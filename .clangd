@@ -1,0 +1,6 @@
+If:
+  PathMatch: .*\.h
+
+CompileFlags:
+  Add: [-Wno-unused-function]
+  CompilationDatabase: build/       # Search build/ directory for compile_commands.json

@@ -1,0 +1,69 @@
+project('dxmt', ['c', 'cpp'], version : 'v0.1', default_options : [ 'cpp_std=c++17', 'warning_level=2' ])
+
+cpp = meson.get_compiler('cpp')
+cc = meson.get_compiler('c')
+clang = meson.get_compiler('c', native: true)
+
+dxmt_include_dirs = [
+  './include',
+  './libs'
+]
+
+compiler_args = [
+  '-msse',
+  '-msse2',
+  '-msse3',
+  '-mfpmath=sse',
+  '-Wimplicit-fallthrough',
+  # gcc
+  '-Wno-missing-field-initializers',
+  '-Wno-unused-parameter',
+  '-Wno-cast-function-type', # Needed for GetProcAddress.
+  # clang
+  '-Wno-unused-private-field',
+  '-Wno-microsoft-exception-spec',
+  '-Wno-extern-c-compat',
+  '-Wno-unused-const-variable',
+  '-Wno-missing-braces',
+]
+
+link_args = []
+
+compiler_args += [
+  '-DNOMINMAX',
+  '-D_WIN32_WINNT=0xa00',
+]
+
+link_args += [
+  '-static',
+  '-static-libgcc',
+  '-static-libstdc++',
+  # We need to set the section alignment for debug symbols to
+  # work properly as well as avoiding a memcpy from the Wine loader.
+  '-Wl,--file-alignment=4096',
+]
+
+# Wine's built-in back traces only work with dwarf4 symbols
+if get_option('debug')
+  compiler_args += [
+    '-gdwarf-4',
+  ]
+endif
+
+dxmt_include_path = include_directories(dxmt_include_dirs)
+
+res_ext = '.o'
+wrc = find_program('windres')
+wrc_generator = generator(wrc,
+  output    : [ '@BASENAME@' + res_ext ],
+  arguments : [ '-i', '@INPUT@', '-o', '@OUTPUT@' ],
+)
+
+add_project_arguments(cpp.get_supported_arguments(compiler_args), language: 'cpp')
+add_project_arguments(cc.get_supported_arguments(compiler_args), language: 'c')
+add_project_link_arguments(cpp.get_supported_link_arguments(link_args), language: 'cpp')
+add_project_link_arguments(cc.get_supported_link_arguments(link_args), language: 'c')
+
+subdir('libs')
+subdir('src')
+subdir('tests')

@@ -1,0 +1,10 @@
+build
+.vscode
+.DS_Store
+wineprefix
+.cache
+wine
+.local
+.config
+toolchains
+build-local.txt

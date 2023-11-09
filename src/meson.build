@@ -1,0 +1,6 @@
+subdir('util')
+subdir('winemetal')
+subdir('dxmt')
+subdir('dxgi')
+subdir('hlslcc')
+subdir('d3d11')
