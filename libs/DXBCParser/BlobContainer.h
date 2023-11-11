@@ -120,7 +120,7 @@ public:
     UINT   GetBlobFourCC(UINT32 BlobIndex);
     // fixes up internal pointers given that the original bytecode has been moved by ByteOffset bytes
     HRESULT RelocateBytecode(UINT_PTR ByteOffset); 
-#define DXBC_BLOB_NOT_FOUND -1
+#define DXBC_BLOB_NOT_FOUND 0xffffffffu
     // Note: search INCLUDES entry at startindex
     // returns blob index if found, otherwise returns DXBC_BLOB_NOT_FOUND
     UINT32 FindNextMatchingBlob( DXBCFourCC SearchFourCC, UINT32 SearchStartBlobIndex = 0 ); 

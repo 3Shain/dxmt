@@ -1146,29 +1146,3 @@ uint32_t GetNumberBitsSet(uint32_t a) {
   // only up to 14 bits (we're only using up to 4)
   return (a * 0x200040008001ULL & 0x111111111111111ULL) % 0xf;
 }
-
-HLSLCC_API void ReflectShaderInputSignature(DXBCShader *_shader,
-                                            DXBCInputOutputSignature *_array) {
-  auto shader = (Shader *)_shader;
-  size_t i = 0;
-  for (auto sig : shader->info.inputSignatures) {
-    auto array = &_array[i];
-    strcpy(array->semanticName, sig.semanticName.c_str());
-    array->semanticIndex = sig.semanticIndex;
-    array->vertexAttribute = sig.vertexAttribute;
-    array->componentType = sig.eComponentType;
-    array->numComponent = GetNumberBitsSet(sig.ui32Mask);
-    array->isPatchConstant = false;
-    i++;
-  }
-  for (auto sig : shader->info.patchConstantSignatures) {
-    auto array = &_array[i];
-    strcpy(array->semanticName, sig.semanticName.c_str());
-    array->semanticIndex = sig.semanticIndex;
-    array->vertexAttribute = sig.vertexAttribute;
-    array->componentType = sig.eComponentType;
-    array->numComponent = GetNumberBitsSet(sig.ui32Mask);
-    array->isPatchConstant = true;
-    i++;
-  }
-}

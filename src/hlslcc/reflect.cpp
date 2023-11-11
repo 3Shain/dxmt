@@ -81,8 +81,6 @@ static void ExtractInputSignatures(const uint32_t *pui32Tokens,
     currentSig.semanticName = ReadStringFromTokenStream(
         (const uint32_t *)((const char *)pui32FirstSignatureToken +
                            ui32SemanticNameOffset));
-
-    currentSig.vertexAttribute = i++;
   }
 }
 
@@ -186,9 +184,6 @@ static void ExtractPatchConstantSignatures(const uint32_t *pui32Tokens,
     psCurrentSignature->semanticName = ReadStringFromTokenStream(
         (const uint32_t *)((const char *)pui32FirstSignatureToken +
                            ui32SemanticNameOffset));
-
-    psCurrentSignature->vertexAttribute =
-        i + psShaderInfo.inputSignatures.size();
   }
 }
 

@@ -357,8 +357,6 @@ public:
         indexStart; // If indexed, contains the start index for the range
     std::map<uint32_t, uint32_t> index; // If indexed, contains the current
                                         // index relative to the index start.
-
-    uint32_t vertexAttribute;
   };
 
   ShaderInfo()

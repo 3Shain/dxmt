@@ -535,7 +535,7 @@ void ToMetal::DeclareHullShaderPassthrough() {
     oss << typeName << " " << name;
 
     oss << " [[ "
-        << "attribute(" << psSig->vertexAttribute << ")"
+        << "attribute(" << psSig->ui32Register << ")"
         << " ]] ";
 
     m_StructDefinitions[out].m_Members.push_back(
@@ -1319,7 +1319,7 @@ void ToMetal::TranslateDeclaration(const Declaration *psDecl) {
         psContext->psShader->eShaderType == DOMAIN_SHADER) {
       std::ostringstream oss;
 
-      oss << "attribute(" << psSig->vertexAttribute << ")";
+      oss << "attribute(" << psSig->ui32Register << ")";
       semantic = oss.str();
     } else {
       std::ostringstream oss;
@@ -2291,7 +2291,7 @@ void ToMetal::DeclareOutput(const Declaration *psDecl) {
       oss << type << " " << name;
 
       oss << " [[ "
-          << "attribute(" << psSignature->vertexAttribute << ")"
+          << "attribute(" << psSignature->ui32Register << ")"
           << " ]] ";
 
       m_StructDefinitions[out].m_Members.push_back(

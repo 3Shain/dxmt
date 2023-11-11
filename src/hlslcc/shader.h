@@ -274,14 +274,10 @@ HLSLCC_API size_t GetShaderInputSignatureCount(DXBCShader *shader);
 struct DXBCInputOutputSignature {
   char semanticName[64];
   uint32_t semanticIndex;
-  uint32_t vertexAttribute;
   uint32_t isPatchConstant;
   INOUT_COMPONENT_TYPE componentType;
   size_t numComponent;
 };
-
-HLSLCC_API void ReflectShaderInputSignature(DXBCShader *shader,
-                                            DXBCInputOutputSignature *array);
 
 HLSLCC_API void ReflectShaderOutputSignature(DXBCShader *shader);
 

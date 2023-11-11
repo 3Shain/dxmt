@@ -1,15 +1,17 @@
 #include "d3d11_input_layout.hpp"
+#include "DXBCParser/d3d12tokenizedprogramformat.hpp"
 #include "Foundation/NSAutoreleasePool.hpp"
 #include "d3d11_device_child.h"
 
 #include "../dxgi/dxgi_format.hpp"
 
-#include "../hlslcc/shader.h"
+#include "DXBCParser/DXBCUtils.h"
+#include <algorithm>
 
 namespace dxmt {
 
 struct Attribute {
-  uint32_t metal_attribute;
+  uint32_t index;
   uint32_t slot;
   uint32_t offset;
   MTL::AttributeFormat format; // the same as MTL::VertexFormat
@@ -57,7 +59,7 @@ public:
     auto pool = transfer(NS::AutoreleasePool::alloc()->init());
     auto vertex_desc = (MTL::VertexDescriptor::vertexDescriptor());
     for (auto &attr : attributes_) {
-      auto attr_desc = vertex_desc->attributes()->object(attr.metal_attribute);
+      auto attr_desc = vertex_desc->attributes()->object(attr.index);
       attr_desc->setBufferIndex(attr.slot);
       attr_desc->setFormat((MTL::VertexFormat)attr.format);
       attr_desc->setOffset(attr.offset);
@@ -97,43 +99,54 @@ HRESULT CreateInputLayout(IMTLD3D11Device *device,
   std::vector<Attribute> elements(NumElements);
   std::vector<Layout> layout(16);
 
-  DXBCShader *shader =
-      DecodeDXBCShader(pShaderBytecodeWithInputSignature); // FIXME: release!
-  ShaderInfo *info;
-  GetDXBCShaderInfo(shader, &info);
+  CSignatureParser parser;
+  HRESULT hr =
+      DXBCGetInputSignature(pShaderBytecodeWithInputSignature, &parser);
+  if (FAILED(hr)) {
+    return hr;
+  }
+  const D3D11_SIGNATURE_PARAMETER *pParamters;
+  auto numParameteres = parser.GetParameters(&pParamters);
 
-  auto find_metal_attribute = [&](const D3D11_INPUT_ELEMENT_DESC &desc) {
-    for (auto &sig : info->inputSignatures) {
-      if (sig.semanticName == desc.SemanticName) {
-        if (sig.semanticIndex == desc.SemanticIndex) {
-          return sig.vertexAttribute;
-        }
-      }
+  UINT attributeCount = 0;
+  for (UINT i = 0; i < numParameteres; i++) {
+    auto &inputSig = pParamters[i];
+    if (inputSig.SystemValue != D3D10_SB_NAME_UNDEFINED) {
+      continue; // ignore SIV & SGV
     }
-    throw MTLD3DError("Unmatched signature");
-    return 0xffffffff;
-  };
-
-  for (UINT i = 0; i < NumElements; i++) {
-    auto &desc = pInputElementDescs[i];
-    if (g_metal_format_map[desc.Format].vertex_format ==
-        MTL::VertexFormatInvalid) {
-      ERR("Unsupported Vertex Format ", desc.Format);
-      return E_INVALIDARG;
-    }
-    if (desc.InputSlot >= 16) {
-      ERR("InputSlot greater than 15 is not supported (yet)");
+    auto pDesc = std::find_if(
+        pInputElementDescs, pInputElementDescs + NumElements,
+        [&](const D3D11_INPUT_ELEMENT_DESC &Ele) {
+          return Ele.SemanticIndex == inputSig.SemanticIndex &&
+                 std::strcmp(Ele.SemanticName, inputSig.SemanticName) == 0;
+        });
+    if (pDesc == pInputElementDescs + NumElements) {
+      // Unmatched shader input signature
+      ERR("CreateInputLayout: Vertex shader expects ", inputSig.SemanticName,
+          "_", inputSig.SemanticIndex, " but it's not in pInputElementDescs");
       return E_FAIL;
     }
-    auto &attribute = elements[i];
-    attribute.metal_attribute = find_metal_attribute(desc);
-    if (attribute.metal_attribute > 31) {
-      ERR("Unmatched input signature");
+    auto &desc = *pDesc;
+    auto &attribute = elements[attributeCount++];
+
+    if (g_metal_format_map[desc.Format].vertex_format ==
+        MTL::VertexFormatInvalid) {
+      ERR("CreateInputLayout: Unsupported Vertex Format ", desc.Format);
       return E_INVALIDARG;
     }
     attribute.format = g_metal_format_map[desc.Format].attribute_format;
     attribute.element_stride = g_metal_format_map[desc.Format].stride;
     attribute.slot = desc.InputSlot;
+    attribute.index = inputSig.Register;
+    if (attribute.slot >= 16) {
+      ERR("CreateInputLayout: InputSlot greater than 15 is not supported "
+          "(yet)");
+      return E_FAIL;
+    }
+    if (attribute.index > 30) {
+      ERR("CreateInputLayout: FIXME: Too many elements.");
+      return E_INVALIDARG;
+    }
 
     if (desc.AlignedByteOffset == D3D11_APPEND_ALIGNED_ELEMENT) {
       Attribute last_attr_in_same_slot = {
@@ -165,62 +178,5 @@ HRESULT CreateInputLayout(IMTLD3D11Device *device,
       new MTLD3D11InputLayout(device, std::move(elements), std::move(layout)));
   return S_OK;
 };
-
-// Obj<MTL::StageInputOutputDescriptor>
-// MTLD3D11InputLayout::CreateStageIODescriptor(
-//     UINT strides[D3D11_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT],
-//     DXGI_FORMAT index_format) {
-//   auto mtl_vertex_desc =
-//       transfer(MTL::StageInputOutputDescriptor::stageInputOutputDescriptor());
-//   if (index_format != DXGI_FORMAT_UNKNOWN) {
-//     // indexBuffer exist, so bind it to 16 (convention)
-//     mtl_vertex_desc->setIndexBufferIndex(16);
-//     if (index_format == DXGI_FORMAT_R16_UINT) {
-//       mtl_vertex_desc->setIndexType(MTL::IndexType::IndexTypeUInt16);
-//     } else {
-//       mtl_vertex_desc->setIndexType(MTL::IndexType::IndexTypeUInt32);
-//     }
-//   }
-
-//   D3D11_INPUT_CLASSIFICATION
-//   input_slot_classes[D3D11_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT];
-//   UINT instance_data_step_rates[D3D11_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT];
-
-//   for (unsigned i = 0; i < num_elements_; i++) {
-//     auto mtl_attr_desc = transfer(MTL::AttributeDescriptor::alloc()->init());
-//     mtl_attr_desc->setBufferIndex(input_element_descs_[i].InputSlot);
-//     mtl_attr_desc->setOffset(input_element_descs_[i].AlignedByteOffset);
-
-//     mtl_attr_desc->setFormat(
-//         g_metal_format_map[input_element_descs_[i].Format].attribute_format);
-//     mtl_vertex_desc->attributes()->setObject(mtl_attr_desc.ptr(), i);
-
-//     input_slot_classes[input_element_descs_[i].InputSlot] =
-//         input_element_descs_[i].InputSlotClass;
-//     instance_data_step_rates[input_element_descs_[i].InputSlot] =
-//         input_element_descs_[i].InstanceDataStepRate;
-//   }
-
-//   for (unsigned slot = 0; slot < D3D11_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT;
-//        slot++) {
-//     if (strides[slot] == 0)
-//       continue;
-//     auto mtl_buffer_layout_desc =
-//         transfer(MTL::BufferLayoutDescriptor::alloc()->init());
-//     mtl_buffer_layout_desc->setStride(strides[slot]);
-//     if (input_slot_classes[slot] == D3D11_INPUT_PER_INSTANCE_DATA) {
-//       mtl_buffer_layout_desc->setStepFunction(
-//           MTL::StepFunctionThreadPositionInGridY);
-//       mtl_buffer_layout_desc->setStepRate(instance_data_step_rates[slot]);
-//     } else {
-//       // D3D11_INPUT_PER_VERTEX_DATA
-//       mtl_buffer_layout_desc->setStepFunction(
-//           MTL::StepFunctionThreadPositionInGridX);
-//     }
-//     mtl_vertex_desc->layouts()->setObject(mtl_buffer_layout_desc.ptr(),
-//     slot);
-//   }
-//   return mtl_vertex_desc;
-// }
 
 } // namespace dxmt
