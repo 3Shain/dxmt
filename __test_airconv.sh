@@ -7,7 +7,7 @@ cp $ROOT/build/src/dxgi/dxgi.dll $ROOT/wineprefix/drive_c/windows/system32/dxgi.
 
 export WINEDEBUG=fixme-all
 
-cd $ROOT/build/tests/dx11
+cd $ROOT/build/tests/airconv
 
 MTL_HUD_ENABLED=1 OBJC_DEBUG_MISSING_POOLS=NO MTL_CAPTURE_ENABLED=0 WINEPREFIX=$ROOT/wineprefix XDG_DATA_HOME=$ROOT/.local/share XDG_CONFIG_HOME=$ROOT/.config \
-XDG_CACHE_HOME=$ROOT/.cache WINEDEBUG="" WINEDLLOVERRIDES="dxgi,d3d11,d3dcompiler_47=n,b" $ROOT/toolchains/wine/bin/wine dx11_$1.exe
+XDG_CACHE_HOME=$ROOT/.cache WINEDEBUG="" WINEDLLOVERRIDES="dxgi,d3d11,d3dcompiler_47=n,b" $ROOT/toolchains/wine/bin/wine generate_kernel.exe

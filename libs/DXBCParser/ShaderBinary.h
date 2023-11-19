@@ -7,6 +7,7 @@
 #include "d3d12tokenizedprogramformat.hpp"
 #include "d3d11_3.h"
 #include <algorithm>
+#include <cassert>
 #include "strsafe.h"
 
 typedef UINT CShaderToken;
@@ -2641,7 +2642,8 @@ public:
         if( ((m_Index + SizeInUINTs) < m_Index) || // wrap
              (SizeInUINTs > 0xfffffffd) ) // need to add 2, also 0xffffffff isn't caught above
         {
-            throw E_FAIL;
+            assert(0);
+            // throw E_FAIL;
         }
         UINT FullSizeInUINTs = SizeInUINTs + 2; // include opcode and size
         if( m_Index + FullSizeInUINTs >= m_BufferSize ) // If custom data is going to overflow the buffer, reserve more memory
@@ -2728,7 +2730,8 @@ protected:
     {
         if( m_Index + SizeInUINTs < m_Index ) // overflow (prefix)
         {
-            throw E_FAIL;
+            // throw E_FAIL;
+            assert(0);
         }
         if (m_BufferSize < (m_Index + SizeInUINTs))
         {
@@ -2736,7 +2739,8 @@ protected:
             UINT* pNewBuffer = (UINT*)malloc(NewSize*sizeof(UINT));
             if (pNewBuffer == NULL)
             {
-                throw E_OUTOFMEMORY;
+                assert(0);
+                // throw E_OUTOFMEMORY;
             }
             memcpy(pNewBuffer, m_dwFunc, sizeof(UINT)*m_Index);
             free(m_dwFunc);
@@ -2770,15 +2774,15 @@ class CShaderCodeParser
 {
 public:
     CShaderCodeParser():
-        m_pShaderCode(NULL),
         m_pCurrentToken(NULL),
+        m_pShaderCode(NULL),
         m_pShaderEndToken(NULL)
     {
         InitInstructionInfo();
     }
     CShaderCodeParser(CONST CShaderToken* pBuffer):
-        m_pShaderCode(NULL),
         m_pCurrentToken(NULL),
+        m_pShaderCode(NULL),
         m_pShaderEndToken(NULL)
     {
         InitInstructionInfo();

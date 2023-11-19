@@ -19,10 +19,12 @@ BOOL IsOpCodeValid(D3D10_SB_OPCODE_TYPE OpCode) {
 }
 
 UINT GetNumInstructionOperands(D3D10_SB_OPCODE_TYPE OpCode) {
-  if (IsOpCodeValid(OpCode))
-    return g_InstructionInfo[OpCode].m_NumOperands;
-  else
-    throw E_FAIL;
+  // if (IsOpCodeValid(OpCode))
+  //   return g_InstructionInfo[OpCode].m_NumOperands;
+  // else
+  //   throw E_FAIL;
+  assert(IsOpCodeValid(OpCode));
+  return g_InstructionInfo[OpCode].m_NumOperands;
 }
 
 CInstructionInfo g_InstructionInfo[D3D10_SB_NUM_OPCODES];
@@ -421,7 +423,8 @@ void CShaderCodeParser::ParseIndex(
     pOperandIndex->m_MinPrecision = operand.m_MinPrecision;
   } break;
   default:
-    throw E_FAIL;
+    assert(0);
+    // throw E_FAIL;
   }
 }
 
@@ -476,7 +479,8 @@ void CShaderCodeParser::ParseOperand(COperandBase *pOperand) {
         break;
       }
       default:
-        throw E_FAIL;
+        assert(0);
+        // throw E_FAIL;
       }
     }
     pOperand->m_IndexDimension = DECODE_D3D10_SB_OPERAND_INDEX_DIMENSION(Token);
@@ -606,7 +610,8 @@ void CShaderCodeParser::ParseInstruction(CInstruction *pInstruction) {
       pInstruction->m_CustomData.pData =
           malloc((*m_pCurrentToken - 2) * sizeof(UINT));
       if (NULL == pInstruction->m_CustomData.pData) {
-        throw E_OUTOFMEMORY;
+        // throw E_OUTOFMEMORY;
+        assert(0);
       }
       memcpy(pInstruction->m_CustomData.pData, m_pCurrentToken + 1,
              (*m_pCurrentToken - 2) * 4);
@@ -640,7 +645,8 @@ void CShaderCodeParser::ParseInstruction(CInstruction *pInstruction) {
         pMessage->pOperands =
             (COperand *)malloc(NumOperands * sizeof(COperand));
         if (!pMessage->pOperands) {
-          throw E_OUTOFMEMORY;
+          // throw E_OUTOFMEMORY;
+          assert(0);
         }
 
         CONST CShaderToken *pOperands = (CShaderToken *)&pData[5];
@@ -694,7 +700,8 @@ void CShaderCodeParser::ParseInstruction(CInstruction *pInstruction) {
         pInstruction->m_FunctionTableDecl.TableLength * sizeof(UINT));
 
     if (NULL == pInstruction->m_FunctionTableDecl.pFunctionIdentifiers) {
-      throw E_OUTOFMEMORY;
+      // throw E_OUTOFMEMORY;
+      assert(0);
     }
 
     m_pCurrentToken++;
@@ -730,7 +737,8 @@ void CShaderCodeParser::ParseInstruction(CInstruction *pInstruction) {
         pInstruction->m_InterfaceDecl.TableLength * sizeof(UINT));
 
     if (NULL == pInstruction->m_InterfaceDecl.pFunctionTableIdentifiers) {
-      throw E_OUTOFMEMORY;
+      // throw E_OUTOFMEMORY;
+      assert(0);
     }
 
     m_pCurrentToken++;
@@ -1074,7 +1082,8 @@ void CShaderAsm::EmitOperand(const COperandBase &operand) {
         break;
       }
       default:
-        throw E_FAIL;
+        // throw E_FAIL;
+        assert(0);
       }
     }
 
@@ -1110,7 +1119,8 @@ void CShaderAsm::EmitOperand(const COperandBase &operand) {
     else if (operand.m_NumComponents == D3D10_SB_OPERAND_1_COMPONENT)
       n = 1;
     else {
-      throw E_FAIL;
+      // throw E_FAIL;
+      assert(0);
     }
     for (UINT i = 0; i < n; i++) {
       FUNC(operand.m_Value[i]);
@@ -1147,7 +1157,8 @@ void CShaderAsm::EmitOperand(const COperandBase &operand) {
         }
       } break;
       default:
-        throw E_FAIL;
+        // throw E_FAIL;
+        assert(0);
       }
     }
   }

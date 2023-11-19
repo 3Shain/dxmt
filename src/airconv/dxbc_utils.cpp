@@ -1,5 +1,5 @@
-#include "CMask.h"
-
+#include "dxbc_utils.h"
+namespace dxmt {
 
 //------------------------------------------------------------------------------
 //
@@ -142,3 +142,4 @@ BYTE CMask::GetFirstActiveComp() const {
 CMask CMask::FromDXBC(const unsigned DxbcMask) {
   return CMask(DxbcMask >> D3D10_SB_OPERAND_4_COMPONENT_MASK_SHIFT);
 }
+} // namespace dxmt

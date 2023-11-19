@@ -2,7 +2,7 @@
 // Licensed under the MIT License.
 #pragma once
 #include "BlobContainer.h"
-#include "d3d12TokenizedProgramFormat.hpp"
+#include "d3d12tokenizedprogramformat.hpp"
 
 class CSignatureParser;
 class CSignatureParser5;
