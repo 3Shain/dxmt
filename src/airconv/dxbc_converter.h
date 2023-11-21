@@ -7,6 +7,7 @@
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Type.h"
+#include "llvm/Support/raw_ostream.h"
 #include "DXBCParser/ShaderBinary.h"
 #include "dxbc_utils.h"
 
@@ -25,7 +26,8 @@ public:
 protected:
   LLVMContext context_;
   std::unique_ptr<Module> pModule_;
-std::unique_ptr<IRBuilder<>> pBuilder_;
+  std::unique_ptr<IRBuilder<>> pBuilder_;
+
 public:
   void AnalyzeShader(D3D10ShaderBinary::CShaderCodeParser &Parser);
 
@@ -39,12 +41,11 @@ public:
                     const unsigned OpIdx, const CMask &Mask,
                     const int ValueType);
 
-
   void EmitAIRMetadata();
 
   void Optimize();
 
-  void SerializeAIR();
+  void SerializeAIR(raw_ostream& OS);
 
 protected:
   Type *voidTy = Type::getVoidTy(context_);

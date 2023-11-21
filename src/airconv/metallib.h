@@ -1,5 +1,6 @@
 #pragma once
 #include "stdint.h"
+#include <array>
 #include <cstdint>
 
 #ifdef __cplusplus
@@ -34,7 +35,7 @@ typedef enum : uint8_t {
   MTLBOS_macOS = 0x81,
 } MTLBOS;
 
-typedef struct {
+typedef struct __attribute__((packed)) {
   uint32_t Magic; // MTLB
   MTLBPlatform Platform;
   uint16_t VersionMajor;
@@ -55,12 +56,45 @@ typedef struct {
 } MTLBHeader;
 
 typedef enum : uint8_t {
-    MTLB_VertexFunction = 0x00,
-    MTLB_FragmentFunction = 0x01,
-    MTLB_KernelFunction = 0x02,
+  MTLB_VertexFunction = 0x00,
+  MTLB_FragmentFunction = 0x01,
+  MTLB_KernelFunction = 0x02,
 } MTLB_FunctionType;
 
-int GenerateMetalLib(const void* pBitcode, uint32_t BitcodeSize, const char* FunctionName);
+struct __attribute__((packed)) MTLB_TYPE_TAG {
+  MTLBFourCC TAG = MTLB_Type;
+  uint16_t TAG_SIZE = 1;
+  uint8_t type;
+};
+
+struct __attribute__((packed)) MTLB_HASH_TAG {
+  MTLBFourCC TAG = MTLB_Hash;
+  uint16_t TAG_SIZE = 0x20;
+  std::array<uint32_t, 8> hash;
+};
+
+struct __attribute__((packed)) MTLB_OFFT_TAG {
+  MTLBFourCC TAG = MTLB_Offset;
+  uint16_t TAG_SIZE = 0x18;
+  uint64_t PublicMetadataOffset;
+  uint64_t PrivateMetadataOffset;
+  uint64_t BitcodeOffset;
+};
+
+struct __attribute__((packed)) MTLB_VERS_TAG {
+  MTLBFourCC TAG = MTLB_Version;
+  uint16_t TAG_SIZE = 0x08;
+  uint16_t airVersionMajor;
+  uint16_t airVersionMinor;
+  uint16_t languageVersionMajor;
+  uint16_t languageVersionMinor;
+};
+
+struct __attribute__((packed)) MTLB_MDSZ_TAG {
+  MTLBFourCC TAG = MTLB_Size;
+  uint16_t TAG_SIZE = 0x08;
+  uint64_t bitcodeSize;
+};
 
 #ifdef __cplusplus
 };
