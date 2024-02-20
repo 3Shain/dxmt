@@ -27,6 +27,11 @@ protected:
   LLVMContext context_;
   std::unique_ptr<Module> pModule_;
   std::unique_ptr<IRBuilder<>> pBuilder_;
+  unsigned m_DxbcMajor;
+  unsigned m_DxbcMinor;
+  bool IsSM51Plus() const {
+    return m_DxbcMajor > 5 || (m_DxbcMajor == 5 && m_DxbcMinor >= 1);
+  }
 
 public:
   void AnalyzeShader(D3D10ShaderBinary::CShaderCodeParser &Parser);
@@ -41,11 +46,14 @@ public:
                     const unsigned OpIdx, const CMask &Mask,
                     const int ValueType);
 
+  Value *ApplyOperandModifiers(Value *pValue,
+                               const D3D10ShaderBinary::COperandBase &O);
+
   void EmitAIRMetadata();
 
   void Optimize();
 
-  void SerializeAIR(raw_ostream& OS);
+  void SerializeAIR(raw_ostream &OS);
 
 protected:
   Type *voidTy = Type::getVoidTy(context_);
@@ -54,5 +62,21 @@ protected:
   // Type *voidTy = Type::getVoidTy(context_);
   // Type *voidTy = Type::getVoidTy(context_);
   // Type *voidTy = Type::getVoidTy(context_);
+
+  // helpers
+protected:
+  void GetResourceRange(const D3D10ShaderBinary::CInstruction &Inst) {
+    unsigned RangeID = Inst.m_Operands[0].m_Index[0].m_RegIndex;
+    unsigned LB, RangeSize;
+    if (IsSM51Plus()) {
+      LB = Inst.m_Operands[0].m_Index[1].m_RegIndex;
+      RangeSize = Inst.m_Operands[0].m_Index[2].m_RegIndex != UINT_MAX
+                      ? Inst.m_Operands[0].m_Index[2].m_RegIndex - LB + 1
+                      : UINT_MAX;
+    } else {
+      LB = RangeID;
+      RangeSize = 1;
+    }
+  }
 };
 } // namespace dxmt

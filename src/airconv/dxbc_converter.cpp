@@ -9,6 +9,7 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Bitcode/BitcodeWriter.h"
 #include "llvm/IR/BasicBlock.h"
+#include "llvm/IR/DataLayout.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/IRBuilder.h"
@@ -23,7 +24,231 @@ DxbcConverter::DxbcConverter() {}
 DxbcConverter::~DxbcConverter() {}
 
 void DxbcConverter::AnalyzeShader(
-    D3D10ShaderBinary::CShaderCodeParser &Parser) {}
+    D3D10ShaderBinary::CShaderCodeParser &Parser) {
+
+  D3D10_SB_TOKENIZED_PROGRAM_TYPE ShaderType = Parser.ShaderType();
+  m_DxbcMajor = Parser.ShaderMajorVersion();
+  m_DxbcMinor = Parser.ShaderMinorVersion();
+
+  // Collect:
+  //   1. Declarations
+  //   2. Labels
+  // Declare:
+  //   1. Global symbols for resources/samplers.
+  //   2. Their types.
+  D3D10ShaderBinary::CInstruction Inst;
+  while (!Parser.EndOfShader()) {
+
+    Parser.ParseInstruction(&Inst);
+
+    switch (Inst.OpCode()) {
+    case D3D10_SB_OPCODE_DCL_CONSTANT_BUFFER: {
+      DXASSERT(false, "Unhandled declaration (tbd)");
+      break;
+    }
+    case D3D10_SB_OPCODE_DCL_SAMPLER: {
+      DXASSERT(false, "Unhandled declaration (tbd)");
+      // pModule_.gettyp
+      // StructType::getTypeByName(LLVMContext &C, StringRef Name)
+      break;
+    }
+
+    case D3D10_SB_OPCODE_DCL_RESOURCE:
+    case D3D11_SB_OPCODE_DCL_RESOURCE_RAW:
+    case D3D11_SB_OPCODE_DCL_RESOURCE_STRUCTURED: {
+      DXASSERT(false, "Unhandled declaration (tbd)");
+      break;
+    }
+
+    case D3D11_SB_OPCODE_DCL_UNORDERED_ACCESS_VIEW_TYPED:
+    case D3D11_SB_OPCODE_DCL_UNORDERED_ACCESS_VIEW_RAW:
+    case D3D11_SB_OPCODE_DCL_UNORDERED_ACCESS_VIEW_STRUCTURED: {
+      DXASSERT(false, "Unhandled declaration (tbd)");
+      break;
+    }
+
+    case D3D10_SB_OPCODE_DCL_INDEX_RANGE: {
+      DXASSERT(false, "Unhandled declaration (tbd)");
+      break;
+    }
+
+    case D3D10_SB_OPCODE_DCL_GS_INPUT_PRIMITIVE: {
+      DXASSERT(false, "Unhandled declaration (tbd)");
+      break;
+    }
+
+    case D3D10_SB_OPCODE_DCL_GS_OUTPUT_PRIMITIVE_TOPOLOGY: {
+      DXASSERT(false, "Unhandled declaration (tbd)");
+      break;
+    }
+
+    case D3D10_SB_OPCODE_DCL_MAX_OUTPUT_VERTEX_COUNT: {
+      DXASSERT(false, "Unhandled declaration (tbd)");
+      break;
+    }
+
+    case D3D10_SB_OPCODE_DCL_INPUT: {
+      DXASSERT(false, "Unhandled declaration (tbd)");
+      break;
+    }
+
+    case D3D10_SB_OPCODE_DCL_INPUT_SGV: {
+      DXASSERT(false, "Unhandled declaration (tbd)");
+      break;
+    }
+
+    case D3D10_SB_OPCODE_DCL_INPUT_SIV: {
+      DXASSERT(false, "Unhandled declaration (tbd)");
+      break;
+    }
+
+    case D3D10_SB_OPCODE_DCL_INPUT_PS: {
+      DXASSERT(false, "Unhandled declaration (tbd)");
+      break;
+    }
+
+    case D3D10_SB_OPCODE_DCL_INPUT_PS_SGV: {
+      DXASSERT(false, "Unhandled declaration (tbd)");
+      break;
+    }
+
+    case D3D10_SB_OPCODE_DCL_INPUT_PS_SIV: {
+      DXASSERT(false, "Unhandled declaration (tbd)");
+      break;
+    }
+
+    case D3D10_SB_OPCODE_DCL_OUTPUT: {
+      DXASSERT(false, "Unhandled declaration (tbd)");
+      break;
+    }
+
+    case D3D10_SB_OPCODE_DCL_OUTPUT_SGV: {
+      DXASSERT(false, "Unhandled declaration (tbd)");
+      break;
+    }
+    case D3D10_SB_OPCODE_DCL_OUTPUT_SIV: {
+      DXASSERT(false, "Unhandled declaration (tbd)");
+      break;
+    }
+
+    case D3D10_SB_OPCODE_DCL_TEMPS: {
+      DXASSERT(false, "Unhandled declaration (tbd)");
+      break;
+    }
+
+    case D3D10_SB_OPCODE_DCL_INDEXABLE_TEMP: {
+      DXASSERT(false, "Unhandled declaration (tbd)");
+      break;
+    }
+
+    case D3D10_SB_OPCODE_DCL_GLOBAL_FLAGS: {
+      //
+      break;
+    }
+
+    case D3D11_SB_OPCODE_DCL_STREAM: {
+      DXASSERT(false, "Unhandled declaration (tbd)");
+      break;
+    }
+
+    case D3D11_SB_OPCODE_HS_DECLS:
+      break; // on purpose
+
+    case D3D11_SB_OPCODE_DCL_INPUT_CONTROL_POINT_COUNT: {
+      DXASSERT(false, "Unhandled declaration (tbd)");
+      break;
+    }
+
+    case D3D11_SB_OPCODE_DCL_OUTPUT_CONTROL_POINT_COUNT: {
+      DXASSERT(false, "Unhandled declaration (tbd)");
+      break;
+    }
+
+    case D3D11_SB_OPCODE_DCL_TESS_DOMAIN: {
+      DXASSERT(false, "Unhandled declaration (tbd)");
+      break;
+    }
+
+    case D3D11_SB_OPCODE_DCL_TESS_PARTITIONING: {
+      DXASSERT(false, "Unhandled declaration (tbd)");
+      break;
+    }
+
+    case D3D11_SB_OPCODE_DCL_TESS_OUTPUT_PRIMITIVE: {
+      DXASSERT(false, "Unhandled declaration (tbd)");
+      break;
+    }
+
+    case D3D11_SB_OPCODE_DCL_HS_MAX_TESSFACTOR: {
+      DXASSERT(false, "Unhandled declaration (tbd)");
+      break;
+    }
+
+    case D3D11_SB_OPCODE_HS_CONTROL_POINT_PHASE: {
+      DXASSERT(false, "Unhandled declaration (tbd)");
+      break;
+    }
+
+    case D3D11_SB_OPCODE_HS_FORK_PHASE:
+    case D3D11_SB_OPCODE_HS_JOIN_PHASE: {
+      DXASSERT(false, "Unhandled declaration (tbd)");
+      break;
+    }
+
+    case D3D11_SB_OPCODE_DCL_HS_FORK_PHASE_INSTANCE_COUNT: {
+      DXASSERT(false, "Unhandled declaration (tbd)");
+      break;
+    }
+
+    case D3D11_SB_OPCODE_DCL_HS_JOIN_PHASE_INSTANCE_COUNT: {
+      DXASSERT(false, "Unhandled declaration (tbd)");
+      break;
+    }
+
+    case D3D11_SB_OPCODE_DCL_THREAD_GROUP: {
+      DXASSERT(false, "Unhandled declaration (tbd)");
+      break;
+    }
+
+    case D3D11_SB_OPCODE_DCL_THREAD_GROUP_SHARED_MEMORY_RAW:
+    case D3D11_SB_OPCODE_DCL_THREAD_GROUP_SHARED_MEMORY_STRUCTURED: {
+      DXASSERT(false, "Unhandled declaration (tbd)");
+      break;
+    }
+
+    case D3D11_SB_OPCODE_DCL_GS_INSTANCE_COUNT: {
+      DXASSERT(false, "Unhandled declaration (tbd)");
+      break;
+    }
+
+    case D3D10_SB_OPCODE_CUSTOMDATA:
+      break; // on purpose
+
+    case D3D11_SB_OPCODE_DCL_FUNCTION_BODY: {
+      DXASSERT(false, "Unhandled declaration (tbd)");
+      break;
+    }
+
+    case D3D11_SB_OPCODE_DCL_FUNCTION_TABLE: {
+      DXASSERT(false, "Unhandled declaration (tbd)");
+      break;
+    }
+
+    case D3D11_SB_OPCODE_DCL_INTERFACE: {
+      DXASSERT(false, "Unhandled declaration (tbd)");
+      break;
+    }
+
+    case D3D10_SB_OPCODE_LABEL: {
+      DXASSERT(false, "Unhandled declaration (tbd)");
+      break;
+    }
+
+    default:
+      break;
+    };
+  }
+}
 
 void DxbcConverter::Convert(LPCVOID dxbc, UINT dxbcSize, LPVOID *ppAIR,
                             UINT *pAIRSize) {
@@ -117,13 +342,97 @@ void DxbcConverter::ConvertInstructions(
     // char temp[1024];
     // Inst.Disassemble(temp, 1024);
     // outs() << temp << "\n";
+
+    // Fix up output register masks.
+    // DXBC instruction conversion relies on the output mask(s) determining
+    // what components need to be written.
+    // Some output operand types have write mask that is 0 -- fix this.
+    for (unsigned i = 0; i < std::min(Inst.m_NumOperands, (UINT)2); i++) {
+      D3D10ShaderBinary::COperandBase &O = Inst.m_Operands[i];
+      switch (O.m_Type) {
+      case D3D10_SB_OPERAND_TYPE_OUTPUT_DEPTH:
+      case D3D11_SB_OPERAND_TYPE_OUTPUT_DEPTH_GREATER_EQUAL:
+      case D3D11_SB_OPERAND_TYPE_OUTPUT_DEPTH_LESS_EQUAL:
+      case D3D11_SB_OPERAND_TYPE_OUTPUT_STENCIL_REF:
+      case D3D10_SB_OPERAND_TYPE_OUTPUT_COVERAGE_MASK:
+        DXASSERT_DXBC(O.m_WriteMask == 0);
+        O.m_WriteMask = (D3D10_SB_OPERAND_4_COMPONENT_MASK_X);
+        break;
+      default:
+        break;
+      }
+    }
+
+    switch (Inst.OpCode()) {
+    case D3D10_SB_OPCODE_DCL_GLOBAL_FLAGS:
+      break;
+    case D3D10_SB_OPCODE_MOV: {
+      CMask WriteMask = CMask::FromDXBC(Inst.m_Operands[0].m_WriteMask);
+      break;
+    }
+    default:
+      DXASSERT(false, "Unhandled opecode")
+      break;
+    }
   }
 }
 
 void DxbcConverter::LoadOperand(int src,
                                 const D3D10ShaderBinary::CInstruction &Inst,
                                 const unsigned int OpIdx, const CMask &Mask,
-                                const int ValueType) {}
+                                const int ValueType) {
+  const D3D10ShaderBinary::COperandBase &O = Inst.m_Operands[OpIdx];
+  switch (O.m_Type) {
+  case D3D10_SB_OPERAND_TYPE_IMMEDIATE32: {
+    DXASSERT_DXBC(O.m_Modifier == D3D10_SB_OPERAND_MODIFIER_NONE);
+    break;
+  }
+  case D3D10_SB_OPERAND_TYPE_IMMEDIATE64: {
+    DXASSERT(false, "64bit value not supported yet");
+    break;
+  }
+  default:
+    DXASSERT(false, "unhandled load operand type");
+    break;
+  }
+}
+
+Value *
+DxbcConverter::ApplyOperandModifiers(Value *pValue,
+                                     const D3D10ShaderBinary::COperandBase &O) {
+  bool bAbsModifier = (O.m_Modifier & D3D10_SB_OPERAND_MODIFIER_ABS) != 0;
+  bool bNegModifier = (O.m_Modifier & D3D10_SB_OPERAND_MODIFIER_NEG) != 0;
+
+  if (pValue->getType()->isVectorTy()) {
+    if (bAbsModifier) {
+      DXASSERT_DXBC(pValue->getType()->getScalarType()->isFloatingPointTy());
+    }
+
+    if (bNegModifier) {
+    }
+  } else {
+
+    if (bAbsModifier) {
+      DXASSERT_DXBC(pValue->getType()->isFloatingPointTy());
+      // Function *F = m_pOP->GetOpFunc(OP::OpCode::FAbs, pValue->getType());
+      // Value *Args[2];
+      // Args[0] = m_pOP->GetU32Const((unsigned)OP::OpCode::FAbs);
+      // Args[1] = pValue;
+      // pValue = m_pBuilder->CreateCall(F, Args);
+    }
+
+    if (bNegModifier) {
+      if (pValue->getType()->isFloatingPointTy()) {
+        pValue = pBuilder_->CreateFNeg(pValue);
+      } else {
+        DXASSERT_DXBC(pValue->getType()->isIntegerTy());
+        pValue = pBuilder_->CreateNeg(pValue);
+      }
+    }
+  }
+
+  return pValue;
+}
 
 void DxbcConverter::EmitAIRMetadata() {
   MDBuilder mdbuilder(context_);

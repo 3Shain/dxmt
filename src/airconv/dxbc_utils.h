@@ -28,6 +28,9 @@
     }                                                                          \
   } while (0);
 
+#define DXASSERT_DXBC(__exp)                                                   \
+  DXASSERT(__exp, "otherwise incorrect assumption about DXBC")
+  
 namespace DXBC {
 
 // Width of DXBC vector operand.
