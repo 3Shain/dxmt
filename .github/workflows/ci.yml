@@ -17,7 +17,7 @@ jobs:
             cache-key-${{ hashFiles('configure.sh') }}
             cache-key-
           path: |
-            ~/toolchains
+            ./toolchains
       - name: Install Development Environment
         run: brew install ninja meson
       - name: Configuration
