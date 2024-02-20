@@ -1,5 +1,5 @@
 subdir('util')
-subdir('airconv')
+# subdir('airconv')
 subdir('winemetal')
 subdir('dxmt')
 subdir('dxgi')

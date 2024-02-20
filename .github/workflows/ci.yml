@@ -8,9 +8,20 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v3
+      - name: Cache Toolchains
+        id: cache-toolchains
+        uses: actions/cache@v3
+        with:
+          key: cache-key-${{ hashFiles('configure.sh') }}
+          restore-keys: |
+            cache-key-${{ hashFiles('configure.sh') }}
+            cache-key-
+          path: |
+            ~/toolchains
       - name: Install Development Environment
         run: brew install ninja meson
       - name: Configuration
+        if: ${{ steps.cache-toolchains.outputs.cache-hit != 'true' }}
         run: ./configure.sh
       - name: Build # hardcoded llvm-mingw-20231017-ucrt-macos-universal is annoying
         run: |

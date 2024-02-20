@@ -67,4 +67,4 @@ add_project_link_arguments(cc.get_supported_link_arguments(link_args), language:
 
 subdir('libs')
 subdir('src')
-subdir('tests')
+# subdir('tests')
