@@ -1,0 +1,26 @@
+name: CI Build
+
+on: push
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Install Development Environment
+        run: brew install ninja meson
+      - name: Configuration
+        run: ./configure.sh
+      - name: Build # hardcoded llvm-mingw-20231017-ucrt-macos-universal is annoying
+        run: |
+          export PATH="$PATH:$(pwd)/toolchains/llvm-mingw-20231017-ucrt-macos-universal/bin"
+          meson setup --cross-file build-win64.txt --native-file build-osx.txt build
+          meson compile -C build
+      - name: Tar
+        run: tar -zcf artifacts.tar.gz build/src
+      - name: Upload
+        uses: actions/upload-artifact@v3
+        with:
+          name: artifacts
+          path: artifacts.tar.gz
