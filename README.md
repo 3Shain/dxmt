@@ -1,5 +1,14 @@
 # DXMT
 
+A Metal-based translation layer for Direct3D 11 which allows running 3D applications on macOS using Wine.
+
 ![](https://github.com/3Shain/dxmt/raw/main/docs/anim.gif)
 
-> Making slow progress.... Currently I'm moving code from old (private) codebase and experimenting meson build system. Thus there is no working executables in this repository, yet. I would expect a working implementation (at least be capable of a certain anime game) by 2024 Q1.
+### [Current Status of `dxmt`](https://github.com/3Shain/dxmt/blob/main/docs/PROGRESS.md)
+
+## Build
+
+TBD.
+
+There is a working [CI workflow](https://github.com/3Shain/dxmt/blob/main/.github/workflows/ci.yml) which you can refer to.
+
