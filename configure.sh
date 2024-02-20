@@ -14,14 +14,13 @@ rm ./llvm.tar.xz
 # setup llvm
 git clone --depth 1 https://github.com/llvm/llvm-project.git toolchains/llvm-project 
 mkdir -p ./toolchains/llvm-build
-cmake -B./toolchains/llvm-build \
--S./toolchains/llvm-project/llvm \ 
--DCMAKE_SYSTEM_NAME=Windows -DCMAKE_INSTALL_PREFIX=$(pwd)/toolchains/llvm \
--DLLVM_HOST_TRIPLE=x86_64-w64-mingw32 -DLLVM_TARGETS_TO_BUILD=X86 \
--DCMAKE_BUILD_TYPE=Release \
--DCMAKE_SYSROOT="$(pwd)/toolchains/llvm-mingw-20231017-ucrt-macos-universal" \
--DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc \
--G Ninja
+cmake -B ./toolchains/llvm-build -S ./toolchains/llvm-project/llvm -DCMAKE_SYSTEM_NAME=Windows \
+  -DCMAKE_INSTALL_PREFIX="$(pwd)/toolchains/llvm" \
+  -DLLVM_HOST_TRIPLE=x86_64-w64-mingw32 -DLLVM_TARGETS_TO_BUILD=X86 \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_SYSROOT="$(pwd)/toolchains/llvm-mingw-20231017-ucrt-macos-universal" \
+  -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc \
+  -G Ninja
 pushd ./toolchains/llvm-build
 ninja
 ninja install
