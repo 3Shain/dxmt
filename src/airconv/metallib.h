@@ -1,4 +1,5 @@
 #pragma once
+#include "sha256.hpp" // FIXME: wtf?
 #include "stdint.h"
 #include <array>
 #include <cstdint>
@@ -70,7 +71,7 @@ struct __attribute__((packed)) MTLB_TYPE_TAG {
 struct __attribute__((packed)) MTLB_HASH_TAG {
   MTLBFourCC TAG = MTLB_Hash;
   uint16_t TAG_SIZE = 0x20;
-  std::array<uint32_t, 8> hash;
+  sha256_hash hash;
 };
 
 struct __attribute__((packed)) MTLB_OFFT_TAG {

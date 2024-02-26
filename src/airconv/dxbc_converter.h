@@ -2,73 +2,83 @@
 #pragma once
 #include <cstdint>
 #include <memory>
+#include <optional>
 
+#include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/LLVMContext.h"
+#include "llvm/IR/Metadata.h"
+#include "llvm/IR/Module.h"
 #include "llvm/IR/Type.h"
+#include "llvm/IR/Value.h"
+#include "llvm/Passes/OptimizationLevel.h"
 #include "llvm/Support/raw_ostream.h"
 #include "DXBCParser/ShaderBinary.h"
-#include "dxbc_utils.h"
 
-using namespace llvm;
+#include "air_builder.h"
+#include "air_constants.h"
+#include "air_metadata.h"
+#include "air_operation.h"
+#include "air_type.h"
+#include "dxbc_analyzer.h"
+#include "dxbc_utils.h"
 
 namespace dxmt {
 
 class DxbcConverter {
 
 public:
-  DxbcConverter();
-  ~DxbcConverter();
-
-  void Convert(LPCVOID dxbc, UINT dxbcSize, LPVOID *ppAIR, UINT *pAIRSize);
+  DxbcConverter(DxbcAnalyzer &analyzer, AirType &types,
+                llvm::LLVMContext &context, llvm::Module &pModule);
 
 protected:
-  LLVMContext context_;
-  std::unique_ptr<Module> pModule_;
-  std::unique_ptr<IRBuilder<>> pBuilder_;
+  DxbcAnalyzer &analyzer;
+  AirType &types;
+  llvm::LLVMContext &context_;
+  llvm::Module &pModule_;
+  llvm::IRBuilder<> pBuilder_;
+  AirBuilder airBuilder;
+  AirOp airOp;
+
   unsigned m_DxbcMajor;
   unsigned m_DxbcMinor;
-  bool IsSM51Plus() const {
-    return m_DxbcMajor > 5 || (m_DxbcMajor == 5 && m_DxbcMinor >= 1);
-  }
+
+  llvm::Function *function;
+  llvm::BasicBlock *epilogue;
+
+  __ShaderContext shaderContext;
 
 public:
-  void AnalyzeShader(D3D10ShaderBinary::CShaderCodeParser &Parser);
+  llvm::MDNode *Pre(AirMetadata &metadata);
+
+  llvm::MDNode *Post(AirMetadata &metadata, llvm::MDNode *input);
 
   void ConvertInstructions(D3D10ShaderBinary::CShaderCodeParser &Parser);
 
-  void LoadOperand(int src, const D3D10ShaderBinary::CInstruction &Inst,
-                   const unsigned OpIdx, const CMask &Mask,
-                   const int ValueType);
+  void Optimize(llvm::OptimizationLevel leve);
 
-  void StoreOperand(int Dst, const D3D10ShaderBinary::CInstruction &Inst,
-                    const unsigned OpIdx, const CMask &Mask,
-                    const int ValueType);
+  void SerializeAIR(llvm::raw_ostream &OS);
 
-  Value *ApplyOperandModifiers(Value *pValue,
-                               const D3D10ShaderBinary::COperandBase &O);
+  /* internal helpers */
 
-  void EmitAIRMetadata();
+  llvm::Value *LoadOperand(const D3D10ShaderBinary::CInstruction &Inst,
+                           const unsigned OpIdx);
 
-  void Optimize();
+  llvm::Value *
+  LoadOperandIndex(const D3D10ShaderBinary::COperandIndex &OpIndex,
+                   const D3D10_SB_OPERAND_INDEX_REPRESENTATION IndexType);
 
-  void SerializeAIR(raw_ostream &OS);
+  void StoreOperand(llvm::Value *, const D3D10ShaderBinary::CInstruction &Inst,
+                    const unsigned OpIdx, uint32_t mask);
 
-protected:
-  Type *voidTy = Type::getVoidTy(context_);
-  IntegerType *int32Ty = Type::getInt32Ty(context_);
-  Type *floatTy = Type::getFloatTy(context_);
-  // Type *voidTy = Type::getVoidTy(context_);
-  // Type *voidTy = Type::getVoidTy(context_);
-  // Type *voidTy = Type::getVoidTy(context_);
+  llvm::Value *ApplyOperandModifiers(llvm::Value *pValue,
+                                     const D3D10ShaderBinary::COperandBase &O);
 
-  // helpers
-protected:
   void GetResourceRange(const D3D10ShaderBinary::CInstruction &Inst) {
     unsigned RangeID = Inst.m_Operands[0].m_Index[0].m_RegIndex;
     unsigned LB, RangeSize;
-    if (IsSM51Plus()) {
+    if (analyzer.IsSM51Plus()) {
       LB = Inst.m_Operands[0].m_Index[1].m_RegIndex;
       RangeSize = Inst.m_Operands[0].m_Index[2].m_RegIndex != UINT_MAX
                       ? Inst.m_Operands[0].m_Index[2].m_RegIndex - LB + 1
@@ -79,4 +89,6 @@ protected:
     }
   }
 };
+
+class Scope {};
 } // namespace dxmt

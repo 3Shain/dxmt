@@ -37,5 +37,7 @@ ASM_FORWARD(unix_malloc, 8 * 29)
 ASM_FORWARD(unix_free, 8 * 30)
 ASM_FORWARD(unix_setjmp, 8 * 31)
 ASM_FORWARD(unix_longjmp, 8 * 32)
+ASM_FORWARD(dispatch_get_main_queue, 8 * 33)
+ASM_FORWARD(dispatch_data_create, 8 * 34)
 
 extern void *__wine_unixlib_handle;

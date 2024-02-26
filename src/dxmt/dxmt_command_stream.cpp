@@ -163,9 +163,9 @@ void DXMTCommandStream::Encode(PipelineCommandState &pcs,
            ps_enc->setArgumentBuffer(argument_buffer.ptr(), fs_offset);
            vs_enc->setArgumentBuffer(argument_buffer.ptr(), vs_offset);
            render_encoder->setVertexBuffer(argument_buffer.ptr(), vs_offset,
-                                           20); // ARUGMENT TABLE AT 20
-           render_encoder->setFragmentBuffer(argument_buffer.ptr(), fs_offset,
-                                             20); // ARUGMENT TABLE AT 20
+                                           30); // ARUGMENT TABLE AT 20
+          //  render_encoder->setFragmentBuffer(argument_buffer.ptr(), fs_offset,
+          //                                    30); // ARUGMENT TABLE AT 20
            for (uint32_t i = 0; i < 64; i++) {
              auto &r = pcs.setPixelShaderResource[i];
              if (r.shader_resource_ref_ != nullptr) {
@@ -178,7 +178,8 @@ void DXMTCommandStream::Encode(PipelineCommandState &pcs,
              auto &r = pcs.setVertexConstantBuffer[i];
              if (r.constant_buffer_ref_ != nullptr) {
                r.constant_buffer_ref_->Bind(render_encoder.ptr(), vs_enc,
-                                            r.index + 32,
+                                            // r.index + 32,
+                                            r.index,
                                             lookupFn); // constant offset 32
              }
            }

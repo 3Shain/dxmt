@@ -28,7 +28,8 @@
 
 #include "MTLEvent.hpp"
 
-typedef NS::Object *dispatch_queue_t;
+// typedef NS::Object *dispatch_queue_t;
+#include "objc-wrapper/dispatch.h"
 
 namespace MTL {
 class Event : public NS::Referencing<Event> {

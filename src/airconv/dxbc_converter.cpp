@@ -1,336 +1,171 @@
-
 #include "dxbc_converter.h"
+#include "DXBCParser/d3d12tokenizedprogramformat.hpp"
+#include "air_builder.h"
+#include "air_constants.h"
+#include "air_operation.h"
 #include "airconv_public.h"
 #include "DXBCParser/BlobContainer.h"
 #include "DXBCParser/ShaderBinary.h"
 #include "DXBCParser/DXBCUtils.h"
 #include "dxbc_utils.h"
 #include "metallib.h"
+#include "sha256.hpp"
+#include "llvm/ADT/APInt.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Bitcode/BitcodeWriter.h"
 #include "llvm/IR/BasicBlock.h"
+#include "llvm/IR/Constants.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/MDBuilder.h"
+#include "llvm/IR/Metadata.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Type.h"
+#include "llvm/IR/Value.h"
+// #include "llvm/Analysis/LoopAnalysisManager.h"
+// #include "llvm/Analysis/CGSCCPassManager.h"
+#include "llvm/Passes/PassBuilder.h"
+#include "llvm/IR/Verifier.h"
+#include <array>
+#include <cstdint>
+#include <memory>
+#include <vector>
+
+using namespace llvm;
 
 namespace dxmt {
 
-DxbcConverter::DxbcConverter() {}
+DxbcConverter::DxbcConverter(DxbcAnalyzer &analyzer, AirType &types,
+                             llvm::LLVMContext &context, llvm::Module &pModule)
+    : analyzer(analyzer), types(types), context_(context), pModule_(pModule),
+      pBuilder_(context), airBuilder(types, pBuilder_),
+      airOp(types, context, pModule) {}
 
-DxbcConverter::~DxbcConverter() {}
+MDNode *DxbcConverter::Pre(AirMetadata &metadata) {
 
-void DxbcConverter::AnalyzeShader(
-    D3D10ShaderBinary::CShaderCodeParser &Parser) {
+  std::vector<Type *> argTypes;
+  std::vector<Metadata *> argMetadatas;
+  std::vector<Type *> retFieldTypes;
 
-  D3D10_SB_TOKENIZED_PROGRAM_TYPE ShaderType = Parser.ShaderType();
-  m_DxbcMajor = Parser.ShaderMajorVersion();
-  m_DxbcMinor = Parser.ShaderMinorVersion();
-
-  // Collect:
-  //   1. Declarations
-  //   2. Labels
-  // Declare:
-  //   1. Global symbols for resources/samplers.
-  //   2. Their types.
-  D3D10ShaderBinary::CInstruction Inst;
-  while (!Parser.EndOfShader()) {
-
-    Parser.ParseInstruction(&Inst);
-
-    switch (Inst.OpCode()) {
-    case D3D10_SB_OPCODE_DCL_CONSTANT_BUFFER: {
-      DXASSERT(false, "Unhandled declaration (tbd)");
-      break;
-    }
-    case D3D10_SB_OPCODE_DCL_SAMPLER: {
-      DXASSERT(false, "Unhandled declaration (tbd)");
-      // pModule_.gettyp
-      // StructType::getTypeByName(LLVMContext &C, StringRef Name)
-      break;
-    }
-
-    case D3D10_SB_OPCODE_DCL_RESOURCE:
-    case D3D11_SB_OPCODE_DCL_RESOURCE_RAW:
-    case D3D11_SB_OPCODE_DCL_RESOURCE_STRUCTURED: {
-      DXASSERT(false, "Unhandled declaration (tbd)");
-      break;
-    }
-
-    case D3D11_SB_OPCODE_DCL_UNORDERED_ACCESS_VIEW_TYPED:
-    case D3D11_SB_OPCODE_DCL_UNORDERED_ACCESS_VIEW_RAW:
-    case D3D11_SB_OPCODE_DCL_UNORDERED_ACCESS_VIEW_STRUCTURED: {
-      DXASSERT(false, "Unhandled declaration (tbd)");
-      break;
-    }
-
-    case D3D10_SB_OPCODE_DCL_INDEX_RANGE: {
-      DXASSERT(false, "Unhandled declaration (tbd)");
-      break;
-    }
-
-    case D3D10_SB_OPCODE_DCL_GS_INPUT_PRIMITIVE: {
-      DXASSERT(false, "Unhandled declaration (tbd)");
-      break;
-    }
-
-    case D3D10_SB_OPCODE_DCL_GS_OUTPUT_PRIMITIVE_TOPOLOGY: {
-      DXASSERT(false, "Unhandled declaration (tbd)");
-      break;
-    }
-
-    case D3D10_SB_OPCODE_DCL_MAX_OUTPUT_VERTEX_COUNT: {
-      DXASSERT(false, "Unhandled declaration (tbd)");
-      break;
-    }
-
-    case D3D10_SB_OPCODE_DCL_INPUT: {
-      DXASSERT(false, "Unhandled declaration (tbd)");
-      break;
-    }
-
-    case D3D10_SB_OPCODE_DCL_INPUT_SGV: {
-      DXASSERT(false, "Unhandled declaration (tbd)");
-      break;
-    }
-
-    case D3D10_SB_OPCODE_DCL_INPUT_SIV: {
-      DXASSERT(false, "Unhandled declaration (tbd)");
-      break;
-    }
-
-    case D3D10_SB_OPCODE_DCL_INPUT_PS: {
-      DXASSERT(false, "Unhandled declaration (tbd)");
-      break;
-    }
-
-    case D3D10_SB_OPCODE_DCL_INPUT_PS_SGV: {
-      DXASSERT(false, "Unhandled declaration (tbd)");
-      break;
-    }
-
-    case D3D10_SB_OPCODE_DCL_INPUT_PS_SIV: {
-      DXASSERT(false, "Unhandled declaration (tbd)");
-      break;
-    }
-
-    case D3D10_SB_OPCODE_DCL_OUTPUT: {
-      DXASSERT(false, "Unhandled declaration (tbd)");
-      break;
-    }
-
-    case D3D10_SB_OPCODE_DCL_OUTPUT_SGV: {
-      DXASSERT(false, "Unhandled declaration (tbd)");
-      break;
-    }
-    case D3D10_SB_OPCODE_DCL_OUTPUT_SIV: {
-      DXASSERT(false, "Unhandled declaration (tbd)");
-      break;
-    }
-
-    case D3D10_SB_OPCODE_DCL_TEMPS: {
-      DXASSERT(false, "Unhandled declaration (tbd)");
-      break;
-    }
-
-    case D3D10_SB_OPCODE_DCL_INDEXABLE_TEMP: {
-      DXASSERT(false, "Unhandled declaration (tbd)");
-      break;
-    }
-
-    case D3D10_SB_OPCODE_DCL_GLOBAL_FLAGS: {
-      //
-      break;
-    }
-
-    case D3D11_SB_OPCODE_DCL_STREAM: {
-      DXASSERT(false, "Unhandled declaration (tbd)");
-      break;
-    }
-
-    case D3D11_SB_OPCODE_HS_DECLS:
-      break; // on purpose
-
-    case D3D11_SB_OPCODE_DCL_INPUT_CONTROL_POINT_COUNT: {
-      DXASSERT(false, "Unhandled declaration (tbd)");
-      break;
-    }
-
-    case D3D11_SB_OPCODE_DCL_OUTPUT_CONTROL_POINT_COUNT: {
-      DXASSERT(false, "Unhandled declaration (tbd)");
-      break;
-    }
-
-    case D3D11_SB_OPCODE_DCL_TESS_DOMAIN: {
-      DXASSERT(false, "Unhandled declaration (tbd)");
-      break;
-    }
-
-    case D3D11_SB_OPCODE_DCL_TESS_PARTITIONING: {
-      DXASSERT(false, "Unhandled declaration (tbd)");
-      break;
-    }
-
-    case D3D11_SB_OPCODE_DCL_TESS_OUTPUT_PRIMITIVE: {
-      DXASSERT(false, "Unhandled declaration (tbd)");
-      break;
-    }
-
-    case D3D11_SB_OPCODE_DCL_HS_MAX_TESSFACTOR: {
-      DXASSERT(false, "Unhandled declaration (tbd)");
-      break;
-    }
-
-    case D3D11_SB_OPCODE_HS_CONTROL_POINT_PHASE: {
-      DXASSERT(false, "Unhandled declaration (tbd)");
-      break;
-    }
-
-    case D3D11_SB_OPCODE_HS_FORK_PHASE:
-    case D3D11_SB_OPCODE_HS_JOIN_PHASE: {
-      DXASSERT(false, "Unhandled declaration (tbd)");
-      break;
-    }
-
-    case D3D11_SB_OPCODE_DCL_HS_FORK_PHASE_INSTANCE_COUNT: {
-      DXASSERT(false, "Unhandled declaration (tbd)");
-      break;
-    }
-
-    case D3D11_SB_OPCODE_DCL_HS_JOIN_PHASE_INSTANCE_COUNT: {
-      DXASSERT(false, "Unhandled declaration (tbd)");
-      break;
-    }
-
-    case D3D11_SB_OPCODE_DCL_THREAD_GROUP: {
-      DXASSERT(false, "Unhandled declaration (tbd)");
-      break;
-    }
-
-    case D3D11_SB_OPCODE_DCL_THREAD_GROUP_SHARED_MEMORY_RAW:
-    case D3D11_SB_OPCODE_DCL_THREAD_GROUP_SHARED_MEMORY_STRUCTURED: {
-      DXASSERT(false, "Unhandled declaration (tbd)");
-      break;
-    }
-
-    case D3D11_SB_OPCODE_DCL_GS_INSTANCE_COUNT: {
-      DXASSERT(false, "Unhandled declaration (tbd)");
-      break;
-    }
-
-    case D3D10_SB_OPCODE_CUSTOMDATA:
-      break; // on purpose
-
-    case D3D11_SB_OPCODE_DCL_FUNCTION_BODY: {
-      DXASSERT(false, "Unhandled declaration (tbd)");
-      break;
-    }
-
-    case D3D11_SB_OPCODE_DCL_FUNCTION_TABLE: {
-      DXASSERT(false, "Unhandled declaration (tbd)");
-      break;
-    }
-
-    case D3D11_SB_OPCODE_DCL_INTERFACE: {
-      DXASSERT(false, "Unhandled declaration (tbd)");
-      break;
-    }
-
-    case D3D10_SB_OPCODE_LABEL: {
-      DXASSERT(false, "Unhandled declaration (tbd)");
-      break;
-    }
-
-    default:
-      break;
-    };
+  for (auto &input : analyzer.inputs) {
+    argTypes.push_back(input.type);
+    argMetadatas.push_back(input.indexedMetadata);
   }
+  for (auto &outputField : analyzer.outputs) {
+    assert(outputField.type);
+    retFieldTypes.push_back(outputField.type);
+  }
+  // binding table
+  auto [bindingTableType, bindingTableMetadat] =
+      analyzer.GenerateBindingTable();
+
+  if (bindingTableType) {
+    // argTypes.push_back(bindingTableType);
+    argTypes.push_back(
+        PointerType::get(bindingTableType, air::EBufferAddrSpace::constant));
+    // argTypes.push_back(types.tyConstantPtr);
+    argMetadatas.push_back(metadata.createIndirectBufferBinding(
+        argMetadatas.size(),
+        pModule_.getDataLayout().getTypeAllocSize(bindingTableType), 30, 1,
+        air::EBufferAccess::read, air::EBufferAddrSpace::constant,
+        bindingTableMetadat,
+        pModule_.getDataLayout().getABITypeAlignment(bindingTableType),
+        "BindingTable", "bindingTable"));
+  }
+
+  // TODO: insert ResourceBindingTable
+
+  FunctionType *funcType =
+      FunctionType::get(analyzer.NoShaderOutput()
+                            ? Type::getVoidTy(context_)
+                            : StructType::get(context_, retFieldTypes, true),
+                        argTypes, false);
+  // funcType.
+
+  function = Function::Create(funcType, llvm::GlobalValue::ExternalLinkage,
+                              "shader_main", pModule_);
+
+  // prologue
+  auto prologue = BasicBlock::Create(context_, "prelogue", function);
+  pBuilder_.SetInsertPoint(prologue);
+  {
+    if (analyzer.maxInputRegister) {
+      shaderContext.tyInputRegs =
+          ArrayType::get(types.tyInt32V4, analyzer.maxInputRegister);
+      shaderContext.inputRegs = pBuilder_.CreateAlloca(
+          shaderContext.tyInputRegs, nullptr, "inputRegisters");
+    }
+    if (analyzer.maxOutputRegister) {
+      shaderContext.tyOutputRegs =
+          ArrayType::get(types.tyInt32V4, analyzer.maxOutputRegister);
+      shaderContext.outputRegs = pBuilder_.CreateAlloca(
+          shaderContext.tyOutputRegs, nullptr, "outputRegisters");
+    }
+    if (analyzer.tempsCount) {
+      shaderContext.tyTempRegs =
+          ArrayType::get(types.tyInt32V4, analyzer.tempsCount);
+      shaderContext.tempRegs = pBuilder_.CreateAlloca(shaderContext.tyTempRegs,
+                                                      nullptr, "tempRegisters");
+    }
+
+    for (auto [input, arg] : zip(analyzer.inputs, function->args())) {
+      arg.setName(input.name);
+      input.prologueHook(&arg, shaderContext, airBuilder);
+    }
+    if (bindingTableType) {
+      shaderContext.bindingTable = function->getArg(function->arg_size() - 1);
+      shaderContext.tyBindingTable = bindingTableType;
+      function->addParamAttr(function->arg_size() - 1,
+                             Attribute::get(context_, "air-buffer-no-alias"));
+    }
+  }
+
+  // epilogue
+
+  epilogue = BasicBlock::Create(context_, "epilogue", function);
+
+  return MDTuple::get(context_, argMetadatas);
 }
 
-void DxbcConverter::Convert(LPCVOID dxbc, UINT dxbcSize, LPVOID *ppAIR,
-                            UINT *pAIRSize) {
+MDNode *DxbcConverter::Post(AirMetadata &metadata, MDNode *input) {
+  pBuilder_.CreateBr(epilogue);
+  pBuilder_.SetInsertPoint(epilogue);
+  auto functionMD = ConstantAsMetadata::get(function);
+  {
+    if (analyzer.NoShaderOutput()) {
+      pBuilder_.CreateRetVoid();
+      return MDTuple::get(context_,
+                          {functionMD, MDTuple::get(context_, {}), input});
+    }
 
-  // module metadata
-  pModule_ = std::make_unique<Module>("generated.metal", context_);
-  pModule_->setSourceFileName("airconv_generated.metal");
-  pModule_->setTargetTriple("air64-apple-macosx13.0.0");
-  pModule_->setDataLayout(
-      "e-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f32:32:32-f64:"
-      "64:64-v16:16:16-v24:32:32-v32:32:32-v48:64:64-v64:64:64-v96:128:128-"
-      "v128:128:128-v192:256:256-v256:256:256-v512:512:512-v1024:1024:1024-n8:"
-      "16:32");
+    std::vector<Metadata *> outputMetadatas;
 
-  CDXBCParser DXBCParser;
-  DXASSERT(DXBCParser.ReadDXBC(dxbc, dxbcSize) == S_OK,
-           "otherwise invalid dxbc blob");
+    // 1. map output registers
+    Value *retValue = UndefValue::get(function->getReturnType());
+    for (auto &item : enumerate(analyzer.outputs)) {
+      outputMetadatas.push_back(item.value().metadata);
+      retValue = pBuilder_.CreateInsertValue(
+          retValue, item.value().epilogueHook(shaderContext, airBuilder),
+          item.index());
+    }
+    pBuilder_.CreateRet(retValue);
 
-  UINT codeBlobIdx = DXBCParser.FindNextMatchingBlob(DXBC_GenericShaderEx);
-  if (codeBlobIdx == DXBC_BLOB_NOT_FOUND) {
-    codeBlobIdx = DXBCParser.FindNextMatchingBlob(DXBC_GenericShader);
+    auto outputMD = MDTuple::get(context_, outputMetadatas);
+
+    return MDTuple::get(context_, {functionMD, outputMD, input});
   }
-  DXASSERT(codeBlobIdx != DXBC_BLOB_NOT_FOUND, "otherwise invalid dxbc blob");
-  LPCVOID codeBlob = DXBCParser.GetBlob(codeBlobIdx);
-
-  D3D10ShaderBinary::CShaderCodeParser CodeParser;
-
-  CShaderToken *ShaderCode = (CShaderToken *)(BYTE *)codeBlob;
-  // 1. Collect information about the shader.
-  CodeParser.SetShader(ShaderCode);
-  AnalyzeShader(CodeParser);
-
-  // 2. Parse input signature(s).
-  //   DXBCGetInputSignature(const void *pBlobContainer, CSignatureParser
-  //   *pParserToUse)
-
-  // 3. Parse output signature(s).
-
-  // 4. Transform DXBC to AIR.
-  CodeParser.SetShader(ShaderCode);
-  ConvertInstructions(CodeParser);
-
-  // 5. Emit medatada.
-  EmitAIRMetadata();
-
-  // 6. Cleanup/Optimize AIR.
-  Optimize();
-
-  SmallVector<char, 0> vec;
-
-  raw_svector_ostream OS(vec);
-
-  // Serialize AIR
-  SerializeAIR(OS);
-  auto ptr = malloc(vec.size_in_bytes());
-  memcpy(ptr, vec.data(), vec.size_in_bytes());
-
-  *ppAIR = ptr;
-  *pAIRSize = vec.size_in_bytes();
-
-  pModule_.reset();
 }
 
 void DxbcConverter::ConvertInstructions(
     D3D10ShaderBinary::CShaderCodeParser &Parser) {
 
-  StructType::get(context_, {FixedVectorType::get(int32Ty, 4)}, false);
-
-  FunctionType *entryFunctionTy = FunctionType::get(
-      voidTy, {}, false); // TODO: need proper param and return type definition
-
-  Function *pFunction =
-      Function::Create(entryFunctionTy, llvm::GlobalValue::ExternalLinkage,
-                       "__main__", pModule_.get());
-
-  auto pBasicBlock = BasicBlock::Create(context_, "entry", pFunction);
-  pBuilder_ = std::make_unique<IRBuilder<>>(pBasicBlock);
-
   // TODO: check fastmath
 
   if (Parser.EndOfShader()) {
-    pBuilder_->CreateRetVoid();
+    pBuilder_.CreateRetVoid();
     return;
   }
 
@@ -367,33 +202,183 @@ void DxbcConverter::ConvertInstructions(
     case D3D10_SB_OPCODE_DCL_GLOBAL_FLAGS:
       break;
     case D3D10_SB_OPCODE_MOV: {
-      CMask WriteMask = CMask::FromDXBC(Inst.m_Operands[0].m_WriteMask);
+      auto mask = Inst.m_Operands[0].m_WriteMask >> 4;
+
+      auto input = LoadOperand(Inst, 1);
+      StoreOperand(input, Inst, 0, mask);
+      break;
+    }
+    case D3D10_SB_OPCODE_ADD: {
+      // TODO: BINARY TEMPALTE
+      const unsigned DstIdx = 0;
+      const unsigned SrcIdx1 = 1;
+      const unsigned SrcIdx2 = 2;
+      auto mask = Inst.m_Operands[DstIdx].m_WriteMask >> 4;
+
+      auto A = LoadOperand(Inst, SrcIdx1);
+      auto B = LoadOperand(Inst, SrcIdx2);
+
+      auto R =
+          pBuilder_.CreateFAdd(pBuilder_.CreateBitCast(A, types.tyFloatV4),
+                               pBuilder_.CreateBitCast(B, types.tyFloatV4));
+
+      StoreOperand(pBuilder_.CreateBitCast(R, types.tyInt32V4), Inst, DstIdx,
+                   mask);
+
+      break;
+    }
+    case D3D10_SB_OPCODE_DP2:
+    case D3D10_SB_OPCODE_DP3:
+    case D3D10_SB_OPCODE_DP4: {
+      auto mask = Inst.m_Operands[0].m_WriteMask >> 4;
+
+      auto A = LoadOperand(Inst, 1);
+      auto B = LoadOperand(Inst, 2);
+
+      auto opDP = airOp.GetDotProduct();
+      auto R = pBuilder_.CreateCall(
+          opDP, {pBuilder_.CreateBitCast(A, types.tyFloatV4),
+                 pBuilder_.CreateBitCast(B, types.tyFloatV4)});
+
+      StoreOperand(pBuilder_.CreateBitCast(pBuilder_.CreateVectorSplat(4, R),
+                                           types.tyInt32V4),
+                   Inst, 0, mask);
       break;
     }
     default:
-      DXASSERT(false, "Unhandled opecode")
+      // DXASSERT(false, "Unhandled opecode")
       break;
     }
   }
 }
 
-void DxbcConverter::LoadOperand(int src,
-                                const D3D10ShaderBinary::CInstruction &Inst,
-                                const unsigned int OpIdx, const CMask &Mask,
-                                const int ValueType) {
+llvm::Value *
+DxbcConverter::LoadOperand(const D3D10ShaderBinary::CInstruction &Inst,
+                           const unsigned OpIdx) {
   const D3D10ShaderBinary::COperandBase &O = Inst.m_Operands[OpIdx];
   switch (O.m_Type) {
   case D3D10_SB_OPERAND_TYPE_IMMEDIATE32: {
+
     DXASSERT_DXBC(O.m_Modifier == D3D10_SB_OPERAND_MODIFIER_NONE);
+    bool bVec4 = O.m_NumComponents == D3D10_SB_OPERAND_4_COMPONENT;
+    std::array<uint32_t, 4> constantVal = {
+        O.m_Value[0], O.m_Value[bVec4 ? 1 : 0], O.m_Value[bVec4 ? 2 : 0],
+        O.m_Value[bVec4 ? 3 : 0]}; // wtf?
+    return airBuilder.CreateConstantVector(constantVal);
     break;
   }
-  case D3D10_SB_OPERAND_TYPE_IMMEDIATE64: {
-    DXASSERT(false, "64bit value not supported yet");
+  case D3D10_SB_OPERAND_TYPE_INPUT: {
+    unsigned Register;     // Starting index of the register range.
+    Value *pRowIndexValue; // Row index expression.
+    switch (O.m_IndexDimension) {
+    case D3D10_SB_OPERAND_INDEX_1D:
+      Register = O.m_Index[0].m_RegIndex;
+      pRowIndexValue = LoadOperandIndex(O.m_Index[0], O.m_IndexType[0]);
+      break;
+    default:
+      DXASSERT(false, "there should no other index dimensions");
+    }
+    return airBuilder.CreateRegisterLoad(
+        shaderContext.inputRegs, shaderContext.tyInputRegs, pRowIndexValue);
     break;
   }
+
+  case D3D10_SB_OPERAND_TYPE_TEMP: {
+    unsigned Register;     // Starting index of the register range.
+    Value *pRowIndexValue; // Row index expression.
+    switch (O.m_IndexDimension) {
+    case D3D10_SB_OPERAND_INDEX_1D:
+      Register = O.m_Index[0].m_RegIndex;
+      pRowIndexValue = LoadOperandIndex(O.m_Index[0], O.m_IndexType[0]);
+      break;
+    default:
+      DXASSERT(false, "there should no other index dimensions");
+    }
+    return airBuilder.CreateRegisterLoad(
+        shaderContext.tempRegs, shaderContext.tyTempRegs, pRowIndexValue);
+    break;
+  }
+  case D3D10_SB_OPERAND_TYPE_CONSTANT_BUFFER: {
+    auto cbIdx = pBuilder_.CreateInBoundsGEP(
+        shaderContext.tyBindingTable, shaderContext.bindingTable,
+        {airBuilder.CreateConstant((uint32_t)0),
+         airBuilder.CreateConstant(
+             (uint32_t)0) /** TODO: get from binding table*/});
+    auto cbPtr = pBuilder_.CreateLoad(types.tyInt32V4->getPointerTo(2), cbIdx);
+    auto arrayIdx = pBuilder_.CreateInBoundsGEP(
+        types.tyInt32V4, cbPtr,
+        {LoadOperandIndex(O.m_Index[1], O.m_IndexType[1])});
+    auto element = pBuilder_.CreateLoad(types.tyInt32V4, arrayIdx);
+    return element;
+    break;
+  }
+  default: {
+    assert(0 && "to be handled");
+    break;
+  }
+  }
+}
+
+llvm::Value *DxbcConverter::LoadOperandIndex(
+    const D3D10ShaderBinary::COperandIndex &OpIndex,
+    const D3D10_SB_OPERAND_INDEX_REPRESENTATION IndexType) {
+  Value *pValue = nullptr;
+
+  switch (IndexType) {
+  case D3D10_SB_OPERAND_INDEX_IMMEDIATE32:
+    DXASSERT_DXBC(OpIndex.m_RelRegType == D3D10_SB_OPERAND_TYPE_IMMEDIATE32);
+    pValue = airBuilder.CreateConstant(OpIndex.m_RegIndex);
+    break;
+
+  case D3D10_SB_OPERAND_INDEX_IMMEDIATE64:
+    DXASSERT_DXBC(false);
+    break;
+
+  case D3D10_SB_OPERAND_INDEX_RELATIVE:
+  case D3D10_SB_OPERAND_INDEX_IMMEDIATE32_PLUS_RELATIVE:
+  case D3D10_SB_OPERAND_INDEX_IMMEDIATE64_PLUS_RELATIVE:
+    DXASSERT_DXBC(false);
+    break;
+
   default:
-    DXASSERT(false, "unhandled load operand type");
+    DXASSERT_DXBC(false);
     break;
+  }
+
+  return pValue;
+}
+
+void DxbcConverter::StoreOperand(llvm::Value *value,
+                                 const D3D10ShaderBinary::CInstruction &Inst,
+                                 const unsigned OpIdx, uint32_t mask) {
+
+  const D3D10ShaderBinary::COperandBase &O = Inst.m_Operands[OpIdx];
+  switch (O.m_Type) {
+  case D3D10_SB_OPERAND_TYPE_OUTPUT: {
+    unsigned Reg = O.m_Index[0].m_RegIndex;
+    // Row index expression.
+    Value *pRowIndexValue = LoadOperandIndex(O.m_Index[0], O.m_IndexType[0]);
+    airBuilder.CreateRegisterStore(shaderContext.outputRegs,
+                                   shaderContext.tyOutputRegs, pRowIndexValue,
+                                   value, mask, {0, 1, 2, 3});
+    break;
+  }
+  case D3D10_SB_OPERAND_TYPE_TEMP: {
+    unsigned Reg = O.m_Index[0].m_RegIndex;
+    // Row index expression.
+    Value *pRowIndexValue = LoadOperandIndex(O.m_Index[0], O.m_IndexType[0]);
+    airBuilder.CreateRegisterStore(shaderContext.tempRegs,
+                                   shaderContext.tyTempRegs, pRowIndexValue,
+                                   value, mask, {0, 1, 2, 3});
+    break;
+  }
+  case D3D10_SB_OPERAND_TYPE_NULL:
+    break;
+  default: {
+    outs() << (O.m_Type);
+    assert(0 && "to be handled");
+    break;
+  }
   }
 }
 
@@ -403,73 +388,64 @@ DxbcConverter::ApplyOperandModifiers(Value *pValue,
   bool bAbsModifier = (O.m_Modifier & D3D10_SB_OPERAND_MODIFIER_ABS) != 0;
   bool bNegModifier = (O.m_Modifier & D3D10_SB_OPERAND_MODIFIER_NEG) != 0;
 
-  if (pValue->getType()->isVectorTy()) {
-    if (bAbsModifier) {
-      DXASSERT_DXBC(pValue->getType()->getScalarType()->isFloatingPointTy());
-    }
+  if (bAbsModifier) {
+    DXASSERT_DXBC(pValue->getType()->isFloatingPointTy());
+    // Function *F = m_pOP->GetOpFunc(OP::OpCode::FAbs, pValue->getType());
+    // Value *Args[2];
+    // Args[0] = m_pOP->GetU32Const((unsigned)OP::OpCode::FAbs);
+    // Args[1] = pValue;
+    // pValue = m_pBuilder->CreateCall(F, Args);
+    // pBuilder_.CreateCall()
+    // pModule_.getOrInsertFunction()
+  }
 
-    if (bNegModifier) {
-    }
-  } else {
-
-    if (bAbsModifier) {
-      DXASSERT_DXBC(pValue->getType()->isFloatingPointTy());
-      // Function *F = m_pOP->GetOpFunc(OP::OpCode::FAbs, pValue->getType());
-      // Value *Args[2];
-      // Args[0] = m_pOP->GetU32Const((unsigned)OP::OpCode::FAbs);
-      // Args[1] = pValue;
-      // pValue = m_pBuilder->CreateCall(F, Args);
-    }
-
-    if (bNegModifier) {
-      if (pValue->getType()->isFloatingPointTy()) {
-        pValue = pBuilder_->CreateFNeg(pValue);
-      } else {
-        DXASSERT_DXBC(pValue->getType()->isIntegerTy());
-        pValue = pBuilder_->CreateNeg(pValue);
-      }
+  if (bNegModifier) {
+    if (pValue->getType()->isFloatingPointTy()) {
+      pValue = pBuilder_.CreateFNeg(pValue);
+    } else {
+      DXASSERT_DXBC(pValue->getType()->isIntegerTy());
+      pValue = pBuilder_.CreateNeg(pValue);
     }
   }
 
   return pValue;
 }
 
-void DxbcConverter::EmitAIRMetadata() {
-  MDBuilder mdbuilder(context_);
-  auto uintMetadata = [&](uint32_t value) {
-    return mdbuilder.createConstant(
-        ConstantInt::get(Type::getInt32Ty(context_), value));
-  };
+void DxbcConverter::Optimize(llvm::OptimizationLevel level) {
+  // Create the analysis managers.
+  // These must be declared in this order so that they are destroyed in the
+  // correct order due to inter-analysis-manager references.
+  LoopAnalysisManager LAM;
+  FunctionAnalysisManager FAM;
+  CGSCCAnalysisManager CGAM;
+  ModuleAnalysisManager MAM;
 
-  auto stringMetadata = [&](StringRef str) {
-    return MDString::get(context_, str);
-  };
-  auto llvmIdent = pModule_->getOrInsertNamedMetadata("llvm.ident");
-  llvmIdent->addOperand(
-      MDNode::get(context_, {MDString::get(context_, "airconv")}));
+  // Create the new pass manager builder.
+  // Take a look at the PassBuilder constructor parameters for more
+  // customization, e.g. specifying a TargetMachine or various debugging
+  // options.
+  PassBuilder PB;
 
-  auto airVersion = pModule_->getOrInsertNamedMetadata("air.version");
-  airVersion->addOperand(MDNode::get(context_, {
-                                                   uintMetadata(2),
-                                                   uintMetadata(5),
-                                                   uintMetadata(0),
-                                               }));
-  auto airLangVersion =
-      pModule_->getOrInsertNamedMetadata("air.language_version");
-  airLangVersion->addOperand(MDNode::get(context_, {
-                                                       stringMetadata("Metal"),
-                                                       uintMetadata(3),
-                                                       uintMetadata(0),
-                                                       uintMetadata(0),
-                                                   }));
-}
+  // Register all the basic analyses with the managers.
+  PB.registerModuleAnalyses(MAM);
+  PB.registerCGSCCAnalyses(CGAM);
+  PB.registerFunctionAnalyses(FAM);
+  PB.registerLoopAnalyses(LAM);
+  PB.crossRegisterProxies(LAM, FAM, CGAM, MAM);
 
-void DxbcConverter::Optimize() {
-  // TODO
+  ModulePassManager MPM = PB.buildPerModuleDefaultPipeline(level);
+
+  FunctionPassManager FPM;
+  FPM.addPass(VerifierPass());
+
+  MPM.addPass(createModuleToFunctionPassAdaptor(std::move(FPM)));
+
+  // Optimize the IR!
+  MPM.run(pModule_, MAM);
 }
 
 void DxbcConverter::SerializeAIR(raw_ostream &OS) {
-  std::string funciton_name("generated_entry");
+  std::string funciton_name(function->getName());
   MTLBHeader header;
   header.Magic = MTLB_Magic;
 
@@ -480,7 +456,7 @@ void DxbcConverter::SerializeAIR(raw_ostream &OS) {
 
   raw_svector_ostream bitcode_stream(bitcode);
   ModuleHash module_hash;
-  WriteBitcodeToFile(*pModule_.get(), bitcode_stream, false, nullptr, true,
+  WriteBitcodeToFile(pModule_, bitcode_stream, false, nullptr, true,
                      &module_hash);
 
   raw_svector_ostream public_metadata_stream(public_metadata);
@@ -494,11 +470,16 @@ void DxbcConverter::SerializeAIR(raw_ostream &OS) {
   function_def_stream.write(funciton_name.c_str(), funciton_name.size() + 1);
 
   MTLB_TYPE_TAG type_tag{
-      .type = 2 // TODO: function type
-  };
+      .type = analyzer.IsVS()   ? MTLB_FunctionType::MTLB_VertexFunction
+              : analyzer.IsPS() ? MTLB_FunctionType::MTLB_FragmentFunction
+              : analyzer.IsCS() ? MTLB_KernelFunction
+                                : (assert(0), MTLB_KernelFunction)};
   function_def_stream.write((const char *)&type_tag, sizeof(type_tag));
 
   MTLB_HASH_TAG hash_tag{.hash = {0}};
+
+  hash_tag.hash =
+      compute_sha256_hash((const uint8_t *)bitcode.data(), bitcode.size());
 
   function_def_stream.write((const char *)&hash_tag, sizeof(hash_tag));
 
@@ -515,9 +496,9 @@ void DxbcConverter::SerializeAIR(raw_ostream &OS) {
 
   MTLB_VERS_TAG version_tag{
       .airVersionMajor = 2,
-      .airVersionMinor = 5,
-      .languageVersionMajor = 2,
-      .languageVersionMinor = 4,
+      .airVersionMinor = 6,
+      .languageVersionMajor = 3,
+      .languageVersionMinor = 1,
   };
   function_def_stream.write((const char *)&version_tag, sizeof(version_tag));
 
@@ -525,7 +506,34 @@ void DxbcConverter::SerializeAIR(raw_ostream &OS) {
 
   // public metadata
   uint32_t public_metadata_size = 4;
+
+  if (analyzer.IsVS()) {
+    public_metadata_size += (4 + 11 + 4 + 5);
+  }
+
   public_metadata_stream.write((const char *)&public_metadata_size, 4);
+
+  if (analyzer.IsVS()) {
+    // FIXME: properly handle it via vertex attribute information
+
+    public_metadata_stream.write("VATT", 4);
+    uint8_t w[] = {
+        0x09, 0x00,                   // tag len
+        0x01, 0x00,                   // type
+        0x72, 0x65, 0x67, 0x30, 0x00, // name str
+        0x00, 0x80                    // wtf?
+    };
+    public_metadata_stream.write((char *)w, sizeof(w));
+
+    public_metadata_stream.write("VATY", 4);
+    char e[] = {
+        3, 0, // tag len
+        1, 0, // attr type array len?
+        6     // type[0]
+    };
+    public_metadata_stream.write(e, sizeof(e));
+  }
+
   public_metadata_stream.write("ENDT", 4);
 
   // private metadata
@@ -556,8 +564,8 @@ void DxbcConverter::SerializeAIR(raw_ostream &OS) {
   header.VersionMajor = 2;
   header.VersionMinor = 7;
   header.OS = MTLBOS_macOS;
-  header.OSVersionMajor = 13;
-  header.OSVersionMinor = 3;
+  header.OSVersionMajor = 14;
+  header.OSVersionMinor = 4;
 
   // write to stream
   OS.write((const char *)&header, sizeof(MTLBHeader));
@@ -572,11 +580,5 @@ void DxbcConverter::SerializeAIR(raw_ostream &OS) {
   OS.write((const char *)private_metadata.data(), private_metadata.size());
   OS.write((const char *)bitcode.data(), bitcode.size());
 }
-
-extern "C" void ConvertDXBC(const void *pDXBC, uint32_t DXBCSize,
-                            void **ppMetalLib, uint32_t *pMetalLibSize) {
-  DxbcConverter converter;
-  converter.Convert(pDXBC, DXBCSize, ppMetalLib, pMetalLibSize);
-};
 
 } // namespace dxmt

@@ -34,7 +34,8 @@
 #include "MTLTypes.hpp"
 #include "objc-wrapper/block.hpp"
 // #include <IOSurface/IOSurfaceRef.h>
-typedef NS::Object *dispatch_data_t;
+// typedef NS::Object *dispatch_data_t;
+#include "objc-wrapper/dispatch.h"
 #include <functional>
 
 namespace MTL {

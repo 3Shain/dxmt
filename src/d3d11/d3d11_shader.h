@@ -3,6 +3,7 @@
 #include "d3d11_device_child.h"
 #include "../util/sha1/sha1_util.h"
 #include "../hlslcc/shader.h"
+#include <cstdlib>
 
 namespace dxmt {
 template <typename Base, typename Reflection>
@@ -11,9 +12,15 @@ public:
   friend class MTLD3D11DeviceContext;
 
   MTLBaseShader(IMTLD3D11Device *pDevice, DXBCShader *Shader,
-                Reflection &_Reflection, Sha1Hash Hash)
+                Reflection &_Reflection, Sha1Hash Hash, const void *bytecode,
+                SIZE_T bytecodeLength)
       : MTLD3D11DeviceChild<Base>(pDevice), hash(Hash), shader(Shader),
-        reflection(_Reflection) {}
+        reflection(_Reflection) {
+    m_bytecode = malloc(bytecodeLength);
+    assert(m_bytecode);
+    memcpy(m_bytecode, bytecode, bytecodeLength);
+    m_bytecodeLength = bytecodeLength;
+  }
   ~MTLBaseShader() { ReleaseDXBCShader(shader); }
 
   HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void **ppvObject) {
@@ -33,7 +40,7 @@ public:
   }
 
 private:
-  const void *m_bytecode;
+  void *m_bytecode;
   SIZE_T m_bytecodeLength;
   Sha1Hash hash;
   DXBCShader *shader;

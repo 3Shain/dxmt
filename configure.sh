@@ -12,7 +12,8 @@ rm ./llvm.tar.xz
 
 
 # setup llvm
-git clone --depth 1 https://github.com/llvm/llvm-project.git toolchains/llvm-project 
+# I don't really know what version of llvm it should be
+git clone --depth 1 --branch llvmorg-15.0.7 https://github.com/llvm/llvm-project.git toolchains/llvm-project 
 mkdir -p ./toolchains/llvm-build
 cmake -B ./toolchains/llvm-build -S ./toolchains/llvm-project/llvm -DCMAKE_SYSTEM_NAME=Windows \
   -DCMAKE_INSTALL_PREFIX="$(pwd)/toolchains/llvm" \

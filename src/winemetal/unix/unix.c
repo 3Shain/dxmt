@@ -64,5 +64,7 @@ const void *__wine_unix_call_funcs[] = {
     &free,
     &sigsetjmp,
     &siglongjmp,
+    &dispatch_get_main_queue,
+    &dispatch_data_create,
 };
 // wow64: things become funny

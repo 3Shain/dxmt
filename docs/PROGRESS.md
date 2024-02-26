@@ -73,3 +73,5 @@ I'm in favor of \#4 and it's my current plan. Although it will take longer to ac
 ### More On Difference and Similarity between D3D11 and Metal. 
 
 // TBD
+
+[Glossary](https://github.com/3Shain/dxmt/blob/main/docs/GLOSSARY.md)

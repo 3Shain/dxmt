@@ -585,7 +585,8 @@ HRESULT STDMETHODCALLTYPE MTLD3D11Device::CreateVertexShader(
   DXBCVertexStageInfo info;
   ReflectVertexStageInfo(shader, &info);
 
-  *ppVertexShader = ref(new MTLD3D11VertexShader(this, shader, info, hash));
+  *ppVertexShader = ref(new MTLD3D11VertexShader(
+      this, shader, info, hash, pShaderBytecode, BytecodeLength));
   return S_OK;
 }
 
@@ -636,7 +637,8 @@ HRESULT STDMETHODCALLTYPE MTLD3D11Device::CreatePixelShader(
   DXBCFragmentStageInfo info;
   ReflectFragmentStageInfo(shader, &info);
 
-  *ppPixelShader = ref(new MTLD3D11PixelShader(this, shader, info, hash));
+  *ppPixelShader = ref(new MTLD3D11PixelShader(
+      this, shader, info, hash, pShaderBytecode, BytecodeLength));
   return S_OK;
 }
 

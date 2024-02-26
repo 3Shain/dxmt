@@ -27,8 +27,10 @@
 #include "mtld11_resource.hpp"
 
 #include "objc-wrapper/block.hpp"
-#include <future>
+#include <vector>
 #include "../dxmt/dxmt_pipeline.hpp"
+
+#include "../airconv/airconv_public.h"
 
 namespace dxmt {
 
@@ -341,34 +343,40 @@ public:
         Obj<MTL::Function> ff;
         Obj<MTL::RenderPipelineDescriptor> ps;
         {
-          auto vertex_shader_msl =
-              TranslateToMSL(state_.vertex_stage.shader->shader);
           auto options = transfer(MTL::CompileOptions::alloc()->init());
+          {
+            uint32_t size;
+            void *ptr;
+            ConvertDXBC(state_.vertex_stage.shader->m_bytecode,
+                        state_.vertex_stage.shader->m_bytecodeLength, &ptr,
+                        &size);
+            assert(ptr);
+            auto dp = dispatch_data_create(ptr, size, nullptr, nullptr);
+            Obj<MTL::Library> vlib =
+                transfer(metal_device_->newLibrary(dp, &err));
+            assert(dp);
+            vf = transfer(vlib->newFunction(
+                NS::String::string("shader_main", NS::UTF8StringEncoding)));
+          }
 
-          std::promise<Obj<MTL::Library>> compiler;
+          {
+            uint32_t size;
+            void *ptr;
+            ConvertDXBC(state_.pixel_stage.shader->m_bytecode,
+                        state_.pixel_stage.shader->m_bytecodeLength, &ptr,
+                        &size);
+            assert(ptr);
+            auto dp = dispatch_data_create(ptr, size, nullptr, nullptr);
+            Obj<MTL::Library> vlib =
+                transfer(metal_device_->newLibrary(dp, &err));
+            assert(dp);
 
-          // Obj<MTL::Library> vlib = transfer(metal_device_->newLibrary(
-          //     NS::String::string(vertex_shader_msl, NS::UTF8StringEncoding),
-          //     options.ptr(), &err));
-          metal_device_->newLibrary(
-              NS::String::string(vertex_shader_msl, NS::UTF8StringEncoding),
-              options.ptr(), [&](auto w, auto e) { compiler.set_value(w); });
-          Obj<MTL::Library> vlib = (compiler.get_future().get());
-          auto wtf = err->localizedDescription()->cString(NS::UTF8StringEncoding);
-          // ERR();
-          unix_printf("compilation error: %s\n", wtf);
-          // ERR(wtf);
-          vf = transfer(vlib->newFunction(
-              NS::String::string("vs_main", NS::UTF8StringEncoding)));
+            // dispatch_release(dp);
+            // free(ptr);
 
-          auto fragment_shader_msl =
-              TranslateToMSL(state_.pixel_stage.shader->shader);
-          auto flib = transfer(metal_device_->newLibrary(
-              NS::String::string(fragment_shader_msl, NS::UTF8StringEncoding),
-              options.ptr(), &err));
-          // ERR(err->localizedDescription()->cString(NS::UTF8StringEncoding));
-          ff = transfer(flib->newFunction(
-              NS::String::string("ps_main", NS::UTF8StringEncoding)));
+            ff = transfer(vlib->newFunction(
+                NS::String::string("shader_main", NS::UTF8StringEncoding)));
+          }
 
           ps = transfer(MTL::RenderPipelineDescriptor::alloc()->init());
 
@@ -380,15 +388,15 @@ public:
           if (state_.output_merger.depth_stencil_view != nullptr) {
             ps->setDepthAttachmentPixelFormat(
                 state_.output_merger.depth_stencil_view->GetPixelFormat());
-            ps->setStencilAttachmentPixelFormat(
-                state_.output_merger.depth_stencil_view->GetPixelFormat());
+            // ps->setStencilAttachmentPixelFormat(
+            //     state_.output_merger.depth_stencil_view->GetPixelFormat());
+            // FIXME: pass validator
           }
 
           std::array<uint32_t, 16> strides;
           memcpy(&strides[0], state_.input_assembler.strides, 4 * 16);
           state_.input_assembler.input_layout->Bind(ps.ptr(), strides);
         }
-
         auto state =
             transfer(metal_device_->newRenderPipelineState(ps.ptr(), &err));
 
@@ -397,13 +405,13 @@ public:
           throw MTLD3DError("Failed to create PSO");
         }
 
-        auto ve = transfer(vf->newArgumentEncoder(20));
-        auto fe = transfer(ff->newArgumentEncoder(20));
+        auto ve = transfer(vf->newArgumentEncoder(30));
+        // auto fe = transfer(ff->newArgumentEncoder(30)); // FIXME:
 
         stream_->Emit(MTLBindPipelineState(
-            [state = state]() { return state.ptr(); }, ve.ptr(), fe.ptr()));
+            [state = state]() { return state.ptr(); }, ve.ptr(), nullptr));
 
-        setCache(key, new RenderPipelineCache(state.ptr(), ve.ptr(), fe.ptr()));
+        setCache(key, new RenderPipelineCache(state.ptr(), ve.ptr(), nullptr));
       }
       pipelineUpToDate = true;
     }
@@ -1215,8 +1223,6 @@ public:
 
     state_.rasterizer.rasterizer_state =
         static_cast<MTLD3D11RasterizerState *>(pRasterizerState);
-
-        
   }
 
   void STDMETHODCALLTYPE RSGetState(ID3D11RasterizerState **ppRasterizerState) {

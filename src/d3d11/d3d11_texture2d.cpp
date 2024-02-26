@@ -130,7 +130,7 @@ DepthStencilBinding *TMTLD3D11DepthStencilView<
   //     [c = data_(cs)]() { return c; });
   auto texture = w(cs);
   return new SimpleLazyTextureDepthStencilBinding(
-      [texture]() { return texture; }, 0, 1,
+      [texture]() { return texture; }, 0, 0,
       /** todo: */ desc_.Flags & D3D11_DSV_READ_ONLY_DEPTH,
       desc_.Flags & D3D11_DSV_READ_ONLY_STENCIL);
 };
