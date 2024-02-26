@@ -15,7 +15,6 @@ jobs:
           key: cache-key-${{ hashFiles('configure.sh') }}
           restore-keys: |
             cache-key-${{ hashFiles('configure.sh') }}
-            cache-key-
           path: |
             ./toolchains
       - name: Install Development Environment
