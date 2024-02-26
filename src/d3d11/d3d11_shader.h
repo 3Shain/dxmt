@@ -2,7 +2,6 @@
 #include "d3d11_private.h"
 #include "d3d11_device_child.h"
 #include "../util/sha1/sha1_util.h"
-#include "../hlslcc/shader.h"
 #include <cstdlib>
 
 namespace dxmt {
@@ -11,17 +10,15 @@ class MTLBaseShader : public MTLD3D11DeviceChild<Base> {
 public:
   friend class MTLD3D11DeviceContext;
 
-  MTLBaseShader(IMTLD3D11Device *pDevice, DXBCShader *Shader,
-                Reflection &_Reflection, Sha1Hash Hash, const void *bytecode,
+  MTLBaseShader(IMTLD3D11Device *pDevice, Sha1Hash Hash, const void *bytecode,
                 SIZE_T bytecodeLength)
-      : MTLD3D11DeviceChild<Base>(pDevice), hash(Hash), shader(Shader),
-        reflection(_Reflection) {
+      : MTLD3D11DeviceChild<Base>(pDevice), hash(Hash) {
     m_bytecode = malloc(bytecodeLength);
     assert(m_bytecode);
     memcpy(m_bytecode, bytecode, bytecodeLength);
     m_bytecodeLength = bytecodeLength;
   }
-  ~MTLBaseShader() { ReleaseDXBCShader(shader); }
+  ~MTLBaseShader() { free(m_bytecode); }
 
   HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void **ppvObject) {
     *ppvObject = nullptr;
@@ -43,21 +40,14 @@ private:
   void *m_bytecode;
   SIZE_T m_bytecodeLength;
   Sha1Hash hash;
-  DXBCShader *shader;
 
 public:
-  Reflection reflection;
 };
 
-using MTLD3D11VertexShader =
-    MTLBaseShader<ID3D11VertexShader, DXBCVertexStageInfo>;
-using MTLD3D11HullShader = MTLBaseShader<ID3D11HullShader, DXBCHullStageInfo>;
-using MTLD3D11DomainShader =
-    MTLBaseShader<ID3D11DomainShader, DXBCDomainStageInfo>;
-using MTLD3D11GeometryShader =
-    MTLBaseShader<ID3D11GeometryShader, DXBCGeometryStageInfo>;
-using MTLD3D11PixelShader =
-    MTLBaseShader<ID3D11PixelShader, DXBCFragmentStageInfo>;
-using MTLD3D11ComputeShader =
-    MTLBaseShader<ID3D11ComputeShader, DXBCComputeStageInfo>;
+using MTLD3D11VertexShader = MTLBaseShader<ID3D11VertexShader, nullptr_t>;
+using MTLD3D11HullShader = MTLBaseShader<ID3D11HullShader, nullptr_t>;
+using MTLD3D11DomainShader = MTLBaseShader<ID3D11DomainShader, nullptr_t>;
+using MTLD3D11GeometryShader = MTLBaseShader<ID3D11GeometryShader, nullptr_t>;
+using MTLD3D11PixelShader = MTLBaseShader<ID3D11PixelShader, nullptr_t>;
+using MTLD3D11ComputeShader = MTLBaseShader<ID3D11ComputeShader, nullptr_t>;
 } // namespace dxmt

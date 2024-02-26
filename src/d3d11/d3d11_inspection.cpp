@@ -52,7 +52,7 @@ MTLD3D11Inspection::MTLD3D11Inspection(MTL::Device *pDevice)
   // In metal we don't support double
   m_d3d11Options.ExtendedDoublesShaderInstructions = FALSE;
   m_d3d11Options.ExtendedResourceSharing = TRUE; // wtf
-  // clearly hlslcc haven't support this yet
+  // FIXME: check it
   m_d3d11Options.SAD4ShaderInstructions = FALSE;
   m_d3d11Options.FlagsForUpdateAndCopySeenByDriver = TRUE; // wtf
   m_d3d11Options.OutputMergerLogicOp =

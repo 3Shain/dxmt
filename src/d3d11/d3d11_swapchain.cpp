@@ -336,7 +336,7 @@ public:
   Present1(UINT SyncInterval, UINT PresentFlags,
            const DXGI_PRESENT_PARAMETERS *pPresentParameters) final {
 
-    dispatch_semaphore_wait(semaphore, (~0ull));
+    // dispatch_semaphore_wait(semaphore, (~0ull));
 
     auto w = transfer(NS::AutoreleasePool::alloc()->init());
 
@@ -346,10 +346,11 @@ public:
       // swapchain_.GetCurrentFrameBackBuffer(); // ensure not null
       cbuffer->presentDrawable(swapchain_.CurrentDrawable());
       cbuffer->addCompletedHandler(
-          [semaphore, presentation_count_](void *cbuffer) {
-            // unix_printf("A frame end. pc: %d\n", presentation_count_);
-            dispatch_semaphore_signal(semaphore);
+          [presentation_count_](void *cbuffer) {
+            unix_printf("A frame end. pc: %d\n", presentation_count_);
+            // dispatch_semaphore_signal(semaphore);
           });
+          // assert(0);
     });
     swapchain_.Swap();
 

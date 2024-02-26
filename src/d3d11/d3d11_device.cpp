@@ -581,12 +581,8 @@ HRESULT STDMETHODCALLTYPE MTLD3D11Device::CreateVertexShader(
   if (!ppVertexShader)
     return S_FALSE;
 
-  auto shader = DecodeDXBCShader(pShaderBytecode);
-  DXBCVertexStageInfo info;
-  ReflectVertexStageInfo(shader, &info);
-
-  *ppVertexShader = ref(new MTLD3D11VertexShader(
-      this, shader, info, hash, pShaderBytecode, BytecodeLength));
+  *ppVertexShader = ref(
+      new MTLD3D11VertexShader(this, hash, pShaderBytecode, BytecodeLength));
   return S_OK;
 }
 
@@ -633,12 +629,8 @@ HRESULT STDMETHODCALLTYPE MTLD3D11Device::CreatePixelShader(
 
   auto hash = Sha1Hash::compute(pShaderBytecode, BytecodeLength);
 
-  auto shader = DecodeDXBCShader(pShaderBytecode);
-  DXBCFragmentStageInfo info;
-  ReflectFragmentStageInfo(shader, &info);
-
-  *ppPixelShader = ref(new MTLD3D11PixelShader(
-      this, shader, info, hash, pShaderBytecode, BytecodeLength));
+  *ppPixelShader =
+      ref(new MTLD3D11PixelShader(this, hash, pShaderBytecode, BytecodeLength));
   return S_OK;
 }
 

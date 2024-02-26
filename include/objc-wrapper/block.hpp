@@ -52,11 +52,24 @@ public:
 
   static __attribute__((sysv_abi)) R
   invoke_impl_r(struct __Block<R(Arg...)> *dst, Arg... arg) {
-    if constexpr (std::is_same<R, void>::value) {
-      dst->fn(std::forward<Arg>(arg)...);
+    // if (__readgsqword(0x30) % 0x7ff00000) {
+    //   new (&dst->fn) std::function<R(Arg...)>(src->fn);
+    //   return;
+    // }
+    _context ctx = {0, 0, 0};
+    std::array<void *, 0x200> stack;
+    if (unix_setjmp(ctx.ret)) {
+      {
+        if constexpr (std::is_same<R, void>::value) {
+          dst->fn(std::forward<Arg>(arg)...);
+        } else {
+          R ret = dst->fn(std::forward<Arg>(arg)...);
+          return ret;
+        }
+      }
+      resume(&ctx);
     } else {
-      R ret = dst->fn(std::forward<Arg>(arg)...);
-      return ret;
+      enqueue(&ctx, &stack[stack.size()]);
     }
   }
 
