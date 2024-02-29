@@ -1,6 +1,6 @@
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------
 //
-// Metal/MTLFunctionHandle.hpp
+// MetalFX/MetalFX.hpp
 //
 // Copyright 2020-2023 Apple Inc.
 //
@@ -20,42 +20,9 @@
 
 #pragma once
 
-#include "MTLDefines.hpp"
-#include "MTLHeaderBridge.hpp"
-#include "MTLPrivate.hpp"
+//-------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-#include <Foundation/Foundation.hpp>
+#include "MTLFXSpatialScaler.hpp"
+#include "MTLFXTemporalScaler.hpp"
 
-#include "MTLLibrary.hpp"
-
-namespace MTL
-{
-class FunctionHandle : public NS::Referencing<FunctionHandle>
-{
-public:
-    MTL::FunctionType functionType() const;
-
-    NS::String*       name() const;
-
-    class Device*     device() const;
-};
-
-}
-
-// property: functionType
-_MTL_INLINE MTL::FunctionType MTL::FunctionHandle::functionType() const
-{
-    return Object::sendMessage<MTL::FunctionType>(this, _MTL_PRIVATE_SEL(functionType));
-}
-
-// property: name
-_MTL_INLINE NS::String* MTL::FunctionHandle::name() const
-{
-    return Object::sendMessage<NS::String*>(this, _MTL_PRIVATE_SEL(name));
-}
-
-// property: device
-_MTL_INLINE MTL::Device* MTL::FunctionHandle::device() const
-{
-    return Object::sendMessage<MTL::Device*>(this, _MTL_PRIVATE_SEL(device));
-}
+//-------------------------------------------------------------------------------------------------------------------------------------------------------------

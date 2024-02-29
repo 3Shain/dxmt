@@ -28,183 +28,154 @@
 
 #include "MTLCommandBuffer.hpp"
 
-namespace MTL {
-class ComputePassSampleBufferAttachmentDescriptor
-    : public NS::Copying<ComputePassSampleBufferAttachmentDescriptor> {
+namespace MTL
+{
+class ComputePassSampleBufferAttachmentDescriptor : public NS::Copying<ComputePassSampleBufferAttachmentDescriptor>
+{
 public:
-  static class ComputePassSampleBufferAttachmentDescriptor *alloc();
+    static class ComputePassSampleBufferAttachmentDescriptor* alloc();
 
-  class ComputePassSampleBufferAttachmentDescriptor *init();
+    class ComputePassSampleBufferAttachmentDescriptor*        init();
 
-  class CounterSampleBuffer *sampleBuffer() const;
-  void setSampleBuffer(const class CounterSampleBuffer *sampleBuffer);
+    class CounterSampleBuffer*                                sampleBuffer() const;
+    void                                                      setSampleBuffer(const class CounterSampleBuffer* sampleBuffer);
 
-  NS::UInteger startOfEncoderSampleIndex() const;
-  void setStartOfEncoderSampleIndex(NS::UInteger startOfEncoderSampleIndex);
+    NS::UInteger                                              startOfEncoderSampleIndex() const;
+    void                                                      setStartOfEncoderSampleIndex(NS::UInteger startOfEncoderSampleIndex);
 
-  NS::UInteger endOfEncoderSampleIndex() const;
-  void setEndOfEncoderSampleIndex(NS::UInteger endOfEncoderSampleIndex);
+    NS::UInteger                                              endOfEncoderSampleIndex() const;
+    void                                                      setEndOfEncoderSampleIndex(NS::UInteger endOfEncoderSampleIndex);
 };
 
-class ComputePassSampleBufferAttachmentDescriptorArray
-    : public NS::Referencing<ComputePassSampleBufferAttachmentDescriptorArray> {
+class ComputePassSampleBufferAttachmentDescriptorArray : public NS::Referencing<ComputePassSampleBufferAttachmentDescriptorArray>
+{
 public:
-  static class ComputePassSampleBufferAttachmentDescriptorArray *alloc();
+    static class ComputePassSampleBufferAttachmentDescriptorArray* alloc();
 
-  class ComputePassSampleBufferAttachmentDescriptorArray *init();
+    class ComputePassSampleBufferAttachmentDescriptorArray*        init();
 
-  class ComputePassSampleBufferAttachmentDescriptor *
-  object(NS::UInteger attachmentIndex);
+    class ComputePassSampleBufferAttachmentDescriptor*             object(NS::UInteger attachmentIndex);
 
-  void
-  setObject(const class ComputePassSampleBufferAttachmentDescriptor *attachment,
-            NS::UInteger attachmentIndex);
+    void                                                           setObject(const class ComputePassSampleBufferAttachmentDescriptor* attachment, NS::UInteger attachmentIndex);
 };
 
-class ComputePassDescriptor : public NS::Copying<ComputePassDescriptor> {
+class ComputePassDescriptor : public NS::Copying<ComputePassDescriptor>
+{
 public:
-  static class ComputePassDescriptor *alloc();
+    static class ComputePassDescriptor*                     alloc();
 
-  class ComputePassDescriptor *init();
+    class ComputePassDescriptor*                            init();
 
-  static class ComputePassDescriptor *computePassDescriptor();
+    static class ComputePassDescriptor*                     computePassDescriptor();
 
-  MTL::DispatchType dispatchType() const;
-  void setDispatchType(MTL::DispatchType dispatchType);
+    MTL::DispatchType                                       dispatchType() const;
+    void                                                    setDispatchType(MTL::DispatchType dispatchType);
 
-  class ComputePassSampleBufferAttachmentDescriptorArray *
-  sampleBufferAttachments() const;
+    class ComputePassSampleBufferAttachmentDescriptorArray* sampleBufferAttachments() const;
 };
 
-} // namespace MTL
+}
 
 // static method: alloc
-_MTL_INLINE MTL::ComputePassSampleBufferAttachmentDescriptor *
-MTL::ComputePassSampleBufferAttachmentDescriptor::alloc() {
-  return NS::Object::alloc<MTL::ComputePassSampleBufferAttachmentDescriptor>(
-      _MTL_PRIVATE_CLS(MTLComputePassSampleBufferAttachmentDescriptor));
+_MTL_INLINE MTL::ComputePassSampleBufferAttachmentDescriptor* MTL::ComputePassSampleBufferAttachmentDescriptor::alloc()
+{
+    return NS::Object::alloc<MTL::ComputePassSampleBufferAttachmentDescriptor>(_MTL_PRIVATE_CLS(MTLComputePassSampleBufferAttachmentDescriptor));
 }
 
 // method: init
-_MTL_INLINE MTL::ComputePassSampleBufferAttachmentDescriptor *
-MTL::ComputePassSampleBufferAttachmentDescriptor::init() {
-  return NS::Object::init<MTL::ComputePassSampleBufferAttachmentDescriptor>();
+_MTL_INLINE MTL::ComputePassSampleBufferAttachmentDescriptor* MTL::ComputePassSampleBufferAttachmentDescriptor::init()
+{
+    return NS::Object::init<MTL::ComputePassSampleBufferAttachmentDescriptor>();
 }
 
 // property: sampleBuffer
-_MTL_INLINE MTL::CounterSampleBuffer *
-MTL::ComputePassSampleBufferAttachmentDescriptor::sampleBuffer() const {
-  return Object::sendMessage<MTL::CounterSampleBuffer *>(
-      this, _MTL_PRIVATE_SEL(sampleBuffer));
+_MTL_INLINE MTL::CounterSampleBuffer* MTL::ComputePassSampleBufferAttachmentDescriptor::sampleBuffer() const
+{
+    return Object::sendMessage<MTL::CounterSampleBuffer*>(this, _MTL_PRIVATE_SEL(sampleBuffer));
 }
 
-_MTL_INLINE void
-MTL::ComputePassSampleBufferAttachmentDescriptor::setSampleBuffer(
-    const MTL::CounterSampleBuffer *sampleBuffer) {
-  Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(setSampleBuffer_),
-                            sampleBuffer);
+_MTL_INLINE void MTL::ComputePassSampleBufferAttachmentDescriptor::setSampleBuffer(const MTL::CounterSampleBuffer* sampleBuffer)
+{
+    Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(setSampleBuffer_), sampleBuffer);
 }
 
 // property: startOfEncoderSampleIndex
-_MTL_INLINE NS::UInteger
-MTL::ComputePassSampleBufferAttachmentDescriptor::startOfEncoderSampleIndex()
-    const {
-  return Object::sendMessage<NS::UInteger>(
-      this, _MTL_PRIVATE_SEL(startOfEncoderSampleIndex));
+_MTL_INLINE NS::UInteger MTL::ComputePassSampleBufferAttachmentDescriptor::startOfEncoderSampleIndex() const
+{
+    return Object::sendMessage<NS::UInteger>(this, _MTL_PRIVATE_SEL(startOfEncoderSampleIndex));
 }
 
-_MTL_INLINE void
-MTL::ComputePassSampleBufferAttachmentDescriptor::setStartOfEncoderSampleIndex(
-    NS::UInteger startOfEncoderSampleIndex) {
-  Object::sendMessage<void>(this,
-                            _MTL_PRIVATE_SEL(setStartOfEncoderSampleIndex_),
-                            startOfEncoderSampleIndex);
+_MTL_INLINE void MTL::ComputePassSampleBufferAttachmentDescriptor::setStartOfEncoderSampleIndex(NS::UInteger startOfEncoderSampleIndex)
+{
+    Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(setStartOfEncoderSampleIndex_), startOfEncoderSampleIndex);
 }
 
 // property: endOfEncoderSampleIndex
-_MTL_INLINE NS::UInteger
-MTL::ComputePassSampleBufferAttachmentDescriptor::endOfEncoderSampleIndex()
-    const {
-  return Object::sendMessage<NS::UInteger>(
-      this, _MTL_PRIVATE_SEL(endOfEncoderSampleIndex));
+_MTL_INLINE NS::UInteger MTL::ComputePassSampleBufferAttachmentDescriptor::endOfEncoderSampleIndex() const
+{
+    return Object::sendMessage<NS::UInteger>(this, _MTL_PRIVATE_SEL(endOfEncoderSampleIndex));
 }
 
-_MTL_INLINE void
-MTL::ComputePassSampleBufferAttachmentDescriptor::setEndOfEncoderSampleIndex(
-    NS::UInteger endOfEncoderSampleIndex) {
-  Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(setEndOfEncoderSampleIndex_),
-                            endOfEncoderSampleIndex);
+_MTL_INLINE void MTL::ComputePassSampleBufferAttachmentDescriptor::setEndOfEncoderSampleIndex(NS::UInteger endOfEncoderSampleIndex)
+{
+    Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(setEndOfEncoderSampleIndex_), endOfEncoderSampleIndex);
 }
 
 // static method: alloc
-_MTL_INLINE MTL::ComputePassSampleBufferAttachmentDescriptorArray *
-MTL::ComputePassSampleBufferAttachmentDescriptorArray::alloc() {
-  return NS::Object::alloc<
-      MTL::ComputePassSampleBufferAttachmentDescriptorArray>(
-      _MTL_PRIVATE_CLS(MTLComputePassSampleBufferAttachmentDescriptorArray));
+_MTL_INLINE MTL::ComputePassSampleBufferAttachmentDescriptorArray* MTL::ComputePassSampleBufferAttachmentDescriptorArray::alloc()
+{
+    return NS::Object::alloc<MTL::ComputePassSampleBufferAttachmentDescriptorArray>(_MTL_PRIVATE_CLS(MTLComputePassSampleBufferAttachmentDescriptorArray));
 }
 
 // method: init
-_MTL_INLINE MTL::ComputePassSampleBufferAttachmentDescriptorArray *
-MTL::ComputePassSampleBufferAttachmentDescriptorArray::init() {
-  return NS::Object::init<
-      MTL::ComputePassSampleBufferAttachmentDescriptorArray>();
+_MTL_INLINE MTL::ComputePassSampleBufferAttachmentDescriptorArray* MTL::ComputePassSampleBufferAttachmentDescriptorArray::init()
+{
+    return NS::Object::init<MTL::ComputePassSampleBufferAttachmentDescriptorArray>();
 }
 
 // method: objectAtIndexedSubscript:
-_MTL_INLINE MTL::ComputePassSampleBufferAttachmentDescriptor *
-MTL::ComputePassSampleBufferAttachmentDescriptorArray::object(
-    NS::UInteger attachmentIndex) {
-  return Object::sendMessage<
-      MTL::ComputePassSampleBufferAttachmentDescriptor *>(
-      this, _MTL_PRIVATE_SEL(objectAtIndexedSubscript_), attachmentIndex);
+_MTL_INLINE MTL::ComputePassSampleBufferAttachmentDescriptor* MTL::ComputePassSampleBufferAttachmentDescriptorArray::object(NS::UInteger attachmentIndex)
+{
+    return Object::sendMessage<MTL::ComputePassSampleBufferAttachmentDescriptor*>(this, _MTL_PRIVATE_SEL(objectAtIndexedSubscript_), attachmentIndex);
 }
 
 // method: setObject:atIndexedSubscript:
-_MTL_INLINE void
-MTL::ComputePassSampleBufferAttachmentDescriptorArray::setObject(
-    const MTL::ComputePassSampleBufferAttachmentDescriptor *attachment,
-    NS::UInteger attachmentIndex) {
-  Object::sendMessage<void>(this,
-                            _MTL_PRIVATE_SEL(setObject_atIndexedSubscript_),
-                            attachment, attachmentIndex);
+_MTL_INLINE void MTL::ComputePassSampleBufferAttachmentDescriptorArray::setObject(const MTL::ComputePassSampleBufferAttachmentDescriptor* attachment, NS::UInteger attachmentIndex)
+{
+    Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(setObject_atIndexedSubscript_), attachment, attachmentIndex);
 }
 
 // static method: alloc
-_MTL_INLINE MTL::ComputePassDescriptor *MTL::ComputePassDescriptor::alloc() {
-  return NS::Object::alloc<MTL::ComputePassDescriptor>(
-      _MTL_PRIVATE_CLS(MTLComputePassDescriptor));
+_MTL_INLINE MTL::ComputePassDescriptor* MTL::ComputePassDescriptor::alloc()
+{
+    return NS::Object::alloc<MTL::ComputePassDescriptor>(_MTL_PRIVATE_CLS(MTLComputePassDescriptor));
 }
 
 // method: init
-_MTL_INLINE MTL::ComputePassDescriptor *MTL::ComputePassDescriptor::init() {
-  return NS::Object::init<MTL::ComputePassDescriptor>();
+_MTL_INLINE MTL::ComputePassDescriptor* MTL::ComputePassDescriptor::init()
+{
+    return NS::Object::init<MTL::ComputePassDescriptor>();
 }
 
 // static method: computePassDescriptor
-_MTL_INLINE MTL::ComputePassDescriptor *
-MTL::ComputePassDescriptor::computePassDescriptor() {
-  return Object::sendMessage<MTL::ComputePassDescriptor *>(
-      _MTL_PRIVATE_CLS(MTLComputePassDescriptor),
-      _MTL_PRIVATE_SEL(computePassDescriptor));
+_MTL_INLINE MTL::ComputePassDescriptor* MTL::ComputePassDescriptor::computePassDescriptor()
+{
+    return Object::sendMessage<MTL::ComputePassDescriptor*>(_MTL_PRIVATE_CLS(MTLComputePassDescriptor), _MTL_PRIVATE_SEL(computePassDescriptor));
 }
 
 // property: dispatchType
-_MTL_INLINE MTL::DispatchType MTL::ComputePassDescriptor::dispatchType() const {
-  return Object::sendMessage<MTL::DispatchType>(this,
-                                                _MTL_PRIVATE_SEL(dispatchType));
+_MTL_INLINE MTL::DispatchType MTL::ComputePassDescriptor::dispatchType() const
+{
+    return Object::sendMessage<MTL::DispatchType>(this, _MTL_PRIVATE_SEL(dispatchType));
 }
 
-_MTL_INLINE void
-MTL::ComputePassDescriptor::setDispatchType(MTL::DispatchType dispatchType) {
-  Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(setDispatchType_),
-                            dispatchType);
+_MTL_INLINE void MTL::ComputePassDescriptor::setDispatchType(MTL::DispatchType dispatchType)
+{
+    Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(setDispatchType_), dispatchType);
 }
 
 // property: sampleBufferAttachments
-_MTL_INLINE MTL::ComputePassSampleBufferAttachmentDescriptorArray *
-MTL::ComputePassDescriptor::sampleBufferAttachments() const {
-  return Object::sendMessage<
-      MTL::ComputePassSampleBufferAttachmentDescriptorArray *>(
-      this, _MTL_PRIVATE_SEL(sampleBufferAttachments));
+_MTL_INLINE MTL::ComputePassSampleBufferAttachmentDescriptorArray* MTL::ComputePassDescriptor::sampleBufferAttachments() const
+{
+    return Object::sendMessage<MTL::ComputePassSampleBufferAttachmentDescriptorArray*>(this, _MTL_PRIVATE_SEL(sampleBufferAttachments));
 }

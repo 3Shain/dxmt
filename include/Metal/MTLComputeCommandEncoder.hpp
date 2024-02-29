@@ -30,407 +30,333 @@
 #include "MTLCommandEncoder.hpp"
 #include "MTLTypes.hpp"
 
-namespace MTL {
-struct DispatchThreadgroupsIndirectArguments {
-  uint32_t threadgroupsPerGrid[3];
+namespace MTL
+{
+struct DispatchThreadgroupsIndirectArguments
+{
+    uint32_t threadgroupsPerGrid[3];
 } _MTL_PACKED;
 
-struct StageInRegionIndirectArguments {
-  uint32_t stageInOrigin[3];
-  uint32_t stageInSize[3];
+struct StageInRegionIndirectArguments
+{
+    uint32_t stageInOrigin[3];
+    uint32_t stageInSize[3];
 } _MTL_PACKED;
 
-class ComputeCommandEncoder
-    : public NS::Referencing<ComputeCommandEncoder, CommandEncoder> {
+class ComputeCommandEncoder : public NS::Referencing<ComputeCommandEncoder, CommandEncoder>
+{
 public:
-  MTL::DispatchType dispatchType() const;
+    MTL::DispatchType dispatchType() const;
 
-  void setComputePipelineState(const class ComputePipelineState *state);
+    void              setComputePipelineState(const class ComputePipelineState* state);
 
-  void setBytes(const void *bytes, NS::UInteger length, NS::UInteger index);
+    void              setBytes(const void* bytes, NS::UInteger length, NS::UInteger index);
 
-  void setBuffer(const class Buffer *buffer, NS::UInteger offset,
-                 NS::UInteger index);
+    void              setBuffer(const class Buffer* buffer, NS::UInteger offset, NS::UInteger index);
 
-  void setBufferOffset(NS::UInteger offset, NS::UInteger index);
+    void              setBufferOffset(NS::UInteger offset, NS::UInteger index);
 
-  void setBuffers(const class Buffer *const buffers[],
-                  const NS::UInteger offsets[], NS::Range range);
+    void              setBuffers(const class Buffer* const buffers[], const NS::UInteger offsets[], NS::Range range);
 
-  void setVisibleFunctionTable(
-      const class VisibleFunctionTable *visibleFunctionTable,
-      NS::UInteger bufferIndex);
+    void              setBuffer(const class Buffer* buffer, NS::UInteger offset, NS::UInteger stride, NS::UInteger index);
 
-  void setVisibleFunctionTables(
-      const class VisibleFunctionTable *const visibleFunctionTables[],
-      NS::Range range);
+    void              setBuffers(const class Buffer* const buffers[], const NS::UInteger* offsets, const NS::UInteger* strides, NS::Range range);
 
-  void setIntersectionFunctionTable(
-      const class IntersectionFunctionTable *intersectionFunctionTable,
-      NS::UInteger bufferIndex);
+    void              setBufferOffset(NS::UInteger offset, NS::UInteger stride, NS::UInteger index);
 
-  void setIntersectionFunctionTables(
-      const class IntersectionFunctionTable *const intersectionFunctionTables[],
-      NS::Range range);
+    void              setBytes(const void* bytes, NS::UInteger length, NS::UInteger stride, NS::UInteger index);
 
-  void setAccelerationStructure(
-      const class AccelerationStructure *accelerationStructure,
-      NS::UInteger bufferIndex);
+    void              setVisibleFunctionTable(const class VisibleFunctionTable* visibleFunctionTable, NS::UInteger bufferIndex);
 
-  void setTexture(const class Texture *texture, NS::UInteger index);
+    void              setVisibleFunctionTables(const class VisibleFunctionTable* const visibleFunctionTables[], NS::Range range);
 
-  void setTextures(const class Texture *const textures[], NS::Range range);
+    void              setIntersectionFunctionTable(const class IntersectionFunctionTable* intersectionFunctionTable, NS::UInteger bufferIndex);
 
-  void setSamplerState(const class SamplerState *sampler, NS::UInteger index);
+    void              setIntersectionFunctionTables(const class IntersectionFunctionTable* const intersectionFunctionTables[], NS::Range range);
 
-  void setSamplerStates(const class SamplerState *const samplers[],
-                        NS::Range range);
+    void              setAccelerationStructure(const class AccelerationStructure* accelerationStructure, NS::UInteger bufferIndex);
 
-  void setSamplerState(const class SamplerState *sampler, float lodMinClamp,
-                       float lodMaxClamp, NS::UInteger index);
+    void              setTexture(const class Texture* texture, NS::UInteger index);
 
-  void setSamplerStates(const class SamplerState *const samplers[],
-                        const float lodMinClamps[], const float lodMaxClamps[],
-                        NS::Range range);
+    void              setTextures(const class Texture* const textures[], NS::Range range);
 
-  void setThreadgroupMemoryLength(NS::UInteger length, NS::UInteger index);
+    void              setSamplerState(const class SamplerState* sampler, NS::UInteger index);
 
-  void setImageblockWidth(NS::UInteger width, NS::UInteger height);
+    void              setSamplerStates(const class SamplerState* const samplers[], NS::Range range);
 
-  void setStageInRegion(MTL::Region region);
+    void              setSamplerState(const class SamplerState* sampler, float lodMinClamp, float lodMaxClamp, NS::UInteger index);
 
-  void setStageInRegion(const class Buffer *indirectBuffer,
-                        NS::UInteger indirectBufferOffset);
+    void              setSamplerStates(const class SamplerState* const samplers[], const float lodMinClamps[], const float lodMaxClamps[], NS::Range range);
 
-  void dispatchThreadgroups(MTL::Size threadgroupsPerGrid,
-                            MTL::Size threadsPerThreadgroup);
+    void              setThreadgroupMemoryLength(NS::UInteger length, NS::UInteger index);
 
-  void dispatchThreadgroups(const class Buffer *indirectBuffer,
-                            NS::UInteger indirectBufferOffset,
-                            MTL::Size threadsPerThreadgroup);
+    void              setImageblockWidth(NS::UInteger width, NS::UInteger height);
 
-  void dispatchThreads(MTL::Size threadsPerGrid,
-                       MTL::Size threadsPerThreadgroup);
+    void              setStageInRegion(MTL::Region region);
 
-  void updateFence(const class Fence *fence);
+    void              setStageInRegion(const class Buffer* indirectBuffer, NS::UInteger indirectBufferOffset);
 
-  void waitForFence(const class Fence *fence);
+    void              dispatchThreadgroups(MTL::Size threadgroupsPerGrid, MTL::Size threadsPerThreadgroup);
 
-  void useResource(const class Resource *resource, MTL::ResourceUsage usage);
+    void              dispatchThreadgroups(const class Buffer* indirectBuffer, NS::UInteger indirectBufferOffset, MTL::Size threadsPerThreadgroup);
 
-  void useResources(const class Resource *const resources[], NS::UInteger count,
-                    MTL::ResourceUsage usage);
+    void              dispatchThreads(MTL::Size threadsPerGrid, MTL::Size threadsPerThreadgroup);
 
-  void useHeap(const class Heap *heap);
+    void              updateFence(const class Fence* fence);
 
-  void useHeaps(const class Heap *const heaps[], NS::UInteger count);
+    void              waitForFence(const class Fence* fence);
 
-  void executeCommandsInBuffer(
-      const class IndirectCommandBuffer *indirectCommandBuffer,
-      NS::Range executionRange);
+    void              useResource(const class Resource* resource, MTL::ResourceUsage usage);
 
-  void executeCommandsInBuffer(
-      const class IndirectCommandBuffer *indirectCommandbuffer,
-      const class Buffer *indirectRangeBuffer,
-      NS::UInteger indirectBufferOffset);
+    void              useResources(const class Resource* const resources[], NS::UInteger count, MTL::ResourceUsage usage);
 
-  void memoryBarrier(MTL::BarrierScope scope);
+    void              useHeap(const class Heap* heap);
 
-  void memoryBarrier(const class Resource *const resources[],
-                     NS::UInteger count);
+    void              useHeaps(const class Heap* const heaps[], NS::UInteger count);
 
-  void sampleCountersInBuffer(const class CounterSampleBuffer *sampleBuffer,
-                              NS::UInteger sampleIndex, bool barrier);
+    void              executeCommandsInBuffer(const class IndirectCommandBuffer* indirectCommandBuffer, NS::Range executionRange);
+
+    void              executeCommandsInBuffer(const class IndirectCommandBuffer* indirectCommandbuffer, const class Buffer* indirectRangeBuffer, NS::UInteger indirectBufferOffset);
+
+    void              memoryBarrier(MTL::BarrierScope scope);
+
+    void              memoryBarrier(const class Resource* const resources[], NS::UInteger count);
+
+    void              sampleCountersInBuffer(const class CounterSampleBuffer* sampleBuffer, NS::UInteger sampleIndex, bool barrier);
 };
 
-} // namespace MTL
+}
 
 // property: dispatchType
-_MTL_INLINE MTL::DispatchType MTL::ComputeCommandEncoder::dispatchType() const {
-  return Object::sendMessage<MTL::DispatchType>(this,
-                                                _MTL_PRIVATE_SEL(dispatchType));
+_MTL_INLINE MTL::DispatchType MTL::ComputeCommandEncoder::dispatchType() const
+{
+    return Object::sendMessage<MTL::DispatchType>(this, _MTL_PRIVATE_SEL(dispatchType));
 }
 
 // method: setComputePipelineState:
-_MTL_INLINE void MTL::ComputeCommandEncoder::setComputePipelineState(
-    const MTL::ComputePipelineState *state) {
-  Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(setComputePipelineState_),
-                            state);
+_MTL_INLINE void MTL::ComputeCommandEncoder::setComputePipelineState(const MTL::ComputePipelineState* state)
+{
+    Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(setComputePipelineState_), state);
 }
 
 // method: setBytes:length:atIndex:
-_MTL_INLINE void MTL::ComputeCommandEncoder::setBytes(const void *bytes,
-                                                      NS::UInteger length,
-                                                      NS::UInteger index) {
-  Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(setBytes_length_atIndex_),
-                            bytes, length, index);
+_MTL_INLINE void MTL::ComputeCommandEncoder::setBytes(const void* bytes, NS::UInteger length, NS::UInteger index)
+{
+    Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(setBytes_length_atIndex_), bytes, length, index);
 }
 
 // method: setBuffer:offset:atIndex:
-_MTL_INLINE void
-MTL::ComputeCommandEncoder::setBuffer(const MTL::Buffer *buffer,
-                                      NS::UInteger offset, NS::UInteger index) {
-  Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(setBuffer_offset_atIndex_),
-                            buffer, offset, index);
+_MTL_INLINE void MTL::ComputeCommandEncoder::setBuffer(const MTL::Buffer* buffer, NS::UInteger offset, NS::UInteger index)
+{
+    Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(setBuffer_offset_atIndex_), buffer, offset, index);
 }
 
 // method: setBufferOffset:atIndex:
-_MTL_INLINE void
-MTL::ComputeCommandEncoder::setBufferOffset(NS::UInteger offset,
-                                            NS::UInteger index) {
-  Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(setBufferOffset_atIndex_),
-                            offset, index);
+_MTL_INLINE void MTL::ComputeCommandEncoder::setBufferOffset(NS::UInteger offset, NS::UInteger index)
+{
+    Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(setBufferOffset_atIndex_), offset, index);
 }
 
 // method: setBuffers:offsets:withRange:
-_MTL_INLINE void
-MTL::ComputeCommandEncoder::setBuffers(const MTL::Buffer *const buffers[],
-                                       const NS::UInteger offsets[],
-                                       NS::Range range) {
-  Object::sendMessage<void>(this,
-                            _MTL_PRIVATE_SEL(setBuffers_offsets_withRange_),
-                            buffers, offsets, range);
+_MTL_INLINE void MTL::ComputeCommandEncoder::setBuffers(const MTL::Buffer* const buffers[], const NS::UInteger offsets[], NS::Range range)
+{
+    Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(setBuffers_offsets_withRange_), buffers, offsets, range);
+}
+
+// method: setBuffer:offset:attributeStride:atIndex:
+_MTL_INLINE void MTL::ComputeCommandEncoder::setBuffer(const MTL::Buffer* buffer, NS::UInteger offset, NS::UInteger stride, NS::UInteger index)
+{
+    Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(setBuffer_offset_attributeStride_atIndex_), buffer, offset, stride, index);
+}
+
+// method: setBuffers:offsets:attributeStrides:withRange:
+_MTL_INLINE void MTL::ComputeCommandEncoder::setBuffers(const MTL::Buffer* const buffers[], const NS::UInteger* offsets, const NS::UInteger* strides, NS::Range range)
+{
+    Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(setBuffers_offsets_attributeStrides_withRange_), buffers, offsets, strides, range);
+}
+
+// method: setBufferOffset:attributeStride:atIndex:
+_MTL_INLINE void MTL::ComputeCommandEncoder::setBufferOffset(NS::UInteger offset, NS::UInteger stride, NS::UInteger index)
+{
+    Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(setBufferOffset_attributeStride_atIndex_), offset, stride, index);
+}
+
+// method: setBytes:length:attributeStride:atIndex:
+_MTL_INLINE void MTL::ComputeCommandEncoder::setBytes(const void* bytes, NS::UInteger length, NS::UInteger stride, NS::UInteger index)
+{
+    Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(setBytes_length_attributeStride_atIndex_), bytes, length, stride, index);
 }
 
 // method: setVisibleFunctionTable:atBufferIndex:
-_MTL_INLINE void MTL::ComputeCommandEncoder::setVisibleFunctionTable(
-    const MTL::VisibleFunctionTable *visibleFunctionTable,
-    NS::UInteger bufferIndex) {
-  Object::sendMessage<void>(
-      this, _MTL_PRIVATE_SEL(setVisibleFunctionTable_atBufferIndex_),
-      visibleFunctionTable, bufferIndex);
+_MTL_INLINE void MTL::ComputeCommandEncoder::setVisibleFunctionTable(const MTL::VisibleFunctionTable* visibleFunctionTable, NS::UInteger bufferIndex)
+{
+    Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(setVisibleFunctionTable_atBufferIndex_), visibleFunctionTable, bufferIndex);
 }
 
 // method: setVisibleFunctionTables:withBufferRange:
-_MTL_INLINE void MTL::ComputeCommandEncoder::setVisibleFunctionTables(
-    const MTL::VisibleFunctionTable *const visibleFunctionTables[],
-    NS::Range range) {
-  Object::sendMessage<void>(
-      this, _MTL_PRIVATE_SEL(setVisibleFunctionTables_withBufferRange_),
-      visibleFunctionTables, range);
+_MTL_INLINE void MTL::ComputeCommandEncoder::setVisibleFunctionTables(const MTL::VisibleFunctionTable* const visibleFunctionTables[], NS::Range range)
+{
+    Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(setVisibleFunctionTables_withBufferRange_), visibleFunctionTables, range);
 }
 
 // method: setIntersectionFunctionTable:atBufferIndex:
-_MTL_INLINE void MTL::ComputeCommandEncoder::setIntersectionFunctionTable(
-    const MTL::IntersectionFunctionTable *intersectionFunctionTable,
-    NS::UInteger bufferIndex) {
-  Object::sendMessage<void>(
-      this, _MTL_PRIVATE_SEL(setIntersectionFunctionTable_atBufferIndex_),
-      intersectionFunctionTable, bufferIndex);
+_MTL_INLINE void MTL::ComputeCommandEncoder::setIntersectionFunctionTable(const MTL::IntersectionFunctionTable* intersectionFunctionTable, NS::UInteger bufferIndex)
+{
+    Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(setIntersectionFunctionTable_atBufferIndex_), intersectionFunctionTable, bufferIndex);
 }
 
 // method: setIntersectionFunctionTables:withBufferRange:
-_MTL_INLINE void MTL::ComputeCommandEncoder::setIntersectionFunctionTables(
-    const MTL::IntersectionFunctionTable *const intersectionFunctionTables[],
-    NS::Range range) {
-  Object::sendMessage<void>(
-      this, _MTL_PRIVATE_SEL(setIntersectionFunctionTables_withBufferRange_),
-      intersectionFunctionTables, range);
+_MTL_INLINE void MTL::ComputeCommandEncoder::setIntersectionFunctionTables(const MTL::IntersectionFunctionTable* const intersectionFunctionTables[], NS::Range range)
+{
+    Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(setIntersectionFunctionTables_withBufferRange_), intersectionFunctionTables, range);
 }
 
 // method: setAccelerationStructure:atBufferIndex:
-_MTL_INLINE void MTL::ComputeCommandEncoder::setAccelerationStructure(
-    const MTL::AccelerationStructure *accelerationStructure,
-    NS::UInteger bufferIndex) {
-  Object::sendMessage<void>(
-      this, _MTL_PRIVATE_SEL(setAccelerationStructure_atBufferIndex_),
-      accelerationStructure, bufferIndex);
+_MTL_INLINE void MTL::ComputeCommandEncoder::setAccelerationStructure(const MTL::AccelerationStructure* accelerationStructure, NS::UInteger bufferIndex)
+{
+    Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(setAccelerationStructure_atBufferIndex_), accelerationStructure, bufferIndex);
 }
 
 // method: setTexture:atIndex:
-_MTL_INLINE void
-MTL::ComputeCommandEncoder::setTexture(const MTL::Texture *texture,
-                                       NS::UInteger index) {
-  Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(setTexture_atIndex_),
-                            texture, index);
+_MTL_INLINE void MTL::ComputeCommandEncoder::setTexture(const MTL::Texture* texture, NS::UInteger index)
+{
+    Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(setTexture_atIndex_), texture, index);
 }
 
 // method: setTextures:withRange:
-_MTL_INLINE void
-MTL::ComputeCommandEncoder::setTextures(const MTL::Texture *const textures[],
-                                        NS::Range range) {
-  Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(setTextures_withRange_),
-                            textures, range);
+_MTL_INLINE void MTL::ComputeCommandEncoder::setTextures(const MTL::Texture* const textures[], NS::Range range)
+{
+    Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(setTextures_withRange_), textures, range);
 }
 
 // method: setSamplerState:atIndex:
-_MTL_INLINE void
-MTL::ComputeCommandEncoder::setSamplerState(const MTL::SamplerState *sampler,
-                                            NS::UInteger index) {
-  Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(setSamplerState_atIndex_),
-                            sampler, index);
+_MTL_INLINE void MTL::ComputeCommandEncoder::setSamplerState(const MTL::SamplerState* sampler, NS::UInteger index)
+{
+    Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(setSamplerState_atIndex_), sampler, index);
 }
 
 // method: setSamplerStates:withRange:
-_MTL_INLINE void MTL::ComputeCommandEncoder::setSamplerStates(
-    const MTL::SamplerState *const samplers[], NS::Range range) {
-  Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(setSamplerStates_withRange_),
-                            samplers, range);
+_MTL_INLINE void MTL::ComputeCommandEncoder::setSamplerStates(const MTL::SamplerState* const samplers[], NS::Range range)
+{
+    Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(setSamplerStates_withRange_), samplers, range);
 }
 
 // method: setSamplerState:lodMinClamp:lodMaxClamp:atIndex:
-_MTL_INLINE void MTL::ComputeCommandEncoder::setSamplerState(
-    const MTL::SamplerState *sampler, float lodMinClamp, float lodMaxClamp,
-    NS::UInteger index) {
-  Object::sendMessage<void>(
-      this, _MTL_PRIVATE_SEL(setSamplerState_lodMinClamp_lodMaxClamp_atIndex_),
-      sampler, lodMinClamp, lodMaxClamp, index);
+_MTL_INLINE void MTL::ComputeCommandEncoder::setSamplerState(const MTL::SamplerState* sampler, float lodMinClamp, float lodMaxClamp, NS::UInteger index)
+{
+    Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(setSamplerState_lodMinClamp_lodMaxClamp_atIndex_), sampler, lodMinClamp, lodMaxClamp, index);
 }
 
 // method: setSamplerStates:lodMinClamps:lodMaxClamps:withRange:
-_MTL_INLINE void MTL::ComputeCommandEncoder::setSamplerStates(
-    const MTL::SamplerState *const samplers[], const float lodMinClamps[],
-    const float lodMaxClamps[], NS::Range range) {
-  Object::sendMessage<void>(
-      this,
-      _MTL_PRIVATE_SEL(setSamplerStates_lodMinClamps_lodMaxClamps_withRange_),
-      samplers, lodMinClamps, lodMaxClamps, range);
+_MTL_INLINE void MTL::ComputeCommandEncoder::setSamplerStates(const MTL::SamplerState* const samplers[], const float lodMinClamps[], const float lodMaxClamps[], NS::Range range)
+{
+    Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(setSamplerStates_lodMinClamps_lodMaxClamps_withRange_), samplers, lodMinClamps, lodMaxClamps, range);
 }
 
 // method: setThreadgroupMemoryLength:atIndex:
-_MTL_INLINE void
-MTL::ComputeCommandEncoder::setThreadgroupMemoryLength(NS::UInteger length,
-                                                       NS::UInteger index) {
-  Object::sendMessage<void>(
-      this, _MTL_PRIVATE_SEL(setThreadgroupMemoryLength_atIndex_), length,
-      index);
+_MTL_INLINE void MTL::ComputeCommandEncoder::setThreadgroupMemoryLength(NS::UInteger length, NS::UInteger index)
+{
+    Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(setThreadgroupMemoryLength_atIndex_), length, index);
 }
 
 // method: setImageblockWidth:height:
-_MTL_INLINE void
-MTL::ComputeCommandEncoder::setImageblockWidth(NS::UInteger width,
-                                               NS::UInteger height) {
-  Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(setImageblockWidth_height_),
-                            width, height);
+_MTL_INLINE void MTL::ComputeCommandEncoder::setImageblockWidth(NS::UInteger width, NS::UInteger height)
+{
+    Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(setImageblockWidth_height_), width, height);
 }
 
 // method: setStageInRegion:
-_MTL_INLINE void
-MTL::ComputeCommandEncoder::setStageInRegion(MTL::Region region) {
-  Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(setStageInRegion_), region);
+_MTL_INLINE void MTL::ComputeCommandEncoder::setStageInRegion(MTL::Region region)
+{
+    Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(setStageInRegion_), region);
 }
 
 // method: setStageInRegionWithIndirectBuffer:indirectBufferOffset:
-_MTL_INLINE void MTL::ComputeCommandEncoder::setStageInRegion(
-    const MTL::Buffer *indirectBuffer, NS::UInteger indirectBufferOffset) {
-  Object::sendMessage<void>(
-      this,
-      _MTL_PRIVATE_SEL(
-          setStageInRegionWithIndirectBuffer_indirectBufferOffset_),
-      indirectBuffer, indirectBufferOffset);
+_MTL_INLINE void MTL::ComputeCommandEncoder::setStageInRegion(const MTL::Buffer* indirectBuffer, NS::UInteger indirectBufferOffset)
+{
+    Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(setStageInRegionWithIndirectBuffer_indirectBufferOffset_), indirectBuffer, indirectBufferOffset);
 }
 
 // method: dispatchThreadgroups:threadsPerThreadgroup:
-_MTL_INLINE void MTL::ComputeCommandEncoder::dispatchThreadgroups(
-    MTL::Size threadgroupsPerGrid, MTL::Size threadsPerThreadgroup) {
-  Object::sendMessage<void>(
-      this, _MTL_PRIVATE_SEL(dispatchThreadgroups_threadsPerThreadgroup_),
-      threadgroupsPerGrid, threadsPerThreadgroup);
+_MTL_INLINE void MTL::ComputeCommandEncoder::dispatchThreadgroups(MTL::Size threadgroupsPerGrid, MTL::Size threadsPerThreadgroup)
+{
+    Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(dispatchThreadgroups_threadsPerThreadgroup_), threadgroupsPerGrid, threadsPerThreadgroup);
 }
 
-// method:
-// dispatchThreadgroupsWithIndirectBuffer:indirectBufferOffset:threadsPerThreadgroup:
-_MTL_INLINE void MTL::ComputeCommandEncoder::dispatchThreadgroups(
-    const MTL::Buffer *indirectBuffer, NS::UInteger indirectBufferOffset,
-    MTL::Size threadsPerThreadgroup) {
-  Object::sendMessage<void>(
-      this,
-      _MTL_PRIVATE_SEL(
-          dispatchThreadgroupsWithIndirectBuffer_indirectBufferOffset_threadsPerThreadgroup_),
-      indirectBuffer, indirectBufferOffset, threadsPerThreadgroup);
+// method: dispatchThreadgroupsWithIndirectBuffer:indirectBufferOffset:threadsPerThreadgroup:
+_MTL_INLINE void MTL::ComputeCommandEncoder::dispatchThreadgroups(const MTL::Buffer* indirectBuffer, NS::UInteger indirectBufferOffset, MTL::Size threadsPerThreadgroup)
+{
+    Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(dispatchThreadgroupsWithIndirectBuffer_indirectBufferOffset_threadsPerThreadgroup_), indirectBuffer, indirectBufferOffset, threadsPerThreadgroup);
 }
 
 // method: dispatchThreads:threadsPerThreadgroup:
-_MTL_INLINE void
-MTL::ComputeCommandEncoder::dispatchThreads(MTL::Size threadsPerGrid,
-                                            MTL::Size threadsPerThreadgroup) {
-  Object::sendMessage<void>(
-      this, _MTL_PRIVATE_SEL(dispatchThreads_threadsPerThreadgroup_),
-      threadsPerGrid, threadsPerThreadgroup);
+_MTL_INLINE void MTL::ComputeCommandEncoder::dispatchThreads(MTL::Size threadsPerGrid, MTL::Size threadsPerThreadgroup)
+{
+    Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(dispatchThreads_threadsPerThreadgroup_), threadsPerGrid, threadsPerThreadgroup);
 }
 
 // method: updateFence:
-_MTL_INLINE void
-MTL::ComputeCommandEncoder::updateFence(const MTL::Fence *fence) {
-  Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(updateFence_), fence);
+_MTL_INLINE void MTL::ComputeCommandEncoder::updateFence(const MTL::Fence* fence)
+{
+    Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(updateFence_), fence);
 }
 
 // method: waitForFence:
-_MTL_INLINE void
-MTL::ComputeCommandEncoder::waitForFence(const MTL::Fence *fence) {
-  Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(waitForFence_), fence);
+_MTL_INLINE void MTL::ComputeCommandEncoder::waitForFence(const MTL::Fence* fence)
+{
+    Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(waitForFence_), fence);
 }
 
 // method: useResource:usage:
-_MTL_INLINE void
-MTL::ComputeCommandEncoder::useResource(const MTL::Resource *resource,
-                                        MTL::ResourceUsage usage) {
-  Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(useResource_usage_),
-                            resource, usage);
+_MTL_INLINE void MTL::ComputeCommandEncoder::useResource(const MTL::Resource* resource, MTL::ResourceUsage usage)
+{
+    Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(useResource_usage_), resource, usage);
 }
 
 // method: useResources:count:usage:
-_MTL_INLINE void
-MTL::ComputeCommandEncoder::useResources(const MTL::Resource *const resources[],
-                                         NS::UInteger count,
-                                         MTL::ResourceUsage usage) {
-  Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(useResources_count_usage_),
-                            resources, count, usage);
+_MTL_INLINE void MTL::ComputeCommandEncoder::useResources(const MTL::Resource* const resources[], NS::UInteger count, MTL::ResourceUsage usage)
+{
+    Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(useResources_count_usage_), resources, count, usage);
 }
 
 // method: useHeap:
-_MTL_INLINE void MTL::ComputeCommandEncoder::useHeap(const MTL::Heap *heap) {
-  Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(useHeap_), heap);
+_MTL_INLINE void MTL::ComputeCommandEncoder::useHeap(const MTL::Heap* heap)
+{
+    Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(useHeap_), heap);
 }
 
 // method: useHeaps:count:
-_MTL_INLINE void
-MTL::ComputeCommandEncoder::useHeaps(const MTL::Heap *const heaps[],
-                                     NS::UInteger count) {
-  Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(useHeaps_count_), heaps,
-                            count);
+_MTL_INLINE void MTL::ComputeCommandEncoder::useHeaps(const MTL::Heap* const heaps[], NS::UInteger count)
+{
+    Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(useHeaps_count_), heaps, count);
 }
 
 // method: executeCommandsInBuffer:withRange:
-_MTL_INLINE void MTL::ComputeCommandEncoder::executeCommandsInBuffer(
-    const MTL::IndirectCommandBuffer *indirectCommandBuffer,
-    NS::Range executionRange) {
-  Object::sendMessage<void>(
-      this, _MTL_PRIVATE_SEL(executeCommandsInBuffer_withRange_),
-      indirectCommandBuffer, executionRange);
+_MTL_INLINE void MTL::ComputeCommandEncoder::executeCommandsInBuffer(const MTL::IndirectCommandBuffer* indirectCommandBuffer, NS::Range executionRange)
+{
+    Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(executeCommandsInBuffer_withRange_), indirectCommandBuffer, executionRange);
 }
 
 // method: executeCommandsInBuffer:indirectBuffer:indirectBufferOffset:
-_MTL_INLINE void MTL::ComputeCommandEncoder::executeCommandsInBuffer(
-    const MTL::IndirectCommandBuffer *indirectCommandbuffer,
-    const MTL::Buffer *indirectRangeBuffer, NS::UInteger indirectBufferOffset) {
-  Object::sendMessage<void>(
-      this,
-      _MTL_PRIVATE_SEL(
-          executeCommandsInBuffer_indirectBuffer_indirectBufferOffset_),
-      indirectCommandbuffer, indirectRangeBuffer, indirectBufferOffset);
+_MTL_INLINE void MTL::ComputeCommandEncoder::executeCommandsInBuffer(const MTL::IndirectCommandBuffer* indirectCommandbuffer, const MTL::Buffer* indirectRangeBuffer, NS::UInteger indirectBufferOffset)
+{
+    Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(executeCommandsInBuffer_indirectBuffer_indirectBufferOffset_), indirectCommandbuffer, indirectRangeBuffer, indirectBufferOffset);
 }
 
 // method: memoryBarrierWithScope:
-_MTL_INLINE void
-MTL::ComputeCommandEncoder::memoryBarrier(MTL::BarrierScope scope) {
-  Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(memoryBarrierWithScope_),
-                            scope);
+_MTL_INLINE void MTL::ComputeCommandEncoder::memoryBarrier(MTL::BarrierScope scope)
+{
+    Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(memoryBarrierWithScope_), scope);
 }
 
 // method: memoryBarrierWithResources:count:
-_MTL_INLINE void MTL::ComputeCommandEncoder::memoryBarrier(
-    const MTL::Resource *const resources[], NS::UInteger count) {
-  Object::sendMessage<void>(this,
-                            _MTL_PRIVATE_SEL(memoryBarrierWithResources_count_),
-                            resources, count);
+_MTL_INLINE void MTL::ComputeCommandEncoder::memoryBarrier(const MTL::Resource* const resources[], NS::UInteger count)
+{
+    Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(memoryBarrierWithResources_count_), resources, count);
 }
 
 // method: sampleCountersInBuffer:atSampleIndex:withBarrier:
-_MTL_INLINE void MTL::ComputeCommandEncoder::sampleCountersInBuffer(
-    const MTL::CounterSampleBuffer *sampleBuffer, NS::UInteger sampleIndex,
-    bool barrier) {
-  Object::sendMessage<void>(
-      this, _MTL_PRIVATE_SEL(sampleCountersInBuffer_atSampleIndex_withBarrier_),
-      sampleBuffer, sampleIndex, barrier);
+_MTL_INLINE void MTL::ComputeCommandEncoder::sampleCountersInBuffer(const MTL::CounterSampleBuffer* sampleBuffer, NS::UInteger sampleIndex, bool barrier)
+{
+    Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(sampleCountersInBuffer_atSampleIndex_withBarrier_), sampleBuffer, sampleIndex, barrier);
 }

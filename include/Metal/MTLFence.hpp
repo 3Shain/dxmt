@@ -26,27 +26,32 @@
 
 #include <Foundation/Foundation.hpp>
 
-namespace MTL {
-class Fence : public NS::Referencing<Fence> {
+namespace MTL
+{
+class Fence : public NS::Referencing<Fence>
+{
 public:
-  class Device *device() const;
+    class Device* device() const;
 
-  NS::String *label() const;
-  void setLabel(const NS::String *label);
+    NS::String*   label() const;
+    void          setLabel(const NS::String* label);
 };
 
-} // namespace MTL
+}
 
 // property: device
-_MTL_INLINE MTL::Device *MTL::Fence::device() const {
-  return Object::sendMessage<MTL::Device *>(this, _MTL_PRIVATE_SEL(device));
+_MTL_INLINE MTL::Device* MTL::Fence::device() const
+{
+    return Object::sendMessage<MTL::Device*>(this, _MTL_PRIVATE_SEL(device));
 }
 
 // property: label
-_MTL_INLINE NS::String *MTL::Fence::label() const {
-  return Object::sendMessage<NS::String *>(this, _MTL_PRIVATE_SEL(label));
+_MTL_INLINE NS::String* MTL::Fence::label() const
+{
+    return Object::sendMessage<NS::String*>(this, _MTL_PRIVATE_SEL(label));
 }
 
-_MTL_INLINE void MTL::Fence::setLabel(const NS::String *label) {
-  Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(setLabel_), label);
+_MTL_INLINE void MTL::Fence::setLabel(const NS::String* label)
+{
+    Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(setLabel_), label);
 }
