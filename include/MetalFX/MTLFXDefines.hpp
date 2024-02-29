@@ -1,6 +1,6 @@
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------
 //
-// Foundation/NSTypes.hpp
+// MetalFX/MTLFXDefines.hpp
 //
 // Copyright 2020-2023 Apple Inc.
 //
@@ -22,30 +22,20 @@
 
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-#include "NSDefines.hpp"
-
-#include <CoreFoundation/CoreFoundation.h>
-#include <cstdint>
+#include "../Foundation/NSDefines.hpp"
 
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-namespace NS
-{
-using TimeInterval = double;
+#define _MTLFX_EXPORT                           _NS_EXPORT
+#define _MTLFX_EXTERN                           _NS_EXTERN
+#define _MTLFX_INLINE                           _NS_INLINE
+#define _MTLFX_PACKED                           _NS_PACKED
 
-using Integer = std::intptr_t;
-using UInteger = std::uintptr_t;
+#define _MTLFX_CONST( type, name )              _NS_CONST( type, name )
+#define _MTLFX_ENUM( type, name )               _NS_ENUM( type, name )
+#define _MTLFX_OPTIONS( type, name )            _NS_OPTIONS( type, name )
 
-const Integer  IntegerMax = INTPTR_MAX;
-const Integer  IntegerMin = INTPTR_MIN;
-const UInteger UIntegerMax = UINTPTR_MAX;
-
-struct OperatingSystemVersion
-{
-    Integer majorVersion;
-    Integer minorVersion;
-    Integer patchVersion;
-} _NS_PACKED;
-}
+#define _MTLFX_VALIDATE_SIZE( mtlfx, name )     _NS_VALIDATE_SIZE( mtlfx, name )
+#define _MTLFX_VALIDATE_ENUM( mtlfx, name )     _NS_VALIDATE_ENUM( mtlfx, name )
 
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------

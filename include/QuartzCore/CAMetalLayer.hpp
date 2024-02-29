@@ -22,18 +22,9 @@
 
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-#include "Metal/MTLPixelFormat.hpp"
-#include "Metal/MTLTexture.hpp"
-// #include <CoreGraphics/CGGeometry.h>
-
-#define CGFLOAT_TYPE double
-#define CGFLOAT_IS_DOUBLE 1
-typedef CGFLOAT_TYPE CGFloat;
-struct CGSize {
-  CGFloat width;
-  CGFloat height;
-};
-typedef struct CGSize CGSize;
+#include "../Metal/MTLPixelFormat.hpp"
+#include "../Metal/MTLTexture.hpp"
+#include <CoreGraphics/CGGeometry.h>
 
 #include "CADefines.hpp"
 #include "CAMetalDrawable.hpp"
@@ -41,108 +32,100 @@ typedef struct CGSize CGSize;
 
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-namespace CA {
+namespace CA
+{
 
-class MetalLayer : public NS::Referencing<MetalLayer> {
+class MetalLayer : public NS::Referencing<MetalLayer>
+{
 public:
-  static class MetalLayer *layer();
+    static class MetalLayer* layer();
 
-  MTL::Device *device() const;
-  void setDevice(MTL::Device *device);
+    MTL::Device*             device() const;
+    void                     setDevice(MTL::Device* device);
 
-  MTL::PixelFormat pixelFormat() const;
-  void setPixelFormat(MTL::PixelFormat pixelFormat);
+    MTL::PixelFormat         pixelFormat() const;
+    void                     setPixelFormat(MTL::PixelFormat pixelFormat);
 
-  bool framebufferOnly() const;
-  void setFramebufferOnly(bool framebufferOnly);
+    bool                     framebufferOnly() const;
+    void                     setFramebufferOnly(bool framebufferOnly);
 
-  CGSize drawableSize() const;
-  void setDrawableSize(CGSize drawableSize);
+    CGSize                   drawableSize() const;
+    void                     setDrawableSize(CGSize drawableSize);
 
-  class MetalDrawable *nextDrawable();
-
-  bool allowsNextDrawableTimeout() const;
-  void setAllowsNextDrawableTimeout(bool allowsNextDrawableTimeout);
+    class MetalDrawable*     nextDrawable();
 };
 } // namespace CA
 
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------
-_CA_INLINE CA::MetalLayer *CA::MetalLayer::layer() {
-  return Object::sendMessage<CA::MetalLayer *>(_CA_PRIVATE_CLS(CAMetalLayer),
-                                               _CA_PRIVATE_SEL(layer));
+_CA_INLINE CA::MetalLayer* CA::MetalLayer::layer()
+{
+    return Object::sendMessage<CA::MetalLayer*>(_CA_PRIVATE_CLS(CAMetalLayer), _CA_PRIVATE_SEL(layer));
 }
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-_CA_INLINE MTL::Device *CA::MetalLayer::device() const {
-  return Object::sendMessage<MTL::Device *>(this, _CA_PRIVATE_SEL(device));
+_CA_INLINE MTL::Device* CA::MetalLayer::device() const
+{
+    return Object::sendMessage<MTL::Device*>(this, _CA_PRIVATE_SEL(device));
 }
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-_CA_INLINE void CA::MetalLayer::setDevice(MTL::Device *device) {
-  return Object::sendMessage<void>(this, _CA_PRIVATE_SEL(setDevice_), device);
-}
-
-//-------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-_CA_INLINE MTL::PixelFormat CA::MetalLayer::pixelFormat() const {
-  return Object::sendMessage<MTL::PixelFormat>(this,
-                                               _CA_PRIVATE_SEL(pixelFormat));
+_CA_INLINE void CA::MetalLayer::setDevice(MTL::Device* device)
+{
+    return Object::sendMessage<void>(this, _CA_PRIVATE_SEL(setDevice_), device);
 }
 
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-_CA_INLINE void CA::MetalLayer::setPixelFormat(MTL::PixelFormat pixelFormat) {
-  return Object::sendMessage<void>(this, _CA_PRIVATE_SEL(setPixelFormat_),
-                                   pixelFormat);
+_CA_INLINE MTL::PixelFormat CA::MetalLayer::pixelFormat() const
+{
+    return Object::sendMessage<MTL::PixelFormat>(this,
+        _CA_PRIVATE_SEL(pixelFormat));
 }
 
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-_CA_INLINE bool CA::MetalLayer::framebufferOnly() const {
-  return Object::sendMessage<bool>(this, _CA_PRIVATE_SEL(framebufferOnly));
+_CA_INLINE void CA::MetalLayer::setPixelFormat(MTL::PixelFormat pixelFormat)
+{
+    return Object::sendMessage<void>(this, _CA_PRIVATE_SEL(setPixelFormat_),
+        pixelFormat);
 }
 
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-_CA_INLINE void CA::MetalLayer::setFramebufferOnly(bool framebufferOnly) {
-  return Object::sendMessage<void>(this, _CA_PRIVATE_SEL(setFramebufferOnly_),
-                                   framebufferOnly);
+_CA_INLINE bool CA::MetalLayer::framebufferOnly() const
+{
+    return Object::sendMessage<bool>(this, _CA_PRIVATE_SEL(framebufferOnly));
 }
 
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-_CA_INLINE CGSize CA::MetalLayer::drawableSize() const {
-  return Object::sendMessage<CGSize>(this, _CA_PRIVATE_SEL(drawableSize));
+_CA_INLINE void CA::MetalLayer::setFramebufferOnly(bool framebufferOnly)
+{
+    return Object::sendMessage<void>(this, _CA_PRIVATE_SEL(setFramebufferOnly_),
+        framebufferOnly);
 }
 
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-_CA_INLINE void CA::MetalLayer::setDrawableSize(CGSize drawableSize) {
-  return Object::sendMessage<void>(this, _CA_PRIVATE_SEL(setDrawableSize_),
-                                   drawableSize);
+_CA_INLINE CGSize CA::MetalLayer::drawableSize() const
+{
+    return Object::sendMessage<CGSize>(this, _CA_PRIVATE_SEL(drawableSize));
 }
 
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-_CA_INLINE CA::MetalDrawable *CA::MetalLayer::nextDrawable() {
-  return Object::sendMessage<MetalDrawable *>(this,
-                                              _CA_PRIVATE_SEL(nextDrawable));
+_CA_INLINE void CA::MetalLayer::setDrawableSize(CGSize drawableSize)
+{
+    return Object::sendMessage<void>(this, _CA_PRIVATE_SEL(setDrawableSize_),
+        drawableSize);
 }
 
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-_CA_INLINE bool CA::MetalLayer::allowsNextDrawableTimeout() const {
-  return Object::sendMessage<bool>(this,
-                                   _CA_PRIVATE_SEL(allowsNextDrawableTimeout));
-}
-
-//-------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-_CA_INLINE void
-CA::MetalLayer::setAllowsNextDrawableTimeout(bool allowsNextDrawableTimeout) {
-  return Object::sendMessage<void>(this,
-                                   _CA_PRIVATE_SEL(allowsNextDrawableTimeout),
-                                   allowsNextDrawableTimeout);
+_CA_INLINE CA::MetalDrawable* CA::MetalLayer::nextDrawable()
+{
+    return Object::sendMessage<MetalDrawable*>(this,
+        _CA_PRIVATE_SEL(nextDrawable));
 }

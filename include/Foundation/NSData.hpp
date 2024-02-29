@@ -27,24 +27,28 @@
 
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-namespace NS {
-class Data : public Copying<Data> {
+namespace NS
+{
+class Data : public Copying<Data>
+{
 public:
-  void *mutableBytes() const;
-  UInteger length() const;
+    void*    mutableBytes() const;
+    UInteger length() const;
 };
-} // namespace NS
-
-//-------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-_NS_INLINE void *NS::Data::mutableBytes() const {
-  return Object::sendMessage<void *>(this, _NS_PRIVATE_SEL(mutableBytes));
 }
 
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-_NS_INLINE NS::UInteger NS::Data::length() const {
-  return Object::sendMessage<UInteger>(this, _NS_PRIVATE_SEL(length));
+_NS_INLINE void* NS::Data::mutableBytes() const
+{
+    return Object::sendMessage<void*>(this, _NS_PRIVATE_SEL(mutableBytes));
+}
+
+//-------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+_NS_INLINE NS::UInteger NS::Data::length() const
+{
+    return Object::sendMessage<UInteger>(this, _NS_PRIVATE_SEL(length));
 }
 
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------

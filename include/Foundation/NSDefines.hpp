@@ -34,16 +34,12 @@
 
 #define _NS_CONST(type, name) _NS_EXTERN type const name
 #define _NS_ENUM(type, name) enum name : type
-#define _NS_OPTIONS(type, name)                                                \
-  using name = type;                                                           \
-  enum : name
+#define _NS_OPTIONS(type, name) \
+    using name = type;          \
+    enum : name
 
 #define _NS_CAST_TO_UINT(value) static_cast<NS::UInteger>(value)
-#define _NS_VALIDATE_SIZE(ns, name)                                            \
-  static_assert(sizeof(ns::name) == sizeof(ns##name),                          \
-                "size mismatch " #ns "::" #name)
-#define _NS_VALIDATE_ENUM(ns, name)                                            \
-  static_assert(_NS_CAST_TO_UINT(ns::name) == _NS_CAST_TO_UINT(ns##name),      \
-                "value mismatch " #ns "::" #name)
+#define _NS_VALIDATE_SIZE(ns, name) static_assert(sizeof(ns::name) == sizeof(ns##name), "size mismatch " #ns "::" #name)
+#define _NS_VALIDATE_ENUM(ns, name) static_assert(_NS_CAST_TO_UINT(ns::name) == _NS_CAST_TO_UINT(ns##name), "value mismatch " #ns "::" #name)
 
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------
