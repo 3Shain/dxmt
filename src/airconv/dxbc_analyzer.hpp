@@ -14,10 +14,10 @@
 
 // #include "dxbc_utils.h"
 
-#include "air_builder.h"
-#include "air_constants.h"
-#include "air_metadata.h"
-#include "air_type.h"
+#include "air_builder.hpp"
+#include "air_constants.hpp"
+#include "air_metadata.hpp"
+#include "air_type.hpp"
 
 namespace dxmt {
 
@@ -43,7 +43,7 @@ struct __ShaderContext {
 };
 
 using PrologueHook = std::function<void(
-    llvm::Value *input, const __ShaderContext &context, AirBuilder &builder)>;
+    llvm::Value *input, const __ShaderContext &context, air::AirBuilder &builder)>;
 
 struct InputBinding {
   llvm::Type *type;
@@ -53,7 +53,7 @@ struct InputBinding {
 };
 
 using EpilogueHook =
-    std::function<llvm::Value *(const __ShaderContext &context, AirBuilder &)>;
+    std::function<llvm::Value *(const __ShaderContext &context, air::AirBuilder &)>;
 
 struct OutputBinding {
   llvm::Type *type;
@@ -64,8 +64,8 @@ struct OutputBinding {
 
 class DxbcAnalyzer {
 public:
-  DxbcAnalyzer(llvm::LLVMContext &context, AirType &types,
-               AirMetadata &metadata)
+  DxbcAnalyzer(llvm::LLVMContext &context, air::AirType &types,
+               air::AirMetadata &metadata)
       : context(context), types(types), metadata(metadata) {}
 
   void AnalyzeShader(D3D10ShaderBinary::CShaderCodeParser &Parse,
@@ -102,8 +102,8 @@ public:
 
 private:
   llvm::LLVMContext &context;
-  AirType &types;
-  AirMetadata &metadata;
+  air::AirType &types;
+  air::AirMetadata &metadata;
   unsigned m_DxbcMajor;
   unsigned m_DxbcMinor;
   D3D10_SB_TOKENIZED_PROGRAM_TYPE ShaderType;

@@ -1,12 +1,14 @@
-#include "./air_builder.h"
+#include "./air_builder.hpp"
+
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/Value.h"
+
 #include <array>
 #include <cstdint>
 
 using namespace llvm;
 
-namespace dxmt {
+namespace dxmt::air {
 
 constexpr std::array<uint8_t, 4> swizzleXyzw = {0, 1, 2, 3};
 

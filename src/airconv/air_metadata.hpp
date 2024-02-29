@@ -8,11 +8,11 @@
 #include <cstdint>
 #include <vector>
 
-#include "air_constants.h"
+#include "air_constants.hpp"
 
 using String = llvm::StringRef;
 
-namespace dxmt {
+namespace dxmt::air {
 
 class AirMetadata {
 

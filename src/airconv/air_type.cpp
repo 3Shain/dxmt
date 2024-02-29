@@ -1,11 +1,11 @@
-#include "air_type.h"
+#include "air_type.hpp"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Type.h"
 
 using namespace llvm;
 
-namespace dxmt {
+namespace dxmt::air {
 
 AirType::AirType(LLVMContext &context) : Context(context) {
 

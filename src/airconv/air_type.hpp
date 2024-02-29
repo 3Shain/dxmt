@@ -5,9 +5,9 @@
 #include "llvm/IR/Type.h"
 #include <map>
 
-#include "air_constants.h"
+#include "air_constants.hpp"
 
-namespace dxmt {
+namespace dxmt::air {
 
 class AirType {
 

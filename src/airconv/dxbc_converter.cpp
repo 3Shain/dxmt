@@ -1,15 +1,3 @@
-#include "dxbc_converter.h"
-#include "DXBCParser/d3d12tokenizedprogramformat.hpp"
-#include "air_builder.h"
-#include "air_constants.h"
-#include "air_operation.h"
-#include "airconv_public.h"
-#include "DXBCParser/BlobContainer.h"
-#include "DXBCParser/ShaderBinary.h"
-#include "DXBCParser/DXBCUtils.h"
-#include "dxbc_utils.h"
-#include "metallib.h"
-#include "sha256.hpp"
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
@@ -18,6 +6,7 @@
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/DerivedTypes.h"
+#include "llvm/IR/FMF.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/MDBuilder.h"
@@ -34,7 +23,22 @@
 #include <memory>
 #include <vector>
 
+#include "Metal/MTLHeaderBridge.hpp"
+#include "dxbc_converter.hpp"
+#include "DXBCParser/d3d12tokenizedprogramformat.hpp"
+#include "air_builder.hpp"
+#include "air_constants.hpp"
+#include "air_operation.hpp"
+#include "airconv_public.h"
+#include "DXBCParser/BlobContainer.h"
+#include "DXBCParser/ShaderBinary.h"
+#include "DXBCParser/DXBCUtils.h"
+#include "dxbc_utils.h"
+#include "metallib.h"
+#include "sha256.hpp"
+
 using namespace llvm;
+using namespace dxmt::air;
 
 namespace dxmt {
 
@@ -42,7 +46,7 @@ DxbcConverter::DxbcConverter(DxbcAnalyzer &analyzer, AirType &types,
                              llvm::LLVMContext &context, llvm::Module &pModule)
     : analyzer(analyzer), types(types), context_(context), pModule_(pModule),
       pBuilder_(context), airBuilder(types, pBuilder_),
-      airOp(types, context, pModule) {}
+      airOp(types, airBuilder, context, pModule_) {}
 
 MDNode *DxbcConverter::Pre(AirMetadata &metadata) {
 

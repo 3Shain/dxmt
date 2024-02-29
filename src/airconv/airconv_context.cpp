@@ -1,5 +1,5 @@
-#include "./dxbc_analyzer.h"
-#include "./dxbc_converter.h"
+#include "./dxbc_analyzer.hpp"
+#include "./dxbc_converter.hpp"
 #include "llvm/IR/Constant.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DerivedTypes.h"
@@ -13,10 +13,9 @@
 #include "DXBCParser/BlobContainer.h"
 #include "DXBCParser/ShaderBinary.h"
 #include "DXBCParser/DXBCUtils.h"
-#include "air_metadata.h"
-#include "air_type.h"
 
 using namespace llvm;
+using namespace dxmt::air;
 
 namespace dxmt {
 

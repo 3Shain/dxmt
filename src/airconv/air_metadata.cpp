@@ -1,6 +1,6 @@
 
-#include "air_metadata.h"
-#include "air_constants.h"
+#include "air_metadata.hpp"
+#include "air_constants.hpp"
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/StringRef.h"

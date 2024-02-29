@@ -4,8 +4,10 @@
 
 namespace dxmt::air {
 
-BETTER_ENUM(EType, uint32_t, uint, uint2, uint3, uint4, _bool, _float, float2,
-            float3, float4, sampler)
+BETTER_ENUM(EType, uint32_t, uint = 0x21, uint2 = 0x22, uint3 = 0x23,
+            uint4 = 0x24, _bool = 0x35, _float = 0x03, float2 = 0x04,
+            float3 = 0x05, float4 = 0x06, sampler = 0x3b,
+            texture = 0x3a /* considerred opaque pointer */, ptr = 0x3c)
 
 inline const char *getAirTypeName(EType type) {
   auto str = type._to_string();
@@ -55,8 +57,10 @@ BETTER_ENUM(EBufferAccess, uint32_t, read, read_write)
 
 BETTER_ENUM(EBufferAddrSpace, uint32_t, unknown, device, constant, threadgroup)
 
-BETTER_ENUM(EIntrinsicOp, uint32_t, dot, fast_exp2, fast_log2, fast_fract, fma,
-            fast_fmax, fast_fmom, fast_rint, fast_floor, fast_ceil, fast_round,
-            fast_sqrt, fast_sin, fast_cos, fast_fabs, reverse_bits, popcount);
+// BETTER_ENUM(EIntrinsicOp, uint32_t, dot, fast_exp2, fast_log2, fast_fract,
+// fma,
+//             fast_fmax, fast_fmom, fast_rint, fast_floor, fast_ceil,
+//             fast_round, fast_sqrt, fast_sin, fast_cos, fast_fabs,
+//             reverse_bits, popcount);
 
 } // namespace dxmt::air

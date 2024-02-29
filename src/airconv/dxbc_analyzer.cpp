@@ -1,8 +1,6 @@
-#include "dxbc_analyzer.h"
+#include "dxbc_analyzer.hpp"
 #include "DXBCParser/DXBCUtils.h"
 #include "DXBCParser/d3d12tokenizedprogramformat.hpp"
-#include "air_constants.h"
-#include "air_builder.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/Metadata.h"
@@ -12,35 +10,12 @@
 
 #include "dxbc_utils.h" // TODO: get rid of this. it's confusing
 
+#include "dxbc_instruction.hpp"
+
 using namespace llvm;
+using namespace dxmt::air;
 
 namespace dxmt {
-
-static air::ESampleInterpolation
-ToAirInterpolation(D3D10_SB_INTERPOLATION_MODE mode) {
-  switch (mode) {
-  case D3D10_SB_INTERPOLATION_LINEAR_NOPERSPECTIVE_SAMPLE:
-    return air::ESampleInterpolation::sample_no_perspective;
-  case D3D10_SB_INTERPOLATION_LINEAR_SAMPLE:
-    return air::ESampleInterpolation::sample_perspective;
-  case D3D10_SB_INTERPOLATION_LINEAR_NOPERSPECTIVE_CENTROID:
-    return air::ESampleInterpolation::centroid_no_perspective;
-  case D3D10_SB_INTERPOLATION_LINEAR_CENTROID:
-    return air::ESampleInterpolation::centroid_perspective;
-  case D3D10_SB_INTERPOLATION_CONSTANT:
-    return air::ESampleInterpolation::flat;
-  case D3D10_SB_INTERPOLATION_LINEAR:
-    return air::ESampleInterpolation::center_perspective;
-  case D3D10_SB_INTERPOLATION_LINEAR_NOPERSPECTIVE:
-    return air::ESampleInterpolation::center_no_perspective;
-  default:
-    assert(0 && "Unexpected D3D10_SB_INTERPOLATION_MODE");
-  }
-}
-
-static air::EInput ToAirInput(D3D10_SB_NAME systemValue) {}
-
-static air::EOutput ToAirOutput(D3D10_SB_NAME systemValue) {}
 
 void DxbcAnalyzer::AnalyzeShader(D3D10ShaderBinary::CShaderCodeParser &Parser,
                                  CSignatureParser &inputSig,
@@ -54,48 +29,16 @@ void DxbcAnalyzer::AnalyzeShader(D3D10ShaderBinary::CShaderCodeParser &Parser,
   while (!Parser.EndOfShader()) {
 
     Parser.ParseInstruction(&Inst);
+    dxbc::Instruciton inst(Inst);
 
     switch (Inst.OpCode()) {
       // why so fucking long enum name, it hurts my eyes.
       // because it's C enum. I miss my namespace.
     case D3D10_SB_OPCODE_DCL_CONSTANT_BUFFER: {
-      unsigned RangeID = Inst.m_Operands[0].m_Index[0].m_RegIndex;
-      unsigned CBufferSize = Inst.m_ConstantBufferDecl.Size;
-      switch (Inst.m_Operands[0].m_IndexDimension) {
-      case D3D10_SB_OPERAND_INDEX_2D: // SM 5.0-
-      {
-        constantBuffers.push_back({RangeID, CBufferSize});
-        break;
-      }
-      // case D3D10_SB_OPERAND_INDEX_3D: // SM 5.1
-      //   LB = Inst.m_Operands[0].m_Index[1].m_RegIndex;
-      //   RangeSize = Inst.m_Operands[0].m_Index[2].m_RegIndex != UINT_MAX
-      //                   ? Inst.m_Operands[0].m_Index[2].m_RegIndex - LB + 1
-      //                   : UINT_MAX;
-      //   break;
-      default:
-        DXASSERT_DXBC(false);
-      }
-      // DXASSERT(false, "Unhandled declaration (tbd)");
+      constantBuffers.push_back({inst.dclBindingSlot(), inst.dclConstSize()});
       break;
     }
     case D3D10_SB_OPCODE_DCL_SAMPLER: {
-      unsigned RangeID = Inst.m_Operands[0].m_Index[0].m_RegIndex;
-      unsigned LB, RangeSize;
-      switch (Inst.m_Operands[0].m_IndexDimension) {
-      case D3D10_SB_OPERAND_INDEX_1D: // SM 5.0-
-        LB = RangeID;
-        RangeSize = 1;
-        break;
-      // case D3D10_SB_OPERAND_INDEX_3D: // SM 5.1
-      //   LB = Inst.m_Operands[0].m_Index[1].m_RegIndex;
-      //   RangeSize = Inst.m_Operands[0].m_Index[2].m_RegIndex != UINT_MAX
-      //                   ? Inst.m_Operands[0].m_Index[2].m_RegIndex - LB + 1
-      //                   : UINT_MAX;
-      //   break;
-      default:
-        DXASSERT_DXBC(false);
-      }
       DXASSERT(false, "Unhandled declaration (tbd)");
       break;
     }
@@ -103,17 +46,6 @@ void DxbcAnalyzer::AnalyzeShader(D3D10ShaderBinary::CShaderCodeParser &Parser,
     case D3D10_SB_OPCODE_DCL_RESOURCE:
     case D3D11_SB_OPCODE_DCL_RESOURCE_RAW:
     case D3D11_SB_OPCODE_DCL_RESOURCE_STRUCTURED: {
-      unsigned RangeID = Inst.m_Operands[0].m_Index[0].m_RegIndex;
-      unsigned LB, RangeSize;
-      if (IsSM51Plus()) {
-        LB = Inst.m_Operands[0].m_Index[1].m_RegIndex;
-        RangeSize = Inst.m_Operands[0].m_Index[2].m_RegIndex != UINT_MAX
-                        ? Inst.m_Operands[0].m_Index[2].m_RegIndex - LB + 1
-                        : UINT_MAX;
-      } else {
-        LB = RangeID;
-        RangeSize = 1;
-      }
       DXASSERT(false, "Unhandled declaration (tbd)");
       break;
     }
@@ -121,17 +53,6 @@ void DxbcAnalyzer::AnalyzeShader(D3D10ShaderBinary::CShaderCodeParser &Parser,
     case D3D11_SB_OPCODE_DCL_UNORDERED_ACCESS_VIEW_TYPED:
     case D3D11_SB_OPCODE_DCL_UNORDERED_ACCESS_VIEW_RAW:
     case D3D11_SB_OPCODE_DCL_UNORDERED_ACCESS_VIEW_STRUCTURED: {
-      unsigned RangeID = Inst.m_Operands[0].m_Index[0].m_RegIndex;
-      unsigned LB, RangeSize;
-      if (IsSM51Plus()) {
-        LB = Inst.m_Operands[0].m_Index[1].m_RegIndex;
-        RangeSize = Inst.m_Operands[0].m_Index[2].m_RegIndex != UINT_MAX
-                        ? Inst.m_Operands[0].m_Index[2].m_RegIndex - LB + 1
-                        : UINT_MAX;
-      } else {
-        LB = RangeID;
-        RangeSize = 1;
-      }
       DXASSERT(false, "Unhandled declaration (tbd)");
       break;
     }
@@ -202,8 +123,8 @@ void DxbcAnalyzer::AnalyzeShader(D3D10ShaderBinary::CShaderCodeParser &Parser,
     }
 
     case D3D10_SB_OPCODE_DCL_INPUT_SGV: {
-      unsigned reg = Inst.m_Operands[0].m_Index[0].m_RegIndex;
-      auto mask = Inst.m_Operands[0].m_WriteMask >> 4;
+      unsigned reg = inst.dclBindingSlot();
+      auto mask = inst.dclBindingMask();
       // auto MinPrecision = Inst.m_Operands[0].m_MinPrecision; // not used
       auto sgv = Inst.m_InputDeclSGV.Name;
       PrologueHook prologue = [=](auto value, auto context,
@@ -224,8 +145,7 @@ void DxbcAnalyzer::AnalyzeShader(D3D10ShaderBinary::CShaderCodeParser &Parser,
         break;
       }
       case D3D10_SB_NAME_PRIMITIVE_ID: {
-        if (!IsPS())
-          assert(0 && "PrimitiveID is allowed only in pixel shader");
+        assert(IsPS() && "PrimitiveID is allowed only in pixel shader");
         auto name = "primitiveId";
         inputs.push_back({
             types.tyInt32,
@@ -282,18 +202,14 @@ void DxbcAnalyzer::AnalyzeShader(D3D10ShaderBinary::CShaderCodeParser &Parser,
     }
 
     case D3D10_SB_OPCODE_DCL_INPUT_PS: {
-      unsigned reg = Inst.m_Operands[0].m_Index[0].m_RegIndex;
-      auto mask = Inst.m_Operands[0].m_WriteMask >> 4;
-      auto interpolation = Inst.m_InputPSDecl.InterpolationMode;
-      // auto MinPrecision = Inst.m_Operands[0].m_MinPrecision; // not used
-      // D3D11_SIGNATURE_PARAMETER* W;
-      // inputSig.FindParameter()
+      auto reg = inst.dclBindingSlot();
+      auto mask = inst.dclBindingMask();
       auto name = (Twine("reg") + Twine(reg)).str();
       //
       inputs.push_back(
           {types.tyFloatV4,
            metadata.createUserFragmentInput(inputs.size(), name,
-                                            ToAirInterpolation(interpolation),
+                                            inst.interpolation(),
                                             air::EType::float4, name),
            name, [=](auto value, auto context, AirBuilder &builder) {
              builder.CreateGenericRegisterStore(
@@ -304,8 +220,6 @@ void DxbcAnalyzer::AnalyzeShader(D3D10ShaderBinary::CShaderCodeParser &Parser,
     }
 
     case D3D10_SB_OPCODE_DCL_INPUT_PS_SGV: {
-      unsigned reg = Inst.m_Operands[0].m_Index[0].m_RegIndex;
-      auto mask = Inst.m_Operands[0].m_WriteMask >> 4;
       // auto MinPrecision = Inst.m_Operands[0].m_MinPrecision; // not used
       auto siv = Inst.m_InputPSDeclSGV.Name;
       auto interpolation = Inst.m_InputPSDeclSGV.InterpolationMode;
@@ -325,11 +239,8 @@ void DxbcAnalyzer::AnalyzeShader(D3D10ShaderBinary::CShaderCodeParser &Parser,
     }
 
     case D3D10_SB_OPCODE_DCL_INPUT_PS_SIV: {
-      unsigned reg = Inst.m_Operands[0].m_Index[0].m_RegIndex;
-      auto mask = Inst.m_Operands[0].m_WriteMask >> 4;
       // auto MinPrecision = Inst.m_Operands[0].m_MinPrecision; // not used
       auto siv = Inst.m_InputPSDeclSIV.Name;
-      auto interpolation = Inst.m_InputPSDeclSIV.InterpolationMode;
       switch (siv) {
       case D3D10_SB_NAME_RENDER_TARGET_ARRAY_INDEX:
         break;
@@ -357,8 +268,8 @@ void DxbcAnalyzer::AnalyzeShader(D3D10ShaderBinary::CShaderCodeParser &Parser,
 
       default: {
         // normal output register
-        auto reg = Inst.m_Operands[0].m_Index[0].m_RegIndex;
-        auto mask = Inst.m_Operands[0].m_WriteMask >> 4;
+        auto reg = inst.dclBindingSlot();
+        auto mask = inst.dclBindingMask();
         auto name = (Twine("reg") + Twine(reg)).str();
         // TODO: find SIGNATURE_ELEMENT
         if (IsPS()) {
@@ -397,8 +308,8 @@ void DxbcAnalyzer::AnalyzeShader(D3D10ShaderBinary::CShaderCodeParser &Parser,
       break;
     }
     case D3D10_SB_OPCODE_DCL_OUTPUT_SIV: {
-      unsigned reg = Inst.m_Operands[0].m_Index[0].m_RegIndex;
-      auto mask = Inst.m_Operands[0].m_WriteMask >> 4;
+      auto reg = inst.dclBindingSlot();
+      auto mask = inst.dclBindingMask();
       // auto MinPrecision = Inst.m_Operands[0].m_MinPrecision; // not used
       auto siv = Inst.m_OutputDeclSIV.Name;
       EpilogueHook epilogue = [=](auto a, AirBuilder &builder) {
@@ -456,9 +367,6 @@ void DxbcAnalyzer::AnalyzeShader(D3D10ShaderBinary::CShaderCodeParser &Parser,
     }
 
     case D3D10_SB_OPCODE_DCL_INDEXABLE_TEMP: {
-      unsigned reg = Inst.m_IndexableTempDecl.IndexableTempNumber;
-      unsigned numRegs = Inst.m_IndexableTempDecl.NumRegisters;
-      unsigned mask = Inst.m_IndexableTempDecl.Mask;
       // indexableTemps.insert()
       DXASSERT(false, "Unhandled declaration (tbd)");
       break;

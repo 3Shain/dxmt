@@ -1,15 +1,13 @@
 
 #pragma once
-#include "air_type.h"
+#include "air_type.hpp"
 #include "llvm/IR/Constant.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Type.h"
 #include "llvm/IR/Value.h"
 #include <cstdint>
-namespace dxmt {
 
-//
-
+namespace dxmt::air {
 // IRBuilder wrapper with helper functions
 class AirBuilder {
 public:

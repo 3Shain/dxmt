@@ -1,6 +1,7 @@
-#include "air_operation.h"
-#include "air_constants.h"
-#include "air_type.h"
+#include "air_operation.hpp"
+#include "air_builder.hpp"
+#include "air_constants.hpp"
+#include "air_type.hpp"
 #include "llvm/IR/Attributes.h"
 #include "llvm/IR/CallingConv.h"
 #include "llvm/IR/DerivedTypes.h"
@@ -9,27 +10,11 @@
 
 using namespace llvm;
 
-namespace dxmt {
+namespace dxmt::air {
 
-AirOp::AirOp(AirType &types, llvm::LLVMContext &context, llvm::Module &module)
-    : types(types), context(context), module(module) {}
-
-FunctionCallee AirOp::GetUnaryOp(air::EIntrinsicOp op, air::EType overload) {
-  //   auto attribtues = {Attribute::get(context,
-  //   Attribute::AttrKind::NoUnwind),
-  //                      Attribute::get(context,
-  //                      Attribute::AttrKind::WillReturn),
-  //                      Attribute::get(context, Attribute::AttrKind::Memory)};
-  switch (op) {
-  case air::EIntrinsicOp::fast_fabs:
-    // assembly name
-    // module.getOrInsertFunction()
-  default:
-    llvm::outs() << op;
-    assert(0 && "");
-    break;
-  }
-}
+AirOp::AirOp(AirType &types, AirBuilder &builder, llvm::LLVMContext &context,
+             llvm::Module &module)
+    : types(types), builder(builder), context(context), module(module) {}
 
 FunctionCallee AirOp::GetDotProduct() {
   //  auto attribtues = {Attribute::get(context,
@@ -82,4 +67,4 @@ Twine AirOp::GetOverloadSymbolSegment(air::EType overload) {
   }
 }
 
-} // namespace dxmt
+} // namespace dxmt::air

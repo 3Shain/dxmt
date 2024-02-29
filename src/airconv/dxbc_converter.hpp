@@ -16,30 +16,26 @@
 #include "llvm/Support/raw_ostream.h"
 #include "DXBCParser/ShaderBinary.h"
 
-#include "air_builder.h"
-#include "air_constants.h"
-#include "air_metadata.h"
-#include "air_operation.h"
-#include "air_type.h"
-#include "dxbc_analyzer.h"
-#include "dxbc_utils.h"
+#include "dxbc_analyzer.hpp"
+
+#include "air_operation.hpp"
 
 namespace dxmt {
 
 class DxbcConverter {
 
 public:
-  DxbcConverter(DxbcAnalyzer &analyzer, AirType &types,
+  DxbcConverter(DxbcAnalyzer &analyzer, air::AirType &types,
                 llvm::LLVMContext &context, llvm::Module &pModule);
 
 protected:
   DxbcAnalyzer &analyzer;
-  AirType &types;
+  air::AirType &types;
   llvm::LLVMContext &context_;
   llvm::Module &pModule_;
   llvm::IRBuilder<> pBuilder_;
-  AirBuilder airBuilder;
-  AirOp airOp;
+  air::AirBuilder airBuilder;
+  air::AirOp airOp;
 
   unsigned m_DxbcMajor;
   unsigned m_DxbcMinor;
@@ -50,9 +46,9 @@ protected:
   __ShaderContext shaderContext;
 
 public:
-  llvm::MDNode *Pre(AirMetadata &metadata);
+  llvm::MDNode *Pre(air::AirMetadata &metadata);
 
-  llvm::MDNode *Post(AirMetadata &metadata, llvm::MDNode *input);
+  llvm::MDNode *Post(air::AirMetadata &metadata, llvm::MDNode *input);
 
   void ConvertInstructions(D3D10ShaderBinary::CShaderCodeParser &Parser);
 
