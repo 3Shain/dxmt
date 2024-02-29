@@ -24,7 +24,7 @@
 
 #include "NSDefines.hpp"
 
-#include <CoreFoundation/CoreFoundation.h>
+// #include <CoreFoundation/CoreFoundation.h>
 #include <cstdint>
 
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------

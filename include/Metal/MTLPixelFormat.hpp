@@ -168,6 +168,7 @@ _MTL_ENUM(NS::UInteger, PixelFormat) {
     PixelFormatDepth32Float_Stencil8 = 260,
     PixelFormatX32_Stencil8 = 261,
     PixelFormatX24_Stencil8 = 262,
+    PixelFormatCount,
 };
 
 }

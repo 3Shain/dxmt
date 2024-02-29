@@ -34,10 +34,8 @@ const void *__wine_unix_call_funcs[] = {
     &objc_getProtocol,
     _NSConcreteGlobalBlock, // 4
     _NSConcreteStackBlock,  // 5
-    // &_Block_object_assign,  // 6
-    0,
-    // &_Block_object_dispose, // 7
-    0,
+    &_Block_object_assign,  // 6
+    &_Block_object_dispose, // 7
     &dlsym,                 // 8
     &MTLCreateSystemDefaultDevice,
     &MTLCopyAllDevices,

@@ -26,8 +26,10 @@
 #include "NSPrivate.hpp"
 #include "NSTypes.hpp"
 
-#include <objc/message.h>
-#include <objc/runtime.h>
+// #include <objc/message.h>
+#include "objc-wrapper/message.h"
+// #include <objc/runtime.h>
+#include "objc-wrapper/runtime.h"
 
 #include <type_traits>
 
@@ -186,7 +188,7 @@ _NS_INLINE _Ret NS::Object::sendMessage(const void* pObj, SEL selector, _Args...
 #if (defined(__i386__) || defined(__x86_64__))
     if constexpr (std::is_floating_point<_Ret>())
     {
-        using SendMessageProcFpret = _Ret (*)(const void*, SEL, _Args...);
+        using SendMessageProcFpret = _Ret (SYSV_ABI *)(const void*, SEL, _Args...);
 
         const SendMessageProcFpret pProc = reinterpret_cast<SendMessageProcFpret>(&objc_msgSend_fpret);
 
@@ -197,7 +199,7 @@ _NS_INLINE _Ret NS::Object::sendMessage(const void* pObj, SEL selector, _Args...
 #if !defined(__arm64__)
         if constexpr (doesRequireMsgSendStret<_Ret>())
     {
-        using SendMessageProcStret = void (*)(_Ret*, const void*, SEL, _Args...);
+        using SendMessageProcStret = void (SYSV_ABI *)(_Ret*, const void*, SEL, _Args...);
 
         const SendMessageProcStret pProc = reinterpret_cast<SendMessageProcStret>(&objc_msgSend_stret);
         _Ret                       ret;
@@ -209,7 +211,7 @@ _NS_INLINE _Ret NS::Object::sendMessage(const void* pObj, SEL selector, _Args...
     else
 #endif // !defined( __arm64__ )
     {
-        using SendMessageProc = _Ret (*)(const void*, SEL, _Args...);
+        using SendMessageProc = _Ret (SYSV_ABI *)(const void*, SEL, _Args...);
 
         const SendMessageProc pProc = reinterpret_cast<SendMessageProc>(&objc_msgSend);
 

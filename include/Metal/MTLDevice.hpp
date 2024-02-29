@@ -32,7 +32,8 @@
 #include "MTLResource.hpp"
 #include "MTLTexture.hpp"
 #include "MTLTypes.hpp"
-#include <IOSurface/IOSurfaceRef.h>
+// #include <IOSurface/IOSurfaceRef.h>
+#include "objc-wrapper/dispatch.h"
 #include <functional>
 
 namespace MTL
@@ -620,20 +621,16 @@ extern "C" NS::Array*   MTLCopyAllDevicesWithObserver(NS::Object**, MTL::DeviceN
 
 extern "C" void         MTLRemoveDeviceObserver(const NS::Object*);
 
-#include <TargetConditionals.h>
+// #include <TargetConditionals.h>
 
 _NS_EXPORT MTL::Device* MTL::CreateSystemDefaultDevice()
 {
     return ::MTLCreateSystemDefaultDevice();
 }
 
-_NS_EXPORT NS::Array* MTL::CopyAllDevices()
+_NS_EXPORT __attribute__((dllexport)) NS::Array* MTL::CopyAllDevices()
 {
-#if TARGET_OS_OSX
     return ::MTLCopyAllDevices();
-#else
-    return nullptr;
-#endif // TARGET_OS_OSX
 }
 
 _NS_EXPORT NS::Array* MTL::CopyAllDevicesWithObserver(NS::Object** pOutObserver, DeviceNotificationHandlerBlock handler)
@@ -657,9 +654,7 @@ _NS_EXPORT NS::Array* MTL::CopyAllDevicesWithObserver(NS::Object** pOutObserver,
 
 _NS_EXPORT void MTL::RemoveDeviceObserver(const NS::Object* pObserver)
 {
-#if TARGET_OS_OSX
     ::MTLRemoveDeviceObserver(pObserver);
-#endif // TARGET_OS_OSX
 }
 
 #endif // MTL_PRIVATE_IMPLEMENTATION

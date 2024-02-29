@@ -30,7 +30,9 @@
 #include "MTLResource.hpp"
 #include "MTLTexture.hpp"
 #include "MTLTypes.hpp"
-#include <IOSurface/IOSurfaceRef.h>
+// #include <IOSurface/IOSurfaceRef.h>
+
+typedef struct __IOSurface *IOSurfaceRef;
 
 namespace MTL
 {
