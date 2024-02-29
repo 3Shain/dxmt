@@ -27,8 +27,9 @@ AirType::AirType(LLVMContext &context) : Context(context) {
   auto tyShortV2 = FixedVectorType::get(tyShort, 2);
   auto tyFloatV2 = FixedVectorType::get(tyFloat, 2);
 
-  tyDevicePtr = PointerType::get(context, 1);
-  tyConstantPtr = PointerType::get(context, 2);
+  auto tyOpaque = StructType::create(context, "opaque");
+  tyDevicePtr = PointerType::get(tyOpaque, 1);
+  tyConstantPtr = PointerType::get(tyOpaque, 2);
   //   auto tyTGSMPtr = PointerType::get(context, 3); // TODO: really?
 
   typeContext = {

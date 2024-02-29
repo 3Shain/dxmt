@@ -119,7 +119,7 @@ public:
         factory_(pFactory), presentation_count_(0), desc_(*pDesc),
         fullscreen_desc_(*pFullscreenDesc) {
 
-    swapchain_.layer()->setAllowsNextDrawableTimeout(false);
+    // swapchain_.layer()->setAllowsNextDrawableTimeout(false);
 
     D3D11_TEXTURE2D_DESC desc;
     desc.SampleDesc = {.Count = 1, .Quality = 0};
@@ -345,11 +345,11 @@ public:
                                 MTL::CommandBuffer *cbuffer) {
       // swapchain_.GetCurrentFrameBackBuffer(); // ensure not null
       cbuffer->presentDrawable(swapchain_.CurrentDrawable());
-      cbuffer->addCompletedHandler(
-          [presentation_count_](void *cbuffer) {
-            unix_printf("A frame end. pc: %d\n", presentation_count_);
-            // dispatch_semaphore_signal(semaphore);
-          });
+      // cbuffer->addCompletedHandler(
+      //     [presentation_count_](void *cbuffer) {
+      //       unix_printf("A frame end. pc: %d\n", presentation_count_);
+      //       // dispatch_semaphore_signal(semaphore);
+      //     });
           // assert(0);
     });
     swapchain_.Swap();
