@@ -26,7 +26,7 @@
 #include "Metal/MTLLibrary.hpp"
 #include "mtld11_resource.hpp"
 
-#include "objc-wrapper/block.hpp"
+// #include "objc-wrapper/block.hpp"
 #include <vector>
 #include "../dxmt/dxmt_pipeline.hpp"
 

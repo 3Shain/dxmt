@@ -145,7 +145,7 @@ HRESULT STDMETHODCALLTYPE MTLDXGIFactory::CreateSwapChainForComposition(
 HRESULT STDMETHODCALLTYPE
 MTLDXGIFactory::EnumAdapters1(UINT Adapter, IDXGIAdapter1 **ppAdapter) {
 
-  auto devices = MTLCopyAllDevices();
+  auto devices = MTL::CopyAllDevices();
 
   if (Adapter >= devices->count()) {
     return DXGI_ERROR_INVALID_CALL;
