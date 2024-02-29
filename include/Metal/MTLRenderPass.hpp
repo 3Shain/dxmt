@@ -27,6 +27,7 @@
 #include <Foundation/Foundation.hpp>
 
 #include "MTLRenderPass.hpp"
+#include "MTLTypes.hpp"
 
 namespace MTL
 {

@@ -24,7 +24,8 @@
 
 #include "CADefines.hpp"
 
-#include <objc/runtime.h>
+// #include <objc/runtime.h>
+#include "objc-wrapper/runtime.h"
 
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -38,18 +39,14 @@
 #ifdef METALCPP_SYMBOL_VISIBILITY_HIDDEN
 #define _CA_PRIVATE_VISIBILITY __attribute__((visibility("hidden")))
 #else
-#define _CA_PRIVATE_VISIBILITY __attribute__((visibility("default")))
+#define _CA_PRIVATE_VISIBILITY __attribute__((visibility("default"),dllexport))
 #endif // METALCPP_SYMBOL_VISIBILITY_HIDDEN
 
 #define _CA_PRIVATE_IMPORT __attribute__((weak_import))
 
-#ifdef __OBJC__
-#define _CA_PRIVATE_OBJC_LOOKUP_CLASS(symbol) ((__bridge void*)objc_lookUpClass(#symbol))
-#define _CA_PRIVATE_OBJC_GET_PROTOCOL(symbol) ((__bridge void*)objc_getProtocol(#symbol))
-#else
 #define _CA_PRIVATE_OBJC_LOOKUP_CLASS(symbol) objc_lookUpClass(#symbol)
 #define _CA_PRIVATE_OBJC_GET_PROTOCOL(symbol) objc_getProtocol(#symbol)
-#endif // __OBJC__
+
 
 #define _CA_PRIVATE_DEF_CLS(symbol) void* s_k##symbol _CA_PRIVATE_VISIBILITY = _CA_PRIVATE_OBJC_LOOKUP_CLASS(symbol)
 #define _CA_PRIVATE_DEF_PRO(symbol) void* s_k##symbol _CA_PRIVATE_VISIBILITY = _CA_PRIVATE_OBJC_GET_PROTOCOL(symbol)

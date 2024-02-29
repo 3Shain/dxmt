@@ -29,6 +29,7 @@
 #include "MTLCommandBuffer.hpp"
 #include <functional>
 
+typedef double CFTimeInterval;
 namespace MTL
 {
 _MTL_ENUM(NS::UInteger, CommandBufferStatus) {

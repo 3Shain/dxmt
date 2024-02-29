@@ -25,6 +25,7 @@ compiler_args = [
   '-Wno-extern-c-compat',
   '-Wno-unused-const-variable',
   '-Wno-missing-braces',
+  '-fblocks',
 ]
 
 link_args = []

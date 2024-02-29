@@ -24,7 +24,16 @@
 
 #include "../Metal/MTLPixelFormat.hpp"
 #include "../Metal/MTLTexture.hpp"
-#include <CoreGraphics/CGGeometry.h>
+// #include <CoreGraphics/CGGeometry.h>
+
+#define CGFLOAT_TYPE double
+#define CGFLOAT_IS_DOUBLE 1
+typedef CGFLOAT_TYPE CGFloat;
+struct CGSize {
+  CGFloat width;
+  CGFloat height;
+};
+typedef struct CGSize CGSize;
 
 #include "CADefines.hpp"
 #include "CAMetalDrawable.hpp"

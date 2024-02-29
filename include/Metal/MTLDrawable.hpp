@@ -26,7 +26,8 @@
 
 #include <Foundation/Foundation.hpp>
 
-#include <CoreFoundation/CoreFoundation.h>
+// #include "CoreFoundation/CoreFoundation.h"
+typedef double CFTimeInterval;
 #include <functional>
 
 namespace MTL
