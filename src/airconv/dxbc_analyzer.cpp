@@ -8,6 +8,7 @@
 #include <tuple>
 #include <vector>
 
+#include "dxbc_signature.hpp"
 #include "dxbc_utils.h" // TODO: get rid of this. it's confusing
 
 #include "dxbc_instruction.hpp"
@@ -18,8 +19,8 @@ using namespace dxmt::air;
 namespace dxmt {
 
 void DxbcAnalyzer::AnalyzeShader(D3D10ShaderBinary::CShaderCodeParser &Parser,
-                                 CSignatureParser &inputSig,
-                                 CSignatureParser &outputsig) {
+                                 const SignatureFinder &input,
+                                 const SignatureFinder &output) {
 
   ShaderType = Parser.ShaderType();
   m_DxbcMajor = Parser.ShaderMajorVersion();
@@ -102,7 +103,10 @@ void DxbcAnalyzer::AnalyzeShader(D3D10ShaderBinary::CShaderCodeParser &Parser,
 
         if (RegType == D3D10_SB_OPERAND_TYPE_INPUT) {
           auto mask = Inst.m_Operands[0].m_WriteMask >> 4;
-          auto name = (Twine("reg") + Twine(reg)).str();
+          auto sig = input([=](dxbc::Signature sig) {
+            return (sig.reg() == reg) && ((sig.mask() & mask) != 0);
+          });
+          auto name = sig.fullSemanticString();
           //
           inputs.push_back(
               {types.tyFloatV4,
@@ -204,7 +208,10 @@ void DxbcAnalyzer::AnalyzeShader(D3D10ShaderBinary::CShaderCodeParser &Parser,
     case D3D10_SB_OPCODE_DCL_INPUT_PS: {
       auto reg = inst.dclBindingSlot();
       auto mask = inst.dclBindingMask();
-      auto name = (Twine("reg") + Twine(reg)).str();
+      auto sig = input([=](dxbc::Signature sig) {
+        return (sig.reg() == reg) && ((sig.mask() & mask) != 0);
+      });
+      auto name = sig.fullSemanticString();
       //
       inputs.push_back(
           {types.tyFloatV4,
@@ -270,29 +277,30 @@ void DxbcAnalyzer::AnalyzeShader(D3D10ShaderBinary::CShaderCodeParser &Parser,
         // normal output register
         auto reg = inst.dclBindingSlot();
         auto mask = inst.dclBindingMask();
-        auto name = (Twine("reg") + Twine(reg)).str();
-        // TODO: find SIGNATURE_ELEMENT
+        auto sig = output([=](dxbc::Signature sig) {
+          return (sig.reg() == reg) && ((sig.mask() & mask) != 0);
+        });
+        auto name = sig.fullSemanticString();
+
         if (IsPS()) {
-          // write to color(reg)
           outputs.push_back({types.tyFloatV4,
                              metadata.createRenderTargetOutput(
-                                 reg /* should be SemanticIndex? */, 0,
+                                 reg /* TODO: dual source blending */, 0,
                                  air::EType::float4, name),
-                             name, [=](auto a, AirBuilder &builder) {
+                             name, [=](auto context, AirBuilder &builder) {
                                return builder.CreateGenericRegisterLoad(
-                                   a.outputRegs, a.tyOutputRegs, reg,
-                                   types.tyFloatV4,
+                                   context.outputRegs, context.tyOutputRegs,
+                                   reg, types.tyFloatV4,
                                    builder.MaskToSwizzle(mask));
                              }});
         } else {
-          // write to user(reg)
           outputs.push_back(
               {types.tyFloatV4,
                metadata.createUserVertexOutput(name, air::EType::float4, name),
-               name, [=](auto a, AirBuilder &builder) {
+               name, [=](auto context, AirBuilder &builder) {
                  return builder.CreateGenericRegisterLoad(
-                     a.outputRegs, a.tyOutputRegs, reg, types.tyFloatV4,
-                     builder.MaskToSwizzle(mask));
+                     context.outputRegs, context.tyOutputRegs, reg,
+                     types.tyFloatV4, builder.MaskToSwizzle(mask));
                }});
         }
         maxOutputRegister = std::max(reg + 1, maxOutputRegister);

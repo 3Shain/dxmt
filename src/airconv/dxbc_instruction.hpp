@@ -339,9 +339,9 @@ public:
   };
 
   _INLINE uint32_t reg(){
-    // switch (operand->m_Type) {
-    //     case 
-    // }
+      // switch (operand->m_Type) {
+      //     case
+      // }
   };
 
 private:
@@ -409,6 +409,9 @@ public:
   _INLINE uint32_t dclBindingSlot() {
     if (opCode() == Op::DCL_INDEXABLE_TEMP) {
       return instruction->m_IndexableTempDecl.IndexableTempNumber;
+    }
+    if (opCode() == Op::DCL_CONSTANT_BUFFER) {
+      return instruction->m_Operands[0].m_Index[0].m_RegIndex;
     }
     switch (instruction->m_Operands[0].m_IndexDimension) {
     case D3D10_SB_OPERAND_INDEX_1D: // SM 5.0-

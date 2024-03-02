@@ -54,8 +54,6 @@ public:
 
   void Optimize(llvm::OptimizationLevel leve);
 
-  void SerializeAIR(llvm::raw_ostream &OS);
-
   /* internal helpers */
 
   llvm::Value *LoadOperand(const D3D10ShaderBinary::CInstruction &Inst,

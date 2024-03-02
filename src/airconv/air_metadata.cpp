@@ -10,6 +10,7 @@
 #include <sstream>
 
 using namespace llvm;
+using namespace dxmt::air;
 
 namespace dxmt {
 

@@ -1,3 +1,5 @@
+#include "dxbc_converter.hpp"
+
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
@@ -23,19 +25,10 @@
 #include <memory>
 #include <vector>
 
-#include "Metal/MTLHeaderBridge.hpp"
-#include "dxbc_converter.hpp"
-#include "DXBCParser/d3d12tokenizedprogramformat.hpp"
 #include "air_builder.hpp"
 #include "air_constants.hpp"
 #include "air_operation.hpp"
-#include "airconv_public.h"
-#include "DXBCParser/BlobContainer.h"
-#include "DXBCParser/ShaderBinary.h"
-#include "DXBCParser/DXBCUtils.h"
 #include "dxbc_utils.h"
-#include "metallib.h"
-#include "sha256.hpp"
 
 using namespace llvm;
 using namespace dxmt::air;
@@ -446,143 +439,6 @@ void DxbcConverter::Optimize(llvm::OptimizationLevel level) {
 
   // Optimize the IR!
   MPM.run(pModule_, MAM);
-}
-
-void DxbcConverter::SerializeAIR(raw_ostream &OS) {
-  std::string funciton_name(function->getName());
-  MTLBHeader header;
-  header.Magic = MTLB_Magic;
-
-  SmallVector<char, 0> bitcode;
-  SmallVector<char, 0> public_metadata;
-  SmallVector<char, 0> private_metadata;
-  SmallVector<char, 0> function_def;
-
-  raw_svector_ostream bitcode_stream(bitcode);
-  ModuleHash module_hash;
-  WriteBitcodeToFile(pModule_, bitcode_stream, false, nullptr, true,
-                     &module_hash);
-
-  raw_svector_ostream public_metadata_stream(public_metadata);
-
-  raw_svector_ostream private_metadata_stream(private_metadata);
-
-  raw_svector_ostream function_def_stream(function_def);
-  function_def_stream.write("NAME", 4);
-  uint16_t size = funciton_name.size() + 1;
-  function_def_stream.write((const char *)&size, 2);
-  function_def_stream.write(funciton_name.c_str(), funciton_name.size() + 1);
-
-  MTLB_TYPE_TAG type_tag{
-      .type = analyzer.IsVS()   ? MTLB_FunctionType::MTLB_VertexFunction
-              : analyzer.IsPS() ? MTLB_FunctionType::MTLB_FragmentFunction
-              : analyzer.IsCS() ? MTLB_KernelFunction
-                                : (assert(0), MTLB_KernelFunction)};
-  function_def_stream.write((const char *)&type_tag, sizeof(type_tag));
-
-  MTLB_HASH_TAG hash_tag{.hash = {0}};
-
-  hash_tag.hash =
-      compute_sha256_hash((const uint8_t *)bitcode.data(), bitcode.size());
-
-  function_def_stream.write((const char *)&hash_tag, sizeof(hash_tag));
-
-  MTLB_MDSZ_TAG size_tag{.bitcodeSize = bitcode.size()};
-
-  function_def_stream.write((const char *)&size_tag, sizeof(size_tag));
-
-  MTLB_OFFT_TAG offset_tag{
-      .PublicMetadataOffset = 0,
-      .PrivateMetadataOffset = 0,
-      .BitcodeOffset = 0,
-  };
-  function_def_stream.write((const char *)&offset_tag, sizeof(offset_tag));
-
-  MTLB_VERS_TAG version_tag{
-      .airVersionMajor = 2,
-      .airVersionMinor = 6,
-      .languageVersionMajor = 3,
-      .languageVersionMinor = 1,
-  };
-  function_def_stream.write((const char *)&version_tag, sizeof(version_tag));
-
-  function_def_stream.write("ENDT", 4);
-
-  // public metadata
-  uint32_t public_metadata_size = 4;
-
-  if (analyzer.IsVS()) {
-    public_metadata_size += (4 + 11 + 4 + 5);
-  }
-
-  public_metadata_stream.write((const char *)&public_metadata_size, 4);
-
-  if (analyzer.IsVS()) {
-    // FIXME: properly handle it via vertex attribute information
-
-    public_metadata_stream.write("VATT", 4);
-    uint8_t w[] = {
-        0x09, 0x00,                   // tag len
-        0x01, 0x00,                   // type
-        0x72, 0x65, 0x67, 0x30, 0x00, // name str
-        0x00, 0x80                    // wtf?
-    };
-    public_metadata_stream.write((char *)w, sizeof(w));
-
-    public_metadata_stream.write("VATY", 4);
-    char e[] = {
-        3, 0, // tag len
-        1, 0, // attr type array len?
-        6     // type[0]
-    };
-    public_metadata_stream.write(e, sizeof(e));
-  }
-
-  public_metadata_stream.write("ENDT", 4);
-
-  // private metadata
-  uint32_t private_metadata_size = 4;
-  private_metadata_stream.write((const char *)&private_metadata_size, 4);
-  private_metadata_stream.write("ENDT", 4);
-
-  header.FileSize = sizeof(MTLBHeader) + sizeof(uint32_t) + sizeof(uint32_t) +
-                    function_def.size() + sizeof(MTLB_EndTag) // extended header
-                    + public_metadata.size() + private_metadata.size() +
-                    bitcode.size();
-  header.FunctionListOffset = sizeof(MTLBHeader);
-  header.FunctionListSize = function_def.size() + 4;
-  header.PublicMetadataOffset =
-      header.FunctionListOffset + header.FunctionListSize +
-      sizeof(uint32_t) // extra room for function count
-      + sizeof(MTLB_EndTag);
-  header.PublicMetadataSize = public_metadata.size();
-  header.PrivateMetadataOffset =
-      header.PublicMetadataOffset + header.PublicMetadataSize;
-  header.PrivateMetadataSize = private_metadata.size();
-  header.BitcodeOffset =
-      header.PrivateMetadataOffset + header.PrivateMetadataSize;
-  header.BitcodeSize = bitcode.size();
-
-  header.Type = MTLBType_Executable; // executable
-  header.Platform = MTLBPlatform_macOS;
-  header.VersionMajor = 2;
-  header.VersionMinor = 7;
-  header.OS = MTLBOS_macOS;
-  header.OSVersionMajor = 14;
-  header.OSVersionMinor = 4;
-
-  // write to stream
-  OS.write((const char *)&header, sizeof(MTLBHeader));
-
-  uint32_t fn_count = 1;
-  OS.write((const char *)&fn_count, 4);
-  uint32_t size_fn = function_def.size() + 4;
-  OS.write((const char *)&size_fn, 4);
-  OS.write((const char *)function_def.data(), function_def.size());
-  OS.write("ENDT", 4); // extend header
-  OS.write((const char *)public_metadata.data(), public_metadata.size());
-  OS.write((const char *)private_metadata.data(), private_metadata.size());
-  OS.write((const char *)bitcode.data(), bitcode.size());
 }
 
 } // namespace dxmt

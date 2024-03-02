@@ -18,6 +18,7 @@
 #include "air_constants.hpp"
 #include "air_metadata.hpp"
 #include "air_type.hpp"
+#include "dxbc_signature.hpp"
 
 namespace dxmt {
 
@@ -62,14 +63,16 @@ struct OutputBinding {
   EpilogueHook epilogueHook;
 };
 
+using SignatureMatcher = std::function<bool(dxbc::Signature)>;
+using SignatureFinder = std::function<dxbc::Signature(const SignatureMatcher &)>;
+
 class DxbcAnalyzer {
 public:
   DxbcAnalyzer(llvm::LLVMContext &context, air::AirType &types,
                air::AirMetadata &metadata)
       : context(context), types(types), metadata(metadata) {}
 
-  void AnalyzeShader(D3D10ShaderBinary::CShaderCodeParser &Parse,
-                     CSignatureParser &inputSig, CSignatureParser &outputsig);
+  void AnalyzeShader(D3D10ShaderBinary::CShaderCodeParser &parser, const SignatureFinder& input, const SignatureFinder& output);
 
   // for SM 5.0 : assume no register space
   std::tuple<llvm::Type *, llvm::MDNode *>
