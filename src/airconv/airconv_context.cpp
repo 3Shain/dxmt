@@ -15,6 +15,8 @@
 #include "DXBCParser/DXBCUtils.h"
 #include "dxbc_signature.hpp"
 #include "metallib_writer.hpp"
+#include "llvm/Passes/PassBuilder.h"
+#include "llvm/IR/Verifier.h"
 
 using namespace llvm;
 using namespace dxmt::air;
@@ -122,15 +124,45 @@ void Convert(LPCVOID dxbc, UINT dxbcSize, LPVOID *ppAIR, UINT *pAIRSize) {
         assert(0 && "try to access an undefined output");
       });
 
-  DxbcConverter converter(analyzer, types, context, *pModule);
+  auto converter = CreateConverter(analyzer, types, context, *pModule);
 
   // 4. convert instructions
   CodeParser.SetShader(ShaderCode); // reset parser
-  auto inputMD = converter.Pre(metadata);
-  converter.ConvertInstructions(CodeParser);
-  auto functionMD = converter.Post(metadata, inputMD);
+  auto inputMD = converter->Pre(metadata);
+  converter->ConvertInstructions(CodeParser);
+  auto functionMD = converter->Post(metadata, inputMD);
 
-  converter.Optimize(OptimizationLevel::O2);
+  // Create the analysis managers.
+  // These must be declared in this order so that they are destroyed in the
+  // correct order due to inter-analysis-manager references.
+  LoopAnalysisManager LAM;
+  FunctionAnalysisManager FAM;
+  CGSCCAnalysisManager CGAM;
+  ModuleAnalysisManager MAM;
+
+  // Create the new pass manager builder.
+  // Take a look at the PassBuilder constructor parameters for more
+  // customization, e.g. specifying a TargetMachine or various debugging
+  // options.
+  PassBuilder PB;
+
+  // Register all the basic analyses with the managers.
+  PB.registerModuleAnalyses(MAM);
+  PB.registerCGSCCAnalyses(CGAM);
+  PB.registerFunctionAnalyses(FAM);
+  PB.registerLoopAnalyses(LAM);
+  PB.crossRegisterProxies(LAM, FAM, CGAM, MAM);
+
+  ModulePassManager MPM =
+      PB.buildPerModuleDefaultPipeline(OptimizationLevel::O2);
+
+  FunctionPassManager FPM;
+  FPM.addPass(VerifierPass());
+
+  MPM.addPass(createModuleToFunctionPassAdaptor(std::move(FPM)));
+
+  // Optimize the IR!
+  MPM.run(*pModule, MAM);
 
   if (analyzer.IsVS()) {
     pModule->getOrInsertNamedMetadata("air.vertex")->addOperand(functionMD);
@@ -142,6 +174,8 @@ void Convert(LPCVOID dxbc, UINT dxbcSize, LPVOID *ppAIR, UINT *pAIRSize) {
     // throw
     assert(0 && "Unsupported shader type");
   }
+
+  pModule->print(outs(), nullptr);
 
   // Serialize AIR
   SmallVector<char, 0> vec;
@@ -156,8 +190,6 @@ void Convert(LPCVOID dxbc, UINT dxbcSize, LPVOID *ppAIR, UINT *pAIRSize) {
 
   *ppAIR = ptr;
   *pAIRSize = vec.size();
-
-  pModule->print(outs(), nullptr);
 
   pModule.reset();
 }

@@ -16,11 +16,11 @@
 using namespace llvm;
 using namespace dxmt::air;
 
-namespace dxmt {
+namespace dxmt::dxbc {
 
 void DxbcAnalyzer::AnalyzeShader(D3D10ShaderBinary::CShaderCodeParser &Parser,
-                                 const SignatureFinder &input,
-                                 const SignatureFinder &output) {
+                                 const SignatureFinder &findInputSignature,
+                                 const SignatureFinder &findOutputSignature) {
 
   ShaderType = Parser.ShaderType();
   m_DxbcMajor = Parser.ShaderMajorVersion();
@@ -36,25 +36,44 @@ void DxbcAnalyzer::AnalyzeShader(D3D10ShaderBinary::CShaderCodeParser &Parser,
       // why so fucking long enum name, it hurts my eyes.
       // because it's C enum. I miss my namespace.
     case D3D10_SB_OPCODE_DCL_CONSTANT_BUFFER: {
-      constantBuffers.push_back({inst.dclBindingSlot(), inst.dclConstSize()});
+      bindingDeclare->DeclareConstantBuffer(inst.dclBindingRegister(),
+                                            inst.dclConstSize());
       break;
     }
     case D3D10_SB_OPCODE_DCL_SAMPLER: {
-      DXASSERT(false, "Unhandled declaration (tbd)");
+      bindingDeclare->DeclareSampler(inst.dclBindingRegister());
       break;
     }
 
-    case D3D10_SB_OPCODE_DCL_RESOURCE:
-    case D3D11_SB_OPCODE_DCL_RESOURCE_RAW:
+    case D3D10_SB_OPCODE_DCL_RESOURCE: {
+      bindingDeclare->DeclareTexture(inst.dclBindingRegister(),
+                                     inst.dclResourceType(),
+                                     inst.dclResourceAccessType(), false);
+      break;
+    }
+    case D3D11_SB_OPCODE_DCL_RESOURCE_RAW: {
+      bindingDeclare->DeclareBuffer(inst.dclBindingRegister(), true, false);
+      break;
+    }
     case D3D11_SB_OPCODE_DCL_RESOURCE_STRUCTURED: {
-      DXASSERT(false, "Unhandled declaration (tbd)");
+      bindingDeclare->DeclareBuffer(inst.dclBindingRegister(), true, false);
+      // and read stride here!
       break;
     }
 
-    case D3D11_SB_OPCODE_DCL_UNORDERED_ACCESS_VIEW_TYPED:
-    case D3D11_SB_OPCODE_DCL_UNORDERED_ACCESS_VIEW_RAW:
+    case D3D11_SB_OPCODE_DCL_UNORDERED_ACCESS_VIEW_TYPED: {
+      bindingDeclare->DeclareTexture(inst.dclBindingRegister(),
+                                     inst.dclResourceType(),
+                                     inst.dclResourceAccessType(), true);
+      break;
+    }
+    case D3D11_SB_OPCODE_DCL_UNORDERED_ACCESS_VIEW_RAW: {
+      bindingDeclare->DeclareBuffer(inst.dclBindingRegister(), true, false);
+      break;
+    }
     case D3D11_SB_OPCODE_DCL_UNORDERED_ACCESS_VIEW_STRUCTURED: {
-      DXASSERT(false, "Unhandled declaration (tbd)");
+      bindingDeclare->DeclareBuffer(inst.dclBindingRegister(), true, false);
+      // and read stride here!
       break;
     }
 
@@ -63,24 +82,28 @@ void DxbcAnalyzer::AnalyzeShader(D3D10ShaderBinary::CShaderCodeParser &Parser,
 
       switch (RegType) {
       case D3D11_SB_OPERAND_TYPE_INPUT_COVERAGE_MASK:
-        assert(0);
+        assert(0 && "TODO: fragment: sample_mask");
         break;
 
       case D3D11_SB_OPERAND_TYPE_INNER_COVERAGE:
-        assert(0);
+        assert(0 && "D3D11_SB_OPERAND_TYPE_INNER_COVERAGE");
         break;
 
       case D3D11_SB_OPERAND_TYPE_INPUT_THREAD_ID:
       case D3D11_SB_OPERAND_TYPE_INPUT_THREAD_GROUP_ID:
       case D3D11_SB_OPERAND_TYPE_INPUT_THREAD_ID_IN_GROUP:
       case D3D11_SB_OPERAND_TYPE_INPUT_THREAD_ID_IN_GROUP_FLATTENED:
+        assert(0 && "TODO: kernel function attributes");
+        break;
       case D3D11_SB_OPERAND_TYPE_INPUT_DOMAIN_POINT:
       case D3D11_SB_OPERAND_TYPE_OUTPUT_CONTROL_POINT_ID:
       case D3D10_SB_OPERAND_TYPE_INPUT_PRIMITIVEID:
       case D3D11_SB_OPERAND_TYPE_INPUT_FORK_INSTANCE_ID:
       case D3D11_SB_OPERAND_TYPE_INPUT_JOIN_INSTANCE_ID:
-      case D3D11_SB_OPERAND_TYPE_CYCLE_COUNTER:
       case D3D11_SB_OPERAND_TYPE_INPUT_GS_INSTANCE_ID:
+        assert(0);
+        break;
+      case D3D11_SB_OPERAND_TYPE_CYCLE_COUNTER:
         assert(0);
         break;
 
@@ -99,17 +122,15 @@ void DxbcAnalyzer::AnalyzeShader(D3D10ShaderBinary::CShaderCodeParser &Parser,
           DXASSERT(false, "there should no other index dimensions");
         }
 
-        // auto MinPrecision = Inst.m_Operands[0].m_MinPrecision;
-
         if (RegType == D3D10_SB_OPERAND_TYPE_INPUT) {
-          auto mask = Inst.m_Operands[0].m_WriteMask >> 4;
-          auto sig = input([=](dxbc::Signature sig) {
+          auto mask = inst.dclBindingMask();
+          auto sig = findInputSignature([=](dxbc::Signature sig) {
             return (sig.reg() == reg) && ((sig.mask() & mask) != 0);
           });
           auto name = sig.fullSemanticString();
           //
           inputs.push_back(
-              {types.tyFloatV4,
+              {types._float4,
                metadata.createUserVertexInput(inputs.size(), reg,
                                               air::EType::float4, name),
                name, [=](auto value, auto context, AirBuilder &builder) {
@@ -127,9 +148,8 @@ void DxbcAnalyzer::AnalyzeShader(D3D10ShaderBinary::CShaderCodeParser &Parser,
     }
 
     case D3D10_SB_OPCODE_DCL_INPUT_SGV: {
-      unsigned reg = inst.dclBindingSlot();
+      unsigned reg = inst.dclBindingRegister();
       auto mask = inst.dclBindingMask();
-      // auto MinPrecision = Inst.m_Operands[0].m_MinPrecision; // not used
       auto sgv = Inst.m_InputDeclSGV.Name;
       PrologueHook prologue = [=](auto value, auto context,
                                   AirBuilder &builder) {
@@ -140,8 +160,8 @@ void DxbcAnalyzer::AnalyzeShader(D3D10ShaderBinary::CShaderCodeParser &Parser,
       case D3D10_SB_NAME_VERTEX_ID: {
         auto name = "vertexId";
         inputs.push_back({
-            types.tyInt32, // REFACTOR: air::EInput infer? (not sure it's
-                           // consistent)
+            types._int, // REFACTOR: air::EInput infer? (not sure it's
+                        // consistent)
             metadata.createInput(inputs.size(), air::EInput::vertex_id, name),
             name,
             prologue,
@@ -152,7 +172,7 @@ void DxbcAnalyzer::AnalyzeShader(D3D10ShaderBinary::CShaderCodeParser &Parser,
         assert(IsPS() && "PrimitiveID is allowed only in pixel shader");
         auto name = "primitiveId";
         inputs.push_back({
-            types.tyInt32,
+            types._int,
             metadata.createInput(inputs.size(), air::EInput::primitive_id,
                                  name),
             name,
@@ -163,7 +183,7 @@ void DxbcAnalyzer::AnalyzeShader(D3D10ShaderBinary::CShaderCodeParser &Parser,
       case D3D10_SB_NAME_INSTANCE_ID: {
         auto name = "instanceId";
         inputs.push_back({
-            types.tyInt32,
+            types._int,
             metadata.createInput(inputs.size(), air::EInput::instance_id, name),
             name,
             prologue,
@@ -173,7 +193,7 @@ void DxbcAnalyzer::AnalyzeShader(D3D10ShaderBinary::CShaderCodeParser &Parser,
       case D3D10_SB_NAME_IS_FRONT_FACE: {
         auto name = "isFrontFace";
         inputs.push_back({
-            types.tyBool,
+            types._bool,
             metadata.createInput(inputs.size(), air::EInput::front_facing,
                                  name),
             name,
@@ -184,7 +204,7 @@ void DxbcAnalyzer::AnalyzeShader(D3D10ShaderBinary::CShaderCodeParser &Parser,
       case D3D10_SB_NAME_SAMPLE_INDEX: {
         auto name = "sampleIndex";
         inputs.push_back({
-            types.tyInt32,
+            types._int,
             metadata.createInput(inputs.size(), air::EInput::sample_id, name),
             name,
             prologue,
@@ -206,15 +226,15 @@ void DxbcAnalyzer::AnalyzeShader(D3D10ShaderBinary::CShaderCodeParser &Parser,
     }
 
     case D3D10_SB_OPCODE_DCL_INPUT_PS: {
-      auto reg = inst.dclBindingSlot();
+      auto reg = inst.dclBindingRegister();
       auto mask = inst.dclBindingMask();
-      auto sig = input([=](dxbc::Signature sig) {
+      auto sig = findInputSignature([=](dxbc::Signature sig) {
         return (sig.reg() == reg) && ((sig.mask() & mask) != 0);
       });
       auto name = sig.fullSemanticString();
       //
       inputs.push_back(
-          {types.tyFloatV4,
+          {types._float4,
            metadata.createUserFragmentInput(inputs.size(), name,
                                             inst.interpolation(),
                                             air::EType::float4, name),
@@ -275,32 +295,34 @@ void DxbcAnalyzer::AnalyzeShader(D3D10ShaderBinary::CShaderCodeParser &Parser,
 
       default: {
         // normal output register
-        auto reg = inst.dclBindingSlot();
+        auto reg = inst.dclBindingRegister();
         auto mask = inst.dclBindingMask();
-        auto sig = output([=](dxbc::Signature sig) {
+        auto sig = findOutputSignature([=](dxbc::Signature sig) {
           return (sig.reg() == reg) && ((sig.mask() & mask) != 0);
         });
         auto name = sig.fullSemanticString();
 
         if (IsPS()) {
-          outputs.push_back({types.tyFloatV4,
+          outputs.push_back({sig.componentType() == RegisterComponentType::Float
+                                 ? types._float4
+                                 : types._int4,
                              metadata.createRenderTargetOutput(
                                  reg /* TODO: dual source blending */, 0,
                                  air::EType::float4, name),
                              name, [=](auto context, AirBuilder &builder) {
                                return builder.CreateGenericRegisterLoad(
                                    context.outputRegs, context.tyOutputRegs,
-                                   reg, types.tyFloatV4,
+                                   reg, types._float4,
                                    builder.MaskToSwizzle(mask));
                              }});
         } else {
           outputs.push_back(
-              {types.tyFloatV4,
+              {types._float4,
                metadata.createUserVertexOutput(name, air::EType::float4, name),
                name, [=](auto context, AirBuilder &builder) {
                  return builder.CreateGenericRegisterLoad(
                      context.outputRegs, context.tyOutputRegs, reg,
-                     types.tyFloatV4, builder.MaskToSwizzle(mask));
+                     types._float4, builder.MaskToSwizzle(mask));
                }});
         }
         maxOutputRegister = std::max(reg + 1, maxOutputRegister);
@@ -316,13 +338,13 @@ void DxbcAnalyzer::AnalyzeShader(D3D10ShaderBinary::CShaderCodeParser &Parser,
       break;
     }
     case D3D10_SB_OPCODE_DCL_OUTPUT_SIV: {
-      auto reg = inst.dclBindingSlot();
+      auto reg = inst.dclBindingRegister();
       auto mask = inst.dclBindingMask();
       // auto MinPrecision = Inst.m_Operands[0].m_MinPrecision; // not used
       auto siv = Inst.m_OutputDeclSIV.Name;
       EpilogueHook epilogue = [=](auto a, AirBuilder &builder) {
         return builder.CreateGenericRegisterLoad(a.outputRegs, a.tyOutputRegs,
-                                                 reg, types.tyInt32,
+                                                 reg, types._int,
                                                  builder.MaskToSwizzle(mask));
       };
       switch (siv) {
@@ -336,18 +358,18 @@ void DxbcAnalyzer::AnalyzeShader(D3D10ShaderBinary::CShaderCodeParser &Parser,
         break;
       case D3D10_SB_NAME_POSITION: {
         auto name = "position";
-        outputs.push_back({types.tyFloatV4,
+        outputs.push_back({types._float4,
                            metadata.createOutput(air::EOutput::position, name),
                            name, [=](auto a, AirBuilder &builder) {
                              return builder.CreateGenericRegisterLoad(
                                  a.outputRegs, a.tyOutputRegs, reg,
-                                 types.tyFloatV4, builder.MaskToSwizzle(mask));
+                                 types._float4, builder.MaskToSwizzle(mask));
                            }});
         break;
       }
       case D3D10_SB_NAME_RENDER_TARGET_ARRAY_INDEX: {
         auto name = "renderTargetArrayIndex";
-        outputs.push_back({types.tyInt32,
+        outputs.push_back({types._int,
                            metadata.createOutput(
                                air::EOutput::render_target_array_index, name),
                            name, epilogue});
@@ -355,7 +377,7 @@ void DxbcAnalyzer::AnalyzeShader(D3D10ShaderBinary::CShaderCodeParser &Parser,
       }
       case D3D10_SB_NAME_VIEWPORT_ARRAY_INDEX: {
         auto name = "viewportArrayIndex";
-        outputs.push_back({types.tyInt32,
+        outputs.push_back({types._int,
                            metadata.createOutput(
                                air::EOutput::render_target_array_index, name),
                            name, epilogue});
@@ -375,20 +397,23 @@ void DxbcAnalyzer::AnalyzeShader(D3D10ShaderBinary::CShaderCodeParser &Parser,
     }
 
     case D3D10_SB_OPCODE_DCL_INDEXABLE_TEMP: {
-      // indexableTemps.insert()
-      DXASSERT(false, "Unhandled declaration (tbd)");
+      auto index = inst.dclBindingRegister();
+      auto size = inst.dclConstSize();
+      indexableTemps.insert_or_assign(index, size);
       break;
     }
 
     case D3D10_SB_OPCODE_DCL_GLOBAL_FLAGS: {
-      //
+      auto flag = inst.dclFlags();
+      if (flag & D3D10_SB_GLOBAL_FLAG_REFACTORING_ALLOWED) {
+        enableFastMath = true;
+      }
       break;
     }
 
     case D3D11_SB_OPCODE_DCL_THREAD_GROUP: {
-      // Inst.m_ThreadGroupDecl.x, Inst.m_ThreadGroupDecl.y,
-      // Inst.m_ThreadGroupDecl.z
-      DXASSERT(false, "Unhandled declaration (tbd)");
+      threadgroupSize = {Inst.m_ThreadGroupDecl.x, Inst.m_ThreadGroupDecl.y,
+                         Inst.m_ThreadGroupDecl.z};
       break;
     }
 
@@ -405,6 +430,7 @@ void DxbcAnalyzer::AnalyzeShader(D3D10ShaderBinary::CShaderCodeParser &Parser,
       auto Op = Inst.m_Operands[2];
       DXASSERT_DXBC(Op.OperandType() == D3D10_SB_OPERAND_TYPE_RESOURCE);
       // Op.OperandIndexDimension()
+      assert(0);
       break;
     }
 
@@ -458,7 +484,7 @@ std::tuple<llvm::Type *, llvm::MDNode *> DxbcAnalyzer::GenerateBindingTable() {
                                       air::EType::uint4, cbName.str())});
     // fieldTypes.push_back(types.tyConstantPtr);
     fieldTypes.push_back(PointerType::get(
-        types.tyInt32V4,
+        types._int4,
         2)); // test above! I need to make sure metal backend uses opaque ptr
   }
 
@@ -467,4 +493,4 @@ std::tuple<llvm::Type *, llvm::MDNode *> DxbcAnalyzer::GenerateBindingTable() {
       MDTuple::get(context, structTypeInfo));
 }
 
-} // namespace dxmt
+} // namespace dxmt::dxbc

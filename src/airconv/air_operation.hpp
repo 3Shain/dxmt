@@ -1,6 +1,7 @@
 #pragma once
 
 #include "llvm/ADT/Twine.h"
+#include "llvm/IR/Attributes.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
@@ -40,37 +41,6 @@ enum class EBinaryOp {
   UMin,
 };
 
-enum class EUnaryOp {
-  FExp,
-  FFrac,
-  FLog,
-  FRoundNE,
-  FRoundPI,
-  FRoundNI,
-  FRoundZ,
-  FRcp,
-  FRsq,
-  FSqrt,
-
-  FSincos, // this returns a tuple!
-
-  BNot,
-  BFrev,
-  BCountbits,
-  BFirstbitsSH,
-  BFirstbitsH,
-  BFirstbitsL,
-
-  INeg,
-
-  F16TO23,
-  F32TO16,
-  FTOI,
-  ITOF,
-  UTOF,
-  FTOU,
-};
-
 enum class EAtomicOp {
   And,
   Xor,
@@ -92,8 +62,12 @@ public:
 
   llvm::FunctionCallee GetDotProduct();
 
-  llvm::Value* CreateUnary(EUnaryOp op, llvm::Value* operand);
-  llvm::Value* CreateBinaryOp(EUnaryOp op, llvm::Value* operand1, llvm::Value* operand2);
+  llvm::Value* CreateFloatUnaryOp(EFloatUnaryOp op, llvm::Value* src);
+  llvm::Value* CreateFloatBinaryOp(EFloatBinaryOp op, llvm::Value* src0, llvm::Value* src1);
+
+
+  llvm::Value* CreateBitwiseUnaryOp(EBitwiseUnaryOp op, llvm::Value* src);
+  llvm::Value* CreateBitwiseBinaryOp(EBitwiseBinaryOp op, llvm::Value* src0, llvm::Value* src1);
 
   // a * b + c
   llvm::Value* CreateFMad(llvm::Value* a, llvm::Value* b, llvm::Value* c);
@@ -111,7 +85,7 @@ public:
 
   // resource related
 
-  llvm::Value* CreateSampleTexture();
+  llvm::Value* CreateSampleTexture(llvm::Value* sampler, llvm::Value* position, llvm::Value* );
   llvm::Value* CreateStoreTypedTexture();
   llvm::Value* CreateLoadTypedTexture();
   // llvm::Value* Create
@@ -121,6 +95,8 @@ private:
   AirBuilder &builder;
   llvm::LLVMContext &context;
   llvm::Module &module;
+
+  llvm::AttributeList commonAttributes;
 };
 
 } // namespace dxmt

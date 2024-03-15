@@ -17,7 +17,7 @@ Value *AirBuilder::CreateRegisterLoad(llvm::Value *regs, llvm::Type *regsType,
   assert(regs);
   assert(regsType);
   auto regPtr = builder.CreateConstInBoundsGEP2_32(regsType, regs, 0, reg);
-  auto regValue = builder.CreateLoad(types.tyInt32V4, regPtr);
+  auto regValue = builder.CreateLoad(types._int4, regPtr);
 
   return regValue;
 }
@@ -28,7 +28,7 @@ Value *AirBuilder::CreateRegisterLoad(llvm::Value *regs, llvm::Type *regsType,
   assert(regsType);
   auto regPtr = builder.CreateInBoundsGEP(regsType, regs,
                                           {CreateConstant((uint32_t)0), reg});
-  auto regValue = builder.CreateLoad(types.tyInt32V4, regPtr);
+  auto regValue = builder.CreateLoad(types._int4, regPtr);
 
   return regValue;
 }
@@ -45,37 +45,37 @@ AirBuilder::CreateGenericRegisterLoad(llvm::Value *regs, llvm::Type *regsType,
                                       uint32_t reg, llvm::Type *desiredType,
                                       const std::array<uint8_t, 4> &swizzle) {
   auto valueType = desiredType;
-  if (valueType == types.tyInt32V4) {
+  if (valueType == types._int4) {
     return CreateRegisterLoad(regs, regsType, reg);
   }
   auto value = CreateRegisterLoad(regs, regsType, reg);
-  if (valueType == types.tyInt32) {
+  if (valueType == types._i32) {
     return builder.CreateExtractElement(value, swizzle[0]);
   }
-  if (valueType == types.tyFloat) {
+  if (valueType == types._float) {
     return builder.CreateBitCast(
-        builder.CreateExtractElement(value, swizzle[0]), types.tyFloat);
+        builder.CreateExtractElement(value, swizzle[0]), types._float);
   }
-  if (valueType == types.tyFloatV4) {
-    return builder.CreateBitCast(value, types.tyFloatV4);
+  if (valueType == types._float4) {
+    return builder.CreateBitCast(value, types._float4);
   }
   if (valueType == types.typeContext["float3"]) {
     return builder.CreateShuffleVector(
-        builder.CreateBitCast(value, types.tyFloatV4),
-        PoisonValue::get(types.tyFloatV4),
+        builder.CreateBitCast(value, types._float4),
+        PoisonValue::get(types._float4),
         {swizzle[0], swizzle[1], swizzle[2]});
   }
   if (valueType == types.typeContext["float2"]) {
     return builder.CreateShuffleVector(
-        builder.CreateBitCast(value, types.tyFloatV4),
-        PoisonValue::get(types.tyFloatV4), {swizzle[0], swizzle[1]});
+        builder.CreateBitCast(value, types._float4),
+        PoisonValue::get(types._float4), {swizzle[0], swizzle[1]});
   }
   if (valueType == types.typeContext["uint3"]) {
-    return builder.CreateShuffleVector(value, PoisonValue::get(types.tyInt32V4),
+    return builder.CreateShuffleVector(value, PoisonValue::get(types._int4),
                                        {swizzle[0], swizzle[1], swizzle[2]});
   }
   if (valueType == types.typeContext["uint2"]) {
-    return builder.CreateShuffleVector(value, PoisonValue::get(types.tyInt32V4),
+    return builder.CreateShuffleVector(value, PoisonValue::get(types._int4),
                                        {swizzle[0], swizzle[1]});
   }
   assert(0 && "Overload not implemented yet.");
@@ -85,12 +85,12 @@ void AirBuilder::CreateRegisterStore(llvm::Value *regs, llvm::Type *regsType,
                                      uint32_t reg, llvm::Value *value,
                                      uint32_t writeMask,
                                      const std::array<uint8_t, 4> &swizzle) {
-  assert(value->getType() == types.tyInt32V4);
+  assert(value->getType() == types._int4);
   llvm::Value *newValue = value;
   auto regPtr = builder.CreateConstInBoundsGEP2_32(regsType, regs, 0, reg);
   if (((writeMask & 0xf) != 0xf /* xyzw */) ||
       *((uint32_t *)swizzle.begin()) != 0xe40 /* xyzw */) {
-    auto currentValue = builder.CreateLoad(types.tyInt32V4, regPtr);
+    auto currentValue = builder.CreateLoad(types._int4, regPtr);
     newValue = builder.CreateShuffleVector(
         currentValue, value, CreateShuffleSwizzleMask(writeMask, swizzle));
   }
@@ -101,13 +101,13 @@ void AirBuilder::CreateRegisterStore(llvm::Value *regs, llvm::Type *regsType,
                                      llvm::Value *reg, llvm::Value *value,
                                      uint32_t writeMask,
                                      const std::array<uint8_t, 4> &swizzle) {
-  assert(value->getType() == types.tyInt32V4);
+  assert(value->getType() == types._int4);
   llvm::Value *newValue = value;
   auto regPtr = builder.CreateInBoundsGEP(regsType, regs,
                                           {CreateConstant((uint32_t)0), reg});
   if (((writeMask & 0xf) != 0xf /* xyzw */) ||
       *((uint32_t *)swizzle.begin()) != 0xe40 /* xyzw */) {
-    auto currentValue = builder.CreateLoad(types.tyInt32V4, regPtr);
+    auto currentValue = builder.CreateLoad(types._int4, regPtr);
     newValue = builder.CreateShuffleVector(
         currentValue, value, CreateShuffleSwizzleMask(writeMask, swizzle));
   }
@@ -119,26 +119,26 @@ void AirBuilder::CreateGenericRegisterStore(llvm::Value *regs,
                                             llvm::Value *value,
                                             uint32_t writeMask) {
   auto valueType = value->getType();
-  if (valueType == types.tyInt32V4) {
+  if (valueType == types._int4) {
     return CreateRegisterStore(regs, regsType, reg, value, writeMask,
                                swizzleXyzw);
   }
-  if (valueType == types.tyInt32) {
+  if (valueType == types._i32) {
     return CreateGenericRegisterStore(
         regs, regsType, reg, builder.CreateVectorSplat(4, value), writeMask);
   }
-  if (valueType == types.tyFloat) {
+  if (valueType == types._float) {
     return CreateGenericRegisterStore(
         regs, regsType, reg,
         builder.CreateVectorSplat(4,
-                                  builder.CreateBitCast(value, types.tyInt32)),
+                                  builder.CreateBitCast(value, types._i32)),
         writeMask);
   }
-  if (valueType == types.tyFloatV4) {
+  if (valueType == types._float4) {
     return CreateGenericRegisterStore(
         regs, regsType, reg,
 
-        builder.CreateBitCast(value, types.tyInt32V4), writeMask);
+        builder.CreateBitCast(value, types._int4), writeMask);
   }
   if (valueType == types.typeContext["float3"]) {
     return CreateGenericRegisterStore(
@@ -146,7 +146,7 @@ void AirBuilder::CreateGenericRegisterStore(llvm::Value *regs,
         builder.CreateBitCast(
             builder.CreateShuffleVector(
                 value, PoisonValue::get(value->getType()), {0, 1, 2, 0}),
-            types.tyInt32V4),
+            types._int4),
         writeMask);
   }
   if (valueType == types.typeContext["float2"]) {
@@ -155,7 +155,7 @@ void AirBuilder::CreateGenericRegisterStore(llvm::Value *regs,
         builder.CreateBitCast(
             builder.CreateShuffleVector(
                 value, PoisonValue::get(value->getType()), {0, 1, 0, 0}),
-            types.tyInt32V4),
+            types._int4),
         writeMask);
   }
   if (valueType == types.typeContext["uint3"]) {
@@ -204,11 +204,11 @@ Value *AirBuilder::CreateShuffleSwizzleMask(
 }
 
 Constant *AirBuilder::CreateConstant(uint32_t value) {
-  return ConstantInt::get(types.tyInt32, value, false);
+  return ConstantInt::get(types._i32, value, false);
 }
 
 Constant *AirBuilder::CreateConstant(float value) {
-  return ConstantFP::get(types.tyFloat, APFloat(value));
+  return ConstantFP::get(types._float, APFloat(value));
 }
 
 Constant *AirBuilder::CreateConstantVector(const std::array<float, 4> &float4) {

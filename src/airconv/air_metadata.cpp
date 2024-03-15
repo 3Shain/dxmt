@@ -122,9 +122,9 @@ llvm::MDNode *AirMetadata::createSamplerBinding(uint32_t index,
       context,
       {createUnsignedInteger(index), createString("air.sampler"),
        createString("air.location_index"), createUnsignedInteger(location),
-       createUnsignedInteger(arraySize), // TODO: figure out why it's 1
-       createString("air.arg_type_name"), createString("sampler"),
-       createString("air.arg_name"), createString(argName)});
+       createUnsignedInteger(arraySize), createString("air.arg_type_name"),
+       createString("sampler"), createString("air.arg_name"),
+       createString(argName)});
 }
 
 llvm::MDNode *AirMetadata::createUserKernelInput(uint32_t index,
@@ -159,10 +159,9 @@ llvm::MDNode *AirMetadata::createOutput(air::EOutput output,
     return createDepthTargetOutput(air::EDepthArgument::any,
                                    argName); // TODO: is this correct?
   default:
-    // maybe frag or
-    // should throw here
     break;
   }
+  assert(0 && "unhandled output");
   return nullptr; // not reachable
 }
 
@@ -175,7 +174,6 @@ llvm::MDNode *AirMetadata::createOutput(air::EOutput output, air::EType type,
                        createString("air.arg_name"), createString(argName)});
 }
 
-// llvm::MDNode* AirMetadata
 llvm::MDNode *AirMetadata::createRenderTargetOutput(uint32_t attachmentIndex,
                                                     uint32_t idkIndex,
                                                     air::EType type,
@@ -227,11 +225,11 @@ AirMetadata::createUserFragmentInput(uint32_t index, llvm::StringRef key,
     data.push_back(createString("air.flat"));
     break;
   case air::ESampleInterpolation::sample_no_perspective:
-    data.push_back(createString("air.flat"));
+    data.push_back(createString("air.sample"));
     data.push_back(createString("air.no_perspective"));
     break;
   case air::ESampleInterpolation::sample_perspective:
-    data.push_back(createString("air.flat"));
+    data.push_back(createString("air.sample"));
     data.push_back(createString("air.perspective"));
     break;
   case air::ESampleInterpolation::center_no_perspective:
@@ -302,21 +300,26 @@ llvm::MDNode *AirMetadata::createIndirectBufferBinding(
     air::EBufferAccess access, air::EBufferAddrSpace addrSpace,
     llvm::MDNode *structTypeInfo, uint32_t structAlignSize,
     llvm::StringRef structTypeName, llvm::StringRef argName) {
-  return MDTuple::get(
-      context,
-      {
-          createUnsignedInteger(index), createString("air.indirect_buffer"),
-           createString("air.buffer_size"), createUnsignedInteger(bufferSize),
-          createString("air.location_index"), createUnsignedInteger(location),
-          createUnsignedInteger(arraySize),
-          createString(access._to_string(), "air."),
-          createString("air.address_space"), createUnsignedInteger(addrSpace),
-          createString("air.struct_type_info"), structTypeInfo,
-          createString("air.arg_type_size"), createUnsignedInteger(bufferSize),
-          createString("air.arg_type_align_size"),
-          createUnsignedInteger(structAlignSize),
-          createString("air.arg_type_name"), createString(structTypeName),
-          createString("air.arg_name"), createString(argName)});
+  return MDTuple::get(context, {createUnsignedInteger(index),
+                                createString("air.indirect_buffer"),
+                                createString("air.buffer_size"),
+                                createUnsignedInteger(bufferSize),
+                                createString("air.location_index"),
+                                createUnsignedInteger(location),
+                                createUnsignedInteger(arraySize),
+                                createString(access._to_string(), "air."),
+                                createString("air.address_space"),
+                                createUnsignedInteger(addrSpace),
+                                createString("air.struct_type_info"),
+                                structTypeInfo,
+                                createString("air.arg_type_size"),
+                                createUnsignedInteger(bufferSize),
+                                createString("air.arg_type_align_size"),
+                                createUnsignedInteger(structAlignSize),
+                                createString("air.arg_type_name"),
+                                createString(structTypeName),
+                                createString("air.arg_name"),
+                                createString(argName)});
 }
 
 } // namespace dxmt

@@ -5,12 +5,14 @@ to make DX improvements.
 #pragma once
 #include "DXBCParser/d3d12tokenizedprogramformat.hpp"
 #include "enum.h"
-#include "DXBCParser/ShaderBinary.h"
 #include <array>
 #include <cstdint>
+#include <functional>
 #include <utility>
+#include <cstddef>
 
 #include "air_constants.hpp"
+#include "DXBCParser/ShaderBinary.h"
 
 namespace dxmt::dxbc {
 
@@ -42,22 +44,22 @@ enum class Op : uint32_t {
   ENDIF,
   ENDLOOP,
   ENDSWITCH,
-  EQ,
+  eq,
   EXP,
   FRC,
   FTOI,
   FTOU,
-  GE,
+  ge,
   IADD,
   IF,
-  IEQ,
-  IGE,
-  ILT,
+  ieq,
+  ige,
+  ilt,
   IMAD,
   IMAX,
   IMIN,
   IMUL,
-  INE,
+  ine,
   INEG,
   ISHL,
   ISHR,
@@ -67,15 +69,15 @@ enum class Op : uint32_t {
   LD_MS,
   LOG,
   LOOP,
-  LT,
+  lt,
   MAD,
   MIN,
   MAX,
   CUSTOMDATA,
-  MOV,
-  MOVC,
+  mov,
+  movc,
   MUL,
-  NE,
+  ne,
   NOP,
   NOT,
   OR,
@@ -97,8 +99,8 @@ enum class Op : uint32_t {
   SWITCH,
   SINCOS,
   UDIV,
-  ULT,
-  UGE,
+  ult,
+  uge,
   UMUL,
   UMAD,
   UMAX,
@@ -176,7 +178,7 @@ enum class Op : uint32_t {
   IBFE,
   BFI,
   BFREV,
-  SWAPC,
+  swapc,
 
   DCL_STREAM,
   DCL_FUNCTION_BODY,
@@ -319,13 +321,100 @@ ToAirInterpolation(D3D10_SB_INTERPOLATION_MODE mode) {
   }
 }
 
-class SrcOperand {
+union Immediate32 {
+  uint32_t i32;
+  float fp;
+};
+
+class OperandIndex {
 public:
-  _INLINE SrcOperand(const D3D10ShaderBinary::COperandBase &oprd) {
-    operand = &oprd;
+  OperandIndex(const D3D10ShaderBinary::COperandIndex &index,
+               D3D10_SB_OPERAND_INDEX_REPRESENTATION indexType)
+      : index(index), indexType(indexType) {}
+
+  template <typename T>
+  _INLINE T match(
+      const std::function<T(uint32_t)> &ifImmediate32,
+      const std::function<T(uint32_t reg, uint8_t component)> &ifRelativeToTemp,
+      const std::function<T(uint32_t regFile, uint32_t reg, uint8_t component)>
+          &ifRelativeToIndexableTemp,
+      const std::function<T(T, uint32_t offset)> addOffset) const {
+    switch (indexType) {
+    case D3D10_SB_OPERAND_INDEX_IMMEDIATE32:
+      return ifImmediate32(index.m_RegIndex);
+      break;
+    case D3D10_SB_OPERAND_INDEX_RELATIVE: {
+      switch (index.m_RelRegType) {
+      case D3D10_SB_OPERAND_TYPE_TEMP: {
+        return ifRelativeToTemp(index.m_RelIndex, index.m_ComponentName);
+      }
+      case D3D10_SB_OPERAND_TYPE_INDEXABLE_TEMP: {
+        return ifRelativeToIndexableTemp(index.m_RelIndex, index.m_RelIndex1,
+                                         index.m_ComponentName);
+      }
+      default:
+        break;
+      }
+      break;
+    }
+    case D3D10_SB_OPERAND_INDEX_IMMEDIATE32_PLUS_RELATIVE: {
+      switch (index.m_RelRegType) {
+      case D3D10_SB_OPERAND_TYPE_TEMP: {
+        return addOffset(
+            ifRelativeToTemp(index.m_RelIndex, index.m_ComponentName),
+            index.m_RegIndex);
+      }
+      case D3D10_SB_OPERAND_TYPE_INDEXABLE_TEMP: {
+        return addOffset(
+            ifRelativeToTemp(index.m_RelIndex, index.m_ComponentName),
+            index.m_RegIndex);
+      }
+      default:
+        break;
+      }
+      break;
+    }
+    default:
+      break;
+    }
+    _UNREACHABLE;
+  };
+
+private:
+  const D3D10ShaderBinary::COperandIndex &index;
+  D3D10_SB_OPERAND_INDEX_REPRESENTATION indexType;
+};
+
+class Operand {
+public:
+  Operand(const D3D10ShaderBinary::COperandBase &oprd) { operand = &oprd; }
+
+  _INLINE uint32_t reg() const {
+    switch (operand->m_IndexDimension) {
+    case D3D10_SB_OPERAND_INDEX_1D:
+      return operand->m_Index[0].m_RegIndex; // ? are you sure?
+      break;
+    default:
+      break;
+    }
+    _UNREACHABLE;
+  };
+
+  OperandIndex index(uint32_t i) const {
+    assert(i < operand->m_IndexDimension && "index out of range");
+    return OperandIndex(operand->m_Index[i], operand->m_IndexType[i]);
   }
 
-  _INLINE std::array<uint8_t, 4> swizzle() {
+protected:
+  const D3D10ShaderBinary::COperandBase *operand;
+};
+
+class SrcOperand : public Operand {
+public:
+  _INLINE SrcOperand(const D3D10ShaderBinary::COperandBase &oprd)
+      : Operand(oprd){};
+
+  _INLINE std::array<uint8_t, 4> swizzle() const {
     if (operand->m_ComponentSelection ==
         D3D10_SB_OPERAND_4_COMPONENT_MASK_MODE) {
 
@@ -338,21 +427,33 @@ public:
     _UNREACHABLE
   };
 
-  _INLINE uint32_t reg(){
-      // switch (operand->m_Type) {
-      //     case
-      // }
-  };
+  bool negative() const {
+    return (operand->m_Modifier & D3D10_SB_OPERAND_MODIFIER_NEG) != 0;
+  }
 
-private:
-  const D3D10ShaderBinary::COperandBase *operand;
+  bool absolute() const {
+    return (operand->m_Modifier & D3D10_SB_OPERAND_MODIFIER_ABS) != 0;
+  }
+
+  bool constant() const {
+    return operand->m_Type == D3D10_SB_OPERAND_TYPE_IMMEDIATE32;
+  }
+
+  bool genericInput() const {
+    return operand->m_Type == D3D10_SB_OPERAND_TYPE_INPUT;
+  }
+
+  bool temp() const { return operand->m_Type == D3D10_SB_OPERAND_TYPE_TEMP; }
+
+  bool indexableTemp() const {
+    return operand->m_Type == D3D10_SB_OPERAND_TYPE_INDEXABLE_TEMP;
+  }
 };
 
-class DstOperand {
+class DstOperand : public Operand {
 public:
-  _INLINE DstOperand(const D3D10ShaderBinary::COperandBase &oprd) {
-    operand = &oprd;
-  }
+  _INLINE DstOperand(const D3D10ShaderBinary::COperandBase &oprd)
+      : Operand(oprd){};
 
   _INLINE uint32_t mask() {
     auto mask = operand->m_WriteMask >> 4;
@@ -360,21 +461,31 @@ public:
     return mask;
   };
 
-  //   _INLINE register
+  bool null() const { return operand->m_Type == D3D10_SB_OPERAND_TYPE_NULL; }
 
-private:
-  const D3D10ShaderBinary::COperandBase *operand;
+  bool genericOutput() const {
+    return operand->m_Type == D3D10_SB_OPERAND_TYPE_OUTPUT;
+  }
+
+  bool temp() const { return operand->m_Type == D3D10_SB_OPERAND_TYPE_TEMP; }
+
+  bool indexableTemp() const {
+    return operand->m_Type == D3D10_SB_OPERAND_TYPE_INDEXABLE_TEMP;
+  }
+
+  // bool null() const { return operand->m_Type ==
+  // D3D10_SB_OPERAND_TYPE_OUTPUT_DEPTH; }
 };
 
 class Instruciton {
 public:
-  _INLINE Instruciton(const D3D10ShaderBinary::CInstruction &inst) {
+  Instruciton(const D3D10ShaderBinary::CInstruction &inst) {
     instruction = &inst;
   }
 
-  _INLINE Op opCode() { return (Op)(instruction->OpCode()); }
+  Op opCode() const { return (Op)(instruction->OpCode()); }
 
-  _INLINE air::ESampleInterpolation interpolation() {
+  air::ESampleInterpolation interpolation() const {
     if (opCode() == Op::DCL_INPUT_PS) {
       return ToAirInterpolation(instruction->m_InputPSDecl.InterpolationMode);
     }
@@ -389,13 +500,13 @@ public:
     _UNREACHABLE
   }
 
-  _INLINE DstOperand dest(uint32_t index) {
-    assert(index < instruction->m_NumOperands && "operand oob");
+  DstOperand dst(uint32_t index) const {
+    assert(index < instruction->m_NumOperands && "dst index out of range");
     return DstOperand(instruction->m_Operands[index]);
   }
 
-  _INLINE SrcOperand src(uint32_t index) {
-    assert(index < instruction->m_NumOperands && "operand oob");
+  SrcOperand src(uint32_t index) const {
+    assert(index < instruction->m_NumOperands && "src index out of range");
     return SrcOperand(instruction->m_Operands[index]);
   }
 
@@ -406,20 +517,32 @@ public:
   - resource
   - uav
   */
-  _INLINE uint32_t dclBindingSlot() {
+  uint32_t dclBindingRegister() const {
     if (opCode() == Op::DCL_INDEXABLE_TEMP) {
       return instruction->m_IndexableTempDecl.IndexableTempNumber;
     }
-    if (opCode() == Op::DCL_CONSTANT_BUFFER) {
-      return instruction->m_Operands[0].m_Index[0].m_RegIndex;
+    switch (opCode()) {
+    case Op::DCL_CONSTANT_BUFFER:
+    case Op::DCL_SAMPLER:
+    case Op::DCL_RESOURCE:
+    case Op::DCL_RESOURCE_RAW:
+    case Op::DCL_RESOURCE_STRUCTURED:
+    case Op::DCL_UNORDERED_ACCESS_VIEW_TYPED:
+    case Op::DCL_UNORDERED_ACCESS_VIEW_RAW:
+    case Op::DCL_UNORDERED_ACCESS_VIEW_STRUCTURED: {
+      switch (instruction->m_Operands[0].m_IndexDimension) {
+      case D3D10_SB_OPERAND_INDEX_1D: // SM 5.0-
+        return instruction->m_Operands[0].m_Index[0].m_RegIndex;
+      case D3D10_SB_OPERAND_INDEX_3D: // SM 5.1
+      default:
+        break;
+      }
+      break;
     }
-    switch (instruction->m_Operands[0].m_IndexDimension) {
-    case D3D10_SB_OPERAND_INDEX_1D: // SM 5.0-
-      return instruction->m_Operands[0].m_Index[0].m_RegIndex;
-    case D3D10_SB_OPERAND_INDEX_3D: // SM 5.1
     default:
-      _UNREACHABLE
+      break;
     }
+    _UNREACHABLE
   }
 
   /*
@@ -446,16 +569,16 @@ public:
     }
   }
 
-  _INLINE uint32_t dclBindingMask() {
+  _INLINE uint32_t dclBindingMask() const {
     if (opCode() == Op::DCL_INDEXABLE_TEMP) {
       assert((instruction->m_IndexableTempDecl.Mask & 0xf) ==
              instruction->m_IndexableTempDecl.Mask);
       return instruction->m_IndexableTempDecl.Mask;
     }
-    return dest(0).mask();
+    return dst(0).mask();
   }
 
-  _INLINE uint32_t dclFlags() {
+  _INLINE uint32_t dclFlags() const {
     switch (opCode()) {
     case Op::DCL_UNORDERED_ACCESS_VIEW_RAW:
       return instruction->m_RawUAVDecl.Flags;
@@ -468,7 +591,7 @@ public:
     }
   }
 
-  _INLINE bool dclWithCounter() {
+  _INLINE bool dclWithCounter() const {
     return (dclFlags() & D3D11_SB_UAV_HAS_ORDER_PRESERVING_COUNTER) != 0;
   }
 
@@ -484,7 +607,7 @@ public:
   //     }
   //   }
 
-  _INLINE uint32_t dclConstSize() {
+  _INLINE uint32_t dclConstSize() const {
     switch (opCode()) {
     case Op::DCL_CONSTANT_BUFFER:
       // TODO: return type with dimension
@@ -498,7 +621,7 @@ public:
     }
   }
 
-  _INLINE uint32_t dclConstStride() {
+  _INLINE uint32_t dclConstStride() const {
     switch (opCode()) {
     case Op::DCL_UNORDERED_ACCESS_VIEW_STRUCTURED:
       // TODO: return type with dimension
@@ -511,6 +634,63 @@ public:
   }
 
   //   _INLINE uint32_t dclBindingSpace() {}
+  air::ETextureType dclResourceType() {
+    assert((opCode() == Op::DCL_RESOURCE) ||
+           (opCode() == Op::DCL_UNORDERED_ACCESS_VIEW_TYPED));
+    static_assert(
+        offsetof(D3D10ShaderBinary::CResourceDecl, Dimension) ==
+            offsetof(D3D10ShaderBinary::CTypedUAVDeclaration, Dimension),
+        "otherwise assuption is false");
+    switch (instruction->m_ResourceDecl.Dimension) {
+    case D3D10_SB_RESOURCE_DIMENSION_BUFFER:
+      return air::ETextureType::texture_buffer;
+    case D3D10_SB_RESOURCE_DIMENSION_TEXTURE1D:
+      return air::ETextureType::texture_1d;
+    case D3D10_SB_RESOURCE_DIMENSION_TEXTURE2D:
+      return air::ETextureType::texture_2d;
+    case D3D10_SB_RESOURCE_DIMENSION_TEXTURE2DMS:
+      return air::ETextureType::texture_2d_ms;
+    case D3D10_SB_RESOURCE_DIMENSION_TEXTURE3D:
+      return air::ETextureType::texture_3d;
+    case D3D10_SB_RESOURCE_DIMENSION_TEXTURECUBE:
+      return air::ETextureType::texture_cube;
+    case D3D10_SB_RESOURCE_DIMENSION_TEXTURE1DARRAY:
+      return air::ETextureType::texture_1d_array;
+    case D3D10_SB_RESOURCE_DIMENSION_TEXTURE2DARRAY:
+      return air::ETextureType::texture_2d_array;
+    case D3D10_SB_RESOURCE_DIMENSION_TEXTURE2DMSARRAY:
+      return air::ETextureType::texture_2d_ms_array;
+    case D3D10_SB_RESOURCE_DIMENSION_TEXTURECUBEARRAY:
+      return air::ETextureType::texture_cube_array;
+    default:
+      assert(0 && "Unexpected resource dimension");
+    }
+  }
+
+  air::ETextureAccessType dclResourceAccessType() {
+    assert((opCode() == Op::DCL_RESOURCE) ||
+           (opCode() == Op::DCL_UNORDERED_ACCESS_VIEW_TYPED));
+    static_assert(
+        offsetof(D3D10ShaderBinary::CResourceDecl, ReturnType) ==
+            offsetof(D3D10ShaderBinary::CTypedUAVDeclaration, ReturnType),
+        "otherwise assuption is false");
+    switch (instruction->m_ResourceDecl.ReturnType[0]) {
+    case D3D10_SB_RETURN_TYPE_UNORM:
+      return air::ETextureAccessType::v4f32;
+    case D3D10_SB_RETURN_TYPE_SNORM:
+      return air::ETextureAccessType::v4f32;
+    case D3D10_SB_RETURN_TYPE_SINT:
+      return air::ETextureAccessType::s_v4i32;
+    case D3D10_SB_RETURN_TYPE_UINT:
+      return air::ETextureAccessType::u_v4i32;
+    case D3D10_SB_RETURN_TYPE_FLOAT:
+      return air::ETextureAccessType::v4f32;
+    default:
+      assert(0 && "Unexpected resource return type");
+    }
+  }
+
+  bool saturate() const { return instruction->m_bSaturate; }
 
 private:
   const D3D10ShaderBinary::CInstruction *instruction;

@@ -9,35 +9,56 @@ namespace dxmt::air {
 
 AirType::AirType(LLVMContext &context) : Context(context) {
 
-  tyInt32 = Type::getInt32Ty(context);
-  tyFloat = Type::getFloatTy(context);
-  tyBool = Type::getInt1Ty(context);
+  _int = Type::getInt32Ty(context);
+  _float = Type::getFloatTy(context);
+  _bool = Type::getInt1Ty(context);
 
-  auto tyHalf = Type::getHalfTy(context);
+  _half = Type::getHalfTy(context);
+  _half4 = FixedVectorType::get(_half, 4);
+
   auto tyShort = Type::getInt16Ty(context);
 
-  tyInt32V4 = FixedVectorType::get(tyInt32, 4);
-  tyFloatV4 = FixedVectorType::get(tyFloat, 4);
+  _int4 = FixedVectorType::get(_int, 4);
+  _float4 = FixedVectorType::get(_float, 4);
 
-  auto tyInt32V3 = FixedVectorType::get(tyInt32, 3);
+  auto tyInt32V3 = FixedVectorType::get(_int, 3);
   auto tyShortV3 = FixedVectorType::get(tyShort, 3);
-  auto tyFloatV3 = FixedVectorType::get(tyFloat, 3);
+  auto tyFloatV3 = FixedVectorType::get(_float, 3);
 
-  auto tyInt32V2 = FixedVectorType::get(tyInt32, 2);
+  auto tyInt32V2 = FixedVectorType::get(_int, 2);
   auto tyShortV2 = FixedVectorType::get(tyShort, 2);
-  auto tyFloatV2 = FixedVectorType::get(tyFloat, 2);
+  auto tyFloatV2 = FixedVectorType::get(_float, 2);
 
   auto tyOpaque = StructType::create(context, "opaque");
-  tyDevicePtr = PointerType::get(tyOpaque, 1);
-  tyConstantPtr = PointerType::get(tyOpaque, 2);
-  //   auto tyTGSMPtr = PointerType::get(context, 3); // TODO: really?
+  _ptr_device = PointerType::get(tyOpaque, 1);
+  _ptr_constant = PointerType::get(tyOpaque, 2);
+
+  _texture1d = StructType::create(context, "struct._texture_1d_t");
+  _texture1d_array = StructType::create(context, "struct._texture_1d_array_t");
+  _texture2d = StructType::create(context, "struct._texture_2d_t");
+  _texture2d_array = StructType::create(context, "struct._texture_2d_array_t");
+  _texture2d_ms = StructType::create(context, "struct._texture_2d_ms_t");
+  _texture2d_ms_array = StructType::create(context, "struct._texture_2d_ms_array_t");
+  _texture_cube = StructType::create(context, "struct._texture_cube_t");
+  _texture_cube_array = StructType::create(context, "struct._texture_cube_array_t");
+  _texture3d = StructType::create(context, "struct._texture_3d_t");
+  _texture_buffer = StructType::create(context, "struct._texture_buffer_1d_t");
+
+  _texture2d = StructType::create(context, "struct._depth_2d_t");
+  _texture2d_array = StructType::create(context, "struct._depth_2d_array_t");
+  _texture2d_ms = StructType::create(context, "struct._depth_2d_ms_t");
+  _texture2d_ms_array = StructType::create(context, "struct._depth_2d_ms_array_t");
+  _texture_cube = StructType::create(context, "struct._depth_cube_t");
+  _texture_cube_array = StructType::create(context, "struct._depth_cube_array_t");
+
+  _sampler = StructType::create(context, "struct._sampler_t");
 
   typeContext = {
-      {"bool", tyBool},
-      {"int", tyInt32},
-      {"uint", tyInt32},
+      {"bool", _bool},
+      {"int", _int},
+      {"uint", _int},
       {"short", tyShort},
-      {"float", tyFloat},
+      {"float", _float},
       {"int2", tyInt32V2},
       {"short2", tyShortV2},
       {"uint2", tyInt32V2},
@@ -48,26 +69,13 @@ AirType::AirType(LLVMContext &context) : Context(context) {
       {"uint3", tyInt32V3},
       {"ushort3", tyShortV3},
       {"float3", tyFloatV3},
-      {"int4", tyInt32V4},
-      {"uint4", tyInt32V4},
-      {"float4", tyFloatV4},
+      {"int4", _int4},
+      {"uint4", _int4},
+      {"float4", _float4},
       {"short4", FixedVectorType::get(tyShort, 4)},
       {"ushort4", FixedVectorType::get(tyShort, 4)},
-      {"half", tyHalf},
-      {"half4", FixedVectorType::get(tyHalf, 4)},
-
-      {"texture1d", StructType::get(context, {tyDevicePtr}, false)},
-      {"texture1d_array", StructType::get(context, {tyDevicePtr}, false)},
-      {"texture2d", StructType::get(context, {tyDevicePtr}, false)},
-      {"texture2d_array", StructType::get(context, {tyDevicePtr}, false)},
-      {"texture2d_ms", StructType::get(context, {tyDevicePtr}, false)},
-      {"texture2d_ms_array", StructType::get(context, {tyDevicePtr}, false)},
-      {"texture3d", StructType::get(context, {tyDevicePtr}, false)},
-      {"texturecube", StructType::get(context, {tyDevicePtr}, false)},
-      {"texturecube_array", StructType::get(context, {tyDevicePtr}, false)},
-      {"texture_buffer", StructType::get(context, {tyDevicePtr}, false)},
-
-      {"sampler", StructType::get(context, {tyConstantPtr}, false)},
+      {"half", _half},
+      {"half4", _half4},
   };
 };
 

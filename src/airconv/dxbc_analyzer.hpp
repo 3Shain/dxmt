@@ -18,9 +18,10 @@
 #include "air_constants.hpp"
 #include "air_metadata.hpp"
 #include "air_type.hpp"
+#include "dxbc_binding.hpp"
 #include "dxbc_signature.hpp"
 
-namespace dxmt {
+namespace dxmt::dxbc {
 
 struct ConstantBuffer {
   uint32_t registerIndex;
@@ -43,8 +44,9 @@ struct __ShaderContext {
   std::optional<llvm::Value *> oMask;
 };
 
-using PrologueHook = std::function<void(
-    llvm::Value *input, const __ShaderContext &context, air::AirBuilder &builder)>;
+using PrologueHook =
+    std::function<void(llvm::Value *input, const __ShaderContext &context,
+                       air::AirBuilder &builder)>;
 
 struct InputBinding {
   llvm::Type *type;
@@ -53,8 +55,8 @@ struct InputBinding {
   PrologueHook prologueHook;
 };
 
-using EpilogueHook =
-    std::function<llvm::Value *(const __ShaderContext &context, air::AirBuilder &)>;
+using EpilogueHook = std::function<llvm::Value *(const __ShaderContext &context,
+                                                 air::AirBuilder &)>;
 
 struct OutputBinding {
   llvm::Type *type;
@@ -64,19 +66,22 @@ struct OutputBinding {
 };
 
 using SignatureMatcher = std::function<bool(dxbc::Signature)>;
-using SignatureFinder = std::function<dxbc::Signature(const SignatureMatcher &)>;
+using SignatureFinder =
+    std::function<dxbc::Signature(const SignatureMatcher &)>;
 
 class DxbcAnalyzer {
 public:
   DxbcAnalyzer(llvm::LLVMContext &context, air::AirType &types,
-               air::AirMetadata &metadata)
-      : context(context), types(types), metadata(metadata) {}
+               air::AirMetadata &metadata, IDxbcBindingDeclare *bindingDeclare)
+      : context(context), types(types), metadata(metadata),
+        bindingDeclare(bindingDeclare) {}
 
-  void AnalyzeShader(D3D10ShaderBinary::CShaderCodeParser &parser, const SignatureFinder& input, const SignatureFinder& output);
+  void AnalyzeShader(D3D10ShaderBinary::CShaderCodeParser &parser,
+                     const SignatureFinder &input,
+                     const SignatureFinder &output);
 
   // for SM 5.0 : assume no register space
-  std::tuple<llvm::Type *, llvm::MDNode *>
-  GenerateBindingTable();
+  std::tuple<llvm::Type *, llvm::MDNode *> GenerateBindingTable();
   // std::tuple<llvm::Type*, llvm::MDNode*> GenerateBindingTableSM51(AirType&
   // type);
 
@@ -103,6 +108,12 @@ public:
   uint32_t tempsCount = 0;
   std::map<uint32_t, uint32_t> indexableTemps;
 
+  bool enableFastMath = false;
+
+  union {
+    std::array<uint32_t, 3> threadgroupSize;
+  };
+
 private:
   llvm::LLVMContext &context;
   air::AirType &types;
@@ -110,5 +121,6 @@ private:
   unsigned m_DxbcMajor;
   unsigned m_DxbcMinor;
   D3D10_SB_TOKENIZED_PROGRAM_TYPE ShaderType;
+  IDxbcBindingDeclare *bindingDeclare;
 };
-} // namespace dxmt
+} // namespace dxmt::dxbc

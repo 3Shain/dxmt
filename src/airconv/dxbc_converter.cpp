@@ -11,23 +11,23 @@
 #include "llvm/IR/FMF.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/MDBuilder.h"
 #include "llvm/IR/Metadata.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Type.h"
 #include "llvm/IR/Value.h"
-// #include "llvm/Analysis/LoopAnalysisManager.h"
-// #include "llvm/Analysis/CGSCCPassManager.h"
-#include "llvm/Passes/PassBuilder.h"
-#include "llvm/IR/Verifier.h"
 #include <array>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <vector>
 
 #include "air_builder.hpp"
 #include "air_constants.hpp"
 #include "air_operation.hpp"
+#include "air_type.hpp"
+#include "dxbc_instruction.hpp"
 #include "dxbc_utils.h"
 
 using namespace llvm;
@@ -35,11 +35,105 @@ using namespace dxmt::air;
 
 namespace dxmt {
 
-DxbcConverter::DxbcConverter(DxbcAnalyzer &analyzer, AirType &types,
-                             llvm::LLVMContext &context, llvm::Module &pModule)
-    : analyzer(analyzer), types(types), context_(context), pModule_(pModule),
-      pBuilder_(context), airBuilder(types, pBuilder_),
-      airOp(types, airBuilder, context, pModule_) {}
+class IndexableRegisters {
+
+  IndexableRegisters(uint32_t size, IRBuilder<> &builder, const AirType &types)
+      : size(size), builder(builder) {
+    builder.CreateAlloca(types._int4,
+                         ConstantInt::get(types._int, size));
+  };
+
+  Value *Load(uint32_t index) {
+    // return Load(ConstantInt::get(types.tyInt32, index));
+  }
+  Value *Load(Value *index) {}
+
+  void Store(Value *index, const std::function<Value *(Value *)> &reducer) {}
+
+private:
+  uint32_t size;
+  IRBuilder<> &builder;
+};
+
+class SSARegisters {};
+
+class DxbcConverter : public IDxbcConverter {
+
+public:
+  DxbcConverter(DxbcAnalyzer &analyzer, AirType &types,
+                llvm::LLVMContext &context, llvm::Module &pModule)
+      : analyzer(analyzer), types(types), context_(context), pModule_(pModule),
+        pBuilder_(context), airBuilder(types, pBuilder_),
+        airOp(types, airBuilder, context, pModule_) {}
+
+private:
+  DxbcAnalyzer &analyzer;
+  air::AirType &types;
+  llvm::LLVMContext &context_;
+  llvm::Module &pModule_;
+  llvm::IRBuilder<> pBuilder_;
+  air::AirBuilder airBuilder;
+  air::AirOp airOp;
+
+  unsigned m_DxbcMajor;
+  unsigned m_DxbcMinor;
+
+  llvm::Function *function;
+  llvm::BasicBlock *epilogue;
+
+  __ShaderContext shaderContext;
+
+public:
+  llvm::MDNode *Pre(air::AirMetadata &metadata);
+
+  llvm::MDNode *Post(air::AirMetadata &metadata, llvm::MDNode *input);
+
+  void ConvertInstructions(D3D10ShaderBinary::CShaderCodeParser &Parser);
+
+  /* internal helpers */
+private:
+  llvm::Value *Load(const dxbc::SrcOperand &operand, llvm::Type *expectedType) {
+
+    assert(0 && "Unhandled branch in operand load");
+  };
+
+  PerformStore Store(const dxbc::DstOperand &operand) {
+    if (operand.null()) {
+      return [](auto _) {}; // do nothing
+    }
+    // auto instructionModifier = [this]() {
+
+    // };
+    if (operand.genericOutput()) {
+    }
+
+    if (operand.temp()) {
+    }
+
+    assert(0 && "Unhandled branch in operand store");
+  };
+
+  llvm::Value *LoadIndex(const dxbc::OperandIndex &index) {
+    return index.match<llvm::Value *>(
+        [&](uint32_t index) { return airBuilder.CreateConstant(index); },
+        [&](uint32_t reg, uint8_t component) {
+          return airBuilder.CreateConstant(reg); // TODO!
+        },
+        [&](uint32_t regFile, uint32_t reg, uint8_t component) {
+          return airBuilder.CreateConstant(reg); // TODO!
+        },
+        [&](llvm::Value *val, uint32_t offset) {
+          return pBuilder_.CreateAdd(val, airBuilder.CreateConstant(offset));
+        });
+  };
+};
+
+std::unique_ptr<IDxbcConverter> CreateConverterSM50(DxbcAnalyzer &analyzer,
+                                                air::AirType &types,
+                                                llvm::LLVMContext &context,
+                                                llvm::Module &pModule) {
+  return std::make_unique<DxbcConverter>(analyzer, types, context, pModule);
+};
 
 MDNode *DxbcConverter::Pre(AirMetadata &metadata) {
 
@@ -91,19 +185,19 @@ MDNode *DxbcConverter::Pre(AirMetadata &metadata) {
   {
     if (analyzer.maxInputRegister) {
       shaderContext.tyInputRegs =
-          ArrayType::get(types.tyInt32V4, analyzer.maxInputRegister);
+          ArrayType::get(types._int4, analyzer.maxInputRegister);
       shaderContext.inputRegs = pBuilder_.CreateAlloca(
           shaderContext.tyInputRegs, nullptr, "inputRegisters");
     }
     if (analyzer.maxOutputRegister) {
       shaderContext.tyOutputRegs =
-          ArrayType::get(types.tyInt32V4, analyzer.maxOutputRegister);
+          ArrayType::get(types._int4, analyzer.maxOutputRegister);
       shaderContext.outputRegs = pBuilder_.CreateAlloca(
           shaderContext.tyOutputRegs, nullptr, "outputRegisters");
     }
     if (analyzer.tempsCount) {
       shaderContext.tyTempRegs =
-          ArrayType::get(types.tyInt32V4, analyzer.tempsCount);
+          ArrayType::get(types._int4, analyzer.tempsCount);
       shaderContext.tempRegs = pBuilder_.CreateAlloca(shaderContext.tyTempRegs,
                                                       nullptr, "tempRegisters");
     }
@@ -171,6 +265,7 @@ void DxbcConverter::ConvertInstructions(
       break;
     D3D10ShaderBinary::CInstruction Inst;
     Parser.ParseInstruction(&Inst);
+    dxbc::Instruciton inst(Inst);
     // char temp[1024];
     // Inst.Disassemble(temp, 1024);
     // outs() << temp << "\n";
@@ -194,251 +289,195 @@ void DxbcConverter::ConvertInstructions(
         break;
       }
     }
+    using namespace dxmt::dxbc;
 
-    switch (Inst.OpCode()) {
-    case D3D10_SB_OPCODE_DCL_GLOBAL_FLAGS:
+    auto CreateComparison =
+        [&](const std::function<Value *(Value *, Value *)> op) {
+          auto src1 = Load(inst.src(1), nullptr);
+          auto src2 = Load(inst.src(2), nullptr);
+          auto store = Store(inst.dst(0));
+          store(pBuilder_.CreateSExt(op(src1, src2), types._int4));
+        };
+
+    auto CreateUnary = [&](const std::function<Value *(Value *)> op) {
+      auto src1 = Load(inst.src(1), nullptr); // should pass float?
+      auto store = Store(inst.dst(0));
+      store(op(src1));
+    };
+
+    switch (inst.opCode()) {
+    case Op::DCL_GLOBAL_FLAGS:
       break;
-    case D3D10_SB_OPCODE_MOV: {
-      auto mask = Inst.m_Operands[0].m_WriteMask >> 4;
-
-      auto input = LoadOperand(Inst, 1);
-      StoreOperand(input, Inst, 0, mask);
-      break;
-    }
-    case D3D10_SB_OPCODE_ADD: {
-      // TODO: BINARY TEMPALTE
-      const unsigned DstIdx = 0;
-      const unsigned SrcIdx1 = 1;
-      const unsigned SrcIdx2 = 2;
-      auto mask = Inst.m_Operands[DstIdx].m_WriteMask >> 4;
-
-      auto A = LoadOperand(Inst, SrcIdx1);
-      auto B = LoadOperand(Inst, SrcIdx2);
-
-      auto R =
-          pBuilder_.CreateFAdd(pBuilder_.CreateBitCast(A, types.tyFloatV4),
-                               pBuilder_.CreateBitCast(B, types.tyFloatV4));
-
-      StoreOperand(pBuilder_.CreateBitCast(R, types.tyInt32V4), Inst, DstIdx,
-                   mask);
-
+    case Op::mov: {
+      // TODO
       break;
     }
-    case D3D10_SB_OPCODE_DP2:
-    case D3D10_SB_OPCODE_DP3:
-    case D3D10_SB_OPCODE_DP4: {
-      auto mask = Inst.m_Operands[0].m_WriteMask >> 4;
-
-      auto A = LoadOperand(Inst, 1);
-      auto B = LoadOperand(Inst, 2);
-
-      auto opDP = airOp.GetDotProduct();
-      auto R = pBuilder_.CreateCall(
-          opDP, {pBuilder_.CreateBitCast(A, types.tyFloatV4),
-                 pBuilder_.CreateBitCast(B, types.tyFloatV4)});
-
-      StoreOperand(pBuilder_.CreateBitCast(pBuilder_.CreateVectorSplat(4, R),
-                                           types.tyInt32V4),
-                   Inst, 0, mask);
+    case Op::movc: {
+      // TODO
       break;
     }
-    default:
-      // DXASSERT(false, "Unhandled opecode")
+    case Op::swapc: {
+      // TODO
       break;
     }
+    case Op::DP2:
+    case Op::DP3:
+    case Op::DP4: {
+      // TODO
+      break;
+    }
+      {/* comparison */
+       case Op::eq : {CreateComparison([&](auto src1, auto src2) {
+         return pBuilder_.CreateFCmp(CmpInst::FCMP_OEQ, src1, src2);
+       });
+      break;
+    }
+  case Op::ne: {
+    CreateComparison([&](auto src1, auto src2) {
+      return pBuilder_.CreateFCmp(CmpInst::FCMP_UNE, src1, src2);
+    });
+    break;
   }
+  case Op::lt: {
+    CreateComparison([&](auto src1, auto src2) {
+      return pBuilder_.CreateFCmp(CmpInst::FCMP_OLT, src1, src2);
+    });
+    break;
+  }
+  case Op::ge: {
+    CreateComparison([&](auto src1, auto src2) {
+      return pBuilder_.CreateCmp(CmpInst::FCMP_OGE, src1, src2);
+    });
+    break;
+  }
+
+  case Op::ieq: {
+    CreateComparison([&](auto src1, auto src2) {
+      return pBuilder_.CreateCmp(CmpInst::ICMP_EQ, src1, src2);
+    });
+    break;
+  }
+  case Op::ine: {
+    CreateComparison([&](auto src1, auto src2) {
+      return pBuilder_.CreateCmp(CmpInst::ICMP_NE, src1, src2);
+    });
+    break;
+  }
+  case Op::ige: {
+    CreateComparison([&](auto src1, auto src2) {
+      return pBuilder_.CreateCmp(CmpInst::ICMP_SGE, src1, src2);
+    });
+    break;
+  }
+  case Op::ilt: {
+    CreateComparison([&](auto src1, auto src2) {
+      return pBuilder_.CreateCmp(CmpInst::ICMP_SLT, src1, src2);
+    });
+    break;
+  }
+  case Op::ult: {
+    CreateComparison([&](auto src1, auto src2) {
+      return pBuilder_.CreateCmp(CmpInst::ICMP_ULT, src1, src2);
+    });
+    break;
+  }
+  case Op::uge: {
+    CreateComparison([&](auto src1, auto src2) {
+      return pBuilder_.CreateCmp(CmpInst::ICMP_UGE, src1, src2);
+    });
+    break;
+  }
+  }
+  {
+    /* float arith */
+  case Op::EXP: {
+    CreateUnary([&](auto src) {
+      return airOp.CreateFloatUnaryOp(EFloatUnaryOp::exp2, src);
+    });
+    break;
+  }
+  case Op::LOG: {
+    CreateUnary([&](auto src) {
+      return airOp.CreateFloatUnaryOp(EFloatUnaryOp::log2, src);
+    });
+    break;
+  }
+  case Op::FRC: {
+    CreateUnary([&](auto src) {
+      return airOp.CreateFloatUnaryOp(EFloatUnaryOp::fract, src);
+    });
+    break;
+  }
+  case Op::SQRT: {
+    CreateUnary([&](auto src) {
+      return airOp.CreateFloatUnaryOp(EFloatUnaryOp::sqrt, src);
+    });
+    break;
+  }
+  case Op::ROUND_NE: {
+    CreateUnary([&](auto src) {
+      return airOp.CreateFloatUnaryOp(EFloatUnaryOp::rint, src);
+    });
+    break;
+  }
+  case Op::ROUND_NI: {
+    CreateUnary([&](auto src) {
+      return airOp.CreateFloatUnaryOp(EFloatUnaryOp::floor, src);
+    });
+    break;
+  }
+  case Op::ROUND_PI: {
+    CreateUnary([&](auto src) {
+      return airOp.CreateFloatUnaryOp(EFloatUnaryOp::ceil, src);
+    });
+    break;
+  }
+  case Op::ROUND_Z: {
+    CreateUnary([&](auto src) {
+      return airOp.CreateFloatUnaryOp(EFloatUnaryOp::round, src);
+    });
+    break;
+  }
+  case Op::RSQ: {
+    CreateUnary([&](auto src) {
+      return airOp.CreateFloatUnaryOp(EFloatUnaryOp::rsqrt, src);
+    });
+    break;
+  }
+  case Op::RCP: {
+    CreateUnary([&](auto src) {
+      return airOp.CreateFloatUnaryOp(EFloatUnaryOp::_rcp, src);
+    });
+    break;
+  }
+  case Op::NOP:
+    break; // do nothing
+
+  case Op::ADD: {
+    break;
+  }
+  case Op::DIV: {
+    break;
+  }
+  case Op::MIN: {
+    break;
+  }
+  case Op::MAX: {
+    break;
+  }
+  case Op::MUL: {
+    break;
+  }
+    // case Op::SINCOS: {
+    //   break;
+    // }
+  }
+
+default:
+  DXASSERT(false, "Unhandled opecode")
+  break;
 }
-
-llvm::Value *
-DxbcConverter::LoadOperand(const D3D10ShaderBinary::CInstruction &Inst,
-                           const unsigned OpIdx) {
-  const D3D10ShaderBinary::COperandBase &O = Inst.m_Operands[OpIdx];
-  switch (O.m_Type) {
-  case D3D10_SB_OPERAND_TYPE_IMMEDIATE32: {
-
-    DXASSERT_DXBC(O.m_Modifier == D3D10_SB_OPERAND_MODIFIER_NONE);
-    bool bVec4 = O.m_NumComponents == D3D10_SB_OPERAND_4_COMPONENT;
-    std::array<uint32_t, 4> constantVal = {
-        O.m_Value[0], O.m_Value[bVec4 ? 1 : 0], O.m_Value[bVec4 ? 2 : 0],
-        O.m_Value[bVec4 ? 3 : 0]}; // wtf?
-    return airBuilder.CreateConstantVector(constantVal);
-    break;
-  }
-  case D3D10_SB_OPERAND_TYPE_INPUT: {
-    unsigned Register;     // Starting index of the register range.
-    Value *pRowIndexValue; // Row index expression.
-    switch (O.m_IndexDimension) {
-    case D3D10_SB_OPERAND_INDEX_1D:
-      Register = O.m_Index[0].m_RegIndex;
-      pRowIndexValue = LoadOperandIndex(O.m_Index[0], O.m_IndexType[0]);
-      break;
-    default:
-      DXASSERT(false, "there should no other index dimensions");
-    }
-    return airBuilder.CreateRegisterLoad(
-        shaderContext.inputRegs, shaderContext.tyInputRegs, pRowIndexValue);
-    break;
-  }
-
-  case D3D10_SB_OPERAND_TYPE_TEMP: {
-    unsigned Register;     // Starting index of the register range.
-    Value *pRowIndexValue; // Row index expression.
-    switch (O.m_IndexDimension) {
-    case D3D10_SB_OPERAND_INDEX_1D:
-      Register = O.m_Index[0].m_RegIndex;
-      pRowIndexValue = LoadOperandIndex(O.m_Index[0], O.m_IndexType[0]);
-      break;
-    default:
-      DXASSERT(false, "there should no other index dimensions");
-    }
-    return airBuilder.CreateRegisterLoad(
-        shaderContext.tempRegs, shaderContext.tyTempRegs, pRowIndexValue);
-    break;
-  }
-  case D3D10_SB_OPERAND_TYPE_CONSTANT_BUFFER: {
-    auto cbIdx = pBuilder_.CreateInBoundsGEP(
-        shaderContext.tyBindingTable, shaderContext.bindingTable,
-        {airBuilder.CreateConstant((uint32_t)0),
-         airBuilder.CreateConstant(
-             (uint32_t)0) /** TODO: get from binding table*/});
-    auto cbPtr = pBuilder_.CreateLoad(types.tyInt32V4->getPointerTo(2), cbIdx);
-    auto arrayIdx = pBuilder_.CreateInBoundsGEP(
-        types.tyInt32V4, cbPtr,
-        {LoadOperandIndex(O.m_Index[1], O.m_IndexType[1])});
-    auto element = pBuilder_.CreateLoad(types.tyInt32V4, arrayIdx);
-    return element;
-    break;
-  }
-  default: {
-    assert(0 && "to be handled");
-    break;
-  }
-  }
-}
-
-llvm::Value *DxbcConverter::LoadOperandIndex(
-    const D3D10ShaderBinary::COperandIndex &OpIndex,
-    const D3D10_SB_OPERAND_INDEX_REPRESENTATION IndexType) {
-  Value *pValue = nullptr;
-
-  switch (IndexType) {
-  case D3D10_SB_OPERAND_INDEX_IMMEDIATE32:
-    DXASSERT_DXBC(OpIndex.m_RelRegType == D3D10_SB_OPERAND_TYPE_IMMEDIATE32);
-    pValue = airBuilder.CreateConstant(OpIndex.m_RegIndex);
-    break;
-
-  case D3D10_SB_OPERAND_INDEX_IMMEDIATE64:
-    DXASSERT_DXBC(false);
-    break;
-
-  case D3D10_SB_OPERAND_INDEX_RELATIVE:
-  case D3D10_SB_OPERAND_INDEX_IMMEDIATE32_PLUS_RELATIVE:
-  case D3D10_SB_OPERAND_INDEX_IMMEDIATE64_PLUS_RELATIVE:
-    DXASSERT_DXBC(false);
-    break;
-
-  default:
-    DXASSERT_DXBC(false);
-    break;
-  }
-
-  return pValue;
-}
-
-void DxbcConverter::StoreOperand(llvm::Value *value,
-                                 const D3D10ShaderBinary::CInstruction &Inst,
-                                 const unsigned OpIdx, uint32_t mask) {
-
-  const D3D10ShaderBinary::COperandBase &O = Inst.m_Operands[OpIdx];
-  switch (O.m_Type) {
-  case D3D10_SB_OPERAND_TYPE_OUTPUT: {
-    unsigned Reg = O.m_Index[0].m_RegIndex;
-    // Row index expression.
-    Value *pRowIndexValue = LoadOperandIndex(O.m_Index[0], O.m_IndexType[0]);
-    airBuilder.CreateRegisterStore(shaderContext.outputRegs,
-                                   shaderContext.tyOutputRegs, pRowIndexValue,
-                                   value, mask, {0, 1, 2, 3});
-    break;
-  }
-  case D3D10_SB_OPERAND_TYPE_TEMP: {
-    unsigned Reg = O.m_Index[0].m_RegIndex;
-    // Row index expression.
-    Value *pRowIndexValue = LoadOperandIndex(O.m_Index[0], O.m_IndexType[0]);
-    airBuilder.CreateRegisterStore(shaderContext.tempRegs,
-                                   shaderContext.tyTempRegs, pRowIndexValue,
-                                   value, mask, {0, 1, 2, 3});
-    break;
-  }
-  case D3D10_SB_OPERAND_TYPE_NULL:
-    break;
-  default: {
-    outs() << (O.m_Type);
-    assert(0 && "to be handled");
-    break;
-  }
-  }
-}
-
-Value *
-DxbcConverter::ApplyOperandModifiers(Value *pValue,
-                                     const D3D10ShaderBinary::COperandBase &O) {
-  bool bAbsModifier = (O.m_Modifier & D3D10_SB_OPERAND_MODIFIER_ABS) != 0;
-  bool bNegModifier = (O.m_Modifier & D3D10_SB_OPERAND_MODIFIER_NEG) != 0;
-
-  if (bAbsModifier) {
-    DXASSERT_DXBC(pValue->getType()->isFloatingPointTy());
-    // Function *F = m_pOP->GetOpFunc(OP::OpCode::FAbs, pValue->getType());
-    // Value *Args[2];
-    // Args[0] = m_pOP->GetU32Const((unsigned)OP::OpCode::FAbs);
-    // Args[1] = pValue;
-    // pValue = m_pBuilder->CreateCall(F, Args);
-    // pBuilder_.CreateCall()
-    // pModule_.getOrInsertFunction()
-  }
-
-  if (bNegModifier) {
-    if (pValue->getType()->isFloatingPointTy()) {
-      pValue = pBuilder_.CreateFNeg(pValue);
-    } else {
-      DXASSERT_DXBC(pValue->getType()->isIntegerTy());
-      pValue = pBuilder_.CreateNeg(pValue);
-    }
-  }
-
-  return pValue;
-}
-
-void DxbcConverter::Optimize(llvm::OptimizationLevel level) {
-  // Create the analysis managers.
-  // These must be declared in this order so that they are destroyed in the
-  // correct order due to inter-analysis-manager references.
-  LoopAnalysisManager LAM;
-  FunctionAnalysisManager FAM;
-  CGSCCAnalysisManager CGAM;
-  ModuleAnalysisManager MAM;
-
-  // Create the new pass manager builder.
-  // Take a look at the PassBuilder constructor parameters for more
-  // customization, e.g. specifying a TargetMachine or various debugging
-  // options.
-  PassBuilder PB;
-
-  // Register all the basic analyses with the managers.
-  PB.registerModuleAnalyses(MAM);
-  PB.registerCGSCCAnalyses(CGAM);
-  PB.registerFunctionAnalyses(FAM);
-  PB.registerLoopAnalyses(LAM);
-  PB.crossRegisterProxies(LAM, FAM, CGAM, MAM);
-
-  ModulePassManager MPM = PB.buildPerModuleDefaultPipeline(level);
-
-  FunctionPassManager FPM;
-  FPM.addPass(VerifierPass());
-
-  MPM.addPass(createModuleToFunctionPassAdaptor(std::move(FPM)));
-
-  // Optimize the IR!
-  MPM.run(pModule_, MAM);
+} // namespace dxmt
 }
 
 } // namespace dxmt

@@ -1322,7 +1322,7 @@ public:
     NS::Error *pError = nullptr;
     d->setOutputURL(pURL);
 
-    // c->startCapture(d.ptr(), &pError);
+    c->startCapture(d.ptr(), &pError);
     {
       auto pool = transfer(NS::AutoreleasePool::alloc()->init());
       auto cbuffer = m_queue->commandBufferWithUnretainedReferences();
@@ -1345,7 +1345,7 @@ public:
     ring_offset++;
     ring_offset %= 3;
 
-    // c->stopCapture();
+    c->stopCapture();
   }
 
 private:
