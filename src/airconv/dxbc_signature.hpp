@@ -9,7 +9,7 @@ namespace dxmt::dxbc {
 class Signature {
 
 public:
-  Signature(const D3D11_SIGNATURE_PARAMETER &parameter) : parameter(parameter) {}
+  Signature(const microsoft::D3D11_SIGNATURE_PARAMETER &parameter) : parameter(parameter) {}
 
   std::string_view semanticName() { return parameter.SemanticName; }
 
@@ -27,7 +27,7 @@ public:
   uint32_t reg() { return parameter.Register; }
 
   bool isSystemValue() {
-    return parameter.SystemValue != D3D10_SB_NAME_UNDEFINED;
+    return parameter.SystemValue != microsoft::D3D10_SB_NAME_UNDEFINED;
   }
 
   RegisterComponentType componentType() {
@@ -35,7 +35,7 @@ public:
   }
 
 private:
-  const D3D11_SIGNATURE_PARAMETER &parameter;
+  const microsoft::D3D11_SIGNATURE_PARAMETER &parameter;
 };
 
 static_assert(sizeof(Signature) == sizeof(void *),

@@ -58,7 +58,7 @@ BETTER_ENUM(EBufferAccess, uint32_t, read, read_write)
 BETTER_ENUM(EBufferAddrSpace, uint32_t, unknown, device, constant, threadgroup)
 
 // naming convention: follow AIR operations
-BETTER_ENUM(ETextureType, uint32_t, texture_1d, texture_1d_array, texture_2d,
+BETTER_ENUM(ETextureKind, uint32_t, texture_1d, texture_1d_array, texture_2d,
             texture_2d_array, texture_2d_ms, texture_2d_ms_array, texture_3d,
             texture_cube, texture_cube_array, texture_buffer, depth_2d,
             depth_2d_array, depth_2d_ms, depth_2d_ms_array, depth_cube,

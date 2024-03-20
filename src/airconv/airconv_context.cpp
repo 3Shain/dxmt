@@ -1,5 +1,3 @@
-#include "./dxbc_analyzer.hpp"
-#include "./dxbc_converter.hpp"
 #include "llvm/IR/Constant.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DerivedTypes.h"
@@ -18,12 +16,16 @@
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/IR/Verifier.h"
 
+#include "./air_type.hpp"
+#include "./air_metadata.hpp"
+
 using namespace llvm;
 using namespace dxmt::air;
 
 namespace dxmt {
 
 void Convert(LPCVOID dxbc, UINT dxbcSize, LPVOID *ppAIR, UINT *pAIRSize) {
+  using namespace microsoft;
 
   LLVMContext context;
 
@@ -98,39 +100,39 @@ void Convert(LPCVOID dxbc, UINT dxbcSize, LPVOID *ppAIR, UINT *pAIRSize) {
   CSignatureParser outputParser;
   DXBCGetOutputSignature(dxbc, &outputParser);
 
-  DxbcAnalyzer analyzer(context, types, metadata);
-  analyzer.AnalyzeShader(
-      CodeParser,
-      [&](auto matcher) -> dxbc::Signature {
-        const D3D11_SIGNATURE_PARAMETER *parameters;
-        inputParser.GetParameters(&parameters);
-        for (unsigned i = 0; i < inputParser.GetNumParameters(); i++) {
-          auto sig = dxbc::Signature(parameters[i]);
-          if (matcher(sig)) {
-            return sig;
-          }
-        }
-        assert(0 && "try to access an undefined input");
-      },
-      [&](auto matcher) -> dxbc::Signature {
-        const D3D11_SIGNATURE_PARAMETER *parameters;
-        outputParser.GetParameters(&parameters);
-        for (unsigned i = 0; i < outputParser.GetNumParameters(); i++) {
-          auto sig = dxbc::Signature(parameters[i]);
-          if (matcher(sig)) {
-            return sig;
-          }
-        }
-        assert(0 && "try to access an undefined output");
-      });
+  // DxbcAnalyzer analyzer(context, types, metadata);
+  // analyzer.AnalyzeShader(
+  //     CodeParser,
+  //     [&](auto matcher) -> dxbc::Signature {
+  //       const D3D11_SIGNATURE_PARAMETER *parameters;
+  //       inputParser.GetParameters(&parameters);
+  //       for (unsigned i = 0; i < inputParser.GetNumParameters(); i++) {
+  //         auto sig = dxbc::Signature(parameters[i]);
+  //         if (matcher(sig)) {
+  //           return sig;
+  //         }
+  //       }
+  //       assert(0 && "try to access an undefined input");
+  //     },
+  //     [&](auto matcher) -> dxbc::Signature {
+  //       const D3D11_SIGNATURE_PARAMETER *parameters;
+  //       outputParser.GetParameters(&parameters);
+  //       for (unsigned i = 0; i < outputParser.GetNumParameters(); i++) {
+  //         auto sig = dxbc::Signature(parameters[i]);
+  //         if (matcher(sig)) {
+  //           return sig;
+  //         }
+  //       }
+  //       assert(0 && "try to access an undefined output");
+  //     });
 
-  auto converter = CreateConverter(analyzer, types, context, *pModule);
+  // auto converter = CreateConverter(analyzer, types, context, *pModule);
 
   // 4. convert instructions
-  CodeParser.SetShader(ShaderCode); // reset parser
-  auto inputMD = converter->Pre(metadata);
-  converter->ConvertInstructions(CodeParser);
-  auto functionMD = converter->Post(metadata, inputMD);
+  // CodeParser.SetShader(ShaderCode); // reset parser
+  // auto inputMD = converter->Pre(metadata);
+  // converter->ConvertInstructions(CodeParser);
+  // auto functionMD = converter->Post(metadata, inputMD);
 
   // Create the analysis managers.
   // These must be declared in this order so that they are destroyed in the
@@ -164,16 +166,16 @@ void Convert(LPCVOID dxbc, UINT dxbcSize, LPVOID *ppAIR, UINT *pAIRSize) {
   // Optimize the IR!
   MPM.run(*pModule, MAM);
 
-  if (analyzer.IsVS()) {
-    pModule->getOrInsertNamedMetadata("air.vertex")->addOperand(functionMD);
-  } else if (analyzer.IsPS()) {
-    pModule->getOrInsertNamedMetadata("air.fragment")->addOperand(functionMD);
-  } else if (analyzer.IsCS()) {
-    pModule->getOrInsertNamedMetadata("air.kernel")->addOperand(functionMD);
-  } else {
-    // throw
-    assert(0 && "Unsupported shader type");
-  }
+  // if (analyzer.IsVS()) {
+  //   pModule->getOrInsertNamedMetadata("air.vertex")->addOperand(functionMD);
+  // } else if (analyzer.IsPS()) {
+  //   pModule->getOrInsertNamedMetadata("air.fragment")->addOperand(functionMD);
+  // } else if (analyzer.IsCS()) {
+  //   pModule->getOrInsertNamedMetadata("air.kernel")->addOperand(functionMD);
+  // } else {
+  //   // throw
+  //   assert(0 && "Unsupported shader type");
+  // }
 
   pModule->print(outs(), nullptr);
 

@@ -1,7 +1,4 @@
 airconv_src = files([
- 'dxbc_analyzer.cpp',
- 'dxbc_converter.cpp',
- 'dxbc_utils.cpp',
  'airconv_context.cpp',
  'air_builder.cpp',
  'air_metadata.cpp',

@@ -34,7 +34,7 @@ public:
   llvm::Type *_texture2d_ms_array;
   llvm::Type *_texture3d;
   llvm::Type *_texture_cube;
-  llvm::Type *_texture_cube_array; // probably unused in dxbc
+  llvm::Type *_texture_cube_array;
   llvm::Type *_texture_buffer;
 
   llvm::Type *_depth2d;

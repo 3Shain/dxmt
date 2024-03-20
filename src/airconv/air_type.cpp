@@ -32,6 +32,7 @@ AirType::AirType(LLVMContext &context) : Context(context) {
   auto tyOpaque = StructType::create(context, "opaque");
   _ptr_device = PointerType::get(tyOpaque, 1);
   _ptr_constant = PointerType::get(tyOpaque, 2);
+  _ptr_threadgroup = PointerType::get(tyOpaque, 3);
 
   _texture1d = StructType::create(context, "struct._texture_1d_t");
   _texture1d_array = StructType::create(context, "struct._texture_1d_array_t");

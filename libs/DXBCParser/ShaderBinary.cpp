@@ -12,7 +12,7 @@ using std::min;
  *
  ***************************************************************************/
 
-namespace D3D10ShaderBinary {
+namespace  microsoft::D3D10ShaderBinary {
 
 BOOL IsOpCodeValid(D3D10_SB_OPCODE_TYPE OpCode) {
   return OpCode < D3D10_SB_NUM_OPCODES;
@@ -363,7 +363,7 @@ D3D10_SB_TOKENIZED_PROGRAM_TYPE CShaderCodeParser::ShaderType() {
       DECODE_D3D10_SB_TOKENIZED_PROGRAM_TYPE(*m_pShaderCode);
 }
 
-UINT CShaderCodeParser::CurrentTokenOffset() {
+UINT CShaderCodeParser::CurrentTokenOffset() const {
   return (UINT)(m_pCurrentToken - m_pShaderCode);
 }
 
@@ -530,6 +530,7 @@ void CShaderCodeParser::ParseInstruction(CInstruction *pInstruction) {
   const CShaderToken *pStart = m_pCurrentToken;
   const CShaderToken Token = *m_pCurrentToken++;
   pInstruction->m_OpCode = DECODE_D3D10_SB_OPCODE_TYPE(Token);
+  pInstruction->m_OpClass = g_InstructionInfo[pInstruction->m_OpCode].m_OpClass;
   pInstruction->m_PreciseMask =
       DECODE_D3D11_SB_INSTRUCTION_PRECISE_VALUES(Token);
   pInstruction->m_bSaturate =
@@ -537,6 +538,7 @@ void CShaderCodeParser::ParseInstruction(CInstruction *pInstruction) {
   UINT InstructionLength = DECODE_D3D10_SB_TOKENIZED_INSTRUCTION_LENGTH(Token);
   pInstruction->m_NumOperands =
       GetNumInstructionOperands(pInstruction->m_OpCode);
+
   BOOL b51PlusShader =
       (ShaderMajorVersion() > 5 ||
        (ShaderMajorVersion() == 5 && ShaderMinorVersion() > 0));
