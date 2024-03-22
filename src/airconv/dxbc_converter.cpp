@@ -709,7 +709,7 @@ void convertDXBC(
   auto shader_type = CodeParser.ShaderType();
 
   air::ArgumentBufferBuilder binding_table;
-  air::FunctionSignatureBuilder<> func_signature;
+  air::FunctionSignatureBuilder func_signature;
   uint32_t binding_table_index = 0;
 
   std::function<std::shared_ptr<BasicBlock>(
@@ -722,8 +722,8 @@ void convertDXBC(
   )>
     readControlFlow;
 
-  auto null_bb = std::make_shared<BasicBlock>(nullptr);
-  auto null_switch_context = std::make_shared<BasicBlockSwitch>(nullptr);
+  std::shared_ptr<BasicBlock> null_bb;
+  std::shared_ptr<BasicBlockSwitch> null_switch_context;
 
   auto shader_info = std::make_shared<ShaderInfo>();
 

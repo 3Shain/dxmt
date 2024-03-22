@@ -9,20 +9,17 @@
 #include "llvm/Support/VersionTuple.h"
 
 #include "./air_type.hpp"
-#include "DXBCParser/BlobContainer.h"
-#include "DXBCParser/DXBCUtils.h"
-#include "DXBCParser/ShaderBinary.h"
-#include "dxbc_instruction.hpp"
+#include "dxbc_converter.hpp"
 #include "metallib_writer.hpp"
-#include <cassert>
 
 using namespace llvm;
 using namespace dxmt::air;
 
 namespace dxmt {
 
-void Convert(LPCVOID dxbc, UINT dxbcSize, LPVOID *ppAIR, UINT *pAIRSize) {
-  using namespace microsoft;
+void Convert(
+  const void *dxbc, uint32_t dxbcSize, void **ppAIR, uint32_t *pAIRSize
+) {
 
   LLVMContext context;
 

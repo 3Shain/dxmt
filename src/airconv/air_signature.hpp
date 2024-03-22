@@ -121,7 +121,7 @@ constexpr auto msl_sampler = MSLSampler{};
 struct MSLVector {
   uint32_t dimension;
   MSLScalerType scaler;
-  std::string get_name() {
+  std::string get_name() const {
     auto scaler_name =
       std::visit([](auto scaler) { return scaler.get_name(); }, scaler);
     if (dimension == 1)
@@ -129,7 +129,7 @@ struct MSLVector {
     return scaler_name + std::to_string(dimension);
   };
 
-  llvm::Type *get_llvm_type(llvm::LLVMContext &context) {
+  llvm::Type *get_llvm_type(llvm::LLVMContext &context) const {
     auto scaler_type =
       std::visit([&](auto x) { return x.get_llvm_type(context); }, scaler);
     if (dimension == 1) {
@@ -461,19 +461,18 @@ using FunctionOutput = std::variant<
   /* fragment */
   OutputRenderTarget>;
 
-template <typename I = FunctionInput, typename O = FunctionOutput>
 class FunctionSignatureBuilder {
 public:
-  uint32_t DefineInput(const I &input);
-  uint32_t DefineOutput(const O &output);
+  uint32_t DefineInput(const FunctionInput &input);
+  uint32_t DefineOutput(const FunctionOutput &output);
 
   auto CreateFunction(
     std::string name, llvm::LLVMContext &context, llvm::Module &module
   ) -> std::pair<llvm::Function *, llvm::MDNode *>;
 
 private:
-  std::vector<I> inputs;
-  std::vector<O> outputs;
+  std::vector<FunctionInput> inputs;
+  std::vector<FunctionOutput> outputs;
 };
 
 } // namespace dxmt::air

@@ -96,6 +96,7 @@ HRESULT CreateInputLayout(IMTLD3D11Device *device,
                           const void *pShaderBytecodeWithInputSignature,
                           const D3D11_INPUT_ELEMENT_DESC *pInputElementDescs,
                           UINT NumElements, ID3D11InputLayout **ppInputLayout) {
+  using namespace microsoft;
   std::vector<Attribute> elements(NumElements);
   std::vector<Layout> layout(16);
 

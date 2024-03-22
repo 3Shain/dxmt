@@ -58,7 +58,9 @@ public:
   };
 
   auto BuildTuple(llvm::LLVMContext &context) {
-    auto mds = factories << [&](auto factory) { return factory(context); };
+    auto mds = factories | [&](auto factory) -> llvm::Metadata * {
+      return factory(context);
+    };
     return MDTuple::get(context, mds);
   };
 
@@ -87,8 +89,8 @@ uint32_t ArgumentBufferBuilder::DefineBuffer(
 };
 
 // uint32_t ArgumentBufferBuilder::DefineIndirectBuffer(
-//   std::string name, AddressSpace addressp_space, llvm::StructType *struct_type,
-//   llvm::Metadata *struct_type_metadata
+//   std::string name, AddressSpace addressp_space, llvm::StructType
+//   *struct_type, llvm::Metadata *struct_type_metadata
 // ) {
 //   auto element_index = fieldsType.size();
 //   assert(
@@ -386,31 +388,30 @@ auto ArgumentBufferBuilder::Build(
   return std::make_pair(struct_type, struct_metadata.BuildTuple(context));
 };
 
-template <typename I, typename O>
-uint32_t FunctionSignatureBuilder<I, O>::DefineInput(const I &input) {
+uint32_t FunctionSignatureBuilder::DefineInput(const FunctionInput &input) {
   // TODO: check duplication (in case it's already defined)
   uint32_t index = inputs.size();
   inputs.push_back(input);
   return index;
 };
 
-template <typename I, typename O>
-uint32_t FunctionSignatureBuilder<I, O>::DefineOutput(const O &output) {
+uint32_t FunctionSignatureBuilder::DefineOutput(const FunctionOutput &output) {
   // TODO: check duplication (in case it's already defined)
   uint32_t index = inputs.size();
   outputs.push_back(output);
   return index;
 };
 
-template <typename I, typename O>
-auto FunctionSignatureBuilder<I, O>::CreateFunction(
+auto FunctionSignatureBuilder::CreateFunction(
   std::string name, llvm::LLVMContext &context, llvm::Module &module
 ) -> std::pair<llvm::Function *, llvm::MDNode *> {
   std::vector<Metadata *> metadata_input;
   std::vector<llvm::Type *> type_input;
   std::vector<Metadata *> metadata_output;
   std::vector<llvm::Type *> type_output;
-  for (auto &[i, input] : enumerate(inputs)) {
+  for (auto &item : enumerate(inputs)) {
+    auto i = item.index();
+    auto input = item.value();
     StreamMDHelper metadata_field;
     metadata_field.integer(i);
     llvm::Type *field_type = std::visit(
@@ -424,6 +425,7 @@ auto FunctionSignatureBuilder<I, O>::CreateFunction(
             ->string(get_name(vertex_in.type))
             ->string("air.arg_name")
             ->string(vertex_in.name);
+          return get_llvm_type(vertex_in.type, context);
         },
         [&](const InputFragmentStageIn &frag_in) {
           metadata_field.string("air.fragment_input")
@@ -433,6 +435,7 @@ auto FunctionSignatureBuilder<I, O>::CreateFunction(
             ->string(get_name(frag_in.type))
             ->string("air.arg_name")
             ->string(frag_in.user);
+          return get_llvm_type(frag_in.type, context);
         },
         [&](const ArgumentBindingBuffer &buffer) {
           return build_argument_binding_buffer(
@@ -461,8 +464,13 @@ auto FunctionSignatureBuilder<I, O>::CreateFunction(
             ->string("float4") // HARDCODED
             ->string("air.arg_name")
             ->string("mtl_position");
+
+          return msl_float4.get_llvm_type(context);
         },
-        [](auto _) { assert(0 && "Unhandled input"); }
+        [](auto _) {
+          assert(0 && "Unhandled input");
+          return (llvm::Type *)nullptr;
+        }
       },
       input
     );
@@ -470,7 +478,8 @@ auto FunctionSignatureBuilder<I, O>::CreateFunction(
     metadata_input.push_back(metadata_field.BuildTuple(context));
     type_input.push_back(field_type);
   };
-  for (auto &[i, output] : enumerate(outputs)) {
+  for (auto &item : enumerate(outputs)) {
+    auto output = item.value();
     StreamMDHelper md;
     llvm::Type *field_type = std::visit(
       patterns{
@@ -501,7 +510,10 @@ auto FunctionSignatureBuilder<I, O>::CreateFunction(
             ->string("mtl_position");
           return get_llvm_type(position.type, context);
         },
-        [](auto _) { assert(0 && "Unhandled output"); }
+        [](auto _) {
+          assert(0 && "Unhandled output");
+          return (llvm::Type *)nullptr;
+        }
       },
       output
     );
