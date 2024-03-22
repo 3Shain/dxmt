@@ -1,5 +1,3 @@
-#include "llvm/IR/Constant.h"
-#include "llvm/IR/Constants.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/LLVMContext.h"
@@ -7,17 +5,15 @@
 #include "llvm/IR/Module.h"
 #include "llvm/Passes/OptimizationLevel.h"
 #include "llvm/Support/VersionTuple.h"
+#include "llvm/Passes/PassBuilder.h"
+#include "llvm/IR/Verifier.h"
+
 #include <cassert>
 #include "DXBCParser/BlobContainer.h"
 #include "DXBCParser/ShaderBinary.h"
 #include "DXBCParser/DXBCUtils.h"
-#include "dxbc_signature.hpp"
 #include "metallib_writer.hpp"
-#include "llvm/Passes/PassBuilder.h"
-#include "llvm/IR/Verifier.h"
-
 #include "./air_type.hpp"
-#include "./air_metadata.hpp"
 
 using namespace llvm;
 using namespace dxmt::air;
@@ -32,7 +28,6 @@ void Convert(LPCVOID dxbc, UINT dxbcSize, LPVOID *ppAIR, UINT *pAIRSize) {
   context.setOpaquePointers(false); // I suspect Metal uses LLVM 14...
 
   AirType types(context);
-  AirMetadata metadata(context);
 
   IRBuilder<> builder(context);
   auto pModule = std::make_unique<Module>("shader.air", context);

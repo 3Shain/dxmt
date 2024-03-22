@@ -2,14 +2,14 @@
 #include "DXBCParser/d3d12tokenizedprogramformat.hpp"
 
 #include "air_constants.hpp"
-#include "dxbc_constants.hpp"
+
+#include <cassert>
 #include <cstdint>
 #include <map>
 #include <unordered_map>
 #include <variant>
 #include <vector>
 
-#include "DXBCParser/ShaderBinary.h"
 #include "shader_common.hpp"
 
 namespace dxmt::dxbc {
@@ -176,8 +176,32 @@ struct DclOutput {};
 
 #pragma endregion
 
-using SrcOperand = std::variant<SrcOperandImmediate32, SrcOperandTemp,
-                                SrcOperandIndexableTemp, SrcOperandInput>;
+using SrcOperand =
+    std::variant<SrcOperandImmediate32, SrcOperandTemp, SrcOperandIndexableTemp,
+                 SrcOperandInput, SrcOperandConstantBuffer,
+                 SrcOperandImmediateConstantBuffer>;
+
+struct SrcOperandResource {
+  uint32_t range_id;
+  OperandIndex index;
+  swizzle read_swizzle; // if appliable?
+};
+
+struct SrcOperandSampler {
+  uint32_t range_id;
+  OperandIndex index;
+};
+
+struct SrcOperandUAV {
+  uint32_t range_id;
+  OperandIndex index;
+};
+
+struct SrcOperandTGSM {
+  uint32_t id;
+  OperandIndex index;
+};
+
 using DstOperand =
     std::variant<DstOperandNull, DstOperandTemp, DstOperandIndexableTemp,
                  DstOperandOutput, DstOperandOutputDepth>;
@@ -219,6 +243,7 @@ struct InstGather {};
 enum class FloatComparison { Equal, NotEqual, GreaterEqual, LessThan };
 
 struct InstFloatCompare {
+  InstructionCommon _;
   FloatComparison cmp;
 };
 
@@ -232,6 +257,7 @@ enum class IntegerComparison {
 };
 
 struct InstIntegerCompare {
+  InstructionCommon _;
   IntegerComparison cmp;
 };
 
@@ -244,6 +270,7 @@ enum class FloatBinaryOp {
 };
 
 struct InstFloatBinaryOp {
+  InstructionCommon _;
   FloatBinaryOp op;
   DstOperand dst;
   SrcOperand src0;
@@ -258,6 +285,7 @@ enum class FloatUnaryOp {
 };
 
 struct InstFloatUnaryOp {
+  InstructionCommon _;
   FloatUnaryOp op;
   DstOperand dst;
   SrcOperand src;
@@ -271,6 +299,7 @@ enum class IntegerBinaryOp {
 };
 
 struct InstIntegerBinaryOp {
+  InstructionCommon _;
   IntegerBinaryOp op;
   DstOperand dst;
   SrcOperand src0;
@@ -287,12 +316,29 @@ enum class ConversionOp {
 };
 
 struct InstConvert {
+  InstructionCommon _;
   ConversionOp op;
   DstOperand dst;
   SrcOperand src;
 };
 
 struct InstPixelDiscard {};
+
+struct InstPartialDerivative {
+  InstructionCommon _;
+  DstOperand dst;
+  SrcOperand src;
+  bool ddy;    // use ddx if false
+  bool coarse; // use fine if false
+};
+
+struct InstCalcLOD {
+  // InstructionCommon _;
+  DstOperand dst;
+  SrcOperand src_address;
+  SrcOperandResource src_resource;
+  SrcOperandSampler src_sampler;
+};
 
 using Instruction = std::variant<
     /* Generic */
@@ -303,7 +349,7 @@ using Instruction = std::variant<
     InstFloatUnaryOp,                                        //
     InstSample, InstLoad, InstStore,                         //
     /* Pixel Shader */
-    InstPixelDiscard>;
+    InstPixelDiscard, InstPartialDerivative, InstCalcLOD>;
 
 #pragma region shader reflection
 

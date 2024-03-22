@@ -1,4 +1,6 @@
 #include "dxbc_instruction.hpp"
+#include "DXBCParser/ShaderBinary.h"
+#include "DXBCParser/d3d12tokenizedprogramformat.hpp"
 
 namespace dxmt::dxbc {
 
@@ -533,11 +535,73 @@ auto readSrcOperand(const microsoft::D3D10ShaderBinary::COperandBase &O)
   }
 };
 
+auto readSrcOperandResource(
+    const microsoft::D3D10ShaderBinary::COperandBase &O) -> SrcOperandResource {}
+
+auto readSrcOperandSampler(
+    const microsoft::D3D10ShaderBinary::COperandBase &O) -> SrcOperandSampler {}
+
+auto readSrcOperandUAV(const microsoft::D3D10ShaderBinary::COperandBase &O) -> SrcOperandUAV {}
+
+auto readSrcOperandLoadable(
+    const microsoft::D3D10ShaderBinary::COperandBase &O) {}
+
+auto readInstructionCommon(
+    const microsoft::D3D10ShaderBinary::CInstruction &Inst)
+    -> InstructionCommon {
+  return InstructionCommon{.saturate = Inst.m_bSaturate != 0};
+};
+
 auto readInstruction(const microsoft::D3D10ShaderBinary::CInstruction &Inst)
     -> Instruction {
   using namespace microsoft;
   switch (Inst.m_OpCode) {
-
+  case microsoft::D3D10_SB_OPCODE_DERIV_RTX:
+  case microsoft::D3D11_SB_OPCODE_DERIV_RTX_FINE: {
+    return InstPartialDerivative{
+        ._ = readInstructionCommon(Inst),
+        .dst = readDstOperand(Inst.m_Operands[0]),
+        .src = readSrcOperand(Inst.m_Operands[1]),
+        .ddy = false,
+        .coarse = false,
+    };
+  };
+  case microsoft::D3D10_SB_OPCODE_DERIV_RTY:
+  case microsoft::D3D11_SB_OPCODE_DERIV_RTY_FINE: {
+    return InstPartialDerivative{
+        ._ = readInstructionCommon(Inst),
+        .dst = readDstOperand(Inst.m_Operands[0]),
+        .src = readSrcOperand(Inst.m_Operands[1]),
+        .ddy = true,
+        .coarse = false,
+    };
+  };
+  case microsoft::D3D11_SB_OPCODE_DERIV_RTX_COARSE: {
+    return InstPartialDerivative{
+        ._ = readInstructionCommon(Inst),
+        .dst = readDstOperand(Inst.m_Operands[0]),
+        .src = readSrcOperand(Inst.m_Operands[1]),
+        .ddy = false,
+        .coarse = true,
+    };
+  };
+  case microsoft::D3D11_SB_OPCODE_DERIV_RTY_COARSE: {
+    return InstPartialDerivative{
+        ._ = readInstructionCommon(Inst),
+        .dst = readDstOperand(Inst.m_Operands[0]),
+        .src = readSrcOperand(Inst.m_Operands[1]),
+        .ddy = true,
+        .coarse = true,
+    };
+  };
+  case microsoft::D3D10_1_SB_OPCODE_LOD: {
+    return InstCalcLOD {
+      .dst = readDstOperand(Inst.m_Operands[0]),
+      .src_address = readSrcOperand(Inst.m_Operands[1]),
+      .src_resource = readSrcOperandResource(Inst.m_Operands[2]),
+      .src_sampler = readSrcOperandSampler(Inst.m_Operands[3]),
+    };
+  };
   default:
     DXASSERT_DXBC(false);
   }
