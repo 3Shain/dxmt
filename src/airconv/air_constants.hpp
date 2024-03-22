@@ -44,11 +44,6 @@ BETTER_ENUM(EOutput, uint32_t, render_target, depth, sample_mask, stencil,
             viewport_array_index,
             vertex_output /* user defined vertex output [[user(...)]] */)
 
-BETTER_ENUM(ESampleInterpolation, uint32_t, center_perspective,
-            center_no_perspective, centroid_perspective,
-            centroid_no_perspective, sample_perspective, sample_no_perspective,
-            flat)
-
 BETTER_ENUM(EDepthArgument, uint32_t, any, greater, less)
 
 BETTER_ENUM(ETextureAccess, uint32_t, read, write, sample, read_write)

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "adt.hpp"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Metadata.h"
@@ -7,10 +8,31 @@
 #include <cstdint>
 #include <string>
 #include <unordered_map>
-#include "adt.hpp"
 #include <variant>
 
 namespace dxmt::air {
+
+// static llvm::StructType *
+// getOrCreateStructType(llvm::StringRef Name, llvm::ArrayRef<llvm::Type *>
+// EltTys,
+//                       llvm::LLVMContext &Ctx) {
+//   using namespace llvm;
+//   StructType *ST = StructType::getTypeByName(Ctx, Name);
+//   if (ST)
+//     return ST;
+
+//   return StructType::create(Ctx, EltTys, Name);
+// }
+
+static llvm::StructType *
+getOrCreateStructType(llvm::StringRef Name, llvm::LLVMContext &Ctx) {
+  using namespace llvm;
+  StructType *ST = StructType::getTypeByName(Ctx, Name);
+  if (ST)
+    return ST;
+
+  return StructType::create(Ctx, Name);
+}
 
 enum class MemoryAccess { read, write, read_write, sample };
 
@@ -82,7 +104,7 @@ struct MSLSampler {
   std::string get_name() { return "sampler"; };
 
   llvm::Type *get_llvm_type(llvm::LLVMContext &context) {
-    return llvm::Type::getInt32Ty(context);
+    return getOrCreateStructType("struct._sampler_t", context)->getPointerTo(1);
   };
 };
 
@@ -92,7 +114,7 @@ constexpr auto msl_uint = MSLUint{};
 constexpr auto msl_float = MSLFloat{};
 
 using MSLScalerType =
-    std::variant<MSLFloat, MSLInt, MSLUint, MSLBool>; // incomplete list
+  std::variant<MSLFloat, MSLInt, MSLUint, MSLBool>; // incomplete list
 
 constexpr auto msl_sampler = MSLSampler{};
 
@@ -101,7 +123,7 @@ struct MSLVector {
   MSLScalerType scaler;
   std::string get_name() {
     auto scaler_name =
-        std::visit([](auto scaler) { return scaler.get_name(); }, scaler);
+      std::visit([](auto scaler) { return scaler.get_name(); }, scaler);
     if (dimension == 1)
       return scaler_name;
     return scaler_name + std::to_string(dimension);
@@ -109,7 +131,7 @@ struct MSLVector {
 
   llvm::Type *get_llvm_type(llvm::LLVMContext &context) {
     auto scaler_type =
-        std::visit([&](auto x) { return x.get_llvm_type(context); }, scaler);
+      std::visit([&](auto x) { return x.get_llvm_type(context); }, scaler);
     if (dimension == 1) {
       return scaler_type;
     }
@@ -132,9 +154,9 @@ struct MSLTexture {
   MemoryAccess memory_access;
   TextureKind resource_kind;
 
-  std::string get_name() {
-    auto component = std::visit([](auto scaler) { return scaler.get_name(); },
-                                component_type);
+  std::string get_name() const {
+    auto component =
+      std::visit([](auto scaler) { return scaler.get_name(); }, component_type);
     auto access = [](auto access) -> std::string {
       switch (access) {
       case MemoryAccess::read:
@@ -187,8 +209,58 @@ struct MSLTexture {
     }
   };
 
-  llvm::Type *get_llvm_type(llvm::LLVMContext &context) {
-    return llvm::Type::getInt32Ty(context);
+  llvm::Type *get_llvm_type(llvm::LLVMContext &context) const {
+    switch (resource_kind) {
+    case TextureKind::texture_1d:
+      return getOrCreateStructType("struct._texture_1d_t", context)
+        ->getPointerTo(1);
+    case TextureKind::texture_1d_array:
+      return getOrCreateStructType("struct._texture_1d_array_t", context)
+        ->getPointerTo(1);
+    case TextureKind::texture_2d:
+      return getOrCreateStructType("struct._texture_2d_t", context)
+        ->getPointerTo(1);
+    case TextureKind::texture_2d_array:
+      return getOrCreateStructType("struct._texture_2d_t", context)
+        ->getPointerTo(1);
+    case TextureKind::texture_2d_ms:
+      return getOrCreateStructType("struct._texture_2d_ms_t", context)
+        ->getPointerTo(1);
+    case TextureKind::texture_2d_ms_array:
+      return getOrCreateStructType("struct._texture_2d_ms_array_t", context)
+        ->getPointerTo(1);
+    case TextureKind::texture_3d:
+      return getOrCreateStructType("struct._texture_3d_t", context)
+        ->getPointerTo(1);
+    case TextureKind::texture_cube:
+      return getOrCreateStructType("struct._texture_cube_t", context)
+        ->getPointerTo(1);
+    case TextureKind::texture_cube_array:
+      return getOrCreateStructType("struct._texture_cube_array_t", context)
+        ->getPointerTo(1);
+    case TextureKind::texture_buffer:
+      return getOrCreateStructType("struct._texture_buffer_t", context)
+        ->getPointerTo(1);
+    case TextureKind::depth_2d:
+      return getOrCreateStructType("struct._depth_2d_t", context)
+        ->getPointerTo(1);
+    case TextureKind::depth_2d_array:
+      return getOrCreateStructType("struct._depth_2d_t", context)
+        ->getPointerTo(1);
+    case TextureKind::depth_2d_ms:
+      return getOrCreateStructType("struct._depth_2d_ms_t", context)
+        ->getPointerTo(1);
+    case TextureKind::depth_2d_ms_array:
+      return getOrCreateStructType("struct._depth_2d_ms_array_t", context)
+        ->getPointerTo(1);
+    case TextureKind::depth_cube:
+      return getOrCreateStructType("struct._depth_cube_t", context)
+        ->getPointerTo(1);
+    case TextureKind::depth_cube_array:
+      return getOrCreateStructType("struct._depth_cube_array_t", context)
+        ->getPointerTo(1);
+      break;
+    };
   };
 };
 
@@ -202,11 +274,11 @@ struct MSLWhateverStruct {
 };
 
 using MSLScalerOrVectorType =
-    template_concat_t<MSLScalerType, std::variant<MSLVector>>;
+  template_concat_t<MSLScalerType, std::variant<MSLVector>>;
 
-using MSLRepresentableType =
-    template_concat_t<MSLScalerOrVectorType,
-                      std::variant<MSLSampler, MSLTexture, MSLWhateverStruct>>;
+using MSLRepresentableType = template_concat_t<
+  MSLScalerOrVectorType,
+  std::variant<MSLSampler, MSLTexture, MSLWhateverStruct>>;
 
 struct MSLPointer {
   MSLRepresentableType pointee;
@@ -218,7 +290,7 @@ struct MSLPointer {
 
   llvm::Type *get_llvm_type(llvm::LLVMContext &context) {
     auto pointee_type =
-        std::visit([&](auto x) { return x.get_llvm_type(context); }, pointee);
+      std::visit([&](auto x) { return x.get_llvm_type(context); }, pointee);
     return pointee_type->getPointerTo((uint32_t)address_space);
   };
 };
@@ -228,18 +300,29 @@ struct MSLStaticArray {
   MSLRepresentableType element_type;
   std::string get_name() {
     return "array<" +
-           std::visit([](auto scaler) { return scaler.get_name(); },
-                      element_type) +
+           std::visit(
+             [](auto scaler) { return scaler.get_name(); }, element_type
+           ) +
            "," + std::to_string(array_size) + ">";
   };
+
+  llvm::Type *get_llvm_type(llvm::LLVMContext &context) {
+    return llvm::ArrayType::get(
+      std::visit(
+        [&](auto x) { return x.get_llvm_type(context); }, element_type
+      ),
+      array_size
+    );
+  }
 };
 
 using MSLRepresentableTypeWithArray = template_concat_t<
-    std::variant<MSLStaticArray, MSLPointer /* why are you here? */>>;
+  std::variant<MSLStaticArray, MSLPointer /* why are you here? */>>;
 
 constexpr auto get_name = [](auto msl_type) {
-  return std::visit([](auto msl_type) { return msl_type.get_name(); },
-                    msl_type);
+  return std::visit(
+    [](auto msl_type) { return msl_type.get_name(); }, msl_type
+  );
 };
 
 constexpr auto get_llvm_type = [](auto msl_type, llvm::LLVMContext &context) {
@@ -267,7 +350,7 @@ struct ArgumentBindingTexture {
   uint32_t location_index;
   uint32_t array_size;
   MemoryAccess memory_access;
-  MSLTexture type;
+  MSLTexture type; // why it's a variant!
   std::string arg_name;
 };
 
@@ -289,54 +372,57 @@ struct ArgumentBindingIndirectConstant {
   std::string arg_name;
 };
 
-using ArgumentBufferArguments =
-    std::variant<ArgumentBindingBuffer, ArgumentBindingIndirectBuffer,
-                 ArgumentBindingTexture, ArgumentBindingIndirectConstant,
-                 ArgumentBindingSampler>;
+using ArgumentBufferArguments = std::variant<
+  ArgumentBindingBuffer, ArgumentBindingIndirectBuffer, ArgumentBindingTexture,
+  ArgumentBindingIndirectConstant, ArgumentBindingSampler>;
 
-using FunctionArguments =
-    std::variant<ArgumentBindingBuffer, ArgumentBindingIndirectBuffer,
-                 ArgumentBindingTexture, ArgumentBindingSampler>;
+using FunctionArguments = std::variant<
+  ArgumentBindingBuffer, ArgumentBindingIndirectBuffer, ArgumentBindingTexture,
+  ArgumentBindingSampler>;
 
 class ArgumentBufferBuilder {
   /* the return value is the element index of structure (as well as in argument
    * buffer) */
 public:
-  uint32_t DefineBuffer(std::string name, AddressSpace addressp_space,
-                        MemoryAccess access, MSLRepresentableType type);
-  uint32_t DefineTexture(std::string name, TextureKind kind,
-                         MemoryAccess access, MSLScalerType scaler_type);
+  uint32_t DefineBuffer(
+    std::string name, AddressSpace addressp_space, MemoryAccess access,
+    MSLRepresentableType type
+  );
+  // uint32_t DefineIndirectBuffer(
+  //   std::string name, llvm::StructType* struct_type, llvm::Metadata*
+  //   struct_type_metadata
+  // );
+  uint32_t DefineTexture(
+    std::string name, TextureKind kind, MemoryAccess access,
+    MSLScalerType scaler_type
+  );
   uint32_t DefineSampler(std::string name);
   uint32_t DefineInteger32(std::string name);
   uint32_t DefineFloat32(std::string name);
 
   auto Build(llvm::LLVMContext &context, llvm::Module &module)
-      -> std::tuple<llvm::StructType *, llvm::MDNode>;
+    -> std::tuple<llvm::StructType *, llvm::MDNode *>;
+
+  auto empty() { return fieldsType.empty(); }
 
 private:
   std::unordered_map<std::string, ArgumentBufferArguments> fieldsType;
 };
 
-template <typename I, typename O> class FunctionSignatureBuilder {
-public:
-  uint32_t DefineInput(const I &input);
-  uint32_t DefineOutput(const O &output);
-
-  auto CreateFunction(llvm::LLVMContext &context, llvm::Module &module)
-      -> llvm::Function *;
-
-private:
-  std::vector<I> inputs;
-  std::vector<O> outputs;
-};
-
 struct InputVertexStageIn {
   uint32_t attribute;
   MSLScalerOrVectorType type;
+  std::string name;
 };
+
+struct InputVertexID {};
 
 struct OutputVertex {
   std::string user;
+  MSLScalerOrVectorType type;
+};
+
+struct OutputPosition {
   MSLScalerOrVectorType type;
 };
 
@@ -345,18 +431,6 @@ struct InputFragmentStageIn {
   MSLScalerOrVectorType type;
   Interpolation interpolation;
 };
-
-struct OutputRenderTarget {
-  uint32_t index;
-  MSLScalerOrVectorType type;
-};
-
-struct InputVertexID {};
-
-using VertexInput =
-    template_concat_t<FunctionArguments,
-                      std::variant<InputVertexID, InputVertexStageIn>>;
-using VertexOutput = std::variant<OutputVertex>;
 
 struct InputPrimitiveID {};
 struct InputViewportArrayIndex {};
@@ -367,31 +441,39 @@ struct InputPosition {
   Interpolation interpolation;
 };
 
-using FragmentInput = template_concat_t<
-    FunctionArguments,
-    std::variant<InputPrimitiveID, InputViewportArrayIndex,
-                 InputRenderTargetArrayIndex, InputFrontFacing, InputPosition,
-                 InputFragmentStageIn>>;
-using FragmentOutput = std::variant<OutputRenderTarget>;
-
-using KernelInput = template_concat_t<FunctionArguments>;
-
-class VertexFunctionSignatureBuilder
-    // am I using inheritance? No!
-    : public FunctionSignatureBuilder<VertexInput, VertexOutput> {
-  uint32_t DefineVertexStageIn(uint32_t attribute, MSLScalerOrVectorType type);
-  uint32_t DefineVertexOutput(std::string user, MSLScalerOrVectorType type);
+struct OutputRenderTarget {
+  uint32_t index;
+  MSLScalerOrVectorType type;
 };
 
-class FragmentFunctionSignatureBuilder
-    : public FunctionSignatureBuilder<FragmentInput, FragmentOutput> {
-  uint32_t DefineFragmentStageIn(std::string user, MSLScalerOrVectorType type);
-  uint32_t DefineRenderTarget(uint32_t index, MSLScalerOrVectorType type);
-};
+using FunctionInput = template_concat_t<
+  FunctionArguments,
+  std::variant<
+    /* vertex */
+    InputVertexID, InputVertexStageIn,
+    /* fragment */
+    InputPrimitiveID, InputViewportArrayIndex, InputRenderTargetArrayIndex,
+    InputFrontFacing, InputPosition, InputFragmentStageIn>>;
 
-class KernelFunctionSignatureBuilder
-    : public FunctionSignatureBuilder<KernelInput, std::variant<>> {
-  uint32_t DefineKernelStageIn(std::string user, MSLScalerOrVectorType type);
+using FunctionOutput = std::variant<
+  /* vertex */
+  OutputVertex, OutputPosition,
+  /* fragment */
+  OutputRenderTarget>;
+
+template <typename I = FunctionInput, typename O = FunctionOutput>
+class FunctionSignatureBuilder {
+public:
+  uint32_t DefineInput(const I &input);
+  uint32_t DefineOutput(const O &output);
+
+  auto CreateFunction(
+    std::string name, llvm::LLVMContext &context, llvm::Module &module
+  ) -> std::pair<llvm::Function *, llvm::MDNode *>;
+
+private:
+  std::vector<I> inputs;
+  std::vector<O> outputs;
 };
 
 } // namespace dxmt::air

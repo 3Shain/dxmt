@@ -3,17 +3,18 @@
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Metadata.h"
 #include "llvm/IR/Module.h"
-#include "llvm/Passes/OptimizationLevel.h"
-#include "llvm/Support/VersionTuple.h"
-#include "llvm/Passes/PassBuilder.h"
 #include "llvm/IR/Verifier.h"
+#include "llvm/Passes/OptimizationLevel.h"
+#include "llvm/Passes/PassBuilder.h"
+#include "llvm/Support/VersionTuple.h"
 
-#include <cassert>
-#include "DXBCParser/BlobContainer.h"
-#include "DXBCParser/ShaderBinary.h"
-#include "DXBCParser/DXBCUtils.h"
-#include "metallib_writer.hpp"
 #include "./air_type.hpp"
+#include "DXBCParser/BlobContainer.h"
+#include "DXBCParser/DXBCUtils.h"
+#include "DXBCParser/ShaderBinary.h"
+#include "dxbc_instruction.hpp"
+#include "metallib_writer.hpp"
+#include <cassert>
 
 using namespace llvm;
 using namespace dxmt::air;
@@ -34,100 +35,53 @@ void Convert(LPCVOID dxbc, UINT dxbcSize, LPVOID *ppAIR, UINT *pAIRSize) {
   pModule->setSourceFileName("airconv_generated.metal");
   pModule->setTargetTriple("air64-apple-macosx14.0.0");
   pModule->setDataLayout(
-      "e-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f32:32:32-f64:"
-      "64:64-v16:16:16-v24:32:32-v32:32:32-v48:64:64-v64:64:64-v96:128:128-"
-      "v128:128:128-v192:256:256-v256:256:256-v512:512:512-v1024:1024:1024-n8:"
-      "16:32");
+    "e-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f32:32:32-f64:"
+    "64:64-v16:16:16-v24:32:32-v32:32:32-v48:64:64-v64:64:64-v96:128:128-"
+    "v128:128:128-v192:256:256-v256:256:256-v512:512:512-v1024:1024:1024-n8:"
+    "16:32"
+  );
   pModule->setSDKVersion(VersionTuple(14, 0));
   pModule->addModuleFlag(Module::ModFlagBehavior::Error, "wchar_size", 4);
   pModule->addModuleFlag(Module::ModFlagBehavior::Max, "frame-pointer", 2);
-  pModule->addModuleFlag(Module::ModFlagBehavior::Max, "air.max_device_buffers",
-                         31);
-  pModule->addModuleFlag(Module::ModFlagBehavior::Max,
-                         "air.max_constant_buffers", 31);
-  pModule->addModuleFlag(Module::ModFlagBehavior::Max,
-                         "air.max_threadgroup_buffers", 31);
+  pModule->addModuleFlag(
+    Module::ModFlagBehavior::Max, "air.max_device_buffers", 31
+  );
+  pModule->addModuleFlag(
+    Module::ModFlagBehavior::Max, "air.max_constant_buffers", 31
+  );
+  pModule->addModuleFlag(
+    Module::ModFlagBehavior::Max, "air.max_threadgroup_buffers", 31
+  );
   pModule->addModuleFlag(Module::ModFlagBehavior::Max, "air.max_textures", 128);
-  pModule->addModuleFlag(Module::ModFlagBehavior::Max,
-                         "air.max_read_write_textures", 8);
+  pModule->addModuleFlag(
+    Module::ModFlagBehavior::Max, "air.max_read_write_textures", 8
+  );
   pModule->addModuleFlag(Module::ModFlagBehavior::Max, "air.max_samplers", 16);
 
-  auto airVersion = pModule->getOrInsertNamedMetadata("air.version");
-  airVersion->addOperand(
-      MDTuple::get(context, {metadata.createUnsignedInteger(2),
-                             metadata.createUnsignedInteger(6),
-                             metadata.createUnsignedInteger(0)}));
-  auto airLangVersion =
-      pModule->getOrInsertNamedMetadata("air.language_version");
-  airLangVersion->addOperand(MDTuple::get(
-      context,
-      {metadata.createString("Metal"), metadata.createUnsignedInteger(3),
-       metadata.createUnsignedInteger(0), metadata.createUnsignedInteger(0)}));
+  //   auto airVersion = pModule->getOrInsertNamedMetadata("air.version");
+  //   airVersion->addOperand(
+  //       MDTuple::get(context, {metadata.createUnsignedInteger(2),
+  //                              metadata.createUnsignedInteger(6),
+  //                              metadata.createUnsignedInteger(0)}));
+  //   auto airLangVersion =
+  //       pModule->getOrInsertNamedMetadata("air.language_version");
+  //   airLangVersion->addOperand(MDTuple::get(
+  //       context,
+  //       {metadata.createString("Metal"), metadata.createUnsignedInteger(3),
+  //        metadata.createUnsignedInteger(0),
+  //        metadata.createUnsignedInteger(0)}));
 
-  auto airCompileOptions =
-      pModule->getOrInsertNamedMetadata("air.compile_options");
-  airCompileOptions->addOperand(MDTuple::get(
-      context, {metadata.createString("air.compile.denorms_disable")}));
-  airCompileOptions->addOperand(MDTuple::get(
-      context, {metadata.createString("air.compile.fast_math_enable")}));
-  airCompileOptions->addOperand(MDTuple::get(
-      context,
-      {metadata.createString("air.compile.framebuffer_fetch_enable")}));
+  //   auto airCompileOptions =
+  //       pModule->getOrInsertNamedMetadata("air.compile_options");
+  //   airCompileOptions->addOperand(MDTuple::get(
+  //       context, {metadata.createString("air.compile.denorms_disable")}));
+  //   airCompileOptions->addOperand(MDTuple::get(
+  //       context, {metadata.createString("air.compile.fast_math_enable")}));
+  //   airCompileOptions->addOperand(MDTuple::get(
+  //       context,
+  //       {metadata.createString("air.compile.framebuffer_fetch_enable")}));
 
-  CDXBCParser DXBCParser;
-  assert((DXBCParser.ReadDXBC(dxbc, dxbcSize) == S_OK) && "invalid dxbc blob");
-
-  UINT codeBlobIdx = DXBCParser.FindNextMatchingBlob(DXBC_GenericShaderEx);
-  if (codeBlobIdx == DXBC_BLOB_NOT_FOUND) {
-    codeBlobIdx = DXBCParser.FindNextMatchingBlob(DXBC_GenericShader);
-  }
-  assert((codeBlobIdx != DXBC_BLOB_NOT_FOUND) && "invalid dxbc blob");
-  LPCVOID codeBlob = DXBCParser.GetBlob(codeBlobIdx);
-
-  D3D10ShaderBinary::CShaderCodeParser CodeParser;
-
-  CShaderToken *ShaderCode = (CShaderToken *)(BYTE *)codeBlob;
-  // 1. Collect information about the shader.
-  CodeParser.SetShader(ShaderCode);
-  CSignatureParser inputParser;
-  // TODO: throw if failed
-  DXBCGetInputSignature(dxbc, &inputParser);
-  CSignatureParser outputParser;
-  DXBCGetOutputSignature(dxbc, &outputParser);
-
-  // DxbcAnalyzer analyzer(context, types, metadata);
-  // analyzer.AnalyzeShader(
-  //     CodeParser,
-  //     [&](auto matcher) -> dxbc::Signature {
-  //       const D3D11_SIGNATURE_PARAMETER *parameters;
-  //       inputParser.GetParameters(&parameters);
-  //       for (unsigned i = 0; i < inputParser.GetNumParameters(); i++) {
-  //         auto sig = dxbc::Signature(parameters[i]);
-  //         if (matcher(sig)) {
-  //           return sig;
-  //         }
-  //       }
-  //       assert(0 && "try to access an undefined input");
-  //     },
-  //     [&](auto matcher) -> dxbc::Signature {
-  //       const D3D11_SIGNATURE_PARAMETER *parameters;
-  //       outputParser.GetParameters(&parameters);
-  //       for (unsigned i = 0; i < outputParser.GetNumParameters(); i++) {
-  //         auto sig = dxbc::Signature(parameters[i]);
-  //         if (matcher(sig)) {
-  //           return sig;
-  //         }
-  //       }
-  //       assert(0 && "try to access an undefined output");
-  //     });
-
-  // auto converter = CreateConverter(analyzer, types, context, *pModule);
-
-  // 4. convert instructions
-  // CodeParser.SetShader(ShaderCode); // reset parser
-  // auto inputMD = converter->Pre(metadata);
-  // converter->ConvertInstructions(CodeParser);
-  // auto functionMD = converter->Post(metadata, inputMD);
+  dxbc::convertDXBC(dxbc, dxbcSize, context, *pModule);
 
   // Create the analysis managers.
   // These must be declared in this order so that they are destroyed in the
@@ -151,7 +105,7 @@ void Convert(LPCVOID dxbc, UINT dxbcSize, LPVOID *ppAIR, UINT *pAIRSize) {
   PB.crossRegisterProxies(LAM, FAM, CGAM, MAM);
 
   ModulePassManager MPM =
-      PB.buildPerModuleDefaultPipeline(OptimizationLevel::O2);
+    PB.buildPerModuleDefaultPipeline(OptimizationLevel::O2);
 
   FunctionPassManager FPM;
   FPM.addPass(VerifierPass());
@@ -160,17 +114,6 @@ void Convert(LPCVOID dxbc, UINT dxbcSize, LPVOID *ppAIR, UINT *pAIRSize) {
 
   // Optimize the IR!
   MPM.run(*pModule, MAM);
-
-  // if (analyzer.IsVS()) {
-  //   pModule->getOrInsertNamedMetadata("air.vertex")->addOperand(functionMD);
-  // } else if (analyzer.IsPS()) {
-  //   pModule->getOrInsertNamedMetadata("air.fragment")->addOperand(functionMD);
-  // } else if (analyzer.IsCS()) {
-  //   pModule->getOrInsertNamedMetadata("air.kernel")->addOperand(functionMD);
-  // } else {
-  //   // throw
-  //   assert(0 && "Unsupported shader type");
-  // }
 
   pModule->print(outs(), nullptr);
 
@@ -191,8 +134,10 @@ void Convert(LPCVOID dxbc, UINT dxbcSize, LPVOID *ppAIR, UINT *pAIRSize) {
   pModule.reset();
 }
 
-extern "C" void ConvertDXBC(const void *pDXBC, uint32_t DXBCSize,
-                            void **ppMetalLib, uint32_t *pMetalLibSize) {
+extern "C" void ConvertDXBC(
+  const void *pDXBC, uint32_t DXBCSize, void **ppMetalLib,
+  uint32_t *pMetalLibSize
+) {
   Convert(pDXBC, DXBCSize, ppMetalLib, pMetalLibSize);
 };
 

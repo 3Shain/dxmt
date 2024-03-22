@@ -1,9 +1,5 @@
 #pragma once
-#include "DXBCParser/d3d12tokenizedprogramformat.hpp"
 
-#include "air_constants.hpp"
-
-#include <cassert>
 #include <cstdint>
 #include <map>
 #include <unordered_map>
@@ -11,31 +7,9 @@
 #include <vector>
 
 #include "shader_common.hpp"
+#include "llvm/IR/LLVMContext.h"
 
 namespace dxmt::dxbc {
-
-inline static air::ESampleInterpolation
-ToAirInterpolation(microsoft::D3D10_SB_INTERPOLATION_MODE mode) {
-  using namespace microsoft;
-  switch (mode) {
-  case D3D10_SB_INTERPOLATION_LINEAR_NOPERSPECTIVE_SAMPLE:
-    return air::ESampleInterpolation::sample_no_perspective;
-  case D3D10_SB_INTERPOLATION_LINEAR_SAMPLE:
-    return air::ESampleInterpolation::sample_perspective;
-  case D3D10_SB_INTERPOLATION_LINEAR_NOPERSPECTIVE_CENTROID:
-    return air::ESampleInterpolation::centroid_no_perspective;
-  case D3D10_SB_INTERPOLATION_LINEAR_CENTROID:
-    return air::ESampleInterpolation::centroid_perspective;
-  case D3D10_SB_INTERPOLATION_CONSTANT:
-    return air::ESampleInterpolation::flat;
-  case D3D10_SB_INTERPOLATION_LINEAR:
-    return air::ESampleInterpolation::center_perspective;
-  case D3D10_SB_INTERPOLATION_LINEAR_NOPERSPECTIVE:
-    return air::ESampleInterpolation::center_no_perspective;
-  default:
-    assert(0 && "Unexpected D3D10_SB_INTERPOLATION_MODE");
-  }
-}
 
 struct swizzle {
   union {
@@ -76,7 +50,7 @@ struct IndexByIndexableTempComponent {
 };
 
 using OperandIndex =
-    std::variant<uint32_t, IndexByIndexableTempComponent, IndexByTempComponent>;
+  std::variant<uint32_t, IndexByIndexableTempComponent, IndexByTempComponent>;
 #pragma endregion
 
 #pragma region source operand
@@ -176,10 +150,9 @@ struct DclOutput {};
 
 #pragma endregion
 
-using SrcOperand =
-    std::variant<SrcOperandImmediate32, SrcOperandTemp, SrcOperandIndexableTemp,
-                 SrcOperandInput, SrcOperandConstantBuffer,
-                 SrcOperandImmediateConstantBuffer>;
+using SrcOperand = std::variant<
+  SrcOperandImmediate32, SrcOperandTemp, SrcOperandIndexableTemp,
+  SrcOperandInput, SrcOperandConstantBuffer, SrcOperandImmediateConstantBuffer>;
 
 struct SrcOperandResource {
   uint32_t range_id;
@@ -202,9 +175,9 @@ struct SrcOperandTGSM {
   OperandIndex index;
 };
 
-using DstOperand =
-    std::variant<DstOperandNull, DstOperandTemp, DstOperandIndexableTemp,
-                 DstOperandOutput, DstOperandOutputDepth>;
+using DstOperand = std::variant<
+  DstOperandNull, DstOperandTemp, DstOperandIndexableTemp, DstOperandOutput,
+  DstOperandOutputDepth>;
 
 struct InstMov {
   InstructionCommon _;
@@ -341,15 +314,15 @@ struct InstCalcLOD {
 };
 
 using Instruction = std::variant<
-    /* Generic */
-    InstMov, InstMovConditional, InstDotProduct, InstSinCos, //
-    InstConvert,                                             //
-    InstIntegerCompare, InstFloatCompare,                    //
-    InstFloatBinaryOp, InstIntegerBinaryOp,                  //
-    InstFloatUnaryOp,                                        //
-    InstSample, InstLoad, InstStore,                         //
-    /* Pixel Shader */
-    InstPixelDiscard, InstPartialDerivative, InstCalcLOD>;
+  /* Generic */
+  InstMov, InstMovConditional, InstDotProduct, InstSinCos, //
+  InstConvert,                                             //
+  InstIntegerCompare, InstFloatCompare,                    //
+  InstFloatBinaryOp, InstIntegerBinaryOp,                  //
+  InstFloatUnaryOp,                                        //
+  InstSample, InstLoad, InstStore,                         //
+  /* Pixel Shader */
+  InstPixelDiscard, InstPartialDerivative, InstCalcLOD>;
 
 #pragma region shader reflection
 
@@ -403,9 +376,9 @@ public:
   std::map<uint32_t, SamplerInfo> samplerMap;
   std::map<uint32_t, ThreadgroupBufferInfo> tgsmMap;
   uint32_t tempRegisterCount;
-  std::unordered_map<uint32_t,
-                     std::pair<uint32_t /* count */, uint32_t /* mask */>>
-      indexableTempRegisterCounts;
+  std::unordered_map<
+    uint32_t, std::pair<uint32_t /* count */, uint32_t /* mask */>>
+    indexableTempRegisterCounts;
 };
 
 #pragma endregion
@@ -438,9 +411,9 @@ struct BasicBlockReturn {};
 
 struct BasicBlockUndefined {};
 
-using BasicBlockTarget =
-    std::variant<BasicBlockConditionalBranch, BasicBlockUnconditionalBranch,
-                 BasicBlockSwitch, BasicBlockReturn, BasicBlockUndefined>;
+using BasicBlockTarget = std::variant<
+  BasicBlockConditionalBranch, BasicBlockUnconditionalBranch, BasicBlockSwitch,
+  BasicBlockReturn, BasicBlockUndefined>;
 
 class BasicBlock {
 public:
@@ -449,5 +422,10 @@ public:
 };
 
 #pragma endregion
+
+void convertDXBC(
+  const void *dxbc, uint32_t dxbcSize, llvm::LLVMContext &context,
+  llvm::Module &module
+);
 
 } // namespace dxmt::dxbc

@@ -1,30 +1,59 @@
-#include "dxbc_instruction.hpp"
+#include "dxbc_converter.hpp"
+#include "DXBCParser/DXBCUtils.h"
 #include "DXBCParser/ShaderBinary.h"
 #include "DXBCParser/d3d12tokenizedprogramformat.hpp"
+#include "air_signature.hpp"
+#include "dxbc_signature.hpp"
+#include "llvm/IR/LLVMContext.h"
+#include "llvm/IR/Module.h"
 
 namespace dxmt::dxbc {
 
 #define DXASSERT_DXBC(x) assert(x);
 
+air::Interpolation
+convertInterpolation(microsoft::D3D10_SB_INTERPOLATION_MODE mode) {
+  using namespace microsoft;
+  switch (mode) {
+  case D3D10_SB_INTERPOLATION_LINEAR_NOPERSPECTIVE_SAMPLE:
+    return air::Interpolation::sample_no_perspective;
+  case D3D10_SB_INTERPOLATION_LINEAR_SAMPLE:
+    return air::Interpolation::sample_perspective;
+  case D3D10_SB_INTERPOLATION_LINEAR_NOPERSPECTIVE_CENTROID:
+    return air::Interpolation::centroid_no_perspective;
+  case D3D10_SB_INTERPOLATION_LINEAR_CENTROID:
+    return air::Interpolation::centroid_perspective;
+  case D3D10_SB_INTERPOLATION_CONSTANT:
+    return air::Interpolation::flat;
+  case D3D10_SB_INTERPOLATION_LINEAR:
+    return air::Interpolation::center_perspective;
+  case D3D10_SB_INTERPOLATION_LINEAR_NOPERSPECTIVE:
+    return air::Interpolation::center_no_perspective;
+  default:
+    assert(0 && "Unexpected D3D10_SB_INTERPOLATION_MODE");
+  }
+}
+
 auto readOperandRelativeIndex(
-    const microsoft::D3D10ShaderBinary::COperandIndex &OpIndex,
-    uint32_t offset = 0) -> OperandIndex {
+  const microsoft::D3D10ShaderBinary::COperandIndex &OpIndex,
+  uint32_t offset = 0
+) -> OperandIndex {
   using namespace microsoft;
   switch (OpIndex.m_RelRegType) {
   case D3D10_SB_OPERAND_TYPE_TEMP: {
     return IndexByTempComponent{
-        .regid = OpIndex.m_RelIndex,
-        .component = (uint8_t)OpIndex.m_ComponentName,
-        .offset = offset,
+      .regid = OpIndex.m_RelIndex,
+      .component = (uint8_t)OpIndex.m_ComponentName,
+      .offset = offset,
     };
   }
 
   case D3D10_SB_OPERAND_TYPE_INDEXABLE_TEMP: {
     return IndexByIndexableTempComponent{
-        .regfile = OpIndex.m_RelIndex,
-        .regid = OpIndex.m_RelIndex1,
-        .component = (uint8_t)OpIndex.m_ComponentName,
-        .offset = offset,
+      .regfile = OpIndex.m_RelIndex,
+      .regid = OpIndex.m_RelIndex1,
+      .component = (uint8_t)OpIndex.m_ComponentName,
+      .offset = offset,
     };
   }
 
@@ -34,9 +63,9 @@ auto readOperandRelativeIndex(
 };
 
 auto readOperandIndex(
-    const microsoft::D3D10ShaderBinary::COperandIndex &OpIndex,
-    const microsoft::D3D10_SB_OPERAND_INDEX_REPRESENTATION indexType)
-    -> OperandIndex {
+  const microsoft::D3D10ShaderBinary::COperandIndex &OpIndex,
+  const microsoft::D3D10_SB_OPERAND_INDEX_REPRESENTATION indexType
+) -> OperandIndex {
   using namespace microsoft;
 
   switch (indexType) {
@@ -67,15 +96,15 @@ auto readOperandIndex(
 };
 
 auto readDstOperand(const microsoft::D3D10ShaderBinary::COperandBase &O)
-    -> DstOperand {
+  -> DstOperand {
   using namespace microsoft;
   switch (O.m_Type) {
   case D3D10_SB_OPERAND_TYPE_TEMP: {
     DXASSERT_DXBC(O.m_IndexDimension == D3D10_SB_OPERAND_INDEX_1D);
     unsigned Reg = O.m_Index[0].m_RegIndex;
     return DstOperandTemp{
-        ._ = {.mask = O.m_WriteMask >> 4},
-        .regid = Reg,
+      ._ = {.mask = O.m_WriteMask >> 4},
+      .regid = Reg,
     };
     // CompType DxbcValueType =
     //     DXBC::GetCompTypeFromMinPrec(O.m_MinPrecision, ValueType);
@@ -142,9 +171,10 @@ auto readDstOperand(const microsoft::D3D10ShaderBinary::COperandBase &O)
     unsigned Reg = O.m_Index[0].m_RegIndex;
 
     return DstOperandIndexableTemp{
-        ._ = {.mask = O.m_WriteMask >> 4},
-        .regfile = Reg,
-        .regindex = readOperandIndex(O.m_Index[1], O.m_IndexType[1])};
+      ._ = {.mask = O.m_WriteMask >> 4},
+      .regfile = Reg,
+      .regindex = readOperandIndex(O.m_Index[1], O.m_IndexType[1])
+    };
     // IndexableReg &IRRec = m_IndexableRegs[Reg];
     // Value *pXRegIndex = LoadOperandIndex(O.m_Index[1], O.m_IndexType[1]);
     // Value *pRegIndex =
@@ -204,8 +234,8 @@ auto readDstOperand(const microsoft::D3D10ShaderBinary::COperandBase &O)
   case D3D10_SB_OPERAND_TYPE_OUTPUT: {
     unsigned Reg = O.m_Index[0].m_RegIndex;
     return DstOperandOutput{
-        ._ = {.mask = O.m_WriteMask >> 4},
-        .regid = Reg,
+      ._ = {.mask = O.m_WriteMask >> 4},
+      .regid = Reg,
     };
     // Row index expression.
     // Value *pRowIndexValue = LoadOperandIndex(O.m_Index[0], O.m_IndexType[0]);
@@ -290,7 +320,7 @@ auto readDstOperand(const microsoft::D3D10ShaderBinary::COperandBase &O)
   case D3D11_SB_OPERAND_TYPE_OUTPUT_DEPTH_LESS_EQUAL:
   case D3D11_SB_OPERAND_TYPE_OUTPUT_STENCIL_REF:
   case D3D10_SB_OPERAND_TYPE_OUTPUT_COVERAGE_MASK: {
-    // DXASSERT_DXBC(O.m_IndexDimension == D3D10_SB_OPERAND_INDEX_0D);
+    DXASSERT_DXBC(O.m_IndexDimension == D3D10_SB_OPERAND_INDEX_0D);
     // for (unsigned c = 0; c < DXBC::kWidth; c++) {
     //   if (!Mask.IsSet(c))
     //     continue;
@@ -315,7 +345,7 @@ auto readDstOperand(const microsoft::D3D10ShaderBinary::COperandBase &O)
     //       m_pOP->GetOpFunc(OP::OpCode::StoreOutput, pLlvmDxbcValueType);
     //   MarkPrecise(m_pBuilder->CreateCall(F, Args));
     // }
-
+    assert(0 && "Unhandled operand type");
     break;
   }
 
@@ -329,22 +359,22 @@ auto readDstOperand(const microsoft::D3D10ShaderBinary::COperandBase &O)
 }
 
 auto readSrcOperandSwizzle(const microsoft::D3D10ShaderBinary::COperandBase &O)
-    -> swizzle {
+  -> swizzle {
   using namespace microsoft;
   switch (O.m_ComponentSelection) {
   case D3D10_SB_OPERAND_4_COMPONENT_SWIZZLE_MODE:
     return swizzle{
-        .x = O.m_Swizzle[0],
-        .y = O.m_Swizzle[1],
-        .z = O.m_Swizzle[2],
-        .w = O.m_Swizzle[3],
+      .x = O.m_Swizzle[0],
+      .y = O.m_Swizzle[1],
+      .z = O.m_Swizzle[2],
+      .w = O.m_Swizzle[3],
     };
   case D3D10_SB_OPERAND_4_COMPONENT_SELECT_1_MODE: {
     return swizzle{
-        .x = (uint8_t)O.m_ComponentName,
-        .y = (uint8_t)O.m_ComponentName,
-        .z = (uint8_t)O.m_ComponentName,
-        .w = (uint8_t)O.m_ComponentName,
+      .x = (uint8_t)O.m_ComponentName,
+      .y = (uint8_t)O.m_ComponentName,
+      .z = (uint8_t)O.m_ComponentName,
+      .w = (uint8_t)O.m_ComponentName,
     };
   }
   case D3D10_SB_OPERAND_4_COMPONENT_MASK_MODE: {
@@ -354,16 +384,16 @@ auto readSrcOperandSwizzle(const microsoft::D3D10ShaderBinary::COperandBase &O)
 }
 
 auto readSrcOperandCommon(const microsoft::D3D10ShaderBinary::COperandBase &O)
-    -> SrcOperandCommon {
+  -> SrcOperandCommon {
   return SrcOperandCommon{
-      .swizzle = readSrcOperandSwizzle(O),
-      .abs = (O.m_Modifier & microsoft::D3D10_SB_OPERAND_MODIFIER_ABS) != 0,
-      .neg = (O.m_Modifier & microsoft::D3D10_SB_OPERAND_MODIFIER_NEG) != 0,
+    .swizzle = readSrcOperandSwizzle(O),
+    .abs = (O.m_Modifier & microsoft::D3D10_SB_OPERAND_MODIFIER_ABS) != 0,
+    .neg = (O.m_Modifier & microsoft::D3D10_SB_OPERAND_MODIFIER_NEG) != 0,
   };
 }
 
 auto readSrcOperand(const microsoft::D3D10ShaderBinary::COperandBase &O)
-    -> SrcOperand {
+  -> SrcOperand {
   using namespace microsoft;
   switch (O.m_Type) {
   case D3D10_SB_OPERAND_TYPE_IMMEDIATE32: {
@@ -371,21 +401,27 @@ auto readSrcOperand(const microsoft::D3D10ShaderBinary::COperandBase &O)
     DXASSERT_DXBC(O.m_Modifier == D3D10_SB_OPERAND_MODIFIER_NONE);
 
     if (O.m_NumComponents == D3D10_SB_OPERAND_4_COMPONENT) {
-      return SrcOperandImmediate32{._ = readSrcOperandCommon(O),
-                                   .uvalue = {
-                                       O.m_Value[0],
-                                       O.m_Value[1],
-                                       O.m_Value[2],
-                                       O.m_Value[3],
-                                   }};
+      return SrcOperandImmediate32{
+        ._ = readSrcOperandCommon(O),
+        .uvalue =
+          {
+            O.m_Value[0],
+            O.m_Value[1],
+            O.m_Value[2],
+            O.m_Value[3],
+          }
+      };
     } else {
-      return SrcOperandImmediate32{._ = readSrcOperandCommon(O),
-                                   .uvalue = {
-                                       O.m_Value[0],
-                                       O.m_Value[0],
-                                       O.m_Value[0],
-                                       O.m_Value[0],
-                                   }};
+      return SrcOperandImmediate32{
+        ._ = readSrcOperandCommon(O),
+        .uvalue =
+          {
+            O.m_Value[0],
+            O.m_Value[0],
+            O.m_Value[0],
+            O.m_Value[0],
+          }
+      };
     }
   }
 
@@ -393,8 +429,8 @@ auto readSrcOperand(const microsoft::D3D10ShaderBinary::COperandBase &O)
     DXASSERT_DXBC(O.m_IndexDimension == D3D10_SB_OPERAND_INDEX_1D);
     unsigned Reg = O.m_Index[0].m_RegIndex;
     return SrcOperandTemp{
-        ._ = readSrcOperandCommon(O),
-        .regid = Reg,
+      ._ = readSrcOperandCommon(O),
+      .regid = Reg,
     };
     // CompType DxbcValueType =
     //     DXBC::GetCompTypeFromMinPrec(O.m_MinPrecision, ValueType);
@@ -463,9 +499,10 @@ auto readSrcOperand(const microsoft::D3D10ShaderBinary::COperandBase &O)
     DXASSERT_DXBC(O.m_IndexType[0] == D3D10_SB_OPERAND_INDEX_IMMEDIATE32);
     unsigned Reg = O.m_Index[0].m_RegIndex;
     return SrcOperandIndexableTemp{
-        ._ = readSrcOperandCommon(O),
-        .regfile = Reg,
-        .regindex = readOperandIndex(O.m_Index[1], O.m_IndexType[1])};
+      ._ = readSrcOperandCommon(O),
+      .regfile = Reg,
+      .regindex = readOperandIndex(O.m_Index[1], O.m_IndexType[1])
+    };
 
     // IndexableReg &IRRec = m_IndexableRegs[Reg];
     // Value *pXRegIndex = LoadOperandIndex(O.m_Index[1], O.m_IndexType[1]);
@@ -535,67 +572,68 @@ auto readSrcOperand(const microsoft::D3D10ShaderBinary::COperandBase &O)
   }
 };
 
-auto readSrcOperandResource(
-    const microsoft::D3D10ShaderBinary::COperandBase &O) -> SrcOperandResource {}
+auto readSrcOperandResource(const microsoft::D3D10ShaderBinary::COperandBase &O)
+  -> SrcOperandResource {}
 
-auto readSrcOperandSampler(
-    const microsoft::D3D10ShaderBinary::COperandBase &O) -> SrcOperandSampler {}
+auto readSrcOperandSampler(const microsoft::D3D10ShaderBinary::COperandBase &O)
+  -> SrcOperandSampler {}
 
-auto readSrcOperandUAV(const microsoft::D3D10ShaderBinary::COperandBase &O) -> SrcOperandUAV {}
+auto readSrcOperandUAV(const microsoft::D3D10ShaderBinary::COperandBase &O)
+  -> SrcOperandUAV {}
 
-auto readSrcOperandLoadable(
-    const microsoft::D3D10ShaderBinary::COperandBase &O) {}
+auto readSrcOperandLoadable(const microsoft::D3D10ShaderBinary::COperandBase &O
+) {}
 
 auto readInstructionCommon(
-    const microsoft::D3D10ShaderBinary::CInstruction &Inst)
-    -> InstructionCommon {
+  const microsoft::D3D10ShaderBinary::CInstruction &Inst
+) -> InstructionCommon {
   return InstructionCommon{.saturate = Inst.m_bSaturate != 0};
 };
 
 auto readInstruction(const microsoft::D3D10ShaderBinary::CInstruction &Inst)
-    -> Instruction {
+  -> Instruction {
   using namespace microsoft;
   switch (Inst.m_OpCode) {
   case microsoft::D3D10_SB_OPCODE_DERIV_RTX:
   case microsoft::D3D11_SB_OPCODE_DERIV_RTX_FINE: {
     return InstPartialDerivative{
-        ._ = readInstructionCommon(Inst),
-        .dst = readDstOperand(Inst.m_Operands[0]),
-        .src = readSrcOperand(Inst.m_Operands[1]),
-        .ddy = false,
-        .coarse = false,
+      ._ = readInstructionCommon(Inst),
+      .dst = readDstOperand(Inst.m_Operands[0]),
+      .src = readSrcOperand(Inst.m_Operands[1]),
+      .ddy = false,
+      .coarse = false,
     };
   };
   case microsoft::D3D10_SB_OPCODE_DERIV_RTY:
   case microsoft::D3D11_SB_OPCODE_DERIV_RTY_FINE: {
     return InstPartialDerivative{
-        ._ = readInstructionCommon(Inst),
-        .dst = readDstOperand(Inst.m_Operands[0]),
-        .src = readSrcOperand(Inst.m_Operands[1]),
-        .ddy = true,
-        .coarse = false,
+      ._ = readInstructionCommon(Inst),
+      .dst = readDstOperand(Inst.m_Operands[0]),
+      .src = readSrcOperand(Inst.m_Operands[1]),
+      .ddy = true,
+      .coarse = false,
     };
   };
   case microsoft::D3D11_SB_OPCODE_DERIV_RTX_COARSE: {
     return InstPartialDerivative{
-        ._ = readInstructionCommon(Inst),
-        .dst = readDstOperand(Inst.m_Operands[0]),
-        .src = readSrcOperand(Inst.m_Operands[1]),
-        .ddy = false,
-        .coarse = true,
+      ._ = readInstructionCommon(Inst),
+      .dst = readDstOperand(Inst.m_Operands[0]),
+      .src = readSrcOperand(Inst.m_Operands[1]),
+      .ddy = false,
+      .coarse = true,
     };
   };
   case microsoft::D3D11_SB_OPCODE_DERIV_RTY_COARSE: {
     return InstPartialDerivative{
-        ._ = readInstructionCommon(Inst),
-        .dst = readDstOperand(Inst.m_Operands[0]),
-        .src = readSrcOperand(Inst.m_Operands[1]),
-        .ddy = true,
-        .coarse = true,
+      ._ = readInstructionCommon(Inst),
+      .dst = readDstOperand(Inst.m_Operands[0]),
+      .src = readSrcOperand(Inst.m_Operands[1]),
+      .ddy = true,
+      .coarse = true,
     };
   };
   case microsoft::D3D10_1_SB_OPCODE_LOD: {
-    return InstCalcLOD {
+    return InstCalcLOD{
       .dst = readDstOperand(Inst.m_Operands[0]),
       .src_address = readSrcOperand(Inst.m_Operands[1]),
       .src_resource = readSrcOperandResource(Inst.m_Operands[2]),
@@ -607,47 +645,96 @@ auto readInstruction(const microsoft::D3D10ShaderBinary::CInstruction &Inst)
   }
 };
 
-auto readCondition(const microsoft::D3D10ShaderBinary::CInstruction &Inst,
-                   uint32_t OpIdx) {
+auto readCondition(
+  const microsoft::D3D10ShaderBinary::CInstruction &Inst, uint32_t OpIdx
+) {
   using namespace microsoft;
   const microsoft::D3D10ShaderBinary::COperandBase &O = Inst.m_Operands[OpIdx];
   D3D10_SB_INSTRUCTION_TEST_BOOLEAN TestType = Inst.m_Test;
 
-  return BasicBlockCondition{.operand = readSrcOperand(O),
-                             .test_nonzero =
-                                 TestType == D3D10_SB_INSTRUCTION_TEST_NONZERO};
+  return BasicBlockCondition{
+    .operand = readSrcOperand(O),
+    .test_nonzero = TestType == D3D10_SB_INSTRUCTION_TEST_NONZERO
+  };
 }
 
-auto readDXBC(const void *dxbc) {
+void convertDXBC(
+  const void *dxbc, uint32_t dxbcSize, llvm::LLVMContext &context,
+  llvm::Module &module
+) {
   using namespace microsoft;
-  CShaderToken *ShaderCode = (CShaderToken *)(BYTE *)dxbc;
+  CDXBCParser DXBCParser;
+  assert((DXBCParser.ReadDXBC(dxbc, dxbcSize) == S_OK) && "invalid dxbc blob");
+
+  UINT codeBlobIdx = DXBCParser.FindNextMatchingBlob(DXBC_GenericShaderEx);
+  if (codeBlobIdx == DXBC_BLOB_NOT_FOUND) {
+    codeBlobIdx = DXBCParser.FindNextMatchingBlob(DXBC_GenericShader);
+  }
+  assert((codeBlobIdx != DXBC_BLOB_NOT_FOUND) && "invalid dxbc blob");
+  LPCVOID codeBlob = DXBCParser.GetBlob(codeBlobIdx);
+
+  CShaderToken *ShaderCode = (CShaderToken *)(BYTE *)codeBlob;
   // 1. Collect information about the shader.
   D3D10ShaderBinary::CShaderCodeParser CodeParser(ShaderCode);
+  CSignatureParser inputParser;
+  // TODO: throw if failed
+  DXBCGetInputSignature(dxbc, &inputParser);
+  CSignatureParser outputParser;
+  DXBCGetOutputSignature(dxbc, &outputParser);
+
+  auto findInputElement = [&](auto matcher) -> dxbc::Signature {
+    const D3D11_SIGNATURE_PARAMETER *parameters;
+    inputParser.GetParameters(&parameters);
+    for (unsigned i = 0; i < inputParser.GetNumParameters(); i++) {
+      auto sig = dxbc::Signature(parameters[i]);
+      if (matcher(sig)) {
+        return sig;
+      }
+    }
+    assert(0 && "try to access an undefined input");
+  };
+  auto findOutputElement = [&](auto matcher) -> dxbc::Signature {
+    const D3D11_SIGNATURE_PARAMETER *parameters;
+    outputParser.GetParameters(&parameters);
+    for (unsigned i = 0; i < outputParser.GetNumParameters(); i++) {
+      auto sig = dxbc::Signature(parameters[i]);
+      if (matcher(sig)) {
+        return sig;
+      }
+    }
+  };
 
   bool sm_ver_5_1_ = CodeParser.ShaderMajorVersion() == 5 &&
                      CodeParser.ShaderMinorVersion() >= 1;
+  auto shader_type = CodeParser.ShaderType();
+
+  air::ArgumentBufferBuilder binding_table;
+  air::FunctionSignatureBuilder<> func_signature;
+  uint32_t binding_table_index = 0;
 
   std::function<std::shared_ptr<BasicBlock>(
-      const std::shared_ptr<BasicBlock> &ctx,
-      const std::shared_ptr<BasicBlock> &block_after_endif,
-      const std::shared_ptr<BasicBlock> &continue_point,
-      const std::shared_ptr<BasicBlock> &break_point,
-      const std::shared_ptr<BasicBlock> &return_point,
-      std::shared_ptr<BasicBlockSwitch> &switch_context)>
-      readControlFlow;
+    const std::shared_ptr<BasicBlock> &ctx,
+    const std::shared_ptr<BasicBlock> &block_after_endif,
+    const std::shared_ptr<BasicBlock> &continue_point,
+    const std::shared_ptr<BasicBlock> &break_point,
+    const std::shared_ptr<BasicBlock> &return_point,
+    std::shared_ptr<BasicBlockSwitch> &switch_context
+  )>
+    readControlFlow;
 
   auto null_bb = std::make_shared<BasicBlock>(nullptr);
   auto null_switch_context = std::make_shared<BasicBlockSwitch>(nullptr);
 
   auto shader_info = std::make_shared<ShaderInfo>();
 
-  readControlFlow = [&](const std::shared_ptr<BasicBlock> &ctx,
-                        const std::shared_ptr<BasicBlock> &block_after_endif,
-                        const std::shared_ptr<BasicBlock> &continue_point,
-                        const std::shared_ptr<BasicBlock> &break_point,
-                        const std::shared_ptr<BasicBlock> &return_point,
-                        std::shared_ptr<BasicBlockSwitch> &switch_context)
-      -> std::shared_ptr<BasicBlock> {
+  readControlFlow = [&](
+                      const std::shared_ptr<BasicBlock> &ctx,
+                      const std::shared_ptr<BasicBlock> &block_after_endif,
+                      const std::shared_ptr<BasicBlock> &continue_point,
+                      const std::shared_ptr<BasicBlock> &break_point,
+                      const std::shared_ptr<BasicBlock> &return_point,
+                      std::shared_ptr<BasicBlockSwitch> &switch_context
+                    ) -> std::shared_ptr<BasicBlock> {
     while (!CodeParser.EndOfShader()) {
       D3D10ShaderBinary::CInstruction Inst;
       CodeParser.ParseInstruction(&Inst);
@@ -658,21 +745,27 @@ auto readDXBC(const void *dxbc) {
         auto true_ = std::make_shared<BasicBlock>();
         auto alternative_ = std::make_shared<BasicBlock>();
         // alternative_ might be the block after ENDIF, but ELSE is possible
-        ctx->target = BasicBlockConditionalBranch{readCondition(Inst, 0), true_,
-                                                  alternative_};
+        ctx->target = BasicBlockConditionalBranch{
+          readCondition(Inst, 0), true_, alternative_
+        };
         auto after_endif = readControlFlow(
-            ctx, alternative_, continue_point, break_point, return_point,
-            null_switch_context); // read till ENDIF
+          ctx, alternative_, continue_point, break_point, return_point,
+          null_switch_context
+        ); // read till ENDIF
         // scope end
-        return readControlFlow(after_endif, null_bb, continue_point,
-                               break_point, return_point, switch_context);
+        return readControlFlow(
+          after_endif, null_bb, continue_point, break_point, return_point,
+          switch_context
+        );
       }
       case D3D10_SB_OPCODE_ELSE: {
         assert(block_after_endif.get() && "");
         auto real_exit = std::make_shared<BasicBlock>();
         ctx->target = BasicBlockUnconditionalBranch{real_exit};
-        return readControlFlow(block_after_endif, real_exit, continue_point,
-                               break_point, return_point, switch_context);
+        return readControlFlow(
+          block_after_endif, real_exit, continue_point, break_point,
+          return_point, switch_context
+        );
       }
       case D3D10_SB_OPCODE_ENDIF: {
         assert(block_after_endif.get() && "");
@@ -684,41 +777,54 @@ auto readDXBC(const void *dxbc) {
         auto after_endloop = std::make_shared<BasicBlock>();
         // scope start: loop
         ctx->target = BasicBlockUnconditionalBranch{loop_entrance};
-        auto _ = readControlFlow(loop_entrance, null_bb, loop_entrance,
-                                 after_endloop, return_point,
-                                 null_switch_context); // return from ENDLOOP
+        auto _ = readControlFlow(
+          loop_entrance, null_bb, loop_entrance, after_endloop, return_point,
+          null_switch_context
+        ); // return from ENDLOOP
         assert(_.get() == after_endloop.get());
         // scope end
-        return readControlFlow(after_endloop, block_after_endif, continue_point,
-                               break_point, return_point, switch_context);
+        return readControlFlow(
+          after_endloop, block_after_endif, continue_point, break_point,
+          return_point, switch_context
+        );
       }
       case D3D10_SB_OPCODE_BREAK: {
         ctx->target = BasicBlockUnconditionalBranch{break_point};
         auto after_break = std::make_shared<BasicBlock>();
-        return readControlFlow(after_break, block_after_endif, continue_point,
-                               break_point, return_point, switch_context); // ?
+        return readControlFlow(
+          after_break, block_after_endif, continue_point, break_point,
+          return_point, switch_context
+        ); // ?
       }
       case D3D10_SB_OPCODE_BREAKC: {
         auto after_break = std::make_shared<BasicBlock>();
-        ctx->target = BasicBlockConditionalBranch{readCondition(Inst, 0),
-                                                  break_point, after_break};
-        return readControlFlow(after_break, block_after_endif, continue_point,
-                               break_point, return_point, switch_context); // ?
+        ctx->target = BasicBlockConditionalBranch{
+          readCondition(Inst, 0), break_point, after_break
+        };
+        return readControlFlow(
+          after_break, block_after_endif, continue_point, break_point,
+          return_point, switch_context
+        ); // ?
       }
       case D3D10_SB_OPCODE_CONTINUE: {
         ctx->target = BasicBlockUnconditionalBranch{continue_point};
         auto after_continue = std::make_shared<BasicBlock>();
-        return readControlFlow(after_continue, block_after_endif,
-                               continue_point, break_point, return_point,
-                               switch_context); // ?
+        return readControlFlow(
+          after_continue, block_after_endif, continue_point, break_point,
+          return_point,
+          switch_context
+        ); // ?
       }
       case D3D10_SB_OPCODE_CONTINUEC: {
         auto after_continue = std::make_shared<BasicBlock>();
         ctx->target = BasicBlockConditionalBranch{
-            readCondition(Inst, 0), continue_point, after_continue};
-        return readControlFlow(after_continue, block_after_endif,
-                               continue_point, break_point, return_point,
-                               switch_context); // ?
+          readCondition(Inst, 0), continue_point, after_continue
+        };
+        return readControlFlow(
+          after_continue, block_after_endif, continue_point, break_point,
+          return_point,
+          switch_context
+        ); // ?
       }
       case D3D10_SB_OPCODE_ENDLOOP: {
         ctx->target = BasicBlockUnconditionalBranch{continue_point};
@@ -729,17 +835,19 @@ auto readDXBC(const void *dxbc) {
         // scope start: switch
         auto local_switch_context = std::make_shared<BasicBlockSwitch>();
         auto empty_body =
-            std::make_shared<BasicBlock>(); // it will unconditional jump to
-                                            // first case (and then ignored)
-        auto _ = readControlFlow(empty_body, null_bb, continue_point,
-                                 after_endswitch, return_point,
-                                 local_switch_context);
+          std::make_shared<BasicBlock>(); // it will unconditional jump to
+                                          // first case (and then ignored)
+        auto _ = readControlFlow(
+          empty_body, null_bb, continue_point, after_endswitch, return_point,
+          local_switch_context
+        );
         assert(_.get() == after_endswitch.get());
         ctx->target = std::move(*local_switch_context);
         // scope end
-        return readControlFlow(after_endswitch, block_after_endif,
-                               continue_point, break_point, return_point,
-                               switch_context);
+        return readControlFlow(
+          after_endswitch, block_after_endif, continue_point, break_point,
+          return_point, switch_context
+        );
       }
       case D3D10_SB_OPCODE_CASE: {
         auto case_body = std::make_shared<BasicBlock>();
@@ -747,20 +855,26 @@ auto readDXBC(const void *dxbc) {
         ctx->target = BasicBlockUnconditionalBranch{case_body};
 
         const D3D10ShaderBinary::COperandBase &O = Inst.m_Operands[0];
-        DXASSERT_DXBC(O.m_Type == D3D10_SB_OPERAND_TYPE_IMMEDIATE32 &&
-                      O.m_NumComponents == D3D10_SB_OPERAND_1_COMPONENT);
+        DXASSERT_DXBC(
+          O.m_Type == D3D10_SB_OPERAND_TYPE_IMMEDIATE32 &&
+          O.m_NumComponents == D3D10_SB_OPERAND_1_COMPONENT
+        );
         uint32_t case_value = O.m_Value[0];
 
         switch_context->cases.insert(std::make_pair(case_value, case_body));
-        return readControlFlow(case_body, block_after_endif, continue_point,
-                               break_point, return_point, switch_context);
+        return readControlFlow(
+          case_body, block_after_endif, continue_point, break_point,
+          return_point, switch_context
+        );
       }
       case D3D10_SB_OPCODE_DEFAULT: {
         ctx->target = BasicBlockUnconditionalBranch{break_point};
         auto case_body = std::make_shared<BasicBlock>();
         switch_context->case_default = case_body;
-        return readControlFlow(case_body, block_after_endif, continue_point,
-                               break_point, return_point, switch_context);
+        return readControlFlow(
+          case_body, block_after_endif, continue_point, break_point,
+          return_point, switch_context
+        );
       }
       case D3D10_SB_OPCODE_ENDSWITCH: {
         ctx->target = BasicBlockUnconditionalBranch{break_point};
@@ -778,25 +892,33 @@ auto readDXBC(const void *dxbc) {
         }
         auto after_ret = std::make_shared<BasicBlock>();
         // if it's inside a scope, then return is not the end
-        return readControlFlow(after_ret, block_after_endif, continue_point,
-                               break_point, return_point, switch_context);
+        return readControlFlow(
+          after_ret, block_after_endif, continue_point, break_point,
+          return_point, switch_context
+        );
       }
       case D3D10_SB_OPCODE_RETC: {
         auto after_retc = std::make_shared<BasicBlock>();
-        ctx->target = BasicBlockConditionalBranch{readCondition(Inst, 0),
-                                                  return_point, after_retc};
-        return readControlFlow(after_retc, block_after_endif, continue_point,
-                               break_point, return_point, switch_context);
+        ctx->target = BasicBlockConditionalBranch{
+          readCondition(Inst, 0), return_point, after_retc
+        };
+        return readControlFlow(
+          after_retc, block_after_endif, continue_point, break_point,
+          return_point, switch_context
+        );
       }
       case D3D10_SB_OPCODE_DISCARD: {
         auto fulfilled_ = std::make_shared<BasicBlock>();
         auto otherwise_ = std::make_shared<BasicBlock>();
-        ctx->target = BasicBlockConditionalBranch{readCondition(Inst, 0),
-                                                  fulfilled_, otherwise_};
+        ctx->target = BasicBlockConditionalBranch{
+          readCondition(Inst, 0), fulfilled_, otherwise_
+        };
         fulfilled_->target = BasicBlockUnconditionalBranch{otherwise_};
         fulfilled_->instructions.push_back(InstPixelDiscard{});
-        return readControlFlow(otherwise_, block_after_endif, continue_point,
-                               break_point, return_point, switch_context);
+        return readControlFlow(
+          otherwise_, block_after_endif, continue_point, break_point,
+          return_point, switch_context
+        );
       }
 #pragma endregion
 #pragma region declaration
@@ -812,18 +934,20 @@ auto readDXBC(const void *dxbc) {
         case D3D10_SB_OPERAND_INDEX_3D: // SM 5.1
           LB = Inst.m_Operands[0].m_Index[1].m_RegIndex;
           RangeSize = Inst.m_Operands[0].m_Index[2].m_RegIndex != UINT_MAX
-                          ? Inst.m_Operands[0].m_Index[2].m_RegIndex - LB + 1
-                          : UINT_MAX;
+                        ? Inst.m_Operands[0].m_Index[2].m_RegIndex - LB + 1
+                        : UINT_MAX;
           break;
         default:
           DXASSERT_DXBC(false);
         }
         shader_info->cbufferMap[RangeID] = {
-            .range = {.range_id = RangeID,
-                      .lower_bound = LB,
-                      .size = RangeSize,
-                      .space = Inst.m_ConstantBufferDecl.Space},
-            .size_in_vec4 = CBufferSize};
+          .range =
+            {.range_id = RangeID,
+             .lower_bound = LB,
+             .size = RangeSize,
+             .space = Inst.m_ConstantBufferDecl.Space},
+          .size_in_vec4 = CBufferSize
+        };
         break;
       }
       case D3D10_SB_OPCODE_DCL_SAMPLER: {
@@ -838,17 +962,18 @@ auto readDXBC(const void *dxbc) {
         case D3D10_SB_OPERAND_INDEX_3D: // SM 5.1
           LB = Inst.m_Operands[0].m_Index[1].m_RegIndex;
           RangeSize = Inst.m_Operands[0].m_Index[2].m_RegIndex != UINT_MAX
-                          ? Inst.m_Operands[0].m_Index[2].m_RegIndex - LB + 1
-                          : UINT_MAX;
+                        ? Inst.m_Operands[0].m_Index[2].m_RegIndex - LB + 1
+                        : UINT_MAX;
           break;
         default:
           DXASSERT_DXBC(false);
         }
         shader_info->samplerMap[RangeID] = {
-            .range = {.range_id = RangeID,
-                      .lower_bound = LB,
-                      .size = RangeSize,
-                      .space = Inst.m_SamplerDecl.Space},
+          .range =
+            {.range_id = RangeID,
+             .lower_bound = LB,
+             .size = RangeSize,
+             .space = Inst.m_SamplerDecl.Space},
         };
         // FIXME: SamplerMode ignored?
         break;
@@ -862,17 +987,20 @@ auto readDXBC(const void *dxbc) {
         if (sm_ver_5_1_) {
           LB = Inst.m_Operands[0].m_Index[1].m_RegIndex;
           RangeSize = Inst.m_Operands[0].m_Index[2].m_RegIndex != UINT_MAX
-                          ? Inst.m_Operands[0].m_Index[2].m_RegIndex - LB + 1
-                          : UINT_MAX;
+                        ? Inst.m_Operands[0].m_Index[2].m_RegIndex - LB + 1
+                        : UINT_MAX;
         } else {
           LB = RangeID;
           RangeSize = 1;
         }
-        ShaderResourceViewInfo srv{.range = {
-                                       .range_id = RangeID,
-                                       .lower_bound = LB,
-                                       .size = RangeSize,
-                                   }};
+        ShaderResourceViewInfo srv{
+          .range =
+            {
+              .range_id = RangeID,
+              .lower_bound = LB,
+              .size = RangeSize,
+            }
+        };
         switch (Inst.OpCode()) {
         case D3D10_SB_OPCODE_DCL_RESOURCE: {
           srv.range.space = (Inst.m_ResourceDecl.Space);
@@ -920,18 +1048,21 @@ auto readDXBC(const void *dxbc) {
         if (sm_ver_5_1_) {
           LB = Inst.m_Operands[0].m_Index[1].m_RegIndex;
           RangeSize = Inst.m_Operands[0].m_Index[2].m_RegIndex != UINT_MAX
-                          ? Inst.m_Operands[0].m_Index[2].m_RegIndex - LB + 1
-                          : UINT_MAX;
+                        ? Inst.m_Operands[0].m_Index[2].m_RegIndex - LB + 1
+                        : UINT_MAX;
         } else {
           LB = RangeID;
           RangeSize = 1;
         }
 
-        UnorderedAccessViewInfo uav{.range = {
-                                        .range_id = RangeID,
-                                        .lower_bound = LB,
-                                        .size = RangeSize,
-                                    }};
+        UnorderedAccessViewInfo uav{
+          .range =
+            {
+              .range_id = RangeID,
+              .lower_bound = LB,
+              .size = RangeSize,
+            }
+        };
 
         unsigned Flags = 0;
         switch (Inst.OpCode()) {
@@ -971,11 +1102,11 @@ auto readDXBC(const void *dxbc) {
         }
 
         uav.global_coherent =
-            ((Flags & D3D11_SB_GLOBALLY_COHERENT_ACCESS) != 0);
+          ((Flags & D3D11_SB_GLOBALLY_COHERENT_ACCESS) != 0);
         uav.with_counter =
-            ((Flags & D3D11_SB_UAV_HAS_ORDER_PRESERVING_COUNTER) != 0);
+          ((Flags & D3D11_SB_UAV_HAS_ORDER_PRESERVING_COUNTER) != 0);
         uav.rasterizer_order =
-            ((Flags & D3D11_SB_RASTERIZER_ORDERED_ACCESS) != 0);
+          ((Flags & D3D11_SB_RASTERIZER_ORDERED_ACCESS) != 0);
 
         shader_info->uavMap[RangeID] = uav;
         break;
@@ -986,9 +1117,11 @@ auto readDXBC(const void *dxbc) {
       }
       case D3D10_SB_OPCODE_DCL_INDEXABLE_TEMP: {
         shader_info->indexableTempRegisterCounts[Inst.m_IndexableTempDecl
-                                                     .IndexableTempNumber] =
-            std::make_pair(Inst.m_IndexableTempDecl.NumRegisters,
-                           Inst.m_IndexableTempDecl.Mask >> 4);
+                                                   .IndexableTempNumber] =
+          std::make_pair(
+            Inst.m_IndexableTempDecl.NumRegisters,
+            Inst.m_IndexableTempDecl.Mask >> 4
+          );
         break;
       }
       case D3D11_SB_OPCODE_DCL_THREAD_GROUP: {
@@ -997,8 +1130,7 @@ auto readDXBC(const void *dxbc) {
       case D3D11_SB_OPCODE_DCL_THREAD_GROUP_SHARED_MEMORY_RAW:
       case D3D11_SB_OPCODE_DCL_THREAD_GROUP_SHARED_MEMORY_STRUCTURED: {
         ThreadgroupBufferInfo tgsm;
-        if (Inst.OpCode() ==
-            D3D11_SB_OPCODE_DCL_THREAD_GROUP_SHARED_MEMORY_RAW) {
+        if (Inst.OpCode() == D3D11_SB_OPCODE_DCL_THREAD_GROUP_SHARED_MEMORY_RAW) {
           tgsm.stride = 1;
           tgsm.size = Inst.m_RawTGSMDecl.ByteCount;
           tgsm.size_in_uint = tgsm.size / 4;
@@ -1032,13 +1164,13 @@ auto readDXBC(const void *dxbc) {
         break;
       }
       case D3D10_SB_OPCODE_CUSTOMDATA: {
-        if (Inst.m_CustomData.Type ==
-            D3D10_SB_CUSTOMDATA_DCL_IMMEDIATE_CONSTANT_BUFFER) {
+        if (Inst.m_CustomData.Type == D3D10_SB_CUSTOMDATA_DCL_IMMEDIATE_CONSTANT_BUFFER) {
           unsigned Size = Inst.m_CustomData.DataSizeInBytes >> 2;
           DXASSERT_DXBC(Inst.m_CustomData.DataSizeInBytes == Size * 4);
           shader_info->immConstantBufferData.assign(
-              (uint32_t *)Inst.m_CustomData.pData,
-              ((uint32_t *)Inst.m_CustomData.pData) + Size);
+            (uint32_t *)Inst.m_CustomData.pData,
+            ((uint32_t *)Inst.m_CustomData.pData) + Size
+          );
         }
         break;
       }
@@ -1077,8 +1209,43 @@ auto readDXBC(const void *dxbc) {
   auto entry = std::make_shared<BasicBlock>();
   auto return_point = std::make_shared<BasicBlock>();
   return_point->target = BasicBlockReturn{};
-  auto _ = readControlFlow(entry, null_bb, null_bb, null_bb, return_point,
-                           null_switch_context);
+  auto _ = readControlFlow(
+    entry, null_bb, null_bb, null_bb, return_point, null_switch_context
+  );
   assert(_.get() == return_point.get());
+
+  // post convert
+
+  if (!binding_table.empty()) {
+    auto [type, metadata] = binding_table.Build(context, module);
+    binding_table_index =
+      func_signature.DefineInput(air::ArgumentBindingIndirectBuffer{
+        .location_index = 30,
+        .array_size = 1,
+        .memory_access = air::MemoryAccess::read,
+        .address_space = air::AddressSpace::constant,
+        .struct_type = type,
+        .struct_type_info = metadata,
+        .arg_name = "binding_table",
+      });
+  }
+  auto [function, function_metadata] =
+    func_signature.CreateFunction("shader_main", context, module);
+
+  // then we can start build ... real IR code (visit all basicblocks)
+
+  if (shader_type == D3D10_SB_VERTEX_SHADER) {
+    module.getOrInsertNamedMetadata("air.vertex")
+      ->addOperand(function_metadata);
+  } else if (shader_type == D3D10_SB_PIXEL_SHADER) {
+    module.getOrInsertNamedMetadata("air.fragment")
+      ->addOperand(function_metadata);
+  } else if (shader_type == D3D11_SB_COMPUTE_SHADER) {
+    module.getOrInsertNamedMetadata("air.kernel")
+      ->addOperand(function_metadata);
+  } else {
+    // throw
+    assert(0 && "Unsupported shader type");
+  }
 };
 } // namespace dxmt::dxbc
