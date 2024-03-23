@@ -295,6 +295,8 @@ struct InstConvert {
   SrcOperand src;
 };
 
+struct InstNop {};
+
 struct InstPixelDiscard {};
 
 struct InstPartialDerivative {
@@ -321,6 +323,7 @@ using Instruction = std::variant<
   InstFloatBinaryOp, InstIntegerBinaryOp,                  //
   InstFloatUnaryOp,                                        //
   InstSample, InstLoad, InstStore,                         //
+  InstNop,
   /* Pixel Shader */
   InstPixelDiscard, InstPartialDerivative, InstCalcLOD>;
 

@@ -179,10 +179,10 @@ auto build_argument_binding_buffer(
   md.integer(module.getDataLayout().getABITypeAlign(type).value());
 
   md.string("air.arg_type_name");
-  md.string(get_name(buffer.type).c_str());
+  md.string(get_name(buffer.type));
 
   md.string("air.arg_name");
-  md.string(buffer.arg_name.c_str());
+  md.string(buffer.arg_name);
 
   return type->getPointerTo((uint32_t)buffer.address_space);
 };
@@ -227,10 +227,10 @@ auto build_argument_binding_indirect_buffer(
   md.integer(struct_layout->getAlignment().value());
 
   md.string("air.arg_type_name");
-  md.string((indirect_buffer.arg_name + std::string("_type")).c_str());
+  md.string(indirect_buffer.struct_type->getName().str());
 
   md.string("air.arg_name");
-  md.string(indirect_buffer.arg_name.c_str());
+  md.string(indirect_buffer.arg_name);
 
   return indirect_buffer.struct_type->getPointerTo((uint32_t
   )indirect_buffer.address_space);
@@ -353,6 +353,7 @@ auto ArgumentBufferBuilder::Build(
       s
     );
     fields.push_back(field_type);
+    indirect_argument.push_back(metadata_field.BuildTuple(context));
     offset++;
   };
 
@@ -489,7 +490,7 @@ auto FunctionSignatureBuilder::CreateFunction(
             ->string("air.arg_type_name")
             ->string(get_name(vertex_out.type))
             ->string("air.arg_name")
-            ->string(vertex_out.user.c_str());
+            ->string(vertex_out.user);
           return get_llvm_type(vertex_out.type, context);
         },
         [&](const OutputRenderTarget &render_target) {
@@ -520,7 +521,9 @@ auto FunctionSignatureBuilder::CreateFunction(
     metadata_output.push_back(md.BuildTuple(context));
     type_output.push_back(field_type);
   };
-  auto output_struct_type = StructType::get(context, type_output, true);
+  auto output_struct_type = type_output.size() > 0
+                              ? StructType::get(context, type_output, true)
+                              : Type::getVoidTy(context);
   auto function = Function::Create(
     FunctionType::get(output_struct_type, type_input, false),
     llvm::Function::LinkageTypes::ExternalLinkage, name, module
@@ -529,8 +532,8 @@ auto FunctionSignatureBuilder::CreateFunction(
   auto metadata_input_tuple = MDTuple::get(context, metadata_input);
   return std::make_pair(
     function, MDTuple::get(
-                context, {ValueAsMetadata::get(function), metadata_output_tuple,
-                          metadata_input_tuple}
+                context, {ConstantAsMetadata::get(function),
+                          metadata_output_tuple, metadata_input_tuple}
               )
   );
 };
