@@ -11,7 +11,7 @@
 
 namespace dxmt::dxbc {
 
-struct swizzle {
+struct Swizzle {
   union {
     uint8_t x;
     uint8_t r;
@@ -28,12 +28,12 @@ struct swizzle {
     uint8_t w;
     uint8_t a;
   };
-  bool operator==(swizzle const &o) const {
+  bool operator==(Swizzle const &o) const {
     return r == o.r && g == o.g && b == o.b && a == o.a;
   };
 };
 
-constexpr swizzle swizzle_identity = {0, 1, 2, 3};
+constexpr Swizzle swizzle_identity = {0, 1, 2, 3};
 
 #pragma region operand index
 struct IndexByTempComponent {
@@ -56,7 +56,7 @@ using OperandIndex =
 #pragma region source operand
 
 struct SrcOperandCommon {
-  swizzle swizzle;
+  Swizzle swizzle;
   bool abs;
   bool neg;
 };
@@ -157,7 +157,7 @@ using SrcOperand = std::variant<
 struct SrcOperandResource {
   uint32_t range_id;
   OperandIndex index;
-  swizzle read_swizzle; // if appliable?
+  Swizzle read_swizzle; // if appliable?
 };
 
 struct SrcOperandSampler {
@@ -350,7 +350,6 @@ struct UnorderedAccessViewInfo {
   shader::common::ResourceType resource_type;
   bool read;
   bool written;
-  bool sampled;
   bool global_coherent;
   bool rasterizer_order;
   bool with_counter;

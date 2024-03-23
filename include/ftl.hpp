@@ -34,9 +34,10 @@ private:
 
 template <typename Env, typename V, typename Func>
 auto operator>>=(const ReaderIO<Env, V>& src, Func &&fn) {
-  return ReaderIO<Env,
-                  decltype(fn(std::declval<V>()).build(std::declval<Env>()))>(
-      [=](auto context) { return fn(src.build(context)).build(context); });
+  using R = ReaderIO<Env,
+                  decltype(fn(std::declval<V>()).build(std::declval<Env>()))>;
+  return R(
+      [=, fn=std::function<R(V)>(fn)](auto context) { return fn(src.build(context)).build(context); });
 }
 
 template <typename Env, typename A, typename B>

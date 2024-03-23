@@ -46,25 +46,4 @@ BETTER_ENUM(EOutput, uint32_t, render_target, depth, sample_mask, stencil,
 
 BETTER_ENUM(EDepthArgument, uint32_t, any, greater, less)
 
-BETTER_ENUM(ETextureAccess, uint32_t, read, write, sample, read_write)
-
-BETTER_ENUM(EBufferAccess, uint32_t, read, read_write)
-
-BETTER_ENUM(EBufferAddrSpace, uint32_t, unknown, device, constant, threadgroup)
-
-BETTER_ENUM(ETextureAccessType, uint32_t, v4f32, u_v4i32, s_v4i32);
-
-BETTER_ENUM(EFloatUnaryOp, uint32_t, exp2, log2, fract, floor, ceil, round,
-            rint, sin, cos, sqrt, abs, rsqrt, _rcp)
-
-BETTER_ENUM(EFloatBinaryOp, uint32_t, dot /* note this returns scalar*/, fmax,
-            fmin, _add, _div, _mul);
-
-BETTER_ENUM(EBitwiseUnaryOp, uint32_t, reverse_bits, popcount, __clz, __ctz,
-            _not);
-
-BETTER_ENUM(EBitwiseBinaryOp, uint32_t, _and, _or, _xor, rotate);
-
-BETTER_ENUM(EIntegerUnaryOp, uint32_t, max, min);
-
 } // namespace dxmt::air

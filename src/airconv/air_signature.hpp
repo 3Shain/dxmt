@@ -1,6 +1,7 @@
 #pragma once
 
 #include "adt.hpp"
+#include "shader_common.hpp"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Metadata.h"
@@ -386,7 +387,7 @@ class ArgumentBufferBuilder {
 public:
   uint32_t DefineBuffer(
     std::string name, AddressSpace addressp_space, MemoryAccess access,
-    MSLRepresentableType type
+    MSLRepresentableType type, uint32_t location_index = UINT32_MAX
   );
   // uint32_t DefineIndirectBuffer(
   //   std::string name, llvm::StructType* struct_type, llvm::Metadata*
@@ -394,11 +395,11 @@ public:
   // );
   uint32_t DefineTexture(
     std::string name, TextureKind kind, MemoryAccess access,
-    MSLScalerType scaler_type
+    MSLScalerType scaler_type, uint32_t location_index = UINT32_MAX
   );
-  uint32_t DefineSampler(std::string name);
-  uint32_t DefineInteger32(std::string name);
-  uint32_t DefineFloat32(std::string name);
+  uint32_t DefineSampler(std::string name, uint32_t location_index = UINT32_MAX);
+  uint32_t DefineInteger32(std::string name, uint32_t location_index = UINT32_MAX);
+  uint32_t DefineFloat32(std::string name, uint32_t location_index = UINT32_MAX);
 
   auto Build(llvm::LLVMContext &context, llvm::Module &module)
     -> std::tuple<llvm::StructType *, llvm::MDNode *>;
@@ -474,5 +475,50 @@ private:
   std::vector<FunctionInput> inputs;
   std::vector<FunctionOutput> outputs;
 };
+
+inline TextureKind to_air_resource_type(
+  dxmt::shader::common::ResourceType type, bool use_depth = false
+) {
+  switch (type) {
+  case shader::common::ResourceType::TextureBuffer:
+    return TextureKind::texture_buffer;
+  case shader::common::ResourceType::Texture1D:
+    return TextureKind::texture_1d;
+  case shader::common::ResourceType::Texture1DArray:
+    return TextureKind::texture_1d_array;
+  case shader::common::ResourceType::Texture2D:
+    return use_depth ? TextureKind::depth_2d : TextureKind::texture_2d;
+  case shader::common::ResourceType::Texture2DArray:
+    return use_depth ? TextureKind::depth_2d_array
+                     : TextureKind::texture_2d_array;
+  case shader::common::ResourceType::Texture2DMultisampled:
+    return use_depth ? TextureKind::depth_2d_ms : TextureKind::texture_2d_ms;
+  case shader::common::ResourceType::Texture2DMultisampledArray:
+    return use_depth ? TextureKind::depth_2d_ms_array
+                     : TextureKind::texture_2d_ms_array;
+  case shader::common::ResourceType::Texture3D:
+    return TextureKind::texture_3d;
+  case shader::common::ResourceType::TextureCube:
+    return use_depth ? TextureKind::depth_cube : TextureKind::texture_cube;
+  case shader::common::ResourceType::TextureCubeArray:
+    return use_depth ? TextureKind::depth_cube_array
+                     : TextureKind::texture_cube_array;
+  };
+};
+
+inline MSLScalerType
+to_air_scaler_type(dxmt::shader::common::ScalerDataType type) {
+  switch (type) {
+  case shader::common::ScalerDataType::Float:
+    return msl_float;
+  case shader::common::ScalerDataType::Uint:
+    return msl_uint;
+  case shader::common::ScalerDataType::Int:
+    return msl_int;
+  case shader::common::ScalerDataType::Double:
+    assert(0 && "");
+    break;
+  }
+}
 
 } // namespace dxmt::air

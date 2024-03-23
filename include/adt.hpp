@@ -1,3 +1,4 @@
+#pragma once
 // https://stackoverflow.com/a/76255307
 
 /* (associative) type sum */

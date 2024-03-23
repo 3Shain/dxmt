@@ -70,7 +70,7 @@ private:
 
 uint32_t ArgumentBufferBuilder::DefineBuffer(
   std::string name, AddressSpace addressp_space, MemoryAccess access,
-  MSLRepresentableType type
+  MSLRepresentableType type, uint32_t location_index
 ) {
   auto element_index = fieldsType.size();
   assert(
@@ -78,7 +78,8 @@ uint32_t ArgumentBufferBuilder::DefineBuffer(
     "otherwise duplicated field name"
   );
   fieldsType[name] = ArgumentBindingBuffer{
-    .location_index = (uint32_t)element_index,
+    .location_index =
+      location_index == UINT32_MAX ? (uint32_t)element_index : location_index,
     .array_size = 1,
     .memory_access = access,
     .address_space = addressp_space,
@@ -88,34 +89,26 @@ uint32_t ArgumentBufferBuilder::DefineBuffer(
   return element_index;
 };
 
-// uint32_t ArgumentBufferBuilder::DefineIndirectBuffer(
-//   std::string name, AddressSpace addressp_space, llvm::StructType
-//   *struct_type, llvm::Metadata *struct_type_metadata
-// ) {
-//   auto element_index = fieldsType.size();
-//   assert(
-//     fieldsType.find(name) == fieldsType.end() &&
-//     "otherwise duplicated field name"
-//   );
-//   fieldsType[name] = ArgumentBindingIndirectBuffer {};
-//   return element_index;
-// }
-
-uint32_t ArgumentBufferBuilder::DefineSampler(std::string name) {
+uint32_t ArgumentBufferBuilder::DefineSampler(
+  std::string name, uint32_t location_index
+) {
   auto element_index = fieldsType.size();
   assert(
     fieldsType.find(name) == fieldsType.end() &&
     "otherwise duplicated field name"
   );
   fieldsType[name] = ArgumentBindingSampler{
-    .location_index = (uint32_t)element_index, .array_size = 1, .arg_name = name
+    .location_index =
+      location_index == UINT32_MAX ? (uint32_t)element_index : location_index,
+    .array_size = 1,
+    .arg_name = name
   };
   return element_index;
 };
 
 uint32_t ArgumentBufferBuilder::DefineTexture(
   std::string name, TextureKind kind, MemoryAccess access,
-  MSLScalerType scaler_type
+  MSLScalerType scaler_type, uint32_t location_index
 ) {
   auto element_index = fieldsType.size();
   assert(
@@ -123,7 +116,8 @@ uint32_t ArgumentBufferBuilder::DefineTexture(
     "otherwise duplicated field name"
   );
   fieldsType[name] = ArgumentBindingTexture{
-    .location_index = (uint32_t)element_index,
+    .location_index =
+      location_index == UINT32_MAX ? (uint32_t)element_index : location_index,
     .array_size = 1,
     .memory_access = access,
     .type =
