@@ -652,7 +652,8 @@ readInstruction(const microsoft::D3D10ShaderBinary::CInstruction &Inst, ShaderIn
     return InstNop{};
   };
   default: {
-    assert(0 && "unhandled dxbc instruction");
+    // assert(0 && "unhandled dxbc instruction");
+    return InstNop{};
   }
   }
 };

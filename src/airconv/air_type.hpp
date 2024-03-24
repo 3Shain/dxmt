@@ -17,8 +17,12 @@ public:
 
   llvm::Type *_bool;
   llvm::Type *_float;
+  llvm::Type *_float2;
+  llvm::Type *_float3;
   llvm::Type *_float4;
   llvm::Type *_int;
+  llvm::Type *_int2;
+  llvm::Type *_int3;
   llvm::Type *_int4;
   llvm::Type *_half;
   llvm::Type *_half4;

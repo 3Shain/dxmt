@@ -3,9 +3,14 @@
 #include "DXBCParser/ShaderBinary.h"
 #include "DXBCParser/d3d12tokenizedprogramformat.hpp"
 #include "air_signature.hpp"
+#include "air_type.hpp"
 #include "dxbc_constants.hpp"
 #include "dxbc_signature.hpp"
 #include "llvm/IR/BasicBlock.h"
+#include "llvm/IR/Constant.h"
+#include "llvm/IR/Constants.h"
+#include "llvm/IR/DerivedTypes.h"
+#include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
 #include <string>
@@ -73,6 +78,7 @@ void convertDXBC(
   uint32_t binding_table_index = 0;
   uint32_t max_input_register = 0;
   uint32_t max_output_register = 0;
+  uint32_t num_temp_register = 0;
 
   std::function<std::shared_ptr<BasicBlock>(
     const std::shared_ptr<BasicBlock> &ctx,
@@ -88,6 +94,10 @@ void convertDXBC(
   std::shared_ptr<BasicBlockSwitch> null_switch_context;
 
   auto shader_info = std::make_shared<ShaderInfo>();
+  IREffect prelogue([](auto) { return std::monostate(); });
+  IRValue epilogue([](struct context ctx) {
+    return llvm::UndefValue::get(ctx.function->getReturnType());
+  });
 
   readControlFlow = [&](
                       const std::shared_ptr<BasicBlock> &ctx,
@@ -525,10 +535,11 @@ void convertDXBC(
         auto sgv = Inst.m_InputDeclSGV.Name;
         switch (sgv) {
         case D3D10_SB_NAME_VERTEX_ID: {
-          auto name = "vertexId";
+          // auto name = "vertexId";
           auto assigned_index =
             func_signature.DefineInput(air::InputVertexID{});
           // and perform side effect here
+          prelogue << init_input_reg(assigned_index, reg, mask);
           break;
         }
         case D3D10_SB_NAME_PRIMITIVE_ID:
@@ -597,8 +608,7 @@ void convertDXBC(
                           : air::msl_int4,
                 .name = sig.fullSemanticString()
               });
-            // and perform the lazy side effect that move argument into alloca
-            // register file
+            prelogue << init_input_reg(assigned_index, reg, mask);
           } else {
             assert(0 && "Unknown input register type");
           }
@@ -624,6 +634,7 @@ void convertDXBC(
           assert(0 && "Unexpected/unhandled input system value");
           break;
         }
+        // prelogue << init_input_reg(assigned_index, reg, mask);
         break;
       }
       case D3D10_SB_OPCODE_DCL_INPUT_PS_SGV: {
@@ -645,6 +656,7 @@ void convertDXBC(
           assert(0 && "Unexpected/unhandled input system value");
           break;
         }
+        // prelogue << init_input_reg(assigned_index, reg, mask);
         break;
       }
       case D3D10_SB_OPCODE_DCL_INPUT_PS: {
@@ -664,6 +676,7 @@ void convertDXBC(
                       : air::msl_int4,
             .interpolation = interpolation
           });
+        prelogue << init_input_reg(assigned_index, reg, mask);
         break;
       }
       case D3D10_SB_OPCODE_DCL_OUTPUT_SGV: {
@@ -690,6 +703,8 @@ void convertDXBC(
           auto assigned_index = func_signature.DefineOutput(
             air::OutputPosition{.type = air::msl_float4}
           );
+          max_output_register = std::max(reg + 1, max_output_register);
+          epilogue = (epilogue >>= pop_output_reg(reg, mask, assigned_index));
           break;
         }
         case D3D10_SB_NAME_RENDER_TARGET_ARRAY_INDEX: {
@@ -708,7 +723,6 @@ void convertDXBC(
           assert(0 && "Unexpected/unhandled input system value");
           break;
         }
-        max_output_register = std::max(reg + 1, max_output_register);
         break;
       }
       case D3D10_SB_OPCODE_DCL_OUTPUT: {
@@ -742,6 +756,8 @@ void convertDXBC(
                           ? air::msl_float4
                           : air::msl_int4
               });
+            epilogue
+              = (epilogue >>= pop_output_reg(reg, mask, assigned_index));
           } else {
             assigned_index = func_signature.DefineOutput(air::OutputVertex{
               .user = sig.fullSemanticString(),
@@ -749,6 +765,8 @@ void convertDXBC(
                         ? air::msl_float4
                         : air::msl_int4,
             });
+            epilogue
+              = (epilogue >>= pop_output_reg(reg, mask, assigned_index));
           }
           max_output_register = std::max(reg + 1, max_output_register);
           llvm::outs() << "should define output done \n";
@@ -810,14 +828,14 @@ void convertDXBC(
   llvm::outs() << "bbr done \n";
 
   // post convert
-  resource_binding_map resource_map;
+  io_binding_map resource_map;
   for (auto &[range_id, cbv] : shader_info->cbufferMap) {
     // TODO: abstract SM 5.0 binding
     auto index = binding_table.DefineBuffer(
       "cb" + std::to_string(range_id), air::AddressSpace::constant,
       air::MemoryAccess::read, air::msl_uint4
     );
-    resource_map.cbRangeMap[range_id] = [=, &binding_table_index](pvalue) {
+    resource_map.cb_range_map[range_id] = [=, &binding_table_index](pvalue) {
       // ignore index in SM 5.0
       return get_item_in_argbuf_binding_table(binding_table_index, index);
     };
@@ -825,7 +843,8 @@ void convertDXBC(
   for (auto &[range_id, sampler] : shader_info->samplerMap) {
     // TODO: abstract SM 5.0 binding
     auto index = binding_table.DefineSampler("s" + std::to_string(range_id));
-    resource_map.samplerRangeMap[range_id] = [=, &binding_table_index](pvalue) {
+    resource_map.sampler_range_map[range_id] = [=,
+                                                &binding_table_index](pvalue) {
       // ignore index in SM 5.0
       return get_item_in_argbuf_binding_table(binding_table_index, index);
     };
@@ -838,7 +857,7 @@ void convertDXBC(
       srv.sampled ? air::MemoryAccess::sample : air::MemoryAccess::read,
       air::to_air_scaler_type(srv.scaler_type)
     );
-    resource_map.srvRangeMap[range_id] = [=, &binding_table_index](pvalue) {
+    resource_map.srv_range_map[range_id] = [=, &binding_table_index](pvalue) {
       // ignore index in SM 5.0
       return get_item_in_argbuf_binding_table(binding_table_index, index);
     };
@@ -852,7 +871,7 @@ void convertDXBC(
         : air::MemoryAccess::read,
       air::to_air_scaler_type(uav.scaler_type)
     );
-    resource_map.uavRangeMap[range_id] = [=, &binding_table_index](pvalue) {
+    resource_map.uav_range_map[range_id] = [=, &binding_table_index](pvalue) {
       // ignore index in SM 5.0
       return get_item_in_argbuf_binding_table(binding_table_index, index);
     };
@@ -877,8 +896,34 @@ void convertDXBC(
   auto [function, function_metadata] =
     func_signature.CreateFunction("shader_main", context, module);
 
+  air::AirType types(context);
+  auto entry_bb = llvm::BasicBlock::Create(context, "entry", function);
+  auto epilogue_bb = llvm::BasicBlock::Create(context, "epilogue", function);
+  llvm::IRBuilder<> builder(entry_bb);
+  resource_map.input_register_file =
+    builder.CreateAlloca(llvm::ArrayType::get(types._int4, max_input_register));
+  resource_map.output_register_file =
+    builder.CreateAlloca(llvm::ArrayType::get(types._int4, max_output_register)
+    );
+  resource_map.temp_register_file =
+    builder.CreateAlloca(llvm::ArrayType::get(types._int4, num_temp_register));
+
+  struct context ctx {
+    .builder = builder, .llvm = context, .module = module, .function = function,
+    .resource = resource_map, .types = types
+  };
   // then we can start build ... real IR code (visit all basicblocks)
-  convertBasicBlocks(entry, context, module, function, resource_map);
+  llvm::outs() << "will build prelogue\n";
+  prelogue.build(ctx);
+  llvm::outs() << "built prelogue\n";
+  auto real_entry = convertBasicBlocks(entry, ctx, epilogue_bb);
+  llvm::outs() << "convertd instructions\n";
+  builder.CreateBr(real_entry);
+
+  builder.SetInsertPoint(epilogue_bb);
+  auto value = epilogue.build(ctx);
+  builder.CreateRet(value);
+  llvm::outs() << "built epilogue\n";
 
   if (shader_type == D3D10_SB_VERTEX_SHADER) {
     module.getOrInsertNamedMetadata("air.vertex")

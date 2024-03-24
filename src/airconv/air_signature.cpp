@@ -392,7 +392,7 @@ uint32_t FunctionSignatureBuilder::DefineInput(const FunctionInput &input) {
 
 uint32_t FunctionSignatureBuilder::DefineOutput(const FunctionOutput &output) {
   // TODO: check duplication (in case it's already defined)
-  uint32_t index = inputs.size();
+  uint32_t index = outputs.size();
   outputs.push_back(output);
   return index;
 };

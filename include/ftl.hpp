@@ -21,8 +21,8 @@ auto operator | (const std::vector<Tp> &vec, const Func &f)  {
 
 template <typename Env, typename V> class ReaderIO {
 public:
-  ReaderIO(ReaderIO &&other) = default;
-  ReaderIO(const ReaderIO &copy) = default;
+  // ReaderIO(ReaderIO &&other) = default;
+  // ReaderIO(const ReaderIO &copy) = default;
 
   ReaderIO(std::function<V(Env)> &&ff) : run(ff) {}
 
@@ -32,6 +32,7 @@ private:
   std::function<V(Env)> run;
 };
 
+/* bind */
 template <typename Env, typename V, typename Func>
 auto operator>>=(const ReaderIO<Env, V>& src, Func &&fn) {
   using R = ReaderIO<Env,
@@ -40,10 +41,21 @@ auto operator>>=(const ReaderIO<Env, V>& src, Func &&fn) {
       [=, fn=std::function<R(V)>(fn)](auto context) { return fn(src.build(context)).build(context); });
 }
 
-template <typename Env, typename A, typename B>
-ReaderIO<Env, B> seq(const ReaderIO<Env, A>& a, const ReaderIO<Env, B>& b) {
-  return a >>= [b](auto _) { return b; };
+/* map */
+template <typename Env, typename V, typename Func>
+auto operator | (const ReaderIO<Env, V>& src, Func &&fn) {
+  using R = ReaderIO<Env,
+                  decltype(fn(std::declval<V>()))>;
+  return R(
+      [=, fn=std::function<decltype(fn(std::declval<V>()))(V)>(fn)](auto context) { return fn(src.build(context)); });
+}
+
+template <typename Env, typename A>
+ReaderIO<Env, A>& operator<<(ReaderIO<Env, A>& a, const ReaderIO<Env, A>& b) {
+  a = a >>= [b=b](auto) { return b; };
+  return a;
 };
+
 
 template <typename Env, typename A, typename B, typename Func>
 auto lift(const ReaderIO<Env,A>& a, const ReaderIO<Env,B>& b, Func&& func) {
