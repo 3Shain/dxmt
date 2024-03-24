@@ -7,7 +7,6 @@
 #include "dxbc_constants.hpp"
 #include "dxbc_signature.hpp"
 #include "llvm/IR/BasicBlock.h"
-#include "llvm/IR/Constant.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/IRBuilder.h"
@@ -78,7 +77,6 @@ void convertDXBC(
   uint32_t binding_table_index = 0;
   uint32_t max_input_register = 0;
   uint32_t max_output_register = 0;
-  uint32_t num_temp_register = 0;
 
   std::function<std::shared_ptr<BasicBlock>(
     const std::shared_ptr<BasicBlock> &ctx,
@@ -699,7 +697,6 @@ void convertDXBC(
           assert(0 && "Metal doesn't support shader output: cull distance");
           break;
         case D3D10_SB_NAME_POSITION: {
-          auto name = "position";
           auto assigned_index = func_signature.DefineOutput(
             air::OutputPosition{.type = air::msl_float4}
           );
@@ -756,8 +753,7 @@ void convertDXBC(
                           ? air::msl_float4
                           : air::msl_int4
               });
-            epilogue
-              = (epilogue >>= pop_output_reg(reg, mask, assigned_index));
+            epilogue = (epilogue >>= pop_output_reg(reg, mask, assigned_index));
           } else {
             assigned_index = func_signature.DefineOutput(air::OutputVertex{
               .user = sig.fullSemanticString(),
@@ -765,8 +761,7 @@ void convertDXBC(
                         ? air::msl_float4
                         : air::msl_int4,
             });
-            epilogue
-              = (epilogue >>= pop_output_reg(reg, mask, assigned_index));
+            epilogue = (epilogue >>= pop_output_reg(reg, mask, assigned_index));
           }
           max_output_register = std::max(reg + 1, max_output_register);
           llvm::outs() << "should define output done \n";
@@ -905,8 +900,9 @@ void convertDXBC(
   resource_map.output_register_file =
     builder.CreateAlloca(llvm::ArrayType::get(types._int4, max_output_register)
     );
-  resource_map.temp_register_file =
-    builder.CreateAlloca(llvm::ArrayType::get(types._int4, num_temp_register));
+  resource_map.temp_register_file = builder.CreateAlloca(
+    llvm::ArrayType::get(types._int4, shader_info->tempRegisterCount)
+  );
 
   struct context ctx {
     .builder = builder, .llvm = context, .module = module, .function = function,

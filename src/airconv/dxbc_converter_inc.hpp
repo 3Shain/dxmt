@@ -15,6 +15,7 @@
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Type.h"
 #include <cstdint>
+#include <functional>
 #include <variant>
 
 // it's suposed to be include by specific file
@@ -105,7 +106,9 @@ auto read_float(pvalue vec4, Swizzle swizzle) {
 IRValue read_float2(pvalue vec4, Swizzle swizzle) {
   return bitcast_float4(vec4) >>= [=](auto bitcasted) {
     return make_irvalue([=](context s) {
-      return s.builder.CreateShuffleVector(bitcasted, {swizzle.r, swizzle.g});
+      return s.builder.CreateShuffleVector(
+        bitcasted, (llvm::ArrayRef<int>){swizzle.r, swizzle.g}
+      );
     });
   };
 };
@@ -132,6 +135,8 @@ auto read_float4(pvalue vec4, Swizzle swizzle) {
     });
   };
 };
+
+auto read_float4_(pvalue vec4) { return read_float4(vec4, swizzle_identity); };
 
 auto read_int(pvalue vec4, Swizzle swizzle) {
   return bitcast_int4(vec4) >>= [=](auto bitcasted) {
@@ -208,10 +213,10 @@ auto extend_to_vec4(pvalue value) {
 
 auto to_int_vec4(pvalue value) {
   return make_irvalue([=](context ctx) {
-    auto ty = value->getType();
     auto &types = ctx.types;
     std::function<pvalue(pvalue)> convert = //
       [&](pvalue value) -> pvalue {
+      auto ty = value->getType();
       if (ty == types._int4)
         return value;
       if (ty == types._float4)
@@ -262,13 +267,20 @@ auto get_function_arg(uint32_t arg_index) {
   });
 };
 
-auto get_item_in_argbuf_binding_table(uint32_t argbuf_index, uint32_t id) {
+auto get_item_in_argbuf_binding_table(uint32_t argbuf_index, uint32_t index) {
   return make_irvalue([=](context ctx) {
     auto argbuf = ctx.function->getArg(argbuf_index);
-    return ctx.builder.CreateStructGEP(
+    auto argbuf_struct_type = llvm::cast<llvm::StructType>(
       llvm::cast<llvm::PointerType>(argbuf->getType())
-        ->getNonOpaquePointerElementType(),
-      argbuf, id
+        ->getNonOpaquePointerElementType()
+    );
+    return ctx.builder.CreateLoad(
+      argbuf_struct_type->getElementType(index),
+      ctx.builder.CreateStructGEP(
+        llvm::cast<llvm::PointerType>(argbuf->getType())
+          ->getNonOpaquePointerElementType(),
+        argbuf, index
+      )
     );
   });
 };
@@ -331,7 +343,7 @@ auto store_at_alloca_array(
 
 auto store_at_alloca_int_vec4_array(
   llvm::AllocaInst *array, pvalue index, pvalue item, uint32_t mask
-) {
+) -> IREffect {
   return to_int_vec4(item) >>= [=](pvalue ivec4) {
     return make_effect_bind([=](context ctx) {
       return load_at_alloca_array(array, index) >>= [=](auto current) {
@@ -339,7 +351,7 @@ auto store_at_alloca_int_vec4_array(
           current, ivec4, (llvm::ArrayRef<int>)create_shuffle_swizzle_mask(mask)
         );
         return store_at_alloca_array(
-          ctx.resource.input_register_file, index, new_value
+          array, index, new_value
         );
       };
     });
@@ -419,6 +431,166 @@ pop_output_reg(uint32_t from_reg, uint32_t mask, uint32_t to_element) {
 
 // };
 
+std::function<IRValue(pvalue)> apply_src_operand_modifier(SrcOperandCommon c) {
+  return [=](auto vec4) {
+    return make_irvalue([=](context ctx) {
+      return ctx.builder.CreateShuffleVector(
+        vec4, vec4, create_shuffle_swizzle_mask(0b1111, c.swizzle)
+      );
+    });
+  };
+};
+
+auto call_dp4(pvalue a, pvalue b) {
+  return make_irvalue([=](context ctx) {
+    using namespace llvm;
+    auto &context = ctx.llvm;
+    auto &module = ctx.module;
+    auto &types = ctx.types;
+    auto att = AttributeList::get(
+      context, {std::make_pair<unsigned int, Attribute>(
+                  ~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)
+                ),
+                std::make_pair<unsigned int, Attribute>(
+                  ~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)
+                ),
+                std::make_pair<unsigned int, Attribute>(
+                  ~0U, Attribute::get(context, Attribute::AttrKind::ReadNone)
+                )}
+    );
+    auto fn = (module.getOrInsertFunction(
+      "air.dot.v4f32",
+      llvm::FunctionType::get(
+        types._float, {types._float4, types._float4}, false
+      ),
+      att
+    ));
+    return ctx.builder.CreateCall(fn, {a, b}, "dp4");
+  });
+};
+
+/* should provide single i32 value */
+auto load_operand_index(OperandIndex idx) {
+  return std::visit(
+    patterns{
+      [&](uint32_t v) {
+        return make_irvalue([=](context ctx) { return ctx.builder.getInt32(v); }
+        );
+      },
+      [&](IndexByTempComponent ot) {
+        return make_irvalue([=](context ctx) {
+          auto temp =
+            load_at_alloca_array(
+              ctx.resource.temp_register_file, ctx.builder.getInt32(ot.regid)
+            )
+              .build(ctx);
+          return ctx.builder.CreateAdd(
+            ctx.builder.CreateExtractElement(temp, ot.component),
+            ctx.builder.getInt32(ot.offset)
+          );
+        });
+      },
+      [&](IndexByIndexableTempComponent it) {
+        return make_irvalue([=](context ctx) {
+          assert(0 && "not implemented");
+          return nullptr;
+        });
+      }
+    },
+    idx
+  );
+}
+
+auto load_src_operand(SrcOperand src) -> IRValue {
+  return std::visit(
+    patterns{
+      [&](SrcOperandInput input) {
+        return make_irvalue_bind([=](context ctx) {
+                 return load_at_alloca_array(
+                   ctx.resource.input_register_file,
+                   ctx.builder.getInt32(input.regid)
+                 );
+               }) >>= apply_src_operand_modifier(input._);
+      },
+      [&](SrcOperandImmediate32 imm) {
+        return make_irvalue([=](context ctx) {
+                 return llvm::ConstantDataVector::get(ctx.llvm, imm.uvalue);
+               }) >>= apply_src_operand_modifier(imm._);
+      },
+      [&](SrcOperandTemp temp) {
+        return make_irvalue_bind([=](context ctx) {
+                 return load_at_alloca_array(
+                   ctx.resource.temp_register_file,
+                   ctx.builder.getInt32(temp.regid)
+                 );
+               }) >>= apply_src_operand_modifier(temp._);
+      },
+      [&](SrcOperandConstantBuffer cb) {
+        return make_irvalue([=](context ctx) {
+                 auto cb_handle =
+                   ctx.resource
+                     .cb_range_map
+                       [cb.rangeid](nullptr /* TODO: rangeindex for SM51*/)
+                     .build(ctx);
+                 assert(cb_handle);
+                 //  llvm::outs() << ;
+                 cb_handle->dump();
+                 auto ptr = ctx.builder.CreateGEP(
+                   ctx.types._int4, cb_handle,
+                   {load_operand_index(cb.regindex).build(ctx)}
+                 );
+                 return ctx.builder.CreateLoad(ctx.types._int4, ptr);
+               }) >>= apply_src_operand_modifier(cb._);
+      },
+      [](auto) {
+        assert(0 && "unhandled operand");
+        return make_irvalue([=](context ctx) { return nullptr; });
+      }
+    },
+    src
+  );
+};
+
+auto store_dst_operand(DstOperand dst, IRValue &&value) -> IREffect {
+  return std::visit(
+    patterns{
+      [&](DstOperandNull) {
+        return make_effect([=](auto ctx) {
+          value.build(ctx);
+          return std::monostate();
+        });
+      },
+      [&](DstOperandTemp o) {
+        return make_effect_bind([=](context ctx) {
+          auto to_ = value.build(ctx);
+          return store_at_alloca_int_vec4_array(
+            ctx.resource.temp_register_file, ctx.builder.getInt32(o.regid), to_,
+            o._.mask
+          );
+        });
+      },
+      [&](DstOperandOutput o) {
+        return make_effect([=](context ctx) {
+          auto to_ = value.build(ctx);
+          llvm::outs() << "start\n";
+          store_at_alloca_int_vec4_array(
+            ctx.resource.output_register_file, ctx.builder.getInt32(o.regid),
+            to_, o._.mask
+          )
+            .build(ctx);
+          llvm::outs() << "end\n";
+          return std::monostate();
+        });
+      },
+      [&](auto) {
+        assert(0 && "unhandled dst operand");
+        return make_effect([](auto) { return std::monostate(); });
+      }
+    },
+    dst
+  );
+};
+
 auto convertBasicBlocks(
   std::shared_ptr<BasicBlock> entry, context &ctx, llvm::BasicBlock *return_bb
 ) {
@@ -437,6 +609,16 @@ auto convertBasicBlocks(
           patterns{
             [&](InstMov mov) {
               // r
+              effect << store_dst_operand(mov.dst, load_src_operand(mov.src));
+            },
+            [&](InstDotProduct dp) {
+              effect << lift(
+                load_src_operand(dp.src0) >>= read_float4_,
+                load_src_operand(dp.src1) >>= read_float4_,
+                [=](auto a, auto b) {
+                  return store_dst_operand(dp.dst, call_dp4(a, b));
+                }
+              );
             },
             [](InstNop) {}, // nop
             [](auto) { assert(0 && "unhandled instruction"); }

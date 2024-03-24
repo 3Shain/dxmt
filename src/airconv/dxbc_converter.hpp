@@ -181,8 +181,8 @@ using DstOperand = std::variant<
 
 struct InstMov {
   InstructionCommon _;
-  SrcOperand src;
   DstOperand dst;
+  SrcOperand src;
 };
 
 struct InstMovConditional {

@@ -382,6 +382,8 @@ readSrcOperandSwizzle(const microsoft::D3D10ShaderBinary::COperandBase &O)
   }
   case D3D10_SB_OPERAND_4_COMPONENT_MASK_MODE: {
     DXASSERT_DXBC(false && "can not read swizzle from mask");
+    // DXASSERT_DXBC(O.m_WriteMask >> 4 == 0b1111);
+    // return swizzle_identity;
   }
   }
 }
@@ -406,7 +408,12 @@ static auto readSrcOperand(const microsoft::D3D10ShaderBinary::COperandBase &O)
 
     if (O.m_NumComponents == D3D10_SB_OPERAND_4_COMPONENT) {
       return SrcOperandImmediate32{
-        ._ = readSrcOperandCommon(O),
+        ._ =
+          {
+            .swizzle = swizzle_identity,
+            .abs = false,
+            .neg = false,
+          },
         .uvalue =
           {
             O.m_Value[0],
@@ -417,7 +424,12 @@ static auto readSrcOperand(const microsoft::D3D10ShaderBinary::COperandBase &O)
       };
     } else {
       return SrcOperandImmediate32{
-        ._ = readSrcOperandCommon(O),
+        ._ =
+          {
+            .swizzle = swizzle_identity,
+            .abs = false,
+            .neg = false,
+          },
         .uvalue =
           {
             O.m_Value[0],
@@ -497,6 +509,14 @@ static auto readSrcOperand(const microsoft::D3D10ShaderBinary::COperandBase &O)
 
     // break;
   }
+  case D3D10_SB_OPERAND_TYPE_INPUT: {
+    DXASSERT_DXBC(O.m_IndexDimension == D3D10_SB_OPERAND_INDEX_1D);
+    unsigned Reg = O.m_Index[0].m_RegIndex;
+    return SrcOperandInput{
+      ._ = readSrcOperandCommon(O),
+      .regid = Reg,
+    };
+  }
 
   case D3D10_SB_OPERAND_TYPE_INDEXABLE_TEMP: {
     DXASSERT_DXBC(O.m_IndexDimension == D3D10_SB_OPERAND_INDEX_2D);
@@ -571,8 +591,19 @@ static auto readSrcOperand(const microsoft::D3D10ShaderBinary::COperandBase &O)
     DXASSERT_DXBC(false); // ?
     break;
   }
+  case D3D10_SB_OPERAND_TYPE_CONSTANT_BUFFER: {
+    if (O.m_IndexDimension == D3D10_SB_OPERAND_INDEX_2D) {
+      return SrcOperandConstantBuffer{
+        ._ = readSrcOperandCommon(O),
+        .rangeid = O.m_Index[0].m_RegIndex,
+        .rangeindex = readOperandIndex(O.m_Index[0], O.m_IndexType[0]),
+        .regindex = readOperandIndex(O.m_Index[1], O.m_IndexType[1])
+      };
+    }
+    assert(0 && "TODO: SM5.1");
+  }
   default:
-    DXASSERT_DXBC(false);
+    DXASSERT_DXBC(false && "unhandled src operand");
   }
 };
 
@@ -597,11 +628,27 @@ readInstructionCommon(const microsoft::D3D10ShaderBinary::CInstruction &Inst)
   return InstructionCommon{.saturate = Inst.m_bSaturate != 0};
 };
 
-static auto
-readInstruction(const microsoft::D3D10ShaderBinary::CInstruction &Inst, ShaderInfo& shader_info)
-  -> Instruction {
+static auto readInstruction(
+  const microsoft::D3D10ShaderBinary::CInstruction &Inst,
+  ShaderInfo &shader_info
+) -> Instruction {
   using namespace microsoft;
   switch (Inst.m_OpCode) {
+  case microsoft::D3D10_SB_OPCODE_MOV: {
+    return InstMov{
+      ._ = readInstructionCommon(Inst),
+      .dst = readDstOperand(Inst.m_Operands[0]),
+      .src = readSrcOperand(Inst.m_Operands[1]),
+    };
+  };
+  case microsoft::D3D10_SB_OPCODE_DP4: {
+    return InstDotProduct{
+      ._ = readInstructionCommon(Inst),
+      .dst = readDstOperand(Inst.m_Operands[0]),
+      .src0 = readSrcOperand(Inst.m_Operands[1]),
+      .src1 = readSrcOperand(Inst.m_Operands[2]),
+    };
+  };
   case microsoft::D3D10_SB_OPCODE_DERIV_RTX:
   case microsoft::D3D11_SB_OPCODE_DERIV_RTX_FINE: {
     return InstPartialDerivative{
