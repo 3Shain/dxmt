@@ -1,3 +1,4 @@
+#include "llvm/IR/Constants.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/LLVMContext.h"
@@ -55,28 +56,36 @@ void Convert(
   );
   pModule->addModuleFlag(Module::ModFlagBehavior::Max, "air.max_samplers", 16);
 
-  //   auto airVersion = pModule->getOrInsertNamedMetadata("air.version");
-  //   airVersion->addOperand(
-  //       MDTuple::get(context, {metadata.createUnsignedInteger(2),
-  //                              metadata.createUnsignedInteger(6),
-  //                              metadata.createUnsignedInteger(0)}));
-  //   auto airLangVersion =
-  //       pModule->getOrInsertNamedMetadata("air.language_version");
-  //   airLangVersion->addOperand(MDTuple::get(
-  //       context,
-  //       {metadata.createString("Metal"), metadata.createUnsignedInteger(3),
-  //        metadata.createUnsignedInteger(0),
-  //        metadata.createUnsignedInteger(0)}));
+  auto createUnsignedInteger = [&](uint32_t s) {
+    return ConstantAsMetadata::get(
+      ConstantInt::get(context, APInt{32, s, false})
+    );
+  };
+  auto createString = [&](auto s) { return MDString::get(context, s); };
 
-  //   auto airCompileOptions =
-  //       pModule->getOrInsertNamedMetadata("air.compile_options");
-  //   airCompileOptions->addOperand(MDTuple::get(
-  //       context, {metadata.createString("air.compile.denorms_disable")}));
-  //   airCompileOptions->addOperand(MDTuple::get(
-  //       context, {metadata.createString("air.compile.fast_math_enable")}));
-  //   airCompileOptions->addOperand(MDTuple::get(
-  //       context,
-  //       {metadata.createString("air.compile.framebuffer_fetch_enable")}));
+  auto airVersion = pModule->getOrInsertNamedMetadata("air.version");
+  airVersion->addOperand(MDTuple::get(
+    context, {createUnsignedInteger(2), createUnsignedInteger(6),
+              createUnsignedInteger(0)}
+  ));
+  auto airLangVersion =
+    pModule->getOrInsertNamedMetadata("air.language_version");
+  airLangVersion->addOperand(MDTuple::get(
+    context, {createString("Metal"), createUnsignedInteger(3),
+              createUnsignedInteger(0), createUnsignedInteger(0)}
+  ));
+
+  auto airCompileOptions =
+    pModule->getOrInsertNamedMetadata("air.compile_options");
+  airCompileOptions->addOperand(
+    MDTuple::get(context, {createString("air.compile.denorms_disable")})
+  );
+  airCompileOptions->addOperand(
+    MDTuple::get(context, {createString("air.compile.fast_math_disable")})
+  );
+  airCompileOptions->addOperand(MDTuple::get(
+    context, {createString("air.compile.framebuffer_fetch_enable")}
+  ));
 
   dxbc::convertDXBC(dxbc, dxbcSize, context, *pModule);
 

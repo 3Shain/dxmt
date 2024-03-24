@@ -10,7 +10,7 @@ int main() {
   // ID3D11VertexShader *vertexShader;
   ID3DBlob *shaderCompileErrorsBlob;
   HRESULT hResult =
-      D3DCompileFromFile(L"../dx11/shader_cube.hlsl", nullptr, nullptr, "vs_main", "vs_5_0",
+      D3DCompileFromFile(L"../dx11/shader_cube.hlsl", nullptr, nullptr, "ps_main", "ps_5_0",
                          0, 0, &vsBlob, &shaderCompileErrorsBlob);
 
   assert(SUCCEEDED(hResult));

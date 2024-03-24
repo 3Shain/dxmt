@@ -196,6 +196,7 @@ struct InstDotProduct {
   DstOperand dst;
   SrcOperand src0;
   SrcOperand src1;
+  uint8_t dimension;
 };
 
 struct InstSinCos {

@@ -641,9 +641,38 @@ static auto readInstruction(
       .src = readSrcOperand(Inst.m_Operands[1]),
     };
   };
+
+  case microsoft::D3D10_SB_OPCODE_DP2: {
+    return InstDotProduct{
+      ._ = readInstructionCommon(Inst),
+      .dst = readDstOperand(Inst.m_Operands[0]),
+      .src0 = readSrcOperand(Inst.m_Operands[1]),
+      .src1 = readSrcOperand(Inst.m_Operands[2]),
+      .dimension = 2,
+    };
+  };
+  case microsoft::D3D10_SB_OPCODE_DP3: {
+    return InstDotProduct{
+      ._ = readInstructionCommon(Inst),
+      .dst = readDstOperand(Inst.m_Operands[0]),
+      .src0 = readSrcOperand(Inst.m_Operands[1]),
+      .src1 = readSrcOperand(Inst.m_Operands[2]),
+      .dimension = 3,
+    };
+  };
   case microsoft::D3D10_SB_OPCODE_DP4: {
     return InstDotProduct{
       ._ = readInstructionCommon(Inst),
+      .dst = readDstOperand(Inst.m_Operands[0]),
+      .src0 = readSrcOperand(Inst.m_Operands[1]),
+      .src1 = readSrcOperand(Inst.m_Operands[2]),
+      .dimension = 4,
+    };
+  };
+  case microsoft::D3D10_SB_OPCODE_ADD: {
+    return InstFloatBinaryOp {
+      ._ = readInstructionCommon(Inst),
+      .op = FloatBinaryOp::Add,
       .dst = readDstOperand(Inst.m_Operands[0]),
       .src0 = readSrcOperand(Inst.m_Operands[1]),
       .src1 = readSrcOperand(Inst.m_Operands[2]),

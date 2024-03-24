@@ -16,6 +16,7 @@
 #include "llvm/IR/Type.h"
 #include <cstdint>
 #include <functional>
+#include <string>
 #include <variant>
 
 // it's suposed to be include by specific file
@@ -83,7 +84,9 @@ auto bitcast_float4(pvalue vec4) {
   return make_irvalue([=](context s) {
     if (vec4->getType() == s.types._float4)
       return vec4;
-    return s.builder.CreateBitCast(vec4, s.types._float4);
+    return s.builder.CreateBitCast(
+      vec4, s.types._float4, "cast_to_float4_by_need_"
+    );
   });
 }
 
@@ -103,7 +106,7 @@ auto read_float(pvalue vec4, Swizzle swizzle) {
   };
 };
 
-IRValue read_float2(pvalue vec4, Swizzle swizzle) {
+IRValue to_float2_swizzled(pvalue vec4, Swizzle swizzle) {
   return bitcast_float4(vec4) >>= [=](auto bitcasted) {
     return make_irvalue([=](context s) {
       return s.builder.CreateShuffleVector(
@@ -113,7 +116,11 @@ IRValue read_float2(pvalue vec4, Swizzle swizzle) {
   };
 };
 
-auto read_float3(pvalue vec4, Swizzle swizzle) {
+auto to_float2(pvalue vec4) {
+  return to_float2_swizzled(vec4, swizzle_identity);
+};
+
+auto to_float3_swizzled(pvalue vec4, Swizzle swizzle) {
   return bitcast_float4(vec4) >>= [=](auto bitcasted) {
     return make_irvalue([=](context s) {
       return s.builder.CreateShuffleVector(
@@ -123,7 +130,11 @@ auto read_float3(pvalue vec4, Swizzle swizzle) {
   };
 };
 
-auto read_float4(pvalue vec4, Swizzle swizzle) {
+auto to_float3(pvalue vec4) {
+  return to_float3_swizzled(vec4, swizzle_identity);
+};
+
+auto to_float4_swizzled(pvalue vec4, Swizzle swizzle) {
   if (swizzle == swizzle_identity) {
     return bitcast_float4(vec4);
   }
@@ -136,7 +147,9 @@ auto read_float4(pvalue vec4, Swizzle swizzle) {
   };
 };
 
-auto read_float4_(pvalue vec4) { return read_float4(vec4, swizzle_identity); };
+auto to_float4(pvalue vec4) {
+  return to_float4_swizzled(vec4, swizzle_identity);
+};
 
 auto read_int(pvalue vec4, Swizzle swizzle) {
   return bitcast_int4(vec4) >>= [=](auto bitcasted) {
@@ -211,7 +224,7 @@ auto extend_to_vec4(pvalue value) {
   });
 }
 
-auto to_int_vec4(pvalue value) {
+auto extend_to_int_vec4(pvalue value) {
   return make_irvalue([=](context ctx) {
     auto &types = ctx.types;
     std::function<pvalue(pvalue)> convert = //
@@ -220,7 +233,9 @@ auto to_int_vec4(pvalue value) {
       if (ty == types._int4)
         return value;
       if (ty == types._float4)
-        return ctx.builder.CreateBitCast(value, types._int4);
+        return ctx.builder.CreateBitCast(
+          value, types._int4, "cast_to_int4_by_need_"
+        );
       return convert(extend_to_vec4(value).build(ctx));
       assert(0 && "unhandled value type");
     };
@@ -315,15 +330,13 @@ auto create_shuffle_swizzle_mask(
 
 auto load_at_alloca_array(llvm::AllocaInst *array, pvalue index) -> IRValue {
   return make_irvalue([=](context ctx) {
-    // convert arg to int4
     auto ptr = ctx.builder.CreateInBoundsGEP(
       llvm::cast<llvm::ArrayType>(array->getAllocatedType()), array,
-      {ctx.builder.getInt32(0), index}
+      {ctx.builder.getInt32(0), index}, "load_at_alloca_array_gep_"
     );
     return ctx.builder.CreateLoad(
       llvm::cast<llvm::ArrayType>(array->getAllocatedType())->getElementType(),
-      // ctx.types._int4,
-      ptr
+      ptr, "load_at_alloca_array_"
     );
   });
 };
@@ -332,27 +345,27 @@ auto store_at_alloca_array(
   llvm::AllocaInst *array, pvalue index, pvalue item_with_matched_type
 ) -> IREffect {
   return make_effect([=](context ctx) {
-    // convert arg to int4
     auto ptr = ctx.builder.CreateInBoundsGEP(
-      array->getAllocatedType(), array, {ctx.builder.getInt32(0), index}
+      array->getAllocatedType(), array, {ctx.builder.getInt32(0), index},
+      "store_at_alloca_array_gep_"
     );
     ctx.builder.CreateStore(item_with_matched_type, ptr);
     return std::monostate();
   });
 };
 
-auto store_at_alloca_int_vec4_array(
+auto store_at_alloca_int_vec4_array_masked(
   llvm::AllocaInst *array, pvalue index, pvalue item, uint32_t mask
 ) -> IREffect {
-  return to_int_vec4(item) >>= [=](pvalue ivec4) {
+  return extend_to_int_vec4(item) >>= [=](pvalue ivec4) {
     return make_effect_bind([=](context ctx) {
       return load_at_alloca_array(array, index) >>= [=](auto current) {
         auto new_value = ctx.builder.CreateShuffleVector(
-          current, ivec4, (llvm::ArrayRef<int>)create_shuffle_swizzle_mask(mask)
+          current, ivec4,
+          (llvm::ArrayRef<int>)create_shuffle_swizzle_mask(mask),
+          "value_to_store_after_swizzle_mask_"
         );
-        return store_at_alloca_array(
-          array, index, new_value
-        );
+        return store_at_alloca_array(array, index, new_value);
       };
     });
   };
@@ -364,7 +377,7 @@ auto init_input_reg(uint32_t with_fnarg_at, uint32_t to_reg, uint32_t mask)
     auto arg = ctx.function->getArg(with_fnarg_at);
     auto const_index =
       llvm::ConstantInt::get(ctx.llvm, llvm::APInt{32, to_reg, false});
-    return store_at_alloca_int_vec4_array(
+    return store_at_alloca_int_vec4_array_masked(
       ctx.resource.input_register_file, const_index, arg, mask
     );
   });
@@ -390,58 +403,7 @@ pop_output_reg(uint32_t from_reg, uint32_t mask, uint32_t to_element) {
   };
 }
 
-// auto defineOperation(StringRef name, air::EType returnType,
-//                      ArrayRef<air::EType> argumentsType)
-//     -> std::function<IRValue(ArrayRef<pvalue>)> {
-//   std::string name_ = name.str();
-//   auto args_ = argumentsType.vec();
-//   return [name_, args_, returnType](ArrayRef<pvalue> params) -> IRValue {
-//     return make_irvalue([params = params.vec()](context ctx) {
-//       // ctx.module.getOrInsertFunction()
-//       return ctx.builder.CreateCall(nullptr, params);
-//     });
-//   };
-// }
-
-// auto air_dot_v4f32 = defineOperation("air.dot.v4f32", air::EType::_float,
-//                                      {air::EType::float4,
-//                                      air::EType::float4});
-
-// auto air_dot_v3f32 = defineOperation("air.dot.v4f32", air::EType::_float,
-//                                      {air::EType::float2,
-//                                      air::EType::float2});
-
-// auto air_dot_v2f32 = defineOperation("air.dot.v4f32", air::EType::_float,
-//                                      {air::EType::float2,
-//                                      air::EType::float2});
-
-// IRValue dp4(pvalue a_v4f32, pvalue b_v4f32) {
-//   return air_dot_v4f32({a_v4f32, b_v4f32});
-// };
-
-// IRValue dp3(pvalue a_v3f32, pvalue b_v3f32){
-
-// };
-
-// IRValue dp3(const IRValue &a_v3f32, const IRValue &b_v3f32) {
-//   return lift(a_v3f32, b_v3f32, [](auto a, auto b) { return dp3(a, b); });
-// };
-
-// IRValue dp2(pvalue a_v2f32, pvalue b_v2f32) {
-
-// };
-
-std::function<IRValue(pvalue)> apply_src_operand_modifier(SrcOperandCommon c) {
-  return [=](auto vec4) {
-    return make_irvalue([=](context ctx) {
-      return ctx.builder.CreateShuffleVector(
-        vec4, vec4, create_shuffle_swizzle_mask(0b1111, c.swizzle)
-      );
-    });
-  };
-};
-
-auto call_dp4(pvalue a, pvalue b) {
+auto call_dot_product(uint32_t dimension, pvalue a, pvalue b) {
   return make_irvalue([=](context ctx) {
     using namespace llvm;
     auto &context = ctx.llvm;
@@ -458,15 +420,83 @@ auto call_dp4(pvalue a, pvalue b) {
                   ~0U, Attribute::get(context, Attribute::AttrKind::ReadNone)
                 )}
     );
+    auto operand_type = dimension == 4   ? types._float4
+                        : dimension == 3 ? types._float3
+                                         : types._float2;
     auto fn = (module.getOrInsertFunction(
-      "air.dot.v4f32",
+      "air.dot.v" + std::to_string(dimension) + "f32",
       llvm::FunctionType::get(
-        types._float, {types._float4, types._float4}, false
+        types._float, {operand_type, operand_type}, false
       ),
       att
     ));
-    return ctx.builder.CreateCall(fn, {a, b}, "dp4");
+    return ctx.builder.CreateCall(fn, {a, b});
   });
+};
+
+auto call_abs(uint32_t dimension, pvalue fvec) {
+  return make_irvalue([=](context ctx) {
+    using namespace llvm;
+    auto &context = ctx.llvm;
+    auto &module = ctx.module;
+    auto &types = ctx.types;
+    auto att = AttributeList::get(
+      context, {std::make_pair<unsigned int, Attribute>(
+                  ~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)
+                ),
+                std::make_pair<unsigned int, Attribute>(
+                  ~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)
+                ),
+                std::make_pair<unsigned int, Attribute>(
+                  ~0U, Attribute::get(context, Attribute::AttrKind::ReadNone)
+                )}
+    );
+    auto operand_type = dimension == 4   ? types._float4
+                        : dimension == 3 ? types._float3
+                                         : types._float2;
+    auto fn = (module.getOrInsertFunction(
+      ctx.builder.getFastMathFlags().isFast()
+        ? "air.fast_fabs.v" + std::to_string(dimension) + "f32"
+        : "air.fabs.v" + std::to_string(dimension) + "f32",
+      llvm::FunctionType::get(operand_type, {operand_type}, false), att
+    ));
+    return ctx.builder.CreateCall(fn, {fvec});
+  });
+};
+
+std::function<IRValue(pvalue)>
+apply_src_operand_modifier(SrcOperandCommon c, bool float_op) {
+  return [=](auto ivec4) {
+    return make_irvalue([=](context ctx) {
+      auto ret = ctx.builder.CreateShuffleVector(
+        ivec4, ivec4, create_shuffle_swizzle_mask(0b1111, c.swizzle),
+        "operand_swizzle_"
+      );
+      if (c.abs) {
+        assert(float_op);
+        ret = ctx.builder.CreateBitCast(
+          call_abs(4, ctx.builder.CreateBitCast(ret, ctx.types._float4))
+            .build(ctx),
+          ctx.types._int4
+        );
+      }
+      if (c.neg) {
+        if (float_op) {
+          ret = ctx.builder.CreateBitCast(
+            ctx.builder.CreateFNeg(
+              ctx.builder.CreateBitCast(ret, ctx.types._float4)
+            ),
+            ctx.types._int4
+          );
+        } else {
+          ret = ctx.builder.CreateNeg(
+            ctx.builder.CreateBitCast(ret, ctx.types._float4)
+          );
+        }
+      }
+      return ret;
+    });
+  };
 };
 
 /* should provide single i32 value */
@@ -501,7 +531,7 @@ auto load_operand_index(OperandIndex idx) {
   );
 }
 
-auto load_src_operand(SrcOperand src) -> IRValue {
+auto load_src_operand(SrcOperand src, bool float_op = true) -> IRValue {
   return std::visit(
     patterns{
       [&](SrcOperandInput input) {
@@ -510,12 +540,12 @@ auto load_src_operand(SrcOperand src) -> IRValue {
                    ctx.resource.input_register_file,
                    ctx.builder.getInt32(input.regid)
                  );
-               }) >>= apply_src_operand_modifier(input._);
+               }) >>= apply_src_operand_modifier(input._, float_op);
       },
       [&](SrcOperandImmediate32 imm) {
         return make_irvalue([=](context ctx) {
                  return llvm::ConstantDataVector::get(ctx.llvm, imm.uvalue);
-               }) >>= apply_src_operand_modifier(imm._);
+               }) >>= apply_src_operand_modifier(imm._, float_op);
       },
       [&](SrcOperandTemp temp) {
         return make_irvalue_bind([=](context ctx) {
@@ -523,7 +553,7 @@ auto load_src_operand(SrcOperand src) -> IRValue {
                    ctx.resource.temp_register_file,
                    ctx.builder.getInt32(temp.regid)
                  );
-               }) >>= apply_src_operand_modifier(temp._);
+               }) >>= apply_src_operand_modifier(temp._, float_op);
       },
       [&](SrcOperandConstantBuffer cb) {
         return make_irvalue([=](context ctx) {
@@ -533,14 +563,12 @@ auto load_src_operand(SrcOperand src) -> IRValue {
                        [cb.rangeid](nullptr /* TODO: rangeindex for SM51*/)
                      .build(ctx);
                  assert(cb_handle);
-                 //  llvm::outs() << ;
-                 cb_handle->dump();
                  auto ptr = ctx.builder.CreateGEP(
                    ctx.types._int4, cb_handle,
                    {load_operand_index(cb.regindex).build(ctx)}
                  );
                  return ctx.builder.CreateLoad(ctx.types._int4, ptr);
-               }) >>= apply_src_operand_modifier(cb._);
+               }) >>= apply_src_operand_modifier(cb._, float_op);
       },
       [](auto) {
         assert(0 && "unhandled operand");
@@ -563,7 +591,7 @@ auto store_dst_operand(DstOperand dst, IRValue &&value) -> IREffect {
       [&](DstOperandTemp o) {
         return make_effect_bind([=](context ctx) {
           auto to_ = value.build(ctx);
-          return store_at_alloca_int_vec4_array(
+          return store_at_alloca_int_vec4_array_masked(
             ctx.resource.temp_register_file, ctx.builder.getInt32(o.regid), to_,
             o._.mask
           );
@@ -572,13 +600,11 @@ auto store_dst_operand(DstOperand dst, IRValue &&value) -> IREffect {
       [&](DstOperandOutput o) {
         return make_effect([=](context ctx) {
           auto to_ = value.build(ctx);
-          llvm::outs() << "start\n";
-          store_at_alloca_int_vec4_array(
+          store_at_alloca_int_vec4_array_masked(
             ctx.resource.output_register_file, ctx.builder.getInt32(o.regid),
             to_, o._.mask
           )
             .build(ctx);
-          llvm::outs() << "end\n";
           return std::monostate();
         });
       },
@@ -608,17 +634,64 @@ auto convertBasicBlocks(
         std::visit(
           patterns{
             [&](InstMov mov) {
-              // r
               effect << store_dst_operand(mov.dst, load_src_operand(mov.src));
             },
             [&](InstDotProduct dp) {
-              effect << lift(
-                load_src_operand(dp.src0) >>= read_float4_,
-                load_src_operand(dp.src1) >>= read_float4_,
-                [=](auto a, auto b) {
-                  return store_dst_operand(dp.dst, call_dp4(a, b));
-                }
-              );
+              switch (dp.dimension) {
+              case 4:
+                effect << lift(
+                  load_src_operand(dp.src0) >>= to_float4,
+                  load_src_operand(dp.src1) >>= to_float4,
+                  [=](auto a, auto b) {
+                    return store_dst_operand(dp.dst, call_dot_product(4, a, b));
+                  }
+                );
+                break;
+              case 3:
+                effect << lift(
+                  load_src_operand(dp.src0) >>= to_float3,
+                  load_src_operand(dp.src1) >>= to_float3,
+                  [=](auto a, auto b) {
+                    return store_dst_operand(dp.dst, call_dot_product(3, a, b));
+                  }
+                );
+                break;
+              case 2:
+                effect << lift(
+                  load_src_operand(dp.src0) >>= to_float2,
+                  load_src_operand(dp.src1) >>= to_float2,
+                  [=](auto a, auto b) {
+                    return store_dst_operand(dp.dst, call_dot_product(2, a, b));
+                  }
+                );
+                break;
+              default:
+                assert(0 && "wrong dot product dimension");
+              }
+            },
+            [&](InstFloatBinaryOp bin) {
+              switch (bin.op) {
+              case FloatBinaryOp::Add: {
+                effect << lift(
+                  load_src_operand(bin.src0) >>= to_float4,
+                  load_src_operand(bin.src1) >>= to_float4,
+                  [=](auto a, auto b) {
+                    return store_dst_operand(
+                      bin.dst, make_irvalue([=](struct context ctx) {
+                        return ctx.builder.CreateFAdd(a, b);
+                      })
+                    );
+                  }
+                );
+                break;
+              }
+              case FloatBinaryOp::Mul:
+              case FloatBinaryOp::Div:
+              case FloatBinaryOp::Min:
+              case FloatBinaryOp::Max:
+              default:
+                assert(0 && "TODO: implement float binop");
+              }
             },
             [](InstNop) {}, // nop
             [](auto) { assert(0 && "unhandled instruction"); }
