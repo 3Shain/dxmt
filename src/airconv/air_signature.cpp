@@ -73,11 +73,8 @@ uint32_t ArgumentBufferBuilder::DefineBuffer(
   MSLRepresentableType type, uint32_t location_index
 ) {
   auto element_index = fieldsType.size();
-  assert(
-    fieldsType.find(name) == fieldsType.end() &&
-    "otherwise duplicated field name"
-  );
-  fieldsType[name] = ArgumentBindingBuffer{
+  assert(!fields.count(name) && "otherwise duplicated field name");
+  fieldsType.push_back(ArgumentBindingBuffer{
     .location_index =
       location_index == UINT32_MAX ? (uint32_t)element_index : location_index,
     .array_size = 1,
@@ -85,7 +82,7 @@ uint32_t ArgumentBufferBuilder::DefineBuffer(
     .address_space = addressp_space,
     .type = type,
     .arg_name = name,
-  };
+  });
   return element_index;
 };
 
@@ -93,16 +90,13 @@ uint32_t ArgumentBufferBuilder::DefineSampler(
   std::string name, uint32_t location_index
 ) {
   auto element_index = fieldsType.size();
-  assert(
-    fieldsType.find(name) == fieldsType.end() &&
-    "otherwise duplicated field name"
-  );
-  fieldsType[name] = ArgumentBindingSampler{
+  assert(!fields.count(name) && "otherwise duplicated field name");
+  fieldsType.push_back(ArgumentBindingSampler{
     .location_index =
       location_index == UINT32_MAX ? (uint32_t)element_index : location_index,
     .array_size = 1,
     .arg_name = name
-  };
+  });
   return element_index;
 };
 
@@ -111,11 +105,8 @@ uint32_t ArgumentBufferBuilder::DefineTexture(
   MSLScalerType scaler_type, uint32_t location_index
 ) {
   auto element_index = fieldsType.size();
-  assert(
-    fieldsType.find(name) == fieldsType.end() &&
-    "otherwise duplicated field name"
-  );
-  fieldsType[name] = ArgumentBindingTexture{
+  assert(!fields.count(name) && "otherwise duplicated field name");
+  fieldsType.push_back(ArgumentBindingTexture{
     .location_index =
       location_index == UINT32_MAX ? (uint32_t)element_index : location_index,
     .array_size = 1,
@@ -127,7 +118,7 @@ uint32_t ArgumentBufferBuilder::DefineTexture(
         .resource_kind = kind
       },
     .arg_name = name
-  };
+  });
   return element_index;
 };
 
@@ -307,7 +298,7 @@ auto ArgumentBufferBuilder::Build(
   std::vector<llvm::Type *> fields;
   std::vector<llvm::Metadata *> indirect_argument;
   uint32_t offset = 0;
-  for (auto [name, s] : fieldsType) {
+  for (auto argument : fieldsType) {
     StreamMDHelper metadata_field;
     metadata_field.integer(offset);
     auto field_type = std::visit(
@@ -344,7 +335,7 @@ auto ArgumentBufferBuilder::Build(
           return get_llvm_type(constant.type, context);
         }
       },
-      s
+      argument
     );
     fields.push_back(field_type);
     indirect_argument.push_back(metadata_field.BuildTuple(context));

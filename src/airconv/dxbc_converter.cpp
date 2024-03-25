@@ -17,6 +17,7 @@
 /* separated implementation details */
 #include "dxbc_converter_inc.hpp"
 #include "dxbc_converter_instruction_inc.hpp"
+#include "shader_common.hpp"
 
 namespace dxmt::dxbc {
 
@@ -376,32 +377,22 @@ void convertDXBC(
         switch (Inst.OpCode()) {
         case D3D10_SB_OPCODE_DCL_RESOURCE: {
           srv.range.space = (Inst.m_ResourceDecl.Space);
-          // R.SetKind(DXBC::GetResourceKind(Inst.m_ResourceDecl.Dimension));
-          // const unsigned kTypedBufferElementSizeInBytes = 4;
-          // R.SetElementStride(kTypedBufferElementSizeInBytes);
-          // R.SetSampleCount(Inst.m_ResourceDecl.SampleCount);
-          // CompType DeclCT =
-          //     DXBC::GetDeclResCompType(Inst.m_ResourceDecl.ReturnType[0]);
-          // if (DeclCT.IsInvalid())
-          //   DeclCT = CompType::getU32();
-          // R.SetCompType(DeclCT);
-          // pResType = GetTypedResElemType(DeclCT);
+          srv.resource_type =
+            to_shader_resource_type(Inst.m_ResourceDecl.Dimension);
+          srv.scaler_type =
+            to_shader_scaler_type(Inst.m_ResourceDecl.ReturnType[0]);
+          // Inst.m_ResourceDecl.SampleCount
           break;
         }
         case D3D11_SB_OPCODE_DCL_RESOURCE_RAW: {
           srv.range.space = (Inst.m_RawSRVDecl.Space);
-          // R.SetKind(DxilResource::Kind::RawBuffer);
-          // const unsigned kRawBufferElementSizeInBytes = 1;
-          // R.SetElementStride(kRawBufferElementSizeInBytes);
-          // pResType = GetTypedResElemType(CompType::getU32());
+          srv.scaler_type = shader::common::ScalerDataType::Uint;
           break;
         }
         case D3D11_SB_OPCODE_DCL_RESOURCE_STRUCTURED: {
           srv.range.space = (Inst.m_StructuredSRVDecl.Space);
-          // R.SetKind(DxilResource::Kind::StructuredBuffer);
-          // unsigned Stride = Inst.m_StructuredSRVDecl.ByteStride;
-          // R.SetElementStride(Stride);
-          // pResType = GetStructResElemType(Stride);
+          srv.scaler_type = shader::common::ScalerDataType::Uint;
+          srv.strucure_stride = Inst.m_StructuredSRVDecl.ByteStride;
           break;
         }
         default:;
@@ -441,33 +432,25 @@ void convertDXBC(
         case D3D11_SB_OPCODE_DCL_UNORDERED_ACCESS_VIEW_TYPED: {
           uav.range.space = (Inst.m_TypedUAVDecl.Space);
           Flags = Inst.m_TypedUAVDecl.Flags;
-          // R.SetKind(DXBC::GetResourceKind(Inst.m_TypedUAVDecl.Dimension));
-          // const unsigned kTypedBufferElementSizeInBytes = 4;
-          // R.SetElementStride(kTypedBufferElementSizeInBytes);
-          // CompType DeclCT =
-          //     DXBC::GetDeclResCompType(Inst.m_TypedUAVDecl.ReturnType[0]);
-          // if (DeclCT.IsInvalid())
-          //   DeclCT = CompType::getU32();
-          // R.SetCompType(DeclCT);
-          // pResType = GetTypedResElemType(DeclCT);
+          uav.resource_type =
+            to_shader_resource_type(Inst.m_TypedUAVDecl.Dimension);
+          uav.scaler_type =
+            to_shader_scaler_type(Inst.m_TypedUAVDecl.ReturnType[0]);
           break;
         }
         case D3D11_SB_OPCODE_DCL_UNORDERED_ACCESS_VIEW_RAW: {
           uav.range.space = (Inst.m_RawUAVDecl.Space);
           // R.SetKind(DxilResource::Kind::RawBuffer);
           Flags = Inst.m_RawUAVDecl.Flags;
-          // const unsigned kRawBufferElementSizeInBytes = 1;
-          // R.SetElementStride(kRawBufferElementSizeInBytes);
-          // pResType = GetTypedResElemType(CompType::getU32());
+          uav.scaler_type = shader::common::ScalerDataType::Uint;
           break;
         }
         case D3D11_SB_OPCODE_DCL_UNORDERED_ACCESS_VIEW_STRUCTURED: {
           uav.range.space = (Inst.m_StructuredUAVDecl.Space);
           // R.SetKind(DxilResource::Kind::StructuredBuffer);
           Flags = Inst.m_StructuredUAVDecl.Flags;
-          // unsigned Stride = Inst.m_StructuredUAVDecl.ByteStride;
-          // R.SetElementStride(Stride);
-          // pResType = GetStructResElemType(Stride);
+          uav.scaler_type = shader::common::ScalerDataType::Uint;
+          uav.strucure_stride = Inst.m_StructuredUAVDecl.ByteStride;
           break;
         }
         default:;
@@ -622,7 +605,7 @@ void convertDXBC(
         // auto MinPrecision = Inst.m_Operands[0].m_MinPrecision; // not used
         auto siv = Inst.m_InputPSDeclSIV.Name;
         auto interpolation =
-          convertInterpolation(Inst.m_InputPSDeclSIV.InterpolationMode);
+          to_air_interpolation(Inst.m_InputPSDeclSIV.InterpolationMode);
         switch (siv) {
         case D3D10_SB_NAME_RENDER_TARGET_ARRAY_INDEX:
           break;
@@ -641,7 +624,7 @@ void convertDXBC(
         // auto MinPrecision = Inst.m_Operands[0].m_MinPrecision; // not used
         auto siv = Inst.m_InputPSDeclSGV.Name;
         auto interpolation =
-          convertInterpolation(Inst.m_InputPSDeclSGV.InterpolationMode);
+          to_air_interpolation(Inst.m_InputPSDeclSGV.InterpolationMode);
         switch (siv) {
         case D3D10_SB_NAME_POSITION: {
           assert(
@@ -661,7 +644,7 @@ void convertDXBC(
         unsigned reg = Inst.m_Operands[0].m_Index[0].m_RegIndex;
         auto mask = Inst.m_Operands[0].m_WriteMask >> 4;
         auto interpolation =
-          convertInterpolation(Inst.m_InputPSDecl.InterpolationMode);
+          to_air_interpolation(Inst.m_InputPSDecl.InterpolationMode);
         auto sig = findInputElement([=](dxbc::Signature sig) {
           return (sig.reg() == reg) && ((sig.mask() & mask) != 0);
         });
@@ -675,6 +658,7 @@ void convertDXBC(
             .interpolation = interpolation
           });
         prelogue << init_input_reg(assigned_index, reg, mask);
+        max_input_register = std::max(reg + 1, max_input_register);
         break;
       }
       case D3D10_SB_OPCODE_DCL_OUTPUT_SGV: {

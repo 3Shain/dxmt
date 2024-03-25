@@ -71,6 +71,7 @@ enum class OutputAttribute {
   StencilRef,
 };
 
+/* not used yet */
 enum class Interpolation {
   Flat,
   Sample,

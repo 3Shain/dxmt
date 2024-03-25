@@ -5,16 +5,20 @@
 #include "DXBCParser/ShaderBinary.h"
 #include "DXBCParser/d3d12tokenizedprogramformat.hpp"
 #include "air_signature.hpp"
+#include "shader_common.hpp"
 
 // it's suposed to be include by specific file
+#pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wunused-function"
+#pragma clang diagnostic ignored "-Wunknown-pragmas"
+// NOLINTBEGIN(misc-definitions-in-headers)
 
 namespace dxmt::dxbc {
 
 #define DXASSERT_DXBC(x) assert(x);
 
-static air::Interpolation
-convertInterpolation(microsoft::D3D10_SB_INTERPOLATION_MODE mode) {
+air::Interpolation
+to_air_interpolation(microsoft::D3D10_SB_INTERPOLATION_MODE mode) {
   using namespace microsoft;
   switch (mode) {
   case D3D10_SB_INTERPOLATION_LINEAR_NOPERSPECTIVE_SAMPLE:
@@ -34,6 +38,58 @@ convertInterpolation(microsoft::D3D10_SB_INTERPOLATION_MODE mode) {
   default:
     assert(0 && "Unexpected D3D10_SB_INTERPOLATION_MODE");
   }
+}
+
+dxmt::shader::common::ResourceType
+to_shader_resource_type(microsoft::D3D10_SB_RESOURCE_DIMENSION dim) {
+  switch (dim) {
+  case microsoft::D3D10_SB_RESOURCE_DIMENSION_UNKNOWN:
+  case microsoft::D3D10_SB_RESOURCE_DIMENSION_BUFFER:
+  case microsoft::D3D11_SB_RESOURCE_DIMENSION_RAW_BUFFER:
+  case microsoft::D3D11_SB_RESOURCE_DIMENSION_STRUCTURED_BUFFER:
+    return shader::common::ResourceType::TextureBuffer;
+  case microsoft::D3D10_SB_RESOURCE_DIMENSION_TEXTURE1D:
+    return shader::common::ResourceType::Texture1D;
+  case microsoft::D3D10_SB_RESOURCE_DIMENSION_TEXTURE2D:
+    return shader::common::ResourceType::Texture2D;
+  case microsoft::D3D10_SB_RESOURCE_DIMENSION_TEXTURE2DMS:
+    return shader::common::ResourceType::Texture2DMultisampled;
+  case microsoft::D3D10_SB_RESOURCE_DIMENSION_TEXTURE3D:
+    return shader::common::ResourceType::Texture3D;
+  case microsoft::D3D10_SB_RESOURCE_DIMENSION_TEXTURECUBE:
+    return shader::common::ResourceType::TextureCube;
+  case microsoft::D3D10_SB_RESOURCE_DIMENSION_TEXTURE1DARRAY:
+    return shader::common::ResourceType::Texture1DArray;
+  case microsoft::D3D10_SB_RESOURCE_DIMENSION_TEXTURE2DARRAY:
+    return shader::common::ResourceType::Texture2DArray;
+  case microsoft::D3D10_SB_RESOURCE_DIMENSION_TEXTURE2DMSARRAY:
+    return shader::common::ResourceType::Texture2DMultisampledArray;
+  case microsoft::D3D10_SB_RESOURCE_DIMENSION_TEXTURECUBEARRAY:
+    return shader::common::ResourceType::TextureCubeArray;
+    break;
+  }
+  assert(0 && "invalid D3D10_SB_RESOURCE_DIMENSION");
+};
+
+dxmt::shader::common::ScalerDataType
+to_shader_scaler_type(microsoft::D3D10_SB_RESOURCE_RETURN_TYPE type) {
+  switch (type) {
+
+  case microsoft::D3D10_SB_RETURN_TYPE_UNORM:
+  case microsoft::D3D10_SB_RETURN_TYPE_SNORM:
+  case microsoft::D3D10_SB_RETURN_TYPE_FLOAT:
+    return shader::common::ScalerDataType::Float;
+  case microsoft::D3D10_SB_RETURN_TYPE_SINT:
+    return shader::common::ScalerDataType::Int;
+  case microsoft::D3D10_SB_RETURN_TYPE_UINT:
+    return shader::common::ScalerDataType::Uint;
+  case microsoft::D3D10_SB_RETURN_TYPE_MIXED:
+  case microsoft::D3D11_SB_RETURN_TYPE_DOUBLE:
+  case microsoft::D3D11_SB_RETURN_TYPE_CONTINUED:
+  case microsoft::D3D11_SB_RETURN_TYPE_UNUSED:
+    break;
+  }
+  assert(0 && "invalid D3D10_SB_RESOURCE_RETURN_TYPE");
 }
 
 static auto readOperandRelativeIndex(
@@ -609,15 +665,65 @@ static auto readSrcOperand(const microsoft::D3D10ShaderBinary::COperandBase &O)
 
 static auto
 readSrcOperandResource(const microsoft::D3D10ShaderBinary::COperandBase &O)
-  -> SrcOperandResource {}
+  -> SrcOperandResource {
+  using namespace microsoft;
+  assert(O.m_Type == D3D10_SB_OPERAND_TYPE_RESOURCE);
+  if (O.m_IndexType[0] == D3D10_SB_OPERAND_INDEX_IMMEDIATE32) {
+    if (O.m_IndexDimension == D3D10_SB_OPERAND_INDEX_1D) {
+      return SrcOperandResource{
+        .range_id = O.m_Index[0].m_RegIndex,
+        .index = readOperandIndex(O.m_Index[0], O.m_IndexType[0]),
+        .read_swizzle = readSrcOperandSwizzle(O)
+      };
+    } else {
+      return SrcOperandResource{
+        .range_id = O.m_Index[0].m_RegIndex,
+        .index = readOperandIndex(O.m_Index[1], O.m_IndexType[1]),
+        .read_swizzle = readSrcOperandSwizzle(O)
+      };
+    }
+  } else {
+    assert(0 && "interface resource is not supported yet");
+  }
+}
 
 static auto
 readSrcOperandSampler(const microsoft::D3D10ShaderBinary::COperandBase &O)
-  -> SrcOperandSampler {}
+  -> SrcOperandSampler {
+  if (O.m_IndexDimension == microsoft::D3D10_SB_OPERAND_INDEX_1D) {
+    DXASSERT_DXBC(
+      O.m_IndexType[0] == microsoft::D3D10_SB_OPERAND_INDEX_IMMEDIATE32
+    );
+    return SrcOperandSampler{
+      .range_id = O.m_Index[0].m_RegIndex,
+      .index = readOperandIndex(O.m_Index[0], O.m_IndexType[0])
+    };
+  } else {
+    return SrcOperandSampler{
+      .range_id = O.m_Index[0].m_RegIndex,
+      .index = readOperandIndex(O.m_Index[1], O.m_IndexType[1])
+    };
+  }
+}
 
 static auto
 readSrcOperandUAV(const microsoft::D3D10ShaderBinary::COperandBase &O)
-  -> SrcOperandUAV {}
+  -> SrcOperandUAV {
+  if (O.m_IndexDimension == microsoft::D3D10_SB_OPERAND_INDEX_1D) {
+    DXASSERT_DXBC(
+      O.m_IndexType[0] == microsoft::D3D10_SB_OPERAND_INDEX_IMMEDIATE32
+    );
+    return SrcOperandUAV{
+      .range_id = O.m_Index[0].m_RegIndex,
+      .index = readOperandIndex(O.m_Index[0], O.m_IndexType[0])
+    };
+  } else {
+    return SrcOperandUAV{
+      .range_id = O.m_Index[0].m_RegIndex,
+      .index = readOperandIndex(O.m_Index[1], O.m_IndexType[1])
+    };
+  }
+}
 
 static auto
 readSrcOperandLoadable(const microsoft::D3D10ShaderBinary::COperandBase &O) {}
@@ -670,7 +776,7 @@ static auto readInstruction(
     };
   };
   case microsoft::D3D10_SB_OPCODE_ADD: {
-    return InstFloatBinaryOp {
+    return InstFloatBinaryOp{
       ._ = readInstructionCommon(Inst),
       .op = FloatBinaryOp::Add,
       .dst = readDstOperand(Inst.m_Operands[0]),
@@ -748,4 +854,5 @@ static auto readCondition(
 }
 } // namespace dxmt::dxbc
 
-#pragma clang diagnostic warning "-Wunused-function"
+// NOLINTEND(misc-definitions-in-headers)
+#pragma clang diagnostic pop

@@ -617,6 +617,20 @@ auto store_dst_operand(DstOperand dst, IRValue &&value) -> IREffect {
   );
 };
 
+auto load_condition(SrcOperand src, bool non_zero_test) {
+  return load_src_operand(src, false) >>= [=](pvalue condition_src) {
+    return make_irvalue([=](context ctx) {
+      auto element =
+        ctx.builder.CreateExtractElement(condition_src, (uint64_t)0);
+      if (non_zero_test) {
+        return ctx.builder.CreateICmpNE(element, ctx.builder.getInt32(0));
+      } else {
+        return ctx.builder.CreateICmpEQ(element, ctx.builder.getInt32(0));
+      }
+    });
+  };
+};
+
 auto convertBasicBlocks(
   std::shared_ptr<BasicBlock> entry, context &ctx, llvm::BasicBlock *return_bb
 ) {
@@ -723,7 +737,10 @@ auto convertBasicBlocks(
             }
             auto target_true_bb = visited[cond.true_branch.get()];
             auto target_false_bb = visited[cond.false_branch.get()];
-            builder.CreateCondBr(nullptr, target_true_bb, target_false_bb);
+            auto test =
+              load_condition(cond.cond.operand, cond.cond.test_nonzero)
+                .build(ctx);
+            builder.CreateCondBr(test, target_true_bb, target_false_bb);
           },
           [&](BasicBlockSwitch swc) {
             for (auto &[_, case_bb] : swc.cases) {

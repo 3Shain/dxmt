@@ -8,7 +8,7 @@
 #include "llvm/IR/Module.h"
 #include <cstdint>
 #include <string>
-#include <unordered_map>
+#include <unordered_set>
 #include <variant>
 
 namespace dxmt::air {
@@ -407,7 +407,8 @@ public:
   auto empty() { return fieldsType.empty(); }
 
 private:
-  std::unordered_map<std::string, ArgumentBufferArguments> fieldsType;
+  std::vector<ArgumentBufferArguments> fieldsType;
+  std::unordered_set<std::string> fields;
 };
 
 struct InputVertexStageIn {

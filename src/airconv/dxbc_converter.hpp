@@ -179,6 +179,8 @@ using DstOperand = std::variant<
   DstOperandNull, DstOperandTemp, DstOperandIndexableTemp, DstOperandOutput,
   DstOperandOutputDepth>;
 
+#pragma mark mov instructions
+namespace {
 struct InstMov {
   InstructionCommon _;
   DstOperand dst;
@@ -190,6 +192,32 @@ struct InstMovConditional {
   SrcOperand src;
   DstOperand dst;
 };
+
+} // namespace
+
+#pragma mark resource instructions
+namespace {
+
+struct InstSample {
+  InstructionCommon _;
+  DstOperand dst;
+  SrcOperand src_address;
+  SrcOperandResource src_resource;
+  SrcOperandSampler src_sampler;
+  uint32_t offsets[3];
+  bool feedback;
+};
+
+struct InstLoad {
+  InstructionCommon _;
+  DstOperand dst;
+  SrcOperand src_address;
+  SrcOperandResource src_resource;
+};
+
+struct InstStore {};
+
+} // namespace
 
 struct InstDotProduct {
   InstructionCommon _;
@@ -205,12 +233,6 @@ struct InstSinCos {
   DstOperand dst_cos;
   SrcOperand src;
 };
-
-struct InstLoad {};
-
-struct InstStore {};
-
-struct InstSample {};
 
 struct InstGather {};
 
@@ -344,6 +366,8 @@ struct ShaderResourceViewInfo {
   bool read;
   bool sampled;
   bool compared; // therefore we use depth texture!
+
+  uint32_t strucure_stride = 0; // =0 for typed and raw
 };
 struct UnorderedAccessViewInfo {
   ResourceRange range;
@@ -354,6 +378,8 @@ struct UnorderedAccessViewInfo {
   bool global_coherent;
   bool rasterizer_order;
   bool with_counter;
+
+  uint32_t strucure_stride = 0; // =0 for typed and raw
 };
 struct ConstantBufferInfo {
   ResourceRange range;
