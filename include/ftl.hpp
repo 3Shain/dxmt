@@ -67,7 +67,7 @@ auto lift(const ReaderIO<Env,A>& a, const ReaderIO<Env,B>& b, Func&& func) {
 };
 
 template <typename Env, typename A, typename B, typename C,typename Func>
-auto lift(const ReaderIO<Env,A>& a, const ReaderIO<Env,B>& b, const ReaderIO<Env,B>& c,  Func&& func) {
+auto lift(const ReaderIO<Env,A>& a, const ReaderIO<Env,B>& b, const ReaderIO<Env,C>& c,  Func&& func) {
   return a >>= [=](auto a) {
     return b >>= [=](auto b) {
       return c >>= [=](auto c) {
@@ -78,7 +78,7 @@ auto lift(const ReaderIO<Env,A>& a, const ReaderIO<Env,B>& b, const ReaderIO<Env
 };
 
 template <typename Env, typename A, typename B, typename C, typename D,typename Func>
-auto lift(const ReaderIO<Env,A>& a, const ReaderIO<Env,B>& b, const ReaderIO<Env,B>& c,  const ReaderIO<Env,B>& d, Func&& func) {
+auto lift(const ReaderIO<Env,A>& a, const ReaderIO<Env,B>& b, const ReaderIO<Env,C>& c,  const ReaderIO<Env,D>& d, Func&& func) {
   return a >>= [=](auto a) {
     return b >>= [=](auto b) {
       return c >>= [=](auto c) {

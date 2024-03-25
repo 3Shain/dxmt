@@ -64,6 +64,7 @@ struct SrcOperandCommon {
 struct SrcOperandImmediate32 {
   SrcOperandCommon _;
   union {
+    int32_t ivalue[4];
     uint32_t uvalue[4];
     float fvalue[4];
   };
@@ -204,8 +205,38 @@ struct InstSample {
   SrcOperand src_address;
   SrcOperandResource src_resource;
   SrcOperandSampler src_sampler;
-  uint32_t offsets[3];
-  bool feedback;
+  int32_t offsets[3];
+};
+
+struct InstSampleBias {
+  InstructionCommon _;
+  DstOperand dst;
+  SrcOperand src_address;
+  SrcOperandResource src_resource;
+  SrcOperandSampler src_sampler;
+  SrcOperand src_bias;
+  int32_t offsets[3];
+};
+
+struct InstSampleDerivative {
+  InstructionCommon _;
+  DstOperand dst;
+  SrcOperand src_address;
+  SrcOperandResource src_resource;
+  SrcOperandSampler src_sampler;
+  SrcOperand src_x_derivative;
+  SrcOperand src_y_derivative;
+  int32_t offsets[3];
+};
+
+struct InstSampleLOD {
+  InstructionCommon _;
+  DstOperand dst;
+  SrcOperand src_address;
+  SrcOperandResource src_resource;
+  SrcOperandSampler src_sampler;
+  SrcOperand src_lod;
+  int32_t offsets[3];
 };
 
 struct InstLoad {

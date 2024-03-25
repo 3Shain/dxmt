@@ -70,42 +70,43 @@ enum class Interpolation {
 };
 
 struct MSLFloat {
-  std::string get_name() { return "float"; };
+  std::string get_name() const { return "float"; };
 
-  llvm::Type *get_llvm_type(llvm::LLVMContext &context) {
+  llvm::Type *get_llvm_type(llvm::LLVMContext &context) const {
     return llvm::Type::getFloatTy(context);
   };
 };
 
 struct MSLInt {
-  std::string get_name() { return "int"; };
+  std::string get_name() const { return "int"; };
 
-  llvm::Type *get_llvm_type(llvm::LLVMContext &context) {
+  llvm::Type *get_llvm_type(llvm::LLVMContext &context) const {
     return llvm::Type::getInt32Ty(context);
   };
 };
 
 struct MSLUint {
-  std::string get_name() { return "uint"; };
+  std::string get_name() const { return "uint"; };
 
-  llvm::Type *get_llvm_type(llvm::LLVMContext &context) {
+  llvm::Type *get_llvm_type(llvm::LLVMContext &context) const {
     return llvm::Type::getInt32Ty(context);
   };
 };
 
 struct MSLBool {
-  std::string get_name() { return "bool"; };
+  std::string get_name() const { return "bool"; };
 
-  llvm::Type *get_llvm_type(llvm::LLVMContext &context) {
+  llvm::Type *get_llvm_type(llvm::LLVMContext &context) const {
     return llvm::Type::getInt1Ty(context);
   };
 };
 
 struct MSLSampler {
-  std::string get_name() { return "sampler"; };
+  std::string get_name() const { return "sampler"; };
 
-  llvm::Type *get_llvm_type(llvm::LLVMContext &context) {
-    return getOrCreateStructType("struct._sampler_t", context)->getPointerTo(1);
+  llvm::Type *get_llvm_type(llvm::LLVMContext &context) const {
+    return getOrCreateStructType("struct._sampler_t", context)
+      ->getPointerTo(2); // samplers are in constant addrspace
   };
 };
 
@@ -222,7 +223,7 @@ struct MSLTexture {
       return getOrCreateStructType("struct._texture_2d_t", context)
         ->getPointerTo(1);
     case TextureKind::texture_2d_array:
-      return getOrCreateStructType("struct._texture_2d_t", context)
+      return getOrCreateStructType("struct._texture_2d_array_t", context)
         ->getPointerTo(1);
     case TextureKind::texture_2d_ms:
       return getOrCreateStructType("struct._texture_2d_ms_t", context)
@@ -246,7 +247,7 @@ struct MSLTexture {
       return getOrCreateStructType("struct._depth_2d_t", context)
         ->getPointerTo(1);
     case TextureKind::depth_2d_array:
-      return getOrCreateStructType("struct._depth_2d_t", context)
+      return getOrCreateStructType("struct._depth_2d_array_t", context)
         ->getPointerTo(1);
     case TextureKind::depth_2d_ms:
       return getOrCreateStructType("struct._depth_2d_ms_t", context)
@@ -263,6 +264,131 @@ struct MSLTexture {
       break;
     };
   };
+
+  std::string get_air_symbol(bool ignore_multisample = true) const {
+    switch (resource_kind) {
+    case TextureKind::texture_1d:
+      return "texture_1d";
+    case TextureKind::texture_1d_array:
+      return "texture_1d_array";
+    case TextureKind::texture_2d:
+      return "texture_2d";
+    case TextureKind::texture_2d_array:
+      return "texture_2d_array";
+    case TextureKind::texture_2d_ms:
+      if (ignore_multisample)
+        return "texture_2d";
+      return "texture_2d_ms";
+    case TextureKind::texture_2d_ms_array:
+      if (ignore_multisample)
+        return "texture_2d_array";
+      return "texture_2d_ms_array";
+    case TextureKind::texture_3d:
+      return "texture_3d";
+    case TextureKind::texture_cube:
+      return "texture_cube";
+    case TextureKind::texture_cube_array:
+      return "texture_cube_array";
+    case TextureKind::texture_buffer:
+      return "texture_buffer";
+    case TextureKind::depth_2d:
+      return "depth_2d";
+    case TextureKind::depth_2d_array:
+      return "depth_2d_array";
+    case TextureKind::depth_2d_ms:
+      if (ignore_multisample)
+        return "depth_2d";
+      return "depth_2d_ms";
+    case TextureKind::depth_2d_ms_array:
+      if (ignore_multisample)
+        return "depth_2d_array";
+      return "depth_2d_ms_array";
+    case TextureKind::depth_cube:
+      return "depth_cube";
+    case TextureKind::depth_cube_array:
+      return "depth_cube_array";
+      break;
+    };
+  };
+
+  std::pair<llvm::Type *, llvm::Type *>
+  get_coord_offset_type(llvm::LLVMContext &context) const {
+    switch (resource_kind) {
+    case TextureKind::texture_1d:
+    case TextureKind::texture_buffer:
+    case TextureKind::texture_1d_array:
+      return {msl_float.get_llvm_type(context), msl_int.get_llvm_type(context)};
+    case TextureKind::texture_2d:
+    case TextureKind::texture_2d_array:
+    case TextureKind::texture_2d_ms:
+    case TextureKind::texture_2d_ms_array:
+    case TextureKind::depth_2d:
+    case TextureKind::depth_2d_array:
+    case TextureKind::depth_2d_ms:
+    case TextureKind::depth_2d_ms_array:
+      return {
+        msl_float2.get_llvm_type(context), msl_int2.get_llvm_type(context)
+      };
+    case TextureKind::texture_3d:
+    case TextureKind::texture_cube:
+    case TextureKind::texture_cube_array:
+    case TextureKind::depth_cube:
+    case TextureKind::depth_cube_array:
+      return {
+        msl_float3.get_llvm_type(context), msl_int3.get_llvm_type(context)
+      };
+    }
+  };
+
+  bool is_array() const {
+    switch (resource_kind) {
+    case TextureKind::texture_1d:
+    case TextureKind::texture_2d:
+    case TextureKind::texture_2d_ms:
+    case TextureKind::texture_3d:
+    case TextureKind::texture_buffer:
+    case TextureKind::depth_2d:
+    case TextureKind::depth_2d_ms:
+    case TextureKind::depth_cube:
+    case TextureKind::texture_cube:
+      return false;
+    case TextureKind::texture_2d_array:
+    case TextureKind::texture_2d_ms_array:
+    case TextureKind::texture_cube_array:
+    case TextureKind::depth_2d_array:
+    case TextureKind::depth_2d_ms_array:
+    case TextureKind::texture_1d_array:
+    case TextureKind::depth_cube_array:
+      return true;
+    }
+  };
+
+  bool is_multisampled() const {
+    switch (resource_kind) {
+    case TextureKind::texture_1d:
+    case TextureKind::texture_1d_array:
+    case TextureKind::texture_2d:
+    case TextureKind::texture_2d_array:
+    case TextureKind::texture_3d:
+    case TextureKind::texture_cube:
+    case TextureKind::texture_cube_array:
+    case TextureKind::texture_buffer:
+    case TextureKind::depth_2d:
+    case TextureKind::depth_2d_array:
+    case TextureKind::depth_cube:
+    case TextureKind::depth_cube_array:
+      return false;
+    case TextureKind::texture_2d_ms:
+    case TextureKind::texture_2d_ms_array:
+    case TextureKind::depth_2d_ms:
+    case TextureKind::depth_2d_ms_array:
+      return true;
+    }
+  };
+
+  llvm::Type *get_return_type(llvm::LLVMContext &context) const {
+    return MSLVector{4, component_type}.get_llvm_type(context);
+  }
 };
 
 // I mean does metal really care about it?
@@ -397,9 +523,12 @@ public:
     std::string name, TextureKind kind, MemoryAccess access,
     MSLScalerType scaler_type, uint32_t location_index = UINT32_MAX
   );
-  uint32_t DefineSampler(std::string name, uint32_t location_index = UINT32_MAX);
-  uint32_t DefineInteger32(std::string name, uint32_t location_index = UINT32_MAX);
-  uint32_t DefineFloat32(std::string name, uint32_t location_index = UINT32_MAX);
+  uint32_t
+  DefineSampler(std::string name, uint32_t location_index = UINT32_MAX);
+  uint32_t
+  DefineInteger32(std::string name, uint32_t location_index = UINT32_MAX);
+  uint32_t
+  DefineFloat32(std::string name, uint32_t location_index = UINT32_MAX);
 
   auto Build(llvm::LLVMContext &context, llvm::Module &module)
     -> std::tuple<llvm::StructType *, llvm::MDNode *>;

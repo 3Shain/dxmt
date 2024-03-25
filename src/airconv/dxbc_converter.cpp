@@ -629,8 +629,7 @@ void convertDXBC(
         case D3D10_SB_NAME_POSITION: {
           assert(
             interpolation == air::Interpolation::sample_no_perspective
-          ); // the only supported
-             // by metal
+          ); // the only supported interpolation for [[position]]
           break;
         }
         default:
@@ -688,18 +687,8 @@ void convertDXBC(
           epilogue = (epilogue >>= pop_output_reg(reg, mask, assigned_index));
           break;
         }
-        case D3D10_SB_NAME_RENDER_TARGET_ARRAY_INDEX: {
-          // auto name = "renderTargetArrayIndex";
-          // auto assigned_index =
-          // func_signature.DefineOutput(air::OutputPosition {.type =
-          // air::msl_float4}); break;
-        }
-        case D3D10_SB_NAME_VIEWPORT_ARRAY_INDEX: {
-          // auto name = "viewportArrayIndex";
-          // auto assigned_index =
-          // func_signature.DefineOutput(air::OutputPosition {.type =
-          // air::msl_float4}); break;
-        }
+        case D3D10_SB_NAME_RENDER_TARGET_ARRAY_INDEX:
+        case D3D10_SB_NAME_VIEWPORT_ARRAY_INDEX:
         default:
           assert(0 && "Unexpected/unhandled input system value");
           break;
@@ -830,29 +819,45 @@ void convertDXBC(
   }
   for (auto &[range_id, srv] : shader_info->srvMap) {
     // TODO: abstract SM 5.0 binding
+    auto access =
+      srv.sampled ? air::MemoryAccess::sample : air::MemoryAccess::read;
+    auto texture_kind =
+      air::to_air_resource_type(srv.resource_type, srv.compared);
+    auto scaler_type = air::to_air_scaler_type(srv.scaler_type);
     auto index = binding_table.DefineTexture(
-      "t" + std::to_string(range_id),
-      air::to_air_resource_type(srv.resource_type, srv.compared),
-      srv.sampled ? air::MemoryAccess::sample : air::MemoryAccess::read,
-      air::to_air_scaler_type(srv.scaler_type)
+      "t" + std::to_string(range_id), texture_kind, access, scaler_type
     );
-    resource_map.srv_range_map[range_id] = [=, &binding_table_index](pvalue) {
-      // ignore index in SM 5.0
-      return get_item_in_argbuf_binding_table(binding_table_index, index);
+    resource_map.srv_range_map[range_id] = {
+      air::MSLTexture{
+        .component_type = scaler_type,
+        .memory_access = access,
+        .resource_kind = texture_kind,
+      },
+      [=, &binding_table_index](pvalue) {
+        // ignore index in SM 5.0
+        return get_item_in_argbuf_binding_table(binding_table_index, index);
+      }
     };
   }
   for (auto &[range_id, uav] : shader_info->uavMap) {
+    auto texture_kind = air::to_air_resource_type(uav.resource_type);
+    auto scaler_type = air::to_air_scaler_type(uav.scaler_type);
+    auto access = uav.written ? (uav.read ? air::MemoryAccess::read_write
+                                          : air::MemoryAccess::write)
+                              : air::MemoryAccess::read;
     auto index = binding_table.DefineTexture(
-      "u" + std::to_string(range_id),
-      air::to_air_resource_type(uav.resource_type),
-      uav.written
-        ? (uav.read ? air::MemoryAccess::read_write : air::MemoryAccess::write)
-        : air::MemoryAccess::read,
-      air::to_air_scaler_type(uav.scaler_type)
+      "u" + std::to_string(range_id), texture_kind, access, scaler_type
     );
-    resource_map.uav_range_map[range_id] = [=, &binding_table_index](pvalue) {
-      // ignore index in SM 5.0
-      return get_item_in_argbuf_binding_table(binding_table_index, index);
+    resource_map.uav_range_map[range_id] = {
+      air::MSLTexture{
+        .component_type = scaler_type,
+        .memory_access = access,
+        .resource_kind = texture_kind,
+      },
+      [=, &binding_table_index](pvalue) {
+        // ignore index in SM 5.0
+        return get_item_in_argbuf_binding_table(binding_table_index, index);
+      }
     };
     if (uav.with_counter) {
       //

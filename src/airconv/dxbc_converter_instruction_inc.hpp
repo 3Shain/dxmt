@@ -747,6 +747,16 @@ static auto readInstruction(
       .src = readSrcOperand(Inst.m_Operands[1]),
     };
   };
+  case microsoft::D3D10_SB_OPCODE_SAMPLE: {
+    return InstSample {
+      ._ = readInstructionCommon(Inst),
+      .dst = readDstOperand(Inst.m_Operands[0]),
+      .src_address = readSrcOperand(Inst.m_Operands[1]),
+      .src_resource = readSrcOperandResource(Inst.m_Operands[2]),
+      .src_sampler = readSrcOperandSampler(Inst.m_Operands[3]),
+      .offsets = {Inst.m_TexelOffset[0],Inst.m_TexelOffset[1],Inst.m_TexelOffset[2]},
+    };
+  };
 
   case microsoft::D3D10_SB_OPCODE_DP2: {
     return InstDotProduct{

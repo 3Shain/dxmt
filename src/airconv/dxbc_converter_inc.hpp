@@ -1,8 +1,10 @@
 #pragma once
 #include "adt.hpp"
+#include "air_signature.hpp"
 #include "air_type.hpp"
 #include "dxbc_converter.hpp"
 #include "ftl.hpp"
+#include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/IR/BasicBlock.h"
@@ -39,8 +41,10 @@ using IndexedIRValue = std::function<IRValue(pvalue)>;
 struct io_binding_map {
   std::unordered_map<uint32_t, IndexedIRValue> cb_range_map;
   std::unordered_map<uint32_t, IndexedIRValue> sampler_range_map;
-  std::unordered_map<uint32_t, IndexedIRValue> srv_range_map;
-  std::unordered_map<uint32_t, IndexedIRValue> uav_range_map;
+  std::unordered_map<uint32_t, std::pair<air::MSLTexture, IndexedIRValue>>
+    srv_range_map;
+  std::unordered_map<uint32_t, std::pair<air::MSLTexture, IndexedIRValue>>
+    uav_range_map;
   std::unordered_map<uint32_t, llvm::AllocaInst *> indexable_temp_map;
   llvm::AllocaInst *input_register_file;
   llvm::AllocaInst *output_register_file;
@@ -243,6 +247,22 @@ auto extend_to_int_vec4(pvalue value) {
   });
 };
 
+auto extract_element(uint32_t index) {
+  return [=](pvalue vec) {
+    make_irvalue([=](context ctx) {
+      return ctx.builder.CreateExtractElement(vec, index);
+    });
+  };
+}
+
+auto extract_value(uint32_t index) {
+  return [=](pvalue aggregate) {
+    return make_irvalue([=](context ctx) {
+      return ctx.builder.CreateExtractValue(aggregate, {index});
+    });
+  };
+}
+
 auto to_desired_type_from_int_vec4(pvalue vec4, llvm::Type *desired) {
   return make_irvalue([=](context ctx) {
     assert(vec4->getType() == ctx.types._int4);
@@ -355,14 +375,15 @@ auto store_at_alloca_array(
 };
 
 auto store_at_alloca_int_vec4_array_masked(
-  llvm::AllocaInst *array, pvalue index, pvalue item, uint32_t mask
+  llvm::AllocaInst *array, pvalue index, pvalue item, uint32_t mask,
+  Swizzle swizzle
 ) -> IREffect {
   return extend_to_int_vec4(item) >>= [=](pvalue ivec4) {
     return make_effect_bind([=](context ctx) {
       return load_at_alloca_array(array, index) >>= [=](auto current) {
         auto new_value = ctx.builder.CreateShuffleVector(
           current, ivec4,
-          (llvm::ArrayRef<int>)create_shuffle_swizzle_mask(mask),
+          (llvm::ArrayRef<int>)create_shuffle_swizzle_mask(mask, swizzle),
           "value_to_store_after_swizzle_mask_"
         );
         return store_at_alloca_array(array, index, new_value);
@@ -378,7 +399,7 @@ auto init_input_reg(uint32_t with_fnarg_at, uint32_t to_reg, uint32_t mask)
     auto const_index =
       llvm::ConstantInt::get(ctx.llvm, llvm::APInt{32, to_reg, false});
     return store_at_alloca_int_vec4_array_masked(
-      ctx.resource.input_register_file, const_index, arg, mask
+      ctx.resource.input_register_file, const_index, arg, mask, swizzle_identity
     );
   });
 };
@@ -463,6 +484,85 @@ auto call_abs(uint32_t dimension, pvalue fvec) {
     return ctx.builder.CreateCall(fn, {fvec});
   });
 };
+
+auto call_sample(
+  air::MSLTexture texture_type, pvalue handle, pvalue sampler, pvalue coord,
+  pvalue offset
+) {
+  /*
+  ; Function Attrs: argmemonly convergent nounwind readonly willreturn
+  declare { <4 x [element type]>, i8 }
+  @air.sample_[resource type].v4[element type attr](
+    %struct._[resource type]_t addrspace(1)* nocapture readonly,
+    %struct._sampler_t addrspace(2)* nocapture readonly,
+    <n x float>, ; coordinate
+    ; i32, ; optional array index
+    i1, ; false for texture_1d, true for others
+    <n x i32>, ; offset?
+    i1, ; some mistery control bit
+    float, ; bias or level if above is true
+    float, ; min_lod_clamp
+    i32 ; unknown, seems always 0
+    )
+  */
+
+  return make_irvalue([=](context ctx) {
+    using namespace llvm;
+    auto &context = ctx.llvm;
+    auto &module = ctx.module;
+    auto &types = ctx.types;
+    auto att = AttributeList::get(
+      context,
+      {
+        {0U, Attribute::get(context, Attribute::AttrKind::NoCapture)},
+        {0U, Attribute::get(context, Attribute::AttrKind::ReadOnly)},
+        {1U, Attribute::get(context, Attribute::AttrKind::NoCapture)},
+        {1U, Attribute::get(context, Attribute::AttrKind::ReadOnly)},
+        {~0U, Attribute::get(context, Attribute::AttrKind::ArgMemOnly)},
+        {~0U, Attribute::get(context, Attribute::AttrKind::Convergent)},
+        {~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)},
+        {~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)},
+        {~0U, Attribute::get(context, Attribute::AttrKind::ReadOnly)},
+      }
+    );
+    // TODO: .v4i32 and .u.v4i32
+    auto fn_name = "air.sample_" + texture_type.get_air_symbol() + ".v4f32";
+    auto [coord_type, offset_type] =
+      texture_type.get_coord_offset_type(context);
+    std::vector<llvm::Type *> args_type;
+    args_type.push_back(texture_type.get_llvm_type(context));
+    args_type.push_back(types._sampler->getPointerTo(2));
+    args_type.push_back(coord_type);
+    args_type.push_back(types._bool);
+    args_type.push_back(offset_type);
+    args_type.push_back(types._bool);
+    args_type.push_back(ctx.types._float);
+    args_type.push_back(types._float);
+    args_type.push_back(types._int);
+    auto return_type = StructType::get(
+      context, {texture_type.get_return_type(context), ctx.types._bool}
+    );
+    auto fn = module.getOrInsertFunction(
+      fn_name, llvm::FunctionType::get(return_type, args_type, false), att
+    );
+    return ctx.builder.CreateCall(
+      fn,
+      {
+        handle,
+        sampler,
+        coord,
+        texture_type.resource_kind == air::TextureKind::texture_1d
+          ? ctx.builder.getInt1(false)
+          : ctx.builder.getInt1(true),
+        offset,
+        ctx.builder.getInt1(false),
+        ConstantFP::get(context, APFloat{0.0f}),
+        ConstantFP::get(context, APFloat{0.0f}),
+        ctx.builder.getInt32(0),
+      }
+    );
+  });
+}
 
 std::function<IRValue(pvalue)>
 apply_src_operand_modifier(SrcOperandCommon c, bool float_op) {
@@ -579,7 +679,9 @@ auto load_src_operand(SrcOperand src, bool float_op = true) -> IRValue {
   );
 };
 
-auto store_dst_operand(DstOperand dst, IRValue &&value) -> IREffect {
+auto store_dst_operand(
+  DstOperand dst, IRValue &&value, Swizzle s = swizzle_identity
+) -> IREffect {
   return std::visit(
     patterns{
       [&](DstOperandNull) {
@@ -593,7 +695,7 @@ auto store_dst_operand(DstOperand dst, IRValue &&value) -> IREffect {
           auto to_ = value.build(ctx);
           return store_at_alloca_int_vec4_array_masked(
             ctx.resource.temp_register_file, ctx.builder.getInt32(o.regid), to_,
-            o._.mask
+            o._.mask, s
           );
         });
       },
@@ -602,7 +704,7 @@ auto store_dst_operand(DstOperand dst, IRValue &&value) -> IREffect {
           auto to_ = value.build(ctx);
           store_at_alloca_int_vec4_array_masked(
             ctx.resource.output_register_file, ctx.builder.getInt32(o.regid),
-            to_, o._.mask
+            to_, o._.mask, s
           )
             .build(ctx);
           return std::monostate();
@@ -649,6 +751,32 @@ auto convertBasicBlocks(
           patterns{
             [&](InstMov mov) {
               effect << store_dst_operand(mov.dst, load_src_operand(mov.src));
+            },
+            [&](InstSample sample) {
+              auto [res, res_handle_fn] =
+                ctx.resource.srv_range_map[sample.src_resource.range_id];
+              auto sampler_handle_fn =
+                ctx.resource.sampler_range_map[sample.src_sampler.range_id];
+              auto offset_const = llvm::ConstantVector::get(
+                {llvm::ConstantInt::get(
+                   context, llvm::APInt{32, (uint64_t)sample.offsets[0], true}
+                 ),
+                 llvm::ConstantInt::get(
+                   context, llvm::APInt{32, (uint64_t)sample.offsets[1], true}
+                 )}
+              );
+              effect << lift(
+                res_handle_fn(nullptr), sampler_handle_fn(nullptr),
+                load_src_operand(sample.src_address) >>= to_float2,
+                [=, res = res](pvalue res_h, pvalue sampler_h, pvalue coord) {
+                  return store_dst_operand(
+                    sample.dst,
+                    call_sample(res, res_h, sampler_h, coord, offset_const) >>=
+                    extract_value(0),
+                    sample.src_resource.read_swizzle
+                  );
+                }
+              );
             },
             [&](InstDotProduct dp) {
               switch (dp.dimension) {
