@@ -17,7 +17,7 @@ int main() {
 
   LPVOID air;
   UINT airSize;
-  ConvertDXBC(vsBlob->GetBufferPointer(), vsBlob->GetBufferSize(), &air, &airSize);
+  ConvertDXBC(vsBlob->GetBufferPointer(), vsBlob->GetBufferSize(), &air, &airSize, nullptr);
 
   std::ofstream out;
   out.open("dest.metallib", std::ios::out | std::ios::binary);
