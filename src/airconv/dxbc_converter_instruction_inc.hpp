@@ -6,6 +6,7 @@
 #include "DXBCParser/d3d12tokenizedprogramformat.hpp"
 #include "air_signature.hpp"
 #include "shader_common.hpp"
+#include "llvm/Support/raw_ostream.h"
 
 // it's suposed to be include by specific file
 #pragma clang diagnostic push
@@ -731,6 +732,7 @@ readSrcOperandLoadable(const microsoft::D3D10ShaderBinary::COperandBase &O) {}
 static auto
 readInstructionCommon(const microsoft::D3D10ShaderBinary::CInstruction &Inst)
   -> InstructionCommon {
+  assert(Inst.m_bSaturate == 0);
   return InstructionCommon{.saturate = Inst.m_bSaturate != 0};
 };
 
@@ -748,13 +750,14 @@ static auto readInstruction(
     };
   };
   case microsoft::D3D10_SB_OPCODE_SAMPLE: {
-    return InstSample {
+    return InstSample{
       ._ = readInstructionCommon(Inst),
       .dst = readDstOperand(Inst.m_Operands[0]),
       .src_address = readSrcOperand(Inst.m_Operands[1]),
       .src_resource = readSrcOperandResource(Inst.m_Operands[2]),
       .src_sampler = readSrcOperandSampler(Inst.m_Operands[3]),
-      .offsets = {Inst.m_TexelOffset[0],Inst.m_TexelOffset[1],Inst.m_TexelOffset[2]},
+      .offsets =
+        {Inst.m_TexelOffset[0], Inst.m_TexelOffset[1], Inst.m_TexelOffset[2]},
     };
   };
 
@@ -785,10 +788,230 @@ static auto readInstruction(
       .dimension = 4,
     };
   };
+  case microsoft::D3D10_SB_OPCODE_RSQ: {
+    return InstFloatUnaryOp{
+      ._ = readInstructionCommon(Inst),
+      .op = FloatUnaryOp::Rsq,
+      .dst = readDstOperand(Inst.m_Operands[0]),
+      .src = readSrcOperand(Inst.m_Operands[1]),
+    };
+  }
+  case microsoft::D3D11_SB_OPCODE_RCP: {
+    return InstFloatUnaryOp{
+      ._ = readInstructionCommon(Inst),
+      .op = FloatUnaryOp::Rcp,
+      .dst = readDstOperand(Inst.m_Operands[0]),
+      .src = readSrcOperand(Inst.m_Operands[1]),
+    };
+  }
+  case microsoft::D3D10_SB_OPCODE_LOG: {
+    return InstFloatUnaryOp{
+      ._ = readInstructionCommon(Inst),
+      .op = FloatUnaryOp::Log2,
+      .dst = readDstOperand(Inst.m_Operands[0]),
+      .src = readSrcOperand(Inst.m_Operands[1]),
+    };
+  }
+  case microsoft::D3D10_SB_OPCODE_EXP: {
+    return InstFloatUnaryOp{
+      ._ = readInstructionCommon(Inst),
+      .op = FloatUnaryOp::Exp2,
+      .dst = readDstOperand(Inst.m_Operands[0]),
+      .src = readSrcOperand(Inst.m_Operands[1]),
+    };
+  }
+  case microsoft::D3D10_SB_OPCODE_SQRT: {
+    return InstFloatUnaryOp{
+      ._ = readInstructionCommon(Inst),
+      .op = FloatUnaryOp::Sqrt,
+      .dst = readDstOperand(Inst.m_Operands[0]),
+      .src = readSrcOperand(Inst.m_Operands[1]),
+    };
+  }
   case microsoft::D3D10_SB_OPCODE_ADD: {
     return InstFloatBinaryOp{
       ._ = readInstructionCommon(Inst),
       .op = FloatBinaryOp::Add,
+      .dst = readDstOperand(Inst.m_Operands[0]),
+      .src0 = readSrcOperand(Inst.m_Operands[1]),
+      .src1 = readSrcOperand(Inst.m_Operands[2]),
+    };
+  };
+  case microsoft::D3D10_SB_OPCODE_MUL: {
+    return InstFloatBinaryOp{
+      ._ = readInstructionCommon(Inst),
+      .op = FloatBinaryOp::Mul,
+      .dst = readDstOperand(Inst.m_Operands[0]),
+      .src0 = readSrcOperand(Inst.m_Operands[1]),
+      .src1 = readSrcOperand(Inst.m_Operands[2]),
+    };
+  };
+  case microsoft::D3D10_SB_OPCODE_DIV: {
+    return InstFloatBinaryOp{
+      ._ = readInstructionCommon(Inst),
+      .op = FloatBinaryOp::Div,
+      .dst = readDstOperand(Inst.m_Operands[0]),
+      .src0 = readSrcOperand(Inst.m_Operands[1]),
+      .src1 = readSrcOperand(Inst.m_Operands[2]),
+    };
+  };
+  case microsoft::D3D10_SB_OPCODE_MAX: {
+    return InstFloatBinaryOp{
+      ._ = readInstructionCommon(Inst),
+      .op = FloatBinaryOp::Max,
+      .dst = readDstOperand(Inst.m_Operands[0]),
+      .src0 = readSrcOperand(Inst.m_Operands[1]),
+      .src1 = readSrcOperand(Inst.m_Operands[2]),
+    };
+  };
+  case microsoft::D3D10_SB_OPCODE_MIN: {
+    return InstFloatBinaryOp{
+      ._ = readInstructionCommon(Inst),
+      .op = FloatBinaryOp::Min,
+      .dst = readDstOperand(Inst.m_Operands[0]),
+      .src0 = readSrcOperand(Inst.m_Operands[1]),
+      .src1 = readSrcOperand(Inst.m_Operands[2]),
+    };
+  };
+  case microsoft::D3D10_SB_OPCODE_MAD: {
+    return InstFloatMAD{
+      ._ = readInstructionCommon(Inst),
+      .dst = readDstOperand(Inst.m_Operands[0]),
+      .src0 = readSrcOperand(Inst.m_Operands[1]),
+      .src1 = readSrcOperand(Inst.m_Operands[2]),
+      .src2 = readSrcOperand(Inst.m_Operands[3]),
+    };
+  };
+  case microsoft::D3D10_SB_OPCODE_EQ: {
+    return InstFloatCompare{
+      ._ = readInstructionCommon(Inst),
+      .cmp = FloatComparison::Equal,
+      .dst = readDstOperand(Inst.m_Operands[0]),
+      .src0 = readSrcOperand(Inst.m_Operands[1]),
+      .src1 = readSrcOperand(Inst.m_Operands[2]),
+    };
+  };
+  case microsoft::D3D10_SB_OPCODE_GE: {
+    return InstFloatCompare{
+      ._ = readInstructionCommon(Inst),
+      .cmp = FloatComparison::GreaterEqual,
+      .dst = readDstOperand(Inst.m_Operands[0]),
+      .src0 = readSrcOperand(Inst.m_Operands[1]),
+      .src1 = readSrcOperand(Inst.m_Operands[2]),
+    };
+  };
+  case microsoft::D3D10_SB_OPCODE_LT: {
+    return InstFloatCompare{
+      ._ = readInstructionCommon(Inst),
+      .cmp = FloatComparison::LessThan,
+      .dst = readDstOperand(Inst.m_Operands[0]),
+      .src0 = readSrcOperand(Inst.m_Operands[1]),
+      .src1 = readSrcOperand(Inst.m_Operands[2]),
+    };
+  };
+  case microsoft::D3D10_SB_OPCODE_NE: {
+    return InstFloatCompare{
+      ._ = readInstructionCommon(Inst),
+      .cmp = FloatComparison::NotEqual,
+      .dst = readDstOperand(Inst.m_Operands[0]),
+      .src0 = readSrcOperand(Inst.m_Operands[1]),
+      .src1 = readSrcOperand(Inst.m_Operands[2]),
+    };
+  };
+  case microsoft::D3D10_SB_OPCODE_IEQ: {
+    return InstIntegerCompare{
+      ._ = readInstructionCommon(Inst),
+      .cmp = IntegerComparison::Equal,
+      .dst = readDstOperand(Inst.m_Operands[0]),
+      .src0 = readSrcOperand(Inst.m_Operands[1]),
+      .src1 = readSrcOperand(Inst.m_Operands[2]),
+    };
+  };
+  case microsoft::D3D10_SB_OPCODE_INE: {
+    return InstIntegerCompare{
+      ._ = readInstructionCommon(Inst),
+      .cmp = IntegerComparison::NotEqual,
+      .dst = readDstOperand(Inst.m_Operands[0]),
+      .src0 = readSrcOperand(Inst.m_Operands[1]),
+      .src1 = readSrcOperand(Inst.m_Operands[2]),
+    };
+  };
+  case microsoft::D3D10_SB_OPCODE_IGE: {
+    return InstIntegerCompare{
+      ._ = readInstructionCommon(Inst),
+      .cmp = IntegerComparison::SignedGreaterEqual,
+      .dst = readDstOperand(Inst.m_Operands[0]),
+      .src0 = readSrcOperand(Inst.m_Operands[1]),
+      .src1 = readSrcOperand(Inst.m_Operands[2]),
+    };
+  };
+  case microsoft::D3D10_SB_OPCODE_ILT: {
+    return InstIntegerCompare{
+      ._ = readInstructionCommon(Inst),
+      .cmp = IntegerComparison::SignedLessThan,
+      .dst = readDstOperand(Inst.m_Operands[0]),
+      .src0 = readSrcOperand(Inst.m_Operands[1]),
+      .src1 = readSrcOperand(Inst.m_Operands[2]),
+    };
+  };
+  case microsoft::D3D10_SB_OPCODE_UGE: {
+    return InstIntegerCompare{
+      ._ = readInstructionCommon(Inst),
+      .cmp = IntegerComparison::UnsignedGreaterEqual,
+      .dst = readDstOperand(Inst.m_Operands[0]),
+      .src0 = readSrcOperand(Inst.m_Operands[1]),
+      .src1 = readSrcOperand(Inst.m_Operands[2]),
+    };
+  };
+  case microsoft::D3D10_SB_OPCODE_ULT: {
+    return InstIntegerCompare{
+      ._ = readInstructionCommon(Inst),
+      .cmp = IntegerComparison::UnsignedLessThan,
+      .dst = readDstOperand(Inst.m_Operands[0]),
+      .src0 = readSrcOperand(Inst.m_Operands[1]),
+      .src1 = readSrcOperand(Inst.m_Operands[2]),
+    };
+  };
+  case microsoft::D3D10_SB_OPCODE_ISHL: {
+    return InstIntegerBinaryOp{
+      ._ = readInstructionCommon(Inst),
+      .op = IntegerBinaryOp::IShl,
+      .dst = readDstOperand(Inst.m_Operands[0]),
+      .src0 = readSrcOperand(Inst.m_Operands[1]),
+      .src1 = readSrcOperand(Inst.m_Operands[2]),
+    };
+  };
+  case microsoft::D3D10_SB_OPCODE_ISHR: {
+    return InstIntegerBinaryOp{
+      ._ = readInstructionCommon(Inst),
+      .op = IntegerBinaryOp::IShr,
+      .dst = readDstOperand(Inst.m_Operands[0]),
+      .src0 = readSrcOperand(Inst.m_Operands[1]),
+      .src1 = readSrcOperand(Inst.m_Operands[2]),
+    };
+  };
+  case microsoft::D3D10_SB_OPCODE_USHR: {
+    return InstIntegerBinaryOp{
+      ._ = readInstructionCommon(Inst),
+      .op = IntegerBinaryOp::UShr,
+      .dst = readDstOperand(Inst.m_Operands[0]),
+      .src0 = readSrcOperand(Inst.m_Operands[1]),
+      .src1 = readSrcOperand(Inst.m_Operands[2]),
+    };
+  };
+  case microsoft::D3D10_SB_OPCODE_XOR: {
+    return InstIntegerBinaryOp{
+      ._ = readInstructionCommon(Inst),
+      .op = IntegerBinaryOp::Xor,
+      .dst = readDstOperand(Inst.m_Operands[0]),
+      .src0 = readSrcOperand(Inst.m_Operands[1]),
+      .src1 = readSrcOperand(Inst.m_Operands[2]),
+    };
+  };
+  case microsoft::D3D10_SB_OPCODE_IADD: {
+    return InstIntegerBinaryOp{
+      ._ = readInstructionCommon(Inst),
+      .op = IntegerBinaryOp::Add,
       .dst = readDstOperand(Inst.m_Operands[0]),
       .src0 = readSrcOperand(Inst.m_Operands[1]),
       .src1 = readSrcOperand(Inst.m_Operands[2]),
@@ -844,8 +1067,9 @@ static auto readInstruction(
     return InstNop{};
   };
   default: {
-    // assert(0 && "unhandled dxbc instruction");
-    return InstNop{};
+    llvm::outs() << "unhandled dxbc instruction " << Inst.OpCode() << "\n";
+    assert(0 && "unhandled dxbc instruction");
+    // return InstNop{};
   }
   }
 };

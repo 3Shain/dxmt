@@ -1,7 +1,6 @@
 #include "./dxmt_command_stream.hpp"
 #include "../util/objc_pointer.h"
 #include "../util/util_error.h"
-#include "Foundation/NSAutoreleasePool.hpp"
 #include "Foundation/NSRange.hpp"
 #include "Metal/MTLBuffer.hpp"
 #include "Metal/MTLRenderPass.hpp"
@@ -134,11 +133,11 @@ void DXMTCommandStream::Encode(PipelineCommandState &pcs,
                      pcs.setVertexBuffer[i].index,
                      pcs.setVertexBuffer[i].offset, render_encoder.ptr());
                }
-               if (pcs.setPixelShaderSampler[i].sampler != nullptr) {
-                 render_encoder->setFragmentSamplerState(
-                     pcs.setPixelShaderSampler[i].sampler.ptr(),
-                     pcs.setPixelShaderSampler[i].slot);
-               }
+               //  if (pcs.setPixelShaderSampler[i].sampler != nullptr) {
+               //    render_encoder->setFragmentSamplerState(
+               //        pcs.setPixelShaderSampler[i].sampler.ptr(),
+               //        pcs.setPixelShaderSampler[i].slot);
+               //  }
              }
              active_encoder = ActiveEncoder::Render;
            }
@@ -163,9 +162,9 @@ void DXMTCommandStream::Encode(PipelineCommandState &pcs,
            ps_enc->setArgumentBuffer(argument_buffer.ptr(), fs_offset);
            vs_enc->setArgumentBuffer(argument_buffer.ptr(), vs_offset);
            render_encoder->setVertexBuffer(argument_buffer.ptr(), vs_offset,
-                                           30); // ARUGMENT TABLE AT 20
-          //  render_encoder->setFragmentBuffer(argument_buffer.ptr(), fs_offset,
-          //                                    30); // ARUGMENT TABLE AT 20
+                                           30); // ARUGMENT TABLE AT 30
+           render_encoder->setFragmentBuffer(argument_buffer.ptr(), fs_offset,
+                                             30); // ARUGMENT TABLE AT 30
            for (uint32_t i = 0; i < 64; i++) {
              auto &r = pcs.setPixelShaderResource[i];
              if (r.shader_resource_ref_ != nullptr) {
@@ -173,22 +172,28 @@ void DXMTCommandStream::Encode(PipelineCommandState &pcs,
                                             r.slot + 128); // texture offset 128
              }
            }
+           for (uint32_t i = 0; i < 16; i++) {
+             auto &r = pcs.setPixelShaderSampler[i];
+             if (r.sampler != nullptr) {
+               ps_enc->setSamplerState(r.sampler.ptr(), r.slot + 16);
+              //  render_encoder->useResource(r.sampler.ptr());
+             }
+           }
 
            for (uint32_t i = 0; i < 14; i++) {
              auto &r = pcs.setVertexConstantBuffer[i];
              if (r.constant_buffer_ref_ != nullptr) {
                r.constant_buffer_ref_->Bind(render_encoder.ptr(), vs_enc,
-                                            // r.index + 32,
                                             r.index,
-                                            lookupFn); // constant offset 32
+                                            lookupFn);
              }
            }
            for (uint32_t i = 0; i < 14; i++) {
              auto &r = pcs.setPixelConstantBuffer[i];
              if (r.constant_buffer_ref_ != nullptr) {
                r.constant_buffer_ref_->Bind(render_encoder.ptr(), ps_enc,
-                                            r.index + 32,
-                                            lookupFn); // constant offset 32
+                                            r.index,
+                                            lookupFn);
              }
            }
 
@@ -196,9 +201,9 @@ void DXMTCommandStream::Encode(PipelineCommandState &pcs,
            ps_enc->setArgumentBuffer(NULL, 0);
            vs_enc->setArgumentBuffer(NULL, 0);
            render_encoder->setVertexBuffer(NULL, 0,
-                                           20); // ARUGMENT TABLE AT 20
+                                           30); // ARUGMENT TABLE AT 30
            render_encoder->setFragmentBuffer(NULL, 0,
-                                             20); // ARUGMENT TABLE AT 20
+                                             30); // ARUGMENT TABLE AT 30
          },
          [&](MTLBlitCommand &cmd) {
            if (active_encoder != ActiveEncoder::Blit) {
@@ -283,16 +288,16 @@ void DXMTCommandStream::Encode(PipelineCommandState &pcs,
          },
          [&](MTLSetSampler<Pixel> &cmd) {
            pcs.setPixelShaderSampler[cmd.slot] = cmd;
-           if (active_encoder == ActiveEncoder::Render) {
-             render_encoder->setFragmentSamplerState(cmd.sampler.ptr(),
-                                                     cmd.slot);
-           }
+          //  if (active_encoder == ActiveEncoder::Render) {
+          //     render_encoder->setFragmentSamplerState(cmd.sampler.ptr(),
+          //                                             cmd.slot);
+          //  }
          },
          [&](MTLSetShaderResource<Pixel> &cmd) {
            pcs.setPixelShaderResource[cmd.slot] = cmd;
-           if (active_encoder == ActiveEncoder::Render) {
+          //  if (active_encoder == ActiveEncoder::Render) {
              // render_encoder->setFragmentSamplerState()
-           }
+          //  }
          },
          [&](MTLCommandClearRenderTargetView &cmd) {
            //  if (active_encoder == ActiveEncoder::Render) {

@@ -8,8 +8,10 @@
 #include "llvm/Passes/OptimizationLevel.h"
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/Support/VersionTuple.h"
+#include "llvm/Transforms/InstCombine/InstCombine.h"
 
 #include "./air_type.hpp"
+#include "airconv_public.h"
 #include "dxbc_converter.hpp"
 #include "metallib_writer.hpp"
 
@@ -19,7 +21,8 @@ using namespace dxmt::air;
 namespace dxmt {
 
 void Convert(
-  const void *dxbc, uint32_t dxbcSize, void **ppAIR, uint32_t *pAIRSize
+  const void *dxbc, uint32_t dxbcSize, void **ppAIR, uint32_t *pAIRSize,
+  MetalShaderReflection *reflection
 ) {
 
   LLVMContext context;
@@ -81,13 +84,13 @@ void Convert(
     MDTuple::get(context, {createString("air.compile.denorms_disable")})
   );
   airCompileOptions->addOperand(
-    MDTuple::get(context, {createString("air.compile.fast_math_disable")})
+    MDTuple::get(context, {createString("air.compile.fast_math_enable")})
   );
   airCompileOptions->addOperand(MDTuple::get(
     context, {createString("air.compile.framebuffer_fetch_enable")}
   ));
 
-  dxbc::convertDXBC(dxbc, dxbcSize, context, *pModule);
+  auto ref = dxbc::convertDXBC(dxbc, dxbcSize, context, *pModule);
 
   // Create the analysis managers.
   // These must be declared in this order so that they are destroyed in the
@@ -111,10 +114,11 @@ void Convert(
   PB.crossRegisterProxies(LAM, FAM, CGAM, MAM);
 
   ModulePassManager MPM =
-    PB.buildPerModuleDefaultPipeline(OptimizationLevel::O2);
+    PB.buildPerModuleDefaultPipeline(OptimizationLevel::O1);
 
   FunctionPassManager FPM;
   FPM.addPass(VerifierPass());
+  FPM.addPass(llvm::InstCombinePass());
 
   MPM.addPass(createModuleToFunctionPassAdaptor(std::move(FPM)));
 
@@ -138,13 +142,17 @@ void Convert(
   *pAIRSize = vec.size();
 
   pModule.reset();
+
+  if (reflection) {
+    reflection->has_binding_map = ref.has_binding_map;
+  }
 }
 
 extern "C" void ConvertDXBC(
   const void *pDXBC, uint32_t DXBCSize, void **ppMetalLib,
-  uint32_t *pMetalLibSize
+  uint32_t *pMetalLibSize, MetalShaderReflection *reflection
 ) {
-  Convert(pDXBC, DXBCSize, ppMetalLib, pMetalLibSize);
+  Convert(pDXBC, DXBCSize, ppMetalLib, pMetalLibSize, reflection);
 };
 
 } // namespace dxmt

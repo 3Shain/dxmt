@@ -328,25 +328,43 @@ auto create_shuffle_swizzle_mask(
   // if writeMask at specific component is 0, use original value
   std::array<int, 4> mask = {0, 1, 2, 3}; // identity selection
   char *swizzle = (char *)&swizzle_;
-  unsigned checked_component = 0;
+  // unsigned checked_component = 0;
   if (writeMask & 1) {
-    mask[0] = 4 + swizzle[checked_component];
-    checked_component++;
+    mask[0] = 4 + swizzle[0];
+    // checked_component++;
   }
   if (writeMask & 2) {
-    mask[1] = 4 + swizzle[checked_component];
-    checked_component++;
+    mask[1] = 4 + swizzle[1];
+    // checked_component++;
   }
   if (writeMask & 4) {
-    mask[2] = 4 + swizzle[checked_component];
-    checked_component++;
+    mask[2] = 4 + swizzle[2];
+    // checked_component++;
   }
   if (writeMask & 8) {
-    mask[3] = 4 + swizzle[checked_component];
-    checked_component++;
+    mask[3] = 4 + swizzle[3];
+    // checked_component++;
   }
   return mask;
 }
+
+/* it should return sign extended uint4 (all bits 0 or all bits 1) */
+auto cmp_integer(llvm::CmpInst::Predicate cmp, pvalue a, pvalue b) {
+  return make_irvalue([=](context ctx) {
+    return ctx.builder.CreateSExt(
+      ctx.builder.CreateICmp(llvm::CmpInst::ICMP_EQ, a, b), ctx.types._int4
+    );
+  });
+};
+
+/* it should return sign extended uint4 (all bits 0 or all bits 1) */
+auto cmp_float(llvm::CmpInst::Predicate cmp, pvalue a, pvalue b) {
+  return make_irvalue([=](context ctx) {
+    return ctx.builder.CreateSExt(
+      ctx.builder.CreateFCmp(cmp, a, b), ctx.types._int4
+    );
+  });
+};
 
 auto load_at_alloca_array(llvm::AllocaInst *array, pvalue index) -> IRValue {
   return make_irvalue([=](context ctx) {
@@ -448,6 +466,96 @@ auto call_dot_product(uint32_t dimension, pvalue a, pvalue b) {
       "air.dot.v" + std::to_string(dimension) + "f32",
       llvm::FunctionType::get(
         types._float, {operand_type, operand_type}, false
+      ),
+      att
+    ));
+    return ctx.builder.CreateCall(fn, {a, b});
+  });
+};
+
+auto call_mad(uint32_t dimension, pvalue a, pvalue b, pvalue c) {
+  return make_irvalue([=](context ctx) {
+    using namespace llvm;
+    auto &context = ctx.llvm;
+    auto &module = ctx.module;
+    auto &types = ctx.types;
+    auto att = AttributeList::get(
+      context, {std::make_pair<unsigned int, Attribute>(
+                  ~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)
+                ),
+                std::make_pair<unsigned int, Attribute>(
+                  ~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)
+                ),
+                std::make_pair<unsigned int, Attribute>(
+                  ~0U, Attribute::get(context, Attribute::AttrKind::ReadNone)
+                )}
+    );
+    auto operand_type = dimension == 4   ? types._float4
+                        : dimension == 3 ? types._float3
+                                         : types._float2;
+    auto fn = (module.getOrInsertFunction(
+      "air.fma.v" + std::to_string(dimension) + "f32",
+      llvm::FunctionType::get(
+        operand_type, {operand_type, operand_type, operand_type}, false
+      ),
+      att
+    ));
+    return ctx.builder.CreateCall(fn, {a, b, c});
+  });
+};
+
+auto call_float_unary_op(uint32_t dimension, std::string op, pvalue a) {
+  return make_irvalue([=](context ctx) {
+    using namespace llvm;
+    auto &context = ctx.llvm;
+    auto &module = ctx.module;
+    auto &types = ctx.types;
+    auto att = AttributeList::get(
+      context, {std::make_pair<unsigned int, Attribute>(
+                  ~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)
+                ),
+                std::make_pair<unsigned int, Attribute>(
+                  ~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)
+                ),
+                std::make_pair<unsigned int, Attribute>(
+                  ~0U, Attribute::get(context, Attribute::AttrKind::ReadNone)
+                )}
+    );
+    auto operand_type = dimension == 4   ? types._float4
+                        : dimension == 3 ? types._float3
+                                         : types._float2;
+    auto fn = (module.getOrInsertFunction(
+      "air." + op + ".v" + std::to_string(dimension) + "f32",
+      llvm::FunctionType::get(operand_type, {operand_type}, false), att
+    ));
+    return ctx.builder.CreateCall(fn, {a});
+  });
+};
+
+auto call_float_binop(uint32_t dimension, std::string op, pvalue a, pvalue b) {
+  return make_irvalue([=](context ctx) {
+    using namespace llvm;
+    auto &context = ctx.llvm;
+    auto &module = ctx.module;
+    auto &types = ctx.types;
+    auto att = AttributeList::get(
+      context, {std::make_pair<unsigned int, Attribute>(
+                  ~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)
+                ),
+                std::make_pair<unsigned int, Attribute>(
+                  ~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)
+                ),
+                std::make_pair<unsigned int, Attribute>(
+                  ~0U, Attribute::get(context, Attribute::AttrKind::ReadNone)
+                )}
+    );
+    auto operand_type = dimension == 4   ? types._float4
+                        : dimension == 3 ? types._float3
+                                         : types._float2;
+    auto fn = (module.getOrInsertFunction(
+      "air." + op + ".v" + std::to_string(dimension) + "f32",
+      llvm::FunctionType::get(
+        operand_type, {operand_type, operand_type}, false
       ),
       att
     ));
@@ -589,9 +697,7 @@ apply_src_operand_modifier(SrcOperandCommon c, bool float_op) {
             ctx.types._int4
           );
         } else {
-          ret = ctx.builder.CreateNeg(
-            ctx.builder.CreateBitCast(ret, ctx.types._float4)
-          );
+          ret = ctx.builder.CreateNeg(ret);
         }
       }
       return ret;
@@ -778,6 +884,134 @@ auto convertBasicBlocks(
                 }
               );
             },
+            [&](InstIntegerCompare icmp) {
+              auto src0 = load_src_operand(icmp.src0, false);
+              auto src1 = load_src_operand(icmp.src1, false);
+              llvm::CmpInst::Predicate pred;
+              switch (icmp.cmp) {
+              case IntegerComparison::Equal:
+                pred = llvm::CmpInst::ICMP_EQ;
+                break;
+              case IntegerComparison::NotEqual:
+                pred = llvm::CmpInst::ICMP_NE;
+                break;
+              case IntegerComparison::SignedLessThan:
+                pred = llvm::CmpInst::ICMP_SLT;
+                break;
+              case IntegerComparison::SignedGreaterEqual:
+                pred = llvm::CmpInst::ICMP_SGE;
+                break;
+              case IntegerComparison::UnsignedLessThan:
+                pred = llvm::CmpInst::ICMP_ULT;
+                break;
+              case IntegerComparison::UnsignedGreaterEqual:
+                pred = llvm::CmpInst::ICMP_UGE;
+                break;
+              }
+              effect << store_dst_operand(
+                icmp.dst,
+                lift(
+                  src0, src1,
+                  [=](auto a, auto b) { return cmp_integer(pred, a, b); }
+                )
+              );
+            },
+            [&](InstIntegerBinaryOp bin) {
+              auto src0 = load_src_operand(bin.src0, false);
+              auto src1 = load_src_operand(bin.src1, false);
+              std::function<IRValue(pvalue, pvalue)> fn;
+
+              switch (bin.op) {
+              case IntegerBinaryOp::IShl:
+                fn = [=](pvalue a, pvalue b) {
+                  return make_irvalue([=](struct context ctx) {
+                    return ctx.builder.CreateShl(
+                      a, ctx.builder.CreateAnd(b, 0x1f)
+                    );
+                  });
+                };
+                break;
+              case IntegerBinaryOp::IShr:
+                fn = [=](pvalue a, pvalue b) {
+                  return make_irvalue([=](struct context ctx) {
+                    return ctx.builder.CreateAShr(
+                      a, ctx.builder.CreateAnd(b, 0x1f)
+                    );
+                  });
+                };
+                break;
+              case IntegerBinaryOp::UShr:
+                fn = [=](pvalue a, pvalue b) {
+                  return make_irvalue([=](struct context ctx) {
+                    return ctx.builder.CreateLShr(
+                      a, ctx.builder.CreateAnd(b, 0x1f)
+                    );
+                  });
+                };
+                break;
+              case IntegerBinaryOp::Xor:
+                fn = [=](pvalue a, pvalue b) {
+                  return make_irvalue([=](struct context ctx) {
+                    return ctx.builder.CreateXor(a, b);
+                  });
+                };
+                break;
+              case IntegerBinaryOp::And:
+                fn = [=](pvalue a, pvalue b) {
+                  return make_irvalue([=](struct context ctx) {
+                    return ctx.builder.CreateAnd(a, b);
+                  });
+                };
+                break;
+              case IntegerBinaryOp::Or:
+                fn = [=](pvalue a, pvalue b) {
+                  return make_irvalue([=](struct context ctx) {
+                    return ctx.builder.CreateOr(a, b);
+                  });
+                };
+                break;
+              case IntegerBinaryOp::Add:
+                fn = [=](pvalue a, pvalue b) {
+                  return make_irvalue([=](struct context ctx) {
+                    return ctx.builder.CreateAdd(a, b);
+                  });
+                };
+                break;
+              case IntegerBinaryOp::UMin:
+              case IntegerBinaryOp::UMax:
+              case IntegerBinaryOp::IMin:
+              case IntegerBinaryOp::IMax:
+                assert(0 && "to be implemented");
+                break;
+              }
+              effect << store_dst_operand(bin.dst, lift(src0, src1, fn));
+            },
+            [&](InstFloatCompare fcmp) {
+              auto src0 = load_src_operand(fcmp.src0);
+              auto src1 = load_src_operand(fcmp.src1);
+              llvm::CmpInst::Predicate pred;
+              switch (fcmp.cmp) {
+              case FloatComparison::Equal:
+                pred = llvm::CmpInst::FCMP_OEQ;
+                break;
+              case FloatComparison::NotEqual:
+                pred = llvm::CmpInst::FCMP_UNE;
+                break;
+              case FloatComparison::GreaterEqual:
+                pred = llvm::CmpInst::FCMP_OGE;
+                break;
+              case FloatComparison::LessThan:
+                pred = llvm::CmpInst::FCMP_OLT;
+                break;
+              }
+              effect << store_dst_operand(
+                fcmp.dst,
+                lift(
+                  src0, src1,
+                  [=](auto a, auto b) { return cmp_float(pred, a, b); }
+                )
+              );
+            },
             [&](InstDotProduct dp) {
               switch (dp.dimension) {
               case 4:
@@ -811,29 +1045,105 @@ auto convertBasicBlocks(
                 assert(0 && "wrong dot product dimension");
               }
             },
-            [&](InstFloatBinaryOp bin) {
-              switch (bin.op) {
-              case FloatBinaryOp::Add: {
-                effect << lift(
-                  load_src_operand(bin.src0) >>= to_float4,
-                  load_src_operand(bin.src1) >>= to_float4,
-                  [=](auto a, auto b) {
-                    return store_dst_operand(
-                      bin.dst, make_irvalue([=](struct context ctx) {
-                        return ctx.builder.CreateFAdd(a, b);
-                      })
-                    );
-                  }
-                );
+            [&](InstFloatMAD mad) {
+              effect << lift(
+                load_src_operand(mad.src0) >>= to_float4,
+                load_src_operand(mad.src1) >>= to_float4,
+                load_src_operand(mad.src2) >>= to_float4,
+                [=](auto a, auto b, auto c) {
+                  return store_dst_operand(mad.dst, call_mad(4, a, b, c));
+                }
+              );
+            },
+            [&](InstFloatUnaryOp unary) {
+              auto src = load_src_operand(unary.src) >>= to_float4;
+              std::function<IRValue(pvalue)> fn;
+              switch (unary.op) {
+              case FloatUnaryOp::Log2: {
+                fn = [=](pvalue a) {
+                  return call_float_unary_op(4, "log2", a);
+                };
                 break;
               }
-              case FloatBinaryOp::Mul:
-              case FloatBinaryOp::Div:
-              case FloatBinaryOp::Min:
-              case FloatBinaryOp::Max:
+              case FloatUnaryOp::Exp2: {
+                fn = [=](pvalue a) {
+                  return call_float_unary_op(4, "exp2", a);
+                };
+                break;
+              }
+              case FloatUnaryOp::Rcp: {
+                fn = [=](pvalue a) {
+                  return make_irvalue([=](struct context ctx) {
+                    return ctx.builder.CreateFDiv(
+                      ctx.builder.CreateVectorSplat(
+                        4, llvm::ConstantFP::get(ctx.llvm, llvm::APFloat{1.0f})
+                      ),
+                      a
+                    );
+                  });
+                };
+                break;
+              }
+              case FloatUnaryOp::Rsq: {
+                fn = [=](pvalue a) {
+                  return call_float_unary_op(4, "rsqrt", a);
+                };
+                break;
+              }
+              case FloatUnaryOp::Sqrt: {
+                fn = [=](pvalue a) {
+                  return call_float_unary_op(4, "sqrt", a);
+                };
+                break;
+              }
+              }
+              effect << store_dst_operand(unary.dst, src >>= fn);
+            },
+            [&](InstFloatBinaryOp bin) {
+              auto src0 = load_src_operand(bin.src0) >>= to_float4;
+              auto src1 = load_src_operand(bin.src1) >>= to_float4;
+              std::function<IRValue(pvalue, pvalue)> fn;
+              switch (bin.op) {
+              case FloatBinaryOp::Add: {
+                fn = [=](pvalue a, pvalue b) {
+                  return make_irvalue([=](struct context ctx) {
+                    return ctx.builder.CreateFAdd(a, b);
+                  });
+                };
+                break;
+              }
+              case FloatBinaryOp::Mul: {
+                fn = [=](pvalue a, pvalue b) {
+                  return make_irvalue([=](struct context ctx) {
+                    return ctx.builder.CreateFMul(a, b);
+                  });
+                };
+                break;
+              }
+              case FloatBinaryOp::Div: {
+                fn = [=](pvalue a, pvalue b) {
+                  return make_irvalue([=](struct context ctx) {
+                    return ctx.builder.CreateFDiv(a, b);
+                  });
+                };
+                break;
+              }
+              case FloatBinaryOp::Min: {
+                fn = [=](pvalue a, pvalue b) {
+                  return call_float_binop(4, "fmin", a, b);
+                };
+                break;
+              }
+              case FloatBinaryOp::Max: {
+                fn = [=](pvalue a, pvalue b) {
+                  return call_float_binop(4, "fmax", a, b);
+                };
+                break;
+              }
               default:
                 assert(0 && "TODO: implement float binop");
               }
+              effect << store_dst_operand(bin.dst, lift(src0, src1, fn));
             },
             [](InstNop) {}, // nop
             [](auto) { assert(0 && "unhandled instruction"); }

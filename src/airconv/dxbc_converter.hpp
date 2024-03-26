@@ -272,6 +272,9 @@ enum class FloatComparison { Equal, NotEqual, GreaterEqual, LessThan };
 struct InstFloatCompare {
   InstructionCommon _;
   FloatComparison cmp;
+  DstOperand dst;
+  SrcOperand src0;
+  SrcOperand src1;
 };
 
 enum class IntegerComparison {
@@ -286,6 +289,9 @@ enum class IntegerComparison {
 struct InstIntegerCompare {
   InstructionCommon _;
   IntegerComparison cmp;
+  DstOperand dst;
+  SrcOperand src0;
+  SrcOperand src1;
 };
 
 enum class FloatBinaryOp {
@@ -309,6 +315,7 @@ enum class FloatUnaryOp {
   Exp2,
   Rcp,
   Rsq,
+  Sqrt,
 };
 
 struct InstFloatUnaryOp {
@@ -318,11 +325,26 @@ struct InstFloatUnaryOp {
   SrcOperand src;
 };
 
+struct InstFloatMAD {
+  InstructionCommon _;
+  DstOperand dst;
+  SrcOperand src0;
+  SrcOperand src1;
+  SrcOperand src2;
+};
+
 enum class IntegerBinaryOp {
   UMin,
   UMax,
   IMin,
   IMax,
+  IShl,
+  IShr,
+  UShr,
+  Xor,
+  Or,
+  And,
+  Add,
 };
 
 struct InstIntegerBinaryOp {
@@ -376,6 +398,7 @@ using Instruction = std::variant<
   InstIntegerCompare, InstFloatCompare,                    //
   InstFloatBinaryOp, InstIntegerBinaryOp,                  //
   InstFloatUnaryOp,                                        //
+  InstFloatMAD,                                            //
   InstSample, InstLoad, InstStore,                         //
   InstNop,
   /* Pixel Shader */
@@ -483,7 +506,11 @@ public:
 
 #pragma endregion
 
-void convertDXBC(
+struct Reflection {
+  bool has_binding_map;
+};
+
+Reflection convertDXBC(
   const void *dxbc, uint32_t dxbcSize, llvm::LLVMContext &context,
   llvm::Module &module
 );

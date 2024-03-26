@@ -9,6 +9,7 @@
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DerivedTypes.h"
+#include "llvm/IR/FMF.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
@@ -21,7 +22,7 @@
 
 namespace dxmt::dxbc {
 
-void convertDXBC(
+Reflection convertDXBC(
   const void *dxbc, uint32_t dxbcSize, llvm::LLVMContext &context,
   llvm::Module &module
 ) {
@@ -810,7 +811,9 @@ void convertDXBC(
   }
   for (auto &[range_id, sampler] : shader_info->samplerMap) {
     // TODO: abstract SM 5.0 binding
-    auto index = binding_table.DefineSampler("s" + std::to_string(range_id));
+    auto index = binding_table.DefineSampler(
+      "s" + std::to_string(range_id), range_id + 16
+    );
     resource_map.sampler_range_map[range_id] = [=,
                                                 &binding_table_index](pvalue) {
       // ignore index in SM 5.0
@@ -825,7 +828,8 @@ void convertDXBC(
       air::to_air_resource_type(srv.resource_type, srv.compared);
     auto scaler_type = air::to_air_scaler_type(srv.scaler_type);
     auto index = binding_table.DefineTexture(
-      "t" + std::to_string(range_id), texture_kind, access, scaler_type
+      "t" + std::to_string(range_id), texture_kind, access, scaler_type,
+      range_id + 128
     );
     resource_map.srv_range_map[range_id] = {
       air::MSLTexture{
@@ -884,6 +888,7 @@ void convertDXBC(
   auto entry_bb = llvm::BasicBlock::Create(context, "entry", function);
   auto epilogue_bb = llvm::BasicBlock::Create(context, "epilogue", function);
   llvm::IRBuilder<> builder(entry_bb);
+  builder.getFastMathFlags().setFast(true);
   resource_map.input_register_file =
     builder.CreateAlloca(llvm::ArrayType::get(types._int4, max_input_register));
   resource_map.output_register_file =
@@ -923,5 +928,6 @@ void convertDXBC(
     // throw
     assert(0 && "Unsupported shader type");
   }
+  return {.has_binding_map = !binding_table.empty()};
 };
 } // namespace dxmt::dxbc
