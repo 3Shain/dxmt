@@ -13,6 +13,8 @@
             ((UINT)(BYTE)(ch0) | ((UINT)(BYTE)(ch1) << 8) |   \
             ((UINT)(BYTE)(ch2) << 16) | ((UINT)(BYTE)(ch3) << 24 ))
 
+namespace microsoft {
+
 const UINT  DXBC_FOURCC_NAME = DXBC_FOURCC('D','X','B','C');
 
 typedef enum DXBCFourCC
@@ -129,3 +131,5 @@ private:
     const DXBCHeader*    m_pHeader;
     const UINT32*        m_pIndex;
 };
+
+}

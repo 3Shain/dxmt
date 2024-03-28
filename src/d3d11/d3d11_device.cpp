@@ -886,6 +886,7 @@ MTLD3D11Device::CreateSamplerState(const D3D11_SAMPLER_DESC *pSamplerDesc,
   } else {
     WARN("Unsupported border color");
   }
+  mtl_sampler_desc->setSupportArgumentBuffers(true);
 
   auto mtl_sampler =
       transfer(GetMTLDevice()->newSamplerState(mtl_sampler_desc.ptr()));

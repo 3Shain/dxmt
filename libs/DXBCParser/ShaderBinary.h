@@ -21,7 +21,7 @@ typedef UINT CShaderToken;
  *
  ***************************************************************************/
 
-namespace D3D10ShaderBinary {
+namespace microsoft::D3D10ShaderBinary {
 
 const UINT MAX_INSTRUCTION_LENGTH = 128;
 const UINT D3D10_SB_MAX_INSTRUCTION_OPERANDS = 8;
@@ -1327,6 +1327,7 @@ public:
   UINT GetPreciseMask() const { return m_PreciseMask; }
 
   D3D10_SB_OPCODE_TYPE m_OpCode;
+  D3D10_SB_OPCODE_CLASS m_OpClass;
   COperandBase m_Operands[D3D10_SB_MAX_INSTRUCTION_OPERANDS];
   UINT m_NumOperands;
   UINT m_ExtendedOpCodeCount;
@@ -1436,7 +1437,7 @@ public:
   UINT ShaderMinorVersion();
   UINT ShaderMajorVersion();
   UINT ShaderLengthInTokens();
-  UINT CurrentTokenOffset();
+  UINT CurrentTokenOffset() const;
   UINT CurrentTokenOffsetInBytes() {
     return CurrentTokenOffset() * sizeof(CShaderToken);
   }

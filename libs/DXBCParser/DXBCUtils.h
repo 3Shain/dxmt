@@ -4,6 +4,8 @@
 #include "BlobContainer.h"
 #include "d3d12tokenizedprogramformat.hpp"
 
+namespace microsoft {
+
 class CSignatureParser;
 class CSignatureParser5;
 
@@ -206,3 +208,5 @@ private:
 struct SShaderFeatureInfo {
   UINT64 FeatureFlags;
 };
+
+} // namespace microsoft

@@ -10,14 +10,14 @@ int main() {
   // ID3D11VertexShader *vertexShader;
   ID3DBlob *shaderCompileErrorsBlob;
   HRESULT hResult =
-      D3DCompileFromFile(L"../dx11/shader_cube.hlsl", nullptr, nullptr, "vs_main", "vs_5_0",
+      D3DCompileFromFile(L"../dx11/shader_bp.hlsl", nullptr, nullptr, "ps_main", "ps_5_0",
                          0, 0, &vsBlob, &shaderCompileErrorsBlob);
 
   assert(SUCCEEDED(hResult));
 
   LPVOID air;
   UINT airSize;
-  ConvertDXBC(vsBlob->GetBufferPointer(), vsBlob->GetBufferSize(), &air, &airSize);
+  ConvertDXBC(vsBlob->GetBufferPointer(), vsBlob->GetBufferSize(), &air, &airSize, nullptr);
 
   std::ofstream out;
   out.open("dest.metallib", std::ios::out | std::ios::binary);

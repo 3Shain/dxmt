@@ -3,6 +3,8 @@
 #include "dxbcutils.h"
 #include "BlobContainer.h"
 
+namespace microsoft {
+
 //=================================================================================================================================
 // CDXBCParser
 
@@ -186,4 +188,6 @@ HRESULT CDXBCParser::RelocateBytecode( UINT_PTR ByteOffset )
     m_pHeader = (const DXBCHeader*)((const BYTE*)m_pHeader + ByteOffset);
     m_pIndex = (const UINT32*)((const BYTE*)m_pIndex + ByteOffset);
     return S_OK;
+}
+
 }
