@@ -84,6 +84,15 @@ template <typename S> IREffect make_effect_bind(S &&fs) {
   });
 }
 
+uint32_t get_value_dimension(pvalue maybe_vec) {
+  if (maybe_vec->getType()->getTypeID() == llvm::Type::FixedVectorTyID) {
+    return llvm::cast<llvm::FixedVectorType>(maybe_vec->getType())
+      ->getNumElements();
+  } else {
+    return 1;
+  }
+};
+
 auto bitcast_float4(pvalue vec4) {
   return make_irvalue([=](context s) {
     if (vec4->getType() == s.types._float4)
@@ -504,12 +513,82 @@ auto call_mad(uint32_t dimension, pvalue a, pvalue b, pvalue c) {
   });
 };
 
-auto call_float_unary_op(uint32_t dimension, std::string op, pvalue a) {
+auto call_integer_unary_op(std::string op, pvalue a) {
   return make_irvalue([=](context ctx) {
     using namespace llvm;
     auto &context = ctx.llvm;
     auto &module = ctx.module;
     auto &types = ctx.types;
+    assert(a->getType()->getScalarType()->isIntegerTy());
+    auto dimension = get_value_dimension(a);
+    auto att = AttributeList::get(
+      context, {std::make_pair<unsigned int, Attribute>(
+                  ~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)
+                ),
+                std::make_pair<unsigned int, Attribute>(
+                  ~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)
+                ),
+                std::make_pair<unsigned int, Attribute>(
+                  ~0U, Attribute::get(context, Attribute::AttrKind::ReadNone)
+                )}
+    );
+    auto operand_type = dimension == 4   ? types._int4
+                        : dimension == 3 ? types._int3
+                                         : types._int2;
+    auto fn = (module.getOrInsertFunction(
+      "air." + op + ".v" + std::to_string(dimension) + "i32",
+      llvm::FunctionType::get(operand_type, {operand_type}, false), att
+    ));
+    return ctx.builder.CreateCall(fn, {a});
+  });
+};
+
+auto call_integer_binop(
+  std::string op, pvalue a, pvalue b, bool is_signed = false
+) {
+  return make_irvalue([=](context ctx) {
+    using namespace llvm;
+    auto &context = ctx.llvm;
+    auto &module = ctx.module;
+    auto &types = ctx.types;
+    assert(a->getType()->getScalarType()->isIntegerTy());
+    assert(b->getType()->getScalarType()->isIntegerTy());
+    assert(a->getType() == b->getType());
+    auto dimension = get_value_dimension(a);
+    auto att = AttributeList::get(
+      context, {std::make_pair<unsigned int, Attribute>(
+                  ~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)
+                ),
+                std::make_pair<unsigned int, Attribute>(
+                  ~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)
+                ),
+                std::make_pair<unsigned int, Attribute>(
+                  ~0U, Attribute::get(context, Attribute::AttrKind::ReadNone)
+                )}
+    );
+    auto operand_type = dimension == 4   ? types._int4
+                        : dimension == 3 ? types._int3
+                                         : types._int2;
+    auto fn = (module.getOrInsertFunction(
+      "air." + op + (is_signed ? ".s" : ".u") + ".v" +
+        std::to_string(dimension) + "i32",
+      llvm::FunctionType::get(
+        operand_type, {operand_type, operand_type}, false
+      ),
+      att
+    ));
+    return ctx.builder.CreateCall(fn, {a, b});
+  });
+};
+
+auto call_float_unary_op(std::string op, pvalue a) {
+  return make_irvalue([=](context ctx) {
+    using namespace llvm;
+    auto &context = ctx.llvm;
+    auto &module = ctx.module;
+    auto &types = ctx.types;
+    assert(a->getType()->getScalarType()->isFloatTy());
+    auto dimension = get_value_dimension(a);
     auto att = AttributeList::get(
       context, {std::make_pair<unsigned int, Attribute>(
                   ~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)
@@ -532,12 +611,16 @@ auto call_float_unary_op(uint32_t dimension, std::string op, pvalue a) {
   });
 };
 
-auto call_float_binop(uint32_t dimension, std::string op, pvalue a, pvalue b) {
+auto call_float_binop(std::string op, pvalue a, pvalue b) {
   return make_irvalue([=](context ctx) {
     using namespace llvm;
     auto &context = ctx.llvm;
     auto &module = ctx.module;
     auto &types = ctx.types;
+    assert(a->getType()->getScalarType()->isFloatTy());
+    assert(b->getType()->getScalarType()->isFloatTy());
+    assert(a->getType() == b->getType());
+    auto dimension = get_value_dimension(a);
     auto att = AttributeList::get(
       context, {std::make_pair<unsigned int, Attribute>(
                   ~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)
@@ -916,6 +999,46 @@ auto convertBasicBlocks(
                 )
               );
             },
+            [&](InstIntegerUnaryOp unary) {
+              auto src = load_src_operand(unary.src, false);
+              std::function<IRValue(pvalue)> fn;
+              switch (unary.op) {
+              case IntegerUnaryOp::Neg:
+                fn = [=](pvalue a) {
+                  return make_irvalue([=](struct context ctx) {
+                    return ctx.builder.CreateNeg(a);
+                  });
+                };
+                break;
+              case IntegerUnaryOp::Not:
+                fn = [=](pvalue a) {
+                  return make_irvalue([=](struct context ctx) {
+                    return ctx.builder.CreateNot(a);
+                  });
+                };
+                break;
+              case IntegerUnaryOp::ReverseBits:
+                fn = [=](pvalue a) {
+                  // metal shader spec doesn't make it clear
+                  // if this is component-wise...
+                  return call_integer_unary_op("reverse_bits", a);
+                };
+                break;
+              case IntegerUnaryOp::CountBits:
+                fn = [=](pvalue a) {
+                  // metal shader spec doesn't make it clear
+                  // if this is component-wise...
+                  return call_integer_unary_op("popcount", a);
+                };
+                break;
+              case IntegerUnaryOp::FirstHiBitSigned:
+              case IntegerUnaryOp::FirstHiBit:
+              case IntegerUnaryOp::FirstLowBit:
+                assert(0 && "TODO: should be polyfilled");
+                break;
+              }
+              effect << store_dst_operand(unary.dst, src >>= fn);
+            },
             [&](InstIntegerBinaryOp bin) {
               auto src0 = load_src_operand(bin.src0, false);
               auto src1 = load_src_operand(bin.src1, false);
@@ -1060,15 +1183,11 @@ auto convertBasicBlocks(
               std::function<IRValue(pvalue)> fn;
               switch (unary.op) {
               case FloatUnaryOp::Log2: {
-                fn = [=](pvalue a) {
-                  return call_float_unary_op(4, "log2", a);
-                };
+                fn = [=](pvalue a) { return call_float_unary_op("log2", a); };
                 break;
               }
               case FloatUnaryOp::Exp2: {
-                fn = [=](pvalue a) {
-                  return call_float_unary_op(4, "exp2", a);
-                };
+                fn = [=](pvalue a) { return call_float_unary_op("exp2", a); };
                 break;
               }
               case FloatUnaryOp::Rcp: {
@@ -1085,17 +1204,33 @@ auto convertBasicBlocks(
                 break;
               }
               case FloatUnaryOp::Rsq: {
-                fn = [=](pvalue a) {
-                  return call_float_unary_op(4, "rsqrt", a);
-                };
+                fn = [=](pvalue a) { return call_float_unary_op("rsqrt", a); };
                 break;
               }
               case FloatUnaryOp::Sqrt: {
-                fn = [=](pvalue a) {
-                  return call_float_unary_op(4, "sqrt", a);
-                };
+                fn = [=](pvalue a) { return call_float_unary_op("sqrt", a); };
                 break;
               }
+              case FloatUnaryOp::Fraction: {
+                fn = [=](pvalue a) { return call_float_unary_op("fract", a); };
+                break;
+              }
+              case FloatUnaryOp::RoundNearestEven: {
+                fn = [=](pvalue a) { return call_float_unary_op("rint", a); };
+                break;
+              }
+              case FloatUnaryOp::RoundNegativeInf: {
+                fn = [=](pvalue a) { return call_float_unary_op("floor", a); };
+                break;
+              }
+              case FloatUnaryOp::RoundPositiveInf: {
+                fn = [=](pvalue a) { return call_float_unary_op("ceil", a); };
+                break;
+              }
+              case FloatUnaryOp::RoundZero: {
+                fn = [=](pvalue a) { return call_float_unary_op("trunc", a); };
+                break;
+              } break;
               }
               effect << store_dst_operand(unary.dst, src >>= fn);
             },
@@ -1130,20 +1265,31 @@ auto convertBasicBlocks(
               }
               case FloatBinaryOp::Min: {
                 fn = [=](pvalue a, pvalue b) {
-                  return call_float_binop(4, "fmin", a, b);
+                  return call_float_binop("fmin", a, b);
                 };
                 break;
               }
               case FloatBinaryOp::Max: {
                 fn = [=](pvalue a, pvalue b) {
-                  return call_float_binop(4, "fmax", a, b);
+                  return call_float_binop("fmax", a, b);
                 };
                 break;
               }
-              default:
-                assert(0 && "TODO: implement float binop");
               }
               effect << store_dst_operand(bin.dst, lift(src0, src1, fn));
+            },
+            [&](InstSinCos sincos) {
+              effect << store_dst_operand(
+                sincos.dst_cos,
+                (load_src_operand(sincos.src) >>= to_float4) >>=
+                [=](auto src) { return call_float_unary_op("cos", src); }
+              );
+
+              effect << store_dst_operand(
+                sincos.dst_sin,
+                (load_src_operand(sincos.src) >>= to_float4) >>=
+                [=](auto src) { return call_float_unary_op("sin", src); }
+              );
             },
             [](InstNop) {}, // nop
             [](auto) { assert(0 && "unhandled instruction"); }

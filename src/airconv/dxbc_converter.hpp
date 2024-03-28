@@ -316,6 +316,11 @@ enum class FloatUnaryOp {
   Rcp,
   Rsq,
   Sqrt,
+  Fraction,
+  RoundNearestEven,
+  RoundNegativeInf,
+  RoundPositiveInf,
+  RoundZero,
 };
 
 struct InstFloatUnaryOp {
@@ -325,7 +330,48 @@ struct InstFloatUnaryOp {
   SrcOperand src;
 };
 
+enum class IntegerUnaryOp {
+  Neg,
+  Not,
+  ReverseBits,
+  CountBits,
+  FirstHiBitSigned,
+  FirstHiBit,
+  FirstLowBit,
+};
+
+struct InstIntegerUnaryOp {
+  InstructionCommon _;
+  IntegerUnaryOp op;
+  DstOperand dst;
+  SrcOperand src;
+};
+
 struct InstFloatMAD {
+  InstructionCommon _;
+  DstOperand dst;
+  SrcOperand src0;
+  SrcOperand src1;
+  SrcOperand src2;
+};
+
+struct InstSignedMAD {
+  InstructionCommon _;
+  DstOperand dst;
+  SrcOperand src0;
+  SrcOperand src1;
+  SrcOperand src2;
+};
+
+struct InstUnsignedMAD {
+  InstructionCommon _;
+  DstOperand dst;
+  SrcOperand src0;
+  SrcOperand src1;
+  SrcOperand src2;
+};
+
+struct InstMaskedSumOfAbsDiff {
   InstructionCommon _;
   DstOperand dst;
   SrcOperand src0;
@@ -351,6 +397,30 @@ struct InstIntegerBinaryOp {
   InstructionCommon _;
   IntegerBinaryOp op;
   DstOperand dst;
+  SrcOperand src0;
+  SrcOperand src1;
+};
+
+enum class IntegerBinaryOpWithTwoDst {
+  IMul,
+  UAddCarry,
+  UDiv,
+  UMul,
+  USubBorrow,
+};
+
+struct InstIntegerBinaryOpWithTwoDst {
+  InstructionCommon _;
+  IntegerBinaryOpWithTwoDst op;
+  union {
+    DstOperand dst_hi;
+    DstOperand dst_quot;
+  };
+  union {
+    DstOperand dst_low;
+    DstOperand dst_rem;
+    DstOperand dst_carry; // 1 if a carry is produced, 0 otherwise.
+  };
   SrcOperand src0;
   SrcOperand src1;
 };
@@ -393,13 +463,13 @@ struct InstCalcLOD {
 
 using Instruction = std::variant<
   /* Generic */
-  InstMov, InstMovConditional, InstDotProduct, InstSinCos, //
-  InstConvert,                                             //
-  InstIntegerCompare, InstFloatCompare,                    //
-  InstFloatBinaryOp, InstIntegerBinaryOp,                  //
-  InstFloatUnaryOp,                                        //
-  InstFloatMAD,                                            //
-  InstSample, InstLoad, InstStore,                         //
+  InstMov, InstMovConditional, InstDotProduct, InstSinCos,               //
+  InstConvert,                                                           //
+  InstIntegerCompare, InstFloatCompare,                                  //
+  InstFloatBinaryOp, InstIntegerBinaryOp, InstIntegerBinaryOpWithTwoDst, //
+  InstFloatUnaryOp, InstIntegerUnaryOp,                                  //
+  InstFloatMAD, InstSignedMAD, InstUnsignedMAD, InstMaskedSumOfAbsDiff,  //
+  InstSample, InstLoad, InstStore,                                       //
   InstNop,
   /* Pixel Shader */
   InstPixelDiscard, InstPartialDerivative, InstCalcLOD>;
