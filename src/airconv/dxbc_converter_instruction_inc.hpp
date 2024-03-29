@@ -726,8 +726,15 @@ readSrcOperandUAV(const microsoft::D3D10ShaderBinary::COperandBase &O)
   }
 }
 
-static auto
-readSrcOperandLoadable(const microsoft::D3D10ShaderBinary::COperandBase &O) {}
+static std::variant<AtomicDstOperandUAV, AtomicDstOperandTGSM>
+readAtomicDst(const microsoft::D3D10ShaderBinary::COperandBase &O) {
+  if (O.m_Type == microsoft::D3D11_SB_OPERAND_TYPE_UNORDERED_ACCESS_VIEW) {
+    return readSrcOperandUAV(O);
+  } else if (O.m_Type == microsoft::D3D11_SB_OPERAND_TYPE_THREAD_GROUP_SHARED_MEMORY) {
+    return AtomicDstOperandTGSM{.id = O.m_Index[0].m_RegIndex};
+  }
+  assert(0 && "unexpected atomic operation destination");
+}
 
 static auto
 readInstructionCommon(const microsoft::D3D10ShaderBinary::CInstruction &Inst)
@@ -1303,10 +1310,82 @@ static auto readInstruction(
   case microsoft::D3D10_SB_OPCODE_NOP: {
     return InstNop{};
   };
+  case microsoft::D3D11_SB_OPCODE_SYNC: {
+    return InstSync{
+      .boundary = Inst.m_SyncFlags.bUnorderedAccessViewMemoryGlobal
+                    ? InstSync::Boundary::global
+                    : InstSync::Boundary::group,
+      .threadGroupMemoryFence = Inst.m_SyncFlags.bThreadGroupSharedMemory,
+      .threadGroupExecutionFence = Inst.m_SyncFlags.bThreadsInGroup
+    };
+  };
+  case microsoft::D3D11_SB_OPCODE_ATOMIC_AND: {
+    return InstAtomicBinOp{
+      .op = AtomicBinaryOp::And,
+      .dst = readAtomicDst(Inst.m_Operands[0]),
+      .dst_address = readSrcOperand(Inst.m_Operands[1]),
+      .src = readSrcOperand(Inst.m_Operands[2]),
+    };
+  };
+  case microsoft::D3D11_SB_OPCODE_ATOMIC_OR: {
+    return InstAtomicBinOp{
+      .op = AtomicBinaryOp::Or,
+      .dst = readAtomicDst(Inst.m_Operands[0]),
+      .dst_address = readSrcOperand(Inst.m_Operands[1]),
+      .src = readSrcOperand(Inst.m_Operands[2]),
+    };
+  };
+  case microsoft::D3D11_SB_OPCODE_ATOMIC_XOR: {
+    return InstAtomicBinOp{
+      .op = AtomicBinaryOp::Xor,
+      .dst = readAtomicDst(Inst.m_Operands[0]),
+      .dst_address = readSrcOperand(Inst.m_Operands[1]),
+      .src = readSrcOperand(Inst.m_Operands[2]),
+    };
+  };
+  case microsoft::D3D11_SB_OPCODE_ATOMIC_IADD: {
+    return InstAtomicBinOp{
+      .op = AtomicBinaryOp::Add,
+      .dst = readAtomicDst(Inst.m_Operands[0]),
+      .dst_address = readSrcOperand(Inst.m_Operands[1]),
+      .src = readSrcOperand(Inst.m_Operands[2]),
+    };
+  };
+  case microsoft::D3D11_SB_OPCODE_ATOMIC_IMAX: {
+    return InstAtomicBinOp{
+      .op = AtomicBinaryOp::IMax,
+      .dst = readAtomicDst(Inst.m_Operands[0]),
+      .dst_address = readSrcOperand(Inst.m_Operands[1]),
+      .src = readSrcOperand(Inst.m_Operands[2]),
+    };
+  };
+  case microsoft::D3D11_SB_OPCODE_ATOMIC_IMIN: {
+    return InstAtomicBinOp{
+      .op = AtomicBinaryOp::IMin,
+      .dst = readAtomicDst(Inst.m_Operands[0]),
+      .dst_address = readSrcOperand(Inst.m_Operands[1]),
+      .src = readSrcOperand(Inst.m_Operands[2]),
+    };
+  };
+  case microsoft::D3D11_SB_OPCODE_ATOMIC_UMAX: {
+    return InstAtomicBinOp{
+      .op = AtomicBinaryOp::UMax,
+      .dst = readAtomicDst(Inst.m_Operands[0]),
+      .dst_address = readSrcOperand(Inst.m_Operands[1]),
+      .src = readSrcOperand(Inst.m_Operands[2]),
+    };
+  };
+  case microsoft::D3D11_SB_OPCODE_ATOMIC_UMIN: {
+    return InstAtomicBinOp{
+      .op = AtomicBinaryOp::UMin,
+      .dst = readAtomicDst(Inst.m_Operands[0]),
+      .dst_address = readSrcOperand(Inst.m_Operands[1]),
+      .src = readSrcOperand(Inst.m_Operands[2]),
+    };
+  };
   default: {
     llvm::outs() << "unhandled dxbc instruction " << Inst.OpCode() << "\n";
     assert(0 && "unhandled dxbc instruction");
-    // return InstNop{};
   }
   }
 };

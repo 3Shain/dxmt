@@ -241,7 +241,7 @@ struct MSLTexture {
       return getOrCreateStructType("struct._texture_cube_array_t", context)
         ->getPointerTo(1);
     case TextureKind::texture_buffer:
-      return getOrCreateStructType("struct._texture_buffer_t", context)
+      return getOrCreateStructType("struct._texture_buffer_1d_t", context)
         ->getPointerTo(1);
     case TextureKind::depth_2d:
       return getOrCreateStructType("struct._depth_2d_t", context)
@@ -290,7 +290,7 @@ struct MSLTexture {
     case TextureKind::texture_cube_array:
       return "texture_cube_array";
     case TextureKind::texture_buffer:
-      return "texture_buffer";
+      return "texture_buffer_1d";
     case TextureKind::depth_2d:
       return "depth_2d";
     case TextureKind::depth_2d_array:

@@ -1101,10 +1101,24 @@ auto convertBasicBlocks(
                 };
                 break;
               case IntegerBinaryOp::UMin:
+                fn = [=](pvalue a, pvalue b) {
+                  return call_integer_binop("min", a, b, false);
+                };
+                break;
               case IntegerBinaryOp::UMax:
+                fn = [=](pvalue a, pvalue b) {
+                  return call_integer_binop("max", a, b, false);
+                };
+                break;
               case IntegerBinaryOp::IMin:
+                fn = [=](pvalue a, pvalue b) {
+                  return call_integer_binop("min", a, b, true);
+                };
+                break;
               case IntegerBinaryOp::IMax:
-                assert(0 && "to be implemented");
+                fn = [=](pvalue a, pvalue b) {
+                  return call_integer_binop("max", a, b, true);
+                };
                 break;
               }
               effect << store_dst_operand(bin.dst, lift(src0, src1, fn));
@@ -1178,6 +1192,29 @@ auto convertBasicBlocks(
                 }
               );
             },
+            // [&](InstSignedMAD mad) {
+              // effect << lift(
+              //   load_src_operand(mad.src0, false),
+              //   load_src_operand(mad.src1, false),
+              //   load_src_operand(mad.src2, false),
+              //   [=](auto a, auto b, auto c) {
+              //     return store_dst_operand(mad.dst, call_mad(4, a, b, c));
+              //   }
+              // );
+            // },
+            // [&](InstUnsignedMAD mad) {
+              // effect << lift(
+              //   load_src_operand(mad.src0, false),
+              //   load_src_operand(mad.src1, false),
+              //   load_src_operand(mad.src2, false),
+              //   [=](auto a, auto b, auto c) {
+              //     return store_dst_operand(mad.dst, make_irvalue([=](struct context ctx) {
+              //       // auto a_ext = ctx.builder.CreateZExt(Value *V, Type *DestTy)
+
+              //     }));
+              //   }
+              // );
+            // },
             [&](InstFloatUnaryOp unary) {
               auto src = load_src_operand(unary.src) >>= to_float4;
               std::function<IRValue(pvalue)> fn;

@@ -176,6 +176,12 @@ struct SrcOperandTGSM {
   OperandIndex index;
 };
 
+using AtomicDstOperandUAV = SrcOperandUAV;
+
+struct AtomicDstOperandTGSM {
+  uint32_t id;
+};
+
 using DstOperand = std::variant<
   DstOperandNull, DstOperandTemp, DstOperandIndexableTemp, DstOperandOutput,
   DstOperandOutputDepth>;
@@ -461,6 +467,62 @@ struct InstCalcLOD {
   SrcOperandSampler src_sampler;
 };
 
+struct InstSync {
+  enum class Boundary { global, group } boundary;
+  bool threadGroupMemoryFence;
+  bool threadGroupExecutionFence;
+};
+
+enum class AtomicBinaryOp { And, Or, Xor, Add, IMax, IMin, UMax, UMin };
+
+struct InstAtomicBinOp {
+  AtomicBinaryOp op;
+  std::variant<AtomicDstOperandUAV, AtomicDstOperandTGSM> dst;
+  SrcOperand dst_address;
+  SrcOperand src; // select one component
+};
+
+struct InstAtomicCmpStore {
+  std::variant<AtomicDstOperandUAV, AtomicDstOperandTGSM> dst;
+  SrcOperand dst_address;
+  SrcOperand src0; // select one component
+  SrcOperand src1; // select one component
+};
+
+struct InstAtomicImmIncrement {
+  AtomicDstOperandUAV uav;
+  DstOperand dst; // store single component, original value
+};
+
+struct InstAtomicImmDecrement {
+  AtomicDstOperandUAV uav;
+  DstOperand dst; // store single component, new value
+};
+
+struct InstAtomicImmBinOp {
+  AtomicBinaryOp op;
+  DstOperand dst; // store single component, original value
+  std::variant<AtomicDstOperandUAV, AtomicDstOperandTGSM> dst_resource;
+  SrcOperand dst_address;
+  SrcOperand src; // select one component
+};
+
+struct InstAtomicImmExchange {
+  DstOperand dst; // store single component, original value
+  std::variant<AtomicDstOperandUAV, AtomicDstOperandTGSM> dst_resource;
+  SrcOperand dst_address;
+  SrcOperand src; // select one component
+};
+
+struct InstAtomicImmCmpExchange {
+  DstOperand dst; // store single component, original value,
+  // note it's always written
+  std::variant<AtomicDstOperandUAV, AtomicDstOperandTGSM> dst_resource;
+  SrcOperand dst_address;
+  SrcOperand src0; // select one component
+  SrcOperand src1; // select one component
+};
+
 using Instruction = std::variant<
   /* Generic */
   InstMov, InstMovConditional, InstDotProduct, InstSinCos,               //
@@ -472,7 +534,11 @@ using Instruction = std::variant<
   InstSample, InstLoad, InstStore,                                       //
   InstNop,
   /* Pixel Shader */
-  InstPixelDiscard, InstPartialDerivative, InstCalcLOD>;
+  InstPixelDiscard, InstPartialDerivative, InstCalcLOD,
+  /* Atomics */
+  InstSync, InstAtomicBinOp, InstAtomicCmpStore, InstAtomicImmBinOp, //
+  InstAtomicImmCmpExchange, InstAtomicImmExchange,                   //
+  InstAtomicImmIncrement, InstAtomicImmDecrement>;
 
 #pragma region shader reflection
 
