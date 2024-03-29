@@ -98,7 +98,7 @@ auto bitcast_float4(pvalue vec4) {
     if (vec4->getType() == s.types._float4)
       return vec4;
     return s.builder.CreateBitCast(
-      vec4, s.types._float4, "cast_to_float4_by_need_"
+      vec4, s.types._float4
     );
   });
 }
@@ -678,25 +678,8 @@ auto call_abs(uint32_t dimension, pvalue fvec) {
 
 auto call_sample(
   air::MSLTexture texture_type, pvalue handle, pvalue sampler, pvalue coord,
-  pvalue offset
+  pvalue array_index, pvalue offset, pvalue ctrl, pvalue para1, pvalue para2
 ) {
-  /*
-  ; Function Attrs: argmemonly convergent nounwind readonly willreturn
-  declare { <4 x [element type]>, i8 }
-  @air.sample_[resource type].v4[element type attr](
-    %struct._[resource type]_t addrspace(1)* nocapture readonly,
-    %struct._sampler_t addrspace(2)* nocapture readonly,
-    <n x float>, ; coordinate
-    ; i32, ; optional array index
-    i1, ; false for texture_1d, true for others
-    <n x i32>, ; offset?
-    i1, ; some mistery control bit
-    float, ; bias or level if above is true
-    float, ; min_lod_clamp
-    i32 ; unknown, seems always 0
-    )
-  */
-
   return make_irvalue([=](context ctx) {
     using namespace llvm;
     auto &context = ctx.llvm;
@@ -727,7 +710,7 @@ auto call_sample(
     args_type.push_back(types._bool);
     args_type.push_back(offset_type);
     args_type.push_back(types._bool);
-    args_type.push_back(ctx.types._float);
+    args_type.push_back(types._float);
     args_type.push_back(types._float);
     args_type.push_back(types._int);
     auto return_type = StructType::get(
@@ -754,6 +737,38 @@ auto call_sample(
     );
   });
 }
+
+auto call_sample_grad(
+  air::MSLTexture texture_type, pvalue handle, pvalue sampler_handle,
+  pvalue coord, pvalue array_index, pvalue dpdx, pvalue dpdy, pvalue minlod,
+  pvalue offset
+) {}
+
+auto call_sample_compare(
+  air::MSLTexture texture_type, pvalue handle, pvalue sampler_handle,
+  pvalue coord, pvalue array_index, pvalue reference, pvalue offset,
+  pvalue ctrl, pvalue para1, pvalue para2
+) {}
+
+auto call_gather(
+  air::MSLTexture texture_type, pvalue handle, pvalue sampler_handle,
+  pvalue coord, pvalue array_index, pvalue offset, pvalue component
+) {}
+
+auto call_gather_compare(
+  air::MSLTexture texture_type, pvalue handle, pvalue sampler_handle,
+  pvalue coord, pvalue array_index, pvalue reference, pvalue offset
+) {}
+
+auto call_read(
+  air::MSLTexture texture_type, pvalue handle, pvalue coord, pvalue cube_face,
+  pvalue array_index, pvalue sample_index, pvalue lod
+) {}
+
+auto call_write(
+  air::MSLTexture texture_type, pvalue handle, pvalue coord, pvalue cube_face,
+  pvalue array_index, pvalue vec4, pvalue lod
+) {}
 
 std::function<IRValue(pvalue)>
 apply_src_operand_modifier(SrcOperandCommon c, bool float_op) {
@@ -960,8 +975,10 @@ auto convertBasicBlocks(
                 [=, res = res](pvalue res_h, pvalue sampler_h, pvalue coord) {
                   return store_dst_operand(
                     sample.dst,
-                    call_sample(res, res_h, sampler_h, coord, offset_const) >>=
-                    extract_value(0),
+                    call_sample(
+                      res, res_h, sampler_h, coord, nullptr, offset_const,
+                      nullptr, nullptr, nullptr
+                    ) >>= extract_value(0),
                     sample.src_resource.read_swizzle
                   );
                 }
@@ -1193,27 +1210,29 @@ auto convertBasicBlocks(
               );
             },
             // [&](InstSignedMAD mad) {
-              // effect << lift(
-              //   load_src_operand(mad.src0, false),
-              //   load_src_operand(mad.src1, false),
-              //   load_src_operand(mad.src2, false),
-              //   [=](auto a, auto b, auto c) {
-              //     return store_dst_operand(mad.dst, call_mad(4, a, b, c));
-              //   }
-              // );
+            // effect << lift(
+            //   load_src_operand(mad.src0, false),
+            //   load_src_operand(mad.src1, false),
+            //   load_src_operand(mad.src2, false),
+            //   [=](auto a, auto b, auto c) {
+            //     return store_dst_operand(mad.dst, call_mad(4, a, b, c));
+            //   }
+            // );
             // },
             // [&](InstUnsignedMAD mad) {
-              // effect << lift(
-              //   load_src_operand(mad.src0, false),
-              //   load_src_operand(mad.src1, false),
-              //   load_src_operand(mad.src2, false),
-              //   [=](auto a, auto b, auto c) {
-              //     return store_dst_operand(mad.dst, make_irvalue([=](struct context ctx) {
-              //       // auto a_ext = ctx.builder.CreateZExt(Value *V, Type *DestTy)
+            // effect << lift(
+            //   load_src_operand(mad.src0, false),
+            //   load_src_operand(mad.src1, false),
+            //   load_src_operand(mad.src2, false),
+            //   [=](auto a, auto b, auto c) {
+            //     return store_dst_operand(mad.dst, make_irvalue([=](struct
+            //     context ctx) {
+            //       // auto a_ext = ctx.builder.CreateZExt(Value *V, Type
+            //       *DestTy)
 
-              //     }));
-              //   }
-              // );
+            //     }));
+            //   }
+            // );
             // },
             [&](InstFloatUnaryOp unary) {
               auto src = load_src_operand(unary.src) >>= to_float4;

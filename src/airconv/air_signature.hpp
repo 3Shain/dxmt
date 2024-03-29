@@ -315,28 +315,22 @@ struct MSLTexture {
   get_coord_offset_type(llvm::LLVMContext &context) const {
     switch (resource_kind) {
     case TextureKind::texture_1d:
-    case TextureKind::texture_buffer:
     case TextureKind::texture_1d_array:
       return {msl_float.get_llvm_type(context), msl_int.get_llvm_type(context)};
     case TextureKind::texture_2d:
     case TextureKind::texture_2d_array:
-    case TextureKind::texture_2d_ms:
-    case TextureKind::texture_2d_ms_array:
     case TextureKind::depth_2d:
     case TextureKind::depth_2d_array:
-    case TextureKind::depth_2d_ms:
-    case TextureKind::depth_2d_ms_array:
       return {
         msl_float2.get_llvm_type(context), msl_int2.get_llvm_type(context)
       };
     case TextureKind::texture_3d:
-    case TextureKind::texture_cube:
-    case TextureKind::texture_cube_array:
-    case TextureKind::depth_cube:
-    case TextureKind::depth_cube_array:
       return {
         msl_float3.get_llvm_type(context), msl_int3.get_llvm_type(context)
       };
+    default: {
+      assert(0 && "invalid operation");
+    }
     }
   };
 
