@@ -110,7 +110,6 @@ Reflection convertDXBC(
     while (!CodeParser.EndOfShader()) {
       D3D10ShaderBinary::CInstruction Inst;
       CodeParser.ParseInstruction(&Inst);
-      llvm::outs() << Inst.m_OpCode << " \n";
       switch (Inst.m_OpCode) {
 #pragma region control flow
       case D3D10_SB_OPCODE_IF: {
@@ -254,7 +253,6 @@ Reflection convertDXBC(
         return break_point;
       }
       case D3D10_SB_OPCODE_RET: {
-        llvm::outs() << "should return \n";
         ctx->target = BasicBlockUnconditionalBranch{return_point};
         if (
             // if it's inside a loop or switch, break_point is not null
@@ -685,7 +683,7 @@ Reflection convertDXBC(
             air::OutputPosition{.type = air::msl_float4}
           );
           max_output_register = std::max(reg + 1, max_output_register);
-          epilogue = (epilogue >>= pop_output_reg(reg, mask, assigned_index));
+          epilogue >> pop_output_reg(reg, mask, assigned_index);
           break;
         }
         case D3D10_SB_NAME_RENDER_TARGET_ARRAY_INDEX:
@@ -717,7 +715,6 @@ Reflection convertDXBC(
             return (sig.reg() == reg) && ((sig.mask() & mask) != 0);
           });
           // TODO: find SIGNATURE_ELEMENT
-          llvm::outs() << "should define output \n";
           uint32_t assigned_index;
           if (shader_type == D3D10_SB_PIXEL_SHADER) {
             assigned_index =
@@ -727,7 +724,7 @@ Reflection convertDXBC(
                           ? air::msl_float4
                           : air::msl_int4
               });
-            epilogue = (epilogue >>= pop_output_reg(reg, mask, assigned_index));
+            epilogue >> pop_output_reg(reg, mask, assigned_index);
           } else {
             assigned_index = func_signature.DefineOutput(air::OutputVertex{
               .user = sig.fullSemanticString(),
@@ -735,10 +732,9 @@ Reflection convertDXBC(
                         ? air::msl_float4
                         : air::msl_int4,
             });
-            epilogue = (epilogue >>= pop_output_reg(reg, mask, assigned_index));
+            epilogue >> pop_output_reg(reg, mask, assigned_index);
           }
           max_output_register = std::max(reg + 1, max_output_register);
-          llvm::outs() << "should define output done \n";
           break;
         }
         }
@@ -794,7 +790,6 @@ Reflection convertDXBC(
     entry, null_bb, null_bb, null_bb, return_point, null_switch_context
   );
   assert(_.get() == return_point.get());
-  llvm::outs() << "bbr done \n";
 
   // post convert
   io_binding_map resource_map;
@@ -903,17 +898,13 @@ Reflection convertDXBC(
     .resource = resource_map, .types = types
   };
   // then we can start build ... real IR code (visit all basicblocks)
-  llvm::outs() << "will build prelogue\n";
   prelogue.build(ctx);
-  llvm::outs() << "built prelogue\n";
   auto real_entry = convertBasicBlocks(entry, ctx, epilogue_bb);
-  llvm::outs() << "convertd instructions\n";
   builder.CreateBr(real_entry);
 
   builder.SetInsertPoint(epilogue_bb);
   auto value = epilogue.build(ctx);
   builder.CreateRet(value);
-  llvm::outs() << "built epilogue\n";
 
   if (shader_type == D3D10_SB_VERTEX_SHADER) {
     module.getOrInsertNamedMetadata("air.vertex")

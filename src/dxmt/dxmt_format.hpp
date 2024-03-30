@@ -2,7 +2,7 @@
 
 #include "Metal/MTLDevice.hpp"
 #include "Metal/MTLPixelFormat.hpp"
-#include <array>
+#include <map>
 
 namespace dxmt {
 enum class FormatCapability {
@@ -33,7 +33,7 @@ const FormatCapability APPLE_INT_FORMAT_CAP_32 =
 
 class FormatCapabilityInspector {
 public:
-  std::array<FormatCapability, MTL::PixelFormatCount> textureCapabilities{};
+  std::map<MTL::PixelFormat,FormatCapability> textureCapabilities{};
   void Inspect(MTL::Device *device);
 };
 } // namespace dxmt

@@ -1,4 +1,4 @@
-project('dxmt', ['c', 'cpp'], version : 'v0.1', default_options : [ 'cpp_std=c++17', 'warning_level=2' ])
+project('dxmt', ['c', 'cpp'], version : 'v0.1', default_options : [ 'cpp_std=c++20', 'warning_level=2' ])
 
 cpp = meson.get_compiler('cpp')
 cc = meson.get_compiler('c')
