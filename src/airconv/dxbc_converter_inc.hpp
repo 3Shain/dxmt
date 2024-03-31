@@ -902,14 +902,12 @@ auto store_dst_operand(
         });
       },
       [&](DstOperandOutput o) {
-        return make_effect([=, value = std::move(value)](context ctx) mutable {
+        return make_effect_bind([=, value = std::move(value)](context ctx) mutable {
           auto to_ = value.build(ctx);
-          store_at_alloca_int_vec4_array_masked(
+          return store_at_alloca_int_vec4_array_masked(
             ctx.resource.output_register_file, ctx.builder.getInt32(o.regid),
             to_, o._.mask, s
-          )
-            .build(ctx);
-          return std::monostate();
+          );
         });
       },
       [&](auto) {
@@ -1361,7 +1359,7 @@ auto convertBasicBlocks(
       std::visit(
         patterns{
           [](BasicBlockUndefined) {
-            assert(0 && "unexpect undefined basicblock");
+            assert(0 && "unexpected undefined basicblock");
           },
           [&](BasicBlockUnconditionalBranch uncond) {
             if (visited.count(uncond.target.get()) == 0) {
@@ -1395,6 +1393,7 @@ auto convertBasicBlocks(
               readBasicBlock(swc.case_default);
             }
             // builder.CreateSwitch()
+            assert(0 && "TODO: switch");
           },
           [&](BasicBlockReturn ret) {
             // we have done here!

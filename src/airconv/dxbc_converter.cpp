@@ -13,6 +13,7 @@
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
+#include "llvm/IR/Value.h"
 #include <string>
 
 /* separated implementation details */
@@ -96,7 +97,11 @@ Reflection convertDXBC(
   auto shader_info = std::make_shared<ShaderInfo>();
   IREffect prelogue([](auto) { return std::monostate(); });
   IRValue epilogue([](struct context ctx) {
-    return llvm::UndefValue::get(ctx.function->getReturnType());
+    auto retTy = ctx.function->getReturnType();
+    if(retTy->isVoidTy()) {
+      return (pvalue)nullptr;
+    }
+    return (pvalue)llvm::UndefValue::get(retTy);
   });
 
   readControlFlow = [&](
@@ -714,7 +719,6 @@ Reflection convertDXBC(
           auto sig = findOutputElement([=](dxbc::Signature sig) {
             return (sig.reg() == reg) && ((sig.mask() & mask) != 0);
           });
-          // TODO: find SIGNATURE_ELEMENT
           uint32_t assigned_index;
           if (shader_type == D3D10_SB_PIXEL_SHADER) {
             assigned_index =
@@ -904,7 +908,11 @@ Reflection convertDXBC(
 
   builder.SetInsertPoint(epilogue_bb);
   auto value = epilogue.build(ctx);
-  builder.CreateRet(value);
+  if(value == nullptr) {
+    builder.CreateRetVoid();
+  } else {
+    builder.CreateRet(value);
+  }
 
   if (shader_type == D3D10_SB_VERTEX_SHADER) {
     module.getOrInsertNamedMetadata("air.vertex")

@@ -4,19 +4,6 @@
 
 namespace dxmt::air {
 
-BETTER_ENUM(EType, uint32_t, uint = 0x21, uint2 = 0x22, uint3 = 0x23,
-            uint4 = 0x24, _bool = 0x35, _float = 0x03, float2 = 0x04,
-            float3 = 0x05, float4 = 0x06, sampler = 0x3b,
-            texture = 0x3a /* considerred opaque pointer */, ptr = 0x3c)
-
-inline const char *getAirTypeName(EType type) {
-  auto str = type._to_string();
-  if (str[0] == '_') {
-    return &str[1];
-  }
-  return str;
-}
-
 BETTER_ENUM(EInput, uint32_t, amplification_count, amplification_id,
             barycentric_coord, render_target, front_facing, point_coord,
             position, primitive_id, render_target_array_index, sample_id,

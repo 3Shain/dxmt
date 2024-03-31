@@ -101,8 +101,4 @@ Type *AirType::getTypeByMetalTypeName(const std::string &name) {
   return typeContext[name];
 }
 
-Type *AirType::getTypeByAirTypeEnum(air::EType type) {
-  return typeContext[air::getAirTypeName(type)]; // TODO: might fail here!
-}
-
 } // namespace dxmt::air

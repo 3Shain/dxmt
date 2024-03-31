@@ -145,12 +145,14 @@ auto operator | (ReaderIO<Env, V>&& src, Func &&fn) {
       [src=std::move(src), fn=std::move(fn)](auto context) mutable { return fn(src.build(context)); });
 }
 
+/* in-place sequence: a = a then b */
 template <typename Env, typename A>
 ReaderIO<Env, A>& operator << (ReaderIO<Env, A>& a, ReaderIO<Env, A>&& b) {
   a = std::move(a) >>= [b=std::move(b)](auto) mutable ->ReaderIO<Env, A> { return std::move(b); };
   return a;
 };
 
+/* in-place bind: a = fn(result of a) */
 template <typename Env, typename V, std::invocable<V> Func>
 ReaderIO<Env, V>& operator >> (ReaderIO<Env, V>& a, Func &&fn) {
   a = std::move(a) >>= std::move(fn);

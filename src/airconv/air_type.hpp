@@ -4,15 +4,12 @@
 #include "llvm/IR/Type.h"
 #include <map>
 
-#include "air_constants.hpp"
-
 namespace dxmt::air {
 
 class AirType {
 
 public:
   llvm::Type *getTypeByMetalTypeName(const std::string &name);
-  llvm::Type *getTypeByAirTypeEnum(air::EType type);
   AirType(llvm::LLVMContext &context);
 
   llvm::Type *_bool;
