@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <map>
+#include <optional>
 #include <unordered_map>
 #include <variant>
 #include <vector>
@@ -164,6 +165,7 @@ struct SrcOperandResource {
 struct SrcOperandSampler {
   uint32_t range_id;
   OperandIndex index;
+  uint8_t gather_channel; // if appliable
 };
 
 struct SrcOperandUAV {
@@ -206,16 +208,28 @@ struct InstMovConditional {
 namespace {
 
 struct InstSample {
-  InstructionCommon _;
   DstOperand dst;
   SrcOperand src_address;
   SrcOperandResource src_resource;
   SrcOperandSampler src_sampler;
   int32_t offsets[3];
+  std::optional<SrcOperand> min_lod_clamp;
+  std::optional<DstOperand> feedback;
+};
+
+struct InstSampleCompare {
+  DstOperand dst;
+  SrcOperand src_address;
+  SrcOperandResource src_resource; // swizzle must be .r channel
+  SrcOperandSampler src_sampler;
+  SrcOperand src_reference;
+  int32_t offsets[3];
+  std::optional<SrcOperand> min_lod_clamp;
+  std::optional<DstOperand> feedback;
+  bool level_zero;
 };
 
 struct InstSampleBias {
-  InstructionCommon _;
   DstOperand dst;
   SrcOperand src_address;
   SrcOperandResource src_resource;
@@ -225,7 +239,6 @@ struct InstSampleBias {
 };
 
 struct InstSampleDerivative {
-  InstructionCommon _;
   DstOperand dst;
   SrcOperand src_address;
   SrcOperandResource src_resource;
@@ -236,13 +249,54 @@ struct InstSampleDerivative {
 };
 
 struct InstSampleLOD {
-  InstructionCommon _;
   DstOperand dst;
   SrcOperand src_address;
   SrcOperandResource src_resource;
   SrcOperandSampler src_sampler;
   SrcOperand src_lod;
   int32_t offsets[3];
+};
+
+struct InstGather {
+  DstOperand dst;
+  SrcOperand src_address;
+  SrcOperandResource src_resource;
+  SrcOperandSampler src_sampler;
+  SrcOperand offset;
+  std::optional<DstOperand> feedback;
+};
+
+struct InstGatherCompare {
+  DstOperand dst;
+  SrcOperand src_address;
+  SrcOperandResource src_resource;
+  SrcOperandSampler src_sampler;
+  SrcOperand src_reference; // single component
+  SrcOperand offset;
+  std::optional<DstOperand> feedback;
+};
+
+struct InstBufferInfo {
+  DstOperand dst;
+  std::variant<SrcOperandResource, SrcOperandUAV> src;
+};
+
+struct InstResourceInfo {
+  DstOperand dst;
+  SrcOperand src_mip_level;
+  std::variant<SrcOperandResource, SrcOperandUAV> src_resource;
+  enum class M { none, uint, rcp } modifier;
+};
+struct InstSampleInfo {
+  DstOperand dst;
+  std::optional<SrcOperandResource> src; // if null, get rasterizer info
+  bool uint_result;
+};
+
+struct InstSamplePos {
+  DstOperand dst;
+  std::optional<SrcOperandResource> src; // if null, get rasterizer info
+  SrcOperand src_sample_index;
 };
 
 struct InstLoad {
@@ -270,8 +324,6 @@ struct InstSinCos {
   DstOperand dst_cos;
   SrcOperand src;
 };
-
-struct InstGather {};
 
 enum class FloatComparison { Equal, NotEqual, GreaterEqual, LessThan };
 
@@ -361,20 +413,13 @@ struct InstFloatMAD {
   SrcOperand src2;
 };
 
-struct InstSignedMAD {
+struct InstIntegerMAD {
   InstructionCommon _;
   DstOperand dst;
   SrcOperand src0;
   SrcOperand src1;
   SrcOperand src2;
-};
-
-struct InstUnsignedMAD {
-  InstructionCommon _;
-  DstOperand dst;
-  SrcOperand src0;
-  SrcOperand src1;
-  SrcOperand src2;
+  bool is_signed;
 };
 
 struct InstMaskedSumOfAbsDiff {
@@ -460,7 +505,6 @@ struct InstPartialDerivative {
 };
 
 struct InstCalcLOD {
-  // InstructionCommon _;
   DstOperand dst;
   SrcOperand src_address;
   SrcOperandResource src_resource;
@@ -480,6 +524,8 @@ struct InstAtomicBinOp {
   std::variant<AtomicDstOperandUAV, AtomicDstOperandTGSM> dst;
   SrcOperand dst_address;
   SrcOperand src; // select one component
+  std::optional<DstOperand>
+    dst_original; // store single component, original value
 };
 
 struct InstAtomicCmpStore {
@@ -490,21 +536,13 @@ struct InstAtomicCmpStore {
 };
 
 struct InstAtomicImmIncrement {
-  AtomicDstOperandUAV uav;
   DstOperand dst; // store single component, original value
+  AtomicDstOperandUAV uav;
 };
 
 struct InstAtomicImmDecrement {
-  AtomicDstOperandUAV uav;
   DstOperand dst; // store single component, new value
-};
-
-struct InstAtomicImmBinOp {
-  AtomicBinaryOp op;
-  DstOperand dst; // store single component, original value
-  std::variant<AtomicDstOperandUAV, AtomicDstOperandTGSM> dst_resource;
-  SrcOperand dst_address;
-  SrcOperand src; // select one component
+  AtomicDstOperandUAV uav;
 };
 
 struct InstAtomicImmExchange {
@@ -530,14 +568,17 @@ using Instruction = std::variant<
   InstIntegerCompare, InstFloatCompare,                                  //
   InstFloatBinaryOp, InstIntegerBinaryOp, InstIntegerBinaryOpWithTwoDst, //
   InstFloatUnaryOp, InstIntegerUnaryOp,                                  //
-  InstFloatMAD, InstSignedMAD, InstUnsignedMAD, InstMaskedSumOfAbsDiff,  //
-  InstSample, InstLoad, InstStore,                                       //
+  InstFloatMAD, InstIntegerMAD, InstMaskedSumOfAbsDiff,                  //
+  InstSample, InstSampleCompare, InstGather, InstGatherCompare,          //
+  InstSampleBias, InstSampleDerivative, InstSampleLOD,                   //
+  InstSamplePos, InstSampleInfo, InstBufferInfo, InstResourceInfo,       //
+  InstLoad, InstStore,                                                   //
   InstNop,
   /* Pixel Shader */
   InstPixelDiscard, InstPartialDerivative, InstCalcLOD,
   /* Atomics */
-  InstSync, InstAtomicBinOp, InstAtomicCmpStore, InstAtomicImmBinOp, //
-  InstAtomicImmCmpExchange, InstAtomicImmExchange,                   //
+  InstSync, InstAtomicBinOp, InstAtomicCmpStore,   //
+  InstAtomicImmCmpExchange, InstAtomicImmExchange, //
   InstAtomicImmIncrement, InstAtomicImmDecrement>;
 
 #pragma region shader reflection

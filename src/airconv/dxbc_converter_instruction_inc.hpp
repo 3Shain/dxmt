@@ -505,66 +505,6 @@ static auto readSrcOperand(const microsoft::D3D10ShaderBinary::COperandBase &O)
       ._ = readSrcOperandCommon(O),
       .regid = Reg,
     };
-    // CompType DxbcValueType =
-    //     DXBC::GetCompTypeFromMinPrec(O.m_MinPrecision, ValueType);
-    // if (DxbcValueType.IsBoolTy()) {
-    //   DxbcValueType = CompType::getI32();
-    // }
-    // Type *pDxbcValueType = DxbcValueType.GetLLVMType(m_Ctx);
-    // if (DxbcValueType.GetKind() != CompType::Kind::F64) {
-    //   for (OperandValueHelper OVH(SrcVal, Mask, O); !OVH.IsDone();
-    //        OVH.Advance()) {
-    //     BYTE Comp = OVH.GetComp();
-    //     Value *Args[2];
-    //     Args[0] =
-    //         m_pOP->GetU32Const((unsigned)OP::OpCode::TempRegLoad); // OpCode
-    //     Args[1] = m_pOP->GetU32Const(
-    //         DXBC::GetRegIndex(Reg, Comp)); // Linearized register index
-    //     Function *F = m_pOP->GetOpFunc(OP::OpCode::TempRegLoad,
-    //     pDxbcValueType); Value *pValue = m_pBuilder->CreateCall(F, Args);
-    //     pValue = CastDxbcValue(pValue, DxbcValueType, ValueType);
-    //     pValue = ApplyOperandModifiers(pValue, O);
-    //     OVH.SetValue(pValue);
-    //   }
-    // } else {
-    //   DXASSERT_DXBC(CMask::IsValidDoubleMask(Mask));
-    //   for (OperandValueHelper OVH(SrcVal, Mask, O); !OVH.IsDone();
-    //        OVH.Advance()) {
-    //     BYTE Comp = OVH.GetComp();
-    //     Value *pValue1, *pValue2;
-    //     {
-    //       Value *Args[2];
-    //       Args[0] =
-    //           m_pOP->GetU32Const((unsigned)OP::OpCode::TempRegLoad); //
-    //           OpCode
-    //       Args[1] = m_pOP->GetU32Const(
-    //           DXBC::GetRegIndex(Reg, Comp)); // Linearized register index1
-    //       Function *F = m_pOP->GetOpFunc(OP::OpCode::TempRegLoad,
-    //                                      CompType::getU32().GetLLVMType(m_Ctx));
-    //       pValue1 = m_pBuilder->CreateCall(F, Args);
-    //       Args[1] = m_pOP->GetU32Const(
-    //           DXBC::GetRegIndex(Reg, Comp + 1)); // Linearized register
-    //           index2
-    //       pValue2 = m_pBuilder->CreateCall(F, Args);
-    //     }
-    //     Value *pValue;
-    //     {
-    //       Value *Args[3];
-    //       Function *F =
-    //           m_pOP->GetOpFunc(OP::OpCode::MakeDouble, pDxbcValueType);
-    //       Args[0] =
-    //           m_pOP->GetU32Const((unsigned)OP::OpCode::MakeDouble); // OpCode
-    //       Args[1] = pValue1;                                        // Lo
-    //       part Args[2] = pValue2;                                        //
-    //       Hi part pValue = m_pBuilder->CreateCall(F, Args); pValue =
-    //       ApplyOperandModifiers(pValue, O);
-    //     }
-    //     OVH.SetValue(pValue);
-    //     OVH.Advance();
-    //   }
-    // }
-
-    // break;
   }
   case D3D10_SB_OPERAND_TYPE_INPUT: {
     DXASSERT_DXBC(O.m_IndexDimension == D3D10_SB_OPERAND_INDEX_1D);
@@ -584,63 +524,6 @@ static auto readSrcOperand(const microsoft::D3D10ShaderBinary::COperandBase &O)
       .regfile = Reg,
       .regindex = readOperandIndex(O.m_Index[1], O.m_IndexType[1])
     };
-
-    // IndexableReg &IRRec = m_IndexableRegs[Reg];
-    // Value *pXRegIndex = LoadOperandIndex(O.m_Index[1], O.m_IndexType[1]);
-    // Value *pRegIndex =
-    //     m_pBuilder->CreateMul(pXRegIndex,
-    //     m_pOP->GetI32Const(IRRec.NumComps));
-    // CompType DxbcValueType =
-    //     DXBC::GetCompTypeFromMinPrec(O.m_MinPrecision, ValueType);
-    // if (DxbcValueType.IsBoolTy()) {
-    //   DxbcValueType = CompType::getI32();
-    // }
-    // if (DxbcValueType.GetKind() != CompType::Kind::F64) {
-    //   for (OperandValueHelper OVH(SrcVal, Mask, O); !OVH.IsDone();
-    //        OVH.Advance()) {
-    //     BYTE Comp = OVH.GetComp();
-    //     Value *pValue = nullptr;
-    //     // Create GEP.
-    //     Value *pIndex =
-    //         m_pBuilder->CreateAdd(pRegIndex, m_pOP->GetU32Const(Comp));
-    //     Value *pGEPIndices[2] = {m_pOP->GetU32Const(0), pIndex};
-    //     if (!DxbcValueType.HasMinPrec()) {
-    //       Value *pBasePtr = m_IndexableRegs[Reg].pValue32;
-    //       Value *pPtr = m_pBuilder->CreateGEP(pBasePtr, pGEPIndices);
-    //       pValue = m_pBuilder->CreateAlignedLoad(pPtr, kRegCompAlignment);
-    //       pValue = CastDxbcValue(pValue, CompType::getF32(), ValueType);
-    //     } else {
-    //       // Create GEP.
-    //       Value *pBasePtr = m_IndexableRegs[Reg].pValue16;
-    //       Value *pPtr = m_pBuilder->CreateGEP(pBasePtr, pGEPIndices);
-    //       pValue = m_pBuilder->CreateAlignedLoad(pPtr, kRegCompAlignment /
-    //       2); pValue = CastDxbcValue(pValue, CompType::getF16(), ValueType);
-    //     }
-    //     pValue = ApplyOperandModifiers(pValue, O);
-    //     OVH.SetValue(pValue);
-    //   }
-    // } else {
-    //   // Double precision.
-    //   for (OperandValueHelper OVH(SrcVal, Mask, O); !OVH.IsDone();
-    //        OVH.Advance()) {
-    //     BYTE Comp = OVH.GetComp();
-    //     Value *pValue = nullptr;
-    //     // Create GEP.
-    //     Value *pIndex =
-    //         m_pBuilder->CreateAdd(pRegIndex, m_pOP->GetU32Const(Comp));
-    //     Value *pGEPIndices[1] = {pIndex};
-    //     Value *pBasePtr = m_pBuilder->CreateBitCast(
-    //         m_IndexableRegs[Reg].pValue32, Type::getDoublePtrTy(m_Ctx));
-    //     Value *pPtr = m_pBuilder->CreateGEP(pBasePtr, pGEPIndices);
-    //     pValue = m_pBuilder->CreateAlignedLoad(pPtr, kRegCompAlignment * 2);
-    //     pValue = ApplyOperandModifiers(pValue, O);
-    //     OVH.SetValue(pValue);
-    //     OVH.Advance();
-    //     OVH.SetValue(pValue);
-    //   }
-    // }
-
-    // break;
   }
 
   case D3D10_SB_OPERAND_TYPE_RASTERIZER: {
@@ -697,12 +580,14 @@ readSrcOperandSampler(const microsoft::D3D10ShaderBinary::COperandBase &O)
     );
     return SrcOperandSampler{
       .range_id = O.m_Index[0].m_RegIndex,
-      .index = readOperandIndex(O.m_Index[0], O.m_IndexType[0])
+      .index = readOperandIndex(O.m_Index[0], O.m_IndexType[0]),
+      .gather_channel = (uint8_t)O.m_ComponentName
     };
   } else {
     return SrcOperandSampler{
       .range_id = O.m_Index[0].m_RegIndex,
-      .index = readOperandIndex(O.m_Index[1], O.m_IndexType[1])
+      .index = readOperandIndex(O.m_Index[1], O.m_IndexType[1]),
+      .gather_channel = (uint8_t)O.m_ComponentName
     };
   }
 }
@@ -726,7 +611,7 @@ readSrcOperandUAV(const microsoft::D3D10ShaderBinary::COperandBase &O)
   }
 }
 
-static std::variant<AtomicDstOperandUAV, AtomicDstOperandTGSM>
+std::variant<AtomicDstOperandUAV, AtomicDstOperandTGSM>
 readAtomicDst(const microsoft::D3D10ShaderBinary::COperandBase &O) {
   if (O.m_Type == microsoft::D3D11_SB_OPERAND_TYPE_UNORDERED_ACCESS_VIEW) {
     return readSrcOperandUAV(O);
@@ -736,9 +621,18 @@ readAtomicDst(const microsoft::D3D10ShaderBinary::COperandBase &O) {
   assert(0 && "unexpected atomic operation destination");
 }
 
-static auto
-readInstructionCommon(const microsoft::D3D10ShaderBinary::CInstruction &Inst)
-  -> InstructionCommon {
+std::variant<SrcOperandResource, SrcOperandUAV>
+readSrcResourceOrUAV(const microsoft::D3D10ShaderBinary::COperandBase &O) {
+  if (O.m_Type == microsoft::D3D11_SB_OPERAND_TYPE_UNORDERED_ACCESS_VIEW) {
+    return readSrcOperandUAV(O);
+  } else if (O.m_Type == microsoft::D3D10_SB_OPERAND_TYPE_RESOURCE) {
+    return readSrcOperandResource(O);
+  }
+  assert(0 && "unexpected resource operation destination");
+}
+auto readInstructionCommon(
+  const microsoft::D3D10ShaderBinary::CInstruction &Inst
+) -> InstructionCommon {
   assert(Inst.m_bSaturate == 0);
   return InstructionCommon{.saturate = Inst.m_bSaturate != 0};
 };
@@ -758,7 +652,6 @@ static auto readInstruction(
   };
   case microsoft::D3D10_SB_OPCODE_SAMPLE: {
     auto inst = InstSample{
-      ._ = readInstructionCommon(Inst),
       .dst = readDstOperand(Inst.m_Operands[0]),
       .src_address = readSrcOperand(Inst.m_Operands[1]),
       .src_resource = readSrcOperandResource(Inst.m_Operands[2]),
@@ -768,6 +661,166 @@ static auto readInstruction(
     };
     shader_info.srvMap[inst.src_resource.range_id].sampled = true;
     return inst;
+  };
+  case microsoft::D3D10_SB_OPCODE_SAMPLE_B: {
+    auto inst = InstSampleBias{
+      .dst = readDstOperand(Inst.m_Operands[0]),
+      .src_address = readSrcOperand(Inst.m_Operands[1]),
+      .src_resource = readSrcOperandResource(Inst.m_Operands[2]),
+      .src_sampler = readSrcOperandSampler(Inst.m_Operands[3]),
+      .src_bias = readSrcOperand(Inst.m_Operands[4]),
+      .offsets =
+        {Inst.m_TexelOffset[0], Inst.m_TexelOffset[1], Inst.m_TexelOffset[2]},
+    };
+    shader_info.srvMap[inst.src_resource.range_id].sampled = true;
+    return inst;
+  };
+  case microsoft::D3D10_SB_OPCODE_SAMPLE_D: {
+    auto inst = InstSampleDerivative{
+      .dst = readDstOperand(Inst.m_Operands[0]),
+      .src_address = readSrcOperand(Inst.m_Operands[1]),
+      .src_resource = readSrcOperandResource(Inst.m_Operands[2]),
+      .src_sampler = readSrcOperandSampler(Inst.m_Operands[3]),
+      .src_x_derivative = readSrcOperand(Inst.m_Operands[4]),
+      .src_y_derivative = readSrcOperand(Inst.m_Operands[5]),
+      .offsets =
+        {Inst.m_TexelOffset[0], Inst.m_TexelOffset[1], Inst.m_TexelOffset[2]},
+    };
+    shader_info.srvMap[inst.src_resource.range_id].sampled = true;
+    return inst;
+  };
+  case microsoft::D3D10_SB_OPCODE_SAMPLE_L: {
+    auto inst = InstSampleLOD{
+      .dst = readDstOperand(Inst.m_Operands[0]),
+      .src_address = readSrcOperand(Inst.m_Operands[1]),
+      .src_resource = readSrcOperandResource(Inst.m_Operands[2]),
+      .src_sampler = readSrcOperandSampler(Inst.m_Operands[3]),
+      .src_lod = readSrcOperand(Inst.m_Operands[4]),
+      .offsets =
+        {Inst.m_TexelOffset[0], Inst.m_TexelOffset[1], Inst.m_TexelOffset[2]},
+    };
+    shader_info.srvMap[inst.src_resource.range_id].sampled = true;
+    return inst;
+  };
+  case microsoft::D3D10_SB_OPCODE_SAMPLE_C_LZ:
+  case microsoft::D3D10_SB_OPCODE_SAMPLE_C: {
+    auto inst = InstSampleCompare{
+      .dst = readDstOperand(Inst.m_Operands[0]),
+      .src_address = readSrcOperand(Inst.m_Operands[1]),
+      .src_resource = readSrcOperandResource(Inst.m_Operands[2]),
+      .src_sampler = readSrcOperandSampler(Inst.m_Operands[3]),
+      .src_reference = readSrcOperand(Inst.m_Operands[4]),
+      .offsets =
+        {Inst.m_TexelOffset[0], Inst.m_TexelOffset[1], Inst.m_TexelOffset[2]},
+      .level_zero = Inst.m_OpCode == microsoft::D3D10_SB_OPCODE_SAMPLE_C_LZ
+    };
+    shader_info.srvMap[inst.src_resource.range_id].compared = true;
+    return inst;
+  };
+  case microsoft::D3D10_1_SB_OPCODE_GATHER4: {
+    auto inst = InstGather{
+      .dst = readDstOperand(Inst.m_Operands[0]),
+      .src_address = readSrcOperand(Inst.m_Operands[1]),
+      .src_resource = readSrcOperandResource(Inst.m_Operands[2]),
+      .src_sampler = readSrcOperandSampler(Inst.m_Operands[3]),
+      .offset =
+        SrcOperandImmediate32{
+          ._ = {.swizzle = {0, 1, 1, 1}, .abs = false, .neg = false},
+          .ivalue = {Inst.m_TexelOffset[0], Inst.m_TexelOffset[1], 0, 0}
+        },
+    };
+    shader_info.srvMap[inst.src_resource.range_id].sampled = true;
+    return inst;
+  };
+  case microsoft::D3D11_SB_OPCODE_GATHER4_C: {
+    auto inst = InstGatherCompare{
+      .dst = readDstOperand(Inst.m_Operands[0]),
+      .src_address = readSrcOperand(Inst.m_Operands[1]),
+      .src_resource = readSrcOperandResource(Inst.m_Operands[2]),
+      .src_sampler = readSrcOperandSampler(Inst.m_Operands[3]),
+      .src_reference = readSrcOperand(Inst.m_Operands[4]),
+      .offset =
+        SrcOperandImmediate32{
+          ._ = {.swizzle = {0, 1, 1, 1}, .abs = false, .neg = false},
+          .ivalue = {Inst.m_TexelOffset[0], Inst.m_TexelOffset[1], 0, 0}
+        },
+    };
+    shader_info.srvMap[inst.src_resource.range_id].compared = true;
+    return inst;
+  };
+  case microsoft::D3D11_SB_OPCODE_GATHER4_PO: {
+    auto inst = InstGather{
+      .dst = readDstOperand(Inst.m_Operands[0]),
+      .src_address = readSrcOperand(Inst.m_Operands[1]),
+      .src_resource = readSrcOperandResource(Inst.m_Operands[3]),
+      .src_sampler = readSrcOperandSampler(Inst.m_Operands[4]),
+      .offset = readSrcOperand(Inst.m_Operands[2]),
+    };
+    shader_info.srvMap[inst.src_resource.range_id].sampled = true;
+    return inst;
+  };
+  case microsoft::D3D11_SB_OPCODE_GATHER4_PO_C: {
+    auto inst = InstGatherCompare{
+      .dst = readDstOperand(Inst.m_Operands[0]),
+      .src_address = readSrcOperand(Inst.m_Operands[1]),
+      .src_resource = readSrcOperandResource(Inst.m_Operands[3]),
+      .src_sampler = readSrcOperandSampler(Inst.m_Operands[4]),
+      .src_reference = readSrcOperand(Inst.m_Operands[5]),
+      .offset = readSrcOperand(Inst.m_Operands[2]),
+    };
+    shader_info.srvMap[inst.src_resource.range_id].compared = true;
+    return inst;
+  };
+  case microsoft::D3D10_1_SB_OPCODE_SAMPLE_INFO: {
+    bool return_uint =
+      Inst.m_InstructionReturnType == D3D10_SB_INSTRUCTION_RETURN_UINT;
+    if (Inst.m_Operands[1].m_Type == microsoft::D3D10_SB_OPERAND_TYPE_RASTERIZER) {
+      return InstSampleInfo{
+        .dst = readDstOperand(Inst.m_Operands[0]), .uint_result = return_uint
+      };
+    } else {
+      return InstSampleInfo{
+        .dst = readDstOperand(Inst.m_Operands[0]),
+        .src = readSrcOperandResource(Inst.m_Operands[1]),
+        .uint_result = return_uint
+      };
+    };
+  };
+  case microsoft::D3D10_1_SB_OPCODE_SAMPLE_POS: {
+    if (Inst.m_Operands[1].m_Type == microsoft::D3D10_SB_OPERAND_TYPE_RASTERIZER) {
+      return InstSamplePos{
+        .dst = readDstOperand(Inst.m_Operands[0]),
+        .src_sample_index = readSrcOperand(Inst.m_Operands[2])
+      };
+    } else {
+      return InstSamplePos{
+        .dst = readDstOperand(Inst.m_Operands[0]),
+        .src = readSrcOperandResource(Inst.m_Operands[1]),
+        .src_sample_index = readSrcOperand(Inst.m_Operands[2])
+      };
+    };
+  };
+  case microsoft::D3D11_SB_OPCODE_BUFINFO: {
+    return InstBufferInfo {
+      .dst = readDstOperand(Inst.m_Operands[0]),
+      .src = readSrcResourceOrUAV(Inst.m_Operands[1]),
+    };
+  };
+  case microsoft::D3D10_SB_OPCODE_RESINFO: {
+    InstResourceInfo::M modifier =
+      (Inst.m_ResInfoReturnType ==
+       microsoft::D3D10_SB_RESINFO_INSTRUCTION_RETURN_UINT)
+        ? InstResourceInfo::M::uint
+      : (Inst.m_ResInfoReturnType ==
+         D3D10_SB_RESINFO_INSTRUCTION_RETURN_RCPFLOAT)
+        ? InstResourceInfo::M::rcp
+        : InstResourceInfo::M::none;
+    return InstResourceInfo{
+      .dst = readDstOperand(Inst.m_Operands[0]),
+      .src_mip_level = readSrcOperand(Inst.m_Operands[1]),
+      .src_resource = readSrcResourceOrUAV(Inst.m_Operands[2]),
+      .modifier = modifier
+    };
   };
 
   case microsoft::D3D10_SB_OPCODE_DP2: {
@@ -932,21 +985,23 @@ static auto readInstruction(
     };
   };
   case microsoft::D3D10_SB_OPCODE_IMAD: {
-    return InstSignedMAD{
+    return InstIntegerMAD{
       ._ = readInstructionCommon(Inst),
       .dst = readDstOperand(Inst.m_Operands[0]),
       .src0 = readSrcOperand(Inst.m_Operands[1]),
       .src1 = readSrcOperand(Inst.m_Operands[2]),
       .src2 = readSrcOperand(Inst.m_Operands[3]),
+      .is_signed = true,
     };
   };
   case microsoft::D3D10_SB_OPCODE_UMAD: {
-    return InstUnsignedMAD{
+    return InstIntegerMAD{
       ._ = readInstructionCommon(Inst),
       .dst = readDstOperand(Inst.m_Operands[0]),
       .src0 = readSrcOperand(Inst.m_Operands[1]),
       .src1 = readSrcOperand(Inst.m_Operands[2]),
       .src2 = readSrcOperand(Inst.m_Operands[3]),
+      .is_signed = false,
     };
   };
   case microsoft::D3D11_1_SB_OPCODE_MSAD: {
@@ -1381,6 +1436,116 @@ static auto readInstruction(
       .dst = readAtomicDst(Inst.m_Operands[0]),
       .dst_address = readSrcOperand(Inst.m_Operands[1]),
       .src = readSrcOperand(Inst.m_Operands[2]),
+    };
+  };
+  case microsoft::D3D11_SB_OPCODE_ATOMIC_CMP_STORE: {
+    return InstAtomicCmpStore{
+      .dst = readAtomicDst(Inst.m_Operands[0]),
+      .dst_address = readSrcOperand(Inst.m_Operands[1]),
+      .src0 = readSrcOperand(Inst.m_Operands[2]),
+      .src1 = readSrcOperand(Inst.m_Operands[3]),
+    };
+  };
+  case microsoft::D3D11_SB_OPCODE_IMM_ATOMIC_ALLOC: {
+    return InstAtomicImmIncrement{
+      .dst = readDstOperand(Inst.m_Operands[0]),
+      .uav = readSrcOperandUAV(Inst.m_Operands[1])
+    };
+  };
+  case microsoft::D3D11_SB_OPCODE_IMM_ATOMIC_CONSUME: {
+    return InstAtomicImmDecrement{
+      .dst = readDstOperand(Inst.m_Operands[0]),
+      .uav = readSrcOperandUAV(Inst.m_Operands[1])
+    };
+  };
+  case microsoft::D3D11_SB_OPCODE_IMM_ATOMIC_EXCH: {
+    return InstAtomicImmExchange{
+      .dst = readDstOperand(Inst.m_Operands[0]),
+      .dst_resource = readAtomicDst(Inst.m_Operands[1]),
+      .dst_address = readSrcOperand(Inst.m_Operands[2]),
+      .src = readSrcOperand(Inst.m_Operands[3]),
+    };
+  };
+
+  case microsoft::D3D11_SB_OPCODE_IMM_ATOMIC_CMP_EXCH: {
+    return InstAtomicImmCmpExchange{
+      .dst = readDstOperand(Inst.m_Operands[0]),
+      .dst_resource = readAtomicDst(Inst.m_Operands[1]),
+      .dst_address = readSrcOperand(Inst.m_Operands[2]),
+      .src0 = readSrcOperand(Inst.m_Operands[3]),
+      .src1 = readSrcOperand(Inst.m_Operands[4]),
+    };
+  };
+  case microsoft::D3D11_SB_OPCODE_IMM_ATOMIC_AND: {
+    return InstAtomicBinOp{
+      .op = AtomicBinaryOp::And,
+      .dst = readAtomicDst(Inst.m_Operands[1]),
+      .dst_address = readSrcOperand(Inst.m_Operands[2]),
+      .src = readSrcOperand(Inst.m_Operands[3]),
+      .dst_original = readDstOperand(Inst.m_Operands[0]),
+    };
+  };
+  case microsoft::D3D11_SB_OPCODE_IMM_ATOMIC_OR: {
+    return InstAtomicBinOp{
+      .op = AtomicBinaryOp::Or,
+      .dst = readAtomicDst(Inst.m_Operands[1]),
+      .dst_address = readSrcOperand(Inst.m_Operands[2]),
+      .src = readSrcOperand(Inst.m_Operands[3]),
+      .dst_original = readDstOperand(Inst.m_Operands[0]),
+    };
+  };
+  case microsoft::D3D11_SB_OPCODE_IMM_ATOMIC_XOR: {
+    return InstAtomicBinOp{
+      .op = AtomicBinaryOp::Xor,
+      .dst = readAtomicDst(Inst.m_Operands[1]),
+      .dst_address = readSrcOperand(Inst.m_Operands[2]),
+      .src = readSrcOperand(Inst.m_Operands[3]),
+      .dst_original = readDstOperand(Inst.m_Operands[0]),
+    };
+  };
+  case microsoft::D3D11_SB_OPCODE_IMM_ATOMIC_IADD: {
+    return InstAtomicBinOp{
+      .op = AtomicBinaryOp::Add,
+      .dst = readAtomicDst(Inst.m_Operands[1]),
+      .dst_address = readSrcOperand(Inst.m_Operands[2]),
+      .src = readSrcOperand(Inst.m_Operands[3]),
+      .dst_original = readDstOperand(Inst.m_Operands[0]),
+    };
+  };
+  case microsoft::D3D11_SB_OPCODE_IMM_ATOMIC_UMAX: {
+    return InstAtomicBinOp{
+      .op = AtomicBinaryOp::UMax,
+      .dst = readAtomicDst(Inst.m_Operands[1]),
+      .dst_address = readSrcOperand(Inst.m_Operands[2]),
+      .src = readSrcOperand(Inst.m_Operands[3]),
+      .dst_original = readDstOperand(Inst.m_Operands[0]),
+    };
+  };
+  case microsoft::D3D11_SB_OPCODE_IMM_ATOMIC_UMIN: {
+    return InstAtomicBinOp{
+      .op = AtomicBinaryOp::UMin,
+      .dst = readAtomicDst(Inst.m_Operands[1]),
+      .dst_address = readSrcOperand(Inst.m_Operands[2]),
+      .src = readSrcOperand(Inst.m_Operands[3]),
+      .dst_original = readDstOperand(Inst.m_Operands[0]),
+    };
+  };
+  case microsoft::D3D11_SB_OPCODE_IMM_ATOMIC_IMAX: {
+    return InstAtomicBinOp{
+      .op = AtomicBinaryOp::IMax,
+      .dst = readAtomicDst(Inst.m_Operands[1]),
+      .dst_address = readSrcOperand(Inst.m_Operands[2]),
+      .src = readSrcOperand(Inst.m_Operands[3]),
+      .dst_original = readDstOperand(Inst.m_Operands[0]),
+    };
+  };
+  case microsoft::D3D11_SB_OPCODE_IMM_ATOMIC_IMIN: {
+    return InstAtomicBinOp{
+      .op = AtomicBinaryOp::IMin,
+      .dst = readAtomicDst(Inst.m_Operands[1]),
+      .dst_address = readSrcOperand(Inst.m_Operands[2]),
+      .src = readSrcOperand(Inst.m_Operands[3]),
+      .dst_original = readDstOperand(Inst.m_Operands[0]),
     };
   };
   default: {

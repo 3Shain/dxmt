@@ -17,7 +17,7 @@ get_or_create_struct(llvm::LLVMContext &Ctx, llvm::StringRef Name) {
   return StructType::create(Ctx, Name);
 }
 
-AirType::AirType(LLVMContext &context) : Context(context) {
+AirType::AirType(LLVMContext &context) : context(context) {
 
   _int = Type::getInt32Ty(context);
   _float = Type::getFloatTy(context);

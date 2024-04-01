@@ -1,5 +1,4 @@
 #pragma once
-#include "adt.hpp"
 #include "air_signature.hpp"
 #include "air_type.hpp"
 #include "dxbc_converter.hpp"
@@ -60,6 +59,10 @@ struct context {
   air::AirType &types; // hmmm
 };
 
+ReaderIO<context, context> get_context() {
+  return ReaderIO<context, context>([](struct context ctx) { return ctx; });
+};
+
 template <typename S> IRValue make_irvalue(S &&fs) {
   return IRValue(std::forward<S>(fs));
 }
@@ -91,6 +94,36 @@ uint32_t get_value_dimension(pvalue maybe_vec) {
   } else {
     return 1;
   }
+};
+
+std::string type_overload_suffix(
+  llvm::Type *type, air::Sign sign = air::Sign::inapplicable
+) {
+  if (type->isFloatTy()) {
+    return ".f32";
+  }
+  if (type->isIntegerTy()) {
+    assert(llvm::cast<llvm::IntegerType>(type)->getBitWidth() == 32);
+    if (sign == air::Sign::inapplicable)
+      return ".i32";
+    return sign == air::Sign::with_sign ? ".s.i32" : ".u.i32";
+  }
+  if (type->getTypeID() == llvm::Type::FixedVectorTyID) {
+    auto fixedVecTy = llvm::cast<llvm::FixedVectorType>(type);
+    auto elementTy = fixedVecTy->getElementType();
+    if (elementTy->isFloatTy()) {
+      return ".v" + std::to_string(fixedVecTy->getNumElements()) + "f32";
+    } else if (elementTy->isIntegerTy()) {
+      assert(llvm::cast<llvm::IntegerType>(type)->getBitWidth() == 32);
+      if (sign == air::Sign::inapplicable)
+        return ".v" + std::to_string(fixedVecTy->getNumElements()) + "i32";
+      return sign == air::Sign::with_sign
+               ? ".s.v" + std::to_string(fixedVecTy->getNumElements()) + "i32"
+               : ".u.v" + std::to_string(fixedVecTy->getNumElements()) + "i32";
+    }
+  }
+  type->dump();
+  assert(0 && "unexpected or unhandled type");
 };
 
 auto bitcast_float4(pvalue vec4) {
@@ -243,9 +276,7 @@ auto extend_to_int_vec4(pvalue value) {
       if (ty == types._int4)
         return value;
       if (ty == types._float4)
-        return ctx.builder.CreateBitCast(
-          value, types._int4, "cast_to_int4_by_need_"
-        );
+        return ctx.builder.CreateBitCast(value, types._int4);
       return convert(extend_to_vec4(value).build(ctx));
       assert(0 && "unhandled value type");
     };
@@ -376,11 +407,11 @@ auto load_at_alloca_array(llvm::AllocaInst *array, pvalue index) -> IRValue {
   return make_irvalue([=](context ctx) {
     auto ptr = ctx.builder.CreateInBoundsGEP(
       llvm::cast<llvm::ArrayType>(array->getAllocatedType()), array,
-      {ctx.builder.getInt32(0), index}, "load_at_alloca_array_gep_"
+      {ctx.builder.getInt32(0), index}
     );
     return ctx.builder.CreateLoad(
       llvm::cast<llvm::ArrayType>(array->getAllocatedType())->getElementType(),
-      ptr, "load_at_alloca_array_"
+      ptr
     );
   });
 };
@@ -390,8 +421,7 @@ auto store_at_alloca_array(
 ) -> IREffect {
   return make_effect([=](context ctx) {
     auto ptr = ctx.builder.CreateInBoundsGEP(
-      array->getAllocatedType(), array, {ctx.builder.getInt32(0), index},
-      "store_at_alloca_array_gep_"
+      array->getAllocatedType(), array, {ctx.builder.getInt32(0), index}
     );
     ctx.builder.CreateStore(item_with_matched_type, ptr);
     return std::monostate();
@@ -407,8 +437,7 @@ auto store_at_alloca_int_vec4_array_masked(
       return load_at_alloca_array(array, index) >>= [=](auto current) {
         auto new_value = ctx.builder.CreateShuffleVector(
           current, ivec4,
-          (llvm::ArrayRef<int>)create_shuffle_swizzle_mask(mask, swizzle),
-          "value_to_store_after_swizzle_mask_"
+          (llvm::ArrayRef<int>)create_shuffle_swizzle_mask(mask, swizzle)
         );
         return store_at_alloca_array(array, index, new_value);
       };
@@ -455,21 +484,15 @@ auto call_dot_product(uint32_t dimension, pvalue a, pvalue b) {
     auto &module = ctx.module;
     auto &types = ctx.types;
     auto att = AttributeList::get(
-      context, {std::make_pair<unsigned int, Attribute>(
-                  ~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)
-                ),
-                std::make_pair<unsigned int, Attribute>(
-                  ~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)
-                ),
-                std::make_pair<unsigned int, Attribute>(
-                  ~0U, Attribute::get(context, Attribute::AttrKind::ReadNone)
-                )}
+      context, {{~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)},
+                {~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)},
+                {~0U, Attribute::get(context, Attribute::AttrKind::ReadNone)}}
     );
     auto operand_type = dimension == 4   ? types._float4
                         : dimension == 3 ? types._float3
                                          : types._float2;
     auto fn = (module.getOrInsertFunction(
-      "air.dot.v" + std::to_string(dimension) + "f32",
+      "air.dot" + type_overload_suffix(operand_type),
       llvm::FunctionType::get(
         types._float, {operand_type, operand_type}, false
       ),
@@ -479,28 +502,22 @@ auto call_dot_product(uint32_t dimension, pvalue a, pvalue b) {
   });
 };
 
-auto call_mad(uint32_t dimension, pvalue a, pvalue b, pvalue c) {
+auto call_float_mad(uint32_t dimension, pvalue a, pvalue b, pvalue c) {
   return make_irvalue([=](context ctx) {
     using namespace llvm;
     auto &context = ctx.llvm;
     auto &module = ctx.module;
     auto &types = ctx.types;
     auto att = AttributeList::get(
-      context, {std::make_pair<unsigned int, Attribute>(
-                  ~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)
-                ),
-                std::make_pair<unsigned int, Attribute>(
-                  ~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)
-                ),
-                std::make_pair<unsigned int, Attribute>(
-                  ~0U, Attribute::get(context, Attribute::AttrKind::ReadNone)
-                )}
+      context, {{~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)},
+                {~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)},
+                {~0U, Attribute::get(context, Attribute::AttrKind::ReadNone)}}
     );
     auto operand_type = dimension == 4   ? types._float4
                         : dimension == 3 ? types._float3
                                          : types._float2;
     auto fn = (module.getOrInsertFunction(
-      "air.fma.v" + std::to_string(dimension) + "f32",
+      "air.fma" + type_overload_suffix(operand_type),
       llvm::FunctionType::get(
         operand_type, {operand_type, operand_type, operand_type}, false
       ),
@@ -587,21 +604,15 @@ auto call_float_unary_op(std::string op, pvalue a) {
     assert(a->getType()->getScalarType()->isFloatTy());
     auto dimension = get_value_dimension(a);
     auto att = AttributeList::get(
-      context, {std::make_pair<unsigned int, Attribute>(
-                  ~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)
-                ),
-                std::make_pair<unsigned int, Attribute>(
-                  ~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)
-                ),
-                std::make_pair<unsigned int, Attribute>(
-                  ~0U, Attribute::get(context, Attribute::AttrKind::ReadNone)
-                )}
+      context, {{~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)},
+                {~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)},
+                {~0U, Attribute::get(context, Attribute::AttrKind::ReadNone)}}
     );
     auto operand_type = dimension == 4   ? types._float4
                         : dimension == 3 ? types._float3
                                          : types._float2;
     auto fn = (module.getOrInsertFunction(
-      "air." + op + ".v" + std::to_string(dimension) + "f32",
+      "air." + op + type_overload_suffix(operand_type),
       llvm::FunctionType::get(operand_type, {operand_type}, false), att
     ));
     return ctx.builder.CreateCall(fn, {a});
@@ -633,7 +644,7 @@ auto call_float_binop(std::string op, pvalue a, pvalue b) {
                         : dimension == 3 ? types._float3
                                          : types._float2;
     auto fn = (module.getOrInsertFunction(
-      "air." + op + ".v" + std::to_string(dimension) + "f32",
+      "air." + op + type_overload_suffix(operand_type),
       llvm::FunctionType::get(
         operand_type, {operand_type, operand_type}, false
       ),
@@ -673,66 +684,98 @@ auto call_abs(uint32_t dimension, pvalue fvec) {
   });
 };
 
-auto call_sample(
+IRValue call_sample(
   air::MSLTexture texture_type, pvalue handle, pvalue sampler, pvalue coord,
-  pvalue array_index, pvalue offset, pvalue ctrl, pvalue para1, pvalue para2
+  pvalue array_index, pvalue offset = nullptr, pvalue bias = nullptr,
+  pvalue min_lod_clamp = nullptr, pvalue lod_level = nullptr
 ) {
-  return make_irvalue([=](context ctx) {
-    using namespace llvm;
-    auto &context = ctx.llvm;
-    auto &module = ctx.module;
-    auto &types = ctx.types;
-    auto att = AttributeList::get(
-      context,
-      {
-        {0U, Attribute::get(context, Attribute::AttrKind::NoCapture)},
-        {0U, Attribute::get(context, Attribute::AttrKind::ReadOnly)},
-        {1U, Attribute::get(context, Attribute::AttrKind::NoCapture)},
-        {1U, Attribute::get(context, Attribute::AttrKind::ReadOnly)},
-        {~0U, Attribute::get(context, Attribute::AttrKind::ArgMemOnly)},
-        {~0U, Attribute::get(context, Attribute::AttrKind::Convergent)},
-        {~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)},
-        {~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)},
-        {~0U, Attribute::get(context, Attribute::AttrKind::ReadOnly)},
-      }
-    );
-    // TODO: .v4i32 and .u.v4i32
-    auto fn_name = "air.sample_" + texture_type.get_air_symbol() + ".v4f32";
-    auto [coord_type, offset_type] =
-      texture_type.get_coord_offset_type(context);
-    std::vector<llvm::Type *> args_type;
-    args_type.push_back(texture_type.get_llvm_type(context));
-    args_type.push_back(types._sampler->getPointerTo(2));
-    args_type.push_back(coord_type);
-    args_type.push_back(types._bool);
-    args_type.push_back(offset_type);
-    args_type.push_back(types._bool);
-    args_type.push_back(types._float);
-    args_type.push_back(types._float);
+  auto ctx = co_yield get_context();
+  using namespace llvm;
+  auto &context = ctx.llvm;
+  auto &module = ctx.module;
+  auto &types = ctx.types;
+  auto att = AttributeList::get(
+    context,
+    {
+      {0U, Attribute::get(context, Attribute::AttrKind::NoCapture)},
+      {0U, Attribute::get(context, Attribute::AttrKind::ReadOnly)},
+      {1U, Attribute::get(context, Attribute::AttrKind::NoCapture)},
+      {1U, Attribute::get(context, Attribute::AttrKind::ReadOnly)},
+      {~0U, Attribute::get(context, Attribute::AttrKind::ArgMemOnly)},
+      {~0U, Attribute::get(context, Attribute::AttrKind::Convergent)},
+      {~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)},
+      {~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)},
+      {~0U, Attribute::get(context, Attribute::AttrKind::ReadOnly)},
+    }
+  );
+  auto op_info = texture_type.get_operation_info(types);
+  auto fn_name = "air.sample_" + op_info.air_symbol_suffix +
+                 type_overload_suffix(op_info.sample_type, op_info.sign);
+  std::vector<llvm::Type *> args_type;
+  std::vector<pvalue> args_value;
+
+  args_type.push_back(texture_type.get_llvm_type(context));
+  args_value.push_back(handle);
+
+  args_type.push_back(types._sampler->getPointerTo(2));
+  args_value.push_back(sampler);
+
+  if (op_info.is_depth) {
     args_type.push_back(types._int);
-    auto return_type = StructType::get(
-      context, {texture_type.get_return_type(context), ctx.types._bool}
+    args_value.push_back(ctx.builder.getInt32(1));
+  }
+
+  args_type.push_back(op_info.coord_type);
+  args_value.push_back(coord);
+
+  if (op_info.is_array) {
+    args_type.push_back(types._int);
+    args_value.push_back(array_index);
+  }
+
+  if (!op_info.is_depth) {
+    args_type.push_back(types._bool);
+    args_value.push_back(ctx.builder.getInt1(op_info.sample_unknown_bit));
+  }
+
+  if (op_info.allow_sample_offset) {
+    args_type.push_back(op_info.offset_type);
+    args_value.push_back(
+      offset != nullptr ? offset
+                        : ConstantAggregateZero::get(op_info.offset_type)
     );
-    auto fn = module.getOrInsertFunction(
-      fn_name, llvm::FunctionType::get(return_type, args_type, false), att
+  }
+
+  /* parameters */
+  args_type.push_back(types._bool);
+  args_type.push_back(types._float);
+  args_type.push_back(types._float);
+
+  if (lod_level != nullptr) {
+    args_value.push_back(ctx.builder.getInt1(true));
+    args_value.push_back(lod_level);
+    args_value.push_back(ConstantFP::get(context, APFloat{0.0f}));
+  } else {
+    args_value.push_back(ctx.builder.getInt1(false));
+    args_value.push_back(
+      bias != nullptr ? bias : ConstantFP::get(context, APFloat{0.0f})
     );
-    return ctx.builder.CreateCall(
-      fn,
-      {
-        handle,
-        sampler,
-        coord,
-        texture_type.resource_kind == air::TextureKind::texture_1d
-          ? ctx.builder.getInt1(false)
-          : ctx.builder.getInt1(true),
-        offset,
-        ctx.builder.getInt1(false),
-        ConstantFP::get(context, APFloat{0.0f}),
-        ConstantFP::get(context, APFloat{0.0f}),
-        ctx.builder.getInt32(0),
-      }
+    args_value.push_back(
+      min_lod_clamp != nullptr ? min_lod_clamp
+                               : ConstantFP::get(context, APFloat{0.0f})
     );
-  });
+  }
+
+  /* access: always 0 = sample */
+  args_type.push_back(types._int);
+  args_value.push_back(ctx.builder.getInt32(0));
+
+  auto return_type =
+    StructType::get(context, {op_info.sample_type, ctx.types._bool});
+  auto fn = module.getOrInsertFunction(
+    fn_name, llvm::FunctionType::get(return_type, args_type, false), att
+  );
+  co_return ctx.builder.CreateCall(fn, args_value);
 }
 
 auto call_sample_grad(
@@ -766,6 +809,104 @@ auto call_write(
   air::MSLTexture texture_type, pvalue handle, pvalue coord, pvalue cube_face,
   pvalue array_index, pvalue vec4, pvalue lod
 ) {}
+
+IREffect call_discard_fragment() {
+  using namespace llvm;
+  auto ctx = co_yield get_context();
+  auto &context = ctx.llvm;
+  auto &module = ctx.module;
+  auto att = AttributeList::get(
+    context, {{~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)},
+              {~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)}}
+  );
+  auto fn = (module.getOrInsertFunction(
+    "air.discard_fragment",
+    llvm::FunctionType::get(
+      Type::getVoidTy(context), {Type::getVoidTy(context)}, false
+    ),
+    att
+  ));
+  ctx.builder.CreateCall(fn, {});
+  co_return {};
+}
+
+enum class mem_flags : uint32_t { device = 1, threadgroup = 2, texture = 4 };
+
+IREffect call_threadgroup_barrier(mem_flags mem_flag) {
+  using namespace llvm;
+  auto ctx = co_yield get_context();
+  auto &context = ctx.llvm;
+  auto &types = ctx.types;
+  auto &module = ctx.module;
+  auto att = AttributeList::get(
+    context, {{~0U, Attribute::get(context, Attribute::AttrKind::Convergent)},
+              {~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)},
+              {~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)}}
+  );
+
+  auto fn = (module.getOrInsertFunction(
+    "air.wg.barrier",
+    llvm::FunctionType::get(
+      Type::getVoidTy(context),
+      {
+        types._int, // mem_flag
+        types._int, // scope, should be always 1?
+      },
+      false
+    ),
+    att
+  ));
+  ctx.builder.CreateCall(
+    fn, {co_yield get_int((uint32_t)mem_flag), co_yield get_int(1)}
+  );
+  co_return {};
+}
+
+IRValue call_atomic_fetch_explicit(
+  pvalue pointer, pvalue operand, std::string op, bool is_signed = false,
+  bool device = false
+) {
+  using namespace llvm;
+  auto ctx = co_yield get_context();
+  auto &context = ctx.llvm;
+  auto &types = ctx.types;
+  auto &module = ctx.module;
+  auto att = AttributeList::get(
+    context, {{0U, Attribute::get(context, Attribute::AttrKind::NoCapture)},
+              {~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)},
+              {~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)}}
+  );
+
+  assert(operand->getType() == types._int);
+
+  auto fn = (module.getOrInsertFunction(
+    "air.atomic." + std::string(device ? "global." : "local.") + op +
+      std::string(is_signed ? ".s.i32" : ".u.i32"),
+    llvm::FunctionType::get(
+      types._int,
+      {
+        types._int->getPointerTo(device ? 1 : 3),
+        types._int, // operand
+        types._int, // order 0 relaxed
+        types._int, // scope 1 threadgroup 2 device (type: memflag?)
+        types._bool // volatile? should be true all the time?
+      },
+      false
+    ),
+    att
+  ));
+  co_return ctx.builder.CreateCall(
+    fn, {pointer, operand, co_yield get_int(0),
+         co_yield get_int(device ? 2 : 1), ConstantInt::getBool(context, true)}
+  );
+};
+
+IRValue call_texture_atomic_fetch(
+  air::MSLTexture texture_type, pvalue handle, pvalue operand, std::string op,
+  bool is_signed = false
+) {
+  assert(0 && "TODO");
+};
 
 std::function<IRValue(pvalue)>
 apply_src_operand_modifier(SrcOperandCommon c, bool float_op) {
@@ -902,7 +1043,8 @@ auto store_dst_operand(
         });
       },
       [&](DstOperandOutput o) {
-        return make_effect_bind([=, value = std::move(value)](context ctx) mutable {
+        return make_effect_bind([=, value =
+                                      std::move(value)](context ctx) mutable {
           auto to_ = value.build(ctx);
           return store_at_alloca_int_vec4_array_masked(
             ctx.resource.output_register_file, ctx.builder.getInt32(o.regid),
@@ -972,8 +1114,7 @@ auto convertBasicBlocks(
                   return store_dst_operand(
                     sample.dst,
                     call_sample(
-                      res, res_h, sampler_h, coord, nullptr, offset_const,
-                      nullptr, nullptr, nullptr
+                      res, res_h, sampler_h, coord, nullptr, offset_const
                     ) >>= extract_value(0),
                     sample.src_resource.read_swizzle
                   );
@@ -1053,7 +1194,6 @@ auto convertBasicBlocks(
             },
             [&](InstIntegerBinaryOp bin) {
               std::function<IRValue(pvalue, pvalue)> fn;
-
               switch (bin.op) {
               case IntegerBinaryOp::IShl:
                 fn = [=](pvalue a, pvalue b) {
@@ -1201,35 +1341,27 @@ auto convertBasicBlocks(
                 load_src_operand(mad.src1) >>= to_float4,
                 load_src_operand(mad.src2) >>= to_float4,
                 [=](auto a, auto b, auto c) {
-                  return store_dst_operand(mad.dst, call_mad(4, a, b, c));
+                  return store_dst_operand(mad.dst, call_float_mad(4, a, b, c));
                 }
               );
             },
-            // [&](InstSignedMAD mad) {
-            // effect << lift(
-            //   load_src_operand(mad.src0, false),
-            //   load_src_operand(mad.src1, false),
-            //   load_src_operand(mad.src2, false),
-            //   [=](auto a, auto b, auto c) {
-            //     return store_dst_operand(mad.dst, call_mad(4, a, b, c));
-            //   }
-            // );
-            // },
-            // [&](InstUnsignedMAD mad) {
-            // effect << lift(
-            //   load_src_operand(mad.src0, false),
-            //   load_src_operand(mad.src1, false),
-            //   load_src_operand(mad.src2, false),
-            //   [=](auto a, auto b, auto c) {
-            //     return store_dst_operand(mad.dst, make_irvalue([=](struct
-            //     context ctx) {
-            //       // auto a_ext = ctx.builder.CreateZExt(Value *V, Type
-            //       *DestTy)
-
-            //     }));
-            //   }
-            // );
-            // },
+            [&](InstIntegerMAD mad) {
+              // FIXME: this looks wrong, what's the sign specific behavior?
+              effect << lift(
+                load_src_operand(mad.src0, false),
+                load_src_operand(mad.src1, false),
+                load_src_operand(mad.src2, false),
+                [=](auto a, auto b, auto c) {
+                  return store_dst_operand(
+                    mad.dst, make_irvalue([=](struct context ctx) {
+                      return ctx.builder.CreateAdd(
+                        ctx.builder.CreateMul(a, b), c
+                      );
+                    })
+                  );
+                }
+              );
+            },
             [&](InstFloatUnaryOp unary) {
               std::function<IRValue(pvalue)> fn;
               switch (unary.op) {
@@ -1347,6 +1479,31 @@ auto convertBasicBlocks(
                 [=](auto src) { return call_float_unary_op("sin", src); }
               );
             },
+            // [&](InstIntegerBinaryOpWithTwoDst bin) {
+            //   switch (bin.op) {
+            //   case IntegerBinaryOpWithTwoDst::IMul:
+            //   case IntegerBinaryOpWithTwoDst::UMul: {
+            //     assert(0 && "todo");
+            //     break;
+            //   }
+            //   case IntegerBinaryOpWithTwoDst::UAddCarry:
+            //   case IntegerBinaryOpWithTwoDst::USubBorrow:
+            //   case IntegerBinaryOpWithTwoDst::UDiv:
+            //     assert(0 && "todo");
+            //     break;
+            //   }
+            // },
+            // [&](InstSync sync) {
+            //   mem_flags mem_flag;
+            //   if (sync.boundary == InstSync::Boundary::global) {
+            //     // mem_flag |= mem_flags::device;
+            //   }
+            //   if (sync.boundary == InstSync::Boundary::group) {
+            //     // mem_flag |= mem_flags::threadgroup;
+            //   }
+            //   effect << call_threadgroup_barrier(mem_flag);
+            // },
+            [&](InstPixelDiscard) { effect << call_discard_fragment(); },
             [](InstNop) {}, // nop
             [](auto) { assert(0 && "unhandled instruction"); }
           },

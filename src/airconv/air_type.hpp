@@ -2,6 +2,7 @@
 
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Type.h"
+#include <cassert>
 #include <map>
 
 namespace dxmt::air {
@@ -49,8 +50,16 @@ public:
   llvm::Type* _ptr_threadgroup;
   std::map<std::string, llvm::Type *> typeContext;
 
-private:
+  llvm::Type* to_vec4_type(llvm::Type* scalar) {
+    if(scalar == _int) {
+      return _int4;
+    }
+    if(scalar == _float) {
+      return _float4;
+    }
+    assert(0 && "input is not a scalar or not implemented.");
+  };
 
-  llvm::LLVMContext &Context;
+  llvm::LLVMContext &context;
 };
 } // namespace dxmt
