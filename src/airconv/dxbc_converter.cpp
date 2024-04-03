@@ -14,6 +14,7 @@
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Value.h"
+#include <bit>
 #include <string>
 
 /* separated implementation details */
@@ -98,11 +99,12 @@ Reflection convertDXBC(
   IREffect prelogue([](auto) { return std::monostate(); });
   IRValue epilogue([](struct context ctx) {
     auto retTy = ctx.function->getReturnType();
-    if(retTy->isVoidTy()) {
-      return (pvalue)nullptr;
+    if (retTy->isVoidTy()) {
+      return (pvalue) nullptr;
     }
     return (pvalue)llvm::UndefValue::get(retTy);
   });
+  io_binding_map resource_map;
 
   readControlFlow = [&](
                       const std::shared_ptr<BasicBlock> &ctx,
@@ -549,18 +551,20 @@ Reflection convertDXBC(
           assert(0);
           break;
 
+        case D3D11_SB_OPERAND_TYPE_CYCLE_COUNTER:
+          break; // ignore it atm
         case D3D11_SB_OPERAND_TYPE_INPUT_THREAD_ID:
         case D3D11_SB_OPERAND_TYPE_INPUT_THREAD_GROUP_ID:
         case D3D11_SB_OPERAND_TYPE_INPUT_THREAD_ID_IN_GROUP:
         case D3D11_SB_OPERAND_TYPE_INPUT_THREAD_ID_IN_GROUP_FLATTENED:
+          break;
         case D3D11_SB_OPERAND_TYPE_INPUT_DOMAIN_POINT:
         case D3D11_SB_OPERAND_TYPE_OUTPUT_CONTROL_POINT_ID:
         case D3D10_SB_OPERAND_TYPE_INPUT_PRIMITIVEID:
         case D3D11_SB_OPERAND_TYPE_INPUT_FORK_INSTANCE_ID:
         case D3D11_SB_OPERAND_TYPE_INPUT_JOIN_INSTANCE_ID:
-        case D3D11_SB_OPERAND_TYPE_CYCLE_COUNTER:
         case D3D11_SB_OPERAND_TYPE_INPUT_GS_INSTANCE_ID:
-          assert(0);
+          assert(0 && "unimplemented input registers");
           break;
 
         default: {
@@ -569,16 +573,12 @@ Reflection convertDXBC(
           case D3D10_SB_OPERAND_INDEX_1D:
             reg = Inst.m_Operands[0].m_Index[0].m_RegIndex;
             break;
-
           case D3D10_SB_OPERAND_INDEX_2D:
             assert(0 && "Hull/Domain shader not supported yet");
             break;
-
           default:
             assert(0 && "there should no other index dimensions");
           }
-
-          // auto MinPrecision = Inst.m_Operands[0].m_MinPrecision;
 
           if (RegType == D3D10_SB_OPERAND_TYPE_INPUT) {
             auto mask = Inst.m_Operands[0].m_WriteMask >> 4;
@@ -606,26 +606,29 @@ Reflection convertDXBC(
       case D3D10_SB_OPCODE_DCL_INPUT_PS_SIV: {
         unsigned reg = Inst.m_Operands[0].m_Index[0].m_RegIndex;
         auto mask = Inst.m_Operands[0].m_WriteMask >> 4;
-        // auto MinPrecision = Inst.m_Operands[0].m_MinPrecision; // not used
         auto siv = Inst.m_InputPSDeclSIV.Name;
-        auto interpolation =
-          to_air_interpolation(Inst.m_InputPSDeclSIV.InterpolationMode);
+        // auto interpolation =
+        //   to_air_interpolation(Inst.m_InputPSDeclSIV.InterpolationMode);
+        uint32_t assigned_index;
         switch (siv) {
         case D3D10_SB_NAME_RENDER_TARGET_ARRAY_INDEX:
+          assigned_index =
+            func_signature.DefineInput(air::InputRenderTargetArrayIndex{});
           break;
         case D3D10_SB_NAME_VIEWPORT_ARRAY_INDEX:
+          assigned_index =
+            func_signature.DefineInput(air::InputViewportArrayIndex{});
           break;
         default:
           assert(0 && "Unexpected/unhandled input system value");
           break;
         }
-        // prelogue << init_input_reg(assigned_index, reg, mask);
+        prelogue << init_input_reg(assigned_index, reg, mask);
         break;
       }
       case D3D10_SB_OPCODE_DCL_INPUT_PS_SGV: {
         unsigned reg = Inst.m_Operands[0].m_Index[0].m_RegIndex;
         auto mask = Inst.m_Operands[0].m_WriteMask >> 4;
-        // auto MinPrecision = Inst.m_Operands[0].m_MinPrecision; // not used
         auto siv = Inst.m_InputPSDeclSGV.Name;
         auto interpolation =
           to_air_interpolation(Inst.m_InputPSDeclSGV.InterpolationMode);
@@ -634,6 +637,10 @@ Reflection convertDXBC(
           assert(
             interpolation == air::Interpolation::sample_no_perspective
           ); // the only supported interpolation for [[position]]
+          auto assigned_index = func_signature.DefineInput(
+            air::InputPosition{.interpolation = interpolation}
+          );
+          prelogue << init_input_reg(assigned_index, reg, mask);
           break;
         }
         default:
@@ -672,7 +679,6 @@ Reflection convertDXBC(
       case D3D10_SB_OPCODE_DCL_OUTPUT_SIV: {
         unsigned reg = Inst.m_Operands[0].m_Index[0].m_RegIndex;
         auto mask = Inst.m_Operands[0].m_WriteMask >> 4;
-        // auto MinPrecision = Inst.m_Operands[0].m_MinPrecision; // not used
         auto siv = Inst.m_OutputDeclSIV.Name;
         switch (siv) {
         case D3D10_SB_NAME_CLIP_DISTANCE: {
@@ -702,8 +708,12 @@ Reflection convertDXBC(
       case D3D10_SB_OPCODE_DCL_OUTPUT: {
         D3D10_SB_OPERAND_TYPE RegType = Inst.m_Operands[0].m_Type;
         switch (RegType) {
-        case D3D10_SB_OPERAND_TYPE_OUTPUT_DEPTH:
-        case D3D11_SB_OPERAND_TYPE_OUTPUT_DEPTH_GREATER_EQUAL:
+        case D3D10_SB_OPERAND_TYPE_OUTPUT_DEPTH: {
+          break;
+        }
+        case D3D11_SB_OPERAND_TYPE_OUTPUT_DEPTH_GREATER_EQUAL: {
+          break;
+        }
         case D3D11_SB_OPERAND_TYPE_OUTPUT_DEPTH_LESS_EQUAL: {
           break;
         }
@@ -746,16 +756,18 @@ Reflection convertDXBC(
       }
       case D3D10_SB_OPCODE_CUSTOMDATA: {
         if (Inst.m_CustomData.Type == D3D10_SB_CUSTOMDATA_DCL_IMMEDIATE_CONSTANT_BUFFER) {
-          unsigned Size = Inst.m_CustomData.DataSizeInBytes >> 2;
-          DXASSERT_DXBC(Inst.m_CustomData.DataSizeInBytes == Size * 4);
+          // must be list of 4-tuples
+          unsigned size_in_vec4 = Inst.m_CustomData.DataSizeInBytes >> 4;
+          DXASSERT_DXBC(Inst.m_CustomData.DataSizeInBytes == size_in_vec4 * 16);
           shader_info->immConstantBufferData.assign(
-            (uint32_t *)Inst.m_CustomData.pData,
-            ((uint32_t *)Inst.m_CustomData.pData) + Size
+            (std::array<uint32_t, 4> *)Inst.m_CustomData.pData,
+            ((std::array<uint32_t, 4> *)Inst.m_CustomData.pData) + size_in_vec4
           );
         }
         break;
       }
       case D3D10_SB_OPCODE_DCL_INDEX_RANGE:
+        break; // ignore, and it turns out backend compiler can handle alloca
       case D3D10_SB_OPCODE_DCL_GS_INPUT_PRIMITIVE:
       case D3D10_SB_OPCODE_DCL_GS_OUTPUT_PRIMITIVE_TOPOLOGY:
       case D3D10_SB_OPCODE_DCL_MAX_OUTPUT_VERTEX_COUNT:
@@ -796,7 +808,6 @@ Reflection convertDXBC(
   assert(_.get() == return_point.get());
 
   // post convert
-  io_binding_map resource_map;
   for (auto &[range_id, cbv] : shader_info->cbufferMap) {
     // TODO: abstract SM 5.0 binding
     auto index = binding_table.DefineBuffer(
@@ -866,6 +877,30 @@ Reflection convertDXBC(
       //
     }
   }
+  air::AirType types(context);
+  if (shader_info->immConstantBufferData.size()) {
+    auto type = llvm::ArrayType::get(
+      types._int4, shader_info->immConstantBufferData.size()
+    );
+    auto const_data = llvm::ConstantArray::get(
+      type,
+      shader_info->immConstantBufferData |
+        [&](auto data) {
+          return llvm::ConstantVector::get(
+            {llvm::ConstantInt::get(context, llvm::APInt{32, data[0], false}),
+             llvm::ConstantInt::get(context, llvm::APInt{32, data[1], false}),
+             llvm::ConstantInt::get(context, llvm::APInt{32, data[2], false}),
+             llvm::ConstantInt::get(context, llvm::APInt{32, data[3], false})}
+          );
+        }
+    );
+    llvm::GlobalVariable *icb = new llvm::GlobalVariable(
+      module, type, const_data, llvm::GlobalValue::InternalLinkage, nullptr,
+      "icb", nullptr, llvm::GlobalValue::NotThreadLocal, 2
+    );
+    icb->setAlignment(llvm::Align(16));
+    resource_map.icb = icb;
+  }
 
   if (!binding_table.empty()) {
     auto [type, metadata] = binding_table.Build(context, module);
@@ -883,7 +918,6 @@ Reflection convertDXBC(
   auto [function, function_metadata] =
     func_signature.CreateFunction("shader_main", context, module);
 
-  air::AirType types(context);
   auto entry_bb = llvm::BasicBlock::Create(context, "entry", function);
   auto epilogue_bb = llvm::BasicBlock::Create(context, "epilogue", function);
   llvm::IRBuilder<> builder(entry_bb);
@@ -896,6 +930,14 @@ Reflection convertDXBC(
   resource_map.temp_register_file = builder.CreateAlloca(
     llvm::ArrayType::get(types._int4, shader_info->tempRegisterCount)
   );
+  for (auto &[idx, info] : shader_info->indexableTempRegisterCounts) {
+    auto &[numRegisters, mask] = info;
+    auto channel_count = std::bit_width(mask);
+    resource_map.indexable_temp_map[idx] =
+      builder.CreateAlloca(llvm::ArrayType::get(
+        llvm::FixedVectorType::get(types._int, channel_count), numRegisters
+      ));
+  }
 
   struct context ctx {
     .builder = builder, .llvm = context, .module = module, .function = function,
@@ -908,7 +950,7 @@ Reflection convertDXBC(
 
   builder.SetInsertPoint(epilogue_bb);
   auto value = epilogue.build(ctx);
-  if(value == nullptr) {
+  if (value == nullptr) {
     builder.CreateRetVoid();
   } else {
     builder.CreateRet(value);

@@ -453,6 +453,38 @@ auto FunctionSignatureBuilder::CreateFunction(
 
           return msl_float4.get_llvm_type(context);
         },
+        [&](const InputThreadgroupPositionInGrid &) {
+          metadata_field.string("air.threadgroup_position_in_grid")
+            ->string("air.arg_type_name")
+            ->string("uint3") // HARDCODED
+            ->string("air.arg_name")
+            ->string("mtl_threadgroup_position_in_grid");
+          return msl_uint3.get_llvm_type(context);
+        },
+        [&](const InputThreadPositionInGrid &) {
+          metadata_field.string("air.thread_position_in_grid")
+            ->string("air.arg_type_name")
+            ->string("uint3") // HARDCODED
+            ->string("air.arg_name")
+            ->string("mtl_thread_position_in_grid");
+          return msl_uint3.get_llvm_type(context);
+        },
+        [&](const InputThreadPositionInThreadgroup &) {
+          metadata_field.string("air.thread_position_in_threadgroup")
+            ->string("air.arg_type_name")
+            ->string("uint3") // HARDCODED
+            ->string("air.arg_name")
+            ->string("mtl_thread_position_in_threadgroup");
+          return msl_uint3.get_llvm_type(context);
+        },
+        [&](const InputThreadIndexInThreadgroup &) {
+          metadata_field.string("air.thread_index_in_threadgroup")
+            ->string("air.arg_type_name")
+            ->string("uint") // HARDCODED
+            ->string("air.arg_name")
+            ->string("mtl_thread_index_in_threadgroup");
+          return msl_uint.get_llvm_type(context);
+        },
         [](auto _) {
           assert(0 && "Unhandled input");
           return (llvm::Type *)nullptr;

@@ -496,8 +496,6 @@ struct InputVertexStageIn {
   std::string name;
 };
 
-struct InputVertexID {};
-
 struct OutputVertex {
   std::string user;
   MSLScalerOrVectorType type;
@@ -513,28 +511,43 @@ struct InputFragmentStageIn {
   Interpolation interpolation;
 };
 
-struct InputPrimitiveID {};
+struct InputVertexID {};
+struct InputInstanceID {};
 struct InputViewportArrayIndex {};
 struct InputRenderTargetArrayIndex {};
+
+struct InputPrimitiveID {};
 struct InputFrontFacing {};
+struct InputInputCoverage {};
+struct InputSampleIndex {};
 
 struct InputPosition {
   Interpolation interpolation;
 };
+
+struct InputThreadIndexInThreadgroup {};    // uint
+struct InputThreadPositionInThreadgroup {}; // uint3
+struct InputThreadPositionInGrid {};        // uint3
+struct InputThreadgroupPositionInGrid {};   // uint3
 
 struct OutputRenderTarget {
   uint32_t index;
   MSLScalerOrVectorType type;
 };
 
+struct OutputDepth {};
+
 using FunctionInput = template_concat_t<
   FunctionArguments,
   std::variant<
     /* vertex */
-    InputVertexID, InputVertexStageIn,
+    InputVertexID, InputVertexStageIn, InputInstanceID,
     /* fragment */
     InputPrimitiveID, InputViewportArrayIndex, InputRenderTargetArrayIndex,
-    InputFrontFacing, InputPosition, InputFragmentStageIn>>;
+    InputFrontFacing, InputPosition, InputFragmentStageIn,
+    /* kernel */
+    InputThreadIndexInThreadgroup, InputThreadPositionInThreadgroup,
+    InputThreadPositionInGrid, InputThreadgroupPositionInGrid>>;
 
 using FunctionOutput = std::variant<
   /* vertex */

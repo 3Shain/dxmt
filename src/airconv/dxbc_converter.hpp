@@ -629,7 +629,7 @@ struct ThreadgroupBufferInfo {
 
 class ShaderInfo {
 public:
-  std::vector<uint32_t> immConstantBufferData;
+  std::vector<std::array<uint32_t,4>> immConstantBufferData;
   std::map<uint32_t, ShaderResourceViewInfo> srvMap;
   std::map<uint32_t, UnorderedAccessViewInfo> uavMap;
   std::map<uint32_t, ConstantBufferInfo> cbufferMap;

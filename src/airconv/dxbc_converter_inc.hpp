@@ -10,6 +10,7 @@
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/Function.h"
+#include "llvm/IR/GlobalVariable.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/LLVMContext.h"
@@ -38,6 +39,7 @@ using IREffect = ReaderIO<context, std::monostate>;
 using IndexedIRValue = std::function<IRValue(pvalue)>;
 
 struct io_binding_map {
+  llvm::GlobalVariable *icb;
   std::unordered_map<uint32_t, IndexedIRValue> cb_range_map;
   std::unordered_map<uint32_t, IndexedIRValue> sampler_range_map;
   std::unordered_map<uint32_t, std::pair<air::MSLTexture, IndexedIRValue>>
@@ -45,9 +47,21 @@ struct io_binding_map {
   std::unordered_map<uint32_t, std::pair<air::MSLTexture, IndexedIRValue>>
     uav_range_map;
   std::unordered_map<uint32_t, llvm::AllocaInst *> indexable_temp_map;
-  llvm::AllocaInst *input_register_file;
-  llvm::AllocaInst *output_register_file;
-  llvm::AllocaInst *temp_register_file;
+  llvm::AllocaInst *input_register_file = nullptr;
+  llvm::AllocaInst *output_register_file = nullptr;
+  llvm::AllocaInst *temp_register_file = nullptr;
+  // TODO: tgsm
+
+  // special registers (input)
+  uint32_t thread_id_arg_index = -1;
+  uint32_t thread_group_id_arg_index = -1;
+  uint32_t thread_id_in_group_arg_index = -1;
+  uint32_t thread_id_in_group_flat_arg_index = -1;
+
+  // special registers (output)
+  llvm::AllocaInst *depth_output_reg = nullptr;
+  llvm::AllocaInst *stencil_ref_reg = nullptr;
+  llvm::AllocaInst *coverage_mask_reg = nullptr;
 };
 
 struct context {
