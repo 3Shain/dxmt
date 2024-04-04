@@ -613,10 +613,13 @@ auto call_integer_binop(
     );
     auto operand_type = dimension == 4   ? types._int4
                         : dimension == 3 ? types._int3
-                                         : types._int2;
+                        : dimension == 2 ? types._int2
+                                         : types._int;
     auto fn = (module.getOrInsertFunction(
-      "air." + op + (is_signed ? ".s" : ".u") + ".v" +
-        std::to_string(dimension) + "i32",
+      "air." + op +
+        type_overload_suffix(
+          operand_type, is_signed ? air::Sign::with_sign : air::Sign::no_sign
+        ),
       llvm::FunctionType::get(
         operand_type, {operand_type, operand_type}, false
       ),
@@ -641,7 +644,8 @@ auto call_float_unary_op(std::string op, pvalue a) {
     );
     auto operand_type = dimension == 4   ? types._float4
                         : dimension == 3 ? types._float3
-                                         : types._float2;
+                        : dimension == 2 ? types._float2
+                                         : types._float;
     auto fn = (module.getOrInsertFunction(
       "air." + op + type_overload_suffix(operand_type),
       llvm::FunctionType::get(operand_type, {operand_type}, false), att
@@ -686,34 +690,22 @@ auto call_float_binop(std::string op, pvalue a, pvalue b) {
 };
 
 auto call_abs(uint32_t dimension, pvalue fvec) {
-  return make_irvalue([=](context ctx) {
-    using namespace llvm;
-    auto &context = ctx.llvm;
-    auto &module = ctx.module;
-    auto &types = ctx.types;
-    auto att = AttributeList::get(
-      context, {std::make_pair<unsigned int, Attribute>(
-                  ~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)
-                ),
-                std::make_pair<unsigned int, Attribute>(
-                  ~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)
-                ),
-                std::make_pair<unsigned int, Attribute>(
-                  ~0U, Attribute::get(context, Attribute::AttrKind::ReadNone)
-                )}
-    );
-    auto operand_type = dimension == 4   ? types._float4
-                        : dimension == 3 ? types._float3
-                                         : types._float2;
-    auto fn = (module.getOrInsertFunction(
-      ctx.builder.getFastMathFlags().isFast()
-        ? "air.fast_fabs.v" + std::to_string(dimension) + "f32"
-        : "air.fabs.v" + std::to_string(dimension) + "f32",
-      llvm::FunctionType::get(operand_type, {operand_type}, false), att
-    ));
-    return ctx.builder.CreateCall(fn, {fvec});
-  });
+  return call_float_unary_op("fabs", fvec);
 };
+
+auto pure(pvalue p) {
+  return make_irvalue([=](auto) { return p; });
+}
+
+auto saturate(bool sat) {
+  return [sat](pvalue floaty) {
+    if (sat) {
+      return call_float_unary_op("saturate", floaty);
+    } else {
+      return pure(floaty);
+    }
+  };
+}
 
 IRValue call_sample(
   air::MSLTexture texture_type, pvalue handle, pvalue sampler, pvalue coord,
@@ -1196,7 +1188,53 @@ auto convertBasicBlocks(
         std::visit(
           patterns{
             [&](InstMov mov) {
-              effect << store_dst_op<true>(mov.dst, load_src_op<true>(mov.src));
+              effect << store_dst_op<true>(
+                mov.dst, load_src_op<true>(mov.src) >>= saturate(mov._.saturate)
+              );
+            },
+            [&](InstMovConditional movc) {
+              effect << store_dst_op<true>(
+                movc.dst,
+                make_irvalue_bind([=](struct context ctx) -> IRValue {
+                  auto src0 = co_yield load_src_op<true>(movc.src0);
+                  auto src1 = co_yield load_src_op<true>(movc.src1);
+                  auto cond = co_yield load_src_op<false>(movc.src_cond);
+                  co_return ctx.builder.CreateSelect(
+                    ctx.builder.CreateICmpNE(
+                      cond, llvm::ConstantAggregateZero::get(ctx.types._int4)
+                    ),
+                    src0, src1
+                  );
+                }) >>= saturate(movc._.saturate)
+              );
+            },
+            [&](InstSwapConditional swapc) {
+              effect << make_effect_bind([=](struct context ctx) -> IREffect {
+                auto src0 = co_yield load_src_op<true>(swapc.src0);
+                auto src1 = co_yield load_src_op<true>(swapc.src1);
+                auto cond = co_yield load_src_op<false>(swapc.src_cond);
+                co_yield store_dst_op<true>(
+                  swapc.dst0, make_irvalue([=](auto ctx) {
+                    return ctx.builder.CreateSelect(
+                      ctx.builder.CreateICmpNE(
+                        cond, llvm::ConstantAggregateZero::get(ctx.types._int4)
+                      ),
+                      src1, src0
+                    );
+                  })
+                );
+                co_yield store_dst_op<true>(
+                  swapc.dst1, make_irvalue([=](auto ctx) {
+                    return ctx.builder.CreateSelect(
+                      ctx.builder.CreateICmpNE(
+                        cond, llvm::ConstantAggregateZero::get(ctx.types._int4)
+                      ),
+                      src0, src1
+                    );
+                  })
+                );
+                co_return {};
+              });
             },
             [&](InstSample sample) {
               auto [res, res_handle_fn] =
@@ -1450,7 +1488,8 @@ auto convertBasicBlocks(
                 load_src_op<true>(mad.src2),
                 [=](auto a, auto b, auto c) {
                   return store_dst_op<true>(
-                    mad.dst, call_float_mad(4, a, b, c)
+                    mad.dst,
+                    call_float_mad(4, a, b, c) >>= saturate(mad._.saturate)
                   );
                 }
               );
@@ -1525,7 +1564,8 @@ auto convertBasicBlocks(
               } break;
               }
               effect << store_dst_op<true>(
-                unary.dst, load_src_op<true>(unary.src) >>= fn
+                unary.dst, (load_src_op<true>(unary.src) >>= fn) >>=
+                           saturate(unary._.saturate)
               );
             },
             [&](InstFloatBinaryOp bin) {
@@ -1572,20 +1612,24 @@ auto convertBasicBlocks(
                 bin.dst,
                 lift(
                   load_src_op<true>(bin.src0), load_src_op<true>(bin.src1), fn
-                )
+                ) >>= saturate(bin._.saturate)
               );
             },
             [&](InstSinCos sincos) {
               effect << store_dst_op<true>(
-                sincos.dst_cos,
-                load_src_op<true>(sincos.src) >>=
-                [=](auto src) { return call_float_unary_op("cos", src); }
+                sincos.dst_cos, load_src_op<true>(sincos.src) >>=
+                                [=](auto src) {
+                                  return call_float_unary_op("cos", src) >>=
+                                         saturate(sincos._.saturate);
+                                }
               );
 
               effect << store_dst_op<true>(
-                sincos.dst_sin,
-                load_src_op<true>(sincos.src) >>=
-                [=](auto src) { return call_float_unary_op("sin", src); }
+                sincos.dst_sin, load_src_op<true>(sincos.src) >>=
+                                [=](auto src) {
+                                  return call_float_unary_op("sin", src) >>=
+                                         saturate(sincos._.saturate);
+                                }
               );
             },
             // [&](InstIntegerBinaryOpWithTwoDst bin) {

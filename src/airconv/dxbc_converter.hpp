@@ -197,8 +197,18 @@ struct InstMov {
 
 struct InstMovConditional {
   InstructionCommon _;
-  SrcOperand src;
   DstOperand dst;
+  SrcOperand src_cond;
+  SrcOperand src0;
+  SrcOperand src1;
+};
+
+struct InstSwapConditional {
+  DstOperand dst0;
+  DstOperand dst1;
+  SrcOperand src_cond;
+  SrcOperand src0;
+  SrcOperand src1;
 };
 
 } // namespace
@@ -344,7 +354,6 @@ enum class IntegerComparison {
 };
 
 struct InstIntegerCompare {
-  InstructionCommon _;
   IntegerComparison cmp;
   DstOperand dst;
   SrcOperand src0;
@@ -562,7 +571,8 @@ struct InstAtomicImmCmpExchange {
 
 using Instruction = std::variant<
   /* Generic */
-  InstMov, InstMovConditional, InstDotProduct, InstSinCos,               //
+  InstMov, InstMovConditional, InstSwapConditional,                      //
+  InstDotProduct, InstSinCos,                                            //
   InstConvert,                                                           //
   InstIntegerCompare, InstFloatCompare,                                  //
   InstFloatBinaryOp, InstIntegerBinaryOp, InstIntegerBinaryOpWithTwoDst, //
@@ -628,7 +638,7 @@ struct ThreadgroupBufferInfo {
 
 class ShaderInfo {
 public:
-  std::vector<std::array<uint32_t,4>> immConstantBufferData;
+  std::vector<std::array<uint32_t, 4>> immConstantBufferData;
   std::map<uint32_t, ShaderResourceViewInfo> srvMap;
   std::map<uint32_t, UnorderedAccessViewInfo> uavMap;
   std::map<uint32_t, ConstantBufferInfo> cbufferMap;

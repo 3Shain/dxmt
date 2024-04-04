@@ -638,6 +638,24 @@ static auto readInstruction(
       .src = readSrcOperand(Inst.m_Operands[1]),
     };
   };
+  case microsoft::D3D10_SB_OPCODE_MOVC: {
+    return InstMovConditional{
+      ._ = readInstructionCommon(Inst),
+      .dst = readDstOperand(Inst.m_Operands[0]),
+      .src_cond = readSrcOperand(Inst.m_Operands[1]),
+      .src0 = readSrcOperand(Inst.m_Operands[2]),
+      .src1 = readSrcOperand(Inst.m_Operands[3]),
+    };
+  };
+  case microsoft::D3D11_SB_OPCODE_SWAPC: {
+    return InstSwapConditional{
+      .dst0 = readDstOperand(Inst.m_Operands[0]),
+      .dst1 = readDstOperand(Inst.m_Operands[1]),
+      .src_cond = readSrcOperand(Inst.m_Operands[2]),
+      .src0 = readSrcOperand(Inst.m_Operands[3]),
+      .src1 = readSrcOperand(Inst.m_Operands[4]),
+    };
+  };
   case microsoft::D3D10_SB_OPCODE_SAMPLE: {
     auto inst = InstSample{
       .dst = readDstOperand(Inst.m_Operands[0]),
@@ -787,7 +805,7 @@ static auto readInstruction(
     };
   };
   case microsoft::D3D11_SB_OPCODE_BUFINFO: {
-    return InstBufferInfo {
+    return InstBufferInfo{
       .dst = readDstOperand(Inst.m_Operands[0]),
       .src = readSrcResourceOrUAV(Inst.m_Operands[1]),
     };
@@ -1045,7 +1063,6 @@ static auto readInstruction(
   };
   case microsoft::D3D10_SB_OPCODE_IEQ: {
     return InstIntegerCompare{
-      ._ = readInstructionCommon(Inst),
       .cmp = IntegerComparison::Equal,
       .dst = readDstOperand(Inst.m_Operands[0]),
       .src0 = readSrcOperand(Inst.m_Operands[1]),
@@ -1054,7 +1071,6 @@ static auto readInstruction(
   };
   case microsoft::D3D10_SB_OPCODE_INE: {
     return InstIntegerCompare{
-      ._ = readInstructionCommon(Inst),
       .cmp = IntegerComparison::NotEqual,
       .dst = readDstOperand(Inst.m_Operands[0]),
       .src0 = readSrcOperand(Inst.m_Operands[1]),
@@ -1063,7 +1079,6 @@ static auto readInstruction(
   };
   case microsoft::D3D10_SB_OPCODE_IGE: {
     return InstIntegerCompare{
-      ._ = readInstructionCommon(Inst),
       .cmp = IntegerComparison::SignedGreaterEqual,
       .dst = readDstOperand(Inst.m_Operands[0]),
       .src0 = readSrcOperand(Inst.m_Operands[1]),
@@ -1072,7 +1087,6 @@ static auto readInstruction(
   };
   case microsoft::D3D10_SB_OPCODE_ILT: {
     return InstIntegerCompare{
-      ._ = readInstructionCommon(Inst),
       .cmp = IntegerComparison::SignedLessThan,
       .dst = readDstOperand(Inst.m_Operands[0]),
       .src0 = readSrcOperand(Inst.m_Operands[1]),
@@ -1081,7 +1095,6 @@ static auto readInstruction(
   };
   case microsoft::D3D10_SB_OPCODE_UGE: {
     return InstIntegerCompare{
-      ._ = readInstructionCommon(Inst),
       .cmp = IntegerComparison::UnsignedGreaterEqual,
       .dst = readDstOperand(Inst.m_Operands[0]),
       .src0 = readSrcOperand(Inst.m_Operands[1]),
@@ -1090,7 +1103,6 @@ static auto readInstruction(
   };
   case microsoft::D3D10_SB_OPCODE_ULT: {
     return InstIntegerCompare{
-      ._ = readInstructionCommon(Inst),
       .cmp = IntegerComparison::UnsignedLessThan,
       .dst = readDstOperand(Inst.m_Operands[0]),
       .src0 = readSrcOperand(Inst.m_Operands[1]),
