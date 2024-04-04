@@ -465,12 +465,6 @@ static auto readSrcOperand(const microsoft::D3D10ShaderBinary::COperandBase &O)
 
     if (O.m_NumComponents == D3D10_SB_OPERAND_4_COMPONENT) {
       return SrcOperandImmediate32{
-        ._ =
-          {
-            .swizzle = swizzle_identity,
-            .abs = false,
-            .neg = false,
-          },
         .uvalue =
           {
             O.m_Value[0],
@@ -481,12 +475,6 @@ static auto readSrcOperand(const microsoft::D3D10ShaderBinary::COperandBase &O)
       };
     } else {
       return SrcOperandImmediate32{
-        ._ =
-          {
-            .swizzle = swizzle_identity,
-            .abs = false,
-            .neg = false,
-          },
         .uvalue =
           {
             O.m_Value[0],
@@ -725,7 +713,6 @@ static auto readInstruction(
       .src_sampler = readSrcOperandSampler(Inst.m_Operands[3]),
       .offset =
         SrcOperandImmediate32{
-          ._ = {.swizzle = {0, 1, 1, 1}, .abs = false, .neg = false},
           .ivalue = {Inst.m_TexelOffset[0], Inst.m_TexelOffset[1], 0, 0}
         },
     };
@@ -741,7 +728,6 @@ static auto readInstruction(
       .src_reference = readSrcOperand(Inst.m_Operands[4]),
       .offset =
         SrcOperandImmediate32{
-          ._ = {.swizzle = {0, 1, 1, 1}, .abs = false, .neg = false},
           .ivalue = {Inst.m_TexelOffset[0], Inst.m_TexelOffset[1], 0, 0}
         },
     };

@@ -63,7 +63,6 @@ struct SrcOperandCommon {
 };
 
 struct SrcOperandImmediate32 {
-  SrcOperandCommon _;
   union {
     int32_t ivalue[4];
     uint32_t uvalue[4];

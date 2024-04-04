@@ -48,8 +48,11 @@ struct io_binding_map {
     uav_range_map;
   std::unordered_map<uint32_t, llvm::AllocaInst *> indexable_temp_map;
   llvm::AllocaInst *input_register_file = nullptr;
+  llvm::Value *input_register_file_float = nullptr;
   llvm::AllocaInst *output_register_file = nullptr;
+  llvm::Value *output_register_file_float = nullptr;
   llvm::AllocaInst *temp_register_file = nullptr;
+  llvm::Value *temp_register_file_float = nullptr;
   // TODO: tgsm
 
   // special registers (input)
@@ -281,23 +284,6 @@ auto extend_to_vec4(pvalue value) {
   });
 }
 
-auto extend_to_int_vec4(pvalue value) {
-  return make_irvalue([=](context ctx) {
-    auto &types = ctx.types;
-    std::function<pvalue(pvalue)> convert = //
-      [&](pvalue value) -> pvalue {
-      auto ty = value->getType();
-      if (ty == types._int4)
-        return value;
-      if (ty == types._float4)
-        return ctx.builder.CreateBitCast(value, types._int4);
-      return convert(extend_to_vec4(value).build(ctx));
-      assert(0 && "unhandled value type");
-    };
-    return convert(value);
-  });
-};
-
 auto extract_element(uint32_t index) {
   return [=](pvalue vec) {
     return make_irvalue([=](context ctx) {
@@ -310,6 +296,16 @@ auto extract_value(uint32_t index) {
   return [=](pvalue aggregate) {
     return make_irvalue([=](context ctx) {
       return ctx.builder.CreateExtractValue(aggregate, {index});
+    });
+  };
+}
+
+auto swizzle(Swizzle swizzle) {
+  return [=](pvalue vec) {
+    return make_irvalue([=](context ctx) {
+      return ctx.builder.CreateShuffleVector(
+        vec, {swizzle.x, swizzle.y, swizzle.z, swizzle.w}
+      );
     });
   };
 }
@@ -417,41 +413,50 @@ auto cmp_float(llvm::CmpInst::Predicate cmp, pvalue a, pvalue b) {
   });
 };
 
-auto load_at_alloca_array(llvm::AllocaInst *array, pvalue index) -> IRValue {
+auto load_at_alloca_array(llvm::Value *array, pvalue index) -> IRValue {
   return make_irvalue([=](context ctx) {
     auto ptr = ctx.builder.CreateInBoundsGEP(
-      llvm::cast<llvm::ArrayType>(array->getAllocatedType()), array,
-      {ctx.builder.getInt32(0), index}
+      llvm::cast<llvm::PointerType>(array->getType())
+        ->getNonOpaquePointerElementType(),
+      array, {ctx.builder.getInt32(0), index}
     );
     return ctx.builder.CreateLoad(
-      llvm::cast<llvm::ArrayType>(array->getAllocatedType())->getElementType(),
+      llvm::cast<llvm::ArrayType>(llvm::cast<llvm::PointerType>(array->getType()
+                                  )
+                                    ->getNonOpaquePointerElementType())
+        ->getElementType(),
       ptr
     );
   });
 };
 
 auto store_at_alloca_array(
-  llvm::AllocaInst *array, pvalue index, pvalue item_with_matched_type
+  llvm::Value *array, pvalue index, pvalue vec4_type_matched
 ) -> IREffect {
   return make_effect([=](context ctx) {
     auto ptr = ctx.builder.CreateInBoundsGEP(
-      array->getAllocatedType(), array, {ctx.builder.getInt32(0), index}
+      llvm::cast<llvm::PointerType>(array->getType())
+        ->getNonOpaquePointerElementType(),
+      array, {ctx.builder.getInt32(0), index}
     );
-    ctx.builder.CreateStore(item_with_matched_type, ptr);
+    ctx.builder.CreateStore(vec4_type_matched, ptr);
     return std::monostate();
   });
 };
 
-auto store_at_alloca_int_vec4_array_masked(
-  llvm::AllocaInst *array, pvalue index, pvalue item, uint32_t mask,
-  Swizzle swizzle
+auto store_at_vec4_array_masked(
+  llvm::Value *array, pvalue index, pvalue item, uint32_t mask
 ) -> IREffect {
-  return extend_to_int_vec4(item) >>= [=](pvalue ivec4) {
+  return extend_to_vec4(item) >>= [=](pvalue vec4) {
     return make_effect_bind([=](context ctx) {
+      if (mask == 0b1111) {
+        return store_at_alloca_array(array, index, vec4);
+      }
       return load_at_alloca_array(array, index) >>= [=](auto current) {
         auto new_value = ctx.builder.CreateShuffleVector(
-          current, ivec4,
-          (llvm::ArrayRef<int>)create_shuffle_swizzle_mask(mask, swizzle)
+          current, vec4,
+          (llvm::ArrayRef<int>)
+            create_shuffle_swizzle_mask(mask, swizzle_identity)
         );
         return store_at_alloca_array(array, index, new_value);
       };
@@ -465,9 +470,21 @@ auto init_input_reg(uint32_t with_fnarg_at, uint32_t to_reg, uint32_t mask)
     auto arg = ctx.function->getArg(with_fnarg_at);
     auto const_index =
       llvm::ConstantInt::get(ctx.llvm, llvm::APInt{32, to_reg, false});
-    return store_at_alloca_int_vec4_array_masked(
-      ctx.resource.input_register_file, const_index, arg, mask, swizzle_identity
-    );
+    if (arg->getType()->getScalarType()->isIntegerTy()) {
+      assert(
+        arg->getType()->getScalarType() == ctx.types._int &&
+        "TODO: handle non 32 bit integer"
+      );
+      return store_at_vec4_array_masked(
+        ctx.resource.input_register_file, const_index, arg, mask
+      );
+    } else if (arg->getType()->getScalarType()->isFloatTy()) {
+      return store_at_vec4_array_masked(
+        ctx.resource.input_register_file_float, const_index, arg, mask
+      );
+    } else {
+      assert(0 && "TODO: unhandled input type? might be interpolant...");
+    }
   });
 };
 
@@ -922,37 +939,43 @@ IRValue call_texture_atomic_fetch(
   assert(0 && "TODO");
 };
 
-std::function<IRValue(pvalue)>
-apply_src_operand_modifier(SrcOperandCommon c, bool float_op) {
-  return [=](auto ivec4) {
-    return make_irvalue([=](context ctx) {
-      auto ret = ctx.builder.CreateShuffleVector(
-        ivec4, ivec4, create_shuffle_swizzle_mask(0b1111, c.swizzle),
-        "operand_swizzle_"
-      );
-      if (c.abs) {
-        assert(float_op);
-        ret = ctx.builder.CreateBitCast(
-          call_abs(4, ctx.builder.CreateBitCast(ret, ctx.types._float4))
-            .build(ctx),
-          ctx.types._int4
-        );
-      }
-      if (c.neg) {
-        if (float_op) {
-          ret = ctx.builder.CreateBitCast(
-            ctx.builder.CreateFNeg(
-              ctx.builder.CreateBitCast(ret, ctx.types._float4)
-            ),
-            ctx.types._int4
-          );
-        } else {
-          ret = ctx.builder.CreateNeg(ret);
-        }
-      }
-      return ret;
-    });
-  };
+IRValue
+apply_float_src_operand_modifier(SrcOperandCommon c, llvm::Value *fvec4) {
+  auto ctx = co_yield get_context();
+  assert(fvec4->getType() == ctx.types._float4);
+
+  auto ret = fvec4;
+  if (c.swizzle != swizzle_identity) {
+    ret = ctx.builder.CreateShuffleVector(
+      ret, {c.swizzle.x, c.swizzle.y, c.swizzle.z, c.swizzle.w}
+    );
+  }
+  if (c.abs) {
+    ret = co_yield call_abs(4, ret);
+  }
+  if (c.neg) {
+    ret = ctx.builder.CreateFNeg(ret);
+  }
+  co_return ret;
+};
+
+IRValue
+apply_integer_src_operand_modifier(SrcOperandCommon c, llvm::Value *ivec4) {
+  auto ctx = co_yield get_context();
+  assert(ivec4->getType() == ctx.types._int4);
+  auto ret = ivec4;
+  if (c.swizzle != swizzle_identity) {
+    ret = ctx.builder.CreateShuffleVector(
+      ret, {c.swizzle.x, c.swizzle.y, c.swizzle.z, c.swizzle.w}
+    );
+  }
+  if (c.abs) {
+    assert(0 && "otherwise dxbc spec is wrong");
+  }
+  if (c.neg) {
+    ret = ctx.builder.CreateNeg(ret);
+  }
+  co_return ret;
 };
 
 /* should provide single i32 value */
@@ -987,96 +1010,163 @@ auto load_operand_index(OperandIndex idx) {
   );
 }
 
-auto load_src_operand(SrcOperand src, bool float_op = true) -> IRValue {
+template <typename Operand, bool ReadFloat> IRValue load_src(Operand) {
+  assert(0 && "operation not implemented");
+};
+
+template <bool ReadFloat> IRValue load_src_op(SrcOperand src) {
   return std::visit(
-    patterns{
-      [&](SrcOperandInput input) {
-        return make_irvalue_bind([=](context ctx) {
-                 return load_at_alloca_array(
-                   ctx.resource.input_register_file,
-                   ctx.builder.getInt32(input.regid)
-                 );
-               }) >>= apply_src_operand_modifier(input._, float_op);
-      },
-      [&](SrcOperandImmediate32 imm) {
-        return make_irvalue([=](context ctx) {
-                 return llvm::ConstantDataVector::get(ctx.llvm, imm.uvalue);
-               }) >>= apply_src_operand_modifier(imm._, float_op);
-      },
-      [&](SrcOperandTemp temp) {
-        return make_irvalue_bind([=](context ctx) {
-                 return load_at_alloca_array(
-                   ctx.resource.temp_register_file,
-                   ctx.builder.getInt32(temp.regid)
-                 );
-               }) >>= apply_src_operand_modifier(temp._, float_op);
-      },
-      [&](SrcOperandConstantBuffer cb) {
-        return make_irvalue([=](context ctx) {
-                 auto cb_handle =
-                   ctx.resource
-                     .cb_range_map
-                       [cb.rangeid](nullptr /* TODO: rangeindex for SM51*/)
-                     .build(ctx);
-                 assert(cb_handle);
-                 auto ptr = ctx.builder.CreateGEP(
-                   ctx.types._int4, cb_handle,
-                   {load_operand_index(cb.regindex).build(ctx)}
-                 );
-                 return ctx.builder.CreateLoad(ctx.types._int4, ptr);
-               }) >>= apply_src_operand_modifier(cb._, float_op);
-      },
-      [](auto) {
-        assert(0 && "unhandled operand");
-        return make_irvalue([=](context ctx) { return nullptr; });
-      }
-    },
-    src
+    [](auto src) { return load_src<decltype(src), ReadFloat>(src); }, src
   );
 };
 
-auto store_dst_operand(
-  DstOperand dst, IRValue &&value, Swizzle s = swizzle_identity
-) -> IREffect {
+template <>
+IRValue load_src<SrcOperandConstantBuffer, false>(SrcOperandConstantBuffer cb) {
+  auto ctx = co_yield get_context();
+  auto cb_handle = co_yield ctx.resource.cb_range_map[cb.rangeid](nullptr);
+  assert(cb_handle);
+  auto ptr = ctx.builder.CreateGEP(
+    ctx.types._int4, cb_handle, {load_operand_index(cb.regindex).build(ctx)}
+  );
+  co_return co_yield apply_integer_src_operand_modifier(
+    cb._, ctx.builder.CreateLoad(ctx.types._int4, ptr)
+  );
+};
+
+template <>
+IRValue load_src<SrcOperandConstantBuffer, true>(SrcOperandConstantBuffer cb) {
+  auto ctx = co_yield get_context();
+  auto cb_handle = co_yield ctx.resource.cb_range_map[cb.rangeid](nullptr);
+  assert(cb_handle);
+  auto ptr = ctx.builder.CreateGEP(
+    ctx.types._int4, cb_handle, {load_operand_index(cb.regindex).build(ctx)}
+  );
+  auto vec = ctx.builder.CreateBitCast(
+    ctx.builder.CreateLoad(ctx.types._int4, ptr), ctx.types._float4
+  );
+  co_return co_yield apply_float_src_operand_modifier(cb._, vec);
+};
+
+template <>
+IRValue load_src<SrcOperandImmediate32, false>(SrcOperandImmediate32 imm) {
+  return make_irvalue([=](context ctx) {
+    return llvm::ConstantDataVector::get(ctx.llvm, imm.uvalue);
+  });
+};
+
+template <>
+IRValue load_src<SrcOperandImmediate32, true>(SrcOperandImmediate32 imm) {
+  return make_irvalue([=](context ctx) {
+    return llvm::ConstantDataVector::get(ctx.llvm, imm.fvalue);
+  });
+};
+
+template <> IRValue load_src<SrcOperandTemp, true>(SrcOperandTemp temp) {
+  auto ctx = co_yield get_context();
+  auto s = co_yield load_at_alloca_array(
+    ctx.resource.temp_register_file_float, ctx.builder.getInt32(temp.regid)
+  );
+  co_return co_yield apply_float_src_operand_modifier(temp._, s);
+};
+
+template <> IRValue load_src<SrcOperandTemp, false>(SrcOperandTemp temp) {
+  auto ctx = co_yield get_context();
+  auto s = co_yield load_at_alloca_array(
+    ctx.resource.temp_register_file, ctx.builder.getInt32(temp.regid)
+  );
+  co_return (co_yield apply_integer_src_operand_modifier(temp._, s));
+};
+
+template <> IRValue load_src<SrcOperandInput, true>(SrcOperandInput input) {
+  auto ctx = co_yield get_context();
+  auto s = co_yield load_at_alloca_array(
+    ctx.resource.input_register_file_float, ctx.builder.getInt32(input.regid)
+  );
+  co_return co_yield apply_float_src_operand_modifier(input._, s);
+};
+
+template <typename Operand, bool StoreFloat>
+IREffect store_dst(Operand, IRValue &&value) {
+  assert(0 && "operation not implemented");
+};
+
+template <bool StoreFloat>
+IREffect store_dst_op(DstOperand dst, IRValue &&value) {
   return std::visit(
-    patterns{
-      [&](DstOperandNull) {
-        return make_effect([=, value = std::move(value)](auto ctx) mutable {
-          value.build(ctx);
-          return std::monostate();
-        });
-      },
-      [&](DstOperandTemp o) {
-        return make_effect_bind([=, value =
-                                      std::move(value)](context ctx) mutable {
-          auto to_ = value.build(ctx);
-          return store_at_alloca_int_vec4_array_masked(
-            ctx.resource.temp_register_file, ctx.builder.getInt32(o.regid), to_,
-            o._.mask, s
-          );
-        });
-      },
-      [&](DstOperandOutput o) {
-        return make_effect_bind([=, value =
-                                      std::move(value)](context ctx) mutable {
-          auto to_ = value.build(ctx);
-          return store_at_alloca_int_vec4_array_masked(
-            ctx.resource.output_register_file, ctx.builder.getInt32(o.regid),
-            to_, o._.mask, s
-          );
-        });
-      },
-      [&](auto) {
-        assert(0 && "unhandled dst operand");
-        return make_effect([](auto) { return std::monostate(); });
-      }
+    [value = std::move(value)](auto dst) mutable {
+      return store_dst<decltype(dst), StoreFloat>(dst, std::move(value));
     },
     dst
   );
 };
 
+template <>
+IREffect store_dst<DstOperandNull, false>(DstOperandNull, IRValue &&) {
+  co_return {};
+};
+
+template <>
+IREffect store_dst<DstOperandNull, true>(DstOperandNull, IRValue &&) {
+  co_return {};
+};
+
+template <>
+IREffect
+store_dst<DstOperandTemp, false>(DstOperandTemp temp, IRValue &&value) {
+  // coroutine + rvalue reference = SHOOT YOURSELF IN THE FOOT
+  return make_effect_bind(
+    [value = std::move(value), temp](auto ctx) mutable -> IREffect {
+      co_return co_yield store_at_vec4_array_masked(
+        ctx.resource.temp_register_file, co_yield get_int(temp.regid),
+        co_yield std::move(value), temp._.mask
+      );
+    }
+  );
+};
+
+template <>
+IREffect store_dst<DstOperandTemp, true>(DstOperandTemp temp, IRValue &&value) {
+  // coroutine + rvalue reference = SHOOT YOURSELF IN THE FOOT
+  return make_effect_bind(
+    [value = std::move(value), temp](auto ctx) mutable -> IREffect {
+      co_return co_yield store_at_vec4_array_masked(
+        ctx.resource.temp_register_file_float, co_yield get_int(temp.regid),
+        co_yield std::move(value), temp._.mask
+      );
+    }
+  );
+};
+
+template <>
+IREffect
+store_dst<DstOperandOutput, false>(DstOperandOutput output, IRValue &&value) {
+  // coroutine + rvalue reference = SHOOT YOURSELF IN THE FOOT
+  return make_effect_bind(
+    [value = std::move(value), output](auto ctx) mutable -> IREffect {
+      co_return co_yield store_at_vec4_array_masked(
+        ctx.resource.output_register_file, co_yield get_int(output.regid),
+        co_yield std::move(value), output._.mask
+      );
+    }
+  );
+};
+
+template <>
+IREffect
+store_dst<DstOperandOutput, true>(DstOperandOutput output, IRValue &&value) {
+  // coroutine + rvalue reference = SHOOT YOURSELF IN THE FOOT
+  return make_effect_bind(
+    [value = std::move(value), output](auto ctx) mutable -> IREffect {
+      co_return co_yield store_at_vec4_array_masked(
+        ctx.resource.output_register_file_float, co_yield get_int(output.regid),
+        co_yield std::move(value), output._.mask
+      );
+    }
+  );
+};
+
 auto load_condition(SrcOperand src, bool non_zero_test) {
-  return load_src_operand(src, false) >>= [=](pvalue condition_src) {
+  return load_src_op<false>(src) >>= [=](pvalue condition_src) {
     return make_irvalue([=](context ctx) {
       auto element =
         ctx.builder.CreateExtractElement(condition_src, (uint64_t)0);
@@ -1106,7 +1196,7 @@ auto convertBasicBlocks(
         std::visit(
           patterns{
             [&](InstMov mov) {
-              effect << store_dst_operand(mov.dst, load_src_operand(mov.src));
+              effect << store_dst_op<true>(mov.dst, load_src_op<true>(mov.src));
             },
             [&](InstSample sample) {
               auto [res, res_handle_fn] =
@@ -1123,14 +1213,14 @@ auto convertBasicBlocks(
               );
               effect << lift(
                 res_handle_fn(nullptr), sampler_handle_fn(nullptr),
-                load_src_operand(sample.src_address) >>= to_float2,
+                load_src_op<true>(sample.src_address) >>= to_float2,
                 [=, res = res](pvalue res_h, pvalue sampler_h, pvalue coord) {
-                  return store_dst_operand(
+                  return store_dst_op<true>(
                     sample.dst,
-                    call_sample(
-                      res, res_h, sampler_h, coord, nullptr, offset_const
-                    ) >>= extract_value(0),
-                    sample.src_resource.read_swizzle
+                    (call_sample(
+                       res, res_h, sampler_h, coord, nullptr, offset_const
+                     ) >>= extract_value(0)) >>=
+                    swizzle(sample.src_resource.read_swizzle)
                   );
                 }
               );
@@ -1157,17 +1247,15 @@ auto convertBasicBlocks(
                 pred = llvm::CmpInst::ICMP_UGE;
                 break;
               }
-              effect << store_dst_operand(
+              effect << store_dst_op<false>(
                 icmp.dst,
                 lift(
-                  load_src_operand(icmp.src0, false),
-                  load_src_operand(icmp.src1, false),
+                  load_src_op<false>(icmp.src0), load_src_op<false>(icmp.src1),
                   [=](auto a, auto b) { return cmp_integer(pred, a, b); }
                 )
               );
             },
             [&](InstIntegerUnaryOp unary) {
-              auto src = load_src_operand(unary.src, false);
               std::function<IRValue(pvalue)> fn;
               switch (unary.op) {
               case IntegerUnaryOp::Neg:
@@ -1204,7 +1292,9 @@ auto convertBasicBlocks(
                 assert(0 && "TODO: should be polyfilled");
                 break;
               }
-              effect << store_dst_operand(unary.dst, std::move(src) >>= fn);
+              effect << store_dst_op<false>(
+                unary.dst, load_src_op<false>(unary.src) >>= fn
+              );
             },
             [&](InstIntegerBinaryOp bin) {
               std::function<IRValue(pvalue, pvalue)> fn;
@@ -1285,11 +1375,11 @@ auto convertBasicBlocks(
                 };
                 break;
               }
-              effect << store_dst_operand(
-                bin.dst, lift(
-                           load_src_operand(bin.src0, false),
-                           load_src_operand(bin.src1, false), fn
-                         )
+              effect << store_dst_op<false>(
+                bin.dst,
+                lift(
+                  load_src_op<false>(bin.src0), load_src_op<false>(bin.src1), fn
+                )
               );
             },
             [&](InstFloatCompare fcmp) {
@@ -1308,10 +1398,10 @@ auto convertBasicBlocks(
                 pred = llvm::CmpInst::FCMP_OLT;
                 break;
               }
-              effect << store_dst_operand(
+              effect << store_dst_op<true>(
                 fcmp.dst,
                 lift(
-                  load_src_operand(fcmp.src0), load_src_operand(fcmp.src1),
+                  load_src_op<true>(fcmp.src0), load_src_op<true>(fcmp.src1),
                   [=](auto a, auto b) { return cmp_float(pred, a, b); }
                 )
               );
@@ -1320,28 +1410,33 @@ auto convertBasicBlocks(
               switch (dp.dimension) {
               case 4:
                 effect << lift(
-                  load_src_operand(dp.src0) >>= to_float4,
-                  load_src_operand(dp.src1) >>= to_float4,
+                  load_src_op<true>(dp.src0), load_src_op<true>(dp.src1),
                   [=](auto a, auto b) {
-                    return store_dst_operand(dp.dst, call_dot_product(4, a, b));
+                    return store_dst_op<true>(
+                      dp.dst, call_dot_product(4, a, b)
+                    );
                   }
                 );
                 break;
               case 3:
                 effect << lift(
-                  load_src_operand(dp.src0) >>= to_float3,
-                  load_src_operand(dp.src1) >>= to_float3,
+                  load_src_op<true>(dp.src0) >>= to_float3,
+                  load_src_op<true>(dp.src1) >>= to_float3,
                   [=](auto a, auto b) {
-                    return store_dst_operand(dp.dst, call_dot_product(3, a, b));
+                    return store_dst_op<true>(
+                      dp.dst, call_dot_product(3, a, b)
+                    );
                   }
                 );
                 break;
               case 2:
                 effect << lift(
-                  load_src_operand(dp.src0) >>= to_float2,
-                  load_src_operand(dp.src1) >>= to_float2,
+                  load_src_op<true>(dp.src0) >>= to_float2,
+                  load_src_op<true>(dp.src1) >>= to_float2,
                   [=](auto a, auto b) {
-                    return store_dst_operand(dp.dst, call_dot_product(2, a, b));
+                    return store_dst_op<true>(
+                      dp.dst, call_dot_product(2, a, b)
+                    );
                   }
                 );
                 break;
@@ -1351,22 +1446,22 @@ auto convertBasicBlocks(
             },
             [&](InstFloatMAD mad) {
               effect << lift(
-                load_src_operand(mad.src0) >>= to_float4,
-                load_src_operand(mad.src1) >>= to_float4,
-                load_src_operand(mad.src2) >>= to_float4,
+                load_src_op<true>(mad.src0), load_src_op<true>(mad.src1),
+                load_src_op<true>(mad.src2),
                 [=](auto a, auto b, auto c) {
-                  return store_dst_operand(mad.dst, call_float_mad(4, a, b, c));
+                  return store_dst_op<true>(
+                    mad.dst, call_float_mad(4, a, b, c)
+                  );
                 }
               );
             },
             [&](InstIntegerMAD mad) {
               // FIXME: this looks wrong, what's the sign specific behavior?
               effect << lift(
-                load_src_operand(mad.src0, false),
-                load_src_operand(mad.src1, false),
-                load_src_operand(mad.src2, false),
+                load_src_op<false>(mad.src0), load_src_op<false>(mad.src1),
+                load_src_op<false>(mad.src2),
                 [=](auto a, auto b, auto c) {
-                  return store_dst_operand(
+                  return store_dst_op<false>(
                     mad.dst, make_irvalue([=](struct context ctx) {
                       return ctx.builder.CreateAdd(
                         ctx.builder.CreateMul(a, b), c
@@ -1429,8 +1524,8 @@ auto convertBasicBlocks(
                 break;
               } break;
               }
-              effect << store_dst_operand(
-                unary.dst, (load_src_operand(unary.src) >>= to_float4) >>= fn
+              effect << store_dst_op<true>(
+                unary.dst, load_src_op<true>(unary.src) >>= fn
               );
             },
             [&](InstFloatBinaryOp bin) {
@@ -1473,23 +1568,23 @@ auto convertBasicBlocks(
                 break;
               }
               }
-              effect << store_dst_operand(
-                bin.dst, lift(
-                           load_src_operand(bin.src0) >>= to_float4,
-                           load_src_operand(bin.src1) >>= to_float4, fn
-                         )
+              effect << store_dst_op<true>(
+                bin.dst,
+                lift(
+                  load_src_op<true>(bin.src0), load_src_op<true>(bin.src1), fn
+                )
               );
             },
             [&](InstSinCos sincos) {
-              effect << store_dst_operand(
+              effect << store_dst_op<true>(
                 sincos.dst_cos,
-                (load_src_operand(sincos.src) >>= to_float4) >>=
+                load_src_op<true>(sincos.src) >>=
                 [=](auto src) { return call_float_unary_op("cos", src); }
               );
 
-              effect << store_dst_operand(
+              effect << store_dst_op<true>(
                 sincos.dst_sin,
-                (load_src_operand(sincos.src) >>= to_float4) >>=
+                load_src_op<true>(sincos.src) >>=
                 [=](auto src) { return call_float_unary_op("sin", src); }
               );
             },

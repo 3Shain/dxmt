@@ -924,11 +924,24 @@ Reflection convertDXBC(
   builder.getFastMathFlags().setFast(true);
   resource_map.input_register_file =
     builder.CreateAlloca(llvm::ArrayType::get(types._int4, max_input_register));
+  resource_map.input_register_file_float = builder.CreateBitCast(
+    resource_map.input_register_file,
+    llvm::ArrayType::get(types._float4, max_input_register)->getPointerTo()
+  );
   resource_map.output_register_file =
     builder.CreateAlloca(llvm::ArrayType::get(types._int4, max_output_register)
     );
+  resource_map.output_register_file_float = builder.CreateBitCast(
+    resource_map.output_register_file,
+    llvm::ArrayType::get(types._float4, max_output_register)->getPointerTo()
+  );
   resource_map.temp_register_file = builder.CreateAlloca(
     llvm::ArrayType::get(types._int4, shader_info->tempRegisterCount)
+  );
+  resource_map.temp_register_file_float = builder.CreateBitCast(
+    resource_map.temp_register_file,
+    llvm::ArrayType::get(types._float4, shader_info->tempRegisterCount)
+      ->getPointerTo()
   );
   for (auto &[idx, info] : shader_info->indexableTempRegisterCounts) {
     auto &[numRegisters, mask] = info;

@@ -125,7 +125,7 @@ void Convert(
   // Optimize the IR!
   MPM.run(*pModule, MAM);
 
-  // pModule->print(outs(), nullptr);
+  pModule->print(outs(), nullptr);
 
   // Serialize AIR
   SmallVector<char, 0> vec;
