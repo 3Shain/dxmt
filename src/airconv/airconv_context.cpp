@@ -8,56 +8,39 @@
 #include "llvm/Passes/OptimizationLevel.h"
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/Support/VersionTuple.h"
-#include "llvm/Transforms/InstCombine/InstCombine.h"
 
-#include "./air_type.hpp"
+#include "airconv_context.hpp"
 #include "airconv_public.h"
 #include "dxbc_converter.hpp"
 #include "metallib_writer.hpp"
 
 using namespace llvm;
-using namespace dxmt::air;
 
 namespace dxmt {
 
-void Convert(
-  const void *dxbc, uint32_t dxbcSize, void **ppAIR, uint32_t *pAIRSize,
-  MetalShaderReflection *reflection
-) {
-
-  LLVMContext context;
-
-  context.setOpaquePointers(false); // I suspect Metal uses LLVM 14...
-
-  AirType types(context);
-
-  IRBuilder<> builder(context);
-  auto pModule = std::make_unique<Module>("shader.air", context);
-  pModule->setSourceFileName("airconv_generated.metal");
-  pModule->setTargetTriple("air64-apple-macosx14.0.0");
-  pModule->setDataLayout(
+void initializeModule(llvm::Module &M, const ModuleOptions &opts) {
+  auto &context = M.getContext();
+  M.setSourceFileName("airconv_generated.metal");
+  M.setTargetTriple("air64-apple-macosx14.0.0");
+  M.setDataLayout(
     "e-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f32:32:32-f64:"
     "64:64-v16:16:16-v24:32:32-v32:32:32-v48:64:64-v64:64:64-v96:128:128-"
     "v128:128:128-v192:256:256-v256:256:256-v512:512:512-v1024:1024:1024-n8:"
     "16:32"
   );
-  pModule->setSDKVersion(VersionTuple(14, 0));
-  pModule->addModuleFlag(Module::ModFlagBehavior::Error, "wchar_size", 4);
-  pModule->addModuleFlag(Module::ModFlagBehavior::Max, "frame-pointer", 2);
-  pModule->addModuleFlag(
-    Module::ModFlagBehavior::Max, "air.max_device_buffers", 31
-  );
-  pModule->addModuleFlag(
-    Module::ModFlagBehavior::Max, "air.max_constant_buffers", 31
-  );
-  pModule->addModuleFlag(
+  M.setSDKVersion(VersionTuple(14, 0));
+  M.addModuleFlag(Module::ModFlagBehavior::Error, "wchar_size", 4);
+  M.addModuleFlag(Module::ModFlagBehavior::Max, "frame-pointer", 2);
+  M.addModuleFlag(Module::ModFlagBehavior::Max, "air.max_device_buffers", 31);
+  M.addModuleFlag(Module::ModFlagBehavior::Max, "air.max_constant_buffers", 31);
+  M.addModuleFlag(
     Module::ModFlagBehavior::Max, "air.max_threadgroup_buffers", 31
   );
-  pModule->addModuleFlag(Module::ModFlagBehavior::Max, "air.max_textures", 128);
-  pModule->addModuleFlag(
+  M.addModuleFlag(Module::ModFlagBehavior::Max, "air.max_textures", 128);
+  M.addModuleFlag(
     Module::ModFlagBehavior::Max, "air.max_read_write_textures", 8
   );
-  pModule->addModuleFlag(Module::ModFlagBehavior::Max, "air.max_samplers", 16);
+  M.addModuleFlag(Module::ModFlagBehavior::Max, "air.max_samplers", 16);
 
   auto createUnsignedInteger = [&](uint32_t s) {
     return ConstantAsMetadata::get(
@@ -66,31 +49,32 @@ void Convert(
   };
   auto createString = [&](auto s) { return MDString::get(context, s); };
 
-  auto airVersion = pModule->getOrInsertNamedMetadata("air.version");
+  auto airVersion = M.getOrInsertNamedMetadata("air.version");
   airVersion->addOperand(MDTuple::get(
     context, {createUnsignedInteger(2), createUnsignedInteger(6),
               createUnsignedInteger(0)}
   ));
-  auto airLangVersion =
-    pModule->getOrInsertNamedMetadata("air.language_version");
+  auto airLangVersion = M.getOrInsertNamedMetadata("air.language_version");
   airLangVersion->addOperand(MDTuple::get(
     context, {createString("Metal"), createUnsignedInteger(3),
               createUnsignedInteger(0), createUnsignedInteger(0)}
   ));
 
-  auto airCompileOptions =
-    pModule->getOrInsertNamedMetadata("air.compile_options");
+  auto airCompileOptions = M.getOrInsertNamedMetadata("air.compile_options");
   airCompileOptions->addOperand(
     MDTuple::get(context, {createString("air.compile.denorms_disable")})
   );
-  airCompileOptions->addOperand(
-    MDTuple::get(context, {createString("air.compile.fast_math_enable")})
-  );
+  airCompileOptions->addOperand(MDTuple::get(
+    context,
+    {opts.enableFastMath ? createString("air.compile.fast_math_enable")
+                         : createString("air.compile.fast_math_disable")}
+  ));
   airCompileOptions->addOperand(MDTuple::get(
     context, {createString("air.compile.framebuffer_fetch_enable")}
   ));
+};
 
-  auto ref = dxbc::convertDXBC(dxbc, dxbcSize, context, *pModule);
+void runOptimizationPasses(llvm::Module &M, llvm::OptimizationLevel opt) {
 
   // Create the analysis managers.
   // These must be declared in this order so that they are destroyed in the
@@ -113,17 +97,31 @@ void Convert(
   PB.registerLoopAnalyses(LAM);
   PB.crossRegisterProxies(LAM, FAM, CGAM, MAM);
 
-  ModulePassManager MPM =
-    PB.buildPerModuleDefaultPipeline(OptimizationLevel::O1);
+  ModulePassManager MPM = PB.buildPerModuleDefaultPipeline(opt);
 
   FunctionPassManager FPM;
   FPM.addPass(VerifierPass());
-  FPM.addPass(llvm::InstCombinePass());
 
   MPM.addPass(createModuleToFunctionPassAdaptor(std::move(FPM)));
 
   // Optimize the IR!
-  MPM.run(*pModule, MAM);
+  MPM.run(M, MAM);
+}
+
+void Convert(
+  const void *dxbc, uint32_t dxbcSize, void **ppAIR, uint32_t *pAIRSize,
+  MetalShaderReflection *reflection
+) {
+  LLVMContext context;
+
+  context.setOpaquePointers(false); // I suspect Metal uses LLVM 14...
+
+  auto pModule = std::make_unique<Module>("shader.air", context);
+  initializeModule(*pModule, {.enableFastMath = true});
+
+  auto ref = dxbc::convertDXBC(dxbc, dxbcSize, context, *pModule);
+
+  runOptimizationPasses(*pModule, OptimizationLevel::O1);
 
   pModule->print(outs(), nullptr);
 

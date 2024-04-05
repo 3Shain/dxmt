@@ -453,6 +453,7 @@ auto store_at_vec4_array_masked(
         return store_at_alloca_array(array, index, vec4);
       }
       return load_at_alloca_array(array, index) >>= [=](auto current) {
+        assert(current->getType() == vec4->getType());
         auto new_value = ctx.builder.CreateShuffleVector(
           current, vec4,
           (llvm::ArrayRef<int>)
@@ -1436,7 +1437,7 @@ auto convertBasicBlocks(
                 pred = llvm::CmpInst::FCMP_OLT;
                 break;
               }
-              effect << store_dst_op<true>(
+              effect << store_dst_op<false>(
                 fcmp.dst,
                 lift(
                   load_src_op<true>(fcmp.src0), load_src_op<true>(fcmp.src1),

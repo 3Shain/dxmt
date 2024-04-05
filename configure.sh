@@ -23,6 +23,9 @@ cmake -B ./toolchains/llvm-build -S ./toolchains/llvm-project/llvm -DCMAKE_SYSTE
   -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_SYSROOT="$(pwd)/toolchains/llvm-mingw-20231017-ucrt-macos-universal" \
   -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc \
+  -DBUG_REPORT_URL="https://github.com/3Shain/dxmt" \
+  -DPACKAGE_VENDOR="DXMT" \
+  -DLLVM_VERSION_PRINTER_SHOW_HOST_TARGET_INFO=Off \
   -G Ninja
 pushd ./toolchains/llvm-build
 ninja
