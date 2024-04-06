@@ -579,11 +579,46 @@ Reflection convertDXBC(
 
         case D3D11_SB_OPERAND_TYPE_CYCLE_COUNTER:
           break; // ignore it atm
-        case D3D11_SB_OPERAND_TYPE_INPUT_THREAD_ID:
-        case D3D11_SB_OPERAND_TYPE_INPUT_THREAD_GROUP_ID:
-        case D3D11_SB_OPERAND_TYPE_INPUT_THREAD_ID_IN_GROUP:
-        case D3D11_SB_OPERAND_TYPE_INPUT_THREAD_ID_IN_GROUP_FLATTENED:
+        case D3D11_SB_OPERAND_TYPE_INPUT_THREAD_ID: {
+          auto assigned_index =
+            func_signature.DefineInput(air::InputThreadPositionInGrid{});
+          prelogue << make_effect([=](struct context ctx) {
+            auto attr = ctx.function->getArg(assigned_index);
+            ctx.resource.thread_id_arg = attr;
+            return std::monostate{};
+          });
           break;
+        }
+        case D3D11_SB_OPERAND_TYPE_INPUT_THREAD_GROUP_ID: {
+          auto assigned_index =
+            func_signature.DefineInput(air::InputThreadgroupPositionInGrid{});
+          prelogue << make_effect([=](struct context ctx) {
+            auto attr = ctx.function->getArg(assigned_index);
+            ctx.resource.thread_group_id_arg = attr;
+            return std::monostate{};
+          });
+          break;
+        }
+        case D3D11_SB_OPERAND_TYPE_INPUT_THREAD_ID_IN_GROUP: {
+          auto assigned_index =
+            func_signature.DefineInput(air::InputThreadPositionInThreadgroup{});
+          prelogue << make_effect([=](struct context ctx) {
+            auto attr = ctx.function->getArg(assigned_index);
+            ctx.resource.thread_id_in_group_arg = attr;
+            return std::monostate{};
+          });
+          break;
+        }
+        case D3D11_SB_OPERAND_TYPE_INPUT_THREAD_ID_IN_GROUP_FLATTENED: {
+          auto assigned_index =
+            func_signature.DefineInput(air::InputThreadIndexInThreadgroup{});
+          prelogue << make_effect([=](struct context ctx) {
+            auto attr = ctx.function->getArg(assigned_index);
+            ctx.resource.thread_id_in_group_flat_arg = attr;
+            return std::monostate{};
+          });
+          break;
+        }
         case D3D11_SB_OPERAND_TYPE_INPUT_DOMAIN_POINT:
         case D3D11_SB_OPERAND_TYPE_OUTPUT_CONTROL_POINT_ID:
         case D3D10_SB_OPERAND_TYPE_INPUT_PRIMITIVEID:

@@ -56,10 +56,10 @@ struct io_binding_map {
   // TODO: tgsm
 
   // special registers (input)
-  uint32_t thread_id_arg_index = -1;
-  uint32_t thread_group_id_arg_index = -1;
-  uint32_t thread_id_in_group_arg_index = -1;
-  uint32_t thread_id_in_group_flat_arg_index = -1;
+  llvm::Value *thread_id_arg = nullptr;
+  llvm::Value *thread_group_id_arg = nullptr;
+  llvm::Value *thread_id_in_group_arg = nullptr;
+  llvm::Value *thread_id_in_group_flat_arg = nullptr;
 
   // special registers (output)
   llvm::AllocaInst *depth_output_reg = nullptr;
@@ -231,23 +231,18 @@ auto get_float(float value) -> IRValue {
 };
 
 auto extend_to_vec4(pvalue value) {
-  static llvm::ArrayRef<int> shuffle_mask[4] = {
-    {0, 0, 0, 0},
-    {0, 1, 1, 1},
-    {0, 1, 2, 2},
-    {0, 1, 2, 3},
-  };
   return make_irvalue([=](context ctx) {
     auto ty = value->getType();
     if (ty->isVectorTy()) {
       auto vecTy = llvm::cast<llvm::FixedVectorType>(ty);
       if (vecTy->getNumElements() == 4)
-        return value;
-      assert(vecTy->getNumElements() > 0);
-      assert(vecTy->getNumElements() < 4);
-      return ctx.builder.CreateShuffleVector(
-        value, shuffle_mask[vecTy->getNumElements() - 1]
-      );
+        return ctx.builder.CreateShuffleVector(value, {0, 1, 2, 3});
+      if (vecTy->getNumElements() == 3)
+        return ctx.builder.CreateShuffleVector(value, {0, 1, 2, 2});
+      if (vecTy->getNumElements() == 2)
+        return ctx.builder.CreateShuffleVector(value, {0, 1, 1, 1});
+      if (vecTy->getNumElements() == 1)
+        return ctx.builder.CreateShuffleVector(value, {0, 0, 0, 0});
     } else {
       return ctx.builder.CreateVectorSplat(4, value);
     }
@@ -1737,10 +1732,69 @@ template <> IRValue load_src<SrcOperandInput, false>(SrcOperandInput input) {
 template <>
 IRValue load_src<SrcOperandAttribute, false>(SrcOperandAttribute attr) {
   auto ctx = co_yield get_context();
-  // stub
-  co_return co_yield apply_integer_src_operand_modifier(
-    attr._, llvm::ConstantAggregateZero::get(ctx.types._int4)
-  );
+  pvalue vec;
+  switch (attr.attribute) {
+  case shader::common::InputAttribute::VertexId:
+  case shader::common::InputAttribute::PrimitiveId:
+  case shader::common::InputAttribute::InstanceId:
+    assert(0 && "never reached: should be handled separately");
+    break;
+  case shader::common::InputAttribute::ThreadId: {
+    assert(ctx.resource.thread_id_arg);
+    vec = co_yield extend_to_vec4(ctx.resource.thread_id_arg);
+    break;
+  }
+  case shader::common::InputAttribute::ThreadIdInGroup: {
+    assert(ctx.resource.thread_id_in_group_arg);
+    vec = co_yield extend_to_vec4(ctx.resource.thread_id_in_group_arg);
+    break;
+  }
+  case shader::common::InputAttribute::ThreadGroupId: {
+    assert(ctx.resource.thread_group_id_arg);
+    vec = co_yield extend_to_vec4(ctx.resource.thread_group_id_arg);
+    break;
+  }
+  case shader::common::InputAttribute::ThreadIdInGroupFlatten: {
+    assert(ctx.resource.thread_id_in_group_flat_arg);
+    vec = co_yield extend_to_vec4(ctx.resource.thread_id_in_group_flat_arg);
+    break;
+  }
+  }
+  co_return co_yield apply_integer_src_operand_modifier(attr._, vec);
+};
+
+template <>
+IRValue load_src<SrcOperandAttribute, true>(SrcOperandAttribute attr) {
+  auto ctx = co_yield get_context();
+  pvalue vec;
+  switch (attr.attribute) {
+  case shader::common::InputAttribute::VertexId:
+  case shader::common::InputAttribute::PrimitiveId:
+  case shader::common::InputAttribute::InstanceId:
+    assert(0 && "never reached: should be handled separately");
+    break;
+  case shader::common::InputAttribute::ThreadId: {
+    vec = co_yield extend_to_vec4(ctx.resource.thread_id_arg) >>=
+      bitcast_float4;
+    break;
+  }
+  case shader::common::InputAttribute::ThreadIdInGroup: {
+    vec = co_yield extend_to_vec4(ctx.resource.thread_id_in_group_arg) >>=
+      bitcast_float4;
+    break;
+  }
+  case shader::common::InputAttribute::ThreadGroupId: {
+    vec = co_yield extend_to_vec4(ctx.resource.thread_group_id_arg) >>=
+      bitcast_float4;
+    break;
+  }
+  case shader::common::InputAttribute::ThreadIdInGroupFlatten: {
+    vec = co_yield extend_to_vec4(ctx.resource.thread_id_in_group_flat_arg) >>=
+      bitcast_float4;
+    break;
+  }
+  }
+  co_return co_yield apply_float_src_operand_modifier(attr._, vec);
 };
 
 template <typename Operand, bool StoreFloat>
