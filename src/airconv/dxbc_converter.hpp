@@ -106,6 +106,8 @@ struct SrcOperandImmediateConstantBuffer {
 
 struct SrcOperandAttribute {
   static constexpr std::string_view debug_name = "attribute";
+  SrcOperandCommon _;
+  shader::common::InputAttribute attribute;
 };
 
 #pragma endregion
@@ -168,7 +170,8 @@ struct DclOutput {};
 
 using SrcOperand = std::variant<
   SrcOperandImmediate32, SrcOperandTemp, SrcOperandIndexableTemp,
-  SrcOperandInput, SrcOperandConstantBuffer, SrcOperandImmediateConstantBuffer>;
+  SrcOperandInput, SrcOperandConstantBuffer, SrcOperandImmediateConstantBuffer,
+  SrcOperandAttribute>;
 
 struct SrcOperandResource {
   uint32_t range_id;
@@ -330,7 +333,11 @@ struct InstLoad {
   SrcOperandResource src_resource;
 };
 
-struct InstStore {};
+struct InstStoreUAVTyped {
+  SrcOperandUAV dst;
+  SrcOperand src_address;
+  SrcOperand src;
+};
 
 } // namespace
 
@@ -595,7 +602,7 @@ using Instruction = std::variant<
   InstSample, InstSampleCompare, InstGather, InstGatherCompare,          //
   InstSampleBias, InstSampleDerivative, InstSampleLOD,                   //
   InstSamplePos, InstSampleInfo, InstBufferInfo, InstResourceInfo,       //
-  InstLoad, InstStore,                                                   //
+  InstLoad, InstStoreUAVTyped,                                           //
   InstNop,
   /* Pixel Shader */
   InstPixelDiscard, InstPartialDerivative, InstCalcLOD,

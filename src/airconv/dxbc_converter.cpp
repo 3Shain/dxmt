@@ -886,7 +886,8 @@ Reflection convertDXBC(
                                           : air::MemoryAccess::write)
                               : air::MemoryAccess::read;
     auto index = binding_table.DefineTexture(
-      "u" + std::to_string(range_id), texture_kind, access, scaler_type
+      "u" + std::to_string(range_id), texture_kind, access, scaler_type,
+      range_id + 64
     );
     resource_map.uav_range_map[range_id] = {
       air::MSLTexture{

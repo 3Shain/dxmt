@@ -530,6 +530,30 @@ static auto readSrcOperand(const microsoft::D3D10ShaderBinary::COperandBase &O)
     }
     assert(0 && "TODO: SM5.1");
   }
+  case D3D11_SB_OPERAND_TYPE_INPUT_THREAD_GROUP_ID: {
+    return SrcOperandAttribute{
+      ._ = readSrcOperandCommon(O),
+      .attribute = shader::common::InputAttribute::ThreadGroupId
+    };
+  }
+  case D3D11_SB_OPERAND_TYPE_INPUT_THREAD_ID: {
+    return SrcOperandAttribute{
+      ._ = readSrcOperandCommon(O),
+      .attribute = shader::common::InputAttribute::ThreadId
+    };
+  }
+  case D3D11_SB_OPERAND_TYPE_INPUT_THREAD_ID_IN_GROUP: {
+    return SrcOperandAttribute{
+      ._ = readSrcOperandCommon(O),
+      .attribute = shader::common::InputAttribute::ThreadIdInGroup
+    };
+  }
+  case D3D11_SB_OPERAND_TYPE_INPUT_THREAD_ID_IN_GROUP_FLATTENED: {
+    return SrcOperandAttribute{
+      ._ = readSrcOperandCommon(O),
+      .attribute = shader::common::InputAttribute::ThreadIdInGroupFlatten
+    };
+  }
   default:
     DXASSERT_DXBC(false && "unhandled src operand");
   }
@@ -621,7 +645,6 @@ readSrcResourceOrUAV(const microsoft::D3D10ShaderBinary::COperandBase &O) {
 auto readInstructionCommon(
   const microsoft::D3D10ShaderBinary::CInstruction &Inst
 ) -> InstructionCommon {
-  assert(Inst.m_bSaturate == 0);
   return InstructionCommon{.saturate = Inst.m_bSaturate != 0};
 };
 
@@ -826,7 +849,15 @@ static auto readInstruction(
       .modifier = modifier
     };
   };
-
+  case microsoft::D3D11_SB_OPCODE_STORE_UAV_TYPED: {
+    auto inst = InstStoreUAVTyped{
+      .dst = readSrcOperandUAV(Inst.m_Operands[0]),
+      .src_address = readSrcOperand(Inst.m_Operands[1]),
+      .src = readSrcOperand(Inst.m_Operands[2]),
+    };
+    shader_info.uavMap[inst.dst.range_id].written = true;
+    return inst;
+  };
   case microsoft::D3D10_SB_OPCODE_DP2: {
     return InstDotProduct{
       ._ = readInstructionCommon(Inst),

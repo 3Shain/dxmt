@@ -1,7 +1,6 @@
 #pragma once
 
 #include "adt.hpp"
-#include "air_type.hpp"
 #include "shader_common.hpp"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/LLVMContext.h"
@@ -46,7 +45,7 @@ constexpr auto get_llvm_type = [](auto msl_type, llvm::LLVMContext &context) {
   return std::visit([&](auto x) { return x.get_llvm_type(context); }, msl_type);
 };
 
-enum class MemoryAccess : uint32_t { sample = 0, read, write, read_write };
+enum class MemoryAccess : uint32_t { sample = 0, read = 1, write = 2, read_write = 3 };
 
 enum class AddressSpace : uint32_t { unknown, device, constant, threadgroup };
 
@@ -277,78 +276,6 @@ struct MSLTexture {
       break;
     };
   };
-
-  struct TextureOperationInfo {
-    bool allow_sample_offset = false;
-    bool sample_unknown_bit = false;
-    bool allow_sample_gradient = false;
-    bool allow_gather = false;
-    bool allow_read = false;
-    bool allow_write = false;
-    bool is_depth = false;
-    bool is_array = false;
-    Sign sign = Sign::inapplicable;
-    std::string air_symbol_suffix = {};
-    llvm::Type *coord_type = nullptr;
-    llvm::Type *offset_type = nullptr;
-    llvm::Type *sample_type = nullptr;
-    llvm::Type *gather_type = nullptr;
-    llvm::Type *read_type = nullptr;
-    llvm::Type *write_type = nullptr;
-    llvm::Type *gradient_type = nullptr;
-  };
-
-  TextureOperationInfo get_operation_info(air::AirType &types) const {
-    auto sign = std::visit(
-      patterns{
-        [](MSLUint) { return Sign::no_sign; },
-        [](MSLInt) { return Sign::with_sign; },
-        [](auto) { return Sign::inapplicable; }
-      },
-      component_type
-    );
-    TextureOperationInfo ret;
-    ret.sign = sign;
-    switch (resource_kind) {
-    case TextureKind::texture_1d: {
-      ret.coord_type = types._float;
-      ret.allow_sample_offset = true;
-      ret.sample_unknown_bit = false;
-      ret.offset_type = types._int;
-      ret.air_symbol_suffix = "texture_1d";
-      ret.sample_type =
-        types.to_vec4_type(air::get_llvm_type(component_type, types.context));
-      break;
-    };
-    case TextureKind::texture_2d: {
-      ret.coord_type = types._float2;
-      ret.allow_sample_offset = true;
-      ret.sample_unknown_bit = true;
-      ret.offset_type = types._int2;
-      ret.air_symbol_suffix = "texture_2d";
-      ret.sample_type =
-        types.to_vec4_type(air::get_llvm_type(component_type, types.context));
-      break;
-    }
-    case TextureKind::texture_1d_array:
-    case TextureKind::texture_2d_array:
-    case TextureKind::texture_3d:
-    case TextureKind::texture_cube:
-    case TextureKind::texture_cube_array:
-    case TextureKind::texture_buffer:
-    case TextureKind::depth_2d:
-    case TextureKind::depth_2d_array:
-    case TextureKind::depth_cube:
-    case TextureKind::depth_cube_array:
-    case TextureKind::texture_2d_ms:
-    case TextureKind::texture_2d_ms_array:
-    case TextureKind::depth_2d_ms:
-    case TextureKind::depth_2d_ms_array: {
-      assert(0 && "TODO");
-    }
-    }
-    return ret;
-  }
 };
 
 // I mean does metal really care about it?

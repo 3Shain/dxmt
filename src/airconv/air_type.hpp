@@ -14,6 +14,7 @@ public:
   AirType(llvm::LLVMContext &context);
 
   llvm::Type *_bool;
+  llvm::Type *_byte;
   llvm::Type *_float;
   llvm::Type *_float2;
   llvm::Type *_float3;

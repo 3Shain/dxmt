@@ -22,6 +22,7 @@ AirType::AirType(LLVMContext &context) : context(context) {
   _int = Type::getInt32Ty(context);
   _float = Type::getFloatTy(context);
   _bool = Type::getInt1Ty(context);
+  _byte = Type::getInt8Ty(context);
 
   _half = Type::getHalfTy(context);
   _half4 = FixedVectorType::get(_half, 4);
