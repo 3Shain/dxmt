@@ -63,6 +63,7 @@ struct SrcOperandCommon {
 };
 
 struct SrcOperandImmediate32 {
+  static constexpr std::string_view debug_name = "immediate_32";
   union {
     int32_t ivalue[4];
     uint32_t uvalue[4];
@@ -71,22 +72,26 @@ struct SrcOperandImmediate32 {
 };
 
 struct SrcOperandTemp {
+  static constexpr std::string_view debug_name = "temp";
   SrcOperandCommon _;
   uint32_t regid;
 };
 
 struct SrcOperandIndexableTemp {
+  static constexpr std::string_view debug_name = "indexable_temp";
   SrcOperandCommon _;
   uint32_t regfile;
   OperandIndex regindex;
 };
 
 struct SrcOperandInput {
+  static constexpr std::string_view debug_name = "input";
   SrcOperandCommon _;
   uint32_t regid;
 };
 
 struct SrcOperandConstantBuffer {
+  static constexpr std::string_view debug_name = "constant_buffer";
   SrcOperandCommon _;
   uint32_t rangeid;
   OperandIndex rangeindex;
@@ -94,8 +99,13 @@ struct SrcOperandConstantBuffer {
 };
 
 struct SrcOperandImmediateConstantBuffer {
+  static constexpr std::string_view debug_name = "immediate_constant_buffer";
   SrcOperandCommon _;
   OperandIndex regindex;
+};
+
+struct SrcOperandAttribute {
+  static constexpr std::string_view debug_name = "attribute";
 };
 
 #pragma endregion
@@ -107,26 +117,31 @@ struct DstOperandCommon {
 };
 
 struct DstOperandNull {
+  static constexpr std::string_view debug_name = "null";
   DstOperandCommon _;
 };
 
 struct DstOperandTemp {
+  static constexpr std::string_view debug_name = "temp";
   DstOperandCommon _;
   uint32_t regid;
 };
 
 struct DstOperandIndexableTemp {
+  static constexpr std::string_view debug_name = "indexable_temp";
   DstOperandCommon _;
   uint32_t regfile;
   OperandIndex regindex;
 };
 
 struct DstOperandOutput {
+  static constexpr std::string_view debug_name = "output";
   DstOperandCommon _;
   uint32_t regid;
 };
 
 struct DstOperandOutputDepth {
+  static constexpr std::string_view debug_name = "odepth";
   DstOperandCommon _;
 };
 
@@ -494,7 +509,6 @@ enum class ConversionOp {
 };
 
 struct InstConvert {
-  InstructionCommon _;
   ConversionOp op;
   DstOperand dst;
   SrcOperand src;

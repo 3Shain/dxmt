@@ -136,7 +136,7 @@ int main(int argc, char **argv) {
   if (OptLevelO1) {
     dxmt::runOptimizationPasses(M, OptimizationLevel::O1);
   } else if (OptLevelO0) {
-    dxmt::runOptimizationPasses(M, OptimizationLevel::O0);
+    // do nothing
   } else {
     dxmt::runOptimizationPasses(M, OptimizationLevel::O2);
   }

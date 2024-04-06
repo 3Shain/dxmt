@@ -522,17 +522,43 @@ Reflection convertDXBC(
         auto sgv = Inst.m_InputDeclSGV.Name;
         switch (sgv) {
         case D3D10_SB_NAME_VERTEX_ID: {
-          // auto name = "vertexId";
           auto assigned_index =
             func_signature.DefineInput(air::InputVertexID{});
-          // and perform side effect here
-          prelogue << init_input_reg(assigned_index, reg, mask);
+          auto assigned_index_base =
+            func_signature.DefineInput(air::InputBaseVertex{});
+          prelogue << make_effect_bind([=](struct context ctx) {
+            auto vertex_id = ctx.function->getArg(assigned_index);
+            auto base_vertex = ctx.function->getArg(assigned_index_base);
+            auto const_index =
+              llvm::ConstantInt::get(ctx.llvm, llvm::APInt{32, reg, false});
+            return store_at_vec4_array_masked(
+              ctx.resource.input_register_file, const_index,
+              ctx.builder.CreateSub(vertex_id, base_vertex), mask
+            );
+          });
           break;
         }
-        case D3D10_SB_NAME_PRIMITIVE_ID:
-        case D3D10_SB_NAME_INSTANCE_ID:
-        case D3D10_SB_NAME_IS_FRONT_FACE:
+        case D3D10_SB_NAME_INSTANCE_ID: {
+          auto assigned_index =
+            func_signature.DefineInput(air::InputInstanceID{});
+          auto assigned_index_base =
+            func_signature.DefineInput(air::InputBaseInstance{});
+          // and perform side effect here
+          prelogue << make_effect_bind([=](struct context ctx) {
+            auto instance_id = ctx.function->getArg(assigned_index);
+            auto base_instance = ctx.function->getArg(assigned_index_base);
+            auto const_index =
+              llvm::ConstantInt::get(ctx.llvm, llvm::APInt{32, reg, false});
+            return store_at_vec4_array_masked(
+              ctx.resource.input_register_file, const_index,
+              ctx.builder.CreateSub(instance_id, base_instance), mask
+            );
+          });
+          break;
+        }
         case D3D10_SB_NAME_SAMPLE_INDEX:
+        case D3D10_SB_NAME_PRIMITIVE_ID:
+        case D3D10_SB_NAME_IS_FRONT_FACE:
         default:
           assert(0 && "Unexpected/unhandled input system value");
           break;

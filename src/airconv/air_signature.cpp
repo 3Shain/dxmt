@@ -375,8 +375,31 @@ auto ArgumentBufferBuilder::Build(
 };
 
 uint32_t FunctionSignatureBuilder::DefineInput(const FunctionInput &input) {
-  // TODO: check duplication (in case it's already defined)
   uint32_t index = inputs.size();
+  for (auto &element : enumerate(inputs)) {
+    if (element.value().index() == input.index()) {
+      if (std::visit(
+            patterns{
+              [&](const InputVertexStageIn s) {
+                return s.attribute ==
+                       std::get<InputVertexStageIn>(element.value()).attribute;
+              },
+              [&](const InputFragmentStageIn s) {
+                return s.user ==
+                       std::get<InputFragmentStageIn>(element.value()).user;
+              },
+              [&](const ArgumentBindingBuffer s) { return false; },
+              [&](const ArgumentBindingSampler s) { return false; },
+              [&](const ArgumentBindingTexture s) { return false; },
+              [&](const ArgumentBindingIndirectBuffer s) { return false; },
+              [](auto) { return true; }
+            },
+            input
+          )) {
+        return element.index();
+      }
+    }
+  }
   inputs.push_back(input);
   return index;
 };
@@ -483,6 +506,38 @@ auto FunctionSignatureBuilder::CreateFunction(
             ->string("uint") // HARDCODED
             ->string("air.arg_name")
             ->string("mtl_thread_index_in_threadgroup");
+          return msl_uint.get_llvm_type(context);
+        },
+        [&](const InputVertexID &) {
+          metadata_field.string("air.vertex_id")
+            ->string("air.arg_type_name")
+            ->string("uint") // HARDCODED
+            ->string("air.arg_name")
+            ->string("mtl_vertex_id");
+          return msl_uint.get_llvm_type(context);
+        },
+        [&](const InputBaseVertex &) {
+          metadata_field.string("air.base_vertex")
+            ->string("air.arg_type_name")
+            ->string("uint") // HARDCODED
+            ->string("air.arg_name")
+            ->string("mtl_base_vertex");
+          return msl_uint.get_llvm_type(context);
+        },
+        [&](const InputInstanceID &) {
+          metadata_field.string("air.instance_id")
+            ->string("air.arg_type_name")
+            ->string("uint") // HARDCODED
+            ->string("air.arg_name")
+            ->string("mtl_instance_id");
+          return msl_uint.get_llvm_type(context);
+        },
+        [&](const InputBaseInstance &) {
+          metadata_field.string("air.base_instance")
+            ->string("air.arg_type_name")
+            ->string("uint") // HARDCODED
+            ->string("air.arg_name")
+            ->string("mtl_base_instance");
           return msl_uint.get_llvm_type(context);
         },
         [](auto _) {

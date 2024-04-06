@@ -159,56 +159,26 @@ auto bitcast_int4(pvalue vec4) {
   });
 }
 
-// auto read_float(pvalue vec4, Swizzle swizzle) {
-//   return bitcast_float4(vec4) >>= [=](auto bitcasted) -> IRValue {
-//     return make_irvalue([=](context s) {
-//       return s.builder.CreateExtractElement(bitcasted, swizzle.r);
-//     });
-//   };
-// };
-
-IRValue to_float2_swizzled(pvalue vec4, Swizzle swizzle) {
-  auto bitcasted = co_yield bitcast_float4(vec4);
-  co_return co_yield make_irvalue([=](context s) {
-    return s.builder.CreateShuffleVector(
-      bitcasted, (llvm::ArrayRef<int>){swizzle.r, swizzle.g}
-    );
-  });
-};
-
-auto to_float2(pvalue vec4) {
-  return to_float2_swizzled(vec4, swizzle_identity);
-};
-
-auto to_float3_swizzled(pvalue vec4, Swizzle swizzle) {
-  return bitcast_float4(vec4) >>= [=](auto bitcasted) {
-    return make_irvalue([=](context s) {
-      return s.builder.CreateShuffleVector(
-        bitcasted, {swizzle.r, swizzle.g, swizzle.b}
-      );
+auto truncate_vec(uint8_t &&elements) {
+  assert(elements > 1 && "use extract_element to extract single element");
+  return [=](pvalue vec) {
+    assert((vec->getType()->getTypeID() == llvm::Type::FixedVectorTyID));
+    auto origin_element_count =
+      cast<llvm::FixedVectorType>(vec->getType())->getNumElements();
+    assert(origin_element_count >= elements);
+    return make_irvalue([=](struct context ctx) {
+      switch (elements) {
+      case 2:
+        return ctx.builder.CreateShuffleVector(vec, {0, 1});
+      case 3:
+        return ctx.builder.CreateShuffleVector(vec, {0, 1, 2});
+      case 4:
+        return ctx.builder.CreateShuffleVector(vec, {0, 1, 2, 3});
+      default:
+        assert(0 && "unexpected element count");
+      }
     });
   };
-};
-
-auto to_float3(pvalue vec4) {
-  return to_float3_swizzled(vec4, swizzle_identity);
-};
-
-auto to_float4_swizzled(pvalue vec4, Swizzle swizzle) {
-  if (swizzle == swizzle_identity) {
-    return bitcast_float4(vec4);
-  }
-  return bitcast_float4(vec4) >>= [=](auto bitcasted) {
-    return make_irvalue([=](context s) {
-      return s.builder.CreateShuffleVector(
-        bitcasted, {swizzle.r, swizzle.g, swizzle.b, swizzle.a}
-      );
-    });
-  };
-};
-
-auto to_float4(pvalue vec4) {
-  return to_float4_swizzled(vec4, swizzle_identity);
 };
 
 auto read_int(pvalue vec4, Swizzle swizzle) {
@@ -932,6 +902,28 @@ IRValue call_texture_atomic_fetch(
   assert(0 && "TODO");
 };
 
+// TODO: not good, expose too much detail
+IRValue call_convert(
+  pvalue src, llvm::Type *src_type, llvm::Type *dst_type,
+  std::string src_suffix, std::string dst_suffix
+) {
+  using namespace llvm;
+  auto ctx = co_yield get_context();
+  auto &context = ctx.llvm;
+  auto &module = ctx.module;
+  auto att = AttributeList::get(
+    context, {{~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)},
+              {~0U, Attribute::get(context, Attribute::AttrKind::ReadNone)},
+              {~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)}}
+  );
+
+  auto fn = (module.getOrInsertFunction(
+    "air.convert" + dst_suffix + src_suffix,
+    llvm::FunctionType::get(dst_type, {src_type}, false), att
+  ));
+  co_return ctx.builder.CreateCall(fn, {src});
+};
+
 IRValue
 apply_float_src_operand_modifier(SrcOperandCommon c, llvm::Value *fvec4) {
   auto ctx = co_yield get_context();
@@ -1004,6 +996,8 @@ auto load_operand_index(OperandIndex idx) {
 }
 
 template <typename Operand, bool ReadFloat> IRValue load_src(Operand) {
+  llvm::outs() << "register load of " << Operand::debug_name << "<"
+               << (ReadFloat ? "float" : "int") << "> is not implemented\n";
   assert(0 && "operation not implemented");
 };
 
@@ -1078,8 +1072,18 @@ template <> IRValue load_src<SrcOperandInput, true>(SrcOperandInput input) {
   co_return co_yield apply_float_src_operand_modifier(input._, s);
 };
 
+template <> IRValue load_src<SrcOperandInput, false>(SrcOperandInput input) {
+  auto ctx = co_yield get_context();
+  auto s = co_yield load_at_alloca_array(
+    ctx.resource.input_register_file, ctx.builder.getInt32(input.regid)
+  );
+  co_return co_yield apply_integer_src_operand_modifier(input._, s);
+};
+
 template <typename Operand, bool StoreFloat>
 IREffect store_dst(Operand, IRValue &&value) {
+  llvm::outs() << "register store of " << Operand::debug_name << "<"
+               << (StoreFloat ? "float" : "int") << "> is not implemented\n";
   assert(0 && "operation not implemented");
 };
 
@@ -1252,7 +1256,7 @@ auto convertBasicBlocks(
               );
               effect << lift(
                 res_handle_fn(nullptr), sampler_handle_fn(nullptr),
-                load_src_op<true>(sample.src_address) >>= to_float2,
+                load_src_op<true>(sample.src_address) >>= truncate_vec(2),
                 [=, res = res](pvalue res_h, pvalue sampler_h, pvalue coord) {
                   return store_dst_op<true>(
                     sample.dst,
@@ -1459,8 +1463,8 @@ auto convertBasicBlocks(
                 break;
               case 3:
                 effect << lift(
-                  load_src_op<true>(dp.src0) >>= to_float3,
-                  load_src_op<true>(dp.src1) >>= to_float3,
+                  load_src_op<true>(dp.src0) >>= truncate_vec(3),
+                  load_src_op<true>(dp.src1) >>= truncate_vec(3),
                   [=](auto a, auto b) {
                     return store_dst_op<true>(
                       dp.dst, call_dot_product(3, a, b)
@@ -1470,8 +1474,8 @@ auto convertBasicBlocks(
                 break;
               case 2:
                 effect << lift(
-                  load_src_op<true>(dp.src0) >>= to_float2,
-                  load_src_op<true>(dp.src1) >>= to_float2,
+                  load_src_op<true>(dp.src0) >>= truncate_vec(2),
+                  load_src_op<true>(dp.src1) >>= truncate_vec(2),
                   [=](auto a, auto b) {
                     return store_dst_op<true>(
                       dp.dst, call_dot_product(2, a, b)
@@ -1632,6 +1636,103 @@ auto convertBasicBlocks(
                                          saturate(sincos._.saturate);
                                 }
               );
+            },
+            [&](InstConvert convert) {
+              switch (convert.op) {
+              case ConversionOp::HalfToFloat: {
+                effect << store_dst_op<true>(
+                  convert.dst,
+                  make_irvalue_bind([=](struct context ctx) -> IRValue {
+                    // FIXME: neg modifier might be wrong?!
+                    auto src = co_yield load_src_op<false>(convert.src); // int4
+                    auto half8 = ctx.builder.CreateBitCast(
+                      src, llvm::FixedVectorType::get(ctx.types._half, 8)
+                    );
+                    co_return co_yield call_convert(
+                      ctx.builder.CreateShuffleVector(half8, {0, 2, 4, 6}),
+                      ctx.types._half4, ctx.types._float4, ".f.v4f16",
+                      ".f.v4f32"
+                    );
+                  })
+                );
+                break;
+              }
+              case ConversionOp::FloatToHalf: {
+                effect << store_dst_op<false>(
+                  convert.dst,
+                  make_irvalue_bind([=](struct context ctx) -> IRValue {
+                    // FIXME: neg modifier might be wrong?!
+                    auto src =
+                      co_yield load_src_op<true>(convert.src); // float4
+                    auto half4 = co_yield call_convert(
+                      src, ctx.types._float4, ctx.types._half4, ".f.v4f32",
+                      ".f.v4f16"
+                    );
+                    co_return ctx.builder.CreateBitCast(
+                      ctx.builder.CreateShuffleVector(
+                        half4,
+                        llvm::ConstantAggregateZero::get(half4->getType()),
+                        {0, 4, 1, 5, 2, 6, 3, 7}
+                      ),
+                      ctx.types._int4
+                    );
+                  })
+                );
+                break;
+              }
+              case ConversionOp::FloatToSigned: {
+                effect << store_dst_op<false>(
+                  convert.dst,
+                  make_irvalue_bind([=](struct context ctx) -> IRValue {
+                    auto src = co_yield load_src_op<true>(convert.src);
+                    co_return co_yield call_convert(
+                      src, ctx.types._float4, ctx.types._int4, ".f.v4f32",
+                      ".s.v4i32"
+                    );
+                  })
+                );
+                break;
+              }
+              case ConversionOp::SignedToFloat: {
+                effect << store_dst_op<true>(
+                  convert.dst,
+                  make_irvalue_bind([=](struct context ctx) -> IRValue {
+                    auto src = co_yield load_src_op<false>(convert.src);
+                    co_return co_yield call_convert(
+                      src, ctx.types._int4, ctx.types._float4, ".s.v4i32",
+                      ".f.v4f32"
+                    );
+                  })
+                );
+                break;
+              }
+              case ConversionOp::FloatToUnsigned: {
+                effect << store_dst_op<false>(
+                  convert.dst,
+                  make_irvalue_bind([=](struct context ctx) -> IRValue {
+                    auto src = co_yield load_src_op<true>(convert.src);
+                    co_return co_yield call_convert(
+                      src, ctx.types._float4, ctx.types._int4, ".f.v4f32",
+                      ".u.v4i32"
+                    );
+                  })
+                );
+                break;
+              }
+              case ConversionOp::UnsignedToFloat: {
+                effect << store_dst_op<true>(
+                  convert.dst,
+                  make_irvalue_bind([=](struct context ctx) -> IRValue {
+                    auto src = co_yield load_src_op<false>(convert.src);
+                    co_return co_yield call_convert(
+                      src, ctx.types._int4, ctx.types._float4, ".u.v4i32",
+                      ".f.v4f32"
+                    );
+                  })
+                );
+                break;
+              }
+              }
             },
             // [&](InstIntegerBinaryOpWithTwoDst bin) {
             //   switch (bin.op) {

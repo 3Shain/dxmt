@@ -8,3 +8,5 @@ wine
 .config
 toolchains
 build-local.txt
+*.cso
+*.ll

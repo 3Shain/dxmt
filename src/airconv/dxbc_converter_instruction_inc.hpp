@@ -1314,6 +1314,48 @@ static auto readInstruction(
       .src1 = readSrcOperand(Inst.m_Operands[3]),
     };
   };
+  case microsoft::D3D11_SB_OPCODE_F16TOF32: {
+    return InstConvert{
+      .op = ConversionOp::HalfToFloat,
+      .dst = readDstOperand(Inst.m_Operands[0]),
+      .src = readSrcOperand(Inst.m_Operands[1]),
+    };
+  };
+  case microsoft::D3D11_SB_OPCODE_F32TOF16: {
+    return InstConvert{
+      .op = ConversionOp::HalfToFloat,
+      .dst = readDstOperand(Inst.m_Operands[0]),
+      .src = readSrcOperand(Inst.m_Operands[1]),
+    };
+  };
+  case microsoft::D3D10_SB_OPCODE_FTOI: {
+    return InstConvert{
+      .op = ConversionOp::FloatToSigned,
+      .dst = readDstOperand(Inst.m_Operands[0]),
+      .src = readSrcOperand(Inst.m_Operands[1]),
+    };
+  };
+  case microsoft::D3D10_SB_OPCODE_FTOU: {
+    return InstConvert{
+      .op = ConversionOp::FloatToUnsigned,
+      .dst = readDstOperand(Inst.m_Operands[0]),
+      .src = readSrcOperand(Inst.m_Operands[1]),
+    };
+  };
+  case microsoft::D3D10_SB_OPCODE_ITOF: {
+    return InstConvert{
+      .op = ConversionOp::SignedToFloat,
+      .dst = readDstOperand(Inst.m_Operands[0]),
+      .src = readSrcOperand(Inst.m_Operands[1]),
+    };
+  };
+  case microsoft::D3D10_SB_OPCODE_UTOF: {
+    return InstConvert{
+      .op = ConversionOp::UnsignedToFloat,
+      .dst = readDstOperand(Inst.m_Operands[0]),
+      .src = readSrcOperand(Inst.m_Operands[1]),
+    };
+  };
   case microsoft::D3D10_SB_OPCODE_DERIV_RTX:
   case microsoft::D3D11_SB_OPCODE_DERIV_RTX_FINE: {
     return InstPartialDerivative{

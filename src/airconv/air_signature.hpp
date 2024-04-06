@@ -512,7 +512,9 @@ struct InputFragmentStageIn {
 };
 
 struct InputVertexID {};
+struct InputBaseVertex {};
 struct InputInstanceID {};
+struct InputBaseInstance {};
 struct InputViewportArrayIndex {};
 struct InputRenderTargetArrayIndex {};
 
@@ -541,10 +543,13 @@ using FunctionInput = template_concat_t<
   FunctionArguments,
   std::variant<
     /* vertex */
-    InputVertexID, InputVertexStageIn, InputInstanceID,
+    InputVertexID, InputInstanceID,     //
+    InputBaseVertex, InputBaseInstance, //
+    InputVertexStageIn,
     /* fragment */
     InputPrimitiveID, InputViewportArrayIndex, InputRenderTargetArrayIndex,
-    InputFrontFacing, InputPosition, InputFragmentStageIn,
+    InputFrontFacing, InputPosition, //
+    InputFragmentStageIn,
     /* kernel */
     InputThreadIndexInThreadgroup, InputThreadPositionInThreadgroup,
     InputThreadPositionInGrid, InputThreadgroupPositionInGrid>>;
@@ -557,6 +562,12 @@ using FunctionOutput = std::variant<
 
 class FunctionSignatureBuilder {
 public:
+  /*
+   * uniqueness is implied by variant type
+   * for InputVertexStageIn: attribute
+   * for InputFragmentStageIn: user
+   * for ArgumentBinding*: no guarantee
+   */
   uint32_t DefineInput(const FunctionInput &input);
   uint32_t DefineOutput(const FunctionOutput &output);
 
