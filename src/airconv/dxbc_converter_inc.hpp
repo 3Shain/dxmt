@@ -221,6 +221,25 @@ auto read_int4(pvalue vec4, Swizzle swizzle) {
   };
 };
 
+auto get_int2(uint32_t value0, uint32_t value1) -> IRValue {
+  return make_irvalue([=](context ctx) {
+    return llvm::ConstantVector::get(
+      {llvm::ConstantInt::get(ctx.llvm, llvm::APInt{32, value0, true}),
+       llvm::ConstantInt::get(ctx.llvm, llvm::APInt{32, value1, true})}
+    );
+  });
+};
+
+auto get_int3(uint32_t value0, uint32_t value1, uint32_t value2) -> IRValue {
+  return make_irvalue([=](context ctx) {
+    return llvm::ConstantVector::get(
+      {llvm::ConstantInt::get(ctx.llvm, llvm::APInt{32, value0, true}),
+       llvm::ConstantInt::get(ctx.llvm, llvm::APInt{32, value1, true}),
+       llvm::ConstantInt::get(ctx.llvm, llvm::APInt{32, value2, true})}
+    );
+  });
+};
+
 auto get_int(uint32_t value) -> IRValue {
   return make_irvalue([=](context ctx) { return ctx.builder.getInt32(value); });
 };
@@ -1308,8 +1327,10 @@ auto call_gather_compare(
 }
 
 auto call_read(
-  air::MSLTexture texture_type, pvalue handle, pvalue coord, pvalue cube_face,
-  pvalue array_index, pvalue sample_index, pvalue lod
+  air::MSLTexture texture_type, pvalue handle, pvalue coord,
+  pvalue offset = nullptr, pvalue cube_face = nullptr,
+  pvalue array_index = nullptr, pvalue sample_index = nullptr,
+  pvalue lod = nullptr
 ) -> IRValue {
   auto ctx = co_yield get_context();
   using namespace llvm;
@@ -1341,20 +1362,31 @@ auto call_read(
     args_value.push_back(ctx.builder.getInt32(1));
   }
 
-  args_type.push_back(op_info.coord_type);
-  args_value.push_back(coord);
+  args_type.push_back(op_info.address_type);
+  if (Constant *c = offset ? dyn_cast<Constant>(offset) : nullptr) {
+    if (c->isZeroValue()) {
+      args_value.push_back(coord);
+    } else {
+      args_value.push_back(ctx.builder.CreateAdd(coord, offset));
+    }
+  } else {
+    args_value.push_back(coord);
+  }
 
   if (op_info.is_cube) {
+    assert(cube_face);
     args_type.push_back(types._int);
     args_value.push_back(cube_face);
   }
 
   if (op_info.is_array) {
+    assert(array_index);
     args_type.push_back(types._int);
     args_value.push_back(array_index);
   }
 
   if (op_info.is_ms) {
+    assert(sample_index);
     args_type.push_back(types._int);
     args_value.push_back(sample_index);
   }
@@ -1364,7 +1396,7 @@ auto call_read(
     if (op_info.is_1d_or_1d_array) {
       args_value.push_back(ctx.builder.getInt32(0));
     } else {
-      args_value.push_back(lod);
+      args_value.push_back(lod ? lod : ctx.builder.getInt32(0));
     }
   }
 
@@ -2557,6 +2589,162 @@ auto convertBasicBlocks(
                  }) >>= extract_value(0)) >>=
                 swizzle(sample.src_resource.read_swizzle)
               );
+            },
+
+            [&](InstLoad load) {
+              effect << make_effect_bind([=](struct context ctx) -> IREffect {
+                auto [res, res_handle_fn] =
+                  ctx.resource.srv_range_map[load.src_resource.range_id];
+                auto res_h = co_yield res_handle_fn(nullptr);
+                auto coord = co_yield load_src_op<false>(load.src_address);
+                pvalue ret;
+                switch (res.resource_kind) {
+                case air::TextureKind::texture_buffer:
+                case air::TextureKind::texture_1d: {
+                  ret = co_yield call_read(
+                    res, res_h, co_yield extract_element(0)(coord),
+                    co_yield get_int(load.offsets[0])
+                  );
+                  break;
+                }
+                case air::TextureKind::texture_1d_array: {
+                  ret = co_yield call_read(
+                    res, res_h, co_yield extract_element(0)(coord),
+                    co_yield get_int(load.offsets[0]), nullptr,
+                    co_yield extract_element(1)(coord)
+                  );
+                  break;
+                }
+                case air::TextureKind::depth_2d:
+                case air::TextureKind::texture_2d: {
+                  ret = co_yield call_read(
+                    res, res_h, co_yield truncate_vec(2)(coord),
+                    co_yield get_int2(load.offsets[0], load.offsets[1])
+                  );
+                  break;
+                }
+                case air::TextureKind::depth_2d_array:
+                case air::TextureKind::texture_2d_array: {
+                  ret = co_yield call_read(
+                    res, res_h, co_yield truncate_vec(2)(coord),
+                    co_yield get_int2(load.offsets[0], load.offsets[1]),
+                    nullptr, co_yield extract_element(2)(coord)
+                  );
+                  break;
+                }
+                case air::TextureKind::texture_3d: {
+                  ret = co_yield call_read(
+                    res, res_h, co_yield truncate_vec(3)(coord),
+                    co_yield get_int3(
+                      load.offsets[0], load.offsets[1], load.offsets[2]
+                    )
+                  );
+                  break;
+                }
+                case air::TextureKind::texture_2d_ms:
+                case air::TextureKind::depth_2d_ms: {
+                  auto sample_index =
+                    co_yield load_src_op<false>(load.src_sample_index.value()
+                    ) >>= extract_element(0);
+                  ret = co_yield call_read(
+                    res, res_h, co_yield truncate_vec(2)(coord),
+                    co_yield get_int2(load.offsets[0], load.offsets[1]),
+                    nullptr, nullptr, sample_index
+                  );
+                  break;
+                }
+                case air::TextureKind::texture_2d_ms_array:
+                case air::TextureKind::depth_2d_ms_array: {
+                  auto sample_index =
+                    co_yield load_src_op<false>(load.src_sample_index.value()
+                    ) >>= extract_element(0);
+                  ret = co_yield call_read(
+                    res, res_h, co_yield truncate_vec(2)(coord),
+                    co_yield get_int2(load.offsets[0], load.offsets[1]),
+                    nullptr, co_yield extract_element(2)(coord), sample_index
+                  );
+                  break;
+                }
+                default: {
+                  assert(0 && "invalid load resource type");
+                }
+                }
+                ret = co_yield extract_value(0)(ret) >>=
+                  swizzle(load.src_resource.read_swizzle);
+                co_return co_yield std::visit(
+                  patterns{
+                    [&](air::MSLFloat) {
+                      return store_dst_op<true>(load.dst, pure(ret));
+                    },
+                    [&](auto) {
+                      return store_dst_op<false>(load.dst, pure(ret));
+                    }
+                  },
+                  res.component_type
+                );
+              });
+            },
+            [&](InstLoadUAVTyped load) {
+              effect << make_effect_bind([=](struct context ctx) -> IREffect {
+                auto [res, res_handle_fn] =
+                  ctx.resource.uav_range_map[load.src_uav.range_id];
+                auto res_h = co_yield res_handle_fn(nullptr);
+                auto coord = co_yield load_src_op<false>(load.src_address);
+                pvalue ret;
+                switch (res.resource_kind) {
+                case air::TextureKind::texture_buffer:
+                case air::TextureKind::texture_1d: {
+                  ret = co_yield call_read(
+                    res, res_h, co_yield extract_element(0)(coord)
+                  );
+                  break;
+                }
+                case air::TextureKind::texture_1d_array: {
+                  ret = co_yield call_read(
+                    res, res_h, co_yield extract_element(0)(coord), nullptr,
+                    nullptr, co_yield extract_element(1)(coord)
+                  );
+                  break;
+                }
+                case air::TextureKind::depth_2d:
+                case air::TextureKind::texture_2d: {
+                  ret = co_yield call_read(
+                    res, res_h, co_yield truncate_vec(2)(coord)
+                  );
+                  break;
+                }
+                case air::TextureKind::depth_2d_array:
+                case air::TextureKind::texture_2d_array: {
+                  ret = co_yield call_read(
+                    res, res_h, co_yield truncate_vec(2)(coord), nullptr,
+                    nullptr, co_yield extract_element(2)(coord)
+                  );
+                  break;
+                }
+                case air::TextureKind::texture_3d: {
+                  ret = co_yield call_read(
+                    res, res_h, co_yield truncate_vec(3)(coord)
+                  );
+                  break;
+                }
+                default: {
+                  assert(0 && "invalid load resource type");
+                }
+                }
+                ret = co_yield extract_value(0)(ret) >>=
+                  swizzle(load.src_uav.read_swizzle);
+                co_return co_yield std::visit(
+                  patterns{
+                    [&](air::MSLFloat) {
+                      return store_dst_op<true>(load.dst, pure(ret));
+                    },
+                    [&](auto) {
+                      return store_dst_op<false>(load.dst, pure(ret));
+                    }
+                  },
+                  res.component_type
+                );
+              });
             },
             [&](InstStoreUAVTyped store) {
               effect << make_effect_bind([=](struct context ctx) -> IREffect {

@@ -128,7 +128,7 @@ Reflection convertDXBC(
           readCondition(Inst, 0), true_, alternative_
         };
         auto after_endif = readControlFlow(
-          ctx, alternative_, continue_point, break_point, return_point,
+          true_, alternative_, continue_point, break_point, return_point,
           null_switch_context
         ); // read till ENDIF
         // scope end

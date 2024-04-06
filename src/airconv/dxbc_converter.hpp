@@ -188,6 +188,7 @@ struct SrcOperandSampler {
 struct SrcOperandUAV {
   uint32_t range_id;
   OperandIndex index;
+  Swizzle read_swizzle; // if appliable?
 };
 
 struct SrcOperandTGSM {
@@ -195,9 +196,12 @@ struct SrcOperandTGSM {
   OperandIndex index;
 };
 
-using AtomicDstOperandUAV = SrcOperandUAV;
+struct AtomicDstOperandUAV {
+  uint32_t range_id;
+  OperandIndex index;
+};
 
-struct AtomicDstOperandTGSM {
+struct AtomicOperandTGSM {
   uint32_t id;
 };
 
@@ -327,15 +331,48 @@ struct InstSamplePos {
 };
 
 struct InstLoad {
-  InstructionCommon _;
   DstOperand dst;
   SrcOperand src_address;
   SrcOperandResource src_resource;
+  std::optional<SrcOperand> src_sample_index;
+  int32_t offsets[3];
+};
+
+struct InstLoadRaw {
+  DstOperand dst;
+  SrcOperand src_byte_offset;
+  std::variant<SrcOperandResource, SrcOperandUAV, AtomicOperandTGSM> src;
+};
+
+struct InstLoadStructured {
+  DstOperand dst;
+  SrcOperand src_address;
+  SrcOperand src_byte_offset;
+  std::variant<SrcOperandResource, SrcOperandUAV, AtomicOperandTGSM> src;
+};
+
+struct InstLoadUAVTyped {
+  DstOperand dst;
+  SrcOperand src_address;
+  SrcOperandUAV src_uav;
 };
 
 struct InstStoreUAVTyped {
-  SrcOperandUAV dst;
+  AtomicDstOperandUAV dst;
   SrcOperand src_address;
+  SrcOperand src;
+};
+
+struct InstStoreRaw {
+  std::variant<AtomicDstOperandUAV, AtomicOperandTGSM> dst;
+  SrcOperand dst_byte_offset;
+  SrcOperand src;
+};
+
+struct InstStoreStructured {
+  std::variant<AtomicDstOperandUAV, AtomicOperandTGSM> dst;
+  SrcOperand dst_address;
+  SrcOperand dst_byte_offset;
   SrcOperand src;
 };
 
@@ -550,7 +587,7 @@ enum class AtomicBinaryOp { And, Or, Xor, Add, IMax, IMin, UMax, UMin };
 
 struct InstAtomicBinOp {
   AtomicBinaryOp op;
-  std::variant<AtomicDstOperandUAV, AtomicDstOperandTGSM> dst;
+  std::variant<AtomicDstOperandUAV, AtomicOperandTGSM> dst;
   SrcOperand dst_address;
   SrcOperand src; // select one component
   std::optional<DstOperand>
@@ -558,7 +595,7 @@ struct InstAtomicBinOp {
 };
 
 struct InstAtomicCmpStore {
-  std::variant<AtomicDstOperandUAV, AtomicDstOperandTGSM> dst;
+  std::variant<AtomicDstOperandUAV, AtomicOperandTGSM> dst;
   SrcOperand dst_address;
   SrcOperand src0; // select one component
   SrcOperand src1; // select one component
@@ -576,7 +613,7 @@ struct InstAtomicImmDecrement {
 
 struct InstAtomicImmExchange {
   DstOperand dst; // store single component, original value
-  std::variant<AtomicDstOperandUAV, AtomicDstOperandTGSM> dst_resource;
+  std::variant<AtomicDstOperandUAV, AtomicOperandTGSM> dst_resource;
   SrcOperand dst_address;
   SrcOperand src; // select one component
 };
@@ -584,7 +621,7 @@ struct InstAtomicImmExchange {
 struct InstAtomicImmCmpExchange {
   DstOperand dst; // store single component, original value,
   // note it's always written
-  std::variant<AtomicDstOperandUAV, AtomicDstOperandTGSM> dst_resource;
+  std::variant<AtomicDstOperandUAV, AtomicOperandTGSM> dst_resource;
   SrcOperand dst_address;
   SrcOperand src0; // select one component
   SrcOperand src1; // select one component
@@ -602,7 +639,8 @@ using Instruction = std::variant<
   InstSample, InstSampleCompare, InstGather, InstGatherCompare,          //
   InstSampleBias, InstSampleDerivative, InstSampleLOD,                   //
   InstSamplePos, InstSampleInfo, InstBufferInfo, InstResourceInfo,       //
-  InstLoad, InstStoreUAVTyped,                                           //
+  InstLoad, InstLoadUAVTyped, InstStoreUAVTyped,                         //
+  InstLoadRaw, InstLoadStructured, InstStoreRaw, InstStoreStructured,    //
   InstNop,
   /* Pixel Shader */
   InstPixelDiscard, InstPartialDerivative, InstCalcLOD,

@@ -611,8 +611,7 @@ readSrcOperandSampler(const microsoft::D3D10ShaderBinary::COperandBase &O)
   }
 }
 
-static auto
-readSrcOperandUAV(const microsoft::D3D10ShaderBinary::COperandBase &O)
+auto readSrcOperandUAV(const microsoft::D3D10ShaderBinary::COperandBase &O)
   -> SrcOperandUAV {
   if (O.m_IndexDimension == microsoft::D3D10_SB_OPERAND_INDEX_1D) {
     DXASSERT_DXBC(
@@ -620,24 +619,56 @@ readSrcOperandUAV(const microsoft::D3D10ShaderBinary::COperandBase &O)
     );
     return SrcOperandUAV{
       .range_id = O.m_Index[0].m_RegIndex,
-      .index = readOperandIndex(O.m_Index[0], O.m_IndexType[0])
+      .index = readOperandIndex(O.m_Index[0], O.m_IndexType[0]),
+      .read_swizzle = readSrcOperandSwizzle(O)
     };
   } else {
     return SrcOperandUAV{
+      .range_id = O.m_Index[0].m_RegIndex,
+      .index = readOperandIndex(O.m_Index[1], O.m_IndexType[1]),
+      .read_swizzle = readSrcOperandSwizzle(O)
+    };
+  }
+}
+
+auto readDstOperandUAV(const microsoft::D3D10ShaderBinary::COperandBase &O)
+  -> AtomicDstOperandUAV {
+  if (O.m_IndexDimension == microsoft::D3D10_SB_OPERAND_INDEX_1D) {
+    DXASSERT_DXBC(
+      O.m_IndexType[0] == microsoft::D3D10_SB_OPERAND_INDEX_IMMEDIATE32
+    );
+    return AtomicDstOperandUAV{
+      .range_id = O.m_Index[0].m_RegIndex,
+      .index = readOperandIndex(O.m_Index[0], O.m_IndexType[0])
+    };
+  } else {
+    return AtomicDstOperandUAV{
       .range_id = O.m_Index[0].m_RegIndex,
       .index = readOperandIndex(O.m_Index[1], O.m_IndexType[1])
     };
   }
 }
 
-std::variant<AtomicDstOperandUAV, AtomicDstOperandTGSM>
+std::variant<AtomicDstOperandUAV, AtomicOperandTGSM>
 readAtomicDst(const microsoft::D3D10ShaderBinary::COperandBase &O) {
   if (O.m_Type == microsoft::D3D11_SB_OPERAND_TYPE_UNORDERED_ACCESS_VIEW) {
-    return readSrcOperandUAV(O);
+    return readDstOperandUAV(O);
   } else if (O.m_Type == microsoft::D3D11_SB_OPERAND_TYPE_THREAD_GROUP_SHARED_MEMORY) {
-    return AtomicDstOperandTGSM{.id = O.m_Index[0].m_RegIndex};
+    return AtomicOperandTGSM{.id = O.m_Index[0].m_RegIndex};
   }
   assert(0 && "unexpected atomic operation destination");
+}
+
+std::variant<SrcOperandResource, SrcOperandUAV, AtomicOperandTGSM>
+readTypelessSrc(const microsoft::D3D10ShaderBinary::COperandBase &O) {
+  if (O.m_Type == microsoft::D3D11_SB_OPERAND_TYPE_UNORDERED_ACCESS_VIEW) {
+    return readSrcOperandUAV(O);
+  } else if (O.m_Type == microsoft::D3D10_SB_OPERAND_TYPE_RESOURCE) {
+    return readSrcOperandResource(O);
+  } else if (O.m_Type == microsoft::D3D11_SB_OPERAND_TYPE_THREAD_GROUP_SHARED_MEMORY) {
+    return AtomicOperandTGSM{.id = O.m_Index[0].m_RegIndex};
+  }
+  assert(0 && "unexpected typeless load/store operation destination");
 }
 
 std::variant<SrcOperandResource, SrcOperandUAV>
@@ -856,13 +887,121 @@ static auto readInstruction(
       .modifier = modifier
     };
   };
+  case microsoft::D3D10_SB_OPCODE_LD: {
+    auto inst = InstLoad{
+      .dst = readDstOperand(Inst.m_Operands[0]),
+      .src_address = readSrcOperand(Inst.m_Operands[1]),
+      .src_resource = readSrcOperandResource(Inst.m_Operands[2]),
+      .offsets =
+        {Inst.m_TexelOffset[0], Inst.m_TexelOffset[1], Inst.m_TexelOffset[2]},
+    };
+    shader_info.srvMap[inst.src_resource.range_id].read = true;
+    return inst;
+  };
+  case microsoft::D3D10_SB_OPCODE_LD_MS: {
+    auto inst = InstLoad{
+      .dst = readDstOperand(Inst.m_Operands[0]),
+      .src_address = readSrcOperand(Inst.m_Operands[1]),
+      .src_resource = readSrcOperandResource(Inst.m_Operands[2]),
+      .src_sample_index = readSrcOperand(Inst.m_Operands[3]),
+      .offsets =
+        {Inst.m_TexelOffset[0], Inst.m_TexelOffset[1], Inst.m_TexelOffset[2]},
+    };
+    shader_info.srvMap[inst.src_resource.range_id].read = true;
+    return inst;
+  };
+  case microsoft::D3D11_SB_OPCODE_LD_UAV_TYPED: {
+    auto inst = InstLoadUAVTyped{
+      .dst = readDstOperand(Inst.m_Operands[0]),
+      .src_address = readSrcOperand(Inst.m_Operands[1]),
+      .src_uav = readSrcOperandUAV(Inst.m_Operands[2]),
+    };
+    shader_info.uavMap[inst.src_uav.range_id].read = true;
+    return inst;
+  };
   case microsoft::D3D11_SB_OPCODE_STORE_UAV_TYPED: {
     auto inst = InstStoreUAVTyped{
-      .dst = readSrcOperandUAV(Inst.m_Operands[0]),
+      .dst = readDstOperandUAV(Inst.m_Operands[0]),
       .src_address = readSrcOperand(Inst.m_Operands[1]),
       .src = readSrcOperand(Inst.m_Operands[2]),
     };
     shader_info.uavMap[inst.dst.range_id].written = true;
+    return inst;
+  };
+  case microsoft::D3D11_SB_OPCODE_LD_RAW: {
+    auto inst = InstLoadRaw{
+      .dst = readDstOperand(Inst.m_Operands[0]),
+      .src_byte_offset = readSrcOperand(Inst.m_Operands[1]),
+      .src = readTypelessSrc(Inst.m_Operands[2]),
+    };
+    std::visit(
+      patterns{
+        [&](const SrcOperandResource &res) {
+          shader_info.srvMap[res.range_id].read = true;
+        },
+        [&](const SrcOperandUAV &uav) {
+          shader_info.uavMap[uav.range_id].read = true;
+        },
+        [](auto) {}
+      },
+      inst.src
+    );
+    return inst;
+  };
+  case microsoft::D3D11_SB_OPCODE_STORE_RAW: {
+    auto inst = InstStoreRaw{
+      .dst = readAtomicDst(Inst.m_Operands[0]),
+      .dst_byte_offset = readSrcOperand(Inst.m_Operands[1]),
+      .src = readSrcOperand(Inst.m_Operands[2]),
+    };
+    std::visit(
+      patterns{
+        [&](const SrcOperandUAV &uav) {
+          shader_info.uavMap[uav.range_id].written = true;
+        },
+        [](auto) {}
+      },
+      inst.dst
+    );
+    return inst;
+  };
+  case microsoft::D3D11_SB_OPCODE_LD_STRUCTURED: {
+    auto inst = InstLoadStructured{
+      .dst = readDstOperand(Inst.m_Operands[0]),
+      .src_address = readSrcOperand(Inst.m_Operands[1]),
+      .src_byte_offset = readSrcOperand(Inst.m_Operands[2]),
+      .src = readTypelessSrc(Inst.m_Operands[3]),
+    };
+    std::visit(
+      patterns{
+        [&](const SrcOperandResource &res) {
+          shader_info.srvMap[res.range_id].read = true;
+        },
+        [&](const SrcOperandUAV &uav) {
+          shader_info.uavMap[uav.range_id].read = true;
+        },
+        [](auto) {}
+      },
+      inst.src
+    );
+    return inst;
+  };
+  case microsoft::D3D11_SB_OPCODE_STORE_STRUCTURED: {
+    auto inst = InstStoreStructured{
+      .dst = readAtomicDst(Inst.m_Operands[0]),
+      .dst_address = readSrcOperand(Inst.m_Operands[1]),
+      .dst_byte_offset = readSrcOperand(Inst.m_Operands[2]),
+      .src = readSrcOperand(Inst.m_Operands[3]),
+    };
+    std::visit(
+      patterns{
+        [&](const SrcOperandUAV &uav) {
+          shader_info.uavMap[uav.range_id].written = true;
+        },
+        [](auto) {}
+      },
+      inst.dst
+    );
     return inst;
   };
   case microsoft::D3D10_SB_OPCODE_DP2: {
@@ -1527,13 +1666,13 @@ static auto readInstruction(
   case microsoft::D3D11_SB_OPCODE_IMM_ATOMIC_ALLOC: {
     return InstAtomicImmIncrement{
       .dst = readDstOperand(Inst.m_Operands[0]),
-      .uav = readSrcOperandUAV(Inst.m_Operands[1])
+      .uav = readDstOperandUAV(Inst.m_Operands[1])
     };
   };
   case microsoft::D3D11_SB_OPCODE_IMM_ATOMIC_CONSUME: {
     return InstAtomicImmDecrement{
       .dst = readDstOperand(Inst.m_Operands[0]),
-      .uav = readSrcOperandUAV(Inst.m_Operands[1])
+      .uav = readDstOperandUAV(Inst.m_Operands[1])
     };
   };
   case microsoft::D3D11_SB_OPCODE_IMM_ATOMIC_EXCH: {
