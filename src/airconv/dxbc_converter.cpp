@@ -957,8 +957,8 @@ Reflection convertDXBC(
         }
     );
     llvm::GlobalVariable *icb = new llvm::GlobalVariable(
-      module, type, const_data, llvm::GlobalValue::InternalLinkage, nullptr,
-      "icb", nullptr, llvm::GlobalValue::NotThreadLocal, 2
+      module, type, true, llvm::GlobalValue::InternalLinkage, const_data, "icb",
+      nullptr, llvm::GlobalValue::NotThreadLocal, 2
     );
     icb->setAlignment(llvm::Align(16));
     resource_map.icb = icb;
@@ -1005,6 +1005,15 @@ Reflection convertDXBC(
     llvm::ArrayType::get(types._float4, shader_info->tempRegisterCount)
       ->getPointerTo()
   );
+  if (shader_info->immConstantBufferData.size()) {
+    resource_map.icb_float = builder.CreateBitCast(
+      resource_map.icb,
+      llvm::ArrayType::get(
+        types._float4, shader_info->immConstantBufferData.size()
+      )
+        ->getPointerTo(2)
+    );
+  }
   for (auto &[idx, info] : shader_info->indexableTempRegisterCounts) {
     auto &[numRegisters, mask] = info;
     auto channel_count = std::bit_width(mask);

@@ -530,6 +530,13 @@ static auto readSrcOperand(const microsoft::D3D10ShaderBinary::COperandBase &O)
     }
     assert(0 && "TODO: SM5.1");
   }
+  case D3D10_SB_OPERAND_TYPE_IMMEDIATE_CONSTANT_BUFFER: {
+    DXASSERT_DXBC(O.m_IndexDimension == D3D10_SB_OPERAND_INDEX_1D);
+    return SrcOperandImmediateConstantBuffer{
+      ._ = readSrcOperandCommon(O),
+      .regindex = readOperandIndex(O.m_Index[0], O.m_IndexType[0]),
+    };
+  }
   case D3D11_SB_OPERAND_TYPE_INPUT_THREAD_GROUP_ID: {
     return SrcOperandAttribute{
       ._ = readSrcOperandCommon(O),

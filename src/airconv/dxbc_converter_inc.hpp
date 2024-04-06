@@ -40,6 +40,7 @@ using IndexedIRValue = std::function<IRValue(pvalue)>;
 
 struct io_binding_map {
   llvm::GlobalVariable *icb;
+  llvm::Value *icb_float;
   std::unordered_map<uint32_t, IndexedIRValue> cb_range_map;
   std::unordered_map<uint32_t, IndexedIRValue> sampler_range_map;
   std::unordered_map<uint32_t, std::pair<air::MSLTexture, IndexedIRValue>>
@@ -243,6 +244,7 @@ auto extend_to_vec4(pvalue value) {
         return ctx.builder.CreateShuffleVector(value, {0, 1, 1, 1});
       if (vecTy->getNumElements() == 1)
         return ctx.builder.CreateShuffleVector(value, {0, 0, 0, 0});
+      assert(0 && "?");
     } else {
       return ctx.builder.CreateVectorSplat(4, value);
     }
@@ -1679,6 +1681,28 @@ IRValue load_src<SrcOperandConstantBuffer, true>(SrcOperandConstantBuffer cb) {
   );
   auto vec = ctx.builder.CreateBitCast(
     ctx.builder.CreateLoad(ctx.types._int4, ptr), ctx.types._float4
+  );
+  co_return co_yield apply_float_src_operand_modifier(cb._, vec);
+};
+
+template <>
+IRValue load_src<SrcOperandImmediateConstantBuffer, false>(
+  SrcOperandImmediateConstantBuffer cb
+) {
+  auto ctx = co_yield get_context();
+  auto vec = co_yield load_at_alloca_array(
+    ctx.resource.icb, co_yield load_operand_index(cb.regindex)
+  );
+  co_return co_yield apply_integer_src_operand_modifier(cb._, vec);
+};
+
+template <>
+IRValue load_src<SrcOperandImmediateConstantBuffer, true>(
+  SrcOperandImmediateConstantBuffer cb
+) {
+  auto ctx = co_yield get_context();
+  auto vec = co_yield load_at_alloca_array(
+    ctx.resource.icb_float, co_yield load_operand_index(cb.regindex)
   );
   co_return co_yield apply_float_src_operand_modifier(cb._, vec);
 };
