@@ -32,6 +32,7 @@ d3d11_dll = shared_library('d3d11', d3d11_src, d3d11_res,
   dxmt_dep, winemetal_dep ],
   include_directories : dxmt_include_path,
   install             : true,
+  vs_module_defs      : 'd3d11.def',
   link_args           : d3d11_ld_args,
   link_depends        : [ d3d11_link_depends ],
 )

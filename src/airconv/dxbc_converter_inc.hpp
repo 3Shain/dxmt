@@ -2499,8 +2499,9 @@ auto convert_basicblocks(
                    case air::TextureKind::depth_2d_array: {
                      co_return co_yield call_sample_compare(
                        res, res_h, sampler_h,
-                       co_yield truncate_vec(2)(coord),        // .rg
-                       co_yield extract_element(2)(coord),     // array_index
+                       co_yield truncate_vec(2)(coord), // .rg
+                       co_yield extract_element(2)(coord) >>=
+                       implicit_float_to_int,                  // array_index
                        co_yield extract_element(0)(reference), // reference
                        co_yield truncate_vec(2)(offset_const), // 2d offset
                        nullptr, nullptr,
@@ -2524,8 +2525,9 @@ auto convert_basicblocks(
                    case air::TextureKind::depth_cube_array: {
                      co_return co_yield call_sample_compare(
                        res, res_h, sampler_h,
-                       co_yield truncate_vec(3)(coord),        // .rgb
-                       co_yield extract_element(3)(coord),     // array_index
+                       co_yield truncate_vec(3)(coord), // .rgb
+                       co_yield extract_element(3)(coord) >>=
+                       implicit_float_to_int,                  // array_index
                        co_yield extract_element(0)(reference), // reference
                        nullptr, nullptr, nullptr,
                        sample.level_zero
@@ -2537,8 +2539,7 @@ auto convert_basicblocks(
                      assert(0 && "invalid sample_compare resource type");
                    }
                    }
-                 }) >>= extract_value(0)) >>=
-                swizzle(sample.src_resource.read_swizzle)
+                 }) >>= extract_value(0))
               );
             },
             [&](InstGather sample) {
