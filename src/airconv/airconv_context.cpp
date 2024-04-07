@@ -99,10 +99,7 @@ void runOptimizationPasses(llvm::Module &M, llvm::OptimizationLevel opt) {
 
   ModulePassManager MPM = PB.buildPerModuleDefaultPipeline(opt);
 
-  FunctionPassManager FPM;
-  FPM.addPass(VerifierPass());
-
-  MPM.addPass(createModuleToFunctionPassAdaptor(std::move(FPM)));
+  MPM.addPass(VerifierPass());
 
   // Optimize the IR!
   MPM.run(M, MAM);

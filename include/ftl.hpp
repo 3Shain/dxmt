@@ -193,3 +193,20 @@ auto lift( ReaderIO<Env,A>&& a,  ReaderIO<Env,B>&& b,  ReaderIO<Env,C>&& c,  Fun
 //     };
 //   };
 // };
+
+template<class T, std::enable_if_t<std::is_enum_v<T>, int> = 0>
+constexpr T operator|(T lhs, T rhs) 
+{
+  return static_cast<T>(
+    static_cast<std::underlying_type<T>::type>(lhs) | 
+    static_cast<std::underlying_type<T>::type>(rhs));
+}
+
+template<class T, std::enable_if_t<std::is_enum_v<T>, int> = 0>
+constexpr T& operator|=(T& lhs, T rhs)
+{
+  lhs = static_cast<T>(
+    static_cast<std::underlying_type<T>::type>(lhs) | 
+    static_cast<std::underlying_type<T>::type>(rhs));
+  return lhs;
+}

@@ -193,16 +193,18 @@ struct SrcOperandUAV {
 
 struct SrcOperandTGSM {
   uint32_t id;
-  OperandIndex index;
+  Swizzle read_swizzle; // if appliable?
 };
 
 struct AtomicDstOperandUAV {
   uint32_t range_id;
   OperandIndex index;
+  uint32_t mask;
 };
 
 struct AtomicOperandTGSM {
   uint32_t id;
+  uint32_t mask;
 };
 
 using DstOperand = std::variant<
@@ -341,14 +343,14 @@ struct InstLoad {
 struct InstLoadRaw {
   DstOperand dst;
   SrcOperand src_byte_offset;
-  std::variant<SrcOperandResource, SrcOperandUAV, AtomicOperandTGSM> src;
+  std::variant<SrcOperandResource, SrcOperandUAV, SrcOperandTGSM> src;
 };
 
 struct InstLoadStructured {
   DstOperand dst;
   SrcOperand src_address;
   SrcOperand src_byte_offset;
-  std::variant<SrcOperandResource, SrcOperandUAV, AtomicOperandTGSM> src;
+  std::variant<SrcOperandResource, SrcOperandUAV, SrcOperandTGSM> src;
 };
 
 struct InstLoadUAVTyped {

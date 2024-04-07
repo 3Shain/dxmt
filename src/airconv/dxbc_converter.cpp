@@ -133,7 +133,7 @@ Reflection convertDXBC(
         ); // read till ENDIF
         // scope end
         return readControlFlow(
-          after_endif, null_bb, continue_point, break_point, return_point,
+          after_endif, block_after_endif, continue_point, break_point, return_point,
           switch_context
         );
       }
@@ -496,11 +496,17 @@ Reflection convertDXBC(
           tgsm.size = Inst.m_RawTGSMDecl.ByteCount;
           tgsm.size_in_uint = tgsm.size / 4;
           tgsm.structured = false;
+          assert(
+            (Inst.m_RawTGSMDecl.ByteCount & 0b11) == 0
+          ); // is multiple of 4
         } else {
           tgsm.stride = Inst.m_StructuredTGSMDecl.StructByteStride;
           tgsm.size = Inst.m_StructuredTGSMDecl.StructCount;
           tgsm.size_in_uint = tgsm.stride * tgsm.size / 4;
           tgsm.structured = true;
+          assert(
+            (Inst.m_StructuredTGSMDecl.StructByteStride & 0b11) == 0
+          ); // is multiple of 4
         }
 
         shader_info->tgsmMap[Inst.m_Operands[0].m_Index[0].m_RegIndex] = tgsm;
@@ -940,6 +946,16 @@ Reflection convertDXBC(
     }
   }
   air::AirType types(context);
+  for (auto &[id, tgsm] : shader_info->tgsmMap) {
+    auto type = llvm::ArrayType::get(types._int, tgsm.size_in_uint);
+    llvm::GlobalVariable *tgsm_h = new llvm::GlobalVariable(
+      module, type, false, llvm::GlobalValue::InternalLinkage,
+      llvm::UndefValue::get(type), "g" + std::to_string(id), nullptr,
+      llvm::GlobalValue::NotThreadLocal, 3
+    );
+    tgsm_h->setAlignment(llvm::Align(4));
+    resource_map.tgsm_map[id] = {tgsm.structured ? tgsm.stride : 0, tgsm_h};
+  }
   if (shader_info->immConstantBufferData.size()) {
     auto type = llvm::ArrayType::get(
       types._int4, shader_info->immConstantBufferData.size()
@@ -1029,7 +1045,7 @@ Reflection convertDXBC(
   };
   // then we can start build ... real IR code (visit all basicblocks)
   prelogue.build(ctx);
-  auto real_entry = convertBasicBlocks(entry, ctx, epilogue_bb);
+  auto real_entry = convert_basicblocks(entry, ctx, epilogue_bb);
   builder.CreateBr(real_entry);
 
   builder.SetInsertPoint(epilogue_bb);

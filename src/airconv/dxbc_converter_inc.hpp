@@ -10,6 +10,7 @@
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/Function.h"
+#include "llvm/IR/GlobalValue.h"
 #include "llvm/IR/GlobalVariable.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Instructions.h"
@@ -48,13 +49,14 @@ struct io_binding_map {
   std::unordered_map<uint32_t, std::pair<air::MSLTexture, IndexedIRValue>>
     uav_range_map;
   std::unordered_map<uint32_t, llvm::AllocaInst *> indexable_temp_map;
+  std::unordered_map<uint32_t, std::pair<uint32_t, llvm::GlobalVariable *>>
+    tgsm_map;
   llvm::AllocaInst *input_register_file = nullptr;
   llvm::Value *input_register_file_float = nullptr;
   llvm::AllocaInst *output_register_file = nullptr;
   llvm::Value *output_register_file_float = nullptr;
   llvm::AllocaInst *temp_register_file = nullptr;
   llvm::Value *temp_register_file_float = nullptr;
-  // TODO: tgsm
 
   // special registers (input)
   llvm::Value *thread_id_arg = nullptr;
@@ -385,7 +387,7 @@ auto create_shuffle_swizzle_mask(
 auto cmp_integer(llvm::CmpInst::Predicate cmp, pvalue a, pvalue b) {
   return make_irvalue([=](context ctx) {
     return ctx.builder.CreateSExt(
-      ctx.builder.CreateICmp(llvm::CmpInst::ICMP_EQ, a, b), ctx.types._int4
+      ctx.builder.CreateICmp(cmp, a, b), ctx.types._int4
     );
   });
 };
@@ -680,8 +682,8 @@ auto call_abs(uint32_t dimension, pvalue fvec) {
   return call_float_unary_op("fabs", fvec);
 };
 
-auto pure(pvalue p) {
-  return make_irvalue([=](auto) { return p; });
+auto pure(pvalue value) {
+  return make_irvalue([=](auto) { return value; });
 }
 
 auto saturate(bool sat) {
@@ -1499,7 +1501,11 @@ IREffect call_discard_fragment() {
   co_return {};
 }
 
-enum class mem_flags : uint32_t { device = 1, threadgroup = 2, texture = 4 };
+enum class mem_flags : uint8_t {
+  device = 1,
+  threadgroup = 2,
+  texture = 4,
+};
 
 IREffect call_threadgroup_barrier(mem_flags mem_flag) {
   using namespace llvm;
@@ -1949,7 +1955,62 @@ auto load_condition(SrcOperand src, bool non_zero_test) {
   };
 };
 
-auto convertBasicBlocks(
+auto load_tgsm(
+  llvm::GlobalValue *g, pvalue offset_in_4bytes, uint32_t read_components
+) -> IRValue {
+  auto ctx = co_yield get_context();
+  pvalue vec = llvm::UndefValue::get(ctx.types._int4);
+  for (uint32_t i = 0; i < read_components; i++) {
+    auto ptr = ctx.builder.CreateInBoundsGEP(
+      llvm::cast<llvm::PointerType>(g->getType())
+        ->getNonOpaquePointerElementType(),
+      g,
+      {ctx.builder.getInt32(0),
+       ctx.builder.CreateAdd(offset_in_4bytes, ctx.builder.getInt32(i))}
+    );
+    vec = ctx.builder.CreateInsertElement(
+      vec, ctx.builder.CreateLoad(ctx.types._int, ptr), i
+    );
+  }
+  co_return vec;
+};
+
+auto mask_to_linear_components_num(uint32_t mask) {
+  switch (mask) {
+  case 0b1:
+    return 1;
+  case 0b11:
+    return 2;
+  case 0b111:
+    return 3;
+  case 0b1111:
+    return 4;
+  default:
+    llvm::outs() << mask << '\n';
+    assert(0 && "invalid write mask");
+    return 0;
+  }
+}
+
+auto store_tgsm(
+  llvm::GlobalValue *g, pvalue offset_in_4bytes, uint32_t written_components,
+  pvalue ivec4_to_write
+) -> IREffect {
+  auto ctx = co_yield get_context();
+  for (uint32_t i = 0; i < written_components; i++) {
+    auto ptr = ctx.builder.CreateInBoundsGEP(
+      llvm::cast<llvm::PointerType>(g->getType())
+        ->getNonOpaquePointerElementType(),
+      g,
+      {ctx.builder.getInt32(0),
+       ctx.builder.CreateAdd(offset_in_4bytes, ctx.builder.getInt32(i))}
+    );
+    ctx.builder.CreateStore(co_yield extract_element(i)(ivec4_to_write), ptr);
+  }
+  co_return {};
+};
+
+auto convert_basicblocks(
   std::shared_ptr<BasicBlock> entry, context &ctx, llvm::BasicBlock *return_bb
 ) {
   auto &context = ctx.llvm;
@@ -2794,20 +2855,153 @@ auto convertBasicBlocks(
                     nullptr, value, ctx.builder.getInt32(0)
                   );
                   break;
-
-                // case air::TextureKind::texture_buffer:
-                //   co_yield call_write(
-                //     res, res_h, co_yield extract_element(0)(coord), nullptr,
-                //     nullptr, value, ctx.builder.getInt32(0)
-                //   );
-                //   break;
-                case air::TextureKind::texture_cube:
-                case air::TextureKind::texture_cube_array:
                 default:
                   assert(0 && "invalid texture kind for uav store");
                 }
                 co_return {};
               });
+            },
+            [&](InstLoadStructured load) {
+              std::visit(
+                patterns{
+                  [&](SrcOperandTGSM tgsm) {
+                    effect << make_effect_bind(
+                      [=](struct context ctx) -> IREffect {
+                        auto &builder = ctx.builder;
+                        auto [stride, tgsm_h] = ctx.resource.tgsm_map[tgsm.id];
+                        auto offset = builder.CreateLShr(
+                          builder.CreateAdd(
+                            builder.CreateMul(
+                              builder.getInt32(stride),
+                              co_yield load_src_op<false>(load.src_address) >>=
+                              extract_element(0)
+                            ),
+                            co_yield load_src_op<false>(load.src_byte_offset
+                            ) >>= extract_element(0)
+                          ),
+                          2
+                        );
+                        co_return co_yield store_dst_op<false>(
+                          load.dst,
+                          load_tgsm(
+                            tgsm_h, offset,
+                            std::max(
+                              {tgsm.read_swizzle.x, tgsm.read_swizzle.y,
+                               tgsm.read_swizzle.z, tgsm.read_swizzle.w}
+                            ) +
+                              1
+                          ) >>= swizzle(tgsm.read_swizzle)
+                        );
+                      }
+                    );
+                  },
+                  [&](SrcOperandResource srv) {
+                    assert(0 && "TODO: ld_structured srv");
+                  },
+                  [&](SrcOperandUAV uav) {
+                    assert(0 && "TODO: ld_structured uav");
+                  }
+                },
+                load.src
+              );
+            },
+            [&](InstStoreStructured store) {
+              std::visit(
+                patterns{
+                  [&](AtomicOperandTGSM tgsm) {
+                    effect << make_effect_bind(
+                      [=](struct context ctx) -> IREffect {
+                        auto &builder = ctx.builder;
+                        auto [stride, tgsm_h] = ctx.resource.tgsm_map[tgsm.id];
+                        auto offset = builder.CreateLShr(
+                          builder.CreateAdd(
+                            builder.CreateMul(
+                              builder.getInt32(stride),
+                              co_yield load_src_op<false>(store.dst_address) >>=
+                              extract_element(0)
+                            ),
+                            co_yield load_src_op<false>(store.dst_byte_offset
+                            ) >>= extract_element(0)
+                          ),
+                          2
+                        );
+                        co_return co_yield store_tgsm(
+                          tgsm_h, offset,
+                          mask_to_linear_components_num(tgsm.mask),
+                          co_yield load_src_op<false>(store.src)
+                        );
+                      }
+                    );
+                  },
+                  [&](AtomicDstOperandUAV uav) {
+                    assert(0 && "TODO: store_structured uav");
+                  }
+                },
+                store.dst
+              );
+            },
+            [&](InstLoadRaw load) {
+              std::visit(
+                patterns{
+                  [&](SrcOperandTGSM tgsm) {
+                    effect << make_effect_bind(
+                      [=](struct context ctx) -> IREffect {
+                        auto &builder = ctx.builder;
+                        auto [stride, tgsm_h] = ctx.resource.tgsm_map[tgsm.id];
+                        auto offset = builder.CreateLShr(
+                          co_yield load_src_op<false>(load.src_byte_offset) >>=
+                          extract_element(0),
+                          2
+                        );
+                        co_return co_yield store_dst_op<false>(
+                          load.dst,
+                          load_tgsm(
+                            tgsm_h, offset,
+                            std::max(
+                              {tgsm.read_swizzle.x, tgsm.read_swizzle.y,
+                               tgsm.read_swizzle.z, tgsm.read_swizzle.w}
+                            ) +
+                              1
+                          ) >>= swizzle(tgsm.read_swizzle)
+                        );
+                      }
+                    );
+                  },
+                  [&](SrcOperandResource srv) {
+                    assert(0 && "TODO: ld_raw srv");
+                  },
+                  [&](SrcOperandUAV uav) { assert(0 && "TODO: ld_raw uav"); }
+                },
+                load.src
+              );
+            },
+            [&](InstStoreRaw store) {
+              std::visit(
+                patterns{
+                  [&](AtomicOperandTGSM tgsm) {
+                    effect << make_effect_bind(
+                      [=](struct context ctx) -> IREffect {
+                        auto &builder = ctx.builder;
+                        auto [stride, tgsm_h] = ctx.resource.tgsm_map[tgsm.id];
+                        auto offset = builder.CreateLShr(
+                          co_yield load_src_op<false>(store.dst_byte_offset) >>=
+                          extract_element(0),
+                          2
+                        );
+                        co_return co_yield store_tgsm(
+                          tgsm_h, offset,
+                          mask_to_linear_components_num(tgsm.mask),
+                          co_yield load_src_op<false>(store.src)
+                        );
+                      }
+                    );
+                  },
+                  [&](AtomicDstOperandUAV uav) {
+                    assert(0 && "TODO: store_raw uav");
+                  }
+                },
+                store.dst
+              );
             },
             [&](InstIntegerCompare icmp) {
               llvm::CmpInst::Predicate pred;
@@ -3275,30 +3469,48 @@ auto convertBasicBlocks(
               }
               }
             },
-            // [&](InstIntegerBinaryOpWithTwoDst bin) {
-            //   switch (bin.op) {
-            //   case IntegerBinaryOpWithTwoDst::IMul:
-            //   case IntegerBinaryOpWithTwoDst::UMul: {
-            //     assert(0 && "todo");
-            //     break;
-            //   }
-            //   case IntegerBinaryOpWithTwoDst::UAddCarry:
-            //   case IntegerBinaryOpWithTwoDst::USubBorrow:
-            //   case IntegerBinaryOpWithTwoDst::UDiv:
-            //     assert(0 && "todo");
-            //     break;
-            //   }
-            // },
-            // [&](InstSync sync) {
-            //   mem_flags mem_flag;
-            //   if (sync.boundary == InstSync::Boundary::global) {
-            //     // mem_flag |= mem_flags::device;
-            //   }
-            //   if (sync.boundary == InstSync::Boundary::group) {
-            //     // mem_flag |= mem_flags::threadgroup;
-            //   }
-            //   effect << call_threadgroup_barrier(mem_flag);
-            // },
+            [&](InstIntegerBinaryOpWithTwoDst bin) {
+              switch (bin.op) {
+              case IntegerBinaryOpWithTwoDst::IMul:
+              case IntegerBinaryOpWithTwoDst::UMul: {
+                assert(0 && "todo");
+                break;
+              }
+              case IntegerBinaryOpWithTwoDst::UAddCarry:
+              case IntegerBinaryOpWithTwoDst::USubBorrow: {
+                assert(0 && "todo");
+                break;
+              }
+              case IntegerBinaryOpWithTwoDst::UDiv: {
+                effect << make_effect_bind([=](struct context ctx) -> IREffect {
+                  auto a = co_yield load_src_op<false>(bin.src0);
+                  auto b = co_yield load_src_op<false>(bin.src1);
+                  co_yield store_dst_op<false>(
+                    bin.dst_quot, make_irvalue([=](struct context ctx) {
+                      return ctx.builder.CreateUDiv(a, b);
+                    })
+                  );
+                  co_yield store_dst_op<false>(
+                    bin.dst_rem, make_irvalue([=](struct context ctx) {
+                      return ctx.builder.CreateURem(a, b);
+                    })
+                  );
+                  co_return {};
+                });
+                break;
+              }
+              }
+            },
+            [&](InstSync sync) {
+              mem_flags mem_flag;
+              if (sync.boundary == InstSync::Boundary::global) {
+                mem_flag |= mem_flags::device;
+              }
+              if (sync.boundary == InstSync::Boundary::group) {
+                mem_flag |= mem_flags::threadgroup;
+              }
+              effect << call_threadgroup_barrier(mem_flag);
+            },
             [&](InstPixelDiscard) { effect << call_discard_fragment(); },
             [](InstNop) {}, // nop
             [](auto) { assert(0 && "unhandled instruction"); }

@@ -631,6 +631,16 @@ auto readSrcOperandUAV(const microsoft::D3D10ShaderBinary::COperandBase &O)
   }
 }
 
+auto readSrcOperandTGSM(const microsoft::D3D10ShaderBinary::COperandBase &O)
+  -> SrcOperandTGSM {
+  assert(
+    O.m_Type == microsoft::D3D11_SB_OPERAND_TYPE_THREAD_GROUP_SHARED_MEMORY
+  );
+  return SrcOperandTGSM{
+    .id = O.m_Index[0].m_RegIndex, .read_swizzle = readSrcOperandSwizzle(O)
+  };
+}
+
 auto readDstOperandUAV(const microsoft::D3D10ShaderBinary::COperandBase &O)
   -> AtomicDstOperandUAV {
   if (O.m_IndexDimension == microsoft::D3D10_SB_OPERAND_INDEX_1D) {
@@ -639,12 +649,14 @@ auto readDstOperandUAV(const microsoft::D3D10ShaderBinary::COperandBase &O)
     );
     return AtomicDstOperandUAV{
       .range_id = O.m_Index[0].m_RegIndex,
-      .index = readOperandIndex(O.m_Index[0], O.m_IndexType[0])
+      .index = readOperandIndex(O.m_Index[0], O.m_IndexType[0]),
+      .mask = O.m_WriteMask >> 4
     };
   } else {
     return AtomicDstOperandUAV{
       .range_id = O.m_Index[0].m_RegIndex,
-      .index = readOperandIndex(O.m_Index[1], O.m_IndexType[1])
+      .index = readOperandIndex(O.m_Index[1], O.m_IndexType[1]),
+      .mask = O.m_WriteMask >> 4
     };
   }
 }
@@ -654,19 +666,21 @@ readAtomicDst(const microsoft::D3D10ShaderBinary::COperandBase &O) {
   if (O.m_Type == microsoft::D3D11_SB_OPERAND_TYPE_UNORDERED_ACCESS_VIEW) {
     return readDstOperandUAV(O);
   } else if (O.m_Type == microsoft::D3D11_SB_OPERAND_TYPE_THREAD_GROUP_SHARED_MEMORY) {
-    return AtomicOperandTGSM{.id = O.m_Index[0].m_RegIndex};
+    return AtomicOperandTGSM{
+      .id = O.m_Index[0].m_RegIndex, .mask = O.m_WriteMask >> 4
+    };
   }
   assert(0 && "unexpected atomic operation destination");
 }
 
-std::variant<SrcOperandResource, SrcOperandUAV, AtomicOperandTGSM>
+std::variant<SrcOperandResource, SrcOperandUAV, SrcOperandTGSM>
 readTypelessSrc(const microsoft::D3D10ShaderBinary::COperandBase &O) {
   if (O.m_Type == microsoft::D3D11_SB_OPERAND_TYPE_UNORDERED_ACCESS_VIEW) {
     return readSrcOperandUAV(O);
   } else if (O.m_Type == microsoft::D3D10_SB_OPERAND_TYPE_RESOURCE) {
     return readSrcOperandResource(O);
   } else if (O.m_Type == microsoft::D3D11_SB_OPERAND_TYPE_THREAD_GROUP_SHARED_MEMORY) {
-    return AtomicOperandTGSM{.id = O.m_Index[0].m_RegIndex};
+    return readSrcOperandTGSM(O);
   }
   assert(0 && "unexpected typeless load/store operation destination");
 }
