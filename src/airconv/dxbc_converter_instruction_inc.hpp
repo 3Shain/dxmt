@@ -1630,68 +1630,156 @@ static auto readInstruction(
     };
   };
   case microsoft::D3D11_SB_OPCODE_ATOMIC_AND: {
-    return InstAtomicBinOp{
+    auto inst = InstAtomicBinOp{
       .op = AtomicBinaryOp::And,
       .dst = readAtomicDst(Inst.m_Operands[0]),
       .dst_address = readSrcOperand(Inst.m_Operands[1]),
       .src = readSrcOperand(Inst.m_Operands[2]),
     };
+    std::visit(
+      patterns{
+        [&](AtomicDstOperandUAV uav) {
+          shader_info.uavMap[uav.range_id].read = true;
+          shader_info.uavMap[uav.range_id].written = true;
+        },
+        [](auto) {}
+      },
+      inst.dst
+    );
+    return inst;
   };
   case microsoft::D3D11_SB_OPCODE_ATOMIC_OR: {
-    return InstAtomicBinOp{
+    auto inst = InstAtomicBinOp{
       .op = AtomicBinaryOp::Or,
       .dst = readAtomicDst(Inst.m_Operands[0]),
       .dst_address = readSrcOperand(Inst.m_Operands[1]),
       .src = readSrcOperand(Inst.m_Operands[2]),
     };
+    std::visit(
+      patterns{
+        [&](AtomicDstOperandUAV uav) {
+          shader_info.uavMap[uav.range_id].read = true;
+          shader_info.uavMap[uav.range_id].written = true;
+        },
+        [](auto) {}
+      },
+      inst.dst
+    );
+    return inst;
   };
   case microsoft::D3D11_SB_OPCODE_ATOMIC_XOR: {
-    return InstAtomicBinOp{
+    auto inst = InstAtomicBinOp{
       .op = AtomicBinaryOp::Xor,
       .dst = readAtomicDst(Inst.m_Operands[0]),
       .dst_address = readSrcOperand(Inst.m_Operands[1]),
       .src = readSrcOperand(Inst.m_Operands[2]),
     };
+    std::visit(
+      patterns{
+        [&](AtomicDstOperandUAV uav) {
+          shader_info.uavMap[uav.range_id].read = true;
+          shader_info.uavMap[uav.range_id].written = true;
+        },
+        [](auto) {}
+      },
+      inst.dst
+    );
+    return inst;
   };
   case microsoft::D3D11_SB_OPCODE_ATOMIC_IADD: {
-    return InstAtomicBinOp{
+    auto inst = InstAtomicBinOp{
       .op = AtomicBinaryOp::Add,
       .dst = readAtomicDst(Inst.m_Operands[0]),
       .dst_address = readSrcOperand(Inst.m_Operands[1]),
       .src = readSrcOperand(Inst.m_Operands[2]),
     };
+    std::visit(
+      patterns{
+        [&](AtomicDstOperandUAV uav) {
+          shader_info.uavMap[uav.range_id].read = true;
+          shader_info.uavMap[uav.range_id].written = true;
+        },
+        [](auto) {}
+      },
+      inst.dst
+    );
+    return inst;
   };
   case microsoft::D3D11_SB_OPCODE_ATOMIC_IMAX: {
-    return InstAtomicBinOp{
+    auto inst = InstAtomicBinOp{
       .op = AtomicBinaryOp::IMax,
       .dst = readAtomicDst(Inst.m_Operands[0]),
       .dst_address = readSrcOperand(Inst.m_Operands[1]),
       .src = readSrcOperand(Inst.m_Operands[2]),
     };
+    std::visit(
+      patterns{
+        [&](AtomicDstOperandUAV uav) {
+          shader_info.uavMap[uav.range_id].read = true;
+          shader_info.uavMap[uav.range_id].written = true;
+        },
+        [](auto) {}
+      },
+      inst.dst
+    );
+    return inst;
   };
   case microsoft::D3D11_SB_OPCODE_ATOMIC_IMIN: {
-    return InstAtomicBinOp{
+    auto inst = InstAtomicBinOp{
       .op = AtomicBinaryOp::IMin,
       .dst = readAtomicDst(Inst.m_Operands[0]),
       .dst_address = readSrcOperand(Inst.m_Operands[1]),
       .src = readSrcOperand(Inst.m_Operands[2]),
     };
+    std::visit(
+      patterns{
+        [&](AtomicDstOperandUAV uav) {
+          shader_info.uavMap[uav.range_id].read = true;
+          shader_info.uavMap[uav.range_id].written = true;
+        },
+        [](auto) {}
+      },
+      inst.dst
+    );
+    return inst;
   };
   case microsoft::D3D11_SB_OPCODE_ATOMIC_UMAX: {
-    return InstAtomicBinOp{
+    auto inst = InstAtomicBinOp{
       .op = AtomicBinaryOp::UMax,
       .dst = readAtomicDst(Inst.m_Operands[0]),
       .dst_address = readSrcOperand(Inst.m_Operands[1]),
       .src = readSrcOperand(Inst.m_Operands[2]),
     };
+    std::visit(
+      patterns{
+        [&](AtomicDstOperandUAV uav) {
+          shader_info.uavMap[uav.range_id].read = true;
+          shader_info.uavMap[uav.range_id].written = true;
+        },
+        [](auto) {}
+      },
+      inst.dst
+    );
+    return inst;
   };
   case microsoft::D3D11_SB_OPCODE_ATOMIC_UMIN: {
-    return InstAtomicBinOp{
+    auto inst = InstAtomicBinOp{
       .op = AtomicBinaryOp::UMin,
       .dst = readAtomicDst(Inst.m_Operands[0]),
       .dst_address = readSrcOperand(Inst.m_Operands[1]),
       .src = readSrcOperand(Inst.m_Operands[2]),
     };
+    std::visit(
+      patterns{
+        [&](AtomicDstOperandUAV uav) {
+          shader_info.uavMap[uav.range_id].read = true;
+          shader_info.uavMap[uav.range_id].written = true;
+        },
+        [](auto) {}
+      },
+      inst.dst
+    );
+    return inst;
   };
   case microsoft::D3D11_SB_OPCODE_ATOMIC_CMP_STORE: {
     return InstAtomicCmpStore{
@@ -1732,76 +1820,164 @@ static auto readInstruction(
     };
   };
   case microsoft::D3D11_SB_OPCODE_IMM_ATOMIC_AND: {
-    return InstAtomicBinOp{
+    auto inst = InstAtomicBinOp{
       .op = AtomicBinaryOp::And,
       .dst = readAtomicDst(Inst.m_Operands[1]),
       .dst_address = readSrcOperand(Inst.m_Operands[2]),
       .src = readSrcOperand(Inst.m_Operands[3]),
       .dst_original = readDstOperand(Inst.m_Operands[0]),
     };
+    std::visit(
+      patterns{
+        [&](AtomicDstOperandUAV uav) {
+          shader_info.uavMap[uav.range_id].read = true;
+          shader_info.uavMap[uav.range_id].written = true;
+        },
+        [](auto) {}
+      },
+      inst.dst
+    );
+    return inst;
   };
   case microsoft::D3D11_SB_OPCODE_IMM_ATOMIC_OR: {
-    return InstAtomicBinOp{
+    auto inst = InstAtomicBinOp{
       .op = AtomicBinaryOp::Or,
       .dst = readAtomicDst(Inst.m_Operands[1]),
       .dst_address = readSrcOperand(Inst.m_Operands[2]),
       .src = readSrcOperand(Inst.m_Operands[3]),
       .dst_original = readDstOperand(Inst.m_Operands[0]),
     };
+    std::visit(
+      patterns{
+        [&](AtomicDstOperandUAV uav) {
+          shader_info.uavMap[uav.range_id].read = true;
+          shader_info.uavMap[uav.range_id].written = true;
+        },
+        [](auto) {}
+      },
+      inst.dst
+    );
+    return inst;
   };
   case microsoft::D3D11_SB_OPCODE_IMM_ATOMIC_XOR: {
-    return InstAtomicBinOp{
+    auto inst = InstAtomicBinOp{
       .op = AtomicBinaryOp::Xor,
       .dst = readAtomicDst(Inst.m_Operands[1]),
       .dst_address = readSrcOperand(Inst.m_Operands[2]),
       .src = readSrcOperand(Inst.m_Operands[3]),
       .dst_original = readDstOperand(Inst.m_Operands[0]),
     };
+    std::visit(
+      patterns{
+        [&](AtomicDstOperandUAV uav) {
+          shader_info.uavMap[uav.range_id].read = true;
+          shader_info.uavMap[uav.range_id].written = true;
+        },
+        [](auto) {}
+      },
+      inst.dst
+    );
+    return inst;
   };
   case microsoft::D3D11_SB_OPCODE_IMM_ATOMIC_IADD: {
-    return InstAtomicBinOp{
+    auto inst = InstAtomicBinOp{
       .op = AtomicBinaryOp::Add,
       .dst = readAtomicDst(Inst.m_Operands[1]),
       .dst_address = readSrcOperand(Inst.m_Operands[2]),
       .src = readSrcOperand(Inst.m_Operands[3]),
       .dst_original = readDstOperand(Inst.m_Operands[0]),
     };
+    std::visit(
+      patterns{
+        [&](AtomicDstOperandUAV uav) {
+          shader_info.uavMap[uav.range_id].read = true;
+          shader_info.uavMap[uav.range_id].written = true;
+        },
+        [](auto) {}
+      },
+      inst.dst
+    );
+    return inst;
   };
   case microsoft::D3D11_SB_OPCODE_IMM_ATOMIC_UMAX: {
-    return InstAtomicBinOp{
+    auto inst = InstAtomicBinOp{
       .op = AtomicBinaryOp::UMax,
       .dst = readAtomicDst(Inst.m_Operands[1]),
       .dst_address = readSrcOperand(Inst.m_Operands[2]),
       .src = readSrcOperand(Inst.m_Operands[3]),
       .dst_original = readDstOperand(Inst.m_Operands[0]),
     };
+    std::visit(
+      patterns{
+        [&](AtomicDstOperandUAV uav) {
+          shader_info.uavMap[uav.range_id].read = true;
+          shader_info.uavMap[uav.range_id].written = true;
+        },
+        [](auto) {}
+      },
+      inst.dst
+    );
+    return inst;
   };
   case microsoft::D3D11_SB_OPCODE_IMM_ATOMIC_UMIN: {
-    return InstAtomicBinOp{
+    auto inst = InstAtomicBinOp{
       .op = AtomicBinaryOp::UMin,
       .dst = readAtomicDst(Inst.m_Operands[1]),
       .dst_address = readSrcOperand(Inst.m_Operands[2]),
       .src = readSrcOperand(Inst.m_Operands[3]),
       .dst_original = readDstOperand(Inst.m_Operands[0]),
     };
+    std::visit(
+      patterns{
+        [&](AtomicDstOperandUAV uav) {
+          shader_info.uavMap[uav.range_id].read = true;
+          shader_info.uavMap[uav.range_id].written = true;
+        },
+        [](auto) {}
+      },
+      inst.dst
+    );
+    return inst;
   };
   case microsoft::D3D11_SB_OPCODE_IMM_ATOMIC_IMAX: {
-    return InstAtomicBinOp{
+    auto inst = InstAtomicBinOp{
       .op = AtomicBinaryOp::IMax,
       .dst = readAtomicDst(Inst.m_Operands[1]),
       .dst_address = readSrcOperand(Inst.m_Operands[2]),
       .src = readSrcOperand(Inst.m_Operands[3]),
       .dst_original = readDstOperand(Inst.m_Operands[0]),
     };
+    std::visit(
+      patterns{
+        [&](AtomicDstOperandUAV uav) {
+          shader_info.uavMap[uav.range_id].read = true;
+          shader_info.uavMap[uav.range_id].written = true;
+        },
+        [](auto) {}
+      },
+      inst.dst
+    );
+    return inst;
   };
   case microsoft::D3D11_SB_OPCODE_IMM_ATOMIC_IMIN: {
-    return InstAtomicBinOp{
+    auto inst = InstAtomicBinOp{
       .op = AtomicBinaryOp::IMin,
       .dst = readAtomicDst(Inst.m_Operands[1]),
       .dst_address = readSrcOperand(Inst.m_Operands[2]),
       .src = readSrcOperand(Inst.m_Operands[3]),
       .dst_original = readDstOperand(Inst.m_Operands[0]),
     };
+    std::visit(
+      patterns{
+        [&](AtomicDstOperandUAV uav) {
+          shader_info.uavMap[uav.range_id].read = true;
+          shader_info.uavMap[uav.range_id].written = true;
+        },
+        [](auto) {}
+      },
+      inst.dst
+    );
+    return inst;
   };
   default: {
     llvm::outs() << "unhandled dxbc instruction " << Inst.OpCode() << "\n";

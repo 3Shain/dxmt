@@ -387,6 +387,7 @@ Reflection convertDXBC(
             to_shader_resource_type(Inst.m_ResourceDecl.Dimension);
           srv.scaler_type =
             to_shader_scaler_type(Inst.m_ResourceDecl.ReturnType[0]);
+          srv.strucure_stride = -1;
           // Inst.m_ResourceDecl.SampleCount
           break;
         }
@@ -442,6 +443,7 @@ Reflection convertDXBC(
             to_shader_resource_type(Inst.m_TypedUAVDecl.Dimension);
           uav.scaler_type =
             to_shader_scaler_type(Inst.m_TypedUAVDecl.ReturnType[0]);
+          uav.strucure_stride = -1;
           break;
         }
         case D3D11_SB_OPCODE_DCL_UNORDERED_ACCESS_VIEW_RAW: {

@@ -697,7 +697,7 @@ struct UnorderedAccessViewInfo {
   bool rasterizer_order;
   bool with_counter;
 
-  uint32_t strucure_stride = 0; // =0 for typed and raw
+  int32_t strucure_stride = 0; // =0 for raw, -1 for typed
 };
 struct ConstantBufferInfo {
   ResourceRange range;

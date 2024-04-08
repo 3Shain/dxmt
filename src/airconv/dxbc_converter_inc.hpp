@@ -45,10 +45,10 @@ struct io_binding_map {
   std::unordered_map<uint32_t, IndexedIRValue> cb_range_map;
   std::unordered_map<uint32_t, IndexedIRValue> sampler_range_map;
   std::unordered_map<
-    uint32_t, std::tuple<air::MSLTexture, IndexedIRValue, uint32_t>>
+    uint32_t, std::tuple<air::MSLTexture, IndexedIRValue, int32_t>>
     srv_range_map;
   std::unordered_map<
-    uint32_t, std::tuple<air::MSLTexture, IndexedIRValue, uint32_t>>
+    uint32_t, std::tuple<air::MSLTexture, IndexedIRValue, int32_t>>
     uav_range_map;
   std::unordered_map<uint32_t, llvm::AllocaInst *> indexable_temp_map;
   std::unordered_map<uint32_t, std::pair<uint32_t, llvm::GlobalVariable *>>
@@ -1342,7 +1342,7 @@ auto call_gather_compare(
 }
 
 auto call_read(
-  air::MSLTexture texture_type, pvalue handle, pvalue coord,
+  air::MSLTexture texture_type, pvalue handle, pvalue address,
   pvalue offset = nullptr, pvalue cube_face = nullptr,
   pvalue array_index = nullptr, pvalue sample_index = nullptr,
   pvalue lod = nullptr
@@ -1380,12 +1380,12 @@ auto call_read(
   args_type.push_back(op_info.address_type);
   if (Constant *c = offset ? dyn_cast<Constant>(offset) : nullptr) {
     if (c->isZeroValue()) {
-      args_value.push_back(coord);
+      args_value.push_back(address);
     } else {
-      args_value.push_back(ctx.builder.CreateAdd(coord, offset));
+      args_value.push_back(ctx.builder.CreateAdd(address, offset));
     }
   } else {
-    args_value.push_back(coord);
+    args_value.push_back(address);
   }
 
   if (op_info.is_cube) {
@@ -1429,7 +1429,7 @@ auto call_read(
 }
 
 auto call_write(
-  air::MSLTexture texture_type, pvalue handle, pvalue coord, pvalue cube_face,
+  air::MSLTexture texture_type, pvalue handle, pvalue address, pvalue cube_face,
   pvalue array_index, pvalue vec4, pvalue lod = nullptr
 ) -> IRValue {
   auto ctx = co_yield get_context();
@@ -1458,7 +1458,7 @@ auto call_write(
   args_value.push_back(handle);
 
   args_type.push_back(op_info.address_type);
-  args_value.push_back(coord);
+  args_value.push_back(address);
 
   if (op_info.is_cube) {
     args_type.push_back(types._int);
@@ -1589,11 +1589,62 @@ IRValue call_atomic_fetch_explicit(
   );
 };
 
-IRValue call_texture_atomic_fetch(
-  air::MSLTexture texture_type, pvalue handle, pvalue operand, std::string op,
-  bool is_signed = false
+/* are we assume that vec4 can only be integer? */
+IRValue call_texture_atomic_fetch_explicit(
+  air::MSLTexture texture_type, pvalue handle, std::string op, bool is_signed,
+  pvalue address, pvalue array_index, pvalue vec4
 ) {
-  assert(0 && "TODO");
+  auto ctx = co_yield get_context();
+  using namespace llvm;
+  auto &context = ctx.llvm;
+  auto &module = ctx.module;
+  auto &types = ctx.types;
+  auto att = AttributeList::get(
+    context,
+    {
+      {1U, Attribute::get(context, Attribute::AttrKind::NoCapture)},
+      {~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)},
+      {~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)},
+    }
+  );
+  auto op_info = co_yield get_operation_info(texture_type);
+  assert(!op_info.is_depth);
+  assert(!op_info.is_cube);
+  assert(!op_info.is_ms);
+  auto fn_name =
+    "air.atomic_fetch_" + op + "_explicit_" + op_info.air_symbol_suffix +
+    type_overload_suffix(
+      vec4->getType(), is_signed ? air::Sign::with_sign : air::Sign::no_sign
+    );
+  std::vector<llvm::Type *> args_type;
+  std::vector<pvalue> args_value;
+
+  args_type.push_back(texture_type.get_llvm_type(context));
+  args_value.push_back(handle);
+
+  args_type.push_back(op_info.address_type);
+  args_value.push_back(address);
+
+  if (op_info.is_array) {
+    args_type.push_back(types._int);
+    args_value.push_back(array_index);
+  }
+
+  args_type.push_back(op_info.write_type);
+  args_value.push_back(vec4);
+
+  args_type.push_back(types._int);
+  args_value.push_back(ctx.builder.getInt32(0)); // memory order relaxed
+
+  /* access */
+  args_type.push_back(types._int);
+  args_value.push_back(ctx.builder.getInt32((uint32_t)texture_type.memory_access
+  ));
+
+  auto fn = module.getOrInsertFunction(
+    fn_name, llvm::FunctionType::get(op_info.write_type, args_type, false), att
+  );
+  co_return ctx.builder.CreateCall(fn, args_value);
 };
 
 // TODO: not good, expose too much detail
@@ -3903,11 +3954,44 @@ auto convert_basicblocks(
                   [&](AtomicDstOperandUAV uav) {
                     return make_effect_bind(
                       [=](struct context ctx) -> IREffect {
-                        assert(0 && "todo uav atomic");
-                        // auto &builder = ctx.builder;
-                        // auto [res, res_handle_fn, stride] =
-                        //   ctx.resource.uav_range_map[uav.range_id];
-                        // auto res_h = co_yield res_handle_fn(nullptr);
+                        auto &builder = ctx.builder;
+                        auto [res, res_handle_fn, stride] =
+                          ctx.resource.uav_range_map[uav.range_id];
+                        assert(
+                          (res.resource_kind == air::TextureKind::texture_buffer
+                          ) &&
+                          "TODO: handle typed uav atomic operation..."
+                        );
+                        auto res_h = co_yield res_handle_fn(nullptr);
+                        auto addr =
+                          co_yield load_src_op<false>(bin.dst_address);
+                          addr->dump();
+                        auto ptr =
+                          stride < 0
+                            ? co_yield extract_element(0)(addr
+                              ) // TODO: handle 2d/3d..and array uav
+                            : builder.CreateLShr(
+                                stride > 0
+                                  ? builder.CreateAdd(
+                                      builder.CreateMul(
+                                        builder.getInt32(stride),
+                                        co_yield extract_element(0)(addr)
+                                      ),
+                                      co_yield extract_element(1)(addr)
+                                    )
+                                  : co_yield extract_element(0)(addr),
+                                2
+                              );
+                        auto imm = co_yield call_texture_atomic_fetch_explicit(
+                          res, res_h, op, is_signed, ptr, nullptr,
+                          co_yield load_src_op<false>(bin.src)
+                        );
+                        if (bin.dst_original.has_value()) {
+                          co_yield store_dst_op<false>(
+                            bin.dst_original.value(), extract_element(0)(imm)
+                          );
+                        };
+                        co_return {};
                       }
                     );
                   }
