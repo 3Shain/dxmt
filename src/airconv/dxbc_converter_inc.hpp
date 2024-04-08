@@ -44,9 +44,11 @@ struct io_binding_map {
   llvm::Value *icb_float;
   std::unordered_map<uint32_t, IndexedIRValue> cb_range_map;
   std::unordered_map<uint32_t, IndexedIRValue> sampler_range_map;
-  std::unordered_map<uint32_t, std::pair<air::MSLTexture, IndexedIRValue>>
+  std::unordered_map<
+    uint32_t, std::tuple<air::MSLTexture, IndexedIRValue, uint32_t>>
     srv_range_map;
-  std::unordered_map<uint32_t, std::pair<air::MSLTexture, IndexedIRValue>>
+  std::unordered_map<
+    uint32_t, std::tuple<air::MSLTexture, IndexedIRValue, uint32_t>>
     uav_range_map;
   std::unordered_map<uint32_t, llvm::AllocaInst *> indexable_temp_map;
   std::unordered_map<uint32_t, std::pair<uint32_t, llvm::GlobalVariable *>>
@@ -238,6 +240,17 @@ auto get_int3(uint32_t value0, uint32_t value1, uint32_t value2) -> IRValue {
       {llvm::ConstantInt::get(ctx.llvm, llvm::APInt{32, value0, true}),
        llvm::ConstantInt::get(ctx.llvm, llvm::APInt{32, value1, true}),
        llvm::ConstantInt::get(ctx.llvm, llvm::APInt{32, value2, true})}
+    );
+  });
+};
+
+auto get_int4_splat(uint32_t value) -> IRValue {
+  return make_irvalue([=](context ctx) {
+    return llvm::ConstantVector::get(
+      {llvm::ConstantInt::get(ctx.llvm, llvm::APInt{32, value, true}),
+       llvm::ConstantInt::get(ctx.llvm, llvm::APInt{32, value, true}),
+       llvm::ConstantInt::get(ctx.llvm, llvm::APInt{32, value, true}),
+       llvm::ConstantInt::get(ctx.llvm, llvm::APInt{32, value, true})}
     );
   });
 };
@@ -1417,7 +1430,7 @@ auto call_read(
 
 auto call_write(
   air::MSLTexture texture_type, pvalue handle, pvalue coord, pvalue cube_face,
-  pvalue array_index, pvalue vec4, pvalue lod
+  pvalue array_index, pvalue vec4, pvalue lod = nullptr
 ) -> IRValue {
   auto ctx = co_yield get_context();
   using namespace llvm;
@@ -1465,7 +1478,7 @@ auto call_write(
     if (op_info.is_1d_or_1d_array) {
       args_value.push_back(ctx.builder.getInt32(0));
     } else {
-      args_value.push_back(lod);
+      args_value.push_back(lod ? lod : ctx.builder.getInt32(0));
     }
   }
 
@@ -1975,6 +1988,27 @@ auto load_tgsm(
   co_return vec;
 };
 
+auto load_texture_raw(
+  air::MSLTexture texture, pvalue h, pvalue offset_in_4bytes,
+  uint32_t read_components
+) -> IRValue {
+  assert(texture.resource_kind == air::TextureKind::texture_buffer);
+  auto ctx = co_yield get_context();
+  pvalue vec = llvm::UndefValue::get(ctx.types._int4);
+  for (uint32_t i = 0; i < read_components; i++) {
+    auto read_ret = call_read(
+      texture, h, ctx.builder.CreateAdd(offset_in_4bytes, co_yield get_int(i))
+    );
+    vec = ctx.builder.CreateInsertElement(
+      vec,
+      co_yield (std::move(read_ret) >>= extract_value(0)) >>=
+      extract_element(0),
+      i
+    );
+  }
+  co_return vec;
+};
+
 auto mask_to_linear_components_num(uint32_t mask) {
   switch (mask) {
   case 0b1:
@@ -2006,6 +2040,29 @@ auto store_tgsm(
        ctx.builder.CreateAdd(offset_in_4bytes, ctx.builder.getInt32(i))}
     );
     ctx.builder.CreateStore(co_yield extract_element(i)(ivec4_to_write), ptr);
+  }
+  co_return {};
+};
+
+auto store_texture_raw(
+  air::MSLTexture texture, pvalue h, pvalue offset_in_4bytes,
+  uint32_t written_components, pvalue ivec4_to_write
+) -> IREffect {
+  assert(texture.resource_kind == air::TextureKind::texture_buffer);
+  auto ctx = co_yield get_context();
+  for (int i = 0; (uint32_t)i < written_components; i++) {
+    co_yield call_write(
+      texture, h,
+      ctx.builder.CreateAdd(offset_in_4bytes, ctx.builder.getInt32(i)), nullptr,
+      nullptr,
+      ctx.builder.CreateShuffleVector(
+        // by deisgn, only .r channel is written, but we need to provide a
+        // vector anyway
+        ivec4_to_write, llvm::ArrayRef<int>{i, i, i, i}
+        // why shufflevector accept negative mask????
+      ),
+      nullptr
+    );
   }
   co_return {};
 };
@@ -2090,7 +2147,7 @@ auto convert_basicblocks(
               effect << store_dst_op<true>(
                 sample.dst,
                 (make_irvalue_bind([=](struct context ctx) -> IRValue {
-                   auto [res, res_handle_fn] =
+                   auto [res, res_handle_fn, _] =
                      ctx.resource.srv_range_map[sample.src_resource.range_id];
                    auto sampler_handle_fn =
                      ctx.resource
@@ -2182,7 +2239,7 @@ auto convert_basicblocks(
               effect << store_dst_op<true>(
                 sample.dst,
                 (make_irvalue_bind([=](struct context ctx) -> IRValue {
-                   auto [res, res_handle_fn] =
+                   auto [res, res_handle_fn, _] =
                      ctx.resource.srv_range_map[sample.src_resource.range_id];
                    auto sampler_handle_fn =
                      ctx.resource
@@ -2283,7 +2340,7 @@ auto convert_basicblocks(
               effect << store_dst_op<true>(
                 sample.dst,
                 (make_irvalue_bind([=](struct context ctx) -> IRValue {
-                   auto [res, res_handle_fn] =
+                   auto [res, res_handle_fn, _] =
                      ctx.resource.srv_range_map[sample.src_resource.range_id];
                    auto sampler_handle_fn =
                      ctx.resource
@@ -2382,7 +2439,7 @@ auto convert_basicblocks(
               effect << store_dst_op<true>(
                 sample.dst,
                 (make_irvalue_bind([=](struct context ctx) -> IRValue {
-                   auto [res, res_handle_fn] =
+                   auto [res, res_handle_fn, _] =
                      ctx.resource.srv_range_map[sample.src_resource.range_id];
                    auto sampler_handle_fn =
                      ctx.resource
@@ -2472,7 +2529,7 @@ auto convert_basicblocks(
               effect << store_dst_op<true>(
                 sample.dst,
                 (make_irvalue_bind([=](struct context ctx) -> IRValue {
-                   auto [res, res_handle_fn] =
+                   auto [res, res_handle_fn, _] =
                      ctx.resource.srv_range_map[sample.src_resource.range_id];
                    auto sampler_handle_fn =
                      ctx.resource
@@ -2546,7 +2603,7 @@ auto convert_basicblocks(
               effect << store_dst_op<true>(
                 sample.dst,
                 (make_irvalue_bind([=](struct context ctx) -> IRValue {
-                   auto [res, res_handle_fn] =
+                   auto [res, res_handle_fn, _] =
                      ctx.resource.srv_range_map[sample.src_resource.range_id];
                    auto sampler_handle_fn =
                      ctx.resource
@@ -2602,7 +2659,7 @@ auto convert_basicblocks(
               effect << store_dst_op<true>(
                 sample.dst,
                 (make_irvalue_bind([=](struct context ctx) -> IRValue {
-                   auto [res, res_handle_fn] =
+                   auto [res, res_handle_fn, _] =
                      ctx.resource.srv_range_map[sample.src_resource.range_id];
                    auto sampler_handle_fn =
                      ctx.resource
@@ -2655,7 +2712,7 @@ auto convert_basicblocks(
 
             [&](InstLoad load) {
               effect << make_effect_bind([=](struct context ctx) -> IREffect {
-                auto [res, res_handle_fn] =
+                auto [res, res_handle_fn, _] =
                   ctx.resource.srv_range_map[load.src_resource.range_id];
                 auto res_h = co_yield res_handle_fn(nullptr);
                 auto coord = co_yield load_src_op<false>(load.src_address);
@@ -2748,7 +2805,7 @@ auto convert_basicblocks(
             },
             [&](InstLoadUAVTyped load) {
               effect << make_effect_bind([=](struct context ctx) -> IREffect {
-                auto [res, res_handle_fn] =
+                auto [res, res_handle_fn, _] =
                   ctx.resource.uav_range_map[load.src_uav.range_id];
                 auto res_h = co_yield res_handle_fn(nullptr);
                 auto coord = co_yield load_src_op<false>(load.src_address);
@@ -2810,7 +2867,7 @@ auto convert_basicblocks(
             },
             [&](InstStoreUAVTyped store) {
               effect << make_effect_bind([=](struct context ctx) -> IREffect {
-                auto [res, res_handle_fn] =
+                auto [res, res_handle_fn, _] =
                   ctx.resource.uav_range_map[store.dst.range_id];
                 auto res_h = co_yield res_handle_fn(nullptr);
                 auto address = co_yield load_src_op<false>(store.src_address);
@@ -2863,10 +2920,10 @@ auto convert_basicblocks(
               });
             },
             [&](InstLoadStructured load) {
-              std::visit(
+              effect << std::visit(
                 patterns{
                   [&](SrcOperandTGSM tgsm) {
-                    effect << make_effect_bind(
+                    return make_effect_bind(
                       [=](struct context ctx) -> IREffect {
                         auto &builder = ctx.builder;
                         auto [stride, tgsm_h] = ctx.resource.tgsm_map[tgsm.id];
@@ -2897,20 +2954,78 @@ auto convert_basicblocks(
                     );
                   },
                   [&](SrcOperandResource srv) {
-                    assert(0 && "TODO: ld_structured srv");
+                    return make_effect_bind(
+                      [=](struct context ctx) -> IREffect {
+                        auto &builder = ctx.builder;
+                        auto [res, res_handle_fn, stride] =
+                          ctx.resource.srv_range_map[srv.range_id];
+                        auto res_h = co_yield res_handle_fn(nullptr);
+                        auto offset = builder.CreateLShr(
+                          builder.CreateAdd(
+                            builder.CreateMul(
+                              builder.getInt32(stride),
+                              co_yield load_src_op<false>(load.src_address) >>=
+                              extract_element(0)
+                            ),
+                            co_yield load_src_op<false>(load.src_byte_offset
+                            ) >>= extract_element(0)
+                          ),
+                          2
+                        );
+                        co_return co_yield store_dst_op<false>(
+                          load.dst, load_texture_raw(
+                                      res, res_h, offset,
+                                      std::max(
+                                        {srv.read_swizzle.x, srv.read_swizzle.y,
+                                         srv.read_swizzle.z, srv.read_swizzle.w}
+                                      ) +
+                                        1
+                                    ) >>= swizzle(srv.read_swizzle)
+                        );
+                      }
+                    );
                   },
                   [&](SrcOperandUAV uav) {
-                    assert(0 && "TODO: ld_structured uav");
+                    return make_effect_bind(
+                      [=](struct context ctx) -> IREffect {
+                        auto &builder = ctx.builder;
+                        auto [res, res_handle_fn, stride] =
+                          ctx.resource.uav_range_map[uav.range_id];
+                        auto res_h = co_yield res_handle_fn(nullptr);
+                        auto offset = builder.CreateLShr(
+                          builder.CreateAdd(
+                            builder.CreateMul(
+                              builder.getInt32(stride),
+                              co_yield load_src_op<false>(load.src_address) >>=
+                              extract_element(0)
+                            ),
+                            co_yield load_src_op<false>(load.src_byte_offset
+                            ) >>= extract_element(0)
+                          ),
+                          2
+                        );
+                        co_return co_yield store_dst_op<false>(
+                          load.dst, load_texture_raw(
+                                      res, res_h, offset,
+                                      std::max(
+                                        {uav.read_swizzle.x, uav.read_swizzle.y,
+                                         uav.read_swizzle.z, uav.read_swizzle.w}
+                                      ) +
+                                        1
+                                    ) >>= swizzle(uav.read_swizzle)
+                        );
+                      }
+                    );
                   }
                 },
                 load.src
               );
             },
             [&](InstStoreStructured store) {
-              std::visit(
+              effect << std::visit(
                 patterns{
                   [&](AtomicOperandTGSM tgsm) {
-                    effect << make_effect_bind(
+                    return make_effect_bind(
                       [=](struct context ctx) -> IREffect {
                         auto &builder = ctx.builder;
                         auto [stride, tgsm_h] = ctx.resource.tgsm_map[tgsm.id];
@@ -2935,17 +3050,41 @@ auto convert_basicblocks(
                     );
                   },
                   [&](AtomicDstOperandUAV uav) {
-                    assert(0 && "TODO: store_structured uav");
+                    return make_effect_bind(
+                      [=](struct context ctx) -> IREffect {
+                        auto &builder = ctx.builder;
+                        auto [res, res_handle_fn, stride] =
+                          ctx.resource.uav_range_map[uav.range_id];
+                        auto res_h = co_yield res_handle_fn(nullptr);
+                        auto offset = builder.CreateLShr(
+                          builder.CreateAdd(
+                            builder.CreateMul(
+                              builder.getInt32(stride),
+                              co_yield load_src_op<false>(store.dst_address) >>=
+                              extract_element(0)
+                            ),
+                            co_yield load_src_op<false>(store.dst_byte_offset
+                            ) >>= extract_element(0)
+                          ),
+                          2
+                        );
+                        co_return co_yield store_texture_raw(
+                          res, res_h, offset,
+                          mask_to_linear_components_num(uav.mask),
+                          co_yield load_src_op<false>(store.src)
+                        );
+                      }
+                    );
                   }
                 },
                 store.dst
               );
             },
             [&](InstLoadRaw load) {
-              std::visit(
+              effect << std::visit(
                 patterns{
                   [&](SrcOperandTGSM tgsm) {
-                    effect << make_effect_bind(
+                    return make_effect_bind(
                       [=](struct context ctx) -> IREffect {
                         auto &builder = ctx.builder;
                         auto [stride, tgsm_h] = ctx.resource.tgsm_map[tgsm.id];
@@ -2969,18 +3108,64 @@ auto convert_basicblocks(
                     );
                   },
                   [&](SrcOperandResource srv) {
-                    assert(0 && "TODO: ld_raw srv");
+                    return make_effect_bind(
+                      [=](struct context ctx) -> IREffect {
+                        auto &builder = ctx.builder;
+                        auto [res, res_handle_fn, stride] =
+                          ctx.resource.srv_range_map[srv.range_id];
+                        auto res_h = co_yield res_handle_fn(nullptr);
+                        auto offset = builder.CreateLShr(
+                          co_yield load_src_op<false>(load.src_byte_offset) >>=
+                          extract_element(0),
+                          2
+                        );
+                        co_return co_yield store_dst_op<false>(
+                          load.dst, load_texture_raw(
+                                      res, res_h, offset,
+                                      std::max(
+                                        {srv.read_swizzle.x, srv.read_swizzle.y,
+                                         srv.read_swizzle.z, srv.read_swizzle.w}
+                                      ) +
+                                        1
+                                    ) >>= swizzle(srv.read_swizzle)
+                        );
+                      }
+                    );
                   },
-                  [&](SrcOperandUAV uav) { assert(0 && "TODO: ld_raw uav"); }
+                  [&](SrcOperandUAV uav) {
+                    return make_effect_bind(
+                      [=](struct context ctx) -> IREffect {
+                        auto &builder = ctx.builder;
+                        auto [res, res_handle_fn, stride] =
+                          ctx.resource.uav_range_map[uav.range_id];
+                        auto res_h = co_yield res_handle_fn(nullptr);
+                        auto offset = builder.CreateLShr(
+                          co_yield load_src_op<false>(load.src_byte_offset) >>=
+                          extract_element(0),
+                          2
+                        );
+                        co_return co_yield store_dst_op<false>(
+                          load.dst, load_texture_raw(
+                                      res, res_h, offset,
+                                      std::max(
+                                        {uav.read_swizzle.x, uav.read_swizzle.y,
+                                         uav.read_swizzle.z, uav.read_swizzle.w}
+                                      ) +
+                                        1
+                                    ) >>= swizzle(uav.read_swizzle)
+                        );
+                      }
+                    );
+                  }
                 },
                 load.src
               );
             },
             [&](InstStoreRaw store) {
-              std::visit(
+              effect << std::visit(
                 patterns{
                   [&](AtomicOperandTGSM tgsm) {
-                    effect << make_effect_bind(
+                    return make_effect_bind(
                       [=](struct context ctx) -> IREffect {
                         auto &builder = ctx.builder;
                         auto [stride, tgsm_h] = ctx.resource.tgsm_map[tgsm.id];
@@ -2998,7 +3183,24 @@ auto convert_basicblocks(
                     );
                   },
                   [&](AtomicDstOperandUAV uav) {
-                    assert(0 && "TODO: store_raw uav");
+                    return make_effect_bind(
+                      [=](struct context ctx) -> IREffect {
+                        auto &builder = ctx.builder;
+                        auto [res, res_handle_fn, stride] =
+                          ctx.resource.uav_range_map[uav.range_id];
+                        auto res_h = co_yield res_handle_fn(nullptr);
+                        auto offset = builder.CreateLShr(
+                          co_yield load_src_op<false>(store.dst_byte_offset) >>=
+                          extract_element(0),
+                          2
+                        );
+                        co_return co_yield store_texture_raw(
+                          res, res_h, offset,
+                          mask_to_linear_components_num(uav.mask),
+                          co_yield load_src_op<false>(store.src)
+                        );
+                      }
+                    );
                   }
                 },
                 store.dst
@@ -3501,6 +3703,53 @@ auto convert_basicblocks(
                 break;
               }
               }
+            },
+            [&](InstExtractBits extract) {
+              effect << store_dst_op<false>(
+                extract.dst,
+                make_irvalue_bind([=](struct context ctx) -> IRValue {
+                  auto src0 = co_yield load_src_op<false>(extract.src0);
+                  auto src1 = co_yield load_src_op<false>(extract.src1);
+                  auto src2 = co_yield load_src_op<false>(extract.src2);
+                  auto width = ctx.builder.CreateAnd(
+                    src0, co_yield get_int4_splat(0b11111)
+                  );
+                  auto offset = ctx.builder.CreateAnd(
+                    src1, co_yield get_int4_splat(0b11111)
+                  );
+                  auto width_is_zero =
+                    ctx.builder.CreateICmpEQ(width, co_yield get_int4_splat(0));
+                  auto width_offset_sum = ctx.builder.CreateAdd(width, offset);
+                  auto width_cp =
+                    ctx.builder.CreateSub(co_yield get_int4_splat(32), width);
+                  auto clamp_src = ctx.builder.CreateShl(
+                    src2, ctx.builder.CreateSub(
+                            co_yield get_int4_splat(32), width_offset_sum
+                          )
+                  );
+                  if (!extract.is_signed) {
+                    auto need_clamp = ctx.builder.CreateICmpULT(
+                      width_offset_sum, co_yield get_int4_splat(32)
+                    );
+                    auto no_clamp = ctx.builder.CreateLShr(src2, offset);
+                    auto clamped = ctx.builder.CreateLShr(clamp_src, width_cp);
+                    co_return ctx.builder.CreateSelect(
+                      width_is_zero, co_yield get_int4_splat(0),
+                      ctx.builder.CreateSelect(need_clamp, clamped, no_clamp)
+                    );
+                  } else {
+                    auto need_clamp = ctx.builder.CreateICmpSLT(
+                      width_offset_sum, co_yield get_int4_splat(32)
+                    );
+                    auto no_clamp = ctx.builder.CreateAShr(src2, offset);
+                    auto clamped = ctx.builder.CreateAShr(clamp_src, width_cp);
+                    co_return ctx.builder.CreateSelect(
+                      width_is_zero, co_yield get_int4_splat(0),
+                      ctx.builder.CreateSelect(need_clamp, clamped, no_clamp)
+                    );
+                  }
+                })
+              );
             },
             [&](InstSync sync) {
               mem_flags mem_flag;

@@ -917,7 +917,8 @@ Reflection convertDXBC(
       [=, &binding_table_index](pvalue) {
         // ignore index in SM 5.0
         return get_item_in_argbuf_binding_table(binding_table_index, index);
-      }
+      },
+      srv.strucure_stride
     };
   }
   for (auto &[range_id, uav] : shader_info->uavMap) {
@@ -939,7 +940,8 @@ Reflection convertDXBC(
       [=, &binding_table_index](pvalue) {
         // ignore index in SM 5.0
         return get_item_in_argbuf_binding_table(binding_table_index, index);
-      }
+      },
+      uav.strucure_stride
     };
     if (uav.with_counter) {
       //

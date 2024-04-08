@@ -344,6 +344,8 @@ struct InstLoadRaw {
   DstOperand dst;
   SrcOperand src_byte_offset;
   std::variant<SrcOperandResource, SrcOperandUAV, SrcOperandTGSM> src;
+  // then we can load 4 components at once
+  bool opt_flag_offset_is_vec4_aligned = false;
 };
 
 struct InstLoadStructured {
@@ -351,6 +353,8 @@ struct InstLoadStructured {
   SrcOperand src_address;
   SrcOperand src_byte_offset;
   std::variant<SrcOperandResource, SrcOperandUAV, SrcOperandTGSM> src;
+  // 2nd condtion: stride is also vec4 aligned
+  bool opt_flag_offset_is_vec4_aligned = false;
 };
 
 struct InstLoadUAVTyped {
@@ -468,7 +472,6 @@ enum class IntegerUnaryOp {
 };
 
 struct InstIntegerUnaryOp {
-  InstructionCommon _;
   IntegerUnaryOp op;
   DstOperand dst;
   SrcOperand src;
@@ -483,7 +486,6 @@ struct InstFloatMAD {
 };
 
 struct InstIntegerMAD {
-  InstructionCommon _;
   DstOperand dst;
   SrcOperand src0;
   SrcOperand src1;
@@ -492,7 +494,6 @@ struct InstIntegerMAD {
 };
 
 struct InstMaskedSumOfAbsDiff {
-  InstructionCommon _;
   DstOperand dst;
   SrcOperand src0;
   SrcOperand src1;
@@ -514,7 +515,6 @@ enum class IntegerBinaryOp {
 };
 
 struct InstIntegerBinaryOp {
-  InstructionCommon _;
   IntegerBinaryOp op;
   DstOperand dst;
   SrcOperand src0;
@@ -543,6 +543,14 @@ struct InstIntegerBinaryOpWithTwoDst {
   };
   SrcOperand src0;
   SrcOperand src1;
+};
+
+struct InstExtractBits {
+  DstOperand dst;
+  SrcOperand src0;
+  SrcOperand src1;
+  SrcOperand src2;
+  bool is_signed;
 };
 
 enum class ConversionOp {
@@ -637,7 +645,7 @@ using Instruction = std::variant<
   InstIntegerCompare, InstFloatCompare,                                  //
   InstFloatBinaryOp, InstIntegerBinaryOp, InstIntegerBinaryOpWithTwoDst, //
   InstFloatUnaryOp, InstIntegerUnaryOp,                                  //
-  InstFloatMAD, InstIntegerMAD, InstMaskedSumOfAbsDiff,                  //
+  InstFloatMAD, InstIntegerMAD, InstMaskedSumOfAbsDiff, InstExtractBits, //
   InstSample, InstSampleCompare, InstGather, InstGatherCompare,          //
   InstSampleBias, InstSampleDerivative, InstSampleLOD,                   //
   InstSamplePos, InstSampleInfo, InstBufferInfo, InstResourceInfo,       //

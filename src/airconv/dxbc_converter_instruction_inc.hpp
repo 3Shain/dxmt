@@ -960,6 +960,15 @@ static auto readInstruction(
       },
       inst.src
     );
+    std::visit(
+      patterns{
+        [&](const SrcOperandImmediate32 &imm) {
+          inst.opt_flag_offset_is_vec4_aligned = (imm.uvalue[0] & 0xF) == 0;
+        },
+        [](auto) {}
+      },
+      inst.src_byte_offset
+    );
     return inst;
   };
   case microsoft::D3D11_SB_OPCODE_STORE_RAW: {
@@ -997,6 +1006,15 @@ static auto readInstruction(
         [](auto) {}
       },
       inst.src
+    );
+    std::visit(
+      patterns{
+        [&](const SrcOperandImmediate32 &imm) {
+          inst.opt_flag_offset_is_vec4_aligned = (imm.uvalue[0] & 0xF) == 0;
+        },
+        [](auto) {}
+      },
+      inst.src_byte_offset
     );
     return inst;
   };
@@ -1181,7 +1199,6 @@ static auto readInstruction(
   };
   case microsoft::D3D10_SB_OPCODE_IMAD: {
     return InstIntegerMAD{
-      ._ = readInstructionCommon(Inst),
       .dst = readDstOperand(Inst.m_Operands[0]),
       .src0 = readSrcOperand(Inst.m_Operands[1]),
       .src1 = readSrcOperand(Inst.m_Operands[2]),
@@ -1191,7 +1208,6 @@ static auto readInstruction(
   };
   case microsoft::D3D10_SB_OPCODE_UMAD: {
     return InstIntegerMAD{
-      ._ = readInstructionCommon(Inst),
       .dst = readDstOperand(Inst.m_Operands[0]),
       .src0 = readSrcOperand(Inst.m_Operands[1]),
       .src1 = readSrcOperand(Inst.m_Operands[2]),
@@ -1201,7 +1217,6 @@ static auto readInstruction(
   };
   case microsoft::D3D11_1_SB_OPCODE_MSAD: {
     return InstMaskedSumOfAbsDiff{
-      ._ = readInstructionCommon(Inst),
       .dst = readDstOperand(Inst.m_Operands[0]),
       .src0 = readSrcOperand(Inst.m_Operands[1]),
       .src1 = readSrcOperand(Inst.m_Operands[2]),
@@ -1302,7 +1317,6 @@ static auto readInstruction(
   };
   case microsoft::D3D10_SB_OPCODE_NOT: {
     return InstIntegerUnaryOp{
-      ._ = readInstructionCommon(Inst),
       .op = IntegerUnaryOp::Not,
       .dst = readDstOperand(Inst.m_Operands[0]),
       .src = readSrcOperand(Inst.m_Operands[1]),
@@ -1310,7 +1324,6 @@ static auto readInstruction(
   };
   case microsoft::D3D10_SB_OPCODE_INEG: {
     return InstIntegerUnaryOp{
-      ._ = readInstructionCommon(Inst),
       .op = IntegerUnaryOp::Neg,
       .dst = readDstOperand(Inst.m_Operands[0]),
       .src = readSrcOperand(Inst.m_Operands[1]),
@@ -1318,7 +1331,6 @@ static auto readInstruction(
   };
   case microsoft::D3D11_SB_OPCODE_BFREV: {
     return InstIntegerUnaryOp{
-      ._ = readInstructionCommon(Inst),
       .op = IntegerUnaryOp::ReverseBits,
       .dst = readDstOperand(Inst.m_Operands[0]),
       .src = readSrcOperand(Inst.m_Operands[1]),
@@ -1326,7 +1338,6 @@ static auto readInstruction(
   };
   case microsoft::D3D11_SB_OPCODE_COUNTBITS: {
     return InstIntegerUnaryOp{
-      ._ = readInstructionCommon(Inst),
       .op = IntegerUnaryOp::CountBits,
       .dst = readDstOperand(Inst.m_Operands[0]),
       .src = readSrcOperand(Inst.m_Operands[1]),
@@ -1334,7 +1345,6 @@ static auto readInstruction(
   };
   case microsoft::D3D11_SB_OPCODE_FIRSTBIT_HI: {
     return InstIntegerUnaryOp{
-      ._ = readInstructionCommon(Inst),
       .op = IntegerUnaryOp::FirstHiBit,
       .dst = readDstOperand(Inst.m_Operands[0]),
       .src = readSrcOperand(Inst.m_Operands[1]),
@@ -1342,7 +1352,6 @@ static auto readInstruction(
   };
   case microsoft::D3D11_SB_OPCODE_FIRSTBIT_SHI: {
     return InstIntegerUnaryOp{
-      ._ = readInstructionCommon(Inst),
       .op = IntegerUnaryOp::FirstHiBitSigned,
       .dst = readDstOperand(Inst.m_Operands[0]),
       .src = readSrcOperand(Inst.m_Operands[1]),
@@ -1350,15 +1359,31 @@ static auto readInstruction(
   };
   case microsoft::D3D11_SB_OPCODE_FIRSTBIT_LO: {
     return InstIntegerUnaryOp{
-      ._ = readInstructionCommon(Inst),
       .op = IntegerUnaryOp::FirstLowBit,
       .dst = readDstOperand(Inst.m_Operands[0]),
       .src = readSrcOperand(Inst.m_Operands[1]),
     };
   };
+  case microsoft::D3D11_SB_OPCODE_UBFE: {
+    return InstExtractBits{
+      .dst = readDstOperand(Inst.m_Operands[0]),
+      .src0 = readSrcOperand(Inst.m_Operands[1]),
+      .src1 = readSrcOperand(Inst.m_Operands[2]),
+      .src2 = readSrcOperand(Inst.m_Operands[3]),
+      .is_signed = false
+    };
+  };
+  case microsoft::D3D11_SB_OPCODE_IBFE: {
+    return InstExtractBits{
+      .dst = readDstOperand(Inst.m_Operands[0]),
+      .src0 = readSrcOperand(Inst.m_Operands[1]),
+      .src1 = readSrcOperand(Inst.m_Operands[2]),
+      .src2 = readSrcOperand(Inst.m_Operands[3]),
+      .is_signed = true
+    };
+  };
   case microsoft::D3D10_SB_OPCODE_ISHL: {
     return InstIntegerBinaryOp{
-      ._ = readInstructionCommon(Inst),
       .op = IntegerBinaryOp::IShl,
       .dst = readDstOperand(Inst.m_Operands[0]),
       .src0 = readSrcOperand(Inst.m_Operands[1]),
@@ -1367,7 +1392,6 @@ static auto readInstruction(
   };
   case microsoft::D3D10_SB_OPCODE_ISHR: {
     return InstIntegerBinaryOp{
-      ._ = readInstructionCommon(Inst),
       .op = IntegerBinaryOp::IShr,
       .dst = readDstOperand(Inst.m_Operands[0]),
       .src0 = readSrcOperand(Inst.m_Operands[1]),
@@ -1376,7 +1400,6 @@ static auto readInstruction(
   };
   case microsoft::D3D10_SB_OPCODE_USHR: {
     return InstIntegerBinaryOp{
-      ._ = readInstructionCommon(Inst),
       .op = IntegerBinaryOp::UShr,
       .dst = readDstOperand(Inst.m_Operands[0]),
       .src0 = readSrcOperand(Inst.m_Operands[1]),
@@ -1385,7 +1408,6 @@ static auto readInstruction(
   };
   case microsoft::D3D10_SB_OPCODE_XOR: {
     return InstIntegerBinaryOp{
-      ._ = readInstructionCommon(Inst),
       .op = IntegerBinaryOp::Xor,
       .dst = readDstOperand(Inst.m_Operands[0]),
       .src0 = readSrcOperand(Inst.m_Operands[1]),
@@ -1394,7 +1416,6 @@ static auto readInstruction(
   };
   case microsoft::D3D10_SB_OPCODE_OR: {
     return InstIntegerBinaryOp{
-      ._ = readInstructionCommon(Inst),
       .op = IntegerBinaryOp::Or,
       .dst = readDstOperand(Inst.m_Operands[0]),
       .src0 = readSrcOperand(Inst.m_Operands[1]),
@@ -1403,7 +1424,6 @@ static auto readInstruction(
   };
   case microsoft::D3D10_SB_OPCODE_AND: {
     return InstIntegerBinaryOp{
-      ._ = readInstructionCommon(Inst),
       .op = IntegerBinaryOp::And,
       .dst = readDstOperand(Inst.m_Operands[0]),
       .src0 = readSrcOperand(Inst.m_Operands[1]),
@@ -1412,7 +1432,6 @@ static auto readInstruction(
   };
   case microsoft::D3D10_SB_OPCODE_UMIN: {
     return InstIntegerBinaryOp{
-      ._ = readInstructionCommon(Inst),
       .op = IntegerBinaryOp::UMin,
       .dst = readDstOperand(Inst.m_Operands[0]),
       .src0 = readSrcOperand(Inst.m_Operands[1]),
@@ -1421,7 +1440,6 @@ static auto readInstruction(
   };
   case microsoft::D3D10_SB_OPCODE_UMAX: {
     return InstIntegerBinaryOp{
-      ._ = readInstructionCommon(Inst),
       .op = IntegerBinaryOp::UMax,
       .dst = readDstOperand(Inst.m_Operands[0]),
       .src0 = readSrcOperand(Inst.m_Operands[1]),
@@ -1430,7 +1448,6 @@ static auto readInstruction(
   };
   case microsoft::D3D10_SB_OPCODE_IMIN: {
     return InstIntegerBinaryOp{
-      ._ = readInstructionCommon(Inst),
       .op = IntegerBinaryOp::IMin,
       .dst = readDstOperand(Inst.m_Operands[0]),
       .src0 = readSrcOperand(Inst.m_Operands[1]),
@@ -1439,7 +1456,6 @@ static auto readInstruction(
   };
   case microsoft::D3D10_SB_OPCODE_IMAX: {
     return InstIntegerBinaryOp{
-      ._ = readInstructionCommon(Inst),
       .op = IntegerBinaryOp::IMax,
       .dst = readDstOperand(Inst.m_Operands[0]),
       .src0 = readSrcOperand(Inst.m_Operands[1]),
@@ -1448,7 +1464,6 @@ static auto readInstruction(
   };
   case microsoft::D3D10_SB_OPCODE_IADD: {
     return InstIntegerBinaryOp{
-      ._ = readInstructionCommon(Inst),
       .op = IntegerBinaryOp::Add,
       .dst = readDstOperand(Inst.m_Operands[0]),
       .src0 = readSrcOperand(Inst.m_Operands[1]),
