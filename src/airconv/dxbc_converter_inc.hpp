@@ -1494,6 +1494,57 @@ auto call_write(
   co_return ctx.builder.CreateCall(fn, args_value);
 }
 
+IRValue call_calc_lod(
+  air::MSLTexture texture_type, pvalue handle, pvalue sampler, pvalue coord,
+  bool is_unclamped
+) {
+  auto ctx = co_yield get_context();
+  using namespace llvm;
+  auto &context = ctx.llvm;
+  auto &module = ctx.module;
+  auto &types = ctx.types;
+  auto att = AttributeList::get(
+    context,
+    {
+      {1U, Attribute::get(context, Attribute::AttrKind::NoCapture)},
+      {1U, Attribute::get(context, Attribute::AttrKind::ReadOnly)},
+      {2U, Attribute::get(context, Attribute::AttrKind::NoCapture)},
+      {2U, Attribute::get(context, Attribute::AttrKind::ReadOnly)},
+      {~0U, Attribute::get(context, Attribute::AttrKind::ArgMemOnly)},
+      {~0U, Attribute::get(context, Attribute::AttrKind::Convergent)},
+      {~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)},
+      {~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)},
+      {~0U, Attribute::get(context, Attribute::AttrKind::ReadOnly)},
+    }
+  );
+  auto op_info = co_yield get_operation_info(texture_type);
+  assert(!op_info.is_ms);
+  assert(!op_info.is_1d_or_1d_array);
+  auto fn_name = is_unclamped
+                   ? "air.calculate_unclamped_lod_"
+                   : "air.calculate_clamped_lod_" + op_info.air_symbol_suffix;
+  std::vector<llvm::Type *> args_type;
+  std::vector<pvalue> args_value;
+
+  args_type.push_back(texture_type.get_llvm_type(context));
+  args_value.push_back(handle);
+
+  args_type.push_back(types._sampler->getPointerTo(2));
+  args_value.push_back(sampler);
+
+  args_type.push_back(op_info.coord_type);
+  args_value.push_back(coord);
+
+  /* access: always 0 = sample */
+  args_type.push_back(types._int);
+  args_value.push_back(ctx.builder.getInt32(0));
+
+  auto fn = module.getOrInsertFunction(
+    fn_name, llvm::FunctionType::get(types._float, args_type, false), att
+  );
+  co_return ctx.builder.CreateCall(fn, args_value);
+}
+
 IREffect call_discard_fragment() {
   using namespace llvm;
   auto ctx = co_yield get_context();
@@ -1512,6 +1563,23 @@ IREffect call_discard_fragment() {
   ));
   ctx.builder.CreateCall(fn, {});
   co_return {};
+}
+
+IRValue call_derivative(pvalue fvec4, bool dfdy) {
+  using namespace llvm;
+  auto ctx = co_yield get_context();
+  auto &context = ctx.llvm;
+  auto &module = ctx.module;
+  auto &types = ctx.types;
+  auto att = AttributeList::get(
+    context, {{~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)},
+              {~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)}}
+  );
+  auto fn = (module.getOrInsertFunction(
+    "air." + std::string(dfdy ? "dfdy" : "dfdx") + ".v4f32",
+    llvm::FunctionType::get(types._float4, {types._float4}, false), att
+  ));
+  co_return ctx.builder.CreateCall(fn, {fvec4});
 }
 
 enum class mem_flags : uint8_t {
@@ -2932,6 +3000,12 @@ auto convert_basicblocks(
                 );
 
                 switch (res.resource_kind) {
+                case air::TextureKind::texture_buffer:
+                  co_yield call_write(
+                    res, res_h, co_yield extract_element(0)(address), nullptr,
+                    nullptr, value, ctx.builder.getInt32(0)
+                  );
+                  break;
                 case air::TextureKind::texture_1d:
                   co_yield call_write(
                     res, res_h, co_yield extract_element(0)(address), nullptr,
@@ -3965,7 +4039,7 @@ auto convert_basicblocks(
                         auto res_h = co_yield res_handle_fn(nullptr);
                         auto addr =
                           co_yield load_src_op<false>(bin.dst_address);
-                          addr->dump();
+                        addr->dump();
                         auto ptr =
                           stride < 0
                             ? co_yield extract_element(0)(addr
@@ -4010,6 +4084,77 @@ auto convert_basicblocks(
               effect << call_threadgroup_barrier(mem_flag);
             },
             [&](InstPixelDiscard) { effect << call_discard_fragment(); },
+            [&](InstPartialDerivative df) {
+              effect << store_dst_op<true>(
+                df.dst, make_irvalue_bind([=](struct context ctx) -> IRValue {
+                          auto fvec4 = co_yield load_src_op<true>(df.src);
+                          co_return co_yield call_derivative(fvec4, df.ddy);
+                        }) >>= saturate(df._.saturate)
+              );
+            },
+            [&](InstCalcLOD calc) {
+              effect << store_dst_op<true>(
+                calc.dst,
+                make_irvalue_bind([=](struct context ctx) -> IRValue {
+                  auto [res, res_handle_fn, _] =
+                    ctx.resource.srv_range_map[calc.src_resource.range_id];
+                  auto sampler_handle_fn =
+                    ctx.resource.sampler_range_map[calc.src_sampler.range_id];
+                  auto res_h = co_yield res_handle_fn(nullptr);
+                  auto sampler_h = co_yield sampler_handle_fn(nullptr);
+                  auto coord = co_yield load_src_op<true>(calc.src_address);
+                  pvalue clamped_float = nullptr, unclamped_float = nullptr;
+                  switch (res.resource_kind) {
+                  case air::TextureKind::texture_1d:
+                  case air::TextureKind::texture_1d_array: {
+                    // MSL Spec 6.12.2 mipmaps are not supported for 1D texture
+                    clamped_float = co_yield get_float(0.0f);
+                    unclamped_float = co_yield get_float(0.0f);
+                    break;
+                  }
+                  case air::TextureKind::depth_2d:
+                  case air::TextureKind::texture_2d:
+                  case air::TextureKind::depth_2d_array:
+                  case air::TextureKind::texture_2d_array: {
+                    clamped_float = co_yield call_calc_lod(
+                      res, res_h, sampler_h, co_yield truncate_vec(2)(coord),
+                      false
+                    );
+                    unclamped_float = co_yield call_calc_lod(
+                      res, res_h, sampler_h, co_yield truncate_vec(2)(coord),
+                      true
+                    );
+                    break;
+                  }
+                  case air::TextureKind::texture_3d:
+                  case air::TextureKind::depth_cube:
+                  case air::TextureKind::texture_cube:
+                  case air::TextureKind::depth_cube_array:
+                  case air::TextureKind::texture_cube_array: {
+                    clamped_float = co_yield call_calc_lod(
+                      res, res_h, sampler_h, co_yield truncate_vec(3)(coord),
+                      false
+                    );
+                    unclamped_float = co_yield call_calc_lod(
+                      res, res_h, sampler_h, co_yield truncate_vec(3)(coord),
+                      true
+                    );
+                    break;
+                  }
+                  default: {
+                    assert(0 && "invalid calc_lod resource type");
+                  }
+                  }
+                  co_return ctx.builder.CreateInsertElement(
+                    ctx.builder.CreateInsertElement(
+                      llvm::ConstantAggregateZero::get(types._float4),
+                      clamped_float, (uint64_t)0
+                    ),
+                    unclamped_float, 1
+                  );
+                }) >>= swizzle(calc.src_resource.read_swizzle)
+              );
+            },
             [](InstNop) {}, // nop
             [](auto) { assert(0 && "unhandled instruction"); }
           },
