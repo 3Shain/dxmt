@@ -23,8 +23,11 @@ public:
   llvm::Type *_int2;
   llvm::Type *_int3;
   llvm::Type *_int4;
+  llvm::Type *_int8;
   llvm::Type *_half;
   llvm::Type *_half4;
+  llvm::Type *_long;
+  llvm::Type *_long4;
 
   llvm::Type *_sampler;
 

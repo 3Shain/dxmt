@@ -1560,7 +1560,7 @@ IRValue call_atomic_fetch_explicit(
   auto &types = ctx.types;
   auto &module = ctx.module;
   auto att = AttributeList::get(
-    context, {{0U, Attribute::get(context, Attribute::AttrKind::NoCapture)},
+    context, {{1U, Attribute::get(context, Attribute::AttrKind::NoCapture)},
               {~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)},
               {~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)}}
   );
@@ -2076,7 +2076,8 @@ auto convert_basicblocks(
   std::unordered_map<BasicBlock *, llvm::BasicBlock *> visited;
   std::function<void(std::shared_ptr<BasicBlock>)> readBasicBlock =
     [&](std::shared_ptr<BasicBlock> current) {
-      auto bb = llvm::BasicBlock::Create(context, "", function);
+      auto bb =
+        llvm::BasicBlock::Create(context, current->debug_name, function);
       assert(visited.insert({current.get(), bb}).second);
       air::AirType types(context);
       IREffect effect([](auto) { return std::monostate(); });
@@ -3674,9 +3675,50 @@ auto convert_basicblocks(
             },
             [&](InstIntegerBinaryOpWithTwoDst bin) {
               switch (bin.op) {
-              case IntegerBinaryOpWithTwoDst::IMul:
+              case IntegerBinaryOpWithTwoDst::IMul: {
+                effect << make_effect_bind([=](struct context ctx) -> IREffect {
+                  auto a = co_yield load_src_op<false>(bin.src0);
+                  auto b = co_yield load_src_op<false>(bin.src1);
+                  auto mul = ctx.builder.CreateBitCast(
+                    ctx.builder.CreateMul(
+                      ctx.builder.CreateSExt(a, ctx.types._long4),
+                      ctx.builder.CreateSExt(b, ctx.types._long4)
+                    ),
+                    ctx.types._int8
+                  );
+                  co_yield store_dst_op<false>(
+                    bin.dst_hi,
+                    pure(ctx.builder.CreateShuffleVector(mul, {1, 3, 5, 7}))
+                  );
+                  co_yield store_dst_op<false>(
+                    bin.dst_low,
+                    pure(ctx.builder.CreateShuffleVector(mul, {0, 2, 4, 6}))
+                  );
+                  co_return {};
+                });
+                break;
+              }
               case IntegerBinaryOpWithTwoDst::UMul: {
-                assert(0 && "todo");
+                effect << make_effect_bind([=](struct context ctx) -> IREffect {
+                  auto a = co_yield load_src_op<false>(bin.src0);
+                  auto b = co_yield load_src_op<false>(bin.src1);
+                  auto mul = ctx.builder.CreateBitCast(
+                    ctx.builder.CreateMul(
+                      ctx.builder.CreateZExt(a, ctx.types._long4),
+                      ctx.builder.CreateZExt(b, ctx.types._long4)
+                    ),
+                    ctx.types._int8
+                  );
+                  co_yield store_dst_op<false>(
+                    bin.dst_hi,
+                    pure(ctx.builder.CreateShuffleVector(mul, {1, 3, 5, 7}))
+                  );
+                  co_yield store_dst_op<false>(
+                    bin.dst_low,
+                    pure(ctx.builder.CreateShuffleVector(mul, {0, 2, 4, 6}))
+                  );
+                  co_return {};
+                });
                 break;
               }
               case IntegerBinaryOpWithTwoDst::UAddCarry:
@@ -3749,6 +3791,128 @@ auto convert_basicblocks(
                     );
                   }
                 })
+              );
+            },
+            [&](InstBitFiledInsert bfi) {
+              effect << store_dst_op<false>(
+                bfi.dst, make_irvalue_bind([=](struct context ctx) -> IRValue {
+                  auto src0 = co_yield load_src_op<false>(bfi.src0);
+                  auto src1 = co_yield load_src_op<false>(bfi.src1);
+                  auto src2 = co_yield load_src_op<false>(bfi.src2);
+                  auto src3 = co_yield load_src_op<false>(bfi.src2);
+                  auto width = ctx.builder.CreateAnd(
+                    src0, co_yield get_int4_splat(0b11111)
+                  );
+                  auto offset = ctx.builder.CreateAnd(
+                    src1, co_yield get_int4_splat(0b11111)
+                  );
+                  auto bitmask = ctx.builder.CreateAnd(
+                    co_yield get_int4_splat(0xffffffff), // is this necessary?
+                    ctx.builder.CreateShl(
+                      ctx.builder.CreateSub(
+                        ctx.builder.CreateLShr(
+                          co_yield get_int4_splat(1), width
+                        ),
+                        co_yield get_int4_splat(1)
+                      ),
+                      offset
+                    )
+                  );
+                  co_return ctx.builder.CreateOr(
+                    ctx.builder.CreateAnd(
+                      ctx.builder.CreateLShr(src2, offset), bitmask
+                    ),
+                    ctx.builder.CreateAnd(src3, ctx.builder.CreateNot(bitmask))
+                  );
+                })
+              );
+            },
+            [&](InstAtomicBinOp bin) {
+              std::string op;
+              bool is_signed = false;
+              switch (bin.op) {
+              case AtomicBinaryOp::And:
+                op = "and";
+                break;
+              case AtomicBinaryOp::Or:
+                op = "or";
+                break;
+              case AtomicBinaryOp::Xor:
+                op = "xor";
+                break;
+              case AtomicBinaryOp::Add:
+                op = "add";
+                break;
+              case AtomicBinaryOp::IMax:
+                op = "max";
+                is_signed = true;
+                break;
+              case AtomicBinaryOp::IMin:
+                op = "min";
+                is_signed = true;
+                break;
+              case AtomicBinaryOp::UMax:
+                op = "max";
+                break;
+              case AtomicBinaryOp::UMin:
+                op = "min";
+                break;
+                break;
+              }
+              effect << std::visit(
+                patterns{
+                  [&](AtomicOperandTGSM tgsm) {
+                    return make_effect_bind(
+                      [=](struct context ctx) -> IREffect {
+                        auto &builder = ctx.builder;
+                        auto [stride, tgsm_h] = ctx.resource.tgsm_map[tgsm.id];
+                        auto addr =
+                          co_yield load_src_op<false>(bin.dst_address);
+                        auto ptr = ctx.builder.CreateInBoundsGEP(
+                          llvm::cast<llvm::PointerType>(tgsm_h->getType())
+                            ->getNonOpaquePointerElementType(),
+                          tgsm_h,
+                          {ctx.builder.getInt32(0),
+                           builder.CreateLShr(
+                             stride > 0 ? builder.CreateAdd(
+                                            builder.CreateMul(
+                                              builder.getInt32(stride),
+                                              co_yield extract_element(0)(addr)
+                                            ),
+                                            co_yield extract_element(1)(addr)
+                                          )
+                                        : co_yield extract_element(0)(addr),
+                             2
+                           )}
+                        );
+                        auto imm = co_yield call_atomic_fetch_explicit(
+                          ptr,
+                          co_yield load_src_op<false>(bin.src) >>=
+                          extract_element(0),
+                          op, is_signed, false
+                        );
+                        if (bin.dst_original.has_value()) {
+                          co_yield store_dst_op<false>(
+                            bin.dst_original.value(), pure(imm)
+                          );
+                        };
+                        co_return {};
+                      }
+                    );
+                  },
+                  [&](AtomicDstOperandUAV uav) {
+                    return make_effect_bind(
+                      [=](struct context ctx) -> IREffect {
+                        assert(0 && "todo uav atomic");
+                        // auto &builder = ctx.builder;
+                        // auto [res, res_handle_fn, stride] =
+                        //   ctx.resource.uav_range_map[uav.range_id];
+                        // auto res_h = co_yield res_handle_fn(nullptr);
+                      }
+                    );
+                  }
+                },
+                bin.dst
               );
             },
             [&](InstSync sync) {

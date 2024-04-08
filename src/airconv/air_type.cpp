@@ -23,6 +23,9 @@ AirType::AirType(LLVMContext &context) : context(context) {
   _float = Type::getFloatTy(context);
   _bool = Type::getInt1Ty(context);
   _byte = Type::getInt8Ty(context);
+  _long = Type::getInt64Ty(context);
+  _long4 = FixedVectorType::get(_long, 4);
+
 
   _half = Type::getHalfTy(context);
   _half4 = FixedVectorType::get(_half, 4);
@@ -30,6 +33,7 @@ AirType::AirType(LLVMContext &context) : context(context) {
   auto tyShort = Type::getInt16Ty(context);
 
   _int4 = FixedVectorType::get(_int, 4);
+  _int8 = FixedVectorType::get(_int, 8);
   _float4 = FixedVectorType::get(_float, 4);
 
   _int3 = FixedVectorType::get(_int, 3);

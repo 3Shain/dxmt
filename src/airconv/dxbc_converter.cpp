@@ -121,8 +121,8 @@ Reflection convertDXBC(
 #pragma region control flow
       case D3D10_SB_OPCODE_IF: {
         // scope start: if-else-endif
-        auto true_ = std::make_shared<BasicBlock>();
-        auto alternative_ = std::make_shared<BasicBlock>();
+        auto true_ = std::make_shared<BasicBlock>("if_true");
+        auto alternative_ = std::make_shared<BasicBlock>("if_alternative");
         // alternative_ might be the block after ENDIF, but ELSE is possible
         ctx->target = BasicBlockConditionalBranch{
           readCondition(Inst, 0), true_, alternative_
@@ -139,7 +139,7 @@ Reflection convertDXBC(
       }
       case D3D10_SB_OPCODE_ELSE: {
         assert(block_after_endif.get() && "");
-        auto real_exit = std::make_shared<BasicBlock>();
+        auto real_exit = std::make_shared<BasicBlock>("endif");
         ctx->target = BasicBlockUnconditionalBranch{real_exit};
         return readControlFlow(
           block_after_endif, real_exit, continue_point, break_point,
@@ -152,8 +152,8 @@ Reflection convertDXBC(
         return block_after_endif;
       }
       case D3D10_SB_OPCODE_LOOP: {
-        auto loop_entrance = std::make_shared<BasicBlock>();
-        auto after_endloop = std::make_shared<BasicBlock>();
+        auto loop_entrance = std::make_shared<BasicBlock>("loop_entrance");
+        auto after_endloop = std::make_shared<BasicBlock>("endloop");
         // scope start: loop
         ctx->target = BasicBlockUnconditionalBranch{loop_entrance};
         auto _ = readControlFlow(
@@ -169,14 +169,14 @@ Reflection convertDXBC(
       }
       case D3D10_SB_OPCODE_BREAK: {
         ctx->target = BasicBlockUnconditionalBranch{break_point};
-        auto after_break = std::make_shared<BasicBlock>();
+        auto after_break = std::make_shared<BasicBlock>("after_break");
         return readControlFlow(
           after_break, block_after_endif, continue_point, break_point,
           return_point, switch_context
         ); // ?
       }
       case D3D10_SB_OPCODE_BREAKC: {
-        auto after_break = std::make_shared<BasicBlock>();
+        auto after_break = std::make_shared<BasicBlock>("after_breakc");
         ctx->target = BasicBlockConditionalBranch{
           readCondition(Inst, 0), break_point, after_break
         };
@@ -187,7 +187,7 @@ Reflection convertDXBC(
       }
       case D3D10_SB_OPCODE_CONTINUE: {
         ctx->target = BasicBlockUnconditionalBranch{continue_point};
-        auto after_continue = std::make_shared<BasicBlock>();
+        auto after_continue = std::make_shared<BasicBlock>("after_continue");
         return readControlFlow(
           after_continue, block_after_endif, continue_point, break_point,
           return_point,
@@ -195,7 +195,7 @@ Reflection convertDXBC(
         ); // ?
       }
       case D3D10_SB_OPCODE_CONTINUEC: {
-        auto after_continue = std::make_shared<BasicBlock>();
+        auto after_continue = std::make_shared<BasicBlock>("after_continuec");
         ctx->target = BasicBlockConditionalBranch{
           readCondition(Inst, 0), continue_point, after_continue
         };
@@ -210,11 +210,11 @@ Reflection convertDXBC(
         return break_point;
       }
       case D3D10_SB_OPCODE_SWITCH: {
-        auto after_endswitch = std::make_shared<BasicBlock>();
+        auto after_endswitch = std::make_shared<BasicBlock>("endswitch");
         // scope start: switch
         auto local_switch_context = std::make_shared<BasicBlockSwitch>();
         auto empty_body =
-          std::make_shared<BasicBlock>(); // it will unconditional jump to
+          std::make_shared<BasicBlock>("switch_empty"); // it will unconditional jump to
                                           // first case (and then ignored)
         auto _ = readControlFlow(
           empty_body, null_bb, continue_point, after_endswitch, return_point,
@@ -229,7 +229,7 @@ Reflection convertDXBC(
         );
       }
       case D3D10_SB_OPCODE_CASE: {
-        auto case_body = std::make_shared<BasicBlock>();
+        auto case_body = std::make_shared<BasicBlock>("switch_case");
         // always fallthrough
         ctx->target = BasicBlockUnconditionalBranch{case_body};
 
@@ -248,7 +248,7 @@ Reflection convertDXBC(
       }
       case D3D10_SB_OPCODE_DEFAULT: {
         ctx->target = BasicBlockUnconditionalBranch{break_point};
-        auto case_body = std::make_shared<BasicBlock>();
+        auto case_body = std::make_shared<BasicBlock>("switch_default");
         switch_context->case_default = case_body;
         return readControlFlow(
           case_body, block_after_endif, continue_point, break_point,
@@ -269,7 +269,7 @@ Reflection convertDXBC(
           // not inside any scope, this is the final ret
           return return_point;
         }
-        auto after_ret = std::make_shared<BasicBlock>();
+        auto after_ret = std::make_shared<BasicBlock>("after_ret");
         // if it's inside a scope, then return is not the end
         return readControlFlow(
           after_ret, block_after_endif, continue_point, break_point,
@@ -277,7 +277,7 @@ Reflection convertDXBC(
         );
       }
       case D3D10_SB_OPCODE_RETC: {
-        auto after_retc = std::make_shared<BasicBlock>();
+        auto after_retc = std::make_shared<BasicBlock>("after_retc");
         ctx->target = BasicBlockConditionalBranch{
           readCondition(Inst, 0), return_point, after_retc
         };
@@ -287,8 +287,8 @@ Reflection convertDXBC(
         );
       }
       case D3D10_SB_OPCODE_DISCARD: {
-        auto fulfilled_ = std::make_shared<BasicBlock>();
-        auto otherwise_ = std::make_shared<BasicBlock>();
+        auto fulfilled_ = std::make_shared<BasicBlock>("discard_fulfilled");
+        auto otherwise_ = std::make_shared<BasicBlock>("discard_otherwise");
         ctx->target = BasicBlockConditionalBranch{
           readCondition(Inst, 0), fulfilled_, otherwise_
         };
@@ -866,8 +866,8 @@ Reflection convertDXBC(
     assert(0 && "Unexpected end of shader instructions.");
   };
 
-  auto entry = std::make_shared<BasicBlock>();
-  auto return_point = std::make_shared<BasicBlock>();
+  auto entry = std::make_shared<BasicBlock>("entrybb");
+  auto return_point = std::make_shared<BasicBlock>("returnbb");
   return_point->target = BasicBlockReturn{};
   auto _ = readControlFlow(
     entry, null_bb, null_bb, null_bb, return_point, null_switch_context

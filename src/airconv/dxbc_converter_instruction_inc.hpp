@@ -1364,6 +1364,15 @@ static auto readInstruction(
       .src = readSrcOperand(Inst.m_Operands[1]),
     };
   };
+  case microsoft::D3D11_SB_OPCODE_BFI: {
+    return InstBitFiledInsert{
+      .dst = readDstOperand(Inst.m_Operands[0]),
+      .src0 = readSrcOperand(Inst.m_Operands[1]),
+      .src1 = readSrcOperand(Inst.m_Operands[2]),
+      .src2 = readSrcOperand(Inst.m_Operands[3]),
+      .src3 = readSrcOperand(Inst.m_Operands[4]),
+    };
+  };
   case microsoft::D3D11_SB_OPCODE_UBFE: {
     return InstExtractBits{
       .dst = readDstOperand(Inst.m_Operands[0]),

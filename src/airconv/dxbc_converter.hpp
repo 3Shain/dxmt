@@ -553,6 +553,14 @@ struct InstExtractBits {
   bool is_signed;
 };
 
+struct InstBitFiledInsert {
+  DstOperand dst;
+  SrcOperand src0;
+  SrcOperand src1;
+  SrcOperand src2;
+  SrcOperand src3;
+};
+
 enum class ConversionOp {
   HalfToFloat,
   FloatToHalf,
@@ -645,7 +653,8 @@ using Instruction = std::variant<
   InstIntegerCompare, InstFloatCompare,                                  //
   InstFloatBinaryOp, InstIntegerBinaryOp, InstIntegerBinaryOpWithTwoDst, //
   InstFloatUnaryOp, InstIntegerUnaryOp,                                  //
-  InstFloatMAD, InstIntegerMAD, InstMaskedSumOfAbsDiff, InstExtractBits, //
+  InstFloatMAD, InstIntegerMAD, InstMaskedSumOfAbsDiff,                  //
+  InstExtractBits, InstBitFiledInsert,                                   //
   InstSample, InstSampleCompare, InstGather, InstGatherCompare,          //
   InstSampleBias, InstSampleDerivative, InstSampleLOD,                   //
   InstSamplePos, InstSampleInfo, InstBufferInfo, InstResourceInfo,       //
@@ -756,7 +765,11 @@ using BasicBlockTarget = std::variant<
 class BasicBlock {
 public:
   std::vector<Instruction> instructions;
-  BasicBlockTarget target = BasicBlockUndefined{};
+  BasicBlockTarget target;
+  std::string debug_name;
+
+  BasicBlock(const char *name)
+      : instructions(), target(BasicBlockUndefined{}), debug_name(name) {}
 };
 
 #pragma endregion
