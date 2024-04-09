@@ -583,6 +583,19 @@ auto FunctionSignatureBuilder::CreateFunction(
             ->string("mtl_position");
           return get_llvm_type(position.type, context);
         },
+        [&](const OutputDepth &depth) {
+          static const char *qualifiers[3] = {
+            "air.any", "air.greater", "air.less"
+          };
+          md.string("air.depth")
+            ->string("air.depth_qualifier")
+            ->string(qualifiers[(uint32_t)depth.depth_argument])
+            ->string("air.arg_type_name")
+            ->string("float")
+            ->string("air.arg_name")
+            ->string("mtl_depth");
+          return Type::getFloatTy(context);
+        },
         [](auto _) {
           assert(0 && "Unhandled output");
           return (llvm::Type *)nullptr;

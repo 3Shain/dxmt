@@ -133,8 +133,8 @@ Reflection convertDXBC(
         ); // read till ENDIF
         // scope end
         return readControlFlow(
-          after_endif, block_after_endif, continue_point, break_point, return_point,
-          switch_context
+          after_endif, block_after_endif, continue_point, break_point,
+          return_point, switch_context
         );
       }
       case D3D10_SB_OPCODE_ELSE: {
@@ -213,8 +213,8 @@ Reflection convertDXBC(
         auto after_endswitch = std::make_shared<BasicBlock>("endswitch");
         // scope start: switch
         auto local_switch_context = std::make_shared<BasicBlockSwitch>();
-        auto empty_body =
-          std::make_shared<BasicBlock>("switch_empty"); // it will unconditional jump to
+        auto empty_body = std::make_shared<BasicBlock>("switch_empty"
+        ); // it will unconditional jump to
                                           // first case (and then ignored)
         auto _ = readControlFlow(
           empty_body, null_bb, continue_point, after_endswitch, return_point,
@@ -777,17 +777,41 @@ Reflection convertDXBC(
       case D3D10_SB_OPCODE_DCL_OUTPUT: {
         D3D10_SB_OPERAND_TYPE RegType = Inst.m_Operands[0].m_Type;
         switch (RegType) {
-        case D3D10_SB_OPERAND_TYPE_OUTPUT_DEPTH: {
-          break;
-        }
-        case D3D11_SB_OPERAND_TYPE_OUTPUT_DEPTH_GREATER_EQUAL: {
-          break;
-        }
+        case D3D10_SB_OPERAND_TYPE_OUTPUT_DEPTH:
+        case D3D11_SB_OPERAND_TYPE_OUTPUT_DEPTH_GREATER_EQUAL:
         case D3D11_SB_OPERAND_TYPE_OUTPUT_DEPTH_LESS_EQUAL: {
+          prelogue << make_effect([](struct context ctx) -> std::monostate {
+            ctx.resource.depth_output_reg =
+              ctx.builder.CreateAlloca(ctx.types._float);
+            return {};
+          });
+          auto assigned_index = func_signature.DefineOutput(air::OutputDepth{
+            .depth_argument =
+              RegType == D3D11_SB_OPERAND_TYPE_OUTPUT_DEPTH_GREATER_EQUAL
+                ? air::DepthArgument::greater
+              : RegType == D3D11_SB_OPERAND_TYPE_OUTPUT_DEPTH_LESS_EQUAL
+                ? air::DepthArgument::less
+                : air::DepthArgument::any
+          });
+          epilogue >> [=](pvalue v) {
+            return make_irvalue([=](struct context ctx) {
+              return ctx.builder.CreateInsertValue(
+                v,
+                ctx.builder.CreateLoad(
+                  ctx.types._float,
+                  ctx.builder.CreateConstInBoundsGEP1_32(
+                    ctx.types._float, ctx.resource.depth_output_reg, 0
+                  )
+                ),
+                {assigned_index}
+              );
+            });
+          };
           break;
         }
         case D3D11_SB_OPERAND_TYPE_OUTPUT_STENCIL_REF:
         case D3D10_SB_OPERAND_TYPE_OUTPUT_COVERAGE_MASK: {
+          assert(0 && "todo");
           break;
         }
 

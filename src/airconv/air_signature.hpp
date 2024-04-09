@@ -45,7 +45,12 @@ constexpr auto get_llvm_type = [](auto msl_type, llvm::LLVMContext &context) {
   return std::visit([&](auto x) { return x.get_llvm_type(context); }, msl_type);
 };
 
-enum class MemoryAccess : uint32_t { sample = 0, read = 1, write = 2, read_write = 3 };
+enum class MemoryAccess : uint32_t {
+  sample = 0,
+  read = 1,
+  write = 2,
+  read_write = 3
+};
 
 enum class AddressSpace : uint32_t { unknown, device, constant, threadgroup };
 
@@ -464,7 +469,11 @@ struct OutputRenderTarget {
   MSLScalerOrVectorType type;
 };
 
-struct OutputDepth {};
+enum class DepthArgument { any = 0, greater = 1, less = 2 };
+
+struct OutputDepth {
+  DepthArgument depth_argument;
+};
 
 using FunctionInput = template_concat_t<
   FunctionArguments,
@@ -485,7 +494,7 @@ using FunctionOutput = std::variant<
   /* vertex */
   OutputVertex, OutputPosition,
   /* fragment */
-  OutputRenderTarget>;
+  OutputRenderTarget, OutputDepth>;
 
 class FunctionSignatureBuilder {
 public:

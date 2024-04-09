@@ -90,8 +90,6 @@ template <typename S> IRValue make_irvalue(S &&fs) {
 }
 
 template <typename S> IRValue make_irvalue_bind(S &&fs) {
-  //   return ReaderIO<context, IRValue>(std::forward<S>(fs)) >>=
-  //          [](auto inside) { return inside; };
   return IRValue([fs = std::forward<S>(fs)](auto ctx) {
     return fs(ctx).build(ctx);
   });
@@ -102,8 +100,6 @@ template <typename S> IREffect make_effect(S &&fs) {
 }
 
 template <typename S> IREffect make_effect_bind(S &&fs) {
-  //   return ReaderIO<context, IREffect>(std::forward<S>(fs)) >>=
-  //          [](auto inside) { return inside; };
   return IREffect([fs = std::forward<S>(fs)](auto ctx) mutable {
     return fs(ctx).build(ctx);
   });
@@ -368,30 +364,22 @@ auto get_item_in_argbuf_binding_table(uint32_t argbuf_index, uint32_t index) {
   });
 };
 
-auto create_shuffle_swizzle_mask(
-  uint32_t writeMask, Swizzle swizzle_ = swizzle_identity
-) {
+auto get_shuffle_mask(uint32_t writeMask) {
   // original value: 0 1 2 3
   // new value: 4 5 6 7
-  // if writeMask at specific component is 0, use original value
+  // if writeMask at specific component is not set, use original value
   std::array<int, 4> mask = {0, 1, 2, 3}; // identity selection
-  char *swizzle = (char *)&swizzle_;
-  // unsigned checked_component = 0;
   if (writeMask & 1) {
-    mask[0] = 4 + swizzle[0];
-    // checked_component++;
+    mask[0] = 4;
   }
   if (writeMask & 2) {
-    mask[1] = 4 + swizzle[1];
-    // checked_component++;
+    mask[1] = 5;
   }
   if (writeMask & 4) {
-    mask[2] = 4 + swizzle[2];
-    // checked_component++;
+    mask[2] = 6;
   }
   if (writeMask & 8) {
-    mask[3] = 4 + swizzle[3];
-    // checked_component++;
+    mask[3] = 7;
   }
   return mask;
 }
@@ -446,9 +434,9 @@ auto store_at_alloca_array(
 };
 
 auto store_at_vec4_array_masked(
-  llvm::Value *array, pvalue index, pvalue item, uint32_t mask
+  llvm::Value *array, pvalue index, pvalue maybe_vec4, uint32_t mask
 ) -> IREffect {
-  return extend_to_vec4(item) >>= [=](pvalue vec4) {
+  return extend_to_vec4(maybe_vec4) >>= [=](pvalue vec4) {
     return make_effect_bind([=](context ctx) {
       if (mask == 0b1111) {
         return store_at_alloca_array(array, index, vec4);
@@ -456,9 +444,7 @@ auto store_at_vec4_array_masked(
       return load_at_alloca_array(array, index) >>= [=](auto current) {
         assert(current->getType() == vec4->getType());
         auto new_value = ctx.builder.CreateShuffleVector(
-          current, vec4,
-          (llvm::ArrayRef<int>)
-            create_shuffle_swizzle_mask(mask, swizzle_identity)
+          current, vec4, get_shuffle_mask(mask)
         );
         return store_at_alloca_array(array, index, new_value);
       };
@@ -565,25 +551,15 @@ auto call_integer_unary_op(std::string op, pvalue a) {
     using namespace llvm;
     auto &context = ctx.llvm;
     auto &module = ctx.module;
-    auto &types = ctx.types;
     assert(a->getType()->getScalarType()->isIntegerTy());
-    auto dimension = get_value_dimension(a);
     auto att = AttributeList::get(
-      context, {std::make_pair<unsigned int, Attribute>(
-                  ~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)
-                ),
-                std::make_pair<unsigned int, Attribute>(
-                  ~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)
-                ),
-                std::make_pair<unsigned int, Attribute>(
-                  ~0U, Attribute::get(context, Attribute::AttrKind::ReadNone)
-                )}
+      context, {{~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)},
+                {~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)},
+                {~0U, Attribute::get(context, Attribute::AttrKind::ReadNone)}}
     );
-    auto operand_type = dimension == 4   ? types._int4
-                        : dimension == 3 ? types._int3
-                                         : types._int2;
+    auto operand_type = a->getType();
     auto fn = (module.getOrInsertFunction(
-      "air." + op + ".v" + std::to_string(dimension) + "i32",
+      "air." + op + type_overload_suffix(operand_type, air::Sign::inapplicable),
       llvm::FunctionType::get(operand_type, {operand_type}, false), att
     ));
     return ctx.builder.CreateCall(fn, {a});
@@ -597,11 +573,9 @@ auto call_integer_binop(
     using namespace llvm;
     auto &context = ctx.llvm;
     auto &module = ctx.module;
-    auto &types = ctx.types;
     assert(a->getType()->getScalarType()->isIntegerTy());
     assert(b->getType()->getScalarType()->isIntegerTy());
     assert(a->getType() == b->getType());
-    auto dimension = get_value_dimension(a);
     auto att = AttributeList::get(
       context, {std::make_pair<unsigned int, Attribute>(
                   ~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)
@@ -613,10 +587,7 @@ auto call_integer_binop(
                   ~0U, Attribute::get(context, Attribute::AttrKind::ReadNone)
                 )}
     );
-    auto operand_type = dimension == 4   ? types._int4
-                        : dimension == 3 ? types._int3
-                        : dimension == 2 ? types._int2
-                                         : types._int;
+    auto operand_type = a->getType();
     auto fn = (module.getOrInsertFunction(
       "air." + op +
         type_overload_suffix(
@@ -636,18 +607,13 @@ auto call_float_unary_op(std::string op, pvalue a) {
     using namespace llvm;
     auto &context = ctx.llvm;
     auto &module = ctx.module;
-    auto &types = ctx.types;
     assert(a->getType()->getScalarType()->isFloatTy());
-    auto dimension = get_value_dimension(a);
     auto att = AttributeList::get(
       context, {{~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)},
                 {~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)},
                 {~0U, Attribute::get(context, Attribute::AttrKind::ReadNone)}}
     );
-    auto operand_type = dimension == 4   ? types._float4
-                        : dimension == 3 ? types._float3
-                        : dimension == 2 ? types._float2
-                                         : types._float;
+    auto operand_type = a->getType();
     auto fn = (module.getOrInsertFunction(
       "air." + op + type_overload_suffix(operand_type),
       llvm::FunctionType::get(operand_type, {operand_type}, false), att
@@ -661,25 +627,15 @@ auto call_float_binop(std::string op, pvalue a, pvalue b) {
     using namespace llvm;
     auto &context = ctx.llvm;
     auto &module = ctx.module;
-    auto &types = ctx.types;
     assert(a->getType()->getScalarType()->isFloatTy());
     assert(b->getType()->getScalarType()->isFloatTy());
     assert(a->getType() == b->getType());
-    auto dimension = get_value_dimension(a);
     auto att = AttributeList::get(
-      context, {std::make_pair<unsigned int, Attribute>(
-                  ~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)
-                ),
-                std::make_pair<unsigned int, Attribute>(
-                  ~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)
-                ),
-                std::make_pair<unsigned int, Attribute>(
-                  ~0U, Attribute::get(context, Attribute::AttrKind::ReadNone)
-                )}
+      context, {{~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)},
+                {~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)},
+                {~0U, Attribute::get(context, Attribute::AttrKind::ReadNone)}}
     );
-    auto operand_type = dimension == 4   ? types._float4
-                        : dimension == 3 ? types._float3
-                                         : types._float2;
+    auto operand_type = a->getType();
     auto fn = (module.getOrInsertFunction(
       "air." + op + type_overload_suffix(operand_type),
       llvm::FunctionType::get(
@@ -1556,10 +1512,7 @@ IREffect call_discard_fragment() {
   );
   auto fn = (module.getOrInsertFunction(
     "air.discard_fragment",
-    llvm::FunctionType::get(
-      Type::getVoidTy(context), {Type::getVoidTy(context)}, false
-    ),
-    att
+    llvm::FunctionType::get(Type::getVoidTy(context), {}, false), att
   ));
   ctx.builder.CreateCall(fn, {});
   co_return {};
@@ -2069,6 +2022,22 @@ store_dst<DstOperandOutput, true>(DstOperandOutput output, IRValue &&value) {
         ctx.resource.output_register_file_float, co_yield get_int(output.regid),
         co_yield std::move(value), output._.mask
       );
+    }
+  );
+};
+
+template <>
+IREffect
+store_dst<DstOperandOutputDepth, true>(DstOperandOutputDepth, IRValue &&value) {
+  // coroutine + rvalue reference = SHOOT YOURSELF IN THE FOOT
+  return make_effect_bind(
+    [value = std::move(value)](context ctx) mutable -> IREffect {
+      pvalue depth = co_yield std::move(value) >>= extract_element(0);
+      auto ptr = ctx.builder.CreateConstGEP1_32(
+        ctx.types._float, ctx.resource.depth_output_reg, 0
+      );
+      ctx.builder.CreateStore(depth, ptr);
+      co_return {};
     }
   );
 };
@@ -4039,7 +4008,6 @@ auto convert_basicblocks(
                         auto res_h = co_yield res_handle_fn(nullptr);
                         auto addr =
                           co_yield load_src_op<false>(bin.dst_address);
-                        addr->dump();
                         auto ptr =
                           stride < 0
                             ? co_yield extract_element(0)(addr
