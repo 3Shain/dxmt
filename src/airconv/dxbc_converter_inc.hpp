@@ -454,6 +454,7 @@ auto store_at_vec4_array_masked(
 
 auto init_input_reg(uint32_t with_fnarg_at, uint32_t to_reg, uint32_t mask)
   -> IREffect {
+  assert((mask & 1) && "todo: handle input register sharing correctly");
   return make_effect_bind([=](context ctx) {
     auto arg = ctx.function->getArg(with_fnarg_at);
     auto const_index =

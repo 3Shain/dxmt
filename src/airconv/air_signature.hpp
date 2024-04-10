@@ -484,7 +484,7 @@ using FunctionInput = template_concat_t<
     InputVertexStageIn,
     /* fragment */
     InputPrimitiveID, InputViewportArrayIndex, InputRenderTargetArrayIndex,
-    InputFrontFacing, InputPosition, //
+    InputFrontFacing, InputPosition, InputSampleIndex, //
     InputFragmentStageIn,
     /* kernel */
     InputThreadIndexInThreadgroup, InputThreadPositionInThreadgroup,

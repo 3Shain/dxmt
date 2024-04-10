@@ -564,9 +564,24 @@ Reflection convertDXBC(
           });
           break;
         }
-        case D3D10_SB_NAME_SAMPLE_INDEX:
-        case D3D10_SB_NAME_PRIMITIVE_ID:
-        case D3D10_SB_NAME_IS_FRONT_FACE:
+        case D3D10_SB_NAME_SAMPLE_INDEX: {
+          auto assigned_index =
+            func_signature.DefineInput(air::InputSampleIndex{});
+          prelogue << init_input_reg(assigned_index, reg, mask);
+          break;
+        }
+        case D3D10_SB_NAME_PRIMITIVE_ID: {
+          auto assigned_index =
+            func_signature.DefineInput(air::InputPrimitiveID{});
+          prelogue << init_input_reg(assigned_index, reg, mask);
+          break;
+        }
+        case D3D10_SB_NAME_IS_FRONT_FACE: {
+          auto assigned_index =
+            func_signature.DefineInput(air::InputFrontFacing{});
+          prelogue << init_input_reg(assigned_index, reg, mask);
+          break;
+        }
         default:
           assert(0 && "Unexpected/unhandled input system value");
           break;
@@ -676,15 +691,25 @@ Reflection convertDXBC(
         unsigned reg = Inst.m_Operands[0].m_Index[0].m_RegIndex;
         auto mask = Inst.m_Operands[0].m_WriteMask >> 4;
         auto siv = Inst.m_InputPSDeclSIV.Name;
-        // auto interpolation =
-        //   to_air_interpolation(Inst.m_InputPSDeclSIV.InterpolationMode);
+        auto interpolation =
+          to_air_interpolation(Inst.m_InputPSDeclSGV.InterpolationMode);
         uint32_t assigned_index;
         switch (siv) {
+        case D3D10_SB_NAME_POSITION:
+          assert(
+            interpolation == air::Interpolation::center_no_perspective
+          ); // the only supported interpolation for [[position]]
+          assigned_index = func_signature.DefineInput(
+            air::InputPosition{.interpolation = interpolation}
+          );
+          break;
         case D3D10_SB_NAME_RENDER_TARGET_ARRAY_INDEX:
+          assert(interpolation == air::Interpolation::flat);
           assigned_index =
             func_signature.DefineInput(air::InputRenderTargetArrayIndex{});
           break;
         case D3D10_SB_NAME_VIEWPORT_ARRAY_INDEX:
+          assert(interpolation == air::Interpolation::flat);
           assigned_index =
             func_signature.DefineInput(air::InputViewportArrayIndex{});
           break;
@@ -698,25 +723,24 @@ Reflection convertDXBC(
       case D3D10_SB_OPCODE_DCL_INPUT_PS_SGV: {
         unsigned reg = Inst.m_Operands[0].m_Index[0].m_RegIndex;
         auto mask = Inst.m_Operands[0].m_WriteMask >> 4;
-        auto siv = Inst.m_InputPSDeclSGV.Name;
+        auto siv = Inst.m_InputPSDeclSIV.Name;
         auto interpolation =
           to_air_interpolation(Inst.m_InputPSDeclSGV.InterpolationMode);
+        uint32_t assigned_index;
         switch (siv) {
-        case D3D10_SB_NAME_POSITION: {
-          assert(
-            interpolation == air::Interpolation::sample_no_perspective
-          ); // the only supported interpolation for [[position]]
-          auto assigned_index = func_signature.DefineInput(
-            air::InputPosition{.interpolation = interpolation}
-          );
-          prelogue << init_input_reg(assigned_index, reg, mask);
+        case microsoft::D3D10_SB_NAME_IS_FRONT_FACE:
+          assert(interpolation == air::Interpolation::flat);
+          assigned_index = func_signature.DefineInput(air::InputFrontFacing{});
           break;
-        }
+        case microsoft::D3D10_SB_NAME_SAMPLE_INDEX:
+          assert(interpolation == air::Interpolation::flat);
+          assigned_index = func_signature.DefineInput(air::InputSampleIndex{});
+          break;
         default:
           assert(0 && "Unexpected/unhandled input system value");
           break;
         }
-        // prelogue << init_input_reg(assigned_index, reg, mask);
+        prelogue << init_input_reg(assigned_index, reg, mask);
         break;
       }
       case D3D10_SB_OPCODE_DCL_INPUT_PS: {
@@ -781,6 +805,10 @@ Reflection convertDXBC(
         case D3D11_SB_OPERAND_TYPE_OUTPUT_DEPTH_GREATER_EQUAL:
         case D3D11_SB_OPERAND_TYPE_OUTPUT_DEPTH_LESS_EQUAL: {
           prelogue << make_effect([](struct context ctx) -> std::monostate {
+            assert(
+              ctx.resource.depth_output_reg == nullptr &&
+              "otherwise oDepth is defined twice"
+            );
             ctx.resource.depth_output_reg =
               ctx.builder.CreateAlloca(ctx.types._float);
             return {};

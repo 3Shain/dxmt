@@ -476,6 +476,38 @@ auto FunctionSignatureBuilder::CreateFunction(
 
           return msl_float4.get_llvm_type(context);
         },
+        [&](const InputFrontFacing &) {
+          metadata_field.string("air.front_face")
+            ->string("air.arg_type_name")
+            ->string("bool") // HARDCODED
+            ->string("air.arg_name")
+            ->string("mtl_frontface");
+          return msl_bool.get_llvm_type(context);
+        },
+        [&](const InputSampleIndex &) {
+          metadata_field.string("air.sample_id")
+            ->string("air.arg_type_name")
+            ->string("uint") // HARDCODED
+            ->string("air.arg_name")
+            ->string("mtl_sample_index");
+          return msl_uint.get_llvm_type(context);
+        },
+        [&](const InputRenderTargetArrayIndex &) {
+          metadata_field.string("air.render_target_array_index")
+            ->string("air.arg_type_name")
+            ->string("uint") // HARDCODED
+            ->string("air.arg_name")
+            ->string("mtl_rt_index");
+          return msl_uint.get_llvm_type(context);
+        },
+        [&](const InputViewportArrayIndex &) {
+          metadata_field.string("air.viewport_array_index")
+            ->string("air.arg_type_name")
+            ->string("uint") // HARDCODED
+            ->string("air.arg_name")
+            ->string("mtl_vp_index");
+          return msl_uint.get_llvm_type(context);
+        },
         [&](const InputThreadgroupPositionInGrid &) {
           metadata_field.string("air.threadgroup_position_in_grid")
             ->string("air.arg_type_name")
@@ -538,6 +570,14 @@ auto FunctionSignatureBuilder::CreateFunction(
             ->string("uint") // HARDCODED
             ->string("air.arg_name")
             ->string("mtl_base_instance");
+          return msl_uint.get_llvm_type(context);
+        },
+        [&](const InputPrimitiveID &) {
+          metadata_field.string("air.primitive_id")
+            ->string("air.arg_type_name")
+            ->string("uint") // HARDCODED
+            ->string("air.arg_name")
+            ->string("mtl_primitive_id");
           return msl_uint.get_llvm_type(context);
         },
         [](auto _) {
