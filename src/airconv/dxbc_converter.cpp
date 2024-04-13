@@ -215,7 +215,7 @@ Reflection convertDXBC(
         auto local_switch_context = std::make_shared<BasicBlockSwitch>();
         auto empty_body = std::make_shared<BasicBlock>("switch_empty"
         ); // it will unconditional jump to
-                                          // first case (and then ignored)
+           // first case (and then ignored)
         auto _ = readControlFlow(
           empty_body, null_bb, continue_point, after_endswitch, return_point,
           local_switch_context
@@ -540,7 +540,7 @@ Reflection convertDXBC(
             auto const_index =
               llvm::ConstantInt::get(ctx.llvm, llvm::APInt{32, reg, false});
             return store_at_vec4_array_masked(
-              ctx.resource.input_register_file, const_index,
+              ctx.resource.input.ptr_int4, const_index,
               ctx.builder.CreateSub(vertex_id, base_vertex), mask
             );
           });
@@ -558,7 +558,7 @@ Reflection convertDXBC(
             auto const_index =
               llvm::ConstantInt::get(ctx.llvm, llvm::APInt{32, reg, false});
             return store_at_vec4_array_masked(
-              ctx.resource.input_register_file, const_index,
+              ctx.resource.input.ptr_int4, const_index,
               ctx.builder.CreateSub(instance_id, base_instance), mask
             );
           });
@@ -1056,24 +1056,24 @@ Reflection convertDXBC(
   auto epilogue_bb = llvm::BasicBlock::Create(context, "epilogue", function);
   llvm::IRBuilder<> builder(entry_bb);
   builder.getFastMathFlags().setFast(true);
-  resource_map.input_register_file =
+  resource_map.input.ptr_int4 =
     builder.CreateAlloca(llvm::ArrayType::get(types._int4, max_input_register));
-  resource_map.input_register_file_float = builder.CreateBitCast(
-    resource_map.input_register_file,
+  resource_map.input.ptr_float4 = builder.CreateBitCast(
+    resource_map.input.ptr_int4,
     llvm::ArrayType::get(types._float4, max_input_register)->getPointerTo()
   );
-  resource_map.output_register_file =
+  resource_map.output.ptr_int4 =
     builder.CreateAlloca(llvm::ArrayType::get(types._int4, max_output_register)
     );
-  resource_map.output_register_file_float = builder.CreateBitCast(
-    resource_map.output_register_file,
+  resource_map.output.ptr_float4 = builder.CreateBitCast(
+    resource_map.output.ptr_int4,
     llvm::ArrayType::get(types._float4, max_output_register)->getPointerTo()
   );
-  resource_map.temp_register_file = builder.CreateAlloca(
+  resource_map.temp.ptr_int4 = builder.CreateAlloca(
     llvm::ArrayType::get(types._int4, shader_info->tempRegisterCount)
   );
-  resource_map.temp_register_file_float = builder.CreateBitCast(
-    resource_map.temp_register_file,
+  resource_map.temp.ptr_float4 = builder.CreateBitCast(
+    resource_map.temp.ptr_int4,
     llvm::ArrayType::get(types._float4, shader_info->tempRegisterCount)
       ->getPointerTo()
   );
@@ -1089,10 +1089,19 @@ Reflection convertDXBC(
   for (auto &[idx, info] : shader_info->indexableTempRegisterCounts) {
     auto &[numRegisters, mask] = info;
     auto channel_count = std::bit_width(mask);
-    resource_map.indexable_temp_map[idx] =
-      builder.CreateAlloca(llvm::ArrayType::get(
-        llvm::FixedVectorType::get(types._int, channel_count), numRegisters
-      ));
+    auto ptr_int_vec = builder.CreateAlloca(llvm::ArrayType::get(
+      llvm::FixedVectorType::get(types._int, channel_count), numRegisters
+    ));
+    auto ptr_float_vec = builder.CreateBitCast(
+      ptr_int_vec,
+      llvm::ArrayType::get(
+        llvm::FixedVectorType::get(types._float, channel_count), numRegisters
+      )
+        ->getPointerTo()
+    );
+    resource_map.indexable_temp_map[idx] = {
+      ptr_int_vec, ptr_float_vec, (uint32_t)channel_count
+    };
   }
 
   struct context ctx {

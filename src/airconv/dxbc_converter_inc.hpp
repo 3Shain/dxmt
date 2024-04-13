@@ -39,6 +39,17 @@ using IRValue = ReaderIO<context, pvalue>;
 using IREffect = ReaderIO<context, std::monostate>;
 using IndexedIRValue = std::function<IRValue(pvalue)>;
 
+struct register_file {
+  llvm::Value *ptr_int4 = nullptr;
+  llvm::Value *ptr_float4 = nullptr;
+};
+
+struct indexable_register_file {
+  llvm::Value *ptr_int_vec = nullptr;
+  llvm::Value *ptr_float_vec = nullptr;
+  uint32_t vec_size = 0;
+};
+
 struct io_binding_map {
   llvm::GlobalVariable *icb;
   llvm::Value *icb_float;
@@ -50,15 +61,13 @@ struct io_binding_map {
   std::unordered_map<
     uint32_t, std::tuple<air::MSLTexture, IndexedIRValue, int32_t>>
     uav_range_map;
-  std::unordered_map<uint32_t, llvm::AllocaInst *> indexable_temp_map;
   std::unordered_map<uint32_t, std::pair<uint32_t, llvm::GlobalVariable *>>
     tgsm_map;
-  llvm::AllocaInst *input_register_file = nullptr;
-  llvm::Value *input_register_file_float = nullptr;
-  llvm::AllocaInst *output_register_file = nullptr;
-  llvm::Value *output_register_file_float = nullptr;
-  llvm::AllocaInst *temp_register_file = nullptr;
-  llvm::Value *temp_register_file_float = nullptr;
+
+  register_file input;
+  register_file output;
+  register_file temp;
+  std::unordered_map<uint32_t, indexable_register_file> indexable_temp_map;
 
   // special registers (input)
   llvm::Value *thread_id_arg = nullptr;
@@ -300,9 +309,7 @@ auto extract_value(uint32_t index) {
 auto swizzle(Swizzle swizzle) {
   return [=](pvalue vec) {
     return make_irvalue([=](context ctx) {
-      return ctx.builder.CreateShuffleVector(
-        vec, {swizzle.x, swizzle.y, swizzle.z, swizzle.w}
-      );
+      return ctx.builder.CreateShuffleVector(vec, (std::array<int, 4>)swizzle);
     });
   };
 }
@@ -402,24 +409,21 @@ auto cmp_float(llvm::CmpInst::Predicate cmp, pvalue a, pvalue b) {
   });
 };
 
-auto load_at_alloca_array(llvm::Value *array, pvalue index) -> IRValue {
+auto load_from_array_at(llvm::Value *array, pvalue index) -> IRValue {
   return make_irvalue([=](context ctx) {
-    auto ptr = ctx.builder.CreateInBoundsGEP(
+    auto array_ty = llvm::cast<llvm::ArrayType>( // force line break
       llvm::cast<llvm::PointerType>(array->getType())
-        ->getNonOpaquePointerElementType(),
-      array, {ctx.builder.getInt32(0), index}
+        ->getNonOpaquePointerElementType()
     );
-    return ctx.builder.CreateLoad(
-      llvm::cast<llvm::ArrayType>(llvm::cast<llvm::PointerType>(array->getType()
-                                  )
-                                    ->getNonOpaquePointerElementType())
-        ->getElementType(),
-      ptr
+    auto ptr = ctx.builder.CreateGEP(
+      array_ty, array, {ctx.builder.getInt32(0), index}, "",
+      llvm::isa<llvm::ConstantInt>(index)
     );
+    return ctx.builder.CreateLoad(array_ty->getElementType(), ptr);
   });
 };
 
-auto store_at_alloca_array(
+auto store_to_array_at(
   llvm::Value *array, pvalue index, pvalue vec4_type_matched
 ) -> IREffect {
   return make_effect([=](context ctx) {
@@ -439,14 +443,14 @@ auto store_at_vec4_array_masked(
   return extend_to_vec4(maybe_vec4) >>= [=](pvalue vec4) {
     return make_effect_bind([=](context ctx) {
       if (mask == 0b1111) {
-        return store_at_alloca_array(array, index, vec4);
+        return store_to_array_at(array, index, vec4);
       }
-      return load_at_alloca_array(array, index) >>= [=](auto current) {
+      return load_from_array_at(array, index) >>= [=](auto current) {
         assert(current->getType() == vec4->getType());
         auto new_value = ctx.builder.CreateShuffleVector(
           current, vec4, get_shuffle_mask(mask)
         );
-        return store_at_alloca_array(array, index, new_value);
+        return store_to_array_at(array, index, new_value);
       };
     });
   };
@@ -465,11 +469,11 @@ auto init_input_reg(uint32_t with_fnarg_at, uint32_t to_reg, uint32_t mask)
         "TODO: handle non 32 bit integer"
       );
       return store_at_vec4_array_masked(
-        ctx.resource.input_register_file, const_index, arg, mask
+        ctx.resource.input.ptr_int4, const_index, arg, mask
       );
     } else if (arg->getType()->getScalarType()->isFloatTy()) {
       return store_at_vec4_array_masked(
-        ctx.resource.input_register_file_float, const_index, arg, mask
+        ctx.resource.input.ptr_float4, const_index, arg, mask
       );
     } else {
       assert(0 && "TODO: unhandled input type? might be interpolant...");
@@ -483,8 +487,8 @@ pop_output_reg(uint32_t from_reg, uint32_t mask, uint32_t to_element) {
     return make_irvalue_bind([=](context ctx) {
       auto const_index =
         llvm::ConstantInt::get(ctx.llvm, llvm::APInt{32, from_reg, false});
-      return load_at_alloca_array(
-               ctx.resource.output_register_file, const_index
+      return load_from_array_at(
+               ctx.resource.output.ptr_int4, const_index
              ) >>= [=, &ctx](auto ivec4) {
         auto desired_type =
           ctx.function->getReturnType()->getStructElementType(to_element);
@@ -1749,8 +1753,8 @@ auto load_operand_index(OperandIndex idx) {
       [&](IndexByTempComponent ot) {
         return make_irvalue([=](context ctx) {
           auto temp =
-            load_at_alloca_array(
-              ctx.resource.temp_register_file, ctx.builder.getInt32(ot.regid)
+            load_from_array_at(
+              ctx.resource.temp.ptr_int4, ctx.builder.getInt32(ot.regid)
             )
               .build(ctx);
           return ctx.builder.CreateAdd(
@@ -1814,7 +1818,7 @@ IRValue load_src<SrcOperandImmediateConstantBuffer, false>(
   SrcOperandImmediateConstantBuffer cb
 ) {
   auto ctx = co_yield get_context();
-  auto vec = co_yield load_at_alloca_array(
+  auto vec = co_yield load_from_array_at(
     ctx.resource.icb, co_yield load_operand_index(cb.regindex)
   );
   co_return co_yield apply_integer_src_operand_modifier(cb._, vec);
@@ -1825,7 +1829,7 @@ IRValue load_src<SrcOperandImmediateConstantBuffer, true>(
   SrcOperandImmediateConstantBuffer cb
 ) {
   auto ctx = co_yield get_context();
-  auto vec = co_yield load_at_alloca_array(
+  auto vec = co_yield load_from_array_at(
     ctx.resource.icb_float, co_yield load_operand_index(cb.regindex)
   );
   co_return co_yield apply_float_src_operand_modifier(cb._, vec);
@@ -1847,32 +1851,57 @@ IRValue load_src<SrcOperandImmediate32, true>(SrcOperandImmediate32 imm) {
 
 template <> IRValue load_src<SrcOperandTemp, true>(SrcOperandTemp temp) {
   auto ctx = co_yield get_context();
-  auto s = co_yield load_at_alloca_array(
-    ctx.resource.temp_register_file_float, ctx.builder.getInt32(temp.regid)
+  auto s = co_yield load_from_array_at(
+    ctx.resource.temp.ptr_float4, ctx.builder.getInt32(temp.regid)
   );
   co_return co_yield apply_float_src_operand_modifier(temp._, s);
 };
 
 template <> IRValue load_src<SrcOperandTemp, false>(SrcOperandTemp temp) {
   auto ctx = co_yield get_context();
-  auto s = co_yield load_at_alloca_array(
-    ctx.resource.temp_register_file, ctx.builder.getInt32(temp.regid)
+  auto s = co_yield load_from_array_at(
+    ctx.resource.temp.ptr_int4, ctx.builder.getInt32(temp.regid)
   );
   co_return (co_yield apply_integer_src_operand_modifier(temp._, s));
 };
 
+template <>
+IRValue load_src<SrcOperandIndexableTemp, true>(SrcOperandIndexableTemp itemp) {
+  auto ctx = co_yield get_context();
+  auto regfile = ctx.resource.indexable_temp_map[itemp.regfile];
+  auto s = co_yield load_from_array_at(
+    regfile.ptr_float_vec, co_yield load_operand_index(itemp.regindex)
+  );
+  co_return co_yield apply_float_src_operand_modifier(
+    itemp._, co_yield extend_to_vec4(s)
+  );
+};
+
+template <>
+IRValue load_src<SrcOperandIndexableTemp, false>(SrcOperandIndexableTemp itemp
+) {
+  auto ctx = co_yield get_context();
+  auto regfile = ctx.resource.indexable_temp_map[itemp.regfile];
+  auto s = co_yield load_from_array_at(
+    regfile.ptr_int_vec, co_yield load_operand_index(itemp.regindex)
+  );
+  co_return co_yield apply_integer_src_operand_modifier(
+    itemp._, co_yield extend_to_vec4(s)
+  );
+};
+
 template <> IRValue load_src<SrcOperandInput, true>(SrcOperandInput input) {
   auto ctx = co_yield get_context();
-  auto s = co_yield load_at_alloca_array(
-    ctx.resource.input_register_file_float, ctx.builder.getInt32(input.regid)
+  auto s = co_yield load_from_array_at(
+    ctx.resource.input.ptr_float4, ctx.builder.getInt32(input.regid)
   );
   co_return co_yield apply_float_src_operand_modifier(input._, s);
 };
 
 template <> IRValue load_src<SrcOperandInput, false>(SrcOperandInput input) {
   auto ctx = co_yield get_context();
-  auto s = co_yield load_at_alloca_array(
-    ctx.resource.input_register_file, ctx.builder.getInt32(input.regid)
+  auto s = co_yield load_from_array_at(
+    ctx.resource.input.ptr_int4, ctx.builder.getInt32(input.regid)
   );
   co_return co_yield apply_integer_src_operand_modifier(input._, s);
 };
@@ -1979,7 +2008,7 @@ store_dst<DstOperandTemp, false>(DstOperandTemp temp, IRValue &&value) {
   return make_effect_bind(
     [value = std::move(value), temp](auto ctx) mutable -> IREffect {
       co_return co_yield store_at_vec4_array_masked(
-        ctx.resource.temp_register_file, co_yield get_int(temp.regid),
+        ctx.resource.temp.ptr_int4, co_yield get_int(temp.regid),
         co_yield std::move(value), temp._.mask
       );
     }
@@ -1992,7 +2021,7 @@ IREffect store_dst<DstOperandTemp, true>(DstOperandTemp temp, IRValue &&value) {
   return make_effect_bind(
     [value = std::move(value), temp](auto ctx) mutable -> IREffect {
       co_return co_yield store_at_vec4_array_masked(
-        ctx.resource.temp_register_file_float, co_yield get_int(temp.regid),
+        ctx.resource.temp.ptr_float4, co_yield get_int(temp.regid),
         co_yield std::move(value), temp._.mask
       );
     }
@@ -2006,7 +2035,7 @@ store_dst<DstOperandOutput, false>(DstOperandOutput output, IRValue &&value) {
   return make_effect_bind(
     [value = std::move(value), output](auto ctx) mutable -> IREffect {
       co_return co_yield store_at_vec4_array_masked(
-        ctx.resource.output_register_file, co_yield get_int(output.regid),
+        ctx.resource.output.ptr_int4, co_yield get_int(output.regid),
         co_yield std::move(value), output._.mask
       );
     }
@@ -2020,7 +2049,7 @@ store_dst<DstOperandOutput, true>(DstOperandOutput output, IRValue &&value) {
   return make_effect_bind(
     [value = std::move(value), output](auto ctx) mutable -> IREffect {
       co_return co_yield store_at_vec4_array_masked(
-        ctx.resource.output_register_file_float, co_yield get_int(output.regid),
+        ctx.resource.output.ptr_float4, co_yield get_int(output.regid),
         co_yield std::move(value), output._.mask
       );
     }

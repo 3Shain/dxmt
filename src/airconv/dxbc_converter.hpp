@@ -32,6 +32,8 @@ struct Swizzle {
   bool operator==(Swizzle const &o) const {
     return r == o.r && g == o.g && b == o.b && a == o.a;
   };
+
+  operator std::array<int, 4>() const { return std::array<int, 4>{x, y, z, w}; }
 };
 
 constexpr Swizzle swizzle_identity = {0, 1, 2, 3};
@@ -176,24 +178,24 @@ using SrcOperand = std::variant<
 struct SrcOperandResource {
   uint32_t range_id;
   OperandIndex index;
-  Swizzle read_swizzle; // if appliable?
+  Swizzle read_swizzle;
 };
 
 struct SrcOperandSampler {
   uint32_t range_id;
   OperandIndex index;
-  uint8_t gather_channel; // if appliable
+  uint8_t gather_channel;
 };
 
 struct SrcOperandUAV {
   uint32_t range_id;
   OperandIndex index;
-  Swizzle read_swizzle; // if appliable?
+  Swizzle read_swizzle;
 };
 
 struct SrcOperandTGSM {
   uint32_t id;
-  Swizzle read_swizzle; // if appliable?
+  Swizzle read_swizzle;
 };
 
 struct AtomicDstOperandUAV {
