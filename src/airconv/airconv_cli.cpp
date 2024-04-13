@@ -1,4 +1,5 @@
 #include "airconv_context.hpp"
+#include "d3dcompiler.h"
 #include "dxbc_converter.hpp"
 #include "llvm/Bitcode/BitcodeReader.h"
 #include "llvm/Bitcode/BitcodeWriter.h"
@@ -27,6 +28,10 @@ static cl::opt<std::string> OutputFilename(
 static cl::opt<bool>
   EmitLLVM("S", cl::init(false), cl::desc("Write output as LLVM assembly"));
 
+static cl::opt<bool> DisassembleDXBC(
+  "disas-dxbc", cl::init(false), cl::desc("Disassemble dxbc shader")
+);
+
 static cl::opt<bool>
   OptLevelO0("O0", cl::desc("Optimization level 0. Similar to clang -O0. "));
 
@@ -48,8 +53,7 @@ static cl::opt<bool> PreserveAssemblyUseListOrder(
   cl::init(false), cl::Hidden
 );
 
-static cl::opt<bool>
-  FastMath("fast-math", cl::desc("Use fast math"), cl::init(true));
+cl::list<std::string> f("f", cl::Prefix, cl::Hidden);
 
 namespace {
 
@@ -99,6 +103,13 @@ int main(int argc, char **argv) {
   Context.setOpaquePointers(false);
   cl::ParseCommandLineOptions(argc, argv, "DXBC to Metal AIR transpiler\n");
 
+  bool FastMath = true;
+  for (StringRef Flag : f) {
+    if (Flag == "no-fast-math") {
+      FastMath = false;
+    }
+  }
+
   if (OutputFilename.empty()) { // Unspecified output, infer it.
     if (InputFilename == "-") {
       OutputFilename = "-";
@@ -111,7 +122,7 @@ int main(int argc, char **argv) {
                         : IFN.endswith(".dxbc") ? IFN.drop_back(5)
                                                 : IFN)
                          .str();
-      OutputFilename += EmitLLVM ? ".ll" : ".air";
+      OutputFilename += DisassembleDXBC ? ".txt" : EmitLLVM ? ".ll" : ".air";
     }
   }
 
@@ -126,6 +137,31 @@ int main(int argc, char **argv) {
     return 1;
   }
   auto MemRef = FileOrErr->get()->getMemBufferRef();
+
+  if (DisassembleDXBC) {
+    std::error_code EC;
+    std::unique_ptr<ToolOutputFile> Out(
+      new ToolOutputFile(OutputFilename, EC, sys::fs::OF_TextWithCRLF)
+    );
+    if (EC) {
+      errs() << EC.message() << '\n';
+      return 1;
+    }
+
+    ID3DBlob *blob;
+    D3DDisassemble(
+      MemRef.getBufferStart(), MemRef.getBufferSize(), 0, nullptr, &blob
+    );
+
+    Out->os().write(
+      (const char *)blob->GetBufferPointer(), blob->GetBufferSize() - 1
+    );
+    // Declare success.
+    Out->keep();
+
+    blob->Release();
+    return 0;
+  }
 
   Module M("default", Context);
   dxmt::initializeModule(M, {.enableFastMath = FastMath});
