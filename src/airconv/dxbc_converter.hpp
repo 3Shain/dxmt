@@ -58,7 +58,7 @@ using OperandIndex =
 
 #pragma region source operand
 
-struct SrcOperandCommon {
+struct SrcOperandModifier {
   Swizzle swizzle;
   bool abs;
   bool neg;
@@ -75,26 +75,26 @@ struct SrcOperandImmediate32 {
 
 struct SrcOperandTemp {
   static constexpr std::string_view debug_name = "temp";
-  SrcOperandCommon _;
+  SrcOperandModifier _;
   uint32_t regid;
 };
 
 struct SrcOperandIndexableTemp {
   static constexpr std::string_view debug_name = "indexable_temp";
-  SrcOperandCommon _;
+  SrcOperandModifier _;
   uint32_t regfile;
   OperandIndex regindex;
 };
 
 struct SrcOperandInput {
   static constexpr std::string_view debug_name = "input";
-  SrcOperandCommon _;
+  SrcOperandModifier _;
   uint32_t regid;
 };
 
 struct SrcOperandConstantBuffer {
   static constexpr std::string_view debug_name = "constant_buffer";
-  SrcOperandCommon _;
+  SrcOperandModifier _;
   uint32_t rangeid;
   OperandIndex rangeindex;
   OperandIndex regindex;
@@ -102,13 +102,13 @@ struct SrcOperandConstantBuffer {
 
 struct SrcOperandImmediateConstantBuffer {
   static constexpr std::string_view debug_name = "immediate_constant_buffer";
-  SrcOperandCommon _;
+  SrcOperandModifier _;
   OperandIndex regindex;
 };
 
 struct SrcOperandAttribute {
   static constexpr std::string_view debug_name = "attribute";
-  SrcOperandCommon _;
+  SrcOperandModifier _;
   shader::common::InputAttribute attribute;
 };
 

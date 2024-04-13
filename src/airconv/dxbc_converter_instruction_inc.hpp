@@ -264,8 +264,8 @@ readSrcOperandSwizzle(const microsoft::D3D10ShaderBinary::COperandBase &O)
 
 static auto
 readSrcOperandCommon(const microsoft::D3D10ShaderBinary::COperandBase &O)
-  -> SrcOperandCommon {
-  return SrcOperandCommon{
+  -> SrcOperandModifier {
+  return SrcOperandModifier{
     .swizzle = readSrcOperandSwizzle(O),
     .abs = (O.m_Modifier & microsoft::D3D10_SB_OPERAND_MODIFIER_ABS) != 0,
     .neg = (O.m_Modifier & microsoft::D3D10_SB_OPERAND_MODIFIER_NEG) != 0,
