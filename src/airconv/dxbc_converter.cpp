@@ -1,584 +1,1139 @@
-#include "dxbc_converter.h"
-#include "DXBCParser/d3d12tokenizedprogramformat.hpp"
-#include "air_builder.h"
-#include "air_constants.h"
-#include "air_operation.h"
-#include "airconv_public.h"
-#include "DXBCParser/BlobContainer.h"
-#include "DXBCParser/ShaderBinary.h"
+#include "dxbc_converter.hpp"
 #include "DXBCParser/DXBCUtils.h"
-#include "dxbc_utils.h"
-#include "metallib.h"
-#include "sha256.hpp"
-#include "llvm/ADT/APInt.h"
-#include "llvm/ADT/STLExtras.h"
-#include "llvm/ADT/SmallVector.h"
-#include "llvm/Bitcode/BitcodeWriter.h"
+#include "DXBCParser/ShaderBinary.h"
+#include "DXBCParser/d3d12tokenizedprogramformat.hpp"
+#include "air_signature.hpp"
+#include "air_type.hpp"
+#include "dxbc_constants.hpp"
+#include "dxbc_signature.hpp"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Constants.h"
-#include "llvm/IR/DataLayout.h"
 #include "llvm/IR/DerivedTypes.h"
-#include "llvm/IR/Function.h"
+#include "llvm/IR/FMF.h"
 #include "llvm/IR/IRBuilder.h"
-#include "llvm/IR/MDBuilder.h"
-#include "llvm/IR/Metadata.h"
+#include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
-#include "llvm/IR/Type.h"
 #include "llvm/IR/Value.h"
-// #include "llvm/Analysis/LoopAnalysisManager.h"
-// #include "llvm/Analysis/CGSCCPassManager.h"
-#include "llvm/Passes/PassBuilder.h"
-#include "llvm/IR/Verifier.h"
-#include <array>
-#include <cstdint>
-#include <memory>
-#include <vector>
+#include <bit>
+#include <string>
 
-using namespace llvm;
+/* separated implementation details */
+#include "dxbc_converter_inc.hpp"
+#include "dxbc_converter_instruction_inc.hpp"
+#include "shader_common.hpp"
 
-namespace dxmt {
+namespace dxmt::dxbc {
 
-DxbcConverter::DxbcConverter(DxbcAnalyzer &analyzer, AirType &types,
-                             llvm::LLVMContext &context, llvm::Module &pModule)
-    : analyzer(analyzer), types(types), context_(context), pModule_(pModule),
-      pBuilder_(context), airBuilder(types, pBuilder_),
-      airOp(types, context, pModule) {}
+Reflection convertDXBC(
+  const void *dxbc, uint32_t dxbcSize, llvm::LLVMContext &context,
+  llvm::Module &module
+) {
+  using namespace microsoft;
+  CDXBCParser DXBCParser;
+  assert((DXBCParser.ReadDXBC(dxbc, dxbcSize) == S_OK) && "invalid dxbc blob");
 
-MDNode *DxbcConverter::Pre(AirMetadata &metadata) {
-
-  std::vector<Type *> argTypes;
-  std::vector<Metadata *> argMetadatas;
-  std::vector<Type *> retFieldTypes;
-
-  for (auto &input : analyzer.inputs) {
-    argTypes.push_back(input.type);
-    argMetadatas.push_back(input.indexedMetadata);
+  UINT codeBlobIdx = DXBCParser.FindNextMatchingBlob(DXBC_GenericShaderEx);
+  if (codeBlobIdx == DXBC_BLOB_NOT_FOUND) {
+    codeBlobIdx = DXBCParser.FindNextMatchingBlob(DXBC_GenericShader);
   }
-  for (auto &outputField : analyzer.outputs) {
-    assert(outputField.type);
-    retFieldTypes.push_back(outputField.type);
-  }
-  // binding table
-  auto [bindingTableType, bindingTableMetadat] =
-      analyzer.GenerateBindingTable();
+  assert((codeBlobIdx != DXBC_BLOB_NOT_FOUND) && "invalid dxbc blob");
+  LPCVOID codeBlob = DXBCParser.GetBlob(codeBlobIdx);
 
-  if (bindingTableType) {
-    // argTypes.push_back(bindingTableType);
-    argTypes.push_back(
-        PointerType::get(bindingTableType, air::EBufferAddrSpace::constant));
-    // argTypes.push_back(types.tyConstantPtr);
-    argMetadatas.push_back(metadata.createIndirectBufferBinding(
-        argMetadatas.size(),
-        pModule_.getDataLayout().getTypeAllocSize(bindingTableType), 30, 1,
-        air::EBufferAccess::read, air::EBufferAddrSpace::constant,
-        bindingTableMetadat,
-        pModule_.getDataLayout().getABITypeAlignment(bindingTableType),
-        "BindingTable", "bindingTable"));
-  }
+  CShaderToken *ShaderCode = (CShaderToken *)(BYTE *)codeBlob;
+  // 1. Collect information about the shader.
+  D3D10ShaderBinary::CShaderCodeParser CodeParser(ShaderCode);
+  CSignatureParser inputParser;
+  // TODO: throw if failed
+  DXBCGetInputSignature(dxbc, &inputParser);
+  CSignatureParser outputParser;
+  DXBCGetOutputSignature(dxbc, &outputParser);
 
-  // TODO: insert ResourceBindingTable
-
-  FunctionType *funcType =
-      FunctionType::get(analyzer.NoShaderOutput()
-                            ? Type::getVoidTy(context_)
-                            : StructType::get(context_, retFieldTypes, true),
-                        argTypes, false);
-  // funcType.
-
-  function = Function::Create(funcType, llvm::GlobalValue::ExternalLinkage,
-                              "shader_main", pModule_);
-
-  // prologue
-  auto prologue = BasicBlock::Create(context_, "prelogue", function);
-  pBuilder_.SetInsertPoint(prologue);
-  {
-    if (analyzer.maxInputRegister) {
-      shaderContext.tyInputRegs =
-          ArrayType::get(types.tyInt32V4, analyzer.maxInputRegister);
-      shaderContext.inputRegs = pBuilder_.CreateAlloca(
-          shaderContext.tyInputRegs, nullptr, "inputRegisters");
-    }
-    if (analyzer.maxOutputRegister) {
-      shaderContext.tyOutputRegs =
-          ArrayType::get(types.tyInt32V4, analyzer.maxOutputRegister);
-      shaderContext.outputRegs = pBuilder_.CreateAlloca(
-          shaderContext.tyOutputRegs, nullptr, "outputRegisters");
-    }
-    if (analyzer.tempsCount) {
-      shaderContext.tyTempRegs =
-          ArrayType::get(types.tyInt32V4, analyzer.tempsCount);
-      shaderContext.tempRegs = pBuilder_.CreateAlloca(shaderContext.tyTempRegs,
-                                                      nullptr, "tempRegisters");
-    }
-
-    for (auto [input, arg] : zip(analyzer.inputs, function->args())) {
-      arg.setName(input.name);
-      input.prologueHook(&arg, shaderContext, airBuilder);
-    }
-    if (bindingTableType) {
-      shaderContext.bindingTable = function->getArg(function->arg_size() - 1);
-      shaderContext.tyBindingTable = bindingTableType;
-      function->addParamAttr(function->arg_size() - 1,
-                             Attribute::get(context_, "air-buffer-no-alias"));
-    }
-  }
-
-  // epilogue
-
-  epilogue = BasicBlock::Create(context_, "epilogue", function);
-
-  return MDTuple::get(context_, argMetadatas);
-}
-
-MDNode *DxbcConverter::Post(AirMetadata &metadata, MDNode *input) {
-  pBuilder_.CreateBr(epilogue);
-  pBuilder_.SetInsertPoint(epilogue);
-  auto functionMD = ConstantAsMetadata::get(function);
-  {
-    if (analyzer.NoShaderOutput()) {
-      pBuilder_.CreateRetVoid();
-      return MDTuple::get(context_,
-                          {functionMD, MDTuple::get(context_, {}), input});
-    }
-
-    std::vector<Metadata *> outputMetadatas;
-
-    // 1. map output registers
-    Value *retValue = UndefValue::get(function->getReturnType());
-    for (auto &item : enumerate(analyzer.outputs)) {
-      outputMetadatas.push_back(item.value().metadata);
-      retValue = pBuilder_.CreateInsertValue(
-          retValue, item.value().epilogueHook(shaderContext, airBuilder),
-          item.index());
-    }
-    pBuilder_.CreateRet(retValue);
-
-    auto outputMD = MDTuple::get(context_, outputMetadatas);
-
-    return MDTuple::get(context_, {functionMD, outputMD, input});
-  }
-}
-
-void DxbcConverter::ConvertInstructions(
-    D3D10ShaderBinary::CShaderCodeParser &Parser) {
-
-  // TODO: check fastmath
-
-  if (Parser.EndOfShader()) {
-    pBuilder_.CreateRetVoid();
-    return;
-  }
-
-  for (;;) {
-    if (Parser.EndOfShader())
-      break;
-    D3D10ShaderBinary::CInstruction Inst;
-    Parser.ParseInstruction(&Inst);
-    // char temp[1024];
-    // Inst.Disassemble(temp, 1024);
-    // outs() << temp << "\n";
-
-    // Fix up output register masks.
-    // DXBC instruction conversion relies on the output mask(s) determining
-    // what components need to be written.
-    // Some output operand types have write mask that is 0 -- fix this.
-    for (unsigned i = 0; i < std::min(Inst.m_NumOperands, (UINT)2); i++) {
-      D3D10ShaderBinary::COperandBase &O = Inst.m_Operands[i];
-      switch (O.m_Type) {
-      case D3D10_SB_OPERAND_TYPE_OUTPUT_DEPTH:
-      case D3D11_SB_OPERAND_TYPE_OUTPUT_DEPTH_GREATER_EQUAL:
-      case D3D11_SB_OPERAND_TYPE_OUTPUT_DEPTH_LESS_EQUAL:
-      case D3D11_SB_OPERAND_TYPE_OUTPUT_STENCIL_REF:
-      case D3D10_SB_OPERAND_TYPE_OUTPUT_COVERAGE_MASK:
-        DXASSERT_DXBC(O.m_WriteMask == 0);
-        O.m_WriteMask = (D3D10_SB_OPERAND_4_COMPONENT_MASK_X);
-        break;
-      default:
-        break;
+  auto findInputElement = [&](auto matcher) -> dxbc::Signature {
+    const D3D11_SIGNATURE_PARAMETER *parameters;
+    inputParser.GetParameters(&parameters);
+    for (unsigned i = 0; i < inputParser.GetNumParameters(); i++) {
+      auto sig = dxbc::Signature(parameters[i]);
+      if (matcher(sig)) {
+        return sig;
       }
     }
-
-    switch (Inst.OpCode()) {
-    case D3D10_SB_OPCODE_DCL_GLOBAL_FLAGS:
-      break;
-    case D3D10_SB_OPCODE_MOV: {
-      auto mask = Inst.m_Operands[0].m_WriteMask >> 4;
-
-      auto input = LoadOperand(Inst, 1);
-      StoreOperand(input, Inst, 0, mask);
-      break;
-    }
-    case D3D10_SB_OPCODE_ADD: {
-      // TODO: BINARY TEMPALTE
-      const unsigned DstIdx = 0;
-      const unsigned SrcIdx1 = 1;
-      const unsigned SrcIdx2 = 2;
-      auto mask = Inst.m_Operands[DstIdx].m_WriteMask >> 4;
-
-      auto A = LoadOperand(Inst, SrcIdx1);
-      auto B = LoadOperand(Inst, SrcIdx2);
-
-      auto R =
-          pBuilder_.CreateFAdd(pBuilder_.CreateBitCast(A, types.tyFloatV4),
-                               pBuilder_.CreateBitCast(B, types.tyFloatV4));
-
-      StoreOperand(pBuilder_.CreateBitCast(R, types.tyInt32V4), Inst, DstIdx,
-                   mask);
-
-      break;
-    }
-    case D3D10_SB_OPCODE_DP2:
-    case D3D10_SB_OPCODE_DP3:
-    case D3D10_SB_OPCODE_DP4: {
-      auto mask = Inst.m_Operands[0].m_WriteMask >> 4;
-
-      auto A = LoadOperand(Inst, 1);
-      auto B = LoadOperand(Inst, 2);
-
-      auto opDP = airOp.GetDotProduct();
-      auto R = pBuilder_.CreateCall(
-          opDP, {pBuilder_.CreateBitCast(A, types.tyFloatV4),
-                 pBuilder_.CreateBitCast(B, types.tyFloatV4)});
-
-      StoreOperand(pBuilder_.CreateBitCast(pBuilder_.CreateVectorSplat(4, R),
-                                           types.tyInt32V4),
-                   Inst, 0, mask);
-      break;
-    }
-    default:
-      // DXASSERT(false, "Unhandled opecode")
-      break;
-    }
-  }
-}
-
-llvm::Value *
-DxbcConverter::LoadOperand(const D3D10ShaderBinary::CInstruction &Inst,
-                           const unsigned OpIdx) {
-  const D3D10ShaderBinary::COperandBase &O = Inst.m_Operands[OpIdx];
-  switch (O.m_Type) {
-  case D3D10_SB_OPERAND_TYPE_IMMEDIATE32: {
-
-    DXASSERT_DXBC(O.m_Modifier == D3D10_SB_OPERAND_MODIFIER_NONE);
-    bool bVec4 = O.m_NumComponents == D3D10_SB_OPERAND_4_COMPONENT;
-    std::array<uint32_t, 4> constantVal = {
-        O.m_Value[0], O.m_Value[bVec4 ? 1 : 0], O.m_Value[bVec4 ? 2 : 0],
-        O.m_Value[bVec4 ? 3 : 0]}; // wtf?
-    return airBuilder.CreateConstantVector(constantVal);
-    break;
-  }
-  case D3D10_SB_OPERAND_TYPE_INPUT: {
-    unsigned Register;     // Starting index of the register range.
-    Value *pRowIndexValue; // Row index expression.
-    switch (O.m_IndexDimension) {
-    case D3D10_SB_OPERAND_INDEX_1D:
-      Register = O.m_Index[0].m_RegIndex;
-      pRowIndexValue = LoadOperandIndex(O.m_Index[0], O.m_IndexType[0]);
-      break;
-    default:
-      DXASSERT(false, "there should no other index dimensions");
-    }
-    return airBuilder.CreateRegisterLoad(
-        shaderContext.inputRegs, shaderContext.tyInputRegs, pRowIndexValue);
-    break;
-  }
-
-  case D3D10_SB_OPERAND_TYPE_TEMP: {
-    unsigned Register;     // Starting index of the register range.
-    Value *pRowIndexValue; // Row index expression.
-    switch (O.m_IndexDimension) {
-    case D3D10_SB_OPERAND_INDEX_1D:
-      Register = O.m_Index[0].m_RegIndex;
-      pRowIndexValue = LoadOperandIndex(O.m_Index[0], O.m_IndexType[0]);
-      break;
-    default:
-      DXASSERT(false, "there should no other index dimensions");
-    }
-    return airBuilder.CreateRegisterLoad(
-        shaderContext.tempRegs, shaderContext.tyTempRegs, pRowIndexValue);
-    break;
-  }
-  case D3D10_SB_OPERAND_TYPE_CONSTANT_BUFFER: {
-    auto cbIdx = pBuilder_.CreateInBoundsGEP(
-        shaderContext.tyBindingTable, shaderContext.bindingTable,
-        {airBuilder.CreateConstant((uint32_t)0),
-         airBuilder.CreateConstant(
-             (uint32_t)0) /** TODO: get from binding table*/});
-    auto cbPtr = pBuilder_.CreateLoad(types.tyInt32V4->getPointerTo(2), cbIdx);
-    auto arrayIdx = pBuilder_.CreateInBoundsGEP(
-        types.tyInt32V4, cbPtr,
-        {LoadOperandIndex(O.m_Index[1], O.m_IndexType[1])});
-    auto element = pBuilder_.CreateLoad(types.tyInt32V4, arrayIdx);
-    return element;
-    break;
-  }
-  default: {
-    assert(0 && "to be handled");
-    break;
-  }
-  }
-}
-
-llvm::Value *DxbcConverter::LoadOperandIndex(
-    const D3D10ShaderBinary::COperandIndex &OpIndex,
-    const D3D10_SB_OPERAND_INDEX_REPRESENTATION IndexType) {
-  Value *pValue = nullptr;
-
-  switch (IndexType) {
-  case D3D10_SB_OPERAND_INDEX_IMMEDIATE32:
-    DXASSERT_DXBC(OpIndex.m_RelRegType == D3D10_SB_OPERAND_TYPE_IMMEDIATE32);
-    pValue = airBuilder.CreateConstant(OpIndex.m_RegIndex);
-    break;
-
-  case D3D10_SB_OPERAND_INDEX_IMMEDIATE64:
-    DXASSERT_DXBC(false);
-    break;
-
-  case D3D10_SB_OPERAND_INDEX_RELATIVE:
-  case D3D10_SB_OPERAND_INDEX_IMMEDIATE32_PLUS_RELATIVE:
-  case D3D10_SB_OPERAND_INDEX_IMMEDIATE64_PLUS_RELATIVE:
-    DXASSERT_DXBC(false);
-    break;
-
-  default:
-    DXASSERT_DXBC(false);
-    break;
-  }
-
-  return pValue;
-}
-
-void DxbcConverter::StoreOperand(llvm::Value *value,
-                                 const D3D10ShaderBinary::CInstruction &Inst,
-                                 const unsigned OpIdx, uint32_t mask) {
-
-  const D3D10ShaderBinary::COperandBase &O = Inst.m_Operands[OpIdx];
-  switch (O.m_Type) {
-  case D3D10_SB_OPERAND_TYPE_OUTPUT: {
-    unsigned Reg = O.m_Index[0].m_RegIndex;
-    // Row index expression.
-    Value *pRowIndexValue = LoadOperandIndex(O.m_Index[0], O.m_IndexType[0]);
-    airBuilder.CreateRegisterStore(shaderContext.outputRegs,
-                                   shaderContext.tyOutputRegs, pRowIndexValue,
-                                   value, mask, {0, 1, 2, 3});
-    break;
-  }
-  case D3D10_SB_OPERAND_TYPE_TEMP: {
-    unsigned Reg = O.m_Index[0].m_RegIndex;
-    // Row index expression.
-    Value *pRowIndexValue = LoadOperandIndex(O.m_Index[0], O.m_IndexType[0]);
-    airBuilder.CreateRegisterStore(shaderContext.tempRegs,
-                                   shaderContext.tyTempRegs, pRowIndexValue,
-                                   value, mask, {0, 1, 2, 3});
-    break;
-  }
-  case D3D10_SB_OPERAND_TYPE_NULL:
-    break;
-  default: {
-    outs() << (O.m_Type);
-    assert(0 && "to be handled");
-    break;
-  }
-  }
-}
-
-Value *
-DxbcConverter::ApplyOperandModifiers(Value *pValue,
-                                     const D3D10ShaderBinary::COperandBase &O) {
-  bool bAbsModifier = (O.m_Modifier & D3D10_SB_OPERAND_MODIFIER_ABS) != 0;
-  bool bNegModifier = (O.m_Modifier & D3D10_SB_OPERAND_MODIFIER_NEG) != 0;
-
-  if (bAbsModifier) {
-    DXASSERT_DXBC(pValue->getType()->isFloatingPointTy());
-    // Function *F = m_pOP->GetOpFunc(OP::OpCode::FAbs, pValue->getType());
-    // Value *Args[2];
-    // Args[0] = m_pOP->GetU32Const((unsigned)OP::OpCode::FAbs);
-    // Args[1] = pValue;
-    // pValue = m_pBuilder->CreateCall(F, Args);
-    // pBuilder_.CreateCall()
-    // pModule_.getOrInsertFunction()
-  }
-
-  if (bNegModifier) {
-    if (pValue->getType()->isFloatingPointTy()) {
-      pValue = pBuilder_.CreateFNeg(pValue);
-    } else {
-      DXASSERT_DXBC(pValue->getType()->isIntegerTy());
-      pValue = pBuilder_.CreateNeg(pValue);
-    }
-  }
-
-  return pValue;
-}
-
-void DxbcConverter::Optimize(llvm::OptimizationLevel level) {
-  // Create the analysis managers.
-  // These must be declared in this order so that they are destroyed in the
-  // correct order due to inter-analysis-manager references.
-  LoopAnalysisManager LAM;
-  FunctionAnalysisManager FAM;
-  CGSCCAnalysisManager CGAM;
-  ModuleAnalysisManager MAM;
-
-  // Create the new pass manager builder.
-  // Take a look at the PassBuilder constructor parameters for more
-  // customization, e.g. specifying a TargetMachine or various debugging
-  // options.
-  PassBuilder PB;
-
-  // Register all the basic analyses with the managers.
-  PB.registerModuleAnalyses(MAM);
-  PB.registerCGSCCAnalyses(CGAM);
-  PB.registerFunctionAnalyses(FAM);
-  PB.registerLoopAnalyses(LAM);
-  PB.crossRegisterProxies(LAM, FAM, CGAM, MAM);
-
-  ModulePassManager MPM = PB.buildPerModuleDefaultPipeline(level);
-
-  FunctionPassManager FPM;
-  FPM.addPass(VerifierPass());
-
-  MPM.addPass(createModuleToFunctionPassAdaptor(std::move(FPM)));
-
-  // Optimize the IR!
-  MPM.run(pModule_, MAM);
-}
-
-void DxbcConverter::SerializeAIR(raw_ostream &OS) {
-  std::string funciton_name(function->getName());
-  MTLBHeader header;
-  header.Magic = MTLB_Magic;
-
-  SmallVector<char, 0> bitcode;
-  SmallVector<char, 0> public_metadata;
-  SmallVector<char, 0> private_metadata;
-  SmallVector<char, 0> function_def;
-
-  raw_svector_ostream bitcode_stream(bitcode);
-  ModuleHash module_hash;
-  WriteBitcodeToFile(pModule_, bitcode_stream, false, nullptr, true,
-                     &module_hash);
-
-  raw_svector_ostream public_metadata_stream(public_metadata);
-
-  raw_svector_ostream private_metadata_stream(private_metadata);
-
-  raw_svector_ostream function_def_stream(function_def);
-  function_def_stream.write("NAME", 4);
-  uint16_t size = funciton_name.size() + 1;
-  function_def_stream.write((const char *)&size, 2);
-  function_def_stream.write(funciton_name.c_str(), funciton_name.size() + 1);
-
-  MTLB_TYPE_TAG type_tag{
-      .type = analyzer.IsVS()   ? MTLB_FunctionType::MTLB_VertexFunction
-              : analyzer.IsPS() ? MTLB_FunctionType::MTLB_FragmentFunction
-              : analyzer.IsCS() ? MTLB_KernelFunction
-                                : (assert(0), MTLB_KernelFunction)};
-  function_def_stream.write((const char *)&type_tag, sizeof(type_tag));
-
-  MTLB_HASH_TAG hash_tag{.hash = {0}};
-
-  hash_tag.hash =
-      compute_sha256_hash((const uint8_t *)bitcode.data(), bitcode.size());
-
-  function_def_stream.write((const char *)&hash_tag, sizeof(hash_tag));
-
-  MTLB_MDSZ_TAG size_tag{.bitcodeSize = bitcode.size()};
-
-  function_def_stream.write((const char *)&size_tag, sizeof(size_tag));
-
-  MTLB_OFFT_TAG offset_tag{
-      .PublicMetadataOffset = 0,
-      .PrivateMetadataOffset = 0,
-      .BitcodeOffset = 0,
+    assert(inputParser.GetNumParameters());
+    assert(0 && "try to access an undefined input");
   };
-  function_def_stream.write((const char *)&offset_tag, sizeof(offset_tag));
-
-  MTLB_VERS_TAG version_tag{
-      .airVersionMajor = 2,
-      .airVersionMinor = 6,
-      .languageVersionMajor = 3,
-      .languageVersionMinor = 1,
+  auto findOutputElement = [&](auto matcher) -> dxbc::Signature {
+    const D3D11_SIGNATURE_PARAMETER *parameters;
+    outputParser.GetParameters(&parameters);
+    for (unsigned i = 0; i < outputParser.GetNumParameters(); i++) {
+      auto sig = dxbc::Signature(parameters[i]);
+      if (matcher(sig)) {
+        return sig;
+      }
+    }
+    assert(0 && "try to access an undefined output");
   };
-  function_def_stream.write((const char *)&version_tag, sizeof(version_tag));
 
-  function_def_stream.write("ENDT", 4);
+  bool sm_ver_5_1_ = CodeParser.ShaderMajorVersion() == 5 &&
+                     CodeParser.ShaderMinorVersion() >= 1;
+  auto shader_type = CodeParser.ShaderType();
 
-  // public metadata
-  uint32_t public_metadata_size = 4;
+  air::ArgumentBufferBuilder binding_table;
+  air::FunctionSignatureBuilder func_signature;
+  uint32_t binding_table_index = 0;
+  uint32_t max_input_register = 0;
+  uint32_t max_output_register = 0;
 
-  if (analyzer.IsVS()) {
-    public_metadata_size += (4 + 11 + 4 + 5);
+  std::function<std::shared_ptr<BasicBlock>(
+    const std::shared_ptr<BasicBlock> &ctx,
+    const std::shared_ptr<BasicBlock> &block_after_endif,
+    const std::shared_ptr<BasicBlock> &continue_point,
+    const std::shared_ptr<BasicBlock> &break_point,
+    const std::shared_ptr<BasicBlock> &return_point,
+    std::shared_ptr<BasicBlockSwitch> &switch_context
+  )>
+    readControlFlow;
+
+  std::shared_ptr<BasicBlock> null_bb;
+  std::shared_ptr<BasicBlockSwitch> null_switch_context;
+
+  auto shader_info = std::make_shared<ShaderInfo>();
+  IREffect prelogue([](auto) { return std::monostate(); });
+  IRValue epilogue([](struct context ctx) {
+    auto retTy = ctx.function->getReturnType();
+    if (retTy->isVoidTy()) {
+      return (pvalue) nullptr;
+    }
+    return (pvalue)llvm::UndefValue::get(retTy);
+  });
+  io_binding_map resource_map;
+
+  readControlFlow = [&](
+                      const std::shared_ptr<BasicBlock> &ctx,
+                      const std::shared_ptr<BasicBlock> &block_after_endif,
+                      const std::shared_ptr<BasicBlock> &continue_point,
+                      const std::shared_ptr<BasicBlock> &break_point,
+                      const std::shared_ptr<BasicBlock> &return_point,
+                      std::shared_ptr<BasicBlockSwitch> &switch_context
+                    ) -> std::shared_ptr<BasicBlock> {
+    while (!CodeParser.EndOfShader()) {
+      D3D10ShaderBinary::CInstruction Inst;
+      CodeParser.ParseInstruction(&Inst);
+      switch (Inst.m_OpCode) {
+#pragma region control flow
+      case D3D10_SB_OPCODE_IF: {
+        // scope start: if-else-endif
+        auto true_ = std::make_shared<BasicBlock>("if_true");
+        auto alternative_ = std::make_shared<BasicBlock>("if_alternative");
+        // alternative_ might be the block after ENDIF, but ELSE is possible
+        ctx->target = BasicBlockConditionalBranch{
+          readCondition(Inst, 0), true_, alternative_
+        };
+        auto after_endif = readControlFlow(
+          true_, alternative_, continue_point, break_point, return_point,
+          null_switch_context
+        ); // read till ENDIF
+        // scope end
+        return readControlFlow(
+          after_endif, block_after_endif, continue_point, break_point,
+          return_point, switch_context
+        );
+      }
+      case D3D10_SB_OPCODE_ELSE: {
+        assert(block_after_endif.get() && "");
+        auto real_exit = std::make_shared<BasicBlock>("endif");
+        ctx->target = BasicBlockUnconditionalBranch{real_exit};
+        return readControlFlow(
+          block_after_endif, real_exit, continue_point, break_point,
+          return_point, switch_context
+        );
+      }
+      case D3D10_SB_OPCODE_ENDIF: {
+        assert(block_after_endif.get() && "");
+        ctx->target = BasicBlockUnconditionalBranch{block_after_endif};
+        return block_after_endif;
+      }
+      case D3D10_SB_OPCODE_LOOP: {
+        auto loop_entrance = std::make_shared<BasicBlock>("loop_entrance");
+        auto after_endloop = std::make_shared<BasicBlock>("endloop");
+        // scope start: loop
+        ctx->target = BasicBlockUnconditionalBranch{loop_entrance};
+        auto _ = readControlFlow(
+          loop_entrance, null_bb, loop_entrance, after_endloop, return_point,
+          null_switch_context
+        ); // return from ENDLOOP
+        assert(_.get() == after_endloop.get());
+        // scope end
+        return readControlFlow(
+          after_endloop, block_after_endif, continue_point, break_point,
+          return_point, switch_context
+        );
+      }
+      case D3D10_SB_OPCODE_BREAK: {
+        ctx->target = BasicBlockUnconditionalBranch{break_point};
+        auto after_break = std::make_shared<BasicBlock>("after_break");
+        return readControlFlow(
+          after_break, block_after_endif, continue_point, break_point,
+          return_point, switch_context
+        ); // ?
+      }
+      case D3D10_SB_OPCODE_BREAKC: {
+        auto after_break = std::make_shared<BasicBlock>("after_breakc");
+        ctx->target = BasicBlockConditionalBranch{
+          readCondition(Inst, 0), break_point, after_break
+        };
+        return readControlFlow(
+          after_break, block_after_endif, continue_point, break_point,
+          return_point, switch_context
+        ); // ?
+      }
+      case D3D10_SB_OPCODE_CONTINUE: {
+        ctx->target = BasicBlockUnconditionalBranch{continue_point};
+        auto after_continue = std::make_shared<BasicBlock>("after_continue");
+        return readControlFlow(
+          after_continue, block_after_endif, continue_point, break_point,
+          return_point,
+          switch_context
+        ); // ?
+      }
+      case D3D10_SB_OPCODE_CONTINUEC: {
+        auto after_continue = std::make_shared<BasicBlock>("after_continuec");
+        ctx->target = BasicBlockConditionalBranch{
+          readCondition(Inst, 0), continue_point, after_continue
+        };
+        return readControlFlow(
+          after_continue, block_after_endif, continue_point, break_point,
+          return_point,
+          switch_context
+        ); // ?
+      }
+      case D3D10_SB_OPCODE_ENDLOOP: {
+        ctx->target = BasicBlockUnconditionalBranch{continue_point};
+        return break_point;
+      }
+      case D3D10_SB_OPCODE_SWITCH: {
+        auto after_endswitch = std::make_shared<BasicBlock>("endswitch");
+        // scope start: switch
+        auto local_switch_context = std::make_shared<BasicBlockSwitch>();
+        auto empty_body = std::make_shared<BasicBlock>("switch_empty"
+        ); // it will unconditional jump to
+           // first case (and then ignored)
+        auto _ = readControlFlow(
+          empty_body, null_bb, continue_point, after_endswitch, return_point,
+          local_switch_context
+        );
+        assert(_.get() == after_endswitch.get());
+        ctx->target = std::move(*local_switch_context);
+        // scope end
+        return readControlFlow(
+          after_endswitch, block_after_endif, continue_point, break_point,
+          return_point, switch_context
+        );
+      }
+      case D3D10_SB_OPCODE_CASE: {
+        auto case_body = std::make_shared<BasicBlock>("switch_case");
+        // always fallthrough
+        ctx->target = BasicBlockUnconditionalBranch{case_body};
+
+        const D3D10ShaderBinary::COperandBase &O = Inst.m_Operands[0];
+        DXASSERT_DXBC(
+          O.m_Type == D3D10_SB_OPERAND_TYPE_IMMEDIATE32 &&
+          O.m_NumComponents == D3D10_SB_OPERAND_1_COMPONENT
+        );
+        uint32_t case_value = O.m_Value[0];
+
+        switch_context->cases.insert(std::make_pair(case_value, case_body));
+        return readControlFlow(
+          case_body, block_after_endif, continue_point, break_point,
+          return_point, switch_context
+        );
+      }
+      case D3D10_SB_OPCODE_DEFAULT: {
+        ctx->target = BasicBlockUnconditionalBranch{break_point};
+        auto case_body = std::make_shared<BasicBlock>("switch_default");
+        switch_context->case_default = case_body;
+        return readControlFlow(
+          case_body, block_after_endif, continue_point, break_point,
+          return_point, switch_context
+        );
+      }
+      case D3D10_SB_OPCODE_ENDSWITCH: {
+        ctx->target = BasicBlockUnconditionalBranch{break_point};
+        return break_point;
+      }
+      case D3D10_SB_OPCODE_RET: {
+        ctx->target = BasicBlockUnconditionalBranch{return_point};
+        if (
+            // if it's inside a loop or switch, break_point is not null
+            break_point.get() == nullptr &&
+            // if it's inside if-else, block_after_endif is not null
+            block_after_endif.get() == nullptr) {
+          // not inside any scope, this is the final ret
+          return return_point;
+        }
+        auto after_ret = std::make_shared<BasicBlock>("after_ret");
+        // if it's inside a scope, then return is not the end
+        return readControlFlow(
+          after_ret, block_after_endif, continue_point, break_point,
+          return_point, switch_context
+        );
+      }
+      case D3D10_SB_OPCODE_RETC: {
+        auto after_retc = std::make_shared<BasicBlock>("after_retc");
+        ctx->target = BasicBlockConditionalBranch{
+          readCondition(Inst, 0), return_point, after_retc
+        };
+        return readControlFlow(
+          after_retc, block_after_endif, continue_point, break_point,
+          return_point, switch_context
+        );
+      }
+      case D3D10_SB_OPCODE_DISCARD: {
+        auto fulfilled_ = std::make_shared<BasicBlock>("discard_fulfilled");
+        auto otherwise_ = std::make_shared<BasicBlock>("discard_otherwise");
+        ctx->target = BasicBlockConditionalBranch{
+          readCondition(Inst, 0), fulfilled_, otherwise_
+        };
+        fulfilled_->target = BasicBlockUnconditionalBranch{otherwise_};
+        fulfilled_->instructions.push_back(InstPixelDiscard{});
+        return readControlFlow(
+          otherwise_, block_after_endif, continue_point, break_point,
+          return_point, switch_context
+        );
+      }
+#pragma endregion
+#pragma region declaration
+      case D3D10_SB_OPCODE_DCL_CONSTANT_BUFFER: {
+        unsigned RangeID = Inst.m_Operands[0].m_Index[0].m_RegIndex;
+        unsigned CBufferSize = Inst.m_ConstantBufferDecl.Size;
+        unsigned LB, RangeSize;
+        switch (Inst.m_Operands[0].m_IndexDimension) {
+        case D3D10_SB_OPERAND_INDEX_2D: // SM 5.0-
+          LB = RangeID;
+          RangeSize = 1;
+          break;
+        case D3D10_SB_OPERAND_INDEX_3D: // SM 5.1
+          LB = Inst.m_Operands[0].m_Index[1].m_RegIndex;
+          RangeSize = Inst.m_Operands[0].m_Index[2].m_RegIndex != UINT_MAX
+                        ? Inst.m_Operands[0].m_Index[2].m_RegIndex - LB + 1
+                        : UINT_MAX;
+          break;
+        default:
+          DXASSERT_DXBC(false);
+        }
+        shader_info->cbufferMap[RangeID] = {
+          .range =
+            {.range_id = RangeID,
+             .lower_bound = LB,
+             .size = RangeSize,
+             .space = Inst.m_ConstantBufferDecl.Space},
+          .size_in_vec4 = CBufferSize
+        };
+        break;
+      }
+      case D3D10_SB_OPCODE_DCL_SAMPLER: {
+        // Root signature bindings.
+        unsigned RangeID = Inst.m_Operands[0].m_Index[0].m_RegIndex;
+        unsigned LB, RangeSize;
+        switch (Inst.m_Operands[0].m_IndexDimension) {
+        case D3D10_SB_OPERAND_INDEX_1D: // SM 5.0-
+          LB = RangeID;
+          RangeSize = 1;
+          break;
+        case D3D10_SB_OPERAND_INDEX_3D: // SM 5.1
+          LB = Inst.m_Operands[0].m_Index[1].m_RegIndex;
+          RangeSize = Inst.m_Operands[0].m_Index[2].m_RegIndex != UINT_MAX
+                        ? Inst.m_Operands[0].m_Index[2].m_RegIndex - LB + 1
+                        : UINT_MAX;
+          break;
+        default:
+          DXASSERT_DXBC(false);
+        }
+        shader_info->samplerMap[RangeID] = {
+          .range =
+            {.range_id = RangeID,
+             .lower_bound = LB,
+             .size = RangeSize,
+             .space = Inst.m_SamplerDecl.Space},
+        };
+        // FIXME: SamplerMode ignored?
+        break;
+      }
+      case D3D10_SB_OPCODE_DCL_RESOURCE:
+      case D3D11_SB_OPCODE_DCL_RESOURCE_RAW:
+      case D3D11_SB_OPCODE_DCL_RESOURCE_STRUCTURED: {
+        // Root signature bindings.
+        unsigned RangeID = Inst.m_Operands[0].m_Index[0].m_RegIndex;
+        unsigned LB, RangeSize;
+        if (sm_ver_5_1_) {
+          LB = Inst.m_Operands[0].m_Index[1].m_RegIndex;
+          RangeSize = Inst.m_Operands[0].m_Index[2].m_RegIndex != UINT_MAX
+                        ? Inst.m_Operands[0].m_Index[2].m_RegIndex - LB + 1
+                        : UINT_MAX;
+        } else {
+          LB = RangeID;
+          RangeSize = 1;
+        }
+        ShaderResourceViewInfo srv{
+          .range =
+            {
+              .range_id = RangeID,
+              .lower_bound = LB,
+              .size = RangeSize,
+            }
+        };
+        switch (Inst.OpCode()) {
+        case D3D10_SB_OPCODE_DCL_RESOURCE: {
+          srv.range.space = (Inst.m_ResourceDecl.Space);
+          srv.resource_type =
+            to_shader_resource_type(Inst.m_ResourceDecl.Dimension);
+          srv.scaler_type =
+            to_shader_scaler_type(Inst.m_ResourceDecl.ReturnType[0]);
+          srv.strucure_stride = -1;
+          // Inst.m_ResourceDecl.SampleCount
+          break;
+        }
+        case D3D11_SB_OPCODE_DCL_RESOURCE_RAW: {
+          srv.range.space = (Inst.m_RawSRVDecl.Space);
+          srv.scaler_type = shader::common::ScalerDataType::Uint;
+          break;
+        }
+        case D3D11_SB_OPCODE_DCL_RESOURCE_STRUCTURED: {
+          srv.range.space = (Inst.m_StructuredSRVDecl.Space);
+          srv.scaler_type = shader::common::ScalerDataType::Uint;
+          srv.strucure_stride = Inst.m_StructuredSRVDecl.ByteStride;
+          break;
+        }
+        default:;
+        }
+
+        shader_info->srvMap[RangeID] = srv;
+
+        break;
+      }
+      case D3D11_SB_OPCODE_DCL_UNORDERED_ACCESS_VIEW_TYPED:
+      case D3D11_SB_OPCODE_DCL_UNORDERED_ACCESS_VIEW_RAW:
+      case D3D11_SB_OPCODE_DCL_UNORDERED_ACCESS_VIEW_STRUCTURED: {
+        // Root signature bindings.
+        unsigned RangeID = Inst.m_Operands[0].m_Index[0].m_RegIndex;
+        unsigned LB, RangeSize;
+        if (sm_ver_5_1_) {
+          LB = Inst.m_Operands[0].m_Index[1].m_RegIndex;
+          RangeSize = Inst.m_Operands[0].m_Index[2].m_RegIndex != UINT_MAX
+                        ? Inst.m_Operands[0].m_Index[2].m_RegIndex - LB + 1
+                        : UINT_MAX;
+        } else {
+          LB = RangeID;
+          RangeSize = 1;
+        }
+
+        UnorderedAccessViewInfo uav{
+          .range =
+            {
+              .range_id = RangeID,
+              .lower_bound = LB,
+              .size = RangeSize,
+            }
+        };
+
+        unsigned Flags = 0;
+        switch (Inst.OpCode()) {
+        case D3D11_SB_OPCODE_DCL_UNORDERED_ACCESS_VIEW_TYPED: {
+          uav.range.space = (Inst.m_TypedUAVDecl.Space);
+          Flags = Inst.m_TypedUAVDecl.Flags;
+          uav.resource_type =
+            to_shader_resource_type(Inst.m_TypedUAVDecl.Dimension);
+          uav.scaler_type =
+            to_shader_scaler_type(Inst.m_TypedUAVDecl.ReturnType[0]);
+          uav.strucure_stride = -1;
+          break;
+        }
+        case D3D11_SB_OPCODE_DCL_UNORDERED_ACCESS_VIEW_RAW: {
+          uav.range.space = (Inst.m_RawUAVDecl.Space);
+          // R.SetKind(DxilResource::Kind::RawBuffer);
+          Flags = Inst.m_RawUAVDecl.Flags;
+          uav.scaler_type = shader::common::ScalerDataType::Uint;
+          break;
+        }
+        case D3D11_SB_OPCODE_DCL_UNORDERED_ACCESS_VIEW_STRUCTURED: {
+          uav.range.space = (Inst.m_StructuredUAVDecl.Space);
+          // R.SetKind(DxilResource::Kind::StructuredBuffer);
+          Flags = Inst.m_StructuredUAVDecl.Flags;
+          uav.scaler_type = shader::common::ScalerDataType::Uint;
+          uav.strucure_stride = Inst.m_StructuredUAVDecl.ByteStride;
+          break;
+        }
+        default:;
+        }
+
+        uav.global_coherent =
+          ((Flags & D3D11_SB_GLOBALLY_COHERENT_ACCESS) != 0);
+        uav.with_counter =
+          ((Flags & D3D11_SB_UAV_HAS_ORDER_PRESERVING_COUNTER) != 0);
+        uav.rasterizer_order =
+          ((Flags & D3D11_SB_RASTERIZER_ORDERED_ACCESS) != 0);
+
+        shader_info->uavMap[RangeID] = uav;
+        break;
+      }
+      case D3D10_SB_OPCODE_DCL_TEMPS: {
+        shader_info->tempRegisterCount = Inst.m_TempsDecl.NumTemps;
+        break;
+      }
+      case D3D10_SB_OPCODE_DCL_INDEXABLE_TEMP: {
+        shader_info->indexableTempRegisterCounts[Inst.m_IndexableTempDecl
+                                                   .IndexableTempNumber] =
+          std::make_pair(
+            Inst.m_IndexableTempDecl.NumRegisters,
+            Inst.m_IndexableTempDecl.Mask >> 4
+          );
+        break;
+      }
+      case D3D11_SB_OPCODE_DCL_THREAD_GROUP: {
+        break;
+      }
+      case D3D11_SB_OPCODE_DCL_THREAD_GROUP_SHARED_MEMORY_RAW:
+      case D3D11_SB_OPCODE_DCL_THREAD_GROUP_SHARED_MEMORY_STRUCTURED: {
+        ThreadgroupBufferInfo tgsm;
+        if (Inst.OpCode() == D3D11_SB_OPCODE_DCL_THREAD_GROUP_SHARED_MEMORY_RAW) {
+          tgsm.stride = 1;
+          tgsm.size = Inst.m_RawTGSMDecl.ByteCount;
+          tgsm.size_in_uint = tgsm.size / 4;
+          tgsm.structured = false;
+          assert(
+            (Inst.m_RawTGSMDecl.ByteCount & 0b11) == 0
+          ); // is multiple of 4
+        } else {
+          tgsm.stride = Inst.m_StructuredTGSMDecl.StructByteStride;
+          tgsm.size = Inst.m_StructuredTGSMDecl.StructCount;
+          tgsm.size_in_uint = tgsm.stride * tgsm.size / 4;
+          tgsm.structured = true;
+          assert(
+            (Inst.m_StructuredTGSMDecl.StructByteStride & 0b11) == 0
+          ); // is multiple of 4
+        }
+
+        shader_info->tgsmMap[Inst.m_Operands[0].m_Index[0].m_RegIndex] = tgsm;
+        break;
+      }
+      case D3D10_SB_OPCODE_DCL_GLOBAL_FLAGS: {
+        break;
+      }
+      case D3D10_SB_OPCODE_DCL_INPUT_SIV: {
+        assert(0 && "dcl_input_siv should not happen for now");
+        // because we don't support hull/domain/geometry
+        // and pixel shader has its own dcl_input_ps
+        break;
+      }
+      case D3D10_SB_OPCODE_DCL_INPUT_SGV: {
+        unsigned reg = Inst.m_Operands[0].m_Index[0].m_RegIndex;
+        auto mask = Inst.m_Operands[0].m_WriteMask >> 4;
+        // auto MinPrecision = Inst.m_Operands[0].m_MinPrecision; // not used
+        auto sgv = Inst.m_InputDeclSGV.Name;
+        switch (sgv) {
+        case D3D10_SB_NAME_VERTEX_ID: {
+          auto assigned_index =
+            func_signature.DefineInput(air::InputVertexID{});
+          auto assigned_index_base =
+            func_signature.DefineInput(air::InputBaseVertex{});
+          prelogue << make_effect_bind([=](struct context ctx) {
+            auto vertex_id = ctx.function->getArg(assigned_index);
+            auto base_vertex = ctx.function->getArg(assigned_index_base);
+            auto const_index =
+              llvm::ConstantInt::get(ctx.llvm, llvm::APInt{32, reg, false});
+            return store_at_vec4_array_masked(
+              ctx.resource.input.ptr_int4, const_index,
+              ctx.builder.CreateSub(vertex_id, base_vertex), mask
+            );
+          });
+          break;
+        }
+        case D3D10_SB_NAME_INSTANCE_ID: {
+          auto assigned_index =
+            func_signature.DefineInput(air::InputInstanceID{});
+          auto assigned_index_base =
+            func_signature.DefineInput(air::InputBaseInstance{});
+          // and perform side effect here
+          prelogue << make_effect_bind([=](struct context ctx) {
+            auto instance_id = ctx.function->getArg(assigned_index);
+            auto base_instance = ctx.function->getArg(assigned_index_base);
+            auto const_index =
+              llvm::ConstantInt::get(ctx.llvm, llvm::APInt{32, reg, false});
+            return store_at_vec4_array_masked(
+              ctx.resource.input.ptr_int4, const_index,
+              ctx.builder.CreateSub(instance_id, base_instance), mask
+            );
+          });
+          break;
+        }
+        case D3D10_SB_NAME_SAMPLE_INDEX: {
+          auto assigned_index =
+            func_signature.DefineInput(air::InputSampleIndex{});
+          prelogue << init_input_reg(assigned_index, reg, mask);
+          break;
+        }
+        case D3D10_SB_NAME_PRIMITIVE_ID: {
+          auto assigned_index =
+            func_signature.DefineInput(air::InputPrimitiveID{});
+          prelogue << init_input_reg(assigned_index, reg, mask);
+          break;
+        }
+        case D3D10_SB_NAME_IS_FRONT_FACE: {
+          auto assigned_index =
+            func_signature.DefineInput(air::InputFrontFacing{});
+          prelogue << init_input_reg(assigned_index, reg, mask);
+          break;
+        }
+        default:
+          assert(0 && "Unexpected/unhandled input system value");
+          break;
+        }
+        break;
+      }
+      case D3D10_SB_OPCODE_DCL_INPUT: {
+        D3D10_SB_OPERAND_TYPE RegType = Inst.m_Operands[0].m_Type;
+
+        switch (RegType) {
+        case D3D11_SB_OPERAND_TYPE_INPUT_COVERAGE_MASK:
+          assert(0);
+          break;
+
+        case D3D11_SB_OPERAND_TYPE_INNER_COVERAGE:
+          assert(0);
+          break;
+
+        case D3D11_SB_OPERAND_TYPE_CYCLE_COUNTER:
+          break; // ignore it atm
+        case D3D11_SB_OPERAND_TYPE_INPUT_THREAD_ID: {
+          auto assigned_index =
+            func_signature.DefineInput(air::InputThreadPositionInGrid{});
+          prelogue << make_effect([=](struct context ctx) {
+            auto attr = ctx.function->getArg(assigned_index);
+            ctx.resource.thread_id_arg = attr;
+            return std::monostate{};
+          });
+          break;
+        }
+        case D3D11_SB_OPERAND_TYPE_INPUT_THREAD_GROUP_ID: {
+          auto assigned_index =
+            func_signature.DefineInput(air::InputThreadgroupPositionInGrid{});
+          prelogue << make_effect([=](struct context ctx) {
+            auto attr = ctx.function->getArg(assigned_index);
+            ctx.resource.thread_group_id_arg = attr;
+            return std::monostate{};
+          });
+          break;
+        }
+        case D3D11_SB_OPERAND_TYPE_INPUT_THREAD_ID_IN_GROUP: {
+          auto assigned_index =
+            func_signature.DefineInput(air::InputThreadPositionInThreadgroup{});
+          prelogue << make_effect([=](struct context ctx) {
+            auto attr = ctx.function->getArg(assigned_index);
+            ctx.resource.thread_id_in_group_arg = attr;
+            return std::monostate{};
+          });
+          break;
+        }
+        case D3D11_SB_OPERAND_TYPE_INPUT_THREAD_ID_IN_GROUP_FLATTENED: {
+          auto assigned_index =
+            func_signature.DefineInput(air::InputThreadIndexInThreadgroup{});
+          prelogue << make_effect([=](struct context ctx) {
+            auto attr = ctx.function->getArg(assigned_index);
+            ctx.resource.thread_id_in_group_flat_arg = attr;
+            return std::monostate{};
+          });
+          break;
+        }
+        case D3D11_SB_OPERAND_TYPE_INPUT_DOMAIN_POINT:
+        case D3D11_SB_OPERAND_TYPE_OUTPUT_CONTROL_POINT_ID:
+        case D3D10_SB_OPERAND_TYPE_INPUT_PRIMITIVEID:
+        case D3D11_SB_OPERAND_TYPE_INPUT_FORK_INSTANCE_ID:
+        case D3D11_SB_OPERAND_TYPE_INPUT_JOIN_INSTANCE_ID:
+        case D3D11_SB_OPERAND_TYPE_INPUT_GS_INSTANCE_ID:
+          assert(0 && "unimplemented input registers");
+          break;
+
+        default: {
+          unsigned reg = 0;
+          switch (Inst.m_Operands[0].m_IndexDimension) {
+          case D3D10_SB_OPERAND_INDEX_1D:
+            reg = Inst.m_Operands[0].m_Index[0].m_RegIndex;
+            break;
+          case D3D10_SB_OPERAND_INDEX_2D:
+            assert(0 && "Hull/Domain shader not supported yet");
+            break;
+          default:
+            assert(0 && "there should no other index dimensions");
+          }
+
+          if (RegType == D3D10_SB_OPERAND_TYPE_INPUT) {
+            auto mask = Inst.m_Operands[0].m_WriteMask >> 4;
+            auto sig = findInputElement([=](Signature &sig) {
+              return (sig.reg() == reg) && ((sig.mask() & mask) != 0);
+            });
+            auto assigned_index =
+              func_signature.DefineInput(air::InputVertexStageIn{
+                .attribute = reg,
+                .type = sig.componentType() == RegisterComponentType::Float
+                          ? air::msl_float4
+                          : air::msl_int4,
+                .name = sig.fullSemanticString()
+              });
+            prelogue << init_input_reg(assigned_index, reg, mask);
+          } else {
+            assert(0 && "Unknown input register type");
+          }
+          max_input_register = std::max(reg + 1, max_input_register);
+          break;
+        }
+        }
+        break;
+      }
+      case D3D10_SB_OPCODE_DCL_INPUT_PS_SIV: {
+        unsigned reg = Inst.m_Operands[0].m_Index[0].m_RegIndex;
+        auto mask = Inst.m_Operands[0].m_WriteMask >> 4;
+        auto siv = Inst.m_InputPSDeclSIV.Name;
+        auto interpolation =
+          to_air_interpolation(Inst.m_InputPSDeclSGV.InterpolationMode);
+        uint32_t assigned_index;
+        switch (siv) {
+        case D3D10_SB_NAME_POSITION:
+          assert(
+            interpolation == air::Interpolation::center_no_perspective
+          ); // the only supported interpolation for [[position]]
+          assigned_index = func_signature.DefineInput(
+            air::InputPosition{.interpolation = interpolation}
+          );
+          break;
+        case D3D10_SB_NAME_RENDER_TARGET_ARRAY_INDEX:
+          assert(interpolation == air::Interpolation::flat);
+          assigned_index =
+            func_signature.DefineInput(air::InputRenderTargetArrayIndex{});
+          break;
+        case D3D10_SB_NAME_VIEWPORT_ARRAY_INDEX:
+          assert(interpolation == air::Interpolation::flat);
+          assigned_index =
+            func_signature.DefineInput(air::InputViewportArrayIndex{});
+          break;
+        default:
+          assert(0 && "Unexpected/unhandled input system value");
+          break;
+        }
+        prelogue << init_input_reg(assigned_index, reg, mask);
+        break;
+      }
+      case D3D10_SB_OPCODE_DCL_INPUT_PS_SGV: {
+        unsigned reg = Inst.m_Operands[0].m_Index[0].m_RegIndex;
+        auto mask = Inst.m_Operands[0].m_WriteMask >> 4;
+        auto siv = Inst.m_InputPSDeclSIV.Name;
+        auto interpolation =
+          to_air_interpolation(Inst.m_InputPSDeclSGV.InterpolationMode);
+        uint32_t assigned_index;
+        switch (siv) {
+        case microsoft::D3D10_SB_NAME_IS_FRONT_FACE:
+          assert(interpolation == air::Interpolation::flat);
+          assigned_index = func_signature.DefineInput(air::InputFrontFacing{});
+          break;
+        case microsoft::D3D10_SB_NAME_SAMPLE_INDEX:
+          assert(interpolation == air::Interpolation::flat);
+          assigned_index = func_signature.DefineInput(air::InputSampleIndex{});
+          break;
+        default:
+          assert(0 && "Unexpected/unhandled input system value");
+          break;
+        }
+        prelogue << init_input_reg(assigned_index, reg, mask);
+        break;
+      }
+      case D3D10_SB_OPCODE_DCL_INPUT_PS: {
+        unsigned reg = Inst.m_Operands[0].m_Index[0].m_RegIndex;
+        auto mask = Inst.m_Operands[0].m_WriteMask >> 4;
+        auto interpolation =
+          to_air_interpolation(Inst.m_InputPSDecl.InterpolationMode);
+        auto sig = findInputElement([=](dxbc::Signature sig) {
+          return (sig.reg() == reg) && ((sig.mask() & mask) != 0);
+        });
+        auto name = sig.fullSemanticString();
+        auto assigned_index =
+          func_signature.DefineInput(air::InputFragmentStageIn{
+            .user = name,
+            .type = sig.componentType() == RegisterComponentType::Float
+                      ? air::msl_float4
+                      : air::msl_int4,
+            .interpolation = interpolation
+          });
+        prelogue << init_input_reg(assigned_index, reg, mask);
+        max_input_register = std::max(reg + 1, max_input_register);
+        break;
+      }
+      case D3D10_SB_OPCODE_DCL_OUTPUT_SGV: {
+        assert(0 && "dcl_output_sgv should not happen for now");
+        // only GS PrimitiveID uses this, but we don't support GS for now
+        break;
+      }
+      case D3D10_SB_OPCODE_DCL_OUTPUT_SIV: {
+        unsigned reg = Inst.m_Operands[0].m_Index[0].m_RegIndex;
+        auto mask = Inst.m_Operands[0].m_WriteMask >> 4;
+        auto siv = Inst.m_OutputDeclSIV.Name;
+        switch (siv) {
+        case D3D10_SB_NAME_CLIP_DISTANCE: {
+          assert(0 && "Should be handled separately"); // becuase it can defined
+                                                       // multiple times
+          break;
+        }
+        case D3D10_SB_NAME_CULL_DISTANCE:
+          assert(0 && "Metal doesn't support shader output: cull distance");
+          break;
+        case D3D10_SB_NAME_POSITION: {
+          auto assigned_index = func_signature.DefineOutput(
+            air::OutputPosition{.type = air::msl_float4}
+          );
+          max_output_register = std::max(reg + 1, max_output_register);
+          epilogue >> pop_output_reg(reg, mask, assigned_index);
+          break;
+        }
+        case D3D10_SB_NAME_RENDER_TARGET_ARRAY_INDEX:
+        case D3D10_SB_NAME_VIEWPORT_ARRAY_INDEX:
+        default:
+          assert(0 && "Unexpected/unhandled input system value");
+          break;
+        }
+        break;
+      }
+      case D3D10_SB_OPCODE_DCL_OUTPUT: {
+        D3D10_SB_OPERAND_TYPE RegType = Inst.m_Operands[0].m_Type;
+        switch (RegType) {
+        case D3D10_SB_OPERAND_TYPE_OUTPUT_DEPTH:
+        case D3D11_SB_OPERAND_TYPE_OUTPUT_DEPTH_GREATER_EQUAL:
+        case D3D11_SB_OPERAND_TYPE_OUTPUT_DEPTH_LESS_EQUAL: {
+          prelogue << make_effect([](struct context ctx) -> std::monostate {
+            assert(
+              ctx.resource.depth_output_reg == nullptr &&
+              "otherwise oDepth is defined twice"
+            );
+            ctx.resource.depth_output_reg =
+              ctx.builder.CreateAlloca(ctx.types._float);
+            return {};
+          });
+          auto assigned_index = func_signature.DefineOutput(air::OutputDepth{
+            .depth_argument =
+              RegType == D3D11_SB_OPERAND_TYPE_OUTPUT_DEPTH_GREATER_EQUAL
+                ? air::DepthArgument::greater
+              : RegType == D3D11_SB_OPERAND_TYPE_OUTPUT_DEPTH_LESS_EQUAL
+                ? air::DepthArgument::less
+                : air::DepthArgument::any
+          });
+          epilogue >> [=](pvalue v) {
+            return make_irvalue([=](struct context ctx) {
+              return ctx.builder.CreateInsertValue(
+                v,
+                ctx.builder.CreateLoad(
+                  ctx.types._float,
+                  ctx.builder.CreateConstInBoundsGEP1_32(
+                    ctx.types._float, ctx.resource.depth_output_reg, 0
+                  )
+                ),
+                {assigned_index}
+              );
+            });
+          };
+          break;
+        }
+        case D3D11_SB_OPERAND_TYPE_OUTPUT_STENCIL_REF:
+        case D3D10_SB_OPERAND_TYPE_OUTPUT_COVERAGE_MASK: {
+          assert(0 && "todo");
+          break;
+        }
+
+        default: {
+          // normal output register
+          auto reg = Inst.m_Operands[0].m_Index[0].m_RegIndex;
+          auto mask = Inst.m_Operands[0].m_WriteMask >> 4;
+          auto sig = findOutputElement([=](dxbc::Signature sig) {
+            return (sig.reg() == reg) && ((sig.mask() & mask) != 0);
+          });
+          uint32_t assigned_index;
+          if (shader_type == D3D10_SB_PIXEL_SHADER) {
+            assigned_index =
+              func_signature.DefineOutput(air::OutputRenderTarget{
+                .index = reg,
+                .type = sig.componentType() == RegisterComponentType::Float
+                          ? air::msl_float4
+                          : air::msl_int4
+              });
+            epilogue >> pop_output_reg(reg, mask, assigned_index);
+          } else {
+            assigned_index = func_signature.DefineOutput(air::OutputVertex{
+              .user = sig.fullSemanticString(),
+              .type = sig.componentType() == RegisterComponentType::Float
+                        ? air::msl_float4
+                        : air::msl_int4,
+            });
+            epilogue >> pop_output_reg(reg, mask, assigned_index);
+          }
+          max_output_register = std::max(reg + 1, max_output_register);
+          break;
+        }
+        }
+        break;
+      }
+      case D3D10_SB_OPCODE_CUSTOMDATA: {
+        if (Inst.m_CustomData.Type == D3D10_SB_CUSTOMDATA_DCL_IMMEDIATE_CONSTANT_BUFFER) {
+          // must be list of 4-tuples
+          unsigned size_in_vec4 = Inst.m_CustomData.DataSizeInBytes >> 4;
+          DXASSERT_DXBC(Inst.m_CustomData.DataSizeInBytes == size_in_vec4 * 16);
+          shader_info->immConstantBufferData.assign(
+            (std::array<uint32_t, 4> *)Inst.m_CustomData.pData,
+            ((std::array<uint32_t, 4> *)Inst.m_CustomData.pData) + size_in_vec4
+          );
+        }
+        break;
+      }
+      case D3D10_SB_OPCODE_DCL_INDEX_RANGE:
+        break; // ignore, and it turns out backend compiler can handle alloca
+      case D3D10_SB_OPCODE_DCL_GS_INPUT_PRIMITIVE:
+      case D3D10_SB_OPCODE_DCL_GS_OUTPUT_PRIMITIVE_TOPOLOGY:
+      case D3D10_SB_OPCODE_DCL_MAX_OUTPUT_VERTEX_COUNT:
+      case D3D11_SB_OPCODE_DCL_GS_INSTANCE_COUNT:
+      case D3D11_SB_OPCODE_DCL_STREAM:
+      case D3D11_SB_OPCODE_DCL_INTERFACE:
+      case D3D11_SB_OPCODE_DCL_FUNCTION_TABLE:
+      case D3D11_SB_OPCODE_DCL_FUNCTION_BODY:
+      case D3D10_SB_OPCODE_LABEL:
+      case D3D11_SB_OPCODE_DCL_TESS_PARTITIONING:
+      case D3D11_SB_OPCODE_DCL_TESS_OUTPUT_PRIMITIVE:
+      case D3D11_SB_OPCODE_DCL_TESS_DOMAIN:
+      case D3D11_SB_OPCODE_DCL_INPUT_CONTROL_POINT_COUNT:
+      case D3D11_SB_OPCODE_DCL_OUTPUT_CONTROL_POINT_COUNT:
+      case D3D11_SB_OPCODE_DCL_HS_FORK_PHASE_INSTANCE_COUNT:
+      case D3D11_SB_OPCODE_DCL_HS_JOIN_PHASE_INSTANCE_COUNT:
+      case D3D11_SB_OPCODE_DCL_HS_MAX_TESSFACTOR: {
+        // ignore atm
+        break;
+      }
+#pragma endregion
+      default: {
+        // insert instruction into BasicBlock
+        ctx->instructions.push_back(readInstruction(Inst, *shader_info));
+        break;
+      }
+      }
+    }
+    assert(0 && "Unexpected end of shader instructions.");
+  };
+
+  auto entry = std::make_shared<BasicBlock>("entrybb");
+  auto return_point = std::make_shared<BasicBlock>("returnbb");
+  return_point->target = BasicBlockReturn{};
+  auto _ = readControlFlow(
+    entry, null_bb, null_bb, null_bb, return_point, null_switch_context
+  );
+  assert(_.get() == return_point.get());
+
+  // post convert
+  for (auto &[range_id, cbv] : shader_info->cbufferMap) {
+    // TODO: abstract SM 5.0 binding
+    auto index = binding_table.DefineBuffer(
+      "cb" + std::to_string(range_id), air::AddressSpace::constant,
+      air::MemoryAccess::read, air::msl_uint4
+    );
+    resource_map.cb_range_map[range_id] = [=, &binding_table_index](pvalue) {
+      // ignore index in SM 5.0
+      return get_item_in_argbuf_binding_table(binding_table_index, index);
+    };
+  }
+  for (auto &[range_id, sampler] : shader_info->samplerMap) {
+    // TODO: abstract SM 5.0 binding
+    auto index = binding_table.DefineSampler(
+      "s" + std::to_string(range_id), range_id + 16
+    );
+    resource_map.sampler_range_map[range_id] = [=,
+                                                &binding_table_index](pvalue) {
+      // ignore index in SM 5.0
+      return get_item_in_argbuf_binding_table(binding_table_index, index);
+    };
+  }
+  for (auto &[range_id, srv] : shader_info->srvMap) {
+    // TODO: abstract SM 5.0 binding
+    auto access =
+      srv.sampled ? air::MemoryAccess::sample : air::MemoryAccess::read;
+    auto texture_kind =
+      air::to_air_resource_type(srv.resource_type, srv.compared);
+    auto scaler_type = air::to_air_scaler_type(srv.scaler_type);
+    auto index = binding_table.DefineTexture(
+      "t" + std::to_string(range_id), texture_kind, access, scaler_type,
+      range_id + 128
+    );
+    resource_map.srv_range_map[range_id] = {
+      air::MSLTexture{
+        .component_type = scaler_type,
+        .memory_access = access,
+        .resource_kind = texture_kind,
+      },
+      [=, &binding_table_index](pvalue) {
+        // ignore index in SM 5.0
+        return get_item_in_argbuf_binding_table(binding_table_index, index);
+      },
+      srv.strucure_stride
+    };
+  }
+  for (auto &[range_id, uav] : shader_info->uavMap) {
+    auto texture_kind = air::to_air_resource_type(uav.resource_type);
+    auto scaler_type = air::to_air_scaler_type(uav.scaler_type);
+    auto access = uav.written ? (uav.read ? air::MemoryAccess::read_write
+                                          : air::MemoryAccess::write)
+                              : air::MemoryAccess::read;
+    auto index = binding_table.DefineTexture(
+      "u" + std::to_string(range_id), texture_kind, access, scaler_type,
+      range_id + 64
+    );
+    resource_map.uav_range_map[range_id] = {
+      air::MSLTexture{
+        .component_type = scaler_type,
+        .memory_access = access,
+        .resource_kind = texture_kind,
+      },
+      [=, &binding_table_index](pvalue) {
+        // ignore index in SM 5.0
+        return get_item_in_argbuf_binding_table(binding_table_index, index);
+      },
+      uav.strucure_stride
+    };
+    if (uav.with_counter) {
+      //
+    }
+  }
+  air::AirType types(context);
+  for (auto &[id, tgsm] : shader_info->tgsmMap) {
+    auto type = llvm::ArrayType::get(types._int, tgsm.size_in_uint);
+    llvm::GlobalVariable *tgsm_h = new llvm::GlobalVariable(
+      module, type, false, llvm::GlobalValue::InternalLinkage,
+      llvm::UndefValue::get(type), "g" + std::to_string(id), nullptr,
+      llvm::GlobalValue::NotThreadLocal, 3
+    );
+    tgsm_h->setAlignment(llvm::Align(4));
+    resource_map.tgsm_map[id] = {tgsm.structured ? tgsm.stride : 0, tgsm_h};
+  }
+  if (shader_info->immConstantBufferData.size()) {
+    auto type = llvm::ArrayType::get(
+      types._int4, shader_info->immConstantBufferData.size()
+    );
+    auto const_data = llvm::ConstantArray::get(
+      type,
+      shader_info->immConstantBufferData |
+        [&](auto data) {
+          return llvm::ConstantVector::get(
+            {llvm::ConstantInt::get(context, llvm::APInt{32, data[0], false}),
+             llvm::ConstantInt::get(context, llvm::APInt{32, data[1], false}),
+             llvm::ConstantInt::get(context, llvm::APInt{32, data[2], false}),
+             llvm::ConstantInt::get(context, llvm::APInt{32, data[3], false})}
+          );
+        }
+    );
+    llvm::GlobalVariable *icb = new llvm::GlobalVariable(
+      module, type, true, llvm::GlobalValue::InternalLinkage, const_data, "icb",
+      nullptr, llvm::GlobalValue::NotThreadLocal, 2
+    );
+    icb->setAlignment(llvm::Align(16));
+    resource_map.icb = icb;
   }
 
-  public_metadata_stream.write((const char *)&public_metadata_size, 4);
+  if (!binding_table.empty()) {
+    auto [type, metadata] = binding_table.Build(context, module);
+    binding_table_index =
+      func_signature.DefineInput(air::ArgumentBindingIndirectBuffer{
+        .location_index = 30,
+        .array_size = 1,
+        .memory_access = air::MemoryAccess::read,
+        .address_space = air::AddressSpace::constant,
+        .struct_type = type,
+        .struct_type_info = metadata,
+        .arg_name = "binding_table",
+      });
+  }
+  auto [function, function_metadata] =
+    func_signature.CreateFunction("shader_main", context, module);
 
-  if (analyzer.IsVS()) {
-    // FIXME: properly handle it via vertex attribute information
-
-    public_metadata_stream.write("VATT", 4);
-    uint8_t w[] = {
-        0x09, 0x00,                   // tag len
-        0x01, 0x00,                   // type
-        0x72, 0x65, 0x67, 0x30, 0x00, // name str
-        0x00, 0x80                    // wtf?
+  auto entry_bb = llvm::BasicBlock::Create(context, "entry", function);
+  auto epilogue_bb = llvm::BasicBlock::Create(context, "epilogue", function);
+  llvm::IRBuilder<> builder(entry_bb);
+  builder.getFastMathFlags().setFast(true);
+  resource_map.input.ptr_int4 =
+    builder.CreateAlloca(llvm::ArrayType::get(types._int4, max_input_register));
+  resource_map.input.ptr_float4 = builder.CreateBitCast(
+    resource_map.input.ptr_int4,
+    llvm::ArrayType::get(types._float4, max_input_register)->getPointerTo()
+  );
+  resource_map.output.ptr_int4 =
+    builder.CreateAlloca(llvm::ArrayType::get(types._int4, max_output_register)
+    );
+  resource_map.output.ptr_float4 = builder.CreateBitCast(
+    resource_map.output.ptr_int4,
+    llvm::ArrayType::get(types._float4, max_output_register)->getPointerTo()
+  );
+  resource_map.temp.ptr_int4 = builder.CreateAlloca(
+    llvm::ArrayType::get(types._int4, shader_info->tempRegisterCount)
+  );
+  resource_map.temp.ptr_float4 = builder.CreateBitCast(
+    resource_map.temp.ptr_int4,
+    llvm::ArrayType::get(types._float4, shader_info->tempRegisterCount)
+      ->getPointerTo()
+  );
+  if (shader_info->immConstantBufferData.size()) {
+    resource_map.icb_float = builder.CreateBitCast(
+      resource_map.icb,
+      llvm::ArrayType::get(
+        types._float4, shader_info->immConstantBufferData.size()
+      )
+        ->getPointerTo(2)
+    );
+  }
+  for (auto &[idx, info] : shader_info->indexableTempRegisterCounts) {
+    auto &[numRegisters, mask] = info;
+    auto channel_count = std::bit_width(mask);
+    auto ptr_int_vec = builder.CreateAlloca(llvm::ArrayType::get(
+      llvm::FixedVectorType::get(types._int, channel_count), numRegisters
+    ));
+    auto ptr_float_vec = builder.CreateBitCast(
+      ptr_int_vec,
+      llvm::ArrayType::get(
+        llvm::FixedVectorType::get(types._float, channel_count), numRegisters
+      )
+        ->getPointerTo()
+    );
+    resource_map.indexable_temp_map[idx] = {
+      ptr_int_vec, ptr_float_vec, (uint32_t)channel_count
     };
-    public_metadata_stream.write((char *)w, sizeof(w));
-
-    public_metadata_stream.write("VATY", 4);
-    char e[] = {
-        3, 0, // tag len
-        1, 0, // attr type array len?
-        6     // type[0]
-    };
-    public_metadata_stream.write(e, sizeof(e));
   }
 
-  public_metadata_stream.write("ENDT", 4);
+  struct context ctx {
+    .builder = builder, .llvm = context, .module = module, .function = function,
+    .resource = resource_map, .types = types
+  };
+  // then we can start build ... real IR code (visit all basicblocks)
+  prelogue.build(ctx);
+  auto real_entry = convert_basicblocks(entry, ctx, epilogue_bb);
+  builder.CreateBr(real_entry);
 
-  // private metadata
-  uint32_t private_metadata_size = 4;
-  private_metadata_stream.write((const char *)&private_metadata_size, 4);
-  private_metadata_stream.write("ENDT", 4);
+  builder.SetInsertPoint(epilogue_bb);
+  auto value = epilogue.build(ctx);
+  if (value == nullptr) {
+    builder.CreateRetVoid();
+  } else {
+    builder.CreateRet(value);
+  }
 
-  header.FileSize = sizeof(MTLBHeader) + sizeof(uint32_t) + sizeof(uint32_t) +
-                    function_def.size() + sizeof(MTLB_EndTag) // extended header
-                    + public_metadata.size() + private_metadata.size() +
-                    bitcode.size();
-  header.FunctionListOffset = sizeof(MTLBHeader);
-  header.FunctionListSize = function_def.size() + 4;
-  header.PublicMetadataOffset =
-      header.FunctionListOffset + header.FunctionListSize +
-      sizeof(uint32_t) // extra room for function count
-      + sizeof(MTLB_EndTag);
-  header.PublicMetadataSize = public_metadata.size();
-  header.PrivateMetadataOffset =
-      header.PublicMetadataOffset + header.PublicMetadataSize;
-  header.PrivateMetadataSize = private_metadata.size();
-  header.BitcodeOffset =
-      header.PrivateMetadataOffset + header.PrivateMetadataSize;
-  header.BitcodeSize = bitcode.size();
-
-  header.Type = MTLBType_Executable; // executable
-  header.Platform = MTLBPlatform_macOS;
-  header.VersionMajor = 2;
-  header.VersionMinor = 7;
-  header.OS = MTLBOS_macOS;
-  header.OSVersionMajor = 14;
-  header.OSVersionMinor = 4;
-
-  // write to stream
-  OS.write((const char *)&header, sizeof(MTLBHeader));
-
-  uint32_t fn_count = 1;
-  OS.write((const char *)&fn_count, 4);
-  uint32_t size_fn = function_def.size() + 4;
-  OS.write((const char *)&size_fn, 4);
-  OS.write((const char *)function_def.data(), function_def.size());
-  OS.write("ENDT", 4); // extend header
-  OS.write((const char *)public_metadata.data(), public_metadata.size());
-  OS.write((const char *)private_metadata.data(), private_metadata.size());
-  OS.write((const char *)bitcode.data(), bitcode.size());
-}
-
-} // namespace dxmt
+  if (shader_type == D3D10_SB_VERTEX_SHADER) {
+    module.getOrInsertNamedMetadata("air.vertex")
+      ->addOperand(function_metadata);
+  } else if (shader_type == D3D10_SB_PIXEL_SHADER) {
+    module.getOrInsertNamedMetadata("air.fragment")
+      ->addOperand(function_metadata);
+  } else if (shader_type == D3D11_SB_COMPUTE_SHADER) {
+    module.getOrInsertNamedMetadata("air.kernel")
+      ->addOperand(function_metadata);
+  } else {
+    // throw
+    assert(0 && "Unsupported shader type");
+  }
+  return {.has_binding_map = !binding_table.empty()};
+};
+} // namespace dxmt::dxbc

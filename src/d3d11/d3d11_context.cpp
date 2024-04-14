@@ -342,6 +342,7 @@ public:
         Obj<MTL::Function> vf;
         Obj<MTL::Function> ff;
         Obj<MTL::RenderPipelineDescriptor> ps;
+        MetalShaderReflection vs_ref, ps_ref;
         {
           auto options = transfer(MTL::CompileOptions::alloc()->init());
           {
@@ -349,7 +350,7 @@ public:
             void *ptr;
             ConvertDXBC(state_.vertex_stage.shader->m_bytecode,
                         state_.vertex_stage.shader->m_bytecodeLength, &ptr,
-                        &size);
+                        &size, &vs_ref);
             assert(ptr);
             auto dp = dispatch_data_create(ptr, size, nullptr, nullptr);
             Obj<MTL::Library> vlib =
@@ -368,7 +369,7 @@ public:
             void *ptr;
             ConvertDXBC(state_.pixel_stage.shader->m_bytecode,
                         state_.pixel_stage.shader->m_bytecodeLength, &ptr,
-                        &size);
+                        &size, &ps_ref);
             assert(ptr);
             auto dp = dispatch_data_create(ptr, size, nullptr, nullptr);
             Obj<MTL::Library> vlib =
@@ -409,13 +410,15 @@ public:
           throw MTLD3DError("Failed to create PSO");
         }
 
-        auto ve = transfer(vf->newArgumentEncoder(30));
-        // auto fe = transfer(ff->newArgumentEncoder(30)); // FIXME:
+        auto ve = transfer(vs_ref.has_binding_map ? vf->newArgumentEncoder(30)
+                                                  : nullptr);
+        auto fe = transfer(ps_ref.has_binding_map ? ff->newArgumentEncoder(30)
+                                                  : nullptr);
 
         stream_->Emit(MTLBindPipelineState(
-            [state = state]() { return state.ptr(); }, ve.ptr(), nullptr));
+            [state = state]() { return state.ptr(); }, ve.ptr(), fe.ptr()));
 
-        setCache(key, new RenderPipelineCache(state.ptr(), ve.ptr(), nullptr));
+        setCache(key, new RenderPipelineCache(state.ptr(), ve.ptr(), fe.ptr()));
       }
       pipelineUpToDate = true;
     }
@@ -1322,7 +1325,7 @@ public:
     NS::Error *pError = nullptr;
     d->setOutputURL(pURL);
 
-    // c->startCapture(d.ptr(), &pError);
+    c->startCapture(d.ptr(), &pError);
     {
       auto pool = transfer(NS::AutoreleasePool::alloc()->init());
       auto cbuffer = m_queue->commandBufferWithUnretainedReferences();
@@ -1345,7 +1348,7 @@ public:
     ring_offset++;
     ring_offset %= 3;
 
-    // c->stopCapture();
+    c->stopCapture();
   }
 
 private:

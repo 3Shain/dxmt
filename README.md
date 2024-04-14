@@ -7,6 +7,9 @@ A Metal-based translation layer for Direct3D 11 which allows running 3D applicat
 ### [Current Status of `dxmt`](https://github.com/3Shain/dxmt/blob/main/docs/PROGRESS.md)
 
 ## Build
+### Requirements:
+- Meson 1.4+
+- CMake 3.27+
 
 TBD.
 

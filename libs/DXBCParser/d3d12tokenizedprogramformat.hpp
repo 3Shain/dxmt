@@ -55,6 +55,8 @@
 //
 // ----------------------------------------------------------------------------
 
+namespace microsoft {
+
 typedef enum D3D10_SB_TOKENIZED_PROGRAM_TYPE
 {
     D3D10_SB_PIXEL_SHADER       = 0,
@@ -2617,3 +2619,5 @@ typedef enum D3D10_SB_INSTRUCTION_RETURN_TYPE
 // (3) a DWORD indicating the space index.
 //
 // ----------------------------------------------------------------------------
+
+} // namespace microsoft

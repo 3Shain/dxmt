@@ -18,7 +18,7 @@ BEGIN
       VALUE "FileDescription",  "Direct3D 11 Runtime"
       VALUE "FileVersion",      "10.0.17763.1 (WinBuild.160101.0800)"
       VALUE "InternalName",     "D3D11.dll"
-      VALUE "LegalCopyright",   "zlib/libpng license"
+      VALUE "LegalCopyright",   "MIT License"
       VALUE "OriginalFilename", "D3D11.dll"
       VALUE "ProductName",      "DXMT"
       VALUE "ProductVersion",   "10.0.17763.1"

@@ -4,6 +4,8 @@
 #include "dxbcutils.h"
 #include <cassert>
 
+namespace microsoft {
+
 //---------------------------------------------------------------------------------------------------------------------------------
 // DXBCGetSizeAssumingValidPointer()
 UINT DXBCGetSizeAssumingValidPointer(const void* pDXBC)
@@ -1263,4 +1265,6 @@ void CSignatureParser::ClearAlwaysReadsNeverWritesMask()
     {
         m_pSignatureParameters[i].NeverWrites_Mask = 0; // union with AlwaysReads_Mask
     }
+}
+
 }
