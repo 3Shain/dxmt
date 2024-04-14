@@ -711,6 +711,7 @@ struct TextureOperationInfo {
   bool is_array = false;
   bool is_ms = false;
   bool is_1d_or_1d_array = false;
+  bool is_texture_buffer = false;
   air::Sign sign = air::Sign::inapplicable;
   std::string air_symbol_suffix = {};
   llvm::Type *coord_type = nullptr;
@@ -814,6 +815,7 @@ auto get_operation_info(air::MSLTexture texture)
     ret.air_symbol_suffix = "texture_buffer_1d";
     ret.gather_type = nullptr;
     ret.address_type = types._int;
+    ret.is_texture_buffer = true;
     break;
   }
   case TextureKind::depth_2d: {
@@ -1539,6 +1541,71 @@ IRValue call_calc_lod(
   co_return ctx.builder.CreateCall(fn, args_value);
 }
 
+enum class TextureInfoType {
+  width,
+  height,
+  depth,
+  array_length,
+  num_mip_levels,
+  num_samples
+};
+
+IRValue call_get_texture_info(
+  air::MSLTexture texture_type, pvalue handle, TextureInfoType type, pvalue lod
+) {
+  auto ctx = co_yield get_context();
+  using namespace llvm;
+  auto &context = ctx.llvm;
+  auto &module = ctx.module;
+  auto &types = ctx.types;
+  auto att = AttributeList::get(
+    context,
+    {
+      {1U, Attribute::get(context, Attribute::AttrKind::NoCapture)},
+      {1U, Attribute::get(context, Attribute::AttrKind::ReadOnly)},
+      {~0U, Attribute::get(context, Attribute::AttrKind::ArgMemOnly)},
+      {~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)},
+      {~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)},
+      {~0U, Attribute::get(context, Attribute::AttrKind::ReadOnly)},
+    }
+  );
+  auto op_info = co_yield get_operation_info(texture_type);
+  if (type == TextureInfoType::array_length) {
+    assert(op_info.is_array);
+  }
+  if (type == TextureInfoType::num_mip_levels) {
+    assert(!op_info.is_ms);
+  }
+  if (type == TextureInfoType::num_samples) {
+    assert(op_info.is_ms);
+  }
+  auto fn_name =
+    (type == TextureInfoType::width          ? "air.get_width_"
+     : type == TextureInfoType::height       ? "air.get_height_"
+     : type == TextureInfoType::depth        ? "air.get_depth_"
+     : type == TextureInfoType::array_length ? "air.get_array_size_"
+     : type == TextureInfoType::num_samples  ? "air.get_num_samples_"
+                                             : "air.get_num_mip_levels_") +
+    op_info.air_symbol_suffix;
+  std::vector<llvm::Type *> args_type;
+  std::vector<pvalue> args_value;
+
+  args_type.push_back(texture_type.get_llvm_type(context));
+  args_value.push_back(handle);
+
+  if (type == TextureInfoType::width || type == TextureInfoType::height || type == TextureInfoType::depth) {
+    if (!op_info.is_ms && !op_info.is_texture_buffer) {
+      args_type.push_back(types._int);
+      args_value.push_back(lod);
+    }
+  }
+
+  auto fn = module.getOrInsertFunction(
+    fn_name, llvm::FunctionType::get(types._int, args_type, false), att
+  );
+  co_return ctx.builder.CreateCall(fn, args_value);
+}
+
 IREffect call_discard_fragment() {
   using namespace llvm;
   auto ctx = co_yield get_context();
@@ -1705,6 +1772,92 @@ IRValue call_texture_atomic_fetch_explicit(
   );
   co_return ctx.builder.CreateCall(fn, args_value);
 };
+
+IRValue call_atomic_exchange_explicit(
+  pvalue pointer, pvalue operand, bool device = false
+) {
+  using namespace llvm;
+  auto ctx = co_yield get_context();
+  auto &context = ctx.llvm;
+  auto &types = ctx.types;
+  auto &module = ctx.module;
+  auto att = AttributeList::get(
+    context, {{1U, Attribute::get(context, Attribute::AttrKind::NoCapture)},
+              {~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)},
+              {~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)}}
+  );
+
+  assert(operand->getType() == types._int);
+
+  auto fn = (module.getOrInsertFunction(
+    "air.atomic." + std::string(device ? "global." : "local.") + "xchg.i32",
+    llvm::FunctionType::get(
+      types._int,
+      {
+        types._int->getPointerTo(device ? 1 : 3),
+        types._int, // desired
+        types._int, // order 0 relaxed
+        types._int, // scope 1 threadgroup 2 device (type: memflag?)
+        types._bool // volatile? should be true all the time?
+      },
+      false
+    ),
+    att
+  ));
+  co_return ctx.builder.CreateCall(
+    fn, {pointer, operand, co_yield get_int(0),
+         co_yield get_int(device ? 2 : 1), ConstantInt::getBool(context, true)}
+  );
+}
+
+ReaderIO<context, std::pair<pvalue, pvalue>> call_atomic_cmp_exchange(
+  pvalue pointer, pvalue compared, pvalue operand, std::string op,
+  bool is_signed = false, bool device = false
+) {
+  using namespace llvm;
+  auto ctx = co_yield get_context();
+  auto &context = ctx.llvm;
+  auto &types = ctx.types;
+  auto &module = ctx.module;
+  auto att = AttributeList::get(
+    context, {{1U, Attribute::get(context, Attribute::AttrKind::NoCapture)},
+              {2U, Attribute::get(context, Attribute::AttrKind::NoCapture)},
+              {~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)},
+              {~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)}}
+  );
+
+  assert(operand->getType() == types._int);
+
+  auto fn = module.getOrInsertFunction(
+    "air.atomic." + std::string(device ? "global." : "local.") +
+      "cmpxchg.weak.i32",
+    llvm::FunctionType::get(
+      types._int,
+      {
+        types._int->getPointerTo(device ? 1 : 3),
+        types._int->getPointerTo(), // expected
+        types._int,                 // desired
+        types._int,                 // order 0 relaxed
+        types._int,                 // order 0 relaxed
+        types._int, // scope 1 threadgroup 2 device (type: memflag?)
+        types._bool // volatile? should be true all the time?
+      },
+      false
+    ),
+    att
+  );
+  auto alloca = ctx.builder.CreateAlloca(types._int);
+  auto ptr = ctx.builder.CreateConstGEP1_64(types._int, alloca, 0);
+  ctx.builder.CreateLifetimeStart(alloca);
+  ctx.builder.CreateStore(compared, ptr);
+  auto call_ret = ctx.builder.CreateCall(
+    fn, {pointer, alloca, operand, co_yield get_int(0), co_yield get_int(0),
+         co_yield get_int(device ? 2 : 1), ConstantInt::getBool(context, true)}
+  );
+  auto expected = ctx.builder.CreateLoad(types._int, ptr);
+  ctx.builder.CreateLifetimeEnd(alloca);
+  co_return {call_ret, expected};
+}
 
 // TODO: not good, expose too much detail
 IRValue call_convert(
@@ -2175,7 +2328,8 @@ store_dst<DstOperandOutputDepth, true>(DstOperandOutputDepth, IRValue &&value) {
   // coroutine + rvalue reference = SHOOT YOURSELF IN THE FOOT
   return make_effect_bind(
     [value = std::move(value)](context ctx) mutable -> IREffect {
-      pvalue depth = co_yield std::move(value) >>= extract_element(0);
+      pvalue depth = co_yield std::move(value) >>=
+        extract_element(0); // FIXME: value might be a scalar!
       auto ptr = ctx.builder.CreateConstGEP1_32(
         ctx.types._float, ctx.resource.depth_output_reg, 0
       );
