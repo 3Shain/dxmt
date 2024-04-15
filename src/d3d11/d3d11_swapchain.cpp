@@ -1,7 +1,8 @@
 #include "d3d11_swapchain.hpp"
 #include "com/com_guid.hpp"
-#include "dxgi_format.hpp"
-#include "dxgi_object.h"
+#include "d3d11_private.h"
+#include "dxgi_interfaces.h"
+#include "dxgi_object.hpp"
 #include "Foundation/NSAutoreleasePool.hpp"
 #include "Metal/MTLPixelFormat.hpp"
 #include "Metal/MTLTexture.hpp"
@@ -89,15 +90,18 @@ public:
     // you must set the device for a layer before rendering
     swapchain_.layer()->setDevice(device_->GetMTLDevice());
 
-    auto metal_format = g_metal_format_map[desc.Format];
+    METAL_FORMAT_DESC metal_format;
+
+    assert(0 && "FIXME: get metal foramt");
+
     // FIXME: actually render target format is very limited
-    if (metal_format.pixel_format == MTL::PixelFormatInvalid) {
+    if (metal_format.PixelFormat == MTL::PixelFormatInvalid) {
       throw MTLD3DError("Unsupported pixel format");
     }
 
     swapchain_.layer()->setDrawableSize(
         {.width = (double)desc.Width, .height = (double)desc.Height});
-    swapchain_.layer()->setPixelFormat(metal_format.pixel_format);
+    swapchain_.layer()->setPixelFormat(metal_format.PixelFormat);
     // buffer_delegate_ = new D3D11Resource<__SwapChainTexture>(
     //     device_.ptr(), &swapchain_, &desc, NULL);
 
@@ -202,11 +206,12 @@ public:
     if (format == DXGI_FORMAT_UNKNOWN) {
       // TODO: NOP
     } else {
-      auto metal_format = g_metal_format_map[format];
-      if (metal_format.pixel_format == MTL::PixelFormatInvalid) {
+      METAL_FORMAT_DESC metal_format;
+      assert(0 && "FIXME: get metal format");
+      if (metal_format.PixelFormat == MTL::PixelFormatInvalid) {
         return E_FAIL;
       }
-      swapchain_.layer()->setPixelFormat(metal_format.pixel_format);
+      swapchain_.layer()->setPixelFormat(metal_format.PixelFormat);
     }
     D3D11_TEXTURE2D_DESC desc;
     buffer_delegate_->GetDesc(&desc);

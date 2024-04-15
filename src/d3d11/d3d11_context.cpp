@@ -8,6 +8,7 @@
 
 #include "../dxmt/dxmt_command_stream.hpp"
 
+#include "d3d11_private.h"
 #include "d3d11_query.hpp"
 #include "d3d11_context.hpp"
 #include "d3d11_device.hpp"

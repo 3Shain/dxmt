@@ -3,7 +3,7 @@
 #include "Metal/MTLResource.hpp"
 #include "Metal/MTLTexture.hpp"
 #include "d3d11_texture.hpp"
-#include "dxgi_format.hpp"
+#include "dxgi_interfaces.h"
 #include "log/log.hpp"
 
 namespace dxmt {
@@ -148,15 +148,21 @@ void initWithSubresourceData(MTL::Texture *target,
 };
 
 Obj<MTL::TextureDescriptor>
-getTextureDescriptor(D3D11_RESOURCE_DIMENSION Dimension, UINT Width,
+getTextureDescriptor(IMTLDXGIAdatper *pAdapter,
+                     D3D11_RESOURCE_DIMENSION Dimension, UINT Width,
                      UINT Height, UINT Depth, UINT ArraySize, UINT SampleCount,
                      UINT BindFlags, UINT CPUAccessFlags, UINT MiscFlags,
-                     D3D11_USAGE Usage, UINT MipLevels, DXGI_FORMAT FORMAT) {
+                     D3D11_USAGE Usage, UINT MipLevels, DXGI_FORMAT Format) {
   auto desc = transfer(MTL::TextureDescriptor::alloc()->init());
 
-  auto format = g_metal_format_map[FORMAT];
-  WARN("DXGI FORMAT:", FORMAT, ",METAL FORMAT:", format.pixel_format);
-  desc->setPixelFormat(format.pixel_format);
+  METAL_FORMAT_DESC metal_format;
+
+  if(FAILED(pAdapter->QueryFormatDesc(Format, &metal_format))) {
+    return nullptr;
+  }
+
+  WARN("DXGI FORMAT:", Format, ",METAL FORMAT:", metal_format.PixelFormat);
+  desc->setPixelFormat(metal_format.PixelFormat);
 
   MTL::TextureUsage metal_usage = 0; // actually corresponding to BindFlags
 
@@ -246,18 +252,20 @@ getTextureDescriptor(D3D11_RESOURCE_DIMENSION Dimension, UINT Width,
 
 template <>
 Obj<MTL::TextureDescriptor>
-getTextureDescriptor(const D3D11_TEXTURE1D_DESC *desc) {
-  return getTextureDescriptor(D3D11_RESOURCE_DIMENSION_TEXTURE2D, desc->Width,
-                              1, 1, desc->ArraySize, 0, desc->BindFlags,
-                              desc->CPUAccessFlags, desc->MiscFlags,
-                              desc->Usage, desc->MipLevels, desc->Format);
+getTextureDescriptor(IMTLDXGIAdatper *pAdapter,
+                     const D3D11_TEXTURE1D_DESC *desc) {
+  return getTextureDescriptor(
+      pAdapter, D3D11_RESOURCE_DIMENSION_TEXTURE2D, desc->Width, 1, 1,
+      desc->ArraySize, 0, desc->BindFlags, desc->CPUAccessFlags,
+      desc->MiscFlags, desc->Usage, desc->MipLevels, desc->Format);
 }
 
 template <>
 Obj<MTL::TextureDescriptor>
-getTextureDescriptor(const D3D11_TEXTURE2D_DESC *desc) {
-  return getTextureDescriptor(D3D11_RESOURCE_DIMENSION_TEXTURE2D, desc->Width,
-                              desc->Height, 1, desc->ArraySize,
+getTextureDescriptor(IMTLDXGIAdatper *pAdapter,
+                     const D3D11_TEXTURE2D_DESC *desc) {
+  return getTextureDescriptor(pAdapter, D3D11_RESOURCE_DIMENSION_TEXTURE2D,
+                              desc->Width, desc->Height, 1, desc->ArraySize,
                               desc->SampleDesc.Count, desc->BindFlags,
                               desc->CPUAccessFlags, desc->MiscFlags,
                               desc->Usage, desc->MipLevels, desc->Format);
@@ -265,11 +273,12 @@ getTextureDescriptor(const D3D11_TEXTURE2D_DESC *desc) {
 
 template <>
 Obj<MTL::TextureDescriptor>
-getTextureDescriptor(const D3D11_TEXTURE3D_DESC *desc) {
-  return getTextureDescriptor(D3D11_RESOURCE_DIMENSION_TEXTURE2D, desc->Width,
-                              desc->Height, desc->Depth, 1, 1, desc->BindFlags,
-                              desc->CPUAccessFlags, desc->MiscFlags,
-                              desc->Usage, desc->MipLevels, desc->Format);
+getTextureDescriptor(IMTLDXGIAdatper *pAdapter,
+                     const D3D11_TEXTURE3D_DESC *desc) {
+  return getTextureDescriptor(
+      pAdapter, D3D11_RESOURCE_DIMENSION_TEXTURE2D, desc->Width, desc->Height,
+      desc->Depth, 1, 1, desc->BindFlags, desc->CPUAccessFlags, desc->MiscFlags,
+      desc->Usage, desc->MipLevels, desc->Format);
 }
 
 } // namespace dxmt

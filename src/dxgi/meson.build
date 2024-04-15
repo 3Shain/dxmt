@@ -1,7 +1,6 @@
 dxgi_src = [
   'dxgi_adapter.cpp',
   'dxgi_factory.cpp',
-  'dxgi_format.cpp',
   'dxgi_output.cpp',
   'dxgi.cpp',
   'dxgi_names.cpp',

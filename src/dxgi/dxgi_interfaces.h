@@ -2,28 +2,35 @@
 
 #include <dxgi1_2.h>
 #include "Metal/MTLDevice.hpp"
-#include "Metal/MTLRenderPass.hpp"
+#include "Metal/MTLPixelFormat.hpp"
+#include "Metal/MTLStageInputOutputDescriptor.hpp"
+#include "Metal/MTLVertexDescriptor.hpp"
 #include "QuartzCore/CAMetalLayer.hpp"
 
-struct MTL_FORMAT_DESC {
-
+struct METAL_FORMAT_DESC {
+  MTL::PixelFormat PixelFormat;
+  MTL::AttributeFormat AttributeFormat;
+  MTL::VertexFormat VertexFormat;
+  UINT Stride;
+  UINT Alignment;
+  BOOL IsCompressed;
 };
 
 MIDL_INTERFACE("acdf3ef1-b33a-4cb6-97bd-1c1974827e6d")
 IMTLDXGIAdatper : public IDXGIAdapter2 {
   virtual MTL::Device *STDMETHODCALLTYPE GetMTLDevice() = 0;
-  virtual HRESULT STDMETHODCALLTYPE QueryFormatDesc(DXGI_FORMAT dxgiFormat, MTL_FORMAT_DESC* pMtlFormatDesc) = 0;
+  virtual HRESULT STDMETHODCALLTYPE QueryFormatDesc(DXGI_FORMAT Format, METAL_FORMAT_DESC* pMtlFormatDesc) = 0;
 };
 __CRT_UUID_DECL(IMTLDXGIAdatper, 0xacdf3ef1, 0xb33a, 0x4cb6, 0x97, 0xbd, 0x1c,
                 0x19, 0x74, 0x82, 0x7e, 0x6d);
 
-MIDL_INTERFACE("5cc49399-ead6-44b3-af53-0c0ec1a8a35e")
-IMTLDXGISwapChainBuffer : public IUnknown {
-  virtual void SetColorAttachment(MTL::RenderPassColorAttachmentDescriptor *
-                                  colorAttachment) = 0;
-};
-__CRT_UUID_DECL(IMTLDXGISwapChainBuffer, 0x5cc49399, 0xead6, 0x44b3, 0xaf, 0x53,
-                0x0c, 0x0e, 0xc1, 0xa8, 0xa3, 0x5e);
+// MIDL_INTERFACE("5cc49399-ead6-44b3-af53-0c0ec1a8a35e")
+// IMTLDXGISwapChainBuffer : public IUnknown {
+//   virtual void SetColorAttachment(MTL::RenderPassColorAttachmentDescriptor *
+//                                   colorAttachment) = 0;
+// };
+// __CRT_UUID_DECL(IMTLDXGISwapChainBuffer, 0x5cc49399, 0xead6, 0x44b3, 0xaf, 0x53,
+//                 0x0c, 0x0e, 0xc1, 0xa8, 0xa3, 0x5e);
 
 MIDL_INTERFACE("f2be9c71-9c4b-42d3-b46b-bbfd459db688")
 IDXGIMetalLayerFactory : public IUnknown {

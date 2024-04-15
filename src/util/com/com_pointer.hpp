@@ -97,6 +97,16 @@ public:
   T **operator&() { return &m_ptr; }
   T *const *operator&() const { return &m_ptr; }
 
+  /*
+   * dxmt: move to pointer semantic
+   * the ownersihp is completely taken away
+   */
+  operator T *() && {
+    auto ret = this->m_ptr;
+    this->m_ptr = nullptr;
+    return ret;
+  }
+
   template <bool Public_> bool operator==(const Com<T, Public_> &other) const {
     return m_ptr == other.m_ptr;
   }

@@ -13,8 +13,6 @@ d3d11_src = [
   'd3d11_state_object.cpp',
   'd3d11_swapchain.cpp',
   'd3d11_texture.cpp',
-  'd3d11_texture1d.cpp',
-  'd3d11_texture2d.cpp',
   'd3d11.cpp',
   'mtld11_resource.cpp',
   'd3d11_names.cpp',

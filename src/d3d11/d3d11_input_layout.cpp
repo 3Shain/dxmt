@@ -4,15 +4,15 @@
 #include "com/com_guid.hpp"
 #include "d3d11_device_child.hpp"
 
-#include "dxgi_format.hpp"
-
 #include "com/com_pointer.hpp"
 
 #include "DXBCParser/DXBCUtils.h"
+#include "dxgi_interfaces.h"
 #include "log/log.hpp"
 #include "objc_pointer.hpp"
 #include "util_string.hpp"
 #include <algorithm>
+#include <cassert>
 
 namespace dxmt {
 
@@ -136,23 +136,24 @@ HRESULT CreateInputLayout(IMTLD3D11Device *device,
     auto &desc = *pDesc;
     auto &attribute = elements[attributeCount++];
 
-    if (g_metal_format_map[desc.Format].vertex_format ==
+    METAL_FORMAT_DESC metal_format;
+    
+    // FIXME
+    assert(0 && "FIXME: query metal format");
+
+    if (metal_format.VertexFormat ==
         MTL::VertexFormatInvalid) {
       ERR("CreateInputLayout: Unsupported Vertex Format ", desc.Format);
       return E_INVALIDARG;
     }
-    attribute.format = g_metal_format_map[desc.Format].attribute_format;
-    attribute.element_stride = g_metal_format_map[desc.Format].stride;
+    attribute.format = metal_format.AttributeFormat;
+    attribute.element_stride = metal_format.Stride;
     attribute.slot = desc.InputSlot;
     attribute.index = inputSig.Register;
     if (attribute.slot >= 16) {
       ERR("CreateInputLayout: InputSlot greater than 15 is not supported "
           "(yet)");
       return E_FAIL;
-    }
-    if (attribute.index > 30) {
-      ERR("CreateInputLayout: FIXME: Too many elements.");
-      return E_INVALIDARG;
     }
 
     if (desc.AlignedByteOffset == D3D11_APPEND_ALIGNED_ELEMENT) {

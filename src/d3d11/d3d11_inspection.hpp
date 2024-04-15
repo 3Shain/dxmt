@@ -14,9 +14,6 @@ public:
   HRESULT GetFeatureData(D3D11_FEATURE Feature, UINT FeatureDataSize,
                          void *pFeatureData) const;
 
-  HRESULT CheckSupportedFormat(DXGI_FORMAT Format, UINT *pFlags);
-  HRESULT CheckSupportedFormat2(DXGI_FORMAT Format, UINT *pFlags);
-
 private:
   Obj<MTL::Device> m_device;
   FormatCapabilityInspector cap_inspector_;

@@ -2,6 +2,7 @@
 #include "Metal/MTLPixelFormat.hpp"
 #include "Metal/MTLTexture.hpp"
 #include "d3d11_1.h"
+#include "dxgi_interfaces.h"
 #include "objc_pointer.hpp"
 
 namespace dxmt {
@@ -12,9 +13,10 @@ MTL::Texture *newTextureView(MTL::Texture *source, MTL::PixelFormat newFormat,
 
 template <typename TEXTURE_DESC>
 void initWithSubresourceData(MTL::Texture *target, const TEXTURE_DESC *desc,
-                             const D3D11_SUBRESOURCE_DATA *subresources);\
+                             const D3D11_SUBRESOURCE_DATA *subresources);
 
 template <typename TEXTURE_DESC>
-Obj<MTL::TextureDescriptor> getTextureDescriptor(const TEXTURE_DESC* desc);
+Obj<MTL::TextureDescriptor> getTextureDescriptor(IMTLDXGIAdatper *pAdapter,
+                                                 const TEXTURE_DESC *pDesc);
 
 } // namespace dxmt

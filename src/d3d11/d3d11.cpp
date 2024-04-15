@@ -15,11 +15,7 @@ D3D11CoreCreateDevice(IDXGIFactory *pFactory, IDXGIAdapter *pAdapter,
   Com<IMTLDXGIAdatper> dxgi_adapter;
 
   // Try to find the corresponding Metal device for the DXGI adapter
-  if (SUCCEEDED(
-          pAdapter->QueryInterface(__uuidof(IMTLDXGIAdatper),
-                                   reinterpret_cast<void **>(&dxgi_adapter)))) {
-
-  } else {
+  if (FAILED(pAdapter->QueryInterface(IID_PPV_ARGS(&dxgi_adapter)))) {
     ERR("Not a DXMT adapter");
     return E_INVALIDARG;
   }
@@ -65,11 +61,9 @@ D3D11CoreCreateDevice(IDXGIFactory *pFactory, IDXGIAdapter *pAdapter,
   try {
     Logger::info(str::format("Using feature level ", devFeatureLevel));
 
-    Com<IMTLDXGIDevice> device =
-        NewMTLD3D11DXGIDevice(dxgi_adapter.ptr(), devFeatureLevel, Flags);
+    auto device = CreateD3D11Device(dxgi_adapter.ptr(), devFeatureLevel, Flags);
 
-    return device->QueryInterface(__uuidof(ID3D11Device),
-                                  reinterpret_cast<void **>(ppDevice));
+    return device->QueryInterface(IID_PPV_ARGS(ppDevice));
   } catch (const MTLD3DError &e) {
     Logger::err("D3D11CoreCreateDevice: Failed to create D3D11 device");
     return E_FAIL;

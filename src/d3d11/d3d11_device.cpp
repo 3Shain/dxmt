@@ -5,14 +5,16 @@
 #include "d3d11_context_state.hpp"
 #include "d3d11_device.hpp"
 #include "d3d11_input_layout.hpp"
+#include "d3d11_private.h"
 #include "d3d11_query.hpp"
 #include "d3d11_swapchain.hpp"
 #include "d3d11_shader.hpp"
 #include "d3d11_state_object.hpp"
+#include "dxgi_interfaces.h"
 #include "mtld11_resource.hpp"
 #include "winemacdrv.h"
 #include "com/com_aggregatable.hpp"
-#include "dxgi_object.h"
+#include "dxgi_object.hpp"
 #include <winerror.h>
 
 namespace dxmt {
@@ -912,15 +914,13 @@ HRESULT STDMETHODCALLTYPE MTLD3D11Device::OpenSharedResource(
     HANDLE hResource, REFIID ReturnedInterface, void **ppResource){IMPLEMENT_ME}
 
 HRESULT STDMETHODCALLTYPE MTLD3D11Device::CheckFormatSupport(
-    DXGI_FORMAT Format, UINT *pFormatSupport) {
-  return m_features.CheckSupportedFormat(Format, pFormatSupport);
-}
+    DXGI_FORMAT Format, UINT *pFormatSupport){IMPLEMENT_ME}
 
 HRESULT STDMETHODCALLTYPE MTLD3D11Device::CheckMultisampleQualityLevels(
     DXGI_FORMAT Format, UINT SampleCount, UINT *pNumQualityLevels) {
-
-  const auto pfmt = g_metal_format_map[Format];
-  if (pfmt.pixel_format == MTL::PixelFormatInvalid) {
+  METAL_FORMAT_DESC desc;
+  m_container->adapter_->QueryFormatDesc(Format, &desc);
+  if (desc.PixelFormat == MTL::PixelFormatInvalid) {
     return E_FAIL;
   }
 
@@ -928,7 +928,6 @@ HRESULT STDMETHODCALLTYPE MTLD3D11Device::CheckMultisampleQualityLevels(
   // FEATURE_LEVEL_11_0 devices are required to support 4x MSAA for all render
   // target formats, and 8x MSAA for all render target formats except
   // R32G32B32A32 formats.
-  // Hmmm I don't know
 
   // FIXME: seems some pixel format doesn't support MSAA
   // https://developer.apple.com/metal/Metal-Feature-Set-Tables.pdf
@@ -969,11 +968,8 @@ HRESULT STDMETHODCALLTYPE MTLD3D11Device::CheckFeatureSupport(
     if (FeatureSupportDataSize != sizeof(*info))
       return E_INVALIDARG;
 
-    return m_features.CheckSupportedFormat(info->InFormat,
-                                           &info->OutFormatSupport);
+    return CheckFormatSupport(info->InFormat, &info->OutFormatSupport);
   }
-    return S_OK;
-
   case D3D11_FEATURE_FORMAT_SUPPORT2: {
     auto info =
         static_cast<D3D11_FEATURE_DATA_FORMAT_SUPPORT2 *>(pFeatureSupportData);
@@ -981,11 +977,8 @@ HRESULT STDMETHODCALLTYPE MTLD3D11Device::CheckFeatureSupport(
     if (FeatureSupportDataSize != sizeof(*info))
       return E_INVALIDARG;
 
-    return m_features.CheckSupportedFormat2(info->InFormat,
-                                            &info->OutFormatSupport2);
+    IMPLEMENT_ME
   }
-    return S_OK;
-
   default:
     // For everything else, we can use the device feature struct
     // that we already initialized during device creation.
@@ -1224,7 +1217,7 @@ HRESULT STDMETHODCALLTYPE MTLD3D11DXGIDevice::CreateSwapChain(
                                pDesc, pFullscreenDesc, ppSwapChain);
 }
 
-IMTLDXGIDevice *NewMTLD3D11DXGIDevice(IMTLDXGIAdatper *adapter,
+Com<IMTLDXGIDevice> CreateD3D11Device(IMTLDXGIAdatper *adapter,
                                       D3D_FEATURE_LEVEL feature_level,
                                       UINT feature_flags) {
   return new MTLD3D11DXGIDevice(adapter, feature_level, feature_flags);

@@ -1,6 +1,6 @@
 #include "d3d11_inspection.hpp"
 
-#include "../dxgi/dxgi_format.hpp"
+#include "log/log.hpp"
 
 namespace dxmt {
 
@@ -140,42 +140,6 @@ HRESULT MTLD3D11Inspection::GetFeatureData(D3D11_FEATURE Feature,
     ERR("Not supported feature: ", Feature);
     return E_INVALIDARG;
   }
-}
-
-HRESULT MTLD3D11Inspection::CheckSupportedFormat(DXGI_FORMAT Format,
-                                                 UINT *pFlags) {
-
-  const auto pfmt = g_metal_format_map[Format];
-  if (pfmt.pixel_format == MTL::PixelFormatInvalid) {
-    return E_FAIL;
-  }
-
-  // TODO:
-
-  *pFlags =
-      D3D11_FORMAT_SUPPORT_BUFFER | D3D11_FORMAT_SUPPORT_IA_VERTEX_BUFFER |
-      D3D11_FORMAT_SUPPORT_TEXTURE1D | D3D11_FORMAT_SUPPORT_TEXTURE2D |
-      D3D11_FORMAT_SUPPORT_TEXTURE3D | D3D11_FORMAT_SUPPORT_TEXTURECUBE |
-      D3D11_FORMAT_SUPPORT_SHADER_LOAD | D3D11_FORMAT_SUPPORT_SHADER_SAMPLE |
-      D3D11_FORMAT_SUPPORT_MIP | D3D11_FORMAT_SUPPORT_MIP_AUTOGEN |
-      D3D11_FORMAT_SUPPORT_RENDER_TARGET | D3D11_FORMAT_SUPPORT_BLENDABLE |
-      D3D11_FORMAT_SUPPORT_CPU_LOCKABLE |
-      D3D11_FORMAT_SUPPORT_MULTISAMPLE_RESOLVE | D3D11_FORMAT_SUPPORT_DISPLAY |
-      D3D11_FORMAT_SUPPORT_CAST_WITHIN_BIT_LAYOUT |
-      D3D11_FORMAT_SUPPORT_MULTISAMPLE_RENDERTARGET |
-      D3D11_FORMAT_SUPPORT_MULTISAMPLE_LOAD |
-      D3D11_FORMAT_SUPPORT_SHADER_GATHER |
-      D3D11_FORMAT_SUPPORT_VIDEO_PROCESSOR_OUTPUT |
-      D3D11_FORMAT_SUPPORT_VIDEO_PROCESSOR_INPUT;
-
-  return S_OK;
-}
-
-HRESULT MTLD3D11Inspection::CheckSupportedFormat2(DXGI_FORMAT Format,
-                                                  UINT *pFlags) {
-  // D3D11_FORMAT_SUPPORT2_UAV_ATOMIC_ADD
-
-  return S_OK;
 }
 
 } // namespace dxmt
