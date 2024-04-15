@@ -1,8 +1,8 @@
 #pragma once
 
-#include "dxgi_private.h"
-
-#include "../util/com/com_private_data.h"
+#include "com/com_private_data.hpp"
+#include "com/com_object.hpp"
+#include "com/com_pointer.hpp"
 
 namespace dxmt {
 

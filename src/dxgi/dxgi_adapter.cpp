@@ -1,6 +1,10 @@
 #include "dxgi_adapter.h"
-#include "../util/wsi_monitor.h"
+#include "com/com_guid.hpp"
 #include "dxgi_output.h"
+#include "util_string.hpp"
+#include "log/log.hpp"
+#include "wsi_monitor.hpp"
+#include "dxgi_interfaces.h"
 
 namespace dxmt {
 
@@ -148,5 +152,9 @@ HRESULT STDMETHODCALLTYPE MTLDXGIAdatper::EnumOutputs(UINT Output,
 MTL::Device *STDMETHODCALLTYPE MTLDXGIAdatper::GetMTLDevice() {
   return m_deivce.ptr();
 }
+
+HRESULT STDMETHODCALLTYPE MTLDXGIAdatper::QueryFormatDesc(DXGI_FORMAT dxgiFormat, MTL_FORMAT_DESC* pMtlDesc) {
+  return S_OK;
+};
 
 } // namespace dxmt

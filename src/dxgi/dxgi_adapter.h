@@ -1,8 +1,9 @@
 #pragma once
 
+#include "dxgi_interfaces.h"
 #include "dxgi_object.h"
-#include "dxgi_private.h"
 #include "dxgi_factory.h"
+#include "objc_pointer.hpp"
 
 namespace dxmt {
 
@@ -28,5 +29,7 @@ private:
   Obj<MTL::Device> m_deivce;
   Com<MTLDXGIFactory> m_factory;
 };
+
+
 
 } // namespace dxmt

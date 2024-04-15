@@ -1,12 +1,12 @@
 #pragma once
-
-#include "com_include.h"
+#include <unknwn.h>
 
 namespace dxmt {
 /*
 \see https://learn.microsoft.com/en-us/windows/win32/com/aggregation
 */
-template <typename Outer, typename Inner> class ComAggregatedObject : public Inner {
+template <typename Outer, typename Inner>
+class ComAggregatedObject : public Inner {
 
 public:
   ComAggregatedObject(Outer *outer) noexcept : outer_(outer) {}

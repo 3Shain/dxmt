@@ -1,13 +1,19 @@
 #include "d3d11_swapchain.hpp"
-#include "../dxgi/dxgi_format.hpp"
+#include "com/com_guid.hpp"
+#include "dxgi_format.hpp"
+#include "dxgi_object.h"
 #include "Foundation/NSAutoreleasePool.hpp"
 #include "Metal/MTLPixelFormat.hpp"
 #include "Metal/MTLTexture.hpp"
 #include "d3d11_context.hpp"
-#include "../util/wsi_window.h"
+#include "log/log.hpp"
+#include "util_error.hpp"
 #include "d3d11_device.hpp"
 
 #include "objc-wrapper/dispatch.h"
+#include "objc_pointer.hpp"
+#include "util_string.hpp"
+#include "wsi_window.hpp"
 #include <cassert>
 
 namespace dxmt {
@@ -53,62 +59,6 @@ private:
   void *native_view_;
 };
 
-class __SwapChainTexture {
-public:
-  static const D3D11_RESOURCE_DIMENSION Dimension =
-      D3D11_RESOURCE_DIMENSION_TEXTURE2D;
-  static const D3D11_USAGE Usage = D3D11_USAGE_DEFAULT;
-  typedef D3D11_TEXTURE2D_DESC Description;
-  typedef ID3D11Texture2D Interface;
-  typedef EmulatedSwapChain *Data;
-
-  __SwapChainTexture(IMTLD3D11Device *pDevice, Data data,
-                     const Description *pDesc,
-                     const D3D11_SUBRESOURCE_DATA *pData)
-      : swapchain(data) {}
-
-  Data swapchain;
-  IMTLD3D11Device *__device__;
-  Interface *__resource__;
-
-  HRESULT CreateRenderTargetView(const D3D11_RENDER_TARGET_VIEW_DESC *desc,
-                                 ID3D11RenderTargetView **ppvRTV) {
-    if (desc) {
-      if (desc->ViewDimension != D3D11_RTV_DIMENSION_TEXTURE2D &&
-          desc->ViewDimension != D3D11_RTV_DIMENSION_UNKNOWN) {
-        ERR("Try to create a non 2D texture RTV from swap chain buffer");
-        return E_INVALIDARG;
-      }
-    }
-
-    D3D11_RENDER_TARGET_VIEW_DESC true_desc;
-    true_desc.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D;
-    true_desc.Format = DXGI_FORMAT_UNKNOWN; // FIXME: sync with metal texture
-    true_desc.Texture2D.MipSlice = 0;       // must be 0
-
-    // FIXME: format check?
-
-    *ppvRTV = ref(
-        new TMTLD3D11RenderTargetView<__SwapChainTexture, EmulatedSwapChain *>(
-            __device__, __resource__, desc == nullptr ? &true_desc : desc,
-            swapchain));
-    return S_OK;
-  }
-};
-
-using SwapChainRenderTargetView =
-    TMTLD3D11RenderTargetView<__SwapChainTexture, EmulatedSwapChain *>;
-
-template <> MTL::PixelFormat SwapChainRenderTargetView::GetPixelFormat() {
-  return data_->layer()->pixelFormat();
-}
-
-template <> RenderTargetBinding *SwapChainRenderTargetView::Pin() {
-  return new SimpleLazyTextureRenderTargetBinding(
-      [this]() { return (this->data_->GetCurrentFrameBackBuffer()); },
-      desc_.Texture2D.MipSlice, 0);
-}
-
 class MTLD3D11SwapChain final : public MTLDXGISubObject<IDXGISwapChain1> {
 public:
   MTLD3D11SwapChain(IDXGIFactory1 *pFactory, IMTLDXGIDevice *pDevice, HWND hWnd,
@@ -148,8 +98,8 @@ public:
     swapchain_.layer()->setDrawableSize(
         {.width = (double)desc.Width, .height = (double)desc.Height});
     swapchain_.layer()->setPixelFormat(metal_format.pixel_format);
-    buffer_delegate_ = new D3D11Resource<__SwapChainTexture>(
-        device_.ptr(), &swapchain_, &desc, NULL);
+    // buffer_delegate_ = new D3D11Resource<__SwapChainTexture>(
+    //     device_.ptr(), &swapchain_, &desc, NULL);
 
     Com<ID3D11DeviceContext1> context;
     device_->GetImmediateContext1(&context);
@@ -263,8 +213,8 @@ public:
     desc.Width = desc_.Width;
     desc.Height = desc_.Height;
     desc.Format = format;
-    buffer_delegate_ = new D3D11Resource<__SwapChainTexture>(
-        device_.ptr(), &swapchain_, &desc, NULL);
+    // buffer_delegate_ = new D3D11Resource<__SwapChainTexture>(
+    //     device_.ptr(), &swapchain_, &desc, NULL);
     return S_OK;
   };
 
@@ -340,19 +290,19 @@ public:
 
     auto w = transfer(NS::AutoreleasePool::alloc()->init());
 
-    device_context_->Flush2([&swapchain_ = swapchain_, semaphore = semaphore,
-                             presentation_count_ = presentation_count_](
-                                MTL::CommandBuffer *cbuffer) {
-      // swapchain_.GetCurrentFrameBackBuffer(); // ensure not null
-      cbuffer->presentDrawable(swapchain_.CurrentDrawable());
-      // cbuffer->addCompletedHandler(
-      //     [presentation_count_](void *cbuffer) {
-      //       unix_printf("A frame end. pc: %d\n", presentation_count_);
-      //       // dispatch_semaphore_signal(semaphore);
-      //     });
-          // assert(0);
-    });
-    swapchain_.Swap();
+    // device_context_->Flush2([&swapchain_ = swapchain_, semaphore = semaphore,
+    //                          presentation_count_ = presentation_count_](
+    //                             MTL::CommandBuffer *cbuffer) {
+    //   // swapchain_.GetCurrentFrameBackBuffer(); // ensure not null
+    //   cbuffer->presentDrawable(swapchain_.CurrentDrawable());
+    //   // cbuffer->addCompletedHandler(
+    //   //     [presentation_count_](void *cbuffer) {
+    //   //       unix_printf("A frame end. pc: %d\n", presentation_count_);
+    //   //       // dispatch_semaphore_signal(semaphore);
+    //   //     });
+    //       // assert(0);
+    // });
+    // swapchain_.Swap();
 
     presentation_count_ += 1;
 

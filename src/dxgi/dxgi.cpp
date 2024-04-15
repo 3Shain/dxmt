@@ -1,5 +1,6 @@
 #include "dxgi_private.h"
 #include "dxgi_factory.h"
+#include "log/log.hpp"
 
 namespace dxmt {
 Logger Logger::s_instance("dxgi.log");

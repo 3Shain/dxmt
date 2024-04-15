@@ -1,4 +1,5 @@
 #include "./d3d11_names.hpp"
+#include "util_names.hpp"
 
 std::ostream &operator<<(std::ostream &os, D3D_FEATURE_LEVEL e) {
   switch (e) {

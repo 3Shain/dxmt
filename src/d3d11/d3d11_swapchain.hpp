@@ -1,9 +1,7 @@
 #pragma once
 
-#include "d3d11_device.hpp"
-#include "mtld11_resource.hpp"
-#include "../dxgi/dxgi_object.h"
-#include "d3d11_view.hpp"
+#include "dxgi1_2.h"
+#include "../dxgi/dxgi_interfaces.h"
 
 namespace dxmt {
 

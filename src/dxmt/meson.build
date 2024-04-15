@@ -4,11 +4,8 @@ dxmt_src = [
   'dxmt_format.cpp',
 ]
 
-dxmt_extra_deps = [ ]
-
 dxmt_lib = static_library('dxmt', dxmt_src,
-  link_with           : [ util_lib ],
-  dependencies        : dxmt_extra_deps,
+  dependencies        : [ util_dep ],
   include_directories : [ dxmt_include_path ],
 )
 

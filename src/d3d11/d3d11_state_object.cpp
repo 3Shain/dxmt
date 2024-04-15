@@ -1,5 +1,9 @@
 #include "d3d11_state_object.hpp"
+#include "com/com_guid.hpp"
+#include "com/com_pointer.hpp"
 #include "d3d11_device.hpp"
+#include "log/log.hpp"
+#include "util_string.hpp"
 
 namespace dxmt {
 

@@ -2,6 +2,7 @@
 
 #include "Metal/MTLDevice.hpp"
 #include "Metal/MTLPixelFormat.hpp"
+#include "ftl.hpp"
 #include <map>
 
 namespace dxmt {
@@ -16,11 +17,6 @@ enum class FormatCapability {
   Resolve = 0x80,
 };
 
-inline FormatCapability operator|(FormatCapability a, FormatCapability b) {
-  return static_cast<FormatCapability>(static_cast<int>(a) |
-                                       static_cast<int>(b));
-}
-
 const FormatCapability ALL_CAP = static_cast<FormatCapability>(0xFE);
 const FormatCapability NO_ATOMIC_RESOLVE = static_cast<FormatCapability>(0x88);
 const FormatCapability APPLE_INT_FORMAT_CAP =
@@ -33,7 +29,7 @@ const FormatCapability APPLE_INT_FORMAT_CAP_32 =
 
 class FormatCapabilityInspector {
 public:
-  std::map<MTL::PixelFormat,FormatCapability> textureCapabilities{};
+  std::map<MTL::PixelFormat, FormatCapability> textureCapabilities{};
   void Inspect(MTL::Device *device);
 };
 } // namespace dxmt

@@ -1,7 +1,9 @@
 #pragma once
-#include "d3d11_private.h"
-#include "d3d11_device_child.h"
-#include "../util/sha1/sha1_util.h"
+#include "d3d11_device_child.hpp"
+#include "log/log.hpp"
+#include "sha1/sha1_util.hpp"
+#include "util_string.hpp"
+#include <cassert>
 #include <cstdlib>
 
 namespace dxmt {

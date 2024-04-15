@@ -1,12 +1,9 @@
 
 #pragma once
-#include "../util/objc_pointer.h"
-#include "../util/rc/util_rc.h"
-#include "../util/rc/util_rc_ptr.h"
+#include "objc_pointer.hpp"
+#include "rc/util_rc.hpp"
 #include "Metal/MTLArgumentEncoder.hpp"
 #include "Metal/MTLRenderPipeline.hpp"
-#include "dxmt_binding.hpp"
-#include <unordered_map>
 namespace dxmt {
 
 struct RenderPipelineCacheEntry {

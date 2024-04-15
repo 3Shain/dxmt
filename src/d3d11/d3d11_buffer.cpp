@@ -1,6 +1,0 @@
-
-
-namespace dxmt {
-
-
-} // namespace dxmt

@@ -1,8 +1,18 @@
-#include "wsi_window.h"
-#include "wsi_monitor.h"
+/*
+ * This file is part of DXMT, Copyright (c) 2023 Feifan He
+ *
+ * Derived from a part of DXVK (originally under zlib License),
+ * Copyright (c) 2017 Philip Rebohle
+ * Copyright (c) 2019 Joshua Ashton
+ *
+ * See <https://github.com/doitsujin/dxvk/blob/master/LICENSE>
+ */
 
-#include "util_string.h"
-#include "log/log.h"
+#include "wsi_window.hpp"
+#include "wsi_monitor.hpp"
+
+#include "util_string.hpp"
+#include "log/log.hpp"
 
 namespace dxmt::wsi {
 

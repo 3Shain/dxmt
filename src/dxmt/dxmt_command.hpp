@@ -1,6 +1,6 @@
 #pragma once
-#include "../util/rc/util_rc.h"
-#include "../util/rc/util_rc_ptr.h"
+#include "rc/util_rc.hpp"
+#include "rc/util_rc_ptr.hpp"
 
 #include <variant>
 

@@ -1,6 +1,5 @@
 #pragma once
-#include "d3d11_private.h"
-#include "../dxgi/dxgi_format.hpp"
+#include "d3d11_1.h"
 
 namespace dxmt {
 class MTLDXGIResource : public IDXGIResource1 {

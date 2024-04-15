@@ -1,4 +1,5 @@
 #include "d3d11_context_state.hpp"
+#include "com/com_guid.hpp"
 
 namespace dxmt {
 

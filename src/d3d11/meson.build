@@ -1,7 +1,6 @@
 d3d11_res = wrc_generator.process('version.rc')
 
 d3d11_src = [
-  'd3d11_buffer.cpp',
   'd3d11_class_linkage.cpp',
   'd3d11_context_state.cpp',
   'd3d11_context.cpp',
@@ -26,11 +25,14 @@ d3d11_link_depends = []
 
 d3d11_dll = shared_library('d3d11', d3d11_src, d3d11_res,
   name_prefix         : '',
-  dependencies        : [ dxgi_dep, 
-  DXBCParser_dep,
-  airconv_dep,
-  dxmt_dep, winemetal_dep ],
-  include_directories : dxmt_include_path,
+  dependencies        : [ 
+    dxgi_dep, 
+    DXBCParser_dep,
+    airconv_dep,
+    dxmt_dep,
+    winemetal_dep,
+    util_dep ],
+  include_directories : [ dxmt_include_path ],
   install             : true,
   vs_module_defs      : 'd3d11.def',
   link_args           : d3d11_ld_args,

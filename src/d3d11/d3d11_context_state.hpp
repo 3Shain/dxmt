@@ -1,4 +1,5 @@
 #pragma once
+#include "d3d11_device_child.hpp"
 #include "mtld11_state.hpp"
 
 namespace dxmt {

@@ -1,9 +1,8 @@
 #pragma once
 
 #include "d3d11_device.hpp"
-#include "d3d11_private.h"
-
-#include "../util/com/com_private_data.h"
+#include "com/com_object.hpp"
+#include "com/com_private_data.hpp"
 
 namespace dxmt {
 

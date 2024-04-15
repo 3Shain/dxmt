@@ -1,6 +1,6 @@
 #include "./dxmt_command_stream.hpp"
-#include "../util/objc_pointer.h"
-#include "../util/util_error.h"
+#include "objc_pointer.hpp"
+#include "util_error.hpp"
 #include "Foundation/NSRange.hpp"
 #include "Metal/MTLBuffer.hpp"
 #include "Metal/MTLRenderPass.hpp"
@@ -10,9 +10,6 @@
 #include "dxmt_precommand.hpp"
 #include <cstddef>
 #include <cstdint>
-#include <unordered_map>
-#include <utility>
-#include <variant>
 #include "Metal/MTLDevice.hpp"
 
 namespace dxmt {

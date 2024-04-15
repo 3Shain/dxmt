@@ -1,23 +1,18 @@
-#include "d3d11_buffer.hpp"
+#include "com/com_guid.hpp"
 #include "d3d11_class_linkage.hpp"
 #include "d3d11_inspection.hpp"
 #include "d3d11_context.hpp"
 #include "d3d11_context_state.hpp"
 #include "d3d11_device.hpp"
 #include "d3d11_input_layout.hpp"
-#include "d3d11_private.h"
-#include "d3d11_query.h"
-// #include "d3d11_buffer.hpp"
+#include "d3d11_query.hpp"
 #include "d3d11_swapchain.hpp"
-#include "d3d11_texture.hpp"
-#include "d3d11_shader.h"
+#include "d3d11_shader.hpp"
 #include "d3d11_state_object.hpp"
 #include "mtld11_resource.hpp"
-#include "d3d11_view.hpp"
 #include "winemacdrv.h"
-
-#include "../util/com/com_private_data.h"
-#include "../dxgi/dxgi_object.h"
+#include "com/com_aggregatable.hpp"
+#include "dxgi_object.h"
 #include <winerror.h>
 
 namespace dxmt {
@@ -229,11 +224,6 @@ public:
 
   MTL::Device *STDMETHODCALLTYPE GetMTLDevice();
 
-  void STDMETHODCALLTYPE CopyToPrivate(MTL::Buffer *src, MTL::Buffer *dst,
-                                       uint64_t size) final{
-      // auto s = transfer()
-  };
-
 private:
   Com<MTLD3D11DXGIDevice> m_container;
   D3D_FEATURE_LEVEL m_FeatureLevel;
@@ -380,29 +370,11 @@ HRESULT STDMETHODCALLTYPE MTLD3D11Device::CreateBuffer(
 
   try {
     switch (pDesc->Usage) {
-    case D3D11_USAGE_IMMUTABLE: {
-      *ppBuffer = ref(
-          new D3D11Resource<ImmutableBuffer>(this, NULL, pDesc, pInitialData));
-      ;
+    case D3D11_USAGE_DEFAULT:
+    case D3D11_USAGE_IMMUTABLE:
+    case D3D11_USAGE_DYNAMIC:
+    case D3D11_USAGE_STAGING:
       break;
-    }
-    case D3D11_USAGE_DEFAULT: {
-
-      IMPLEMENT_ME;
-      break;
-    }
-    case D3D11_USAGE_DYNAMIC: {
-      *ppBuffer =
-          ref(new D3D11Resource<DynamicBuffer>(this, 0, pDesc, pInitialData));
-
-      break;
-    }
-    case D3D11_USAGE_STAGING: {
-      *ppBuffer =
-          ref(new D3D11Resource<StagingBuffer>(this, 0, pDesc, pInitialData));
-      ;
-      break;
-    }
     }
     return S_OK;
   } catch (const MTLD3DError &err) {
@@ -421,7 +393,7 @@ HRESULT STDMETHODCALLTYPE MTLD3D11Device::CreateTexture1D(
     return E_INVALIDARG;
 
   if (pDesc->MiscFlags & D3D11_RESOURCE_MISC_TILED)
-    return E_INVALIDARG; // not supported
+    return E_INVALIDARG; // not supported yet
 
   IMPLEMENT_ME;
 }
@@ -435,18 +407,12 @@ HRESULT STDMETHODCALLTYPE MTLD3D11Device::CreateTexture2D(
     return E_INVALIDARG;
 
   if ((pDesc->MiscFlags & D3D11_RESOURCE_MISC_TILED))
-    return E_INVALIDARG; // not supported
+    return E_INVALIDARG; // not supported yet
 
   try {
     switch (pDesc->Usage) {
     case D3D11_USAGE_DEFAULT:
-      *ppTexture2D = ref(
-          new D3D11Resource<DefaultTexture2D>(this, 0, pDesc, pInitialData));
-      break;
     case D3D11_USAGE_IMMUTABLE:
-      *ppTexture2D = ref(
-          new D3D11Resource<ImmutableTexture2D>(this, 0, pDesc, pInitialData));
-      break;
     case D3D11_USAGE_DYNAMIC:
 
       IMPLEMENT_ME;
@@ -474,7 +440,7 @@ HRESULT STDMETHODCALLTYPE MTLD3D11Device::CreateTexture3D(
     return E_INVALIDARG;
 
   if ((pDesc->MiscFlags & D3D11_RESOURCE_MISC_TILED))
-    return E_INVALIDARG; // not supported
+    return E_INVALIDARG; // not supported yet
 
   IMPLEMENT_ME;
 }

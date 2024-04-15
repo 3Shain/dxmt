@@ -1,11 +1,17 @@
 #include "d3d11_input_layout.hpp"
 #include "DXBCParser/d3d12tokenizedprogramformat.hpp"
 #include "Foundation/NSAutoreleasePool.hpp"
-#include "d3d11_device_child.h"
+#include "com/com_guid.hpp"
+#include "d3d11_device_child.hpp"
 
-#include "../dxgi/dxgi_format.hpp"
+#include "dxgi_format.hpp"
+
+#include "com/com_pointer.hpp"
 
 #include "DXBCParser/DXBCUtils.h"
+#include "log/log.hpp"
+#include "objc_pointer.hpp"
+#include "util_string.hpp"
 #include <algorithm>
 
 namespace dxmt {

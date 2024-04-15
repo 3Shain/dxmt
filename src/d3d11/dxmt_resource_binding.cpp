@@ -1,4 +1,7 @@
 #include "dxmt_resource_binding.hpp"
+#include <cassert>
+
+#define ASSUME(x) assert(x)
 
 namespace dxmt {
 

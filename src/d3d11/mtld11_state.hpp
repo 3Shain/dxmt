@@ -1,11 +1,10 @@
 #pragma once
+
+#include "com/com_pointer.hpp"
 #include "d3d11_input_layout.hpp"
-#include "d3d11_private.h"
-// #include "d3d11_buffer.hpp"
-#include "d3d11_shader.h"
+#include "d3d11_shader.hpp"
 #include "d3d11_state_object.hpp"
 #include "d3d11_view.hpp"
-
 namespace dxmt {
 
 typedef struct {
@@ -81,6 +80,8 @@ typedef struct {
   UINT cbv_constant_nums[D3D11_COMMONSHADER_CONSTANT_BUFFER_API_SLOT_COUNT];
   Com<MTLD3D11ComputeShader> shader;
 } D3D11ComputeStageState;
+
+struct D3D11ShaderStageState {};
 
 typedef struct {
   Com<ID3D11Buffer> vertex_buffers[D3D11_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT];

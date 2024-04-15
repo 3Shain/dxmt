@@ -1,4 +1,7 @@
 #include "d3d11_resource.hpp"
+#include "com/com_pointer.hpp"
+#include "d3d11_private.h"
+#include "log/log.hpp"
 
 namespace dxmt {
 

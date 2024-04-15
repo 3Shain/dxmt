@@ -1,6 +1,6 @@
 #pragma once
-#include "../util/rc/util_rc.h"
-#include "../util/objc_pointer.h"
+#include "rc/util_rc.hpp"
+#include "objc_pointer.hpp"
 
 #include "Metal/MTLArgumentEncoder.hpp"
 #include "Metal/MTLBlitCommandEncoder.hpp"
@@ -14,8 +14,8 @@
 #include <cstdint>
 #include <cstring>
 
-#include "../util/util_string.h"
-#include "../util/log/log.h"
+#include "util_string.hpp"
+#include "log/log.hpp"
 
 namespace dxmt {
 

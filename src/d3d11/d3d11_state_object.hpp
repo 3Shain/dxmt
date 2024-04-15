@@ -1,9 +1,10 @@
 #pragma once
 
-#include "d3d11_device_child.h"
+#include "d3d11_device_child.hpp"
 #include "Metal/MTLRenderCommandEncoder.hpp"
 #include "Metal/MTLRenderPipeline.hpp"
 #include "Metal/MTLSampler.hpp"
+#include "objc_pointer.hpp"
 
 namespace dxmt {
 

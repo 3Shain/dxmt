@@ -2,8 +2,11 @@
 #include <algorithm>
 #include <numeric>
 
-#include "../util/wsi_window.h"
-#include "../util/wsi_monitor.h"
+#include "com/com_guid.hpp"
+#include "log/log.hpp"
+#include "util_string.hpp"
+#include "wsi_window.hpp"
+#include "wsi_monitor.hpp"
 
 namespace dxmt {
 

@@ -5,9 +5,14 @@
 #include "Metal/MTLRenderPass.hpp"
 #include "QuartzCore/CAMetalLayer.hpp"
 
+struct MTL_FORMAT_DESC {
+
+};
+
 MIDL_INTERFACE("acdf3ef1-b33a-4cb6-97bd-1c1974827e6d")
 IMTLDXGIAdatper : public IDXGIAdapter2 {
   virtual MTL::Device *STDMETHODCALLTYPE GetMTLDevice() = 0;
+  virtual HRESULT STDMETHODCALLTYPE QueryFormatDesc(DXGI_FORMAT dxgiFormat, MTL_FORMAT_DESC* pMtlFormatDesc) = 0;
 };
 __CRT_UUID_DECL(IMTLDXGIAdatper, 0xacdf3ef1, 0xb33a, 0x4cb6, 0x97, 0xbd, 0x1c,
                 0x19, 0x74, 0x82, 0x7e, 0x6d);

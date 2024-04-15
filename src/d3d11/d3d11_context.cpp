@@ -1,13 +1,6 @@
-
-
-#include "Foundation/NSError.hpp"
-#include "Foundation/NSString.hpp"
-#include "Foundation/NSURL.hpp"
 #include "Metal/MTLCaptureManager.hpp"
-#include "Metal/MTLRenderCommandEncoder.hpp"
-#include "Metal/MTLStageInputOutputDescriptor.hpp"
-#include "d3d11_buffer.hpp"
-#include "d3d11_device_child.h"
+#include "com/com_guid.hpp"
+#include "d3d11_device_child.hpp"
 #include "d3d11_context_state.hpp"
 
 #include "Metal/MTLCommandBuffer.hpp"
@@ -15,24 +8,70 @@
 
 #include "../dxmt/dxmt_command_stream.hpp"
 
-#include "d3d11_state_object.hpp"
-#include "d3d11_view.hpp"
+#include "d3d11_query.hpp"
 #include "d3d11_context.hpp"
-#include "d3d11_private.h"
 #include "d3d11_device.hpp"
-#include "d3d11_query.h"
-#include "d3d11_shader.h"
-
-#include "Metal/MTLLibrary.hpp"
-#include "mtld11_resource.hpp"
-
-// #include "objc-wrapper/block.hpp"
-#include <vector>
-#include "../dxmt/dxmt_pipeline.hpp"
-
-#include "../airconv/airconv_public.h"
+#include "d3d11_shader.hpp"
 
 namespace dxmt {
+
+auto to_metal_topology(D3D11_PRIMITIVE_TOPOLOGY topo) {
+
+  switch (topo) {
+  case D3D_PRIMITIVE_TOPOLOGY_POINTLIST:
+    return MTL::PrimitiveTypePoint;
+  case D3D_PRIMITIVE_TOPOLOGY_LINELIST:
+    return MTL::PrimitiveTypeLine;
+  case D3D_PRIMITIVE_TOPOLOGY_LINESTRIP:
+    return MTL::PrimitiveTypeLineStrip;
+  case D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST:
+    return MTL::PrimitiveTypeTriangle;
+  case D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP:
+    return MTL::PrimitiveTypeTriangleStrip;
+  case D3D_PRIMITIVE_TOPOLOGY_LINELIST_ADJ:
+  case D3D_PRIMITIVE_TOPOLOGY_LINESTRIP_ADJ:
+  case D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST_ADJ:
+  case D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP_ADJ:
+    // FIXME
+    return MTL::PrimitiveTypePoint;
+  case D3D_PRIMITIVE_TOPOLOGY_1_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_2_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_3_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_4_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_5_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_6_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_7_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_8_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_9_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_10_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_11_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_12_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_13_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_14_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_15_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_16_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_17_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_18_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_19_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_20_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_21_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_22_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_23_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_24_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_25_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_26_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_27_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_28_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_29_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_30_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_31_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_32_CONTROL_POINT_PATCHLIST:
+    // FIXME
+    return MTL::PrimitiveTypePoint;
+  case D3D_PRIMITIVE_TOPOLOGY_UNDEFINED:
+    throw MTLD3DError("Invalid topology");
+  }
+}
 
 class MTLD3D11DeviceContext
     : public MTLD3D11DeviceChild<IMTLD3D11DeviceContext> {
@@ -104,28 +143,17 @@ public:
   HRESULT STDMETHODCALLTYPE Map(ID3D11Resource *pResource, UINT Subresource,
                                 D3D11_MAP MapType, UINT MapFlags,
                                 D3D11_MAPPED_SUBRESOURCE *pMappedResource) {
-    auto resource = Com<IDXMTResource>::queryFrom(pResource);
-    if (resource == nullptr) {
-      return E_INVALIDARG;
-    }
-    if (MapType == D3D11_MAP_WRITE_DISCARD) {
-      return resource->MapDiscard(
-          Subresource, (MappedResource *)pMappedResource, stream_.ptr());
-    }
+
     IMPLEMENT_ME;
   }
 
   void STDMETHODCALLTYPE Unmap(ID3D11Resource *pResource, UINT Subresource) {
-    auto resource = Com<IDXMTResource>::queryFrom(pResource);
-    if (resource == nullptr) {
-      return;
-    }
-    resource->Unmap(Subresource);
+
+    IMPLEMENT_ME;
   }
 
   void STDMETHODCALLTYPE Flush() {
     Flush2([](auto) {});
-    pipelineUpToDate = false;
   }
 
   void STDMETHODCALLTYPE ExecuteCommandList(ID3D11CommandList *pCommandList,
@@ -153,10 +181,8 @@ public:
 
   void STDMETHODCALLTYPE ClearRenderTargetView(
       ID3D11RenderTargetView *pRenderTargetView, const FLOAT ColorRGBA[4]) {
-    if (auto rtv = Com<IMTLD3D11RenderTargetView>::queryFrom(pRenderTargetView);
-        rtv != nullptr) {
-      stream_->Emit(MTLCommandClearRenderTargetView(rtv->Pin(), ColorRGBA));
-    }
+
+    IMPLEMENT_ME;
   }
 
   void STDMETHODCALLTYPE ClearUnorderedAccessViewUint(
@@ -171,14 +197,7 @@ public:
 
   void STDMETHODCALLTYPE
   ClearDepthStencilView(ID3D11DepthStencilView *pDepthStencilView,
-                        UINT ClearFlags, FLOAT Depth, UINT8 Stencil) {
-    if (auto dsv = Com<IMTLD3D11DepthStencilView>::queryFrom(pDepthStencilView);
-        dsv != nullptr) {
-      stream_->Emit(MTLCommandClearDepthStencilView(
-          dsv->Pin(stream_.ptr()), Depth, Stencil,
-          ClearFlags & D3D11_CLEAR_DEPTH, ClearFlags & D3D11_CLEAR_STENCIL));
-    };
-  }
+                        UINT ClearFlags, FLOAT Depth, UINT8 Stencil) {}
 
   void STDMETHODCALLTYPE ClearView(ID3D11View *pView, const FLOAT Color[4],
                                    const D3D11_RECT *pRect, UINT NumRects) {
@@ -192,14 +211,6 @@ public:
     if (desc.ViewDimension == D3D11_SRV_DIMENSION_BUFFER ||
         desc.ViewDimension == D3D11_SRV_DIMENSION_BUFFEREX) {
       return;
-    }
-    if (auto c =
-            Com<IMTLD3D11ShaderResourceView>::queryFrom(pShaderResourceView);
-        c != nullptr) {
-
-      stream_->Emit(MTLBlitCommand([](MTL::BlitCommandEncoder *encoder) {
-        encoder->generateMipmaps(nullptr);
-      }));
     }
   }
 
@@ -240,9 +251,6 @@ public:
   void STDMETHODCALLTYPE
   CopyStructureCount(ID3D11Buffer *pDstBuffer, UINT DstAlignedByteOffset,
                      ID3D11UnorderedAccessView *pSrcView) {
-
-    // allows the hidden count in a Count/Append UAV to be copied to another
-    // Buffer.
     IMPLEMENT_ME
   }
 
@@ -310,146 +318,10 @@ public:
 
 #pragma region DrawCall
 
-  void CheckGraphicsPipeline() {
-    // if (state_.hull_stage.shader != nullptr &&
-    //     state_.domain_stage.shader != nullptr) {
-    //   // tessellation pipeline
-    // } else {
-    //   // classic pipeline
-
-    //   // calculate pipeline has
-
-    //   // search for prebuilt pipeline
-    // }
-
-    // TMP
-
-    if (!pipelineUpToDate) {
-      RenderPipelineCacheEntry key{
-          .VertexShaderRef = state_.vertex_stage.shader.ptr(),
-          .PixelShaderRef = state_.pixel_stage.shader.ptr()};
-      // look up history
-      Rc<RenderPipelineCache> cached = findCache(key);
-      if (cached != nullptr) {
-        stream_->Emit(MTLBindPipelineState(
-            [PSO = cached->PSO]() { return PSO.ptr(); },
-            cached->vertexFunctionArgumentEncoder.ptr(),
-            cached->fragmentFunctionArgumentEncoder.ptr()));
-      } else {
-        auto pool = transfer(NS::AutoreleasePool::alloc()->init());
-        WARN("cache miss");
-        Obj<NS::Error> err;
-        Obj<MTL::Function> vf;
-        Obj<MTL::Function> ff;
-        Obj<MTL::RenderPipelineDescriptor> ps;
-        MetalShaderReflection vs_ref, ps_ref;
-        {
-          auto options = transfer(MTL::CompileOptions::alloc()->init());
-          {
-            uint32_t size;
-            void *ptr;
-            ConvertDXBC(state_.vertex_stage.shader->m_bytecode,
-                        state_.vertex_stage.shader->m_bytecodeLength, &ptr,
-                        &size, &vs_ref);
-            assert(ptr);
-            auto dp = dispatch_data_create(ptr, size, nullptr, nullptr);
-            Obj<MTL::Library> vlib =
-                transfer(metal_device_->newLibrary(dp, &err));
-            assert(dp);
-
-            dispatch_release(dp);
-            free(ptr);
-
-            vf = transfer(vlib->newFunction(
-                NS::String::string("shader_main", NS::UTF8StringEncoding)));
-          }
-
-          {
-            uint32_t size;
-            void *ptr;
-            ConvertDXBC(state_.pixel_stage.shader->m_bytecode,
-                        state_.pixel_stage.shader->m_bytecodeLength, &ptr,
-                        &size, &ps_ref);
-            assert(ptr);
-            auto dp = dispatch_data_create(ptr, size, nullptr, nullptr);
-            Obj<MTL::Library> vlib =
-                transfer(metal_device_->newLibrary(dp, &err));
-            assert(dp);
-
-            dispatch_release(dp);
-            free(ptr);
-
-            ff = transfer(vlib->newFunction(
-                NS::String::string("shader_main", NS::UTF8StringEncoding)));
-          }
-
-          ps = transfer(MTL::RenderPipelineDescriptor::alloc()->init());
-
-          ps->setVertexFunction(vf.ptr());
-          ps->setFragmentFunction(ff.ptr());
-          ps->colorAttachments()->object(0)->setPixelFormat(
-              state_.output_merger.render_target_views[0]->GetPixelFormat());
-
-          if (state_.output_merger.depth_stencil_view != nullptr) {
-            ps->setDepthAttachmentPixelFormat(
-                state_.output_merger.depth_stencil_view->GetPixelFormat());
-            // ps->setStencilAttachmentPixelFormat(
-            //     state_.output_merger.depth_stencil_view->GetPixelFormat());
-            // FIXME: pass validator
-          }
-
-          std::array<uint32_t, 16> strides;
-          memcpy(&strides[0], state_.input_assembler.strides, 4 * 16);
-          state_.input_assembler.input_layout->Bind(ps.ptr(), strides);
-        }
-        auto state =
-            transfer(metal_device_->newRenderPipelineState(ps.ptr(), &err));
-
-        if (state == nullptr) {
-          ERR(err->localizedDescription()->utf8String());
-          throw MTLD3DError("Failed to create PSO");
-        }
-
-        auto ve = transfer(vs_ref.has_binding_map ? vf->newArgumentEncoder(30)
-                                                  : nullptr);
-        auto fe = transfer(ps_ref.has_binding_map ? ff->newArgumentEncoder(30)
-                                                  : nullptr);
-
-        stream_->Emit(MTLBindPipelineState(
-            [state = state]() { return state.ptr(); }, ve.ptr(), fe.ptr()));
-
-        setCache(key, new RenderPipelineCache(state.ptr(), ve.ptr(), fe.ptr()));
-      }
-      pipelineUpToDate = true;
-    }
-  }
-
-  void STDMETHODCALLTYPE Draw(UINT VertexCount, UINT StartVertexLocation) {
-    CheckGraphicsPipeline();
-    // FIXME: _ADJ _PATCHLIST not handled
-    auto primitive = g_topology_map[state_.input_assembler.topology];
-    stream_->Emit(MTLRenderCommand([=](MTL::RenderCommandEncoder *encoder) {
-      encoder->drawPrimitives(primitive, StartVertexLocation, VertexCount);
-    }));
-  }
+  void STDMETHODCALLTYPE Draw(UINT VertexCount, UINT StartVertexLocation) {}
 
   void STDMETHODCALLTYPE DrawIndexed(UINT IndexCount, UINT StartIndexLocation,
-                                     INT BaseVertexLocation) {
-    CheckGraphicsPipeline();
-    auto buffer = Com<IDXMTBufferResource>::queryFrom(
-        state_.input_assembler.index_buffer.ptr());
-    auto primitive = g_topology_map[state_.input_assembler.topology];
-    auto type =
-        (state_.input_assembler.index_buffer_format == DXGI_FORMAT_R32_UINT)
-            ? MTL::IndexTypeUInt32
-            : MTL::IndexTypeUInt16;
-    Rc<IndexBufferBinding> pinned = buffer->BindAsIndexBuffer(stream_.ptr());
-    auto offset = state_.input_assembler.index_buffer_offset;
-    stream_->Emit(MTLRenderCommand([=](MTL::RenderCommandEncoder *encoder) {
-      encoder->drawIndexedPrimitives(primitive, IndexCount, type, pinned->Get(),
-                                     offset, 1, BaseVertexLocation, 0);
-    }));
-  }
+                                     INT BaseVertexLocation) {}
 
   void STDMETHODCALLTYPE DrawInstanced(UINT VertexCountPerInstance,
                                        UINT InstanceCount,
@@ -531,33 +403,12 @@ public:
   void STDMETHODCALLTYPE IASetInputLayout(ID3D11InputLayout *pInputLayout) {
     state_.input_assembler.input_layout =
         static_cast<IMTLD3D11InputLayout *>(pInputLayout);
-    pipelineUpToDate = false;
   }
-  void STDMETHODCALLTYPE IAGetInputLayout(ID3D11InputLayout **ppInputLayout) {
-    if (ppInputLayout) {
-      *ppInputLayout = state_.input_assembler.input_layout.ref();
-    }
-  }
+  void STDMETHODCALLTYPE IAGetInputLayout(ID3D11InputLayout **ppInputLayout) {}
 
   void STDMETHODCALLTYPE IASetVertexBuffers(
       UINT StartSlot, UINT NumBuffers, ID3D11Buffer *const *ppVertexBuffers,
-      const UINT *pStrides, const UINT *pOffsets) {
-    for (unsigned i = 0; i < NumBuffers; i++) {
-      state_.input_assembler.vertex_buffers[i + StartSlot] = ppVertexBuffers[i];
-      state_.input_assembler.strides[i + StartSlot] = pStrides[i];
-      state_.input_assembler.offsets[i + StartSlot] = pOffsets[i];
-      if (ppVertexBuffers[i] != NULL) {
-
-        auto vbo = Com<IDXMTBufferResource>::queryFrom(ppVertexBuffers[i]);
-
-        stream_->Emit(
-            MTLSetVertexBuffer(i + StartSlot, pOffsets[i],
-                               vbo->BindAsVertexBuffer(stream_.ptr())));
-      } else {
-        stream_->Emit(MTLSetVertexBuffer(i + StartSlot, 0, nullptr));
-      }
-    }
-  }
+      const UINT *pStrides, const UINT *pOffsets) {}
   void STDMETHODCALLTYPE IAGetVertexBuffers(UINT StartSlot, UINT NumBuffers,
                                             ID3D11Buffer **ppVertexBuffers,
                                             UINT *pStrides, UINT *pOffsets) {
@@ -611,6 +462,25 @@ public:
   }
 #pragma endregion
 
+#pragma region ShaderCommon
+
+template<int shader_type>
+void SetConstantBuffer() {
+
+}
+
+template<int shader_type>
+void SetShaderResource() {
+
+}
+
+template<int shader_type>
+void SetSampler() {
+
+}
+
+#pragma endregion
+
 #pragma region VertexShader
 
   void STDMETHODCALLTYPE VSSetShader(
@@ -619,58 +489,25 @@ public:
 
     if (NumClassInstances)
       ERR("Class instances not supported");
-
-    if (state_.vertex_stage.shader !=
-        static_cast<MTLD3D11VertexShader *>(pVertexShader)) {
-      state_.vertex_stage.shader =
-          static_cast<MTLD3D11VertexShader *>(pVertexShader);
-      pipelineUpToDate = false;
-    }
   }
 
   void STDMETHODCALLTYPE VSGetShader(ID3D11VertexShader **ppVertexShader,
                                      ID3D11ClassInstance **ppClassInstances,
-                                     UINT *pNumClassInstances) {
-    if (ppVertexShader) {
-      *ppVertexShader = state_.vertex_stage.shader.ref();
-    }
-    if (pNumClassInstances) {
-      *pNumClassInstances = 0;
-    }
-  }
+                                     UINT *pNumClassInstances) {}
 
-  void STDMETHODCALLTYPE
-  VSSetShaderResources(UINT StartSlot, UINT NumViews,
-                       ID3D11ShaderResourceView *const *ppShaderResourceViews) {
-    for (unsigned i = 0; i < NumViews; i++) {
-      state_.vertex_stage.shader_resource_views[i + StartSlot] =
-          static_cast<IMTLD3D11ShaderResourceView *>(ppShaderResourceViews[i]);
-    }
-  }
+  void STDMETHODCALLTYPE VSSetShaderResources(
+      UINT StartSlot, UINT NumViews,
+      ID3D11ShaderResourceView *const *ppShaderResourceViews) {}
 
   void STDMETHODCALLTYPE
   VSGetShaderResources(UINT StartSlot, UINT NumViews,
-                       ID3D11ShaderResourceView **ppShaderResourceViews) {
-    for (unsigned i = 0; i < NumViews; i++) {
-      ppShaderResourceViews[i] =
-          state_.vertex_stage.shader_resource_views[i + StartSlot].ref();
-    }
-  }
+                       ID3D11ShaderResourceView **ppShaderResourceViews) {}
 
   void STDMETHODCALLTYPE VSSetSamplers(UINT StartSlot, UINT NumSamplers,
-                                       ID3D11SamplerState *const *ppSamplers) {
-    for (unsigned i = 0; i < NumSamplers; i++) {
-      state_.vertex_stage.sampler_states[i + StartSlot] =
-          static_cast<MTLD3D11SamplerState *>(ppSamplers[i]);
-    }
-  }
+                                       ID3D11SamplerState *const *ppSamplers) {}
 
   void STDMETHODCALLTYPE VSGetSamplers(UINT StartSlot, UINT NumSamplers,
-                                       ID3D11SamplerState **ppSamplers) {
-    for (unsigned i = 0; i < NumSamplers; i++) {
-      ppSamplers[i] = state_.vertex_stage.sampler_states[i + StartSlot].ref();
-    }
-  }
+                                       ID3D11SamplerState **ppSamplers) {}
 
   void STDMETHODCALLTYPE VSSetConstantBuffers(
       UINT StartSlot, UINT NumBuffers, ID3D11Buffer *const *ppConstantBuffers) {
@@ -684,20 +521,7 @@ public:
 
   void STDMETHODCALLTYPE VSSetConstantBuffers1(
       UINT StartSlot, UINT NumBuffers, ID3D11Buffer *const *ppConstantBuffers,
-      const UINT *pFirstConstant, const UINT *pNumConstants) {
-    if ((pFirstConstant == NULL) != (pNumConstants == NULL)) {
-      return; // INVALID
-    }
-    for (unsigned i = 0; i < NumBuffers; i++) {
-      state_.vertex_stage.constant_buffers[i + StartSlot] =
-          static_cast<ID3D11Buffer *>(ppConstantBuffers[i]);
-
-      auto vbo = Com<IDXMTBufferResource>::queryFrom(ppConstantBuffers[i]);
-
-      stream_->Emit(MTLSetConstantBuffer<Vertex>(
-          i + StartSlot, 0, 0, vbo->BindAsConstantBuffer(stream_.ptr())));
-    }
-  }
+      const UINT *pFirstConstant, const UINT *pNumConstants) {}
 
   void STDMETHODCALLTYPE VSGetConstantBuffers1(UINT StartSlot, UINT NumBuffers,
                                                ID3D11Buffer **ppConstantBuffers,
@@ -716,46 +540,15 @@ public:
 
     if (NumClassInstances)
       ERR("Class instances not supported");
-
-    if (state_.pixel_stage.shader !=
-        static_cast<MTLD3D11PixelShader *>(pPixelShader)) {
-      state_.pixel_stage.shader =
-          static_cast<MTLD3D11PixelShader *>(pPixelShader);
-      pipelineUpToDate = false;
-    }
   }
 
   void STDMETHODCALLTYPE PSGetShader(ID3D11PixelShader **ppPixelShader,
                                      ID3D11ClassInstance **ppClassInstances,
-                                     UINT *pNumClassInstances) {
-    if (ppPixelShader) {
-      *ppPixelShader = state_.pixel_stage.shader.ref();
-    }
-    if (pNumClassInstances) {
-      *pNumClassInstances = 0;
-    }
-  }
+                                     UINT *pNumClassInstances) {}
 
-  void STDMETHODCALLTYPE
-  PSSetShaderResources(UINT StartSlot, UINT NumViews,
-                       ID3D11ShaderResourceView *const *ppShaderResourceViews) {
-    for (unsigned i = 0; i < NumViews; i++) {
-      if (ppShaderResourceViews[i] != nullptr) {
-        state_.pixel_stage.shader_resource_views[i + StartSlot] =
-            static_cast<IMTLD3D11ShaderResourceView *>(
-                ppShaderResourceViews[i]);
-        if (auto res = Com<IMTLD3D11ShaderResourceView>::queryFrom(
-                ppShaderResourceViews[i]);
-            res != nullptr) {
-
-          stream_->Emit(MTLSetShaderResource<Pixel>(res->Pin(stream_.ptr()),
-                                                    i + StartSlot));
-          continue;
-        }
-      }
-      stream_->Emit(MTLSetShaderResource<Pixel>(nullptr, i + StartSlot));
-    }
-  }
+  void STDMETHODCALLTYPE PSSetShaderResources(
+      UINT StartSlot, UINT NumViews,
+      ID3D11ShaderResourceView *const *ppShaderResourceViews) {}
 
   void STDMETHODCALLTYPE
   PSGetShaderResources(UINT StartSlot, UINT NumViews,
@@ -764,22 +557,7 @@ public:
   }
 
   void STDMETHODCALLTYPE PSSetSamplers(UINT StartSlot, UINT NumSamplers,
-                                       ID3D11SamplerState *const *ppSamplers) {
-    for (unsigned i = 0; i < NumSamplers; i++) {
-      if (ppSamplers[i] != nullptr) {
-
-        auto c = state_.pixel_stage.sampler_states[i + StartSlot] =
-            static_cast<MTLD3D11SamplerState *>(ppSamplers[i]);
-        stream_->Emit(
-            MTLSetSampler<Pixel>(c->metal_sampler_state_.ptr(), StartSlot + i));
-      } else {
-
-        auto c = state_.pixel_stage.sampler_states[i + StartSlot] =
-            static_cast<MTLD3D11SamplerState *>(ppSamplers[i]);
-        stream_->Emit(MTLSetSampler<Pixel>(nullptr, StartSlot + i));
-      }
-    }
-  }
+                                       ID3D11SamplerState *const *ppSamplers) {}
 
   void STDMETHODCALLTYPE PSGetSamplers(UINT StartSlot, UINT NumSamplers,
                                        ID3D11SamplerState **ppSamplers) {
@@ -798,26 +576,7 @@ public:
 
   void STDMETHODCALLTYPE PSSetConstantBuffers1(
       UINT StartSlot, UINT NumBuffers, ID3D11Buffer *const *ppConstantBuffers,
-      const UINT *pFirstConstant, const UINT *pNumConstants) {
-    if ((pFirstConstant == NULL) != (pNumConstants == NULL)) {
-      return; // INVALID
-    }
-    for (unsigned i = 0; i < NumBuffers; i++) {
-      if (ppConstantBuffers[i] != nullptr) {
-        state_.vertex_stage.constant_buffers[i + StartSlot] =
-            static_cast<ID3D11Buffer *>(ppConstantBuffers[i]);
-
-        auto vbo = Com<IDXMTBufferResource>::queryFrom(ppConstantBuffers[i]);
-
-        stream_->Emit(MTLSetConstantBuffer<Pixel>(
-            i + StartSlot, 0, 0, vbo->BindAsConstantBuffer(stream_.ptr())));
-      } else {
-
-        stream_->Emit(
-            MTLSetConstantBuffer<Pixel>(i + StartSlot, 0, 0, nullptr));
-      }
-    }
-  }
+      const UINT *pFirstConstant, const UINT *pNumConstants) {}
 
   void STDMETHODCALLTYPE PSGetConstantBuffers1(UINT StartSlot, UINT NumBuffers,
                                                ID3D11Buffer **ppConstantBuffers,
@@ -836,12 +595,6 @@ public:
 
     if (NumClassInstances)
       Logger::err("D3D11: Class instances not supported");
-
-    // if (m_state.gs != shader) {
-    //   m_state.gs = shader;
-
-    //   BindShader<DxbcProgramType::GeometryShader>(GetCommonShader(shader));
-    // }
   }
 
   void STDMETHODCALLTYPE GSGetShader(ID3D11GeometryShader **ppGeometryShader,
@@ -1145,44 +898,7 @@ public:
       UINT NumRTVs, ID3D11RenderTargetView *const *ppRenderTargetViews,
       ID3D11DepthStencilView *pDepthStencilView, UINT UAVStartSlot,
       UINT NumUAVs, ID3D11UnorderedAccessView *const *ppUnorderedAccessViews,
-      const UINT *pUAVInitialCounts) {
-
-    // TODO: check data hazards
-    // TODO: handle UAV
-    std::vector<Rc<RenderTargetBinding>> views(NumRTVs);
-    for (unsigned i = 0; i < 8; i++) {
-      if (i < NumRTVs) {
-        state_.output_merger.render_target_views[i] =
-            static_cast<IMTLD3D11RenderTargetView *>(ppRenderTargetViews[i]);
-        views[i] = state_.output_merger.render_target_views[i]->Pin();
-      } else {
-        state_.output_merger.render_target_views[i] = nullptr;
-      }
-    }
-    state_.output_merger.depth_stencil_view =
-        static_cast<IMTLD3D11DepthStencilView *>(pDepthStencilView);
-    Rc<DepthStencilBinding> dsv =
-        pDepthStencilView
-            ? state_.output_merger.depth_stencil_view->Pin(stream_.ptr())
-            : nullptr;
-
-    // Validation
-    // 1. check if all rtvs and dsv have the same array size
-
-    stream_->Emit(MTLBindRenderTarget([views = std::move(views),
-                                       dsv = std::move(dsv)](
-                                          MTL::RenderPassDescriptor *desc) {
-      unsigned slot = 0;
-      for (auto &view : views) {
-        view->Bind(desc, slot++, MTL::LoadActionLoad, MTL::StoreActionStore);
-      }
-      if (dsv != nullptr) {
-        dsv->Bind(desc);
-      }
-      // desc->setRenderTargetArrayLength(1); // TODO: if RTVs are created from
-      // texture array
-    }));
-  }
+      const UINT *pUAVInitialCounts) {}
   void STDMETHODCALLTYPE OMGetRenderTargetsAndUnorderedAccessViews(
       UINT NumRTVs, ID3D11RenderTargetView **ppRenderTargetViews,
       ID3D11DepthStencilView **ppDepthStencilView, UINT UAVStartSlot,
@@ -1202,22 +918,7 @@ public:
   }
 
   void STDMETHODCALLTYPE OMSetDepthStencilState(
-      ID3D11DepthStencilState *pDepthStencilState, UINT StencilRef) {
-    state_.output_merger.depth_stencil_state =
-        static_cast<MTLD3D11DepthStencilState *>(pDepthStencilState);
-    state_.output_merger.stencil_ref = StencilRef;
-    if (pDepthStencilState != NULL) {
-      stream_->Emit(MTLBindDepthStencilState(
-          [StencilRef = StencilRef,
-           state = (state_.output_merger.depth_stencil_state)](
-              MTL::RenderCommandEncoder *enc) {
-            state->SetupDepthStencilState(enc);
-            enc->setStencilReferenceValue(StencilRef);
-          }));
-    } else {
-      stream_->Emit(MTLBindDepthStencilState());
-    }
-  }
+      ID3D11DepthStencilState *pDepthStencilState, UINT StencilRef) {}
 
   void STDMETHODCALLTYPE OMGetDepthStencilState(
       ID3D11DepthStencilState **ppDepthStencilState, UINT *pStencilRef) {}
@@ -1226,72 +927,23 @@ public:
 
 #pragma region Rasterizer
 
-  void STDMETHODCALLTYPE RSSetState(ID3D11RasterizerState *pRasterizerState) {
-
-    state_.rasterizer.rasterizer_state =
-        static_cast<MTLD3D11RasterizerState *>(pRasterizerState);
-  }
+  void STDMETHODCALLTYPE RSSetState(ID3D11RasterizerState *pRasterizerState) {}
 
   void STDMETHODCALLTYPE RSGetState(ID3D11RasterizerState **ppRasterizerState) {
     InitReturnPtr(ppRasterizerState);
-
-    *ppRasterizerState = state_.rasterizer.rasterizer_state.ref();
   }
 
   void STDMETHODCALLTYPE RSSetViewports(UINT NumViewports,
-                                        const D3D11_VIEWPORT *pViewports) {
-    state_.rasterizer.numViewports = NumViewports;
-    memcpy(state_.rasterizer.viewports, pViewports,
-           sizeof(D3D11_VIEWPORT) * NumViewports);
-    std::vector<MTL::Viewport> viewports(NumViewports);
-    //
-    for (unsigned i = 0; i < NumViewports; i++) {
-      auto &viewport = pViewports[i];
-      viewports[i].height = viewport.Height;
-      viewports[i].width = viewport.Width;
-      viewports[i].originX = viewport.TopLeftX;
-      viewports[i].originY = viewport.TopLeftY;
-      viewports[i].zfar = viewport.MaxDepth;
-      viewports[i].znear = viewport.MinDepth;
-    };
-    stream_->Emit(MTLSetViewports(std::move(viewports)));
-  }
+                                        const D3D11_VIEWPORT *pViewports) {}
 
   void STDMETHODCALLTYPE RSGetViewports(UINT *pNumViewports,
-                                        D3D11_VIEWPORT *pViewports) {
-    *pNumViewports = state_.rasterizer.numViewports;
-    memcpy(pViewports, state_.rasterizer.viewports,
-           sizeof(D3D11_VIEWPORT) * state_.rasterizer.numViewports);
-  }
+                                        D3D11_VIEWPORT *pViewports) {}
 
   void STDMETHODCALLTYPE RSSetScissorRects(UINT NumRects,
-                                           const D3D11_RECT *pRects) {
-    state_.rasterizer.numScissorRects = NumRects;
-    memcpy(state_.rasterizer.scissor_rects, pRects,
-           sizeof(D3D11_RECT) * NumRects);
-    std::vector<MTL::ScissorRect> rects(NumRects);
-    //
-    for (unsigned i = 0; i < NumRects; i++) {
-      auto &scissorRect = pRects[i];
-      rects[i].x = scissorRect.left;
-      rects[i].y = scissorRect.top;
-      rects[i].width = state_.rasterizer.viewports[i].Width - scissorRect.left -
-                       scissorRect.right;
-      rects[i].height = state_.rasterizer.viewports[i].Height -
-                        scissorRect.top - scissorRect.bottom;
-    } // FIXME: undesired dependency: viewports. need to recalculate if viewport
-      // changes
-    stream_->Emit(MTLSetScissorRects(std::move(rects)));
-  }
+                                           const D3D11_RECT *pRects) {}
 
   void STDMETHODCALLTYPE RSGetScissorRects(UINT *pNumRects,
-                                           D3D11_RECT *pRects) {
-    *pNumRects = state_.rasterizer.numScissorRects;
-    memcpy(pRects, state_.rasterizer.scissor_rects,
-           sizeof(D3D11_RECT) * state_.rasterizer.numScissorRects);
-  }
-#pragma endregion
-
+                                           D3D11_RECT *pRects) {}
 #pragma endregion
 
 #pragma region Misc
@@ -1305,51 +957,7 @@ public:
 #pragma endregion
 
   void STDMETHODCALLTYPE
-  Flush2(std::function<void(MTL::CommandBuffer *)> &&beforeCommit) final {
-
-    auto c = MTL::CaptureManager::sharedCaptureManager();
-    auto d = transfer(MTL::CaptureDescriptor::alloc()->init());
-    d->setCaptureObject(m_queue->device());
-    d->setDestination(MTL::CaptureDestinationGPUTraceDocument);
-    char filename[1024];
-    std::time_t now;
-    std::time(&now);
-    std::strftime(filename, 1024,
-                  "/Users/sanshain/capture-%H-%M-%S_%m-%d-%y.gputrace",
-                  std::localtime(&now));
-
-    auto _pTraceSaveFilePath =
-        (NS::String::string(filename, NS::UTF8StringEncoding));
-    NS::URL *pURL = NS::URL::alloc()->initFileURLWithPath(_pTraceSaveFilePath);
-
-    NS::Error *pError = nullptr;
-    d->setOutputURL(pURL);
-
-    c->startCapture(d.ptr(), &pError);
-    {
-      auto pool = transfer(NS::AutoreleasePool::alloc()->init());
-      auto cbuffer = m_queue->commandBufferWithUnretainedReferences();
-      stream_->Encode(pipeline_command_state, cbuffer, metal_device_.ptr());
-
-      beforeCommit(cbuffer);
-
-      // stream_->incRef();
-      // cbuffer->addCompletedHandler([stream_ = std::move(stream_)](auto s) {
-
-      // });
-      cbuffer->commit();
-      cbuffer->waitUntilCompleted();
-    }
-
-    // throw 0;
-
-    stream_ = new DXMTCommandStream(ring_[ring_offset].ptr());
-
-    ring_offset++;
-    ring_offset %= 3;
-
-    c->stopCapture();
-  }
+  Flush2(std::function<void(MTL::CommandBuffer *)> &&beforeCommit) final {}
 
 private:
   Obj<MTL::Device> metal_device_;
@@ -1359,8 +967,6 @@ private:
   Rc<DXMTCommandStream> stream_;
 
   PipelineCommandState pipeline_command_state;
-
-  bool pipelineUpToDate = false;
 
   Obj<MTL::Buffer> ring_[3];
   int ring_offset = 0;

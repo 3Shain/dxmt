@@ -1,3 +1,13 @@
+/*
+ * This file is part of DXMT, Copyright (c) 2023 Feifan He
+ *
+ * Derived from a part of DXVK (originally under zlib License),
+ * Copyright (c) 2017 Philip Rebohle
+ * Copyright (c) 2019 Joshua Ashton
+ *
+ * See <https://github.com/doitsujin/dxvk/blob/master/LICENSE>
+ */
+
 #pragma once
 
 #if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) ||             \
@@ -27,8 +37,8 @@
 #endif
 #endif
 
-#include "util_likely.h"
-#include "util_math.h"
+#include "util_likely.hpp"
+#include "util_math.hpp"
 
 #include <cstdint>
 #include <cstring>

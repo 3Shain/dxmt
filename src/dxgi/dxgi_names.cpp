@@ -1,5 +1,6 @@
 #include "dxgi_names.hpp"
 #include "Metal/MTLPixelFormat.hpp"
+#include "util_names.hpp"
 
 std::ostream &operator<<(std::ostream &os, DXGI_FORMAT e) {
   switch (e) {

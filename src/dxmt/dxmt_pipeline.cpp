@@ -1,4 +1,5 @@
 #include "./dxmt_pipeline.hpp"
+#include "rc/util_rc_ptr.hpp"
 #include <utility>
 
 namespace dxmt {

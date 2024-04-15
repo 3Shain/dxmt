@@ -1,7 +1,5 @@
 #pragma once
-#include "../util/rc/util_rc.h"
-#include "../util/rc/util_rc_ptr.h"
-#include "../util/objc_pointer.h"
+#include "objc_pointer.hpp"
 #include "Metal/MTLBuffer.hpp"
 #include "Metal/MTLTexture.hpp"
 

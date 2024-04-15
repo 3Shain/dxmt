@@ -1,8 +1,9 @@
 #pragma once
-#include "d3d11_private.h"
 
+#include "d3d11_1.h"
 #include "Metal/MTLDevice.hpp"
 #include "../dxmt/dxmt_format.hpp"
+#include "objc_pointer.hpp"
 
 namespace dxmt {
 

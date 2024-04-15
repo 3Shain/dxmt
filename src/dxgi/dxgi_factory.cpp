@@ -1,7 +1,10 @@
 #include "dxgi_factory.h"
 #include "Metal/MTLDevice.hpp"
+#include "com/com_guid.hpp"
 #include "dxgi_adapter.h"
-#include "../util/wsi_window.h"
+#include "log/log.hpp"
+#include "util_string.hpp"
+#include "wsi_window.hpp"
 
 namespace dxmt {
 MTLDXGIFactory::MTLDXGIFactory(UINT Flags) : flags_(Flags) {}
