@@ -2,6 +2,7 @@
 #include "com/com_pointer.hpp"
 #include "d3d11_device.hpp"
 #include "log/log.hpp"
+#include "d3d11_names.hpp"
 
 namespace dxmt {
 Logger Logger::s_instance("d3d11.log");
@@ -96,10 +97,9 @@ extern "C" HRESULT WINAPI D3D11CreateDeviceAndSwapChain(
   if (!pAdapter) {
     // Ignore DriverType
     if (DriverType != D3D_DRIVER_TYPE_HARDWARE)
-      Logger::warn("D3D11CreateDevice: Unsupported driver type");
+      WARN("D3D11CreateDevice: Unsupported driver type ", DriverType);
     // We'll use the first adapter returned by a DXGI factory
-    hr = CreateDXGIFactory1(__uuidof(IDXGIFactory),
-                            reinterpret_cast<void **>(&dxgiFactory));
+    hr = CreateDXGIFactory1(IID_PPV_ARGS(&dxgiFactory));
 
     if (FAILED(hr)) {
       Logger::err("D3D11CreateDevice: Failed to create a DXGI factory");
@@ -114,8 +114,7 @@ extern "C" HRESULT WINAPI D3D11CreateDeviceAndSwapChain(
     }
   } else {
     // We should be able to query the DXGI factory from the adapter
-    if (FAILED(dxgiAdapter->GetParent(
-            __uuidof(IDXGIFactory), reinterpret_cast<void **>(&dxgiFactory)))) {
+    if (FAILED(dxgiAdapter->GetParent(IID_PPV_ARGS(&dxgiFactory)))) {
       Logger::err(
           "D3D11CreateDevice: Failed to query DXGI factory from DXGI adapter");
       return E_INVALIDARG;

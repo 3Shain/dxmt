@@ -5,7 +5,7 @@
 namespace dxmt {
 
 MTLD3D11Inspection::MTLD3D11Inspection(MTL::Device *pDevice)
-    : m_device(pDevice), cap_inspector_() {
+    : m_device(pDevice) {
 
   // FIXME: Apple Silicon definitely TBDR
   m_architectureInfo.TileBasedDeferredRenderer = FALSE;
@@ -80,8 +80,6 @@ MTLD3D11Inspection::MTLD3D11Inspection(MTL::Device *pDevice)
       D3D11_SHADER_MIN_PRECISION_16_BIT;
 
   m_d3d9Shadow.SupportsDepthAsTextureWithLessEqualComparisonFilter = TRUE;
-
-  cap_inspector_.Inspect(this->m_device.ptr());
 }
 
 HRESULT MTLD3D11Inspection::GetFeatureData(D3D11_FEATURE Feature,

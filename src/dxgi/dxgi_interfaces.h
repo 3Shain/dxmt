@@ -6,14 +6,17 @@
 #include "Metal/MTLStageInputOutputDescriptor.hpp"
 #include "Metal/MTLVertexDescriptor.hpp"
 #include "QuartzCore/CAMetalLayer.hpp"
+#include "dxmt_format.hpp"
 
 struct METAL_FORMAT_DESC {
   MTL::PixelFormat PixelFormat;
   MTL::AttributeFormat AttributeFormat;
   MTL::VertexFormat VertexFormat;
+  dxmt::FormatCapability Capability;
   UINT Stride;
   UINT Alignment;
   BOOL IsCompressed;
+  BOOL SupportBackBuffer;
 };
 
 MIDL_INTERFACE("acdf3ef1-b33a-4cb6-97bd-1c1974827e6d")

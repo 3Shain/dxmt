@@ -10,6 +10,10 @@
 
 namespace dxmt {
 
+/*
+ * \see
+ * https://github.com/microsoft/DirectXTex/blob/main/DirectXTex/DirectXTexUtil.cpp
+ */
 uint32_t GetMonitorFormatBpp(DXGI_FORMAT Format) {
   switch (Format) {
   case DXGI_FORMAT_R8G8B8A8_UNORM:
@@ -19,6 +23,7 @@ uint32_t GetMonitorFormatBpp(DXGI_FORMAT Format) {
   case DXGI_FORMAT_B8G8R8A8_UNORM_SRGB:
   case DXGI_FORMAT_B8G8R8X8_UNORM_SRGB:
   case DXGI_FORMAT_R10G10B10A2_UNORM:
+  case DXGI_FORMAT_R10G10B10_XR_BIAS_A2_UNORM:
     return 32;
 
   case DXGI_FORMAT_R16G16B16A16_FLOAT:
@@ -308,6 +313,12 @@ public:
 
     // Special case, just return zero modes
     if (EnumFormat == DXGI_FORMAT_UNKNOWN) {
+      *pNumModes = 0;
+      return S_OK;
+    }
+    METAL_FORMAT_DESC formatDesc;
+    if (FAILED(m_adapter->QueryFormatDesc(EnumFormat, &formatDesc)) ||
+        !formatDesc.SupportBackBuffer) {
       *pNumModes = 0;
       return S_OK;
     }

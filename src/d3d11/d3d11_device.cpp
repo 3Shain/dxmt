@@ -1,3 +1,5 @@
+#include "Metal/MTLPixelFormat.hpp"
+#include "Metal/MTLVertexDescriptor.hpp"
 #include "com/com_guid.hpp"
 #include "d3d11_class_linkage.hpp"
 #include "d3d11_inspection.hpp"
@@ -11,6 +13,8 @@
 #include "d3d11_shader.hpp"
 #include "d3d11_state_object.hpp"
 #include "dxgi_interfaces.h"
+#include "dxmt_format.hpp"
+#include "ftl.hpp"
 #include "mtld11_resource.hpp"
 #include "winemacdrv.h"
 #include "com/com_aggregatable.hpp"
@@ -914,7 +918,80 @@ HRESULT STDMETHODCALLTYPE MTLD3D11Device::OpenSharedResource(
     HANDLE hResource, REFIID ReturnedInterface, void **ppResource){IMPLEMENT_ME}
 
 HRESULT STDMETHODCALLTYPE MTLD3D11Device::CheckFormatSupport(
-    DXGI_FORMAT Format, UINT *pFormatSupport){IMPLEMENT_ME}
+    DXGI_FORMAT Format, UINT *pFormatSupport) {
+
+  if (pFormatSupport) {
+    *pFormatSupport = 0;
+  }
+
+  METAL_FORMAT_DESC metal_format;
+
+  if (FAILED(m_container->adapter_->QueryFormatDesc(Format, &metal_format))) {
+    return S_OK;
+  }
+
+  UINT outFormatSupport = 0;
+
+  // All graphics and compute kernels can read or sample a texture with any
+  // pixel format.
+  outFormatSupport |=
+      D3D11_FORMAT_SUPPORT_SHADER_LOAD | D3D11_FORMAT_SUPPORT_SHADER_SAMPLE |
+      D3D11_FORMAT_SUPPORT_SHADER_GATHER |
+      D3D11_FORMAT_SUPPORT_MULTISAMPLE_LOAD | D3D11_FORMAT_SUPPORT_CPU_LOCKABLE;
+
+  /* UNCHECKED */
+  outFormatSupport |=
+      D3D11_FORMAT_SUPPORT_BUFFER | D3D11_FORMAT_SUPPORT_TEXTURE1D |
+      D3D11_FORMAT_SUPPORT_TEXTURE2D | D3D11_FORMAT_SUPPORT_TEXTURE3D |
+      D3D11_FORMAT_SUPPORT_TEXTURECUBE | D3D11_FORMAT_SUPPORT_MIP |
+      D3D11_FORMAT_SUPPORT_MIP_AUTOGEN | // ?
+      D3D11_FORMAT_SUPPORT_CAST_WITHIN_BIT_LAYOUT;
+
+  if (metal_format.SupportBackBuffer) {
+    outFormatSupport |= D3D11_FORMAT_SUPPORT_DISPLAY;
+  }
+
+  if (metal_format.VertexFormat != MTL::VertexFormatInvalid) {
+    outFormatSupport |= D3D11_FORMAT_SUPPORT_IA_VERTEX_BUFFER;
+  }
+
+  if (metal_format.PixelFormat == MTL::PixelFormatR32Uint ||
+      metal_format.PixelFormat == MTL::PixelFormatR16Uint) {
+    outFormatSupport |= D3D11_FORMAT_SUPPORT_IA_INDEX_BUFFER;
+  }
+
+  if (any_bit_set(metal_format.Capability & FormatCapability::Color)) {
+    outFormatSupport |= D3D11_FORMAT_SUPPORT_RENDER_TARGET;
+  }
+
+  if (any_bit_set(metal_format.Capability & FormatCapability::Blend)) {
+    outFormatSupport |= D3D11_FORMAT_SUPPORT_BLENDABLE;
+  }
+
+  if (any_bit_set(metal_format.Capability & FormatCapability::DepthStencil)) {
+    outFormatSupport |= D3D11_FORMAT_SUPPORT_DEPTH_STENCIL |
+                        D3D11_FORMAT_SUPPORT_SHADER_SAMPLE_COMPARISON |
+                        D3D11_FORMAT_SUPPORT_SHADER_GATHER_COMPARISON;
+  }
+
+  if (any_bit_set(metal_format.Capability & FormatCapability::Resolve)) {
+    outFormatSupport |= D3D11_FORMAT_SUPPORT_MULTISAMPLE_RESOLVE;
+  }
+
+  if (any_bit_set(metal_format.Capability & FormatCapability::MSAA)) {
+    outFormatSupport |= D3D11_FORMAT_SUPPORT_MULTISAMPLE_RENDERTARGET;
+  }
+
+  if (any_bit_set(metal_format.Capability & FormatCapability::Write)) {
+    outFormatSupport |= D3D11_FORMAT_SUPPORT_TYPED_UNORDERED_ACCESS_VIEW;
+  }
+
+  if (pFormatSupport) {
+    *pFormatSupport = outFormatSupport;
+  }
+
+  return S_OK;
+}
 
 HRESULT STDMETHODCALLTYPE MTLD3D11Device::CheckMultisampleQualityLevels(
     DXGI_FORMAT Format, UINT SampleCount, UINT *pNumQualityLevels) {
@@ -976,8 +1053,28 @@ HRESULT STDMETHODCALLTYPE MTLD3D11Device::CheckFeatureSupport(
 
     if (FeatureSupportDataSize != sizeof(*info))
       return E_INVALIDARG;
+    info->OutFormatSupport2 = 0;
 
-    IMPLEMENT_ME
+    METAL_FORMAT_DESC desc;
+    if (FAILED(m_container->adapter_->QueryFormatDesc(info->InFormat, &desc))) {
+      return S_OK;
+    }
+
+    if (any_bit_set(desc.Capability & FormatCapability::Atomic)) {
+      info->OutFormatSupport2 |=
+          D3D11_FORMAT_SUPPORT2_UAV_ATOMIC_ADD |
+          D3D11_FORMAT_SUPPORT2_UAV_ATOMIC_BITWISE_OPS |
+          D3D11_FORMAT_SUPPORT2_UAV_ATOMIC_COMPARE_STORE_OR_COMPARE_EXCHANGE |
+          D3D11_FORMAT_SUPPORT2_UAV_ATOMIC_EXCHANGE |
+          D3D11_FORMAT_SUPPORT2_UAV_ATOMIC_SIGNED_MIN_OR_MAX |
+          D3D11_FORMAT_SUPPORT2_UAV_ATOMIC_UNSIGNED_MIN_OR_MAX;
+    }
+
+    if (any_bit_set(desc.Capability & FormatCapability::Sparse)) {
+      info->OutFormatSupport2 |= D3D11_FORMAT_SUPPORT2_TILED;
+    }
+
+    return S_OK;
   }
   default:
     // For everything else, we can use the device feature struct
@@ -1137,7 +1234,7 @@ MTLD3D11DXGIDevice::QueryInterface(REFIID riid, void **ppvObject) {
     return E_NOINTERFACE;
 
   if (logQueryInterfaceError(__uuidof(IMTLDXGIDevice), riid)) {
-    WARN("Unknown interface query: ", str::format(riid));
+    WARN("D3D11Device: Unknown interface query: ", str::format(riid));
   }
 
   return E_NOINTERFACE;

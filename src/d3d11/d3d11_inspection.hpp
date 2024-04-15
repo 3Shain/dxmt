@@ -2,7 +2,6 @@
 
 #include "d3d11_1.h"
 #include "Metal/MTLDevice.hpp"
-#include "../dxmt/dxmt_format.hpp"
 #include "objc_pointer.hpp"
 
 namespace dxmt {
@@ -16,7 +15,6 @@ public:
 
 private:
   Obj<MTL::Device> m_device;
-  FormatCapabilityInspector cap_inspector_;
 
   D3D11_FEATURE_DATA_THREADING m_threading = {};
   D3D11_FEATURE_DATA_DOUBLES m_doubles = {};

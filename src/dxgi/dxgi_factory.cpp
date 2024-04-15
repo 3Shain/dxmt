@@ -32,7 +32,7 @@ public:
     }
 
     if (logQueryInterfaceError(__uuidof(IDXGIFactory2), riid)) {
-      WARN("Unknown interface query", str::format(riid));
+      WARN("DXGIFactory: Unknown interface query ", str::format(riid));
     }
 
     return E_NOINTERFACE;
@@ -41,7 +41,7 @@ public:
   HRESULT STDMETHODCALLTYPE GetParent(REFIID riid, void **ppParent) final {
     InitReturnPtr(ppParent);
 
-    WARN("Unknown interface query", str::format(riid));
+    WARN("DXGIFactory::GetParent: Unknown interface query ", str::format(riid));
     return E_NOINTERFACE;
   }
 

@@ -77,6 +77,6 @@ private:
 
 #define ERR_ONCE(...)                                                          \
   static bool s_errorShown = false;                                            \
-  if (std::exchange(s_errorShown, true)) {                                     \
+  if (!std::exchange(s_errorShown, true)) {                                     \
     Logger::err(str::format(__PRETTY_FUNCTION__, ":", __VA_ARGS__));           \
   }

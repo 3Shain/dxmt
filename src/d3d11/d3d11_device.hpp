@@ -13,7 +13,7 @@ __CRT_UUID_DECL(IMTLD3D11Device, 0xa46de9a7, 0x0233, 0x4a94, 0xb7, 0x5c, 0x9c,
                 0x0f, 0x8f, 0x36, 0x4c, 0xda);
 
 namespace dxmt {
-Com<IMTLDXGIDevice> CreateD3D11Device(IMTLDXGIAdatper *adapter,
-                                      D3D_FEATURE_LEVEL feature_level,
-                                      UINT feature_flags);
+Com<IMTLDXGIDevice> CreateD3D11Device(IMTLDXGIAdatper *pAdapter,
+                                      D3D_FEATURE_LEVEL FeatureLevel,
+                                      UINT Flags);
 } // namespace dxmt

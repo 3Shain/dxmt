@@ -203,6 +203,20 @@ constexpr T operator|(T lhs, T rhs)
 }
 
 template<class T, std::enable_if_t<std::is_enum_v<T>, int> = 0>
+constexpr T operator&(T lhs, T rhs) 
+{
+  return static_cast<T>(
+    static_cast<std::underlying_type<T>::type>(lhs) &
+    static_cast<std::underlying_type<T>::type>(rhs));
+}
+
+template<class T, std::enable_if_t<std::is_enum_v<T>, int> = 0>
+constexpr bool any_bit_set(T lhs) 
+{
+  return static_cast<std::underlying_type<T>::type>(lhs) != 0;
+}
+
+template<class T, std::enable_if_t<std::is_enum_v<T>, int> = 0>
 constexpr T& operator|=(T& lhs, T rhs)
 {
   lhs = static_cast<T>(
