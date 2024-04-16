@@ -27,6 +27,12 @@ template <typename T> T *ref(T *object) {
   return object;
 }
 
+template <typename T, typename X> T *ref_and_cast(X *object) {
+  if (object != nullptr)
+    object->AddRef();
+  return static_cast<T*>(object);
+}
+
 /**
  * \brief Ref count methods for public references
  */

@@ -39,7 +39,7 @@ public:
 
  * ^3Shain: not sure DXMT will have the same behaviour
  */
-template <typename Base> class ComObject : public Base {
+template <typename... Base> class ComObject : public Base... {
 
 public:
   virtual ~ComObject() {}

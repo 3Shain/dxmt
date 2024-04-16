@@ -90,13 +90,18 @@ public:
     // you must set the device for a layer before rendering
     swapchain_.layer()->setDevice(device_->GetMTLDevice());
 
+    Com<IMTLDXGIAdatper> adapter;
+    if (FAILED(pDevice->GetParent(IID_PPV_ARGS(&adapter)))) {
+      throw MTLD3DError("Unknown DXGIAdapter");
+    }
+
     METAL_FORMAT_DESC metal_format;
+    if (FAILED(adapter->QueryFormatDesc(pDesc->Format, &metal_format))) {
+      throw MTLD3DError("Unsupported swapchain format");
+    }
 
-    assert(0 && "FIXME: get metal foramt");
-
-    // FIXME: actually render target format is very limited
     if (metal_format.PixelFormat == MTL::PixelFormatInvalid) {
-      throw MTLD3DError("Unsupported pixel format");
+      throw MTLD3DError("Unsupported swapchain format");
     }
 
     swapchain_.layer()->setDrawableSize(
@@ -150,7 +155,7 @@ public:
   STDMETHODCALLTYPE
   GetBuffer(UINT buffer_idx, REFIID riid, void **surface) final {
     if (buffer_idx == 0) {
-      return buffer_delegate_->QueryInterface(riid, surface);
+      assert(0 && "TODO");
     } else {
       ERR("Non zero-index buffer is not supported");
       return E_FAIL;
@@ -213,11 +218,11 @@ public:
       }
       swapchain_.layer()->setPixelFormat(metal_format.PixelFormat);
     }
-    D3D11_TEXTURE2D_DESC desc;
-    buffer_delegate_->GetDesc(&desc);
-    desc.Width = desc_.Width;
-    desc.Height = desc_.Height;
-    desc.Format = format;
+    // D3D11_TEXTURE2D_DESC desc;
+    // buffer_delegate_->GetDesc(&desc);
+    // desc.Width = desc_.Width;
+    // desc.Height = desc_.Height;
+    // desc.Format = format;
     // buffer_delegate_ = new D3D11Resource<__SwapChainTexture>(
     //     device_.ptr(), &swapchain_, &desc, NULL);
     return S_OK;
@@ -337,7 +342,6 @@ public:
   GetRotation(DXGI_MODE_ROTATION *pRotation) final { IMPLEMENT_ME; };
 
 private:
-  Com<ID3D11Texture2D> buffer_delegate_;
   EmulatedSwapChain swapchain_;
   Com<IDXGIFactory1> factory_;
   ULONG presentation_count_;

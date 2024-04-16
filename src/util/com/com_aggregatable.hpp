@@ -9,19 +9,19 @@ template <typename Outer, typename Inner>
 class ComAggregatedObject : public Inner {
 
 public:
-  ComAggregatedObject(Outer *outer) noexcept : outer_(outer) {}
+  ComAggregatedObject(Outer *outer) noexcept : context(outer) {}
 
   HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid,
                                            void **ppvObject) final {
-    return outer_->QueryInterface(riid, ppvObject);
+    return context->QueryInterface(riid, ppvObject);
   };
 
-  ULONG STDMETHODCALLTYPE AddRef() final { return outer_->AddRef(); };
+  ULONG STDMETHODCALLTYPE AddRef() final { return context->AddRef(); };
 
-  ULONG STDMETHODCALLTYPE Release() final { return outer_->Release(); };
+  ULONG STDMETHODCALLTYPE Release() final { return context->Release(); };
 
 protected:
-  Outer *outer_;
+  Outer *context;
 };
 
 } // namespace dxmt

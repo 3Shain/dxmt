@@ -320,7 +320,7 @@ HRESULT STDMETHODCALLTYPE MTLDXGIMetalLayerFactory::GetMetalLayerFromHwnd(
   auto data = get_win_data(hWnd);
 
   auto metalView = macdrv_view_create_metal_view(
-      data->client_cocoa_view, (macdrv_metal_device)outer_->GetMTLDevice());
+      data->client_cocoa_view, (macdrv_metal_device)context->GetMTLDevice());
 
   if (metalView == nullptr)
     return E_FAIL;

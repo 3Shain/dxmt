@@ -43,12 +43,12 @@ private:
   ComPrivateData m_privateData;
 };
 
-template <typename Base>
-class MTLD3D11DeviceChild : public MTLD3D11DeviceObject<ComObject<Base>> {
+template <typename... Base>
+class MTLD3D11DeviceChild : public MTLD3D11DeviceObject<ComObject<Base...>> {
 
 public:
   MTLD3D11DeviceChild(IMTLD3D11Device *pDevice)
-      : MTLD3D11DeviceObject<ComObject<Base>>(pDevice) {}
+      : MTLD3D11DeviceObject<ComObject<Base...>>(pDevice) {}
 
   ULONG STDMETHODCALLTYPE AddRef() {
     uint32_t refCount = this->m_refCount++;

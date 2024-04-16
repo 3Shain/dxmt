@@ -7,15 +7,20 @@
 #include "com/com_pointer.hpp"
 #include "com/com_aggregatable.hpp"
 #include "com/com_guid.hpp"
+#include "dxgi_resource.hpp"
 #include "log/log.hpp"
+#include <memory>
 
 namespace dxmt {
 
-template <typename tag>
-class ResourceBase : public MTLD3D11DeviceChild<typename tag::COM> {
+template <typename tag, typename... Base>
+class ResourceBase
+    : public MTLD3D11DeviceChild<typename tag::COM, IDXMTResource, Base...> {
 public:
   ResourceBase(const tag::DESC_S *desc, IMTLD3D11Device *device)
-      : MTLD3D11DeviceChild<ID3D11Buffer>(device), desc(*desc) {}
+      : MTLD3D11DeviceChild<typename tag::COM, IDXMTResource>(device),
+        desc(*desc),
+        dxgi_resource(new MTLDXGIResource<ResourceBase<tag>>(this)) {}
 
   HRESULT QueryInterface(REFIID riid, void **ppvObject) {
     if (ppvObject == nullptr)
@@ -26,17 +31,21 @@ public:
     if (riid == __uuidof(IUnknown) || riid == __uuidof(ID3D11DeviceChild) ||
         riid == __uuidof(ID3D11Resource) ||
         riid == __uuidof(typename tag::COM)) {
-      *ppvObject = ref(this);
+      *ppvObject = ref_and_cast<typename tag::COM>(this);
       return S_OK;
     }
 
-    // if (riid == __uuidof(IDXGIObject) ||
-    //     riid == __uuidof(IDXGIDeviceSubObject) ||
-    //     riid == __uuidof(IDXGIResource) || riid == __uuidof(IDXGIResource1))
-    //     {
-    //   *ppvObject = ref(&m_resource);
-    //   return S_OK;
-    // }
+    if (riid == __uuidof(IDXGIObject) ||
+        riid == __uuidof(IDXGIDeviceSubObject) ||
+        riid == __uuidof(IDXGIResource) || riid == __uuidof(IDXGIResource1)) {
+      *ppvObject = ref(dxgi_resource.get());
+      return S_OK;
+    }
+
+    if (riid == __uuidof(IDXMTResource)) {
+      *ppvObject = ref_and_cast<IDXMTResource>(this);
+      return S_OK;
+    }
 
     if (SUCCEEDED(this->PrivateQueryInterface(riid, ppvObject))) {
       return S_OK;
@@ -64,8 +73,44 @@ public:
     return E_FAIL;
   };
 
+  virtual HRESULT GetDeviceInterface(REFIID riid, void **ppDevice) {
+    Com<ID3D11Device> device;
+    this->GetDevice(&device);
+    return device->QueryInterface(riid, ppDevice);
+  };
+
+  virtual HRESULT GetDXGIUsage(DXGI_USAGE *pUsage) {
+    if(!pUsage) {
+      return E_INVALIDARG;
+    }
+    *pUsage = 0;
+    return S_OK;
+  }
+
+  virtual HRESULT STDMETHODCALLTYPE
+  CreateShaderResourceView(const D3D11_SHADER_RESOURCE_VIEW_DESC *desc,
+                           ID3D11ShaderResourceView **ppView) {
+    return E_INVALIDARG;
+  };
+  virtual HRESULT STDMETHODCALLTYPE
+  CreateUnorderedAccessView(const D3D11_UNORDERED_ACCESS_VIEW_DESC *desc,
+                            ID3D11UnorderedAccessView **ppView) {
+    return E_INVALIDARG;
+  };
+  virtual HRESULT STDMETHODCALLTYPE
+  CreateRenderTargetView(const D3D11_RENDER_TARGET_VIEW_DESC *desc,
+                         ID3D11RenderTargetView **ppView) {
+    return E_INVALIDARG;
+  };
+  virtual HRESULT STDMETHODCALLTYPE
+  CreateDepthStencilView(const D3D11_DEPTH_STENCIL_VIEW_DESC *desc,
+                         ID3D11DepthStencilView **ppView) {
+    return E_INVALIDARG;
+  };
+
 protected:
   tag::DESC_S desc;
+  std::unique_ptr<IDXGIResource1> dxgi_resource;
 };
 
 #pragma region StagingBuffer
@@ -83,7 +128,7 @@ public:
 
 #pragma endregion
 
-#pragma region StagingBuffer
+#pragma region StagingTexture
 
 template <typename tag_texture>
 class StagingTexture : public ResourceBase<tag_texture> {
@@ -91,8 +136,7 @@ class StagingTexture : public ResourceBase<tag_texture> {
 
   struct SomeWeirdInnerClass : public ComAggregatedObject<CONTEXT, IUnknown> {
     SomeWeirdInnerClass(CONTEXT *ctx)
-        : ComAggregatedObject<CONTEXT, IUnknown>(ctx) {
-    }
+        : ComAggregatedObject<CONTEXT, IUnknown>(ctx) {}
   };
 
 public:
