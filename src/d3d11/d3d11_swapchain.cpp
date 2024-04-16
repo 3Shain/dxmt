@@ -133,7 +133,7 @@ public:
     }
 
     if (logQueryInterfaceError(__uuidof(IDXGISwapChain1), riid)) {
-      WARN("Unknown interface query", str::format(riid));
+      WARN("DXGISwapChain: Unknown interface query ", str::format(riid));
     }
 
     return E_NOINTERFACE;

@@ -86,6 +86,8 @@ public:
 
   T *ptr() const { return m_ptr; }
 
+  operator T *() const { return m_ptr; }
+
 private:
   // T *m_ptr = nullptr;
   T *m_ptr = 0; // throw an error please
