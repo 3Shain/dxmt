@@ -12,7 +12,6 @@
 #include "objc_pointer.hpp"
 #include "util_string.hpp"
 #include <algorithm>
-#include <cassert>
 
 namespace dxmt {
 
@@ -136,14 +135,16 @@ HRESULT CreateInputLayout(IMTLD3D11Device *device,
     auto &desc = *pDesc;
     auto &attribute = elements[attributeCount++];
 
+    Com<IMTLDXGIAdatper> dxgi_adapter;
+    device->GetAdapter(&dxgi_adapter);
     METAL_FORMAT_DESC metal_format;
-    
-    // FIXME
-    assert(0 && "FIXME: query metal format");
+    if (FAILED(dxgi_adapter->QueryFormatDesc(pDesc->Format, &metal_format))) {
+      ERR("CreateInputLayout: Unsupported vertex format ", desc.Format);
+      return E_FAIL;
+    }
 
-    if (metal_format.VertexFormat ==
-        MTL::VertexFormatInvalid) {
-      ERR("CreateInputLayout: Unsupported Vertex Format ", desc.Format);
+    if (metal_format.VertexFormat == MTL::VertexFormatInvalid) {
+      ERR("CreateInputLayout: Unsupported vertex format ", desc.Format);
       return E_INVALIDARG;
     }
     attribute.format = metal_format.AttributeFormat;

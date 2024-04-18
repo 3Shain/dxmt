@@ -10,7 +10,6 @@ public:
                  size_t numArraySlices, size_t firstArraySlice,
                  size_t numPlanes, size_t firstPlane) noexcept;
 
-
   ResourceSubset(const D3D11_SHADER_RESOURCE_VIEW_DESC &Desc) noexcept;
   ResourceSubset(const D3D11_UNORDERED_ACCESS_VIEW_DESC &Desc) noexcept;
   ResourceSubset(const D3D11_RENDER_TARGET_VIEW_DESC &Desc) noexcept;
@@ -19,6 +18,8 @@ public:
   ResourceSubset(const D3D11_UNORDERED_ACCESS_VIEW_DESC1 &Desc) noexcept;
   ResourceSubset(const D3D11_RENDER_TARGET_VIEW_DESC1 &Desc) noexcept;
   ResourceSubset(const D3D11_DEPTH_STENCIL_VIEW_DESC &Desc) noexcept;
+
+  bool CheckOverlap(const ResourceSubset &other) const noexcept;
 
 private:
   size_t begin_array_;

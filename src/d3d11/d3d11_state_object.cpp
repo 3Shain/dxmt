@@ -480,7 +480,7 @@ public:
     }
 
     if (logQueryInterfaceError(__uuidof(IMTLD3D11DepthStencilState), riid)) {
-      WARN("DepthStencilState: Unknown interface query ", str::format(riid));
+      WARN("D3D11DepthStencilState: Unknown interface query ", str::format(riid));
     }
 
     return E_NOINTERFACE;
@@ -676,7 +676,7 @@ HRESULT CreateSamplerState(ID3D11Device *pDevice,
     mtl_sampler_desc->setBorderColor(
         MTL::SamplerBorderColor::SamplerBorderColorOpaqueWhite);
   } else {
-    WARN("Unsupported border color");
+    WARN("CreateSamplerState: Unsupported border color");
   }
   mtl_sampler_desc->setSupportArgumentBuffers(true);
 

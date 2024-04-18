@@ -3,62 +3,21 @@
 #include "d3d11_private.h"
 #include "dxgi_interfaces.h"
 #include "dxgi_object.hpp"
-#include "Foundation/NSAutoreleasePool.hpp"
-#include "Metal/MTLPixelFormat.hpp"
-#include "Metal/MTLTexture.hpp"
 #include "d3d11_context.hpp"
 #include "log/log.hpp"
+#include "mtld11_resource.hpp"
 #include "util_error.hpp"
 #include "d3d11_device.hpp"
 
 #include "objc-wrapper/dispatch.h"
-#include "objc_pointer.hpp"
 #include "util_string.hpp"
 #include "wsi_window.hpp"
-#include <cassert>
 
 namespace dxmt {
 
-class EmulatedSwapChain {
-public:
-  EmulatedSwapChain(HWND hWnd, IDXGIMetalLayerFactory *layer_factory)
-      : layer_factory_(layer_factory), window_handle_(hWnd) {
-    if (unlikely(FAILED(layer_factory->GetMetalLayerFromHwnd(hWnd, &layer_,
-                                                             &native_view_)))) {
-      throw MTLD3DError("Unknown window handle");
-    }
-  };
-
-  ~EmulatedSwapChain() {
-    {
-      current_drawable = nullptr;
-      layer_factory_->ReleaseMetalLayer(window_handle_, native_view_);
-    }
-  }
-
-  MTL::Texture *GetCurrentFrameBackBuffer() {
-    if (current_drawable == nullptr) {
-      current_drawable = layer_->nextDrawable();
-      assert(current_drawable != nullptr);
-    }
-    return current_drawable->texture();
-  };
-
-  void Swap() { current_drawable = nullptr; }
-
-  CA::MetalDrawable *CurrentDrawable() { return current_drawable.ptr(); }
-
-  HWND hWnd() { return window_handle_; }
-
-  CA::MetalLayer *layer() { return layer_.ptr(); }
-
-private:
-  Obj<CA::MetalLayer> layer_;
-  Obj<CA::MetalDrawable> current_drawable;
-  Com<IDXGIMetalLayerFactory> layer_factory_;
-  HWND window_handle_;
-  void *native_view_;
-};
+Com<IMTLD3D11BackBuffer>
+CreateEmulatedBackBuffer(IMTLD3D11Device *pDevice,
+                         const DXGI_SWAP_CHAIN_DESC1 *pDesc, HWND hWnd);
 
 class MTLD3D11SwapChain final : public MTLDXGISubObject<IDXGISwapChain1> {
 public:
@@ -66,55 +25,26 @@ public:
                     IDXGIMetalLayerFactory *pMetalLayerFactory,
                     const DXGI_SWAP_CHAIN_DESC1 *pDesc,
                     const DXGI_SWAP_CHAIN_FULLSCREEN_DESC *pFullscreenDesc)
-      : MTLDXGISubObject(pDevice), swapchain_(hWnd, pMetalLayerFactory),
-        factory_(pFactory), presentation_count_(0), desc_(*pDesc),
-        fullscreen_desc_(*pFullscreenDesc) {
-
-    // swapchain_.layer()->setAllowsNextDrawableTimeout(false);
-
-    D3D11_TEXTURE2D_DESC desc;
-    desc.SampleDesc = {.Count = 1, .Quality = 0};
-    desc.ArraySize = 1;
-    desc.BindFlags = D3D11_BIND_RENDER_TARGET;
-    desc.Usage = D3D11_USAGE_DEFAULT;
-    desc.Format = pDesc->Format;
-    desc.CPUAccessFlags = 0;
-    desc.MiscFlags = 0;
-    desc.MipLevels = 1;
-    desc.Height = pDesc->Height;
-    desc.Width = pDesc->Width;
+      : MTLDXGISubObject(pDevice), factory_(pFactory), presentation_count_(0),
+        desc_(*pDesc), hWnd(hWnd) {
 
     device_ = Com<IMTLD3D11Device>::queryFrom(pDevice);
-
-    // https://developer.apple.com/documentation/quartzcore/cametallayer/1478163-device
-    // you must set the device for a layer before rendering
-    swapchain_.layer()->setDevice(device_->GetMTLDevice());
-
-    Com<IMTLDXGIAdatper> adapter;
-    if (FAILED(pDevice->GetParent(IID_PPV_ARGS(&adapter)))) {
-      throw MTLD3DError("Unknown DXGIAdapter");
-    }
-
-    METAL_FORMAT_DESC metal_format;
-    if (FAILED(adapter->QueryFormatDesc(pDesc->Format, &metal_format))) {
-      throw MTLD3DError("Unsupported swapchain format");
-    }
-
-    if (metal_format.PixelFormat == MTL::PixelFormatInvalid) {
-      throw MTLD3DError("Unsupported swapchain format");
-    }
-
-    swapchain_.layer()->setDrawableSize(
-        {.width = (double)desc.Width, .height = (double)desc.Height});
-    swapchain_.layer()->setPixelFormat(metal_format.PixelFormat);
-    // buffer_delegate_ = new D3D11Resource<__SwapChainTexture>(
-    //     device_.ptr(), &swapchain_, &desc, NULL);
 
     Com<ID3D11DeviceContext1> context;
     device_->GetImmediateContext1(&context);
     context->QueryInterface(IID_PPV_ARGS(&device_context_));
 
     semaphore = dispatch_semaphore_create(3);
+
+    if (desc_.Width == 0 || desc_.Height == 0) {
+      wsi::getWindowSize(hWnd, &desc_.Width, &desc_.Height);
+    }
+
+    if (pFullscreenDesc) {
+      fullscreen_desc_ = *pFullscreenDesc;
+    } else {
+      fullscreen_desc_.Windowed = true;
+    }
   };
 
   HRESULT
@@ -155,7 +85,10 @@ public:
   STDMETHODCALLTYPE
   GetBuffer(UINT buffer_idx, REFIID riid, void **surface) final {
     if (buffer_idx == 0) {
-      assert(0 && "TODO");
+      if (!backbuffer_) {
+        backbuffer_ = CreateEmulatedBackBuffer(device_.ptr(), &desc_, hWnd);
+      }
+      return backbuffer_->QueryInterface(riid, surface);
     } else {
       ERR("Non zero-index buffer is not supported");
       return E_FAIL;
@@ -189,7 +122,7 @@ public:
     pDesc->SampleDesc = desc_.SampleDesc;
     pDesc->BufferUsage = desc_.BufferUsage;
     pDesc->BufferCount = desc_.BufferCount;
-    pDesc->OutputWindow = swapchain_.hWnd();
+    pDesc->OutputWindow = hWnd;
     pDesc->Windowed = fullscreen_desc_.Windowed;
     pDesc->SwapEffect = desc_.SwapEffect;
     pDesc->Flags = desc_.Flags;
@@ -198,42 +131,27 @@ public:
 
   HRESULT
   STDMETHODCALLTYPE
-  ResizeBuffers(UINT buffer_count, UINT width, UINT height, DXGI_FORMAT format,
+  ResizeBuffers(UINT BufferCount, UINT Width, UINT Height, DXGI_FORMAT Format,
                 UINT flags) final {
-    if (width == 0 && height == 0) {
-      wsi::getWindowSize(swapchain_.hWnd(), &desc_.Width, &desc_.Height);
+    /* BufferCount ignored */
+    if (Width == 0 || Height == 0) {
+      wsi::getWindowSize(hWnd, &desc_.Width, &desc_.Height);
     } else {
-      desc_.Width = width;
-      desc_.Height = height;
+      desc_.Width = Width;
+      desc_.Height = Height;
     }
-    swapchain_.layer()->setDrawableSize(
-        {.width = (double)desc_.Width, .height = (double)desc_.Height});
-    if (format == DXGI_FORMAT_UNKNOWN) {
-      // TODO: NOP
-    } else {
-      METAL_FORMAT_DESC metal_format;
-      assert(0 && "FIXME: get metal format");
-      if (metal_format.PixelFormat == MTL::PixelFormatInvalid) {
-        return E_FAIL;
-      }
-      swapchain_.layer()->setPixelFormat(metal_format.PixelFormat);
+    if (Format != DXGI_FORMAT_UNKNOWN) {
+      desc_.Format = Format;
     }
-    // D3D11_TEXTURE2D_DESC desc;
-    // buffer_delegate_->GetDesc(&desc);
-    // desc.Width = desc_.Width;
-    // desc.Height = desc_.Height;
-    // desc.Format = format;
-    // buffer_delegate_ = new D3D11Resource<__SwapChainTexture>(
-    //     device_.ptr(), &swapchain_, &desc, NULL);
+    backbuffer_ = nullptr;
     return S_OK;
   };
 
   HRESULT
   STDMETHODCALLTYPE
-  ResizeTarget(const DXGI_MODE_DESC *target_mode_desc) final {
-
-    return ResizeBuffers(1 /* FIXME: */, target_mode_desc->Width,
-                         target_mode_desc->Height, target_mode_desc->Format, 0);
+  ResizeTarget(const DXGI_MODE_DESC *pDesc) final {
+    /* FIXME: check this out!*/
+    return ResizeBuffers(0, pDesc->Width, pDesc->Height, pDesc->Format, 0);
   };
 
   HRESULT
@@ -280,7 +198,7 @@ public:
     if (pHwnd == NULL) {
       return E_POINTER;
     }
-    *pHwnd = swapchain_.hWnd();
+    *pHwnd = hWnd;
     return S_OK;
   };
 
@@ -298,21 +216,14 @@ public:
 
     // dispatch_semaphore_wait(semaphore, (~0ull));
 
-    auto w = transfer(NS::AutoreleasePool::alloc()->init());
+    // auto w = transfer(NS::AutoreleasePool::alloc()->init());
 
-    // device_context_->Flush2([&swapchain_ = swapchain_, semaphore = semaphore,
-    //                          presentation_count_ = presentation_count_](
-    //                             MTL::CommandBuffer *cbuffer) {
-    //   // swapchain_.GetCurrentFrameBackBuffer(); // ensure not null
-    //   cbuffer->presentDrawable(swapchain_.CurrentDrawable());
-    //   // cbuffer->addCompletedHandler(
-    //   //     [presentation_count_](void *cbuffer) {
-    //   //       unix_printf("A frame end. pc: %d\n", presentation_count_);
-    //   //       // dispatch_semaphore_signal(semaphore);
-    //   //     });
-    //       // assert(0);
-    // });
-    // swapchain_.Swap();
+    device_context_->Flush2(
+        [swapchain_ = backbuffer_.ptr()](MTL::CommandBuffer *cbuffer) {
+          // swapchain_.GetCurrentFrameBackBuffer(); // ensure not null
+          cbuffer->presentDrawable(swapchain_->CurrentDrawable());
+        });
+    backbuffer_->Swap();
 
     presentation_count_ += 1;
 
@@ -342,14 +253,15 @@ public:
   GetRotation(DXGI_MODE_ROTATION *pRotation) final { IMPLEMENT_ME; };
 
 private:
-  EmulatedSwapChain swapchain_;
   Com<IDXGIFactory1> factory_;
   ULONG presentation_count_;
   DXGI_SWAP_CHAIN_DESC1 desc_;
   DXGI_SWAP_CHAIN_FULLSCREEN_DESC fullscreen_desc_;
   Com<IMTLD3D11Device> device_;
   Com<IMTLD3D11DeviceContext> device_context_;
+  Com<IMTLD3D11BackBuffer> backbuffer_;
   dispatch_semaphore_t semaphore;
+  HWND hWnd;
 };
 
 HRESULT CreateSwapChain(IDXGIFactory1 *pFactory, IMTLDXGIDevice *pDevice,
@@ -357,8 +269,11 @@ HRESULT CreateSwapChain(IDXGIFactory1 *pFactory, IMTLDXGIDevice *pDevice,
                         const DXGI_SWAP_CHAIN_DESC1 *pDesc,
                         const DXGI_SWAP_CHAIN_FULLSCREEN_DESC *pFullscreenDesc,
                         IDXGISwapChain1 **ppSwapChain) {
+  if (pDesc == NULL) {
+    return DXGI_ERROR_INVALID_CALL;
+  }
   if (ppSwapChain == NULL) {
-    return E_POINTER;
+    return DXGI_ERROR_INVALID_CALL;
   }
   InitReturnPtr(ppSwapChain);
   try {

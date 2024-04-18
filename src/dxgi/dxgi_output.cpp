@@ -153,7 +153,7 @@ public:
     }
 
     if (logQueryInterfaceError(__uuidof(IDXGIOutput), riid)) {
-      WARN("Unknown interface query", str::format(riid));
+      WARN("DXGIOutput: Unknown interface query ", str::format(riid));
     }
 
     return E_NOINTERFACE;
@@ -255,11 +255,11 @@ public:
   HRESULT
   STDMETHODCALLTYPE
   TakeOwnership(IUnknown *device, BOOL exclusive) final {
-    WARN("Stub");
+    WARN("TakeOwnership: Stub");
     return S_OK;
   }
 
-  void STDMETHODCALLTYPE ReleaseOwnership() final { WARN("Stub"); }
+  void STDMETHODCALLTYPE ReleaseOwnership() final { WARN("ReleaseOwnership: Stub"); }
 
   HRESULT
   STDMETHODCALLTYPE

@@ -230,6 +230,8 @@ public:
 
   MTL::Device *STDMETHODCALLTYPE GetMTLDevice();
 
+  void GetAdapter(IMTLDXGIAdatper **ppAdapter);
+
 private:
   Com<MTLD3D11DXGIDevice> m_container;
   D3D_FEATURE_LEVEL m_FeatureLevel;
@@ -1029,6 +1031,10 @@ MTL::Device *STDMETHODCALLTYPE MTLD3D11Device::GetMTLDevice() {
   return m_container->GetMTLDevice();
 }
 
+void MTLD3D11Device::GetAdapter(IMTLDXGIAdatper **ppAdapter) {
+  *ppAdapter = m_container->adapter_.ref();
+}
+
 MTLD3D11DXGIDevice::MTLD3D11DXGIDevice(IMTLDXGIAdatper *adapter,
                                        D3D_FEATURE_LEVEL feature_level,
                                        UINT feature_flags)
@@ -1100,7 +1106,7 @@ HRESULT STDMETHODCALLTYPE
   if (Priority < -7 || Priority > 7)
     return E_INVALIDARG;
 
-  WARN("Ignoring");
+  WARN("SetGPUThreadPriority: Ignoring");
   return S_OK;
 }
 

@@ -160,8 +160,6 @@ getTextureDescriptor(IMTLDXGIAdatper *pAdapter,
   if(FAILED(pAdapter->QueryFormatDesc(Format, &metal_format))) {
     return nullptr;
   }
-
-  WARN("DXGI FORMAT:", Format, ",METAL FORMAT:", metal_format.PixelFormat);
   desc->setPixelFormat(metal_format.PixelFormat);
 
   MTL::TextureUsage metal_usage = 0; // actually corresponding to BindFlags

@@ -45,8 +45,6 @@ public:
   ~ErasureFunction() = default;
   ErasureFunction(const ErasureFunction& copy) = delete;
   ErasureFunction& operator=(const ErasureFunction& copy_assign) = delete;
-  ErasureFunction(ErasureFunction&& move) = default;
-  ErasureFunction& operator=( ErasureFunction&& move_assign) = default;
 private:
   Fn fn;
 };

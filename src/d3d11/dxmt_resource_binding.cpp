@@ -14,6 +14,9 @@ ResourceSubset::ResourceSubset(size_t numMips, size_t mostDetailedMipLevel,
       end_mip_(numMips + mostDetailedMipLevel), begin_plane_(firstPlane),
       end_plane_(firstPlane + numPlanes) {}
 
+bool ResourceSubset::CheckOverlap(const ResourceSubset& other) const noexcept {
+  return false;
+}
 
 ResourceSubset::ResourceSubset(
     const D3D11_SHADER_RESOURCE_VIEW_DESC &Desc) noexcept

@@ -1,5 +1,4 @@
 #include "Metal/MTLBuffer.hpp"
-#include "Metal/MTLCaptureManager.hpp"
 #include "Metal/MTLRenderCommandEncoder.hpp"
 #include "com/com_guid.hpp"
 #include "com/com_pointer.hpp"
@@ -7,7 +6,6 @@
 #include "d3d11_context_state.hpp"
 
 #include "Metal/MTLCommandBuffer.hpp"
-#include "Metal/MTLCommandQueue.hpp"
 
 #include "d3d11_input_layout.hpp"
 #include "d3d11_private.h"
@@ -16,13 +14,13 @@
 #include "d3d11_device.hpp"
 #include "d3d11_shader.hpp"
 #include "d3d11_state_object.hpp"
-#include "dxmt_command_stream.hpp"
 #include "log/log.hpp"
 #include "mtld11_interfaces.hpp"
 #include "mtld11_resource.hpp"
 #include "objc_pointer.hpp"
 #include "util_flags.hpp"
-#include <cstddef>
+
+#include "dxmt_command_queue.hpp"
 
 namespace dxmt {
 
@@ -326,9 +324,7 @@ public:
   void DrawIndexed(UINT IndexCount, UINT StartIndexLocation,
                    INT BaseVertexLocation) {
     FinalizeCurrentRenderPipeline();
-    
-    
-    }
+  }
 
   void DrawInstanced(UINT VertexCountPerInstance, UINT InstanceCount,
                      UINT StartVertexLocation, UINT StartInstanceLocation) {
@@ -507,7 +503,7 @@ public:
                          ID3D11Buffer *const *ppConstantBuffers,
                          const UINT *pFirstConstant,
                          const UINT *pNumConstants) {
-    auto &ShaderStage = state_.ShaderStages[(UINT)Type];
+    // auto &ShaderStage = state_.ShaderStages[(UINT)Type];
 
     binding_ready.clr(Type);
   }
@@ -518,7 +514,7 @@ public:
                          const UINT *pFirstConstant,
                          const UINT *pNumConstants) {
 
-    auto &ShaderStage = state_.ShaderStages[(UINT)Type];
+    // auto &ShaderStage = state_.ShaderStages[(UINT)Type];
   }
 
   template <ShaderType Type>
@@ -526,7 +522,7 @@ public:
   SetShaderResource(UINT StartSlot, UINT NumViews,
                     ID3D11ShaderResourceView *const *ppShaderResourceViews) {
 
-    auto &ShaderStage = state_.ShaderStages[(UINT)Type];
+    // auto &ShaderStage = state_.ShaderStages[(UINT)Type];
 
     binding_ready.clr(Type);
   }
@@ -534,13 +530,13 @@ public:
   template <ShaderType Type>
   void GetShaderResource(UINT StartSlot, UINT NumViews,
                          ID3D11ShaderResourceView **ppShaderResourceViews) {
-    auto &ShaderStage = state_.ShaderStages[(UINT)Type];
+    // auto &ShaderStage = state_.ShaderStages[(UINT)Type];
   }
 
   template <ShaderType Type>
   void SetSamplers(UINT StartSlot, UINT NumSamplers,
                    ID3D11SamplerState *const *ppSamplers) {
-    auto &ShaderStage = state_.ShaderStages[(UINT)Type];
+    // auto &ShaderStage = state_.ShaderStages[(UINT)Type];
     for (unsigned Slot = StartSlot; Slot < StartSlot + NumSamplers; Slot++) {
     }
 
@@ -1260,7 +1256,10 @@ public:
     }
     if (cmdbuf_state == CommandBufferState::RenderEncoderActive ||
         cmdbuf_state == CommandBufferState::RenderPipelineReady) {
-      // insert
+      CommandChunk *chk = cmd_queue.CurrentChunk();
+      chk->emit([fn = std::forward<Fn>(fn)](CommandChunk::context &ctx) {
+        fn(ctx.render_encoder.ptr());
+      });
     }
   };
 
@@ -1287,31 +1286,29 @@ public:
     auto state = state_.OutputMerger.DepthStencilState
                      ? state_.OutputMerger.DepthStencilState
                      : default_depth_stencil_state;
-
-    EmitRenderCommand<Force>([state = std::move(state),
-                              stencil_ref = state_.OutputMerger.StencilRef](
-                                 MTL::RenderCommandEncoder *encoder) {
-      encoder->setDepthStencilState(state->GetDepthStencilState());
-      encoder->setStencilReferenceValue(stencil_ref);
-    });
+    EmitRenderCommand<Force>(
+        [state, stencil_ref = state_.OutputMerger.StencilRef](
+            MTL::RenderCommandEncoder *encoder) {
+          encoder->setDepthStencilState(state->GetDepthStencilState());
+          encoder->setStencilReferenceValue(stencil_ref);
+        });
   }
 
   template <bool Force = false> void EmitSetRasterizerState() {
     auto state = state_.Rasterizer.RasterizerState
                      ? state_.Rasterizer.RasterizerState
                      : default_rasterizer_state;
-
-    EmitRenderCommand<Force>(
-        [state = std::move(state)](MTL::RenderCommandEncoder *encoder) {
-          state->SetupRasterizerState(encoder);
-        });
+    EmitRenderCommand<Force>([state](MTL::RenderCommandEncoder *encoder) {
+      state->SetupRasterizerState(encoder);
+    });
   }
 
   template <bool Force = false> void EmitSetScissor() {
-    CommandChunk *chk;
+    CommandChunk *chk = cmd_queue.CurrentChunk();
     auto scissors =
         chk->allocate<MTL::ScissorRect>(state_.Rasterizer.NumScissorRects);
-    // TODO: map
+    for (unsigned i = 0; i < state_.Rasterizer.NumScissorRects; i++) {
+    }
     EmitRenderCommand<Force>(
         [scissors = std::move(scissors)](MTL::RenderCommandEncoder *encoder) {
           encoder->setScissorRects(scissors.data(), scissors.size());
@@ -1320,10 +1317,11 @@ public:
 
   template <bool Force = false> void EmitSetViewport() {
 
-    CommandChunk *chk;
+    CommandChunk *chk = cmd_queue.CurrentChunk();
     auto scissors =
         chk->allocate<MTL::Viewport>(state_.Rasterizer.NumViewports);
-    // todo: map
+    for (unsigned i = 0; i < state_.Rasterizer.NumViewports; i++) {
+    }
     EmitRenderCommand<Force>(
         [viewports = std::move(scissors)](MTL::RenderCommandEncoder *encoder) {
           encoder->setViewports(viewports.data(), viewports.size());
@@ -1331,30 +1329,40 @@ public:
   }
 
   /**
-  in fact it's just about vertex buffer
+  it's just about vertex buffer
   - index buffer and input topology are provided in draw commands
   */
   template <bool Force = false> void EmitSetIAState() {
-
-    CommandChunk *chk;
-    auto vbs = chk->allocate<std::pair<int, int>>(
+    CommandChunk *chk = cmd_queue.CurrentChunk();
+    struct VERTEX_BUFFER_STATE {
+      Obj<MTL::Buffer> buffer;
+      UINT offset;
+      UINT stride;
+    };
+    auto vbs = chk->allocate<std::pair<UINT, VERTEX_BUFFER_STATE>>(
         state_.InputAssembler.VertexBuffers.size());
-    // TODO: map
-    EmitRenderCommand<Force>([vbs = std::move(vbs)]() {
-      MTL::RenderCommandEncoder *encoder; // don't ask me where it comes from
-      for (auto &[slot, vb] : vbs) {
-        // encoder->setVertexBuffer();
-        // NO YOU SHOULD PIN THE COMMAND BUFFER EARLY...
-      }
-    });
+    for (auto &[index, state] : state_.InputAssembler.VertexBuffers) {
+      vbs.push_back({index, {nullptr, state.Offset, state.Stride}});
+    };
+    EmitRenderCommand<Force>(
+        [vbs = std::move(vbs)](MTL::RenderCommandEncoder *encoder) {
+          for (auto &[index, state] : vbs) {
+            encoder->setVertexBuffer(state.buffer.ptr(), state.offset,
+                                     state.stride, index);
+          };
+          // TODO: deal with old redunant binding
+        });
   }
 
-  template <bool Force = false> void EmitBlendFactorAndSampleMask() {
-    EmitRenderCommand<Force>([]() {
-      MTL::RenderCommandEncoder *encoder; // don't ask me where it comes from
-
-      encoder->setBlendColor(0, 0, 0, 0);
-      encoder->setStencilReferenceValue(0);
+  template <bool Force = false> void EmitBlendFactorAndStencilRef() {
+    EmitRenderCommand<Force>([r = state_.OutputMerger.BlendFactor[0],
+                              g = state_.OutputMerger.BlendFactor[1],
+                              b = state_.OutputMerger.BlendFactor[2],
+                              a = state_.OutputMerger.BlendFactor[3],
+                              stencil_ref = state_.OutputMerger.StencilRef](
+                                 MTL::RenderCommandEncoder *encoder) {
+      encoder->setBlendColor(r, g, b, a);
+      encoder->setStencilReferenceValue(stencil_ref);
     });
   }
 
@@ -1388,22 +1396,22 @@ private:
 
 private:
   Obj<MTL::Device> metal_device_;
-  MTL::CommandQueue *m_queue;
   D3D11ContextState state_;
 
   CommandBufferState cmdbuf_state;
   Flags<ShaderType> binding_ready;
+  CommandQueue cmd_queue;
 
 public:
   MTLD3D11DeviceContext(IMTLD3D11Device *pDevice)
       : MTLD3D11DeviceContextBase(pDevice),
-        metal_device_(m_parent->GetMTLDevice()), state_() {
-    m_queue = metal_device_->newCommandQueue();
+        metal_device_(m_parent->GetMTLDevice()), state_(),
+        cmd_queue(metal_device_) {
     default_rasterizer_state = CreateDefaultRasterizerState(pDevice);
     default_depth_stencil_state = CreateDefaultDepthStencilState(pDevice);
   }
 
-  ~MTLD3D11DeviceContext() { m_queue->release(); }
+  ~MTLD3D11DeviceContext() {}
 };
 
 Com<IMTLD3D11DeviceContext> CreateD3D11DeviceContext(IMTLD3D11Device *pDevice) {

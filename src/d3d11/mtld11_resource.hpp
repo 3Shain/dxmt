@@ -6,6 +6,7 @@
 #include "com/com_pointer.hpp"
 #include "com/com_guid.hpp"
 #include "dxgi_resource.hpp"
+#include "dxmt_resource_binding.hpp"
 #include "log/log.hpp"
 #include <memory>
 
@@ -49,10 +50,10 @@ DEFINE_COM_INTERFACE("8f1b6f77-58c4-4bf4-8ce9-d08318ae70b1",
 };
 
 DEFINE_COM_INTERFACE("daf21510-d136-44dd-bb16-068a94690775",
-                     IMTLSwappableTexture)
-    : public IUnknown {
-  virtual MTL::Texture *GetCurrent() = 0;
+                     IMTLD3D11BackBuffer)
+    : public ID3D11Texture2D {
   virtual void Swap() = 0;
+  virtual CA::MetalDrawable *CurrentDrawable() = 0;
 };
 
 namespace dxmt {
@@ -93,10 +94,13 @@ template <typename tag, typename... Base>
 class TResourceBase
     : public MTLD3D11DeviceChild<typename tag::COM, IDXMTResource, Base...> {
 public:
-  TResourceBase(const tag::DESC_S *desc, IMTLD3D11Device *device)
-      : MTLD3D11DeviceChild<typename tag::COM, IDXMTResource>(device),
-        desc(*desc),
-        dxgi_resource(new MTLDXGIResource<TResourceBase<tag>>(this)) {}
+  TResourceBase(const tag::DESC_S *pDesc, IMTLD3D11Device *device)
+      : MTLD3D11DeviceChild<typename tag::COM, IDXMTResource, Base...>(device),
+        dxgi_resource(new MTLDXGIResource<TResourceBase<tag>>(this)) {
+    if (pDesc) {
+      desc = *pDesc;
+    }
+  }
 
   HRESULT QueryInterface(REFIID riid, void **ppvObject) {
     if (ppvObject == nullptr)
@@ -128,8 +132,7 @@ public:
     }
 
     if (logQueryInterfaceError(__uuidof(typename tag::COM), riid)) {
-      Logger::warn("QueryInterface: Unknown interface query");
-      Logger::warn(str::format(riid));
+      WARN("D3D11Resource: Unknown interface query ", str::format(riid));
     }
 
     return E_NOINTERFACE;
@@ -187,6 +190,73 @@ public:
 protected:
   tag::DESC_S desc;
   std::unique_ptr<IDXGIResource1> dxgi_resource;
+};
+
+template <typename COM_IMPL_ = ID3D11RenderTargetView,
+          typename RESOURCE_IMPL_ = ID3D11Resource>
+struct tag_render_target_view {
+  using COM = ID3D11RenderTargetView;
+  using COM_IMPL = COM_IMPL_;
+  using RESOURCE = ID3D11Resource;
+  using RESOURCE_IMPL = RESOURCE_IMPL_;
+  using DESC = D3D11_RENDER_TARGET_VIEW_DESC;
+  using DESC_S = D3D11_RENDER_TARGET_VIEW_DESC;
+};
+
+template <typename tag, typename... Base>
+class TResourceViewBase
+    : public MTLD3D11DeviceChild<typename tag::COM_IMPL, Base...> {
+public:
+  TResourceViewBase(const tag::DESC_S *pDesc, tag::RESOURCE_IMPL *pResource,
+                    IMTLD3D11Device *device)
+      : MTLD3D11DeviceChild<typename tag::COM_IMPL, Base...>(device),
+        resource(pResource) {
+    if (pDesc) {
+      desc = *pDesc;
+    }
+  }
+
+  HRESULT QueryInterface(REFIID riid, void **ppvObject) {
+    if (ppvObject == nullptr)
+      return E_POINTER;
+
+    *ppvObject = nullptr;
+
+    if (riid == __uuidof(IUnknown) || riid == __uuidof(ID3D11DeviceChild) ||
+        riid == __uuidof(ID3D11View) || riid == __uuidof(typename tag::COM) ||
+        riid == __uuidof(typename tag::COM_IMPL)) {
+      *ppvObject = ref_and_cast<typename tag::COM>(this);
+      return S_OK;
+    }
+
+    if (SUCCEEDED(this->PrivateQueryInterface(riid, ppvObject))) {
+      return S_OK;
+    }
+
+    if (logQueryInterfaceError(__uuidof(typename tag::COM_IMPL), riid)) {
+      WARN("D3D11View: Unknown interface query ", str::format(riid));
+    }
+
+    return E_NOINTERFACE;
+  }
+
+  void GetDesc(tag::DESC *pDesc) final { *pDesc = desc; }
+
+  void GetResource(tag::RESOURCE **ppResource) final {
+    resource->QueryInterface(IID_PPV_ARGS(ppResource));
+  }
+
+  virtual HRESULT PrivateQueryInterface(REFIID riid, void **ppvObject) {
+    return E_FAIL;
+  };
+
+  virtual ULONG64 GetUnderlyingResourceId() { return (ULONG64)resource.ptr(); };
+
+  virtual dxmt::ResourceSubset GetViewRange() { return ResourceSubset(desc); };
+
+protected:
+  tag::DESC_S desc;
+  Com<typename tag::RESOURCE_IMPL> resource;
 };
 
 } // namespace dxmt
