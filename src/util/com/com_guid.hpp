@@ -85,7 +85,7 @@ template <size_t N> constexpr GUID make_guid(const char (&str)[N]) {
   using namespace std::string_literals;
   static_assert(
       N == (GUID_STRING_LENGTH + 1),
-      "String GUID of the form {XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX} or "
+      "String GUID of the form "
       "XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX is expected");
 
   return make_guid_helper(str);

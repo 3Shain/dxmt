@@ -1,45 +1,108 @@
 #pragma once
-#include "./dxmt_precommand.hpp"
-#include "./dxmt_command.hpp"
-#include <array>
+
+#include "Metal/MTLCommandBuffer.hpp"
+#include "Metal/MTLCommandQueue.hpp"
+#include "Metal/MTLHeap.hpp"
+#include "objc_pointer.hpp"
+#include "rc/util_rc.hpp"
+#include "thread.hpp"
+#include "util_env.hpp"
+#include <atomic>
+#include <cstdint>
+#include <map>
+#include <queue>
 #include <vector>
 
 namespace dxmt {
 
-struct PipelineCommandState {
-  MTLBindRenderTarget bindRenderTarget;
-  MTLBindDepthStencilState bindDepthStencilState;
-  MTLBindPipelineState bindPipelineState;
-  MTLSetViewports setViewports;
-  MTLSetScissorRects setScissorRects;
-  MTLSetVertexBuffer setVertexBuffer[16];
-  MTLSetConstantBuffer<Vertex> setVertexConstantBuffer[14];
-  MTLSetConstantBuffer<Pixel> setPixelConstantBuffer[14];
-  MTLSetSampler<Pixel> setPixelShaderSampler[16];
-  std::array<MTLSetShaderResource<Pixel>, 64> setPixelShaderResource =
-      {}; // TODO
+class CommandChunk : public RcObject {
+
+  template <typename T> struct CommandChunkHeapLinearAllocator {
+    typedef T value_type;
+
+    CommandChunkHeapLinearAllocator() = delete;
+    CommandChunkHeapLinearAllocator(CommandChunk *chunk) : chunk(chunk){};
+
+    [[nodiscard]] constexpr T *allocate(std::size_t n) {
+      return reinterpret_cast<T *>(
+          chunk->allocateCPUHeap(n * sizeof(T), alignof(T)));
+    }
+
+    constexpr void deallocate(T *p, [[maybe_unused]] std::size_t n) noexcept {
+      // do nothing
+    }
+
+    bool
+    operator==(const CommandChunkHeapLinearAllocator<T> &rhs) const noexcept {
+      return chunk == rhs.chunk;
+    }
+
+    bool
+    operator!=(const CommandChunkHeapLinearAllocator<T> &rhs) const noexcept {
+      return !(*this == rhs);
+    }
+
+    CommandChunk *chunk;
+  };
+
+public:
+  template <typename T>
+  using fixed_vector_on_heap =
+      std::vector<T, CommandChunkHeapLinearAllocator<T>>;
+
+  CommandChunk(const CommandChunk &) = delete; // delete copy constructor
+
+  template <typename T> fixed_vector_on_heap<T> allocate(size_t n = 1) {
+    CommandChunkHeapLinearAllocator<T> allocator(this);
+    fixed_vector_on_heap<T> ret(allocator);
+    ret.reserve(n);
+    return ret;
+  }
+
+  void *allocateCPUHeap(size_t size, size_t align) {
+    // TODO: proper implementation
+    return 0;
+  }
+
+  char *cpu_argument_heap;
+  Obj<MTL::Heap> gpu_argument_heap;
+  uint32_t cpu_arugment_heap_offset;
+  uint32_t gpu_arugment_heap_offset;
 };
 
-class DXMTCommandStream : public RcObject {
+class CommandQueue {
+
 public:
-  DXMTCommandStream(MTL::Buffer *argument_buffer);
+  CommandQueue()
+      : encodeThread([this]() { this->EncodingThread(); }),
+        finishThread([this]() { this->FinishThread(); }){};
 
-  void Emit(MTLCommand &&command);
-  void EmitPreCommand(MTLPreCommand &&command);
-
-  void Encode(PipelineCommandState &pcs, MTL::CommandBuffer *cbuffer,
-              MTL::Device *device);
-
-  uint64_t stream_seq_id;
+  ~CommandQueue() { stopped.store(true); }
 
 private:
-  uint64_t command_seq_id_;
-  std::vector<MTLCommand> command_list_;
-  std::vector<MTLPreCommand> precommand_list_;
-  std::vector<NS::Object *> collect_;
-  Obj<MTL::Buffer> argument_buffer;
-};
+  uint32_t EncodingThread() {
+    env::setThreadName("dxmt-encode-thread");
+    while (!stopped.load()) {
 
-enum class ActiveEncoder { None = 0, Render, Compute, Blit };
+      auto cmdbuf = commandQueue->commandBuffer();
+    }
+    return 0;
+  };
+
+  uint32_t FinishThread() {
+    env::setThreadName("dxmt-finish-thread");
+    while (!stopped.load()) {
+    }
+    return 0;
+  }
+
+  // std::queue<CommandBuffer> pendingCmdBufferQueue;
+  // std::queue<CommandBuffer> ongoingCmdBufferQueue;
+  std::atomic_bool stopped;
+
+  dxmt::thread encodeThread;
+  dxmt::thread finishThread;
+  MTL::CommandQueue *commandQueue;
+};
 
 } // namespace dxmt

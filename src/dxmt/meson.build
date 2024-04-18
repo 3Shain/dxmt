@@ -1,6 +1,4 @@
 dxmt_src = [
-  'dxmt_command_stream.cpp',
-  'dxmt_pipeline.cpp',
   'dxmt_format.cpp',
 ]
 

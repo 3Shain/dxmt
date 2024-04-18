@@ -351,7 +351,7 @@ MTLD3D11Device::MTLD3D11Device(MTLD3D11DXGIDevice *container,
                                UINT FeatureFlags)
     : m_container(container), m_FeatureLevel(FeatureLevel),
       m_FeatureFlags(FeatureFlags), m_features(container->GetMTLDevice()) {
-  context_ = NewD3D11DeviceContext(this);
+  context_ = CreateD3D11DeviceContext(this);
 }
 
 MTLD3D11Device::~MTLD3D11Device() { context_ = nullptr; }
@@ -690,61 +690,7 @@ HRESULT STDMETHODCALLTYPE MTLD3D11Device::CreateBlendState(
 HRESULT STDMETHODCALLTYPE MTLD3D11Device::CreateDepthStencilState(
     const D3D11_DEPTH_STENCIL_DESC *pDesc,
     ID3D11DepthStencilState **ppDepthStencilState) {
-  InitReturnPtr(ppDepthStencilState);
-
-  // TODO: validation
-
-  if (!ppDepthStencilState)
-    return S_FALSE;
-  using SD = MTL::StencilDescriptor;
-
-  using DSD = MTL::DepthStencilDescriptor;
-  Obj<MTL::DepthStencilDescriptor> dsd = transfer(DSD::alloc()->init());
-  if (pDesc->DepthEnable) {
-    dsd->setDepthCompareFunction(compareFunctionMap[pDesc->DepthFunc]);
-    dsd->setDepthWriteEnabled(pDesc->DepthWriteMask ==
-                              D3D11_DEPTH_WRITE_MASK_ALL);
-  } else {
-    dsd->setDepthCompareFunction(MTL::CompareFunctionAlways);
-    dsd->setDepthWriteEnabled(0);
-  }
-
-  if (pDesc->StencilEnable) {
-    {
-      auto fsd = transfer(SD::alloc()->init());
-      fsd->setDepthStencilPassOperation(
-          stencilOperationMap[pDesc->FrontFace.StencilPassOp]);
-      fsd->setStencilFailureOperation(
-          stencilOperationMap[pDesc->FrontFace.StencilFailOp]);
-      fsd->setDepthFailureOperation(
-          stencilOperationMap[pDesc->FrontFace.StencilDepthFailOp]);
-      fsd->setStencilCompareFunction(
-          compareFunctionMap[pDesc->FrontFace.StencilFunc]);
-      fsd->setWriteMask(pDesc->StencilWriteMask);
-      fsd->setReadMask(pDesc->StencilReadMask);
-      dsd->setFrontFaceStencil(fsd.ptr());
-    }
-    {
-      auto bsd = transfer(SD::alloc()->init());
-      bsd->setDepthStencilPassOperation(
-          stencilOperationMap[pDesc->BackFace.StencilPassOp]);
-      bsd->setStencilFailureOperation(
-          stencilOperationMap[pDesc->BackFace.StencilFailOp]);
-      bsd->setDepthFailureOperation(
-          stencilOperationMap[pDesc->BackFace.StencilDepthFailOp]);
-      bsd->setStencilCompareFunction(
-          compareFunctionMap[pDesc->BackFace.StencilFunc]);
-      bsd->setWriteMask(pDesc->StencilWriteMask);
-      bsd->setReadMask(pDesc->StencilReadMask);
-      dsd->setBackFaceStencil(bsd.ptr());
-    }
-  }
-
-  auto state = transfer(GetMTLDevice()->newDepthStencilState(dsd.ptr()));
-
-  *ppDepthStencilState =
-      ref(new MTLD3D11DepthStencilState(this, state.ptr(), *pDesc));
-  return S_OK;
+  return dxmt::CreateDepthStencilState(this, pDesc, ppDepthStencilState);
 }
 
 HRESULT STDMETHODCALLTYPE MTLD3D11Device::CreateRasterizerState(
@@ -771,101 +717,7 @@ HRESULT STDMETHODCALLTYPE MTLD3D11Device::CreateRasterizerState(
 HRESULT STDMETHODCALLTYPE
 MTLD3D11Device::CreateSamplerState(const D3D11_SAMPLER_DESC *pSamplerDesc,
                                    ID3D11SamplerState **ppSamplerState) {
-
-  InitReturnPtr(ppSamplerState);
-
-  if (pSamplerDesc == nullptr)
-    return E_INVALIDARG;
-
-  D3D11_SAMPLER_DESC desc = *pSamplerDesc;
-
-  // FIXME: validation
-
-  if (!ppSamplerState)
-    return S_FALSE;
-
-  auto mtl_sampler_desc = transfer(MTL::SamplerDescriptor::alloc()->init());
-
-  // filter
-  if (D3D11_DECODE_MIN_FILTER(desc.Filter)) { // LINEAR = 1
-    mtl_sampler_desc->setMinFilter(
-        MTL::SamplerMinMagFilter::SamplerMinMagFilterLinear);
-  } else {
-    mtl_sampler_desc->setMinFilter(
-        MTL::SamplerMinMagFilter::SamplerMinMagFilterNearest);
-  }
-  if (D3D11_DECODE_MAG_FILTER(desc.Filter)) { // LINEAR = 1
-    mtl_sampler_desc->setMagFilter(
-        MTL::SamplerMinMagFilter::SamplerMinMagFilterLinear);
-  } else {
-    mtl_sampler_desc->setMagFilter(
-        MTL::SamplerMinMagFilter::SamplerMinMagFilterNearest);
-  }
-  if (D3D11_DECODE_MIP_FILTER(desc.Filter)) { // LINEAR = 1
-    mtl_sampler_desc->setMipFilter(
-        MTL::SamplerMipFilter::SamplerMipFilterLinear);
-  } else {
-    mtl_sampler_desc->setMipFilter(
-        MTL::SamplerMipFilter::SamplerMipFilterNearest);
-  }
-
-  // LOD
-  // MipLODBias is not supported
-  // FIXME: it can be done in shader, see MSL spec page 186:  bias(float value)
-  mtl_sampler_desc->setLodMinClamp(
-      desc.MinLOD); // -FLT_MAX vs 0?
-                    // https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11devicecontext-vssetsamplers
-  mtl_sampler_desc->setLodMaxClamp(desc.MaxLOD);
-
-  // Anisotropy
-  if (D3D11_DECODE_IS_ANISOTROPIC_FILTER(desc.Filter)) {
-    mtl_sampler_desc->setMaxAnisotropy(desc.MaxAnisotropy);
-  }
-
-  // address modes
-  // U-S  V-T W-R
-  if (desc.AddressU > 0 && desc.AddressU < 6) {
-    mtl_sampler_desc->setSAddressMode(addressModeMap[desc.AddressU - 1]);
-  }
-  if (desc.AddressV > 0 && desc.AddressV < 6) {
-    mtl_sampler_desc->setTAddressMode(addressModeMap[desc.AddressV - 1]);
-  }
-  if (desc.AddressW > 0 && desc.AddressW < 6) {
-    mtl_sampler_desc->setRAddressMode(addressModeMap[desc.AddressW - 1]);
-  }
-
-  // comparison function
-  if (desc.ComparisonFunc < 1 || desc.ComparisonFunc > 8) {
-    ERR("Invalid ComparisonFunc");
-  } else {
-    mtl_sampler_desc->setCompareFunction(
-        compareFunctionMap[desc.ComparisonFunc]);
-  }
-
-  // border color
-  if (desc.BorderColor[0] == 0.0f && desc.BorderColor[1] == 0.0f &&
-      desc.BorderColor[2] == 0.0f && desc.BorderColor[3] == 0.0f) {
-    mtl_sampler_desc->setBorderColor(
-        MTL::SamplerBorderColor::SamplerBorderColorTransparentBlack);
-  } else if (desc.BorderColor[0] == 0.0f && desc.BorderColor[1] == 0.0f &&
-             desc.BorderColor[2] == 0.0f && desc.BorderColor[3] == 1.0f) {
-    mtl_sampler_desc->setBorderColor(
-        MTL::SamplerBorderColor::SamplerBorderColorOpaqueBlack);
-  } else if (desc.BorderColor[0] == 1.0f && desc.BorderColor[1] == 1.0f &&
-             desc.BorderColor[2] == 1.0f && desc.BorderColor[3] == 1.0f) {
-    mtl_sampler_desc->setBorderColor(
-        MTL::SamplerBorderColor::SamplerBorderColorOpaqueWhite);
-  } else {
-    WARN("Unsupported border color");
-  }
-  mtl_sampler_desc->setSupportArgumentBuffers(true);
-
-  auto mtl_sampler =
-      transfer(GetMTLDevice()->newSamplerState(mtl_sampler_desc.ptr()));
-
-  *ppSamplerState =
-      ref(new MTLD3D11SamplerState(this, mtl_sampler.ptr(), desc));
-  return S_OK;
+  return dxmt::CreateSamplerState(this, pSamplerDesc, ppSamplerState);
 }
 
 HRESULT STDMETHODCALLTYPE MTLD3D11Device::CreateQuery(
@@ -1141,33 +993,13 @@ HRESULT STDMETHODCALLTYPE MTLD3D11Device::CreateDeferredContext1(
 HRESULT STDMETHODCALLTYPE
     MTLD3D11Device::CreateBlendState1(const D3D11_BLEND_DESC1 *pBlendStateDesc,
                                       ID3D11BlendState1 **ppBlendState) {
-  InitReturnPtr(ppBlendState);
-
-  // TODO: validate
-  // if(pBlendStateDesc->AlphaToCoverageEnable)
-
-  if (ppBlendState) {
-    *ppBlendState = ref(new MTLD3D11BlendState(this, *pBlendStateDesc));
-    return S_OK;
-  } else {
-    return S_FALSE;
-  }
+  return dxmt::CreateBlendState(this, pBlendStateDesc, ppBlendState);
 }
 
 HRESULT STDMETHODCALLTYPE MTLD3D11Device::CreateRasterizerState1(
     const D3D11_RASTERIZER_DESC1 *pRasterizerDesc,
     ID3D11RasterizerState1 **ppRasterizerState) {
-  InitReturnPtr(ppRasterizerState);
-
-  // TODO: validate
-
-  if (ppRasterizerState) {
-    *ppRasterizerState =
-        ref(new MTLD3D11RasterizerState(this, *pRasterizerDesc));
-    return S_OK;
-  } else {
-    return S_FALSE;
-  }
+  return dxmt::CreateRasterizerState(this, pRasterizerDesc, ppRasterizerState);
 }
 
 HRESULT STDMETHODCALLTYPE MTLD3D11Device::CreateDeviceContextState(
@@ -1234,7 +1066,7 @@ MTLD3D11DXGIDevice::QueryInterface(REFIID riid, void **ppvObject) {
     return E_NOINTERFACE;
 
   if (logQueryInterfaceError(__uuidof(IMTLDXGIDevice), riid)) {
-    WARN("D3D11Device: Unknown interface query: ", str::format(riid));
+    WARN("D3D11Device: Unknown interface query ", str::format(riid));
   }
 
   return E_NOINTERFACE;

@@ -7,6 +7,16 @@
 #include <cstdlib>
 
 namespace dxmt {
+
+enum class ShaderType {
+  Vertex = 0,
+  Pixel = 1,
+  Geometry = 2,
+  Hull = 3,
+  Domain = 4,
+  Compute = 5
+};
+
 template <typename Base, typename Reflection>
 class MTLBaseShader : public MTLD3D11DeviceChild<Base> {
 public:

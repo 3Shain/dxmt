@@ -2,7 +2,6 @@ d3d11_res = wrc_generator.process('version.rc')
 
 d3d11_src = [
   'd3d11_class_linkage.cpp',
-  'd3d11_context_state.cpp',
   'd3d11_context.cpp',
   'd3d11_device.cpp',
   'd3d11_input_layout.cpp',

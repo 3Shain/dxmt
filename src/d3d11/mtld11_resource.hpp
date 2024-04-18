@@ -41,12 +41,16 @@ DEFINE_COM_INTERFACE("4fe0ec8e-8be0-4c41-a9a4-11726ceba59c", IMTLTexture)
   virtual MTL::Texture *Get() = 0;
 };
 
-struct IMTLSwappableBuffer : public IUnknown {
+DEFINE_COM_INTERFACE("8f1b6f77-58c4-4bf4-8ce9-d08318ae70b1",
+                     IMTLSwappableBuffer)
+    : public IUnknown {
   virtual MTL::Buffer *GetCurrent() = 0;
   virtual void Swap() = 0;
 };
 
-struct IMTLSwappableTexture : public IUnknown {
+DEFINE_COM_INTERFACE("daf21510-d136-44dd-bb16-068a94690775",
+                     IMTLSwappableTexture)
+    : public IUnknown {
   virtual MTL::Texture *GetCurrent() = 0;
   virtual void Swap() = 0;
 };

@@ -30,7 +30,7 @@ template <typename T> T *ref(T *object) {
 template <typename T, typename X> T *ref_and_cast(X *object) {
   if (object != nullptr)
     object->AddRef();
-  return static_cast<T*>(object);
+  return static_cast<T *>(object);
 }
 
 /**
@@ -113,6 +113,8 @@ public:
     return ret;
   }
 
+  operator bool() const { return this->m_ptr != nullptr; }
+
   template <bool Public_> bool operator==(const Com<T, Public_> &other) const {
     return m_ptr == other.m_ptr;
   }
@@ -159,6 +161,10 @@ private:
     if (m_ptr != nullptr)
       ComRef::decRef(m_ptr);
   }
+};
+
+template <typename T> Com<T> com_cast(IUnknown *pUnknwn) {
+  return Com<T>::queryFrom(pUnknwn);
 };
 
 } // namespace dxmt
