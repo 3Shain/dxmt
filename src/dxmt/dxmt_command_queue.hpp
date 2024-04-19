@@ -8,6 +8,7 @@
 #include "Metal/MTLComputeCommandEncoder.hpp"
 #include "Metal/MTLHeap.hpp"
 #include "Metal/MTLRenderCommandEncoder.hpp"
+#include "log/log.hpp"
 #include "objc_pointer.hpp"
 #include "thread.hpp"
 #include "util_env.hpp"
@@ -23,6 +24,19 @@ template <typename F, typename context>
 concept cpu_cmd = requires(F f, context &ctx) {
   { f(ctx) } -> std::same_as<void>;
 };
+
+inline std::size_t
+align_forward_adjustment(const void *const ptr,
+                         const std::size_t &alignment) noexcept {
+  const auto iptr = reinterpret_cast<std::uintptr_t>(ptr);
+  const auto aligned = (iptr - 1u + alignment) & -alignment;
+  return aligned - iptr;
+}
+
+inline void *ptr_add(const void *const p,
+                     const std::uintptr_t &amount) noexcept {
+  return reinterpret_cast<void *>(reinterpret_cast<std::uintptr_t>(p) + amount);
+}
 
 class CommandChunk {
 
@@ -56,14 +70,14 @@ class CommandChunk {
   template <typename context> class BFunc {
   public:
     virtual void invoke(context &) = 0;
-    virtual ~BFunc(){};
+    virtual ~BFunc() noexcept {};
   };
 
   template <typename context, typename F>
   class EFunc final : public BFunc<context> {
   public:
     void invoke(context &ctx) final { std::invoke(func, ctx); };
-    ~EFunc() final = default;
+    ~EFunc() noexcept final = default;
     EFunc(F &&ff) : func(std::forward<F>(ff)) {}
     EFunc(const EFunc &copy) = delete;
     EFunc &operator=(const EFunc &copy_assign) = delete;
@@ -75,7 +89,7 @@ class CommandChunk {
   template <typename context> class MFunc final : public BFunc<context> {
   public:
     void invoke(context &ctx) final{/* nop */};
-    ~MFunc() = default;
+    ~MFunc() noexcept = default;
   };
 
   template <typename value_t> struct Node {
@@ -106,9 +120,22 @@ public:
     return ret;
   }
 
-  void *allocateCPUHeap(size_t size, size_t align) {
-    // TODO: proper implementation
-    return 0;
+  void *allocateCPUHeap(size_t size, size_t alignment) {
+    std::size_t adjustment =
+        align_forward_adjustment(cpu_argument_heap, alignment);
+
+    // if(m_usedBytes + adjustment + size > m_size)
+    //     throw std::bad_alloc();
+
+    auto aligned = cpu_arugment_heap_offset + adjustment;
+    cpu_arugment_heap_offset = aligned + size;
+
+    // m_usedBytes = reinterpret_cast<std::uintptr_t>(m_current)
+    //     - reinterpret_cast<std::uintptr_t>(m_start);
+
+    // ++m_numAllocations;
+
+    return ptr_add(cpu_argument_heap, aligned);
   }
 
   using context = context_t;
@@ -128,11 +155,9 @@ public:
   void encode(MTL::CommandBuffer *cmdbuf) {
     attached_cmdbuf = cmdbuf;
     context_t context{cmdbuf, {}, {}, {}, {}, {}, {}};
-    auto cur = &monoid_list;
-    while (true) {
+    auto cur = monoid_list.next;
+    while (cur) {
       cur->value->invoke(context);
-      if (cur->next == nullptr)
-        break;
       cur = cur->next;
     }
   };
@@ -153,9 +178,9 @@ public:
   CommandChunk()
       : monoid(), monoid_list{&monoid, nullptr}, list_end(&monoid_list) {}
 
-  void reset() {
+  void reset() noexcept {
     auto cur = monoid_list.next;
-    while (cur != nullptr) {
+    while (cur) {
       cur->value->~BFunc<context>(); // call destructor
       cur = cur->next;
     }
@@ -178,8 +203,7 @@ private:
     env::setThreadName("dxmt-encode-thread");
     uint64_t internal_seq = 0;
     while (!stopped.load()) {
-      if (internal_seq == encoding_index.load())
-        encoding_index.wait(internal_seq);
+      ready_for_encode.wait(internal_seq, std::memory_order_acquire);
       if (stopped.load())
         break;
       // perform...
@@ -188,10 +212,14 @@ private:
       auto pool = transfer(NS::AutoreleasePool::alloc()->init());
       auto cmdbuf = commandQueue->commandBuffer();
       chunk.encode(cmdbuf);
-      wait_for_finish_index.fetch_add(1);
-      wait_for_finish_index.notify_all();
+      cmdbuf->commit();
+      // cmdbuf->waitUntilScheduled(); // seems unnecessary
+
+      ready_for_commit.fetch_add(1, std::memory_order_release);
+      ready_for_commit.notify_all();
       internal_seq++;
     }
+    TRACE("encoder thread gracefully terminates");
     return 0;
   };
 
@@ -199,21 +227,25 @@ private:
     env::setThreadName("dxmt-finish-thread");
     uint64_t internal_seq = 0;
     while (!stopped.load()) {
-      if (internal_seq == wait_for_finish_index.load())
-        wait_for_finish_index.wait(internal_seq);
+      ready_for_commit.wait(internal_seq, std::memory_order_acquire);
       if (stopped.load())
         break;
       auto &chunk = chunks[internal_seq % kCommandChunkCount];
-      chunk.attached_cmdbuf->waitUntilCompleted();
-      // TODO: perform cleanup
+      if (chunk.attached_cmdbuf->status() <=
+          MTL::CommandBufferStatusScheduled) {
+        chunk.attached_cmdbuf->waitUntilCompleted();
+      }
       chunk.reset();
+      chunk_ongoing.fetch_sub(1, std::memory_order_relaxed);
+      chunk_ongoing.notify_all();
       internal_seq++;
     }
     return 0;
   }
 
-  std::atomic_uint64_t encoding_index = 0;
-  std::atomic_uint64_t wait_for_finish_index = 0;
+  std::atomic_uint64_t ready_for_encode = 0;
+  std::atomic_uint64_t ready_for_commit = 0;
+  std::atomic_uint64_t chunk_ongoing = 0;
   std::atomic_bool stopped;
 
   std::array<CommandChunk, kCommandChunkCount> chunks;
@@ -240,10 +272,10 @@ public:
 
   ~CommandQueue() {
     stopped.store(true);
-    encoding_index++;
-    encoding_index.notify_all();
-    wait_for_finish_index++;
-    wait_for_finish_index.notify_all();
+    ready_for_encode++;
+    ready_for_encode.notify_all();
+    ready_for_commit++;
+    ready_for_commit.notify_all();
     for (unsigned i = 0; i < kCommandChunkCount; i++) {
       auto &chunk = chunks[i];
       chunk.reset();
@@ -253,20 +285,26 @@ public:
   }
 
   CommandChunk *CurrentChunk() {
-    // TODO: prevent overflow
-    return &chunks[encoding_index.load() % kCommandChunkCount];
+    return &chunks[ready_for_encode.load(std::memory_order_relaxed) %
+                   kCommandChunkCount];
   };
 
+  /**
+  This is not thread-safe!
+  CurrentChunk & CommitCurrentChunk should be called on the same thread
+
+  */
   void CommitCurrentChunk() {
-    // TODO: prevent overflow
-    encoding_index.fetch_add(1);
-    encoding_index.notify_all();
+    chunk_ongoing.wait(kCommandChunkCount - 1, std::memory_order_relaxed);
+    chunk_ongoing.fetch_add(1, std::memory_order_relaxed);
+    ready_for_encode.fetch_add(1, std::memory_order_release);
+    ready_for_encode.notify_all();
   };
 
   void WaitCPUFence(uint64_t seq) {
     uint64_t current;
-    while ((current = wait_for_finish_index.load()) < seq) {
-      wait_for_finish_index.wait(current);
+    while ((current = chunk_ongoing.load(std::memory_order_relaxed))) {
+      chunk_ongoing.wait(current);
     }
   };
 };

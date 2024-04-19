@@ -46,13 +46,13 @@ public:
     *ppvObject = nullptr;
 
     if (riid == __uuidof(IUnknown) || riid == __uuidof(ID3D11DeviceChild) ||
-        riid == __uuidof(ID3D11InputLayout)) {
+        riid == __uuidof(ID3D11InputLayout) || riid == __uuidof(IMTLD3D11InputLayout)) {
       *ppvObject = ref(this);
       return S_OK;
     }
 
     if (logQueryInterfaceError(__uuidof(ID3D11InputLayout), riid)) {
-      WARN("Unknown interface query", str::format(riid));
+      WARN("D3D311InputLayout: Unknown interface query ", str::format(riid));
     }
 
     return E_NOINTERFACE;

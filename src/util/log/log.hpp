@@ -71,6 +71,9 @@ private:
 
 } // namespace dxmt
 
+
+#define TRACE(...) Logger::trace(str::format(__VA_ARGS__))
+
 #define WARN(...) Logger::warn(str::format(__VA_ARGS__))
 
 #define ERR(...) Logger::err(str::format(__VA_ARGS__))

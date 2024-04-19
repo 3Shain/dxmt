@@ -95,6 +95,7 @@ public:
 
   ~EmulatedBackBufferTexture() {
     current_drawable = nullptr;
+    // layer_ = nullptr; // this cause program hang
     layer_factory->ReleaseMetalLayer(hWnd, native_view_);
   }
 

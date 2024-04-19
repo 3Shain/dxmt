@@ -1,4 +1,5 @@
 #include "d3d11_swapchain.hpp"
+#include "QuartzCore/CAMetalDrawable.hpp"
 #include "com/com_guid.hpp"
 #include "d3d11_private.h"
 #include "dxgi_interfaces.h"
@@ -6,6 +7,7 @@
 #include "d3d11_context.hpp"
 #include "log/log.hpp"
 #include "mtld11_resource.hpp"
+#include "objc_pointer.hpp"
 #include "util_error.hpp"
 #include "d3d11_device.hpp"
 
@@ -133,6 +135,13 @@ public:
   STDMETHODCALLTYPE
   ResizeBuffers(UINT BufferCount, UINT Width, UINT Height, DXGI_FORMAT Format,
                 UINT flags) final {
+    if (backbuffer_->AddRef() != 2) {
+      ERR("ResizeBuffers: unreleased outstanding references to back "
+          "buffers");
+      backbuffer_->Release();
+      return DXGI_ERROR_INVALID_CALL;
+    }
+    backbuffer_->Release();
     /* BufferCount ignored */
     if (Width == 0 || Height == 0) {
       wsi::getWindowSize(hWnd, &desc_.Width, &desc_.Height);
@@ -143,6 +152,7 @@ public:
     if (Format != DXGI_FORMAT_UNKNOWN) {
       desc_.Format = Format;
     }
+    device_context_->WaitUntilGPUIdle();
     backbuffer_ = nullptr;
     return S_OK;
   };
@@ -214,14 +224,12 @@ public:
   Present1(UINT SyncInterval, UINT PresentFlags,
            const DXGI_PRESENT_PARAMETERS *pPresentParameters) final {
 
-    // dispatch_semaphore_wait(semaphore, (~0ull));
-
-    // auto w = transfer(NS::AutoreleasePool::alloc()->init());
-
+    // does this affect reference count?
+    assert(backbuffer_->CurrentDrawable());
     device_context_->Flush2(
-        [swapchain_ = backbuffer_.ptr()](MTL::CommandBuffer *cbuffer) {
-          // swapchain_.GetCurrentFrameBackBuffer(); // ensure not null
-          cbuffer->presentDrawable(swapchain_->CurrentDrawable());
+        [drawable = transfer(backbuffer_->CurrentDrawable())](
+            MTL::CommandBuffer *cmdbuf) {
+          cmdbuf->presentDrawable(drawable.ptr());
         });
     backbuffer_->Swap();
 

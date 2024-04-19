@@ -1,5 +1,6 @@
 #include "Metal/MTLBuffer.hpp"
 #include "Metal/MTLRenderCommandEncoder.hpp"
+#include "Metal/MTLRenderPass.hpp"
 #include "com/com_guid.hpp"
 #include "com/com_pointer.hpp"
 #include "d3d11_device_child.hpp"
@@ -14,6 +15,7 @@
 #include "d3d11_device.hpp"
 #include "d3d11_shader.hpp"
 #include "d3d11_state_object.hpp"
+#include "d3d11_view.hpp"
 #include "log/log.hpp"
 #include "mtld11_interfaces.hpp"
 #include "mtld11_resource.hpp"
@@ -188,8 +190,26 @@ public:
 
   void ClearRenderTargetView(ID3D11RenderTargetView *pRenderTargetView,
                              const FLOAT ColorRGBA[4]) {
+    if (auto expected =
+            com_cast<IMTLD3D11RenderTargetView>(pRenderTargetView)) {
 
-    IMPLEMENT_ME;
+      InvalidateCurrentPass();
+      // should raise a new render command
+      CommandChunk *chk = cmd_queue.CurrentChunk();
+      chk->emit([texture = expected->GetCurrentTexture(), r = ColorRGBA[0],
+                 g = ColorRGBA[1], b = ColorRGBA[2],
+                 a = ColorRGBA[3]](CommandChunk::context &ctx) {
+        auto enc_descriptor = MTL::RenderPassDescriptor::renderPassDescriptor();
+        auto attachmentz = enc_descriptor->colorAttachments()->object(0);
+        attachmentz->setClearColor({r, g, b, a});
+        attachmentz->setTexture(texture);
+        attachmentz->setLoadAction(MTL::LoadActionClear);
+        attachmentz->setStoreAction(MTL::StoreActionStore);
+
+        auto enc = ctx.cmdbuf->renderCommandEncoder(enc_descriptor);
+        enc->endEncoding();
+      });
+    }
   }
 
   void
@@ -318,7 +338,8 @@ public:
 #pragma region DrawCall
 
   void Draw(UINT VertexCount, UINT StartVertexLocation) {
-    FinalizeCurrentRenderPipeline();
+    // FinalizeCurrentRenderPipeline();
+    // TODO
   }
 
   void DrawIndexed(UINT IndexCount, UINT StartIndexLocation,
@@ -411,10 +432,11 @@ public:
                           ID3D11Buffer *const *ppVertexBuffers,
                           const UINT *pStrides, const UINT *pOffsets) {
     for (unsigned Slot = StartSlot; Slot < StartSlot + NumBuffers; Slot++) {
-      auto pOldBuffer = state_.InputAssembler.VertexBuffers[Slot];
-      if (auto pBuffer =
-              com_cast<IMTLBuffer>(ppVertexBuffers[Slot - StartSlot])) {
-      }
+      // auto pOldBuffer = state_.InputAssembler.VertexBuffers[Slot];
+      // if (auto pBuffer =
+      //         com_cast<IMTLBuffer>(ppVertexBuffers[Slot - StartSlot])) {
+      // }
+      // TODO
     }
   }
 
@@ -1012,7 +1034,10 @@ public:
       UINT NumRTVs, ID3D11RenderTargetView *const *ppRenderTargetViews,
       ID3D11DepthStencilView *pDepthStencilView, UINT UAVStartSlot,
       UINT NumUAVs, ID3D11UnorderedAccessView *const *ppUnorderedAccessViews,
-      const UINT *pUAVInitialCounts) {}
+      const UINT *pUAVInitialCounts) {
+
+    // TODO...
+  }
 
   void OMGetRenderTargetsAndUnorderedAccessViews(
       UINT NumRTVs, ID3D11RenderTargetView **ppRenderTargetViews,
@@ -1079,7 +1104,10 @@ public:
   }
 
   void RSSetViewports(UINT NumViewports, const D3D11_VIEWPORT *pViewports) {
-
+    state_.Rasterizer.NumViewports = NumViewports;
+    for (unsigned i = 0; i < NumViewports; i++) {
+      state_.Rasterizer.viewports[i] = pViewports[i];
+    }
     EmitSetViewport();
   }
 
@@ -1116,7 +1144,14 @@ public:
 
 #pragma endregion
 
-  void Flush2(std::function<void(MTL::CommandBuffer *)> &&beforeCommit) final {}
+  void Flush2(std::function<void(MTL::CommandBuffer *)> &&beforeCommit) final {
+    InvalidateCurrentPass();
+    cmd_queue.CurrentChunk()->emit(
+        [bc = std::move(beforeCommit)](CommandChunk::context &ctx) {
+          bc(ctx.cmdbuf);
+        });
+    cmd_queue.CommitCurrentChunk();
+  }
 
 #pragma region CommandEncoder Maintain State
 
@@ -1124,11 +1159,35 @@ public:
   Render pass can be invalidated by reasons:
   - render target changes (including depth stencil)
   All pass can be invalidated by reasons:
-  -
+  - a encoder type switch
+  - flush/present
   */
   void InvalidateCurrentPass() {
-
-    // TODO
+    CommandChunk *chk = cmd_queue.CurrentChunk();
+    switch (cmdbuf_state) {
+    case CommandBufferState::Idle:
+      break;
+    case CommandBufferState::RenderEncoderActive:
+    case CommandBufferState::RenderPipelineReady:
+      chk->emit([](CommandChunk::context &ctx) {
+        ctx.render_encoder->endEncoding();
+        ctx.render_encoder = nullptr;
+      });
+      break;
+    case CommandBufferState::ComputeEncoderActive:
+    case CommandBufferState::ComputePipelineReady:
+      chk->emit([](CommandChunk::context &ctx) {
+        ctx.compute_encoder->endEncoding();
+        ctx.compute_encoder = nullptr;
+      });
+      break;
+    case CommandBufferState::BlitEncoderActive:
+      chk->emit([](CommandChunk::context &ctx) {
+        ctx.blit_encoder->endEncoding();
+        ctx.blit_encoder = nullptr;
+      });
+      break;
+    }
 
     cmdbuf_state = CommandBufferState::Idle;
   }
@@ -1318,12 +1377,16 @@ public:
   template <bool Force = false> void EmitSetViewport() {
 
     CommandChunk *chk = cmd_queue.CurrentChunk();
-    auto scissors =
+    auto viewports =
         chk->allocate<MTL::Viewport>(state_.Rasterizer.NumViewports);
     for (unsigned i = 0; i < state_.Rasterizer.NumViewports; i++) {
+      auto &d3dViewport = state_.Rasterizer.viewports[i];
+      viewports.push_back({d3dViewport.TopLeftX, d3dViewport.TopLeftY,
+                           d3dViewport.Width, d3dViewport.Height,
+                           d3dViewport.MinDepth, d3dViewport.MaxDepth});
     }
     EmitRenderCommand<Force>(
-        [viewports = std::move(scissors)](MTL::RenderCommandEncoder *encoder) {
+        [viewports = std::move(viewports)](MTL::RenderCommandEncoder *encoder) {
           encoder->setViewports(viewports.data(), viewports.size());
         });
   }
@@ -1412,6 +1475,11 @@ public:
   }
 
   ~MTLD3D11DeviceContext() {}
+
+
+  virtual void WaitUntilGPUIdle() {
+    cmd_queue.WaitCPUFence(0);
+  };
 };
 
 Com<IMTLD3D11DeviceContext> CreateD3D11DeviceContext(IMTLD3D11Device *pDevice) {
