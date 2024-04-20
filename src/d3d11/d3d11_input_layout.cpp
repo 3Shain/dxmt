@@ -7,6 +7,7 @@
 #include "com/com_pointer.hpp"
 
 #include "DXBCParser/DXBCUtils.h"
+#include "d3d11_private.h"
 #include "dxgi_interfaces.h"
 #include "log/log.hpp"
 #include "objc_pointer.hpp"
@@ -46,7 +47,8 @@ public:
     *ppvObject = nullptr;
 
     if (riid == __uuidof(IUnknown) || riid == __uuidof(ID3D11DeviceChild) ||
-        riid == __uuidof(ID3D11InputLayout) || riid == __uuidof(IMTLD3D11InputLayout)) {
+        riid == __uuidof(ID3D11InputLayout) ||
+        riid == __uuidof(IMTLD3D11InputLayout)) {
       *ppvObject = ref(this);
       return S_OK;
     }
@@ -81,16 +83,15 @@ public:
                                            D3D11_INPUT_PER_INSTANCE_DATA
                                        ? MTL::VertexStepFunctionPerInstance
                                        : MTL::VertexStepFunctionPerVertex);
-      layout_desc->setStride(strides[slot]);
+      // layout_desc->setStride(strides[slot]);
+      layout_desc->setStride(MTL::BufferLayoutStrideDynamic);
     }
 
     desc->setVertexDescriptor(vertex_desc);
   };
   virtual void STDMETHODCALLTYPE
   Bind(MTL::ComputePipelineDescriptor *desc,
-       const std::array<UINT, 16> &strides) final{
-
-  };
+       const std::array<UINT, 16> &strides) final{IMPLEMENT_ME};
 
 private:
   std::vector<Attribute> attributes_;

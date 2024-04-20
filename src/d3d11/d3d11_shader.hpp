@@ -1,10 +1,46 @@
 #pragma once
-#include "d3d11_device_child.hpp"
-#include "log/log.hpp"
+
+#include "com/com_guid.hpp"
+#include "d3d11_device.hpp"
+#include "objc-wrapper/dispatch.h"
 #include "sha1/sha1_util.hpp"
-#include "util_string.hpp"
-#include <cassert>
-#include <cstdlib>
+
+struct MTL_SHADER_REFLECTION {
+  UINT type; // FIXME:
+  BOOL HasArgumentBindings;
+  union {
+    UINT ThreadgroupSize[3];
+  };
+};
+
+struct MTL_COMPILED_SHADER {
+  /**
+  NOTE: it's not retained by design
+  */
+  MTL::Function* Function;
+  dxmt::Sha1Hash* MetallibHash;
+  MTL_SHADER_REFLECTION* Reflection;
+  // TODO: extra information
+};
+
+DEFINE_COM_INTERFACE("a8bfeef7-a453-4bce-90c1-912b02cf5cdf", IMTLCompiledShader)
+    : public IMTLThreadpoolWork {
+  virtual bool IsReady() = 0;
+  /**
+  NOTE: the current thread is blocked if it's not ready
+   */
+  virtual void GetShader(MTL_COMPILED_SHADER * pShaderData) = 0;
+
+  // virtual UINT Hash();
+};
+
+DEFINE_COM_INTERFACE("e95ba1c7-e43f-49c3-a907-4ac669c9fb42", IMTLD3D11Shader)
+    : public IUnknown {
+  /**
+  NOTE: return may be cached (based on \c pArgs )
+  */
+  virtual void GetCompiledShader(void *pArgs, IMTLCompiledShader **pShader) = 0;
+};
 
 namespace dxmt {
 
@@ -17,49 +53,16 @@ enum class ShaderType {
   Compute = 5
 };
 
-template <typename Base, typename Reflection>
-class MTLBaseShader : public MTLD3D11DeviceChild<Base> {
-public:
-  friend class MTLD3D11DeviceContext;
+Com<ID3D11VertexShader> CreateVertexShader(IMTLD3D11Device *pDevice,
+                                           const void *pShaderBytecode,
+                                           SIZE_T BytecodeLength);
 
-  MTLBaseShader(IMTLD3D11Device *pDevice, Sha1Hash Hash, const void *bytecode,
-                SIZE_T bytecodeLength)
-      : MTLD3D11DeviceChild<Base>(pDevice), hash(Hash) {
-    m_bytecode = malloc(bytecodeLength);
-    assert(m_bytecode);
-    memcpy(m_bytecode, bytecode, bytecodeLength);
-    m_bytecodeLength = bytecodeLength;
-  }
-  ~MTLBaseShader() { free(m_bytecode); }
+Com<ID3D11PixelShader> CreatePixelShader(IMTLD3D11Device *pDevice,
+                                         const void *pShaderBytecode,
+                                         SIZE_T BytecodeLength);
 
-  HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void **ppvObject) {
-    *ppvObject = nullptr;
+Com<ID3D11ComputeShader> CreateComputeShader(IMTLD3D11Device *pDevice,
+                                             const void *pShaderBytecode,
+                                             SIZE_T BytecodeLength);
 
-    if (riid == __uuidof(IUnknown) || riid == __uuidof(ID3D11DeviceChild) ||
-        riid == __uuidof(Base)) {
-      *ppvObject = ref(this);
-      return S_OK;
-    }
-
-    if (logQueryInterfaceError(__uuidof(Base), riid)) {
-      WARN("Unknown interface query", str::format(riid));
-    }
-
-    return E_NOINTERFACE;
-  }
-
-private:
-  void *m_bytecode;
-  SIZE_T m_bytecodeLength;
-  Sha1Hash hash;
-
-public:
-};
-
-using MTLD3D11VertexShader = MTLBaseShader<ID3D11VertexShader, nullptr_t>;
-using MTLD3D11HullShader = MTLBaseShader<ID3D11HullShader, nullptr_t>;
-using MTLD3D11DomainShader = MTLBaseShader<ID3D11DomainShader, nullptr_t>;
-using MTLD3D11GeometryShader = MTLBaseShader<ID3D11GeometryShader, nullptr_t>;
-using MTLD3D11PixelShader = MTLBaseShader<ID3D11PixelShader, nullptr_t>;
-using MTLD3D11ComputeShader = MTLBaseShader<ID3D11ComputeShader, nullptr_t>;
 } // namespace dxmt

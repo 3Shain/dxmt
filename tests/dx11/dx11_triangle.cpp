@@ -1,3 +1,4 @@
+#include <cstdio>
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 #define UNICODE
@@ -324,6 +325,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, LPSTR /*lpC
         
         d3d11SwapChain->Present(1, 0);
     }
+
+    d3d11SwapChain->Release();
+    printf("%ld\n",d3d11DeviceContext->Release());
+    printf("%ld\n",d3d11Device->Release());
 
     return 0;
 }

@@ -18,6 +18,7 @@ d3d11_src = [
   'mtld11_resource_backbuf.cpp',
   'd3d11_names.cpp',
   'dxmt_resource_binding.cpp',
+  'd3d11_pipeline.cpp',
 ]
 
 d3d11_ld_args      = []

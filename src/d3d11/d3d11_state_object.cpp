@@ -480,7 +480,8 @@ public:
     }
 
     if (logQueryInterfaceError(__uuidof(IMTLD3D11DepthStencilState), riid)) {
-      WARN("D3D11DepthStencilState: Unknown interface query ", str::format(riid));
+      WARN("D3D11DepthStencilState: Unknown interface query ",
+           str::format(riid));
     }
 
     return E_NOINTERFACE;
@@ -724,6 +725,13 @@ CreateDefaultDepthStencilState(ID3D11Device *pDevice) {
   Com<IMTLD3D11DepthStencilState> ret;
   assert(SUCCEEDED(CreateDepthStencilState(pDevice, &kDefaultDepthStencilDesc,
                                            (ID3D11DepthStencilState **)&ret)));
+  return ret;
+}
+
+Com<IMTLD3D11BlendState> CreateDefaultBlendState(ID3D11Device *pDevice) {
+  Com<IMTLD3D11BlendState> ret;
+  assert(SUCCEEDED(CreateBlendState(pDevice, &kDefaultBlendDesc,
+                                    (ID3D11BlendState1 **)&ret)));
   return ret;
 }
 

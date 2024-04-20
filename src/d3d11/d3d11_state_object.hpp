@@ -54,4 +54,7 @@ CreateDefaultRasterizerState(ID3D11Device *pDevice);
 Com<IMTLD3D11DepthStencilState>
 CreateDefaultDepthStencilState(ID3D11Device *pDevice);
 
+Com<IMTLD3D11BlendState>
+CreateDefaultBlendState(ID3D11Device *pDevice);
+
 } // namespace dxmt

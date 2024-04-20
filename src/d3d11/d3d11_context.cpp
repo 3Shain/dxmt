@@ -1,6 +1,9 @@
 #include "Metal/MTLBuffer.hpp"
+#include "Metal/MTLPixelFormat.hpp"
 #include "Metal/MTLRenderCommandEncoder.hpp"
 #include "Metal/MTLRenderPass.hpp"
+#include "Metal/MTLStageInputOutputDescriptor.hpp"
+#include "Metal/MTLTexture.hpp"
 #include "com/com_guid.hpp"
 #include "com/com_pointer.hpp"
 #include "d3d11_device_child.hpp"
@@ -9,6 +12,7 @@
 #include "Metal/MTLCommandBuffer.hpp"
 
 #include "d3d11_input_layout.hpp"
+#include "d3d11_pipeline.hpp"
 #include "d3d11_private.h"
 #include "d3d11_query.hpp"
 #include "d3d11_context.hpp"
@@ -23,6 +27,9 @@
 #include "util_flags.hpp"
 
 #include "dxmt_command_queue.hpp"
+#include <cassert>
+#include <cstddef>
+#include <cstring>
 
 namespace dxmt {
 
@@ -149,7 +156,7 @@ public:
         break;
       }
       case D3D11_MAP_WRITE_NO_OVERWRITE: {
-        Out.pData = dynamic->GetCurrent()->contents();
+        Out.pData = dynamic->GetCurrentBuffer()->contents();
         break;
       }
       }
@@ -338,18 +345,56 @@ public:
 #pragma region DrawCall
 
   void Draw(UINT VertexCount, UINT StartVertexLocation) {
-    // FinalizeCurrentRenderPipeline();
-    // TODO
+    FinalizeCurrentRenderPipeline();
+    MTL::PrimitiveType Primitive =
+        to_metal_topology(state_.InputAssembler.Topology);
+    // TODO: skip invalid topology
+    EmitRenderCommand([Primitive, StartVertexLocation,
+                       VertexCount](MTL::RenderCommandEncoder *encoder) {
+      encoder->drawPrimitives(Primitive, StartVertexLocation, VertexCount);
+    });
   }
 
   void DrawIndexed(UINT IndexCount, UINT StartIndexLocation,
                    INT BaseVertexLocation) {
     FinalizeCurrentRenderPipeline();
+    MTL::PrimitiveType Primitive =
+        to_metal_topology(state_.InputAssembler.Topology);
+    MTL_BIND_RESOURCE IndexBuffer;
+    state_.InputAssembler.IndexBuffer->GetBoundResource(&IndexBuffer);
+    auto IndexType =
+        state_.InputAssembler.IndexBufferFormat == DXGI_FORMAT_R32_UINT
+            ? MTL::IndexTypeUInt32
+            : MTL::IndexTypeUInt16;
+    auto IndexBufferOffset =
+        state_.InputAssembler.IndexBufferOffset +
+        StartIndexLocation *
+            (state_.InputAssembler.IndexBufferFormat == DXGI_FORMAT_R32_UINT
+                 ? 4
+                 : 2);
+    EmitRenderCommand<>(
+        [IndexBuffer = Obj(IndexBuffer.Buffer), IndexType, IndexBufferOffset,
+         Primitive, IndexCount,
+         BaseVertexLocation](MTL::RenderCommandEncoder *encoder) {
+          encoder->drawIndexedPrimitives(Primitive, IndexCount, IndexType,
+                                         IndexBuffer, IndexBufferOffset, 1,
+                                         BaseVertexLocation, 0);
+        });
   }
 
   void DrawInstanced(UINT VertexCountPerInstance, UINT InstanceCount,
                      UINT StartVertexLocation, UINT StartInstanceLocation) {
-    IMPLEMENT_ME
+    FinalizeCurrentRenderPipeline();
+    MTL::PrimitiveType Primitive =
+        to_metal_topology(state_.InputAssembler.Topology);
+    // TODO: skip invalid topology
+    EmitRenderCommand<>(
+        [Primitive, StartVertexLocation, VertexCountPerInstance, InstanceCount,
+         StartInstanceLocation](MTL::RenderCommandEncoder *encoder) {
+          encoder->drawPrimitives(Primitive, StartVertexLocation,
+                                  VertexCountPerInstance, InstanceCount,
+                                  StartInstanceLocation);
+        });
   }
 
   void DrawIndexedInstanced(UINT IndexCountPerInstance, UINT InstanceCount,
@@ -431,12 +476,24 @@ public:
   void IASetVertexBuffers(UINT StartSlot, UINT NumBuffers,
                           ID3D11Buffer *const *ppVertexBuffers,
                           const UINT *pStrides, const UINT *pOffsets) {
+    auto &BoundVBs = state_.InputAssembler.VertexBuffers;
     for (unsigned Slot = StartSlot; Slot < StartSlot + NumBuffers; Slot++) {
-      // auto pOldBuffer = state_.InputAssembler.VertexBuffers[Slot];
-      // if (auto pBuffer =
-      //         com_cast<IMTLBuffer>(ppVertexBuffers[Slot - StartSlot])) {
-      // }
-      // TODO
+      auto &VB = BoundVBs[Slot];
+      VB.Buffer = nullptr;
+      assert(ppVertexBuffers);
+      assert(pStrides);
+      assert(pOffsets);
+      if (auto dynamic =
+              com_cast<IMTLDynamicBuffer>(ppVertexBuffers[Slot - StartSlot])) {
+        dynamic->GetBindable(&VB.Buffer, [this]() { EmitSetIAState(); });
+      } else if (auto expected = com_cast<IMTLBindable>(
+                     ppVertexBuffers[Slot - StartSlot])) {
+        VB.Buffer = std::move(expected);
+      } else if (ppVertexBuffers[Slot - StartSlot]) {
+        ERR("IASetVertexBuffers: wrong vertex buffer binding");
+      }
+      VB.Stride = pStrides[Slot - StartSlot];
+      VB.Offset = pOffsets[Slot - StartSlot];
     }
   }
 
@@ -445,8 +502,10 @@ public:
                           UINT *pOffsets) {
     for (unsigned i = 0; i < NumBuffers; i++) {
       auto &VertexBuffer = state_.InputAssembler.VertexBuffers[i + StartSlot];
-      if (ppVertexBuffers != NULL)
-        ppVertexBuffers[i] = VertexBuffer.Buffer.ptr();
+      if (ppVertexBuffers != NULL) {
+        VertexBuffer.Buffer->GetLogicalResourceOrView(
+            IID_PPV_ARGS(&ppVertexBuffers[i]));
+      }
       if (pStrides != NULL)
         pStrides[i] = VertexBuffer.Stride;
       if (pOffsets != NULL)
@@ -456,27 +515,32 @@ public:
 
   void IASetIndexBuffer(ID3D11Buffer *pIndexBuffer, DXGI_FORMAT Format,
                         UINT Offset) {
-    // get curreent, unbind current
-    // bind new
+    state_.InputAssembler.IndexBuffer = nullptr;
     if (auto dynamic = com_cast<IMTLDynamicBuffer>(pIndexBuffer)) {
+      dynamic->GetBindable(&state_.InputAssembler.IndexBuffer, []() {});
+    } else if (auto expected = com_cast<IMTLBindable>(pIndexBuffer)) {
+      state_.InputAssembler.IndexBuffer = std::move(expected);
     }
+    state_.InputAssembler.IndexBufferFormat = Format;
+    state_.InputAssembler.IndexBufferOffset = Offset;
   }
   void IAGetIndexBuffer(ID3D11Buffer **pIndexBuffer, DXGI_FORMAT *Format,
                         UINT *Offset) {
     if (pIndexBuffer != NULL) {
-      pIndexBuffer[0] = state_.InputAssembler.index_buffer.ptr();
+      state_.InputAssembler.IndexBuffer->GetLogicalResourceOrView(
+          IID_PPV_ARGS(pIndexBuffer));
     }
     if (Format != NULL)
-      *Format = state_.InputAssembler.index_buffer_format;
+      *Format = state_.InputAssembler.IndexBufferFormat;
     if (Offset != NULL)
-      *Offset = state_.InputAssembler.index_buffer_offset;
+      *Offset = state_.InputAssembler.IndexBufferOffset;
   }
   void IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY Topology) {
-    state_.InputAssembler.topology = Topology;
+    state_.InputAssembler.Topology = Topology;
   }
   void IAGetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY *pTopology) {
     if (pTopology) {
-      *pTopology = state_.InputAssembler.topology;
+      *pTopology = state_.InputAssembler.Topology;
     }
   }
 #pragma endregion
@@ -487,7 +551,12 @@ public:
   void SetShader(IShader *pShader, ID3D11ClassInstance *const *ppClassInstances,
                  UINT NumClassInstances) {
     auto &ShaderStage = state_.ShaderStages[(UINT)Type];
-    ShaderStage.Shader = pShader;
+
+    if (auto expected = com_cast<IMTLD3D11Shader>(pShader)) {
+      ShaderStage.Shader = std::move(expected);
+    } else {
+      assert(0 && "wtf");
+    }
 
     if (NumClassInstances)
       ERR("Class instances not supported");
@@ -506,8 +575,7 @@ public:
 
     if (ppShader) {
       if (ShaderStage.Shader) {
-        ShaderStage.Shader->QueryInterface(__uuidof(IShader),
-                                           (void **)ppShader);
+        ShaderStage.Shader->QueryInterface(IID_PPV_ARGS(ppShader));
       } else {
         *ppShader = NULL;
       }
@@ -1036,7 +1104,30 @@ public:
       UINT NumUAVs, ID3D11UnorderedAccessView *const *ppUnorderedAccessViews,
       const UINT *pUAVInitialCounts) {
 
-    // TODO...
+    auto &BoundRTVs = state_.OutputMerger.RTVs;
+    constexpr unsigned RTVSlotCount = D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT;
+    for (unsigned rtv_index = 0; rtv_index < RTVSlotCount; rtv_index++) {
+      if (rtv_index < NumRTVs && ppRenderTargetViews[rtv_index]) {
+        if (auto expected = com_cast<IMTLD3D11RenderTargetView>(
+                ppRenderTargetViews[rtv_index])) {
+          BoundRTVs[rtv_index] = std::move(expected);
+        }
+      } else {
+        BoundRTVs[rtv_index] = nullptr;
+      }
+    }
+    state_.OutputMerger.NumRTVs = NumRTVs;
+
+    if (auto expected =
+            com_cast<IMTLD3D11DepthStencilView>(pDepthStencilView)) {
+      state_.OutputMerger.DSV = std::move(expected);
+    }
+
+    if (NumUAVs) {
+      IMPLEMENT_ME
+    }
+
+    InvalidateCurrentPass();
   }
 
   void OMGetRenderTargetsAndUnorderedAccessViews(
@@ -1048,20 +1139,35 @@ public:
 
   void OMSetBlendState(ID3D11BlendState *pBlendState,
                        const FLOAT BlendFactor[4], UINT SampleMask) {
+    if (auto expected = com_cast<IMTLD3D11BlendState>(pBlendState)) {
+      state_.OutputMerger.BlendState = std::move(expected);
+      memcpy(state_.OutputMerger.BlendFactor, BlendFactor, sizeof(float[4]));
+      state_.OutputMerger.SampleMask = SampleMask;
+    }
+
     InvalidateGraphicPipeline();
-    IMPLEMENT_ME
   }
   void OMGetBlendState(ID3D11BlendState **ppBlendState, FLOAT BlendFactor[4],
                        UINT *pSampleMask) {
-    IMPLEMENT_ME
+    if (ppBlendState) {
+      *ppBlendState = state_.OutputMerger.BlendState.ref();
+    }
+    if (BlendFactor) {
+      memcpy(BlendFactor, state_.OutputMerger.BlendFactor, sizeof(float[4]));
+    }
+    if (pSampleMask) {
+      *pSampleMask = state_.OutputMerger.SampleMask;
+    }
   }
 
   void OMSetDepthStencilState(ID3D11DepthStencilState *pDepthStencilState,
                               UINT StencilRef) {
-
-    EmitSetDepthStencilState();
-
-    IMPLEMENT_ME
+    if (auto expected =
+            com_cast<IMTLD3D11DepthStencilState>(pDepthStencilState)) {
+      state_.OutputMerger.DepthStencilState = std::move(expected);
+      state_.OutputMerger.StencilRef = StencilRef;
+      EmitSetDepthStencilState();
+    }
   }
 
   void OMGetDepthStencilState(ID3D11DepthStencilState **ppDepthStencilState,
@@ -1111,14 +1217,19 @@ public:
     EmitSetViewport();
   }
 
-  void RSGetViewports(UINT *pNumViewports, D3D11_VIEWPORT *pViewports) {}
+  void RSGetViewports(UINT *pNumViewports, D3D11_VIEWPORT *pViewports) {
+    IMPLEMENT_ME;
+  }
 
   void RSSetScissorRects(UINT NumRects, const D3D11_RECT *pRects) {
-
+    state_.Rasterizer.NumScissorRects = NumRects;
+    for (unsigned i = 0; i < NumRects; i++) {
+      state_.Rasterizer.scissor_rects[i] = pRects[i];
+    }
     EmitSetScissor();
   }
 
-  void RSGetScissorRects(UINT *pNumRects, D3D11_RECT *pRects) {}
+  void RSGetScissorRects(UINT *pNumRects, D3D11_RECT *pRects) { IMPLEMENT_ME; }
 #pragma endregion
 
 #pragma region DynamicBufferPool
@@ -1171,6 +1282,8 @@ public:
     case CommandBufferState::RenderPipelineReady:
       chk->emit([](CommandChunk::context &ctx) {
         ctx.render_encoder->endEncoding();
+        ctx.vs_binding_encoder = nullptr;
+        ctx.ps_binding_encoder = nullptr;
         ctx.render_encoder = nullptr;
       });
       break;
@@ -1204,6 +1317,13 @@ public:
   void InvalidateGraphicPipeline() {
     if (cmdbuf_state != CommandBufferState::RenderPipelineReady)
       return;
+    cmdbuf_state = CommandBufferState::RenderEncoderActive;
+
+    CommandChunk *chk = cmd_queue.CurrentChunk();
+    chk->emit([](CommandChunk::context &ctx) {
+      ctx.vs_binding_encoder = nullptr;
+      ctx.ps_binding_encoder = nullptr;
+    });
   }
 
   /**
@@ -1214,6 +1334,7 @@ public:
   void InvalidateComputePipeline() {
     if (cmdbuf_state != CommandBufferState::ComputePipelineReady)
       return;
+    cmdbuf_state = CommandBufferState::ComputeEncoderActive;
   }
 
   /**
@@ -1224,19 +1345,83 @@ public:
       return;
     if (cmdbuf_state == CommandBufferState::RenderEncoderActive)
       return;
+    InvalidateCurrentPass();
 
     // should assume: render target is properly set
+    {
+      /* Setup RenderCommandEncoder */
+      CommandChunk *chk = cmd_queue.CurrentChunk();
 
-    // TODO
+      struct RENDER_TARGET_STATE {
+        Obj<MTL::Texture> Texture;
+        UINT RenderTargetIndex;
+        UINT MipSlice;
+        UINT ArrayIndex;
+        MTL::PixelFormat PixelFormat;
+      };
+      auto rtvs =
+          chk->reserve_vector<RENDER_TARGET_STATE>(state_.OutputMerger.NumRTVs);
+      for (unsigned i = 0; i < state_.OutputMerger.NumRTVs; i++) {
+        auto &rtv = state_.OutputMerger.RTVs[i];
+        rtvs.push_back(
+            {rtv->GetCurrentTexture(), i, 0, 0, rtv->GetPixelFormat()});
+      }
+      struct DEPTH_STENCIL_STATE {
+        Obj<MTL::Texture> Texture;
+        UINT MipSlice;
+        UINT ArrayIndex;
+        MTL::PixelFormat PixelFormat;
+      };
+      auto &dsv = state_.OutputMerger.DSV;
+      chk->emit(
+          [rtvs = std::move(rtvs),
+           dsv = DEPTH_STENCIL_STATE{
+               dsv != nullptr ? dsv->GetCurrentTexture() : nullptr, 0, 0,
+               dsv != nullptr
+                   ? dsv->GetPixelFormat()
+                   : MTL::PixelFormatInvalid}](CommandChunk::context &ctx) {
+            auto renderPassDescriptor =
+                MTL::RenderPassDescriptor::renderPassDescriptor();
+            for (auto &rtv : rtvs) {
+              auto colorAttachment =
+                  renderPassDescriptor->colorAttachments()->object(
+                      rtv.RenderTargetIndex);
+              colorAttachment->setTexture(rtv.Texture);
+              colorAttachment->setLevel(rtv.MipSlice);
+              colorAttachment->setSlice(rtv.ArrayIndex);
+              colorAttachment->setLoadAction(MTL::LoadActionLoad);
+              colorAttachment->setStoreAction(MTL::StoreActionStore);
+            };
+            if (dsv.Texture) {
+              // TODO: ...should know more about load/store behavior
+              // auto depthAttachment = renderPassDescriptor->depthAttachment();
+              // depthAttachment->setTexture(dsv.Texture);
+              // depthAttachment->setLevel(dsv.MipSlice);
+              // depthAttachment->setSlice(dsv.ArrayIndex);
+              // depthAttachment->setLoadAction(MTL::LoadActionLoad);
+              // depthAttachment->setStoreAction(MTL::StoreActionStore);
+
+              // TODO: should know if depth buffer has stencil bits
+              // auto stencilAttachment =
+              // renderPassDescriptor->stencilAttachment();
+              // stencilAttachment->setTexture(dsv.Texture);
+              // stencilAttachment->setLevel(dsv.MipSlice);
+              // stencilAttachment->setSlice(dsv.ArrayIndex);
+              // stencilAttachment->setLoadAction(MTL::LoadActionLoad);
+              // stencilAttachment->setStoreAction(MTL::StoreActionStore);
+            }
+            ctx.render_encoder =
+                ctx.cmdbuf->renderCommandEncoder(renderPassDescriptor);
+          });
+    }
+
+    cmdbuf_state = CommandBufferState::RenderEncoderActive;
+
     EmitSetDepthStencilState<true>();
     EmitSetRasterizerState<true>();
     EmitSetScissor<true>();
     EmitSetViewport<true>();
     EmitSetIAState<true>();
-
-    // after created encoder, you need also to:
-
-    cmdbuf_state = CommandBufferState::RenderEncoderActive;
   }
 
   /**
@@ -1245,6 +1430,7 @@ public:
   void SwitchToBlitEncoder() {
     if (cmdbuf_state == CommandBufferState::BlitEncoderActive)
       return;
+    InvalidateCurrentPass();
 
     // TODO
 
@@ -1259,12 +1445,14 @@ public:
       return;
     if (cmdbuf_state == CommandBufferState::ComputeEncoderActive)
       return;
+    InvalidateCurrentPass();
 
     // TODO
 
     cmdbuf_state = CommandBufferState::ComputeEncoderActive;
   }
 
+  Com<IMTLCompiledGraphicsPipeline> temp;
   /**
   Assume we have all things needed to build PSO
   If the current encoder is not a render encoder, switch to it.
@@ -1276,7 +1464,33 @@ public:
 
     SwitchToRenderEncoder();
 
-    // TODO
+    // TODO: Find PSO from cache?
+    CommandChunk *chk = cmd_queue.CurrentChunk();
+
+    if (!temp) {
+      Com<IMTLCompiledShader> vs, ps;
+      state_.ShaderStages[(UINT)ShaderType::Vertex]
+          .Shader //
+          ->GetCompiledShader(NULL, &vs);
+      state_.ShaderStages[(UINT)ShaderType::Pixel]
+          .Shader //
+          ->GetCompiledShader(NULL, &ps);
+      MTL::PixelFormat s[1] = {state_.OutputMerger.RTVs[0]->GetPixelFormat()};
+      temp = CreateGraphicsPipeline(
+          m_parent, vs.ptr(), ps.ptr(), state_.InputAssembler.InputLayout.ptr(),
+          state_.OutputMerger.BlendState ? state_.OutputMerger.BlendState.ptr()
+                                         : default_blend_state.ptr(),
+          1, s, MTL::PixelFormatInvalid, MTL::PixelFormatInvalid);
+    }
+    chk->emit([pso = temp](CommandChunk::context &ctx) {
+      MTL_COMPILED_GRAPHICS_PIPELINE GraphicsPipeline;
+      pso->GetPipeline(&GraphicsPipeline); // may block
+      ctx.render_encoder->setRenderPipelineState(
+          GraphicsPipeline.PipelineState);
+      ctx.ps_binding_encoder = GraphicsPipeline.PSArgumentEncoder;
+      ctx.vs_binding_encoder = GraphicsPipeline.VSArgumentEncoder;
+    });
+
     UploadShaderStageResourceBinding(ShaderType::Vertex);
     UploadShaderStageResourceBinding(ShaderType::Pixel);
 
@@ -1307,6 +1521,7 @@ public:
       /* naive implementation... */
     } else {
     }
+    binding_ready.set(stage);
   }
 
   template <bool Force = false, typename Fn> void EmitRenderCommand(Fn &&fn) {
@@ -1342,15 +1557,15 @@ public:
   };
 
   template <bool Force = false> void EmitSetDepthStencilState() {
-    auto state = state_.OutputMerger.DepthStencilState
-                     ? state_.OutputMerger.DepthStencilState
-                     : default_depth_stencil_state;
-    EmitRenderCommand<Force>(
-        [state, stencil_ref = state_.OutputMerger.StencilRef](
-            MTL::RenderCommandEncoder *encoder) {
-          encoder->setDepthStencilState(state->GetDepthStencilState());
-          encoder->setStencilReferenceValue(stencil_ref);
-        });
+    // auto state = state_.OutputMerger.DepthStencilState
+    //                  ? state_.OutputMerger.DepthStencilState
+    //                  : default_depth_stencil_state;
+    // EmitRenderCommand<Force>(
+    //     [state, stencil_ref = state_.OutputMerger.StencilRef](
+    //         MTL::RenderCommandEncoder *encoder) {
+    //       encoder->setDepthStencilState(nullptr);
+    //       encoder->setStencilReferenceValue(stencil_ref);
+    //     });
   }
 
   template <bool Force = false> void EmitSetRasterizerState() {
@@ -1364,12 +1579,18 @@ public:
 
   template <bool Force = false> void EmitSetScissor() {
     CommandChunk *chk = cmd_queue.CurrentChunk();
-    auto scissors =
-        chk->allocate<MTL::ScissorRect>(state_.Rasterizer.NumScissorRects);
+    auto scissors = chk->reserve_vector<MTL::ScissorRect>(
+        state_.Rasterizer.NumScissorRects);
     for (unsigned i = 0; i < state_.Rasterizer.NumScissorRects; i++) {
+      auto &d3dRect = state_.Rasterizer.scissor_rects[i];
+      scissors.push_back({(UINT)d3dRect.left, (UINT)d3dRect.top,
+                          (UINT)d3dRect.right - d3dRect.left,
+                          (UINT)d3dRect.bottom - d3dRect.top});
     }
     EmitRenderCommand<Force>(
         [scissors = std::move(scissors)](MTL::RenderCommandEncoder *encoder) {
+          if (scissors.size() == 0)
+            return;
           encoder->setScissorRects(scissors.data(), scissors.size());
         });
   }
@@ -1378,7 +1599,7 @@ public:
 
     CommandChunk *chk = cmd_queue.CurrentChunk();
     auto viewports =
-        chk->allocate<MTL::Viewport>(state_.Rasterizer.NumViewports);
+        chk->reserve_vector<MTL::Viewport>(state_.Rasterizer.NumViewports);
     for (unsigned i = 0; i < state_.Rasterizer.NumViewports; i++) {
       auto &d3dViewport = state_.Rasterizer.viewports[i];
       viewports.push_back({d3dViewport.TopLeftX, d3dViewport.TopLeftY,
@@ -1402,10 +1623,13 @@ public:
       UINT offset;
       UINT stride;
     };
-    auto vbs = chk->allocate<std::pair<UINT, VERTEX_BUFFER_STATE>>(
+    auto vbs = chk->reserve_vector<std::pair<UINT, VERTEX_BUFFER_STATE>>(
         state_.InputAssembler.VertexBuffers.size());
     for (auto &[index, state] : state_.InputAssembler.VertexBuffers) {
-      vbs.push_back({index, {nullptr, state.Offset, state.Stride}});
+      MTL_BIND_RESOURCE r;
+      assert(!r.IsTexture);
+      state.Buffer->GetBoundResource(&r);
+      vbs.push_back({index, {r.Buffer, state.Offset, state.Stride}});
     };
     EmitRenderCommand<Force>(
         [vbs = std::move(vbs)](MTL::RenderCommandEncoder *encoder) {
@@ -1413,7 +1637,7 @@ public:
             encoder->setVertexBuffer(state.buffer.ptr(), state.offset,
                                      state.stride, index);
           };
-          // TODO: deal with old redunant binding
+          // TODO: deal with old redunant binding (I guess it doesn't hurt
         });
   }
 
@@ -1452,8 +1676,14 @@ public:
 #pragma region Default State
 
 private:
+  /**
+  Don't bind them to state or provide to API consumer
+  (use COM just in case it's referenced by encoding thread)
+  ...tricky
+  */
   Com<IMTLD3D11RasterizerState> default_rasterizer_state;
   Com<IMTLD3D11DepthStencilState> default_depth_stencil_state;
+  Com<IMTLD3D11BlendState> default_blend_state;
 
 #pragma endregion
 
@@ -1472,14 +1702,12 @@ public:
         cmd_queue(metal_device_) {
     default_rasterizer_state = CreateDefaultRasterizerState(pDevice);
     default_depth_stencil_state = CreateDefaultDepthStencilState(pDevice);
+    default_blend_state = CreateDefaultBlendState(pDevice);
   }
 
   ~MTLD3D11DeviceContext() {}
 
-
-  virtual void WaitUntilGPUIdle() {
-    cmd_queue.WaitCPUFence(0);
-  };
+  virtual void WaitUntilGPUIdle() { cmd_queue.WaitCPUFence(0); };
 };
 
 Com<IMTLD3D11DeviceContext> CreateD3D11DeviceContext(IMTLD3D11Device *pDevice) {

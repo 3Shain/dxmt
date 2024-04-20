@@ -3,9 +3,11 @@
 
 #include "com/com_pointer.hpp"
 #include "d3d11_input_layout.hpp"
+#include "d3d11_shader.hpp"
 #include "d3d11_state_object.hpp"
 #include "d3d11_view.hpp"
 #include "log/log.hpp"
+#include "mtld11_resource.hpp"
 #include "util_string.hpp"
 
 namespace dxmt {
@@ -20,20 +22,20 @@ struct D3D11ComputeStageState {
 };
 
 struct CONSTANT_BUFFER_B {
-  Com<ID3D11Buffer> Buffer;
+  Com<IMTLBindable> Buffer;
   UINT FirstConstant;
   UINT NumConstants;
 };
 
 struct D3D11ShaderStageState {
-  std::map<UINT, Com<IMTLD3D11ShaderResourceView>> SRVs;
+  std::map<UINT, Com<IMTLBindable>> SRVs;
   std::map<UINT, Com<IMTLD3D11SamplerState>> Samplers;
   std::map<UINT, CONSTANT_BUFFER_B> ConstantBuffers;
-  Com<IUnknown> Shader;
+  Com<IMTLD3D11Shader> Shader;
 };
 
 struct VERTEX_BUFFER_B {
-  Com<ID3D11Buffer> Buffer;
+  Com<IMTLBindable> Buffer;
   UINT Stride;
   UINT Offset;
 };
@@ -41,18 +43,20 @@ struct VERTEX_BUFFER_B {
 struct D3D11InputAssemblerStageState {
   Com<IMTLD3D11InputLayout> InputLayout;
   std::map<UINT, VERTEX_BUFFER_B> VertexBuffers;
-  Com<ID3D11Buffer> index_buffer;
+  Com<IMTLBindable> IndexBuffer;
   /**
   either DXGI_FORMAT_R16_UINT or DXGI_FORMAT_R32_UINT
   */
-  DXGI_FORMAT index_buffer_format;
-  UINT index_buffer_offset;
-  D3D11_PRIMITIVE_TOPOLOGY topology;
+  DXGI_FORMAT IndexBufferFormat;
+  UINT IndexBufferOffset;
+  D3D11_PRIMITIVE_TOPOLOGY Topology;
 };
 
 struct D3D11OutputMergerStageState {
   Com<IMTLD3D11RenderTargetView> RTVs[D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT];
   Com<IMTLD3D11DepthStencilView> DSV;
+  UINT NumRTVs;
+
   std::map<UINT, UAV_B> UAVs;
 
   Com<IMTLD3D11DepthStencilState> DepthStencilState;

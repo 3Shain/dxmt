@@ -32,28 +32,44 @@ DEFINE_COM_INTERFACE("d8a49d20-9a1f-4bb8-9ee6-442e064dce23", IDXMTResource)
       ID3D11DepthStencilView **ppView) = 0;
 };
 
-DEFINE_COM_INTERFACE("1c7e7c98-6dd4-42f0-867b-67960806886e", IMTLBuffer)
-    : public IUnknown {
-  virtual MTL::Buffer *Get() = 0;
+struct MTL_BIND_RESOURCE {
+  UINT IsTexture;
+  UINT Padding;
+  union {
+    MTL::Buffer *Buffer;
+    MTL::Texture *Texture;
+  };
 };
 
-DEFINE_COM_INTERFACE("4fe0ec8e-8be0-4c41-a9a4-11726ceba59c", IMTLTexture)
+DEFINE_COM_INTERFACE("1c7e7c98-6dd4-42f0-867b-67960806886e", IMTLBindable)
     : public IUnknown {
-  virtual MTL::Texture *Get() = 0;
+  /**
+  Note: the resource object is NOT retained by design
+  */
+  virtual void GetBoundResource(MTL_BIND_RESOURCE * ppResource) = 0;
+  virtual void GetLogicalResourceOrView(REFIID riid,
+                                        void **ppLogicalResource) = 0;
 };
 
-DEFINE_COM_INTERFACE("8f1b6f77-58c4-4bf4-8ce9-d08318ae70b1",
-                     IMTLSwappableBuffer)
-    : public IUnknown {
-  virtual MTL::Buffer *GetCurrent() = 0;
-  virtual void Swap() = 0;
-};
+// DEFINE_COM_INTERFACE("8f1b6f77-58c4-4bf4-8ce9-d08318ae70b1",
+//                      IMTLSwappableBuffer)
+//     : public IUnknown {
+//   virtual MTL::Buffer *GetCurrent() = 0;
+//   virtual void Swap() = 0;
+// };
 
 DEFINE_COM_INTERFACE("daf21510-d136-44dd-bb16-068a94690775",
                      IMTLD3D11BackBuffer)
     : public ID3D11Texture2D {
   virtual void Swap() = 0;
   virtual CA::MetalDrawable *CurrentDrawable() = 0;
+};
+
+DEFINE_COM_INTERFACE("65feb8c5-01de-49df-bf58-d115007a117d", IMTLDynamicBuffer)
+    : public IUnknown {
+  virtual MTL::Buffer *GetCurrentBuffer() = 0;
+  virtual void GetBindable(IMTLBindable * *ppResource,
+                           std::function<void()> && onBufferSwap);
 };
 
 namespace dxmt {
@@ -96,7 +112,7 @@ class TResourceBase
 public:
   TResourceBase(const tag::DESC_S *pDesc, IMTLD3D11Device *device)
       : MTLD3D11DeviceChild<typename tag::COM, IDXMTResource, Base...>(device),
-        dxgi_resource(new MTLDXGIResource<TResourceBase<tag>>(this)) {
+        dxgi_resource(new MTLDXGIResource<TResourceBase<tag, Base...>>(this)) {
     if (pDesc) {
       desc = *pDesc;
     }
@@ -129,6 +145,11 @@ public:
 
     if (SUCCEEDED(this->PrivateQueryInterface(riid, ppvObject))) {
       return S_OK;
+    }
+
+    if (riid == __uuidof(IMTLDynamicBuffer) || riid == __uuidof(IMTLBindable)) {
+      // silent these interfaces if PrivateQueryInterface doesn't provide
+      return E_NOINTERFACE;
     }
 
     if (logQueryInterfaceError(__uuidof(typename tag::COM), riid)) {
@@ -258,5 +279,31 @@ protected:
   tag::DESC_S desc;
   Com<typename tag::RESOURCE_IMPL> resource;
 };
+
+#pragma region Resource Factory
+
+Com<ID3D11Buffer>
+CreateStagingBuffer(IMTLD3D11Device *pDevice, const D3D11_BUFFER_DESC *pDesc,
+                    const D3D11_SUBRESOURCE_DATA *pInitialData);
+
+Com<ID3D11Texture1D>
+CreateStagingTexture1D(IMTLD3D11Device *pDevice,
+                       const D3D11_TEXTURE1D_DESC *pDesc,
+                       const D3D11_SUBRESOURCE_DATA *pInitialData);
+
+Com<ID3D11Texture2D>
+CreateStagingTexture2D(IMTLD3D11Device *pDevice,
+                       const D3D11_TEXTURE2D_DESC *pDesc,
+                       const D3D11_SUBRESOURCE_DATA *pInitialData);
+
+Com<ID3D11Buffer>
+CreateDeviceBuffer(IMTLD3D11Device *pDevice, const D3D11_BUFFER_DESC *pDesc,
+                   const D3D11_SUBRESOURCE_DATA *pInitialData);
+
+Com<ID3D11Buffer>
+CreateDynamicBuffer(IMTLD3D11Device *pDevice, const D3D11_BUFFER_DESC *pDesc,
+                    const D3D11_SUBRESOURCE_DATA *pInitialData);
+
+#pragma endregion
 
 } // namespace dxmt

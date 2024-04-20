@@ -25,7 +25,7 @@ class EmulatedBackBufferTexture : public TResourceBase<tag_texture_backbuffer> {
 
 private:
   HWND hWnd;
-  Com<IDXGIMetalLayerFactory> layer_factory;
+  IDXGIMetalLayerFactory* layer_factory;
   Obj<CA::MetalLayer> layer_;
   Obj<CA::MetalDrawable> current_drawable;
   void *native_view_;
@@ -56,6 +56,8 @@ public:
     if (FAILED(pDevice->QueryInterface(IID_PPV_ARGS(&layer_factory)))) {
       throw MTLD3DError("Failed to create CAMetalLayer");
     }
+    // this looks weird but we don't need a strong reference
+    layer_factory->Release();
     if (FAILED(layer_factory->GetMetalLayerFromHwnd(hWnd, &layer_,
                                                     &native_view_))) {
       throw MTLD3DError("Failed to create CAMetalLayer");

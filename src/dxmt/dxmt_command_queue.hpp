@@ -10,7 +10,8 @@
 #include "Metal/MTLRenderCommandEncoder.hpp"
 #include "log/log.hpp"
 #include "objc_pointer.hpp"
-#include "thread.hpp"
+// #include "thread.hpp"
+#include <thread>
 #include "util_env.hpp"
 #include <atomic>
 #include <cstddef>
@@ -37,6 +38,10 @@ inline void *ptr_add(const void *const p,
                      const std::uintptr_t &amount) noexcept {
   return reinterpret_cast<void *>(reinterpret_cast<std::uintptr_t>(p) + amount);
 }
+
+constexpr uint32_t kCommandChunkCount = 16;
+constexpr size_t kCommandChunkCPUHeapSize = 0x4000; // 16kb
+constexpr size_t kCommandChunkGPUHeapSize = 0x4000;
 
 class CommandChunk {
 
@@ -113,7 +118,7 @@ public:
 
   CommandChunk(const CommandChunk &) = delete; // delete copy constructor
 
-  template <typename T> fixed_vector_on_heap<T> allocate(size_t n = 1) {
+  template <typename T> fixed_vector_on_heap<T> reserve_vector(size_t n = 1) {
     linear_allocator<T> allocator(this);
     fixed_vector_on_heap<T> ret(allocator);
     ret.reserve(n);
@@ -150,6 +155,9 @@ public:
     *ptr_node = {ptr, nullptr};
     list_end->next = ptr_node;
     list_end = ptr_node;
+    if (cpu_arugment_heap_offset > kCommandChunkCPUHeapSize) {
+      ERR("cpu argument heap overflow, expect error.");
+    }
   }
 
   void encode(MTL::CommandBuffer *cmdbuf) {
@@ -191,10 +199,6 @@ public:
     attached_cmdbuf = nullptr;
   }
 };
-
-constexpr uint32_t kCommandChunkCount = 16;
-constexpr size_t kCommandChunkCPUHeapSize = 0x4000; // 16kb
-constexpr size_t kCommandChunkGPUHeapSize = 0x4000;
 
 class CommandQueue {
 
@@ -240,6 +244,7 @@ private:
       chunk_ongoing.notify_all();
       internal_seq++;
     }
+    TRACE("finishing thread gracefully terminates");
     return 0;
   }
 
@@ -250,8 +255,12 @@ private:
 
   std::array<CommandChunk, kCommandChunkCount> chunks;
 
-  dxmt::thread encodeThread;
-  dxmt::thread finishThread;
+  /**
+  FIXME: dxmt::thread cause access page fault when
+  program shutdown. recheck this later
+  */
+  std::thread encodeThread;
+  std::thread finishThread;
   Obj<MTL::CommandQueue> commandQueue;
 
 public:
@@ -271,22 +280,26 @@ public:
   };
 
   ~CommandQueue() {
+    TRACE("Destructing command queue");
     stopped.store(true);
     ready_for_encode++;
     ready_for_encode.notify_all();
     ready_for_commit++;
     ready_for_commit.notify_all();
+    encodeThread.join();
+    finishThread.join();
     for (unsigned i = 0; i < kCommandChunkCount; i++) {
       auto &chunk = chunks[i];
       chunk.reset();
       free(chunk.cpu_argument_heap);
       chunk.gpu_argument_heap = nullptr;
     };
+    TRACE("Destructed command queue");
   }
 
   CommandChunk *CurrentChunk() {
-    return &chunks[ready_for_encode.load(std::memory_order_relaxed) %
-                   kCommandChunkCount];
+    auto id = ready_for_encode.load(std::memory_order_acquire);
+    return &chunks[id % kCommandChunkCount];
   };
 
   /**

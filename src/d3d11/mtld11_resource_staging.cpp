@@ -45,17 +45,17 @@ public:
 #pragma endregion
 
 Com<ID3D11Buffer> CreateStagingBuffer(IMTLD3D11Device *pDevice,
-                                      const D3D11_BUFFER_DESC *pDesc) {
+                                      const D3D11_BUFFER_DESC *pDesc, const D3D11_SUBRESOURCE_DATA* pInitialData) {
   return new StagingBuffer(pDesc, pDevice);
 }
 
 Com<ID3D11Texture1D> CreateStagingTexture1D(IMTLD3D11Device *pDevice,
-                                            const D3D11_TEXTURE1D_DESC *pDesc) {
+                                            const D3D11_TEXTURE1D_DESC *pDesc, const D3D11_SUBRESOURCE_DATA* pInitialData) {
   return new StagingTexture<tag_texture_1d>(pDesc, pDevice);
 }
 
 Com<ID3D11Texture2D> CreateStagingTexture2D(IMTLD3D11Device *pDevice,
-                                            const D3D11_TEXTURE2D_DESC *pDesc) {
+                                            const D3D11_TEXTURE2D_DESC *pDesc, const D3D11_SUBRESOURCE_DATA* pInitialData) {
   return new StagingTexture<tag_texture_2d>(pDesc, pDevice);
 }
 

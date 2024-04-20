@@ -9,17 +9,17 @@
 #include "d3d11_input_layout.hpp"
 #include "d3d11_private.h"
 #include "d3d11_query.hpp"
-#include "d3d11_swapchain.hpp"
 #include "d3d11_shader.hpp"
+#include "d3d11_swapchain.hpp"
 #include "d3d11_state_object.hpp"
 #include "dxgi_interfaces.h"
 #include "dxmt_format.hpp"
 #include "ftl.hpp"
 #include "mtld11_resource.hpp"
+#include "threadpool.hpp"
 #include "winemacdrv.h"
 #include "com/com_aggregatable.hpp"
 #include "dxgi_object.hpp"
-#include <winerror.h>
 
 namespace dxmt {
 
@@ -232,12 +232,17 @@ public:
 
   void GetAdapter(IMTLDXGIAdatper **ppAdapter);
 
+  void SubmitThreadgroupWork(IMTLThreadpoolWork *pWork,
+                             THREADGROUP_WORK_STATE *pState) final;
+  void WaitThreadgroupWork(THREADGROUP_WORK_STATE *pState) final;
+
 private:
-  Com<MTLD3D11DXGIDevice> m_container;
+  MTLD3D11DXGIDevice *m_container;
   D3D_FEATURE_LEVEL m_FeatureLevel;
   UINT m_FeatureFlags;
   MTLD3D11Inspection m_features;
   Com<IMTLD3D11DeviceContext> context_;
+  threadpool<threadpool_trait> pool_;
 };
 
 /**
@@ -352,9 +357,7 @@ MTLD3D11Device::MTLD3D11Device(MTLD3D11DXGIDevice *container,
                                D3D_FEATURE_LEVEL FeatureLevel,
                                UINT FeatureFlags)
     : m_container(container), m_FeatureLevel(FeatureLevel),
-      m_FeatureFlags(FeatureFlags), m_features(container->GetMTLDevice()) {
-  context_ = CreateD3D11DeviceContext(this);
-}
+      m_FeatureFlags(FeatureFlags), m_features(container->GetMTLDevice()) {}
 
 MTLD3D11Device::~MTLD3D11Device() { context_ = nullptr; }
 
@@ -380,8 +383,11 @@ HRESULT STDMETHODCALLTYPE MTLD3D11Device::CreateBuffer(
     switch (pDesc->Usage) {
     case D3D11_USAGE_DEFAULT:
     case D3D11_USAGE_IMMUTABLE:
+      *ppBuffer = CreateDeviceBuffer(this, pDesc, pInitialData);
+      break;
     case D3D11_USAGE_DYNAMIC:
     case D3D11_USAGE_STAGING:
+      IMPLEMENT_ME
       break;
     }
     return S_OK;
@@ -550,14 +556,19 @@ HRESULT STDMETHODCALLTYPE MTLD3D11Device::CreateVertexShader(
   if (pClassLinkage != nullptr)
     WARN("Class linkage not supported");
 
-  auto hash = Sha1Hash::compute(pShaderBytecode, BytecodeLength);
-
-  if (!ppVertexShader)
+  if (!ppVertexShader) {
+    // FIXME: we didn't really check if the shader bytecode is valid
     return S_FALSE;
+  }
 
-  *ppVertexShader = ref(
-      new MTLD3D11VertexShader(this, hash, pShaderBytecode, BytecodeLength));
-  return S_OK;
+  try {
+    *ppVertexShader =
+        dxmt::CreateVertexShader(this, pShaderBytecode, BytecodeLength);
+    return S_OK;
+  } catch (const MTLD3DError &err) {
+    ERR(err.message());
+    return E_FAIL;
+  }
 }
 
 HRESULT STDMETHODCALLTYPE MTLD3D11Device::CreateGeometryShader(
@@ -568,13 +579,8 @@ HRESULT STDMETHODCALLTYPE MTLD3D11Device::CreateGeometryShader(
   if (pClassLinkage != nullptr)
     WARN("Class linkage not supported");
 
-  // auto hash = Sha1Hash::compute(pShaderBytecode, BytecodeLength);
-
   if (!ppGeometryShader)
     return S_FALSE;
-
-  // *ppGeometryShader = ref(new MTLD3D11GeometryShader(this, , , hash));
-  // return S_OK;
   return E_NOTIMPL;
 }
 
@@ -588,7 +594,7 @@ HRESULT STDMETHODCALLTYPE MTLD3D11Device::CreateGeometryShaderWithStreamOutput(
   if (pClassLinkage != nullptr)
     WARN("Class linkage not supported");
 
-  return S_OK;
+  return E_NOTIMPL;
 }
 
 HRESULT STDMETHODCALLTYPE MTLD3D11Device::CreatePixelShader(
@@ -598,14 +604,18 @@ HRESULT STDMETHODCALLTYPE MTLD3D11Device::CreatePixelShader(
   if (pClassLinkage != nullptr)
     WARN("Class linkage not supported");
 
-  if (!ppPixelShader)
+  if (!ppPixelShader) {
+    // FIXME: we didn't really check if the shader bytecode is valid
     return S_FALSE;
-
-  auto hash = Sha1Hash::compute(pShaderBytecode, BytecodeLength);
-
-  *ppPixelShader =
-      ref(new MTLD3D11PixelShader(this, hash, pShaderBytecode, BytecodeLength));
-  return S_OK;
+  }
+  try {
+    *ppPixelShader =
+        dxmt::CreatePixelShader(this, pShaderBytecode, BytecodeLength);
+    return S_OK;
+  } catch (const MTLD3DError &err) {
+    ERR(err.message());
+    return E_FAIL;
+  }
 }
 
 HRESULT STDMETHODCALLTYPE MTLD3D11Device::CreateHullShader(
@@ -617,9 +627,6 @@ HRESULT STDMETHODCALLTYPE MTLD3D11Device::CreateHullShader(
 
   if (!ppHullShader)
     return S_FALSE;
-  // auto hash = Sha1Hash::compute(pShaderBytecode, BytecodeLength);
-  // *ppHullShader = ref(new MTLD3D11HullShader(this, , , hash));
-  // return S_OK;
   return E_NOTIMPL;
 }
 
@@ -632,10 +639,6 @@ HRESULT STDMETHODCALLTYPE MTLD3D11Device::CreateDomainShader(
 
   if (!ppDomainShader)
     return S_FALSE;
-
-  // auto hash = Sha1Hash::compute(pShaderBytecode, BytecodeLength);
-  // *ppDomainShader = ref(new MTLD3D11DomainShader(this, , , hash));
-  // return S_OK;
   return E_NOTIMPL;
 }
 
@@ -646,12 +649,19 @@ HRESULT STDMETHODCALLTYPE MTLD3D11Device::CreateComputeShader(
   if (pClassLinkage != nullptr)
     WARN("Class linkage not supported");
 
-  if (!ppComputeShader)
+  if (!ppComputeShader) {
+    // FIXME: we didn't really check if the shader bytecode is valid
     return S_FALSE;
-  // auto hash = Sha1Hash::compute(pShaderBytecode, BytecodeLength);
-  // *ppComputeShader = ref(new MTLD3D11ComputeShader(this, , , hash));
-  // TODO
-  return S_OK;
+  }
+
+  try {
+    *ppComputeShader =
+        dxmt::CreateComputeShader(this, pShaderBytecode, BytecodeLength);
+    return S_OK;
+  } catch (const MTLD3DError &err) {
+    ERR(err.message());
+    return E_FAIL;
+  }
 }
 
 HRESULT STDMETHODCALLTYPE
@@ -971,6 +981,14 @@ HRESULT STDMETHODCALLTYPE MTLD3D11Device::GetDeviceRemovedReason() {
 
 void STDMETHODCALLTYPE
 MTLD3D11Device::GetImmediateContext(ID3D11DeviceContext **ppImmediateContext) {
+  if (!context_) {
+    /*
+    lazy construction by design
+    to solve an awkward com_cast on refcount=0 object
+    (generally shouldn't pass this to others in constructor)
+    */
+    context_ = CreateD3D11DeviceContext(this);
+  }
   *ppImmediateContext = context_.ref();
 }
 
@@ -1033,6 +1051,15 @@ MTL::Device *STDMETHODCALLTYPE MTLD3D11Device::GetMTLDevice() {
 
 void MTLD3D11Device::GetAdapter(IMTLDXGIAdatper **ppAdapter) {
   *ppAdapter = m_container->adapter_.ref();
+}
+
+void MTLD3D11Device::SubmitThreadgroupWork(IMTLThreadpoolWork *pWork,
+                                           THREADGROUP_WORK_STATE *pState) {
+  pool_.enqueue(pWork, pState);
+}
+
+VOID MTLD3D11Device::WaitThreadgroupWork(THREADGROUP_WORK_STATE *pState) {
+  pool_.wait(pState);
 }
 
 MTLD3D11DXGIDevice::MTLD3D11DXGIDevice(IMTLDXGIAdatper *adapter,
