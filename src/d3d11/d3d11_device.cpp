@@ -336,6 +336,8 @@ HRESULT STDMETHODCALLTYPE MTLDXGIMetalLayerFactory::GetMetalLayerFromHwnd(
 
   auto layer = (CA::MetalLayer *)macdrv_view_get_metal_layer(metalView);
 
+  TRACE("CAMetaLayer got with ref count ", layer->retainCount());
+
   if (layer == nullptr)
     return E_FAIL;
 
@@ -386,6 +388,8 @@ HRESULT STDMETHODCALLTYPE MTLD3D11Device::CreateBuffer(
       *ppBuffer = CreateDeviceBuffer(this, pDesc, pInitialData);
       break;
     case D3D11_USAGE_DYNAMIC:
+      *ppBuffer = CreateDynamicBuffer(this, pDesc, pInitialData);
+      break;
     case D3D11_USAGE_STAGING:
       IMPLEMENT_ME
       break;
@@ -427,8 +431,9 @@ HRESULT STDMETHODCALLTYPE MTLD3D11Device::CreateTexture2D(
     switch (pDesc->Usage) {
     case D3D11_USAGE_DEFAULT:
     case D3D11_USAGE_IMMUTABLE:
+      *ppTexture2D = CreateDeviceTexture2D(this, pDesc, pInitialData);
+      break;
     case D3D11_USAGE_DYNAMIC:
-
       IMPLEMENT_ME;
       break;
     case D3D11_USAGE_STAGING:

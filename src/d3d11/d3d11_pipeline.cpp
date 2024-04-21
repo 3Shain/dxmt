@@ -90,6 +90,13 @@ public:
           rtv_formats[i]);
     }
 
+    if (depth_format != MTL::PixelFormatInvalid) {
+      pipelineDescriptor->setDepthAttachmentPixelFormat(depth_format);
+    }
+    if (stencil_format != MTL::PixelFormatInvalid) {
+      pipelineDescriptor->setStencilAttachmentPixelFormat(stencil_format);
+    }
+
     state_ = transfer(device_->GetMTLDevice()->newRenderPipelineState(
         pipelineDescriptor, &err));
 

@@ -120,7 +120,7 @@ void Convert(
 
   runOptimizationPasses(*pModule, OptimizationLevel::O1);
 
-  pModule->print(outs(), nullptr);
+  // pModule->print(outs(), nullptr);
 
   // Serialize AIR
   SmallVector<char, 0> vec;

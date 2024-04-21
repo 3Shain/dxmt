@@ -933,7 +933,7 @@ Reflection convertDXBC(
     // TODO: abstract SM 5.0 binding
     auto index = binding_table.DefineBuffer(
       "cb" + std::to_string(range_id), air::AddressSpace::constant,
-      air::MemoryAccess::read, air::msl_uint4
+      air::MemoryAccess::read, air::msl_uint4, range_id
     );
     resource_map.cb_range_map[range_id] = [=, &binding_table_index](pvalue) {
       // ignore index in SM 5.0

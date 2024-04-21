@@ -1,4 +1,5 @@
 #include "Metal/MTLBuffer.hpp"
+#include "Metal/MTLCommandEncoder.hpp"
 #include "Metal/MTLPixelFormat.hpp"
 #include "Metal/MTLRenderCommandEncoder.hpp"
 #include "Metal/MTLRenderPass.hpp"
@@ -91,9 +92,30 @@ auto to_metal_topology(D3D11_PRIMITIVE_TOPOLOGY topo) {
   }
 }
 
+enum class BINDING_TYPE { Buffer, Texture };
+
+struct BINDING_TEXTURE {
+  MTL::Texture *Ptr;
+  // TODO: minlod
+};
+
+struct BINDING_BUFFER {
+  MTL::Buffer *Ptr;
+  UINT Offset;
+  // TODO: length
+};
+
+struct BINDING_INFO {
+  UINT ArgumentIndex;
+  BINDING_TYPE Type; // 0 buffer, 1 texture, 2 sampler
+  union {
+    BINDING_TEXTURE Texture;
+    BINDING_BUFFER Buffer;
+  } U;
+};
+
 using MTLD3D11DeviceContextBase =
-    MTLD3D11DeviceChild<IMTLD3D11DeviceContext, IMTLDynamicBufferPool,
-                        IMTLRenamingObserver>;
+    MTLD3D11DeviceChild<IMTLD3D11DeviceContext, IMTLDynamicBufferPool>;
 
 class MTLD3D11DeviceContext : public MTLD3D11DeviceContextBase {
 public:
@@ -152,7 +174,8 @@ public:
       case D3D11_MAP_READ_WRITE:
         return E_INVALIDARG;
       case D3D11_MAP_WRITE_DISCARD: {
-
+        dynamic->RotateBuffer(this);
+        Out.pData = dynamic->GetCurrentBuffer()->contents();
         break;
       }
       case D3D11_MAP_WRITE_NO_OVERWRITE: {
@@ -169,7 +192,12 @@ public:
     IMPLEMENT_ME;
   }
 
-  void Unmap(ID3D11Resource *pResource, UINT Subresource) { IMPLEMENT_ME; }
+  void Unmap(ID3D11Resource *pResource, UINT Subresource) {
+    if (auto dynamic = com_cast<IMTLDynamicBuffer>(pResource)) {
+      return;
+    }
+    IMPLEMENT_ME;
+  }
 
   void Flush() {
     Flush2([](auto) {});
@@ -199,9 +227,7 @@ public:
                              const FLOAT ColorRGBA[4]) {
     if (auto expected =
             com_cast<IMTLD3D11RenderTargetView>(pRenderTargetView)) {
-
       InvalidateCurrentPass();
-      // should raise a new render command
       CommandChunk *chk = cmd_queue.CurrentChunk();
       chk->emit([texture = expected->GetCurrentTexture(), r = ColorRGBA[0],
                  g = ColorRGBA[1], b = ColorRGBA[2],
@@ -232,7 +258,37 @@ public:
   }
 
   void ClearDepthStencilView(ID3D11DepthStencilView *pDepthStencilView,
-                             UINT ClearFlags, FLOAT Depth, UINT8 Stencil) {}
+                             UINT ClearFlags, FLOAT Depth, UINT8 Stencil) {
+    if (auto expected =
+            com_cast<IMTLD3D11DepthStencilView>(pDepthStencilView)) {
+
+      InvalidateCurrentPass();
+      CommandChunk *chk = cmd_queue.CurrentChunk();
+      chk->emit([texture = expected->GetCurrentTexture(), Depth, Stencil,
+                 ClearDepth = (ClearFlags & D3D11_CLEAR_DEPTH),
+                 ClearStencil = (ClearFlags & D3D11_CLEAR_STENCIL)](
+                    CommandChunk::context &ctx) {
+        auto enc_descriptor = MTL::RenderPassDescriptor::renderPassDescriptor();
+        if (ClearDepth) {
+          auto attachmentz = enc_descriptor->depthAttachment();
+          attachmentz->setClearDepth(Depth);
+          attachmentz->setTexture(texture);
+          attachmentz->setLoadAction(MTL::LoadActionClear);
+          attachmentz->setStoreAction(MTL::StoreActionStore);
+        }
+        if (ClearStencil) {
+          auto attachmentz = enc_descriptor->stencilAttachment();
+          attachmentz->setClearStencil(Stencil);
+          attachmentz->setTexture(texture);
+          attachmentz->setLoadAction(MTL::LoadActionClear);
+          attachmentz->setStoreAction(MTL::StoreActionStore);
+        }
+
+        auto enc = ctx.cmdbuf->renderCommandEncoder(enc_descriptor);
+        enc->endEncoding();
+      });
+    }
+  }
 
   void ClearView(ID3D11View *pView, const FLOAT Color[4],
                  const D3D11_RECT *pRect, UINT NumRects) {
@@ -246,6 +302,7 @@ public:
         desc.ViewDimension == D3D11_SRV_DIMENSION_BUFFEREX) {
       return;
     }
+    IMPLEMENT_ME
   }
 
   void ResolveSubresource(ID3D11Resource *pDstResource, UINT DstSubresource,
@@ -345,7 +402,7 @@ public:
 #pragma region DrawCall
 
   void Draw(UINT VertexCount, UINT StartVertexLocation) {
-    FinalizeCurrentRenderPipeline();
+    PreDraw();
     MTL::PrimitiveType Primitive =
         to_metal_topology(state_.InputAssembler.Topology);
     // TODO: skip invalid topology
@@ -357,7 +414,7 @@ public:
 
   void DrawIndexed(UINT IndexCount, UINT StartIndexLocation,
                    INT BaseVertexLocation) {
-    FinalizeCurrentRenderPipeline();
+    PreDraw();
     MTL::PrimitiveType Primitive =
         to_metal_topology(state_.InputAssembler.Topology);
     MTL_BIND_RESOURCE IndexBuffer;
@@ -384,7 +441,7 @@ public:
 
   void DrawInstanced(UINT VertexCountPerInstance, UINT InstanceCount,
                      UINT StartVertexLocation, UINT StartInstanceLocation) {
-    FinalizeCurrentRenderPipeline();
+    PreDraw();
     MTL::PrimitiveType Primitive =
         to_metal_topology(state_.InputAssembler.Topology);
     // TODO: skip invalid topology
@@ -593,7 +650,32 @@ public:
                          ID3D11Buffer *const *ppConstantBuffers,
                          const UINT *pFirstConstant,
                          const UINT *pNumConstants) {
-    // auto &ShaderStage = state_.ShaderStages[(UINT)Type];
+    auto &ShaderStage = state_.ShaderStages[(UINT)Type];
+
+    for (unsigned i = StartSlot; i < StartSlot + NumBuffers; i++) {
+      auto pConstantBuffer = ppConstantBuffers[i - StartSlot];
+      if (pConstantBuffer) {
+        auto maybeExist = ShaderStage.ConstantBuffers.insert({i, {}});
+        // either old value or inserted empty value
+        auto &entry = maybeExist.first->second;
+        entry.Buffer = nullptr; // dereference old
+        entry.FirstConstant =
+            pFirstConstant ? pFirstConstant[i - StartSlot] : 0;
+        entry.NumConstants = pNumConstants ? pNumConstants[i - StartSlot]
+                                           : 4096; // FIXME: too much
+        if (auto dynamic = com_cast<IMTLDynamicBuffer>(pConstantBuffer)) {
+          dynamic->GetBindable(&entry.Buffer,
+                               [this]() { binding_ready.clr(Type); });
+        } else if (auto expected = com_cast<IMTLBindable>(pConstantBuffer)) {
+          entry.Buffer = std::move(expected);
+        } else {
+          assert(0 && "wtf");
+        }
+      } else {
+        // BIND NULL
+        ShaderStage.ConstantBuffers.erase(i);
+      }
+    }
 
     binding_ready.clr(Type);
   }
@@ -1234,15 +1316,21 @@ public:
 
 #pragma region DynamicBufferPool
 
-  void SwapDynamicBuffer(MTL::Buffer *pBuffer) final {}
-
-#pragma endregion
-
-#pragma region RenameObserver
-
-  virtual void OnRenamed(IUnknown *pState) final {
-    if (auto yes = com_cast<ID3D11Buffer>(pState)) {
-    }
+  void ExchangeFromPool(MTL::Buffer **pBuffer) final {
+    /**
+    TODO: there is no pool at all!
+    */
+    assert(*pBuffer);
+    auto original = transfer(*pBuffer);
+    *pBuffer = metal_device_->newBuffer(original->length(),
+                                        original->resourceOptions());
+    cmd_queue.CurrentChunk()->emit(
+        [_ = std::move(original)](CommandChunk::context &ctx) {
+          /**
+          abusing lambda capture
+          the original buffer will be released once the chunk has completed
+          */
+        });
   }
 
 #pragma endregion
@@ -1394,12 +1482,12 @@ public:
             };
             if (dsv.Texture) {
               // TODO: ...should know more about load/store behavior
-              // auto depthAttachment = renderPassDescriptor->depthAttachment();
-              // depthAttachment->setTexture(dsv.Texture);
-              // depthAttachment->setLevel(dsv.MipSlice);
-              // depthAttachment->setSlice(dsv.ArrayIndex);
-              // depthAttachment->setLoadAction(MTL::LoadActionLoad);
-              // depthAttachment->setStoreAction(MTL::StoreActionStore);
+              auto depthAttachment = renderPassDescriptor->depthAttachment();
+              depthAttachment->setTexture(dsv.Texture);
+              depthAttachment->setLevel(dsv.MipSlice);
+              depthAttachment->setSlice(dsv.ArrayIndex);
+              depthAttachment->setLoadAction(MTL::LoadActionLoad);
+              depthAttachment->setStoreAction(MTL::StoreActionStore);
 
               // TODO: should know if depth buffer has stencil bits
               // auto stencilAttachment =
@@ -1480,7 +1568,10 @@ public:
           m_parent, vs.ptr(), ps.ptr(), state_.InputAssembler.InputLayout.ptr(),
           state_.OutputMerger.BlendState ? state_.OutputMerger.BlendState.ptr()
                                          : default_blend_state.ptr(),
-          1, s, MTL::PixelFormatInvalid, MTL::PixelFormatInvalid);
+          1, s,
+          state_.OutputMerger.DSV ? state_.OutputMerger.DSV->GetPixelFormat()
+                                  : MTL::PixelFormatInvalid,
+          MTL::PixelFormatInvalid);
     }
     chk->emit([pso = temp](CommandChunk::context &ctx) {
       MTL_COMPILED_GRAPHICS_PIPELINE GraphicsPipeline;
@@ -1491,10 +1582,13 @@ public:
       ctx.vs_binding_encoder = GraphicsPipeline.VSArgumentEncoder;
     });
 
-    UploadShaderStageResourceBinding(ShaderType::Vertex);
-    UploadShaderStageResourceBinding(ShaderType::Pixel);
-
     cmdbuf_state = CommandBufferState::RenderPipelineReady;
+  }
+
+  void PreDraw() {
+    FinalizeCurrentRenderPipeline();
+    UploadShaderStageResourceBinding<ShaderType::Vertex>();
+    UploadShaderStageResourceBinding<ShaderType::Pixel>();
   }
 
   /**
@@ -1507,16 +1601,78 @@ public:
     SwitchToComputeEncoder();
 
     // TODO
-    UploadShaderStageResourceBinding(ShaderType::Compute);
 
     cmdbuf_state = CommandBufferState::ComputePipelineReady;
   }
 
-  template <bool Force = false>
-  void UploadShaderStageResourceBinding(ShaderType stage) {
+  void PreDispatch() {
+    FinalizeCurrentComputePipeline();
+    UploadShaderStageResourceBinding<ShaderType::Compute>();
+  }
+
+  template <ShaderType stage, bool Force = false>
+  void UploadShaderStageResourceBinding() {
     if (!Force && binding_ready.test(stage))
       return;
 
+    auto &ShaderStage = state_.ShaderStages[(UINT)stage];
+
+    auto BindingCount = ShaderStage.ConstantBuffers.size() +
+                        ShaderStage.Samplers.size() + ShaderStage.SRVs.size();
+    // TODO: + UAV count
+
+    if (BindingCount) {
+      CommandChunk *chk = cmd_queue.CurrentChunk();
+      auto bindings = chk->reserve_vector<BINDING_INFO>(BindingCount);
+
+      for (auto &[slot, cbuf] : ShaderStage.ConstantBuffers) {
+        MTL_BIND_RESOURCE m;
+        cbuf.Buffer->GetBoundResource(&m);
+        bindings.push_back(BINDING_INFO{.ArgumentIndex = slot,
+                                        .Type = BINDING_TYPE::Buffer,
+                                        .U = {.Buffer = {m.Buffer, 0}}});
+      }
+      // TODO: sampler
+
+      chk->emit([bindings = std::move(bindings)](CommandChunk::context &ctx) {
+        // FIXME: compute shader?
+        auto encoder = stage == ShaderType::Vertex ? ctx.vs_binding_encoder
+                                                   : ctx.ps_binding_encoder;
+        auto sstage = stage == ShaderType::Vertex ? MTL::RenderStageVertex
+                                                  : MTL::RenderStageFragment;
+        if (!encoder)
+          return;
+
+        auto [heap, offset] = ctx.chk->allocate_gpu_heap(
+            encoder->encodedLength(), encoder->alignment());
+        encoder->setArgumentBuffer(heap, offset);
+
+        for (auto &binding : bindings) {
+          switch (binding.Type) {
+          case BINDING_TYPE::Buffer:
+            encoder->setBuffer(binding.U.Buffer.Ptr, binding.U.Buffer.Offset,
+                               binding.ArgumentIndex);
+            ctx.render_encoder->useResource(binding.U.Buffer.Ptr,
+                                            MTL::ResourceUsageRead, sstage);
+            break;
+          case BINDING_TYPE::Texture:
+            encoder->setTexture(binding.U.Texture.Ptr, binding.ArgumentIndex);
+            ctx.render_encoder->useResource(binding.U.Texture.Ptr,
+                                            MTL::ResourceUsageRead, sstage);
+            break;
+          }
+        }
+
+        if constexpr (stage == ShaderType::Vertex) {
+          ctx.render_encoder->setVertexBuffer(heap, offset,
+                                              30 /* kArgumentBufferBinding */);
+        } else {
+          ctx.render_encoder->setFragmentBuffer(
+              heap, offset, 30 /* kArgumentBufferBinding */);
+        }
+      });
+      // TRACE("should encode element: ", BindingCount);
+    }
     if (stage == ShaderType::Compute) {
       /* naive implementation... */
     } else {
@@ -1557,15 +1713,15 @@ public:
   };
 
   template <bool Force = false> void EmitSetDepthStencilState() {
-    // auto state = state_.OutputMerger.DepthStencilState
-    //                  ? state_.OutputMerger.DepthStencilState
-    //                  : default_depth_stencil_state;
-    // EmitRenderCommand<Force>(
-    //     [state, stencil_ref = state_.OutputMerger.StencilRef](
-    //         MTL::RenderCommandEncoder *encoder) {
-    //       encoder->setDepthStencilState(nullptr);
-    //       encoder->setStencilReferenceValue(stencil_ref);
-    //     });
+    auto state = state_.OutputMerger.DepthStencilState
+                     ? state_.OutputMerger.DepthStencilState
+                     : default_depth_stencil_state;
+    EmitRenderCommand<Force>(
+        [state, stencil_ref = state_.OutputMerger.StencilRef](
+            MTL::RenderCommandEncoder *encoder) {
+          encoder->setDepthStencilState(state->GetDepthStencilState());
+          encoder->setStencilReferenceValue(stencil_ref);
+        });
   }
 
   template <bool Force = false> void EmitSetRasterizerState() {

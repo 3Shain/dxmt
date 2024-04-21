@@ -1,5 +1,8 @@
+#include "Metal/MTLPixelFormat.hpp"
 #include "Metal/MTLResource.hpp"
+#include "Metal/MTLTexture.hpp"
 #include "com/com_pointer.hpp"
+#include "d3d11_texture.hpp"
 #include "mtld11_resource.hpp"
 #include "objc_pointer.hpp"
 
@@ -42,6 +45,152 @@ Com<ID3D11Buffer>
 CreateDeviceBuffer(IMTLD3D11Device *pDevice, const D3D11_BUFFER_DESC *pDesc,
                    const D3D11_SUBRESOURCE_DATA *pInitialData) {
   return new DeviceBuffer(pDesc, pInitialData, pDevice);
+}
+
+template <typename tag_texture>
+class DeviceTexture : public TResourceBase<tag_texture, IMTLBindable> {
+private:
+  Obj<MTL::Texture> texture;
+
+  using SRVBase =
+      TResourceViewBase<tag_shader_resource_view<DeviceTexture<tag_texture>>,
+                        IMTLBindable>;
+  class TextureSRV : public SRVBase {
+  private:
+    Obj<MTL::Texture> view;
+
+  public:
+    TextureSRV(MTL::Texture *view,
+               const tag_shader_resource_view<>::DESC_S *pDesc,
+               DeviceTexture *pResource, IMTLD3D11Device *pDevice)
+        : SRVBase(pDesc, pResource, pDevice), view(view) {}
+
+    virtual void GetBoundResource(MTL_BIND_RESOURCE *ppResource) {
+      (*ppResource).IsTexture = 1;
+      (*ppResource).Texture = view.ptr();
+    };
+
+    virtual void GetLogicalResourceOrView(REFIID riid,
+                                          void **ppLogicalResource) {
+      this->QueryInterface(riid, ppLogicalResource);
+    };
+  };
+
+  using RTVBase =
+      TResourceViewBase<tag_render_target_view<DeviceTexture<tag_texture>>>;
+  class TextureRTV : public RTVBase {
+  private:
+    Obj<MTL::Texture> view;
+
+  public:
+    TextureRTV(MTL::Texture *view,
+               const tag_render_target_view<>::DESC_S *pDesc,
+               DeviceTexture *pResource, IMTLD3D11Device *pDevice)
+        : RTVBase(pDesc, pResource, pDevice), view(view) {}
+
+    MTL::PixelFormat GetPixelFormat() final { return view->pixelFormat(); }
+
+    MTL::Texture *GetCurrentTexture() final { return view.ptr(); }
+  };
+
+  using DSVBase =
+      TResourceViewBase<tag_depth_stencil_view<DeviceTexture<tag_texture>>>;
+  class TextureDSV : public DSVBase {
+  private:
+    Obj<MTL::Texture> view;
+
+  public:
+    TextureDSV(MTL::Texture *view,
+               const tag_depth_stencil_view<>::DESC_S *pDesc,
+               DeviceTexture *pResource, IMTLD3D11Device *pDevice)
+        : DSVBase(pDesc, pResource, pDevice), view(view) {}
+
+    MTL::PixelFormat GetPixelFormat() final { return view->pixelFormat(); }
+
+    MTL::Texture *GetCurrentTexture() final { return view.ptr(); }
+  };
+
+public:
+  DeviceTexture(const tag_texture::DESC_S *pDesc,
+                const D3D11_SUBRESOURCE_DATA *pInitialData,
+                IMTLD3D11Device *pDevice)
+      : TResourceBase<tag_texture, IMTLBindable>(pDesc, pDevice) {
+    auto metal = pDevice->GetMTLDevice();
+    auto textureDescriptor = getTextureDescriptor(pDevice, pDesc);
+    assert(textureDescriptor);
+    texture = transfer(metal->newTexture(textureDescriptor));
+    if (pInitialData) {
+      initWithSubresourceData(texture, pDesc, pInitialData);
+    }
+  }
+  virtual HRESULT PrivateQueryInterface(REFIID riid, void **ppvObject) {
+    if (riid == __uuidof(IMTLBindable)) {
+      *ppvObject = ref_and_cast<IMTLBindable>(this);
+      return S_OK;
+    }
+    return E_NOINTERFACE;
+  };
+
+  virtual void GetBoundResource(MTL_BIND_RESOURCE *ppResource) {
+    (*ppResource).IsTexture = 1;
+    (*ppResource).Texture = texture.ptr();
+  };
+
+  virtual void GetLogicalResourceOrView(REFIID riid, void **ppLogicalResource) {
+    this->QueryInterface(riid, ppLogicalResource);
+  };
+
+  HRESULT CreateDepthStencilView(const D3D11_DEPTH_STENCIL_VIEW_DESC *pDesc,
+                                 ID3D11DepthStencilView **ppView) {
+    D3D11_DEPTH_STENCIL_VIEW_DESC finalDesc;
+    getViewDescFromResourceDesc(&this->desc, pDesc, &finalDesc);
+    auto view =
+        transfer(newTextureView(this->m_parent, this->texture, &finalDesc));
+    if (!view) {
+      return E_FAIL; // ??
+    }
+    if (ppView) {
+      *ppView = ref(new TextureDSV(view, &finalDesc, this, this->m_parent));
+    } else {
+      return S_FALSE;
+    }
+    return S_OK;
+  };
+
+  HRESULT CreateShaderResourceView(const D3D11_SHADER_RESOURCE_VIEW_DESC *desc,
+                                   ID3D11ShaderResourceView **ppView) {
+    auto view = transfer(newTextureView(this->m_parent, this->texture, desc));
+    if (!view) {
+      return E_FAIL; // ??
+    }
+    if (ppView) {
+      *ppView = ref(new TextureSRV(view, desc, this, this->m_parent));
+    } else {
+      return S_FALSE;
+    }
+    return S_OK;
+  };
+};
+
+Com<ID3D11Texture1D>
+CreateDeviceTexture1D(IMTLD3D11Device *pDevice,
+                      const D3D11_TEXTURE1D_DESC *pDesc,
+                      const D3D11_SUBRESOURCE_DATA *pInitialData) {
+  return new DeviceTexture<tag_texture_1d>(pDesc, pInitialData, pDevice);
+}
+
+Com<ID3D11Texture2D>
+CreateDeviceTexture2D(IMTLD3D11Device *pDevice,
+                      const D3D11_TEXTURE2D_DESC *pDesc,
+                      const D3D11_SUBRESOURCE_DATA *pInitialData) {
+  return new DeviceTexture<tag_texture_2d>(pDesc, pInitialData, pDevice);
+}
+
+Com<ID3D11Texture3D>
+CreateDeviceTexture3D(IMTLD3D11Device *pDevice,
+                      const D3D11_TEXTURE3D_DESC *pDesc,
+                      const D3D11_SUBRESOURCE_DATA *pInitialData) {
+  return new DeviceTexture<tag_texture_3d>(pDesc, pInitialData, pDevice);
 }
 
 } // namespace dxmt

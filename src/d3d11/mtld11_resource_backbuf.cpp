@@ -25,14 +25,17 @@ class EmulatedBackBufferTexture : public TResourceBase<tag_texture_backbuffer> {
 
 private:
   HWND hWnd;
-  IDXGIMetalLayerFactory* layer_factory;
-  Obj<CA::MetalLayer> layer_;
-  Obj<CA::MetalDrawable> current_drawable;
+  IDXGIMetalLayerFactory *layer_factory;
   void *native_view_;
+  /**
+  don't use a smart pointer
+  it's managed by native_view_
+  */
+  CA::MetalLayer* layer_;
+  Obj<CA::MetalDrawable> current_drawable;
 
   using BackBufferRTVBase =
-      TResourceViewBase<tag_render_target_view<IMTLD3D11RenderTargetView,
-                                               EmulatedBackBufferTexture>>;
+      TResourceViewBase<tag_render_target_view<EmulatedBackBufferTexture>>;
   class BackBufferRTV : public BackBufferRTVBase {
   public:
     BackBufferRTV(const D3D11_RENDER_TARGET_VIEW_DESC *pDesc,
@@ -93,11 +96,15 @@ public:
     desc.CPUAccessFlags = 0;
     desc.MiscFlags = 0;
     desc.Format = pDesc->Format;
+    desc.Width = pDesc->Width;
+    desc.Height = pDesc->Height;
   }
 
   ~EmulatedBackBufferTexture() {
+    // drop reference if any
     current_drawable = nullptr;
-    // layer_ = nullptr; // this cause program hang
+    // unnecessary
+    // layer_ = nullptr;
     layer_factory->ReleaseMetalLayer(hWnd, native_view_);
   }
 

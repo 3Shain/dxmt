@@ -1,5 +1,6 @@
 #pragma once
 
+#include "util_error.hpp"
 #include <cstddef>
 #include <cassert>
 #include <debugapi.h>
@@ -70,7 +71,14 @@ public:
 
   void release() = delete;
 
-  T *operator->() const { return m_ptr; }
+  T *operator->() const {
+    #ifndef NDEBUG
+    if (m_ptr == nullptr) {
+      throw MTLD3DError("try to access a nullptr");
+    }
+    #endif
+    return m_ptr;
+  }
 
   T **operator&() { return &m_ptr; }
   T *const *operator&() const { return &m_ptr; }

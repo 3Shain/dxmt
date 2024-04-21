@@ -6,8 +6,10 @@
 #include "Metal/MTLCommandBuffer.hpp"
 #include "Metal/MTLCommandQueue.hpp"
 #include "Metal/MTLComputeCommandEncoder.hpp"
-#include "Metal/MTLHeap.hpp"
 #include "Metal/MTLRenderCommandEncoder.hpp"
+#include "Metal/MTLResource.hpp"
+#include "Metal/MTLDevice.hpp"
+#include "Metal/MTLCaptureManager.hpp"
 #include "log/log.hpp"
 #include "objc_pointer.hpp"
 // #include "thread.hpp"
@@ -54,7 +56,7 @@ class CommandChunk {
 
     [[nodiscard]] constexpr T *allocate(std::size_t n) {
       return reinterpret_cast<T *>(
-          chunk->allocateCPUHeap(n * sizeof(T), alignof(T)));
+          chunk->allocate_cpu_heap(n * sizeof(T), alignof(T)));
     }
 
     constexpr void deallocate(T *p, [[maybe_unused]] std::size_t n) noexcept {
@@ -102,7 +104,9 @@ class CommandChunk {
     Node *next;
   };
 
-  struct context_t {
+  class context_t {
+  public:
+    CommandChunk *chk;
     MTL::CommandBuffer *cmdbuf;
     Obj<MTL::RenderCommandEncoder> render_encoder;
     Obj<MTL::ArgumentEncoder> vs_binding_encoder;
@@ -110,6 +114,8 @@ class CommandChunk {
     Obj<MTL::ComputeCommandEncoder> compute_encoder;
     Obj<MTL::ArgumentEncoder> consts_binding_encoder;
     Obj<MTL::BlitCommandEncoder> blit_encoder;
+
+  private:
   };
 
 public:
@@ -125,22 +131,23 @@ public:
     return ret;
   }
 
-  void *allocateCPUHeap(size_t size, size_t alignment) {
+  void *allocate_cpu_heap(size_t size, size_t alignment) {
     std::size_t adjustment =
-        align_forward_adjustment(cpu_argument_heap, alignment);
-
-    // if(m_usedBytes + adjustment + size > m_size)
-    //     throw std::bad_alloc();
-
+        align_forward_adjustment((void *)cpu_arugment_heap_offset, alignment);
     auto aligned = cpu_arugment_heap_offset + adjustment;
     cpu_arugment_heap_offset = aligned + size;
-
-    // m_usedBytes = reinterpret_cast<std::uintptr_t>(m_current)
-    //     - reinterpret_cast<std::uintptr_t>(m_start);
-
-    // ++m_numAllocations;
-
+    // TODO: check overflow
     return ptr_add(cpu_argument_heap, aligned);
+  }
+
+  std::pair<MTL::Buffer *, uint64_t> allocate_gpu_heap(size_t size,
+                                                       size_t alignment) {
+    std::size_t adjustment =
+        align_forward_adjustment((void *)gpu_arugment_heap_offset, alignment);
+    auto aligned = gpu_arugment_heap_offset + adjustment;
+    gpu_arugment_heap_offset = aligned + size;
+    // TODO: check overflow
+    return {gpu_argument_heap, aligned};
   }
 
   using context = context_t;
@@ -162,7 +169,7 @@ public:
 
   void encode(MTL::CommandBuffer *cmdbuf) {
     attached_cmdbuf = cmdbuf;
-    context_t context{cmdbuf, {}, {}, {}, {}, {}, {}};
+    context_t context{this, cmdbuf, {}, {}, {}, {}, {}, {}};
     auto cur = monoid_list.next;
     while (cur) {
       cur->value->invoke(context);
@@ -172,9 +179,9 @@ public:
 
 private:
   char *cpu_argument_heap;
-  Obj<MTL::Heap> gpu_argument_heap;
-  uint32_t cpu_arugment_heap_offset;
-  uint32_t gpu_arugment_heap_offset;
+  Obj<MTL::Buffer> gpu_argument_heap;
+  uint64_t cpu_arugment_heap_offset;
+  uint64_t gpu_arugment_heap_offset;
   MFunc<context> monoid;
   Node<BFunc<context> *> monoid_list;
   Node<BFunc<context> *> *list_end;
@@ -214,10 +221,34 @@ private:
       auto &chunk = chunks[internal_seq % kCommandChunkCount];
 
       auto pool = transfer(NS::AutoreleasePool::alloc()->init());
+
+      auto c = MTL::CaptureManager::sharedCaptureManager();
+      auto d = transfer(MTL::CaptureDescriptor::alloc()->init());
+      d->setCaptureObject(commandQueue->device());
+      d->setDestination(MTL::CaptureDestinationGPUTraceDocument);
+      char filename[1024];
+      std::time_t now;
+      std::time(&now);
+      // TODO: absolute path? not a good idea
+      std::strftime(filename, 1024,
+                    "/Users/sanshain/capture-%H-%M-%S_%m-%d-%y.gputrace",
+                    std::localtime(&now));
+      auto _pTraceSaveFilePath =
+          (NS::String::string(filename, NS::UTF8StringEncoding));
+      NS::URL *pURL =
+          NS::URL::alloc()->initFileURLWithPath(_pTraceSaveFilePath);
+
+      NS::Error *pError = nullptr;
+      d->setOutputURL(pURL);
+
+      c->startCapture(d.ptr(), &pError);
+
       auto cmdbuf = commandQueue->commandBuffer();
       chunk.encode(cmdbuf);
       cmdbuf->commit();
       // cmdbuf->waitUntilScheduled(); // seems unnecessary
+
+      c->stopCapture();
 
       ready_for_commit.fetch_add(1, std::memory_order_release);
       ready_for_commit.notify_all();
@@ -272,10 +303,10 @@ public:
       auto &chunk = chunks[i];
       chunk.reset();
       chunk.cpu_argument_heap = (char *)malloc(kCommandChunkGPUHeapSize);
-      auto heap_desc = transfer(MTL::HeapDescriptor::alloc()->init());
-      heap_desc->setType(MTL::HeapTypePlacement);
-      heap_desc->setSize(kCommandChunkGPUHeapSize);
-      chunk.gpu_argument_heap = transfer(device->newHeap(heap_desc));
+      chunk.gpu_argument_heap = transfer(device->newBuffer(
+          kCommandChunkGPUHeapSize, MTL::ResourceHazardTrackingModeUntracked |
+                                        MTL::ResourceCPUCacheModeWriteCombined |
+                                        MTL::ResourceStorageModeShared));
     };
   };
 

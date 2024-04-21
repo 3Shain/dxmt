@@ -5,9 +5,11 @@
 #include "d3d11_device_child.hpp"
 #include "com/com_pointer.hpp"
 #include "com/com_guid.hpp"
+#include "d3d11_view.hpp"
 #include "dxgi_resource.hpp"
 #include "dxmt_resource_binding.hpp"
 #include "log/log.hpp"
+#include "mtld11_interfaces.hpp"
 #include <memory>
 
 typedef struct MappedResource {
@@ -68,8 +70,12 @@ DEFINE_COM_INTERFACE("daf21510-d136-44dd-bb16-068a94690775",
 DEFINE_COM_INTERFACE("65feb8c5-01de-49df-bf58-d115007a117d", IMTLDynamicBuffer)
     : public IUnknown {
   virtual MTL::Buffer *GetCurrentBuffer() = 0;
+  /**
+
+  */
   virtual void GetBindable(IMTLBindable * *ppResource,
-                           std::function<void()> && onBufferSwap);
+                           std::function<void()> && onBufferSwap) = 0;
+  virtual void RotateBuffer(IMTLDynamicBufferPool* pool) = 0;
 };
 
 namespace dxmt {
@@ -95,6 +101,7 @@ struct tag_texture_2d {
       D3D11_RESOURCE_DIMENSION_TEXTURE2D;
   using COM = ID3D11Texture2D;
   using DESC = D3D11_TEXTURE2D_DESC;
+  // TODO: extend this to D3D11_TEXTURE2D_DESC
   using DESC_S = D3D11_TEXTURE2D_DESC;
 };
 
@@ -213,8 +220,8 @@ protected:
   std::unique_ptr<IDXGIResource1> dxgi_resource;
 };
 
-template <typename COM_IMPL_ = ID3D11RenderTargetView,
-          typename RESOURCE_IMPL_ = ID3D11Resource>
+template <typename RESOURCE_IMPL_ = ID3D11Resource,
+          typename COM_IMPL_ = IMTLD3D11RenderTargetView>
 struct tag_render_target_view {
   using COM = ID3D11RenderTargetView;
   using COM_IMPL = COM_IMPL_;
@@ -222,6 +229,39 @@ struct tag_render_target_view {
   using RESOURCE_IMPL = RESOURCE_IMPL_;
   using DESC = D3D11_RENDER_TARGET_VIEW_DESC;
   using DESC_S = D3D11_RENDER_TARGET_VIEW_DESC;
+};
+
+template <typename RESOURCE_IMPL_ = ID3D11Resource,
+          typename COM_IMPL_ = IMTLD3D11DepthStencilView>
+struct tag_depth_stencil_view {
+  using COM = ID3D11DepthStencilView;
+  using COM_IMPL = COM_IMPL_;
+  using RESOURCE = ID3D11Resource;
+  using RESOURCE_IMPL = RESOURCE_IMPL_;
+  using DESC = D3D11_DEPTH_STENCIL_VIEW_DESC;
+  using DESC_S = D3D11_DEPTH_STENCIL_VIEW_DESC;
+};
+
+template <typename RESOURCE_IMPL_ = ID3D11Resource,
+          typename COM_IMPL_ = IMTLD3D11ShaderResourceView>
+struct tag_shader_resource_view {
+  using COM = ID3D11ShaderResourceView;
+  using COM_IMPL = COM_IMPL_;
+  using RESOURCE = ID3D11Resource;
+  using RESOURCE_IMPL = RESOURCE_IMPL_;
+  using DESC = D3D11_SHADER_RESOURCE_VIEW_DESC;
+  using DESC_S = D3D11_SHADER_RESOURCE_VIEW_DESC;
+};
+
+template <typename RESOURCE_IMPL_ = ID3D11Resource,
+          typename COM_IMPL_ = ID3D11UnorderedAccessView>
+struct tag_unordered_access_view {
+  using COM = ID3D11UnorderedAccessView;
+  using COM_IMPL = COM_IMPL_;
+  using RESOURCE = ID3D11Resource;
+  using RESOURCE_IMPL = RESOURCE_IMPL_;
+  using DESC = D3D11_UNORDERED_ACCESS_VIEW_DESC;
+  using DESC_S = D3D11_UNORDERED_ACCESS_VIEW_DESC;
 };
 
 template <typename tag, typename... Base>
@@ -277,6 +317,10 @@ public:
 
 protected:
   tag::DESC_S desc;
+  /**
+  It's important that View holds a strong ref to Resource
+  but not vice versa
+  */
   Com<typename tag::RESOURCE_IMPL> resource;
 };
 
@@ -299,6 +343,21 @@ CreateStagingTexture2D(IMTLD3D11Device *pDevice,
 Com<ID3D11Buffer>
 CreateDeviceBuffer(IMTLD3D11Device *pDevice, const D3D11_BUFFER_DESC *pDesc,
                    const D3D11_SUBRESOURCE_DATA *pInitialData);
+
+Com<ID3D11Texture1D>
+CreateDeviceTexture1D(IMTLD3D11Device *pDevice,
+                      const D3D11_TEXTURE1D_DESC *pDesc,
+                      const D3D11_SUBRESOURCE_DATA *pInitialData);
+
+Com<ID3D11Texture2D>
+CreateDeviceTexture2D(IMTLD3D11Device *pDevice,
+                      const D3D11_TEXTURE2D_DESC *pDesc,
+                      const D3D11_SUBRESOURCE_DATA *pInitialData);
+
+Com<ID3D11Texture3D>
+CreateDeviceTexture3D(IMTLD3D11Device *pDevice,
+                      const D3D11_TEXTURE3D_DESC *pDesc,
+                      const D3D11_SUBRESOURCE_DATA *pInitialData);
 
 Com<ID3D11Buffer>
 CreateDynamicBuffer(IMTLD3D11Device *pDevice, const D3D11_BUFFER_DESC *pDesc,
