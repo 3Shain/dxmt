@@ -65,15 +65,22 @@ private:
                DeviceTexture *pResource, IMTLD3D11Device *pDevice)
         : SRVBase(pDesc, pResource, pDevice), view(view) {}
 
-    virtual void GetBoundResource(MTL_BIND_RESOURCE *ppResource) {
+    void GetBoundResource(MTL_BIND_RESOURCE *ppResource) {
       (*ppResource).IsTexture = 1;
       (*ppResource).Texture = view.ptr();
     };
 
-    virtual void GetLogicalResourceOrView(REFIID riid,
-                                          void **ppLogicalResource) {
+    void GetLogicalResourceOrView(REFIID riid, void **ppLogicalResource) {
       this->QueryInterface(riid, ppLogicalResource);
     };
+
+    HRESULT PrivateQueryInterface(REFIID riid, void **ppvObject) {
+      if (riid == __uuidof(IMTLBindable)) {
+        *ppvObject = ref_and_cast<IMTLBindable>(this);
+        return S_OK;
+      }
+      return E_NOINTERFACE;
+    }
   };
 
   using RTVBase =
@@ -157,14 +164,17 @@ public:
     return S_OK;
   };
 
-  HRESULT CreateShaderResourceView(const D3D11_SHADER_RESOURCE_VIEW_DESC *desc,
+  HRESULT CreateShaderResourceView(const D3D11_SHADER_RESOURCE_VIEW_DESC *pDesc,
                                    ID3D11ShaderResourceView **ppView) {
-    auto view = transfer(newTextureView(this->m_parent, this->texture, desc));
+    D3D11_SHADER_RESOURCE_VIEW_DESC finalDesc;
+    getViewDescFromResourceDesc(&this->desc, pDesc, &finalDesc);
+    auto view =
+        transfer(newTextureView(this->m_parent, this->texture, &finalDesc));
     if (!view) {
       return E_FAIL; // ??
     }
     if (ppView) {
-      *ppView = ref(new TextureSRV(view, desc, this, this->m_parent));
+      *ppView = ref(new TextureSRV(view, &finalDesc, this, this->m_parent));
     } else {
       return S_FALSE;
     }

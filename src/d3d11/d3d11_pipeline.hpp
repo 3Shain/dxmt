@@ -32,7 +32,6 @@ Com<IMTLCompiledGraphicsPipeline> CreateGraphicsPipeline(
     IMTLD3D11Device *pDevice, IMTLCompiledShader *pVertexShader,
     IMTLCompiledShader *pPixelShader, IMTLD3D11InputLayout *pInputLayout,
     IMTLD3D11BlendState *pBlendState, UINT NumRTVs,
-    MTL::PixelFormat const *RTVFormats, MTL::PixelFormat DepthFormat,
-    MTL::PixelFormat StencilFormat);
+    MTL::PixelFormat const *RTVFormats, MTL::PixelFormat DepthStencilFormat);
 
 };

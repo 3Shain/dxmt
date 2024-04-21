@@ -15,7 +15,6 @@ namespace dxmt {
 class DynamicBuffer : public TResourceBase<tag_buffer, IMTLDynamicBuffer> {
 private:
   Obj<MTL::Buffer> buffer;
-  std::set<IMTLBindable *> observers;
 
   // using SRVBase = TResourceViewBase<tag_shader_resource_view<DynamicBuffer>,
   // IMTLDynamicBuffer> ; class SRVView :public SRVBase {};
@@ -58,6 +57,8 @@ private:
     void NotifyObserver() { observer(); };
   };
 
+  std::set<DynamicBindable *> observers;
+
 public:
   DynamicBuffer(const tag_buffer::DESC_S *desc,
                 const D3D11_SUBRESOURCE_DATA *pInitialData,
@@ -76,14 +77,18 @@ public:
   void GetBindable(IMTLBindable **ppResource,
                    std::function<void()> &&onBufferSwap) {
     *ppResource = new DynamicBindable(this, std::move(onBufferSwap));
-    assert(observers.insert(*ppResource).second && "are you kidding me?");
+    assert(observers.insert((DynamicBindable *)*ppResource).second &&
+           "are you kidding me?");
   };
 
   void RotateBuffer(IMTLDynamicBufferPool *pool) {
     pool->ExchangeFromPool(&buffer);
+    for (auto &observer : observers) {
+      observer->NotifyObserver();
+    }
   };
 
-  void RemoveObserver(IMTLBindable *pBindable) {
+  void RemoveObserver(DynamicBindable *pBindable) {
     assert(observers.erase(pBindable) == 1 &&
            "it must be 1 unless the destructor called twice");
   }

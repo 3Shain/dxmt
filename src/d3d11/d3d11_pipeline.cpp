@@ -22,10 +22,9 @@ public:
                               IMTLD3D11InputLayout *pInputLayout,
                               IMTLD3D11BlendState *pBlendState, UINT NumRTVs,
                               MTL::PixelFormat const *RTVFormats,
-                              MTL::PixelFormat DepthFormat,
-                              MTL::PixelFormat StencilFormat)
+                              MTL::PixelFormat DepthStencilFormat)
       : ComObject<IMTLCompiledGraphicsPipeline>(), num_rtvs(NumRTVs),
-        depth_format(DepthFormat), stencil_format(StencilFormat),
+        depth_stencil_format(DepthStencilFormat),
         device_(pDevice), pVertexShader(pVertexShader),
         pPixelShader(pPixelShader), pInputLayout(pInputLayout),
         pBlendState(pBlendState) {
@@ -90,12 +89,13 @@ public:
           rtv_formats[i]);
     }
 
-    if (depth_format != MTL::PixelFormatInvalid) {
-      pipelineDescriptor->setDepthAttachmentPixelFormat(depth_format);
+    if (depth_stencil_format != MTL::PixelFormatInvalid) {
+      pipelineDescriptor->setDepthAttachmentPixelFormat(depth_stencil_format);
     }
-    if (stencil_format != MTL::PixelFormatInvalid) {
-      pipelineDescriptor->setStencilAttachmentPixelFormat(stencil_format);
-    }
+    // TODO: check depth_stencil_format has stencil channel
+    // if (stencil_format != MTL::PixelFormatInvalid) {
+    //   pipelineDescriptor->setStencilAttachmentPixelFormat(stencil_format);
+    // }
 
     state_ = transfer(device_->GetMTLDevice()->newRenderPipelineState(
         pipelineDescriptor, &err));
@@ -114,8 +114,7 @@ public:
 private:
   UINT num_rtvs;
   MTL::PixelFormat rtv_formats[8]; // 8?
-  MTL::PixelFormat depth_format;
-  MTL::PixelFormat stencil_format;
+  MTL::PixelFormat depth_stencil_format;
   IMTLD3D11Device *device_;
   std::atomic_bool ready_;
   THREADGROUP_WORK_STATE work_state_;
@@ -132,11 +131,10 @@ Com<IMTLCompiledGraphicsPipeline> CreateGraphicsPipeline(
     IMTLD3D11Device *pDevice, IMTLCompiledShader *pVertexShader,
     IMTLCompiledShader *pPixelShader, IMTLD3D11InputLayout *pInputLayout,
     IMTLD3D11BlendState *pBlendState, UINT NumRTVs,
-    MTL::PixelFormat const *RTVFormats, MTL::PixelFormat DepthFormat,
-    MTL::PixelFormat StencilFormat) {
+    MTL::PixelFormat const *RTVFormats, MTL::PixelFormat DepthStencilFormat) {
   return new MTLCompiledGraphicsPipeline(
       pDevice, pVertexShader, pPixelShader, pInputLayout, pBlendState, NumRTVs,
-      RTVFormats, DepthFormat, StencilFormat);
+      RTVFormats, DepthStencilFormat);
 }
 
 } // namespace dxmt

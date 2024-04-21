@@ -1,6 +1,9 @@
 #include "Metal/MTLPixelFormat.hpp"
 #include "Metal/MTLVertexDescriptor.hpp"
 #include "com/com_guid.hpp"
+#include "com/com_aggregatable.hpp"
+#include "d3d11_pipeline.hpp"
+#include "util_hash.hpp"
 #include "d3d11_class_linkage.hpp"
 #include "d3d11_inspection.hpp"
 #include "d3d11_context.hpp"
@@ -16,10 +19,48 @@
 #include "dxmt_format.hpp"
 #include "ftl.hpp"
 #include "mtld11_resource.hpp"
+#include "thread.hpp"
 #include "threadpool.hpp"
 #include "winemacdrv.h"
-#include "com/com_aggregatable.hpp"
 #include "dxgi_object.hpp"
+#include <iterator>
+#include <mutex>
+#include <unordered_map>
+
+namespace std {
+template <> struct hash<MTL_GRAPHICS_PIPELINE_DESC> {
+  size_t operator()(const MTL_GRAPHICS_PIPELINE_DESC &v) const noexcept {
+    dxmt::HashState state;
+    state.add((size_t)v.VertexShader); // FIXME: don't use pointer?
+    state.add((size_t)v.PixelShader);  // FIXME: don't use pointer?
+    state.add((size_t)v.InputLayout);  // FIXME: don't use pointer?
+    state.add(v.BlendState->GetHash());
+    state.add((size_t)v.DepthStencilFormat);
+    state.add((size_t)v.NumColorAttachments);
+    for (unsigned i = 0; i < std::size(v.ColorAttachmentFormats); i++) {
+      state.add(i < v.NumColorAttachments ? v.ColorAttachmentFormats[i]
+                                          : MTL::PixelFormatInvalid);
+    }
+    return state;
+  };
+};
+template <> struct equal_to<MTL_GRAPHICS_PIPELINE_DESC> {
+  bool operator()(const MTL_GRAPHICS_PIPELINE_DESC &x,
+                  const MTL_GRAPHICS_PIPELINE_DESC &y) const {
+    if (x.NumColorAttachments != y.NumColorAttachments)
+      return false;
+    for (unsigned i = 0; i < x.NumColorAttachments; i++) {
+      if (x.ColorAttachmentFormats[i] != y.ColorAttachmentFormats[i])
+        return false;
+    }
+    return (x.BlendState == y.BlendState) &&
+           (x.VertexShader == y.VertexShader) &&
+           (x.PixelShader == y.PixelShader) &&
+           (x.InputLayout == y.InputLayout) &&
+           (x.DepthStencilFormat == y.DepthStencilFormat);
+  }
+};
+} // namespace std
 
 namespace dxmt {
 
@@ -236,6 +277,24 @@ public:
                              THREADGROUP_WORK_STATE *pState) final;
   void WaitThreadgroupWork(THREADGROUP_WORK_STATE *pState) final;
 
+  HRESULT CreateGraphicsPipeline(MTL_GRAPHICS_PIPELINE_DESC *pDesc,
+                                 IMTLCompiledGraphicsPipeline **ppPipeline) {
+    std::lock_guard<dxmt::mutex> lock(mutex_);
+
+    auto iter = pipelines_.find(*pDesc);
+    if (iter != pipelines_.end()) {
+      *ppPipeline = iter->second.ref();
+      return S_OK;
+    }
+    auto temp = dxmt::CreateGraphicsPipeline(
+        this, pDesc->VertexShader, pDesc->PixelShader, pDesc->InputLayout,
+        pDesc->BlendState, pDesc->NumColorAttachments,
+        pDesc->ColorAttachmentFormats, pDesc->DepthStencilFormat);
+    assert(pipelines_.insert({*pDesc, temp}).second); // copy
+    *ppPipeline = std::move(temp);                    // move
+    return S_OK;
+  };
+
 private:
   MTLD3D11DXGIDevice *m_container;
   D3D_FEATURE_LEVEL m_FeatureLevel;
@@ -243,6 +302,11 @@ private:
   MTLD3D11Inspection m_features;
   Com<IMTLD3D11DeviceContext> context_;
   threadpool<threadpool_trait> pool_;
+
+  std::unordered_map<MTL_GRAPHICS_PIPELINE_DESC,
+                     Com<IMTLCompiledGraphicsPipeline>>
+      pipelines_;
+  dxmt::mutex mutex_;
 };
 
 /**

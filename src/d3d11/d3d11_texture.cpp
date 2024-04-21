@@ -481,6 +481,85 @@ void getViewDescFromResourceDesc<D3D11_TEXTURE3D_DESC,
 }
 
 template <>
+void getViewDescFromResourceDesc<D3D11_TEXTURE1D_DESC,
+                                 D3D11_SHADER_RESOURCE_VIEW_DESC>(
+    const D3D11_TEXTURE1D_DESC *pResourceDesc,
+    const D3D11_SHADER_RESOURCE_VIEW_DESC *pViewDescIn,
+    D3D11_SHADER_RESOURCE_VIEW_DESC *pViewDescOut) {
+  if (pViewDescIn) {
+    *pViewDescOut = *pViewDescIn;
+    return;
+  }
+  pViewDescOut->Format = pResourceDesc->Format;
+
+  if (pResourceDesc->ArraySize == 1) {
+    pViewDescOut->ViewDimension = D3D11_SRV_DIMENSION_TEXTURE1D;
+    pViewDescOut->Texture1D.MostDetailedMip = 0;
+    pViewDescOut->Texture1D.MipLevels = pResourceDesc->MipLevels;
+  } else {
+    pViewDescOut->ViewDimension = D3D11_SRV_DIMENSION_TEXTURE1DARRAY;
+    pViewDescOut->Texture1DArray.MostDetailedMip = 0;
+    pViewDescOut->Texture1DArray.MipLevels = pResourceDesc->MipLevels;
+    pViewDescOut->Texture1DArray.FirstArraySlice = 0;
+    pViewDescOut->Texture1DArray.ArraySize = pResourceDesc->ArraySize;
+  }
+}
+
+template <>
+void getViewDescFromResourceDesc<D3D11_TEXTURE2D_DESC,
+                                 D3D11_SHADER_RESOURCE_VIEW_DESC>(
+    const D3D11_TEXTURE2D_DESC *pResourceDesc,
+    const D3D11_SHADER_RESOURCE_VIEW_DESC *pViewDescIn,
+    D3D11_SHADER_RESOURCE_VIEW_DESC *pViewDescOut) {
+  if (pViewDescIn) {
+    *pViewDescOut = *pViewDescIn;
+    return;
+  }
+  pViewDescOut->Format = pResourceDesc->Format;
+
+  if (pResourceDesc->SampleDesc.Count == 1) {
+    if (pResourceDesc->ArraySize == 1) {
+      pViewDescOut->ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+      pViewDescOut->Texture2D.MostDetailedMip = 0;
+      pViewDescOut->Texture2D.MipLevels = pResourceDesc->MipLevels;
+      // pViewDescOut->Texture2D.PlaneSlice      = 0;
+    } else {
+      pViewDescOut->ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2DARRAY;
+      pViewDescOut->Texture2DArray.MostDetailedMip = 0;
+      pViewDescOut->Texture2DArray.MipLevels = pResourceDesc->MipLevels;
+      pViewDescOut->Texture2DArray.FirstArraySlice = 0;
+      pViewDescOut->Texture2DArray.ArraySize = pResourceDesc->ArraySize;
+      // pViewDescOut->Texture2DArray.PlaneSlice      = 0;
+    }
+  } else {
+    if (pResourceDesc->ArraySize == 1) {
+      pViewDescOut->ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2DMS;
+    } else {
+      pViewDescOut->ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2DMSARRAY;
+      pViewDescOut->Texture2DMSArray.FirstArraySlice = 0;
+      pViewDescOut->Texture2DMSArray.ArraySize = pResourceDesc->ArraySize;
+    }
+  }
+}
+
+template <>
+void getViewDescFromResourceDesc<D3D11_TEXTURE3D_DESC,
+                                 D3D11_SHADER_RESOURCE_VIEW_DESC>(
+    const D3D11_TEXTURE3D_DESC *pResourceDesc,
+    const D3D11_SHADER_RESOURCE_VIEW_DESC *pViewDescIn,
+    D3D11_SHADER_RESOURCE_VIEW_DESC *pViewDescOut) {
+  if (pViewDescIn) {
+    *pViewDescOut = *pViewDescIn;
+    return;
+  }
+  pViewDescOut->Format = pResourceDesc->Format;
+
+  pViewDescOut->ViewDimension = D3D11_SRV_DIMENSION_TEXTURE3D;
+  pViewDescOut->Texture3D.MostDetailedMip = 0;
+  pViewDescOut->Texture3D.MipLevels = pResourceDesc->MipLevels;
+}
+
+template <>
 void getViewDescFromResourceDesc<D3D11_TEXTURE2D_DESC,
                                  D3D11_DEPTH_STENCIL_VIEW_DESC>(
     const D3D11_TEXTURE2D_DESC *pResourceDesc,

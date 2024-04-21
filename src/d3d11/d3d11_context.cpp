@@ -3,6 +3,7 @@
 #include "Metal/MTLPixelFormat.hpp"
 #include "Metal/MTLRenderCommandEncoder.hpp"
 #include "Metal/MTLRenderPass.hpp"
+#include "Metal/MTLSampler.hpp"
 #include "Metal/MTLStageInputOutputDescriptor.hpp"
 #include "Metal/MTLTexture.hpp"
 #include "com/com_guid.hpp"
@@ -92,26 +93,47 @@ auto to_metal_topology(D3D11_PRIMITIVE_TOPOLOGY topo) {
   }
 }
 
-enum class BINDING_TYPE { Buffer, Texture };
+enum class BINDING_TYPE { Buffer, Texture, Sampler };
 
-struct BINDING_TEXTURE {
-  MTL::Texture *Ptr;
-  // TODO: minlod
-};
-
-struct BINDING_BUFFER {
-  MTL::Buffer *Ptr;
-  UINT Offset;
-  // TODO: length
-};
-
+/**
+I think I will use variant in the end...
+if I have to hold a reference of resources
+*/
 struct BINDING_INFO {
   UINT ArgumentIndex;
   BINDING_TYPE Type; // 0 buffer, 1 texture, 2 sampler
+
+  struct BINDING_TEXTURE {
+    MTL::Texture *Ptr;
+    // TODO: minlod
+  };
+
+  struct BINDING_BUFFER {
+    MTL::Buffer *Ptr;
+    UINT Offset;
+    // TODO: length
+  };
+
+  struct BINDING_SAMPLER {
+    MTL::SamplerState *Ptr;
+  };
   union {
     BINDING_TEXTURE Texture;
     BINDING_BUFFER Buffer;
-  } U;
+    BINDING_SAMPLER Sampler;
+  };
+
+  BINDING_INFO(UINT ArgumentIndex, MTL::Buffer *Buffer, UINT Offset)
+      : ArgumentIndex(ArgumentIndex), Type(BINDING_TYPE::Buffer),
+        Buffer({Buffer, Offset}) {}
+
+  BINDING_INFO(UINT ArgumentIndex, MTL::Texture *Texture)
+      : ArgumentIndex(ArgumentIndex), Type(BINDING_TYPE::Texture),
+        Texture({Texture}) {}
+
+  BINDING_INFO(UINT ArgumentIndex, MTL::SamplerState *SamplerState)
+      : ArgumentIndex(ArgumentIndex), Type(BINDING_TYPE::Sampler),
+        Sampler({SamplerState}) {}
 };
 
 using MTLD3D11DeviceContextBase =
@@ -687,6 +709,7 @@ public:
                          const UINT *pNumConstants) {
 
     // auto &ShaderStage = state_.ShaderStages[(UINT)Type];
+    IMPLEMENT_ME;
   }
 
   template <ShaderType Type>
@@ -694,7 +717,26 @@ public:
   SetShaderResource(UINT StartSlot, UINT NumViews,
                     ID3D11ShaderResourceView *const *ppShaderResourceViews) {
 
-    // auto &ShaderStage = state_.ShaderStages[(UINT)Type];
+    auto &ShaderStage = state_.ShaderStages[(UINT)Type];
+    for (unsigned Slot = StartSlot; Slot < StartSlot + NumViews; Slot++) {
+      auto pView = ppShaderResourceViews[Slot - StartSlot];
+      if (pView) {
+        auto maybeExist = ShaderStage.SRVs.insert({Slot, {}});
+        // either old value or inserted empty value
+        auto &entry = maybeExist.first->second;
+        entry = nullptr;
+        if (auto dynamic = com_cast<IMTLDynamicBuffer>(pView)) {
+          dynamic->GetBindable(&entry, [this]() { binding_ready.clr(Type); });
+        } else if (auto expected = com_cast<IMTLBindable>(pView)) {
+          entry = std::move(expected);
+        } else {
+          assert(0 && "wtf");
+        }
+      } else {
+        // BIND NULL
+        ShaderStage.SRVs.erase(Slot);
+      }
+    }
 
     binding_ready.clr(Type);
   }
@@ -703,13 +745,28 @@ public:
   void GetShaderResource(UINT StartSlot, UINT NumViews,
                          ID3D11ShaderResourceView **ppShaderResourceViews) {
     // auto &ShaderStage = state_.ShaderStages[(UINT)Type];
+    IMPLEMENT_ME;
   }
 
   template <ShaderType Type>
   void SetSamplers(UINT StartSlot, UINT NumSamplers,
                    ID3D11SamplerState *const *ppSamplers) {
-    // auto &ShaderStage = state_.ShaderStages[(UINT)Type];
+    auto &ShaderStage = state_.ShaderStages[(UINT)Type];
     for (unsigned Slot = StartSlot; Slot < StartSlot + NumSamplers; Slot++) {
+      auto pSampler = ppSamplers[Slot - StartSlot];
+      if (pSampler) {
+        auto maybeExist = ShaderStage.Samplers.insert({Slot, {}});
+        // either old value or inserted empty value
+        auto &entry = maybeExist.first->second;
+        if (auto expected = com_cast<IMTLD3D11SamplerState>(pSampler)) {
+          entry = std::move(expected);
+        } else {
+          assert(0 && "wtf");
+        }
+      } else {
+        // BIND NULL
+        ShaderStage.Samplers.erase(Slot);
+      }
     }
 
     binding_ready.clr(Type);
@@ -1540,7 +1597,6 @@ public:
     cmdbuf_state = CommandBufferState::ComputeEncoderActive;
   }
 
-  Com<IMTLCompiledGraphicsPipeline> temp;
   /**
   Assume we have all things needed to build PSO
   If the current encoder is not a render encoder, switch to it.
@@ -1555,25 +1611,33 @@ public:
     // TODO: Find PSO from cache?
     CommandChunk *chk = cmd_queue.CurrentChunk();
 
-    if (!temp) {
-      Com<IMTLCompiledShader> vs, ps;
-      state_.ShaderStages[(UINT)ShaderType::Vertex]
-          .Shader //
-          ->GetCompiledShader(NULL, &vs);
-      state_.ShaderStages[(UINT)ShaderType::Pixel]
-          .Shader //
-          ->GetCompiledShader(NULL, &ps);
-      MTL::PixelFormat s[1] = {state_.OutputMerger.RTVs[0]->GetPixelFormat()};
-      temp = CreateGraphicsPipeline(
-          m_parent, vs.ptr(), ps.ptr(), state_.InputAssembler.InputLayout.ptr(),
-          state_.OutputMerger.BlendState ? state_.OutputMerger.BlendState.ptr()
-                                         : default_blend_state.ptr(),
-          1, s,
-          state_.OutputMerger.DSV ? state_.OutputMerger.DSV->GetPixelFormat()
-                                  : MTL::PixelFormatInvalid,
-          MTL::PixelFormatInvalid);
+    Com<IMTLCompiledGraphicsPipeline> pipeline;
+    Com<IMTLCompiledShader> vs, ps;
+    state_.ShaderStages[(UINT)ShaderType::Vertex]
+        .Shader //
+        ->GetCompiledShader(NULL, &vs);
+    state_.ShaderStages[(UINT)ShaderType::Pixel]
+        .Shader //
+        ->GetCompiledShader(NULL, &ps);
+    MTL_GRAPHICS_PIPELINE_DESC pipelineDesc;
+    pipelineDesc.VertexShader = vs.ptr();
+    pipelineDesc.PixelShader = ps.ptr();
+    pipelineDesc.InputLayout = state_.InputAssembler.InputLayout.ptr();
+    pipelineDesc.NumColorAttachments = state_.OutputMerger.NumRTVs;
+    for (unsigned i = 0; i < pipelineDesc.NumColorAttachments; i++) {
+      pipelineDesc.ColorAttachmentFormats[i] =
+          state_.OutputMerger.RTVs[i]->GetPixelFormat();
     }
-    chk->emit([pso = temp](CommandChunk::context &ctx) {
+    pipelineDesc.BlendState = state_.OutputMerger.BlendState
+                                  ? state_.OutputMerger.BlendState.ptr()
+                                  : default_blend_state.ptr();
+    pipelineDesc.DepthStencilFormat =
+        state_.OutputMerger.DSV ? state_.OutputMerger.DSV->GetPixelFormat()
+                                : MTL::PixelFormatInvalid;
+
+    m_parent->CreateGraphicsPipeline(&pipelineDesc, &pipeline);
+
+    chk->emit([pso = std::move(pipeline)](CommandChunk::context &ctx) {
       MTL_COMPILED_GRAPHICS_PIPELINE GraphicsPipeline;
       pso->GetPipeline(&GraphicsPipeline); // may block
       ctx.render_encoder->setRenderPipelineState(
@@ -1628,11 +1692,17 @@ public:
       for (auto &[slot, cbuf] : ShaderStage.ConstantBuffers) {
         MTL_BIND_RESOURCE m;
         cbuf.Buffer->GetBoundResource(&m);
-        bindings.push_back(BINDING_INFO{.ArgumentIndex = slot,
-                                        .Type = BINDING_TYPE::Buffer,
-                                        .U = {.Buffer = {m.Buffer, 0}}});
+        bindings.push_back(BINDING_INFO{slot, m.Buffer, 0});
       }
-      // TODO: sampler
+      for (auto &[slot, srv] : ShaderStage.SRVs) {
+        MTL_BIND_RESOURCE m;
+        srv->GetBoundResource(&m);
+        bindings.push_back(m.IsTexture ? BINDING_INFO{slot + 128, m.Texture}
+                                       : BINDING_INFO{slot + 128, m.Buffer, 0});
+      }
+      for (auto &[slot, sampler] : ShaderStage.Samplers) {
+        bindings.push_back(BINDING_INFO{slot + 16, sampler->GetSamplerState()});
+      }
 
       chk->emit([bindings = std::move(bindings)](CommandChunk::context &ctx) {
         // FIXME: compute shader?
@@ -1650,15 +1720,19 @@ public:
         for (auto &binding : bindings) {
           switch (binding.Type) {
           case BINDING_TYPE::Buffer:
-            encoder->setBuffer(binding.U.Buffer.Ptr, binding.U.Buffer.Offset,
+            encoder->setBuffer(binding.Buffer.Ptr, binding.Buffer.Offset,
                                binding.ArgumentIndex);
-            ctx.render_encoder->useResource(binding.U.Buffer.Ptr,
+            ctx.render_encoder->useResource(binding.Buffer.Ptr,
                                             MTL::ResourceUsageRead, sstage);
             break;
           case BINDING_TYPE::Texture:
-            encoder->setTexture(binding.U.Texture.Ptr, binding.ArgumentIndex);
-            ctx.render_encoder->useResource(binding.U.Texture.Ptr,
+            encoder->setTexture(binding.Texture.Ptr, binding.ArgumentIndex);
+            ctx.render_encoder->useResource(binding.Texture.Ptr,
                                             MTL::ResourceUsageRead, sstage);
+            break;
+          case BINDING_TYPE::Sampler:
+            encoder->setSamplerState(binding.Sampler.Ptr,
+                                     binding.ArgumentIndex);
             break;
           }
         }

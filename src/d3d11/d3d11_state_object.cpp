@@ -4,6 +4,7 @@
 #include "d3d11_device.hpp"
 #include "log/log.hpp"
 #include "util_string.hpp"
+#include "util_hash.hpp"
 #include "d3d11_device_child.hpp"
 #include "Metal/MTLRenderCommandEncoder.hpp"
 #include "Metal/MTLSampler.hpp"
@@ -341,6 +342,25 @@ public:
     render_pipeline_descriptor->setAlphaToCoverageEnabled(
         desc_.AlphaToCoverageEnable);
   }
+
+  SIZE_T GetHash() {
+    HashState state;
+    state.add(desc_.AlphaToCoverageEnable);
+    state.add(desc_.IndependentBlendEnable);
+    for (auto x : desc_.RenderTarget) {
+      state.add(x.BlendEnable);
+      state.add(x.RenderTargetWriteMask);
+      state.add(x.LogicOpEnable);
+      state.add(x.LogicOp);
+      state.add(x.BlendOp);
+      state.add(x.BlendOpAlpha);
+      state.add(x.SrcBlendAlpha);
+      state.add(x.DestBlendAlpha);
+      state.add(x.SrcBlend);
+      state.add(x.DestBlend);
+    }
+    return state;
+  };
 
 private:
   const D3D11_BLEND_DESC1 desc_;

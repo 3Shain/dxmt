@@ -294,6 +294,11 @@ public:
       return S_OK;
     }
 
+    if (riid == __uuidof(IMTLDynamicBuffer) || riid == __uuidof(IMTLBindable)) {
+      // silent these interfaces if PrivateQueryInterface doesn't provide
+      return E_NOINTERFACE;
+    }
+
     if (logQueryInterfaceError(__uuidof(typename tag::COM_IMPL), riid)) {
       WARN("D3D11View: Unknown interface query ", str::format(riid));
     }
