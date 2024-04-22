@@ -634,21 +634,65 @@ public:
       break;
     }
     case DXGI_FORMAT_BC1_TYPELESS:
-    case DXGI_FORMAT_BC1_UNORM:
-    case DXGI_FORMAT_BC1_UNORM_SRGB:
+    /**
+    from doc:
+    Reinterpretation of image data between pixel formats is supported:
+    - sRGB and non-sRGB forms of the same compressed format
+    */
+    case DXGI_FORMAT_BC1_UNORM: {
+      pMtlDesc->PixelFormat = MTL::PixelFormatBC1_RGBA;
+      pMtlDesc->IsCompressed = true;
+      break;
+    }
+    case DXGI_FORMAT_BC1_UNORM_SRGB: {
+      pMtlDesc->PixelFormat = MTL::PixelFormatBC1_RGBA_sRGB;
+      pMtlDesc->IsCompressed = true;
+      break;
+    }
     case DXGI_FORMAT_BC2_TYPELESS:
-    case DXGI_FORMAT_BC2_UNORM:
-    case DXGI_FORMAT_BC2_UNORM_SRGB:
+    case DXGI_FORMAT_BC2_UNORM: {
+      pMtlDesc->PixelFormat = MTL::PixelFormatBC2_RGBA;
+      pMtlDesc->IsCompressed = true;
+      break;
+    }
+    case DXGI_FORMAT_BC2_UNORM_SRGB: {
+      pMtlDesc->PixelFormat = MTL::PixelFormatBC2_RGBA_sRGB;
+      pMtlDesc->IsCompressed = true;
+      break;
+    }
     case DXGI_FORMAT_BC3_TYPELESS:
-    case DXGI_FORMAT_BC3_UNORM:
-    case DXGI_FORMAT_BC3_UNORM_SRGB:
+    case DXGI_FORMAT_BC3_UNORM: {
+      pMtlDesc->PixelFormat = MTL::PixelFormatBC3_RGBA;
+      pMtlDesc->IsCompressed = true;
+      break;
+    }
+    case DXGI_FORMAT_BC3_UNORM_SRGB: {
+      pMtlDesc->PixelFormat = MTL::PixelFormatBC3_RGBA_sRGB;
+      pMtlDesc->IsCompressed = true;
+      break;
+    }
     case DXGI_FORMAT_BC4_TYPELESS:
-    case DXGI_FORMAT_BC4_UNORM:
-    case DXGI_FORMAT_BC4_SNORM:
+    case DXGI_FORMAT_BC4_UNORM: {
+      pMtlDesc->PixelFormat = MTL::PixelFormatBC4_RUnorm;
+      pMtlDesc->IsCompressed = true;
+      break;
+    }
+    case DXGI_FORMAT_BC4_SNORM: {
+      pMtlDesc->PixelFormat = MTL::PixelFormatBC4_RSnorm;
+      pMtlDesc->IsCompressed = true;
+      break;
+    }
     case DXGI_FORMAT_BC5_TYPELESS:
-    case DXGI_FORMAT_BC5_UNORM:
-    case DXGI_FORMAT_BC5_SNORM:
-      return E_FAIL;
+    case DXGI_FORMAT_BC5_UNORM: {
+      pMtlDesc->PixelFormat = MTL::PixelFormatBC5_RGUnorm;
+      pMtlDesc->IsCompressed = true;
+      break;
+    }
+    case DXGI_FORMAT_BC5_SNORM: {
+      pMtlDesc->PixelFormat = MTL::PixelFormatBC5_RGSnorm;
+      pMtlDesc->IsCompressed = true;
+      break;
+    }
     case DXGI_FORMAT_B5G6R5_UNORM: {
       pMtlDesc->PixelFormat = MTL::PixelFormatB5G6R5Unorm;
       pMtlDesc->Stride = 2;
@@ -714,7 +758,8 @@ public:
     case DXGI_FORMAT_UNKNOWN:
       return E_FAIL;
     }
-    pMtlDesc->Capability = format_inspector.textureCapabilities[pMtlDesc->PixelFormat];
+    pMtlDesc->Capability =
+        format_inspector.textureCapabilities[pMtlDesc->PixelFormat];
 
     return S_OK;
   };

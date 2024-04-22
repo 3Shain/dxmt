@@ -64,7 +64,6 @@ struct CInstructionInfo {
 extern CInstructionInfo g_InstructionInfo[D3D10_SB_NUM_OPCODES];
 
 UINT GetNumInstructionOperands(D3D10_SB_OPCODE_TYPE OpCode);
-void InitInstructionInfo();
 
 //*****************************************************************************
 //
@@ -1419,11 +1418,9 @@ class CShaderCodeParser {
 public:
   CShaderCodeParser()
       : m_pCurrentToken(NULL), m_pShaderCode(NULL), m_pShaderEndToken(NULL) {
-    InitInstructionInfo();
   }
   CShaderCodeParser(CONST CShaderToken *pBuffer)
       : m_pCurrentToken(NULL), m_pShaderCode(NULL), m_pShaderEndToken(NULL) {
-    InitInstructionInfo();
     SetShader(pBuffer);
   }
   ~CShaderCodeParser() {}

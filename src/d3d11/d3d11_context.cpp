@@ -197,11 +197,13 @@ public:
         return E_INVALIDARG;
       case D3D11_MAP_WRITE_DISCARD: {
         dynamic->RotateBuffer(this);
-        Out.pData = dynamic->GetCurrentBuffer()->contents();
+        Out.pData =
+            dynamic->GetCurrentBuffer(&pMappedResource->RowPitch)->contents();
         break;
       }
       case D3D11_MAP_WRITE_NO_OVERWRITE: {
-        Out.pData = dynamic->GetCurrentBuffer()->contents();
+        Out.pData =
+            dynamic->GetCurrentBuffer(&pMappedResource->RowPitch)->contents();
         break;
       }
       }
@@ -440,6 +442,7 @@ public:
     MTL::PrimitiveType Primitive =
         to_metal_topology(state_.InputAssembler.Topology);
     MTL_BIND_RESOURCE IndexBuffer;
+    assert(state_.InputAssembler.IndexBuffer);
     state_.InputAssembler.IndexBuffer->GetBoundResource(&IndexBuffer);
     auto IndexType =
         state_.InputAssembler.IndexBufferFormat == DXGI_FORMAT_R32_UINT
@@ -562,14 +565,16 @@ public:
       assert(ppVertexBuffers);
       assert(pStrides);
       assert(pOffsets);
-      if (auto dynamic =
-              com_cast<IMTLDynamicBuffer>(ppVertexBuffers[Slot - StartSlot])) {
+      if (auto dynamic = com_cast<IMTLDynamicBindable>(
+              ppVertexBuffers[Slot - StartSlot])) {
         dynamic->GetBindable(&VB.Buffer, [this]() { EmitSetIAState(); });
       } else if (auto expected = com_cast<IMTLBindable>(
                      ppVertexBuffers[Slot - StartSlot])) {
         VB.Buffer = std::move(expected);
       } else if (ppVertexBuffers[Slot - StartSlot]) {
         ERR("IASetVertexBuffers: wrong vertex buffer binding");
+      } else {
+        BoundVBs.erase(Slot);
       }
       VB.Stride = pStrides[Slot - StartSlot];
       VB.Offset = pOffsets[Slot - StartSlot];
@@ -595,7 +600,7 @@ public:
   void IASetIndexBuffer(ID3D11Buffer *pIndexBuffer, DXGI_FORMAT Format,
                         UINT Offset) {
     state_.InputAssembler.IndexBuffer = nullptr;
-    if (auto dynamic = com_cast<IMTLDynamicBuffer>(pIndexBuffer)) {
+    if (auto dynamic = com_cast<IMTLDynamicBindable>(pIndexBuffer)) {
       dynamic->GetBindable(&state_.InputAssembler.IndexBuffer, []() {});
     } else if (auto expected = com_cast<IMTLBindable>(pIndexBuffer)) {
       state_.InputAssembler.IndexBuffer = std::move(expected);
@@ -685,7 +690,7 @@ public:
             pFirstConstant ? pFirstConstant[i - StartSlot] : 0;
         entry.NumConstants = pNumConstants ? pNumConstants[i - StartSlot]
                                            : 4096; // FIXME: too much
-        if (auto dynamic = com_cast<IMTLDynamicBuffer>(pConstantBuffer)) {
+        if (auto dynamic = com_cast<IMTLDynamicBindable>(pConstantBuffer)) {
           dynamic->GetBindable(&entry.Buffer,
                                [this]() { binding_ready.clr(Type); });
         } else if (auto expected = com_cast<IMTLBindable>(pConstantBuffer)) {
@@ -725,7 +730,7 @@ public:
         // either old value or inserted empty value
         auto &entry = maybeExist.first->second;
         entry = nullptr;
-        if (auto dynamic = com_cast<IMTLDynamicBuffer>(pView)) {
+        if (auto dynamic = com_cast<IMTLDynamicBindable>(pView)) {
           dynamic->GetBindable(&entry, [this]() { binding_ready.clr(Type); });
         } else if (auto expected = com_cast<IMTLBindable>(pView)) {
           entry = std::move(expected);
@@ -1250,6 +1255,8 @@ public:
         if (auto expected = com_cast<IMTLD3D11RenderTargetView>(
                 ppRenderTargetViews[rtv_index])) {
           BoundRTVs[rtv_index] = std::move(expected);
+        } else {
+          assert(0 && "wtf");
         }
       } else {
         BoundRTVs[rtv_index] = nullptr;
@@ -1508,8 +1515,13 @@ public:
           chk->reserve_vector<RENDER_TARGET_STATE>(state_.OutputMerger.NumRTVs);
       for (unsigned i = 0; i < state_.OutputMerger.NumRTVs; i++) {
         auto &rtv = state_.OutputMerger.RTVs[i];
-        rtvs.push_back(
-            {rtv->GetCurrentTexture(), i, 0, 0, rtv->GetPixelFormat()});
+        if (rtv) {
+          rtvs.push_back(
+              {rtv->GetCurrentTexture(), i, 0, 0, rtv->GetPixelFormat()});
+          assert(rtv->GetPixelFormat() != MTL::PixelFormatInvalid);
+        } else {
+          rtvs.push_back({nullptr, i, 0, 0, MTL::PixelFormatInvalid});
+        }
       }
       struct DEPTH_STENCIL_STATE {
         Obj<MTL::Texture> Texture;
@@ -1528,6 +1540,8 @@ public:
             auto renderPassDescriptor =
                 MTL::RenderPassDescriptor::renderPassDescriptor();
             for (auto &rtv : rtvs) {
+              if (rtv.PixelFormat == MTL::PixelFormatInvalid)
+                continue;
               auto colorAttachment =
                   renderPassDescriptor->colorAttachments()->object(
                       rtv.RenderTargetIndex);
@@ -1625,8 +1639,13 @@ public:
     pipelineDesc.InputLayout = state_.InputAssembler.InputLayout.ptr();
     pipelineDesc.NumColorAttachments = state_.OutputMerger.NumRTVs;
     for (unsigned i = 0; i < pipelineDesc.NumColorAttachments; i++) {
-      pipelineDesc.ColorAttachmentFormats[i] =
-          state_.OutputMerger.RTVs[i]->GetPixelFormat();
+      auto &rtv = state_.OutputMerger.RTVs[i];
+      if (rtv) {
+        pipelineDesc.ColorAttachmentFormats[i] =
+            state_.OutputMerger.RTVs[i]->GetPixelFormat();
+      } else {
+        pipelineDesc.ColorAttachmentFormats[i] = MTL::PixelFormatInvalid;
+      }
     }
     pipelineDesc.BlendState = state_.OutputMerger.BlendState
                                   ? state_.OutputMerger.BlendState.ptr()
@@ -1691,16 +1710,19 @@ public:
 
       for (auto &[slot, cbuf] : ShaderStage.ConstantBuffers) {
         MTL_BIND_RESOURCE m;
+        assert(cbuf.Buffer);
         cbuf.Buffer->GetBoundResource(&m);
         bindings.push_back(BINDING_INFO{slot, m.Buffer, 0});
       }
       for (auto &[slot, srv] : ShaderStage.SRVs) {
         MTL_BIND_RESOURCE m;
+        assert(srv);
         srv->GetBoundResource(&m);
         bindings.push_back(m.IsTexture ? BINDING_INFO{slot + 128, m.Texture}
                                        : BINDING_INFO{slot + 128, m.Buffer, 0});
       }
       for (auto &[slot, sampler] : ShaderStage.Samplers) {
+        assert(sampler);
         bindings.push_back(BINDING_INFO{slot + 16, sampler->GetSamplerState()});
       }
 
@@ -1857,8 +1879,9 @@ public:
         state_.InputAssembler.VertexBuffers.size());
     for (auto &[index, state] : state_.InputAssembler.VertexBuffers) {
       MTL_BIND_RESOURCE r;
-      assert(!r.IsTexture);
+      assert(state.Buffer);
       state.Buffer->GetBoundResource(&r);
+      assert(!r.IsTexture);
       vbs.push_back({index, {r.Buffer, state.Offset, state.Stride}});
     };
     EmitRenderCommand<Force>(

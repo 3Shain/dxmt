@@ -93,7 +93,7 @@ to_shader_scaler_type(microsoft::D3D10_SB_RESOURCE_RETURN_TYPE type) {
   assert(0 && "invalid D3D10_SB_RESOURCE_RETURN_TYPE");
 }
 
-static auto readOperandRelativeIndex(
+auto readOperandRelativeIndex(
   const microsoft::D3D10ShaderBinary::COperandIndex &OpIndex,
   uint32_t offset = 0
 ) -> OperandIndex {
@@ -121,7 +121,7 @@ static auto readOperandRelativeIndex(
   };
 };
 
-static auto readOperandIndex(
+auto readOperandIndex(
   const microsoft::D3D10ShaderBinary::COperandIndex &OpIndex,
   const microsoft::D3D10_SB_OPERAND_INDEX_REPRESENTATION indexType
 ) -> OperandIndex {
@@ -154,7 +154,7 @@ static auto readOperandIndex(
   }
 };
 
-static auto readDstOperand(const microsoft::D3D10ShaderBinary::COperandBase &O)
+auto readDstOperand(const microsoft::D3D10ShaderBinary::COperandBase &O)
   -> DstOperand {
   using namespace microsoft;
   switch (O.m_Type) {
@@ -234,8 +234,7 @@ static auto readDstOperand(const microsoft::D3D10ShaderBinary::COperandBase &O)
   }
 }
 
-static auto
-readSrcOperandSwizzle(const microsoft::D3D10ShaderBinary::COperandBase &O)
+auto readSrcOperandSwizzle(const microsoft::D3D10ShaderBinary::COperandBase &O)
   -> Swizzle {
   using namespace microsoft;
   switch (O.m_ComponentSelection) {
@@ -262,8 +261,7 @@ readSrcOperandSwizzle(const microsoft::D3D10ShaderBinary::COperandBase &O)
   }
 }
 
-static auto
-readSrcOperandCommon(const microsoft::D3D10ShaderBinary::COperandBase &O)
+auto readSrcOperandCommon(const microsoft::D3D10ShaderBinary::COperandBase &O)
   -> SrcOperandModifier {
   return SrcOperandModifier{
     .swizzle = readSrcOperandSwizzle(O),
@@ -272,7 +270,7 @@ readSrcOperandCommon(const microsoft::D3D10ShaderBinary::COperandBase &O)
   };
 }
 
-static auto readSrcOperand(const microsoft::D3D10ShaderBinary::COperandBase &O)
+auto readSrcOperand(const microsoft::D3D10ShaderBinary::COperandBase &O)
   -> SrcOperand {
   using namespace microsoft;
   switch (O.m_Type) {
@@ -383,8 +381,7 @@ static auto readSrcOperand(const microsoft::D3D10ShaderBinary::COperandBase &O)
   }
 };
 
-static auto
-readSrcOperandResource(const microsoft::D3D10ShaderBinary::COperandBase &O)
+auto readSrcOperandResource(const microsoft::D3D10ShaderBinary::COperandBase &O)
   -> SrcOperandResource {
   using namespace microsoft;
   assert(O.m_Type == D3D10_SB_OPERAND_TYPE_RESOURCE);
@@ -407,8 +404,7 @@ readSrcOperandResource(const microsoft::D3D10ShaderBinary::COperandBase &O)
   }
 }
 
-static auto
-readSrcOperandSampler(const microsoft::D3D10ShaderBinary::COperandBase &O)
+auto readSrcOperandSampler(const microsoft::D3D10ShaderBinary::COperandBase &O)
   -> SrcOperandSampler {
   if (O.m_IndexDimension == microsoft::D3D10_SB_OPERAND_INDEX_1D) {
     DXASSERT_DXBC(
@@ -517,7 +513,7 @@ auto readInstructionCommon(
   return InstructionCommon{.saturate = Inst.m_bSaturate != 0};
 };
 
-static auto readInstruction(
+auto readInstruction(
   const microsoft::D3D10ShaderBinary::CInstruction &Inst,
   ShaderInfo &shader_info
 ) -> Instruction {
@@ -1803,7 +1799,7 @@ static auto readInstruction(
   }
 };
 
-static auto readCondition(
+auto readCondition(
   const microsoft::D3D10ShaderBinary::CInstruction &Inst, uint32_t OpIdx
 ) {
   using namespace microsoft;

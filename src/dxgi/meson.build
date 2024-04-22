@@ -3,7 +3,6 @@ dxgi_src = [
   'dxgi_factory.cpp',
   'dxgi_output.cpp',
   'dxgi.cpp',
-  'dxgi_names.cpp',
 ]
 
 dxgi_ld_args      = []

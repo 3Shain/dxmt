@@ -147,6 +147,23 @@ public:
     this->QueryInterface(riid, ppLogicalResource);
   };
 
+  HRESULT CreateRenderTargetView(const D3D11_RENDER_TARGET_VIEW_DESC *pDesc,
+                                 ID3D11RenderTargetView **ppView) {
+    D3D11_RENDER_TARGET_VIEW_DESC finalDesc;
+    getViewDescFromResourceDesc(&this->desc, pDesc, &finalDesc);
+    auto view =
+        transfer(newTextureView(this->m_parent, this->texture, &finalDesc));
+    if (!view) {
+      return E_FAIL; // ??
+    }
+    if (ppView) {
+      *ppView = ref(new TextureRTV(view, &finalDesc, this, this->m_parent));
+    } else {
+      return S_FALSE;
+    }
+    return S_OK;
+  };
+
   HRESULT CreateDepthStencilView(const D3D11_DEPTH_STENCIL_VIEW_DESC *pDesc,
                                  ID3D11DepthStencilView **ppView) {
     D3D11_DEPTH_STENCIL_VIEW_DESC finalDesc;

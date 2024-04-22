@@ -1,3 +1,4 @@
+#include "dxmt_names.hpp"
 #include "Foundation/NSRange.hpp"
 #include "Metal/MTLPixelFormat.hpp"
 #include "Metal/MTLResource.hpp"
@@ -12,6 +13,26 @@ namespace dxmt {
 template <typename VIEW_DESC>
 MTL::Texture *newTextureView(MTL::Texture *source, MTL::PixelFormat newFormat,
                              const VIEW_DESC *s);
+
+template <>
+MTL::Texture *newTextureView(MTL::Texture *source, MTL::PixelFormat newFormat,
+                             const D3D11_TEX1D_SRV *s) {
+  return source->newTextureView(
+      newFormat, MTL::TextureType1D,
+      NS::Range::Make(s->MostDetailedMip,
+                      s->MipLevels == 0xffffffffu
+                          ? source->mipmapLevelCount() - s->MostDetailedMip
+                          : s->MipLevels),
+      NS::Range::Make(0, 1));
+}
+
+template <>
+MTL::Texture *newTextureView(MTL::Texture *source, MTL::PixelFormat newFormat,
+                             const D3D11_TEX1D_RTV *s) {
+  return source->newTextureView(newFormat, MTL::TextureType1D,
+                                NS::Range::Make(s->MipSlice, 1),
+                                NS::Range::Make(0, 1));
+}
 
 template <>
 MTL::Texture *newTextureView(MTL::Texture *source, MTL::PixelFormat newFormat,
@@ -35,41 +56,6 @@ MTL::Texture *newTextureView(MTL::Texture *source, MTL::PixelFormat newFormat,
       newFormat, MTL::TextureType1DArray, NS::Range::Make(s->MipSlice, 1),
       NS::Range::Make(s->FirstArraySlice, s->ArraySize));
 }
-
-template <>
-MTL::Texture *newTextureView(MTL::Texture *source, MTL::PixelFormat newFormat,
-                             const D3D11_TEX1D_SRV *s) {
-  return source->newTextureView(
-      newFormat, MTL::TextureType1D,
-      NS::Range::Make(s->MostDetailedMip, s->MipLevels == 0xffffffffu
-                                              ? source->mipmapLevelCount()
-                                              : s->MipLevels),
-      NS::Range::Make(0, 1));
-}
-
-template <>
-MTL::Texture *newTextureView(MTL::Texture *source, MTL::PixelFormat newFormat,
-                             const D3D11_TEX2D_SRV *s) {
-  return source->newTextureView(
-      newFormat, MTL::TextureType2D,
-      NS::Range::Make(s->MostDetailedMip, s->MipLevels == 0xffffffffu
-                                              ? source->mipmapLevelCount()
-                                              : s->MipLevels),
-      NS::Range::Make(0, 1));
-}
-
-template <>
-MTL::Texture *newTextureView(MTL::Texture *source, MTL::PixelFormat newFormat,
-                             const D3D11_TEX2D_DSV *s) {
-  if (source->mipmapLevelCount() == 1) {
-    source->retain();
-    return source;
-  }
-  return source->newTextureView(newFormat, MTL::TextureType2D,
-                                NS::Range::Make(s->MipSlice, 1),
-                                NS::Range::Make(0, source->arrayLength()));
-}
-
 template <>
 MTL::Texture *newTextureView(MTL::Texture *source, MTL::PixelFormat newFormat,
                              const D3D11_TEX1D_ARRAY_SRV *s) {
@@ -85,13 +71,62 @@ MTL::Texture *newTextureView(MTL::Texture *source, MTL::PixelFormat newFormat,
 
 template <>
 MTL::Texture *newTextureView(MTL::Texture *source, MTL::PixelFormat newFormat,
+                             const D3D11_TEX2D_SRV *s) {
+  return source->newTextureView(
+      newFormat, MTL::TextureType2D,
+      NS::Range::Make(s->MostDetailedMip,
+                      s->MipLevels == 0xffffffffu
+                          ? source->mipmapLevelCount() - s->MostDetailedMip
+                          : s->MipLevels),
+      NS::Range::Make(0, 1));
+}
+
+template <>
+MTL::Texture *newTextureView(MTL::Texture *source, MTL::PixelFormat newFormat,
+                             const D3D11_TEX2D_RTV *s) {
+  if (source->mipmapLevelCount() == 1) {
+    source->retain();
+    return source;
+  }
+  return source->newTextureView(newFormat, MTL::TextureType2D,
+                                NS::Range::Make(s->MipSlice, 1),
+                                NS::Range::Make(0, 1));
+}
+
+template <>
+MTL::Texture *newTextureView(MTL::Texture *source, MTL::PixelFormat newFormat,
+                             const D3D11_TEX2D_DSV *s) {
+  if (source->mipmapLevelCount() == 1) {
+    source->retain();
+    return source;
+  }
+  return source->newTextureView(newFormat, MTL::TextureType2D,
+                                NS::Range::Make(s->MipSlice, 1),
+                                NS::Range::Make(0, 1));
+}
+
+template <>
+MTL::Texture *newTextureView(MTL::Texture *source, MTL::PixelFormat newFormat,
                              const D3D11_TEX2D_ARRAY_SRV *s) {
   return source->newTextureView(
       newFormat, MTL::TextureType2D,
-      NS::Range::Make(s->MostDetailedMip, s->MipLevels == 0xffffffffu
-                                              ? source->mipmapLevelCount()
-                                              : s->MipLevels),
+      NS::Range::Make(s->MostDetailedMip,
+                      s->MipLevels == 0xffffffffu
+                          ? source->mipmapLevelCount() - s->MostDetailedMip
+                          : s->MipLevels),
       NS::Range::Make(s->FirstArraySlice, s->ArraySize));
+}
+
+template <>
+MTL::Texture *newTextureView(MTL::Texture *source, MTL::PixelFormat newFormat,
+                             const D3D11_TEXCUBE_SRV *s) {
+  return source->newTextureView(
+      newFormat, MTL::TextureType2D,
+      NS::Range::Make(s->MostDetailedMip,
+                      s->MipLevels == 0xffffffffu
+                          ? source->mipmapLevelCount() - s->MostDetailedMip
+                          : s->MipLevels),
+      NS::Range::Make(0, 1));
 }
 
 template <>
@@ -120,6 +155,7 @@ MTL::Texture *newTextureView(MTL::Texture *source, MTL::PixelFormat newFormat,
     break;
   }
   }
+  ERR("dsv ", s->ViewDimension);
   IMPLEMENT_ME
 }
 
@@ -135,12 +171,15 @@ MTL::Texture *newTextureView(MTL::Texture *source, MTL::PixelFormat newFormat,
     break;
   }
   case D3D11_RTV_DIMENSION_TEXTURE1D: {
+    return newTextureView(source, newFormat, &s->Texture1D);
     break;
   }
   case D3D11_RTV_DIMENSION_TEXTURE1DARRAY: {
+    return newTextureView(source, newFormat, &s->Texture1DArray);
     break;
   }
   case D3D11_RTV_DIMENSION_TEXTURE2D: {
+    return newTextureView(source, newFormat, &s->Texture2D);
     break;
   }
   case D3D11_RTV_DIMENSION_TEXTURE2DARRAY: {
@@ -156,6 +195,7 @@ MTL::Texture *newTextureView(MTL::Texture *source, MTL::PixelFormat newFormat,
     break;
   }
   }
+  ERR("rtv ", s->ViewDimension);
   IMPLEMENT_ME
 }
 
@@ -185,6 +225,7 @@ MTL::Texture *newTextureView(MTL::Texture *source, MTL::PixelFormat newFormat,
     break;
   }
   }
+  ERR("uav ", s->ViewDimension);
   IMPLEMENT_ME;
 }
 
@@ -220,6 +261,7 @@ MTL::Texture *newTextureView(MTL::Texture *source, MTL::PixelFormat newFormat,
     break;
   }
   case D3D_SRV_DIMENSION_TEXTURECUBE: {
+    return newTextureView(source, newFormat, &s->TextureCube);
     break;
   }
   case D3D_SRV_DIMENSION_TEXTURECUBEARRAY: {
@@ -229,6 +271,7 @@ MTL::Texture *newTextureView(MTL::Texture *source, MTL::PixelFormat newFormat,
     break;
   }
   }
+  ERR("srv ", s->ViewDimension);
   IMPLEMENT_ME;
 }
 
@@ -321,6 +364,7 @@ getTextureDescriptor(IMTLDXGIAdatper *pAdapter,
   METAL_FORMAT_DESC metal_format;
 
   if (FAILED(pAdapter->QueryFormatDesc(Format, &metal_format))) {
+    ERR("getTextureDescriptor: creating a texture of invalid format: ", Format);
     return nullptr;
   }
   desc->setPixelFormat(metal_format.PixelFormat);
@@ -329,6 +373,7 @@ getTextureDescriptor(IMTLDXGIAdatper *pAdapter,
 
   if (BindFlags & (D3D11_BIND_CONSTANT_BUFFER | D3D11_BIND_VERTEX_BUFFER |
                    D3D11_BIND_INDEX_BUFFER | D3D11_BIND_STREAM_OUTPUT)) {
+    ERR("getTextureDescriptor: invalid bind flags");
     return nullptr;
   } else {
     if (BindFlags & D3D11_BIND_SHADER_RESOURCE)
@@ -364,11 +409,17 @@ getTextureDescriptor(IMTLDXGIAdatper *pAdapter,
 
   desc->setResourceOptions(options);
 
-  desc->setMipmapLevelCount(MipLevels);
+  if (MipLevels == 0) {
+    desc->setMipmapLevelCount(32 - __builtin_clz(Width | Height));
+  } else {
+    desc->setMipmapLevelCount(MipLevels);
+  }
 
   switch (Dimension) {
-  default:
+  default: {
+    ERR("getTextureDescriptor: invalid texture dimension");
     return nullptr; // nonsense
+  }
   case D3D11_RESOURCE_DIMENSION_TEXTURE1D:
     if (ArraySize > 1) {
       desc->setTextureType(MTL::TextureType1DArray);
@@ -623,6 +674,45 @@ void getViewDescFromResourceDesc<D3D11_TEXTURE2D_DESC,
       pViewDescOut->Texture2DMSArray.ArraySize = pResourceDesc->ArraySize;
     }
   }
+}
+
+template <>
+void getViewDescFromResourceDesc<D3D11_TEXTURE1D_DESC,
+                                 D3D11_RENDER_TARGET_VIEW_DESC>(
+    const D3D11_TEXTURE1D_DESC *pResourceDesc,
+    const D3D11_RENDER_TARGET_VIEW_DESC *pViewDescIn,
+    D3D11_RENDER_TARGET_VIEW_DESC *pViewDescOut) {
+  if (pViewDescIn) {
+    *pViewDescOut = *pViewDescIn;
+    return;
+  }
+  pViewDescOut->Format = pResourceDesc->Format;
+  if (pResourceDesc->ArraySize == 1) {
+    pViewDescOut->ViewDimension = D3D11_RTV_DIMENSION_TEXTURE1D;
+    pViewDescOut->Texture1D.MipSlice = 0;
+  } else {
+    pViewDescOut->ViewDimension = D3D11_RTV_DIMENSION_TEXTURE1DARRAY;
+    pViewDescOut->Texture1DArray.MipSlice = 0;
+    pViewDescOut->Texture1DArray.FirstArraySlice = 0;
+    pViewDescOut->Texture1DArray.ArraySize = pResourceDesc->ArraySize;
+  }
+}
+
+template <>
+void getViewDescFromResourceDesc<D3D11_TEXTURE3D_DESC,
+                                 D3D11_RENDER_TARGET_VIEW_DESC>(
+    const D3D11_TEXTURE3D_DESC *pResourceDesc,
+    const D3D11_RENDER_TARGET_VIEW_DESC *pViewDescIn,
+    D3D11_RENDER_TARGET_VIEW_DESC *pViewDescOut) {
+  if (pViewDescIn) {
+    *pViewDescOut = *pViewDescIn;
+    return;
+  }
+  pViewDescOut->Format = pResourceDesc->Format;
+  pViewDescOut->ViewDimension = D3D11_RTV_DIMENSION_TEXTURE3D;
+  pViewDescOut->Texture3D.MipSlice = 0;
+  pViewDescOut->Texture3D.FirstWSlice = 0;
+  pViewDescOut->Texture3D.WSize = pResourceDesc->Depth;
 }
 
 } // namespace dxmt

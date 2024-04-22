@@ -12,7 +12,7 @@ using std::min;
  *
  ***************************************************************************/
 
-namespace  microsoft::D3D10ShaderBinary {
+namespace microsoft::D3D10ShaderBinary {
 
 BOOL IsOpCodeValid(D3D10_SB_OPCODE_TYPE OpCode) {
   return OpCode < D3D10_SB_NUM_OPCODES;
@@ -344,6 +344,12 @@ void InitInstructionInfo() {
   SET(D3DWDDM1_3_SB_OPCODE_CHECK_ACCESS_FULLY_MAPPED,
       "check_access_fully_mapped", 2, 0x00, D3D10_SB_TEX_OP);
 }
+
+struct GlobalInfoInitializer {
+  GlobalInfoInitializer() { InitInstructionInfo(); };
+};
+
+GlobalInfoInitializer init;
 
 //*****************************************************************************
 //
@@ -1104,6 +1110,6 @@ BOOL CInstruction::Disassemble(__out_ecount(StringSize) LPSTR pString,
   return TRUE;
 }
 
-}; // namespace D3D10ShaderBinary
+}; // namespace microsoft::D3D10ShaderBinary
 
 // End of file : ShaderBinary.cpp

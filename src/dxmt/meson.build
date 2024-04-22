@@ -1,5 +1,6 @@
 dxmt_src = [
   'dxmt_format.cpp',
+  'dxmt_names.cpp',
 ]
 
 dxmt_lib = static_library('dxmt', dxmt_src,

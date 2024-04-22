@@ -115,7 +115,6 @@ public:
     Obj<NS::Error> err;
     MetalShaderReflection reflection;
 
-    auto options = transfer(MTL::CompileOptions::alloc()->init());
     {
       uint32_t size;
       void *ptr;

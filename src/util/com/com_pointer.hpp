@@ -11,6 +11,7 @@
 
 #include <cstddef>
 #include <unknwn.h>
+#include <cassert>
 
 namespace dxmt {
 
@@ -98,7 +99,12 @@ public:
 
   ~Com() { this->decRef(); }
 
-  T *operator->() const { return m_ptr; }
+  T *operator->() const { 
+    #ifndef NDEBUG
+    assert(m_ptr && "try to access a null com pointer!");
+    #endif
+    return m_ptr;
+   }
 
   T **operator&() { return &m_ptr; }
   T *const *operator&() const { return &m_ptr; }

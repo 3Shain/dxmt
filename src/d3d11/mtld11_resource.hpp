@@ -69,13 +69,17 @@ DEFINE_COM_INTERFACE("daf21510-d136-44dd-bb16-068a94690775",
 
 DEFINE_COM_INTERFACE("65feb8c5-01de-49df-bf58-d115007a117d", IMTLDynamicBuffer)
     : public IUnknown {
-  virtual MTL::Buffer *GetCurrentBuffer() = 0;
-  /**
+  virtual MTL::Buffer *GetCurrentBuffer(UINT * pBytesPerRow) = 0;
+  virtual void RotateBuffer(IMTLDynamicBufferPool * pool) = 0;
+};
 
-  */
+DEFINE_COM_INTERFACE("0988488c-75fb-44f3-859a-b6fb2d022239",
+                     IMTLDynamicBindable)
+    : public IUnknown {
+  /**
+   */
   virtual void GetBindable(IMTLBindable * *ppResource,
                            std::function<void()> && onBufferSwap) = 0;
-  virtual void RotateBuffer(IMTLDynamicBufferPool* pool) = 0;
 };
 
 namespace dxmt {
@@ -154,7 +158,8 @@ public:
       return S_OK;
     }
 
-    if (riid == __uuidof(IMTLDynamicBuffer) || riid == __uuidof(IMTLBindable)) {
+    if (riid == __uuidof(IMTLDynamicBuffer) || riid == __uuidof(IMTLBindable) ||
+        riid == __uuidof(IMTLDynamicBindable)) {
       // silent these interfaces if PrivateQueryInterface doesn't provide
       return E_NOINTERFACE;
     }
@@ -294,7 +299,8 @@ public:
       return S_OK;
     }
 
-    if (riid == __uuidof(IMTLDynamicBuffer) || riid == __uuidof(IMTLBindable)) {
+    if (riid == __uuidof(IMTLDynamicBuffer) || riid == __uuidof(IMTLBindable) ||
+        riid == __uuidof(IMTLDynamicBindable)) {
       // silent these interfaces if PrivateQueryInterface doesn't provide
       return E_NOINTERFACE;
     }

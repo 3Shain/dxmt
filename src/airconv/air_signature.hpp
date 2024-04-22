@@ -25,7 +25,7 @@ namespace dxmt::air {
 //   return StructType::create(Ctx, EltTys, Name);
 // }
 
-static llvm::StructType *
+inline llvm::StructType *
 getOrCreateStructType(llvm::StringRef Name, llvm::LLVMContext &Ctx) {
   using namespace llvm;
   StructType *ST = StructType::getTypeByName(Ctx, Name);

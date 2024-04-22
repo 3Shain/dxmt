@@ -51,23 +51,23 @@ struct indexable_register_file {
 };
 
 struct io_binding_map {
-  llvm::GlobalVariable *icb;
-  llvm::Value *icb_float;
-  std::unordered_map<uint32_t, IndexedIRValue> cb_range_map;
-  std::unordered_map<uint32_t, IndexedIRValue> sampler_range_map;
+  llvm::GlobalVariable *icb = nullptr;
+  llvm::Value *icb_float = nullptr;
+  std::unordered_map<uint32_t, IndexedIRValue> cb_range_map{};
+  std::unordered_map<uint32_t, IndexedIRValue> sampler_range_map{};
   std::unordered_map<
     uint32_t, std::tuple<air::MSLTexture, IndexedIRValue, int32_t>>
-    srv_range_map;
+    srv_range_map{};
   std::unordered_map<
     uint32_t, std::tuple<air::MSLTexture, IndexedIRValue, int32_t>>
-    uav_range_map;
+    uav_range_map{};
   std::unordered_map<uint32_t, std::pair<uint32_t, llvm::GlobalVariable *>>
-    tgsm_map;
+    tgsm_map{};
 
-  register_file input;
-  register_file output;
-  register_file temp;
-  std::unordered_map<uint32_t, indexable_register_file> indexable_temp_map;
+  register_file input{};
+  register_file output{};
+  register_file temp{};
+  std::unordered_map<uint32_t, indexable_register_file> indexable_temp_map{};
 
   // special registers (input)
   llvm::Value *thread_id_arg = nullptr;
@@ -494,9 +494,64 @@ auto store_at_vec4_array_masked(
   };
 };
 
+auto store_at_vec_array_masked(
+  llvm::Value *array, pvalue index,  pvalue maybe_vec4,
+  uint32_t mask
+) -> IREffect {
+  auto array_ty = llvm::cast<llvm::ArrayType>( // force line break
+      llvm::cast<llvm::PointerType>(array->getType())
+        ->getNonOpaquePointerElementType()
+    );
+    auto components = cast<llvm::FixedVectorType>(array_ty->getElementType())->getNumElements();
+  return extend_to_vec4(maybe_vec4) >>= [=](pvalue vec4) {
+    return make_effect_bind([=](context ctx) {
+      return (load_from_array_at(array, index) >>= extend_to_vec4) >>=
+             [=](auto current) {
+               auto cx = mask & 1 ? 4 : 0;
+               auto cy = mask & 2 ? 5 : 1;
+               auto cz = mask & 4 ? 6 : 2;
+               auto cw = mask & 8 ? 7 : 3;
+               switch (components) {
+               case 1: {
+                 auto new_value = ctx.builder.CreateShuffleVector(
+                   current, vec4, {cx}
+                 );
+                 return store_to_array_at(array, index, new_value);
+               };
+               case 2: {
+                 auto new_value = ctx.builder.CreateShuffleVector(
+                   current, vec4,  {cx, cy}
+                 );
+                 return store_to_array_at(array, index, new_value);
+               };
+               case 3: {
+                 auto new_value = ctx.builder.CreateShuffleVector(
+                   current, vec4,  {cx, cy, cz}
+                 );
+                 return store_to_array_at(array, index, new_value);
+               };
+               case 4: {
+                 auto new_value = ctx.builder.CreateShuffleVector(
+                   current, vec4,  {cx, cy, cz, cw}
+                 );
+                 return store_to_array_at(array, index, new_value);
+               };
+               default: {
+                 assert(0 && "UNREACHABLE");
+                 break;
+               }
+               }
+             };
+    });
+  };
+};
+
 auto init_input_reg(uint32_t with_fnarg_at, uint32_t to_reg, uint32_t mask)
   -> IREffect {
-  assert((mask & 1) && "todo: handle input register sharing correctly");
+  // no it doesn't work like this
+  // regular input can be masked like .zw
+  // assert((mask & 1) && "todo: handle input register sharing correctly");
+  // FIXME: it's buggy as hell
   return make_effect_bind([=](context ctx) {
     auto arg = ctx.function->getArg(with_fnarg_at);
     auto const_index =
@@ -2048,7 +2103,7 @@ template <bool ReadFloat>
 IRValue load_src_op(SrcOperand src, uint32_t mask = 0b1111) {
   return std::visit(
            [](auto src) { return load_src<decltype(src), ReadFloat>(src); }, src
-         ) >>= [=](auto vec) {
+         ) >>= [mask, src](auto vec) {
     auto modifier = get_modifier(src);
     if (ReadFloat) {
       return apply_float_src_operand_modifier(modifier, vec, mask);
@@ -2209,7 +2264,7 @@ IRValue load_src<SrcOperandAttribute, false>(SrcOperandAttribute attr) {
 template <>
 IRValue load_src<SrcOperandAttribute, true>(SrcOperandAttribute attr) {
   auto ctx = co_yield get_context();
-  pvalue vec;
+  pvalue vec = nullptr;
   switch (attr.attribute) {
   case shader::common::InputAttribute::VertexId:
   case shader::common::InputAttribute::PrimitiveId:
@@ -2289,6 +2344,22 @@ IREffect store_dst<DstOperandTemp, true>(DstOperandTemp temp, IRValue &&value) {
       co_return co_yield store_at_vec4_array_masked(
         ctx.resource.temp.ptr_float4, co_yield get_int(temp.regid),
         co_yield std::move(value), temp._.mask
+      );
+    }
+  );
+};
+
+template <>
+IREffect store_dst<DstOperandIndexableTemp, true>(
+  DstOperandIndexableTemp itemp, IRValue &&value
+) {
+  // coroutine + rvalue reference = SHOOT YOURSELF IN THE FOOT
+  return make_effect_bind(
+    [value = std::move(value), itemp](auto ctx) mutable -> IREffect {
+      auto regfile = ctx.resource.indexable_temp_map[itemp.regfile];
+      co_return co_yield store_at_vec_array_masked(
+        regfile.ptr_float_vec, co_yield load_operand_index(itemp.regindex),
+        co_yield std::move(value), itemp._.mask
       );
     }
   );
@@ -2458,13 +2529,13 @@ auto convert_basicblocks(
   auto &context = ctx.llvm;
   auto &builder = ctx.builder;
   auto function = ctx.function;
+  auto &types = ctx.types;
   std::unordered_map<BasicBlock *, llvm::BasicBlock *> visited;
   std::function<void(std::shared_ptr<BasicBlock>)> readBasicBlock =
     [&](std::shared_ptr<BasicBlock> current) {
       auto bb =
         llvm::BasicBlock::Create(context, current->debug_name, function);
       assert(visited.insert({current.get(), bb}).second);
-      air::AirType types(context);
       IREffect effect([](auto) { return std::monostate(); });
       for (auto &inst : current->instructions) {
         std::visit(

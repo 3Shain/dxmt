@@ -1,9 +1,8 @@
+#include "dxmt_names.hpp"
 #include "com/com_object.hpp"
 #include "com/com_pointer.hpp"
 #include "d3d11_device.hpp"
 #include "log/log.hpp"
-#include "d3d11_names.hpp"
-
 namespace dxmt {
 Logger Logger::s_instance("d3d11.log");
 

@@ -224,12 +224,14 @@ public:
   Present1(UINT SyncInterval, UINT PresentFlags,
            const DXGI_PRESENT_PARAMETERS *pPresentParameters) final {
 
-    // does this affect reference count?
-    assert(backbuffer_->CurrentDrawable());
     device_context_->Flush2(
+        // why transfer?
+        // it works because the texture is in use, so drawable is valid during encoding...
         [drawable = transfer(backbuffer_->CurrentDrawable())](
             MTL::CommandBuffer *cmdbuf) {
+          if (drawable) {
           cmdbuf->presentDrawable(drawable.ptr());
+          }
         });
     backbuffer_->Swap();
 

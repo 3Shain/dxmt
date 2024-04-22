@@ -1,10 +1,8 @@
-
-#include "dxgi_names.hpp"
+#include "dxmt_names.hpp"
 #include "Metal/MTLPixelFormat.hpp"
 #include "Metal/MTLTexture.hpp"
 #include "com/com_pointer.hpp"
 #include "d3d11_device.hpp"
-#include "d3d11_view.hpp"
 #include "dxgi_interfaces.h"
 #include "mtld11_resource.hpp"
 #include "objc_pointer.hpp"

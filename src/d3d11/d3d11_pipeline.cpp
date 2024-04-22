@@ -24,14 +24,13 @@ public:
                               MTL::PixelFormat const *RTVFormats,
                               MTL::PixelFormat DepthStencilFormat)
       : ComObject<IMTLCompiledGraphicsPipeline>(), num_rtvs(NumRTVs),
-        depth_stencil_format(DepthStencilFormat),
-        device_(pDevice), pVertexShader(pVertexShader),
-        pPixelShader(pPixelShader), pInputLayout(pInputLayout),
-        pBlendState(pBlendState) {
-    device_->SubmitThreadgroupWork(this, &work_state_);
+        depth_stencil_format(DepthStencilFormat), device_(pDevice),
+        pVertexShader(pVertexShader), pPixelShader(pPixelShader),
+        pInputLayout(pInputLayout), pBlendState(pBlendState) {
     for (unsigned i = 0; i < NumRTVs; i++) {
       rtv_formats[i] = RTVFormats[i];
     }
+    device_->SubmitThreadgroupWork(this, &work_state_);
   }
 
   HRESULT QueryInterface(REFIID riid, void **ppvObject) {
@@ -85,6 +84,8 @@ public:
     pPixelShader = nullptr;
 
     for (unsigned i = 0; i < num_rtvs; i++) {
+      if (rtv_formats[i] == MTL::PixelFormatInvalid)
+        continue;
       pipelineDescriptor->colorAttachments()->object(i)->setPixelFormat(
           rtv_formats[i]);
     }
@@ -132,8 +133,8 @@ Com<IMTLCompiledGraphicsPipeline> CreateGraphicsPipeline(
     IMTLCompiledShader *pPixelShader, IMTLD3D11InputLayout *pInputLayout,
     IMTLD3D11BlendState *pBlendState, UINT NumRTVs,
     MTL::PixelFormat const *RTVFormats, MTL::PixelFormat DepthStencilFormat) {
-  return new MTLCompiledGraphicsPipeline(
-      pDevice, pVertexShader, pPixelShader, pInputLayout, pBlendState, NumRTVs,
+  return new MTLCompiledGraphicsPipeline(pDevice, pVertexShader, pPixelShader,
+                                         pInputLayout, pBlendState, NumRTVs,
       RTVFormats, DepthStencilFormat);
 }
 

@@ -41,7 +41,7 @@ public:
   V invoke(Env env) override {
     return std::invoke(fn, env);
   };
-  ErasureFunction(Fn&& ff): fn(std::move(ff)) {}
+  ErasureFunction(Fn&& ff): fn(std::forward<Fn>(ff)) {}
   ~ErasureFunction() = default;
   ErasureFunction(const ErasureFunction& copy) = delete;
   ErasureFunction& operator=(const ErasureFunction& copy_assign) = delete;
@@ -52,7 +52,7 @@ private:
 public:
   template<std::invocable<Env> T>
   ReaderIO(T&& ff) {
-    factory = new ErasureFunction<T>(std::move(ff));
+    factory = new ErasureFunction<T>(std::forward<T>(ff));
   }
   ~ReaderIO() {
     if(factory!=nullptr) {
@@ -93,15 +93,16 @@ struct trivial_value_awaiter {
 
 struct promise_type {
   Env* to_be_filled = nullptr;
-  V return_value_;
+  V return_value_{};
   ReaderIO<Env, V> get_return_object() {
     return ReaderIO<Env,V>([this](Env ctx) { 
-        auto h = std::coroutine_handle<promise_type>::from_promise(*this);
         this->to_be_filled = &ctx; // I'm sure to_be_filled is only accessed within the scope?
+        auto h = std::coroutine_handle<promise_type>::from_promise(*this);
         h.resume();
         assert(h.done() && "unexpected suspension of coroutine");
+        auto r = return_value_;
         h.destroy(); // should I destroy?
-        return this->return_value_;
+        return r;
     });
   };
 
@@ -129,7 +130,7 @@ auto operator>>=(ReaderIO<Env, V>&& src, Func &&fn) {
   using R = ReaderIO<Env,
                   decltype(fn(std::declval<V>()).build(std::declval<Env>()))>;
   return R(
-      [src0=std::move(src), fn=std::move(fn)](auto context) mutable { 
+      [src0=std::move(src), fn=std::forward<Func>(fn)](auto context) mutable { 
         return fn(src0.build(context))
       .build(context); });
 }
@@ -140,20 +141,23 @@ auto operator | (ReaderIO<Env, V>&& src, Func &&fn) {
   using R = ReaderIO<Env,
                   decltype(fn(std::declval<V>()))>;
   return R(
-      [src=std::move(src), fn=std::move(fn)](auto context) mutable { return fn(src.build(context)); });
+      [src=std::move(src), fn=std::forward<Func>(fn)](auto context) mutable { return fn(src.build(context)); });
 }
 
 /* in-place sequence: a = a then b */
 template <typename Env, typename A>
 ReaderIO<Env, A>& operator << (ReaderIO<Env, A>& a, ReaderIO<Env, A>&& b) {
-  a = std::move(a) >>= [b=std::move(b)](auto) mutable ->ReaderIO<Env, A> { return std::move(b); };
+  a = ReaderIO<Env, A>([a=std::move(a), b=std::move(b)](auto context) mutable {
+    a.build(context);
+    return b.build(context);
+  });
   return a;
 };
 
 /* in-place bind: a = fn(result of a) */
 template <typename Env, typename V, std::invocable<V> Func>
 ReaderIO<Env, V>& operator >> (ReaderIO<Env, V>& a, Func &&fn) {
-  a = std::move(a) >>= std::move(fn);
+  a = std::move(a) >>= std::forward<Func>(fn);
   return a;
 };
 
@@ -161,8 +165,8 @@ ReaderIO<Env, V>& operator >> (ReaderIO<Env, V>& a, Func &&fn) {
 template <typename Env, typename A, typename B, std::move_constructible Func>
 auto lift( ReaderIO<Env,A>&& a,  ReaderIO<Env,B>&& b, Func&& func) {
   /* TODO: func should be move captured? */
-  return std::move(a) >>= [=,b=std::move(b)](auto a) mutable {
-    return std::move(b) >>= [=](auto b) {
+  return std::move(a) >>= [func=std::forward<Func>(func),b=std::move(b)](auto a) mutable {
+    return std::move(b) >>= [a, func=std::forward<Func>(func)](auto b) {
       return func(a,b);
     };
   };
@@ -170,9 +174,9 @@ auto lift( ReaderIO<Env,A>&& a,  ReaderIO<Env,B>&& b, Func&& func) {
 
 template <typename Env, typename A, typename B, typename C,typename Func>
 auto lift( ReaderIO<Env,A>&& a,  ReaderIO<Env,B>&& b,  ReaderIO<Env,C>&& c,  Func&& func) {
-  return std::move(a) >>= [=, b=std::move(b), c=std::move(c)](auto a) mutable {
-    return std::move(b) >>= [=, c=std::move(c)](auto b) mutable {
-      return std::move(c) >>= [=](auto c) {
+  return std::move(a) >>= [func=std::forward<Func>(func), b=std::move(b), c=std::move(c)](auto a) mutable {
+    return std::move(b) >>= [a,func=std::forward<Func>(func), c=std::move(c)](auto b) mutable {
+      return std::move(c) >>= [a,b,func=std::forward<Func>(func)](auto c) {
         return func(a,b,c);
       };
     };
