@@ -55,9 +55,11 @@ MTLD3D11Inspection::MTLD3D11Inspection(MTL::Device *pDevice)
   // FIXME: check it
   m_d3d11Options.SAD4ShaderInstructions = FALSE;
   m_d3d11Options.FlagsForUpdateAndCopySeenByDriver = TRUE; // wtf
-  m_d3d11Options.OutputMergerLogicOp =
-      FALSE; // FIXME: This must be true for 11.1 .programmable blend might
-             // solve this
+#ifdef DXMT_NO_PRIVATE_API
+  m_d3d11Options.OutputMergerLogicOp = FALSE;
+#else
+  m_d3d11Options.OutputMergerLogicOp = TRUE;
+#endif
 
   m_d3d11Options5.SharedResourceTier = D3D11_SHARED_RESOURCE_TIER_0; // TODO
 

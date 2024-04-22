@@ -89,6 +89,17 @@ constexpr MTL::BlendOperation kBlendOpMap[] = {
     MTL::BlendOperationMax,
 };
 
+constexpr MTL::LogicOperation kLogicOpMap[] = {
+    MTL::LogicOperationClear,      MTL::LogicOperationSet,
+    MTL::LogicOperationCopy,       MTL::LogicOperationCopyInverted,
+    MTL::LogicOperationNoOp,       MTL::LogicOperationInvert,
+    MTL::LogicOperationAnd,        MTL::LogicOperationNand,
+    MTL::LogicOperationOr,         MTL::LogicOperationNor,
+    MTL::LogicOperationXor,        MTL::LogicOperationEquiv,
+    MTL::LogicOperationAndReverse, MTL::LogicOperationAndInverted,
+    MTL::LogicOperationOrReverse,  MTL::LogicOperationOrInverted,
+};
+
 constexpr MTL::BlendFactor kBlendFactorMap[] = {
     MTL::BlendFactorZero, // FIXME: invalid,0
     MTL::BlendFactorZero,
@@ -296,16 +307,16 @@ public:
     pDesc->IndependentBlendEnable = desc_.IndependentBlendEnable;
     pDesc->AlphaToCoverageEnable = desc_.AlphaToCoverageEnable;
     for (size_t i = 0; i < 8; i++) {
+      auto &renderTarget = desc_.RenderTarget[i];
       pDesc->RenderTarget[i].RenderTargetWriteMask =
-          desc_.RenderTarget[i].RenderTargetWriteMask;
-      pDesc->RenderTarget[i].BlendEnable = desc_.RenderTarget[i].BlendEnable;
-      pDesc->RenderTarget[i].BlendOp = desc_.RenderTarget[i].BlendOp;
-      pDesc->RenderTarget[i].BlendOpAlpha = desc_.RenderTarget[i].BlendOpAlpha;
-      pDesc->RenderTarget[i].SrcBlend = desc_.RenderTarget[i].SrcBlend;
-      pDesc->RenderTarget[i].DestBlend = desc_.RenderTarget[i].SrcBlendAlpha;
-      pDesc->RenderTarget[i].SrcBlendAlpha = desc_.RenderTarget[i].DestBlend;
-      pDesc->RenderTarget[i].DestBlendAlpha =
-          desc_.RenderTarget[i].DestBlendAlpha;
+          renderTarget.RenderTargetWriteMask;
+      pDesc->RenderTarget[i].BlendEnable = renderTarget.BlendEnable;
+      pDesc->RenderTarget[i].BlendOp = renderTarget.BlendOp;
+      pDesc->RenderTarget[i].BlendOpAlpha = renderTarget.BlendOpAlpha;
+      pDesc->RenderTarget[i].SrcBlend = renderTarget.SrcBlend;
+      pDesc->RenderTarget[i].DestBlend = renderTarget.SrcBlendAlpha;
+      pDesc->RenderTarget[i].SrcBlendAlpha = renderTarget.DestBlend;
+      pDesc->RenderTarget[i].DestBlendAlpha = renderTarget.DestBlendAlpha;
     }
   }
 
@@ -317,27 +328,33 @@ public:
       MTL::RenderPipelineDescriptor *render_pipeline_descriptor) {
     for (unsigned rt = 0; rt < D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT; rt++) {
       auto i = desc_.IndependentBlendEnable ? rt : 0;
-      if (desc_.RenderTarget[i].LogicOpEnable) {
+      auto &renderTarget = desc_.RenderTarget[i];
+      if (renderTarget.LogicOpEnable) {
+#ifdef DXMT_NO_PRIVATE_API
         ERR("OutputMerger LogicOp is not supported");
         continue;
+#else
+        render_pipeline_descriptor->setLogicOperationEnabled(true);
+        render_pipeline_descriptor->setLogicOperation(
+            kLogicOpMap[renderTarget.LogicOp]);
+#endif
       }
       auto attachment_desc =
           render_pipeline_descriptor->colorAttachments()->object(rt);
       attachment_desc->setAlphaBlendOperation(
-          kBlendOpMap[desc_.RenderTarget[i].BlendOpAlpha]);
-      attachment_desc->setRgbBlendOperation(
-          kBlendOpMap[desc_.RenderTarget[i].BlendOp]);
-      attachment_desc->setBlendingEnabled(desc_.RenderTarget[i].BlendEnable);
+          kBlendOpMap[renderTarget.BlendOpAlpha]);
+      attachment_desc->setRgbBlendOperation(kBlendOpMap[renderTarget.BlendOp]);
+      attachment_desc->setBlendingEnabled(renderTarget.BlendEnable);
       attachment_desc->setSourceAlphaBlendFactor(
-          kBlendFactorMap[desc_.RenderTarget[i].SrcBlendAlpha]);
+          kBlendFactorMap[renderTarget.SrcBlendAlpha]);
       attachment_desc->setSourceRGBBlendFactor(
-          kBlendFactorMap[desc_.RenderTarget[i].SrcBlend]);
+          kBlendFactorMap[renderTarget.SrcBlend]);
       attachment_desc->setDestinationAlphaBlendFactor(
-          kBlendFactorMap[desc_.RenderTarget[i].DestBlendAlpha]);
+          kBlendFactorMap[renderTarget.DestBlendAlpha]);
       attachment_desc->setDestinationRGBBlendFactor(
-          kBlendFactorMap[desc_.RenderTarget[i].DestBlend]);
+          kBlendFactorMap[renderTarget.DestBlend]);
       attachment_desc->setWriteMask(
-          kColorWriteMaskMap[desc_.RenderTarget[i].RenderTargetWriteMask]);
+          kColorWriteMaskMap[renderTarget.RenderTargetWriteMask]);
     }
     render_pipeline_descriptor->setAlphaToCoverageEnabled(
         desc_.AlphaToCoverageEnable);
@@ -351,7 +368,7 @@ public:
       state.add(x.BlendEnable);
       state.add(x.RenderTargetWriteMask);
       state.add(x.LogicOpEnable);
-      state.add(x.LogicOp);
+      state.add(x.LogicOpEnable ? x.LogicOp : 0);
       state.add(x.BlendOp);
       state.add(x.BlendOpAlpha);
       state.add(x.SrcBlendAlpha);
