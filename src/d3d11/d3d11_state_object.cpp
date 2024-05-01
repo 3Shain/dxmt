@@ -81,7 +81,7 @@ constexpr MTL::StencilOperation kStencilOperationMap[] = {
 };
 
 constexpr MTL::BlendOperation kBlendOpMap[] = {
-    MTL::BlendOperationAdd, // FIXME: invalid,0
+    MTL::BlendOperationAdd, // padding 0
     MTL::BlendOperationAdd,
     MTL::BlendOperationSubtract,
     MTL::BlendOperationReverseSubtract,
@@ -101,7 +101,7 @@ constexpr MTL::LogicOperation kLogicOpMap[] = {
 };
 
 constexpr MTL::BlendFactor kBlendFactorMap[] = {
-    MTL::BlendFactorZero, // FIXME: invalid,0
+    MTL::BlendFactorZero, // padding 0
     MTL::BlendFactorZero,
     MTL::BlendFactorOne,
     MTL::BlendFactorSourceColor,

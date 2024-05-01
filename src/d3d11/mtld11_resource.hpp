@@ -105,7 +105,6 @@ struct tag_texture_2d {
       D3D11_RESOURCE_DIMENSION_TEXTURE2D;
   using COM = ID3D11Texture2D;
   using DESC = D3D11_TEXTURE2D_DESC;
-  // TODO: extend this to D3D11_TEXTURE2D_DESC
   using DESC_S = D3D11_TEXTURE2D_DESC;
 };
 

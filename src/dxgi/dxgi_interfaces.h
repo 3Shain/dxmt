@@ -9,7 +9,7 @@
 #include "com/com_guid.hpp"
 #include "dxmt_format.hpp"
 
-struct METAL_FORMAT_DESC {
+struct MTL_FORMAT_DESC {
   MTL::PixelFormat PixelFormat;
   MTL::AttributeFormat AttributeFormat;
   MTL::VertexFormat VertexFormat;
@@ -24,7 +24,7 @@ DEFINE_COM_INTERFACE("acdf3ef1-b33a-4cb6-97bd-1c1974827e6d", IMTLDXGIAdatper)
     : public IDXGIAdapter2 {
   virtual MTL::Device *STDMETHODCALLTYPE GetMTLDevice() = 0;
   virtual HRESULT STDMETHODCALLTYPE QueryFormatDesc(
-      DXGI_FORMAT Format, METAL_FORMAT_DESC * pMtlFormatDesc) = 0;
+      DXGI_FORMAT Format, MTL_FORMAT_DESC * pMtlFormatDesc) = 0;
 };
 
 DEFINE_COM_INTERFACE("f2be9c71-9c4b-42d3-b46b-bbfd459db688",

@@ -42,7 +42,7 @@ airconv_lib = static_library('airconv', airconv_src,
 
 airconv_dep = declare_dependency(
   link_with           : [ airconv_lib ],
-  include_directories : [ dxmt_include_path ],
+  include_directories : [ dxmt_include_path, include_directories('.') ],
   link_args           : [ llvm_ld_flags, llvm_deps ] # meh
 )
 

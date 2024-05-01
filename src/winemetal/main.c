@@ -1,5 +1,3 @@
-#include <stdarg.h> // FIXME: related to wine's winbase.h
-
 #include "windef.h"
 #include "winbase.h"
 #include "wineunixlib.h"

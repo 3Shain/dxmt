@@ -1,3 +1,4 @@
+#include "dxmt_names.hpp"
 #include "d3d11_pipeline.hpp"
 #include "Metal/MTLArgumentEncoder.hpp"
 #include "Metal/MTLLibrary.hpp"
@@ -63,12 +64,14 @@ public:
     Obj<NS::Error> err;
     MTL_COMPILED_SHADER vs, ps;
     pVertexShader->GetShader(&vs); // may block
-    if (vs.Reflection->HasArgumentBindings) {
-      vs_encoder_ = transfer(vs.Function->newArgumentEncoder(30));
+    if (vs.Reflection->ArgumentBufferBindIndex != ~0u) {
+      vs_encoder_ = transfer(vs.Function->newArgumentEncoder(
+          vs.Reflection->ArgumentBufferBindIndex));
     }
     pPixelShader->GetShader(&ps); // may block
-    if (ps.Reflection->HasArgumentBindings) {
-      ps_encoder_ = transfer(ps.Function->newArgumentEncoder(30));
+    if (ps.Reflection->ArgumentBufferBindIndex != ~0u) {
+      ps_encoder_ = transfer(ps.Function->newArgumentEncoder(
+          ps.Reflection->ArgumentBufferBindIndex));
     }
 
     auto pipelineDescriptor =
@@ -135,7 +138,7 @@ Com<IMTLCompiledGraphicsPipeline> CreateGraphicsPipeline(
     MTL::PixelFormat const *RTVFormats, MTL::PixelFormat DepthStencilFormat) {
   return new MTLCompiledGraphicsPipeline(pDevice, pVertexShader, pPixelShader,
                                          pInputLayout, pBlendState, NumRTVs,
-      RTVFormats, DepthStencilFormat);
+                                         RTVFormats, DepthStencilFormat);
 }
 
 } // namespace dxmt

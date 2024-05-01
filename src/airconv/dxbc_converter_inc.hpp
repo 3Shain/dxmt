@@ -495,53 +495,48 @@ auto store_at_vec4_array_masked(
 };
 
 auto store_at_vec_array_masked(
-  llvm::Value *array, pvalue index,  pvalue maybe_vec4,
-  uint32_t mask
+  llvm::Value *array, pvalue index, pvalue maybe_vec4, uint32_t mask
 ) -> IREffect {
   auto array_ty = llvm::cast<llvm::ArrayType>( // force line break
-      llvm::cast<llvm::PointerType>(array->getType())
-        ->getNonOpaquePointerElementType()
-    );
-    auto components = cast<llvm::FixedVectorType>(array_ty->getElementType())->getNumElements();
+    llvm::cast<llvm::PointerType>(array->getType())
+      ->getNonOpaquePointerElementType()
+  );
+  auto components =
+    cast<llvm::FixedVectorType>(array_ty->getElementType())->getNumElements();
   return extend_to_vec4(maybe_vec4) >>= [=](pvalue vec4) {
     return make_effect_bind([=](context ctx) {
-      return (load_from_array_at(array, index) >>= extend_to_vec4) >>=
-             [=](auto current) {
-               auto cx = mask & 1 ? 4 : 0;
-               auto cy = mask & 2 ? 5 : 1;
-               auto cz = mask & 4 ? 6 : 2;
-               auto cw = mask & 8 ? 7 : 3;
-               switch (components) {
-               case 1: {
-                 auto new_value = ctx.builder.CreateShuffleVector(
-                   current, vec4, {cx}
-                 );
-                 return store_to_array_at(array, index, new_value);
-               };
-               case 2: {
-                 auto new_value = ctx.builder.CreateShuffleVector(
-                   current, vec4,  {cx, cy}
-                 );
-                 return store_to_array_at(array, index, new_value);
-               };
-               case 3: {
-                 auto new_value = ctx.builder.CreateShuffleVector(
-                   current, vec4,  {cx, cy, cz}
-                 );
-                 return store_to_array_at(array, index, new_value);
-               };
-               case 4: {
-                 auto new_value = ctx.builder.CreateShuffleVector(
-                   current, vec4,  {cx, cy, cz, cw}
-                 );
-                 return store_to_array_at(array, index, new_value);
-               };
-               default: {
-                 assert(0 && "UNREACHABLE");
-                 break;
-               }
-               }
-             };
+      return (load_from_array_at(array, index) >>=
+              extend_to_vec4) >>= [=](auto current) {
+        auto cx = mask & 1 ? 4 : 0;
+        auto cy = mask & 2 ? 5 : 1;
+        auto cz = mask & 4 ? 6 : 2;
+        auto cw = mask & 8 ? 7 : 3;
+        switch (components) {
+        case 1: {
+          auto new_value = ctx.builder.CreateShuffleVector(current, vec4, {cx});
+          return store_to_array_at(array, index, new_value);
+        };
+        case 2: {
+          auto new_value =
+            ctx.builder.CreateShuffleVector(current, vec4, {cx, cy});
+          return store_to_array_at(array, index, new_value);
+        };
+        case 3: {
+          auto new_value =
+            ctx.builder.CreateShuffleVector(current, vec4, {cx, cy, cz});
+          return store_to_array_at(array, index, new_value);
+        };
+        case 4: {
+          auto new_value =
+            ctx.builder.CreateShuffleVector(current, vec4, {cx, cy, cz, cw});
+          return store_to_array_at(array, index, new_value);
+        };
+        default: {
+          assert(0 && "UNREACHABLE");
+          break;
+        }
+        }
+      };
     });
   };
 };
@@ -2523,6 +2518,34 @@ auto store_texture_raw(
   co_return {};
 };
 
+auto read_tgsm_address(AtomicOperandTGSM const &tgsm, pvalue addr) -> IRValue {
+  auto ctx = co_yield get_context();
+  auto &builder = ctx.builder;
+  auto [stride, tgsm_h] = ctx.resource.tgsm_map[tgsm.id];
+  auto ptr = ctx.builder.CreateInBoundsGEP(
+    llvm::cast<llvm::PointerType>(tgsm_h->getType())
+      ->getNonOpaquePointerElementType(),
+    tgsm_h,
+    {ctx.builder.getInt32(0),
+     builder.CreateLShr(
+       stride > 0
+         ? builder.CreateAdd(
+             builder.CreateMul(
+               builder.getInt32(stride), co_yield extract_element(0)(addr)
+             ),
+             co_yield extract_element(1)(addr)
+           )
+         : co_yield extract_element(0)(addr),
+       2
+     )}
+  );
+  co_return ptr;
+};
+
+auto read_uav_buffer_address(AtomicDstOperandUAVBuffer const &op){
+
+};
+
 auto convert_basicblocks(
   std::shared_ptr<BasicBlock> entry, context &ctx, llvm::BasicBlock *return_bb
 ) {
@@ -4299,126 +4322,6 @@ auto convert_basicblocks(
                 })
               );
             },
-            [&](InstAtomicBinOp bin) {
-              std::string op;
-              bool is_signed = false;
-              switch (bin.op) {
-              case AtomicBinaryOp::And:
-                op = "and";
-                break;
-              case AtomicBinaryOp::Or:
-                op = "or";
-                break;
-              case AtomicBinaryOp::Xor:
-                op = "xor";
-                break;
-              case AtomicBinaryOp::Add:
-                op = "add";
-                break;
-              case AtomicBinaryOp::IMax:
-                op = "max";
-                is_signed = true;
-                break;
-              case AtomicBinaryOp::IMin:
-                op = "min";
-                is_signed = true;
-                break;
-              case AtomicBinaryOp::UMax:
-                op = "max";
-                break;
-              case AtomicBinaryOp::UMin:
-                op = "min";
-                break;
-                break;
-              }
-              effect << std::visit(
-                patterns{
-                  [&](AtomicOperandTGSM tgsm) {
-                    return make_effect_bind(
-                      [=](struct context ctx) -> IREffect {
-                        auto &builder = ctx.builder;
-                        auto [stride, tgsm_h] = ctx.resource.tgsm_map[tgsm.id];
-                        auto addr =
-                          co_yield load_src_op<false>(bin.dst_address);
-                        auto ptr = ctx.builder.CreateInBoundsGEP(
-                          llvm::cast<llvm::PointerType>(tgsm_h->getType())
-                            ->getNonOpaquePointerElementType(),
-                          tgsm_h,
-                          {ctx.builder.getInt32(0),
-                           builder.CreateLShr(
-                             stride > 0 ? builder.CreateAdd(
-                                            builder.CreateMul(
-                                              builder.getInt32(stride),
-                                              co_yield extract_element(0)(addr)
-                                            ),
-                                            co_yield extract_element(1)(addr)
-                                          )
-                                        : co_yield extract_element(0)(addr),
-                             2
-                           )}
-                        );
-                        auto imm = co_yield call_atomic_fetch_explicit(
-                          ptr,
-                          co_yield load_src_op<false>(bin.src) >>=
-                          extract_element(0),
-                          op, is_signed, false
-                        );
-                        if (bin.dst_original.has_value()) {
-                          co_yield store_dst_op<false>(
-                            bin.dst_original.value(), pure(imm)
-                          );
-                        };
-                        co_return {};
-                      }
-                    );
-                  },
-                  [&](AtomicDstOperandUAV uav) {
-                    return make_effect_bind(
-                      [=](struct context ctx) -> IREffect {
-                        auto &builder = ctx.builder;
-                        auto [res, res_handle_fn, stride] =
-                          ctx.resource.uav_range_map[uav.range_id];
-                        assert(
-                          (res.resource_kind == air::TextureKind::texture_buffer
-                          ) &&
-                          "TODO: handle typed uav atomic operation..."
-                        );
-                        auto res_h = co_yield res_handle_fn(nullptr);
-                        auto addr =
-                          co_yield load_src_op<false>(bin.dst_address);
-                        auto ptr =
-                          stride < 0
-                            ? co_yield extract_element(0)(addr
-                              ) // TODO: handle 2d/3d..and array uav
-                            : builder.CreateLShr(
-                                stride > 0
-                                  ? builder.CreateAdd(
-                                      builder.CreateMul(
-                                        builder.getInt32(stride),
-                                        co_yield extract_element(0)(addr)
-                                      ),
-                                      co_yield extract_element(1)(addr)
-                                    )
-                                  : co_yield extract_element(0)(addr),
-                                2
-                              );
-                        auto imm = co_yield call_texture_atomic_fetch_explicit(
-                          res, res_h, op, is_signed, ptr, nullptr,
-                          co_yield load_src_op<false>(bin.src)
-                        );
-                        if (bin.dst_original.has_value()) {
-                          co_yield store_dst_op<false>(
-                            bin.dst_original.value(), extract_element(0)(imm)
-                          );
-                        };
-                        co_return {};
-                      }
-                    );
-                  }
-                },
-                bin.dst
-              );
-            },
             [&](InstSync sync) {
               mem_flags mem_flag;
               if (sync.boundary == InstSync::Boundary::global) {
@@ -4502,7 +4405,136 @@ auto convert_basicblocks(
               );
             },
             [](InstNop) {}, // nop
-            [](auto) { assert(0 && "unhandled instruction"); }
+            [&](InstMaskedSumOfAbsDiff) { assert(0 && "unhandled msad"); },
+
+            [&](InstAtomicBinOp bin) {
+              std::string op;
+              bool is_signed = false;
+              switch (bin.op) {
+              case AtomicBinaryOp::And:
+                op = "and";
+                break;
+              case AtomicBinaryOp::Or:
+                op = "or";
+                break;
+              case AtomicBinaryOp::Xor:
+                op = "xor";
+                break;
+              case AtomicBinaryOp::Add:
+                op = "add";
+                break;
+              case AtomicBinaryOp::IMax:
+                op = "max";
+                is_signed = true;
+                break;
+              case AtomicBinaryOp::IMin:
+                op = "min";
+                is_signed = true;
+                break;
+              case AtomicBinaryOp::UMax:
+                op = "max";
+                break;
+              case AtomicBinaryOp::UMin:
+                op = "min";
+                break;
+                break;
+              }
+              effect << std::visit(
+                patterns{
+                  [&](AtomicOperandTGSM tgsm) {
+                    return make_effect_bind(
+                      [=](struct context ctx) -> IREffect {
+                        auto addr =
+                          co_yield load_src_op<false>(bin.dst_address);
+                        auto ptr = co_yield read_tgsm_address(tgsm, addr);
+                        auto imm = co_yield call_atomic_fetch_explicit(
+                          ptr,
+                          co_yield load_src_op<false>(bin.src) >>=
+                          extract_element(0),
+                          op, is_signed, false
+                        );
+                        co_yield store_dst_op<false>(
+                          bin.dst_original, pure(imm)
+                        );
+                        co_return {};
+                      }
+                    );
+                  },
+                  [&](AtomicDstOperandUAV uav) {
+                    return make_effect_bind(
+                      [=](struct context ctx) -> IREffect {
+                        auto &builder = ctx.builder;
+                        auto [res, res_handle_fn, stride] =
+                          ctx.resource.uav_range_map[uav.range_id];
+                        assert(
+                          (res.resource_kind == air::TextureKind::texture_buffer
+                          ) &&
+                          "TODO: handle typed uav atomic operation..."
+                        );
+                        auto res_h = co_yield res_handle_fn(nullptr);
+                        auto addr =
+                          co_yield load_src_op<false>(bin.dst_address);
+                        auto ptr =
+                          stride < 0
+                            ? co_yield extract_element(0)(addr
+                              ) // TODO: handle 2d/3d..and array uav
+                            : builder.CreateLShr(
+                                stride > 0
+                                  ? builder.CreateAdd(
+                                      builder.CreateMul(
+                                        builder.getInt32(stride),
+                                        co_yield extract_element(0)(addr)
+                                      ),
+                                      co_yield extract_element(1)(addr)
+                                    )
+                                  : co_yield extract_element(0)(addr),
+                                2
+                              );
+                        auto imm = co_yield call_texture_atomic_fetch_explicit(
+                          res, res_h, op, is_signed, ptr, nullptr,
+                          co_yield load_src_op<false>(bin.src)
+                        );
+                        co_yield store_dst_op<false>(
+                          bin.dst_original, extract_element(0)(imm)
+                        );
+                        co_return {};
+                      }
+                    );
+                  }
+                },
+                bin.dst
+              );
+            },
+            [&](InstAtomicImmExchange exch) {
+              effect << std::visit(
+                patterns{
+                  [&](AtomicOperandTGSM tgsm) -> IREffect { co_return {}; },
+                  [&](AtomicDstOperandUAV uav) -> IREffect { co_return {}; }
+                },
+                exch.dst_resource
+              );
+              assert(0 && "unhandled imm_exch");
+            },
+            [&](InstAtomicImmCmpExchange cmpexch) {
+              effect << std::visit(
+                patterns{
+                  [&](AtomicOperandTGSM tgsm) -> IREffect { co_return {}; },
+                  [&](AtomicDstOperandUAV uav) -> IREffect { co_return {}; }
+                },
+                cmpexch.dst_resource
+              );
+              assert(0 && "unhandled imm_cmp_exch");
+            },
+            [&](InstAtomicImmIncrement alloc) {
+              assert(0 && "unhandled imm_alloc");
+            },
+            [&](InstAtomicImmDecrement consume) {
+              assert(0 && "unhandled imm_consume");
+            },
+            [&](InstBufferInfo) { assert(0 && "unhandled bufinfo"); },
+            [&](InstResourceInfo) { assert(0 && "unhandled resinfo"); },
+            [&](InstSampleInfo) { assert(0 && "unhandled sampleinfo"); },
+            [&](InstSamplePos) { assert(0 && "unhandled samplepos"); },
           },
           inst
         );

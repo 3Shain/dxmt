@@ -8,7 +8,6 @@
 #include <vector>
 
 #include "shader_common.hpp"
-#include "llvm/IR/LLVMContext.h"
 
 namespace dxmt::dxbc {
 
@@ -199,6 +198,15 @@ struct SrcOperandTGSM {
 };
 
 struct AtomicDstOperandUAV {
+  uint32_t range_id;
+  OperandIndex index;
+  uint32_t mask;
+};
+
+/**
+It's a UAV implemented as metal buffer
+*/
+struct AtomicDstOperandUAVBuffer {
   uint32_t range_id;
   OperandIndex index;
   uint32_t mask;
@@ -609,16 +617,8 @@ struct InstAtomicBinOp {
   AtomicBinaryOp op;
   std::variant<AtomicDstOperandUAV, AtomicOperandTGSM> dst;
   SrcOperand dst_address;
-  SrcOperand src; // select one component
-  std::optional<DstOperand>
-    dst_original; // store single component, original value
-};
-
-struct InstAtomicCmpStore {
-  std::variant<AtomicDstOperandUAV, AtomicOperandTGSM> dst;
-  SrcOperand dst_address;
-  SrcOperand src0; // select one component
-  SrcOperand src1; // select one component
+  SrcOperand src;          // select one component
+  DstOperand dst_original; // store single component, original value
 };
 
 struct InstAtomicImmIncrement {
@@ -666,7 +666,7 @@ using Instruction = std::variant<
   /* Pixel Shader */
   InstPixelDiscard, InstPartialDerivative, InstCalcLOD,
   /* Atomics */
-  InstSync, InstAtomicBinOp, InstAtomicCmpStore,   //
+  InstSync, InstAtomicBinOp,                       //
   InstAtomicImmCmpExchange, InstAtomicImmExchange, //
   InstAtomicImmIncrement, InstAtomicImmDecrement>;
 
@@ -716,20 +716,6 @@ struct ThreadgroupBufferInfo {
   bool structured;
 };
 
-class ShaderInfo {
-public:
-  std::vector<std::array<uint32_t, 4>> immConstantBufferData;
-  std::map<uint32_t, ShaderResourceViewInfo> srvMap;
-  std::map<uint32_t, UnorderedAccessViewInfo> uavMap;
-  std::map<uint32_t, ConstantBufferInfo> cbufferMap;
-  std::map<uint32_t, SamplerInfo> samplerMap;
-  std::map<uint32_t, ThreadgroupBufferInfo> tgsmMap;
-  uint32_t tempRegisterCount;
-  std::unordered_map<
-    uint32_t, std::pair<uint32_t /* count */, uint32_t /* mask */>>
-    indexableTempRegisterCounts;
-};
-
 #pragma endregion
 
 #pragma region basicblock
@@ -776,13 +762,18 @@ public:
 
 #pragma endregion
 
-struct Reflection {
-  bool has_binding_map;
+class ShaderInfo {
+public:
+  std::vector<std::array<uint32_t, 4>> immConstantBufferData;
+  std::map<uint32_t, ShaderResourceViewInfo> srvMap;
+  std::map<uint32_t, UnorderedAccessViewInfo> uavMap;
+  std::map<uint32_t, ConstantBufferInfo> cbufferMap;
+  std::map<uint32_t, SamplerInfo> samplerMap;
+  std::map<uint32_t, ThreadgroupBufferInfo> tgsmMap;
+  uint32_t tempRegisterCount;
+  std::unordered_map<
+    uint32_t, std::pair<uint32_t /* count */, uint32_t /* mask */>>
+    indexableTempRegisterCounts;
 };
-
-Reflection convertDXBC(
-  const void *dxbc, uint32_t dxbcSize, llvm::LLVMContext &context,
-  llvm::Module &module
-);
 
 } // namespace dxmt::dxbc

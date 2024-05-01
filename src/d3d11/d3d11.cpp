@@ -32,7 +32,7 @@ D3D11CoreCreateDevice(IDXGIFactory *pFactory, IDXGIAdapter *pAdapter,
     FeatureLevels = defaultFeatureLevels.size();
   }
 
-  // FIXME: check feature level
+  // check feature level
   // so far stick to 11.0
   // Find the highest feature level supported by the device.
   // This works because the feature level array is ordered.

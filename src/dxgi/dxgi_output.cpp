@@ -316,7 +316,7 @@ public:
       *pNumModes = 0;
       return S_OK;
     }
-    METAL_FORMAT_DESC formatDesc;
+    MTL_FORMAT_DESC formatDesc;
     if (FAILED(m_adapter->QueryFormatDesc(EnumFormat, &formatDesc)) ||
         !formatDesc.SupportBackBuffer) {
       *pNumModes = 0;

@@ -68,7 +68,7 @@ public:
     if (FAILED(dxgiDevice->GetParent(IID_PPV_ARGS(&adapter)))) {
       throw MTLD3DError("Unknown DXGIAdapter");
     }
-    METAL_FORMAT_DESC metal_format;
+    MTL_FORMAT_DESC metal_format;
     if (FAILED(adapter->QueryFormatDesc(pDesc->Format, &metal_format))) {
       throw MTLD3DError(
           str::format("Unsupported swapchain format ", pDesc->Format));

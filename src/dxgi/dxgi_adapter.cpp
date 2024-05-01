@@ -153,7 +153,7 @@ public:
   MTL::Device *STDMETHODCALLTYPE GetMTLDevice() final { return m_deivce.ptr(); }
 
   HRESULT STDMETHODCALLTYPE QueryFormatDesc(DXGI_FORMAT Format,
-                                            METAL_FORMAT_DESC *pMtlDesc) final {
+                                            MTL_FORMAT_DESC *pMtlDesc) final {
     if (!pMtlDesc) {
       return E_INVALIDARG;
     }

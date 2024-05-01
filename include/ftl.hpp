@@ -56,7 +56,6 @@ public:
   }
   ~ReaderIO() {
     if(factory!=nullptr) {
-      // TODO: properly handle destructor
       delete factory;
     }
   }
@@ -76,6 +75,7 @@ public:
   V build(Env ir) { 
     assert(factory && "value has been consumed or moved."); 
     auto ret = factory->invoke(ir);
+    delete factory;
     factory = nullptr;
     return ret;
   };
@@ -164,7 +164,6 @@ ReaderIO<Env, V>& operator >> (ReaderIO<Env, V>& a, Func &&fn) {
 
 template <typename Env, typename A, typename B, std::move_constructible Func>
 auto lift( ReaderIO<Env,A>&& a,  ReaderIO<Env,B>&& b, Func&& func) {
-  /* TODO: func should be move captured? */
   return std::move(a) >>= [func=std::forward<Func>(func),b=std::move(b)](auto a) mutable {
     return std::move(b) >>= [a, func=std::forward<Func>(func)](auto b) {
       return func(a,b);

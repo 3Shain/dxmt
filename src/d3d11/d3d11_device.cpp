@@ -504,7 +504,7 @@ HRESULT STDMETHODCALLTYPE MTLD3D11Device::CreateTexture2D(
       if (pDesc->BindFlags != 0) {
         return E_INVALIDARG;
       }
-      IMPLEMENT_ME;
+      *ppTexture2D = CreateStagingTexture2D(this, pDesc, pInitialData);
       break;
     }
     return S_OK;
@@ -810,7 +810,7 @@ HRESULT STDMETHODCALLTYPE MTLD3D11Device::CreateQuery(
 
   switch (pQueryDesc->Query) {
   case D3D11_QUERY_EVENT:
-    // TODO
+    // TODO: implement it at command chunk boundary
     return S_OK;
   case D3D11_QUERY_TIMESTAMP:
 
@@ -826,6 +826,9 @@ HRESULT STDMETHODCALLTYPE MTLD3D11Device::CreateQuery(
 
     *ppQuery = ref(new MTLD3D11TimeStampDisjointQuery(this, *pQueryDesc));
     return S_OK;
+  case D3D11_QUERY_OCCLUSION:
+  // TODO: implement occulusion query
+    return E_NOTIMPL;
   default:
     return E_NOTIMPL;
   }
@@ -857,7 +860,7 @@ HRESULT STDMETHODCALLTYPE MTLD3D11Device::CheckFormatSupport(
     *pFormatSupport = 0;
   }
 
-  METAL_FORMAT_DESC metal_format;
+  MTL_FORMAT_DESC metal_format;
 
   if (FAILED(m_container->adapter_->QueryFormatDesc(Format, &metal_format))) {
     return S_OK;
@@ -928,7 +931,7 @@ HRESULT STDMETHODCALLTYPE MTLD3D11Device::CheckFormatSupport(
 
 HRESULT STDMETHODCALLTYPE MTLD3D11Device::CheckMultisampleQualityLevels(
     DXGI_FORMAT Format, UINT SampleCount, UINT *pNumQualityLevels) {
-  METAL_FORMAT_DESC desc;
+  MTL_FORMAT_DESC desc;
   m_container->adapter_->QueryFormatDesc(Format, &desc);
   if (desc.PixelFormat == MTL::PixelFormatInvalid) {
     return E_FAIL;
@@ -939,7 +942,7 @@ HRESULT STDMETHODCALLTYPE MTLD3D11Device::CheckMultisampleQualityLevels(
   // target formats, and 8x MSAA for all render target formats except
   // R32G32B32A32 formats.
 
-  // FIXME: seems some pixel format doesn't support MSAA
+  // seems some pixel format doesn't support MSAA
   // https://developer.apple.com/metal/Metal-Feature-Set-Tables.pdf
 
   if (GetMTLDevice()->supportsTextureSampleCount(SampleCount)) {
@@ -988,7 +991,7 @@ HRESULT STDMETHODCALLTYPE MTLD3D11Device::CheckFeatureSupport(
       return E_INVALIDARG;
     info->OutFormatSupport2 = 0;
 
-    METAL_FORMAT_DESC desc;
+    MTL_FORMAT_DESC desc;
     if (FAILED(m_container->adapter_->QueryFormatDesc(info->InFormat, &desc))) {
       return S_OK;
     }
@@ -1001,6 +1004,11 @@ HRESULT STDMETHODCALLTYPE MTLD3D11Device::CheckFeatureSupport(
           D3D11_FORMAT_SUPPORT2_UAV_ATOMIC_EXCHANGE |
           D3D11_FORMAT_SUPPORT2_UAV_ATOMIC_SIGNED_MIN_OR_MAX |
           D3D11_FORMAT_SUPPORT2_UAV_ATOMIC_UNSIGNED_MIN_OR_MAX;
+
+#ifndef DXMT_NO_PRIVATE_API
+      /* UNCHECKED */
+      info->OutFormatSupport2 |= D3D11_FORMAT_SUPPORT2_OUTPUT_MERGER_LOGIC_OP;
+#endif
     }
 
     if (any_bit_set(desc.Capability & FormatCapability::Sparse)) {
@@ -1043,8 +1051,7 @@ UINT STDMETHODCALLTYPE MTLD3D11Device::GetCreationFlags() {
 }
 
 HRESULT STDMETHODCALLTYPE MTLD3D11Device::GetDeviceRemovedReason() {
-
-  // FIXME: unless we are deal with eGPU, this method should awalys return S_OK?
+  // unless we are deal with eGPU, this method should awalys return S_OK?
   return S_OK;
 }
 
@@ -1221,13 +1228,13 @@ HRESULT STDMETHODCALLTYPE
 HRESULT STDMETHODCALLTYPE MTLD3D11DXGIDevice::OfferResources(
     UINT NumResources, IDXGIResource *const *ppResources,
     DXGI_OFFER_RESOURCE_PRIORITY Priority) {
-  // TODO Stub
+  // stub
   return S_OK;
 }
 
 HRESULT STDMETHODCALLTYPE MTLD3D11DXGIDevice::ReclaimResources(
     UINT NumResources, IDXGIResource *const *ppResources, WINBOOL *pDiscarded) {
-  // TODO Stub
+  // stub
   return S_OK;
 }
 

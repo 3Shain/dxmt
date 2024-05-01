@@ -280,7 +280,7 @@ MTL::Texture *newTextureView(IMTLD3D11Device *pDevice, MTL::Texture *source,
                              const VIEW_DESC *pDesc) {
   Com<IMTLDXGIAdatper> adapter;
   pDevice->GetAdapter(&adapter);
-  METAL_FORMAT_DESC metal_format;
+  MTL_FORMAT_DESC metal_format;
   if (FAILED(adapter->QueryFormatDesc(pDesc->Format, &metal_format))) {
     assert(0 && "TODO: handle invalid texture view format");
   }
@@ -361,7 +361,7 @@ getTextureDescriptor(IMTLDXGIAdatper *pAdapter,
                      D3D11_USAGE Usage, UINT MipLevels, DXGI_FORMAT Format) {
   auto desc = transfer(MTL::TextureDescriptor::alloc()->init());
 
-  METAL_FORMAT_DESC metal_format;
+  MTL_FORMAT_DESC metal_format;
 
   if (FAILED(pAdapter->QueryFormatDesc(Format, &metal_format))) {
     ERR("getTextureDescriptor: creating a texture of invalid format: ", Format);
@@ -383,12 +383,10 @@ getTextureDescriptor(IMTLDXGIAdatper *pAdapter,
     if (BindFlags & D3D11_BIND_UNORDERED_ACCESS)
       metal_usage |= MTL::TextureUsageShaderRead | MTL::TextureUsageShaderWrite;
     // decoder not supported: D3D11_BIND_DECODER, D3D11_BIND_VIDEO_ENCODER
-
-    // TODO: if format is TYPELESS
   }
   desc->setUsage(metal_usage);
 
-  MTL::ResourceOptions options = 0; // actually corresponding to Usage ...
+  MTL::ResourceOptions options = 0;
   switch (Usage) {
   case D3D11_USAGE_DEFAULT:
     options |= MTL::ResourceStorageModeManaged;

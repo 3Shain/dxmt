@@ -1448,6 +1448,7 @@ auto readInstruction(
       .dst = readAtomicDst(Inst.m_Operands[0]),
       .dst_address = readSrcOperand(Inst.m_Operands[1]),
       .src = readSrcOperand(Inst.m_Operands[2]),
+      .dst_original = DstOperandNull {},
     };
     std::visit(
       patterns{
@@ -1467,6 +1468,7 @@ auto readInstruction(
       .dst = readAtomicDst(Inst.m_Operands[0]),
       .dst_address = readSrcOperand(Inst.m_Operands[1]),
       .src = readSrcOperand(Inst.m_Operands[2]),
+      .dst_original = DstOperandNull {},
     };
     std::visit(
       patterns{
@@ -1486,6 +1488,7 @@ auto readInstruction(
       .dst = readAtomicDst(Inst.m_Operands[0]),
       .dst_address = readSrcOperand(Inst.m_Operands[1]),
       .src = readSrcOperand(Inst.m_Operands[2]),
+      .dst_original = DstOperandNull {},
     };
     std::visit(
       patterns{
@@ -1505,6 +1508,7 @@ auto readInstruction(
       .dst = readAtomicDst(Inst.m_Operands[0]),
       .dst_address = readSrcOperand(Inst.m_Operands[1]),
       .src = readSrcOperand(Inst.m_Operands[2]),
+      .dst_original = DstOperandNull {},
     };
     std::visit(
       patterns{
@@ -1524,6 +1528,7 @@ auto readInstruction(
       .dst = readAtomicDst(Inst.m_Operands[0]),
       .dst_address = readSrcOperand(Inst.m_Operands[1]),
       .src = readSrcOperand(Inst.m_Operands[2]),
+      .dst_original = DstOperandNull {},
     };
     std::visit(
       patterns{
@@ -1543,6 +1548,7 @@ auto readInstruction(
       .dst = readAtomicDst(Inst.m_Operands[0]),
       .dst_address = readSrcOperand(Inst.m_Operands[1]),
       .src = readSrcOperand(Inst.m_Operands[2]),
+      .dst_original = DstOperandNull {},
     };
     std::visit(
       patterns{
@@ -1562,6 +1568,7 @@ auto readInstruction(
       .dst = readAtomicDst(Inst.m_Operands[0]),
       .dst_address = readSrcOperand(Inst.m_Operands[1]),
       .src = readSrcOperand(Inst.m_Operands[2]),
+      .dst_original = DstOperandNull {},
     };
     std::visit(
       patterns{
@@ -1581,6 +1588,7 @@ auto readInstruction(
       .dst = readAtomicDst(Inst.m_Operands[0]),
       .dst_address = readSrcOperand(Inst.m_Operands[1]),
       .src = readSrcOperand(Inst.m_Operands[2]),
+      .dst_original = DstOperandNull {},
     };
     std::visit(
       patterns{
@@ -1595,8 +1603,9 @@ auto readInstruction(
     return inst;
   };
   case microsoft::D3D11_SB_OPCODE_ATOMIC_CMP_STORE: {
-    return InstAtomicCmpStore{
-      .dst = readAtomicDst(Inst.m_Operands[0]),
+    return InstAtomicImmCmpExchange{
+      .dst = DstOperandNull {},
+      .dst_resource = readAtomicDst(Inst.m_Operands[0]),
       .dst_address = readSrcOperand(Inst.m_Operands[1]),
       .src0 = readSrcOperand(Inst.m_Operands[2]),
       .src1 = readSrcOperand(Inst.m_Operands[3]),

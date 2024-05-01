@@ -1,17 +1,10 @@
 #pragma once
 
+#include "airconv_public.hpp"
 #include "com/com_guid.hpp"
 #include "d3d11_device.hpp"
 #include "objc-wrapper/dispatch.h"
 #include "sha1/sha1_util.hpp"
-
-struct MTL_SHADER_REFLECTION {
-  UINT type; // FIXME:
-  BOOL HasArgumentBindings;
-  union {
-    UINT ThreadgroupSize[3];
-  };
-};
 
 struct MTL_COMPILED_SHADER {
   /**
@@ -20,7 +13,6 @@ struct MTL_COMPILED_SHADER {
   MTL::Function* Function;
   dxmt::Sha1Hash* MetallibHash;
   MTL_SHADER_REFLECTION* Reflection;
-  // TODO: extra information
 };
 
 DEFINE_COM_INTERFACE("a8bfeef7-a453-4bce-90c1-912b02cf5cdf", IMTLCompiledShader)

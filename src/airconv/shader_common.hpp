@@ -7,23 +7,6 @@
 
 namespace dxmt::shader::common {
 
-enum class ShaderType {
-  Vertex,
-  /* Metal: fragment function */
-  Pixel,
-  /* Metal: kernel function */
-  Compute,
-  /* Not present in Metal */
-  Hull,
-  /* Metal: post-vertex function */
-  Domain,
-  /* Not present in Metal */
-  Geometry,
-  Mesh,
-  /* Metal: object function */
-  Amplification,
-};
-
 enum class ScalerDataType {
   Float,
   Uint,
@@ -61,25 +44,6 @@ enum class InputAttribute {
   ThreadGroupId,
   /* uint */
   ThreadIdInGroupFlatten,
-};
-
-/* It's often called System Interpret Value in DirectX */
-enum class OutputAttribute {
-  Depth,
-  SampleMask,
-  Coverage,
-  StencilRef,
-};
-
-/* not used yet */
-enum class Interpolation {
-  Flat,
-  Sample,
-  SampleNoPerspective,
-  Centroid,
-  CentroidNoPerspective,
-  Center,
-  CenterPerspective,
 };
 
 } // namespace dxmt::shader::common

@@ -14,11 +14,6 @@ DEFINE_COM_INTERFACE("3b1c3251-2053-4d41-99b8-c6c246d0b219",
 
   */
   virtual void ExchangeFromPool(MTL::Buffer * *ppBuffer) = 0;
-
-  /**
-  TODO: maybe not the same size? the new buffer can be larger?
-  Then a second argument MinSize should be provided as well
-  */
 };
 
 // DEFINE_COM_INTERFACE("3b1c3251-2053-4d41-99b8-c6c246d0b251",

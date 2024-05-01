@@ -52,8 +52,6 @@ void MetallibWriter::Write(const llvm::Module &module, raw_ostream &OS) {
         function_def_stream << name << '\0';
         function_def_stream
             << value(MTLB_TYPE_TAG{.type = FunctionType::Vertex});
-        // FIXME: are we using the same bitcode for all functions? does this
-        // really work?
         function_def_stream << value(MTLB_HASH_TAG{.hash = hash});
         function_def_stream
             << value(MTLB_MDSZ_TAG{.bitcodeSize = bitcode.size()});
@@ -144,8 +142,6 @@ void MetallibWriter::Write(const llvm::Module &module, raw_ostream &OS) {
         function_def_stream << name << '\0';
         function_def_stream
             << value(MTLB_TYPE_TAG{.type = FunctionType::Fragment});
-        // FIXME: are we using the same bitcode for all functions? does this
-        // really work?
         function_def_stream << value(MTLB_HASH_TAG{.hash = hash});
         function_def_stream
             << value(MTLB_MDSZ_TAG{.bitcodeSize = bitcode.size()});

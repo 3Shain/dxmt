@@ -1622,7 +1622,6 @@ public:
 
     SwitchToRenderEncoder();
 
-    // TODO: Find PSO from cache?
     CommandChunk *chk = cmd_queue.CurrentChunk();
 
     Com<IMTLCompiledGraphicsPipeline> pipeline;

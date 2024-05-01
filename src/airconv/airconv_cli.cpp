@@ -1,6 +1,6 @@
 #include "airconv_context.hpp"
+#include "airconv_public.hpp"
 #include "d3dcompiler.h"
-#include "dxbc_converter.hpp"
 #include "llvm/Bitcode/BitcodeReader.h"
 #include "llvm/Bitcode/BitcodeWriter.h"
 #include "llvm/IR/DiagnosticInfo.h"
@@ -89,6 +89,13 @@ struct LLVMDisDiagnosticHandler : public DiagnosticHandler {
 };
 } // namespace
 
+namespace dxmt::dxbc {
+void convertDXBC(
+  SM50Shader *pShader, llvm::LLVMContext &context, llvm::Module &module,
+  MTL_SHADER_REFLECTION *reflection = nullptr
+);
+}
+
 static ExitOnError ExitOnErr;
 
 int main(int argc, char **argv) {
@@ -165,9 +172,12 @@ int main(int argc, char **argv) {
 
   Module M("default", Context);
   dxmt::initializeModule(M, {.enableFastMath = FastMath});
-  dxmt::dxbc::convertDXBC(
-    MemRef.getBufferStart(), MemRef.getBufferSize(), Context, M
-  );
+
+  auto sm50 = SM50Initialize(MemRef.getBufferStart(), MemRef.getBufferSize());
+
+  dxmt::dxbc::convertDXBC(sm50, Context, M);
+
+  SM50Destroy(sm50);
 
   if (OptLevelO1) {
     dxmt::runOptimizationPasses(M, OptimizationLevel::O1);

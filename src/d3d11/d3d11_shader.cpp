@@ -12,8 +12,6 @@
 #include <cstddef>
 #include <cstring>
 
-#include "../airconv/airconv_public.h"
-
 namespace dxmt {
 
 struct tag_vertex_shader {
@@ -31,12 +29,15 @@ public:
   TShaderBase(IMTLD3D11Device *device, const void *pBytecode,
               UINT BytecodeLength)
       : MTLD3D11DeviceChild<typename tag::COM, IMTLD3D11Shader>(device) {
-    bytecode_ = malloc(BytecodeLength);
-    memcpy(bytecode_, pBytecode, BytecodeLength);
-    bytecode_len_ = BytecodeLength;
+    sm50 = SM50Initialize(pBytecode, BytecodeLength);
   }
 
-  ~TShaderBase() { free(bytecode_); }
+  ~TShaderBase() {
+    if (sm50) {
+      SM50Destroy(sm50);
+      sm50 = nullptr;
+    }
+  }
 
   HRESULT QueryInterface(REFIID riid, void **ppvObject) {
     if (ppvObject == nullptr)
@@ -65,9 +66,8 @@ public:
 
   void GetCompiledShader(void *pArgs, IMTLCompiledShader **pShader) final;
 
+  SM50Shader *sm50;
   Com<IMTLCompiledShader> precompiled_;
-  void *bytecode_;
-  SIZE_T bytecode_len_;
 };
 
 template <typename tag>
@@ -113,16 +113,14 @@ public:
 
     auto pool = transfer(NS::AutoreleasePool::alloc()->init());
     Obj<NS::Error> err;
-    MetalShaderReflection reflection;
 
     {
-      uint32_t size;
-      void *ptr;
-      ConvertDXBC(shader_->bytecode_, shader_->bytecode_len_, &ptr, &size,
-                  &reflection);
-      assert(ptr);
-      hash_.compute(ptr, size);
-      auto dispatch_data = dispatch_data_create(ptr, size, nullptr, nullptr);
+      auto compile_result = SM50Compile(shader_->sm50, nullptr, &reflection_);
+      MTL_SHADER_BITCODE bitcode;
+      SM50GetCompiledBitcode(compile_result, &bitcode);
+      hash_.compute(bitcode.Data, bitcode.Size);
+      auto dispatch_data =
+          dispatch_data_create(bitcode.Data, bitcode.Size, nullptr, nullptr);
       assert(dispatch_data);
       Obj<MTL::Library> library =
           transfer(device_->GetMTLDevice()->newLibrary(dispatch_data, &err));
@@ -134,13 +132,10 @@ public:
       }
 
       dispatch_release(dispatch_data);
-      free(ptr);
-
+      SM50DestroyBitcode(compile_result);
       function_ = transfer(library->newFunction(
           NS::String::string("shader_main", NS::UTF8StringEncoding)));
     }
-
-    reflection_.HasArgumentBindings = reflection.has_binding_map;
 
     TRACE("Compiled 1 shader");
 
@@ -188,6 +183,7 @@ Com<ID3D11VertexShader> CreateVertexShader(IMTLD3D11Device *pDevice,
                                            SIZE_T BytecodeLength) {
   auto ret = new TShaderBase<tag_vertex_shader>(pDevice, pShaderBytecode,
                                                 BytecodeLength);
+  ret->AddRef(); // FIXME:!
   ret->GetCompiledShader(NULL, &ret->precompiled_);
   return ret;
 }
@@ -197,6 +193,7 @@ Com<ID3D11PixelShader> CreatePixelShader(IMTLD3D11Device *pDevice,
                                          SIZE_T BytecodeLength) {
   auto ret = new TShaderBase<tag_pixel_shader>(pDevice, pShaderBytecode,
                                                BytecodeLength);
+  ret->AddRef(); // FIXME:!
   ret->GetCompiledShader(NULL, &ret->precompiled_);
   return ret;
 }

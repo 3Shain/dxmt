@@ -106,7 +106,15 @@ public:
   HRESULT
   STDMETHODCALLTYPE
   GetFullscreenState(BOOL *fullscreen, IDXGIOutput **target) final {
-    IMPLEMENT_ME;
+    if(fullscreen) {
+      *fullscreen = !fullscreen_desc_.Windowed;
+    }
+    if(target) {
+      *target = NULL;
+      // TODO
+      WARN("GetFullscreenState return null");
+    }
+    return S_OK;
   };
 
   HRESULT
@@ -230,7 +238,7 @@ public:
         [drawable = transfer(backbuffer_->CurrentDrawable())](
             MTL::CommandBuffer *cmdbuf) {
           if (drawable) {
-          cmdbuf->presentDrawable(drawable.ptr());
+            cmdbuf->presentDrawable(drawable.ptr());
           }
         });
     backbuffer_->Swap();

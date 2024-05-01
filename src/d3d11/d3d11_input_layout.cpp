@@ -138,7 +138,7 @@ HRESULT CreateInputLayout(IMTLD3D11Device *device,
 
     Com<IMTLDXGIAdatper> dxgi_adapter;
     device->GetAdapter(&dxgi_adapter);
-    METAL_FORMAT_DESC metal_format;
+    MTL_FORMAT_DESC metal_format;
     if (FAILED(dxgi_adapter->QueryFormatDesc(pDesc->Format, &metal_format))) {
       ERR("CreateInputLayout: Unsupported vertex format ", desc.Format);
       return E_FAIL;
