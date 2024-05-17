@@ -23,9 +23,8 @@ jobs:
       - name: Setup x86 Development Environment
         run: /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
       - name: Install Development Environment
-        run: | # wtf? 
-          brew unlink python
-          /usr/local/bin/brew install ninja meson cmake
+        run: | # wtf?
+          /usr/local/bin/brew install ninja meson cmake || /usr/local/bin/brew link --overwrite python@3
       - name: Configuration
         if: ${{ steps.cache-toolchains.outputs.cache-hit != 'true' }}
         run: ./configure.sh
