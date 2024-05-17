@@ -23,7 +23,7 @@ jobs:
       - name: Setup x86 Development Environment
         run: /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
       - name: Install Development Environment
-        run: brew install ninja meson
+        run: /usr/local/bin/brew install ninja meson
       - name: Configuration
         if: ${{ steps.cache-toolchains.outputs.cache-hit != 'true' }}
         run: ./configure.sh
