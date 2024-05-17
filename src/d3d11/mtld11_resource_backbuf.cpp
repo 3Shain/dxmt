@@ -29,7 +29,7 @@ private:
   don't use a smart pointer
   it's managed by native_view_
   */
-  CA::MetalLayer* layer_;
+  CA::MetalLayer *layer_;
   Obj<CA::MetalDrawable> current_drawable;
 
   using BackBufferRTVBase =

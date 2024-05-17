@@ -1,5 +1,6 @@
 #include "d3d11_shader.hpp"
 #include "Metal/MTLLibrary.hpp"
+#include "airconv_public.hpp"
 #include "com/com_object.hpp"
 #include "d3d11_device.hpp"
 #include "d3d11_device_child.hpp"
@@ -29,7 +30,7 @@ public:
   TShaderBase(IMTLD3D11Device *device, const void *pBytecode,
               UINT BytecodeLength)
       : MTLD3D11DeviceChild<typename tag::COM, IMTLD3D11Shader>(device) {
-    sm50 = SM50Initialize(pBytecode, BytecodeLength);
+    sm50 = SM50Initialize(pBytecode, BytecodeLength, &reflection);
   }
 
   ~TShaderBase() {
@@ -66,7 +67,12 @@ public:
 
   void GetCompiledShader(void *pArgs, IMTLCompiledShader **pShader) final;
 
+  void GetReflection(MTL_SHADER_REFLECTION *pRefl) final {
+    *pRefl = reflection;
+  }
+
   SM50Shader *sm50;
+  MTL_SHADER_REFLECTION reflection;
   Com<IMTLCompiledShader> precompiled_;
 };
 
@@ -97,7 +103,7 @@ public:
 
   void GetShader(MTL_COMPILED_SHADER *pShaderData) final {
     ready_.wait(false, std::memory_order_acquire);
-    *pShaderData = {function_.ptr(), &hash_, &reflection_};
+    *pShaderData = {function_.ptr(), &hash_, &shader_->reflection};
   }
 
   void RunThreadpoolWork() {
@@ -115,7 +121,7 @@ public:
     Obj<NS::Error> err;
 
     {
-      auto compile_result = SM50Compile(shader_->sm50, nullptr, &reflection_);
+      auto compile_result = SM50Compile(shader_->sm50, nullptr);
       MTL_SHADER_BITCODE bitcode;
       SM50GetCompiledBitcode(compile_result, &bitcode);
       hash_.compute(bitcode.Data, bitcode.Size);
@@ -153,7 +159,6 @@ private:
   THREADGROUP_WORK_STATE work_state_;
   Sha1Hash hash_;
   Obj<MTL::Function> function_;
-  MTL_SHADER_REFLECTION reflection_;
 };
 
 template <>

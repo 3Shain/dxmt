@@ -38,6 +38,7 @@ public:
   microsoft::D3D10_SB_TOKENIZED_PROGRAM_TYPE shader_type;
   uint32_t max_input_register = 0;
   uint32_t max_output_register = 0;
+  std::vector<MTL_SM50_SHADER_ARGUMENT> args_reflection;
 };
 
 class SM50CompiledBitcodeInternal {
@@ -47,8 +48,7 @@ public:
 namespace dxmt::dxbc {
 
 void convertDXBC(
-  SM50Shader *pShader, llvm::LLVMContext &context, llvm::Module &module,
-  MTL_SHADER_REFLECTION *reflection
+  SM50Shader *pShader, llvm::LLVMContext &context, llvm::Module &module
 ) {
   using namespace microsoft;
 
@@ -83,7 +83,8 @@ void convertDXBC(
     // TODO: abstract SM 5.0 binding
     auto index = binding_table.DefineBuffer(
       "cb" + std::to_string(range_id), air::AddressSpace::constant,
-      air::MemoryAccess::read, air::msl_uint4, range_id
+      air::MemoryAccess::read, air::msl_uint4,
+      GetArgumentIndex({SM50BindingType::ConstantBuffer, range_id})
     );
     resource_map.cb_range_map[range_id] = [=, &binding_table_index](pvalue) {
       // ignore index in SM 5.0
@@ -93,7 +94,8 @@ void convertDXBC(
   for (auto &[range_id, sampler] : shader_info->samplerMap) {
     // TODO: abstract SM 5.0 binding
     auto index = binding_table.DefineSampler(
-      "s" + std::to_string(range_id), range_id + 16
+      "s" + std::to_string(range_id),
+      GetArgumentIndex({SM50BindingType::Sampler, range_id})
     );
     resource_map.sampler_range_map[range_id] = [=,
                                                 &binding_table_index](pvalue) {
@@ -110,7 +112,7 @@ void convertDXBC(
     auto scaler_type = air::to_air_scaler_type(srv.scaler_type);
     auto index = binding_table.DefineTexture(
       "t" + std::to_string(range_id), texture_kind, access, scaler_type,
-      range_id + 128
+      GetArgumentIndex({SM50BindingType::SRV, range_id})
     );
     resource_map.srv_range_map[range_id] = {
       air::MSLTexture{
@@ -133,7 +135,7 @@ void convertDXBC(
                               : air::MemoryAccess::read;
     auto index = binding_table.DefineTexture(
       "u" + std::to_string(range_id), texture_kind, access, scaler_type,
-      range_id + 64
+      GetArgumentIndex({SM50BindingType::UAV, range_id})
     );
     resource_map.uav_range_map[range_id] = {
       air::MSLTexture{
@@ -285,19 +287,12 @@ void convertDXBC(
     // throw
     assert(0 && "Unsupported shader type");
   }
-
-  if (reflection) {
-    reflection->ArgumentBufferBindIndex =
-      binding_table.empty() ? ~0u : 30; // kArgumentBufferBindIndex
-  } else {
-    reflection->ArgumentBufferBindIndex = ~0u;
-    reflection->NumArguments = 0;
-    reflection->Arguments = nullptr;
-  }
 };
 } // namespace dxmt::dxbc
 
-SM50Shader *SM50Initialize(const void *pBytecode, size_t BytecodeSize) {
+SM50Shader *SM50Initialize(
+  const void *pBytecode, size_t BytecodeSize, MTL_SHADER_REFLECTION *pRefl
+) {
   using namespace microsoft;
   using namespace dxmt::dxbc;
   using namespace dxmt::air;
@@ -765,7 +760,8 @@ SM50Shader *SM50Initialize(const void *pBytecode, size_t BytecodeSize) {
       case D3D11_SB_OPCODE_DCL_THREAD_GROUP_SHARED_MEMORY_RAW:
       case D3D11_SB_OPCODE_DCL_THREAD_GROUP_SHARED_MEMORY_STRUCTURED: {
         ThreadgroupBufferInfo tgsm;
-        if (Inst.OpCode() == D3D11_SB_OPCODE_DCL_THREAD_GROUP_SHARED_MEMORY_RAW) {
+        if (Inst.OpCode() ==
+            D3D11_SB_OPCODE_DCL_THREAD_GROUP_SHARED_MEMORY_RAW) {
           tgsm.stride = 1;
           tgsm.size = Inst.m_RawTGSMDecl.ByteCount;
           tgsm.size_in_uint = tgsm.size / 4;
@@ -1175,7 +1171,8 @@ SM50Shader *SM50Initialize(const void *pBytecode, size_t BytecodeSize) {
         break;
       }
       case D3D10_SB_OPCODE_CUSTOMDATA: {
-        if (Inst.m_CustomData.Type == D3D10_SB_CUSTOMDATA_DCL_IMMEDIATE_CONSTANT_BUFFER) {
+        if (Inst.m_CustomData.Type ==
+            D3D10_SB_CUSTOMDATA_DCL_IMMEDIATE_CONSTANT_BUFFER) {
           // must be list of 4-tuples
           unsigned size_in_vec4 = Inst.m_CustomData.DataSizeInBytes >> 4;
           DXASSERT_DXBC(Inst.m_CustomData.DataSizeInBytes == size_in_vec4 * 16);
@@ -1229,13 +1226,35 @@ SM50Shader *SM50Initialize(const void *pBytecode, size_t BytecodeSize) {
 
   sm50_shader->entry = entry;
 
+  for (auto &[range_id, _] : shader_info->cbufferMap) {
+    sm50_shader->args_reflection.push_back(
+      {SM50BindingType::ConstantBuffer, range_id}
+    );
+  }
+  for (auto &[range_id, _] : shader_info->samplerMap) {
+    sm50_shader->args_reflection.push_back({SM50BindingType::Sampler, range_id}
+    );
+  }
+  for (auto &[range_id, srv] : shader_info->srvMap) {
+    sm50_shader->args_reflection.push_back({SM50BindingType::SRV, range_id});
+  }
+  for (auto &[range_id, uav] : shader_info->uavMap) {
+    sm50_shader->args_reflection.push_back({SM50BindingType::UAV, range_id});
+  }
+
+  if (pRefl) {
+    pRefl->ArgumentBufferBindIndex =
+      sm50_shader->args_reflection.size() > 0 ? 30 : ~0u;
+    pRefl->NumArguments = sm50_shader->args_reflection.size();
+    pRefl->Arguments = sm50_shader->args_reflection.data();
+  }
+
   return (SM50Shader *)sm50_shader;
 };
 
 void SM50Destroy(SM50Shader *pShader) { delete (SM50ShaderInternal *)pShader; }
 
-SM50CompiledBitcode *
-SM50Compile(SM50Shader *pShader, void *pArgs, MTL_SHADER_REFLECTION *pRefl) {
+SM50CompiledBitcode *SM50Compile(SM50Shader *pShader, void *pArgs) {
   using namespace llvm;
   using namespace dxmt;
   // pArgs is ignored for now
@@ -1246,7 +1265,7 @@ SM50Compile(SM50Shader *pShader, void *pArgs, MTL_SHADER_REFLECTION *pRefl) {
   auto pModule = std::make_unique<Module>("shader.air", context);
   initializeModule(*pModule, {.enableFastMath = true});
 
-  dxmt::dxbc::convertDXBC(pShader, context, *pModule, pRefl);
+  dxmt::dxbc::convertDXBC(pShader, context, *pModule);
 
   runOptimizationPasses(*pModule, OptimizationLevel::O1);
 

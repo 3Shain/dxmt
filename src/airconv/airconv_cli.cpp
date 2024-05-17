@@ -91,8 +91,7 @@ struct LLVMDisDiagnosticHandler : public DiagnosticHandler {
 
 namespace dxmt::dxbc {
 void convertDXBC(
-  SM50Shader *pShader, llvm::LLVMContext &context, llvm::Module &module,
-  MTL_SHADER_REFLECTION *reflection = nullptr
+  SM50Shader *pShader, llvm::LLVMContext &context, llvm::Module &module
 );
 }
 
@@ -173,7 +172,8 @@ int main(int argc, char **argv) {
   Module M("default", Context);
   dxmt::initializeModule(M, {.enableFastMath = FastMath});
 
-  auto sm50 = SM50Initialize(MemRef.getBufferStart(), MemRef.getBufferSize());
+  auto sm50 =
+    SM50Initialize(MemRef.getBufferStart(), MemRef.getBufferSize(), nullptr);
 
   dxmt::dxbc::convertDXBC(sm50, Context, M);
 

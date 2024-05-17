@@ -6,6 +6,7 @@
 #include "Metal/MTLSampler.hpp"
 #include "Metal/MTLStageInputOutputDescriptor.hpp"
 #include "Metal/MTLTexture.hpp"
+#include "airconv_public.hpp"
 #include "com/com_guid.hpp"
 #include "com/com_pointer.hpp"
 #include "d3d11_device_child.hpp"
@@ -253,6 +254,10 @@ public:
             com_cast<IMTLD3D11RenderTargetView>(pRenderTargetView)) {
       InvalidateCurrentPass();
       CommandChunk *chk = cmd_queue.CurrentChunk();
+      // GetCurrentTexture() is executed outside of command body
+      // because of swapchain logic implemented at the moment
+      // ideally it should be inside the command
+      // so autorelease will work properly
       chk->emit([texture = expected->GetCurrentTexture(), r = ColorRGBA[0],
                  g = ColorRGBA[1], b = ColorRGBA[2],
                  a = ColorRGBA[3]](CommandChunk::context &ctx) {
@@ -1699,30 +1704,52 @@ public:
 
     auto &ShaderStage = state_.ShaderStages[(UINT)stage];
 
-    auto BindingCount = ShaderStage.ConstantBuffers.size() +
-                        ShaderStage.Samplers.size() + ShaderStage.SRVs.size();
-    // TODO: + UAV count
+    // TODO: ideally we should get a MTLArgumentEncoder now.
+    MTL_SHADER_REFLECTION reflection;
+    ShaderStage.Shader->GetReflection(&reflection);
+    auto BindingCount = reflection.NumArguments;
 
     if (BindingCount) {
       CommandChunk *chk = cmd_queue.CurrentChunk();
       auto bindings = chk->reserve_vector<BINDING_INFO>(BindingCount);
 
-      for (auto &[slot, cbuf] : ShaderStage.ConstantBuffers) {
-        MTL_BIND_RESOURCE m;
-        assert(cbuf.Buffer);
-        cbuf.Buffer->GetBoundResource(&m);
-        bindings.push_back(BINDING_INFO{slot, m.Buffer, 0});
-      }
-      for (auto &[slot, srv] : ShaderStage.SRVs) {
-        MTL_BIND_RESOURCE m;
-        assert(srv);
-        srv->GetBoundResource(&m);
-        bindings.push_back(m.IsTexture ? BINDING_INFO{slot + 128, m.Texture}
-                                       : BINDING_INFO{slot + 128, m.Buffer, 0});
-      }
-      for (auto &[slot, sampler] : ShaderStage.Samplers) {
-        assert(sampler);
-        bindings.push_back(BINDING_INFO{slot + 16, sampler->GetSamplerState()});
+      for (unsigned i = 0; i < BindingCount; i++) {
+        auto &arg = reflection.Arguments[i];
+        switch (arg.Type) {
+        case SM50BindingType::ConstantBuffer: {
+          auto &cbuf = ShaderStage.ConstantBuffers[arg.SM50BindingSlot];
+          MTL_BIND_RESOURCE m;
+          assert(cbuf.Buffer);
+          cbuf.Buffer->GetBoundResource(&m);
+          bindings.push_back(BINDING_INFO{GetArgumentIndex(arg), m.Buffer, 0});
+          break;
+        }
+        case SM50BindingType::Sampler: {
+          auto &sampler = ShaderStage.Samplers[arg.SM50BindingSlot];
+          assert(sampler);
+          bindings.push_back(
+              BINDING_INFO{GetArgumentIndex(arg), sampler->GetSamplerState()});
+          break;
+        }
+        case SM50BindingType::SRV: {
+          auto &srv = ShaderStage.SRVs[arg.SM50BindingSlot];
+          MTL_BIND_RESOURCE m;
+          assert(srv);
+          srv->GetBoundResource(&m);
+          bindings.push_back(
+              m.IsTexture ? BINDING_INFO{GetArgumentIndex(arg), m.Texture}
+                          : BINDING_INFO{GetArgumentIndex(arg), m.Buffer, 0});
+          break;
+        }
+        case SM50BindingType::UAV:
+
+        case SM50BindingType::UAV_BufferSize:
+        case SM50BindingType::UAVCounter:
+        case SM50BindingType::SRV_BufferSize:
+        case SM50BindingType::SRV_MinLOD:
+          assert(0 && "TODO");
+          break;
+        }
       }
 
       chk->emit([bindings = std::move(bindings)](CommandChunk::context &ctx) {
@@ -1760,7 +1787,8 @@ public:
 
         if constexpr (stage == ShaderType::Vertex) {
           ctx.render_encoder->setVertexBuffer(heap, offset,
-                                              30 /* kArgumentBufferBinding */);
+                                              30 /* kArgumentBufferBinding
+                                              */);
         } else {
           ctx.render_encoder->setFragmentBuffer(
               heap, offset, 30 /* kArgumentBufferBinding */);
