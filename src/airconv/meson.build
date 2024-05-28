@@ -35,6 +35,14 @@ llvm_ld_flags = [
 
 llvm_include_path = include_directories('../../toolchains/llvm/include') # FIXME: in favor of path relative to project
 
+airconv_forward_dep = declare_dependency(
+  include_directories : [ dxmt_include_path, include_directories('.') ],
+)
+
+build_airconv_for_windows = get_option('build_airconv_for_windows')
+
+if build_airconv_for_windows
+
 airconv_lib = static_library('airconv', airconv_src,
   include_directories : [ dxmt_include_path, llvm_include_path ],
   cpp_args       : llvm_cxx_flags,
@@ -48,10 +56,6 @@ airconv_dep = declare_dependency(
   link_args           : [ llvm_ld_flags, llvm_deps ] # meh
 )
 
-airconv_forward_dep = declare_dependency(
-  include_directories : [ dxmt_include_path, include_directories('.') ],
-)
-
 lib_d3dcompiler = cpp.find_library('d3dcompiler_47')
 
 executable('airconv', airconv_src + airconv_cli_src,
@@ -60,5 +64,7 @@ executable('airconv', airconv_src + airconv_cli_src,
   dependencies        : [ DXBCParser_dep, lib_d3dcompiler ],
   link_args           : [ llvm_ld_flags, llvm_deps ]
 )
+
+endif
 
 subdir('darwin')

@@ -34,6 +34,15 @@ compiler_args = [
   '-fblocks',
 ]
 
+native_compiler_args = [
+  '-Wimplicit-fallthrough',
+  '-Wno-unused-parameter',
+  '-Wno-unused-private-field',
+  '-Wno-unused-const-variable',
+  '-Wno-missing-braces',
+  '-fblocks',
+]
+
 link_args = []
 
 compiler_args += [
@@ -68,7 +77,7 @@ wrc_generator = generator(wrc,
 )
 
 add_project_arguments(cpp.get_supported_arguments(compiler_args), language: 'cpp')
-add_project_arguments(clangpp.get_supported_arguments(compiler_args), language: 'cpp', native: true)
+add_project_arguments(clangpp.get_supported_arguments(native_compiler_args), language: 'cpp', native: true)
 add_project_arguments(cc.get_supported_arguments(compiler_args), language: 'c')
 add_project_link_arguments(cpp.get_supported_link_arguments(link_args), language: 'cpp')
 add_project_link_arguments(cc.get_supported_link_arguments(link_args), language: 'c')

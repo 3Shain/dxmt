@@ -1,1 +1,2 @@
 option('local_native_llvm', type : 'boolean', value : false)
+option('build_airconv_for_windows', type : 'boolean', value : false)
