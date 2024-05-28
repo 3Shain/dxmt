@@ -5,6 +5,7 @@
 #include "Block.h"
 #include "dlfcn.h"
 #include "pthread.h"
+#include "airconv_public.hpp"
 
 typedef struct macdrv_opaque_metal_device *macdrv_metal_device;
 typedef struct macdrv_opaque_metal_view *macdrv_metal_view;
@@ -64,5 +65,10 @@ const void *__wine_unix_call_funcs[] = {
     &siglongjmp,
     &dispatch_get_main_queue,
     &dispatch_data_create,
+    &SM50Initialize,
+    &SM50Destroy,
+    &SM50Compile,
+    &SM50GetCompiledBitcode,
+    &SM50DestroyBitcode,
 };
 // wow64: things become funny

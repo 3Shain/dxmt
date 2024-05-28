@@ -8,6 +8,7 @@ project('dxmt', ['c', 'cpp'], version : 'v0.1', default_options : [
 cpp = meson.get_compiler('cpp')
 cc = meson.get_compiler('c')
 clang = meson.get_compiler('c', native: true)
+clangpp = meson.get_compiler('cpp', native: true)
 
 dxmt_include_dirs = [
   './include',
@@ -67,6 +68,7 @@ wrc_generator = generator(wrc,
 )
 
 add_project_arguments(cpp.get_supported_arguments(compiler_args), language: 'cpp')
+add_project_arguments(clangpp.get_supported_arguments(compiler_args), language: 'cpp', native: true)
 add_project_arguments(cc.get_supported_arguments(compiler_args), language: 'c')
 add_project_link_arguments(cpp.get_supported_link_arguments(link_args), language: 'cpp')
 add_project_link_arguments(cc.get_supported_link_arguments(link_args), language: 'c')

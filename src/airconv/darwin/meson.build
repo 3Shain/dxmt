@@ -40,6 +40,12 @@ airconv_lib_darwin = static_library('airconv', airconv_src,
   native              : true,
 )
 
+airconv_dep_darwin = declare_dependency(
+  link_with           : [ airconv_lib_darwin ],
+  include_directories : [ dxmt_include_path, include_directories('..') ],
+  link_args           : [ llvm_ld_flags_darwin, llvm_deps ] # meh
+)
+
 executable('airconv', airconv_src + airconv_cli_src,
   include_directories : [ dxmt_include_path, llvm_include_path_darwin ],
   cpp_args            : llvm_cxx_flags,

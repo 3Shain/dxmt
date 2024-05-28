@@ -14,7 +14,7 @@ CF_dep = dependency('appleframeworks', modules: ['CoreFoundation','Metal'], nati
 
 winemetal_unix_dll = shared_library('winemetal', winemetal_unix_src,
   name_prefix         : '',
-  dependencies        : [ CF_dep ],
+  dependencies        : [ CF_dep, airconv_dep_darwin ],
   include_directories : dxmt_include_path,
   c_args              : ['-ObjC'],
   link_args           : winemetal_unix_ld_args,

@@ -10,10 +10,10 @@ jobs:
         shell: arch -x86_64 zsh -e {0}
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - name: Cache Toolchains
         id: cache-toolchains
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           key: cache-key-${{ hashFiles('configure.sh') }}
           restore-keys: |

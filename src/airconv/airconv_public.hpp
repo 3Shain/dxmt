@@ -1,7 +1,8 @@
 #pragma once
 
-#include <cstdint>
+#include "stdint.h"
 
+#ifdef __cplusplus
 enum class ShaderType {
   Vertex,
   /* Metal: fragment function */
@@ -29,6 +30,10 @@ enum class SM50BindingType : uint32_t {
   UAV_BufferSize, // argument constant
   UAVCounter,
 };
+#else
+typedef uint32_t ShaderType;
+typedef uint32_t SM50BindingType;
+#endif
 
 struct MTL_SM50_SHADER_ARGUMENT {
   SM50BindingType Type;
@@ -42,7 +47,29 @@ struct MTL_SM50_SHADER_ARGUMENT {
   uint32_t SM50BindingSlot;
 };
 
-inline uint32_t GetArgumentIndex(MTL_SM50_SHADER_ARGUMENT Argument) {
+struct MTL_SHADER_REFLECTION {
+  uint32_t ArgumentBufferBindIndex;
+  uint32_t NumArguments;
+  struct MTL_SM50_SHADER_ARGUMENT *Arguments;
+  union {
+    uint32_t ThreadgroupSize[3];
+  };
+};
+
+struct MTL_SHADER_BITCODE {
+  char *Data;
+  size_t Size;
+  // add additional metadata here
+};
+
+typedef struct __SM50Shader SM50Shader;
+typedef struct __SM50CompiledBitcode SM50CompiledBitcode;
+
+#define AIRCONV_EXPORT __attribute__((sysv_abi))
+
+#ifdef __cplusplus
+
+inline uint32_t GetArgumentIndex(struct MTL_SM50_SHADER_ARGUMENT Argument) {
   switch (Argument.Type) {
   case SM50BindingType::ConstantBuffer:
     return Argument.SM50BindingSlot;
@@ -64,30 +91,19 @@ inline uint32_t GetArgumentIndex(MTL_SM50_SHADER_ARGUMENT Argument) {
   }
 };
 
-struct MTL_SHADER_REFLECTION {
-  uint32_t ArgumentBufferBindIndex;
-  uint32_t NumArguments;
-  MTL_SM50_SHADER_ARGUMENT *Arguments;
-  union {
-    uint32_t ThreadgroupSize[3];
-  };
-};
-
-struct MTL_SHADER_BITCODE {
-  char *Data;
-  size_t Size;
-  // add additional metadata here
-};
-
-typedef struct __SM50Shader SM50Shader;
-typedef struct __SM50CompiledBitcode SM50CompiledBitcode;
-
-SM50Shader *SM50Initialize(
-  const void *pBytecode, size_t BytecodeSize, MTL_SHADER_REFLECTION *pRefl
+extern "C" {
+#endif
+AIRCONV_EXPORT SM50Shader *SM50Initialize(
+  const void *pBytecode, size_t BytecodeSize,
+  struct MTL_SHADER_REFLECTION *pRefl
 );
-void SM50Destroy(SM50Shader *pShader);
-SM50CompiledBitcode *SM50Compile(SM50Shader *pShader, void *pArgs);
-void SM50GetCompiledBitcode(
-  SM50CompiledBitcode *pBitcode, MTL_SHADER_BITCODE *pData
+AIRCONV_EXPORT void SM50Destroy(SM50Shader *pShader);
+AIRCONV_EXPORT SM50CompiledBitcode *
+SM50Compile(SM50Shader *pShader, void *pArgs);
+AIRCONV_EXPORT void SM50GetCompiledBitcode(
+  SM50CompiledBitcode *pBitcode, struct MTL_SHADER_BITCODE *pData
 );
-void SM50DestroyBitcode(SM50CompiledBitcode *pBitcode);
+AIRCONV_EXPORT void SM50DestroyBitcode(SM50CompiledBitcode *pBitcode);
+#ifdef __cplusplus
+}
+#endif

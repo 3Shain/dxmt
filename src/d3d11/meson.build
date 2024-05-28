@@ -28,7 +28,7 @@ d3d11_dll = shared_library('d3d11', d3d11_src, d3d11_res,
   dependencies        : [ 
     dxgi_dep, 
     DXBCParser_dep,
-    airconv_dep,
+    airconv_forward_dep,
     dxmt_dep,
     winemetal_dep,
     util_dep ],

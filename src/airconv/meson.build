@@ -48,6 +48,10 @@ airconv_dep = declare_dependency(
   link_args           : [ llvm_ld_flags, llvm_deps ] # meh
 )
 
+airconv_forward_dep = declare_dependency(
+  include_directories : [ dxmt_include_path, include_directories('.') ],
+)
+
 lib_d3dcompiler = cpp.find_library('d3dcompiler_47')
 
 executable('airconv', airconv_src + airconv_cli_src,
