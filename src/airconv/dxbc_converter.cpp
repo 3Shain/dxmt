@@ -16,6 +16,7 @@
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Value.h"
+#include "llvm/Support/Error.h"
 #include <bit>
 #include <memory>
 #include <string>
@@ -264,13 +265,26 @@ void convertDXBC(
     .resource = resource_map, .types = types
   };
   // then we can start build ... real IR code (visit all basicblocks)
-  prelogue.build(ctx);
+  auto prelogue_result = prelogue.build(ctx);
+  if (auto err = prelogue_result.takeError()) {
+
+    return;
+  }
   auto real_entry =
     convert_basicblocks(pShaderInternal->entry, ctx, epilogue_bb);
-  builder.CreateBr(real_entry);
+  if (auto err = real_entry.takeError()) {
+
+    return;
+  }
+  builder.CreateBr(real_entry.get());
 
   builder.SetInsertPoint(epilogue_bb);
-  auto value = epilogue.build(ctx);
+  auto epilogue_result = epilogue.build(ctx);
+  if (auto err = epilogue_result.takeError()) {
+
+    return;
+  }
+  auto value = epilogue_result.get();
   if (value == nullptr) {
     builder.CreateRetVoid();
   } else {

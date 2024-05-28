@@ -3,6 +3,7 @@
 #include "air_type.hpp"
 #include "dxbc_converter.hpp"
 #include "ftl.hpp"
+#include "monad.hpp"
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/ArrayRef.h"
@@ -17,6 +18,7 @@
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Type.h"
+#include "llvm/Support/Error.h"
 #include <cstdint>
 #include <functional>
 #include <string>
@@ -31,6 +33,7 @@
 namespace dxmt::dxbc {
 
 using pvalue = llvm::Value *;
+using epvalue = llvm::Expected<pvalue>;
 using dxbc::Swizzle;
 using dxbc::swizzle_identity;
 
@@ -88,6 +91,16 @@ struct context {
   llvm::Function *function;
   io_binding_map &resource;
   air::AirType &types; // hmmm
+};
+
+template <typename T = std::monostate>
+ReaderIO<context, T> throwError(llvm::Error &&err) {
+  return ReaderIO<context, T>(
+    [err = std::forward<llvm::Error>(err)](struct context ctx
+    ) mutable -> llvm::Expected<T> {
+      return llvm::Expected<T>(std::forward<llvm::Error>(err));
+    }
+  );
 };
 
 ReaderIO<context, context> get_context() {
@@ -2065,14 +2078,17 @@ auto load_operand_index(OperandIndex idx) {
         );
       },
       [&](IndexByTempComponent ot) {
-        return make_irvalue([=](context ctx) {
+        return make_irvalue([=](context ctx) -> llvm::Expected<pvalue> {
           auto temp =
             load_from_array_at(
               ctx.resource.temp.ptr_int4, ctx.builder.getInt32(ot.regid)
             )
               .build(ctx);
+          if (auto Err = temp.takeError()) {
+            return Err;
+          }
           return ctx.builder.CreateAdd(
-            ctx.builder.CreateExtractElement(temp, ot.component),
+            ctx.builder.CreateExtractElement(temp.get(), ot.component),
             ctx.builder.getInt32(ot.offset)
           );
         });
@@ -2546,7 +2562,7 @@ auto read_uav_buffer_address(AtomicDstOperandUAVBuffer const &op){
 
 };
 
-auto convert_basicblocks(
+llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
   std::shared_ptr<BasicBlock> entry, context &ctx, llvm::BasicBlock *return_bb
 ) {
   auto &context = ctx.llvm;
@@ -2554,10 +2570,9 @@ auto convert_basicblocks(
   auto function = ctx.function;
   auto &types = ctx.types;
   std::unordered_map<BasicBlock *, llvm::BasicBlock *> visited;
-  std::function<void(std::shared_ptr<BasicBlock>)> readBasicBlock =
-    [&](std::shared_ptr<BasicBlock> current) {
-      auto bb =
-        llvm::BasicBlock::Create(context, current->debug_name, function);
+  std::function<llvm::Error(std::shared_ptr<BasicBlock>)> readBasicBlock =
+    [&](std::shared_ptr<BasicBlock> current) -> llvm::Error {
+    auto bb = llvm::BasicBlock::Create(context, current->debug_name, function);
       assert(visited.insert({current.get(), bb}).second);
       IREffect effect([](auto) { return std::monostate(); });
       for (auto &inst : current->instructions) {
@@ -4541,57 +4556,82 @@ auto convert_basicblocks(
       }
       auto bb_pop = builder.GetInsertBlock();
       builder.SetInsertPoint(bb);
-      effect.build(ctx);
-      std::visit(
+      if (auto err = effect.build(ctx).takeError()) {
+        return err;
+      }
+      if (auto err = std::visit(
         patterns{
-          [](BasicBlockUndefined) {
+            [](BasicBlockUndefined) -> llvm::Error {
             assert(0 && "unexpected undefined basicblock");
+              return llvm::Error::success();
           },
-          [&](BasicBlockUnconditionalBranch uncond) {
+            [&](BasicBlockUnconditionalBranch uncond) -> llvm::Error {
             if (visited.count(uncond.target.get()) == 0) {
-              readBasicBlock(uncond.target);
+                if (auto err = readBasicBlock(uncond.target)) {
+                  return err;
+                }
             }
             auto target_bb = visited[uncond.target.get()];
             builder.CreateBr(target_bb);
+              return llvm::Error::success();
           },
-          [&](BasicBlockConditionalBranch cond) {
+            [&](BasicBlockConditionalBranch cond) -> llvm::Error {
             if (visited.count(cond.true_branch.get()) == 0) {
-              readBasicBlock(cond.true_branch);
+                if (auto err = readBasicBlock(cond.true_branch)) {
+                  return err;
+                };
             }
             if (visited.count(cond.false_branch.get()) == 0) {
-              readBasicBlock(cond.false_branch);
+                if (auto err = readBasicBlock(cond.false_branch)) {
+                  return err;
+                };
             }
             auto target_true_bb = visited[cond.true_branch.get()];
             auto target_false_bb = visited[cond.false_branch.get()];
             auto test =
               load_condition(cond.cond.operand, cond.cond.test_nonzero)
                 .build(ctx);
-            builder.CreateCondBr(test, target_true_bb, target_false_bb);
-          },
-          [&](BasicBlockSwitch swc) {
+              if (auto err = test.takeError()) {
+                return err;
+              }
+              builder.CreateCondBr(test.get(), target_true_bb, target_false_bb);
+              return llvm::Error::success();
+            },
+            [&](BasicBlockSwitch swc) -> llvm::Error {
             for (auto &[_, case_bb] : swc.cases) {
               if (visited.count(case_bb.get()) == 0) {
-                readBasicBlock(case_bb);
+                  if (auto err = readBasicBlock(case_bb)) {
+                    return err;
+                  };
               }
             }
             // TODO: ensure default always presented? no...
             if (visited.count(swc.case_default.get()) == 0) {
-              readBasicBlock(swc.case_default);
+                if (auto err = readBasicBlock(swc.case_default)) {
+                  return err;
+                };
             }
             // builder.CreateSwitch()
             assert(0 && "TODO: switch");
+              return llvm::Error::success();
           },
-          [&](BasicBlockReturn ret) {
+            [&](BasicBlockReturn ret) -> llvm::Error {
             // we have done here!
             // unconditional jump to return bb
             builder.CreateBr(return_bb);
+              return llvm::Error::success();
           }
         },
         current->target
-      );
-      builder.SetInsertPoint(bb_pop);
+        )) {
+      return err;
     };
-  readBasicBlock(entry);
+      builder.SetInsertPoint(bb_pop);
+      return llvm::Error::success();
+    };
+  if (auto err = readBasicBlock(entry)) {
+    return err;
+  }
   assert(visited.count(entry.get()) == 1);
   return visited[entry.get()];
 }
