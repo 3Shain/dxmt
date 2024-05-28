@@ -149,7 +149,7 @@ std::string type_overload_suffix(
                : ".u.v" + std::to_string(fixedVecTy->getNumElements()) + "i32";
     }
   }
-  type->dump();
+
   assert(0 && "unexpected or unhandled type");
 };
 

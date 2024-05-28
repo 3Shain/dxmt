@@ -1,7 +1,9 @@
 #include "dxbc_converter.hpp"
+#include "DXBCParser/BlobContainer.h"
 #include "DXBCParser/DXBCUtils.h"
 #include "DXBCParser/ShaderBinary.h"
 #include "DXBCParser/d3d12tokenizedprogramformat.hpp"
+#include "DXBCParser/winerror.h"
 #include "air_signature.hpp"
 #include "air_type.hpp"
 #include "dxbc_constants.hpp"
@@ -309,7 +311,7 @@ SM50Shader *SM50Initialize(
   if (codeBlobIdx == DXBC_BLOB_NOT_FOUND) {
     return nullptr;
   }
-  LPCVOID codeBlob = DXBCParser.GetBlob(codeBlobIdx);
+  const void *codeBlob = DXBCParser.GetBlob(codeBlobIdx);
 
   CShaderToken *ShaderCode = (CShaderToken *)(BYTE *)codeBlob;
   // 1. Collect information about the shader.

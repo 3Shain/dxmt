@@ -2,7 +2,12 @@
 // Licensed under the MIT License.
 
 #include "dxbcutils.h"
+#include "BlobContainer.h"
+#include "winerror.h"
 #include <cassert>
+#include <cstring>
+#include <climits>
+#include <ctype.h>
 
 namespace microsoft {
 
@@ -548,7 +553,7 @@ inline D3D10_SB_REGISTER_COMPONENT_TYPE ConvertToSB(D3D10_REGISTER_COMPONENT_TYP
 
 //---------------------------------------------------------------------------------------------------------------------------------
 // CSignatureParser::ReadSignature()
-HRESULT CSignatureParser::ReadSignature11_1( __in_bcount(BlobSize) const void* pSignature, UINT BlobSize, bool bForceStringReference )
+HRESULT CSignatureParser::ReadSignature11_1(const void* pSignature, UINT BlobSize, bool bForceStringReference )
 {
     if( m_cParameters )
     {
@@ -658,7 +663,7 @@ HRESULT CSignatureParser::ReadSignature11_1( __in_bcount(BlobSize) const void* p
 }
 
 
-HRESULT CSignatureParser::ReadSignature4( __in_bcount(BlobSize) const void* pSignature, UINT BlobSize, bool bForceStringReference )
+HRESULT CSignatureParser::ReadSignature4(const void* pSignature, UINT BlobSize, bool bForceStringReference )
 {
     if( m_cParameters )
     {
@@ -843,7 +848,7 @@ void CSignatureParser5::Cleanup()
 
 //---------------------------------------------------------------------------------------------------------------------------------
 // CSignatureParser::ReadSignature11_1()
-HRESULT CSignatureParser5::ReadSignature11_1( __in_bcount(BlobSize) const void* pSignature, UINT BlobSize, bool bForceStringReference )
+HRESULT CSignatureParser5::ReadSignature11_1(const void* pSignature, UINT BlobSize, bool bForceStringReference )
 {
     Cleanup();
     if( !pSignature || BlobSize < sizeof(D3D10_INTERNALSHADER_SIGNATURE) )
@@ -948,7 +953,7 @@ HRESULT CSignatureParser5::ReadSignature11_1( __in_bcount(BlobSize) const void* 
 
         if (!bForceStringReference)
         {
-            __analysis_assume((char*)pNextDstString + length < (char*)m_pSignatureParameters + (TotalParameterSize + TotalCharSumsSize + TotalStringLength) * sizeof(BYTE));
+            // __analysis_assume((char*)pNextDstString + length < (char*)m_pSignatureParameters + (TotalParameterSize + TotalCharSumsSize + TotalStringLength) * sizeof(BYTE));
             // Calculation of TotalStringLength ensures that we have space in pNextDstString
 #pragma prefast( suppress : __WARNING_POTENTIAL_BUFFER_OVERFLOW_LOOP_DEPENDENT )
             memcpy(pNextDstString, pNextSrcString, length);
@@ -976,7 +981,7 @@ HRESULT CSignatureParser5::ReadSignature11_1( __in_bcount(BlobSize) const void* 
 
 //---------------------------------------------------------------------------------------------------------------------------------
 // CSignatureParser::ReadSignature5()
-HRESULT CSignatureParser5::ReadSignature5( __in_bcount(BlobSize) const void* pSignature, UINT BlobSize, bool bForceStringReference )
+HRESULT CSignatureParser5::ReadSignature5(const void* pSignature, UINT BlobSize, bool bForceStringReference )
 {
     Cleanup();
     if( !pSignature || BlobSize < sizeof(D3D10_INTERNALSHADER_SIGNATURE) )
@@ -1081,7 +1086,7 @@ HRESULT CSignatureParser5::ReadSignature5( __in_bcount(BlobSize) const void* pSi
 
         if (!bForceStringReference)
         {
-            __analysis_assume((char*)pNextDstString + length < (char*)m_pSignatureParameters + (TotalParameterSize + TotalCharSumsSize + TotalStringLength) * sizeof(BYTE));
+            // __analysis_assume((char*)pNextDstString + length < (char*)m_pSignatureParameters + (TotalParameterSize + TotalCharSumsSize + TotalStringLength) * sizeof(BYTE));
             // Calculation of TotalStringLength ensures that we have space in pNextDstString
 #pragma prefast( suppress : __WARNING_POTENTIAL_BUFFER_OVERFLOW_LOOP_DEPENDENT )
             memcpy(pNextDstString, pNextSrcString, length);
@@ -1166,7 +1171,7 @@ HRESULT CSignatureParser::FindParameter( LPCSTR SemanticName, UINT  SemanticInde
     {
         if( (SemanticIndex == m_pSignatureParameters[i].SemanticIndex) &&
             (InputNameCharSum == m_pSemanticNameCharSums[i]) &&
-            (_stricmp(SemanticName,m_pSignatureParameters[i].SemanticName) == 0) )
+            (strcasecmp(SemanticName,m_pSignatureParameters[i].SemanticName) == 0) )
         {
             if(ppFoundParameter) *ppFoundParameter = &m_pSignatureParameters[i];
             return S_OK;
@@ -1186,7 +1191,7 @@ HRESULT CSignatureParser::FindParameterRegister( LPCSTR SemanticName, UINT  Sema
     {
         if( (SemanticIndex == m_pSignatureParameters[i].SemanticIndex) &&
             (InputNameCharSum == m_pSemanticNameCharSums[i]) &&
-            (_stricmp(SemanticName,m_pSignatureParameters[i].SemanticName) == 0) )
+            (strcasecmp(SemanticName,m_pSignatureParameters[i].SemanticName) == 0) )
         {
             if(pFoundParameterRegister) *pFoundParameterRegister = m_pSignatureParameters[i].Register;
             return S_OK;
@@ -1230,7 +1235,7 @@ bool CSignatureParser::CanOutputTo( CSignatureParser* pTargetSignature )
             UINT srcIndex = (i + j) % m_cParameters; // start at the same location in the src as the dest, but loop through all.
             D3D11_SIGNATURE_PARAMETER* pSrcParam = &(m_pSignatureParameters[srcIndex]);
             if( ( m_pSemanticNameCharSums[srcIndex] == pTargetSignature->m_pSemanticNameCharSums[i] ) &&
-                ( _stricmp(pSrcParam->SemanticName, pDstParam->SemanticName) == 0 ) &&
+                ( strcasecmp(pSrcParam->SemanticName, pDstParam->SemanticName) == 0 ) &&
                 ( pSrcParam->SemanticIndex == pDstParam->SemanticIndex ) &&
                 ( pSrcParam->Register == pDstParam->Register ) &&
                 ( pSrcParam->SystemValue == pDstParam->SystemValue ) &&

@@ -1,8 +1,10 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 #pragma once
-#include "BlobContainer.h"
 #include "d3d12tokenizedprogramformat.hpp"
+#include "mind3dcommon.h"
+#include "minwindef.h"
+#include <cstddef>
 
 namespace microsoft {
 

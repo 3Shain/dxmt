@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 #include "dxbcutils.h"
+#include "minwindef.h"
+#include "winerror.h"
 #include "BlobContainer.h"
 
 namespace microsoft {
@@ -178,7 +180,7 @@ UINT CDXBCParser::GetBlobFourCC( UINT BlobIndex )
 
 //---------------------------------------------------------------------------------------------------------------------------------
 // CDXBCParser::RelocateBytecode()
-HRESULT CDXBCParser::RelocateBytecode( UINT_PTR ByteOffset )
+HRESULT CDXBCParser::RelocateBytecode( UINT ByteOffset )
 {
     if (!m_pHeader || !m_pIndex)
     {

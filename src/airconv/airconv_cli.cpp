@@ -1,6 +1,5 @@
 #include "airconv_context.hpp"
 #include "airconv_public.hpp"
-#include "d3dcompiler.h"
 #include "llvm/Bitcode/BitcodeReader.h"
 #include "llvm/Bitcode/BitcodeWriter.h"
 #include "llvm/IR/DiagnosticInfo.h"
@@ -16,6 +15,11 @@
 #include "llvm/Support/ToolOutputFile.h"
 #include "llvm/Support/WithColor.h"
 #include <system_error>
+
+#ifdef __WIN32
+#include "d3dcompiler.h"
+#endif
+
 using namespace llvm;
 
 static cl::opt<std::string>
@@ -145,6 +149,7 @@ int main(int argc, char **argv) {
   auto MemRef = FileOrErr->get()->getMemBufferRef();
 
   if (DisassembleDXBC) {
+#ifdef __WIN32
     std::error_code EC;
     std::unique_ptr<ToolOutputFile> Out(
       new ToolOutputFile(OutputFilename, EC, sys::fs::OF_TextWithCRLF)
@@ -167,6 +172,10 @@ int main(int argc, char **argv) {
 
     blob->Release();
     return 0;
+#else
+    errs() << "Disassemble only supported on Windows" << '\n';
+    return 1;
+#endif
   }
 
   Module M("default", Context);

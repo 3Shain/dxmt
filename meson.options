@@ -1,0 +1,1 @@
+option('local_native_llvm', type : 'boolean', value : false)
