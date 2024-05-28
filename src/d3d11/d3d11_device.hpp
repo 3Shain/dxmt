@@ -34,6 +34,7 @@ struct MTL_GRAPHICS_PIPELINE_DESC {
   MTL::PixelFormat DepthStencilFormat;
 };
 struct IMTLCompiledGraphicsPipeline;
+struct IMTLCompiledComputePipeline;
 
 DEFINE_COM_INTERFACE("a46de9a7-0233-4a94-b75c-9c0f8f364cda", IMTLD3D11Device)
     : public ID3D11Device1 {
@@ -49,9 +50,13 @@ DEFINE_COM_INTERFACE("a46de9a7-0233-4a94-b75c-9c0f8f364cda", IMTLD3D11Device)
                                      THREADGROUP_WORK_STATE * pState) = 0;
   virtual void WaitThreadgroupWork(THREADGROUP_WORK_STATE * pState) = 0;
 
-  virtual HRESULT CreateGraphicsPipeline(MTL_GRAPHICS_PIPELINE_DESC* pDesc,
+  virtual HRESULT CreateGraphicsPipeline(MTL_GRAPHICS_PIPELINE_DESC * pDesc,
                                          IMTLCompiledGraphicsPipeline *
                                              *ppPipeline) = 0;
+
+  virtual HRESULT CreateComputePipeline(IMTLCompiledShader * pComputeShader,
+                                        IMTLCompiledComputePipeline *
+                                            *ppPipeline) = 0;
 };
 
 namespace dxmt {

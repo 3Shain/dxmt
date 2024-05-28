@@ -68,6 +68,9 @@ struct MTL_SHADER_REFLECTION {
   uint32_t ArgumentBufferBindIndex;
   uint32_t NumArguments;
   MTL_SM50_SHADER_ARGUMENT *Arguments;
+  union {
+    uint32_t ThreadgroupSize[3];
+  };
 };
 
 struct MTL_SHADER_BITCODE {

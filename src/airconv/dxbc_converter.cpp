@@ -39,6 +39,7 @@ public:
   uint32_t max_input_register = 0;
   uint32_t max_output_register = 0;
   std::vector<MTL_SM50_SHADER_ARGUMENT> args_reflection;
+  uint32_t threadgroup_size[3] = {0};
 };
 
 class SM50CompiledBitcodeInternal {
@@ -755,6 +756,9 @@ SM50Shader *SM50Initialize(
         break;
       }
       case D3D11_SB_OPCODE_DCL_THREAD_GROUP: {
+        sm50_shader->threadgroup_size[0] = Inst.m_ThreadGroupDecl.x;
+        sm50_shader->threadgroup_size[1] = Inst.m_ThreadGroupDecl.y;
+        sm50_shader->threadgroup_size[2] = Inst.m_ThreadGroupDecl.z;
         break;
       }
       case D3D11_SB_OPCODE_DCL_THREAD_GROUP_SHARED_MEMORY_RAW:
@@ -1247,6 +1251,11 @@ SM50Shader *SM50Initialize(
       sm50_shader->args_reflection.size() > 0 ? 30 : ~0u;
     pRefl->NumArguments = sm50_shader->args_reflection.size();
     pRefl->Arguments = sm50_shader->args_reflection.data();
+    if (sm50_shader->shader_type == microsoft::D3D11_SB_COMPUTE_SHADER) {
+      pRefl->ThreadgroupSize[0] = sm50_shader->threadgroup_size[0];
+      pRefl->ThreadgroupSize[1] = sm50_shader->threadgroup_size[1];
+      pRefl->ThreadgroupSize[2] = sm50_shader->threadgroup_size[2];
+    }
   }
 
   return (SM50Shader *)sm50_shader;

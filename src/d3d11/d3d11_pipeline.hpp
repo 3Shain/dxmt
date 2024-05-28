@@ -15,6 +15,11 @@ struct MTL_COMPILED_GRAPHICS_PIPELINE {
   MTL::ArgumentEncoder *PSArgumentEncoder;
 };
 
+struct MTL_COMPILED_COMPUTE_PIPELINE {
+  MTL::ComputePipelineState *PipelineState;
+  MTL::ArgumentEncoder *CSArgumentEncoder;
+};
+
 DEFINE_COM_INTERFACE("7ee15804-8604-41fc-ad0c-4ecf97e2e6fe",
                      IMTLCompiledGraphicsPipeline)
     : public IMTLThreadpoolWork {
@@ -26,6 +31,14 @@ DEFINE_COM_INTERFACE("7ee15804-8604-41fc-ad0c-4ecf97e2e6fe",
                            pGraphicsPipeline) = 0;
 };
 
+DEFINE_COM_INTERFACE("3b26b8d3-56ca-4d0f-9f63-ca8d305ff07e",
+                     IMTLCompiledComputePipeline)
+    : public IMTLThreadpoolWork {
+  virtual bool IsReady() = 0;
+  virtual void GetPipeline(MTL_COMPILED_COMPUTE_PIPELINE *
+                           pComputePipeline) = 0;
+};
+
 namespace dxmt {
 
 Com<IMTLCompiledGraphicsPipeline> CreateGraphicsPipeline(
@@ -34,4 +47,8 @@ Com<IMTLCompiledGraphicsPipeline> CreateGraphicsPipeline(
     IMTLD3D11BlendState *pBlendState, UINT NumRTVs,
     MTL::PixelFormat const *RTVFormats, MTL::PixelFormat DepthStencilFormat);
 
-};
+Com<IMTLCompiledComputePipeline>
+CreateComputePipeline(IMTLD3D11Device *pDevice,
+                      IMTLCompiledShader *pComputeShader);
+
+}; // namespace dxmt

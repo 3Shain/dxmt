@@ -35,7 +35,7 @@ jobs:
       - name: Tar
         run: tar -zcf artifacts.tar.gz build/src
       - name: Upload
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: artifacts
           path: artifacts.tar.gz

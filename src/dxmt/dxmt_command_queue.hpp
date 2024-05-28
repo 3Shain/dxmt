@@ -10,6 +10,7 @@
 #include "Metal/MTLResource.hpp"
 #include "Metal/MTLDevice.hpp"
 #include "Metal/MTLCaptureManager.hpp"
+#include "Metal/MTLTypes.hpp"
 #include "log/log.hpp"
 #include "objc_pointer.hpp"
 // #include "thread.hpp"
@@ -112,7 +113,8 @@ class CommandChunk {
     Obj<MTL::ArgumentEncoder> vs_binding_encoder;
     Obj<MTL::ArgumentEncoder> ps_binding_encoder;
     Obj<MTL::ComputeCommandEncoder> compute_encoder;
-    Obj<MTL::ArgumentEncoder> consts_binding_encoder;
+    Obj<MTL::ArgumentEncoder> cs_binding_encoder;
+    MTL::Size cs_threadgroup_size;
     Obj<MTL::BlitCommandEncoder> blit_encoder;
 
   private:

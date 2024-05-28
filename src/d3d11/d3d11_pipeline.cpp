@@ -1,3 +1,5 @@
+#include "Metal/MTLComputePipeline.hpp"
+#include "Metal/MTLDevice.hpp"
 #include "dxmt_names.hpp"
 #include "d3d11_pipeline.hpp"
 #include "Metal/MTLArgumentEncoder.hpp"
@@ -139,6 +141,84 @@ Com<IMTLCompiledGraphicsPipeline> CreateGraphicsPipeline(
   return new MTLCompiledGraphicsPipeline(pDevice, pVertexShader, pPixelShader,
                                          pInputLayout, pBlendState, NumRTVs,
                                          RTVFormats, DepthStencilFormat);
+}
+
+class MTLCompiledComputePipeline
+    : public ComObject<IMTLCompiledComputePipeline> {
+public:
+  MTLCompiledComputePipeline(IMTLD3D11Device *pDevice,
+                             IMTLCompiledShader *pComputeShader)
+      : ComObject<IMTLCompiledComputePipeline>(), device_(pDevice),
+        pComputeShader(pComputeShader) {
+    device_->SubmitThreadgroupWork(this, &work_state_);
+  }
+
+  HRESULT QueryInterface(REFIID riid, void **ppvObject) {
+    if (ppvObject == nullptr)
+      return E_POINTER;
+
+    *ppvObject = nullptr;
+
+    if (riid == __uuidof(IUnknown) || riid == __uuidof(IMTLThreadpoolWork) ||
+        riid == __uuidof(IMTLCompiledComputePipeline)) {
+      *ppvObject = ref(this);
+      return S_OK;
+    }
+
+    return E_NOINTERFACE;
+  }
+
+  bool IsReady() final { return ready_.load(std::memory_order_relaxed); }
+
+  void GetPipeline(MTL_COMPILED_COMPUTE_PIPELINE *pPipeline) final {
+    ready_.wait(false, std::memory_order_acquire);
+    *pPipeline = {state_.ptr(), cs_encoder_.ptr()};
+  }
+
+  void RunThreadpoolWork() {
+    assert(!ready_ && "?wtf"); // TODO: should use a lock?
+
+    TRACE("Start compiling 1 PSO");
+
+    Obj<NS::Error> err;
+    MTL_COMPILED_SHADER cs;
+    pComputeShader->GetShader(&cs); // may block
+    if (cs.Reflection->ArgumentBufferBindIndex != ~0u) {
+      cs_encoder_ = transfer(cs.Function->newArgumentEncoder(
+          cs.Reflection->ArgumentBufferBindIndex));
+    }
+
+    auto pipelineDescriptor =
+        transfer(MTL::ComputePipelineDescriptor::alloc()->init());
+    pipelineDescriptor->setComputeFunction(cs.Function);
+
+    state_ = transfer(
+        device_->GetMTLDevice()->newComputePipelineState(cs.Function, &err));
+
+    if (state_ == nullptr) {
+      ERR("Failed to create PSO: ", err->localizedDescription()->utf8String());
+      return; // ready_?
+    }
+
+    TRACE("Compiled 1 PSO");
+
+    ready_.store(true);
+    ready_.notify_all();
+  }
+
+private:
+  IMTLD3D11Device *device_;
+  std::atomic_bool ready_;
+  THREADGROUP_WORK_STATE work_state_;
+  Com<IMTLCompiledShader> pComputeShader;
+  Obj<MTL::ComputePipelineState> state_;
+  Obj<MTL::ArgumentEncoder> cs_encoder_;
+};
+
+Com<IMTLCompiledComputePipeline>
+CreateComputePipeline(IMTLD3D11Device *pDevice,
+                      IMTLCompiledShader *pComputeShader) {
+  return new MTLCompiledComputePipeline(pDevice, pComputeShader);
 }
 
 } // namespace dxmt

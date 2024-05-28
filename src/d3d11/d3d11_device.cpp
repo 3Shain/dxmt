@@ -70,7 +70,7 @@ class MTLDXGIMetalLayerFactory
 public:
   friend class MTLD3D11DeviceContext;
   MTLDXGIMetalLayerFactory(MTLD3D11DXGIDevice *container)
-      : ComAggregatedObject(container){};
+      : ComAggregatedObject(container) {};
   HRESULT GetMetalLayerFromHwnd(HWND hWnd, CA::MetalLayer **ppMetalLayer,
                                 void **ppNativeView) final;
   HRESULT ReleaseMetalLayer(HWND hWnd, void *pNativeView) final;
@@ -295,6 +295,21 @@ public:
     return S_OK;
   };
 
+  HRESULT CreateComputePipeline(IMTLCompiledShader *pShader,
+                                IMTLCompiledComputePipeline **ppPipeline) {
+    std::lock_guard<dxmt::mutex> lock(mutex_cs_);
+
+    auto iter = pipelines_cs_.find(pShader);
+    if (iter != pipelines_cs_.end()) {
+      *ppPipeline = iter->second.ref();
+      return S_OK;
+    }
+    auto temp = dxmt::CreateComputePipeline(this, pShader);
+    assert(pipelines_cs_.insert({pShader, temp}).second); // copy
+    *ppPipeline = std::move(temp);                        // move
+    return S_OK;
+  };
+
 private:
   MTLD3D11DXGIDevice *m_container;
   D3D_FEATURE_LEVEL m_FeatureLevel;
@@ -307,6 +322,10 @@ private:
                      Com<IMTLCompiledGraphicsPipeline>>
       pipelines_;
   dxmt::mutex mutex_;
+
+  std::unordered_map<IMTLCompiledShader *, Com<IMTLCompiledComputePipeline>>
+      pipelines_cs_;
+  dxmt::mutex mutex_cs_;
 };
 
 /**
@@ -827,7 +846,7 @@ HRESULT STDMETHODCALLTYPE MTLD3D11Device::CreateQuery(
     *ppQuery = ref(new MTLD3D11TimeStampDisjointQuery(this, *pQueryDesc));
     return S_OK;
   case D3D11_QUERY_OCCLUSION:
-  // TODO: implement occulusion query
+    // TODO: implement occulusion query
     return E_NOTIMPL;
   default:
     return E_NOTIMPL;

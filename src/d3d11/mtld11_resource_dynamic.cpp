@@ -1,7 +1,9 @@
 
+#include "Metal/MTLPixelFormat.hpp"
 #include "com/com_object.hpp"
 #include "com/com_pointer.hpp"
 #include "d3d11_device.hpp"
+#include "dxgi_interfaces.h"
 #include "mtld11_resource.hpp"
 #include "Metal/MTLBuffer.hpp"
 #include "Metal/MTLTexture.hpp"
@@ -27,7 +29,7 @@ private:
 
   public:
     DynamicBinding(DynamicBuffer *parent, std::function<void()> &&observer)
-        : ComObject(), parent(parent), observer(observer) {}
+        : ComObject(), parent(parent), observer(std::move(observer)) {}
 
     ~DynamicBinding() { parent->RemoveObserver(this); }
 
@@ -138,7 +140,7 @@ private:
   public:
     DynamicTextureBindable(DynamicTexture2D *parent,
                            std::function<void()> &&observer)
-        : ComObject(), parent(parent), observer(observer) {}
+        : ComObject(), parent(parent), observer(std::move(observer)) {}
 
     ~DynamicTextureBindable() { parent->RemoveObserver(this); }
 
@@ -174,15 +176,16 @@ private:
 public:
   DynamicTexture2D(const tag_texture_2d::DESC_S *desc,
                    const D3D11_SUBRESOURCE_DATA *pInitialData,
-                   IMTLD3D11Device *device)
+                   IMTLD3D11Device *device,
+                   UINT bytesPerRow)
       : TResourceBase<tag_texture_2d, IMTLDynamicBuffer>(desc, device) {
-    auto metal = device->GetMTLDevice();
     //
     // buffer = transfer(metal->newBuffer(desc->ByteWidth, 0));
     // if (pInitialData) {
     //   memcpy(buffer->contents(), pInitialData->pSysMem, desc->ByteWidth);
     //   buffer->didModifyRange({0, desc->ByteWidth});
     // }
+    bytes_per_row = bytesPerRow;
   }
 
   MTL::Buffer *GetCurrentBuffer(UINT *pBytesPerRow) {
@@ -232,7 +235,20 @@ Com<ID3D11Texture2D>
 CreateDynamicTexture2D(IMTLD3D11Device *pDevice,
                        const D3D11_TEXTURE2D_DESC *pDesc,
                        const D3D11_SUBRESOURCE_DATA *pInitialData) {
-  return new DynamicTexture2D(pDesc, pInitialData, pDevice);
+  Com<IMTLDXGIAdatper> adapter;
+  auto metal = pDevice->GetMTLDevice();
+  pDevice->GetAdapter(&adapter);
+  MTL_FORMAT_DESC format;
+  adapter->QueryFormatDesc(pDesc->Format, &format);
+  if(format.IsCompressed) {
+    throw 0;
+  }
+  if(format.PixelFormat == MTL::PixelFormatInvalid) {
+    throw 0;
+  }
+  assert(format.Stride > 0);
+  auto minimumAlignment = metal->minimumLinearTextureAlignmentForPixelFormat(format.PixelFormat);
+  return new DynamicTexture2D(pDesc, pInitialData, pDevice, format.Stride);
 }
 
 } // namespace dxmt

@@ -6,6 +6,7 @@
 #include "Metal/MTLSampler.hpp"
 #include "Metal/MTLStageInputOutputDescriptor.hpp"
 #include "Metal/MTLTexture.hpp"
+#include "Metal/MTLTypes.hpp"
 #include "airconv_public.hpp"
 #include "com/com_guid.hpp"
 #include "com/com_pointer.hpp"
@@ -504,12 +505,27 @@ public:
 
   void Dispatch(UINT ThreadGroupCountX, UINT ThreadGroupCountY,
                 UINT ThreadGroupCountZ) {
-    IMPLEMENT_ME
+    if (!PreDispatch())
+      return;
+    EmitComputeCommand([ThreadGroupCountX, ThreadGroupCountY,
+                        ThreadGroupCountZ](MTL::ComputeCommandEncoder *encoder,
+                                           MTL::Size &tg_size) {
+      encoder->dispatchThreadgroups(MTL::Size::Make(ThreadGroupCountX,
+                                                    ThreadGroupCountY,
+                                                    ThreadGroupCountZ),
+                                    tg_size);
+    });
   }
 
   void DispatchIndirect(ID3D11Buffer *pBufferForArgs,
                         UINT AlignedByteOffsetForArgs) {
-    IMPLEMENT_ME
+    if (!PreDispatch())
+      return;
+    EmitComputeCommand([AlignedByteOffsetForArgs](
+                           MTL::ComputeCommandEncoder *encoder,
+                           MTL::Size &tg_size) {
+      encoder->dispatchThreadgroups(nullptr, AlignedByteOffsetForArgs, tg_size);
+    });
   }
 #pragma endregion
 
@@ -1682,19 +1698,49 @@ public:
   Assume we have all things needed to build PSO
   If the current encoder is not a compute encoder, switch to it.
   */
-  void FinalizeCurrentComputePipeline() {
+  bool FinalizeCurrentComputePipeline() {
     if (cmdbuf_state == CommandBufferState::ComputePipelineReady)
-      return;
+      return true;
+
     SwitchToComputeEncoder();
 
-    // TODO
+    Com<IMTLCompiledShader> shader;
+    state_.ShaderStages[(UINT)ShaderType::Compute]
+        .Shader //
+        ->GetCompiledShader(NULL, &shader);
+    if (!shader) {
+      return false;
+    }
+    MTL_COMPILED_SHADER shader_data;
+    shader->GetShader(&shader_data);
+    Com<IMTLCompiledComputePipeline> pipeline;
+    m_parent->CreateComputePipeline(shader.ptr(), &pipeline);
+
+    CommandChunk *chk = cmd_queue.CurrentChunk();
+    chk->emit(
+        [pso = std::move(pipeline),
+         tg_size = MTL::Size::Make(shader_data.Reflection->ThreadgroupSize[0],
+                                   shader_data.Reflection->ThreadgroupSize[1],
+                                   shader_data.Reflection->ThreadgroupSize[2])](
+            CommandChunk::context &ctx) {
+          MTL_COMPILED_COMPUTE_PIPELINE ComputePipeline;
+          pso->GetPipeline(&ComputePipeline); // may block
+          ctx.compute_encoder->setComputePipelineState(
+              ComputePipeline.PipelineState);
+          ctx.cs_binding_encoder = ComputePipeline.CSArgumentEncoder;
+          ctx.cs_threadgroup_size = tg_size;
+        });
 
     cmdbuf_state = CommandBufferState::ComputePipelineReady;
+    return true;
   }
 
-  void PreDispatch() {
-    FinalizeCurrentComputePipeline();
+  bool PreDispatch() {
+    if (!FinalizeCurrentComputePipeline()) {
+      return false;
+    }
     UploadShaderStageResourceBinding<ShaderType::Compute>();
+    return true;
   }
 
   template <ShaderType stage, bool Force = false>
@@ -1741,8 +1787,16 @@ public:
                           : BINDING_INFO{GetArgumentIndex(arg), m.Buffer, 0});
           break;
         }
-        case SM50BindingType::UAV:
-
+        case SM50BindingType::UAV: {
+          if constexpr (stage == ShaderType::Compute) {
+            auto &uav = state_.ComputeStageUAV.UAVs[arg.SM50BindingSlot];
+            // uav.View.get
+          } else {
+            auto &uav = state_.OutputMerger.UAVs[arg.SM50BindingSlot];
+          }
+          assert(0 && "TODO");
+          break;
+        }
         case SM50BindingType::UAV_BufferSize:
         case SM50BindingType::UAVCounter:
         case SM50BindingType::SRV_BufferSize:
@@ -1752,53 +1806,84 @@ public:
         }
       }
 
-      chk->emit([bindings = std::move(bindings)](CommandChunk::context &ctx) {
-        // FIXME: compute shader?
-        auto encoder = stage == ShaderType::Vertex ? ctx.vs_binding_encoder
-                                                   : ctx.ps_binding_encoder;
-        auto sstage = stage == ShaderType::Vertex ? MTL::RenderStageVertex
-                                                  : MTL::RenderStageFragment;
-        if (!encoder)
-          return;
+      if constexpr (stage == ShaderType::Compute) {
 
-        auto [heap, offset] = ctx.chk->allocate_gpu_heap(
-            encoder->encodedLength(), encoder->alignment());
-        encoder->setArgumentBuffer(heap, offset);
+        chk->emit([bindings = std::move(bindings)](CommandChunk::context &ctx) {
+          auto encoder = ctx.cs_binding_encoder;
+          if (!encoder)
+            return;
 
-        for (auto &binding : bindings) {
-          switch (binding.Type) {
-          case BINDING_TYPE::Buffer:
-            encoder->setBuffer(binding.Buffer.Ptr, binding.Buffer.Offset,
-                               binding.ArgumentIndex);
-            ctx.render_encoder->useResource(binding.Buffer.Ptr,
-                                            MTL::ResourceUsageRead, sstage);
-            break;
-          case BINDING_TYPE::Texture:
-            encoder->setTexture(binding.Texture.Ptr, binding.ArgumentIndex);
-            ctx.render_encoder->useResource(binding.Texture.Ptr,
-                                            MTL::ResourceUsageRead, sstage);
-            break;
-          case BINDING_TYPE::Sampler:
-            encoder->setSamplerState(binding.Sampler.Ptr,
-                                     binding.ArgumentIndex);
-            break;
+          auto [heap, offset] = ctx.chk->allocate_gpu_heap(
+              encoder->encodedLength(), encoder->alignment());
+          encoder->setArgumentBuffer(heap, offset);
+
+          for (auto &binding : bindings) {
+            switch (binding.Type) {
+            case BINDING_TYPE::Buffer:
+              encoder->setBuffer(binding.Buffer.Ptr, binding.Buffer.Offset,
+                                 binding.ArgumentIndex);
+              ctx.compute_encoder->useResource(binding.Buffer.Ptr,
+                                               MTL::ResourceUsageRead);
+              break;
+            case BINDING_TYPE::Texture:
+              encoder->setTexture(binding.Texture.Ptr, binding.ArgumentIndex);
+              ctx.compute_encoder->useResource(binding.Texture.Ptr,
+                                               MTL::ResourceUsageRead);
+              break;
+            case BINDING_TYPE::Sampler:
+              encoder->setSamplerState(binding.Sampler.Ptr,
+                                       binding.ArgumentIndex);
+              break;
+            }
           }
-        }
 
-        if constexpr (stage == ShaderType::Vertex) {
-          ctx.render_encoder->setVertexBuffer(heap, offset,
+          ctx.compute_encoder->setBuffer(heap, offset,
                                               30 /* kArgumentBufferBinding
                                               */);
-        } else {
-          ctx.render_encoder->setFragmentBuffer(
-              heap, offset, 30 /* kArgumentBufferBinding */);
-        }
-      });
-      // TRACE("should encode element: ", BindingCount);
-    }
-    if (stage == ShaderType::Compute) {
-      /* naive implementation... */
-    } else {
+        });
+      } else {
+        chk->emit([bindings = std::move(bindings)](CommandChunk::context &ctx) {
+          auto encoder = stage == ShaderType::Vertex ? ctx.vs_binding_encoder
+                                                     : ctx.ps_binding_encoder;
+          auto sstage = stage == ShaderType::Vertex ? MTL::RenderStageVertex
+                                                    : MTL::RenderStageFragment;
+          if (!encoder)
+            return;
+
+          auto [heap, offset] = ctx.chk->allocate_gpu_heap(
+              encoder->encodedLength(), encoder->alignment());
+          encoder->setArgumentBuffer(heap, offset);
+
+          for (auto &binding : bindings) {
+            switch (binding.Type) {
+            case BINDING_TYPE::Buffer:
+              encoder->setBuffer(binding.Buffer.Ptr, binding.Buffer.Offset,
+                                 binding.ArgumentIndex);
+              ctx.render_encoder->useResource(binding.Buffer.Ptr,
+                                              MTL::ResourceUsageRead, sstage);
+              break;
+            case BINDING_TYPE::Texture:
+              encoder->setTexture(binding.Texture.Ptr, binding.ArgumentIndex);
+              ctx.render_encoder->useResource(binding.Texture.Ptr,
+                                              MTL::ResourceUsageRead, sstage);
+              break;
+            case BINDING_TYPE::Sampler:
+              encoder->setSamplerState(binding.Sampler.Ptr,
+                                       binding.ArgumentIndex);
+              break;
+            }
+          }
+
+          if constexpr (stage == ShaderType::Vertex) {
+            ctx.render_encoder->setVertexBuffer(heap, offset,
+                                              30 /* kArgumentBufferBinding
+                                              */);
+          } else {
+            ctx.render_encoder->setFragmentBuffer(
+                heap, offset, 30 /* kArgumentBufferBinding */);
+          }
+        });
+      }
     }
     binding_ready.set(stage);
   }
@@ -1822,7 +1907,10 @@ public:
     }
     if (cmdbuf_state == CommandBufferState::ComputeEncoderActive ||
         cmdbuf_state == CommandBufferState::ComputePipelineReady) {
-      // insert
+      CommandChunk *chk = cmd_queue.CurrentChunk();
+      chk->emit([fn = std::forward<Fn>(fn)](CommandChunk::context &ctx) {
+        fn(ctx.compute_encoder.ptr(), ctx.cs_threadgroup_size);
+      });
     }
   };
 
@@ -1831,7 +1919,10 @@ public:
       SwitchToBlitEncoder();
     }
     if (cmdbuf_state == CommandBufferState::BlitEncoderActive) {
-      // insert
+      CommandChunk *chk = cmd_queue.CurrentChunk();
+      chk->emit([fn = std::forward<Fn>(fn)](CommandChunk::context &ctx) {
+        fn(ctx.blit_encoder.ptr());
+      });
     }
   };
 
