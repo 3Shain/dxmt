@@ -9,7 +9,8 @@ namespace dxmt::dxbc {
 class Signature {
 
 public:
-  Signature(const microsoft::D3D11_SIGNATURE_PARAMETER &parameter) : parameter(parameter) {}
+  Signature(const microsoft::D3D11_SIGNATURE_PARAMETER &parameter)
+      : parameter(parameter) {}
 
   std::string_view semanticName() { return parameter.SemanticName; }
 
@@ -38,6 +39,7 @@ private:
   const microsoft::D3D11_SIGNATURE_PARAMETER &parameter;
 };
 
-static_assert(sizeof(Signature) == sizeof(void *),
-              "ensure inline implementation");
+static_assert(
+  sizeof(Signature) == sizeof(void *), "ensure inline implementation"
+);
 } // namespace dxmt::dxbc

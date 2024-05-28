@@ -63,7 +63,7 @@ public:
     auto ret = factory->invoke(ir);
     delete factory;
     factory = nullptr;
-    return std::move(ret);
+    return ret;
   };
 
   struct promise_type {
@@ -76,7 +76,10 @@ public:
         auto h = std::coroutine_handle<promise_type>::from_promise(*this);
         h.resume();
         assert(return_value_ && "no returnvalue");
-        assert((h.done() == bool(*return_value_)) && "unexpected suspension of coroutine");
+        assert(
+          (h.done() == bool(*return_value_)) &&
+          "unexpected suspension of coroutine"
+        );
         auto r = std::move(*return_value_);
         delete return_value_;
         return_value_ = nullptr;
@@ -93,8 +96,7 @@ public:
       llvm::Expected<ResumeVal> val;
       bool await_ready() noexcept { return bool(val); }
       void await_suspend(const std::coroutine_handle<promise_type> &h) {
-        h.promise().return_value_ =
-          new llvm::Expected<V>(val.takeError());
+        h.promise().return_value_ = new llvm::Expected<V>(val.takeError());
       }
       constexpr ResumeVal await_resume() const noexcept {
         return val.get(); // this function will be not called again?

@@ -154,8 +154,8 @@ auto readOperandIndex(
   }
 };
 
-auto readDstOperand(const microsoft::D3D10ShaderBinary::COperandBase &O)
-  -> DstOperand {
+auto readDstOperand(const microsoft::D3D10ShaderBinary::COperandBase &O
+) -> DstOperand {
   using namespace microsoft;
   switch (O.m_Type) {
   case D3D10_SB_OPERAND_TYPE_TEMP: {
@@ -234,8 +234,8 @@ auto readDstOperand(const microsoft::D3D10ShaderBinary::COperandBase &O)
   }
 }
 
-auto readSrcOperandSwizzle(const microsoft::D3D10ShaderBinary::COperandBase &O)
-  -> Swizzle {
+auto readSrcOperandSwizzle(const microsoft::D3D10ShaderBinary::COperandBase &O
+) -> Swizzle {
   using namespace microsoft;
   switch (O.m_ComponentSelection) {
   case D3D10_SB_OPERAND_4_COMPONENT_SWIZZLE_MODE:
@@ -261,8 +261,8 @@ auto readSrcOperandSwizzle(const microsoft::D3D10ShaderBinary::COperandBase &O)
   }
 }
 
-auto readSrcOperandCommon(const microsoft::D3D10ShaderBinary::COperandBase &O)
-  -> SrcOperandModifier {
+auto readSrcOperandCommon(const microsoft::D3D10ShaderBinary::COperandBase &O
+) -> SrcOperandModifier {
   return SrcOperandModifier{
     .swizzle = readSrcOperandSwizzle(O),
     .abs = (O.m_Modifier & microsoft::D3D10_SB_OPERAND_MODIFIER_ABS) != 0,
@@ -270,8 +270,8 @@ auto readSrcOperandCommon(const microsoft::D3D10ShaderBinary::COperandBase &O)
   };
 }
 
-auto readSrcOperand(const microsoft::D3D10ShaderBinary::COperandBase &O)
-  -> SrcOperand {
+auto readSrcOperand(const microsoft::D3D10ShaderBinary::COperandBase &O
+) -> SrcOperand {
   using namespace microsoft;
   switch (O.m_Type) {
   case D3D10_SB_OPERAND_TYPE_IMMEDIATE32: {
@@ -381,8 +381,8 @@ auto readSrcOperand(const microsoft::D3D10ShaderBinary::COperandBase &O)
   }
 };
 
-auto readSrcOperandResource(const microsoft::D3D10ShaderBinary::COperandBase &O)
-  -> SrcOperandResource {
+auto readSrcOperandResource(const microsoft::D3D10ShaderBinary::COperandBase &O
+) -> SrcOperandResource {
   using namespace microsoft;
   assert(O.m_Type == D3D10_SB_OPERAND_TYPE_RESOURCE);
   if (O.m_IndexType[0] == D3D10_SB_OPERAND_INDEX_IMMEDIATE32) {
@@ -404,8 +404,8 @@ auto readSrcOperandResource(const microsoft::D3D10ShaderBinary::COperandBase &O)
   }
 }
 
-auto readSrcOperandSampler(const microsoft::D3D10ShaderBinary::COperandBase &O)
-  -> SrcOperandSampler {
+auto readSrcOperandSampler(const microsoft::D3D10ShaderBinary::COperandBase &O
+) -> SrcOperandSampler {
   if (O.m_IndexDimension == microsoft::D3D10_SB_OPERAND_INDEX_1D) {
     DXASSERT_DXBC(
       O.m_IndexType[0] == microsoft::D3D10_SB_OPERAND_INDEX_IMMEDIATE32
@@ -424,8 +424,8 @@ auto readSrcOperandSampler(const microsoft::D3D10ShaderBinary::COperandBase &O)
   }
 }
 
-auto readSrcOperandUAV(const microsoft::D3D10ShaderBinary::COperandBase &O)
-  -> SrcOperandUAV {
+auto readSrcOperandUAV(const microsoft::D3D10ShaderBinary::COperandBase &O
+) -> SrcOperandUAV {
   if (O.m_IndexDimension == microsoft::D3D10_SB_OPERAND_INDEX_1D) {
     DXASSERT_DXBC(
       O.m_IndexType[0] == microsoft::D3D10_SB_OPERAND_INDEX_IMMEDIATE32
@@ -444,8 +444,8 @@ auto readSrcOperandUAV(const microsoft::D3D10ShaderBinary::COperandBase &O)
   }
 }
 
-auto readSrcOperandTGSM(const microsoft::D3D10ShaderBinary::COperandBase &O)
-  -> SrcOperandTGSM {
+auto readSrcOperandTGSM(const microsoft::D3D10ShaderBinary::COperandBase &O
+) -> SrcOperandTGSM {
   assert(
     O.m_Type == microsoft::D3D11_SB_OPERAND_TYPE_THREAD_GROUP_SHARED_MEMORY
   );
@@ -454,8 +454,8 @@ auto readSrcOperandTGSM(const microsoft::D3D10ShaderBinary::COperandBase &O)
   };
 }
 
-auto readDstOperandUAV(const microsoft::D3D10ShaderBinary::COperandBase &O)
-  -> AtomicDstOperandUAV {
+auto readDstOperandUAV(const microsoft::D3D10ShaderBinary::COperandBase &O
+) -> AtomicDstOperandUAV {
   if (O.m_IndexDimension == microsoft::D3D10_SB_OPERAND_INDEX_1D) {
     DXASSERT_DXBC(
       O.m_IndexType[0] == microsoft::D3D10_SB_OPERAND_INDEX_IMMEDIATE32
@@ -478,7 +478,8 @@ std::variant<AtomicDstOperandUAV, AtomicOperandTGSM>
 readAtomicDst(const microsoft::D3D10ShaderBinary::COperandBase &O) {
   if (O.m_Type == microsoft::D3D11_SB_OPERAND_TYPE_UNORDERED_ACCESS_VIEW) {
     return readDstOperandUAV(O);
-  } else if (O.m_Type == microsoft::D3D11_SB_OPERAND_TYPE_THREAD_GROUP_SHARED_MEMORY) {
+  } else if (O.m_Type ==
+             microsoft::D3D11_SB_OPERAND_TYPE_THREAD_GROUP_SHARED_MEMORY) {
     return AtomicOperandTGSM{
       .id = O.m_Index[0].m_RegIndex, .mask = O.m_WriteMask >> 4
     };
@@ -492,7 +493,8 @@ readTypelessSrc(const microsoft::D3D10ShaderBinary::COperandBase &O) {
     return readSrcOperandUAV(O);
   } else if (O.m_Type == microsoft::D3D10_SB_OPERAND_TYPE_RESOURCE) {
     return readSrcOperandResource(O);
-  } else if (O.m_Type == microsoft::D3D11_SB_OPERAND_TYPE_THREAD_GROUP_SHARED_MEMORY) {
+  } else if (O.m_Type ==
+             microsoft::D3D11_SB_OPERAND_TYPE_THREAD_GROUP_SHARED_MEMORY) {
     return readSrcOperandTGSM(O);
   }
   assert(0 && "unexpected typeless load/store operation destination");
@@ -666,7 +668,8 @@ auto readInstruction(
   case microsoft::D3D10_1_SB_OPCODE_SAMPLE_INFO: {
     bool return_uint =
       Inst.m_InstructionReturnType == D3D10_SB_INSTRUCTION_RETURN_UINT;
-    if (Inst.m_Operands[1].m_Type == microsoft::D3D10_SB_OPERAND_TYPE_RASTERIZER) {
+    if (Inst.m_Operands[1].m_Type ==
+        microsoft::D3D10_SB_OPERAND_TYPE_RASTERIZER) {
       return InstSampleInfo{
         .dst = readDstOperand(Inst.m_Operands[0]), .uint_result = return_uint
       };
@@ -679,7 +682,8 @@ auto readInstruction(
     };
   };
   case microsoft::D3D10_1_SB_OPCODE_SAMPLE_POS: {
-    if (Inst.m_Operands[1].m_Type == microsoft::D3D10_SB_OPERAND_TYPE_RASTERIZER) {
+    if (Inst.m_Operands[1].m_Type ==
+        microsoft::D3D10_SB_OPERAND_TYPE_RASTERIZER) {
       return InstSamplePos{
         .dst = readDstOperand(Inst.m_Operands[0]),
         .src_sample_index = readSrcOperand(Inst.m_Operands[2])
@@ -1448,7 +1452,7 @@ auto readInstruction(
       .dst = readAtomicDst(Inst.m_Operands[0]),
       .dst_address = readSrcOperand(Inst.m_Operands[1]),
       .src = readSrcOperand(Inst.m_Operands[2]),
-      .dst_original = DstOperandNull {},
+      .dst_original = DstOperandNull{},
     };
     std::visit(
       patterns{
@@ -1468,7 +1472,7 @@ auto readInstruction(
       .dst = readAtomicDst(Inst.m_Operands[0]),
       .dst_address = readSrcOperand(Inst.m_Operands[1]),
       .src = readSrcOperand(Inst.m_Operands[2]),
-      .dst_original = DstOperandNull {},
+      .dst_original = DstOperandNull{},
     };
     std::visit(
       patterns{
@@ -1488,7 +1492,7 @@ auto readInstruction(
       .dst = readAtomicDst(Inst.m_Operands[0]),
       .dst_address = readSrcOperand(Inst.m_Operands[1]),
       .src = readSrcOperand(Inst.m_Operands[2]),
-      .dst_original = DstOperandNull {},
+      .dst_original = DstOperandNull{},
     };
     std::visit(
       patterns{
@@ -1508,7 +1512,7 @@ auto readInstruction(
       .dst = readAtomicDst(Inst.m_Operands[0]),
       .dst_address = readSrcOperand(Inst.m_Operands[1]),
       .src = readSrcOperand(Inst.m_Operands[2]),
-      .dst_original = DstOperandNull {},
+      .dst_original = DstOperandNull{},
     };
     std::visit(
       patterns{
@@ -1528,7 +1532,7 @@ auto readInstruction(
       .dst = readAtomicDst(Inst.m_Operands[0]),
       .dst_address = readSrcOperand(Inst.m_Operands[1]),
       .src = readSrcOperand(Inst.m_Operands[2]),
-      .dst_original = DstOperandNull {},
+      .dst_original = DstOperandNull{},
     };
     std::visit(
       patterns{
@@ -1548,7 +1552,7 @@ auto readInstruction(
       .dst = readAtomicDst(Inst.m_Operands[0]),
       .dst_address = readSrcOperand(Inst.m_Operands[1]),
       .src = readSrcOperand(Inst.m_Operands[2]),
-      .dst_original = DstOperandNull {},
+      .dst_original = DstOperandNull{},
     };
     std::visit(
       patterns{
@@ -1568,7 +1572,7 @@ auto readInstruction(
       .dst = readAtomicDst(Inst.m_Operands[0]),
       .dst_address = readSrcOperand(Inst.m_Operands[1]),
       .src = readSrcOperand(Inst.m_Operands[2]),
-      .dst_original = DstOperandNull {},
+      .dst_original = DstOperandNull{},
     };
     std::visit(
       patterns{
@@ -1588,7 +1592,7 @@ auto readInstruction(
       .dst = readAtomicDst(Inst.m_Operands[0]),
       .dst_address = readSrcOperand(Inst.m_Operands[1]),
       .src = readSrcOperand(Inst.m_Operands[2]),
-      .dst_original = DstOperandNull {},
+      .dst_original = DstOperandNull{},
     };
     std::visit(
       patterns{
@@ -1604,7 +1608,7 @@ auto readInstruction(
   };
   case microsoft::D3D11_SB_OPCODE_ATOMIC_CMP_STORE: {
     return InstAtomicImmCmpExchange{
-      .dst = DstOperandNull {},
+      .dst = DstOperandNull{},
       .dst_resource = readAtomicDst(Inst.m_Operands[0]),
       .dst_address = readSrcOperand(Inst.m_Operands[1]),
       .src0 = readSrcOperand(Inst.m_Operands[2]),
