@@ -373,6 +373,10 @@ Com<ID3D11Buffer>
 CreateDynamicBuffer(IMTLD3D11Device *pDevice, const D3D11_BUFFER_DESC *pDesc,
                     const D3D11_SUBRESOURCE_DATA *pInitialData);
 
+Com<ID3D11Texture2D>
+CreateDynamicTexture2D(IMTLD3D11Device *pDevice,
+                       const D3D11_TEXTURE2D_DESC *pDesc,
+                       const D3D11_SUBRESOURCE_DATA *pInitialData);
 #pragma endregion
 
 } // namespace dxmt

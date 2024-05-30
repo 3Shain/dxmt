@@ -65,6 +65,7 @@ struct MTL_SHADER_BITCODE {
 
 typedef struct __SM50Shader SM50Shader;
 typedef struct __SM50CompiledBitcode SM50CompiledBitcode;
+typedef struct __SM50Error SM50Error;
 
 #define AIRCONV_EXPORT __attribute__((sysv_abi))
 
@@ -94,17 +95,21 @@ inline uint32_t GetArgumentIndex(struct MTL_SM50_SHADER_ARGUMENT Argument) {
 
 extern "C" {
 #endif
-AIRCONV_EXPORT SM50Shader *SM50Initialize(
-  const void *pBytecode, size_t BytecodeSize,
-  struct MTL_SHADER_REFLECTION *pRefl
+AIRCONV_EXPORT int SM50Initialize(
+  const void *pBytecode, size_t BytecodeSize, SM50Shader **ppShader,
+  struct MTL_SHADER_REFLECTION *pRefl, SM50Error **ppError
 );
 AIRCONV_EXPORT void SM50Destroy(SM50Shader *pShader);
-AIRCONV_EXPORT SM50CompiledBitcode *
-SM50Compile(SM50Shader *pShader, void *pArgs);
+AIRCONV_EXPORT int SM50Compile(
+  SM50Shader *pShader, void *pArgs, SM50CompiledBitcode **ppBitcode,
+  SM50Error **ppError
+);
 AIRCONV_EXPORT void SM50GetCompiledBitcode(
   SM50CompiledBitcode *pBitcode, struct MTL_SHADER_BITCODE *pData
 );
 AIRCONV_EXPORT void SM50DestroyBitcode(SM50CompiledBitcode *pBitcode);
+AIRCONV_EXPORT const char *SM50GetErrorMesssage(SM50Error *pError);
+AIRCONV_EXPORT void SM50FreeError(SM50Error *pError);
 #ifdef __cplusplus
-}
+};
 #endif

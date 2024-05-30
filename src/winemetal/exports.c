@@ -44,5 +44,6 @@ ASM_FORWARD(SM50Destroy, 8 * 36)
 ASM_FORWARD(SM50Compile, 8 * 37)
 ASM_FORWARD(SM50GetCompiledBitcode, 8 * 38)
 ASM_FORWARD(SM50DestroyBitcode, 8 * 39)
-
+ASM_FORWARD(SM50GetErrorMesssage, 8 * 40)
+ASM_FORWARD(SM50FreeError, 8 * 41)
 extern void *__wine_unixlib_handle;

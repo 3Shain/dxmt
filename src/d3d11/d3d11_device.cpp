@@ -517,7 +517,7 @@ HRESULT STDMETHODCALLTYPE MTLD3D11Device::CreateTexture2D(
       *ppTexture2D = CreateDeviceTexture2D(this, pDesc, pInitialData);
       break;
     case D3D11_USAGE_DYNAMIC:
-      IMPLEMENT_ME;
+      *ppTexture2D = CreateDynamicTexture2D(this, pDesc, pInitialData);
       break;
     case D3D11_USAGE_STAGING:
       if (pDesc->BindFlags != 0) {

@@ -60,7 +60,7 @@ public:
 
   llvm::Expected<V> build(Env ir) {
     assert(factory && "value has been consumed or moved.");
-    auto ret = factory->invoke(ir);
+    llvm::Expected<V> ret = factory->invoke(ir);
     delete factory;
     factory = nullptr;
     return ret;
@@ -70,7 +70,7 @@ public:
     Env *to_be_filled = nullptr;
     llvm::Expected<V> *return_value_ = nullptr;
     ReaderIO<Env, V> get_return_object() {
-      return ReaderIO<Env, V>([this](Env ctx) {
+      return ReaderIO<Env, V>([this](Env ctx) -> llvm::Expected<V> {
         this->to_be_filled =
           &ctx; // I'm sure to_be_filled is only accessed within the scope?
         auto h = std::coroutine_handle<promise_type>::from_promise(*this);
@@ -130,7 +130,7 @@ auto operator>>=(ReaderIO<Env, V> &&src, Func &&fn) {
     ) mutable -> llvm::Expected<ret_value_type> {
       auto ret = src0.build(context);
       if (auto err = ret.takeError()) {
-        return err;
+        return std::move(err);
       }
       return fn(ret.get()).build(context);
     }
@@ -147,7 +147,7 @@ auto operator|(ReaderIO<Env, V> &&src, Func &&fn) {
     ) mutable -> llvm::Expected<ret_value_type> {
       auto ret = src.build(context);
       if (auto err = ret.takeError()) {
-        return err;
+        return std::move(err);
       }
       return fn(ret.get());
     }
@@ -160,8 +160,8 @@ ReaderIO<Env, A> &operator<<(ReaderIO<Env, A> &a, ReaderIO<Env, A> &&b) {
   a = ReaderIO<Env, A>(
     [a = std::move(a),
      b = std::move(b)](auto context) mutable -> llvm::Expected<A> {
-      if (auto err = a.build(context).takeError()) {
-        return err;
+      if (llvm::Error err = a.build(context).takeError()) {
+        return std::move(err);
       }
       return b.build(context);
     }

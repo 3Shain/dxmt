@@ -1,12 +1,14 @@
 #pragma once
 #include "air_signature.hpp"
 #include "air_type.hpp"
+#include "airconv_error.hpp"
 #include "dxbc_converter.hpp"
 #include "ftl.hpp"
 #include "monad.hpp"
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/StringRef.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DerivedTypes.h"
@@ -19,6 +21,8 @@
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Type.h"
 #include "llvm/Support/Error.h"
+#include "llvm/Support/raw_ostream.h"
+#include <algorithm>
 #include <cstdint>
 #include <functional>
 #include <string>
@@ -94,11 +98,22 @@ struct context {
 };
 
 template <typename T = std::monostate>
-ReaderIO<context, T> throwError(llvm::Error &&err) {
+ReaderIO<context, T> throwUnsupported(llvm::StringRef ref) {
   return ReaderIO<context, T>(
-    [err = std::forward<llvm::Error>(err)](struct context ctx
-    ) mutable -> llvm::Expected<T> {
-      return llvm::Expected<T>(std::forward<llvm::Error>(err));
+    [msg = std::string(ref)](struct context ctx) mutable -> llvm::Expected<T> {
+      // CAUTION: create llvm::Error as lazy as possible
+      // DON'T create it and store somewhere like plain data
+      // ^ which make fking perfect sense but NO DONT DO THAT!
+      // BECAUSE IT IS STATEFUL! IT PRESEVED A 'CHECKED' STATE
+      // to enforce programmer handle any created error
+      // ^ imaging you move-capture the error in a lambda
+      //   but it's never called and eventually deconstructed
+      //   then BOOM
+      // what the fuck why should I use it
+      // `Monadic error handling w/ a gun shoot yourself in the foot`
+      // ^ never claimed to be a monad actually 👆🤓
+      // DO I REALLY DESERVE THIS?
+      return llvm::Expected<T>(llvm::make_error<UnsupportedFeature>(msg));
     }
   );
 };
@@ -565,10 +580,9 @@ auto init_input_reg(uint32_t with_fnarg_at, uint32_t to_reg, uint32_t mask)
     auto const_index =
       llvm::ConstantInt::get(ctx.llvm, llvm::APInt{32, to_reg, false});
     if (arg->getType()->getScalarType()->isIntegerTy()) {
-      assert(
-        arg->getType()->getScalarType() == ctx.types._int &&
-        "TODO: handle non 32 bit integer"
-      );
+      if (arg->getType()->getScalarType() != ctx.types._int) {
+        return throwUnsupported("TODO: handle non 32 bit integer");
+      }
       return store_at_vec4_array_masked(
         ctx.resource.input.ptr_int4, const_index, arg, mask
       );
@@ -577,7 +591,9 @@ auto init_input_reg(uint32_t with_fnarg_at, uint32_t to_reg, uint32_t mask)
         ctx.resource.input.ptr_float4, const_index, arg, mask
       );
     } else {
-      assert(0 && "TODO: unhandled input type? might be interpolant...");
+      return throwUnsupported(
+        "TODO: unhandled input type? might be interpolant..."
+      );
     }
   });
 };
@@ -2086,8 +2102,8 @@ auto load_operand_index(OperandIndex idx) {
               ctx.resource.temp.ptr_int4, ctx.builder.getInt32(ot.regid)
             )
               .build(ctx);
-          if (auto Err = temp.takeError()) {
-            return Err;
+          if (auto err = temp.takeError()) {
+            return std::move(err);
           }
           return ctx.builder.CreateAdd(
             ctx.builder.CreateExtractElement(temp.get(), ot.component),
@@ -2096,10 +2112,9 @@ auto load_operand_index(OperandIndex idx) {
         });
       },
       [&](IndexByIndexableTempComponent it) {
-        return make_irvalue([=](context ctx) {
-          assert(0 && "not implemented");
-          return nullptr;
-        });
+        return throwUnsupported<pvalue>(
+          "TODO: IndexByIndexableTempComponent not implemented yet"
+        );
       }
     },
     idx
@@ -2107,9 +2122,11 @@ auto load_operand_index(OperandIndex idx) {
 }
 
 template <typename Operand, bool ReadFloat> IRValue load_src(Operand) {
-  llvm::outs() << "register load of " << Operand::debug_name << "<"
-               << (ReadFloat ? "float" : "int") << "> is not implemented\n";
-  assert(0 && "operation not implemented");
+  std::string s;
+  llvm::raw_string_ostream o(s);
+  o << "register load of " << Operand::debug_name << "<"
+    << (ReadFloat ? "float" : "int") << "> is not implemented\n";
+  return throwUnsupported<pvalue>(s);
 };
 
 template <bool ReadFloat>
@@ -4481,7 +4498,10 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
           [&](InstAtomicImmDecrement consume) {
             assert(0 && "unhandled imm_consume");
           },
-          [&](InstBufferInfo) { assert(0 && "unhandled bufinfo"); },
+          [&](InstBufferInfo) {
+            // TODO: ? should exit early!
+            effect << throwUnsupported("unhandled bufinfo");
+          },
           [&](InstResourceInfo) { assert(0 && "unhandled resinfo"); },
           [&](InstSampleInfo) { assert(0 && "unhandled sampleinfo"); },
           [&](InstSamplePos) { assert(0 && "unhandled samplepos"); },
@@ -4497,8 +4517,9 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
     if (auto err = std::visit(
           patterns{
             [](BasicBlockUndefined) -> llvm::Error {
-              assert(0 && "unexpected undefined basicblock");
-              return llvm::Error::success();
+              return llvm::make_error<UnsupportedFeature>(
+                "unexpected undefined basicblock"
+              );
             },
             [&](BasicBlockUnconditionalBranch uncond) -> llvm::Error {
               if (visited.count(uncond.target.get()) == 0) {
@@ -4547,8 +4568,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                 };
               }
               // builder.CreateSwitch()
-              assert(0 && "TODO: switch");
-              return llvm::Error::success();
+              return llvm::make_error<UnsupportedFeature>("TODO: switch");
             },
             [&](BasicBlockReturn ret) -> llvm::Error {
               // we have done here!
@@ -4565,7 +4585,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
     return llvm::Error::success();
   };
   if (auto err = readBasicBlock(entry)) {
-    return err;
+    return std::move(err);
   }
   assert(visited.count(entry.get()) == 1);
   return visited[entry.get()];

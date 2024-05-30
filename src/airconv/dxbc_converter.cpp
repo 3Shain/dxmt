@@ -6,8 +6,10 @@
 #include "DXBCParser/winerror.h"
 #include "air_signature.hpp"
 #include "air_type.hpp"
+#include "airconv_error.hpp"
 #include "dxbc_constants.hpp"
 #include "dxbc_signature.hpp"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DerivedTypes.h"
@@ -17,6 +19,7 @@
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Value.h"
 #include "llvm/Support/Error.h"
+#include "llvm/Support/raw_ostream.h"
 #include <bit>
 #include <memory>
 #include <string>
@@ -29,7 +32,9 @@
 #include "shader_common.hpp"
 
 #include "airconv_context.hpp"
-#include "airconv_public.hpp"
+#include "airconv_public.h"
+
+char dxmt::UnsupportedFeature::ID;
 
 class SM50ShaderInternal {
 public:
@@ -49,9 +54,15 @@ class SM50CompiledBitcodeInternal {
 public:
   llvm::SmallVector<char, 0> vec;
 };
+
+class SM50ErrorInternal {
+public:
+  llvm::SmallVector<char, 0> buf;
+};
+
 namespace dxmt::dxbc {
 
-void convertDXBC(
+llvm::Error convertDXBC(
   SM50Shader *pShader, llvm::LLVMContext &context, llvm::Module &module
 ) {
   using namespace microsoft;
@@ -67,12 +78,12 @@ void convertDXBC(
   uint32_t const &max_output_register = pShaderInternal->max_output_register;
 
   IREffect prelogue([](auto) { return std::monostate(); });
-  IRValue epilogue([](struct context ctx) {
+  IRValue epilogue([](struct context ctx) -> pvalue {
     auto retTy = ctx.function->getReturnType();
     if (retTy->isVoidTy()) {
-      return (pvalue) nullptr;
+      return nullptr;
     }
-    return (pvalue)llvm::UndefValue::get(retTy);
+    return llvm::UndefValue::get(retTy);
   });
   for (auto &p : pShaderInternal->prelogue_) {
     p(prelogue);
@@ -267,22 +278,19 @@ void convertDXBC(
   // then we can start build ... real IR code (visit all basicblocks)
   auto prelogue_result = prelogue.build(ctx);
   if (auto err = prelogue_result.takeError()) {
-
-    return;
+    return err;
   }
   auto real_entry =
     convert_basicblocks(pShaderInternal->entry, ctx, epilogue_bb);
   if (auto err = real_entry.takeError()) {
-
-    return;
+    return err;
   }
   builder.CreateBr(real_entry.get());
 
   builder.SetInsertPoint(epilogue_bb);
   auto epilogue_result = epilogue.build(ctx);
   if (auto err = epilogue_result.takeError()) {
-
-    return;
+    return err;
   }
   auto value = epilogue_result.get();
   if (value == nullptr) {
@@ -304,18 +312,34 @@ void convertDXBC(
     // throw
     assert(0 && "Unsupported shader type");
   }
+  return llvm::Error::success();
 };
 } // namespace dxmt::dxbc
 
-SM50Shader *SM50Initialize(
-  const void *pBytecode, size_t BytecodeSize, MTL_SHADER_REFLECTION *pRefl
+int SM50Initialize(
+  const void *pBytecode, size_t BytecodeSize, SM50Shader **ppShader,
+  MTL_SHADER_REFLECTION *pRefl, SM50Error **ppError
 ) {
   using namespace microsoft;
   using namespace dxmt::dxbc;
   using namespace dxmt::air;
+  if (ppError) {
+    *ppError = nullptr;
+  }
+  auto errorObj = new SM50ErrorInternal();
+  llvm::raw_svector_ostream errorOut(errorObj->buf);
+
+  if (ppShader == nullptr) {
+    errorOut << "ppShader can not be null\0";
+    *ppError = (SM50Error *)errorObj;
+    return 1;
+  }
+
   CDXBCParser DXBCParser;
   if (DXBCParser.ReadDXBC(pBytecode, BytecodeSize) != S_OK) {
-    return nullptr;
+    errorOut << "Invalid DXBC bytecode\0";
+    *ppError = (SM50Error *)errorObj;
+    return 1;
   }
 
   UINT codeBlobIdx = DXBCParser.FindNextMatchingBlob(DXBC_GenericShaderEx);
@@ -323,7 +347,9 @@ SM50Shader *SM50Initialize(
     codeBlobIdx = DXBCParser.FindNextMatchingBlob(DXBC_GenericShader);
   }
   if (codeBlobIdx == DXBC_BLOB_NOT_FOUND) {
-    return nullptr;
+    errorOut << "Invalid DXBC bytecode: shader blob not found\0";
+    *ppError = (SM50Error *)errorObj;
+    return 1;
   }
   const void *codeBlob = DXBCParser.GetBlob(codeBlobIdx);
 
@@ -332,11 +358,15 @@ SM50Shader *SM50Initialize(
   D3D10ShaderBinary::CShaderCodeParser CodeParser(ShaderCode);
   CSignatureParser inputParser;
   if (DXBCGetInputSignature(pBytecode, &inputParser) != S_OK) {
-    return nullptr;
+    errorOut << "Invalid DXBC bytecode: input signature not found\0";
+    *ppError = (SM50Error *)errorObj;
+    return 1;
   }
   CSignatureParser outputParser;
   if (DXBCGetOutputSignature(pBytecode, &outputParser) != S_OK) {
-    return nullptr;
+    errorOut << "Invalid DXBC bytecode: output signature not found\0";
+    *ppError = (SM50Error *)errorObj;
+    return 1;
   }
 
   auto findInputElement = [&](auto matcher) -> Signature {
@@ -1274,14 +1304,30 @@ SM50Shader *SM50Initialize(
     }
   }
 
-  return (SM50Shader *)sm50_shader;
+  *ppShader = (SM50Shader *)sm50_shader;
+  return 0;
 };
 
 void SM50Destroy(SM50Shader *pShader) { delete (SM50ShaderInternal *)pShader; }
 
-SM50CompiledBitcode *SM50Compile(SM50Shader *pShader, void *pArgs) {
+int SM50Compile(
+  SM50Shader *pShader, void *pArgs, SM50CompiledBitcode **ppBitcode,
+  SM50Error **ppError
+) {
   using namespace llvm;
   using namespace dxmt;
+
+  if (ppError) {
+    *ppError = nullptr;
+  }
+  auto errorObj = new SM50ErrorInternal();
+  llvm::raw_svector_ostream errorOut(errorObj->buf);
+  if (ppBitcode == nullptr) {
+    errorOut << "ppBitcode can not be null\0";
+    *ppError = (SM50Error *)errorObj;
+    return 1;
+  }
+
   // pArgs is ignored for now
   LLVMContext context;
 
@@ -1290,7 +1336,13 @@ SM50CompiledBitcode *SM50Compile(SM50Shader *pShader, void *pArgs) {
   auto pModule = std::make_unique<Module>("shader.air", context);
   initializeModule(*pModule, {.enableFastMath = true});
 
-  dxmt::dxbc::convertDXBC(pShader, context, *pModule);
+  if (auto err = dxmt::dxbc::convertDXBC(pShader, context, *pModule)) {
+    llvm::handleAllErrors(std::move(err), [&](const UnsupportedFeature &u) {
+      errorOut << u.msg;
+    });
+    *ppError = (SM50Error *)errorObj;
+    return 1;
+  }
 
   runOptimizationPasses(*pModule, OptimizationLevel::O1);
 
@@ -1307,7 +1359,8 @@ SM50CompiledBitcode *SM50Compile(SM50Shader *pShader, void *pArgs) {
 
   pModule.reset();
 
-  return (SM50CompiledBitcode *)compiled;
+  *ppBitcode = (SM50CompiledBitcode *)compiled;
+  return 0;
 }
 
 void SM50GetCompiledBitcode(
@@ -1321,4 +1374,20 @@ void SM50GetCompiledBitcode(
 void SM50DestroyBitcode(SM50CompiledBitcode *pBitcode) {
   auto pBitcodeInternal = (SM50CompiledBitcodeInternal *)pBitcode;
   delete pBitcodeInternal;
+}
+
+const char *SM50GetErrorMesssage(SM50Error *pError) {
+  auto pInternal = (SM50ErrorInternal *)pError;
+  if (*pInternal->buf.end() != '\0') {
+    // ensure it returns a null terminated str
+    pInternal->buf.push_back('\0');
+  }
+  return pInternal->buf.data();
+}
+
+void SM50FreeError(SM50Error *pError) {
+  if (pError == nullptr)
+    return;
+  auto pInternal = (SM50ErrorInternal *)pError;
+  delete pInternal;
 }

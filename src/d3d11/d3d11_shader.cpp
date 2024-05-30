@@ -1,6 +1,6 @@
 #include "d3d11_shader.hpp"
 #include "Metal/MTLLibrary.hpp"
-#include "airconv_public.hpp"
+#include "airconv_public.h"
 #include "com/com_object.hpp"
 #include "d3d11_device.hpp"
 #include "d3d11_device_child.hpp"
@@ -30,7 +30,11 @@ public:
   TShaderBase(IMTLD3D11Device *device, const void *pBytecode,
               UINT BytecodeLength)
       : MTLD3D11DeviceChild<typename tag::COM, IMTLD3D11Shader>(device) {
-    sm50 = SM50Initialize(pBytecode, BytecodeLength, &reflection);
+    sm50_ret_code = SM50Initialize(pBytecode, BytecodeLength, &sm50,
+                                   &reflection, &sm50_error);
+    if (sm50_ret_code) {
+      ERR("Failed to initialize shader: ", SM50GetErrorMesssage(sm50_error));
+    }
   }
 
   ~TShaderBase() {
@@ -38,6 +42,7 @@ public:
       SM50Destroy(sm50);
       sm50 = nullptr;
     }
+    SM50FreeError(sm50_error);
   }
 
   HRESULT QueryInterface(REFIID riid, void **ppvObject) {
@@ -72,6 +77,8 @@ public:
   }
 
   SM50Shader *sm50;
+  int sm50_ret_code;
+  SM50Error *sm50_error;
   MTL_SHADER_REFLECTION reflection;
   Com<IMTLCompiledShader> precompiled_;
 };
@@ -121,7 +128,13 @@ public:
     Obj<NS::Error> err;
 
     {
-      auto compile_result = SM50Compile(shader_->sm50, nullptr);
+      SM50CompiledBitcode *compile_result;
+      SM50Error *sm50_err;
+      if (SM50Compile(shader_->sm50, nullptr, &compile_result, &sm50_err)) {
+        ERR("Failed to compile shader: ", SM50GetErrorMesssage(sm50_err));
+        SM50FreeError(sm50_err);
+        return;
+      }
       MTL_SHADER_BITCODE bitcode;
       SM50GetCompiledBitcode(compile_result, &bitcode);
       hash_.compute(bitcode.Data, bitcode.Size);

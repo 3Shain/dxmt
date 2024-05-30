@@ -1,5 +1,5 @@
 #include "airconv_context.hpp"
-#include "airconv_public.hpp"
+#include "airconv_public.h"
 #include "llvm/Bitcode/BitcodeReader.h"
 #include "llvm/Bitcode/BitcodeWriter.h"
 #include "llvm/IR/DiagnosticInfo.h"
@@ -94,7 +94,7 @@ struct LLVMDisDiagnosticHandler : public DiagnosticHandler {
 } // namespace
 
 namespace dxmt::dxbc {
-void convertDXBC(
+llvm::Error convertDXBC(
   SM50Shader *pShader, llvm::LLVMContext &context, llvm::Module &module
 );
 }
@@ -181,10 +181,20 @@ int main(int argc, char **argv) {
   Module M("default", Context);
   dxmt::initializeModule(M, {.enableFastMath = FastMath});
 
-  auto sm50 =
-    SM50Initialize(MemRef.getBufferStart(), MemRef.getBufferSize(), nullptr);
+  SM50Shader *sm50;
+  SM50Error *err;
+  if (SM50Initialize(
+        MemRef.getBufferStart(), MemRef.getBufferSize(), &sm50, nullptr, &err
+      )) {
+    errs() << SM50GetErrorMesssage(err) << '\n';
+    SM50FreeError(err);
+    return 1;
+  }
 
-  dxmt::dxbc::convertDXBC(sm50, Context, M);
+  if (auto err = dxmt::dxbc::convertDXBC(sm50, Context, M)) {
+    errs() << err << '\n';
+    return 1;
+  }
 
   SM50Destroy(sm50);
 

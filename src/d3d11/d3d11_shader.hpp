@@ -1,6 +1,6 @@
 #pragma once
 
-#include "airconv_public.hpp"
+#include "airconv_public.h"
 #include "com/com_guid.hpp"
 #include "d3d11_device.hpp"
 #include "objc-wrapper/dispatch.h"

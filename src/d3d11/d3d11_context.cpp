@@ -7,7 +7,7 @@
 #include "Metal/MTLStageInputOutputDescriptor.hpp"
 #include "Metal/MTLTexture.hpp"
 #include "Metal/MTLTypes.hpp"
-#include "airconv_public.hpp"
+#include "airconv_public.h"
 #include "com/com_guid.hpp"
 #include "com/com_pointer.hpp"
 #include "d3d11_device_child.hpp"

@@ -5,7 +5,7 @@
 #include "Block.h"
 #include "dlfcn.h"
 #include "pthread.h"
-#include "airconv_public.hpp"
+#include "airconv_public.h"
 
 typedef struct macdrv_opaque_metal_device *macdrv_metal_device;
 typedef struct macdrv_opaque_metal_view *macdrv_metal_view;
@@ -70,5 +70,7 @@ const void *__wine_unix_call_funcs[] = {
     &SM50Compile,
     &SM50GetCompiledBitcode,
     &SM50DestroyBitcode,
+    &SM50GetErrorMesssage,
+    &SM50FreeError,
 };
 // wow64: things become funny
