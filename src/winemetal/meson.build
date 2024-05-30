@@ -2,7 +2,6 @@ winemetal_src = [
   'main.c',
   'exports.c',
   'metalcpp-impl.cpp',
-  'dispatch-queue.cpp',
 ]
 
 winemetal_ld_args      = ['-Wl,/entry:WineMetalEntry']

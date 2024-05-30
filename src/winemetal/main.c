@@ -5,15 +5,12 @@
 __attribute__((dllexport)) void *_NSConcreteGlobalBlock;
 __attribute__((dllexport)) void *_NSConcreteStackBlock;
 
-extern BOOL InitializeDispatchQueue(UINT threadPoolSize);
-
 BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID reserved) {
   if (reason != DLL_PROCESS_ATTACH)
     return TRUE;
 
   DisableThreadLibraryCalls(instance);
-
-  return InitializeDispatchQueue(1);
+  return TRUE;
 }
 
 extern BOOL WINAPI DllMainCRTStartup(HANDLE hDllHandle, DWORD dwReason,
