@@ -6,6 +6,7 @@
 #include <unordered_map>
 #include <variant>
 #include <vector>
+#include <string>
 
 #include "shader_common.hpp"
 
