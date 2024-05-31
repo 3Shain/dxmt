@@ -72,5 +72,6 @@ const void *__wine_unix_call_funcs[] = {
     &SM50DestroyBitcode,
     &SM50GetErrorMesssage,
     &SM50FreeError,
+    &SM50CreateArgumentEncoder,
 };
 // wow64: things become funny

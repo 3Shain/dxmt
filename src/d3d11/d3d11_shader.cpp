@@ -1,4 +1,6 @@
+#define __METALCPP__ 1
 #include "d3d11_shader.hpp"
+#include "Metal/MTLArgumentEncoder.hpp"
 #include "Metal/MTLLibrary.hpp"
 #include "airconv_public.h"
 #include "com/com_object.hpp"
@@ -39,6 +41,8 @@ public:
     if (sm50_ret_code) {
       ERR("Failed to initialize shader: ", SM50GetErrorMesssage(sm50_error));
     }
+    encoder_ =
+        transfer(SM50CreateArgumentEncoder(sm50, device->GetMTLDevice()));
   }
 
   ~TShaderBase() {
@@ -76,6 +80,8 @@ public:
 
   void GetCompiledShader(void *pArgs, IMTLCompiledShader **pShader) final;
 
+  void GetArgumentEncoderRef(MTL::ArgumentEncoder **pEncoder) final;
+
   void GetReflection(MTL_SHADER_REFLECTION *pRefl) final {
     *pRefl = reflection;
   }
@@ -85,6 +91,7 @@ public:
   SM50Error *sm50_error;
   MTL_SHADER_REFLECTION reflection;
   Com<IMTLCompiledShader> precompiled_;
+  Obj<MTL::ArgumentEncoder> encoder_;
 };
 
 template <typename tag>
@@ -187,6 +194,13 @@ void TShaderBase<tag>::GetCompiledShader(void *pArgs,
     return;
   }
   *pShader = ref(new ContextlessShader(this->m_parent, this));
+}
+
+template <typename tag>
+void TShaderBase<tag>::GetArgumentEncoderRef(MTL::ArgumentEncoder **pEncoder) {
+  if (pEncoder) {
+    *pEncoder = encoder_.ptr();
+  }
 }
 
 Com<ID3D11VertexShader> CreateVertexShader(IMTLD3D11Device *pDevice,

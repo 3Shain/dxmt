@@ -110,10 +110,7 @@ class CommandChunk {
     CommandChunk *chk;
     MTL::CommandBuffer *cmdbuf;
     Obj<MTL::RenderCommandEncoder> render_encoder;
-    Obj<MTL::ArgumentEncoder> vs_binding_encoder;
-    Obj<MTL::ArgumentEncoder> ps_binding_encoder;
     Obj<MTL::ComputeCommandEncoder> compute_encoder;
-    Obj<MTL::ArgumentEncoder> cs_binding_encoder;
     MTL::Size cs_threadgroup_size;
     Obj<MTL::BlitCommandEncoder> blit_encoder;
 
@@ -171,7 +168,7 @@ public:
 
   void encode(MTL::CommandBuffer *cmdbuf) {
     attached_cmdbuf = cmdbuf;
-    context_t context{this, cmdbuf, {}, {}, {}, {}, {}, {}};
+    context_t context{this, cmdbuf, {}, {}, {}, {},};
     auto cur = monoid_list.next;
     while (cur) {
       cur->value->invoke(context);

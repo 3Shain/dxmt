@@ -14,7 +14,6 @@
 #include <utility>
 #include <variant>
 
-#include "air_signature.hpp"
 #include "ftl.hpp"
 
 using namespace llvm;

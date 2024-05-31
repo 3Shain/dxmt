@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Metal/MTLArgumentEncoder.hpp"
 #include "airconv_public.h"
 #include "com/com_guid.hpp"
 #include "d3d11_device.hpp"
@@ -10,9 +11,9 @@ struct MTL_COMPILED_SHADER {
   /**
   NOTE: it's not retained by design
   */
-  MTL::Function* Function;
-  dxmt::Sha1Hash* MetallibHash;
-  MTL_SHADER_REFLECTION* Reflection;
+  MTL::Function *Function;
+  dxmt::Sha1Hash *MetallibHash;
+  MTL_SHADER_REFLECTION *Reflection;
 };
 
 DEFINE_COM_INTERFACE("a8bfeef7-a453-4bce-90c1-912b02cf5cdf", IMTLCompiledShader)
@@ -32,7 +33,8 @@ DEFINE_COM_INTERFACE("e95ba1c7-e43f-49c3-a907-4ac669c9fb42", IMTLD3D11Shader)
   NOTE: return may be cached (based on \c pArgs )
   */
   virtual void GetCompiledShader(void *pArgs, IMTLCompiledShader **pShader) = 0;
-  virtual void GetReflection(MTL_SHADER_REFLECTION* pRefl) = 0;
+  virtual void GetReflection(MTL_SHADER_REFLECTION * pRefl) = 0;
+  virtual void GetArgumentEncoderRef(MTL::ArgumentEncoder * *pEncoder) = 0;
 };
 
 namespace dxmt {

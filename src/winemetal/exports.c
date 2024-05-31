@@ -46,4 +46,5 @@ ASM_FORWARD(SM50GetCompiledBitcode, 8 * 38)
 ASM_FORWARD(SM50DestroyBitcode, 8 * 39)
 ASM_FORWARD(SM50GetErrorMesssage, 8 * 40)
 ASM_FORWARD(SM50FreeError, 8 * 41)
+ASM_FORWARD(SM50CreateArgumentEncoder, 8 * 42)
 extern void *__wine_unixlib_handle;

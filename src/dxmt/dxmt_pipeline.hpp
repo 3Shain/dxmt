@@ -19,13 +19,9 @@ struct RenderPipelineCacheEntry {
 class RenderPipelineCache : public RcObject {
 public:
   Obj<MTL::RenderPipelineState> PSO;
-  Obj<MTL::ArgumentEncoder> vertexFunctionArgumentEncoder;
-  Obj<MTL::ArgumentEncoder> fragmentFunctionArgumentEncoder;
 
-  RenderPipelineCache(MTL::RenderPipelineState *pso, MTL::ArgumentEncoder *ve,
-                      MTL::ArgumentEncoder *fe)
-      : PSO(pso), vertexFunctionArgumentEncoder(ve),
-        fragmentFunctionArgumentEncoder(fe) {}
+  RenderPipelineCache(MTL::RenderPipelineState *pso)
+      : PSO(pso) {}
 };
 
 RenderPipelineCache *findCache(RenderPipelineCacheEntry &key);

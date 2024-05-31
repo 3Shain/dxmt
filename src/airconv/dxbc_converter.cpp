@@ -1391,3 +1391,13 @@ void SM50FreeError(SM50Error *pError) {
   auto pInternal = (SM50ErrorInternal *)pError;
   delete pInternal;
 }
+
+ArgumentEncoder_t CreateArgumentEncoderInternal(
+  dxmt::dxbc::ShaderInfo *shader_info, Device_t __mtlDevice
+);
+
+ArgumentEncoder_t
+SM50CreateArgumentEncoder(SM50Shader *pShader, Device_t device) {
+  auto pShaderInternal = (SM50ShaderInternal *)pShader;
+  return CreateArgumentEncoderInternal(&pShaderInternal->shader_info, device);
+}

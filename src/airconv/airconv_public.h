@@ -1,7 +1,7 @@
 #pragma once
 
-#include "stdint.h"
 #include "stddef.h"
+#include "stdint.h"
 
 #ifdef __cplusplus
 enum class ShaderType {
@@ -69,6 +69,15 @@ typedef struct __SM50Error SM50Error;
 
 #define AIRCONV_EXPORT __attribute__((sysv_abi))
 
+#if __METALCPP__
+#include "Metal/MTLArgumentEncoder.hpp"
+typedef ::MTL::ArgumentEncoder *ArgumentEncoder_t;
+typedef ::MTL::Device *Device_t;
+#else
+typedef struct __MTLArgumentEncoder *ArgumentEncoder_t;
+typedef struct __MTLDevice *Device_t;
+#endif
+
 #ifdef __cplusplus
 
 inline uint32_t GetArgumentIndex(struct MTL_SM50_SHADER_ARGUMENT Argument) {
@@ -110,6 +119,8 @@ AIRCONV_EXPORT void SM50GetCompiledBitcode(
 AIRCONV_EXPORT void SM50DestroyBitcode(SM50CompiledBitcode *pBitcode);
 AIRCONV_EXPORT const char *SM50GetErrorMesssage(SM50Error *pError);
 AIRCONV_EXPORT void SM50FreeError(SM50Error *pError);
+AIRCONV_EXPORT ArgumentEncoder_t
+SM50CreateArgumentEncoder(SM50Shader *pShader, Device_t device);
 #ifdef __cplusplus
 };
 #endif

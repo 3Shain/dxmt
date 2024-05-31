@@ -1,8 +1,10 @@
+#include "Metal/MTLArgumentEncoder.hpp"
 #include "Metal/MTLBuffer.hpp"
 #include "Metal/MTLCommandEncoder.hpp"
 #include "Metal/MTLPixelFormat.hpp"
 #include "Metal/MTLRenderCommandEncoder.hpp"
 #include "Metal/MTLRenderPass.hpp"
+#include "Metal/MTLResource.hpp"
 #include "Metal/MTLSampler.hpp"
 #include "Metal/MTLStageInputOutputDescriptor.hpp"
 #include "Metal/MTLTexture.hpp"
@@ -1455,8 +1457,6 @@ public:
     case CommandBufferState::RenderPipelineReady:
       chk->emit([](CommandChunk::context &ctx) {
         ctx.render_encoder->endEncoding();
-        ctx.vs_binding_encoder = nullptr;
-        ctx.ps_binding_encoder = nullptr;
         ctx.render_encoder = nullptr;
       });
       break;
@@ -1491,12 +1491,6 @@ public:
     if (cmdbuf_state != CommandBufferState::RenderPipelineReady)
       return;
     cmdbuf_state = CommandBufferState::RenderEncoderActive;
-
-    CommandChunk *chk = cmd_queue.CurrentChunk();
-    chk->emit([](CommandChunk::context &ctx) {
-      ctx.vs_binding_encoder = nullptr;
-      ctx.ps_binding_encoder = nullptr;
-    });
   }
 
   /**
@@ -1681,8 +1675,6 @@ public:
       pso->GetPipeline(&GraphicsPipeline); // may block
       ctx.render_encoder->setRenderPipelineState(
           GraphicsPipeline.PipelineState);
-      ctx.ps_binding_encoder = GraphicsPipeline.PSArgumentEncoder;
-      ctx.vs_binding_encoder = GraphicsPipeline.VSArgumentEncoder;
     });
 
     cmdbuf_state = CommandBufferState::RenderPipelineReady;
@@ -1727,7 +1719,6 @@ public:
           pso->GetPipeline(&ComputePipeline); // may block
           ctx.compute_encoder->setComputePipelineState(
               ComputePipeline.PipelineState);
-          ctx.cs_binding_encoder = ComputePipeline.CSArgumentEncoder;
           ctx.cs_threadgroup_size = tg_size;
         });
 
@@ -1750,14 +1741,40 @@ public:
 
     auto &ShaderStage = state_.ShaderStages[(UINT)stage];
 
-    // TODO: ideally we should get a MTLArgumentEncoder now.
     MTL_SHADER_REFLECTION reflection;
     ShaderStage.Shader->GetReflection(&reflection);
     auto BindingCount = reflection.NumArguments;
+    MTL::ArgumentEncoder *encoder;
+    ShaderStage.Shader->GetArgumentEncoderRef(&encoder);
 
-    if (BindingCount) {
+    if (encoder) {
       CommandChunk *chk = cmd_queue.CurrentChunk();
-      auto bindings = chk->reserve_vector<BINDING_INFO>(BindingCount);
+
+      auto [heap, offset] = chk->allocate_gpu_heap(encoder->encodedLength(),
+                                                   encoder->alignment());
+      encoder->setArgumentBuffer(heap, offset);
+
+      auto useResource = [&](MTL::Resource *res, MTL::ResourceUsage usage) {
+        chk->emit([res, usage](CommandChunk::context &ctx) {
+          switch (stage) {
+          case ShaderType::Vertex:
+            ctx.render_encoder->useResource(res, usage, MTL::RenderStageVertex);
+            break;
+          case ShaderType::Pixel:
+            ctx.render_encoder->useResource(res, usage,
+                                            MTL::RenderStageFragment);
+            break;
+          case ShaderType::Compute:
+            ctx.compute_encoder->useResource(res, usage);
+            break;
+          case ShaderType::Geometry:
+          case ShaderType::Hull:
+          case ShaderType::Domain:
+            assert(0 && "Not implemented");
+            break;
+          }
+        });
+      };
 
       for (unsigned i = 0; i < BindingCount; i++) {
         auto &arg = reflection.Arguments[i];
@@ -1767,14 +1784,15 @@ public:
           MTL_BIND_RESOURCE m;
           assert(cbuf.Buffer);
           cbuf.Buffer->GetBoundResource(&m);
-          bindings.push_back(BINDING_INFO{GetArgumentIndex(arg), m.Buffer, 0});
+          encoder->setBuffer(m.Buffer, 0, GetArgumentIndex(arg));
+          useResource(m.Buffer, MTL::ResourceUsageRead);
           break;
         }
         case SM50BindingType::Sampler: {
           auto &sampler = ShaderStage.Samplers[arg.SM50BindingSlot];
           assert(sampler);
-          bindings.push_back(
-              BINDING_INFO{GetArgumentIndex(arg), sampler->GetSamplerState()});
+          encoder->setSamplerState(sampler->GetSamplerState(),
+                                   GetArgumentIndex(arg));
           break;
         }
         case SM50BindingType::SRV: {
@@ -1782,17 +1800,21 @@ public:
           MTL_BIND_RESOURCE m;
           assert(srv);
           srv->GetBoundResource(&m);
-          bindings.push_back(
-              m.IsTexture ? BINDING_INFO{GetArgumentIndex(arg), m.Texture}
-                          : BINDING_INFO{GetArgumentIndex(arg), m.Buffer, 0});
+          if (!m.IsTexture) {
+            encoder->setBuffer(m.Buffer, 0, GetArgumentIndex(arg));
+            useResource(m.Buffer, MTL::ResourceUsageRead);
+          } else {
+            encoder->setTexture(m.Texture, GetArgumentIndex(arg));
+            useResource(m.Texture, MTL::ResourceUsageRead);
+          }
           break;
         }
         case SM50BindingType::UAV: {
           if constexpr (stage == ShaderType::Compute) {
-            auto &uav = state_.ComputeStageUAV.UAVs[arg.SM50BindingSlot];
+            // auto &uav = state_.ComputeStageUAV.UAVs[arg.SM50BindingSlot];
             // uav.View.get
           } else {
-            auto &uav = state_.OutputMerger.UAVs[arg.SM50BindingSlot];
+            // auto &uav = state_.OutputMerger.UAVs[arg.SM50BindingSlot];
           }
           assert(0 && "TODO");
           break;
@@ -1806,84 +1828,21 @@ public:
         }
       }
 
-      if constexpr (stage == ShaderType::Compute) {
-
-        chk->emit([bindings = std::move(bindings)](CommandChunk::context &ctx) {
-          auto encoder = ctx.cs_binding_encoder;
-          if (!encoder)
-            return;
-
-          auto [heap, offset] = ctx.chk->allocate_gpu_heap(
-              encoder->encodedLength(), encoder->alignment());
-          encoder->setArgumentBuffer(heap, offset);
-
-          for (auto &binding : bindings) {
-            switch (binding.Type) {
-            case BINDING_TYPE::Buffer:
-              encoder->setBuffer(binding.Buffer.Ptr, binding.Buffer.Offset,
-                                 binding.ArgumentIndex);
-              ctx.compute_encoder->useResource(binding.Buffer.Ptr,
-                                               MTL::ResourceUsageRead);
-              break;
-            case BINDING_TYPE::Texture:
-              encoder->setTexture(binding.Texture.Ptr, binding.ArgumentIndex);
-              ctx.compute_encoder->useResource(binding.Texture.Ptr,
-                                               MTL::ResourceUsageRead);
-              break;
-            case BINDING_TYPE::Sampler:
-              encoder->setSamplerState(binding.Sampler.Ptr,
-                                       binding.ArgumentIndex);
-              break;
-            }
-          }
-
+      chk->emit([heap, offset](CommandChunk::context &ctx) {
+        if constexpr (stage == ShaderType::Vertex) {
+          ctx.render_encoder->setVertexBuffer(heap, offset,
+                                              30 /* kArgumentBufferBinding
+                                              */);
+        } else if constexpr (stage == ShaderType::Pixel) {
+          ctx.render_encoder->setFragmentBuffer(
+              heap, offset, 30 /* kArgumentBufferBinding */);
+        } else if constexpr (stage == ShaderType::Compute) {
           ctx.compute_encoder->setBuffer(heap, offset,
-                                              30 /* kArgumentBufferBinding
-                                              */);
-        });
-      } else {
-        chk->emit([bindings = std::move(bindings)](CommandChunk::context &ctx) {
-          auto encoder = stage == ShaderType::Vertex ? ctx.vs_binding_encoder
-                                                     : ctx.ps_binding_encoder;
-          auto sstage = stage == ShaderType::Vertex ? MTL::RenderStageVertex
-                                                    : MTL::RenderStageFragment;
-          if (!encoder)
-            return;
-
-          auto [heap, offset] = ctx.chk->allocate_gpu_heap(
-              encoder->encodedLength(), encoder->alignment());
-          encoder->setArgumentBuffer(heap, offset);
-
-          for (auto &binding : bindings) {
-            switch (binding.Type) {
-            case BINDING_TYPE::Buffer:
-              encoder->setBuffer(binding.Buffer.Ptr, binding.Buffer.Offset,
-                                 binding.ArgumentIndex);
-              ctx.render_encoder->useResource(binding.Buffer.Ptr,
-                                              MTL::ResourceUsageRead, sstage);
-              break;
-            case BINDING_TYPE::Texture:
-              encoder->setTexture(binding.Texture.Ptr, binding.ArgumentIndex);
-              ctx.render_encoder->useResource(binding.Texture.Ptr,
-                                              MTL::ResourceUsageRead, sstage);
-              break;
-            case BINDING_TYPE::Sampler:
-              encoder->setSamplerState(binding.Sampler.Ptr,
-                                       binding.ArgumentIndex);
-              break;
-            }
-          }
-
-          if constexpr (stage == ShaderType::Vertex) {
-            ctx.render_encoder->setVertexBuffer(heap, offset,
-                                              30 /* kArgumentBufferBinding
-                                              */);
-          } else {
-            ctx.render_encoder->setFragmentBuffer(
-                heap, offset, 30 /* kArgumentBufferBinding */);
-          }
-        });
-      }
+                                         30 /* kArgumentBufferBinding */);
+        } else {
+          assert(0 && "Not implemented");
+        }
+      });
     }
     binding_ready.set(stage);
   }

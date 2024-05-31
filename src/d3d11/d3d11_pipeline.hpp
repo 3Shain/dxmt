@@ -11,13 +11,10 @@
 
 struct MTL_COMPILED_GRAPHICS_PIPELINE {
   MTL::RenderPipelineState *PipelineState;
-  MTL::ArgumentEncoder *VSArgumentEncoder;
-  MTL::ArgumentEncoder *PSArgumentEncoder;
 };
 
 struct MTL_COMPILED_COMPUTE_PIPELINE {
   MTL::ComputePipelineState *PipelineState;
-  MTL::ArgumentEncoder *CSArgumentEncoder;
 };
 
 DEFINE_COM_INTERFACE("7ee15804-8604-41fc-ad0c-4ecf97e2e6fe",

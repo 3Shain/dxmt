@@ -2,8 +2,6 @@
 #include "Metal/MTLDevice.hpp"
 #include "dxmt_names.hpp"
 #include "d3d11_pipeline.hpp"
-#include "Metal/MTLArgumentEncoder.hpp"
-#include "Metal/MTLLibrary.hpp"
 #include "Metal/MTLPixelFormat.hpp"
 #include "Metal/MTLRenderPipeline.hpp"
 #include "com/com_object.hpp"
@@ -55,7 +53,7 @@ public:
 
   void GetPipeline(MTL_COMPILED_GRAPHICS_PIPELINE *pPipeline) final {
     ready_.wait(false, std::memory_order_acquire);
-    *pPipeline = {state_.ptr(), vs_encoder_.ptr(), ps_encoder_.ptr()};
+    *pPipeline = {state_.ptr()};
   }
 
   void RunThreadpoolWork() {
@@ -66,15 +64,7 @@ public:
     Obj<NS::Error> err;
     MTL_COMPILED_SHADER vs, ps;
     pVertexShader->GetShader(&vs); // may block
-    if (vs.Reflection->ArgumentBufferBindIndex != ~0u) {
-      vs_encoder_ = transfer(vs.Function->newArgumentEncoder(
-          vs.Reflection->ArgumentBufferBindIndex));
-    }
-    pPixelShader->GetShader(&ps); // may block
-    if (ps.Reflection->ArgumentBufferBindIndex != ~0u) {
-      ps_encoder_ = transfer(ps.Function->newArgumentEncoder(
-          ps.Reflection->ArgumentBufferBindIndex));
-    }
+    pPixelShader->GetShader(&ps);  // may block
 
     auto pipelineDescriptor =
         transfer(MTL::RenderPipelineDescriptor::alloc()->init());
@@ -129,8 +119,6 @@ private:
   Com<IMTLD3D11InputLayout> pInputLayout;
   Com<IMTLD3D11BlendState> pBlendState;
   Obj<MTL::RenderPipelineState> state_;
-  Obj<MTL::ArgumentEncoder> vs_encoder_;
-  Obj<MTL::ArgumentEncoder> ps_encoder_;
 };
 
 Com<IMTLCompiledGraphicsPipeline> CreateGraphicsPipeline(
@@ -172,7 +160,7 @@ public:
 
   void GetPipeline(MTL_COMPILED_COMPUTE_PIPELINE *pPipeline) final {
     ready_.wait(false, std::memory_order_acquire);
-    *pPipeline = {state_.ptr(), cs_encoder_.ptr()};
+    *pPipeline = {state_.ptr()};
   }
 
   void RunThreadpoolWork() {
@@ -183,10 +171,6 @@ public:
     Obj<NS::Error> err;
     MTL_COMPILED_SHADER cs;
     pComputeShader->GetShader(&cs); // may block
-    if (cs.Reflection->ArgumentBufferBindIndex != ~0u) {
-      cs_encoder_ = transfer(cs.Function->newArgumentEncoder(
-          cs.Reflection->ArgumentBufferBindIndex));
-    }
 
     auto pipelineDescriptor =
         transfer(MTL::ComputePipelineDescriptor::alloc()->init());
@@ -212,7 +196,6 @@ private:
   THREADGROUP_WORK_STATE work_state_;
   Com<IMTLCompiledShader> pComputeShader;
   Obj<MTL::ComputePipelineState> state_;
-  Obj<MTL::ArgumentEncoder> cs_encoder_;
 };
 
 Com<IMTLCompiledComputePipeline>
