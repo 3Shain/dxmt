@@ -23,6 +23,10 @@ struct tag_pixel_shader {
   using COM = ID3D11PixelShader;
 };
 
+struct tag_compute_shader {
+  using COM = ID3D11ComputeShader;
+};
+
 template <typename tag>
 class TShaderBase
     : public MTLD3D11DeviceChild<typename tag::COM, IMTLD3D11Shader> {
@@ -174,26 +178,15 @@ private:
   Obj<MTL::Function> function_;
 };
 
-template <>
-void TShaderBase<tag_vertex_shader>::GetCompiledShader(
-    void *pArgs, IMTLCompiledShader **pShader) {
+template <typename tag>
+void TShaderBase<tag>::GetCompiledShader(void *pArgs,
+                                         IMTLCompiledShader **pShader) {
   // pArgs not used at the moment
   if (precompiled_) {
     *pShader = precompiled_.ref();
     return;
   }
-  *pShader = ref(new ContextlessShader(m_parent, this));
-}
-
-template <>
-void TShaderBase<tag_pixel_shader>::GetCompiledShader(
-    void *pArgs, IMTLCompiledShader **pShader) {
-  // pArgs not used at the moment
-  if (precompiled_) {
-    *pShader = precompiled_.ref();
-    return;
-  }
-  *pShader = ref(new ContextlessShader(m_parent, this));
+  *pShader = ref(new ContextlessShader(this->m_parent, this));
 }
 
 Com<ID3D11VertexShader> CreateVertexShader(IMTLD3D11Device *pDevice,
@@ -219,7 +212,11 @@ Com<ID3D11PixelShader> CreatePixelShader(IMTLD3D11Device *pDevice,
 Com<ID3D11ComputeShader> CreateComputeShader(IMTLD3D11Device *pDevice,
                                              const void *pShaderBytecode,
                                              SIZE_T BytecodeLength) {
-  IMPLEMENT_ME;
+  auto ret = new TShaderBase<tag_compute_shader>(pDevice, pShaderBytecode,
+                                                 BytecodeLength);
+  ret->AddRef(); // FIXME:!
+  ret->GetCompiledShader(NULL, &ret->precompiled_);
+  return ret;
 }
 
 } // namespace dxmt

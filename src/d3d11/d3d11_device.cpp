@@ -474,7 +474,7 @@ HRESULT STDMETHODCALLTYPE MTLD3D11Device::CreateBuffer(
       *ppBuffer = CreateDynamicBuffer(this, pDesc, pInitialData);
       break;
     case D3D11_USAGE_STAGING:
-      IMPLEMENT_ME
+      *ppBuffer = CreateStagingBuffer(this, pDesc, pInitialData);
       break;
     }
     return S_OK;
