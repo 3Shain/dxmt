@@ -23,7 +23,7 @@ class EmulatedBackBufferTexture : public TResourceBase<tag_texture_backbuffer> {
 
 private:
   HWND hWnd;
-  IDXGIMetalLayerFactory *layer_factory;
+  IMTLDXGIDevice *layer_factory;
   void *native_view_;
   /**
   don't use a smart pointer

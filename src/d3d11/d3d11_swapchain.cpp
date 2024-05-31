@@ -1,5 +1,4 @@
 #include "d3d11_swapchain.hpp"
-#include "QuartzCore/CAMetalDrawable.hpp"
 #include "com/com_guid.hpp"
 #include "d3d11_private.h"
 #include "dxgi_interfaces.h"
@@ -24,7 +23,6 @@ CreateEmulatedBackBuffer(IMTLD3D11Device *pDevice,
 class MTLD3D11SwapChain final : public MTLDXGISubObject<IDXGISwapChain1> {
 public:
   MTLD3D11SwapChain(IDXGIFactory1 *pFactory, IMTLDXGIDevice *pDevice, HWND hWnd,
-                    IDXGIMetalLayerFactory *pMetalLayerFactory,
                     const DXGI_SWAP_CHAIN_DESC1 *pDesc,
                     const DXGI_SWAP_CHAIN_FULLSCREEN_DESC *pFullscreenDesc)
       : MTLDXGISubObject(pDevice), factory_(pFactory), presentation_count_(0),
@@ -106,10 +104,10 @@ public:
   HRESULT
   STDMETHODCALLTYPE
   GetFullscreenState(BOOL *fullscreen, IDXGIOutput **target) final {
-    if(fullscreen) {
+    if (fullscreen) {
       *fullscreen = !fullscreen_desc_.Windowed;
     }
-    if(target) {
+    if (target) {
       *target = NULL;
       // TODO
       WARN("GetFullscreenState return null");
@@ -234,7 +232,8 @@ public:
 
     device_context_->Flush2(
         // why transfer?
-        // it works because the texture is in use, so drawable is valid during encoding...
+        // it works because the texture is in use, so drawable is valid during
+        // encoding...
         [drawable = transfer(backbuffer_->CurrentDrawable())](
             MTL::CommandBuffer *cmdbuf) {
           if (drawable) {
@@ -283,8 +282,7 @@ private:
 };
 
 HRESULT CreateSwapChain(IDXGIFactory1 *pFactory, IMTLDXGIDevice *pDevice,
-                        HWND hWnd, IDXGIMetalLayerFactory *pMetalLayerFactory,
-                        const DXGI_SWAP_CHAIN_DESC1 *pDesc,
+                        HWND hWnd, const DXGI_SWAP_CHAIN_DESC1 *pDesc,
                         const DXGI_SWAP_CHAIN_FULLSCREEN_DESC *pFullscreenDesc,
                         IDXGISwapChain1 **ppSwapChain) {
   if (pDesc == NULL) {
@@ -295,8 +293,8 @@ HRESULT CreateSwapChain(IDXGIFactory1 *pFactory, IMTLDXGIDevice *pDevice,
   }
   InitReturnPtr(ppSwapChain);
   try {
-    *ppSwapChain = ref(new MTLD3D11SwapChain(
-        pFactory, pDevice, hWnd, pMetalLayerFactory, pDesc, pFullscreenDesc));
+    *ppSwapChain = ref(
+        new MTLD3D11SwapChain(pFactory, pDevice, hWnd, pDesc, pFullscreenDesc));
     return S_OK;
   } catch (MTLD3DError &err) {
     ERR(err.message());
