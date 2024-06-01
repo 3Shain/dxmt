@@ -1974,7 +1974,9 @@ SrcOperandModifier get_modifier(SrcOperand src) {
   return std::visit(
     patterns{
       [](SrcOperandImmediate32) {
-        return SrcOperandModifier{.swizzle = swizzle_identity};
+        return SrcOperandModifier{
+          .swizzle = swizzle_identity, .abs = false, .neg = false
+        };
       },
       [](SrcOperandAttribute src) { return src._; },
       [](SrcOperandConstantBuffer src) { return src._; },

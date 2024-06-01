@@ -25,19 +25,45 @@ public:
       buffer->didModifyRange({0, desc->ByteWidth});
     }
   }
-  virtual HRESULT PrivateQueryInterface(REFIID riid, void **ppvObject) {
+  HRESULT PrivateQueryInterface(REFIID riid, void **ppvObject) override {
     if (riid == __uuidof(IMTLBindable)) {
       *ppvObject = ref_and_cast<IMTLBindable>(this);
       return S_OK;
     }
     return E_NOINTERFACE;
   };
-  virtual void GetBoundResource(MTL_BIND_RESOURCE *ppResource) {
+  void GetBoundResource(MTL_BIND_RESOURCE *ppResource) override {
     (*ppResource).IsTexture = 0;
     (*ppResource).Buffer = buffer.ptr();
   };
-  virtual void GetLogicalResourceOrView(REFIID riid, void **ppLogicalResource) {
+  void GetLogicalResourceOrView(REFIID riid,
+                                void **ppLogicalResource) override {
     QueryInterface(riid, ppLogicalResource);
+  };
+
+  HRESULT CreateShaderResourceView(const D3D11_SHADER_RESOURCE_VIEW_DESC *desc,
+                                   ID3D11ShaderResourceView **ppView) override {
+    ERR("DeviceBuffer: SRV not supported");
+    return E_FAIL;
+  };
+
+  HRESULT
+  CreateUnorderedAccessView(const D3D11_UNORDERED_ACCESS_VIEW_DESC *desc,
+                            ID3D11UnorderedAccessView **ppView) override {
+    ERR("DeviceBuffer: UAV not supported");
+    return E_FAIL;
+  };
+
+  HRESULT CreateRenderTargetView(const D3D11_RENDER_TARGET_VIEW_DESC *desc,
+                                 ID3D11RenderTargetView **ppView) override {
+    ERR("DeviceBuffer: RTV not supported");
+    return E_FAIL;
+  };
+
+  HRESULT CreateDepthStencilView(const D3D11_DEPTH_STENCIL_VIEW_DESC *desc,
+                                 ID3D11DepthStencilView **ppView) override {
+    ERR("DeviceBuffer: DSV not supported");
+    return E_FAIL;
   };
 };
 
@@ -64,6 +90,37 @@ private:
                const tag_shader_resource_view<>::DESC_S *pDesc,
                DeviceTexture *pResource, IMTLD3D11Device *pDevice)
         : SRVBase(pDesc, pResource, pDevice), view(view) {}
+
+    void GetBoundResource(MTL_BIND_RESOURCE *ppResource) {
+      (*ppResource).IsTexture = 1;
+      (*ppResource).Texture = view.ptr();
+    };
+
+    void GetLogicalResourceOrView(REFIID riid, void **ppLogicalResource) {
+      this->QueryInterface(riid, ppLogicalResource);
+    };
+
+    HRESULT PrivateQueryInterface(REFIID riid, void **ppvObject) {
+      if (riid == __uuidof(IMTLBindable)) {
+        *ppvObject = ref_and_cast<IMTLBindable>(this);
+        return S_OK;
+      }
+      return E_NOINTERFACE;
+    }
+  };
+
+  using UAVBase =
+      TResourceViewBase<tag_unordered_access_view<DeviceTexture<tag_texture>>,
+                        IMTLBindable>;
+  class TextureUAV : public UAVBase {
+  private:
+    Obj<MTL::Texture> view;
+
+  public:
+    TextureUAV(MTL::Texture *view,
+               const tag_unordered_access_view<>::DESC_S *pDesc,
+               DeviceTexture *pResource, IMTLD3D11Device *pDevice)
+        : UAVBase(pDesc, pResource, pDevice), view(view) {}
 
     void GetBoundResource(MTL_BIND_RESOURCE *ppResource) {
       (*ppResource).IsTexture = 1;
@@ -130,7 +187,7 @@ public:
       initWithSubresourceData(texture, pDesc, pInitialData);
     }
   }
-  virtual HRESULT PrivateQueryInterface(REFIID riid, void **ppvObject) {
+  HRESULT PrivateQueryInterface(REFIID riid, void **ppvObject) override {
     if (riid == __uuidof(IMTLBindable)) {
       *ppvObject = ref_and_cast<IMTLBindable>(this);
       return S_OK;
@@ -138,17 +195,18 @@ public:
     return E_NOINTERFACE;
   };
 
-  virtual void GetBoundResource(MTL_BIND_RESOURCE *ppResource) {
+  void GetBoundResource(MTL_BIND_RESOURCE *ppResource) override {
     (*ppResource).IsTexture = 1;
     (*ppResource).Texture = texture.ptr();
   };
 
-  virtual void GetLogicalResourceOrView(REFIID riid, void **ppLogicalResource) {
+  void GetLogicalResourceOrView(REFIID riid,
+                                void **ppLogicalResource) override {
     this->QueryInterface(riid, ppLogicalResource);
   };
 
   HRESULT CreateRenderTargetView(const D3D11_RENDER_TARGET_VIEW_DESC *pDesc,
-                                 ID3D11RenderTargetView **ppView) {
+                                 ID3D11RenderTargetView **ppView) override {
     D3D11_RENDER_TARGET_VIEW_DESC finalDesc;
     getViewDescFromResourceDesc(&this->desc, pDesc, &finalDesc);
     auto view =
@@ -165,7 +223,7 @@ public:
   };
 
   HRESULT CreateDepthStencilView(const D3D11_DEPTH_STENCIL_VIEW_DESC *pDesc,
-                                 ID3D11DepthStencilView **ppView) {
+                                 ID3D11DepthStencilView **ppView) override {
     D3D11_DEPTH_STENCIL_VIEW_DESC finalDesc;
     getViewDescFromResourceDesc(&this->desc, pDesc, &finalDesc);
     auto view =
@@ -182,7 +240,7 @@ public:
   };
 
   HRESULT CreateShaderResourceView(const D3D11_SHADER_RESOURCE_VIEW_DESC *pDesc,
-                                   ID3D11ShaderResourceView **ppView) {
+                                   ID3D11ShaderResourceView **ppView) override {
     D3D11_SHADER_RESOURCE_VIEW_DESC finalDesc;
     getViewDescFromResourceDesc(&this->desc, pDesc, &finalDesc);
     auto view =
@@ -192,6 +250,24 @@ public:
     }
     if (ppView) {
       *ppView = ref(new TextureSRV(view, &finalDesc, this, this->m_parent));
+    } else {
+      return S_FALSE;
+    }
+    return S_OK;
+  };
+
+  HRESULT
+  CreateUnorderedAccessView(const D3D11_UNORDERED_ACCESS_VIEW_DESC *pDesc,
+                            ID3D11UnorderedAccessView **ppView) override {
+    D3D11_UNORDERED_ACCESS_VIEW_DESC finalDesc;
+    getViewDescFromResourceDesc(&this->desc, pDesc, &finalDesc);
+    auto view =
+        transfer(newTextureView(this->m_parent, this->texture, &finalDesc));
+    if (!view) {
+      return E_FAIL; // ??
+    }
+    if (ppView) {
+      *ppView = ref(new TextureUAV(view, &finalDesc, this, this->m_parent));
     } else {
       return S_FALSE;
     }

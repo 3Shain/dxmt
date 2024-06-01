@@ -21,22 +21,22 @@ typedef struct MappedResource {
 DEFINE_COM_INTERFACE("d8a49d20-9a1f-4bb8-9ee6-442e064dce23", IDXMTResource)
     : public IUnknown {
   virtual HRESULT STDMETHODCALLTYPE CreateShaderResourceView(
-      const D3D11_SHADER_RESOURCE_VIEW_DESC *desc,
+      const D3D11_SHADER_RESOURCE_VIEW_DESC *pDesc,
       ID3D11ShaderResourceView **ppView) = 0;
   virtual HRESULT STDMETHODCALLTYPE CreateUnorderedAccessView(
-      const D3D11_UNORDERED_ACCESS_VIEW_DESC *desc,
+      const D3D11_UNORDERED_ACCESS_VIEW_DESC *pDesc,
       ID3D11UnorderedAccessView **ppView) = 0;
   virtual HRESULT STDMETHODCALLTYPE CreateRenderTargetView(
-      const D3D11_RENDER_TARGET_VIEW_DESC *desc,
+      const D3D11_RENDER_TARGET_VIEW_DESC *pDesc,
       ID3D11RenderTargetView **ppView) = 0;
   virtual HRESULT STDMETHODCALLTYPE CreateDepthStencilView(
-      const D3D11_DEPTH_STENCIL_VIEW_DESC *desc,
+      const D3D11_DEPTH_STENCIL_VIEW_DESC *pDesc,
       ID3D11DepthStencilView **ppView) = 0;
 };
 
 struct MTL_BIND_RESOURCE {
   UINT IsTexture;
-  UINT Padding;
+  UINT Padding_unused;
   union {
     MTL::Buffer *Buffer;
     MTL::Texture *Texture;
@@ -52,13 +52,6 @@ DEFINE_COM_INTERFACE("1c7e7c98-6dd4-42f0-867b-67960806886e", IMTLBindable)
   virtual void GetLogicalResourceOrView(REFIID riid,
                                         void **ppLogicalResource) = 0;
 };
-
-// DEFINE_COM_INTERFACE("8f1b6f77-58c4-4bf4-8ce9-d08318ae70b1",
-//                      IMTLSwappableBuffer)
-//     : public IUnknown {
-//   virtual MTL::Buffer *GetCurrent() = 0;
-//   virtual void Swap() = 0;
-// };
 
 DEFINE_COM_INTERFACE("daf21510-d136-44dd-bb16-068a94690775",
                      IMTLD3D11BackBuffer)
@@ -199,22 +192,22 @@ public:
   }
 
   virtual HRESULT STDMETHODCALLTYPE
-  CreateShaderResourceView(const D3D11_SHADER_RESOURCE_VIEW_DESC *desc,
+  CreateShaderResourceView(const D3D11_SHADER_RESOURCE_VIEW_DESC *pDesc,
                            ID3D11ShaderResourceView **ppView) {
     return E_INVALIDARG;
   };
   virtual HRESULT STDMETHODCALLTYPE
-  CreateUnorderedAccessView(const D3D11_UNORDERED_ACCESS_VIEW_DESC *desc,
+  CreateUnorderedAccessView(const D3D11_UNORDERED_ACCESS_VIEW_DESC *pDesc,
                             ID3D11UnorderedAccessView **ppView) {
     return E_INVALIDARG;
   };
   virtual HRESULT STDMETHODCALLTYPE
-  CreateRenderTargetView(const D3D11_RENDER_TARGET_VIEW_DESC *desc,
+  CreateRenderTargetView(const D3D11_RENDER_TARGET_VIEW_DESC *pDesc,
                          ID3D11RenderTargetView **ppView) {
     return E_INVALIDARG;
   };
   virtual HRESULT STDMETHODCALLTYPE
-  CreateDepthStencilView(const D3D11_DEPTH_STENCIL_VIEW_DESC *desc,
+  CreateDepthStencilView(const D3D11_DEPTH_STENCIL_VIEW_DESC *pDesc,
                          ID3D11DepthStencilView **ppView) {
     return E_INVALIDARG;
   };
@@ -328,8 +321,7 @@ public:
 protected:
   tag::DESC_S desc;
   /**
-  It's important that View holds a strong ref to Resource
-  but not vice versa
+  strong ref to resource
   */
   Com<typename tag::RESOURCE_IMPL> resource;
 };

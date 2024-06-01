@@ -554,6 +554,8 @@ auto readInstruction(
       .src_sampler = readSrcOperandSampler(Inst.m_Operands[3]),
       .offsets =
         {Inst.m_TexelOffset[0], Inst.m_TexelOffset[1], Inst.m_TexelOffset[2]},
+      .min_lod_clamp = {},
+      .feedback = {},
     };
     shader_info.srvMap[inst.src_resource.range_id].sampled = true;
     return inst;
@@ -608,7 +610,9 @@ auto readInstruction(
       .src_reference = readSrcOperand(Inst.m_Operands[4]),
       .offsets =
         {Inst.m_TexelOffset[0], Inst.m_TexelOffset[1], Inst.m_TexelOffset[2]},
-      .level_zero = Inst.m_OpCode == microsoft::D3D10_SB_OPCODE_SAMPLE_C_LZ
+      .min_lod_clamp = {},
+      .feedback = {},
+      .level_zero = Inst.m_OpCode == microsoft::D3D10_SB_OPCODE_SAMPLE_C_LZ,
     };
     shader_info.srvMap[inst.src_resource.range_id].compared = true;
     return inst;
@@ -623,6 +627,7 @@ auto readInstruction(
         SrcOperandImmediate32{
           .ivalue = {Inst.m_TexelOffset[0], Inst.m_TexelOffset[1], 0, 0}
         },
+      .feedback = {},
     };
     shader_info.srvMap[inst.src_resource.range_id].sampled = true;
     return inst;
@@ -638,6 +643,7 @@ auto readInstruction(
         SrcOperandImmediate32{
           .ivalue = {Inst.m_TexelOffset[0], Inst.m_TexelOffset[1], 0, 0}
         },
+      .feedback = {},
     };
     shader_info.srvMap[inst.src_resource.range_id].compared = true;
     return inst;
@@ -649,6 +655,7 @@ auto readInstruction(
       .src_resource = readSrcOperandResource(Inst.m_Operands[3]),
       .src_sampler = readSrcOperandSampler(Inst.m_Operands[4]),
       .offset = readSrcOperand(Inst.m_Operands[2]),
+      .feedback = {},
     };
     shader_info.srvMap[inst.src_resource.range_id].sampled = true;
     return inst;
@@ -661,6 +668,7 @@ auto readInstruction(
       .src_sampler = readSrcOperandSampler(Inst.m_Operands[4]),
       .src_reference = readSrcOperand(Inst.m_Operands[5]),
       .offset = readSrcOperand(Inst.m_Operands[2]),
+      .feedback = {},
     };
     shader_info.srvMap[inst.src_resource.range_id].compared = true;
     return inst;
@@ -671,7 +679,9 @@ auto readInstruction(
     if (Inst.m_Operands[1].m_Type ==
         microsoft::D3D10_SB_OPERAND_TYPE_RASTERIZER) {
       return InstSampleInfo{
-        .dst = readDstOperand(Inst.m_Operands[0]), .uint_result = return_uint
+        .dst = readDstOperand(Inst.m_Operands[0]),
+        .src = {},
+        .uint_result = return_uint
       };
     } else {
       return InstSampleInfo{
@@ -686,6 +696,7 @@ auto readInstruction(
         microsoft::D3D10_SB_OPERAND_TYPE_RASTERIZER) {
       return InstSamplePos{
         .dst = readDstOperand(Inst.m_Operands[0]),
+        .src = {},
         .src_sample_index = readSrcOperand(Inst.m_Operands[2])
       };
     } else {
@@ -723,6 +734,7 @@ auto readInstruction(
       .dst = readDstOperand(Inst.m_Operands[0]),
       .src_address = readSrcOperand(Inst.m_Operands[1]),
       .src_resource = readSrcOperandResource(Inst.m_Operands[2]),
+      .src_sample_index = {},
       .offsets =
         {Inst.m_TexelOffset[0], Inst.m_TexelOffset[1], Inst.m_TexelOffset[2]},
     };

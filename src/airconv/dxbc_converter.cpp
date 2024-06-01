@@ -686,13 +686,12 @@ int SM50Initialize(
           LB = RangeID;
           RangeSize = 1;
         }
-        ShaderResourceViewInfo srv{
-          .range =
-            {
-              .range_id = RangeID,
-              .lower_bound = LB,
-              .size = RangeSize,
-            }
+        ShaderResourceViewInfo srv;
+        srv.range = {
+          .range_id = RangeID,
+          .lower_bound = LB,
+          .size = RangeSize,
+          .space = 0,
         };
         switch (Inst.OpCode()) {
         case D3D10_SB_OPCODE_DCL_RESOURCE: {
@@ -739,15 +738,13 @@ int SM50Initialize(
           RangeSize = 1;
         }
 
-        UnorderedAccessViewInfo uav{
-          .range =
-            {
-              .range_id = RangeID,
-              .lower_bound = LB,
-              .size = RangeSize,
-            }
+        UnorderedAccessViewInfo uav;
+        uav.range = {
+          .range_id = RangeID,
+          .lower_bound = LB,
+          .size = RangeSize,
+          .space = 0,
         };
-
         unsigned Flags = 0;
         switch (Inst.OpCode()) {
         case D3D11_SB_OPCODE_DCL_UNORDERED_ACCESS_VIEW_TYPED: {
