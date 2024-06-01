@@ -1,7 +1,9 @@
+#include "DXBCParser/winerror.h"
 #include "Metal/MTLPixelFormat.hpp"
 #include "Metal/MTLResource.hpp"
 #include "Metal/MTLTexture.hpp"
 #include "com/com_pointer.hpp"
+#include "d3d11_device.hpp"
 #include "d3d11_texture.hpp"
 #include "mtld11_resource.hpp"
 #include "objc_pointer.hpp"
@@ -41,15 +43,25 @@ public:
     QueryInterface(riid, ppLogicalResource);
   };
 
-  HRESULT CreateShaderResourceView(const D3D11_SHADER_RESOURCE_VIEW_DESC *desc,
+  HRESULT CreateShaderResourceView(const D3D11_SHADER_RESOURCE_VIEW_DESC *pDesc,
                                    ID3D11ShaderResourceView **ppView) override {
+    D3D11_SHADER_RESOURCE_VIEW_DESC finalDesc;
+    if (FAILED(ExtractEntireResourceViewDescription(&this->desc, pDesc,
+                                                    &finalDesc))) {
+      return E_INVALIDARG;
+    }
     ERR("DeviceBuffer: SRV not supported");
     return E_FAIL;
   };
 
   HRESULT
-  CreateUnorderedAccessView(const D3D11_UNORDERED_ACCESS_VIEW_DESC *desc,
+  CreateUnorderedAccessView(const D3D11_UNORDERED_ACCESS_VIEW_DESC *pDesc,
                             ID3D11UnorderedAccessView **ppView) override {
+    D3D11_UNORDERED_ACCESS_VIEW_DESC finalDesc;
+    if (FAILED(ExtractEntireResourceViewDescription(&this->desc, pDesc,
+                                                    &finalDesc))) {
+      return E_INVALIDARG;
+    }
     ERR("DeviceBuffer: UAV not supported");
     return E_FAIL;
   };
@@ -67,10 +79,12 @@ public:
   };
 };
 
-Com<ID3D11Buffer>
+HRESULT
 CreateDeviceBuffer(IMTLD3D11Device *pDevice, const D3D11_BUFFER_DESC *pDesc,
-                   const D3D11_SUBRESOURCE_DATA *pInitialData) {
-  return new DeviceBuffer(pDesc, pInitialData, pDevice);
+                   const D3D11_SUBRESOURCE_DATA *pInitialData,
+                   ID3D11Buffer **ppBuffer) {
+  *ppBuffer = ref(new DeviceBuffer(pDesc, pInitialData, pDevice));
+  return S_OK;
 }
 
 template <typename tag_texture>
@@ -97,7 +111,7 @@ private:
     };
 
     void GetLogicalResourceOrView(REFIID riid, void **ppLogicalResource) {
-      this->QueryInterface(riid, ppLogicalResource);
+      this->resource->QueryInterface(riid, ppLogicalResource);
     };
 
     HRESULT PrivateQueryInterface(REFIID riid, void **ppvObject) {
@@ -128,7 +142,7 @@ private:
     };
 
     void GetLogicalResourceOrView(REFIID riid, void **ppLogicalResource) {
-      this->QueryInterface(riid, ppLogicalResource);
+      this->resource->QueryInterface(riid, ppLogicalResource);
     };
 
     HRESULT PrivateQueryInterface(REFIID riid, void **ppvObject) {
@@ -175,18 +189,11 @@ private:
   };
 
 public:
-  DeviceTexture(const tag_texture::DESC_S *pDesc,
-                const D3D11_SUBRESOURCE_DATA *pInitialData,
+  DeviceTexture(const tag_texture::DESC_S *pDesc, MTL::Texture *texture,
                 IMTLD3D11Device *pDevice)
-      : TResourceBase<tag_texture, IMTLBindable>(pDesc, pDevice) {
-    auto metal = pDevice->GetMTLDevice();
-    auto textureDescriptor = getTextureDescriptor(pDevice, pDesc);
-    assert(textureDescriptor);
-    texture = transfer(metal->newTexture(textureDescriptor));
-    if (pInitialData) {
-      initWithSubresourceData(texture, pDesc, pInitialData);
-    }
-  }
+      : TResourceBase<tag_texture, IMTLBindable>(pDesc, pDevice),
+        texture(texture) {}
+
   HRESULT PrivateQueryInterface(REFIID riid, void **ppvObject) override {
     if (riid == __uuidof(IMTLBindable)) {
       *ppvObject = ref_and_cast<IMTLBindable>(this);
@@ -208,7 +215,10 @@ public:
   HRESULT CreateRenderTargetView(const D3D11_RENDER_TARGET_VIEW_DESC *pDesc,
                                  ID3D11RenderTargetView **ppView) override {
     D3D11_RENDER_TARGET_VIEW_DESC finalDesc;
-    getViewDescFromResourceDesc(&this->desc, pDesc, &finalDesc);
+    if (FAILED(ExtractEntireResourceViewDescription(&this->desc, pDesc,
+                                                    &finalDesc))) {
+      return E_INVALIDARG;
+    }
     auto view =
         transfer(newTextureView(this->m_parent, this->texture, &finalDesc));
     if (!view) {
@@ -225,7 +235,10 @@ public:
   HRESULT CreateDepthStencilView(const D3D11_DEPTH_STENCIL_VIEW_DESC *pDesc,
                                  ID3D11DepthStencilView **ppView) override {
     D3D11_DEPTH_STENCIL_VIEW_DESC finalDesc;
-    getViewDescFromResourceDesc(&this->desc, pDesc, &finalDesc);
+    if (FAILED(ExtractEntireResourceViewDescription(&this->desc, pDesc,
+                                                    &finalDesc))) {
+      return E_INVALIDARG;
+    }
     auto view =
         transfer(newTextureView(this->m_parent, this->texture, &finalDesc));
     if (!view) {
@@ -242,7 +255,10 @@ public:
   HRESULT CreateShaderResourceView(const D3D11_SHADER_RESOURCE_VIEW_DESC *pDesc,
                                    ID3D11ShaderResourceView **ppView) override {
     D3D11_SHADER_RESOURCE_VIEW_DESC finalDesc;
-    getViewDescFromResourceDesc(&this->desc, pDesc, &finalDesc);
+    if (FAILED(ExtractEntireResourceViewDescription(&this->desc, pDesc,
+                                                    &finalDesc))) {
+      return E_INVALIDARG;
+    }
     auto view =
         transfer(newTextureView(this->m_parent, this->texture, &finalDesc));
     if (!view) {
@@ -260,7 +276,10 @@ public:
   CreateUnorderedAccessView(const D3D11_UNORDERED_ACCESS_VIEW_DESC *pDesc,
                             ID3D11UnorderedAccessView **ppView) override {
     D3D11_UNORDERED_ACCESS_VIEW_DESC finalDesc;
-    getViewDescFromResourceDesc(&this->desc, pDesc, &finalDesc);
+    if (FAILED(ExtractEntireResourceViewDescription(&this->desc, pDesc,
+                                                    &finalDesc))) {
+      return E_INVALIDARG;
+    }
     auto view =
         transfer(newTextureView(this->m_parent, this->texture, &finalDesc));
     if (!view) {
@@ -275,25 +294,47 @@ public:
   };
 };
 
-Com<ID3D11Texture1D>
+template <typename tag>
+HRESULT CreateDeviceTextureInternal(IMTLD3D11Device *pDevice,
+                                    const typename tag::DESC_S *pDesc,
+                                    const D3D11_SUBRESOURCE_DATA *pInitialData,
+                                    typename tag::COM **ppTexture) {
+  auto metal = pDevice->GetMTLDevice();
+  auto textureDescriptor = getTextureDescriptor(pDevice, pDesc);
+  assert(textureDescriptor);
+  auto texture = transfer(metal->newTexture(textureDescriptor));
+  if (pInitialData) {
+    initWithSubresourceData(texture, pDesc, pInitialData);
+  }
+  *ppTexture = ref(new DeviceTexture<tag>(pDesc, texture, pDevice));
+  return S_OK;
+}
+
+HRESULT
 CreateDeviceTexture1D(IMTLD3D11Device *pDevice,
                       const D3D11_TEXTURE1D_DESC *pDesc,
-                      const D3D11_SUBRESOURCE_DATA *pInitialData) {
-  return new DeviceTexture<tag_texture_1d>(pDesc, pInitialData, pDevice);
+                      const D3D11_SUBRESOURCE_DATA *pInitialData,
+                      ID3D11Texture1D **ppTexture) {
+  return CreateDeviceTextureInternal<tag_texture_1d>(pDevice, pDesc,
+                                                     pInitialData, ppTexture);
 }
 
-Com<ID3D11Texture2D>
+HRESULT
 CreateDeviceTexture2D(IMTLD3D11Device *pDevice,
                       const D3D11_TEXTURE2D_DESC *pDesc,
-                      const D3D11_SUBRESOURCE_DATA *pInitialData) {
-  return new DeviceTexture<tag_texture_2d>(pDesc, pInitialData, pDevice);
+                      const D3D11_SUBRESOURCE_DATA *pInitialData,
+                      ID3D11Texture2D **ppTexture) {
+  return CreateDeviceTextureInternal<tag_texture_2d>(pDevice, pDesc,
+                                                     pInitialData, ppTexture);
 }
 
-Com<ID3D11Texture3D>
+HRESULT
 CreateDeviceTexture3D(IMTLD3D11Device *pDevice,
                       const D3D11_TEXTURE3D_DESC *pDesc,
-                      const D3D11_SUBRESOURCE_DATA *pInitialData) {
-  return new DeviceTexture<tag_texture_3d>(pDesc, pInitialData, pDevice);
+                      const D3D11_SUBRESOURCE_DATA *pInitialData,
+                      ID3D11Texture3D **ppTexture) {
+  return CreateDeviceTextureInternal<tag_texture_3d>(pDevice, pDesc,
+                                                     pInitialData, ppTexture);
 }
 
 } // namespace dxmt

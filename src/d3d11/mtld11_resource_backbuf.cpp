@@ -50,6 +50,44 @@ private:
   };
   friend class BackBufferRTV;
 
+  using BackBufferSRVBase =
+      TResourceViewBase<tag_shader_resource_view<EmulatedBackBufferTexture>,
+                        IMTLBindable>;
+  class BackBufferSRV : public BackBufferSRVBase {
+  public:
+    BackBufferSRV(const D3D11_SHADER_RESOURCE_VIEW_DESC *pDesc,
+                  EmulatedBackBufferTexture *context, IMTLD3D11Device *pDevice)
+        : BackBufferSRVBase(pDesc, context, pDevice) {}
+
+    void GetBoundResource(MTL_BIND_RESOURCE *ppResource) {
+      (*ppResource).IsTexture = 1;
+      (*ppResource).Texture = resource->GetCurrentFrameBackBuffer();
+    };
+
+    void GetLogicalResourceOrView(REFIID riid, void **ppLogicalResource) {
+      resource->QueryInterface(riid, ppLogicalResource);
+    };
+  };
+
+  using BackBufferUAVBase =
+      TResourceViewBase<tag_unordered_access_view<EmulatedBackBufferTexture>,
+                        IMTLBindable>;
+  class BackBufferUAV : public BackBufferUAVBase {
+  public:
+    BackBufferUAV(const D3D11_UNORDERED_ACCESS_VIEW_DESC *pDesc,
+                  EmulatedBackBufferTexture *context, IMTLD3D11Device *pDevice)
+        : BackBufferUAVBase(pDesc, context, pDevice) {}
+
+    void GetBoundResource(MTL_BIND_RESOURCE *ppResource) {
+      (*ppResource).IsTexture = 1;
+      (*ppResource).Texture = resource->GetCurrentFrameBackBuffer();
+    };
+
+    void GetLogicalResourceOrView(REFIID riid, void **ppLogicalResource) {
+      resource->QueryInterface(riid, ppLogicalResource);
+    };
+  };
+
 public:
   EmulatedBackBufferTexture(const DXGI_SWAP_CHAIN_DESC1 *pDesc,
                             IMTLD3D11Device *pDevice, HWND hWnd)
@@ -106,7 +144,8 @@ public:
     layer_factory->ReleaseMetalLayer(hWnd, native_view_);
   }
 
-  virtual HRESULT PrivateQueryInterface(REFIID riid, void **ppvObject) {
+  virtual HRESULT PrivateQueryInterface(REFIID riid,
+                                        void **ppvObject) override {
     if (riid == __uuidof(ID3D11Texture2D)) {
       *ppvObject = ref_and_cast<ID3D11Texture2D>(this);
       return S_OK;
@@ -115,7 +154,7 @@ public:
   }
 
   HRESULT CreateRenderTargetView(const D3D11_RENDER_TARGET_VIEW_DESC *pDesc,
-                                 ID3D11RenderTargetView **ppView) {
+                                 ID3D11RenderTargetView **ppView) override {
     D3D11_RENDER_TARGET_VIEW_DESC final;
     if (pDesc) {
       if (pDesc->Format != desc.Format) {
@@ -144,6 +183,71 @@ public:
     return S_OK;
   }
 
+  HRESULT CreateShaderResourceView(const D3D11_SHADER_RESOURCE_VIEW_DESC *pDesc,
+                                   ID3D11ShaderResourceView **ppView) override {
+    D3D11_SHADER_RESOURCE_VIEW_DESC final;
+    if (pDesc) {
+      if (pDesc->Format != desc.Format) {
+        ERR("CreateRenderTargetView: Try to reinterpret back buffer SRV");
+        ERR("previous: ", desc.Format);
+        ERR("new: ", pDesc->Format);
+        return E_INVALIDARG;
+      }
+      if (pDesc->ViewDimension != D3D11_SRV_DIMENSION_TEXTURE2D) {
+        ERR("CreateRenderTargetView: Back buffer SRV must be a 2d texture");
+        return E_INVALIDARG;
+      }
+      // TODO: confirm texture from drawable has exactly 1 mipslice
+      if (pDesc->Texture2D.MostDetailedMip != 0 ||
+          pDesc->Texture2D.MipLevels != 1) {
+        ERR("CreateRenderTargetView: Back buffer SRV mipslice must be 0");
+        return E_INVALIDARG;
+      }
+    }
+    final.Format = desc.Format;
+    final.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+    final.Texture2D.MostDetailedMip = 0;
+    final.Texture2D.MipLevels = 1;
+    if (!ppView)
+      return S_FALSE;
+
+    *ppView = ref(new BackBufferSRV(&final, this, this->m_parent));
+
+    return S_OK;
+  }
+
+  HRESULT
+  CreateUnorderedAccessView(const D3D11_UNORDERED_ACCESS_VIEW_DESC *pDesc,
+                            ID3D11UnorderedAccessView **ppView) override {
+    D3D11_UNORDERED_ACCESS_VIEW_DESC final;
+    if (pDesc) {
+      if (pDesc->Format != desc.Format) {
+        ERR("CreateRenderTargetView: Try to reinterpret back buffer UAV");
+        ERR("previous: ", desc.Format);
+        ERR("new: ", pDesc->Format);
+        return E_INVALIDARG;
+      }
+      if (pDesc->ViewDimension != D3D11_UAV_DIMENSION_TEXTURE2D) {
+        ERR("CreateRenderTargetView: Back buffer UAV must be a 2d texture");
+        return E_INVALIDARG;
+      }
+      // TODO: confirm texture from drawable has exactly 1 mipslice
+      if (pDesc->Texture2D.MipSlice != 0) {
+        ERR("CreateRenderTargetView: Back buffer UAV mipslice must be 0");
+        return E_INVALIDARG;
+      }
+    }
+    final.Format = desc.Format;
+    final.ViewDimension = D3D11_UAV_DIMENSION_TEXTURE2D;
+    final.Texture2D.MipSlice = 0;
+    if (!ppView)
+      return S_FALSE;
+
+    *ppView = ref(new BackBufferUAV(&final, this, this->m_parent));
+
+    return S_OK;
+  }
+
   MTL::Texture *GetCurrentFrameBackBuffer() {
     if (current_drawable == nullptr) {
       current_drawable = layer_->nextDrawable();
@@ -152,9 +256,11 @@ public:
     return current_drawable->texture();
   };
 
-  void Swap() { current_drawable = nullptr; }
+  void Swap() override { current_drawable = nullptr; }
 
-  CA::MetalDrawable *CurrentDrawable() { return current_drawable.ptr(); }
+  CA::MetalDrawable *CurrentDrawable() override {
+    return current_drawable.ptr();
+  }
 };
 
 Com<IMTLD3D11BackBuffer>

@@ -1,4 +1,5 @@
 
+#include "DXBCParser/winerror.h"
 #include "Metal/MTLPixelFormat.hpp"
 #include "com/com_object.hpp"
 #include "com/com_pointer.hpp"
@@ -12,7 +13,7 @@
 
 namespace dxmt {
 
-#pragma region StagingBuffer
+#pragma region DynamicBuffer
 
 class DynamicBuffer
     : public TResourceBase<tag_buffer, IMTLDynamicBuffer, IMTLDynamicBindable> {
@@ -76,16 +77,18 @@ public:
     }
   }
 
-  MTL::Buffer *GetCurrentBuffer(UINT *pBytesPerRow) { return buffer.ptr(); };
+  MTL::Buffer *GetCurrentBuffer(UINT *pBytesPerRow) override {
+    return buffer.ptr();
+  };
 
   void GetBindable(IMTLBindable **ppResource,
-                   std::function<void()> &&onBufferSwap) {
+                   std::function<void()> &&onBufferSwap) override {
     *ppResource = new DynamicBinding(this, std::move(onBufferSwap));
     assert(observers.insert((DynamicBinding *)*ppResource).second &&
            "are you kidding me?");
   };
 
-  void RotateBuffer(IMTLDynamicBufferPool *pool) {
+  void RotateBuffer(IMTLDynamicBufferPool *pool) override {
     pool->ExchangeFromPool(&buffer);
     for (auto &observer : observers) {
       observer->NotifyObserver();
@@ -97,7 +100,7 @@ public:
            "it must be 1 unless the destructor called twice");
   }
 
-  HRESULT PrivateQueryInterface(const IID &riid, void **ppvObject) {
+  HRESULT PrivateQueryInterface(const IID &riid, void **ppvObject) override {
     if (riid == __uuidof(IMTLDynamicBuffer)) {
       *ppvObject = ref_and_cast<IMTLDynamicBuffer>(this);
       return S_OK;
@@ -109,17 +112,30 @@ public:
 
     return E_FAIL;
   }
+
+  HRESULT CreateShaderResourceView(const D3D11_SHADER_RESOURCE_VIEW_DESC *pDesc,
+                                   ID3D11ShaderResourceView **ppView) override {
+    D3D11_SHADER_RESOURCE_VIEW_DESC finalDesc;
+    if (FAILED(ExtractEntireResourceViewDescription(&this->desc, pDesc,
+                                                    &finalDesc))) {
+      return E_INVALIDARG;
+    }
+    ERR("TODO: Dynamic buffer SRV");
+    return E_NOTIMPL;
+  }
 };
 
 #pragma endregion
 
-Com<ID3D11Buffer>
+HRESULT
 CreateDynamicBuffer(IMTLD3D11Device *pDevice, const D3D11_BUFFER_DESC *pDesc,
-                    const D3D11_SUBRESOURCE_DATA *pInitialData) {
-  return new DynamicBuffer(pDesc, pInitialData, pDevice);
+                    const D3D11_SUBRESOURCE_DATA *pInitialData,
+                    ID3D11Buffer **ppBuffer) {
+  *ppBuffer = ref(new DynamicBuffer(pDesc, pInitialData, pDevice));
+  return S_OK;
 }
 
-#pragma region StagingBuffer
+#pragma region DynamicTexture
 
 class DynamicTexture2D
     : public TResourceBase<tag_texture_2d, IMTLDynamicBuffer> {
@@ -176,8 +192,7 @@ private:
 public:
   DynamicTexture2D(const tag_texture_2d::DESC_S *desc,
                    const D3D11_SUBRESOURCE_DATA *pInitialData,
-                   IMTLD3D11Device *device,
-                   UINT bytesPerRow)
+                   IMTLD3D11Device *device, UINT bytesPerRow)
       : TResourceBase<tag_texture_2d, IMTLDynamicBuffer>(desc, device) {
     //
     // buffer = transfer(metal->newBuffer(desc->ByteWidth, 0));
@@ -223,32 +238,41 @@ public:
     return E_FAIL;
   }
 
-  HRESULT CreateShaderResourceView(const D3D11_SHADER_RESOURCE_VIEW_DESC *desc,
+  HRESULT CreateShaderResourceView(const D3D11_SHADER_RESOURCE_VIEW_DESC *pDesc,
                                    ID3D11ShaderResourceView **ppView) {
+    D3D11_SHADER_RESOURCE_VIEW_DESC finalDesc;
+    if (FAILED(ExtractEntireResourceViewDescription(&this->desc, pDesc,
+                                                    &finalDesc))) {
+      return E_INVALIDARG;
+    }
     return E_INVALIDARG;
   };
 };
 
 #pragma endregion
 
-Com<ID3D11Texture2D>
+HRESULT
 CreateDynamicTexture2D(IMTLD3D11Device *pDevice,
                        const D3D11_TEXTURE2D_DESC *pDesc,
-                       const D3D11_SUBRESOURCE_DATA *pInitialData) {
+                       const D3D11_SUBRESOURCE_DATA *pInitialData,
+                       ID3D11Texture2D **ppTexture) {
   Com<IMTLDXGIAdatper> adapter;
   auto metal = pDevice->GetMTLDevice();
   pDevice->GetAdapter(&adapter);
   MTL_FORMAT_DESC format;
   adapter->QueryFormatDesc(pDesc->Format, &format);
-  if(format.IsCompressed) {
+  if (format.IsCompressed) {
     throw 0;
   }
-  if(format.PixelFormat == MTL::PixelFormatInvalid) {
+  if (format.PixelFormat == MTL::PixelFormatInvalid) {
     throw 0;
   }
   assert(format.Stride > 0);
-  auto minimumAlignment = metal->minimumLinearTextureAlignmentForPixelFormat(format.PixelFormat);
-  return new DynamicTexture2D(pDesc, pInitialData, pDevice, format.Stride);
+  auto minimumAlignment =
+      metal->minimumLinearTextureAlignmentForPixelFormat(format.PixelFormat);
+  *ppTexture =
+      ref(new DynamicTexture2D(pDesc, pInitialData, pDevice, format.Stride));
+  return S_OK;
 }
 
 } // namespace dxmt

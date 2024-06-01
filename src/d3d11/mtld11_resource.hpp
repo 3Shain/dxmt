@@ -251,7 +251,7 @@ struct tag_shader_resource_view {
 };
 
 template <typename RESOURCE_IMPL_ = ID3D11Resource,
-          typename COM_IMPL_ = ID3D11UnorderedAccessView>
+          typename COM_IMPL_ = IMTLD3D11UnorderedAccessView>
 struct tag_unordered_access_view {
   using COM = ID3D11UnorderedAccessView;
   using COM_IMPL = COM_IMPL_;
@@ -328,47 +328,76 @@ protected:
 
 #pragma region Resource Factory
 
-Com<ID3D11Buffer>
+HRESULT
 CreateStagingBuffer(IMTLD3D11Device *pDevice, const D3D11_BUFFER_DESC *pDesc,
-                    const D3D11_SUBRESOURCE_DATA *pInitialData);
+                    const D3D11_SUBRESOURCE_DATA *pInitialData,
+                    ID3D11Buffer **ppBuffer);
 
-Com<ID3D11Texture1D>
+HRESULT
 CreateStagingTexture1D(IMTLD3D11Device *pDevice,
                        const D3D11_TEXTURE1D_DESC *pDesc,
-                       const D3D11_SUBRESOURCE_DATA *pInitialData);
+                       const D3D11_SUBRESOURCE_DATA *pInitialData,
+                       ID3D11Texture1D **ppTexture);
 
-Com<ID3D11Texture2D>
+HRESULT
 CreateStagingTexture2D(IMTLD3D11Device *pDevice,
                        const D3D11_TEXTURE2D_DESC *pDesc,
-                       const D3D11_SUBRESOURCE_DATA *pInitialData);
+                       const D3D11_SUBRESOURCE_DATA *pInitialData,
+                       ID3D11Texture2D **ppTexture);
 
-Com<ID3D11Buffer>
+HRESULT
+CreateStagingTexture3D(IMTLD3D11Device *pDevice,
+                       const D3D11_TEXTURE3D_DESC *pDesc,
+                       const D3D11_SUBRESOURCE_DATA *pInitialData,
+                       ID3D11Texture3D **ppTexture);
+
+HRESULT
 CreateDeviceBuffer(IMTLD3D11Device *pDevice, const D3D11_BUFFER_DESC *pDesc,
-                   const D3D11_SUBRESOURCE_DATA *pInitialData);
+                   const D3D11_SUBRESOURCE_DATA *pInitialData,
+                   ID3D11Buffer **ppBuffer);
 
-Com<ID3D11Texture1D>
-CreateDeviceTexture1D(IMTLD3D11Device *pDevice,
-                      const D3D11_TEXTURE1D_DESC *pDesc,
-                      const D3D11_SUBRESOURCE_DATA *pInitialData);
+HRESULT CreateDeviceTexture1D(IMTLD3D11Device *pDevice,
+                              const D3D11_TEXTURE1D_DESC *pDesc,
+                              const D3D11_SUBRESOURCE_DATA *pInitialData,
+                              ID3D11Texture1D **ppTexture);
 
-Com<ID3D11Texture2D>
-CreateDeviceTexture2D(IMTLD3D11Device *pDevice,
-                      const D3D11_TEXTURE2D_DESC *pDesc,
-                      const D3D11_SUBRESOURCE_DATA *pInitialData);
+HRESULT CreateDeviceTexture2D(IMTLD3D11Device *pDevice,
+                              const D3D11_TEXTURE2D_DESC *pDesc,
+                              const D3D11_SUBRESOURCE_DATA *pInitialData,
+                              ID3D11Texture2D **ppTexture);
 
-Com<ID3D11Texture3D>
-CreateDeviceTexture3D(IMTLD3D11Device *pDevice,
-                      const D3D11_TEXTURE3D_DESC *pDesc,
-                      const D3D11_SUBRESOURCE_DATA *pInitialData);
+HRESULT CreateDeviceTexture3D(IMTLD3D11Device *pDevice,
+                              const D3D11_TEXTURE3D_DESC *pDesc,
+                              const D3D11_SUBRESOURCE_DATA *pInitialData,
+                              ID3D11Texture3D **ppTexture);
 
-Com<ID3D11Buffer>
+HRESULT
 CreateDynamicBuffer(IMTLD3D11Device *pDevice, const D3D11_BUFFER_DESC *pDesc,
-                    const D3D11_SUBRESOURCE_DATA *pInitialData);
+                    const D3D11_SUBRESOURCE_DATA *pInitialData,
+                    ID3D11Buffer **ppBuffer);
 
-Com<ID3D11Texture2D>
-CreateDynamicTexture2D(IMTLD3D11Device *pDevice,
-                       const D3D11_TEXTURE2D_DESC *pDesc,
-                       const D3D11_SUBRESOURCE_DATA *pInitialData);
+HRESULT CreateDynamicTexture2D(IMTLD3D11Device *pDevice,
+                               const D3D11_TEXTURE2D_DESC *pDesc,
+                               const D3D11_SUBRESOURCE_DATA *pInitialData,
+                               ID3D11Texture2D **ppTexture);
+#pragma endregion
+
+#pragma region Helper
+template <typename RESOURCE_DESC, typename VIEW_DESC>
+HRESULT ExtractEntireResourceViewDescription(const RESOURCE_DESC *pResourceDesc,
+                                             VIEW_DESC *pViewDescOut);
+
+template <typename RESOURCE_DESC, typename VIEW_DESC>
+HRESULT ExtractEntireResourceViewDescription(const RESOURCE_DESC *pResourceDesc,
+                                             const VIEW_DESC *pViewDescIn,
+                                             VIEW_DESC *pViewDescOut) {
+  if (pViewDescIn) {
+    *pViewDescOut = *pViewDescIn;
+    return S_OK;
+  } else {
+    return ExtractEntireResourceViewDescription(pResourceDesc, pViewDescOut);
+  }
+}
 #pragma endregion
 
 } // namespace dxmt

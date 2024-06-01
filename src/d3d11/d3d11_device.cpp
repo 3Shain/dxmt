@@ -92,16 +92,12 @@ public:
       switch (pDesc->Usage) {
       case D3D11_USAGE_DEFAULT:
       case D3D11_USAGE_IMMUTABLE:
-        *ppBuffer = CreateDeviceBuffer(this, pDesc, pInitialData);
-        break;
+        return CreateDeviceBuffer(this, pDesc, pInitialData, ppBuffer);
       case D3D11_USAGE_DYNAMIC:
-        *ppBuffer = CreateDynamicBuffer(this, pDesc, pInitialData);
-        break;
+        return CreateDynamicBuffer(this, pDesc, pInitialData, ppBuffer);
       case D3D11_USAGE_STAGING:
-        *ppBuffer = CreateStagingBuffer(this, pDesc, pInitialData);
-        break;
+        return CreateStagingBuffer(this, pDesc, pInitialData, ppBuffer);
       }
-      return S_OK;
     } catch (const MTLD3DError &err) {
       ERR(err.message());
       return E_FAIL;
@@ -121,7 +117,24 @@ public:
     if (pDesc->MiscFlags & D3D11_RESOURCE_MISC_TILED)
       return E_INVALIDARG; // not supported yet
 
-    IMPLEMENT_ME;
+    try {
+      switch (pDesc->Usage) {
+      case D3D11_USAGE_DEFAULT:
+      case D3D11_USAGE_IMMUTABLE:
+        return CreateDeviceTexture1D(this, pDesc, pInitialData, ppTexture1D);
+      case D3D11_USAGE_DYNAMIC:
+        return E_NOTIMPL;
+      case D3D11_USAGE_STAGING:
+        if (pDesc->BindFlags != 0) {
+          return E_INVALIDARG;
+        }
+        return CreateStagingTexture1D(this, pDesc, pInitialData, ppTexture1D);
+      }
+      return S_OK;
+    } catch (const MTLD3DError &err) {
+      ERR(err.message());
+      return E_FAIL;
+    }
   }
 
   HRESULT STDMETHODCALLTYPE
@@ -140,17 +153,14 @@ public:
       switch (pDesc->Usage) {
       case D3D11_USAGE_DEFAULT:
       case D3D11_USAGE_IMMUTABLE:
-        *ppTexture2D = CreateDeviceTexture2D(this, pDesc, pInitialData);
-        break;
+        return CreateDeviceTexture2D(this, pDesc, pInitialData, ppTexture2D);
       case D3D11_USAGE_DYNAMIC:
-        *ppTexture2D = CreateDynamicTexture2D(this, pDesc, pInitialData);
-        break;
+        return CreateDynamicTexture2D(this, pDesc, pInitialData, ppTexture2D);
       case D3D11_USAGE_STAGING:
         if (pDesc->BindFlags != 0) {
           return E_INVALIDARG;
         }
-        *ppTexture2D = CreateStagingTexture2D(this, pDesc, pInitialData);
-        break;
+        return CreateStagingTexture2D(this, pDesc, pInitialData, ppTexture2D);
       }
       return S_OK;
     } catch (const MTLD3DError &err) {
@@ -171,7 +181,24 @@ public:
     if ((pDesc->MiscFlags & D3D11_RESOURCE_MISC_TILED))
       return E_INVALIDARG; // not supported yet
 
-    IMPLEMENT_ME;
+    try {
+      switch (pDesc->Usage) {
+      case D3D11_USAGE_DEFAULT:
+      case D3D11_USAGE_IMMUTABLE:
+        return CreateDeviceTexture3D(this, pDesc, pInitialData, ppTexture3D);
+      case D3D11_USAGE_DYNAMIC:
+        return E_NOTIMPL;
+      case D3D11_USAGE_STAGING:
+        if (pDesc->BindFlags != 0) {
+          return E_INVALIDARG;
+        }
+        return CreateStagingTexture3D(this, pDesc, pInitialData, ppTexture3D);
+      }
+      return S_OK;
+    } catch (const MTLD3DError &err) {
+      ERR(err.message());
+      return E_FAIL;
+    }
   }
 
   HRESULT STDMETHODCALLTYPE CreateShaderResourceView(

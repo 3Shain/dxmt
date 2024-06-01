@@ -12,6 +12,7 @@ d3d11_src = [
   'd3d11_swapchain.cpp',
   'd3d11_texture.cpp',
   'd3d11.cpp',
+  'mtld11_resource_helper.cpp',
   'mtld11_resource_device.cpp',
   'mtld11_resource_dynamic.cpp',
   'mtld11_resource_staging.cpp',
