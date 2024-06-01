@@ -54,13 +54,7 @@ HRESULT CreateStagingTextureInternal(IMTLD3D11Device *pDevice,
                                      const typename tag::DESC_S *pDesc,
                                      const D3D11_SUBRESOURCE_DATA *pInitialData,
                                      typename tag::COM **ppTexture) {
-  // auto metal = pDevice->GetMTLDevice();
-  // auto textureDescriptor = getTextureDescriptor(pDevice, pDesc);
-  // assert(textureDescriptor);
-  // auto texture = transfer(metal->newTexture(textureDescriptor));
-  // if (pInitialData) {
-  //   initWithSubresourceData(texture, pDesc, pInitialData);
-  // }
+  assert(0 && "TODO");
   *ppTexture = ref(new StagingTexture<tag>(pDesc, pDevice));
   return S_OK;
 }

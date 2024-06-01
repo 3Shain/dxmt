@@ -300,8 +300,10 @@ HRESULT CreateDeviceTextureInternal(IMTLD3D11Device *pDevice,
                                     const D3D11_SUBRESOURCE_DATA *pInitialData,
                                     typename tag::COM **ppTexture) {
   auto metal = pDevice->GetMTLDevice();
-  auto textureDescriptor = getTextureDescriptor(pDevice, pDesc);
-  assert(textureDescriptor);
+  Obj<MTL::TextureDescriptor> textureDescriptor;
+  if (FAILED(CreateMTLTextureDescriptor(pDevice, pDesc, &textureDescriptor))) {
+    return E_INVALIDARG;
+  }
   auto texture = transfer(metal->newTexture(textureDescriptor));
   if (pInitialData) {
     initWithSubresourceData(texture, pDesc, pInitialData);

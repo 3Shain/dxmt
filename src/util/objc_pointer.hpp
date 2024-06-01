@@ -72,11 +72,11 @@ public:
   void release() = delete;
 
   T *operator->() const {
-    #ifndef NDEBUG
+#ifndef NDEBUG
     if (m_ptr == nullptr) {
       throw MTLD3DError("try to access a nullptr");
     }
-    #endif
+#endif
     return m_ptr;
   }
 
@@ -95,6 +95,12 @@ public:
   T *ptr() const { return m_ptr; }
 
   operator T *() const { return m_ptr; }
+
+  [[nodiscard]] T *takeOwnership() {
+    auto ret = this->m_ptr;
+    this->m_ptr = nullptr;
+    return ret;
+  }
 
 private:
   // T *m_ptr = nullptr;

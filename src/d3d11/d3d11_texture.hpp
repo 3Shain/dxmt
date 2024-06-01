@@ -13,8 +13,4 @@ MTL::Texture *newTextureView(IMTLD3D11Device *pDevice, MTL::Texture *source,
 template <typename TEXTURE_DESC>
 void initWithSubresourceData(MTL::Texture *target, const TEXTURE_DESC *desc,
                              const D3D11_SUBRESOURCE_DATA *subresources);
-
-template <typename TEXTURE_DESC>
-Obj<MTL::TextureDescriptor> getTextureDescriptor(IMTLD3D11Device *pDevice,
-                                                 const TEXTURE_DESC *pDesc);
 } // namespace dxmt

@@ -398,6 +398,11 @@ HRESULT ExtractEntireResourceViewDescription(const RESOURCE_DESC *pResourceDesc,
     return ExtractEntireResourceViewDescription(pResourceDesc, pViewDescOut);
   }
 }
+
+template <typename TEXTURE_DESC>
+HRESULT CreateMTLTextureDescriptor(IMTLD3D11Device *pDevice,
+                                   const TEXTURE_DESC *pDesc,
+                                   MTL::TextureDescriptor **pMtlDescOut);
 #pragma endregion
 
 } // namespace dxmt
