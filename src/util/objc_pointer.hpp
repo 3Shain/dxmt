@@ -74,7 +74,7 @@ public:
   T *operator->() const {
 #ifndef NDEBUG
     if (m_ptr == nullptr) {
-      throw MTLD3DError("try to access a nullptr");
+      __builtin_trap();
     }
 #endif
     return m_ptr;

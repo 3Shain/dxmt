@@ -14,13 +14,26 @@
 #include "util_string.hpp"
 #include "wsi_window.hpp"
 
+/**
+Metal support at most 3 swapchain
+*/
+constexpr size_t kSwapchainLatency = 3;
+
+template <typename F> class DestructorWrapper {
+  F f;
+
+public:
+  DestructorWrapper(F &&f) : f(std::forward<F>(f)) {}
+  ~DestructorWrapper() { std::invoke(f); };
+};
+
 namespace dxmt {
 
 Com<IMTLD3D11BackBuffer>
 CreateEmulatedBackBuffer(IMTLD3D11Device *pDevice,
                          const DXGI_SWAP_CHAIN_DESC1 *pDesc, HWND hWnd);
 
-class MTLD3D11SwapChain final : public MTLDXGISubObject<IDXGISwapChain1> {
+class MTLD3D11SwapChain final : public MTLDXGISubObject<IDXGISwapChain2> {
 public:
   MTLD3D11SwapChain(IDXGIFactory1 *pFactory, IMTLDXGIDevice *pDevice, HWND hWnd,
                     const DXGI_SWAP_CHAIN_DESC1 *pDesc,
@@ -34,7 +47,8 @@ public:
     device_->GetImmediateContext1(&context);
     context->QueryInterface(IID_PPV_ARGS(&device_context_));
 
-    semaphore = dispatch_semaphore_create(3);
+    present_semaphore_ =
+        CreateSemaphore(nullptr, kSwapchainLatency, kSwapchainLatency, nullptr);
 
     if (desc_.Width == 0 || desc_.Height == 0) {
       wsi::getWindowSize(hWnd, &desc_.Width, &desc_.Height);
@@ -47,6 +61,10 @@ public:
     }
   };
 
+  ~MTLD3D11SwapChain() {
+    CloseHandle(present_semaphore_);
+  };
+
   HRESULT
   STDMETHODCALLTYPE
   QueryInterface(REFIID riid, void **ppvObject) final {
@@ -57,7 +75,8 @@ public:
 
     if (riid == __uuidof(IUnknown) || riid == __uuidof(IDXGIObject) ||
         riid == __uuidof(IDXGIDeviceSubObject) ||
-        riid == __uuidof(IDXGISwapChain) || riid == __uuidof(IDXGISwapChain1)) {
+        riid == __uuidof(IDXGISwapChain) || riid == __uuidof(IDXGISwapChain1) ||
+        riid == __uuidof(IDXGISwapChain2)) {
       *ppvObject = ref(this);
       return S_OK;
     }
@@ -141,13 +160,15 @@ public:
   STDMETHODCALLTYPE
   ResizeBuffers(UINT BufferCount, UINT Width, UINT Height, DXGI_FORMAT Format,
                 UINT flags) final {
-    if (backbuffer_->AddRef() != 2) {
-      ERR("ResizeBuffers: unreleased outstanding references to back "
-          "buffers");
+    if (backbuffer_) {
+      if (backbuffer_->AddRef() != 2) {
+        ERR("ResizeBuffers: unreleased outstanding references to back "
+            "buffers");
+        backbuffer_->Release();
+        return DXGI_ERROR_INVALID_CALL;
+      }
       backbuffer_->Release();
-      return DXGI_ERROR_INVALID_CALL;
     }
-    backbuffer_->Release();
     /* BufferCount ignored */
     if (Width == 0 || Height == 0) {
       wsi::getWindowSize(hWnd, &desc_.Width, &desc_.Height);
@@ -234,8 +255,11 @@ public:
         // why transfer?
         // it works because the texture is in use, so drawable is valid during
         // encoding...
-        [drawable = transfer(backbuffer_->CurrentDrawable())](
-            MTL::CommandBuffer *cmdbuf) {
+        [drawable = transfer(backbuffer_->CurrentDrawable()),
+         _ = DestructorWrapper([sem = present_semaphore_]() {
+           // called when cmdbuf complete
+           ReleaseSemaphore(sem, 1, nullptr);
+         })](MTL::CommandBuffer *cmdbuf) {
           if (drawable) {
             cmdbuf->presentDrawable(drawable.ptr());
           }
@@ -269,6 +293,49 @@ public:
   STDMETHODCALLTYPE
   GetRotation(DXGI_MODE_ROTATION *pRotation) final { IMPLEMENT_ME; };
 
+  HRESULT STDMETHODCALLTYPE SetSourceSize(UINT width, UINT height) {
+    IMPLEMENT_ME
+    return S_OK;
+  };
+
+  HRESULT STDMETHODCALLTYPE GetSourceSize(UINT *width, UINT *height) {
+    IMPLEMENT_ME
+    return S_OK;
+  };
+
+  HRESULT STDMETHODCALLTYPE SetMaximumFrameLatency(UINT max_latency) {
+    // no-op?
+    return S_OK;
+  };
+
+  HRESULT STDMETHODCALLTYPE GetMaximumFrameLatency(UINT *max_latency) {
+    if (max_latency) {
+      *max_latency = kSwapchainLatency;
+    }
+    return S_OK;
+  };
+
+  HANDLE STDMETHODCALLTYPE GetFrameLatencyWaitableObject() {
+    HANDLE result = nullptr;
+    HANDLE processHandle = GetCurrentProcess();
+
+    if (!DuplicateHandle(processHandle, present_semaphore_, processHandle,
+                         &result, 0, FALSE, DUPLICATE_SAME_ACCESS)) {
+      return nullptr;
+    }
+
+    return result;
+  };
+
+  HRESULT STDMETHODCALLTYPE
+  SetMatrixTransform(const DXGI_MATRIX_3X2_F *matrix) {
+    return DXGI_ERROR_INVALID_CALL;
+  };
+
+  HRESULT STDMETHODCALLTYPE GetMatrixTransform(DXGI_MATRIX_3X2_F *matrix) {
+    return DXGI_ERROR_INVALID_CALL;
+  };
+
 private:
   Com<IDXGIFactory1> factory_;
   ULONG presentation_count_;
@@ -277,7 +344,7 @@ private:
   Com<IMTLD3D11Device> device_;
   Com<IMTLD3D11DeviceContext> device_context_;
   Com<IMTLD3D11BackBuffer> backbuffer_;
-  dispatch_semaphore_t semaphore;
+  HANDLE present_semaphore_;
   HWND hWnd;
 };
 

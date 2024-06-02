@@ -1,7 +1,6 @@
 #include "dxmt_names.hpp"
 #include "Foundation/NSRange.hpp"
 #include "Metal/MTLPixelFormat.hpp"
-#include "Metal/MTLResource.hpp"
 #include "Metal/MTLTexture.hpp"
 #include "d3d11_texture.hpp"
 #include "d3d11_device.hpp"

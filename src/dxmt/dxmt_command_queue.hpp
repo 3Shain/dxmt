@@ -53,7 +53,7 @@ class CommandChunk {
     typedef T value_type;
 
     linear_allocator() = delete;
-    linear_allocator(CommandChunk *chunk) : chunk(chunk){};
+    linear_allocator(CommandChunk *chunk) : chunk(chunk) {};
 
     [[nodiscard]] constexpr T *allocate(std::size_t n) {
       return reinterpret_cast<T *>(
@@ -96,7 +96,7 @@ class CommandChunk {
 
   template <typename context> class MFunc final : public BFunc<context> {
   public:
-    void invoke(context &ctx) final{/* nop */};
+    void invoke(context &ctx) final { /* nop */ };
     ~MFunc() noexcept = default;
   };
 
@@ -139,6 +139,10 @@ public:
     return ptr_add(cpu_argument_heap, aligned);
   }
 
+  std::pair<MTL::Buffer *, uint64_t> inspect_gpu_heap() {
+    return {gpu_argument_heap, gpu_arugment_heap_offset};
+  }
+
   std::pair<MTL::Buffer *, uint64_t> allocate_gpu_heap(size_t size,
                                                        size_t alignment) {
     std::size_t adjustment =
@@ -168,7 +172,9 @@ public:
 
   void encode(MTL::CommandBuffer *cmdbuf) {
     attached_cmdbuf = cmdbuf;
-    context_t context{this, cmdbuf, {}, {}, {}, {},};
+    context_t context{
+        this, cmdbuf, {}, {}, {}, {},
+    };
     auto cur = monoid_list.next;
     while (cur) {
       cur->value->invoke(context);

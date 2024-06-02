@@ -3,17 +3,8 @@
 #include "Metal/MTLArgumentEncoder.hpp"
 #include "Metal/MTLLibrary.hpp"
 #include "airconv_public.h"
-#include "com/com_object.hpp"
-#include "d3d11_device.hpp"
 #include "d3d11_device_child.hpp"
-#include "d3d11_private.h"
-#include "log/log.hpp"
 #include "objc_pointer.hpp"
-#include "sha1/sha1_util.hpp"
-#include "util_string.hpp"
-#include <atomic>
-#include <cstddef>
-#include <cstring>
 
 namespace dxmt {
 
@@ -33,24 +24,17 @@ template <typename tag>
 class TShaderBase
     : public MTLD3D11DeviceChild<typename tag::COM, IMTLD3D11Shader> {
 public:
-  TShaderBase(IMTLD3D11Device *device, const void *pBytecode,
-              UINT BytecodeLength)
-      : MTLD3D11DeviceChild<typename tag::COM, IMTLD3D11Shader>(device) {
-    sm50_ret_code = SM50Initialize(pBytecode, BytecodeLength, &sm50,
-                                   &reflection, &sm50_error);
-    if (sm50_ret_code) {
-      ERR("Failed to initialize shader: ", SM50GetErrorMesssage(sm50_error));
-    }
-    encoder_ =
-        transfer(SM50CreateArgumentEncoder(sm50, device->GetMTLDevice()));
-  }
+  TShaderBase(IMTLD3D11Device *device, SM50Shader *sm50,
+              MTL_SHADER_REFLECTION &reflection,
+              Obj<MTL::ArgumentEncoder> encoder)
+      : MTLD3D11DeviceChild<typename tag::COM, IMTLD3D11Shader>(device),
+        sm50(sm50), reflection(reflection), encoder_(std::move(encoder)) {}
 
   ~TShaderBase() {
     if (sm50) {
       SM50Destroy(sm50);
       sm50 = nullptr;
     }
-    SM50FreeError(sm50_error);
   }
 
   HRESULT QueryInterface(REFIID riid, void **ppvObject) {
@@ -87,8 +71,6 @@ public:
   }
 
   SM50Shader *sm50;
-  int sm50_ret_code;
-  SM50Error *sm50_error;
   MTL_SHADER_REFLECTION reflection;
   Com<IMTLCompiledShader> precompiled_;
   Obj<MTL::ArgumentEncoder> encoder_;
@@ -165,6 +147,10 @@ public:
       SM50DestroyBitcode(compile_result);
       function_ = transfer(library->newFunction(
           NS::String::string("shader_main", NS::UTF8StringEncoding)));
+      if (function_ == nullptr) {
+        ERR("Failed to create MTLFunction: name not found");
+        return;
+      }
     }
 
     TRACE("Compiled 1 shader");
@@ -203,34 +189,50 @@ void TShaderBase<tag>::GetArgumentEncoderRef(MTL::ArgumentEncoder **pEncoder) {
   }
 }
 
-Com<ID3D11VertexShader> CreateVertexShader(IMTLD3D11Device *pDevice,
-                                           const void *pShaderBytecode,
-                                           SIZE_T BytecodeLength) {
-  auto ret = new TShaderBase<tag_vertex_shader>(pDevice, pShaderBytecode,
-                                                BytecodeLength);
-  ret->AddRef(); // FIXME:!
-  ret->GetCompiledShader(NULL, &ret->precompiled_);
-  return ret;
+template <typename tag>
+HRESULT CreateShaderInternal(IMTLD3D11Device *pDevice,
+                             const void *pShaderBytecode, SIZE_T BytecodeLength,
+                             typename tag::COM **ppShader) {
+  SM50Shader *sm50;
+  SM50Error *err;
+  MTL_SHADER_REFLECTION reflection;
+  if (SM50Initialize(pShaderBytecode, BytecodeLength, &sm50, &reflection,
+                     &err)) {
+    ERR("Failed to initialize shader: ", SM50GetErrorMesssage(err));
+    SM50FreeError(err);
+    return E_FAIL;
+  }
+  if (ppShader == nullptr) {
+    SM50Destroy(sm50);
+    return S_FALSE;
+  }
+  auto encoder_ =
+      transfer(SM50CreateArgumentEncoder(sm50, pDevice->GetMTLDevice()));
+  *ppShader = ref(new TShaderBase<tag>(pDevice, sm50, reflection, encoder_));
+  // FIXME: this looks weird but don't change it for now
+  ((TShaderBase<tag> *)*ppShader)
+      ->GetCompiledShader(NULL, &((TShaderBase<tag> *)*ppShader)->precompiled_);
+  return S_OK;
 }
 
-Com<ID3D11PixelShader> CreatePixelShader(IMTLD3D11Device *pDevice,
-                                         const void *pShaderBytecode,
-                                         SIZE_T BytecodeLength) {
-  auto ret = new TShaderBase<tag_pixel_shader>(pDevice, pShaderBytecode,
-                                               BytecodeLength);
-  ret->AddRef(); // FIXME:!
-  ret->GetCompiledShader(NULL, &ret->precompiled_);
-  return ret;
+HRESULT CreateVertexShader(IMTLD3D11Device *pDevice,
+                           const void *pShaderBytecode, SIZE_T BytecodeLength,
+                           ID3D11VertexShader **ppShader) {
+  return CreateShaderInternal<tag_vertex_shader>(pDevice, pShaderBytecode,
+                                                 BytecodeLength, ppShader);
 }
 
-Com<ID3D11ComputeShader> CreateComputeShader(IMTLD3D11Device *pDevice,
-                                             const void *pShaderBytecode,
-                                             SIZE_T BytecodeLength) {
-  auto ret = new TShaderBase<tag_compute_shader>(pDevice, pShaderBytecode,
-                                                 BytecodeLength);
-  ret->AddRef(); // FIXME:!
-  ret->GetCompiledShader(NULL, &ret->precompiled_);
-  return ret;
+HRESULT CreatePixelShader(IMTLD3D11Device *pDevice, const void *pShaderBytecode,
+                          SIZE_T BytecodeLength, ID3D11PixelShader **ppShader) {
+  return CreateShaderInternal<tag_pixel_shader>(pDevice, pShaderBytecode,
+                                                BytecodeLength, ppShader);
+}
+
+HRESULT CreateComputeShader(IMTLD3D11Device *pDevice,
+                            const void *pShaderBytecode, SIZE_T BytecodeLength,
+                            ID3D11ComputeShader **ppShader) {
+  return CreateShaderInternal<tag_compute_shader>(pDevice, pShaderBytecode,
+                                                  BytecodeLength, ppShader);
 }
 
 } // namespace dxmt

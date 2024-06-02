@@ -48,16 +48,15 @@ enum class ShaderType {
   Compute = 5
 };
 
-Com<ID3D11VertexShader> CreateVertexShader(IMTLD3D11Device *pDevice,
-                                           const void *pShaderBytecode,
-                                           SIZE_T BytecodeLength);
+HRESULT CreateVertexShader(IMTLD3D11Device *pDevice,
+                           const void *pShaderBytecode, SIZE_T BytecodeLength,
+                           ID3D11VertexShader **ppShader);
 
-Com<ID3D11PixelShader> CreatePixelShader(IMTLD3D11Device *pDevice,
-                                         const void *pShaderBytecode,
-                                         SIZE_T BytecodeLength);
+HRESULT CreatePixelShader(IMTLD3D11Device *pDevice, const void *pShaderBytecode,
+                          SIZE_T BytecodeLength, ID3D11PixelShader **ppShader);
 
-Com<ID3D11ComputeShader> CreateComputeShader(IMTLD3D11Device *pDevice,
-                                             const void *pShaderBytecode,
-                                             SIZE_T BytecodeLength);
+HRESULT CreateComputeShader(IMTLD3D11Device *pDevice,
+                            const void *pShaderBytecode, SIZE_T BytecodeLength,
+                            ID3D11ComputeShader **ppShader);
 
 } // namespace dxmt

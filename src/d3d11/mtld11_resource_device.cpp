@@ -10,9 +10,13 @@
 
 namespace dxmt {
 
+#pragma region DeviceBuffer
+
 class DeviceBuffer : public TResourceBase<tag_buffer, IMTLBindable> {
 private:
   Obj<MTL::Buffer> buffer;
+  bool structured;
+  bool allow_raw_view;
 
 public:
   DeviceBuffer(const tag_buffer::DESC_S *desc,
@@ -26,14 +30,11 @@ public:
       memcpy(buffer->contents(), pInitialData->pSysMem, desc->ByteWidth);
       buffer->didModifyRange({0, desc->ByteWidth});
     }
+    structured = desc->MiscFlags & D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
+    allow_raw_view =
+        desc->MiscFlags & D3D11_RESOURCE_MISC_BUFFER_ALLOW_RAW_VIEWS;
   }
-  HRESULT PrivateQueryInterface(REFIID riid, void **ppvObject) override {
-    if (riid == __uuidof(IMTLBindable)) {
-      *ppvObject = ref_and_cast<IMTLBindable>(this);
-      return S_OK;
-    }
-    return E_NOINTERFACE;
-  };
+
   void GetBoundResource(MTL_BIND_RESOURCE *ppResource) override {
     (*ppResource).IsTexture = 0;
     (*ppResource).Buffer = buffer.ptr();
@@ -43,6 +44,9 @@ public:
     QueryInterface(riid, ppLogicalResource);
   };
 
+  using SRVBase = TResourceViewBase<tag_shader_resource_view<DeviceBuffer>,
+                        IMTLBindable>;
+
   HRESULT CreateShaderResourceView(const D3D11_SHADER_RESOURCE_VIEW_DESC *pDesc,
                                    ID3D11ShaderResourceView **ppView) override {
     D3D11_SHADER_RESOURCE_VIEW_DESC finalDesc;
@@ -50,9 +54,32 @@ public:
                                                     &finalDesc))) {
       return E_INVALIDARG;
     }
+    if (finalDesc.ViewDimension != D3D11_SRV_DIMENSION_BUFFER &&
+        finalDesc.ViewDimension != D3D11_SRV_DIMENSION_BUFFEREX) {
+      return E_INVALIDARG;
+    }
+    if (structured) {
+      // StructuredBuffer
+    } else {
+      if (finalDesc.ViewDimension == D3D11_SRV_DIMENSION_BUFFEREX &&
+          finalDesc.BufferEx.Flags & D3D11_BUFFEREX_SRV_FLAG_RAW) {
+        if (!allow_raw_view)
+          return E_INVALIDARG;
+        // ByteAddressBuffer
+      } else {
+        Obj<MTL::Texture> view;
+        if (FAILED(CreateMTLTextureView(this->m_parent, this->buffer,
+                                        &finalDesc, &view))) {
+          return E_FAIL;
+        }
+      }
+    }
     ERR("DeviceBuffer: SRV not supported");
     return E_FAIL;
   };
+
+  using UAVBase = TResourceViewBase<tag_unordered_access_view<DeviceBuffer>,
+                        IMTLBindable>;
 
   HRESULT
   CreateUnorderedAccessView(const D3D11_UNORDERED_ACCESS_VIEW_DESC *pDesc,
@@ -61,6 +88,24 @@ public:
     if (FAILED(ExtractEntireResourceViewDescription(&this->desc, pDesc,
                                                     &finalDesc))) {
       return E_INVALIDARG;
+    }
+    if (finalDesc.ViewDimension != D3D11_UAV_DIMENSION_BUFFER) {
+      return E_INVALIDARG;
+    }
+    if (structured) {
+      // StructuredBuffer
+    } else {
+      if (finalDesc.Buffer.Flags & D3D11_BUFFER_UAV_FLAG_RAW) {
+        if (!allow_raw_view)
+          return E_INVALIDARG;
+        // ByteAddressBuffer
+      } else {
+        Obj<MTL::Texture> view;
+        if (FAILED(CreateMTLTextureView(this->m_parent, this->buffer,
+                                        &finalDesc, &view))) {
+          return E_FAIL;
+        }
+      }
     }
     ERR("DeviceBuffer: UAV not supported");
     return E_FAIL;
@@ -87,6 +132,10 @@ CreateDeviceBuffer(IMTLD3D11Device *pDevice, const D3D11_BUFFER_DESC *pDesc,
   return S_OK;
 }
 
+#pragma endregion
+
+#pragma region DeviceTexture
+
 template <typename tag_texture>
 class DeviceTexture : public TResourceBase<tag_texture, IMTLBindable> {
 private:
@@ -105,22 +154,14 @@ private:
                DeviceTexture *pResource, IMTLD3D11Device *pDevice)
         : SRVBase(pDesc, pResource, pDevice), view(view) {}
 
-    void GetBoundResource(MTL_BIND_RESOURCE *ppResource) {
+    void GetBoundResource(MTL_BIND_RESOURCE *ppResource) override {
       (*ppResource).IsTexture = 1;
       (*ppResource).Texture = view.ptr();
     };
 
-    void GetLogicalResourceOrView(REFIID riid, void **ppLogicalResource) {
+    void GetLogicalResourceOrView(REFIID riid, void **ppLogicalResource) override {
       this->resource->QueryInterface(riid, ppLogicalResource);
     };
-
-    HRESULT PrivateQueryInterface(REFIID riid, void **ppvObject) {
-      if (riid == __uuidof(IMTLBindable)) {
-        *ppvObject = ref_and_cast<IMTLBindable>(this);
-        return S_OK;
-      }
-      return E_NOINTERFACE;
-    }
   };
 
   using UAVBase =
@@ -136,22 +177,14 @@ private:
                DeviceTexture *pResource, IMTLD3D11Device *pDevice)
         : UAVBase(pDesc, pResource, pDevice), view(view) {}
 
-    void GetBoundResource(MTL_BIND_RESOURCE *ppResource) {
+    void GetBoundResource(MTL_BIND_RESOURCE *ppResource) override {
       (*ppResource).IsTexture = 1;
       (*ppResource).Texture = view.ptr();
     };
 
-    void GetLogicalResourceOrView(REFIID riid, void **ppLogicalResource) {
+    void GetLogicalResourceOrView(REFIID riid, void **ppLogicalResource) override {
       this->resource->QueryInterface(riid, ppLogicalResource);
     };
-
-    HRESULT PrivateQueryInterface(REFIID riid, void **ppvObject) {
-      if (riid == __uuidof(IMTLBindable)) {
-        *ppvObject = ref_and_cast<IMTLBindable>(this);
-        return S_OK;
-      }
-      return E_NOINTERFACE;
-    }
   };
 
   using RTVBase =
@@ -194,14 +227,6 @@ public:
       : TResourceBase<tag_texture, IMTLBindable>(pDesc, pDevice),
         texture(texture) {}
 
-  HRESULT PrivateQueryInterface(REFIID riid, void **ppvObject) override {
-    if (riid == __uuidof(IMTLBindable)) {
-      *ppvObject = ref_and_cast<IMTLBindable>(this);
-      return S_OK;
-    }
-    return E_NOINTERFACE;
-  };
-
   void GetBoundResource(MTL_BIND_RESOURCE *ppResource) override {
     (*ppResource).IsTexture = 1;
     (*ppResource).Texture = texture.ptr();
@@ -219,10 +244,10 @@ public:
                                                     &finalDesc))) {
       return E_INVALIDARG;
     }
-    auto view =
-        transfer(newTextureView(this->m_parent, this->texture, &finalDesc));
-    if (!view) {
-      return E_FAIL; // ??
+    Obj<MTL::Texture> view;
+    if (FAILED(CreateMTLTextureView(this->m_parent, this->texture, &finalDesc,
+                                    &view))) {
+      return E_FAIL;
     }
     if (ppView) {
       *ppView = ref(new TextureRTV(view, &finalDesc, this, this->m_parent));
@@ -239,10 +264,10 @@ public:
                                                     &finalDesc))) {
       return E_INVALIDARG;
     }
-    auto view =
-        transfer(newTextureView(this->m_parent, this->texture, &finalDesc));
-    if (!view) {
-      return E_FAIL; // ??
+    Obj<MTL::Texture> view;
+    if (FAILED(CreateMTLTextureView(this->m_parent, this->texture, &finalDesc,
+                                    &view))) {
+      return E_FAIL;
     }
     if (ppView) {
       *ppView = ref(new TextureDSV(view, &finalDesc, this, this->m_parent));
@@ -259,10 +284,10 @@ public:
                                                     &finalDesc))) {
       return E_INVALIDARG;
     }
-    auto view =
-        transfer(newTextureView(this->m_parent, this->texture, &finalDesc));
-    if (!view) {
-      return E_FAIL; // ??
+    Obj<MTL::Texture> view;
+    if (FAILED(CreateMTLTextureView(this->m_parent, this->texture, &finalDesc,
+                                    &view))) {
+      return E_FAIL;
     }
     if (ppView) {
       *ppView = ref(new TextureSRV(view, &finalDesc, this, this->m_parent));
@@ -280,10 +305,10 @@ public:
                                                     &finalDesc))) {
       return E_INVALIDARG;
     }
-    auto view =
-        transfer(newTextureView(this->m_parent, this->texture, &finalDesc));
-    if (!view) {
-      return E_FAIL; // ??
+    Obj<MTL::Texture> view;
+    if (FAILED(CreateMTLTextureView(this->m_parent, this->texture, &finalDesc,
+                                    &view))) {
+      return E_FAIL;
     }
     if (ppView) {
       *ppView = ref(new TextureUAV(view, &finalDesc, this, this->m_parent));
@@ -338,5 +363,7 @@ CreateDeviceTexture3D(IMTLD3D11Device *pDevice,
   return CreateDeviceTextureInternal<tag_texture_3d>(pDevice, pDesc,
                                                      pInitialData, ppTexture);
 }
+
+#pragma endregion
 
 } // namespace dxmt

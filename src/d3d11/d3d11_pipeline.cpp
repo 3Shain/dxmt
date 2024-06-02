@@ -172,10 +172,6 @@ public:
     MTL_COMPILED_SHADER cs;
     pComputeShader->GetShader(&cs); // may block
 
-    auto pipelineDescriptor =
-        transfer(MTL::ComputePipelineDescriptor::alloc()->init());
-    pipelineDescriptor->setComputeFunction(cs.Function);
-
     state_ = transfer(
         device_->GetMTLDevice()->newComputePipelineState(cs.Function, &err));
 

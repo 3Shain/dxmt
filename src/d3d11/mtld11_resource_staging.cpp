@@ -40,11 +40,6 @@ class StagingTexture : public TResourceBase<tag_texture> {
 public:
   StagingTexture(const tag_texture::DESC_S *pDesc, IMTLD3D11Device *pDevice)
       : TResourceBase<tag_texture>(pDesc, pDevice) {}
-
-  HRESULT PrivateQueryInterface(REFIID riid, void **ppvObject) {
-
-    return E_FAIL;
-  }
 };
 
 #pragma endregion

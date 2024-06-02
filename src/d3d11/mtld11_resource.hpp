@@ -55,7 +55,7 @@ DEFINE_COM_INTERFACE("1c7e7c98-6dd4-42f0-867b-67960806886e", IMTLBindable)
 
 DEFINE_COM_INTERFACE("daf21510-d136-44dd-bb16-068a94690775",
                      IMTLD3D11BackBuffer)
-    : public ID3D11Texture2D {
+    : public IUnknown {
   virtual void Swap() = 0;
   virtual CA::MetalDrawable *CurrentDrawable() = 0;
 };
@@ -121,6 +121,19 @@ public:
     }
   }
 
+  template <std::size_t n> HRESULT ResolveBase(REFIID riid, void **ppvObject) {
+    return E_NOINTERFACE;
+  };
+
+  template <std::size_t n, typename V, typename... Args>
+  HRESULT ResolveBase(REFIID riid, void **ppvObject) {
+    if (riid == __uuidof(V)) {
+      *ppvObject = ref_and_cast<V>(this);
+      return S_OK;
+    }
+    return ResolveBase<n + 1, Args...>(riid, ppvObject);
+  };
+
   HRESULT QueryInterface(REFIID riid, void **ppvObject) {
     if (ppvObject == nullptr)
       return E_POINTER;
@@ -146,13 +159,14 @@ public:
       return S_OK;
     }
 
-    if (SUCCEEDED(this->PrivateQueryInterface(riid, ppvObject))) {
+    auto hr = ResolveBase<0, Base...>(riid, ppvObject);
+    if (SUCCEEDED(hr)) {
       return S_OK;
     }
 
     if (riid == __uuidof(IMTLDynamicBuffer) || riid == __uuidof(IMTLBindable) ||
         riid == __uuidof(IMTLDynamicBindable)) {
-      // silent these interfaces if PrivateQueryInterface doesn't provide
+      // silent these interfaces
       return E_NOINTERFACE;
     }
 
@@ -172,10 +186,6 @@ public:
   void SetEvictionPriority(UINT EvictionPriority) final {}
 
   UINT GetEvictionPriority() final { return DXGI_RESOURCE_PRIORITY_NORMAL; }
-
-  virtual HRESULT PrivateQueryInterface(REFIID riid, void **ppvObject) {
-    return E_FAIL;
-  };
 
   virtual HRESULT GetDeviceInterface(REFIID riid, void **ppDevice) {
     Com<ID3D11Device> device;
@@ -274,6 +284,19 @@ public:
     }
   }
 
+  template <std::size_t n> HRESULT ResolveBase(REFIID riid, void **ppvObject) {
+    return E_NOINTERFACE;
+  };
+
+  template <std::size_t n, typename V, typename... Args>
+  HRESULT ResolveBase(REFIID riid, void **ppvObject) {
+    if (riid == __uuidof(V)) {
+      *ppvObject = ref_and_cast<V>(this);
+      return S_OK;
+    }
+    return ResolveBase<n + 1, Args...>(riid, ppvObject);
+  };
+
   HRESULT QueryInterface(REFIID riid, void **ppvObject) {
     if (ppvObject == nullptr)
       return E_POINTER;
@@ -287,13 +310,14 @@ public:
       return S_OK;
     }
 
-    if (SUCCEEDED(this->PrivateQueryInterface(riid, ppvObject))) {
+    auto hr = ResolveBase<0, Base...>(riid, ppvObject);
+    if (SUCCEEDED(hr)) {
       return S_OK;
     }
 
     if (riid == __uuidof(IMTLDynamicBuffer) || riid == __uuidof(IMTLBindable) ||
         riid == __uuidof(IMTLDynamicBindable)) {
-      // silent these interfaces if PrivateQueryInterface doesn't provide
+      // silent these interfaces
       return E_NOINTERFACE;
     }
 
@@ -309,10 +333,6 @@ public:
   void GetResource(tag::RESOURCE **ppResource) final {
     resource->QueryInterface(IID_PPV_ARGS(ppResource));
   }
-
-  virtual HRESULT PrivateQueryInterface(REFIID riid, void **ppvObject) {
-    return E_FAIL;
-  };
 
   virtual ULONG64 GetUnderlyingResourceId() { return (ULONG64)resource.ptr(); };
 
@@ -403,6 +423,14 @@ template <typename TEXTURE_DESC>
 HRESULT CreateMTLTextureDescriptor(IMTLD3D11Device *pDevice,
                                    const TEXTURE_DESC *pDesc,
                                    MTL::TextureDescriptor **pMtlDescOut);
+
+template <typename VIEW_DESC>
+HRESULT CreateMTLTextureView(IMTLD3D11Device *pDevice, MTL::Texture *pResource,
+                             const VIEW_DESC *pViewDesc, MTL::Texture **ppView);
+
+template <typename VIEW_DESC>
+HRESULT CreateMTLTextureView(IMTLD3D11Device *pDevice, MTL::Buffer *pResource,
+                             const VIEW_DESC *pViewDesc, MTL::Texture **ppView);
 #pragma endregion
 
 } // namespace dxmt

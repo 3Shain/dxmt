@@ -14,12 +14,13 @@ namespace dxmt {
 struct tag_texture_backbuffer {
   static const D3D11_RESOURCE_DIMENSION dimension =
       D3D11_RESOURCE_DIMENSION_TEXTURE2D;
-  using COM = IMTLD3D11BackBuffer;
+  using COM = ID3D11Texture2D;
   using DESC = D3D11_TEXTURE2D_DESC;
   using DESC_S = D3D11_TEXTURE2D_DESC;
 };
 
-class EmulatedBackBufferTexture : public TResourceBase<tag_texture_backbuffer> {
+class EmulatedBackBufferTexture
+    : public TResourceBase<tag_texture_backbuffer, IMTLD3D11BackBuffer> {
 
 private:
   HWND hWnd;
@@ -59,12 +60,13 @@ private:
                   EmulatedBackBufferTexture *context, IMTLD3D11Device *pDevice)
         : BackBufferSRVBase(pDesc, context, pDevice) {}
 
-    void GetBoundResource(MTL_BIND_RESOURCE *ppResource) {
+    void GetBoundResource(MTL_BIND_RESOURCE *ppResource) override {
       (*ppResource).IsTexture = 1;
       (*ppResource).Texture = resource->GetCurrentFrameBackBuffer();
     };
 
-    void GetLogicalResourceOrView(REFIID riid, void **ppLogicalResource) {
+    void GetLogicalResourceOrView(REFIID riid,
+                                  void **ppLogicalResource) override {
       resource->QueryInterface(riid, ppLogicalResource);
     };
   };
@@ -78,12 +80,13 @@ private:
                   EmulatedBackBufferTexture *context, IMTLD3D11Device *pDevice)
         : BackBufferUAVBase(pDesc, context, pDevice) {}
 
-    void GetBoundResource(MTL_BIND_RESOURCE *ppResource) {
+    void GetBoundResource(MTL_BIND_RESOURCE *ppResource) override {
       (*ppResource).IsTexture = 1;
       (*ppResource).Texture = resource->GetCurrentFrameBackBuffer();
     };
 
-    void GetLogicalResourceOrView(REFIID riid, void **ppLogicalResource) {
+    void GetLogicalResourceOrView(REFIID riid,
+                                  void **ppLogicalResource) override {
       resource->QueryInterface(riid, ppLogicalResource);
     };
   };
@@ -91,7 +94,9 @@ private:
 public:
   EmulatedBackBufferTexture(const DXGI_SWAP_CHAIN_DESC1 *pDesc,
                             IMTLD3D11Device *pDevice, HWND hWnd)
-      : TResourceBase<tag_texture_backbuffer>(nullptr, pDevice), hWnd(hWnd) {
+      : TResourceBase<tag_texture_backbuffer, IMTLD3D11BackBuffer>(nullptr,
+                                                                   pDevice),
+        hWnd(hWnd) {
     if (FAILED(pDevice->QueryInterface(IID_PPV_ARGS(&layer_factory)))) {
       throw MTLD3DError("Failed to create CAMetalLayer");
     }
@@ -142,15 +147,6 @@ public:
     // unnecessary
     // layer_ = nullptr;
     layer_factory->ReleaseMetalLayer(hWnd, native_view_);
-  }
-
-  virtual HRESULT PrivateQueryInterface(REFIID riid,
-                                        void **ppvObject) override {
-    if (riid == __uuidof(ID3D11Texture2D)) {
-      *ppvObject = ref_and_cast<ID3D11Texture2D>(this);
-      return S_OK;
-    }
-    return E_FAIL;
   }
 
   HRESULT CreateRenderTargetView(const D3D11_RENDER_TARGET_VIEW_DESC *pDesc,

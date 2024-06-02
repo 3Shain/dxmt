@@ -299,15 +299,9 @@ public:
     if (pClassLinkage != nullptr)
       WARN("Class linkage not supported");
 
-    if (!ppVertexShader) {
-      // FIXME: we didn't really check if the shader bytecode is valid
-      return S_FALSE;
-    }
-
     try {
-      *ppVertexShader =
-          dxmt::CreateVertexShader(this, pShaderBytecode, BytecodeLength);
-      return S_OK;
+      return dxmt::CreateVertexShader(this, pShaderBytecode, BytecodeLength,
+                                      ppVertexShader);
     } catch (const MTLD3DError &err) {
       ERR(err.message());
       return E_FAIL;
@@ -348,14 +342,9 @@ public:
     if (pClassLinkage != nullptr)
       WARN("Class linkage not supported");
 
-    if (!ppPixelShader) {
-      // FIXME: we didn't really check if the shader bytecode is valid
-      return S_FALSE;
-    }
     try {
-      *ppPixelShader =
-          dxmt::CreatePixelShader(this, pShaderBytecode, BytecodeLength);
-      return S_OK;
+      return dxmt::CreatePixelShader(this, pShaderBytecode, BytecodeLength,
+                                     ppPixelShader);
     } catch (const MTLD3DError &err) {
       ERR(err.message());
       return E_FAIL;
@@ -396,15 +385,9 @@ public:
     if (pClassLinkage != nullptr)
       WARN("Class linkage not supported");
 
-    if (!ppComputeShader) {
-      // FIXME: we didn't really check if the shader bytecode is valid
-      return S_FALSE;
-    }
-
     try {
-      *ppComputeShader =
-          dxmt::CreateComputeShader(this, pShaderBytecode, BytecodeLength);
-      return S_OK;
+      return dxmt::CreateComputeShader(this, pShaderBytecode, BytecodeLength,
+                                       ppComputeShader);
     } catch (const MTLD3DError &err) {
       ERR(err.message());
       return E_FAIL;
@@ -741,15 +724,7 @@ public:
 
   void STDMETHODCALLTYPE
   GetImmediateContext(ID3D11DeviceContext **ppImmediateContext) override {
-    if (!context_) {
-      /*
-      lazy construction by design
-      to solve an awkward com_cast on refcount=0 object
-      (generally shouldn't pass this to others in constructor)
-      */
-      context_ = CreateD3D11DeviceContext(this);
-    }
-    *ppImmediateContext = context_.ref();
+    GetImmediateContext1((ID3D11DeviceContext1 **)ppImmediateContext);
   }
 
   HRESULT STDMETHODCALLTYPE SetExceptionMode(UINT RaiseFlags) override {
@@ -764,6 +739,14 @@ public:
 
   void STDMETHODCALLTYPE
   GetImmediateContext1(ID3D11DeviceContext1 **ppImmediateContext) override {
+    if (!context_) {
+      /*
+      lazy construction by design
+      to solve an awkward com_cast on refcount=0 object
+      (generally shouldn't pass this to others in constructor)
+      */
+      context_ = CreateD3D11DeviceContext(this);
+    }
     *ppImmediateContext = context_.ref();
   }
 

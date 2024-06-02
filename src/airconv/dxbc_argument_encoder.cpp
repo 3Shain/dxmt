@@ -87,7 +87,57 @@ ArgumentEncoder_t CreateArgumentEncoderInternal(
     });
   }
   for (auto &[range_id, uav] : shader_info->uavMap) {
-    // TODO
+    MTLTextureType texture_type = MTLTextureType1D;
+    MTLDataType data_type = MTLDataTypeTexture;
+    switch (uav.resource_type) {
+    case ResourceType::TextureBuffer:
+      if (uav.strucure_stride >= 0) {
+        data_type = MTLDataTypePointer;
+      }
+      texture_type = MTLTextureTypeTextureBuffer;
+      break;
+    case ResourceType::Texture1D:
+      texture_type = MTLTextureType1D;
+      break;
+    case ResourceType::Texture1DArray:
+      texture_type = MTLTextureType1DArray;
+      break;
+    case ResourceType::Texture2D:
+      texture_type = MTLTextureType2D;
+      break;
+    case ResourceType::Texture2DArray:
+      texture_type = MTLTextureType2DArray;
+      break;
+    case ResourceType::Texture2DMultisampled:
+      texture_type = MTLTextureType2DMultisample;
+      break;
+    case ResourceType::Texture2DMultisampledArray:
+      texture_type = MTLTextureType2DMultisampleArray;
+      break;
+    case ResourceType::Texture3D:
+      texture_type = MTLTextureType3D;
+      break;
+    case ResourceType::TextureCube:
+      texture_type = MTLTextureTypeCube;
+      break;
+    case ResourceType::TextureCubeArray:
+      texture_type = MTLTextureTypeCubeArray;
+      break;
+    }
+    if (uav.with_counter) {
+      assert(0 && "TODO: implement counter slot");
+    }
+    addNewField([&](MTLArgumentDescriptor *descriptor) {
+      descriptor.access = uav.written ? (uav.read ? MTLBindingAccessReadWrite
+                                                  : MTLBindingAccessWriteOnly)
+                                      : MTLBindingAccessReadOnly;
+      descriptor.arrayLength = 0;
+      descriptor.index = GetArgumentIndex(
+        {.Type = SM50BindingType::UAV, .SM50BindingSlot = range_id}
+      );
+      descriptor.dataType = data_type;
+      descriptor.textureType = texture_type;
+    });
   }
 
   if ([descs count] == 0) {

@@ -101,6 +101,9 @@ public:
 
   T *operator->() const { 
     #ifndef NDEBUG
+    if(!m_ptr) {
+      __builtin_trap();
+    }
     assert(m_ptr && "try to access a null com pointer!");
     #endif
     return m_ptr;

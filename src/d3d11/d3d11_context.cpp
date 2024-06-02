@@ -36,6 +36,7 @@
 #include <cassert>
 #include <cstddef>
 #include <cstring>
+#include <vector>
 
 namespace dxmt {
 
@@ -490,7 +491,32 @@ public:
   void DrawIndexedInstanced(UINT IndexCountPerInstance, UINT InstanceCount,
                             UINT StartIndexLocation, INT BaseVertexLocation,
                             UINT StartInstanceLocation) {
-    IMPLEMENT_ME
+    PreDraw();
+    MTL::PrimitiveType Primitive =
+        to_metal_topology(state_.InputAssembler.Topology);
+    // TODO: skip invalid topology
+    MTL_BIND_RESOURCE IndexBuffer;
+    assert(state_.InputAssembler.IndexBuffer);
+    state_.InputAssembler.IndexBuffer->GetBoundResource(&IndexBuffer);
+    auto IndexType =
+        state_.InputAssembler.IndexBufferFormat == DXGI_FORMAT_R32_UINT
+            ? MTL::IndexTypeUInt32
+            : MTL::IndexTypeUInt16;
+    auto IndexBufferOffset =
+        state_.InputAssembler.IndexBufferOffset +
+        StartIndexLocation *
+            (state_.InputAssembler.IndexBufferFormat == DXGI_FORMAT_R32_UINT
+                 ? 4
+                 : 2);
+    EmitRenderCommand<>(
+        [IndexBuffer = Obj(IndexBuffer.Buffer), IndexType, IndexBufferOffset,
+         Primitive, InstanceCount, BaseVertexLocation, StartInstanceLocation,
+         IndexCountPerInstance](MTL::RenderCommandEncoder *encoder) {
+          encoder->drawIndexedPrimitives(
+              Primitive, IndexCountPerInstance, IndexType, IndexBuffer,
+              IndexBufferOffset, InstanceCount, BaseVertexLocation,
+              StartInstanceLocation);
+        });
   }
 
   void DrawIndexedInstancedIndirect(ID3D11Buffer *pBufferForArgs,
@@ -1187,13 +1213,56 @@ public:
       UINT StartSlot, UINT NumUAVs,
       ID3D11UnorderedAccessView *const *ppUnorderedAccessViews,
       const UINT *pUAVInitialCounts) {
-    IMPLEMENT_ME
+
+    std::erase_if(state_.ComputeStageUAV.UAVs, [&](const auto &item) -> bool {
+      auto &[slot, bound_uav] = item;
+      if (slot < StartSlot || slot >= (StartSlot + NumUAVs))
+        return false;
+      for (auto i = 0u; i < NumUAVs; i++) {
+        if (auto uav = static_cast<IMTLD3D11UnorderedAccessView *>(
+                ppUnorderedAccessViews[i])) {
+          // FIXME! GetViewRange is not defined on IMTLBindable
+          // if (bound_uav.View->GetViewRange().CheckOverlap(
+          //         uav->GetViewRange())) {
+          //   return true;
+          // }
+        }
+      }
+      return false;
+    });
+
+    for (auto i = 0u; i < NumUAVs; i++) {
+      if (auto uav = com_cast<IMTLBindable>(ppUnorderedAccessViews[i])) {
+        // bind
+        UAV_B to_bind = {std::move(uav),
+                         pUAVInitialCounts ? pUAVInitialCounts[i] : ~0u};
+        state_.ComputeStageUAV.UAVs.insert_or_assign(StartSlot + i,
+                                                     std::move(to_bind));
+        // resolve srv hazard: unbind any cs srv that share the resource
+        std::erase_if(state_.ShaderStages[5].SRVs,
+                      [&](const auto &item) -> bool {
+                        // auto &[slot, bound_srv] = item;
+                        // if srv conflict with uav, return true
+                        return false;
+                      });
+      } else {
+        // unbind
+        state_.ComputeStageUAV.UAVs.erase(StartSlot + i);
+      }
+    }
   }
 
   void CSGetUnorderedAccessViews(
       UINT StartSlot, UINT NumUAVs,
       ID3D11UnorderedAccessView **ppUnorderedAccessViews) {
-    IMPLEMENT_ME
+    for (auto i = 0u; i < NumUAVs; i++) {
+      if (state_.ComputeStageUAV.UAVs.contains(StartSlot + i)) {
+        state_.ComputeStageUAV.UAVs[StartSlot + i].View->QueryInterface(
+            IID_PPV_ARGS(&ppUnorderedAccessViews[i]));
+      } else {
+        ppUnorderedAccessViews[i] = nullptr;
+      }
+    }
   }
 
   void CSSetShader(ID3D11ComputeShader *pComputeShader,
@@ -1474,6 +1543,7 @@ public:
       });
       break;
     }
+    binding_ready.clrAll();
 
     cmdbuf_state = CommandBufferState::Idle;
   }
@@ -1606,7 +1676,13 @@ public:
       return;
     InvalidateCurrentPass();
 
-    // TODO
+    {
+      /* Setup ComputeCommandEncoder */
+      CommandChunk *chk = cmd_queue.CurrentChunk();
+      chk->emit([](CommandChunk::context &ctx) {
+        ctx.blit_encoder = ctx.cmdbuf->blitCommandEncoder();
+      });
+    }
 
     cmdbuf_state = CommandBufferState::BlitEncoderActive;
   }
@@ -1621,7 +1697,13 @@ public:
       return;
     InvalidateCurrentPass();
 
-    // TODO
+    {
+      /* Setup ComputeCommandEncoder */
+      CommandChunk *chk = cmd_queue.CurrentChunk();
+      chk->emit([](CommandChunk::context &ctx) {
+        ctx.compute_encoder = ctx.cmdbuf->computeCommandEncoder();
+      });
+    }
 
     cmdbuf_state = CommandBufferState::ComputeEncoderActive;
   }
@@ -1677,6 +1759,27 @@ public:
           GraphicsPipeline.PipelineState);
     });
 
+    // FIXME: ...ugly
+    MTL::ArgumentEncoder *encoder;
+    state_.ShaderStages[(UINT)ShaderType::Vertex].Shader->GetArgumentEncoderRef(
+        &encoder);
+    if (encoder) {
+      auto [heap, offset] = chk->inspect_gpu_heap();
+      chk->emit([heap, offset](CommandChunk::context &ctx) {
+        ctx.render_encoder->setVertexBuffer(heap, offset,
+                                            30 /* kArgumentBufferBinding */);
+      });
+    }
+    state_.ShaderStages[(UINT)ShaderType::Pixel].Shader->GetArgumentEncoderRef(
+        &encoder);
+    if (encoder) {
+      auto [heap, offset] = chk->inspect_gpu_heap();
+      chk->emit([heap, offset](CommandChunk::context &ctx) {
+        ctx.render_encoder->setFragmentBuffer(heap, offset,
+                                              30 /* kArgumentBufferBinding */);
+      });
+    }
+
     cmdbuf_state = CommandBufferState::RenderPipelineReady;
   }
 
@@ -1701,6 +1804,7 @@ public:
         .Shader //
         ->GetCompiledShader(NULL, &shader);
     if (!shader) {
+      ERR("Shader not found?");
       return false;
     }
     MTL_COMPILED_SHADER shader_data;
@@ -1721,6 +1825,14 @@ public:
               ComputePipeline.PipelineState);
           ctx.cs_threadgroup_size = tg_size;
         });
+
+    if (shader_data.Reflection->NumArguments) {
+      auto [heap, offset] = chk->inspect_gpu_heap();
+      chk->emit([heap, offset](CommandChunk::context &ctx) {
+        ctx.compute_encoder->setBuffer(heap, offset,
+                                       30 /* kArgumentBufferBinding */);
+      });
+    }
 
     cmdbuf_state = CommandBufferState::ComputePipelineReady;
     return true;
@@ -1780,15 +1892,19 @@ public:
         auto &arg = reflection.Arguments[i];
         switch (arg.Type) {
         case SM50BindingType::ConstantBuffer: {
+          if (!ShaderStage.ConstantBuffers.contains(arg.SM50BindingSlot))
+            break;
           auto &cbuf = ShaderStage.ConstantBuffers[arg.SM50BindingSlot];
           MTL_BIND_RESOURCE m;
-          assert(cbuf.Buffer);
           cbuf.Buffer->GetBoundResource(&m);
           encoder->setBuffer(m.Buffer, 0, GetArgumentIndex(arg));
           useResource(m.Buffer, MTL::ResourceUsageRead);
           break;
         }
         case SM50BindingType::Sampler: {
+          if (!ShaderStage.Samplers.contains(arg.SM50BindingSlot))
+            break;
+
           auto &sampler = ShaderStage.Samplers[arg.SM50BindingSlot];
           assert(sampler);
           encoder->setSamplerState(sampler->GetSamplerState(),
@@ -1796,9 +1912,10 @@ public:
           break;
         }
         case SM50BindingType::SRV: {
+          if (!ShaderStage.SRVs.contains(arg.SM50BindingSlot))
+            break;
           auto &srv = ShaderStage.SRVs[arg.SM50BindingSlot];
           MTL_BIND_RESOURCE m;
-          assert(srv);
           srv->GetBoundResource(&m);
           if (!m.IsTexture) {
             encoder->setBuffer(m.Buffer, 0, GetArgumentIndex(arg));
@@ -1811,12 +1928,27 @@ public:
         }
         case SM50BindingType::UAV: {
           if constexpr (stage == ShaderType::Compute) {
-            // auto &uav = state_.ComputeStageUAV.UAVs[arg.SM50BindingSlot];
-            // uav.View.get
+            if (!state_.ComputeStageUAV.UAVs.contains(arg.SM50BindingSlot))
+              break;
+            auto &uav = state_.ComputeStageUAV.UAVs[arg.SM50BindingSlot];
+            MTL_BIND_RESOURCE m;
+            uav.View->GetBoundResource(&m);
+            // TODO: more bind pattern
+            if (!m.IsTexture) {
+              encoder->setBuffer(m.Buffer, 0, GetArgumentIndex(arg));
+              useResource(m.Buffer,
+                          MTL::ResourceUsageRead | MTL::ResourceUsageWrite);
+            } else {
+              encoder->setTexture(m.Texture, GetArgumentIndex(arg));
+              useResource(m.Texture,
+                          MTL::ResourceUsageRead | MTL::ResourceUsageWrite);
+            }
           } else {
+            if (!state_.OutputMerger.UAVs.contains(arg.SM50BindingSlot))
+              break;
             // auto &uav = state_.OutputMerger.UAVs[arg.SM50BindingSlot];
+            assert(0 && "TODO");
           }
-          assert(0 && "TODO");
           break;
         }
         case SM50BindingType::UAV_BufferSize:
@@ -1828,17 +1960,14 @@ public:
         }
       }
 
-      chk->emit([heap, offset](CommandChunk::context &ctx) {
+      /* kArgumentBufferBinding = 30 */
+      chk->emit([offset](CommandChunk::context &ctx) {
         if constexpr (stage == ShaderType::Vertex) {
-          ctx.render_encoder->setVertexBuffer(heap, offset,
-                                              30 /* kArgumentBufferBinding
-                                              */);
+          ctx.render_encoder->setVertexBufferOffset(offset, 30);
         } else if constexpr (stage == ShaderType::Pixel) {
-          ctx.render_encoder->setFragmentBuffer(
-              heap, offset, 30 /* kArgumentBufferBinding */);
+          ctx.render_encoder->setFragmentBufferOffset(offset, 30);
         } else if constexpr (stage == ShaderType::Compute) {
-          ctx.compute_encoder->setBuffer(heap, offset,
-                                         30 /* kArgumentBufferBinding */);
+          ctx.compute_encoder->setBufferOffset(offset, 30);
         } else {
           assert(0 && "Not implemented");
         }

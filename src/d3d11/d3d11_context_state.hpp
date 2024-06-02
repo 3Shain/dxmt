@@ -13,7 +13,7 @@
 namespace dxmt {
 
 struct UAV_B {
-  Com<IMTLD3D11UnorderedAccessView> View;
+  Com<IMTLBindable> View;
   UINT InitialCountValue;
 };
 
