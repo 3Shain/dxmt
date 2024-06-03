@@ -99,7 +99,7 @@ llvm::Error convertDXBC(
     auto index = binding_table.DefineBuffer(
       "cb" + std::to_string(range_id), air::AddressSpace::constant,
       air::MemoryAccess::read, air::msl_uint4,
-      GetArgumentIndex({SM50BindingType::ConstantBuffer, range_id})
+      GetArgumentIndex(SM50BindingType::ConstantBuffer, range_id)
     );
     resource_map.cb_range_map[range_id] = [=, &binding_table_index](pvalue) {
       // ignore index in SM 5.0
@@ -110,7 +110,7 @@ llvm::Error convertDXBC(
     // TODO: abstract SM 5.0 binding
     auto index = binding_table.DefineSampler(
       "s" + std::to_string(range_id),
-      GetArgumentIndex({SM50BindingType::Sampler, range_id})
+      GetArgumentIndex(SM50BindingType::Sampler, range_id)
     );
     resource_map.sampler_range_map[range_id] = [=,
                                                 &binding_table_index](pvalue) {
@@ -127,7 +127,7 @@ llvm::Error convertDXBC(
     auto scaler_type = air::to_air_scaler_type(srv.scaler_type);
     auto index = binding_table.DefineTexture(
       "t" + std::to_string(range_id), texture_kind, access, scaler_type,
-      GetArgumentIndex({SM50BindingType::SRV, range_id})
+      GetArgumentIndex(SM50BindingType::SRV, range_id)
     );
     resource_map.srv_range_map[range_id] = {
       air::MSLTexture{
@@ -150,7 +150,7 @@ llvm::Error convertDXBC(
                               : air::MemoryAccess::read;
     auto index = binding_table.DefineTexture(
       "u" + std::to_string(range_id), texture_kind, access, scaler_type,
-      GetArgumentIndex({SM50BindingType::UAV, range_id})
+      GetArgumentIndex(SM50BindingType::UAV, range_id)
     );
     resource_map.uav_range_map[range_id] = {
       air::MSLTexture{
@@ -1275,18 +1275,25 @@ int SM50Initialize(
 
   for (auto &[range_id, _] : shader_info->cbufferMap) {
     sm50_shader->args_reflection.push_back(
-      {SM50BindingType::ConstantBuffer, range_id}
+      {.Type = SM50BindingType::ConstantBuffer,
+       .SM50BindingSlot = range_id}
     );
   }
   for (auto &[range_id, _] : shader_info->samplerMap) {
-    sm50_shader->args_reflection.push_back({SM50BindingType::Sampler, range_id}
+    sm50_shader->args_reflection.push_back(
+      {.Type = SM50BindingType::Sampler,
+       .SM50BindingSlot = range_id}
     );
   }
   for (auto &[range_id, srv] : shader_info->srvMap) {
-    sm50_shader->args_reflection.push_back({SM50BindingType::SRV, range_id});
+    sm50_shader->args_reflection.push_back(
+      {.Type = SM50BindingType::SRV, .SM50BindingSlot = range_id}
+    );
   }
   for (auto &[range_id, uav] : shader_info->uavMap) {
-    sm50_shader->args_reflection.push_back({SM50BindingType::UAV, range_id});
+    sm50_shader->args_reflection.push_back(
+      {.Type = SM50BindingType::UAV, .SM50BindingSlot = range_id}
+    );
   }
 
   if (pRefl) {

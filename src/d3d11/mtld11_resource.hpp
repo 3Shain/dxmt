@@ -34,8 +34,17 @@ DEFINE_COM_INTERFACE("d8a49d20-9a1f-4bb8-9ee6-442e064dce23", IDXMTResource)
       ID3D11DepthStencilView **ppView) = 0;
 };
 
+enum MTL_CTX_BIND_TYPE {
+  MTL_BIND_BUFFER_UNBOUNDED = 0,
+  MTL_BIND_TEXTURE = 1,
+  MTL_BIND_BUFFER_BOUNDED = 2,
+  // MTL_BIND_TEXTURE_MINLOD = 3,
+  MTL_BIND_UAV_WITH_COUNTER = 4
+  // MTL_BIND_SWAPCHAIN_BACKBUFFER = 5,
+};
+
 struct MTL_BIND_RESOURCE {
-  UINT IsTexture;
+  MTL_CTX_BIND_TYPE Type;
   UINT Padding_unused;
   union {
     MTL::Buffer *Buffer;

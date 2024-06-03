@@ -95,7 +95,7 @@ private:
 
     void GetBoundResource(MTL_BIND_RESOURCE *ppResource) override {
       MTL_BIND_RESOURCE &resource = *ppResource;
-      resource.IsTexture = false;
+      resource.Type = MTL_BIND_BUFFER_UNBOUNDED;
       resource.Buffer = parent->buffer.ptr();
     };
 
@@ -257,7 +257,7 @@ private:
 
     void GetBoundResource(MTL_BIND_RESOURCE *ppResource) {
       MTL_BIND_RESOURCE &resource = *ppResource;
-      resource.IsTexture = false;
+      resource.Type = MTL_BIND_BUFFER_UNBOUNDED;
       resource.Buffer = parent->buffer.ptr();
     };
 

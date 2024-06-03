@@ -25,11 +25,7 @@ enum class SM50BindingType : uint32_t {
   ConstantBuffer,
   Sampler,
   SRV,
-  SRV_BufferSize, // argument constant
-  SRV_MinLOD,     // argument constant
   UAV,
-  UAV_BufferSize, // argument constant
-  UAVCounter,
 };
 #else
 typedef uint32_t ShaderType;
@@ -80,26 +76,22 @@ typedef struct __MTLDevice *Device_t;
 
 #ifdef __cplusplus
 
-inline uint32_t GetArgumentIndex(struct MTL_SM50_SHADER_ARGUMENT Argument) {
-  switch (Argument.Type) {
+inline uint32_t
+GetArgumentIndex(SM50BindingType Type, uint32_t SM50BindingSlot) {
+  switch (Type) {
   case SM50BindingType::ConstantBuffer:
-    return Argument.SM50BindingSlot;
+    return SM50BindingSlot;
   case SM50BindingType::Sampler:
-    return Argument.SM50BindingSlot + 32;
+    return SM50BindingSlot + 32;
   case SM50BindingType::SRV:
-    return Argument.SM50BindingSlot + 128;
-  case SM50BindingType::SRV_BufferSize:
-    return Argument.SM50BindingSlot; // TODO
-  case SM50BindingType::SRV_MinLOD:
-    return Argument.SM50BindingSlot; // TODO
+    return SM50BindingSlot * 3 + 128;
   case SM50BindingType::UAV:
-    return Argument.SM50BindingSlot + 256;
-  case SM50BindingType::UAV_BufferSize:
-    return Argument.SM50BindingSlot; // TODO
-  case SM50BindingType::UAVCounter:
-    return Argument.SM50BindingSlot; // TODO
-    break;
+    return SM50BindingSlot * 3 + 512;
   }
+};
+
+inline uint32_t GetArgumentIndex(struct MTL_SM50_SHADER_ARGUMENT& Argument) {
+  return GetArgumentIndex(Argument.Type, Argument.SM50BindingSlot);
 };
 
 extern "C" {

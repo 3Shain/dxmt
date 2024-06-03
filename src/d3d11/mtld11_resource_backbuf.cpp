@@ -61,7 +61,7 @@ private:
         : BackBufferSRVBase(pDesc, context, pDevice) {}
 
     void GetBoundResource(MTL_BIND_RESOURCE *ppResource) override {
-      (*ppResource).IsTexture = 1;
+      (*ppResource).Type = MTL_BIND_TEXTURE;
       (*ppResource).Texture = resource->GetCurrentFrameBackBuffer();
     };
 
@@ -81,7 +81,7 @@ private:
         : BackBufferUAVBase(pDesc, context, pDevice) {}
 
     void GetBoundResource(MTL_BIND_RESOURCE *ppResource) override {
-      (*ppResource).IsTexture = 1;
+      (*ppResource).Type = MTL_BIND_TEXTURE;
       (*ppResource).Texture = resource->GetCurrentFrameBackBuffer();
     };
 

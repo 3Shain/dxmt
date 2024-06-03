@@ -36,7 +36,7 @@ public:
   }
 
   void GetBoundResource(MTL_BIND_RESOURCE *ppResource) override {
-    (*ppResource).IsTexture = 0;
+    (*ppResource).Type = MTL_BIND_BUFFER_UNBOUNDED;
     (*ppResource).Buffer = buffer.ptr();
   };
   void GetLogicalResourceOrView(REFIID riid,
@@ -155,7 +155,7 @@ private:
         : SRVBase(pDesc, pResource, pDevice), view(view) {}
 
     void GetBoundResource(MTL_BIND_RESOURCE *ppResource) override {
-      (*ppResource).IsTexture = 1;
+      (*ppResource).Type = MTL_BIND_TEXTURE;
       (*ppResource).Texture = view.ptr();
     };
 
@@ -178,7 +178,7 @@ private:
         : UAVBase(pDesc, pResource, pDevice), view(view) {}
 
     void GetBoundResource(MTL_BIND_RESOURCE *ppResource) override {
-      (*ppResource).IsTexture = 1;
+      (*ppResource).Type = MTL_BIND_TEXTURE;
       (*ppResource).Texture = view.ptr();
     };
 
@@ -228,7 +228,7 @@ public:
         texture(texture) {}
 
   void GetBoundResource(MTL_BIND_RESOURCE *ppResource) override {
-    (*ppResource).IsTexture = 1;
+    (*ppResource).Type = MTL_BIND_TEXTURE;
     (*ppResource).Texture = texture.ptr();
   };
 

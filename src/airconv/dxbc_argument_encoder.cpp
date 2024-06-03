@@ -23,9 +23,8 @@ ArgumentEncoder_t CreateArgumentEncoderInternal(
       descriptor.access = MTLBindingAccessReadOnly;
       descriptor.arrayLength = 0;
       descriptor.dataType = MTLDataTypePointer;
-      descriptor.index = GetArgumentIndex(
-        {.Type = SM50BindingType::ConstantBuffer, .SM50BindingSlot = range_id}
-      );
+      descriptor.index =
+        GetArgumentIndex(SM50BindingType::ConstantBuffer, range_id);
     });
   }
   for (auto &[range_id, sampler] : shader_info->samplerMap) {
@@ -33,9 +32,7 @@ ArgumentEncoder_t CreateArgumentEncoderInternal(
       descriptor.access = MTLBindingAccessReadOnly;
       descriptor.arrayLength = 0;
       descriptor.dataType = MTLDataTypeSampler;
-      descriptor.index = GetArgumentIndex(
-        {.Type = SM50BindingType::Sampler, .SM50BindingSlot = range_id}
-      );
+      descriptor.index = GetArgumentIndex(SM50BindingType::Sampler, range_id);
     });
   }
   for (auto &[range_id, srv] : shader_info->srvMap) {
@@ -79,9 +76,7 @@ ArgumentEncoder_t CreateArgumentEncoderInternal(
     addNewField([&](MTLArgumentDescriptor *descriptor) {
       descriptor.access = MTLBindingAccessReadOnly;
       descriptor.arrayLength = 0;
-      descriptor.index = GetArgumentIndex(
-        {.Type = SM50BindingType::SRV, .SM50BindingSlot = range_id}
-      );
+      descriptor.index = GetArgumentIndex(SM50BindingType::SRV, range_id);
       descriptor.dataType = data_type;
       descriptor.textureType = texture_type;
     });
@@ -132,9 +127,7 @@ ArgumentEncoder_t CreateArgumentEncoderInternal(
                                                   : MTLBindingAccessWriteOnly)
                                       : MTLBindingAccessReadOnly;
       descriptor.arrayLength = 0;
-      descriptor.index = GetArgumentIndex(
-        {.Type = SM50BindingType::UAV, .SM50BindingSlot = range_id}
-      );
+      descriptor.index = GetArgumentIndex(SM50BindingType::UAV, range_id);
       descriptor.dataType = data_type;
       descriptor.textureType = texture_type;
     });
