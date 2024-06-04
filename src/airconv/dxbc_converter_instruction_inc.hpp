@@ -67,7 +67,6 @@ to_shader_resource_type(microsoft::D3D10_SB_RESOURCE_DIMENSION dim) {
     return shader::common::ResourceType::Texture2DMultisampledArray;
   case microsoft::D3D10_SB_RESOURCE_DIMENSION_TEXTURECUBEARRAY:
     return shader::common::ResourceType::TextureCubeArray;
-    break;
   }
   assert(0 && "invalid D3D10_SB_RESOURCE_DIMENSION");
 };

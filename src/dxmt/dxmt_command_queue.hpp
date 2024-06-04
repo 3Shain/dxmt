@@ -135,7 +135,9 @@ public:
         align_forward_adjustment((void *)cpu_arugment_heap_offset, alignment);
     auto aligned = cpu_arugment_heap_offset + adjustment;
     cpu_arugment_heap_offset = aligned + size;
-    // TODO: check overflow
+    if (cpu_arugment_heap_offset >= kCommandChunkCPUHeapSize) {
+      ERR("cpu argument heap overflow, expect error.");
+    }
     return ptr_add(cpu_argument_heap, aligned);
   }
 
@@ -149,7 +151,9 @@ public:
         align_forward_adjustment((void *)gpu_arugment_heap_offset, alignment);
     auto aligned = gpu_arugment_heap_offset + adjustment;
     gpu_arugment_heap_offset = aligned + size;
-    // TODO: check overflow
+    if (gpu_arugment_heap_offset > kCommandChunkGPUHeapSize) {
+      ERR("gpu argument heap overflow, expect error.");
+    }
     return {gpu_argument_heap, aligned};
   }
 
@@ -165,9 +169,6 @@ public:
     *ptr_node = {ptr, nullptr};
     list_end->next = ptr_node;
     list_end = ptr_node;
-    if (cpu_arugment_heap_offset > kCommandChunkCPUHeapSize) {
-      ERR("cpu argument heap overflow, expect error.");
-    }
   }
 
   void encode(MTL::CommandBuffer *cmdbuf) {

@@ -61,9 +61,7 @@ public:
     }
   };
 
-  ~MTLD3D11SwapChain() {
-    CloseHandle(present_semaphore_);
-  };
+  ~MTLD3D11SwapChain() { CloseHandle(present_semaphore_); };
 
   HRESULT
   STDMETHODCALLTYPE
@@ -160,15 +158,17 @@ public:
   STDMETHODCALLTYPE
   ResizeBuffers(UINT BufferCount, UINT Width, UINT Height, DXGI_FORMAT Format,
                 UINT flags) final {
-    if (backbuffer_) {
-      if (backbuffer_->AddRef() != 2) {
-        ERR("ResizeBuffers: unreleased outstanding references to back "
-            "buffers");
-        backbuffer_->Release();
-        return DXGI_ERROR_INVALID_CALL;
-      }
-      backbuffer_->Release();
-    }
+    // FIXME: ... weird
+    // if (backbuffer_) {
+    //   // required behavior...
+    //   if (backbuffer_->AddRef() != 2) {
+    //     ERR("ResizeBuffers: unreleased outstanding references to back "
+    //         "buffers");
+    //     backbuffer_->Release();
+    //     return DXGI_ERROR_INVALID_CALL;
+    //   }
+    //   backbuffer_->Release();
+    // }
     /* BufferCount ignored */
     if (Width == 0 || Height == 0) {
       wsi::getWindowSize(hWnd, &desc_.Width, &desc_.Height);

@@ -121,6 +121,19 @@ uint32_t ArgumentBufferBuilder::DefineTexture(
   return element_index;
 };
 
+uint32_t ArgumentBufferBuilder::DefineInteger32(std::string name, uint32_t location_index) {
+  auto element_index = fieldsType.size();
+  assert(!fields.count(name) && "otherwise duplicated field name");
+  fieldsType.push_back(ArgumentBindingIndirectConstant {
+    .location_index =
+      location_index == UINT32_MAX ? (uint32_t)element_index : location_index,
+    .array_size = 1,
+    .type = msl_uint,
+    .arg_name = name
+  });
+  return element_index;
+};
+
 auto build_argument_binding_buffer(
   StreamMDHelper &md, const ArgumentBindingBuffer &buffer,
   llvm::LLVMContext &context, llvm::Module &module

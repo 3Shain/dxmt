@@ -26,6 +26,7 @@ enum class ResourceType {
   Texture3D,
   TextureCube,
   TextureCubeArray,
+  NonApplicable,
 };
 
 /* It's often called System Generated Value in DirectX */

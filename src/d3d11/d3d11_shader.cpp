@@ -123,7 +123,12 @@ public:
     {
       SM50CompiledBitcode *compile_result;
       SM50Error *sm50_err;
-      if (SM50Compile(shader_->sm50, nullptr, &compile_result, &sm50_err)) {
+      if (auto ret =
+              SM50Compile(shader_->sm50, nullptr, &compile_result, &sm50_err)) {
+        if (ret == 42) {
+          ERR("TODO: dump shader bytecode");
+          return;
+        }
         ERR("Failed to compile shader: ", SM50GetErrorMesssage(sm50_err));
         SM50FreeError(sm50_err);
         return;

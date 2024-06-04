@@ -1,5 +1,6 @@
 #include "airconv_context.hpp"
 #include "airconv_public.h"
+#include "metallib_writer.hpp"
 #include "llvm/Bitcode/BitcodeReader.h"
 #include "llvm/Bitcode/BitcodeWriter.h"
 #include "llvm/IR/DiagnosticInfo.h"
@@ -31,6 +32,9 @@ static cl::opt<std::string> OutputFilename(
 
 static cl::opt<bool>
   EmitLLVM("S", cl::init(false), cl::desc("Write output as LLVM assembly"));
+
+static cl::opt<bool>
+  EmitMetallib("A", cl::init(false), cl::desc("Write output as .metallib"));
 
 static cl::opt<bool> DisassembleDXBC(
   "disas-dxbc", cl::init(false), cl::desc("Disassemble dxbc shader")
@@ -132,7 +136,10 @@ int main(int argc, char **argv) {
                         : IFN.endswith(".dxbc") ? IFN.drop_back(5)
                                                 : IFN)
                          .str();
-      OutputFilename += DisassembleDXBC ? ".txt" : EmitLLVM ? ".ll" : ".air";
+      OutputFilename += DisassembleDXBC ? ".txt"
+                        : EmitMetallib  ? ".metallib"
+                        : EmitLLVM      ? ".ll"
+                                        : ".air";
     }
   }
 
@@ -208,7 +215,8 @@ int main(int argc, char **argv) {
 
   std::error_code EC;
   std::unique_ptr<ToolOutputFile> Out(new ToolOutputFile(
-    OutputFilename, EC, EmitLLVM ? sys::fs::OF_TextWithCRLF : sys::fs::OF_None
+    OutputFilename, EC,
+    (EmitLLVM || EmitMetallib) ? sys::fs::OF_TextWithCRLF : sys::fs::OF_None
   ));
   if (EC) {
     errs() << EC.message() << '\n';
@@ -217,6 +225,9 @@ int main(int argc, char **argv) {
 
   if (EmitLLVM) {
     M.print(Out->os(), nullptr, PreserveAssemblyUseListOrder);
+  } else if (EmitMetallib) {
+    dxmt::metallib::MetallibWriter writer;
+    writer.Write(M, Out->os());
   } else {
     WriteBitcodeToFile(
       M, Out->os(), PreserveBitcodeUseListOrder, nullptr, true

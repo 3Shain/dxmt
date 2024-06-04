@@ -223,9 +223,8 @@ struct MSLTexture {
       return "depthcube<" + component + "," + access + ">";
     case TextureKind::depth_cube_array:
       return "depthcube_array<" + component + "," + access + ">";
-    default:
-      assert(0 && "unhandled resource kind");
     }
+    assert(0 && "unreachable");
   };
 
   llvm::Type *get_llvm_type(llvm::LLVMContext &context) const {
@@ -336,6 +335,7 @@ struct MSLStaticArray {
 };
 
 using MSLRepresentableTypeWithArray = template_concat_t<
+  MSLRepresentableType,
   std::variant<MSLStaticArray, MSLPointer /* why are you here? */>>;
 
 struct ArgumentBindingBuffer {
@@ -543,7 +543,10 @@ inline TextureKind to_air_resource_type(
   case shader::common::ResourceType::TextureCubeArray:
     return use_depth ? TextureKind::depth_cube_array
                      : TextureKind::texture_cube_array;
+  default:
+    break;
   };
+  assert(0 && "unreachable");
 };
 
 inline MSLScalerType

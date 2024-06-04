@@ -684,23 +684,23 @@ struct ShaderResourceViewInfo {
   ResourceRange range;
   shader::common::ScalerDataType scaler_type;
   shader::common::ResourceType resource_type;
-  bool read;
-  bool sampled;
-  bool compared; // therefore we use depth texture!
+  bool read = false;
+  bool sampled = false;
+  bool compared = false; // therefore we use depth texture!
 
-  uint32_t strucure_stride = 0; // =0 for typed and raw
+  uint32_t strucure_stride = 0;
 };
 struct UnorderedAccessViewInfo {
   ResourceRange range;
   shader::common::ScalerDataType scaler_type;
   shader::common::ResourceType resource_type;
-  bool read;
-  bool written;
-  bool global_coherent;
-  bool rasterizer_order;
-  bool with_counter;
+  bool read = false;
+  bool written = false;
+  bool global_coherent = false;
+  bool rasterizer_order = false;
+  bool with_counter = false;
 
-  int32_t strucure_stride = 0; // =0 for raw, -1 for typed
+  uint32_t strucure_stride = 0;
 };
 struct ConstantBufferInfo {
   ResourceRange range;

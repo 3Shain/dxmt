@@ -166,6 +166,7 @@ public:
     pMtlDesc->IsCompressed = false;
     pMtlDesc->SupportBackBuffer = false;
     pMtlDesc->Capability = FormatCapability::None;
+    pMtlDesc->DepthStencilFlag = 0;
 
     switch (Format) {
     case DXGI_FORMAT_R32G32B32A32_TYPELESS: {
@@ -462,9 +463,7 @@ public:
       break;
     }
     case DXGI_FORMAT_R24G8_TYPELESS: {
-      return E_FAIL;
-    }
-    case DXGI_FORMAT_D24_UNORM_S8_UINT: {
+      pMtlDesc->DepthStencilFlag = 3;
       if (m_deivce->depth24Stencil8PixelFormatSupported()) {
         pMtlDesc->PixelFormat = MTL::PixelFormatDepth24Unorm_Stencil8;
       } else {
@@ -473,9 +472,36 @@ public:
       }
       break;
     }
-    case DXGI_FORMAT_R24_UNORM_X8_TYPELESS:
-    case DXGI_FORMAT_X24_TYPELESS_G8_UINT:
-      return E_FAIL;
+    case DXGI_FORMAT_D24_UNORM_S8_UINT: {
+      pMtlDesc->DepthStencilFlag = 3;
+      if (m_deivce->depth24Stencil8PixelFormatSupported()) {
+        pMtlDesc->PixelFormat = MTL::PixelFormatDepth24Unorm_Stencil8;
+      } else {
+        ERR_ONCE("depth24Stencil8 is not supported.");
+        pMtlDesc->PixelFormat = MTL::PixelFormatDepth32Float_Stencil8;
+      }
+      break;
+    }
+    case DXGI_FORMAT_R24_UNORM_X8_TYPELESS: {
+      pMtlDesc->DepthStencilFlag = 1;
+      if (m_deivce->depth24Stencil8PixelFormatSupported()) {
+        pMtlDesc->PixelFormat = MTL::PixelFormatDepth24Unorm_Stencil8;
+      } else {
+        ERR_ONCE("depth24Stencil8 is not supported.");
+        pMtlDesc->PixelFormat = MTL::PixelFormatDepth32Float_Stencil8;
+      }
+      break;
+    }
+    case DXGI_FORMAT_X24_TYPELESS_G8_UINT: {
+      pMtlDesc->DepthStencilFlag = 2;
+      if (m_deivce->depth24Stencil8PixelFormatSupported()) {
+        pMtlDesc->PixelFormat = MTL::PixelFormatX24_Stencil8;
+      } else {
+        ERR_ONCE("depth24Stencil8 is not supported.");
+        pMtlDesc->PixelFormat = MTL::PixelFormatX32_Stencil8;
+      }
+      break;
+    }
     case DXGI_FORMAT_R8G8_TYPELESS: {
       pMtlDesc->PixelFormat = MTL::PixelFormatRG8Uint;
       pMtlDesc->Stride = 2;

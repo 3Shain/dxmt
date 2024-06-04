@@ -10,3 +10,4 @@ toolchains
 build-local.txt
 *.cso
 *.ll
+winetricks

@@ -66,7 +66,7 @@ public:
 class DynamicBuffer
     : public TResourceBase<tag_buffer, IMTLDynamicBuffer, IMTLDynamicBindable> {
 private:
-  Obj<MTL::Buffer> buffer;
+  Obj<MTL::Buffer> buffer_dynamic;
 
   class DynamicBinding : public ComObject<IMTLBindable> {
   private:
@@ -96,7 +96,7 @@ private:
     void GetBoundResource(MTL_BIND_RESOURCE *ppResource) override {
       MTL_BIND_RESOURCE &resource = *ppResource;
       resource.Type = MTL_BIND_BUFFER_UNBOUNDED;
-      resource.Buffer = parent->buffer.ptr();
+      resource.Buffer = parent->buffer_dynamic.ptr();
     };
 
     void GetLogicalResourceOrView(REFIID riid,
@@ -135,15 +135,16 @@ public:
       : TResourceBase<tag_buffer, IMTLDynamicBuffer, IMTLDynamicBindable>(
             desc, device) {
     auto metal = device->GetMTLDevice();
-    buffer = transfer(metal->newBuffer(desc->ByteWidth, 0));
+    buffer_dynamic = transfer(metal->newBuffer(desc->ByteWidth, 0));
     if (pInitialData) {
-      memcpy(buffer->contents(), pInitialData->pSysMem, desc->ByteWidth);
-      buffer->didModifyRange({0, desc->ByteWidth});
+      memcpy(buffer_dynamic->contents(), pInitialData->pSysMem,
+             desc->ByteWidth);
+      buffer_dynamic->didModifyRange({0, desc->ByteWidth});
     }
   }
 
   MTL::Buffer *GetCurrentBuffer(UINT *pBytesPerRow) override {
-    return buffer.ptr();
+    return buffer_dynamic.ptr();
   };
 
   void GetBindable(IMTLBindable **ppResource,
@@ -154,7 +155,7 @@ public:
   };
 
   void RotateBuffer(IMTLDynamicBufferPool *pool) override {
-    pool->ExchangeFromPool(&buffer);
+    pool->ExchangeFromPool(&buffer_dynamic);
     for (auto &observer : observers) {
       observer->NotifyObserver();
     }
@@ -211,12 +212,12 @@ private:
   using SRVBase = TResourceViewBase<tag_shader_resource_view<DynamicTexture2D>,
                                     IMTLDynamicBindable>;
 
-  template <typename BindableMap> class SRV : public SRVBase {
+  template <typename BindableMap> class SRV_BROKEN : public SRVBase {
   private:
     BindableMap thunk;
 
   public:
-    SRV(const tag_shader_resource_view<>::DESC_S *pDesc,
+    SRV_BROKEN(const tag_shader_resource_view<>::DESC_S *pDesc,
         DynamicTexture2D *pResource, IMTLD3D11Device *pDevice,
         BindableMap &&thunk)
         : SRVBase(pDesc, pResource, pDevice), thunk(std::move(thunk)) {}
@@ -330,7 +331,8 @@ public:
     if (!ppView) {
       return S_FALSE;
     }
-    *ppView = new SRV(&finalDesc, this, m_parent,
+    assert(0 && "TODO: dynamic texture2d srv (broken now)");
+    *ppView = new SRV_BROKEN(&finalDesc, this, m_parent,
                       [](MTL_BIND_RESOURCE *, MTL_BIND_RESOURCE *) {
                         assert(0 && "TODO: dynamic texture2d srv bindable map");
                         return Obj<MTL::Resource>(nullptr);

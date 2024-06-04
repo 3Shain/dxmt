@@ -11,6 +11,7 @@ HRESULT CreateMTLTextureView<D3D11_SHADER_RESOURCE_VIEW_DESC>(
   pDevice->GetAdapter(&adapter);
   MTL_FORMAT_DESC metal_format;
   if (FAILED(adapter->QueryFormatDesc(pViewDesc->Format, &metal_format))) {
+    ERR("Failed to create SRV due to unsupported format ", pViewDesc->Format);
     return E_FAIL;
   }
   auto texture_type = pResource->textureType();
@@ -87,6 +88,13 @@ HRESULT CreateMTLTextureView<D3D11_UNORDERED_ACCESS_VIEW_DESC>(
     break;
   }
   case D3D11_UAV_DIMENSION_TEXTURE2D: {
+    if (texture_type == MTL::TextureType2D) {
+      *ppView = pResource->newTextureView(
+          metal_format.PixelFormat, MTL::TextureType2D,
+          NS::Range::Make(pViewDesc->Texture2D.MipSlice, 1),
+          NS::Range::Make(0, 1));
+      return S_OK;
+    }
     break;
   }
   case D3D11_UAV_DIMENSION_TEXTURE2DARRAY: {
@@ -195,6 +203,7 @@ HRESULT CreateMTLTextureView<D3D11_SHADER_RESOURCE_VIEW_DESC>(
   pDevice->GetAdapter(&adapter);
   MTL_FORMAT_DESC metal_format;
   if (FAILED(adapter->QueryFormatDesc(pViewDesc->Format, &metal_format))) {
+    ERR("Failed to create SRV due to unsupported format ", pViewDesc->Format);
     return E_FAIL;
   }
   // TODO: check PixelFormat is ordinary/packed
@@ -223,6 +232,8 @@ HRESULT CreateMTLTextureView<D3D11_SHADER_RESOURCE_VIEW_DESC>(
   default:
     break;
   }
+  ERR("Unhandled srv creation: \n Source: ", metal_format.PixelFormat,
+      "\n Desired: ", pViewDesc->ViewDimension);
   return E_FAIL;
 }
 
@@ -259,6 +270,8 @@ HRESULT CreateMTLTextureView<D3D11_UNORDERED_ACCESS_VIEW_DESC>(
   default:
     break;
   }
+  ERR("Unhandled uav creation: \n Source: ", metal_format.PixelFormat,
+      "\n Desired: ", pViewDesc->ViewDimension);
   return E_FAIL;
 }
 

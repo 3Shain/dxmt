@@ -37,12 +37,23 @@ ArgumentEncoder_t CreateArgumentEncoderInternal(
   }
   for (auto &[range_id, srv] : shader_info->srvMap) {
     MTLTextureType texture_type = MTLTextureType1D;
-    MTLDataType data_type = MTLDataTypeTexture;
     switch (srv.resource_type) {
+    case ResourceType::NonApplicable: {
+      addNewField([&](MTLArgumentDescriptor *descriptor) {
+        descriptor.access = MTLBindingAccessReadOnly;
+        descriptor.arrayLength = 0;
+        descriptor.index = GetArgumentIndex(SM50BindingType::SRV, range_id);
+        descriptor.dataType = MTLDataTypePointer;
+      });
+      addNewField([&](MTLArgumentDescriptor *descriptor) {
+        descriptor.access = MTLBindingAccessReadOnly;
+        descriptor.arrayLength = 0;
+        descriptor.index = GetArgumentIndex(SM50BindingType::SRV, range_id) + 1;
+        descriptor.dataType = MTLDataTypeUInt;
+      });
+      continue;
+    }
     case ResourceType::TextureBuffer:
-      if (srv.strucure_stride >= 0) {
-        data_type = MTLDataTypePointer;
-      }
       texture_type = MTLTextureTypeTextureBuffer;
       break;
     case ResourceType::Texture1D:
@@ -77,18 +88,38 @@ ArgumentEncoder_t CreateArgumentEncoderInternal(
       descriptor.access = MTLBindingAccessReadOnly;
       descriptor.arrayLength = 0;
       descriptor.index = GetArgumentIndex(SM50BindingType::SRV, range_id);
-      descriptor.dataType = data_type;
+      descriptor.dataType = MTLDataTypeTexture;
       descriptor.textureType = texture_type;
     });
   }
   for (auto &[range_id, uav] : shader_info->uavMap) {
     MTLTextureType texture_type = MTLTextureType1D;
-    MTLDataType data_type = MTLDataTypeTexture;
     switch (uav.resource_type) {
-    case ResourceType::TextureBuffer:
-      if (uav.strucure_stride >= 0) {
-        data_type = MTLDataTypePointer;
+    case ResourceType::NonApplicable: {
+      addNewField([&](MTLArgumentDescriptor *descriptor) {
+        descriptor.access = MTLBindingAccessReadWrite;
+        descriptor.arrayLength = 0;
+        descriptor.index = GetArgumentIndex(SM50BindingType::SRV, range_id);
+        descriptor.dataType = MTLDataTypePointer;
+      });
+      addNewField([&](MTLArgumentDescriptor *descriptor) {
+        descriptor.access = MTLBindingAccessReadOnly;
+        descriptor.arrayLength = 0;
+        descriptor.index = GetArgumentIndex(SM50BindingType::SRV, range_id) + 1;
+        descriptor.dataType = MTLDataTypeUInt;
+      });
+      if (uav.with_counter) {
+        addNewField([&](MTLArgumentDescriptor *descriptor) {
+          descriptor.access = MTLBindingAccessReadWrite;
+          descriptor.arrayLength = 0;
+          descriptor.index =
+            GetArgumentIndex(SM50BindingType::SRV, range_id) + 2;
+          descriptor.dataType = MTLDataTypePointer;
+        });
       }
+      continue;
+    }
+    case ResourceType::TextureBuffer:
       texture_type = MTLTextureTypeTextureBuffer;
       break;
     case ResourceType::Texture1D:
@@ -120,7 +151,7 @@ ArgumentEncoder_t CreateArgumentEncoderInternal(
       break;
     }
     if (uav.with_counter) {
-      assert(0 && "TODO: implement counter slot");
+      assert(0 && "unreachable");
     }
     addNewField([&](MTLArgumentDescriptor *descriptor) {
       descriptor.access = uav.written ? (uav.read ? MTLBindingAccessReadWrite
@@ -128,7 +159,7 @@ ArgumentEncoder_t CreateArgumentEncoderInternal(
                                       : MTLBindingAccessReadOnly;
       descriptor.arrayLength = 0;
       descriptor.index = GetArgumentIndex(SM50BindingType::UAV, range_id);
-      descriptor.dataType = data_type;
+      descriptor.dataType = MTLDataTypeTexture;
       descriptor.textureType = texture_type;
     });
   }

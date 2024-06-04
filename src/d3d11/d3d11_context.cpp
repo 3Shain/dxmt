@@ -326,12 +326,35 @@ public:
                           const D3D11_BOX *pDstBox, const void *pSrcData,
                           UINT SrcRowPitch, UINT SrcDepthPitch,
                           UINT CopyFlags) {
-
+    if (!pDstResource)
+      return;
     if (pDstBox != NULL) {
       if (pDstBox->right <= pDstBox->left || pDstBox->bottom <= pDstBox->top ||
           pDstBox->back <= pDstBox->front) {
         return;
       }
+    }
+    D3D11_RESOURCE_DIMENSION dim;
+    pDstResource->GetType(&dim);
+    if (dim == D3D11_RESOURCE_DIMENSION_BUFFER) {
+      MTL_BIND_RESOURCE resource;
+      if (auto bindable = com_cast<IMTLBindable>(pDstResource)) {
+        bindable->GetBoundResource(&resource);
+        if (resource.Type == MTL_BIND_BUFFER_UNBOUNDED) {
+          auto w = resource.Buffer->contents();
+          auto len = resource.Buffer->length();
+          std::memcpy(w, pSrcData, len);
+          resource.Buffer->didModifyRange(NS::Range::Make(0, len));
+          return;
+        } else {
+          assert(0 && "UpdateSubresource1: TODO");
+        }
+      } else if (auto dynamic = com_cast<IMTLDynamicBindable>(pDstResource)) {
+        assert(0 && "UpdateSubresource1: TODO");
+      } else {
+        assert(0 && "UpdateSubresource1: TODO: staging?");
+      }
+      return;
     }
 
     IMPLEMENT_ME
@@ -536,12 +559,13 @@ public:
     for (unsigned Slot = StartSlot; Slot < StartSlot + NumBuffers; Slot++) {
       auto &VB = BoundVBs[Slot];
       VB.Buffer = nullptr;
-      assert(ppVertexBuffers);
-      assert(pStrides);
-      assert(pOffsets);
       if (auto dynamic = com_cast<IMTLDynamicBindable>(
               ppVertexBuffers[Slot - StartSlot])) {
-        dynamic->GetBindable(&VB.Buffer, [this]() { ctx.EmitSetIAState(); });
+        dynamic->GetBindable(&VB.Buffer, [this]() {
+          // FIXME:
+          // ctx.EmitSetIAState();
+          // worth it ? this looks wrong (yes it's indeed wrong)
+        });
       } else if (auto expected = com_cast<IMTLBindable>(
                      ppVertexBuffers[Slot - StartSlot])) {
         VB.Buffer = std::move(expected);
@@ -553,6 +577,7 @@ public:
       VB.Stride = pStrides[Slot - StartSlot];
       VB.Offset = pOffsets[Slot - StartSlot];
     }
+    ctx.EmitSetIAState(); // ? should do it smartly?
   }
 
   void IAGetVertexBuffers(UINT StartSlot, UINT NumBuffers,
@@ -576,7 +601,9 @@ public:
     state_.InputAssembler.IndexBuffer = nullptr;
     if (auto dynamic = com_cast<IMTLDynamicBindable>(pIndexBuffer)) {
       dynamic->GetBindable(&state_.InputAssembler.IndexBuffer, []() {
-        assert(0 && "FIXME: dynamic index buffer updated");
+        // no-op
+        // since index buffer always a parameter of draw call
+        // so we always get the fresh name
       });
     } else if (auto expected = com_cast<IMTLBindable>(pIndexBuffer)) {
       state_.InputAssembler.IndexBuffer = std::move(expected);
@@ -586,9 +613,13 @@ public:
   }
   void IAGetIndexBuffer(ID3D11Buffer **pIndexBuffer, DXGI_FORMAT *Format,
                         UINT *Offset) {
-    if (pIndexBuffer != NULL) {
-      state_.InputAssembler.IndexBuffer->GetLogicalResourceOrView(
-          IID_PPV_ARGS(pIndexBuffer));
+    if (pIndexBuffer) {
+      if (state_.InputAssembler.IndexBuffer) {
+        state_.InputAssembler.IndexBuffer->GetLogicalResourceOrView(
+            IID_PPV_ARGS(pIndexBuffer));
+      } else {
+        *pIndexBuffer = nullptr;
+      }
     }
     if (Format != NULL)
       *Format = state_.InputAssembler.IndexBufferFormat;
@@ -1238,7 +1269,16 @@ public:
     ctx.EmitSetScissor();
   }
 
-  void RSGetScissorRects(UINT *pNumRects, D3D11_RECT *pRects) { IMPLEMENT_ME; }
+  void RSGetScissorRects(UINT *pNumRects, D3D11_RECT *pRects) {
+    if (pNumRects) {
+      *pNumRects = state_.Rasterizer.NumScissorRects;
+    }
+    if (pRects) {
+      for (auto i = 0u; i < state_.Rasterizer.NumScissorRects; i++) {
+        pRects[i] = state_.Rasterizer.scissor_rects[i];
+      }
+    }
+  }
 #pragma endregion
 
 #pragma region DynamicBufferPool

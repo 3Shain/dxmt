@@ -33,10 +33,14 @@ public:
                  UINT NumClassInstances) {
     auto &ShaderStage = state_.ShaderStages[(UINT)Type];
 
-    if (auto expected = com_cast<IMTLD3D11Shader>(pShader)) {
-      ShaderStage.Shader = std::move(expected);
+    if (pShader) {
+      if (auto expected = com_cast<IMTLD3D11Shader>(pShader)) {
+        ShaderStage.Shader = std::move(expected);
+      } else {
+        assert(0 && "wtf");
+      }
     } else {
-      assert(0 && "wtf");
+      ShaderStage.Shader = nullptr;
     }
 
     if (NumClassInstances)
@@ -106,12 +110,29 @@ public:
 
   template <ShaderType Type>
   void GetConstantBuffer(UINT StartSlot, UINT NumBuffers,
-                         ID3D11Buffer *const *ppConstantBuffers,
-                         const UINT *pFirstConstant,
-                         const UINT *pNumConstants) {
+                         ID3D11Buffer **ppConstantBuffers, UINT *pFirstConstant,
+                         UINT *pNumConstants) {
+    auto &ShaderStage = state_.ShaderStages[(UINT)Type];
 
-    // auto &ShaderStage = state_.ShaderStages[(UINT)Type];
-    IMPLEMENT_ME;
+    for (auto i = 0u; i < NumBuffers; i++) {
+      if (ShaderStage.ConstantBuffers.contains(StartSlot + i)) {
+        auto &cb = ShaderStage.ConstantBuffers[StartSlot + i];
+        if (ppConstantBuffers) {
+          cb.Buffer->QueryInterface(IID_PPV_ARGS(&ppConstantBuffers[i]));
+        }
+        if (pFirstConstant) {
+          pFirstConstant[i] = cb.FirstConstant;
+        }
+        if (pNumConstants) {
+          pNumConstants[i] = cb.NumConstants;
+        }
+      } else {
+        if (ppConstantBuffers) {
+          ppConstantBuffers[i] = nullptr;
+        }
+        // FIXME: should reset FirstConstant and NumConstants?
+      }
+    }
   }
 
   template <ShaderType Type>
@@ -146,8 +167,18 @@ public:
   template <ShaderType Type>
   void GetShaderResource(UINT StartSlot, UINT NumViews,
                          ID3D11ShaderResourceView **ppShaderResourceViews) {
-    // auto &ShaderStage = state_.ShaderStages[(UINT)Type];
-    IMPLEMENT_ME;
+    auto &ShaderStage = state_.ShaderStages[(UINT)Type];
+
+    if (!ppShaderResourceViews)
+      return;
+    for (auto i = 0u; i < NumViews; i++) {
+      if (ShaderStage.SRVs.contains(StartSlot + i)) {
+        ShaderStage.SRVs[i]->QueryInterface(
+            IID_PPV_ARGS(&ppShaderResourceViews[i]));
+      } else {
+        ppShaderResourceViews[i] = nullptr;
+      }
+    }
   }
 
   template <ShaderType Type>
@@ -182,6 +213,8 @@ public:
       for (unsigned Slot = StartSlot; Slot < StartSlot + NumSamplers; Slot++) {
         if (ShaderStage.Samplers.contains(Slot)) {
           ppSamplers[Slot - StartSlot] = ShaderStage.Samplers[Slot].ref();
+        } else {
+          ppSamplers[Slot - StartSlot] = nullptr;
         }
       }
     }

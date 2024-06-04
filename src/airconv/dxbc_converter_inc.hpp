@@ -62,12 +62,14 @@ struct io_binding_map {
   llvm::Value *icb_float = nullptr;
   std::unordered_map<uint32_t, IndexedIRValue> cb_range_map{};
   std::unordered_map<uint32_t, IndexedIRValue> sampler_range_map{};
-  std::unordered_map<
-    uint32_t, std::tuple<air::MSLTexture, IndexedIRValue, int32_t>>
+  std::unordered_map<uint32_t, std::tuple<air::MSLTexture, IndexedIRValue>>
     srv_range_map{};
   std::unordered_map<
-    uint32_t, std::tuple<air::MSLTexture, IndexedIRValue, int32_t>>
+    uint32_t, std::tuple<IndexedIRValue, IndexedIRValue, uint32_t>>
+    srv_buf_range_map{};
+  std::unordered_map<uint32_t, std::tuple<air::MSLTexture, IndexedIRValue>>
     uav_range_map{};
+  std::unordered_map<uint32_t, uint32_t> uav_buf_range_map{};
   std::unordered_map<uint32_t, std::pair<uint32_t, llvm::GlobalVariable *>>
     tgsm_map{};
 
@@ -2456,18 +2458,18 @@ auto load_condition(SrcOperand src, bool non_zero_test) {
   };
 };
 
-auto load_tgsm(
-  llvm::GlobalValue *g, pvalue offset_in_4bytes, uint32_t read_components
+/**
+it might be a constant, device or threadgroup buffer of `uint*`
+*/
+auto load_from_uint_bufptr(
+  pvalue g, pvalue offset_in_4bytes, uint32_t read_components
 ) -> IRValue {
   auto ctx = co_yield get_context();
   pvalue vec = llvm::UndefValue::get(ctx.types._int4);
   for (uint32_t i = 0; i < read_components; i++) {
-    auto ptr = ctx.builder.CreateInBoundsGEP(
-      llvm::cast<llvm::PointerType>(g->getType())
-        ->getNonOpaquePointerElementType(),
-      g,
-      {ctx.builder.getInt32(0),
-       ctx.builder.CreateAdd(offset_in_4bytes, ctx.builder.getInt32(i))}
+    auto ptr = ctx.builder.CreateGEP(
+      ctx.types._int, g,
+      {ctx.builder.CreateAdd(offset_in_4bytes, ctx.builder.getInt32(i))}
     );
     vec = ctx.builder.CreateInsertElement(
       vec, ctx.builder.CreateLoad(ctx.types._int, ptr), i
@@ -2663,7 +2665,10 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
             effect << store_dst_op<true>(
               sample.dst,
               (make_irvalue_bind([=](struct context ctx) -> IRValue {
-                 auto [res, res_handle_fn, _] =
+                 assert(ctx.resource.srv_range_map.contains(
+                   sample.src_resource.range_id
+                 ));
+                 auto [res, res_handle_fn] =
                    ctx.resource.srv_range_map[sample.src_resource.range_id];
                  auto sampler_handle_fn =
                    ctx.resource.sampler_range_map[sample.src_sampler.range_id];
@@ -2753,7 +2758,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
             effect << store_dst_op<true>(
               sample.dst,
               (make_irvalue_bind([=](struct context ctx) -> IRValue {
-                 auto [res, res_handle_fn, _] =
+                 auto [res, res_handle_fn] =
                    ctx.resource.srv_range_map[sample.src_resource.range_id];
                  auto sampler_handle_fn =
                    ctx.resource.sampler_range_map[sample.src_sampler.range_id];
@@ -2851,7 +2856,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
             effect << store_dst_op<true>(
               sample.dst,
               (make_irvalue_bind([=](struct context ctx) -> IRValue {
-                 auto [res, res_handle_fn, _] =
+                 auto [res, res_handle_fn] =
                    ctx.resource.srv_range_map[sample.src_resource.range_id];
                  auto sampler_handle_fn =
                    ctx.resource.sampler_range_map[sample.src_sampler.range_id];
@@ -2948,7 +2953,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
             effect << store_dst_op<true>(
               sample.dst,
               (make_irvalue_bind([=](struct context ctx) -> IRValue {
-                 auto [res, res_handle_fn, _] =
+                 auto [res, res_handle_fn] =
                    ctx.resource.srv_range_map[sample.src_resource.range_id];
                  auto sampler_handle_fn =
                    ctx.resource.sampler_range_map[sample.src_sampler.range_id];
@@ -3037,7 +3042,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
             effect << store_dst_op<true>(
               sample.dst,
               (make_irvalue_bind([=](struct context ctx) -> IRValue {
-                 auto [res, res_handle_fn, _] =
+                 auto [res, res_handle_fn] =
                    ctx.resource.srv_range_map[sample.src_resource.range_id];
                  auto sampler_handle_fn =
                    ctx.resource.sampler_range_map[sample.src_sampler.range_id];
@@ -3110,7 +3115,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
             effect << store_dst_op<true>(
               sample.dst,
               (make_irvalue_bind([=](struct context ctx) -> IRValue {
-                 auto [res, res_handle_fn, _] =
+                 auto [res, res_handle_fn] =
                    ctx.resource.srv_range_map[sample.src_resource.range_id];
                  auto sampler_handle_fn =
                    ctx.resource.sampler_range_map[sample.src_sampler.range_id];
@@ -3165,7 +3170,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
             effect << store_dst_op<true>(
               sample.dst,
               (make_irvalue_bind([=](struct context ctx) -> IRValue {
-                 auto [res, res_handle_fn, _] =
+                 auto [res, res_handle_fn] =
                    ctx.resource.srv_range_map[sample.src_resource.range_id];
                  auto sampler_handle_fn =
                    ctx.resource.sampler_range_map[sample.src_sampler.range_id];
@@ -3217,7 +3222,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
 
           [&](InstLoad load) {
             effect << make_effect_bind([=](struct context ctx) -> IREffect {
-              auto [res, res_handle_fn, _] =
+              auto [res, res_handle_fn] =
                 ctx.resource.srv_range_map[load.src_resource.range_id];
               auto res_h = co_yield res_handle_fn(nullptr);
               auto coord = co_yield load_src_op<false>(load.src_address);
@@ -3308,7 +3313,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
           },
           [&](InstLoadUAVTyped load) {
             effect << make_effect_bind([=](struct context ctx) -> IREffect {
-              auto [res, res_handle_fn, _] =
+              auto [res, res_handle_fn] =
                 ctx.resource.uav_range_map[load.src_uav.range_id];
               auto res_h = co_yield res_handle_fn(nullptr);
               auto coord = co_yield load_src_op<false>(load.src_address);
@@ -3368,7 +3373,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
           },
           [&](InstStoreUAVTyped store) {
             effect << make_effect_bind([=](struct context ctx) -> IREffect {
-              auto [res, res_handle_fn, _] =
+              auto [res, res_handle_fn] =
                 ctx.resource.uav_range_map[store.dst.range_id];
               auto res_h = co_yield res_handle_fn(nullptr);
               auto address = co_yield load_src_op<false>(store.src_address);
@@ -3446,7 +3451,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                       2
                     );
                     co_return co_yield store_dst_op<false>(
-                      load.dst, load_tgsm(
+                      load.dst, load_from_uint_bufptr(
                                   tgsm_h, offset,
                                   std::max(
                                     {tgsm.read_swizzle.x, tgsm.read_swizzle.y,
@@ -3460,9 +3465,8 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                 [&](SrcOperandResource srv) {
                   return make_effect_bind([=](struct context ctx) -> IREffect {
                     auto &builder = ctx.builder;
-                    auto [res, res_handle_fn, stride] =
-                      ctx.resource.srv_range_map[srv.range_id];
-                    auto res_h = co_yield res_handle_fn(nullptr);
+                    auto [srv_h, _, stride] =
+                      ctx.resource.srv_buf_range_map[srv.range_id];
                     auto offset = builder.CreateLShr(
                       builder.CreateAdd(
                         builder.CreateMul(
@@ -3476,8 +3480,8 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                       2
                     );
                     co_return co_yield store_dst_op<false>(
-                      load.dst, load_texture_raw(
-                                  res, res_h, offset,
+                      load.dst, load_from_uint_bufptr(
+                                  co_yield srv_h(nullptr), offset,
                                   std::max(
                                     {srv.read_swizzle.x, srv.read_swizzle.y,
                                      srv.read_swizzle.z, srv.read_swizzle.w}
@@ -3489,32 +3493,8 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                 },
                 [&](SrcOperandUAV uav) {
                   return make_effect_bind([=](struct context ctx) -> IREffect {
-                    auto &builder = ctx.builder;
-                    auto [res, res_handle_fn, stride] =
-                      ctx.resource.uav_range_map[uav.range_id];
-                    auto res_h = co_yield res_handle_fn(nullptr);
-                    auto offset = builder.CreateLShr(
-                      builder.CreateAdd(
-                        builder.CreateMul(
-                          builder.getInt32(stride),
-                          co_yield load_src_op<false>(load.src_address) >>=
-                          extract_element(0)
-                        ),
-                        co_yield load_src_op<false>(load.src_byte_offset) >>=
-                        extract_element(0)
-                      ),
-                      2
-                    );
-                    co_return co_yield store_dst_op<false>(
-                      load.dst, load_texture_raw(
-                                  res, res_h, offset,
-                                  std::max(
-                                    {uav.read_swizzle.x, uav.read_swizzle.y,
-                                     uav.read_swizzle.z, uav.read_swizzle.w}
-                                  ) +
-                                    1
-                                ) >>= swizzle(uav.read_swizzle)
-                    );
+                    // auto &builder = ctx.builder;
+                    assert(0 && "todo");
                   });
                 }
               },
@@ -3548,27 +3528,8 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                 },
                 [&](AtomicDstOperandUAV uav) {
                   return make_effect_bind([=](struct context ctx) -> IREffect {
-                    auto &builder = ctx.builder;
-                    auto [res, res_handle_fn, stride] =
-                      ctx.resource.uav_range_map[uav.range_id];
-                    auto res_h = co_yield res_handle_fn(nullptr);
-                    auto offset = builder.CreateLShr(
-                      builder.CreateAdd(
-                        builder.CreateMul(
-                          builder.getInt32(stride),
-                          co_yield load_src_op<false>(store.dst_address) >>=
-                          extract_element(0)
-                        ),
-                        co_yield load_src_op<false>(store.dst_byte_offset) >>=
-                        extract_element(0)
-                      ),
-                      2
-                    );
-                    co_return co_yield store_texture_raw(
-                      res, res_h, offset,
-                      mask_to_linear_components_num(uav.mask),
-                      co_yield load_src_op<false>(store.src)
-                    );
+                    // auto &builder = ctx.builder;
+                    assert(0 && "todo");
                   });
                 }
               },
@@ -3588,7 +3549,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                       2
                     );
                     co_return co_yield store_dst_op<false>(
-                      load.dst, load_tgsm(
+                      load.dst, load_from_uint_bufptr(
                                   tgsm_h, offset,
                                   std::max(
                                     {tgsm.read_swizzle.x, tgsm.read_swizzle.y,
@@ -3601,48 +3562,14 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                 },
                 [&](SrcOperandResource srv) {
                   return make_effect_bind([=](struct context ctx) -> IREffect {
-                    auto &builder = ctx.builder;
-                    auto [res, res_handle_fn, stride] =
-                      ctx.resource.srv_range_map[srv.range_id];
-                    auto res_h = co_yield res_handle_fn(nullptr);
-                    auto offset = builder.CreateLShr(
-                      co_yield load_src_op<false>(load.src_byte_offset) >>=
-                      extract_element(0),
-                      2
-                    );
-                    co_return co_yield store_dst_op<false>(
-                      load.dst, load_texture_raw(
-                                  res, res_h, offset,
-                                  std::max(
-                                    {srv.read_swizzle.x, srv.read_swizzle.y,
-                                     srv.read_swizzle.z, srv.read_swizzle.w}
-                                  ) +
-                                    1
-                                ) >>= swizzle(srv.read_swizzle)
-                    );
+                    // auto &builder = ctx.builder;
+                    assert(0 && "todo");
                   });
                 },
                 [&](SrcOperandUAV uav) {
                   return make_effect_bind([=](struct context ctx) -> IREffect {
-                    auto &builder = ctx.builder;
-                    auto [res, res_handle_fn, stride] =
-                      ctx.resource.uav_range_map[uav.range_id];
-                    auto res_h = co_yield res_handle_fn(nullptr);
-                    auto offset = builder.CreateLShr(
-                      co_yield load_src_op<false>(load.src_byte_offset) >>=
-                      extract_element(0),
-                      2
-                    );
-                    co_return co_yield store_dst_op<false>(
-                      load.dst, load_texture_raw(
-                                  res, res_h, offset,
-                                  std::max(
-                                    {uav.read_swizzle.x, uav.read_swizzle.y,
-                                     uav.read_swizzle.z, uav.read_swizzle.w}
-                                  ) +
-                                    1
-                                ) >>= swizzle(uav.read_swizzle)
-                    );
+                    // auto &builder = ctx.builder;
+                    assert(0 && "todo");
                   });
                 }
               },
@@ -3669,20 +3596,8 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                 },
                 [&](AtomicDstOperandUAV uav) {
                   return make_effect_bind([=](struct context ctx) -> IREffect {
-                    auto &builder = ctx.builder;
-                    auto [res, res_handle_fn, stride] =
-                      ctx.resource.uav_range_map[uav.range_id];
-                    auto res_h = co_yield res_handle_fn(nullptr);
-                    auto offset = builder.CreateLShr(
-                      co_yield load_src_op<false>(store.dst_byte_offset) >>=
-                      extract_element(0),
-                      2
-                    );
-                    co_return co_yield store_texture_raw(
-                      res, res_h, offset,
-                      mask_to_linear_components_num(uav.mask),
-                      co_yield load_src_op<false>(store.src)
-                    );
+                    // auto &builder = ctx.builder;
+                    assert(0 && "todo");
                   });
                 }
               },
@@ -4326,7 +4241,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
             effect << store_dst_op<true>(
               calc.dst,
               make_irvalue_bind([=](struct context ctx) -> IRValue {
-                auto [res, res_handle_fn, _] =
+                auto [res, res_handle_fn] =
                   ctx.resource.srv_range_map[calc.src_resource.range_id];
                 auto sampler_handle_fn =
                   ctx.resource.sampler_range_map[calc.src_sampler.range_id];
@@ -4436,38 +4351,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                 },
                 [&](AtomicDstOperandUAV uav) {
                   return make_effect_bind([=](struct context ctx) -> IREffect {
-                    auto &builder = ctx.builder;
-                    auto [res, res_handle_fn, stride] =
-                      ctx.resource.uav_range_map[uav.range_id];
-                    assert(
-                      (res.resource_kind == air::TextureKind::texture_buffer) &&
-                      "TODO: handle typed uav atomic operation..."
-                    );
-                    auto res_h = co_yield res_handle_fn(nullptr);
-                    auto addr = co_yield load_src_op<false>(bin.dst_address);
-                    auto ptr =
-                      stride < 0
-                        ? co_yield extract_element(0)(addr
-                          ) // TODO: handle 2d/3d..and array uav
-                        : builder.CreateLShr(
-                            stride > 0 ? builder.CreateAdd(
-                                           builder.CreateMul(
-                                             builder.getInt32(stride),
-                                             co_yield extract_element(0)(addr)
-                                           ),
-                                           co_yield extract_element(1)(addr)
-                                         )
-                                       : co_yield extract_element(0)(addr),
-                            2
-                          );
-                    auto imm = co_yield call_texture_atomic_fetch_explicit(
-                      res, res_h, op, is_signed, ptr, nullptr,
-                      co_yield load_src_op<false>(bin.src)
-                    );
-                    co_yield store_dst_op<false>(
-                      bin.dst_original, extract_element(0)(imm)
-                    );
-                    co_return {};
+                    assert(0 && "todo");
                   });
                 }
               },

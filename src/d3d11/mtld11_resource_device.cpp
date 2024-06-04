@@ -5,6 +5,7 @@
 #include "com/com_pointer.hpp"
 #include "d3d11_device.hpp"
 #include "d3d11_texture.hpp"
+#include "log/log.hpp"
 #include "mtld11_resource.hpp"
 #include "objc_pointer.hpp"
 
@@ -44,14 +45,33 @@ public:
     QueryInterface(riid, ppLogicalResource);
   };
 
-  using SRVBase = TResourceViewBase<tag_shader_resource_view<DeviceBuffer>,
-                        IMTLBindable>;
+  using SRVBase =
+      TResourceViewBase<tag_shader_resource_view<DeviceBuffer>, IMTLBindable>;
+  template <typename F> class SRV : public SRVBase {
+  private:
+    F f;
+
+  public:
+    SRV(const tag_shader_resource_view<>::DESC_S *pDesc,
+        DeviceBuffer *pResource, IMTLD3D11Device *pDevice, F &&fn)
+        : SRVBase(pDesc, pResource, pDevice), f(std::move(fn)) {}
+
+    void GetBoundResource(MTL_BIND_RESOURCE *ppResource) override {
+      std::invoke(f, ppResource);
+    };
+
+    void GetLogicalResourceOrView(REFIID riid,
+                                  void **ppLogicalResource) override {
+      this->resource->QueryInterface(riid, ppLogicalResource);
+    };
+  };
 
   HRESULT CreateShaderResourceView(const D3D11_SHADER_RESOURCE_VIEW_DESC *pDesc,
                                    ID3D11ShaderResourceView **ppView) override {
     D3D11_SHADER_RESOURCE_VIEW_DESC finalDesc;
     if (FAILED(ExtractEntireResourceViewDescription(&this->desc, pDesc,
                                                     &finalDesc))) {
+      ERR("DeviceBuffer: Failed to extract srv description");
       return E_INVALIDARG;
     }
     if (finalDesc.ViewDimension != D3D11_SRV_DIMENSION_BUFFER &&
@@ -60,6 +80,13 @@ public:
     }
     if (structured) {
       // StructuredBuffer
+      *ppView = ref(new SRV(pDesc, this, m_parent,
+                            [ctx = Com(this)](MTL_BIND_RESOURCE *ppResource) {
+                              ppResource->Type =
+                                  MTL_BIND_BUFFER_UNBOUNDED; // FIXME: BOUNDED!
+                              ppResource->Buffer = ctx->buffer.ptr();
+                            }));
+      return S_OK;
     } else {
       if (finalDesc.ViewDimension == D3D11_SRV_DIMENSION_BUFFEREX &&
           finalDesc.BufferEx.Flags & D3D11_BUFFEREX_SRV_FLAG_RAW) {
@@ -72,14 +99,21 @@ public:
                                         &finalDesc, &view))) {
           return E_FAIL;
         }
+        *ppView = ref(
+            new SRV(pDesc, this, m_parent,
+                    [view = std::move(view)](MTL_BIND_RESOURCE *ppResource) {
+                      ppResource->Type = MTL_BIND_TEXTURE;
+                      ppResource->Texture = view.ptr();
+                    }));
+        return S_OK;
       }
     }
     ERR("DeviceBuffer: SRV not supported");
     return E_FAIL;
   };
 
-  using UAVBase = TResourceViewBase<tag_unordered_access_view<DeviceBuffer>,
-                        IMTLBindable>;
+  using UAVBase =
+      TResourceViewBase<tag_unordered_access_view<DeviceBuffer>, IMTLBindable>;
 
   HRESULT
   CreateUnorderedAccessView(const D3D11_UNORDERED_ACCESS_VIEW_DESC *pDesc,
@@ -159,7 +193,8 @@ private:
       (*ppResource).Texture = view.ptr();
     };
 
-    void GetLogicalResourceOrView(REFIID riid, void **ppLogicalResource) override {
+    void GetLogicalResourceOrView(REFIID riid,
+                                  void **ppLogicalResource) override {
       this->resource->QueryInterface(riid, ppLogicalResource);
     };
   };
@@ -182,7 +217,8 @@ private:
       (*ppResource).Texture = view.ptr();
     };
 
-    void GetLogicalResourceOrView(REFIID riid, void **ppLogicalResource) override {
+    void GetLogicalResourceOrView(REFIID riid,
+                                  void **ppLogicalResource) override {
       this->resource->QueryInterface(riid, ppLogicalResource);
     };
   };
@@ -282,11 +318,13 @@ public:
     D3D11_SHADER_RESOURCE_VIEW_DESC finalDesc;
     if (FAILED(ExtractEntireResourceViewDescription(&this->desc, pDesc,
                                                     &finalDesc))) {
+      ERR("DeviceTexture: Failed to create SRV descriptor");
       return E_INVALIDARG;
     }
     Obj<MTL::Texture> view;
     if (FAILED(CreateMTLTextureView(this->m_parent, this->texture, &finalDesc,
                                     &view))) {
+      ERR("DeviceTexture: Failed to create SRV texture view");
       return E_FAIL;
     }
     if (ppView) {

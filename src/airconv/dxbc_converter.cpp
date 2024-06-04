@@ -34,6 +34,8 @@
 #include "airconv_context.hpp"
 #include "airconv_public.h"
 
+#include "abrt_handle.h"
+
 char dxmt::UnsupportedFeature::ID;
 
 class SM50ShaderInternal {
@@ -119,53 +121,79 @@ llvm::Error convertDXBC(
     };
   }
   for (auto &[range_id, srv] : shader_info->srvMap) {
-    // TODO: abstract SM 5.0 binding
-    auto access =
-      srv.sampled ? air::MemoryAccess::sample : air::MemoryAccess::read;
-    auto texture_kind =
-      air::to_air_resource_type(srv.resource_type, srv.compared);
-    auto scaler_type = air::to_air_scaler_type(srv.scaler_type);
-    auto index = binding_table.DefineTexture(
-      "t" + std::to_string(range_id), texture_kind, access, scaler_type,
-      GetArgumentIndex(SM50BindingType::SRV, range_id)
-    );
-    resource_map.srv_range_map[range_id] = {
-      air::MSLTexture{
-        .component_type = scaler_type,
-        .memory_access = access,
-        .resource_kind = texture_kind,
-      },
-      [=, &binding_table_index](pvalue) {
-        // ignore index in SM 5.0
-        return get_item_in_argbuf_binding_table(binding_table_index, index);
-      },
-      srv.strucure_stride
-    };
+    if (srv.resource_type != shader::common::ResourceType::NonApplicable) {
+      // TODO: abstract SM 5.0 binding
+      auto access =
+        srv.sampled ? air::MemoryAccess::sample : air::MemoryAccess::read;
+      auto texture_kind =
+        air::to_air_resource_type(srv.resource_type, srv.compared);
+      auto scaler_type = air::to_air_scaler_type(srv.scaler_type);
+      auto index = binding_table.DefineTexture(
+        "t" + std::to_string(range_id), texture_kind, access, scaler_type,
+        GetArgumentIndex(SM50BindingType::SRV, range_id)
+      );
+      resource_map.srv_range_map[range_id] = {
+        air::MSLTexture{
+          .component_type = scaler_type,
+          .memory_access = access,
+          .resource_kind = texture_kind,
+        },
+        [=, &binding_table_index](pvalue) {
+          // ignore index in SM 5.0
+          return get_item_in_argbuf_binding_table(binding_table_index, index);
+        }
+      };
+    } else {
+      auto attr_index = GetArgumentIndex(SM50BindingType::SRV, range_id);
+      auto argbuf_index_bufptr = binding_table.DefineBuffer(
+        "t" + std::to_string(range_id), air::AddressSpace::constant,
+        air::MemoryAccess::read, air::msl_uint, attr_index
+      );
+      auto argbuf_index_size = binding_table.DefineInteger32(
+        "ct" + std::to_string(range_id), attr_index + 1
+      );
+      resource_map.srv_buf_range_map[range_id] = {
+        [=, &binding_table_index](pvalue) {
+          return get_item_in_argbuf_binding_table(
+            binding_table_index, argbuf_index_bufptr
+          );
+        },
+        [=, &binding_table_index](pvalue) {
+          return get_item_in_argbuf_binding_table(
+            binding_table_index, argbuf_index_size
+          );
+        },
+        srv.strucure_stride
+      };
+    }
   }
   for (auto &[range_id, uav] : shader_info->uavMap) {
-    auto texture_kind = air::to_air_resource_type(uav.resource_type);
-    auto scaler_type = air::to_air_scaler_type(uav.scaler_type);
-    auto access = uav.written ? (uav.read ? air::MemoryAccess::read_write
-                                          : air::MemoryAccess::write)
-                              : air::MemoryAccess::read;
-    auto index = binding_table.DefineTexture(
-      "u" + std::to_string(range_id), texture_kind, access, scaler_type,
-      GetArgumentIndex(SM50BindingType::UAV, range_id)
-    );
-    resource_map.uav_range_map[range_id] = {
-      air::MSLTexture{
-        .component_type = scaler_type,
-        .memory_access = access,
-        .resource_kind = texture_kind,
-      },
-      [=, &binding_table_index](pvalue) {
-        // ignore index in SM 5.0
-        return get_item_in_argbuf_binding_table(binding_table_index, index);
-      },
-      uav.strucure_stride
-    };
-    if (uav.with_counter) {
-      //
+    if (uav.resource_type != shader::common::ResourceType::NonApplicable) {
+      auto texture_kind = air::to_air_resource_type(uav.resource_type);
+      auto scaler_type = air::to_air_scaler_type(uav.scaler_type);
+      auto access = uav.written ? (uav.read ? air::MemoryAccess::read_write
+                                            : air::MemoryAccess::write)
+                                : air::MemoryAccess::read;
+      auto index = binding_table.DefineTexture(
+        "u" + std::to_string(range_id), texture_kind, access, scaler_type,
+        GetArgumentIndex(SM50BindingType::UAV, range_id)
+      );
+      resource_map.uav_range_map[range_id] = {
+        air::MSLTexture{
+          .component_type = scaler_type,
+          .memory_access = access,
+          .resource_kind = texture_kind,
+        },
+        [=, &binding_table_index](pvalue) {
+          // ignore index in SM 5.0
+          return get_item_in_argbuf_binding_table(binding_table_index, index);
+        }
+      };
+    } else {
+      assert(0 && "TODO: raw/structued uav");
+      if (uav.with_counter) {
+        //
+      }
     }
   }
   air::AirType types(context);
@@ -323,6 +351,7 @@ int SM50Initialize(
   using namespace microsoft;
   using namespace dxmt::dxbc;
   using namespace dxmt::air;
+  using namespace dxmt::shader::common;
   if (ppError) {
     *ppError = nullptr;
   }
@@ -705,13 +734,16 @@ int SM50Initialize(
           break;
         }
         case D3D11_SB_OPCODE_DCL_RESOURCE_RAW: {
-          srv.range.space = (Inst.m_RawSRVDecl.Space);
-          srv.scaler_type = dxmt::shader::common::ScalerDataType::Uint;
+          srv.resource_type = ResourceType::NonApplicable;
+          srv.range.space = Inst.m_RawSRVDecl.Space;
+          srv.scaler_type = ScalerDataType::Uint;
+          srv.strucure_stride = 0;
           break;
         }
         case D3D11_SB_OPCODE_DCL_RESOURCE_STRUCTURED: {
+          srv.resource_type = ResourceType::NonApplicable;
           srv.range.space = (Inst.m_StructuredSRVDecl.Space);
-          srv.scaler_type = dxmt::shader::common::ScalerDataType::Uint;
+          srv.scaler_type = ScalerDataType::Uint;
           srv.strucure_stride = Inst.m_StructuredSRVDecl.ByteStride;
           break;
         }
@@ -759,16 +791,17 @@ int SM50Initialize(
         }
         case D3D11_SB_OPCODE_DCL_UNORDERED_ACCESS_VIEW_RAW: {
           uav.range.space = (Inst.m_RawUAVDecl.Space);
-          // R.SetKind(DxilResource::Kind::RawBuffer);
+          uav.resource_type = ResourceType::NonApplicable;
           Flags = Inst.m_RawUAVDecl.Flags;
-          uav.scaler_type = dxmt::shader::common::ScalerDataType::Uint;
+          uav.scaler_type = ScalerDataType::Uint;
+          uav.strucure_stride = 0;
           break;
         }
         case D3D11_SB_OPCODE_DCL_UNORDERED_ACCESS_VIEW_STRUCTURED: {
           uav.range.space = (Inst.m_StructuredUAVDecl.Space);
-          // R.SetKind(DxilResource::Kind::StructuredBuffer);
+          uav.resource_type = ResourceType::NonApplicable;
           Flags = Inst.m_StructuredUAVDecl.Flags;
-          uav.scaler_type = dxmt::shader::common::ScalerDataType::Uint;
+          uav.scaler_type = ScalerDataType::Uint;
           uav.strucure_stride = Inst.m_StructuredUAVDecl.ByteStride;
           break;
         }
@@ -1275,14 +1308,12 @@ int SM50Initialize(
 
   for (auto &[range_id, _] : shader_info->cbufferMap) {
     sm50_shader->args_reflection.push_back(
-      {.Type = SM50BindingType::ConstantBuffer,
-       .SM50BindingSlot = range_id}
+      {.Type = SM50BindingType::ConstantBuffer, .SM50BindingSlot = range_id}
     );
   }
   for (auto &[range_id, _] : shader_info->samplerMap) {
     sm50_shader->args_reflection.push_back(
-      {.Type = SM50BindingType::Sampler,
-       .SM50BindingSlot = range_id}
+      {.Type = SM50BindingType::Sampler, .SM50BindingSlot = range_id}
     );
   }
   for (auto &[range_id, srv] : shader_info->srvMap) {
@@ -1314,10 +1345,14 @@ int SM50Initialize(
 
 void SM50Destroy(SM50Shader *pShader) { delete (SM50ShaderInternal *)pShader; }
 
+ABRT_HANDLE_INIT
+
 int SM50Compile(
   SM50Shader *pShader, void *pArgs, SM50CompiledBitcode **ppBitcode,
   SM50Error **ppError
 ) {
+  ABRT_HANDLE_RETURN(42)
+
   using namespace llvm;
   using namespace dxmt;
 
