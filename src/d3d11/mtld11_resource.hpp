@@ -11,6 +11,7 @@
 #include "log/log.hpp"
 #include "mtld11_interfaces.hpp"
 #include <memory>
+#include <type_traits>
 
 typedef struct MappedResource {
   void *pData;
@@ -82,6 +83,30 @@ DEFINE_COM_INTERFACE("0988488c-75fb-44f3-859a-b6fb2d022239",
    */
   virtual void GetBindable(IMTLBindable * *ppResource,
                            std::function<void()> && onBufferSwap) = 0;
+};
+
+DEFINE_COM_INTERFACE("252c1a0e-1c61-42e7-9b57-23dfe3d73d49", IMTLD3D11Staging)
+    : public IUnknown {
+
+  virtual bool UseCopyDestination(uint64_t seq_id, MTL_BIND_RESOURCE * pBuffer,
+                                  uint32_t * pBytesPerRow,
+                                  uint32_t * pBytesPerImage) = 0;
+  virtual bool UseCopySource(uint64_t seq_id, MTL_BIND_RESOURCE * pBuffer,
+                             uint32_t * pBytesPerRow,
+                             uint32_t * pBytesPerImage) = 0;
+  /**
+  cpu_coherent_seq_id: any operation at/before seq_id is coherent to cpu
+  -
+  return:
+  = 0 - map success
+  > 0 - resource in use
+  < 0 - error (?)
+  */
+  virtual int64_t TryMap(uint32_t Subresource, uint64_t cpu_coherent_seq_id,
+                         // uint64_t commited_seq_id,
+                         D3D11_MAP flag,
+                         D3D11_MAPPED_SUBRESOURCE * pMappedResource) = 0;
+  virtual void Unmap(uint32_t Subresource) = 0;
 };
 
 namespace dxmt {
@@ -174,7 +199,8 @@ public:
     }
 
     if (riid == __uuidof(IMTLDynamicBuffer) || riid == __uuidof(IMTLBindable) ||
-        riid == __uuidof(IMTLDynamicBindable)) {
+        riid == __uuidof(IMTLDynamicBindable) ||
+        riid == __uuidof(IMTLD3D11Staging)) {
       // silent these interfaces
       return E_NOINTERFACE;
     }
@@ -422,6 +448,11 @@ HRESULT ExtractEntireResourceViewDescription(const RESOURCE_DESC *pResourceDesc,
                                              VIEW_DESC *pViewDescOut) {
   if (pViewDescIn) {
     *pViewDescOut = *pViewDescIn;
+    if constexpr (!std::is_same_v<RESOURCE_DESC, D3D11_BUFFER_DESC>) {
+      if (pViewDescOut->Format == DXGI_FORMAT_UNKNOWN) {
+        pViewDescOut->Format = pResourceDesc->Format;
+      }
+    }
     return S_OK;
   } else {
     return ExtractEntireResourceViewDescription(pResourceDesc, pViewDescOut);
@@ -431,6 +462,7 @@ HRESULT ExtractEntireResourceViewDescription(const RESOURCE_DESC *pResourceDesc,
 template <typename TEXTURE_DESC>
 HRESULT CreateMTLTextureDescriptor(IMTLD3D11Device *pDevice,
                                    const TEXTURE_DESC *pDesc,
+                                   TEXTURE_DESC *pOutDesc,
                                    MTL::TextureDescriptor **pMtlDescOut);
 
 template <typename VIEW_DESC>

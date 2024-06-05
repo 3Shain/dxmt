@@ -260,6 +260,21 @@ public:
         desc.ViewDimension == D3D11_SRV_DIMENSION_BUFFEREX) {
       return;
     }
+    if (desc.ViewDimension == D3D11_SRV_DIMENSION_TEXTURE2D) {
+      if (auto com = com_cast<IMTLBindable>(pShaderResourceView)) {
+        MTL_BIND_RESOURCE res;
+        com->GetBoundResource(&res);
+        assert(res.Type == MTL_BIND_TEXTURE);
+        ctx.EmitBlitCommand<true>(
+            [tex = Obj(res.Texture)](MTL::BlitCommandEncoder *enc) {
+              enc->generateMipmaps(tex);
+            });
+      } else {
+        // FIXME: any other possible case?
+        assert(0 && "unhandled genmips");
+      }
+      return;
+    }
     IMPLEMENT_ME
   }
 
@@ -277,10 +292,9 @@ public:
     pSrcResource->GetType(&src_dim);
     if (dst_dim != src_dim)
       return;
-    ;
     switch (dst_dim) {
     case D3D11_RESOURCE_DIMENSION_UNKNOWN:
-      return; // wut
+      break;
     case D3D11_RESOURCE_DIMENSION_BUFFER: {
 
       IMPLEMENT_ME
@@ -543,6 +557,8 @@ public:
   void IASetInputLayout(ID3D11InputLayout *pInputLayout) {
     if (auto expected = com_cast<IMTLD3D11InputLayout>(pInputLayout)) {
       state_.InputAssembler.InputLayout = std::move(expected);
+    } else {
+      state_.InputAssembler.InputLayout = nullptr;
     }
     ctx.InvalidateGraphicPipeline();
   }
@@ -1174,7 +1190,14 @@ public:
                        const FLOAT BlendFactor[4], UINT SampleMask) {
     if (auto expected = com_cast<IMTLD3D11BlendState>(pBlendState)) {
       state_.OutputMerger.BlendState = std::move(expected);
+      if (BlendFactor) {
       memcpy(state_.OutputMerger.BlendFactor, BlendFactor, sizeof(float[4]));
+      } else {
+        state_.OutputMerger.BlendFactor[0] = 1.0f;
+        state_.OutputMerger.BlendFactor[1] = 1.0f;
+        state_.OutputMerger.BlendFactor[2] = 1.0f;
+        state_.OutputMerger.BlendFactor[3] = 1.0f;
+      }
       state_.OutputMerger.SampleMask = SampleMask;
     }
 

@@ -1,4 +1,5 @@
 #include "d3d11_state_object.hpp"
+#include "Metal/MTLDepthStencil.hpp"
 #include "com/com_guid.hpp"
 #include "com/com_pointer.hpp"
 #include "d3d11_device.hpp"
@@ -694,7 +695,8 @@ HRESULT CreateSamplerState(ID3D11Device *pDevice,
 
   // comparison function
   if (desc.ComparisonFunc < 1 || desc.ComparisonFunc > 8) {
-    ERR("Invalid ComparisonFunc");
+    WARN("CreateSamplerState: invalid ComparisonFunc");
+    mtl_sampler_desc->setCompareFunction(MTL::CompareFunctionNever);
   } else {
     mtl_sampler_desc->setCompareFunction(
         kCompareFunctionMap[desc.ComparisonFunc]);

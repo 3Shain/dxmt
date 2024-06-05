@@ -123,6 +123,7 @@ public:
       case D3D11_USAGE_IMMUTABLE:
         return CreateDeviceTexture1D(this, pDesc, pInitialData, ppTexture1D);
       case D3D11_USAGE_DYNAMIC:
+        ERR("dynamic texture 1d not supported yet");
         return E_NOTIMPL;
       case D3D11_USAGE_STAGING:
         if (pDesc->BindFlags != 0) {
@@ -187,6 +188,7 @@ public:
       case D3D11_USAGE_IMMUTABLE:
         return CreateDeviceTexture3D(this, pDesc, pInitialData, ppTexture3D);
       case D3D11_USAGE_DYNAMIC:
+        ERR("dynamic texture 3d not supported yet");
         return E_NOTIMPL;
       case D3D11_USAGE_STAGING:
         if (pDesc->BindFlags != 0) {
@@ -262,7 +264,7 @@ public:
 
     if (!ppDepthStencilView)
       return S_FALSE;
-
+    
     if (auto res = Com<IDXMTResource>::queryFrom(pResource); res != nullptr) {
       return res->CreateDepthStencilView(pDesc, ppDepthStencilView);
     }
@@ -318,6 +320,7 @@ public:
 
     if (!ppGeometryShader)
       return S_FALSE;
+    ERR("CreateGeometryShader: not supported, expect error");
     return E_NOTIMPL;
   }
 
@@ -491,8 +494,10 @@ public:
       return S_OK;
     case D3D11_QUERY_OCCLUSION:
       // TODO: implement occulusion query
+      ERR("occulusion query not implemented");
       return E_NOTIMPL;
     default:
+      ERR("unknown query not implemented");
       return E_NOTIMPL;
     }
   }

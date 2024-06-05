@@ -392,40 +392,58 @@ CreateMTLTextureDescriptorInternal(
 template <>
 HRESULT CreateMTLTextureDescriptor(IMTLD3D11Device *pDevice,
                                    const D3D11_TEXTURE1D_DESC *pDesc,
+                                   D3D11_TEXTURE1D_DESC *pOutDesc,
                                    MTL::TextureDescriptor **pMtlDescOut) {
   Com<IMTLDXGIAdatper> adapter;
   pDevice->GetAdapter(&adapter);
-  return CreateMTLTextureDescriptorInternal(
+  auto hr = CreateMTLTextureDescriptorInternal(
       adapter.ptr(), D3D11_RESOURCE_DIMENSION_TEXTURE2D, pDesc->Width, 1, 1,
       pDesc->ArraySize, 0, pDesc->BindFlags, pDesc->CPUAccessFlags,
       pDesc->MiscFlags, pDesc->Usage, pDesc->MipLevels, pDesc->Format,
       pMtlDescOut);
+  if (SUCCEEDED(hr)) {
+    *pOutDesc = *pDesc;
+    pOutDesc->MipLevels = (*pMtlDescOut)->mipmapLevelCount();
+  }
+  return hr;
 }
 
 template <>
 HRESULT CreateMTLTextureDescriptor(IMTLD3D11Device *pDevice,
                                    const D3D11_TEXTURE2D_DESC *pDesc,
+                                   D3D11_TEXTURE2D_DESC *pOutDesc,
                                    MTL::TextureDescriptor **pMtlDescOut) {
   Com<IMTLDXGIAdatper> adapter;
   pDevice->GetAdapter(&adapter);
-  return CreateMTLTextureDescriptorInternal(
+  auto hr = CreateMTLTextureDescriptorInternal(
       adapter.ptr(), D3D11_RESOURCE_DIMENSION_TEXTURE2D, pDesc->Width,
       pDesc->Height, 1, pDesc->ArraySize, pDesc->SampleDesc.Count,
       pDesc->BindFlags, pDesc->CPUAccessFlags, pDesc->MiscFlags, pDesc->Usage,
       pDesc->MipLevels, pDesc->Format, pMtlDescOut);
+  if (SUCCEEDED(hr)) {
+    *pOutDesc = *pDesc;
+    pOutDesc->MipLevels = (*pMtlDescOut)->mipmapLevelCount();
+  }
+  return hr;
 }
 
 template <>
 HRESULT CreateMTLTextureDescriptor(IMTLD3D11Device *pDevice,
                                    const D3D11_TEXTURE3D_DESC *pDesc,
+                                   D3D11_TEXTURE3D_DESC *pOutDesc,
                                    MTL::TextureDescriptor **pMtlDescOut) {
   Com<IMTLDXGIAdatper> adapter;
   pDevice->GetAdapter(&adapter);
-  return CreateMTLTextureDescriptorInternal(
+  auto hr = CreateMTLTextureDescriptorInternal(
       adapter.ptr(), D3D11_RESOURCE_DIMENSION_TEXTURE2D, pDesc->Width,
       pDesc->Height, pDesc->Depth, 1, 1, pDesc->BindFlags,
       pDesc->CPUAccessFlags, pDesc->MiscFlags, pDesc->Usage, pDesc->MipLevels,
       pDesc->Format, pMtlDescOut);
+  if (SUCCEEDED(hr)) {
+    *pOutDesc = *pDesc;
+    pOutDesc->MipLevels = (*pMtlDescOut)->mipmapLevelCount();
+  }
+  return hr;
 }
 
 }; // namespace dxmt

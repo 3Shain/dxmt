@@ -218,7 +218,7 @@ class CommandQueue {
 private:
   uint32_t EncodingThread() {
     env::setThreadName("dxmt-encode-thread");
-    uint64_t internal_seq = 0;
+    uint64_t internal_seq = 1;
     while (!stopped.load()) {
       ready_for_encode.wait(internal_seq, std::memory_order_acquire);
       if (stopped.load())
@@ -256,7 +256,7 @@ private:
 
       c->stopCapture();
 
-      ready_for_commit.fetch_add(1, std::memory_order_release);
+      ready_for_commit.fetch_add(1, std::memory_order_relaxed);
       ready_for_commit.notify_all();
       internal_seq++;
     }
@@ -266,7 +266,7 @@ private:
 
   uint32_t WaitForFinishThread() {
     env::setThreadName("dxmt-finish-thread");
-    uint64_t internal_seq = 0;
+    uint64_t internal_seq = 1;
     while (!stopped.load()) {
       ready_for_commit.wait(internal_seq, std::memory_order_acquire);
       if (stopped.load())
@@ -279,15 +279,19 @@ private:
       chunk.reset();
       chunk_ongoing.fetch_sub(1, std::memory_order_relaxed);
       chunk_ongoing.notify_all();
+      cpu_coherent.fetch_add(1, std::memory_order_relaxed);
+      cpu_coherent.notify_all();
       internal_seq++;
     }
     TRACE("finishing thread gracefully terminates");
     return 0;
   }
 
-  std::atomic_uint64_t ready_for_encode = 0;
-  std::atomic_uint64_t ready_for_commit = 0;
+  std::atomic_uint64_t ready_for_encode =
+      1; // we start from 1, so 0 is aways coherent
+  std::atomic_uint64_t ready_for_commit = 1;
   std::atomic_uint64_t chunk_ongoing = 0;
+  std::atomic_uint64_t cpu_coherent = 0;
   std::atomic_bool stopped;
 
   std::array<CommandChunk, kCommandChunkCount> chunks;
@@ -339,6 +343,14 @@ public:
     return &chunks[id % kCommandChunkCount];
   };
 
+  uint64_t CoherentSeqId() {
+    return cpu_coherent.load(std::memory_order_acquire);
+  };
+
+  uint64_t CurrentSeqId() {
+    return ready_for_encode.load(std::memory_order_acquire);
+  };
+
   /**
   This is not thread-safe!
   CurrentChunk & CommitCurrentChunk should be called on the same thread
@@ -356,6 +368,11 @@ public:
     while ((current = chunk_ongoing.load(std::memory_order_relaxed))) {
       chunk_ongoing.wait(current);
     }
+  };
+
+  void YieldUntilCoherenceBoundaryUpdate() {
+    cpu_coherent.wait(cpu_coherent.load(std::memory_order_acquire),
+                      std::memory_order_acquire);
   };
 };
 

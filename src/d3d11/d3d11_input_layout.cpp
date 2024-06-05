@@ -17,7 +17,7 @@
 namespace dxmt {
 
 struct Attribute {
-  uint32_t index;
+  uint32_t index = 0xffffffff;
   uint32_t slot;
   uint32_t offset;
   MTL::AttributeFormat format; // the same as MTL::VertexFormat
@@ -66,6 +66,8 @@ public:
     auto pool = transfer(NS::AutoreleasePool::alloc()->init());
     auto vertex_desc = (MTL::VertexDescriptor::vertexDescriptor());
     for (auto &attr : attributes_) {
+      if (attr.index == 0xffffffff)
+        continue;
       auto attr_desc = vertex_desc->attributes()->object(attr.index);
       attr_desc->setBufferIndex(attr.slot);
       attr_desc->setFormat((MTL::VertexFormat)attr.format);
@@ -91,7 +93,9 @@ public:
   };
   virtual void STDMETHODCALLTYPE
   Bind(MTL::ComputePipelineDescriptor *desc,
-       const std::array<UINT, 16> &strides) final{IMPLEMENT_ME};
+       const std::array<UINT, 16> &strides) final {
+    IMPLEMENT_ME
+  };
 
 private:
   std::vector<Attribute> attributes_;
@@ -125,7 +129,7 @@ HRESULT CreateInputLayout(IMTLD3D11Device *device,
         pInputElementDescs, pInputElementDescs + NumElements,
         [&](const D3D11_INPUT_ELEMENT_DESC &Ele) {
           return Ele.SemanticIndex == inputSig.SemanticIndex &&
-                 std::strcmp(Ele.SemanticName, inputSig.SemanticName) == 0;
+                 strcasecmp(Ele.SemanticName, inputSig.SemanticName) == 0;
         });
     if (pDesc == pInputElementDescs + NumElements) {
       // Unmatched shader input signature

@@ -158,6 +158,7 @@ HRESULT CreateMTLTextureView<D3D11_DEPTH_STENCIL_VIEW_DESC>(
   pDevice->GetAdapter(&adapter);
   MTL_FORMAT_DESC metal_format;
   if (FAILED(adapter->QueryFormatDesc(pViewDesc->Format, &metal_format))) {
+    ERR("Failed to create DSV due to unsupported format ", pViewDesc->Format);
     return E_FAIL;
   }
   auto texture_type = pResource->textureType();

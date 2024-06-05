@@ -364,14 +364,16 @@ HRESULT CreateDeviceTextureInternal(IMTLD3D11Device *pDevice,
                                     typename tag::COM **ppTexture) {
   auto metal = pDevice->GetMTLDevice();
   Obj<MTL::TextureDescriptor> textureDescriptor;
-  if (FAILED(CreateMTLTextureDescriptor(pDevice, pDesc, &textureDescriptor))) {
+  typename tag::DESC_S finalDesc;
+  if (FAILED(CreateMTLTextureDescriptor(pDevice, pDesc, &finalDesc,
+                                        &textureDescriptor))) {
     return E_INVALIDARG;
   }
   auto texture = transfer(metal->newTexture(textureDescriptor));
   if (pInitialData) {
-    initWithSubresourceData(texture, pDesc, pInitialData);
+    initWithSubresourceData(texture, &finalDesc, pInitialData);
   }
-  *ppTexture = ref(new DeviceTexture<tag>(pDesc, texture, pDevice));
+  *ppTexture = ref(new DeviceTexture<tag>(&finalDesc, texture, pDevice));
   return S_OK;
 }
 
