@@ -588,6 +588,7 @@ int SM50Initialize(
         auto after_endswitch = std::make_shared<BasicBlock>("endswitch");
         // scope start: switch
         auto local_switch_context = std::make_shared<BasicBlockSwitch>();
+        local_switch_context->value = readSrcOperand(Inst.Operand(0));
         auto empty_body = std::make_shared<BasicBlock>("switch_empty"
         ); // it will unconditional jump to
            // first case (and then ignored)
@@ -872,7 +873,7 @@ int SM50Initialize(
         ThreadgroupBufferInfo tgsm;
         if (Inst.OpCode() ==
             D3D11_SB_OPCODE_DCL_THREAD_GROUP_SHARED_MEMORY_RAW) {
-          tgsm.stride = 1;
+          tgsm.stride = 0;
           tgsm.size = Inst.m_RawTGSMDecl.ByteCount;
           tgsm.size_in_uint = tgsm.size / 4;
           tgsm.structured = false;

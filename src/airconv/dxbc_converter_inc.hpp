@@ -2079,6 +2079,7 @@ uint32_t get_dst_mask(DstOperand dst) {
   return std::visit(
     patterns{
       [](DstOperandNull) { return (uint32_t)0b1111; },
+      [](DstOperandSideEffect) { return (uint32_t)0b1111; },
       [](DstOperandOutput dst) { return dst._.mask; },
       [](DstOperandTemp dst) { return dst._.mask; },
       [](DstOperandIndexableTemp dst) { return dst._.mask; },
@@ -2361,6 +2362,28 @@ IREffect store_dst<DstOperandNull, true>(DstOperandNull, IRValue &&) {
 
 template <>
 IREffect
+store_dst<DstOperandSideEffect, false>(DstOperandSideEffect, IRValue &&value) {
+  return make_effect_bind(
+    [value = std::move(value)](auto ctx) mutable -> IREffect {
+      co_yield std::move(value);
+      co_return {};
+    }
+  );
+};
+
+template <>
+IREffect
+store_dst<DstOperandSideEffect, true>(DstOperandSideEffect, IRValue &&value) {
+  return make_effect_bind(
+    [value = std::move(value)](auto ctx) mutable -> IREffect {
+      co_yield std::move(value);
+      co_return {};
+    }
+  );
+};
+
+template <>
+IREffect
 store_dst<DstOperandTemp, false>(DstOperandTemp temp, IRValue &&value) {
   // coroutine + rvalue reference = SHOOT YOURSELF IN THE FOOT
   return make_effect_bind(
@@ -2539,8 +2562,13 @@ auto read_uint_buf_addr(AtomicOperandTGSM tgsm, pvalue index = 0) -> IRValue {
   auto gv = ctx.resource.tgsm_map[tgsm.id].second;
   llvm::Constant *Zero =
     llvm::ConstantInt::get(llvm::Type::getInt32Ty(ctx.llvm), 0);
+  if (index) {
+    co_return ctx.builder.CreateGEP(
+      gv->getValueType(), gv, {Zero, index}
+    );
+  }
   co_return llvm::ConstantExpr::getInBoundsGetElementPtr(
-    gv->getValueType(), gv, {Zero, index}
+    gv->getValueType(), gv, (llvm::ArrayRef<llvm::Constant *>){Zero, Zero}
   );
 }
 
@@ -2551,8 +2579,13 @@ auto read_uint_buf_addr(SrcOperandTGSM tgsm, pvalue index = 0) -> IRValue {
   auto gv = ctx.resource.tgsm_map[tgsm.id].second;
   llvm::Constant *Zero =
     llvm::ConstantInt::get(llvm::Type::getInt32Ty(ctx.llvm), 0);
+  if (index) {
+    co_return ctx.builder.CreateGEP(
+      gv->getValueType(), gv, {Zero, index}
+    );
+  }
   co_return llvm::ConstantExpr::getInBoundsGetElementPtr(
-    gv->getValueType(), gv, {Zero, index}
+    gv->getValueType(), gv, (llvm::ArrayRef<llvm::Constant *>){Zero, Zero}
   );
 }
 
@@ -2616,13 +2649,14 @@ auto read_atomic_index(AtomicDstOperandUAV uav, pvalue addr_vec4) -> IRValue {
   auto &[_, __, stride] = ctx.resource.uav_buf_range_map[uav.range_id];
   auto &builder = ctx.builder;
   co_return builder.CreateLShr(
-    stride > 0 ? builder.CreateAdd(
-                   builder.CreateMul(
-                     builder.getInt32(stride), co_yield extract_element(0)(addr_vec4)
-                   ),
-                   co_yield extract_element(1)(addr_vec4)
-                 )
-               : co_yield extract_element(0)(addr_vec4),
+    stride > 0
+      ? builder.CreateAdd(
+          builder.CreateMul(
+            builder.getInt32(stride), co_yield extract_element(0)(addr_vec4)
+          ),
+          co_yield extract_element(1)(addr_vec4)
+        )
+      : co_yield extract_element(0)(addr_vec4),
     2
   );
 };
@@ -3688,8 +3722,12 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                 },
                 [&](AtomicDstOperandUAV uav) {
                   return make_effect_bind([=](struct context ctx) -> IREffect {
-                    // auto &builder = ctx.builder;
-                    assert(0 && "todo");
+                    co_return co_yield store_to_uint_bufptr(
+                      co_yield read_uint_buf_addr(uav),
+                      co_yield calc_uint_ptr_index(0, 0, store.dst_byte_offset),
+                      mask_to_linear_components_num(uav.mask),
+                      co_yield load_src_op<false>(store.src)
+                    );
                   });
                 }
               },
@@ -4431,7 +4469,6 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
             case AtomicBinaryOp::UMin:
               op = "min";
               break;
-              break;
             }
             effect << std::visit(
               patterns{
@@ -4465,7 +4502,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                                             ptr,
                                             co_yield load_src_op<false>(bin.src
                                             ) >>= extract_element(0),
-                                            op, is_signed, false
+                                            op, is_signed, true
                                           )
                       );
                     }
@@ -4497,21 +4534,22 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                 [&](AtomicDstOperandUAV uav) -> IREffect {
                   return make_effect_bind([=](struct context ctx) -> IREffect {
                     if (ctx.resource.uav_buf_range_map.contains(uav.range_id)) {
-                    auto ptr = co_yield read_uint_buf_addr(
-                      uav, co_yield read_atomic_index(
-                             uav, co_yield load_src_op<false>(exch.dst_address)
-                           )
-                    );
-                    co_return co_yield store_dst_op<false>(
-                      exch.dst, call_atomic_exchange_explicit(
-                                  ptr,
-                                  co_yield load_src_op<false>(exch.src) >>=
-                                  extract_element(0),
-                                  true
-                                )
-                    );
-                  }
-                  assert(0 && "unhandled imm_exch for typed uav");
+                      auto ptr = co_yield read_uint_buf_addr(
+                        uav,
+                        co_yield read_atomic_index(
+                          uav, co_yield load_src_op<false>(exch.dst_address)
+                        )
+                      );
+                      co_return co_yield store_dst_op<false>(
+                        exch.dst, call_atomic_exchange_explicit(
+                                    ptr,
+                                    co_yield load_src_op<false>(exch.src) >>=
+                                    extract_element(0),
+                                    true
+                                  )
+                      );
+                    }
+                    assert(0 && "unhandled imm_exch for typed uav");
                   });
                 }
               },
@@ -4798,21 +4836,36 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
               return llvm::Error::success();
             },
             [&](BasicBlockSwitch swc) -> llvm::Error {
-              for (auto &[_, case_bb] : swc.cases) {
+              // TODO: ensure default always presented? no...
+              if (visited.count(swc.case_default.get()) == 0) {
+                assert(
+                  swc.case_default.get() && "switch has no default branch"
+                );
+                if (auto err = readBasicBlock(swc.case_default)) {
+                  return err;
+                };
+              }
+              auto value =
+                (load_src_op<false>(swc.value) >>= extract_element(0))
+                  .build(ctx);
+              if (auto err = value.takeError()) {
+                return err;
+              }
+              auto switch_inst = builder.CreateSwitch(
+                value.get(), visited[swc.case_default.get()], swc.cases.size()
+              );
+              for (auto &[val, case_bb] : swc.cases) {
                 if (visited.count(case_bb.get()) == 0) {
                   if (auto err = readBasicBlock(case_bb)) {
                     return err;
                   };
                 }
+                switch_inst->addCase(
+                  llvm::ConstantInt::get(context, llvm::APInt(32, val)),
+                  visited[case_bb.get()]
+                );
               }
-              // TODO: ensure default always presented? no...
-              if (visited.count(swc.case_default.get()) == 0) {
-                if (auto err = readBasicBlock(swc.case_default)) {
-                  return err;
-                };
-              }
-              // builder.CreateSwitch()
-              return llvm::make_error<UnsupportedFeature>("TODO: switch");
+              return llvm::Error::success();
             },
             [&](BasicBlockReturn ret) -> llvm::Error {
               // we have done here!

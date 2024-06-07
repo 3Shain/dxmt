@@ -3,10 +3,10 @@
 #include <cstdint>
 #include <map>
 #include <optional>
+#include <string>
 #include <unordered_map>
 #include <variant>
 #include <vector>
-#include <string>
 
 #include "shader_common.hpp"
 
@@ -125,6 +125,11 @@ struct DstOperandNull {
   DstOperandCommon _;
 };
 
+struct DstOperandSideEffect {
+  static constexpr std::string_view debug_name = "side_effect";
+  DstOperandCommon _;
+};
+
 struct DstOperandTemp {
   static constexpr std::string_view debug_name = "temp";
   DstOperandCommon _;
@@ -219,8 +224,8 @@ struct AtomicOperandTGSM {
 };
 
 using DstOperand = std::variant<
-  DstOperandNull, DstOperandTemp, DstOperandIndexableTemp, DstOperandOutput,
-  DstOperandOutputDepth>;
+  DstOperandNull, DstOperandSideEffect, DstOperandTemp, DstOperandIndexableTemp,
+  DstOperandOutput, DstOperandOutputDepth>;
 
 #pragma mark mov instructions
 namespace {
@@ -739,6 +744,7 @@ struct BasicBlockUnconditionalBranch {
 };
 
 struct BasicBlockSwitch {
+  SrcOperand value;
   std::map<uint32_t, std::shared_ptr<BasicBlock>> cases;
   std::shared_ptr<BasicBlock> case_default;
 };
