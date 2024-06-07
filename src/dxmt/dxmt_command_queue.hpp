@@ -42,7 +42,7 @@ inline void *ptr_add(const void *const p,
   return reinterpret_cast<void *>(reinterpret_cast<std::uintptr_t>(p) + amount);
 }
 
-constexpr uint32_t kCommandChunkCount = 16;
+constexpr uint32_t kCommandChunkCount = 2;
 constexpr size_t kCommandChunkCPUHeapSize = 0x4000; // 16kb
 constexpr size_t kCommandChunkGPUHeapSize = 0x4000;
 
@@ -178,6 +178,9 @@ public:
     };
     auto cur = monoid_list.next;
     while (cur) {
+      assert((uint64_t)cur->value >= (uint64_t)cpu_argument_heap);
+      assert((uint64_t)cur->value <
+             ((uint64_t)cpu_argument_heap + cpu_arugment_heap_offset));
       cur->value->invoke(context);
       cur = cur->next;
     }
@@ -202,9 +205,14 @@ public:
   void reset() noexcept {
     auto cur = monoid_list.next;
     while (cur) {
+      assert((uint64_t)cur->value >= (uint64_t)cpu_argument_heap);
+      assert((uint64_t)cur->value <
+             ((uint64_t)cpu_argument_heap + cpu_arugment_heap_offset));
       cur->value->~BFunc<context>(); // call destructor
       cur = cur->next;
     }
+    TRACE("cmdbuf heap size (cpu , gpu): ", cpu_arugment_heap_offset, ",",
+          gpu_arugment_heap_offset);
     cpu_arugment_heap_offset = 0;
     gpu_arugment_heap_offset = 0;
     monoid_list.next = nullptr;

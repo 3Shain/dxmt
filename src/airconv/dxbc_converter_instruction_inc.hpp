@@ -807,7 +807,7 @@ auto readInstruction(
     };
     std::visit(
       patterns{
-        [&](const SrcOperandUAV &uav) {
+        [&](const AtomicDstOperandUAV &uav) {
           shader_info.uavMap[uav.range_id].written = true;
         },
         [](auto) {}
@@ -855,7 +855,7 @@ auto readInstruction(
     };
     std::visit(
       patterns{
-        [&](const SrcOperandUAV &uav) {
+        [&](const AtomicDstOperandUAV &uav) {
           shader_info.uavMap[uav.range_id].written = true;
         },
         [](auto) {}
@@ -1627,16 +1627,20 @@ auto readInstruction(
     };
   };
   case microsoft::D3D11_SB_OPCODE_IMM_ATOMIC_ALLOC: {
-    return InstAtomicImmIncrement{
+    auto inst = InstAtomicImmIncrement{
       .dst = readDstOperand(Inst.m_Operands[0]),
       .uav = readDstOperandUAV(Inst.m_Operands[1])
     };
+    shader_info.uavMap[inst.uav.range_id].with_counter = true;
+    return inst;
   };
   case microsoft::D3D11_SB_OPCODE_IMM_ATOMIC_CONSUME: {
-    return InstAtomicImmDecrement{
+    auto inst = InstAtomicImmDecrement{
       .dst = readDstOperand(Inst.m_Operands[0]),
       .uav = readDstOperandUAV(Inst.m_Operands[1])
     };
+    shader_info.uavMap[inst.uav.range_id].with_counter = true;
+    return inst;
   };
   case microsoft::D3D11_SB_OPCODE_IMM_ATOMIC_EXCH: {
     return InstAtomicImmExchange{

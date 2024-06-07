@@ -115,7 +115,8 @@ public:
   HRESULT
   STDMETHODCALLTYPE
   SetFullscreenState(BOOL fullscreen, IDXGIOutput *target) final {
-    IMPLEMENT_ME;
+    WARN("SetFullscreenState: stub");
+    return S_OK;
   };
 
   HRESULT

@@ -168,15 +168,16 @@ llvm::Error convertDXBC(
     }
   }
   for (auto &[range_id, uav] : shader_info->uavMap) {
+    auto access = uav.written ? (uav.read ? air::MemoryAccess::read_write
+                                          : air::MemoryAccess::write)
+                              : air::MemoryAccess::read;
     if (uav.resource_type != shader::common::ResourceType::NonApplicable) {
       auto texture_kind = air::to_air_resource_type(uav.resource_type);
       auto scaler_type = air::to_air_scaler_type(uav.scaler_type);
-      auto access = uav.written ? (uav.read ? air::MemoryAccess::read_write
-                                            : air::MemoryAccess::write)
-                                : air::MemoryAccess::read;
       auto index = binding_table.DefineTexture(
         "u" + std::to_string(range_id), texture_kind, access, scaler_type,
-        GetArgumentIndex(SM50BindingType::UAV, range_id)
+        GetArgumentIndex(SM50BindingType::UAV, range_id),
+        uav.rasterizer_order ? std::optional(1) : std::nullopt
       );
       resource_map.uav_range_map[range_id] = {
         air::MSLTexture{
@@ -190,9 +191,40 @@ llvm::Error convertDXBC(
         }
       };
     } else {
-      assert(0 && "TODO: raw/structued uav");
+      auto attr_index = GetArgumentIndex(SM50BindingType::UAV, range_id);
+      auto argbuf_index_bufptr = binding_table.DefineBuffer(
+        "u" + std::to_string(range_id), air::AddressSpace::device, access,
+        air::msl_uint, attr_index,
+        uav.rasterizer_order ? std::optional(1) : std::nullopt
+      );
+      auto argbuf_index_size = binding_table.DefineInteger32(
+        "cu" + std::to_string(range_id), attr_index + 1
+      );
+      resource_map.uav_buf_range_map[range_id] = {
+        [=, &binding_table_index](pvalue) {
+          return get_item_in_argbuf_binding_table(
+            binding_table_index, argbuf_index_bufptr
+          );
+        },
+        [=, &binding_table_index](pvalue) {
+          return get_item_in_argbuf_binding_table(
+            binding_table_index, argbuf_index_size
+          );
+        },
+        uav.strucure_stride
+      };
       if (uav.with_counter) {
-        //
+        auto argbuf_index_counterptr = binding_table.DefineBuffer(
+          "counter" + std::to_string(range_id), air::AddressSpace::device,
+          air::MemoryAccess::read_write, air::msl_uint, attr_index + 2,
+          uav.rasterizer_order ? std::optional(1) : std::nullopt
+        );
+        resource_map.uav_counter_range_map[range_id] =
+          [=, &binding_table_index](pvalue) {
+            return get_item_in_argbuf_binding_table(
+              binding_table_index, argbuf_index_counterptr
+            );
+          };
       }
     }
   }
@@ -810,8 +842,6 @@ int SM50Initialize(
 
         uav.global_coherent =
           ((Flags & D3D11_SB_GLOBALLY_COHERENT_ACCESS) != 0);
-        uav.with_counter =
-          ((Flags & D3D11_SB_UAV_HAS_ORDER_PRESERVING_COUNTER) != 0);
         uav.rasterizer_order =
           ((Flags & D3D11_SB_RASTERIZER_ORDERED_ACCESS) != 0);
 
@@ -863,6 +893,10 @@ int SM50Initialize(
         break;
       }
       case D3D10_SB_OPCODE_DCL_GLOBAL_FLAGS: {
+        if (Inst.m_GlobalFlagsDecl.Flags &
+            D3D11_SB_GLOBAL_FLAG_FORCE_EARLY_DEPTH_STENCIL) {
+          func_signature.UseEarlyFragmentTests();
+        }
         break;
       }
       case D3D10_SB_OPCODE_DCL_INPUT_SIV: {

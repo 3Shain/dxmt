@@ -42,7 +42,6 @@ void MetallibWriter::Write(const llvm::Module &module, raw_ostream &OS) {
     auto vertexFns = module.getNamedMetadata("air.vertex");
     if (vertexFns) {
       for (auto fn : vertexFns->operands()) {
-        assert(fn->getNumOperands() == 3);
         fn_count++;
         auto func = dyn_cast<Function>(
           dyn_cast<ConstantAsMetadata>(fn->getOperand(0).get())->getValue()
@@ -134,7 +133,6 @@ void MetallibWriter::Write(const llvm::Module &module, raw_ostream &OS) {
     auto fragmentFns = module.getNamedMetadata("air.fragment");
     if (fragmentFns) {
       for (auto fn : fragmentFns->operands()) {
-        assert(fn->getNumOperands() == 3);
         fn_count++;
         auto func = dyn_cast<Function>(
           dyn_cast<ConstantAsMetadata>(fn->getOperand(0).get())->getValue()
@@ -169,7 +167,6 @@ void MetallibWriter::Write(const llvm::Module &module, raw_ostream &OS) {
     auto kernelFns = module.getNamedMetadata("air.kernel");
     if (kernelFns) {
       for (auto fn : kernelFns->operands()) {
-        assert(fn->getNumOperands() == 3);
         fn_count++;
         auto func = dyn_cast<Function>(
           dyn_cast<ConstantAsMetadata>(fn->getOperand(0).get())->getValue()

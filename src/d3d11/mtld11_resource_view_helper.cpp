@@ -56,6 +56,17 @@ HRESULT CreateMTLTextureView<D3D11_SHADER_RESOURCE_VIEW_DESC>(
     break;
   }
   case D3D_SRV_DIMENSION_TEXTURECUBE: {
+    if (texture_type == MTL::TextureTypeCube) {
+      *ppView = pResource->newTextureView(
+          metal_format.PixelFormat, MTL::TextureTypeCube,
+          NS::Range::Make(pViewDesc->TextureCube.MostDetailedMip,
+                          pViewDesc->TextureCube.MipLevels == 0xffffffffu
+                              ? pResource->mipmapLevelCount() -
+                                    pViewDesc->TextureCube.MostDetailedMip
+                              : pViewDesc->TextureCube.MipLevels),
+          NS::Range::Make(0, 6));
+      return S_OK;
+    }
     break;
   }
   case D3D_SRV_DIMENSION_TEXTURECUBEARRAY: {
@@ -130,6 +141,13 @@ HRESULT CreateMTLTextureView<D3D11_RENDER_TARGET_VIEW_DESC>(
     break;
   }
   case D3D11_RTV_DIMENSION_TEXTURE2D: {
+    if (texture_type == MTL::TextureType2D) {
+      *ppView = pResource->newTextureView(
+          metal_format.PixelFormat, MTL::TextureType2D,
+          NS::Range::Make(pViewDesc->Texture2D.MipSlice, 1),
+          NS::Range::Make(0, 1));
+      return S_OK;
+    }
     break;
   }
   case D3D11_RTV_DIMENSION_TEXTURE2DARRAY: {
@@ -233,7 +251,7 @@ HRESULT CreateMTLTextureView<D3D11_SHADER_RESOURCE_VIEW_DESC>(
   default:
     break;
   }
-  ERR("Unhandled srv creation: \n Source: ", metal_format.PixelFormat,
+  ERR("Unhandled buffer srv creation: \n Source: ", metal_format.PixelFormat,
       "\n Desired: ", pViewDesc->ViewDimension);
   return E_FAIL;
 }

@@ -99,13 +99,13 @@ ArgumentEncoder_t CreateArgumentEncoderInternal(
       addNewField([&](MTLArgumentDescriptor *descriptor) {
         descriptor.access = MTLBindingAccessReadWrite;
         descriptor.arrayLength = 0;
-        descriptor.index = GetArgumentIndex(SM50BindingType::SRV, range_id);
+        descriptor.index = GetArgumentIndex(SM50BindingType::UAV, range_id);
         descriptor.dataType = MTLDataTypePointer;
       });
       addNewField([&](MTLArgumentDescriptor *descriptor) {
         descriptor.access = MTLBindingAccessReadOnly;
         descriptor.arrayLength = 0;
-        descriptor.index = GetArgumentIndex(SM50BindingType::SRV, range_id) + 1;
+        descriptor.index = GetArgumentIndex(SM50BindingType::UAV, range_id) + 1;
         descriptor.dataType = MTLDataTypeUInt;
       });
       if (uav.with_counter) {
@@ -113,7 +113,7 @@ ArgumentEncoder_t CreateArgumentEncoderInternal(
           descriptor.access = MTLBindingAccessReadWrite;
           descriptor.arrayLength = 0;
           descriptor.index =
-            GetArgumentIndex(SM50BindingType::SRV, range_id) + 2;
+            GetArgumentIndex(SM50BindingType::UAV, range_id) + 2;
           descriptor.dataType = MTLDataTypePointer;
         });
       }

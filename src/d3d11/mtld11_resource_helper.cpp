@@ -295,9 +295,17 @@ CreateMTLTextureDescriptorInternal(
         Format);
     return E_FAIL;
   }
-  desc->setPixelFormat(metal_format.PixelFormat);
 
   MTL::TextureUsage metal_usage = 0; // actually corresponding to BindFlags
+
+  // DIRTY HACK!
+  if (Format == DXGI_FORMAT_R32_TYPELESS &&
+      (BindFlags & D3D11_BIND_DEPTH_STENCIL)) {
+    desc->setPixelFormat(MTL::PixelFormatDepth32Float);
+    metal_usage |= MTL::TextureUsagePixelFormatView;
+  } else {
+    desc->setPixelFormat(metal_format.PixelFormat);
+  }
 
   if (BindFlags & (D3D11_BIND_CONSTANT_BUFFER | D3D11_BIND_VERTEX_BUFFER |
                    D3D11_BIND_INDEX_BUFFER | D3D11_BIND_STREAM_OUTPUT)) {
@@ -355,7 +363,8 @@ CreateMTLTextureDescriptorInternal(
     break;
   case D3D11_RESOURCE_DIMENSION_TEXTURE2D:
     if (MiscFlags & D3D11_RESOURCE_MISC_TEXTURECUBE) {
-      if (ArraySize > 1) {
+      assert(ArraySize / 6);
+      if ((ArraySize / 6) > 1) {
         desc->setTextureType(MTL::TextureTypeCubeArray);
       } else {
         desc->setTextureType(MTL::TextureTypeCube);
@@ -444,6 +453,31 @@ HRESULT CreateMTLTextureDescriptor(IMTLD3D11Device *pDevice,
     pOutDesc->MipLevels = (*pMtlDescOut)->mipmapLevelCount();
   }
   return hr;
+}
+
+
+template <>
+void GetMipmapSize(const D3D11_TEXTURE1D_DESC *pDesc, uint32_t level,
+                   uint32_t *pWidth, uint32_t *pHeight, uint32_t *pDepth) {
+  *pHeight = 1;
+  *pDepth = 1;
+  *pWidth = std::max(1u, pDesc->Width >> level);
+}
+
+template <>
+void GetMipmapSize(const D3D11_TEXTURE2D_DESC *pDesc, uint32_t level,
+                   uint32_t *pWidth, uint32_t *pHeight, uint32_t *pDepth) {
+  *pDepth = 1;
+  *pWidth = std::max(1u, pDesc->Width >> level);
+  *pHeight = std::max(1u, pDesc->Height >> level);
+}
+
+template <>
+void GetMipmapSize(const D3D11_TEXTURE3D_DESC *pDesc, uint32_t level,
+                   uint32_t *pWidth, uint32_t *pHeight, uint32_t *pDepth) {
+  *pWidth = std::max(1u, pDesc->Width >> level);
+  *pHeight = std::max(1u, pDesc->Height >> level);
+  *pDepth = std::max(1u, pDesc->Depth >> level);
 }
 
 }; // namespace dxmt

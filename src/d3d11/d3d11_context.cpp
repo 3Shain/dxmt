@@ -1,7 +1,6 @@
 
 
 #include "d3d11_context.hpp"
-#include "d3d11_query.hpp"
 #include "dxmt_command_queue.hpp"
 
 #include "./d3d11_context_internal.cpp"
@@ -94,13 +93,11 @@ public:
   void Begin(ID3D11Asynchronous *pAsync) {
     // in theory pAsync could be any of them: { Query, Predicate, Counter }.
     // However `Predicate` and `Counter` are not supported at all
-    static_cast<MTLD3D11Query *>(pAsync)->Begin();
+    WARN("DeviceContext::Begin: stub");
   }
 
   // See Begin()
-  void End(ID3D11Asynchronous *pAsync) {
-    static_cast<MTLD3D11Query *>(pAsync)->End();
-  }
+  void End(ID3D11Asynchronous *pAsync) { WARN("DeviceContext::End: stub"); }
 
   HRESULT GetData(ID3D11Asynchronous *pAsync, void *pData, UINT DataSize,
                   UINT GetDataFlags) {
@@ -112,8 +109,8 @@ public:
       return E_INVALIDARG;
     pData = DataSize ? pData : nullptr;
 
-    auto query = static_cast<MTLD3D11Query *>(pAsync);
-    return query->GetData(pData, GetDataFlags);
+    ERR("DeviceContext::GetData: not implemented");
+    return E_FAIL;
   }
 
   HRESULT Map(ID3D11Resource *pResource, UINT Subresource, D3D11_MAP MapType,
@@ -142,7 +139,30 @@ public:
       }
       return S_OK;
     }
-
+    if (auto staging = com_cast<IMTLD3D11Staging>(pResource)) {
+      while (true) {
+        auto coh = cmd_queue.CoherentSeqId();
+        auto ret = staging->TryMap(Subresource, coh, MapType, pMappedResource);
+        if (ret < 0) {
+          return E_FAIL;
+        }
+        if (ret == 0) {
+          TRACE("staging map ready");
+          return S_OK;
+        }
+        if (MapFlags & D3D11_MAP_FLAG_DO_NOT_WAIT) {
+          return DXGI_ERROR_WAS_STILL_DRAWING;
+        }
+        // FIXME: bugprone
+        if (ret + coh == cmd_queue.CurrentSeqId()) {
+          TRACE("Map: forced flush");
+          Flush2([](auto) {});
+        }
+        TRACE("staging map block");
+        cmd_queue.YieldUntilCoherenceBoundaryUpdate();
+      };
+    };
+    assert(0 && "unknown mapped resource (USAGE_DEFAULT?)");
     IMPLEMENT_ME;
   }
 
@@ -150,6 +170,11 @@ public:
     if (auto dynamic = com_cast<IMTLDynamicBuffer>(pResource)) {
       return;
     }
+    if (auto staging = com_cast<IMTLD3D11Staging>(pResource)) {
+      staging->Unmap(Subresource);
+      return;
+    };
+    assert(0 && "unknown mapped resource (USAGE_DEFAULT?)");
     IMPLEMENT_ME;
   }
 
@@ -198,6 +223,8 @@ public:
         attachmentz->setStoreAction(MTL::StoreActionStore);
 
         auto enc = ctx.cmdbuf->renderCommandEncoder(enc_descriptor);
+        enc->setLabel(NS::String::string("ClearRenderTargetView",
+                                         NS::ASCIIStringEncoding));
         enc->endEncoding();
       });
     }
@@ -235,14 +262,20 @@ public:
           attachmentz->setStoreAction(MTL::StoreActionStore);
         }
         if (ClearStencil) {
-          auto attachmentz = enc_descriptor->stencilAttachment();
-          attachmentz->setClearStencil(Stencil);
-          attachmentz->setTexture(texture);
-          attachmentz->setLoadAction(MTL::LoadActionClear);
-          attachmentz->setStoreAction(MTL::StoreActionStore);
+          // FIXME: texture must have a stencil channel!
+          auto pf = texture->pixelFormat();
+          if (pf != MTL::PixelFormatDepth32Float) {
+            auto attachmentz = enc_descriptor->stencilAttachment();
+            attachmentz->setClearStencil(Stencil);
+            attachmentz->setTexture(texture);
+            attachmentz->setLoadAction(MTL::LoadActionClear);
+            attachmentz->setStoreAction(MTL::StoreActionStore);
+          }
         }
 
         auto enc = ctx.cmdbuf->renderCommandEncoder(enc_descriptor);
+        enc->setLabel(NS::String::string("ClearDepthStencilView",
+                                         NS::ASCIIStringEncoding));
         enc->endEncoding();
       });
     }
@@ -296,8 +329,8 @@ public:
     case D3D11_RESOURCE_DIMENSION_UNKNOWN:
       break;
     case D3D11_RESOURCE_DIMENSION_BUFFER: {
-
-      IMPLEMENT_ME
+      ctx.CopyBuffer((ID3D11Buffer *)pDstResource,
+                     (ID3D11Buffer *)pSrcResource);
       break;
     }
     case D3D11_RESOURCE_DIMENSION_TEXTURE1D:
@@ -355,6 +388,8 @@ public:
       if (auto bindable = com_cast<IMTLBindable>(pDstResource)) {
         bindable->GetBoundResource(&resource);
         if (resource.Type == MTL_BIND_BUFFER_UNBOUNDED) {
+          // FIXME: resource contention
+          // if the buffer is already in use,you can't modify it directly!
           auto w = resource.Buffer->contents();
           auto len = resource.Buffer->length();
           std::memcpy(w, pSrcData, len);
@@ -364,9 +399,44 @@ public:
           assert(0 && "UpdateSubresource1: TODO");
         }
       } else if (auto dynamic = com_cast<IMTLDynamicBindable>(pDstResource)) {
+        assert(CopyFlags && "otherwise resource cannot be dynamic");
         assert(0 && "UpdateSubresource1: TODO");
       } else {
         assert(0 && "UpdateSubresource1: TODO: staging?");
+      }
+      return;
+    }
+    if (dim == D3D11_RESOURCE_DIMENSION_TEXTURE2D) {
+      MTL_BIND_RESOURCE resource;
+      D3D11_TEXTURE2D_DESC desc;
+      ((ID3D11Texture2D *)pDstResource)->GetDesc(&desc);
+      if (auto bindable = com_cast<IMTLBindable>(pDstResource)) {
+        bindable->GetBoundResource(&resource);
+        if (resource.Type == MTL_BIND_TEXTURE) {
+          auto slice = (DstSubresource % (desc.ArraySize * desc.MipLevels));
+          auto level = (DstSubresource / desc.MipLevels);
+          // FIXME: resource contention
+          resource.Texture->replaceRegion(
+              pDstBox ? MTL::Region::Make2D(pDstBox->left, pDstBox->top,
+                                            pDstBox->right - pDstBox->left,
+                                            pDstBox->bottom - pDstBox->top)
+                      : MTL::Region::Make2D(0, 0, resource.Texture->width(),
+                                            resource.Texture->height()),
+              level, slice, pSrcData, SrcRowPitch, 0);
+          // ctx.EmitBlitCommand([tex = Obj(resource.Texture), slice,
+          //                      level](MTL::BlitCommandEncoder *enc) {
+          //   enc->synchronizeTexture(tex.ptr(), slice, level);
+          // });
+          return;
+        } else {
+          assert(0 && "UpdateSubresource1: TODO: texture2d non texture bind");
+        }
+      } else if (auto dynamic = com_cast<IMTLDynamicBindable>(pDstResource)) {
+        assert(CopyFlags && "otherwise resource cannot be dynamic");
+        assert(0 && "UpdateSubresource1: TODO");
+      } else {
+        // staging: ...
+        assert(0 && "UpdateSubresource1: TODO: texture2d");
       }
       return;
     }
@@ -579,7 +649,7 @@ public:
               ppVertexBuffers[Slot - StartSlot])) {
         dynamic->GetBindable(&VB.Buffer, [this]() {
           // FIXME:
-          // ctx.EmitSetIAState();
+          ctx.EmitSetIAState();
           // worth it ? this looks wrong (yes it's indeed wrong)
         });
       } else if (auto expected = com_cast<IMTLBindable>(
@@ -600,6 +670,15 @@ public:
                           ID3D11Buffer **ppVertexBuffers, UINT *pStrides,
                           UINT *pOffsets) {
     for (unsigned i = 0; i < NumBuffers; i++) {
+      if (!state_.InputAssembler.VertexBuffers.contains(i + StartSlot)) {
+        if (ppVertexBuffers != NULL)
+          ppVertexBuffers[i] = nullptr;
+        if (pStrides != NULL)
+          pStrides[i] = 0;
+        if (pOffsets != NULL)
+          pOffsets[i] = 0;
+        continue;
+      }
       auto &VertexBuffer = state_.InputAssembler.VertexBuffers[i + StartSlot];
       if (ppVertexBuffers != NULL) {
         VertexBuffer.Buffer->GetLogicalResourceOrView(
@@ -1068,8 +1147,9 @@ public:
       ID3D11UnorderedAccessView **ppUnorderedAccessViews) {
     for (auto i = 0u; i < NumUAVs; i++) {
       if (state_.ComputeStageUAV.UAVs.contains(StartSlot + i)) {
-        state_.ComputeStageUAV.UAVs[StartSlot + i].View->QueryInterface(
-            IID_PPV_ARGS(&ppUnorderedAccessViews[i]));
+        state_.ComputeStageUAV.UAVs[StartSlot + i]
+            .View->GetLogicalResourceOrView(
+                IID_PPV_ARGS(&ppUnorderedAccessViews[i]));
       } else {
         ppUnorderedAccessViews[i] = nullptr;
       }
@@ -1191,7 +1271,7 @@ public:
     if (auto expected = com_cast<IMTLD3D11BlendState>(pBlendState)) {
       state_.OutputMerger.BlendState = std::move(expected);
       if (BlendFactor) {
-      memcpy(state_.OutputMerger.BlendFactor, BlendFactor, sizeof(float[4]));
+        memcpy(state_.OutputMerger.BlendFactor, BlendFactor, sizeof(float[4]));
       } else {
         state_.OutputMerger.BlendFactor[0] = 1.0f;
         state_.OutputMerger.BlendFactor[1] = 1.0f;

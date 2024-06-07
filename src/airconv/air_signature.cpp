@@ -69,7 +69,8 @@ private:
 
 uint32_t ArgumentBufferBuilder::DefineBuffer(
   std::string name, AddressSpace addressp_space, MemoryAccess access,
-  MSLRepresentableType type, uint32_t location_index
+  MSLRepresentableType type, uint32_t location_index,
+  std::optional<uint32_t> raster_order_group
 ) {
   auto element_index = fieldsType.size();
   assert(!fields.count(name) && "otherwise duplicated field name");
@@ -81,6 +82,7 @@ uint32_t ArgumentBufferBuilder::DefineBuffer(
     .address_space = addressp_space,
     .type = type,
     .arg_name = name,
+    .raster_order_group = raster_order_group,
   });
   return element_index;
 };
@@ -101,7 +103,8 @@ uint32_t ArgumentBufferBuilder::DefineSampler(
 
 uint32_t ArgumentBufferBuilder::DefineTexture(
   std::string name, TextureKind kind, MemoryAccess access,
-  MSLScalerType scaler_type, uint32_t location_index
+  MSLScalerType scaler_type, uint32_t location_index,
+  std::optional<uint32_t> raster_order_group
 ) {
   auto element_index = fieldsType.size();
   assert(!fields.count(name) && "otherwise duplicated field name");
@@ -116,15 +119,18 @@ uint32_t ArgumentBufferBuilder::DefineTexture(
         .memory_access = access,
         .resource_kind = kind
       },
-    .arg_name = name
+    .arg_name = name,
+    .raster_order_group = raster_order_group,
   });
   return element_index;
 };
 
-uint32_t ArgumentBufferBuilder::DefineInteger32(std::string name, uint32_t location_index) {
+uint32_t ArgumentBufferBuilder::DefineInteger32(
+  std::string name, uint32_t location_index
+) {
   auto element_index = fieldsType.size();
   assert(!fields.count(name) && "otherwise duplicated field name");
-  fieldsType.push_back(ArgumentBindingIndirectConstant {
+  fieldsType.push_back(ArgumentBindingIndirectConstant{
     .location_index =
       location_index == UINT32_MAX ? (uint32_t)element_index : location_index,
     .array_size = 1,
@@ -164,6 +170,11 @@ auto build_argument_binding_buffer(
 
   md.string("air.address_space");
   md.integer(buffer.address_space);
+
+  if (buffer.raster_order_group.has_value()) {
+    md.string("air.raster_order_group");
+    md.integer(buffer.raster_order_group.value());
+  }
 
   auto type = get_llvm_type(buffer.type, context);
 
@@ -255,6 +266,11 @@ auto build_argument_binding_texture(
   case dxmt::air::MemoryAccess::sample:
     md.string("air.sample");
     break;
+  }
+
+  if (texture.raster_order_group.has_value()) {
+    md.string("air.raster_order_group");
+    md.integer(texture.raster_order_group.value());
   }
 
   md.string("air.arg_type_name")
@@ -667,12 +683,15 @@ auto FunctionSignatureBuilder::CreateFunction(
   );
   auto metadata_output_tuple = MDTuple::get(context, metadata_output);
   auto metadata_input_tuple = MDTuple::get(context, metadata_input);
-  return std::make_pair(
-    function, MDTuple::get(
-                context, {ConstantAsMetadata::get(function),
-                          metadata_output_tuple, metadata_input_tuple}
-              )
-  );
+  std::vector<Metadata *> function_def_tuple = {
+    ConstantAsMetadata::get(function), metadata_output_tuple,
+    metadata_input_tuple
+  };
+  if (early_fragment_tests) {
+    function_def_tuple.push_back(MDString::get(context, "early_fragment_tests")
+    );
+  }
+  return std::make_pair(function, MDTuple::get(context, function_def_tuple));
 };
 
 } // namespace dxmt::air

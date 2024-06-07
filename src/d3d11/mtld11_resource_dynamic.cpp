@@ -15,25 +15,26 @@
 namespace dxmt {
 
 #pragma region DynamicViewBindable
+struct IMTLNotifiedBindable : public IMTLBindable {
+  virtual void NotifyObserver() = 0;
+};
 
-template <typename BindableMap>
-class DynamicViewBindable : public ComObject<IMTLBindable> {
+template <typename BindableMap, typename ReleaseCallback>
+class DynamicBinding : public ComObject<IMTLNotifiedBindable> {
 private:
-  Com<IMTLBindable> source;
-  MTL_BIND_RESOURCE cache;
-  /**
-
-  */
-  Obj<MTL::Resource> view_ref;
+  Com<IUnknown> parent;
+  std::function<void()> observer;
+  BindableMap fn;
+  ReleaseCallback cb;
 
 public:
-  DynamicViewBindable(Com<IMTLBindable> &&source, BindableMap &thunk)
-      : source(std::move(source)) {
-    MTL_BIND_RESOURCE bindable_original;
-    source->GetBoundResource(&bindable_original);
-    view_ref = std::move<Obj<MTL::Resource>>(
-        std::invoke(thunk, &bindable_original, &cache));
-  }
+  DynamicBinding(IUnknown *parent, std::function<void()> &&observer,
+                 BindableMap &&fn, ReleaseCallback &&cb)
+      : ComObject(), parent(parent), observer(std::move(observer)),
+        fn(std::forward<BindableMap>(fn)),
+        cb(std::forward<ReleaseCallback>(cb)) {}
+
+  ~DynamicBinding() { std::invoke(cb, this); }
 
   HRESULT QueryInterface(REFIID riid, void **ppvObject) override {
     if (ppvObject == nullptr)
@@ -50,15 +51,16 @@ public:
   }
 
   void GetBoundResource(MTL_BIND_RESOURCE *ppResource) override {
-    *ppResource = cache;
+    std::invoke(fn, ppResource);
   };
 
   void GetLogicalResourceOrView(REFIID riid,
                                 void **ppLogicalResource) override {
-    source->GetLogicalResourceOrView(riid, ppLogicalResource);
+    parent->QueryInterface(riid, ppLogicalResource);
   };
-};
 
+  void NotifyObserver() override { observer(); };
+};
 #pragma endregion
 
 #pragma region DynamicBuffer
@@ -68,65 +70,41 @@ class DynamicBuffer
 private:
   Obj<MTL::Buffer> buffer_dynamic;
 
-  class DynamicBinding : public ComObject<IMTLBindable> {
-  private:
-    Com<DynamicBuffer> parent;
-    std::function<void()> observer;
-
-  public:
-    DynamicBinding(DynamicBuffer *parent, std::function<void()> &&observer)
-        : ComObject(), parent(parent), observer(std::move(observer)) {}
-
-    ~DynamicBinding() { parent->RemoveObserver(this); }
-
-    HRESULT QueryInterface(REFIID riid, void **ppvObject) override {
-      if (ppvObject == nullptr)
-        return E_POINTER;
-
-      *ppvObject = nullptr;
-
-      if (riid == __uuidof(IUnknown) || riid == __uuidof(IMTLBindable)) {
-        *ppvObject = ref(this);
-        return S_OK;
-      }
-
-      return E_NOINTERFACE;
-    }
-
-    void GetBoundResource(MTL_BIND_RESOURCE *ppResource) override {
-      MTL_BIND_RESOURCE &resource = *ppResource;
-      resource.Type = MTL_BIND_BUFFER_UNBOUNDED;
-      resource.Buffer = parent->buffer_dynamic.ptr();
-    };
-
-    void GetLogicalResourceOrView(REFIID riid,
-                                  void **ppLogicalResource) override {
-      parent->QueryInterface(riid, ppLogicalResource);
-    };
-
-    void NotifyObserver() { observer(); };
-  };
-  std::set<DynamicBinding *> observers;
+  std::set<IMTLNotifiedBindable *> observers;
 
   using SRVBase = TResourceViewBase<tag_shader_resource_view<DynamicBuffer>,
                                     IMTLDynamicBindable>;
 
-  template <typename BindableMap> class SRV : public SRVBase {
+  class SRV : public SRVBase {
   private:
-    BindableMap thunk;
-
   public:
     SRV(const tag_shader_resource_view<>::DESC_S *pDesc,
-        DynamicBuffer *pResource, IMTLD3D11Device *pDevice, BindableMap &&thunk)
-        : SRVBase(pDesc, pResource, pDevice), thunk(std::move(thunk)) {}
+        DynamicBuffer *pResource, IMTLD3D11Device *pDevice)
+        : SRVBase(pDesc, pResource, pDevice) {}
+
+    ~SRV() { assert(resource->weak_srvs.erase(this) == 1); }
 
     void GetBindable(IMTLBindable **ppResource,
                      std::function<void()> &&onBufferSwap) override {
-      Com<IMTLBindable> underlying;
-      resource->GetBindable(&underlying, std::move(onBufferSwap));
-      *ppResource = ref(new DynamicViewBindable(std::move(underlying), thunk));
+      IMTLNotifiedBindable *ret = ref(new DynamicBinding(
+          static_cast<ID3D11ShaderResourceView *>(this),
+          std::move(onBufferSwap),
+          [u = this->resource.ptr()](MTL_BIND_RESOURCE *pResource) {
+            assert(0 && "todo: prepare srv view");
+          },
+          [u = this->resource.ptr()](IMTLNotifiedBindable *_this) {
+            u->RemoveObserver(_this);
+          }));
+      resource->AddObserver(ret);
+      *ppResource = ret;
+    };
+
+    void RotateView() {
+
     };
   };
+
+  std::set<SRV *> weak_srvs;
 
 public:
   DynamicBuffer(const tag_buffer::DESC_S *desc,
@@ -149,19 +127,35 @@ public:
 
   void GetBindable(IMTLBindable **ppResource,
                    std::function<void()> &&onBufferSwap) override {
-    *ppResource = new DynamicBinding(this, std::move(onBufferSwap));
-    assert(observers.insert((DynamicBinding *)*ppResource).second &&
-           "are you kidding me?");
+    auto ret = ref(new DynamicBinding(
+        static_cast<ID3D11Buffer *>(this), std::move(onBufferSwap),
+        [this](MTL_BIND_RESOURCE *pResource) {
+          MTL_BIND_RESOURCE &resource = *pResource;
+          resource.Type = MTL_BIND_BUFFER_UNBOUNDED;
+          resource.Buffer = this->buffer_dynamic.ptr();
+        },
+        [this](IMTLNotifiedBindable *_binding) {
+          this->RemoveObserver(_binding);
+        }));
+    AddObserver(ret);
+    *ppResource = ret;
   };
 
   void RotateBuffer(IMTLDynamicBufferPool *pool) override {
     pool->ExchangeFromPool(&buffer_dynamic);
+    for (auto srv : weak_srvs) {
+      srv->RotateView();
+    }
     for (auto &observer : observers) {
       observer->NotifyObserver();
     }
   };
 
-  void RemoveObserver(DynamicBinding *pBindable) {
+  void AddObserver(IMTLNotifiedBindable *pBindable) {
+    assert(observers.insert(pBindable).second && "otherwise already added");
+  }
+
+  void RemoveObserver(IMTLNotifiedBindable *pBindable) {
     assert(observers.erase(pBindable) == 1 &&
            "it must be 1 unless the destructor called twice");
   }
@@ -181,11 +175,10 @@ public:
       return S_FALSE;
     }
     // TODO: polymorphism: buffer/byteaddress/structured
-    *ppView = new SRV(&finalDesc, this, m_parent,
-                      [](const MTL_BIND_RESOURCE *, MTL_BIND_RESOURCE *) {
-                        assert(0 && "TODO: dynamic texture2d srv bindable map");
-                        return Obj<MTL::Resource>(nullptr);
-                      });
+    auto srv = ref(new SRV(&finalDesc, this, m_parent));
+    assert(weak_srvs.insert(srv).second);
+    *ppView = srv;
+    srv->RotateView();
     return S_OK;
   };
 };
@@ -206,70 +199,40 @@ class DynamicTexture2D
     : public TResourceBase<tag_texture_2d, IMTLDynamicBuffer> {
 private:
   Obj<MTL::Buffer> buffer;
-  Obj<MTL::Texture> view;
   size_t bytes_per_row;
 
   using SRVBase = TResourceViewBase<tag_shader_resource_view<DynamicTexture2D>,
                                     IMTLDynamicBindable>;
 
-  template <typename BindableMap> class SRV_BROKEN : public SRVBase {
+  class SRV : public SRVBase {
   private:
-    BindableMap thunk;
-
   public:
-    SRV_BROKEN(const tag_shader_resource_view<>::DESC_S *pDesc,
-        DynamicTexture2D *pResource, IMTLD3D11Device *pDevice,
-        BindableMap &&thunk)
-        : SRVBase(pDesc, pResource, pDevice), thunk(std::move(thunk)) {}
+    SRV(const tag_shader_resource_view<>::DESC_S *pDesc,
+        DynamicTexture2D *pResource, IMTLD3D11Device *pDevice)
+        : SRVBase(pDesc, pResource, pDevice) {}
+
+    ~SRV() { assert(resource->weak_srvs.erase(this) == 1); }
 
     void GetBindable(IMTLBindable **ppResource,
                      std::function<void()> &&onBufferSwap) override {
-      Com<IMTLBindable> underlying;
-      resource->GetBindablePrivate(&underlying, std::move(onBufferSwap));
-      *ppResource = ref(new DynamicViewBindable(std::move(underlying), thunk));
-    }
-  };
-
-  class DynamicTextureBindable : public ComObject<IMTLBindable> {
-  private:
-    Com<DynamicTexture2D> parent;
-    std::function<void()> observer;
-
-  public:
-    DynamicTextureBindable(DynamicTexture2D *parent,
-                           std::function<void()> &&observer)
-        : ComObject(), parent(parent), observer(std::move(observer)) {}
-
-    ~DynamicTextureBindable() { parent->RemoveObserver(this); }
-
-    HRESULT QueryInterface(REFIID riid, void **ppvObject) {
-      if (ppvObject == nullptr)
-        return E_POINTER;
-
-      *ppvObject = nullptr;
-
-      if (riid == __uuidof(IUnknown) || riid == __uuidof(IMTLBindable)) {
-        *ppvObject = ref(this);
-        return S_OK;
-      }
-
-      return E_NOINTERFACE;
+      *ppResource = ref(new DynamicBinding(
+          static_cast<ID3D11ShaderResourceView *>(this),
+          std::move(onBufferSwap),
+          [u = this->resource.ptr()](MTL_BIND_RESOURCE *pResource) {
+            assert(0 && "todo: prepare srv view");
+          },
+          [u = this->resource.ptr()](IMTLNotifiedBindable *_this) {
+            u->RemoveObserver(_this);
+          }));
     }
 
-    void GetBoundResource(MTL_BIND_RESOURCE *ppResource) {
-      MTL_BIND_RESOURCE &resource = *ppResource;
-      resource.Type = MTL_BIND_BUFFER_UNBOUNDED;
-      resource.Buffer = parent->buffer.ptr();
-    };
+    void RotateView() {
 
-    void GetLogicalResourceOrView(REFIID riid, void **ppLogicalResource) {
-      parent->QueryInterface(riid, ppLogicalResource);
     };
-
-    void NotifyObserver() { observer(); };
   };
 
-  std::set<DynamicTextureBindable *> observers;
+  std::set<IMTLNotifiedBindable *> observers;
+  std::set<SRV *> weak_srvs;
 
 public:
   DynamicTexture2D(const tag_texture_2d::DESC_S *desc,
@@ -290,24 +253,17 @@ public:
     return buffer.ptr();
   };
 
-  /**
-  called by view
-  */
-  void GetBindablePrivate(IMTLBindable **ppResource,
-                          std::function<void()> &&onBufferSwap) {
-    *ppResource = new DynamicTextureBindable(this, std::move(onBufferSwap));
-    assert(observers.insert((DynamicTextureBindable *)*ppResource).second &&
-           "are you kidding me?");
-  };
-
   void RotateBuffer(IMTLDynamicBufferPool *pool) override {
     pool->ExchangeFromPool(&buffer);
+    for (auto srv : weak_srvs) {
+      srv->RotateView();
+    }
     for (auto &observer : observers) {
       observer->NotifyObserver();
     }
   };
 
-  void RemoveObserver(DynamicTextureBindable *pBindable) {
+  void RemoveObserver(IMTLNotifiedBindable *pBindable) {
     assert(observers.erase(pBindable) == 1 &&
            "it must be 1 unless the destructor called twice");
   }
@@ -331,12 +287,10 @@ public:
     if (!ppView) {
       return S_FALSE;
     }
-    assert(0 && "TODO: dynamic texture2d srv (broken now)");
-    *ppView = new SRV_BROKEN(&finalDesc, this, m_parent,
-                      [](MTL_BIND_RESOURCE *, MTL_BIND_RESOURCE *) {
-                        assert(0 && "TODO: dynamic texture2d srv bindable map");
-                        return Obj<MTL::Resource>(nullptr);
-                      });
+    auto srv = ref(new SRV(&finalDesc, this, m_parent));
+    assert(weak_srvs.insert(srv).second);
+    *ppView = srv;
+    srv->RotateView();
     return S_OK;
   };
 };

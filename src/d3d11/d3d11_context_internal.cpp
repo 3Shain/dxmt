@@ -118,7 +118,8 @@ public:
       if (ShaderStage.ConstantBuffers.contains(StartSlot + i)) {
         auto &cb = ShaderStage.ConstantBuffers[StartSlot + i];
         if (ppConstantBuffers) {
-          cb.Buffer->QueryInterface(IID_PPV_ARGS(&ppConstantBuffers[i]));
+          cb.Buffer->GetLogicalResourceOrView(
+              IID_PPV_ARGS(&ppConstantBuffers[i]));
         }
         if (pFirstConstant) {
           pFirstConstant[i] = cb.FirstConstant;
@@ -173,7 +174,7 @@ public:
       return;
     for (auto i = 0u; i < NumViews; i++) {
       if (ShaderStage.SRVs.contains(StartSlot + i)) {
-        ShaderStage.SRVs[i]->QueryInterface(
+        ShaderStage.SRVs[i]->GetLogicalResourceOrView(
             IID_PPV_ARGS(&ppShaderResourceViews[i]));
       } else {
         ppShaderResourceViews[i] = nullptr;
@@ -216,6 +217,61 @@ public:
         } else {
           ppSamplers[Slot - StartSlot] = nullptr;
         }
+      }
+    }
+  }
+
+#pragma endregion
+
+#pragma region CopyResource
+
+  void CopyBuffer(ID3D11Buffer *pDstResource, ID3D11Buffer *pSrcResource) {
+    D3D11_BUFFER_DESC dst_desc;
+    D3D11_BUFFER_DESC src_desc;
+    pDstResource->GetDesc(&dst_desc);
+    pSrcResource->GetDesc(&src_desc);
+    MTL_BIND_RESOURCE dst_bind;
+    UINT bytes_per_row, bytes_per_image;
+    MTL_BIND_RESOURCE src_bind;
+    auto currentChunkId = cmd_queue.CurrentSeqId();
+    if (auto staging_dst = com_cast<IMTLD3D11Staging>(pDstResource)) {
+      staging_dst->UseCopyDestination(0, currentChunkId, &dst_bind,
+                                      &bytes_per_row, &bytes_per_image);
+      if (auto staging_src = com_cast<IMTLD3D11Staging>(pSrcResource)) {
+        // wtf
+        assert(0 && "TODO: copy between staging?");
+      } else if (auto src = com_cast<IMTLBindable>(pSrcResource)) {
+        // might be a dynamic, default or immutable buffer
+        src->GetBoundResource(&src_bind);
+        EmitBlitCommand<true>(
+            [dst = Obj(dst_bind.Buffer),
+             src = Obj(src_bind.Buffer)](MTL::BlitCommandEncoder *encoder) {
+              encoder->copyFromBuffer(src, 0, dst, 0, src->length());
+            });
+      }
+
+    } else if (dst_desc.Usage == D3D11_USAGE_DEFAULT) {
+      auto dst = com_cast<IMTLBindable>(pDstResource);
+      assert(dst);
+      dst->GetBoundResource(&dst_bind);
+      if (auto staging_src = com_cast<IMTLD3D11Staging>(pSrcResource)) {
+        // copy from staging to default
+        staging_src->UseCopySource(0, currentChunkId, &src_bind, &bytes_per_row,
+                                   &bytes_per_image);
+        EmitBlitCommand<true>(
+            [dst = Obj(dst_bind.Buffer),
+             src = Obj(src_bind.Buffer)](MTL::BlitCommandEncoder *encoder) {
+              encoder->copyFromBuffer(src, 0, dst, 0, src->length());
+            });
+      } else if (auto src = com_cast<IMTLBindable>(pSrcResource)) {
+        // on-device copy
+        src->GetBoundResource(&src_bind);
+        assert(src_bind.Type == MTL_BIND_BUFFER_UNBOUNDED);
+        EmitBlitCommand<true>(
+            [dst = Obj(dst_bind.Buffer),
+             src = Obj(src_bind.Buffer)](MTL::BlitCommandEncoder *encoder) {
+              encoder->copyFromBuffer(src, 0, dst, 0, src->length());
+            });
       }
     }
   }

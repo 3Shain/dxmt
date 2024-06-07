@@ -476,28 +476,12 @@ public:
 
     switch (pQueryDesc->Query) {
     case D3D11_QUERY_EVENT:
-      // TODO: implement it at command chunk boundary
-      return S_OK;
-    case D3D11_QUERY_TIMESTAMP:
-
-      if (!ppQuery)
-        return S_FALSE;
-
-      *ppQuery = ref(new MTLD3D11TimeStampQuery(this, *pQueryDesc));
-      return S_OK;
-    case D3D11_QUERY_TIMESTAMP_DISJOINT:
-
-      if (!ppQuery)
-        return S_FALSE;
-
-      *ppQuery = ref(new MTLD3D11TimeStampDisjointQuery(this, *pQueryDesc));
+      return CreateEventQuery(this, pQueryDesc, ppQuery);
       return S_OK;
     case D3D11_QUERY_OCCLUSION:
-      // TODO: implement occulusion query
-      ERR("occulusion query not implemented");
-      return E_NOTIMPL;
+      return CreateOcculusionQuery(this, pQueryDesc, ppQuery);
     default:
-      ERR("unknown query not implemented");
+      ERR("CreateQuery: query type not implemented: ", pQueryDesc->Query);
       return E_NOTIMPL;
     }
   }

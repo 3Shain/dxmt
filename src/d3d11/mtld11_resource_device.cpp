@@ -321,6 +321,13 @@ public:
       ERR("DeviceTexture: Failed to create SRV descriptor");
       return E_INVALIDARG;
     }
+    // !DIRTY HACK
+    if (this->desc.BindFlags & D3D11_BIND_DEPTH_STENCIL) {
+      if (finalDesc.Format == DXGI_FORMAT_R32_FLOAT) {
+        ERR("hack fired: interpret R32Float as Depth32Float");
+        finalDesc.Format = DXGI_FORMAT_D32_FLOAT; // sad!
+      }
+    }
     Obj<MTL::Texture> view;
     if (FAILED(CreateMTLTextureView(this->m_parent, this->texture, &finalDesc,
                                     &view))) {

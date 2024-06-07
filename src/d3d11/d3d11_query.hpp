@@ -1,65 +1,65 @@
 #pragma once
-
+#include "com/com_guid.hpp"
 #include "d3d11_device_child.hpp"
+
+DEFINE_COM_INTERFACE("a301e56d-d87e-4b69-8440-bd003e285904",
+                     IMTLD3DOcclusionQuery)
+    : public ID3D11Query{};
+
+DEFINE_COM_INTERFACE("81fe1837-05fa-4927-811f-3699f997cb9f", IMTLD3DEventQuery)
+    : public ID3D11Query{};
 
 namespace dxmt {
 
-using timestamp_t = MTL::Timestamp;
+template <typename Query>
+class MTLD3DQueryBase : public MTLD3D11DeviceChild<Query> {
+public:
+  MTLD3DQueryBase(IMTLD3D11Device *pDevice, const D3D11_QUERY_DESC *desc)
+      : MTLD3D11DeviceChild<Query>(pDevice), desc_(*desc) {}
+  ~MTLD3DQueryBase() {};
 
-enum class D3D11QueryState {
+  HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid,
+                                           void **ppvObject) final {
+    if (ppvObject == nullptr)
+      return E_POINTER;
+
+    *ppvObject = nullptr;
+
+    if (riid == __uuidof(IUnknown) || riid == __uuidof(ID3D11DeviceChild) ||
+        riid == __uuidof(ID3D11Query) || riid == __uuidof(Query)) {
+      *ppvObject = ref(this);
+      return S_OK;
+    }
+
+    if (logQueryInterfaceError(__uuidof(Query), riid)) {
+      Logger::warn("D3D11Query::QueryInterface: Unknown interface query");
+      Logger::warn(str::format(riid));
+    }
+
+    return E_NOINTERFACE;
+  };
+
+  void STDMETHODCALLTYPE GetDesc(D3D11_QUERY_DESC *pDesc) final {
+    if (pDesc) {
+      *pDesc = desc_;
+    }
+  };
+
+private:
+  D3D11_QUERY_DESC desc_;
+};
+
+enum class QueryState {
   Created, // ?
   Issued,
   Signaled,
 };
 
-class MTLD3D11Query : public MTLD3D11DeviceChild<ID3D11Query> {
-public:
-  MTLD3D11Query(IMTLD3D11Device *pDevice, const D3D11_QUERY_DESC &desc);
-  ~MTLD3D11Query();
+HRESULT CreateEventQuery(IMTLD3D11Device *pDevice,
+                         const D3D11_QUERY_DESC *pDesc, ID3D11Query **ppQuery);
 
-  HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void **ppvObject) final;
+HRESULT CreateOcculusionQuery(IMTLD3D11Device *pDevice,
+                              const D3D11_QUERY_DESC *pDesc,
+                              ID3D11Query **ppQuery);
 
-  void STDMETHODCALLTYPE GetDesc(D3D11_QUERY_DESC *pDesc) final;
-
-  virtual UINT STDMETHODCALLTYPE GetDataSize() = 0;
-
-  virtual HRESULT STDMETHODCALLTYPE GetData(void *pData, UINT GetDataFlags) = 0;
-
-  virtual void Begin() {}
-
-  virtual void End() {}
-
-private:
-  D3D11_QUERY_DESC m_desc;
-};
-
-class MTLD3D11TimeStampQuery : public MTLD3D11Query {
-public:
-  using MTLD3D11Query::MTLD3D11Query;
-  UINT STDMETHODCALLTYPE GetDataSize() final {
-    return sizeof(D3D11_QUERY_DATA_TIMESTAMP_DISJOINT);
-  };
-  HRESULT STDMETHODCALLTYPE GetData(void *pData, UINT GetDataFlags) final;
-  void End() final;
-};
-
-class MTLD3D11TimeStampDisjointQuery : public MTLD3D11Query {
-public:
-  using MTLD3D11Query::MTLD3D11Query;
-  UINT STDMETHODCALLTYPE GetDataSize() final { return sizeof(UINT64); };
-  HRESULT STDMETHODCALLTYPE GetData(void *pData, UINT GetDataFlags) final;
-  void Begin() final;
-  void End() final;
-
-private:
-  timestamp_t cputime_begin_;
-  timestamp_t gputime_begin_;
-
-  timestamp_t cputime_end_;
-  timestamp_t gputime_end_;
-
-  enum STATE : unsigned { begin = 1, end = 2, ready = begin | end };
-
-  unsigned state;
-};
 } // namespace dxmt

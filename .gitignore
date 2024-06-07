@@ -11,3 +11,4 @@ build-local.txt
 *.cso
 *.ll
 winetricks
+*.vt100

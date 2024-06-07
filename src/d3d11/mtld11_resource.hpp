@@ -88,12 +88,12 @@ DEFINE_COM_INTERFACE("0988488c-75fb-44f3-859a-b6fb2d022239",
 DEFINE_COM_INTERFACE("252c1a0e-1c61-42e7-9b57-23dfe3d73d49", IMTLD3D11Staging)
     : public IUnknown {
 
-  virtual bool UseCopyDestination(uint64_t seq_id, MTL_BIND_RESOURCE * pBuffer,
-                                  uint32_t * pBytesPerRow,
-                                  uint32_t * pBytesPerImage) = 0;
-  virtual bool UseCopySource(uint64_t seq_id, MTL_BIND_RESOURCE * pBuffer,
-                             uint32_t * pBytesPerRow,
-                             uint32_t * pBytesPerImage) = 0;
+  virtual bool UseCopyDestination(
+      uint32_t Subresource, uint64_t seq_id, MTL_BIND_RESOURCE * pBuffer,
+      uint32_t * pBytesPerRow, uint32_t * pBytesPerImage) = 0;
+  virtual bool UseCopySource(
+      uint32_t Subresource, uint64_t seq_id, MTL_BIND_RESOURCE * pBuffer,
+      uint32_t * pBytesPerRow, uint32_t * pBytesPerImage) = 0;
   /**
   cpu_coherent_seq_id: any operation at/before seq_id is coherent to cpu
   -
@@ -472,6 +472,10 @@ HRESULT CreateMTLTextureView(IMTLD3D11Device *pDevice, MTL::Texture *pResource,
 template <typename VIEW_DESC>
 HRESULT CreateMTLTextureView(IMTLD3D11Device *pDevice, MTL::Buffer *pResource,
                              const VIEW_DESC *pViewDesc, MTL::Texture **ppView);
+
+template <typename TEXTURE_DESC>
+void GetMipmapSize(const TEXTURE_DESC *pDesc, uint32_t level, uint32_t *pWidth,
+                   uint32_t *pHeight, uint32_t *pDepth);
 #pragma endregion
 
 } // namespace dxmt

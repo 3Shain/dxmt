@@ -7,6 +7,7 @@
 #include "llvm/IR/Metadata.h"
 #include "llvm/IR/Module.h"
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <unordered_set>
 #include <variant>
@@ -347,6 +348,7 @@ struct ArgumentBindingBuffer {
   // std::string arg_type_name;
   MSLRepresentableType type;
   std::string arg_name;
+  std::optional<uint32_t> raster_order_group;
 };
 
 struct ArgumentBindingSampler {
@@ -361,6 +363,7 @@ struct ArgumentBindingTexture {
   MemoryAccess memory_access;
   MSLTexture type; // why it's a variant!
   std::string arg_name;
+  std::optional<uint32_t> raster_order_group;
 };
 
 /* is this in fact argument buffer? */
@@ -395,7 +398,8 @@ class ArgumentBufferBuilder {
 public:
   uint32_t DefineBuffer(
     std::string name, AddressSpace addressp_space, MemoryAccess access,
-    MSLRepresentableType type, uint32_t location_index = UINT32_MAX
+    MSLRepresentableType type, uint32_t location_index = UINT32_MAX,
+    std::optional<uint32_t> raster_order_group = std::nullopt
   );
   // uint32_t DefineIndirectBuffer(
   //   std::string name, llvm::StructType* struct_type, llvm::Metadata*
@@ -403,7 +407,8 @@ public:
   // );
   uint32_t DefineTexture(
     std::string name, TextureKind kind, MemoryAccess access,
-    MSLScalerType scaler_type, uint32_t location_index = UINT32_MAX
+    MSLScalerType scaler_type, uint32_t location_index = UINT32_MAX,
+    std::optional<uint32_t> raster_order_group = std::nullopt
   );
   uint32_t
   DefineSampler(std::string name, uint32_t location_index = UINT32_MAX);
@@ -506,6 +511,7 @@ public:
    */
   uint32_t DefineInput(const FunctionInput &input);
   uint32_t DefineOutput(const FunctionOutput &output);
+  void UseEarlyFragmentTests() { early_fragment_tests = true; }
 
   auto CreateFunction(
     std::string name, llvm::LLVMContext &context, llvm::Module &module
@@ -514,6 +520,7 @@ public:
 private:
   std::vector<FunctionInput> inputs;
   std::vector<FunctionOutput> outputs;
+  bool early_fragment_tests = false;
 };
 
 inline TextureKind to_air_resource_type(
