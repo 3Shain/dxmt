@@ -199,11 +199,16 @@ HRESULT CreateStagingTextureInternal(IMTLD3D11Device *pDevice,
   }
   std::vector<StagingBufferInternal> subresources;
   uint32_t mip_levels = finalDesc.MipLevels;
+  assert(!pInitialData);
   for (auto slice = 0u; slice < array_size; slice++) {
     for (auto level = 0u; level < mip_levels; level++) {
       auto sub_id = D3D11CalcSubresource(level, slice, mip_levels);
       uint32_t w, h, d;
       GetMipmapSize(&finalDesc, level, &w, &h, &d);
+      uint32_t bpr, bpi, buf_len;
+      if(FAILED(GetLinearTextureLayout(pDevice, &finalDesc, level, &bpr, &bpi, &buf_len))) {
+        return E_FAIL;
+      }
     }
   }
 

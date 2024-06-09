@@ -51,6 +51,8 @@ struct MTL_BIND_RESOURCE {
     MTL::Buffer *Buffer;
     MTL::Texture *Texture;
   };
+  uint32_t BoundOffset;
+  uint32_t BoundSize;
 };
 
 DEFINE_COM_INTERFACE("1c7e7c98-6dd4-42f0-867b-67960806886e", IMTLBindable)
@@ -476,6 +478,12 @@ HRESULT CreateMTLTextureView(IMTLD3D11Device *pDevice, MTL::Buffer *pResource,
 template <typename TEXTURE_DESC>
 void GetMipmapSize(const TEXTURE_DESC *pDesc, uint32_t level, uint32_t *pWidth,
                    uint32_t *pHeight, uint32_t *pDepth);
+
+template <typename TEXTURE_DESC>
+HRESULT GetLinearTextureLayout(IMTLD3D11Device *pDevice,
+                               const TEXTURE_DESC *pDesc, uint32_t level,
+                               uint32_t *pBytesPerRow, uint32_t *pBytesPerImage,
+                               uint32_t *pBytesPerSlice);
 #pragma endregion
 
 } // namespace dxmt

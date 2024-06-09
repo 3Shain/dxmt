@@ -117,7 +117,6 @@ public:
     if (pInitialData) {
       memcpy(buffer_dynamic->contents(), pInitialData->pSysMem,
              desc->ByteWidth);
-      buffer_dynamic->didModifyRange({0, desc->ByteWidth});
     }
   }
 
@@ -174,6 +173,8 @@ public:
     if (!ppView) {
       return S_FALSE;
     }
+    ERR("DynamicBuffer srv not impl");
+    return E_NOTIMPL;
     // TODO: polymorphism: buffer/byteaddress/structured
     auto srv = ref(new SRV(&finalDesc, this, m_parent));
     assert(weak_srvs.insert(srv).second);
@@ -205,29 +206,36 @@ private:
                                     IMTLDynamicBindable>;
 
   class SRV : public SRVBase {
-  private:
+    Obj<MTL::Texture> view;
+    Obj<MTL::TextureDescriptor> view_desc;
+
   public:
     SRV(const tag_shader_resource_view<>::DESC_S *pDesc,
-        DynamicTexture2D *pResource, IMTLD3D11Device *pDevice)
-        : SRVBase(pDesc, pResource, pDevice) {}
+        DynamicTexture2D *pResource, IMTLD3D11Device *pDevice,
+        Obj<MTL::TextureDescriptor> &&view_desc)
+        : SRVBase(pDesc, pResource, pDevice), view_desc(std::move(view_desc)) {}
 
     ~SRV() { assert(resource->weak_srvs.erase(this) == 1); }
 
     void GetBindable(IMTLBindable **ppResource,
                      std::function<void()> &&onBufferSwap) override {
-      *ppResource = ref(new DynamicBinding(
+      auto ret = ref(new DynamicBinding(
           static_cast<ID3D11ShaderResourceView *>(this),
           std::move(onBufferSwap),
-          [u = this->resource.ptr()](MTL_BIND_RESOURCE *pResource) {
-            assert(0 && "todo: prepare srv view");
+          [u = this->resource.ptr(), this](MTL_BIND_RESOURCE *pResource) {
+            pResource->Type = MTL_BIND_TEXTURE;
+            pResource->Texture = this->view.ptr();
           },
           [u = this->resource.ptr()](IMTLNotifiedBindable *_this) {
             u->RemoveObserver(_this);
           }));
+      resource->AddObserver(ret);
+      *ppResource = ret;
     }
 
     void RotateView() {
-
+      view = transfer(
+          resource->buffer->newTexture(view_desc, 0, resource->bytes_per_row));
     };
   };
 
@@ -236,17 +244,10 @@ private:
 
 public:
   DynamicTexture2D(const tag_texture_2d::DESC_S *desc,
-                   const D3D11_SUBRESOURCE_DATA *pInitialData,
-                   IMTLD3D11Device *device, UINT bytesPerRow)
-      : TResourceBase<tag_texture_2d, IMTLDynamicBuffer>(desc, device) {
-    //
-    // buffer = transfer(metal->newBuffer(desc->ByteWidth, 0));
-    // if (pInitialData) {
-    //   memcpy(buffer->contents(), pInitialData->pSysMem, desc->ByteWidth);
-    //   buffer->didModifyRange({0, desc->ByteWidth});
-    // }
-    bytes_per_row = bytesPerRow;
-  }
+                   Obj<MTL::Buffer> &&buffer, IMTLD3D11Device *device,
+                   UINT bytesPerRow)
+      : TResourceBase<tag_texture_2d, IMTLDynamicBuffer>(desc, device),
+        buffer(std::move(buffer)), bytes_per_row(bytesPerRow) {}
 
   MTL::Buffer *GetCurrentBuffer(UINT *pBytesPerRow) override {
     *pBytesPerRow = bytes_per_row;
@@ -262,6 +263,10 @@ public:
       observer->NotifyObserver();
     }
   };
+
+  void AddObserver(IMTLNotifiedBindable *pBindable) {
+    assert(observers.insert(pBindable).second && "otherwise already added");
+  }
 
   void RemoveObserver(IMTLNotifiedBindable *pBindable) {
     assert(observers.erase(pBindable) == 1 &&
@@ -287,7 +292,26 @@ public:
     if (!ppView) {
       return S_FALSE;
     }
-    auto srv = ref(new SRV(&finalDesc, this, m_parent));
+    MTL_FORMAT_DESC format;
+    Com<IMTLDXGIAdatper> adapter;
+    m_parent->GetAdapter(&adapter);
+    if (FAILED(adapter->QueryFormatDesc(finalDesc.Format, &format))) {
+      return E_FAIL;
+    }
+
+    auto desc = transfer(MTL::TextureDescriptor::alloc()->init());
+    desc->setTextureType(MTL::TextureType2D);
+    desc->setWidth(this->desc.Width);
+    desc->setHeight(this->desc.Height);
+    desc->setDepth(1);
+    desc->setArrayLength(1);
+    desc->setMipmapLevelCount(1);
+    desc->setSampleCount(1);
+    desc->setUsage(MTL::TextureUsageShaderRead);
+    desc->setStorageMode(MTL::StorageModeShared);
+    desc->setCpuCacheMode(MTL::CPUCacheModeWriteCombined);
+    desc->setPixelFormat(format.PixelFormat);
+    auto srv = ref(new SRV(&finalDesc, this, m_parent, std::move(desc)));
     assert(weak_srvs.insert(srv).second);
     *ppView = srv;
     srv->RotateView();
@@ -312,9 +336,26 @@ CreateDynamicTexture2D(IMTLD3D11Device *pDevice,
   if (format.PixelFormat == MTL::PixelFormatInvalid) {
     return E_FAIL;
   }
-  assert(format.Stride > 0);
+  Obj<MTL::TextureDescriptor> textureDescriptor;
+  D3D11_TEXTURE2D_DESC finalDesc;
+  if (FAILED(CreateMTLTextureDescriptor(pDevice, pDesc, &finalDesc,
+                                        &textureDescriptor))) {
+    return E_INVALIDARG;
+  }
+  uint32_t bytesPerRow, bytesPerImage, bufferLen;
+  if (FAILED(GetLinearTextureLayout(pDevice, &finalDesc, 0, &bytesPerRow,
+                                    &bytesPerImage, &bufferLen))) {
+    return E_FAIL;
+  }
+  auto metal = pDevice->GetMTLDevice();
+  auto buffer = transfer(metal->newBuffer(
+      bufferLen, MTL::ResourceOptionCPUCacheModeWriteCombined));
+  if (pInitialData) {
+    assert(pInitialData->SysMemPitch == bytesPerRow);
+    memcpy(buffer->contents(), pInitialData->pSysMem, bufferLen);
+  }
   *ppTexture =
-      ref(new DynamicTexture2D(pDesc, pInitialData, pDevice, format.Stride));
+      ref(new DynamicTexture2D(pDesc, std::move(buffer), pDevice, bytesPerRow));
   return S_OK;
 }
 

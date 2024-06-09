@@ -44,6 +44,30 @@ HRESULT CreateMTLTextureView<D3D11_SHADER_RESOURCE_VIEW_DESC>(
     break;
   }
   case D3D_SRV_DIMENSION_TEXTURE2DARRAY: {
+    if (texture_type == MTL::TextureType2DArray) {
+      *ppView = pResource->newTextureView(
+          metal_format.PixelFormat, MTL::TextureType2DArray,
+          NS::Range::Make(pViewDesc->Texture2DArray.MostDetailedMip,
+                          pViewDesc->Texture2DArray.MipLevels == 0xffffffffu
+                              ? pResource->mipmapLevelCount() -
+                                    pViewDesc->Texture2DArray.MostDetailedMip
+                              : pViewDesc->Texture2DArray.MipLevels),
+          NS::Range::Make(pViewDesc->Texture2DArray.FirstArraySlice,
+                          pViewDesc->Texture2DArray.ArraySize));
+      return S_OK;
+    }
+    if (texture_type == MTL::TextureTypeCube) {
+      *ppView = pResource->newTextureView(
+          metal_format.PixelFormat, MTL::TextureType2DArray,
+          NS::Range::Make(pViewDesc->Texture2DArray.MostDetailedMip,
+                          pViewDesc->Texture2DArray.MipLevels == 0xffffffffu
+                              ? pResource->mipmapLevelCount() -
+                                    pViewDesc->Texture2DArray.MostDetailedMip
+                              : pViewDesc->Texture2DArray.MipLevels),
+          NS::Range::Make(pViewDesc->Texture2DArray.FirstArraySlice,
+                          pViewDesc->Texture2DArray.ArraySize));
+      return S_OK;
+    }
     break;
   }
   case D3D_SRV_DIMENSION_TEXTURE2DMS: {
@@ -70,6 +94,18 @@ HRESULT CreateMTLTextureView<D3D11_SHADER_RESOURCE_VIEW_DESC>(
     break;
   }
   case D3D_SRV_DIMENSION_TEXTURECUBEARRAY: {
+    if (texture_type == MTL::TextureTypeCubeArray) {
+      *ppView = pResource->newTextureView(
+          metal_format.PixelFormat, MTL::TextureTypeCubeArray,
+          NS::Range::Make(pViewDesc->TextureCubeArray.MostDetailedMip,
+                          pViewDesc->TextureCubeArray.MipLevels == 0xffffffffu
+                              ? pResource->mipmapLevelCount() -
+                                    pViewDesc->TextureCubeArray.MostDetailedMip
+                              : pViewDesc->TextureCube.MipLevels),
+          NS::Range::Make(pViewDesc->TextureCubeArray.First2DArrayFace,
+                          pViewDesc->TextureCubeArray.NumCubes * 6));
+      return S_OK;
+    }
     break;
   }
   }
@@ -109,6 +145,22 @@ HRESULT CreateMTLTextureView<D3D11_UNORDERED_ACCESS_VIEW_DESC>(
     break;
   }
   case D3D11_UAV_DIMENSION_TEXTURE2DARRAY: {
+    if (texture_type == MTL::TextureType2DArray) {
+      *ppView = pResource->newTextureView(
+          metal_format.PixelFormat, MTL::TextureType2DArray,
+          NS::Range::Make(pViewDesc->Texture2DArray.MipSlice, 1),
+          NS::Range::Make(pViewDesc->Texture2DArray.FirstArraySlice,
+                          pViewDesc->Texture2DArray.ArraySize));
+      return S_OK;
+    }
+    if (texture_type == MTL::TextureTypeCubeArray) {
+      *ppView = pResource->newTextureView(
+          metal_format.PixelFormat, MTL::TextureType2DArray,
+          NS::Range::Make(pViewDesc->Texture2DArray.MipSlice, 1),
+          NS::Range::Make(pViewDesc->Texture2DArray.FirstArraySlice,
+                          pViewDesc->Texture2DArray.ArraySize));
+      return S_OK;
+    }
     break;
   }
   case D3D11_UAV_DIMENSION_TEXTURE3D: {
@@ -226,7 +278,7 @@ HRESULT CreateMTLTextureView<D3D11_SHADER_RESOURCE_VIEW_DESC>(
     return E_FAIL;
   }
   // TODO: check PixelFormat is ordinary/packed
-  auto bytes_per_pixel = metal_format.Stride;
+  auto bytes_per_pixel = metal_format.BytesPerTexel;
   switch (pViewDesc->ViewDimension) {
   case D3D11_SRV_DIMENSION_BUFFEREX: {
     if (pViewDesc->BufferEx.Flags) {
@@ -267,7 +319,7 @@ HRESULT CreateMTLTextureView<D3D11_UNORDERED_ACCESS_VIEW_DESC>(
     return E_FAIL;
   }
   // TODO: check PixelFormat is ordinary/packed
-  auto bytes_per_pixel = metal_format.Stride;
+  auto bytes_per_pixel = metal_format.BytesPerTexel;
   switch (pViewDesc->ViewDimension) {
   case D3D11_UAV_DIMENSION_BUFFER: {
     if (pViewDesc->Buffer.Flags) {
@@ -289,7 +341,7 @@ HRESULT CreateMTLTextureView<D3D11_UNORDERED_ACCESS_VIEW_DESC>(
   default:
     break;
   }
-  ERR("Unhandled uav creation: \n Source: ", metal_format.PixelFormat,
+  ERR("Unhandled uav buffer creation: \n Source: ", metal_format.PixelFormat,
       "\n Desired: ", pViewDesc->ViewDimension);
   return E_FAIL;
 }

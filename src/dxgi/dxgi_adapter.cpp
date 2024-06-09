@@ -161,8 +161,7 @@ public:
     pMtlDesc->PixelFormat = MTL::PixelFormatInvalid;
     pMtlDesc->VertexFormat = MTL::VertexFormatInvalid;
     pMtlDesc->AttributeFormat = MTL::AttributeFormatInvalid;
-    pMtlDesc->Alignment = 0;
-    pMtlDesc->Stride = 0;
+    pMtlDesc->BytesPerTexel = 0;
     pMtlDesc->IsCompressed = false;
     pMtlDesc->SupportBackBuffer = false;
     pMtlDesc->Capability = FormatCapability::None;
@@ -171,72 +170,62 @@ public:
     switch (Format) {
     case DXGI_FORMAT_R32G32B32A32_TYPELESS: {
       pMtlDesc->PixelFormat = MTL::PixelFormatRGBA32Uint;
-      pMtlDesc->Stride = 16;
-      pMtlDesc->Alignment = 16;
+      pMtlDesc->BytesPerTexel = 16;
       break;
     }
     case DXGI_FORMAT_R32G32B32A32_UINT: {
       pMtlDesc->PixelFormat = MTL::PixelFormatRGBA32Uint;
       pMtlDesc->VertexFormat = MTL::VertexFormatUInt4;
       pMtlDesc->AttributeFormat = MTL::AttributeFormatUInt4;
-      pMtlDesc->Stride = 16;
-      pMtlDesc->Alignment = 16;
+      pMtlDesc->BytesPerTexel = 16;
       break;
     }
     case DXGI_FORMAT_R32G32B32A32_SINT: {
       pMtlDesc->PixelFormat = MTL::PixelFormatRGBA32Sint;
       pMtlDesc->VertexFormat = MTL::VertexFormatInt4;
       pMtlDesc->AttributeFormat = MTL::AttributeFormatInt4;
-      pMtlDesc->Stride = 16;
-      pMtlDesc->Alignment = 16;
+      pMtlDesc->BytesPerTexel = 16;
       break;
     }
     case DXGI_FORMAT_R32G32B32A32_FLOAT: {
       pMtlDesc->PixelFormat = MTL::PixelFormatRGBA32Float;
       pMtlDesc->VertexFormat = MTL::VertexFormatFloat4;
       pMtlDesc->AttributeFormat = MTL::AttributeFormatFloat4;
-      pMtlDesc->Stride = 16;
-      pMtlDesc->Alignment = 16;
+      pMtlDesc->BytesPerTexel = 16;
       break;
     }
     case DXGI_FORMAT_R32G32B32_TYPELESS: {
-      pMtlDesc->Stride = 12;
-      pMtlDesc->Alignment = 16;
+      pMtlDesc->BytesPerTexel = 12;
       break;
     }
     case DXGI_FORMAT_R32G32B32_UINT: {
       pMtlDesc->VertexFormat = MTL::VertexFormatUInt3;
       pMtlDesc->AttributeFormat = MTL::AttributeFormatUInt3;
-      pMtlDesc->Stride = 12;
-      pMtlDesc->Alignment = 16;
+      pMtlDesc->BytesPerTexel = 12;
       break;
     }
     case DXGI_FORMAT_R32G32B32_SINT: {
       pMtlDesc->VertexFormat = MTL::VertexFormatInt3;
       pMtlDesc->AttributeFormat = MTL::AttributeFormatInt3;
-      pMtlDesc->Stride = 12;
-      pMtlDesc->Alignment = 16;
+      pMtlDesc->BytesPerTexel = 12;
       break;
     }
     case DXGI_FORMAT_R32G32B32_FLOAT: {
       pMtlDesc->VertexFormat = MTL::VertexFormatFloat3;
       pMtlDesc->AttributeFormat = MTL::AttributeFormatFloat3;
-      pMtlDesc->Stride = 12;
-      pMtlDesc->Alignment = 16;
+      pMtlDesc->BytesPerTexel = 12;
       break;
     }
     case DXGI_FORMAT_R16G16B16A16_TYPELESS: {
       pMtlDesc->PixelFormat = MTL::PixelFormatRGBA16Uint;
-      pMtlDesc->Stride = 8;
-      pMtlDesc->Alignment = 8;
+      pMtlDesc->BytesPerTexel = 8;
       break;
     }
     case DXGI_FORMAT_R16G16B16A16_FLOAT: {
       pMtlDesc->PixelFormat = MTL::PixelFormatRGBA16Float;
       pMtlDesc->VertexFormat = MTL::VertexFormatHalf4;
       pMtlDesc->AttributeFormat = MTL::AttributeFormatHalf4;
-      pMtlDesc->Stride = 8;
-      pMtlDesc->Alignment = 8;
+      pMtlDesc->BytesPerTexel = 8;
       pMtlDesc->SupportBackBuffer = true;
       break;
     }
@@ -244,62 +233,54 @@ public:
       pMtlDesc->PixelFormat = MTL::PixelFormatRGBA16Unorm;
       pMtlDesc->VertexFormat = MTL::VertexFormatUShort4Normalized;
       pMtlDesc->AttributeFormat = MTL::AttributeFormatUShort4Normalized;
-      pMtlDesc->Stride = 8;
-      pMtlDesc->Alignment = 8;
+      pMtlDesc->BytesPerTexel = 8;
       break;
     }
     case DXGI_FORMAT_R16G16B16A16_UINT: {
       pMtlDesc->PixelFormat = MTL::PixelFormatRGBA16Uint;
       pMtlDesc->VertexFormat = MTL::VertexFormatUShort4;
       pMtlDesc->AttributeFormat = MTL::AttributeFormatUShort4;
-      pMtlDesc->Stride = 8;
-      pMtlDesc->Alignment = 8;
+      pMtlDesc->BytesPerTexel = 8;
       break;
     }
     case DXGI_FORMAT_R16G16B16A16_SNORM: {
       pMtlDesc->PixelFormat = MTL::PixelFormatRGBA16Snorm;
       pMtlDesc->VertexFormat = MTL::VertexFormatShort4Normalized;
       pMtlDesc->AttributeFormat = MTL::AttributeFormatShort4Normalized;
-      pMtlDesc->Stride = 8;
-      pMtlDesc->Alignment = 8;
+      pMtlDesc->BytesPerTexel = 8;
       break;
     }
     case DXGI_FORMAT_R16G16B16A16_SINT: {
       pMtlDesc->PixelFormat = MTL::PixelFormatRGBA16Sint;
       pMtlDesc->VertexFormat = MTL::VertexFormatShort4;
       pMtlDesc->AttributeFormat = MTL::AttributeFormatShort4;
-      pMtlDesc->Stride = 8;
-      pMtlDesc->Alignment = 8;
+      pMtlDesc->BytesPerTexel = 8;
       break;
     }
     case DXGI_FORMAT_R32G32_TYPELESS: {
       pMtlDesc->PixelFormat = MTL::PixelFormatRG32Uint;
-      pMtlDesc->Stride = 8;
-      pMtlDesc->Alignment = 8;
+      pMtlDesc->BytesPerTexel = 8;
       break;
     }
     case DXGI_FORMAT_R32G32_FLOAT: {
       pMtlDesc->PixelFormat = MTL::PixelFormatRG32Float;
       pMtlDesc->VertexFormat = MTL::VertexFormatFloat2;
       pMtlDesc->AttributeFormat = MTL::AttributeFormatFloat2;
-      pMtlDesc->Stride = 8;
-      pMtlDesc->Alignment = 8;
+      pMtlDesc->BytesPerTexel = 8;
       break;
     }
     case DXGI_FORMAT_R32G32_UINT: {
       pMtlDesc->PixelFormat = MTL::PixelFormatRG32Uint;
       pMtlDesc->VertexFormat = MTL::VertexFormatUInt2;
       pMtlDesc->AttributeFormat = MTL::AttributeFormatUInt2;
-      pMtlDesc->Stride = 8;
-      pMtlDesc->Alignment = 8;
+      pMtlDesc->BytesPerTexel = 8;
       break;
     }
     case DXGI_FORMAT_R32G32_SINT: {
       pMtlDesc->PixelFormat = MTL::PixelFormatRG32Sint;
       pMtlDesc->VertexFormat = MTL::VertexFormatInt2;
       pMtlDesc->AttributeFormat = MTL::AttributeFormatInt2;
-      pMtlDesc->Stride = 8;
-      pMtlDesc->Alignment = 8;
+      pMtlDesc->BytesPerTexel = 8;
       break;
     }
     case DXGI_FORMAT_R32G8X24_TYPELESS:
@@ -309,157 +290,136 @@ public:
       return E_FAIL;
     case DXGI_FORMAT_R10G10B10A2_TYPELESS: {
       pMtlDesc->PixelFormat = MTL::PixelFormatRGB10A2Uint;
-      pMtlDesc->Stride = 4;
-      pMtlDesc->Alignment = 4;
+      pMtlDesc->BytesPerTexel = 4;
       break;
     }
     case DXGI_FORMAT_R10G10B10A2_UNORM: {
       pMtlDesc->PixelFormat = MTL::PixelFormatRGB10A2Unorm;
       pMtlDesc->VertexFormat = MTL::VertexFormatUInt1010102Normalized;
       pMtlDesc->AttributeFormat = MTL::AttributeFormatUInt1010102Normalized;
-      pMtlDesc->Stride = 4;
-      pMtlDesc->Alignment = 4;
+      pMtlDesc->BytesPerTexel = 4;
       pMtlDesc->SupportBackBuffer = true;
       break;
     }
     case DXGI_FORMAT_R10G10B10A2_UINT: {
       pMtlDesc->PixelFormat = MTL::PixelFormatRGB10A2Uint;
-      pMtlDesc->Stride = 4;
-      pMtlDesc->Alignment = 4;
+      pMtlDesc->BytesPerTexel = 4;
       break;
     }
     case DXGI_FORMAT_R11G11B10_FLOAT: {
       pMtlDesc->PixelFormat = MTL::PixelFormatRG11B10Float;
       pMtlDesc->VertexFormat = MTL::VertexFormatFloatRG11B10;
       pMtlDesc->AttributeFormat = MTL::AttributeFormatFloatRG11B10;
-      pMtlDesc->Stride = 4;
-      pMtlDesc->Alignment = 4;
+      pMtlDesc->BytesPerTexel = 4;
       break;
     }
     case DXGI_FORMAT_R8G8B8A8_TYPELESS: {
       pMtlDesc->PixelFormat = MTL::PixelFormatRGBA8Uint;
-      pMtlDesc->Stride = 4;
-      pMtlDesc->Alignment = 4;
+      pMtlDesc->BytesPerTexel = 4;
       break;
     }
     case DXGI_FORMAT_R8G8B8A8_UNORM: {
       pMtlDesc->PixelFormat = MTL::PixelFormatRGBA8Unorm;
       pMtlDesc->VertexFormat = MTL::VertexFormatUChar4Normalized;
       pMtlDesc->AttributeFormat = MTL::AttributeFormatUChar4Normalized;
-      pMtlDesc->Stride = 4;
-      pMtlDesc->Alignment = 4;
+      pMtlDesc->BytesPerTexel = 4;
       break;
     }
     case DXGI_FORMAT_R8G8B8A8_UNORM_SRGB: {
       pMtlDesc->PixelFormat = MTL::PixelFormatRGBA8Unorm_sRGB;
-      pMtlDesc->Stride = 4;
-      pMtlDesc->Alignment = 4;
+      pMtlDesc->BytesPerTexel = 4;
       break;
     }
     case DXGI_FORMAT_R8G8B8A8_UINT: {
       pMtlDesc->PixelFormat = MTL::PixelFormatRGBA8Uint;
       pMtlDesc->VertexFormat = MTL::VertexFormatUChar4;
       pMtlDesc->AttributeFormat = MTL::AttributeFormatUChar4;
-      pMtlDesc->Stride = 4;
-      pMtlDesc->Alignment = 4;
+      pMtlDesc->BytesPerTexel = 4;
       break;
     }
     case DXGI_FORMAT_R8G8B8A8_SNORM: {
       pMtlDesc->PixelFormat = MTL::PixelFormatRGBA8Snorm;
       pMtlDesc->VertexFormat = MTL::VertexFormatChar4Normalized;
       pMtlDesc->AttributeFormat = MTL::AttributeFormatChar4Normalized;
-      pMtlDesc->Stride = 4;
-      pMtlDesc->Alignment = 4;
+      pMtlDesc->BytesPerTexel = 4;
       break;
     }
     case DXGI_FORMAT_R8G8B8A8_SINT: {
       pMtlDesc->PixelFormat = MTL::PixelFormatRGBA8Sint;
       pMtlDesc->VertexFormat = MTL::VertexFormatChar4;
       pMtlDesc->AttributeFormat = MTL::AttributeFormatChar4;
-      pMtlDesc->Stride = 4;
-      pMtlDesc->Alignment = 4;
+      pMtlDesc->BytesPerTexel = 4;
       break;
     }
     case DXGI_FORMAT_R16G16_TYPELESS: {
       pMtlDesc->PixelFormat = MTL::PixelFormatRG16Uint;
-      pMtlDesc->Stride = 4;
-      pMtlDesc->Alignment = 4;
+      pMtlDesc->BytesPerTexel = 4;
       break;
     }
     case DXGI_FORMAT_R16G16_FLOAT: {
       pMtlDesc->PixelFormat = MTL::PixelFormatRG16Float;
       pMtlDesc->VertexFormat = MTL::VertexFormatHalf2;
       pMtlDesc->AttributeFormat = MTL::AttributeFormatHalf2;
-      pMtlDesc->Stride = 4;
-      pMtlDesc->Alignment = 4;
+      pMtlDesc->BytesPerTexel = 4;
       break;
     }
     case DXGI_FORMAT_R16G16_UNORM: {
       pMtlDesc->PixelFormat = MTL::PixelFormatRG16Unorm;
       pMtlDesc->VertexFormat = MTL::VertexFormatUShort2Normalized;
       pMtlDesc->AttributeFormat = MTL::AttributeFormatUShort2Normalized;
-      pMtlDesc->Stride = 4;
-      pMtlDesc->Alignment = 4;
+      pMtlDesc->BytesPerTexel = 4;
       break;
     }
     case DXGI_FORMAT_R16G16_UINT: {
       pMtlDesc->PixelFormat = MTL::PixelFormatRG16Uint;
       pMtlDesc->VertexFormat = MTL::VertexFormatUShort2;
       pMtlDesc->AttributeFormat = MTL::AttributeFormatUShort2;
-      pMtlDesc->Stride = 4;
-      pMtlDesc->Alignment = 4;
+      pMtlDesc->BytesPerTexel = 4;
       break;
     }
     case DXGI_FORMAT_R16G16_SNORM: {
       pMtlDesc->PixelFormat = MTL::PixelFormatRG16Snorm;
       pMtlDesc->VertexFormat = MTL::VertexFormatShort2Normalized;
       pMtlDesc->AttributeFormat = MTL::AttributeFormatShort2Normalized;
-      pMtlDesc->Stride = 4;
-      pMtlDesc->Alignment = 4;
+      pMtlDesc->BytesPerTexel = 4;
       break;
     }
     case DXGI_FORMAT_R16G16_SINT: {
       pMtlDesc->PixelFormat = MTL::PixelFormatRG16Sint;
       pMtlDesc->VertexFormat = MTL::VertexFormatShort2;
       pMtlDesc->AttributeFormat = MTL::AttributeFormatShort2;
-      pMtlDesc->Stride = 4;
-      pMtlDesc->Alignment = 4;
+      pMtlDesc->BytesPerTexel = 4;
       break;
     }
     case DXGI_FORMAT_R32_TYPELESS: {
       pMtlDesc->PixelFormat = MTL::PixelFormatR32Uint;
-      pMtlDesc->Stride = 4;
-      pMtlDesc->Alignment = 4;
+      pMtlDesc->BytesPerTexel = 4;
       break;
     }
     case DXGI_FORMAT_D32_FLOAT: {
       pMtlDesc->PixelFormat = MTL::PixelFormatDepth32Float;
-      pMtlDesc->Stride = 4;
-      pMtlDesc->Alignment = 4;
+      pMtlDesc->BytesPerTexel = 4;
       break;
     }
     case DXGI_FORMAT_R32_FLOAT: {
       pMtlDesc->PixelFormat = MTL::PixelFormatR32Float;
       pMtlDesc->VertexFormat = MTL::VertexFormatFloat;
       pMtlDesc->AttributeFormat = MTL::AttributeFormatFloat;
-      pMtlDesc->Stride = 4;
-      pMtlDesc->Alignment = 4;
+      pMtlDesc->BytesPerTexel = 4;
       break;
     }
     case DXGI_FORMAT_R32_UINT: {
       pMtlDesc->PixelFormat = MTL::PixelFormatR32Uint;
       pMtlDesc->VertexFormat = MTL::VertexFormatUInt;
       pMtlDesc->AttributeFormat = MTL::AttributeFormatUInt;
-      pMtlDesc->Stride = 4;
-      pMtlDesc->Alignment = 4;
+      pMtlDesc->BytesPerTexel = 4;
       break;
     }
     case DXGI_FORMAT_R32_SINT: {
       pMtlDesc->PixelFormat = MTL::PixelFormatR32Sint;
       pMtlDesc->VertexFormat = MTL::VertexFormatInt;
       pMtlDesc->AttributeFormat = MTL::AttributeFormatInt;
-      pMtlDesc->Stride = 4;
-      pMtlDesc->Alignment = 4;
+      pMtlDesc->BytesPerTexel = 4;
       break;
     }
     case DXGI_FORMAT_R24G8_TYPELESS: {
@@ -504,136 +464,118 @@ public:
     }
     case DXGI_FORMAT_R8G8_TYPELESS: {
       pMtlDesc->PixelFormat = MTL::PixelFormatRG8Uint;
-      pMtlDesc->Stride = 2;
-      pMtlDesc->Alignment = 2;
+      pMtlDesc->BytesPerTexel = 2;
       break;
     }
     case DXGI_FORMAT_R8G8_UNORM: {
       pMtlDesc->PixelFormat = MTL::PixelFormatRG8Unorm;
       pMtlDesc->VertexFormat = MTL::VertexFormatUChar2Normalized;
       pMtlDesc->AttributeFormat = MTL::AttributeFormatUChar2Normalized;
-      pMtlDesc->Stride = 2;
-      pMtlDesc->Alignment = 2;
+      pMtlDesc->BytesPerTexel = 2;
       break;
     }
     case DXGI_FORMAT_R8G8_UINT: {
       pMtlDesc->PixelFormat = MTL::PixelFormatRG8Uint;
       pMtlDesc->VertexFormat = MTL::VertexFormatUChar2;
       pMtlDesc->AttributeFormat = MTL::AttributeFormatUChar2;
-      pMtlDesc->Stride = 2;
-      pMtlDesc->Alignment = 2;
+      pMtlDesc->BytesPerTexel = 2;
       break;
     }
     case DXGI_FORMAT_R8G8_SNORM: {
       pMtlDesc->PixelFormat = MTL::PixelFormatRG8Snorm;
       pMtlDesc->VertexFormat = MTL::VertexFormatChar2Normalized;
       pMtlDesc->AttributeFormat = MTL::AttributeFormatChar2Normalized;
-      pMtlDesc->Stride = 2;
-      pMtlDesc->Alignment = 2;
+      pMtlDesc->BytesPerTexel = 2;
       break;
     }
     case DXGI_FORMAT_R8G8_SINT: {
       pMtlDesc->PixelFormat = MTL::PixelFormatRG8Sint;
       pMtlDesc->VertexFormat = MTL::VertexFormatChar2;
       pMtlDesc->AttributeFormat = MTL::AttributeFormatChar2;
-      pMtlDesc->Stride = 2;
-      pMtlDesc->Alignment = 2;
+      pMtlDesc->BytesPerTexel = 2;
       break;
     }
     case DXGI_FORMAT_R16_TYPELESS: {
       pMtlDesc->PixelFormat = MTL::PixelFormatR16Uint;
-      pMtlDesc->Stride = 2;
-      pMtlDesc->Alignment = 2;
+      pMtlDesc->BytesPerTexel = 2;
       break;
     }
     case DXGI_FORMAT_R16_FLOAT: {
       pMtlDesc->PixelFormat = MTL::PixelFormatR16Float;
       pMtlDesc->VertexFormat = MTL::VertexFormatHalf;
       pMtlDesc->AttributeFormat = MTL::AttributeFormatHalf;
-      pMtlDesc->Stride = 2;
-      pMtlDesc->Alignment = 2;
+      pMtlDesc->BytesPerTexel = 2;
       break;
     }
     case DXGI_FORMAT_D16_UNORM: {
       pMtlDesc->PixelFormat = MTL::PixelFormatDepth16Unorm;
-      pMtlDesc->Stride = 2;
-      pMtlDesc->Alignment = 2;
+      pMtlDesc->BytesPerTexel = 2;
       break;
     }
     case DXGI_FORMAT_R16_UNORM: {
       pMtlDesc->PixelFormat = MTL::PixelFormatR16Unorm;
       pMtlDesc->VertexFormat = MTL::VertexFormatUShortNormalized;
       pMtlDesc->AttributeFormat = MTL::AttributeFormatUShortNormalized;
-      pMtlDesc->Stride = 2;
-      pMtlDesc->Alignment = 2;
+      pMtlDesc->BytesPerTexel = 2;
       break;
     }
     case DXGI_FORMAT_R16_UINT: {
       pMtlDesc->PixelFormat = MTL::PixelFormatR16Uint;
       pMtlDesc->VertexFormat = MTL::VertexFormatUShort;
       pMtlDesc->AttributeFormat = MTL::AttributeFormatUShort;
-      pMtlDesc->Stride = 2;
-      pMtlDesc->Alignment = 2;
+      pMtlDesc->BytesPerTexel = 2;
       break;
     }
     case DXGI_FORMAT_R16_SNORM: {
       pMtlDesc->PixelFormat = MTL::PixelFormatR16Snorm;
       pMtlDesc->VertexFormat = MTL::VertexFormatShortNormalized;
       pMtlDesc->AttributeFormat = MTL::AttributeFormatShortNormalized;
-      pMtlDesc->Stride = 2;
-      pMtlDesc->Alignment = 2;
+      pMtlDesc->BytesPerTexel = 2;
       break;
     }
     case DXGI_FORMAT_R16_SINT: {
       pMtlDesc->PixelFormat = MTL::PixelFormatR16Sint;
       pMtlDesc->VertexFormat = MTL::VertexFormatShort;
       pMtlDesc->AttributeFormat = MTL::AttributeFormatShort;
-      pMtlDesc->Stride = 2;
-      pMtlDesc->Alignment = 2;
+      pMtlDesc->BytesPerTexel = 2;
       break;
     }
     case DXGI_FORMAT_R8_TYPELESS: {
       pMtlDesc->PixelFormat = MTL::PixelFormatR8Uint;
-      pMtlDesc->Stride = 1;
-      pMtlDesc->Alignment = 1;
+      pMtlDesc->BytesPerTexel = 1;
       break;
     }
     case DXGI_FORMAT_R8_UNORM: {
       pMtlDesc->PixelFormat = MTL::PixelFormatR8Unorm;
       pMtlDesc->VertexFormat = MTL::VertexFormatUCharNormalized;
       pMtlDesc->AttributeFormat = MTL::AttributeFormatUCharNormalized;
-      pMtlDesc->Stride = 1;
-      pMtlDesc->Alignment = 1;
+      pMtlDesc->BytesPerTexel = 1;
       break;
     }
     case DXGI_FORMAT_R8_UINT: {
       pMtlDesc->PixelFormat = MTL::PixelFormatR8Uint;
       pMtlDesc->VertexFormat = MTL::VertexFormatUChar;
       pMtlDesc->AttributeFormat = MTL::AttributeFormatUChar;
-      pMtlDesc->Stride = 1;
-      pMtlDesc->Alignment = 1;
+      pMtlDesc->BytesPerTexel = 1;
       break;
     }
     case DXGI_FORMAT_R8_SNORM: {
       pMtlDesc->PixelFormat = MTL::PixelFormatR8Snorm;
       pMtlDesc->VertexFormat = MTL::VertexFormatCharNormalized;
       pMtlDesc->AttributeFormat = MTL::AttributeFormatCharNormalized;
-      pMtlDesc->Stride = 1;
-      pMtlDesc->Alignment = 1;
+      pMtlDesc->BytesPerTexel = 1;
       break;
     }
     case DXGI_FORMAT_R8_SINT: {
       pMtlDesc->PixelFormat = MTL::PixelFormatR8Sint;
       pMtlDesc->VertexFormat = MTL::VertexFormatChar;
       pMtlDesc->AttributeFormat = MTL::AttributeFormatChar;
-      pMtlDesc->Stride = 1;
-      pMtlDesc->Alignment = 1;
+      pMtlDesc->BytesPerTexel = 1;
       break;
     }
     case DXGI_FORMAT_A8_UNORM: {
       pMtlDesc->PixelFormat = MTL::PixelFormatA8Unorm;
-      pMtlDesc->Stride = 1;
-      pMtlDesc->Alignment = 1;
+      pMtlDesc->BytesPerTexel = 1;
       break;
     }
     case DXGI_FORMAT_R1_UNORM: {
@@ -643,20 +585,17 @@ public:
       pMtlDesc->PixelFormat = MTL::PixelFormatRGB9E5Float;
       pMtlDesc->VertexFormat = MTL::VertexFormatFloatRGB9E5;
       pMtlDesc->AttributeFormat = MTL::AttributeFormatFloatRGB9E5;
-      pMtlDesc->Stride = 4;
-      pMtlDesc->Alignment = 4;
+      pMtlDesc->BytesPerTexel = 4;
       break;
     }
     case DXGI_FORMAT_R8G8_B8G8_UNORM: {
       pMtlDesc->PixelFormat = MTL::PixelFormatBGRG422;
-      pMtlDesc->Stride = 4;
-      pMtlDesc->Alignment = 4;
+      pMtlDesc->BytesPerTexel = 4;
       break;
     }
     case DXGI_FORMAT_G8R8_G8B8_UNORM: {
       pMtlDesc->PixelFormat = MTL::PixelFormatGBGR422;
-      pMtlDesc->Stride = 4;
-      pMtlDesc->Alignment = 4;
+      pMtlDesc->BytesPerTexel = 4;
       break;
     }
     case DXGI_FORMAT_BC1_TYPELESS:
@@ -721,22 +660,19 @@ public:
     }
     case DXGI_FORMAT_B5G6R5_UNORM: {
       pMtlDesc->PixelFormat = MTL::PixelFormatB5G6R5Unorm;
-      pMtlDesc->Stride = 2;
-      pMtlDesc->Alignment = 2;
+      pMtlDesc->BytesPerTexel = 2;
       break;
     }
     case DXGI_FORMAT_B5G5R5A1_UNORM: {
       pMtlDesc->PixelFormat = MTL::PixelFormatBGR5A1Unorm;
-      pMtlDesc->Stride = 2;
-      pMtlDesc->Alignment = 2;
+      pMtlDesc->BytesPerTexel = 2;
       break;
     }
     case DXGI_FORMAT_B8G8R8A8_UNORM: {
       pMtlDesc->PixelFormat = MTL::PixelFormatBGRA8Unorm;
       pMtlDesc->VertexFormat = MTL::VertexFormatUChar4Normalized_BGRA;
       pMtlDesc->AttributeFormat = MTL::AttributeFormatUChar4Normalized_BGRA;
-      pMtlDesc->Stride = 4;
-      pMtlDesc->Alignment = 4;
+      pMtlDesc->BytesPerTexel = 4;
       pMtlDesc->SupportBackBuffer = true;
       break;
     }
@@ -744,8 +680,7 @@ public:
       pMtlDesc->PixelFormat = MTL::PixelFormatBGRA8Unorm;
       // pMtlDesc->VertexFormat = MTL::VertexFormatUChar4Normalized_BGRA;
       // pMtlDesc->AttributeFormat = MTL::AttributeFormatUChar4Normalized_BGRA;
-      pMtlDesc->Stride = 4;
-      pMtlDesc->Alignment = 4;
+      pMtlDesc->BytesPerTexel = 4;
       pMtlDesc->SupportBackBuffer = true;
       break;
     }
@@ -756,8 +691,7 @@ public:
       pMtlDesc->PixelFormat = MTL::PixelFormatBGRA8Unorm_sRGB;
       // pMtlDesc->VertexFormat =MTL::VertexFormatUChar4Normalized_BGRA;
       // pMtlDesc->AttributeFormat =MTL::AttributeFormatUChar4Normalized_BGRA;
-      pMtlDesc->Stride = 4;
-      pMtlDesc->Alignment = 4;
+      pMtlDesc->BytesPerTexel = 4;
       pMtlDesc->SupportBackBuffer = true;
       break;
     }
@@ -765,8 +699,7 @@ public:
       pMtlDesc->PixelFormat = MTL::PixelFormatBGRA8Unorm;
       // pMtlDesc->VertexFormat =MTL::VertexFormatUChar4Normalized_BGRA;
       // pMtlDesc->AttributeFormat =MTL::AttributeFormatUChar4Normalized_BGRA;
-      pMtlDesc->Stride = 4;
-      pMtlDesc->Alignment = 4;
+      pMtlDesc->BytesPerTexel = 4;
       // pMtlDesc->SupportBackBuffer = true;
       break;
     }
@@ -774,17 +707,32 @@ public:
       pMtlDesc->PixelFormat = MTL::PixelFormatBGRA8Unorm_sRGB;
       // pMtlDesc->VertexFormat =MTL::VertexFormatUChar4Normalized_BGRA;
       // pMtlDesc->AttributeFormat =MTL::AttributeFormatUChar4Normalized_BGRA;
-      pMtlDesc->Stride = 4;
-      pMtlDesc->Alignment = 4;
+      pMtlDesc->BytesPerTexel = 4;
       pMtlDesc->SupportBackBuffer = true;
       break;
     }
     case DXGI_FORMAT_BC6H_TYPELESS:
-    case DXGI_FORMAT_BC6H_UF16:
-    case DXGI_FORMAT_BC6H_SF16:
+    case DXGI_FORMAT_BC6H_UF16: {
+      pMtlDesc->PixelFormat = MTL::PixelFormatBC6H_RGBUfloat;
+      pMtlDesc->IsCompressed = true;
+      break;
+    }
+    case DXGI_FORMAT_BC6H_SF16: {
+      pMtlDesc->PixelFormat = MTL::PixelFormatBC6H_RGBFloat;
+      pMtlDesc->IsCompressed = true;
+      break;
+    }
     case DXGI_FORMAT_BC7_TYPELESS:
-    case DXGI_FORMAT_BC7_UNORM:
-    case DXGI_FORMAT_BC7_UNORM_SRGB:
+    case DXGI_FORMAT_BC7_UNORM: {
+      pMtlDesc->PixelFormat = MTL::PixelFormatBC7_RGBAUnorm;
+      pMtlDesc->IsCompressed = true;
+      break;
+    }
+    case DXGI_FORMAT_BC7_UNORM_SRGB: {
+      pMtlDesc->PixelFormat = MTL::PixelFormatBC7_RGBAUnorm_sRGB;
+      pMtlDesc->IsCompressed = true;
+      break;
+    }
     case DXGI_FORMAT_AYUV:
     case DXGI_FORMAT_Y410:
     case DXGI_FORMAT_Y416:

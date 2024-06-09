@@ -14,8 +14,7 @@ struct MTL_FORMAT_DESC {
   MTL::AttributeFormat AttributeFormat;
   MTL::VertexFormat VertexFormat;
   dxmt::FormatCapability Capability;
-  UINT Stride;
-  UINT Alignment;
+  UINT BytesPerTexel;
   BOOL IsCompressed;
   BOOL SupportBackBuffer;
   UINT DepthStencilFlag; // 0 - none, 1 - depth, 2 - stencil

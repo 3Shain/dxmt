@@ -182,9 +182,31 @@ _NS_INLINE constexpr bool NS::Object::doesRequireMsgSendStret<void>()
 
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------
 
+#if !defined(NS_PRIVATE_IMPLEMENTATION) && !defined(NDEBUG)
+#include "errhandlingapi.h"
+
+extern "C" void ____enter_scope(PCONTEXT C);
+extern "C" void ____exit_scope();
+
+struct CaptureStackframe {    
+    CONTEXT C;
+    CaptureStackframe() {
+    C.ContextFlags = CONTEXT_FULL;
+        RtlCaptureContext(&C);
+        ____enter_scope(&C);
+    }
+    ~CaptureStackframe() {
+        ____exit_scope();
+    }
+};
+#endif
+
 template <typename _Ret, typename... _Args>
 _NS_INLINE _Ret NS::Object::sendMessage(const void* pObj, SEL selector, _Args... args)
 {
+#if !defined(NS_PRIVATE_IMPLEMENTATION) && !defined(NDEBUG)
+    CaptureStackframe _;
+#endif
 #if (defined(__i386__) || defined(__x86_64__))
     if constexpr (std::is_floating_point<_Ret>())
     {

@@ -42,9 +42,9 @@ inline void *ptr_add(const void *const p,
   return reinterpret_cast<void *>(reinterpret_cast<std::uintptr_t>(p) + amount);
 }
 
-constexpr uint32_t kCommandChunkCount = 2;
-constexpr size_t kCommandChunkCPUHeapSize = 0x4000; // 16kb
-constexpr size_t kCommandChunkGPUHeapSize = 0x4000;
+constexpr uint32_t kCommandChunkCount = 8;
+constexpr size_t kCommandChunkCPUHeapSize = 0x800000; // is 8MB too large?
+constexpr size_t kCommandChunkGPUHeapSize = 0x800000;
 
 class CommandChunk {
 
@@ -136,7 +136,8 @@ public:
     auto aligned = cpu_arugment_heap_offset + adjustment;
     cpu_arugment_heap_offset = aligned + size;
     if (cpu_arugment_heap_offset >= kCommandChunkCPUHeapSize) {
-      ERR("cpu argument heap overflow, expect error.");
+      ERR(cpu_arugment_heap_offset,
+          " - cpu argument heap overflow, expect error.");
     }
     return ptr_add(cpu_argument_heap, aligned);
   }
@@ -224,19 +225,13 @@ public:
 class CommandQueue {
 
 private:
-  uint32_t EncodingThread() {
-    env::setThreadName("dxmt-encode-thread");
-    uint64_t internal_seq = 1;
-    while (!stopped.load()) {
-      ready_for_encode.wait(internal_seq, std::memory_order_acquire);
-      if (stopped.load())
-        break;
-      // perform...
-      auto &chunk = chunks[internal_seq % kCommandChunkCount];
+  void CommitChunkInternal(CommandChunk &chunk) {
 
-      auto pool = transfer(NS::AutoreleasePool::alloc()->init());
+    auto pool = transfer(NS::AutoreleasePool::alloc()->init());
 
-      auto c = MTL::CaptureManager::sharedCaptureManager();
+    bool should_capture = ready_for_encode.load() > 60 * 40;
+
+    auto c = MTL::CaptureManager::sharedCaptureManager();
       auto d = transfer(MTL::CaptureDescriptor::alloc()->init());
       d->setCaptureObject(commandQueue->device());
       d->setDestination(MTL::CaptureDestinationGPUTraceDocument);
@@ -257,18 +252,32 @@ private:
 
       c->startCapture(d.ptr(), &pError);
 
-      auto cmdbuf = commandQueue->commandBuffer();
-      chunk.encode(cmdbuf);
-      cmdbuf->commit();
-      // cmdbuf->waitUntilScheduled(); // seems unnecessary
+    auto cmdbuf = commandQueue->commandBuffer();
+    chunk.encode(cmdbuf);
+    cmdbuf->commit();
+    // cmdbuf->waitUntilScheduled(); // seems unnecessary
 
       c->stopCapture();
 
-      ready_for_commit.fetch_add(1, std::memory_order_relaxed);
-      ready_for_commit.notify_all();
+    ready_for_commit.fetch_add(1, std::memory_order_relaxed);
+    ready_for_commit.notify_all();
+  }
+
+  uint32_t EncodingThread() {
+#ifndef SYNC_ENCODING
+    env::setThreadName("dxmt-encode-thread");
+    uint64_t internal_seq = 1;
+    while (!stopped.load()) {
+      ready_for_encode.wait(internal_seq, std::memory_order_acquire);
+      if (stopped.load())
+        break;
+      // perform...
+      auto &chunk = chunks[internal_seq % kCommandChunkCount];
+      CommitChunkInternal(chunk);
       internal_seq++;
     }
     TRACE("encoder thread gracefully terminates");
+#endif
     return 0;
   };
 
@@ -319,12 +328,12 @@ public:
     commandQueue = transfer(device->newCommandQueue(kCommandChunkCount));
     for (unsigned i = 0; i < kCommandChunkCount; i++) {
       auto &chunk = chunks[i];
-      chunk.reset();
-      chunk.cpu_argument_heap = (char *)malloc(kCommandChunkGPUHeapSize);
+      chunk.cpu_argument_heap = (char *)malloc(kCommandChunkCPUHeapSize);
       chunk.gpu_argument_heap = transfer(device->newBuffer(
           kCommandChunkGPUHeapSize, MTL::ResourceHazardTrackingModeUntracked |
                                         MTL::ResourceCPUCacheModeWriteCombined |
                                         MTL::ResourceStorageModeShared));
+      chunk.reset();
     };
   };
 
@@ -367,8 +376,14 @@ public:
   void CommitCurrentChunk() {
     chunk_ongoing.wait(kCommandChunkCount - 1, std::memory_order_relaxed);
     chunk_ongoing.fetch_add(1, std::memory_order_relaxed);
+#ifndef SYNC_ENCODING
     ready_for_encode.fetch_add(1, std::memory_order_release);
     ready_for_encode.notify_all();
+#else
+    auto &chunk = chunks[ready_for_encode % kCommandChunkCount];
+    CommitChunkInternal(chunk);
+    ready_for_encode.fetch_add(1, std::memory_order_release);
+#endif
   };
 
   void WaitCPUFence(uint64_t seq) {

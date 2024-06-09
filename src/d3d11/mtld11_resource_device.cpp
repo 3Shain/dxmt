@@ -54,7 +54,7 @@ public:
   public:
     SRV(const tag_shader_resource_view<>::DESC_S *pDesc,
         DeviceBuffer *pResource, IMTLD3D11Device *pDevice, F &&fn)
-        : SRVBase(pDesc, pResource, pDevice), f(std::move(fn)) {}
+        : SRVBase(pDesc, pResource, pDevice), f(std::forward<F>(fn)) {}
 
     void GetBoundResource(MTL_BIND_RESOURCE *ppResource) override {
       std::invoke(f, ppResource);
@@ -80,19 +80,32 @@ public:
     }
     if (structured) {
       // StructuredBuffer
-      *ppView = ref(new SRV(pDesc, this, m_parent,
-                            [ctx = Com(this)](MTL_BIND_RESOURCE *ppResource) {
-                              ppResource->Type =
-                                  MTL_BIND_BUFFER_UNBOUNDED; // FIXME: BOUNDED!
-                              ppResource->Buffer = ctx->buffer.ptr();
-                            }));
+      *ppView = ref(new SRV(
+          pDesc, this, m_parent,
+          [ctx = Com(this),
+           offset = pDesc->Buffer.FirstElement * this->desc.StructureByteStride,
+           size = pDesc->Buffer.NumElements](MTL_BIND_RESOURCE *ppResource) {
+            ppResource->Type = MTL_BIND_BUFFER_BOUNDED;
+            ppResource->Buffer = ctx->buffer.ptr();
+            ppResource->BoundOffset = offset;
+            ppResource->BoundSize = size;
+          }));
       return S_OK;
     } else {
       if (finalDesc.ViewDimension == D3D11_SRV_DIMENSION_BUFFEREX &&
           finalDesc.BufferEx.Flags & D3D11_BUFFEREX_SRV_FLAG_RAW) {
         if (!allow_raw_view)
           return E_INVALIDARG;
-        // ByteAddressBuffer
+        *ppView = ref(new SRV(
+            pDesc, this, m_parent,
+            [ctx = Com(this), offset = pDesc->Buffer.FirstElement,
+             size = pDesc->Buffer.NumElements](MTL_BIND_RESOURCE *ppResource) {
+              ppResource->Type = MTL_BIND_BUFFER_BOUNDED;
+              ppResource->Buffer = ctx->buffer.ptr();
+              ppResource->BoundOffset = offset;
+              ppResource->BoundSize = size;
+            }));
+        return S_OK;
       } else {
         Obj<MTL::Texture> view;
         if (FAILED(CreateMTLTextureView(this->m_parent, this->buffer,
@@ -115,12 +128,32 @@ public:
   using UAVBase =
       TResourceViewBase<tag_unordered_access_view<DeviceBuffer>, IMTLBindable>;
 
+  template <typename F> class UAV : public UAVBase {
+  private:
+    F f;
+
+  public:
+    UAV(const tag_unordered_access_view<>::DESC_S *pDesc,
+        DeviceBuffer *pResource, IMTLD3D11Device *pDevice, F &&fn)
+        : UAVBase(pDesc, pResource, pDevice), f(std::forward<F>(fn)) {}
+
+    void GetBoundResource(MTL_BIND_RESOURCE *ppResource) override {
+      std::invoke(f, ppResource);
+    };
+
+    void GetLogicalResourceOrView(REFIID riid,
+                                  void **ppLogicalResource) override {
+      this->resource->QueryInterface(riid, ppLogicalResource);
+    };
+  };
+
   HRESULT
   CreateUnorderedAccessView(const D3D11_UNORDERED_ACCESS_VIEW_DESC *pDesc,
                             ID3D11UnorderedAccessView **ppView) override {
     D3D11_UNORDERED_ACCESS_VIEW_DESC finalDesc;
     if (FAILED(ExtractEntireResourceViewDescription(&this->desc, pDesc,
                                                     &finalDesc))) {
+      ERR("DeviceBuffer: Failed to extract uav description");
       return E_INVALIDARG;
     }
     if (finalDesc.ViewDimension != D3D11_UAV_DIMENSION_BUFFER) {
@@ -128,17 +161,44 @@ public:
     }
     if (structured) {
       // StructuredBuffer
+      *ppView = ref(new UAV(
+          pDesc, this, m_parent,
+          [ctx = Com(this),
+           offset = pDesc->Buffer.FirstElement * this->desc.StructureByteStride,
+           size = pDesc->Buffer.NumElements](MTL_BIND_RESOURCE *ppResource) {
+            ppResource->Type = MTL_BIND_BUFFER_BOUNDED;
+            ppResource->Buffer = ctx->buffer.ptr();
+            ppResource->BoundOffset = offset;
+            ppResource->BoundSize = size;
+          }));
+      return S_OK;
     } else {
       if (finalDesc.Buffer.Flags & D3D11_BUFFER_UAV_FLAG_RAW) {
         if (!allow_raw_view)
           return E_INVALIDARG;
-        // ByteAddressBuffer
+        *ppView = ref(new UAV(
+            pDesc, this, m_parent,
+            [ctx = Com(this), offset = pDesc->Buffer.FirstElement,
+             size = pDesc->Buffer.NumElements](MTL_BIND_RESOURCE *ppResource) {
+              ppResource->Type = MTL_BIND_BUFFER_BOUNDED;
+              ppResource->Buffer = ctx->buffer.ptr();
+              ppResource->BoundOffset = offset;
+              ppResource->BoundSize = size;
+            }));
+        return S_OK;
       } else {
         Obj<MTL::Texture> view;
         if (FAILED(CreateMTLTextureView(this->m_parent, this->buffer,
                                         &finalDesc, &view))) {
           return E_FAIL;
         }
+        *ppView = ref(
+            new UAV(pDesc, this, m_parent,
+                    [view = std::move(view)](MTL_BIND_RESOURCE *ppResource) {
+                      ppResource->Type = MTL_BIND_TEXTURE;
+                      ppResource->Texture = view.ptr();
+                    }));
+        return S_OK;
       }
     }
     ERR("DeviceBuffer: UAV not supported");

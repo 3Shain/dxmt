@@ -89,8 +89,13 @@ public:
         entry.Buffer = nullptr; // dereference old
         entry.FirstConstant =
             pFirstConstant ? pFirstConstant[i - StartSlot] : 0;
-        entry.NumConstants = pNumConstants ? pNumConstants[i - StartSlot]
-                                           : 4096; // FIXME: too much
+        if (pNumConstants) {
+          entry.NumConstants = pNumConstants[i - StartSlot];
+        } else {
+          D3D11_BUFFER_DESC desc;
+          pConstantBuffer->GetDesc(&desc);
+          entry.NumConstants = desc.ByteWidth >> 4;
+        }
         if (auto dynamic = com_cast<IMTLDynamicBindable>(pConstantBuffer)) {
           dynamic->GetBindable(&entry.Buffer,
                                [this]() { binding_ready.clr(Type); });
@@ -276,6 +281,66 @@ public:
     }
   }
 
+  void CopyTexture2D(ID3D11Texture2D *pDstResource, uint32_t DstSubresource,
+                     uint32_t DstX, uint32_t DstY, uint32_t DstZ,
+                     ID3D11Texture2D *pSrcResource, uint32_t SrcSubresource,
+                     const D3D11_BOX *pSrcBox) {
+    D3D11_TEXTURE2D_DESC dst_desc;
+    D3D11_TEXTURE2D_DESC src_desc;
+    pDstResource->GetDesc(&dst_desc);
+    pSrcResource->GetDesc(&src_desc);
+    MTL_BIND_RESOURCE dst_bind;
+    // UINT bytes_per_row, bytes_per_image;
+    MTL_BIND_RESOURCE src_bind;
+    D3D11_BOX SrcBox;
+    if (pSrcBox) {
+      SrcBox = *pSrcBox;
+    } else {
+      SrcBox.left = 0;
+      SrcBox.top = 0;
+      SrcBox.right = src_desc.Width;
+      SrcBox.bottom = src_desc.Height;
+    }
+    // auto currentChunkId = cmd_queue.CurrentSeqId();
+    if (auto staging_dst = com_cast<IMTLD3D11Staging>(pDstResource)) {
+      assert(0 && "TODO: copy texture2d staging");
+    } else if (dst_desc.Usage == D3D11_USAGE_DEFAULT) {
+      auto dst = com_cast<IMTLBindable>(pDstResource);
+      assert(dst);
+      dst->GetBoundResource(&dst_bind);
+      if (auto staging_src = com_cast<IMTLD3D11Staging>(pSrcResource)) {
+        assert(0 && "TODO: copy texture2d staging");
+        // copy from staging to default
+      } else if (auto src = com_cast<IMTLBindable>(pSrcResource)) {
+        // on-device copy
+        assert(dst_bind.Type == MTL_BIND_TEXTURE);
+        src->GetBoundResource(&src_bind);
+        assert(src_bind.Type == MTL_BIND_TEXTURE);
+        EmitBlitCommand<true>([dst = Obj(dst_bind.Texture),
+                               src = Obj(src_bind.Texture), DstSubresource,
+                               SrcSubresource, DstX, DstY, DstZ,
+                               SrcBox](MTL::BlitCommandEncoder *encoder) {
+          auto src_mips = src->mipmapLevelCount();
+          auto src_level = SrcSubresource % src_mips;
+          auto src_slice = SrcSubresource / src_mips;
+          auto dst_mips = dst->mipmapLevelCount();
+          auto dst_level = DstSubresource % dst_mips;
+          auto dst_slice = DstSubresource / dst_mips;
+          encoder->copyFromTexture(
+              src, src_slice, src_level,
+              MTL::Origin::Make(SrcBox.left, SrcBox.top, 0),
+              MTL::Size::Make(SrcBox.right - SrcBox.left,
+                              SrcBox.bottom - SrcBox.top, 1),
+              dst, dst_slice, dst_level, MTL::Origin::Make(DstX, DstY, DstZ));
+        });
+      } else {
+        assert(0 && "todo");
+      }
+    } else {
+      assert(0 && "todo");
+    }
+  }
+
 #pragma endregion
 
 #pragma region CommandEncoder Maintain State
@@ -416,13 +481,17 @@ public:
               depthAttachment->setStoreAction(MTL::StoreActionStore);
 
               // TODO: should know if depth buffer has stencil bits
-              // auto stencilAttachment =
-              // renderPassDescriptor->stencilAttachment();
-              // stencilAttachment->setTexture(dsv.Texture);
-              // stencilAttachment->setLevel(dsv.MipSlice);
-              // stencilAttachment->setSlice(dsv.ArrayIndex);
-              // stencilAttachment->setLoadAction(MTL::LoadActionLoad);
-              // stencilAttachment->setStoreAction(MTL::StoreActionStore);
+              if (dsv.PixelFormat == MTL::PixelFormatDepth32Float_Stencil8 ||
+                  dsv.PixelFormat == MTL::PixelFormatDepth24Unorm_Stencil8 ||
+                  dsv.PixelFormat == MTL::PixelFormatStencil8) {
+                auto stencilAttachment =
+                    renderPassDescriptor->stencilAttachment();
+                stencilAttachment->setTexture(dsv.Texture);
+                stencilAttachment->setLevel(dsv.MipSlice);
+                stencilAttachment->setSlice(dsv.ArrayIndex);
+                stencilAttachment->setLoadAction(MTL::LoadActionLoad);
+                stencilAttachment->setStoreAction(MTL::StoreActionStore);
+              }
             }
             ctx.render_encoder =
                 ctx.cmdbuf->renderCommandEncoder(renderPassDescriptor);
@@ -637,7 +706,7 @@ public:
       encoder->setArgumentBuffer(heap, offset);
 
       auto useResource = [&](MTL::Resource *res, MTL::ResourceUsage usage) {
-        chk->emit([res, usage](CommandChunk::context &ctx) {
+        chk->emit([res = Obj(res), usage](CommandChunk::context &ctx) {
           switch (stage) {
           case ShaderType::Vertex:
             ctx.render_encoder->useResource(res, usage, MTL::RenderStageVertex);
@@ -667,14 +736,14 @@ public:
           auto &cbuf = ShaderStage.ConstantBuffers[arg.SM50BindingSlot];
           MTL_BIND_RESOURCE m;
           cbuf.Buffer->GetBoundResource(&m);
-          encoder->setBuffer(m.Buffer, 0, GetArgumentIndex(arg));
+          encoder->setBuffer(m.Buffer, cbuf.FirstConstant * 0x10,
+                             GetArgumentIndex(arg));
           useResource(m.Buffer, MTL::ResourceUsageRead);
           break;
         }
         case SM50BindingType::Sampler: {
           if (!ShaderStage.Samplers.contains(arg.SM50BindingSlot))
             break;
-
           auto &sampler = ShaderStage.Samplers[arg.SM50BindingSlot];
           assert(sampler);
           encoder->setSamplerState(sampler->GetSamplerState(),
@@ -698,9 +767,15 @@ public:
             useResource(m.Texture, MTL::ResourceUsageRead);
             break;
           }
-          case MTL_BIND_BUFFER_BOUNDED:
+          case MTL_BIND_BUFFER_BOUNDED: {
+            encoder->setBuffer(m.Buffer, m.BoundOffset, GetArgumentIndex(arg));
+            *((uint32_t *)encoder->constantData(GetArgumentIndex(arg) + 1)) =
+                m.BoundSize;
+            useResource(m.Buffer, MTL::ResourceUsageRead);
+            break;
+          }
           case MTL_BIND_UAV_WITH_COUNTER:
-            WARN("Unknown SRV binding");
+            ERR("Unknown SRV binding");
             break;
           }
           break;
@@ -725,16 +800,25 @@ public:
                           MTL::ResourceUsageRead | MTL::ResourceUsageWrite);
               break;
             }
-            case MTL_BIND_BUFFER_BOUNDED:
+            case MTL_BIND_BUFFER_BOUNDED: {
+              encoder->setBuffer(m.Buffer, m.BoundOffset,
+                                 GetArgumentIndex(arg));
+              *((uint32_t *)encoder->constantData(GetArgumentIndex(arg) + 1)) =
+                  m.BoundSize;
+              useResource(m.Buffer,
+                          MTL::ResourceUsageRead | MTL::ResourceUsageWrite);
+              break;
+            }
             case MTL_BIND_UAV_WITH_COUNTER:
-              WARN("Unknown UAV binding");
+              ERR("TODO: uav counter binding");
               break;
             }
           } else {
             if (!state_.OutputMerger.UAVs.contains(arg.SM50BindingSlot))
               break;
             // auto &uav = state_.OutputMerger.UAVs[arg.SM50BindingSlot];
-            assert(0 && "TODO");
+            // assert(0 && "TODO: graphical pipeline uav binding");
+            ERR("TODO: graphical pipeline uav binding");
           }
           break;
         }
@@ -778,7 +862,7 @@ public:
         cmdbuf_state == CommandBufferState::ComputePipelineReady) {
       CommandChunk *chk = cmd_queue.CurrentChunk();
       chk->emit([fn = std::forward<Fn>(fn)](CommandChunk::context &ctx) {
-        fn(ctx.compute_encoder.ptr(), ctx.cs_threadgroup_size);
+        std::invoke(fn, ctx.compute_encoder.ptr(), ctx.cs_threadgroup_size);
       });
     }
   };
@@ -799,21 +883,22 @@ public:
     auto state = state_.OutputMerger.DepthStencilState
                      ? state_.OutputMerger.DepthStencilState
                      : default_depth_stencil_state;
-    EmitRenderCommand<Force>(
-        [state, stencil_ref = state_.OutputMerger.StencilRef](
-            MTL::RenderCommandEncoder *encoder) {
-          encoder->setDepthStencilState(state->GetDepthStencilState());
-          encoder->setStencilReferenceValue(stencil_ref);
-        });
+    EmitRenderCommand<Force>([state = std::move(state),
+                              stencil_ref = state_.OutputMerger.StencilRef](
+                                 MTL::RenderCommandEncoder *encoder) {
+      encoder->setDepthStencilState(state->GetDepthStencilState());
+      encoder->setStencilReferenceValue(stencil_ref);
+    });
   }
 
   template <bool Force = false> void EmitSetRasterizerState() {
     auto state = state_.Rasterizer.RasterizerState
                      ? state_.Rasterizer.RasterizerState
                      : default_rasterizer_state;
-    EmitRenderCommand<Force>([state](MTL::RenderCommandEncoder *encoder) {
-      state->SetupRasterizerState(encoder);
-    });
+    EmitRenderCommand<Force>(
+        [state = std::move(state)](MTL::RenderCommandEncoder *encoder) {
+          state->SetupRasterizerState(encoder);
+        });
   }
 
   template <bool Force = false> void EmitSetScissor() {

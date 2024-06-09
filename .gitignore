@@ -12,3 +12,5 @@ build-local.txt
 *.ll
 winetricks
 *.vt100
+ref.sh
+*.js

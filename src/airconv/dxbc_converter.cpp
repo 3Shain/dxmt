@@ -1069,7 +1069,9 @@ int SM50Initialize(
               .attribute = reg,
               .type = sig.componentType() == RegisterComponentType::Float
                         ? msl_float4
-                        : msl_int4,
+                        : (sig.componentType() == RegisterComponentType::Uint
+                             ? msl_uint4
+                             : msl_int4),
               .name = sig.fullSemanticString()
             });
             prelogue_.push_back([=](IREffect &prelogue) {

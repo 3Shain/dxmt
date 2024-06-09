@@ -20,7 +20,8 @@ struct tag_texture_backbuffer {
 };
 
 class EmulatedBackBufferTexture
-    : public TResourceBase<tag_texture_backbuffer, IMTLD3D11BackBuffer> {
+    : public TResourceBase<tag_texture_backbuffer, IMTLD3D11BackBuffer,
+                           IMTLBindable> {
 
 private:
   HWND hWnd;
@@ -94,8 +95,8 @@ private:
 public:
   EmulatedBackBufferTexture(const DXGI_SWAP_CHAIN_DESC1 *pDesc,
                             IMTLD3D11Device *pDevice, HWND hWnd)
-      : TResourceBase<tag_texture_backbuffer, IMTLD3D11BackBuffer>(nullptr,
-                                                                   pDevice),
+      : TResourceBase<tag_texture_backbuffer, IMTLD3D11BackBuffer,
+                      IMTLBindable>(nullptr, pDevice),
         hWnd(hWnd) {
     if (FAILED(pDevice->QueryInterface(IID_PPV_ARGS(&layer_factory)))) {
       throw MTLD3DError("Failed to create CAMetalLayer");
@@ -257,6 +258,16 @@ public:
   CA::MetalDrawable *CurrentDrawable() override {
     return current_drawable.ptr();
   }
+
+  void GetBoundResource(MTL_BIND_RESOURCE *ppResource) override {
+    (*ppResource).Type = MTL_BIND_TEXTURE;
+    (*ppResource).Texture = GetCurrentFrameBackBuffer();
+  };
+
+  void GetLogicalResourceOrView(REFIID riid,
+                                void **ppLogicalResource) override {
+    QueryInterface(riid, ppLogicalResource);
+  };
 };
 
 Com<IMTLD3D11BackBuffer>

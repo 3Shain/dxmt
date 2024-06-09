@@ -357,6 +357,7 @@ CreateMTLTextureDescriptorInternal(
   case D3D11_RESOURCE_DIMENSION_TEXTURE1D:
     if (ArraySize > 1) {
       desc->setTextureType(MTL::TextureType1DArray);
+      desc->setArrayLength(ArraySize);
     } else {
       desc->setTextureType(MTL::TextureType1D);
     }
@@ -366,6 +367,7 @@ CreateMTLTextureDescriptorInternal(
       assert(ArraySize / 6);
       if ((ArraySize / 6) > 1) {
         desc->setTextureType(MTL::TextureTypeCubeArray);
+        desc->setArrayLength(ArraySize / 6);
       } else {
         desc->setTextureType(MTL::TextureTypeCube);
       }
@@ -373,6 +375,7 @@ CreateMTLTextureDescriptorInternal(
       if (SampleCount > 1) {
         if (ArraySize > 1) {
           desc->setTextureType(MTL::TextureType2DMultisampleArray);
+          desc->setArrayLength(ArraySize);
         } else {
           desc->setTextureType(MTL::TextureType2DMultisample);
         }
@@ -380,6 +383,7 @@ CreateMTLTextureDescriptorInternal(
       } else {
         if (ArraySize > 1) {
           desc->setTextureType(MTL::TextureType2DArray);
+          desc->setArrayLength(ArraySize);
         } else {
           desc->setTextureType(MTL::TextureType2D);
         }
@@ -479,5 +483,113 @@ void GetMipmapSize(const D3D11_TEXTURE3D_DESC *pDesc, uint32_t level,
   *pHeight = std::max(1u, pDesc->Height >> level);
   *pDepth = std::max(1u, pDesc->Depth >> level);
 }
+
+template <>
+HRESULT GetLinearTextureLayout(IMTLD3D11Device *pDevice,
+                               const D3D11_TEXTURE1D_DESC *pDesc,
+                               uint32_t level, uint32_t *pBytesPerRow,
+                               uint32_t *pBytesPerImage,
+                               uint32_t *pBytesPerSlice) {
+  Com<IMTLDXGIAdatper> pAdapter;
+  pDevice->GetAdapter(&pAdapter);
+  auto metal = pDevice->GetMTLDevice();
+  MTL_FORMAT_DESC metal_format;
+
+  if (FAILED(pAdapter->QueryFormatDesc(pDesc->Format, &metal_format))) {
+    ERR("GetLinearTextureLayout: invalid format: ", pDesc->Format);
+    return E_FAIL;
+  }
+  if (metal_format.PixelFormat == MTL::PixelFormatInvalid) {
+    ERR("GetLinearTextureLayout: invalid format: ", pDesc->Format);
+    return E_FAIL;
+  }
+  if (metal_format.BytesPerTexel == 0) {
+    ERR("GetLinearTextureLayout: not an ordinary or packed format: ",
+        pDesc->Format);
+    return E_FAIL;
+  }
+  uint32_t w, h, d;
+  GetMipmapSize(pDesc, level, &w, &h, &d);
+  auto bytes_per_row_unaligned = metal_format.BytesPerTexel * w;
+  auto alignment = metal->minimumLinearTextureAlignmentForPixelFormat(
+      metal_format.PixelFormat);
+  assert((bytes_per_row_unaligned % alignment) == 0 && "todo: ...");
+  *pBytesPerRow = 0;
+  *pBytesPerImage = 0;
+  *pBytesPerSlice = bytes_per_row_unaligned;
+  return S_OK;
+};
+
+template <>
+HRESULT GetLinearTextureLayout(IMTLD3D11Device *pDevice,
+                               const D3D11_TEXTURE2D_DESC *pDesc,
+                               uint32_t level, uint32_t *pBytesPerRow,
+                               uint32_t *pBytesPerImage,
+                               uint32_t *pBytesPerSlice) {
+  Com<IMTLDXGIAdatper> pAdapter;
+  pDevice->GetAdapter(&pAdapter);
+  auto metal = pDevice->GetMTLDevice();
+  MTL_FORMAT_DESC metal_format;
+
+  if (FAILED(pAdapter->QueryFormatDesc(pDesc->Format, &metal_format))) {
+    ERR("GetLinearTextureLayout: invalid format: ", pDesc->Format);
+    return E_FAIL;
+  }
+  if (metal_format.PixelFormat == MTL::PixelFormatInvalid) {
+    ERR("GetLinearTextureLayout: invalid format: ", pDesc->Format);
+    return E_FAIL;
+  }
+  if (metal_format.BytesPerTexel == 0) {
+    ERR("GetLinearTextureLayout: not an ordinary or packed format: ",
+        pDesc->Format);
+    return E_FAIL;
+  }
+  uint32_t w, h, d;
+  GetMipmapSize(pDesc, level, &w, &h, &d);
+  auto bytes_per_row_unaligned = metal_format.BytesPerTexel * w;
+  auto alignment = metal->minimumLinearTextureAlignmentForPixelFormat(
+      metal_format.PixelFormat);
+  assert((bytes_per_row_unaligned % alignment) == 0 && "todo: ...");
+  *pBytesPerRow = bytes_per_row_unaligned;
+  *pBytesPerImage = 0;
+  *pBytesPerSlice = bytes_per_row_unaligned * h;
+  return S_OK;
+};
+
+template <>
+HRESULT GetLinearTextureLayout(IMTLD3D11Device *pDevice,
+                               const D3D11_TEXTURE3D_DESC *pDesc,
+                               uint32_t level, uint32_t *pBytesPerRow,
+                               uint32_t *pBytesPerImage,
+                               uint32_t *pBytesPerSlice) {
+  Com<IMTLDXGIAdatper> pAdapter;
+  pDevice->GetAdapter(&pAdapter);
+  auto metal = pDevice->GetMTLDevice();
+  MTL_FORMAT_DESC metal_format;
+
+  if (FAILED(pAdapter->QueryFormatDesc(pDesc->Format, &metal_format))) {
+    ERR("GetLinearTextureLayout: invalid format: ", pDesc->Format);
+    return E_FAIL;
+  }
+  if (metal_format.PixelFormat == MTL::PixelFormatInvalid) {
+    ERR("GetLinearTextureLayout: invalid format: ", pDesc->Format);
+    return E_FAIL;
+  }
+  if (metal_format.BytesPerTexel == 0) {
+    ERR("GetLinearTextureLayout: not an ordinary or packed format: ",
+        pDesc->Format);
+    return E_FAIL;
+  }
+  uint32_t w, h, d;
+  GetMipmapSize(pDesc, level, &w, &h, &d);
+  auto bytes_per_row_unaligned = metal_format.BytesPerTexel * w;
+  auto alignment = metal->minimumLinearTextureAlignmentForPixelFormat(
+      metal_format.PixelFormat);
+  assert((bytes_per_row_unaligned % alignment) == 0 && "todo: ...");
+  *pBytesPerRow = bytes_per_row_unaligned;
+  *pBytesPerImage = bytes_per_row_unaligned * h;
+  *pBytesPerSlice = bytes_per_row_unaligned * h * d;
+  return S_OK;
+};
 
 }; // namespace dxmt

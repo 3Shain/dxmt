@@ -153,7 +153,7 @@ HRESULT CreateInputLayout(IMTLD3D11Device *device,
       return E_INVALIDARG;
     }
     attribute.format = metal_format.AttributeFormat;
-    attribute.element_stride = metal_format.Stride;
+    attribute.element_stride = metal_format.BytesPerTexel;
     attribute.slot = desc.InputSlot;
     attribute.index = inputSig.Register;
     if (attribute.slot >= 16) {

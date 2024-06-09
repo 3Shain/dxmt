@@ -88,10 +88,12 @@ public:
     if (depth_stencil_format != MTL::PixelFormatInvalid) {
       pipelineDescriptor->setDepthAttachmentPixelFormat(depth_stencil_format);
     }
-    // TODO: check depth_stencil_format has stencil channel
-    // if (stencil_format != MTL::PixelFormatInvalid) {
-    //   pipelineDescriptor->setStencilAttachmentPixelFormat(stencil_format);
-    // }
+    // FIXME: don't hardcoding!
+    if (depth_stencil_format == MTL::PixelFormatDepth32Float_Stencil8 ||
+        depth_stencil_format == MTL::PixelFormatDepth24Unorm_Stencil8 ||
+        depth_stencil_format == MTL::PixelFormatStencil8) {
+      pipelineDescriptor->setStencilAttachmentPixelFormat(depth_stencil_format);
+    }
 
     state_ = transfer(device_->GetMTLDevice()->newRenderPipelineState(
         pipelineDescriptor, &err));
