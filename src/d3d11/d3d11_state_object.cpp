@@ -356,6 +356,10 @@ public:
           kBlendFactorMap[renderTarget.DestBlend]);
       attachment_desc->setWriteMask(
           kColorWriteMaskMap[renderTarget.RenderTargetWriteMask]);
+      assert(renderTarget.SrcBlend < D3D11_BLEND_SRC1_COLOR);
+      assert(renderTarget.SrcBlendAlpha < D3D11_BLEND_SRC1_COLOR);
+      assert(renderTarget.DestBlendAlpha < D3D11_BLEND_SRC1_COLOR);
+      assert(renderTarget.DestBlend < D3D11_BLEND_SRC1_COLOR);
     }
     render_pipeline_descriptor->setAlphaToCoverageEnabled(
         desc_.AlphaToCoverageEnable);

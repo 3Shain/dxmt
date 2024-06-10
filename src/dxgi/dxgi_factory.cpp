@@ -176,7 +176,7 @@ public:
     auto device = devices->object<MTL::Device>(Adapter);
 
     *ppAdapter = CreateAdapter(device, this);
-    devices->release();
+    // devices->release(); // no you should not release it...
     return S_OK;
   }
 

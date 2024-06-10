@@ -502,8 +502,7 @@ public:
 
     EmitSetDepthStencilState<true>();
     EmitSetRasterizerState<true>();
-    EmitSetScissor<true>();
-    EmitSetViewport<true>();
+    EmitSetViewportAndScissors<true>();
     EmitSetIAState<true>();
   }
 
@@ -901,26 +900,10 @@ public:
         });
   }
 
-  template <bool Force = false> void EmitSetScissor() {
-    CommandChunk *chk = cmd_queue.CurrentChunk();
-    auto scissors = chk->reserve_vector<MTL::ScissorRect>(
-        state_.Rasterizer.NumScissorRects);
-    for (unsigned i = 0; i < state_.Rasterizer.NumScissorRects; i++) {
-      auto &d3dRect = state_.Rasterizer.scissor_rects[i];
-      scissors.push_back({(UINT)d3dRect.left, (UINT)d3dRect.top,
-                          (UINT)d3dRect.right - d3dRect.left,
-                          (UINT)d3dRect.bottom - d3dRect.top});
-    }
-    EmitRenderCommand<Force>(
-        [scissors = std::move(scissors)](MTL::RenderCommandEncoder *encoder) {
-          if (scissors.size() == 0)
-            return;
-          encoder->setScissorRects(scissors.data(), scissors.size());
-        });
-  }
-
-  template <bool Force = false> void EmitSetViewport() {
-
+  template <bool Force = false> void EmitSetViewportAndScissors() {
+    if (state_.Rasterizer.NumViewports != state_.Rasterizer.NumScissorRects) {
+      return;
+    };
     CommandChunk *chk = cmd_queue.CurrentChunk();
     auto viewports =
         chk->reserve_vector<MTL::Viewport>(state_.Rasterizer.NumViewports);
@@ -930,9 +913,28 @@ public:
                            d3dViewport.Width, d3dViewport.Height,
                            d3dViewport.MinDepth, d3dViewport.MaxDepth});
     }
+    auto scissors = chk->reserve_vector<MTL::ScissorRect>(
+        state_.Rasterizer.NumScissorRects);
+    if (state_.Rasterizer.RasterizerState->IsScissorEnabled()) {
+      for (unsigned i = 0; i < state_.Rasterizer.NumScissorRects; i++) {
+        auto &d3dRect = state_.Rasterizer.scissor_rects[i];
+        scissors.push_back({(UINT)d3dRect.left, (UINT)d3dRect.top,
+                            (UINT)d3dRect.right - d3dRect.left,
+                            (UINT)d3dRect.bottom - d3dRect.top});
+      }
+    } else {
+      for (unsigned i = 0; i < state_.Rasterizer.NumScissorRects; i++) {
+        auto &d3dViewport = state_.Rasterizer.viewports[i];
+        scissors.push_back({(UINT)d3dViewport.TopLeftX,
+                            (UINT)d3dViewport.TopLeftY, (UINT)d3dViewport.Width,
+                            (UINT)d3dViewport.Height});
+      }
+    }
     EmitRenderCommand<Force>(
-        [viewports = std::move(viewports)](MTL::RenderCommandEncoder *encoder) {
+        [viewports = std::move(viewports),
+         scissors = std::move(scissors)](MTL::RenderCommandEncoder *encoder) {
           encoder->setViewports(viewports.data(), viewports.size());
+          encoder->setScissorRects(scissors.data(), scissors.size());
         });
   }
 

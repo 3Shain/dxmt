@@ -410,7 +410,7 @@ HRESULT CreateMTLTextureDescriptor(IMTLD3D11Device *pDevice,
   Com<IMTLDXGIAdatper> adapter;
   pDevice->GetAdapter(&adapter);
   auto hr = CreateMTLTextureDescriptorInternal(
-      adapter.ptr(), D3D11_RESOURCE_DIMENSION_TEXTURE2D, pDesc->Width, 1, 1,
+      adapter.ptr(), D3D11_RESOURCE_DIMENSION_TEXTURE1D, pDesc->Width, 1, 1,
       pDesc->ArraySize, 0, pDesc->BindFlags, pDesc->CPUAccessFlags,
       pDesc->MiscFlags, pDesc->Usage, pDesc->MipLevels, pDesc->Format,
       pMtlDescOut);
@@ -448,7 +448,7 @@ HRESULT CreateMTLTextureDescriptor(IMTLD3D11Device *pDevice,
   Com<IMTLDXGIAdatper> adapter;
   pDevice->GetAdapter(&adapter);
   auto hr = CreateMTLTextureDescriptorInternal(
-      adapter.ptr(), D3D11_RESOURCE_DIMENSION_TEXTURE2D, pDesc->Width,
+      adapter.ptr(), D3D11_RESOURCE_DIMENSION_TEXTURE3D, pDesc->Width,
       pDesc->Height, pDesc->Depth, 1, 1, pDesc->BindFlags,
       pDesc->CPUAccessFlags, pDesc->MiscFlags, pDesc->Usage, pDesc->MipLevels,
       pDesc->Format, pMtlDescOut);

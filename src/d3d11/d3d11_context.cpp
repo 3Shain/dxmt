@@ -1307,6 +1307,8 @@ public:
     if (auto expected =
             com_cast<IMTLD3D11DepthStencilView>(pDepthStencilView)) {
       state_.OutputMerger.DSV = std::move(expected);
+    } else {
+      state_.OutputMerger.DSV = nullptr;
     }
 
     if (NumUAVs) {
@@ -1389,6 +1391,8 @@ public:
       state_.Rasterizer.RasterizerState = nullptr;
     }
     ctx.EmitSetRasterizerState();
+    // check scissors enabled
+    ctx.EmitSetViewportAndScissors();
   }
 
   void RSGetState(ID3D11RasterizerState **ppRasterizerState) {
@@ -1407,7 +1411,7 @@ public:
     for (auto i = 0u; i < NumViewports; i++) {
       state_.Rasterizer.viewports[i] = pViewports[i];
     }
-    ctx.EmitSetViewport();
+    ctx.EmitSetViewportAndScissors();
   }
 
   void RSGetViewports(UINT *pNumViewports, D3D11_VIEWPORT *pViewports) {
@@ -1426,7 +1430,7 @@ public:
     for (unsigned i = 0; i < NumRects; i++) {
       state_.Rasterizer.scissor_rects[i] = pRects[i];
     }
-    ctx.EmitSetScissor();
+    ctx.EmitSetViewportAndScissors();
   }
 
   void RSGetScissorRects(UINT *pNumRects, D3D11_RECT *pRects) {

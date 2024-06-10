@@ -974,6 +974,7 @@ int SM50Initialize(
           assert(0 && "Unexpected/unhandled input system value");
           break;
         }
+        max_input_register = std::max(reg + 1, max_input_register);
         break;
       }
       case D3D10_SB_OPCODE_DCL_INPUT: {
