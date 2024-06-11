@@ -61,9 +61,9 @@ MTL::Texture *BindingRef::texture() const {
 MTL::Texture *BindingRef::texture(EncodingContext *context) const {
   return std::visit(
       patterns{[](impl::JustTexture _) { return _.texture.ptr(); },
-               [=](impl::SwapchainBackbuffer) {
-                 return context->GetCurrentSwapchainBackbuffer();
-               },
+              //  [=](impl::SwapchainBackbuffer) {
+              //    return context->GetCurrentSwapchainBackbuffer();
+              //  },
                //  [](impl::LazyTexture t) { return t.thunk(); },
                [](BackBufferSource *s) {
                  return (MTL::Texture *)s->GetCurrentFrameBackBuffer();
@@ -132,9 +132,9 @@ MTL::Resource *BindingRef::resource(EncodingContext *context) const {
             return (MTL::Resource *)_.buffer.ptr();
           },
           [](impl::JustTexture _) { return (MTL::Resource *)_.texture.ptr(); },
-          [=](impl::SwapchainBackbuffer) {
-            return (MTL::Resource *)context->GetCurrentSwapchainBackbuffer();
-          },
+          // [=](impl::SwapchainBackbuffer) {
+          //   return (MTL::Resource *)context->GetCurrentSwapchainBackbuffer();
+          // },
           // [](impl::LazyTexture t) { return (MTL::Resource *)t.thunk(); },
           [](BackBufferSource *s) {
             return (MTL::Resource *)s->GetCurrentFrameBackBuffer();

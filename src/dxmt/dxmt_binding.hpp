@@ -8,7 +8,7 @@
 namespace dxmt {
 
 struct EncodingContext {
-  virtual MTL::Texture *GetCurrentSwapchainBackbuffer() = 0;
+  // virtual MTL::Texture *GetCurrentSwapchainBackbuffer() = 0;
 };
 
 struct BackBufferSource {
