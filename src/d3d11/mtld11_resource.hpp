@@ -7,6 +7,7 @@
 #include "com/com_guid.hpp"
 #include "d3d11_view.hpp"
 #include "dxgi_resource.hpp"
+#include "dxmt_binding.hpp"
 #include "dxmt_resource_binding.hpp"
 #include "log/log.hpp"
 #include "mtld11_interfaces.hpp"
@@ -60,7 +61,15 @@ DEFINE_COM_INTERFACE("1c7e7c98-6dd4-42f0-867b-67960806886e", IMTLBindable)
   /**
   Note: the resource object is NOT retained by design
   */
-  virtual void GetBoundResource(MTL_BIND_RESOURCE * ppResource) = 0;
+  // virtual void GetBoundResource(MTL_BIND_RESOURCE * ppResource) = 0;
+
+  // I swear I will use my own rtti system instead of COM
+  // it's just weird to involve c++ class in a COM interface
+  // the argument `bindAtSeqId` is not checked
+  virtual dxmt::BindingRef GetBinding(uint64_t bindAtSeqId) = 0;
+  // it's only used as a potential to optimize resource updating
+  // generally assume it return `true` meaning it's in use
+  virtual bool GetContentionState(uint64_t finishedSeqId) = 0;
   virtual void GetLogicalResourceOrView(REFIID riid,
                                         void **ppLogicalResource) = 0;
 };
@@ -75,7 +84,7 @@ DEFINE_COM_INTERFACE("daf21510-d136-44dd-bb16-068a94690775",
 DEFINE_COM_INTERFACE("65feb8c5-01de-49df-bf58-d115007a117d", IMTLDynamicBuffer)
     : public IUnknown {
   virtual MTL::Buffer *GetCurrentBuffer(UINT * pBytesPerRow) = 0;
-  virtual void RotateBuffer(IMTLDynamicBufferPool * pool) = 0;
+  virtual void RotateBuffer(IMTLDynamicBufferExchange * pool) = 0;
 };
 
 DEFINE_COM_INTERFACE("0988488c-75fb-44f3-859a-b6fb2d022239",
@@ -374,6 +383,8 @@ public:
   virtual ULONG64 GetUnderlyingResourceId() { return (ULONG64)resource.ptr(); };
 
   virtual dxmt::ResourceSubset GetViewRange() { return ResourceSubset(desc); };
+
+  virtual bool GetContentionState(uint64_t finishedSeqId) { return true; };
 
 protected:
   tag::DESC_S desc;

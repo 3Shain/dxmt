@@ -98,6 +98,9 @@ public:
     if (pDesc == nullptr)
       return E_INVALIDARG;
 
+    wcscpy(pDesc->Description,
+           (const wchar_t *)m_deivce->name()->cString(NS::UTF16StringEncoding));
+
     //   pDesc->VendorId = deviceProp.vendorID;
     //   pDesc->DeviceId = deviceProp.deviceID;
     //   pDesc->SubSysId = 0;
@@ -106,7 +109,7 @@ public:
     //   pDesc->DedicatedSystemMemory = 0;
     //   pDesc->SharedSystemMemory = sharedMemory;
     //   pDesc->AdapterLuid = LUID{0, 0};
-    //   pDesc->Flags = DXGI_ADAPTER_FLAG3_NONE;
+    pDesc->Flags = DXGI_ADAPTER_FLAG_NONE;
     //   pDesc->GraphicsPreemptionGranularity =
     //       DXGI_GRAPHICS_PREEMPTION_DMA_BUFFER_BOUNDARY;
     //   pDesc->ComputePreemptionGranularity =

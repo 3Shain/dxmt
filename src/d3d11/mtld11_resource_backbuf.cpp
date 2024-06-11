@@ -1,3 +1,4 @@
+#include "dxmt_binding.hpp"
 #include "dxmt_names.hpp"
 #include "Metal/MTLPixelFormat.hpp"
 #include "Metal/MTLTexture.hpp"
@@ -21,7 +22,8 @@ struct tag_texture_backbuffer {
 
 class EmulatedBackBufferTexture
     : public TResourceBase<tag_texture_backbuffer, IMTLD3D11BackBuffer,
-                           IMTLBindable> {
+                           IMTLBindable>,
+      BackBufferSource {
 
 private:
   HWND hWnd;
@@ -46,9 +48,9 @@ private:
       return resource->layer_->pixelFormat();
     };
 
-    MTL::Texture *GetCurrentTexture() final {
-      return resource->GetCurrentFrameBackBuffer();
-    }
+    BindingRef GetBinding(uint64_t) {
+      return BindingRef(static_cast<BackBufferSource *>(resource.ptr()));
+    };
   };
   friend class BackBufferRTV;
 
@@ -61,14 +63,13 @@ private:
                   EmulatedBackBufferTexture *context, IMTLD3D11Device *pDevice)
         : BackBufferSRVBase(pDesc, context, pDevice) {}
 
-    void GetBoundResource(MTL_BIND_RESOURCE *ppResource) override {
-      (*ppResource).Type = MTL_BIND_TEXTURE;
-      (*ppResource).Texture = resource->GetCurrentFrameBackBuffer();
+    BindingRef GetBinding(uint64_t) override {
+      return BindingRef(static_cast<BackBufferSource *>(resource.ptr()));
     };
 
     void GetLogicalResourceOrView(REFIID riid,
                                   void **ppLogicalResource) override {
-      resource->QueryInterface(riid, ppLogicalResource);
+      QueryInterface(riid, ppLogicalResource);
     };
   };
 
@@ -81,14 +82,13 @@ private:
                   EmulatedBackBufferTexture *context, IMTLD3D11Device *pDevice)
         : BackBufferUAVBase(pDesc, context, pDevice) {}
 
-    void GetBoundResource(MTL_BIND_RESOURCE *ppResource) override {
-      (*ppResource).Type = MTL_BIND_TEXTURE;
-      (*ppResource).Texture = resource->GetCurrentFrameBackBuffer();
+    BindingRef GetBinding(uint64_t) override {
+      return BindingRef(static_cast<BackBufferSource *>(resource.ptr()));
     };
 
     void GetLogicalResourceOrView(REFIID riid,
                                   void **ppLogicalResource) override {
-      resource->QueryInterface(riid, ppLogicalResource);
+      QueryInterface(riid, ppLogicalResource);
     };
   };
 
@@ -124,7 +124,7 @@ public:
     layer_->setDevice(pDevice->GetMTLDevice());
     layer_->setPixelFormat(metal_format.PixelFormat);
     layer_->setDrawableSize({(double)pDesc->Width, (double)pDesc->Height});
-
+    // layer_->setDisplaySyncEnabled(false);
     desc.ArraySize = 1;
     desc.SampleDesc = {1, 0};
     desc.MipLevels = 1;
@@ -245,7 +245,7 @@ public:
     return S_OK;
   }
 
-  MTL::Texture *GetCurrentFrameBackBuffer() {
+  MTL::Texture *GetCurrentFrameBackBuffer() override {
     if (current_drawable == nullptr) {
       current_drawable = layer_->nextDrawable();
       assert(current_drawable != nullptr);
@@ -259,15 +259,16 @@ public:
     return current_drawable.ptr();
   }
 
-  void GetBoundResource(MTL_BIND_RESOURCE *ppResource) override {
-    (*ppResource).Type = MTL_BIND_TEXTURE;
-    (*ppResource).Texture = GetCurrentFrameBackBuffer();
+  BindingRef GetBinding(uint64_t) override {
+    return BindingRef(static_cast<BackBufferSource *>(this));
   };
 
   void GetLogicalResourceOrView(REFIID riid,
                                 void **ppLogicalResource) override {
     QueryInterface(riid, ppLogicalResource);
   };
+
+  bool GetContentionState(uint64_t finishedSeqId) override { return true; }
 };
 
 Com<IMTLD3D11BackBuffer>

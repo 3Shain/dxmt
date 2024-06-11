@@ -169,7 +169,7 @@ public:
 
     auto devices = MTL::CopyAllDevices();
 
-    if (Adapter >= devices->count()) {
+    if (Adapter >= (UINT)devices->count()) {
       return DXGI_ERROR_INVALID_CALL;
     }
 

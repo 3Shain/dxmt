@@ -9,6 +9,7 @@
 #include "log/log.hpp"
 #include "mtld11_resource.hpp"
 #include "util_string.hpp"
+#include <unordered_map>
 
 namespace dxmt {
 
@@ -28,9 +29,9 @@ struct CONSTANT_BUFFER_B {
 };
 
 struct D3D11ShaderStageState {
-  std::map<UINT, Com<IMTLBindable>> SRVs;
-  std::map<UINT, Com<IMTLD3D11SamplerState>> Samplers;
-  std::map<UINT, CONSTANT_BUFFER_B> ConstantBuffers;
+  std::unordered_map<UINT, Com<IMTLBindable>> SRVs;
+  std::unordered_map<UINT, Com<IMTLD3D11SamplerState>> Samplers;
+  std::unordered_map<UINT, CONSTANT_BUFFER_B> ConstantBuffers;
   Com<IMTLD3D11Shader> Shader;
 };
 

@@ -32,6 +32,15 @@ typedef uint32_t ShaderType;
 typedef uint32_t SM50BindingType;
 #endif
 
+enum MTL_SM50_SHADER_ARGUMENT_FLAG: uint32_t {
+  MTL_SM50_SHADER_ARGUMENT_BUFFER = 1 << 0,
+  MTL_SM50_SHADER_ARGUMENT_TEXTURE = 1 << 1,
+  MTL_SM50_SHADER_ARGUMENT_ELEMENT_WIDTH = 1 << 2,
+  MTL_SM50_SHADER_ARGUMENT_UAV_COUNTER = 1<< 3,
+  MTL_SM50_SHADER_ARGUMENT_READ_ACCESS = 1<< 10,
+  MTL_SM50_SHADER_ARGUMENT_WRITE_ACCESS = 1<< 11,
+};
+
 struct MTL_SM50_SHADER_ARGUMENT {
   SM50BindingType Type;
   /**
@@ -42,6 +51,7 @@ struct MTL_SM50_SHADER_ARGUMENT {
   sampler:            s2  -> 2
   */
   uint32_t SM50BindingSlot;
+  enum MTL_SM50_SHADER_ARGUMENT_FLAG Flags;
 };
 
 struct MTL_SHADER_REFLECTION {

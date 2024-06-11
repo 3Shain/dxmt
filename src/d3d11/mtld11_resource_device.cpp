@@ -5,6 +5,7 @@
 #include "com/com_pointer.hpp"
 #include "d3d11_device.hpp"
 #include "d3d11_texture.hpp"
+#include "dxmt_binding.hpp"
 #include "log/log.hpp"
 #include "mtld11_resource.hpp"
 #include "objc_pointer.hpp"
@@ -36,10 +37,10 @@ public:
         desc->MiscFlags & D3D11_RESOURCE_MISC_BUFFER_ALLOW_RAW_VIEWS;
   }
 
-  void GetBoundResource(MTL_BIND_RESOURCE *ppResource) override {
-    (*ppResource).Type = MTL_BIND_BUFFER_UNBOUNDED;
-    (*ppResource).Buffer = buffer.ptr();
-  };
+  BindingRef GetBinding(uint64_t) override { return BindingRef(buffer.ptr()); };
+
+  bool GetContentionState(uint64_t) override { return true; };
+
   void GetLogicalResourceOrView(REFIID riid,
                                 void **ppLogicalResource) override {
     QueryInterface(riid, ppLogicalResource);
@@ -56,13 +57,11 @@ public:
         DeviceBuffer *pResource, IMTLD3D11Device *pDevice, F &&fn)
         : SRVBase(pDesc, pResource, pDevice), f(std::forward<F>(fn)) {}
 
-    void GetBoundResource(MTL_BIND_RESOURCE *ppResource) override {
-      std::invoke(f, ppResource);
-    };
+    BindingRef GetBinding(uint64_t t) override { return std::invoke(f, t); };
 
     void GetLogicalResourceOrView(REFIID riid,
                                   void **ppLogicalResource) override {
-      this->resource->QueryInterface(riid, ppLogicalResource);
+      QueryInterface(riid, ppLogicalResource);
     };
   };
 
@@ -84,11 +83,8 @@ public:
           pDesc, this, m_parent,
           [ctx = Com(this),
            offset = pDesc->Buffer.FirstElement * this->desc.StructureByteStride,
-           size = pDesc->Buffer.NumElements](MTL_BIND_RESOURCE *ppResource) {
-            ppResource->Type = MTL_BIND_BUFFER_BOUNDED;
-            ppResource->Buffer = ctx->buffer.ptr();
-            ppResource->BoundOffset = offset;
-            ppResource->BoundSize = size;
+           size = pDesc->Buffer.NumElements](uint64_t) {
+            return BindingRef(ctx->buffer.ptr(), size, offset);
           }));
       return S_OK;
     } else {
@@ -96,15 +92,12 @@ public:
           finalDesc.BufferEx.Flags & D3D11_BUFFEREX_SRV_FLAG_RAW) {
         if (!allow_raw_view)
           return E_INVALIDARG;
-        *ppView = ref(new SRV(
-            pDesc, this, m_parent,
-            [ctx = Com(this), offset = pDesc->Buffer.FirstElement,
-             size = pDesc->Buffer.NumElements](MTL_BIND_RESOURCE *ppResource) {
-              ppResource->Type = MTL_BIND_BUFFER_BOUNDED;
-              ppResource->Buffer = ctx->buffer.ptr();
-              ppResource->BoundOffset = offset;
-              ppResource->BoundSize = size;
-            }));
+        *ppView =
+            ref(new SRV(pDesc, this, m_parent,
+                        [ctx = Com(this), offset = pDesc->Buffer.FirstElement,
+                         size = pDesc->Buffer.NumElements](uint64_t) {
+                          return BindingRef(ctx->buffer.ptr(), size, offset);
+                        }));
         return S_OK;
       } else {
         Obj<MTL::Texture> view;
@@ -113,11 +106,9 @@ public:
           return E_FAIL;
         }
         *ppView = ref(
-            new SRV(pDesc, this, m_parent,
-                    [view = std::move(view)](MTL_BIND_RESOURCE *ppResource) {
-                      ppResource->Type = MTL_BIND_TEXTURE;
-                      ppResource->Texture = view.ptr();
-                    }));
+            new SRV(pDesc, this, m_parent, [view = std::move(view)](uint64_t) {
+              return BindingRef(view.ptr());
+            }));
         return S_OK;
       }
     }
@@ -137,13 +128,11 @@ public:
         DeviceBuffer *pResource, IMTLD3D11Device *pDevice, F &&fn)
         : UAVBase(pDesc, pResource, pDevice), f(std::forward<F>(fn)) {}
 
-    void GetBoundResource(MTL_BIND_RESOURCE *ppResource) override {
-      std::invoke(f, ppResource);
-    };
+    BindingRef GetBinding(uint64_t t) override { return std::invoke(f, t); };
 
     void GetLogicalResourceOrView(REFIID riid,
                                   void **ppLogicalResource) override {
-      this->resource->QueryInterface(riid, ppLogicalResource);
+      QueryInterface(riid, ppLogicalResource);
     };
   };
 
@@ -166,26 +155,20 @@ public:
           pDesc, this, m_parent,
           [ctx = Com(this),
            offset = pDesc->Buffer.FirstElement * this->desc.StructureByteStride,
-           size = pDesc->Buffer.NumElements](MTL_BIND_RESOURCE *ppResource) {
-            ppResource->Type = MTL_BIND_BUFFER_BOUNDED;
-            ppResource->Buffer = ctx->buffer.ptr();
-            ppResource->BoundOffset = offset;
-            ppResource->BoundSize = size;
+           size = pDesc->Buffer.NumElements](uint64_t) {
+            return BindingRef(ctx->buffer.ptr(), size, offset);
           }));
       return S_OK;
     } else {
       if (finalDesc.Buffer.Flags & D3D11_BUFFER_UAV_FLAG_RAW) {
         if (!allow_raw_view)
           return E_INVALIDARG;
-        *ppView = ref(new UAV(
-            pDesc, this, m_parent,
-            [ctx = Com(this), offset = pDesc->Buffer.FirstElement,
-             size = pDesc->Buffer.NumElements](MTL_BIND_RESOURCE *ppResource) {
-              ppResource->Type = MTL_BIND_BUFFER_BOUNDED;
-              ppResource->Buffer = ctx->buffer.ptr();
-              ppResource->BoundOffset = offset;
-              ppResource->BoundSize = size;
-            }));
+        *ppView =
+            ref(new UAV(pDesc, this, m_parent,
+                        [ctx = Com(this), offset = pDesc->Buffer.FirstElement,
+                         size = pDesc->Buffer.NumElements](uint64_t) {
+                          return BindingRef(ctx->buffer.ptr(), size, offset);
+                        }));
         return S_OK;
       } else {
         Obj<MTL::Texture> view;
@@ -194,11 +177,9 @@ public:
           return E_FAIL;
         }
         *ppView = ref(
-            new UAV(pDesc, this, m_parent,
-                    [view = std::move(view)](MTL_BIND_RESOURCE *ppResource) {
-                      ppResource->Type = MTL_BIND_TEXTURE;
-                      ppResource->Texture = view.ptr();
-                    }));
+            new UAV(pDesc, this, m_parent, [view = std::move(view)](uint64_t) {
+              return BindingRef(view.ptr());
+            }));
         return S_OK;
       }
     }
@@ -249,14 +230,11 @@ private:
                DeviceTexture *pResource, IMTLD3D11Device *pDevice)
         : SRVBase(pDesc, pResource, pDevice), view(view) {}
 
-    void GetBoundResource(MTL_BIND_RESOURCE *ppResource) override {
-      (*ppResource).Type = MTL_BIND_TEXTURE;
-      (*ppResource).Texture = view.ptr();
-    };
+    BindingRef GetBinding(uint64_t) override { return BindingRef(view.ptr()); };
 
     void GetLogicalResourceOrView(REFIID riid,
                                   void **ppLogicalResource) override {
-      this->resource->QueryInterface(riid, ppLogicalResource);
+      this->QueryInterface(riid, ppLogicalResource);
     };
   };
 
@@ -273,14 +251,11 @@ private:
                DeviceTexture *pResource, IMTLD3D11Device *pDevice)
         : UAVBase(pDesc, pResource, pDevice), view(view) {}
 
-    void GetBoundResource(MTL_BIND_RESOURCE *ppResource) override {
-      (*ppResource).Type = MTL_BIND_TEXTURE;
-      (*ppResource).Texture = view.ptr();
-    };
+    BindingRef GetBinding(uint64_t) override { return BindingRef(view.ptr()); };
 
     void GetLogicalResourceOrView(REFIID riid,
                                   void **ppLogicalResource) override {
-      this->resource->QueryInterface(riid, ppLogicalResource);
+      this->QueryInterface(riid, ppLogicalResource);
     };
   };
 
@@ -298,7 +273,7 @@ private:
 
     MTL::PixelFormat GetPixelFormat() final { return view->pixelFormat(); }
 
-    MTL::Texture *GetCurrentTexture() final { return view.ptr(); }
+    BindingRef GetBinding(uint64_t) final { return BindingRef(view.ptr()); }
   };
 
   using DSVBase =
@@ -315,7 +290,7 @@ private:
 
     MTL::PixelFormat GetPixelFormat() final { return view->pixelFormat(); }
 
-    MTL::Texture *GetCurrentTexture() final { return view.ptr(); }
+    BindingRef GetBinding(uint64_t) final { return BindingRef(view.ptr()); }
   };
 
 public:
@@ -324,10 +299,11 @@ public:
       : TResourceBase<tag_texture, IMTLBindable>(pDesc, pDevice),
         texture(texture) {}
 
-  void GetBoundResource(MTL_BIND_RESOURCE *ppResource) override {
-    (*ppResource).Type = MTL_BIND_TEXTURE;
-    (*ppResource).Texture = texture.ptr();
+  BindingRef GetBinding(uint64_t) override {
+    return BindingRef(texture.ptr());
   };
+
+  bool GetContentionState(uint64_t) override { return true; };
 
   void GetLogicalResourceOrView(REFIID riid,
                                 void **ppLogicalResource) override {

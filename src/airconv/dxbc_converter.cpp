@@ -1346,22 +1346,55 @@ int SM50Initialize(
 
   for (auto &[range_id, _] : shader_info->cbufferMap) {
     sm50_shader->args_reflection.push_back(
-      {.Type = SM50BindingType::ConstantBuffer, .SM50BindingSlot = range_id}
+      {.Type = SM50BindingType::ConstantBuffer,
+       .SM50BindingSlot = range_id,
+       .Flags =
+         MTL_SM50_SHADER_ARGUMENT_BUFFER | MTL_SM50_SHADER_ARGUMENT_READ_ACCESS}
     );
   }
   for (auto &[range_id, _] : shader_info->samplerMap) {
     sm50_shader->args_reflection.push_back(
-      {.Type = SM50BindingType::Sampler, .SM50BindingSlot = range_id}
+      {.Type = SM50BindingType::Sampler,
+       .SM50BindingSlot = range_id,
+       .Flags = (MTL_SM50_SHADER_ARGUMENT_FLAG)0}
     );
   }
   for (auto &[range_id, srv] : shader_info->srvMap) {
+    MTL_SM50_SHADER_ARGUMENT_FLAG flags = (MTL_SM50_SHADER_ARGUMENT_FLAG)0;
+    if (srv.resource_type == ResourceType::NonApplicable) {
+      flags |= MTL_SM50_SHADER_ARGUMENT_ELEMENT_WIDTH |
+               MTL_SM50_SHADER_ARGUMENT_BUFFER;
+    } else {
+      flags |= MTL_SM50_SHADER_ARGUMENT_TEXTURE;
+    }
+    if (srv.read || srv.sampled || srv.compared) {
+      flags |= MTL_SM50_SHADER_ARGUMENT_READ_ACCESS;
+    }
     sm50_shader->args_reflection.push_back(
-      {.Type = SM50BindingType::SRV, .SM50BindingSlot = range_id}
+      {.Type = SM50BindingType::SRV, .SM50BindingSlot = range_id, .Flags = flags
+      }
     );
   }
   for (auto &[range_id, uav] : shader_info->uavMap) {
+    MTL_SM50_SHADER_ARGUMENT_FLAG flags = (MTL_SM50_SHADER_ARGUMENT_FLAG)0;
+    if (uav.resource_type == ResourceType::NonApplicable) {
+      flags |= MTL_SM50_SHADER_ARGUMENT_ELEMENT_WIDTH |
+               MTL_SM50_SHADER_ARGUMENT_BUFFER;
+    } else {
+      flags |= MTL_SM50_SHADER_ARGUMENT_TEXTURE;
+    }
+    if (uav.read) {
+      flags |= MTL_SM50_SHADER_ARGUMENT_READ_ACCESS;
+    }
+    if (uav.written) {
+      flags |= MTL_SM50_SHADER_ARGUMENT_WRITE_ACCESS;
+    }
+    if (uav.with_counter) {
+      flags |= MTL_SM50_SHADER_ARGUMENT_UAV_COUNTER;
+    }
     sm50_shader->args_reflection.push_back(
-      {.Type = SM50BindingType::UAV, .SM50BindingSlot = range_id}
+      {.Type = SM50BindingType::UAV, .SM50BindingSlot = range_id, .Flags = flags
+      }
     );
   }
 

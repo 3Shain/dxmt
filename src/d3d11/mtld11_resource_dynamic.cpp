@@ -6,6 +6,7 @@
 #include "com/com_pointer.hpp"
 #include "d3d11_device.hpp"
 #include "dxgi_interfaces.h"
+#include "dxmt_buffer_pool.hpp"
 #include "mtld11_resource.hpp"
 #include "Metal/MTLBuffer.hpp"
 #include "Metal/MTLTexture.hpp"
@@ -50,9 +51,9 @@ public:
     return E_NOINTERFACE;
   }
 
-  void GetBoundResource(MTL_BIND_RESOURCE *ppResource) override {
-    std::invoke(fn, ppResource);
-  };
+  BindingRef GetBinding(uint64_t x) override { return std::invoke(fn, x); };
+
+  bool GetContentionState(uint64_t finishedSeqId) override { return true; }
 
   void GetLogicalResourceOrView(REFIID riid,
                                 void **ppLogicalResource) override {
@@ -89,8 +90,9 @@ private:
       IMTLNotifiedBindable *ret = ref(new DynamicBinding(
           static_cast<ID3D11ShaderResourceView *>(this),
           std::move(onBufferSwap),
-          [u = this->resource.ptr()](MTL_BIND_RESOURCE *pResource) {
+          [u = this->resource.ptr()](uint64_t) {
             assert(0 && "todo: prepare srv view");
+            return BindingRef(std::nullopt);
           },
           [u = this->resource.ptr()](IMTLNotifiedBindable *_this) {
             u->RemoveObserver(_this);
@@ -106,6 +108,8 @@ private:
 
   std::set<SRV *> weak_srvs;
 
+  std::unique_ptr<BufferPool> pool;
+
 public:
   DynamicBuffer(const tag_buffer::DESC_S *desc,
                 const D3D11_SUBRESOURCE_DATA *pInitialData,
@@ -113,11 +117,14 @@ public:
       : TResourceBase<tag_buffer, IMTLDynamicBuffer, IMTLDynamicBindable>(
             desc, device) {
     auto metal = device->GetMTLDevice();
-    buffer_dynamic = transfer(metal->newBuffer(desc->ByteWidth, 0));
+    auto options = MTL::ResourceCPUCacheModeWriteCombined |
+                   MTL::ResourceHazardTrackingModeUntracked;
+    buffer_dynamic = transfer(metal->newBuffer(desc->ByteWidth, options));
     if (pInitialData) {
       memcpy(buffer_dynamic->contents(), pInitialData->pSysMem,
              desc->ByteWidth);
     }
+    pool = std::make_unique<BufferPool>(metal, desc->ByteWidth, options);
   }
 
   MTL::Buffer *GetCurrentBuffer(UINT *pBytesPerRow) override {
@@ -128,11 +135,7 @@ public:
                    std::function<void()> &&onBufferSwap) override {
     auto ret = ref(new DynamicBinding(
         static_cast<ID3D11Buffer *>(this), std::move(onBufferSwap),
-        [this](MTL_BIND_RESOURCE *pResource) {
-          MTL_BIND_RESOURCE &resource = *pResource;
-          resource.Type = MTL_BIND_BUFFER_UNBOUNDED;
-          resource.Buffer = this->buffer_dynamic.ptr();
-        },
+        [this](uint64_t) { return BindingRef(buffer_dynamic.ptr()); },
         [this](IMTLNotifiedBindable *_binding) {
           this->RemoveObserver(_binding);
         }));
@@ -140,8 +143,8 @@ public:
     *ppResource = ret;
   };
 
-  void RotateBuffer(IMTLDynamicBufferPool *pool) override {
-    pool->ExchangeFromPool(&buffer_dynamic);
+  void RotateBuffer(IMTLDynamicBufferExchange *exch) override {
+    exch->ExchangeFromPool(&buffer_dynamic, pool.get());
     for (auto srv : weak_srvs) {
       srv->RotateView();
     }
@@ -222,9 +225,8 @@ private:
       auto ret = ref(new DynamicBinding(
           static_cast<ID3D11ShaderResourceView *>(this),
           std::move(onBufferSwap),
-          [u = this->resource.ptr(), this](MTL_BIND_RESOURCE *pResource) {
-            pResource->Type = MTL_BIND_TEXTURE;
-            pResource->Texture = this->view.ptr();
+          [u = this->resource.ptr(), this](uint64_t) {
+            return BindingRef(this->view.ptr());
           },
           [u = this->resource.ptr()](IMTLNotifiedBindable *_this) {
             u->RemoveObserver(_this);
@@ -241,21 +243,27 @@ private:
 
   std::set<IMTLNotifiedBindable *> observers;
   std::set<SRV *> weak_srvs;
+  std::unique_ptr<BufferPool> pool_;
 
 public:
   DynamicTexture2D(const tag_texture_2d::DESC_S *desc,
                    Obj<MTL::Buffer> &&buffer, IMTLD3D11Device *device,
                    UINT bytesPerRow)
       : TResourceBase<tag_texture_2d, IMTLDynamicBuffer>(desc, device),
-        buffer(std::move(buffer)), bytes_per_row(bytesPerRow) {}
+        buffer(std::move(buffer)), bytes_per_row(bytesPerRow) {
+
+    pool_ = std::make_unique<BufferPool>(device->GetMTLDevice(),
+                                         this->buffer->length(),
+                                         this->buffer->resourceOptions());
+  }
 
   MTL::Buffer *GetCurrentBuffer(UINT *pBytesPerRow) override {
     *pBytesPerRow = bytes_per_row;
     return buffer.ptr();
   };
 
-  void RotateBuffer(IMTLDynamicBufferPool *pool) override {
-    pool->ExchangeFromPool(&buffer);
+  void RotateBuffer(IMTLDynamicBufferExchange *exch) override {
+    exch->ExchangeFromPool(&buffer, pool_.get());
     for (auto srv : weak_srvs) {
       srv->RotateView();
     }

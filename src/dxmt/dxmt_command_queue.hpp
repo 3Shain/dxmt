@@ -11,6 +11,7 @@
 #include "Metal/MTLDevice.hpp"
 #include "Metal/MTLCaptureManager.hpp"
 #include "Metal/MTLTypes.hpp"
+#include "dxmt_binding.hpp"
 #include "log/log.hpp"
 #include "objc_pointer.hpp"
 // #include "thread.hpp"
@@ -105,7 +106,7 @@ class CommandChunk {
     Node *next;
   };
 
-  class context_t {
+  class context_t : public EncodingContext {
   public:
     CommandChunk *chk;
     MTL::CommandBuffer *cmdbuf;
@@ -113,6 +114,9 @@ class CommandChunk {
     Obj<MTL::ComputeCommandEncoder> compute_encoder;
     MTL::Size cs_threadgroup_size;
     Obj<MTL::BlitCommandEncoder> blit_encoder;
+
+    context_t(CommandChunk *chk, MTL::CommandBuffer *cmdbuf)
+        : chk(chk), cmdbuf(cmdbuf) {}
 
   private:
   };
@@ -174,9 +178,7 @@ public:
 
   void encode(MTL::CommandBuffer *cmdbuf) {
     attached_cmdbuf = cmdbuf;
-    context_t context{
-        this, cmdbuf, {}, {}, {}, {},
-    };
+    context_t context(this, cmdbuf);
     auto cur = monoid_list.next;
     while (cur) {
       assert((uint64_t)cur->value >= (uint64_t)cpu_argument_heap);

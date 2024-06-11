@@ -247,35 +247,35 @@ public:
         assert(0 && "TODO: copy between staging?");
       } else if (auto src = com_cast<IMTLBindable>(pSrcResource)) {
         // might be a dynamic, default or immutable buffer
-        src->GetBoundResource(&src_bind);
         EmitBlitCommand<true>(
-            [dst = Obj(dst_bind.Buffer),
-             src = Obj(src_bind.Buffer)](MTL::BlitCommandEncoder *encoder) {
-              encoder->copyFromBuffer(src, 0, dst, 0, src->length());
+            [dst = Obj(dst_bind.Buffer), src = src->GetBinding(currentChunkId)](
+                MTL::BlitCommandEncoder *encoder, auto &) {
+              auto src_buf = src.buffer();
+              encoder->copyFromBuffer(src_buf, 0, dst, 0, src_buf->length());
             });
       }
 
     } else if (dst_desc.Usage == D3D11_USAGE_DEFAULT) {
       auto dst = com_cast<IMTLBindable>(pDstResource);
       assert(dst);
-      dst->GetBoundResource(&dst_bind);
       if (auto staging_src = com_cast<IMTLD3D11Staging>(pSrcResource)) {
         // copy from staging to default
         staging_src->UseCopySource(0, currentChunkId, &src_bind, &bytes_per_row,
                                    &bytes_per_image);
         EmitBlitCommand<true>(
-            [dst = Obj(dst_bind.Buffer),
-             src = Obj(src_bind.Buffer)](MTL::BlitCommandEncoder *encoder) {
-              encoder->copyFromBuffer(src, 0, dst, 0, src->length());
+            [dst = dst->GetBinding(currentChunkId), src = Obj(src_bind.Buffer)](
+                MTL::BlitCommandEncoder *encoder, auto&) {
+              auto dst_buf = dst.buffer();
+              encoder->copyFromBuffer(src, 0, dst_buf, 0, src->length());
             });
       } else if (auto src = com_cast<IMTLBindable>(pSrcResource)) {
         // on-device copy
-        src->GetBoundResource(&src_bind);
         assert(src_bind.Type == MTL_BIND_BUFFER_UNBOUNDED);
         EmitBlitCommand<true>(
-            [dst = Obj(dst_bind.Buffer),
-             src = Obj(src_bind.Buffer)](MTL::BlitCommandEncoder *encoder) {
-              encoder->copyFromBuffer(src, 0, dst, 0, src->length());
+            [dst = Obj(dst_bind.Buffer), src = src->GetBinding(currentChunkId)](
+                MTL::BlitCommandEncoder *encoder, auto &) {
+              auto src_buf = src.buffer();
+              encoder->copyFromBuffer(src_buf, 0, dst, 0, src_buf->length());
             });
       }
     }
@@ -289,9 +289,6 @@ public:
     D3D11_TEXTURE2D_DESC src_desc;
     pDstResource->GetDesc(&dst_desc);
     pSrcResource->GetDesc(&src_desc);
-    MTL_BIND_RESOURCE dst_bind;
-    // UINT bytes_per_row, bytes_per_image;
-    MTL_BIND_RESOURCE src_bind;
     D3D11_BOX SrcBox;
     if (pSrcBox) {
       SrcBox = *pSrcBox;
@@ -301,25 +298,24 @@ public:
       SrcBox.right = src_desc.Width;
       SrcBox.bottom = src_desc.Height;
     }
-    // auto currentChunkId = cmd_queue.CurrentSeqId();
+    auto currentChunkId = cmd_queue.CurrentSeqId();
     if (auto staging_dst = com_cast<IMTLD3D11Staging>(pDstResource)) {
       assert(0 && "TODO: copy texture2d staging");
     } else if (dst_desc.Usage == D3D11_USAGE_DEFAULT) {
       auto dst = com_cast<IMTLBindable>(pDstResource);
       assert(dst);
-      dst->GetBoundResource(&dst_bind);
       if (auto staging_src = com_cast<IMTLD3D11Staging>(pSrcResource)) {
         assert(0 && "TODO: copy texture2d staging");
         // copy from staging to default
       } else if (auto src = com_cast<IMTLBindable>(pSrcResource)) {
         // on-device copy
-        assert(dst_bind.Type == MTL_BIND_TEXTURE);
-        src->GetBoundResource(&src_bind);
-        assert(src_bind.Type == MTL_BIND_TEXTURE);
-        EmitBlitCommand<true>([dst = Obj(dst_bind.Texture),
-                               src = Obj(src_bind.Texture), DstSubresource,
-                               SrcSubresource, DstX, DstY, DstZ,
-                               SrcBox](MTL::BlitCommandEncoder *encoder) {
+        EmitBlitCommand<true>([dst_ = dst->GetBinding(currentChunkId),
+                               src_ = src->GetBinding(currentChunkId),
+                               DstSubresource, SrcSubresource, DstX, DstY, DstZ,
+                               SrcBox](MTL::BlitCommandEncoder *encoder,
+                                       auto ctx) {
+          auto src = src_.texture(&ctx);
+          auto dst = dst_.texture(&ctx);
           auto src_mips = src->mipmapLevelCount();
           auto src_level = SrcSubresource % src_mips;
           auto src_slice = SrcSubresource / src_mips;
@@ -423,9 +419,10 @@ public:
     {
       /* Setup RenderCommandEncoder */
       CommandChunk *chk = cmd_queue.CurrentChunk();
+      auto currentChunkId = cmd_queue.CurrentSeqId();
 
       struct RENDER_TARGET_STATE {
-        Obj<MTL::Texture> Texture;
+        BindingRef Texture;
         UINT RenderTargetIndex;
         UINT MipSlice;
         UINT ArrayIndex;
@@ -436,66 +433,69 @@ public:
       for (unsigned i = 0; i < state_.OutputMerger.NumRTVs; i++) {
         auto &rtv = state_.OutputMerger.RTVs[i];
         if (rtv) {
-          rtvs.push_back(
-              {rtv->GetCurrentTexture(), i, 0, 0, rtv->GetPixelFormat()});
+          rtvs.push_back({rtv->GetBinding(currentChunkId), i, 0, 0,
+                          rtv->GetPixelFormat()});
           assert(rtv->GetPixelFormat() != MTL::PixelFormatInvalid);
         } else {
-          rtvs.push_back({nullptr, i, 0, 0, MTL::PixelFormatInvalid});
+          rtvs.push_back(
+              {BindingRef(std::nullopt), i, 0, 0, MTL::PixelFormatInvalid});
         }
       }
       struct DEPTH_STENCIL_STATE {
-        Obj<MTL::Texture> Texture;
+        BindingRef Texture;
         UINT MipSlice;
         UINT ArrayIndex;
         MTL::PixelFormat PixelFormat;
       };
       auto &dsv = state_.OutputMerger.DSV;
-      chk->emit(
-          [rtvs = std::move(rtvs),
-           dsv = DEPTH_STENCIL_STATE{
-               dsv != nullptr ? dsv->GetCurrentTexture() : nullptr, 0, 0,
-               dsv != nullptr
-                   ? dsv->GetPixelFormat()
-                   : MTL::PixelFormatInvalid}](CommandChunk::context &ctx) {
-            auto renderPassDescriptor =
-                MTL::RenderPassDescriptor::renderPassDescriptor();
-            for (auto &rtv : rtvs) {
-              if (rtv.PixelFormat == MTL::PixelFormatInvalid)
-                continue;
-              auto colorAttachment =
-                  renderPassDescriptor->colorAttachments()->object(
-                      rtv.RenderTargetIndex);
-              colorAttachment->setTexture(rtv.Texture);
-              colorAttachment->setLevel(rtv.MipSlice);
-              colorAttachment->setSlice(rtv.ArrayIndex);
-              colorAttachment->setLoadAction(MTL::LoadActionLoad);
-              colorAttachment->setStoreAction(MTL::StoreActionStore);
-            };
-            if (dsv.Texture) {
-              // TODO: ...should know more about load/store behavior
-              auto depthAttachment = renderPassDescriptor->depthAttachment();
-              depthAttachment->setTexture(dsv.Texture);
-              depthAttachment->setLevel(dsv.MipSlice);
-              depthAttachment->setSlice(dsv.ArrayIndex);
-              depthAttachment->setLoadAction(MTL::LoadActionLoad);
-              depthAttachment->setStoreAction(MTL::StoreActionStore);
+      chk->emit([rtvs = std::move(rtvs),
+                 dsv = DEPTH_STENCIL_STATE{dsv != nullptr
+                                               ? dsv->GetBinding(currentChunkId)
+                                               : BindingRef(std::nullopt),
+                                           0, 0,
+                                           dsv != nullptr
+                                               ? dsv->GetPixelFormat()
+                                               : MTL::PixelFormatInvalid}](
+                    CommandChunk::context &ctx) {
+                      auto pool = transfer(NS::AutoreleasePool::alloc()->init());
+        auto renderPassDescriptor =
+            MTL::RenderPassDescriptor::renderPassDescriptor();
+        for (auto &rtv : rtvs) {
+          if (rtv.PixelFormat == MTL::PixelFormatInvalid)
+            continue;
+          auto colorAttachment =
+              renderPassDescriptor->colorAttachments()->object(
+                  rtv.RenderTargetIndex);
+          colorAttachment->setTexture(rtv.Texture.texture(&ctx));
+          colorAttachment->setLevel(rtv.MipSlice);
+          colorAttachment->setSlice(rtv.ArrayIndex);
+          colorAttachment->setLoadAction(MTL::LoadActionLoad);
+          colorAttachment->setStoreAction(MTL::StoreActionStore);
+        };
+        if (dsv.Texture) {
+          // TODO: ...should know more about load/store behavior
+          auto depthAttachment = renderPassDescriptor->depthAttachment();
+          depthAttachment->setTexture(dsv.Texture.texture(&ctx));
+          depthAttachment->setLevel(dsv.MipSlice);
+          depthAttachment->setSlice(dsv.ArrayIndex);
+          depthAttachment->setLoadAction(MTL::LoadActionLoad);
+          depthAttachment->setStoreAction(MTL::StoreActionStore);
 
-              // TODO: should know if depth buffer has stencil bits
-              if (dsv.PixelFormat == MTL::PixelFormatDepth32Float_Stencil8 ||
-                  dsv.PixelFormat == MTL::PixelFormatDepth24Unorm_Stencil8 ||
-                  dsv.PixelFormat == MTL::PixelFormatStencil8) {
-                auto stencilAttachment =
-                    renderPassDescriptor->stencilAttachment();
-                stencilAttachment->setTexture(dsv.Texture);
-                stencilAttachment->setLevel(dsv.MipSlice);
-                stencilAttachment->setSlice(dsv.ArrayIndex);
-                stencilAttachment->setLoadAction(MTL::LoadActionLoad);
-                stencilAttachment->setStoreAction(MTL::StoreActionStore);
-              }
-            }
-            ctx.render_encoder =
-                ctx.cmdbuf->renderCommandEncoder(renderPassDescriptor);
-          });
+          // TODO: should know if depth buffer has stencil bits
+          if (dsv.PixelFormat == MTL::PixelFormatDepth32Float_Stencil8 ||
+              dsv.PixelFormat == MTL::PixelFormatDepth24Unorm_Stencil8 ||
+              dsv.PixelFormat == MTL::PixelFormatStencil8) {
+            auto stencilAttachment = renderPassDescriptor->stencilAttachment();
+            stencilAttachment->setTexture(dsv.Texture.texture(&ctx));
+            stencilAttachment->setLevel(dsv.MipSlice);
+            stencilAttachment->setSlice(dsv.ArrayIndex);
+            stencilAttachment->setLoadAction(MTL::LoadActionLoad);
+            stencilAttachment->setStoreAction(MTL::StoreActionStore);
+          }
+        }
+        ctx.render_encoder =
+            ctx.cmdbuf->renderCommandEncoder(renderPassDescriptor);
+      });
     }
 
     cmdbuf_state = CommandBufferState::RenderEncoderActive;
@@ -689,6 +689,8 @@ public:
     if (!Force && binding_ready.test(stage))
       return;
 
+    auto currentChunkId = cmd_queue.CurrentSeqId();
+
     auto &ShaderStage = state_.ShaderStages[(UINT)stage];
 
     MTL_SHADER_REFLECTION reflection;
@@ -704,18 +706,19 @@ public:
                                                    encoder->alignment());
       encoder->setArgumentBuffer(heap, offset);
 
-      auto useResource = [&](MTL::Resource *res, MTL::ResourceUsage usage) {
-        chk->emit([res = Obj(res), usage](CommandChunk::context &ctx) {
+      auto useResource = [&](BindingRef &&res, MTL::ResourceUsage usage) {
+        chk->emit([res = std::move(res), usage](CommandChunk::context &ctx) {
           switch (stage) {
           case ShaderType::Vertex:
-            ctx.render_encoder->useResource(res, usage, MTL::RenderStageVertex);
+            ctx.render_encoder->useResource(res.resource(&ctx), usage,
+                                            MTL::RenderStageVertex);
             break;
           case ShaderType::Pixel:
-            ctx.render_encoder->useResource(res, usage,
+            ctx.render_encoder->useResource(res.resource(&ctx), usage,
                                             MTL::RenderStageFragment);
             break;
           case ShaderType::Compute:
-            ctx.compute_encoder->useResource(res, usage);
+            ctx.compute_encoder->useResource(res.resource(&ctx), usage);
             break;
           case ShaderType::Geometry:
           case ShaderType::Hull:
@@ -733,11 +736,10 @@ public:
           if (!ShaderStage.ConstantBuffers.contains(arg.SM50BindingSlot))
             break;
           auto &cbuf = ShaderStage.ConstantBuffers[arg.SM50BindingSlot];
-          MTL_BIND_RESOURCE m;
-          cbuf.Buffer->GetBoundResource(&m);
-          encoder->setBuffer(m.Buffer, cbuf.FirstConstant * 0x10,
+          auto binding = cbuf.Buffer->GetBinding(currentChunkId);
+          encoder->setBuffer(binding.buffer(), cbuf.FirstConstant * 0x10,
                              GetArgumentIndex(arg));
-          useResource(m.Buffer, MTL::ResourceUsageRead);
+          useResource(std::move(binding), MTL::ResourceUsageRead);
           break;
         }
         case SM50BindingType::Sampler: {
@@ -753,30 +755,26 @@ public:
           if (!ShaderStage.SRVs.contains(arg.SM50BindingSlot))
             break;
           auto &srv = ShaderStage.SRVs[arg.SM50BindingSlot];
-          MTL_BIND_RESOURCE m;
-          srv->GetBoundResource(&m);
-          switch (m.Type) {
-          case MTL_BIND_BUFFER_UNBOUNDED: {
-            encoder->setBuffer(m.Buffer, 0, GetArgumentIndex(arg));
-            useResource(m.Buffer, MTL::ResourceUsageRead);
-            break;
+          auto binding = srv->GetBinding(currentChunkId);
+          if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_BUFFER) {
+            encoder->setBuffer(binding.buffer(), binding.offset(),
+                               GetArgumentIndex(arg));
           }
-          case MTL_BIND_TEXTURE: {
-            encoder->setTexture(m.Texture, GetArgumentIndex(arg));
-            useResource(m.Texture, MTL::ResourceUsageRead);
-            break;
-          }
-          case MTL_BIND_BUFFER_BOUNDED: {
-            encoder->setBuffer(m.Buffer, m.BoundOffset, GetArgumentIndex(arg));
+          if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_ELEMENT_WIDTH) {
             *((uint32_t *)encoder->constantData(GetArgumentIndex(arg) + 1)) =
-                m.BoundSize;
-            useResource(m.Buffer, MTL::ResourceUsageRead);
-            break;
+                binding.width();
           }
-          case MTL_BIND_UAV_WITH_COUNTER:
-            ERR("Unknown SRV binding");
-            break;
+          if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE) {
+            if (binding.requiresContext()) {
+              assert(0 && "todo");
+            } else {
+              encoder->setTexture(binding.texture(), GetArgumentIndex(arg));
+            }
           }
+          if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_UAV_COUNTER) {
+          }
+          MTL::ResourceUsage usage = (arg.Flags >> 10) & 0b11;
+          useResource(std::move(binding), usage);
           break;
         }
         case SM50BindingType::UAV: {
@@ -784,34 +782,27 @@ public:
             if (!state_.ComputeStageUAV.UAVs.contains(arg.SM50BindingSlot))
               break;
             auto &uav = state_.ComputeStageUAV.UAVs[arg.SM50BindingSlot];
-            MTL_BIND_RESOURCE m;
-            uav.View->GetBoundResource(&m);
-            switch (m.Type) {
-            case MTL_BIND_BUFFER_UNBOUNDED: {
-              encoder->setBuffer(m.Buffer, 0, GetArgumentIndex(arg));
-              useResource(m.Buffer,
-                          MTL::ResourceUsageRead | MTL::ResourceUsageWrite);
-              break;
-            }
-            case MTL_BIND_TEXTURE: {
-              encoder->setTexture(m.Texture, GetArgumentIndex(arg));
-              useResource(m.Texture,
-                          MTL::ResourceUsageRead | MTL::ResourceUsageWrite);
-              break;
-            }
-            case MTL_BIND_BUFFER_BOUNDED: {
-              encoder->setBuffer(m.Buffer, m.BoundOffset,
+            auto binding = uav.View->GetBinding(currentChunkId);
+            if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_BUFFER) {
+              encoder->setBuffer(binding.buffer(), binding.offset(),
                                  GetArgumentIndex(arg));
+            }
+            if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_ELEMENT_WIDTH) {
               *((uint32_t *)encoder->constantData(GetArgumentIndex(arg) + 1)) =
-                  m.BoundSize;
-              useResource(m.Buffer,
-                          MTL::ResourceUsageRead | MTL::ResourceUsageWrite);
-              break;
+                  binding.width();
             }
-            case MTL_BIND_UAV_WITH_COUNTER:
-              ERR("TODO: uav counter binding");
-              break;
+            if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE) {
+              if (binding.requiresContext()) {
+                assert(0 && "todo");
+              } else {
+                encoder->setTexture(binding.texture(), GetArgumentIndex(arg));
+              }
             }
+            if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_UAV_COUNTER) {
+              assert(0 && "todo: implement uav counter binding");
+            }
+            MTL::ResourceUsage usage = (arg.Flags >> 10) & 0b11;
+            useResource(std::move(binding), usage);
           } else {
             if (!state_.OutputMerger.UAVs.contains(arg.SM50BindingSlot))
               break;
@@ -873,7 +864,7 @@ public:
     if (cmdbuf_state == CommandBufferState::BlitEncoderActive) {
       CommandChunk *chk = cmd_queue.CurrentChunk();
       chk->emit([fn = std::forward<Fn>(fn)](CommandChunk::context &ctx) {
-        fn(ctx.blit_encoder.ptr());
+        fn(ctx.blit_encoder.ptr(), ctx);
       });
     }
   };
@@ -945,31 +936,21 @@ public:
   template <bool Force = false> void EmitSetIAState() {
     CommandChunk *chk = cmd_queue.CurrentChunk();
     struct VERTEX_BUFFER_STATE {
-      Obj<MTL::Buffer> buffer;
+      BindingRef buffer;
       UINT offset;
       UINT stride;
     };
     auto vbs = chk->reserve_vector<std::pair<UINT, VERTEX_BUFFER_STATE>>(
         state_.InputAssembler.VertexBuffers.size());
     for (auto &[index, state] : state_.InputAssembler.VertexBuffers) {
-      MTL_BIND_RESOURCE r;
-      assert(state.Buffer);
-      state.Buffer->GetBoundResource(&r);
-      switch (r.Type) {
-      case MTL_BIND_BUFFER_UNBOUNDED:
-        vbs.push_back({index, {r.Buffer, state.Offset, state.Stride}});
-        break;
-      case MTL_BIND_TEXTURE:
-      case MTL_BIND_BUFFER_BOUNDED:
-      case MTL_BIND_UAV_WITH_COUNTER:
-        assert(0 && "unexpected vertex buffer binding type");
-        break;
-      }
+      vbs.push_back({index, VERTEX_BUFFER_STATE{state.Buffer->GetBinding(
+                                                    cmd_queue.CurrentSeqId()),
+                                                state.Offset, state.Stride}});
     };
     EmitRenderCommand<Force>(
         [vbs = std::move(vbs)](MTL::RenderCommandEncoder *encoder) {
           for (auto &[index, state] : vbs) {
-            encoder->setVertexBuffer(state.buffer.ptr(), state.offset,
+            encoder->setVertexBuffer(state.buffer.buffer(), state.offset,
                                      state.stride, index);
           };
           // TODO: deal with old redunant binding (I guess it doesn't hurt

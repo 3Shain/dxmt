@@ -252,20 +252,18 @@ public:
   Present1(UINT SyncInterval, UINT PresentFlags,
            const DXGI_PRESENT_PARAMETERS *pPresentParameters) final {
 
-    device_context_->Flush2(
-        // why transfer?
-        // it works because the texture is in use, so drawable is valid during
-        // encoding...
-        [drawable = transfer(backbuffer_->CurrentDrawable()),
+    device_context_->FlushInternal(
+        [backbuffer = backbuffer_,
          _ = DestructorWrapper([sem = present_semaphore_]() {
            // called when cmdbuf complete
            ReleaseSemaphore(sem, 1, nullptr);
          })](MTL::CommandBuffer *cmdbuf) {
+          auto drawable = backbuffer->CurrentDrawable();
           if (drawable) {
-            cmdbuf->presentDrawable(drawable.ptr());
+            cmdbuf->presentDrawable(drawable);
+            backbuffer->Swap();
           }
         });
-    backbuffer_->Swap();
 
     presentation_count_ += 1;
 

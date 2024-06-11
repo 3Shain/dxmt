@@ -66,7 +66,7 @@ auto to_metal_topology(D3D11_PRIMITIVE_TOPOLOGY topo) {
 }
 
 using MTLD3D11DeviceContextBase =
-    MTLD3D11DeviceChild<IMTLD3D11DeviceContext, IMTLDynamicBufferPool>;
+    MTLD3D11DeviceChild<IMTLD3D11DeviceContext, IMTLDynamicBufferExchange>;
 
 class MTLD3D11DeviceContext : public MTLD3D11DeviceContextBase {
 public:
@@ -154,7 +154,7 @@ public:
         // FIXME: bugprone
         if (ret + coh == cmd_queue.CurrentSeqId()) {
           TRACE("Map: forced flush");
-          Flush2([](auto) {});
+          FlushInternal([](auto) {});
         }
         TRACE("staging map block");
         cmd_queue.YieldUntilCoherenceBoundaryUpdate();
@@ -177,7 +177,7 @@ public:
   }
 
   void Flush() {
-    Flush2([](auto) {});
+    FlushInternal([](auto) {});
   }
 
   void ExecuteCommandList(ID3D11CommandList *pCommandList,
@@ -210,13 +210,14 @@ public:
       // because of swapchain logic implemented at the moment
       // ideally it should be inside the command
       // so autorelease will work properly
-      chk->emit([texture = expected->GetCurrentTexture(), r = ColorRGBA[0],
-                 g = ColorRGBA[1], b = ColorRGBA[2],
+      chk->emit([texture = expected->GetBinding(cmd_queue.CurrentSeqId()),
+                 r = ColorRGBA[0], g = ColorRGBA[1], b = ColorRGBA[2],
                  a = ColorRGBA[3]](CommandChunk::context &ctx) {
+        auto pool = transfer(NS::AutoreleasePool::alloc()->init());
         auto enc_descriptor = MTL::RenderPassDescriptor::renderPassDescriptor();
         auto attachmentz = enc_descriptor->colorAttachments()->object(0);
         attachmentz->setClearColor({r, g, b, a});
-        attachmentz->setTexture(texture);
+        attachmentz->setTexture(texture.texture(&ctx));
         attachmentz->setLoadAction(MTL::LoadActionClear);
         attachmentz->setStoreAction(MTL::StoreActionStore);
 
@@ -247,11 +248,12 @@ public:
 
       ctx.InvalidateCurrentPass();
       CommandChunk *chk = cmd_queue.CurrentChunk();
-      chk->emit([texture = Obj(expected->GetCurrentTexture()), Depth, Stencil,
-                 ClearDepth = (ClearFlags & D3D11_CLEAR_DEPTH),
+      chk->emit([texture_ = expected->GetBinding(cmd_queue.CurrentSeqId()),
+                 Depth, Stencil, ClearDepth = (ClearFlags & D3D11_CLEAR_DEPTH),
                  ClearStencil = (ClearFlags & D3D11_CLEAR_STENCIL)](
                     CommandChunk::context &ctx) {
         auto enc_descriptor = MTL::RenderPassDescriptor::renderPassDescriptor();
+        auto texture = texture_.texture(&ctx);
         if (ClearDepth) {
           auto attachmentz = enc_descriptor->depthAttachment();
           attachmentz->setClearDepth(Depth);
@@ -293,12 +295,10 @@ public:
     }
     if (desc.ViewDimension == D3D11_SRV_DIMENSION_TEXTURE2D) {
       if (auto com = com_cast<IMTLBindable>(pShaderResourceView)) {
-        MTL_BIND_RESOURCE res;
-        com->GetBoundResource(&res);
-        assert(res.Type == MTL_BIND_TEXTURE);
         ctx.EmitBlitCommand<true>(
-            [tex = Obj(res.Texture)](MTL::BlitCommandEncoder *enc) {
-              enc->generateMipmaps(tex);
+            [tex = com->GetBinding(cmd_queue.CurrentSeqId())](
+                MTL::BlitCommandEncoder *enc, CommandChunk::context &ctx) {
+              enc->generateMipmaps(tex.texture(&ctx));
             });
       } else {
         // FIXME: any other possible case?
@@ -407,19 +407,25 @@ public:
     D3D11_RESOURCE_DIMENSION dim;
     pDstResource->GetType(&dim);
     if (dim == D3D11_RESOURCE_DIMENSION_BUFFER) {
-      MTL_BIND_RESOURCE resource;
+      D3D11_BUFFER_DESC desc;
+      ((ID3D11Buffer *)pDstResource)->GetDesc(&desc);
+      uint32_t copy_offset = 0;
+      uint32_t copy_len = desc.ByteWidth;
+      if (pDstBox) {
+        copy_offset = pDstBox->left;
+        copy_len = pDstBox->right - copy_offset;
+      }
+
       if (auto bindable = com_cast<IMTLBindable>(pDstResource)) {
-        bindable->GetBoundResource(&resource);
-        if (resource.Type == MTL_BIND_BUFFER_UNBOUNDED) {
-          // FIXME: resource contention
-          // if the buffer is already in use,you can't modify it directly!
-          auto w = resource.Buffer->contents();
-          auto len = resource.Buffer->length();
-          std::memcpy(w, pSrcData, len);
-          return;
-        } else {
-          assert(0 && "UpdateSubresource1: TODO");
-        }
+        auto chk = cmd_queue.CurrentChunk();
+        auto [heap, offset] = chk->allocate_gpu_heap(copy_len, 16);
+        memcpy(((char *)heap->contents()) + offset, pSrcData, copy_len);
+        ctx.EmitBlitCommand<true>(
+            [heap, offset, dst = bindable->GetBinding(cmd_queue.CurrentSeqId()),
+             copy_offset, copy_len](MTL::BlitCommandEncoder *enc, auto &ctx) {
+              enc->copyFromBuffer(heap, offset, dst.buffer(), copy_offset,
+                                  copy_len);
+            });
       } else if (auto dynamic = com_cast<IMTLDynamicBindable>(pDstResource)) {
         assert(CopyFlags && "otherwise resource cannot be dynamic");
         assert(0 && "UpdateSubresource1: TODO");
@@ -429,31 +435,38 @@ public:
       return;
     }
     if (dim == D3D11_RESOURCE_DIMENSION_TEXTURE2D) {
-      MTL_BIND_RESOURCE resource;
       D3D11_TEXTURE2D_DESC desc;
       ((ID3D11Texture2D *)pDstResource)->GetDesc(&desc);
+      auto slice = DstSubresource / desc.MipLevels;
+      auto level = DstSubresource % desc.MipLevels;
+      uint32_t copy_rows = desc.Height;
+      uint32_t copy_columns = desc.Width;
+      uint32_t origin_x = 0;
+      uint32_t origin_y = 0;
+      if (pDstBox) {
+        copy_rows = pDstBox->bottom - pDstBox->top;
+        copy_columns = pDstBox->right - pDstBox->left;
+        origin_x = pDstBox->left;
+        origin_y = pDstBox->top;
+      }
+      copy_rows = std::max(copy_rows >> level, 1u);
+      copy_columns = std::max(copy_columns >> level, 1u);
+      origin_x = std::max(origin_x >> level, 1u);
+      origin_y = std::max(origin_y >> level, 1u);
       if (auto bindable = com_cast<IMTLBindable>(pDstResource)) {
-        bindable->GetBoundResource(&resource);
-        if (resource.Type == MTL_BIND_TEXTURE) {
-          auto slice = DstSubresource / desc.MipLevels;
-          auto level = DstSubresource % desc.MipLevels;
-          // FIXME: resource contention
-          resource.Texture->replaceRegion(
-              pDstBox
-                  ? MTL::Region::Make2D(pDstBox->left, pDstBox->top,
-                                        pDstBox->right - pDstBox->left,
-                                        pDstBox->bottom - pDstBox->top)
-                  : MTL::Region::Make2D(
-                        0, 0,
-                        std::max((uint32_t)resource.Texture->width() >> level,
-                                 1u),
-                        std::max((uint32_t)resource.Texture->height() >> level,
-                                 1u)),
-              level, slice, pSrcData, SrcRowPitch, 0);
-          return;
-        } else {
-          assert(0 && "UpdateSubresource1: TODO: texture2d non texture bind");
-        }
+        auto copy_len = copy_rows * SrcRowPitch;
+        auto chk = cmd_queue.CurrentChunk();
+        auto [heap, offset] = chk->allocate_gpu_heap(copy_len, 16);
+        memcpy(((char *)heap->contents()) + offset, pSrcData, copy_len);
+        ctx.EmitBlitCommand<true>(
+            [heap, offset, dst = bindable->GetBinding(cmd_queue.CurrentSeqId()),
+             SrcRowPitch, copy_rows, copy_columns, origin_x, origin_y, slice,
+             level](MTL::BlitCommandEncoder *enc, auto &ctx) {
+              enc->copyFromBuffer(heap, offset, SrcRowPitch, 0,
+                                  MTL::Size::Make(copy_columns, copy_rows, 1),
+                                  dst.texture(&ctx), slice, level,
+                                  MTL::Origin::Make(origin_x, origin_y, 0));
+            });
       } else if (auto dynamic = com_cast<IMTLDynamicBindable>(pDstResource)) {
         assert(CopyFlags && "otherwise resource cannot be dynamic");
         assert(0 && "UpdateSubresource1: TODO");
@@ -494,7 +507,7 @@ public:
     MTL::PrimitiveType Primitive =
         to_metal_topology(state_.InputAssembler.Topology);
     // TODO: skip invalid topology
-    ctx.EmitRenderCommand([Primitive, StartVertexLocation,
+    ctx.EmitRenderCommand<true>([Primitive, StartVertexLocation,
                            VertexCount](MTL::RenderCommandEncoder *encoder) {
       encoder->drawPrimitives(Primitive, StartVertexLocation, VertexCount);
     });
@@ -503,11 +516,10 @@ public:
   void DrawIndexed(UINT IndexCount, UINT StartIndexLocation,
                    INT BaseVertexLocation) {
     ctx.PreDraw();
+    auto currentChunkId = cmd_queue.CurrentSeqId();
     MTL::PrimitiveType Primitive =
         to_metal_topology(state_.InputAssembler.Topology);
-    MTL_BIND_RESOURCE IndexBuffer;
     assert(state_.InputAssembler.IndexBuffer);
-    state_.InputAssembler.IndexBuffer->GetBoundResource(&IndexBuffer);
     auto IndexType =
         state_.InputAssembler.IndexBufferFormat == DXGI_FORMAT_R32_UINT
             ? MTL::IndexTypeUInt32
@@ -519,12 +531,13 @@ public:
                  ? 4
                  : 2);
     ctx.EmitRenderCommand<true>(
-        [IndexBuffer = Obj(IndexBuffer.Buffer), IndexType, IndexBufferOffset,
-         Primitive, IndexCount,
+        [IndexBuffer =
+             state_.InputAssembler.IndexBuffer->GetBinding(currentChunkId),
+         IndexType, IndexBufferOffset, Primitive, IndexCount,
          BaseVertexLocation](MTL::RenderCommandEncoder *encoder) {
-          encoder->drawIndexedPrimitives(Primitive, IndexCount, IndexType,
-                                         IndexBuffer, IndexBufferOffset, 1,
-                                         BaseVertexLocation, 0);
+          encoder->drawIndexedPrimitives(
+              Primitive, IndexCount, IndexType, IndexBuffer.buffer(),
+              IndexBufferOffset, 1, BaseVertexLocation, 0);
         });
   }
 
@@ -547,12 +560,11 @@ public:
                             UINT StartIndexLocation, INT BaseVertexLocation,
                             UINT StartInstanceLocation) {
     ctx.PreDraw();
+    auto currentChunkId = cmd_queue.CurrentSeqId();
     MTL::PrimitiveType Primitive =
         to_metal_topology(state_.InputAssembler.Topology);
     // TODO: skip invalid topology
-    MTL_BIND_RESOURCE IndexBuffer;
     assert(state_.InputAssembler.IndexBuffer);
-    state_.InputAssembler.IndexBuffer->GetBoundResource(&IndexBuffer);
     auto IndexType =
         state_.InputAssembler.IndexBufferFormat == DXGI_FORMAT_R32_UINT
             ? MTL::IndexTypeUInt32
@@ -564,11 +576,13 @@ public:
                  ? 4
                  : 2);
     ctx.EmitRenderCommand<true>(
-        [IndexBuffer = Obj(IndexBuffer.Buffer), IndexType, IndexBufferOffset,
-         Primitive, InstanceCount, BaseVertexLocation, StartInstanceLocation,
+        [IndexBuffer =
+             state_.InputAssembler.IndexBuffer->GetBinding(currentChunkId),
+         IndexType, IndexBufferOffset, Primitive, InstanceCount,
+         BaseVertexLocation, StartInstanceLocation,
          IndexCountPerInstance](MTL::RenderCommandEncoder *encoder) {
           encoder->drawIndexedPrimitives(
-              Primitive, IndexCountPerInstance, IndexType, IndexBuffer,
+              Primitive, IndexCountPerInstance, IndexType, IndexBuffer.buffer(),
               IndexBufferOffset, InstanceCount, BaseVertexLocation,
               StartInstanceLocation);
         });
@@ -577,32 +591,28 @@ public:
   void DrawIndexedInstancedIndirect(ID3D11Buffer *pBufferForArgs,
                                     UINT AlignedByteOffsetForArgs) {
     ctx.PreDraw();
+    auto currentChunkId = cmd_queue.CurrentSeqId();
     MTL::PrimitiveType Primitive =
         to_metal_topology(state_.InputAssembler.Topology);
     // TODO: skip invalid topology
-    MTL_BIND_RESOURCE IndexBuffer;
     assert(state_.InputAssembler.IndexBuffer);
-    state_.InputAssembler.IndexBuffer->GetBoundResource(&IndexBuffer);
     auto IndexType =
         state_.InputAssembler.IndexBufferFormat == DXGI_FORMAT_R32_UINT
             ? MTL::IndexTypeUInt32
             : MTL::IndexTypeUInt16;
     auto IndexBufferOffset = state_.InputAssembler.IndexBufferOffset;
-    MTL_BIND_RESOURCE ArgBuffer;
     if (auto bindable = com_cast<IMTLBindable>(pBufferForArgs)) {
-      bindable->GetBoundResource(&ArgBuffer);
-    } else {
-      return;
+      ctx.EmitRenderCommand<true>(
+          [IndexBuffer =
+               state_.InputAssembler.IndexBuffer->GetBinding(currentChunkId),
+           IndexType, IndexBufferOffset, Primitive,
+           ArgBuffer = bindable->GetBinding(currentChunkId),
+           AlignedByteOffsetForArgs](MTL::RenderCommandEncoder *encoder) {
+            encoder->drawIndexedPrimitives(
+                Primitive, IndexType, IndexBuffer.buffer(), IndexBufferOffset,
+                ArgBuffer.buffer(), AlignedByteOffsetForArgs);
+          });
     }
-    assert(ArgBuffer.Type == MTL_BIND_BUFFER_UNBOUNDED);
-    ctx.EmitRenderCommand<true>(
-        [IndexBuffer = Obj(IndexBuffer.Buffer), IndexType, IndexBufferOffset,
-         Primitive, ArgBuffer = Obj(ArgBuffer.Buffer),
-         AlignedByteOffsetForArgs](MTL::RenderCommandEncoder *encoder) {
-          encoder->drawIndexedPrimitives(Primitive, IndexType, IndexBuffer,
-                                         IndexBufferOffset, ArgBuffer,
-                                         AlignedByteOffsetForArgs);
-        });
   }
 
   void DrawInstancedIndirect(ID3D11Buffer *pBufferForArgs,
@@ -630,19 +640,15 @@ public:
                         UINT AlignedByteOffsetForArgs) {
     if (!ctx.PreDispatch())
       return;
-    MTL_BIND_RESOURCE ArgBuffer;
     if (auto bindable = com_cast<IMTLBindable>(pBufferForArgs)) {
-      bindable->GetBoundResource(&ArgBuffer);
-    } else {
-      return;
+      ctx.EmitComputeCommand<true>(
+          [AlignedByteOffsetForArgs,
+           ArgBuffer = bindable->GetBinding(cmd_queue.CurrentSeqId())](
+              MTL::ComputeCommandEncoder *encoder, MTL::Size &tg_size) {
+            encoder->dispatchThreadgroups(ArgBuffer.buffer(),
+                                          AlignedByteOffsetForArgs, tg_size);
+          });
     }
-    assert(ArgBuffer.Type == MTL_BIND_BUFFER_UNBOUNDED);
-    ctx.EmitComputeCommand<true>(
-        [AlignedByteOffsetForArgs, ArgBuffer = Obj(ArgBuffer.Buffer)](
-            MTL::ComputeCommandEncoder *encoder, MTL::Size &tg_size) {
-          encoder->dispatchThreadgroups(ArgBuffer, AlignedByteOffsetForArgs,
-                                        tg_size);
-        });
   }
 #pragma endregion
 
@@ -1447,21 +1453,24 @@ public:
 
 #pragma region DynamicBufferPool
 
-  void ExchangeFromPool(MTL::Buffer **pBuffer) final {
-    /**
-    TODO: there is no pool at all!
-    */
+  void ExchangeFromPool(MTL::Buffer **pBuffer, BufferPool *pool) final {
     assert(*pBuffer);
-    auto original = transfer(*pBuffer);
-    *pBuffer = metal_device_->newBuffer(original->length(),
-                                        original->resourceOptions());
-    cmd_queue.CurrentChunk()->emit(
-        [_ = std::move(original)](CommandChunk::context &ctx) {
-          /**
-          abusing lambda capture
-          the original buffer will be released once the chunk has completed
-          */
-        });
+    if (pool) {
+
+      pool->GetNext(cmd_queue.CurrentSeqId(), cmd_queue.CoherentSeqId(),
+                    pBuffer);
+    } else {
+      auto original = transfer(*pBuffer);
+      *pBuffer = metal_device_->newBuffer(original->length(),
+                                          original->resourceOptions());
+      cmd_queue.CurrentChunk()->emit(
+          [_ = std::move(original)](CommandChunk::context &ctx) {
+            /**
+            abusing lambda capture
+            the original buffer will be released once the chunk has completed
+            */
+          });
+    }
   }
 
 #pragma endregion
@@ -1474,7 +1483,8 @@ public:
 
 #pragma endregion
 
-  void Flush2(std::function<void(MTL::CommandBuffer *)> &&beforeCommit) final {
+  void FlushInternal(
+      std::function<void(MTL::CommandBuffer *)> &&beforeCommit) final {
     ctx.InvalidateCurrentPass();
     cmd_queue.CurrentChunk()->emit(
         [bc = std::move(beforeCommit)](CommandChunk::context &ctx) {
