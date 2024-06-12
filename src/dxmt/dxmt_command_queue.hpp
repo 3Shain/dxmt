@@ -234,6 +234,7 @@ private:
     bool should_capture = ready_for_encode.load() > 60 * 40;
 
     auto c = MTL::CaptureManager::sharedCaptureManager();
+    if (should_capture) {
       auto d = transfer(MTL::CaptureDescriptor::alloc()->init());
       d->setCaptureObject(commandQueue->device());
       d->setDestination(MTL::CaptureDestinationGPUTraceDocument);
@@ -253,13 +254,17 @@ private:
       d->setOutputURL(pURL);
 
       c->startCapture(d.ptr(), &pError);
+    }
 
     auto cmdbuf = commandQueue->commandBuffer();
     chunk.encode(cmdbuf);
     cmdbuf->commit();
     // cmdbuf->waitUntilScheduled(); // seems unnecessary
 
+    if (should_capture) {
+
       c->stopCapture();
+    }
 
     ready_for_commit.fetch_add(1, std::memory_order_relaxed);
     ready_for_commit.notify_all();
@@ -358,7 +363,7 @@ public:
   }
 
   CommandChunk *CurrentChunk() {
-    auto id = ready_for_encode.load(std::memory_order_acquire);
+    auto id = ready_for_encode.load(std::memory_order_relaxed);
     return &chunks[id % kCommandChunkCount];
   };
 
@@ -367,7 +372,7 @@ public:
   };
 
   uint64_t CurrentSeqId() {
-    return ready_for_encode.load(std::memory_order_acquire);
+    return ready_for_encode.load(std::memory_order_relaxed);
   };
 
   /**

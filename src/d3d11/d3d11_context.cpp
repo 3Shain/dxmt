@@ -507,8 +507,8 @@ public:
     MTL::PrimitiveType Primitive =
         to_metal_topology(state_.InputAssembler.Topology);
     // TODO: skip invalid topology
-    ctx.EmitRenderCommand<true>([Primitive, StartVertexLocation,
-                           VertexCount](MTL::RenderCommandEncoder *encoder) {
+    ctx.EmitRenderCommand<true>([Primitive, StartVertexLocation, VertexCount](
+                                    MTL::RenderCommandEncoder *encoder) {
       encoder->drawPrimitives(Primitive, StartVertexLocation, VertexCount);
     });
   }
@@ -1333,8 +1333,12 @@ public:
 
   void OMSetBlendState(ID3D11BlendState *pBlendState,
                        const FLOAT BlendFactor[4], UINT SampleMask) {
+    bool should_invalidate_pipeline = false;
     if (auto expected = com_cast<IMTLD3D11BlendState>(pBlendState)) {
-      state_.OutputMerger.BlendState = std::move(expected);
+      if (expected.ptr() != state_.OutputMerger.BlendState.ptr()) {
+        state_.OutputMerger.BlendState = std::move(expected);
+        should_invalidate_pipeline = true;
+      }
       if (BlendFactor) {
         memcpy(state_.OutputMerger.BlendFactor, BlendFactor, sizeof(float[4]));
       } else {
@@ -1345,8 +1349,10 @@ public:
       }
       state_.OutputMerger.SampleMask = SampleMask;
     }
-
-    ctx.InvalidateGraphicPipeline();
+    if (should_invalidate_pipeline) {
+      ctx.InvalidateGraphicPipeline();
+    }
+    ctx.EmitBlendFactorAndStencilRef();
   }
   void OMGetBlendState(ID3D11BlendState **ppBlendState, FLOAT BlendFactor[4],
                        UINT *pSampleMask) {

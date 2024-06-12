@@ -365,6 +365,7 @@ CreateMTLTextureDescriptorInternal(
   case D3D11_RESOURCE_DIMENSION_TEXTURE2D:
     if (MiscFlags & D3D11_RESOURCE_MISC_TEXTURECUBE) {
       assert(ArraySize / 6);
+      assert((ArraySize % 6) == 0);
       if ((ArraySize / 6) > 1) {
         desc->setTextureType(MTL::TextureTypeCubeArray);
         desc->setArrayLength(ArraySize / 6);

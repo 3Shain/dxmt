@@ -2563,9 +2563,7 @@ auto read_uint_buf_addr(AtomicOperandTGSM tgsm, pvalue index = 0) -> IRValue {
   llvm::Constant *Zero =
     llvm::ConstantInt::get(llvm::Type::getInt32Ty(ctx.llvm), 0);
   if (index) {
-    co_return ctx.builder.CreateGEP(
-      gv->getValueType(), gv, {Zero, index}
-    );
+    co_return ctx.builder.CreateGEP(gv->getValueType(), gv, {Zero, index});
   }
   co_return llvm::ConstantExpr::getInBoundsGetElementPtr(
     gv->getValueType(), gv, (llvm::ArrayRef<llvm::Constant *>){Zero, Zero}
@@ -2580,9 +2578,7 @@ auto read_uint_buf_addr(SrcOperandTGSM tgsm, pvalue index = 0) -> IRValue {
   llvm::Constant *Zero =
     llvm::ConstantInt::get(llvm::Type::getInt32Ty(ctx.llvm), 0);
   if (index) {
-    co_return ctx.builder.CreateGEP(
-      gv->getValueType(), gv, {Zero, index}
-    );
+    co_return ctx.builder.CreateGEP(gv->getValueType(), gv, {Zero, index});
   }
   co_return llvm::ConstantExpr::getInBoundsGetElementPtr(
     gv->getValueType(), gv, (llvm::ArrayRef<llvm::Constant *>){Zero, Zero}
@@ -3923,7 +3919,10 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
               effect << lift(
                 load_src_op<true>(dp.src0), load_src_op<true>(dp.src1),
                 [=](auto a, auto b) {
-                  return store_dst_op<true>(dp.dst, call_dot_product(4, a, b));
+                  return store_dst_op<true>(
+                    dp.dst,
+                    call_dot_product(4, a, b) >>= saturate(dp._.saturate)
+                  );
                 }
               );
               break;
@@ -3932,7 +3931,10 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                 load_src_op<true>(dp.src0) >>= truncate_vec(3),
                 load_src_op<true>(dp.src1) >>= truncate_vec(3),
                 [=](auto a, auto b) {
-                  return store_dst_op<true>(dp.dst, call_dot_product(3, a, b));
+                  return store_dst_op<true>(
+                    dp.dst,
+                    call_dot_product(3, a, b) >>= saturate(dp._.saturate)
+                  );
                 }
               );
               break;
@@ -3941,7 +3943,10 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                 load_src_op<true>(dp.src0) >>= truncate_vec(2),
                 load_src_op<true>(dp.src1) >>= truncate_vec(2),
                 [=](auto a, auto b) {
-                  return store_dst_op<true>(dp.dst, call_dot_product(2, a, b));
+                  return store_dst_op<true>(
+                    dp.dst,
+                    call_dot_product(2, a, b) >>= saturate(dp._.saturate)
+                  );
                 }
               );
               break;

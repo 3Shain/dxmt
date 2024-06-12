@@ -502,6 +502,7 @@ public:
 
     EmitSetDepthStencilState<true>();
     EmitSetRasterizerState<true>();
+    EmitBlendFactorAndStencilRef<true>();
     EmitSetViewportAndScissors<true>();
     EmitSetIAState<true>();
   }
