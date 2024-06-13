@@ -866,6 +866,10 @@ int SM50Initialize(
         sm50_shader->threadgroup_size[0] = Inst.m_ThreadGroupDecl.x;
         sm50_shader->threadgroup_size[1] = Inst.m_ThreadGroupDecl.y;
         sm50_shader->threadgroup_size[2] = Inst.m_ThreadGroupDecl.z;
+        func_signature.UseMaxWorkgroupSize(
+          Inst.m_ThreadGroupDecl.x * Inst.m_ThreadGroupDecl.y *
+          Inst.m_ThreadGroupDecl.z
+        );
         break;
       }
       case D3D11_SB_OPCODE_DCL_THREAD_GROUP_SHARED_MEMORY_RAW:
@@ -1092,14 +1096,17 @@ int SM50Initialize(
         auto mask = Inst.m_Operands[0].m_WriteMask >> 4;
         auto siv = Inst.m_InputPSDeclSIV.Name;
         auto interpolation =
-          to_air_interpolation(Inst.m_InputPSDeclSGV.InterpolationMode);
+          to_air_interpolation(Inst.m_InputPSDeclSIV.InterpolationMode);
         uint32_t assigned_index;
         switch (siv) {
         case D3D10_SB_NAME_POSITION:
           assert(
-            interpolation == Interpolation::center_no_perspective
-          ); // the only supported interpolation for [[position]]
+            interpolation == Interpolation::center_no_perspective ||
+            // in case it's per-sample, FIXME: will this cause problem?
+            interpolation == Interpolation::sample_no_perspective
+          );
           assigned_index = func_signature.DefineInput(
+            // the only supported interpolation for [[position]]
             InputPosition{.interpolation = interpolation}
           );
           break;

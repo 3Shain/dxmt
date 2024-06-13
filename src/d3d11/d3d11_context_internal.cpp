@@ -49,7 +49,7 @@ public:
     if (Type == ShaderType::Compute) {
       InvalidateComputePipeline();
     } else {
-      InvalidateGraphicPipeline();
+      InvalidateRenderPipeline();
     }
   }
 
@@ -264,7 +264,7 @@ public:
                                    &bytes_per_image);
         EmitBlitCommand<true>(
             [dst = dst->GetBinding(currentChunkId), src = Obj(src_bind.Buffer)](
-                MTL::BlitCommandEncoder *encoder, auto&) {
+                MTL::BlitCommandEncoder *encoder, auto &) {
               auto dst_buf = dst.buffer();
               encoder->copyFromBuffer(src, 0, dst_buf, 0, src->length());
             });
@@ -379,6 +379,14 @@ public:
     cmdbuf_state = CommandBufferState::Idle;
   }
 
+  void InvalidateRenderPass() {
+    if (cmdbuf_state != CommandBufferState::RenderPipelineReady &&
+        cmdbuf_state != CommandBufferState::RenderEncoderActive) {
+      return;
+    }
+    InvalidateCurrentPass();
+  }
+
   /**
   Render pipeline can be invalidate by reasons:
   - shader program changes
@@ -388,7 +396,7 @@ public:
   - (when layered rendering) input primitive topology changes
   -
   */
-  void InvalidateGraphicPipeline() {
+  void InvalidateRenderPipeline() {
     if (cmdbuf_state != CommandBufferState::RenderPipelineReady)
       return;
     cmdbuf_state = CommandBufferState::RenderEncoderActive;
@@ -457,7 +465,7 @@ public:
                                                ? dsv->GetPixelFormat()
                                                : MTL::PixelFormatInvalid}](
                     CommandChunk::context &ctx) {
-                      auto pool = transfer(NS::AutoreleasePool::alloc()->init());
+        auto pool = transfer(NS::AutoreleasePool::alloc()->init());
         auto renderPassDescriptor =
             MTL::RenderPassDescriptor::renderPassDescriptor();
         for (auto &rtv : rtvs) {

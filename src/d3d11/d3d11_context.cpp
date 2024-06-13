@@ -439,8 +439,8 @@ public:
       ((ID3D11Texture2D *)pDstResource)->GetDesc(&desc);
       auto slice = DstSubresource / desc.MipLevels;
       auto level = DstSubresource % desc.MipLevels;
-      uint32_t copy_rows = desc.Height;
-      uint32_t copy_columns = desc.Width;
+      uint32_t copy_rows = std::max(desc.Height >> level, 1u);
+      uint32_t copy_columns = std::max(desc.Width >> level, 1u);
       uint32_t origin_x = 0;
       uint32_t origin_y = 0;
       if (pDstBox) {
@@ -449,10 +449,6 @@ public:
         origin_x = pDstBox->left;
         origin_y = pDstBox->top;
       }
-      copy_rows = std::max(copy_rows >> level, 1u);
-      copy_columns = std::max(copy_columns >> level, 1u);
-      origin_x = std::max(origin_x >> level, 1u);
-      origin_y = std::max(origin_y >> level, 1u);
       if (auto bindable = com_cast<IMTLBindable>(pDstResource)) {
         auto copy_len = copy_rows * SrcRowPitch;
         auto chk = cmd_queue.CurrentChunk();
@@ -693,7 +689,7 @@ public:
     } else {
       state_.InputAssembler.InputLayout = nullptr;
     }
-    ctx.InvalidateGraphicPipeline();
+    ctx.InvalidateRenderPipeline();
   }
   void IAGetInputLayout(ID3D11InputLayout **ppInputLayout) {
     if (ppInputLayout) {
@@ -1350,7 +1346,7 @@ public:
       state_.OutputMerger.SampleMask = SampleMask;
     }
     if (should_invalidate_pipeline) {
-      ctx.InvalidateGraphicPipeline();
+      ctx.InvalidateRenderPipeline();
     }
     ctx.EmitBlendFactorAndStencilRef();
   }
@@ -1514,7 +1510,11 @@ public:
 
   ~MTLD3D11DeviceContext() {}
 
-  virtual void WaitUntilGPUIdle() { cmd_queue.WaitCPUFence(0); };
+  virtual void WaitUntilGPUIdle() {
+    uint64_t seq = cmd_queue.CurrentSeqId();
+    Flush();
+    cmd_queue.WaitCPUFence(seq);
+  };
 };
 
 Com<IMTLD3D11DeviceContext> CreateD3D11DeviceContext(IMTLD3D11Device *pDevice) {

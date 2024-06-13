@@ -131,7 +131,7 @@ void FilterModesByDesc(std::vector<DXGI_MODE_DESC1> &Modes,
   }
 }
 
-class MTLDXGIOutput : public MTLDXGIObject<IDXGIOutput1> {
+class MTLDXGIOutput : public MTLDXGIObject<IDXGIOutput6> {
 public:
   MTLDXGIOutput(IMTLDXGIAdatper *adapter, HMONITOR monitor)
       : m_adapter(adapter), m_monitor(monitor) {}
@@ -147,7 +147,10 @@ public:
     *ppvObject = nullptr;
 
     if (riid == __uuidof(IUnknown) || riid == __uuidof(IDXGIObject) ||
-        riid == __uuidof(IDXGIOutput) || riid == __uuidof(IDXGIOutput1)) {
+        riid == __uuidof(IDXGIOutput) || riid == __uuidof(IDXGIOutput1) ||
+        riid == __uuidof(IDXGIOutput2) || riid == __uuidof(IDXGIOutput3) ||
+        riid == __uuidof(IDXGIOutput4) || riid == __uuidof(IDXGIOutput5) ||
+        riid == __uuidof(IDXGIOutput6)) {
       *ppvObject = ref(this);
       return S_OK;
     }
@@ -259,7 +262,9 @@ public:
     return S_OK;
   }
 
-  void STDMETHODCALLTYPE ReleaseOwnership() final { WARN("ReleaseOwnership: Stub"); }
+  void STDMETHODCALLTYPE ReleaseOwnership() final {
+    WARN("ReleaseOwnership: Stub");
+  }
 
   HRESULT
   STDMETHODCALLTYPE
@@ -492,6 +497,75 @@ public:
     ERR("Not implemented");
 
     // At least return a valid error code
+    return DXGI_ERROR_UNSUPPORTED;
+  }
+
+  HRESULT CheckOverlaySupport(DXGI_FORMAT enum_format,
+                              IUnknown *concerned_device,
+                              UINT *flags) override {
+    if (flags) {
+      *flags = 0;
+    }
+    return S_OK;
+  }
+
+  WINBOOL SupportsOverlays() override { return FALSE; }
+
+  HRESULT CheckOverlayColorSpaceSupport(DXGI_FORMAT format,
+                                        DXGI_COLOR_SPACE_TYPE colour_space,
+                                        IUnknown *device,
+                                        UINT *flags) override {
+    if (flags) {
+      *flags = 0;
+    }
+    return S_OK;
+  }
+
+  HRESULT GetDesc1(DXGI_OUTPUT_DESC1 *pDesc) override {
+    if (pDesc == nullptr)
+      return DXGI_ERROR_INVALID_CALL;
+
+    if (!wsi::getDesktopCoordinates(m_monitor, &pDesc->DesktopCoordinates)) {
+      ERR("Failed to query monitor coords");
+      return E_FAIL;
+    }
+
+    if (!wsi::getDisplayName(m_monitor, pDesc->DeviceName)) {
+      ERR("Failed to query monitor name");
+      return E_FAIL;
+    }
+
+    pDesc->AttachedToDesktop = 1;
+    pDesc->Rotation = DXGI_MODE_ROTATION_UNSPECIFIED;
+    pDesc->Monitor = m_monitor;
+    pDesc->ColorSpace = DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709;
+    FLOAT s[2] = {0.0f, 1.0f};
+    memcpy(pDesc->RedPrimary, s, 8);
+    memcpy(pDesc->GreenPrimary, s, 8);
+    memcpy(pDesc->BluePrimary, s, 8);
+    memcpy(pDesc->WhitePoint, s, 8);
+    pDesc->MinLuminance = 0.0f;
+    pDesc->MaxLuminance = 1.0f;
+    return S_OK;
+  }
+
+  HRESULT CheckHardwareCompositionSupport(UINT *flags) override {
+    if (flags) {
+      *flags = 0;
+    }
+    return S_OK;
+  }
+
+  HRESULT
+  DuplicateOutput1(IUnknown *pDevice, UINT flags, UINT format_count,
+                   const DXGI_FORMAT *formats,
+                   IDXGIOutputDuplication **ppOutputDuplication) override {
+    InitReturnPtr(ppOutputDuplication);
+    if (!pDevice)
+      return E_INVALIDARG;
+
+    ERR("Not implemented");
+
     return DXGI_ERROR_UNSUPPORTED;
   }
 

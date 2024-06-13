@@ -1,6 +1,6 @@
 #pragma once
 
-#include <dxgi1_2.h>
+#include <dxgi1_6.h>
 #include "Metal/MTLDevice.hpp"
 #include "Metal/MTLPixelFormat.hpp"
 #include "Metal/MTLStageInputOutputDescriptor.hpp"

@@ -4337,7 +4337,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                 auto src0 = co_yield load_src_op<false>(bfi.src0);
                 auto src1 = co_yield load_src_op<false>(bfi.src1);
                 auto src2 = co_yield load_src_op<false>(bfi.src2);
-                auto src3 = co_yield load_src_op<false>(bfi.src2);
+                auto src3 = co_yield load_src_op<false>(bfi.src3);
                 auto width =
                   ctx.builder.CreateAnd(src0, co_yield get_int4_splat(0b11111));
                 auto offset =
@@ -4346,7 +4346,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                   co_yield get_int4_splat(0xffffffff), // is this necessary?
                   ctx.builder.CreateShl(
                     ctx.builder.CreateSub(
-                      ctx.builder.CreateLShr(co_yield get_int4_splat(1), width),
+                      ctx.builder.CreateShl(co_yield get_int4_splat(1), width),
                       co_yield get_int4_splat(1)
                     ),
                     offset
@@ -4354,7 +4354,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                 );
                 co_return ctx.builder.CreateOr(
                   ctx.builder.CreateAnd(
-                    ctx.builder.CreateLShr(src2, offset), bitmask
+                    ctx.builder.CreateShl(src2, offset), bitmask
                   ),
                   ctx.builder.CreateAnd(src3, ctx.builder.CreateNot(bitmask))
                 );

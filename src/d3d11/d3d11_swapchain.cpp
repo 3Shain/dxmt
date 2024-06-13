@@ -6,12 +6,12 @@
 #include "d3d11_context.hpp"
 #include "log/log.hpp"
 #include "mtld11_resource.hpp"
-#include "objc_pointer.hpp"
 #include "util_error.hpp"
 #include "d3d11_device.hpp"
 
 #include "objc-wrapper/dispatch.h"
 #include "util_string.hpp"
+#include "wsi_platform_win32.hpp"
 #include "wsi_window.hpp"
 
 /**
@@ -33,13 +33,13 @@ Com<IMTLD3D11BackBuffer>
 CreateEmulatedBackBuffer(IMTLD3D11Device *pDevice,
                          const DXGI_SWAP_CHAIN_DESC1 *pDesc, HWND hWnd);
 
-class MTLD3D11SwapChain final : public MTLDXGISubObject<IDXGISwapChain2> {
+class MTLD3D11SwapChain final : public MTLDXGISubObject<IDXGISwapChain4> {
 public:
   MTLD3D11SwapChain(IDXGIFactory1 *pFactory, IMTLDXGIDevice *pDevice, HWND hWnd,
                     const DXGI_SWAP_CHAIN_DESC1 *pDesc,
                     const DXGI_SWAP_CHAIN_FULLSCREEN_DESC *pFullscreenDesc)
       : MTLDXGISubObject(pDevice), factory_(pFactory), presentation_count_(0),
-        desc_(*pDesc), hWnd(hWnd) {
+        desc_(*pDesc), hWnd(hWnd), monitor_(wsi::getWindowMonitor(hWnd)) {
 
     device_ = Com<IMTLD3D11Device>::queryFrom(pDevice);
 
@@ -74,7 +74,9 @@ public:
     if (riid == __uuidof(IUnknown) || riid == __uuidof(IDXGIObject) ||
         riid == __uuidof(IDXGIDeviceSubObject) ||
         riid == __uuidof(IDXGISwapChain) || riid == __uuidof(IDXGISwapChain1) ||
-        riid == __uuidof(IDXGISwapChain2)) {
+        riid == __uuidof(IDXGISwapChain2) ||
+        riid == __uuidof(IDXGISwapChain3) ||
+        riid == __uuidof(IDXGISwapChain4)) {
       *ppvObject = ref(this);
       return S_OK;
     }
@@ -160,16 +162,19 @@ public:
   ResizeBuffers(UINT BufferCount, UINT Width, UINT Height, DXGI_FORMAT Format,
                 UINT flags) final {
     // FIXME: ... weird
-    // if (backbuffer_) {
-    //   // required behavior...
-    //   if (backbuffer_->AddRef() != 2) {
-    //     ERR("ResizeBuffers: unreleased outstanding references to back "
-    //         "buffers");
-    //     backbuffer_->Release();
-    //     return DXGI_ERROR_INVALID_CALL;
-    //   }
-    //   backbuffer_->Release();
-    // }
+    if (backbuffer_) {
+      device_context_->WaitUntilGPUIdle();
+      auto _ = backbuffer_.takeOwnership();
+      // required behavior...
+      if (auto x = _->Release() != 0) {
+        ERR("outstanding buffer hold! ", x);
+        /**
+         usually shouldn't call it, but in case devs forget to
+         unbind RTV before calling `ResizeBuffers`
+         */
+        _->Destroy();
+      }
+    }
     /* BufferCount ignored */
     if (Width == 0 || Height == 0) {
       wsi::getWindowSize(hWnd, &desc_.Width, &desc_.Height);
@@ -180,16 +185,45 @@ public:
     if (Format != DXGI_FORMAT_UNKNOWN) {
       desc_.Format = Format;
     }
-    device_context_->WaitUntilGPUIdle();
-    backbuffer_ = nullptr;
     return S_OK;
   };
 
   HRESULT
   STDMETHODCALLTYPE
   ResizeTarget(const DXGI_MODE_DESC *pDesc) final {
-    /* FIXME: check this out!*/
-    return ResizeBuffers(0, pDesc->Width, pDesc->Height, pDesc->Format, 0);
+    if (!pDesc)
+      return DXGI_ERROR_INVALID_CALL;
+
+    if (!wsi::isWindow(hWnd))
+      return DXGI_ERROR_INVALID_CALL;
+
+    // Promote display mode
+    DXGI_MODE_DESC1 newDisplayMode = {};
+    newDisplayMode.Width = pDesc->Width;
+    newDisplayMode.Height = pDesc->Height;
+    newDisplayMode.RefreshRate = pDesc->RefreshRate;
+    newDisplayMode.Format = pDesc->Format;
+    newDisplayMode.ScanlineOrdering = pDesc->ScanlineOrdering;
+    newDisplayMode.Scaling = pDesc->Scaling;
+
+    // Update the swap chain description
+    if (newDisplayMode.RefreshRate.Numerator != 0)
+      fullscreen_desc_.RefreshRate = newDisplayMode.RefreshRate;
+
+    fullscreen_desc_.ScanlineOrdering = newDisplayMode.ScanlineOrdering;
+    fullscreen_desc_.Scaling = newDisplayMode.Scaling;
+
+    wsi::DXMTWindowState state;
+    if (fullscreen_desc_.Windowed) {
+      // TODO: window state is concerned by fullscreen state
+      wsi::resizeWindow(hWnd, &state, newDisplayMode.Width,
+                        newDisplayMode.Height);
+    } else {
+      ERR("DXGISwapChain::ResizeTarget: fullscreen mode not supported yet.");
+      return E_FAIL;
+    }
+
+    return S_OK;
   };
 
   HRESULT
@@ -292,29 +326,29 @@ public:
   STDMETHODCALLTYPE
   GetRotation(DXGI_MODE_ROTATION *pRotation) final { IMPLEMENT_ME; };
 
-  HRESULT STDMETHODCALLTYPE SetSourceSize(UINT width, UINT height) {
+  HRESULT STDMETHODCALLTYPE SetSourceSize(UINT width, UINT height) override {
     IMPLEMENT_ME
     return S_OK;
   };
 
-  HRESULT STDMETHODCALLTYPE GetSourceSize(UINT *width, UINT *height) {
+  HRESULT STDMETHODCALLTYPE GetSourceSize(UINT *width, UINT *height) override {
     IMPLEMENT_ME
     return S_OK;
   };
 
-  HRESULT STDMETHODCALLTYPE SetMaximumFrameLatency(UINT max_latency) {
+  HRESULT STDMETHODCALLTYPE SetMaximumFrameLatency(UINT max_latency) override {
     // no-op?
     return S_OK;
   };
 
-  HRESULT STDMETHODCALLTYPE GetMaximumFrameLatency(UINT *max_latency) {
+  HRESULT STDMETHODCALLTYPE GetMaximumFrameLatency(UINT *max_latency) override {
     if (max_latency) {
       *max_latency = kSwapchainLatency;
     }
     return S_OK;
   };
 
-  HANDLE STDMETHODCALLTYPE GetFrameLatencyWaitableObject() {
+  HANDLE STDMETHODCALLTYPE GetFrameLatencyWaitableObject() override {
     HANDLE result = nullptr;
     HANDLE processHandle = GetCurrentProcess();
 
@@ -327,13 +361,47 @@ public:
   };
 
   HRESULT STDMETHODCALLTYPE
-  SetMatrixTransform(const DXGI_MATRIX_3X2_F *matrix) {
+  SetMatrixTransform(const DXGI_MATRIX_3X2_F *matrix) override {
     return DXGI_ERROR_INVALID_CALL;
   };
 
-  HRESULT STDMETHODCALLTYPE GetMatrixTransform(DXGI_MATRIX_3X2_F *matrix) {
+  HRESULT STDMETHODCALLTYPE
+  GetMatrixTransform(DXGI_MATRIX_3X2_F *matrix) override {
     return DXGI_ERROR_INVALID_CALL;
   };
+
+  HRESULT CheckColorSpaceSupport(DXGI_COLOR_SPACE_TYPE ColorSpace,
+                                 UINT *pColorSpaceSupport) override {
+    WARN("DXGISwapChain3::CheckColorSpaceSupport: stub");
+    if (pColorSpaceSupport) {
+      *pColorSpaceSupport = 0;
+    }
+    return S_OK;
+  };
+
+  UINT GetCurrentBackBufferIndex() override {
+    // should always 0?
+    return 0;
+  }
+
+  HRESULT ResizeBuffers1(UINT BufferCount, UINT Width, UINT Height,
+                         DXGI_FORMAT Format, UINT SwapChainFlags,
+                         const UINT *pCreationNodeMask,
+                         IUnknown *const *ppPresentQueue) override {
+    WARN("DXGISwapChain3::ResizeBuffers1: ignoring d3d12 related parameters");
+    return ResizeBuffers(BufferCount, Width, Height, Format, SwapChainFlags);
+  }
+
+  HRESULT SetColorSpace1(DXGI_COLOR_SPACE_TYPE ColorSpace) override {
+    WARN("DXGISwapChain3::SetColorSpace1: stub");
+    return S_OK;
+  }
+
+  HRESULT SetHDRMetaData(DXGI_HDR_METADATA_TYPE Type, UINT Size,
+                         void *pMetaData) override {
+    WARN("DXGISwapChain4::SetHDRMetaData: stub");
+    return DXGI_ERROR_UNSUPPORTED;
+  }
 
 private:
   Com<IDXGIFactory1> factory_;
@@ -345,6 +413,7 @@ private:
   Com<IMTLD3D11BackBuffer> backbuffer_;
   HANDLE present_semaphore_;
   HWND hWnd;
+  HMONITOR monitor_;
 };
 
 HRESULT CreateSwapChain(IDXGIFactory1 *pFactory, IMTLDXGIDevice *pDevice,

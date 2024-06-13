@@ -35,6 +35,7 @@ private:
   */
   CA::MetalLayer *layer_;
   Obj<CA::MetalDrawable> current_drawable;
+  bool destroyed = false;
 
   using BackBufferRTVBase =
       TResourceViewBase<tag_render_target_view<EmulatedBackBufferTexture>>;
@@ -45,6 +46,7 @@ private:
         : BackBufferRTVBase(pDesc, context, pDevice) {}
 
     MTL::PixelFormat GetPixelFormat() final {
+      assert(!resource->destroyed);
       return resource->layer_->pixelFormat();
     };
 
@@ -142,12 +144,17 @@ public:
     desc.Height = pDesc->Height;
   }
 
-  ~EmulatedBackBufferTexture() {
+  ~EmulatedBackBufferTexture() { Destroy(); }
+
+  void Destroy() override {
+    if (destroyed)
+      return;
     // drop reference if any
     current_drawable = nullptr;
     // unnecessary
     // layer_ = nullptr;
     layer_factory->ReleaseMetalLayer(hWnd, native_view_);
+    destroyed = true;
   }
 
   HRESULT CreateRenderTargetView(const D3D11_RENDER_TARGET_VIEW_DESC *pDesc,

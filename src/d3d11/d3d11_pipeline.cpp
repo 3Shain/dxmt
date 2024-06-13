@@ -174,8 +174,11 @@ public:
     MTL_COMPILED_SHADER cs;
     pComputeShader->GetShader(&cs); // may block
 
+    auto desc = transfer(MTL::ComputePipelineDescriptor::alloc()->init());
+    desc->setComputeFunction(cs.Function);
+
     state_ = transfer(
-        device_->GetMTLDevice()->newComputePipelineState(cs.Function, &err));
+        device_->GetMTLDevice()->newComputePipelineState(desc, 0, nullptr, &err));
 
     if (state_ == nullptr) {
       ERR("Failed to create PSO: ", err->localizedDescription()->utf8String());

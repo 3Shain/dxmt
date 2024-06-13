@@ -1,6 +1,7 @@
 #include "air_signature.hpp"
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/IR/Attributes.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/Function.h"
@@ -689,6 +690,20 @@ auto FunctionSignatureBuilder::CreateFunction(
   };
   if (early_fragment_tests) {
     function_def_tuple.push_back(MDString::get(context, "early_fragment_tests")
+    );
+  }
+  if (max_work_group_size > 0) {
+    auto tuple = MDTuple::get(
+      context, {MDString::get(context, "air.max_work_group_size"),
+                ConstantAsMetadata::get(
+                  ConstantInt::get(context, APInt{32, max_work_group_size})
+                )}
+    );
+    function_def_tuple.push_back(tuple);
+    function->addAttributeAtIndex(
+      ~0U, Attribute::get(
+             context, "max-work-group-size", std::to_string(max_work_group_size)
+           )
     );
   }
   return std::make_pair(function, MDTuple::get(context, function_def_tuple));

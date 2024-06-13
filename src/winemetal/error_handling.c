@@ -110,6 +110,7 @@ LONG CALLBACK ExceptionHandler(PEXCEPTION_POINTERS ExceptionInfo) {
     return EXCEPTION_CONTINUE_SEARCH;
   }
 
+  printf("native error at call boundary 0%llx\n", data->ctx.Rip);
   // print_stack(&data->ctx);
 
   ExceptionInfo->ExceptionRecord->ExceptionAddress = (PVOID)data->ctx.Rip;

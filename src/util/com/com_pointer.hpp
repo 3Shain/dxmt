@@ -122,6 +122,12 @@ public:
     return ret;
   }
 
+  [[nodiscard]] T* takeOwnership() {
+    auto ret = this->m_ptr;
+    this->m_ptr = nullptr;
+    return ret;
+  };
+
   operator bool() const { return this->m_ptr != nullptr; }
 
   template <bool Public_> bool operator==(const Com<T, Public_> &other) const {

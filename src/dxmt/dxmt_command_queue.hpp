@@ -395,8 +395,11 @@ public:
 
   void WaitCPUFence(uint64_t seq) {
     uint64_t current;
-    while ((current = chunk_ongoing.load(std::memory_order_relaxed))) {
-      chunk_ongoing.wait(current);
+    while ((current = cpu_coherent.load(std::memory_order_relaxed))) {
+      if (current == seq) {
+        return;
+      }
+      cpu_coherent.wait(current);
     }
   };
 

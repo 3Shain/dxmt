@@ -79,6 +79,7 @@ DEFINE_COM_INTERFACE("daf21510-d136-44dd-bb16-068a94690775",
     : public IUnknown {
   virtual void Swap() = 0;
   virtual CA::MetalDrawable *CurrentDrawable() = 0;
+  virtual void Destroy() = 0;
 };
 
 DEFINE_COM_INTERFACE("65feb8c5-01de-49df-bf58-d115007a117d", IMTLDynamicBuffer)

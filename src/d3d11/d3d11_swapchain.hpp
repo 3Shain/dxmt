@@ -1,6 +1,6 @@
 #pragma once
 
-#include "dxgi1_2.h"
+#include "dxgi1_5.h"
 #include "../dxgi/dxgi_interfaces.h"
 
 namespace dxmt {
