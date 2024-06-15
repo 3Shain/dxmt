@@ -15,7 +15,7 @@ Com<IMTLDXGIAdatper> CreateAdapter(MTL::Device *pDevice,
 class MTLDXGIFactory : public MTLDXGIObject<IDXGIFactory2> {
 
 public:
-  MTLDXGIFactory(UINT Flags) : flags_(Flags){};
+  MTLDXGIFactory(UINT Flags) : flags_(Flags) {};
 
   HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid,
                                            void **ppvObject) final {
@@ -170,7 +170,7 @@ public:
     auto devices = MTL::CopyAllDevices();
 
     if (Adapter >= (UINT)devices->count()) {
-      return DXGI_ERROR_INVALID_CALL;
+      return DXGI_ERROR_NOT_FOUND;
     }
 
     auto device = devices->object<MTL::Device>(Adapter);

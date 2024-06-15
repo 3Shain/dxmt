@@ -11,6 +11,7 @@
 #include "Metal/MTLDevice.hpp"
 #include "Metal/MTLCaptureManager.hpp"
 #include "Metal/MTLTypes.hpp"
+#include "Metal/MTLFunctionLog.hpp"
 #include "dxmt_binding.hpp"
 #include "log/log.hpp"
 #include "objc_pointer.hpp"
@@ -46,6 +47,7 @@ inline void *ptr_add(const void *const p,
 constexpr uint32_t kCommandChunkCount = 8;
 constexpr size_t kCommandChunkCPUHeapSize = 0x800000; // is 8MB too large?
 constexpr size_t kCommandChunkGPUHeapSize = 0x800000;
+constexpr size_t kOcclusionSampleCount = 4096;
 
 class CommandChunk {
 
@@ -231,7 +233,8 @@ private:
 
     auto pool = transfer(NS::AutoreleasePool::alloc()->init());
 
-    bool should_capture = ready_for_encode.load() > 60 * 40;
+    // TODO:
+    bool should_capture = false;
 
     auto c = MTL::CaptureManager::sharedCaptureManager();
     if (should_capture) {
@@ -299,6 +302,17 @@ private:
       if (chunk.attached_cmdbuf->status() <=
           MTL::CommandBufferStatusScheduled) {
         chunk.attached_cmdbuf->waitUntilCompleted();
+      }
+      if (chunk.attached_cmdbuf->status() == MTL::CommandBufferStatusError) {
+        ERR("Device error: ",
+            chunk.attached_cmdbuf->error()->localizedDescription()->cString(
+                NS::ASCIIStringEncoding));
+      }
+      if (chunk.attached_cmdbuf->logs()) {
+        if (((NS::Array *)chunk.attached_cmdbuf->logs())->count()) {
+          ERR(chunk.attached_cmdbuf->logs()->debugDescription()->cString(
+              NS::ASCIIStringEncoding));
+        }
       }
       chunk.reset();
       chunk_ongoing.fetch_sub(1, std::memory_order_relaxed);

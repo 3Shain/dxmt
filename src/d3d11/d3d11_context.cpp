@@ -1,6 +1,7 @@
 
 
 #include "d3d11_context.hpp"
+#include "d3d11_query.hpp"
 #include "dxmt_command_queue.hpp"
 
 #include "./d3d11_context_internal.cpp"
@@ -93,11 +94,45 @@ public:
   void Begin(ID3D11Asynchronous *pAsync) {
     // in theory pAsync could be any of them: { Query, Predicate, Counter }.
     // However `Predicate` and `Counter` are not supported at all
-    WARN("DeviceContext::Begin: stub");
+    D3D11_QUERY_DESC desc;
+    ((ID3D11Query *)pAsync)->GetDesc(&desc);
+    switch (desc.Query) {
+    case D3D11_QUERY_EVENT:
+      break;
+    case D3D11_QUERY_OCCLUSION:
+      // ((IMTLD3DOcclusionQuery *)pAsync)->Begin(todo);
+      /**
+      todo:
+      1. add to command queue
+      2. assign new occlusion counter
+       */
+      break;
+    default:
+      ERR("Unknown query type ", desc.Query);
+      break;
+    }
   }
 
   // See Begin()
-  void End(ID3D11Asynchronous *pAsync) { WARN("DeviceContext::End: stub"); }
+  void End(ID3D11Asynchronous *pAsync) {
+    D3D11_QUERY_DESC desc;
+    ((ID3D11Query *)pAsync)->GetDesc(&desc);
+    switch (desc.Query) {
+    case D3D11_QUERY_EVENT:
+      ((IMTLD3DEventQuery *)pAsync)->Issue(cmd_queue.CurrentSeqId());
+      break;
+    case D3D11_QUERY_OCCLUSION:
+      /**
+        todo:
+        2. assign new occlusion counter
+         */
+      // ((IMTLD3DOcclusionQuery *)pAsync)->End(todo);
+      break;
+    default:
+      ERR("Unknown query type ", desc.Query);
+      break;
+    }
+  }
 
   HRESULT GetData(ID3D11Asynchronous *pAsync, void *pData, UINT DataSize,
                   UINT GetDataFlags) {
@@ -107,10 +142,26 @@ public:
     // Allow dataSize to be zero
     if (DataSize && DataSize != pAsync->GetDataSize())
       return E_INVALIDARG;
-    pData = DataSize ? pData : nullptr;
 
-    ERR("DeviceContext::GetData: not implemented");
-    return E_FAIL;
+    if(GetDataFlags != D3D11_ASYNC_GETDATA_DONOTFLUSH) {
+      assert(0 && "handle GetDataFlags correctly");
+    }
+
+    D3D11_QUERY_DESC desc;
+    ((ID3D11Query *)pAsync)->GetDesc(&desc);
+    switch (desc.Query) {
+    case D3D11_QUERY_EVENT: {
+      return ((IMTLD3DEventQuery *)pAsync)->GetData(cmd_queue.CoherentSeqId());
+    }
+    case D3D11_QUERY_OCCLUSION: {
+      uint64_t null_data;
+      uint64_t *data_ptr = pData ? (uint64_t *)pData : &null_data;
+      return ((IMTLD3DOcclusionQuery *)pAsync)->GetData(data_ptr);
+    }
+    default:
+      ERR("Unknown query type ", desc.Query);
+      return E_FAIL;
+    }
   }
 
   HRESULT Map(ID3D11Resource *pResource, UINT Subresource, D3D11_MAP MapType,

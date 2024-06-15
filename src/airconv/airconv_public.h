@@ -32,13 +32,13 @@ typedef uint32_t ShaderType;
 typedef uint32_t SM50BindingType;
 #endif
 
-enum MTL_SM50_SHADER_ARGUMENT_FLAG: uint32_t {
+enum MTL_SM50_SHADER_ARGUMENT_FLAG : uint32_t {
   MTL_SM50_SHADER_ARGUMENT_BUFFER = 1 << 0,
   MTL_SM50_SHADER_ARGUMENT_TEXTURE = 1 << 1,
   MTL_SM50_SHADER_ARGUMENT_ELEMENT_WIDTH = 1 << 2,
-  MTL_SM50_SHADER_ARGUMENT_UAV_COUNTER = 1<< 3,
-  MTL_SM50_SHADER_ARGUMENT_READ_ACCESS = 1<< 10,
-  MTL_SM50_SHADER_ARGUMENT_WRITE_ACCESS = 1<< 11,
+  MTL_SM50_SHADER_ARGUMENT_UAV_COUNTER = 1 << 3,
+  MTL_SM50_SHADER_ARGUMENT_READ_ACCESS = 1 << 10,
+  MTL_SM50_SHADER_ARGUMENT_WRITE_ACCESS = 1 << 11,
 };
 
 struct MTL_SM50_SHADER_ARGUMENT {
@@ -100,7 +100,7 @@ GetArgumentIndex(SM50BindingType Type, uint32_t SM50BindingSlot) {
   }
 };
 
-inline uint32_t GetArgumentIndex(struct MTL_SM50_SHADER_ARGUMENT& Argument) {
+inline uint32_t GetArgumentIndex(struct MTL_SM50_SHADER_ARGUMENT &Argument) {
   return GetArgumentIndex(Argument.Type, Argument.SM50BindingSlot);
 };
 
@@ -112,8 +112,8 @@ AIRCONV_EXPORT int SM50Initialize(
 );
 AIRCONV_EXPORT void SM50Destroy(SM50Shader *pShader);
 AIRCONV_EXPORT int SM50Compile(
-  SM50Shader *pShader, void *pArgs, SM50CompiledBitcode **ppBitcode,
-  SM50Error **ppError
+  SM50Shader *pShader, void *pArgs, const char *FunctionName,
+  SM50CompiledBitcode **ppBitcode, SM50Error **ppError
 );
 AIRCONV_EXPORT void SM50GetCompiledBitcode(
   SM50CompiledBitcode *pBitcode, struct MTL_SHADER_BITCODE *pData

@@ -86,7 +86,6 @@ public:
         auto maybeExist = ShaderStage.ConstantBuffers.insert({i, {}});
         // either old value or inserted empty value
         auto &entry = maybeExist.first->second;
-        entry.Buffer = nullptr; // dereference old
         entry.FirstConstant =
             pFirstConstant ? pFirstConstant[i - StartSlot] : 0;
         if (pNumConstants) {
@@ -97,6 +96,7 @@ public:
           entry.NumConstants = desc.ByteWidth >> 4;
         }
         if (auto dynamic = com_cast<IMTLDynamicBindable>(pConstantBuffer)) {
+          entry.Buffer = nullptr; // dereference old
           dynamic->GetBindable(&entry.Buffer,
                                [this]() { binding_ready.clr(Type); });
         } else if (auto expected = com_cast<IMTLBindable>(pConstantBuffer)) {
@@ -153,8 +153,8 @@ public:
         auto maybeExist = ShaderStage.SRVs.insert({Slot, {}});
         // either old value or inserted empty value
         auto &entry = maybeExist.first->second;
-        entry = nullptr;
         if (auto dynamic = com_cast<IMTLDynamicBindable>(pView)) {
+          entry = nullptr;
           dynamic->GetBindable(&entry, [this]() { binding_ready.clr(Type); });
         } else if (auto expected = com_cast<IMTLBindable>(pView)) {
           entry = std::move(expected);
@@ -377,14 +377,6 @@ public:
     binding_ready.clrAll();
 
     cmdbuf_state = CommandBufferState::Idle;
-  }
-
-  void InvalidateRenderPass() {
-    if (cmdbuf_state != CommandBufferState::RenderPipelineReady &&
-        cmdbuf_state != CommandBufferState::RenderEncoderActive) {
-      return;
-    }
-    InvalidateCurrentPass();
   }
 
   /**
@@ -720,11 +712,14 @@ public:
           switch (stage) {
           case ShaderType::Vertex:
             ctx.render_encoder->useResource(res.resource(&ctx), usage,
-                                            MTL::RenderStageVertex);
+                                            // FIXME: should be smarter
+                                            MTL::RenderStageVertex |
+                                                MTL::RenderStageFragment);
             break;
           case ShaderType::Pixel:
             ctx.render_encoder->useResource(res.resource(&ctx), usage,
-                                            MTL::RenderStageFragment);
+                                            MTL::RenderStageVertex |
+                                                MTL::RenderStageFragment);
             break;
           case ShaderType::Compute:
             ctx.compute_encoder->useResource(res.resource(&ctx), usage);
@@ -742,8 +737,11 @@ public:
         auto &arg = reflection.Arguments[i];
         switch (arg.Type) {
         case SM50BindingType::ConstantBuffer: {
-          if (!ShaderStage.ConstantBuffers.contains(arg.SM50BindingSlot))
+          if (!ShaderStage.ConstantBuffers.contains(arg.SM50BindingSlot)) {
+            ERR("expect constant buffer at slot ", arg.SM50BindingSlot,
+                " but none is bound.");
             break;
+          }
           auto &cbuf = ShaderStage.ConstantBuffers[arg.SM50BindingSlot];
           auto binding = cbuf.Buffer->GetBinding(currentChunkId);
           encoder->setBuffer(binding.buffer(), cbuf.FirstConstant * 0x10,
@@ -752,8 +750,11 @@ public:
           break;
         }
         case SM50BindingType::Sampler: {
-          if (!ShaderStage.Samplers.contains(arg.SM50BindingSlot))
+          if (!ShaderStage.Samplers.contains(arg.SM50BindingSlot)) {
+            ERR("expect sample at slot ", arg.SM50BindingSlot,
+                " but none is bound.");
             break;
+          }
           auto &sampler = ShaderStage.Samplers[arg.SM50BindingSlot];
           assert(sampler);
           encoder->setSamplerState(sampler->GetSamplerState(),
@@ -761,8 +762,11 @@ public:
           break;
         }
         case SM50BindingType::SRV: {
-          if (!ShaderStage.SRVs.contains(arg.SM50BindingSlot))
+          if (!ShaderStage.SRVs.contains(arg.SM50BindingSlot)) {
+            ERR("expect shader resource at slot ", arg.SM50BindingSlot,
+                " but none is bound.");
             break;
+          }
           auto &srv = ShaderStage.SRVs[arg.SM50BindingSlot];
           auto binding = srv->GetBinding(currentChunkId);
           if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_BUFFER) {
@@ -788,8 +792,11 @@ public:
         }
         case SM50BindingType::UAV: {
           if constexpr (stage == ShaderType::Compute) {
-            if (!state_.ComputeStageUAV.UAVs.contains(arg.SM50BindingSlot))
+            if (!state_.ComputeStageUAV.UAVs.contains(arg.SM50BindingSlot)) {
+              ERR("expect uav at slot ", arg.SM50BindingSlot,
+                  " but none is bound.");
               break;
+            }
             auto &uav = state_.ComputeStageUAV.UAVs[arg.SM50BindingSlot];
             auto binding = uav.View->GetBinding(currentChunkId);
             if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_BUFFER) {

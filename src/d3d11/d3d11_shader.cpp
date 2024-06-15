@@ -1,3 +1,5 @@
+#include <atomic>
+#include <string>
 #define __METALCPP__ 1
 #include "d3d11_shader.hpp"
 #include "Metal/MTLArgumentEncoder.hpp"
@@ -20,6 +22,8 @@ struct tag_compute_shader {
   using COM = ID3D11ComputeShader;
 };
 
+static std::atomic_uint64_t global_id = 0;
+
 template <typename tag>
 class TShaderBase
     : public MTLD3D11DeviceChild<typename tag::COM, IMTLD3D11Shader> {
@@ -28,7 +32,9 @@ public:
               MTL_SHADER_REFLECTION &reflection,
               Obj<MTL::ArgumentEncoder> encoder)
       : MTLD3D11DeviceChild<typename tag::COM, IMTLD3D11Shader>(device),
-        sm50(sm50), reflection(reflection), encoder_(std::move(encoder)) {}
+        sm50(sm50), reflection(reflection), encoder_(std::move(encoder)) {
+    id = ++global_id;
+  }
 
   ~TShaderBase() {
     if (sm50) {
@@ -74,6 +80,7 @@ public:
   MTL_SHADER_REFLECTION reflection;
   Com<IMTLCompiledShader> precompiled_;
   Obj<MTL::ArgumentEncoder> encoder_;
+  uint64_t id;
 };
 
 template <typename tag>
@@ -123,8 +130,9 @@ public:
     {
       SM50CompiledBitcode *compile_result;
       SM50Error *sm50_err;
-      if (auto ret =
-              SM50Compile(shader_->sm50, nullptr, &compile_result, &sm50_err)) {
+      std::string func_name = "shader_main_" + std::to_string(shader_->id);
+      if (auto ret = SM50Compile(shader_->sm50, nullptr, func_name.c_str(),
+                                 &compile_result, &sm50_err)) {
         if (ret == 42) {
           ERR("TODO: dump shader bytecode");
           return;
@@ -151,7 +159,7 @@ public:
       dispatch_release(dispatch_data);
       SM50DestroyBitcode(compile_result);
       function_ = transfer(library->newFunction(
-          NS::String::string("shader_main", NS::UTF8StringEncoding)));
+          NS::String::string(func_name.c_str(), NS::UTF8StringEncoding)));
       if (function_ == nullptr) {
         ERR("Failed to create MTLFunction: name not found");
         return;

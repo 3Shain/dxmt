@@ -205,13 +205,15 @@ public:
     HRESULT hr = GetDisplayModeList1(EnumFormat, Flags, pNumModes,
                                      pDesc ? modes.data() : nullptr);
 
-    for (uint32_t i = 0; i < *pNumModes && i < modes.size(); i++) {
-      pDesc[i].Width = modes[i].Width;
-      pDesc[i].Height = modes[i].Height;
-      pDesc[i].RefreshRate = modes[i].RefreshRate;
-      pDesc[i].Format = modes[i].Format;
-      pDesc[i].ScanlineOrdering = modes[i].ScanlineOrdering;
-      pDesc[i].Scaling = modes[i].Scaling;
+    if (pDesc) {
+      for (uint32_t i = 0; i < *pNumModes && i < modes.size(); i++) {
+        pDesc[i].Width = modes[i].Width;
+        pDesc[i].Height = modes[i].Height;
+        pDesc[i].RefreshRate = modes[i].RefreshRate;
+        pDesc[i].Format = modes[i].Format;
+        pDesc[i].ScanlineOrdering = modes[i].ScanlineOrdering;
+        pDesc[i].Scaling = modes[i].Scaling;
+      }
     }
 
     return hr;
@@ -538,6 +540,7 @@ public:
     pDesc->AttachedToDesktop = 1;
     pDesc->Rotation = DXGI_MODE_ROTATION_UNSPECIFIED;
     pDesc->Monitor = m_monitor;
+    pDesc->BitsPerColor = 8; // FIXME:
     pDesc->ColorSpace = DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709;
     FLOAT s[2] = {0.0f, 1.0f};
     memcpy(pDesc->RedPrimary, s, 8);
@@ -546,6 +549,7 @@ public:
     memcpy(pDesc->WhitePoint, s, 8);
     pDesc->MinLuminance = 0.0f;
     pDesc->MaxLuminance = 1.0f;
+    pDesc->MaxFullFrameLuminance = 0;
     return S_OK;
   }
 

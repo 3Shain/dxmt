@@ -101,19 +101,20 @@ public:
     wcscpy(pDesc->Description,
            (const wchar_t *)m_deivce->name()->cString(NS::UTF16StringEncoding));
 
-    //   pDesc->VendorId = deviceProp.vendorID;
-    //   pDesc->DeviceId = deviceProp.deviceID;
-    //   pDesc->SubSysId = 0;
-    //   pDesc->Revision = 0;
-    //   pDesc->DedicatedVideoMemory = deviceMemory;
-    //   pDesc->DedicatedSystemMemory = 0;
-    //   pDesc->SharedSystemMemory = sharedMemory;
-    //   pDesc->AdapterLuid = LUID{0, 0};
+    // FIXME: fill the correct values
+    pDesc->VendorId = 4098;
+    pDesc->DeviceId = 26287;
+    pDesc->SubSysId = 0;
+    pDesc->Revision = 0;
+    pDesc->DedicatedVideoMemory = 2290653168;
+    pDesc->DedicatedSystemMemory = 2290653168;
+    pDesc->SharedSystemMemory = 2290653168;
+    pDesc->AdapterLuid = LUID{1168, 1};
     pDesc->Flags = DXGI_ADAPTER_FLAG_NONE;
-    //   pDesc->GraphicsPreemptionGranularity =
-    //       DXGI_GRAPHICS_PREEMPTION_DMA_BUFFER_BOUNDARY;
-    //   pDesc->ComputePreemptionGranularity =
-    //       DXGI_COMPUTE_PREEMPTION_DMA_BUFFER_BOUNDARY;
+    pDesc->GraphicsPreemptionGranularity =
+        DXGI_GRAPHICS_PREEMPTION_DMA_BUFFER_BOUNDARY;
+    pDesc->ComputePreemptionGranularity =
+        DXGI_COMPUTE_PREEMPTION_DMA_BUFFER_BOUNDARY;
 
     // TODO
 
@@ -326,6 +327,9 @@ public:
       pMtlDesc->VertexFormat = MTL::VertexFormatUChar4Normalized;
       pMtlDesc->AttributeFormat = MTL::AttributeFormatUChar4Normalized;
       pMtlDesc->BytesPerTexel = 4;
+      pMtlDesc->SupportBackBuffer = TRUE;
+      // FIXME: backbuffer format not supported!
+      // need some workaround for GetDisplayModeList
       break;
     }
     case DXGI_FORMAT_R8G8B8A8_UNORM_SRGB: {

@@ -99,7 +99,8 @@ struct LLVMDisDiagnosticHandler : public DiagnosticHandler {
 
 namespace dxmt::dxbc {
 llvm::Error convertDXBC(
-  SM50Shader *pShader, llvm::LLVMContext &context, llvm::Module &module
+  SM50Shader *pShader, const char *name, llvm::LLVMContext &context,
+  llvm::Module &module
 );
 }
 
@@ -198,7 +199,7 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  if (auto err = dxmt::dxbc::convertDXBC(sm50, Context, M)) {
+  if (auto err = dxmt::dxbc::convertDXBC(sm50, "shader_main", Context, M)) {
     errs() << err << '\n';
     return 1;
   }

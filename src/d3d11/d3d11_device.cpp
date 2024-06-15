@@ -264,7 +264,7 @@ public:
 
     if (!ppDepthStencilView)
       return S_FALSE;
-    
+
     if (auto res = Com<IDXMTResource>::queryFrom(pResource); res != nullptr) {
       return res->CreateDepthStencilView(pDesc, ppDepthStencilView);
     }
@@ -591,7 +591,8 @@ public:
     MTL_FORMAT_DESC desc;
     adapter_->QueryFormatDesc(Format, &desc);
     if (desc.PixelFormat == MTL::PixelFormatInvalid) {
-      return E_FAIL;
+      *pNumQualityLevels = 0;
+      return E_INVALIDARG;
     }
 
     // MSDN:

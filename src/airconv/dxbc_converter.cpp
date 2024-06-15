@@ -65,7 +65,8 @@ public:
 namespace dxmt::dxbc {
 
 llvm::Error convertDXBC(
-  SM50Shader *pShader, llvm::LLVMContext &context, llvm::Module &module
+  SM50Shader *pShader, const char *name, llvm::LLVMContext &context,
+  llvm::Module &module
 ) {
   using namespace microsoft;
 
@@ -277,7 +278,7 @@ llvm::Error convertDXBC(
       });
   }
   auto [function, function_metadata] =
-    func_signature.CreateFunction("shader_main", context, module);
+    func_signature.CreateFunction(name, context, module);
 
   auto entry_bb = llvm::BasicBlock::Create(context, "entry", function);
   auto epilogue_bb = llvm::BasicBlock::Create(context, "epilogue", function);
@@ -1426,8 +1427,8 @@ void SM50Destroy(SM50Shader *pShader) { delete (SM50ShaderInternal *)pShader; }
 ABRT_HANDLE_INIT
 
 int SM50Compile(
-  SM50Shader *pShader, void *pArgs, SM50CompiledBitcode **ppBitcode,
-  SM50Error **ppError
+  SM50Shader *pShader, void *pArgs, const char *FunctionName,
+  SM50CompiledBitcode **ppBitcode, SM50Error **ppError
 ) {
   ABRT_HANDLE_RETURN(42)
 
@@ -1453,7 +1454,8 @@ int SM50Compile(
   auto pModule = std::make_unique<Module>("shader.air", context);
   initializeModule(*pModule, {.enableFastMath = true});
 
-  if (auto err = dxmt::dxbc::convertDXBC(pShader, context, *pModule)) {
+  if (auto err =
+        dxmt::dxbc::convertDXBC(pShader, FunctionName, context, *pModule)) {
     llvm::handleAllErrors(std::move(err), [&](const UnsupportedFeature &u) {
       errorOut << u.msg;
     });
