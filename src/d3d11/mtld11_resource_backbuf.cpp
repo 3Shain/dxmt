@@ -34,6 +34,7 @@ private:
   it's managed by native_view_
   */
   CA::MetalLayer *layer_;
+  MTL::PixelFormat pixel_format_;
   Obj<CA::MetalDrawable> current_drawable;
   bool destroyed = false;
 
@@ -47,7 +48,7 @@ private:
 
     MTL::PixelFormat GetPixelFormat() final {
       assert(!resource->destroyed);
-      return resource->layer_->pixelFormat();
+      return resource->pixel_format_;
     };
 
     BindingRef GetBinding(uint64_t) {
@@ -69,6 +70,10 @@ private:
       return BindingRef(static_cast<BackBufferSource *>(resource.ptr()));
     };
 
+    ArgumentData GetArgumentData() override {
+      return ArgumentData(static_cast<BackBufferSource *>(resource.ptr()));
+    };
+
     void GetLogicalResourceOrView(REFIID riid,
                                   void **ppLogicalResource) override {
       QueryInterface(riid, ppLogicalResource);
@@ -86,6 +91,10 @@ private:
 
     BindingRef GetBinding(uint64_t) override {
       return BindingRef(static_cast<BackBufferSource *>(resource.ptr()));
+    };
+
+    ArgumentData GetArgumentData() override {
+      return ArgumentData(static_cast<BackBufferSource *>(resource.ptr()));
     };
 
     void GetLogicalResourceOrView(REFIID riid,
@@ -125,6 +134,7 @@ public:
     }
     layer_->setDevice(pDevice->GetMTLDevice());
     layer_->setPixelFormat(metal_format.PixelFormat);
+    pixel_format_ = metal_format.PixelFormat;
     layer_->setDrawableSize({(double)pDesc->Width, (double)pDesc->Height});
     // layer_->setDisplaySyncEnabled(false);
     desc.ArraySize = 1;
@@ -268,6 +278,10 @@ public:
 
   BindingRef GetBinding(uint64_t) override {
     return BindingRef(static_cast<BackBufferSource *>(this));
+  };
+
+  ArgumentData GetArgumentData() override {
+    return ArgumentData(static_cast<BackBufferSource *>(this));
   };
 
   void GetLogicalResourceOrView(REFIID riid,

@@ -3,6 +3,7 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/IR/Attributes.h"
 #include "llvm/IR/Constants.h"
+#include "llvm/IR/DataLayout.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/LLVMContext.h"
@@ -143,7 +144,7 @@ uint32_t ArgumentBufferBuilder::DefineInteger32(
 
 auto build_argument_binding_buffer(
   StreamMDHelper &md, const ArgumentBindingBuffer &buffer,
-  llvm::LLVMContext &context, llvm::Module &module
+  llvm::LLVMContext &context, const llvm::DataLayout &layout
 ) -> llvm::Type * {
   md.string("air.buffer");
   if (buffer.buffer_size.has_value()) {
@@ -181,11 +182,11 @@ auto build_argument_binding_buffer(
 
   md.string("air.arg_type_size");
   md.integer( // FIXME: bool (i1)
-    module.getDataLayout().getTypeSizeInBits(type) / 8
+    layout.getTypeSizeInBits(type) / 8
   );
 
   md.string("air.arg_type_align_size");
-  md.integer(module.getDataLayout().getABITypeAlign(type).value());
+  md.integer(layout.getABITypeAlign(type).value());
 
   md.string("air.arg_type_name");
   md.string(get_name(buffer.type));
@@ -197,11 +198,10 @@ auto build_argument_binding_buffer(
 };
 auto build_argument_binding_indirect_buffer(
   StreamMDHelper &md, const ArgumentBindingIndirectBuffer &indirect_buffer,
-  llvm::LLVMContext &context, llvm::Module &module
+  llvm::LLVMContext &context, const llvm::DataLayout &layout
 ) -> llvm::Type * {
   md.string("air.indirect_buffer");
-  auto struct_layout =
-    module.getDataLayout().getStructLayout(indirect_buffer.struct_type);
+  auto struct_layout = layout.getStructLayout(indirect_buffer.struct_type);
   md.string("air.buffer_size");
   md.integer((struct_layout->getSizeInBytes() * indirect_buffer.array_size));
   md.string("air.location_index");
@@ -246,7 +246,7 @@ auto build_argument_binding_indirect_buffer(
 };
 auto build_argument_binding_texture(
   StreamMDHelper &md, const ArgumentBindingTexture &texture,
-  llvm::LLVMContext &context, llvm::Module &module
+  llvm::LLVMContext &context
 ) -> llvm::Type * {
   auto texture_type_name = texture.type.get_name();
   md.string("air.texture")
@@ -283,7 +283,7 @@ auto build_argument_binding_texture(
 };
 auto build_argument_binding_sampler(
   StreamMDHelper &md, const ArgumentBindingSampler &sampler,
-  llvm::LLVMContext &context, llvm::Module &module
+  llvm::LLVMContext &context
 ) -> llvm::Type * {
   md.string("air.sampler")
     ->string("air.location_index")
@@ -322,7 +322,7 @@ auto insert_inteterpolation(StreamMDHelper &md, Interpolation interpolation) {
 }
 
 auto ArgumentBufferBuilder::Build(
-  llvm::LLVMContext &context, llvm::Module &module
+  llvm::LLVMContext &context, const llvm::DataLayout &layout
 ) -> std::tuple<llvm::StructType *, llvm::MDNode *> {
   std::vector<llvm::Type *> fields;
   std::vector<llvm::Metadata *> indirect_argument;
@@ -334,22 +334,22 @@ auto ArgumentBufferBuilder::Build(
       patterns{
         [&](const ArgumentBindingBuffer &buffer) {
           return build_argument_binding_buffer(
-            metadata_field, buffer, context, module
+            metadata_field, buffer, context, layout
           );
         },
         [&](const ArgumentBindingIndirectBuffer &indirect_buffer) {
           return build_argument_binding_indirect_buffer(
-            metadata_field, indirect_buffer, context, module
+            metadata_field, indirect_buffer, context, layout
           );
         },
         [&](const ArgumentBindingTexture &texture) {
           return build_argument_binding_texture(
-            metadata_field, texture, context, module
+            metadata_field, texture, context
           );
         },
         [&](const ArgumentBindingSampler &sampler) {
           return build_argument_binding_sampler(
-            metadata_field, sampler, context, module
+            metadata_field, sampler, context
           );
         },
         [&](const ArgumentBindingIndirectConstant &constant) {
@@ -375,14 +375,14 @@ auto ArgumentBufferBuilder::Build(
     StructType::create(context, fields, "argument_buffer_struct");
 
   // struct_type.
-  auto struct_layout = module.getDataLayout().getStructLayout(struct_type);
+  auto struct_layout = layout.getStructLayout(struct_type);
   auto member_offsets = struct_layout->getMemberOffsets();
   StreamMDHelper struct_metadata;
   for (auto [field_type, member_offset, indirect_argument_metadata] :
        zip(fields, member_offsets, indirect_argument)) {
     struct_metadata.integer(member_offset)
       ->integer(
-        module.getDataLayout().getTypeSizeInBits(field_type) / 8
+        layout.getTypeSizeInBits(field_type) / 8
       )            // CAVEATS: the bool is represented as i8 in arugment
                    // buffer (but i1 in function argument)
       ->integer(0) // TODO: array_size (0 for non-array, like
@@ -477,22 +477,22 @@ auto FunctionSignatureBuilder::CreateFunction(
         },
         [&](const ArgumentBindingBuffer &buffer) {
           return build_argument_binding_buffer(
-            metadata_field, buffer, context, module
+            metadata_field, buffer, context, module.getDataLayout()
           );
         },
         [&](const ArgumentBindingIndirectBuffer &indirect_buffer) {
           return build_argument_binding_indirect_buffer(
-            metadata_field, indirect_buffer, context, module
+            metadata_field, indirect_buffer, context, module.getDataLayout()
           );
         },
         [&](const ArgumentBindingTexture &texture) {
           return build_argument_binding_texture(
-            metadata_field, texture, context, module
+            metadata_field, texture, context
           );
         },
         [&](const ArgumentBindingSampler &sampler) {
           return build_argument_binding_sampler(
-            metadata_field, sampler, context, module
+            metadata_field, sampler, context
           );
         },
         [&](const InputPosition &position) {

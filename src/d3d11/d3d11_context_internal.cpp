@@ -9,7 +9,6 @@ since it is for internal use only
 #include "d3d11_context_state.hpp"
 #include "d3d11_device.hpp"
 #include "d3d11_pipeline.hpp"
-#include "d3d11_private.h"
 #include "dxmt_command_queue.hpp"
 #include "util_flags.hpp"
 
@@ -80,25 +79,31 @@ public:
                          const UINT *pNumConstants) {
     auto &ShaderStage = state_.ShaderStages[(UINT)Type];
 
-    for (unsigned i = StartSlot; i < StartSlot + NumBuffers; i++) {
-      auto pConstantBuffer = ppConstantBuffers[i - StartSlot];
+    for (unsigned slot = StartSlot; slot < StartSlot + NumBuffers; slot++) {
+      auto pConstantBuffer = ppConstantBuffers[slot - StartSlot];
       if (pConstantBuffer) {
-        auto maybeExist = ShaderStage.ConstantBuffers.insert({i, {}});
-        // either old value or inserted empty value
-        auto &entry = maybeExist.first->second;
+        bool replaced = false;
+        auto &entry =
+            ShaderStage.ConstantBuffers.bind(slot, {pConstantBuffer}, replaced);
+        if (!replaced)
+          continue;
         entry.FirstConstant =
-            pFirstConstant ? pFirstConstant[i - StartSlot] : 0;
+            pFirstConstant ? pFirstConstant[slot - StartSlot] : 0;
         if (pNumConstants) {
-          entry.NumConstants = pNumConstants[i - StartSlot];
+          entry.NumConstants = pNumConstants[slot - StartSlot];
         } else {
           D3D11_BUFFER_DESC desc;
           pConstantBuffer->GetDesc(&desc);
           entry.NumConstants = desc.ByteWidth >> 4;
         }
         if (auto dynamic = com_cast<IMTLDynamicBindable>(pConstantBuffer)) {
-          entry.Buffer = nullptr; // dereference old
-          dynamic->GetBindable(&entry.Buffer,
-                               [this]() { binding_ready.clr(Type); });
+          auto old = std::move(entry.Buffer); // FIXME: it looks so weird!
+          // should migrate vertex buffer storage to BindingSet
+          // once we have implemented BindingSet iteration
+          dynamic->GetBindable(
+              &entry.Buffer, [slot, &set = ShaderStage.ConstantBuffers](auto) {
+                set.set_dirty(slot);
+              });
         } else if (auto expected = com_cast<IMTLBindable>(pConstantBuffer)) {
           entry.Buffer = std::move(expected);
         } else {
@@ -106,11 +111,9 @@ public:
         }
       } else {
         // BIND NULL
-        ShaderStage.ConstantBuffers.erase(i);
+        ShaderStage.ConstantBuffers.unbind(slot);
       }
     }
-
-    binding_ready.clr(Type);
   }
 
   template <ShaderType Type>
@@ -120,8 +123,8 @@ public:
     auto &ShaderStage = state_.ShaderStages[(UINT)Type];
 
     for (auto i = 0u; i < NumBuffers; i++) {
-      if (ShaderStage.ConstantBuffers.contains(StartSlot + i)) {
-        auto &cb = ShaderStage.ConstantBuffers[StartSlot + i];
+      if (ShaderStage.ConstantBuffers.test_bound(StartSlot + i)) {
+        auto &cb = ShaderStage.ConstantBuffers.at(StartSlot + i);
         if (ppConstantBuffers) {
           cb.Buffer->GetLogicalResourceOrView(
               IID_PPV_ARGS(&ppConstantBuffers[i]));
@@ -136,7 +139,6 @@ public:
         if (ppConstantBuffers) {
           ppConstantBuffers[i] = nullptr;
         }
-        // FIXME: should reset FirstConstant and NumConstants?
       }
     }
   }
@@ -147,27 +149,27 @@ public:
                     ID3D11ShaderResourceView *const *ppShaderResourceViews) {
 
     auto &ShaderStage = state_.ShaderStages[(UINT)Type];
-    for (unsigned Slot = StartSlot; Slot < StartSlot + NumViews; Slot++) {
-      auto pView = ppShaderResourceViews[Slot - StartSlot];
+    for (unsigned slot = StartSlot; slot < StartSlot + NumViews; slot++) {
+      auto pView = ppShaderResourceViews[slot - StartSlot];
       if (pView) {
-        auto maybeExist = ShaderStage.SRVs.insert({Slot, {}});
-        // either old value or inserted empty value
-        auto &entry = maybeExist.first->second;
+        bool replaced = false;
+        auto &entry = ShaderStage.SRVs.bind(slot, {pView}, replaced);
+        if (!replaced)
+          continue;
         if (auto dynamic = com_cast<IMTLDynamicBindable>(pView)) {
-          entry = nullptr;
-          dynamic->GetBindable(&entry, [this]() { binding_ready.clr(Type); });
+          entry.SRV = nullptr;
+          dynamic->GetBindable(&entry.SRV, [slot, &set = ShaderStage.SRVs](
+                                               auto) { set.set_dirty(slot); });
         } else if (auto expected = com_cast<IMTLBindable>(pView)) {
-          entry = std::move(expected);
+          entry.SRV = std::move(expected);
         } else {
           assert(0 && "wtf");
         }
       } else {
         // BIND NULL
-        ShaderStage.SRVs.erase(Slot);
+        ShaderStage.SRVs.unbind(slot);
       }
     }
-
-    binding_ready.clr(Type);
   }
 
   template <ShaderType Type>
@@ -178,8 +180,8 @@ public:
     if (!ppShaderResourceViews)
       return;
     for (auto i = 0u; i < NumViews; i++) {
-      if (ShaderStage.SRVs.contains(StartSlot + i)) {
-        ShaderStage.SRVs[i]->GetLogicalResourceOrView(
+      if (ShaderStage.SRVs.test_bound(StartSlot + i)) {
+        ShaderStage.SRVs[i].SRV->GetLogicalResourceOrView(
             IID_PPV_ARGS(&ppShaderResourceViews[i]));
       } else {
         ppShaderResourceViews[i] = nullptr;
@@ -194,21 +196,20 @@ public:
     for (unsigned Slot = StartSlot; Slot < StartSlot + NumSamplers; Slot++) {
       auto pSampler = ppSamplers[Slot - StartSlot];
       if (pSampler) {
-        auto maybeExist = ShaderStage.Samplers.insert({Slot, {}});
-        // either old value or inserted empty value
-        auto &entry = maybeExist.first->second;
+        bool replaced = false;
+        auto &entry = ShaderStage.Samplers.bind(Slot, {pSampler}, replaced);
+        if (!replaced)
+          continue;
         if (auto expected = com_cast<IMTLD3D11SamplerState>(pSampler)) {
-          entry = std::move(expected);
+          entry.Sampler = std::move(expected);
         } else {
           assert(0 && "wtf");
         }
       } else {
         // BIND NULL
-        ShaderStage.Samplers.erase(Slot);
+        ShaderStage.Samplers.unbind(Slot);
       }
     }
-
-    binding_ready.clr(Type);
   }
 
   template <ShaderType Type>
@@ -217,8 +218,9 @@ public:
     auto &ShaderStage = state_.ShaderStages[(UINT)Type];
     if (ppSamplers) {
       for (unsigned Slot = StartSlot; Slot < StartSlot + NumSamplers; Slot++) {
-        if (ShaderStage.Samplers.contains(Slot)) {
-          ppSamplers[Slot - StartSlot] = ShaderStage.Samplers[Slot].ref();
+        if (ShaderStage.Samplers.test_bound(Slot)) {
+          ppSamplers[Slot - StartSlot] =
+              ShaderStage.Samplers[Slot].Sampler.ref();
         } else {
           ppSamplers[Slot - StartSlot] = nullptr;
         }
@@ -226,6 +228,67 @@ public:
     }
   }
 
+#pragma endregion
+
+#pragma region InputAssembler
+  void SetVertexBuffers(UINT StartSlot, UINT NumBuffers,
+                        ID3D11Buffer *const *ppVertexBuffers,
+                        const UINT *pStrides, const UINT *pOffsets) {
+    // FIXME: this implementation is completely BS
+    auto &BoundVBs = state_.InputAssembler.VertexBuffers;
+    for (unsigned Slot = StartSlot; Slot < StartSlot + NumBuffers; Slot++) {
+      auto &VB = BoundVBs[Slot];
+      VB.Buffer = nullptr;
+      if (auto dynamic = com_cast<IMTLDynamicBindable>(
+              ppVertexBuffers[Slot - StartSlot])) {
+        dynamic->GetBindable(&VB.Buffer, [this, Slot](MTL::Buffer *buffer) {
+          vertex_buffer_dirty |= (1 << Slot);
+          auto &BoundVBs = state_.InputAssembler.VertexBuffers;
+          auto &VB = BoundVBs[Slot];
+          VB.BufferRaw = buffer;
+        });
+      } else if (auto expected = com_cast<IMTLBindable>(
+                     ppVertexBuffers[Slot - StartSlot])) {
+        VB.Buffer = std::move(expected);
+      } else if (ppVertexBuffers[Slot - StartSlot]) {
+        ERR("IASetVertexBuffers: wrong vertex buffer binding");
+      } else {
+        BoundVBs.erase(Slot);
+      }
+      if (ppVertexBuffers[Slot - StartSlot]) {
+        VB.BufferRaw =
+            VB.Buffer->GetBinding(this->cmd_queue.CurrentSeqId()).buffer();
+      }
+      VB.Stride = pStrides[Slot - StartSlot];
+      VB.Offset = pOffsets[Slot - StartSlot];
+      vertex_buffer_dirty |= (1 << Slot);
+    }
+  }
+
+  void GetVertexBuffers(UINT StartSlot, UINT NumBuffers,
+                        ID3D11Buffer **ppVertexBuffers, UINT *pStrides,
+                        UINT *pOffsets) {
+    for (unsigned i = 0; i < NumBuffers; i++) {
+      if (!state_.InputAssembler.VertexBuffers.contains(i + StartSlot)) {
+        if (ppVertexBuffers != NULL)
+          ppVertexBuffers[i] = nullptr;
+        if (pStrides != NULL)
+          pStrides[i] = 0;
+        if (pOffsets != NULL)
+          pOffsets[i] = 0;
+        continue;
+      }
+      auto &VertexBuffer = state_.InputAssembler.VertexBuffers[i + StartSlot];
+      if (ppVertexBuffers != NULL) {
+        VertexBuffer.Buffer->GetLogicalResourceOrView(
+            IID_PPV_ARGS(&ppVertexBuffers[i]));
+      }
+      if (pStrides != NULL)
+        pStrides[i] = VertexBuffer.Stride;
+      if (pOffsets != NULL)
+        pOffsets[i] = VertexBuffer.Offset;
+    }
+  }
 #pragma endregion
 
 #pragma region CopyResource
@@ -374,7 +437,6 @@ public:
       });
       break;
     }
-    binding_ready.clrAll();
 
     cmdbuf_state = CommandBufferState::Idle;
   }
@@ -414,6 +476,18 @@ public:
     if (cmdbuf_state == CommandBufferState::RenderEncoderActive)
       return;
     InvalidateCurrentPass();
+
+    // set dirty state
+    state_.ShaderStages[0].ConstantBuffers.set_dirty();
+    state_.ShaderStages[0].Samplers.set_dirty();
+    state_.ShaderStages[0].SRVs.set_dirty();
+    state_.ShaderStages[1].ConstantBuffers.set_dirty();
+    state_.ShaderStages[1].Samplers.set_dirty();
+    state_.ShaderStages[1].SRVs.set_dirty();
+    vertex_buffer_dirty = 0xFFFFFFFF;
+    dirty_state.set(DirtyState::BlendFactorAndStencilRef,
+                    DirtyState::RasterizerState, DirtyState::DepthStencilState,
+                    DirtyState::ViewportAndScissors, DirtyState::IndexBuffer);
 
     // should assume: render target is properly set
     {
@@ -495,16 +569,13 @@ public:
         }
         ctx.render_encoder =
             ctx.cmdbuf->renderCommandEncoder(renderPassDescriptor);
+        auto [h, _] = ctx.chk->inspect_gpu_heap();
+        ctx.render_encoder->setVertexBuffer(h, 0, 30);
+        ctx.render_encoder->setFragmentBuffer(h, 0, 30);
       });
     }
 
     cmdbuf_state = CommandBufferState::RenderEncoderActive;
-
-    EmitSetDepthStencilState<true>();
-    EmitSetRasterizerState<true>();
-    EmitBlendFactorAndStencilRef<true>();
-    EmitSetViewportAndScissors<true>();
-    EmitSetIAState<true>();
   }
 
   /**
@@ -536,11 +607,18 @@ public:
       return;
     InvalidateCurrentPass();
 
+    // set dirty state
+    state_.ShaderStages[5].ConstantBuffers.set_dirty();
+    state_.ShaderStages[5].Samplers.set_dirty();
+    state_.ShaderStages[5].SRVs.set_dirty();
+
     {
       /* Setup ComputeCommandEncoder */
       CommandChunk *chk = cmd_queue.CurrentChunk();
       chk->emit([](CommandChunk::context &ctx) {
         ctx.compute_encoder = ctx.cmdbuf->computeCommandEncoder();
+        auto [heap, offset] = ctx.chk->inspect_gpu_heap();
+        ctx.compute_encoder->setBuffer(heap, 0, 30);
       });
     }
 
@@ -598,34 +676,42 @@ public:
           GraphicsPipeline.PipelineState);
     });
 
-    // FIXME: ...ugly
-    MTL::ArgumentEncoder *encoder;
-    state_.ShaderStages[(UINT)ShaderType::Vertex].Shader->GetArgumentEncoderRef(
-        &encoder);
-    if (encoder) {
-      auto [heap, offset] = chk->inspect_gpu_heap();
-      chk->emit([heap, offset](CommandChunk::context &ctx) {
-        ctx.render_encoder->setVertexBuffer(heap, offset,
-                                            30 /* kArgumentBufferBinding */);
-      });
-    }
-    state_.ShaderStages[(UINT)ShaderType::Pixel].Shader->GetArgumentEncoderRef(
-        &encoder);
-    if (encoder) {
-      auto [heap, offset] = chk->inspect_gpu_heap();
-      chk->emit([heap, offset](CommandChunk::context &ctx) {
-        ctx.render_encoder->setFragmentBuffer(heap, offset,
-                                              30 /* kArgumentBufferBinding */);
-      });
-    }
-
     cmdbuf_state = CommandBufferState::RenderPipelineReady;
   }
 
-  void PreDraw() {
+  bool PreDraw() {
     FinalizeCurrentRenderPipeline();
-    UploadShaderStageResourceBinding<ShaderType::Vertex>();
-    UploadShaderStageResourceBinding<ShaderType::Pixel>();
+    UpdateVertexBuffer();
+    if (dirty_state.any(DirtyState::DepthStencilState)) {
+      EmitSetDepthStencilState<true>();
+    }
+    if (dirty_state.any(DirtyState::RasterizerState)) {
+      EmitSetRasterizerState<true>();
+    }
+    if (dirty_state.any(DirtyState::BlendFactorAndStencilRef)) {
+      EmitBlendFactorAndStencilRef<true>();
+    }
+    if (dirty_state.any(DirtyState::ViewportAndScissors)) {
+      EmitSetViewportAndScissors<true>();
+    }
+    if (dirty_state.any(DirtyState::IndexBuffer)) {
+      CommandChunk *chk = cmd_queue.CurrentChunk();
+      // we should be able to retrieve it from chunk
+      auto seq_id = cmd_queue.CurrentSeqId();
+      if (state_.InputAssembler.IndexBuffer) {
+        chk->emit([buffer = state_.InputAssembler.IndexBuffer->GetBinding(
+                       seq_id)](CommandChunk::context &ctx) {
+          ctx.current_index_buffer_ref = buffer.buffer();
+        });
+      } else {
+        chk->emit([](CommandChunk::context &ctx) {
+          ctx.current_index_buffer_ref = nullptr;
+        });
+      }
+    }
+    dirty_state.clrAll();
+    return UploadShaderStageResourceBinding<ShaderType::Vertex>() &&
+           UploadShaderStageResourceBinding<ShaderType::Pixel>();
   }
 
   /**
@@ -665,14 +751,6 @@ public:
           ctx.cs_threadgroup_size = tg_size;
         });
 
-    if (shader_data.Reflection->NumArguments) {
-      auto [heap, offset] = chk->inspect_gpu_heap();
-      chk->emit([heap, offset](CommandChunk::context &ctx) {
-        ctx.compute_encoder->setBuffer(heap, offset,
-                                       30 /* kArgumentBufferBinding */);
-      });
-    }
-
     cmdbuf_state = CommandBufferState::ComputePipelineReady;
     return true;
   }
@@ -686,26 +764,26 @@ public:
   }
 
   template <ShaderType stage, bool Force = false>
-  void UploadShaderStageResourceBinding() {
-    if (!Force && binding_ready.test(stage))
-      return;
+  bool UploadShaderStageResourceBinding() {
+    auto &ShaderStage = state_.ShaderStages[(UINT)stage];
+
+    // TODO: should be more optimized (only check dirty on used slot)
+    if (!Force && !ShaderStage.ConstantBuffers.any_dirty() &&
+        !ShaderStage.Samplers.any_dirty() && !ShaderStage.SRVs.any_dirty())
+      return true;
 
     auto currentChunkId = cmd_queue.CurrentSeqId();
 
-    auto &ShaderStage = state_.ShaderStages[(UINT)stage];
-
-    MTL_SHADER_REFLECTION reflection;
+    MTL_SHADER_REFLECTION *reflection;
     ShaderStage.Shader->GetReflection(&reflection);
-    auto BindingCount = reflection.NumArguments;
-    MTL::ArgumentEncoder *encoder;
-    ShaderStage.Shader->GetArgumentEncoderRef(&encoder);
+    auto BindingCount = reflection->NumArguments;
 
-    if (encoder) {
+    if (BindingCount) {
       CommandChunk *chk = cmd_queue.CurrentChunk();
 
-      auto [heap, offset] = chk->allocate_gpu_heap(encoder->encodedLength(),
-                                                   encoder->alignment());
-      encoder->setArgumentBuffer(heap, offset);
+      /* FIXME: we are over-allocating */
+      auto [heap, offset] = chk->allocate_gpu_heap(BindingCount << 4, 16);
+      uint64_t *write_to_it = chk->gpu_argument_heap_contents + (offset >> 3);
 
       auto useResource = [&](BindingRef &&res, MTL::ResourceUsage usage) {
         chk->emit([res = std::move(res), usage](CommandChunk::context &ctx) {
@@ -734,97 +812,102 @@ public:
       };
 
       for (unsigned i = 0; i < BindingCount; i++) {
-        auto &arg = reflection.Arguments[i];
+        auto &arg = reflection->Arguments[i];
+        auto slot = arg.SM50BindingSlot;
         switch (arg.Type) {
         case SM50BindingType::ConstantBuffer: {
-          if (!ShaderStage.ConstantBuffers.contains(arg.SM50BindingSlot)) {
-            ERR("expect constant buffer at slot ", arg.SM50BindingSlot,
-                " but none is bound.");
-            break;
+          if (!ShaderStage.ConstantBuffers.test_bound(slot)) {
+            ERR("expect constant buffer at slot ", slot, " but none is bound.");
+            return false;
           }
-          auto &cbuf = ShaderStage.ConstantBuffers[arg.SM50BindingSlot];
-          auto binding = cbuf.Buffer->GetBinding(currentChunkId);
-          encoder->setBuffer(binding.buffer(), cbuf.FirstConstant * 0x10,
-                             GetArgumentIndex(arg));
-          useResource(std::move(binding), MTL::ResourceUsageRead);
+          auto &cbuf = ShaderStage.ConstantBuffers[slot];
+          write_to_it[arg.StructurePtrOffset] =
+              cbuf.Buffer->GetArgumentData().buffer() +
+              (cbuf.FirstConstant << 4);
+          if (ShaderStage.ConstantBuffers.test_dirty(slot)) {
+            useResource(cbuf.Buffer->GetBinding(currentChunkId),
+                        MTL::ResourceUsageRead);
+            ShaderStage.ConstantBuffers.clear_dirty(slot);
+          }
           break;
         }
         case SM50BindingType::Sampler: {
-          if (!ShaderStage.Samplers.contains(arg.SM50BindingSlot)) {
-            ERR("expect sample at slot ", arg.SM50BindingSlot,
-                " but none is bound.");
-            break;
+          if (!ShaderStage.Samplers.test_bound(slot)) {
+            ERR("expect sample at slot ", slot, " but none is bound.");
+            return false;
           }
-          auto &sampler = ShaderStage.Samplers[arg.SM50BindingSlot];
-          assert(sampler);
-          encoder->setSamplerState(sampler->GetSamplerState(),
-                                   GetArgumentIndex(arg));
+          auto &sampler = ShaderStage.Samplers[slot];
+          write_to_it[arg.StructurePtrOffset] =
+              sampler.Sampler->GetArgumentHandle();
+          ShaderStage.Samplers.clear_dirty(slot);
           break;
         }
         case SM50BindingType::SRV: {
-          if (!ShaderStage.SRVs.contains(arg.SM50BindingSlot)) {
-            ERR("expect shader resource at slot ", arg.SM50BindingSlot,
-                " but none is bound.");
+          if (!ShaderStage.SRVs.test_bound(slot)) {
+            ERR("expect shader resource at slot ", slot, " but none is bound.");
+            write_to_it[arg.StructurePtrOffset] = 0;
+            // ? we are doing something dangerous
+            // need to verify that 0 have defined behavior (e.g. no gpu crash)
+            if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_ELEMENT_WIDTH) {
+              write_to_it[arg.StructurePtrOffset + 1] = 0;
+            }
             break;
           }
-          auto &srv = ShaderStage.SRVs[arg.SM50BindingSlot];
-          auto binding = srv->GetBinding(currentChunkId);
+          auto &srv = ShaderStage.SRVs[slot];
+          auto arg_data = srv.SRV->GetArgumentData();
           if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_BUFFER) {
-            encoder->setBuffer(binding.buffer(), binding.offset(),
-                               GetArgumentIndex(arg));
+            write_to_it[arg.StructurePtrOffset] = arg_data.buffer();
           }
           if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_ELEMENT_WIDTH) {
-            *((uint32_t *)encoder->constantData(GetArgumentIndex(arg) + 1)) =
-                binding.width();
+            write_to_it[arg.StructurePtrOffset + 1] = arg_data.width();
           }
           if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE) {
-            if (binding.requiresContext()) {
+            if (arg_data.requiresContext()) {
               assert(0 && "todo");
             } else {
-              encoder->setTexture(binding.texture(), GetArgumentIndex(arg));
+              write_to_it[arg.StructurePtrOffset] = arg_data.texture();
             }
           }
           if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_UAV_COUNTER) {
           }
-          MTL::ResourceUsage usage = (arg.Flags >> 10) & 0b11;
-          useResource(std::move(binding), usage);
+          if (ShaderStage.SRVs.test_dirty(slot)) {
+            MTL::ResourceUsage usage = (arg.Flags >> 10) & 0b11;
+            useResource(srv.SRV->GetBinding(currentChunkId), usage);
+            ShaderStage.SRVs.clear_dirty(slot);
+          }
           break;
         }
         case SM50BindingType::UAV: {
+          // TODO: consider separately handle uav
           if constexpr (stage == ShaderType::Compute) {
             if (!state_.ComputeStageUAV.UAVs.contains(arg.SM50BindingSlot)) {
               ERR("expect uav at slot ", arg.SM50BindingSlot,
                   " but none is bound.");
-              break;
+              return false;
             }
             auto &uav = state_.ComputeStageUAV.UAVs[arg.SM50BindingSlot];
-            auto binding = uav.View->GetBinding(currentChunkId);
+            auto arg_data = uav.View->GetArgumentData();
             if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_BUFFER) {
-              encoder->setBuffer(binding.buffer(), binding.offset(),
-                                 GetArgumentIndex(arg));
+              write_to_it[arg.StructurePtrOffset] = arg_data.buffer();
             }
             if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_ELEMENT_WIDTH) {
-              *((uint32_t *)encoder->constantData(GetArgumentIndex(arg) + 1)) =
-                  binding.width();
+              write_to_it[arg.StructurePtrOffset + 1] = arg_data.width();
             }
             if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE) {
-              if (binding.requiresContext()) {
+              if (arg_data.requiresContext()) {
                 assert(0 && "todo");
               } else {
-                encoder->setTexture(binding.texture(), GetArgumentIndex(arg));
+                write_to_it[arg.StructurePtrOffset] = arg_data.texture();
               }
             }
             if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_UAV_COUNTER) {
               assert(0 && "todo: implement uav counter binding");
             }
             MTL::ResourceUsage usage = (arg.Flags >> 10) & 0b11;
-            useResource(std::move(binding), usage);
+            useResource(uav.View->GetBinding(currentChunkId), usage);
           } else {
-            if (!state_.OutputMerger.UAVs.contains(arg.SM50BindingSlot))
-              break;
-            // auto &uav = state_.OutputMerger.UAVs[arg.SM50BindingSlot];
-            // assert(0 && "TODO: graphical pipeline uav binding");
-            ERR("TODO: graphical pipeline uav binding");
+            // FIXME: all graphical stages share one uav binding set
+            assert(0 && "TODO: graphical pipeline uav binding");
           }
           break;
         }
@@ -844,19 +927,27 @@ public:
         }
       });
     }
-    binding_ready.set(stage);
+    return true;
   }
 
   template <bool Force = false, typename Fn> void EmitRenderCommand(Fn &&fn) {
+    // FIXME: not quite efficent...?
+    EmitRenderCommandChk<Force>(
+        [fn = std::forward<Fn>(fn)](CommandChunk::context &ctx) {
+          fn(ctx.render_encoder.ptr());
+        });
+  };
+
+  template <bool Force = false, typename Fn>
+  void EmitRenderCommandChk(Fn &&fn) {
     if (Force) {
       SwitchToRenderEncoder();
     }
     if (cmdbuf_state == CommandBufferState::RenderEncoderActive ||
         cmdbuf_state == CommandBufferState::RenderPipelineReady) {
       CommandChunk *chk = cmd_queue.CurrentChunk();
-      chk->emit([fn = std::forward<Fn>(fn)](CommandChunk::context &ctx) {
-        fn(ctx.render_encoder.ptr());
-      });
+      chk->emit(
+          [fn = std::forward<Fn>(fn)](CommandChunk::context &ctx) { fn(ctx); });
     }
   };
 
@@ -949,28 +1040,24 @@ public:
   it's just about vertex buffer
   - index buffer and input topology are provided in draw commands
   */
-  template <bool Force = false> void EmitSetIAState() {
-    CommandChunk *chk = cmd_queue.CurrentChunk();
-    struct VERTEX_BUFFER_STATE {
-      BindingRef buffer;
-      UINT offset;
-      UINT stride;
-    };
-    auto vbs = chk->reserve_vector<std::pair<UINT, VERTEX_BUFFER_STATE>>(
-        state_.InputAssembler.VertexBuffers.size());
+  template <bool Force = false> void UpdateVertexBuffer() {
+    auto dirty_vbs =
+        std::min((size_t)std::popcount((vertex_buffer_dirty & 0xFFFFFFFF)),
+                 state_.InputAssembler.VertexBuffers.size());
+    if (!dirty_vbs) {
+      return;
+    }
     for (auto &[index, state] : state_.InputAssembler.VertexBuffers) {
-      vbs.push_back({index, VERTEX_BUFFER_STATE{state.Buffer->GetBinding(
-                                                    cmd_queue.CurrentSeqId()),
-                                                state.Offset, state.Stride}});
+      if ((vertex_buffer_dirty & (1 << index)) == 0) {
+        continue;
+      }
+      EmitRenderCommand<Force>([buffer = state.BufferRaw, offset = state.Offset,
+                                stride = state.Stride,
+                                index](MTL::RenderCommandEncoder *encoder) {
+        encoder->setVertexBuffer(buffer, offset, stride, index);
+      });
     };
-    EmitRenderCommand<Force>(
-        [vbs = std::move(vbs)](MTL::RenderCommandEncoder *encoder) {
-          for (auto &[index, state] : vbs) {
-            encoder->setVertexBuffer(state.buffer.buffer(), state.offset,
-                                     state.stride, index);
-          };
-          // TODO: deal with old redunant binding (I guess it doesn't hurt
-        });
+    vertex_buffer_dirty = 0;
   }
 
   template <bool Force = false> void EmitBlendFactorAndStencilRef() {
@@ -1023,8 +1110,19 @@ private:
   IMTLD3D11Device *device;
   D3D11ContextState &state_;
   CommandBufferState cmdbuf_state;
-  Flags<ShaderType> binding_ready;
+  uint64_t vertex_buffer_dirty = 0xFFFFFFFF;
   CommandQueue &cmd_queue;
+
+public:
+  enum class DirtyState {
+    DepthStencilState = 1,
+    RasterizerState = 2,
+    BlendFactorAndStencilRef = 4,
+    ViewportAndScissors = 8,
+    IndexBuffer = 16,
+  };
+
+  Flags<DirtyState> dirty_state;
 };
 
 } // namespace dxmt

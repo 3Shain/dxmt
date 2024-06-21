@@ -75,7 +75,6 @@ llvm::Error convertDXBC(
   auto shader_info = &(pShaderInternal->shader_info);
   auto shader_type = pShaderInternal->shader_type;
 
-  air::ArgumentBufferBuilder binding_table;
   uint32_t binding_table_index = ~0u;
   uint32_t const &max_input_register = pShaderInternal->max_input_register;
   uint32_t const &max_output_register = pShaderInternal->max_output_register;
@@ -99,11 +98,7 @@ llvm::Error convertDXBC(
   // post convert
   for (auto &[range_id, cbv] : shader_info->cbufferMap) {
     // TODO: abstract SM 5.0 binding
-    auto index = binding_table.DefineBuffer(
-      "cb" + std::to_string(range_id), air::AddressSpace::constant,
-      air::MemoryAccess::read, air::msl_uint4,
-      GetArgumentIndex(SM50BindingType::ConstantBuffer, range_id)
-    );
+    auto index = cbv.arg_index;
     resource_map.cb_range_map[range_id] = [=, &binding_table_index](pvalue) {
       // ignore index in SM 5.0
       return get_item_in_argbuf_binding_table(binding_table_index, index);
@@ -111,10 +106,7 @@ llvm::Error convertDXBC(
   }
   for (auto &[range_id, sampler] : shader_info->samplerMap) {
     // TODO: abstract SM 5.0 binding
-    auto index = binding_table.DefineSampler(
-      "s" + std::to_string(range_id),
-      GetArgumentIndex(SM50BindingType::Sampler, range_id)
-    );
+    auto index = sampler.arg_index;
     resource_map.sampler_range_map[range_id] = [=,
                                                 &binding_table_index](pvalue) {
       // ignore index in SM 5.0
@@ -129,10 +121,7 @@ llvm::Error convertDXBC(
       auto texture_kind =
         air::to_air_resource_type(srv.resource_type, srv.compared);
       auto scaler_type = air::to_air_scaler_type(srv.scaler_type);
-      auto index = binding_table.DefineTexture(
-        "t" + std::to_string(range_id), texture_kind, access, scaler_type,
-        GetArgumentIndex(SM50BindingType::SRV, range_id)
-      );
+      auto index = srv.arg_index;
       resource_map.srv_range_map[range_id] = {
         air::MSLTexture{
           .component_type = scaler_type,
@@ -145,14 +134,8 @@ llvm::Error convertDXBC(
         }
       };
     } else {
-      auto attr_index = GetArgumentIndex(SM50BindingType::SRV, range_id);
-      auto argbuf_index_bufptr = binding_table.DefineBuffer(
-        "t" + std::to_string(range_id), air::AddressSpace::constant,
-        air::MemoryAccess::read, air::msl_uint, attr_index
-      );
-      auto argbuf_index_size = binding_table.DefineInteger32(
-        "ct" + std::to_string(range_id), attr_index + 1
-      );
+      auto argbuf_index_bufptr = srv.arg_index;
+      auto argbuf_index_size = srv.arg_size_index;
       resource_map.srv_buf_range_map[range_id] = {
         [=, &binding_table_index](pvalue) {
           return get_item_in_argbuf_binding_table(
@@ -175,11 +158,7 @@ llvm::Error convertDXBC(
     if (uav.resource_type != shader::common::ResourceType::NonApplicable) {
       auto texture_kind = air::to_air_resource_type(uav.resource_type);
       auto scaler_type = air::to_air_scaler_type(uav.scaler_type);
-      auto index = binding_table.DefineTexture(
-        "u" + std::to_string(range_id), texture_kind, access, scaler_type,
-        GetArgumentIndex(SM50BindingType::UAV, range_id),
-        uav.rasterizer_order ? std::optional(1) : std::nullopt
-      );
+      auto index = uav.arg_index;
       resource_map.uav_range_map[range_id] = {
         air::MSLTexture{
           .component_type = scaler_type,
@@ -192,15 +171,8 @@ llvm::Error convertDXBC(
         }
       };
     } else {
-      auto attr_index = GetArgumentIndex(SM50BindingType::UAV, range_id);
-      auto argbuf_index_bufptr = binding_table.DefineBuffer(
-        "u" + std::to_string(range_id), air::AddressSpace::device, access,
-        air::msl_uint, attr_index,
-        uav.rasterizer_order ? std::optional(1) : std::nullopt
-      );
-      auto argbuf_index_size = binding_table.DefineInteger32(
-        "cu" + std::to_string(range_id), attr_index + 1
-      );
+      auto argbuf_index_bufptr = uav.arg_index;
+      auto argbuf_index_size = uav.arg_size_index;
       resource_map.uav_buf_range_map[range_id] = {
         [=, &binding_table_index](pvalue) {
           return get_item_in_argbuf_binding_table(
@@ -215,11 +187,7 @@ llvm::Error convertDXBC(
         uav.strucure_stride
       };
       if (uav.with_counter) {
-        auto argbuf_index_counterptr = binding_table.DefineBuffer(
-          "counter" + std::to_string(range_id), air::AddressSpace::device,
-          air::MemoryAccess::read_write, air::msl_uint, attr_index + 2,
-          uav.rasterizer_order ? std::optional(1) : std::nullopt
-        );
+        auto argbuf_index_counterptr = uav.arg_counter_index;
         resource_map.uav_counter_range_map[range_id] =
           [=, &binding_table_index](pvalue) {
             return get_item_in_argbuf_binding_table(
@@ -264,8 +232,9 @@ llvm::Error convertDXBC(
     resource_map.icb = icb;
   }
 
-  if (!binding_table.empty()) {
-    auto [type, metadata] = binding_table.Build(context, module);
+  if (!shader_info->binding_table.empty()) {
+    auto [type, metadata] =
+      shader_info->binding_table.Build(context, module.getDataLayout());
     binding_table_index =
       func_signature.DefineInput(air::ArgumentBindingIndirectBuffer{
         .location_index = 30, // kArgumentBufferBindIndex
@@ -702,7 +671,8 @@ int SM50Initialize(
              .lower_bound = LB,
              .size = RangeSize,
              .space = Inst.m_ConstantBufferDecl.Space},
-          .size_in_vec4 = CBufferSize
+          .size_in_vec4 = CBufferSize,
+          .arg_index = 0, // set it later
         };
         break;
       }
@@ -730,6 +700,7 @@ int SM50Initialize(
              .lower_bound = LB,
              .size = RangeSize,
              .space = Inst.m_SamplerDecl.Space},
+          .arg_index = 0, // set it later
         };
         // FIXME: SamplerMode ignored?
         break;
@@ -1352,22 +1323,56 @@ int SM50Initialize(
 
   sm50_shader->entry = entry;
 
-  for (auto &[range_id, _] : shader_info->cbufferMap) {
-    sm50_shader->args_reflection.push_back(
-      {.Type = SM50BindingType::ConstantBuffer,
-       .SM50BindingSlot = range_id,
-       .Flags =
-         MTL_SM50_SHADER_ARGUMENT_BUFFER | MTL_SM50_SHADER_ARGUMENT_READ_ACCESS}
+  auto &binding_table = shader_info->binding_table;
+
+  for (auto &[range_id, cbv] : shader_info->cbufferMap) {
+    // TODO: abstract SM 5.0 binding
+    cbv.arg_index = binding_table.DefineBuffer(
+      "cb" + std::to_string(range_id), AddressSpace::constant,
+      MemoryAccess::read, msl_uint4,
+      GetArgumentIndex(SM50BindingType::ConstantBuffer, range_id)
     );
+    sm50_shader->args_reflection.push_back({
+      .Type = SM50BindingType::ConstantBuffer,
+      .SM50BindingSlot = range_id,
+      .Flags =
+        MTL_SM50_SHADER_ARGUMENT_BUFFER | MTL_SM50_SHADER_ARGUMENT_READ_ACCESS,
+      .StructurePtrOffset = cbv.arg_index,
+    });
   }
-  for (auto &[range_id, _] : shader_info->samplerMap) {
-    sm50_shader->args_reflection.push_back(
-      {.Type = SM50BindingType::Sampler,
-       .SM50BindingSlot = range_id,
-       .Flags = (MTL_SM50_SHADER_ARGUMENT_FLAG)0}
+  for (auto &[range_id, sampler] : shader_info->samplerMap) {
+    // TODO: abstract SM 5.0 binding
+    sampler.arg_index = binding_table.DefineSampler(
+      "s" + std::to_string(range_id),
+      GetArgumentIndex(SM50BindingType::Sampler, range_id)
     );
+    sm50_shader->args_reflection.push_back({
+      .Type = SM50BindingType::Sampler,
+      .SM50BindingSlot = range_id,
+      .Flags = (MTL_SM50_SHADER_ARGUMENT_FLAG)0,
+      .StructurePtrOffset = sampler.arg_index,
+    });
   }
   for (auto &[range_id, srv] : shader_info->srvMap) {
+    if (srv.resource_type != ResourceType::NonApplicable) {
+      // TODO: abstract SM 5.0 binding
+      auto access = srv.sampled ? MemoryAccess::sample : MemoryAccess::read;
+      auto texture_kind = to_air_resource_type(srv.resource_type, srv.compared);
+      auto scaler_type = to_air_scaler_type(srv.scaler_type);
+      srv.arg_index = binding_table.DefineTexture(
+        "t" + std::to_string(range_id), texture_kind, access, scaler_type,
+        GetArgumentIndex(SM50BindingType::SRV, range_id)
+      );
+    } else {
+      auto attr_index = GetArgumentIndex(SM50BindingType::SRV, range_id);
+      srv.arg_index = binding_table.DefineBuffer(
+        "t" + std::to_string(range_id), AddressSpace::constant,
+        MemoryAccess::read, msl_uint, attr_index
+      );
+      srv.arg_size_index = binding_table.DefineInteger32(
+        "ct" + std::to_string(range_id), attr_index + 1
+      );
+    }
     MTL_SM50_SHADER_ARGUMENT_FLAG flags = (MTL_SM50_SHADER_ARGUMENT_FLAG)0;
     if (srv.resource_type == ResourceType::NonApplicable) {
       flags |= MTL_SM50_SHADER_ARGUMENT_ELEMENT_WIDTH |
@@ -1378,12 +1383,42 @@ int SM50Initialize(
     if (srv.read || srv.sampled || srv.compared) {
       flags |= MTL_SM50_SHADER_ARGUMENT_READ_ACCESS;
     }
-    sm50_shader->args_reflection.push_back(
-      {.Type = SM50BindingType::SRV, .SM50BindingSlot = range_id, .Flags = flags
-      }
-    );
+    sm50_shader->args_reflection.push_back({
+      .Type = SM50BindingType::SRV,
+      .SM50BindingSlot = range_id,
+      .Flags = flags,
+      .StructurePtrOffset = srv.arg_index,
+    });
   }
   for (auto &[range_id, uav] : shader_info->uavMap) {
+    auto access =
+      uav.written ? (uav.read ? MemoryAccess::read_write : MemoryAccess::write)
+                  : MemoryAccess::read;
+    if (uav.resource_type != ResourceType::NonApplicable) {
+      auto texture_kind = to_air_resource_type(uav.resource_type);
+      auto scaler_type = to_air_scaler_type(uav.scaler_type);
+      uav.arg_index = binding_table.DefineTexture(
+        "u" + std::to_string(range_id), texture_kind, access, scaler_type,
+        GetArgumentIndex(SM50BindingType::UAV, range_id),
+        uav.rasterizer_order ? std::optional(1) : std::nullopt
+      );
+    } else {
+      auto attr_index = GetArgumentIndex(SM50BindingType::UAV, range_id);
+      uav.arg_index = binding_table.DefineBuffer(
+        "u" + std::to_string(range_id), AddressSpace::device, access, msl_uint,
+        attr_index, uav.rasterizer_order ? std::optional(1) : std::nullopt
+      );
+      uav.arg_size_index = binding_table.DefineInteger32(
+        "cu" + std::to_string(range_id), attr_index + 1
+      );
+      if (uav.with_counter) {
+        uav.arg_counter_index = binding_table.DefineBuffer(
+          "counter" + std::to_string(range_id), AddressSpace::device,
+          MemoryAccess::read_write, msl_uint, attr_index + 2,
+          uav.rasterizer_order ? std::optional(1) : std::nullopt
+        );
+      }
+    }
     MTL_SM50_SHADER_ARGUMENT_FLAG flags = (MTL_SM50_SHADER_ARGUMENT_FLAG)0;
     if (uav.resource_type == ResourceType::NonApplicable) {
       flags |= MTL_SM50_SHADER_ARGUMENT_ELEMENT_WIDTH |
@@ -1400,10 +1435,12 @@ int SM50Initialize(
     if (uav.with_counter) {
       flags |= MTL_SM50_SHADER_ARGUMENT_UAV_COUNTER;
     }
-    sm50_shader->args_reflection.push_back(
-      {.Type = SM50BindingType::UAV, .SM50BindingSlot = range_id, .Flags = flags
-      }
-    );
+    sm50_shader->args_reflection.push_back({
+      .Type = SM50BindingType::UAV,
+      .SM50BindingSlot = range_id,
+      .Flags = flags,
+      .StructurePtrOffset = uav.arg_index,
+    });
   }
 
   if (pRefl) {

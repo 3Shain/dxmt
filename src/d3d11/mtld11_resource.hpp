@@ -67,6 +67,7 @@ DEFINE_COM_INTERFACE("1c7e7c98-6dd4-42f0-867b-67960806886e", IMTLBindable)
   // it's just weird to involve c++ class in a COM interface
   // the argument `bindAtSeqId` is not checked
   virtual dxmt::BindingRef GetBinding(uint64_t bindAtSeqId) = 0;
+  virtual dxmt::ArgumentData GetArgumentData() = 0;
   // it's only used as a potential to optimize resource updating
   // generally assume it return `true` meaning it's in use
   virtual bool GetContentionState(uint64_t finishedSeqId) = 0;
@@ -84,9 +85,11 @@ DEFINE_COM_INTERFACE("daf21510-d136-44dd-bb16-068a94690775",
 
 DEFINE_COM_INTERFACE("65feb8c5-01de-49df-bf58-d115007a117d", IMTLDynamicBuffer)
     : public IUnknown {
-  virtual MTL::Buffer *GetCurrentBuffer(UINT * pBytesPerRow) = 0;
+  virtual void *GetMappedMemory(UINT * pBytesPerRow) = 0;
   virtual void RotateBuffer(IMTLDynamicBufferExchange * pool) = 0;
 };
+
+using BufferSwapCallback = std::function<void(MTL::Buffer *resource)>;
 
 DEFINE_COM_INTERFACE("0988488c-75fb-44f3-859a-b6fb2d022239",
                      IMTLDynamicBindable)
@@ -94,7 +97,7 @@ DEFINE_COM_INTERFACE("0988488c-75fb-44f3-859a-b6fb2d022239",
   /**
    */
   virtual void GetBindable(IMTLBindable * *ppResource,
-                           std::function<void()> && onBufferSwap) = 0;
+                           BufferSwapCallback && onBufferSwap) = 0;
 };
 
 DEFINE_COM_INTERFACE("252c1a0e-1c61-42e7-9b57-23dfe3d73d49", IMTLD3D11Staging)
@@ -186,6 +189,11 @@ public:
 
     *ppvObject = nullptr;
 
+    auto hr = ResolveBase<0, Base...>(riid, ppvObject);
+    if (SUCCEEDED(hr)) {
+      return S_OK;
+    }
+
     if (riid == __uuidof(IUnknown) || riid == __uuidof(ID3D11DeviceChild) ||
         riid == __uuidof(ID3D11Resource) ||
         riid == __uuidof(typename tag::COM)) {
@@ -202,11 +210,6 @@ public:
 
     if (riid == __uuidof(IDXMTResource)) {
       *ppvObject = ref_and_cast<IDXMTResource>(this);
-      return S_OK;
-    }
-
-    auto hr = ResolveBase<0, Base...>(riid, ppvObject);
-    if (SUCCEEDED(hr)) {
       return S_OK;
     }
 
@@ -350,15 +353,15 @@ public:
 
     *ppvObject = nullptr;
 
+    auto hr = ResolveBase<0, Base...>(riid, ppvObject);
+    if (SUCCEEDED(hr)) {
+      return S_OK;
+    }
+
     if (riid == __uuidof(IUnknown) || riid == __uuidof(ID3D11DeviceChild) ||
         riid == __uuidof(ID3D11View) || riid == __uuidof(typename tag::COM) ||
         riid == __uuidof(typename tag::COM_IMPL)) {
       *ppvObject = ref_and_cast<typename tag::COM>(this);
-      return S_OK;
-    }
-
-    auto hr = ResolveBase<0, Base...>(riid, ppvObject);
-    if (SUCCEEDED(hr)) {
       return S_OK;
     }
 

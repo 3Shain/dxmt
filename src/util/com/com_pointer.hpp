@@ -99,15 +99,15 @@ public:
 
   ~Com() { this->decRef(); }
 
-  T *operator->() const { 
-    #ifndef NDEBUG
-    if(!m_ptr) {
+  T *operator->() const {
+#ifndef NDEBUG
+    if (!m_ptr) {
       __builtin_trap();
     }
     assert(m_ptr && "try to access a null com pointer!");
-    #endif
+#endif
     return m_ptr;
-   }
+  }
 
   T **operator&() { return &m_ptr; }
   T *const *operator&() const { return &m_ptr; }
@@ -122,7 +122,7 @@ public:
     return ret;
   }
 
-  [[nodiscard]] T* takeOwnership() {
+  [[nodiscard]] T *takeOwnership() {
     auto ret = this->m_ptr;
     this->m_ptr = nullptr;
     return ret;

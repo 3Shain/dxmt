@@ -132,6 +132,7 @@ void initialize_veh() {
   if ((dwTlsIndex = TlsAlloc()) == TLS_OUT_OF_INDEXES)
     assert(0 && "fail to initialize tls");
   pVEH = AddVectoredExceptionHandler(1, ExceptionHandler);
+  TlsSetValue(dwTlsIndex, 0);
 };
 
 void cleanup_veh() {

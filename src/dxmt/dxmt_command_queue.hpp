@@ -1,23 +1,18 @@
 #pragma once
 
-#include "Foundation/NSAutoreleasePool.hpp"
 #include "Metal/MTLArgumentEncoder.hpp"
 #include "Metal/MTLBlitCommandEncoder.hpp"
 #include "Metal/MTLCommandBuffer.hpp"
 #include "Metal/MTLCommandQueue.hpp"
 #include "Metal/MTLComputeCommandEncoder.hpp"
 #include "Metal/MTLRenderCommandEncoder.hpp"
-#include "Metal/MTLResource.hpp"
 #include "Metal/MTLDevice.hpp"
-#include "Metal/MTLCaptureManager.hpp"
 #include "Metal/MTLTypes.hpp"
-#include "Metal/MTLFunctionLog.hpp"
 #include "dxmt_binding.hpp"
 #include "log/log.hpp"
 #include "objc_pointer.hpp"
 // #include "thread.hpp"
 #include <thread>
-#include "util_env.hpp"
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
@@ -114,8 +109,11 @@ class CommandChunk {
     MTL::CommandBuffer *cmdbuf;
     Obj<MTL::RenderCommandEncoder> render_encoder;
     Obj<MTL::ComputeCommandEncoder> compute_encoder;
-    MTL::Size cs_threadgroup_size;
+    MTL::Size cs_threadgroup_size {};
     Obj<MTL::BlitCommandEncoder> blit_encoder;
+    // we don't need an extra reference here
+    // since it's guaranteed to be captured by closure
+    MTL::Buffer *current_index_buffer_ref {};
 
     context_t(CommandChunk *chk, MTL::CommandBuffer *cmdbuf)
         : chk(chk), cmdbuf(cmdbuf) {}
@@ -163,6 +161,8 @@ public:
     }
     return {gpu_argument_heap, aligned};
   }
+
+  uint64_t *gpu_argument_heap_contents;
 
   using context = context_t;
 
@@ -216,8 +216,6 @@ public:
       cur->value->~BFunc<context>(); // call destructor
       cur = cur->next;
     }
-    TRACE("cmdbuf heap size (cpu , gpu): ", cpu_arugment_heap_offset, ",",
-          gpu_arugment_heap_offset);
     cpu_arugment_heap_offset = 0;
     gpu_arugment_heap_offset = 0;
     monoid_list.next = nullptr;
@@ -229,101 +227,11 @@ public:
 class CommandQueue {
 
 private:
-  void CommitChunkInternal(CommandChunk &chunk) {
+  void CommitChunkInternal(CommandChunk &chunk, uint64_t seq);
 
-    auto pool = transfer(NS::AutoreleasePool::alloc()->init());
+  uint32_t EncodingThread();
 
-    // TODO:
-    bool should_capture = false;
-
-    auto c = MTL::CaptureManager::sharedCaptureManager();
-    if (should_capture) {
-      auto d = transfer(MTL::CaptureDescriptor::alloc()->init());
-      d->setCaptureObject(commandQueue->device());
-      d->setDestination(MTL::CaptureDestinationGPUTraceDocument);
-      char filename[1024];
-      std::time_t now;
-      std::time(&now);
-      // TODO: absolute path? not a good idea
-      std::strftime(filename, 1024,
-                    "/Users/sanshain/capture-%H-%M-%S_%m-%d-%y.gputrace",
-                    std::localtime(&now));
-      auto _pTraceSaveFilePath =
-          (NS::String::string(filename, NS::UTF8StringEncoding));
-      NS::URL *pURL =
-          NS::URL::alloc()->initFileURLWithPath(_pTraceSaveFilePath);
-
-      NS::Error *pError = nullptr;
-      d->setOutputURL(pURL);
-
-      c->startCapture(d.ptr(), &pError);
-    }
-
-    auto cmdbuf = commandQueue->commandBuffer();
-    chunk.encode(cmdbuf);
-    cmdbuf->commit();
-    // cmdbuf->waitUntilScheduled(); // seems unnecessary
-
-    if (should_capture) {
-
-      c->stopCapture();
-    }
-
-    ready_for_commit.fetch_add(1, std::memory_order_relaxed);
-    ready_for_commit.notify_all();
-  }
-
-  uint32_t EncodingThread() {
-#ifndef SYNC_ENCODING
-    env::setThreadName("dxmt-encode-thread");
-    uint64_t internal_seq = 1;
-    while (!stopped.load()) {
-      ready_for_encode.wait(internal_seq, std::memory_order_acquire);
-      if (stopped.load())
-        break;
-      // perform...
-      auto &chunk = chunks[internal_seq % kCommandChunkCount];
-      CommitChunkInternal(chunk);
-      internal_seq++;
-    }
-    TRACE("encoder thread gracefully terminates");
-#endif
-    return 0;
-  };
-
-  uint32_t WaitForFinishThread() {
-    env::setThreadName("dxmt-finish-thread");
-    uint64_t internal_seq = 1;
-    while (!stopped.load()) {
-      ready_for_commit.wait(internal_seq, std::memory_order_acquire);
-      if (stopped.load())
-        break;
-      auto &chunk = chunks[internal_seq % kCommandChunkCount];
-      if (chunk.attached_cmdbuf->status() <=
-          MTL::CommandBufferStatusScheduled) {
-        chunk.attached_cmdbuf->waitUntilCompleted();
-      }
-      if (chunk.attached_cmdbuf->status() == MTL::CommandBufferStatusError) {
-        ERR("Device error: ",
-            chunk.attached_cmdbuf->error()->localizedDescription()->cString(
-                NS::ASCIIStringEncoding));
-      }
-      if (chunk.attached_cmdbuf->logs()) {
-        if (((NS::Array *)chunk.attached_cmdbuf->logs())->count()) {
-          ERR(chunk.attached_cmdbuf->logs()->debugDescription()->cString(
-              NS::ASCIIStringEncoding));
-        }
-      }
-      chunk.reset();
-      chunk_ongoing.fetch_sub(1, std::memory_order_relaxed);
-      chunk_ongoing.notify_all();
-      cpu_coherent.fetch_add(1, std::memory_order_relaxed);
-      cpu_coherent.notify_all();
-      internal_seq++;
-    }
-    TRACE("finishing thread gracefully terminates");
-    return 0;
-  }
+  uint32_t WaitForFinishThread();
 
   std::atomic_uint64_t ready_for_encode =
       1; // we start from 1, so 0 is aways coherent
@@ -343,38 +251,9 @@ private:
   Obj<MTL::CommandQueue> commandQueue;
 
 public:
-  CommandQueue(MTL::Device *device)
-      : encodeThread([this]() { this->EncodingThread(); }),
-        finishThread([this]() { this->WaitForFinishThread(); }) {
-    commandQueue = transfer(device->newCommandQueue(kCommandChunkCount));
-    for (unsigned i = 0; i < kCommandChunkCount; i++) {
-      auto &chunk = chunks[i];
-      chunk.cpu_argument_heap = (char *)malloc(kCommandChunkCPUHeapSize);
-      chunk.gpu_argument_heap = transfer(device->newBuffer(
-          kCommandChunkGPUHeapSize, MTL::ResourceHazardTrackingModeUntracked |
-                                        MTL::ResourceCPUCacheModeWriteCombined |
-                                        MTL::ResourceStorageModeShared));
-      chunk.reset();
-    };
-  };
+  CommandQueue(MTL::Device *device);
 
-  ~CommandQueue() {
-    TRACE("Destructing command queue");
-    stopped.store(true);
-    ready_for_encode++;
-    ready_for_encode.notify_all();
-    ready_for_commit++;
-    ready_for_commit.notify_all();
-    encodeThread.join();
-    finishThread.join();
-    for (unsigned i = 0; i < kCommandChunkCount; i++) {
-      auto &chunk = chunks[i];
-      chunk.reset();
-      free(chunk.cpu_argument_heap);
-      chunk.gpu_argument_heap = nullptr;
-    };
-    TRACE("Destructed command queue");
-  }
+  ~CommandQueue();
 
   CommandChunk *CurrentChunk() {
     auto id = ready_for_encode.load(std::memory_order_relaxed);
@@ -394,18 +273,7 @@ public:
   CurrentChunk & CommitCurrentChunk should be called on the same thread
 
   */
-  void CommitCurrentChunk() {
-    chunk_ongoing.wait(kCommandChunkCount - 1, std::memory_order_relaxed);
-    chunk_ongoing.fetch_add(1, std::memory_order_relaxed);
-#ifndef SYNC_ENCODING
-    ready_for_encode.fetch_add(1, std::memory_order_release);
-    ready_for_encode.notify_all();
-#else
-    auto &chunk = chunks[ready_for_encode % kCommandChunkCount];
-    CommitChunkInternal(chunk);
-    ready_for_encode.fetch_add(1, std::memory_order_release);
-#endif
-  };
+  void CommitCurrentChunk();
 
   void WaitCPUFence(uint64_t seq) {
     uint64_t current;

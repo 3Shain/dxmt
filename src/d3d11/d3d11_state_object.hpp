@@ -9,6 +9,7 @@ DEFINE_COM_INTERFACE("77f0bbd5-2be7-4e9e-ad61-70684ff19e01",
                      IMTLD3D11SamplerState)
     : public ID3D11SamplerState {
   virtual MTL::SamplerState *GetSamplerState() = 0;
+  virtual uint64_t GetArgumentHandle() = 0;
 };
 
 DEFINE_COM_INTERFACE("03629ed8-bcdd-4582-8997-3817209a34f4",

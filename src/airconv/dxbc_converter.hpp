@@ -8,6 +8,7 @@
 #include <variant>
 #include <vector>
 
+#include "air_signature.hpp"
 #include "shader_common.hpp"
 
 namespace dxmt::dxbc {
@@ -694,6 +695,8 @@ struct ShaderResourceViewInfo {
   bool compared = false; // therefore we use depth texture!
 
   uint32_t strucure_stride = 0;
+  uint32_t arg_index;
+  uint32_t arg_size_index;
 };
 struct UnorderedAccessViewInfo {
   ResourceRange range;
@@ -706,13 +709,18 @@ struct UnorderedAccessViewInfo {
   bool with_counter = false;
 
   uint32_t strucure_stride = 0;
+  uint32_t arg_index;
+  uint32_t arg_size_index;
+  uint32_t arg_counter_index;
 };
 struct ConstantBufferInfo {
   ResourceRange range;
   uint32_t size_in_vec4;
+  uint32_t arg_index;
 };
 struct SamplerInfo {
   ResourceRange range;
+  uint32_t arg_index;
 };
 
 struct ThreadgroupBufferInfo {
@@ -781,6 +789,7 @@ public:
   std::unordered_map<
     uint32_t, std::pair<uint32_t /* count */, uint32_t /* mask */>>
     indexableTempRegisterCounts;
+  air::ArgumentBufferBuilder binding_table;
 };
 
 } // namespace dxmt::dxbc

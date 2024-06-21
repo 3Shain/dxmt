@@ -6,10 +6,10 @@
 #include "d3d11_shader.hpp"
 #include "d3d11_state_object.hpp"
 #include "d3d11_view.hpp"
+#include "dxmt_binding_set.hpp"
 #include "log/log.hpp"
 #include "mtld11_resource.hpp"
 #include "util_string.hpp"
-#include <unordered_map>
 
 namespace dxmt {
 
@@ -23,19 +23,50 @@ struct D3D11ComputeStageState {
 };
 
 struct CONSTANT_BUFFER_B {
+  IUnknown *RawPointer = 0;
   Com<IMTLBindable> Buffer;
   UINT FirstConstant;
   UINT NumConstants;
 };
 
+template <> struct redunant_binding_trait<CONSTANT_BUFFER_B> {
+  static bool is_redunant(const CONSTANT_BUFFER_B &left,
+                          const CONSTANT_BUFFER_B &right) {
+    return left.RawPointer == right.RawPointer;
+  }
+};
+
+struct SAMPLER_B {
+  IUnknown *RawPointer = 0;
+  Com<IMTLD3D11SamplerState> Sampler;
+};
+
+template <> struct redunant_binding_trait<SAMPLER_B> {
+  static bool is_redunant(const SAMPLER_B &left, const SAMPLER_B &right) {
+    return left.RawPointer == right.RawPointer;
+  }
+};
+
+struct SRV_B {
+  IUnknown *RawPointer = 0;
+  Com<IMTLBindable> SRV;
+};
+
+template <> struct redunant_binding_trait<SRV_B> {
+  static bool is_redunant(const SRV_B &left, const SRV_B &right) {
+    return left.RawPointer == right.RawPointer;
+  }
+};
+
 struct D3D11ShaderStageState {
-  std::unordered_map<UINT, Com<IMTLBindable>> SRVs;
-  std::unordered_map<UINT, Com<IMTLD3D11SamplerState>> Samplers;
-  std::unordered_map<UINT, CONSTANT_BUFFER_B> ConstantBuffers;
+  BindingSet<SRV_B, 128> SRVs;
+  BindingSet<SAMPLER_B, 16> Samplers;
+  BindingSet<CONSTANT_BUFFER_B, 14> ConstantBuffers;
   Com<IMTLD3D11Shader> Shader;
 };
 
 struct VERTEX_BUFFER_B {
+  MTL::Buffer* BufferRaw;
   Com<IMTLBindable> Buffer;
   UINT Stride;
   UINT Offset;
@@ -88,7 +119,7 @@ struct D3D11RasterizerStageState {
 };
 
 struct D3D11ContextState {
-  D3D11ShaderStageState ShaderStages[6] = {{}};
+  std::array<D3D11ShaderStageState, 6> ShaderStages;
   D3D11ComputeStageState ComputeStageUAV = {};
   D3D11StreamOutputStageState stream_output = {};
   D3D11InputAssemblerStageState InputAssembler = {};

@@ -14,5 +14,6 @@ DEFINE_COM_INTERFACE("3b1c3251-2053-4d41-99b8-c6c246d0b219",
   read-only.
 
   */
-  virtual void ExchangeFromPool(MTL::Buffer * *ppBuffer, dxmt::BufferPool* pool) = 0;
+  virtual void ExchangeFromPool(MTL::Buffer * *ppBuffer, uint64_t * gpuAddr,
+                                void **cpuAddr, dxmt::BufferPool *pool) = 0;
 };

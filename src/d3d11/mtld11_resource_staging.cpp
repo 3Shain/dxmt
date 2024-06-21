@@ -5,6 +5,8 @@ namespace dxmt {
 
 class StagingBufferInternal {
   Obj<MTL::Buffer> buffer;
+  void *buffer_mapped;
+  uint64_t buffer_len;
   // prevent read from staging before
   uint64_t cpu_coherent_after_finished_seq_id = 0;
   // prevent write to staging before
@@ -13,7 +15,8 @@ class StagingBufferInternal {
 
 public:
   StagingBufferInternal(Obj<MTL::Buffer> &&buffer)
-      : buffer(std::move(buffer)) {}
+      : buffer(std::move(buffer)), buffer_mapped(this->buffer->contents()),
+        buffer_len(this->buffer->length()) {}
 
   bool UseCopyDestination(uint64_t seq_id, MTL_BIND_RESOURCE *pBuffer,
                           uint32_t *pBytesPerRow, uint32_t *pBytesPerImage) {
@@ -62,9 +65,9 @@ public:
     } else {
       return -1;
     }
-    pMappedResource->pData = buffer->contents();
-    pMappedResource->RowPitch = buffer->length();
-    pMappedResource->DepthPitch = buffer->length();
+    pMappedResource->pData = buffer_mapped;
+    pMappedResource->RowPitch = buffer_len;
+    pMappedResource->DepthPitch = buffer_len;
     return 0;
   };
   void Unmap() {
@@ -189,7 +192,10 @@ HRESULT CreateStagingTextureInternal(IMTLD3D11Device *pDevice,
   auto metal = pDevice->GetMTLDevice();
   typename tag::DESC_S finalDesc;
   Obj<MTL::TextureDescriptor> texDesc; // unused
-  if (FAILED(CreateMTLTextureDescriptor(pDevice, pDesc, &finalDesc, &texDesc))) {
+  // clang-format, why do you piss me off
+  // is this really expected to be read by human?
+  if (FAILED(
+          CreateMTLTextureDescriptor(pDevice, pDesc, &finalDesc, &texDesc))) {
     return E_INVALIDARG;
   }
   uint32_t array_size = 1;
@@ -206,9 +212,11 @@ HRESULT CreateStagingTextureInternal(IMTLD3D11Device *pDevice,
       uint32_t w, h, d;
       GetMipmapSize(&finalDesc, level, &w, &h, &d);
       uint32_t bpr, bpi, buf_len;
-      if(FAILED(GetLinearTextureLayout(pDevice, &finalDesc, level, &bpr, &bpi, &buf_len))) {
+      if (FAILED(GetLinearTextureLayout(pDevice, &finalDesc, level, &bpr, &bpi,
+                                        &buf_len))) {
         return E_FAIL;
       }
+      // TODO: unfinished!
     }
   }
 

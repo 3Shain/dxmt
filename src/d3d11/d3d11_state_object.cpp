@@ -236,7 +236,8 @@ public:
   MTLD3D11SamplerState(IMTLD3D11Device *device, MTL::SamplerState *samplerState,
                        const D3D11_SAMPLER_DESC &desc)
       : MTLD3D11StateObject<IMTLD3D11SamplerState>(device), desc_(desc),
-        metal_sampler_state_(samplerState) {}
+        metal_sampler_state_(samplerState),
+        argument_handle_(samplerState->gpuResourceID()._impl) {}
   ~MTLD3D11SamplerState() {}
 
   HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid,
@@ -268,9 +269,12 @@ public:
     return metal_sampler_state_.ptr();
   }
 
+  virtual uint64_t GetArgumentHandle() { return argument_handle_; }
+
 private:
   const D3D11_SAMPLER_DESC desc_;
   Obj<MTL::SamplerState> metal_sampler_state_;
+  uint64_t argument_handle_;
 };
 
 // BlendState
@@ -398,7 +402,7 @@ public:
   MTLD3D11RasterizerState(IMTLD3D11Device *device,
                           const D3D11_RASTERIZER_DESC1 *desc)
       : MTLD3D11StateObject<IMTLD3D11RasterizerState>(device), m_desc(*desc) {}
-  ~MTLD3D11RasterizerState(){};
+  ~MTLD3D11RasterizerState() {};
 
   HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid,
                                            void **ppvObject) final {
@@ -505,7 +509,7 @@ public:
                             const D3D11_DEPTH_STENCIL_DESC &desc)
       : MTLD3D11StateObject<IMTLD3D11DepthStencilState>(device), m_desc(desc),
         metal_depth_stencil_state_(state) {}
-  ~MTLD3D11DepthStencilState(){};
+  ~MTLD3D11DepthStencilState() {};
 
   HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid,
                                            void **ppvObject) final {

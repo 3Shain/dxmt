@@ -1,5 +1,3 @@
-
-#include "DXBCParser/winerror.h"
 #include "Metal/MTLPixelFormat.hpp"
 #include "Metal/MTLResource.hpp"
 #include "com/com_object.hpp"
@@ -11,28 +9,32 @@
 #include "Metal/MTLBuffer.hpp"
 #include "Metal/MTLTexture.hpp"
 #include "objc_pointer.hpp"
-#include <set>
+#include <vector>
 
 namespace dxmt {
 
 #pragma region DynamicViewBindable
 struct IMTLNotifiedBindable : public IMTLBindable {
-  virtual void NotifyObserver() = 0;
+  virtual void NotifyObserver(MTL::Buffer *resource) = 0;
 };
 
-template <typename BindableMap, typename ReleaseCallback>
+template <typename BindableMap, typename GetArgumentData_,
+          typename ReleaseCallback>
 class DynamicBinding : public ComObject<IMTLNotifiedBindable> {
 private:
   Com<IUnknown> parent;
-  std::function<void()> observer;
+  BufferSwapCallback observer;
   BindableMap fn;
+  GetArgumentData_ get_argument_data;
   ReleaseCallback cb;
 
 public:
-  DynamicBinding(IUnknown *parent, std::function<void()> &&observer,
-                 BindableMap &&fn, ReleaseCallback &&cb)
+  DynamicBinding(IUnknown *parent, BufferSwapCallback &&observer,
+                 BindableMap &&fn, GetArgumentData_ &&get_argument_data,
+                 ReleaseCallback &&cb)
       : ComObject(), parent(parent), observer(std::move(observer)),
         fn(std::forward<BindableMap>(fn)),
+        get_argument_data(std::forward<GetArgumentData_>(get_argument_data)),
         cb(std::forward<ReleaseCallback>(cb)) {}
 
   ~DynamicBinding() { std::invoke(cb, this); }
@@ -53,6 +55,10 @@ public:
 
   BindingRef GetBinding(uint64_t x) override { return std::invoke(fn, x); };
 
+  ArgumentData GetArgumentData() override {
+    return std::invoke(get_argument_data);
+  }
+
   bool GetContentionState(uint64_t finishedSeqId) override { return true; }
 
   void GetLogicalResourceOrView(REFIID riid,
@@ -60,7 +66,7 @@ public:
     parent->QueryInterface(riid, ppLogicalResource);
   };
 
-  void NotifyObserver() override { observer(); };
+  void NotifyObserver(MTL::Buffer *resource) override { observer(resource); };
 };
 #pragma endregion
 
@@ -70,8 +76,10 @@ class DynamicBuffer
     : public TResourceBase<tag_buffer, IMTLDynamicBuffer, IMTLDynamicBindable> {
 private:
   Obj<MTL::Buffer> buffer_dynamic;
+  uint64_t buffer_handle;
+  void *buffer_mapped;
 
-  std::set<IMTLNotifiedBindable *> observers;
+  std::vector<IMTLNotifiedBindable *> observers;
 
   using SRVBase = TResourceViewBase<tag_shader_resource_view<DynamicBuffer>,
                                     IMTLDynamicBindable>;
@@ -83,16 +91,23 @@ private:
         DynamicBuffer *pResource, IMTLD3D11Device *pDevice)
         : SRVBase(pDesc, pResource, pDevice) {}
 
-    ~SRV() { assert(resource->weak_srvs.erase(this) == 1); }
+    ~SRV() {
+      auto &vec = resource->weak_srvs;
+      vec.erase(std::remove(vec.begin(), vec.end(), this), vec.end());
+    }
 
     void GetBindable(IMTLBindable **ppResource,
-                     std::function<void()> &&onBufferSwap) override {
+                     BufferSwapCallback &&onBufferSwap) override {
       IMTLNotifiedBindable *ret = ref(new DynamicBinding(
           static_cast<ID3D11ShaderResourceView *>(this),
           std::move(onBufferSwap),
-          [u = this->resource.ptr()](uint64_t) {
-            assert(0 && "todo: prepare srv view");
+          [](uint64_t) {
+            assert(0 && "todo: prepare dynamic buffer srv view");
             return BindingRef(std::nullopt);
+          },
+          []() {
+            assert(0 && "todo: prepare dynamic buffer srv view");
+            return ArgumentData(0uL, 0);
           },
           [u = this->resource.ptr()](IMTLNotifiedBindable *_this) {
             u->RemoveObserver(_this);
@@ -106,7 +121,7 @@ private:
     };
   };
 
-  std::set<SRV *> weak_srvs;
+  std::vector<SRV *> weak_srvs;
 
   std::unique_ptr<BufferPool> pool;
 
@@ -124,18 +139,19 @@ public:
       memcpy(buffer_dynamic->contents(), pInitialData->pSysMem,
              desc->ByteWidth);
     }
+    buffer_handle = buffer_dynamic->gpuAddress();
+    buffer_mapped = buffer_dynamic->contents();
     pool = std::make_unique<BufferPool>(metal, desc->ByteWidth, options);
   }
 
-  MTL::Buffer *GetCurrentBuffer(UINT *pBytesPerRow) override {
-    return buffer_dynamic.ptr();
-  };
+  void *GetMappedMemory(UINT *pBytesPerRow) override { return buffer_mapped; };
 
   void GetBindable(IMTLBindable **ppResource,
-                   std::function<void()> &&onBufferSwap) override {
+                   BufferSwapCallback &&onBufferSwap) override {
     auto ret = ref(new DynamicBinding(
         static_cast<ID3D11Buffer *>(this), std::move(onBufferSwap),
         [this](uint64_t) { return BindingRef(buffer_dynamic.ptr()); },
+        [this]() { return ArgumentData(this->buffer_handle); },
         [this](IMTLNotifiedBindable *_binding) {
           this->RemoveObserver(_binding);
         }));
@@ -144,22 +160,26 @@ public:
   };
 
   void RotateBuffer(IMTLDynamicBufferExchange *exch) override {
-    exch->ExchangeFromPool(&buffer_dynamic, pool.get());
+    exch->ExchangeFromPool(&buffer_dynamic, &buffer_handle, &buffer_mapped,
+                           pool.get());
     for (auto srv : weak_srvs) {
       srv->RotateView();
     }
     for (auto &observer : observers) {
-      observer->NotifyObserver();
+      observer->NotifyObserver(buffer_dynamic.ptr());
     }
   };
 
   void AddObserver(IMTLNotifiedBindable *pBindable) {
-    assert(observers.insert(pBindable).second && "otherwise already added");
+    // assert(observers.insert(pBindable).second && "otherwise already added");
+    observers.push_back(pBindable);
   }
 
   void RemoveObserver(IMTLNotifiedBindable *pBindable) {
-    assert(observers.erase(pBindable) == 1 &&
-           "it must be 1 unless the destructor called twice");
+    // assert(observers.erase(pBindable) == 1 &&
+    //        "it must be 1 unless the destructor called twice");
+    auto &vec = observers;
+    vec.erase(std::remove(vec.begin(), vec.end(), pBindable), vec.end());
   }
 
   HRESULT CreateShaderResourceView(const D3D11_SHADER_RESOURCE_VIEW_DESC *pDesc,
@@ -180,7 +200,8 @@ public:
     return E_NOTIMPL;
     // TODO: polymorphism: buffer/byteaddress/structured
     auto srv = ref(new SRV(&finalDesc, this, m_parent));
-    assert(weak_srvs.insert(srv).second);
+    // assert(weak_srvs.insert(srv).second);
+    weak_srvs.push_back(srv);
     *ppView = srv;
     srv->RotateView();
     return S_OK;
@@ -203,6 +224,8 @@ class DynamicTexture2D
     : public TResourceBase<tag_texture_2d, IMTLDynamicBuffer> {
 private:
   Obj<MTL::Buffer> buffer;
+  uint64_t buffer_handle;
+  void *buffer_mapped;
   size_t bytes_per_row;
 
   using SRVBase = TResourceViewBase<tag_shader_resource_view<DynamicTexture2D>,
@@ -210,6 +233,7 @@ private:
 
   class SRV : public SRVBase {
     Obj<MTL::Texture> view;
+    MTL::ResourceID view_handle;
     Obj<MTL::TextureDescriptor> view_desc;
 
   public:
@@ -218,15 +242,19 @@ private:
         Obj<MTL::TextureDescriptor> &&view_desc)
         : SRVBase(pDesc, pResource, pDevice), view_desc(std::move(view_desc)) {}
 
-    ~SRV() { assert(resource->weak_srvs.erase(this) == 1); }
+    ~SRV() {
+      auto vec = resource->weak_srvs;
+      vec.erase(std::remove(vec.begin(), vec.end(), this), vec.end());
+    }
 
     void GetBindable(IMTLBindable **ppResource,
-                     std::function<void()> &&onBufferSwap) override {
+                     BufferSwapCallback &&onBufferSwap) override {
       auto ret = ref(new DynamicBinding(
           static_cast<ID3D11ShaderResourceView *>(this),
           std::move(onBufferSwap),
-          [u = this->resource.ptr(), this](uint64_t) {
-            return BindingRef(this->view.ptr());
+          [this](uint64_t) { return BindingRef(this->view.ptr()); },
+          [this]() {
+            return ArgumentData(this->view_handle, this->view.ptr());
           },
           [u = this->resource.ptr()](IMTLNotifiedBindable *_this) {
             u->RemoveObserver(_this);
@@ -235,14 +263,29 @@ private:
       *ppResource = ret;
     }
 
+    struct ViewCache {
+      Obj<MTL::Texture> view;
+      MTL::ResourceID view_handle;
+    };
+
+    // FIXME: use LRU cache instead!
+    std::unordered_map<uint64_t, ViewCache> cache;
+
     void RotateView() {
-      view = transfer(
-          resource->buffer->newTexture(view_desc, 0, resource->bytes_per_row));
+      auto insert = cache.insert({resource->buffer_handle, {}});
+      auto &item = insert.first->second;
+      if (insert.second) {
+        item.view = transfer(resource->buffer->newTexture(
+            view_desc, 0, resource->bytes_per_row));
+        item.view_handle = item.view->gpuResourceID();
+      }
+      view = item.view;
+      view_handle = item.view_handle;
     };
   };
 
-  std::set<IMTLNotifiedBindable *> observers;
-  std::set<SRV *> weak_srvs;
+  std::vector<IMTLNotifiedBindable *> observers;
+  std::vector<SRV *> weak_srvs;
   std::unique_ptr<BufferPool> pool_;
 
 public:
@@ -250,35 +293,40 @@ public:
                    Obj<MTL::Buffer> &&buffer, IMTLD3D11Device *device,
                    UINT bytesPerRow)
       : TResourceBase<tag_texture_2d, IMTLDynamicBuffer>(desc, device),
-        buffer(std::move(buffer)), bytes_per_row(bytesPerRow) {
+        buffer(std::move(buffer)), buffer_handle(this->buffer->gpuAddress()),
+        buffer_mapped(this->buffer->contents()), bytes_per_row(bytesPerRow) {
 
     pool_ = std::make_unique<BufferPool>(device->GetMTLDevice(),
                                          this->buffer->length(),
                                          this->buffer->resourceOptions());
   }
 
-  MTL::Buffer *GetCurrentBuffer(UINT *pBytesPerRow) override {
+  void *GetMappedMemory(UINT *pBytesPerRow) override {
     *pBytesPerRow = bytes_per_row;
-    return buffer.ptr();
+    return buffer_mapped;
   };
 
   void RotateBuffer(IMTLDynamicBufferExchange *exch) override {
-    exch->ExchangeFromPool(&buffer, pool_.get());
+    exch->ExchangeFromPool(&buffer, &buffer_handle, &buffer_mapped,
+                           pool_.get());
     for (auto srv : weak_srvs) {
       srv->RotateView();
     }
     for (auto &observer : observers) {
-      observer->NotifyObserver();
+      observer->NotifyObserver(buffer.ptr());
     }
   };
 
   void AddObserver(IMTLNotifiedBindable *pBindable) {
-    assert(observers.insert(pBindable).second && "otherwise already added");
+    // assert(observers.insert(pBindable).second && "otherwise already added");
+    observers.push_back(pBindable);
   }
 
   void RemoveObserver(IMTLNotifiedBindable *pBindable) {
-    assert(observers.erase(pBindable) == 1 &&
-           "it must be 1 unless the destructor called twice");
+    // assert(observers.erase(pBindable) == 1 &&
+    //        "it must be 1 unless the destructor called twice");
+    auto vec = observers;
+    vec.erase(std::remove(vec.begin(), vec.end(), pBindable), vec.end());
   }
 
   HRESULT CreateShaderResourceView(const D3D11_SHADER_RESOURCE_VIEW_DESC *pDesc,
@@ -320,7 +368,7 @@ public:
     desc->setCpuCacheMode(MTL::CPUCacheModeWriteCombined);
     desc->setPixelFormat(format.PixelFormat);
     auto srv = ref(new SRV(&finalDesc, this, m_parent, std::move(desc)));
-    assert(weak_srvs.insert(srv).second);
+    weak_srvs.push_back(srv);
     *ppView = srv;
     srv->RotateView();
     return S_OK;

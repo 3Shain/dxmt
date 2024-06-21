@@ -33,7 +33,7 @@ DEFINE_COM_INTERFACE("e95ba1c7-e43f-49c3-a907-4ac669c9fb42", IMTLD3D11Shader)
   NOTE: return may be cached (based on \c pArgs )
   */
   virtual void GetCompiledShader(void *pArgs, IMTLCompiledShader **pShader) = 0;
-  virtual void GetReflection(MTL_SHADER_REFLECTION * pRefl) = 0;
+  virtual void GetReflection(MTL_SHADER_REFLECTION ** pRefl) = 0;
   virtual void GetArgumentEncoderRef(MTL::ArgumentEncoder * *pEncoder) = 0;
 };
 

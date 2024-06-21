@@ -17,6 +17,7 @@ namespace dxmt {
 class DeviceBuffer : public TResourceBase<tag_buffer, IMTLBindable> {
 private:
   Obj<MTL::Buffer> buffer;
+  uint64_t buffer_handle;
   bool structured;
   bool allow_raw_view;
 
@@ -32,12 +33,17 @@ public:
       memcpy(buffer->contents(), pInitialData->pSysMem, desc->ByteWidth);
       buffer->didModifyRange({0, desc->ByteWidth});
     }
+    buffer_handle = buffer->gpuAddress();
     structured = desc->MiscFlags & D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
     allow_raw_view =
         desc->MiscFlags & D3D11_RESOURCE_MISC_BUFFER_ALLOW_RAW_VIEWS;
   }
 
   BindingRef GetBinding(uint64_t) override { return BindingRef(buffer.ptr()); };
+
+  ArgumentData GetArgumentData() override {
+    return ArgumentData(buffer_handle);
+  }
 
   bool GetContentionState(uint64_t) override { return true; };
 
@@ -50,14 +56,19 @@ public:
       TResourceViewBase<tag_shader_resource_view<DeviceBuffer>, IMTLBindable>;
   template <typename F> class SRV : public SRVBase {
   private:
+    ArgumentData argument_data;
     F f;
 
   public:
     SRV(const tag_shader_resource_view<>::DESC_S *pDesc,
-        DeviceBuffer *pResource, IMTLD3D11Device *pDevice, F &&fn)
-        : SRVBase(pDesc, pResource, pDevice), f(std::forward<F>(fn)) {}
+        DeviceBuffer *pResource, IMTLD3D11Device *pDevice,
+        ArgumentData argument_data, F &&fn)
+        : SRVBase(pDesc, pResource, pDevice), argument_data(argument_data),
+          f(std::forward<F>(fn)) {}
 
     BindingRef GetBinding(uint64_t t) override { return std::invoke(f, t); };
+
+    ArgumentData GetArgumentData() override { return argument_data; };
 
     void GetLogicalResourceOrView(REFIID riid,
                                   void **ppLogicalResource) override {
@@ -79,11 +90,11 @@ public:
     }
     if (structured) {
       // StructuredBuffer
+      auto offset = pDesc->Buffer.FirstElement * this->desc.StructureByteStride;
+      auto size = pDesc->Buffer.NumElements;
       *ppView = ref(new SRV(
-          pDesc, this, m_parent,
-          [ctx = Com(this),
-           offset = pDesc->Buffer.FirstElement * this->desc.StructureByteStride,
-           size = pDesc->Buffer.NumElements](uint64_t) {
+          pDesc, this, m_parent, ArgumentData(buffer_handle + offset, size),
+          [ctx = Com(this), offset, size](uint64_t) {
             return BindingRef(ctx->buffer.ptr(), size, offset);
           }));
       return S_OK;
@@ -92,12 +103,13 @@ public:
           finalDesc.BufferEx.Flags & D3D11_BUFFEREX_SRV_FLAG_RAW) {
         if (!allow_raw_view)
           return E_INVALIDARG;
-        *ppView =
-            ref(new SRV(pDesc, this, m_parent,
-                        [ctx = Com(this), offset = pDesc->Buffer.FirstElement,
-                         size = pDesc->Buffer.NumElements](uint64_t) {
-                          return BindingRef(ctx->buffer.ptr(), size, offset);
-                        }));
+        auto offset = pDesc->Buffer.FirstElement;
+        auto size = pDesc->Buffer.NumElements;
+        *ppView = ref(new SRV(
+            pDesc, this, m_parent, ArgumentData(buffer_handle + offset, size),
+            [ctx = Com(this), offset, size](uint64_t) {
+              return BindingRef(ctx->buffer.ptr(), size, offset);
+            }));
         return S_OK;
       } else {
         Obj<MTL::Texture> view;
@@ -105,10 +117,11 @@ public:
                                         &finalDesc, &view))) {
           return E_FAIL;
         }
-        *ppView = ref(
-            new SRV(pDesc, this, m_parent, [view = std::move(view)](uint64_t) {
-              return BindingRef(view.ptr());
-            }));
+        *ppView = ref(new SRV(pDesc, this, m_parent,
+                              ArgumentData(view->gpuResourceID(), view.ptr()),
+                              [view = std::move(view)](uint64_t) {
+                                return BindingRef(view.ptr());
+                              }));
         return S_OK;
       }
     }
@@ -121,14 +134,19 @@ public:
 
   template <typename F> class UAV : public UAVBase {
   private:
+    ArgumentData argument_data;
     F f;
 
   public:
     UAV(const tag_unordered_access_view<>::DESC_S *pDesc,
-        DeviceBuffer *pResource, IMTLD3D11Device *pDevice, F &&fn)
-        : UAVBase(pDesc, pResource, pDevice), f(std::forward<F>(fn)) {}
+        DeviceBuffer *pResource, IMTLD3D11Device *pDevice,
+        ArgumentData argument_data, F &&fn)
+        : UAVBase(pDesc, pResource, pDevice), argument_data(argument_data),
+          f(std::forward<F>(fn)) {}
 
     BindingRef GetBinding(uint64_t t) override { return std::invoke(f, t); };
+
+    ArgumentData GetArgumentData() override { return argument_data; };
 
     void GetLogicalResourceOrView(REFIID riid,
                                   void **ppLogicalResource) override {
@@ -148,14 +166,14 @@ public:
     if (finalDesc.ViewDimension != D3D11_UAV_DIMENSION_BUFFER) {
       return E_INVALIDARG;
     }
-    assert(finalDesc.Buffer.Flags < 2 && "TODO: uav counter");
+    // assert(finalDesc.Buffer.Flags < 2 && "TODO: uav counter");
     if (structured) {
       // StructuredBuffer
+      auto offset = pDesc->Buffer.FirstElement * this->desc.StructureByteStride,
+           size = pDesc->Buffer.NumElements;
       *ppView = ref(new UAV(
-          pDesc, this, m_parent,
-          [ctx = Com(this),
-           offset = pDesc->Buffer.FirstElement * this->desc.StructureByteStride,
-           size = pDesc->Buffer.NumElements](uint64_t) {
+          pDesc, this, m_parent, ArgumentData(buffer_handle + offset, size),
+          [ctx = Com(this), offset, size](uint64_t) {
             return BindingRef(ctx->buffer.ptr(), size, offset);
           }));
       return S_OK;
@@ -163,12 +181,13 @@ public:
       if (finalDesc.Buffer.Flags & D3D11_BUFFER_UAV_FLAG_RAW) {
         if (!allow_raw_view)
           return E_INVALIDARG;
-        *ppView =
-            ref(new UAV(pDesc, this, m_parent,
-                        [ctx = Com(this), offset = pDesc->Buffer.FirstElement,
-                         size = pDesc->Buffer.NumElements](uint64_t) {
-                          return BindingRef(ctx->buffer.ptr(), size, offset);
-                        }));
+        auto offset = pDesc->Buffer.FirstElement,
+             size = pDesc->Buffer.NumElements;
+        *ppView = ref(new UAV(
+            pDesc, this, m_parent, ArgumentData(buffer_handle + offset, size),
+            [ctx = Com(this), offset, size](uint64_t) {
+              return BindingRef(ctx->buffer.ptr(), size, offset);
+            }));
         return S_OK;
       } else {
         Obj<MTL::Texture> view;
@@ -176,10 +195,11 @@ public:
                                         &finalDesc, &view))) {
           return E_FAIL;
         }
-        *ppView = ref(
-            new UAV(pDesc, this, m_parent, [view = std::move(view)](uint64_t) {
-              return BindingRef(view.ptr());
-            }));
+        *ppView = ref(new UAV(pDesc, this, m_parent,
+                              ArgumentData(view->gpuResourceID(), view.ptr()),
+                              [view = std::move(view)](uint64_t) {
+                                return BindingRef(view.ptr());
+                              }));
         return S_OK;
       }
     }
@@ -216,6 +236,7 @@ template <typename tag_texture>
 class DeviceTexture : public TResourceBase<tag_texture, IMTLBindable> {
 private:
   Obj<MTL::Texture> texture;
+  MTL::ResourceID texture_handle;
 
   using SRVBase =
       TResourceViewBase<tag_shader_resource_view<DeviceTexture<tag_texture>>,
@@ -223,14 +244,20 @@ private:
   class TextureSRV : public SRVBase {
   private:
     Obj<MTL::Texture> view;
+    MTL::ResourceID view_handle;
 
   public:
     TextureSRV(MTL::Texture *view,
                const tag_shader_resource_view<>::DESC_S *pDesc,
                DeviceTexture *pResource, IMTLD3D11Device *pDevice)
-        : SRVBase(pDesc, pResource, pDevice), view(view) {}
+        : SRVBase(pDesc, pResource, pDevice), view(view),
+          view_handle(view->gpuResourceID()) {}
 
     BindingRef GetBinding(uint64_t) override { return BindingRef(view.ptr()); };
+
+    ArgumentData GetArgumentData() override {
+      return ArgumentData(view_handle, view.ptr());
+    };
 
     void GetLogicalResourceOrView(REFIID riid,
                                   void **ppLogicalResource) override {
@@ -244,14 +271,20 @@ private:
   class TextureUAV : public UAVBase {
   private:
     Obj<MTL::Texture> view;
+    MTL::ResourceID view_handle;
 
   public:
     TextureUAV(MTL::Texture *view,
                const tag_unordered_access_view<>::DESC_S *pDesc,
                DeviceTexture *pResource, IMTLD3D11Device *pDevice)
-        : UAVBase(pDesc, pResource, pDevice), view(view) {}
+        : UAVBase(pDesc, pResource, pDevice), view(view),
+          view_handle(view->gpuResourceID()) {}
 
     BindingRef GetBinding(uint64_t) override { return BindingRef(view.ptr()); };
+
+    ArgumentData GetArgumentData() override {
+      return ArgumentData(view_handle, view.ptr());
+    };
 
     void GetLogicalResourceOrView(REFIID riid,
                                   void **ppLogicalResource) override {
@@ -264,14 +297,16 @@ private:
   class TextureRTV : public RTVBase {
   private:
     Obj<MTL::Texture> view;
+    MTL::PixelFormat view_pixel_format;
 
   public:
     TextureRTV(MTL::Texture *view,
                const tag_render_target_view<>::DESC_S *pDesc,
                DeviceTexture *pResource, IMTLD3D11Device *pDevice)
-        : RTVBase(pDesc, pResource, pDevice), view(view) {}
+        : RTVBase(pDesc, pResource, pDevice), view(view),
+          view_pixel_format(view->pixelFormat()) {}
 
-    MTL::PixelFormat GetPixelFormat() final { return view->pixelFormat(); }
+    MTL::PixelFormat GetPixelFormat() final { return view_pixel_format; }
 
     BindingRef GetBinding(uint64_t) final { return BindingRef(view.ptr()); }
   };
@@ -281,14 +316,16 @@ private:
   class TextureDSV : public DSVBase {
   private:
     Obj<MTL::Texture> view;
+    MTL::PixelFormat view_pixel_format;
 
   public:
     TextureDSV(MTL::Texture *view,
                const tag_depth_stencil_view<>::DESC_S *pDesc,
                DeviceTexture *pResource, IMTLD3D11Device *pDevice)
-        : DSVBase(pDesc, pResource, pDevice), view(view) {}
+        : DSVBase(pDesc, pResource, pDevice), view(view),
+          view_pixel_format(view->pixelFormat()) {}
 
-    MTL::PixelFormat GetPixelFormat() final { return view->pixelFormat(); }
+    MTL::PixelFormat GetPixelFormat() final { return view_pixel_format; }
 
     BindingRef GetBinding(uint64_t) final { return BindingRef(view.ptr()); }
   };
@@ -297,11 +334,16 @@ public:
   DeviceTexture(const tag_texture::DESC_S *pDesc, MTL::Texture *texture,
                 IMTLD3D11Device *pDevice)
       : TResourceBase<tag_texture, IMTLBindable>(pDesc, pDevice),
-        texture(texture) {}
+        texture(texture), texture_handle(texture->gpuResourceID()) {}
 
   BindingRef GetBinding(uint64_t) override {
     return BindingRef(texture.ptr());
   };
+
+  ArgumentData GetArgumentData() override {
+    // rarely used, since texture is not directly accessed by pipeline
+    return ArgumentData(texture_handle, texture.ptr());
+  }
 
   bool GetContentionState(uint64_t) override { return true; };
 

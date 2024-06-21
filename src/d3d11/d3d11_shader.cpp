@@ -72,8 +72,8 @@ public:
 
   void GetArgumentEncoderRef(MTL::ArgumentEncoder **pEncoder) final;
 
-  void GetReflection(MTL_SHADER_REFLECTION *pRefl) final {
-    *pRefl = reflection;
+  void GetReflection(MTL_SHADER_REFLECTION **pRefl) final {
+    *pRefl = &reflection;
   }
 
   SM50Shader *sm50;

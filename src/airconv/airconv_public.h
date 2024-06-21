@@ -52,6 +52,7 @@ struct MTL_SM50_SHADER_ARGUMENT {
   */
   uint32_t SM50BindingSlot;
   enum MTL_SM50_SHADER_ARGUMENT_FLAG Flags;
+  uint32_t StructurePtrOffset;
 };
 
 struct MTL_SHADER_REFLECTION {

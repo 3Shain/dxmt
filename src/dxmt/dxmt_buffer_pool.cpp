@@ -1,12 +1,15 @@
 #include "./dxmt_buffer_pool.hpp"
-#include "objc_pointer.hpp"
+#include "Metal/MTLDevice.hpp"
 
 namespace dxmt {
 
 void BufferPool::GetNext(uint64_t currentSeqId, uint64_t coherentSeqId,
-                         MTL::Buffer **next) {
-  fifo.push(
-      QueueEntry{.buffer = transfer(*next), .will_free_at = currentSeqId});
+                         MTL::Buffer **next, uint64_t *gpuAddr,
+                         void **cpuAddr) {
+  fifo.push(QueueEntry{.buffer = *next,
+                       .gpu_addr = *gpuAddr,
+                       .cpu_addr = *cpuAddr,
+                       .will_free_at = currentSeqId});
   for (;;) {
     if (fifo.empty()) {
       break;
@@ -15,13 +18,16 @@ void BufferPool::GetNext(uint64_t currentSeqId, uint64_t coherentSeqId,
     if (entry.will_free_at > coherentSeqId) {
       break;
     }
-    *next = entry.buffer.takeOwnership();
+    *next = entry.buffer;
+    *gpuAddr = entry.gpu_addr;
+    *cpuAddr = entry.cpu_addr;
     fifo.pop();
     return;
   }
 
   auto buffer = device->newBuffer(buffer_len, options);
-  // fifo.push(QueueEntry{.buffer = Obj(buffer), .will_free_at = currentSeqId});
   *next = buffer;
+  *gpuAddr = buffer->gpuAddress();
+  *cpuAddr = buffer->contents();
 }
 }; // namespace dxmt

@@ -1,6 +1,7 @@
 
 
 #include "d3d11_context.hpp"
+#include "d3d11_private.h"
 #include "d3d11_query.hpp"
 #include "dxmt_command_queue.hpp"
 
@@ -143,7 +144,7 @@ public:
     if (DataSize && DataSize != pAsync->GetDataSize())
       return E_INVALIDARG;
 
-    if(GetDataFlags != D3D11_ASYNC_GETDATA_DONOTFLUSH) {
+    if (GetDataFlags != D3D11_ASYNC_GETDATA_DONOTFLUSH) {
       assert(0 && "handle GetDataFlags correctly");
     }
 
@@ -175,11 +176,11 @@ public:
         return E_INVALIDARG;
       case D3D11_MAP_WRITE_DISCARD: {
         dynamic->RotateBuffer(this);
-        Out.pData = dynamic->GetCurrentBuffer(&Out.RowPitch)->contents();
+        Out.pData = dynamic->GetMappedMemory(&Out.RowPitch);
         break;
       }
       case D3D11_MAP_WRITE_NO_OVERWRITE: {
-        Out.pData = dynamic->GetCurrentBuffer(&Out.RowPitch)->contents();
+        Out.pData = dynamic->GetMappedMemory(&Out.RowPitch);
         break;
       }
       }
@@ -488,6 +489,10 @@ public:
     if (dim == D3D11_RESOURCE_DIMENSION_TEXTURE2D) {
       D3D11_TEXTURE2D_DESC desc;
       ((ID3D11Texture2D *)pDstResource)->GetDesc(&desc);
+      if (DstSubresource >= desc.MipLevels * desc.ArraySize) {
+        ERR("out of bound texture write");
+        return;
+      }
       auto slice = DstSubresource / desc.MipLevels;
       auto level = DstSubresource % desc.MipLevels;
       uint32_t copy_rows = std::max(desc.Height >> level, 1u);
@@ -550,7 +555,8 @@ public:
 #pragma region DrawCall
 
   void Draw(UINT VertexCount, UINT StartVertexLocation) {
-    ctx.PreDraw();
+    if (!ctx.PreDraw())
+      return;
     MTL::PrimitiveType Primitive =
         to_metal_topology(state_.InputAssembler.Topology);
     // TODO: skip invalid topology
@@ -562,11 +568,10 @@ public:
 
   void DrawIndexed(UINT IndexCount, UINT StartIndexLocation,
                    INT BaseVertexLocation) {
-    ctx.PreDraw();
-    auto currentChunkId = cmd_queue.CurrentSeqId();
+    if (!ctx.PreDraw())
+      return;
     MTL::PrimitiveType Primitive =
         to_metal_topology(state_.InputAssembler.Topology);
-    assert(state_.InputAssembler.IndexBuffer);
     auto IndexType =
         state_.InputAssembler.IndexBufferFormat == DXGI_FORMAT_R32_UINT
             ? MTL::IndexTypeUInt32
@@ -577,20 +582,20 @@ public:
             (state_.InputAssembler.IndexBufferFormat == DXGI_FORMAT_R32_UINT
                  ? 4
                  : 2);
-    ctx.EmitRenderCommand<true>(
-        [IndexBuffer =
-             state_.InputAssembler.IndexBuffer->GetBinding(currentChunkId),
-         IndexType, IndexBufferOffset, Primitive, IndexCount,
-         BaseVertexLocation](MTL::RenderCommandEncoder *encoder) {
-          encoder->drawIndexedPrimitives(
-              Primitive, IndexCount, IndexType, IndexBuffer.buffer(),
+    ctx.EmitRenderCommandChk<true>(
+        [IndexType, IndexBufferOffset, Primitive, IndexCount,
+         BaseVertexLocation](CommandChunk::context &ctx) {
+          assert(ctx.current_index_buffer_ref);
+          ctx.render_encoder->drawIndexedPrimitives(
+              Primitive, IndexCount, IndexType, ctx.current_index_buffer_ref,
               IndexBufferOffset, 1, BaseVertexLocation, 0);
         });
   }
 
   void DrawInstanced(UINT VertexCountPerInstance, UINT InstanceCount,
                      UINT StartVertexLocation, UINT StartInstanceLocation) {
-    ctx.PreDraw();
+    if (!ctx.PreDraw())
+      return;
     MTL::PrimitiveType Primitive =
         to_metal_topology(state_.InputAssembler.Topology);
     // TODO: skip invalid topology
@@ -606,12 +611,11 @@ public:
   void DrawIndexedInstanced(UINT IndexCountPerInstance, UINT InstanceCount,
                             UINT StartIndexLocation, INT BaseVertexLocation,
                             UINT StartInstanceLocation) {
-    ctx.PreDraw();
-    auto currentChunkId = cmd_queue.CurrentSeqId();
+    if (!ctx.PreDraw())
+      return;
     MTL::PrimitiveType Primitive =
         to_metal_topology(state_.InputAssembler.Topology);
     // TODO: skip invalid topology
-    assert(state_.InputAssembler.IndexBuffer);
     auto IndexType =
         state_.InputAssembler.IndexBufferFormat == DXGI_FORMAT_R32_UINT
             ? MTL::IndexTypeUInt32
@@ -622,42 +626,41 @@ public:
             (state_.InputAssembler.IndexBufferFormat == DXGI_FORMAT_R32_UINT
                  ? 4
                  : 2);
-    ctx.EmitRenderCommand<true>(
-        [IndexBuffer =
-             state_.InputAssembler.IndexBuffer->GetBinding(currentChunkId),
-         IndexType, IndexBufferOffset, Primitive, InstanceCount,
+    ctx.EmitRenderCommandChk<true>(
+        [IndexType, IndexBufferOffset, Primitive, InstanceCount,
          BaseVertexLocation, StartInstanceLocation,
-         IndexCountPerInstance](MTL::RenderCommandEncoder *encoder) {
-          encoder->drawIndexedPrimitives(
-              Primitive, IndexCountPerInstance, IndexType, IndexBuffer.buffer(),
-              IndexBufferOffset, InstanceCount, BaseVertexLocation,
-              StartInstanceLocation);
+         IndexCountPerInstance](CommandChunk::context &ctx) {
+          assert(ctx.current_index_buffer_ref);
+          ctx.render_encoder->drawIndexedPrimitives(
+              Primitive, IndexCountPerInstance, IndexType,
+              ctx.current_index_buffer_ref, IndexBufferOffset, InstanceCount,
+              BaseVertexLocation, StartInstanceLocation);
         });
   }
 
   void DrawIndexedInstancedIndirect(ID3D11Buffer *pBufferForArgs,
                                     UINT AlignedByteOffsetForArgs) {
-    ctx.PreDraw();
+    if (!ctx.PreDraw())
+      return;
     auto currentChunkId = cmd_queue.CurrentSeqId();
     MTL::PrimitiveType Primitive =
         to_metal_topology(state_.InputAssembler.Topology);
     // TODO: skip invalid topology
-    assert(state_.InputAssembler.IndexBuffer);
     auto IndexType =
         state_.InputAssembler.IndexBufferFormat == DXGI_FORMAT_R32_UINT
             ? MTL::IndexTypeUInt32
             : MTL::IndexTypeUInt16;
     auto IndexBufferOffset = state_.InputAssembler.IndexBufferOffset;
     if (auto bindable = com_cast<IMTLBindable>(pBufferForArgs)) {
-      ctx.EmitRenderCommand<true>(
-          [IndexBuffer =
-               state_.InputAssembler.IndexBuffer->GetBinding(currentChunkId),
-           IndexType, IndexBufferOffset, Primitive,
+      ctx.EmitRenderCommandChk<true>(
+          [IndexType, IndexBufferOffset, Primitive,
            ArgBuffer = bindable->GetBinding(currentChunkId),
-           AlignedByteOffsetForArgs](MTL::RenderCommandEncoder *encoder) {
-            encoder->drawIndexedPrimitives(
-                Primitive, IndexType, IndexBuffer.buffer(), IndexBufferOffset,
-                ArgBuffer.buffer(), AlignedByteOffsetForArgs);
+           AlignedByteOffsetForArgs](CommandChunk::context &ctx) {
+            assert(ctx.current_index_buffer_ref);
+            ctx.render_encoder->drawIndexedPrimitives(
+                Primitive, IndexType, ctx.current_index_buffer_ref,
+                IndexBufferOffset, ArgBuffer.buffer(),
+                AlignedByteOffsetForArgs);
           });
     }
   }
@@ -751,70 +754,32 @@ public:
   void IASetVertexBuffers(UINT StartSlot, UINT NumBuffers,
                           ID3D11Buffer *const *ppVertexBuffers,
                           const UINT *pStrides, const UINT *pOffsets) {
-    auto &BoundVBs = state_.InputAssembler.VertexBuffers;
-    for (unsigned Slot = StartSlot; Slot < StartSlot + NumBuffers; Slot++) {
-      auto &VB = BoundVBs[Slot];
-      VB.Buffer = nullptr;
-      if (auto dynamic = com_cast<IMTLDynamicBindable>(
-              ppVertexBuffers[Slot - StartSlot])) {
-        dynamic->GetBindable(&VB.Buffer, [this]() {
-          // FIXME:
-          ctx.EmitSetIAState();
-          // worth it ? this looks wrong (yes it's indeed wrong)
-        });
-      } else if (auto expected = com_cast<IMTLBindable>(
-                     ppVertexBuffers[Slot - StartSlot])) {
-        VB.Buffer = std::move(expected);
-      } else if (ppVertexBuffers[Slot - StartSlot]) {
-        ERR("IASetVertexBuffers: wrong vertex buffer binding");
-      } else {
-        BoundVBs.erase(Slot);
-      }
-      VB.Stride = pStrides[Slot - StartSlot];
-      VB.Offset = pOffsets[Slot - StartSlot];
-    }
-    ctx.EmitSetIAState(); // ? should do it smartly?
+    ctx.SetVertexBuffers(StartSlot, NumBuffers, ppVertexBuffers, pStrides,
+                         pOffsets);
   }
 
   void IAGetVertexBuffers(UINT StartSlot, UINT NumBuffers,
                           ID3D11Buffer **ppVertexBuffers, UINT *pStrides,
                           UINT *pOffsets) {
-    for (unsigned i = 0; i < NumBuffers; i++) {
-      if (!state_.InputAssembler.VertexBuffers.contains(i + StartSlot)) {
-        if (ppVertexBuffers != NULL)
-          ppVertexBuffers[i] = nullptr;
-        if (pStrides != NULL)
-          pStrides[i] = 0;
-        if (pOffsets != NULL)
-          pOffsets[i] = 0;
-        continue;
-      }
-      auto &VertexBuffer = state_.InputAssembler.VertexBuffers[i + StartSlot];
-      if (ppVertexBuffers != NULL) {
-        VertexBuffer.Buffer->GetLogicalResourceOrView(
-            IID_PPV_ARGS(&ppVertexBuffers[i]));
-      }
-      if (pStrides != NULL)
-        pStrides[i] = VertexBuffer.Stride;
-      if (pOffsets != NULL)
-        pOffsets[i] = VertexBuffer.Offset;
-    }
+    ctx.GetVertexBuffers(StartSlot, NumBuffers, ppVertexBuffers, pStrides,
+                         pOffsets);
   }
 
   void IASetIndexBuffer(ID3D11Buffer *pIndexBuffer, DXGI_FORMAT Format,
                         UINT Offset) {
-    state_.InputAssembler.IndexBuffer = nullptr;
     if (auto dynamic = com_cast<IMTLDynamicBindable>(pIndexBuffer)) {
-      dynamic->GetBindable(&state_.InputAssembler.IndexBuffer, []() {
-        // no-op
-        // since index buffer always a parameter of draw call
-        // so we always get the fresh name
+      state_.InputAssembler.IndexBuffer = nullptr;
+      dynamic->GetBindable(&state_.InputAssembler.IndexBuffer, [this](auto) {
+        ctx.dirty_state.set(ContextInternal::DirtyState::IndexBuffer);
       });
     } else if (auto expected = com_cast<IMTLBindable>(pIndexBuffer)) {
       state_.InputAssembler.IndexBuffer = std::move(expected);
+    } else {
+      state_.InputAssembler.IndexBuffer = nullptr;
     }
     state_.InputAssembler.IndexBufferFormat = Format;
     state_.InputAssembler.IndexBufferOffset = Offset;
+    ctx.dirty_state.set(ContextInternal::DirtyState::IndexBuffer);
   }
   void IAGetIndexBuffer(ID3D11Buffer **pIndexBuffer, DXGI_FORMAT *Format,
                         UINT *Offset) {
@@ -1239,12 +1204,12 @@ public:
         state_.ComputeStageUAV.UAVs.insert_or_assign(StartSlot + i,
                                                      std::move(to_bind));
         // resolve srv hazard: unbind any cs srv that share the resource
-        std::erase_if(state_.ShaderStages[5].SRVs,
-                      [&](const auto &item) -> bool {
-                        // auto &[slot, bound_srv] = item;
-                        // if srv conflict with uav, return true
-                        return false;
-                      });
+        // std::erase_if(state_.ShaderStages[5].SRVs,
+        //               [&](const auto &item) -> bool {
+        //                 // auto &[slot, bound_srv] = item;
+        //                 // if srv conflict with uav, return true
+        //                 return false;
+        //               });
       } else {
         // unbind
         state_.ComputeStageUAV.UAVs.erase(StartSlot + i);
@@ -1341,17 +1306,25 @@ public:
       UINT NumUAVs, ID3D11UnorderedAccessView *const *ppUnorderedAccessViews,
       const UINT *pUAVInitialCounts) {
 
+    bool should_invalidate_pass = false;
+
     auto &BoundRTVs = state_.OutputMerger.RTVs;
     constexpr unsigned RTVSlotCount = D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT;
     for (unsigned rtv_index = 0; rtv_index < RTVSlotCount; rtv_index++) {
       if (rtv_index < NumRTVs && ppRenderTargetViews[rtv_index]) {
         if (auto expected = com_cast<IMTLD3D11RenderTargetView>(
                 ppRenderTargetViews[rtv_index])) {
+          if (BoundRTVs[rtv_index].ptr() == expected.ptr())
+            continue;
           BoundRTVs[rtv_index] = std::move(expected);
+          should_invalidate_pass = true;
         } else {
           assert(0 && "wtf");
         }
       } else {
+        if (BoundRTVs[rtv_index]) {
+          should_invalidate_pass = true;
+        }
         BoundRTVs[rtv_index] = nullptr;
       }
     }
@@ -1359,8 +1332,14 @@ public:
 
     if (auto expected =
             com_cast<IMTLD3D11DepthStencilView>(pDepthStencilView)) {
-      state_.OutputMerger.DSV = std::move(expected);
+      if (state_.OutputMerger.DSV.ptr() != expected.ptr()) {
+        state_.OutputMerger.DSV = std::move(expected);
+        should_invalidate_pass = true;
+      }
     } else {
+      if (state_.OutputMerger.DSV) {
+        should_invalidate_pass = true;
+      }
       state_.OutputMerger.DSV = nullptr;
     }
 
@@ -1368,7 +1347,9 @@ public:
       IMPLEMENT_ME
     }
 
-    ctx.InvalidateCurrentPass();
+    if (should_invalidate_pass) {
+      ctx.InvalidateCurrentPass();
+    }
   }
 
   void OMGetRenderTargetsAndUnorderedAccessViews(
@@ -1399,7 +1380,7 @@ public:
     if (should_invalidate_pipeline) {
       ctx.InvalidateRenderPipeline();
     }
-    ctx.EmitBlendFactorAndStencilRef();
+    ctx.dirty_state.set(ContextInternal::DirtyState::BlendFactorAndStencilRef);
   }
   void OMGetBlendState(ID3D11BlendState **ppBlendState, FLOAT BlendFactor[4],
                        UINT *pSampleMask) {
@@ -1420,7 +1401,7 @@ public:
             com_cast<IMTLD3D11DepthStencilState>(pDepthStencilState)) {
       state_.OutputMerger.DepthStencilState = std::move(expected);
       state_.OutputMerger.StencilRef = StencilRef;
-      ctx.EmitSetDepthStencilState();
+      ctx.dirty_state.set(ContextInternal::DirtyState::DepthStencilState);
     }
   }
 
@@ -1449,9 +1430,9 @@ public:
     } else {
       state_.Rasterizer.RasterizerState = nullptr;
     }
-    ctx.EmitSetRasterizerState();
     // check scissors enabled
-    ctx.EmitSetViewportAndScissors();
+    ctx.dirty_state.set(ContextInternal::DirtyState::RasterizerState,
+                        ContextInternal::DirtyState::ViewportAndScissors);
   }
 
   void RSGetState(ID3D11RasterizerState **ppRasterizerState) {
@@ -1470,7 +1451,7 @@ public:
     for (auto i = 0u; i < NumViewports; i++) {
       state_.Rasterizer.viewports[i] = pViewports[i];
     }
-    ctx.EmitSetViewportAndScissors();
+    ctx.dirty_state.set(ContextInternal::DirtyState::ViewportAndScissors);
   }
 
   void RSGetViewports(UINT *pNumViewports, D3D11_VIEWPORT *pViewports) {
@@ -1489,7 +1470,7 @@ public:
     for (unsigned i = 0; i < NumRects; i++) {
       state_.Rasterizer.scissor_rects[i] = pRects[i];
     }
-    ctx.EmitSetViewportAndScissors();
+    ctx.dirty_state.set(ContextInternal::DirtyState::ViewportAndScissors);
   }
 
   void RSGetScissorRects(UINT *pNumRects, D3D11_RECT *pRects) {
@@ -1506,12 +1487,13 @@ public:
 
 #pragma region DynamicBufferPool
 
-  void ExchangeFromPool(MTL::Buffer **pBuffer, BufferPool *pool) final {
+  void ExchangeFromPool(MTL::Buffer **pBuffer, uint64_t *gpuAddr,
+                        void **cpuAddr, BufferPool *pool) final {
     assert(*pBuffer);
     if (pool) {
 
       pool->GetNext(cmd_queue.CurrentSeqId(), cmd_queue.CoherentSeqId(),
-                    pBuffer);
+                    pBuffer, gpuAddr, cpuAddr);
     } else {
       auto original = transfer(*pBuffer);
       *pBuffer = metal_device_->newBuffer(original->length(),

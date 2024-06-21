@@ -2,6 +2,7 @@
 
 #include "adt.hpp"
 #include "shader_common.hpp"
+#include "llvm/IR/DataLayout.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Metadata.h"
@@ -417,7 +418,7 @@ public:
   uint32_t
   DefineFloat32(std::string name, uint32_t location_index = UINT32_MAX);
 
-  auto Build(llvm::LLVMContext &context, llvm::Module &module)
+  auto Build(llvm::LLVMContext &context, const llvm::DataLayout &layout)
     -> std::tuple<llvm::StructType *, llvm::MDNode *>;
 
   auto empty() { return fieldsType.empty(); }

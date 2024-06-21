@@ -1,8 +1,8 @@
 dxmt_src = [
   'dxmt_format.cpp',
   'dxmt_names.cpp',
-  'dxmt_binding.cpp',
   'dxmt_buffer_pool.cpp',
+  'dxmt_command_queue.cpp',
 ]
 
 dxmt_lib = static_library('dxmt', dxmt_src,
