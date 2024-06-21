@@ -832,6 +832,16 @@ _MTL_PRIVATE_DEF_SEL(maxFragmentBufferBindCount,
     "maxFragmentBufferBindCount");
 _MTL_PRIVATE_DEF_SEL(maxFragmentCallStackDepth,
     "maxFragmentCallStackDepth");
+#ifndef DXMT_NO_PRIVATE_API
+_MTL_PRIVATE_DEF_SEL(logicOperation,
+    "logicOperation");
+_MTL_PRIVATE_DEF_SEL(isLogicOperationEnabled,
+    "isLogicOperationEnabled");
+_MTL_PRIVATE_DEF_SEL(setLogicOperation,
+    "setLogicOperation:");
+_MTL_PRIVATE_DEF_SEL(setLogicOperationEnabled,
+    "setLogicOperationEnabled:");   
+#endif
 _MTL_PRIVATE_DEF_SEL(maxInstanceCount,
     "maxInstanceCount");
 _MTL_PRIVATE_DEF_SEL(maxKernelBufferBindCount,

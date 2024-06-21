@@ -30,7 +30,7 @@ void MetallibWriter::Write(const llvm::Module &module, raw_ostream &OS) {
   WriteBitcodeToFile(module, bitcode_stream, false, nullptr, true);
 
   auto hash =
-      compute_sha256_hash((const uint8_t *)bitcode.data(), bitcode.size());
+    compute_sha256_hash((const uint8_t *)bitcode.data(), bitcode.size());
 
   raw_svector_ostream public_metadata_stream(public_metadata);
   raw_svector_ostream private_metadata_stream(private_metadata);
@@ -42,31 +42,29 @@ void MetallibWriter::Write(const llvm::Module &module, raw_ostream &OS) {
     auto vertexFns = module.getNamedMetadata("air.vertex");
     if (vertexFns) {
       for (auto fn : vertexFns->operands()) {
-        assert(fn->getNumOperands() == 3);
         fn_count++;
         auto func = dyn_cast<Function>(
-            dyn_cast<ConstantAsMetadata>(fn->getOperand(0).get())->getValue());
+          dyn_cast<ConstantAsMetadata>(fn->getOperand(0).get())->getValue()
+        );
         auto name = func->getName();
         function_def_stream << "NAME";
         function_def_stream << value((uint16_t)(name.size() + 1));
         function_def_stream << name << '\0';
         function_def_stream
-            << value(MTLB_TYPE_TAG{.type = FunctionType::Vertex});
-        // FIXME: are we using the same bitcode for all functions? does this
-        // really work?
+          << value(MTLB_TYPE_TAG{.type = FunctionType::Vertex});
         function_def_stream << value(MTLB_HASH_TAG{.hash = hash});
         function_def_stream
-            << value(MTLB_MDSZ_TAG{.bitcodeSize = bitcode.size()});
+          << value(MTLB_MDSZ_TAG{.bitcodeSize = bitcode.size()});
         function_def_stream << value(MTLB_OFFT_TAG{
-            .PublicMetadataOffset = public_metadata_stream.tell(),
-            .PrivateMetadataOffset = private_metadata_stream.tell(),
-            .BitcodeOffset = 0, // ??
+          .PublicMetadataOffset = public_metadata_stream.tell(),
+          .PrivateMetadataOffset = private_metadata_stream.tell(),
+          .BitcodeOffset = 0, // ??
         });
         function_def_stream << value(MTLB_VERS_TAG{
-            .airVersionMajor = 2,
-            .airVersionMinor = 6,
-            .languageVersionMajor = 3,
-            .languageVersionMinor = 1,
+          .airVersionMajor = 2,
+          .airVersionMinor = 6,
+          .languageVersionMajor = 3,
+          .languageVersionMinor = 1,
         });
         function_def_stream << "ENDT";
         auto inputs = dyn_cast<MDTuple>(fn->getOperand(2).get());
@@ -76,26 +74,27 @@ void MetallibWriter::Write(const llvm::Module &module, raw_ostream &OS) {
         for (auto &input : inputs->operands()) {
           auto inputElement = dyn_cast<MDTuple>(input.get());
           auto inputKind =
-              dyn_cast<MDString>(inputElement->getOperand(1))->getString();
+            dyn_cast<MDString>(inputElement->getOperand(1))->getString();
           if (inputKind == "air.vertex_input") {
             uint32_t location =
-                dyn_cast<ConstantInt>(
-                    dyn_cast<ConstantAsMetadata>(inputElement->getOperand(3))
-                        ->getValue())
-                    ->getValue()
-                    .getZExtValue();
+              dyn_cast<ConstantInt>(
+                dyn_cast<ConstantAsMetadata>(inputElement->getOperand(3))
+                  ->getValue()
+              )
+                ->getValue()
+                .getZExtValue();
             auto typeName =
-                dyn_cast<MDString>(inputElement->getOperand(6))->getString();
+              dyn_cast<MDString>(inputElement->getOperand(6))->getString();
             auto argName =
-                dyn_cast<MDString>(inputElement->getOperand(8))->getString();
+              dyn_cast<MDString>(inputElement->getOperand(8))->getString();
             attribtues.push_back(InputAttribute{
-                .attribute = (uint8_t)location,
-                .name = (argName.str()),
-                .type = (uint8_t)(typeName == "float4" ? 0x06
-                                  : typeName == "uint4"
-                                      ? 0x24
-                                      : 0x20), // REFACTOR IT: hope it works in
-                                               // general?
+              .attribute = (uint8_t)location,
+              .name = (argName.str()),
+              .type =
+                (uint8_t)(typeName == "float4"  ? 0x06
+                          : typeName == "uint4" ? 0x24
+                                                : 0x20), // REFACTOR IT: hope it
+                                                         // works in general?
             });
           }
         }
@@ -108,10 +107,10 @@ void MetallibWriter::Write(const llvm::Module &module, raw_ostream &OS) {
         for (auto &vattr : attribtues) {
           fn_public_metadata_stream << vattr.name << '\0';
           fn_public_metadata_stream << value(MTLB_VATY{
-              .attribute = vattr.attribute,
-              .__ = 0,
-              .usage = 0,
-              .active = 1,
+            .attribute = vattr.attribute,
+            .__ = 0,
+            .usage = 0,
+            .active = 1,
           });
         }
         auto vatt_written = fn_public_metadata_stream.tell() - lenOffset;
@@ -134,31 +133,29 @@ void MetallibWriter::Write(const llvm::Module &module, raw_ostream &OS) {
     auto fragmentFns = module.getNamedMetadata("air.fragment");
     if (fragmentFns) {
       for (auto fn : fragmentFns->operands()) {
-        assert(fn->getNumOperands() == 3);
         fn_count++;
         auto func = dyn_cast<Function>(
-            dyn_cast<ConstantAsMetadata>(fn->getOperand(0).get())->getValue());
+          dyn_cast<ConstantAsMetadata>(fn->getOperand(0).get())->getValue()
+        );
         auto name = func->getName();
         function_def_stream << "NAME";
         function_def_stream << value((uint16_t)(name.size() + 1));
         function_def_stream << name << '\0';
         function_def_stream
-            << value(MTLB_TYPE_TAG{.type = FunctionType::Fragment});
-        // FIXME: are we using the same bitcode for all functions? does this
-        // really work?
+          << value(MTLB_TYPE_TAG{.type = FunctionType::Fragment});
         function_def_stream << value(MTLB_HASH_TAG{.hash = hash});
         function_def_stream
-            << value(MTLB_MDSZ_TAG{.bitcodeSize = bitcode.size()});
+          << value(MTLB_MDSZ_TAG{.bitcodeSize = bitcode.size()});
         function_def_stream << value(MTLB_OFFT_TAG{
-            .PublicMetadataOffset = public_metadata_stream.tell(),
-            .PrivateMetadataOffset = private_metadata_stream.tell(),
-            .BitcodeOffset = 0, // ??
+          .PublicMetadataOffset = public_metadata_stream.tell(),
+          .PrivateMetadataOffset = private_metadata_stream.tell(),
+          .BitcodeOffset = 0, // ??
         });
         function_def_stream << value(MTLB_VERS_TAG{
-            .airVersionMajor = 2,
-            .airVersionMinor = 6,
-            .languageVersionMajor = 3,
-            .languageVersionMinor = 1,
+          .airVersionMajor = 2,
+          .airVersionMinor = 6,
+          .languageVersionMajor = 3,
+          .languageVersionMinor = 1,
         });
         function_def_stream << "ENDT";
         public_metadata_stream << value(4);
@@ -167,33 +164,120 @@ void MetallibWriter::Write(const llvm::Module &module, raw_ostream &OS) {
         private_metadata_stream << "ENDT";
       }
     }
-    // auto kernelFns = module.getNamedMetadata("air.kernel");
-    // if (kernelFns) {
-    //   for (auto fn : kernelFns->operands()) {
-    //     assert(fn->getNumOperands() == 3);
-    //   }
-    // }
+    auto kernelFns = module.getNamedMetadata("air.kernel");
+    if (kernelFns) {
+      for (auto fn : kernelFns->operands()) {
+        fn_count++;
+        auto func = dyn_cast<Function>(
+          dyn_cast<ConstantAsMetadata>(fn->getOperand(0).get())->getValue()
+        );
+        auto name = func->getName();
+        function_def_stream << "NAME";
+        function_def_stream << value((uint16_t)(name.size() + 1));
+        function_def_stream << name << '\0';
+        function_def_stream
+          << value(MTLB_TYPE_TAG{.type = FunctionType::Kernel});
+        function_def_stream << value(MTLB_HASH_TAG{.hash = hash});
+        function_def_stream
+          << value(MTLB_MDSZ_TAG{.bitcodeSize = bitcode.size()});
+        function_def_stream << value(MTLB_OFFT_TAG{
+          .PublicMetadataOffset = public_metadata_stream.tell(),
+          .PrivateMetadataOffset = private_metadata_stream.tell(),
+          .BitcodeOffset = 0, // ??
+        });
+        function_def_stream << value(MTLB_VERS_TAG{
+          .airVersionMajor = 2,
+          .airVersionMinor = 6,
+          .languageVersionMajor = 3,
+          .languageVersionMinor = 1,
+        });
+        function_def_stream << "ENDT";
+
+        std::vector<InputAttribute> attribtues;
+
+        // auto inputs = dyn_cast<MDTuple>(fn->getOperand(2).get());
+        // for (auto &input : inputs->operands()) {
+        //   auto inputElement = dyn_cast<MDTuple>(input.get());
+        //   auto inputKind =
+        //     dyn_cast<MDString>(inputElement->getOperand(1))->getString();
+        //   if (inputKind == "air.vertex_input") {
+        //     uint32_t location =
+        //       dyn_cast<ConstantInt>(
+        //         dyn_cast<ConstantAsMetadata>(inputElement->getOperand(3))
+        //           ->getValue()
+        //       )
+        //         ->getValue()
+        //         .getZExtValue();
+        //     auto typeName =
+        //       dyn_cast<MDString>(inputElement->getOperand(6))->getString();
+        //     auto argName =
+        //       dyn_cast<MDString>(inputElement->getOperand(8))->getString();
+        //     attribtues.push_back(InputAttribute{
+        //       .attribute = (uint8_t)location,
+        //       .name = (argName.str()),
+        //       .type =
+        //         (uint8_t)(typeName == "float4"  ? 0x06
+        //                   : typeName == "uint4" ? 0x24
+        //                                         : 0x20), // REFACTOR IT: hope
+        //                                         it
+        //                                                  // works in general?
+        //     });
+        //   }
+        // }
+        SmallVector<char, 0> fn_public_metadata;
+        raw_svector_ostream fn_public_metadata_stream(fn_public_metadata);
+        // fn_public_metadata_stream << value(MTLBFourCC::VertexAttribute);
+        // auto lenOffset = fn_public_metadata_stream.tell();
+        // fn_public_metadata_stream << value((uint16_t)0);
+        // fn_public_metadata_stream << value((uint16_t)attribtues.size());
+        // for (auto &vattr : attribtues) {
+        //   fn_public_metadata_stream << vattr.name << '\0';
+        //   fn_public_metadata_stream << value(MTLB_VATY{
+        //     .attribute = vattr.attribute,
+        //     .__ = 0,
+        //     .usage = 0,
+        //     .active = 1,
+        //   });
+        // }
+        // auto vatt_written = fn_public_metadata_stream.tell() - lenOffset;
+        // *(uint16_t *)(&fn_public_metadata[lenOffset]) = vatt_written - 2;
+        // fn_public_metadata_stream << value(MTLBFourCC::VertexAttributeType);
+        // fn_public_metadata_stream << value((uint16_t)(2 +
+        // attribtues.size())); fn_public_metadata_stream <<
+        // value((uint16_t)(attribtues.size())); for (auto &vattr : attribtues)
+        // {
+        //   fn_public_metadata_stream << value(vattr.type);
+        // }
+        fn_public_metadata_stream << "ENDT";
+
+        public_metadata_stream << value((uint32_t)fn_public_metadata.size());
+        public_metadata_stream << fn_public_metadata;
+
+        private_metadata_stream << value(4);
+        private_metadata_stream << "ENDT";
+      }
+    }
   }
 
   MTLBHeader header;
   header.Magic = MTLB_Magic;
   header.FileSize =
-      sizeof(MTLBHeader) + sizeof(uint32_t) /* fn count */ +
-      sizeof(uint32_t) /* constant: function list size */ +
-      function_def.size() + sizeof(MTLBFourCC::EndTag) /* extended header*/
-      + public_metadata.size() + private_metadata.size() + bitcode.size();
+    sizeof(MTLBHeader) + sizeof(uint32_t) /* fn count */ +
+    sizeof(uint32_t) /* constant: function list size */ + function_def.size() +
+    sizeof(MTLBFourCC::EndTag) /* extended header*/
+    + public_metadata.size() + private_metadata.size() + bitcode.size();
   header.FunctionListOffset = sizeof(MTLBHeader);
   header.FunctionListSize = function_def.size() + 4;
   header.PublicMetadataOffset =
-      header.FunctionListOffset + header.FunctionListSize +
-      sizeof(uint32_t) // extra room for function count
-      + sizeof(MTLBFourCC::EndTag);
+    header.FunctionListOffset + header.FunctionListSize +
+    sizeof(uint32_t) // extra room for function count
+    + sizeof(MTLBFourCC::EndTag);
   header.PublicMetadataSize = public_metadata.size();
   header.PrivateMetadataOffset =
-      header.PublicMetadataOffset + header.PublicMetadataSize;
+    header.PublicMetadataOffset + header.PublicMetadataSize;
   header.PrivateMetadataSize = private_metadata.size();
   header.BitcodeOffset =
-      header.PrivateMetadataOffset + header.PrivateMetadataSize;
+    header.PrivateMetadataOffset + header.PrivateMetadataSize;
   header.BitcodeSize = bitcode.size();
 
   header.Type = FileType::MTLBType_Executable; // executable

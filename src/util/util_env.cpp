@@ -1,6 +1,16 @@
+/*
+ * This file is part of DXMT, Copyright (c) 2023 Feifan He
+ *
+ * Derived from a part of DXVK (originally under zlib License),
+ * Copyright (c) 2017 Philip Rebohle
+ * Copyright (c) 2019 Joshua Ashton
+ *
+ * See <https://github.com/doitsujin/dxvk/blob/master/LICENSE>
+ */
+
+#include "util_string.hpp"
 #include <array>
 #include <cstdlib>
-#include <filesystem>
 #include <numeric>
 
 #ifdef __linux__
@@ -8,9 +18,8 @@
 #include <limits.h>
 #endif
 
-#include "util_env.h"
-
-#include "./com/com_include.h"
+#include "util_env.hpp"
+#include "unknwn.h"
 
 namespace dxmt::env {
 

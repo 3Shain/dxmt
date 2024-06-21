@@ -67,7 +67,6 @@ to_shader_resource_type(microsoft::D3D10_SB_RESOURCE_DIMENSION dim) {
     return shader::common::ResourceType::Texture2DMultisampledArray;
   case microsoft::D3D10_SB_RESOURCE_DIMENSION_TEXTURECUBEARRAY:
     return shader::common::ResourceType::TextureCubeArray;
-    break;
   }
   assert(0 && "invalid D3D10_SB_RESOURCE_DIMENSION");
 };
@@ -93,7 +92,7 @@ to_shader_scaler_type(microsoft::D3D10_SB_RESOURCE_RETURN_TYPE type) {
   assert(0 && "invalid D3D10_SB_RESOURCE_RETURN_TYPE");
 }
 
-static auto readOperandRelativeIndex(
+auto readOperandRelativeIndex(
   const microsoft::D3D10ShaderBinary::COperandIndex &OpIndex,
   uint32_t offset = 0
 ) -> OperandIndex {
@@ -121,7 +120,7 @@ static auto readOperandRelativeIndex(
   };
 };
 
-static auto readOperandIndex(
+auto readOperandIndex(
   const microsoft::D3D10ShaderBinary::COperandIndex &OpIndex,
   const microsoft::D3D10_SB_OPERAND_INDEX_REPRESENTATION indexType
 ) -> OperandIndex {
@@ -154,8 +153,8 @@ static auto readOperandIndex(
   }
 };
 
-static auto readDstOperand(const microsoft::D3D10ShaderBinary::COperandBase &O)
-  -> DstOperand {
+auto readDstOperand(const microsoft::D3D10ShaderBinary::COperandBase &O
+) -> DstOperand {
   using namespace microsoft;
   switch (O.m_Type) {
   case D3D10_SB_OPERAND_TYPE_TEMP: {
@@ -234,9 +233,8 @@ static auto readDstOperand(const microsoft::D3D10ShaderBinary::COperandBase &O)
   }
 }
 
-static auto
-readSrcOperandSwizzle(const microsoft::D3D10ShaderBinary::COperandBase &O)
-  -> Swizzle {
+auto readSrcOperandSwizzle(const microsoft::D3D10ShaderBinary::COperandBase &O
+) -> Swizzle {
   using namespace microsoft;
   switch (O.m_ComponentSelection) {
   case D3D10_SB_OPERAND_4_COMPONENT_SWIZZLE_MODE:
@@ -262,9 +260,8 @@ readSrcOperandSwizzle(const microsoft::D3D10ShaderBinary::COperandBase &O)
   }
 }
 
-static auto
-readSrcOperandCommon(const microsoft::D3D10ShaderBinary::COperandBase &O)
-  -> SrcOperandModifier {
+auto readSrcOperandCommon(const microsoft::D3D10ShaderBinary::COperandBase &O
+) -> SrcOperandModifier {
   return SrcOperandModifier{
     .swizzle = readSrcOperandSwizzle(O),
     .abs = (O.m_Modifier & microsoft::D3D10_SB_OPERAND_MODIFIER_ABS) != 0,
@@ -272,8 +269,8 @@ readSrcOperandCommon(const microsoft::D3D10ShaderBinary::COperandBase &O)
   };
 }
 
-static auto readSrcOperand(const microsoft::D3D10ShaderBinary::COperandBase &O)
-  -> SrcOperand {
+auto readSrcOperand(const microsoft::D3D10ShaderBinary::COperandBase &O
+) -> SrcOperand {
   using namespace microsoft;
   switch (O.m_Type) {
   case D3D10_SB_OPERAND_TYPE_IMMEDIATE32: {
@@ -383,9 +380,8 @@ static auto readSrcOperand(const microsoft::D3D10ShaderBinary::COperandBase &O)
   }
 };
 
-static auto
-readSrcOperandResource(const microsoft::D3D10ShaderBinary::COperandBase &O)
-  -> SrcOperandResource {
+auto readSrcOperandResource(const microsoft::D3D10ShaderBinary::COperandBase &O
+) -> SrcOperandResource {
   using namespace microsoft;
   assert(O.m_Type == D3D10_SB_OPERAND_TYPE_RESOURCE);
   if (O.m_IndexType[0] == D3D10_SB_OPERAND_INDEX_IMMEDIATE32) {
@@ -407,9 +403,8 @@ readSrcOperandResource(const microsoft::D3D10ShaderBinary::COperandBase &O)
   }
 }
 
-static auto
-readSrcOperandSampler(const microsoft::D3D10ShaderBinary::COperandBase &O)
-  -> SrcOperandSampler {
+auto readSrcOperandSampler(const microsoft::D3D10ShaderBinary::COperandBase &O
+) -> SrcOperandSampler {
   if (O.m_IndexDimension == microsoft::D3D10_SB_OPERAND_INDEX_1D) {
     DXASSERT_DXBC(
       O.m_IndexType[0] == microsoft::D3D10_SB_OPERAND_INDEX_IMMEDIATE32
@@ -428,8 +423,8 @@ readSrcOperandSampler(const microsoft::D3D10ShaderBinary::COperandBase &O)
   }
 }
 
-auto readSrcOperandUAV(const microsoft::D3D10ShaderBinary::COperandBase &O)
-  -> SrcOperandUAV {
+auto readSrcOperandUAV(const microsoft::D3D10ShaderBinary::COperandBase &O
+) -> SrcOperandUAV {
   if (O.m_IndexDimension == microsoft::D3D10_SB_OPERAND_INDEX_1D) {
     DXASSERT_DXBC(
       O.m_IndexType[0] == microsoft::D3D10_SB_OPERAND_INDEX_IMMEDIATE32
@@ -448,8 +443,8 @@ auto readSrcOperandUAV(const microsoft::D3D10ShaderBinary::COperandBase &O)
   }
 }
 
-auto readSrcOperandTGSM(const microsoft::D3D10ShaderBinary::COperandBase &O)
-  -> SrcOperandTGSM {
+auto readSrcOperandTGSM(const microsoft::D3D10ShaderBinary::COperandBase &O
+) -> SrcOperandTGSM {
   assert(
     O.m_Type == microsoft::D3D11_SB_OPERAND_TYPE_THREAD_GROUP_SHARED_MEMORY
   );
@@ -458,8 +453,8 @@ auto readSrcOperandTGSM(const microsoft::D3D10ShaderBinary::COperandBase &O)
   };
 }
 
-auto readDstOperandUAV(const microsoft::D3D10ShaderBinary::COperandBase &O)
-  -> AtomicDstOperandUAV {
+auto readDstOperandUAV(const microsoft::D3D10ShaderBinary::COperandBase &O
+) -> AtomicDstOperandUAV {
   if (O.m_IndexDimension == microsoft::D3D10_SB_OPERAND_INDEX_1D) {
     DXASSERT_DXBC(
       O.m_IndexType[0] == microsoft::D3D10_SB_OPERAND_INDEX_IMMEDIATE32
@@ -482,7 +477,8 @@ std::variant<AtomicDstOperandUAV, AtomicOperandTGSM>
 readAtomicDst(const microsoft::D3D10ShaderBinary::COperandBase &O) {
   if (O.m_Type == microsoft::D3D11_SB_OPERAND_TYPE_UNORDERED_ACCESS_VIEW) {
     return readDstOperandUAV(O);
-  } else if (O.m_Type == microsoft::D3D11_SB_OPERAND_TYPE_THREAD_GROUP_SHARED_MEMORY) {
+  } else if (O.m_Type ==
+             microsoft::D3D11_SB_OPERAND_TYPE_THREAD_GROUP_SHARED_MEMORY) {
     return AtomicOperandTGSM{
       .id = O.m_Index[0].m_RegIndex, .mask = O.m_WriteMask >> 4
     };
@@ -496,7 +492,8 @@ readTypelessSrc(const microsoft::D3D10ShaderBinary::COperandBase &O) {
     return readSrcOperandUAV(O);
   } else if (O.m_Type == microsoft::D3D10_SB_OPERAND_TYPE_RESOURCE) {
     return readSrcOperandResource(O);
-  } else if (O.m_Type == microsoft::D3D11_SB_OPERAND_TYPE_THREAD_GROUP_SHARED_MEMORY) {
+  } else if (O.m_Type ==
+             microsoft::D3D11_SB_OPERAND_TYPE_THREAD_GROUP_SHARED_MEMORY) {
     return readSrcOperandTGSM(O);
   }
   assert(0 && "unexpected typeless load/store operation destination");
@@ -517,7 +514,7 @@ auto readInstructionCommon(
   return InstructionCommon{.saturate = Inst.m_bSaturate != 0};
 };
 
-static auto readInstruction(
+auto readInstruction(
   const microsoft::D3D10ShaderBinary::CInstruction &Inst,
   ShaderInfo &shader_info
 ) -> Instruction {
@@ -556,6 +553,8 @@ static auto readInstruction(
       .src_sampler = readSrcOperandSampler(Inst.m_Operands[3]),
       .offsets =
         {Inst.m_TexelOffset[0], Inst.m_TexelOffset[1], Inst.m_TexelOffset[2]},
+      .min_lod_clamp = {},
+      .feedback = {},
     };
     shader_info.srvMap[inst.src_resource.range_id].sampled = true;
     return inst;
@@ -610,7 +609,9 @@ static auto readInstruction(
       .src_reference = readSrcOperand(Inst.m_Operands[4]),
       .offsets =
         {Inst.m_TexelOffset[0], Inst.m_TexelOffset[1], Inst.m_TexelOffset[2]},
-      .level_zero = Inst.m_OpCode == microsoft::D3D10_SB_OPCODE_SAMPLE_C_LZ
+      .min_lod_clamp = {},
+      .feedback = {},
+      .level_zero = Inst.m_OpCode == microsoft::D3D10_SB_OPCODE_SAMPLE_C_LZ,
     };
     shader_info.srvMap[inst.src_resource.range_id].compared = true;
     return inst;
@@ -625,6 +626,7 @@ static auto readInstruction(
         SrcOperandImmediate32{
           .ivalue = {Inst.m_TexelOffset[0], Inst.m_TexelOffset[1], 0, 0}
         },
+      .feedback = {},
     };
     shader_info.srvMap[inst.src_resource.range_id].sampled = true;
     return inst;
@@ -640,6 +642,7 @@ static auto readInstruction(
         SrcOperandImmediate32{
           .ivalue = {Inst.m_TexelOffset[0], Inst.m_TexelOffset[1], 0, 0}
         },
+      .feedback = {},
     };
     shader_info.srvMap[inst.src_resource.range_id].compared = true;
     return inst;
@@ -651,6 +654,7 @@ static auto readInstruction(
       .src_resource = readSrcOperandResource(Inst.m_Operands[3]),
       .src_sampler = readSrcOperandSampler(Inst.m_Operands[4]),
       .offset = readSrcOperand(Inst.m_Operands[2]),
+      .feedback = {},
     };
     shader_info.srvMap[inst.src_resource.range_id].sampled = true;
     return inst;
@@ -663,6 +667,7 @@ static auto readInstruction(
       .src_sampler = readSrcOperandSampler(Inst.m_Operands[4]),
       .src_reference = readSrcOperand(Inst.m_Operands[5]),
       .offset = readSrcOperand(Inst.m_Operands[2]),
+      .feedback = {},
     };
     shader_info.srvMap[inst.src_resource.range_id].compared = true;
     return inst;
@@ -670,9 +675,12 @@ static auto readInstruction(
   case microsoft::D3D10_1_SB_OPCODE_SAMPLE_INFO: {
     bool return_uint =
       Inst.m_InstructionReturnType == D3D10_SB_INSTRUCTION_RETURN_UINT;
-    if (Inst.m_Operands[1].m_Type == microsoft::D3D10_SB_OPERAND_TYPE_RASTERIZER) {
+    if (Inst.m_Operands[1].m_Type ==
+        microsoft::D3D10_SB_OPERAND_TYPE_RASTERIZER) {
       return InstSampleInfo{
-        .dst = readDstOperand(Inst.m_Operands[0]), .uint_result = return_uint
+        .dst = readDstOperand(Inst.m_Operands[0]),
+        .src = {},
+        .uint_result = return_uint
       };
     } else {
       return InstSampleInfo{
@@ -683,9 +691,11 @@ static auto readInstruction(
     };
   };
   case microsoft::D3D10_1_SB_OPCODE_SAMPLE_POS: {
-    if (Inst.m_Operands[1].m_Type == microsoft::D3D10_SB_OPERAND_TYPE_RASTERIZER) {
+    if (Inst.m_Operands[1].m_Type ==
+        microsoft::D3D10_SB_OPERAND_TYPE_RASTERIZER) {
       return InstSamplePos{
         .dst = readDstOperand(Inst.m_Operands[0]),
+        .src = {},
         .src_sample_index = readSrcOperand(Inst.m_Operands[2])
       };
     } else {
@@ -723,6 +733,7 @@ static auto readInstruction(
       .dst = readDstOperand(Inst.m_Operands[0]),
       .src_address = readSrcOperand(Inst.m_Operands[1]),
       .src_resource = readSrcOperandResource(Inst.m_Operands[2]),
+      .src_sample_index = {},
       .offsets =
         {Inst.m_TexelOffset[0], Inst.m_TexelOffset[1], Inst.m_TexelOffset[2]},
     };
@@ -796,7 +807,7 @@ static auto readInstruction(
     };
     std::visit(
       patterns{
-        [&](const SrcOperandUAV &uav) {
+        [&](const AtomicDstOperandUAV &uav) {
           shader_info.uavMap[uav.range_id].written = true;
         },
         [](auto) {}
@@ -844,7 +855,7 @@ static auto readInstruction(
     };
     std::visit(
       patterns{
-        [&](const SrcOperandUAV &uav) {
+        [&](const AtomicDstOperandUAV &uav) {
           shader_info.uavMap[uav.range_id].written = true;
         },
         [](auto) {}
@@ -1452,6 +1463,7 @@ static auto readInstruction(
       .dst = readAtomicDst(Inst.m_Operands[0]),
       .dst_address = readSrcOperand(Inst.m_Operands[1]),
       .src = readSrcOperand(Inst.m_Operands[2]),
+      .dst_original = DstOperandSideEffect{},
     };
     std::visit(
       patterns{
@@ -1471,6 +1483,7 @@ static auto readInstruction(
       .dst = readAtomicDst(Inst.m_Operands[0]),
       .dst_address = readSrcOperand(Inst.m_Operands[1]),
       .src = readSrcOperand(Inst.m_Operands[2]),
+      .dst_original = DstOperandSideEffect{},
     };
     std::visit(
       patterns{
@@ -1490,6 +1503,7 @@ static auto readInstruction(
       .dst = readAtomicDst(Inst.m_Operands[0]),
       .dst_address = readSrcOperand(Inst.m_Operands[1]),
       .src = readSrcOperand(Inst.m_Operands[2]),
+      .dst_original = DstOperandSideEffect{},
     };
     std::visit(
       patterns{
@@ -1509,6 +1523,7 @@ static auto readInstruction(
       .dst = readAtomicDst(Inst.m_Operands[0]),
       .dst_address = readSrcOperand(Inst.m_Operands[1]),
       .src = readSrcOperand(Inst.m_Operands[2]),
+      .dst_original = DstOperandSideEffect{},
     };
     std::visit(
       patterns{
@@ -1528,6 +1543,7 @@ static auto readInstruction(
       .dst = readAtomicDst(Inst.m_Operands[0]),
       .dst_address = readSrcOperand(Inst.m_Operands[1]),
       .src = readSrcOperand(Inst.m_Operands[2]),
+      .dst_original = DstOperandSideEffect{},
     };
     std::visit(
       patterns{
@@ -1547,6 +1563,7 @@ static auto readInstruction(
       .dst = readAtomicDst(Inst.m_Operands[0]),
       .dst_address = readSrcOperand(Inst.m_Operands[1]),
       .src = readSrcOperand(Inst.m_Operands[2]),
+      .dst_original = DstOperandSideEffect{},
     };
     std::visit(
       patterns{
@@ -1566,6 +1583,7 @@ static auto readInstruction(
       .dst = readAtomicDst(Inst.m_Operands[0]),
       .dst_address = readSrcOperand(Inst.m_Operands[1]),
       .src = readSrcOperand(Inst.m_Operands[2]),
+      .dst_original = DstOperandSideEffect{},
     };
     std::visit(
       patterns{
@@ -1585,6 +1603,7 @@ static auto readInstruction(
       .dst = readAtomicDst(Inst.m_Operands[0]),
       .dst_address = readSrcOperand(Inst.m_Operands[1]),
       .src = readSrcOperand(Inst.m_Operands[2]),
+      .dst_original = DstOperandSideEffect{},
     };
     std::visit(
       patterns{
@@ -1599,24 +1618,29 @@ static auto readInstruction(
     return inst;
   };
   case microsoft::D3D11_SB_OPCODE_ATOMIC_CMP_STORE: {
-    return InstAtomicCmpStore{
-      .dst = readAtomicDst(Inst.m_Operands[0]),
+    return InstAtomicImmCmpExchange{
+      .dst = DstOperandSideEffect{},
+      .dst_resource = readAtomicDst(Inst.m_Operands[0]),
       .dst_address = readSrcOperand(Inst.m_Operands[1]),
       .src0 = readSrcOperand(Inst.m_Operands[2]),
       .src1 = readSrcOperand(Inst.m_Operands[3]),
     };
   };
   case microsoft::D3D11_SB_OPCODE_IMM_ATOMIC_ALLOC: {
-    return InstAtomicImmIncrement{
+    auto inst = InstAtomicImmIncrement{
       .dst = readDstOperand(Inst.m_Operands[0]),
       .uav = readDstOperandUAV(Inst.m_Operands[1])
     };
+    shader_info.uavMap[inst.uav.range_id].with_counter = true;
+    return inst;
   };
   case microsoft::D3D11_SB_OPCODE_IMM_ATOMIC_CONSUME: {
-    return InstAtomicImmDecrement{
+    auto inst = InstAtomicImmDecrement{
       .dst = readDstOperand(Inst.m_Operands[0]),
       .uav = readDstOperandUAV(Inst.m_Operands[1])
     };
+    shader_info.uavMap[inst.uav.range_id].with_counter = true;
+    return inst;
   };
   case microsoft::D3D11_SB_OPCODE_IMM_ATOMIC_EXCH: {
     return InstAtomicImmExchange{
@@ -1803,7 +1827,7 @@ static auto readInstruction(
   }
 };
 
-static auto readCondition(
+auto readCondition(
   const microsoft::D3D10ShaderBinary::CInstruction &Inst, uint32_t OpIdx
 ) {
   using namespace microsoft;

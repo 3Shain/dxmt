@@ -12,3 +12,13 @@ DXBCParser_dep = declare_dependency(
   link_with           : [ DXBCParser_lib ],
   include_directories : [ dxmt_include_path ],
 )
+
+DXBCParser_native_lib = static_library('DXBCParserNative', DXBCParser_src,
+  include_directories : [ ],
+  native              : true,
+)
+
+DXBCParser_native_dep = declare_dependency(
+  link_with           : [ DXBCParser_native_lib ],
+  include_directories : [ ],
+)

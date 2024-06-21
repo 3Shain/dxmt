@@ -1,242 +1,186 @@
 #pragma once
-#include "../util/rc/util_rc.h"
-#include "../util/objc_pointer.h"
 
-#include "Metal/MTLArgumentEncoder.hpp"
-#include "Metal/MTLBlitCommandEncoder.hpp"
 #include "Metal/MTLBuffer.hpp"
-#include "Metal/MTLCommandEncoder.hpp"
-#include "Metal/MTLComputeCommandEncoder.hpp"
-#include "Metal/MTLPixelFormat.hpp"
-#include "Metal/MTLRenderCommandEncoder.hpp"
-#include "Metal/MTLRenderPass.hpp"
+#include "Metal/MTLResource.hpp"
 #include "Metal/MTLTexture.hpp"
-#include <cstdint>
-#include <cstring>
-
-#include "../util/util_string.h"
-#include "../util/log/log.h"
+#include "Metal/MTLTypes.hpp"
+#include "objc_pointer.hpp"
 
 namespace dxmt {
 
-using AliasLookup = std::function<void *(void *)>;
-
-class ShaderResourceBinding : public RcObject {
-public:
-  virtual void Bind(MTL::RenderCommandEncoder *renc, MTL::ArgumentEncoder *enc,
-                    uint32_t index) = 0;
-  virtual ~ShaderResourceBinding(){};
+struct EncodingContext {
+  // virtual MTL::Texture *GetCurrentSwapchainBackbuffer() = 0;
 };
 
-class RenderTargetBinding : public RcObject {
-public:
-  virtual void Bind(MTL::RenderPassDescriptor *render_pass_desc, uint32_t index,
-                    MTL::LoadAction loadAction,
-                    MTL::StoreAction storeAction) = 0;
-  virtual ~RenderTargetBinding(){};
+struct BackBufferSource {
+  virtual MTL::Texture *GetCurrentFrameBackBuffer() = 0;
 };
 
-class DepthStencilBinding : public RcObject {
-public:
-  virtual ~DepthStencilBinding(){};
-  virtual void Bind(MTL::RenderPassDescriptor *render_pass_desc) = 0;
-};
+struct tag_swapchain_backbuffer_t {};
+constexpr tag_swapchain_backbuffer_t tag_swapchain_backbuffer{};
 
-class VertexBufferBinding : public RcObject {
-public:
-  virtual ~VertexBufferBinding(){};
-  virtual void Bind(uint32_t index, uint32_t offset,
-                    MTL::RenderCommandEncoder *encoder) = 0;
-  virtual void Bind(uint32_t index, uint32_t offset,
-                    MTL::ComputeCommandEncoder *encoder) = 0;
-};
+class BindingRef {
+  enum class Type : uint64_t {
+    Null = 0,
+    UnboundedBuffer = 0b1,
+    BoundedBuffer = 0b11,
+    UAVWithCounter = 0b111,
+    JustTexture = 0b10000000,
+    BackBufferSource = 0b100000000,
+  };
+  Type type;
+  Obj<MTL::Resource> resource_ptr;
+  Obj<MTL::Buffer> counter_;
+  uint32_t element_width;
+  uint32_t byte_offset;
+  void *ptr;
 
-/**
-TODO: Should expose DrawIndexed ? 
-*/
-class IndexBufferBinding : public RcObject {
 public:
-  virtual ~IndexBufferBinding(){};
-  virtual MTL::Buffer *Get() = 0;
-};
+  BindingRef(MTL::Buffer *buffer) noexcept
+      : type(Type::UnboundedBuffer), resource_ptr(buffer) {}
+  BindingRef(MTL::Buffer *buffer, uint32_t element_width,
+             uint32_t offset) noexcept
+      : type(Type::BoundedBuffer), resource_ptr(buffer),
+        element_width(element_width), byte_offset(offset) {}
+  BindingRef(MTL::Buffer *buffer, uint32_t element_width, uint32_t offset,
+             MTL::Buffer *counter) noexcept
+      : type(Type::UAVWithCounter), resource_ptr(buffer), counter_(counter),
+        element_width(element_width), byte_offset(offset) {}
+  BindingRef(MTL::Texture *texture) noexcept
+      : type(Type::JustTexture), resource_ptr(texture) {}
+  BindingRef(std::nullopt_t _) noexcept : type(Type::Null) {};
+  BindingRef(BackBufferSource *t) noexcept
+      : type(Type::BackBufferSource), ptr(t) {}
 
-class ConstantBufferBinding : public RcObject {
-public:
-  virtual void Bind(MTL::RenderCommandEncoder *renc, MTL::ArgumentEncoder *enc,
-                    uint32_t index, AliasLookup &lookup) = 0;
-  virtual ~ConstantBufferBinding(){};
-};
+  operator bool() const noexcept { return type != Type::Null; }
+  BindingRef(const BindingRef &copy) = delete;
+  BindingRef(BindingRef &&move) = default;
 
-class SimpleLazyTextureShaderResourceBinding : public ShaderResourceBinding {
-public:
-  SimpleLazyTextureShaderResourceBinding(
-      std::function<MTL::Texture *()> &&texture)
-      : texture(std::move(texture)) {}
-  virtual void Bind(MTL::RenderCommandEncoder *renc, MTL::ArgumentEncoder *enc,
-                    uint32_t index) {
-    auto w = texture();
-    enc->setTexture(w, index);
-    renc->useResource(w, MTL::ResourceUsageRead);
-  }
+  bool requiresContext() const { return type == Type::BackBufferSource; };
 
-private:
-  std::function<MTL::Texture *()> texture;
-};
-
-class SimpleLazyConstantBufferBinding : public ConstantBufferBinding {
-public:
-  SimpleLazyConstantBufferBinding(std::function<MTL::Buffer *()> &&buffer,
-                                  void *reference)
-      : buffer(std::move(buffer)), reference_(reference) {}
-  virtual void Bind(MTL::RenderCommandEncoder *renc, MTL::ArgumentEncoder *enc,
-                    uint32_t index, AliasLookup &lookup) {
-    auto ww = lookup(reference_);
-    if (ww) {
-      auto w = (MTL::Buffer *)ww;
-      enc->setBuffer(w, 0, index);
-      renc->useResource(w, MTL::ResourceUsageRead);
-    } else {
-      auto w = buffer();
-      enc->setBuffer(w, 0, index);
-      renc->useResource(w, MTL::ResourceUsageRead);
+  MTL::Buffer *buffer() const {
+    if ((uint64_t)type & (uint64_t)Type::UnboundedBuffer) {
+      return (MTL::Buffer *)resource_ptr.ptr();
     }
+    return nullptr;
+  }
+  MTL::Texture *texture() const {
+    if ((uint64_t)type & (uint64_t)Type::JustTexture) {
+      return (MTL::Texture *)resource_ptr.ptr();
+    }
+    return nullptr;
+  }
+  MTL::Texture *texture(EncodingContext *context) const {
+    if ((uint64_t)type & (uint64_t)Type::JustTexture) {
+      return (MTL::Texture *)resource_ptr.ptr();
+    }
+    if ((uint64_t)type & (uint64_t)Type::BackBufferSource) {
+      return ((BackBufferSource *)ptr)->GetCurrentFrameBackBuffer();
+    }
+    return nullptr;
+  }
+  uint32_t width() const {
+    if (((uint64_t)type & (uint64_t)Type::BoundedBuffer) ==
+        (uint64_t)Type::BoundedBuffer) {
+      return element_width;
+    }
+    return 0;
   }
 
-private:
-  std::function<MTL::Buffer *()> buffer;
-  void *reference_;
+  uint32_t offset() const {
+    if (((uint64_t)type & (uint64_t)Type::BoundedBuffer) ==
+        (uint64_t)Type::BoundedBuffer) {
+      return byte_offset;
+    }
+    return 0;
+  }
+
+  MTL::Buffer *counter() const {
+    if (((uint64_t)type & (uint64_t)Type::UAVWithCounter) ==
+        (uint64_t)Type::UAVWithCounter) {
+      return counter_;
+    }
+    return nullptr;
+  }
+
+  MTL::Resource *resource() const { return resource_ptr; }
+
+  MTL::Resource *resource(EncodingContext *context) const {
+    if ((uint64_t)type & (uint64_t)Type::BackBufferSource) {
+      return ((BackBufferSource *)ptr)->GetCurrentFrameBackBuffer();
+    }
+    return resource();
+  }
 };
 
-class SimpleLazyTextureRenderTargetBinding : public RenderTargetBinding {
-public:
-  SimpleLazyTextureRenderTargetBinding(
-      std::function<MTL::Texture *()> &&texture, uint32_t level, uint32_t slice)
-      : texture(std::move(texture)), level(level), slice(slice){};
-
-  ~SimpleLazyTextureRenderTargetBinding() { texture.~function(); }
-
-  virtual void Bind(MTL::RenderPassDescriptor *render_pass_desc, uint32_t index,
-                    MTL::LoadAction loadAction, MTL::StoreAction storeAction) {
-    auto colorAttachment = render_pass_desc->colorAttachments()->object(index);
-    colorAttachment->setLoadAction(loadAction);
-    colorAttachment->setStoreAction(storeAction);
-    colorAttachment->setTexture(texture());
-    colorAttachment->setLevel(level);
-    colorAttachment->setSlice(slice);
+class ArgumentData {
+  enum class Type : uint64_t {
+    UnboundedBuffer = 0b1,
+    BoundedBuffer = 0b11,
+    UAVWithCounter = 0b111,
+    JustTexture = 0b10000000,
+    BackBufferSource = 0b100000000,
+  };
+  Type type;
+  uint64_t resource_handle;
+  uint32_t size;
+  union {
+    uint64_t counter_handle;
+    BackBufferSource *ptr;
   };
 
-private:
-  std::function<MTL::Texture *()> texture;
-  uint32_t level;
-  uint32_t slice;
-};
-
-class SimpleLazyTextureDepthStencilBinding : public DepthStencilBinding {
 public:
-  SimpleLazyTextureDepthStencilBinding(
-      std::function<MTL::Texture *()> &&texture, uint32_t level, uint32_t slice,
-      bool depthReadonly, bool stencilReadonly)
-      : texture(std::move(texture)), level(level), slice(slice),
-        depthReadonly(depthReadonly), stencilReadonly(stencilReadonly){};
+  ArgumentData(uint64_t h) noexcept
+      : type(Type::UnboundedBuffer), resource_handle(h) {}
+  ArgumentData(uint64_t h, uint32_t c) noexcept
+      : type(Type::BoundedBuffer), resource_handle(h), size(c) {}
+  ArgumentData(uint64_t h, uint32_t c, uint64_t ctr) noexcept
+      : type(Type::UnboundedBuffer), resource_handle(h), size(c) {
+    counter_handle = ctr;
+  }
+  ArgumentData(MTL::ResourceID id, MTL::Texture *) noexcept
+      : type(Type::JustTexture), resource_handle(id._impl) {}
+  ArgumentData(BackBufferSource *t) noexcept
+      : type(Type::BackBufferSource), ptr(t) {}
 
-  ~SimpleLazyTextureDepthStencilBinding() { texture.~function(); }
+  bool requiresContext() const { return type == Type::BackBufferSource; };
 
-  virtual void Bind(MTL::RenderPassDescriptor *render_pass_desc) {
-    auto stencil = render_pass_desc->depthAttachment();
-    stencil->setLoadAction(MTL::LoadActionLoad);
-    stencil->setStoreAction(stencilReadonly ? MTL::StoreActionDontCare
-                                            : MTL::StoreActionStore);
-    stencil->setTexture(texture());
-    stencil->setLevel(level);
-    stencil->setSlice(slice);
-    auto depthAttachment = render_pass_desc->depthAttachment();
-    depthAttachment->setLoadAction(MTL::LoadActionLoad);
-    depthAttachment->setStoreAction(depthReadonly ? MTL::StoreActionDontCare
-                                                  : MTL::StoreActionStore);
-    depthAttachment->setTexture(texture());
-    depthAttachment->setLevel(level);
-    depthAttachment->setSlice(slice);
-  };
+  uint64_t buffer() const {
+    if ((uint64_t)type & (uint64_t)Type::UnboundedBuffer) {
+      return resource_handle;
+    }
+    return 0;
+  }
+  uint64_t texture() const {
+    if ((uint64_t)type & (uint64_t)Type::JustTexture) {
+      return resource_handle;
+    }
+    return 0;
+  }
 
-private:
-  std::function<MTL::Texture *()> texture;
-  uint32_t level;
-  uint32_t slice;
-  bool depthReadonly;
-  bool stencilReadonly;
+  uint64_t width() const {
+    if (((uint64_t)type & (uint64_t)Type::BoundedBuffer) ==
+        (uint64_t)Type::BoundedBuffer) {
+      return size + (((uint64_t)size) << 32);
+    }
+    return 0;
+  }
+
+  uint64_t counter() const {
+    if (((uint64_t)type & (uint64_t)Type::UAVWithCounter) ==
+        (uint64_t)Type::UAVWithCounter) {
+      return counter_handle;
+    }
+    return 0;
+  }
+
+  uint64_t resource() const { return resource_handle; }
+
+  uint64_t resource(EncodingContext *context) const {
+    if ((uint64_t)type & (uint64_t)Type::BackBufferSource) {
+      return ptr->GetCurrentFrameBackBuffer()->gpuResourceID()._impl;
+    }
+    return resource();
+  }
 };
-
-class SimpleTextureDepthStencilBinding : public DepthStencilBinding {
-public:
-  SimpleTextureDepthStencilBinding(MTL::Texture *texture, uint32_t level,
-                                   uint32_t slice, bool depthReadonly,
-                                   bool stencilReadonly)
-      : texture(texture), level(level), slice(slice),
-        depthReadonly(depthReadonly), stencilReadonly(stencilReadonly){};
-
-  virtual void Bind(MTL::RenderPassDescriptor *render_pass_desc) {
-    auto depthAttachment = render_pass_desc->depthAttachment();
-    depthAttachment->setLoadAction(MTL::LoadActionLoad);
-    depthAttachment->setStoreAction(depthReadonly ? MTL::StoreActionDontCare
-                                                  : MTL::StoreActionStore);
-    depthAttachment->setTexture(texture.ptr());
-    depthAttachment->setLevel(level);
-    depthAttachment->setSlice(slice);
-    auto stencilAttachment = render_pass_desc->stencilAttachment();
-    stencilAttachment->setLoadAction(MTL::LoadActionLoad);
-    stencilAttachment->setStoreAction(stencilReadonly ? MTL::StoreActionDontCare
-                                                      : MTL::StoreActionStore);
-    stencilAttachment->setTexture(texture.ptr());
-    stencilAttachment->setLevel(level);
-    stencilAttachment->setSlice(slice);
-  };
-
-private:
-  Obj<MTL::Texture> texture;
-  uint32_t level;
-  uint32_t slice;
-  bool depthReadonly;
-  bool stencilReadonly;
-};
-
-class SimpleVertexBufferBinding : public VertexBufferBinding {
-public:
-  SimpleVertexBufferBinding(MTL::Buffer *buffer) : buffer(buffer) {}
-  virtual void Bind(uint32_t index, uint32_t offset,
-                    MTL::RenderCommandEncoder *encoder) {
-    encoder->setVertexBuffer(buffer.ptr(), offset, index);
-  };
-  virtual void Bind(uint32_t index, uint32_t offset,
-                    MTL::ComputeCommandEncoder *encoder) {
-    encoder->setBuffer(buffer.ptr(), offset, index);
-  };
-
-private:
-  Obj<MTL::Buffer> buffer;
-};
-
-// class SimpleConstantBufferBinding : public ConstantBufferBinding {
-// public:
-//   SimpleConstantBufferBinding(MTL::Buffer *buffer) : buffer(buffer) {}
-
-//   virtual void Bind(MTL::RenderCommandEncoder *renc, MTL::ArgumentEncoder
-//   *enc,
-//                     uint32_t index,AliasLookup& lookup) {
-//     enc->setBuffer(buffer.ptr(), 0, index);
-//     renc->useResource(buffer.ptr(), MTL::ResourceUsageRead);
-//   }
-
-// private:
-//   Obj<MTL::Buffer> buffer;
-// };
-
-class SimpleIndexBufferBinding : public IndexBufferBinding {
-public:
-  SimpleIndexBufferBinding(MTL::Buffer *buffer) : buffer(buffer) {}
-  virtual MTL::Buffer *Get() { return buffer.ptr(); }
-
-private:
-  Obj<MTL::Buffer> buffer;
-};
-
 } // namespace dxmt

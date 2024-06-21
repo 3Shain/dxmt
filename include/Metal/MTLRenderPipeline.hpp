@@ -103,6 +103,27 @@ _MTL_ENUM(NS::UInteger, TessellationControlPointIndexType) {
     TessellationControlPointIndexTypeUInt32 = 2,
 };
 
+#ifndef DXMT_NO_PRIVATE_API
+_MTL_ENUM(NS::UInteger, LogicOperation) {
+	LogicOperationClear = 0,
+	LogicOperationSet = 1,
+	LogicOperationCopy = 2,
+	LogicOperationCopyInverted = 3,
+	LogicOperationNoOp = 4,
+	LogicOperationInvert = 5,
+	LogicOperationAnd = 6,
+	LogicOperationNand = 7,
+	LogicOperationOr = 8,
+	LogicOperationNor = 9,
+	LogicOperationXor = 10,
+	LogicOperationEquiv = 11,
+	LogicOperationAndReverse = 12,
+	LogicOperationAndInverted = 13,
+	LogicOperationOrReverse = 14,
+	LogicOperationOrInverted = 15,
+};
+#endif
+
 class RenderPipelineColorAttachmentDescriptor : public NS::Copying<RenderPipelineColorAttachmentDescriptor>
 {
 public:
@@ -266,6 +287,14 @@ public:
     void                                                setMaxFragmentCallStackDepth(NS::UInteger maxFragmentCallStackDepth);
 
     void                                                reset();
+
+#ifndef DXMT_NO_PRIVATE_API
+    bool                                                logicOperationEnabled() const;
+    void                                                setLogicOperationEnabled(bool isLogicOperationEnabled);
+
+    MTL::LogicOperation                                 logicOperation() const;
+    void                                                setLogicOperation(MTL::LogicOperation logicOperation);
+#endif
 };
 
 class RenderPipelineFunctionsDescriptor : public NS::Copying<RenderPipelineFunctionsDescriptor>
@@ -1021,6 +1050,30 @@ _MTL_INLINE void MTL::RenderPipelineDescriptor::reset()
 {
     Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(reset));
 }
+
+#ifndef DXMT_NO_PRIVATE_API
+// property: logicOperation
+_MTL_INLINE MTL::LogicOperation MTL::RenderPipelineDescriptor::logicOperation() const
+{
+    return Object::sendMessage<MTL::LogicOperation>(this, _MTL_PRIVATE_SEL(logicOperation));
+}
+
+_MTL_INLINE void MTL::RenderPipelineDescriptor::setLogicOperation(MTL::LogicOperation logicOperation)
+{
+    Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(setLogicOperation), logicOperation);
+}
+
+// property: isLogicOperationEnabled
+_MTL_INLINE bool MTL::RenderPipelineDescriptor::logicOperationEnabled() const
+{
+    return Object::sendMessage<bool>(this, _MTL_PRIVATE_SEL(isLogicOperationEnabled));
+}
+
+_MTL_INLINE void MTL::RenderPipelineDescriptor::setLogicOperationEnabled(bool isLogicOperationEnabled)
+{
+    Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(setLogicOperationEnabled), isLogicOperationEnabled);
+}
+#endif
 
 // static method: alloc
 _MTL_INLINE MTL::RenderPipelineFunctionsDescriptor* MTL::RenderPipelineFunctionsDescriptor::alloc()

@@ -1,17 +1,23 @@
 #include "d3d11_input_layout.hpp"
 #include "DXBCParser/d3d12tokenizedprogramformat.hpp"
 #include "Foundation/NSAutoreleasePool.hpp"
-#include "d3d11_device_child.h"
+#include "com/com_guid.hpp"
+#include "d3d11_device_child.hpp"
 
-#include "../dxgi/dxgi_format.hpp"
+#include "com/com_pointer.hpp"
 
 #include "DXBCParser/DXBCUtils.h"
+#include "d3d11_private.h"
+#include "dxgi_interfaces.h"
+#include "log/log.hpp"
+#include "objc_pointer.hpp"
+#include "util_string.hpp"
 #include <algorithm>
 
 namespace dxmt {
 
 struct Attribute {
-  uint32_t index;
+  uint32_t index = 0xffffffff;
   uint32_t slot;
   uint32_t offset;
   MTL::AttributeFormat format; // the same as MTL::VertexFormat
@@ -41,13 +47,14 @@ public:
     *ppvObject = nullptr;
 
     if (riid == __uuidof(IUnknown) || riid == __uuidof(ID3D11DeviceChild) ||
-        riid == __uuidof(ID3D11InputLayout)) {
+        riid == __uuidof(ID3D11InputLayout) ||
+        riid == __uuidof(IMTLD3D11InputLayout)) {
       *ppvObject = ref(this);
       return S_OK;
     }
 
     if (logQueryInterfaceError(__uuidof(ID3D11InputLayout), riid)) {
-      WARN("Unknown interface query", str::format(riid));
+      WARN("D3D311InputLayout: Unknown interface query ", str::format(riid));
     }
 
     return E_NOINTERFACE;
@@ -59,6 +66,8 @@ public:
     auto pool = transfer(NS::AutoreleasePool::alloc()->init());
     auto vertex_desc = (MTL::VertexDescriptor::vertexDescriptor());
     for (auto &attr : attributes_) {
+      if (attr.index == 0xffffffff)
+        continue;
       auto attr_desc = vertex_desc->attributes()->object(attr.index);
       attr_desc->setBufferIndex(attr.slot);
       attr_desc->setFormat((MTL::VertexFormat)attr.format);
@@ -76,15 +85,16 @@ public:
                                            D3D11_INPUT_PER_INSTANCE_DATA
                                        ? MTL::VertexStepFunctionPerInstance
                                        : MTL::VertexStepFunctionPerVertex);
-      layout_desc->setStride(strides[slot]);
+      // layout_desc->setStride(strides[slot]);
+      layout_desc->setStride(MTL::BufferLayoutStrideDynamic);
     }
 
     desc->setVertexDescriptor(vertex_desc);
   };
   virtual void STDMETHODCALLTYPE
   Bind(MTL::ComputePipelineDescriptor *desc,
-       const std::array<UINT, 16> &strides) final{
-
+       const std::array<UINT, 16> &strides) final {
+    IMPLEMENT_ME
   };
 
 private:
@@ -119,7 +129,7 @@ HRESULT CreateInputLayout(IMTLD3D11Device *device,
         pInputElementDescs, pInputElementDescs + NumElements,
         [&](const D3D11_INPUT_ELEMENT_DESC &Ele) {
           return Ele.SemanticIndex == inputSig.SemanticIndex &&
-                 std::strcmp(Ele.SemanticName, inputSig.SemanticName) == 0;
+                 strcasecmp(Ele.SemanticName, inputSig.SemanticName) == 0;
         });
     if (pDesc == pInputElementDescs + NumElements) {
       // Unmatched shader input signature
@@ -130,23 +140,26 @@ HRESULT CreateInputLayout(IMTLD3D11Device *device,
     auto &desc = *pDesc;
     auto &attribute = elements[attributeCount++];
 
-    if (g_metal_format_map[desc.Format].vertex_format ==
-        MTL::VertexFormatInvalid) {
-      ERR("CreateInputLayout: Unsupported Vertex Format ", desc.Format);
+    Com<IMTLDXGIAdatper> dxgi_adapter;
+    device->GetAdapter(&dxgi_adapter);
+    MTL_FORMAT_DESC metal_format;
+    if (FAILED(dxgi_adapter->QueryFormatDesc(pDesc->Format, &metal_format))) {
+      ERR("CreateInputLayout: Unsupported vertex format ", desc.Format);
+      return E_FAIL;
+    }
+
+    if (metal_format.VertexFormat == MTL::VertexFormatInvalid) {
+      ERR("CreateInputLayout: Unsupported vertex format ", desc.Format);
       return E_INVALIDARG;
     }
-    attribute.format = g_metal_format_map[desc.Format].attribute_format;
-    attribute.element_stride = g_metal_format_map[desc.Format].stride;
+    attribute.format = metal_format.AttributeFormat;
+    attribute.element_stride = metal_format.BytesPerTexel;
     attribute.slot = desc.InputSlot;
     attribute.index = inputSig.Register;
     if (attribute.slot >= 16) {
       ERR("CreateInputLayout: InputSlot greater than 15 is not supported "
           "(yet)");
       return E_FAIL;
-    }
-    if (attribute.index > 30) {
-      ERR("CreateInputLayout: FIXME: Too many elements.");
-      return E_INVALIDARG;
     }
 
     if (desc.AlignedByteOffset == D3D11_APPEND_ALIGNED_ELEMENT) {

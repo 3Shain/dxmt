@@ -10,3 +10,7 @@ toolchains
 build-local.txt
 *.cso
 *.ll
+winetricks
+*.vt100
+ref.sh
+*.js

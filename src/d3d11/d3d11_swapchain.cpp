@@ -1,162 +1,67 @@
 #include "d3d11_swapchain.hpp"
-#include "../dxgi/dxgi_format.hpp"
-#include "Foundation/NSAutoreleasePool.hpp"
-#include "Metal/MTLPixelFormat.hpp"
-#include "Metal/MTLTexture.hpp"
+#include "com/com_guid.hpp"
+#include "d3d11_private.h"
+#include "dxgi_interfaces.h"
+#include "dxgi_object.hpp"
 #include "d3d11_context.hpp"
-#include "../util/wsi_window.h"
+#include "log/log.hpp"
+#include "mtld11_resource.hpp"
+#include "util_error.hpp"
 #include "d3d11_device.hpp"
 
 #include "objc-wrapper/dispatch.h"
-#include <cassert>
+#include "util_string.hpp"
+#include "wsi_platform_win32.hpp"
+#include "wsi_window.hpp"
+
+/**
+Metal support at most 3 swapchain
+*/
+constexpr size_t kSwapchainLatency = 3;
+
+template <typename F> class DestructorWrapper {
+  F f;
+
+public:
+  DestructorWrapper(F &&f) : f(std::forward<F>(f)) {}
+  ~DestructorWrapper() { std::invoke(f); };
+};
 
 namespace dxmt {
 
-class EmulatedSwapChain {
-public:
-  EmulatedSwapChain(HWND hWnd, IDXGIMetalLayerFactory *layer_factory)
-      : layer_factory_(layer_factory), window_handle_(hWnd) {
-    if (unlikely(FAILED(layer_factory->GetMetalLayerFromHwnd(hWnd, &layer_,
-                                                             &native_view_)))) {
-      throw MTLD3DError("Unknown window handle");
-    }
-  };
+Com<IMTLD3D11BackBuffer>
+CreateEmulatedBackBuffer(IMTLD3D11Device *pDevice,
+                         const DXGI_SWAP_CHAIN_DESC1 *pDesc, HWND hWnd);
 
-  ~EmulatedSwapChain() {
-    {
-      current_drawable = nullptr;
-      layer_factory_->ReleaseMetalLayer(window_handle_, native_view_);
-    }
-  }
-
-  MTL::Texture *GetCurrentFrameBackBuffer() {
-    if (current_drawable == nullptr) {
-      current_drawable = layer_->nextDrawable();
-      assert(current_drawable != nullptr);
-    }
-    return current_drawable->texture();
-  };
-
-  void Swap() { current_drawable = nullptr; }
-
-  CA::MetalDrawable *CurrentDrawable() { return current_drawable.ptr(); }
-
-  HWND hWnd() { return window_handle_; }
-
-  CA::MetalLayer *layer() { return layer_.ptr(); }
-
-private:
-  Obj<CA::MetalLayer> layer_;
-  Obj<CA::MetalDrawable> current_drawable;
-  Com<IDXGIMetalLayerFactory> layer_factory_;
-  HWND window_handle_;
-  void *native_view_;
-};
-
-class __SwapChainTexture {
-public:
-  static const D3D11_RESOURCE_DIMENSION Dimension =
-      D3D11_RESOURCE_DIMENSION_TEXTURE2D;
-  static const D3D11_USAGE Usage = D3D11_USAGE_DEFAULT;
-  typedef D3D11_TEXTURE2D_DESC Description;
-  typedef ID3D11Texture2D Interface;
-  typedef EmulatedSwapChain *Data;
-
-  __SwapChainTexture(IMTLD3D11Device *pDevice, Data data,
-                     const Description *pDesc,
-                     const D3D11_SUBRESOURCE_DATA *pData)
-      : swapchain(data) {}
-
-  Data swapchain;
-  IMTLD3D11Device *__device__;
-  Interface *__resource__;
-
-  HRESULT CreateRenderTargetView(const D3D11_RENDER_TARGET_VIEW_DESC *desc,
-                                 ID3D11RenderTargetView **ppvRTV) {
-    if (desc) {
-      if (desc->ViewDimension != D3D11_RTV_DIMENSION_TEXTURE2D &&
-          desc->ViewDimension != D3D11_RTV_DIMENSION_UNKNOWN) {
-        ERR("Try to create a non 2D texture RTV from swap chain buffer");
-        return E_INVALIDARG;
-      }
-    }
-
-    D3D11_RENDER_TARGET_VIEW_DESC true_desc;
-    true_desc.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D;
-    true_desc.Format = DXGI_FORMAT_UNKNOWN; // FIXME: sync with metal texture
-    true_desc.Texture2D.MipSlice = 0;       // must be 0
-
-    // FIXME: format check?
-
-    *ppvRTV = ref(
-        new TMTLD3D11RenderTargetView<__SwapChainTexture, EmulatedSwapChain *>(
-            __device__, __resource__, desc == nullptr ? &true_desc : desc,
-            swapchain));
-    return S_OK;
-  }
-};
-
-using SwapChainRenderTargetView =
-    TMTLD3D11RenderTargetView<__SwapChainTexture, EmulatedSwapChain *>;
-
-template <> MTL::PixelFormat SwapChainRenderTargetView::GetPixelFormat() {
-  return data_->layer()->pixelFormat();
-}
-
-template <> RenderTargetBinding *SwapChainRenderTargetView::Pin() {
-  return new SimpleLazyTextureRenderTargetBinding(
-      [this]() { return (this->data_->GetCurrentFrameBackBuffer()); },
-      desc_.Texture2D.MipSlice, 0);
-}
-
-class MTLD3D11SwapChain final : public MTLDXGISubObject<IDXGISwapChain1> {
+class MTLD3D11SwapChain final : public MTLDXGISubObject<IDXGISwapChain4> {
 public:
   MTLD3D11SwapChain(IDXGIFactory1 *pFactory, IMTLDXGIDevice *pDevice, HWND hWnd,
-                    IDXGIMetalLayerFactory *pMetalLayerFactory,
                     const DXGI_SWAP_CHAIN_DESC1 *pDesc,
                     const DXGI_SWAP_CHAIN_FULLSCREEN_DESC *pFullscreenDesc)
-      : MTLDXGISubObject(pDevice), swapchain_(hWnd, pMetalLayerFactory),
-        factory_(pFactory), presentation_count_(0), desc_(*pDesc),
-        fullscreen_desc_(*pFullscreenDesc) {
-
-    // swapchain_.layer()->setAllowsNextDrawableTimeout(false);
-
-    D3D11_TEXTURE2D_DESC desc;
-    desc.SampleDesc = {.Count = 1, .Quality = 0};
-    desc.ArraySize = 1;
-    desc.BindFlags = D3D11_BIND_RENDER_TARGET;
-    desc.Usage = D3D11_USAGE_DEFAULT;
-    desc.Format = pDesc->Format;
-    desc.CPUAccessFlags = 0;
-    desc.MiscFlags = 0;
-    desc.MipLevels = 1;
-    desc.Height = pDesc->Height;
-    desc.Width = pDesc->Width;
+      : MTLDXGISubObject(pDevice), factory_(pFactory), presentation_count_(0),
+        desc_(*pDesc), hWnd(hWnd), monitor_(wsi::getWindowMonitor(hWnd)) {
 
     device_ = Com<IMTLD3D11Device>::queryFrom(pDevice);
-
-    // https://developer.apple.com/documentation/quartzcore/cametallayer/1478163-device
-    // you must set the device for a layer before rendering
-    swapchain_.layer()->setDevice(device_->GetMTLDevice());
-
-    auto metal_format = g_metal_format_map[desc.Format];
-    // FIXME: actually render target format is very limited
-    if (metal_format.pixel_format == MTL::PixelFormatInvalid) {
-      throw MTLD3DError("Unsupported pixel format");
-    }
-
-    swapchain_.layer()->setDrawableSize(
-        {.width = (double)desc.Width, .height = (double)desc.Height});
-    swapchain_.layer()->setPixelFormat(metal_format.pixel_format);
-    buffer_delegate_ = new D3D11Resource<__SwapChainTexture>(
-        device_.ptr(), &swapchain_, &desc, NULL);
 
     Com<ID3D11DeviceContext1> context;
     device_->GetImmediateContext1(&context);
     context->QueryInterface(IID_PPV_ARGS(&device_context_));
 
-    semaphore = dispatch_semaphore_create(3);
+    present_semaphore_ =
+        CreateSemaphore(nullptr, kSwapchainLatency, kSwapchainLatency, nullptr);
+
+    if (desc_.Width == 0 || desc_.Height == 0) {
+      wsi::getWindowSize(hWnd, &desc_.Width, &desc_.Height);
+    }
+
+    if (pFullscreenDesc) {
+      fullscreen_desc_ = *pFullscreenDesc;
+    } else {
+      fullscreen_desc_.Windowed = true;
+    }
   };
+
+  ~MTLD3D11SwapChain() { CloseHandle(present_semaphore_); };
 
   HRESULT
   STDMETHODCALLTYPE
@@ -168,13 +73,16 @@ public:
 
     if (riid == __uuidof(IUnknown) || riid == __uuidof(IDXGIObject) ||
         riid == __uuidof(IDXGIDeviceSubObject) ||
-        riid == __uuidof(IDXGISwapChain) || riid == __uuidof(IDXGISwapChain1)) {
+        riid == __uuidof(IDXGISwapChain) || riid == __uuidof(IDXGISwapChain1) ||
+        riid == __uuidof(IDXGISwapChain2) ||
+        riid == __uuidof(IDXGISwapChain3) ||
+        riid == __uuidof(IDXGISwapChain4)) {
       *ppvObject = ref(this);
       return S_OK;
     }
 
     if (logQueryInterfaceError(__uuidof(IDXGISwapChain1), riid)) {
-      WARN("Unknown interface query", str::format(riid));
+      WARN("DXGISwapChain: Unknown interface query ", str::format(riid));
     }
 
     return E_NOINTERFACE;
@@ -196,7 +104,10 @@ public:
   STDMETHODCALLTYPE
   GetBuffer(UINT buffer_idx, REFIID riid, void **surface) final {
     if (buffer_idx == 0) {
-      return buffer_delegate_->QueryInterface(riid, surface);
+      if (!backbuffer_) {
+        backbuffer_ = CreateEmulatedBackBuffer(device_.ptr(), &desc_, hWnd);
+      }
+      return backbuffer_->QueryInterface(riid, surface);
     } else {
       ERR("Non zero-index buffer is not supported");
       return E_FAIL;
@@ -206,13 +117,22 @@ public:
   HRESULT
   STDMETHODCALLTYPE
   SetFullscreenState(BOOL fullscreen, IDXGIOutput *target) final {
-    IMPLEMENT_ME;
+    WARN("SetFullscreenState: stub");
+    return S_OK;
   };
 
   HRESULT
   STDMETHODCALLTYPE
   GetFullscreenState(BOOL *fullscreen, IDXGIOutput **target) final {
-    IMPLEMENT_ME;
+    if (fullscreen) {
+      *fullscreen = !fullscreen_desc_.Windowed;
+    }
+    if (target) {
+      *target = NULL;
+      // TODO
+      WARN("GetFullscreenState return null");
+    }
+    return S_OK;
   };
 
   HRESULT
@@ -230,7 +150,7 @@ public:
     pDesc->SampleDesc = desc_.SampleDesc;
     pDesc->BufferUsage = desc_.BufferUsage;
     pDesc->BufferCount = desc_.BufferCount;
-    pDesc->OutputWindow = swapchain_.hWnd();
+    pDesc->OutputWindow = hWnd;
     pDesc->Windowed = fullscreen_desc_.Windowed;
     pDesc->SwapEffect = desc_.SwapEffect;
     pDesc->Flags = desc_.Flags;
@@ -239,41 +159,71 @@ public:
 
   HRESULT
   STDMETHODCALLTYPE
-  ResizeBuffers(UINT buffer_count, UINT width, UINT height, DXGI_FORMAT format,
+  ResizeBuffers(UINT BufferCount, UINT Width, UINT Height, DXGI_FORMAT Format,
                 UINT flags) final {
-    if (width == 0 && height == 0) {
-      wsi::getWindowSize(swapchain_.hWnd(), &desc_.Width, &desc_.Height);
-    } else {
-      desc_.Width = width;
-      desc_.Height = height;
-    }
-    swapchain_.layer()->setDrawableSize(
-        {.width = (double)desc_.Width, .height = (double)desc_.Height});
-    if (format == DXGI_FORMAT_UNKNOWN) {
-      // TODO: NOP
-    } else {
-      auto metal_format = g_metal_format_map[format];
-      if (metal_format.pixel_format == MTL::PixelFormatInvalid) {
-        return E_FAIL;
+    // FIXME: ... weird
+    if (backbuffer_) {
+      device_context_->WaitUntilGPUIdle();
+      auto _ = backbuffer_.takeOwnership();
+      // required behavior...
+      if (auto x = _->Release() != 0) {
+        ERR("outstanding buffer hold! ", x);
+        /**
+         usually shouldn't call it, but in case devs forget to
+         unbind RTV before calling `ResizeBuffers`
+         */
+        _->Destroy();
       }
-      swapchain_.layer()->setPixelFormat(metal_format.pixel_format);
     }
-    D3D11_TEXTURE2D_DESC desc;
-    buffer_delegate_->GetDesc(&desc);
-    desc.Width = desc_.Width;
-    desc.Height = desc_.Height;
-    desc.Format = format;
-    buffer_delegate_ = new D3D11Resource<__SwapChainTexture>(
-        device_.ptr(), &swapchain_, &desc, NULL);
+    /* BufferCount ignored */
+    if (Width == 0 || Height == 0) {
+      wsi::getWindowSize(hWnd, &desc_.Width, &desc_.Height);
+    } else {
+      desc_.Width = Width;
+      desc_.Height = Height;
+    }
+    if (Format != DXGI_FORMAT_UNKNOWN) {
+      desc_.Format = Format;
+    }
     return S_OK;
   };
 
   HRESULT
   STDMETHODCALLTYPE
-  ResizeTarget(const DXGI_MODE_DESC *target_mode_desc) final {
+  ResizeTarget(const DXGI_MODE_DESC *pDesc) final {
+    if (!pDesc)
+      return DXGI_ERROR_INVALID_CALL;
 
-    return ResizeBuffers(1 /* FIXME: */, target_mode_desc->Width,
-                         target_mode_desc->Height, target_mode_desc->Format, 0);
+    if (!wsi::isWindow(hWnd))
+      return DXGI_ERROR_INVALID_CALL;
+
+    // Promote display mode
+    DXGI_MODE_DESC1 newDisplayMode = {};
+    newDisplayMode.Width = pDesc->Width;
+    newDisplayMode.Height = pDesc->Height;
+    newDisplayMode.RefreshRate = pDesc->RefreshRate;
+    newDisplayMode.Format = pDesc->Format;
+    newDisplayMode.ScanlineOrdering = pDesc->ScanlineOrdering;
+    newDisplayMode.Scaling = pDesc->Scaling;
+
+    // Update the swap chain description
+    if (newDisplayMode.RefreshRate.Numerator != 0)
+      fullscreen_desc_.RefreshRate = newDisplayMode.RefreshRate;
+
+    fullscreen_desc_.ScanlineOrdering = newDisplayMode.ScanlineOrdering;
+    fullscreen_desc_.Scaling = newDisplayMode.Scaling;
+
+    wsi::DXMTWindowState state;
+    if (fullscreen_desc_.Windowed) {
+      // TODO: window state is concerned by fullscreen state
+      wsi::resizeWindow(hWnd, &state, newDisplayMode.Width,
+                        newDisplayMode.Height);
+    } else {
+      ERR("DXGISwapChain::ResizeTarget: fullscreen mode not supported yet.");
+      return E_FAIL;
+    }
+
+    return S_OK;
   };
 
   HRESULT
@@ -320,7 +270,7 @@ public:
     if (pHwnd == NULL) {
       return E_POINTER;
     }
-    *pHwnd = swapchain_.hWnd();
+    *pHwnd = hWnd;
     return S_OK;
   };
 
@@ -336,23 +286,18 @@ public:
   Present1(UINT SyncInterval, UINT PresentFlags,
            const DXGI_PRESENT_PARAMETERS *pPresentParameters) final {
 
-    // dispatch_semaphore_wait(semaphore, (~0ull));
-
-    auto w = transfer(NS::AutoreleasePool::alloc()->init());
-
-    device_context_->Flush2([&swapchain_ = swapchain_, semaphore = semaphore,
-                             presentation_count_ = presentation_count_](
-                                MTL::CommandBuffer *cbuffer) {
-      // swapchain_.GetCurrentFrameBackBuffer(); // ensure not null
-      cbuffer->presentDrawable(swapchain_.CurrentDrawable());
-      // cbuffer->addCompletedHandler(
-      //     [presentation_count_](void *cbuffer) {
-      //       unix_printf("A frame end. pc: %d\n", presentation_count_);
-      //       // dispatch_semaphore_signal(semaphore);
-      //     });
-          // assert(0);
-    });
-    swapchain_.Swap();
+    device_context_->FlushInternal(
+        [backbuffer = backbuffer_,
+         _ = DestructorWrapper([sem = present_semaphore_]() {
+           // called when cmdbuf complete
+           ReleaseSemaphore(sem, 1, nullptr);
+         })](MTL::CommandBuffer *cmdbuf) {
+          auto drawable = backbuffer->CurrentDrawable();
+          if (drawable) {
+            cmdbuf->presentDrawable(drawable);
+            backbuffer->Swap();
+          }
+        });
 
     presentation_count_ += 1;
 
@@ -381,30 +326,110 @@ public:
   STDMETHODCALLTYPE
   GetRotation(DXGI_MODE_ROTATION *pRotation) final { IMPLEMENT_ME; };
 
+  HRESULT STDMETHODCALLTYPE SetSourceSize(UINT width, UINT height) override {
+    IMPLEMENT_ME
+    return S_OK;
+  };
+
+  HRESULT STDMETHODCALLTYPE GetSourceSize(UINT *width, UINT *height) override {
+    IMPLEMENT_ME
+    return S_OK;
+  };
+
+  HRESULT STDMETHODCALLTYPE SetMaximumFrameLatency(UINT max_latency) override {
+    // no-op?
+    return S_OK;
+  };
+
+  HRESULT STDMETHODCALLTYPE GetMaximumFrameLatency(UINT *max_latency) override {
+    if (max_latency) {
+      *max_latency = kSwapchainLatency;
+    }
+    return S_OK;
+  };
+
+  HANDLE STDMETHODCALLTYPE GetFrameLatencyWaitableObject() override {
+    HANDLE result = nullptr;
+    HANDLE processHandle = GetCurrentProcess();
+
+    if (!DuplicateHandle(processHandle, present_semaphore_, processHandle,
+                         &result, 0, FALSE, DUPLICATE_SAME_ACCESS)) {
+      return nullptr;
+    }
+
+    return result;
+  };
+
+  HRESULT STDMETHODCALLTYPE
+  SetMatrixTransform(const DXGI_MATRIX_3X2_F *matrix) override {
+    return DXGI_ERROR_INVALID_CALL;
+  };
+
+  HRESULT STDMETHODCALLTYPE
+  GetMatrixTransform(DXGI_MATRIX_3X2_F *matrix) override {
+    return DXGI_ERROR_INVALID_CALL;
+  };
+
+  HRESULT CheckColorSpaceSupport(DXGI_COLOR_SPACE_TYPE ColorSpace,
+                                 UINT *pColorSpaceSupport) override {
+    WARN("DXGISwapChain3::CheckColorSpaceSupport: stub");
+    if (pColorSpaceSupport) {
+      *pColorSpaceSupport = 0;
+    }
+    return S_OK;
+  };
+
+  UINT GetCurrentBackBufferIndex() override {
+    // should always 0?
+    return 0;
+  }
+
+  HRESULT ResizeBuffers1(UINT BufferCount, UINT Width, UINT Height,
+                         DXGI_FORMAT Format, UINT SwapChainFlags,
+                         const UINT *pCreationNodeMask,
+                         IUnknown *const *ppPresentQueue) override {
+    WARN("DXGISwapChain3::ResizeBuffers1: ignoring d3d12 related parameters");
+    return ResizeBuffers(BufferCount, Width, Height, Format, SwapChainFlags);
+  }
+
+  HRESULT SetColorSpace1(DXGI_COLOR_SPACE_TYPE ColorSpace) override {
+    WARN("DXGISwapChain3::SetColorSpace1: stub");
+    return S_OK;
+  }
+
+  HRESULT SetHDRMetaData(DXGI_HDR_METADATA_TYPE Type, UINT Size,
+                         void *pMetaData) override {
+    WARN("DXGISwapChain4::SetHDRMetaData: stub");
+    return DXGI_ERROR_UNSUPPORTED;
+  }
+
 private:
-  Com<ID3D11Texture2D> buffer_delegate_;
-  EmulatedSwapChain swapchain_;
   Com<IDXGIFactory1> factory_;
   ULONG presentation_count_;
   DXGI_SWAP_CHAIN_DESC1 desc_;
   DXGI_SWAP_CHAIN_FULLSCREEN_DESC fullscreen_desc_;
   Com<IMTLD3D11Device> device_;
   Com<IMTLD3D11DeviceContext> device_context_;
-  dispatch_semaphore_t semaphore;
+  Com<IMTLD3D11BackBuffer> backbuffer_;
+  HANDLE present_semaphore_;
+  HWND hWnd;
+  HMONITOR monitor_;
 };
 
 HRESULT CreateSwapChain(IDXGIFactory1 *pFactory, IMTLDXGIDevice *pDevice,
-                        HWND hWnd, IDXGIMetalLayerFactory *pMetalLayerFactory,
-                        const DXGI_SWAP_CHAIN_DESC1 *pDesc,
+                        HWND hWnd, const DXGI_SWAP_CHAIN_DESC1 *pDesc,
                         const DXGI_SWAP_CHAIN_FULLSCREEN_DESC *pFullscreenDesc,
                         IDXGISwapChain1 **ppSwapChain) {
+  if (pDesc == NULL) {
+    return DXGI_ERROR_INVALID_CALL;
+  }
   if (ppSwapChain == NULL) {
-    return E_POINTER;
+    return DXGI_ERROR_INVALID_CALL;
   }
   InitReturnPtr(ppSwapChain);
   try {
-    *ppSwapChain = ref(new MTLD3D11SwapChain(
-        pFactory, pDevice, hWnd, pMetalLayerFactory, pDesc, pFullscreenDesc));
+    *ppSwapChain = ref(
+        new MTLD3D11SwapChain(pFactory, pDevice, hWnd, pDesc, pFullscreenDesc));
     return S_OK;
   } catch (MTLD3DError &err) {
     ERR(err.message());

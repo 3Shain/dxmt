@@ -5,10 +5,9 @@
 #define _SHADERBINARY_H
 
 #include "d3d12tokenizedprogramformat.hpp"
-#include "d3d11_3.h"
-#include <algorithm>
 #include <cassert>
-#include "strsafe.h"
+#include <cstring>
+#include "minwindef.h"
 
 typedef UINT CShaderToken;
 
@@ -50,7 +49,8 @@ struct CInstructionInfo {
     m_NumOperands = NumOperands;
     m_InPrecisionFromOutMask = InPrecisionFromOutMask;
 
-    StringCchCopyA(m_Name, sizeof(m_Name), Name);
+    // StringCchCopyA(m_Name, sizeof(m_Name), Name);
+    strcpy(m_Name, Name);
 
     m_OpClass = OpClass;
   }
@@ -64,7 +64,6 @@ struct CInstructionInfo {
 extern CInstructionInfo g_InstructionInfo[D3D10_SB_NUM_OPCODES];
 
 UINT GetNumInstructionOperands(D3D10_SB_OPCODE_TYPE OpCode);
-void InitInstructionInfo();
 
 //*****************************************************************************
 //
@@ -1310,7 +1309,7 @@ public:
     memcpy(m_ResourceReturnTypeEx, RetType,
            4 * sizeof(D3D10_SB_RESOURCE_RETURN_TYPE));
   }
-  BOOL Disassemble(__out_ecount(StringSize) LPSTR pString, UINT StringSize);
+  BOOL Disassemble(LPSTR pString, UINT StringSize);
 
   // Private data is used by D3D runtime
   void SetPrivateData(UINT Value, UINT index = 0) {
@@ -1419,11 +1418,9 @@ class CShaderCodeParser {
 public:
   CShaderCodeParser()
       : m_pCurrentToken(NULL), m_pShaderCode(NULL), m_pShaderEndToken(NULL) {
-    InitInstructionInfo();
   }
   CShaderCodeParser(CONST CShaderToken *pBuffer)
       : m_pCurrentToken(NULL), m_pShaderCode(NULL), m_pShaderEndToken(NULL) {
-    InitInstructionInfo();
     SetShader(pBuffer);
   }
   ~CShaderCodeParser() {}

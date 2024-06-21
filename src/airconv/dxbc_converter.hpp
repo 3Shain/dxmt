@@ -3,12 +3,13 @@
 #include <cstdint>
 #include <map>
 #include <optional>
+#include <string>
 #include <unordered_map>
 #include <variant>
 #include <vector>
 
+#include "air_signature.hpp"
 #include "shader_common.hpp"
-#include "llvm/IR/LLVMContext.h"
 
 namespace dxmt::dxbc {
 
@@ -125,6 +126,11 @@ struct DstOperandNull {
   DstOperandCommon _;
 };
 
+struct DstOperandSideEffect {
+  static constexpr std::string_view debug_name = "side_effect";
+  DstOperandCommon _;
+};
+
 struct DstOperandTemp {
   static constexpr std::string_view debug_name = "temp";
   DstOperandCommon _;
@@ -204,14 +210,23 @@ struct AtomicDstOperandUAV {
   uint32_t mask;
 };
 
+/**
+It's a UAV implemented as metal buffer
+*/
+struct AtomicDstOperandUAVBuffer {
+  uint32_t range_id;
+  OperandIndex index;
+  uint32_t mask;
+};
+
 struct AtomicOperandTGSM {
   uint32_t id;
   uint32_t mask;
 };
 
 using DstOperand = std::variant<
-  DstOperandNull, DstOperandTemp, DstOperandIndexableTemp, DstOperandOutput,
-  DstOperandOutputDepth>;
+  DstOperandNull, DstOperandSideEffect, DstOperandTemp, DstOperandIndexableTemp,
+  DstOperandOutput, DstOperandOutputDepth>;
 
 #pragma mark mov instructions
 namespace {
@@ -609,16 +624,8 @@ struct InstAtomicBinOp {
   AtomicBinaryOp op;
   std::variant<AtomicDstOperandUAV, AtomicOperandTGSM> dst;
   SrcOperand dst_address;
-  SrcOperand src; // select one component
-  std::optional<DstOperand>
-    dst_original; // store single component, original value
-};
-
-struct InstAtomicCmpStore {
-  std::variant<AtomicDstOperandUAV, AtomicOperandTGSM> dst;
-  SrcOperand dst_address;
-  SrcOperand src0; // select one component
-  SrcOperand src1; // select one component
+  SrcOperand src;          // select one component
+  DstOperand dst_original; // store single component, original value
 };
 
 struct InstAtomicImmIncrement {
@@ -666,7 +673,7 @@ using Instruction = std::variant<
   /* Pixel Shader */
   InstPixelDiscard, InstPartialDerivative, InstCalcLOD,
   /* Atomics */
-  InstSync, InstAtomicBinOp, InstAtomicCmpStore,   //
+  InstSync, InstAtomicBinOp,                       //
   InstAtomicImmCmpExchange, InstAtomicImmExchange, //
   InstAtomicImmIncrement, InstAtomicImmDecrement>;
 
@@ -683,30 +690,37 @@ struct ShaderResourceViewInfo {
   ResourceRange range;
   shader::common::ScalerDataType scaler_type;
   shader::common::ResourceType resource_type;
-  bool read;
-  bool sampled;
-  bool compared; // therefore we use depth texture!
+  bool read = false;
+  bool sampled = false;
+  bool compared = false; // therefore we use depth texture!
 
-  uint32_t strucure_stride = 0; // =0 for typed and raw
+  uint32_t strucure_stride = 0;
+  uint32_t arg_index;
+  uint32_t arg_size_index;
 };
 struct UnorderedAccessViewInfo {
   ResourceRange range;
   shader::common::ScalerDataType scaler_type;
   shader::common::ResourceType resource_type;
-  bool read;
-  bool written;
-  bool global_coherent;
-  bool rasterizer_order;
-  bool with_counter;
+  bool read = false;
+  bool written = false;
+  bool global_coherent = false;
+  bool rasterizer_order = false;
+  bool with_counter = false;
 
-  int32_t strucure_stride = 0; // =0 for raw, -1 for typed
+  uint32_t strucure_stride = 0;
+  uint32_t arg_index;
+  uint32_t arg_size_index;
+  uint32_t arg_counter_index;
 };
 struct ConstantBufferInfo {
   ResourceRange range;
   uint32_t size_in_vec4;
+  uint32_t arg_index;
 };
 struct SamplerInfo {
   ResourceRange range;
+  uint32_t arg_index;
 };
 
 struct ThreadgroupBufferInfo {
@@ -714,20 +728,6 @@ struct ThreadgroupBufferInfo {
   uint32_t size;
   uint32_t stride;
   bool structured;
-};
-
-class ShaderInfo {
-public:
-  std::vector<std::array<uint32_t, 4>> immConstantBufferData;
-  std::map<uint32_t, ShaderResourceViewInfo> srvMap;
-  std::map<uint32_t, UnorderedAccessViewInfo> uavMap;
-  std::map<uint32_t, ConstantBufferInfo> cbufferMap;
-  std::map<uint32_t, SamplerInfo> samplerMap;
-  std::map<uint32_t, ThreadgroupBufferInfo> tgsmMap;
-  uint32_t tempRegisterCount;
-  std::unordered_map<
-    uint32_t, std::pair<uint32_t /* count */, uint32_t /* mask */>>
-    indexableTempRegisterCounts;
 };
 
 #pragma endregion
@@ -752,6 +752,7 @@ struct BasicBlockUnconditionalBranch {
 };
 
 struct BasicBlockSwitch {
+  SrcOperand value;
   std::map<uint32_t, std::shared_ptr<BasicBlock>> cases;
   std::shared_ptr<BasicBlock> case_default;
 };
@@ -776,13 +777,19 @@ public:
 
 #pragma endregion
 
-struct Reflection {
-  bool has_binding_map;
+class ShaderInfo {
+public:
+  std::vector<std::array<uint32_t, 4>> immConstantBufferData;
+  std::map<uint32_t, ShaderResourceViewInfo> srvMap;
+  std::map<uint32_t, UnorderedAccessViewInfo> uavMap;
+  std::map<uint32_t, ConstantBufferInfo> cbufferMap;
+  std::map<uint32_t, SamplerInfo> samplerMap;
+  std::map<uint32_t, ThreadgroupBufferInfo> tgsmMap;
+  uint32_t tempRegisterCount;
+  std::unordered_map<
+    uint32_t, std::pair<uint32_t /* count */, uint32_t /* mask */>>
+    indexableTempRegisterCounts;
+  air::ArgumentBufferBuilder binding_table;
 };
-
-Reflection convertDXBC(
-  const void *dxbc, uint32_t dxbcSize, llvm::LLVMContext &context,
-  llvm::Module &module
-);
 
 } // namespace dxmt::dxbc

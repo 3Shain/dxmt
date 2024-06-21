@@ -1,6 +1,6 @@
 #include "airconv_context.hpp"
-#include "d3dcompiler.h"
-#include "dxbc_converter.hpp"
+#include "airconv_public.h"
+#include "metallib_writer.hpp"
 #include "llvm/Bitcode/BitcodeReader.h"
 #include "llvm/Bitcode/BitcodeWriter.h"
 #include "llvm/IR/DiagnosticInfo.h"
@@ -16,6 +16,11 @@
 #include "llvm/Support/ToolOutputFile.h"
 #include "llvm/Support/WithColor.h"
 #include <system_error>
+
+#ifdef __WIN32
+#include "d3dcompiler.h"
+#endif
+
 using namespace llvm;
 
 static cl::opt<std::string>
@@ -27,6 +32,9 @@ static cl::opt<std::string> OutputFilename(
 
 static cl::opt<bool>
   EmitLLVM("S", cl::init(false), cl::desc("Write output as LLVM assembly"));
+
+static cl::opt<bool>
+  EmitMetallib("A", cl::init(false), cl::desc("Write output as .metallib"));
 
 static cl::opt<bool> DisassembleDXBC(
   "disas-dxbc", cl::init(false), cl::desc("Disassemble dxbc shader")
@@ -89,6 +97,13 @@ struct LLVMDisDiagnosticHandler : public DiagnosticHandler {
 };
 } // namespace
 
+namespace dxmt::dxbc {
+llvm::Error convertDXBC(
+  SM50Shader *pShader, const char *name, llvm::LLVMContext &context,
+  llvm::Module &module
+);
+}
+
 static ExitOnError ExitOnErr;
 
 int main(int argc, char **argv) {
@@ -122,7 +137,10 @@ int main(int argc, char **argv) {
                         : IFN.endswith(".dxbc") ? IFN.drop_back(5)
                                                 : IFN)
                          .str();
-      OutputFilename += DisassembleDXBC ? ".txt" : EmitLLVM ? ".ll" : ".air";
+      OutputFilename += DisassembleDXBC ? ".txt"
+                        : EmitMetallib  ? ".metallib"
+                        : EmitLLVM      ? ".ll"
+                                        : ".air";
     }
   }
 
@@ -139,6 +157,7 @@ int main(int argc, char **argv) {
   auto MemRef = FileOrErr->get()->getMemBufferRef();
 
   if (DisassembleDXBC) {
+#ifdef __WIN32
     std::error_code EC;
     std::unique_ptr<ToolOutputFile> Out(
       new ToolOutputFile(OutputFilename, EC, sys::fs::OF_TextWithCRLF)
@@ -161,13 +180,31 @@ int main(int argc, char **argv) {
 
     blob->Release();
     return 0;
+#else
+    errs() << "Disassemble only supported on Windows" << '\n';
+    return 1;
+#endif
   }
 
   Module M("default", Context);
   dxmt::initializeModule(M, {.enableFastMath = FastMath});
-  dxmt::dxbc::convertDXBC(
-    MemRef.getBufferStart(), MemRef.getBufferSize(), Context, M
-  );
+
+  SM50Shader *sm50;
+  SM50Error *err;
+  if (SM50Initialize(
+        MemRef.getBufferStart(), MemRef.getBufferSize(), &sm50, nullptr, &err
+      )) {
+    errs() << SM50GetErrorMesssage(err) << '\n';
+    SM50FreeError(err);
+    return 1;
+  }
+
+  if (auto err = dxmt::dxbc::convertDXBC(sm50, "shader_main", Context, M)) {
+    errs() << err << '\n';
+    return 1;
+  }
+
+  SM50Destroy(sm50);
 
   if (OptLevelO1) {
     dxmt::runOptimizationPasses(M, OptimizationLevel::O1);
@@ -179,7 +216,8 @@ int main(int argc, char **argv) {
 
   std::error_code EC;
   std::unique_ptr<ToolOutputFile> Out(new ToolOutputFile(
-    OutputFilename, EC, EmitLLVM ? sys::fs::OF_TextWithCRLF : sys::fs::OF_None
+    OutputFilename, EC,
+    (EmitLLVM || EmitMetallib) ? sys::fs::OF_TextWithCRLF : sys::fs::OF_None
   ));
   if (EC) {
     errs() << EC.message() << '\n';
@@ -188,6 +226,9 @@ int main(int argc, char **argv) {
 
   if (EmitLLVM) {
     M.print(Out->os(), nullptr, PreserveAssemblyUseListOrder);
+  } else if (EmitMetallib) {
+    dxmt::metallib::MetallibWriter writer;
+    writer.Write(M, Out->os());
   } else {
     WriteBitcodeToFile(
       M, Out->os(), PreserveBitcodeUseListOrder, nullptr, true

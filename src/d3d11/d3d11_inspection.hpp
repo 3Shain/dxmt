@@ -1,8 +1,8 @@
 #pragma once
-#include "d3d11_private.h"
 
+#include "d3d11_1.h"
 #include "Metal/MTLDevice.hpp"
-#include "../dxmt/dxmt_format.hpp"
+#include "objc_pointer.hpp"
 
 namespace dxmt {
 
@@ -13,12 +13,8 @@ public:
   HRESULT GetFeatureData(D3D11_FEATURE Feature, UINT FeatureDataSize,
                          void *pFeatureData) const;
 
-  HRESULT CheckSupportedFormat(DXGI_FORMAT Format, UINT *pFlags);
-  HRESULT CheckSupportedFormat2(DXGI_FORMAT Format, UINT *pFlags);
-
 private:
   Obj<MTL::Device> m_device;
-  FormatCapabilityInspector cap_inspector_;
 
   D3D11_FEATURE_DATA_THREADING m_threading = {};
   D3D11_FEATURE_DATA_DOUBLES m_doubles = {};

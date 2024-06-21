@@ -1,11 +1,11 @@
 #include "d3d11_inspection.hpp"
 
-#include "../dxgi/dxgi_format.hpp"
+#include "log/log.hpp"
 
 namespace dxmt {
 
 MTLD3D11Inspection::MTLD3D11Inspection(MTL::Device *pDevice)
-    : m_device(pDevice), cap_inspector_() {
+    : m_device(pDevice) {
 
   // FIXME: Apple Silicon definitely TBDR
   m_architectureInfo.TileBasedDeferredRenderer = FALSE;
@@ -55,9 +55,11 @@ MTLD3D11Inspection::MTLD3D11Inspection(MTL::Device *pDevice)
   // FIXME: check it
   m_d3d11Options.SAD4ShaderInstructions = FALSE;
   m_d3d11Options.FlagsForUpdateAndCopySeenByDriver = TRUE; // wtf
-  m_d3d11Options.OutputMergerLogicOp =
-      FALSE; // FIXME: This must be true for 11.1 .programmable blend might
-             // solve this
+#ifdef DXMT_NO_PRIVATE_API
+  m_d3d11Options.OutputMergerLogicOp = FALSE;
+#else
+  m_d3d11Options.OutputMergerLogicOp = TRUE;
+#endif
 
   m_d3d11Options5.SharedResourceTier = D3D11_SHARED_RESOURCE_TIER_0; // TODO
 
@@ -80,8 +82,6 @@ MTLD3D11Inspection::MTLD3D11Inspection(MTL::Device *pDevice)
       D3D11_SHADER_MIN_PRECISION_16_BIT;
 
   m_d3d9Shadow.SupportsDepthAsTextureWithLessEqualComparisonFilter = TRUE;
-
-  cap_inspector_.Inspect(this->m_device.ptr());
 }
 
 HRESULT MTLD3D11Inspection::GetFeatureData(D3D11_FEATURE Feature,
@@ -140,42 +140,6 @@ HRESULT MTLD3D11Inspection::GetFeatureData(D3D11_FEATURE Feature,
     ERR("Not supported feature: ", Feature);
     return E_INVALIDARG;
   }
-}
-
-HRESULT MTLD3D11Inspection::CheckSupportedFormat(DXGI_FORMAT Format,
-                                                 UINT *pFlags) {
-
-  const auto pfmt = g_metal_format_map[Format];
-  if (pfmt.pixel_format == MTL::PixelFormatInvalid) {
-    return E_FAIL;
-  }
-
-  // TODO:
-
-  *pFlags =
-      D3D11_FORMAT_SUPPORT_BUFFER | D3D11_FORMAT_SUPPORT_IA_VERTEX_BUFFER |
-      D3D11_FORMAT_SUPPORT_TEXTURE1D | D3D11_FORMAT_SUPPORT_TEXTURE2D |
-      D3D11_FORMAT_SUPPORT_TEXTURE3D | D3D11_FORMAT_SUPPORT_TEXTURECUBE |
-      D3D11_FORMAT_SUPPORT_SHADER_LOAD | D3D11_FORMAT_SUPPORT_SHADER_SAMPLE |
-      D3D11_FORMAT_SUPPORT_MIP | D3D11_FORMAT_SUPPORT_MIP_AUTOGEN |
-      D3D11_FORMAT_SUPPORT_RENDER_TARGET | D3D11_FORMAT_SUPPORT_BLENDABLE |
-      D3D11_FORMAT_SUPPORT_CPU_LOCKABLE |
-      D3D11_FORMAT_SUPPORT_MULTISAMPLE_RESOLVE | D3D11_FORMAT_SUPPORT_DISPLAY |
-      D3D11_FORMAT_SUPPORT_CAST_WITHIN_BIT_LAYOUT |
-      D3D11_FORMAT_SUPPORT_MULTISAMPLE_RENDERTARGET |
-      D3D11_FORMAT_SUPPORT_MULTISAMPLE_LOAD |
-      D3D11_FORMAT_SUPPORT_SHADER_GATHER |
-      D3D11_FORMAT_SUPPORT_VIDEO_PROCESSOR_OUTPUT |
-      D3D11_FORMAT_SUPPORT_VIDEO_PROCESSOR_INPUT;
-
-  return S_OK;
-}
-
-HRESULT MTLD3D11Inspection::CheckSupportedFormat2(DXGI_FORMAT Format,
-                                                  UINT *pFlags) {
-  // D3D11_FORMAT_SUPPORT2_UAV_ATOMIC_ADD
-
-  return S_OK;
 }
 
 } // namespace dxmt

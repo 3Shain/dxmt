@@ -1,11 +1,14 @@
 #pragma once
 #include "air_signature.hpp"
 #include "air_type.hpp"
+#include "airconv_error.hpp"
 #include "dxbc_converter.hpp"
 #include "ftl.hpp"
+#include "monad.hpp"
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/StringRef.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DerivedTypes.h"
@@ -17,6 +20,9 @@
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Type.h"
+#include "llvm/Support/Error.h"
+#include "llvm/Support/raw_ostream.h"
+#include <algorithm>
 #include <cstdint>
 #include <functional>
 #include <string>
@@ -31,6 +37,7 @@
 namespace dxmt::dxbc {
 
 using pvalue = llvm::Value *;
+using epvalue = llvm::Expected<pvalue>;
 using dxbc::Swizzle;
 using dxbc::swizzle_identity;
 
@@ -51,23 +58,28 @@ struct indexable_register_file {
 };
 
 struct io_binding_map {
-  llvm::GlobalVariable *icb;
-  llvm::Value *icb_float;
-  std::unordered_map<uint32_t, IndexedIRValue> cb_range_map;
-  std::unordered_map<uint32_t, IndexedIRValue> sampler_range_map;
+  llvm::GlobalVariable *icb = nullptr;
+  llvm::Value *icb_float = nullptr;
+  std::unordered_map<uint32_t, IndexedIRValue> cb_range_map{};
+  std::unordered_map<uint32_t, IndexedIRValue> sampler_range_map{};
+  std::unordered_map<uint32_t, std::tuple<air::MSLTexture, IndexedIRValue>>
+    srv_range_map{};
   std::unordered_map<
-    uint32_t, std::tuple<air::MSLTexture, IndexedIRValue, int32_t>>
-    srv_range_map;
+    uint32_t, std::tuple<IndexedIRValue, IndexedIRValue, uint32_t>>
+    srv_buf_range_map{};
+  std::unordered_map<uint32_t, std::tuple<air::MSLTexture, IndexedIRValue>>
+    uav_range_map{};
   std::unordered_map<
-    uint32_t, std::tuple<air::MSLTexture, IndexedIRValue, int32_t>>
-    uav_range_map;
+    uint32_t, std::tuple<IndexedIRValue, IndexedIRValue, uint32_t>>
+    uav_buf_range_map{};
   std::unordered_map<uint32_t, std::pair<uint32_t, llvm::GlobalVariable *>>
-    tgsm_map;
+    tgsm_map{};
+  std::unordered_map<uint32_t, IndexedIRValue> uav_counter_range_map{};
 
-  register_file input;
-  register_file output;
-  register_file temp;
-  std::unordered_map<uint32_t, indexable_register_file> indexable_temp_map;
+  register_file input{};
+  register_file output{};
+  register_file temp{};
+  std::unordered_map<uint32_t, indexable_register_file> indexable_temp_map{};
 
   // special registers (input)
   llvm::Value *thread_id_arg = nullptr;
@@ -88,6 +100,27 @@ struct context {
   llvm::Function *function;
   io_binding_map &resource;
   air::AirType &types; // hmmm
+};
+
+template <typename T = std::monostate>
+ReaderIO<context, T> throwUnsupported(llvm::StringRef ref) {
+  return ReaderIO<context, T>(
+    [msg = std::string(ref)](struct context ctx) mutable -> llvm::Expected<T> {
+      // CAUTION: create llvm::Error as lazy as possible
+      // DON'T create it and store somewhere like plain data
+      // ^ which make fking perfect sense but NO DONT DO THAT!
+      // BECAUSE IT IS STATEFUL! IT PRESEVED A 'CHECKED' STATE
+      // to enforce programmer handle any created error
+      // ^ imaging you move-capture the error in a lambda
+      //   but it's never called and eventually deconstructed
+      //   then BOOM
+      // what the fuck why should I use it
+      // `Monadic error handling w/ a gun shoot yourself in the foot`
+      // ^ never claimed to be a monad actually 👆🤓
+      // DO I REALLY DESERVE THIS?
+      return llvm::Expected<T>(llvm::make_error<UnsupportedFeature>(msg));
+    }
+  );
 };
 
 ReaderIO<context, context> get_context() {
@@ -149,7 +182,7 @@ std::string type_overload_suffix(
                : ".u.v" + std::to_string(fixedVecTy->getNumElements()) + "i32";
     }
   }
-  type->dump();
+
   assert(0 && "unexpected or unhandled type");
 };
 
@@ -494,18 +527,67 @@ auto store_at_vec4_array_masked(
   };
 };
 
+auto store_at_vec_array_masked(
+  llvm::Value *array, pvalue index, pvalue maybe_vec4, uint32_t mask
+) -> IREffect {
+  auto array_ty = llvm::cast<llvm::ArrayType>( // force line break
+    llvm::cast<llvm::PointerType>(array->getType())
+      ->getNonOpaquePointerElementType()
+  );
+  auto components =
+    cast<llvm::FixedVectorType>(array_ty->getElementType())->getNumElements();
+  return extend_to_vec4(maybe_vec4) >>= [=](pvalue vec4) {
+    return make_effect_bind([=](context ctx) {
+      return (load_from_array_at(array, index) >>=
+              extend_to_vec4) >>= [=](auto current) {
+        auto cx = mask & 1 ? 4 : 0;
+        auto cy = mask & 2 ? 5 : 1;
+        auto cz = mask & 4 ? 6 : 2;
+        auto cw = mask & 8 ? 7 : 3;
+        switch (components) {
+        case 1: {
+          auto new_value = ctx.builder.CreateShuffleVector(current, vec4, {cx});
+          return store_to_array_at(array, index, new_value);
+        };
+        case 2: {
+          auto new_value =
+            ctx.builder.CreateShuffleVector(current, vec4, {cx, cy});
+          return store_to_array_at(array, index, new_value);
+        };
+        case 3: {
+          auto new_value =
+            ctx.builder.CreateShuffleVector(current, vec4, {cx, cy, cz});
+          return store_to_array_at(array, index, new_value);
+        };
+        case 4: {
+          auto new_value =
+            ctx.builder.CreateShuffleVector(current, vec4, {cx, cy, cz, cw});
+          return store_to_array_at(array, index, new_value);
+        };
+        default: {
+          assert(0 && "UNREACHABLE");
+          break;
+        }
+        }
+      };
+    });
+  };
+};
+
 auto init_input_reg(uint32_t with_fnarg_at, uint32_t to_reg, uint32_t mask)
   -> IREffect {
-  assert((mask & 1) && "todo: handle input register sharing correctly");
+  // no it doesn't work like this
+  // regular input can be masked like .zw
+  // assert((mask & 1) && "todo: handle input register sharing correctly");
+  // FIXME: it's buggy as hell
   return make_effect_bind([=](context ctx) {
     auto arg = ctx.function->getArg(with_fnarg_at);
     auto const_index =
       llvm::ConstantInt::get(ctx.llvm, llvm::APInt{32, to_reg, false});
     if (arg->getType()->getScalarType()->isIntegerTy()) {
-      assert(
-        arg->getType()->getScalarType() == ctx.types._int &&
-        "TODO: handle non 32 bit integer"
-      );
+      if (arg->getType()->getScalarType() != ctx.types._int) {
+        return throwUnsupported("TODO: handle non 32 bit integer");
+      }
       return store_at_vec4_array_masked(
         ctx.resource.input.ptr_int4, const_index, arg, mask
       );
@@ -514,7 +596,9 @@ auto init_input_reg(uint32_t with_fnarg_at, uint32_t to_reg, uint32_t mask)
         ctx.resource.input.ptr_float4, const_index, arg, mask
       );
     } else {
-      assert(0 && "TODO: unhandled input type? might be interpolant...");
+      return throwUnsupported(
+        "TODO: unhandled input type? might be interpolant..."
+      );
     }
   });
 };
@@ -724,8 +808,8 @@ struct TextureOperationInfo {
   llvm::Type *gradient_type = nullptr;
 };
 
-auto get_operation_info(air::MSLTexture texture)
-  -> ReaderIO<context, TextureOperationInfo> {
+auto get_operation_info(air::MSLTexture texture
+) -> ReaderIO<context, TextureOperationInfo> {
   using namespace dxmt::air;
   auto ctx = co_yield get_context();
   auto &types = ctx.types;
@@ -1402,7 +1486,8 @@ auto call_read(
     args_value.push_back(sample_index);
   }
 
-  if (!op_info.is_ms && texture_type.resource_kind != air::TextureKind::texture_buffer) {
+  if (!op_info.is_ms &&
+      texture_type.resource_kind != air::TextureKind::texture_buffer) {
     args_type.push_back(types._int);
     if (op_info.is_1d_or_1d_array) {
       args_value.push_back(ctx.builder.getInt32(0));
@@ -1593,7 +1678,8 @@ IRValue call_get_texture_info(
   args_type.push_back(texture_type.get_llvm_type(context));
   args_value.push_back(handle);
 
-  if (type == TextureInfoType::width || type == TextureInfoType::height || type == TextureInfoType::depth) {
+  if (type == TextureInfoType::width || type == TextureInfoType::height ||
+      type == TextureInfoType::depth) {
     if (!op_info.is_ms && !op_info.is_texture_buffer) {
       args_type.push_back(types._int);
       args_value.push_back(lod);
@@ -1893,7 +1979,9 @@ SrcOperandModifier get_modifier(SrcOperand src) {
   return std::visit(
     patterns{
       [](SrcOperandImmediate32) {
-        return SrcOperandModifier{.swizzle = swizzle_identity};
+        return SrcOperandModifier{
+          .swizzle = swizzle_identity, .abs = false, .neg = false
+        };
       },
       [](SrcOperandAttribute src) { return src._; },
       [](SrcOperandConstantBuffer src) { return src._; },
@@ -1991,6 +2079,7 @@ uint32_t get_dst_mask(DstOperand dst) {
   return std::visit(
     patterns{
       [](DstOperandNull) { return (uint32_t)0b1111; },
+      [](DstOperandSideEffect) { return (uint32_t)0b1111; },
       [](DstOperandOutput dst) { return dst._.mask; },
       [](DstOperandTemp dst) { return dst._.mask; },
       [](DstOperandIndexableTemp dst) { return dst._.mask; },
@@ -2015,23 +2104,25 @@ auto load_operand_index(OperandIndex idx) {
         );
       },
       [&](IndexByTempComponent ot) {
-        return make_irvalue([=](context ctx) {
+        return make_irvalue([=](context ctx) -> llvm::Expected<pvalue> {
           auto temp =
             load_from_array_at(
               ctx.resource.temp.ptr_int4, ctx.builder.getInt32(ot.regid)
             )
               .build(ctx);
+          if (auto err = temp.takeError()) {
+            return std::move(err);
+          }
           return ctx.builder.CreateAdd(
-            ctx.builder.CreateExtractElement(temp, ot.component),
+            ctx.builder.CreateExtractElement(temp.get(), ot.component),
             ctx.builder.getInt32(ot.offset)
           );
         });
       },
       [&](IndexByIndexableTempComponent it) {
-        return make_irvalue([=](context ctx) {
-          assert(0 && "not implemented");
-          return nullptr;
-        });
+        return throwUnsupported<pvalue>(
+          "TODO: IndexByIndexableTempComponent not implemented yet"
+        );
       }
     },
     idx
@@ -2039,16 +2130,18 @@ auto load_operand_index(OperandIndex idx) {
 }
 
 template <typename Operand, bool ReadFloat> IRValue load_src(Operand) {
-  llvm::outs() << "register load of " << Operand::debug_name << "<"
-               << (ReadFloat ? "float" : "int") << "> is not implemented\n";
-  assert(0 && "operation not implemented");
+  std::string s;
+  llvm::raw_string_ostream o(s);
+  o << "register load of " << Operand::debug_name << "<"
+    << (ReadFloat ? "float" : "int") << "> is not implemented\n";
+  return throwUnsupported<pvalue>(s);
 };
 
 template <bool ReadFloat>
 IRValue load_src_op(SrcOperand src, uint32_t mask = 0b1111) {
   return std::visit(
            [](auto src) { return load_src<decltype(src), ReadFloat>(src); }, src
-         ) >>= [=](auto vec) {
+         ) >>= [mask, src](auto vec) {
     auto modifier = get_modifier(src);
     if (ReadFloat) {
       return apply_float_src_operand_modifier(modifier, vec, mask);
@@ -2209,7 +2302,7 @@ IRValue load_src<SrcOperandAttribute, false>(SrcOperandAttribute attr) {
 template <>
 IRValue load_src<SrcOperandAttribute, true>(SrcOperandAttribute attr) {
   auto ctx = co_yield get_context();
-  pvalue vec;
+  pvalue vec = nullptr;
   switch (attr.attribute) {
   case shader::common::InputAttribute::VertexId:
   case shader::common::InputAttribute::PrimitiveId:
@@ -2269,6 +2362,28 @@ IREffect store_dst<DstOperandNull, true>(DstOperandNull, IRValue &&) {
 
 template <>
 IREffect
+store_dst<DstOperandSideEffect, false>(DstOperandSideEffect, IRValue &&value) {
+  return make_effect_bind(
+    [value = std::move(value)](auto ctx) mutable -> IREffect {
+      co_yield std::move(value);
+      co_return {};
+    }
+  );
+};
+
+template <>
+IREffect
+store_dst<DstOperandSideEffect, true>(DstOperandSideEffect, IRValue &&value) {
+  return make_effect_bind(
+    [value = std::move(value)](auto ctx) mutable -> IREffect {
+      co_yield std::move(value);
+      co_return {};
+    }
+  );
+};
+
+template <>
+IREffect
 store_dst<DstOperandTemp, false>(DstOperandTemp temp, IRValue &&value) {
   // coroutine + rvalue reference = SHOOT YOURSELF IN THE FOOT
   return make_effect_bind(
@@ -2289,6 +2404,22 @@ IREffect store_dst<DstOperandTemp, true>(DstOperandTemp temp, IRValue &&value) {
       co_return co_yield store_at_vec4_array_masked(
         ctx.resource.temp.ptr_float4, co_yield get_int(temp.regid),
         co_yield std::move(value), temp._.mask
+      );
+    }
+  );
+};
+
+template <>
+IREffect store_dst<DstOperandIndexableTemp, true>(
+  DstOperandIndexableTemp itemp, IRValue &&value
+) {
+  // coroutine + rvalue reference = SHOOT YOURSELF IN THE FOOT
+  return make_effect_bind(
+    [value = std::move(value), itemp](auto ctx) mutable -> IREffect {
+      auto regfile = ctx.resource.indexable_temp_map[itemp.regfile];
+      co_return co_yield store_at_vec_array_masked(
+        regfile.ptr_float_vec, co_yield load_operand_index(itemp.regindex),
+        co_yield std::move(value), itemp._.mask
       );
     }
   );
@@ -2353,18 +2484,18 @@ auto load_condition(SrcOperand src, bool non_zero_test) {
   };
 };
 
-auto load_tgsm(
-  llvm::GlobalValue *g, pvalue offset_in_4bytes, uint32_t read_components
+/**
+it might be a constant, device or threadgroup buffer of `uint*`
+*/
+auto load_from_uint_bufptr(
+  pvalue uint_buf_ptr, pvalue offset_in_4bytes, uint32_t read_components
 ) -> IRValue {
   auto ctx = co_yield get_context();
   pvalue vec = llvm::UndefValue::get(ctx.types._int4);
   for (uint32_t i = 0; i < read_components; i++) {
-    auto ptr = ctx.builder.CreateInBoundsGEP(
-      llvm::cast<llvm::PointerType>(g->getType())
-        ->getNonOpaquePointerElementType(),
-      g,
-      {ctx.builder.getInt32(0),
-       ctx.builder.CreateAdd(offset_in_4bytes, ctx.builder.getInt32(i))}
+    auto ptr = ctx.builder.CreateGEP(
+      ctx.types._int, uint_buf_ptr,
+      {ctx.builder.CreateAdd(offset_in_4bytes, ctx.builder.getInt32(i))}
     );
     vec = ctx.builder.CreateInsertElement(
       vec, ctx.builder.CreateLoad(ctx.types._int, ptr), i
@@ -2373,25 +2504,21 @@ auto load_tgsm(
   co_return vec;
 };
 
-auto load_texture_raw(
-  air::MSLTexture texture, pvalue h, pvalue offset_in_4bytes,
-  uint32_t read_components
-) -> IRValue {
-  assert(texture.resource_kind == air::TextureKind::texture_buffer);
+auto store_to_uint_bufptr(
+  pvalue uint_buf_ptr, pvalue offset_in_4bytes, uint32_t written_components,
+  pvalue ivec4_to_write
+) -> IREffect {
   auto ctx = co_yield get_context();
-  pvalue vec = llvm::UndefValue::get(ctx.types._int4);
-  for (uint32_t i = 0; i < read_components; i++) {
-    auto read_ret = call_read(
-      texture, h, ctx.builder.CreateAdd(offset_in_4bytes, co_yield get_int(i))
+  for (uint32_t i = 0; i < written_components; i++) {
+    auto ptr = ctx.builder.CreateGEP(
+      ctx.types._int, uint_buf_ptr,
+      {ctx.builder.CreateAdd(offset_in_4bytes, ctx.builder.getInt32(i))}
     );
-    vec = ctx.builder.CreateInsertElement(
-      vec,
-      co_yield (std::move(read_ret) >>= extract_value(0)) >>=
-      extract_element(0),
-      i
+    ctx.builder.CreateStore(
+      ctx.builder.CreateExtractElement(ivec4_to_write, i), ptr
     );
   }
-  co_return vec;
+  co_return {};
 };
 
 auto mask_to_linear_components_num(uint32_t mask) {
@@ -2429,2066 +2556,2339 @@ auto store_tgsm(
   co_return {};
 };
 
-auto store_texture_raw(
-  air::MSLTexture texture, pvalue h, pvalue offset_in_4bytes,
-  uint32_t written_components, pvalue ivec4_to_write
-) -> IREffect {
-  assert(texture.resource_kind == air::TextureKind::texture_buffer);
+auto read_uint_buf_addr(AtomicOperandTGSM tgsm, pvalue index = 0) -> IRValue {
   auto ctx = co_yield get_context();
-  for (int i = 0; (uint32_t)i < written_components; i++) {
-    co_yield call_write(
-      texture, h,
-      ctx.builder.CreateAdd(offset_in_4bytes, ctx.builder.getInt32(i)), nullptr,
-      nullptr,
-      ctx.builder.CreateShuffleVector(
-        // by deisgn, only .r channel is written, but we need to provide a
-        // vector anyway
-        ivec4_to_write, llvm::ArrayRef<int>{i, i, i, i}
-        // why shufflevector accept negative mask????
-      ),
-      nullptr
+  assert(ctx.resource.tgsm_map.contains(tgsm.id));
+  auto gv = ctx.resource.tgsm_map[tgsm.id].second;
+  llvm::Constant *Zero =
+    llvm::ConstantInt::get(llvm::Type::getInt32Ty(ctx.llvm), 0);
+  if (index) {
+    co_return ctx.builder.CreateGEP(gv->getValueType(), gv, {Zero, index});
+  }
+  co_return llvm::ConstantExpr::getInBoundsGetElementPtr(
+    gv->getValueType(), gv, (llvm::ArrayRef<llvm::Constant *>){Zero, Zero}
+  );
+}
+
+// the same as above
+auto read_uint_buf_addr(SrcOperandTGSM tgsm, pvalue index = 0) -> IRValue {
+  auto ctx = co_yield get_context();
+  assert(ctx.resource.tgsm_map.contains(tgsm.id));
+  auto gv = ctx.resource.tgsm_map[tgsm.id].second;
+  llvm::Constant *Zero =
+    llvm::ConstantInt::get(llvm::Type::getInt32Ty(ctx.llvm), 0);
+  if (index) {
+    co_return ctx.builder.CreateGEP(gv->getValueType(), gv, {Zero, index});
+  }
+  co_return llvm::ConstantExpr::getInBoundsGetElementPtr(
+    gv->getValueType(), gv, (llvm::ArrayRef<llvm::Constant *>){Zero, Zero}
+  );
+}
+
+auto read_uint_buf_addr(AtomicDstOperandUAV uav, pvalue index = 0) -> IRValue {
+  auto ctx = co_yield get_context();
+  assert(ctx.resource.uav_buf_range_map.contains(uav.range_id));
+  auto &[handle, _, __] = ctx.resource.uav_buf_range_map[uav.range_id];
+  if (index) {
+    co_return ctx.builder.CreateGEP(
+      ctx.types._int, co_yield handle(nullptr), {index}
     );
   }
-  co_return {};
+  co_return co_yield handle(nullptr);
+}
+
+// the same as above
+auto read_uint_buf_addr(SrcOperandUAV uav, pvalue index = 0) -> IRValue {
+  auto ctx = co_yield get_context();
+  assert(ctx.resource.uav_buf_range_map.contains(uav.range_id));
+  auto &[handle, _, __] = ctx.resource.uav_buf_range_map[uav.range_id];
+  if (index) {
+    co_return ctx.builder.CreateGEP(
+      ctx.types._int, co_yield handle(nullptr), {index}
+    );
+  }
+  co_return co_yield handle(nullptr);
+}
+
+auto read_uint_buf_addr(SrcOperandResource srv, pvalue index = 0) -> IRValue {
+  auto ctx = co_yield get_context();
+  assert(ctx.resource.srv_buf_range_map.contains(srv.range_id));
+  auto &[handle, _, __] = ctx.resource.srv_buf_range_map[srv.range_id];
+  if (index) {
+    co_return ctx.builder.CreateGEP(
+      ctx.types._int, co_yield handle(nullptr), {index}
+    );
+  }
+  co_return co_yield handle(nullptr);
+}
+
+auto read_atomic_index(AtomicOperandTGSM tgsm, pvalue vec4) -> IRValue {
+  auto ctx = co_yield get_context();
+  assert(ctx.resource.tgsm_map.contains(tgsm.id));
+  auto stride = ctx.resource.tgsm_map[tgsm.id].first;
+  auto &builder = ctx.builder;
+  co_return builder.CreateLShr(
+    stride > 0 ? builder.CreateAdd(
+                   builder.CreateMul(
+                     builder.getInt32(stride), co_yield extract_element(0)(vec4)
+                   ),
+                   co_yield extract_element(1)(vec4)
+                 )
+               : co_yield extract_element(0)(vec4),
+    2
+  );
 };
 
-auto convert_basicblocks(
+auto read_atomic_index(AtomicDstOperandUAV uav, pvalue addr_vec4) -> IRValue {
+  auto ctx = co_yield get_context();
+  assert(ctx.resource.uav_buf_range_map.contains(uav.range_id));
+  auto &[_, __, stride] = ctx.resource.uav_buf_range_map[uav.range_id];
+  auto &builder = ctx.builder;
+  co_return builder.CreateLShr(
+    stride > 0
+      ? builder.CreateAdd(
+          builder.CreateMul(
+            builder.getInt32(stride), co_yield extract_element(0)(addr_vec4)
+          ),
+          co_yield extract_element(1)(addr_vec4)
+        )
+      : co_yield extract_element(0)(addr_vec4),
+    2
+  );
+};
+
+auto calc_uint_ptr_index(
+  uint32_t stride, SrcOperand structure_idx, SrcOperand byte_offset
+) -> IRValue {
+  auto ctx = co_yield get_context();
+  auto &builder = ctx.builder;
+  co_return builder.CreateLShr(
+    builder.CreateAdd(
+      builder.CreateMul(
+        builder.getInt32(stride),
+        co_yield load_src_op<false>(structure_idx) >>= extract_element(0)
+      ),
+      co_yield load_src_op<false>(byte_offset) >>= extract_element(0)
+    ),
+    2
+  );
+};
+
+auto calc_uint_ptr_index(uint32_t zero, uint32_t unused, SrcOperand byte_offset)
+  -> IRValue {
+  assert(zero == 0);
+  auto ctx = co_yield get_context();
+  auto &builder = ctx.builder;
+  co_return builder.CreateLShr(
+    co_yield load_src_op<false>(byte_offset) >>= extract_element(0), 2
+  );
+};
+
+llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
   std::shared_ptr<BasicBlock> entry, context &ctx, llvm::BasicBlock *return_bb
 ) {
   auto &context = ctx.llvm;
   auto &builder = ctx.builder;
   auto function = ctx.function;
   std::unordered_map<BasicBlock *, llvm::BasicBlock *> visited;
-  std::function<void(std::shared_ptr<BasicBlock>)> readBasicBlock =
-    [&](std::shared_ptr<BasicBlock> current) {
-      auto bb =
-        llvm::BasicBlock::Create(context, current->debug_name, function);
-      assert(visited.insert({current.get(), bb}).second);
-      air::AirType types(context);
-      IREffect effect([](auto) { return std::monostate(); });
-      for (auto &inst : current->instructions) {
-        std::visit(
-          patterns{
-            [&](InstMov mov) {
-              effect << store_dst_op<true>(
-                mov.dst, load_src_op<true>(mov.src) >>= saturate(mov._.saturate)
+  std::function<llvm::Error(std::shared_ptr<BasicBlock>)> readBasicBlock =
+    [&](std::shared_ptr<BasicBlock> current) -> llvm::Error {
+    auto bb = llvm::BasicBlock::Create(context, current->debug_name, function);
+    assert(visited.insert({current.get(), bb}).second);
+    IREffect effect([](auto) { return std::monostate(); });
+    for (auto &inst : current->instructions) {
+      std::visit(
+        patterns{
+          [&effect](InstMov mov) {
+            effect << store_dst_op<true>(
+              mov.dst, load_src_op<true>(mov.src) >>= saturate(mov._.saturate)
+            );
+          },
+          [&effect](InstMovConditional movc) {
+            effect << store_dst_op<true>(
+              movc.dst,
+              make_irvalue_bind([=](struct context ctx) -> IRValue {
+                auto src0 = co_yield load_src_op<true>(movc.src0);
+                auto src1 = co_yield load_src_op<true>(movc.src1);
+                auto cond = co_yield load_src_op<false>(movc.src_cond);
+                co_return ctx.builder.CreateSelect(
+                  ctx.builder.CreateICmpNE(
+                    cond, llvm::ConstantAggregateZero::get(ctx.types._int4)
+                  ),
+                  src0, src1
+                );
+              }) >>= saturate(movc._.saturate)
+            );
+          },
+          [&effect](InstSwapConditional swapc) {
+            effect << make_effect_bind([=](struct context ctx) -> IREffect {
+              auto src0 = co_yield load_src_op<true>(swapc.src0);
+              auto src1 = co_yield load_src_op<true>(swapc.src1);
+              auto cond = co_yield load_src_op<false>(swapc.src_cond);
+              co_yield store_dst_op<true>(
+                swapc.dst0, make_irvalue([=](auto ctx) {
+                  return ctx.builder.CreateSelect(
+                    ctx.builder.CreateICmpNE(
+                      cond, llvm::ConstantAggregateZero::get(ctx.types._int4)
+                    ),
+                    src1, src0
+                  );
+                })
               );
-            },
-            [&](InstMovConditional movc) {
-              effect << store_dst_op<true>(
-                movc.dst,
-                make_irvalue_bind([=](struct context ctx) -> IRValue {
-                  auto src0 = co_yield load_src_op<true>(movc.src0);
-                  auto src1 = co_yield load_src_op<true>(movc.src1);
-                  auto cond = co_yield load_src_op<false>(movc.src_cond);
-                  co_return ctx.builder.CreateSelect(
+              co_yield store_dst_op<true>(
+                swapc.dst1, make_irvalue([=](auto ctx) {
+                  return ctx.builder.CreateSelect(
                     ctx.builder.CreateICmpNE(
                       cond, llvm::ConstantAggregateZero::get(ctx.types._int4)
                     ),
                     src0, src1
                   );
-                }) >>= saturate(movc._.saturate)
+                })
               );
-            },
-            [&](InstSwapConditional swapc) {
-              effect << make_effect_bind([=](struct context ctx) -> IREffect {
-                auto src0 = co_yield load_src_op<true>(swapc.src0);
-                auto src1 = co_yield load_src_op<true>(swapc.src1);
-                auto cond = co_yield load_src_op<false>(swapc.src_cond);
-                co_yield store_dst_op<true>(
-                  swapc.dst0, make_irvalue([=](auto ctx) {
-                    return ctx.builder.CreateSelect(
-                      ctx.builder.CreateICmpNE(
-                        cond, llvm::ConstantAggregateZero::get(ctx.types._int4)
+              co_return {};
+            });
+          },
+          [&effect](InstSample sample) {
+            effect << store_dst_op<true>(
+              sample.dst,
+              (make_irvalue_bind([=](struct context ctx) -> IRValue {
+                 assert(ctx.resource.srv_range_map.contains(
+                   sample.src_resource.range_id
+                 ));
+                 auto offset_const = llvm::ConstantVector::get(
+                   {llvm::ConstantInt::get(
+                      ctx.llvm,
+                      llvm::APInt{32, (uint64_t)sample.offsets[0], true}
+                    ),
+                    llvm::ConstantInt::get(
+                      ctx.llvm,
+                      llvm::APInt{32, (uint64_t)sample.offsets[1], true}
+                    ),
+                    llvm::ConstantInt::get(
+                      ctx.llvm,
+                      llvm::APInt{32, (uint64_t)sample.offsets[2], true}
+                    )}
+                 );
+                 auto [res, res_handle_fn] =
+                   ctx.resource.srv_range_map[sample.src_resource.range_id];
+                 auto sampler_handle_fn =
+                   ctx.resource.sampler_range_map[sample.src_sampler.range_id];
+                 auto res_h = co_yield res_handle_fn(nullptr);
+                 auto sampler_h = co_yield sampler_handle_fn(nullptr);
+                 auto coord = co_yield load_src_op<true>(sample.src_address);
+                 switch (res.resource_kind) {
+                 case air::TextureKind::texture_1d: {
+                   co_return co_yield call_sample(
+                     res, res_h, sampler_h, co_yield extract_element(0)(coord),
+                     nullptr, co_yield truncate_vec(1)(offset_const)
+                   );
+                 }
+                 case air::TextureKind::texture_1d_array: {
+                   co_return co_yield call_sample(
+                     res, res_h, sampler_h,
+                     co_yield extract_element(0)(coord), // .r
+                     co_yield extract_element(1)(coord) >>=
+                     implicit_float_to_int,                 // .g
+                     co_yield truncate_vec(1)(offset_const) // 1d offset
+                   );
+                 }
+                 case air::TextureKind::depth_2d:
+                 case air::TextureKind::texture_2d: {
+                   co_return co_yield call_sample(
+                     res, res_h, sampler_h,
+                     co_yield truncate_vec(2)(coord), // .rg
+                     nullptr,
+                     co_yield truncate_vec(2)(offset_const) // 2d offset
+                   );
+                 }
+                 case air::TextureKind::depth_2d_array:
+                 case air::TextureKind::texture_2d_array: {
+                   co_return co_yield call_sample(
+                     res, res_h, sampler_h,
+                     co_yield truncate_vec(2)(coord), // .rg
+                     co_yield extract_element(2)(coord) >>=
+                     implicit_float_to_int,                 // .b
+                     co_yield truncate_vec(2)(offset_const) // 2d offset
+                   );
+                 }
+                 case air::TextureKind::texture_3d: {
+                   co_return co_yield call_sample(
+                     res, res_h, sampler_h,
+                     co_yield truncate_vec(3)(coord), // .rgb
+                     nullptr,
+                     co_yield truncate_vec(3)(offset_const) // 3d offset
+                   );
+                 }
+                 case air::TextureKind::depth_cube:
+                 case air::TextureKind::texture_cube: {
+                   co_return co_yield call_sample(
+                     res, res_h, sampler_h,
+                     co_yield truncate_vec(3)(coord), // .rgb
+                     nullptr
+                   );
+                 }
+                 case air::TextureKind::depth_cube_array:
+                 case air::TextureKind::texture_cube_array: {
+                   co_return co_yield call_sample(
+                     res, res_h, sampler_h,
+                     co_yield truncate_vec(3)(coord), // .rgb
+                     co_yield extract_element(3)(coord) >>=
+                     implicit_float_to_int // .a
+                   );
+                 } break;
+                 default: {
+                   assert(0 && "invalid sample resource type");
+                 }
+                 }
+               }) >>= extract_value(0)) >>=
+              swizzle(sample.src_resource.read_swizzle)
+            );
+          },
+          [&effect](InstSampleLOD sample) {
+            effect << store_dst_op<true>(
+              sample.dst,
+              (make_irvalue_bind([=](struct context ctx) -> IRValue {
+                 auto offset_const = llvm::ConstantVector::get(
+                   {llvm::ConstantInt::get(
+                      ctx.llvm,
+                      llvm::APInt{32, (uint64_t)sample.offsets[0], true}
+                    ),
+                    llvm::ConstantInt::get(
+                      ctx.llvm,
+                      llvm::APInt{32, (uint64_t)sample.offsets[1], true}
+                    ),
+                    llvm::ConstantInt::get(
+                      ctx.llvm,
+                      llvm::APInt{32, (uint64_t)sample.offsets[2], true}
+                    )}
+                 );
+                 auto [res, res_handle_fn] =
+                   ctx.resource.srv_range_map[sample.src_resource.range_id];
+                 auto sampler_handle_fn =
+                   ctx.resource.sampler_range_map[sample.src_sampler.range_id];
+                 auto res_h = co_yield res_handle_fn(nullptr);
+                 auto sampler_h = co_yield sampler_handle_fn(nullptr);
+                 auto coord = co_yield load_src_op<true>(sample.src_address);
+                 auto LOD = co_yield load_src_op<true>(sample.src_lod);
+                 switch (res.resource_kind) {
+                 case air::TextureKind::texture_1d: {
+                   co_return co_yield call_sample(
+                     res, res_h, sampler_h, co_yield extract_element(0)(coord),
+                     nullptr, co_yield truncate_vec(1)(offset_const), nullptr,
+                     nullptr, co_yield extract_element(0)(LOD)
+                   );
+                 }
+                 case air::TextureKind::texture_1d_array: {
+                   co_return co_yield call_sample(
+                     res, res_h, sampler_h,
+                     co_yield extract_element(0)(coord), // .r
+                     co_yield extract_element(1)(coord) >>=
+                     implicit_float_to_int,                  // .g
+                     co_yield truncate_vec(1)(offset_const), // 1d offset
+                     nullptr, nullptr, co_yield extract_element(0)(LOD)
+                   );
+                 }
+                 case air::TextureKind::depth_2d:
+                 case air::TextureKind::texture_2d: {
+                   co_return co_yield call_sample(
+                     res, res_h, sampler_h,
+                     co_yield truncate_vec(2)(coord), // .rg
+                     nullptr,
+                     co_yield truncate_vec(2)(offset_const), // 2d offset
+                     nullptr, nullptr, co_yield extract_element(0)(LOD)
+                   );
+                 }
+                 case air::TextureKind::depth_2d_array:
+                 case air::TextureKind::texture_2d_array: {
+                   co_return co_yield call_sample(
+                     res, res_h, sampler_h,
+                     co_yield truncate_vec(2)(coord), // .rg
+                     co_yield extract_element(2)(coord) >>=
+                     implicit_float_to_int,                  // .b
+                     co_yield truncate_vec(2)(offset_const), // 2d offset
+                     nullptr, nullptr, co_yield extract_element(0)(LOD)
+                   );
+                 }
+                 case air::TextureKind::texture_3d: {
+                   co_return co_yield call_sample(
+                     res, res_h, sampler_h,
+                     co_yield truncate_vec(3)(coord), // .rgb
+                     nullptr,
+                     co_yield truncate_vec(3)(offset_const), // 3d offset
+                     nullptr, nullptr, co_yield extract_element(0)(LOD)
+                   );
+                 }
+                 case air::TextureKind::depth_cube:
+                 case air::TextureKind::texture_cube: {
+                   co_return co_yield call_sample(
+                     res, res_h, sampler_h,
+                     co_yield truncate_vec(3)(coord), // .rgb
+                     nullptr, nullptr, nullptr, nullptr,
+                     co_yield extract_element(0)(LOD)
+                   );
+                 }
+                 case air::TextureKind::depth_cube_array:
+                 case air::TextureKind::texture_cube_array: {
+                   co_return co_yield call_sample(
+                     res, res_h, sampler_h,
+                     co_yield truncate_vec(3)(coord), // .rgb
+                     co_yield extract_element(3)(coord) >>=
+                     implicit_float_to_int, // .a
+                     nullptr, nullptr, nullptr, co_yield extract_element(0)(LOD)
+                   );
+                 } break;
+                 default: {
+                   assert(0 && "invalid sample resource type");
+                 }
+                 }
+               }) >>= extract_value(0)) >>=
+              swizzle(sample.src_resource.read_swizzle)
+            );
+          },
+          [&effect](InstSampleBias sample) {
+            effect << store_dst_op<true>(
+              sample.dst,
+              (make_irvalue_bind([=](struct context ctx) -> IRValue {
+                 auto offset_const = llvm::ConstantVector::get(
+                   {llvm::ConstantInt::get(
+                      ctx.llvm,
+                      llvm::APInt{32, (uint64_t)sample.offsets[0], true}
+                    ),
+                    llvm::ConstantInt::get(
+                      ctx.llvm,
+                      llvm::APInt{32, (uint64_t)sample.offsets[1], true}
+                    ),
+                    llvm::ConstantInt::get(
+                      ctx.llvm,
+                      llvm::APInt{32, (uint64_t)sample.offsets[2], true}
+                    )}
+                 );
+                 auto [res, res_handle_fn] =
+                   ctx.resource.srv_range_map[sample.src_resource.range_id];
+                 auto sampler_handle_fn =
+                   ctx.resource.sampler_range_map[sample.src_sampler.range_id];
+                 auto res_h = co_yield res_handle_fn(nullptr);
+                 auto sampler_h = co_yield sampler_handle_fn(nullptr);
+                 auto coord = co_yield load_src_op<true>(sample.src_address);
+                 auto bias = co_yield load_src_op<true>(sample.src_bias);
+                 switch (res.resource_kind) {
+                 case air::TextureKind::texture_1d: {
+                   co_return co_yield call_sample(
+                     res, res_h, sampler_h, co_yield extract_element(0)(coord),
+                     nullptr, co_yield truncate_vec(1)(offset_const),
+                     co_yield extract_element(0)(bias)
+                   );
+                 }
+                 case air::TextureKind::texture_1d_array: {
+                   co_return co_yield call_sample(
+                     res, res_h, sampler_h,
+                     co_yield extract_element(0)(coord), // .r
+                     co_yield extract_element(1)(coord) >>=
+                     implicit_float_to_int,                  // .g
+                     co_yield truncate_vec(1)(offset_const), // 1d offset
+                     co_yield extract_element(0)(bias)
+                   );
+                 }
+                 case air::TextureKind::depth_2d:
+                 case air::TextureKind::texture_2d: {
+                   co_return co_yield call_sample(
+                     res, res_h, sampler_h,
+                     co_yield truncate_vec(2)(coord), // .rg
+                     nullptr,
+                     co_yield truncate_vec(2)(offset_const), // 2d offset
+                     co_yield extract_element(0)(bias)
+                   );
+                 }
+                 case air::TextureKind::depth_2d_array:
+                 case air::TextureKind::texture_2d_array: {
+                   co_return co_yield call_sample(
+                     res, res_h, sampler_h,
+                     co_yield truncate_vec(2)(coord), // .rg
+                     co_yield extract_element(2)(coord) >>=
+                     implicit_float_to_int,                  // .b
+                     co_yield truncate_vec(2)(offset_const), // 2d offset
+                     co_yield extract_element(0)(bias)
+                   );
+                 }
+                 case air::TextureKind::texture_3d: {
+                   co_return co_yield call_sample(
+                     res, res_h, sampler_h,
+                     co_yield truncate_vec(3)(coord), // .rgb
+                     nullptr,
+                     co_yield truncate_vec(3)(offset_const), // 3d offset
+                     co_yield extract_element(0)(bias)
+                   );
+                 }
+                 case air::TextureKind::depth_cube:
+                 case air::TextureKind::texture_cube: {
+                   co_return co_yield call_sample(
+                     res, res_h, sampler_h,
+                     co_yield truncate_vec(3)(coord), // .rgb
+                     nullptr, nullptr, co_yield extract_element(0)(bias)
+                   );
+                 }
+                 case air::TextureKind::depth_cube_array:
+                 case air::TextureKind::texture_cube_array: {
+                   co_return co_yield call_sample(
+                     res, res_h, sampler_h,
+                     co_yield truncate_vec(3)(coord), // .rgb
+                     co_yield extract_element(3)(coord) >>=
+                     implicit_float_to_int, // .a
+                     nullptr, co_yield extract_element(0)(bias)
+                   );
+                 } break;
+                 default: {
+                   assert(0 && "invalid sample resource type");
+                 }
+                 }
+               }) >>= extract_value(0)) >>=
+              swizzle(sample.src_resource.read_swizzle)
+            );
+          },
+          [&effect](InstSampleDerivative sample) {
+            effect << store_dst_op<true>(
+              sample.dst,
+              (make_irvalue_bind([=](struct context ctx) -> IRValue {
+                 auto offset_const = llvm::ConstantVector::get(
+                   {llvm::ConstantInt::get(
+                      ctx.llvm,
+                      llvm::APInt{32, (uint64_t)sample.offsets[0], true}
+                    ),
+                    llvm::ConstantInt::get(
+                      ctx.llvm,
+                      llvm::APInt{32, (uint64_t)sample.offsets[1], true}
+                    ),
+                    llvm::ConstantInt::get(
+                      ctx.llvm,
+                      llvm::APInt{32, (uint64_t)sample.offsets[2], true}
+                    )}
+                 );
+                 auto [res, res_handle_fn] =
+                   ctx.resource.srv_range_map[sample.src_resource.range_id];
+                 auto sampler_handle_fn =
+                   ctx.resource.sampler_range_map[sample.src_sampler.range_id];
+                 auto res_h = co_yield res_handle_fn(nullptr);
+                 auto sampler_h = co_yield sampler_handle_fn(nullptr);
+                 auto coord = co_yield load_src_op<true>(sample.src_address);
+                 auto dpdx =
+                   co_yield load_src_op<true>(sample.src_x_derivative);
+                 auto dpdy =
+                   co_yield load_src_op<true>(sample.src_x_derivative);
+                 switch (res.resource_kind) {
+                 case air::TextureKind::depth_2d:
+                 case air::TextureKind::texture_2d: {
+                   co_return co_yield call_sample_grad(
+                     res, res_h, sampler_h,
+                     co_yield truncate_vec(2)(coord), // .rg
+                     nullptr,                         // array_index
+                     co_yield truncate_vec(2)(dpdx),
+                     co_yield truncate_vec(2)(dpdy), nullptr,
+                     co_yield truncate_vec(2)(offset_const) // 2d offset
+                   );
+                 }
+                 case air::TextureKind::depth_2d_array:
+                 case air::TextureKind::texture_2d_array: {
+                   co_return co_yield call_sample_grad(
+                     res, res_h, sampler_h,
+                     co_yield truncate_vec(2)(coord), // .rg
+                     co_yield extract_element(2)(coord) >>=
+                     implicit_float_to_int, // array_index
+                     co_yield truncate_vec(2)(dpdx),
+                     co_yield truncate_vec(2)(dpdy), nullptr,
+                     co_yield truncate_vec(2)(offset_const) // 2d offset
+                   );
+                 }
+                 case air::TextureKind::texture_3d: {
+                   co_return co_yield call_sample_grad(
+                     res, res_h, sampler_h,
+                     co_yield truncate_vec(3)(coord), // .rgb
+                     nullptr,                         // array_index
+                     co_yield truncate_vec(3)(dpdx),
+                     co_yield truncate_vec(3)(dpdy), nullptr,
+                     co_yield truncate_vec(3)(offset_const) // 3d offset
+                   );
+                 }
+                 case air::TextureKind::depth_cube:
+                 case air::TextureKind::texture_cube: {
+                   co_return co_yield call_sample_grad(
+                     res, res_h, sampler_h,
+                     co_yield truncate_vec(3)(coord), // .rgb
+                     nullptr,                         // array_index
+                     co_yield truncate_vec(3)(dpdx),
+                     co_yield truncate_vec(3)(dpdy), nullptr, nullptr
+                   );
+                 }
+                 case air::TextureKind::depth_cube_array:
+                 case air::TextureKind::texture_cube_array: {
+                   co_return co_yield call_sample_grad(
+                     res, res_h, sampler_h,
+                     co_yield truncate_vec(2)(coord), // .rgb
+                     co_yield extract_element(3)(coord) >>=
+                     implicit_float_to_int, // array_index
+                     co_yield truncate_vec(3)(dpdx),
+                     co_yield truncate_vec(3)(dpdy), nullptr, nullptr
+                   );
+                 } break;
+                 default: {
+                   assert(0 && "invalid sample resource type");
+                 }
+                 }
+               }) >>= extract_value(0)) >>=
+              swizzle(sample.src_resource.read_swizzle)
+            );
+          },
+          [&effect](InstSampleCompare sample) {
+            effect << store_dst_op<true>(
+              sample.dst,
+              (make_irvalue_bind([=](struct context ctx) -> IRValue {
+                 auto offset_const = llvm::ConstantVector::get(
+                   {llvm::ConstantInt::get(
+                      ctx.llvm,
+                      llvm::APInt{32, (uint64_t)sample.offsets[0], true}
+                    ),
+                    llvm::ConstantInt::get(
+                      ctx.llvm,
+                      llvm::APInt{32, (uint64_t)sample.offsets[1], true}
+                    ),
+                    llvm::ConstantInt::get(
+                      ctx.llvm,
+                      llvm::APInt{32, (uint64_t)sample.offsets[2], true}
+                    )}
+                 );
+                 auto [res, res_handle_fn] =
+                   ctx.resource.srv_range_map[sample.src_resource.range_id];
+                 auto sampler_handle_fn =
+                   ctx.resource.sampler_range_map[sample.src_sampler.range_id];
+                 auto res_h = co_yield res_handle_fn(nullptr);
+                 auto sampler_h = co_yield sampler_handle_fn(nullptr);
+                 auto coord = co_yield load_src_op<true>(sample.src_address);
+                 auto reference =
+                   co_yield load_src_op<true>(sample.src_reference);
+                 switch (res.resource_kind) {
+                 case air::TextureKind::depth_2d: {
+                   co_return co_yield call_sample_compare(
+                     res, res_h, sampler_h,
+                     co_yield truncate_vec(2)(coord),        // .rg
+                     nullptr,                                // array_index
+                     co_yield extract_element(0)(reference), // reference
+                     co_yield truncate_vec(2)(offset_const), // 2d offset
+                     nullptr, nullptr,
+                     sample.level_zero
+                       ? llvm::ConstantFP::getZero(ctx.types._float)
+                       : nullptr
+                   );
+                 }
+                 case air::TextureKind::depth_2d_array: {
+                   co_return co_yield call_sample_compare(
+                     res, res_h, sampler_h,
+                     co_yield truncate_vec(2)(coord), // .rg
+                     co_yield extract_element(2)(coord) >>=
+                     implicit_float_to_int,                  // array_index
+                     co_yield extract_element(0)(reference), // reference
+                     co_yield truncate_vec(2)(offset_const), // 2d offset
+                     nullptr, nullptr,
+                     sample.level_zero
+                       ? llvm::ConstantFP::getZero(ctx.types._float)
+                       : nullptr
+                   );
+                 }
+                 case air::TextureKind::depth_cube: {
+                   co_return co_yield call_sample_compare(
+                     res, res_h, sampler_h,
+                     co_yield truncate_vec(3)(coord),        // .rgb
+                     nullptr,                                // array_index
+                     co_yield extract_element(0)(reference), // reference
+                     nullptr, nullptr, nullptr,
+                     sample.level_zero
+                       ? llvm::ConstantFP::getZero(ctx.types._float)
+                       : nullptr
+                   );
+                 }
+                 case air::TextureKind::depth_cube_array: {
+                   co_return co_yield call_sample_compare(
+                     res, res_h, sampler_h,
+                     co_yield truncate_vec(3)(coord), // .rgb
+                     co_yield extract_element(3)(coord) >>=
+                     implicit_float_to_int,                  // array_index
+                     co_yield extract_element(0)(reference), // reference
+                     nullptr, nullptr, nullptr,
+                     sample.level_zero
+                       ? llvm::ConstantFP::getZero(ctx.types._float)
+                       : nullptr
+                   );
+                 } break;
+                 default: {
+                   assert(0 && "invalid sample_compare resource type");
+                 }
+                 }
+               }) >>= extract_value(0))
+            );
+          },
+          [&effect](InstGather sample) {
+            effect << store_dst_op<true>(
+              sample.dst,
+              (make_irvalue_bind([=](struct context ctx) -> IRValue {
+                 auto [res, res_handle_fn] =
+                   ctx.resource.srv_range_map[sample.src_resource.range_id];
+                 auto sampler_handle_fn =
+                   ctx.resource.sampler_range_map[sample.src_sampler.range_id];
+                 auto res_h = co_yield res_handle_fn(nullptr);
+                 auto sampler_h = co_yield sampler_handle_fn(nullptr);
+                 auto coord = co_yield load_src_op<true>(sample.src_address);
+                 auto offset = co_yield load_src_op<false>(sample.offset);
+                 auto component =
+                   co_yield get_int(sample.src_sampler.gather_channel);
+                 switch (res.resource_kind) {
+                 case air::TextureKind::depth_2d:
+                 case air::TextureKind::texture_2d: {
+                   co_return co_yield call_gather(
+                     res, res_h, sampler_h, co_yield truncate_vec(2)(coord),
+                     nullptr, co_yield truncate_vec(2)(offset), component
+                   );
+                 }
+                 case air::TextureKind::depth_2d_array:
+                 case air::TextureKind::texture_2d_array: {
+                   co_return co_yield call_gather(
+                     res, res_h, sampler_h, co_yield truncate_vec(2)(coord),
+                     co_yield extract_element(2)(coord) >>=
+                     implicit_float_to_int, // .b
+                     co_yield truncate_vec(2)(offset), component
+                   );
+                 }
+                 case air::TextureKind::depth_cube:
+                 case air::TextureKind::texture_cube: {
+                   co_return co_yield call_gather(
+                     res, res_h, sampler_h, co_yield truncate_vec(3)(coord),
+                     nullptr, nullptr, component
+                   );
+                 }
+                 case air::TextureKind::depth_cube_array:
+                 case air::TextureKind::texture_cube_array: {
+                   co_return co_yield call_gather(
+                     res, res_h, sampler_h, co_yield truncate_vec(3)(coord),
+                     co_yield extract_element(3)(coord) >>=
+                     implicit_float_to_int, // .b
+                     nullptr, component
+                   );
+                 } break;
+                 default: {
+                   assert(0 && "invalid sample resource type");
+                 }
+                 }
+               }) >>= extract_value(0)) >>=
+              swizzle(sample.src_resource.read_swizzle)
+            );
+          },
+          [&effect](InstGatherCompare sample) {
+            effect << store_dst_op<true>(
+              sample.dst,
+              (make_irvalue_bind([=](struct context ctx) -> IRValue {
+                 auto [res, res_handle_fn] =
+                   ctx.resource.srv_range_map[sample.src_resource.range_id];
+                 auto sampler_handle_fn =
+                   ctx.resource.sampler_range_map[sample.src_sampler.range_id];
+                 auto res_h = co_yield res_handle_fn(nullptr);
+                 auto sampler_h = co_yield sampler_handle_fn(nullptr);
+                 auto coord = co_yield load_src_op<true>(sample.src_address);
+                 auto offset = co_yield load_src_op<false>(sample.offset);
+                 auto reference =
+                   co_yield load_src_op<true>(sample.src_reference);
+                 switch (res.resource_kind) {
+                 case air::TextureKind::depth_2d: {
+                   co_return co_yield call_gather_compare(
+                     res, res_h, sampler_h, co_yield truncate_vec(2)(coord),
+                     nullptr, co_yield extract_element(0)(reference),
+                     co_yield truncate_vec(2)(offset)
+                   );
+                 }
+                 case air::TextureKind::depth_2d_array: {
+                   co_return co_yield call_gather_compare(
+                     res, res_h, sampler_h, co_yield truncate_vec(2)(coord),
+                     co_yield extract_element(2)(coord) >>=
+                     implicit_float_to_int, // .b
+                     co_yield extract_element(0)(reference),
+                     co_yield truncate_vec(2)(offset)
+                   );
+                 }
+                 case air::TextureKind::depth_cube: {
+                   co_return co_yield call_gather_compare(
+                     res, res_h, sampler_h, co_yield truncate_vec(3)(coord),
+                     nullptr, co_yield extract_element(0)(reference), nullptr
+                   );
+                 }
+                 case air::TextureKind::depth_cube_array: {
+                   co_return co_yield call_gather_compare(
+                     res, res_h, sampler_h, co_yield truncate_vec(3)(coord),
+                     co_yield extract_element(3)(coord) >>=
+                     implicit_float_to_int, // .a
+                     co_yield extract_element(0)(reference), nullptr
+                   );
+                 } break;
+                 default: {
+                   assert(0 && "invalid sample resource type");
+                 }
+                 }
+               }) >>= extract_value(0)) >>=
+              swizzle(sample.src_resource.read_swizzle)
+            );
+          },
+
+          [&effect](InstLoad load) {
+            effect << make_effect_bind([=](struct context ctx) -> IREffect {
+              auto [res, res_handle_fn] =
+                ctx.resource.srv_range_map[load.src_resource.range_id];
+              auto res_h = co_yield res_handle_fn(nullptr);
+              auto coord = co_yield load_src_op<false>(load.src_address);
+              pvalue ret;
+              switch (res.resource_kind) {
+              case air::TextureKind::texture_buffer:
+              case air::TextureKind::texture_1d: {
+                ret = co_yield call_read(
+                  res, res_h, co_yield extract_element(0)(coord),
+                  co_yield get_int(load.offsets[0])
+                );
+                break;
+              }
+              case air::TextureKind::texture_1d_array: {
+                ret = co_yield call_read(
+                  res, res_h, co_yield extract_element(0)(coord),
+                  co_yield get_int(load.offsets[0]), nullptr,
+                  co_yield extract_element(1)(coord)
+                );
+                break;
+              }
+              case air::TextureKind::depth_2d:
+              case air::TextureKind::texture_2d: {
+                ret = co_yield call_read(
+                  res, res_h, co_yield truncate_vec(2)(coord),
+                  co_yield get_int2(load.offsets[0], load.offsets[1])
+                );
+                break;
+              }
+              case air::TextureKind::depth_2d_array:
+              case air::TextureKind::texture_2d_array: {
+                ret = co_yield call_read(
+                  res, res_h, co_yield truncate_vec(2)(coord),
+                  co_yield get_int2(load.offsets[0], load.offsets[1]), nullptr,
+                  co_yield extract_element(2)(coord)
+                );
+                break;
+              }
+              case air::TextureKind::texture_3d: {
+                ret = co_yield call_read(
+                  res, res_h, co_yield truncate_vec(3)(coord),
+                  co_yield get_int3(
+                    load.offsets[0], load.offsets[1], load.offsets[2]
+                  )
+                );
+                break;
+              }
+              case air::TextureKind::texture_2d_ms:
+              case air::TextureKind::depth_2d_ms: {
+                auto sample_index =
+                  co_yield load_src_op<false>(load.src_sample_index.value()) >>=
+                  extract_element(0);
+                ret = co_yield call_read(
+                  res, res_h, co_yield truncate_vec(2)(coord),
+                  co_yield get_int2(load.offsets[0], load.offsets[1]), nullptr,
+                  nullptr, sample_index
+                );
+                break;
+              }
+              case air::TextureKind::texture_2d_ms_array:
+              case air::TextureKind::depth_2d_ms_array: {
+                auto sample_index =
+                  co_yield load_src_op<false>(load.src_sample_index.value()) >>=
+                  extract_element(0);
+                ret = co_yield call_read(
+                  res, res_h, co_yield truncate_vec(2)(coord),
+                  co_yield get_int2(load.offsets[0], load.offsets[1]), nullptr,
+                  co_yield extract_element(2)(coord), sample_index
+                );
+                break;
+              }
+              default: {
+                assert(0 && "invalid load resource type");
+              }
+              }
+              ret = co_yield extract_value(0)(ret) >>=
+                swizzle(load.src_resource.read_swizzle);
+              co_return co_yield std::visit(
+                patterns{
+                  [&](air::MSLFloat) {
+                    return store_dst_op<true>(load.dst, pure(ret));
+                  },
+                  [&](auto) { return store_dst_op<false>(load.dst, pure(ret)); }
+                },
+                res.component_type
+              );
+            });
+          },
+          [&effect](InstLoadUAVTyped load) {
+            effect << make_effect_bind([=](struct context ctx) -> IREffect {
+              auto [res, res_handle_fn] =
+                ctx.resource.uav_range_map[load.src_uav.range_id];
+              auto res_h = co_yield res_handle_fn(nullptr);
+              auto coord = co_yield load_src_op<false>(load.src_address);
+              pvalue ret;
+              switch (res.resource_kind) {
+              case air::TextureKind::texture_buffer:
+              case air::TextureKind::texture_1d: {
+                ret = co_yield call_read(
+                  res, res_h, co_yield extract_element(0)(coord)
+                );
+                break;
+              }
+              case air::TextureKind::texture_1d_array: {
+                ret = co_yield call_read(
+                  res, res_h, co_yield extract_element(0)(coord), nullptr,
+                  nullptr, co_yield extract_element(1)(coord)
+                );
+                break;
+              }
+              case air::TextureKind::depth_2d:
+              case air::TextureKind::texture_2d: {
+                ret = co_yield call_read(
+                  res, res_h, co_yield truncate_vec(2)(coord)
+                );
+                break;
+              }
+              case air::TextureKind::depth_2d_array:
+              case air::TextureKind::texture_2d_array: {
+                ret = co_yield call_read(
+                  res, res_h, co_yield truncate_vec(2)(coord), nullptr, nullptr,
+                  co_yield extract_element(2)(coord)
+                );
+                break;
+              }
+              case air::TextureKind::texture_3d: {
+                ret = co_yield call_read(
+                  res, res_h, co_yield truncate_vec(3)(coord)
+                );
+                break;
+              }
+              default: {
+                assert(0 && "invalid load resource type");
+              }
+              }
+              ret = co_yield extract_value(0)(ret) >>=
+                swizzle(load.src_uav.read_swizzle);
+              co_return co_yield std::visit(
+                patterns{
+                  [&](air::MSLFloat) {
+                    return store_dst_op<true>(load.dst, pure(ret));
+                  },
+                  [&](auto) { return store_dst_op<false>(load.dst, pure(ret)); }
+                },
+                res.component_type
+              );
+            });
+          },
+          [&effect](InstStoreUAVTyped store) {
+            effect << make_effect_bind([=](struct context ctx) -> IREffect {
+              auto [res, res_handle_fn] =
+                ctx.resource.uav_range_map[store.dst.range_id];
+              auto res_h = co_yield res_handle_fn(nullptr);
+              auto address = co_yield load_src_op<false>(store.src_address);
+              auto value = co_yield std::visit(
+                patterns{
+                  [&](air::MSLFloat) { return load_src_op<true>(store.src); },
+                  [&](auto) { return load_src_op<false>(store.src); }
+                },
+                res.component_type
+              );
+
+              switch (res.resource_kind) {
+              case air::TextureKind::texture_buffer:
+                co_yield call_write(
+                  res, res_h, co_yield extract_element(0)(address), nullptr,
+                  nullptr, value, ctx.builder.getInt32(0)
+                );
+                break;
+              case air::TextureKind::texture_1d:
+                co_yield call_write(
+                  res, res_h, co_yield extract_element(0)(address), nullptr,
+                  nullptr, value, ctx.builder.getInt32(0)
+                );
+                break;
+              case air::TextureKind::texture_1d_array:
+                co_yield call_write(
+                  res, res_h, co_yield extract_element(0)(address), nullptr,
+                  co_yield extract_element(1)(address), value,
+                  ctx.builder.getInt32(0)
+                );
+                break;
+              case air::TextureKind::texture_2d:
+                co_yield call_write(
+                  res, res_h, co_yield truncate_vec(2)(address), nullptr,
+                  nullptr, value, ctx.builder.getInt32(0)
+                );
+                break;
+              case air::TextureKind::texture_2d_array: {
+                co_yield call_write(
+                  res, res_h, co_yield truncate_vec(2)(address), nullptr,
+                  co_yield extract_element(2)(address), value,
+                  ctx.builder.getInt32(0)
+                );
+                break;
+              }
+              case air::TextureKind::texture_3d:
+                co_yield call_write(
+                  res, res_h, co_yield truncate_vec(3)(address), nullptr,
+                  nullptr, value, ctx.builder.getInt32(0)
+                );
+                break;
+              default:
+                assert(0 && "invalid texture kind for uav store");
+              }
+              co_return {};
+            });
+          },
+          [&effect](InstLoadStructured load) {
+            effect << std::visit(
+              patterns{
+                [&](SrcOperandTGSM tgsm) {
+                  return make_effect_bind([=](struct context ctx) -> IREffect {
+                    auto [stride, _] = ctx.resource.tgsm_map[tgsm.id];
+                    co_return co_yield store_dst_op<false>(
+                      load.dst,
+                      load_from_uint_bufptr(
+                        co_yield read_uint_buf_addr(tgsm),
+                        co_yield calc_uint_ptr_index(
+                          stride, load.src_address, load.src_byte_offset
+                        ),
+                        std::max(
+                          {tgsm.read_swizzle.x, tgsm.read_swizzle.y,
+                           tgsm.read_swizzle.z, tgsm.read_swizzle.w}
+                        ) +
+                          1
+                      ) >>= swizzle(tgsm.read_swizzle)
+                    );
+                  });
+                },
+                [&](SrcOperandResource srv) {
+                  return make_effect_bind([=](struct context ctx) -> IREffect {
+                    auto [__, _, stride] =
+                      ctx.resource.srv_buf_range_map[srv.range_id];
+                    co_return co_yield store_dst_op<false>(
+                      load.dst,
+                      load_from_uint_bufptr(
+                        co_yield read_uint_buf_addr(srv),
+                        co_yield calc_uint_ptr_index(
+                          stride, load.src_address, load.src_byte_offset
+                        ),
+                        std::max(
+                          {srv.read_swizzle.x, srv.read_swizzle.y,
+                           srv.read_swizzle.z, srv.read_swizzle.w}
+                        ) +
+                          1
+                      ) >>= swizzle(srv.read_swizzle)
+                    );
+                  });
+                },
+                [&](SrcOperandUAV uav) {
+                  return make_effect_bind([=](struct context ctx) -> IREffect {
+                    auto [__, _, stride] =
+                      ctx.resource.uav_buf_range_map[uav.range_id];
+                    co_return co_yield store_dst_op<false>(
+                      load.dst,
+                      load_from_uint_bufptr(
+                        co_yield read_uint_buf_addr(uav),
+                        co_yield calc_uint_ptr_index(
+                          stride, load.src_address, load.src_byte_offset
+                        ),
+                        std::max(
+                          {uav.read_swizzle.x, uav.read_swizzle.y,
+                           uav.read_swizzle.z, uav.read_swizzle.w}
+                        ) +
+                          1
+                      ) >>= swizzle(uav.read_swizzle)
+                    );
+                  });
+                }
+              },
+              load.src
+            );
+          },
+          [&effect](InstStoreStructured store) {
+            effect << std::visit(
+              patterns{
+                [&](AtomicOperandTGSM tgsm) {
+                  return make_effect_bind([=](struct context ctx) -> IREffect {
+                    auto [stride, _] = ctx.resource.tgsm_map[tgsm.id];
+                    co_return co_yield store_to_uint_bufptr(
+                      co_yield read_uint_buf_addr(tgsm),
+                      co_yield calc_uint_ptr_index(
+                        stride, store.dst_address, store.dst_byte_offset
                       ),
-                      src1, src0
+                      mask_to_linear_components_num(tgsm.mask),
+                      co_yield load_src_op<false>(store.src)
+                    );
+                  });
+                },
+                [&](AtomicDstOperandUAV uav) {
+                  return make_effect_bind([=](struct context ctx) -> IREffect {
+                    auto [__, _, stride] =
+                      ctx.resource.uav_buf_range_map[uav.range_id];
+                    co_return co_yield store_to_uint_bufptr(
+                      co_yield read_uint_buf_addr(uav),
+                      co_yield calc_uint_ptr_index(
+                        stride, store.dst_address, store.dst_byte_offset
+                      ),
+                      mask_to_linear_components_num(uav.mask),
+                      co_yield load_src_op<false>(store.src)
+                    );
+                  });
+                }
+              },
+              store.dst
+            );
+          },
+          [&effect](InstLoadRaw load) {
+            effect << std::visit(
+              patterns{
+                [&](SrcOperandTGSM tgsm) {
+                  return make_effect_bind([=](struct context ctx) -> IREffect {
+                    co_return co_yield store_dst_op<false>(
+                      load.dst, load_from_uint_bufptr(
+                                  co_yield read_uint_buf_addr(tgsm),
+                                  co_yield calc_uint_ptr_index(
+                                    0, 0, load.src_byte_offset
+                                  ),
+                                  std::max(
+                                    {tgsm.read_swizzle.x, tgsm.read_swizzle.y,
+                                     tgsm.read_swizzle.z, tgsm.read_swizzle.w}
+                                  ) +
+                                    1
+                                ) >>= swizzle(tgsm.read_swizzle)
+                    );
+                  });
+                },
+                [&](SrcOperandResource srv) {
+                  return make_effect_bind([=](struct context ctx) -> IREffect {
+                    co_return co_yield store_dst_op<false>(
+                      load.dst, load_from_uint_bufptr(
+                                  co_yield read_uint_buf_addr(srv),
+                                  co_yield calc_uint_ptr_index(
+                                    0, 0, load.src_byte_offset
+                                  ),
+                                  std::max(
+                                    {srv.read_swizzle.x, srv.read_swizzle.y,
+                                     srv.read_swizzle.z, srv.read_swizzle.w}
+                                  ) +
+                                    1
+                                ) >>= swizzle(srv.read_swizzle)
+                    );
+                  });
+                },
+                [&](SrcOperandUAV uav) {
+                  return make_effect_bind([=](struct context ctx) -> IREffect {
+                    co_return co_yield store_dst_op<false>(
+                      load.dst, load_from_uint_bufptr(
+                                  co_yield read_uint_buf_addr(uav),
+                                  co_yield calc_uint_ptr_index(
+                                    0, 0, load.src_byte_offset
+                                  ),
+                                  std::max(
+                                    {uav.read_swizzle.x, uav.read_swizzle.y,
+                                     uav.read_swizzle.z, uav.read_swizzle.w}
+                                  ) +
+                                    1
+                                ) >>= swizzle(uav.read_swizzle)
+                    );
+                  });
+                }
+              },
+              load.src
+            );
+          },
+          [&effect](InstStoreRaw store) {
+            effect << std::visit(
+              patterns{
+                [&](AtomicOperandTGSM tgsm) {
+                  return make_effect_bind([=](struct context ctx) -> IREffect {
+                    auto [stride, tgsm_h] = ctx.resource.tgsm_map[tgsm.id];
+                    co_return co_yield store_tgsm(
+                      tgsm_h,
+                      co_yield calc_uint_ptr_index(0, 0, store.dst_byte_offset),
+                      mask_to_linear_components_num(tgsm.mask),
+                      co_yield load_src_op<false>(store.src)
+                    );
+                  });
+                },
+                [&](AtomicDstOperandUAV uav) {
+                  return make_effect_bind([=](struct context ctx) -> IREffect {
+                    co_return co_yield store_to_uint_bufptr(
+                      co_yield read_uint_buf_addr(uav),
+                      co_yield calc_uint_ptr_index(0, 0, store.dst_byte_offset),
+                      mask_to_linear_components_num(uav.mask),
+                      co_yield load_src_op<false>(store.src)
+                    );
+                  });
+                }
+              },
+              store.dst
+            );
+          },
+          [&effect](InstIntegerCompare icmp) {
+            llvm::CmpInst::Predicate pred;
+            switch (icmp.cmp) {
+            case IntegerComparison::Equal:
+              pred = llvm::CmpInst::ICMP_EQ;
+              break;
+            case IntegerComparison::NotEqual:
+              pred = llvm::CmpInst::ICMP_NE;
+              break;
+            case IntegerComparison::SignedLessThan:
+              pred = llvm::CmpInst::ICMP_SLT;
+              break;
+            case IntegerComparison::SignedGreaterEqual:
+              pred = llvm::CmpInst::ICMP_SGE;
+              break;
+            case IntegerComparison::UnsignedLessThan:
+              pred = llvm::CmpInst::ICMP_ULT;
+              break;
+            case IntegerComparison::UnsignedGreaterEqual:
+              pred = llvm::CmpInst::ICMP_UGE;
+              break;
+            }
+            effect << store_dst_op<false>(
+              icmp.dst,
+              lift(
+                load_src_op<false>(icmp.src0), load_src_op<false>(icmp.src1),
+                [=](auto a, auto b) { return cmp_integer(pred, a, b); }
+              )
+            );
+          },
+          [&effect](InstIntegerUnaryOp unary) {
+            std::function<IRValue(pvalue)> fn;
+            switch (unary.op) {
+            case IntegerUnaryOp::Neg:
+              fn = [=](pvalue a) {
+                return make_irvalue([=](struct context ctx) {
+                  return ctx.builder.CreateNeg(a);
+                });
+              };
+              break;
+            case IntegerUnaryOp::Not:
+              fn = [=](pvalue a) {
+                return make_irvalue([=](struct context ctx) {
+                  return ctx.builder.CreateNot(a);
+                });
+              };
+              break;
+            case IntegerUnaryOp::ReverseBits:
+              fn = [=](pvalue a) {
+                // metal shader spec doesn't make it clear
+                // if this is component-wise...
+                return call_integer_unary_op("reverse_bits", a);
+              };
+              break;
+            case IntegerUnaryOp::CountBits:
+              fn = [=](pvalue a) {
+                // metal shader spec doesn't make it clear
+                // if this is component-wise...
+                return call_integer_unary_op("popcount", a);
+              };
+              break;
+            case IntegerUnaryOp::FirstHiBitSigned:
+            case IntegerUnaryOp::FirstHiBit:
+            case IntegerUnaryOp::FirstLowBit:
+              assert(0 && "TODO: should be polyfilled");
+              break;
+            }
+            auto mask = get_dst_mask(unary.dst);
+            effect << store_dst_op<false>(
+              unary.dst, load_src_op<false>(unary.src, mask) >>= fn
+            );
+          },
+          [&effect](InstIntegerBinaryOp bin) {
+            std::function<IRValue(pvalue, pvalue)> fn;
+            switch (bin.op) {
+            case IntegerBinaryOp::IShl:
+              fn = [=](pvalue a, pvalue b) {
+                return make_irvalue([=](struct context ctx) {
+                  return ctx.builder.CreateShl(
+                    a, ctx.builder.CreateAnd(b, 0x1f)
+                  );
+                });
+              };
+              break;
+            case IntegerBinaryOp::IShr:
+              fn = [=](pvalue a, pvalue b) {
+                return make_irvalue([=](struct context ctx) {
+                  return ctx.builder.CreateAShr(
+                    a, ctx.builder.CreateAnd(b, 0x1f)
+                  );
+                });
+              };
+              break;
+            case IntegerBinaryOp::UShr:
+              fn = [=](pvalue a, pvalue b) {
+                return make_irvalue([=](struct context ctx) {
+                  return ctx.builder.CreateLShr(
+                    a, ctx.builder.CreateAnd(b, 0x1f)
+                  );
+                });
+              };
+              break;
+            case IntegerBinaryOp::Xor:
+              fn = [=](pvalue a, pvalue b) {
+                return make_irvalue([=](struct context ctx) {
+                  return ctx.builder.CreateXor(a, b);
+                });
+              };
+              break;
+            case IntegerBinaryOp::And:
+              fn = [=](pvalue a, pvalue b) {
+                return make_irvalue([=](struct context ctx) {
+                  return ctx.builder.CreateAnd(a, b);
+                });
+              };
+              break;
+            case IntegerBinaryOp::Or:
+              fn = [=](pvalue a, pvalue b) {
+                return make_irvalue([=](struct context ctx) {
+                  return ctx.builder.CreateOr(a, b);
+                });
+              };
+              break;
+            case IntegerBinaryOp::Add:
+              fn = [=](pvalue a, pvalue b) {
+                return make_irvalue([=](struct context ctx) {
+                  return ctx.builder.CreateAdd(a, b);
+                });
+              };
+              break;
+            case IntegerBinaryOp::UMin:
+              fn = [=](pvalue a, pvalue b) {
+                return call_integer_binop("min", a, b, false);
+              };
+              break;
+            case IntegerBinaryOp::UMax:
+              fn = [=](pvalue a, pvalue b) {
+                return call_integer_binop("max", a, b, false);
+              };
+              break;
+            case IntegerBinaryOp::IMin:
+              fn = [=](pvalue a, pvalue b) {
+                return call_integer_binop("min", a, b, true);
+              };
+              break;
+            case IntegerBinaryOp::IMax:
+              fn = [=](pvalue a, pvalue b) {
+                return call_integer_binop("max", a, b, true);
+              };
+              break;
+            }
+            auto mask = get_dst_mask(bin.dst);
+            effect << store_dst_op<false>(
+              bin.dst, lift(
+                         load_src_op<false>(bin.src0, mask),
+                         load_src_op<false>(bin.src1, mask), fn
+                       )
+            );
+          },
+          [&effect](InstFloatCompare fcmp) {
+            llvm::CmpInst::Predicate pred;
+            switch (fcmp.cmp) {
+            case FloatComparison::Equal:
+              pred = llvm::CmpInst::FCMP_OEQ;
+              break;
+            case FloatComparison::NotEqual:
+              pred = llvm::CmpInst::FCMP_UNE;
+              break;
+            case FloatComparison::GreaterEqual:
+              pred = llvm::CmpInst::FCMP_OGE;
+              break;
+            case FloatComparison::LessThan:
+              pred = llvm::CmpInst::FCMP_OLT;
+              break;
+            }
+            effect << store_dst_op<false>(
+              fcmp.dst,
+              lift(
+                load_src_op<true>(fcmp.src0), load_src_op<true>(fcmp.src1),
+                [=](auto a, auto b) { return cmp_float(pred, a, b); }
+              )
+            );
+          },
+          [&effect](InstDotProduct dp) {
+            switch (dp.dimension) {
+            case 4:
+              effect << lift(
+                load_src_op<true>(dp.src0), load_src_op<true>(dp.src1),
+                [=](auto a, auto b) {
+                  return store_dst_op<true>(
+                    dp.dst,
+                    call_dot_product(4, a, b) >>= saturate(dp._.saturate)
+                  );
+                }
+              );
+              break;
+            case 3:
+              effect << lift(
+                load_src_op<true>(dp.src0) >>= truncate_vec(3),
+                load_src_op<true>(dp.src1) >>= truncate_vec(3),
+                [=](auto a, auto b) {
+                  return store_dst_op<true>(
+                    dp.dst,
+                    call_dot_product(3, a, b) >>= saturate(dp._.saturate)
+                  );
+                }
+              );
+              break;
+            case 2:
+              effect << lift(
+                load_src_op<true>(dp.src0) >>= truncate_vec(2),
+                load_src_op<true>(dp.src1) >>= truncate_vec(2),
+                [=](auto a, auto b) {
+                  return store_dst_op<true>(
+                    dp.dst,
+                    call_dot_product(2, a, b) >>= saturate(dp._.saturate)
+                  );
+                }
+              );
+              break;
+            default:
+              assert(0 && "wrong dot product dimension");
+            }
+          },
+          [&effect](InstFloatMAD mad) {
+            auto mask = get_dst_mask(mad.dst);
+            effect << lift(
+              load_src_op<true>(mad.src0, mask),
+              load_src_op<true>(mad.src1, mask),
+              load_src_op<true>(mad.src2, mask),
+              [=](auto a, auto b, auto c) {
+                return store_dst_op<true>(
+                  mad.dst, call_float_mad(a, b, c) >>= saturate(mad._.saturate)
+                );
+              }
+            );
+          },
+          [&effect](InstIntegerMAD mad) {
+            // FIXME: this looks wrong, what's the sign specific behavior?
+            auto mask = get_dst_mask(mad.dst);
+            effect << lift(
+              load_src_op<false>(mad.src0, mask),
+              load_src_op<false>(mad.src1, mask),
+              load_src_op<false>(mad.src2, mask),
+              [=](auto a, auto b, auto c) {
+                return store_dst_op<false>(
+                  mad.dst, make_irvalue([=](struct context ctx) {
+                    return ctx.builder.CreateAdd(
+                      ctx.builder.CreateMul(a, b), c
                     );
                   })
                 );
-                co_yield store_dst_op<true>(
-                  swapc.dst1, make_irvalue([=](auto ctx) {
-                    return ctx.builder.CreateSelect(
-                      ctx.builder.CreateICmpNE(
-                        cond, llvm::ConstantAggregateZero::get(ctx.types._int4)
-                      ),
-                      src0, src1
+              }
+            );
+          },
+          [&effect](InstFloatUnaryOp unary) {
+            std::function<IRValue(pvalue)> fn;
+            switch (unary.op) {
+            case FloatUnaryOp::Log2: {
+              fn = [=](pvalue a) { return call_float_unary_op("log2", a); };
+              break;
+            }
+            case FloatUnaryOp::Exp2: {
+              fn = [=](pvalue a) { return call_float_unary_op("exp2", a); };
+              break;
+            }
+            case FloatUnaryOp::Rcp: {
+              fn = [=](pvalue a) {
+                return make_irvalue([=](struct context ctx) {
+                  if (!llvm::isa<llvm::FixedVectorType>(a->getType())) {
+                    // it's a scalar
+                    return ctx.builder.CreateFDiv(
+                      llvm::ConstantFP::get(ctx.llvm, llvm::APFloat{1.0f}), a
                     );
+                  }
+                  return ctx.builder.CreateFDiv(
+                    ctx.builder.CreateVectorSplat(
+                      cast<llvm::FixedVectorType>(a->getType())
+                        ->getNumElements(),
+                      llvm::ConstantFP::get(ctx.llvm, llvm::APFloat{1.0f})
+                    ),
+                    a
+                  );
+                });
+              };
+              break;
+            }
+            case FloatUnaryOp::Rsq: {
+              fn = [=](pvalue a) { return call_float_unary_op("rsqrt", a); };
+              break;
+            }
+            case FloatUnaryOp::Sqrt: {
+              fn = [=](pvalue a) { return call_float_unary_op("sqrt", a); };
+              break;
+            }
+            case FloatUnaryOp::Fraction: {
+              fn = [=](pvalue a) { return call_float_unary_op("fract", a); };
+              break;
+            }
+            case FloatUnaryOp::RoundNearestEven: {
+              fn = [=](pvalue a) { return call_float_unary_op("rint", a); };
+              break;
+            }
+            case FloatUnaryOp::RoundNegativeInf: {
+              fn = [=](pvalue a) { return call_float_unary_op("floor", a); };
+              break;
+            }
+            case FloatUnaryOp::RoundPositiveInf: {
+              fn = [=](pvalue a) { return call_float_unary_op("ceil", a); };
+              break;
+            }
+            case FloatUnaryOp::RoundZero: {
+              fn = [=](pvalue a) { return call_float_unary_op("trunc", a); };
+              break;
+            } break;
+            }
+            auto mask = get_dst_mask(unary.dst);
+            effect << store_dst_op<true>(
+              unary.dst, (load_src_op<true>(unary.src, mask) >>= fn) >>=
+                         saturate(unary._.saturate)
+            );
+          },
+          [&effect](InstFloatBinaryOp bin) {
+            std::function<IRValue(pvalue, pvalue)> fn;
+            switch (bin.op) {
+            case FloatBinaryOp::Add: {
+              fn = [=](pvalue a, pvalue b) {
+                return make_irvalue([=](struct context ctx) {
+                  return ctx.builder.CreateFAdd(a, b);
+                });
+              };
+              break;
+            }
+            case FloatBinaryOp::Mul: {
+              fn = [=](pvalue a, pvalue b) {
+                return make_irvalue([=](struct context ctx) {
+                  return ctx.builder.CreateFMul(a, b);
+                });
+              };
+              break;
+            }
+            case FloatBinaryOp::Div: {
+              fn = [=](pvalue a, pvalue b) {
+                return make_irvalue([=](struct context ctx) {
+                  return ctx.builder.CreateFDiv(a, b);
+                });
+              };
+              break;
+            }
+            case FloatBinaryOp::Min: {
+              fn = [=](pvalue a, pvalue b) {
+                return call_float_binop("fmin", a, b);
+              };
+              break;
+            }
+            case FloatBinaryOp::Max: {
+              fn = [=](pvalue a, pvalue b) {
+                return call_float_binop("fmax", a, b);
+              };
+              break;
+            }
+            }
+            auto mask = get_dst_mask(bin.dst);
+            effect << store_dst_op<true>(
+              bin.dst, lift(
+                         load_src_op<true>(bin.src0, mask),
+                         load_src_op<true>(bin.src1, mask), fn
+                       ) >>= saturate(bin._.saturate)
+            );
+          },
+          [&effect](InstSinCos sincos) {
+            auto mask_cos = get_dst_mask(sincos.dst_cos);
+            effect << store_dst_op<true>(
+              sincos.dst_cos, load_src_op<true>(sincos.src, mask_cos) >>=
+                              [=](auto src) {
+                                return call_float_unary_op("cos", src) >>=
+                                       saturate(sincos._.saturate);
+                              }
+            );
+
+            auto mask_sin = get_dst_mask(sincos.dst_sin);
+            effect << store_dst_op<true>(
+              sincos.dst_sin, load_src_op<true>(sincos.src, mask_sin) >>=
+                              [=](auto src) {
+                                return call_float_unary_op("sin", src) >>=
+                                       saturate(sincos._.saturate);
+                              }
+            );
+          },
+          [&effect](InstConvert convert) {
+            switch (convert.op) {
+            case ConversionOp::HalfToFloat: {
+              effect << store_dst_op<true>(
+                convert.dst,
+                make_irvalue_bind([=](struct context ctx) -> IRValue {
+                  // FIXME: neg modifier might be wrong?!
+                  auto src = co_yield load_src_op<false>(convert.src); // int4
+                  auto half8 = ctx.builder.CreateBitCast(
+                    src, llvm::FixedVectorType::get(ctx.types._half, 8)
+                  );
+                  co_return co_yield call_convert(
+                    ctx.builder.CreateShuffleVector(half8, {0, 2, 4, 6}),
+                    ctx.types._half4, ctx.types._float4, ".f.v4f16", ".f.v4f32"
+                  );
+                })
+              );
+              break;
+            }
+            case ConversionOp::FloatToHalf: {
+              effect << store_dst_op<false>(
+                convert.dst,
+                make_irvalue_bind([=](struct context ctx) -> IRValue {
+                  // FIXME: neg modifier might be wrong?!
+                  auto src = co_yield load_src_op<true>(convert.src); // float4
+                  auto half4 = co_yield call_convert(
+                    src, ctx.types._float4, ctx.types._half4, ".f.v4f32",
+                    ".f.v4f16"
+                  );
+                  co_return ctx.builder.CreateBitCast(
+                    ctx.builder.CreateShuffleVector(
+                      half4, llvm::ConstantAggregateZero::get(half4->getType()),
+                      {0, 4, 1, 5, 2, 6, 3, 7}
+                    ),
+                    ctx.types._int4
+                  );
+                })
+              );
+              break;
+            }
+            case ConversionOp::FloatToSigned: {
+              effect << store_dst_op<false>(
+                convert.dst,
+                make_irvalue_bind([=](struct context ctx) -> IRValue {
+                  auto src = co_yield load_src_op<true>(convert.src);
+                  co_return co_yield call_convert(
+                    src, ctx.types._float4, ctx.types._int4, ".f.v4f32",
+                    ".s.v4i32"
+                  );
+                })
+              );
+              break;
+            }
+            case ConversionOp::SignedToFloat: {
+              effect << store_dst_op<true>(
+                convert.dst,
+                make_irvalue_bind([=](struct context ctx) -> IRValue {
+                  auto src = co_yield load_src_op<false>(convert.src);
+                  co_return co_yield call_convert(
+                    src, ctx.types._int4, ctx.types._float4, ".s.v4i32",
+                    ".f.v4f32"
+                  );
+                })
+              );
+              break;
+            }
+            case ConversionOp::FloatToUnsigned: {
+              effect << store_dst_op<false>(
+                convert.dst,
+                make_irvalue_bind([=](struct context ctx) -> IRValue {
+                  auto src = co_yield load_src_op<true>(convert.src);
+                  co_return co_yield call_convert(
+                    src, ctx.types._float4, ctx.types._int4, ".f.v4f32",
+                    ".u.v4i32"
+                  );
+                })
+              );
+              break;
+            }
+            case ConversionOp::UnsignedToFloat: {
+              effect << store_dst_op<true>(
+                convert.dst,
+                make_irvalue_bind([=](struct context ctx) -> IRValue {
+                  auto src = co_yield load_src_op<false>(convert.src);
+                  co_return co_yield call_convert(
+                    src, ctx.types._int4, ctx.types._float4, ".u.v4i32",
+                    ".f.v4f32"
+                  );
+                })
+              );
+              break;
+            }
+            }
+          },
+          [&effect](InstIntegerBinaryOpWithTwoDst bin) {
+            switch (bin.op) {
+            case IntegerBinaryOpWithTwoDst::IMul: {
+              effect << make_effect_bind([=](struct context ctx) -> IREffect {
+                auto a = co_yield load_src_op<false>(bin.src0);
+                auto b = co_yield load_src_op<false>(bin.src1);
+                auto mul = ctx.builder.CreateBitCast(
+                  ctx.builder.CreateMul(
+                    ctx.builder.CreateSExt(a, ctx.types._long4),
+                    ctx.builder.CreateSExt(b, ctx.types._long4)
+                  ),
+                  ctx.types._int8
+                );
+                co_yield store_dst_op<false>(
+                  bin.dst_hi,
+                  pure(ctx.builder.CreateShuffleVector(mul, {1, 3, 5, 7}))
+                );
+                co_yield store_dst_op<false>(
+                  bin.dst_low,
+                  pure(ctx.builder.CreateShuffleVector(mul, {0, 2, 4, 6}))
+                );
+                co_return {};
+              });
+              break;
+            }
+            case IntegerBinaryOpWithTwoDst::UMul: {
+              effect << make_effect_bind([=](struct context ctx) -> IREffect {
+                auto a = co_yield load_src_op<false>(bin.src0);
+                auto b = co_yield load_src_op<false>(bin.src1);
+                auto mul = ctx.builder.CreateBitCast(
+                  ctx.builder.CreateMul(
+                    ctx.builder.CreateZExt(a, ctx.types._long4),
+                    ctx.builder.CreateZExt(b, ctx.types._long4)
+                  ),
+                  ctx.types._int8
+                );
+                co_yield store_dst_op<false>(
+                  bin.dst_hi,
+                  pure(ctx.builder.CreateShuffleVector(mul, {1, 3, 5, 7}))
+                );
+                co_yield store_dst_op<false>(
+                  bin.dst_low,
+                  pure(ctx.builder.CreateShuffleVector(mul, {0, 2, 4, 6}))
+                );
+                co_return {};
+              });
+              break;
+            }
+            case IntegerBinaryOpWithTwoDst::UAddCarry:
+            case IntegerBinaryOpWithTwoDst::USubBorrow: {
+              assert(0 && "todo");
+              break;
+            }
+            case IntegerBinaryOpWithTwoDst::UDiv: {
+              effect << make_effect_bind([=](struct context ctx) -> IREffect {
+                auto a = co_yield load_src_op<false>(bin.src0);
+                auto b = co_yield load_src_op<false>(bin.src1);
+                co_yield store_dst_op<false>(
+                  bin.dst_quot, make_irvalue([=](struct context ctx) {
+                    return ctx.builder.CreateUDiv(a, b);
+                  })
+                );
+                co_yield store_dst_op<false>(
+                  bin.dst_rem, make_irvalue([=](struct context ctx) {
+                    return ctx.builder.CreateURem(a, b);
                   })
                 );
                 co_return {};
               });
-            },
-            [&](InstSample sample) {
-              auto offset_const = llvm::ConstantVector::get(
-                {llvm::ConstantInt::get(
-                   context, llvm::APInt{32, (uint64_t)sample.offsets[0], true}
-                 ),
-                 llvm::ConstantInt::get(
-                   context, llvm::APInt{32, (uint64_t)sample.offsets[1], true}
-                 ),
-                 llvm::ConstantInt::get(
-                   context, llvm::APInt{32, (uint64_t)sample.offsets[2], true}
-                 )}
-              );
-              effect << store_dst_op<true>(
-                sample.dst,
-                (make_irvalue_bind([=](struct context ctx) -> IRValue {
-                   auto [res, res_handle_fn, _] =
-                     ctx.resource.srv_range_map[sample.src_resource.range_id];
-                   auto sampler_handle_fn =
-                     ctx.resource
-                       .sampler_range_map[sample.src_sampler.range_id];
-                   auto res_h = co_yield res_handle_fn(nullptr);
-                   auto sampler_h = co_yield sampler_handle_fn(nullptr);
-                   auto coord = co_yield load_src_op<true>(sample.src_address);
-                   switch (res.resource_kind) {
-                   case air::TextureKind::texture_1d: {
-                     co_return co_yield call_sample(
-                       res, res_h, sampler_h,
-                       co_yield extract_element(0)(coord), nullptr,
-                       co_yield truncate_vec(1)(offset_const)
-                     );
-                   }
-                   case air::TextureKind::texture_1d_array: {
-                     co_return co_yield call_sample(
-                       res, res_h, sampler_h,
-                       co_yield extract_element(0)(coord), // .r
-                       co_yield extract_element(1)(coord) >>=
-                       implicit_float_to_int,                 // .g
-                       co_yield truncate_vec(1)(offset_const) // 1d offset
-                     );
-                   }
-                   case air::TextureKind::depth_2d:
-                   case air::TextureKind::texture_2d: {
-                     co_return co_yield call_sample(
-                       res, res_h, sampler_h,
-                       co_yield truncate_vec(2)(coord), // .rg
-                       nullptr,
-                       co_yield truncate_vec(2)(offset_const) // 2d offset
-                     );
-                   }
-                   case air::TextureKind::depth_2d_array:
-                   case air::TextureKind::texture_2d_array: {
-                     co_return co_yield call_sample(
-                       res, res_h, sampler_h,
-                       co_yield truncate_vec(2)(coord), // .rg
-                       co_yield extract_element(2)(coord) >>=
-                       implicit_float_to_int,                 // .b
-                       co_yield truncate_vec(2)(offset_const) // 2d offset
-                     );
-                   }
-                   case air::TextureKind::texture_3d: {
-                     co_return co_yield call_sample(
-                       res, res_h, sampler_h,
-                       co_yield truncate_vec(3)(coord), // .rgb
-                       nullptr,
-                       co_yield truncate_vec(3)(offset_const) // 3d offset
-                     );
-                   }
-                   case air::TextureKind::depth_cube:
-                   case air::TextureKind::texture_cube: {
-                     co_return co_yield call_sample(
-                       res, res_h, sampler_h,
-                       co_yield truncate_vec(3)(coord), // .rgb
-                       nullptr
-                     );
-                   }
-                   case air::TextureKind::depth_cube_array:
-                   case air::TextureKind::texture_cube_array: {
-                     co_return co_yield call_sample(
-                       res, res_h, sampler_h,
-                       co_yield truncate_vec(3)(coord), // .rgb
-                       co_yield extract_element(3)(coord) >>=
-                       implicit_float_to_int // .a
-                     );
-                   } break;
-                   default: {
-                     assert(0 && "invalid sample resource type");
-                   }
-                   }
-                 }) >>= extract_value(0)) >>=
-                swizzle(sample.src_resource.read_swizzle)
-              );
-            },
-            [&](InstSampleLOD sample) {
-              auto offset_const = llvm::ConstantVector::get(
-                {llvm::ConstantInt::get(
-                   context, llvm::APInt{32, (uint64_t)sample.offsets[0], true}
-                 ),
-                 llvm::ConstantInt::get(
-                   context, llvm::APInt{32, (uint64_t)sample.offsets[1], true}
-                 ),
-                 llvm::ConstantInt::get(
-                   context, llvm::APInt{32, (uint64_t)sample.offsets[2], true}
-                 )}
-              );
-              effect << store_dst_op<true>(
-                sample.dst,
-                (make_irvalue_bind([=](struct context ctx) -> IRValue {
-                   auto [res, res_handle_fn, _] =
-                     ctx.resource.srv_range_map[sample.src_resource.range_id];
-                   auto sampler_handle_fn =
-                     ctx.resource
-                       .sampler_range_map[sample.src_sampler.range_id];
-                   auto res_h = co_yield res_handle_fn(nullptr);
-                   auto sampler_h = co_yield sampler_handle_fn(nullptr);
-                   auto coord = co_yield load_src_op<true>(sample.src_address);
-                   auto LOD = co_yield load_src_op<true>(sample.src_lod);
-                   switch (res.resource_kind) {
-                   case air::TextureKind::texture_1d: {
-                     co_return co_yield call_sample(
-                       res, res_h, sampler_h,
-                       co_yield extract_element(0)(coord), nullptr,
-                       co_yield truncate_vec(1)(offset_const), nullptr, nullptr,
-                       co_yield extract_element(0)(LOD)
-                     );
-                   }
-                   case air::TextureKind::texture_1d_array: {
-                     co_return co_yield call_sample(
-                       res, res_h, sampler_h,
-                       co_yield extract_element(0)(coord), // .r
-                       co_yield extract_element(1)(coord) >>=
-                       implicit_float_to_int,                  // .g
-                       co_yield truncate_vec(1)(offset_const), // 1d offset
-                       nullptr, nullptr, co_yield extract_element(0)(LOD)
-                     );
-                   }
-                   case air::TextureKind::depth_2d:
-                   case air::TextureKind::texture_2d: {
-                     co_return co_yield call_sample(
-                       res, res_h, sampler_h,
-                       co_yield truncate_vec(2)(coord), // .rg
-                       nullptr,
-                       co_yield truncate_vec(2)(offset_const), // 2d offset
-                       nullptr, nullptr, co_yield extract_element(0)(LOD)
-                     );
-                   }
-                   case air::TextureKind::depth_2d_array:
-                   case air::TextureKind::texture_2d_array: {
-                     co_return co_yield call_sample(
-                       res, res_h, sampler_h,
-                       co_yield truncate_vec(2)(coord), // .rg
-                       co_yield extract_element(2)(coord) >>=
-                       implicit_float_to_int,                  // .b
-                       co_yield truncate_vec(2)(offset_const), // 2d offset
-                       nullptr, nullptr, co_yield extract_element(0)(LOD)
-                     );
-                   }
-                   case air::TextureKind::texture_3d: {
-                     co_return co_yield call_sample(
-                       res, res_h, sampler_h,
-                       co_yield truncate_vec(3)(coord), // .rgb
-                       nullptr,
-                       co_yield truncate_vec(3)(offset_const), // 3d offset
-                       nullptr, nullptr, co_yield extract_element(0)(LOD)
-                     );
-                   }
-                   case air::TextureKind::depth_cube:
-                   case air::TextureKind::texture_cube: {
-                     co_return co_yield call_sample(
-                       res, res_h, sampler_h,
-                       co_yield truncate_vec(3)(coord), // .rgb
-                       nullptr, nullptr, nullptr, nullptr,
-                       co_yield extract_element(0)(LOD)
-                     );
-                   }
-                   case air::TextureKind::depth_cube_array:
-                   case air::TextureKind::texture_cube_array: {
-                     co_return co_yield call_sample(
-                       res, res_h, sampler_h,
-                       co_yield truncate_vec(3)(coord), // .rgb
-                       co_yield extract_element(3)(coord) >>=
-                       implicit_float_to_int, // .a
-                       nullptr, nullptr, nullptr,
-                       co_yield extract_element(0)(LOD)
-                     );
-                   } break;
-                   default: {
-                     assert(0 && "invalid sample resource type");
-                   }
-                   }
-                 }) >>= extract_value(0)) >>=
-                swizzle(sample.src_resource.read_swizzle)
-              );
-            },
-            [&](InstSampleBias sample) {
-              auto offset_const = llvm::ConstantVector::get(
-                {llvm::ConstantInt::get(
-                   context, llvm::APInt{32, (uint64_t)sample.offsets[0], true}
-                 ),
-                 llvm::ConstantInt::get(
-                   context, llvm::APInt{32, (uint64_t)sample.offsets[1], true}
-                 ),
-                 llvm::ConstantInt::get(
-                   context, llvm::APInt{32, (uint64_t)sample.offsets[2], true}
-                 )}
-              );
-              effect << store_dst_op<true>(
-                sample.dst,
-                (make_irvalue_bind([=](struct context ctx) -> IRValue {
-                   auto [res, res_handle_fn, _] =
-                     ctx.resource.srv_range_map[sample.src_resource.range_id];
-                   auto sampler_handle_fn =
-                     ctx.resource
-                       .sampler_range_map[sample.src_sampler.range_id];
-                   auto res_h = co_yield res_handle_fn(nullptr);
-                   auto sampler_h = co_yield sampler_handle_fn(nullptr);
-                   auto coord = co_yield load_src_op<true>(sample.src_address);
-                   auto bias = co_yield load_src_op<true>(sample.src_bias);
-                   switch (res.resource_kind) {
-                   case air::TextureKind::texture_1d: {
-                     co_return co_yield call_sample(
-                       res, res_h, sampler_h,
-                       co_yield extract_element(0)(coord), nullptr,
-                       co_yield truncate_vec(1)(offset_const),
-                       co_yield extract_element(0)(bias)
-                     );
-                   }
-                   case air::TextureKind::texture_1d_array: {
-                     co_return co_yield call_sample(
-                       res, res_h, sampler_h,
-                       co_yield extract_element(0)(coord), // .r
-                       co_yield extract_element(1)(coord) >>=
-                       implicit_float_to_int,                  // .g
-                       co_yield truncate_vec(1)(offset_const), // 1d offset
-                       co_yield extract_element(0)(bias)
-                     );
-                   }
-                   case air::TextureKind::depth_2d:
-                   case air::TextureKind::texture_2d: {
-                     co_return co_yield call_sample(
-                       res, res_h, sampler_h,
-                       co_yield truncate_vec(2)(coord), // .rg
-                       nullptr,
-                       co_yield truncate_vec(2)(offset_const), // 2d offset
-                       co_yield extract_element(0)(bias)
-                     );
-                   }
-                   case air::TextureKind::depth_2d_array:
-                   case air::TextureKind::texture_2d_array: {
-                     co_return co_yield call_sample(
-                       res, res_h, sampler_h,
-                       co_yield truncate_vec(2)(coord), // .rg
-                       co_yield extract_element(2)(coord) >>=
-                       implicit_float_to_int,                  // .b
-                       co_yield truncate_vec(2)(offset_const), // 2d offset
-                       co_yield extract_element(0)(bias)
-                     );
-                   }
-                   case air::TextureKind::texture_3d: {
-                     co_return co_yield call_sample(
-                       res, res_h, sampler_h,
-                       co_yield truncate_vec(3)(coord), // .rgb
-                       nullptr,
-                       co_yield truncate_vec(3)(offset_const), // 3d offset
-                       co_yield extract_element(0)(bias)
-                     );
-                   }
-                   case air::TextureKind::depth_cube:
-                   case air::TextureKind::texture_cube: {
-                     co_return co_yield call_sample(
-                       res, res_h, sampler_h,
-                       co_yield truncate_vec(3)(coord), // .rgb
-                       nullptr, nullptr, co_yield extract_element(0)(bias)
-                     );
-                   }
-                   case air::TextureKind::depth_cube_array:
-                   case air::TextureKind::texture_cube_array: {
-                     co_return co_yield call_sample(
-                       res, res_h, sampler_h,
-                       co_yield truncate_vec(3)(coord), // .rgb
-                       co_yield extract_element(3)(coord) >>=
-                       implicit_float_to_int, // .a
-                       nullptr, co_yield extract_element(0)(bias)
-                     );
-                   } break;
-                   default: {
-                     assert(0 && "invalid sample resource type");
-                   }
-                   }
-                 }) >>= extract_value(0)) >>=
-                swizzle(sample.src_resource.read_swizzle)
-              );
-            },
-            [&](InstSampleDerivative sample) {
-              auto offset_const = llvm::ConstantVector::get(
-                {llvm::ConstantInt::get(
-                   context, llvm::APInt{32, (uint64_t)sample.offsets[0], true}
-                 ),
-                 llvm::ConstantInt::get(
-                   context, llvm::APInt{32, (uint64_t)sample.offsets[1], true}
-                 ),
-                 llvm::ConstantInt::get(
-                   context, llvm::APInt{32, (uint64_t)sample.offsets[2], true}
-                 )}
-              );
-              effect << store_dst_op<true>(
-                sample.dst,
-                (make_irvalue_bind([=](struct context ctx) -> IRValue {
-                   auto [res, res_handle_fn, _] =
-                     ctx.resource.srv_range_map[sample.src_resource.range_id];
-                   auto sampler_handle_fn =
-                     ctx.resource
-                       .sampler_range_map[sample.src_sampler.range_id];
-                   auto res_h = co_yield res_handle_fn(nullptr);
-                   auto sampler_h = co_yield sampler_handle_fn(nullptr);
-                   auto coord = co_yield load_src_op<true>(sample.src_address);
-                   auto dpdx =
-                     co_yield load_src_op<true>(sample.src_x_derivative);
-                   auto dpdy =
-                     co_yield load_src_op<true>(sample.src_x_derivative);
-                   switch (res.resource_kind) {
-                   case air::TextureKind::depth_2d:
-                   case air::TextureKind::texture_2d: {
-                     co_return co_yield call_sample_grad(
-                       res, res_h, sampler_h,
-                       co_yield truncate_vec(2)(coord), // .rg
-                       nullptr,                         // array_index
-                       co_yield truncate_vec(2)(dpdx),
-                       co_yield truncate_vec(2)(dpdy), nullptr,
-                       co_yield truncate_vec(2)(offset_const) // 2d offset
-                     );
-                   }
-                   case air::TextureKind::depth_2d_array:
-                   case air::TextureKind::texture_2d_array: {
-                     co_return co_yield call_sample_grad(
-                       res, res_h, sampler_h,
-                       co_yield truncate_vec(2)(coord), // .rg
-                       co_yield extract_element(2)(coord) >>=
-                       implicit_float_to_int, // array_index
-                       co_yield truncate_vec(2)(dpdx),
-                       co_yield truncate_vec(2)(dpdy), nullptr,
-                       co_yield truncate_vec(2)(offset_const) // 2d offset
-                     );
-                   }
-                   case air::TextureKind::texture_3d: {
-                     co_return co_yield call_sample_grad(
-                       res, res_h, sampler_h,
-                       co_yield truncate_vec(3)(coord), // .rgb
-                       nullptr,                         // array_index
-                       co_yield truncate_vec(3)(dpdx),
-                       co_yield truncate_vec(3)(dpdy), nullptr,
-                       co_yield truncate_vec(3)(offset_const) // 3d offset
-                     );
-                   }
-                   case air::TextureKind::depth_cube:
-                   case air::TextureKind::texture_cube: {
-                     co_return co_yield call_sample_grad(
-                       res, res_h, sampler_h,
-                       co_yield truncate_vec(3)(coord), // .rgb
-                       nullptr,                         // array_index
-                       co_yield truncate_vec(3)(dpdx),
-                       co_yield truncate_vec(3)(dpdy), nullptr, nullptr
-                     );
-                   }
-                   case air::TextureKind::depth_cube_array:
-                   case air::TextureKind::texture_cube_array: {
-                     co_return co_yield call_sample_grad(
-                       res, res_h, sampler_h,
-                       co_yield truncate_vec(2)(coord), // .rgb
-                       co_yield extract_element(3)(coord) >>=
-                       implicit_float_to_int, // array_index
-                       co_yield truncate_vec(3)(dpdx),
-                       co_yield truncate_vec(3)(dpdy), nullptr, nullptr
-                     );
-                   } break;
-                   default: {
-                     assert(0 && "invalid sample resource type");
-                   }
-                   }
-                 }) >>= extract_value(0)) >>=
-                swizzle(sample.src_resource.read_swizzle)
-              );
-            },
-            [&](InstSampleCompare sample) {
-              auto offset_const = llvm::ConstantVector::get(
-                {llvm::ConstantInt::get(
-                   context, llvm::APInt{32, (uint64_t)sample.offsets[0], true}
-                 ),
-                 llvm::ConstantInt::get(
-                   context, llvm::APInt{32, (uint64_t)sample.offsets[1], true}
-                 ),
-                 llvm::ConstantInt::get(
-                   context, llvm::APInt{32, (uint64_t)sample.offsets[2], true}
-                 )}
-              );
-              effect << store_dst_op<true>(
-                sample.dst,
-                (make_irvalue_bind([=](struct context ctx) -> IRValue {
-                   auto [res, res_handle_fn, _] =
-                     ctx.resource.srv_range_map[sample.src_resource.range_id];
-                   auto sampler_handle_fn =
-                     ctx.resource
-                       .sampler_range_map[sample.src_sampler.range_id];
-                   auto res_h = co_yield res_handle_fn(nullptr);
-                   auto sampler_h = co_yield sampler_handle_fn(nullptr);
-                   auto coord = co_yield load_src_op<true>(sample.src_address);
-                   auto reference =
-                     co_yield load_src_op<true>(sample.src_reference);
-                   switch (res.resource_kind) {
-                   case air::TextureKind::depth_2d: {
-                     co_return co_yield call_sample_compare(
-                       res, res_h, sampler_h,
-                       co_yield truncate_vec(2)(coord),        // .rg
-                       nullptr,                                // array_index
-                       co_yield extract_element(0)(reference), // reference
-                       co_yield truncate_vec(2)(offset_const), // 2d offset
-                       nullptr, nullptr,
-                       sample.level_zero
-                         ? llvm::ConstantFP::getZero(ctx.types._float)
-                         : nullptr
-                     );
-                   }
-                   case air::TextureKind::depth_2d_array: {
-                     co_return co_yield call_sample_compare(
-                       res, res_h, sampler_h,
-                       co_yield truncate_vec(2)(coord), // .rg
-                       co_yield extract_element(2)(coord) >>=
-                       implicit_float_to_int,                  // array_index
-                       co_yield extract_element(0)(reference), // reference
-                       co_yield truncate_vec(2)(offset_const), // 2d offset
-                       nullptr, nullptr,
-                       sample.level_zero
-                         ? llvm::ConstantFP::getZero(ctx.types._float)
-                         : nullptr
-                     );
-                   }
-                   case air::TextureKind::depth_cube: {
-                     co_return co_yield call_sample_compare(
-                       res, res_h, sampler_h,
-                       co_yield truncate_vec(3)(coord),        // .rgb
-                       nullptr,                                // array_index
-                       co_yield extract_element(0)(reference), // reference
-                       nullptr, nullptr, nullptr,
-                       sample.level_zero
-                         ? llvm::ConstantFP::getZero(ctx.types._float)
-                         : nullptr
-                     );
-                   }
-                   case air::TextureKind::depth_cube_array: {
-                     co_return co_yield call_sample_compare(
-                       res, res_h, sampler_h,
-                       co_yield truncate_vec(3)(coord), // .rgb
-                       co_yield extract_element(3)(coord) >>=
-                       implicit_float_to_int,                  // array_index
-                       co_yield extract_element(0)(reference), // reference
-                       nullptr, nullptr, nullptr,
-                       sample.level_zero
-                         ? llvm::ConstantFP::getZero(ctx.types._float)
-                         : nullptr
-                     );
-                   } break;
-                   default: {
-                     assert(0 && "invalid sample_compare resource type");
-                   }
-                   }
-                 }) >>= extract_value(0))
-              );
-            },
-            [&](InstGather sample) {
-              effect << store_dst_op<true>(
-                sample.dst,
-                (make_irvalue_bind([=](struct context ctx) -> IRValue {
-                   auto [res, res_handle_fn, _] =
-                     ctx.resource.srv_range_map[sample.src_resource.range_id];
-                   auto sampler_handle_fn =
-                     ctx.resource
-                       .sampler_range_map[sample.src_sampler.range_id];
-                   auto res_h = co_yield res_handle_fn(nullptr);
-                   auto sampler_h = co_yield sampler_handle_fn(nullptr);
-                   auto coord = co_yield load_src_op<true>(sample.src_address);
-                   auto offset = co_yield load_src_op<false>(sample.offset);
-                   auto component =
-                     co_yield get_int(sample.src_sampler.gather_channel);
-                   switch (res.resource_kind) {
-                   case air::TextureKind::depth_2d:
-                   case air::TextureKind::texture_2d: {
-                     co_return co_yield call_gather(
-                       res, res_h, sampler_h, co_yield truncate_vec(2)(coord),
-                       nullptr, co_yield truncate_vec(2)(offset), component
-                     );
-                   }
-                   case air::TextureKind::depth_2d_array:
-                   case air::TextureKind::texture_2d_array: {
-                     co_return co_yield call_gather(
-                       res, res_h, sampler_h, co_yield truncate_vec(2)(coord),
-                       co_yield extract_element(2)(coord) >>=
-                       implicit_float_to_int, // .b
-                       co_yield truncate_vec(2)(offset), component
-                     );
-                   }
-                   case air::TextureKind::depth_cube:
-                   case air::TextureKind::texture_cube: {
-                     co_return co_yield call_gather(
-                       res, res_h, sampler_h, co_yield truncate_vec(3)(coord),
-                       nullptr, nullptr, component
-                     );
-                   }
-                   case air::TextureKind::depth_cube_array:
-                   case air::TextureKind::texture_cube_array: {
-                     co_return co_yield call_gather(
-                       res, res_h, sampler_h, co_yield truncate_vec(3)(coord),
-                       co_yield extract_element(3)(coord) >>=
-                       implicit_float_to_int, // .b
-                       nullptr, component
-                     );
-                   } break;
-                   default: {
-                     assert(0 && "invalid sample resource type");
-                   }
-                   }
-                 }) >>= extract_value(0)) >>=
-                swizzle(sample.src_resource.read_swizzle)
-              );
-            },
-            [&](InstGatherCompare sample) {
-              effect << store_dst_op<true>(
-                sample.dst,
-                (make_irvalue_bind([=](struct context ctx) -> IRValue {
-                   auto [res, res_handle_fn, _] =
-                     ctx.resource.srv_range_map[sample.src_resource.range_id];
-                   auto sampler_handle_fn =
-                     ctx.resource
-                       .sampler_range_map[sample.src_sampler.range_id];
-                   auto res_h = co_yield res_handle_fn(nullptr);
-                   auto sampler_h = co_yield sampler_handle_fn(nullptr);
-                   auto coord = co_yield load_src_op<true>(sample.src_address);
-                   auto offset = co_yield load_src_op<false>(sample.offset);
-                   auto reference =
-                     co_yield load_src_op<true>(sample.src_reference);
-                   switch (res.resource_kind) {
-                   case air::TextureKind::depth_2d: {
-                     co_return co_yield call_gather_compare(
-                       res, res_h, sampler_h, co_yield truncate_vec(2)(coord),
-                       nullptr, co_yield extract_element(0)(reference),
-                       co_yield truncate_vec(2)(offset)
-                     );
-                   }
-                   case air::TextureKind::depth_2d_array: {
-                     co_return co_yield call_gather_compare(
-                       res, res_h, sampler_h, co_yield truncate_vec(2)(coord),
-                       co_yield extract_element(2)(coord) >>=
-                       implicit_float_to_int, // .b
-                       co_yield extract_element(0)(reference),
-                       co_yield truncate_vec(2)(offset)
-                     );
-                   }
-                   case air::TextureKind::depth_cube: {
-                     co_return co_yield call_gather_compare(
-                       res, res_h, sampler_h, co_yield truncate_vec(3)(coord),
-                       nullptr, co_yield extract_element(0)(reference), nullptr
-                     );
-                   }
-                   case air::TextureKind::depth_cube_array: {
-                     co_return co_yield call_gather_compare(
-                       res, res_h, sampler_h, co_yield truncate_vec(3)(coord),
-                       co_yield extract_element(3)(coord) >>=
-                       implicit_float_to_int, // .a
-                       co_yield extract_element(0)(reference), nullptr
-                     );
-                   } break;
-                   default: {
-                     assert(0 && "invalid sample resource type");
-                   }
-                   }
-                 }) >>= extract_value(0)) >>=
-                swizzle(sample.src_resource.read_swizzle)
-              );
-            },
-
-            [&](InstLoad load) {
-              effect << make_effect_bind([=](struct context ctx) -> IREffect {
-                auto [res, res_handle_fn, _] =
-                  ctx.resource.srv_range_map[load.src_resource.range_id];
-                auto res_h = co_yield res_handle_fn(nullptr);
-                auto coord = co_yield load_src_op<false>(load.src_address);
-                pvalue ret;
-                switch (res.resource_kind) {
-                case air::TextureKind::texture_buffer:
-                case air::TextureKind::texture_1d: {
-                  ret = co_yield call_read(
-                    res, res_h, co_yield extract_element(0)(coord),
-                    co_yield get_int(load.offsets[0])
-                  );
-                  break;
-                }
-                case air::TextureKind::texture_1d_array: {
-                  ret = co_yield call_read(
-                    res, res_h, co_yield extract_element(0)(coord),
-                    co_yield get_int(load.offsets[0]), nullptr,
-                    co_yield extract_element(1)(coord)
-                  );
-                  break;
-                }
-                case air::TextureKind::depth_2d:
-                case air::TextureKind::texture_2d: {
-                  ret = co_yield call_read(
-                    res, res_h, co_yield truncate_vec(2)(coord),
-                    co_yield get_int2(load.offsets[0], load.offsets[1])
-                  );
-                  break;
-                }
-                case air::TextureKind::depth_2d_array:
-                case air::TextureKind::texture_2d_array: {
-                  ret = co_yield call_read(
-                    res, res_h, co_yield truncate_vec(2)(coord),
-                    co_yield get_int2(load.offsets[0], load.offsets[1]),
-                    nullptr, co_yield extract_element(2)(coord)
-                  );
-                  break;
-                }
-                case air::TextureKind::texture_3d: {
-                  ret = co_yield call_read(
-                    res, res_h, co_yield truncate_vec(3)(coord),
-                    co_yield get_int3(
-                      load.offsets[0], load.offsets[1], load.offsets[2]
-                    )
-                  );
-                  break;
-                }
-                case air::TextureKind::texture_2d_ms:
-                case air::TextureKind::depth_2d_ms: {
-                  auto sample_index =
-                    co_yield load_src_op<false>(load.src_sample_index.value()
-                    ) >>= extract_element(0);
-                  ret = co_yield call_read(
-                    res, res_h, co_yield truncate_vec(2)(coord),
-                    co_yield get_int2(load.offsets[0], load.offsets[1]),
-                    nullptr, nullptr, sample_index
-                  );
-                  break;
-                }
-                case air::TextureKind::texture_2d_ms_array:
-                case air::TextureKind::depth_2d_ms_array: {
-                  auto sample_index =
-                    co_yield load_src_op<false>(load.src_sample_index.value()
-                    ) >>= extract_element(0);
-                  ret = co_yield call_read(
-                    res, res_h, co_yield truncate_vec(2)(coord),
-                    co_yield get_int2(load.offsets[0], load.offsets[1]),
-                    nullptr, co_yield extract_element(2)(coord), sample_index
-                  );
-                  break;
-                }
-                default: {
-                  assert(0 && "invalid load resource type");
-                }
-                }
-                ret = co_yield extract_value(0)(ret) >>=
-                  swizzle(load.src_resource.read_swizzle);
-                co_return co_yield std::visit(
-                  patterns{
-                    [&](air::MSLFloat) {
-                      return store_dst_op<true>(load.dst, pure(ret));
-                    },
-                    [&](auto) {
-                      return store_dst_op<false>(load.dst, pure(ret));
-                    }
-                  },
-                  res.component_type
+              break;
+            }
+            }
+          },
+          [&effect](InstExtractBits extract) {
+            effect << store_dst_op<false>(
+              extract.dst,
+              make_irvalue_bind([=](struct context ctx) -> IRValue {
+                auto src0 = co_yield load_src_op<false>(extract.src0);
+                auto src1 = co_yield load_src_op<false>(extract.src1);
+                auto src2 = co_yield load_src_op<false>(extract.src2);
+                auto width =
+                  ctx.builder.CreateAnd(src0, co_yield get_int4_splat(0b11111));
+                auto offset =
+                  ctx.builder.CreateAnd(src1, co_yield get_int4_splat(0b11111));
+                auto width_is_zero =
+                  ctx.builder.CreateICmpEQ(width, co_yield get_int4_splat(0));
+                auto width_offset_sum = ctx.builder.CreateAdd(width, offset);
+                auto width_cp =
+                  ctx.builder.CreateSub(co_yield get_int4_splat(32), width);
+                auto clamp_src = ctx.builder.CreateShl(
+                  src2, ctx.builder.CreateSub(
+                          co_yield get_int4_splat(32), width_offset_sum
+                        )
                 );
-              });
-            },
-            [&](InstLoadUAVTyped load) {
-              effect << make_effect_bind([=](struct context ctx) -> IREffect {
-                auto [res, res_handle_fn, _] =
-                  ctx.resource.uav_range_map[load.src_uav.range_id];
-                auto res_h = co_yield res_handle_fn(nullptr);
-                auto coord = co_yield load_src_op<false>(load.src_address);
-                pvalue ret;
-                switch (res.resource_kind) {
-                case air::TextureKind::texture_buffer:
-                case air::TextureKind::texture_1d: {
-                  ret = co_yield call_read(
-                    res, res_h, co_yield extract_element(0)(coord)
+                if (!extract.is_signed) {
+                  auto need_clamp = ctx.builder.CreateICmpULT(
+                    width_offset_sum, co_yield get_int4_splat(32)
                   );
-                  break;
-                }
-                case air::TextureKind::texture_1d_array: {
-                  ret = co_yield call_read(
-                    res, res_h, co_yield extract_element(0)(coord), nullptr,
-                    nullptr, co_yield extract_element(1)(coord)
+                  auto no_clamp = ctx.builder.CreateLShr(src2, offset);
+                  auto clamped = ctx.builder.CreateLShr(clamp_src, width_cp);
+                  co_return ctx.builder.CreateSelect(
+                    width_is_zero, co_yield get_int4_splat(0),
+                    ctx.builder.CreateSelect(need_clamp, clamped, no_clamp)
                   );
-                  break;
-                }
-                case air::TextureKind::depth_2d:
-                case air::TextureKind::texture_2d: {
-                  ret = co_yield call_read(
-                    res, res_h, co_yield truncate_vec(2)(coord)
+                } else {
+                  auto need_clamp = ctx.builder.CreateICmpSLT(
+                    width_offset_sum, co_yield get_int4_splat(32)
                   );
-                  break;
-                }
-                case air::TextureKind::depth_2d_array:
-                case air::TextureKind::texture_2d_array: {
-                  ret = co_yield call_read(
-                    res, res_h, co_yield truncate_vec(2)(coord), nullptr,
-                    nullptr, co_yield extract_element(2)(coord)
+                  auto no_clamp = ctx.builder.CreateAShr(src2, offset);
+                  auto clamped = ctx.builder.CreateAShr(clamp_src, width_cp);
+                  co_return ctx.builder.CreateSelect(
+                    width_is_zero, co_yield get_int4_splat(0),
+                    ctx.builder.CreateSelect(need_clamp, clamped, no_clamp)
                   );
-                  break;
                 }
-                case air::TextureKind::texture_3d: {
-                  ret = co_yield call_read(
-                    res, res_h, co_yield truncate_vec(3)(coord)
-                  );
-                  break;
-                }
-                default: {
-                  assert(0 && "invalid load resource type");
-                }
-                }
-                ret = co_yield extract_value(0)(ret) >>=
-                  swizzle(load.src_uav.read_swizzle);
-                co_return co_yield std::visit(
-                  patterns{
-                    [&](air::MSLFloat) {
-                      return store_dst_op<true>(load.dst, pure(ret));
-                    },
-                    [&](auto) {
-                      return store_dst_op<false>(load.dst, pure(ret));
-                    }
-                  },
-                  res.component_type
+              })
+            );
+          },
+          [&effect](InstBitFiledInsert bfi) {
+            effect << store_dst_op<false>(
+              bfi.dst, make_irvalue_bind([=](struct context ctx) -> IRValue {
+                auto src0 = co_yield load_src_op<false>(bfi.src0);
+                auto src1 = co_yield load_src_op<false>(bfi.src1);
+                auto src2 = co_yield load_src_op<false>(bfi.src2);
+                auto src3 = co_yield load_src_op<false>(bfi.src3);
+                auto width =
+                  ctx.builder.CreateAnd(src0, co_yield get_int4_splat(0b11111));
+                auto offset =
+                  ctx.builder.CreateAnd(src1, co_yield get_int4_splat(0b11111));
+                auto bitmask = ctx.builder.CreateAnd(
+                  co_yield get_int4_splat(0xffffffff), // is this necessary?
+                  ctx.builder.CreateShl(
+                    ctx.builder.CreateSub(
+                      ctx.builder.CreateShl(co_yield get_int4_splat(1), width),
+                      co_yield get_int4_splat(1)
+                    ),
+                    offset
+                  )
                 );
-              });
-            },
-            [&](InstStoreUAVTyped store) {
-              effect << make_effect_bind([=](struct context ctx) -> IREffect {
-                auto [res, res_handle_fn, _] =
-                  ctx.resource.uav_range_map[store.dst.range_id];
-                auto res_h = co_yield res_handle_fn(nullptr);
-                auto address = co_yield load_src_op<false>(store.src_address);
-                auto value = co_yield std::visit(
-                  patterns{
-                    [&](air::MSLFloat) { return load_src_op<true>(store.src); },
-                    [&](auto) { return load_src_op<false>(store.src); }
-                  },
-                  res.component_type
+                co_return ctx.builder.CreateOr(
+                  ctx.builder.CreateAnd(
+                    ctx.builder.CreateShl(src2, offset), bitmask
+                  ),
+                  ctx.builder.CreateAnd(src3, ctx.builder.CreateNot(bitmask))
                 );
-
+              })
+            );
+          },
+          [&effect](InstSync sync) {
+            mem_flags mem_flag;
+            if (sync.boundary == InstSync::Boundary::global) {
+              mem_flag |= mem_flags::device;
+            }
+            if (sync.boundary == InstSync::Boundary::group) {
+              mem_flag |= mem_flags::threadgroup;
+            }
+            effect << call_threadgroup_barrier(mem_flag);
+          },
+          [&effect](InstPixelDiscard) { effect << call_discard_fragment(); },
+          [&effect](InstPartialDerivative df) {
+            effect << store_dst_op<true>(
+              df.dst, make_irvalue_bind([=](struct context ctx) -> IRValue {
+                        auto fvec4 = co_yield load_src_op<true>(df.src);
+                        co_return co_yield call_derivative(fvec4, df.ddy);
+                      }) >>= saturate(df._.saturate)
+            );
+          },
+          [&effect](InstCalcLOD calc) {
+            effect << store_dst_op<true>(
+              calc.dst,
+              make_irvalue_bind([=](struct context ctx) -> IRValue {
+                auto [res, res_handle_fn] =
+                  ctx.resource.srv_range_map[calc.src_resource.range_id];
+                auto sampler_handle_fn =
+                  ctx.resource.sampler_range_map[calc.src_sampler.range_id];
+                auto res_h = co_yield res_handle_fn(nullptr);
+                auto sampler_h = co_yield sampler_handle_fn(nullptr);
+                auto coord = co_yield load_src_op<true>(calc.src_address);
+                pvalue clamped_float = nullptr, unclamped_float = nullptr;
                 switch (res.resource_kind) {
-                case air::TextureKind::texture_buffer:
-                  co_yield call_write(
-                    res, res_h, co_yield extract_element(0)(address), nullptr,
-                    nullptr, value, ctx.builder.getInt32(0)
-                  );
-                  break;
                 case air::TextureKind::texture_1d:
-                  co_yield call_write(
-                    res, res_h, co_yield extract_element(0)(address), nullptr,
-                    nullptr, value, ctx.builder.getInt32(0)
-                  );
+                case air::TextureKind::texture_1d_array: {
+                  // MSL Spec 6.12.2 mipmaps are not supported for 1D texture
+                  clamped_float = co_yield get_float(0.0f);
+                  unclamped_float = co_yield get_float(0.0f);
                   break;
-                case air::TextureKind::texture_1d_array:
-                  co_yield call_write(
-                    res, res_h, co_yield extract_element(0)(address), nullptr,
-                    co_yield extract_element(1)(address), value,
-                    ctx.builder.getInt32(0)
-                  );
-                  break;
+                }
+                case air::TextureKind::depth_2d:
                 case air::TextureKind::texture_2d:
-                  co_yield call_write(
-                    res, res_h, co_yield truncate_vec(2)(address), nullptr,
-                    nullptr, value, ctx.builder.getInt32(0)
-                  );
-                  break;
+                case air::TextureKind::depth_2d_array:
                 case air::TextureKind::texture_2d_array: {
-                  co_yield call_write(
-                    res, res_h, co_yield truncate_vec(2)(address), nullptr,
-                    co_yield extract_element(2)(address), value,
-                    ctx.builder.getInt32(0)
+                  clamped_float = co_yield call_calc_lod(
+                    res, res_h, sampler_h, co_yield truncate_vec(2)(coord),
+                    false
+                  );
+                  unclamped_float = co_yield call_calc_lod(
+                    res, res_h, sampler_h, co_yield truncate_vec(2)(coord), true
                   );
                   break;
                 }
                 case air::TextureKind::texture_3d:
-                  co_yield call_write(
-                    res, res_h, co_yield truncate_vec(3)(address), nullptr,
-                    nullptr, value, ctx.builder.getInt32(0)
+                case air::TextureKind::depth_cube:
+                case air::TextureKind::texture_cube:
+                case air::TextureKind::depth_cube_array:
+                case air::TextureKind::texture_cube_array: {
+                  clamped_float = co_yield call_calc_lod(
+                    res, res_h, sampler_h, co_yield truncate_vec(3)(coord),
+                    false
+                  );
+                  unclamped_float = co_yield call_calc_lod(
+                    res, res_h, sampler_h, co_yield truncate_vec(3)(coord), true
                   );
                   break;
-                default:
-                  assert(0 && "invalid texture kind for uav store");
                 }
-                co_return {};
-              });
-            },
-            [&](InstLoadStructured load) {
-              effect << std::visit(
-                patterns{
-                  [&](SrcOperandTGSM tgsm) {
-                    return make_effect_bind(
-                      [=](struct context ctx) -> IREffect {
-                        auto &builder = ctx.builder;
-                        auto [stride, tgsm_h] = ctx.resource.tgsm_map[tgsm.id];
-                        auto offset = builder.CreateLShr(
-                          builder.CreateAdd(
-                            builder.CreateMul(
-                              builder.getInt32(stride),
-                              co_yield load_src_op<false>(load.src_address) >>=
-                              extract_element(0)
-                            ),
-                            co_yield load_src_op<false>(load.src_byte_offset
-                            ) >>= extract_element(0)
-                          ),
-                          2
-                        );
-                        co_return co_yield store_dst_op<false>(
-                          load.dst,
-                          load_tgsm(
-                            tgsm_h, offset,
-                            std::max(
-                              {tgsm.read_swizzle.x, tgsm.read_swizzle.y,
-                               tgsm.read_swizzle.z, tgsm.read_swizzle.w}
-                            ) +
-                              1
-                          ) >>= swizzle(tgsm.read_swizzle)
-                        );
-                      }
-                    );
-                  },
-                  [&](SrcOperandResource srv) {
-                    return make_effect_bind(
-                      [=](struct context ctx) -> IREffect {
-                        auto &builder = ctx.builder;
-                        auto [res, res_handle_fn, stride] =
-                          ctx.resource.srv_range_map[srv.range_id];
-                        auto res_h = co_yield res_handle_fn(nullptr);
-                        auto offset = builder.CreateLShr(
-                          builder.CreateAdd(
-                            builder.CreateMul(
-                              builder.getInt32(stride),
-                              co_yield load_src_op<false>(load.src_address) >>=
-                              extract_element(0)
-                            ),
-                            co_yield load_src_op<false>(load.src_byte_offset
-                            ) >>= extract_element(0)
-                          ),
-                          2
-                        );
-                        co_return co_yield store_dst_op<false>(
-                          load.dst, load_texture_raw(
-                                      res, res_h, offset,
-                                      std::max(
-                                        {srv.read_swizzle.x, srv.read_swizzle.y,
-                                         srv.read_swizzle.z, srv.read_swizzle.w}
-                                      ) +
-                                        1
-                                    ) >>= swizzle(srv.read_swizzle)
-                        );
-                      }
-                    );
-                  },
-                  [&](SrcOperandUAV uav) {
-                    return make_effect_bind(
-                      [=](struct context ctx) -> IREffect {
-                        auto &builder = ctx.builder;
-                        auto [res, res_handle_fn, stride] =
-                          ctx.resource.uav_range_map[uav.range_id];
-                        auto res_h = co_yield res_handle_fn(nullptr);
-                        auto offset = builder.CreateLShr(
-                          builder.CreateAdd(
-                            builder.CreateMul(
-                              builder.getInt32(stride),
-                              co_yield load_src_op<false>(load.src_address) >>=
-                              extract_element(0)
-                            ),
-                            co_yield load_src_op<false>(load.src_byte_offset
-                            ) >>= extract_element(0)
-                          ),
-                          2
-                        );
-                        co_return co_yield store_dst_op<false>(
-                          load.dst, load_texture_raw(
-                                      res, res_h, offset,
-                                      std::max(
-                                        {uav.read_swizzle.x, uav.read_swizzle.y,
-                                         uav.read_swizzle.z, uav.read_swizzle.w}
-                                      ) +
-                                        1
-                                    ) >>= swizzle(uav.read_swizzle)
-                        );
-                      }
-                    );
-                  }
-                },
-                load.src
-              );
-            },
-            [&](InstStoreStructured store) {
-              effect << std::visit(
-                patterns{
-                  [&](AtomicOperandTGSM tgsm) {
-                    return make_effect_bind(
-                      [=](struct context ctx) -> IREffect {
-                        auto &builder = ctx.builder;
-                        auto [stride, tgsm_h] = ctx.resource.tgsm_map[tgsm.id];
-                        auto offset = builder.CreateLShr(
-                          builder.CreateAdd(
-                            builder.CreateMul(
-                              builder.getInt32(stride),
-                              co_yield load_src_op<false>(store.dst_address) >>=
-                              extract_element(0)
-                            ),
-                            co_yield load_src_op<false>(store.dst_byte_offset
-                            ) >>= extract_element(0)
-                          ),
-                          2
-                        );
-                        co_return co_yield store_tgsm(
-                          tgsm_h, offset,
-                          mask_to_linear_components_num(tgsm.mask),
-                          co_yield load_src_op<false>(store.src)
-                        );
-                      }
-                    );
-                  },
-                  [&](AtomicDstOperandUAV uav) {
-                    return make_effect_bind(
-                      [=](struct context ctx) -> IREffect {
-                        auto &builder = ctx.builder;
-                        auto [res, res_handle_fn, stride] =
-                          ctx.resource.uav_range_map[uav.range_id];
-                        auto res_h = co_yield res_handle_fn(nullptr);
-                        auto offset = builder.CreateLShr(
-                          builder.CreateAdd(
-                            builder.CreateMul(
-                              builder.getInt32(stride),
-                              co_yield load_src_op<false>(store.dst_address) >>=
-                              extract_element(0)
-                            ),
-                            co_yield load_src_op<false>(store.dst_byte_offset
-                            ) >>= extract_element(0)
-                          ),
-                          2
-                        );
-                        co_return co_yield store_texture_raw(
-                          res, res_h, offset,
-                          mask_to_linear_components_num(uav.mask),
-                          co_yield load_src_op<false>(store.src)
-                        );
-                      }
-                    );
-                  }
-                },
-                store.dst
-              );
-            },
-            [&](InstLoadRaw load) {
-              effect << std::visit(
-                patterns{
-                  [&](SrcOperandTGSM tgsm) {
-                    return make_effect_bind(
-                      [=](struct context ctx) -> IREffect {
-                        auto &builder = ctx.builder;
-                        auto [stride, tgsm_h] = ctx.resource.tgsm_map[tgsm.id];
-                        auto offset = builder.CreateLShr(
-                          co_yield load_src_op<false>(load.src_byte_offset) >>=
-                          extract_element(0),
-                          2
-                        );
-                        co_return co_yield store_dst_op<false>(
-                          load.dst,
-                          load_tgsm(
-                            tgsm_h, offset,
-                            std::max(
-                              {tgsm.read_swizzle.x, tgsm.read_swizzle.y,
-                               tgsm.read_swizzle.z, tgsm.read_swizzle.w}
-                            ) +
-                              1
-                          ) >>= swizzle(tgsm.read_swizzle)
-                        );
-                      }
-                    );
-                  },
-                  [&](SrcOperandResource srv) {
-                    return make_effect_bind(
-                      [=](struct context ctx) -> IREffect {
-                        auto &builder = ctx.builder;
-                        auto [res, res_handle_fn, stride] =
-                          ctx.resource.srv_range_map[srv.range_id];
-                        auto res_h = co_yield res_handle_fn(nullptr);
-                        auto offset = builder.CreateLShr(
-                          co_yield load_src_op<false>(load.src_byte_offset) >>=
-                          extract_element(0),
-                          2
-                        );
-                        co_return co_yield store_dst_op<false>(
-                          load.dst, load_texture_raw(
-                                      res, res_h, offset,
-                                      std::max(
-                                        {srv.read_swizzle.x, srv.read_swizzle.y,
-                                         srv.read_swizzle.z, srv.read_swizzle.w}
-                                      ) +
-                                        1
-                                    ) >>= swizzle(srv.read_swizzle)
-                        );
-                      }
-                    );
-                  },
-                  [&](SrcOperandUAV uav) {
-                    return make_effect_bind(
-                      [=](struct context ctx) -> IREffect {
-                        auto &builder = ctx.builder;
-                        auto [res, res_handle_fn, stride] =
-                          ctx.resource.uav_range_map[uav.range_id];
-                        auto res_h = co_yield res_handle_fn(nullptr);
-                        auto offset = builder.CreateLShr(
-                          co_yield load_src_op<false>(load.src_byte_offset) >>=
-                          extract_element(0),
-                          2
-                        );
-                        co_return co_yield store_dst_op<false>(
-                          load.dst, load_texture_raw(
-                                      res, res_h, offset,
-                                      std::max(
-                                        {uav.read_swizzle.x, uav.read_swizzle.y,
-                                         uav.read_swizzle.z, uav.read_swizzle.w}
-                                      ) +
-                                        1
-                                    ) >>= swizzle(uav.read_swizzle)
-                        );
-                      }
-                    );
-                  }
-                },
-                load.src
-              );
-            },
-            [&](InstStoreRaw store) {
-              effect << std::visit(
-                patterns{
-                  [&](AtomicOperandTGSM tgsm) {
-                    return make_effect_bind(
-                      [=](struct context ctx) -> IREffect {
-                        auto &builder = ctx.builder;
-                        auto [stride, tgsm_h] = ctx.resource.tgsm_map[tgsm.id];
-                        auto offset = builder.CreateLShr(
-                          co_yield load_src_op<false>(store.dst_byte_offset) >>=
-                          extract_element(0),
-                          2
-                        );
-                        co_return co_yield store_tgsm(
-                          tgsm_h, offset,
-                          mask_to_linear_components_num(tgsm.mask),
-                          co_yield load_src_op<false>(store.src)
-                        );
-                      }
-                    );
-                  },
-                  [&](AtomicDstOperandUAV uav) {
-                    return make_effect_bind(
-                      [=](struct context ctx) -> IREffect {
-                        auto &builder = ctx.builder;
-                        auto [res, res_handle_fn, stride] =
-                          ctx.resource.uav_range_map[uav.range_id];
-                        auto res_h = co_yield res_handle_fn(nullptr);
-                        auto offset = builder.CreateLShr(
-                          co_yield load_src_op<false>(store.dst_byte_offset) >>=
-                          extract_element(0),
-                          2
-                        );
-                        co_return co_yield store_texture_raw(
-                          res, res_h, offset,
-                          mask_to_linear_components_num(uav.mask),
-                          co_yield load_src_op<false>(store.src)
-                        );
-                      }
-                    );
-                  }
-                },
-                store.dst
-              );
-            },
-            [&](InstIntegerCompare icmp) {
-              llvm::CmpInst::Predicate pred;
-              switch (icmp.cmp) {
-              case IntegerComparison::Equal:
-                pred = llvm::CmpInst::ICMP_EQ;
-                break;
-              case IntegerComparison::NotEqual:
-                pred = llvm::CmpInst::ICMP_NE;
-                break;
-              case IntegerComparison::SignedLessThan:
-                pred = llvm::CmpInst::ICMP_SLT;
-                break;
-              case IntegerComparison::SignedGreaterEqual:
-                pred = llvm::CmpInst::ICMP_SGE;
-                break;
-              case IntegerComparison::UnsignedLessThan:
-                pred = llvm::CmpInst::ICMP_ULT;
-                break;
-              case IntegerComparison::UnsignedGreaterEqual:
-                pred = llvm::CmpInst::ICMP_UGE;
-                break;
-              }
-              effect << store_dst_op<false>(
-                icmp.dst,
-                lift(
-                  load_src_op<false>(icmp.src0), load_src_op<false>(icmp.src1),
-                  [=](auto a, auto b) { return cmp_integer(pred, a, b); }
-                )
-              );
-            },
-            [&](InstIntegerUnaryOp unary) {
-              std::function<IRValue(pvalue)> fn;
-              switch (unary.op) {
-              case IntegerUnaryOp::Neg:
-                fn = [=](pvalue a) {
-                  return make_irvalue([=](struct context ctx) {
-                    return ctx.builder.CreateNeg(a);
-                  });
-                };
-                break;
-              case IntegerUnaryOp::Not:
-                fn = [=](pvalue a) {
-                  return make_irvalue([=](struct context ctx) {
-                    return ctx.builder.CreateNot(a);
-                  });
-                };
-                break;
-              case IntegerUnaryOp::ReverseBits:
-                fn = [=](pvalue a) {
-                  // metal shader spec doesn't make it clear
-                  // if this is component-wise...
-                  return call_integer_unary_op("reverse_bits", a);
-                };
-                break;
-              case IntegerUnaryOp::CountBits:
-                fn = [=](pvalue a) {
-                  // metal shader spec doesn't make it clear
-                  // if this is component-wise...
-                  return call_integer_unary_op("popcount", a);
-                };
-                break;
-              case IntegerUnaryOp::FirstHiBitSigned:
-              case IntegerUnaryOp::FirstHiBit:
-              case IntegerUnaryOp::FirstLowBit:
-                assert(0 && "TODO: should be polyfilled");
-                break;
-              }
-              auto mask = get_dst_mask(unary.dst);
-              effect << store_dst_op<false>(
-                unary.dst, load_src_op<false>(unary.src, mask) >>= fn
-              );
-            },
-            [&](InstIntegerBinaryOp bin) {
-              std::function<IRValue(pvalue, pvalue)> fn;
-              switch (bin.op) {
-              case IntegerBinaryOp::IShl:
-                fn = [=](pvalue a, pvalue b) {
-                  return make_irvalue([=](struct context ctx) {
-                    return ctx.builder.CreateShl(
-                      a, ctx.builder.CreateAnd(b, 0x1f)
-                    );
-                  });
-                };
-                break;
-              case IntegerBinaryOp::IShr:
-                fn = [=](pvalue a, pvalue b) {
-                  return make_irvalue([=](struct context ctx) {
-                    return ctx.builder.CreateAShr(
-                      a, ctx.builder.CreateAnd(b, 0x1f)
-                    );
-                  });
-                };
-                break;
-              case IntegerBinaryOp::UShr:
-                fn = [=](pvalue a, pvalue b) {
-                  return make_irvalue([=](struct context ctx) {
-                    return ctx.builder.CreateLShr(
-                      a, ctx.builder.CreateAnd(b, 0x1f)
-                    );
-                  });
-                };
-                break;
-              case IntegerBinaryOp::Xor:
-                fn = [=](pvalue a, pvalue b) {
-                  return make_irvalue([=](struct context ctx) {
-                    return ctx.builder.CreateXor(a, b);
-                  });
-                };
-                break;
-              case IntegerBinaryOp::And:
-                fn = [=](pvalue a, pvalue b) {
-                  return make_irvalue([=](struct context ctx) {
-                    return ctx.builder.CreateAnd(a, b);
-                  });
-                };
-                break;
-              case IntegerBinaryOp::Or:
-                fn = [=](pvalue a, pvalue b) {
-                  return make_irvalue([=](struct context ctx) {
-                    return ctx.builder.CreateOr(a, b);
-                  });
-                };
-                break;
-              case IntegerBinaryOp::Add:
-                fn = [=](pvalue a, pvalue b) {
-                  return make_irvalue([=](struct context ctx) {
-                    return ctx.builder.CreateAdd(a, b);
-                  });
-                };
-                break;
-              case IntegerBinaryOp::UMin:
-                fn = [=](pvalue a, pvalue b) {
-                  return call_integer_binop("min", a, b, false);
-                };
-                break;
-              case IntegerBinaryOp::UMax:
-                fn = [=](pvalue a, pvalue b) {
-                  return call_integer_binop("max", a, b, false);
-                };
-                break;
-              case IntegerBinaryOp::IMin:
-                fn = [=](pvalue a, pvalue b) {
-                  return call_integer_binop("min", a, b, true);
-                };
-                break;
-              case IntegerBinaryOp::IMax:
-                fn = [=](pvalue a, pvalue b) {
-                  return call_integer_binop("max", a, b, true);
-                };
-                break;
-              }
-              auto mask = get_dst_mask(bin.dst);
-              effect << store_dst_op<false>(
-                bin.dst, lift(
-                           load_src_op<false>(bin.src0, mask),
-                           load_src_op<false>(bin.src1, mask), fn
-                         )
-              );
-            },
-            [&](InstFloatCompare fcmp) {
-              llvm::CmpInst::Predicate pred;
-              switch (fcmp.cmp) {
-              case FloatComparison::Equal:
-                pred = llvm::CmpInst::FCMP_OEQ;
-                break;
-              case FloatComparison::NotEqual:
-                pred = llvm::CmpInst::FCMP_UNE;
-                break;
-              case FloatComparison::GreaterEqual:
-                pred = llvm::CmpInst::FCMP_OGE;
-                break;
-              case FloatComparison::LessThan:
-                pred = llvm::CmpInst::FCMP_OLT;
-                break;
-              }
-              effect << store_dst_op<false>(
-                fcmp.dst,
-                lift(
-                  load_src_op<true>(fcmp.src0), load_src_op<true>(fcmp.src1),
-                  [=](auto a, auto b) { return cmp_float(pred, a, b); }
-                )
-              );
-            },
-            [&](InstDotProduct dp) {
-              switch (dp.dimension) {
-              case 4:
-                effect << lift(
-                  load_src_op<true>(dp.src0), load_src_op<true>(dp.src1),
-                  [=](auto a, auto b) {
-                    return store_dst_op<true>(
-                      dp.dst, call_dot_product(4, a, b)
-                    );
-                  }
-                );
-                break;
-              case 3:
-                effect << lift(
-                  load_src_op<true>(dp.src0) >>= truncate_vec(3),
-                  load_src_op<true>(dp.src1) >>= truncate_vec(3),
-                  [=](auto a, auto b) {
-                    return store_dst_op<true>(
-                      dp.dst, call_dot_product(3, a, b)
-                    );
-                  }
-                );
-                break;
-              case 2:
-                effect << lift(
-                  load_src_op<true>(dp.src0) >>= truncate_vec(2),
-                  load_src_op<true>(dp.src1) >>= truncate_vec(2),
-                  [=](auto a, auto b) {
-                    return store_dst_op<true>(
-                      dp.dst, call_dot_product(2, a, b)
-                    );
-                  }
-                );
-                break;
-              default:
-                assert(0 && "wrong dot product dimension");
-              }
-            },
-            [&](InstFloatMAD mad) {
-              auto mask = get_dst_mask(mad.dst);
-              effect << lift(
-                load_src_op<true>(mad.src0, mask),
-                load_src_op<true>(mad.src1, mask),
-                load_src_op<true>(mad.src2, mask),
-                [=](auto a, auto b, auto c) {
-                  return store_dst_op<true>(
-                    mad.dst,
-                    call_float_mad(a, b, c) >>= saturate(mad._.saturate)
-                  );
+                default: {
+                  assert(0 && "invalid calc_lod resource type");
                 }
-              );
-            },
-            [&](InstIntegerMAD mad) {
-              // FIXME: this looks wrong, what's the sign specific behavior?
-              auto mask = get_dst_mask(mad.dst);
-              effect << lift(
-                load_src_op<false>(mad.src0, mask),
-                load_src_op<false>(mad.src1, mask),
-                load_src_op<false>(mad.src2, mask),
-                [=](auto a, auto b, auto c) {
-                  return store_dst_op<false>(
-                    mad.dst, make_irvalue([=](struct context ctx) {
-                      return ctx.builder.CreateAdd(
-                        ctx.builder.CreateMul(a, b), c
-                      );
-                    })
-                  );
                 }
-              );
-            },
-            [&](InstFloatUnaryOp unary) {
-              std::function<IRValue(pvalue)> fn;
-              switch (unary.op) {
-              case FloatUnaryOp::Log2: {
-                fn = [=](pvalue a) { return call_float_unary_op("log2", a); };
-                break;
-              }
-              case FloatUnaryOp::Exp2: {
-                fn = [=](pvalue a) { return call_float_unary_op("exp2", a); };
-                break;
-              }
-              case FloatUnaryOp::Rcp: {
-                fn = [=](pvalue a) {
-                  return make_irvalue([=](struct context ctx) {
-                    return ctx.builder.CreateFDiv(
-                      ctx.builder.CreateVectorSplat(
-                        4, llvm::ConstantFP::get(ctx.llvm, llvm::APFloat{1.0f})
-                      ),
-                      a
-                    );
-                  });
-                };
-                break;
-              }
-              case FloatUnaryOp::Rsq: {
-                fn = [=](pvalue a) { return call_float_unary_op("rsqrt", a); };
-                break;
-              }
-              case FloatUnaryOp::Sqrt: {
-                fn = [=](pvalue a) { return call_float_unary_op("sqrt", a); };
-                break;
-              }
-              case FloatUnaryOp::Fraction: {
-                fn = [=](pvalue a) { return call_float_unary_op("fract", a); };
-                break;
-              }
-              case FloatUnaryOp::RoundNearestEven: {
-                fn = [=](pvalue a) { return call_float_unary_op("rint", a); };
-                break;
-              }
-              case FloatUnaryOp::RoundNegativeInf: {
-                fn = [=](pvalue a) { return call_float_unary_op("floor", a); };
-                break;
-              }
-              case FloatUnaryOp::RoundPositiveInf: {
-                fn = [=](pvalue a) { return call_float_unary_op("ceil", a); };
-                break;
-              }
-              case FloatUnaryOp::RoundZero: {
-                fn = [=](pvalue a) { return call_float_unary_op("trunc", a); };
-                break;
-              } break;
-              }
-              auto mask = get_dst_mask(unary.dst);
-              effect << store_dst_op<true>(
-                unary.dst, (load_src_op<true>(unary.src, mask) >>= fn) >>=
-                           saturate(unary._.saturate)
-              );
-            },
-            [&](InstFloatBinaryOp bin) {
-              std::function<IRValue(pvalue, pvalue)> fn;
-              switch (bin.op) {
-              case FloatBinaryOp::Add: {
-                fn = [=](pvalue a, pvalue b) {
-                  return make_irvalue([=](struct context ctx) {
-                    return ctx.builder.CreateFAdd(a, b);
-                  });
-                };
-                break;
-              }
-              case FloatBinaryOp::Mul: {
-                fn = [=](pvalue a, pvalue b) {
-                  return make_irvalue([=](struct context ctx) {
-                    return ctx.builder.CreateFMul(a, b);
-                  });
-                };
-                break;
-              }
-              case FloatBinaryOp::Div: {
-                fn = [=](pvalue a, pvalue b) {
-                  return make_irvalue([=](struct context ctx) {
-                    return ctx.builder.CreateFDiv(a, b);
-                  });
-                };
-                break;
-              }
-              case FloatBinaryOp::Min: {
-                fn = [=](pvalue a, pvalue b) {
-                  return call_float_binop("fmin", a, b);
-                };
-                break;
-              }
-              case FloatBinaryOp::Max: {
-                fn = [=](pvalue a, pvalue b) {
-                  return call_float_binop("fmax", a, b);
-                };
-                break;
-              }
-              }
-              auto mask = get_dst_mask(bin.dst);
-              effect << store_dst_op<true>(
-                bin.dst, lift(
-                           load_src_op<true>(bin.src0, mask),
-                           load_src_op<true>(bin.src1, mask), fn
-                         ) >>= saturate(bin._.saturate)
-              );
-            },
-            [&](InstSinCos sincos) {
-              auto mask_cos = get_dst_mask(sincos.dst_cos);
-              effect << store_dst_op<true>(
-                sincos.dst_cos, load_src_op<true>(sincos.src, mask_cos) >>=
-                                [=](auto src) {
-                                  return call_float_unary_op("cos", src) >>=
-                                         saturate(sincos._.saturate);
-                                }
-              );
+                co_return ctx.builder.CreateInsertElement(
+                  ctx.builder.CreateInsertElement(
+                    llvm::ConstantAggregateZero::get(ctx.types._float4),
+                    clamped_float, (uint64_t)0
+                  ),
+                  unclamped_float, 1
+                );
+              }) >>= swizzle(calc.src_resource.read_swizzle)
+            );
+          },
+          [](InstNop) {}, // nop
+          [](InstMaskedSumOfAbsDiff) { assert(0 && "unhandled msad"); },
 
-              auto mask_sin = get_dst_mask(sincos.dst_sin);
-              effect << store_dst_op<true>(
-                sincos.dst_sin, load_src_op<true>(sincos.src, mask_sin) >>=
-                                [=](auto src) {
-                                  return call_float_unary_op("sin", src) >>=
-                                         saturate(sincos._.saturate);
-                                }
-              );
-            },
-            [&](InstConvert convert) {
-              switch (convert.op) {
-              case ConversionOp::HalfToFloat: {
-                effect << store_dst_op<true>(
-                  convert.dst,
-                  make_irvalue_bind([=](struct context ctx) -> IRValue {
-                    // FIXME: neg modifier might be wrong?!
-                    auto src = co_yield load_src_op<false>(convert.src); // int4
-                    auto half8 = ctx.builder.CreateBitCast(
-                      src, llvm::FixedVectorType::get(ctx.types._half, 8)
+          [&effect](InstAtomicBinOp bin) {
+            std::string op;
+            bool is_signed = false;
+            switch (bin.op) {
+            case AtomicBinaryOp::And:
+              op = "and";
+              break;
+            case AtomicBinaryOp::Or:
+              op = "or";
+              break;
+            case AtomicBinaryOp::Xor:
+              op = "xor";
+              break;
+            case AtomicBinaryOp::Add:
+              op = "add";
+              break;
+            case AtomicBinaryOp::IMax:
+              op = "max";
+              is_signed = true;
+              break;
+            case AtomicBinaryOp::IMin:
+              op = "min";
+              is_signed = true;
+              break;
+            case AtomicBinaryOp::UMax:
+              op = "max";
+              break;
+            case AtomicBinaryOp::UMin:
+              op = "min";
+              break;
+            }
+            effect << std::visit(
+              patterns{
+                [&](AtomicOperandTGSM tgsm) {
+                  return make_effect_bind([=](struct context ctx) -> IREffect {
+                    auto ptr = co_yield read_uint_buf_addr(
+                      tgsm, co_yield read_atomic_index(
+                              tgsm, co_yield load_src_op<false>(bin.dst_address)
+                            )
                     );
-                    co_return co_yield call_convert(
-                      ctx.builder.CreateShuffleVector(half8, {0, 2, 4, 6}),
-                      ctx.types._half4, ctx.types._float4, ".f.v4f16",
-                      ".f.v4f32"
+                    co_return co_yield store_dst_op<false>(
+                      bin.dst_original, call_atomic_fetch_explicit(
+                                          ptr,
+                                          co_yield load_src_op<false>(bin.src
+                                          ) >>= extract_element(0),
+                                          op, is_signed, false
+                                        )
                     );
-                  })
-                );
-                break;
-              }
-              case ConversionOp::FloatToHalf: {
-                effect << store_dst_op<false>(
-                  convert.dst,
-                  make_irvalue_bind([=](struct context ctx) -> IRValue {
-                    // FIXME: neg modifier might be wrong?!
-                    auto src =
-                      co_yield load_src_op<true>(convert.src); // float4
-                    auto half4 = co_yield call_convert(
-                      src, ctx.types._float4, ctx.types._half4, ".f.v4f32",
-                      ".f.v4f16"
-                    );
-                    co_return ctx.builder.CreateBitCast(
-                      ctx.builder.CreateShuffleVector(
-                        half4,
-                        llvm::ConstantAggregateZero::get(half4->getType()),
-                        {0, 4, 1, 5, 2, 6, 3, 7}
-                      ),
-                      ctx.types._int4
-                    );
-                  })
-                );
-                break;
-              }
-              case ConversionOp::FloatToSigned: {
-                effect << store_dst_op<false>(
-                  convert.dst,
-                  make_irvalue_bind([=](struct context ctx) -> IRValue {
-                    auto src = co_yield load_src_op<true>(convert.src);
-                    co_return co_yield call_convert(
-                      src, ctx.types._float4, ctx.types._int4, ".f.v4f32",
-                      ".s.v4i32"
-                    );
-                  })
-                );
-                break;
-              }
-              case ConversionOp::SignedToFloat: {
-                effect << store_dst_op<true>(
-                  convert.dst,
-                  make_irvalue_bind([=](struct context ctx) -> IRValue {
-                    auto src = co_yield load_src_op<false>(convert.src);
-                    co_return co_yield call_convert(
-                      src, ctx.types._int4, ctx.types._float4, ".s.v4i32",
-                      ".f.v4f32"
-                    );
-                  })
-                );
-                break;
-              }
-              case ConversionOp::FloatToUnsigned: {
-                effect << store_dst_op<false>(
-                  convert.dst,
-                  make_irvalue_bind([=](struct context ctx) -> IRValue {
-                    auto src = co_yield load_src_op<true>(convert.src);
-                    co_return co_yield call_convert(
-                      src, ctx.types._float4, ctx.types._int4, ".f.v4f32",
-                      ".u.v4i32"
-                    );
-                  })
-                );
-                break;
-              }
-              case ConversionOp::UnsignedToFloat: {
-                effect << store_dst_op<true>(
-                  convert.dst,
-                  make_irvalue_bind([=](struct context ctx) -> IRValue {
-                    auto src = co_yield load_src_op<false>(convert.src);
-                    co_return co_yield call_convert(
-                      src, ctx.types._int4, ctx.types._float4, ".u.v4i32",
-                      ".f.v4f32"
-                    );
-                  })
-                );
-                break;
-              }
-              }
-            },
-            [&](InstIntegerBinaryOpWithTwoDst bin) {
-              switch (bin.op) {
-              case IntegerBinaryOpWithTwoDst::IMul: {
-                effect << make_effect_bind([=](struct context ctx) -> IREffect {
-                  auto a = co_yield load_src_op<false>(bin.src0);
-                  auto b = co_yield load_src_op<false>(bin.src1);
-                  auto mul = ctx.builder.CreateBitCast(
-                    ctx.builder.CreateMul(
-                      ctx.builder.CreateSExt(a, ctx.types._long4),
-                      ctx.builder.CreateSExt(b, ctx.types._long4)
-                    ),
-                    ctx.types._int8
-                  );
-                  co_yield store_dst_op<false>(
-                    bin.dst_hi,
-                    pure(ctx.builder.CreateShuffleVector(mul, {1, 3, 5, 7}))
-                  );
-                  co_yield store_dst_op<false>(
-                    bin.dst_low,
-                    pure(ctx.builder.CreateShuffleVector(mul, {0, 2, 4, 6}))
-                  );
-                  co_return {};
-                });
-                break;
-              }
-              case IntegerBinaryOpWithTwoDst::UMul: {
-                effect << make_effect_bind([=](struct context ctx) -> IREffect {
-                  auto a = co_yield load_src_op<false>(bin.src0);
-                  auto b = co_yield load_src_op<false>(bin.src1);
-                  auto mul = ctx.builder.CreateBitCast(
-                    ctx.builder.CreateMul(
-                      ctx.builder.CreateZExt(a, ctx.types._long4),
-                      ctx.builder.CreateZExt(b, ctx.types._long4)
-                    ),
-                    ctx.types._int8
-                  );
-                  co_yield store_dst_op<false>(
-                    bin.dst_hi,
-                    pure(ctx.builder.CreateShuffleVector(mul, {1, 3, 5, 7}))
-                  );
-                  co_yield store_dst_op<false>(
-                    bin.dst_low,
-                    pure(ctx.builder.CreateShuffleVector(mul, {0, 2, 4, 6}))
-                  );
-                  co_return {};
-                });
-                break;
-              }
-              case IntegerBinaryOpWithTwoDst::UAddCarry:
-              case IntegerBinaryOpWithTwoDst::USubBorrow: {
-                assert(0 && "todo");
-                break;
-              }
-              case IntegerBinaryOpWithTwoDst::UDiv: {
-                effect << make_effect_bind([=](struct context ctx) -> IREffect {
-                  auto a = co_yield load_src_op<false>(bin.src0);
-                  auto b = co_yield load_src_op<false>(bin.src1);
-                  co_yield store_dst_op<false>(
-                    bin.dst_quot, make_irvalue([=](struct context ctx) {
-                      return ctx.builder.CreateUDiv(a, b);
-                    })
-                  );
-                  co_yield store_dst_op<false>(
-                    bin.dst_rem, make_irvalue([=](struct context ctx) {
-                      return ctx.builder.CreateURem(a, b);
-                    })
-                  );
-                  co_return {};
-                });
-                break;
-              }
-              }
-            },
-            [&](InstExtractBits extract) {
-              effect << store_dst_op<false>(
-                extract.dst,
-                make_irvalue_bind([=](struct context ctx) -> IRValue {
-                  auto src0 = co_yield load_src_op<false>(extract.src0);
-                  auto src1 = co_yield load_src_op<false>(extract.src1);
-                  auto src2 = co_yield load_src_op<false>(extract.src2);
-                  auto width = ctx.builder.CreateAnd(
-                    src0, co_yield get_int4_splat(0b11111)
-                  );
-                  auto offset = ctx.builder.CreateAnd(
-                    src1, co_yield get_int4_splat(0b11111)
-                  );
-                  auto width_is_zero =
-                    ctx.builder.CreateICmpEQ(width, co_yield get_int4_splat(0));
-                  auto width_offset_sum = ctx.builder.CreateAdd(width, offset);
-                  auto width_cp =
-                    ctx.builder.CreateSub(co_yield get_int4_splat(32), width);
-                  auto clamp_src = ctx.builder.CreateShl(
-                    src2, ctx.builder.CreateSub(
-                            co_yield get_int4_splat(32), width_offset_sum
+                  });
+                },
+                [&](AtomicDstOperandUAV uav) {
+                  return make_effect_bind([=](struct context ctx) -> IREffect {
+                    if (ctx.resource.uav_buf_range_map.contains(uav.range_id)) {
+                      auto ptr = co_yield read_uint_buf_addr(
+                        uav, co_yield read_atomic_index(
+                               uav, co_yield load_src_op<false>(bin.dst_address)
+                             )
+                      );
+                      co_return co_yield store_dst_op<false>(
+                        bin.dst_original, call_atomic_fetch_explicit(
+                                            ptr,
+                                            co_yield load_src_op<false>(bin.src
+                                            ) >>= extract_element(0),
+                                            op, is_signed, true
+                                          )
+                      );
+                    }
+                    assert(0 && "todo: typed uav atomic binop");
+                  });
+                }
+              },
+              bin.dst
+            );
+          },
+          [&effect](InstAtomicImmExchange exch) {
+            effect << std::visit(
+              patterns{
+                [=](AtomicOperandTGSM tgsm) -> IREffect {
+                  auto ptr = co_yield read_uint_buf_addr(
+                    tgsm, co_yield read_atomic_index(
+                            tgsm, co_yield load_src_op<false>(exch.dst_address)
                           )
                   );
-                  if (!extract.is_signed) {
-                    auto need_clamp = ctx.builder.CreateICmpULT(
-                      width_offset_sum, co_yield get_int4_splat(32)
-                    );
-                    auto no_clamp = ctx.builder.CreateLShr(src2, offset);
-                    auto clamped = ctx.builder.CreateLShr(clamp_src, width_cp);
-                    co_return ctx.builder.CreateSelect(
-                      width_is_zero, co_yield get_int4_splat(0),
-                      ctx.builder.CreateSelect(need_clamp, clamped, no_clamp)
-                    );
+                  co_return co_yield store_dst_op<false>(
+                    exch.dst, call_atomic_exchange_explicit(
+                                ptr,
+                                co_yield load_src_op<false>(exch.src) >>=
+                                extract_element(0),
+                                false
+                              )
+                  );
+                },
+                [&](AtomicDstOperandUAV uav) -> IREffect {
+                  return make_effect_bind([=](struct context ctx) -> IREffect {
+                    if (ctx.resource.uav_buf_range_map.contains(uav.range_id)) {
+                      auto ptr = co_yield read_uint_buf_addr(
+                        uav,
+                        co_yield read_atomic_index(
+                          uav, co_yield load_src_op<false>(exch.dst_address)
+                        )
+                      );
+                      co_return co_yield store_dst_op<false>(
+                        exch.dst, call_atomic_exchange_explicit(
+                                    ptr,
+                                    co_yield load_src_op<false>(exch.src) >>=
+                                    extract_element(0),
+                                    true
+                                  )
+                      );
+                    }
+                    assert(0 && "unhandled imm_exch for typed uav");
+                  });
+                }
+              },
+              exch.dst_resource
+            );
+          },
+          [&effect](InstAtomicImmCmpExchange cmpexch) {
+            effect << std::visit(
+              patterns{
+                [&](AtomicOperandTGSM tgsm) -> IREffect { co_return {}; },
+                [&](AtomicDstOperandUAV uav) -> IREffect { co_return {}; }
+              },
+              cmpexch.dst_resource
+            );
+            assert(0 && "unhandled imm_cmp_exch");
+          },
+          [&effect](InstAtomicImmIncrement alloc) {
+            effect << store_dst_op<false>(
+              alloc.dst, make_irvalue_bind([=](struct context ctx) -> IRValue {
+                auto ptr =
+                  co_yield ctx.resource
+                    .uav_counter_range_map[alloc.uav.range_id](nullptr);
+                co_return co_yield call_atomic_fetch_explicit(
+                  ptr, co_yield get_int(1), "add", false, true
+                );
+              })
+            );
+          },
+          [&effect](InstAtomicImmDecrement consume) {
+            effect << store_dst_op<false>(
+              consume.dst,
+              make_irvalue_bind([=](struct context ctx) -> IRValue {
+                auto ptr =
+                  co_yield ctx.resource
+                    .uav_counter_range_map[consume.uav.range_id](nullptr);
+                co_return ctx.builder.CreateSub(
+                  co_yield call_atomic_fetch_explicit(
+                    ptr, co_yield get_int(1), "sub", false, true
+                  ),
+                  co_yield get_int(1)
+                );
+              })
+            );
+          },
+          [&effect](InstBufferInfo bufinfo) {
+            auto count = std::visit(
+              patterns{
+                [](SrcOperandResource srv) -> IRValue {
+                  auto ctx = co_yield get_context();
+                  if (ctx.resource.srv_buf_range_map.contains(srv.range_id)) {
+                    auto &[_, srv_c, __] =
+                      ctx.resource.srv_buf_range_map[srv.range_id];
+                    co_return co_yield srv_c(nullptr);
                   } else {
-                    auto need_clamp = ctx.builder.CreateICmpSLT(
-                      width_offset_sum, co_yield get_int4_splat(32)
-                    );
-                    auto no_clamp = ctx.builder.CreateAShr(src2, offset);
-                    auto clamped = ctx.builder.CreateAShr(clamp_src, width_cp);
-                    co_return ctx.builder.CreateSelect(
-                      width_is_zero, co_yield get_int4_splat(0),
-                      ctx.builder.CreateSelect(need_clamp, clamped, no_clamp)
-                    );
-                  }
-                })
-              );
-            },
-            [&](InstBitFiledInsert bfi) {
-              effect << store_dst_op<false>(
-                bfi.dst, make_irvalue_bind([=](struct context ctx) -> IRValue {
-                  auto src0 = co_yield load_src_op<false>(bfi.src0);
-                  auto src1 = co_yield load_src_op<false>(bfi.src1);
-                  auto src2 = co_yield load_src_op<false>(bfi.src2);
-                  auto src3 = co_yield load_src_op<false>(bfi.src2);
-                  auto width = ctx.builder.CreateAnd(
-                    src0, co_yield get_int4_splat(0b11111)
-                  );
-                  auto offset = ctx.builder.CreateAnd(
-                    src1, co_yield get_int4_splat(0b11111)
-                  );
-                  auto bitmask = ctx.builder.CreateAnd(
-                    co_yield get_int4_splat(0xffffffff), // is this necessary?
-                    ctx.builder.CreateShl(
-                      ctx.builder.CreateSub(
-                        ctx.builder.CreateLShr(
-                          co_yield get_int4_splat(1), width
-                        ),
-                        co_yield get_int4_splat(1)
-                      ),
-                      offset
-                    )
-                  );
-                  co_return ctx.builder.CreateOr(
-                    ctx.builder.CreateAnd(
-                      ctx.builder.CreateLShr(src2, offset), bitmask
-                    ),
-                    ctx.builder.CreateAnd(src3, ctx.builder.CreateNot(bitmask))
-                  );
-                })
-              );
-            },
-            [&](InstAtomicBinOp bin) {
-              std::string op;
-              bool is_signed = false;
-              switch (bin.op) {
-              case AtomicBinaryOp::And:
-                op = "and";
-                break;
-              case AtomicBinaryOp::Or:
-                op = "or";
-                break;
-              case AtomicBinaryOp::Xor:
-                op = "xor";
-                break;
-              case AtomicBinaryOp::Add:
-                op = "add";
-                break;
-              case AtomicBinaryOp::IMax:
-                op = "max";
-                is_signed = true;
-                break;
-              case AtomicBinaryOp::IMin:
-                op = "min";
-                is_signed = true;
-                break;
-              case AtomicBinaryOp::UMax:
-                op = "max";
-                break;
-              case AtomicBinaryOp::UMin:
-                op = "min";
-                break;
-                break;
-              }
-              effect << std::visit(
-                patterns{
-                  [&](AtomicOperandTGSM tgsm) {
-                    return make_effect_bind(
-                      [=](struct context ctx) -> IREffect {
-                        auto &builder = ctx.builder;
-                        auto [stride, tgsm_h] = ctx.resource.tgsm_map[tgsm.id];
-                        auto addr =
-                          co_yield load_src_op<false>(bin.dst_address);
-                        auto ptr = ctx.builder.CreateInBoundsGEP(
-                          llvm::cast<llvm::PointerType>(tgsm_h->getType())
-                            ->getNonOpaquePointerElementType(),
-                          tgsm_h,
-                          {ctx.builder.getInt32(0),
-                           builder.CreateLShr(
-                             stride > 0 ? builder.CreateAdd(
-                                            builder.CreateMul(
-                                              builder.getInt32(stride),
-                                              co_yield extract_element(0)(addr)
-                                            ),
-                                            co_yield extract_element(1)(addr)
-                                          )
-                                        : co_yield extract_element(0)(addr),
-                             2
-                           )}
-                        );
-                        auto imm = co_yield call_atomic_fetch_explicit(
-                          ptr,
-                          co_yield load_src_op<false>(bin.src) >>=
-                          extract_element(0),
-                          op, is_signed, false
-                        );
-                        if (bin.dst_original.has_value()) {
-                          co_yield store_dst_op<false>(
-                            bin.dst_original.value(), pure(imm)
-                          );
-                        };
-                        co_return {};
-                      }
-                    );
-                  },
-                  [&](AtomicDstOperandUAV uav) {
-                    return make_effect_bind(
-                      [=](struct context ctx) -> IREffect {
-                        auto &builder = ctx.builder;
-                        auto [res, res_handle_fn, stride] =
-                          ctx.resource.uav_range_map[uav.range_id];
-                        assert(
-                          (res.resource_kind == air::TextureKind::texture_buffer
-                          ) &&
-                          "TODO: handle typed uav atomic operation..."
-                        );
-                        auto res_h = co_yield res_handle_fn(nullptr);
-                        auto addr =
-                          co_yield load_src_op<false>(bin.dst_address);
-                        auto ptr =
-                          stride < 0
-                            ? co_yield extract_element(0)(addr
-                              ) // TODO: handle 2d/3d..and array uav
-                            : builder.CreateLShr(
-                                stride > 0
-                                  ? builder.CreateAdd(
-                                      builder.CreateMul(
-                                        builder.getInt32(stride),
-                                        co_yield extract_element(0)(addr)
-                                      ),
-                                      co_yield extract_element(1)(addr)
-                                    )
-                                  : co_yield extract_element(0)(addr),
-                                2
-                              );
-                        auto imm = co_yield call_texture_atomic_fetch_explicit(
-                          res, res_h, op, is_signed, ptr, nullptr,
-                          co_yield load_src_op<false>(bin.src)
-                        );
-                        if (bin.dst_original.has_value()) {
-                          co_yield store_dst_op<false>(
-                            bin.dst_original.value(), extract_element(0)(imm)
-                          );
-                        };
-                        co_return {};
-                      }
-                    );
+                    auto &[tex, srv_h] =
+                      ctx.resource.srv_range_map[srv.range_id];
+                    co_return co_yield call_get_texture_info(
+                      tex, co_yield srv_h(nullptr), TextureInfoType::width,
+                      co_yield get_int(0)
+                    ) >>= swizzle(srv.read_swizzle);
                   }
                 },
-                bin.dst
-              );
-            },
-            [&](InstSync sync) {
-              mem_flags mem_flag;
-              if (sync.boundary == InstSync::Boundary::global) {
-                mem_flag |= mem_flags::device;
-              }
-              if (sync.boundary == InstSync::Boundary::group) {
-                mem_flag |= mem_flags::threadgroup;
-              }
-              effect << call_threadgroup_barrier(mem_flag);
-            },
-            [&](InstPixelDiscard) { effect << call_discard_fragment(); },
-            [&](InstPartialDerivative df) {
-              effect << store_dst_op<true>(
-                df.dst, make_irvalue_bind([=](struct context ctx) -> IRValue {
-                          auto fvec4 = co_yield load_src_op<true>(df.src);
-                          co_return co_yield call_derivative(fvec4, df.ddy);
-                        }) >>= saturate(df._.saturate)
-              );
-            },
-            [&](InstCalcLOD calc) {
-              effect << store_dst_op<true>(
-                calc.dst,
-                make_irvalue_bind([=](struct context ctx) -> IRValue {
-                  auto [res, res_handle_fn, _] =
-                    ctx.resource.srv_range_map[calc.src_resource.range_id];
-                  auto sampler_handle_fn =
-                    ctx.resource.sampler_range_map[calc.src_sampler.range_id];
-                  auto res_h = co_yield res_handle_fn(nullptr);
-                  auto sampler_h = co_yield sampler_handle_fn(nullptr);
-                  auto coord = co_yield load_src_op<true>(calc.src_address);
-                  pvalue clamped_float = nullptr, unclamped_float = nullptr;
-                  switch (res.resource_kind) {
-                  case air::TextureKind::texture_1d:
-                  case air::TextureKind::texture_1d_array: {
-                    // MSL Spec 6.12.2 mipmaps are not supported for 1D texture
-                    clamped_float = co_yield get_float(0.0f);
-                    unclamped_float = co_yield get_float(0.0f);
-                    break;
+                [](SrcOperandUAV uav) -> IRValue {
+                  auto ctx = co_yield get_context();
+                  if (ctx.resource.uav_buf_range_map.contains(uav.range_id)) {
+                    auto &[_, uav_c, __] =
+                      ctx.resource.uav_buf_range_map[uav.range_id];
+                    co_return co_yield uav_c(nullptr);
+                  } else {
+                    auto &[tex, uav_h] =
+                      ctx.resource.srv_range_map[uav.range_id];
+                    co_return co_yield call_get_texture_info(
+                      tex, co_yield uav_h(nullptr), TextureInfoType::width,
+                      co_yield get_int(0)
+                    ) >>= swizzle(uav.read_swizzle);
                   }
-                  case air::TextureKind::depth_2d:
-                  case air::TextureKind::texture_2d:
-                  case air::TextureKind::depth_2d_array:
-                  case air::TextureKind::texture_2d_array: {
-                    clamped_float = co_yield call_calc_lod(
-                      res, res_h, sampler_h, co_yield truncate_vec(2)(coord),
-                      false
-                    );
-                    unclamped_float = co_yield call_calc_lod(
-                      res, res_h, sampler_h, co_yield truncate_vec(2)(coord),
-                      true
-                    );
-                    break;
-                  }
-                  case air::TextureKind::texture_3d:
-                  case air::TextureKind::depth_cube:
-                  case air::TextureKind::texture_cube:
-                  case air::TextureKind::depth_cube_array:
-                  case air::TextureKind::texture_cube_array: {
-                    clamped_float = co_yield call_calc_lod(
-                      res, res_h, sampler_h, co_yield truncate_vec(3)(coord),
-                      false
-                    );
-                    unclamped_float = co_yield call_calc_lod(
-                      res, res_h, sampler_h, co_yield truncate_vec(3)(coord),
-                      true
-                    );
-                    break;
-                  }
-                  default: {
-                    assert(0 && "invalid calc_lod resource type");
-                  }
-                  }
-                  co_return ctx.builder.CreateInsertElement(
-                    ctx.builder.CreateInsertElement(
-                      llvm::ConstantAggregateZero::get(types._float4),
-                      clamped_float, (uint64_t)0
-                    ),
-                    unclamped_float, 1
-                  );
-                }) >>= swizzle(calc.src_resource.read_swizzle)
-              );
-            },
-            [](InstNop) {}, // nop
-            [](auto) { assert(0 && "unhandled instruction"); }
+                }
+              },
+              bufinfo.src
+            );
+            effect << store_dst_op<false>(bufinfo.dst, std::move(count));
           },
-          inst
-        );
-      }
-      auto bb_pop = builder.GetInsertBlock();
-      builder.SetInsertPoint(bb);
-      effect.build(ctx);
-      std::visit(
-        patterns{
-          [](BasicBlockUndefined) {
-            assert(0 && "unexpected undefined basicblock");
+          [&effect](InstResourceInfo resinfo) {
+            using T = std::tuple<air::MSLTexture, pvalue, Swizzle>;
+            using V = ReaderIO<struct context, T>;
+            effect
+              << (std::visit(
+                    patterns{
+                      [](SrcOperandResource srv) -> V {
+                        auto ctx = co_yield get_context();
+                        assert(ctx.resource.srv_range_map.contains(srv.range_id)
+                        );
+                        auto &[tex, res_h] =
+                          ctx.resource.srv_range_map[srv.range_id];
+                        co_return {
+                          tex, co_yield res_h(nullptr), srv.read_swizzle
+                        };
+                      },
+                      [](SrcOperandUAV uav) -> V {
+                        auto ctx = co_yield get_context();
+                        assert(ctx.resource.uav_range_map.contains(uav.range_id)
+                        );
+                        auto &[tex, res_h] =
+                          ctx.resource.uav_range_map[uav.range_id];
+                        co_return {
+                          tex, co_yield res_h(nullptr), uav.read_swizzle
+                        };
+                      }
+                    },
+                    resinfo.src_resource
+                  ) >>= [=](T w) -> IREffect {
+                   auto &[tex, res_h, swiz] = w;
+                   return make_effect_bind([=](struct context ctx) -> IREffect {
+                     pvalue x = nullptr;
+                     pvalue y = nullptr;
+                     pvalue z = nullptr;
+                     pvalue zero = co_yield get_int(0);
+                     switch (tex.resource_kind) {
+                     case air::TextureKind::texture_1d:
+                       x = co_yield call_get_texture_info(
+                         tex, res_h, TextureInfoType::width, zero
+                       );
+                       break;
+                     case air::TextureKind::texture_1d_array:
+                       x = co_yield call_get_texture_info(
+                         tex, res_h, TextureInfoType::width, zero
+                       );
+                       y = co_yield call_get_texture_info(
+                         tex, res_h, TextureInfoType::array_length, zero
+                       );
+                       break;
+                     case air::TextureKind::texture_2d:
+                     case air::TextureKind::depth_2d:
+                     case air::TextureKind::texture_cube:
+                     case air::TextureKind::depth_cube:
+                       x = co_yield call_get_texture_info(
+                         tex, res_h, TextureInfoType::width, zero
+                       );
+                       y = co_yield call_get_texture_info(
+                         tex, res_h, TextureInfoType::height, zero
+                       );
+                       break;
+                     case air::TextureKind::texture_2d_array:
+                     case air::TextureKind::depth_2d_array:
+                     case air::TextureKind::texture_cube_array:
+                     case air::TextureKind::depth_cube_array:
+                       x = co_yield call_get_texture_info(
+                         tex, res_h, TextureInfoType::width, zero
+                       );
+                       y = co_yield call_get_texture_info(
+                         tex, res_h, TextureInfoType::height, zero
+                       );
+                       z = co_yield call_get_texture_info(
+                         tex, res_h, TextureInfoType::array_length, zero
+                       );
+                       break;
+                     case air::TextureKind::texture_3d:
+                       x = co_yield call_get_texture_info(
+                         tex, res_h, TextureInfoType::width, zero
+                       );
+                       y = co_yield call_get_texture_info(
+                         tex, res_h, TextureInfoType::height, zero
+                       );
+                       z = co_yield call_get_texture_info(
+                         tex, res_h, TextureInfoType::depth, zero
+                       );
+                       break;
+                     case air::TextureKind::texture_buffer: {
+                       assert(0 && "resinfo: texture buffer not supported");
+                       break;
+                     }
+                     default: {
+                       assert(0 && "resinfo: ms texture not supported");
+                       break;
+                     }
+                     }
+                     // CAUTION: it can't be texture_buffer or ms texture
+                     pvalue mip_count = co_yield call_get_texture_info(
+                       tex, res_h, TextureInfoType::num_mip_levels, zero
+                     );
+                     pvalue vec_ret = llvm::PoisonValue::get(ctx.types._int4);
+                     vec_ret =
+                       ctx.builder.CreateInsertElement(vec_ret, mip_count, 3);
+                     switch (resinfo.modifier) {
+                     case InstResourceInfo::M::none: {
+                       auto to_float_cast = [&](pvalue v) -> IRValue {
+                         co_return ctx.builder.CreateBitCast(
+                           co_yield call_convert(
+                             v, ctx.types._int, ctx.types._float, ".u.i32",
+                             ".f.f32"
+                           ),
+                           ctx.types._int
+                         );
+                       };
+                       x = co_yield to_float_cast(x ? x : zero);
+                       y = co_yield to_float_cast(y ? y : zero);
+                       z = co_yield to_float_cast(z ? z : zero);
+                       break;
+                     }
+                     case InstResourceInfo::M::uint: {
+                       x = x ? x : zero;
+                       y = y ? y : zero;
+                       z = z ? z : zero;
+                       break;
+                     }
+                     case InstResourceInfo::M::rcp: {
+                       auto to_rcp_cast = [&](pvalue v) -> IRValue {
+                         co_return ctx.builder.CreateBitCast(
+                           ctx.builder.CreateFDiv(
+                             co_yield get_float(1.0f),
+                             co_yield call_convert(
+                               v, ctx.types._int, ctx.types._float, ".u.i32",
+                               ".f.f32"
+                             )
+                           ),
+                           ctx.types._int
+                         );
+                       };
+                       x = co_yield to_rcp_cast(x ? x : zero);
+                       y = co_yield to_rcp_cast(y ? y : zero);
+                       z = co_yield to_rcp_cast(z ? z : zero);
+                       break;
+                     }
+                     }
+
+                     vec_ret =
+                       ctx.builder.CreateInsertElement(vec_ret, x, (uint64_t)0);
+                     vec_ret = ctx.builder.CreateInsertElement(vec_ret, y, 1);
+                     vec_ret = ctx.builder.CreateInsertElement(vec_ret, z, 2);
+                     co_return co_yield store_dst_op<false>(
+                       resinfo.dst, pure(vec_ret) >>= swizzle(swiz)
+                     );
+                   });
+                 });
           },
-          [&](BasicBlockUnconditionalBranch uncond) {
-            if (visited.count(uncond.target.get()) == 0) {
-              readBasicBlock(uncond.target);
-            }
-            auto target_bb = visited[uncond.target.get()];
-            builder.CreateBr(target_bb);
-          },
-          [&](BasicBlockConditionalBranch cond) {
-            if (visited.count(cond.true_branch.get()) == 0) {
-              readBasicBlock(cond.true_branch);
-            }
-            if (visited.count(cond.false_branch.get()) == 0) {
-              readBasicBlock(cond.false_branch);
-            }
-            auto target_true_bb = visited[cond.true_branch.get()];
-            auto target_false_bb = visited[cond.false_branch.get()];
-            auto test =
-              load_condition(cond.cond.operand, cond.cond.test_nonzero)
-                .build(ctx);
-            builder.CreateCondBr(test, target_true_bb, target_false_bb);
-          },
-          [&](BasicBlockSwitch swc) {
-            for (auto &[_, case_bb] : swc.cases) {
-              if (visited.count(case_bb.get()) == 0) {
-                readBasicBlock(case_bb);
-              }
-            }
-            // TODO: ensure default always presented? no...
-            if (visited.count(swc.case_default.get()) == 0) {
-              readBasicBlock(swc.case_default);
-            }
-            // builder.CreateSwitch()
-            assert(0 && "TODO: switch");
-          },
-          [&](BasicBlockReturn ret) {
-            // we have done here!
-            // unconditional jump to return bb
-            builder.CreateBr(return_bb);
-          }
+          [](InstSampleInfo) { assert(0 && "unhandled sampleinfo"); },
+          [](InstSamplePos) { assert(0 && "unhandled samplepos"); },
         },
-        current->target
+        inst
       );
-      builder.SetInsertPoint(bb_pop);
+    }
+    auto bb_pop = builder.GetInsertBlock();
+    builder.SetInsertPoint(bb);
+    if (auto err = effect.build(ctx).takeError()) {
+      return err;
+    }
+    if (auto err = std::visit(
+          patterns{
+            [](BasicBlockUndefined) -> llvm::Error {
+              return llvm::make_error<UnsupportedFeature>(
+                "unexpected undefined basicblock"
+              );
+            },
+            [&](BasicBlockUnconditionalBranch uncond) -> llvm::Error {
+              if (visited.count(uncond.target.get()) == 0) {
+                if (auto err = readBasicBlock(uncond.target)) {
+                  return err;
+                }
+              }
+              auto target_bb = visited[uncond.target.get()];
+              builder.CreateBr(target_bb);
+              return llvm::Error::success();
+            },
+            [&](BasicBlockConditionalBranch cond) -> llvm::Error {
+              if (visited.count(cond.true_branch.get()) == 0) {
+                if (auto err = readBasicBlock(cond.true_branch)) {
+                  return err;
+                };
+              }
+              if (visited.count(cond.false_branch.get()) == 0) {
+                if (auto err = readBasicBlock(cond.false_branch)) {
+                  return err;
+                };
+              }
+              auto target_true_bb = visited[cond.true_branch.get()];
+              auto target_false_bb = visited[cond.false_branch.get()];
+              auto test =
+                load_condition(cond.cond.operand, cond.cond.test_nonzero)
+                  .build(ctx);
+              if (auto err = test.takeError()) {
+                return err;
+              }
+              builder.CreateCondBr(test.get(), target_true_bb, target_false_bb);
+              return llvm::Error::success();
+            },
+            [&](BasicBlockSwitch swc) -> llvm::Error {
+              // TODO: ensure default always presented? no...
+              if (visited.count(swc.case_default.get()) == 0) {
+                assert(
+                  swc.case_default.get() && "switch has no default branch"
+                );
+                if (auto err = readBasicBlock(swc.case_default)) {
+                  return err;
+                };
+              }
+              auto value =
+                (load_src_op<false>(swc.value) >>= extract_element(0))
+                  .build(ctx);
+              if (auto err = value.takeError()) {
+                return err;
+              }
+              auto switch_inst = builder.CreateSwitch(
+                value.get(), visited[swc.case_default.get()], swc.cases.size()
+              );
+              for (auto &[val, case_bb] : swc.cases) {
+                if (visited.count(case_bb.get()) == 0) {
+                  if (auto err = readBasicBlock(case_bb)) {
+                    return err;
+                  };
+                }
+                switch_inst->addCase(
+                  llvm::ConstantInt::get(context, llvm::APInt(32, val)),
+                  visited[case_bb.get()]
+                );
+              }
+              return llvm::Error::success();
+            },
+            [&](BasicBlockReturn ret) -> llvm::Error {
+              // we have done here!
+              // unconditional jump to return bb
+              builder.CreateBr(return_bb);
+              return llvm::Error::success();
+            }
+          },
+          current->target
+        )) {
+      return err;
     };
-  readBasicBlock(entry);
+    builder.SetInsertPoint(bb_pop);
+    return llvm::Error::success();
+  };
+  if (auto err = readBasicBlock(entry)) {
+    return std::move(err);
+  }
   assert(visited.count(entry.get()) == 1);
   return visited[entry.get()];
 }

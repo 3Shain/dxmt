@@ -1,285 +1,785 @@
 #include "d3d11_state_object.hpp"
+#include "Metal/MTLDepthStencil.hpp"
+#include "com/com_guid.hpp"
+#include "com/com_pointer.hpp"
 #include "d3d11_device.hpp"
+#include "log/log.hpp"
+#include "util_string.hpp"
+#include "util_hash.hpp"
+#include "d3d11_device_child.hpp"
+#include "Metal/MTLRenderCommandEncoder.hpp"
+#include "Metal/MTLSampler.hpp"
+#include "objc_pointer.hpp"
+#include <cassert>
 
 namespace dxmt {
 
-#pragma region SamplerState
+constexpr MTL::CompareFunction kCompareFunctionMap[] = {
+    MTL::CompareFunction::CompareFunctionNever, // padding 0
+    MTL::CompareFunction::CompareFunctionNever, // 1 - 1
+    MTL::CompareFunction::CompareFunctionLess,
+    MTL::CompareFunction::CompareFunctionEqual,
+    MTL::CompareFunction::CompareFunctionLessEqual,
+    MTL::CompareFunction::CompareFunctionGreater,
+    MTL::CompareFunction::CompareFunctionNotEqual,
+    MTL::CompareFunction::CompareFunctionGreaterEqual,
+    MTL::CompareFunction::CompareFunctionAlways // 8 - 1
+};
 
-//-----------------------------------------------------------------------------
-// Sampler State
-//-----------------------------------------------------------------------------
+constexpr MTL::SamplerAddressMode kAddressModeMap[] = {
+    // MTL: Texture coordinates wrap to the other side of the texture,
+    // effectively keeping only the fractional part of the texture coordinate.
 
-MTLD3D11SamplerState::MTLD3D11SamplerState(IMTLD3D11Device *device,
-                                           MTL::SamplerState *sampler_state,
-                                           const D3D11_SAMPLER_DESC &desc)
-    : MTLD3D11StateObject<ID3D11SamplerState>(device), desc_(desc),
-      metal_sampler_state_(sampler_state) {}
+    // MSDN: Tile the texture at every (u,v) integer junction. For example, for
+    // u values between 0 and 3, the texture is repeated three times.
+    MTL::SamplerAddressMode::SamplerAddressModeRepeat, // 1 - 1
 
-MTLD3D11SamplerState::~MTLD3D11SamplerState() {}
+    // MTL:Between -1.0 and 1.0, the texture coordinates are mirrored across the
+    // axis; outside -1.0 and 1.0, the image is repeated.
 
-HRESULT STDMETHODCALLTYPE
-MTLD3D11SamplerState::QueryInterface(REFIID riid, void **ppvObject) {
-  if (ppvObject == nullptr)
-    return E_POINTER;
+    // MSDN: Flip the texture at every (u,v) integer junction. For u values
+    // between 0 and 1, for example, the texture is addressed normally; between
+    // 1 and 2, the texture is flipped (mirrored); between 2 and 3, the texture
+    // is normal again; and so on.
+    MTL::SamplerAddressMode::SamplerAddressModeMirrorRepeat,
+    // MTL: Texture coordinates are clamped between 0.0 and 1.0, inclusive.
+    // MSDN: Texture coordinates outside the range [0.0, 1.0] are set to the
+    // texture color at 0.0 or 1.0, respectively.
+    MTL::SamplerAddressMode::SamplerAddressModeClampToEdge,
 
-  *ppvObject = nullptr;
+    // MTL: Out-of-range texture coordinates return the value specified by the
+    // borderColor property.
 
-  if (riid == __uuidof(IUnknown) || riid == __uuidof(ID3D11DeviceChild) ||
-      riid == __uuidof(ID3D11SamplerState)) {
-    *ppvObject = ref(this);
-    return S_OK;
-  }
+    // MSDN: Texture coordinates outside the range [0.0, 1.0] are set to the
+    // border color specified in D3D11_SAMPLER_DESC or HLSL code.
+    MTL::SamplerAddressMode::SamplerAddressModeClampToBorderColor,
+    // MTL: Between -1.0 and 1.0, the texture coordinates are mirrored across
+    // the axis; outside -1.0 and 1.0, texture coordinates are clamped.
 
-  if (logQueryInterfaceError(__uuidof(ID3D11SamplerState), riid)) {
-    Logger::warn("D3D11SamplerState::QueryInterface: Unknown interface query");
-    Logger::warn(str::format(riid));
-  }
+    // MSDN:
+    //  Similar to D3D11_TEXTURE_ADDRESS_MIRROR and D3D11_TEXTURE_ADDRESS_CLAMP.
+    //  Takes the absolute value of the texture coordinate (thus, mirroring
+    //  around 0), and then clamps to the maximum value.
+    MTL::SamplerAddressMode::SamplerAddressModeMirrorClampToEdge // 5 - 1
+};
 
-  return E_NOINTERFACE;
-}
+constexpr MTL::StencilOperation kStencilOperationMap[] = {
+    MTL::StencilOperationZero, // invalid
+    MTL::StencilOperationKeep,
+    MTL::StencilOperationZero,
+    MTL::StencilOperationReplace,
+    // D3D11_STENCIL_OP_INCR_SAT: Increment the stencil value by 1, and clamp
+    // the result.
+    MTL::StencilOperationIncrementClamp,
+    MTL::StencilOperationDecrementClamp,
+    MTL::StencilOperationInvert,
+    // D3D11_STENCIL_OP_INCR:Increment the stencil value by 1, and wrap the
+    // result if necessary.
 
-void STDMETHODCALLTYPE
-MTLD3D11SamplerState::GetDesc(D3D11_SAMPLER_DESC *pDesc) {
-  *pDesc = desc_;
-}
+    MTL::StencilOperationIncrementWrap,
+    MTL::StencilOperationDecrementWrap,
 
-#pragma endregion
+};
 
-#pragma region BlendState
+constexpr MTL::BlendOperation kBlendOpMap[] = {
+    MTL::BlendOperationAdd, // padding 0
+    MTL::BlendOperationAdd,
+    MTL::BlendOperationSubtract,
+    MTL::BlendOperationReverseSubtract,
+    MTL::BlendOperationMin,
+    MTL::BlendOperationMax,
+};
 
-//-----------------------------------------------------------------------------
-// Blend State
-//-----------------------------------------------------------------------------
-MTLD3D11BlendState::MTLD3D11BlendState(IMTLD3D11Device *device,
-                                       const D3D11_BLEND_DESC1 &desc)
-    : MTLD3D11StateObject<ID3D11BlendState1>(device), desc_(desc) {}
+constexpr MTL::LogicOperation kLogicOpMap[] = {
+    MTL::LogicOperationClear,      MTL::LogicOperationSet,
+    MTL::LogicOperationCopy,       MTL::LogicOperationCopyInverted,
+    MTL::LogicOperationNoOp,       MTL::LogicOperationInvert,
+    MTL::LogicOperationAnd,        MTL::LogicOperationNand,
+    MTL::LogicOperationOr,         MTL::LogicOperationNor,
+    MTL::LogicOperationXor,        MTL::LogicOperationEquiv,
+    MTL::LogicOperationAndReverse, MTL::LogicOperationAndInverted,
+    MTL::LogicOperationOrReverse,  MTL::LogicOperationOrInverted,
+};
 
-MTLD3D11BlendState::~MTLD3D11BlendState() {}
+constexpr MTL::BlendFactor kBlendFactorMap[] = {
+    MTL::BlendFactorZero, // padding 0
+    MTL::BlendFactorZero,
+    MTL::BlendFactorOne,
+    MTL::BlendFactorSourceColor,
+    MTL::BlendFactorOneMinusSourceColor,
+    MTL::BlendFactorSourceAlpha,
+    MTL::BlendFactorOneMinusSourceAlpha,
+    MTL::BlendFactorDestinationAlpha,
+    MTL::BlendFactorOneMinusDestinationAlpha,
+    MTL::BlendFactorDestinationColor,
+    MTL::BlendFactorOneMinusDestinationColor,
+    MTL::BlendFactorSourceAlphaSaturated,
+    MTL::BlendFactorZero,       // invalid,12
+    MTL::BlendFactorZero,       // invalid,13
+    MTL::BlendFactorBlendAlpha, // BLEND_FACTOR
+    MTL::BlendFactorOneMinusBlendAlpha,
+    MTL::BlendFactorSource1Color,
+    MTL::BlendFactorOneMinusSource1Color,
+    MTL::BlendFactorSource1Alpha,
+    MTL::BlendFactorOneMinusSource1Alpha,
+};
 
-void STDMETHODCALLTYPE MTLD3D11BlendState::GetDesc(D3D11_BLEND_DESC *pDesc) {
-  pDesc->IndependentBlendEnable = desc_.IndependentBlendEnable;
-  pDesc->AlphaToCoverageEnable = desc_.AlphaToCoverageEnable;
-  for (size_t i = 0; i < 8; i++) {
-    pDesc->RenderTarget[i].RenderTargetWriteMask =
-        desc_.RenderTarget[i].RenderTargetWriteMask;
-    pDesc->RenderTarget[i].BlendEnable = desc_.RenderTarget[i].BlendEnable;
-    pDesc->RenderTarget[i].BlendOp = desc_.RenderTarget[i].BlendOp;
-    pDesc->RenderTarget[i].BlendOpAlpha = desc_.RenderTarget[i].BlendOpAlpha;
-    pDesc->RenderTarget[i].SrcBlend = desc_.RenderTarget[i].SrcBlend;
-    pDesc->RenderTarget[i].DestBlend = desc_.RenderTarget[i].SrcBlendAlpha;
-    pDesc->RenderTarget[i].SrcBlendAlpha = desc_.RenderTarget[i].DestBlend;
-    pDesc->RenderTarget[i].DestBlendAlpha =
-        desc_.RenderTarget[i].DestBlendAlpha;
-  }
-}
+constexpr MTL::ColorWriteMask kColorWriteMaskMap[] = {
+    // 0000
+    0,
+    // 0001
+    MTL::ColorWriteMaskRed,
+    // 0010
+    MTL::ColorWriteMaskGreen,
+    // 0011,
+    MTL::ColorWriteMaskRed | MTL::ColorWriteMaskGreen,
+    // 0100
+    MTL::ColorWriteMaskBlue,
+    // 0101
+    MTL::ColorWriteMaskBlue | MTL::ColorWriteMaskRed,
+    // 0110
+    MTL::ColorWriteMaskBlue | MTL::ColorWriteMaskGreen,
+    // 0111
+    MTL::ColorWriteMaskBlue | MTL::ColorWriteMaskRed | MTL::ColorWriteMaskGreen,
 
-void STDMETHODCALLTYPE MTLD3D11BlendState::GetDesc1(D3D11_BLEND_DESC1 *pDesc) {
-  *pDesc = desc_;
-}
+    // 1000
+    MTL::ColorWriteMaskAlpha | 0,
+    // 1001
+    MTL::ColorWriteMaskAlpha | MTL::ColorWriteMaskRed,
+    // 1010
+    MTL::ColorWriteMaskAlpha | MTL::ColorWriteMaskGreen,
+    // 1011,
+    MTL::ColorWriteMaskAlpha | MTL::ColorWriteMaskRed |
+        MTL::ColorWriteMaskGreen,
+    // 1100
+    MTL::ColorWriteMaskAlpha | MTL::ColorWriteMaskBlue,
+    // 0101
+    MTL::ColorWriteMaskAlpha | MTL::ColorWriteMaskBlue | MTL::ColorWriteMaskRed,
+    // 1110
+    MTL::ColorWriteMaskAlpha | MTL::ColorWriteMaskBlue |
+        MTL::ColorWriteMaskGreen,
+    // 1111
+    MTL::ColorWriteMaskAlpha | MTL::ColorWriteMaskBlue |
+        MTL::ColorWriteMaskRed | MTL::ColorWriteMaskGreen,
+};
 
-HRESULT STDMETHODCALLTYPE MTLD3D11BlendState::QueryInterface(const IID &riid,
-                                                             void **ppvObject) {
-  if (ppvObject == nullptr)
-    return E_POINTER;
+constexpr D3D11_RASTERIZER_DESC1 kDefaultRasterizerDesc = {
+    .FillMode = D3D11_FILL_SOLID,
+    .CullMode = D3D11_CULL_BACK,
+    .FrontCounterClockwise = FALSE,
+    .DepthBias = 0,
+    .DepthBiasClamp = 0.0f,
+    .SlopeScaledDepthBias = 0.0f,
+    .DepthClipEnable = TRUE,
+    .ScissorEnable = FALSE,
+    .MultisampleEnable = FALSE,
+    .AntialiasedLineEnable = FALSE,
+    .ForcedSampleCount = 0,
+};
 
-  *ppvObject = nullptr;
+constexpr D3D11_RENDER_TARGET_BLEND_DESC1 kDefaultRenderTargetBlendDesc = {
+    .BlendEnable = FALSE,
+    .LogicOpEnable = FALSE,
+    .SrcBlend = D3D11_BLEND_ONE,
+    .DestBlend = D3D11_BLEND_ZERO,
+    .BlendOp = D3D11_BLEND_OP_ADD,
+    .SrcBlendAlpha = D3D11_BLEND_ONE,
+    .DestBlendAlpha = D3D11_BLEND_ZERO,
+    .BlendOpAlpha = D3D11_BLEND_OP_ADD,
+    .LogicOp = D3D11_LOGIC_OP_NOOP,
+    .RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL,
+};
 
-  if (riid == __uuidof(IUnknown) || riid == __uuidof(ID3D11DeviceChild) ||
-      riid == __uuidof(ID3D11DepthStencilState)) {
-    *ppvObject = ref(this);
-    return S_OK;
-  }
+constexpr D3D11_BLEND_DESC1 kDefaultBlendDesc = {
+    .AlphaToCoverageEnable = FALSE,
+    .IndependentBlendEnable = FALSE,
+    .RenderTarget = {kDefaultRenderTargetBlendDesc}};
 
-  if (logQueryInterfaceError(__uuidof(ID3D11DepthStencilState), riid)) {
-    WARN("Unknown interface query", str::format(riid));
-  }
+constexpr D3D11_SAMPLER_DESC kDefaultSamplerDesc = {
+    .Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR,
+    .AddressU = D3D11_TEXTURE_ADDRESS_CLAMP,
+    .AddressV = D3D11_TEXTURE_ADDRESS_CLAMP,
+    .AddressW = D3D11_TEXTURE_ADDRESS_CLAMP,
+    .MipLODBias = 0.0f,
+    .MaxAnisotropy = 1,
+    .ComparisonFunc = D3D11_COMPARISON_NEVER,
+    .BorderColor = {0.0f, 0.0f, 0.0f, 0.0f},
+    .MinLOD = 0,
+    .MaxLOD = 0,
+};
 
-  return E_NOINTERFACE;
-}
+constexpr D3D11_DEPTH_STENCIL_DESC kDefaultDepthStencilDesc = {
+    .DepthEnable = TRUE,
+    .DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ALL,
+    .DepthFunc = D3D11_COMPARISON_LESS,
+    .StencilEnable = FALSE,
+    .StencilReadMask = D3D11_DEFAULT_STENCIL_READ_MASK,
+    .StencilWriteMask = D3D11_DEFAULT_STENCIL_WRITE_MASK,
+    .FrontFace =
+        {
+            .StencilFailOp = D3D11_STENCIL_OP_KEEP,
+            .StencilDepthFailOp = D3D11_STENCIL_OP_KEEP,
+            .StencilPassOp = D3D11_STENCIL_OP_KEEP,
+            .StencilFunc = D3D11_COMPARISON_ALWAYS,
+        },
+    .BackFace = {
+        .StencilFailOp = D3D11_STENCIL_OP_KEEP,
+        .StencilDepthFailOp = D3D11_STENCIL_OP_KEEP,
+        .StencilPassOp = D3D11_STENCIL_OP_KEEP,
+        .StencilFunc = D3D11_COMPARISON_ALWAYS,
+    }};
 
-void MTLD3D11BlendState::SetupMetalPipelineDescriptor(
-    MTL::RenderPipelineDescriptor *render_pipeline_descriptor) {
-  for (unsigned rt = 0; rt < D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT; rt++) {
-    auto i = desc_.IndependentBlendEnable ? rt : 0;
-    if (desc_.RenderTarget[i].LogicOpEnable) {
-      ERR("OutputMerger LogicOp is not supported");
-      continue;
+class MTLD3D11SamplerState : public MTLD3D11StateObject<IMTLD3D11SamplerState> {
+
+public:
+  friend class MTLD3D11DeviceContext;
+  MTLD3D11SamplerState(IMTLD3D11Device *device, MTL::SamplerState *samplerState,
+                       const D3D11_SAMPLER_DESC &desc)
+      : MTLD3D11StateObject<IMTLD3D11SamplerState>(device), desc_(desc),
+        metal_sampler_state_(samplerState),
+        argument_handle_(samplerState->gpuResourceID()._impl) {}
+  ~MTLD3D11SamplerState() {}
+
+  HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid,
+                                           void **ppvObject) final {
+    if (ppvObject == nullptr)
+      return E_POINTER;
+
+    *ppvObject = nullptr;
+
+    if (riid == __uuidof(IUnknown) || riid == __uuidof(ID3D11DeviceChild) ||
+        riid == __uuidof(ID3D11SamplerState) ||
+        riid == __uuidof(IMTLD3D11SamplerState)) {
+      *ppvObject = ref(this);
+      return S_OK;
     }
-    auto attachment_desc =
-        render_pipeline_descriptor->colorAttachments()->object(rt);
-    attachment_desc->setAlphaBlendOperation(
-        g_blend_op_map[desc_.RenderTarget[i].BlendOpAlpha]);
-    attachment_desc->setRgbBlendOperation(
-        g_blend_op_map[desc_.RenderTarget[i].BlendOp]);
-    attachment_desc->setBlendingEnabled(desc_.RenderTarget[i].BlendEnable);
-    attachment_desc->setSourceAlphaBlendFactor(
-        g_blend_factor_map[desc_.RenderTarget[i].SrcBlendAlpha]);
-    attachment_desc->setSourceRGBBlendFactor(
-        g_blend_factor_map[desc_.RenderTarget[i].SrcBlend]);
-    attachment_desc->setDestinationAlphaBlendFactor(
-        g_blend_factor_map[desc_.RenderTarget[i].DestBlendAlpha]);
-    attachment_desc->setDestinationRGBBlendFactor(
-        g_blend_factor_map[desc_.RenderTarget[i].DestBlend]);
-    attachment_desc->setWriteMask(
-        g_color_write_mask_map[desc_.RenderTarget[i].RenderTargetWriteMask]);
-  }
-  render_pipeline_descriptor->setAlphaToCoverageEnabled(
-      desc_.AlphaToCoverageEnable);
-}
 
-#pragma endregion
+    if (logQueryInterfaceError(__uuidof(IMTLD3D11SamplerState), riid)) {
+      WARN("D3D11SamplerState: Unknown interface query ", str::format(riid));
+    }
 
-#pragma region RasterizerState
-
-//-----------------------------------------------------------------------------
-// Rasterizer State
-//-----------------------------------------------------------------------------
-
-MTLD3D11RasterizerState::MTLD3D11RasterizerState(
-    IMTLD3D11Device *device, const D3D11_RASTERIZER_DESC1 &desc)
-    : MTLD3D11StateObject<ID3D11RasterizerState1>(device), m_desc(desc) {}
-
-MTLD3D11RasterizerState::~MTLD3D11RasterizerState() {}
-
-HRESULT
-STDMETHODCALLTYPE
-MTLD3D11RasterizerState::QueryInterface(REFIID riid, void **ppvObject) {
-  if (ppvObject == nullptr)
-    return E_POINTER;
-
-  *ppvObject = nullptr;
-
-  if (riid == __uuidof(IUnknown) || riid == __uuidof(ID3D11DeviceChild) ||
-      riid == __uuidof(ID3D11RasterizerState) ||
-      riid == __uuidof(ID3D11RasterizerState1)) {
-    *ppvObject = ref(this);
-    return S_OK;
+    return E_NOINTERFACE;
   }
 
-  if (logQueryInterfaceError(__uuidof(ID3D11RasterizerState), riid)) {
-    Logger::warn(
-        "D3D11RasterizerState::QueryInterface: Unknown interface query");
-    Logger::warn(str::format(riid));
+  void STDMETHODCALLTYPE GetDesc(D3D11_SAMPLER_DESC *pDesc) final {
+    *pDesc = desc_;
   }
 
-  return E_NOINTERFACE;
-}
+  virtual MTL::SamplerState *GetSamplerState() {
+    return metal_sampler_state_.ptr();
+  }
 
-void STDMETHODCALLTYPE
-MTLD3D11RasterizerState::GetDesc(D3D11_RASTERIZER_DESC *pDesc) {
-  pDesc->FillMode = m_desc.FillMode;
-  pDesc->CullMode = m_desc.CullMode;
-  pDesc->FrontCounterClockwise = m_desc.FrontCounterClockwise;
-  pDesc->DepthBias = m_desc.DepthBias;
-  pDesc->DepthBiasClamp = m_desc.DepthBiasClamp;
-  pDesc->SlopeScaledDepthBias = m_desc.SlopeScaledDepthBias;
-  pDesc->DepthClipEnable = m_desc.DepthClipEnable;
-  pDesc->ScissorEnable = m_desc.ScissorEnable;
-  pDesc->MultisampleEnable = m_desc.MultisampleEnable;
-  pDesc->AntialiasedLineEnable = m_desc.AntialiasedLineEnable;
-}
+  virtual uint64_t GetArgumentHandle() { return argument_handle_; }
 
-void STDMETHODCALLTYPE
-MTLD3D11RasterizerState::GetDesc1(D3D11_RASTERIZER_DESC1 *pDesc) {
-  *pDesc = m_desc;
-}
+private:
+  const D3D11_SAMPLER_DESC desc_;
+  Obj<MTL::SamplerState> metal_sampler_state_;
+  uint64_t argument_handle_;
+};
 
-void STDMETHODCALLTYPE MTLD3D11RasterizerState::SetupRasterizerState(
-    MTL::RenderCommandEncoder *encoder) {
+// BlendState
 
-  if (m_desc.FillMode == D3D11_FILL_SOLID) {
-    encoder->setTriangleFillMode(MTL::TriangleFillMode::TriangleFillModeFill);
+class MTLD3D11BlendState : public MTLD3D11StateObject<IMTLD3D11BlendState> {
+
+public:
+  friend class MTLD3D11DeviceContext;
+  MTLD3D11BlendState(IMTLD3D11Device *device, const D3D11_BLEND_DESC1 &desc)
+      : MTLD3D11StateObject<IMTLD3D11BlendState>(device), desc_(desc) {}
+  ~MTLD3D11BlendState() {}
+
+  HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid,
+                                           void **ppvObject) final {
+    if (ppvObject == nullptr)
+      return E_POINTER;
+
+    *ppvObject = nullptr;
+
+    if (riid == __uuidof(IUnknown) || riid == __uuidof(ID3D11DeviceChild) ||
+        riid == __uuidof(ID3D11DepthStencilState) ||
+        riid == __uuidof(IMTLD3D11BlendState)) {
+      *ppvObject = ref(this);
+      return S_OK;
+    }
+
+    if (logQueryInterfaceError(__uuidof(IMTLD3D11BlendState), riid)) {
+      WARN("D3D11BlendState: Unknown interface query ", str::format(riid));
+    }
+
+    return E_NOINTERFACE;
+  }
+
+  void STDMETHODCALLTYPE GetDesc(D3D11_BLEND_DESC *pDesc) final {
+    pDesc->IndependentBlendEnable = desc_.IndependentBlendEnable;
+    pDesc->AlphaToCoverageEnable = desc_.AlphaToCoverageEnable;
+    for (size_t i = 0; i < 8; i++) {
+      auto &renderTarget = desc_.RenderTarget[i];
+      pDesc->RenderTarget[i].RenderTargetWriteMask =
+          renderTarget.RenderTargetWriteMask;
+      pDesc->RenderTarget[i].BlendEnable = renderTarget.BlendEnable;
+      pDesc->RenderTarget[i].BlendOp = renderTarget.BlendOp;
+      pDesc->RenderTarget[i].BlendOpAlpha = renderTarget.BlendOpAlpha;
+      pDesc->RenderTarget[i].SrcBlend = renderTarget.SrcBlend;
+      pDesc->RenderTarget[i].DestBlend = renderTarget.SrcBlendAlpha;
+      pDesc->RenderTarget[i].SrcBlendAlpha = renderTarget.DestBlend;
+      pDesc->RenderTarget[i].DestBlendAlpha = renderTarget.DestBlendAlpha;
+    }
+  }
+
+  void STDMETHODCALLTYPE GetDesc1(D3D11_BLEND_DESC1 *pDesc) final {
+    *pDesc = desc_;
+  }
+
+  void SetupMetalPipelineDescriptor(
+      MTL::RenderPipelineDescriptor *render_pipeline_descriptor) {
+    for (unsigned rt = 0; rt < D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT; rt++) {
+      auto i = desc_.IndependentBlendEnable ? rt : 0;
+      auto &renderTarget = desc_.RenderTarget[i];
+      if (renderTarget.LogicOpEnable) {
+#ifdef DXMT_NO_PRIVATE_API
+        ERR("OutputMerger LogicOp is not supported");
+        continue;
+#else
+        render_pipeline_descriptor->setLogicOperationEnabled(true);
+        render_pipeline_descriptor->setLogicOperation(
+            kLogicOpMap[renderTarget.LogicOp]);
+#endif
+      }
+      auto attachment_desc =
+          render_pipeline_descriptor->colorAttachments()->object(rt);
+      attachment_desc->setAlphaBlendOperation(
+          kBlendOpMap[renderTarget.BlendOpAlpha]);
+      attachment_desc->setRgbBlendOperation(kBlendOpMap[renderTarget.BlendOp]);
+      attachment_desc->setBlendingEnabled(renderTarget.BlendEnable);
+      attachment_desc->setSourceAlphaBlendFactor(
+          kBlendFactorMap[renderTarget.SrcBlendAlpha]);
+      attachment_desc->setSourceRGBBlendFactor(
+          kBlendFactorMap[renderTarget.SrcBlend]);
+      attachment_desc->setDestinationAlphaBlendFactor(
+          kBlendFactorMap[renderTarget.DestBlendAlpha]);
+      attachment_desc->setDestinationRGBBlendFactor(
+          kBlendFactorMap[renderTarget.DestBlend]);
+      attachment_desc->setWriteMask(
+          kColorWriteMaskMap[renderTarget.RenderTargetWriteMask]);
+      assert(renderTarget.SrcBlend < D3D11_BLEND_SRC1_COLOR);
+      assert(renderTarget.SrcBlendAlpha < D3D11_BLEND_SRC1_COLOR);
+      assert(renderTarget.DestBlendAlpha < D3D11_BLEND_SRC1_COLOR);
+      assert(renderTarget.DestBlend < D3D11_BLEND_SRC1_COLOR);
+    }
+    render_pipeline_descriptor->setAlphaToCoverageEnabled(
+        desc_.AlphaToCoverageEnable);
+  }
+
+  SIZE_T GetHash() {
+    HashState state;
+    state.add(desc_.AlphaToCoverageEnable);
+    state.add(desc_.IndependentBlendEnable);
+    for (auto x : desc_.RenderTarget) {
+      state.add(x.BlendEnable);
+      state.add(x.RenderTargetWriteMask);
+      state.add(x.LogicOpEnable);
+      state.add(x.LogicOpEnable ? x.LogicOp : 0);
+      state.add(x.BlendOp);
+      state.add(x.BlendOpAlpha);
+      state.add(x.SrcBlendAlpha);
+      state.add(x.DestBlendAlpha);
+      state.add(x.SrcBlend);
+      state.add(x.DestBlend);
+    }
+    return state;
+  };
+
+private:
+  const D3D11_BLEND_DESC1 desc_;
+};
+
+// RasterizerState
+
+class MTLD3D11RasterizerState
+    : public MTLD3D11StateObject<IMTLD3D11RasterizerState> {
+
+public:
+  friend class MTLD3D11DeviceContext;
+  MTLD3D11RasterizerState(IMTLD3D11Device *device,
+                          const D3D11_RASTERIZER_DESC1 *desc)
+      : MTLD3D11StateObject<IMTLD3D11RasterizerState>(device), m_desc(*desc) {}
+  ~MTLD3D11RasterizerState() {};
+
+  HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid,
+                                           void **ppvObject) final {
+    if (ppvObject == nullptr)
+      return E_POINTER;
+
+    *ppvObject = nullptr;
+
+    if (riid == __uuidof(IUnknown) || riid == __uuidof(ID3D11DeviceChild) ||
+        riid == __uuidof(ID3D11RasterizerState) ||
+        riid == __uuidof(ID3D11RasterizerState1) ||
+        riid == __uuidof(IMTLD3D11RasterizerState)) {
+      *ppvObject = ref(this);
+      return S_OK;
+    }
+
+    if (logQueryInterfaceError(__uuidof(IMTLD3D11RasterizerState), riid)) {
+      WARN("D3D11RasterizerState: Unknown interface query ", str::format(riid));
+    }
+
+    return E_NOINTERFACE;
+  }
+
+  void STDMETHODCALLTYPE GetDesc(D3D11_RASTERIZER_DESC *pDesc) final {
+    pDesc->FillMode = m_desc.FillMode;
+    pDesc->CullMode = m_desc.CullMode;
+    pDesc->FrontCounterClockwise = m_desc.FrontCounterClockwise;
+    pDesc->DepthBias = m_desc.DepthBias;
+    pDesc->DepthBiasClamp = m_desc.DepthBiasClamp;
+    pDesc->SlopeScaledDepthBias = m_desc.SlopeScaledDepthBias;
+    pDesc->DepthClipEnable = m_desc.DepthClipEnable;
+    pDesc->ScissorEnable = m_desc.ScissorEnable;
+    pDesc->MultisampleEnable = m_desc.MultisampleEnable;
+    pDesc->AntialiasedLineEnable = m_desc.AntialiasedLineEnable;
+  }
+
+  void STDMETHODCALLTYPE GetDesc1(D3D11_RASTERIZER_DESC1 *pDesc) final {
+    *pDesc = m_desc;
+  }
+
+  void SetupRasterizerState(MTL::RenderCommandEncoder *encoder) {
+
+    if (m_desc.FillMode == D3D11_FILL_SOLID) {
+      encoder->setTriangleFillMode(MTL::TriangleFillMode::TriangleFillModeFill);
+    } else {
+      encoder->setTriangleFillMode(
+          MTL::TriangleFillMode::TriangleFillModeLines);
+    }
+
+    switch (m_desc.CullMode) {
+    case D3D11_CULL_BACK:
+      encoder->setCullMode(MTL::CullModeBack);
+      break;
+    case D3D11_CULL_FRONT:
+      encoder->setCullMode(MTL::CullModeFront);
+      break;
+    case D3D11_CULL_NONE:
+      encoder->setCullMode(MTL::CullModeNone);
+      break;
+    }
+
+    // https://github.com/gpuweb/gpuweb/issues/2100#issuecomment-924536243
+    if (m_desc.DepthClipEnable) {
+      encoder->setDepthClipMode(MTL::DepthClipMode::DepthClipModeClip);
+    } else {
+      encoder->setDepthClipMode(MTL::DepthClipMode::DepthClipModeClamp);
+    }
+
+    encoder->setDepthBias(m_desc.DepthBias, m_desc.SlopeScaledDepthBias,
+                          m_desc.DepthBiasClamp);
+
+    if (m_desc.FrontCounterClockwise) {
+      encoder->setFrontFacingWinding(MTL::Winding::WindingCounterClockwise);
+    }
+
+    if (m_desc.AntialiasedLineEnable) {
+      // nop , we don't support this
+    }
+
+    if (m_desc.MultisampleEnable) {
+      // used in combination with AntialiasedLineEnable, not supported yet.
+    }
+
+    // m_desc.ScissorEnable : handled outside
+
+    // m_desc.ForcedSampleCount : not supported?
+  }
+
+  bool IsScissorEnabled() { return m_desc.ScissorEnable; }
+
+private:
+  const D3D11_RASTERIZER_DESC1 m_desc;
+};
+
+// DepthStencilState
+
+class MTLD3D11DepthStencilState
+    : public MTLD3D11StateObject<IMTLD3D11DepthStencilState> {
+
+public:
+  friend class MTLD3D11DeviceContext;
+  MTLD3D11DepthStencilState(IMTLD3D11Device *device,
+                            MTL::DepthStencilState *state,
+                            const D3D11_DEPTH_STENCIL_DESC &desc)
+      : MTLD3D11StateObject<IMTLD3D11DepthStencilState>(device), m_desc(desc),
+        metal_depth_stencil_state_(state) {}
+  ~MTLD3D11DepthStencilState() {};
+
+  HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid,
+                                           void **ppvObject) final {
+    if (ppvObject == nullptr)
+      return E_POINTER;
+
+    *ppvObject = nullptr;
+
+    if (riid == __uuidof(IUnknown) || riid == __uuidof(ID3D11DeviceChild) ||
+        riid == __uuidof(ID3D11DepthStencilState) ||
+        riid == __uuidof(IMTLD3D11DepthStencilState)) {
+      *ppvObject = ref(this);
+      return S_OK;
+    }
+
+    if (logQueryInterfaceError(__uuidof(IMTLD3D11DepthStencilState), riid)) {
+      WARN("D3D11DepthStencilState: Unknown interface query ",
+           str::format(riid));
+    }
+
+    return E_NOINTERFACE;
+  }
+
+  void STDMETHODCALLTYPE GetDesc(D3D11_DEPTH_STENCIL_DESC *pDesc) final {
+    *pDesc = m_desc;
+  }
+
+  virtual MTL::DepthStencilState *GetDepthStencilState() {
+    return metal_depth_stencil_state_.ptr();
+  }
+
+private:
+  const D3D11_DEPTH_STENCIL_DESC m_desc;
+  Obj<MTL::DepthStencilState> metal_depth_stencil_state_;
+};
+
+HRESULT CreateDepthStencilState(ID3D11Device *pDevice,
+                                const D3D11_DEPTH_STENCIL_DESC *pDesc,
+                                ID3D11DepthStencilState **ppDepthStencilState) {
+  InitReturnPtr(ppDepthStencilState);
+
+  // TODO: validation
+
+  if (!ppDepthStencilState)
+    return S_FALSE;
+
+  Com<IMTLD3D11Device> metal;
+  if (!(metal = com_cast<IMTLD3D11Device>(pDevice)))
+    return E_INVALIDARG;
+
+  using SD = MTL::StencilDescriptor;
+
+  using DSD = MTL::DepthStencilDescriptor;
+  Obj<MTL::DepthStencilDescriptor> dsd = transfer(DSD::alloc()->init());
+  if (pDesc->DepthEnable) {
+    dsd->setDepthCompareFunction(kCompareFunctionMap[pDesc->DepthFunc]);
+    dsd->setDepthWriteEnabled(pDesc->DepthWriteMask ==
+                              D3D11_DEPTH_WRITE_MASK_ALL);
   } else {
-    encoder->setTriangleFillMode(MTL::TriangleFillMode::TriangleFillModeLines);
+    dsd->setDepthCompareFunction(MTL::CompareFunctionAlways);
+    dsd->setDepthWriteEnabled(0);
   }
 
-  switch (m_desc.CullMode) {
-  case D3D11_CULL_BACK:
-    encoder->setCullMode(MTL::CullModeBack);
-    break;
-  case D3D11_CULL_FRONT:
-    encoder->setCullMode(MTL::CullModeFront);
-    break;
-  case D3D11_CULL_NONE:
-    encoder->setCullMode(MTL::CullModeNone);
-    break;
+  if (pDesc->StencilEnable) {
+    {
+      auto fsd = transfer(SD::alloc()->init());
+      fsd->setDepthStencilPassOperation(
+          kStencilOperationMap[pDesc->FrontFace.StencilPassOp]);
+      fsd->setStencilFailureOperation(
+          kStencilOperationMap[pDesc->FrontFace.StencilFailOp]);
+      fsd->setDepthFailureOperation(
+          kStencilOperationMap[pDesc->FrontFace.StencilDepthFailOp]);
+      fsd->setStencilCompareFunction(
+          kCompareFunctionMap[pDesc->FrontFace.StencilFunc]);
+      fsd->setWriteMask(pDesc->StencilWriteMask);
+      fsd->setReadMask(pDesc->StencilReadMask);
+      dsd->setFrontFaceStencil(fsd.ptr());
+    }
+    {
+      auto bsd = transfer(SD::alloc()->init());
+      bsd->setDepthStencilPassOperation(
+          kStencilOperationMap[pDesc->BackFace.StencilPassOp]);
+      bsd->setStencilFailureOperation(
+          kStencilOperationMap[pDesc->BackFace.StencilFailOp]);
+      bsd->setDepthFailureOperation(
+          kStencilOperationMap[pDesc->BackFace.StencilDepthFailOp]);
+      bsd->setStencilCompareFunction(
+          kCompareFunctionMap[pDesc->BackFace.StencilFunc]);
+      bsd->setWriteMask(pDesc->StencilWriteMask);
+      bsd->setReadMask(pDesc->StencilReadMask);
+      dsd->setBackFaceStencil(bsd.ptr());
+    }
   }
 
-  // https://github.com/gpuweb/gpuweb/issues/2100#issuecomment-924536243
-  if (m_desc.DepthClipEnable) {
-    encoder->setDepthClipMode(MTL::DepthClipMode::DepthClipModeClip);
-  } else {
-    encoder->setDepthClipMode(MTL::DepthClipMode::DepthClipModeClamp);
-  }
+  auto state = transfer(metal->GetMTLDevice()->newDepthStencilState(dsd.ptr()));
 
-  encoder->setDepthBias(m_desc.DepthBias, m_desc.SlopeScaledDepthBias,
-                        m_desc.DepthBiasClamp);
-
-  if (m_desc.FrontCounterClockwise) {
-    encoder->setFrontFacingWinding(MTL::Winding::WindingCounterClockwise);
-  }
-
-  if (m_desc.AntialiasedLineEnable) {
-    // nop , we don't support this
-  }
-
-  if (m_desc.MultisampleEnable) {
-    // used in combination with AntialiasedLineEnable, not supported yet.
-  }
-
-  // m_desc.ScissorEnable : handled outside
-
-  // m_desc.ForcedSampleCount : not supported?
+  *ppDepthStencilState =
+      ref(new MTLD3D11DepthStencilState(metal.ptr(), state.ptr(), *pDesc));
+  return S_OK;
 }
 
-bool MTLD3D11RasterizerState::IsScissorEnabled() {
-  return m_desc.ScissorEnable;
-}
+HRESULT CreateRasterizerState(ID3D11Device *pDevice,
+                              const D3D11_RASTERIZER_DESC1 *pRasterizerDesc,
+                              ID3D11RasterizerState1 **ppRasterizerState) {
+  InitReturnPtr(ppRasterizerState);
 
-#pragma endregion
+  // TODO: validate
 
-#pragma region DepthStencilState
-//-----------------------------------------------------------------------------
-// Depth Stencil State
-//-----------------------------------------------------------------------------
-MTLD3D11DepthStencilState::MTLD3D11DepthStencilState(
-    IMTLD3D11Device *device, MTL::DepthStencilState *state,
-    const D3D11_DEPTH_STENCIL_DESC &desc)
-    : MTLD3D11StateObject<ID3D11DepthStencilState>(device), m_desc(desc),
-      metal_depth_stencil_state_(state) {}
+  Com<IMTLD3D11Device> metal;
+  if (!(metal = com_cast<IMTLD3D11Device>(pDevice)))
+    return E_INVALIDARG;
 
-MTLD3D11DepthStencilState::~MTLD3D11DepthStencilState() {}
-
-void STDMETHODCALLTYPE
-MTLD3D11DepthStencilState::GetDesc(D3D11_DEPTH_STENCIL_DESC *pDesc) {
-  *pDesc = m_desc;
-}
-
-HRESULT STDMETHODCALLTYPE
-MTLD3D11DepthStencilState::QueryInterface(const IID &riid, void **ppvObject) {
-  if (ppvObject == nullptr)
-    return E_POINTER;
-
-  *ppvObject = nullptr;
-
-  if (riid == __uuidof(IUnknown) || riid == __uuidof(ID3D11DeviceChild) ||
-      riid == __uuidof(ID3D11DepthStencilState)) {
-    *ppvObject = ref(this);
+  if (ppRasterizerState) {
+    *ppRasterizerState =
+        ref(new MTLD3D11RasterizerState(metal.ptr(), pRasterizerDesc));
     return S_OK;
+  } else {
+    return S_FALSE;
   }
-
-  if (logQueryInterfaceError(__uuidof(ID3D11DepthStencilState), riid)) {
-    WARN("Unknown interface query", str::format(riid));
-  }
-
-  return E_NOINTERFACE;
 }
 
-void STDMETHODCALLTYPE MTLD3D11DepthStencilState::SetupDepthStencilState(
-    MTL::RenderCommandEncoder *encoder) {
-  encoder->setDepthStencilState(metal_depth_stencil_state_.ptr());
+HRESULT CreateSamplerState(ID3D11Device *pDevice,
+                           const D3D11_SAMPLER_DESC *pSamplerDesc,
+                           ID3D11SamplerState **ppSamplerState) {
+
+  InitReturnPtr(ppSamplerState);
+
+  if (pSamplerDesc == nullptr)
+    return E_INVALIDARG;
+
+  D3D11_SAMPLER_DESC desc = *pSamplerDesc;
+
+  // FIXME: validation
+
+  if (!ppSamplerState)
+    return S_FALSE;
+
+  Com<IMTLD3D11Device> metal;
+  if (!(metal = com_cast<IMTLD3D11Device>(pDevice)))
+    return E_INVALIDARG;
+
+  auto mtl_sampler_desc = transfer(MTL::SamplerDescriptor::alloc()->init());
+
+  // filter
+  if (D3D11_DECODE_MIN_FILTER(desc.Filter)) { // LINEAR = 1
+    mtl_sampler_desc->setMinFilter(
+        MTL::SamplerMinMagFilter::SamplerMinMagFilterLinear);
+  } else {
+    mtl_sampler_desc->setMinFilter(
+        MTL::SamplerMinMagFilter::SamplerMinMagFilterNearest);
+  }
+  if (D3D11_DECODE_MAG_FILTER(desc.Filter)) { // LINEAR = 1
+    mtl_sampler_desc->setMagFilter(
+        MTL::SamplerMinMagFilter::SamplerMinMagFilterLinear);
+  } else {
+    mtl_sampler_desc->setMagFilter(
+        MTL::SamplerMinMagFilter::SamplerMinMagFilterNearest);
+  }
+  if (D3D11_DECODE_MIP_FILTER(desc.Filter)) { // LINEAR = 1
+    mtl_sampler_desc->setMipFilter(
+        MTL::SamplerMipFilter::SamplerMipFilterLinear);
+  } else {
+    mtl_sampler_desc->setMipFilter(
+        MTL::SamplerMipFilter::SamplerMipFilterNearest);
+  }
+
+  // LOD
+  // MipLODBias is not supported
+  // FIXME: it can be done in shader, see MSL spec page 186:  bias(float value)
+  mtl_sampler_desc->setLodMinClamp(
+      desc.MinLOD); // -FLT_MAX vs 0?
+                    // https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11devicecontext-vssetsamplers
+  mtl_sampler_desc->setLodMaxClamp(desc.MaxLOD);
+
+  // Anisotropy
+  if (D3D11_DECODE_IS_ANISOTROPIC_FILTER(desc.Filter)) {
+    mtl_sampler_desc->setMaxAnisotropy(desc.MaxAnisotropy);
+  }
+
+  // address modes
+  // U-S  V-T W-R
+  if (desc.AddressU > 0 && desc.AddressU < 6) {
+    mtl_sampler_desc->setSAddressMode(kAddressModeMap[desc.AddressU - 1]);
+  }
+  if (desc.AddressV > 0 && desc.AddressV < 6) {
+    mtl_sampler_desc->setTAddressMode(kAddressModeMap[desc.AddressV - 1]);
+  }
+  if (desc.AddressW > 0 && desc.AddressW < 6) {
+    mtl_sampler_desc->setRAddressMode(kAddressModeMap[desc.AddressW - 1]);
+  }
+
+  // comparison function
+  if (desc.ComparisonFunc < 1 || desc.ComparisonFunc > 8) {
+    WARN("CreateSamplerState: invalid ComparisonFunc");
+    mtl_sampler_desc->setCompareFunction(MTL::CompareFunctionNever);
+  } else {
+    mtl_sampler_desc->setCompareFunction(
+        kCompareFunctionMap[desc.ComparisonFunc]);
+  }
+
+  // border color
+  if (desc.BorderColor[0] == 0.0f && desc.BorderColor[1] == 0.0f &&
+      desc.BorderColor[2] == 0.0f && desc.BorderColor[3] == 0.0f) {
+    mtl_sampler_desc->setBorderColor(
+        MTL::SamplerBorderColor::SamplerBorderColorTransparentBlack);
+  } else if (desc.BorderColor[0] == 0.0f && desc.BorderColor[1] == 0.0f &&
+             desc.BorderColor[2] == 0.0f && desc.BorderColor[3] == 1.0f) {
+    mtl_sampler_desc->setBorderColor(
+        MTL::SamplerBorderColor::SamplerBorderColorOpaqueBlack);
+  } else if (desc.BorderColor[0] == 1.0f && desc.BorderColor[1] == 1.0f &&
+             desc.BorderColor[2] == 1.0f && desc.BorderColor[3] == 1.0f) {
+    mtl_sampler_desc->setBorderColor(
+        MTL::SamplerBorderColor::SamplerBorderColorOpaqueWhite);
+  } else {
+    WARN("CreateSamplerState: Unsupported border color");
+  }
+  mtl_sampler_desc->setSupportArgumentBuffers(true);
+
+  auto mtl_sampler =
+      transfer(metal->GetMTLDevice()->newSamplerState(mtl_sampler_desc.ptr()));
+
+  *ppSamplerState =
+      ref(new MTLD3D11SamplerState(metal.ptr(), mtl_sampler.ptr(), desc));
+  return S_OK;
 }
 
-#pragma endregion
+HRESULT CreateBlendState(ID3D11Device *pDevice,
+                         const D3D11_BLEND_DESC1 *pBlendStateDesc,
+                         ID3D11BlendState1 **ppBlendState) {
+  InitReturnPtr(ppBlendState);
+
+  // TODO: validate
+  // if(pBlendStateDesc->AlphaToCoverageEnable)
+
+  Com<IMTLD3D11Device> metal;
+  if (!(metal = com_cast<IMTLD3D11Device>(pDevice)))
+    return E_INVALIDARG;
+
+  if (ppBlendState) {
+    *ppBlendState = ref(new MTLD3D11BlendState(metal.ptr(), *pBlendStateDesc));
+    return S_OK;
+  } else {
+    return S_FALSE;
+  }
+}
+
+Com<IMTLD3D11RasterizerState>
+CreateDefaultRasterizerState(ID3D11Device *pDevice) {
+  Com<IMTLD3D11RasterizerState> ret;
+  // double pointer is awful
+  // because neither covariance and contravariance works
+  // wtf
+  assert(SUCCEEDED(CreateRasterizerState(pDevice, &kDefaultRasterizerDesc,
+                                         (ID3D11RasterizerState1 **)&ret)));
+  return ret;
+};
+
+Com<IMTLD3D11DepthStencilState>
+CreateDefaultDepthStencilState(ID3D11Device *pDevice) {
+  Com<IMTLD3D11DepthStencilState> ret;
+  assert(SUCCEEDED(CreateDepthStencilState(pDevice, &kDefaultDepthStencilDesc,
+                                           (ID3D11DepthStencilState **)&ret)));
+  return ret;
+}
+
+Com<IMTLD3D11BlendState> CreateDefaultBlendState(ID3D11Device *pDevice) {
+  Com<IMTLD3D11BlendState> ret;
+  assert(SUCCEEDED(CreateBlendState(pDevice, &kDefaultBlendDesc,
+                                    (ID3D11BlendState1 **)&ret)));
+  return ret;
+}
 
 } // namespace dxmt

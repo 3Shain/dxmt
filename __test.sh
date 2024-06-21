@@ -10,4 +10,4 @@ export WINEDEBUG=fixme-all
 cd $ROOT/build/tests/dx11
 
 MTL_HUD_ENABLED=1 OBJC_DEBUG_MISSING_POOLS=NO MTL_DEBUG_LAYER=1 WINEPREFIX=$ROOT/wineprefix XDG_DATA_HOME=$ROOT/.local/share XDG_CONFIG_HOME=$ROOT/.config \
-XDG_CACHE_HOME=$ROOT/.cache WINEDEBUG="" WINEDLLOVERRIDES="dxgi,d3d11,d3dcompiler_47=n,b" $ROOT/toolchains/wine/bin/wine dx11_$1.exe
+XDG_CACHE_HOME=$ROOT/.cache WINEDEBUG="" DXMT_LOG_LEVEL="trace" WINEDLLOVERRIDES="dxgi,d3d11,d3dcompiler_47=n,b" $ROOT/toolchains/wine/bin/wine dx11_$1.exe

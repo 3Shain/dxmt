@@ -1,7 +1,8 @@
+#include "dxmt_names.hpp"
+#include "com/com_object.hpp"
+#include "com/com_pointer.hpp"
 #include "d3d11_device.hpp"
-#include "d3d11_private.h"
-#include "../dxgi/dxgi_adapter.h"
-
+#include "log/log.hpp"
 namespace dxmt {
 Logger Logger::s_instance("d3d11.log");
 
@@ -14,11 +15,7 @@ D3D11CoreCreateDevice(IDXGIFactory *pFactory, IDXGIAdapter *pAdapter,
   Com<IMTLDXGIAdatper> dxgi_adapter;
 
   // Try to find the corresponding Metal device for the DXGI adapter
-  if (SUCCEEDED(
-          pAdapter->QueryInterface(__uuidof(IMTLDXGIAdatper),
-                                   reinterpret_cast<void **>(&dxgi_adapter)))) {
-
-  } else {
+  if (FAILED(pAdapter->QueryInterface(IID_PPV_ARGS(&dxgi_adapter)))) {
     ERR("Not a DXMT adapter");
     return E_INVALIDARG;
   }
@@ -35,11 +32,11 @@ D3D11CoreCreateDevice(IDXGIFactory *pFactory, IDXGIAdapter *pAdapter,
     FeatureLevels = defaultFeatureLevels.size();
   }
 
-  // FIXME: check feature level
+  // check feature level
   // so far stick to 11.0
   // Find the highest feature level supported by the device.
   // This works because the feature level array is ordered.
-  D3D_FEATURE_LEVEL maxFeatureLevel = D3D_FEATURE_LEVEL_11_0;
+  D3D_FEATURE_LEVEL maxFeatureLevel = D3D_FEATURE_LEVEL_11_1;
   D3D_FEATURE_LEVEL minFeatureLevel = D3D_FEATURE_LEVEL();
   D3D_FEATURE_LEVEL devFeatureLevel = D3D_FEATURE_LEVEL();
 
@@ -64,11 +61,9 @@ D3D11CoreCreateDevice(IDXGIFactory *pFactory, IDXGIAdapter *pAdapter,
   try {
     Logger::info(str::format("Using feature level ", devFeatureLevel));
 
-    Com<IMTLDXGIDevice> device =
-        NewMTLD3D11DXGIDevice(dxgi_adapter.ptr(), devFeatureLevel, Flags);
+    auto device = CreateD3D11Device(dxgi_adapter.ptr(), devFeatureLevel, Flags);
 
-    return device->QueryInterface(__uuidof(ID3D11Device),
-                                  reinterpret_cast<void **>(ppDevice));
+    return device->QueryInterface(IID_PPV_ARGS(ppDevice));
   } catch (const MTLD3DError &e) {
     Logger::err("D3D11CoreCreateDevice: Failed to create D3D11 device");
     return E_FAIL;
@@ -101,10 +96,9 @@ extern "C" HRESULT WINAPI D3D11CreateDeviceAndSwapChain(
   if (!pAdapter) {
     // Ignore DriverType
     if (DriverType != D3D_DRIVER_TYPE_HARDWARE)
-      Logger::warn("D3D11CreateDevice: Unsupported driver type");
+      WARN("D3D11CreateDevice: Unsupported driver type ", DriverType);
     // We'll use the first adapter returned by a DXGI factory
-    hr = CreateDXGIFactory1(__uuidof(IDXGIFactory),
-                            reinterpret_cast<void **>(&dxgiFactory));
+    hr = CreateDXGIFactory1(IID_PPV_ARGS(&dxgiFactory));
 
     if (FAILED(hr)) {
       Logger::err("D3D11CreateDevice: Failed to create a DXGI factory");
@@ -119,8 +113,7 @@ extern "C" HRESULT WINAPI D3D11CreateDeviceAndSwapChain(
     }
   } else {
     // We should be able to query the DXGI factory from the adapter
-    if (FAILED(dxgiAdapter->GetParent(
-            __uuidof(IDXGIFactory), reinterpret_cast<void **>(&dxgiFactory)))) {
+    if (FAILED(dxgiAdapter->GetParent(IID_PPV_ARGS(&dxgiFactory)))) {
       Logger::err(
           "D3D11CreateDevice: Failed to query DXGI factory from DXGI adapter");
       return E_INVALIDARG;

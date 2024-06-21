@@ -1,7 +1,6 @@
 #pragma once
 
 #include <ostream>
-#include "../util/util_names.h"
 #include "dxgi.h"
 #include "Metal/MTLPixelFormat.hpp"
 

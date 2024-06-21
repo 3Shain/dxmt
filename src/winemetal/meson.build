@@ -2,7 +2,7 @@ winemetal_src = [
   'main.c',
   'exports.c',
   'metalcpp-impl.cpp',
-  'dispatch-queue.cpp',
+  'error_handling.c',
 ]
 
 winemetal_ld_args      = ['-Wl,/entry:WineMetalEntry']
@@ -10,10 +10,11 @@ winemetal_link_depends = []
 
 lib_winecrt0 = cc.find_library('winecrt0', dirs : [ join_paths(meson.source_root(), 'toolchains/wine/lib/wine/x86_64-windows') ])
 lib_ntdll = cc.find_library('ntdll', dirs : [ join_paths(meson.source_root(), 'toolchains/wine/lib/wine/x86_64-windows') ])
+lib_dbghelp = cc.find_library('dbghelp', dirs : [ join_paths(meson.source_root(), 'toolchains/wine/lib/wine/x86_64-windows') ])
 
 winemetal_dll = shared_library('winemetal', winemetal_src,
   name_prefix         : '',
-  dependencies        : [ lib_winecrt0, lib_ntdll ],
+  dependencies        : [ lib_winecrt0, lib_ntdll, lib_dbghelp ],
   include_directories : dxmt_include_path,
   install             : true,
   link_args           : winemetal_ld_args,

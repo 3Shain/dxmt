@@ -2,7 +2,8 @@
 // Licensed under the MIT License.
 
 #include "ShaderBinary.h"
-#include <cassert>
+#include "winerror.h"
+#include <algorithm>
 
 using std::max;
 using std::min;
@@ -12,7 +13,7 @@ using std::min;
  *
  ***************************************************************************/
 
-namespace  microsoft::D3D10ShaderBinary {
+namespace microsoft::D3D10ShaderBinary {
 
 BOOL IsOpCodeValid(D3D10_SB_OPCODE_TYPE OpCode) {
   return OpCode < D3D10_SB_NUM_OPCODES;
@@ -345,6 +346,12 @@ void InitInstructionInfo() {
       "check_access_fully_mapped", 2, 0x00, D3D10_SB_TEX_OP);
 }
 
+struct GlobalInfoInitializer {
+  GlobalInfoInitializer() { InitInstructionInfo(); };
+};
+
+GlobalInfoInitializer init;
+
 //*****************************************************************************
 //
 //  CShaderCodeParser
@@ -626,7 +633,8 @@ void CShaderCodeParser::ParseInstruction(CInstruction *pInstruction) {
         UINT Length = pInstruction->m_CustomData.DataSizeInBytes / 4;
         UINT *pData = (UINT *)pInstruction->m_CustomData.pData;
 
-        ZeroMemory(pMessage, sizeof(*pMessage));
+        // ZeroMemory(pMessage, sizeof(*pMessage));
+        memset(pMessage, 0, sizeof(*pMessage));
 
         if (Length < 6) {
           break;
@@ -1098,12 +1106,12 @@ void CShaderCodeParser::ParseInstruction(CInstruction *pInstruction) {
 //  CInstruction
 //
 //*****************************************************************************
-BOOL CInstruction::Disassemble(__out_ecount(StringSize) LPSTR pString,
+BOOL CInstruction::Disassemble(LPSTR pString,
                                UINT StringSize) {
-  StringCchCopyA(pString, StringSize, g_InstructionInfo[m_OpCode].m_Name);
+  strcpy(pString, g_InstructionInfo[m_OpCode].m_Name);
   return TRUE;
 }
 
-}; // namespace D3D10ShaderBinary
+}; // namespace microsoft::D3D10ShaderBinary
 
 // End of file : ShaderBinary.cpp

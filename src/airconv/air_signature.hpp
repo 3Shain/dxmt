@@ -2,11 +2,13 @@
 
 #include "adt.hpp"
 #include "shader_common.hpp"
+#include "llvm/IR/DataLayout.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Metadata.h"
 #include "llvm/IR/Module.h"
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <unordered_set>
 #include <variant>
@@ -25,7 +27,7 @@ namespace dxmt::air {
 //   return StructType::create(Ctx, EltTys, Name);
 // }
 
-static llvm::StructType *
+inline llvm::StructType *
 getOrCreateStructType(llvm::StringRef Name, llvm::LLVMContext &Ctx) {
   using namespace llvm;
   StructType *ST = StructType::getTypeByName(Ctx, Name);
@@ -223,9 +225,8 @@ struct MSLTexture {
       return "depthcube<" + component + "," + access + ">";
     case TextureKind::depth_cube_array:
       return "depthcube_array<" + component + "," + access + ">";
-    default:
-      assert(0 && "unhandled resource kind");
     }
+    assert(0 && "unreachable");
   };
 
   llvm::Type *get_llvm_type(llvm::LLVMContext &context) const {
@@ -336,6 +337,7 @@ struct MSLStaticArray {
 };
 
 using MSLRepresentableTypeWithArray = template_concat_t<
+  MSLRepresentableType,
   std::variant<MSLStaticArray, MSLPointer /* why are you here? */>>;
 
 struct ArgumentBindingBuffer {
@@ -347,6 +349,7 @@ struct ArgumentBindingBuffer {
   // std::string arg_type_name;
   MSLRepresentableType type;
   std::string arg_name;
+  std::optional<uint32_t> raster_order_group;
 };
 
 struct ArgumentBindingSampler {
@@ -361,6 +364,7 @@ struct ArgumentBindingTexture {
   MemoryAccess memory_access;
   MSLTexture type; // why it's a variant!
   std::string arg_name;
+  std::optional<uint32_t> raster_order_group;
 };
 
 /* is this in fact argument buffer? */
@@ -395,7 +399,8 @@ class ArgumentBufferBuilder {
 public:
   uint32_t DefineBuffer(
     std::string name, AddressSpace addressp_space, MemoryAccess access,
-    MSLRepresentableType type, uint32_t location_index = UINT32_MAX
+    MSLRepresentableType type, uint32_t location_index = UINT32_MAX,
+    std::optional<uint32_t> raster_order_group = std::nullopt
   );
   // uint32_t DefineIndirectBuffer(
   //   std::string name, llvm::StructType* struct_type, llvm::Metadata*
@@ -403,7 +408,8 @@ public:
   // );
   uint32_t DefineTexture(
     std::string name, TextureKind kind, MemoryAccess access,
-    MSLScalerType scaler_type, uint32_t location_index = UINT32_MAX
+    MSLScalerType scaler_type, uint32_t location_index = UINT32_MAX,
+    std::optional<uint32_t> raster_order_group = std::nullopt
   );
   uint32_t
   DefineSampler(std::string name, uint32_t location_index = UINT32_MAX);
@@ -412,7 +418,7 @@ public:
   uint32_t
   DefineFloat32(std::string name, uint32_t location_index = UINT32_MAX);
 
-  auto Build(llvm::LLVMContext &context, llvm::Module &module)
+  auto Build(llvm::LLVMContext &context, const llvm::DataLayout &layout)
     -> std::tuple<llvm::StructType *, llvm::MDNode *>;
 
   auto empty() { return fieldsType.empty(); }
@@ -506,6 +512,8 @@ public:
    */
   uint32_t DefineInput(const FunctionInput &input);
   uint32_t DefineOutput(const FunctionOutput &output);
+  void UseEarlyFragmentTests() { early_fragment_tests = true; }
+  void UseMaxWorkgroupSize(uint32_t size) { max_work_group_size = size; }
 
   auto CreateFunction(
     std::string name, llvm::LLVMContext &context, llvm::Module &module
@@ -514,6 +522,8 @@ public:
 private:
   std::vector<FunctionInput> inputs;
   std::vector<FunctionOutput> outputs;
+  bool early_fragment_tests = false;
+  uint32_t max_work_group_size = 0;
 };
 
 inline TextureKind to_air_resource_type(
@@ -543,7 +553,10 @@ inline TextureKind to_air_resource_type(
   case shader::common::ResourceType::TextureCubeArray:
     return use_depth ? TextureKind::depth_cube_array
                      : TextureKind::texture_cube_array;
+  default:
+    break;
   };
+  assert(0 && "unreachable");
 };
 
 inline MSLScalerType

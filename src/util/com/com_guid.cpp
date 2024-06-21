@@ -1,14 +1,20 @@
+/*
+ * This file is part of DXMT, Copyright (c) 2023 Feifan He
+ *
+ * Derived from a part of DXVK (originally under zlib License),
+ * Copyright (c) 2017 Philip Rebohle
+ * Copyright (c) 2019 Joshua Ashton
+ *
+ * See <https://github.com/doitsujin/dxvk/blob/master/LICENSE>
+ */
+
 #include <mutex>
 #include <unordered_set>
 
-#include "com_guid.h"
+#include "com_guid.hpp"
 
-// #include "../../d3d11/d3d11_interfaces.h"
-
-// #include "../../dxgi/dxgi_interfaces.h"
-
-#include "../thread.h"
-#include "../log/log.h"
+#include "../thread.hpp"
+#include "../log/log.hpp"
 
 namespace dxmt {
 

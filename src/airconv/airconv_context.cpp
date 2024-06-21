@@ -10,9 +10,6 @@
 #include "llvm/Support/VersionTuple.h"
 
 #include "airconv_context.hpp"
-#include "airconv_public.h"
-#include "dxbc_converter.hpp"
-#include "metallib_writer.hpp"
 
 using namespace llvm;
 
@@ -104,50 +101,5 @@ void runOptimizationPasses(llvm::Module &M, llvm::OptimizationLevel opt) {
   // Optimize the IR!
   MPM.run(M, MAM);
 }
-
-void Convert(
-  const void *dxbc, uint32_t dxbcSize, void **ppAIR, uint32_t *pAIRSize,
-  MetalShaderReflection *reflection
-) {
-  LLVMContext context;
-
-  context.setOpaquePointers(false); // I suspect Metal uses LLVM 14...
-
-  auto pModule = std::make_unique<Module>("shader.air", context);
-  initializeModule(*pModule, {.enableFastMath = true});
-
-  auto ref = dxbc::convertDXBC(dxbc, dxbcSize, context, *pModule);
-
-  runOptimizationPasses(*pModule, OptimizationLevel::O1);
-
-  pModule->print(outs(), nullptr);
-
-  // Serialize AIR
-  SmallVector<char, 0> vec;
-  raw_svector_ostream OS(vec);
-
-  metallib::MetallibWriter writer;
-
-  writer.Write(*pModule, OS);
-
-  auto ptr = malloc(vec.size());
-  memcpy(ptr, vec.data(), vec.size());
-
-  *ppAIR = ptr;
-  *pAIRSize = vec.size();
-
-  pModule.reset();
-
-  if (reflection) {
-    reflection->has_binding_map = ref.has_binding_map;
-  }
-}
-
-extern "C" void ConvertDXBC(
-  const void *pDXBC, uint32_t DXBCSize, void **ppMetalLib,
-  uint32_t *pMetalLibSize, MetalShaderReflection *reflection
-) {
-  Convert(pDXBC, DXBCSize, ppMetalLib, pMetalLibSize, reflection);
-};
 
 } // namespace dxmt
