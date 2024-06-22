@@ -45,7 +45,7 @@ enum MTL_CTX_BIND_TYPE {
   // MTL_BIND_SWAPCHAIN_BACKBUFFER = 5,
 };
 
-struct MTL_BIND_RESOURCE {
+struct MTL_STAGING_RESOURCE {
   MTL_CTX_BIND_TYPE Type;
   UINT Padding_unused;
   union {
@@ -59,18 +59,30 @@ struct MTL_BIND_RESOURCE {
 DEFINE_COM_INTERFACE("1c7e7c98-6dd4-42f0-867b-67960806886e", IMTLBindable)
     : public IUnknown {
   /**
-  Note: the resource object is NOT retained by design
-  */
-  // virtual void GetBoundResource(MTL_BIND_RESOURCE * ppResource) = 0;
-
-  // I swear I will use my own rtti system instead of COM
-  // it's just weird to involve c++ class in a COM interface
-  // the argument `bindAtSeqId` is not checked
-  virtual dxmt::BindingRef GetBinding(uint64_t bindAtSeqId) = 0;
+  Semantic: get a reference of the underlying metal resource and
+  other necessary information (e.g. size),record the time/seqId
+  of usage (no matter read/write)
+   */
+  virtual dxmt::BindingRef UseBindable(uint64_t bindAtSeqId) = 0;
+  /**
+  Semantic: get all data required to fill the argument buffer
+  it's similar to `UseBindable`, but optimized for setting
+  argument buffer (which is frequent and needs to be performant!)
+  so it provides raw gpu handle/resource_id without extra reference
+  (no need to worry about missing reference, because `UseBindable`
+  will be called at least once for marking residency anyway)
+   */
   virtual dxmt::ArgumentData GetArgumentData() = 0;
-  // it's only used as a potential to optimize resource updating
-  // generally assume it return `true` meaning it's in use
+  /**
+  Semantic: check if the resource is used by gpu at the moment
+  it guarantees true negative but can give false positive!
+  thus only use it as a potential to optimize updating from CPU
+  generally assume it return `true`
+   */
   virtual bool GetContentionState(uint64_t finishedSeqId) = 0;
+  /**
+  Usually it's effectively just QueryInterface, except for dynamic resources
+   */
   virtual void GetLogicalResourceOrView(REFIID riid,
                                         void **ppLogicalResource) = 0;
 };
@@ -91,10 +103,20 @@ DEFINE_COM_INTERFACE("65feb8c5-01de-49df-bf58-d115007a117d", IMTLDynamicBuffer)
 
 using BufferSwapCallback = std::function<void(MTL::Buffer *resource)>;
 
+/**
+It's separated from IMTLDynamicBuffer because of dynamic texture,
+which is not bindable (but a shader resource view is)
+ */
 DEFINE_COM_INTERFACE("0988488c-75fb-44f3-859a-b6fb2d022239",
                      IMTLDynamicBindable)
     : public IUnknown {
   /**
+  Get a Bindable from the dynamic resource, and callback when
+  the underlying buffer renamed/rotated.
+  Note the returned Bindable will have refcount+=1, and when
+  it becomes 0, the callback will be automatically unregistered
+  The ideal usage of callback is to simply set a dirty bit, so
+  that MAP_DISCARD can be predictably efficient
    */
   virtual void GetBindable(IMTLBindable * *ppResource,
                            BufferSwapCallback && onBufferSwap) = 0;
@@ -104,10 +126,10 @@ DEFINE_COM_INTERFACE("252c1a0e-1c61-42e7-9b57-23dfe3d73d49", IMTLD3D11Staging)
     : public IUnknown {
 
   virtual bool UseCopyDestination(
-      uint32_t Subresource, uint64_t seq_id, MTL_BIND_RESOURCE * pBuffer,
+      uint32_t Subresource, uint64_t seq_id, MTL_STAGING_RESOURCE * pBuffer,
       uint32_t * pBytesPerRow, uint32_t * pBytesPerImage) = 0;
   virtual bool UseCopySource(
-      uint32_t Subresource, uint64_t seq_id, MTL_BIND_RESOURCE * pBuffer,
+      uint32_t Subresource, uint64_t seq_id, MTL_STAGING_RESOURCE * pBuffer,
       uint32_t * pBytesPerRow, uint32_t * pBytesPerImage) = 0;
   /**
   cpu_coherent_seq_id: any operation at/before seq_id is coherent to cpu

@@ -18,7 +18,7 @@ public:
       : buffer(std::move(buffer)), buffer_mapped(this->buffer->contents()),
         buffer_len(this->buffer->length()) {}
 
-  bool UseCopyDestination(uint64_t seq_id, MTL_BIND_RESOURCE *pBuffer,
+  bool UseCopyDestination(uint64_t seq_id, MTL_STAGING_RESOURCE *pBuffer,
                           uint32_t *pBytesPerRow, uint32_t *pBytesPerImage) {
     if (mapped) {
       return false;
@@ -30,7 +30,7 @@ public:
     return true;
   };
 
-  bool UseCopySource(uint64_t seq_id, MTL_BIND_RESOURCE *pBuffer,
+  bool UseCopySource(uint64_t seq_id, MTL_STAGING_RESOURCE *pBuffer,
                      uint32_t *pBytesPerRow, uint32_t *pBytesPerImage) {
     if (mapped) {
       return false;
@@ -90,7 +90,7 @@ public:
         internal(std::move(internal)) {}
 
   bool UseCopyDestination(uint32_t Subresource, uint64_t seq_id,
-                          MTL_BIND_RESOURCE *pBuffer, uint32_t *pBytesPerRow,
+                          MTL_STAGING_RESOURCE *pBuffer, uint32_t *pBytesPerRow,
                           uint32_t *pBytesPerImage) override {
     assert(Subresource == 0);
     return internal.UseCopyDestination(seq_id, pBuffer, pBytesPerRow,
@@ -98,7 +98,7 @@ public:
   };
 
   bool UseCopySource(uint32_t Subresource, uint64_t seq_id,
-                     MTL_BIND_RESOURCE *pBuffer, uint32_t *pBytesPerRow,
+                     MTL_STAGING_RESOURCE *pBuffer, uint32_t *pBytesPerRow,
                      uint32_t *pBytesPerImage) override {
     assert(Subresource == 0);
     return internal.UseCopySource(seq_id, pBuffer, pBytesPerRow,
@@ -148,7 +148,7 @@ public:
         subresource_count(subresources.size()) {}
 
   bool UseCopyDestination(uint32_t Subresource, uint64_t seq_id,
-                          MTL_BIND_RESOURCE *pBuffer, uint32_t *pBytesPerRow,
+                          MTL_STAGING_RESOURCE *pBuffer, uint32_t *pBytesPerRow,
                           uint32_t *pBytesPerImage) override {
     assert(Subresource < subresource_count);
     return subresources.at(Subresource)
@@ -156,7 +156,7 @@ public:
   };
 
   bool UseCopySource(uint32_t Subresource, uint64_t seq_id,
-                     MTL_BIND_RESOURCE *pBuffer, uint32_t *pBytesPerRow,
+                     MTL_STAGING_RESOURCE *pBuffer, uint32_t *pBytesPerRow,
                      uint32_t *pBytesPerImage) override {
     assert(Subresource < subresource_count);
     return subresources.at(Subresource)

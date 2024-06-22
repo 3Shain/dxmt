@@ -39,7 +39,9 @@ public:
         desc->MiscFlags & D3D11_RESOURCE_MISC_BUFFER_ALLOW_RAW_VIEWS;
   }
 
-  BindingRef GetBinding(uint64_t) override { return BindingRef(buffer.ptr()); };
+  BindingRef UseBindable(uint64_t) override {
+    return BindingRef(buffer.ptr());
+  };
 
   ArgumentData GetArgumentData() override {
     return ArgumentData(buffer_handle);
@@ -66,7 +68,7 @@ public:
         : SRVBase(pDesc, pResource, pDevice), argument_data(argument_data),
           f(std::forward<F>(fn)) {}
 
-    BindingRef GetBinding(uint64_t t) override { return std::invoke(f, t); };
+    BindingRef UseBindable(uint64_t t) override { return std::invoke(f, t); };
 
     ArgumentData GetArgumentData() override { return argument_data; };
 
@@ -144,7 +146,7 @@ public:
         : UAVBase(pDesc, pResource, pDevice), argument_data(argument_data),
           f(std::forward<F>(fn)) {}
 
-    BindingRef GetBinding(uint64_t t) override { return std::invoke(f, t); };
+    BindingRef UseBindable(uint64_t t) override { return std::invoke(f, t); };
 
     ArgumentData GetArgumentData() override { return argument_data; };
 
@@ -253,7 +255,9 @@ private:
         : SRVBase(pDesc, pResource, pDevice), view(view),
           view_handle(view->gpuResourceID()) {}
 
-    BindingRef GetBinding(uint64_t) override { return BindingRef(view.ptr()); };
+    BindingRef UseBindable(uint64_t) override {
+      return BindingRef(view.ptr());
+    };
 
     ArgumentData GetArgumentData() override {
       return ArgumentData(view_handle, view.ptr());
@@ -280,7 +284,9 @@ private:
         : UAVBase(pDesc, pResource, pDevice), view(view),
           view_handle(view->gpuResourceID()) {}
 
-    BindingRef GetBinding(uint64_t) override { return BindingRef(view.ptr()); };
+    BindingRef UseBindable(uint64_t) override {
+      return BindingRef(view.ptr());
+    };
 
     ArgumentData GetArgumentData() override {
       return ArgumentData(view_handle, view.ptr());
@@ -336,7 +342,7 @@ public:
       : TResourceBase<tag_texture, IMTLBindable>(pDesc, pDevice),
         texture(texture), texture_handle(texture->gpuResourceID()) {}
 
-  BindingRef GetBinding(uint64_t) override {
+  BindingRef UseBindable(uint64_t) override {
     return BindingRef(texture.ptr());
   };
 

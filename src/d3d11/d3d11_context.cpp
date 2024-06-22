@@ -351,7 +351,7 @@ public:
     if (desc.ViewDimension == D3D11_SRV_DIMENSION_TEXTURE2D) {
       if (auto com = com_cast<IMTLBindable>(pShaderResourceView)) {
         ctx.EmitBlitCommand<true>(
-            [tex = com->GetBinding(cmd_queue.CurrentSeqId())](
+            [tex = com->UseBindable(cmd_queue.CurrentSeqId())](
                 MTL::BlitCommandEncoder *enc, CommandChunk::context &ctx) {
               enc->generateMipmaps(tex.texture(&ctx));
             });
@@ -477,8 +477,9 @@ public:
         auto [heap, offset] = chk->allocate_gpu_heap(copy_len, 16);
         memcpy(((char *)heap->contents()) + offset, pSrcData, copy_len);
         ctx.EmitBlitCommand<true>(
-            [heap, offset, dst = bindable->GetBinding(cmd_queue.CurrentSeqId()),
-             copy_offset, copy_len](MTL::BlitCommandEncoder *enc, auto &ctx) {
+            [heap, offset,
+             dst = bindable->UseBindable(cmd_queue.CurrentSeqId()), copy_offset,
+             copy_len](MTL::BlitCommandEncoder *enc, auto &ctx) {
               enc->copyFromBuffer(heap, offset, dst.buffer(), copy_offset,
                                   copy_len);
             });
@@ -515,8 +516,9 @@ public:
         auto [heap, offset] = chk->allocate_gpu_heap(copy_len, 16);
         memcpy(((char *)heap->contents()) + offset, pSrcData, copy_len);
         ctx.EmitBlitCommand<true>(
-            [heap, offset, dst = bindable->GetBinding(cmd_queue.CurrentSeqId()),
-             SrcRowPitch, copy_rows, copy_columns, origin_x, origin_y, slice,
+            [heap, offset,
+             dst = bindable->UseBindable(cmd_queue.CurrentSeqId()), SrcRowPitch,
+             copy_rows, copy_columns, origin_x, origin_y, slice,
              level](MTL::BlitCommandEncoder *enc, auto &ctx) {
               enc->copyFromBuffer(heap, offset, SrcRowPitch, 0,
                                   MTL::Size::Make(copy_columns, copy_rows, 1),
@@ -659,7 +661,7 @@ public:
     if (auto bindable = com_cast<IMTLBindable>(pBufferForArgs)) {
       ctx.EmitRenderCommandChk<true>(
           [IndexType, IndexBufferOffset, Primitive,
-           ArgBuffer = bindable->GetBinding(currentChunkId),
+           ArgBuffer = bindable->UseBindable(currentChunkId),
            AlignedByteOffsetForArgs](CommandChunk::context &ctx) {
             assert(ctx.current_index_buffer_ref);
             ctx.render_encoder->drawIndexedPrimitives(
@@ -698,7 +700,7 @@ public:
     if (auto bindable = com_cast<IMTLBindable>(pBufferForArgs)) {
       ctx.EmitComputeCommand<true>(
           [AlignedByteOffsetForArgs,
-           ArgBuffer = bindable->GetBinding(cmd_queue.CurrentSeqId())](
+           ArgBuffer = bindable->UseBindable(cmd_queue.CurrentSeqId())](
               MTL::ComputeCommandEncoder *encoder, MTL::Size &tg_size) {
             encoder->dispatchThreadgroups(ArgBuffer.buffer(),
                                           AlignedByteOffsetForArgs, tg_size);

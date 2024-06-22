@@ -66,7 +66,7 @@ private:
                   EmulatedBackBufferTexture *context, IMTLD3D11Device *pDevice)
         : BackBufferSRVBase(pDesc, context, pDevice) {}
 
-    BindingRef GetBinding(uint64_t) override {
+    BindingRef UseBindable(uint64_t) override {
       return BindingRef(static_cast<BackBufferSource *>(resource.ptr()));
     };
 
@@ -89,7 +89,7 @@ private:
                   EmulatedBackBufferTexture *context, IMTLD3D11Device *pDevice)
         : BackBufferUAVBase(pDesc, context, pDevice) {}
 
-    BindingRef GetBinding(uint64_t) override {
+    BindingRef UseBindable(uint64_t) override {
       return BindingRef(static_cast<BackBufferSource *>(resource.ptr()));
     };
 
@@ -276,7 +276,7 @@ public:
     return current_drawable.ptr();
   }
 
-  BindingRef GetBinding(uint64_t) override {
+  BindingRef UseBindable(uint64_t) override {
     return BindingRef(static_cast<BackBufferSource *>(this));
   };
 

@@ -257,7 +257,7 @@ public:
       }
       if (ppVertexBuffers[Slot - StartSlot]) {
         VB.BufferRaw =
-            VB.Buffer->GetBinding(this->cmd_queue.CurrentSeqId()).buffer();
+            VB.Buffer->UseBindable(this->cmd_queue.CurrentSeqId()).buffer();
       }
       VB.Stride = pStrides[Slot - StartSlot];
       VB.Offset = pOffsets[Slot - StartSlot];
@@ -298,9 +298,9 @@ public:
     D3D11_BUFFER_DESC src_desc;
     pDstResource->GetDesc(&dst_desc);
     pSrcResource->GetDesc(&src_desc);
-    MTL_BIND_RESOURCE dst_bind;
+    MTL_STAGING_RESOURCE dst_bind;
     UINT bytes_per_row, bytes_per_image;
-    MTL_BIND_RESOURCE src_bind;
+    MTL_STAGING_RESOURCE src_bind;
     auto currentChunkId = cmd_queue.CurrentSeqId();
     if (auto staging_dst = com_cast<IMTLD3D11Staging>(pDstResource)) {
       staging_dst->UseCopyDestination(0, currentChunkId, &dst_bind,
@@ -310,12 +310,12 @@ public:
         assert(0 && "TODO: copy between staging?");
       } else if (auto src = com_cast<IMTLBindable>(pSrcResource)) {
         // might be a dynamic, default or immutable buffer
-        EmitBlitCommand<true>(
-            [dst = Obj(dst_bind.Buffer), src = src->GetBinding(currentChunkId)](
-                MTL::BlitCommandEncoder *encoder, auto &) {
-              auto src_buf = src.buffer();
-              encoder->copyFromBuffer(src_buf, 0, dst, 0, src_buf->length());
-            });
+        EmitBlitCommand<true>([dst = Obj(dst_bind.Buffer),
+                               src = src->UseBindable(currentChunkId)](
+                                  MTL::BlitCommandEncoder *encoder, auto &) {
+          auto src_buf = src.buffer();
+          encoder->copyFromBuffer(src_buf, 0, dst, 0, src_buf->length());
+        });
       }
 
     } else if (dst_desc.Usage == D3D11_USAGE_DEFAULT) {
@@ -325,21 +325,21 @@ public:
         // copy from staging to default
         staging_src->UseCopySource(0, currentChunkId, &src_bind, &bytes_per_row,
                                    &bytes_per_image);
-        EmitBlitCommand<true>(
-            [dst = dst->GetBinding(currentChunkId), src = Obj(src_bind.Buffer)](
-                MTL::BlitCommandEncoder *encoder, auto &) {
-              auto dst_buf = dst.buffer();
-              encoder->copyFromBuffer(src, 0, dst_buf, 0, src->length());
-            });
+        EmitBlitCommand<true>([dst = dst->UseBindable(currentChunkId),
+                               src = Obj(src_bind.Buffer)](
+                                  MTL::BlitCommandEncoder *encoder, auto &) {
+          auto dst_buf = dst.buffer();
+          encoder->copyFromBuffer(src, 0, dst_buf, 0, src->length());
+        });
       } else if (auto src = com_cast<IMTLBindable>(pSrcResource)) {
         // on-device copy
         assert(src_bind.Type == MTL_BIND_BUFFER_UNBOUNDED);
-        EmitBlitCommand<true>(
-            [dst = Obj(dst_bind.Buffer), src = src->GetBinding(currentChunkId)](
-                MTL::BlitCommandEncoder *encoder, auto &) {
-              auto src_buf = src.buffer();
-              encoder->copyFromBuffer(src_buf, 0, dst, 0, src_buf->length());
-            });
+        EmitBlitCommand<true>([dst = Obj(dst_bind.Buffer),
+                               src = src->UseBindable(currentChunkId)](
+                                  MTL::BlitCommandEncoder *encoder, auto &) {
+          auto src_buf = src.buffer();
+          encoder->copyFromBuffer(src_buf, 0, dst, 0, src_buf->length());
+        });
       }
     }
   }
@@ -372,8 +372,8 @@ public:
         // copy from staging to default
       } else if (auto src = com_cast<IMTLBindable>(pSrcResource)) {
         // on-device copy
-        EmitBlitCommand<true>([dst_ = dst->GetBinding(currentChunkId),
-                               src_ = src->GetBinding(currentChunkId),
+        EmitBlitCommand<true>([dst_ = dst->UseBindable(currentChunkId),
+                               src_ = src->UseBindable(currentChunkId),
                                DstSubresource, SrcSubresource, DstX, DstY, DstZ,
                                SrcBox](MTL::BlitCommandEncoder *encoder,
                                        auto ctx) {
@@ -699,7 +699,7 @@ public:
       // we should be able to retrieve it from chunk
       auto seq_id = cmd_queue.CurrentSeqId();
       if (state_.InputAssembler.IndexBuffer) {
-        chk->emit([buffer = state_.InputAssembler.IndexBuffer->GetBinding(
+        chk->emit([buffer = state_.InputAssembler.IndexBuffer->UseBindable(
                        seq_id)](CommandChunk::context &ctx) {
           ctx.current_index_buffer_ref = buffer.buffer();
         });
@@ -825,7 +825,7 @@ public:
               cbuf.Buffer->GetArgumentData().buffer() +
               (cbuf.FirstConstant << 4);
           if (ShaderStage.ConstantBuffers.test_dirty(slot)) {
-            useResource(cbuf.Buffer->GetBinding(currentChunkId),
+            useResource(cbuf.Buffer->UseBindable(currentChunkId),
                         MTL::ResourceUsageRead);
             ShaderStage.ConstantBuffers.clear_dirty(slot);
           }
@@ -872,7 +872,7 @@ public:
           }
           if (ShaderStage.SRVs.test_dirty(slot)) {
             MTL::ResourceUsage usage = (arg.Flags >> 10) & 0b11;
-            useResource(srv.SRV->GetBinding(currentChunkId), usage);
+            useResource(srv.SRV->UseBindable(currentChunkId), usage);
             ShaderStage.SRVs.clear_dirty(slot);
           }
           break;
@@ -904,7 +904,7 @@ public:
               assert(0 && "todo: implement uav counter binding");
             }
             MTL::ResourceUsage usage = (arg.Flags >> 10) & 0b11;
-            useResource(uav.View->GetBinding(currentChunkId), usage);
+            useResource(uav.View->UseBindable(currentChunkId), usage);
           } else {
             // FIXME: all graphical stages share one uav binding set
             assert(0 && "TODO: graphical pipeline uav binding");

@@ -53,7 +53,7 @@ public:
     return E_NOINTERFACE;
   }
 
-  BindingRef GetBinding(uint64_t x) override { return std::invoke(fn, x); };
+  BindingRef UseBindable(uint64_t x) override { return std::invoke(fn, x); };
 
   ArgumentData GetArgumentData() override {
     return std::invoke(get_argument_data);
