@@ -31,7 +31,8 @@ public:
 
     if (riid == __uuidof(IUnknown) || riid == __uuidof(IDXGIObject) ||
         riid == __uuidof(IDXGIAdapter) || riid == __uuidof(IDXGIAdapter1) ||
-        riid == __uuidof(IDXGIAdapter2) || riid == __uuidof(IMTLDXGIAdatper)) {
+        riid == __uuidof(IDXGIAdapter2) || riid == __uuidof(IDXGIAdapter3) ||
+        riid == __uuidof(IMTLDXGIAdatper)) {
       *ppvObject = ref(this);
       return S_OK;
     }
@@ -152,6 +153,39 @@ public:
     }
 
     return hr;
+  }
+
+  HRESULT STDMETHODCALLTYPE
+  RegisterHardwareContentProtectionTeardownStatusEvent(HANDLE event,
+                                                       DWORD *cookie) override {
+    assert(0 && "TODO");
+  }
+
+  void STDMETHODCALLTYPE
+  UnregisterHardwareContentProtectionTeardownStatus(DWORD cookie) override {
+    assert(0 && "TODO");
+  }
+
+  HRESULT STDMETHODCALLTYPE
+  QueryVideoMemoryInfo(UINT node_index, DXGI_MEMORY_SEGMENT_GROUP segment_group,
+                       DXGI_QUERY_VIDEO_MEMORY_INFO *memory_info) override {
+    assert(0 && "TODO");
+  }
+
+  HRESULT STDMETHODCALLTYPE SetVideoMemoryReservation(
+      UINT node_index, DXGI_MEMORY_SEGMENT_GROUP segment_group,
+      UINT64 reservation) override {
+    assert(0 && "TODO");
+  }
+
+  HRESULT STDMETHODCALLTYPE RegisterVideoMemoryBudgetChangeNotificationEvent(
+      HANDLE event, DWORD *cookie) override {
+    assert(0 && "TODO");
+  }
+
+  void STDMETHODCALLTYPE
+  UnregisterVideoMemoryBudgetChangeNotification(DWORD cookie) override {
+    assert(0 && "TODO");
   }
 
   MTL::Device *STDMETHODCALLTYPE GetMTLDevice() final { return m_deivce.ptr(); }

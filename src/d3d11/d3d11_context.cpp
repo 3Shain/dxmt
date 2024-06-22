@@ -72,7 +72,7 @@ using MTLD3D11DeviceContextBase =
 
 class MTLD3D11DeviceContext : public MTLD3D11DeviceContextBase {
 public:
-  HRESULT QueryInterface(REFIID riid, void **ppvObject) {
+  HRESULT QueryInterface(REFIID riid, void **ppvObject) override {
     if (ppvObject == nullptr)
       return E_POINTER;
 
@@ -81,6 +81,7 @@ public:
     if (riid == __uuidof(IUnknown) || riid == __uuidof(ID3D11DeviceChild) ||
         riid == __uuidof(ID3D11DeviceContext) ||
         riid == __uuidof(ID3D11DeviceContext1) ||
+        riid == __uuidof(ID3D11DeviceContext2) ||
         riid == __uuidof(IMTLD3D11DeviceContext)) {
       *ppvObject = ref(this);
       return S_OK;
@@ -92,7 +93,7 @@ public:
     return E_NOINTERFACE;
   }
 
-  void Begin(ID3D11Asynchronous *pAsync) {
+  void Begin(ID3D11Asynchronous *pAsync) override {
     // in theory pAsync could be any of them: { Query, Predicate, Counter }.
     // However `Predicate` and `Counter` are not supported at all
     D3D11_QUERY_DESC desc;
@@ -115,7 +116,7 @@ public:
   }
 
   // See Begin()
-  void End(ID3D11Asynchronous *pAsync) {
+  void End(ID3D11Asynchronous *pAsync) override {
     D3D11_QUERY_DESC desc;
     ((ID3D11Query *)pAsync)->GetDesc(&desc);
     switch (desc.Query) {
@@ -136,7 +137,7 @@ public:
   }
 
   HRESULT GetData(ID3D11Asynchronous *pAsync, void *pData, UINT DataSize,
-                  UINT GetDataFlags) {
+                  UINT GetDataFlags) override {
     if (!pAsync || (DataSize && !pData))
       return E_INVALIDARG;
 
@@ -166,7 +167,8 @@ public:
   }
 
   HRESULT Map(ID3D11Resource *pResource, UINT Subresource, D3D11_MAP MapType,
-              UINT MapFlags, D3D11_MAPPED_SUBRESOURCE *pMappedResource) {
+              UINT MapFlags,
+              D3D11_MAPPED_SUBRESOURCE *pMappedResource) override {
     if (auto dynamic = com_cast<IMTLDynamicBuffer>(pResource)) {
       D3D11_MAPPED_SUBRESOURCE Out;
       switch (MapType) {
@@ -216,7 +218,7 @@ public:
     IMPLEMENT_ME;
   }
 
-  void Unmap(ID3D11Resource *pResource, UINT Subresource) {
+  void Unmap(ID3D11Resource *pResource, UINT Subresource) override {
     if (auto dynamic = com_cast<IMTLDynamicBuffer>(pResource)) {
       return;
     }
@@ -228,24 +230,24 @@ public:
     IMPLEMENT_ME;
   }
 
-  void Flush() {
+  void Flush() override {
     FlushInternal([](auto) {});
   }
 
   void ExecuteCommandList(ID3D11CommandList *pCommandList,
-                          BOOL RestoreContextState){IMPLEMENT_ME}
+                          BOOL RestoreContextState) override{IMPLEMENT_ME}
 
   HRESULT FinishCommandList(BOOL RestoreDeferredContextState,
-                            ID3D11CommandList **ppCommandList) {
+                            ID3D11CommandList **ppCommandList) override {
     return DXGI_ERROR_INVALID_CALL;
   }
 
-  void SetResourceMinLOD(ID3D11Resource *pResource, FLOAT MinLOD) {
+  void SetResourceMinLOD(ID3D11Resource *pResource, FLOAT MinLOD) override {
     // FIXME: `min_lod_clamp` can do this but it's in the shader
     ERR_ONCE("Not implemented");
   }
 
-  FLOAT GetResourceMinLOD(ID3D11Resource *pResource) {
+  FLOAT GetResourceMinLOD(ID3D11Resource *pResource) override {
     ERR_ONCE("Not implemented");
     return 0.0f;
   }
@@ -253,7 +255,7 @@ public:
 #pragma region Resource Manipulation
 
   void ClearRenderTargetView(ID3D11RenderTargetView *pRenderTargetView,
-                             const FLOAT ColorRGBA[4]) {
+                             const FLOAT ColorRGBA[4]) override {
     if (auto expected =
             com_cast<IMTLD3D11RenderTargetView>(pRenderTargetView)) {
       ctx.InvalidateCurrentPass();
@@ -283,18 +285,19 @@ public:
 
   void
   ClearUnorderedAccessViewUint(ID3D11UnorderedAccessView *pUnorderedAccessView,
-                               const UINT Values[4]) {
+                               const UINT Values[4]) override {
     IMPLEMENT_ME
   }
 
   void
   ClearUnorderedAccessViewFloat(ID3D11UnorderedAccessView *pUnorderedAccessView,
-                                const FLOAT Values[4]) {
+                                const FLOAT Values[4]) override {
     IMPLEMENT_ME
   }
 
   void ClearDepthStencilView(ID3D11DepthStencilView *pDepthStencilView,
-                             UINT ClearFlags, FLOAT Depth, UINT8 Stencil) {
+                             UINT ClearFlags, FLOAT Depth,
+                             UINT8 Stencil) override {
     if (auto expected =
             com_cast<IMTLD3D11DepthStencilView>(pDepthStencilView)) {
 
@@ -334,11 +337,11 @@ public:
   }
 
   void ClearView(ID3D11View *pView, const FLOAT Color[4],
-                 const D3D11_RECT *pRect, UINT NumRects) {
+                 const D3D11_RECT *pRect, UINT NumRects) override {
     IMPLEMENT_ME
   }
 
-  void GenerateMips(ID3D11ShaderResourceView *pShaderResourceView) {
+  void GenerateMips(ID3D11ShaderResourceView *pShaderResourceView) override {
     D3D11_SHADER_RESOURCE_VIEW_DESC desc;
     pShaderResourceView->GetDesc(&desc);
     if (desc.ViewDimension == D3D11_SRV_DIMENSION_BUFFER ||
@@ -363,13 +366,13 @@ public:
 
   void ResolveSubresource(ID3D11Resource *pDstResource, UINT DstSubresource,
                           ID3D11Resource *pSrcResource, UINT SrcSubresource,
-                          DXGI_FORMAT Format) {
+                          DXGI_FORMAT Format) override {
     // Metal does not provide methods for explicit resolve action.
     IMPLEMENT_ME
   }
 
   void CopyResource(ID3D11Resource *pDstResource,
-                    ID3D11Resource *pSrcResource) {
+                    ID3D11Resource *pSrcResource) override {
     D3D11_RESOURCE_DIMENSION dst_dim, src_dim;
     pDstResource->GetType(&dst_dim);
     pSrcResource->GetType(&src_dim);
@@ -393,14 +396,14 @@ public:
   }
 
   void CopyStructureCount(ID3D11Buffer *pDstBuffer, UINT DstAlignedByteOffset,
-                          ID3D11UnorderedAccessView *pSrcView) {
+                          ID3D11UnorderedAccessView *pSrcView) override {
     IMPLEMENT_ME
   }
 
   void CopySubresourceRegion(ID3D11Resource *pDstResource, UINT DstSubresource,
                              UINT DstX, UINT DstY, UINT DstZ,
                              ID3D11Resource *pSrcResource, UINT SrcSubresource,
-                             const D3D11_BOX *pSrcBox) {
+                             const D3D11_BOX *pSrcBox) override {
     CopySubresourceRegion1(pDstResource, DstSubresource, DstX, DstY, DstZ,
                            pSrcResource, SrcSubresource, pSrcBox, 0);
   }
@@ -408,7 +411,8 @@ public:
   void CopySubresourceRegion1(ID3D11Resource *pDstResource, UINT DstSubresource,
                               UINT DstX, UINT DstY, UINT DstZ,
                               ID3D11Resource *pSrcResource, UINT SrcSubresource,
-                              const D3D11_BOX *pSrcBox, UINT CopyFlags) {
+                              const D3D11_BOX *pSrcBox,
+                              UINT CopyFlags) override {
     D3D11_RESOURCE_DIMENSION dst_dim, src_dim;
     pDstResource->GetType(&dst_dim);
     pSrcResource->GetType(&src_dim);
@@ -439,7 +443,7 @@ public:
 
   void UpdateSubresource(ID3D11Resource *pDstResource, UINT DstSubresource,
                          const D3D11_BOX *pDstBox, const void *pSrcData,
-                         UINT SrcRowPitch, UINT SrcDepthPitch) {
+                         UINT SrcRowPitch, UINT SrcDepthPitch) override {
     UpdateSubresource1(pDstResource, DstSubresource, pDstBox, pSrcData,
                        SrcRowPitch, SrcDepthPitch, 0);
   }
@@ -447,7 +451,7 @@ public:
   void UpdateSubresource1(ID3D11Resource *pDstResource, UINT DstSubresource,
                           const D3D11_BOX *pDstBox, const void *pSrcData,
                           UINT SrcRowPitch, UINT SrcDepthPitch,
-                          UINT CopyFlags) {
+                          UINT CopyFlags) override {
     if (!pDstResource)
       return;
     if (pDstBox != NULL) {
@@ -532,7 +536,7 @@ public:
     IMPLEMENT_ME
   }
 
-  void DiscardResource(ID3D11Resource *pResource) {
+  void DiscardResource(ID3D11Resource *pResource) override {
     /*
     All the Discard* API is not implemented and that's probably fine (as it's
     more like a hint of optimization, and Metal manages resources on its own)
@@ -542,19 +546,19 @@ public:
     ERR_ONCE("Not implemented");
   }
 
-  void DiscardView(ID3D11View *pResourceView) {
+  void DiscardView(ID3D11View *pResourceView) override {
     DiscardView1(pResourceView, 0, 0);
   }
 
   void DiscardView1(ID3D11View *pResourceView, const D3D11_RECT *pRects,
-                    UINT NumRects) {
+                    UINT NumRects) override {
     ERR_ONCE("Not implemented");
   }
 #pragma endregion
 
 #pragma region DrawCall
 
-  void Draw(UINT VertexCount, UINT StartVertexLocation) {
+  void Draw(UINT VertexCount, UINT StartVertexLocation) override {
     if (!ctx.PreDraw())
       return;
     MTL::PrimitiveType Primitive =
@@ -567,7 +571,7 @@ public:
   }
 
   void DrawIndexed(UINT IndexCount, UINT StartIndexLocation,
-                   INT BaseVertexLocation) {
+                   INT BaseVertexLocation) override {
     if (!ctx.PreDraw())
       return;
     MTL::PrimitiveType Primitive =
@@ -593,7 +597,8 @@ public:
   }
 
   void DrawInstanced(UINT VertexCountPerInstance, UINT InstanceCount,
-                     UINT StartVertexLocation, UINT StartInstanceLocation) {
+                     UINT StartVertexLocation,
+                     UINT StartInstanceLocation) override {
     if (!ctx.PreDraw())
       return;
     MTL::PrimitiveType Primitive =
@@ -610,7 +615,7 @@ public:
 
   void DrawIndexedInstanced(UINT IndexCountPerInstance, UINT InstanceCount,
                             UINT StartIndexLocation, INT BaseVertexLocation,
-                            UINT StartInstanceLocation) {
+                            UINT StartInstanceLocation) override {
     if (!ctx.PreDraw())
       return;
     MTL::PrimitiveType Primitive =
@@ -639,7 +644,7 @@ public:
   }
 
   void DrawIndexedInstancedIndirect(ID3D11Buffer *pBufferForArgs,
-                                    UINT AlignedByteOffsetForArgs) {
+                                    UINT AlignedByteOffsetForArgs) override {
     if (!ctx.PreDraw())
       return;
     auto currentChunkId = cmd_queue.CurrentSeqId();
@@ -666,14 +671,14 @@ public:
   }
 
   void DrawInstancedIndirect(ID3D11Buffer *pBufferForArgs,
-                             UINT AlignedByteOffsetForArgs) {
+                             UINT AlignedByteOffsetForArgs) override {
     IMPLEMENT_ME
   }
 
-  void DrawAuto() { IMPLEMENT_ME }
+  void DrawAuto() override { IMPLEMENT_ME }
 
   void Dispatch(UINT ThreadGroupCountX, UINT ThreadGroupCountY,
-                UINT ThreadGroupCountZ) {
+                UINT ThreadGroupCountZ) override {
     if (!ctx.PreDispatch())
       return;
     ctx.EmitComputeCommand<true>(
@@ -687,7 +692,7 @@ public:
   }
 
   void DispatchIndirect(ID3D11Buffer *pBufferForArgs,
-                        UINT AlignedByteOffsetForArgs) {
+                        UINT AlignedByteOffsetForArgs) override {
     if (!ctx.PreDispatch())
       return;
     if (auto bindable = com_cast<IMTLBindable>(pBufferForArgs)) {
@@ -704,7 +709,8 @@ public:
 
 #pragma region State API
 
-  void GetPredication(ID3D11Predicate **ppPredicate, BOOL *pPredicateValue) {
+  void GetPredication(ID3D11Predicate **ppPredicate,
+                      BOOL *pPredicateValue) override {
 
     if (ppPredicate) {
       *ppPredicate = state_.predicate.ref();
@@ -716,7 +722,8 @@ public:
     ERR_ONCE("Stub");
   }
 
-  void SetPredication(ID3D11Predicate *pPredicate, BOOL PredicateValue) {
+  void SetPredication(ID3D11Predicate *pPredicate,
+                      BOOL PredicateValue) override {
 
     state_.predicate = pPredicate;
     state_.predicate_value = PredicateValue;
@@ -728,16 +735,17 @@ public:
   // State Machine
   //-----------------------------------------------------------------------------
 
-  void SwapDeviceContextState(ID3DDeviceContextState *pState,
-                              ID3DDeviceContextState **ppPreviousState) {
+  void
+  SwapDeviceContextState(ID3DDeviceContextState *pState,
+                         ID3DDeviceContextState **ppPreviousState) override {
     IMPLEMENT_ME
   }
 
-  void ClearState() { state_ = {}; }
+  void ClearState() override { state_ = {}; }
 
 #pragma region InputAssembler
 
-  void IASetInputLayout(ID3D11InputLayout *pInputLayout) {
+  void IASetInputLayout(ID3D11InputLayout *pInputLayout) override {
     if (auto expected = com_cast<IMTLD3D11InputLayout>(pInputLayout)) {
       state_.InputAssembler.InputLayout = std::move(expected);
     } else {
@@ -745,7 +753,7 @@ public:
     }
     ctx.InvalidateRenderPipeline();
   }
-  void IAGetInputLayout(ID3D11InputLayout **ppInputLayout) {
+  void IAGetInputLayout(ID3D11InputLayout **ppInputLayout) override {
     if (ppInputLayout) {
       *ppInputLayout = state_.InputAssembler.InputLayout.ref();
     }
@@ -753,20 +761,20 @@ public:
 
   void IASetVertexBuffers(UINT StartSlot, UINT NumBuffers,
                           ID3D11Buffer *const *ppVertexBuffers,
-                          const UINT *pStrides, const UINT *pOffsets) {
+                          const UINT *pStrides, const UINT *pOffsets) override {
     ctx.SetVertexBuffers(StartSlot, NumBuffers, ppVertexBuffers, pStrides,
                          pOffsets);
   }
 
   void IAGetVertexBuffers(UINT StartSlot, UINT NumBuffers,
                           ID3D11Buffer **ppVertexBuffers, UINT *pStrides,
-                          UINT *pOffsets) {
+                          UINT *pOffsets) override {
     ctx.GetVertexBuffers(StartSlot, NumBuffers, ppVertexBuffers, pStrides,
                          pOffsets);
   }
 
   void IASetIndexBuffer(ID3D11Buffer *pIndexBuffer, DXGI_FORMAT Format,
-                        UINT Offset) {
+                        UINT Offset) override {
     if (auto dynamic = com_cast<IMTLDynamicBindable>(pIndexBuffer)) {
       state_.InputAssembler.IndexBuffer = nullptr;
       dynamic->GetBindable(&state_.InputAssembler.IndexBuffer, [this](auto) {
@@ -782,7 +790,7 @@ public:
     ctx.dirty_state.set(ContextInternal::DirtyState::IndexBuffer);
   }
   void IAGetIndexBuffer(ID3D11Buffer **pIndexBuffer, DXGI_FORMAT *Format,
-                        UINT *Offset) {
+                        UINT *Offset) override {
     if (pIndexBuffer) {
       if (state_.InputAssembler.IndexBuffer) {
         state_.InputAssembler.IndexBuffer->GetLogicalResourceOrView(
@@ -796,10 +804,10 @@ public:
     if (Offset != NULL)
       *Offset = state_.InputAssembler.IndexBufferOffset;
   }
-  void IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY Topology) {
+  void IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY Topology) override {
     state_.InputAssembler.Topology = Topology;
   }
-  void IAGetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY *pTopology) {
+  void IAGetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY *pTopology) override {
     if (pTopology) {
       *pTopology = state_.InputAssembler.Topology;
     }
@@ -810,55 +818,56 @@ public:
 
   void VSSetShader(ID3D11VertexShader *pVertexShader,
                    ID3D11ClassInstance *const *ppClassInstances,
-                   UINT NumClassInstances) {
+                   UINT NumClassInstances) override {
     ctx.SetShader<ShaderType::Vertex, ID3D11VertexShader>(
         pVertexShader, ppClassInstances, NumClassInstances);
   }
 
   void VSGetShader(ID3D11VertexShader **ppVertexShader,
                    ID3D11ClassInstance **ppClassInstances,
-                   UINT *pNumClassInstances) {
+                   UINT *pNumClassInstances) override {
     ctx.GetShader<ShaderType::Vertex, ID3D11VertexShader>(
         ppVertexShader, ppClassInstances, pNumClassInstances);
   }
 
-  void
-  VSSetShaderResources(UINT StartSlot, UINT NumViews,
-                       ID3D11ShaderResourceView *const *ppShaderResourceViews) {
+  void VSSetShaderResources(
+      UINT StartSlot, UINT NumViews,
+      ID3D11ShaderResourceView *const *ppShaderResourceViews) override {
     ctx.SetShaderResource<ShaderType::Vertex>(StartSlot, NumViews,
                                               ppShaderResourceViews);
   }
 
-  void VSGetShaderResources(UINT StartSlot, UINT NumViews,
-                            ID3D11ShaderResourceView **ppShaderResourceViews) {
+  void VSGetShaderResources(
+      UINT StartSlot, UINT NumViews,
+      ID3D11ShaderResourceView **ppShaderResourceViews) override {
     ctx.GetShaderResource<ShaderType::Vertex>(StartSlot, NumViews,
                                               ppShaderResourceViews);
   }
 
   void VSSetSamplers(UINT StartSlot, UINT NumSamplers,
-                     ID3D11SamplerState *const *ppSamplers) {
+                     ID3D11SamplerState *const *ppSamplers) override {
     ctx.SetSamplers<ShaderType::Vertex>(StartSlot, NumSamplers, ppSamplers);
   }
 
   void VSGetSamplers(UINT StartSlot, UINT NumSamplers,
-                     ID3D11SamplerState **ppSamplers) {
+                     ID3D11SamplerState **ppSamplers) override {
     ctx.GetSamplers<ShaderType::Vertex>(StartSlot, NumSamplers, ppSamplers);
   }
 
   void VSSetConstantBuffers(UINT StartSlot, UINT NumBuffers,
-                            ID3D11Buffer *const *ppConstantBuffers) {
+                            ID3D11Buffer *const *ppConstantBuffers) override {
     VSSetConstantBuffers1(StartSlot, NumBuffers, ppConstantBuffers, NULL, NULL);
   }
 
   void VSGetConstantBuffers(UINT StartSlot, UINT NumBuffers,
-                            ID3D11Buffer **ppConstantBuffers) {
+                            ID3D11Buffer **ppConstantBuffers) override {
     VSGetConstantBuffers1(StartSlot, NumBuffers, ppConstantBuffers, NULL, NULL);
   }
 
   void VSSetConstantBuffers1(UINT StartSlot, UINT NumBuffers,
                              ID3D11Buffer *const *ppConstantBuffers,
                              const UINT *pFirstConstant,
-                             const UINT *pNumConstants) {
+                             const UINT *pNumConstants) override {
     ctx.SetConstantBuffer<ShaderType::Vertex>(StartSlot, NumBuffers,
                                               ppConstantBuffers, pFirstConstant,
                                               pNumConstants);
@@ -866,7 +875,8 @@ public:
 
   void VSGetConstantBuffers1(UINT StartSlot, UINT NumBuffers,
                              ID3D11Buffer **ppConstantBuffers,
-                             UINT *pFirstConstant, UINT *pNumConstants) {
+                             UINT *pFirstConstant,
+                             UINT *pNumConstants) override {
     ctx.GetConstantBuffer<ShaderType::Vertex>(StartSlot, NumBuffers,
                                               ppConstantBuffers, pFirstConstant,
                                               pNumConstants);
@@ -878,56 +888,57 @@ public:
 
   void PSSetShader(ID3D11PixelShader *pPixelShader,
                    ID3D11ClassInstance *const *ppClassInstances,
-                   UINT NumClassInstances) {
+                   UINT NumClassInstances) override {
     ctx.SetShader<ShaderType::Pixel, ID3D11PixelShader>(
         pPixelShader, ppClassInstances, NumClassInstances);
   }
 
   void PSGetShader(ID3D11PixelShader **ppPixelShader,
                    ID3D11ClassInstance **ppClassInstances,
-                   UINT *pNumClassInstances) {
+                   UINT *pNumClassInstances) override {
     ctx.GetShader<ShaderType::Pixel, ID3D11PixelShader>(
         ppPixelShader, ppClassInstances, pNumClassInstances);
   }
 
-  void
-  PSSetShaderResources(UINT StartSlot, UINT NumViews,
-                       ID3D11ShaderResourceView *const *ppShaderResourceViews) {
+  void PSSetShaderResources(
+      UINT StartSlot, UINT NumViews,
+      ID3D11ShaderResourceView *const *ppShaderResourceViews) override {
     ctx.SetShaderResource<ShaderType::Pixel>(StartSlot, NumViews,
                                              ppShaderResourceViews);
   }
 
-  void PSGetShaderResources(UINT StartSlot, UINT NumViews,
-                            ID3D11ShaderResourceView **ppShaderResourceViews) {
+  void PSGetShaderResources(
+      UINT StartSlot, UINT NumViews,
+      ID3D11ShaderResourceView **ppShaderResourceViews) override {
     ctx.GetShaderResource<ShaderType::Pixel>(StartSlot, NumViews,
                                              ppShaderResourceViews);
   }
 
   void PSSetSamplers(UINT StartSlot, UINT NumSamplers,
-                     ID3D11SamplerState *const *ppSamplers) {
+                     ID3D11SamplerState *const *ppSamplers) override {
     ctx.SetSamplers<ShaderType::Pixel>(StartSlot, NumSamplers, ppSamplers);
   }
 
   void PSGetSamplers(UINT StartSlot, UINT NumSamplers,
-                     ID3D11SamplerState **ppSamplers) {
+                     ID3D11SamplerState **ppSamplers) override {
 
     ctx.GetSamplers<ShaderType::Pixel>(StartSlot, NumSamplers, ppSamplers);
   }
 
   void PSSetConstantBuffers(UINT StartSlot, UINT NumBuffers,
-                            ID3D11Buffer *const *ppConstantBuffers) {
+                            ID3D11Buffer *const *ppConstantBuffers) override {
     PSSetConstantBuffers1(StartSlot, NumBuffers, ppConstantBuffers, 0, 0);
   }
 
   void PSGetConstantBuffers(UINT StartSlot, UINT NumBuffers,
-                            ID3D11Buffer **ppConstantBuffers) {
+                            ID3D11Buffer **ppConstantBuffers) override {
     PSGetConstantBuffers1(StartSlot, NumBuffers, ppConstantBuffers, 0, 0);
   }
 
   void PSSetConstantBuffers1(UINT StartSlot, UINT NumBuffers,
                              ID3D11Buffer *const *ppConstantBuffers,
                              const UINT *pFirstConstant,
-                             const UINT *pNumConstants) {
+                             const UINT *pNumConstants) override {
     ctx.SetConstantBuffer<ShaderType::Pixel>(StartSlot, NumBuffers,
                                              ppConstantBuffers, pFirstConstant,
                                              pNumConstants);
@@ -935,7 +946,8 @@ public:
 
   void PSGetConstantBuffers1(UINT StartSlot, UINT NumBuffers,
                              ID3D11Buffer **ppConstantBuffers,
-                             UINT *pFirstConstant, UINT *pNumConstants) {
+                             UINT *pFirstConstant,
+                             UINT *pNumConstants) override {
     ctx.GetConstantBuffer<ShaderType::Pixel>(StartSlot, NumBuffers,
                                              ppConstantBuffers, pFirstConstant,
                                              pNumConstants);
@@ -947,74 +959,76 @@ public:
 
   void GSSetShader(ID3D11GeometryShader *pShader,
                    ID3D11ClassInstance *const *ppClassInstances,
-                   UINT NumClassInstances) {
+                   UINT NumClassInstances) override {
     ctx.SetShader<ShaderType::Geometry>(pShader, ppClassInstances,
                                         NumClassInstances);
   }
 
   void GSGetShader(ID3D11GeometryShader **ppGeometryShader,
                    ID3D11ClassInstance **ppClassInstances,
-                   UINT *pNumClassInstances) {
+                   UINT *pNumClassInstances) override {
     ctx.GetShader<ShaderType::Geometry>(ppGeometryShader, ppClassInstances,
                                         pNumClassInstances);
   }
 
   void GSSetConstantBuffers(UINT StartSlot, UINT NumBuffers,
-                            ID3D11Buffer *const *ppConstantBuffers) {
+                            ID3D11Buffer *const *ppConstantBuffers) override {
     GSSetConstantBuffers1(StartSlot, NumBuffers, ppConstantBuffers, NULL, NULL);
   }
 
   void GSSetConstantBuffers1(UINT StartSlot, UINT NumBuffers,
                              ID3D11Buffer *const *ppConstantBuffers,
                              const UINT *pFirstConstant,
-                             const UINT *pNumConstants) {
+                             const UINT *pNumConstants) override {
     ctx.SetConstantBuffer<ShaderType::Geometry>(StartSlot, NumBuffers,
                                                 ppConstantBuffers,
                                                 pFirstConstant, pNumConstants);
   }
 
   void GSGetConstantBuffers(UINT StartSlot, UINT NumBuffers,
-                            ID3D11Buffer **ppConstantBuffers) {
+                            ID3D11Buffer **ppConstantBuffers) override {
     GSGetConstantBuffers1(StartSlot, NumBuffers, ppConstantBuffers, NULL, NULL);
   }
 
   void GSGetConstantBuffers1(UINT StartSlot, UINT NumBuffers,
                              ID3D11Buffer **ppConstantBuffers,
-                             UINT *pFirstConstant, UINT *pNumConstants) {
+                             UINT *pFirstConstant,
+                             UINT *pNumConstants) override {
     ctx.GetConstantBuffer<ShaderType::Geometry>(StartSlot, NumBuffers,
                                                 ppConstantBuffers,
                                                 pFirstConstant, pNumConstants);
   }
 
-  void
-  GSSetShaderResources(UINT StartSlot, UINT NumViews,
-                       ID3D11ShaderResourceView *const *ppShaderResourceViews) {
+  void GSSetShaderResources(
+      UINT StartSlot, UINT NumViews,
+      ID3D11ShaderResourceView *const *ppShaderResourceViews) override {
     ctx.SetShaderResource<ShaderType::Geometry>(StartSlot, NumViews,
                                                 ppShaderResourceViews);
   }
 
-  void GSGetShaderResources(UINT StartSlot, UINT NumViews,
-                            ID3D11ShaderResourceView **ppShaderResourceViews) {
+  void GSGetShaderResources(
+      UINT StartSlot, UINT NumViews,
+      ID3D11ShaderResourceView **ppShaderResourceViews) override {
     ctx.GetShaderResource<ShaderType::Geometry>(StartSlot, NumViews,
                                                 ppShaderResourceViews);
   }
 
   void GSSetSamplers(UINT StartSlot, UINT NumSamplers,
-                     ID3D11SamplerState *const *ppSamplers) {
+                     ID3D11SamplerState *const *ppSamplers) override {
     ctx.SetSamplers<ShaderType::Geometry>(StartSlot, NumSamplers, ppSamplers);
   }
 
   void GSGetSamplers(UINT StartSlot, UINT NumSamplers,
-                     ID3D11SamplerState **ppSamplers) {
+                     ID3D11SamplerState **ppSamplers) override {
     ctx.GetSamplers<ShaderType::Geometry>(StartSlot, NumSamplers, ppSamplers);
   }
 
   void SOSetTargets(UINT NumBuffers, ID3D11Buffer *const *ppSOTargets,
-                    const UINT *pOffsets) {
+                    const UINT *pOffsets) override {
     IMPLEMENT_ME
   }
 
-  void SOGetTargets(UINT NumBuffers, ID3D11Buffer **ppSOTargets) {
+  void SOGetTargets(UINT NumBuffers, ID3D11Buffer **ppSOTargets) override {
     IMPLEMENT_ME
   }
 
@@ -1022,57 +1036,58 @@ public:
 
 #pragma region HullShader
 
-  void HSGetShaderResources(UINT StartSlot, UINT NumViews,
-                            ID3D11ShaderResourceView **ppShaderResourceViews) {
+  void HSGetShaderResources(
+      UINT StartSlot, UINT NumViews,
+      ID3D11ShaderResourceView **ppShaderResourceViews) override {
     ctx.GetShaderResource<ShaderType::Hull>(StartSlot, NumViews,
                                             ppShaderResourceViews);
   }
 
   void HSGetShader(ID3D11HullShader **ppHullShader,
                    ID3D11ClassInstance **ppClassInstances,
-                   UINT *pNumClassInstances) {
+                   UINT *pNumClassInstances) override {
     ctx.GetShader<ShaderType::Hull>(ppHullShader, ppClassInstances,
                                     pNumClassInstances);
   }
 
   void HSGetSamplers(UINT StartSlot, UINT NumSamplers,
-                     ID3D11SamplerState **ppSamplers) {
+                     ID3D11SamplerState **ppSamplers) override {
     ctx.GetSamplers<ShaderType::Hull>(StartSlot, NumSamplers, ppSamplers);
   }
 
   void HSGetConstantBuffers(UINT StartSlot, UINT NumBuffers,
-                            ID3D11Buffer **ppConstantBuffers) {
+                            ID3D11Buffer **ppConstantBuffers) override {
     HSGetConstantBuffers1(StartSlot, NumBuffers, ppConstantBuffers, NULL, NULL);
   }
 
-  void
-  HSSetShaderResources(UINT StartSlot, UINT NumViews,
-                       ID3D11ShaderResourceView *const *ppShaderResourceViews) {
+  void HSSetShaderResources(
+      UINT StartSlot, UINT NumViews,
+      ID3D11ShaderResourceView *const *ppShaderResourceViews) override {
     ctx.SetShaderResource<ShaderType::Hull>(StartSlot, NumViews,
                                             ppShaderResourceViews);
   }
 
   void HSSetShader(ID3D11HullShader *pHullShader,
                    ID3D11ClassInstance *const *ppClassInstances,
-                   UINT NumClassInstances) {
+                   UINT NumClassInstances) override {
     ctx.SetShader<ShaderType::Hull>(pHullShader, ppClassInstances,
                                     NumClassInstances);
   }
 
   void HSSetSamplers(UINT StartSlot, UINT NumSamplers,
-                     ID3D11SamplerState *const *ppSamplers) {
+                     ID3D11SamplerState *const *ppSamplers) override {
     ctx.SetSamplers<ShaderType::Hull>(StartSlot, NumSamplers, ppSamplers);
   }
 
   void HSSetConstantBuffers(UINT StartSlot, UINT NumBuffers,
-                            ID3D11Buffer *const *ppConstantBuffers) {
+                            ID3D11Buffer *const *ppConstantBuffers) override {
     HSSetConstantBuffers1(StartSlot, NumBuffers, ppConstantBuffers, NULL, NULL);
   }
 
   void HSSetConstantBuffers1(UINT StartSlot, UINT NumBuffers,
                              ID3D11Buffer *const *ppConstantBuffers,
                              const UINT *pFirstConstant,
-                             const UINT *pNumConstants) {
+                             const UINT *pNumConstants) override {
     ctx.SetConstantBuffer<ShaderType::Hull>(StartSlot, NumBuffers,
                                             ppConstantBuffers, pFirstConstant,
                                             pNumConstants);
@@ -1080,7 +1095,8 @@ public:
 
   void HSGetConstantBuffers1(UINT StartSlot, UINT NumBuffers,
                              ID3D11Buffer **ppConstantBuffers,
-                             UINT *pFirstConstant, UINT *pNumConstants) {
+                             UINT *pFirstConstant,
+                             UINT *pNumConstants) override {
     ctx.GetConstantBuffer<ShaderType::Hull>(StartSlot, NumBuffers,
                                             ppConstantBuffers, pFirstConstant,
                                             pNumConstants);
@@ -1090,45 +1106,46 @@ public:
 
 #pragma region DomainShader
 
-  void
-  DSSetShaderResources(UINT StartSlot, UINT NumViews,
-                       ID3D11ShaderResourceView *const *ppShaderResourceViews) {
+  void DSSetShaderResources(
+      UINT StartSlot, UINT NumViews,
+      ID3D11ShaderResourceView *const *ppShaderResourceViews) override {
     ctx.SetShaderResource<ShaderType::Domain>(StartSlot, NumViews,
                                               ppShaderResourceViews);
   }
 
-  void DSGetShaderResources(UINT StartSlot, UINT NumViews,
-                            ID3D11ShaderResourceView **ppShaderResourceViews) {
+  void DSGetShaderResources(
+      UINT StartSlot, UINT NumViews,
+      ID3D11ShaderResourceView **ppShaderResourceViews) override {
     ctx.GetShaderResource<ShaderType::Domain>(StartSlot, NumViews,
                                               ppShaderResourceViews);
   }
 
   void DSSetShader(ID3D11DomainShader *pDomainShader,
                    ID3D11ClassInstance *const *ppClassInstances,
-                   UINT NumClassInstances) {
+                   UINT NumClassInstances) override {
     ctx.SetShader<ShaderType::Domain, ID3D11DomainShader>(
         pDomainShader, ppClassInstances, NumClassInstances);
   }
 
   void DSGetShader(ID3D11DomainShader **ppDomainShader,
                    ID3D11ClassInstance **ppClassInstances,
-                   UINT *pNumClassInstances) {
+                   UINT *pNumClassInstances) override {
     ctx.GetShader<ShaderType::Domain, ID3D11DomainShader>(
         ppDomainShader, ppClassInstances, pNumClassInstances);
   }
 
   void DSGetSamplers(UINT StartSlot, UINT NumSamplers,
-                     ID3D11SamplerState **ppSamplers) {
+                     ID3D11SamplerState **ppSamplers) override {
     ctx.GetSamplers<ShaderType::Domain>(StartSlot, NumSamplers, ppSamplers);
   }
 
   void DSSetSamplers(UINT StartSlot, UINT NumSamplers,
-                     ID3D11SamplerState *const *ppSamplers) {
+                     ID3D11SamplerState *const *ppSamplers) override {
     ctx.SetSamplers<ShaderType::Domain>(StartSlot, NumSamplers, ppSamplers);
   }
 
   void DSSetConstantBuffers(UINT StartSlot, UINT NumBuffers,
-                            ID3D11Buffer *const *ppConstantBuffers) {
+                            ID3D11Buffer *const *ppConstantBuffers) override {
     return DSSetConstantBuffers1(StartSlot, NumBuffers, ppConstantBuffers, NULL,
                                  NULL);
   }
@@ -1136,14 +1153,14 @@ public:
   void DSSetConstantBuffers1(UINT StartSlot, UINT NumBuffers,
                              ID3D11Buffer *const *ppConstantBuffers,
                              const UINT *pFirstConstant,
-                             const UINT *pNumConstants) {
+                             const UINT *pNumConstants) override {
     ctx.SetConstantBuffer<ShaderType::Domain>(StartSlot, NumBuffers,
                                               ppConstantBuffers, pFirstConstant,
                                               pNumConstants);
   }
 
   void DSGetConstantBuffers(UINT StartSlot, UINT NumBuffers,
-                            ID3D11Buffer **ppConstantBuffers) {
+                            ID3D11Buffer **ppConstantBuffers) override {
     UINT *pFirstConstant = 0, *pNumConstants = 0;
     return DSGetConstantBuffers1(StartSlot, NumBuffers, ppConstantBuffers,
                                  pFirstConstant, pNumConstants);
@@ -1151,7 +1168,8 @@ public:
 
   void DSGetConstantBuffers1(UINT StartSlot, UINT NumBuffers,
                              ID3D11Buffer **ppConstantBuffers,
-                             UINT *pFirstConstant, UINT *pNumConstants) {
+                             UINT *pFirstConstant,
+                             UINT *pNumConstants) override {
     ctx.GetConstantBuffer<ShaderType::Domain>(StartSlot, NumBuffers,
                                               ppConstantBuffers, pFirstConstant,
                                               pNumConstants);
@@ -1161,15 +1179,16 @@ public:
 
 #pragma region ComputeShader
 
-  void CSGetShaderResources(UINT StartSlot, UINT NumViews,
-                            ID3D11ShaderResourceView **ppShaderResourceViews) {
+  void CSGetShaderResources(
+      UINT StartSlot, UINT NumViews,
+      ID3D11ShaderResourceView **ppShaderResourceViews) override {
     ctx.GetShaderResource<ShaderType::Compute>(StartSlot, NumViews,
                                                ppShaderResourceViews);
   }
 
-  void
-  CSSetShaderResources(UINT StartSlot, UINT NumViews,
-                       ID3D11ShaderResourceView *const *ppShaderResourceViews) {
+  void CSSetShaderResources(
+      UINT StartSlot, UINT NumViews,
+      ID3D11ShaderResourceView *const *ppShaderResourceViews) override {
     ctx.SetShaderResource<ShaderType::Compute>(StartSlot, NumViews,
                                                ppShaderResourceViews);
   }
@@ -1177,7 +1196,7 @@ public:
   void CSSetUnorderedAccessViews(
       UINT StartSlot, UINT NumUAVs,
       ID3D11UnorderedAccessView *const *ppUnorderedAccessViews,
-      const UINT *pUAVInitialCounts) {
+      const UINT *pUAVInitialCounts) override {
 
     std::erase_if(state_.ComputeStageUAV.UAVs, [&](const auto &item) -> bool {
       auto &[slot, bound_uav] = item;
@@ -1219,7 +1238,7 @@ public:
 
   void CSGetUnorderedAccessViews(
       UINT StartSlot, UINT NumUAVs,
-      ID3D11UnorderedAccessView **ppUnorderedAccessViews) {
+      ID3D11UnorderedAccessView **ppUnorderedAccessViews) override {
     for (auto i = 0u; i < NumUAVs; i++) {
       if (state_.ComputeStageUAV.UAVs.contains(StartSlot + i)) {
         state_.ComputeStageUAV.UAVs[StartSlot + i]
@@ -1233,42 +1252,42 @@ public:
 
   void CSSetShader(ID3D11ComputeShader *pComputeShader,
                    ID3D11ClassInstance *const *ppClassInstances,
-                   UINT NumClassInstances) {
+                   UINT NumClassInstances) override {
     ctx.SetShader<ShaderType::Compute>(pComputeShader, ppClassInstances,
                                        NumClassInstances);
   }
 
   void CSGetShader(ID3D11ComputeShader **ppComputeShader,
                    ID3D11ClassInstance **ppClassInstances,
-                   UINT *pNumClassInstances) {
+                   UINT *pNumClassInstances) override {
     ctx.GetShader<ShaderType::Compute>(ppComputeShader, ppClassInstances,
                                        pNumClassInstances);
   }
 
   void CSSetSamplers(UINT StartSlot, UINT NumSamplers,
-                     ID3D11SamplerState *const *ppSamplers) {
+                     ID3D11SamplerState *const *ppSamplers) override {
     ctx.SetSamplers<ShaderType::Compute>(StartSlot, NumSamplers, ppSamplers);
   }
 
   void CSGetSamplers(UINT StartSlot, UINT NumSamplers,
-                     ID3D11SamplerState **ppSamplers) {
+                     ID3D11SamplerState **ppSamplers) override {
     ctx.GetSamplers<ShaderType::Compute>(StartSlot, NumSamplers, ppSamplers);
   }
 
   void CSSetConstantBuffers(UINT StartSlot, UINT NumBuffers,
-                            ID3D11Buffer *const *ppConstantBuffers) {
+                            ID3D11Buffer *const *ppConstantBuffers) override {
     CSSetConstantBuffers1(StartSlot, NumBuffers, ppConstantBuffers, NULL, NULL);
   }
 
   void CSGetConstantBuffers(UINT StartSlot, UINT NumBuffers,
-                            ID3D11Buffer **ppConstantBuffers) {
+                            ID3D11Buffer **ppConstantBuffers) override {
     CSGetConstantBuffers1(StartSlot, NumBuffers, ppConstantBuffers, NULL, NULL);
   }
 
   void CSSetConstantBuffers1(UINT StartSlot, UINT NumBuffers,
                              ID3D11Buffer *const *ppConstantBuffers,
                              const UINT *pFirstConstant,
-                             const UINT *pNumConstants) {
+                             const UINT *pNumConstants) override {
     ctx.SetConstantBuffer<ShaderType::Compute>(StartSlot, NumBuffers,
                                                ppConstantBuffers,
                                                pFirstConstant, pNumConstants);
@@ -1276,7 +1295,8 @@ public:
 
   void CSGetConstantBuffers1(UINT StartSlot, UINT NumBuffers,
                              ID3D11Buffer **ppConstantBuffers,
-                             UINT *pFirstConstant, UINT *pNumConstants) {
+                             UINT *pFirstConstant,
+                             UINT *pNumConstants) override {
     ctx.GetConstantBuffer<ShaderType::Compute>(StartSlot, NumBuffers,
                                                ppConstantBuffers,
                                                pFirstConstant, pNumConstants);
@@ -1288,14 +1308,15 @@ public:
 
   void OMSetRenderTargets(UINT NumViews,
                           ID3D11RenderTargetView *const *ppRenderTargetViews,
-                          ID3D11DepthStencilView *pDepthStencilView) {
+                          ID3D11DepthStencilView *pDepthStencilView) override {
     OMSetRenderTargetsAndUnorderedAccessViews(
         NumViews, ppRenderTargetViews, pDepthStencilView, 0, 0, NULL, NULL);
   }
 
-  void OMGetRenderTargets(UINT NumViews,
-                          ID3D11RenderTargetView **ppRenderTargetViews,
-                          ID3D11DepthStencilView **ppDepthStencilView) {
+  void
+  OMGetRenderTargets(UINT NumViews,
+                     ID3D11RenderTargetView **ppRenderTargetViews,
+                     ID3D11DepthStencilView **ppDepthStencilView) override {
     OMGetRenderTargetsAndUnorderedAccessViews(NumViews, ppRenderTargetViews,
                                               ppDepthStencilView, 0, 0, NULL);
   }
@@ -1304,7 +1325,7 @@ public:
       UINT NumRTVs, ID3D11RenderTargetView *const *ppRenderTargetViews,
       ID3D11DepthStencilView *pDepthStencilView, UINT UAVStartSlot,
       UINT NumUAVs, ID3D11UnorderedAccessView *const *ppUnorderedAccessViews,
-      const UINT *pUAVInitialCounts) {
+      const UINT *pUAVInitialCounts) override {
 
     bool should_invalidate_pass = false;
 
@@ -1355,12 +1376,13 @@ public:
   void OMGetRenderTargetsAndUnorderedAccessViews(
       UINT NumRTVs, ID3D11RenderTargetView **ppRenderTargetViews,
       ID3D11DepthStencilView **ppDepthStencilView, UINT UAVStartSlot,
-      UINT NumUAVs, ID3D11UnorderedAccessView **ppUnorderedAccessViews) {
+      UINT NumUAVs,
+      ID3D11UnorderedAccessView **ppUnorderedAccessViews) override {
     IMPLEMENT_ME;
   }
 
   void OMSetBlendState(ID3D11BlendState *pBlendState,
-                       const FLOAT BlendFactor[4], UINT SampleMask) {
+                       const FLOAT BlendFactor[4], UINT SampleMask) override {
     bool should_invalidate_pipeline = false;
     if (auto expected = com_cast<IMTLD3D11BlendState>(pBlendState)) {
       if (expected.ptr() != state_.OutputMerger.BlendState.ptr()) {
@@ -1383,7 +1405,7 @@ public:
     ctx.dirty_state.set(ContextInternal::DirtyState::BlendFactorAndStencilRef);
   }
   void OMGetBlendState(ID3D11BlendState **ppBlendState, FLOAT BlendFactor[4],
-                       UINT *pSampleMask) {
+                       UINT *pSampleMask) override {
     if (ppBlendState) {
       *ppBlendState = state_.OutputMerger.BlendState.ref();
     }
@@ -1396,7 +1418,7 @@ public:
   }
 
   void OMSetDepthStencilState(ID3D11DepthStencilState *pDepthStencilState,
-                              UINT StencilRef) {
+                              UINT StencilRef) override {
     if (auto expected =
             com_cast<IMTLD3D11DepthStencilState>(pDepthStencilState)) {
       state_.OutputMerger.DepthStencilState = std::move(expected);
@@ -1406,7 +1428,7 @@ public:
   }
 
   void OMGetDepthStencilState(ID3D11DepthStencilState **ppDepthStencilState,
-                              UINT *pStencilRef) {
+                              UINT *pStencilRef) override {
     if (ppDepthStencilState) {
       *ppDepthStencilState = state_.OutputMerger.DepthStencilState.ref();
     }
@@ -1419,7 +1441,7 @@ public:
 
 #pragma region Rasterizer
 
-  void RSSetState(ID3D11RasterizerState *pRasterizerState) {
+  void RSSetState(ID3D11RasterizerState *pRasterizerState) override {
     if (pRasterizerState) {
       if (auto expected =
               com_cast<IMTLD3D11RasterizerState>(pRasterizerState)) {
@@ -1435,7 +1457,7 @@ public:
                         ContextInternal::DirtyState::ViewportAndScissors);
   }
 
-  void RSGetState(ID3D11RasterizerState **ppRasterizerState) {
+  void RSGetState(ID3D11RasterizerState **ppRasterizerState) override {
     if (ppRasterizerState) {
       if (state_.Rasterizer.RasterizerState) {
         state_.Rasterizer.RasterizerState->QueryInterface(
@@ -1446,7 +1468,8 @@ public:
     }
   }
 
-  void RSSetViewports(UINT NumViewports, const D3D11_VIEWPORT *pViewports) {
+  void RSSetViewports(UINT NumViewports,
+                      const D3D11_VIEWPORT *pViewports) override {
     state_.Rasterizer.NumViewports = NumViewports;
     for (auto i = 0u; i < NumViewports; i++) {
       state_.Rasterizer.viewports[i] = pViewports[i];
@@ -1454,7 +1477,8 @@ public:
     ctx.dirty_state.set(ContextInternal::DirtyState::ViewportAndScissors);
   }
 
-  void RSGetViewports(UINT *pNumViewports, D3D11_VIEWPORT *pViewports) {
+  void RSGetViewports(UINT *pNumViewports,
+                      D3D11_VIEWPORT *pViewports) override {
     if (pNumViewports) {
       *pNumViewports = state_.Rasterizer.NumViewports;
     }
@@ -1465,7 +1489,7 @@ public:
     }
   }
 
-  void RSSetScissorRects(UINT NumRects, const D3D11_RECT *pRects) {
+  void RSSetScissorRects(UINT NumRects, const D3D11_RECT *pRects) override {
     state_.Rasterizer.NumScissorRects = NumRects;
     for (unsigned i = 0; i < NumRects; i++) {
       state_.Rasterizer.scissor_rects[i] = pRects[i];
@@ -1473,7 +1497,7 @@ public:
     ctx.dirty_state.set(ContextInternal::DirtyState::ViewportAndScissors);
   }
 
-  void RSGetScissorRects(UINT *pNumRects, D3D11_RECT *pRects) {
+  void RSGetScissorRects(UINT *pNumRects, D3D11_RECT *pRects) override {
     if (pNumRects) {
       *pNumRects = state_.Rasterizer.NumScissorRects;
     }
@@ -1483,6 +1507,67 @@ public:
       }
     }
   }
+#pragma endregion
+
+#pragma region D3D11DeviceContext2
+
+  HRESULT STDMETHODCALLTYPE UpdateTileMappings(
+      ID3D11Resource *resource, UINT region_count,
+      const D3D11_TILED_RESOURCE_COORDINATE *region_start_coordinates,
+      const D3D11_TILE_REGION_SIZE *region_sizes, ID3D11Buffer *pool,
+      UINT range_count, const UINT *range_flags, const UINT *pool_start_offsets,
+      const UINT *range_tile_counts, UINT flags) override {
+    IMPLEMENT_ME
+  };
+
+  HRESULT STDMETHODCALLTYPE CopyTileMappings(
+      ID3D11Resource *dst_resource,
+      const D3D11_TILED_RESOURCE_COORDINATE *dst_start_coordinate,
+      ID3D11Resource *src_resource,
+      const D3D11_TILED_RESOURCE_COORDINATE *src_start_coordinate,
+      const D3D11_TILE_REGION_SIZE *region_size, UINT flags) override {
+    IMPLEMENT_ME
+  };
+
+  void STDMETHODCALLTYPE
+  CopyTiles(ID3D11Resource *resource,
+            const D3D11_TILED_RESOURCE_COORDINATE *start_coordinate,
+            const D3D11_TILE_REGION_SIZE *size, ID3D11Buffer *buffer,
+            UINT64 start_offset, UINT flags) override {
+    IMPLEMENT_ME
+  };
+
+  void STDMETHODCALLTYPE
+  UpdateTiles(ID3D11Resource *dst_resource,
+              const D3D11_TILED_RESOURCE_COORDINATE *dst_start_coordinate,
+              const D3D11_TILE_REGION_SIZE *dst_region_size,
+              const void *src_data, UINT flags) override {
+    IMPLEMENT_ME
+  };
+
+  HRESULT STDMETHODCALLTYPE ResizeTilePool(ID3D11Buffer *pool,
+                                           UINT64 size) override {
+    IMPLEMENT_ME
+  };
+
+  void STDMETHODCALLTYPE
+  TiledResourceBarrier(ID3D11DeviceChild *before_barrier,
+                       ID3D11DeviceChild *after_barrier) override {
+    IMPLEMENT_ME
+  };
+
+  WINBOOL STDMETHODCALLTYPE IsAnnotationEnabled() override { IMPLEMENT_ME };
+
+  void STDMETHODCALLTYPE SetMarkerInt(const WCHAR *label, int data) override {
+    IMPLEMENT_ME
+  };
+
+  void STDMETHODCALLTYPE BeginEventInt(const WCHAR *label, int data) override {
+    IMPLEMENT_ME
+  };
+
+  void STDMETHODCALLTYPE EndEvent() override { IMPLEMENT_ME };
+
 #pragma endregion
 
 #pragma region DynamicBufferPool
@@ -1512,9 +1597,11 @@ public:
 
 #pragma region Misc
 
-  D3D11_DEVICE_CONTEXT_TYPE GetType() { return D3D11_DEVICE_CONTEXT_IMMEDIATE; }
+  D3D11_DEVICE_CONTEXT_TYPE GetType() override {
+    return D3D11_DEVICE_CONTEXT_IMMEDIATE;
+  }
 
-  UINT GetContextFlags() { return 0; }
+  UINT GetContextFlags() override { return 0; }
 
 #pragma endregion
 
@@ -1543,7 +1630,7 @@ public:
 
   ~MTLD3D11DeviceContext() {}
 
-  virtual void WaitUntilGPUIdle() {
+  virtual void WaitUntilGPUIdle() override {
     uint64_t seq = cmd_queue.CurrentSeqId();
     Flush();
     cmd_queue.WaitCPUFence(seq);

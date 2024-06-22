@@ -12,7 +12,7 @@ namespace dxmt {
 Com<IMTLDXGIAdatper> CreateAdapter(MTL::Device *pDevice,
                                    IDXGIFactory2 *pFactory);
 
-class MTLDXGIFactory : public MTLDXGIObject<IDXGIFactory2> {
+class MTLDXGIFactory : public MTLDXGIObject<IDXGIFactory5> {
 
 public:
   MTLDXGIFactory(UINT Flags) : flags_(Flags) {};
@@ -26,7 +26,9 @@ public:
 
     if (riid == __uuidof(IUnknown) || riid == __uuidof(IDXGIObject) ||
         riid == __uuidof(IDXGIFactory) || riid == __uuidof(IDXGIFactory1) ||
-        riid == __uuidof(IDXGIFactory2)) {
+        riid == __uuidof(IDXGIFactory2) || riid == __uuidof(IDXGIFactory2) ||
+        riid == __uuidof(IDXGIFactory3) || riid == __uuidof(IDXGIFactory4) ||
+        riid == __uuidof(IDXGIFactory5)) {
       *ppvObject = ref(this);
       return S_OK;
     }
@@ -236,15 +238,50 @@ public:
     ERR("Not implemented");
   }
 
+  UINT STDMETHODCALLTYPE GetCreationFlags() override { return flags_; }
+
+  HRESULT STDMETHODCALLTYPE EnumAdapterByLuid(LUID luid, REFIID iid,
+                                              void **adapter) override {
+    ERR("DXGIFactory::EnumAdapterByLuid: not implemented");
+    return DXGI_ERROR_NOT_FOUND;
+  }
+
+  HRESULT STDMETHODCALLTYPE EnumWarpAdapter(REFIID iid,
+                                            void **adapter) override {
+    ERR("DXGIFactory::EnumWrapAdapter: not implemented");
+    return DXGI_ERROR_NOT_FOUND;
+  };
+
+  HRESULT STDMETHODCALLTYPE
+  CheckFeatureSupport(DXGI_FEATURE Feature, void *pFeatureSupportData,
+                      UINT FeatureSupportDataSize) override {
+    switch (Feature) {
+    case DXGI_FEATURE_PRESENT_ALLOW_TEARING: {
+      auto info = static_cast<BOOL *>(pFeatureSupportData);
+
+      if (FeatureSupportDataSize != sizeof(*info))
+        return E_INVALIDARG;
+
+      *info = TRUE;
+      return S_OK;
+    }
+    default: {
+      ERR("DXGIFactory::CheckFeatureSupport: unknown feature ", Feature);
+      return E_INVALIDARG;
+    }
+    }
+  };
+
 private:
   UINT flags_;
 
   HWND m_associatedWindow = nullptr;
 };
 
-extern "C" HRESULT __stdcall CreateDXGIFactory1(REFIID riid, void **ppFactory) {
+extern "C" HRESULT __stdcall CreateDXGIFactory2(UINT Flags, REFIID riid,
+                                                void **ppFactory) {
   try {
-    Com<MTLDXGIFactory> factory = new MTLDXGIFactory(0);
+    Com<MTLDXGIFactory> factory = new MTLDXGIFactory(Flags);
     HRESULT hr = factory->QueryInterface(riid, ppFactory);
 
     if (FAILED(hr))
@@ -257,8 +294,12 @@ extern "C" HRESULT __stdcall CreateDXGIFactory1(REFIID riid, void **ppFactory) {
   }
 }
 
+extern "C" HRESULT __stdcall CreateDXGIFactory1(REFIID riid, void **ppFactory) {
+  return CreateDXGIFactory2(0, riid, ppFactory);
+}
+
 extern "C" HRESULT __stdcall CreateDXGIFactory(REFIID riid, void **factory) {
-  return CreateDXGIFactory1(riid, factory);
+  return CreateDXGIFactory2(0, riid, factory);
 }
 
 } // namespace dxmt

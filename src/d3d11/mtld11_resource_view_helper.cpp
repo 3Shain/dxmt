@@ -77,6 +77,17 @@ HRESULT CreateMTLTextureView<D3D11_SHADER_RESOURCE_VIEW_DESC>(
     break;
   }
   case D3D_SRV_DIMENSION_TEXTURE3D: {
+    if (texture_type == MTL::TextureType3D) {
+      *ppView = pResource->newTextureView(
+          metal_format.PixelFormat, MTL::TextureType3D,
+          NS::Range::Make(pViewDesc->Texture3D.MostDetailedMip,
+                          pViewDesc->Texture3D.MipLevels == 0xffffffffu
+                              ? pResource->mipmapLevelCount() -
+                                    pViewDesc->Texture3D.MostDetailedMip
+                              : pViewDesc->Texture3D.MipLevels),
+          NS::Range::Make(0, 1));
+      return S_OK;
+    }
     break;
   }
   case D3D_SRV_DIMENSION_TEXTURECUBE: {

@@ -21,14 +21,14 @@ struct MTL_FORMAT_DESC {
 };
 
 DEFINE_COM_INTERFACE("acdf3ef1-b33a-4cb6-97bd-1c1974827e6d", IMTLDXGIAdatper)
-    : public IDXGIAdapter2 {
+    : public IDXGIAdapter3 {
   virtual MTL::Device *STDMETHODCALLTYPE GetMTLDevice() = 0;
   virtual HRESULT STDMETHODCALLTYPE QueryFormatDesc(
       DXGI_FORMAT Format, MTL_FORMAT_DESC * pMtlFormatDesc) = 0;
 };
 
 DEFINE_COM_INTERFACE("6bfa1657-9cb1-471a-a4fb-7cacf8a81207", IMTLDXGIDevice)
-    : public IDXGIDevice2 {
+    : public IDXGIDevice3 {
   virtual MTL::Device *STDMETHODCALLTYPE GetMTLDevice() = 0;
   virtual HRESULT STDMETHODCALLTYPE CreateSwapChain(
       IDXGIFactory1 * pFactory, HWND hWnd, const DXGI_SWAP_CHAIN_DESC1 *pDesc,

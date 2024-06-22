@@ -588,27 +588,8 @@ public:
 
   HRESULT STDMETHODCALLTYPE CheckMultisampleQualityLevels(
       DXGI_FORMAT Format, UINT SampleCount, UINT *pNumQualityLevels) override {
-    MTL_FORMAT_DESC desc;
-    adapter_->QueryFormatDesc(Format, &desc);
-    if (desc.PixelFormat == MTL::PixelFormatInvalid) {
-      *pNumQualityLevels = 0;
-      return E_INVALIDARG;
-    }
-
-    // MSDN:
-    // FEATURE_LEVEL_11_0 devices are required to support 4x MSAA for all render
-    // target formats, and 8x MSAA for all render target formats except
-    // R32G32B32A32 formats.
-
-    // seems some pixel format doesn't support MSAA
-    // https://developer.apple.com/metal/Metal-Feature-Set-Tables.pdf
-
-    if (GetMTLDevice()->supportsTextureSampleCount(SampleCount)) {
-      *pNumQualityLevels = 1; // always 1: in metal there is no concept of
-                              // Quality Level (so is it in vulkan iirc)
-      return S_OK;
-    }
-    return S_FALSE;
+    return CheckMultisampleQualityLevels1(Format, SampleCount, 0,
+                                          pNumQualityLevels);
   }
 
   void STDMETHODCALLTYPE CheckCounterInfo(D3D11_COUNTER_INFO *pCounterInfo)
@@ -714,7 +695,7 @@ public:
 
   void STDMETHODCALLTYPE
   GetImmediateContext(ID3D11DeviceContext **ppImmediateContext) override {
-    GetImmediateContext1((ID3D11DeviceContext1 **)ppImmediateContext);
+    GetImmediateContext2((ID3D11DeviceContext2 **)ppImmediateContext);
   }
 
   HRESULT STDMETHODCALLTYPE SetExceptionMode(UINT RaiseFlags) override {
@@ -729,15 +710,7 @@ public:
 
   void STDMETHODCALLTYPE
   GetImmediateContext1(ID3D11DeviceContext1 **ppImmediateContext) override {
-    if (!context_) {
-      /*
-      lazy construction by design
-      to solve an awkward com_cast on refcount=0 object
-      (generally shouldn't pass this to others in constructor)
-      */
-      context_ = CreateD3D11DeviceContext(this);
-    }
-    *ppImmediateContext = context_.ref();
+    GetImmediateContext2((ID3D11DeviceContext2 **)ppImmediateContext);
   }
 
   HRESULT STDMETHODCALLTYPE CreateDeferredContext1(
@@ -781,7 +754,124 @@ public:
   HRESULT STDMETHODCALLTYPE
       OpenSharedResourceByName(LPCWSTR lpName, DWORD dwDesiredAccess,
                                REFIID returnedInterface,
-                               void **ppResource) override{IMPLEMENT_ME}
+                               void **ppResource) override {
+    IMPLEMENT_ME
+  }
+
+  void STDMETHODCALLTYPE
+  GetImmediateContext2(ID3D11DeviceContext2 **ppImmediateContext) override {
+    if (!context_) {
+      /*
+      lazy construction by design
+      to solve an awkward com_cast on refcount=0 object
+      (generally shouldn't pass this to others in constructor)
+      */
+      context_ = CreateD3D11DeviceContext(this);
+    }
+    *ppImmediateContext = context_.ref();
+  }
+
+  HRESULT STDMETHODCALLTYPE
+  CreateDeferredContext2(UINT flags, ID3D11DeviceContext2 **context) override {
+    IMPLEMENT_ME;
+  }
+
+  void STDMETHODCALLTYPE GetResourceTiling(
+      ID3D11Resource *resource, UINT *tile_count,
+      D3D11_PACKED_MIP_DESC *mip_desc, D3D11_TILE_SHAPE *tile_shape,
+      UINT *subresource_tiling_count, UINT first_subresource_tiling,
+      D3D11_SUBRESOURCE_TILING *subresource_tiling) override{IMPLEMENT_ME}
+
+  HRESULT STDMETHODCALLTYPE
+      CheckMultisampleQualityLevels1(DXGI_FORMAT Format, UINT SampleCount,
+                                     UINT Flags,
+                                     UINT *pNumQualityLevels) override {
+    if (Flags) {
+      IMPLEMENT_ME;
+    }
+    MTL_FORMAT_DESC desc;
+    adapter_->QueryFormatDesc(Format, &desc);
+    if (desc.PixelFormat == MTL::PixelFormatInvalid) {
+      *pNumQualityLevels = 0;
+      return E_INVALIDARG;
+    }
+
+    // MSDN:
+    // FEATURE_LEVEL_11_0 devices are required to support 4x MSAA for all render
+    // target formats, and 8x MSAA for all render target formats except
+    // R32G32B32A32 formats.
+
+    // seems some pixel format doesn't support MSAA
+    // https://developer.apple.com/metal/Metal-Feature-Set-Tables.pdf
+
+    if (GetMTLDevice()->supportsTextureSampleCount(SampleCount)) {
+      *pNumQualityLevels = 1; // always 1: in metal there is no concept of
+                              // Quality Level (so is it in vulkan iirc)
+      return S_OK;
+    }
+    return S_FALSE;
+  }
+
+  HRESULT STDMETHODCALLTYPE
+  CreateTexture2D1(const D3D11_TEXTURE2D_DESC1 *desc,
+                   const D3D11_SUBRESOURCE_DATA *initial_data,
+                   ID3D11Texture2D1 **texture) override{IMPLEMENT_ME}
+
+  HRESULT STDMETHODCALLTYPE
+      CreateTexture3D1(const D3D11_TEXTURE3D_DESC1 *desc,
+                       const D3D11_SUBRESOURCE_DATA *initial_data,
+                       ID3D11Texture3D1 **texture) override{IMPLEMENT_ME}
+
+  HRESULT STDMETHODCALLTYPE
+      CreateRasterizerState2(const D3D11_RASTERIZER_DESC2 *desc,
+                             ID3D11RasterizerState2 **state) override{
+          IMPLEMENT_ME}
+
+  HRESULT STDMETHODCALLTYPE
+      CreateShaderResourceView1(ID3D11Resource *resource,
+                                const D3D11_SHADER_RESOURCE_VIEW_DESC1 *desc,
+                                ID3D11ShaderResourceView1 **view) override{
+          IMPLEMENT_ME}
+
+  HRESULT STDMETHODCALLTYPE
+      CreateUnorderedAccessView1(ID3D11Resource *resource,
+                                 const D3D11_UNORDERED_ACCESS_VIEW_DESC1 *desc,
+                                 ID3D11UnorderedAccessView1 **view) override{
+          IMPLEMENT_ME}
+
+  HRESULT STDMETHODCALLTYPE
+      CreateRenderTargetView1(ID3D11Resource *resource,
+                              const D3D11_RENDER_TARGET_VIEW_DESC1 *desc,
+                              ID3D11RenderTargetView1 **view) override{
+          IMPLEMENT_ME}
+
+  HRESULT STDMETHODCALLTYPE CreateQuery1(const D3D11_QUERY_DESC1 *desc,
+                                         ID3D11Query1 **query) override {
+    IMPLEMENT_ME
+  }
+
+  void STDMETHODCALLTYPE
+  GetImmediateContext3(ID3D11DeviceContext3 **context) override{IMPLEMENT_ME}
+
+  HRESULT STDMETHODCALLTYPE
+      CreateDeferredContext3(UINT flags,
+                             ID3D11DeviceContext3 **context) override {
+    IMPLEMENT_ME
+  }
+
+  void STDMETHODCALLTYPE WriteToSubresource(ID3D11Resource *dst_resource,
+                                            UINT dst_subresource,
+                                            const D3D11_BOX *dst_box,
+                                            const void *src_data,
+                                            UINT src_row_pitch,
+                                            UINT src_depth_pitch) override {
+    IMPLEMENT_ME
+  }
+
+  void STDMETHODCALLTYPE
+  ReadFromSubresource(void *dst_data, UINT dst_row_pitch, UINT dst_depth_pitch,
+                      ID3D11Resource *src_resource, UINT src_subresource,
+                      const D3D11_BOX *src_box) override{IMPLEMENT_ME}
 
   MTL::Device *STDMETHODCALLTYPE GetMTLDevice() override {
     return m_container->GetMTLDevice();
@@ -880,12 +970,14 @@ public:
 
     if (riid == __uuidof(IUnknown) || riid == __uuidof(IDXGIObject) ||
         riid == __uuidof(IDXGIDevice) || riid == __uuidof(IDXGIDevice1) ||
-        riid == __uuidof(IDXGIDevice2) || riid == __uuidof(IMTLDXGIDevice)) {
+        riid == __uuidof(IDXGIDevice2) || riid == __uuidof(IDXGIDevice3) ||
+        riid == __uuidof(IMTLDXGIDevice)) {
       *ppvObject = ref(this);
       return S_OK;
     }
 
     if (riid == __uuidof(ID3D11Device) || riid == __uuidof(ID3D11Device1) ||
+        riid == __uuidof(ID3D11Device2) || riid == __uuidof(ID3D11Device3) ||
         riid == __uuidof(IMTLD3D11Device)) {
       *ppvObject = ref(&d3d11_device_);
       return S_OK;
@@ -959,6 +1051,8 @@ public:
   HRESULT STDMETHODCALLTYPE EnqueueSetEvent(HANDLE hEvent) override {
     return E_FAIL;
   }
+
+  void STDMETHODCALLTYPE Trim() override { WARN("DXGIDevice3::Trim: no-op"); };
 
   MTL::Device *STDMETHODCALLTYPE GetMTLDevice() override {
     return adapter_->GetMTLDevice();
