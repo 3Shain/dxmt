@@ -100,26 +100,30 @@ void MetallibWriter::Write(const llvm::Module &module, raw_ostream &OS) {
         }
         SmallVector<char, 0> fn_public_metadata;
         raw_svector_ostream fn_public_metadata_stream(fn_public_metadata);
-        fn_public_metadata_stream << value(MTLBFourCC::VertexAttribute);
-        auto lenOffset = fn_public_metadata_stream.tell();
-        fn_public_metadata_stream << value((uint16_t)0);
-        fn_public_metadata_stream << value((uint16_t)attribtues.size());
-        for (auto &vattr : attribtues) {
-          fn_public_metadata_stream << vattr.name << '\0';
-          fn_public_metadata_stream << value(MTLB_VATY{
-            .attribute = vattr.attribute,
-            .__ = 0,
-            .usage = 0,
-            .active = 1,
-          });
-        }
-        auto vatt_written = fn_public_metadata_stream.tell() - lenOffset;
-        *(uint16_t *)(&fn_public_metadata[lenOffset]) = vatt_written - 2;
-        fn_public_metadata_stream << value(MTLBFourCC::VertexAttributeType);
-        fn_public_metadata_stream << value((uint16_t)(2 + attribtues.size()));
-        fn_public_metadata_stream << value((uint16_t)(attribtues.size()));
-        for (auto &vattr : attribtues) {
-          fn_public_metadata_stream << value(vattr.type);
+        if (attribtues.size()) {
+          // if no vertex attribtues, then don't emit VATY, otherwise PSO
+          // doesn't compile
+          fn_public_metadata_stream << value(MTLBFourCC::VertexAttribute);
+          auto lenOffset = fn_public_metadata_stream.tell();
+          fn_public_metadata_stream << value((uint16_t)0);
+          fn_public_metadata_stream << value((uint16_t)attribtues.size());
+          for (auto &vattr : attribtues) {
+            fn_public_metadata_stream << vattr.name << '\0';
+            fn_public_metadata_stream << value(MTLB_VATY{
+              .attribute = vattr.attribute,
+              .__ = 0,
+              .usage = 0,
+              .active = 1,
+            });
+          }
+          auto vatt_written = fn_public_metadata_stream.tell() - lenOffset;
+          *(uint16_t *)(&fn_public_metadata[lenOffset]) = vatt_written - 2;
+          fn_public_metadata_stream << value(MTLBFourCC::VertexAttributeType);
+          fn_public_metadata_stream << value((uint16_t)(2 + attribtues.size()));
+          fn_public_metadata_stream << value((uint16_t)(attribtues.size()));
+          for (auto &vattr : attribtues) {
+            fn_public_metadata_stream << value(vattr.type);
+          }
         }
         fn_public_metadata_stream << "ENDT";
 

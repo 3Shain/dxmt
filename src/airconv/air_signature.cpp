@@ -506,7 +506,7 @@ auto FunctionSignatureBuilder::CreateFunction(
           return msl_float4.get_llvm_type(context);
         },
         [&](const InputFrontFacing &) {
-          metadata_field.string("air.front_face")
+          metadata_field.string("air.front_facing")
             ->string("air.arg_type_name")
             ->string("bool") // HARDCODED
             ->string("air.arg_name")

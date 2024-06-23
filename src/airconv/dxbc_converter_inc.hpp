@@ -585,6 +585,13 @@ auto init_input_reg(uint32_t with_fnarg_at, uint32_t to_reg, uint32_t mask)
     auto const_index =
       llvm::ConstantInt::get(ctx.llvm, llvm::APInt{32, to_reg, false});
     if (arg->getType()->getScalarType()->isIntegerTy()) {
+      if (arg->getType()->getScalarType() == ctx.types._bool) {
+        // front_facing
+        return store_at_vec4_array_masked(
+          ctx.resource.input.ptr_int4, const_index,
+          ctx.builder.CreateSExt(arg, ctx.types._int), mask
+        );
+      }
       if (arg->getType()->getScalarType() != ctx.types._int) {
         return throwUnsupported("TODO: handle non 32 bit integer");
       }
@@ -4511,7 +4518,61 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                                           )
                       );
                     }
-                    assert(0 && "todo: typed uav atomic binop");
+                    auto [res, res_handle_fn] =
+                      ctx.resource.uav_range_map.at(uav.range_id);
+                    auto res_h = co_yield res_handle_fn(nullptr);
+                    auto address = co_yield load_src_op<false>(bin.dst_address);
+                    auto value = co_yield load_src_op<false>(bin.src);
+                    switch (res.resource_kind) {
+                    case air::TextureKind::texture_buffer:
+                    case air::TextureKind::texture_1d:
+                      co_return co_yield store_dst_op<false>(
+                        bin.dst_original,
+                        call_texture_atomic_fetch_explicit(
+                          res, res_h, op, is_signed,
+                          co_yield extract_element(0)(address), nullptr, value
+                        )
+                      );
+                    case air::TextureKind::texture_1d_array:
+                      co_return co_yield store_dst_op<false>(
+                        bin.dst_original,
+                        call_texture_atomic_fetch_explicit(
+                          res, res_h, op, is_signed,
+                          co_yield extract_element(1)(address),
+                          co_yield extract_element(1)(address), value
+                        )
+                      );
+                    case air::TextureKind::texture_2d:
+                      co_return co_yield store_dst_op<false>(
+                        bin.dst_original,
+                        call_texture_atomic_fetch_explicit(
+                          res, res_h, op, is_signed,
+                          co_yield truncate_vec(2)(address), nullptr, value
+                        )
+                      );
+                    case air::TextureKind::texture_2d_array: {
+                      co_return co_yield store_dst_op<false>(
+                        bin.dst_original,
+                        call_texture_atomic_fetch_explicit(
+                          res, res_h, op, is_signed,
+                          co_yield truncate_vec(2)(address),
+                          co_yield extract_element(2)(address), value
+                        )
+                      );
+                    }
+                    case air::TextureKind::texture_3d:
+                      co_return co_yield store_dst_op<false>(
+                        bin.dst_original,
+                        call_texture_atomic_fetch_explicit(
+                          res, res_h, op, is_signed,
+                          co_yield truncate_vec(3)(address), nullptr, value
+                        )
+                      );
+                    default:
+                      assert(0 && "invalid texture kind for typed uav atomic");
+                    }
+
+                    co_return {};
                   });
                 }
               },

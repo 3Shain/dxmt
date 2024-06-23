@@ -534,6 +534,15 @@ public:
       }
       return;
     }
+    if (dim == D3D11_RESOURCE_DIMENSION_TEXTURE3D) {
+      D3D11_TEXTURE3D_DESC desc;
+      ((ID3D11Texture3D *)pDstResource)->GetDesc(&desc);
+      if (DstSubresource >= desc.MipLevels) {
+        ERR("out of bound texture write");
+        return;
+      }
+      assert(0 && "Unimplemented UpdateSubresource for 3d texture");
+    }
 
     IMPLEMENT_ME
   }

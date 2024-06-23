@@ -925,27 +925,23 @@ int SM50Initialize(
           });
           break;
         }
-        case D3D10_SB_NAME_SAMPLE_INDEX: {
-          auto assigned_index = func_signature.DefineInput(InputSampleIndex{});
-          prelogue_.push_back([=](IREffect &prelogue) {
-            prelogue << init_input_reg(assigned_index, reg, mask);
-          });
-          break;
-        }
-        case D3D10_SB_NAME_PRIMITIVE_ID: {
-          auto assigned_index = func_signature.DefineInput(InputPrimitiveID{});
-          prelogue_.push_back([=](IREffect &prelogue) {
-            prelogue << init_input_reg(assigned_index, reg, mask);
-          });
-          break;
-        }
-        case D3D10_SB_NAME_IS_FRONT_FACE: {
-          auto assigned_index = func_signature.DefineInput(InputFrontFacing{});
-          prelogue_.push_back([=](IREffect &prelogue) {
-            prelogue << init_input_reg(assigned_index, reg, mask);
-          });
-          break;
-        }
+        // FIXME: these sgv are pixel shader only
+        // case D3D10_SB_NAME_SAMPLE_INDEX: {
+        //   auto assigned_index =
+        //   func_signature.DefineInput(InputSampleIndex{});
+        //   prelogue_.push_back([=](IREffect &prelogue) {
+        //     prelogue << init_input_reg(assigned_index, reg, mask);
+        //   });
+        //   break;
+        // }
+        // case D3D10_SB_NAME_PRIMITIVE_ID: {
+        //   auto assigned_index =
+        //   func_signature.DefineInput(InputPrimitiveID{});
+        //   prelogue_.push_back([=](IREffect &prelogue) {
+        //     prelogue << init_input_reg(assigned_index, reg, mask);
+        //   });
+        //   break;
+        // }
         default:
           assert(0 && "Unexpected/unhandled input system value");
           break;
@@ -1124,6 +1120,7 @@ int SM50Initialize(
         prelogue_.push_back([=](IREffect &prelogue) {
           prelogue << init_input_reg(assigned_index, reg, mask);
         });
+        max_input_register = std::max(reg + 1, max_input_register);
         break;
       }
       case D3D10_SB_OPCODE_DCL_INPUT_PS: {
