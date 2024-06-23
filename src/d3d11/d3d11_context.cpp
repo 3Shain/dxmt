@@ -1,6 +1,7 @@
 
 
 #include "d3d11_context.hpp"
+#include "d3d11_enumerable.hpp"
 #include "d3d11_private.h"
 #include "d3d11_query.hpp"
 #include "dxmt_command_queue.hpp"
@@ -146,7 +147,8 @@ public:
       return E_INVALIDARG;
 
     if (GetDataFlags != D3D11_ASYNC_GETDATA_DONOTFLUSH) {
-      assert(0 && "handle GetDataFlags correctly");
+      // assert(0 && "handle GetDataFlags correctly");
+      FlushInternal([](auto) {});
     }
 
     D3D11_QUERY_DESC desc;
@@ -386,8 +388,20 @@ public:
                      (ID3D11Buffer *)pSrcResource);
       break;
     }
-    case D3D11_RESOURCE_DIMENSION_TEXTURE1D:
-    case D3D11_RESOURCE_DIMENSION_TEXTURE2D:
+    case D3D11_RESOURCE_DIMENSION_TEXTURE1D: {
+      IMPLEMENT_ME
+      break;
+    }
+    case D3D11_RESOURCE_DIMENSION_TEXTURE2D: {
+      D3D11_TEXTURE2D_DESC desc;
+      ((ID3D11Texture2D *)pSrcResource)->GetDesc(&desc);
+      for (auto sub : EnumerateSubresources(desc)) {
+        ctx.CopyTexture2D((ID3D11Texture2D *)pDstResource, sub.SubresourceId, 0,
+                          0, 0, (ID3D11Texture2D *)pSrcResource,
+                          sub.SubresourceId, nullptr);
+      }
+      break;
+    }
     case D3D11_RESOURCE_DIMENSION_TEXTURE3D: {
       IMPLEMENT_ME
       break;
@@ -541,7 +555,45 @@ public:
         ERR("out of bound texture write");
         return;
       }
-      assert(0 && "Unimplemented UpdateSubresource for 3d texture");
+      auto level = DstSubresource % desc.MipLevels;
+      uint32_t copy_rows = std::max(desc.Height >> level, 1u);
+      uint32_t copy_columns = std::max(desc.Width >> level, 1u);
+      uint32_t copy_w = std::max(desc.Depth >> level, 1u);
+      uint32_t origin_x = 0;
+      uint32_t origin_y = 0;
+      uint32_t origin_z = 0;
+      if (pDstBox) {
+        copy_rows = pDstBox->bottom - pDstBox->top;
+        copy_columns = pDstBox->right - pDstBox->left;
+        copy_w = pDstBox->back - pDstBox->front;
+        origin_x = pDstBox->left;
+        origin_y = pDstBox->top;
+        origin_z = pDstBox->front;
+      }
+      if (auto bindable = com_cast<IMTLBindable>(pDstResource)) {
+        auto copy_len = copy_w * SrcDepthPitch;
+        auto chk = cmd_queue.CurrentChunk();
+        auto [heap, offset] = chk->allocate_gpu_heap(copy_len, 16);
+        memcpy(((char *)heap->contents()) + offset, pSrcData, copy_len);
+        ctx.EmitBlitCommand<true>(
+            [heap, offset,
+             dst = bindable->UseBindable(cmd_queue.CurrentSeqId()), SrcRowPitch,
+             SrcDepthPitch, copy_rows, copy_columns, copy_w, origin_x, origin_y,
+             origin_z, level](MTL::BlitCommandEncoder *enc, auto &ctx) {
+              enc->copyFromBuffer(
+                  heap, offset, SrcRowPitch, SrcDepthPitch,
+                  MTL::Size::Make(copy_columns, copy_rows, copy_w),
+                  dst.texture(&ctx), 0, level,
+                  MTL::Origin::Make(origin_x, origin_y, origin_z));
+            });
+      } else if (auto dynamic = com_cast<IMTLDynamicBindable>(pDstResource)) {
+        assert(CopyFlags && "otherwise resource cannot be dynamic");
+        assert(0 && "UpdateSubresource1: TODO");
+      } else {
+        // staging: ...
+        assert(0 && "UpdateSubresource1: TODO: texture2d");
+      }
+      return;
     }
 
     IMPLEMENT_ME

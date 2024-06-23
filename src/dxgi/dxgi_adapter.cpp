@@ -321,11 +321,30 @@ public:
       pMtlDesc->BytesPerTexel = 8;
       break;
     }
-    case DXGI_FORMAT_R32G8X24_TYPELESS:
-    case DXGI_FORMAT_D32_FLOAT_S8X24_UINT:
-    case DXGI_FORMAT_R32_FLOAT_X8X24_TYPELESS:
-    case DXGI_FORMAT_X32_TYPELESS_G8X24_UINT:
+    case DXGI_FORMAT_R32G8X24_TYPELESS: {
+      pMtlDesc->PixelFormat = MTL::PixelFormatDepth32Float_Stencil8;
+      pMtlDesc->BytesPerTexel = 8;
+      pMtlDesc->DepthStencilFlag = 3; // ?
+      break;
+    }
+    case DXGI_FORMAT_D32_FLOAT_S8X24_UINT: {
+      pMtlDesc->PixelFormat = MTL::PixelFormatDepth32Float_Stencil8;
+      pMtlDesc->BytesPerTexel = 8;
+      pMtlDesc->DepthStencilFlag = 3; // ?
+      break;
+    }
+    case DXGI_FORMAT_R32_FLOAT_X8X24_TYPELESS: {
+      pMtlDesc->PixelFormat = MTL::PixelFormatDepth32Float_Stencil8;
+      pMtlDesc->BytesPerTexel = 8;
+      pMtlDesc->DepthStencilFlag = 1; // ?
+      break;
+    }
       return E_FAIL;
+    case DXGI_FORMAT_X32_TYPELESS_G8X24_UINT: {
+      pMtlDesc->PixelFormat = MTL::PixelFormatX32_Stencil8;
+      pMtlDesc->BytesPerTexel = 8;
+      break;
+    }
     case DXGI_FORMAT_R10G10B10A2_TYPELESS: {
       pMtlDesc->PixelFormat = MTL::PixelFormatRGB10A2Uint;
       pMtlDesc->BytesPerTexel = 4;

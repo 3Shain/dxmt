@@ -1,3 +1,4 @@
+#include "d3d11_enumerable.hpp"
 #include "mtld11_resource.hpp"
 #include "objc_pointer.hpp"
 
@@ -7,6 +8,8 @@ class StagingBufferInternal {
   Obj<MTL::Buffer> buffer;
   void *buffer_mapped;
   uint64_t buffer_len;
+  uint32_t bytes_per_row;
+  uint32_t bytes_per_image;
   // prevent read from staging before
   uint64_t cpu_coherent_after_finished_seq_id = 0;
   // prevent write to staging before
@@ -14,9 +17,11 @@ class StagingBufferInternal {
   bool mapped = false;
 
 public:
-  StagingBufferInternal(Obj<MTL::Buffer> &&buffer)
+  StagingBufferInternal(Obj<MTL::Buffer> &&buffer, uint32_t bytes_per_row,
+                        uint32_t bytes_per_image)
       : buffer(std::move(buffer)), buffer_mapped(this->buffer->contents()),
-        buffer_len(this->buffer->length()) {}
+        buffer_len(this->buffer->length()), bytes_per_row(bytes_per_row),
+        bytes_per_image(bytes_per_image) {}
 
   bool UseCopyDestination(uint64_t seq_id, MTL_STAGING_RESOURCE *pBuffer,
                           uint32_t *pBytesPerRow, uint32_t *pBytesPerImage) {
@@ -27,6 +32,8 @@ public:
     gpu_occupied_until_finished_seq_id = seq_id; // coherent write-after-write
     pBuffer->Type = MTL_BIND_BUFFER_UNBOUNDED;
     pBuffer->Buffer = buffer.ptr();
+    *pBytesPerRow = bytes_per_row;
+    *pBytesPerImage = bytes_per_image;
     return true;
   };
 
@@ -39,6 +46,8 @@ public:
     gpu_occupied_until_finished_seq_id = seq_id; // coherent write-after-read
     pBuffer->Type = MTL_BIND_BUFFER_UNBOUNDED;
     pBuffer->Buffer = buffer.ptr();
+    *pBytesPerRow = bytes_per_row;
+    *pBytesPerImage = bytes_per_image;
     return true;
   };
 
@@ -66,8 +75,8 @@ public:
       return -1;
     }
     pMappedResource->pData = buffer_mapped;
-    pMappedResource->RowPitch = buffer_len;
-    pMappedResource->DepthPitch = buffer_len;
+    pMappedResource->RowPitch = bytes_per_row;
+    pMappedResource->DepthPitch = bytes_per_image;
     return 0;
   };
   void Unmap() {
@@ -121,13 +130,15 @@ CreateStagingBuffer(IMTLD3D11Device *pDevice, const D3D11_BUFFER_DESC *pDesc,
                     const D3D11_SUBRESOURCE_DATA *pInitialData,
                     ID3D11Buffer **ppBuffer) {
   auto metal = pDevice->GetMTLDevice();
-  auto buffer = transfer(
-      metal->newBuffer(pDesc->ByteWidth, MTL::ResourceStorageModeShared));
+  auto byte_width = pDesc->ByteWidth;
+  auto buffer =
+      transfer(metal->newBuffer(byte_width, MTL::ResourceStorageModeShared));
   if (pInitialData) {
-    memcpy(buffer->contents(), pInitialData->pSysMem, buffer->length());
+    memcpy(buffer->contents(), pInitialData->pSysMem, byte_width);
   }
-  *ppBuffer = ref(new StagingBuffer(pDesc, pDevice,
-                                    StagingBufferInternal(std::move(buffer))));
+  *ppBuffer = ref(new StagingBuffer(
+      pDesc, pDevice,
+      StagingBufferInternal(std::move(buffer), byte_width, byte_width)));
   return S_OK;
 }
 
@@ -137,7 +148,7 @@ CreateStagingBuffer(IMTLD3D11Device *pDevice, const D3D11_BUFFER_DESC *pDesc,
 
 template <typename tag_texture>
 class StagingTexture : public TResourceBase<tag_texture, IMTLD3D11Staging> {
-  std::vector<StagingBufferInternal> &&subresources;
+  std::vector<StagingBufferInternal> subresources;
   uint32_t subresource_count;
 
 public:
@@ -145,7 +156,7 @@ public:
                  std::vector<StagingBufferInternal> &&subresources)
       : TResourceBase<tag_texture, IMTLD3D11Staging>(pDesc, pDevice),
         subresources(std::move(subresources)),
-        subresource_count(subresources.size()) {}
+        subresource_count(this->subresources.size()) {}
 
   bool UseCopyDestination(uint32_t Subresource, uint64_t seq_id,
                           MTL_STAGING_RESOURCE *pBuffer, uint32_t *pBytesPerRow,
@@ -198,26 +209,25 @@ HRESULT CreateStagingTextureInternal(IMTLD3D11Device *pDevice,
           CreateMTLTextureDescriptor(pDevice, pDesc, &finalDesc, &texDesc))) {
     return E_INVALIDARG;
   }
-  uint32_t array_size = 1;
-  if constexpr (!std::is_same<typename tag::DESC_S,
-                              D3D11_TEXTURE3D_DESC>::value) {
-    array_size = finalDesc.ArraySize;
-  }
   std::vector<StagingBufferInternal> subresources;
-  uint32_t mip_levels = finalDesc.MipLevels;
   assert(!pInitialData);
-  for (auto slice = 0u; slice < array_size; slice++) {
-    for (auto level = 0u; level < mip_levels; level++) {
-      auto sub_id = D3D11CalcSubresource(level, slice, mip_levels);
-      uint32_t w, h, d;
-      GetMipmapSize(&finalDesc, level, &w, &h, &d);
-      uint32_t bpr, bpi, buf_len;
-      if (FAILED(GetLinearTextureLayout(pDevice, &finalDesc, level, &bpr, &bpi,
-                                        &buf_len))) {
-        return E_FAIL;
-      }
-      // TODO: unfinished!
+  for (auto &sub : EnumerateSubresources(finalDesc)) {
+    uint32_t w, h, d;
+    GetMipmapSize(&finalDesc, sub.MipLevel, &w, &h, &d);
+    uint32_t bpr, bpi, buf_len;
+    if (FAILED(GetLinearTextureLayout(pDevice, &finalDesc, sub.MipLevel, &bpr,
+                                      &bpi, &buf_len))) {
+      return E_FAIL;
     }
+    assert(subresources.size() == sub.SubresourceId);
+    auto buffer =
+        transfer(metal->newBuffer(buf_len, MTL::ResourceStorageModeShared));
+    if (pInitialData) {
+      // FIXME: SysMemPitch and SysMemSlicePitch should be respected!
+      memcpy(buffer->contents(), pInitialData[sub.SubresourceId].pSysMem,
+             buf_len);
+    }
+    subresources.push_back(StagingBufferInternal(std::move(buffer), bpr, bpi));
   }
 
   *ppTexture = ref(

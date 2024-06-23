@@ -66,7 +66,7 @@ struct D3D11ShaderStageState {
 };
 
 struct VERTEX_BUFFER_B {
-  MTL::Buffer* BufferRaw;
+  MTL::Buffer *BufferRaw;
   Com<IMTLBindable> Buffer;
   UINT Stride;
   UINT Offset;

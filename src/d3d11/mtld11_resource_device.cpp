@@ -412,6 +412,14 @@ public:
         ERR("hack fired: interpret R32Float as Depth32Float");
         finalDesc.Format = DXGI_FORMAT_D32_FLOAT; // sad!
       }
+      if (finalDesc.Format == DXGI_FORMAT_R16_UINT) {
+        ERR("hack fired: interpret R16Uint as Depth16Unorm");
+        finalDesc.Format = DXGI_FORMAT_D16_UNORM;
+      }
+      if (finalDesc.Format == DXGI_FORMAT_R16_UNORM) {
+        ERR("hack fired: interpret R16Unorm as Depth16Unorm");
+        finalDesc.Format = DXGI_FORMAT_D16_UNORM;
+      }
     }
     Obj<MTL::Texture> view;
     if (FAILED(CreateMTLTextureView(this->m_parent, this->texture, &finalDesc,

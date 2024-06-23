@@ -161,7 +161,7 @@ public:
       function_ = transfer(library->newFunction(
           NS::String::string(func_name.c_str(), NS::UTF8StringEncoding)));
       if (function_ == nullptr) {
-        ERR("Failed to create MTLFunction: name not found");
+        ERR("Failed to create MTLFunction: ", func_name);
         return;
       }
     }

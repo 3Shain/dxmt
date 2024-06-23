@@ -20,6 +20,7 @@ d3d11_src = [
   'mtld11_resource_backbuf.cpp',
   'dxmt_resource_binding.cpp',
   'd3d11_pipeline.cpp',
+  'd3d11_enumerable.cpp',
 ]
 
 d3d11_ld_args      = []

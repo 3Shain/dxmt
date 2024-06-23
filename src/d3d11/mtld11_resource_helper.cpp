@@ -303,6 +303,10 @@ CreateMTLTextureDescriptorInternal(
       (BindFlags & D3D11_BIND_DEPTH_STENCIL)) {
     desc->setPixelFormat(MTL::PixelFormatDepth32Float);
     metal_usage |= MTL::TextureUsagePixelFormatView;
+  } else if (Format == DXGI_FORMAT_R16_TYPELESS &&
+             (BindFlags & D3D11_BIND_DEPTH_STENCIL)) {
+    desc->setPixelFormat(MTL::PixelFormatDepth16Unorm);
+    metal_usage |= MTL::TextureUsagePixelFormatView;
   } else {
     desc->setPixelFormat(metal_format.PixelFormat);
   }
@@ -460,7 +464,6 @@ HRESULT CreateMTLTextureDescriptor(IMTLD3D11Device *pDevice,
   return hr;
 }
 
-
 template <>
 void GetMipmapSize(const D3D11_TEXTURE1D_DESC *pDesc, uint32_t level,
                    uint32_t *pWidth, uint32_t *pHeight, uint32_t *pDepth) {
@@ -483,6 +486,11 @@ void GetMipmapSize(const D3D11_TEXTURE3D_DESC *pDesc, uint32_t level,
   *pWidth = std::max(1u, pDesc->Width >> level);
   *pHeight = std::max(1u, pDesc->Height >> level);
   *pDepth = std::max(1u, pDesc->Depth >> level);
+}
+
+inline size_t CalcAlignedBytesPerRow(size_t unaligned, size_t alignment) {
+  // a smart ceil
+  return ((unaligned + alignment - 1) / alignment) * alignment;
 }
 
 template <>
@@ -514,10 +522,11 @@ HRESULT GetLinearTextureLayout(IMTLD3D11Device *pDevice,
   auto bytes_per_row_unaligned = metal_format.BytesPerTexel * w;
   auto alignment = metal->minimumLinearTextureAlignmentForPixelFormat(
       metal_format.PixelFormat);
-  assert((bytes_per_row_unaligned % alignment) == 0 && "todo: ...");
-  *pBytesPerRow = 0;
+  auto aligned_bytes_per_row =
+      CalcAlignedBytesPerRow(bytes_per_row_unaligned, alignment);
+  *pBytesPerRow = aligned_bytes_per_row;
   *pBytesPerImage = 0;
-  *pBytesPerSlice = bytes_per_row_unaligned;
+  *pBytesPerSlice = aligned_bytes_per_row;
   return S_OK;
 };
 
@@ -550,10 +559,11 @@ HRESULT GetLinearTextureLayout(IMTLD3D11Device *pDevice,
   auto bytes_per_row_unaligned = metal_format.BytesPerTexel * w;
   auto alignment = metal->minimumLinearTextureAlignmentForPixelFormat(
       metal_format.PixelFormat);
-  assert((bytes_per_row_unaligned % alignment) == 0 && "todo: ...");
-  *pBytesPerRow = bytes_per_row_unaligned;
-  *pBytesPerImage = 0;
-  *pBytesPerSlice = bytes_per_row_unaligned * h;
+  auto aligned_bytes_per_row =
+      CalcAlignedBytesPerRow(bytes_per_row_unaligned, alignment);
+  *pBytesPerRow = aligned_bytes_per_row;
+  *pBytesPerImage = aligned_bytes_per_row * h;
+  *pBytesPerSlice = aligned_bytes_per_row * h;
   return S_OK;
 };
 
@@ -586,10 +596,11 @@ HRESULT GetLinearTextureLayout(IMTLD3D11Device *pDevice,
   auto bytes_per_row_unaligned = metal_format.BytesPerTexel * w;
   auto alignment = metal->minimumLinearTextureAlignmentForPixelFormat(
       metal_format.PixelFormat);
-  assert((bytes_per_row_unaligned % alignment) == 0 && "todo: ...");
-  *pBytesPerRow = bytes_per_row_unaligned;
-  *pBytesPerImage = bytes_per_row_unaligned * h;
-  *pBytesPerSlice = bytes_per_row_unaligned * h * d;
+  auto aligned_bytes_per_row =
+      CalcAlignedBytesPerRow(bytes_per_row_unaligned, alignment);
+  *pBytesPerRow = aligned_bytes_per_row;
+  *pBytesPerImage = aligned_bytes_per_row * h;
+  *pBytesPerSlice = aligned_bytes_per_row * h * d;
   return S_OK;
 };
 

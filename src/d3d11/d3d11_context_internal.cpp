@@ -10,6 +10,7 @@ since it is for internal use only
 #include "d3d11_device.hpp"
 #include "d3d11_pipeline.hpp"
 #include "dxmt_command_queue.hpp"
+#include "mtld11_resource.hpp"
 #include "util_flags.hpp"
 
 namespace dxmt {
@@ -85,8 +86,19 @@ public:
         bool replaced = false;
         auto &entry =
             ShaderStage.ConstantBuffers.bind(slot, {pConstantBuffer}, replaced);
-        if (!replaced)
+        if (!replaced) {
+          if (pFirstConstant &&
+              pFirstConstant[slot - StartSlot] != entry.FirstConstant) {
+            ShaderStage.ConstantBuffers.set_dirty(slot);
+            entry.FirstConstant = pFirstConstant[slot - StartSlot];
+          }
+          if (pNumConstants &&
+              pNumConstants[slot - StartSlot] != entry.NumConstants) {
+            ShaderStage.ConstantBuffers.set_dirty(slot);
+            entry.NumConstants = pNumConstants[slot - StartSlot];
+          }
           continue;
+        }
         entry.FirstConstant =
             pFirstConstant ? pFirstConstant[slot - StartSlot] : 0;
         if (pNumConstants) {
@@ -368,8 +380,27 @@ public:
       auto dst = com_cast<IMTLBindable>(pDstResource);
       assert(dst);
       if (auto staging_src = com_cast<IMTLD3D11Staging>(pSrcResource)) {
-        assert(0 && "TODO: copy texture2d staging");
         // copy from staging to default
+        MTL_STAGING_RESOURCE src_bind;
+        uint32_t bytes_per_row, bytes_per_image;
+        if (!staging_src->UseCopySource(SrcSubresource, currentChunkId,
+                                        &src_bind, &bytes_per_row,
+                                        &bytes_per_image))
+          return;
+        EmitBlitCommand<true>([dst_ = dst->UseBindable(currentChunkId),
+                               src = Obj(src_bind.Buffer), bytes_per_row,
+                               DstSubresource, DstX, DstY, DstZ, SrcBox](
+                                  MTL::BlitCommandEncoder *encoder, auto ctx) {
+          auto dst = dst_.texture(&ctx);
+          auto dst_mips = dst->mipmapLevelCount();
+          auto dst_level = DstSubresource % dst_mips;
+          auto dst_slice = DstSubresource / dst_mips;
+          encoder->copyFromBuffer(
+              src, 0, bytes_per_row, 0,
+              MTL::Size::Make(SrcBox.right - SrcBox.left,
+                              SrcBox.bottom - SrcBox.top, 1),
+              dst, dst_slice, dst_level, MTL::Origin::Make(DstX, DstY, DstZ));
+        });
       } else if (auto src = com_cast<IMTLBindable>(pSrcResource)) {
         // on-device copy
         EmitBlitCommand<true>([dst_ = dst->UseBindable(currentChunkId),
@@ -404,6 +435,16 @@ public:
 
 #pragma region CommandEncoder Maintain State
 
+  bool ReadyToFlush() {
+    if (encoder_count == 0) {
+      return false;
+    }
+    encoder_count = 0;
+    return true;
+  };
+
+  uint32_t encoder_count = 0;
+
   /**
   Render pass can be invalidated by reasons:
   - render target changes (including depth stencil)
@@ -422,6 +463,7 @@ public:
         ctx.render_encoder->endEncoding();
         ctx.render_encoder = nullptr;
       });
+      encoder_count++;
       break;
     case CommandBufferState::ComputeEncoderActive:
     case CommandBufferState::ComputePipelineReady:
@@ -429,12 +471,14 @@ public:
         ctx.compute_encoder->endEncoding();
         ctx.compute_encoder = nullptr;
       });
+      encoder_count++;
       break;
     case CommandBufferState::BlitEncoderActive:
       chk->emit([](CommandChunk::context &ctx) {
         ctx.blit_encoder->endEncoding();
         ctx.blit_encoder = nullptr;
       });
+      encoder_count++;
       break;
     }
 
