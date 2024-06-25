@@ -24,13 +24,21 @@ jobs:
         run: /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
       - name: Install Development Environment
         run: | # wtf?
-          /usr/local/bin/brew install ninja meson cmake llvm@15 || /usr/local/bin/brew link --overwrite python@3
+          /usr/local/bin/brew install ninja meson cmake || /usr/local/bin/brew link --overwrite python@3
       - name: Configuration
         if: ${{ steps.cache-toolchains.outputs.cache-hit != 'true' }}
         run: ./configure.sh
+      - name: Save Cache
+        id: cache-save
+        if: ${{ steps.cache-toolchains.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v4
+        with:
+          key: cache-key-${{ hashFiles('configure.sh') }}
+          path: |
+            ./toolchains
       - name: Build
         run: |
-          meson setup --cross-file build-win64.txt --native-file build-osx.txt build
+          meson setup --cross-file build-win64.txt --native-file build-osx.txt -Dlocal_native_llvm=true -Dbuild_airconv_for_windows=true build
           meson compile -C build
       - name: Tar
         run: tar -zcf artifacts.tar.gz build/src

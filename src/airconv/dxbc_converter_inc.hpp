@@ -380,7 +380,13 @@ auto swizzle(Swizzle swizzle) {
           );
         }
       };
-      return ctx.builder.CreateShuffleVector(vec, (std::array<int, 4>)swizzle);
+      // FIXME: should guarantee vec is of 4 elements
+      if (auto is_vec = llvm::dyn_cast<llvm::VectorType>(vec->getType())) {
+        return ctx.builder.CreateShuffleVector(
+          vec, (std::array<int, 4>)swizzle
+        );
+      }
+      return ctx.builder.CreateVectorSplat(4, vec); // effective
     });
   };
 }
@@ -3228,7 +3234,8 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                    assert(0 && "invalid sample_compare resource type");
                  }
                  }
-               }) >>= extract_value(0))
+               }) >>= extract_value(0)) >>=
+              swizzle(sample.src_resource.read_swizzle)
             );
           },
           [&effect](InstGather sample) {
