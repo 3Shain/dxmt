@@ -41,7 +41,7 @@ inline void *ptr_add(const void *const p,
 
 constexpr uint32_t kCommandChunkCount = 8;
 constexpr size_t kCommandChunkCPUHeapSize = 0x800000; // is 8MB too large?
-constexpr size_t kCommandChunkGPUHeapSize = 0x800000;
+constexpr size_t kCommandChunkGPUHeapSize = 0x1000000;
 constexpr size_t kOcclusionSampleCount = 4096;
 
 class CommandChunk {
@@ -114,6 +114,7 @@ class CommandChunk {
     // we don't need an extra reference here
     // since it's guaranteed to be captured by closure
     MTL::Buffer *current_index_buffer_ref {};
+    bool dsv_valid = false;
 
     context_t(CommandChunk *chk, MTL::CommandBuffer *cmdbuf)
         : chk(chk), cmdbuf(cmdbuf) {}

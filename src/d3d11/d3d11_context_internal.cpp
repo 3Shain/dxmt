@@ -375,7 +375,35 @@ public:
     }
     auto currentChunkId = cmd_queue.CurrentSeqId();
     if (auto staging_dst = com_cast<IMTLD3D11Staging>(pDstResource)) {
-      assert(0 && "TODO: copy texture2d staging");
+      if (auto staging_src = com_cast<IMTLD3D11Staging>(pSrcResource)) {
+        assert(0 && "tod: copy between staging");
+      } else if (auto src = com_cast<IMTLBindable>(pSrcResource)) {
+        // copy from device to staging
+        MTL_STAGING_RESOURCE dst_bind;
+        uint32_t bytes_per_row, bytes_per_image;
+        if (!staging_dst->UseCopyDestination(DstSubresource, currentChunkId,
+                                             &dst_bind, &bytes_per_row,
+                                             &bytes_per_image))
+          return;
+        EmitBlitCommand<true>(
+            [src_ = src->UseBindable(currentChunkId),
+             dst = Obj(dst_bind.Buffer), bytes_per_row, SrcSubresource, DstX,
+             DstY, SrcBox](MTL::BlitCommandEncoder *encoder, auto ctx) {
+              auto src = src_.texture(&ctx);
+              auto src_mips = src->mipmapLevelCount();
+              auto src_level = SrcSubresource % src_mips;
+              auto src_slice = SrcSubresource / src_mips;
+              encoder->copyFromTexture(
+                  src, src_slice, src_level,
+                  MTL::Origin::Make(SrcBox.left, SrcBox.top, 0),
+                  MTL::Size::Make(SrcBox.right - SrcBox.left,
+                                  SrcBox.bottom - SrcBox.top, 1),
+                  dst.ptr(), /* offset */ 0, bytes_per_row, 0);
+              // offset should be DstY*bytes_per_row + DstX*BytesPerTexel
+            });
+      } else {
+        assert(0 && "todo");
+      }
     } else if (dst_desc.Usage == D3D11_USAGE_DEFAULT) {
       auto dst = com_cast<IMTLBindable>(pDstResource);
       assert(dst);
@@ -462,6 +490,7 @@ public:
       chk->emit([](CommandChunk::context &ctx) {
         ctx.render_encoder->endEncoding();
         ctx.render_encoder = nullptr;
+        ctx.dsv_valid = false;
       });
       encoder_count++;
       break;
@@ -590,7 +619,9 @@ public:
           colorAttachment->setLoadAction(MTL::LoadActionLoad);
           colorAttachment->setStoreAction(MTL::StoreActionStore);
         };
+        bool dsv_valid = false;
         if (dsv.Texture) {
+          dsv_valid = true;
           // TODO: ...should know more about load/store behavior
           auto depthAttachment = renderPassDescriptor->depthAttachment();
           depthAttachment->setTexture(dsv.Texture.texture(&ctx));
@@ -614,6 +645,7 @@ public:
         ctx.render_encoder =
             ctx.cmdbuf->renderCommandEncoder(renderPassDescriptor);
         auto [h, _] = ctx.chk->inspect_gpu_heap();
+        ctx.dsv_valid = dsv_valid;
         ctx.render_encoder->setVertexBuffer(h, 0, 30);
         ctx.render_encoder->setFragmentBuffer(h, 0, 30);
       });
@@ -673,9 +705,9 @@ public:
   Assume we have all things needed to build PSO
   If the current encoder is not a render encoder, switch to it.
   */
-  void FinalizeCurrentRenderPipeline() {
+  bool FinalizeCurrentRenderPipeline() {
     if (cmdbuf_state == CommandBufferState::RenderPipelineReady)
-      return;
+      return true;
     assert(state_.InputAssembler.InputLayout && "");
 
     SwitchToRenderEncoder();
@@ -687,6 +719,10 @@ public:
     state_.ShaderStages[(UINT)ShaderType::Vertex]
         .Shader //
         ->GetCompiledShader(NULL, &vs);
+    if (!state_.ShaderStages[(UINT)ShaderType::Pixel].Shader) {
+      // in case rasterization is not enabled.
+      return false;
+    }
     state_.ShaderStages[(UINT)ShaderType::Pixel]
         .Shader //
         ->GetCompiledShader(NULL, &ps);
@@ -721,10 +757,13 @@ public:
     });
 
     cmdbuf_state = CommandBufferState::RenderPipelineReady;
+    return true;
   }
 
   bool PreDraw() {
-    FinalizeCurrentRenderPipeline();
+    if (!FinalizeCurrentRenderPipeline()) {
+      return false;
+    }
     UpdateVertexBuffer();
     if (dirty_state.any(DirtyState::DepthStencilState)) {
       EmitSetDepthStencilState<true>();
@@ -978,7 +1017,7 @@ public:
     // FIXME: not quite efficent...?
     EmitRenderCommandChk<Force>(
         [fn = std::forward<Fn>(fn)](CommandChunk::context &ctx) {
-          fn(ctx.render_encoder.ptr());
+          std::invoke(fn, ctx.render_encoder.ptr());
         });
   };
 
@@ -990,8 +1029,9 @@ public:
     if (cmdbuf_state == CommandBufferState::RenderEncoderActive ||
         cmdbuf_state == CommandBufferState::RenderPipelineReady) {
       CommandChunk *chk = cmd_queue.CurrentChunk();
-      chk->emit(
-          [fn = std::forward<Fn>(fn)](CommandChunk::context &ctx) { fn(ctx); });
+      chk->emit([fn = std::forward<Fn>(fn)](CommandChunk::context &ctx) {
+        std::invoke(fn, ctx);
+      });
     }
   };
 
@@ -1024,10 +1064,11 @@ public:
     auto state = state_.OutputMerger.DepthStencilState
                      ? state_.OutputMerger.DepthStencilState
                      : default_depth_stencil_state;
-    EmitRenderCommand<Force>([state = std::move(state),
-                              stencil_ref = state_.OutputMerger.StencilRef](
-                                 MTL::RenderCommandEncoder *encoder) {
-      encoder->setDepthStencilState(state->GetDepthStencilState());
+    EmitRenderCommandChk<Force>([state = std::move(state),
+                                 stencil_ref = state_.OutputMerger.StencilRef](
+                                    CommandChunk::context &ctx) {
+      auto encoder = ctx.render_encoder;
+      encoder->setDepthStencilState(state->GetDepthStencilState(ctx.dsv_valid));
       encoder->setStencilReferenceValue(stencil_ref);
     });
   }
@@ -1095,8 +1136,9 @@ public:
       if ((vertex_buffer_dirty & (1 << index)) == 0) {
         continue;
       }
-      EmitRenderCommand<Force>([buffer = state.BufferRaw, offset = state.Offset,
-                                stride = state.Stride,
+      // a ref is necessary (in case buffer destroyed before encoding)
+      EmitRenderCommand<Force>([buffer = state.BufferRaw, ref = state.Buffer,
+                                offset = state.Offset, stride = state.Stride,
                                 index](MTL::RenderCommandEncoder *encoder) {
         encoder->setVertexBuffer(buffer, offset, stride, index);
       });

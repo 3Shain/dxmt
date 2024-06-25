@@ -22,7 +22,7 @@ DEFINE_COM_INTERFACE("03629ed8-bcdd-4582-8997-3817209a34f4",
 DEFINE_COM_INTERFACE("b01aaffa-b4d3-478a-91be-6195f215aaba",
                      IMTLD3D11DepthStencilState)
     : public ID3D11DepthStencilState {
-  virtual MTL::DepthStencilState *GetDepthStencilState() = 0;
+  virtual MTL::DepthStencilState *GetDepthStencilState(bool DSVAttached) = 0;
 };
 
 DEFINE_COM_INTERFACE("279a1d66-2fc1-460c-a0a7-a7a5f2b7a48f",

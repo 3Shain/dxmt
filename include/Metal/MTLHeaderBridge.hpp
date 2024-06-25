@@ -36,7 +36,6 @@ _MTL_PRIVATE_DEF_CLS(MTLAccelerationStructurePassSampleBufferAttachmentDescripto
 _MTL_PRIVATE_DEF_CLS(MTLAccelerationStructurePassSampleBufferAttachmentDescriptorArray);
 _MTL_PRIVATE_DEF_CLS(MTLAccelerationStructureTriangleGeometryDescriptor);
 _MTL_PRIVATE_DEF_CLS(MTLArchitecture);
-_MTL_PRIVATE_DEF_CLS(MTLArgument);
 _MTL_PRIVATE_DEF_CLS(MTLArgumentDescriptor);
 _MTL_PRIVATE_DEF_CLS(MTLArrayType);
 _MTL_PRIVATE_DEF_CLS(MTLAttribute);

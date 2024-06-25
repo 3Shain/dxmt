@@ -44,6 +44,17 @@ HRESULT CreateMTLTextureView<D3D11_SHADER_RESOURCE_VIEW_DESC>(
     break;
   }
   case D3D_SRV_DIMENSION_TEXTURE2DARRAY: {
+    if (texture_type == MTL::TextureType2D) {
+      *ppView = pResource->newTextureView(
+          metal_format.PixelFormat, MTL::TextureType2DArray,
+          NS::Range::Make(pViewDesc->Texture2D.MostDetailedMip,
+                          pViewDesc->Texture2D.MipLevels == 0xffffffffu
+                              ? pResource->mipmapLevelCount() -
+                                    pViewDesc->Texture2D.MostDetailedMip
+                              : pViewDesc->Texture2D.MipLevels),
+          NS::Range::Make(0, 1));
+      return S_OK;
+    }
     if (texture_type == MTL::TextureType2DArray) {
       *ppView = pResource->newTextureView(
           metal_format.PixelFormat, MTL::TextureType2DArray,
@@ -105,6 +116,17 @@ HRESULT CreateMTLTextureView<D3D11_SHADER_RESOURCE_VIEW_DESC>(
     break;
   }
   case D3D_SRV_DIMENSION_TEXTURECUBEARRAY: {
+    if (texture_type == MTL::TextureTypeCube) {
+      *ppView = pResource->newTextureView(
+          metal_format.PixelFormat, MTL::TextureTypeCubeArray,
+          NS::Range::Make(pViewDesc->TextureCube.MostDetailedMip,
+                          pViewDesc->TextureCube.MipLevels == 0xffffffffu
+                              ? pResource->mipmapLevelCount() -
+                                    pViewDesc->TextureCube.MostDetailedMip
+                              : pViewDesc->TextureCube.MipLevels),
+          NS::Range::Make(0, 6));
+      return S_OK;
+    }
     if (texture_type == MTL::TextureTypeCubeArray) {
       *ppView = pResource->newTextureView(
           metal_format.PixelFormat, MTL::TextureTypeCubeArray,
@@ -263,6 +285,14 @@ HRESULT CreateMTLTextureView<D3D11_DEPTH_STENCIL_VIEW_DESC>(
     break;
   }
   case D3D11_DSV_DIMENSION_TEXTURE2DARRAY: {
+    if (texture_type == MTL::TextureType2DArray) {
+      *ppView = pResource->newTextureView(
+          metal_format.PixelFormat, MTL::TextureType2DArray,
+          NS::Range::Make(pViewDesc->Texture2DArray.MipSlice, 1),
+          NS::Range::Make(pViewDesc->Texture2DArray.FirstArraySlice,
+                          pViewDesc->Texture2DArray.ArraySize));
+      return S_OK;
+    }
     break;
   }
   case D3D11_DSV_DIMENSION_TEXTURE2DMS: {

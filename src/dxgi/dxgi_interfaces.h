@@ -18,6 +18,7 @@ struct MTL_FORMAT_DESC {
   BOOL IsCompressed;
   BOOL SupportBackBuffer;
   UINT DepthStencilFlag; // 0 - none, 1 - depth, 2 - stencil
+  BOOL Typeless;
 };
 
 DEFINE_COM_INTERFACE("acdf3ef1-b33a-4cb6-97bd-1c1974827e6d", IMTLDXGIAdatper)

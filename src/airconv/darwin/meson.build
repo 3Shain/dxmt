@@ -21,14 +21,14 @@ if use_local_native_llvm
 llvm_include_path_darwin = include_directories('../../../toolchains/llvm-darwin/include') # FIXME: in favor of path relative to project
 llvm_ld_flags_darwin = [
  '-L'+join_paths(meson.source_root(), 'toolchains/llvm-darwin/lib'),
- '-lm','-lz', '-lzstd', '-lcurses', '-lxml2'
+ '-lm', '-lz', '-lcurses', '-lxml2'
 ]
 else
 # `brew install llvm@15`
 llvm_include_path_darwin = include_directories('/usr/local/opt/llvm@15/include') # FIXME: in favor of path relative to project
 llvm_ld_flags_darwin = [
  '-L'+join_paths('/usr/local/opt/llvm@15/lib'),
- '-lm','-lz', '-lzstd', '-lcurses', '-lxml2'
+ '-lm', '-lz', '-lcurses', '-lxml2'
 ]
 endif
 

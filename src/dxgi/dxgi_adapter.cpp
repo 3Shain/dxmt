@@ -204,11 +204,13 @@ public:
     pMtlDesc->SupportBackBuffer = false;
     pMtlDesc->Capability = FormatCapability::None;
     pMtlDesc->DepthStencilFlag = 0;
+    pMtlDesc->Typeless = 0;
 
     switch (Format) {
     case DXGI_FORMAT_R32G32B32A32_TYPELESS: {
       pMtlDesc->PixelFormat = MTL::PixelFormatRGBA32Uint;
       pMtlDesc->BytesPerTexel = 16;
+      pMtlDesc->Typeless = 1;
       break;
     }
     case DXGI_FORMAT_R32G32B32A32_UINT: {
@@ -234,6 +236,7 @@ public:
     }
     case DXGI_FORMAT_R32G32B32_TYPELESS: {
       pMtlDesc->BytesPerTexel = 12;
+      pMtlDesc->Typeless = 1;
       break;
     }
     case DXGI_FORMAT_R32G32B32_UINT: {
@@ -257,6 +260,7 @@ public:
     case DXGI_FORMAT_R16G16B16A16_TYPELESS: {
       pMtlDesc->PixelFormat = MTL::PixelFormatRGBA16Uint;
       pMtlDesc->BytesPerTexel = 8;
+      pMtlDesc->Typeless = 1;
       break;
     }
     case DXGI_FORMAT_R16G16B16A16_FLOAT: {
@@ -298,6 +302,7 @@ public:
     case DXGI_FORMAT_R32G32_TYPELESS: {
       pMtlDesc->PixelFormat = MTL::PixelFormatRG32Uint;
       pMtlDesc->BytesPerTexel = 8;
+      pMtlDesc->Typeless = 1;
       break;
     }
     case DXGI_FORMAT_R32G32_FLOAT: {
@@ -325,6 +330,7 @@ public:
       pMtlDesc->PixelFormat = MTL::PixelFormatDepth32Float_Stencil8;
       pMtlDesc->BytesPerTexel = 8;
       pMtlDesc->DepthStencilFlag = 3; // ?
+      pMtlDesc->Typeless = 1;
       break;
     }
     case DXGI_FORMAT_D32_FLOAT_S8X24_UINT: {
@@ -337,17 +343,20 @@ public:
       pMtlDesc->PixelFormat = MTL::PixelFormatDepth32Float_Stencil8;
       pMtlDesc->BytesPerTexel = 8;
       pMtlDesc->DepthStencilFlag = 1; // ?
+      pMtlDesc->Typeless = 1;
       break;
     }
       return E_FAIL;
     case DXGI_FORMAT_X32_TYPELESS_G8X24_UINT: {
       pMtlDesc->PixelFormat = MTL::PixelFormatX32_Stencil8;
       pMtlDesc->BytesPerTexel = 8;
+      pMtlDesc->Typeless = 1;
       break;
     }
     case DXGI_FORMAT_R10G10B10A2_TYPELESS: {
       pMtlDesc->PixelFormat = MTL::PixelFormatRGB10A2Uint;
       pMtlDesc->BytesPerTexel = 4;
+      pMtlDesc->Typeless = 1;
       break;
     }
     case DXGI_FORMAT_R10G10B10A2_UNORM: {
@@ -373,6 +382,7 @@ public:
     case DXGI_FORMAT_R8G8B8A8_TYPELESS: {
       pMtlDesc->PixelFormat = MTL::PixelFormatRGBA8Uint;
       pMtlDesc->BytesPerTexel = 4;
+      pMtlDesc->Typeless = 1;
       break;
     }
     case DXGI_FORMAT_R8G8B8A8_UNORM: {
@@ -414,6 +424,7 @@ public:
     case DXGI_FORMAT_R16G16_TYPELESS: {
       pMtlDesc->PixelFormat = MTL::PixelFormatRG16Uint;
       pMtlDesc->BytesPerTexel = 4;
+      pMtlDesc->Typeless = 1;
       break;
     }
     case DXGI_FORMAT_R16G16_FLOAT: {
@@ -454,6 +465,7 @@ public:
     case DXGI_FORMAT_R32_TYPELESS: {
       pMtlDesc->PixelFormat = MTL::PixelFormatR32Uint;
       pMtlDesc->BytesPerTexel = 4;
+      pMtlDesc->Typeless = 1;
       break;
     }
     case DXGI_FORMAT_D32_FLOAT: {
@@ -490,6 +502,7 @@ public:
         ERR_ONCE("depth24Stencil8 is not supported.");
         pMtlDesc->PixelFormat = MTL::PixelFormatDepth32Float_Stencil8;
       }
+      pMtlDesc->Typeless = 1;
       break;
     }
     case DXGI_FORMAT_D24_UNORM_S8_UINT: {
@@ -510,6 +523,7 @@ public:
         ERR_ONCE("depth24Stencil8 is not supported.");
         pMtlDesc->PixelFormat = MTL::PixelFormatDepth32Float_Stencil8;
       }
+      pMtlDesc->Typeless = 1;
       break;
     }
     case DXGI_FORMAT_X24_TYPELESS_G8_UINT: {
@@ -520,11 +534,13 @@ public:
         ERR_ONCE("depth24Stencil8 is not supported.");
         pMtlDesc->PixelFormat = MTL::PixelFormatX32_Stencil8;
       }
+      pMtlDesc->Typeless = 1;
       break;
     }
     case DXGI_FORMAT_R8G8_TYPELESS: {
       pMtlDesc->PixelFormat = MTL::PixelFormatRG8Uint;
       pMtlDesc->BytesPerTexel = 2;
+      pMtlDesc->Typeless = 1;
       break;
     }
     case DXGI_FORMAT_R8G8_UNORM: {
@@ -558,6 +574,7 @@ public:
     case DXGI_FORMAT_R16_TYPELESS: {
       pMtlDesc->PixelFormat = MTL::PixelFormatR16Uint;
       pMtlDesc->BytesPerTexel = 2;
+      pMtlDesc->Typeless = 1;
       break;
     }
     case DXGI_FORMAT_R16_FLOAT: {
@@ -603,6 +620,7 @@ public:
     case DXGI_FORMAT_R8_TYPELESS: {
       pMtlDesc->PixelFormat = MTL::PixelFormatR8Uint;
       pMtlDesc->BytesPerTexel = 1;
+      pMtlDesc->Typeless = 1;
       break;
     }
     case DXGI_FORMAT_R8_UNORM: {
@@ -658,7 +676,12 @@ public:
       pMtlDesc->BytesPerTexel = 4;
       break;
     }
-    case DXGI_FORMAT_BC1_TYPELESS:
+    case DXGI_FORMAT_BC1_TYPELESS: {
+      pMtlDesc->PixelFormat = MTL::PixelFormatBC1_RGBA;
+      pMtlDesc->IsCompressed = true;
+      pMtlDesc->Typeless = 1;
+      break;
+    }
     /**
     from doc:
     Reinterpretation of image data between pixel formats is supported:
@@ -674,7 +697,12 @@ public:
       pMtlDesc->IsCompressed = true;
       break;
     }
-    case DXGI_FORMAT_BC2_TYPELESS:
+    case DXGI_FORMAT_BC2_TYPELESS: {
+      pMtlDesc->PixelFormat = MTL::PixelFormatBC2_RGBA;
+      pMtlDesc->IsCompressed = true;
+      pMtlDesc->Typeless = 1;
+      break;
+    }
     case DXGI_FORMAT_BC2_UNORM: {
       pMtlDesc->PixelFormat = MTL::PixelFormatBC2_RGBA;
       pMtlDesc->IsCompressed = true;
@@ -685,7 +713,12 @@ public:
       pMtlDesc->IsCompressed = true;
       break;
     }
-    case DXGI_FORMAT_BC3_TYPELESS:
+    case DXGI_FORMAT_BC3_TYPELESS: {
+      pMtlDesc->PixelFormat = MTL::PixelFormatBC3_RGBA;
+      pMtlDesc->IsCompressed = true;
+      pMtlDesc->Typeless = 1;
+      break;
+    }
     case DXGI_FORMAT_BC3_UNORM: {
       pMtlDesc->PixelFormat = MTL::PixelFormatBC3_RGBA;
       pMtlDesc->IsCompressed = true;
@@ -696,7 +729,12 @@ public:
       pMtlDesc->IsCompressed = true;
       break;
     }
-    case DXGI_FORMAT_BC4_TYPELESS:
+    case DXGI_FORMAT_BC4_TYPELESS: {
+      pMtlDesc->PixelFormat = MTL::PixelFormatBC4_RUnorm;
+      pMtlDesc->IsCompressed = true;
+      pMtlDesc->Typeless = 1;
+      break;
+    }
     case DXGI_FORMAT_BC4_UNORM: {
       pMtlDesc->PixelFormat = MTL::PixelFormatBC4_RUnorm;
       pMtlDesc->IsCompressed = true;
@@ -707,7 +745,12 @@ public:
       pMtlDesc->IsCompressed = true;
       break;
     }
-    case DXGI_FORMAT_BC5_TYPELESS:
+    case DXGI_FORMAT_BC5_TYPELESS: {
+      pMtlDesc->PixelFormat = MTL::PixelFormatBC5_RGUnorm;
+      pMtlDesc->IsCompressed = true;
+      pMtlDesc->Typeless = 1;
+      break;
+    }
     case DXGI_FORMAT_BC5_UNORM: {
       pMtlDesc->PixelFormat = MTL::PixelFormatBC5_RGUnorm;
       pMtlDesc->IsCompressed = true;
@@ -760,6 +803,7 @@ public:
       // pMtlDesc->VertexFormat =MTL::VertexFormatUChar4Normalized_BGRA;
       // pMtlDesc->AttributeFormat =MTL::AttributeFormatUChar4Normalized_BGRA;
       pMtlDesc->BytesPerTexel = 4;
+      pMtlDesc->Typeless = 1;
       // pMtlDesc->SupportBackBuffer = true;
       break;
     }
@@ -771,7 +815,12 @@ public:
       pMtlDesc->SupportBackBuffer = true;
       break;
     }
-    case DXGI_FORMAT_BC6H_TYPELESS:
+    case DXGI_FORMAT_BC6H_TYPELESS: {
+      pMtlDesc->PixelFormat = MTL::PixelFormatBC6H_RGBUfloat;
+      pMtlDesc->IsCompressed = true;
+      pMtlDesc->Typeless = 1;
+      break;
+    }
     case DXGI_FORMAT_BC6H_UF16: {
       pMtlDesc->PixelFormat = MTL::PixelFormatBC6H_RGBUfloat;
       pMtlDesc->IsCompressed = true;
@@ -782,7 +831,12 @@ public:
       pMtlDesc->IsCompressed = true;
       break;
     }
-    case DXGI_FORMAT_BC7_TYPELESS:
+    case DXGI_FORMAT_BC7_TYPELESS: {
+      pMtlDesc->PixelFormat = MTL::PixelFormatBC7_RGBAUnorm;
+      pMtlDesc->IsCompressed = true;
+      pMtlDesc->Typeless = 1;
+      break;
+    }
     case DXGI_FORMAT_BC7_UNORM: {
       pMtlDesc->PixelFormat = MTL::PixelFormatBC7_RGBAUnorm;
       pMtlDesc->IsCompressed = true;

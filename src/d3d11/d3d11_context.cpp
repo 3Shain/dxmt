@@ -738,7 +738,10 @@ public:
     IMPLEMENT_ME
   }
 
-  void DrawAuto() override { IMPLEMENT_ME }
+  void DrawAuto() override {
+    ERR("DrawAuto: ignored");
+    return;
+  }
 
   void Dispatch(UINT ThreadGroupCountX, UINT ThreadGroupCountY,
                 UINT ThreadGroupCountZ) override {
@@ -1088,7 +1091,7 @@ public:
 
   void SOSetTargets(UINT NumBuffers, ID3D11Buffer *const *ppSOTargets,
                     const UINT *pOffsets) override {
-    IMPLEMENT_ME
+    ERR("SOSetTargets: stub");
   }
 
   void SOGetTargets(UINT NumBuffers, ID3D11Buffer **ppSOTargets) override {

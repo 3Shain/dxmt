@@ -84,6 +84,7 @@ to_shader_scaler_type(microsoft::D3D10_SB_RESOURCE_RETURN_TYPE type) {
   case microsoft::D3D10_SB_RETURN_TYPE_UINT:
     return shader::common::ScalerDataType::Uint;
   case microsoft::D3D10_SB_RETURN_TYPE_MIXED:
+    return shader::common::ScalerDataType::Uint; // kinda weird but ok
   case microsoft::D3D11_SB_RETURN_TYPE_DOUBLE:
   case microsoft::D3D11_SB_RETURN_TYPE_CONTINUED:
   case microsoft::D3D11_SB_RETURN_TYPE_UNUSED:
