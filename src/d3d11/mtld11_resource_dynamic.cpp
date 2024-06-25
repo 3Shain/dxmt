@@ -1,3 +1,4 @@
+#include "d3d11_private.h"
 #include "Metal/MTLPixelFormat.hpp"
 #include "Metal/MTLResource.hpp"
 #include "com/com_object.hpp"
@@ -102,11 +103,11 @@ private:
           static_cast<ID3D11ShaderResourceView *>(this),
           std::move(onBufferSwap),
           [](uint64_t) {
-            assert(0 && "todo: prepare dynamic buffer srv view");
+            D3D11_ASSERT(0 && "todo: prepare dynamic buffer srv view");
             return BindingRef(std::nullopt);
           },
           []() {
-            assert(0 && "todo: prepare dynamic buffer srv view");
+            D3D11_ASSERT(0 && "todo: prepare dynamic buffer srv view");
             return ArgumentData(0uL, 0);
           },
           [u = this->resource.ptr()](IMTLNotifiedBindable *_this) {
@@ -171,12 +172,12 @@ public:
   };
 
   void AddObserver(IMTLNotifiedBindable *pBindable) {
-    // assert(observers.insert(pBindable).second && "otherwise already added");
+    // D3D11_ASSERT(observers.insert(pBindable).second && "otherwise already added");
     observers.push_back(pBindable);
   }
 
   void RemoveObserver(IMTLNotifiedBindable *pBindable) {
-    // assert(observers.erase(pBindable) == 1 &&
+    // D3D11_ASSERT(observers.erase(pBindable) == 1 &&
     //        "it must be 1 unless the destructor called twice");
     auto &vec = observers;
     vec.erase(std::remove(vec.begin(), vec.end(), pBindable), vec.end());
@@ -200,7 +201,7 @@ public:
     return E_NOTIMPL;
     // TODO: polymorphism: buffer/byteaddress/structured
     auto srv = ref(new SRV(&finalDesc, this, m_parent));
-    // assert(weak_srvs.insert(srv).second);
+    // D3D11_ASSERT(weak_srvs.insert(srv).second);
     weak_srvs.push_back(srv);
     *ppView = srv;
     srv->RotateView();
@@ -318,12 +319,12 @@ public:
   };
 
   void AddObserver(IMTLNotifiedBindable *pBindable) {
-    // assert(observers.insert(pBindable).second && "otherwise already added");
+    // D3D11_ASSERT(observers.insert(pBindable).second && "otherwise already added");
     observers.push_back(pBindable);
   }
 
   void RemoveObserver(IMTLNotifiedBindable *pBindable) {
-    // assert(observers.erase(pBindable) == 1 &&
+    // D3D11_ASSERT(observers.erase(pBindable) == 1 &&
     //        "it must be 1 unless the destructor called twice");
     auto vec = observers;
     vec.erase(std::remove(vec.begin(), vec.end(), pBindable), vec.end());
@@ -407,7 +408,7 @@ CreateDynamicTexture2D(IMTLD3D11Device *pDevice,
   auto buffer = transfer(metal->newBuffer(
       bufferLen, MTL::ResourceOptionCPUCacheModeWriteCombined));
   if (pInitialData) {
-    assert(pInitialData->SysMemPitch == bytesPerRow);
+    D3D11_ASSERT(pInitialData->SysMemPitch == bytesPerRow);
     memcpy(buffer->contents(), pInitialData->pSysMem, bufferLen);
   }
   *ppTexture =

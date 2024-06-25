@@ -904,7 +904,7 @@ public:
         this, pDesc->VertexShader, pDesc->PixelShader, pDesc->InputLayout,
         pDesc->BlendState, pDesc->NumColorAttachments,
         pDesc->ColorAttachmentFormats, pDesc->DepthStencilFormat);
-    assert(pipelines_.insert({*pDesc, temp}).second); // copy
+    D3D11_ASSERT(pipelines_.insert({*pDesc, temp}).second); // copy
     *ppPipeline = std::move(temp);                    // move
     return S_OK;
   };
@@ -920,7 +920,7 @@ public:
       return S_OK;
     }
     auto temp = dxmt::CreateComputePipeline(this, pShader);
-    assert(pipelines_cs_.insert({pShader, temp}).second); // copy
+    D3D11_ASSERT(pipelines_cs_.insert({pShader, temp}).second); // copy
     *ppPipeline = std::move(temp);                        // move
     return S_OK;
   };

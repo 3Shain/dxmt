@@ -147,7 +147,7 @@ public:
       return E_INVALIDARG;
 
     if (GetDataFlags != D3D11_ASYNC_GETDATA_DONOTFLUSH) {
-      // assert(0 && "handle GetDataFlags correctly");
+      // D3D11_ASSERT(0 && "handle GetDataFlags correctly");
       FlushInternal([](auto) {});
     }
 
@@ -216,7 +216,7 @@ public:
         cmd_queue.YieldUntilCoherenceBoundaryUpdate();
       };
     };
-    assert(0 && "unknown mapped resource (USAGE_DEFAULT?)");
+    D3D11_ASSERT(0 && "unknown mapped resource (USAGE_DEFAULT?)");
     IMPLEMENT_ME;
   }
 
@@ -228,7 +228,7 @@ public:
       staging->Unmap(Subresource);
       return;
     };
-    assert(0 && "unknown mapped resource (USAGE_DEFAULT?)");
+    D3D11_ASSERT(0 && "unknown mapped resource (USAGE_DEFAULT?)");
     IMPLEMENT_ME;
   }
 
@@ -359,7 +359,7 @@ public:
             });
       } else {
         // FIXME: any other possible case?
-        assert(0 && "unhandled genmips");
+        D3D11_ASSERT(0 && "unhandled genmips");
       }
       return;
     }
@@ -435,11 +435,11 @@ public:
     switch (dst_dim) {
     case D3D11_RESOURCE_DIMENSION_UNKNOWN:
     case D3D11_RESOURCE_DIMENSION_BUFFER: {
-      assert(0 && "TODO: CopySubresourceRegion1 for buffer");
+      D3D11_ASSERT(0 && "TODO: CopySubresourceRegion1 for buffer");
       break;
     }
     case D3D11_RESOURCE_DIMENSION_TEXTURE1D: {
-      assert(0 && "TODO: CopySubresourceRegion1 for tex1d");
+      D3D11_ASSERT(0 && "TODO: CopySubresourceRegion1 for tex1d");
       break;
     }
     case D3D11_RESOURCE_DIMENSION_TEXTURE2D: {
@@ -449,7 +449,7 @@ public:
       break;
     }
     case D3D11_RESOURCE_DIMENSION_TEXTURE3D: {
-      assert(0 && "TODO: CopySubresourceRegion1 for tex3d");
+      D3D11_ASSERT(0 && "TODO: CopySubresourceRegion1 for tex3d");
       break;
     }
     }
@@ -498,10 +498,10 @@ public:
                                   copy_len);
             });
       } else if (auto dynamic = com_cast<IMTLDynamicBindable>(pDstResource)) {
-        assert(CopyFlags && "otherwise resource cannot be dynamic");
-        assert(0 && "UpdateSubresource1: TODO");
+        D3D11_ASSERT(CopyFlags && "otherwise resource cannot be dynamic");
+        D3D11_ASSERT(0 && "UpdateSubresource1: TODO");
       } else {
-        assert(0 && "UpdateSubresource1: TODO: staging?");
+        D3D11_ASSERT(0 && "UpdateSubresource1: TODO: staging?");
       }
       return;
     }
@@ -540,11 +540,11 @@ public:
                                   MTL::Origin::Make(origin_x, origin_y, 0));
             });
       } else if (auto dynamic = com_cast<IMTLDynamicBindable>(pDstResource)) {
-        assert(CopyFlags && "otherwise resource cannot be dynamic");
-        assert(0 && "UpdateSubresource1: TODO");
+        D3D11_ASSERT(CopyFlags && "otherwise resource cannot be dynamic");
+        D3D11_ASSERT(0 && "UpdateSubresource1: TODO");
       } else {
         // staging: ...
-        assert(0 && "UpdateSubresource1: TODO: texture2d");
+        D3D11_ASSERT(0 && "UpdateSubresource1: TODO: texture2d");
       }
       return;
     }
@@ -587,11 +587,11 @@ public:
                   MTL::Origin::Make(origin_x, origin_y, origin_z));
             });
       } else if (auto dynamic = com_cast<IMTLDynamicBindable>(pDstResource)) {
-        assert(CopyFlags && "otherwise resource cannot be dynamic");
-        assert(0 && "UpdateSubresource1: TODO");
+        D3D11_ASSERT(CopyFlags && "otherwise resource cannot be dynamic");
+        D3D11_ASSERT(0 && "UpdateSubresource1: TODO");
       } else {
         // staging: ...
-        assert(0 && "UpdateSubresource1: TODO: texture2d");
+        D3D11_ASSERT(0 && "UpdateSubresource1: TODO: texture2d");
       }
       return;
     }
@@ -652,7 +652,7 @@ public:
     ctx.EmitRenderCommandChk<true>(
         [IndexType, IndexBufferOffset, Primitive, IndexCount,
          BaseVertexLocation](CommandChunk::context &ctx) {
-          assert(ctx.current_index_buffer_ref);
+          D3D11_ASSERT(ctx.current_index_buffer_ref);
           ctx.render_encoder->drawIndexedPrimitives(
               Primitive, IndexCount, IndexType, ctx.current_index_buffer_ref,
               IndexBufferOffset, 1, BaseVertexLocation, 0);
@@ -698,7 +698,7 @@ public:
         [IndexType, IndexBufferOffset, Primitive, InstanceCount,
          BaseVertexLocation, StartInstanceLocation,
          IndexCountPerInstance](CommandChunk::context &ctx) {
-          assert(ctx.current_index_buffer_ref);
+          D3D11_ASSERT(ctx.current_index_buffer_ref);
           ctx.render_encoder->drawIndexedPrimitives(
               Primitive, IndexCountPerInstance, IndexType,
               ctx.current_index_buffer_ref, IndexBufferOffset, InstanceCount,
@@ -724,7 +724,7 @@ public:
           [IndexType, IndexBufferOffset, Primitive,
            ArgBuffer = bindable->UseBindable(currentChunkId),
            AlignedByteOffsetForArgs](CommandChunk::context &ctx) {
-            assert(ctx.current_index_buffer_ref);
+            D3D11_ASSERT(ctx.current_index_buffer_ref);
             ctx.render_encoder->drawIndexedPrimitives(
                 Primitive, IndexType, ctx.current_index_buffer_ref,
                 IndexBufferOffset, ArgBuffer.buffer(),
@@ -1406,7 +1406,7 @@ public:
           BoundRTVs[rtv_index] = std::move(expected);
           should_invalidate_pass = true;
         } else {
-          assert(0 && "wtf");
+          D3D11_ASSERT(0 && "wtf");
         }
       } else {
         if (BoundRTVs[rtv_index]) {
@@ -1640,7 +1640,7 @@ public:
 
   void ExchangeFromPool(MTL::Buffer **pBuffer, uint64_t *gpuAddr,
                         void **cpuAddr, BufferPool *pool) final {
-    assert(*pBuffer);
+    D3D11_ASSERT(*pBuffer);
     if (pool) {
 
       pool->GetNext(cmd_queue.CurrentSeqId(), cmd_queue.CoherentSeqId(),

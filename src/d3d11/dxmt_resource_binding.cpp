@@ -1,7 +1,8 @@
 #include "dxmt_resource_binding.hpp"
 #include <cassert>
+#include "d3d11_private.h"
 
-#define ASSUME(x) assert(x)
+#define ASSUME(x) D3D11_ASSERT(x)
 
 namespace dxmt {
 

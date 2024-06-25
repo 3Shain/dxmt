@@ -168,7 +168,7 @@ public:
     if (finalDesc.ViewDimension != D3D11_UAV_DIMENSION_BUFFER) {
       return E_INVALIDARG;
     }
-    // assert(finalDesc.Buffer.Flags < 2 && "TODO: uav counter");
+    // D3D11_ASSERT(finalDesc.Buffer.Flags < 2 && "TODO: uav counter");
     if (structured) {
       // StructuredBuffer
       auto offset = pDesc->Buffer.FirstElement * this->desc.StructureByteStride,

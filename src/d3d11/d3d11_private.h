@@ -1,10 +1,20 @@
 #pragma once
-#include <cassert>
+
+extern "C" void _massert (const char *_Message, const char *_File, unsigned _Line) __attribute__((noreturn));
+
+#ifdef NDEBUG
+#define D3D11_ASSERT(_Expression) ((void)0)
+#else
+#define D3D11_ASSERT(_Expression) \
+ (void) \
+ ((!!(_Expression)) || \
+  (_massert(#_Expression,__FILE__,__LINE__),0))
+#endif
 
 #define IMPLEMENT_ME                                                           \
   Logger::err(                                                                 \
       str::format(__FILE__, ":", __FUNCTION__, " is not implemented."));       \
-  assert(0);
+  D3D11_ASSERT(0);
 
 template <class... Ts> struct patterns : Ts... {
   using Ts::operator()...;

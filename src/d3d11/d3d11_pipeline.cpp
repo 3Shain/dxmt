@@ -1,3 +1,4 @@
+#include "d3d11_private.h"
 #include "Metal/MTLComputePipeline.hpp"
 #include "Metal/MTLDevice.hpp"
 #include "dxmt_names.hpp"
@@ -57,7 +58,7 @@ public:
   }
 
   void RunThreadpoolWork() {
-    assert(!ready_ && "?wtf"); // TODO: should use a lock?
+    D3D11_ASSERT(!ready_ && "?wtf"); // TODO: should use a lock?
 
     TRACE("Start compiling 1 PSO");
 
@@ -166,7 +167,7 @@ public:
   }
 
   void RunThreadpoolWork() {
-    assert(!ready_ && "?wtf"); // TODO: should use a lock?
+    D3D11_ASSERT(!ready_ && "?wtf"); // TODO: should use a lock?
 
     TRACE("Start compiling 1 PSO");
 

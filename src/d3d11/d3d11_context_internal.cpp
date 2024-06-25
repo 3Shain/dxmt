@@ -6,6 +6,7 @@ and should be not used as a compilation unit
 since it is for internal use only
 (and I don't want to deal with several thousands line of code)
 */
+#include "d3d11_private.h"
 #include "d3d11_context_state.hpp"
 #include "d3d11_device.hpp"
 #include "d3d11_pipeline.hpp"
@@ -37,7 +38,7 @@ public:
       if (auto expected = com_cast<IMTLD3D11Shader>(pShader)) {
         ShaderStage.Shader = std::move(expected);
       } else {
-        assert(0 && "wtf");
+        D3D11_ASSERT(0 && "wtf");
       }
     } else {
       ShaderStage.Shader = nullptr;
@@ -119,7 +120,7 @@ public:
         } else if (auto expected = com_cast<IMTLBindable>(pConstantBuffer)) {
           entry.Buffer = std::move(expected);
         } else {
-          assert(0 && "wtf");
+          D3D11_ASSERT(0 && "wtf");
         }
       } else {
         // BIND NULL
@@ -175,7 +176,7 @@ public:
         } else if (auto expected = com_cast<IMTLBindable>(pView)) {
           entry.SRV = std::move(expected);
         } else {
-          assert(0 && "wtf");
+          D3D11_ASSERT(0 && "wtf");
         }
       } else {
         // BIND NULL
@@ -215,7 +216,7 @@ public:
         if (auto expected = com_cast<IMTLD3D11SamplerState>(pSampler)) {
           entry.Sampler = std::move(expected);
         } else {
-          assert(0 && "wtf");
+          D3D11_ASSERT(0 && "wtf");
         }
       } else {
         // BIND NULL
@@ -319,7 +320,7 @@ public:
                                       &bytes_per_row, &bytes_per_image);
       if (auto staging_src = com_cast<IMTLD3D11Staging>(pSrcResource)) {
         // wtf
-        assert(0 && "TODO: copy between staging?");
+        D3D11_ASSERT(0 && "TODO: copy between staging?");
       } else if (auto src = com_cast<IMTLBindable>(pSrcResource)) {
         // might be a dynamic, default or immutable buffer
         EmitBlitCommand<true>([dst = Obj(dst_bind.Buffer),
@@ -332,7 +333,7 @@ public:
 
     } else if (dst_desc.Usage == D3D11_USAGE_DEFAULT) {
       auto dst = com_cast<IMTLBindable>(pDstResource);
-      assert(dst);
+      D3D11_ASSERT(dst);
       if (auto staging_src = com_cast<IMTLD3D11Staging>(pSrcResource)) {
         // copy from staging to default
         staging_src->UseCopySource(0, currentChunkId, &src_bind, &bytes_per_row,
@@ -345,7 +346,7 @@ public:
         });
       } else if (auto src = com_cast<IMTLBindable>(pSrcResource)) {
         // on-device copy
-        assert(src_bind.Type == MTL_BIND_BUFFER_UNBOUNDED);
+        D3D11_ASSERT(src_bind.Type == MTL_BIND_BUFFER_UNBOUNDED);
         EmitBlitCommand<true>([dst = Obj(dst_bind.Buffer),
                                src = src->UseBindable(currentChunkId)](
                                   MTL::BlitCommandEncoder *encoder, auto &) {
@@ -376,7 +377,7 @@ public:
     auto currentChunkId = cmd_queue.CurrentSeqId();
     if (auto staging_dst = com_cast<IMTLD3D11Staging>(pDstResource)) {
       if (auto staging_src = com_cast<IMTLD3D11Staging>(pSrcResource)) {
-        assert(0 && "tod: copy between staging");
+        D3D11_ASSERT(0 && "tod: copy between staging");
       } else if (auto src = com_cast<IMTLBindable>(pSrcResource)) {
         // copy from device to staging
         MTL_STAGING_RESOURCE dst_bind;
@@ -402,11 +403,11 @@ public:
               // offset should be DstY*bytes_per_row + DstX*BytesPerTexel
             });
       } else {
-        assert(0 && "todo");
+        D3D11_ASSERT(0 && "todo");
       }
     } else if (dst_desc.Usage == D3D11_USAGE_DEFAULT) {
       auto dst = com_cast<IMTLBindable>(pDstResource);
-      assert(dst);
+      D3D11_ASSERT(dst);
       if (auto staging_src = com_cast<IMTLD3D11Staging>(pSrcResource)) {
         // copy from staging to default
         MTL_STAGING_RESOURCE src_bind;
@@ -452,10 +453,10 @@ public:
               dst, dst_slice, dst_level, MTL::Origin::Make(DstX, DstY, DstZ));
         });
       } else {
-        assert(0 && "todo");
+        D3D11_ASSERT(0 && "todo");
       }
     } else {
-      assert(0 && "todo");
+      D3D11_ASSERT(0 && "todo");
     }
   }
 
@@ -582,7 +583,7 @@ public:
         if (rtv) {
           rtvs.push_back({rtv->GetBinding(currentChunkId), i, 0, 0,
                           rtv->GetPixelFormat()});
-          assert(rtv->GetPixelFormat() != MTL::PixelFormatInvalid);
+          D3D11_ASSERT(rtv->GetPixelFormat() != MTL::PixelFormatInvalid);
         } else {
           rtvs.push_back(
               {BindingRef(std::nullopt), i, 0, 0, MTL::PixelFormatInvalid});
@@ -708,7 +709,7 @@ public:
   bool FinalizeCurrentRenderPipeline() {
     if (cmdbuf_state == CommandBufferState::RenderPipelineReady)
       return true;
-    assert(state_.InputAssembler.InputLayout && "");
+    D3D11_ASSERT(state_.InputAssembler.InputLayout && "");
 
     SwitchToRenderEncoder();
 
@@ -888,7 +889,7 @@ public:
           case ShaderType::Geometry:
           case ShaderType::Hull:
           case ShaderType::Domain:
-            assert(0 && "Not implemented");
+            D3D11_ASSERT(0 && "Not implemented");
             break;
           }
         });
@@ -946,7 +947,7 @@ public:
           }
           if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE) {
             if (arg_data.requiresContext()) {
-              assert(0 && "todo");
+              D3D11_ASSERT(0 && "todo");
             } else {
               write_to_it[arg.StructurePtrOffset] = arg_data.texture();
             }
@@ -978,19 +979,19 @@ public:
             }
             if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE) {
               if (arg_data.requiresContext()) {
-                assert(0 && "todo");
+                D3D11_ASSERT(0 && "todo");
               } else {
                 write_to_it[arg.StructurePtrOffset] = arg_data.texture();
               }
             }
             if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_UAV_COUNTER) {
-              assert(0 && "todo: implement uav counter binding");
+              D3D11_ASSERT(0 && "todo: implement uav counter binding");
             }
             MTL::ResourceUsage usage = (arg.Flags >> 10) & 0b11;
             useResource(uav.View->UseBindable(currentChunkId), usage);
           } else {
             // FIXME: all graphical stages share one uav binding set
-            assert(0 && "TODO: graphical pipeline uav binding");
+            D3D11_ASSERT(0 && "TODO: graphical pipeline uav binding");
           }
           break;
         }
@@ -1006,7 +1007,7 @@ public:
         } else if constexpr (stage == ShaderType::Compute) {
           ctx.compute_encoder->setBufferOffset(offset, 30);
         } else {
-          assert(0 && "Not implemented");
+          D3D11_ASSERT(0 && "Not implemented");
         }
       });
     }

@@ -2,6 +2,7 @@
 #include <fstream>
 #include <string>
 #define __METALCPP__ 1
+#include "d3d11_private.h"
 #include "d3d11_shader.hpp"
 #include "Metal/MTLArgumentEncoder.hpp"
 #include "Metal/MTLLibrary.hpp"
@@ -122,7 +123,7 @@ public:
   }
 
   void RunThreadpoolWork() {
-    assert(!ready_ && "?wtf"); // TODO: should use a lock?
+    D3D11_ASSERT(!ready_ && "?wtf"); // TODO: should use a lock?
 
     /**
     workaround: ensure shader bytecode is accessible
@@ -162,7 +163,7 @@ public:
       hash_.compute(bitcode.Data, bitcode.Size);
       auto dispatch_data =
           dispatch_data_create(bitcode.Data, bitcode.Size, nullptr, nullptr);
-      assert(dispatch_data);
+      D3D11_ASSERT(dispatch_data);
       Obj<MTL::Library> library =
           transfer(device_->GetMTLDevice()->newLibrary(dispatch_data, &err));
 

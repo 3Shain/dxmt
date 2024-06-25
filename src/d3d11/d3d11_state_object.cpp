@@ -1,3 +1,4 @@
+#include "d3d11_private.h"
 #include "d3d11_state_object.hpp"
 #include "Metal/MTLDepthStencil.hpp"
 #include "com/com_guid.hpp"
@@ -360,10 +361,10 @@ public:
           kBlendFactorMap[renderTarget.DestBlend]);
       attachment_desc->setWriteMask(
           kColorWriteMaskMap[renderTarget.RenderTargetWriteMask]);
-      assert(renderTarget.SrcBlend < D3D11_BLEND_SRC1_COLOR);
-      assert(renderTarget.SrcBlendAlpha < D3D11_BLEND_SRC1_COLOR);
-      assert(renderTarget.DestBlendAlpha < D3D11_BLEND_SRC1_COLOR);
-      assert(renderTarget.DestBlend < D3D11_BLEND_SRC1_COLOR);
+      D3D11_ASSERT(renderTarget.SrcBlend < D3D11_BLEND_SRC1_COLOR);
+      D3D11_ASSERT(renderTarget.SrcBlendAlpha < D3D11_BLEND_SRC1_COLOR);
+      D3D11_ASSERT(renderTarget.DestBlendAlpha < D3D11_BLEND_SRC1_COLOR);
+      D3D11_ASSERT(renderTarget.DestBlend < D3D11_BLEND_SRC1_COLOR);
     }
     render_pipeline_descriptor->setAlphaToCoverageEnabled(
         desc_.AlphaToCoverageEnable);
@@ -776,7 +777,7 @@ CreateDefaultRasterizerState(ID3D11Device *pDevice) {
   // double pointer is awful
   // because neither covariance and contravariance works
   // wtf
-  assert(SUCCEEDED(CreateRasterizerState(pDevice, &kDefaultRasterizerDesc,
+  D3D11_ASSERT(SUCCEEDED(CreateRasterizerState(pDevice, &kDefaultRasterizerDesc,
                                          (ID3D11RasterizerState1 **)&ret)));
   return ret;
 };
@@ -784,14 +785,14 @@ CreateDefaultRasterizerState(ID3D11Device *pDevice) {
 Com<IMTLD3D11DepthStencilState>
 CreateDefaultDepthStencilState(ID3D11Device *pDevice) {
   Com<IMTLD3D11DepthStencilState> ret;
-  assert(SUCCEEDED(CreateDepthStencilState(pDevice, &kDefaultDepthStencilDesc,
+  D3D11_ASSERT(SUCCEEDED(CreateDepthStencilState(pDevice, &kDefaultDepthStencilDesc,
                                            (ID3D11DepthStencilState **)&ret)));
   return ret;
 }
 
 Com<IMTLD3D11BlendState> CreateDefaultBlendState(ID3D11Device *pDevice) {
   Com<IMTLD3D11BlendState> ret;
-  assert(SUCCEEDED(CreateBlendState(pDevice, &kDefaultBlendDesc,
+  D3D11_ASSERT(SUCCEEDED(CreateBlendState(pDevice, &kDefaultBlendDesc,
                                     (ID3D11BlendState1 **)&ret)));
   return ret;
 }

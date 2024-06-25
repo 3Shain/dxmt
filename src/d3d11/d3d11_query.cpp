@@ -1,4 +1,5 @@
 #include "d3d11_query.hpp"
+#include "d3d11_private.h"
 
 namespace dxmt {
 
@@ -76,7 +77,7 @@ class OcculusionQuery : public MTLD3DQueryBase<IMTLD3DOcclusionQuery> {
   virtual bool Update(uint64_t occlusion_counter, uint64_t value) override {
     // expect `occlusion_counter` to be monotonous increasing for each
     // invocation
-    assert(state != QueryState::Signaled);
+    D3D11_ASSERT(state != QueryState::Signaled);
     if (occlusion_counter < occlusion_counter_begin) {
       // simply ignore
       return false;

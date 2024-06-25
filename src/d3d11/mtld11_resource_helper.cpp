@@ -1,3 +1,4 @@
+#include "d3d11_private.h"
 #include "mtld11_resource.hpp"
 #include "d3d11_1.h"
 #include "objc_pointer.hpp"
@@ -377,8 +378,8 @@ CreateMTLTextureDescriptorInternal(
     break;
   case D3D11_RESOURCE_DIMENSION_TEXTURE2D:
     if (MiscFlags & D3D11_RESOURCE_MISC_TEXTURECUBE) {
-      assert(ArraySize / 6);
-      assert((ArraySize % 6) == 0);
+      D3D11_ASSERT(ArraySize / 6);
+      D3D11_ASSERT((ArraySize % 6) == 0);
       if ((ArraySize / 6) > 1) {
         desc->setTextureType(MTL::TextureTypeCubeArray);
         desc->setArrayLength(ArraySize / 6);

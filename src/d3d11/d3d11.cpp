@@ -3,6 +3,8 @@
 #include "com/com_pointer.hpp"
 #include "d3d11_device.hpp"
 #include "log/log.hpp"
+#include "util_string.hpp"
+#include <exception>
 namespace dxmt {
 Logger Logger::s_instance("d3d11.log");
 
@@ -183,4 +185,11 @@ BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID reserved) {
 
   DisableThreadLibraryCalls(instance);
   return TRUE;
+}
+
+extern "C" void _massert(const char *_Message, const char *_File,
+                         unsigned _Line) {
+  dxmt::Logger::err(dxmt::str::format("Assertation failed: ", _Message,
+                                      "\nfile: ", _File, ":", _Line));
+  std::terminate();
 }

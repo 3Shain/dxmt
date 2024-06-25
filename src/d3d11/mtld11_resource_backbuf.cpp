@@ -1,3 +1,4 @@
+#include "d3d11_private.h"
 #include "dxmt_binding.hpp"
 #include "dxmt_names.hpp"
 #include "Metal/MTLPixelFormat.hpp"
@@ -47,7 +48,7 @@ private:
         : BackBufferRTVBase(pDesc, context, pDevice) {}
 
     MTL::PixelFormat GetPixelFormat() final {
-      assert(!resource->destroyed);
+      D3D11_ASSERT(!resource->destroyed);
       return resource->pixel_format_;
     };
 
@@ -265,7 +266,7 @@ public:
   MTL::Texture *GetCurrentFrameBackBuffer() override {
     if (current_drawable == nullptr) {
       current_drawable = layer_->nextDrawable();
-      assert(current_drawable != nullptr);
+      D3D11_ASSERT(current_drawable != nullptr);
     }
     return current_drawable->texture();
   };

@@ -1,3 +1,4 @@
+#include "d3d11_private.h"
 #include "d3d11_enumerable.hpp"
 #include "mtld11_resource.hpp"
 #include "objc_pointer.hpp"
@@ -101,7 +102,7 @@ public:
   bool UseCopyDestination(uint32_t Subresource, uint64_t seq_id,
                           MTL_STAGING_RESOURCE *pBuffer, uint32_t *pBytesPerRow,
                           uint32_t *pBytesPerImage) override {
-    assert(Subresource == 0);
+    D3D11_ASSERT(Subresource == 0);
     return internal.UseCopyDestination(seq_id, pBuffer, pBytesPerRow,
                                        pBytesPerImage);
   };
@@ -109,7 +110,7 @@ public:
   bool UseCopySource(uint32_t Subresource, uint64_t seq_id,
                      MTL_STAGING_RESOURCE *pBuffer, uint32_t *pBytesPerRow,
                      uint32_t *pBytesPerImage) override {
-    assert(Subresource == 0);
+    D3D11_ASSERT(Subresource == 0);
     return internal.UseCopySource(seq_id, pBuffer, pBytesPerRow,
                                   pBytesPerImage);
   };
@@ -161,7 +162,7 @@ public:
   bool UseCopyDestination(uint32_t Subresource, uint64_t seq_id,
                           MTL_STAGING_RESOURCE *pBuffer, uint32_t *pBytesPerRow,
                           uint32_t *pBytesPerImage) override {
-    assert(Subresource < subresource_count);
+    D3D11_ASSERT(Subresource < subresource_count);
     return subresources.at(Subresource)
         .UseCopyDestination(seq_id, pBuffer, pBytesPerRow, pBytesPerImage);
   };
@@ -169,7 +170,7 @@ public:
   bool UseCopySource(uint32_t Subresource, uint64_t seq_id,
                      MTL_STAGING_RESOURCE *pBuffer, uint32_t *pBytesPerRow,
                      uint32_t *pBytesPerImage) override {
-    assert(Subresource < subresource_count);
+    D3D11_ASSERT(Subresource < subresource_count);
     return subresources.at(Subresource)
         .UseCopySource(seq_id, pBuffer, pBytesPerRow, pBytesPerImage);
   };
@@ -210,7 +211,7 @@ HRESULT CreateStagingTextureInternal(IMTLD3D11Device *pDevice,
     return E_INVALIDARG;
   }
   std::vector<StagingBufferInternal> subresources;
-  assert(!pInitialData);
+  D3D11_ASSERT(!pInitialData);
   for (auto &sub : EnumerateSubresources(finalDesc)) {
     uint32_t w, h, d;
     GetMipmapSize(&finalDesc, sub.MipLevel, &w, &h, &d);
@@ -219,7 +220,7 @@ HRESULT CreateStagingTextureInternal(IMTLD3D11Device *pDevice,
                                       &bpi, &buf_len))) {
       return E_FAIL;
     }
-    assert(subresources.size() == sub.SubresourceId);
+    D3D11_ASSERT(subresources.size() == sub.SubresourceId);
     auto buffer =
         transfer(metal->newBuffer(buf_len, MTL::ResourceStorageModeShared));
     if (pInitialData) {
