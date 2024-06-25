@@ -82,6 +82,20 @@ MTLD3D11Inspection::MTLD3D11Inspection(MTL::Device *pDevice)
       D3D11_SHADER_MIN_PRECISION_16_BIT;
 
   m_d3d9Shadow.SupportsDepthAsTextureWithLessEqualComparisonFilter = TRUE;
+
+  m_d3d11Options1.ClearViewAlsoSupportsDepthOnlyFormats = TRUE;
+  m_d3d11Options1.MapOnDefaultBuffers = TRUE;
+  m_d3d11Options1.MinMaxFiltering = TRUE;
+  m_d3d11Options1.TiledResourcesTier = D3D11_TILED_RESOURCES_NOT_SUPPORTED;
+
+  m_d3d11Options2.TiledResourcesTier = D3D11_TILED_RESOURCES_NOT_SUPPORTED;
+  m_d3d11Options2.ConservativeRasterizationTier = D3D11_CONSERVATIVE_RASTERIZATION_NOT_SUPPORTED;
+  m_d3d11Options2.PSSpecifiedStencilRefSupported = TRUE;
+  m_d3d11Options2.ROVsSupported = TRUE;
+  m_d3d11Options2.MapOnDefaultTextures = FALSE;
+  m_d3d11Options2.StandardSwizzle = TRUE;
+  m_d3d11Options2.TypedUAVLoadAdditionalFormats = TRUE;
+  m_d3d11Options2.UnifiedMemoryArchitecture = TRUE;
 }
 
 HRESULT MTLD3D11Inspection::GetFeatureData(D3D11_FEATURE Feature,
@@ -109,9 +123,8 @@ HRESULT MTLD3D11Inspection::GetFeatureData(D3D11_FEATURE Feature,
                                &m_shaderMinPrecision);
   case D3D11_FEATURE_D3D9_SHADOW_SUPPORT:
     return GetTypedFeatureData(FeatureDataSize, pFeatureData, &m_d3d9Shadow);
-    //   case D3D11_FEATURE_D3D11_OPTIONS1:
-    //     return GetTypedFeatureData(FeatureDataSize, pFeatureData,
-    //     &m_d3d11Options1);
+  case D3D11_FEATURE_D3D11_OPTIONS1:
+    return GetTypedFeatureData(FeatureDataSize, pFeatureData, &m_d3d11Options1);
     //   case D3D11_FEATURE_D3D9_SIMPLE_INSTANCING_SUPPORT:
     //     return GetTypedFeatureData(FeatureDataSize, pFeatureData,
     //                                &m_d3d9SimpleInstancing);
@@ -120,9 +133,9 @@ HRESULT MTLD3D11Inspection::GetFeatureData(D3D11_FEATURE Feature,
     //   case D3D11_FEATURE_D3D9_OPTIONS1:
     //     return GetTypedFeatureData(FeatureDataSize, pFeatureData,
     //     &m_d3d9Options1);
-    //   case D3D11_FEATURE_D3D11_OPTIONS2:
-    //     return GetTypedFeatureData(FeatureDataSize, pFeatureData,
-    //     &m_d3d11Options2);
+      case D3D11_FEATURE_D3D11_OPTIONS2:
+        return GetTypedFeatureData(FeatureDataSize, pFeatureData,
+        &m_d3d11Options2);
     //   case D3D11_FEATURE_D3D11_OPTIONS3:
     //     return GetTypedFeatureData(FeatureDataSize, pFeatureData,
     //     &m_d3d11Options3);
