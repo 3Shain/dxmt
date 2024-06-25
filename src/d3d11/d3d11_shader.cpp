@@ -1,4 +1,5 @@
 #include <atomic>
+#include <fstream>
 #include <string>
 #define __METALCPP__ 1
 #include "d3d11_shader.hpp"
@@ -30,10 +31,14 @@ class TShaderBase
 public:
   TShaderBase(IMTLD3D11Device *device, SM50Shader *sm50,
               MTL_SHADER_REFLECTION &reflection,
-              Obj<MTL::ArgumentEncoder> encoder)
+              Obj<MTL::ArgumentEncoder> encoder, const void *pShaderBytecode,
+              SIZE_T BytecodeLength)
       : MTLD3D11DeviceChild<typename tag::COM, IMTLD3D11Shader>(device),
-        sm50(sm50), reflection(reflection), encoder_(std::move(encoder)) {
+        sm50(sm50), reflection(reflection), encoder_(std::move(encoder)),
+        dump_len(BytecodeLength) {
     id = ++global_id;
+    dump = malloc(BytecodeLength);
+    memcpy(dump, pShaderBytecode, BytecodeLength);
   }
 
   ~TShaderBase() {
@@ -41,6 +46,7 @@ public:
       SM50Destroy(sm50);
       sm50 = nullptr;
     }
+    free(dump);
   }
 
   HRESULT QueryInterface(REFIID riid, void **ppvObject) {
@@ -81,6 +87,8 @@ public:
   Com<IMTLCompiledShader> precompiled_;
   Obj<MTL::ArgumentEncoder> encoder_;
   uint64_t id;
+  void *dump;
+  uint64_t dump_len;
 };
 
 template <typename tag>
@@ -134,11 +142,19 @@ public:
       if (auto ret = SM50Compile(shader_->sm50, nullptr, func_name.c_str(),
                                  &compile_result, &sm50_err)) {
         if (ret == 42) {
-          ERR("TODO: dump shader bytecode");
-          return;
+          ERR("Failed to compile shader due to failed assertation");
+        } else {
+          ERR("Failed to compile shader: ", SM50GetErrorMesssage(sm50_err));
+          SM50FreeError(sm50_err);
         }
-        ERR("Failed to compile shader: ", SM50GetErrorMesssage(sm50_err));
-        SM50FreeError(sm50_err);
+        std::fstream dump_out;
+        dump_out.open("shader_dump_" + std::to_string(shader_->id) + ".cso",
+                      std::ios::out | std::ios::binary);
+        if (dump_out) {
+          dump_out.write((char *)shader_->dump, shader_->dump_len);
+        }
+        dump_out.close();
+        ERR("dumped to ./shader_dump_" + std::to_string(shader_->id) + ".cso");
         return;
       }
       MTL_SHADER_BITCODE bitcode;
@@ -221,7 +237,8 @@ HRESULT CreateShaderInternal(IMTLD3D11Device *pDevice,
   }
   auto encoder_ =
       transfer(SM50CreateArgumentEncoder(sm50, pDevice->GetMTLDevice()));
-  *ppShader = ref(new TShaderBase<tag>(pDevice, sm50, reflection, encoder_));
+  *ppShader = ref(new TShaderBase<tag>(pDevice, sm50, reflection, encoder_,
+                                       pShaderBytecode, BytecodeLength));
   // FIXME: this looks weird but don't change it for now
   ((TShaderBase<tag> *)*ppShader)
       ->GetCompiledShader(NULL, &((TShaderBase<tag> *)*ppShader)->precompiled_);
