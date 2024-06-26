@@ -439,7 +439,9 @@ public:
       break;
     }
     case D3D11_RESOURCE_DIMENSION_TEXTURE1D: {
-      D3D11_ASSERT(0 && "TODO: CopySubresourceRegion1 for tex1d");
+      ctx.CopyTexture1D((ID3D11Texture1D *)pDstResource, DstSubresource, DstX,
+                        DstY, DstZ, (ID3D11Texture1D *)pSrcResource,
+                        SrcSubresource, pSrcBox);
       break;
     }
     case D3D11_RESOURCE_DIMENSION_TEXTURE2D: {

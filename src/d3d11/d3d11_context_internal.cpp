@@ -357,6 +357,103 @@ public:
     }
   }
 
+  void CopyTexture1D(ID3D11Texture1D *pDstResource, uint32_t DstSubresource,
+                     uint32_t DstX, uint32_t DstY, uint32_t DstZ,
+                     ID3D11Texture1D *pSrcResource, uint32_t SrcSubresource,
+                     const D3D11_BOX *pSrcBox) {
+    D3D11_TEXTURE1D_DESC dst_desc;
+    D3D11_TEXTURE1D_DESC src_desc;
+    pDstResource->GetDesc(&dst_desc);
+    pSrcResource->GetDesc(&src_desc);
+    D3D11_BOX SrcBox;
+    if (pSrcBox) {
+      SrcBox = *pSrcBox;
+    } else {
+      SrcBox.left = 0;
+      SrcBox.right = src_desc.Width;
+    }
+    auto currentChunkId = cmd_queue.CurrentSeqId();
+    if (auto staging_dst = com_cast<IMTLD3D11Staging>(pDstResource)) {
+      if (auto staging_src = com_cast<IMTLD3D11Staging>(pSrcResource)) {
+        D3D11_ASSERT(0 && "tod: copy between staging");
+      } else if (auto src = com_cast<IMTLBindable>(pSrcResource)) {
+        // copy from device to staging
+        MTL_STAGING_RESOURCE dst_bind;
+        uint32_t bytes_per_row, bytes_per_image;
+        if (!staging_dst->UseCopyDestination(DstSubresource, currentChunkId,
+                                             &dst_bind, &bytes_per_row,
+                                             &bytes_per_image))
+          return;
+        EmitBlitCommand<true>([src_ = src->UseBindable(currentChunkId),
+                               dst = Obj(dst_bind.Buffer), bytes_per_row,
+                               SrcSubresource, DstX, DstY, SrcBox](
+                                  MTL::BlitCommandEncoder *encoder, auto ctx) {
+          auto src = src_.texture(&ctx);
+          auto src_mips = src->mipmapLevelCount();
+          auto src_level = SrcSubresource % src_mips;
+          auto src_slice = SrcSubresource / src_mips;
+          encoder->copyFromTexture(
+              src, src_slice, src_level, MTL::Origin::Make(SrcBox.left, 0, 0),
+              MTL::Size::Make(SrcBox.right - SrcBox.left, 1, 1), dst.ptr(),
+              /* offset */ 0, bytes_per_row, 0);
+          // offset should be DstX*BytesPerTexel
+        });
+      } else {
+        D3D11_ASSERT(0 && "todo");
+      }
+    } else if (dst_desc.Usage == D3D11_USAGE_DEFAULT) {
+      auto dst = com_cast<IMTLBindable>(pDstResource);
+      D3D11_ASSERT(dst);
+      if (auto staging_src = com_cast<IMTLD3D11Staging>(pSrcResource)) {
+        // copy from staging to default
+        MTL_STAGING_RESOURCE src_bind;
+        uint32_t bytes_per_row, bytes_per_image;
+        if (!staging_src->UseCopySource(SrcSubresource, currentChunkId,
+                                        &src_bind, &bytes_per_row,
+                                        &bytes_per_image))
+          return;
+        EmitBlitCommand<true>(
+            [dst_ = dst->UseBindable(currentChunkId),
+             src = Obj(src_bind.Buffer), bytes_per_row, DstSubresource, DstX,
+             DstY, DstZ, SrcBox](MTL::BlitCommandEncoder *encoder, auto ctx) {
+              auto dst = dst_.texture(&ctx);
+              auto dst_mips = dst->mipmapLevelCount();
+              auto dst_level = DstSubresource % dst_mips;
+              auto dst_slice = DstSubresource / dst_mips;
+              // FIXME: offste should be calculated from SrcBox
+              encoder->copyFromBuffer(
+                  src, 0, bytes_per_row, 0,
+                  MTL::Size::Make(SrcBox.right - SrcBox.left, 1, 1), dst,
+                  dst_slice, dst_level, MTL::Origin::Make(DstX, DstY, DstZ));
+            });
+      } else if (auto src = com_cast<IMTLBindable>(pSrcResource)) {
+        // on-device copy
+        EmitBlitCommand<true>([dst_ = dst->UseBindable(currentChunkId),
+                               src_ = src->UseBindable(currentChunkId),
+                               DstSubresource, SrcSubresource, DstX, DstY, DstZ,
+                               SrcBox](MTL::BlitCommandEncoder *encoder,
+                                       auto ctx) {
+          auto src = src_.texture(&ctx);
+          auto dst = dst_.texture(&ctx);
+          auto src_mips = src->mipmapLevelCount();
+          auto src_level = SrcSubresource % src_mips;
+          auto src_slice = SrcSubresource / src_mips;
+          auto dst_mips = dst->mipmapLevelCount();
+          auto dst_level = DstSubresource % dst_mips;
+          auto dst_slice = DstSubresource / dst_mips;
+          encoder->copyFromTexture(
+              src, src_slice, src_level, MTL::Origin::Make(SrcBox.left, 0, 0),
+              MTL::Size::Make(SrcBox.right - SrcBox.left, 1, 1), dst, dst_slice,
+              dst_level, MTL::Origin::Make(DstX, DstY, DstZ));
+        });
+      } else {
+        D3D11_ASSERT(0 && "todo");
+      }
+    } else {
+      D3D11_ASSERT(0 && "todo");
+    }
+  }
+
   void CopyTexture2D(ID3D11Texture2D *pDstResource, uint32_t DstSubresource,
                      uint32_t DstX, uint32_t DstY, uint32_t DstZ,
                      ID3D11Texture2D *pSrcResource, uint32_t SrcSubresource,
@@ -424,6 +521,7 @@ public:
           auto dst_mips = dst->mipmapLevelCount();
           auto dst_level = DstSubresource % dst_mips;
           auto dst_slice = DstSubresource / dst_mips;
+          // FIXME: offste should be calculated from SrcBox
           encoder->copyFromBuffer(
               src, 0, bytes_per_row, 0,
               MTL::Size::Make(SrcBox.right - SrcBox.left,

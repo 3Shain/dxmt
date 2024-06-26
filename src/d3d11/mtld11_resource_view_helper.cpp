@@ -27,6 +27,17 @@ HRESULT CreateMTLTextureView<D3D11_SHADER_RESOURCE_VIEW_DESC>(
     break;
   }
   case D3D_SRV_DIMENSION_TEXTURE1DARRAY: {
+    if (texture_type == MTL::TextureType1D) {
+      *ppView = pResource->newTextureView(
+          metal_format.PixelFormat, MTL::TextureType1DArray,
+          NS::Range::Make(pViewDesc->Texture1DArray.MostDetailedMip,
+                          pViewDesc->Texture1DArray.MipLevels == 0xffffffffu
+                              ? pResource->mipmapLevelCount() -
+                                    pViewDesc->Texture1DArray.MostDetailedMip
+                              : pViewDesc->Texture1DArray.MipLevels),
+          NS::Range::Make(0, 1));
+      return S_OK;
+    }
     break;
   }
   case D3D_SRV_DIMENSION_TEXTURE2D: {
