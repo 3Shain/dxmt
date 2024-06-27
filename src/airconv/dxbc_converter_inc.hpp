@@ -975,6 +975,7 @@ auto get_operation_info(air::MSLTexture texture
     ret.write_type = nullptr;
     ret.gradient_type = types._float2;
     ret.gather_type = types._float4;
+    ret.address_type = types._int2;
     break;
   }
   case TextureKind::depth_2d_array: {
@@ -989,6 +990,7 @@ auto get_operation_info(air::MSLTexture texture
     ret.write_type = nullptr;
     ret.gradient_type = types._float2;
     ret.gather_type = types._float4;
+    ret.address_type = types._int2;
     break;
   }
   case TextureKind::depth_cube: {
@@ -1002,6 +1004,7 @@ auto get_operation_info(air::MSLTexture texture
     ret.gradient_type = types._float3;
     ret.gather_type = types._float4;
     ret.is_cube = true;
+    ret.address_type = types._int2;
     break;
   }
   case TextureKind::depth_cube_array: {
@@ -1015,6 +1018,7 @@ auto get_operation_info(air::MSLTexture texture
     ret.gradient_type = types._float3;
     ret.gather_type = types._float4;
     ret.is_cube = true;
+    ret.address_type = types._int2;
     break;
   }
   case TextureKind::texture_2d_ms: {
@@ -1022,6 +1026,7 @@ auto get_operation_info(air::MSLTexture texture
     ret.air_symbol_suffix = "texture_2d_ms";
     ret.is_ms = true;
     ret.gather_type = nullptr;
+    ret.address_type = types._int2;
     break;
   }
   case TextureKind::texture_2d_ms_array: {
@@ -1030,6 +1035,7 @@ auto get_operation_info(air::MSLTexture texture
     ret.is_array = true;
     ret.is_ms = true;
     ret.gather_type = nullptr;
+    ret.address_type = types._int2;
     break;
   }
   case TextureKind::depth_2d_ms: {
@@ -1040,6 +1046,7 @@ auto get_operation_info(air::MSLTexture texture
     ret.write_type = nullptr;
     ret.is_ms = true;
     ret.gather_type = nullptr;
+    ret.address_type = types._int2;
     break;
   }
   case TextureKind::depth_2d_ms_array: {
@@ -1051,6 +1058,7 @@ auto get_operation_info(air::MSLTexture texture
     ret.write_type = nullptr;
     ret.is_ms = true;
     ret.gather_type = nullptr;
+    ret.address_type = types._int2;
     break;
   }
   }
@@ -1520,6 +1528,7 @@ auto call_read(
     args_value.push_back(ctx.builder.getInt32(1));
   }
 
+  assert(op_info.address_type);
   args_type.push_back(op_info.address_type);
   if (Constant *c = offset ? dyn_cast<Constant>(offset) : nullptr) {
     if (c->isZeroValue()) {
@@ -1601,6 +1610,7 @@ auto call_write(
   args_type.push_back(texture_type.get_llvm_type(context));
   args_value.push_back(handle);
 
+  assert(op_info.address_type);
   args_type.push_back(op_info.address_type);
   args_value.push_back(address);
 
@@ -1897,6 +1907,7 @@ IRValue call_texture_atomic_fetch_explicit(
   args_type.push_back(texture_type.get_llvm_type(context));
   args_value.push_back(handle);
 
+  assert(op_info.address_type);
   args_type.push_back(op_info.address_type);
   args_value.push_back(address);
 
@@ -2538,8 +2549,9 @@ store_dst<DstOperandOutputDepth, true>(DstOperandOutputDepth, IRValue &&value) {
   // coroutine + rvalue reference = SHOOT YOURSELF IN THE FOOT
   return make_effect_bind(
     [value = std::move(value)](context ctx) mutable -> IREffect {
-      pvalue depth = co_yield std::move(value) >>=
-        extract_element(0); // FIXME: value might be a scalar!
+      // FIXME: extend_to_vec4 is kinda silly
+      pvalue depth = co_yield (std::move(value) >>= extend_to_vec4) >>=
+        extract_element(0);
       auto ptr = ctx.builder.CreateConstGEP1_32(
         ctx.types._float, ctx.resource.depth_output_reg, 0
       );
