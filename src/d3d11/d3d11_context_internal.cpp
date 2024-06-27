@@ -241,6 +241,64 @@ public:
     }
   }
 
+  template <ShaderType Type>
+  void SetUnorderedAccessView(
+      UINT StartSlot, UINT NumUAVs,
+      ID3D11UnorderedAccessView *const *ppUnorderedAccessViews,
+      const UINT *pUAVInitialCounts) {
+    auto &binding_set = Type == ShaderType::Compute
+                            ? state_.ComputeStageUAV.UAVs
+                            : state_.OutputMerger.UAVs;
+
+    // std::erase_if(state_.ComputeStageUAV.UAVs, [&](const auto &item) -> bool
+    // {
+    //   auto &[slot, bound_uav] = item;
+    //   if (slot < StartSlot || slot >= (StartSlot + NumUAVs))
+    //     return false;
+    //   for (auto i = 0u; i < NumUAVs; i++) {
+    //     if (auto uav = static_cast<IMTLD3D11UnorderedAccessView *>(
+    //             ppUnorderedAccessViews[i])) {
+    //       // FIXME! GetViewRange is not defined on IMTLBindable
+    //       // if (bound_uav.View->GetViewRange().CheckOverlap(
+    //       //         uav->GetViewRange())) {
+    //       //   return true;
+    //       // }
+    //     }
+    //   }
+    //   return false;
+    // });
+
+    for (unsigned slot = StartSlot; slot < StartSlot + NumUAVs; slot++) {
+      auto pUAV = ppUnorderedAccessViews[slot - StartSlot];
+      auto InitialCount =
+          pUAVInitialCounts ? pUAVInitialCounts[slot - StartSlot] : ~0u;
+      if (pUAV) {
+        bool replaced = false;
+        auto &entry = binding_set.bind(slot, {pUAV}, replaced);
+        if (!replaced) {
+          // FIXME: update initial count
+          continue;
+        }
+        // FIXME: handle keep current counter...
+        entry.InitialCountValue = InitialCount;
+        if (auto expected = com_cast<IMTLBindable>(pUAV)) {
+          entry.View = std::move(expected);
+        } else {
+          D3D11_ASSERT(0 && "wtf");
+        }
+        // FIXME: resolve srv hazard: unbind any cs srv that share the resource
+        // std::erase_if(state_.ShaderStages[5].SRVs,
+        //               [&](const auto &item) -> bool {
+        //                 // auto &[slot, bound_srv] = item;
+        //                 // if srv conflict with uav, return true
+        //                 return false;
+        //               });
+      } else {
+        binding_set.unbind(slot);
+      }
+    }
+  }
+
 #pragma endregion
 
 #pragma region InputAssembler
@@ -818,8 +876,20 @@ public:
     state_.ShaderStages[(UINT)ShaderType::Vertex]
         .Shader //
         ->GetCompiledShader(NULL, &vs);
+    if (state_.ShaderStages[(UINT)ShaderType::Hull].Shader) {
+      // ERR("tessellation is not supported yet, skip drawcall");
+      return false;
+    }
+    if (state_.ShaderStages[(UINT)ShaderType::Domain].Shader) {
+      // ERR("tessellation is not supported yet, skip drawcall");
+      return false;
+    }
+    if (state_.ShaderStages[(UINT)ShaderType::Geometry].Shader) {
+      // ERR("geometry shader is not supported yet, skip drawcall");
+      return false;
+    }
     if (!state_.ShaderStages[(UINT)ShaderType::Pixel].Shader) {
-      // in case rasterization is not enabled.
+      // ERR("stream-out is not supported yet, skip drawcall");
       return false;
     }
     state_.ShaderStages[(UINT)ShaderType::Pixel]
@@ -1026,7 +1096,9 @@ public:
         }
         case SM50BindingType::SRV: {
           if (!ShaderStage.SRVs.test_bound(slot)) {
-            ERR("expect shader resource at slot ", slot, " but none is bound.");
+            // TODO: debug only
+            // ERR("expect shader resource at slot ", slot, " but none is
+            // bound.");
             write_to_it[arg.StructurePtrOffset] = 0;
             // ? we are doing something dangerous
             // need to verify that 0 have defined behavior (e.g. no gpu crash)
@@ -1060,36 +1132,51 @@ public:
           break;
         }
         case SM50BindingType::UAV: {
+          if constexpr (stage == ShaderType::Vertex) {
+            ERR("uav in vertex shader! need to workaround");
+            return false;
+          }
+          // FIXME: currently only pixel shader use uav from OM
+          // REFACTOR NEEDED
+          auto &binding_set = stage == ShaderType::Compute
+                                  ? state_.ComputeStageUAV.UAVs
+                                  : state_.OutputMerger.UAVs;
           // TODO: consider separately handle uav
-          if constexpr (stage == ShaderType::Compute) {
-            if (!state_.ComputeStageUAV.UAVs.contains(arg.SM50BindingSlot)) {
-              ERR("expect uav at slot ", arg.SM50BindingSlot,
-                  " but none is bound.");
-              return false;
-            }
-            auto &uav = state_.ComputeStageUAV.UAVs[arg.SM50BindingSlot];
-            auto arg_data = uav.View->GetArgumentData();
-            if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_BUFFER) {
-              write_to_it[arg.StructurePtrOffset] = arg_data.buffer();
-            }
+          if (!binding_set.test_bound(arg.SM50BindingSlot)) {
+            // ERR("expect uav at slot ", arg.SM50BindingSlot,
+            //     " but none is bound.");
+            write_to_it[arg.StructurePtrOffset] = 0;
             if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_ELEMENT_WIDTH) {
-              write_to_it[arg.StructurePtrOffset + 1] = arg_data.width();
-            }
-            if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE) {
-              if (arg_data.requiresContext()) {
-                D3D11_ASSERT(0 && "todo");
-              } else {
-                write_to_it[arg.StructurePtrOffset] = arg_data.texture();
-              }
+              write_to_it[arg.StructurePtrOffset + 1] = 0;
             }
             if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_UAV_COUNTER) {
-              D3D11_ASSERT(0 && "todo: implement uav counter binding");
+              write_to_it[arg.StructurePtrOffset + 2] = 0;
             }
+            break;
+          }
+          auto &uav = binding_set[arg.SM50BindingSlot];
+          auto arg_data = uav.View->GetArgumentData();
+          if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_BUFFER) {
+            write_to_it[arg.StructurePtrOffset] = arg_data.buffer();
+          }
+          if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_ELEMENT_WIDTH) {
+            write_to_it[arg.StructurePtrOffset + 1] = arg_data.width();
+          }
+          if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE) {
+            if (arg_data.requiresContext()) {
+              D3D11_ASSERT(0 && "todo");
+            } else {
+              write_to_it[arg.StructurePtrOffset] = arg_data.texture();
+            }
+          }
+          if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_UAV_COUNTER) {
+            ERR("todo: implement uav counter binding");
+            return false;
+          }
+          if (binding_set.test_dirty(slot)) {
             MTL::ResourceUsage usage = (arg.Flags >> 10) & 0b11;
             useResource(uav.View->UseBindable(currentChunkId), usage);
-          } else {
-            // FIXME: all graphical stages share one uav binding set
-            D3D11_ASSERT(0 && "TODO: graphical pipeline uav binding");
+            binding_set.clear_dirty(slot);
           }
           break;
         }

@@ -14,12 +14,19 @@
 namespace dxmt {
 
 struct UAV_B {
+  IUnknown *RawPointer = 0;
   Com<IMTLBindable> View;
   UINT InitialCountValue;
 };
 
+template <> struct redunant_binding_trait<UAV_B> {
+  static bool is_redunant(const UAV_B &left, const UAV_B &right) {
+    return left.RawPointer == right.RawPointer;
+  }
+};
+
 struct D3D11ComputeStageState {
-  std::map<UINT, UAV_B> UAVs;
+  BindingSet<UAV_B, 64> UAVs;
 };
 
 struct CONSTANT_BUFFER_B {
@@ -89,7 +96,7 @@ struct D3D11OutputMergerStageState {
   Com<IMTLD3D11DepthStencilView> DSV;
   UINT NumRTVs;
 
-  std::map<UINT, UAV_B> UAVs;
+  BindingSet<UAV_B, 64> UAVs;
 
   Com<IMTLD3D11DepthStencilState> DepthStencilState;
   UINT StencilRef;

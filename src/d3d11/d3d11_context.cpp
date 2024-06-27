@@ -1265,50 +1265,15 @@ public:
       UINT StartSlot, UINT NumUAVs,
       ID3D11UnorderedAccessView *const *ppUnorderedAccessViews,
       const UINT *pUAVInitialCounts) override {
-
-    std::erase_if(state_.ComputeStageUAV.UAVs, [&](const auto &item) -> bool {
-      auto &[slot, bound_uav] = item;
-      if (slot < StartSlot || slot >= (StartSlot + NumUAVs))
-        return false;
-      for (auto i = 0u; i < NumUAVs; i++) {
-        if (auto uav = static_cast<IMTLD3D11UnorderedAccessView *>(
-                ppUnorderedAccessViews[i])) {
-          // FIXME! GetViewRange is not defined on IMTLBindable
-          // if (bound_uav.View->GetViewRange().CheckOverlap(
-          //         uav->GetViewRange())) {
-          //   return true;
-          // }
-        }
-      }
-      return false;
-    });
-
-    for (auto i = 0u; i < NumUAVs; i++) {
-      if (auto uav = com_cast<IMTLBindable>(ppUnorderedAccessViews[i])) {
-        // bind
-        UAV_B to_bind = {std::move(uav),
-                         pUAVInitialCounts ? pUAVInitialCounts[i] : ~0u};
-        state_.ComputeStageUAV.UAVs.insert_or_assign(StartSlot + i,
-                                                     std::move(to_bind));
-        // resolve srv hazard: unbind any cs srv that share the resource
-        // std::erase_if(state_.ShaderStages[5].SRVs,
-        //               [&](const auto &item) -> bool {
-        //                 // auto &[slot, bound_srv] = item;
-        //                 // if srv conflict with uav, return true
-        //                 return false;
-        //               });
-      } else {
-        // unbind
-        state_.ComputeStageUAV.UAVs.erase(StartSlot + i);
-      }
-    }
+    ctx.SetUnorderedAccessView<ShaderType::Compute>(
+        StartSlot, NumUAVs, ppUnorderedAccessViews, pUAVInitialCounts);
   }
 
   void CSGetUnorderedAccessViews(
       UINT StartSlot, UINT NumUAVs,
       ID3D11UnorderedAccessView **ppUnorderedAccessViews) override {
     for (auto i = 0u; i < NumUAVs; i++) {
-      if (state_.ComputeStageUAV.UAVs.contains(StartSlot + i)) {
+      if (state_.ComputeStageUAV.UAVs.test_bound(StartSlot + i)) {
         state_.ComputeStageUAV.UAVs[StartSlot + i]
             .View->GetLogicalResourceOrView(
                 IID_PPV_ARGS(&ppUnorderedAccessViews[i]));
@@ -1378,7 +1343,8 @@ public:
                           ID3D11RenderTargetView *const *ppRenderTargetViews,
                           ID3D11DepthStencilView *pDepthStencilView) override {
     OMSetRenderTargetsAndUnorderedAccessViews(
-        NumViews, ppRenderTargetViews, pDepthStencilView, 0, 0, NULL, NULL);
+        NumViews, ppRenderTargetViews, pDepthStencilView, 0,
+        D3D11_KEEP_UNORDERED_ACCESS_VIEWS, NULL, NULL);
   }
 
   void
@@ -1397,43 +1363,46 @@ public:
 
     bool should_invalidate_pass = false;
 
-    auto &BoundRTVs = state_.OutputMerger.RTVs;
-    constexpr unsigned RTVSlotCount = D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT;
-    for (unsigned rtv_index = 0; rtv_index < RTVSlotCount; rtv_index++) {
-      if (rtv_index < NumRTVs && ppRenderTargetViews[rtv_index]) {
-        if (auto expected = com_cast<IMTLD3D11RenderTargetView>(
-                ppRenderTargetViews[rtv_index])) {
-          if (BoundRTVs[rtv_index].ptr() == expected.ptr())
-            continue;
-          BoundRTVs[rtv_index] = std::move(expected);
-          should_invalidate_pass = true;
+    if (NumRTVs != D3D11_KEEP_RENDER_TARGETS_AND_DEPTH_STENCIL) {
+      auto &BoundRTVs = state_.OutputMerger.RTVs;
+      constexpr unsigned RTVSlotCount = D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT;
+      for (unsigned rtv_index = 0; rtv_index < RTVSlotCount; rtv_index++) {
+        if (rtv_index < NumRTVs && ppRenderTargetViews[rtv_index]) {
+          if (auto expected = com_cast<IMTLD3D11RenderTargetView>(
+                  ppRenderTargetViews[rtv_index])) {
+            if (BoundRTVs[rtv_index].ptr() == expected.ptr())
+              continue;
+            BoundRTVs[rtv_index] = std::move(expected);
+            should_invalidate_pass = true;
+          } else {
+            D3D11_ASSERT(0 && "wtf");
+          }
         } else {
-          D3D11_ASSERT(0 && "wtf");
+          if (BoundRTVs[rtv_index]) {
+            should_invalidate_pass = true;
+          }
+          BoundRTVs[rtv_index] = nullptr;
+        }
+      }
+      state_.OutputMerger.NumRTVs = NumRTVs;
+
+      if (auto expected =
+              com_cast<IMTLD3D11DepthStencilView>(pDepthStencilView)) {
+        if (state_.OutputMerger.DSV.ptr() != expected.ptr()) {
+          state_.OutputMerger.DSV = std::move(expected);
+          should_invalidate_pass = true;
         }
       } else {
-        if (BoundRTVs[rtv_index]) {
+        if (state_.OutputMerger.DSV) {
           should_invalidate_pass = true;
         }
-        BoundRTVs[rtv_index] = nullptr;
+        state_.OutputMerger.DSV = nullptr;
       }
     }
-    state_.OutputMerger.NumRTVs = NumRTVs;
 
-    if (auto expected =
-            com_cast<IMTLD3D11DepthStencilView>(pDepthStencilView)) {
-      if (state_.OutputMerger.DSV.ptr() != expected.ptr()) {
-        state_.OutputMerger.DSV = std::move(expected);
-        should_invalidate_pass = true;
-      }
-    } else {
-      if (state_.OutputMerger.DSV) {
-        should_invalidate_pass = true;
-      }
-      state_.OutputMerger.DSV = nullptr;
-    }
-
-    if (NumUAVs) {
-      IMPLEMENT_ME
+    if (NumUAVs != D3D11_KEEP_UNORDERED_ACCESS_VIEWS) {
+      ctx.SetUnorderedAccessView<ShaderType::Pixel>(
+          UAVStartSlot, NumUAVs, ppUnorderedAccessViews, pUAVInitialCounts);
     }
 
     if (should_invalidate_pass) {
