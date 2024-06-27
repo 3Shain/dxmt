@@ -697,6 +697,134 @@ public:
     cmdbuf_state = CommandBufferState::ComputeEncoderActive;
   }
 
+  void EncodeClearPass(ENCODER_CLEARPASS_INFO *clear_pass) {
+    InvalidateCurrentPass();
+    CommandChunk *chk = cmd_queue.CurrentChunk();
+    chk->emit([clear_pass,
+               _ = clear_pass->use_clearpass()](CommandChunk::context &ctx) {
+      if (clear_pass->skipped) {
+        return;
+      }
+      auto pool = transfer(NS::AutoreleasePool::alloc()->init());
+      auto enc_descriptor = MTL::RenderPassDescriptor::renderPassDescriptor();
+      for (unsigned i = 0; i < clear_pass->num_color_attachments; i++) {
+        auto attachmentz = enc_descriptor->colorAttachments()->object(i);
+        attachmentz->setClearColor(clear_pass->clear_colors[i]);
+        attachmentz->setTexture(
+            clear_pass->clear_color_attachments[i].texture(&ctx));
+        attachmentz->setLoadAction(MTL::LoadActionClear);
+        attachmentz->setStoreAction(MTL::StoreActionStore);
+      }
+      if (clear_pass->clear_depth_stencil & D3D11_CLEAR_DEPTH) {
+        auto attachmentz = enc_descriptor->depthAttachment();
+        attachmentz->setClearDepth(clear_pass->clear_depth);
+        attachmentz->setTexture(
+            clear_pass->clear_depth_stencil_attachment.texture(&ctx));
+        attachmentz->setLoadAction(MTL::LoadActionClear);
+        attachmentz->setStoreAction(MTL::StoreActionStore);
+      }
+      if (clear_pass->clear_depth_stencil & D3D11_CLEAR_STENCIL) {
+        auto attachmentz = enc_descriptor->stencilAttachment();
+        attachmentz->setClearStencil(clear_pass->clear_stencil);
+        attachmentz->setTexture(
+            clear_pass->clear_depth_stencil_attachment.texture(&ctx));
+        attachmentz->setLoadAction(MTL::LoadActionClear);
+        attachmentz->setStoreAction(MTL::StoreActionStore);
+      }
+
+      auto enc = ctx.cmdbuf->renderCommandEncoder(enc_descriptor);
+      enc->setLabel(NS::String::string("ClearPass", NS::ASCIIStringEncoding));
+      enc->endEncoding();
+    });
+  };
+
+  void ClearRenderTargetView(IMTLD3D11RenderTargetView *pRenderTargetView,
+                             const FLOAT ColorRGBA[4]) {
+    CommandChunk *chk = cmd_queue.CurrentChunk();
+
+    auto target = pRenderTargetView->GetBinding(cmd_queue.CurrentSeqId());
+    auto clear_color = MTL::ClearColor::Make(ColorRGBA[0], ColorRGBA[1],
+                                             ColorRGBA[2], ColorRGBA[3]);
+
+    auto previous_encoder = chk->get_previous_encoder();
+    // use `while` instead of `if`, for short circuiting
+    while (previous_encoder->kind == EncoderKind::ClearPass) {
+      auto previous_clearpass = (ENCODER_CLEARPASS_INFO *)previous_encoder;
+      unsigned i = 0;
+      for (; i < previous_clearpass->num_color_attachments; i++) {
+        if (previous_clearpass->clear_color_attachments[i] == target) {
+          previous_clearpass->clear_colors[i] = clear_color;
+          return;
+        }
+      }
+      if (i == 8) {
+        break; // we have to create a new clearpass
+      }
+      previous_clearpass->num_color_attachments = i + 1;
+      previous_clearpass->clear_color_attachments[i] = std::move(target);
+      previous_clearpass->clear_colors[i] = clear_color;
+      return;
+    }
+
+    auto clear_pass = chk->mark_clear_pass();
+    clear_pass->num_color_attachments = 1;
+    clear_pass->clear_color_attachments[0] = std::move(target);
+    clear_pass->clear_colors[0] = clear_color;
+    EncodeClearPass(clear_pass);
+  }
+
+  void ClearDepthStencilView(IMTLD3D11DepthStencilView *pDepthStencilView,
+                             UINT ClearFlags, FLOAT Depth, UINT8 Stencil) {
+    if (ClearFlags == 0)
+      return;
+    CommandChunk *chk = cmd_queue.CurrentChunk();
+    auto target = pDepthStencilView->GetBinding(cmd_queue.CurrentSeqId());
+
+    auto previous_encoder = chk->get_previous_encoder();
+    // use `while` instead of `if`, for short circuiting
+    while (previous_encoder->kind == EncoderKind::ClearPass) {
+      auto previous_clearpass = (ENCODER_CLEARPASS_INFO *)previous_encoder;
+      // if there is already a depth stencil attachment
+      if (previous_clearpass->clear_depth_stencil_attachment) {
+        // if it's the same target
+        if (previous_clearpass->clear_depth_stencil_attachment == target) {
+          // override previous value
+          previous_clearpass->clear_depth_stencil |= ClearFlags;
+          if (ClearFlags & D3D11_CLEAR_DEPTH) {
+            previous_clearpass->clear_depth = Depth;
+          }
+          if (ClearFlags & D3D11_CLEAR_STENCIL) {
+            previous_clearpass->clear_stencil = Stencil;
+          }
+          return;
+        }
+        // otherwise we must create a new clearpass
+        break;
+      }
+      // no depth stencil attachment, just set it
+      previous_clearpass->clear_depth_stencil_attachment = std::move(target);
+      previous_clearpass->clear_depth_stencil = ClearFlags;
+      if (ClearFlags & D3D11_CLEAR_DEPTH) {
+        previous_clearpass->clear_depth = Depth;
+      }
+      if (ClearFlags & D3D11_CLEAR_STENCIL) {
+        previous_clearpass->clear_stencil = Stencil;
+      }
+      return;
+    }
+
+    auto clear_pass = chk->mark_clear_pass();
+    clear_pass->clear_depth_stencil_attachment = std::move(target);
+    clear_pass->clear_depth_stencil = ClearFlags;
+    if (ClearFlags & D3D11_CLEAR_DEPTH) {
+      clear_pass->clear_depth = Depth;
+    }
+    if (ClearFlags & D3D11_CLEAR_STENCIL) {
+      clear_pass->clear_stencil = Stencil;
+    }
+    EncodeClearPass(clear_pass);
+  }
+
   /**
   Switch to render encoder and set all states (expect for pipeline state)
   */
@@ -730,37 +858,117 @@ public:
         UINT RenderTargetIndex;
         UINT MipSlice;
         UINT ArrayIndex;
-        MTL::PixelFormat PixelFormat;
+        UINT DepthPlane;
+        MTL::PixelFormat PixelFormat = MTL::PixelFormatInvalid;
+        MTL::LoadAction LoadAction{MTL::LoadActionLoad};
+        MTL::ClearColor ClearColor{};
       };
       auto rtvs =
           chk->reserve_vector<RENDER_TARGET_STATE>(state_.OutputMerger.NumRTVs);
       for (unsigned i = 0; i < state_.OutputMerger.NumRTVs; i++) {
         auto &rtv = state_.OutputMerger.RTVs[i];
         if (rtv) {
-          rtvs.push_back({rtv->GetBinding(currentChunkId), i, 0, 0,
+          auto props = rtv->GetRenderTargetProps();
+          rtvs.push_back({rtv->GetBinding(currentChunkId), i, props->Level,
+                          props->Slice, props->DepthPlane,
                           rtv->GetPixelFormat()});
           D3D11_ASSERT(rtv->GetPixelFormat() != MTL::PixelFormatInvalid);
         } else {
           rtvs.push_back(
-              {BindingRef(std::nullopt), i, 0, 0, MTL::PixelFormatInvalid});
+              {BindingRef(std::nullopt), i, 0, 0, 0, MTL::PixelFormatInvalid});
         }
       }
       struct DEPTH_STENCIL_STATE {
-        BindingRef Texture;
-        UINT MipSlice;
-        UINT ArrayIndex;
-        MTL::PixelFormat PixelFormat;
+        BindingRef Texture{};
+        UINT MipSlice{};
+        UINT ArrayIndex{};
+        MTL::PixelFormat PixelFormat = MTL::PixelFormatInvalid;
+        MTL::LoadAction DepthLoadAction{MTL::LoadActionLoad};
+        MTL::LoadAction StencilLoadAction{MTL::LoadActionLoad};
+        float ClearDepth{};
+        uint8_t ClearStencil{};
       };
-      auto &dsv = state_.OutputMerger.DSV;
+      // auto &dsv = state_.OutputMerger.DSV;
+      DEPTH_STENCIL_STATE dsv_info;
+      if (state_.OutputMerger.DSV) {
+        dsv_info.Texture = state_.OutputMerger.DSV->GetBinding(currentChunkId);
+        dsv_info.PixelFormat = state_.OutputMerger.DSV->GetPixelFormat();
+      }
+
+      auto previous_encoder = chk->get_previous_encoder();
+      if (previous_encoder->kind == EncoderKind::ClearPass) {
+        auto previous_clearpass = (ENCODER_CLEARPASS_INFO *)previous_encoder;
+        uint32_t skip_clear_color_mask = 0;
+        bool skip_clear_ds = 0;
+        for (unsigned i = 0; i < previous_clearpass->num_color_attachments;
+             i++) {
+          for (auto &rtv : rtvs) {
+            if (previous_clearpass->clear_color_attachments[i] == rtv.Texture) {
+              // you think this is unnecessary? not the case in C++!
+              previous_clearpass->clear_color_attachments[i] = {};
+              skip_clear_color_mask |= (1 << i);
+              rtv.LoadAction = MTL::LoadActionClear;
+              rtv.ClearColor = previous_clearpass->clear_colors[i];
+            }
+          }
+        }
+        if (previous_clearpass->clear_depth_stencil_attachment &&
+            dsv_info.Texture) {
+          if (previous_clearpass->clear_depth_stencil_attachment ==
+              dsv_info.Texture) {
+            previous_clearpass->clear_depth_stencil_attachment = {};
+            skip_clear_ds = 1;
+            dsv_info.DepthLoadAction =
+                previous_clearpass->clear_depth_stencil & D3D11_CLEAR_DEPTH
+                    ? MTL::LoadActionClear
+                    : MTL::LoadActionLoad;
+            dsv_info.StencilLoadAction =
+                previous_clearpass->clear_depth_stencil & D3D11_CLEAR_STENCIL
+                    ? MTL::LoadActionClear
+                    : MTL::LoadActionLoad;
+            dsv_info.ClearDepth = previous_clearpass->clear_depth;
+            dsv_info.ClearStencil = previous_clearpass->clear_stencil;
+          }
+        }
+        if ((uint32_t)std::popcount(skip_clear_color_mask) ==
+                previous_clearpass->num_color_attachments &&
+            skip_clear_ds) {
+          // the previous clearpass is fully skipped
+          previous_clearpass->skipped = true;
+        } else if (skip_clear_color_mask || skip_clear_ds) {
+          // the previous clearpass is partially skipped, so we construct new
+          // clearpass for remaining
+          previous_clearpass->skipped = true;
+          auto remain_clearpass = chk->mark_clear_pass();
+          for (unsigned i = 0; i < previous_clearpass->num_color_attachments;
+               i++) {
+            if (skip_clear_color_mask | (1 << i))
+              continue;
+            auto j = remain_clearpass->num_color_attachments;
+            remain_clearpass->num_color_attachments++;
+            remain_clearpass->clear_color_attachments[j] =
+                std::move(previous_clearpass->clear_color_attachments[i]);
+            remain_clearpass->clear_colors[j] =
+                std::move(previous_clearpass->clear_colors[i]);
+          }
+          if (!skip_clear_ds) {
+            remain_clearpass->clear_depth_stencil_attachment =
+                std::move(previous_clearpass->clear_depth_stencil_attachment);
+            remain_clearpass->clear_depth_stencil =
+                previous_clearpass->clear_depth_stencil;
+            remain_clearpass->clear_depth = previous_clearpass->clear_depth;
+            remain_clearpass->clear_stencil = previous_clearpass->clear_stencil;
+          }
+          EncodeClearPass(remain_clearpass);
+        } else {
+          // previous_clearpass kept untouched
+        }
+      };
+
+      chk->mark_pass(EncoderKind::Render);
+
       chk->emit([rtvs = std::move(rtvs),
-                 dsv = DEPTH_STENCIL_STATE{dsv != nullptr
-                                               ? dsv->GetBinding(currentChunkId)
-                                               : BindingRef(std::nullopt),
-                                           0, 0,
-                                           dsv != nullptr
-                                               ? dsv->GetPixelFormat()
-                                               : MTL::PixelFormatInvalid}](
-                    CommandChunk::context &ctx) {
+                 dsv = std::move(dsv_info)](CommandChunk::context &ctx) {
         auto pool = transfer(NS::AutoreleasePool::alloc()->init());
         auto renderPassDescriptor =
             MTL::RenderPassDescriptor::renderPassDescriptor();
@@ -773,18 +981,21 @@ public:
           colorAttachment->setTexture(rtv.Texture.texture(&ctx));
           colorAttachment->setLevel(rtv.MipSlice);
           colorAttachment->setSlice(rtv.ArrayIndex);
-          colorAttachment->setLoadAction(MTL::LoadActionLoad);
+          colorAttachment->setDepthPlane(rtv.DepthPlane);
+          colorAttachment->setLoadAction(rtv.LoadAction);
+          colorAttachment->setClearColor(rtv.ClearColor);
           colorAttachment->setStoreAction(MTL::StoreActionStore);
         };
         bool dsv_valid = false;
         if (dsv.Texture) {
           dsv_valid = true;
-          // TODO: ...should know more about load/store behavior
+          // TODO: ...should know more about store behavior (e.g. DiscardView)
           auto depthAttachment = renderPassDescriptor->depthAttachment();
           depthAttachment->setTexture(dsv.Texture.texture(&ctx));
           depthAttachment->setLevel(dsv.MipSlice);
           depthAttachment->setSlice(dsv.ArrayIndex);
-          depthAttachment->setLoadAction(MTL::LoadActionLoad);
+          depthAttachment->setLoadAction(dsv.DepthLoadAction);
+          depthAttachment->setClearDepth(dsv.ClearDepth);
           depthAttachment->setStoreAction(MTL::StoreActionStore);
 
           // TODO: should know if depth buffer has stencil bits
@@ -795,7 +1006,8 @@ public:
             stencilAttachment->setTexture(dsv.Texture.texture(&ctx));
             stencilAttachment->setLevel(dsv.MipSlice);
             stencilAttachment->setSlice(dsv.ArrayIndex);
-            stencilAttachment->setLoadAction(MTL::LoadActionLoad);
+            stencilAttachment->setLoadAction(dsv.StencilLoadAction);
+            stencilAttachment->setClearStencil(dsv.ClearStencil);
             stencilAttachment->setStoreAction(MTL::StoreActionStore);
           }
         }
@@ -822,6 +1034,9 @@ public:
     {
       /* Setup ComputeCommandEncoder */
       CommandChunk *chk = cmd_queue.CurrentChunk();
+
+      chk->mark_pass(EncoderKind::Blit);
+
       chk->emit([](CommandChunk::context &ctx) {
         ctx.blit_encoder = ctx.cmdbuf->blitCommandEncoder();
       });
@@ -848,6 +1063,9 @@ public:
     {
       /* Setup ComputeCommandEncoder */
       CommandChunk *chk = cmd_queue.CurrentChunk();
+
+      chk->mark_pass(EncoderKind::Compute);
+
       chk->emit([](CommandChunk::context &ctx) {
         ctx.compute_encoder = ctx.cmdbuf->computeCommandEncoder();
         auto [heap, offset] = ctx.chk->inspect_gpu_heap();

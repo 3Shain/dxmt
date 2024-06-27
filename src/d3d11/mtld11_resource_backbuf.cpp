@@ -46,6 +46,7 @@ private:
     BackBufferRTV(const D3D11_RENDER_TARGET_VIEW_DESC *pDesc,
                   EmulatedBackBufferTexture *context, IMTLD3D11Device *pDevice)
         : BackBufferRTVBase(pDesc, context, pDevice) {}
+    MTL_RENDER_TARGET_VIEW_DESC props{0, 0, 0, 0}; // FIXME: bugprone
 
     MTL::PixelFormat GetPixelFormat() final {
       D3D11_ASSERT(!resource->destroyed);
@@ -55,6 +56,8 @@ private:
     BindingRef GetBinding(uint64_t) {
       return BindingRef(static_cast<BackBufferSource *>(resource.ptr()));
     };
+
+    MTL_RENDER_TARGET_VIEW_DESC *GetRenderTargetProps() { return &props; };
   };
   friend class BackBufferRTV;
 

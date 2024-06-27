@@ -31,11 +31,12 @@ class BindingRef {
   Type type;
   Obj<MTL::Resource> resource_ptr;
   Obj<MTL::Buffer> counter_;
-  uint32_t element_width;
-  uint32_t byte_offset;
-  void *ptr;
+  uint32_t element_width = 0;
+  uint32_t byte_offset = 0;
+  void *ptr = nullptr;
 
 public:
+  BindingRef() noexcept : type(Type::Null) {};
   BindingRef(MTL::Buffer *buffer) noexcept
       : type(Type::UnboundedBuffer), resource_ptr(buffer) {}
   BindingRef(MTL::Buffer *buffer, uint32_t element_width,
@@ -54,7 +55,60 @@ public:
 
   operator bool() const noexcept { return type != Type::Null; }
   BindingRef(const BindingRef &copy) = delete;
-  BindingRef(BindingRef &&move) = default;
+  BindingRef(BindingRef &&move) {
+    type = move.type;
+    resource_ptr = std::move(move.resource_ptr);
+    counter_ = std::move(move.counter_);
+    element_width = move.element_width;
+    byte_offset = move.byte_offset;
+    ptr = move.ptr;
+    move.type = Type::Null;
+    move.byte_offset = 0;
+    move.element_width = 0;
+    move.ptr = 0;
+  };
+
+  BindingRef &operator=(BindingRef &&move) {
+    // ahh this is redunant
+    type = move.type;
+    resource_ptr = std::move(move.resource_ptr);
+    counter_ = std::move(move.counter_);
+    element_width = move.element_width;
+    byte_offset = move.byte_offset;
+    ptr = move.ptr;
+    move.type = Type::Null;
+    move.byte_offset = 0;
+    move.element_width = 0;
+    move.ptr = 0;
+    return *this;
+  };
+
+  ~BindingRef() { type = Type::Null; }
+
+  bool operator==(const BindingRef &other) const {
+    if (type != other.type) {
+      return false;
+    }
+    switch (type) {
+    case Type::Null:
+      return true; // FIXME: is this intended?
+    case Type::JustTexture:
+    case Type::UnboundedBuffer:
+      return resource_ptr == other.resource_ptr &&
+             byte_offset == other.byte_offset;
+      ;
+    case Type::BoundedBuffer:
+      return resource_ptr == other.resource_ptr &&
+             byte_offset == other.byte_offset &&
+             element_width == other.element_width;
+    case Type::UAVWithCounter:
+      return resource_ptr == other.resource_ptr &&
+             byte_offset == other.byte_offset &&
+             element_width == other.element_width && counter_ == other.counter_;
+    case Type::BackBufferSource:
+      return ptr == other.ptr;
+    }
+  };
 
   bool requiresContext() const { return type == Type::BackBufferSource; };
 

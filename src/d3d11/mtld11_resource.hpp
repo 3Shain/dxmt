@@ -508,6 +508,12 @@ template <typename VIEW_DESC>
 HRESULT CreateMTLTextureView(IMTLD3D11Device *pDevice, MTL::Texture *pResource,
                              const VIEW_DESC *pViewDesc, MTL::Texture **ppView);
 
+HRESULT
+CreateMTLRenderTargetView(IMTLD3D11Device *pDevice, MTL::Texture *pResource,
+                          const D3D11_RENDER_TARGET_VIEW_DESC *pViewDesc,
+                          MTL::Texture **ppView,
+                          MTL_RENDER_TARGET_VIEW_DESC *pMTLDesc);
+
 template <typename VIEW_DESC>
 HRESULT CreateMTLTextureView(IMTLD3D11Device *pDevice, MTL::Buffer *pResource,
                              const VIEW_DESC *pViewDesc, MTL::Texture **ppView);

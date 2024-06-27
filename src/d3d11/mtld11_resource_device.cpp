@@ -304,15 +304,21 @@ private:
   private:
     Obj<MTL::Texture> view;
     MTL::PixelFormat view_pixel_format;
+    MTL_RENDER_TARGET_VIEW_DESC mtl_rtv_desc;
 
   public:
     TextureRTV(MTL::Texture *view,
                const tag_render_target_view<>::DESC_S *pDesc,
-               DeviceTexture *pResource, IMTLD3D11Device *pDevice)
+               DeviceTexture *pResource, IMTLD3D11Device *pDevice,
+               const MTL_RENDER_TARGET_VIEW_DESC &mtl_rtv_desc)
         : RTVBase(pDesc, pResource, pDevice), view(view),
-          view_pixel_format(view->pixelFormat()) {}
+          view_pixel_format(view->pixelFormat()), mtl_rtv_desc(mtl_rtv_desc) {}
 
     MTL::PixelFormat GetPixelFormat() final { return view_pixel_format; }
+
+    MTL_RENDER_TARGET_VIEW_DESC *GetRenderTargetProps() final {
+      return &mtl_rtv_desc;
+    };
 
     BindingRef GetBinding(uint64_t) final { return BindingRef(view.ptr()); }
   };
@@ -366,12 +372,14 @@ public:
       return E_INVALIDARG;
     }
     Obj<MTL::Texture> view;
-    if (FAILED(CreateMTLTextureView(this->m_parent, this->texture, &finalDesc,
-                                    &view))) {
+    MTL_RENDER_TARGET_VIEW_DESC mtl_rtv_desc;
+    if (FAILED(CreateMTLRenderTargetView(this->m_parent, this->texture,
+                                         &finalDesc, &view, &mtl_rtv_desc))) {
       return E_FAIL;
     }
     if (ppView) {
-      *ppView = ref(new TextureRTV(view, &finalDesc, this, this->m_parent));
+      *ppView = ref(
+          new TextureRTV(view, &finalDesc, this, this->m_parent, mtl_rtv_desc));
     } else {
       return S_FALSE;
     }

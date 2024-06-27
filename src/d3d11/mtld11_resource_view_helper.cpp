@@ -208,6 +208,19 @@ HRESULT CreateMTLTextureView<D3D11_UNORDERED_ACCESS_VIEW_DESC>(
     break;
   }
   case D3D11_UAV_DIMENSION_TEXTURE3D: {
+    if (texture_type == MTL::TextureType3D) {
+      if (pViewDesc->Texture3D.FirstWSlice != 0 ||
+          pViewDesc->Texture3D.WSize != 1) {
+        ERR("tex3d uav creation not properly handled: ", pViewDesc->Texture3D.FirstWSlice,
+            ":", pViewDesc->Texture3D.WSize, ":", pResource->depth());
+        // break;
+      }
+      *ppView = pResource->newTextureView(
+          metal_format.PixelFormat, MTL::TextureType3D,
+          NS::Range::Make(pViewDesc->Texture3D.MipSlice, 1),
+          NS::Range::Make(0, 1));
+      return S_OK;
+    }
     break;
   }
   }
@@ -216,10 +229,11 @@ HRESULT CreateMTLTextureView<D3D11_UNORDERED_ACCESS_VIEW_DESC>(
   return E_FAIL;
 }
 
-template <>
-HRESULT CreateMTLTextureView<D3D11_RENDER_TARGET_VIEW_DESC>(
-    IMTLD3D11Device *pDevice, MTL::Texture *pResource,
-    const D3D11_RENDER_TARGET_VIEW_DESC *pViewDesc, MTL::Texture **ppView) {
+HRESULT
+CreateMTLRenderTargetView(IMTLD3D11Device *pDevice, MTL::Texture *pResource,
+                          const D3D11_RENDER_TARGET_VIEW_DESC *pViewDesc,
+                          MTL::Texture **ppView,
+                          MTL_RENDER_TARGET_VIEW_DESC *pMTLDesc) {
   Com<IMTLDXGIAdatper> adapter;
   pDevice->GetAdapter(&adapter);
   MTL_FORMAT_DESC metal_format;
@@ -242,6 +256,10 @@ HRESULT CreateMTLTextureView<D3D11_RENDER_TARGET_VIEW_DESC>(
           metal_format.PixelFormat, MTL::TextureType2D,
           NS::Range::Make(pViewDesc->Texture2D.MipSlice, 1),
           NS::Range::Make(0, 1));
+      pMTLDesc->Slice = 0; // use the original texture if format is the same?
+      pMTLDesc->Level = 0;
+      pMTLDesc->DepthPlane = 0;
+      pMTLDesc->RenderTargetArrayLength = 0; // FIXME: really?
       return S_OK;
     }
     break;
@@ -256,6 +274,23 @@ HRESULT CreateMTLTextureView<D3D11_RENDER_TARGET_VIEW_DESC>(
     break;
   }
   case D3D11_RTV_DIMENSION_TEXTURE3D: {
+    if (texture_type == MTL::TextureType3D) {
+      if (pViewDesc->Texture3D.FirstWSlice != 0 ||
+          pViewDesc->Texture3D.WSize != 1) {
+        ERR("tex3d rtv creation not properly handled: ", pViewDesc->Texture3D.FirstWSlice,
+            ":", pViewDesc->Texture3D.WSize, ":", pResource->depth());
+        // break;
+      }
+      *ppView = pResource->newTextureView(
+          metal_format.PixelFormat, MTL::TextureType3D,
+          NS::Range::Make(pViewDesc->Texture3D.MipSlice, 1),
+          NS::Range::Make(0, 1));
+      pMTLDesc->Slice = 0;
+      pMTLDesc->Level = 0;
+      pMTLDesc->DepthPlane = pViewDesc->Texture3D.FirstWSlice;
+      pMTLDesc->RenderTargetArrayLength = 0; // FIXME: really?
+      return S_OK;
+    }
     break;
   }
   }

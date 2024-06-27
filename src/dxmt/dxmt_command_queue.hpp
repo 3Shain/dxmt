@@ -21,6 +21,47 @@
 
 namespace dxmt {
 
+enum class EncoderKind : uint32_t { Nil, ClearPass, Render, Compute, Blit };
+
+struct ENCODER_INFO {
+  EncoderKind kind;
+};
+
+struct ENCODER_CLEARPASS_INFO {
+  EncoderKind kind = EncoderKind::ClearPass;
+  uint32_t skipped = 0; // this can be flipped by later render pass
+  uint32_t num_color_attachments = 0;
+  uint32_t clear_depth_stencil = 0;
+  BindingRef clear_depth_stencil_attachment;
+  float clear_depth = 0.0;
+  uint8_t clear_stencil = 0;
+  std::array<BindingRef, 8> clear_color_attachments;
+  std::array<MTL::ClearColor, 8> clear_colors;
+
+  struct CLEARPASS_CLEANUP {
+    ENCODER_CLEARPASS_INFO *info;
+    CLEARPASS_CLEANUP(ENCODER_CLEARPASS_INFO *info) : info(info) {}
+    ~CLEARPASS_CLEANUP() {
+      // FIXME: too complicated
+      if (!info || info->skipped)
+        return;
+      for (unsigned i = 0; i < info->num_color_attachments; i++) {
+        info->clear_color_attachments[i].~BindingRef();
+      }
+      info->clear_depth_stencil_attachment.~BindingRef();
+    }
+    CLEARPASS_CLEANUP(const CLEARPASS_CLEANUP &copy) = delete;
+    CLEARPASS_CLEANUP(CLEARPASS_CLEANUP &&move) {
+      info = move.info;
+      move.info = nullptr;
+    };
+  };
+
+  [[nodiscard("")]] CLEARPASS_CLEANUP use_clearpass() {
+    return CLEARPASS_CLEANUP(this);
+  }
+};
+
 template <typename F, typename context>
 concept cpu_cmd = requires(F f, context &ctx) {
   { f(ctx) } -> std::same_as<void>;
@@ -192,6 +233,28 @@ public:
     }
   };
 
+  ENCODER_CLEARPASS_INFO *mark_clear_pass() {
+    linear_allocator<ENCODER_CLEARPASS_INFO> allocator(this);
+    auto ptr = allocator.allocate(1);
+    new (ptr) ENCODER_CLEARPASS_INFO();
+    previous_encoder_info = (ENCODER_INFO *)ptr;
+    return ptr;
+  };
+
+  ENCODER_INFO *mark_pass(EncoderKind kind) {
+    linear_allocator<ENCODER_INFO> allocator(this);
+    auto ptr = allocator.allocate(1);
+    ptr->kind = kind;
+    previous_encoder_info = ptr;
+    return ptr;
+  };
+
+  ENCODER_INFO *get_previous_encoder() { return previous_encoder_info; }
+
+  uint32_t has_no_work_encoded_yet() {
+    return previous_encoder_info->kind == EncoderKind::Nil ? 1u : 0u;
+  }
+
 private:
   char *cpu_argument_heap;
   Obj<MTL::Buffer> gpu_argument_heap;
@@ -201,12 +264,15 @@ private:
   Node<BFunc<context> *> monoid_list;
   Node<BFunc<context> *> *list_end;
   Obj<MTL::CommandBuffer> attached_cmdbuf;
+  ENCODER_INFO init_encoder_info{EncoderKind::Nil};
+  ENCODER_INFO *previous_encoder_info;
 
   friend class CommandQueue;
 
 public:
   CommandChunk()
-      : monoid(), monoid_list{&monoid, nullptr}, list_end(&monoid_list) {}
+      : monoid(), monoid_list{&monoid, nullptr}, list_end(&monoid_list),
+        previous_encoder_info(&init_encoder_info) {}
 
   void reset() noexcept {
     auto cur = monoid_list.next;
@@ -222,6 +288,7 @@ public:
     monoid_list.next = nullptr;
     list_end = &monoid_list;
     attached_cmdbuf = nullptr;
+    previous_encoder_info = &init_encoder_info;
   }
 };
 
@@ -267,6 +334,11 @@ public:
 
   uint64_t CurrentSeqId() {
     return ready_for_encode.load(std::memory_order_relaxed);
+  };
+
+  uint64_t EncodedWorkFinishAt() {
+    auto id = ready_for_encode.load(std::memory_order_relaxed);
+    return id - chunks[id % kCommandChunkCount].has_no_work_encoded_yet();
   };
 
   /**

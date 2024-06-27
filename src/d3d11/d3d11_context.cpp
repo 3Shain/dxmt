@@ -122,7 +122,7 @@ public:
     ((ID3D11Query *)pAsync)->GetDesc(&desc);
     switch (desc.Query) {
     case D3D11_QUERY_EVENT:
-      ((IMTLD3DEventQuery *)pAsync)->Issue(cmd_queue.CurrentSeqId());
+      ((IMTLD3DEventQuery *)pAsync)->Issue(cmd_queue.EncodedWorkFinishAt());
       break;
     case D3D11_QUERY_OCCLUSION:
       /**
@@ -147,8 +147,7 @@ public:
       return E_INVALIDARG;
 
     if (GetDataFlags != D3D11_ASYNC_GETDATA_DONOTFLUSH) {
-      // D3D11_ASSERT(0 && "handle GetDataFlags correctly");
-      FlushInternal([](auto) {});
+      PromoteFlush();
     }
 
     D3D11_QUERY_DESC desc;
@@ -210,7 +209,7 @@ public:
         // FIXME: bugprone
         if (ret + coh == cmd_queue.CurrentSeqId()) {
           TRACE("Map: forced flush");
-          FlushInternal([](auto) {});
+          PromoteFlush();
         }
         TRACE("staging map block");
         cmd_queue.YieldUntilCoherenceBoundaryUpdate();
@@ -260,28 +259,7 @@ public:
                              const FLOAT ColorRGBA[4]) override {
     if (auto expected =
             com_cast<IMTLD3D11RenderTargetView>(pRenderTargetView)) {
-      ctx.InvalidateCurrentPass();
-      CommandChunk *chk = cmd_queue.CurrentChunk();
-      // GetCurrentTexture() is executed outside of command body
-      // because of swapchain logic implemented at the moment
-      // ideally it should be inside the command
-      // so autorelease will work properly
-      chk->emit([texture = expected->GetBinding(cmd_queue.CurrentSeqId()),
-                 r = ColorRGBA[0], g = ColorRGBA[1], b = ColorRGBA[2],
-                 a = ColorRGBA[3]](CommandChunk::context &ctx) {
-        auto pool = transfer(NS::AutoreleasePool::alloc()->init());
-        auto enc_descriptor = MTL::RenderPassDescriptor::renderPassDescriptor();
-        auto attachmentz = enc_descriptor->colorAttachments()->object(0);
-        attachmentz->setClearColor({r, g, b, a});
-        attachmentz->setTexture(texture.texture(&ctx));
-        attachmentz->setLoadAction(MTL::LoadActionClear);
-        attachmentz->setStoreAction(MTL::StoreActionStore);
-
-        auto enc = ctx.cmdbuf->renderCommandEncoder(enc_descriptor);
-        enc->setLabel(NS::String::string("ClearRenderTargetView",
-                                         NS::ASCIIStringEncoding));
-        enc->endEncoding();
-      });
+      ctx.ClearRenderTargetView(expected.ptr(), ColorRGBA);
     }
   }
 
@@ -302,39 +280,7 @@ public:
                              UINT8 Stencil) override {
     if (auto expected =
             com_cast<IMTLD3D11DepthStencilView>(pDepthStencilView)) {
-
-      ctx.InvalidateCurrentPass();
-      CommandChunk *chk = cmd_queue.CurrentChunk();
-      chk->emit([texture_ = expected->GetBinding(cmd_queue.CurrentSeqId()),
-                 Depth, Stencil, ClearDepth = (ClearFlags & D3D11_CLEAR_DEPTH),
-                 ClearStencil = (ClearFlags & D3D11_CLEAR_STENCIL)](
-                    CommandChunk::context &ctx) {
-        auto enc_descriptor = MTL::RenderPassDescriptor::renderPassDescriptor();
-        auto texture = texture_.texture(&ctx);
-        if (ClearDepth) {
-          auto attachmentz = enc_descriptor->depthAttachment();
-          attachmentz->setClearDepth(Depth);
-          attachmentz->setTexture(texture);
-          attachmentz->setLoadAction(MTL::LoadActionClear);
-          attachmentz->setStoreAction(MTL::StoreActionStore);
-        }
-        if (ClearStencil) {
-          // FIXME: texture must have a stencil channel!
-          auto pf = texture->pixelFormat();
-          if (pf != MTL::PixelFormatDepth32Float) {
-            auto attachmentz = enc_descriptor->stencilAttachment();
-            attachmentz->setClearStencil(Stencil);
-            attachmentz->setTexture(texture);
-            attachmentz->setLoadAction(MTL::LoadActionClear);
-            attachmentz->setStoreAction(MTL::StoreActionStore);
-          }
-        }
-
-        auto enc = ctx.cmdbuf->renderCommandEncoder(enc_descriptor);
-        enc->setLabel(NS::String::string("ClearDepthStencilView",
-                                         NS::ASCIIStringEncoding));
-        enc->endEncoding();
-      });
+      ctx.ClearDepthStencilView(expected.ptr(), ClearFlags, Depth, Stencil);
     }
   }
 
@@ -1641,6 +1587,13 @@ public:
   UINT GetContextFlags() override { return 0; }
 
 #pragma endregion
+
+  void PromoteFlush() {
+    if (cmd_queue.CurrentChunk()->has_no_work_encoded_yet()) {
+      return;
+    }
+    FlushInternal([](auto) {});
+  };
 
   void FlushInternal(
       std::function<void(MTL::CommandBuffer *)> &&beforeCommit) final {
