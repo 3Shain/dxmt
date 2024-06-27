@@ -55,6 +55,9 @@ HRESULT CreateVertexShader(IMTLD3D11Device *pDevice,
 HRESULT CreatePixelShader(IMTLD3D11Device *pDevice, const void *pShaderBytecode,
                           SIZE_T BytecodeLength, ID3D11PixelShader **ppShader);
 
+HRESULT CreateDummyGeometryShader(IMTLD3D11Device *pDevice, const void *pShaderBytecode,
+                          SIZE_T BytecodeLength, ID3D11GeometryShader **ppShader);
+
 HRESULT CreateComputeShader(IMTLD3D11Device *pDevice,
                             const void *pShaderBytecode, SIZE_T BytecodeLength,
                             ID3D11ComputeShader **ppShader);

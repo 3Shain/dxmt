@@ -20,6 +20,10 @@ struct tag_pixel_shader {
   using COM = ID3D11PixelShader;
 };
 
+struct tag_geometry_shader {
+  using COM = ID3D11GeometryShader;
+};
+
 struct tag_compute_shader {
   using COM = ID3D11ComputeShader;
 };
@@ -131,7 +135,7 @@ public:
      */
     shader_->AddRef();
 
-    TRACE("Start compiling 1 shader");
+    TRACE("Start compiling 1 shader ", shader_->id);
 
     auto pool = transfer(NS::AutoreleasePool::alloc()->init());
     Obj<NS::Error> err;
@@ -183,7 +187,7 @@ public:
       }
     }
 
-    TRACE("Compiled 1 shader");
+    TRACE("Compiled 1 shader ", shader_->id);
 
     /* workaround end: ensure shader bytecode is accessible */
     shader_->Release();
@@ -246,6 +250,76 @@ HRESULT CreateShaderInternal(IMTLD3D11Device *pDevice,
   return S_OK;
 }
 
+template <typename tag>
+class TDummyShaderBase
+    : public MTLD3D11DeviceChild<typename tag::COM, IMTLD3D11Shader> {
+public:
+  TDummyShaderBase(IMTLD3D11Device *device, const void *pShaderBytecode,
+                   SIZE_T BytecodeLength)
+      : MTLD3D11DeviceChild<typename tag::COM, IMTLD3D11Shader>(device),
+        dump_len(BytecodeLength) {
+    id = ++global_id;
+    dump = malloc(BytecodeLength);
+    memcpy(dump, pShaderBytecode, BytecodeLength);
+  }
+
+  ~TDummyShaderBase() { free(dump); }
+
+  HRESULT QueryInterface(REFIID riid, void **ppvObject) {
+    if (ppvObject == nullptr)
+      return E_POINTER;
+
+    *ppvObject = nullptr;
+
+    if (riid == __uuidof(IUnknown) || riid == __uuidof(ID3D11DeviceChild) ||
+        riid == __uuidof(ID3D11View) || riid == __uuidof(typename tag::COM) ||
+        riid == __uuidof(typename tag::COM)) {
+      *ppvObject = ref_and_cast<typename tag::COM>(this);
+      return S_OK;
+    }
+
+    if (riid == __uuidof(IMTLD3D11Shader)) {
+      *ppvObject = ref_and_cast<IMTLD3D11Shader>(this);
+      return S_OK;
+    }
+
+    if (logQueryInterfaceError(__uuidof(typename tag::COM), riid)) {
+      WARN("D3D11Shader: Unknown interface query ", str::format(riid));
+    }
+
+    return E_NOINTERFACE;
+  }
+
+  void GetCompiledShader(void *pArgs, IMTLCompiledShader **pShader) final {
+    D3D11_ASSERT(0 && "should not call this function");
+    *pShader = nullptr;
+  };
+
+  void GetArgumentEncoderRef(MTL::ArgumentEncoder **pEncoder) final {
+    D3D11_ASSERT(0 && "should not call this function");
+    *pEncoder = nullptr;
+  };
+
+  void GetReflection(MTL_SHADER_REFLECTION **pRefl) final {
+    D3D11_ASSERT(0 && "should not call this function");
+    *pRefl = &reflection;
+  }
+
+  MTL_SHADER_REFLECTION reflection{};
+  uint64_t id;
+  void *dump;
+  uint64_t dump_len;
+};
+
+template <typename tag>
+HRESULT
+CreateDummyShaderInternal(IMTLD3D11Device *pDevice, const void *pShaderBytecode,
+                          SIZE_T BytecodeLength, typename tag::COM **ppShader) {
+  *ppShader =
+      ref(new TDummyShaderBase<tag>(pDevice, pShaderBytecode, BytecodeLength));
+  return S_OK;
+}
+
 HRESULT CreateVertexShader(IMTLD3D11Device *pDevice,
                            const void *pShaderBytecode, SIZE_T BytecodeLength,
                            ID3D11VertexShader **ppShader) {
@@ -257,6 +331,14 @@ HRESULT CreatePixelShader(IMTLD3D11Device *pDevice, const void *pShaderBytecode,
                           SIZE_T BytecodeLength, ID3D11PixelShader **ppShader) {
   return CreateShaderInternal<tag_pixel_shader>(pDevice, pShaderBytecode,
                                                 BytecodeLength, ppShader);
+}
+
+HRESULT CreateDummyGeometryShader(IMTLD3D11Device *pDevice,
+                                  const void *pShaderBytecode,
+                                  SIZE_T BytecodeLength,
+                                  ID3D11GeometryShader **ppShader) {
+  return CreateDummyShaderInternal<tag_geometry_shader>(
+      pDevice, pShaderBytecode, BytecodeLength, ppShader);
 }
 
 HRESULT CreateComputeShader(IMTLD3D11Device *pDevice,

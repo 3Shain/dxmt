@@ -320,8 +320,9 @@ public:
 
     if (!ppGeometryShader)
       return S_FALSE;
-    ERR("CreateGeometryShader: not supported, expect error");
-    return E_NOTIMPL;
+    ERR("CreateGeometryShader: not supported, return a dummy");
+    return dxmt::CreateDummyGeometryShader(this, pShaderBytecode,
+                                           BytecodeLength, ppGeometryShader);
   }
 
   HRESULT STDMETHODCALLTYPE CreateGeometryShaderWithStreamOutput(
@@ -905,7 +906,7 @@ public:
         pDesc->BlendState, pDesc->NumColorAttachments,
         pDesc->ColorAttachmentFormats, pDesc->DepthStencilFormat);
     D3D11_ASSERT(pipelines_.insert({*pDesc, temp}).second); // copy
-    *ppPipeline = std::move(temp);                    // move
+    *ppPipeline = std::move(temp);                          // move
     return S_OK;
   };
 
@@ -921,7 +922,7 @@ public:
     }
     auto temp = dxmt::CreateComputePipeline(this, pShader);
     D3D11_ASSERT(pipelines_cs_.insert({pShader, temp}).second); // copy
-    *ppPipeline = std::move(temp);                        // move
+    *ppPipeline = std::move(temp);                              // move
     return S_OK;
   };
 
