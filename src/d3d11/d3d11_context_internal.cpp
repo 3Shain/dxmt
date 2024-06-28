@@ -1597,7 +1597,7 @@ public:
         continue;
       }
       // a ref is necessary (in case buffer destroyed before encoding)
-      EmitRenderCommand<Force>([buffer = state.BufferRaw, ref = state.Buffer,
+      EmitRenderCommand<Force>([buffer = Obj(state.BufferRaw),
                                 offset = state.Offset, stride = state.Stride,
                                 index](MTL::RenderCommandEncoder *encoder) {
         encoder->setVertexBuffer(buffer, offset, stride, index);

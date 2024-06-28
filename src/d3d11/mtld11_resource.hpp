@@ -94,6 +94,10 @@ struct SIMPLE_RESIDENCY_TRACKER {
   };
 };
 
+/**
+FIXME: don't hold a IMTLBindable in any places other than context state.
+especially don't capture it in command lambda.
+ */
 DEFINE_COM_INTERFACE("1c7e7c98-6dd4-42f0-867b-67960806886e", IMTLBindable)
     : public IUnknown {
   /**

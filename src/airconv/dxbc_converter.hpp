@@ -785,7 +785,7 @@ public:
   std::map<uint32_t, ConstantBufferInfo> cbufferMap;
   std::map<uint32_t, SamplerInfo> samplerMap;
   std::map<uint32_t, ThreadgroupBufferInfo> tgsmMap;
-  uint32_t tempRegisterCount;
+  uint32_t tempRegisterCount = 0;
   std::unordered_map<
     uint32_t, std::pair<uint32_t /* count */, uint32_t /* mask */>>
     indexableTempRegisterCounts;

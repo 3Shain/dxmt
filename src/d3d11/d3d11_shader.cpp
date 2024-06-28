@@ -109,6 +109,7 @@ class ContextlessShader : public ComObject<IMTLCompiledShader> {
 public:
   ContextlessShader(IMTLD3D11Device *pDevice, TShaderBase<tag> *shader)
       : ComObject<IMTLCompiledShader>(), device_(pDevice), shader_(shader) {
+    shader_->AddRef(); // ???
     pDevice->SubmitThreadgroupWork(this, &work_state_);
   }
 
@@ -152,7 +153,7 @@ public:
     workaround: ensure shader bytecode is accessible
     FIXME: why not strong reference shader? (circular ref?)
      */
-    shader_->AddRef();
+    // shader_->AddRef();
 
     TRACE("Start compiling 1 shader ", shader_->id);
 
@@ -160,8 +161,8 @@ public:
     Obj<NS::Error> err;
 
     {
-      SM50CompiledBitcode *compile_result;
-      SM50Error *sm50_err;
+      SM50CompiledBitcode *compile_result = nullptr;
+      SM50Error *sm50_err = nullptr;
       std::string func_name = "shader_main_" + std::to_string(shader_->id);
       if (auto ret = SM50Compile(shader_->sm50, nullptr, func_name.c_str(),
                                  &compile_result, &sm50_err)) {
