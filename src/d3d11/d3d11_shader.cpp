@@ -43,11 +43,10 @@ class TShaderBase
     : public MTLD3D11DeviceChild<typename tag::COM, IMTLD3D11Shader> {
 public:
   TShaderBase(IMTLD3D11Device *device, SM50Shader *sm50,
-              MTL_SHADER_REFLECTION &reflection,
-              Obj<MTL::ArgumentEncoder> encoder, const void *pShaderBytecode,
+              MTL_SHADER_REFLECTION &reflection, const void *pShaderBytecode,
               SIZE_T BytecodeLength)
       : MTLD3D11DeviceChild<typename tag::COM, IMTLD3D11Shader>(device),
-        sm50(sm50), reflection(reflection), encoder_(std::move(encoder)),
+        sm50(sm50), reflection(reflection),
         dump_len(BytecodeLength) {
     id = ++global_id;
     dump = malloc(BytecodeLength);
@@ -88,8 +87,6 @@ public:
   }
 
   void GetCompiledShader(void *pArgs, IMTLCompiledShader **pShader) final;
-
-  void GetArgumentEncoderRef(MTL::ArgumentEncoder **pEncoder) final;
 
   void GetReflection(MTL_SHADER_REFLECTION **pRefl) final {
     *pRefl = &reflection;
@@ -230,13 +227,6 @@ void TShaderBase<tag>::GetCompiledShader(void *pArgs,
 }
 
 template <typename tag>
-void TShaderBase<tag>::GetArgumentEncoderRef(MTL::ArgumentEncoder **pEncoder) {
-  if (pEncoder) {
-    *pEncoder = encoder_.ptr();
-  }
-}
-
-template <typename tag>
 HRESULT CreateShaderInternal(IMTLD3D11Device *pDevice,
                              const void *pShaderBytecode, SIZE_T BytecodeLength,
                              typename tag::COM **ppShader) {
@@ -253,9 +243,7 @@ HRESULT CreateShaderInternal(IMTLD3D11Device *pDevice,
     SM50Destroy(sm50);
     return S_FALSE;
   }
-  auto encoder_ =
-      transfer(SM50CreateArgumentEncoder(sm50, pDevice->GetMTLDevice()));
-  *ppShader = ref(new TShaderBase<tag>(pDevice, sm50, reflection, encoder_,
+  *ppShader = ref(new TShaderBase<tag>(pDevice, sm50, reflection, 
                                        pShaderBytecode, BytecodeLength));
   // FIXME: this looks weird but don't change it for now
   ((TShaderBase<tag> *)*ppShader)
@@ -306,11 +294,6 @@ public:
   void GetCompiledShader(void *pArgs, IMTLCompiledShader **pShader) final {
     D3D11_ASSERT(0 && "should not call this function");
     *pShader = nullptr;
-  };
-
-  void GetArgumentEncoderRef(MTL::ArgumentEncoder **pEncoder) final {
-    D3D11_ASSERT(0 && "should not call this function");
-    *pEncoder = nullptr;
   };
 
   void GetReflection(MTL_SHADER_REFLECTION **pRefl) final {

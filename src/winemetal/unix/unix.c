@@ -72,7 +72,7 @@ const void *__wine_unix_call_funcs[] = {
     &SM50DestroyBitcode,
     &SM50GetErrorMesssage,
     &SM50FreeError,
-    &SM50CreateArgumentEncoder,
+    0,
     &objc_msgSend_fpret,
 };
 // wow64: things become funny

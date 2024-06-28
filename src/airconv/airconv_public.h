@@ -122,8 +122,6 @@ AIRCONV_EXPORT void SM50GetCompiledBitcode(
 AIRCONV_EXPORT void SM50DestroyBitcode(SM50CompiledBitcode *pBitcode);
 AIRCONV_EXPORT const char *SM50GetErrorMesssage(SM50Error *pError);
 AIRCONV_EXPORT void SM50FreeError(SM50Error *pError);
-AIRCONV_EXPORT ArgumentEncoder_t
-SM50CreateArgumentEncoder(SM50Shader *pShader, Device_t device);
 #ifdef __cplusplus
 };
 #endif

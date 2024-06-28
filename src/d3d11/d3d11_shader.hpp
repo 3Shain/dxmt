@@ -1,6 +1,5 @@
 #pragma once
 
-#include "Metal/MTLArgumentEncoder.hpp"
 #include "airconv_public.h"
 #include "com/com_guid.hpp"
 #include "d3d11_device.hpp"
@@ -34,7 +33,6 @@ DEFINE_COM_INTERFACE("e95ba1c7-e43f-49c3-a907-4ac669c9fb42", IMTLD3D11Shader)
   */
   virtual void GetCompiledShader(void *pArgs, IMTLCompiledShader **pShader) = 0;
   virtual void GetReflection(MTL_SHADER_REFLECTION * *pRefl) = 0;
-  virtual void GetArgumentEncoderRef(MTL::ArgumentEncoder * *pEncoder) = 0;
 };
 
 namespace dxmt {
