@@ -974,7 +974,7 @@ auto get_operation_info(air::MSLTexture texture
     ret.read_type = types._float;
     ret.write_type = nullptr;
     ret.gradient_type = types._float2;
-    ret.gather_type = types._float4;
+    ret.gather_type = types._float4; // gather returns float4 instead of float
     ret.address_type = types._int2;
     break;
   }
@@ -1364,7 +1364,7 @@ auto call_gather(
   auto op_info = co_yield get_operation_info(texture_type);
   assert(op_info.gather_type);
   auto fn_name = "air.gather_" + op_info.air_symbol_suffix +
-                 type_overload_suffix(op_info.sample_type, op_info.sign);
+                 type_overload_suffix(op_info.gather_type, op_info.sign);
   std::vector<llvm::Type *> args_type;
   std::vector<pvalue> args_value;
 
