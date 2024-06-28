@@ -35,6 +35,8 @@ public:
       throw MTLD3DError("Failed to create threadpool");
     }
 
+    SetThreadpoolThreadMaximum(pool_, dxmt::thread::hardware_concurrency());
+
     cleanup_ = CreateThreadpoolCleanupGroup();
     if (!cleanup_) {
       CloseThreadpool(pool_);

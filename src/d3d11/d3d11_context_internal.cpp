@@ -444,12 +444,13 @@ public:
           return;
         EmitBlitCommand<true>([src_ = src->UseBindable(currentChunkId),
                                dst = Obj(dst_bind.Buffer), bytes_per_row,
-                               SrcSubresource, DstX, DstY, SrcBox](
+                               SrcSubresource, DstX, SrcBox](
                                   MTL::BlitCommandEncoder *encoder, auto ctx) {
           auto src = src_.texture(&ctx);
           auto src_mips = src->mipmapLevelCount();
           auto src_level = SrcSubresource % src_mips;
           auto src_slice = SrcSubresource / src_mips;
+          D3D11_ASSERT(DstX == 0);
           encoder->copyFromTexture(
               src, src_slice, src_level, MTL::Origin::Make(SrcBox.left, 0, 0),
               MTL::Size::Make(SrcBox.right - SrcBox.left, 1, 1), dst.ptr(),
@@ -549,6 +550,8 @@ public:
               auto src_mips = src->mipmapLevelCount();
               auto src_level = SrcSubresource % src_mips;
               auto src_slice = SrcSubresource / src_mips;
+              D3D11_ASSERT(DstX == 0);
+              D3D11_ASSERT(DstY == 0);
               encoder->copyFromTexture(
                   src, src_slice, src_level,
                   MTL::Origin::Make(SrcBox.left, SrcBox.top, 0),
@@ -1102,7 +1105,7 @@ public:
       // ERR("stream-out is not supported yet, skip drawcall");
       return false;
     }
-    if(!state_.OutputMerger.NumRTVs) {
+    if (!state_.OutputMerger.NumRTVs) {
       return false;
     }
 
