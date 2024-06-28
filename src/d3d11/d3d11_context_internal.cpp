@@ -1015,6 +1015,7 @@ public:
             ctx.cmdbuf->renderCommandEncoder(renderPassDescriptor);
         auto [h, _] = ctx.chk->inspect_gpu_heap();
         ctx.dsv_valid = dsv_valid;
+        D3D11_ASSERT(ctx.render_encoder);
         ctx.render_encoder->setVertexBuffer(h, 0, 30);
         ctx.render_encoder->setFragmentBuffer(h, 0, 30);
       });
@@ -1085,15 +1086,6 @@ public:
       return true;
     D3D11_ASSERT(state_.InputAssembler.InputLayout && "");
 
-    SwitchToRenderEncoder();
-
-    CommandChunk *chk = cmd_queue.CurrentChunk();
-
-    Com<IMTLCompiledGraphicsPipeline> pipeline;
-    Com<IMTLCompiledShader> vs, ps;
-    state_.ShaderStages[(UINT)ShaderType::Vertex]
-        .Shader //
-        ->GetCompiledShader(NULL, &vs);
     if (state_.ShaderStages[(UINT)ShaderType::Hull].Shader) {
       // ERR("tessellation is not supported yet, skip drawcall");
       return false;
@@ -1110,6 +1102,19 @@ public:
       // ERR("stream-out is not supported yet, skip drawcall");
       return false;
     }
+    if(!state_.OutputMerger.NumRTVs) {
+      return false;
+    }
+
+    SwitchToRenderEncoder();
+
+    CommandChunk *chk = cmd_queue.CurrentChunk();
+
+    Com<IMTLCompiledGraphicsPipeline> pipeline;
+    Com<IMTLCompiledShader> vs, ps;
+    state_.ShaderStages[(UINT)ShaderType::Vertex]
+        .Shader //
+        ->GetCompiledShader(NULL, &vs);
     state_.ShaderStages[(UINT)ShaderType::Pixel]
         .Shader //
         ->GetCompiledShader(NULL, &ps);

@@ -24,7 +24,7 @@ DEFINE_COM_INTERFACE("a8bfeef7-a453-4bce-90c1-912b02cf5cdf", IMTLCompiledShader)
    */
   virtual void GetShader(MTL_COMPILED_SHADER * pShaderData) = 0;
 
-  // virtual UINT Hash();
+  virtual void Dump() = 0;
 };
 
 DEFINE_COM_INTERFACE("e95ba1c7-e43f-49c3-a907-4ac669c9fb42", IMTLD3D11Shader)
@@ -33,7 +33,7 @@ DEFINE_COM_INTERFACE("e95ba1c7-e43f-49c3-a907-4ac669c9fb42", IMTLD3D11Shader)
   NOTE: return may be cached (based on \c pArgs )
   */
   virtual void GetCompiledShader(void *pArgs, IMTLCompiledShader **pShader) = 0;
-  virtual void GetReflection(MTL_SHADER_REFLECTION ** pRefl) = 0;
+  virtual void GetReflection(MTL_SHADER_REFLECTION * *pRefl) = 0;
   virtual void GetArgumentEncoderRef(MTL::ArgumentEncoder * *pEncoder) = 0;
 };
 
@@ -55,8 +55,20 @@ HRESULT CreateVertexShader(IMTLD3D11Device *pDevice,
 HRESULT CreatePixelShader(IMTLD3D11Device *pDevice, const void *pShaderBytecode,
                           SIZE_T BytecodeLength, ID3D11PixelShader **ppShader);
 
-HRESULT CreateDummyGeometryShader(IMTLD3D11Device *pDevice, const void *pShaderBytecode,
-                          SIZE_T BytecodeLength, ID3D11GeometryShader **ppShader);
+HRESULT CreateDummyHullShader(IMTLD3D11Device *pDevice,
+                              const void *pShaderBytecode,
+                              SIZE_T BytecodeLength,
+                              ID3D11HullShader **ppShader);
+
+HRESULT CreateDummyDomainShader(IMTLD3D11Device *pDevice,
+                                const void *pShaderBytecode,
+                                SIZE_T BytecodeLength,
+                                ID3D11DomainShader **ppShader);
+
+HRESULT CreateDummyGeometryShader(IMTLD3D11Device *pDevice,
+                                  const void *pShaderBytecode,
+                                  SIZE_T BytecodeLength,
+                                  ID3D11GeometryShader **ppShader);
 
 HRESULT CreateComputeShader(IMTLD3D11Device *pDevice,
                             const void *pShaderBytecode, SIZE_T BytecodeLength,

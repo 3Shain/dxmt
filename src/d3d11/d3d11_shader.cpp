@@ -20,6 +20,14 @@ struct tag_pixel_shader {
   using COM = ID3D11PixelShader;
 };
 
+struct tag_hull_shader {
+  using COM = ID3D11HullShader;
+};
+
+struct tag_domain_shader {
+  using COM = ID3D11DomainShader;
+};
+
 struct tag_geometry_shader {
   using COM = ID3D11GeometryShader;
 };
@@ -126,6 +134,17 @@ public:
     *pShaderData = {function_.ptr(), &hash_, &shader_->reflection};
   }
 
+  void Dump() {
+    std::fstream dump_out;
+    dump_out.open("shader_dump_" + std::to_string(shader_->id) + ".cso",
+                  std::ios::out | std::ios::binary);
+    if (dump_out) {
+      dump_out.write((char *)shader_->dump, shader_->dump_len);
+    }
+    dump_out.close();
+    ERR("dumped to ./shader_dump_" + std::to_string(shader_->id) + ".cso");
+  }
+
   void RunThreadpoolWork() {
     D3D11_ASSERT(!ready_ && "?wtf"); // TODO: should use a lock?
 
@@ -152,14 +171,7 @@ public:
           ERR("Failed to compile shader: ", SM50GetErrorMesssage(sm50_err));
           SM50FreeError(sm50_err);
         }
-        std::fstream dump_out;
-        dump_out.open("shader_dump_" + std::to_string(shader_->id) + ".cso",
-                      std::ios::out | std::ios::binary);
-        if (dump_out) {
-          dump_out.write((char *)shader_->dump, shader_->dump_len);
-        }
-        dump_out.close();
-        ERR("dumped to ./shader_dump_" + std::to_string(shader_->id) + ".cso");
+        Dump();
         return;
       }
       MTL_SHADER_BITCODE bitcode;
@@ -331,6 +343,22 @@ HRESULT CreatePixelShader(IMTLD3D11Device *pDevice, const void *pShaderBytecode,
                           SIZE_T BytecodeLength, ID3D11PixelShader **ppShader) {
   return CreateShaderInternal<tag_pixel_shader>(pDevice, pShaderBytecode,
                                                 BytecodeLength, ppShader);
+}
+
+HRESULT CreateDummyHullShader(IMTLD3D11Device *pDevice,
+                              const void *pShaderBytecode,
+                              SIZE_T BytecodeLength,
+                              ID3D11HullShader **ppShader) {
+  return CreateDummyShaderInternal<tag_hull_shader>(pDevice, pShaderBytecode,
+                                                    BytecodeLength, ppShader);
+}
+
+HRESULT CreateDummyDomainShader(IMTLD3D11Device *pDevice,
+                                const void *pShaderBytecode,
+                                SIZE_T BytecodeLength,
+                                ID3D11DomainShader **ppShader) {
+  return CreateDummyShaderInternal<tag_domain_shader>(pDevice, pShaderBytecode,
+                                                      BytecodeLength, ppShader);
 }
 
 HRESULT CreateDummyGeometryShader(IMTLD3D11Device *pDevice,

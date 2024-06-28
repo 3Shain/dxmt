@@ -172,7 +172,6 @@ public:
   };
 
   void AddObserver(IMTLNotifiedBindable *pBindable) {
-    // D3D11_ASSERT(observers.insert(pBindable).second && "otherwise already added");
     observers.push_back(pBindable);
   }
 
@@ -319,14 +318,13 @@ public:
   };
 
   void AddObserver(IMTLNotifiedBindable *pBindable) {
-    // D3D11_ASSERT(observers.insert(pBindable).second && "otherwise already added");
     observers.push_back(pBindable);
   }
 
   void RemoveObserver(IMTLNotifiedBindable *pBindable) {
     // D3D11_ASSERT(observers.erase(pBindable) == 1 &&
     //        "it must be 1 unless the destructor called twice");
-    auto vec = observers;
+    auto& vec = observers;
     vec.erase(std::remove(vec.begin(), vec.end(), pBindable), vec.end());
   }
 

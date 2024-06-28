@@ -197,6 +197,14 @@ HRESULT CreateMTLTextureView<D3D11_UNORDERED_ACCESS_VIEW_DESC>(
                           pViewDesc->Texture2DArray.ArraySize));
       return S_OK;
     }
+    if (texture_type == MTL::TextureTypeCube) {
+      *ppView = pResource->newTextureView(
+          metal_format.PixelFormat, MTL::TextureType2DArray,
+          NS::Range::Make(pViewDesc->Texture2DArray.MipSlice, 1),
+          NS::Range::Make(pViewDesc->Texture2DArray.FirstArraySlice,
+                          pViewDesc->Texture2DArray.ArraySize));
+      return S_OK;
+    }
     if (texture_type == MTL::TextureTypeCubeArray) {
       *ppView = pResource->newTextureView(
           metal_format.PixelFormat, MTL::TextureType2DArray,

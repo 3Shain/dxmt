@@ -335,7 +335,9 @@ public:
     if (pClassLinkage != nullptr)
       WARN("Class linkage not supported");
 
-    return E_NOTIMPL;
+    ERR("CreateGeometryShaderWithStreamOutput: not supported, expect problem");
+    return dxmt::CreateDummyGeometryShader(this, pShaderBytecode,
+                                           BytecodeLength, ppGeometryShader);
   }
 
   HRESULT STDMETHODCALLTYPE
@@ -365,7 +367,9 @@ public:
 
     if (!ppHullShader)
       return S_FALSE;
-    return E_NOTIMPL;
+    ERR("CreateHullShader: not supported, return a dummy");
+    return dxmt::CreateDummyHullShader(this, pShaderBytecode,
+                                           BytecodeLength, ppHullShader);
   }
 
   HRESULT STDMETHODCALLTYPE
@@ -378,7 +382,9 @@ public:
 
     if (!ppDomainShader)
       return S_FALSE;
-    return E_NOTIMPL;
+    ERR("CreateDomainShader: not supported, return a dummy");
+    return dxmt::CreateDummyDomainShader(this, pShaderBytecode,
+                                           BytecodeLength, ppDomainShader);
   }
 
   HRESULT STDMETHODCALLTYPE
