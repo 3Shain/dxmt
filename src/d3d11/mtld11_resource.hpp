@@ -56,6 +56,44 @@ struct MTL_STAGING_RESOURCE {
   uint32_t BoundSize;
 };
 
+enum MTL_BINDABLE_RESIDENCY_MASK : uint32_t {
+  MTL_RESIDENCY_NULL = 0,
+  MTL_RESIDENCY_VERTEX_READ = 1 << 0,
+  MTL_RESIDENCY_VERTEX_WRITE = 1 << 1,
+  MTL_RESIDENCY_FRAGMENT_READ = 1 << 2,
+  MTL_RESIDENCY_FRAGMENT_WRITE = 1 << 3,
+  MTL_RESIDENCY_READ = MTL_RESIDENCY_VERTEX_READ | MTL_RESIDENCY_FRAGMENT_READ,
+  MTL_RESIDENCY_WRITE =
+      MTL_RESIDENCY_VERTEX_WRITE | MTL_RESIDENCY_FRAGMENT_WRITE,
+};
+
+struct SIMPLE_RESIDENCY_TRACKER {
+  uint64_t last_encoder_id = 0;
+  MTL_BINDABLE_RESIDENCY_MASK last_residency_mask = MTL_RESIDENCY_NULL;
+  void CheckResidency(uint64_t encoderId,
+                      MTL_BINDABLE_RESIDENCY_MASK residencyMask,
+                      MTL_BINDABLE_RESIDENCY_MASK *newResidencyMask) {
+    if (encoderId > last_encoder_id) {
+      last_residency_mask = residencyMask;
+      last_encoder_id = encoderId;
+      *newResidencyMask = last_residency_mask;
+      return;
+    }
+    if (encoderId == last_encoder_id) {
+      if ((last_residency_mask & residencyMask) == residencyMask) {
+        // it's already resident
+        *newResidencyMask = MTL_RESIDENCY_NULL;
+        return;
+      }
+      last_residency_mask |= residencyMask;
+      *newResidencyMask = last_residency_mask;
+      return;
+    }
+    // invalid
+    *newResidencyMask = MTL_RESIDENCY_NULL;
+  };
+};
+
 DEFINE_COM_INTERFACE("1c7e7c98-6dd4-42f0-867b-67960806886e", IMTLBindable)
     : public IUnknown {
   /**
@@ -65,14 +103,19 @@ DEFINE_COM_INTERFACE("1c7e7c98-6dd4-42f0-867b-67960806886e", IMTLBindable)
    */
   virtual dxmt::BindingRef UseBindable(uint64_t bindAtSeqId) = 0;
   /**
-  Semantic: get all data required to fill the argument buffer
+  Semantic: 1. get all data required to fill the argument buffer
   it's similar to `UseBindable`, but optimized for setting
   argument buffer (which is frequent and needs to be performant!)
   so it provides raw gpu handle/resource_id without extra reference
   (no need to worry about missing reference, because `UseBindable`
   will be called at least once for marking residency anyway)
+  2. provide current encoder id and intended residency state, get
+  the latest residency state in current encoder, or NULL if there
+  is no need to change residency state (in case it's already resident
+  before)
    */
-  virtual dxmt::ArgumentData GetArgumentData() = 0;
+  virtual dxmt::ArgumentData GetArgumentData(SIMPLE_RESIDENCY_TRACKER *
+                                             *ppTracker) = 0;
   /**
   Semantic: check if the resource is used by gpu at the moment
   it guarantees true negative but can give false positive!

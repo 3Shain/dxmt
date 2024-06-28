@@ -25,10 +25,12 @@ enum class EncoderKind : uint32_t { Nil, ClearPass, Render, Compute, Blit };
 
 struct ENCODER_INFO {
   EncoderKind kind;
+  uint64_t encoder_id;
 };
 
 struct ENCODER_CLEARPASS_INFO {
   EncoderKind kind = EncoderKind::ClearPass;
+  uint64_t encoder_id;
   uint32_t skipped = 0; // this can be flipped by later render pass
   uint32_t num_color_attachments = 0;
   uint32_t clear_depth_stencil = 0;
@@ -84,6 +86,8 @@ constexpr uint32_t kCommandChunkCount = 8;
 constexpr size_t kCommandChunkCPUHeapSize = 0x800000; // is 8MB too large?
 constexpr size_t kCommandChunkGPUHeapSize = 0x1000000;
 constexpr size_t kOcclusionSampleCount = 4096;
+
+class CommandQueue;
 
 class CommandChunk {
 
@@ -150,11 +154,11 @@ class CommandChunk {
     MTL::CommandBuffer *cmdbuf;
     Obj<MTL::RenderCommandEncoder> render_encoder;
     Obj<MTL::ComputeCommandEncoder> compute_encoder;
-    MTL::Size cs_threadgroup_size {};
+    MTL::Size cs_threadgroup_size{};
     Obj<MTL::BlitCommandEncoder> blit_encoder;
     // we don't need an extra reference here
     // since it's guaranteed to be captured by closure
-    MTL::Buffer *current_index_buffer_ref {};
+    MTL::Buffer *current_index_buffer_ref{};
     bool dsv_valid = false;
 
     context_t(CommandChunk *chk, MTL::CommandBuffer *cmdbuf)
@@ -233,29 +237,20 @@ public:
     }
   };
 
-  ENCODER_CLEARPASS_INFO *mark_clear_pass() {
-    linear_allocator<ENCODER_CLEARPASS_INFO> allocator(this);
-    auto ptr = allocator.allocate(1);
-    new (ptr) ENCODER_CLEARPASS_INFO();
-    previous_encoder_info = (ENCODER_INFO *)ptr;
-    return ptr;
-  };
+  ENCODER_CLEARPASS_INFO *mark_clear_pass();
 
-  ENCODER_INFO *mark_pass(EncoderKind kind) {
-    linear_allocator<ENCODER_INFO> allocator(this);
-    auto ptr = allocator.allocate(1);
-    ptr->kind = kind;
-    previous_encoder_info = ptr;
-    return ptr;
-  };
+  ENCODER_INFO *mark_pass(EncoderKind kind);
 
-  ENCODER_INFO *get_previous_encoder() { return previous_encoder_info; }
+  ENCODER_INFO *get_last_encoder() { return last_encoder_info; }
+
+  uint64_t current_encoder_id() { return last_encoder_info->encoder_id; }
 
   uint32_t has_no_work_encoded_yet() {
-    return previous_encoder_info->kind == EncoderKind::Nil ? 1u : 0u;
+    return last_encoder_info->kind == EncoderKind::Nil ? 1u : 0u;
   }
 
 private:
+  CommandQueue *queue;
   char *cpu_argument_heap;
   Obj<MTL::Buffer> gpu_argument_heap;
   uint64_t cpu_arugment_heap_offset;
@@ -264,15 +259,16 @@ private:
   Node<BFunc<context> *> monoid_list;
   Node<BFunc<context> *> *list_end;
   Obj<MTL::CommandBuffer> attached_cmdbuf;
-  ENCODER_INFO init_encoder_info{EncoderKind::Nil};
-  ENCODER_INFO *previous_encoder_info;
+  ENCODER_INFO init_encoder_info{EncoderKind::Nil, 0};
+  ENCODER_INFO *last_encoder_info;
+  uint64_t encoder_id;
 
   friend class CommandQueue;
 
 public:
   CommandChunk()
       : monoid(), monoid_list{&monoid, nullptr}, list_end(&monoid_list),
-        previous_encoder_info(&init_encoder_info) {}
+        last_encoder_info(&init_encoder_info) {}
 
   void reset() noexcept {
     auto cur = monoid_list.next;
@@ -288,7 +284,7 @@ public:
     monoid_list.next = nullptr;
     list_end = &monoid_list;
     attached_cmdbuf = nullptr;
-    previous_encoder_info = &init_encoder_info;
+    last_encoder_info = &init_encoder_info;
   }
 };
 
@@ -309,6 +305,7 @@ private:
   std::atomic_bool stopped;
 
   std::array<CommandChunk, kCommandChunkCount> chunks;
+  uint64_t encoder_seq = 1;
 
   /**
   FIXME: dxmt::thread cause access page fault when
@@ -317,6 +314,9 @@ private:
   std::thread encodeThread;
   std::thread finishThread;
   Obj<MTL::CommandQueue> commandQueue;
+
+  friend class CommandChunk;
+  uint64_t GetNextEncoderId() { return encoder_seq++; }
 
 public:
   CommandQueue(MTL::Device *device);

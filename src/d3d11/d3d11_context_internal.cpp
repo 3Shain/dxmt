@@ -16,6 +16,42 @@ since it is for internal use only
 
 namespace dxmt {
 
+inline MTL_BINDABLE_RESIDENCY_MASK GetResidencyMask(ShaderType type, bool read,
+                                                    bool write) {
+  switch (type) {
+  case ShaderType::Vertex:
+    return (read ? MTL_RESIDENCY_VERTEX_READ : MTL_RESIDENCY_NULL) |
+           (write ? MTL_RESIDENCY_VERTEX_WRITE : MTL_RESIDENCY_NULL);
+  case ShaderType::Pixel:
+    return (read ? MTL_RESIDENCY_FRAGMENT_READ : MTL_RESIDENCY_NULL) |
+           (write ? MTL_RESIDENCY_FRAGMENT_WRITE : MTL_RESIDENCY_NULL);
+  case ShaderType::Geometry:
+  case ShaderType::Hull:
+  case ShaderType::Domain:
+    D3D11_ASSERT(0 && "TODO");
+    break;
+  case ShaderType::Compute:
+    return (read ? MTL_RESIDENCY_READ : MTL_RESIDENCY_NULL) |
+           (write ? MTL_RESIDENCY_WRITE : MTL_RESIDENCY_NULL);
+  }
+}
+
+inline MTL::ResourceUsage
+GetUsageFromResidencyMask(MTL_BINDABLE_RESIDENCY_MASK mask) {
+  return ((mask & MTL_RESIDENCY_READ) ? MTL::ResourceUsageRead : 0) |
+         ((mask & MTL_RESIDENCY_WRITE) ? MTL::ResourceUsageWrite : 0);
+}
+
+inline MTL::RenderStages
+GetStagesFromResidencyMask(MTL_BINDABLE_RESIDENCY_MASK mask) {
+  return ((mask & (MTL_RESIDENCY_FRAGMENT_READ | MTL_RESIDENCY_FRAGMENT_WRITE))
+              ? MTL::RenderStageFragment
+              : 0) |
+         ((mask & (MTL_RESIDENCY_VERTEX_READ | MTL_RESIDENCY_VERTEX_WRITE))
+              ? MTL::RenderStageVertex
+              : 0);
+}
+
 class ContextInternal {
 
 public:
@@ -749,7 +785,7 @@ public:
     auto clear_color = MTL::ClearColor::Make(ColorRGBA[0], ColorRGBA[1],
                                              ColorRGBA[2], ColorRGBA[3]);
 
-    auto previous_encoder = chk->get_previous_encoder();
+    auto previous_encoder = chk->get_last_encoder();
     // use `while` instead of `if`, for short circuiting
     while (previous_encoder->kind == EncoderKind::ClearPass) {
       auto previous_clearpass = (ENCODER_CLEARPASS_INFO *)previous_encoder;
@@ -783,7 +819,7 @@ public:
     CommandChunk *chk = cmd_queue.CurrentChunk();
     auto target = pDepthStencilView->GetBinding(cmd_queue.CurrentSeqId());
 
-    auto previous_encoder = chk->get_previous_encoder();
+    auto previous_encoder = chk->get_last_encoder();
     // use `while` instead of `if`, for short circuiting
     while (previous_encoder->kind == EncoderKind::ClearPass) {
       auto previous_clearpass = (ENCODER_CLEARPASS_INFO *)previous_encoder;
@@ -898,7 +934,7 @@ public:
         dsv_info.PixelFormat = state_.OutputMerger.DSV->GetPixelFormat();
       }
 
-      auto previous_encoder = chk->get_previous_encoder();
+      auto previous_encoder = chk->get_last_encoder();
       if (previous_encoder->kind == EncoderKind::ClearPass) {
         auto previous_clearpass = (ENCODER_CLEARPASS_INFO *)previous_encoder;
         uint32_t skip_clear_color_mask = 0;
@@ -1258,27 +1294,26 @@ public:
 
     if (BindingCount) {
       CommandChunk *chk = cmd_queue.CurrentChunk();
+      auto encoderId = chk->current_encoder_id();
 
       /* FIXME: we are over-allocating */
       auto [heap, offset] = chk->allocate_gpu_heap(BindingCount << 4, 16);
       uint64_t *write_to_it = chk->gpu_argument_heap_contents + (offset >> 3);
 
-      auto useResource = [&](BindingRef &&res, MTL::ResourceUsage usage) {
-        chk->emit([res = std::move(res), usage](CommandChunk::context &ctx) {
+      auto useResource = [&](BindingRef &&res,
+                             MTL_BINDABLE_RESIDENCY_MASK residencyMask) {
+        chk->emit([res = std::move(res),
+                   residencyMask](CommandChunk::context &ctx) {
           switch (stage) {
           case ShaderType::Vertex:
-            ctx.render_encoder->useResource(res.resource(&ctx), usage,
-                                            // FIXME: should be smarter
-                                            MTL::RenderStageVertex |
-                                                MTL::RenderStageFragment);
-            break;
           case ShaderType::Pixel:
-            ctx.render_encoder->useResource(res.resource(&ctx), usage,
-                                            MTL::RenderStageVertex |
-                                                MTL::RenderStageFragment);
+            ctx.render_encoder->useResource(
+                res.resource(&ctx), GetUsageFromResidencyMask(residencyMask),
+                GetStagesFromResidencyMask(residencyMask));
             break;
           case ShaderType::Compute:
-            ctx.compute_encoder->useResource(res.resource(&ctx), usage);
+            ctx.compute_encoder->useResource(
+                res.resource(&ctx), GetUsageFromResidencyMask(residencyMask));
             break;
           case ShaderType::Geometry:
           case ShaderType::Hull:
@@ -1292,6 +1327,8 @@ public:
       for (unsigned i = 0; i < BindingCount; i++) {
         auto &arg = reflection->Arguments[i];
         auto slot = arg.SM50BindingSlot;
+        MTL_BINDABLE_RESIDENCY_MASK newResidencyMask = MTL_RESIDENCY_NULL;
+        SIMPLE_RESIDENCY_TRACKER *pTracker;
         switch (arg.Type) {
         case SM50BindingType::ConstantBuffer: {
           if (!ShaderStage.ConstantBuffers.test_bound(slot)) {
@@ -1299,13 +1336,16 @@ public:
             return false;
           }
           auto &cbuf = ShaderStage.ConstantBuffers[slot];
+          auto argbuf = cbuf.Buffer->GetArgumentData(&pTracker);
           write_to_it[arg.StructurePtrOffset] =
-              cbuf.Buffer->GetArgumentData().buffer() +
-              (cbuf.FirstConstant << 4);
-          if (ShaderStage.ConstantBuffers.test_dirty(slot)) {
+              argbuf.buffer() + (cbuf.FirstConstant << 4);
+          ShaderStage.ConstantBuffers.clear_dirty(slot);
+          pTracker->CheckResidency(encoderId,
+                                   GetResidencyMask(stage, true, false),
+                                   &newResidencyMask);
+          if (newResidencyMask) {
             useResource(cbuf.Buffer->UseBindable(currentChunkId),
-                        MTL::ResourceUsageRead);
-            ShaderStage.ConstantBuffers.clear_dirty(slot);
+                        newResidencyMask);
           }
           break;
         }
@@ -1334,7 +1374,7 @@ public:
             break;
           }
           auto &srv = ShaderStage.SRVs[slot];
-          auto arg_data = srv.SRV->GetArgumentData();
+          auto arg_data = srv.SRV->GetArgumentData(&pTracker);
           if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_BUFFER) {
             write_to_it[arg.StructurePtrOffset] = arg_data.buffer();
           }
@@ -1350,10 +1390,12 @@ public:
           }
           if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_UAV_COUNTER) {
           }
-          if (ShaderStage.SRVs.test_dirty(slot)) {
-            MTL::ResourceUsage usage = (arg.Flags >> 10) & 0b11;
-            useResource(srv.SRV->UseBindable(currentChunkId), usage);
-            ShaderStage.SRVs.clear_dirty(slot);
+          ShaderStage.SRVs.clear_dirty(slot);
+          pTracker->CheckResidency(encoderId,
+                                   GetResidencyMask(stage, true, false),
+                                   &newResidencyMask);
+          if (newResidencyMask) {
+            useResource(srv.SRV->UseBindable(currentChunkId), newResidencyMask);
           }
           break;
         }
@@ -1381,7 +1423,7 @@ public:
             break;
           }
           auto &uav = binding_set[arg.SM50BindingSlot];
-          auto arg_data = uav.View->GetArgumentData();
+          auto arg_data = uav.View->GetArgumentData(&pTracker);
           if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_BUFFER) {
             write_to_it[arg.StructurePtrOffset] = arg_data.buffer();
           }
@@ -1399,10 +1441,16 @@ public:
             ERR("todo: implement uav counter binding");
             return false;
           }
-          if (binding_set.test_dirty(slot)) {
-            MTL::ResourceUsage usage = (arg.Flags >> 10) & 0b11;
-            useResource(uav.View->UseBindable(currentChunkId), usage);
-            binding_set.clear_dirty(slot);
+          binding_set.clear_dirty(slot);
+          pTracker->CheckResidency(
+              encoderId,
+              GetResidencyMask(stage,
+                               // FIXME: don't use literal constant...
+                               (arg.Flags >> 10) & 1, (arg.Flags >> 10) & 2),
+              &newResidencyMask);
+          if (newResidencyMask) {
+            useResource(uav.View->UseBindable(currentChunkId),
+                        newResidencyMask);
           }
           break;
         }

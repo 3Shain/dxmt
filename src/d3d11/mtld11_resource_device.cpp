@@ -20,6 +20,7 @@ private:
   uint64_t buffer_handle;
   bool structured;
   bool allow_raw_view;
+  SIMPLE_RESIDENCY_TRACKER tracker{};
 
 public:
   DeviceBuffer(const tag_buffer::DESC_S *desc,
@@ -43,7 +44,8 @@ public:
     return BindingRef(buffer.ptr());
   };
 
-  ArgumentData GetArgumentData() override {
+  ArgumentData GetArgumentData(SIMPLE_RESIDENCY_TRACKER **ppTracker) override {
+    *ppTracker = &tracker;
     return ArgumentData(buffer_handle);
   }
 
@@ -60,6 +62,7 @@ public:
   private:
     ArgumentData argument_data;
     F f;
+    SIMPLE_RESIDENCY_TRACKER tracker{};
 
   public:
     SRV(const tag_shader_resource_view<>::DESC_S *pDesc,
@@ -70,7 +73,11 @@ public:
 
     BindingRef UseBindable(uint64_t t) override { return std::invoke(f, t); };
 
-    ArgumentData GetArgumentData() override { return argument_data; };
+    ArgumentData
+    GetArgumentData(SIMPLE_RESIDENCY_TRACKER **ppTracker) override {
+      *ppTracker = &tracker;
+      return argument_data;
+    };
 
     void GetLogicalResourceOrView(REFIID riid,
                                   void **ppLogicalResource) override {
@@ -138,6 +145,7 @@ public:
   private:
     ArgumentData argument_data;
     F f;
+    SIMPLE_RESIDENCY_TRACKER tracker{};
 
   public:
     UAV(const tag_unordered_access_view<>::DESC_S *pDesc,
@@ -148,7 +156,11 @@ public:
 
     BindingRef UseBindable(uint64_t t) override { return std::invoke(f, t); };
 
-    ArgumentData GetArgumentData() override { return argument_data; };
+    ArgumentData
+    GetArgumentData(SIMPLE_RESIDENCY_TRACKER **ppTracker) override {
+      *ppTracker = &tracker;
+      return argument_data;
+    };
 
     void GetLogicalResourceOrView(REFIID riid,
                                   void **ppLogicalResource) override {
@@ -239,6 +251,7 @@ class DeviceTexture : public TResourceBase<tag_texture, IMTLBindable> {
 private:
   Obj<MTL::Texture> texture;
   MTL::ResourceID texture_handle;
+  SIMPLE_RESIDENCY_TRACKER tracker{};
 
   using SRVBase =
       TResourceViewBase<tag_shader_resource_view<DeviceTexture<tag_texture>>,
@@ -247,6 +260,7 @@ private:
   private:
     Obj<MTL::Texture> view;
     MTL::ResourceID view_handle;
+    SIMPLE_RESIDENCY_TRACKER tracker{};
 
   public:
     TextureSRV(MTL::Texture *view,
@@ -259,7 +273,9 @@ private:
       return BindingRef(view.ptr());
     };
 
-    ArgumentData GetArgumentData() override {
+    ArgumentData
+    GetArgumentData(SIMPLE_RESIDENCY_TRACKER **ppTracker) override {
+      *ppTracker = &tracker;
       return ArgumentData(view_handle, view.ptr());
     };
 
@@ -276,6 +292,7 @@ private:
   private:
     Obj<MTL::Texture> view;
     MTL::ResourceID view_handle;
+    SIMPLE_RESIDENCY_TRACKER tracker{};
 
   public:
     TextureUAV(MTL::Texture *view,
@@ -288,7 +305,9 @@ private:
       return BindingRef(view.ptr());
     };
 
-    ArgumentData GetArgumentData() override {
+    ArgumentData
+    GetArgumentData(SIMPLE_RESIDENCY_TRACKER **ppTracker) override {
+      *ppTracker = &tracker;
       return ArgumentData(view_handle, view.ptr());
     };
 
@@ -352,7 +371,8 @@ public:
     return BindingRef(texture.ptr());
   };
 
-  ArgumentData GetArgumentData() override {
+  ArgumentData GetArgumentData(SIMPLE_RESIDENCY_TRACKER **ppTracker) override {
+    *ppTracker = &tracker;
     // rarely used, since texture is not directly accessed by pipeline
     return ArgumentData(texture_handle, texture.ptr());
   }

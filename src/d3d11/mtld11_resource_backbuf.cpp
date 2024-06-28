@@ -38,6 +38,7 @@ private:
   MTL::PixelFormat pixel_format_;
   Obj<CA::MetalDrawable> current_drawable;
   bool destroyed = false;
+  SIMPLE_RESIDENCY_TRACKER tracker{};
 
   using BackBufferRTVBase =
       TResourceViewBase<tag_render_target_view<EmulatedBackBufferTexture>>;
@@ -65,6 +66,8 @@ private:
       TResourceViewBase<tag_shader_resource_view<EmulatedBackBufferTexture>,
                         IMTLBindable>;
   class BackBufferSRV : public BackBufferSRVBase {
+    SIMPLE_RESIDENCY_TRACKER tracker{};
+
   public:
     BackBufferSRV(const D3D11_SHADER_RESOURCE_VIEW_DESC *pDesc,
                   EmulatedBackBufferTexture *context, IMTLD3D11Device *pDevice)
@@ -74,7 +77,9 @@ private:
       return BindingRef(static_cast<BackBufferSource *>(resource.ptr()));
     };
 
-    ArgumentData GetArgumentData() override {
+    ArgumentData
+    GetArgumentData(SIMPLE_RESIDENCY_TRACKER **ppTracker) override {
+      *ppTracker = &tracker;
       return ArgumentData(static_cast<BackBufferSource *>(resource.ptr()));
     };
 
@@ -88,6 +93,8 @@ private:
       TResourceViewBase<tag_unordered_access_view<EmulatedBackBufferTexture>,
                         IMTLBindable>;
   class BackBufferUAV : public BackBufferUAVBase {
+    SIMPLE_RESIDENCY_TRACKER tracker{};
+
   public:
     BackBufferUAV(const D3D11_UNORDERED_ACCESS_VIEW_DESC *pDesc,
                   EmulatedBackBufferTexture *context, IMTLD3D11Device *pDevice)
@@ -97,7 +104,9 @@ private:
       return BindingRef(static_cast<BackBufferSource *>(resource.ptr()));
     };
 
-    ArgumentData GetArgumentData() override {
+    ArgumentData
+    GetArgumentData(SIMPLE_RESIDENCY_TRACKER **ppTracker) override {
+      *ppTracker = &tracker;
       return ArgumentData(static_cast<BackBufferSource *>(resource.ptr()));
     };
 
@@ -284,7 +293,8 @@ public:
     return BindingRef(static_cast<BackBufferSource *>(this));
   };
 
-  ArgumentData GetArgumentData() override {
+  ArgumentData GetArgumentData(SIMPLE_RESIDENCY_TRACKER **ppTracker) override {
+    *ppTracker = &tracker;
     return ArgumentData(static_cast<BackBufferSource *>(this));
   };
 

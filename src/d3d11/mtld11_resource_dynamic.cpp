@@ -56,8 +56,8 @@ public:
 
   BindingRef UseBindable(uint64_t x) override { return std::invoke(fn, x); };
 
-  ArgumentData GetArgumentData() override {
-    return std::invoke(get_argument_data);
+  ArgumentData GetArgumentData(SIMPLE_RESIDENCY_TRACKER **ppTracker) override {
+    return std::invoke(get_argument_data, ppTracker);
   }
 
   bool GetContentionState(uint64_t finishedSeqId) override { return true; }
@@ -106,7 +106,7 @@ private:
             D3D11_ASSERT(0 && "todo: prepare dynamic buffer srv view");
             return BindingRef(std::nullopt);
           },
-          []() {
+          [](SIMPLE_RESIDENCY_TRACKER **ppTracker) {
             D3D11_ASSERT(0 && "todo: prepare dynamic buffer srv view");
             return ArgumentData(0uL, 0);
           },
@@ -125,6 +125,8 @@ private:
   std::vector<SRV *> weak_srvs;
 
   std::unique_ptr<BufferPool> pool;
+
+  SIMPLE_RESIDENCY_TRACKER tracker{};
 
 public:
   DynamicBuffer(const tag_buffer::DESC_S *desc,
@@ -152,7 +154,10 @@ public:
     auto ret = ref(new DynamicBinding(
         static_cast<ID3D11Buffer *>(this), std::move(onBufferSwap),
         [this](uint64_t) { return BindingRef(buffer_dynamic.ptr()); },
-        [this]() { return ArgumentData(this->buffer_handle); },
+        [this](SIMPLE_RESIDENCY_TRACKER **ppTracker) {
+          *ppTracker = &tracker;
+          return ArgumentData(this->buffer_handle);
+        },
         [this](IMTLNotifiedBindable *_binding) {
           this->RemoveObserver(_binding);
         }));
@@ -161,6 +166,7 @@ public:
   };
 
   void RotateBuffer(IMTLDynamicBufferExchange *exch) override {
+    tracker = {};
     exch->ExchangeFromPool(&buffer_dynamic, &buffer_handle, &buffer_mapped,
                            pool.get());
     for (auto srv : weak_srvs) {
@@ -235,6 +241,7 @@ private:
     Obj<MTL::Texture> view;
     MTL::ResourceID view_handle;
     Obj<MTL::TextureDescriptor> view_desc;
+    SIMPLE_RESIDENCY_TRACKER tracker{};
 
   public:
     SRV(const tag_shader_resource_view<>::DESC_S *pDesc,
@@ -253,7 +260,8 @@ private:
           static_cast<ID3D11ShaderResourceView *>(this),
           std::move(onBufferSwap),
           [this](uint64_t) { return BindingRef(this->view.ptr()); },
-          [this]() {
+          [this](SIMPLE_RESIDENCY_TRACKER **ppTracker) {
+            *ppTracker = &tracker;
             return ArgumentData(this->view_handle, this->view.ptr());
           },
           [u = this->resource.ptr()](IMTLNotifiedBindable *_this) {
@@ -272,6 +280,7 @@ private:
     std::unordered_map<uint64_t, ViewCache> cache;
 
     void RotateView() {
+      tracker = {};
       auto insert = cache.insert({resource->buffer_handle, {}});
       auto &item = insert.first->second;
       if (insert.second) {
@@ -324,7 +333,7 @@ public:
   void RemoveObserver(IMTLNotifiedBindable *pBindable) {
     // D3D11_ASSERT(observers.erase(pBindable) == 1 &&
     //        "it must be 1 unless the destructor called twice");
-    auto& vec = observers;
+    auto &vec = observers;
     vec.erase(std::remove(vec.begin(), vec.end(), pBindable), vec.end());
   }
 

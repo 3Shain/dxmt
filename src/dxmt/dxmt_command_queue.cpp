@@ -7,12 +7,31 @@
 
 namespace dxmt {
 
+ENCODER_CLEARPASS_INFO *CommandChunk::mark_clear_pass() {
+  linear_allocator<ENCODER_CLEARPASS_INFO> allocator(this);
+  auto ptr = allocator.allocate(1);
+  new (ptr) ENCODER_CLEARPASS_INFO();
+  ptr->encoder_id = queue->GetNextEncoderId();
+  last_encoder_info = (ENCODER_INFO *)ptr;
+  return ptr;
+};
+
+ENCODER_INFO *CommandChunk::mark_pass(EncoderKind kind) {
+  linear_allocator<ENCODER_INFO> allocator(this);
+  auto ptr = allocator.allocate(1);
+  ptr->kind = kind;
+  ptr->encoder_id = queue->GetNextEncoderId();
+  last_encoder_info = ptr;
+  return ptr;
+};
+
 CommandQueue::CommandQueue(MTL::Device *device)
     : encodeThread([this]() { this->EncodingThread(); }),
       finishThread([this]() { this->WaitForFinishThread(); }) {
   commandQueue = transfer(device->newCommandQueue(kCommandChunkCount));
   for (unsigned i = 0; i < kCommandChunkCount; i++) {
     auto &chunk = chunks[i];
+    chunk.queue = this;
     chunk.cpu_argument_heap = (char *)malloc(kCommandChunkCPUHeapSize);
     chunk.gpu_argument_heap = transfer(device->newBuffer(
         kCommandChunkGPUHeapSize, MTL::ResourceHazardTrackingModeUntracked |
