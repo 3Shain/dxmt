@@ -23,8 +23,7 @@ struct tag_texture_backbuffer {
 
 class EmulatedBackBufferTexture
     : public TResourceBase<tag_texture_backbuffer, IMTLD3D11BackBuffer,
-                           IMTLBindable>,
-      BackBufferSource {
+                           IMTLBindable, BackBufferSource> {
 
 private:
   HWND hWnd;
@@ -119,8 +118,8 @@ private:
 public:
   EmulatedBackBufferTexture(const DXGI_SWAP_CHAIN_DESC1 *pDesc,
                             IMTLD3D11Device *pDevice, HWND hWnd)
-      : TResourceBase<tag_texture_backbuffer, IMTLD3D11BackBuffer,
-                      IMTLBindable>(nullptr, pDevice),
+      : TResourceBase<tag_texture_backbuffer, IMTLD3D11BackBuffer, IMTLBindable,
+                      BackBufferSource>(nullptr, pDevice),
         hWnd(hWnd) {
     if (FAILED(pDevice->QueryInterface(IID_PPV_ARGS(&layer_factory)))) {
       throw MTLD3DError("Failed to create CAMetalLayer");

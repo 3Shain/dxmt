@@ -48,6 +48,7 @@ public:
   microsoft::D3D10_SB_TOKENIZED_PROGRAM_TYPE shader_type;
   uint32_t max_input_register = 0;
   uint32_t max_output_register = 0;
+  std::vector<MTL_SM50_SHADER_ARGUMENT> args_reflection_cbuffer;
   std::vector<MTL_SM50_SHADER_ARGUMENT> args_reflection;
   uint32_t threadgroup_size[3] = {0};
 };
@@ -76,6 +77,7 @@ llvm::Error convertDXBC(
   auto shader_type = pShaderInternal->shader_type;
 
   uint32_t binding_table_index = ~0u;
+  uint32_t cbuf_table_index = ~0u;
   uint32_t const &max_input_register = pShaderInternal->max_input_register;
   uint32_t const &max_output_register = pShaderInternal->max_output_register;
 
@@ -99,9 +101,9 @@ llvm::Error convertDXBC(
   for (auto &[range_id, cbv] : shader_info->cbufferMap) {
     // TODO: abstract SM 5.0 binding
     auto index = cbv.arg_index;
-    resource_map.cb_range_map[range_id] = [=, &binding_table_index](pvalue) {
+    resource_map.cb_range_map[range_id] = [=, &cbuf_table_index](pvalue) {
       // ignore index in SM 5.0
-      return get_item_in_argbuf_binding_table(binding_table_index, index);
+      return get_item_in_argbuf_binding_table(cbuf_table_index, index);
     };
   }
   for (auto &[range_id, sampler] : shader_info->samplerMap) {
@@ -244,6 +246,20 @@ llvm::Error convertDXBC(
         .struct_type = type,
         .struct_type_info = metadata,
         .arg_name = "binding_table",
+      });
+  }
+  if (!shader_info->binding_table_cbuffer.empty()) {
+    auto [type, metadata] =
+      shader_info->binding_table_cbuffer.Build(context, module.getDataLayout());
+    cbuf_table_index =
+      func_signature.DefineInput(air::ArgumentBindingIndirectBuffer{
+        .location_index = 29, // kConstantBufferBindIndex
+        .array_size = 1,
+        .memory_access = air::MemoryAccess::read,
+        .address_space = air::AddressSpace::constant,
+        .struct_type = type,
+        .struct_type_info = metadata,
+        .arg_name = "cbuffer_table",
       });
   }
   auto [function, function_metadata] =
@@ -1321,15 +1337,16 @@ int SM50Initialize(
   sm50_shader->entry = entry;
 
   auto &binding_table = shader_info->binding_table;
+  auto &binding_table_cbuffer = shader_info->binding_table_cbuffer;
 
   for (auto &[range_id, cbv] : shader_info->cbufferMap) {
     // TODO: abstract SM 5.0 binding
-    cbv.arg_index = binding_table.DefineBuffer(
+    cbv.arg_index = binding_table_cbuffer.DefineBuffer(
       "cb" + std::to_string(range_id), AddressSpace::constant,
       MemoryAccess::read, msl_uint4,
       GetArgumentIndex(SM50BindingType::ConstantBuffer, range_id)
     );
-    sm50_shader->args_reflection.push_back({
+    sm50_shader->args_reflection_cbuffer.push_back({
       .Type = SM50BindingType::ConstantBuffer,
       .SM50BindingSlot = range_id,
       .Flags =
@@ -1441,8 +1458,12 @@ int SM50Initialize(
   }
 
   if (pRefl) {
+    pRefl->ConstanttBufferTableBindIndex =
+      sm50_shader->args_reflection_cbuffer.size() > 0 ? 29 : ~0u;
     pRefl->ArgumentBufferBindIndex =
       sm50_shader->args_reflection.size() > 0 ? 30 : ~0u;
+    pRefl->NumConstantBuffers = sm50_shader->args_reflection_cbuffer.size();
+    pRefl->ConstantBuffers = sm50_shader->args_reflection_cbuffer.data();
     pRefl->NumArguments = sm50_shader->args_reflection.size();
     pRefl->Arguments = sm50_shader->args_reflection.data();
     if (sm50_shader->shader_type == microsoft::D3D11_SB_COMPUTE_SHADER) {

@@ -41,7 +41,7 @@ public:
   }
 
   BindingRef UseBindable(uint64_t) override {
-    return BindingRef(buffer.ptr());
+    return BindingRef(static_cast<ID3D11DeviceChild *>(this), buffer.ptr());
   };
 
   ArgumentData GetArgumentData(SIMPLE_RESIDENCY_TRACKER **ppTracker) override {
@@ -71,7 +71,9 @@ public:
         : SRVBase(pDesc, pResource, pDevice), argument_data(argument_data),
           f(std::forward<F>(fn)) {}
 
-    BindingRef UseBindable(uint64_t t) override { return std::invoke(f, t); };
+    BindingRef UseBindable(uint64_t t) override {
+      return std::invoke(f, t, static_cast<SRV *>(this));
+    };
 
     ArgumentData
     GetArgumentData(SIMPLE_RESIDENCY_TRACKER **ppTracker) override {
@@ -103,8 +105,9 @@ public:
       auto size = pDesc->Buffer.NumElements;
       *ppView = ref(new SRV(
           pDesc, this, m_parent, ArgumentData(buffer_handle + offset, size),
-          [ctx = Com(this), offset, size](uint64_t) {
-            return BindingRef(ctx->buffer.ptr(), size, offset);
+          [ctx = Com(this), offset, size](uint64_t, auto _this) {
+            return BindingRef(static_cast<ID3D11ShaderResourceView *>(_this),
+                              ctx->buffer.ptr(), size, offset);
           }));
       return S_OK;
     } else {
@@ -116,8 +119,9 @@ public:
         auto size = pDesc->Buffer.NumElements;
         *ppView = ref(new SRV(
             pDesc, this, m_parent, ArgumentData(buffer_handle + offset, size),
-            [ctx = Com(this), offset, size](uint64_t) {
-              return BindingRef(ctx->buffer.ptr(), size, offset);
+            [ctx = Com(this), offset, size](uint64_t, auto _this) {
+              return BindingRef(static_cast<ID3D11ShaderResourceView *>(_this),
+                                ctx->buffer.ptr(), size, offset);
             }));
         return S_OK;
       } else {
@@ -126,11 +130,13 @@ public:
                                         &finalDesc, &view))) {
           return E_FAIL;
         }
-        *ppView = ref(new SRV(pDesc, this, m_parent,
-                              ArgumentData(view->gpuResourceID(), view.ptr()),
-                              [view = std::move(view)](uint64_t) {
-                                return BindingRef(view.ptr());
-                              }));
+        *ppView = ref(new SRV(
+            pDesc, this, m_parent,
+            ArgumentData(view->gpuResourceID(), view.ptr()),
+            [view = std::move(view)](uint64_t, auto _this) {
+              return BindingRef(static_cast<ID3D11ShaderResourceView *>(_this),
+                                view.ptr());
+            }));
         return S_OK;
       }
     }
@@ -154,7 +160,9 @@ public:
         : UAVBase(pDesc, pResource, pDevice), argument_data(argument_data),
           f(std::forward<F>(fn)) {}
 
-    BindingRef UseBindable(uint64_t t) override { return std::invoke(f, t); };
+    BindingRef UseBindable(uint64_t t) override {
+      return std::invoke(f, t, this);
+    };
 
     ArgumentData
     GetArgumentData(SIMPLE_RESIDENCY_TRACKER **ppTracker) override {
@@ -187,8 +195,9 @@ public:
            size = pDesc->Buffer.NumElements;
       *ppView = ref(new UAV(
           pDesc, this, m_parent, ArgumentData(buffer_handle + offset, size),
-          [ctx = Com(this), offset, size](uint64_t) {
-            return BindingRef(ctx->buffer.ptr(), size, offset);
+          [ctx = Com(this), offset, size](uint64_t, auto _this) {
+            return BindingRef(static_cast<ID3D11UnorderedAccessView *>(_this),
+                              ctx->buffer.ptr(), size, offset);
           }));
       return S_OK;
     } else {
@@ -199,8 +208,9 @@ public:
              size = pDesc->Buffer.NumElements;
         *ppView = ref(new UAV(
             pDesc, this, m_parent, ArgumentData(buffer_handle + offset, size),
-            [ctx = Com(this), offset, size](uint64_t) {
-              return BindingRef(ctx->buffer.ptr(), size, offset);
+            [ctx = Com(this), offset, size](uint64_t, auto _this) {
+              return BindingRef(static_cast<ID3D11UnorderedAccessView *>(_this),
+                                ctx->buffer.ptr(), size, offset);
             }));
         return S_OK;
       } else {
@@ -209,11 +219,13 @@ public:
                                         &finalDesc, &view))) {
           return E_FAIL;
         }
-        *ppView = ref(new UAV(pDesc, this, m_parent,
-                              ArgumentData(view->gpuResourceID(), view.ptr()),
-                              [view = std::move(view)](uint64_t) {
-                                return BindingRef(view.ptr());
-                              }));
+        *ppView = ref(new UAV(
+            pDesc, this, m_parent,
+            ArgumentData(view->gpuResourceID(), view.ptr()),
+            [view = std::move(view)](uint64_t, auto _this) {
+              return BindingRef(static_cast<ID3D11UnorderedAccessView *>(_this),
+                                view.ptr());
+            }));
         return S_OK;
       }
     }
@@ -270,7 +282,7 @@ private:
           view_handle(view->gpuResourceID()) {}
 
     BindingRef UseBindable(uint64_t) override {
-      return BindingRef(view.ptr());
+      return BindingRef(static_cast<ID3D11View *>(this), view.ptr());
     };
 
     ArgumentData
@@ -302,7 +314,7 @@ private:
           view_handle(view->gpuResourceID()) {}
 
     BindingRef UseBindable(uint64_t) override {
-      return BindingRef(view.ptr());
+      return BindingRef(static_cast<ID3D11View *>(this), view.ptr());
     };
 
     ArgumentData
@@ -339,7 +351,9 @@ private:
       return &mtl_rtv_desc;
     };
 
-    BindingRef GetBinding(uint64_t) final { return BindingRef(view.ptr()); }
+    BindingRef GetBinding(uint64_t) final {
+      return BindingRef(static_cast<ID3D11View *>(this), view.ptr());
+    }
   };
 
   using DSVBase =
@@ -358,7 +372,9 @@ private:
 
     MTL::PixelFormat GetPixelFormat() final { return view_pixel_format; }
 
-    BindingRef GetBinding(uint64_t) final { return BindingRef(view.ptr()); }
+    BindingRef GetBinding(uint64_t) final {
+      return BindingRef(static_cast<ID3D11View *>(this), view.ptr());
+    }
   };
 
 public:
@@ -368,7 +384,7 @@ public:
         texture(texture), texture_handle(texture->gpuResourceID()) {}
 
   BindingRef UseBindable(uint64_t) override {
-    return BindingRef(texture.ptr());
+    return BindingRef(static_cast<ID3D11Resource *>(this), texture.ptr());
   };
 
   ArgumentData GetArgumentData(SIMPLE_RESIDENCY_TRACKER **ppTracker) override {

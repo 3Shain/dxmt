@@ -153,7 +153,10 @@ public:
                    BufferSwapCallback &&onBufferSwap) override {
     auto ret = ref(new DynamicBinding(
         static_cast<ID3D11Buffer *>(this), std::move(onBufferSwap),
-        [this](uint64_t) { return BindingRef(buffer_dynamic.ptr()); },
+        [this](uint64_t) {
+          return BindingRef(static_cast<ID3D11Resource *>(this),
+                            buffer_dynamic.ptr());
+        },
         [this](SIMPLE_RESIDENCY_TRACKER **ppTracker) {
           *ppTracker = &tracker;
           return ArgumentData(this->buffer_handle);
@@ -259,7 +262,10 @@ private:
       auto ret = ref(new DynamicBinding(
           static_cast<ID3D11ShaderResourceView *>(this),
           std::move(onBufferSwap),
-          [this](uint64_t) { return BindingRef(this->view.ptr()); },
+          [this](uint64_t) {
+            return BindingRef(static_cast<ID3D11View *>(this),
+                              this->view.ptr());
+          },
           [this](SIMPLE_RESIDENCY_TRACKER **ppTracker) {
             *ppTracker = &tracker;
             return ArgumentData(this->view_handle, this->view.ptr());

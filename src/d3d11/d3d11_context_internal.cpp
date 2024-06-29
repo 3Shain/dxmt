@@ -365,9 +365,10 @@ public:
       if (ppVertexBuffers[Slot - StartSlot]) {
         VB.BufferRaw =
             VB.Buffer->UseBindable(this->cmd_queue.CurrentSeqId()).buffer();
+        VB.RawPointer = ppVertexBuffers[Slot - StartSlot];
+        VB.Stride = pStrides[Slot - StartSlot];
+        VB.Offset = pOffsets[Slot - StartSlot];
       }
-      VB.Stride = pStrides[Slot - StartSlot];
-      VB.Offset = pOffsets[Slot - StartSlot];
       vertex_buffer_dirty |= (1 << Slot);
     }
   }
@@ -659,16 +660,6 @@ public:
 
 #pragma region CommandEncoder Maintain State
 
-  bool ReadyToFlush() {
-    if (encoder_count == 0) {
-      return false;
-    }
-    encoder_count = 0;
-    return true;
-  };
-
-  uint32_t encoder_count = 0;
-
   /**
   Render pass can be invalidated by reasons:
   - render target changes (including depth stencil)
@@ -688,7 +679,6 @@ public:
         ctx.render_encoder = nullptr;
         ctx.dsv_valid = false;
       });
-      encoder_count++;
       break;
     case CommandBufferState::ComputeEncoderActive:
     case CommandBufferState::ComputePipelineReady:
@@ -696,14 +686,12 @@ public:
         ctx.compute_encoder->endEncoding();
         ctx.compute_encoder = nullptr;
       });
-      encoder_count++;
       break;
     case CommandBufferState::BlitEncoderActive:
       chk->emit([](CommandChunk::context &ctx) {
         ctx.blit_encoder->endEncoding();
         ctx.blit_encoder = nullptr;
       });
-      encoder_count++;
       break;
     }
 
@@ -1056,7 +1044,9 @@ public:
         auto [h, _] = ctx.chk->inspect_gpu_heap();
         ctx.dsv_valid = dsv_valid;
         D3D11_ASSERT(ctx.render_encoder);
+        ctx.render_encoder->setVertexBuffer(h, 0, 29);
         ctx.render_encoder->setVertexBuffer(h, 0, 30);
+        ctx.render_encoder->setFragmentBuffer(h, 0, 29);
         ctx.render_encoder->setFragmentBuffer(h, 0, 30);
       });
     }
@@ -1110,6 +1100,7 @@ public:
       chk->emit([](CommandChunk::context &ctx) {
         ctx.compute_encoder = ctx.cmdbuf->computeCommandEncoder();
         auto [heap, offset] = ctx.chk->inspect_gpu_heap();
+        ctx.compute_encoder->setBuffer(heap, 0, 29);
         ctx.compute_encoder->setBuffer(heap, 0, 30);
       });
     }
@@ -1351,52 +1342,56 @@ public:
 
   template <ShaderType stage> bool UploadShaderStageResourceBinding() {
     auto &ShaderStage = state_.ShaderStages[(UINT)stage];
+    auto &UAVBindingSet = stage == ShaderType::Compute
+                              ? state_.ComputeStageUAV.UAVs
+                              : state_.OutputMerger.UAVs;
 
     // TODO: should be more optimized (only check dirty on used slot)
     if (!ShaderStage.ConstantBuffers.any_dirty() &&
-        !ShaderStage.Samplers.any_dirty() && !ShaderStage.SRVs.any_dirty())
+        !ShaderStage.Samplers.any_dirty() && !ShaderStage.SRVs.any_dirty() &&
+        !UAVBindingSet.any_dirty())
       return true;
 
     auto currentChunkId = cmd_queue.CurrentSeqId();
 
     MTL_SHADER_REFLECTION *reflection;
     ShaderStage.Shader->GetReflection(&reflection);
+    auto ConstantBufferCount = reflection->NumConstantBuffers;
     auto BindingCount = reflection->NumArguments;
+    CommandChunk *chk = cmd_queue.CurrentChunk();
+    auto encoderId = chk->current_encoder_id();
 
-    if (BindingCount) {
-      CommandChunk *chk = cmd_queue.CurrentChunk();
-      auto encoderId = chk->current_encoder_id();
+    auto useResource = [&](BindingRef &&res,
+                           MTL_BINDABLE_RESIDENCY_MASK residencyMask) {
+      chk->emit(
+          [res = std::move(res), residencyMask](CommandChunk::context &ctx) {
+            switch (stage) {
+            case ShaderType::Vertex:
+            case ShaderType::Pixel:
+              ctx.render_encoder->useResource(
+                  res.resource(&ctx), GetUsageFromResidencyMask(residencyMask),
+                  GetStagesFromResidencyMask(residencyMask));
+              break;
+            case ShaderType::Compute:
+              ctx.compute_encoder->useResource(
+                  res.resource(&ctx), GetUsageFromResidencyMask(residencyMask));
+              break;
+            case ShaderType::Geometry:
+            case ShaderType::Hull:
+            case ShaderType::Domain:
+              D3D11_ASSERT(0 && "Not implemented");
+              break;
+            }
+          });
+    };
+    if (ConstantBufferCount && ShaderStage.ConstantBuffers.any_dirty()) {
 
-      /* FIXME: we are over-allocating */
-      auto [heap, offset] = chk->allocate_gpu_heap(BindingCount << 4, 16);
+      auto [heap, offset] =
+          chk->allocate_gpu_heap(ConstantBufferCount << 3, 16);
       uint64_t *write_to_it = chk->gpu_argument_heap_contents + (offset >> 3);
 
-      auto useResource = [&](BindingRef &&res,
-                             MTL_BINDABLE_RESIDENCY_MASK residencyMask) {
-        chk->emit([res = std::move(res),
-                   residencyMask](CommandChunk::context &ctx) {
-          switch (stage) {
-          case ShaderType::Vertex:
-          case ShaderType::Pixel:
-            ctx.render_encoder->useResource(
-                res.resource(&ctx), GetUsageFromResidencyMask(residencyMask),
-                GetStagesFromResidencyMask(residencyMask));
-            break;
-          case ShaderType::Compute:
-            ctx.compute_encoder->useResource(
-                res.resource(&ctx), GetUsageFromResidencyMask(residencyMask));
-            break;
-          case ShaderType::Geometry:
-          case ShaderType::Hull:
-          case ShaderType::Domain:
-            D3D11_ASSERT(0 && "Not implemented");
-            break;
-          }
-        });
-      };
-
-      for (unsigned i = 0; i < BindingCount; i++) {
-        auto &arg = reflection->Arguments[i];
+      for (unsigned i = 0; i < ConstantBufferCount; i++) {
+        auto &arg = reflection->ConstantBuffers[i];
         auto slot = arg.SM50BindingSlot;
         MTL_BINDABLE_RESIDENCY_MASK newResidencyMask = MTL_RESIDENCY_NULL;
         SIMPLE_RESIDENCY_TRACKER *pTracker;
@@ -1419,6 +1414,42 @@ public:
                         newResidencyMask);
           }
           break;
+        }
+        default:
+          D3D11_ASSERT(0 && "unreachable");
+        }
+      }
+
+      /* kConstantBufferTableBinding = 29 */
+      chk->emit([offset](CommandChunk::context &ctx) {
+        if constexpr (stage == ShaderType::Vertex) {
+          ctx.render_encoder->setVertexBufferOffset(offset, 29);
+        } else if constexpr (stage == ShaderType::Pixel) {
+          ctx.render_encoder->setFragmentBufferOffset(offset, 29);
+        } else if constexpr (stage == ShaderType::Compute) {
+          ctx.compute_encoder->setBufferOffset(offset, 29);
+        } else {
+          D3D11_ASSERT(0 && "Not implemented");
+        }
+      });
+    }
+
+    if (BindingCount &&
+        (ShaderStage.SRVs.any_dirty() || ShaderStage.Samplers.any_dirty() ||
+         UAVBindingSet.any_dirty())) {
+
+      /* FIXME: we are over-allocating */
+      auto [heap, offset] = chk->allocate_gpu_heap(BindingCount << 4, 16);
+      uint64_t *write_to_it = chk->gpu_argument_heap_contents + (offset >> 3);
+
+      for (unsigned i = 0; i < BindingCount; i++) {
+        auto &arg = reflection->Arguments[i];
+        auto slot = arg.SM50BindingSlot;
+        MTL_BINDABLE_RESIDENCY_MASK newResidencyMask = MTL_RESIDENCY_NULL;
+        SIMPLE_RESIDENCY_TRACKER *pTracker;
+        switch (arg.Type) {
+        case SM50BindingType::ConstantBuffer: {
+          D3D11_ASSERT(0 && "unreachable");
         }
         case SM50BindingType::Sampler: {
           if (!ShaderStage.Samplers.test_bound(slot)) {
@@ -1477,11 +1508,8 @@ public:
           }
           // FIXME: currently only pixel shader use uav from OM
           // REFACTOR NEEDED
-          auto &binding_set = stage == ShaderType::Compute
-                                  ? state_.ComputeStageUAV.UAVs
-                                  : state_.OutputMerger.UAVs;
           // TODO: consider separately handle uav
-          if (!binding_set.test_bound(arg.SM50BindingSlot)) {
+          if (!UAVBindingSet.test_bound(arg.SM50BindingSlot)) {
             // ERR("expect uav at slot ", arg.SM50BindingSlot,
             //     " but none is bound.");
             write_to_it[arg.StructurePtrOffset] = 0;
@@ -1493,7 +1521,7 @@ public:
             }
             break;
           }
-          auto &uav = binding_set[arg.SM50BindingSlot];
+          auto &uav = UAVBindingSet[arg.SM50BindingSlot];
           auto arg_data = uav.View->GetArgumentData(&pTracker);
           if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_BUFFER) {
             write_to_it[arg.StructurePtrOffset] = arg_data.buffer();
@@ -1512,7 +1540,7 @@ public:
             ERR("todo: implement uav counter binding");
             return false;
           }
-          binding_set.clear_dirty(slot);
+          UAVBindingSet.clear_dirty(slot);
           pTracker->CheckResidency(
               encoderId,
               GetResidencyMask(stage,
@@ -1607,7 +1635,8 @@ public:
         continue;
       }
       // a ref is necessary (in case buffer destroyed before encoding)
-      EmitRenderCommand<true>([buffer = Obj(state.BufferRaw),
+      EmitRenderCommand<true>([buffer = state.BufferRaw,
+                               ref = Com(state.RawPointer),
                                offset = state.Offset, stride = state.Stride,
                                index](MTL::RenderCommandEncoder *encoder) {
         encoder->setVertexBuffer(buffer, offset, stride, index);

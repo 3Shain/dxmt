@@ -4,16 +4,18 @@
 #include "Metal/MTLResource.hpp"
 #include "Metal/MTLTexture.hpp"
 #include "Metal/MTLTypes.hpp"
-#include "objc_pointer.hpp"
+#include "com/com_guid.hpp"
+#include "com/com_pointer.hpp"
+
+DEFINE_COM_INTERFACE("12c69ed2-ebae-438d-ac9c-ecdb7c08065b", BackBufferSource)
+    : public IUnknown {
+  virtual MTL::Texture *GetCurrentFrameBackBuffer() = 0;
+};
 
 namespace dxmt {
 
 struct EncodingContext {
   // virtual MTL::Texture *GetCurrentSwapchainBackbuffer() = 0;
-};
-
-struct BackBufferSource {
-  virtual MTL::Texture *GetCurrentFrameBackBuffer() = 0;
 };
 
 struct tag_swapchain_backbuffer_t {};
@@ -29,57 +31,60 @@ class BindingRef {
     BackBufferSource = 0b100000000,
   };
   Type type;
-  Obj<MTL::Resource> resource_ptr;
-  Obj<MTL::Buffer> counter_;
+  MTL::Resource *resource_ptr;
+  MTL::Buffer *counter_;
   uint32_t element_width = 0;
   uint32_t byte_offset = 0;
-  void *ptr = nullptr;
+  Com<IUnknown> reference_holder = nullptr;
 
 public:
   BindingRef() noexcept : type(Type::Null) {};
-  BindingRef(MTL::Buffer *buffer) noexcept
-      : type(Type::UnboundedBuffer), resource_ptr(buffer) {}
-  BindingRef(MTL::Buffer *buffer, uint32_t element_width,
+  BindingRef(IUnknown *ref, MTL::Buffer *buffer) noexcept
+      : type(Type::UnboundedBuffer), resource_ptr(buffer),
+        reference_holder(ref) {}
+  BindingRef(IUnknown *ref, MTL::Buffer *buffer, uint32_t element_width,
              uint32_t offset) noexcept
       : type(Type::BoundedBuffer), resource_ptr(buffer),
-        element_width(element_width), byte_offset(offset) {}
-  BindingRef(MTL::Buffer *buffer, uint32_t element_width, uint32_t offset,
-             MTL::Buffer *counter) noexcept
+        element_width(element_width), byte_offset(offset),
+        reference_holder(ref) {}
+  BindingRef(IUnknown *ref, MTL::Buffer *buffer, uint32_t element_width,
+             uint32_t offset, MTL::Buffer *counter) noexcept
       : type(Type::UAVWithCounter), resource_ptr(buffer), counter_(counter),
-        element_width(element_width), byte_offset(offset) {}
-  BindingRef(MTL::Texture *texture) noexcept
-      : type(Type::JustTexture), resource_ptr(texture) {}
+        element_width(element_width), byte_offset(offset),
+        reference_holder(ref) {}
+  BindingRef(IUnknown *ref, MTL::Texture *texture) noexcept
+      : type(Type::JustTexture), resource_ptr(texture), reference_holder(ref) {}
   BindingRef(std::nullopt_t _) noexcept : type(Type::Null) {};
   BindingRef(BackBufferSource *t) noexcept
-      : type(Type::BackBufferSource), ptr(t) {}
+      : type(Type::BackBufferSource), reference_holder(t) {}
 
   operator bool() const noexcept { return type != Type::Null; }
   BindingRef(const BindingRef &copy) = delete;
   BindingRef(BindingRef &&move) {
     type = move.type;
-    resource_ptr = std::move(move.resource_ptr);
-    counter_ = std::move(move.counter_);
+    resource_ptr = move.resource_ptr;
+    counter_ = move.counter_;
     element_width = move.element_width;
     byte_offset = move.byte_offset;
-    ptr = move.ptr;
+    reference_holder = std::move(move.reference_holder);
     move.type = Type::Null;
     move.byte_offset = 0;
     move.element_width = 0;
-    move.ptr = 0;
+    // move.reference_holder = nullptr;
   };
 
   BindingRef &operator=(BindingRef &&move) {
     // ahh this is redunant
     type = move.type;
-    resource_ptr = std::move(move.resource_ptr);
-    counter_ = std::move(move.counter_);
+    resource_ptr = move.resource_ptr;
+    counter_ = move.counter_;
     element_width = move.element_width;
     byte_offset = move.byte_offset;
-    ptr = move.ptr;
+    reference_holder = std::move(move.reference_holder);
     move.type = Type::Null;
     move.byte_offset = 0;
     move.element_width = 0;
-    move.ptr = 0;
+    // move.reference_holder = 0;
     return *this;
   };
 
@@ -106,7 +111,7 @@ public:
              byte_offset == other.byte_offset &&
              element_width == other.element_width && counter_ == other.counter_;
     case Type::BackBufferSource:
-      return ptr == other.ptr;
+      return reference_holder == other.reference_holder;
     }
   };
 
@@ -114,22 +119,23 @@ public:
 
   MTL::Buffer *buffer() const {
     if ((uint64_t)type & (uint64_t)Type::UnboundedBuffer) {
-      return (MTL::Buffer *)resource_ptr.ptr();
+      return (MTL::Buffer *)resource_ptr;
     }
     return nullptr;
   }
   MTL::Texture *texture() const {
     if ((uint64_t)type & (uint64_t)Type::JustTexture) {
-      return (MTL::Texture *)resource_ptr.ptr();
+      return (MTL::Texture *)resource_ptr;
     }
     return nullptr;
   }
   MTL::Texture *texture(EncodingContext *context) const {
     if ((uint64_t)type & (uint64_t)Type::JustTexture) {
-      return (MTL::Texture *)resource_ptr.ptr();
+      return (MTL::Texture *)resource_ptr;
     }
     if ((uint64_t)type & (uint64_t)Type::BackBufferSource) {
-      return ((BackBufferSource *)ptr)->GetCurrentFrameBackBuffer();
+      return ((BackBufferSource *)reference_holder.ptr())
+          ->GetCurrentFrameBackBuffer();
     }
     return nullptr;
   }
@@ -161,7 +167,8 @@ public:
 
   MTL::Resource *resource(EncodingContext *context) const {
     if ((uint64_t)type & (uint64_t)Type::BackBufferSource) {
-      return ((BackBufferSource *)ptr)->GetCurrentFrameBackBuffer();
+      return ((BackBufferSource *)reference_holder.ptr())
+          ->GetCurrentFrameBackBuffer();
     }
     return resource();
   }

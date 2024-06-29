@@ -56,8 +56,11 @@ struct MTL_SM50_SHADER_ARGUMENT {
 };
 
 struct MTL_SHADER_REFLECTION {
+  uint32_t ConstanttBufferTableBindIndex;
   uint32_t ArgumentBufferBindIndex;
+  uint32_t NumConstantBuffers;
   uint32_t NumArguments;
+  struct MTL_SM50_SHADER_ARGUMENT *ConstantBuffers;
   struct MTL_SM50_SHADER_ARGUMENT *Arguments;
   union {
     uint32_t ThreadgroupSize[3];

@@ -789,6 +789,7 @@ public:
   std::unordered_map<
     uint32_t, std::pair<uint32_t /* count */, uint32_t /* mask */>>
     indexableTempRegisterCounts;
+  air::ArgumentBufferBuilder binding_table_cbuffer;
   air::ArgumentBufferBuilder binding_table;
 };
 
