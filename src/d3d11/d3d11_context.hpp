@@ -12,7 +12,8 @@ DEFINE_COM_INTERFACE("3a3f085a-d0fe-4324-b0ae-fe04de18571c",
     : public ID3D11DeviceContext2 {
 
   virtual void STDMETHODCALLTYPE FlushInternal(
-      std::function<void(MTL::CommandBuffer *)> && beforeCommit) = 0;
+      std::function<void(MTL::CommandBuffer *)> && beforeCommit,
+      bool is_present_boundary) = 0;
 
   virtual void WaitUntilGPUIdle() = 0;
 };

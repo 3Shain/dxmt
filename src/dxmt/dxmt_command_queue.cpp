@@ -26,12 +26,14 @@ ENCODER_INFO *CommandChunk::mark_pass(EncoderKind kind) {
 };
 
 CommandQueue::CommandQueue(MTL::Device *device)
-    : encodeThread([this]() { this->EncodingThread(); }),
+    : encodeThreadBlue([this]() { this->EncodingThread(0); }),
+      encodeThreadGreen([this]() { this->EncodingThread(1); }),
       finishThread([this]() { this->WaitForFinishThread(); }) {
   commandQueue = transfer(device->newCommandQueue(kCommandChunkCount));
   for (unsigned i = 0; i < kCommandChunkCount; i++) {
     auto &chunk = chunks[i];
     chunk.queue = this;
+    chunk.blue = 0;
     chunk.cpu_argument_heap = (char *)malloc(kCommandChunkCPUHeapSize);
     chunk.gpu_argument_heap = transfer(device->newBuffer(
         kCommandChunkGPUHeapSize, MTL::ResourceHazardTrackingModeUntracked |
@@ -50,7 +52,8 @@ CommandQueue::~CommandQueue() {
   ready_for_encode.notify_all();
   ready_for_commit++;
   ready_for_commit.notify_all();
-  encodeThread.join();
+  encodeThreadBlue.join();
+  encodeThreadGreen.join();
   finishThread.join();
   for (unsigned i = 0; i < kCommandChunkCount; i++) {
     auto &chunk = chunks[i];
@@ -61,7 +64,11 @@ CommandQueue::~CommandQueue() {
   TRACE("Destructed command queue");
 }
 
-void CommandQueue::CommitCurrentChunk() {
+void CommandQueue::CommitCurrentChunk(bool is_present_boundary) {
+  auto chunk = CurrentChunk();
+  chunk->attached_cmdbuf =
+      transfer(commandQueue->commandBufferWithUnretainedReferences());
+  chunk->attached_cmdbuf->enqueue();
   chunk_ongoing.wait(kCommandChunkCount - 1, std::memory_order_relaxed);
   chunk_ongoing.fetch_add(1, std::memory_order_relaxed);
 #ifndef SYNC_ENCODING
@@ -72,6 +79,11 @@ void CommandQueue::CommitCurrentChunk() {
   CommitChunkInternal(chunk);
   ready_for_encode.fetch_add(1, std::memory_order_release);
 #endif
+  if (is_present_boundary) {
+    blue = !blue;
+  }
+  auto next = CurrentChunk();
+  next->blue = blue ? 1 : 0;
 }
 
 void CommandQueue::CommitChunkInternal(CommandChunk &chunk, uint64_t seq) {
@@ -103,7 +115,6 @@ void CommandQueue::CommitChunkInternal(CommandChunk &chunk, uint64_t seq) {
     c->startCapture(d.ptr(), &pError);
   }
 
-  chunk.attached_cmdbuf = commandQueue->commandBufferWithUnretainedReferences();
   auto cmdbuf = chunk.attached_cmdbuf;
   chunk.encode(cmdbuf);
   cmdbuf->commit();
@@ -112,12 +123,9 @@ void CommandQueue::CommitChunkInternal(CommandChunk &chunk, uint64_t seq) {
 
     c->stopCapture();
   }
-
-  ready_for_commit.fetch_add(1, std::memory_order_relaxed);
-  ready_for_commit.notify_all();
 }
 
-uint32_t CommandQueue::EncodingThread() {
+uint32_t CommandQueue::EncodingThread(uint64_t blue) {
 #ifndef SYNC_ENCODING
   env::setThreadName("dxmt-encode-thread");
   uint64_t internal_seq = 1;
@@ -127,7 +135,14 @@ uint32_t CommandQueue::EncodingThread() {
       break;
     // perform...
     auto &chunk = chunks[internal_seq % kCommandChunkCount];
+    if (chunk.blue != blue) {
+      internal_seq++;
+      continue;
+    }
     CommitChunkInternal(chunk, internal_seq);
+
+    ready_for_commit.fetch_add(1, std::memory_order_relaxed);
+    ready_for_commit.notify_all();
     internal_seq++;
   }
   TRACE("encoder thread gracefully terminates");

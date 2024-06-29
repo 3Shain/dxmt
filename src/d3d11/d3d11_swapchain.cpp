@@ -287,17 +287,18 @@ public:
            const DXGI_PRESENT_PARAMETERS *pPresentParameters) final {
 
     device_context_->FlushInternal(
-        [backbuffer = backbuffer_,
+        [backbuffer = backbuffer_, blue = backbuffer_->BlueGreenFlip(),
          _ = DestructorWrapper([sem = present_semaphore_]() {
            // called when cmdbuf complete
            ReleaseSemaphore(sem, 1, nullptr);
          })](MTL::CommandBuffer *cmdbuf) {
-          auto drawable = backbuffer->CurrentDrawable();
+          auto drawable = backbuffer->CurrentDrawable(blue);
           if (drawable) {
             cmdbuf->presentDrawable(drawable);
-            backbuffer->Swap();
+            backbuffer->Swap(blue);
           }
-        });
+        },
+        true);
 
     presentation_count_ += 1;
 

@@ -108,7 +108,7 @@ private:
           },
           [](SIMPLE_RESIDENCY_TRACKER **ppTracker) {
             D3D11_ASSERT(0 && "todo: prepare dynamic buffer srv view");
-            return ArgumentData(0uL, 0);
+            return ArgumentData((uint64_t)0uL, 0);
           },
           [u = this->resource.ptr()](IMTLNotifiedBindable *_this) {
             u->RemoveObserver(_this);
