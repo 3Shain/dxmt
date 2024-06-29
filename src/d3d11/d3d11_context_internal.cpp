@@ -1195,21 +1195,46 @@ public:
     if (!FinalizeCurrentRenderPipeline()) {
       return false;
     }
+    CommandChunk *chk = cmd_queue.CurrentChunk();
     UpdateVertexBuffer();
     if (dirty_state.any(DirtyState::DepthStencilState)) {
-      EmitSetDepthStencilState<true>();
+      auto state = state_.OutputMerger.DepthStencilState
+                       ? state_.OutputMerger.DepthStencilState
+                       : default_depth_stencil_state;
+      chk->emit([state = std::move(state),
+                 stencil_ref = state_.OutputMerger.StencilRef](
+                    CommandChunk::context &ctx) {
+        auto encoder = ctx.render_encoder;
+        encoder->setDepthStencilState(
+            state->GetDepthStencilState(ctx.dsv_valid));
+        encoder->setStencilReferenceValue(stencil_ref);
+      });
     }
     if (dirty_state.any(DirtyState::RasterizerState)) {
-      EmitSetRasterizerState<true>();
+      auto state = state_.Rasterizer.RasterizerState
+                       ? state_.Rasterizer.RasterizerState
+                       : default_rasterizer_state;
+      chk->emit([state = std::move(state)](CommandChunk::context &ctx) {
+        auto &encoder = ctx.render_encoder;
+        state->SetupRasterizerState(encoder);
+      });
     }
     if (dirty_state.any(DirtyState::BlendFactorAndStencilRef)) {
-      EmitBlendFactorAndStencilRef<true>();
+      chk->emit([r = state_.OutputMerger.BlendFactor[0],
+                 g = state_.OutputMerger.BlendFactor[1],
+                 b = state_.OutputMerger.BlendFactor[2],
+                 a = state_.OutputMerger.BlendFactor[3],
+                 stencil_ref = state_.OutputMerger.StencilRef](
+                    CommandChunk::context &ctx) {
+        auto &encoder = ctx.render_encoder;
+        encoder->setBlendColor(r, g, b, a);
+        encoder->setStencilReferenceValue(stencil_ref);
+      });
     }
     if (dirty_state.any(DirtyState::ViewportAndScissors)) {
-      EmitSetViewportAndScissors<true>();
+      EmitSetViewportAndScissors();
     }
     if (dirty_state.any(DirtyState::IndexBuffer)) {
-      CommandChunk *chk = cmd_queue.CurrentChunk();
       // we should be able to retrieve it from chunk
       auto seq_id = cmd_queue.CurrentSeqId();
       if (state_.InputAssembler.IndexBuffer) {
@@ -1277,12 +1302,11 @@ public:
     return true;
   }
 
-  template <ShaderType stage, bool Force = false>
-  bool UploadShaderStageResourceBinding() {
+  template <ShaderType stage> bool UploadShaderStageResourceBinding() {
     auto &ShaderStage = state_.ShaderStages[(UINT)stage];
 
     // TODO: should be more optimized (only check dirty on used slot)
-    if (!Force && !ShaderStage.ConstantBuffers.any_dirty() &&
+    if (!ShaderStage.ConstantBuffers.any_dirty() &&
         !ShaderStage.Samplers.any_dirty() && !ShaderStage.SRVs.any_dirty())
       return true;
 
@@ -1520,30 +1544,7 @@ public:
     }
   };
 
-  template <bool Force = false> void EmitSetDepthStencilState() {
-    auto state = state_.OutputMerger.DepthStencilState
-                     ? state_.OutputMerger.DepthStencilState
-                     : default_depth_stencil_state;
-    EmitRenderCommandChk<Force>([state = std::move(state),
-                                 stencil_ref = state_.OutputMerger.StencilRef](
-                                    CommandChunk::context &ctx) {
-      auto encoder = ctx.render_encoder;
-      encoder->setDepthStencilState(state->GetDepthStencilState(ctx.dsv_valid));
-      encoder->setStencilReferenceValue(stencil_ref);
-    });
-  }
-
-  template <bool Force = false> void EmitSetRasterizerState() {
-    auto state = state_.Rasterizer.RasterizerState
-                     ? state_.Rasterizer.RasterizerState
-                     : default_rasterizer_state;
-    EmitRenderCommand<Force>(
-        [state = std::move(state)](MTL::RenderCommandEncoder *encoder) {
-          state->SetupRasterizerState(encoder);
-        });
-  }
-
-  template <bool Force = false> void EmitSetViewportAndScissors() {
+  void EmitSetViewportAndScissors() {
     if (state_.Rasterizer.NumViewports != state_.Rasterizer.NumScissorRects) {
       return;
     };
@@ -1573,7 +1574,7 @@ public:
                             (UINT)d3dViewport.Height});
       }
     }
-    EmitRenderCommand<Force>(
+    EmitRenderCommand<true>(
         [viewports = std::move(viewports),
          scissors = std::move(scissors)](MTL::RenderCommandEncoder *encoder) {
           encoder->setViewports(viewports.data(), viewports.size());
@@ -1585,7 +1586,7 @@ public:
   it's just about vertex buffer
   - index buffer and input topology are provided in draw commands
   */
-  template <bool Force = false> void UpdateVertexBuffer() {
+  void UpdateVertexBuffer() {
     auto dirty_vbs =
         std::min((size_t)std::popcount((vertex_buffer_dirty & 0xFFFFFFFF)),
                  state_.InputAssembler.VertexBuffers.size());
@@ -1597,25 +1598,13 @@ public:
         continue;
       }
       // a ref is necessary (in case buffer destroyed before encoding)
-      EmitRenderCommand<Force>([buffer = Obj(state.BufferRaw),
-                                offset = state.Offset, stride = state.Stride,
-                                index](MTL::RenderCommandEncoder *encoder) {
+      EmitRenderCommand<true>([buffer = Obj(state.BufferRaw),
+                               offset = state.Offset, stride = state.Stride,
+                               index](MTL::RenderCommandEncoder *encoder) {
         encoder->setVertexBuffer(buffer, offset, stride, index);
       });
     };
     vertex_buffer_dirty = 0;
-  }
-
-  template <bool Force = false> void EmitBlendFactorAndStencilRef() {
-    EmitRenderCommand<Force>([r = state_.OutputMerger.BlendFactor[0],
-                              g = state_.OutputMerger.BlendFactor[1],
-                              b = state_.OutputMerger.BlendFactor[2],
-                              a = state_.OutputMerger.BlendFactor[3],
-                              stencil_ref = state_.OutputMerger.StencilRef](
-                                 MTL::RenderCommandEncoder *encoder) {
-      encoder->setBlendColor(r, g, b, a);
-      encoder->setStencilReferenceValue(stencil_ref);
-    });
   }
 
 #pragma endregion

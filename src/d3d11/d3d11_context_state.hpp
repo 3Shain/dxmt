@@ -19,6 +19,8 @@ struct UAV_B {
   UINT InitialCountValue;
 };
 
+typedef BindingSet<UAV_B, 64> UAVBindingSet;
+
 template <> struct redunant_binding_trait<UAV_B> {
   static bool is_redunant(const UAV_B &left, const UAV_B &right) {
     return left.RawPointer == right.RawPointer;
@@ -26,7 +28,7 @@ template <> struct redunant_binding_trait<UAV_B> {
 };
 
 struct D3D11ComputeStageState {
-  BindingSet<UAV_B, 64> UAVs;
+  UAVBindingSet UAVs;
 };
 
 struct CONSTANT_BUFFER_B {
@@ -35,6 +37,8 @@ struct CONSTANT_BUFFER_B {
   UINT FirstConstant;
   UINT NumConstants;
 };
+
+typedef BindingSet<CONSTANT_BUFFER_B, 14> ConstantBufferBindingSet;
 
 template <> struct redunant_binding_trait<CONSTANT_BUFFER_B> {
   static bool is_redunant(const CONSTANT_BUFFER_B &left,
@@ -48,6 +52,8 @@ struct SAMPLER_B {
   Com<IMTLD3D11SamplerState> Sampler;
 };
 
+typedef BindingSet<SAMPLER_B, 16> SamplerBindingSet;
+
 template <> struct redunant_binding_trait<SAMPLER_B> {
   static bool is_redunant(const SAMPLER_B &left, const SAMPLER_B &right) {
     return left.RawPointer == right.RawPointer;
@@ -59,6 +65,8 @@ struct SRV_B {
   Com<IMTLBindable> SRV;
 };
 
+typedef BindingSet<SRV_B, 128> SRVBindingSet;
+
 template <> struct redunant_binding_trait<SRV_B> {
   static bool is_redunant(const SRV_B &left, const SRV_B &right) {
     return left.RawPointer == right.RawPointer;
@@ -66,9 +74,9 @@ template <> struct redunant_binding_trait<SRV_B> {
 };
 
 struct D3D11ShaderStageState {
-  BindingSet<SRV_B, 128> SRVs;
-  BindingSet<SAMPLER_B, 16> Samplers;
-  BindingSet<CONSTANT_BUFFER_B, 14> ConstantBuffers;
+  SRVBindingSet SRVs;
+  SamplerBindingSet Samplers;
+  ConstantBufferBindingSet ConstantBuffers;
   Com<IMTLD3D11Shader> Shader;
 };
 
@@ -96,7 +104,7 @@ struct D3D11OutputMergerStageState {
   Com<IMTLD3D11DepthStencilView> DSV;
   UINT NumRTVs;
 
-  BindingSet<UAV_B, 64> UAVs;
+  UAVBindingSet UAVs;
 
   Com<IMTLD3D11DepthStencilState> DepthStencilState;
   UINT StencilRef;
