@@ -884,7 +884,8 @@ public:
     vertex_buffer_dirty = 0xFFFFFFFF;
     dirty_state.set(DirtyState::BlendFactorAndStencilRef,
                     DirtyState::RasterizerState, DirtyState::DepthStencilState,
-                    DirtyState::ViewportAndScissors, DirtyState::IndexBuffer);
+                    DirtyState::Viewport, DirtyState::Scissors,
+                    DirtyState::IndexBuffer);
 
     // should assume: render target is properly set
     {
@@ -1231,8 +1232,54 @@ public:
         encoder->setStencilReferenceValue(stencil_ref);
       });
     }
-    if (dirty_state.any(DirtyState::ViewportAndScissors)) {
-      EmitSetViewportAndScissors();
+    auto &current_rs = state_.Rasterizer.RasterizerState
+                           ? state_.Rasterizer.RasterizerState
+                           : default_rasterizer_state;
+    bool allow_scissor =
+        current_rs->IsScissorEnabled() &&
+        state_.Rasterizer.NumViewports == state_.Rasterizer.NumScissorRects;
+    // FIXME: multiple viewports with one scissor should be allowed?
+    if (current_rs->IsScissorEnabled() && state_.Rasterizer.NumViewports > 1 &&
+        state_.Rasterizer.NumScissorRects == 1) {
+      ERR("FIXME: handle multiple viewports with single scissor rect.");
+    }
+    if (dirty_state.any(DirtyState::Viewport)) {
+      auto viewports =
+          chk->reserve_vector<MTL::Viewport>(state_.Rasterizer.NumViewports);
+      for (unsigned i = 0; i < state_.Rasterizer.NumViewports; i++) {
+        auto &d3dViewport = state_.Rasterizer.viewports[i];
+        viewports.push_back({d3dViewport.TopLeftX, d3dViewport.TopLeftY,
+                             d3dViewport.Width, d3dViewport.Height,
+                             d3dViewport.MinDepth, d3dViewport.MaxDepth});
+      }
+      chk->emit([viewports = std::move(viewports)](CommandChunk::context &ctx) {
+        auto &encoder = ctx.render_encoder;
+        encoder->setViewports(viewports.data(), viewports.size());
+      });
+    }
+    if (dirty_state.any(DirtyState::Scissors)) {
+      auto scissors = chk->reserve_vector<MTL::ScissorRect>(
+          allow_scissor ? state_.Rasterizer.NumScissorRects
+                        : state_.Rasterizer.NumViewports);
+      if (allow_scissor) {
+        for (unsigned i = 0; i < state_.Rasterizer.NumScissorRects; i++) {
+          auto &d3dRect = state_.Rasterizer.scissor_rects[i];
+          scissors.push_back({(UINT)d3dRect.left, (UINT)d3dRect.top,
+                              (UINT)d3dRect.right - d3dRect.left,
+                              (UINT)d3dRect.bottom - d3dRect.top});
+        }
+      } else {
+        for (unsigned i = 0; i < state_.Rasterizer.NumViewports; i++) {
+          auto &d3dViewport = state_.Rasterizer.viewports[i];
+          scissors.push_back(
+              {(UINT)d3dViewport.TopLeftX, (UINT)d3dViewport.TopLeftY,
+               (UINT)d3dViewport.Width, (UINT)d3dViewport.Height});
+        }
+      }
+      chk->emit([scissors = std::move(scissors)](CommandChunk::context &ctx) {
+        auto &encoder = ctx.render_encoder;
+        encoder->setScissorRects(scissors.data(), scissors.size());
+      });
     }
     if (dirty_state.any(DirtyState::IndexBuffer)) {
       // we should be able to retrieve it from chunk
@@ -1544,44 +1591,6 @@ public:
     }
   };
 
-  void EmitSetViewportAndScissors() {
-    if (state_.Rasterizer.NumViewports != state_.Rasterizer.NumScissorRects) {
-      return;
-    };
-    CommandChunk *chk = cmd_queue.CurrentChunk();
-    auto viewports =
-        chk->reserve_vector<MTL::Viewport>(state_.Rasterizer.NumViewports);
-    for (unsigned i = 0; i < state_.Rasterizer.NumViewports; i++) {
-      auto &d3dViewport = state_.Rasterizer.viewports[i];
-      viewports.push_back({d3dViewport.TopLeftX, d3dViewport.TopLeftY,
-                           d3dViewport.Width, d3dViewport.Height,
-                           d3dViewport.MinDepth, d3dViewport.MaxDepth});
-    }
-    auto scissors = chk->reserve_vector<MTL::ScissorRect>(
-        state_.Rasterizer.NumScissorRects);
-    if (state_.Rasterizer.RasterizerState->IsScissorEnabled()) {
-      for (unsigned i = 0; i < state_.Rasterizer.NumScissorRects; i++) {
-        auto &d3dRect = state_.Rasterizer.scissor_rects[i];
-        scissors.push_back({(UINT)d3dRect.left, (UINT)d3dRect.top,
-                            (UINT)d3dRect.right - d3dRect.left,
-                            (UINT)d3dRect.bottom - d3dRect.top});
-      }
-    } else {
-      for (unsigned i = 0; i < state_.Rasterizer.NumScissorRects; i++) {
-        auto &d3dViewport = state_.Rasterizer.viewports[i];
-        scissors.push_back({(UINT)d3dViewport.TopLeftX,
-                            (UINT)d3dViewport.TopLeftY, (UINT)d3dViewport.Width,
-                            (UINT)d3dViewport.Height});
-      }
-    }
-    EmitRenderCommand<true>(
-        [viewports = std::move(viewports),
-         scissors = std::move(scissors)](MTL::RenderCommandEncoder *encoder) {
-          encoder->setViewports(viewports.data(), viewports.size());
-          encoder->setScissorRects(scissors.data(), scissors.size());
-        });
-  }
-
   /**
   it's just about vertex buffer
   - index buffer and input topology are provided in draw commands
@@ -1628,8 +1637,6 @@ public:
   };
 
 #pragma region Default State
-
-private:
   /**
   Don't bind them to state or provide to API consumer
   (use COM just in case it's referenced by encoding thread)
@@ -1650,11 +1657,12 @@ private:
 
 public:
   enum class DirtyState {
-    DepthStencilState = 1,
-    RasterizerState = 2,
-    BlendFactorAndStencilRef = 4,
-    ViewportAndScissors = 8,
-    IndexBuffer = 16,
+    DepthStencilState,
+    RasterizerState,
+    BlendFactorAndStencilRef,
+    IndexBuffer,
+    Viewport,
+    Scissors,
   };
 
   Flags<DirtyState> dirty_state;

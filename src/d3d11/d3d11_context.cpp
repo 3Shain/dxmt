@@ -1428,16 +1428,30 @@ public:
     if (pRasterizerState) {
       if (auto expected =
               com_cast<IMTLD3D11RasterizerState>(pRasterizerState)) {
+        auto &current_rs = state_.Rasterizer.RasterizerState
+                               ? state_.Rasterizer.RasterizerState
+                               : ctx.default_rasterizer_state;
+        if (current_rs == expected) {
+          return;
+        }
+        if (current_rs->IsScissorEnabled() != expected->IsScissorEnabled()) {
+          ctx.dirty_state.set(ContextInternal::DirtyState::Scissors);
+        }
         state_.Rasterizer.RasterizerState = expected;
+        ctx.dirty_state.set(ContextInternal::DirtyState::RasterizerState);
       } else {
         ERR("RSSetState: invalid ID3D11RasterizerState object.");
       }
     } else {
+      if (state_.Rasterizer.RasterizerState) {
+        if (state_.Rasterizer.RasterizerState->IsScissorEnabled() !=
+            ctx.default_rasterizer_state->IsScissorEnabled()) {
+          ctx.dirty_state.set(ContextInternal::DirtyState::Scissors);
+        }
+      }
       state_.Rasterizer.RasterizerState = nullptr;
+      ctx.dirty_state.set(ContextInternal::DirtyState::RasterizerState);
     }
-    // check scissors enabled
-    ctx.dirty_state.set(ContextInternal::DirtyState::RasterizerState,
-                        ContextInternal::DirtyState::ViewportAndScissors);
   }
 
   void RSGetState(ID3D11RasterizerState **ppRasterizerState) override {
@@ -1453,11 +1467,24 @@ public:
 
   void RSSetViewports(UINT NumViewports,
                       const D3D11_VIEWPORT *pViewports) override {
+    if (NumViewports > 16)
+      return;
+    if (state_.Rasterizer.NumViewports == NumViewports &&
+        memcmp(state_.Rasterizer.viewports, pViewports,
+               NumViewports * sizeof(D3D11_VIEWPORT)) == 0) {
+      return;
+    }
     state_.Rasterizer.NumViewports = NumViewports;
     for (auto i = 0u; i < NumViewports; i++) {
       state_.Rasterizer.viewports[i] = pViewports[i];
     }
-    ctx.dirty_state.set(ContextInternal::DirtyState::ViewportAndScissors);
+    ctx.dirty_state.set(ContextInternal::DirtyState::Viewport);
+    auto &current_rs = state_.Rasterizer.RasterizerState
+                           ? state_.Rasterizer.RasterizerState
+                           : ctx.default_rasterizer_state;
+    if (!current_rs->IsScissorEnabled()) {
+      ctx.dirty_state.set(ContextInternal::DirtyState::Scissors);
+    }
   }
 
   void RSGetViewports(UINT *pNumViewports,
@@ -1473,11 +1500,25 @@ public:
   }
 
   void RSSetScissorRects(UINT NumRects, const D3D11_RECT *pRects) override {
+    if (NumRects > 16)
+      return;
+    if (state_.Rasterizer.NumScissorRects == NumRects &&
+        memcmp(state_.Rasterizer.scissor_rects, pRects,
+               NumRects * sizeof(D3D11_RECT)) == 0) {
+      return;
+    }
     state_.Rasterizer.NumScissorRects = NumRects;
     for (unsigned i = 0; i < NumRects; i++) {
       state_.Rasterizer.scissor_rects[i] = pRects[i];
     }
-    ctx.dirty_state.set(ContextInternal::DirtyState::ViewportAndScissors);
+    auto &current_rs = state_.Rasterizer.RasterizerState
+                           ? state_.Rasterizer.RasterizerState
+                           : ctx.default_rasterizer_state;
+    if (current_rs->IsScissorEnabled()) {
+      ctx.dirty_state.set(ContextInternal::DirtyState::Scissors);
+      // otherwise no need to update scissor because it's either already dirty
+      // or duplicates viewports
+    }
   }
 
   void RSGetScissorRects(UINT *pNumRects, D3D11_RECT *pRects) override {
