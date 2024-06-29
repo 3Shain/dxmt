@@ -156,6 +156,14 @@ uint32_t get_value_dimension(pvalue maybe_vec) {
   }
 };
 
+std::string fastmath_variant(context& ctx ,std::string name) {
+  if(ctx.builder.getFastMathFlags().isFast()) {
+    return "fast_" + name;
+  } else {
+    return name;
+  }
+};
+
 std::string type_overload_suffix(
   llvm::Type *type, air::Sign sign = air::Sign::inapplicable
 ) {
@@ -804,7 +812,7 @@ auto call_float_unary_op(std::string op, pvalue a) {
     );
     auto operand_type = a->getType();
     auto fn = (module.getOrInsertFunction(
-      "air." + op + type_overload_suffix(operand_type),
+      "air." + fastmath_variant(ctx, op) + type_overload_suffix(operand_type),
       llvm::FunctionType::get(operand_type, {operand_type}, false), att
     ));
     return ctx.builder.CreateCall(fn, {a});
@@ -826,7 +834,7 @@ auto call_float_binop(std::string op, pvalue a, pvalue b) {
     );
     auto operand_type = a->getType();
     auto fn = (module.getOrInsertFunction(
-      "air." + op + type_overload_suffix(operand_type),
+      "air." + fastmath_variant(ctx, op) + type_overload_suffix(operand_type),
       llvm::FunctionType::get(
         operand_type, {operand_type, operand_type}, false
       ),

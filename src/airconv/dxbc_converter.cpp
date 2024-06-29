@@ -268,7 +268,19 @@ llvm::Error convertDXBC(
   auto entry_bb = llvm::BasicBlock::Create(context, "entry", function);
   auto epilogue_bb = llvm::BasicBlock::Create(context, "epilogue", function);
   llvm::IRBuilder<> builder(entry_bb);
-  builder.getFastMathFlags().setFast(true);
+  // what a mess
+  if (auto options = module.getNamedMetadata("air.compile_options")) {
+    for (auto operand : options->operands()) {
+      if (isa<llvm::MDTuple>(operand) &&
+          cast<llvm::MDTuple>(operand)->getNumOperands() == 1 &&
+          isa<llvm::MDString>(cast<llvm::MDTuple>(operand)->getOperand(0)) &&
+          cast<llvm::MDString>(cast<llvm::MDTuple>(operand)->getOperand(0))
+              ->getString()
+              .compare("air.compile.fast_math_enable") == 0) {
+        builder.getFastMathFlags().setFast(true);
+      }
+    }
+  }
   resource_map.input.ptr_int4 =
     builder.CreateAlloca(llvm::ArrayType::get(types._int4, max_input_register));
   resource_map.input.ptr_float4 = builder.CreateBitCast(
