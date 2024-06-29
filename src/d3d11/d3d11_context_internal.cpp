@@ -1141,7 +1141,7 @@ public:
       // ERR("stream-out is not supported yet, skip drawcall");
       return false;
     }
-    if (!state_.OutputMerger.NumRTVs) {
+    if (!state_.OutputMerger.NumRTVs && !state_.OutputMerger.DSV) {
       return false;
     }
 
