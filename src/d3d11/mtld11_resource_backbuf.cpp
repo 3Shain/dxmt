@@ -35,12 +35,9 @@ private:
   */
   CA::MetalLayer *layer_;
   MTL::PixelFormat pixel_format_;
-  Obj<CA::MetalDrawable> current_blue_drawable;
-  Obj<CA::MetalDrawable> current_green_drawable;
+  Obj<CA::MetalDrawable> current_drawable;
   bool destroyed = false;
   SIMPLE_RESIDENCY_TRACKER tracker{};
-  bool blue = false;
-  std::atomic_bool presenting_blue = true;
 
   using BackBufferRTVBase =
       TResourceViewBase<tag_render_target_view<EmulatedBackBufferTexture>>;
@@ -57,8 +54,7 @@ private:
     };
 
     BindingRef GetBinding(uint64_t) {
-      return BindingRef(static_cast<BackBufferSource *>(resource.ptr()),
-                        resource->blue);
+      return BindingRef(static_cast<BackBufferSource *>(resource.ptr()));
     };
 
     MTL_RENDER_TARGET_VIEW_DESC *GetRenderTargetProps() { return &props; };
@@ -77,15 +73,13 @@ private:
         : BackBufferSRVBase(pDesc, context, pDevice) {}
 
     BindingRef UseBindable(uint64_t) override {
-      return BindingRef(static_cast<BackBufferSource *>(resource.ptr()),
-                        resource->blue);
+      return BindingRef(static_cast<BackBufferSource *>(resource.ptr()));
     };
 
     ArgumentData
     GetArgumentData(SIMPLE_RESIDENCY_TRACKER **ppTracker) override {
       *ppTracker = &tracker;
-      return ArgumentData(static_cast<BackBufferSource *>(resource.ptr()),
-                          resource->blue);
+      return ArgumentData(static_cast<BackBufferSource *>(resource.ptr()));
     };
 
     void GetLogicalResourceOrView(REFIID riid,
@@ -106,15 +100,13 @@ private:
         : BackBufferUAVBase(pDesc, context, pDevice) {}
 
     BindingRef UseBindable(uint64_t) override {
-      return BindingRef(static_cast<BackBufferSource *>(resource.ptr()),
-                        resource->blue);
+      return BindingRef(static_cast<BackBufferSource *>(resource.ptr()));
     };
 
     ArgumentData
     GetArgumentData(SIMPLE_RESIDENCY_TRACKER **ppTracker) override {
       *ppTracker = &tracker;
-      return ArgumentData(static_cast<BackBufferSource *>(resource.ptr()),
-                          resource->blue);
+      return ArgumentData(static_cast<BackBufferSource *>(resource.ptr()));
     };
 
     void GetLogicalResourceOrView(REFIID riid,
@@ -180,8 +172,7 @@ public:
     if (destroyed)
       return;
     // drop reference if any
-    current_blue_drawable = nullptr;
-    current_green_drawable = nullptr;
+    current_drawable = nullptr;
     // unnecessary
     // layer_ = nullptr;
     layer_factory->ReleaseMetalLayer(hWnd, native_view_);
@@ -283,49 +274,27 @@ public:
     return S_OK;
   }
 
-  MTL::Texture *GetCurrentFrameBackBuffer(bool _blue) override {
-    if (_blue) {
-      if (current_blue_drawable == nullptr) {
-        presenting_blue.wait(true);
-        current_blue_drawable = layer_->nextDrawable();
-        D3D11_ASSERT(current_blue_drawable != nullptr);
-        presenting_blue = true;
-        presenting_blue.notify_all();
-      }
-      return current_blue_drawable->texture();
-    } else {
-      if (current_green_drawable == nullptr) {
-        presenting_blue.wait(false);
-        current_green_drawable = layer_->nextDrawable();
-        D3D11_ASSERT(current_green_drawable != nullptr);
-        presenting_blue = false;
-        presenting_blue.notify_all();
-      }
-      return current_green_drawable->texture();
+  MTL::Texture *GetCurrentFrameBackBuffer() override {
+    if (current_drawable == nullptr) {
+      current_drawable = layer_->nextDrawable();
+      D3D11_ASSERT(current_drawable != nullptr);
     }
+    return current_drawable->texture();
   };
 
-  bool BlueGreenFlip() override { return !(blue = !blue); }
+  void Swap() override { current_drawable = nullptr; }
 
-  void Swap(bool _blue) override {
-    if (_blue) {
-      current_blue_drawable = nullptr;
-    } else {
-      current_green_drawable = nullptr;
-    }
-  }
-
-  CA::MetalDrawable *CurrentDrawable(bool _blue) override {
-    return _blue ? current_blue_drawable.ptr() : current_green_drawable.ptr();
+  CA::MetalDrawable *CurrentDrawable() override {
+    return current_drawable.ptr();
   }
 
   BindingRef UseBindable(uint64_t) override {
-    return BindingRef(static_cast<BackBufferSource *>(this), blue);
+    return BindingRef(static_cast<BackBufferSource *>(this));
   };
 
   ArgumentData GetArgumentData(SIMPLE_RESIDENCY_TRACKER **ppTracker) override {
     *ppTracker = &tracker;
-    return ArgumentData(static_cast<BackBufferSource *>(this), blue);
+    return ArgumentData(static_cast<BackBufferSource *>(this));
   };
 
   void GetLogicalResourceOrView(REFIID riid,

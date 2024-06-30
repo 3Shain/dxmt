@@ -251,7 +251,6 @@ public:
 
 private:
   CommandQueue *queue;
-  uint64_t blue = 0;
   char *cpu_argument_heap;
   Obj<MTL::Buffer> gpu_argument_heap;
   uint64_t cpu_arugment_heap_offset;
@@ -294,7 +293,7 @@ class CommandQueue {
 private:
   void CommitChunkInternal(CommandChunk &chunk, uint64_t seq);
 
-  uint32_t EncodingThread(uint64_t blue);
+  uint32_t EncodingThread();
 
   uint32_t WaitForFinishThread();
 
@@ -312,11 +311,9 @@ private:
   FIXME: dxmt::thread cause access page fault when
   program shutdown. recheck this later
   */
-  std::thread encodeThreadBlue;
-  std::thread encodeThreadGreen;
+  std::thread encodeThread;
   std::thread finishThread;
   Obj<MTL::CommandQueue> commandQueue;
-  bool blue = false;
 
   friend class CommandChunk;
   uint64_t GetNextEncoderId() { return encoder_seq++; }
@@ -349,7 +346,7 @@ public:
   CurrentChunk & CommitCurrentChunk should be called on the same thread
 
   */
-  void CommitCurrentChunk(bool is_present_boundary);
+  void CommitCurrentChunk();
 
   void WaitCPUFence(uint64_t seq) {
     uint64_t current;
