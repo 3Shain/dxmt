@@ -1530,7 +1530,7 @@ int SM50Compile(
     return 1;
   }
 
-  runOptimizationPasses(*pModule, OptimizationLevel::O1);
+  runOptimizationPasses(*pModule, OptimizationLevel::O2);
 
   // pModule->print(outs(), nullptr);
 
