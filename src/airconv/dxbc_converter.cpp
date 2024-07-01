@@ -67,12 +67,12 @@ namespace dxmt::dxbc {
 
 llvm::Error convertDXBC(
   SM50Shader *pShader, const char *name, llvm::LLVMContext &context,
-  llvm::Module &module
+  llvm::Module &module, SM50_SHADER_COMPILATION_ARGUMENT_DATA *pArgs
 ) {
   using namespace microsoft;
 
   auto pShaderInternal = (SM50ShaderInternal *)pShader;
-  auto &func_signature = pShaderInternal->func_signature;
+  auto func_signature = pShaderInternal->func_signature; // we need to copy one!
   auto shader_info = &(pShaderInternal->shader_info);
   auto shader_type = pShaderInternal->shader_type;
 
@@ -80,6 +80,17 @@ llvm::Error convertDXBC(
   uint32_t cbuf_table_index = ~0u;
   uint32_t const &max_input_register = pShaderInternal->max_input_register;
   uint32_t const &max_output_register = pShaderInternal->max_output_register;
+  uint64_t sign_mask = 0;
+  SM50_SHADER_COMPILATION_ARGUMENT_DATA *arg = pArgs;
+  while (arg) {
+    switch (arg->type) {
+    case SM50_SHADER_COMPILATION_INPUT_SIGN_MASK:
+      sign_mask =
+        ((SM50_SHADER_COMPILATION_INPUT_SIGN_MASK_DATA *)arg)->sign_mask;
+      break;
+    }
+    arg = (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)arg->next;
+  }
 
   IREffect prelogue([](auto) { return std::monostate(); });
   IRValue epilogue([](struct context ctx) -> pvalue {
@@ -263,7 +274,7 @@ llvm::Error convertDXBC(
       });
   }
   auto [function, function_metadata] =
-    func_signature.CreateFunction(name, context, module);
+    func_signature.CreateFunction(name, context, module, sign_mask);
 
   auto entry_bb = llvm::BasicBlock::Create(context, "entry", function);
   auto epilogue_bb = llvm::BasicBlock::Create(context, "epilogue", function);
@@ -1068,11 +1079,7 @@ int SM50Initialize(
             });
             auto assigned_index = func_signature.DefineInput(InputVertexStageIn{
               .attribute = reg,
-              .type = sig.componentType() == RegisterComponentType::Float
-                        ? msl_float4
-                        : (sig.componentType() == RegisterComponentType::Uint
-                             ? msl_uint4
-                             : msl_int4),
+              .type = (InputAttributeComponentType)sig.componentType(),
               .name = sig.fullSemanticString()
             });
             prelogue_.push_back([=](IREffect &prelogue) {
@@ -1494,8 +1501,8 @@ void SM50Destroy(SM50Shader *pShader) { delete (SM50ShaderInternal *)pShader; }
 ABRT_HANDLE_INIT
 
 int SM50Compile(
-  SM50Shader *pShader, void *pArgs, const char *FunctionName,
-  SM50CompiledBitcode **ppBitcode, SM50Error **ppError
+  SM50Shader *pShader, SM50_SHADER_COMPILATION_ARGUMENT_DATA *pArgs,
+  const char *FunctionName, SM50CompiledBitcode **ppBitcode, SM50Error **ppError
 ) {
   ABRT_HANDLE_RETURN(42)
 
@@ -1519,10 +1526,11 @@ int SM50Compile(
   context.setOpaquePointers(false); // I suspect Metal uses LLVM 14...
 
   auto pModule = std::make_unique<Module>("shader.air", context);
-  initializeModule(*pModule, {.enableFastMath = true});
+  initializeModule(*pModule, {.enableFastMath = false});
 
-  if (auto err =
-        dxmt::dxbc::convertDXBC(pShader, FunctionName, context, *pModule)) {
+  if (auto err = dxmt::dxbc::convertDXBC(
+        pShader, FunctionName, context, *pModule, pArgs
+      )) {
     llvm::handleAllErrors(std::move(err), [&](const UnsupportedFeature &u) {
       errorOut << u.msg;
     });

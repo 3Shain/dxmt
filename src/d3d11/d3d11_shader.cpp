@@ -46,8 +46,7 @@ public:
               MTL_SHADER_REFLECTION &reflection, const void *pShaderBytecode,
               SIZE_T BytecodeLength)
       : MTLD3D11DeviceChild<typename tag::COM, IMTLD3D11Shader>(device),
-        sm50(sm50), reflection(reflection),
-        dump_len(BytecodeLength) {
+        sm50(sm50), reflection(reflection), dump_len(BytecodeLength) {
     id = ++global_id;
     dump = malloc(BytecodeLength);
     memcpy(dump, pShaderBytecode, BytecodeLength);
@@ -86,7 +85,10 @@ public:
     return E_NOINTERFACE;
   }
 
-  void GetCompiledShader(void *pArgs, IMTLCompiledShader **pShader) final;
+  void GetCompiledShader(IMTLCompiledShader **pShader) final;
+
+  void GetCompiledShaderWithInputLayerFixup(uint64_t sign_mask,
+                                            IMTLCompiledShader **pShader) final;
 
   void GetReflection(MTL_SHADER_REFLECTION **pRefl) final {
     *pRefl = &reflection;
@@ -95,6 +97,8 @@ public:
   SM50Shader *sm50;
   MTL_SHADER_REFLECTION reflection;
   Com<IMTLCompiledShader> precompiled_;
+  std::unordered_map<uint64_t, Com<IMTLCompiledShader>>
+      with_input_layout_fixup_;
   Obj<MTL::ArgumentEncoder> encoder_;
   uint64_t id;
   void *dump;
@@ -102,10 +106,12 @@ public:
 };
 
 template <typename tag>
-class ContextlessShader : public ComObject<IMTLCompiledShader> {
+class AirconvShader : public ComObject<IMTLCompiledShader> {
 public:
-  ContextlessShader(IMTLD3D11Device *pDevice, TShaderBase<tag> *shader)
-      : ComObject<IMTLCompiledShader>(), device_(pDevice), shader_(shader) {
+  AirconvShader(IMTLD3D11Device *pDevice, TShaderBase<tag> *shader,
+                void *compilation_args)
+      : ComObject<IMTLCompiledShader>(), device_(pDevice), shader_(shader),
+        compilation_args(compilation_args) {
     shader_->AddRef(); // ???
     pDevice->SubmitThreadgroupWork(this, &work_state_);
   }
@@ -161,8 +167,10 @@ public:
       SM50CompiledBitcode *compile_result = nullptr;
       SM50Error *sm50_err = nullptr;
       std::string func_name = "shader_main_" + std::to_string(shader_->id);
-      if (auto ret = SM50Compile(shader_->sm50, nullptr, func_name.c_str(),
-                                 &compile_result, &sm50_err)) {
+      if (auto ret = SM50Compile(
+              shader_->sm50,
+              (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)compilation_args,
+              func_name.c_str(), &compile_result, &sm50_err)) {
         if (ret == 42) {
           ERR("Failed to compile shader due to failed assertation");
         } else {
@@ -213,17 +221,49 @@ private:
   THREADGROUP_WORK_STATE work_state_;
   Sha1Hash hash_;
   Obj<MTL::Function> function_;
+  void *compilation_args;
 };
 
 template <typename tag>
-void TShaderBase<tag>::GetCompiledShader(void *pArgs,
-                                         IMTLCompiledShader **pShader) {
+class AirconvShaderWithInputLayoutFixup : public AirconvShader<tag> {
+public:
+  AirconvShaderWithInputLayoutFixup(IMTLD3D11Device *pDevice,
+                                    TShaderBase<tag> *shader,
+                                    uint64_t sign_mask)
+      : AirconvShader<tag>(pDevice, shader, &data) {
+    data.type = SM50_SHADER_COMPILATION_INPUT_SIGN_MASK;
+    data.next = nullptr;
+    data.sign_mask = sign_mask;
+  };
+
+private:
+  SM50_SHADER_COMPILATION_INPUT_SIGN_MASK_DATA data;
+};
+
+template <typename tag>
+void TShaderBase<tag>::GetCompiledShader(IMTLCompiledShader **pShader) {
   // pArgs not used at the moment
   if (precompiled_) {
     *pShader = precompiled_.ref();
     return;
   }
-  *pShader = ref(new ContextlessShader(this->m_parent, this));
+  *pShader = ref(new AirconvShader(this->m_parent, this, nullptr));
+}
+
+template <typename tag>
+void TShaderBase<tag>::GetCompiledShaderWithInputLayerFixup(
+    uint64_t sign_mask, IMTLCompiledShader **pShader) {
+  if (sign_mask == 0) {
+    return GetCompiledShader(pShader);
+  }
+  if (with_input_layout_fixup_.contains(sign_mask)) {
+    *pShader = with_input_layout_fixup_[sign_mask].ref();
+  } else {
+    IMTLCompiledShader *shader = new AirconvShaderWithInputLayoutFixup<tag>(
+        this->m_parent, this, sign_mask);
+    with_input_layout_fixup_.emplace(sign_mask, shader);
+    *pShader = ref(shader);
+  }
 }
 
 template <typename tag>
@@ -243,11 +283,11 @@ HRESULT CreateShaderInternal(IMTLD3D11Device *pDevice,
     SM50Destroy(sm50);
     return S_FALSE;
   }
-  *ppShader = ref(new TShaderBase<tag>(pDevice, sm50, reflection, 
+  *ppShader = ref(new TShaderBase<tag>(pDevice, sm50, reflection,
                                        pShaderBytecode, BytecodeLength));
   // FIXME: this looks weird but don't change it for now
   ((TShaderBase<tag> *)*ppShader)
-      ->GetCompiledShader(NULL, &((TShaderBase<tag> *)*ppShader)->precompiled_);
+      ->GetCompiledShader(&((TShaderBase<tag> *)*ppShader)->precompiled_);
   return S_OK;
 }
 
@@ -291,9 +331,14 @@ public:
     return E_NOINTERFACE;
   }
 
-  void GetCompiledShader(void *pArgs, IMTLCompiledShader **pShader) final {
+  void GetCompiledShader(IMTLCompiledShader **ppShader) final {
     D3D11_ASSERT(0 && "should not call this function");
-    *pShader = nullptr;
+    *ppShader = nullptr;
+  };
+
+  void GetCompiledShaderWithInputLayerFixup(uint64_t,
+                                            IMTLCompiledShader **) final {
+    D3D11_ASSERT(0 && "should not call this function");
   };
 
   void GetReflection(MTL_SHADER_REFLECTION **pRefl) final {

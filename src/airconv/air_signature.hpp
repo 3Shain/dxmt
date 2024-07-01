@@ -428,9 +428,16 @@ private:
   std::unordered_set<std::string> fields;
 };
 
+enum class InputAttributeComponentType : uint32_t {
+  Unknown,
+  Uint = 1,
+  Int = 2,
+  Float = 3
+};
+
 struct InputVertexStageIn {
   uint32_t attribute;
-  MSLScalerOrVectorType type;
+  InputAttributeComponentType type;
   std::string name;
 };
 
@@ -516,7 +523,8 @@ public:
   void UseMaxWorkgroupSize(uint32_t size) { max_work_group_size = size; }
 
   auto CreateFunction(
-    std::string name, llvm::LLVMContext &context, llvm::Module &module
+    std::string name, llvm::LLVMContext &context, llvm::Module &module,
+    uint64_t sign_mask
   ) -> std::pair<llvm::Function *, llvm::MDNode *>;
 
 private:

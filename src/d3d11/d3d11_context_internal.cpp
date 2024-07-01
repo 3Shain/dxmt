@@ -1115,8 +1115,9 @@ public:
   bool FinalizeCurrentRenderPipeline() {
     if (cmdbuf_state == CommandBufferState::RenderPipelineReady)
       return true;
-    D3D11_ASSERT(state_.InputAssembler.InputLayout && "");
-
+    if (!state_.InputAssembler.InputLayout) {
+      return false;
+    }
     if (state_.ShaderStages[(UINT)ShaderType::Hull].Shader) {
       // ERR("tessellation is not supported yet, skip drawcall");
       return false;
@@ -1143,12 +1144,21 @@ public:
 
     Com<IMTLCompiledGraphicsPipeline> pipeline;
     Com<IMTLCompiledShader> vs, ps;
-    state_.ShaderStages[(UINT)ShaderType::Vertex]
-        .Shader //
-        ->GetCompiledShader(NULL, &vs);
+    if (state_.InputAssembler.InputLayout->NeedsFixup()) {
+
+      MTL_SHADER_INPUT_LAYOUT_FIXUP fixup;
+      state_.InputAssembler.InputLayout->GetShaderFixupInfo(&fixup);
+      state_.ShaderStages[(UINT)ShaderType::Vertex]
+          .Shader //
+          ->GetCompiledShaderWithInputLayerFixup(fixup.sign_mask, &vs);
+    } else {
+      state_.ShaderStages[(UINT)ShaderType::Vertex]
+          .Shader //
+          ->GetCompiledShader(&vs);
+    }
     state_.ShaderStages[(UINT)ShaderType::Pixel]
         .Shader //
-        ->GetCompiledShader(NULL, &ps);
+        ->GetCompiledShader(&ps);
     MTL_GRAPHICS_PIPELINE_DESC pipelineDesc;
     pipelineDesc.VertexShader = vs.ptr();
     pipelineDesc.PixelShader = ps.ptr();
@@ -1304,7 +1314,7 @@ public:
     Com<IMTLCompiledShader> shader;
     state_.ShaderStages[(UINT)ShaderType::Compute]
         .Shader //
-        ->GetCompiledShader(NULL, &shader);
+        ->GetCompiledShader(&shader);
     if (!shader) {
       ERR("Shader not found?");
       return false;

@@ -35,9 +35,9 @@ class MTLD3D11InputLayout final
 public:
   MTLD3D11InputLayout(IMTLD3D11Device *device,
                       std::vector<Attribute> &&attributes,
-                      std::vector<Layout> &&layouts)
+                      std::vector<Layout> &&layouts, uint64_t sign_mask)
       : MTLD3D11DeviceChild<IMTLD3D11InputLayout>(device),
-        attributes_(attributes), layouts_(layouts) {}
+        attributes_(attributes), layouts_(layouts), sign_mask_(sign_mask) {}
 
   HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid,
                                            void **ppvObject) final {
@@ -97,9 +97,17 @@ public:
     IMPLEMENT_ME
   };
 
+  virtual bool STDMETHODCALLTYPE NeedsFixup() final { return sign_mask_ > 0; };
+
+  virtual void STDMETHODCALLTYPE
+  GetShaderFixupInfo(MTL_SHADER_INPUT_LAYOUT_FIXUP *pFixup) final {
+    pFixup->sign_mask = sign_mask_;
+  };
+
 private:
   std::vector<Attribute> attributes_;
   std::vector<Layout> layouts_;
+  uint64_t sign_mask_;
 };
 
 HRESULT CreateInputLayout(IMTLD3D11Device *device,
@@ -109,6 +117,7 @@ HRESULT CreateInputLayout(IMTLD3D11Device *device,
   using namespace microsoft;
   std::vector<Attribute> elements(NumElements);
   std::vector<Layout> layout(16);
+  uint64_t sign_mask = 0;
 
   CSignatureParser parser;
   HRESULT hr =
@@ -153,6 +162,17 @@ HRESULT CreateInputLayout(IMTLD3D11Device *device,
       return E_INVALIDARG;
     }
     attribute.format = metal_format.AttributeFormat;
+    // FIXME: incomplete. just check sign of ComponentType
+    if (inputSig.ComponentType ==
+            microsoft::D3D10_SB_REGISTER_COMPONENT_SINT32 &&
+        desc.Format == DXGI_FORMAT_R8G8B8A8_UINT) {
+      sign_mask |= (1 << inputSig.Register);
+    }
+    if (inputSig.ComponentType ==
+            microsoft::D3D10_SB_REGISTER_COMPONENT_SINT32 &&
+        desc.Format == DXGI_FORMAT_R16G16B16A16_UINT) {
+      sign_mask |= (1 << inputSig.Register);
+    }
     attribute.element_stride = metal_format.BytesPerTexel;
     attribute.slot = desc.InputSlot;
     attribute.index = inputSig.Register;
@@ -188,8 +208,8 @@ HRESULT CreateInputLayout(IMTLD3D11Device *device,
   if (ppInputLayout == NULL) {
     return S_FALSE;
   }
-  *ppInputLayout = ref(
-      new MTLD3D11InputLayout(device, std::move(elements), std::move(layout)));
+  *ppInputLayout = ref(new MTLD3D11InputLayout(device, std::move(elements),
+                                               std::move(layout), sign_mask));
   return S_OK;
 };
 

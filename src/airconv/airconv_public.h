@@ -110,14 +110,30 @@ inline uint32_t GetArgumentIndex(struct MTL_SM50_SHADER_ARGUMENT &Argument) {
 
 extern "C" {
 #endif
+
+enum SM50_SHADER_COMPILATION_ARGUMENT_TYPE {
+  SM50_SHADER_COMPILATION_INPUT_SIGN_MASK = 0
+};
+
+struct SM50_SHADER_COMPILATION_ARGUMENT_DATA {
+  void *next;
+  enum SM50_SHADER_COMPILATION_ARGUMENT_TYPE type;
+};
+
+struct SM50_SHADER_COMPILATION_INPUT_SIGN_MASK_DATA {
+  void *next;
+  enum SM50_SHADER_COMPILATION_ARGUMENT_TYPE type;
+  uint64_t sign_mask;
+};
+
 AIRCONV_EXPORT int SM50Initialize(
   const void *pBytecode, size_t BytecodeSize, SM50Shader **ppShader,
   struct MTL_SHADER_REFLECTION *pRefl, SM50Error **ppError
 );
 AIRCONV_EXPORT void SM50Destroy(SM50Shader *pShader);
 AIRCONV_EXPORT int SM50Compile(
-  SM50Shader *pShader, void *pArgs, const char *FunctionName,
-  SM50CompiledBitcode **ppBitcode, SM50Error **ppError
+  SM50Shader *pShader, struct SM50_SHADER_COMPILATION_ARGUMENT_DATA *pArgs,
+  const char *FunctionName, SM50CompiledBitcode **ppBitcode, SM50Error **ppError
 );
 AIRCONV_EXPORT void SM50GetCompiledBitcode(
   SM50CompiledBitcode *pBitcode, struct MTL_SHADER_BITCODE *pData

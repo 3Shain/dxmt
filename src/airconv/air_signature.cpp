@@ -441,12 +441,38 @@ uint32_t FunctionSignatureBuilder::DefineOutput(const FunctionOutput &output) {
 };
 
 auto FunctionSignatureBuilder::CreateFunction(
-  std::string name, llvm::LLVMContext &context, llvm::Module &module
+  std::string name, llvm::LLVMContext &context, llvm::Module &module,
+  uint64_t sign_mask
 ) -> std::pair<llvm::Function *, llvm::MDNode *> {
   std::vector<Metadata *> metadata_input;
   std::vector<llvm::Type *> type_input;
   std::vector<Metadata *> metadata_output;
   std::vector<llvm::Type *> type_output;
+
+  auto get_input_attribute_type = [](
+                                    InputAttributeComponentType type,
+                                    uint32_t attribute, uint64_t sign_mask
+                                  ) -> MSLScalerOrVectorType {
+    switch (type) {
+    case InputAttributeComponentType::Unknown:
+    case InputAttributeComponentType::Uint: {
+      if (sign_mask & (1 << attribute)) {
+        return msl_int4;
+      } else {
+        return msl_uint4;
+      }
+    }
+    case InputAttributeComponentType::Int: {
+      if (sign_mask & (1 << attribute)) {
+        return msl_uint4;
+      } else {
+        return msl_int4;
+      }
+    }
+    case InputAttributeComponentType::Float:
+      return msl_float4;
+    }
+  };
   for (auto &item : enumerate(inputs)) {
     auto i = item.index();
     auto input = item.value();
@@ -455,15 +481,18 @@ auto FunctionSignatureBuilder::CreateFunction(
     llvm::Type *field_type = std::visit(
       patterns{
         [&](const InputVertexStageIn &vertex_in) {
+          auto type = get_input_attribute_type(
+            vertex_in.type, vertex_in.attribute, sign_mask
+          );
           metadata_field.string("air.vertex_input")
             ->string("air.location_index")
             ->integer(vertex_in.attribute)
             ->integer(1)
             ->string("air.arg_type_name")
-            ->string(get_name(vertex_in.type))
+            ->string(get_name(type))
             ->string("air.arg_name")
             ->string(vertex_in.name);
-          return get_llvm_type(vertex_in.type, context);
+          return get_llvm_type(type, context);
         },
         [&](const InputFragmentStageIn &frag_in) {
           metadata_field.string("air.fragment_input")
