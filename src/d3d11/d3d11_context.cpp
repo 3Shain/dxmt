@@ -1626,22 +1626,9 @@ public:
   void ExchangeFromPool(MTL::Buffer **pBuffer, uint64_t *gpuAddr,
                         void **cpuAddr, BufferPool *pool) final {
     D3D11_ASSERT(*pBuffer);
-    if (pool) {
-
-      pool->GetNext(cmd_queue.CurrentSeqId(), cmd_queue.CoherentSeqId(),
-                    pBuffer, gpuAddr, cpuAddr);
-    } else {
-      auto original = transfer(*pBuffer);
-      *pBuffer = metal_device_->newBuffer(original->length(),
-                                          original->resourceOptions());
-      cmd_queue.CurrentChunk()->emit(
-          [_ = std::move(original)](CommandChunk::context &ctx) {
-            /**
-            abusing lambda capture
-            the original buffer will be released once the chunk has completed
-            */
-          });
-    }
+    D3D11_ASSERT(pool);
+    pool->GetNext(cmd_queue.CurrentSeqId(), cmd_queue.CoherentSeqId(), pBuffer,
+                  gpuAddr, cpuAddr);
   }
 
 #pragma endregion
