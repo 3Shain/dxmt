@@ -103,7 +103,7 @@ void CommandQueue::CommitChunkInternal(CommandChunk &chunk, uint64_t seq) {
     c->startCapture(d.ptr(), &pError);
   }
 
-  chunk.attached_cmdbuf = commandQueue->commandBufferWithUnretainedReferences();
+  chunk.attached_cmdbuf = commandQueue->commandBuffer();
   auto cmdbuf = chunk.attached_cmdbuf;
   chunk.encode(cmdbuf);
   cmdbuf->commit();
