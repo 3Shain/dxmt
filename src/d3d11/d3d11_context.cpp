@@ -1361,7 +1361,34 @@ public:
       ID3D11DepthStencilView **ppDepthStencilView, UINT UAVStartSlot,
       UINT NumUAVs,
       ID3D11UnorderedAccessView **ppUnorderedAccessViews) override {
-    IMPLEMENT_ME;
+    if (ppRenderTargetViews) {
+      for (unsigned i = 0; i < NumRTVs; i++) {
+        if (i < state_.OutputMerger.NumRTVs) {
+          state_.OutputMerger.RTVs[i]->QueryInterface(
+              IID_PPV_ARGS(&ppRenderTargetViews[i]));
+        } else {
+          ppRenderTargetViews[i] = nullptr;
+        }
+      }
+    }
+    if (ppDepthStencilView) {
+      if (state_.OutputMerger.DSV) {
+        state_.OutputMerger.DSV->QueryInterface(
+            IID_PPV_ARGS(ppDepthStencilView));
+      } else {
+        ppDepthStencilView = nullptr;
+      }
+    }
+    if (ppUnorderedAccessViews) {
+      for (unsigned i = 0; i < NumUAVs; i++) {
+        if (state_.OutputMerger.UAVs.test_bound(i + UAVStartSlot)) {
+          state_.OutputMerger.UAVs[i + UAVStartSlot].View->QueryInterface(
+              IID_PPV_ARGS(&ppUnorderedAccessViews[i]));
+        } else {
+          ppUnorderedAccessViews[i] = nullptr;
+        }
+      }
+    }
   }
 
   void OMSetBlendState(ID3D11BlendState *pBlendState,
