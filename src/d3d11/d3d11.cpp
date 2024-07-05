@@ -193,3 +193,8 @@ extern "C" void _massert(const char *_Message, const char *_File,
                                       "\nfile: ", _File, ":", _Line));
   std::terminate();
 }
+
+extern "C" void __cxa_pure_virtual() {
+  dxmt::Logger::err(dxmt::str::format("Pure virtual function called"));
+  __builtin_trap();
+}
