@@ -758,6 +758,15 @@ public:
         attachmentz->setLoadAction(MTL::LoadActionClear);
         attachmentz->setStoreAction(MTL::StoreActionStore);
       }
+      if (clear_pass->num_color_attachments == 0) {
+        if(clear_pass->clear_depth_stencil == 0) {
+          return;
+        }
+        auto texture = clear_pass->clear_depth_stencil_attachment.texture(&ctx);
+        enc_descriptor->setRenderTargetHeight(texture->height());
+        enc_descriptor->setRenderTargetWidth(texture->width());
+        enc_descriptor->setDefaultRasterSampleCount(1);
+      }
 
       auto enc = ctx.cmdbuf->renderCommandEncoder(enc_descriptor);
       enc->setLabel(NS::String::string("ClearPass", NS::ASCIIStringEncoding));
@@ -1000,9 +1009,11 @@ public:
         auto pool = transfer(NS::AutoreleasePool::alloc()->init());
         auto renderPassDescriptor =
             MTL::RenderPassDescriptor::renderPassDescriptor();
+        uint32_t effective_render_target = 0;
         for (auto &rtv : rtvs) {
-          if (rtv.PixelFormat == MTL::PixelFormatInvalid)
+          if (rtv.PixelFormat == MTL::PixelFormatInvalid) {
             continue;
+          }
           auto colorAttachment =
               renderPassDescriptor->colorAttachments()->object(
                   rtv.RenderTargetIndex);
@@ -1013,6 +1024,7 @@ public:
           colorAttachment->setLoadAction(rtv.LoadAction);
           colorAttachment->setClearColor(rtv.ClearColor);
           colorAttachment->setStoreAction(MTL::StoreActionStore);
+          effective_render_target++;
         };
         bool dsv_valid = false;
         if (dsv.Texture) {
@@ -1038,6 +1050,12 @@ public:
             stencilAttachment->setClearStencil(dsv.ClearStencil);
             stencilAttachment->setStoreAction(MTL::StoreActionStore);
           }
+        }
+        if (effective_render_target == 0) {
+          D3D11_ASSERT(dsv_valid);
+          auto dsv_tex = dsv.Texture.texture(&ctx);
+          renderPassDescriptor->setRenderTargetHeight(dsv_tex->height());
+          renderPassDescriptor->setRenderTargetWidth(dsv_tex->width());
         }
         ctx.render_encoder =
             ctx.cmdbuf->renderCommandEncoder(renderPassDescriptor);

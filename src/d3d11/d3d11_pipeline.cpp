@@ -32,8 +32,9 @@ public:
     for (unsigned i = 0; i < NumRTVs; i++) {
       rtv_formats[i] = RTVFormats[i];
     }
-    device_->SubmitThreadgroupWork(this, &work_state_);
   }
+
+  void SubmitWork() { device_->SubmitThreadgroupWork(this, &work_state_); }
 
   HRESULT QueryInterface(REFIID riid, void **ppvObject) {
     if (ppvObject == nullptr)
@@ -129,9 +130,11 @@ Com<IMTLCompiledGraphicsPipeline> CreateGraphicsPipeline(
     IMTLCompiledShader *pPixelShader, IMTLD3D11InputLayout *pInputLayout,
     IMTLD3D11BlendState *pBlendState, UINT NumRTVs,
     MTL::PixelFormat const *RTVFormats, MTL::PixelFormat DepthStencilFormat) {
-  return new MTLCompiledGraphicsPipeline(pDevice, pVertexShader, pPixelShader,
-                                         pInputLayout, pBlendState, NumRTVs,
-                                         RTVFormats, DepthStencilFormat);
+  auto pipeline = new MTLCompiledGraphicsPipeline(
+      pDevice, pVertexShader, pPixelShader, pInputLayout, pBlendState, NumRTVs,
+      RTVFormats, DepthStencilFormat);
+  pipeline->SubmitWork();
+  return pipeline;
 }
 
 class MTLCompiledComputePipeline
@@ -140,7 +143,9 @@ public:
   MTLCompiledComputePipeline(IMTLD3D11Device *pDevice,
                              IMTLCompiledShader *pComputeShader)
       : ComObject<IMTLCompiledComputePipeline>(), device_(pDevice),
-        pComputeShader(pComputeShader) {
+        pComputeShader(pComputeShader) {}
+
+  void SubmitWork() final {
     device_->SubmitThreadgroupWork(this, &work_state_);
   }
 
@@ -178,8 +183,8 @@ public:
     auto desc = transfer(MTL::ComputePipelineDescriptor::alloc()->init());
     desc->setComputeFunction(cs.Function);
 
-    state_ = transfer(
-        device_->GetMTLDevice()->newComputePipelineState(desc, 0, nullptr, &err));
+    state_ = transfer(device_->GetMTLDevice()->newComputePipelineState(
+        desc, 0, nullptr, &err));
 
     if (state_ == nullptr) {
       ERR("Failed to create PSO: ", err->localizedDescription()->utf8String());
@@ -203,7 +208,9 @@ private:
 Com<IMTLCompiledComputePipeline>
 CreateComputePipeline(IMTLD3D11Device *pDevice,
                       IMTLCompiledShader *pComputeShader) {
-  return new MTLCompiledComputePipeline(pDevice, pComputeShader);
+  auto pipeline = new MTLCompiledComputePipeline(pDevice, pComputeShader);
+  pipeline->SubmitWork();
+  return pipeline;
 }
 
 } // namespace dxmt

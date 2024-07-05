@@ -17,6 +17,7 @@ struct MTL_COMPILED_SHADER {
 
 DEFINE_COM_INTERFACE("a8bfeef7-a453-4bce-90c1-912b02cf5cdf", IMTLCompiledShader)
     : public IMTLThreadpoolWork {
+  virtual void SubmitWork() = 0;
   virtual bool IsReady() = 0;
   /**
   NOTE: the current thread is blocked if it's not ready

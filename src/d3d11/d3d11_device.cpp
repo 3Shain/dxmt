@@ -368,8 +368,8 @@ public:
     if (!ppHullShader)
       return S_FALSE;
     ERR("CreateHullShader: not supported, return a dummy");
-    return dxmt::CreateDummyHullShader(this, pShaderBytecode,
-                                           BytecodeLength, ppHullShader);
+    return dxmt::CreateDummyHullShader(this, pShaderBytecode, BytecodeLength,
+                                       ppHullShader);
   }
 
   HRESULT STDMETHODCALLTYPE
@@ -383,8 +383,8 @@ public:
     if (!ppDomainShader)
       return S_FALSE;
     ERR("CreateDomainShader: not supported, return a dummy");
-    return dxmt::CreateDummyDomainShader(this, pShaderBytecode,
-                                           BytecodeLength, ppDomainShader);
+    return dxmt::CreateDummyDomainShader(this, pShaderBytecode, BytecodeLength,
+                                         ppDomainShader);
   }
 
   HRESULT STDMETHODCALLTYPE
@@ -890,6 +890,7 @@ public:
 
   void SubmitThreadgroupWork(IMTLThreadpoolWork *pWork,
                              THREADGROUP_WORK_STATE *pState) override {
+    pWork->AddRef();
     pool_.enqueue(pWork, pState);
   }
 

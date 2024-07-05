@@ -15,7 +15,10 @@ DEFINE_COM_INTERFACE("14e1e5e4-3f08-4741-a8e3-597d79373266", IMTLThreadpoolWork)
 
 struct threadpool_trait {
   using work_type = IMTLThreadpoolWork;
-  constexpr void invoke_work(work_type *work) { work->RunThreadpoolWork(); };
+  constexpr void invoke_work(work_type *work) {
+    work->RunThreadpoolWork();
+    work->Release();
+  };
 };
 
 // struct THREADGROUP_WORK_STATE_OPAQUE;
@@ -40,8 +43,6 @@ DEFINE_COM_INTERFACE("a46de9a7-0233-4a94-b75c-9c0f8f364cda", IMTLD3D11Device)
     : public ID3D11Device3 {
   virtual MTL::Device *STDMETHODCALLTYPE GetMTLDevice() = 0;
   virtual void GetAdapter(IMTLDXGIAdatper * *ppAdapter) = 0;
-  // virtual HRESULT CreateMTLTextureDescriptor(
-  //     D3D11_TEXTURE1D_DESC * pDesc, MTL::TextureDescriptor * *ppDescriptor) = 0;
   /**
   TODO: should ensure pWork is not released before executed
   or support cancellation.

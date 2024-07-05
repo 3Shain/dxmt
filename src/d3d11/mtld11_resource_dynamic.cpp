@@ -78,6 +78,7 @@ class DynamicBuffer
 private:
   Obj<MTL::Buffer> buffer_dynamic;
   uint64_t buffer_handle;
+  uint64_t buffer_len;
   void *buffer_mapped;
 
   std::vector<IMTLNotifiedBindable *> observers;
@@ -143,11 +144,15 @@ public:
              desc->ByteWidth);
     }
     buffer_handle = buffer_dynamic->gpuAddress();
+    buffer_len = buffer_dynamic->length();
     buffer_mapped = buffer_dynamic->contents();
     pool = std::make_unique<BufferPool>(metal, desc->ByteWidth, options);
   }
 
-  void *GetMappedMemory(UINT *pBytesPerRow) override { return buffer_mapped; };
+  void *GetMappedMemory(UINT *pBytesPerRow) override {
+    *pBytesPerRow = buffer_len;
+    return buffer_mapped;
+  };
 
   void GetBindable(IMTLBindable **ppResource,
                    BufferSwapCallback &&onBufferSwap) override {

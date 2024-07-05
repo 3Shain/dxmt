@@ -113,8 +113,9 @@ public:
       : ComObject<IMTLCompiledShader>(), device_(pDevice), shader_(shader),
         compilation_args(compilation_args) {
     shader_->AddRef(); // ???
-    pDevice->SubmitThreadgroupWork(this, &work_state_);
   }
+
+  void SubmitWork() { device_->SubmitThreadgroupWork(this, &work_state_); }
 
   HRESULT QueryInterface(REFIID riid, void **ppvObject) {
     if (ppvObject == nullptr)
@@ -247,7 +248,9 @@ void TShaderBase<tag>::GetCompiledShader(IMTLCompiledShader **pShader) {
     *pShader = precompiled_.ref();
     return;
   }
-  *pShader = ref(new AirconvShader(this->m_parent, this, nullptr));
+  auto shader = new AirconvShader(this->m_parent, this, nullptr);
+  shader->SubmitWork();
+  *pShader = ref(shader);
 }
 
 template <typename tag>
@@ -261,6 +264,7 @@ void TShaderBase<tag>::GetCompiledShaderWithInputLayerFixup(
   } else {
     IMTLCompiledShader *shader = new AirconvShaderWithInputLayoutFixup<tag>(
         this->m_parent, this, sign_mask);
+    shader->SubmitWork();
     with_input_layout_fixup_.emplace(sign_mask, shader);
     *pShader = ref(shader);
   }
