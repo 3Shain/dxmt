@@ -791,6 +791,8 @@ public:
     indexableTempRegisterCounts;
   air::ArgumentBufferBuilder binding_table_cbuffer;
   air::ArgumentBufferBuilder binding_table;
+  bool skipOptimization = false;
+  bool refactoringAllowed = true;
 };
 
 } // namespace dxmt::dxbc

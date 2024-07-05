@@ -913,6 +913,14 @@ int SM50Initialize(
             D3D11_SB_GLOBAL_FLAG_FORCE_EARLY_DEPTH_STENCIL) {
           func_signature.UseEarlyFragmentTests();
         }
+        if (Inst.m_GlobalFlagsDecl.Flags &
+            D3D11_1_SB_GLOBAL_FLAG_SKIP_OPTIMIZATION) {
+          shader_info->skipOptimization = true;
+        }
+        if ((Inst.m_GlobalFlagsDecl.Flags &
+             D3D10_SB_GLOBAL_FLAG_REFACTORING_ALLOWED) == 0) {
+          shader_info->refactoringAllowed = false;
+        }
         break;
       }
       case D3D10_SB_OPCODE_DCL_INPUT_SIV: {
@@ -1525,8 +1533,19 @@ int SM50Compile(
 
   context.setOpaquePointers(false); // I suspect Metal uses LLVM 14...
 
+  auto &shader_info = ((SM50ShaderInternal *)pShader)->shader_info;
+  auto shader_type = ((SM50ShaderInternal *)pShader)->shader_type;
+
   auto pModule = std::make_unique<Module>("shader.air", context);
-  initializeModule(*pModule, {.enableFastMath = false});
+  initializeModule(
+    *pModule,
+    {.enableFastMath =
+       (!shader_info.skipOptimization && shader_info.refactoringAllowed &&
+        // this is by design: vertex functions are usually not the
+        // bottle-neck of pipeline, and precise calculation on pixel can reduce
+        // flickering
+        shader_type != microsoft::D3D10_SB_VERTEX_SHADER)}
+  );
 
   if (auto err = dxmt::dxbc::convertDXBC(
         pShader, FunctionName, context, *pModule, pArgs
@@ -1538,7 +1557,10 @@ int SM50Compile(
     return 1;
   }
 
-  runOptimizationPasses(*pModule, OptimizationLevel::O2);
+  runOptimizationPasses(
+    *pModule,
+    shader_info.skipOptimization ? OptimizationLevel::O0 : OptimizationLevel::O2
+  );
 
   // pModule->print(outs(), nullptr);
 
