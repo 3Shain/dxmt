@@ -46,10 +46,13 @@ public:
               MTL_SHADER_REFLECTION &reflection, const void *pShaderBytecode,
               SIZE_T BytecodeLength)
       : MTLD3D11DeviceChild<typename tag::COM, IMTLD3D11Shader>(device),
-        sm50(sm50), reflection(reflection), dump_len(BytecodeLength) {
+        sm50(sm50), reflection(reflection) {
     id = ++global_id;
+#ifdef DXMT_DEBUG
+    dump_len = BytecodeLength;
     dump = malloc(BytecodeLength);
     memcpy(dump, pShaderBytecode, BytecodeLength);
+#endif
   }
 
   ~TShaderBase() {
@@ -57,7 +60,9 @@ public:
       SM50Destroy(sm50);
       sm50 = nullptr;
     }
+#ifdef DXMT_DEBUG
     free(dump);
+#endif
   }
 
   HRESULT QueryInterface(REFIID riid, void **ppvObject) {
@@ -101,8 +106,10 @@ public:
       with_input_layout_fixup_;
   Obj<MTL::ArgumentEncoder> encoder_;
   uint64_t id;
+#ifdef DXMT_DEBUG
   void *dump;
   uint64_t dump_len;
+#endif
 };
 
 template <typename tag>
@@ -140,6 +147,7 @@ public:
   }
 
   void Dump() {
+#ifdef DXMT_DEBUG
     std::fstream dump_out;
     dump_out.open("shader_dump_" + std::to_string(shader_->id) + ".cso",
                   std::ios::out | std::ios::binary);
@@ -148,6 +156,9 @@ public:
     }
     dump_out.close();
     ERR("dumped to ./shader_dump_" + std::to_string(shader_->id) + ".cso");
+#else
+    WARN("shader dump disabled");
+#endif
   }
 
   void RunThreadpoolWork() {
@@ -301,14 +312,20 @@ class TDummyShaderBase
 public:
   TDummyShaderBase(IMTLD3D11Device *device, const void *pShaderBytecode,
                    SIZE_T BytecodeLength)
-      : MTLD3D11DeviceChild<typename tag::COM, IMTLD3D11Shader>(device),
-        dump_len(BytecodeLength) {
+      : MTLD3D11DeviceChild<typename tag::COM, IMTLD3D11Shader>(device) {
     id = ++global_id;
+#ifdef DXMT_DEBUG
+    dump_len = BytecodeLength;
     dump = malloc(BytecodeLength);
     memcpy(dump, pShaderBytecode, BytecodeLength);
+#endif
   }
 
-  ~TDummyShaderBase() { free(dump); }
+  ~TDummyShaderBase() {
+#ifdef DXMT_DEBUG
+    free(dump);
+#endif
+  }
 
   HRESULT QueryInterface(REFIID riid, void **ppvObject) {
     if (ppvObject == nullptr)
@@ -352,8 +369,10 @@ public:
 
   MTL_SHADER_REFLECTION reflection{};
   uint64_t id;
+#ifdef DXMT_DEBUG
   void *dump;
   uint64_t dump_len;
+#endif
 };
 
 template <typename tag>
