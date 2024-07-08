@@ -73,6 +73,8 @@ public:
     if (pShader) {
       if (auto expected = com_cast<IMTLD3D11Shader>(pShader)) {
         ShaderStage.Shader = std::move(expected);
+        Com<IMTLCompiledShader> _;
+        ShaderStage.Shader->GetCompiledShader(&_);
       } else {
         D3D11_ASSERT(0 && "wtf");
       }
@@ -761,7 +763,7 @@ public:
         attachmentz->setStoreAction(MTL::StoreActionStore);
       }
       if (clear_pass->num_color_attachments == 0) {
-        if(clear_pass->clear_depth_stencil == 0) {
+        if (clear_pass->clear_depth_stencil == 0) {
           return;
         }
         auto texture = clear_pass->clear_depth_stencil_attachment.texture(&ctx);

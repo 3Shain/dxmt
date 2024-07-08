@@ -99,7 +99,7 @@ public:
         finalDesc.ViewDimension != D3D11_SRV_DIMENSION_BUFFEREX) {
       return E_INVALIDARG;
     }
-    if (structured) {
+    if (structured && finalDesc.Format == DXGI_FORMAT_UNKNOWN) {
       // StructuredBuffer
       auto offset = pDesc->Buffer.FirstElement * this->desc.StructureByteStride;
       auto size = pDesc->Buffer.NumElements;
@@ -189,7 +189,7 @@ public:
       return E_INVALIDARG;
     }
     // D3D11_ASSERT(finalDesc.Buffer.Flags < 2 && "TODO: uav counter");
-    if (structured) {
+    if (structured && finalDesc.Format == DXGI_FORMAT_UNKNOWN) {
       // StructuredBuffer
       auto offset = pDesc->Buffer.FirstElement * this->desc.StructureByteStride,
            size = pDesc->Buffer.NumElements;

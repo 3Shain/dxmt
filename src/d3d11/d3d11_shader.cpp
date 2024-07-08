@@ -255,13 +255,12 @@ private:
 template <typename tag>
 void TShaderBase<tag>::GetCompiledShader(IMTLCompiledShader **pShader) {
   // pArgs not used at the moment
-  if (precompiled_) {
-    *pShader = precompiled_.ref();
-    return;
+  if (!precompiled_) {
+    precompiled_ = new AirconvShader(this->m_parent, this, nullptr);
+    precompiled_->SubmitWork();
   }
-  auto shader = new AirconvShader(this->m_parent, this, nullptr);
-  shader->SubmitWork();
-  *pShader = ref(shader);
+  *pShader = precompiled_.ref();
+  return;
 }
 
 template <typename tag>
@@ -300,9 +299,6 @@ HRESULT CreateShaderInternal(IMTLD3D11Device *pDevice,
   }
   *ppShader = ref(new TShaderBase<tag>(pDevice, sm50, reflection,
                                        pShaderBytecode, BytecodeLength));
-  // FIXME: this looks weird but don't change it for now
-  ((TShaderBase<tag> *)*ppShader)
-      ->GetCompiledShader(&((TShaderBase<tag> *)*ppShader)->precompiled_);
   return S_OK;
 }
 
