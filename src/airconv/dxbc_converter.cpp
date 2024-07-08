@@ -1407,7 +1407,9 @@ int SM50Initialize(
     } else {
       auto attr_index = GetArgumentIndex(SM50BindingType::SRV, range_id);
       srv.arg_index = binding_table.DefineBuffer(
-        "t" + std::to_string(range_id), AddressSpace::constant,
+        "t" + std::to_string(range_id),
+        AddressSpace::device, // it needs to be `device` since `constant` has
+                              // size and alignment restriction
         MemoryAccess::read, msl_uint, attr_index
       );
       srv.arg_size_index = binding_table.DefineInteger32(

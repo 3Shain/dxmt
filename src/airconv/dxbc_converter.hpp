@@ -93,6 +93,12 @@ struct SrcOperandInput {
   uint32_t regid;
 };
 
+struct SrcOperandIndexableInput {
+  static constexpr std::string_view debug_name = "indexable_input";
+  SrcOperandModifier _;
+  OperandIndex regindex;
+};
+
 struct SrcOperandConstantBuffer {
   static constexpr std::string_view debug_name = "constant_buffer";
   SrcOperandModifier _;
@@ -179,7 +185,7 @@ struct DclOutput {};
 using SrcOperand = std::variant<
   SrcOperandImmediate32, SrcOperandTemp, SrcOperandIndexableTemp,
   SrcOperandInput, SrcOperandConstantBuffer, SrcOperandImmediateConstantBuffer,
-  SrcOperandAttribute>;
+  SrcOperandAttribute, SrcOperandIndexableInput>;
 
 struct SrcOperandResource {
   uint32_t range_id;

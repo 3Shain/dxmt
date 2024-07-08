@@ -156,8 +156,8 @@ uint32_t get_value_dimension(pvalue maybe_vec) {
   }
 };
 
-std::string fastmath_variant(context& ctx ,std::string name) {
-  if(ctx.builder.getFastMathFlags().isFast()) {
+std::string fastmath_variant(context &ctx, std::string name) {
+  if (ctx.builder.getFastMathFlags().isFast()) {
     return "fast_" + name;
   } else {
     return name;
@@ -684,6 +684,33 @@ auto call_float_mad(pvalue a, pvalue b, pvalue c) {
     auto operand_type = a->getType();
     auto fn = (module.getOrInsertFunction(
       "air.fma" + type_overload_suffix(operand_type),
+      llvm::FunctionType::get(
+        operand_type, {operand_type, operand_type, operand_type}, false
+      ),
+      att
+    ));
+    return ctx.builder.CreateCall(fn, {a, b, c});
+  });
+};
+
+auto call_integer_madsat(pvalue a, pvalue b, pvalue c, bool _signed = false) {
+  return make_irvalue([=](context ctx) {
+    using namespace llvm;
+    auto &context = ctx.llvm;
+    auto &module = ctx.module;
+    assert(a->getType() == b->getType());
+    assert(a->getType() == c->getType());
+    auto att = AttributeList::get(
+      context, {{~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)},
+                {~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)},
+                {~0U, Attribute::get(context, Attribute::AttrKind::ReadNone)}}
+    );
+    auto operand_type = a->getType();
+    auto fn = (module.getOrInsertFunction(
+      "air.mad_sat" +
+        type_overload_suffix(
+          operand_type, _signed ? air::Sign::with_sign : air::Sign::no_sign
+        ),
       llvm::FunctionType::get(
         operand_type, {operand_type, operand_type, operand_type}, false
       ),
@@ -2071,6 +2098,7 @@ SrcOperandModifier get_modifier(SrcOperand src) {
       [](SrcOperandInput src) { return src._; },
       [](SrcOperandTemp src) { return src._; },
       [](SrcOperandIndexableTemp src) { return src._; },
+      [](SrcOperandIndexableInput src) { return src._; },
       [](auto s) {
         llvm::outs() << "get_modifier: unhandled src operand type "
                      << decltype(s)::debug_name << "\n";
@@ -2345,6 +2373,24 @@ template <> IRValue load_src<SrcOperandInput, false>(SrcOperandInput input) {
     ctx.resource.input.ptr_int4, ctx.builder.getInt32(input.regid)
   );
   co_return s;
+};
+
+template <>
+IRValue load_src<SrcOperandIndexableInput, true>(SrcOperandIndexableInput input) {
+  auto ctx = co_yield get_context();
+  auto s = co_yield load_from_array_at(
+    ctx.resource.input.ptr_float4, co_yield load_operand_index(input.regindex)
+  );
+  co_return co_yield extend_to_vec4(s);
+};
+
+template <>
+IRValue load_src<SrcOperandIndexableInput, false>(SrcOperandIndexableInput input) {
+  auto ctx = co_yield get_context();
+  auto s = co_yield load_from_array_at(
+    ctx.resource.input.ptr_int4, co_yield load_operand_index(input.regindex)
+  );
+  co_return co_yield extend_to_vec4(s);
 };
 
 template <>
@@ -4082,7 +4128,6 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
             );
           },
           [&effect](InstIntegerMAD mad) {
-            // FIXME: this looks wrong, what's the sign specific behavior?
             auto mask = get_dst_mask(mad.dst);
             effect << lift(
               load_src_op<false>(mad.src0, mask),
@@ -4090,11 +4135,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
               load_src_op<false>(mad.src2, mask),
               [=](auto a, auto b, auto c) {
                 return store_dst_op<false>(
-                  mad.dst, make_irvalue([=](struct context ctx) {
-                    return ctx.builder.CreateAdd(
-                      ctx.builder.CreateMul(a, b), c
-                    );
-                  })
+                  mad.dst, call_integer_madsat(a, b, c, mad.is_signed)
                 );
               }
             );
@@ -4329,47 +4370,19 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
           },
           [&effect](InstIntegerBinaryOpWithTwoDst bin) {
             switch (bin.op) {
-            case IntegerBinaryOpWithTwoDst::IMul: {
-              effect << make_effect_bind([=](struct context ctx) -> IREffect {
-                auto a = co_yield load_src_op<false>(bin.src0);
-                auto b = co_yield load_src_op<false>(bin.src1);
-                auto mul = ctx.builder.CreateBitCast(
-                  ctx.builder.CreateMul(
-                    ctx.builder.CreateSExt(a, ctx.types._long4),
-                    ctx.builder.CreateSExt(b, ctx.types._long4)
-                  ),
-                  ctx.types._int8
-                );
-                co_yield store_dst_op<false>(
-                  bin.dst_hi,
-                  pure(ctx.builder.CreateShuffleVector(mul, {1, 3, 5, 7}))
-                );
-                co_yield store_dst_op<false>(
-                  bin.dst_low,
-                  pure(ctx.builder.CreateShuffleVector(mul, {0, 2, 4, 6}))
-                );
-                co_return {};
-              });
-              break;
-            }
+            case IntegerBinaryOpWithTwoDst::IMul:
             case IntegerBinaryOpWithTwoDst::UMul: {
               effect << make_effect_bind([=](struct context ctx) -> IREffect {
                 auto a = co_yield load_src_op<false>(bin.src0);
                 auto b = co_yield load_src_op<false>(bin.src1);
-                auto mul = ctx.builder.CreateBitCast(
-                  ctx.builder.CreateMul(
-                    ctx.builder.CreateZExt(a, ctx.types._long4),
-                    ctx.builder.CreateZExt(b, ctx.types._long4)
-                  ),
-                  ctx.types._int8
-                );
                 co_yield store_dst_op<false>(
                   bin.dst_hi,
-                  pure(ctx.builder.CreateShuffleVector(mul, {1, 3, 5, 7}))
+                  call_integer_binop(
+                    "mul_hi", a, b, bin.op == IntegerBinaryOpWithTwoDst::IMul
+                  )
                 );
                 co_yield store_dst_op<false>(
-                  bin.dst_low,
-                  pure(ctx.builder.CreateShuffleVector(mul, {0, 2, 4, 6}))
+                  bin.dst_low, pure(ctx.builder.CreateMul(a, b))
                 );
                 co_return {};
               });

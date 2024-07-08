@@ -311,10 +311,17 @@ auto readSrcOperand(const microsoft::D3D10ShaderBinary::COperandBase &O
   }
   case D3D10_SB_OPERAND_TYPE_INPUT: {
     DXASSERT_DXBC(O.m_IndexDimension == D3D10_SB_OPERAND_INDEX_1D);
-    unsigned Reg = O.m_Index[0].m_RegIndex;
-    return SrcOperandInput{
+    if (O.m_IndexType[0] == D3D10_SB_OPERAND_INDEX_IMMEDIATE32) {
+
+      unsigned Reg = O.m_Index[0].m_RegIndex;
+      return SrcOperandInput{
+        ._ = readSrcOperandCommon(O),
+        .regid = Reg,
+      };
+    }
+    return SrcOperandIndexableInput{
       ._ = readSrcOperandCommon(O),
-      .regid = Reg,
+      .regindex = readOperandIndex(O.m_Index[0], O.m_IndexType[0])
     };
   }
 
