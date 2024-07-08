@@ -9,6 +9,7 @@
 #include "Metal/MTLDevice.hpp"
 #include "Metal/MTLTypes.hpp"
 #include "dxmt_binding.hpp"
+#include "dxmt_occlusion_query.hpp"
 #include "log/log.hpp"
 #include "objc_pointer.hpp"
 // #include "thread.hpp"
@@ -85,7 +86,7 @@ inline void *ptr_add(const void *const p,
 constexpr uint32_t kCommandChunkCount = 8;
 constexpr size_t kCommandChunkCPUHeapSize = 0x800000; // is 8MB too large?
 constexpr size_t kCommandChunkGPUHeapSize = 0x2000000; // FIXME: reduce it
-constexpr size_t kOcclusionSampleCount = 4096;
+constexpr size_t kOcclusionSampleCount = 1024;
 
 class CommandQueue;
 
@@ -249,6 +250,10 @@ public:
     return last_encoder_info->kind == EncoderKind::Nil ? 1u : 0u;
   }
 
+  uint64_t visibility_result_seq_begin;
+  uint64_t visibility_result_seq_end;
+  Obj<MTL::Buffer> visibility_result_heap;
+
 private:
   CommandQueue *queue;
   char *cpu_argument_heap;
@@ -318,10 +323,18 @@ private:
   friend class CommandChunk;
   uint64_t GetNextEncoderId() { return encoder_seq++; }
 
+  std::vector<VisibilityResultObserver *> visibility_result_observers;
+  dxmt::mutex mutex_observers;
+
 public:
   CommandQueue(MTL::Device *device);
 
   ~CommandQueue();
+
+  void RegisterVisibilityResultObserver(VisibilityResultObserver *observer) {
+    std::lock_guard<dxmt::mutex> lock(mutex_observers);
+    visibility_result_observers.push_back(observer);
+  }
 
   CommandChunk *CurrentChunk() {
     auto id = ready_for_encode.load(std::memory_order_relaxed);
@@ -346,7 +359,8 @@ public:
   CurrentChunk & CommitCurrentChunk should be called on the same thread
 
   */
-  void CommitCurrentChunk();
+  void CommitCurrentChunk(uint64_t occlusion_counter_begin,
+                          uint64_t occlusion_counter_end);
 
   void WaitCPUFence(uint64_t seq) {
     uint64_t current;

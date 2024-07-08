@@ -1,5 +1,6 @@
 #include "d3d11_query.hpp"
 #include "d3d11_private.h"
+#include "dxmt_occlusion_query.hpp"
 
 namespace dxmt {
 
@@ -29,7 +30,8 @@ class EventQuery : public MTLD3DQueryBase<IMTLD3DEventQuery> {
   };
 };
 
-class OcculusionQuery : public MTLD3DQueryBase<IMTLD3DOcclusionQuery> {
+class OcculusionQuery : public MTLD3DQueryBase<IMTLD3DOcclusionQuery>,
+                        VisibilityResultObserver {
   using MTLD3DQueryBase<IMTLD3DOcclusionQuery>::MTLD3DQueryBase;
 
   QueryState state = QueryState::Signaled;
@@ -43,21 +45,30 @@ class OcculusionQuery : public MTLD3DQueryBase<IMTLD3DOcclusionQuery> {
   };
 
   virtual HRESULT GetData(uint64_t *data) override {
-    *data = 0; // FIXME: report 0 for now, later implement this properly!
-    return S_OK;
-
     if (state == QueryState::Signaled) {
       *data = accumulated_value;
       return S_OK;
     }
     return S_FALSE;
   }
-  virtual void Begin(uint64_t occlusion_counter_begin) override {
+
+  virtual VisibilityResultObserver *
+  Begin(uint64_t occlusion_counter_begin) override {
     this->occlusion_counter_begin = occlusion_counter_begin;
     this->occlusion_counter_end = ~0uLL;
     accumulated_value = 0;
-    state = QueryState::Building;
+    if (state == QueryState::Signaled) {
+      AddRef();
+      state = QueryState::Building;
+      return static_cast<VisibilityResultObserver *>(this);
+    }
+    if (state == QueryState::Issued) {
+      // discard previous issued query
+      state = QueryState::Building;
+    }
+    return nullptr;
   };
+
   virtual void End(uint64_t occlusion_counter_end) override {
     if (state == QueryState::Issued) {
       // FIXME: is this actually allowed?
@@ -65,6 +76,7 @@ class OcculusionQuery : public MTLD3DQueryBase<IMTLD3DOcclusionQuery> {
       return;
     }
     if (state == QueryState::Signaled) {
+      // no effect
       this->occlusion_counter_begin = occlusion_counter_end;
       this->occlusion_counter_end = occlusion_counter_end;
       this->accumulated_value = 0;
@@ -74,6 +86,7 @@ class OcculusionQuery : public MTLD3DQueryBase<IMTLD3DOcclusionQuery> {
     state = QueryState::Issued;
     return;
   };
+
   virtual bool Update(uint64_t occlusion_counter, uint64_t value) override {
     // expect `occlusion_counter` to be monotonous increasing for each
     // invocation
@@ -82,9 +95,14 @@ class OcculusionQuery : public MTLD3DQueryBase<IMTLD3DOcclusionQuery> {
       // simply ignore
       return false;
     }
+    if (occlusion_counter >= occlusion_counter_end) {
+      D3D11_ASSERT(0 && "unreachable");
+    }
     accumulated_value += value;
-    if (occlusion_counter + 1 >= occlusion_counter_end) {
+    if (occlusion_counter + 1 == occlusion_counter_end) {
+      D3D11_ASSERT(state == QueryState::Issued);
       state = QueryState::Signaled;
+      Release();
       // return true, so caller can know this query has done
       return true;
     }

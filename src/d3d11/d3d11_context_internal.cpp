@@ -673,13 +673,15 @@ public:
     case CommandBufferState::Idle:
       break;
     case CommandBufferState::RenderEncoderActive:
-    case CommandBufferState::RenderPipelineReady:
+    case CommandBufferState::RenderPipelineReady: {
       chk->emit([](CommandChunk::context &ctx) {
         ctx.render_encoder->endEncoding();
         ctx.render_encoder = nullptr;
         ctx.dsv_valid = false;
       });
+      occlusion_query_seq++;
       break;
+    }
     case CommandBufferState::ComputeEncoderActive:
     case CommandBufferState::ComputePipelineReady:
       chk->emit([](CommandChunk::context &ctx) {
@@ -1004,8 +1006,10 @@ public:
 
       chk->mark_pass(EncoderKind::Render);
 
-      chk->emit([rtvs = std::move(rtvs),
-                 dsv = std::move(dsv_info)](CommandChunk::context &ctx) {
+      auto bump_offset = NextOcclusionQuerySeq() % kOcclusionSampleCount;
+
+      chk->emit([rtvs = std::move(rtvs), dsv = std::move(dsv_info),
+                 bump_offset](CommandChunk::context &ctx) {
         auto pool = transfer(NS::AutoreleasePool::alloc()->init());
         auto renderPassDescriptor =
             MTL::RenderPassDescriptor::renderPassDescriptor();
@@ -1057,6 +1061,8 @@ public:
           renderPassDescriptor->setRenderTargetHeight(dsv_tex->height());
           renderPassDescriptor->setRenderTargetWidth(dsv_tex->width());
         }
+        renderPassDescriptor->setVisibilityResultBuffer(
+            ctx.chk->visibility_result_heap);
         ctx.render_encoder =
             ctx.cmdbuf->renderCommandEncoder(renderPassDescriptor);
         auto [h, _] = ctx.chk->inspect_gpu_heap();
@@ -1066,6 +1072,9 @@ public:
         ctx.render_encoder->setVertexBuffer(h, 0, 30);
         ctx.render_encoder->setFragmentBuffer(h, 0, 29);
         ctx.render_encoder->setFragmentBuffer(h, 0, 30);
+        // TODO: need to check if there is any query in building
+        ctx.render_encoder->setVisibilityResultMode(
+            MTL::VisibilityResultModeCounting, bump_offset << 3);
       });
     }
 
@@ -1672,6 +1681,32 @@ public:
     };
     vertex_buffer_dirty = 0;
   }
+
+  void Commit() {
+    D3D11_ASSERT(cmdbuf_state == CommandBufferState::Idle);
+    cmd_queue.CommitCurrentChunk(occlusion_query_seq_chunk_start,
+                                 ++occlusion_query_seq);
+    occlusion_query_seq_chunk_start = occlusion_query_seq;
+  };
+
+private:
+  uint64_t occlusion_query_seq = 0;
+  uint64_t occlusion_query_seq_chunk_start = 0;
+
+public:
+  uint64_t NextOcclusionQuerySeq() {
+    if (cmdbuf_state == CommandBufferState::RenderEncoderActive ||
+        cmdbuf_state == CommandBufferState::RenderPipelineReady) {
+      uint64_t bump_offset = (++occlusion_query_seq) % kOcclusionSampleCount;
+      CommandChunk *chk = cmd_queue.CurrentChunk();
+      chk->emit([bump_offset](CommandChunk::context &ctx) {
+        D3D11_ASSERT(ctx.render_encoder);
+        ctx.render_encoder->setVisibilityResultMode(
+            MTL::VisibilityResultModeCounting, bump_offset << 3);
+      });
+    }
+    return occlusion_query_seq;
+  };
 
 #pragma endregion
 

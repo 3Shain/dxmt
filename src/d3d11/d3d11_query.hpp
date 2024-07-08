@@ -1,14 +1,18 @@
 #pragma once
 #include "com/com_guid.hpp"
 #include "d3d11_device_child.hpp"
+#include "dxmt_occlusion_query.hpp"
 
 DEFINE_COM_INTERFACE("a301e56d-d87e-4b69-8440-bd003e285904",
                      IMTLD3DOcclusionQuery)
     : public ID3D11Query {
   virtual HRESULT GetData(uint64_t * data) = 0;
-  virtual void Begin(uint64_t occlusion_counter_begin) = 0;
+  /**
+  Note: this will add a ref if the query is in `Signaled` state
+  */
+  virtual dxmt::VisibilityResultObserver *Begin(
+      uint64_t occlusion_counter_begin) = 0;
   virtual void End(uint64_t occlusion_counter_end) = 0;
-  virtual bool Update(uint64_t occlusion_counter, uint64_t value) = 0;
 };
 
 DEFINE_COM_INTERFACE("81fe1837-05fa-4927-811f-3699f997cb9f", IMTLD3DEventQuery)

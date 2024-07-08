@@ -102,14 +102,13 @@ public:
     switch (desc.Query) {
     case D3D11_QUERY_EVENT:
       break;
-    case D3D11_QUERY_OCCLUSION:
-      // ((IMTLD3DOcclusionQuery *)pAsync)->Begin(todo);
-      /**
-      todo:
-      1. add to command queue
-      2. assign new occlusion counter
-       */
+    case D3D11_QUERY_OCCLUSION: {
+      if (auto observer = ((IMTLD3DOcclusionQuery *)pAsync)
+                              ->Begin(ctx.NextOcclusionQuerySeq())) {
+        cmd_queue.RegisterVisibilityResultObserver(observer);
+      }
       break;
+    }
     default:
       ERR("Unknown query type ", desc.Query);
       break;
@@ -124,13 +123,10 @@ public:
     case D3D11_QUERY_EVENT:
       ((IMTLD3DEventQuery *)pAsync)->Issue(cmd_queue.EncodedWorkFinishAt());
       break;
-    case D3D11_QUERY_OCCLUSION:
-      /**
-        todo:
-        2. assign new occlusion counter
-         */
-      // ((IMTLD3DOcclusionQuery *)pAsync)->End(todo);
+    case D3D11_QUERY_OCCLUSION: {
+      ((IMTLD3DOcclusionQuery *)pAsync)->End(ctx.NextOcclusionQuerySeq());
       break;
+    }
     default:
       ERR("Unknown query type ", desc.Query);
       break;
@@ -1657,7 +1653,7 @@ public:
         [bc = std::move(beforeCommit)](CommandChunk::context &ctx) {
           bc(ctx.cmdbuf);
         });
-    cmd_queue.CommitCurrentChunk();
+    ctx.Commit();
   }
 
 private:

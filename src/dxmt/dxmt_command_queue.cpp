@@ -37,6 +37,10 @@ CommandQueue::CommandQueue(MTL::Device *device)
         kCommandChunkGPUHeapSize, MTL::ResourceHazardTrackingModeUntracked |
                                       MTL::ResourceCPUCacheModeWriteCombined |
                                       MTL::ResourceStorageModeShared));
+    chunk.visibility_result_heap =
+        transfer(device->newBuffer(kOcclusionSampleCount * sizeof(uint64_t),
+                                   MTL::ResourceHazardTrackingModeUntracked |
+                                       MTL::ResourceStorageModeShared));
     chunk.gpu_argument_heap_contents =
         (uint64_t *)chunk.gpu_argument_heap->contents();
     chunk.reset();
@@ -61,14 +65,17 @@ CommandQueue::~CommandQueue() {
   TRACE("Destructed command queue");
 }
 
-void CommandQueue::CommitCurrentChunk() {
+void CommandQueue::CommitCurrentChunk(uint64_t occlusion_counter_begin,
+                                      uint64_t occlusion_counter_end) {
   chunk_ongoing.wait(kCommandChunkCount - 1, std::memory_order_relaxed);
   chunk_ongoing.fetch_add(1, std::memory_order_relaxed);
+  auto &chunk = chunks[ready_for_encode % kCommandChunkCount];
+  chunk.visibility_result_seq_begin = occlusion_counter_begin;
+  chunk.visibility_result_seq_end = occlusion_counter_end;
 #ifndef SYNC_ENCODING
   ready_for_encode.fetch_add(1, std::memory_order_release);
   ready_for_encode.notify_all();
 #else
-  auto &chunk = chunks[ready_for_encode % kCommandChunkCount];
   CommitChunkInternal(chunk);
   ready_for_encode.fetch_add(1, std::memory_order_release);
 #endif
@@ -160,6 +167,21 @@ uint32_t CommandQueue::WaitForFinishThread() {
             NS::ASCIIStringEncoding));
       }
     }
+    uint64_t *visibility_result_buffer =
+        (uint64_t *)chunk.visibility_result_heap->contents();
+    {
+      std::lock_guard<dxmt::mutex> lock(mutex_observers);
+      for (auto seq = chunk.visibility_result_seq_begin;
+           seq < chunk.visibility_result_seq_end; seq++) {
+        uint64_t counter_value =
+            visibility_result_buffer[seq % kOcclusionSampleCount];
+        std::erase_if(visibility_result_observers,
+                      [=](VisibilityResultObserver *observer) {
+                        return observer->Update(seq, counter_value);
+                      });
+      }
+    }
+
     chunk.reset();
     chunk_ongoing.fetch_sub(1, std::memory_order_relaxed);
     chunk_ongoing.notify_all();
