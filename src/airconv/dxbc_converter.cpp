@@ -1559,10 +1559,9 @@ int SM50Compile(
     return 1;
   }
 
-  runOptimizationPasses(
-    *pModule,
-    shader_info.skipOptimization ? OptimizationLevel::O0 : OptimizationLevel::O2
-  );
+  if (!shader_info.skipOptimization) {
+    runOptimizationPasses(*pModule, OptimizationLevel::O2);
+  }
 
   // pModule->print(outs(), nullptr);
 
