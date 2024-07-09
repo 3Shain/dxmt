@@ -82,6 +82,12 @@ add_project_arguments(cc.get_supported_arguments(compiler_args), language: 'c')
 add_project_link_arguments(cpp.get_supported_link_arguments(link_args), language: 'cpp')
 add_project_link_arguments(cc.get_supported_link_arguments(link_args), language: 'c')
 
+dxmt_debug = get_option('dxmt_debug')
+
+if dxmt_debug
+add_project_arguments('-DDXMT_DEBUG=1', language: 'cpp')
+endif
+
 subdir('libs')
 subdir('src')
 subdir('tests')
