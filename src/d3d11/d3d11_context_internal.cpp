@@ -1393,10 +1393,10 @@ public:
                               : state_.OutputMerger.UAVs;
 
     // TODO: should be more optimized (only check dirty on used slot)
-    if (!ShaderStage.ConstantBuffers.any_dirty() &&
-        !ShaderStage.Samplers.any_dirty() && !ShaderStage.SRVs.any_dirty() &&
-        !UAVBindingSet.any_dirty())
-      return true;
+    // if (!ShaderStage.ConstantBuffers.any_dirty() &&
+    //     !ShaderStage.Samplers.any_dirty() && !ShaderStage.SRVs.any_dirty() &&
+    //     !UAVBindingSet.any_dirty())
+    //   return true;
 
     auto currentChunkId = cmd_queue.CurrentSeqId();
 
