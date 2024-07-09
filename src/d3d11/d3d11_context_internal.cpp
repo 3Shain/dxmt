@@ -868,11 +868,11 @@ public:
   /**
   Switch to render encoder and set all states (expect for pipeline state)
   */
-  void SwitchToRenderEncoder() {
+  bool SwitchToRenderEncoder() {
     if (cmdbuf_state == CommandBufferState::RenderPipelineReady)
-      return;
+      return true;
     if (cmdbuf_state == CommandBufferState::RenderEncoderActive)
-      return;
+      return true;
     InvalidateCurrentPass();
 
     // set dirty state
@@ -904,6 +904,8 @@ public:
         MTL::LoadAction LoadAction{MTL::LoadActionLoad};
         MTL::ClearColor ClearColor{};
       };
+
+      uint32_t effective_render_target = 0;
       auto rtvs =
           chk->reserve_vector<RENDER_TARGET_STATE>(state_.OutputMerger.NumRTVs);
       for (unsigned i = 0; i < state_.OutputMerger.NumRTVs; i++) {
@@ -914,6 +916,7 @@ public:
                           props->Slice, props->DepthPlane,
                           rtv->GetPixelFormat()});
           D3D11_ASSERT(rtv->GetPixelFormat() != MTL::PixelFormatInvalid);
+          effective_render_target++;
         } else {
           rtvs.push_back(
               {BindingRef(std::nullopt), i, 0, 0, 0, MTL::PixelFormatInvalid});
@@ -934,6 +937,9 @@ public:
       if (state_.OutputMerger.DSV) {
         dsv_info.Texture = state_.OutputMerger.DSV->GetBinding(currentChunkId);
         dsv_info.PixelFormat = state_.OutputMerger.DSV->GetPixelFormat();
+      } else if (effective_render_target == 0) {
+        // FIXME: No-Rasterization Stream-Out Pipeline
+        return false;
       }
 
       auto previous_encoder = chk->get_last_encoder();
@@ -1010,12 +1016,11 @@ public:
 
       auto bump_offset = NextOcclusionQuerySeq() % kOcclusionSampleCount;
 
-      chk->emit([rtvs = std::move(rtvs), dsv = std::move(dsv_info),
-                 bump_offset](CommandChunk::context &ctx) {
+      chk->emit([rtvs = std::move(rtvs), dsv = std::move(dsv_info), bump_offset,
+                 effective_render_target](CommandChunk::context &ctx) {
         auto pool = transfer(NS::AutoreleasePool::alloc()->init());
         auto renderPassDescriptor =
             MTL::RenderPassDescriptor::renderPassDescriptor();
-        uint32_t effective_render_target = 0;
         for (auto &rtv : rtvs) {
           if (rtv.PixelFormat == MTL::PixelFormatInvalid) {
             continue;
@@ -1030,7 +1035,6 @@ public:
           colorAttachment->setLoadAction(rtv.LoadAction);
           colorAttachment->setClearColor(rtv.ClearColor);
           colorAttachment->setStoreAction(MTL::StoreActionStore);
-          effective_render_target++;
         };
         bool dsv_valid = false;
         if (dsv.Texture) {
@@ -1081,6 +1085,7 @@ public:
     }
 
     cmdbuf_state = CommandBufferState::RenderEncoderActive;
+    return true;
   }
 
   /**
@@ -1167,7 +1172,9 @@ public:
       return false;
     }
 
-    SwitchToRenderEncoder();
+    if (!SwitchToRenderEncoder()) {
+      return false;
+    }
 
     CommandChunk *chk = cmd_queue.CurrentChunk();
 
@@ -1611,26 +1618,22 @@ public:
     return true;
   }
 
-  template <bool Force = false, typename Fn> void EmitRenderCommand(Fn &&fn) {
-    // FIXME: not quite efficent...?
-    EmitRenderCommandChk<Force>(
-        [fn = std::forward<Fn>(fn)](CommandChunk::context &ctx) {
-          std::invoke(fn, ctx.render_encoder.ptr());
-        });
+  template <typename Fn> void EmitRenderCommand(Fn &&fn) {
+    D3D11_ASSERT(cmdbuf_state == CommandBufferState::RenderEncoderActive ||
+                 cmdbuf_state == CommandBufferState::RenderPipelineReady);
+    CommandChunk *chk = cmd_queue.CurrentChunk();
+    chk->emit([fn = std::forward<Fn>(fn)](CommandChunk::context &ctx) {
+      std::invoke(fn, ctx.render_encoder.ptr());
+    });
   };
 
-  template <bool Force = false, typename Fn>
-  void EmitRenderCommandChk(Fn &&fn) {
-    if (Force) {
-      SwitchToRenderEncoder();
-    }
-    if (cmdbuf_state == CommandBufferState::RenderEncoderActive ||
-        cmdbuf_state == CommandBufferState::RenderPipelineReady) {
-      CommandChunk *chk = cmd_queue.CurrentChunk();
-      chk->emit([fn = std::forward<Fn>(fn)](CommandChunk::context &ctx) {
-        std::invoke(fn, ctx);
-      });
-    }
+  template <typename Fn> void EmitRenderCommandChk(Fn &&fn) {
+    D3D11_ASSERT(cmdbuf_state == CommandBufferState::RenderEncoderActive ||
+                 cmdbuf_state == CommandBufferState::RenderPipelineReady);
+    CommandChunk *chk = cmd_queue.CurrentChunk();
+    chk->emit([fn = std::forward<Fn>(fn)](CommandChunk::context &ctx) {
+      std::invoke(fn, ctx);
+    });
   };
 
   template <bool Force = false, typename Fn> void EmitComputeCommand(Fn &&fn) {
@@ -1674,10 +1677,9 @@ public:
         continue;
       }
       // a ref is necessary (in case buffer destroyed before encoding)
-      EmitRenderCommand<true>([buffer = state.BufferRaw,
-                               ref = Com(state.RawPointer),
-                               offset = state.Offset, stride = state.Stride,
-                               index](MTL::RenderCommandEncoder *encoder) {
+      EmitRenderCommand([buffer = state.BufferRaw, ref = Com(state.RawPointer),
+                         offset = state.Offset, stride = state.Stride,
+                         index](MTL::RenderCommandEncoder *encoder) {
         encoder->setVertexBuffer(buffer, offset, stride, index);
       });
     };

@@ -571,8 +571,8 @@ public:
     MTL::PrimitiveType Primitive =
         to_metal_topology(state_.InputAssembler.Topology);
     // TODO: skip invalid topology
-    ctx.EmitRenderCommand<true>([Primitive, StartVertexLocation, VertexCount](
-                                    MTL::RenderCommandEncoder *encoder) {
+    ctx.EmitRenderCommand([Primitive, StartVertexLocation,
+                           VertexCount](MTL::RenderCommandEncoder *encoder) {
       encoder->drawPrimitives(Primitive, StartVertexLocation, VertexCount);
     });
   }
@@ -593,14 +593,14 @@ public:
             (state_.InputAssembler.IndexBufferFormat == DXGI_FORMAT_R32_UINT
                  ? 4
                  : 2);
-    ctx.EmitRenderCommandChk<true>(
-        [IndexType, IndexBufferOffset, Primitive, IndexCount,
-         BaseVertexLocation](CommandChunk::context &ctx) {
-          D3D11_ASSERT(ctx.current_index_buffer_ref);
-          ctx.render_encoder->drawIndexedPrimitives(
-              Primitive, IndexCount, IndexType, ctx.current_index_buffer_ref,
-              IndexBufferOffset, 1, BaseVertexLocation, 0);
-        });
+    ctx.EmitRenderCommandChk([IndexType, IndexBufferOffset, Primitive,
+                              IndexCount,
+                              BaseVertexLocation](CommandChunk::context &ctx) {
+      D3D11_ASSERT(ctx.current_index_buffer_ref);
+      ctx.render_encoder->drawIndexedPrimitives(
+          Primitive, IndexCount, IndexType, ctx.current_index_buffer_ref,
+          IndexBufferOffset, 1, BaseVertexLocation, 0);
+    });
   }
 
   void DrawInstanced(UINT VertexCountPerInstance, UINT InstanceCount,
@@ -611,7 +611,7 @@ public:
     MTL::PrimitiveType Primitive =
         to_metal_topology(state_.InputAssembler.Topology);
     // TODO: skip invalid topology
-    ctx.EmitRenderCommand<true>(
+    ctx.EmitRenderCommand(
         [Primitive, StartVertexLocation, VertexCountPerInstance, InstanceCount,
          StartInstanceLocation](MTL::RenderCommandEncoder *encoder) {
           encoder->drawPrimitives(Primitive, StartVertexLocation,
@@ -638,7 +638,7 @@ public:
             (state_.InputAssembler.IndexBufferFormat == DXGI_FORMAT_R32_UINT
                  ? 4
                  : 2);
-    ctx.EmitRenderCommandChk<true>(
+    ctx.EmitRenderCommandChk(
         [IndexType, IndexBufferOffset, Primitive, InstanceCount,
          BaseVertexLocation, StartInstanceLocation,
          IndexCountPerInstance](CommandChunk::context &ctx) {
@@ -664,7 +664,7 @@ public:
             : MTL::IndexTypeUInt16;
     auto IndexBufferOffset = state_.InputAssembler.IndexBufferOffset;
     if (auto bindable = com_cast<IMTLBindable>(pBufferForArgs)) {
-      ctx.EmitRenderCommandChk<true>(
+      ctx.EmitRenderCommandChk(
           [IndexType, IndexBufferOffset, Primitive,
            ArgBuffer = bindable->UseBindable(currentChunkId),
            AlignedByteOffsetForArgs](CommandChunk::context &ctx) {
