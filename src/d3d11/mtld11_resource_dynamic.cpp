@@ -80,6 +80,9 @@ private:
   uint64_t buffer_handle;
   uint64_t buffer_len;
   void *buffer_mapped;
+#ifdef DXMT_DEBUG
+  std::string debug_name;
+#endif
 
   std::vector<IMTLNotifiedBindable *> observers;
 
@@ -177,6 +180,10 @@ public:
     tracker = {};
     exch->ExchangeFromPool(&buffer_dynamic, &buffer_handle, &buffer_mapped,
                            pool.get());
+#ifdef DXMT_DEBUG
+    buffer_dynamic->setLabel(
+        NS::String::string(debug_name.c_str(), NS::ASCIIStringEncoding));
+#endif
     for (auto srv : weak_srvs) {
       srv->RotateView();
     }
@@ -220,6 +227,15 @@ public:
     srv->RotateView();
     return S_OK;
   };
+
+  void OnSetDebugObjectName(LPCSTR Name) override {
+    if (!Name) {
+      return;
+    }
+#ifdef DXMT_DEBUG
+    debug_name = std::string(Name);
+#endif
+  }
 };
 
 #pragma endregion

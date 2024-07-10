@@ -6,6 +6,8 @@
 namespace dxmt {
 
 class StagingBufferInternal {
+  friend class StagingBuffer;
+  template <typename tag> friend class StagingTexture;
   Obj<MTL::Buffer> buffer;
   void *buffer_mapped;
   uint64_t buffer_len;
@@ -124,6 +126,14 @@ public:
   virtual void Unmap(uint32_t Subresource) override {
     return internal.Unmap();
   };
+
+  void OnSetDebugObjectName(LPCSTR Name) override {
+    if (!Name) {
+      return;
+    }
+    internal.buffer->setLabel(
+        NS::String::string((char *)Name, NS::ASCIIStringEncoding));
+  }
 };
 
 HRESULT
@@ -192,6 +202,16 @@ public:
     }
     return subresources.at(Subresource).Unmap();
   };
+
+  void OnSetDebugObjectName(LPCSTR Name) override {
+    if (!Name) {
+      return;
+    }
+    for (auto &sub : subresources) {
+      sub.buffer->setLabel(
+          NS::String::string((char *)Name, NS::ASCIIStringEncoding));
+    }
+  }
 };
 
 #pragma endregion

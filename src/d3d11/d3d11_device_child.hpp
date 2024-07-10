@@ -11,6 +11,8 @@ template <typename Base> class MTLD3D11DeviceObject : public Base {
 public:
   MTLD3D11DeviceObject(IMTLD3D11Device *pDevice) : m_parent(pDevice) {}
 
+  virtual void OnSetDebugObjectName(LPCSTR Name) {}
+
   HRESULT STDMETHODCALLTYPE GetPrivateData(REFGUID guid, UINT *pDataSize,
                                            void *pData) final {
     return m_privateData.getData(guid, pDataSize, pData);
@@ -18,6 +20,10 @@ public:
 
   HRESULT STDMETHODCALLTYPE SetPrivateData(REFGUID guid, UINT DataSize,
                                            const void *pData) final {
+    if (guid == WKPDID_D3DDebugObjectName) {
+      std::string str((char *)pData, DataSize);
+      OnSetDebugObjectName(str.c_str());
+    }
     return m_privateData.setData(guid, DataSize, pData);
   }
 

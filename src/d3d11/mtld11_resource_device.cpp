@@ -244,6 +244,13 @@ public:
     ERR("DeviceBuffer: DSV not supported");
     return E_FAIL;
   };
+
+  void OnSetDebugObjectName(LPCSTR Name) override {
+    if (!Name) {
+      return;
+    }
+    buffer->setLabel(NS::String::string((char *)Name, NS::ASCIIStringEncoding));
+  }
 };
 
 HRESULT
@@ -295,6 +302,13 @@ private:
                                   void **ppLogicalResource) override {
       this->QueryInterface(riid, ppLogicalResource);
     };
+
+    void OnSetDebugObjectName(LPCSTR Name) override {
+      if (!Name) {
+        return;
+      }
+      view->setLabel(NS::String::string((char *)Name, NS::ASCIIStringEncoding));
+    }
   };
 
   using UAVBase =
@@ -327,6 +341,13 @@ private:
                                   void **ppLogicalResource) override {
       this->QueryInterface(riid, ppLogicalResource);
     };
+
+    void OnSetDebugObjectName(LPCSTR Name) override {
+      if (!Name) {
+        return;
+      }
+      view->setLabel(NS::String::string((char *)Name, NS::ASCIIStringEncoding));
+    }
   };
 
   using RTVBase =
@@ -354,6 +375,13 @@ private:
     BindingRef GetBinding(uint64_t) final {
       return BindingRef(static_cast<ID3D11View *>(this), view.ptr());
     }
+
+    void OnSetDebugObjectName(LPCSTR Name) override {
+      if (!Name) {
+        return;
+      }
+      view->setLabel(NS::String::string((char *)Name, NS::ASCIIStringEncoding));
+    }
   };
 
   using DSVBase =
@@ -374,6 +402,13 @@ private:
 
     BindingRef GetBinding(uint64_t) final {
       return BindingRef(static_cast<ID3D11View *>(this), view.ptr());
+    }
+
+    void OnSetDebugObjectName(LPCSTR Name) override {
+      if (!Name) {
+        return;
+      }
+      view->setLabel(NS::String::string((char *)Name, NS::ASCIIStringEncoding));
     }
   };
 
@@ -499,6 +534,14 @@ public:
     }
     return S_OK;
   };
+
+  void OnSetDebugObjectName(LPCSTR Name) override {
+    if (!Name) {
+      return;
+    }
+    texture->setLabel(
+        NS::String::string((char *)Name, NS::ASCIIStringEncoding));
+  }
 };
 
 template <typename tag>
