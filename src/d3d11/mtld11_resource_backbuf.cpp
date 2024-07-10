@@ -42,15 +42,19 @@ private:
   using BackBufferRTVBase =
       TResourceViewBase<tag_render_target_view<EmulatedBackBufferTexture>>;
   class BackBufferRTV : public BackBufferRTVBase {
+    MTL::PixelFormat interpreted_pixel_format;
+
   public:
     BackBufferRTV(const D3D11_RENDER_TARGET_VIEW_DESC *pDesc,
-                  EmulatedBackBufferTexture *context, IMTLD3D11Device *pDevice)
-        : BackBufferRTVBase(pDesc, context, pDevice) {}
+                  EmulatedBackBufferTexture *context,
+                  MTL::PixelFormat interpreted_pixel_format,
+                  IMTLD3D11Device *pDevice)
+        : BackBufferRTVBase(pDesc, context, pDevice),
+          interpreted_pixel_format(interpreted_pixel_format) {}
     MTL_RENDER_TARGET_VIEW_DESC props{0, 0, 0, 0}; // FIXME: bugprone
 
     MTL::PixelFormat GetPixelFormat() final {
-      D3D11_ASSERT(!resource->destroyed);
-      return resource->pixel_format_;
+      return interpreted_pixel_format;
     };
 
     BindingRef GetBinding(uint64_t) {
@@ -145,6 +149,10 @@ public:
           str::format("Unsupported swapchain format ", pDesc->Format));
     }
     layer_->setDevice(pDevice->GetMTLDevice());
+    // FIXME: will this cause problem if copy to buffer?
+    // FIXME: this is restricted
+    // https://developer.apple.com/documentation/quartzcore/cametallayer/1478155-pixelformat
+    // although it never causes problem
     layer_->setPixelFormat(metal_format.PixelFormat);
     pixel_format_ = metal_format.PixelFormat;
     layer_->setDrawableSize({(double)pDesc->Width, (double)pDesc->Height});
@@ -182,13 +190,17 @@ public:
   HRESULT CreateRenderTargetView(const D3D11_RENDER_TARGET_VIEW_DESC *pDesc,
                                  ID3D11RenderTargetView **ppView) override {
     D3D11_RENDER_TARGET_VIEW_DESC final;
+    MTL::PixelFormat interpreted_pixel_format = pixel_format_;
     if (pDesc) {
-      if (pDesc->Format != desc.Format) {
-        ERR("CreateRenderTargetView: Try to reinterpret back buffer RTV");
-        ERR("previous: ", desc.Format);
-        ERR("new: ", pDesc->Format);
+      MTL_FORMAT_DESC metal_format;
+      Com<IMTLDXGIAdatper> adapter;
+      m_parent->GetAdapter(&adapter);
+      if (FAILED(adapter->QueryFormatDesc(pDesc->Format, &metal_format))) {
+        ERR("CreateRenderTargetView: invalid back buffer rtv format ",
+            pDesc->Format);
         return E_INVALIDARG;
       }
+      interpreted_pixel_format = metal_format.PixelFormat;
       if (pDesc->ViewDimension != D3D11_RTV_DIMENSION_TEXTURE2D) {
         ERR("CreateRenderTargetView: Back buffer RTV must be a 2d texture");
         return E_INVALIDARG;
@@ -197,14 +209,17 @@ public:
         ERR("CreateRenderTargetView: Back buffer RTV mipslice must be 0");
         return E_INVALIDARG;
       }
+      final.Format = pDesc->Format;
+    } else {
+      final.Format = desc.Format;
     }
-    final.Format = desc.Format;
     final.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D;
     final.Texture2D.MipSlice = 0;
     if (!ppView)
       return S_FALSE;
 
-    *ppView = ref(new BackBufferRTV(&final, this, this->m_parent));
+    *ppView = ref(new BackBufferRTV(&final, this, interpreted_pixel_format,
+                                    this->m_parent));
 
     return S_OK;
   }
