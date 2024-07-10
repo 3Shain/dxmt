@@ -680,6 +680,7 @@ public:
       pMtlDesc->PixelFormat = MTL::PixelFormatBC1_RGBA;
       pMtlDesc->IsCompressed = true;
       pMtlDesc->Typeless = 1;
+      pMtlDesc->BlockSize = 8;
       break;
     }
     /**
@@ -690,75 +691,89 @@ public:
     case DXGI_FORMAT_BC1_UNORM: {
       pMtlDesc->PixelFormat = MTL::PixelFormatBC1_RGBA;
       pMtlDesc->IsCompressed = true;
+      pMtlDesc->BlockSize = 8;
       break;
     }
     case DXGI_FORMAT_BC1_UNORM_SRGB: {
       pMtlDesc->PixelFormat = MTL::PixelFormatBC1_RGBA_sRGB;
       pMtlDesc->IsCompressed = true;
+      pMtlDesc->BlockSize = 8;
       break;
     }
     case DXGI_FORMAT_BC2_TYPELESS: {
       pMtlDesc->PixelFormat = MTL::PixelFormatBC2_RGBA;
       pMtlDesc->IsCompressed = true;
       pMtlDesc->Typeless = 1;
+      pMtlDesc->BlockSize = 16;
       break;
     }
     case DXGI_FORMAT_BC2_UNORM: {
       pMtlDesc->PixelFormat = MTL::PixelFormatBC2_RGBA;
       pMtlDesc->IsCompressed = true;
+      pMtlDesc->BlockSize = 16;
       break;
     }
     case DXGI_FORMAT_BC2_UNORM_SRGB: {
       pMtlDesc->PixelFormat = MTL::PixelFormatBC2_RGBA_sRGB;
       pMtlDesc->IsCompressed = true;
+      pMtlDesc->BlockSize = 16;
       break;
     }
     case DXGI_FORMAT_BC3_TYPELESS: {
       pMtlDesc->PixelFormat = MTL::PixelFormatBC3_RGBA;
       pMtlDesc->IsCompressed = true;
       pMtlDesc->Typeless = 1;
+      pMtlDesc->BlockSize = 16;
       break;
     }
     case DXGI_FORMAT_BC3_UNORM: {
       pMtlDesc->PixelFormat = MTL::PixelFormatBC3_RGBA;
       pMtlDesc->IsCompressed = true;
+      pMtlDesc->BlockSize = 16;
       break;
     }
     case DXGI_FORMAT_BC3_UNORM_SRGB: {
       pMtlDesc->PixelFormat = MTL::PixelFormatBC3_RGBA_sRGB;
       pMtlDesc->IsCompressed = true;
+      pMtlDesc->BlockSize = 16;
       break;
     }
     case DXGI_FORMAT_BC4_TYPELESS: {
       pMtlDesc->PixelFormat = MTL::PixelFormatBC4_RUnorm;
       pMtlDesc->IsCompressed = true;
       pMtlDesc->Typeless = 1;
+      pMtlDesc->BlockSize = 8;
       break;
     }
     case DXGI_FORMAT_BC4_UNORM: {
       pMtlDesc->PixelFormat = MTL::PixelFormatBC4_RUnorm;
       pMtlDesc->IsCompressed = true;
+      pMtlDesc->BlockSize = 8;
       break;
     }
     case DXGI_FORMAT_BC4_SNORM: {
       pMtlDesc->PixelFormat = MTL::PixelFormatBC4_RSnorm;
       pMtlDesc->IsCompressed = true;
+      pMtlDesc->BlockSize = 8;
       break;
     }
     case DXGI_FORMAT_BC5_TYPELESS: {
       pMtlDesc->PixelFormat = MTL::PixelFormatBC5_RGUnorm;
       pMtlDesc->IsCompressed = true;
       pMtlDesc->Typeless = 1;
+      pMtlDesc->BlockSize = 16;
       break;
     }
     case DXGI_FORMAT_BC5_UNORM: {
       pMtlDesc->PixelFormat = MTL::PixelFormatBC5_RGUnorm;
       pMtlDesc->IsCompressed = true;
+      pMtlDesc->BlockSize = 16;
       break;
     }
     case DXGI_FORMAT_BC5_SNORM: {
       pMtlDesc->PixelFormat = MTL::PixelFormatBC5_RGSnorm;
       pMtlDesc->IsCompressed = true;
+      pMtlDesc->BlockSize = 16;
       break;
     }
     case DXGI_FORMAT_B5G6R5_UNORM: {
@@ -819,32 +834,38 @@ public:
       pMtlDesc->PixelFormat = MTL::PixelFormatBC6H_RGBUfloat;
       pMtlDesc->IsCompressed = true;
       pMtlDesc->Typeless = 1;
+      pMtlDesc->BlockSize = 16;
       break;
     }
     case DXGI_FORMAT_BC6H_UF16: {
       pMtlDesc->PixelFormat = MTL::PixelFormatBC6H_RGBUfloat;
       pMtlDesc->IsCompressed = true;
+      pMtlDesc->BlockSize = 16;
       break;
     }
     case DXGI_FORMAT_BC6H_SF16: {
       pMtlDesc->PixelFormat = MTL::PixelFormatBC6H_RGBFloat;
       pMtlDesc->IsCompressed = true;
+      pMtlDesc->BlockSize = 16;
       break;
     }
     case DXGI_FORMAT_BC7_TYPELESS: {
       pMtlDesc->PixelFormat = MTL::PixelFormatBC7_RGBAUnorm;
       pMtlDesc->IsCompressed = true;
       pMtlDesc->Typeless = 1;
+      pMtlDesc->BlockSize = 16;
       break;
     }
     case DXGI_FORMAT_BC7_UNORM: {
       pMtlDesc->PixelFormat = MTL::PixelFormatBC7_RGBAUnorm;
       pMtlDesc->IsCompressed = true;
+      pMtlDesc->BlockSize = 16;
       break;
     }
     case DXGI_FORMAT_BC7_UNORM_SRGB: {
       pMtlDesc->PixelFormat = MTL::PixelFormatBC7_RGBAUnorm_sRGB;
       pMtlDesc->IsCompressed = true;
+      pMtlDesc->BlockSize = 16;
       break;
     }
     case DXGI_FORMAT_AYUV:
