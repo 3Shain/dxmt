@@ -28,8 +28,10 @@ public:
                IMTLD3D11Device *device)
       : TResourceBase<tag_buffer, IMTLBindable>(desc, device) {
     auto metal = device->GetMTLDevice();
-    buffer = transfer(
-        metal->newBuffer(desc->ByteWidth, MTL::ResourceStorageModeManaged));
+    buffer = transfer(metal->newBuffer(
+        desc->BindFlags & D3D11_BIND_UNORDERED_ACCESS ? desc->ByteWidth * 2
+                                                      : desc->ByteWidth,
+        MTL::ResourceStorageModeManaged));
     if (pInitialData) {
       memcpy(buffer->contents(), pInitialData->pSysMem, desc->ByteWidth);
       buffer->didModifyRange({0, desc->ByteWidth});

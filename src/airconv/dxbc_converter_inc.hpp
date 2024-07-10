@@ -2635,31 +2635,34 @@ auto load_condition(SrcOperand src, bool non_zero_test) {
 it might be a constant, device or threadgroup buffer of `uint*`
 */
 auto load_from_uint_bufptr(
-  pvalue uint_buf_ptr, pvalue offset_in_4bytes, uint32_t read_components
+  pvalue uint_buf_ptr, uint32_t read_components, pvalue oob = nullptr
 ) -> IRValue {
   auto ctx = co_yield get_context();
   pvalue vec = llvm::UndefValue::get(ctx.types._int4);
   for (uint32_t i = 0; i < read_components; i++) {
     auto ptr = ctx.builder.CreateGEP(
-      ctx.types._int, uint_buf_ptr,
-      {ctx.builder.CreateAdd(offset_in_4bytes, ctx.builder.getInt32(i))}
+      ctx.types._int, uint_buf_ptr, {ctx.builder.getInt32(i)}
     );
     vec = ctx.builder.CreateInsertElement(
-      vec, ctx.builder.CreateLoad(ctx.types._int, ptr), i
+      vec,
+      oob ? ctx.builder.CreateSelect(
+              oob, ctx.builder.getInt32(0),
+              ctx.builder.CreateLoad(ctx.types._int, ptr)
+            )
+          : ctx.builder.CreateLoad(ctx.types._int, ptr),
+      i
     );
   }
   co_return vec;
 };
 
 auto store_to_uint_bufptr(
-  pvalue uint_buf_ptr, pvalue offset_in_4bytes, uint32_t written_components,
-  pvalue ivec4_to_write
+  pvalue uint_buf_ptr, uint32_t written_components, pvalue ivec4_to_write
 ) -> IREffect {
   auto ctx = co_yield get_context();
   for (uint32_t i = 0; i < written_components; i++) {
     auto ptr = ctx.builder.CreateGEP(
-      ctx.types._int, uint_buf_ptr,
-      {ctx.builder.CreateAdd(offset_in_4bytes, ctx.builder.getInt32(i))}
+      ctx.types._int, uint_buf_ptr, {ctx.builder.getInt32(i)}
     );
     ctx.builder.CreateStore(
       ctx.builder.CreateExtractElement(ivec4_to_write, i), ptr
@@ -2732,38 +2735,80 @@ auto read_uint_buf_addr(SrcOperandTGSM tgsm, pvalue index = 0) -> IRValue {
   );
 }
 
-auto read_uint_buf_addr(AtomicDstOperandUAV uav, pvalue index = 0) -> IRValue {
+auto read_uint_buf_addr(
+  AtomicDstOperandUAV uav, pvalue index = 0, pvalue *oob = nullptr
+) -> IRValue {
   auto ctx = co_yield get_context();
   assert(ctx.resource.uav_buf_range_map.contains(uav.range_id));
-  auto &[handle, _, __] = ctx.resource.uav_buf_range_map[uav.range_id];
+  auto &[handle, bound, stride] = ctx.resource.uav_buf_range_map[uav.range_id];
   if (index) {
+    auto _bound = co_yield bound(nullptr);
+    auto is_oob = ctx.builder.CreateICmpUGE(
+      index,
+      stride ? ctx.builder.CreateMul(ctx.builder.getInt32(stride >> 2), _bound)
+             : ctx.builder.CreateLShr(_bound, ctx.builder.getInt32(2))
+    );
+    if (oob) {
+      *oob = is_oob;
+    };
+    auto final_index = ctx.builder.CreateSelect(is_oob, _bound, index);
     co_return ctx.builder.CreateGEP(
-      ctx.types._int, co_yield handle(nullptr), {index}
+      ctx.types._int, co_yield handle(nullptr), {final_index}
     );
   }
+  // can't be even oob at 0?
   co_return co_yield handle(nullptr);
 }
 
 // the same as above
-auto read_uint_buf_addr(SrcOperandUAV uav, pvalue index = 0) -> IRValue {
+auto read_uint_buf_addr(
+  SrcOperandUAV uav, pvalue index = 0, pvalue *oob = nullptr
+) -> IRValue {
   auto ctx = co_yield get_context();
   assert(ctx.resource.uav_buf_range_map.contains(uav.range_id));
-  auto &[handle, _, __] = ctx.resource.uav_buf_range_map[uav.range_id];
+  auto &[handle, bound, stride] = ctx.resource.uav_buf_range_map[uav.range_id];
   if (index) {
+    auto _bound = co_yield bound(nullptr);
+
+    auto is_oob = ctx.builder.CreateICmpUGE(
+      index,
+      stride ? ctx.builder.CreateMul(ctx.builder.getInt32(stride >> 2), _bound)
+             : ctx.builder.CreateLShr(_bound, ctx.builder.getInt32(2))
+    );
+    if (oob) {
+      *oob = is_oob;
+    };
+    auto final_index =
+      ctx.builder.CreateSelect(is_oob, ctx.builder.getInt32(0), index);
     co_return ctx.builder.CreateGEP(
-      ctx.types._int, co_yield handle(nullptr), {index}
+      ctx.types._int, co_yield handle(nullptr), {final_index}
     );
   }
+  // can't be even oob at 0?
   co_return co_yield handle(nullptr);
 }
 
-auto read_uint_buf_addr(SrcOperandResource srv, pvalue index = 0) -> IRValue {
+auto read_uint_buf_addr(
+  SrcOperandResource srv, pvalue index = 0, pvalue *oob = nullptr
+) -> IRValue {
   auto ctx = co_yield get_context();
   assert(ctx.resource.srv_buf_range_map.contains(srv.range_id));
-  auto &[handle, _, __] = ctx.resource.srv_buf_range_map[srv.range_id];
+  auto &[handle, bound, stride] = ctx.resource.srv_buf_range_map[srv.range_id];
   if (index) {
+    auto _bound = co_yield bound(nullptr);
+
+    auto is_oob = ctx.builder.CreateICmpUGE(
+      index,
+      stride ? ctx.builder.CreateMul(ctx.builder.getInt32(stride >> 2), _bound)
+             : ctx.builder.CreateLShr(_bound, ctx.builder.getInt32(2))
+    );
+    if (oob) {
+      *oob = is_oob;
+    };
+    auto final_index =
+      ctx.builder.CreateSelect(is_oob, ctx.builder.getInt32(0), index);
     co_return ctx.builder.CreateGEP(
-      ctx.types._int, co_yield handle(nullptr), {index}
+      ctx.types._int, co_yield handle(nullptr), {final_index}
     );
   }
   co_return co_yield handle(nullptr);
@@ -3701,9 +3746,10 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                     co_return co_yield store_dst_op<false>(
                       load.dst,
                       load_from_uint_bufptr(
-                        co_yield read_uint_buf_addr(tgsm),
-                        co_yield calc_uint_ptr_index(
-                          stride, load.src_address, load.src_byte_offset
+                        co_yield read_uint_buf_addr(
+                          tgsm, co_yield calc_uint_ptr_index(
+                                  stride, load.src_address, load.src_byte_offset
+                                )
                         ),
                         std::max(
                           {tgsm.read_swizzle.x, tgsm.read_swizzle.y,
@@ -3718,18 +3764,23 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                   return make_effect_bind([=](struct context ctx) -> IREffect {
                     auto [__, _, stride] =
                       ctx.resource.srv_buf_range_map[srv.range_id];
+                    pvalue oob = nullptr;
                     co_return co_yield store_dst_op<false>(
                       load.dst,
                       load_from_uint_bufptr(
-                        co_yield read_uint_buf_addr(srv),
-                        co_yield calc_uint_ptr_index(
-                          stride, load.src_address, load.src_byte_offset
+                        co_yield read_uint_buf_addr(
+                          srv,
+                          co_yield calc_uint_ptr_index(
+                            stride, load.src_address, load.src_byte_offset
+                          ),
+                          &oob
                         ),
                         std::max(
                           {srv.read_swizzle.x, srv.read_swizzle.y,
                            srv.read_swizzle.z, srv.read_swizzle.w}
                         ) +
-                          1
+                          1,
+                        oob
                       ) >>= swizzle(srv.read_swizzle)
                     );
                   });
@@ -3738,18 +3789,23 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                   return make_effect_bind([=](struct context ctx) -> IREffect {
                     auto [__, _, stride] =
                       ctx.resource.uav_buf_range_map[uav.range_id];
+                    pvalue oob = nullptr;
                     co_return co_yield store_dst_op<false>(
                       load.dst,
                       load_from_uint_bufptr(
-                        co_yield read_uint_buf_addr(uav),
-                        co_yield calc_uint_ptr_index(
-                          stride, load.src_address, load.src_byte_offset
+                        co_yield read_uint_buf_addr(
+                          uav,
+                          co_yield calc_uint_ptr_index(
+                            stride, load.src_address, load.src_byte_offset
+                          ),
+                          &oob
                         ),
                         std::max(
                           {uav.read_swizzle.x, uav.read_swizzle.y,
                            uav.read_swizzle.z, uav.read_swizzle.w}
                         ) +
-                          1
+                          1,
+                        oob
                       ) >>= swizzle(uav.read_swizzle)
                     );
                   });
@@ -3765,9 +3821,10 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                   return make_effect_bind([=](struct context ctx) -> IREffect {
                     auto [stride, _] = ctx.resource.tgsm_map[tgsm.id];
                     co_return co_yield store_to_uint_bufptr(
-                      co_yield read_uint_buf_addr(tgsm),
-                      co_yield calc_uint_ptr_index(
-                        stride, store.dst_address, store.dst_byte_offset
+                      co_yield read_uint_buf_addr(
+                        tgsm, co_yield calc_uint_ptr_index(
+                                stride, store.dst_address, store.dst_byte_offset
+                              )
                       ),
                       mask_to_linear_components_num(tgsm.mask),
                       co_yield load_src_op<false>(store.src)
@@ -3779,9 +3836,10 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                     auto [__, _, stride] =
                       ctx.resource.uav_buf_range_map[uav.range_id];
                     co_return co_yield store_to_uint_bufptr(
-                      co_yield read_uint_buf_addr(uav),
-                      co_yield calc_uint_ptr_index(
-                        stride, store.dst_address, store.dst_byte_offset
+                      co_yield read_uint_buf_addr(
+                        uav, co_yield calc_uint_ptr_index(
+                               stride, store.dst_address, store.dst_byte_offset
+                             )
                       ),
                       mask_to_linear_components_num(uav.mask),
                       co_yield load_src_op<false>(store.src)
@@ -3799,9 +3857,10 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                   return make_effect_bind([=](struct context ctx) -> IREffect {
                     co_return co_yield store_dst_op<false>(
                       load.dst, load_from_uint_bufptr(
-                                  co_yield read_uint_buf_addr(tgsm),
-                                  co_yield calc_uint_ptr_index(
-                                    0, 0, load.src_byte_offset
+                                  co_yield read_uint_buf_addr(
+                                    tgsm, co_yield calc_uint_ptr_index(
+                                            0, 0, load.src_byte_offset
+                                          )
                                   ),
                                   std::max(
                                     {tgsm.read_swizzle.x, tgsm.read_swizzle.y,
@@ -3814,34 +3873,44 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                 },
                 [&](SrcOperandResource srv) {
                   return make_effect_bind([=](struct context ctx) -> IREffect {
+                    pvalue oob = nullptr;
                     co_return co_yield store_dst_op<false>(
                       load.dst, load_from_uint_bufptr(
-                                  co_yield read_uint_buf_addr(srv),
-                                  co_yield calc_uint_ptr_index(
-                                    0, 0, load.src_byte_offset
+                                  co_yield read_uint_buf_addr(
+                                    srv,
+                                    co_yield calc_uint_ptr_index(
+                                      0, 0, load.src_byte_offset
+                                    ),
+                                    &oob
                                   ),
                                   std::max(
                                     {srv.read_swizzle.x, srv.read_swizzle.y,
                                      srv.read_swizzle.z, srv.read_swizzle.w}
                                   ) +
-                                    1
+                                    1,
+                                  oob
                                 ) >>= swizzle(srv.read_swizzle)
                     );
                   });
                 },
                 [&](SrcOperandUAV uav) {
                   return make_effect_bind([=](struct context ctx) -> IREffect {
+                    pvalue oob = nullptr;
                     co_return co_yield store_dst_op<false>(
                       load.dst, load_from_uint_bufptr(
-                                  co_yield read_uint_buf_addr(uav),
-                                  co_yield calc_uint_ptr_index(
-                                    0, 0, load.src_byte_offset
+                                  co_yield read_uint_buf_addr(
+                                    uav,
+                                    co_yield calc_uint_ptr_index(
+                                      0, 0, load.src_byte_offset
+                                    ),
+                                    &oob
                                   ),
                                   std::max(
                                     {uav.read_swizzle.x, uav.read_swizzle.y,
                                      uav.read_swizzle.z, uav.read_swizzle.w}
                                   ) +
-                                    1
+                                    1,
+                                  oob
                                 ) >>= swizzle(uav.read_swizzle)
                     );
                   });
@@ -3867,8 +3936,11 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                 [&](AtomicDstOperandUAV uav) {
                   return make_effect_bind([=](struct context ctx) -> IREffect {
                     co_return co_yield store_to_uint_bufptr(
-                      co_yield read_uint_buf_addr(uav),
-                      co_yield calc_uint_ptr_index(0, 0, store.dst_byte_offset),
+                      co_yield read_uint_buf_addr(
+                        uav, co_yield calc_uint_ptr_index(
+                               0, 0, store.dst_byte_offset
+                             )
+                      ),
                       mask_to_linear_components_num(uav.mask),
                       co_yield load_src_op<false>(store.src)
                     );
