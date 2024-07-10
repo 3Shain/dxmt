@@ -1865,7 +1865,7 @@ IREffect call_threadgroup_barrier(mem_flags mem_flag) {
     att
   ));
   ctx.builder.CreateCall(
-    fn, {co_yield get_int((uint32_t)mem_flag), co_yield get_int(1)}
+    fn, {co_yield get_int((uint8_t)mem_flag), co_yield get_int(1)}
   );
   co_return {};
 }
@@ -2376,7 +2376,8 @@ template <> IRValue load_src<SrcOperandInput, false>(SrcOperandInput input) {
 };
 
 template <>
-IRValue load_src<SrcOperandIndexableInput, true>(SrcOperandIndexableInput input) {
+IRValue load_src<SrcOperandIndexableInput, true>(SrcOperandIndexableInput input
+) {
   auto ctx = co_yield get_context();
   auto s = co_yield load_from_array_at(
     ctx.resource.input.ptr_float4, co_yield load_operand_index(input.regindex)
@@ -2385,7 +2386,8 @@ IRValue load_src<SrcOperandIndexableInput, true>(SrcOperandIndexableInput input)
 };
 
 template <>
-IRValue load_src<SrcOperandIndexableInput, false>(SrcOperandIndexableInput input) {
+IRValue load_src<SrcOperandIndexableInput, false>(SrcOperandIndexableInput input
+) {
   auto ctx = co_yield get_context();
   auto s = co_yield load_from_array_at(
     ctx.resource.input.ptr_int4, co_yield load_operand_index(input.regindex)
@@ -4489,7 +4491,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
             );
           },
           [&effect](InstSync sync) {
-            mem_flags mem_flag;
+            mem_flags mem_flag = (mem_flags)0;
             if (sync.boundary == InstSync::Boundary::global) {
               mem_flag |= mem_flags::device;
             }
