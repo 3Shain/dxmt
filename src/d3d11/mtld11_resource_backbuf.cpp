@@ -8,8 +8,10 @@
 #include "dxgi_interfaces.h"
 #include "mtld11_resource.hpp"
 #include "objc_pointer.hpp"
+#include "util_env.hpp"
 #include "util_error.hpp"
 #include "util_string.hpp"
+#include "MetalFX/MTLFXSpatialScaler.hpp"
 
 namespace dxmt {
 
@@ -21,6 +23,7 @@ struct tag_texture_backbuffer {
   using DESC_S = D3D11_TEXTURE2D_DESC;
 };
 
+template <bool EnableMetalFX>
 class EmulatedBackBufferTexture
     : public TResourceBase<tag_texture_backbuffer, IMTLD3D11BackBuffer,
                            IMTLBindable, BackBufferSource> {
@@ -36,17 +39,20 @@ private:
   CA::MetalLayer *layer_;
   MTL::PixelFormat pixel_format_;
   Obj<CA::MetalDrawable> current_drawable;
+  std::array<Obj<MTL::Texture>, 3> temp_buffer;
+  uint32_t buffer_idx = 0;
+  Obj<MTLFX::SpatialScaler> metalfx_scaler;
   bool destroyed = false;
   SIMPLE_RESIDENCY_TRACKER tracker{};
 
-  using BackBufferRTVBase =
-      TResourceViewBase<tag_render_target_view<EmulatedBackBufferTexture>>;
+  using BackBufferRTVBase = TResourceViewBase<
+      tag_render_target_view<EmulatedBackBufferTexture<EnableMetalFX>>>;
   class BackBufferRTV : public BackBufferRTVBase {
     MTL::PixelFormat interpreted_pixel_format;
 
   public:
     BackBufferRTV(const D3D11_RENDER_TARGET_VIEW_DESC *pDesc,
-                  EmulatedBackBufferTexture *context,
+                  EmulatedBackBufferTexture<EnableMetalFX> *context,
                   MTL::PixelFormat interpreted_pixel_format,
                   IMTLD3D11Device *pDevice)
         : BackBufferRTVBase(pDesc, context, pDevice),
@@ -58,64 +64,68 @@ private:
     };
 
     BindingRef GetBinding(uint64_t) {
-      return BindingRef(static_cast<BackBufferSource *>(resource.ptr()));
+      return BindingRef(static_cast<BackBufferSource *>(this->resource.ptr()));
     };
 
     MTL_RENDER_TARGET_VIEW_DESC *GetRenderTargetProps() { return &props; };
   };
   friend class BackBufferRTV;
 
-  using BackBufferSRVBase =
-      TResourceViewBase<tag_shader_resource_view<EmulatedBackBufferTexture>,
-                        IMTLBindable>;
+  using BackBufferSRVBase = TResourceViewBase<
+      tag_shader_resource_view<EmulatedBackBufferTexture<EnableMetalFX>>,
+      IMTLBindable>;
   class BackBufferSRV : public BackBufferSRVBase {
     SIMPLE_RESIDENCY_TRACKER tracker{};
 
   public:
     BackBufferSRV(const D3D11_SHADER_RESOURCE_VIEW_DESC *pDesc,
-                  EmulatedBackBufferTexture *context, IMTLD3D11Device *pDevice)
+                  EmulatedBackBufferTexture<EnableMetalFX> *context,
+                  IMTLD3D11Device *pDevice)
         : BackBufferSRVBase(pDesc, context, pDevice) {}
 
     BindingRef UseBindable(uint64_t) override {
-      return BindingRef(static_cast<BackBufferSource *>(resource.ptr()));
+      return BindingRef(static_cast<BackBufferSource *>(this->resource.ptr()));
     };
 
     ArgumentData
     GetArgumentData(SIMPLE_RESIDENCY_TRACKER **ppTracker) override {
       *ppTracker = &tracker;
-      return ArgumentData(static_cast<BackBufferSource *>(resource.ptr()));
+      return ArgumentData(
+          static_cast<BackBufferSource *>(this->resource.ptr()));
     };
 
     void GetLogicalResourceOrView(REFIID riid,
                                   void **ppLogicalResource) override {
-      QueryInterface(riid, ppLogicalResource);
+      this->QueryInterface(riid, ppLogicalResource);
     };
   };
 
-  using BackBufferUAVBase =
-      TResourceViewBase<tag_unordered_access_view<EmulatedBackBufferTexture>,
-                        IMTLBindable>;
+  using BackBufferUAVBase = TResourceViewBase<
+      tag_unordered_access_view<EmulatedBackBufferTexture<EnableMetalFX>>,
+      IMTLBindable>;
   class BackBufferUAV : public BackBufferUAVBase {
     SIMPLE_RESIDENCY_TRACKER tracker{};
 
   public:
     BackBufferUAV(const D3D11_UNORDERED_ACCESS_VIEW_DESC *pDesc,
-                  EmulatedBackBufferTexture *context, IMTLD3D11Device *pDevice)
+                  EmulatedBackBufferTexture<EnableMetalFX> *context,
+                  IMTLD3D11Device *pDevice)
         : BackBufferUAVBase(pDesc, context, pDevice) {}
 
     BindingRef UseBindable(uint64_t) override {
-      return BindingRef(static_cast<BackBufferSource *>(resource.ptr()));
+      return BindingRef(static_cast<BackBufferSource *>(this->resource.ptr()));
     };
 
     ArgumentData
     GetArgumentData(SIMPLE_RESIDENCY_TRACKER **ppTracker) override {
       *ppTracker = &tracker;
-      return ArgumentData(static_cast<BackBufferSource *>(resource.ptr()));
+      return ArgumentData(
+          static_cast<BackBufferSource *>(this->resource.ptr()));
     };
 
     void GetLogicalResourceOrView(REFIID riid,
                                   void **ppLogicalResource) override {
-      QueryInterface(riid, ppLogicalResource);
+      this->QueryInterface(riid, ppLogicalResource);
     };
   };
 
@@ -155,23 +165,52 @@ public:
     // although it never causes problem
     layer_->setPixelFormat(metal_format.PixelFormat);
     pixel_format_ = metal_format.PixelFormat;
-    layer_->setDrawableSize({(double)pDesc->Width, (double)pDesc->Height});
+    if constexpr (EnableMetalFX) {
+      layer_->setDrawableSize(
+          {(double)pDesc->Width * 2, (double)pDesc->Height * 2});
+    } else {
+      layer_->setDrawableSize({(double)pDesc->Width, (double)pDesc->Height});
+    }
     // layer_->setDisplaySyncEnabled(false);
     desc.ArraySize = 1;
     desc.SampleDesc = {1, 0};
     desc.MipLevels = 1;
+    desc.BindFlags = D3D11_BIND_RENDER_TARGET;
     if (pDesc->BufferUsage & DXGI_USAGE_SHADER_INPUT) {
       // can be read
       layer_->setFramebufferOnly(false);
       desc.BindFlags |= D3D11_BIND_SHADER_RESOURCE;
     }
     desc.Usage = D3D11_USAGE_DEFAULT;
-    desc.BindFlags |= D3D11_BIND_RENDER_TARGET;
     desc.CPUAccessFlags = 0;
     desc.MiscFlags = 0;
     desc.Format = pDesc->Format;
     desc.Width = pDesc->Width;
     desc.Height = pDesc->Height;
+
+    if constexpr (EnableMetalFX) {
+      Obj<MTL::TextureDescriptor> descriptor;
+      D3D11_TEXTURE2D_DESC out_desc; // only used as an output
+      if (FAILED((CreateMTLTextureDescriptor(pDevice, &desc, &out_desc,
+                                             &descriptor)))) {
+        throw MTLD3DError(str::format("MTLFX: failed to create texture"));
+      }
+      for (unsigned i = 0; i < 3; i++) {
+        temp_buffer[i] =
+            transfer(pDevice->GetMTLDevice()->newTexture(descriptor));
+      }
+      auto scaler_descriptor =
+          transfer(MTLFX::SpatialScalerDescriptor::alloc()->init());
+      scaler_descriptor->setInputHeight(desc.Height);
+      scaler_descriptor->setInputWidth(desc.Width);
+      scaler_descriptor->setOutputHeight(desc.Height * 2);
+      scaler_descriptor->setOutputWidth(desc.Width * 2);
+      scaler_descriptor->setOutputTextureFormat(layer_->pixelFormat());
+      scaler_descriptor->setColorTextureFormat(descriptor->pixelFormat());
+      metalfx_scaler = transfer(
+          scaler_descriptor->newSpatialScaler(pDevice->GetMTLDevice()));
+      D3D11_ASSERT(metalfx_scaler && "otherwise metalfx failed to initialize");
+    }
   }
 
   ~EmulatedBackBufferTexture() { Destroy(); }
@@ -292,15 +331,29 @@ public:
   MTL::Texture *GetCurrentFrameBackBuffer() override {
     if (current_drawable == nullptr) {
       current_drawable = layer_->nextDrawable();
+      buffer_idx++;
+      buffer_idx = buffer_idx % 3;
       D3D11_ASSERT(current_drawable != nullptr);
     }
-    return current_drawable->texture();
+    if constexpr (EnableMetalFX) {
+      return temp_buffer[buffer_idx];
+    } else {
+      return current_drawable->texture();
+    }
   };
 
-  void Swap() override { current_drawable = nullptr; }
-
-  CA::MetalDrawable *CurrentDrawable() override {
-    return current_drawable.ptr();
+  void Present(MTL::CommandBuffer *cmdbuf) override {
+    auto drawable = current_drawable;
+    if (drawable) {
+      if constexpr (EnableMetalFX) {
+        D3D11_ASSERT(metalfx_scaler);
+        metalfx_scaler->setColorTexture(temp_buffer[buffer_idx]);
+        metalfx_scaler->setOutputTexture(drawable->texture());
+        metalfx_scaler->encodeToCommandBuffer(cmdbuf);
+      }
+      cmdbuf->presentDrawable(drawable);
+      current_drawable = nullptr; // "swap"
+    }
   }
 
   BindingRef UseBindable(uint64_t) override {
@@ -323,7 +376,10 @@ public:
 Com<IMTLD3D11BackBuffer>
 CreateEmulatedBackBuffer(IMTLD3D11Device *pDevice,
                          const DXGI_SWAP_CHAIN_DESC1 *pDesc, HWND hWnd) {
-  return new EmulatedBackBufferTexture(pDesc, pDevice, hWnd);
+  if (env::getEnvVar("DXMT_METALFX_SPATIAL_SWAPCHAIN") == "1") {
+    return new EmulatedBackBufferTexture<true>(pDesc, pDevice, hWnd);
+  }
+  return new EmulatedBackBufferTexture<false>(pDesc, pDevice, hWnd);
 }
 
 } // namespace dxmt

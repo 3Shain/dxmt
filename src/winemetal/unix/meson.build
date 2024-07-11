@@ -7,7 +7,8 @@ winemetal_unix_ld_args = [
   '@rpath/winemetal.so',
   join_paths(meson.source_root(), 'toolchains/wine/lib/wine/x86_64-unix/ntdll.so'),
   join_paths(meson.source_root(), 'toolchains/wine/lib/wine/x86_64-unix/winemac.so'),
-  '-weak_framework', 'CoreFoundation', '-weak_framework', 'Metal'
+  '-weak_framework', 'CoreFoundation', '-weak_framework', 'Metal', 
+  '-framework', 'MetalFX',
 ]
 winemetal_unix_link_depends = []
 
@@ -20,5 +21,6 @@ winemetal_unix_dll = shared_library('winemetal', winemetal_unix_src,
   native              : true,
   name_suffix         : 'so',
   install_rpath       : '',
-  build_rpath         : '@loader_path/:@loader_path/../../'
+  build_rpath         : '@loader_path/:@loader_path/../../',
+  override_options    : { 'b_asneeded' : false },
 )

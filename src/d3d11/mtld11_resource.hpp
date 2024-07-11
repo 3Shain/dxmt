@@ -1,5 +1,6 @@
 #pragma once
 #include "Metal/MTLBuffer.hpp"
+#include "Metal/MTLCommandBuffer.hpp"
 #include "Metal/MTLTexture.hpp"
 #include "d3d11_1.h"
 #include "d3d11_device_child.hpp"
@@ -137,8 +138,7 @@ DEFINE_COM_INTERFACE("1c7e7c98-6dd4-42f0-867b-67960806886e", IMTLBindable)
 DEFINE_COM_INTERFACE("daf21510-d136-44dd-bb16-068a94690775",
                      IMTLD3D11BackBuffer)
     : public IUnknown {
-  virtual void Swap() = 0;
-  virtual CA::MetalDrawable *CurrentDrawable() = 0;
+  virtual void Present(MTL::CommandBuffer* cmdbuf) = 0;
   virtual void Destroy() = 0;
 };
 

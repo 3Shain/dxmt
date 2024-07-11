@@ -291,13 +291,7 @@ public:
          _ = DestructorWrapper([sem = present_semaphore_]() {
            // called when cmdbuf complete
            ReleaseSemaphore(sem, 1, nullptr);
-         })](MTL::CommandBuffer *cmdbuf) {
-          auto drawable = backbuffer->CurrentDrawable();
-          if (drawable) {
-            cmdbuf->presentDrawable(drawable);
-            backbuffer->Swap();
-          }
-        });
+         })](MTL::CommandBuffer *cmdbuf) { backbuffer->Present(cmdbuf); });
 
     presentation_count_ += 1;
 
