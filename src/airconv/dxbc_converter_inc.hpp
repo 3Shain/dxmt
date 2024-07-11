@@ -168,7 +168,14 @@ std::string type_overload_suffix(
   llvm::Type *type, air::Sign sign = air::Sign::inapplicable
 ) {
   if (type->isFloatTy()) {
-    return ".f32";
+    if (sign == air::Sign::inapplicable)
+      return ".f32";
+    return ".f.f32";
+  }
+  if (type->isHalfTy()) {
+    if (sign == air::Sign::inapplicable)
+      return ".f16";
+    return ".f.f32";
   }
   if (type->isIntegerTy()) {
     assert(llvm::cast<llvm::IntegerType>(type)->getBitWidth() == 32);
@@ -180,7 +187,11 @@ std::string type_overload_suffix(
     auto fixedVecTy = llvm::cast<llvm::FixedVectorType>(type);
     auto elementTy = fixedVecTy->getElementType();
     if (elementTy->isFloatTy()) {
-      return ".v" + std::to_string(fixedVecTy->getNumElements()) + "f32";
+      return (sign == air::Sign::inapplicable ? ".v" : ".f.v") +
+             std::to_string(fixedVecTy->getNumElements()) + "f32";
+    } else if (elementTy->isHalfTy()) {
+      return (sign == air::Sign::inapplicable ? ".v" : ".f.v") +
+             std::to_string(fixedVecTy->getNumElements()) + "f16";
     } else if (elementTy->isIntegerTy()) {
       assert(llvm::cast<llvm::IntegerType>(elementTy)->getBitWidth() == 32);
       if (sign == air::Sign::inapplicable)
@@ -480,7 +491,13 @@ auto get_shuffle_mask(uint32_t writeMask) {
 auto cmp_integer(llvm::CmpInst::Predicate cmp, pvalue a, pvalue b) {
   return make_irvalue([=](context ctx) {
     return ctx.builder.CreateSExt(
-      ctx.builder.CreateICmp(cmp, a, b), ctx.types._int4
+      ctx.builder.CreateICmp(cmp, a, b),
+      isa<llvm::FixedVectorType>(a->getType())
+        ? llvm::FixedVectorType::get(
+            ctx.types._int,
+            cast<llvm::FixedVectorType>(a->getType())->getNumElements()
+          )
+        : ctx.types._int
     );
   });
 };
@@ -489,7 +506,13 @@ auto cmp_integer(llvm::CmpInst::Predicate cmp, pvalue a, pvalue b) {
 auto cmp_float(llvm::CmpInst::Predicate cmp, pvalue a, pvalue b) {
   return make_irvalue([=](context ctx) {
     return ctx.builder.CreateSExt(
-      ctx.builder.CreateFCmp(cmp, a, b), ctx.types._int4
+      ctx.builder.CreateFCmp(cmp, a, b),
+      isa<llvm::FixedVectorType>(a->getType())
+        ? llvm::FixedVectorType::get(
+            ctx.types._int,
+            cast<llvm::FixedVectorType>(a->getType())->getNumElements()
+          )
+        : ctx.types._int
     );
   });
 };
@@ -2055,10 +2078,7 @@ IRValue call_atomic_cmp_exchange(
 }
 
 // TODO: not good, expose too much detail
-IRValue call_convert(
-  pvalue src, llvm::Type *src_type, llvm::Type *dst_type,
-  std::string src_suffix, std::string dst_suffix
-) {
+IRValue call_convert(pvalue src, llvm::Type *dst_scaler_type, air::Sign sign) {
   using namespace llvm;
   auto ctx = co_yield get_context();
   auto &context = ctx.llvm;
@@ -2068,6 +2088,17 @@ IRValue call_convert(
               {~0U, Attribute::get(context, Attribute::AttrKind::ReadNone)},
               {~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)}}
   );
+  auto src_type = src->getType();
+  llvm::Type *dst_type = nullptr;
+  if (isa<llvm::FixedVectorType>(src_type)) {
+    dst_type = llvm::FixedVectorType::get(
+      dst_scaler_type, cast<llvm::FixedVectorType>(src_type)->getNumElements()
+    );
+  } else {
+    dst_type = dst_scaler_type;
+  }
+  auto dst_suffix = type_overload_suffix(dst_type, sign);
+  auto src_suffix = type_overload_suffix(src_type, sign);
 
   auto fn = (module.getOrInsertFunction(
     "air.convert" + dst_suffix + src_suffix,
@@ -2079,9 +2110,7 @@ IRValue call_convert(
 auto implicit_float_to_int(pvalue num) -> IRValue {
   auto &types = (co_yield get_context()).types;
   auto rounded = co_yield call_float_unary_op("rint", num);
-  co_return co_yield call_convert(
-    rounded, types._float, types._int, ".f.f32", ".u.i32"
-  );
+  co_return co_yield call_convert(rounded, types._int, air::Sign::with_sign);
 };
 
 SrcOperandModifier get_modifier(SrcOperand src) {
@@ -2136,6 +2165,37 @@ IRValue apply_float_src_operand_modifier(
   case 0b1000:
     ret = co_yield extract_element(3)(ret);
     break;
+  case 0b1100:
+    ret = ctx.builder.CreateShuffleVector(ret, {2, 3});
+    break;
+  case 0b0110:
+    ret = ctx.builder.CreateShuffleVector(ret, {1, 2});
+    break;
+  case 0b0011:
+    ret = ctx.builder.CreateShuffleVector(ret, {0, 1});
+    break;
+  case 0b1010:
+    ret = ctx.builder.CreateShuffleVector(ret, {1, 3});
+    break;
+  case 0b0101:
+    ret = ctx.builder.CreateShuffleVector(ret, {0, 2});
+    break;
+  case 0b1001:
+    ret = ctx.builder.CreateShuffleVector(ret, {0, 3});
+    break;
+  case 0b1101:
+    ret = ctx.builder.CreateShuffleVector(ret, {0, 2, 3});
+    break;
+  case 0b1011:
+    ret = ctx.builder.CreateShuffleVector(ret, {0, 1, 3});
+    break;
+  case 0b1110:
+    ret = ctx.builder.CreateShuffleVector(ret, {1, 2, 3});
+    break;
+  case 0b0111:
+    ret = ctx.builder.CreateShuffleVector(ret, {0, 1, 2});
+    break;
+  case 0b1111:
   default:
     break;
   }
@@ -2173,6 +2233,37 @@ IRValue apply_integer_src_operand_modifier(
   case 0b1000:
     ret = co_yield extract_element(3)(ret);
     break;
+  case 0b1100:
+    ret = ctx.builder.CreateShuffleVector(ret, {2, 3});
+    break;
+  case 0b0110:
+    ret = ctx.builder.CreateShuffleVector(ret, {1, 2});
+    break;
+  case 0b0011:
+    ret = ctx.builder.CreateShuffleVector(ret, {0, 1});
+    break;
+  case 0b1010:
+    ret = ctx.builder.CreateShuffleVector(ret, {1, 3});
+    break;
+  case 0b0101:
+    ret = ctx.builder.CreateShuffleVector(ret, {0, 2});
+    break;
+  case 0b1001:
+    ret = ctx.builder.CreateShuffleVector(ret, {0, 3});
+    break;
+  case 0b1101:
+    ret = ctx.builder.CreateShuffleVector(ret, {0, 2, 3});
+    break;
+  case 0b1011:
+    ret = ctx.builder.CreateShuffleVector(ret, {0, 1, 3});
+    break;
+  case 0b1110:
+    ret = ctx.builder.CreateShuffleVector(ret, {1, 2, 3});
+    break;
+  case 0b0111:
+    ret = ctx.builder.CreateShuffleVector(ret, {0, 1, 2});
+    break;
+  case 0b1111:
   default:
     break;
   }
@@ -2475,6 +2566,76 @@ IREffect store_dst_op(DstOperand dst, IRValue &&value) {
   return std::visit(
     [value = std::move(value)](auto dst) mutable {
       return store_dst<decltype(dst), StoreFloat>(dst, std::move(value));
+    },
+    dst
+  );
+};
+
+auto recover_mask(uint32_t mask) {
+  return [=](pvalue value) -> IRValue {
+    return make_irvalue([=](context ctx) -> pvalue {
+      auto ty = value->getType();
+      if (!ty->isVectorTy()) {
+        switch (mask) {
+        case 0b1000:
+        case 0b0100:
+        case 0b0010:
+        case 0b0001:
+        case 0b1111:
+          return ctx.builder.CreateVectorSplat(4, value);
+        default:
+          assert(0 && "invalid mask");
+        }
+      }
+      int p = llvm::UndefMaskElem;
+      switch (mask) {
+      case 0b1000:
+        return ctx.builder.CreateShuffleVector(value, {p, p, p, 0});
+      case 0b0100:
+        return ctx.builder.CreateShuffleVector(value, {p, p, 0, p});
+      case 0b0010:
+        return ctx.builder.CreateShuffleVector(value, {p, 0, p, p});
+      case 0b0001:
+        return ctx.builder.CreateShuffleVector(value, {0, p, p, p});
+      case 0b1100:
+        return ctx.builder.CreateShuffleVector(value, {p, p, 0, 1});
+      case 0b1010:
+        return ctx.builder.CreateShuffleVector(value, {p, 0, p, 1});
+      case 0b1001:
+        return ctx.builder.CreateShuffleVector(value, {0, p, p, 1});
+      case 0b0110:
+        return ctx.builder.CreateShuffleVector(value, {p, 0, 1, p});
+      case 0b0101:
+        return ctx.builder.CreateShuffleVector(value, {0, p, 1, p});
+      case 0b0011:
+        return ctx.builder.CreateShuffleVector(value, {0, 1, p, p});
+      case 0b1110:
+        return ctx.builder.CreateShuffleVector(value, {p, 0, 1, 2});
+      case 0b1011:
+        return ctx.builder.CreateShuffleVector(value, {0, 1, p, 2});
+      case 0b1101:
+        return ctx.builder.CreateShuffleVector(value, {0, p, 1, 2});
+      case 0b0111:
+        return ctx.builder.CreateShuffleVector(value, {0, 1, 2, p});
+      case 0b1111:
+        return value;
+      default:
+        break;
+      }
+      assert(0 && "invalid mask");
+      return nullptr;
+    });
+  };
+}
+
+template <bool StoreFloat>
+IREffect store_dst_op_masked(DstOperand dst, IRValue &&value) {
+  auto mask = get_dst_mask(dst);
+  return std::visit(
+    [value = std::move(value), mask](auto dst) mutable {
+      return store_dst<decltype(dst), StoreFloat>(
+        dst, std::move(value) >>= recover_mask(mask)
+      );
     },
     dst
   );
@@ -2892,20 +3053,23 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
       std::visit(
         patterns{
           [&effect](InstMov mov) {
-            effect << store_dst_op<true>(
-              mov.dst, load_src_op<true>(mov.src) >>= saturate(mov._.saturate)
+            auto mask = get_dst_mask(mov.dst);
+            effect << store_dst_op_masked<true>(
+              mov.dst,
+              load_src_op<true>(mov.src, mask) >>= saturate(mov._.saturate)
             );
           },
           [&effect](InstMovConditional movc) {
-            effect << store_dst_op<true>(
+            auto mask = get_dst_mask(movc.dst);
+            effect << store_dst_op_masked<true>(
               movc.dst,
               make_irvalue_bind([=](struct context ctx) -> IRValue {
-                auto src0 = co_yield load_src_op<true>(movc.src0);
-                auto src1 = co_yield load_src_op<true>(movc.src1);
-                auto cond = co_yield load_src_op<false>(movc.src_cond);
+                auto src0 = co_yield load_src_op<true>(movc.src0, mask);
+                auto src1 = co_yield load_src_op<true>(movc.src1, mask);
+                auto cond = co_yield load_src_op<false>(movc.src_cond, mask);
                 co_return ctx.builder.CreateSelect(
                   ctx.builder.CreateICmpNE(
-                    cond, llvm::ConstantAggregateZero::get(ctx.types._int4)
+                    cond, llvm::Constant::getNullValue(cond->getType())
                   ),
                   src0, src1
                 );
@@ -3972,10 +4136,12 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
               pred = llvm::CmpInst::ICMP_UGE;
               break;
             }
-            effect << store_dst_op<false>(
+            auto mask = get_dst_mask(icmp.dst);
+            effect << store_dst_op_masked<false>(
               icmp.dst,
               lift(
-                load_src_op<false>(icmp.src0), load_src_op<false>(icmp.src1),
+                load_src_op<false>(icmp.src0, mask),
+                load_src_op<false>(icmp.src1, mask),
                 [=](auto a, auto b) { return cmp_integer(pred, a, b); }
               )
             );
@@ -4032,7 +4198,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
               break;
             }
             auto mask = get_dst_mask(unary.dst);
-            effect << store_dst_op<false>(
+            effect << store_dst_op_masked<false>(
               unary.dst, load_src_op<false>(unary.src, mask) >>= fn
             );
           },
@@ -4116,7 +4282,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
               break;
             }
             auto mask = get_dst_mask(bin.dst);
-            effect << store_dst_op<false>(
+            effect << store_dst_op_masked<false>(
               bin.dst, lift(
                          load_src_op<false>(bin.src0, mask),
                          load_src_op<false>(bin.src1, mask), fn
@@ -4139,12 +4305,13 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
               pred = llvm::CmpInst::FCMP_OLT;
               break;
             }
-            effect << store_dst_op<false>(
-              fcmp.dst,
-              lift(
-                load_src_op<true>(fcmp.src0), load_src_op<true>(fcmp.src1),
-                [=](auto a, auto b) { return cmp_float(pred, a, b); }
-              )
+            auto mask = get_dst_mask(fcmp.dst);
+            effect << store_dst_op_masked<false>(
+              fcmp.dst, lift(
+                          load_src_op<true>(fcmp.src0, mask),
+                          load_src_op<true>(fcmp.src1, mask),
+                          [=](auto a, auto b) { return cmp_float(pred, a, b); }
+                        )
             );
           },
           [&effect](InstDotProduct dp) {
@@ -4195,7 +4362,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
               load_src_op<true>(mad.src1, mask),
               load_src_op<true>(mad.src2, mask),
               [=](auto a, auto b, auto c) {
-                return store_dst_op<true>(
+                return store_dst_op_masked<true>(
                   mad.dst, call_float_mad(a, b, c) >>= saturate(mad._.saturate)
                 );
               }
@@ -4208,7 +4375,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
               load_src_op<false>(mad.src1, mask),
               load_src_op<false>(mad.src2, mask),
               [=](auto a, auto b, auto c) {
-                return store_dst_op<false>(
+                return store_dst_op_masked<false>(
                   mad.dst, call_integer_madsat(a, b, c, mad.is_signed)
                 );
               }
@@ -4276,7 +4443,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
             } break;
             }
             auto mask = get_dst_mask(unary.dst);
-            effect << store_dst_op<true>(
+            effect << store_dst_op_masked<true>(
               unary.dst, (load_src_op<true>(unary.src, mask) >>= fn) >>=
                          saturate(unary._.saturate)
             );
@@ -4322,7 +4489,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
             }
             }
             auto mask = get_dst_mask(bin.dst);
-            effect << store_dst_op<true>(
+            effect << store_dst_op_masked<true>(
               bin.dst, lift(
                          load_src_op<true>(bin.src0, mask),
                          load_src_op<true>(bin.src1, mask), fn
@@ -4331,7 +4498,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
           },
           [&effect](InstSinCos sincos) {
             auto mask_cos = get_dst_mask(sincos.dst_cos);
-            effect << store_dst_op<true>(
+            effect << store_dst_op_masked<true>(
               sincos.dst_cos, load_src_op<true>(sincos.src, mask_cos) >>=
                               [=](auto src) {
                                 return call_float_unary_op("cos", src) >>=
@@ -4340,7 +4507,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
             );
 
             auto mask_sin = get_dst_mask(sincos.dst_sin);
-            effect << store_dst_op<true>(
+            effect << store_dst_op_masked<true>(
               sincos.dst_sin, load_src_op<true>(sincos.src, mask_sin) >>=
                               [=](auto src) {
                                 return call_float_unary_op("sin", src) >>=
@@ -4349,6 +4516,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
             );
           },
           [&effect](InstConvert convert) {
+            auto mask = get_dst_mask(convert.dst);
             switch (convert.op) {
             case ConversionOp::HalfToFloat: {
               effect << store_dst_op<true>(
@@ -4361,21 +4529,20 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                   );
                   co_return co_yield call_convert(
                     ctx.builder.CreateShuffleVector(half8, {0, 2, 4, 6}),
-                    ctx.types._half4, ctx.types._float4, ".f.v4f16", ".f.v4f32"
+                    ctx.types._float, air::Sign::with_sign /* intended */
                   );
                 })
               );
               break;
             }
             case ConversionOp::FloatToHalf: {
-              effect << store_dst_op<false>(
+              effect << store_dst_op_masked<false>(
                 convert.dst,
                 make_irvalue_bind([=](struct context ctx) -> IRValue {
                   // FIXME: neg modifier might be wrong?!
-                  auto src = co_yield load_src_op<true>(convert.src); // float4
+                  auto src = co_yield load_src_op<true>(convert.src, mask);
                   auto half4 = co_yield call_convert(
-                    src, ctx.types._float4, ctx.types._half4, ".f.v4f32",
-                    ".f.v4f16"
+                    src, ctx.types._half, air::Sign::with_sign /* intended */
                   );
                   co_return ctx.builder.CreateBitCast(
                     ctx.builder.CreateShuffleVector(
@@ -4389,52 +4556,48 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
               break;
             }
             case ConversionOp::FloatToSigned: {
-              effect << store_dst_op<false>(
+              effect << store_dst_op_masked<false>(
                 convert.dst,
                 make_irvalue_bind([=](struct context ctx) -> IRValue {
-                  auto src = co_yield load_src_op<true>(convert.src);
+                  auto src = co_yield load_src_op<true>(convert.src, mask);
                   co_return co_yield call_convert(
-                    src, ctx.types._float4, ctx.types._int4, ".f.v4f32",
-                    ".s.v4i32"
+                    src, ctx.types._int, air::Sign::with_sign
                   );
                 })
               );
               break;
             }
             case ConversionOp::SignedToFloat: {
-              effect << store_dst_op<true>(
+              effect << store_dst_op_masked<true>(
                 convert.dst,
                 make_irvalue_bind([=](struct context ctx) -> IRValue {
-                  auto src = co_yield load_src_op<false>(convert.src);
+                  auto src = co_yield load_src_op<false>(convert.src, mask);
                   co_return co_yield call_convert(
-                    src, ctx.types._int4, ctx.types._float4, ".s.v4i32",
-                    ".f.v4f32"
+                    src, ctx.types._float, air::Sign::with_sign
                   );
                 })
               );
               break;
             }
             case ConversionOp::FloatToUnsigned: {
-              effect << store_dst_op<false>(
+              effect << store_dst_op_masked<false>(
                 convert.dst,
                 make_irvalue_bind([=](struct context ctx) -> IRValue {
-                  auto src = co_yield load_src_op<true>(convert.src);
+                  auto src = co_yield load_src_op<true>(convert.src, mask);
                   co_return co_yield call_convert(
-                    src, ctx.types._float4, ctx.types._int4, ".f.v4f32",
-                    ".u.v4i32"
+                    src, ctx.types._int, air::Sign::no_sign
                   );
                 })
               );
               break;
             }
             case ConversionOp::UnsignedToFloat: {
-              effect << store_dst_op<true>(
+              effect << store_dst_op_masked<true>(
                 convert.dst,
                 make_irvalue_bind([=](struct context ctx) -> IRValue {
-                  auto src = co_yield load_src_op<false>(convert.src);
+                  auto src = co_yield load_src_op<false>(convert.src, mask);
                   co_return co_yield call_convert(
-                    src, ctx.types._int4, ctx.types._float4, ".u.v4i32",
-                    ".f.v4f32"
+                    src, ctx.types._float, air::Sign::with_sign
                   );
                 })
               );
@@ -5045,8 +5208,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                        auto to_float_cast = [&](pvalue v) -> IRValue {
                          co_return ctx.builder.CreateBitCast(
                            co_yield call_convert(
-                             v, ctx.types._int, ctx.types._float, ".u.i32",
-                             ".f.f32"
+                             v, ctx.types._float, air::Sign::no_sign
                            ),
                            ctx.types._int
                          );
@@ -5068,8 +5230,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                            ctx.builder.CreateFDiv(
                              co_yield get_float(1.0f),
                              co_yield call_convert(
-                               v, ctx.types._int, ctx.types._float, ".u.i32",
-                               ".f.f32"
+                               v, ctx.types._float, air::Sign::no_sign
                              )
                            ),
                            ctx.types._int
