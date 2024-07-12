@@ -1366,6 +1366,12 @@ int SM50Initialize(
   auto &binding_table = shader_info->binding_table;
   auto &binding_table_cbuffer = shader_info->binding_table_cbuffer;
 
+  uint16_t binding_cbuffer_mask = 0;
+  uint16_t binding_sampler_mask = 0;
+  uint64_t binding_uav_mask = 0;
+  uint64_t binding_srv_hi_mask = 0;
+  uint64_t binding_srv_lo_mask = 0;
+
   for (auto &[range_id, cbv] : shader_info->cbufferMap) {
     // TODO: abstract SM 5.0 binding
     cbv.arg_index = binding_table_cbuffer.DefineBuffer(
@@ -1380,6 +1386,7 @@ int SM50Initialize(
         MTL_SM50_SHADER_ARGUMENT_BUFFER | MTL_SM50_SHADER_ARGUMENT_READ_ACCESS,
       .StructurePtrOffset = cbv.arg_index,
     });
+    binding_cbuffer_mask |= (1 << range_id);
   }
   for (auto &[range_id, sampler] : shader_info->samplerMap) {
     // TODO: abstract SM 5.0 binding
@@ -1393,6 +1400,7 @@ int SM50Initialize(
       .Flags = (MTL_SM50_SHADER_ARGUMENT_FLAG)0,
       .StructurePtrOffset = sampler.arg_index,
     });
+    binding_sampler_mask |= (1 << range_id);
   }
   for (auto &[range_id, srv] : shader_info->srvMap) {
     if (srv.resource_type != ResourceType::NonApplicable) {
@@ -1432,6 +1440,11 @@ int SM50Initialize(
       .Flags = flags,
       .StructurePtrOffset = srv.arg_index,
     });
+    if (range_id & 64) {
+      binding_srv_hi_mask |= (1 << (range_id >> 6));
+    } else {
+      binding_srv_lo_mask |= (1 << range_id);
+    }
   }
   for (auto &[range_id, uav] : shader_info->uavMap) {
     auto access =
@@ -1484,6 +1497,7 @@ int SM50Initialize(
       .Flags = flags,
       .StructurePtrOffset = uav.arg_index,
     });
+    binding_uav_mask |= (1 << range_id);
   }
 
   if (pRefl) {
@@ -1491,6 +1505,11 @@ int SM50Initialize(
       sm50_shader->args_reflection_cbuffer.size() > 0 ? 29 : ~0u;
     pRefl->ArgumentBufferBindIndex =
       sm50_shader->args_reflection.size() > 0 ? 30 : ~0u;
+    pRefl->ConstantBufferSlotMask = binding_cbuffer_mask;
+    pRefl->SamplerSlotMask = binding_sampler_mask;
+    pRefl->SRVSlotMaskHi = binding_srv_hi_mask;
+    pRefl->SRVSlotMaskLo = binding_srv_lo_mask;
+    pRefl->UAVSlotMask = binding_uav_mask;
     pRefl->NumConstantBuffers = sm50_shader->args_reflection_cbuffer.size();
     pRefl->ConstantBuffers = sm50_shader->args_reflection_cbuffer.data();
     pRefl->NumArguments = sm50_shader->args_reflection.size();

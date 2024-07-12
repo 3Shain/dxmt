@@ -1400,16 +1400,21 @@ public:
                               ? state_.ComputeStageUAV.UAVs
                               : state_.OutputMerger.UAVs;
 
-    // TODO: should be more optimized (only check dirty on used slot)
-    // if (!ShaderStage.ConstantBuffers.any_dirty() &&
-    //     !ShaderStage.Samplers.any_dirty() && !ShaderStage.SRVs.any_dirty() &&
-    //     !UAVBindingSet.any_dirty())
-    //   return true;
+    MTL_SHADER_REFLECTION *reflection;
+    ShaderStage.Shader->GetReflection(&reflection);
+
+    bool dirty_cbuffer = ShaderStage.ConstantBuffers.any_dirty_masked(
+        reflection->ConstantBufferSlotMask);
+    bool dirty_sampler =
+        ShaderStage.Samplers.any_dirty_masked(reflection->SamplerSlotMask);
+    bool dirty_srv = ShaderStage.SRVs.any_dirty_masked(
+        reflection->SRVSlotMaskHi, reflection->SRVSlotMaskLo);
+    bool dirty_uav = UAVBindingSet.any_dirty_masked(reflection->UAVSlotMask);
+    if (!dirty_cbuffer && !dirty_sampler && !dirty_srv && !dirty_uav)
+      return true;
 
     auto currentChunkId = cmd_queue.CurrentSeqId();
 
-    MTL_SHADER_REFLECTION *reflection;
-    ShaderStage.Shader->GetReflection(&reflection);
     auto ConstantBufferCount = reflection->NumConstantBuffers;
     auto BindingCount = reflection->NumArguments;
     CommandChunk *chk = cmd_queue.CurrentChunk();
@@ -1438,7 +1443,7 @@ public:
             }
           });
     };
-    if (ConstantBufferCount && ShaderStage.ConstantBuffers.any_dirty()) {
+    if (ConstantBufferCount && dirty_cbuffer) {
 
       auto [heap, offset] =
           chk->allocate_gpu_heap(ConstantBufferCount << 3, 16);
@@ -1488,9 +1493,7 @@ public:
       });
     }
 
-    if (BindingCount &&
-        (ShaderStage.SRVs.any_dirty() || ShaderStage.Samplers.any_dirty() ||
-         UAVBindingSet.any_dirty())) {
+    if (BindingCount && (dirty_sampler || dirty_srv || dirty_uav)) {
 
       /* FIXME: we are over-allocating */
       auto [heap, offset] = chk->allocate_gpu_heap(BindingCount << 4, 16);

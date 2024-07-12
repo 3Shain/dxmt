@@ -65,6 +65,11 @@ struct MTL_SHADER_REFLECTION {
   union {
     uint32_t ThreadgroupSize[3];
   };
+  uint16_t ConstantBufferSlotMask;
+  uint16_t SamplerSlotMask;
+  uint64_t UAVSlotMask;
+  uint64_t SRVSlotMaskHi;
+  uint64_t SRVSlotMaskLo;
 };
 
 struct MTL_SHADER_BITCODE {

@@ -242,106 +242,106 @@ template <typename T> bool bcmpeq(const T *a, const T *b) {
 }
 
 template <size_t Bits> class bitset {
-  static constexpr size_t Dwords = align(Bits, 32) / 32;
+  static constexpr size_t Qwords = align(Bits, 64) / 64;
 
 public:
-  constexpr bitset() : m_dwords() {}
+  constexpr bitset() : m_qwords() {}
 
-  constexpr bool get(uint32_t idx) const {
-    uint32_t dword = 0;
-    uint32_t bit = idx;
+  constexpr bool get(uint64_t idx) const {
+    uint64_t qword = 0;
+    uint64_t bit = idx;
 
     // Compiler doesn't remove this otherwise.
-    if constexpr (Dwords > 1) {
-      dword = idx / 32;
-      bit = idx % 32;
+    if constexpr (Qwords > 1) {
+      qword = idx / 64;
+      bit = idx % 64;
     }
 
-    return m_dwords[dword] & (1u << bit);
+    return m_qwords[qword] & (1u << bit);
   }
 
-  constexpr void set(uint32_t idx, bool value) {
-    uint32_t dword = 0;
-    uint32_t bit = idx;
+  constexpr void set(uint64_t idx, bool value) {
+    uint64_t qword = 0;
+    uint64_t bit = idx;
 
     // Compiler doesn't remove this otherwise.
-    if constexpr (Dwords > 1) {
-      dword = idx / 32;
-      bit = idx % 32;
+    if constexpr (Qwords > 1) {
+      qword = idx / 64;
+      bit = idx % 64;
     }
 
     if (value)
-      m_dwords[dword] |= 1u << bit;
+      m_qwords[qword] |= 1u << bit;
     else
-      m_dwords[dword] &= ~(1u << bit);
+      m_qwords[qword] &= ~(1u << bit);
   }
 
-  constexpr bool exchange(uint32_t idx, bool value) {
+  constexpr bool exchange(uint64_t idx, bool value) {
     bool oldValue = get(idx);
     set(idx, value);
     return oldValue;
   }
 
-  constexpr void flip(uint32_t idx) {
-    uint32_t dword = 0;
-    uint32_t bit = idx;
+  constexpr void flip(uint64_t idx) {
+    uint64_t dword = 0;
+    uint64_t bit = idx;
 
     // Compiler doesn't remove this otherwise.
-    if constexpr (Dwords > 1) {
-      dword = idx / 32;
-      bit = idx % 32;
+    if constexpr (Qwords > 1) {
+      dword = idx / 64;
+      bit = idx % 64;
     }
 
-    m_dwords[dword] ^= 1u << bit;
+    m_qwords[dword] ^= 1u << bit;
   }
 
   constexpr void setAll() {
-    if constexpr (Bits % 32 == 0) {
-      for (size_t i = 0; i < Dwords; i++)
-        m_dwords[i] = std::numeric_limits<uint32_t>::max();
+    if constexpr (Bits % 64 == 0) {
+      for (size_t i = 0; i < Qwords; i++)
+        m_qwords[i] = std::numeric_limits<uint64_t>::max();
     } else {
-      for (size_t i = 0; i < Dwords - 1; i++)
-        m_dwords[i] = std::numeric_limits<uint32_t>::max();
+      for (size_t i = 0; i < Qwords - 1; i++)
+        m_qwords[i] = std::numeric_limits<uint64_t>::max();
 
-      m_dwords[Dwords - 1] = (1u << (Bits % 32)) - 1;
+      m_qwords[Qwords - 1] = (1u << (Bits % 64)) - 1;
     }
   }
 
   constexpr void clearAll() {
-    for (size_t i = 0; i < Dwords; i++)
-      m_dwords[i] = 0;
+    for (size_t i = 0; i < Qwords; i++)
+      m_qwords[i] = 0;
   }
 
   constexpr bool any() const {
-    for (size_t i = 0; i < Dwords; i++) {
-      if (m_dwords[i] != 0)
+    for (size_t i = 0; i < Qwords; i++) {
+      if (m_qwords[i] != 0)
         return true;
     }
 
     return false;
   }
 
-  constexpr uint32_t &dword(uint32_t idx) { return m_dwords[idx]; }
+  constexpr uint64_t &qword(uint64_t idx) { return m_qwords[idx]; }
 
   constexpr size_t bitCount() { return Bits; }
 
-  constexpr size_t dwordCount() { return Dwords; }
+  constexpr size_t qwordCount() { return Qwords; }
 
-  constexpr bool operator[](uint32_t idx) const { return get(idx); }
+  constexpr bool operator[](uint64_t idx) const { return get(idx); }
 
-  constexpr void setN(uint32_t bits) {
-    uint32_t fullDwords = bits / 32;
-    uint32_t offset = bits % 32;
+  constexpr void setN(uint64_t bits) {
+    uint64_t fullqwords = bits / 64;
+    uint64_t offset = bits % 64;
 
-    for (size_t i = 0; i < fullDwords; i++)
-      m_dwords[i] = std::numeric_limits<uint32_t>::max();
+    for (size_t i = 0; i < fullqwords; i++)
+      m_qwords[i] = std::numeric_limits<uint64_t>::max();
 
     if (offset > 0)
-      m_dwords[fullDwords] = (1u << offset) - 1;
+      m_qwords[fullqwords] = (1u << offset) - 1;
   }
 
 private:
-  uint32_t m_dwords[Dwords];
+  uint64_t m_qwords[Qwords];
 };
 
 class bitvector {
