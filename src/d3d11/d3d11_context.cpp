@@ -9,6 +9,24 @@
 #include "./d3d11_context_internal.cpp"
 
 namespace dxmt {
+template <typename F> class DestructorWrapper {
+  F f;
+  bool destroyed = false;
+
+public:
+  DestructorWrapper(const DestructorWrapper &) = delete;
+  DestructorWrapper(DestructorWrapper &&move)
+      : f(std::forward<F>(move.f)), destroyed(move.destroyed) {
+    move.destroyed = true;
+  };
+  DestructorWrapper(F &&f, std::nullptr_t) : f(std::forward<F>(f)) {}
+  ~DestructorWrapper() {
+    if (!destroyed) {
+      std::invoke(f);
+      destroyed = true;
+    }
+  };
+};
 
 auto to_metal_topology(D3D11_PRIMITIVE_TOPOLOGY topo) {
 
@@ -228,7 +246,7 @@ public:
   }
 
   void Flush() override {
-    FlushInternal([](auto) {});
+    FlushInternal([](auto) {}, []() {});
   }
 
   void ExecuteCommandList(ID3D11CommandList *pCommandList,
@@ -1643,14 +1661,16 @@ public:
     if (cmd_queue.CurrentChunk()->has_no_work_encoded_yet()) {
       return;
     }
-    FlushInternal([](auto) {});
+    FlushInternal([](auto) {}, []() {});
   };
 
-  void FlushInternal(
-      std::function<void(MTL::CommandBuffer *)> &&beforeCommit) final {
+  void FlushInternal(std::function<void(MTL::CommandBuffer *)> &&beforeCommit,
+                     std::function<void(void)> &&onFinished) final {
     ctx.InvalidateCurrentPass();
     cmd_queue.CurrentChunk()->emit(
-        [bc = std::move(beforeCommit)](CommandChunk::context &ctx) {
+        [bc = std::move(beforeCommit),
+         _ = DestructorWrapper([of = std::move(onFinished)]() { of(); },
+                               nullptr)](CommandChunk::context &ctx) {
           bc(ctx.cmdbuf);
         });
     ctx.Commit();
