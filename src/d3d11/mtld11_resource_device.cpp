@@ -490,15 +490,12 @@ public:
     // !DIRTY HACK
     if (this->desc.BindFlags & D3D11_BIND_DEPTH_STENCIL) {
       if (finalDesc.Format == DXGI_FORMAT_R32_FLOAT) {
-        WARN("hack fired: interpret R32Float as Depth32Float");
         finalDesc.Format = DXGI_FORMAT_D32_FLOAT; // sad!
       }
       if (finalDesc.Format == DXGI_FORMAT_R16_UINT) {
-        WARN("hack fired: interpret R16Uint as Depth16Unorm");
         finalDesc.Format = DXGI_FORMAT_D16_UNORM;
       }
       if (finalDesc.Format == DXGI_FORMAT_R16_UNORM) {
-        WARN("hack fired: interpret R16Unorm as Depth16Unorm");
         finalDesc.Format = DXGI_FORMAT_D16_UNORM;
       }
     }

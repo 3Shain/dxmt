@@ -302,14 +302,10 @@ CreateMTLTextureDescriptorInternal(
   // DIRTY HACK!
   if (Format == DXGI_FORMAT_R32_TYPELESS &&
       (BindFlags & D3D11_BIND_DEPTH_STENCIL)) {
-    WARN("hack fired: Create DepthStencil resource of R32_TYPELESS as "
-         "Depth32Float");
     desc->setPixelFormat(MTL::PixelFormatDepth32Float);
     metal_usage |= MTL::TextureUsagePixelFormatView;
   } else if (Format == DXGI_FORMAT_R16_TYPELESS &&
              (BindFlags & D3D11_BIND_DEPTH_STENCIL)) {
-    WARN("hack fired: Create DepthStencil resource of R16_TYPELESS as "
-         "Depth16Unorm");
     desc->setPixelFormat(MTL::PixelFormatDepth16Unorm);
     metal_usage |= MTL::TextureUsagePixelFormatView;
   } else {

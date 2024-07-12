@@ -488,7 +488,7 @@ public:
     case D3D11_QUERY_OCCLUSION:
       return CreateOcculusionQuery(this, pQueryDesc, ppQuery);
     default:
-      ERR("CreateQuery: query type not implemented: ", pQueryDesc->Query);
+      // ERR("CreateQuery: query type not implemented: ", pQueryDesc->Query);
       return E_NOTIMPL;
     }
   }

@@ -349,13 +349,13 @@ public:
   }
 
   void GetCompiledShader(IMTLCompiledShader **ppShader) final {
-    D3D11_ASSERT(0 && "should not call this function");
+    // D3D11_ASSERT(0 && "should not call this function");
     *ppShader = nullptr;
   };
 
   void GetCompiledShaderWithInputLayerFixup(uint64_t,
                                             IMTLCompiledShader **) final {
-    D3D11_ASSERT(0 && "should not call this function");
+    // D3D11_ASSERT(0 && "should not call this function");
   };
 
   void GetReflection(MTL_SHADER_REFLECTION **pRefl) final {
