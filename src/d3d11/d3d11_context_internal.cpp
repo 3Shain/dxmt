@@ -75,6 +75,14 @@ public:
         ShaderStage.Shader = std::move(expected);
         Com<IMTLCompiledShader> _;
         ShaderStage.Shader->GetCompiledShader(&_);
+        ShaderStage.ConstantBuffers.set_dirty();
+        ShaderStage.SRVs.set_dirty();
+        ShaderStage.Samplers.set_dirty();
+        if (Type == ShaderType::Compute) {
+          state_.ComputeStageUAV.UAVs.set_dirty();
+        } else {
+          state_.OutputMerger.UAVs.set_dirty();
+        }
       } else {
         D3D11_ASSERT(0 && "wtf");
       }

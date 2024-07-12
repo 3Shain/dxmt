@@ -135,7 +135,7 @@ struct D3D11RasterizerStageState {
 };
 
 struct D3D11ContextState {
-  std::array<D3D11ShaderStageState, 6> ShaderStages;
+  std::array<D3D11ShaderStageState, 6> ShaderStages = {{}};
   D3D11ComputeStageState ComputeStageUAV = {};
   D3D11StreamOutputStageState stream_output = {};
   D3D11InputAssemblerStageState InputAssembler = {};

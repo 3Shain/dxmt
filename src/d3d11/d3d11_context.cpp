@@ -176,7 +176,6 @@ public:
       case D3D11_MAP_WRITE_DISCARD: {
         dynamic->RotateBuffer(this);
         Out.pData = dynamic->GetMappedMemory(&Out.RowPitch);
-        state_.ShaderStages[0].ConstantBuffers.set_dirty();
         break;
       }
       case D3D11_MAP_WRITE_NO_OVERWRITE: {
