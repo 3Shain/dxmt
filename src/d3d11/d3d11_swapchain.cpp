@@ -13,19 +13,12 @@
 #include "util_string.hpp"
 #include "wsi_platform_win32.hpp"
 #include "wsi_window.hpp"
+#include <atomic>
 
 /**
 Metal support at most 3 swapchain
 */
 constexpr size_t kSwapchainLatency = 3;
-
-template <typename F> class DestructorWrapper {
-  F f;
-
-public:
-  DestructorWrapper(F &&f) : f(std::forward<F>(f)) {}
-  ~DestructorWrapper() { std::invoke(f); };
-};
 
 namespace dxmt {
 
@@ -49,6 +42,7 @@ public:
 
     present_semaphore_ =
         CreateSemaphore(nullptr, kSwapchainLatency, kSwapchainLatency, nullptr);
+    frame_latency_fence = kSwapchainLatency;
 
     if (desc_.Width == 0 || desc_.Height == 0) {
       wsi::getWindowSize(hWnd, &desc_.Width, &desc_.Height);
@@ -61,7 +55,12 @@ public:
     }
   };
 
-  ~MTLD3D11SwapChain() { CloseHandle(present_semaphore_); };
+  ~MTLD3D11SwapChain() {
+    CloseHandle(present_semaphore_);
+    frame_latency_fence = kSwapchainLatency;
+    destroyed = true;
+    frame_latency_fence.notify_all();
+  };
 
   HRESULT
   STDMETHODCALLTYPE
@@ -286,12 +285,20 @@ public:
   Present1(UINT SyncInterval, UINT PresentFlags,
            const DXGI_PRESENT_PARAMETERS *pPresentParameters) final {
 
+    frame_latency_fence.wait(0, std::memory_order_relaxed);
+    if (destroyed)
+      return S_OK;
+    frame_latency_fence.fetch_sub(1, std::memory_order_relaxed);
+
     device_context_->FlushInternal(
-        [backbuffer = backbuffer_,
-         _ = DestructorWrapper([sem = present_semaphore_]() {
-           // called when cmdbuf complete
-           ReleaseSemaphore(sem, 1, nullptr);
-         })](MTL::CommandBuffer *cmdbuf) { backbuffer->Present(cmdbuf); });
+        [backbuffer = backbuffer_](MTL::CommandBuffer *cmdbuf) {
+          backbuffer->Present(cmdbuf);
+        },
+        [&fence = frame_latency_fence, sem = present_semaphore_]() {
+          fence.fetch_add(1, std::memory_order_relaxed);
+          fence.notify_one();
+          ReleaseSemaphore(sem, 1, nullptr);
+        });
 
     presentation_count_ += 1;
 
@@ -332,6 +339,7 @@ public:
 
   HRESULT STDMETHODCALLTYPE SetMaximumFrameLatency(UINT max_latency) override {
     // no-op?
+    WARN("Setting maximum frame latency to ", max_latency);
     return S_OK;
   };
 
@@ -406,8 +414,10 @@ private:
   Com<IMTLD3D11DeviceContext> device_context_;
   Com<IMTLD3D11BackBuffer> backbuffer_;
   HANDLE present_semaphore_;
+  std::atomic_uint64_t frame_latency_fence;
   HWND hWnd;
   HMONITOR monitor_;
+  bool destroyed = false;
 };
 
 HRESULT CreateSwapChain(IDXGIFactory1 *pFactory, IMTLDXGIDevice *pDevice,
