@@ -35,9 +35,11 @@ class MTLD3D11InputLayout final
 public:
   MTLD3D11InputLayout(IMTLD3D11Device *device,
                       std::vector<Attribute> &&attributes,
-                      std::vector<Layout> &&layouts, uint64_t sign_mask)
+                      std::vector<Layout> &&layouts, uint64_t sign_mask,
+                      uint32_t input_slot_mask)
       : MTLD3D11DeviceChild<IMTLD3D11InputLayout>(device),
-        attributes_(attributes), layouts_(layouts), sign_mask_(sign_mask) {}
+        attributes_(attributes), layouts_(layouts), sign_mask_(sign_mask),
+        input_slot_mask_(input_slot_mask) {}
 
   HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid,
                                            void **ppvObject) final {
@@ -61,8 +63,7 @@ public:
   };
 
   virtual void STDMETHODCALLTYPE
-  Bind(MTL::RenderPipelineDescriptor *desc,
-       const std::array<UINT, 16> &strides) final {
+  Bind(MTL::RenderPipelineDescriptor *desc) final {
     auto pool = transfer(NS::AutoreleasePool::alloc()->init());
     auto vertex_desc = (MTL::VertexDescriptor::vertexDescriptor());
     for (auto &attr : attributes_) {
@@ -85,15 +86,13 @@ public:
                                            D3D11_INPUT_PER_INSTANCE_DATA
                                        ? MTL::VertexStepFunctionPerInstance
                                        : MTL::VertexStepFunctionPerVertex);
-      // layout_desc->setStride(strides[slot]);
       layout_desc->setStride(MTL::BufferLayoutStrideDynamic);
     }
 
     desc->setVertexDescriptor(vertex_desc);
   };
   virtual void STDMETHODCALLTYPE
-  Bind(MTL::ComputePipelineDescriptor *desc,
-       const std::array<UINT, 16> &strides) final {
+  Bind(MTL::ComputePipelineDescriptor *desc) final {
     IMPLEMENT_ME
   };
 
@@ -104,10 +103,15 @@ public:
     pFixup->sign_mask = sign_mask_;
   };
 
+  virtual uint32_t STDMETHODCALLTYPE GetInputSlotMask() final {
+    return input_slot_mask_;
+  }
+
 private:
   std::vector<Attribute> attributes_;
   std::vector<Layout> layouts_;
   uint64_t sign_mask_;
+  uint32_t input_slot_mask_;
 };
 
 HRESULT CreateInputLayout(IMTLD3D11Device *device,
@@ -118,6 +122,7 @@ HRESULT CreateInputLayout(IMTLD3D11Device *device,
   std::vector<Attribute> elements(NumElements);
   std::vector<Layout> layout(16);
   uint64_t sign_mask = 0;
+  uint32_t input_slot_mask = 0;
 
   CSignatureParser parser;
   HRESULT hr =
@@ -181,6 +186,7 @@ HRESULT CreateInputLayout(IMTLD3D11Device *device,
           "(yet)");
       return E_FAIL;
     }
+    input_slot_mask |= (1 << desc.InputSlot);
 
     if (desc.AlignedByteOffset == D3D11_APPEND_ALIGNED_ELEMENT) {
       Attribute last_attr_in_same_slot = {
@@ -209,7 +215,8 @@ HRESULT CreateInputLayout(IMTLD3D11Device *device,
     return S_FALSE;
   }
   *ppInputLayout = ref(new MTLD3D11InputLayout(device, std::move(elements),
-                                               std::move(layout), sign_mask));
+                                               std::move(layout), sign_mask,
+                                               input_slot_mask));
   return S_OK;
 };
 

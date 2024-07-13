@@ -351,43 +351,61 @@ public:
   void SetVertexBuffers(UINT StartSlot, UINT NumBuffers,
                         ID3D11Buffer *const *ppVertexBuffers,
                         const UINT *pStrides, const UINT *pOffsets) {
-    // FIXME: this implementation is completely BS
-    auto &BoundVBs = state_.InputAssembler.VertexBuffers;
-    for (unsigned Slot = StartSlot; Slot < StartSlot + NumBuffers; Slot++) {
-      auto &VB = BoundVBs[Slot];
-      VB.Buffer = nullptr;
-      if (auto dynamic = com_cast<IMTLDynamicBindable>(
-              ppVertexBuffers[Slot - StartSlot])) {
-        dynamic->GetBindable(&VB.Buffer, [this, Slot](MTL::Buffer *buffer) {
-          vertex_buffer_dirty |= (1 << Slot);
-          auto &BoundVBs = state_.InputAssembler.VertexBuffers;
-          auto &VB = BoundVBs[Slot];
-          VB.BufferRaw = buffer;
-        });
-      } else if (auto expected = com_cast<IMTLBindable>(
-                     ppVertexBuffers[Slot - StartSlot])) {
-        VB.Buffer = std::move(expected);
-      } else if (ppVertexBuffers[Slot - StartSlot]) {
-        ERR("IASetVertexBuffers: wrong vertex buffer binding");
+    auto &VertexBuffers = state_.InputAssembler.VertexBuffers;
+    for (unsigned slot = StartSlot; slot < StartSlot + NumBuffers; slot++) {
+      auto pVertexBuffer = ppVertexBuffers[slot - StartSlot];
+      if (pVertexBuffer) {
+        bool replaced = false;
+        auto &entry = VertexBuffers.bind(slot, {pVertexBuffer}, replaced);
+        if (!replaced) {
+          if (pStrides && pStrides[slot - StartSlot] != entry.Stride) {
+            VertexBuffers.set_dirty(slot);
+            entry.Stride = pStrides[slot - StartSlot];
+          }
+          if (pOffsets && pOffsets[slot - StartSlot] != entry.Offset) {
+            VertexBuffers.set_dirty(slot);
+            entry.Offset = pOffsets[slot - StartSlot];
+          }
+          continue;
+        }
+        if (auto dynamic = com_cast<IMTLDynamicBindable>(pVertexBuffer)) {
+          entry.Buffer = nullptr;
+          dynamic->GetBindable(&entry.Buffer, [&VertexBuffers, slot,
+                                               &entry](MTL::Buffer *buffer) {
+            VertexBuffers.set_dirty(slot);
+            entry.BufferRaw = buffer;
+          });
+        } else if (auto expected = com_cast<IMTLBindable>(pVertexBuffer)) {
+          entry.Buffer = std::move(expected);
+        } else {
+          D3D11_ASSERT(0 && "wtf");
+        }
+        if (pStrides) {
+          entry.Stride = pStrides[slot - StartSlot];
+        } else {
+          ERR("SetVertexBuffers: stride is null");
+          entry.Stride = 0;
+        }
+        if (pOffsets) {
+          entry.Offset = pOffsets[slot - StartSlot];
+        } else {
+          ERR("SetVertexBuffers: offset is null");
+          entry.Stride = 0;
+        }
+        entry.BufferRaw =
+            entry.Buffer->UseBindable(this->cmd_queue.CurrentSeqId()).buffer();
       } else {
-        BoundVBs.erase(Slot);
+        VertexBuffers.unbind(slot);
       }
-      if (ppVertexBuffers[Slot - StartSlot]) {
-        VB.BufferRaw =
-            VB.Buffer->UseBindable(this->cmd_queue.CurrentSeqId()).buffer();
-        VB.RawPointer = ppVertexBuffers[Slot - StartSlot];
-        VB.Stride = pStrides[Slot - StartSlot];
-        VB.Offset = pOffsets[Slot - StartSlot];
-      }
-      vertex_buffer_dirty |= (1 << Slot);
     }
   }
 
   void GetVertexBuffers(UINT StartSlot, UINT NumBuffers,
                         ID3D11Buffer **ppVertexBuffers, UINT *pStrides,
                         UINT *pOffsets) {
+    auto &VertexBuffers = state_.InputAssembler.VertexBuffers;
     for (unsigned i = 0; i < NumBuffers; i++) {
-      if (!state_.InputAssembler.VertexBuffers.contains(i + StartSlot)) {
+      if (!VertexBuffers.test_bound(i + StartSlot)) {
         if (ppVertexBuffers != NULL)
           ppVertexBuffers[i] = nullptr;
         if (pStrides != NULL)
@@ -890,7 +908,7 @@ public:
     state_.ShaderStages[1].ConstantBuffers.set_dirty();
     state_.ShaderStages[1].Samplers.set_dirty();
     state_.ShaderStages[1].SRVs.set_dirty();
-    vertex_buffer_dirty = 0xFFFFFFFF;
+    state_.InputAssembler.VertexBuffers.set_dirty();
     dirty_state.set(DirtyState::BlendFactorAndStencilRef,
                     DirtyState::RasterizerState, DirtyState::DepthStencilState,
                     DirtyState::Viewport, DirtyState::Scissors,
@@ -1155,11 +1173,14 @@ public:
   If the current encoder is not a render encoder, switch to it.
   */
   bool FinalizeCurrentRenderPipeline() {
-    if (cmdbuf_state == CommandBufferState::RenderPipelineReady)
-      return true;
-    if (!state_.InputAssembler.InputLayout) {
+    if (state_.InputAssembler.InputLayout &&
+        !state_.InputAssembler.VertexBuffers.all_bound_masked(
+            state_.InputAssembler.InputLayout->GetInputSlotMask())) {
+      // ERR("missing vertex buffer binding");
       return false;
     }
+    if (cmdbuf_state == CommandBufferState::RenderPipelineReady)
+      return true;
     if (state_.ShaderStages[(UINT)ShaderType::Hull].Shader) {
       // ERR("tessellation is not supported yet, skip drawcall");
       return false;
@@ -1188,7 +1209,8 @@ public:
 
     Com<IMTLCompiledGraphicsPipeline> pipeline;
     Com<IMTLCompiledShader> vs, ps;
-    if (state_.InputAssembler.InputLayout->NeedsFixup()) {
+    if (state_.InputAssembler.InputLayout &&
+        state_.InputAssembler.InputLayout->NeedsFixup()) {
 
       MTL_SHADER_INPUT_LAYOUT_FIXUP fixup;
       state_.InputAssembler.InputLayout->GetShaderFixupInfo(&fixup);
@@ -1677,24 +1699,28 @@ public:
   - index buffer and input topology are provided in draw commands
   */
   void UpdateVertexBuffer() {
-    auto dirty_vbs =
-        std::min((size_t)std::popcount((vertex_buffer_dirty & 0xFFFFFFFF)),
-                 state_.InputAssembler.VertexBuffers.size());
-    if (!dirty_vbs) {
+    if (!state_.InputAssembler.InputLayout) {
       return;
     }
-    for (auto &[index, state] : state_.InputAssembler.VertexBuffers) {
-      if ((vertex_buffer_dirty & (1 << index)) == 0) {
+    auto &VertexBuffers = state_.InputAssembler.VertexBuffers;
+    if (!VertexBuffers.any_dirty_masked(
+            (uint64_t)state_.InputAssembler.InputLayout->GetInputSlotMask())) {
+      return;
+    }
+    for (unsigned index = 0; index < 16; index++) {
+      if (!VertexBuffers.test_bound(index) ||
+          !VertexBuffers.test_dirty(index)) {
         continue;
       }
+      auto &state = VertexBuffers[index];
       // a ref is necessary (in case buffer destroyed before encoding)
       EmitRenderCommand([buffer = state.BufferRaw, ref = Com(state.RawPointer),
                          offset = state.Offset, stride = state.Stride,
                          index](MTL::RenderCommandEncoder *encoder) {
         encoder->setVertexBuffer(buffer, offset, stride, index);
       });
+      VertexBuffers.clear_dirty(index);
     };
-    vertex_buffer_dirty = 0;
   }
 
   void Commit() {
@@ -1759,7 +1785,6 @@ private:
   IMTLD3D11Device *device;
   D3D11ContextState &state_;
   CommandBufferState cmdbuf_state;
-  uint64_t vertex_buffer_dirty = 0xFFFFFFFF;
   CommandQueue &cmd_queue;
 
 public:

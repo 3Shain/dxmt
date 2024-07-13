@@ -60,6 +60,10 @@ public:
     return ((dirty.qword(0) & mask_lo) | (dirty.qword(1) & mask_hi)) != 0;
   }
 
+  constexpr bool all_bound_masked(uint32_t mask) noexcept {
+    return (bound.qword(0) & mask) == mask;
+  }
+
   inline void clear_dirty() { dirty.clearAll(); }
 
   inline void clear_dirty(size_t slot) { dirty.set(slot, false); }

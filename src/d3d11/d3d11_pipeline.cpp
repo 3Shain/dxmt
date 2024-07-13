@@ -72,7 +72,9 @@ public:
         transfer(MTL::RenderPipelineDescriptor::alloc()->init());
     pipelineDescriptor->setVertexFunction(vs.Function);
     pipelineDescriptor->setFragmentFunction(ps.Function);
-    pInputLayout->Bind(pipelineDescriptor, {}); // stride is not in use?
+    if (pInputLayout) {
+      pInputLayout->Bind(pipelineDescriptor); // stride is not in use?
+    }
     pBlendState->SetupMetalPipelineDescriptor(pipelineDescriptor);
 
     pInputLayout = nullptr;

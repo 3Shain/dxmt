@@ -88,9 +88,16 @@ struct VERTEX_BUFFER_B {
   UINT Offset;
 };
 
+template <> struct redunant_binding_trait<VERTEX_BUFFER_B> {
+  static bool is_redunant(const VERTEX_BUFFER_B &left,
+                          const VERTEX_BUFFER_B &right) {
+    return left.RawPointer == right.RawPointer;
+  }
+};
+
 struct D3D11InputAssemblerStageState {
   Com<IMTLD3D11InputLayout> InputLayout;
-  std::map<UINT, VERTEX_BUFFER_B> VertexBuffers;
+  BindingSet<VERTEX_BUFFER_B, 16> VertexBuffers;
   Com<IMTLBindable> IndexBuffer;
   /**
   either DXGI_FORMAT_R16_UINT or DXGI_FORMAT_R32_UINT

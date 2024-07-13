@@ -13,13 +13,12 @@ struct MTL_SHADER_INPUT_LAYOUT_FIXUP {
 DEFINE_COM_INTERFACE("b56c6a99-80cf-4c7f-a756-9e9ceb38730f",
                      IMTLD3D11InputLayout)
     : public ID3D11InputLayout {
-  virtual void STDMETHODCALLTYPE Bind(MTL::RenderPipelineDescriptor * desc,
-                                      const std::array<UINT, 16> &strides) = 0;
-  virtual void STDMETHODCALLTYPE Bind(MTL::ComputePipelineDescriptor * desc,
-                                      const std::array<UINT, 16> &strides) = 0;
+  virtual void STDMETHODCALLTYPE Bind(MTL::RenderPipelineDescriptor * desc) = 0;
+  virtual void STDMETHODCALLTYPE Bind(MTL::ComputePipelineDescriptor * desc) = 0;
   virtual bool STDMETHODCALLTYPE NeedsFixup() = 0;
   virtual void STDMETHODCALLTYPE GetShaderFixupInfo(
       MTL_SHADER_INPUT_LAYOUT_FIXUP * pFixup) = 0;
+  virtual uint32_t STDMETHODCALLTYPE GetInputSlotMask() = 0;
 };
 
 namespace dxmt {
