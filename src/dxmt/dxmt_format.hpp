@@ -22,10 +22,17 @@ enum class FormatCapability : int {
   TextureBufferReadWrite = 0x800
 };
 
-const FormatCapability ALL_CAP = static_cast<FormatCapability>(0xFE);
-const FormatCapability TEXTURE_BUFFER_ALL_CAP =
-    static_cast<FormatCapability>(0x200 | 0x400 | 0x800);
-const FormatCapability NO_ATOMIC_RESOLVE = static_cast<FormatCapability>(0x88);
+const FormatCapability ALL_CAP = static_cast<FormatCapability>(
+    FormatCapability::Filter | FormatCapability::Write |
+    FormatCapability::Color | FormatCapability::MSAA | FormatCapability::Blend |
+    FormatCapability::Sparse | FormatCapability::Resolve);
+const FormatCapability TEXTURE_BUFFER_ALL_CAP = static_cast<FormatCapability>(
+    FormatCapability::TextureBufferRead | FormatCapability::TextureBufferWrite |
+    FormatCapability::TextureBufferReadWrite);
+const FormatCapability NO_ATOMIC_RESOLVE = static_cast<FormatCapability>(
+    FormatCapability::Filter | FormatCapability::Write |
+    FormatCapability::Color | FormatCapability::MSAA | FormatCapability::Blend |
+    FormatCapability::Sparse);
 const FormatCapability APPLE_INT_FORMAT_CAP =
     FormatCapability::Write | FormatCapability::Color | FormatCapability::MSAA |
     FormatCapability::Sparse;
