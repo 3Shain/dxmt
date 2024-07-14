@@ -1111,11 +1111,11 @@ int SM50Initialize(
         uint32_t assigned_index;
         switch (siv) {
         case D3D10_SB_NAME_POSITION:
-          assert(
-            interpolation == Interpolation::center_no_perspective ||
-            // in case it's per-sample, FIXME: will this cause problem?
-            interpolation == Interpolation::sample_no_perspective
-          );
+          // assert(
+          //   interpolation == Interpolation::center_no_perspective ||
+          //   // in case it's per-sample, FIXME: will this cause problem?
+          //   interpolation == Interpolation::sample_no_perspective
+          // );
           assigned_index = func_signature.DefineInput(
             // the only supported interpolation for [[position]]
             InputPosition{.interpolation = interpolation}
@@ -1138,6 +1138,7 @@ int SM50Initialize(
         prelogue_.push_back([=](IREffect &prelogue) {
           prelogue << init_input_reg(assigned_index, reg, mask);
         });
+        max_input_register = std::max(reg + 1, max_input_register);
         break;
       }
       case D3D10_SB_OPCODE_DCL_INPUT_PS_SGV: {
@@ -1209,7 +1210,6 @@ int SM50Initialize(
         case D3D10_SB_NAME_POSITION: {
           auto assigned_index =
             func_signature.DefineOutput(OutputPosition{.type = msl_float4});
-          max_output_register = std::max(reg + 1, max_output_register);
           epilogue_.push_back([=](IRValue &epilogue) {
             epilogue >> pop_output_reg(reg, mask, assigned_index);
           });
@@ -1221,6 +1221,7 @@ int SM50Initialize(
           assert(0 && "Unexpected/unhandled input system value");
           break;
         }
+        max_output_register = std::max(reg + 1, max_output_register);
         break;
       }
       case D3D10_SB_OPCODE_DCL_OUTPUT: {

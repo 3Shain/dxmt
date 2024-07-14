@@ -2804,13 +2804,15 @@ auto load_from_uint_bufptr(
     auto ptr = ctx.builder.CreateGEP(
       ctx.types._int, uint_buf_ptr, {ctx.builder.getInt32(i)}
     );
+    bool is_volatile = 
+      cast<llvm::PointerType>(ptr->getType())->getAddressSpace() !=1;
     vec = ctx.builder.CreateInsertElement(
       vec,
       oob ? ctx.builder.CreateSelect(
               oob, ctx.builder.getInt32(0),
-              ctx.builder.CreateLoad(ctx.types._int, ptr)
+              ctx.builder.CreateLoad(ctx.types._int, ptr, is_volatile)
             )
-          : ctx.builder.CreateLoad(ctx.types._int, ptr),
+          : ctx.builder.CreateLoad(ctx.types._int, ptr, is_volatile),
       i
     );
   }
@@ -2826,7 +2828,8 @@ auto store_to_uint_bufptr(
       ctx.types._int, uint_buf_ptr, {ctx.builder.getInt32(i)}
     );
     ctx.builder.CreateStore(
-      ctx.builder.CreateExtractElement(ivec4_to_write, i), ptr
+      ctx.builder.CreateExtractElement(ivec4_to_write, i), ptr,
+      cast<llvm::PointerType>(ptr->getType())->getAddressSpace() !=1
     );
   }
   co_return {};
@@ -4524,11 +4527,12 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                 make_irvalue_bind([=](struct context ctx) -> IRValue {
                   // FIXME: neg modifier might be wrong?!
                   auto src = co_yield load_src_op<false>(convert.src); // int4
-                  auto half8 = ctx.builder.CreateBitCast(
-                    src, llvm::FixedVectorType::get(ctx.types._half, 8)
+                  auto half4 = ctx.builder.CreateBitCast(
+                    ctx.builder.CreateTrunc(src, llvm::FixedVectorType::get(
+                      llvm::IntegerType::getInt16Ty(ctx.llvm),4)), ctx.types._half4
                   );
                   co_return co_yield call_convert(
-                    ctx.builder.CreateShuffleVector(half8, {0, 2, 4, 6}),
+                    half4,
                     ctx.types._float, air::Sign::with_sign /* intended */
                   );
                 })
@@ -4536,19 +4540,19 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
               break;
             }
             case ConversionOp::FloatToHalf: {
-              effect << store_dst_op_masked<false>(
+              effect << store_dst_op<false>(
                 convert.dst,
                 make_irvalue_bind([=](struct context ctx) -> IRValue {
                   // FIXME: neg modifier might be wrong?!
-                  auto src = co_yield load_src_op<true>(convert.src, mask);
+                  auto src = co_yield load_src_op<true>(convert.src);
                   auto half4 = co_yield call_convert(
                     src, ctx.types._half, air::Sign::with_sign /* intended */
                   );
                   co_return ctx.builder.CreateBitCast(
-                    ctx.builder.CreateShuffleVector(
-                      half4, llvm::ConstantAggregateZero::get(half4->getType()),
-                      {0, 4, 1, 5, 2, 6, 3, 7}
-                    ),
+                    ctx.builder.CreateZExt(
+                      ctx.builder.CreateBitCast(half4, llvm::FixedVectorType::get(
+                      llvm::IntegerType::getInt16Ty(ctx.llvm),4))
+                      , ctx.types._int4),
                     ctx.types._int4
                   );
                 })
@@ -4597,7 +4601,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                 make_irvalue_bind([=](struct context ctx) -> IRValue {
                   auto src = co_yield load_src_op<false>(convert.src, mask);
                   co_return co_yield call_convert(
-                    src, ctx.types._float, air::Sign::with_sign
+                    src, ctx.types._float, air::Sign::no_sign
                   );
                 })
               );

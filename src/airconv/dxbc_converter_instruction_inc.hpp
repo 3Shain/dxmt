@@ -1374,7 +1374,7 @@ auto readInstruction(
   };
   case microsoft::D3D11_SB_OPCODE_F32TOF16: {
     return InstConvert{
-      .op = ConversionOp::HalfToFloat,
+      .op = ConversionOp::FloatToHalf,
       .dst = readDstOperand(Inst.m_Operands[0]),
       .src = readSrcOperand(Inst.m_Operands[1]),
     };
