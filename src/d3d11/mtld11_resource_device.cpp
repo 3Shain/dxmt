@@ -4,6 +4,7 @@
 #include "Metal/MTLTexture.hpp"
 #include "com/com_pointer.hpp"
 #include "d3d11_device.hpp"
+#include "d3d11_private.h"
 #include "d3d11_texture.hpp"
 #include "dxmt_binding.hpp"
 #include "log/log.hpp"
@@ -29,8 +30,8 @@ public:
       : TResourceBase<tag_buffer, IMTLBindable>(desc, device) {
     auto metal = device->GetMTLDevice();
     buffer = transfer(metal->newBuffer(
-        desc->BindFlags & D3D11_BIND_UNORDERED_ACCESS ? desc->ByteWidth * 2
-                                                      : desc->ByteWidth,
+        (desc->BindFlags & D3D11_BIND_UNORDERED_ACCESS) ? (desc->ByteWidth + 16)
+                                                        : desc->ByteWidth,
         MTL::ResourceStorageModeManaged));
     if (pInitialData) {
       memcpy(buffer->contents(), pInitialData->pSysMem, desc->ByteWidth);
@@ -116,8 +117,15 @@ public:
           finalDesc.BufferEx.Flags & D3D11_BUFFEREX_SRV_FLAG_RAW) {
         if (!allow_raw_view)
           return E_INVALIDARG;
-        auto offset = pDesc->Buffer.FirstElement;
-        auto size = pDesc->Buffer.NumElements;
+        D3D11_ASSERT(finalDesc.Format != DXGI_FORMAT_UNKNOWN);
+        MTL_FORMAT_DESC metal_format;
+        Com<IMTLDXGIAdatper> adapter;
+        m_parent->GetAdapter(&adapter);
+        if (FAILED(adapter->QueryFormatDesc(finalDesc.Format, &metal_format))) {
+          return E_INVALIDARG;
+        }
+        auto offset = pDesc->Buffer.FirstElement * metal_format.BytesPerTexel;
+        auto size = pDesc->Buffer.NumElements * metal_format.BytesPerTexel;
         *ppView = ref(new SRV(
             pDesc, this, m_parent, ArgumentData(buffer_handle + offset, size),
             [ctx = Com(this), offset, size](uint64_t, auto _this) {
@@ -204,8 +212,15 @@ public:
       if (finalDesc.Buffer.Flags & D3D11_BUFFER_UAV_FLAG_RAW) {
         if (!allow_raw_view)
           return E_INVALIDARG;
-        auto offset = pDesc->Buffer.FirstElement,
-             size = pDesc->Buffer.NumElements;
+        D3D11_ASSERT(finalDesc.Format != DXGI_FORMAT_UNKNOWN);
+        MTL_FORMAT_DESC metal_format;
+        Com<IMTLDXGIAdatper> adapter;
+        m_parent->GetAdapter(&adapter);
+        if (FAILED(adapter->QueryFormatDesc(finalDesc.Format, &metal_format))) {
+          return E_INVALIDARG;
+        }
+        auto offset = pDesc->Buffer.FirstElement * metal_format.BytesPerTexel;
+        auto size = pDesc->Buffer.NumElements * metal_format.BytesPerTexel;
         *ppView = ref(new UAV(
             pDesc, this, m_parent, ArgumentData(buffer_handle + offset, size),
             [ctx = Com(this), offset, size](uint64_t, auto _this) {
