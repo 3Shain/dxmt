@@ -64,7 +64,6 @@ public:
   private:
     ArgumentData argument_data;
     F f;
-    SIMPLE_RESIDENCY_TRACKER tracker{};
 
   public:
     SRV(const tag_shader_resource_view<>::DESC_S *pDesc,
@@ -79,7 +78,7 @@ public:
 
     ArgumentData
     GetArgumentData(SIMPLE_RESIDENCY_TRACKER **ppTracker) override {
-      *ppTracker = &tracker;
+      *ppTracker = &resource->tracker;
       return argument_data;
     };
 
@@ -153,7 +152,6 @@ public:
   private:
     ArgumentData argument_data;
     F f;
-    SIMPLE_RESIDENCY_TRACKER tracker{};
 
   public:
     UAV(const tag_unordered_access_view<>::DESC_S *pDesc,
@@ -168,7 +166,7 @@ public:
 
     ArgumentData
     GetArgumentData(SIMPLE_RESIDENCY_TRACKER **ppTracker) override {
-      *ppTracker = &tracker;
+      *ppTracker = &resource->tracker;
       return argument_data;
     };
 
