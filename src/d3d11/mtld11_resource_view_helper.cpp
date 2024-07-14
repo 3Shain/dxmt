@@ -337,6 +337,23 @@ CreateMTLRenderTargetView(IMTLD3D11Device *pDevice, MTL::Texture *pResource,
     break;
   }
   case D3D11_RTV_DIMENSION_TEXTURE2DARRAY: {
+    if (texture_type == MTL::TextureType2D) {
+      auto array_size = pViewDesc->Texture2DArray.ArraySize == 0xffffffff
+                            ? pResource->arrayLength() -
+                                  pViewDesc->Texture2DArray.FirstArraySlice
+                            : pViewDesc->Texture2DArray.ArraySize;
+      *ppView = pResource->newTextureView(
+          metal_format.PixelFormat, MTL::TextureType2DArray,
+          NS::Range::Make(pViewDesc->Texture2DArray.MipSlice, 1),
+          NS::Range::Make(pViewDesc->Texture2DArray.FirstArraySlice,
+                          array_size));
+      // D3D11_ASSERT();
+      pMTLDesc->Slice = 0; // use the original texture if format is the same?
+      pMTLDesc->Level = 0;
+      pMTLDesc->DepthPlane = 0;
+      pMTLDesc->RenderTargetArrayLength = 0; // FIXME: really?
+      return S_OK;
+    }
     if (texture_type == MTL::TextureType2DArray) {
       auto array_size = pViewDesc->Texture2DArray.ArraySize == 0xffffffff
                             ? pResource->arrayLength() -
@@ -472,12 +489,24 @@ HRESULT CreateMTLTextureView<D3D11_DEPTH_STENCIL_VIEW_DESC>(
     break;
   }
   case D3D11_DSV_DIMENSION_TEXTURE2DARRAY: {
+    auto array_size = pViewDesc->Texture2DArray.ArraySize == 0xffffffff
+                          ? 6 * pResource->arrayLength() -
+                                pViewDesc->Texture2DArray.FirstArraySlice
+                          : pViewDesc->Texture2DArray.ArraySize;
+    if (texture_type == MTL::TextureType2D) {
+      *ppView = pResource->newTextureView(
+          metal_format.PixelFormat, MTL::TextureType2DArray,
+          NS::Range::Make(pViewDesc->Texture2DArray.MipSlice, 1),
+          NS::Range::Make(pViewDesc->Texture2DArray.FirstArraySlice,
+                          array_size));
+      return S_OK;
+    }
     if (texture_type == MTL::TextureType2DArray) {
       *ppView = pResource->newTextureView(
           metal_format.PixelFormat, MTL::TextureType2DArray,
           NS::Range::Make(pViewDesc->Texture2DArray.MipSlice, 1),
           NS::Range::Make(pViewDesc->Texture2DArray.FirstArraySlice,
-                          pViewDesc->Texture2DArray.ArraySize));
+                          array_size));
       return S_OK;
     }
     break;
