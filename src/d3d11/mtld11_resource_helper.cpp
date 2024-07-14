@@ -2,6 +2,7 @@
 #include "mtld11_resource.hpp"
 #include "d3d11_1.h"
 #include "objc_pointer.hpp"
+#include "util_math.hpp"
 
 namespace dxmt {
 
@@ -494,11 +495,6 @@ void GetMipmapSize(const D3D11_TEXTURE3D_DESC *pDesc, uint32_t level,
   *pDepth = std::max(1u, pDesc->Depth >> level);
 }
 
-inline size_t CalcAlignedBytesPerRow(size_t unaligned, size_t alignment) {
-  // a smart ceil
-  return ((unaligned + alignment - 1) / alignment) * alignment;
-}
-
 template <>
 HRESULT GetLinearTextureLayout(IMTLD3D11Device *pDevice,
                                const D3D11_TEXTURE1D_DESC *pDesc,
@@ -528,8 +524,7 @@ HRESULT GetLinearTextureLayout(IMTLD3D11Device *pDevice,
   auto bytes_per_row_unaligned = metal_format.BytesPerTexel * w;
   auto alignment = metal->minimumLinearTextureAlignmentForPixelFormat(
       metal_format.PixelFormat);
-  auto aligned_bytes_per_row =
-      CalcAlignedBytesPerRow(bytes_per_row_unaligned, alignment);
+  auto aligned_bytes_per_row = align(bytes_per_row_unaligned, alignment);
   *pBytesPerRow = aligned_bytes_per_row;
   *pBytesPerImage = 0;
   *pBytesPerSlice = aligned_bytes_per_row;
@@ -562,11 +557,20 @@ HRESULT GetLinearTextureLayout(IMTLD3D11Device *pDevice,
   }
   uint32_t w, h, d;
   GetMipmapSize(pDesc, level, &w, &h, &d);
+  if (metal_format.IsCompressed) {
+    D3D11_ASSERT(w != 0 && h != 0);
+    auto w_phisical = align(w, 4);
+    auto h_phisical = align(h, 4);
+    auto aligned_bytes_per_row = metal_format.BytesPerTexel * w_phisical >> 2;
+    *pBytesPerRow = aligned_bytes_per_row; // 1 row of block is 4 row of pixel
+    *pBytesPerImage = aligned_bytes_per_row * h_phisical >> 2;
+    *pBytesPerSlice = aligned_bytes_per_row * h_phisical >> 2;
+    return S_OK;
+  }
   auto bytes_per_row_unaligned = metal_format.BytesPerTexel * w;
   auto alignment = metal->minimumLinearTextureAlignmentForPixelFormat(
       metal_format.PixelFormat);
-  auto aligned_bytes_per_row =
-      CalcAlignedBytesPerRow(bytes_per_row_unaligned, alignment);
+  auto aligned_bytes_per_row = align(bytes_per_row_unaligned, alignment);
   *pBytesPerRow = aligned_bytes_per_row;
   *pBytesPerImage = aligned_bytes_per_row * h;
   *pBytesPerSlice = aligned_bytes_per_row * h;
@@ -602,8 +606,7 @@ HRESULT GetLinearTextureLayout(IMTLD3D11Device *pDevice,
   auto bytes_per_row_unaligned = metal_format.BytesPerTexel * w;
   auto alignment = metal->minimumLinearTextureAlignmentForPixelFormat(
       metal_format.PixelFormat);
-  auto aligned_bytes_per_row =
-      CalcAlignedBytesPerRow(bytes_per_row_unaligned, alignment);
+  auto aligned_bytes_per_row = align(bytes_per_row_unaligned, alignment);
   *pBytesPerRow = aligned_bytes_per_row;
   *pBytesPerImage = aligned_bytes_per_row * h;
   *pBytesPerSlice = aligned_bytes_per_row * h * d;
