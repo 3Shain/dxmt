@@ -8,7 +8,7 @@ MTLD3D11Inspection::MTLD3D11Inspection(MTL::Device *pDevice)
     : m_device(pDevice) {
 
   // FIXME: Apple Silicon definitely TBDR
-  m_architectureInfo.TileBasedDeferredRenderer = FALSE;
+  m_architectureInfo.TileBasedDeferredRenderer = pDevice->hasUnifiedMemory();
 
   m_threading.DriverConcurrentCreates = TRUE; // I guess
   m_threading.DriverCommandLists = TRUE;      //  should be?
@@ -61,6 +61,8 @@ MTLD3D11Inspection::MTLD3D11Inspection(MTL::Device *pDevice)
   m_d3d11Options.OutputMergerLogicOp = TRUE;
 #endif
 
+  m_d3d11Options3.VPAndRTArrayIndexFromAnyShaderFeedingRasterizer = TRUE;
+
   m_d3d11Options5.SharedResourceTier = D3D11_SHARED_RESOURCE_TIER_0; // TODO
 
   // use dxvk values
@@ -89,7 +91,8 @@ MTLD3D11Inspection::MTLD3D11Inspection(MTL::Device *pDevice)
   m_d3d11Options1.TiledResourcesTier = D3D11_TILED_RESOURCES_NOT_SUPPORTED;
 
   m_d3d11Options2.TiledResourcesTier = D3D11_TILED_RESOURCES_NOT_SUPPORTED;
-  m_d3d11Options2.ConservativeRasterizationTier = D3D11_CONSERVATIVE_RASTERIZATION_NOT_SUPPORTED;
+  m_d3d11Options2.ConservativeRasterizationTier =
+      D3D11_CONSERVATIVE_RASTERIZATION_NOT_SUPPORTED;
   m_d3d11Options2.PSSpecifiedStencilRefSupported = TRUE;
   m_d3d11Options2.ROVsSupported = TRUE;
   m_d3d11Options2.MapOnDefaultTextures = FALSE;
@@ -133,12 +136,10 @@ HRESULT MTLD3D11Inspection::GetFeatureData(D3D11_FEATURE Feature,
     //   case D3D11_FEATURE_D3D9_OPTIONS1:
     //     return GetTypedFeatureData(FeatureDataSize, pFeatureData,
     //     &m_d3d9Options1);
-      case D3D11_FEATURE_D3D11_OPTIONS2:
-        return GetTypedFeatureData(FeatureDataSize, pFeatureData,
-        &m_d3d11Options2);
-    //   case D3D11_FEATURE_D3D11_OPTIONS3:
-    //     return GetTypedFeatureData(FeatureDataSize, pFeatureData,
-    //     &m_d3d11Options3);
+  case D3D11_FEATURE_D3D11_OPTIONS2:
+    return GetTypedFeatureData(FeatureDataSize, pFeatureData, &m_d3d11Options2);
+  case D3D11_FEATURE_D3D11_OPTIONS3:
+    return GetTypedFeatureData(FeatureDataSize, pFeatureData, &m_d3d11Options3);
     //   case D3D11_FEATURE_D3D11_OPTIONS4:
     //     return GetTypedFeatureData(FeatureDataSize, pFeatureData,
     //     &m_d3d11Options4);
