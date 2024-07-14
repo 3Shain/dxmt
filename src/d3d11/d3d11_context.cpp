@@ -393,9 +393,13 @@ public:
     if (dst_dim != src_dim)
       return;
     switch (dst_dim) {
-    case D3D11_RESOURCE_DIMENSION_UNKNOWN:
+    case D3D11_RESOURCE_DIMENSION_UNKNOWN: {
+      break;
+    }
     case D3D11_RESOURCE_DIMENSION_BUFFER: {
-      D3D11_ASSERT(0 && "TODO: CopySubresourceRegion1 for buffer");
+      ctx.CopyBuffer((ID3D11Buffer *)pDstResource, DstSubresource, DstX, DstY,
+                     DstZ, (ID3D11Buffer *)pSrcResource, SrcSubresource,
+                     pSrcBox);
       break;
     }
     case D3D11_RESOURCE_DIMENSION_TEXTURE1D: {
