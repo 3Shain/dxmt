@@ -13,6 +13,7 @@ since it is for internal use only
 #include "dxmt_command_queue.hpp"
 #include "mtld11_resource.hpp"
 #include "util_flags.hpp"
+#include "util_math.hpp"
 
 namespace dxmt {
 
@@ -488,6 +489,8 @@ public:
     D3D11_BUFFER_DESC src_desc;
     pDstResource->GetDesc(&dst_desc);
     pSrcResource->GetDesc(&src_desc);
+    D3D11_ASSERT(SrcSubresource == 0);
+    D3D11_ASSERT(DstSubresource == 0);
     D3D11_BOX SrcBox;
     if (pSrcBox) {
       SrcBox = *pSrcBox;
@@ -565,13 +568,17 @@ public:
     D3D11_TEXTURE1D_DESC src_desc;
     pDstResource->GetDesc(&dst_desc);
     pSrcResource->GetDesc(&src_desc);
+    auto src_width =
+        std::max(1u, src_desc.Width >> (SrcSubresource % src_desc.MipLevels));
     D3D11_BOX SrcBox;
     if (pSrcBox) {
       SrcBox = *pSrcBox;
     } else {
       SrcBox.left = 0;
-      SrcBox.right = src_desc.Width;
+      SrcBox.right = src_width;
     }
+    if (SrcBox.right <= SrcBox.left)
+      return;
     auto currentChunkId = cmd_queue.CurrentSeqId();
     if (auto staging_dst = com_cast<IMTLD3D11Staging>(pDstResource)) {
       if (auto staging_src = com_cast<IMTLD3D11Staging>(pSrcResource)) {
@@ -663,15 +670,33 @@ public:
     D3D11_TEXTURE2D_DESC src_desc;
     pDstResource->GetDesc(&dst_desc);
     pSrcResource->GetDesc(&src_desc);
+    auto src_width =
+        std::max(1u, src_desc.Width >> (SrcSubresource % src_desc.MipLevels));
+    auto src_height =
+        std::max(1u, src_desc.Height >> (SrcSubresource % src_desc.MipLevels));
+    auto dst_width =
+        std::max(1u, dst_desc.Width >> (DstSubresource % dst_desc.MipLevels));
+    auto dst_height =
+        std::max(1u, dst_desc.Height >> (DstSubresource % dst_desc.MipLevels));
     D3D11_BOX SrcBox;
     if (pSrcBox) {
       SrcBox = *pSrcBox;
     } else {
       SrcBox.left = 0;
       SrcBox.top = 0;
-      SrcBox.right = src_desc.Width;
-      SrcBox.bottom = src_desc.Height;
+      SrcBox.right = src_width;
+      SrcBox.bottom = src_height;
     }
+    // !HACK: just make validation layer happy
+    // all block compression format should be properly handled later
+    if (src_desc.Format == DXGI_FORMAT_BC7_UNORM_SRGB ||
+        src_desc.Format == DXGI_FORMAT_BC7_UNORM ||
+        src_desc.Format == DXGI_FORMAT_BC7_TYPELESS) {
+      SrcBox.right = align(SrcBox.right, 4u);
+      SrcBox.bottom = align(SrcBox.bottom, 4u);
+    }
+    if (SrcBox.right <= SrcBox.left || SrcBox.bottom <= SrcBox.top)
+      return;
     auto currentChunkId = cmd_queue.CurrentSeqId();
     if (auto staging_dst = com_cast<IMTLD3D11Staging>(pDstResource)) {
       if (auto staging_src = com_cast<IMTLD3D11Staging>(pSrcResource)) {
@@ -716,21 +741,26 @@ public:
                                         &src_bind, &bytes_per_row,
                                         &bytes_per_image))
           return;
-        EmitBlitCommand<true>([dst_ = dst->UseBindable(currentChunkId),
-                               src = Obj(src_bind.Buffer), bytes_per_row,
-                               DstSubresource, DstX, DstY, DstZ, SrcBox](
-                                  MTL::BlitCommandEncoder *encoder, auto ctx) {
-          auto dst = dst_.texture(&ctx);
-          auto dst_mips = dst->mipmapLevelCount();
-          auto dst_level = DstSubresource % dst_mips;
-          auto dst_slice = DstSubresource / dst_mips;
-          // FIXME: offste should be calculated from SrcBox
-          encoder->copyFromBuffer(
-              src, 0, bytes_per_row, 0,
-              MTL::Size::Make(SrcBox.right - SrcBox.left,
-                              SrcBox.bottom - SrcBox.top, 1),
-              dst, dst_slice, dst_level, MTL::Origin::Make(DstX, DstY, DstZ));
-        });
+
+        SrcBox.right = std::min(SrcBox.right, dst_width - DstX + SrcBox.left);
+        SrcBox.bottom = std::min(SrcBox.bottom, dst_height - DstY + SrcBox.top);
+        EmitBlitCommand<true>(
+            [dst_ = dst->UseBindable(currentChunkId),
+             src = Obj(src_bind.Buffer), bytes_per_row, DstSubresource, DstX,
+             DstY, SrcBox](MTL::BlitCommandEncoder *encoder, auto ctx) {
+              auto dst = dst_.texture(&ctx);
+              auto dst_mips = dst->mipmapLevelCount();
+              auto dst_level = DstSubresource % dst_mips;
+              auto dst_slice = DstSubresource / dst_mips;
+              D3D11_ASSERT(DstX == 0);
+              D3D11_ASSERT(DstY == 0);
+              // FIXME: offste should be calculated from SrcBox
+              encoder->copyFromBuffer(
+                  src, 0, bytes_per_row, 0,
+                  MTL::Size::Make(SrcBox.right - SrcBox.left,
+                                  SrcBox.bottom - SrcBox.top, 1),
+                  dst, dst_slice, dst_level, MTL::Origin::Make(DstX, DstY, 0));
+            });
       } else if (auto src = com_cast<IMTLBindable>(pSrcResource)) {
         // on-device copy
         EmitBlitCommand<true>([dst_ = dst->UseBindable(currentChunkId),
