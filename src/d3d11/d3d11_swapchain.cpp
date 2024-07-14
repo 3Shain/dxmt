@@ -298,7 +298,8 @@ public:
           fence.fetch_add(1, std::memory_order_relaxed);
           fence.notify_one();
           ReleaseSemaphore(sem, 1, nullptr);
-        });
+        },
+        true);
 
     presentation_count_ += 1;
 

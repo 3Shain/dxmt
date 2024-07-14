@@ -13,7 +13,7 @@ DEFINE_COM_INTERFACE("3a3f085a-d0fe-4324-b0ae-fe04de18571c",
 
   virtual void STDMETHODCALLTYPE FlushInternal(
       std::function<void(MTL::CommandBuffer *)> && beforeCommit,
-      std::function<void(void)> && onFinished) = 0;
+      std::function<void(void)> && onFinished, bool present_) = 0;
 
   virtual void WaitUntilGPUIdle() = 0;
 };

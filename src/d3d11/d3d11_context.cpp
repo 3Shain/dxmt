@@ -246,7 +246,7 @@ public:
   }
 
   void Flush() override {
-    FlushInternal([](auto) {}, []() {});
+    FlushInternal([](auto) {}, []() {}, false);
   }
 
   void ExecuteCommandList(ID3D11CommandList *pCommandList,
@@ -1661,11 +1661,12 @@ public:
     if (cmd_queue.CurrentChunk()->has_no_work_encoded_yet()) {
       return;
     }
-    FlushInternal([](auto) {}, []() {});
+    FlushInternal([](auto) {}, []() {}, false);
   };
 
   void FlushInternal(std::function<void(MTL::CommandBuffer *)> &&beforeCommit,
-                     std::function<void(void)> &&onFinished) final {
+                     std::function<void(void)> &&onFinished,
+                     bool present_) final {
     ctx.InvalidateCurrentPass();
     cmd_queue.CurrentChunk()->emit(
         [bc = std::move(beforeCommit),
@@ -1674,6 +1675,9 @@ public:
           bc(ctx.cmdbuf);
         });
     ctx.Commit();
+    if (present_) {
+      cmd_queue.PresentBoundary();
+    }
   }
 
 private:

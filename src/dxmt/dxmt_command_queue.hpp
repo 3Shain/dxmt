@@ -250,6 +250,7 @@ public:
     return last_encoder_info->kind == EncoderKind::Nil ? 1u : 0u;
   }
 
+  uint64_t frame_;
   uint64_t visibility_result_seq_begin;
   uint64_t visibility_result_seq_end;
   Obj<MTL::Buffer> visibility_result_heap;
@@ -311,6 +312,7 @@ private:
 
   std::array<CommandChunk, kCommandChunkCount> chunks;
   uint64_t encoder_seq = 1;
+  uint64_t present_seq = 0;
 
   /**
   FIXME: dxmt::thread cause access page fault when
@@ -361,6 +363,8 @@ public:
   */
   void CommitCurrentChunk(uint64_t occlusion_counter_begin,
                           uint64_t occlusion_counter_end);
+
+  void PresentBoundary() { present_seq++; }
 
   void WaitCPUFence(uint64_t seq) {
     uint64_t current;

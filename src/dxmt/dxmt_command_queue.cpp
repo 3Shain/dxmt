@@ -70,6 +70,7 @@ void CommandQueue::CommitCurrentChunk(uint64_t occlusion_counter_begin,
   chunk_ongoing.wait(kCommandChunkCount - 1, std::memory_order_relaxed);
   chunk_ongoing.fetch_add(1, std::memory_order_relaxed);
   auto &chunk = chunks[ready_for_encode % kCommandChunkCount];
+  chunk.frame_ = present_seq;
   chunk.visibility_result_seq_begin = occlusion_counter_begin;
   chunk.visibility_result_seq_end = occlusion_counter_end;
 #ifndef SYNC_ENCODING
