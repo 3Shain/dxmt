@@ -453,15 +453,21 @@ public:
       }
 
       if (auto bindable = com_cast<IMTLBindable>(pDstResource)) {
-        auto chk = cmd_queue.CurrentChunk();
-        auto [heap, offset] = chk->allocate_gpu_heap(copy_len, 16);
-        memcpy(((char *)heap->contents()) + offset, pSrcData, copy_len);
+        if (!bindable->GetContentionState(cmd_queue.CoherentSeqId())) {
+          auto _ = bindable->UseBindable(cmd_queue.CurrentSeqId());
+          memcpy(((char *)_.buffer()->contents()) + copy_offset, pSrcData,
+                 copy_len);
+          return;
+        }
+        auto [ptr, staging_buffer, offset] =
+            cmd_queue.AllocateStagingBuffer(copy_len, 16);
+        memcpy(ptr, pSrcData, copy_len);
         ctx.EmitBlitCommand<true>(
-            [heap, offset,
+            [staging_buffer, offset,
              dst = bindable->UseBindable(cmd_queue.CurrentSeqId()), copy_offset,
              copy_len](MTL::BlitCommandEncoder *enc, auto &ctx) {
-              enc->copyFromBuffer(heap, offset, dst.buffer(), copy_offset,
-                                  copy_len);
+              enc->copyFromBuffer(staging_buffer, offset, dst.buffer(),
+                                  copy_offset, copy_len);
             });
       } else if (auto dynamic = com_cast<IMTLDynamicBindable>(pDstResource)) {
         D3D11_ASSERT(CopyFlags && "otherwise resource cannot be dynamic");
@@ -491,16 +497,26 @@ public:
         origin_y = pDstBox->top;
       }
       if (auto bindable = com_cast<IMTLBindable>(pDstResource)) {
+        while (!bindable->GetContentionState(cmd_queue.CoherentSeqId())) {
+          auto dst = bindable->UseBindable(cmd_queue.CurrentSeqId());
+          auto texture = dst.texture();
+          if (!texture)
+            break;
+          texture->replaceRegion(
+              MTL::Region::Make2D(origin_x, origin_y, copy_columns, copy_rows),
+              level, slice, pSrcData, SrcRowPitch, 0);
+          return;
+        }
         auto copy_len = copy_rows * SrcRowPitch;
-        auto chk = cmd_queue.CurrentChunk();
-        auto [heap, offset] = chk->allocate_gpu_heap(copy_len, 16);
-        memcpy(((char *)heap->contents()) + offset, pSrcData, copy_len);
+        auto [ptr, staging_buffer, offset] =
+            cmd_queue.AllocateStagingBuffer(copy_len, 16);
+        memcpy(ptr, pSrcData, copy_len);
         ctx.EmitBlitCommand<true>(
-            [heap, offset,
+            [staging_buffer, offset,
              dst = bindable->UseBindable(cmd_queue.CurrentSeqId()), SrcRowPitch,
              copy_rows, copy_columns, origin_x, origin_y, slice,
              level](MTL::BlitCommandEncoder *enc, auto &ctx) {
-              enc->copyFromBuffer(heap, offset, SrcRowPitch, 0,
+              enc->copyFromBuffer(staging_buffer, offset, SrcRowPitch, 0,
                                   MTL::Size::Make(copy_columns, copy_rows, 1),
                                   dst.texture(&ctx), slice, level,
                                   MTL::Origin::Make(origin_x, origin_y, 0));
@@ -537,17 +553,28 @@ public:
         origin_z = pDstBox->front;
       }
       if (auto bindable = com_cast<IMTLBindable>(pDstResource)) {
+        while (!bindable->GetContentionState(cmd_queue.CoherentSeqId())) {
+          auto dst = bindable->UseBindable(cmd_queue.CurrentSeqId());
+          auto texture = dst.texture();
+          if (!texture)
+            break;
+          texture->replaceRegion(
+              MTL::Region::Make3D(origin_x, origin_y, origin_z, copy_columns,
+                                  copy_rows, copy_w),
+              level, 0, pSrcData, SrcRowPitch, SrcDepthPitch);
+          return;
+        }
         auto copy_len = copy_w * SrcDepthPitch;
-        auto chk = cmd_queue.CurrentChunk();
-        auto [heap, offset] = chk->allocate_gpu_heap(copy_len, 16);
-        memcpy(((char *)heap->contents()) + offset, pSrcData, copy_len);
+        auto [ptr, staging_buffer, offset] =
+            cmd_queue.AllocateStagingBuffer(copy_len, 16);
+        memcpy(ptr, pSrcData, copy_len);
         ctx.EmitBlitCommand<true>(
-            [heap, offset,
+            [staging_buffer, offset,
              dst = bindable->UseBindable(cmd_queue.CurrentSeqId()), SrcRowPitch,
              SrcDepthPitch, copy_rows, copy_columns, copy_w, origin_x, origin_y,
              origin_z, level](MTL::BlitCommandEncoder *enc, auto &ctx) {
               enc->copyFromBuffer(
-                  heap, offset, SrcRowPitch, SrcDepthPitch,
+                  staging_buffer, offset, SrcRowPitch, SrcDepthPitch,
                   MTL::Size::Make(copy_columns, copy_rows, copy_w),
                   dst.texture(&ctx), 0, level,
                   MTL::Origin::Make(origin_x, origin_y, origin_z));

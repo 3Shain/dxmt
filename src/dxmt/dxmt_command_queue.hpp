@@ -10,6 +10,7 @@
 #include "Metal/MTLTypes.hpp"
 #include "dxmt_binding.hpp"
 #include "dxmt_occlusion_query.hpp"
+#include "dxmt_staging_allocator.hpp"
 #include "log/log.hpp"
 #include "objc_pointer.hpp"
 // #include "thread.hpp"
@@ -85,7 +86,7 @@ inline void *ptr_add(const void *const p,
 
 constexpr uint32_t kCommandChunkCount = 8;
 constexpr size_t kCommandChunkCPUHeapSize = 0x800000; // is 8MB too large?
-constexpr size_t kCommandChunkGPUHeapSize = 0x2000000; // FIXME: reduce it
+constexpr size_t kCommandChunkGPUHeapSize = 0x200000;
 constexpr size_t kOcclusionSampleCount = 1024;
 
 class CommandQueue;
@@ -328,6 +329,8 @@ private:
   std::vector<VisibilityResultObserver *> visibility_result_observers;
   dxmt::mutex mutex_observers;
 
+  StagingAllocator staging_allocator;
+
 public:
   CommandQueue(MTL::Device *device);
 
@@ -380,6 +383,12 @@ public:
     cpu_coherent.wait(cpu_coherent.load(std::memory_order_acquire),
                       std::memory_order_acquire);
   };
+
+  std::tuple<void *, MTL::Buffer *, uint64_t>
+  AllocateStagingBuffer(size_t size, size_t alignment) {
+    return staging_allocator.allocate(ready_for_encode, cpu_coherent, size,
+                                      alignment);
+  }
 };
 
 } // namespace dxmt

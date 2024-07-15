@@ -27,7 +27,8 @@ ENCODER_INFO *CommandChunk::mark_pass(EncoderKind kind) {
 
 CommandQueue::CommandQueue(MTL::Device *device)
     : encodeThread([this]() { this->EncodingThread(); }),
-      finishThread([this]() { this->WaitForFinishThread(); }) {
+      finishThread([this]() { this->WaitForFinishThread(); }),
+      staging_allocator(device) {
   commandQueue = transfer(device->newCommandQueue(kCommandChunkCount));
   for (unsigned i = 0; i < kCommandChunkCount; i++) {
     auto &chunk = chunks[i];
@@ -188,6 +189,9 @@ uint32_t CommandQueue::WaitForFinishThread() {
     chunk_ongoing.notify_all();
     cpu_coherent.fetch_add(1, std::memory_order_relaxed);
     cpu_coherent.notify_all();
+
+    staging_allocator.free_blocks(internal_seq);
+
     internal_seq++;
   }
   TRACE("finishing thread gracefully terminates");

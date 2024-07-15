@@ -21,7 +21,8 @@ private:
   uint64_t buffer_handle;
   bool structured;
   bool allow_raw_view;
-  SIMPLE_RESIDENCY_TRACKER tracker{};
+  SIMPLE_RESIDENCY_TRACKER residency{};
+  SIMPLE_OCCUPANCY_TRACKER occupancy{};
 
 public:
   DeviceBuffer(const tag_buffer::DESC_S *desc,
@@ -43,16 +44,19 @@ public:
         desc->MiscFlags & D3D11_RESOURCE_MISC_BUFFER_ALLOW_RAW_VIEWS;
   }
 
-  BindingRef UseBindable(uint64_t) override {
+  BindingRef UseBindable(uint64_t seq_id) override {
+    occupancy.MarkAsOccupied(seq_id);
     return BindingRef(static_cast<ID3D11DeviceChild *>(this), buffer.ptr());
   };
 
   ArgumentData GetArgumentData(SIMPLE_RESIDENCY_TRACKER **ppTracker) override {
-    *ppTracker = &tracker;
+    *ppTracker = &residency;
     return ArgumentData(buffer_handle);
   }
 
-  bool GetContentionState(uint64_t) override { return true; };
+  bool GetContentionState(uint64_t finished_seq_id) override {
+    return occupancy.IsOccupied(finished_seq_id);
+  };
 
   void GetLogicalResourceOrView(REFIID riid,
                                 void **ppLogicalResource) override {
@@ -73,13 +77,14 @@ public:
         : SRVBase(pDesc, pResource, pDevice), argument_data(argument_data),
           f(std::forward<F>(fn)) {}
 
-    BindingRef UseBindable(uint64_t t) override {
-      return std::invoke(f, t, static_cast<SRV *>(this));
+    BindingRef UseBindable(uint64_t seq_id) override {
+      this->resource->occupancy.MarkAsOccupied(seq_id);
+      return std::invoke(f, seq_id, static_cast<SRV *>(this));
     };
 
     ArgumentData
     GetArgumentData(SIMPLE_RESIDENCY_TRACKER **ppTracker) override {
-      *ppTracker = &resource->tracker;
+      *ppTracker = &resource->residency;
       return argument_data;
     };
 
@@ -168,13 +173,14 @@ public:
         : UAVBase(pDesc, pResource, pDevice), argument_data(argument_data),
           f(std::forward<F>(fn)) {}
 
-    BindingRef UseBindable(uint64_t t) override {
-      return std::invoke(f, t, this);
+    BindingRef UseBindable(uint64_t seq_id) override {
+      this->resource->occupancy.MarkAsOccupied(seq_id);
+      return std::invoke(f, seq_id, this);
     };
 
     ArgumentData
     GetArgumentData(SIMPLE_RESIDENCY_TRACKER **ppTracker) override {
-      *ppTracker = &resource->tracker;
+      *ppTracker = &resource->residency;
       return argument_data;
     };
 
@@ -285,7 +291,8 @@ class DeviceTexture : public TResourceBase<tag_texture, IMTLBindable> {
 private:
   Obj<MTL::Texture> texture;
   MTL::ResourceID texture_handle;
-  SIMPLE_RESIDENCY_TRACKER tracker{};
+  SIMPLE_RESIDENCY_TRACKER residency{};
+  SIMPLE_OCCUPANCY_TRACKER occupancy{};
 
   using SRVBase =
       TResourceViewBase<tag_shader_resource_view<DeviceTexture<tag_texture>>,
@@ -303,7 +310,8 @@ private:
         : SRVBase(pDesc, pResource, pDevice), view(view),
           view_handle(view->gpuResourceID()) {}
 
-    BindingRef UseBindable(uint64_t) override {
+    BindingRef UseBindable(uint64_t seq_id) override {
+      this->resource->occupancy.MarkAsOccupied(seq_id);
       return BindingRef(static_cast<ID3D11View *>(this), view.ptr());
     };
 
@@ -342,7 +350,8 @@ private:
         : UAVBase(pDesc, pResource, pDevice), view(view),
           view_handle(view->gpuResourceID()) {}
 
-    BindingRef UseBindable(uint64_t) override {
+    BindingRef UseBindable(uint64_t seq_id) override {
+      this->resource->occupancy.MarkAsOccupied(seq_id);
       return BindingRef(static_cast<ID3D11View *>(this), view.ptr());
     };
 
@@ -387,7 +396,8 @@ private:
       return &mtl_rtv_desc;
     };
 
-    BindingRef GetBinding(uint64_t) final {
+    BindingRef GetBinding(uint64_t seq_id) final {
+      this->resource->occupancy.MarkAsOccupied(seq_id);
       return BindingRef(static_cast<ID3D11View *>(this), view.ptr());
     }
 
@@ -415,7 +425,8 @@ private:
 
     MTL::PixelFormat GetPixelFormat() final { return view_pixel_format; }
 
-    BindingRef GetBinding(uint64_t) final {
+    BindingRef GetBinding(uint64_t seq_id) final {
+      this->resource->occupancy.MarkAsOccupied(seq_id);
       return BindingRef(static_cast<ID3D11View *>(this), view.ptr());
     }
 
@@ -433,17 +444,20 @@ public:
       : TResourceBase<tag_texture, IMTLBindable>(pDesc, pDevice),
         texture(texture), texture_handle(texture->gpuResourceID()) {}
 
-  BindingRef UseBindable(uint64_t) override {
+  BindingRef UseBindable(uint64_t seq_id) override {
+    occupancy.MarkAsOccupied(seq_id);
     return BindingRef(static_cast<ID3D11Resource *>(this), texture.ptr());
   };
 
   ArgumentData GetArgumentData(SIMPLE_RESIDENCY_TRACKER **ppTracker) override {
-    *ppTracker = &tracker;
+    *ppTracker = &residency;
     // rarely used, since texture is not directly accessed by pipeline
     return ArgumentData(texture_handle, texture.ptr());
   }
 
-  bool GetContentionState(uint64_t) override { return true; };
+  bool GetContentionState(uint64_t finished_seq_id) override {
+    return occupancy.IsOccupied(finished_seq_id);
+  };
 
   void GetLogicalResourceOrView(REFIID riid,
                                 void **ppLogicalResource) override {

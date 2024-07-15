@@ -95,6 +95,16 @@ struct SIMPLE_RESIDENCY_TRACKER {
   };
 };
 
+struct SIMPLE_OCCUPANCY_TRACKER {
+  uint64_t last_used_seq = 0;
+  void MarkAsOccupied(uint64_t seq_id) {
+    last_used_seq = std::max(last_used_seq, seq_id);
+  }
+  bool IsOccupied(uint64_t finished_seq_id) {
+    return last_used_seq > finished_seq_id;
+  }
+};
+
 /**
 FIXME: don't hold a IMTLBindable in any places other than context state.
 especially don't capture it in command lambda.
@@ -138,7 +148,7 @@ DEFINE_COM_INTERFACE("1c7e7c98-6dd4-42f0-867b-67960806886e", IMTLBindable)
 DEFINE_COM_INTERFACE("daf21510-d136-44dd-bb16-068a94690775",
                      IMTLD3D11BackBuffer)
     : public IUnknown {
-  virtual void Present(MTL::CommandBuffer* cmdbuf) = 0;
+  virtual void Present(MTL::CommandBuffer * cmdbuf) = 0;
   virtual void Destroy() = 0;
 };
 
