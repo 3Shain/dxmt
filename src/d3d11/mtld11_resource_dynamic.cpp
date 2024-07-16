@@ -181,8 +181,11 @@ public:
     exch->ExchangeFromPool(&buffer_dynamic, &buffer_handle, &buffer_mapped,
                            pool.get());
 #ifdef DXMT_DEBUG
-    buffer_dynamic->setLabel(
-        NS::String::string(debug_name.c_str(), NS::ASCIIStringEncoding));
+    {
+      auto pool = transfer(NS::AutoreleasePool::alloc()->init());
+      buffer_dynamic->setLabel(
+          NS::String::string(debug_name.c_str(), NS::ASCIIStringEncoding));
+    }
 #endif
     for (auto srv : weak_srvs) {
       srv->RotateView();

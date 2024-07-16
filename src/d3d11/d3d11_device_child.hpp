@@ -3,6 +3,7 @@
 #include "d3d11_device.hpp"
 #include "com/com_object.hpp"
 #include "com/com_private_data.hpp"
+#include "objc_pointer.hpp"
 
 namespace dxmt {
 
@@ -21,6 +22,7 @@ public:
   HRESULT STDMETHODCALLTYPE SetPrivateData(REFGUID guid, UINT DataSize,
                                            const void *pData) final {
     if (guid == WKPDID_D3DDebugObjectName) {
+      auto pool = transfer(NS::AutoreleasePool::alloc()->init());
       std::string str((char *)pData, DataSize);
       OnSetDebugObjectName(str.c_str());
     }
