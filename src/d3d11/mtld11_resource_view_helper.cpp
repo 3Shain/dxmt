@@ -116,6 +116,10 @@ HRESULT CreateMTLTextureView<D3D11_SHADER_RESOURCE_VIEW_DESC>(
     break;
   }
   case D3D_SRV_DIMENSION_TEXTURE2DMS: {
+    if (texture_type == MTL::TextureType2DMultisample) {
+      *ppView = pResource->newTextureView(metal_format.PixelFormat);
+      return S_OK;
+    }
     break;
   }
   case D3D_SRV_DIMENSION_TEXTURE2DMSARRAY: {
