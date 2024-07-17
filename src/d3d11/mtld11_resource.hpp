@@ -584,6 +584,16 @@ HRESULT GetLinearTextureLayout(IMTLD3D11Device *pDevice,
                                const TEXTURE_DESC *pDesc, uint32_t level,
                                uint32_t *pBytesPerRow, uint32_t *pBytesPerImage,
                                uint32_t *pBytesPerSlice);
+
+constexpr void
+CalculateBufferViewOffsetAndSize(const D3D11_BUFFER_DESC &buffer_desc,
+                                 uint32_t element_stride,
+                                 uint32_t first_element, uint32_t num_elements,
+                                 uint32_t &offset, uint32_t &size) {
+  offset = first_element * element_stride;
+  size = std::min(std::max(0u, buffer_desc.ByteWidth - offset),
+                  element_stride * num_elements);
+};
 #pragma endregion
 
 } // namespace dxmt

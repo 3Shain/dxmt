@@ -2804,8 +2804,8 @@ auto load_from_uint_bufptr(
     auto ptr = ctx.builder.CreateGEP(
       ctx.types._int, uint_buf_ptr, {ctx.builder.getInt32(i)}
     );
-    bool is_volatile = 
-      cast<llvm::PointerType>(ptr->getType())->getAddressSpace() !=1;
+    bool is_volatile =
+      cast<llvm::PointerType>(ptr->getType())->getAddressSpace() != 2;
     vec = ctx.builder.CreateInsertElement(
       vec,
       oob ? ctx.builder.CreateSelect(
@@ -2829,7 +2829,7 @@ auto store_to_uint_bufptr(
     );
     ctx.builder.CreateStore(
       ctx.builder.CreateExtractElement(ivec4_to_write, i), ptr,
-      cast<llvm::PointerType>(ptr->getType())->getAddressSpace() !=1
+      cast<llvm::PointerType>(ptr->getType())->getAddressSpace() != 2
     );
   }
   co_return {};
@@ -2904,13 +2904,11 @@ auto read_uint_buf_addr(
 ) -> IRValue {
   auto ctx = co_yield get_context();
   assert(ctx.resource.uav_buf_range_map.contains(uav.range_id));
-  auto &[handle, bound, stride] = ctx.resource.uav_buf_range_map[uav.range_id];
+  auto &[handle, bound, _] = ctx.resource.uav_buf_range_map[uav.range_id];
   if (index) {
     auto _bound = co_yield bound(nullptr);
     auto is_oob = ctx.builder.CreateICmpUGE(
-      index,
-      stride ? ctx.builder.CreateMul(ctx.builder.getInt32(stride >> 2), _bound)
-             : ctx.builder.CreateLShr(_bound, ctx.builder.getInt32(2))
+      index, ctx.builder.CreateLShr(_bound, ctx.builder.getInt32(2))
     );
     if (oob) {
       *oob = is_oob;
@@ -2930,14 +2928,12 @@ auto read_uint_buf_addr(
 ) -> IRValue {
   auto ctx = co_yield get_context();
   assert(ctx.resource.uav_buf_range_map.contains(uav.range_id));
-  auto &[handle, bound, stride] = ctx.resource.uav_buf_range_map[uav.range_id];
+  auto &[handle, bound, _] = ctx.resource.uav_buf_range_map[uav.range_id];
   if (index) {
     auto _bound = co_yield bound(nullptr);
 
     auto is_oob = ctx.builder.CreateICmpUGE(
-      index,
-      stride ? ctx.builder.CreateMul(ctx.builder.getInt32(stride >> 2), _bound)
-             : ctx.builder.CreateLShr(_bound, ctx.builder.getInt32(2))
+      index, ctx.builder.CreateLShr(_bound, ctx.builder.getInt32(2))
     );
     if (oob) {
       *oob = is_oob;
@@ -2957,14 +2953,12 @@ auto read_uint_buf_addr(
 ) -> IRValue {
   auto ctx = co_yield get_context();
   assert(ctx.resource.srv_buf_range_map.contains(srv.range_id));
-  auto &[handle, bound, stride] = ctx.resource.srv_buf_range_map[srv.range_id];
+  auto &[handle, bound, _] = ctx.resource.srv_buf_range_map[srv.range_id];
   if (index) {
     auto _bound = co_yield bound(nullptr);
 
     auto is_oob = ctx.builder.CreateICmpUGE(
-      index,
-      stride ? ctx.builder.CreateMul(ctx.builder.getInt32(stride >> 2), _bound)
-             : ctx.builder.CreateLShr(_bound, ctx.builder.getInt32(2))
+      index, ctx.builder.CreateLShr(_bound, ctx.builder.getInt32(2))
     );
     if (oob) {
       *oob = is_oob;
@@ -4528,12 +4522,15 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                   // FIXME: neg modifier might be wrong?!
                   auto src = co_yield load_src_op<false>(convert.src); // int4
                   auto half4 = ctx.builder.CreateBitCast(
-                    ctx.builder.CreateTrunc(src, llvm::FixedVectorType::get(
-                      llvm::IntegerType::getInt16Ty(ctx.llvm),4)), ctx.types._half4
+                    ctx.builder.CreateTrunc(
+                      src, llvm::FixedVectorType::get(
+                             llvm::IntegerType::getInt16Ty(ctx.llvm), 4
+                           )
+                    ),
+                    ctx.types._half4
                   );
                   co_return co_yield call_convert(
-                    half4,
-                    ctx.types._float, air::Sign::with_sign /* intended */
+                    half4, ctx.types._float, air::Sign::with_sign /* intended */
                   );
                 })
               );
@@ -4550,9 +4547,13 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                   );
                   co_return ctx.builder.CreateBitCast(
                     ctx.builder.CreateZExt(
-                      ctx.builder.CreateBitCast(half4, llvm::FixedVectorType::get(
-                      llvm::IntegerType::getInt16Ty(ctx.llvm),4))
-                      , ctx.types._int4),
+                      ctx.builder.CreateBitCast(
+                        half4, llvm::FixedVectorType::get(
+                                 llvm::IntegerType::getInt16Ty(ctx.llvm), 4
+                               )
+                      ),
+                      ctx.types._int4
+                    ),
                     ctx.types._int4
                   );
                 })
@@ -5074,9 +5075,15 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                 [](SrcOperandResource srv) -> IRValue {
                   auto ctx = co_yield get_context();
                   if (ctx.resource.srv_buf_range_map.contains(srv.range_id)) {
-                    auto &[_, srv_c, __] =
+                    auto &[_, srv_c, stride] =
                       ctx.resource.srv_buf_range_map[srv.range_id];
-                    co_return co_yield srv_c(nullptr);
+                    auto byte_width = co_yield srv_c(nullptr);
+                    if (stride) {
+                      co_return ctx.builder.CreateUDiv(
+                        byte_width, ctx.builder.getInt32(stride)
+                      );
+                    }
+                    co_return byte_width;
                   } else {
                     auto &[tex, srv_h] =
                       ctx.resource.srv_range_map[srv.range_id];
@@ -5089,9 +5096,15 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                 [](SrcOperandUAV uav) -> IRValue {
                   auto ctx = co_yield get_context();
                   if (ctx.resource.uav_buf_range_map.contains(uav.range_id)) {
-                    auto &[_, uav_c, __] =
+                    auto &[_, uav_c, stride] =
                       ctx.resource.uav_buf_range_map[uav.range_id];
-                    co_return co_yield uav_c(nullptr);
+                    auto byte_width = co_yield uav_c(nullptr);
+                    if (stride) {
+                      co_return ctx.builder.CreateUDiv(
+                        byte_width, ctx.builder.getInt32(stride)
+                      );
+                    }
+                    co_return byte_width;
                   } else {
                     auto &[tex, uav_h] =
                       ctx.resource.uav_range_map[uav.range_id];

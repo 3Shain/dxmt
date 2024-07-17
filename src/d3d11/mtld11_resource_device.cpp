@@ -76,7 +76,7 @@ public:
 
     BindingRef UseBindable(uint64_t seq_id) override {
       this->resource->occupancy.MarkAsOccupied(seq_id);
-      return std::invoke(f, seq_id, static_cast<SRV *>(this));
+      return std::invoke(f, static_cast<SRV *>(this));
     };
 
     ArgumentData
@@ -112,13 +112,14 @@ public:
         return E_INVALIDARG;
       }
       // StructuredBuffer
-      auto offset =
-          finalDesc.Buffer.FirstElement * this->desc.StructureByteStride;
-      auto size = finalDesc.Buffer.NumElements;
+      uint32_t offset, size;
+      CalculateBufferViewOffsetAndSize(
+          desc, desc.StructureByteStride, finalDesc.Buffer.FirstElement,
+          finalDesc.Buffer.NumElements, offset, size);
       *ppView = ref(new SRV(
           &finalDesc, this, m_parent,
           ArgumentData(buffer_handle + offset, size),
-          [ctx = Com(this), offset, size](uint64_t, auto _this) {
+          [ctx = Com(this), offset, size](auto _this) {
             return BindingRef(static_cast<ID3D11ShaderResourceView *>(_this),
                               ctx->buffer.ptr(), size, offset);
           }));
@@ -128,19 +129,16 @@ public:
         finalDesc.BufferEx.Flags & D3D11_BUFFEREX_SRV_FLAG_RAW) {
       if (!allow_raw_view)
         return E_INVALIDARG;
-      D3D11_ASSERT(finalDesc.Format != DXGI_FORMAT_UNKNOWN);
-      MTL_FORMAT_DESC metal_format;
-      Com<IMTLDXGIAdatper> adapter;
-      m_parent->GetAdapter(&adapter);
-      if (FAILED(adapter->QueryFormatDesc(finalDesc.Format, &metal_format))) {
+      if (finalDesc.Format != DXGI_FORMAT_R32_TYPELESS)
         return E_INVALIDARG;
-      }
-      auto offset = finalDesc.Buffer.FirstElement * metal_format.BytesPerTexel;
-      auto size = finalDesc.Buffer.NumElements * metal_format.BytesPerTexel;
+      uint32_t offset, size;
+      CalculateBufferViewOffsetAndSize(
+          desc, sizeof(uint32_t), finalDesc.Buffer.FirstElement,
+          finalDesc.Buffer.NumElements, offset, size);
       *ppView = ref(new SRV(
           &finalDesc, this, m_parent,
           ArgumentData(buffer_handle + offset, size),
-          [ctx = Com(this), offset, size](uint64_t, auto _this) {
+          [ctx = Com(this), offset, size](auto _this) {
             return BindingRef(static_cast<ID3D11ShaderResourceView *>(_this),
                               ctx->buffer.ptr(), size, offset);
           }));
@@ -154,7 +152,7 @@ public:
     }
     *ppView = ref(new SRV(&finalDesc, this, m_parent,
                           ArgumentData(view->gpuResourceID(), view.ptr()),
-                          [view = std::move(view)](uint64_t, auto _this) {
+                          [view = std::move(view)](auto _this) {
                             return BindingRef(
                                 static_cast<ID3D11ShaderResourceView *>(_this),
                                 view.ptr());
@@ -179,7 +177,7 @@ public:
 
     BindingRef UseBindable(uint64_t seq_id) override {
       this->resource->occupancy.MarkAsOccupied(seq_id);
-      return std::invoke(f, seq_id, this);
+      return std::invoke(f, this);
     };
 
     ArgumentData
@@ -212,57 +210,50 @@ public:
         return E_INVALIDARG;
       }
       // StructuredBuffer
-      auto offset =
-          finalDesc.Buffer.FirstElement * this->desc.StructureByteStride;
-      auto size = finalDesc.Buffer.NumElements;
+      uint32_t offset, size;
+      CalculateBufferViewOffsetAndSize(
+          desc, desc.StructureByteStride, finalDesc.Buffer.FirstElement,
+          finalDesc.Buffer.NumElements, offset, size);
       *ppView = ref(new UAV(
           &finalDesc, this, m_parent,
           ArgumentData(buffer_handle + offset, size),
-          [ctx = Com(this), offset, size](uint64_t, auto _this) {
+          [ctx = Com(this), offset, size](auto _this) {
             return BindingRef(static_cast<ID3D11UnorderedAccessView *>(_this),
                               ctx->buffer.ptr(), size, offset);
           }));
       return S_OK;
-    } else {
-      if (finalDesc.Buffer.Flags & D3D11_BUFFER_UAV_FLAG_RAW) {
-        if (!allow_raw_view)
-          return E_INVALIDARG;
-        D3D11_ASSERT(finalDesc.Format != DXGI_FORMAT_UNKNOWN);
-        MTL_FORMAT_DESC metal_format;
-        Com<IMTLDXGIAdatper> adapter;
-        m_parent->GetAdapter(&adapter);
-        if (FAILED(adapter->QueryFormatDesc(finalDesc.Format, &metal_format))) {
-          return E_INVALIDARG;
-        }
-        auto offset =
-            finalDesc.Buffer.FirstElement * metal_format.BytesPerTexel;
-        auto size = finalDesc.Buffer.NumElements * metal_format.BytesPerTexel;
-        *ppView = ref(new UAV(
-            &finalDesc, this, m_parent,
-            ArgumentData(buffer_handle + offset, size),
-            [ctx = Com(this), offset, size](uint64_t, auto _this) {
-              return BindingRef(static_cast<ID3D11UnorderedAccessView *>(_this),
-                                ctx->buffer.ptr(), size, offset);
-            }));
-        return S_OK;
-      } else {
-        Obj<MTL::Texture> view;
-        if (FAILED(CreateMTLTextureView(this->m_parent, this->buffer,
-                                        &finalDesc, &view))) {
-          return E_FAIL;
-        }
-        *ppView = ref(new UAV(
-            &finalDesc, this, m_parent,
-            ArgumentData(view->gpuResourceID(), view.ptr()),
-            [view = std::move(view)](uint64_t, auto _this) {
-              return BindingRef(static_cast<ID3D11UnorderedAccessView *>(_this),
-                                view.ptr());
-            }));
-        return S_OK;
-      }
     }
-    ERR("DeviceBuffer: UAV not supported");
-    return E_FAIL;
+    if (finalDesc.Buffer.Flags & D3D11_BUFFER_UAV_FLAG_RAW) {
+      if (!allow_raw_view)
+        return E_INVALIDARG;
+      if (finalDesc.Format != DXGI_FORMAT_R32_TYPELESS)
+        return E_INVALIDARG;
+      uint32_t offset, size;
+      CalculateBufferViewOffsetAndSize(
+          desc, sizeof(uint32_t), finalDesc.Buffer.FirstElement,
+          finalDesc.Buffer.NumElements, offset, size);
+      *ppView = ref(new UAV(
+          &finalDesc, this, m_parent,
+          ArgumentData(buffer_handle + offset, size),
+          [ctx = Com(this), offset, size](auto _this) {
+            return BindingRef(static_cast<ID3D11UnorderedAccessView *>(_this),
+                              ctx->buffer.ptr(), size, offset);
+          }));
+      return S_OK;
+    }
+    Obj<MTL::Texture> view;
+    if (FAILED(CreateMTLTextureView(this->m_parent, this->buffer, &finalDesc,
+                                    &view))) {
+      return E_FAIL;
+    }
+    *ppView = ref(new UAV(&finalDesc, this, m_parent,
+                          ArgumentData(view->gpuResourceID(), view.ptr()),
+                          [view = std::move(view)](auto _this) {
+                            return BindingRef(
+                                static_cast<ID3D11UnorderedAccessView *>(_this),
+                                view.ptr());
+                          }));
+    return S_OK;
   };
 
   HRESULT CreateRenderTargetView(const D3D11_RENDER_TARGET_VIEW_DESC *desc,

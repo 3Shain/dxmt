@@ -299,9 +299,10 @@ public:
         return E_INVALIDARG;
       }
       // StructuredBuffer
-      auto offset =
-          finalDesc.Buffer.FirstElement * this->desc.StructureByteStride;
-      auto size = finalDesc.Buffer.NumElements;
+      uint32_t offset, size;
+      CalculateBufferViewOffsetAndSize(
+          this->desc, desc.StructureByteStride, finalDesc.Buffer.FirstElement,
+          finalDesc.Buffer.NumElements, offset, size);
       *ppView = ref(new SRV(&finalDesc, this, m_parent, offset, size));
       return S_OK;
     }
@@ -309,15 +310,12 @@ public:
         finalDesc.BufferEx.Flags & D3D11_BUFFEREX_SRV_FLAG_RAW) {
       if (!allow_raw_view)
         return E_INVALIDARG;
-      D3D11_ASSERT(finalDesc.Format != DXGI_FORMAT_UNKNOWN);
-      MTL_FORMAT_DESC metal_format;
-      Com<IMTLDXGIAdatper> adapter;
-      m_parent->GetAdapter(&adapter);
-      if (FAILED(adapter->QueryFormatDesc(finalDesc.Format, &metal_format))) {
+      if (finalDesc.Format != DXGI_FORMAT_R32_TYPELESS)
         return E_INVALIDARG;
-      }
-      auto offset = finalDesc.Buffer.FirstElement * metal_format.BytesPerTexel;
-      auto size = finalDesc.Buffer.NumElements * metal_format.BytesPerTexel;
+      uint32_t offset, size;
+      CalculateBufferViewOffsetAndSize(
+          this->desc, sizeof(uint32_t), finalDesc.Buffer.FirstElement,
+          finalDesc.Buffer.NumElements, offset, size);
       *ppView = ref(new SRV(&finalDesc, this, m_parent, offset, size));
       return S_OK;
     }
