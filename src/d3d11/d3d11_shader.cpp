@@ -4,36 +4,53 @@
 #define __METALCPP__ 1
 #include "d3d11_private.h"
 #include "d3d11_shader.hpp"
-#include "Metal/MTLArgumentEncoder.hpp"
 #include "Metal/MTLLibrary.hpp"
 #include "airconv_public.h"
 #include "d3d11_device_child.hpp"
 #include "objc_pointer.hpp"
+#include "DXBCParser/DXBCUtils.h"
 
 namespace dxmt {
 
 struct tag_vertex_shader {
   using COM = ID3D11VertexShader;
+  using DATA = void *;
 };
 
 struct tag_pixel_shader {
   using COM = ID3D11PixelShader;
+  using DATA = void *;
 };
 
 struct tag_hull_shader {
   using COM = ID3D11HullShader;
+  using DATA = void *;
 };
 
 struct tag_domain_shader {
   using COM = ID3D11DomainShader;
+  using DATA = void *;
 };
 
 struct tag_geometry_shader {
   using COM = ID3D11GeometryShader;
+  using DATA = void *;
 };
 
 struct tag_compute_shader {
   using COM = ID3D11ComputeShader;
+  using DATA = void *;
+};
+
+struct EMULATED_VERTEX_SO_DATA {
+  uint32_t NumSlots = 0;
+  std::array<uint32_t, 4> Strides{{}};
+  std::vector<SM50_STREAM_OUTPUT_ELEMENT> Elements;
+};
+
+struct tag_emulated_vertex_so {
+  using COM = ID3D11GeometryShader;
+  using DATA = EMULATED_VERTEX_SO_DATA;
 };
 
 static std::atomic_uint64_t global_id = 0;
@@ -44,9 +61,10 @@ class TShaderBase
 public:
   TShaderBase(IMTLD3D11Device *device, SM50Shader *sm50,
               MTL_SHADER_REFLECTION &reflection, const void *pShaderBytecode,
-              SIZE_T BytecodeLength)
+              SIZE_T BytecodeLength, typename tag::DATA &&data)
       : MTLD3D11DeviceChild<typename tag::COM, IMTLD3D11Shader>(device),
-        sm50(sm50), reflection(reflection) {
+        sm50(sm50), reflection(reflection),
+        data(std::forward<typename tag::DATA>(data)) {
     id = ++global_id;
 #ifdef DXMT_DEBUG
     dump_len = BytecodeLength;
@@ -104,8 +122,8 @@ public:
   Com<IMTLCompiledShader> precompiled_;
   std::unordered_map<uint64_t, Com<IMTLCompiledShader>>
       with_input_layout_fixup_;
-  Obj<MTL::ArgumentEncoder> encoder_;
   uint64_t id;
+  typename tag::DATA data;
 #ifdef DXMT_DEBUG
   void *dump;
   uint64_t dump_len;
@@ -252,15 +270,67 @@ private:
   SM50_SHADER_COMPILATION_INPUT_SIGN_MASK_DATA data;
 };
 
+class AirconvShaderEmulatedVertexSO
+    : public AirconvShader<tag_emulated_vertex_so> {
+public:
+  AirconvShaderEmulatedVertexSO(IMTLD3D11Device *pDevice,
+                                TShaderBase<tag_emulated_vertex_so> *shader,
+                                uint64_t sign_mask_)
+      : AirconvShader<tag_emulated_vertex_so>(pDevice, shader, &data) {
+    data.type = SM50_SHADER_EMULATE_VERTEX_STREAM_OUTPUT;
+    data.next = &data_sign_mask;
+    data.num_output_slots = shader->data.NumSlots;
+    data.num_elements = shader->data.Elements.size();
+    memcpy(data.strides, shader->data.Strides.data(), sizeof(data.strides));
+    data.elements = shader->data.Elements.data();
+
+    data_sign_mask.type = SM50_SHADER_COMPILATION_INPUT_SIGN_MASK;
+    data_sign_mask.next = nullptr;
+    data_sign_mask.sign_mask = sign_mask_;
+  };
+
+private:
+  std::vector<uint32_t> entries;
+  SM50_SHADER_EMULATE_VERTEX_STREAM_OUTPUT_DATA data;
+  SM50_SHADER_COMPILATION_INPUT_SIGN_MASK_DATA data_sign_mask;
+};
+
+template <>
+void TShaderBase<tag_emulated_vertex_so>::GetCompiledShader(
+    IMTLCompiledShader **pShader) {
+  if (!precompiled_) {
+    precompiled_ = new AirconvShaderEmulatedVertexSO(this->m_parent, this, 0);
+    precompiled_->SubmitWork();
+  }
+  *pShader = precompiled_.ref();
+  return;
+}
+
 template <typename tag>
 void TShaderBase<tag>::GetCompiledShader(IMTLCompiledShader **pShader) {
-  // pArgs not used at the moment
   if (!precompiled_) {
     precompiled_ = new AirconvShader(this->m_parent, this, nullptr);
     precompiled_->SubmitWork();
   }
   *pShader = precompiled_.ref();
   return;
+}
+
+template <>
+void TShaderBase<tag_emulated_vertex_so>::GetCompiledShaderWithInputLayerFixup(
+    uint64_t sign_mask, IMTLCompiledShader **pShader) {
+  if (sign_mask == 0) {
+    return GetCompiledShader(pShader);
+  }
+  if (with_input_layout_fixup_.contains(sign_mask)) {
+    *pShader = with_input_layout_fixup_[sign_mask].ref();
+  } else {
+    IMTLCompiledShader *shader =
+        new AirconvShaderEmulatedVertexSO(this->m_parent, this, sign_mask);
+    shader->SubmitWork();
+    with_input_layout_fixup_.emplace(sign_mask, shader);
+    *pShader = ref(shader);
+  }
 }
 
 template <typename tag>
@@ -297,8 +367,8 @@ HRESULT CreateShaderInternal(IMTLD3D11Device *pDevice,
     SM50Destroy(sm50);
     return S_FALSE;
   }
-  *ppShader = ref(new TShaderBase<tag>(pDevice, sm50, reflection,
-                                       pShaderBytecode, BytecodeLength));
+  *ppShader = ref(new TShaderBase<tag>(
+      pDevice, sm50, reflection, pShaderBytecode, BytecodeLength, nullptr));
   return S_OK;
 }
 
@@ -422,6 +492,104 @@ HRESULT CreateComputeShader(IMTLD3D11Device *pDevice,
                             ID3D11ComputeShader **ppShader) {
   return CreateShaderInternal<tag_compute_shader>(pDevice, pShaderBytecode,
                                                   BytecodeLength, ppShader);
+}
+
+HRESULT CreateEmulatedVertexStreamOutputShader(
+    IMTLD3D11Device *pDevice, const void *pShaderBytecode,
+    SIZE_T BytecodeLength, ID3D11GeometryShader **ppShader, UINT NumEntries,
+    const D3D11_SO_DECLARATION_ENTRY *pEntries, UINT NumStrides,
+    const UINT *pStrides) {
+  using namespace microsoft;
+  EMULATED_VERTEX_SO_DATA data{};
+  std::array<uint32_t, 4> &strides = data.Strides;
+  std::array<uint32_t, 4> &offsets = strides;
+  CSignatureParser parser;
+  HRESULT hr = DXBCGetOutputSignature(pShaderBytecode, &parser);
+  if (FAILED(hr)) {
+    return hr;
+  }
+  const D3D11_SIGNATURE_PARAMETER *pParamters;
+  auto numParameteres = parser.GetParameters(&pParamters);
+  for (unsigned i = 0; i < NumEntries; i++) {
+    auto entry = pEntries[i];
+    if (entry.Stream != 0) {
+      ERR("CreateEmulatedVertexStreamOutputShader: stream must be 0");
+      return E_INVALIDARG;
+    }
+    if (entry.OutputSlot > 3 || entry.OutputSlot < 0) {
+      ERR("CreateEmulatedVertexStreamOutputShader: invalid output slot ",
+          entry.OutputSlot);
+      return E_INVALIDARG;
+    }
+    // FIXME: support more than 1 output slot
+    if (entry.OutputSlot != 0) {
+      ERR("CreateEmulatedVertexStreamOutputShader: only slot 0 supported");
+      return E_INVALIDARG;
+    }
+    if ((entry.ComponentCount - entry.StartComponent) < 0 ||
+        (entry.ComponentCount + entry.StartComponent) > 4) {
+      ERR("CreateEmulatedVertexStreamOutputShader: invalid components");
+      return E_INVALIDARG;
+    }
+    if ((entry.ComponentCount - entry.StartComponent) == 0) {
+      continue;
+    }
+    if (entry.SemanticName == nullptr) {
+      // skip hole
+      for (unsigned i = 0; i < entry.ComponentCount; i++) {
+        auto offset = offsets[entry.OutputSlot];
+        offsets[entry.OutputSlot] += sizeof(float);
+        auto component = entry.StartComponent + i;
+        data.Elements.push_back({.reg_id = 0xffffffff,
+                                 .component = component,
+                                 .output_slot = entry.OutputSlot,
+                                 .offset = offset});
+      }
+      continue;
+    }
+    auto pDesc = std::find_if(
+        pParamters, pParamters + numParameteres,
+        [&](const D3D11_SIGNATURE_PARAMETER &Ele) {
+          return Ele.SemanticIndex == entry.SemanticIndex &&
+                 strcasecmp(Ele.SemanticName, entry.SemanticName) == 0;
+        });
+    if (pDesc == pParamters + numParameteres) {
+      ERR("CreateEmulatedVertexStreamOutputShader: output parameter not found");
+      return E_INVALIDARG;
+    }
+    auto reg_id = pDesc->Register;
+    for (unsigned i = 0; i < entry.ComponentCount; i++) {
+      auto offset = offsets[entry.OutputSlot];
+      offsets[entry.OutputSlot] += sizeof(float);
+      auto component = entry.StartComponent + i;
+      data.Elements.push_back({.reg_id = reg_id,
+                               .component = component,
+                               .output_slot = entry.OutputSlot,
+                               .offset = offset});
+    }
+  }
+
+  for (unsigned slot = 0; slot < NumStrides; slot++) {
+    strides[slot] = pStrides[slot];
+  }
+
+  SM50Shader *sm50;
+  SM50Error *err;
+  MTL_SHADER_REFLECTION reflection;
+  if (SM50Initialize(pShaderBytecode, BytecodeLength, &sm50, &reflection,
+                     &err)) {
+    ERR("Failed to initialize shader: ", SM50GetErrorMesssage(err));
+    SM50FreeError(err);
+    return E_FAIL;
+  }
+  if (ppShader == nullptr) {
+    SM50Destroy(sm50);
+    return S_FALSE;
+  }
+  *ppShader = ref(new TShaderBase<tag_emulated_vertex_so>(
+      pDevice, sm50, reflection, pShaderBytecode, BytecodeLength,
+      std::move(data)));
+  return S_OK;
 }
 
 } // namespace dxmt

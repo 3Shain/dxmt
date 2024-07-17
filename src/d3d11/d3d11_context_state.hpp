@@ -125,9 +125,21 @@ struct D3D11OutputMergerStageState {
   UINT SampleMask;
 };
 
+struct STREAM_OUTPUT_BUFFER_B {
+  IUnknown *RawPointer = 0;
+  Com<IMTLBindable> Buffer;
+  UINT Offset;
+};
+
+template <> struct redunant_binding_trait<STREAM_OUTPUT_BUFFER_B> {
+  static bool is_redunant(const STREAM_OUTPUT_BUFFER_B &left,
+                          const STREAM_OUTPUT_BUFFER_B &right) {
+    return left.RawPointer == right.RawPointer;
+  }
+};
+
 struct D3D11StreamOutputStageState {
-  Com<ID3D11Buffer> output_buffers[4];
-  UINT output_buffer_offsets[4];
+  BindingSet<STREAM_OUTPUT_BUFFER_B, 4> Targets;
 };
 
 struct D3D11RasterizerStageState {
@@ -144,7 +156,7 @@ struct D3D11RasterizerStageState {
 struct D3D11ContextState {
   std::array<D3D11ShaderStageState, 6> ShaderStages = {{}};
   D3D11ComputeStageState ComputeStageUAV = {};
-  D3D11StreamOutputStageState stream_output = {};
+  D3D11StreamOutputStageState StreamOutput = {};
   D3D11InputAssemblerStageState InputAssembler = {};
   D3D11OutputMergerStageState OutputMerger = {};
   D3D11RasterizerStageState Rasterizer = {};

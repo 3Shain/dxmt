@@ -168,15 +168,32 @@ HRESULT CreateInputLayout(IMTLD3D11Device *device,
     }
     attribute.format = metal_format.AttributeFormat;
     // FIXME: incomplete. just check sign of ComponentType
-    if (inputSig.ComponentType ==
-            microsoft::D3D10_SB_REGISTER_COMPONENT_SINT32 &&
-        desc.Format == DXGI_FORMAT_R8G8B8A8_UINT) {
-      sign_mask |= (1 << inputSig.Register);
-    }
-    if (inputSig.ComponentType ==
-            microsoft::D3D10_SB_REGISTER_COMPONENT_SINT32 &&
-        desc.Format == DXGI_FORMAT_R16G16B16A16_UINT) {
-      sign_mask |= (1 << inputSig.Register);
+    {
+      if (inputSig.ComponentType ==
+              microsoft::D3D10_SB_REGISTER_COMPONENT_SINT32 &&
+          desc.Format == DXGI_FORMAT_R8G8B8A8_UINT) {
+        sign_mask |= (1 << inputSig.Register);
+      }
+      if (inputSig.ComponentType ==
+              microsoft::D3D10_SB_REGISTER_COMPONENT_SINT32 &&
+          desc.Format == DXGI_FORMAT_R16G16B16A16_UINT) {
+        sign_mask |= (1 << inputSig.Register);
+      }
+      if (inputSig.ComponentType ==
+              microsoft::D3D10_SB_REGISTER_COMPONENT_SINT32 &&
+          desc.Format == DXGI_FORMAT_R32G32B32A32_UINT) {
+        sign_mask |= (1 << inputSig.Register);
+      }
+      if (inputSig.ComponentType ==
+              microsoft::D3D10_SB_REGISTER_COMPONENT_SINT32 &&
+          desc.Format == DXGI_FORMAT_R32_UINT) {
+        sign_mask |= (1 << inputSig.Register);
+      }
+      if (inputSig.ComponentType ==
+              microsoft::D3D10_SB_REGISTER_COMPONENT_SINT32 &&
+          desc.Format == DXGI_FORMAT_R32G32_UINT) {
+        sign_mask |= (1 << inputSig.Register);
+      }
     }
     attribute.element_stride = metal_format.BytesPerTexel;
     attribute.slot = desc.InputSlot;

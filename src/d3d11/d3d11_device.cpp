@@ -33,7 +33,7 @@ template <> struct hash<MTL_GRAPHICS_PIPELINE_DESC> {
     state.add((size_t)v.VertexShader); // FIXME: don't use pointer?
     state.add((size_t)v.PixelShader);  // FIXME: don't use pointer?
     state.add((size_t)v.InputLayout);  // FIXME: don't use pointer?
-    state.add(v.BlendState->GetHash());
+    state.add(v.BlendState ? v.BlendState->GetHash(): 0);
     state.add((size_t)v.DepthStencilFormat);
     state.add((size_t)v.NumColorAttachments);
     for (unsigned i = 0; i < std::size(v.ColorAttachmentFormats); i++) {
@@ -335,6 +335,18 @@ public:
     if (pClassLinkage != nullptr)
       WARN("Class linkage not supported");
 
+    if (NumEntries > 0 && RasterizedStream == D3D11_SO_NO_RASTERIZED_STREAM &&
+        ((char *)pShaderBytecode)[0] == 'D' &&
+        ((char *)pShaderBytecode)[1] == 'X' &&
+        ((char *)pShaderBytecode)[2] == 'B' &&
+        ((char *)pShaderBytecode)[3] == 'C') {
+      // FIXME: ensure the input shader is a vertex shader
+      WARN("Emulate stream output");
+
+      return dxmt::CreateEmulatedVertexStreamOutputShader(
+          this, pShaderBytecode, BytecodeLength, ppGeometryShader, NumEntries,
+          pSODeclaration, NumStrides, pBufferStrides);
+    }
     ERR("CreateGeometryShaderWithStreamOutput: not supported, expect problem");
     return dxmt::CreateDummyGeometryShader(this, pShaderBytecode,
                                            BytecodeLength, ppGeometryShader);

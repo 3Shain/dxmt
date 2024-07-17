@@ -1,7 +1,6 @@
 #include "d3d11_private.h"
 #include "Metal/MTLComputePipeline.hpp"
 #include "Metal/MTLDevice.hpp"
-#include "dxmt_names.hpp"
 #include "d3d11_pipeline.hpp"
 #include "Metal/MTLPixelFormat.hpp"
 #include "Metal/MTLRenderPipeline.hpp"
@@ -65,17 +64,23 @@ public:
 
     Obj<NS::Error> err;
     MTL_COMPILED_SHADER vs, ps;
-    pVertexShader->GetShader(&vs); // may block
-    pPixelShader->GetShader(&ps);  // may block
 
     auto pipelineDescriptor =
         transfer(MTL::RenderPipelineDescriptor::alloc()->init());
+    pVertexShader->GetShader(&vs); // may block
     pipelineDescriptor->setVertexFunction(vs.Function);
-    pipelineDescriptor->setFragmentFunction(ps.Function);
-    if (pInputLayout) {
-      pInputLayout->Bind(pipelineDescriptor); // stride is not in use?
+    if (pPixelShader) {
+      pPixelShader->GetShader(&ps); // may block
+      pipelineDescriptor->setFragmentFunction(ps.Function);
+    } else {
+      pipelineDescriptor->setRasterizationEnabled(false);
     }
-    pBlendState->SetupMetalPipelineDescriptor(pipelineDescriptor);
+    if (pInputLayout) {
+      pInputLayout->Bind(pipelineDescriptor);
+    }
+    if (pBlendState) {
+      pBlendState->SetupMetalPipelineDescriptor(pipelineDescriptor);
+    }
 
     pInputLayout = nullptr;
     pBlendState = nullptr;

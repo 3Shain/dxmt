@@ -1259,6 +1259,45 @@ public:
     cmdbuf_state = CommandBufferState::ComputeEncoderActive;
   }
 
+  bool FinalizeNoRasterizationRenderPipeline(IMTLD3D11Shader *pVertexShader) {
+
+    if (!SwitchToRenderEncoder()) {
+      return false;
+    }
+
+    CommandChunk *chk = cmd_queue.CurrentChunk();
+
+    Com<IMTLCompiledGraphicsPipeline> pipeline;
+    Com<IMTLCompiledShader> vs;
+    if (state_.InputAssembler.InputLayout &&
+        state_.InputAssembler.InputLayout->NeedsFixup()) {
+      MTL_SHADER_INPUT_LAYOUT_FIXUP fixup;
+      state_.InputAssembler.InputLayout->GetShaderFixupInfo(&fixup);
+      pVertexShader->GetCompiledShaderWithInputLayerFixup(fixup.sign_mask, &vs);
+    } else {
+      pVertexShader->GetCompiledShader(&vs);
+    }
+    MTL_GRAPHICS_PIPELINE_DESC pipelineDesc;
+    pipelineDesc.VertexShader = vs.ptr();
+    pipelineDesc.PixelShader = nullptr;
+    pipelineDesc.InputLayout = state_.InputAssembler.InputLayout.ptr();
+    pipelineDesc.NumColorAttachments = 0;
+    pipelineDesc.BlendState = nullptr;
+    pipelineDesc.DepthStencilFormat = MTL::PixelFormatInvalid;
+
+    device->CreateGraphicsPipeline(&pipelineDesc, &pipeline);
+
+    chk->emit([pso = std::move(pipeline)](CommandChunk::context &ctx) {
+      MTL_COMPILED_GRAPHICS_PIPELINE GraphicsPipeline;
+      pso->GetPipeline(&GraphicsPipeline); // may block
+      ctx.render_encoder->setRenderPipelineState(
+          GraphicsPipeline.PipelineState);
+    });
+
+    cmdbuf_state = CommandBufferState::RenderPipelineReady;
+    return true;
+  };
+
   /**
   Assume we have all things needed to build PSO
   If the current encoder is not a render encoder, switch to it.
@@ -1281,6 +1320,10 @@ public:
       return false;
     }
     if (state_.ShaderStages[(UINT)ShaderType::Geometry].Shader) {
+      if (!state_.ShaderStages[(UINT)ShaderType::Pixel].Shader) {
+        return FinalizeNoRasterizationRenderPipeline(
+            state_.ShaderStages[(UINT)ShaderType::Geometry].Shader.ptr());
+      }
       // ERR("geometry shader is not supported yet, skip drawcall");
       return false;
     }
@@ -1356,6 +1399,7 @@ public:
     }
     CommandChunk *chk = cmd_queue.CurrentChunk();
     UpdateVertexBuffer();
+    UpdateSOTargets();
     if (dirty_state.any(DirtyState::DepthStencilState)) {
       auto state = state_.OutputMerger.DepthStencilState
                        ? state_.OutputMerger.DepthStencilState
@@ -1509,6 +1553,9 @@ public:
 
   template <ShaderType stage> bool UploadShaderStageResourceBinding() {
     auto &ShaderStage = state_.ShaderStages[(UINT)stage];
+    if (!ShaderStage.Shader) {
+      return true;
+    }
     auto &UAVBindingSet = stage == ShaderType::Compute
                               ? state_.ComputeStageUAV.UAVs
                               : state_.OutputMerger.UAVs;
@@ -1812,6 +1859,43 @@ public:
       });
       VertexBuffers.clear_dirty(index);
     };
+  }
+
+  void UpdateSOTargets() {
+    if (state_.ShaderStages[(UINT)ShaderType::Pixel].Shader) {
+      return;
+    }
+    /**
+    FIXME: support all slots
+     */
+    if (!state_.StreamOutput.Targets.test_dirty(0)) {
+      return;
+    }
+    if (state_.StreamOutput.Targets.test_bound(0)) {
+      auto &so_slot0 = state_.StreamOutput.Targets[0];
+      if (so_slot0.Offset == 0xFFFFFFFF) {
+        ERR("UpdateSOTargets: appending is not supported, expect problem");
+        EmitRenderCommand(
+            [buffer = so_slot0.Buffer->UseBindable(cmd_queue.CurrentSeqId())](
+                MTL::RenderCommandEncoder *encoder) {
+              encoder->setVertexBuffer(buffer.buffer(), 0, 20);
+            });
+      } else {
+        EmitRenderCommand(
+            [buffer = so_slot0.Buffer->UseBindable(cmd_queue.CurrentSeqId()),
+             offset = so_slot0.Offset](MTL::RenderCommandEncoder *encoder) {
+              encoder->setVertexBuffer(buffer.buffer(), offset, 20);
+            });
+      }
+    } else {
+      EmitRenderCommand([](MTL::RenderCommandEncoder *encoder) {
+        encoder->setVertexBuffer(nullptr, 0, 20);
+      });
+    }
+    state_.StreamOutput.Targets.clear_dirty(0);
+    if(state_.StreamOutput.Targets.any_dirty()) {
+      ERR("UpdateSOTargets: non-zero slot is marked dirty but not bound, expect problem");
+    }
   }
 
   void Commit() {

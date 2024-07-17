@@ -1084,7 +1084,31 @@ public:
 
   void SOSetTargets(UINT NumBuffers, ID3D11Buffer *const *ppSOTargets,
                     const UINT *pOffsets) override {
-    ERR("SOSetTargets: stub");
+    if (NumBuffers == 0) {
+      NumBuffers = 4; // see msdn description of SOSetTargets
+    }
+    for (unsigned slot = 0; slot < NumBuffers; slot++) {
+      auto pBuffer = ppSOTargets ? ppSOTargets[slot] : nullptr;
+      if (pBuffer) {
+        bool replaced = false;
+        auto &entry =
+            state_.StreamOutput.Targets.bind(slot, {pBuffer}, replaced);
+        if (!replaced) {
+          auto offset = pOffsets ? pOffsets[slot] : 0;
+          if (offset != entry.Offset) {
+            state_.StreamOutput.Targets.set_dirty(slot);
+            entry.Offset = offset;
+          }
+          continue;
+        }
+        if (auto bindable = com_cast<IMTLBindable>(pBuffer)) {
+          entry.Buffer = std::move(bindable);
+          entry.Offset = pOffsets ? pOffsets[slot] : 0;
+        }
+      } else {
+        state_.StreamOutput.Targets.unbind(slot);
+      }
+    }
   }
 
   void SOGetTargets(UINT NumBuffers, ID3D11Buffer **ppSOTargets) override {
