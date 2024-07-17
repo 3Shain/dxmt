@@ -65,6 +65,22 @@ public:
 
 namespace dxmt::dxbc {
 
+constexpr air::MSLScalerOrVectorType to_msl_type(RegisterComponentType type) {
+  switch (type) {
+  case RegisterComponentType::Unknown: {
+    assert(0 && "unknown component type");
+    break;
+  }
+  case RegisterComponentType::Uint:
+    return air::msl_uint4;
+  case RegisterComponentType::Int:
+    return air::msl_int4;
+  case RegisterComponentType::Float:
+    return air::msl_float4;
+    break;
+  }
+}
+
 llvm::Error convertDXBC(
   SM50Shader *pShader, const char *name, llvm::LLVMContext &context,
   llvm::Module &module, SM50_SHADER_COMPILATION_ARGUMENT_DATA *pArgs
@@ -1235,9 +1251,7 @@ int SM50Initialize(
         auto name = sig.fullSemanticString();
         auto assigned_index = func_signature.DefineInput(InputFragmentStageIn{
           .user = name,
-          .type = sig.componentType() == RegisterComponentType::Float
-                    ? msl_float4
-                    : msl_int4,
+          .type = to_msl_type(sig.componentType()),
           .interpolation = interpolation
         });
         prelogue_.push_back([=](IREffect &prelogue) {
@@ -1341,9 +1355,7 @@ int SM50Initialize(
           if (sm50_shader->shader_type == D3D10_SB_PIXEL_SHADER) {
             assigned_index = func_signature.DefineOutput(OutputRenderTarget{
               .index = reg,
-              .type = sig.componentType() == RegisterComponentType::Float
-                        ? msl_float4
-                        : msl_int4
+              .type = to_msl_type(sig.componentType()),
             });
             epilogue_.push_back([=](IRValue &epilogue) {
               epilogue >> pop_output_reg(reg, mask, assigned_index);
@@ -1351,9 +1363,7 @@ int SM50Initialize(
           } else {
             assigned_index = func_signature.DefineOutput(OutputVertex{
               .user = sig.fullSemanticString(),
-              .type = sig.componentType() == RegisterComponentType::Float
-                        ? msl_float4
-                        : msl_int4,
+              .type = to_msl_type(sig.componentType()),
             });
             epilogue_.push_back([=](IRValue &epilogue) {
               epilogue >> pop_output_reg(reg, mask, assigned_index);
