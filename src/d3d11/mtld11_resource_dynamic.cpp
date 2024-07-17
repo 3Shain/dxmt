@@ -1,14 +1,12 @@
-#include "d3d11_private.h"
 #include "Metal/MTLPixelFormat.hpp"
-#include "Metal/MTLResource.hpp"
-#include "com/com_object.hpp"
+#include "Metal/MTLBuffer.hpp"
+#include "Metal/MTLTexture.hpp"
+#include "d3d11_private.h"
 #include "com/com_pointer.hpp"
 #include "d3d11_device.hpp"
 #include "dxgi_interfaces.h"
 #include "dxmt_buffer_pool.hpp"
 #include "mtld11_resource.hpp"
-#include "Metal/MTLBuffer.hpp"
-#include "Metal/MTLTexture.hpp"
 #include "objc_pointer.hpp"
 #include <vector>
 
@@ -83,6 +81,8 @@ private:
 #ifdef DXMT_DEBUG
   std::string debug_name;
 #endif
+  bool structured;
+  bool allow_raw_view;
 
   std::vector<IMTLNotifiedBindable *> observers;
 
@@ -91,10 +91,15 @@ private:
 
   class SRV : public SRVBase {
   private:
+    size_t offset;
+    size_t width;
+    SIMPLE_RESIDENCY_TRACKER tracker{};
+
   public:
     SRV(const tag_shader_resource_view<>::DESC_S *pDesc,
-        DynamicBuffer *pResource, IMTLD3D11Device *pDevice)
-        : SRVBase(pDesc, pResource, pDevice) {}
+        DynamicBuffer *pResource, IMTLD3D11Device *pDevice, size_t offset,
+        size_t width)
+        : SRVBase(pDesc, pResource, pDevice), offset(offset), width(width) {}
 
     ~SRV() {
       auto &vec = resource->weak_srvs;
@@ -106,13 +111,15 @@ private:
       IMTLNotifiedBindable *ret = ref(new DynamicBinding(
           static_cast<ID3D11ShaderResourceView *>(this),
           std::move(onBufferSwap),
-          [](uint64_t) {
-            D3D11_ASSERT(0 && "todo: prepare dynamic buffer srv view");
-            return BindingRef(std::nullopt);
+          [this](uint64_t) {
+            return BindingRef(static_cast<ID3D11View *>(this),
+                              this->resource->buffer_dynamic, this->width,
+                              this->offset);
           },
-          [](SIMPLE_RESIDENCY_TRACKER **ppTracker) {
-            D3D11_ASSERT(0 && "todo: prepare dynamic buffer srv view");
-            return ArgumentData(0uL, 0);
+          [this](SIMPLE_RESIDENCY_TRACKER **ppTracker) {
+            *ppTracker = &tracker;
+            return ArgumentData(this->resource->buffer_handle + this->offset,
+                                this->width);
           },
           [u = this->resource.ptr()](IMTLNotifiedBindable *_this) {
             u->RemoveObserver(_this);
@@ -121,12 +128,72 @@ private:
       *ppResource = ret;
     };
 
-    void RotateView() {
+    void RotateView() { tracker = {}; };
+  };
 
+  class TBufferSRV : public SRVBase {
+    Obj<MTL::Texture> view;
+    MTL::ResourceID view_handle;
+    Obj<MTL::TextureDescriptor> view_desc;
+    SIMPLE_RESIDENCY_TRACKER tracker{};
+    uint64_t byte_offset;
+
+  public:
+    TBufferSRV(const tag_shader_resource_view<>::DESC_S *pDesc,
+               DynamicBuffer *pResource, IMTLD3D11Device *pDevice,
+               Obj<MTL::TextureDescriptor> &&view_desc, uint64_t byte_offset)
+        : SRVBase(pDesc, pResource, pDevice), view_desc(std::move(view_desc)),
+          byte_offset(byte_offset) {}
+
+    ~TBufferSRV() {
+      auto vec = resource->weak_srvs_tbuffer;
+      vec.erase(std::remove(vec.begin(), vec.end(), this), vec.end());
+    }
+
+    void GetBindable(IMTLBindable **ppResource,
+                     BufferSwapCallback &&onBufferSwap) override {
+      auto ret = ref(new DynamicBinding(
+          static_cast<ID3D11ShaderResourceView *>(this),
+          std::move(onBufferSwap),
+          [this](uint64_t) {
+            return BindingRef(static_cast<ID3D11View *>(this),
+                              this->view.ptr());
+          },
+          [this](SIMPLE_RESIDENCY_TRACKER **ppTracker) {
+            *ppTracker = &tracker;
+            return ArgumentData(this->view_handle, this->view.ptr());
+          },
+          [u = this->resource.ptr()](IMTLNotifiedBindable *_this) {
+            u->RemoveObserver(_this);
+          }));
+      resource->AddObserver(ret);
+      *ppResource = ret;
+    }
+
+    struct ViewCache {
+      Obj<MTL::Texture> view;
+      MTL::ResourceID view_handle;
+    };
+
+    // FIXME: use LRU cache instead!
+    std::unordered_map<uint64_t, ViewCache> cache;
+
+    void RotateView() {
+      tracker = {};
+      auto insert = cache.insert({resource->buffer_handle, {}});
+      auto &item = insert.first->second;
+      if (insert.second) {
+        item.view = transfer(resource->buffer_dynamic->newTexture(
+            view_desc, byte_offset, resource->buffer_len));
+        item.view_handle = item.view->gpuResourceID();
+      }
+      view = item.view;
+      view_handle = item.view_handle;
     };
   };
 
   std::vector<SRV *> weak_srvs;
+  std::vector<TBufferSRV *> weak_srvs_tbuffer;
 
   std::unique_ptr<BufferPool> pool;
 
@@ -139,8 +206,8 @@ public:
       : TResourceBase<tag_buffer, IMTLDynamicBuffer, IMTLDynamicBindable>(
             desc, device) {
     auto metal = device->GetMTLDevice();
-    auto options = MTL::ResourceCPUCacheModeWriteCombined |
-                   MTL::ResourceHazardTrackingModeUntracked;
+    // sadly it needs to be tracked since it's a legal blit dst
+    auto options = MTL::ResourceOptionCPUCacheModeWriteCombined;
     buffer_dynamic = transfer(metal->newBuffer(desc->ByteWidth, options));
     if (pInitialData) {
       memcpy(buffer_dynamic->contents(), pInitialData->pSysMem,
@@ -150,6 +217,9 @@ public:
     buffer_len = buffer_dynamic->length();
     buffer_mapped = buffer_dynamic->contents();
     pool = std::make_unique<BufferPool>(metal, desc->ByteWidth, options);
+    structured = desc->MiscFlags & D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
+    allow_raw_view =
+        desc->MiscFlags & D3D11_RESOURCE_MISC_BUFFER_ALLOW_RAW_VIEWS;
   }
 
   void *GetMappedMemory(UINT *pBytesPerRow) override {
@@ -190,6 +260,9 @@ public:
     for (auto srv : weak_srvs) {
       srv->RotateView();
     }
+    for (auto srv : weak_srvs_tbuffer) {
+      srv->RotateView();
+    }
     for (auto &observer : observers) {
       observer->NotifyObserver(buffer_dynamic.ptr());
     }
@@ -206,8 +279,9 @@ public:
     vec.erase(std::remove(vec.begin(), vec.end(), pBindable), vec.end());
   }
 
-  HRESULT CreateShaderResourceView(const D3D11_SHADER_RESOURCE_VIEW_DESC *pDesc,
-                                   ID3D11ShaderResourceView **ppView) override {
+  HRESULT
+  CreateShaderResourceView(const D3D11_SHADER_RESOURCE_VIEW_DESC *pDesc,
+                           ID3D11ShaderResourceView **ppView) override {
     D3D11_SHADER_RESOURCE_VIEW_DESC finalDesc;
     if (FAILED(ExtractEntireResourceViewDescription(&this->desc, pDesc,
                                                     &finalDesc))) {
@@ -220,12 +294,57 @@ public:
     if (!ppView) {
       return S_FALSE;
     }
-    ERR("DynamicBuffer srv not impl");
-    return E_NOTIMPL;
-    // TODO: polymorphism: buffer/byteaddress/structured
-    auto srv = ref(new SRV(&finalDesc, this, m_parent));
-    // D3D11_ASSERT(weak_srvs.insert(srv).second);
-    weak_srvs.push_back(srv);
+    if (structured) {
+      if (finalDesc.Format != DXGI_FORMAT_UNKNOWN) {
+        return E_INVALIDARG;
+      }
+      // StructuredBuffer
+      auto offset =
+          finalDesc.Buffer.FirstElement * this->desc.StructureByteStride;
+      auto size = finalDesc.Buffer.NumElements;
+      *ppView = ref(new SRV(&finalDesc, this, m_parent, offset, size));
+      return S_OK;
+    }
+    if (finalDesc.ViewDimension == D3D11_SRV_DIMENSION_BUFFEREX &&
+        finalDesc.BufferEx.Flags & D3D11_BUFFEREX_SRV_FLAG_RAW) {
+      if (!allow_raw_view)
+        return E_INVALIDARG;
+      D3D11_ASSERT(finalDesc.Format != DXGI_FORMAT_UNKNOWN);
+      MTL_FORMAT_DESC metal_format;
+      Com<IMTLDXGIAdatper> adapter;
+      m_parent->GetAdapter(&adapter);
+      if (FAILED(adapter->QueryFormatDesc(finalDesc.Format, &metal_format))) {
+        return E_INVALIDARG;
+      }
+      auto offset = finalDesc.Buffer.FirstElement * metal_format.BytesPerTexel;
+      auto size = finalDesc.Buffer.NumElements * metal_format.BytesPerTexel;
+      *ppView = ref(new SRV(&finalDesc, this, m_parent, offset, size));
+      return S_OK;
+    }
+
+    MTL_FORMAT_DESC format;
+    Com<IMTLDXGIAdatper> adapter;
+    m_parent->GetAdapter(&adapter);
+    if (FAILED(adapter->QueryFormatDesc(finalDesc.Format, &format))) {
+      return E_FAIL;
+    }
+
+    auto desc = transfer(MTL::TextureDescriptor::alloc()->init());
+    desc->setTextureType(MTL::TextureTypeTextureBuffer);
+    desc->setWidth(finalDesc.Buffer.NumElements);
+    desc->setHeight(1);
+    desc->setDepth(1);
+    desc->setArrayLength(1);
+    desc->setMipmapLevelCount(1);
+    desc->setSampleCount(1);
+    desc->setUsage(MTL::TextureUsageShaderRead);
+    desc->setStorageMode(MTL::StorageModeShared);
+    desc->setCpuCacheMode(MTL::CPUCacheModeWriteCombined);
+    desc->setPixelFormat(format.PixelFormat);
+    auto srv = ref(
+        new TBufferSRV(&finalDesc, this, m_parent, std::move(desc),
+                       finalDesc.Buffer.FirstElement * format.BytesPerTexel));
+    weak_srvs_tbuffer.push_back(srv);
     *ppView = srv;
     srv->RotateView();
     return S_OK;
