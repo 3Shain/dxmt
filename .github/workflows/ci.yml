@@ -38,7 +38,7 @@ jobs:
             ./toolchains
       - name: Build
         run: |
-          meson setup --cross-file build-win64.txt --native-file build-osx.txt -Dlocal_native_llvm=true -Dbuild_airconv_for_windows=true build --buildtype release
+          meson setup --cross-file build-win64.txt --native-file build-osx.txt -Dlocal_native_llvm=true -Dbuild_airconv_for_windows=true build --buildtype debugoptimized
           meson compile -C build
       - name: Tar
         run: tar -zcf artifacts.tar.gz build/src
