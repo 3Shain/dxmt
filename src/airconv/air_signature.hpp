@@ -524,7 +524,7 @@ public:
 
   auto CreateFunction(
     std::string name, llvm::LLVMContext &context, llvm::Module &module,
-    uint64_t sign_mask
+    uint64_t sign_mask, bool skip_output
   ) -> std::pair<llvm::Function *, llvm::MDNode *>;
 
 private:

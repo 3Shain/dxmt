@@ -117,7 +117,8 @@ extern "C" {
 #endif
 
 enum SM50_SHADER_COMPILATION_ARGUMENT_TYPE {
-  SM50_SHADER_COMPILATION_INPUT_SIGN_MASK = 0
+  SM50_SHADER_COMPILATION_INPUT_SIGN_MASK = 0,
+  SM50_SHADER_EMULATE_VERTEX_STREAM_OUTPUT = 1,
 };
 
 struct SM50_SHADER_COMPILATION_ARGUMENT_DATA {
@@ -129,6 +130,22 @@ struct SM50_SHADER_COMPILATION_INPUT_SIGN_MASK_DATA {
   void *next;
   enum SM50_SHADER_COMPILATION_ARGUMENT_TYPE type;
   uint64_t sign_mask;
+};
+
+struct SM50_STREAM_OUTPUT_ELEMENT {
+  uint32_t reg_id;
+  uint32_t component;
+  uint32_t output_slot;
+  uint32_t offset;
+};
+
+struct SM50_SHADER_EMULATE_VERTEX_STREAM_OUTPUT_DATA {
+  void *next;
+  enum SM50_SHADER_COMPILATION_ARGUMENT_TYPE type;
+  uint32_t num_output_slots;
+  uint32_t num_elements;
+  uint32_t strides[4];
+  struct SM50_STREAM_OUTPUT_ELEMENT *elements;
 };
 
 AIRCONV_EXPORT int SM50Initialize(

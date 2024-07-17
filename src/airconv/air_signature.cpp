@@ -442,7 +442,7 @@ uint32_t FunctionSignatureBuilder::DefineOutput(const FunctionOutput &output) {
 
 auto FunctionSignatureBuilder::CreateFunction(
   std::string name, llvm::LLVMContext &context, llvm::Module &module,
-  uint64_t sign_mask
+  uint64_t sign_mask, bool skip_output
 ) -> std::pair<llvm::Function *, llvm::MDNode *> {
   std::vector<Metadata *> metadata_input;
   std::vector<llvm::Type *> type_input;
@@ -650,6 +650,8 @@ auto FunctionSignatureBuilder::CreateFunction(
     type_input.push_back(field_type);
   };
   for (auto &item : enumerate(outputs)) {
+    if (skip_output)
+      continue;
     auto output = item.value();
     StreamMDHelper md;
     llvm::Type *field_type = std::visit(
@@ -704,7 +706,7 @@ auto FunctionSignatureBuilder::CreateFunction(
     metadata_output.push_back(md.BuildTuple(context));
     type_output.push_back(field_type);
   };
-  auto output_struct_type = type_output.size() > 0
+  auto output_struct_type = (type_output.size() > 0 && !skip_output)
                               ? StructType::get(context, type_output, true)
                               : Type::getVoidTy(context);
   auto function = Function::Create(

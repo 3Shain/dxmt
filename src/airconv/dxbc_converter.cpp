@@ -82,11 +82,17 @@ llvm::Error convertDXBC(
   uint32_t const &max_output_register = pShaderInternal->max_output_register;
   uint64_t sign_mask = 0;
   SM50_SHADER_COMPILATION_ARGUMENT_DATA *arg = pArgs;
+  SM50_SHADER_EMULATE_VERTEX_STREAM_OUTPUT_DATA *vertex_so = nullptr;
   while (arg) {
     switch (arg->type) {
     case SM50_SHADER_COMPILATION_INPUT_SIGN_MASK:
       sign_mask =
         ((SM50_SHADER_COMPILATION_INPUT_SIGN_MASK_DATA *)arg)->sign_mask;
+      break;
+    case SM50_SHADER_EMULATE_VERTEX_STREAM_OUTPUT:
+      if (shader_type != microsoft::D3D10_SB_VERTEX_SHADER)
+        break;
+      vertex_so = (SM50_SHADER_EMULATE_VERTEX_STREAM_OUTPUT_DATA *)arg;
       break;
     }
     arg = (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)arg->next;
@@ -104,8 +110,58 @@ llvm::Error convertDXBC(
     p(prelogue);
   }
   for (auto &e : pShaderInternal->epilogue_) {
+    if (vertex_so)
+      continue;
     e(epilogue);
   }
+  if (vertex_so) {
+    auto bv = func_signature.DefineInput(air::InputBaseVertex{});
+    auto vid = func_signature.DefineInput(air::InputVertexID{});
+    auto slot_0 = func_signature.DefineInput(air::ArgumentBindingBuffer{
+      .buffer_size = {},
+      .location_index = 20,
+      .array_size = 0,
+      .memory_access = air::MemoryAccess::write,
+      .address_space = air::AddressSpace::device,
+      .type = air::MSLUint{},
+      .arg_name = "so_slot0",
+      .raster_order_group = {}
+    });
+    epilogue << make_irvalue([=](struct context ctx) {
+      auto &builder = ctx.builder;
+      auto base_vertex = ctx.function->getArg(bv);
+      auto vertex_id = ctx.function->getArg(vid);
+      auto slot0 = ctx.function->getArg(slot_0);
+      auto adjusted_vertex_id = builder.CreateSub(vertex_id, base_vertex);
+      auto output_regs = builder.CreateBitOrPointerCast(
+        ctx.resource.output.ptr_int4, llvm::PointerType::get(ctx.types._int, 0)
+      );
+      for (unsigned i = 0; i < vertex_so->num_elements; i++) {
+        auto &element = vertex_so->elements[i];
+        if (element.reg_id == 0xffffffff)
+          continue;
+        auto ptr = ctx.builder.CreateConstGEP1_32(
+          ctx.types._int, output_regs,
+          (unsigned)(element.reg_id * 4 + element.component)
+        );
+        auto target_offset = ctx.builder.CreateAdd(
+          ctx.builder.CreateMul(
+            adjusted_vertex_id,
+            ctx.builder.getInt32(vertex_so->strides[element.output_slot])
+          ),
+          ctx.builder.getInt32(element.offset)
+        );
+        auto target_ptr = ctx.builder.CreateGEP(
+          ctx.types._int, slot0, {ctx.builder.CreateLShr(target_offset, 2)}
+        );
+        ctx.builder.CreateStore(
+          ctx.builder.CreateLoad(ctx.types._int, ptr), target_ptr, true
+        );
+      }
+      return nullptr;
+    });
+  }
+
   io_binding_map resource_map;
 
   // post convert
@@ -273,8 +329,9 @@ llvm::Error convertDXBC(
         .arg_name = "cbuffer_table",
       });
   }
-  auto [function, function_metadata] =
-    func_signature.CreateFunction(name, context, module, sign_mask);
+  auto [function, function_metadata] = func_signature.CreateFunction(
+    name, context, module, sign_mask, vertex_so != nullptr
+  );
 
   auto entry_bb = llvm::BasicBlock::Create(context, "entry", function);
   auto epilogue_bb = llvm::BasicBlock::Create(context, "epilogue", function);
