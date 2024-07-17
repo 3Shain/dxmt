@@ -8,8 +8,6 @@
 #include "mtld11_resource.hpp"
 #include "util_error.hpp"
 #include "d3d11_device.hpp"
-
-#include "objc-wrapper/dispatch.h"
 #include "util_string.hpp"
 #include "wsi_platform_win32.hpp"
 #include "wsi_window.hpp"
@@ -40,9 +38,10 @@ public:
     device_->GetImmediateContext1(&context);
     context->QueryInterface(IID_PPV_ARGS(&device_context_));
 
-    present_semaphore_ =
-        CreateSemaphore(nullptr, kSwapchainLatency, kSwapchainLatency, nullptr);
-    frame_latency_fence = kSwapchainLatency;
+    frame_latency = kSwapchainLatency;
+    present_semaphore_ = CreateSemaphore(nullptr, frame_latency,
+                                         DXGI_MAX_SWAP_CHAIN_BUFFERS, nullptr);
+    frame_latency_fence = frame_latency;
 
     if (desc_.Width == 0 || desc_.Height == 0) {
       wsi::getWindowSize(hWnd, &desc_.Width, &desc_.Height);
@@ -57,7 +56,7 @@ public:
 
   ~MTLD3D11SwapChain() {
     CloseHandle(present_semaphore_);
-    frame_latency_fence = kSwapchainLatency;
+    frame_latency_fence = frame_latency;
     destroyed = true;
     frame_latency_fence.notify_all();
   };
@@ -291,13 +290,17 @@ public:
     frame_latency_fence.fetch_sub(1, std::memory_order_relaxed);
 
     device_context_->FlushInternal(
-        [backbuffer = backbuffer_](MTL::CommandBuffer *cmdbuf) {
+        [this, backbuffer = backbuffer_](MTL::CommandBuffer *cmdbuf) {
           backbuffer->Present(cmdbuf);
+          ReleaseSemaphore(present_semaphore_, 1, nullptr);
         },
-        [&fence = frame_latency_fence, sem = present_semaphore_]() {
-          fence.fetch_add(1, std::memory_order_relaxed);
-          fence.notify_one();
-          ReleaseSemaphore(sem, 1, nullptr);
+        [this]() {
+          if (frame_latency_diff) {
+            frame_latency_diff--;
+          } else {
+            frame_latency_fence.fetch_add(1, std::memory_order_relaxed);
+            frame_latency_fence.notify_one();
+          }
         },
         true);
 
@@ -339,14 +342,25 @@ public:
   };
 
   HRESULT STDMETHODCALLTYPE SetMaximumFrameLatency(UINT max_latency) override {
-    // no-op?
-    WARN("Setting maximum frame latency to ", max_latency);
+    if (max_latency == 0 || max_latency > DXGI_MAX_SWAP_CHAIN_BUFFERS) {
+      return E_INVALIDARG;
+    }
+    if (max_latency > frame_latency) {
+      frame_latency_fence.fetch_add(max_latency - frame_latency);
+      frame_latency_fence.notify_one();
+      ReleaseSemaphore(present_semaphore_, max_latency - frame_latency,
+                       nullptr);
+    } else {
+      frame_latency_diff = frame_latency - max_latency;
+    }
+    frame_latency = max_latency;
+
     return S_OK;
   };
 
   HRESULT STDMETHODCALLTYPE GetMaximumFrameLatency(UINT *max_latency) override {
     if (max_latency) {
-      *max_latency = kSwapchainLatency;
+      *max_latency = frame_latency;
     }
     return S_OK;
   };
@@ -418,6 +432,8 @@ private:
   std::atomic_uint64_t frame_latency_fence;
   HWND hWnd;
   HMONITOR monitor_;
+  uint32_t frame_latency;
+  uint32_t frame_latency_diff = 0;
   bool destroyed = false;
 };
 
