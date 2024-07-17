@@ -430,57 +430,6 @@ public:
 
 #pragma region CopyResource
 
-  void CopyBuffer(ID3D11Buffer *pDstResource, ID3D11Buffer *pSrcResource) {
-    D3D11_BUFFER_DESC dst_desc;
-    D3D11_BUFFER_DESC src_desc;
-    pDstResource->GetDesc(&dst_desc);
-    pSrcResource->GetDesc(&src_desc);
-    MTL_STAGING_RESOURCE dst_bind;
-    UINT bytes_per_row, bytes_per_image;
-    MTL_STAGING_RESOURCE src_bind;
-    auto currentChunkId = cmd_queue.CurrentSeqId();
-    if (auto staging_dst = com_cast<IMTLD3D11Staging>(pDstResource)) {
-      staging_dst->UseCopyDestination(0, currentChunkId, &dst_bind,
-                                      &bytes_per_row, &bytes_per_image);
-      if (auto staging_src = com_cast<IMTLD3D11Staging>(pSrcResource)) {
-        // wtf
-        D3D11_ASSERT(0 && "TODO: copy between staging?");
-      } else if (auto src = com_cast<IMTLBindable>(pSrcResource)) {
-        // might be a dynamic, default or immutable buffer
-        EmitBlitCommand<true>([dst = Obj(dst_bind.Buffer),
-                               src = src->UseBindable(currentChunkId)](
-                                  MTL::BlitCommandEncoder *encoder, auto &) {
-          auto src_buf = src.buffer();
-          encoder->copyFromBuffer(src_buf, 0, dst, 0, src_buf->length());
-        });
-      }
-
-    } else if (dst_desc.Usage == D3D11_USAGE_DEFAULT) {
-      auto dst = com_cast<IMTLBindable>(pDstResource);
-      D3D11_ASSERT(dst);
-      if (auto staging_src = com_cast<IMTLD3D11Staging>(pSrcResource)) {
-        // copy from staging to default
-        staging_src->UseCopySource(0, currentChunkId, &src_bind, &bytes_per_row,
-                                   &bytes_per_image);
-        EmitBlitCommand<true>([dst = dst->UseBindable(currentChunkId),
-                               src = Obj(src_bind.Buffer)](
-                                  MTL::BlitCommandEncoder *encoder, auto &) {
-          auto dst_buf = dst.buffer();
-          encoder->copyFromBuffer(src, 0, dst_buf, 0, src->length());
-        });
-      } else if (auto src = com_cast<IMTLBindable>(pSrcResource)) {
-        // on-device copy
-        EmitBlitCommand<true>([dst = dst->UseBindable(currentChunkId),
-                               src = src->UseBindable(currentChunkId)](
-                                  MTL::BlitCommandEncoder *encoder, auto &) {
-          auto src_buf = src.buffer();
-          auto dst_buf = dst.buffer();
-          encoder->copyFromBuffer(src_buf, 0, dst_buf, 0, src_buf->length());
-        });
-      }
-    }
-  }
-
   void CopyBuffer(ID3D11Buffer *pDstResource, uint32_t DstSubresource,
                   uint32_t DstX, uint32_t DstY, uint32_t DstZ,
                   ID3D11Buffer *pSrcResource, uint32_t SrcSubresource,
@@ -549,6 +498,41 @@ public:
              SrcBox](MTL::BlitCommandEncoder *encoder, auto ctx) {
               auto src = src_.buffer();
               auto dst = dst_.buffer();
+              encoder->copyFromBuffer(src, SrcBox.left, dst, DstX,
+                                      SrcBox.right - SrcBox.left);
+            });
+      } else {
+        D3D11_ASSERT(0 && "todo");
+      }
+    } else if (dst_desc.Usage == D3D11_USAGE_DYNAMIC) {
+      auto dst_dynamic = com_cast<IMTLDynamicBindable>(pDstResource);
+      D3D11_ASSERT(dst_dynamic);
+      Com<IMTLBindable> dst;
+      dst_dynamic->GetBindable(&dst, [](auto) {});
+      if (auto staging_src = com_cast<IMTLD3D11Staging>(pSrcResource)) {
+        // copy from staging to dynamic
+        MTL_STAGING_RESOURCE src_bind;
+        uint32_t bytes_per_row, bytes_per_image;
+        if (!staging_src->UseCopySource(SrcSubresource, currentChunkId,
+                                        &src_bind, &bytes_per_row,
+                                        &bytes_per_image))
+          return;
+        EmitBlitCommand<true>([dst_ = dst->UseBindable(currentChunkId).buffer(),
+                               src = Obj(src_bind.Buffer), DstX, SrcBox](
+                                  MTL::BlitCommandEncoder *encoder, auto ctx) {
+          auto dst = dst_;
+          // FIXME: offste should be calculated from SrcBox
+          encoder->copyFromBuffer(src, SrcBox.left, dst, DstX,
+                                  SrcBox.right - SrcBox.left);
+        });
+      } else if (auto src = com_cast<IMTLBindable>(pSrcResource)) {
+        // device to dynamic
+        EmitBlitCommand<true>(
+            [dst_ = dst->UseBindable(currentChunkId).buffer(),
+             src_ = src->UseBindable(currentChunkId), DstX,
+             SrcBox](MTL::BlitCommandEncoder *encoder, auto ctx) {
+              auto src = src_.buffer();
+              auto dst = dst_;
               encoder->copyFromBuffer(src, SrcBox.left, dst, DstX,
                                       SrcBox.right - SrcBox.left);
             });

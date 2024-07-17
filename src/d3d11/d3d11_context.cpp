@@ -344,8 +344,8 @@ public:
     case D3D11_RESOURCE_DIMENSION_UNKNOWN:
       break;
     case D3D11_RESOURCE_DIMENSION_BUFFER: {
-      ctx.CopyBuffer((ID3D11Buffer *)pDstResource,
-                     (ID3D11Buffer *)pSrcResource);
+      ctx.CopyBuffer((ID3D11Buffer *)pDstResource, 0, 0, 0, 0,
+                     (ID3D11Buffer *)pSrcResource, 0, nullptr);
       break;
     }
     case D3D11_RESOURCE_DIMENSION_TEXTURE1D: {
