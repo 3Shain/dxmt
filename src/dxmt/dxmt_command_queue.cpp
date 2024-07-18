@@ -158,13 +158,13 @@ uint32_t CommandQueue::WaitForFinishThread() {
       chunk.attached_cmdbuf->waitUntilCompleted();
     }
     if (chunk.attached_cmdbuf->status() == MTL::CommandBufferStatusError) {
-      ERR("Device error at frame ", internal_seq, ", : ",
+      ERR("Device error at frame ", chunk.frame_, ", : ",
           chunk.attached_cmdbuf->error()->localizedDescription()->cString(
               NS::ASCIIStringEncoding));
     }
     if (chunk.attached_cmdbuf->logs()) {
       if (((NS::Array *)chunk.attached_cmdbuf->logs())->count()) {
-        ERR("logs at frame ", internal_seq);
+        ERR("logs at frame ", chunk.frame_);
         ERR(chunk.attached_cmdbuf->logs()->debugDescription()->cString(
             NS::ASCIIStringEncoding));
       }
