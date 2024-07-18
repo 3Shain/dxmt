@@ -4374,7 +4374,8 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
               load_src_op<false>(mad.src2, mask),
               [=](auto a, auto b, auto c) {
                 return store_dst_op_masked<false>(
-                  mad.dst, call_integer_madsat(a, b, c, mad.is_signed)
+                  // should always use unsigned (because signed saturate to 0x7fffffff)
+                  mad.dst, call_integer_madsat(a, b, c, false)
                 );
               }
             );
