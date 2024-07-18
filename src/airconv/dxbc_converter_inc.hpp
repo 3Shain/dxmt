@@ -2906,9 +2906,10 @@ auto read_uint_buf_addr(
   assert(ctx.resource.uav_buf_range_map.contains(uav.range_id));
   auto &[handle, bound, _] = ctx.resource.uav_buf_range_map[uav.range_id];
   if (index) {
-    auto _bound = co_yield bound(nullptr);
+    auto _bound = ctx.builder.CreateLShr(co_yield bound(nullptr), ctx.builder.getInt32(2));
+
     auto is_oob = ctx.builder.CreateICmpUGE(
-      index, ctx.builder.CreateLShr(_bound, ctx.builder.getInt32(2))
+      index, _bound
     );
     if (oob) {
       *oob = is_oob;
@@ -2930,10 +2931,10 @@ auto read_uint_buf_addr(
   assert(ctx.resource.uav_buf_range_map.contains(uav.range_id));
   auto &[handle, bound, _] = ctx.resource.uav_buf_range_map[uav.range_id];
   if (index) {
-    auto _bound = co_yield bound(nullptr);
+    auto _bound = ctx.builder.CreateLShr(co_yield bound(nullptr), ctx.builder.getInt32(2));
 
     auto is_oob = ctx.builder.CreateICmpUGE(
-      index, ctx.builder.CreateLShr(_bound, ctx.builder.getInt32(2))
+      index, _bound
     );
     if (oob) {
       *oob = is_oob;
@@ -2955,10 +2956,10 @@ auto read_uint_buf_addr(
   assert(ctx.resource.srv_buf_range_map.contains(srv.range_id));
   auto &[handle, bound, _] = ctx.resource.srv_buf_range_map[srv.range_id];
   if (index) {
-    auto _bound = co_yield bound(nullptr);
+    auto _bound = ctx.builder.CreateLShr(co_yield bound(nullptr), ctx.builder.getInt32(2));
 
     auto is_oob = ctx.builder.CreateICmpUGE(
-      index, ctx.builder.CreateLShr(_bound, ctx.builder.getInt32(2))
+      index, _bound
     );
     if (oob) {
       *oob = is_oob;
