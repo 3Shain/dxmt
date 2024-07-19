@@ -222,8 +222,9 @@ public:
         desc->MiscFlags & D3D11_RESOURCE_MISC_BUFFER_ALLOW_RAW_VIEWS;
   }
 
-  void *GetMappedMemory(UINT *pBytesPerRow) override {
+  void *GetMappedMemory(UINT *pBytesPerRow, UINT *pBytesPerImage) override {
     *pBytesPerRow = buffer_len;
+    *pBytesPerImage = buffer_len;
     return buffer_mapped;
   };
 
@@ -457,8 +458,9 @@ public:
                                          this->buffer->resourceOptions());
   }
 
-  void *GetMappedMemory(UINT *pBytesPerRow) override {
+  void *GetMappedMemory(UINT *pBytesPerRow, UINT *pBytesPerImage) override {
     *pBytesPerRow = bytes_per_row;
+    *pBytesPerImage = bytes_per_row * desc.Height;
     return buffer_mapped;
   };
 

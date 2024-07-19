@@ -215,11 +215,11 @@ public:
         return E_INVALIDARG;
       case D3D11_MAP_WRITE_DISCARD: {
         dynamic->RotateBuffer(this);
-        Out.pData = dynamic->GetMappedMemory(&Out.RowPitch);
+        Out.pData = dynamic->GetMappedMemory(&Out.RowPitch, &Out.DepthPitch);
         break;
       }
       case D3D11_MAP_WRITE_NO_OVERWRITE: {
-        Out.pData = dynamic->GetMappedMemory(&Out.RowPitch);
+        Out.pData = dynamic->GetMappedMemory(&Out.RowPitch, &Out.DepthPitch);
         break;
       }
       }
