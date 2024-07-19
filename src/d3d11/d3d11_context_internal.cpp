@@ -633,6 +633,12 @@ public:
           auto dst_mips = dst->mipmapLevelCount();
           auto dst_level = DstSubresource % dst_mips;
           auto dst_slice = DstSubresource / dst_mips;
+          if (Forget_sRGB(src->pixelFormat()) !=
+              Forget_sRGB(dst->pixelFormat())) {
+            ERR("Texture1D format mismatch! src: ", src->pixelFormat(),
+                ", dst ", dst->pixelFormat());
+            return;
+          }
           encoder->copyFromTexture(
               src, src_slice, src_level, MTL::Origin::Make(SrcBox.left, 0, 0),
               MTL::Size::Make(SrcBox.right - SrcBox.left, 1, 1), dst, dst_slice,
@@ -750,16 +756,45 @@ public:
         EmitBlitCommand<true>([dst_ = dst->UseBindable(currentChunkId),
                                src_ = src->UseBindable(currentChunkId),
                                DstSubresource, SrcSubresource, DstX, DstY, DstZ,
-                               SrcBox](MTL::BlitCommandEncoder *encoder,
-                                       auto ctx) {
+                               SrcBox, cmd_queue = &cmd_queue, currentChunkId](
+                                  MTL::BlitCommandEncoder *encoder, auto ctx) {
           auto src = src_.texture(&ctx);
           auto dst = dst_.texture(&ctx);
           auto src_mips = src->mipmapLevelCount();
+          auto src_format = src->pixelFormat();
           auto src_level = SrcSubresource % src_mips;
           auto src_slice = SrcSubresource / src_mips;
           auto dst_mips = dst->mipmapLevelCount();
           auto dst_level = DstSubresource % dst_mips;
           auto dst_slice = DstSubresource / dst_mips;
+          auto dst_format = dst->pixelFormat();
+          if (Forget_sRGB(dst_format) != Forget_sRGB(src_format)) {
+            if (IsBlockCompressionFormat(dst_format) &&
+                FormatBytesPerTexel(src_format) ==
+                    FormatBytesPerTexel(dst_format)) {
+              auto bytes_per_row = (SrcBox.right - SrcBox.left) *
+                                   FormatBytesPerTexel(src_format);
+              auto [_, buffer, offset] = cmd_queue->AllocateTempBuffer(
+                  currentChunkId, bytes_per_row * (SrcBox.bottom - SrcBox.top),
+                  16);
+              encoder->copyFromTexture(
+                  src, src_slice, src_level,
+                  MTL::Origin::Make(SrcBox.left, SrcBox.top, 0),
+                  MTL::Size::Make(SrcBox.right - SrcBox.left,
+                                  SrcBox.bottom - SrcBox.top, 1),
+                  buffer, offset, bytes_per_row, 0);
+              encoder->copyFromBuffer(
+                  buffer, offset, bytes_per_row, 0,
+                  MTL::Size::Make((SrcBox.right - SrcBox.left) * 4,
+                                  (SrcBox.bottom - SrcBox.top) * 4, 1),
+                  dst, dst_slice, dst_level,
+                  MTL::Origin::Make(DstX, DstY, DstZ));
+              return;
+            }
+            ERR("Texture2D format mismatch! src: ", src_format, ", dst ",
+                dst_format);
+            return;
+          }
           encoder->copyFromTexture(
               src, src_slice, src_level,
               MTL::Origin::Make(SrcBox.left, SrcBox.top, 0),
@@ -1893,8 +1928,9 @@ public:
       });
     }
     state_.StreamOutput.Targets.clear_dirty(0);
-    if(state_.StreamOutput.Targets.any_dirty()) {
-      ERR("UpdateSOTargets: non-zero slot is marked dirty but not bound, expect problem");
+    if (state_.StreamOutput.Targets.any_dirty()) {
+      ERR("UpdateSOTargets: non-zero slot is marked dirty but not bound, "
+          "expect problem");
     }
   }
 

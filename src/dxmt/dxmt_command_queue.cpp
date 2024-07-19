@@ -28,7 +28,11 @@ ENCODER_INFO *CommandChunk::mark_pass(EncoderKind kind) {
 CommandQueue::CommandQueue(MTL::Device *device)
     : encodeThread([this]() { this->EncodingThread(); }),
       finishThread([this]() { this->WaitForFinishThread(); }),
-      staging_allocator(device) {
+      staging_allocator(device, MTL::ResourceOptionCPUCacheModeWriteCombined |
+                                    MTL::ResourceHazardTrackingModeUntracked |
+                                    MTL::ResourceStorageModeShared),
+      copy_temp_allocator(device, MTL::ResourceHazardTrackingModeUntracked |
+                                      MTL::ResourceStorageModePrivate) {
   commandQueue = transfer(device->newCommandQueue(kCommandChunkCount));
   for (unsigned i = 0; i < kCommandChunkCount; i++) {
     auto &chunk = chunks[i];

@@ -46,4 +46,15 @@ public:
   std::map<MTL::PixelFormat, FormatCapability> textureCapabilities{};
   void Inspect(MTL::Device *device);
 };
+
+MTL::PixelFormat Forget_sRGB(MTL::PixelFormat format);
+
+constexpr bool Is_sRGBVariant(MTL::PixelFormat format) {
+  return Forget_sRGB(format) != format;
+}
+
+bool IsBlockCompressionFormat(MTL::PixelFormat format);
+
+size_t FormatBytesPerTexel(MTL::PixelFormat format);
+
 } // namespace dxmt

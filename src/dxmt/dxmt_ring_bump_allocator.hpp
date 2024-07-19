@@ -13,10 +13,11 @@ namespace dxmt {
 constexpr size_t kStagingBlockSize = 0x800000; // 8MB
 constexpr size_t kStagingBlockLifetime = 300;
 
-class StagingAllocator {
+template <bool cpu_visible> class RingBumpAllocator {
 
 public:
-  StagingAllocator(MTL::Device *device) : device(device) {}
+  RingBumpAllocator(MTL::Device *device, MTL::ResourceOptions block_options)
+      : device(device), block_options(block_options) {}
 
   std::tuple<void *, MTL::Buffer *, uint64_t> allocate(uint64_t seq_id,
                                                        uint64_t coherent_id,
@@ -50,7 +51,9 @@ public:
           (coherent_id - front.last_used_seq_id) > kStagingBlockLifetime) {
         // can be deallocated
         front.buffer_gpu->release();
-        free(front.buffer_cpu);
+        if constexpr (cpu_visible) {
+          free(front.buffer_cpu);
+        }
         fifo.pop();
       } else {
         break;
@@ -80,17 +83,22 @@ private:
         return fifo.back();
       }
     }
-    auto cpu = malloc(block_size);
-    auto gpu = device->newBuffer(cpu, block_size,
-                                 MTL::ResourceOptionCPUCacheModeWriteCombined |
-                                     MTL::ResourceHazardTrackingModeUntracked |
-                                     MTL::ResourceStorageModeShared,
-                                 nullptr);
-    fifo.push({.buffer_cpu = cpu,
-               .buffer_gpu = gpu,
-               .allocated_size = 0,
-               .total_size = block_size,
-               .last_used_seq_id = seq_id});
+    if constexpr (cpu_visible) {
+      auto cpu = malloc(block_size);
+      auto gpu = device->newBuffer(cpu, block_size, block_options, nullptr);
+      fifo.push({.buffer_cpu = cpu,
+                 .buffer_gpu = gpu,
+                 .allocated_size = 0,
+                 .total_size = block_size,
+                 .last_used_seq_id = seq_id});
+    } else {
+      auto gpu = device->newBuffer(block_size, block_options);
+      fifo.push({.buffer_cpu = nullptr,
+                 .buffer_gpu = gpu,
+                 .allocated_size = 0,
+                 .total_size = block_size,
+                 .last_used_seq_id = seq_id});
+    }
     return fifo.back();
   };
 
@@ -104,6 +112,7 @@ private:
   std::queue<StagingBlock> fifo;
   MTL::Device *device;
   dxmt::mutex mutex;
+  MTL::ResourceOptions block_options;
 };
 
 } // namespace dxmt
