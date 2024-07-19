@@ -2,6 +2,7 @@
 #include "Metal/MTLCaptureManager.hpp"
 #include "Metal/MTLFunctionLog.hpp"
 #include "Foundation/NSAutoreleasePool.hpp"
+#include "dxmt_clear_command.hpp"
 #include "util_env.hpp"
 #include <atomic>
 
@@ -32,7 +33,8 @@ CommandQueue::CommandQueue(MTL::Device *device)
                                     MTL::ResourceHazardTrackingModeUntracked |
                                     MTL::ResourceStorageModeShared),
       copy_temp_allocator(device, MTL::ResourceHazardTrackingModeUntracked |
-                                      MTL::ResourceStorageModePrivate) {
+                                      MTL::ResourceStorageModePrivate),
+      clear_cmd(device) {
   commandQueue = transfer(device->newCommandQueue(kCommandChunkCount));
   for (unsigned i = 0; i < kCommandChunkCount; i++) {
     auto &chunk = chunks[i];

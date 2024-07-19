@@ -193,7 +193,8 @@ public:
     }
     case D3D11_QUERY_TIMESTAMP_DISJOINT: {
       if (pData) {
-        (*static_cast<D3D11_QUERY_DATA_TIMESTAMP_DISJOINT *>(pData)) = {1, TRUE};
+        (*static_cast<D3D11_QUERY_DATA_TIMESTAMP_DISJOINT *>(pData)) = {1,
+                                                                        TRUE};
       }
       return S_OK;
     }
@@ -302,7 +303,65 @@ public:
   void
   ClearUnorderedAccessViewUint(ID3D11UnorderedAccessView *pUnorderedAccessView,
                                const UINT Values[4]) override {
-    IMPLEMENT_ME
+    D3D11_UNORDERED_ACCESS_VIEW_DESC desc;
+    pUnorderedAccessView->GetDesc(&desc);
+    Com<IMTLBindable> bindable;
+    pUnorderedAccessView->QueryInterface(IID_PPV_ARGS(&bindable));
+    auto value =
+        std::array<uint32_t, 4>({Values[0], Values[1], Values[2], Values[3]});
+    switch (desc.ViewDimension) {
+    case D3D11_UAV_DIMENSION_UNKNOWN:
+      return;
+    case D3D11_UAV_DIMENSION_BUFFER: {
+      if (desc.Buffer.Flags & D3D11_BUFFER_UAV_FLAG_RAW) {
+        ctx.EmitComputeCommandChk<true>(
+            [buffer = bindable->UseBindable(cmd_queue.CurrentSeqId()),
+             value](auto encoder, auto &ctx) {
+              ctx.queue->clear_cmd.ClearBufferUint(encoder, buffer.buffer(),
+                                                   buffer.offset(),
+                                                   buffer.width() >> 2, value);
+            });
+      } else {
+        if (desc.Format == DXGI_FORMAT_UNKNOWN) {
+          ctx.EmitComputeCommandChk<true>(
+              [buffer = bindable->UseBindable(cmd_queue.CurrentSeqId()),
+               value](auto encoder, auto &ctx) {
+                ctx.queue->clear_cmd.ClearBufferUint(
+                    encoder, buffer.buffer(), buffer.offset(),
+                    buffer.width() >> 2, value);
+              });
+        } else {
+          ctx.EmitComputeCommandChk<true>(
+              [tex = bindable->UseBindable(cmd_queue.CurrentSeqId()),
+               value](auto encoder, auto &ctx) {
+                ctx.queue->clear_cmd.ClearTextureBufferUint(
+                    encoder, tex.texture(ctx), value);
+              });
+        }
+      }
+      break;
+    }
+    case D3D11_UAV_DIMENSION_TEXTURE1D:
+      D3D11_ASSERT(0 && "tex1d clear");
+      break;
+    case D3D11_UAV_DIMENSION_TEXTURE1DARRAY:
+      D3D11_ASSERT(0 && "tex1darr clear");
+      break;
+    case D3D11_UAV_DIMENSION_TEXTURE2D:
+      ctx.EmitComputeCommandChk<true>(
+          [tex = bindable->UseBindable(cmd_queue.CurrentSeqId()),
+           value](auto encoder, auto &ctx) {
+            ctx.queue->clear_cmd.ClearTexture2DUint(encoder, tex.texture(ctx),
+                                                    value);
+          });
+      break;
+    case D3D11_UAV_DIMENSION_TEXTURE2DARRAY:
+      D3D11_ASSERT(0 && "tex2darr clear");
+      break;
+    case D3D11_UAV_DIMENSION_TEXTURE3D:
+      D3D11_ASSERT(0 && "tex3d clear");
+      break;
+    }
   }
 
   void

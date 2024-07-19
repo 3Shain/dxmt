@@ -9,6 +9,7 @@
 #include "Metal/MTLDevice.hpp"
 #include "Metal/MTLTypes.hpp"
 #include "dxmt_binding.hpp"
+#include "dxmt_clear_command.hpp"
 #include "dxmt_occlusion_query.hpp"
 #include "dxmt_ring_bump_allocator.hpp"
 #include "log/log.hpp"
@@ -153,6 +154,7 @@ class CommandChunk {
   class context_t : public EncodingContext {
   public:
     CommandChunk *chk;
+    CommandQueue *queue;
     MTL::CommandBuffer *cmdbuf;
     Obj<MTL::RenderCommandEncoder> render_encoder;
     Obj<MTL::ComputeCommandEncoder> compute_encoder;
@@ -164,7 +166,7 @@ class CommandChunk {
     bool dsv_valid = false;
 
     context_t(CommandChunk *chk, MTL::CommandBuffer *cmdbuf)
-        : chk(chk), cmdbuf(cmdbuf) {}
+        : chk(chk), queue(chk->queue), cmdbuf(cmdbuf) {}
 
   private:
   };
@@ -333,6 +335,8 @@ private:
   RingBumpAllocator<false> copy_temp_allocator;
 
 public:
+  ClearCommandContext clear_cmd;
+
   CommandQueue(MTL::Device *device);
 
   ~CommandQueue();
