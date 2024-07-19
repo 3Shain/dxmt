@@ -499,6 +499,14 @@ public:
       return S_OK;
     case D3D11_QUERY_OCCLUSION:
       return CreateOcculusionQuery(this, pQueryDesc, ppQuery);
+    case D3D11_QUERY_TIMESTAMP: {
+      *ppQuery = ref(new MTLD3D11DummyQuery<UINT64>(this, pQueryDesc));
+      return S_OK;
+    }
+    case D3D11_QUERY_TIMESTAMP_DISJOINT: {
+      *ppQuery = ref(new MTLD3D11DummyQuery<D3D11_QUERY_DATA_TIMESTAMP_DISJOINT>(this, pQueryDesc));
+      return S_OK;
+    }
     default:
       // ERR("CreateQuery: query type not implemented: ", pQueryDesc->Query);
       return E_NOTIMPL;

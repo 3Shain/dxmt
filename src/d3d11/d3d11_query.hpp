@@ -61,6 +61,17 @@ private:
   D3D11_QUERY_DESC desc_;
 };
 
+template <typename DataType>
+class MTLD3D11DummyQuery : public MTLD3DQueryBase<ID3D11Query> {
+public:
+  MTLD3D11DummyQuery(IMTLD3D11Device *pDevice, const D3D11_QUERY_DESC *desc)
+      : MTLD3DQueryBase<ID3D11Query>(pDevice, desc) {}
+
+  virtual UINT STDMETHODCALLTYPE GetDataSize() override {
+    return sizeof(DataType);
+  };
+};
+
 /**
 
 From D3D11.3 Functional Spec:

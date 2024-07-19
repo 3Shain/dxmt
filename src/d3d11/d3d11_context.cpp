@@ -127,6 +127,11 @@ public:
       }
       break;
     }
+    case D3D11_QUERY_TIMESTAMP:
+    case D3D11_QUERY_TIMESTAMP_DISJOINT: {
+      // ignore
+      break;
+    }
     default:
       ERR("Unknown query type ", desc.Query);
       break;
@@ -143,6 +148,11 @@ public:
       break;
     case D3D11_QUERY_OCCLUSION: {
       ((IMTLD3DOcclusionQuery *)pAsync)->End(ctx.NextOcclusionQuerySeq());
+      break;
+    }
+    case D3D11_QUERY_TIMESTAMP:
+    case D3D11_QUERY_TIMESTAMP_DISJOINT: {
+      // ignore
       break;
     }
     default:
@@ -174,6 +184,18 @@ public:
       uint64_t null_data;
       uint64_t *data_ptr = pData ? (uint64_t *)pData : &null_data;
       return ((IMTLD3DOcclusionQuery *)pAsync)->GetData(data_ptr);
+    }
+    case D3D11_QUERY_TIMESTAMP: {
+      if (pData) {
+        (*static_cast<uint64_t *>(pData)) = 0;
+      }
+      return S_OK;
+    }
+    case D3D11_QUERY_TIMESTAMP_DISJOINT: {
+      if (pData) {
+        (*static_cast<D3D11_QUERY_DATA_TIMESTAMP_DISJOINT *>(pData)) = {1, TRUE};
+      }
+      return S_OK;
     }
     default:
       ERR("Unknown query type ", desc.Query);
