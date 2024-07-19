@@ -716,33 +716,6 @@ auto call_float_mad(pvalue a, pvalue b, pvalue c) {
   });
 };
 
-auto call_integer_madsat(pvalue a, pvalue b, pvalue c, bool _signed = false) {
-  return make_irvalue([=](context ctx) {
-    using namespace llvm;
-    auto &context = ctx.llvm;
-    auto &module = ctx.module;
-    assert(a->getType() == b->getType());
-    assert(a->getType() == c->getType());
-    auto att = AttributeList::get(
-      context, {{~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)},
-                {~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)},
-                {~0U, Attribute::get(context, Attribute::AttrKind::ReadNone)}}
-    );
-    auto operand_type = a->getType();
-    auto fn = (module.getOrInsertFunction(
-      "air.mad_sat" +
-        type_overload_suffix(
-          operand_type, _signed ? air::Sign::with_sign : air::Sign::no_sign
-        ),
-      llvm::FunctionType::get(
-        operand_type, {operand_type, operand_type, operand_type}, false
-      ),
-      att
-    ));
-    return ctx.builder.CreateCall(fn, {a, b, c});
-  });
-};
-
 auto call_integer_unary_op(std::string op, pvalue a) {
   return make_irvalue([=](context ctx) {
     using namespace llvm;
@@ -2906,11 +2879,10 @@ auto read_uint_buf_addr(
   assert(ctx.resource.uav_buf_range_map.contains(uav.range_id));
   auto &[handle, bound, _] = ctx.resource.uav_buf_range_map[uav.range_id];
   if (index) {
-    auto _bound = ctx.builder.CreateLShr(co_yield bound(nullptr), ctx.builder.getInt32(2));
+    auto _bound =
+      ctx.builder.CreateLShr(co_yield bound(nullptr), ctx.builder.getInt32(2));
 
-    auto is_oob = ctx.builder.CreateICmpUGE(
-      index, _bound
-    );
+    auto is_oob = ctx.builder.CreateICmpUGE(index, _bound);
     if (oob) {
       *oob = is_oob;
     };
@@ -2931,11 +2903,10 @@ auto read_uint_buf_addr(
   assert(ctx.resource.uav_buf_range_map.contains(uav.range_id));
   auto &[handle, bound, _] = ctx.resource.uav_buf_range_map[uav.range_id];
   if (index) {
-    auto _bound = ctx.builder.CreateLShr(co_yield bound(nullptr), ctx.builder.getInt32(2));
+    auto _bound =
+      ctx.builder.CreateLShr(co_yield bound(nullptr), ctx.builder.getInt32(2));
 
-    auto is_oob = ctx.builder.CreateICmpUGE(
-      index, _bound
-    );
+    auto is_oob = ctx.builder.CreateICmpUGE(index, _bound);
     if (oob) {
       *oob = is_oob;
     };
@@ -2956,11 +2927,10 @@ auto read_uint_buf_addr(
   assert(ctx.resource.srv_buf_range_map.contains(srv.range_id));
   auto &[handle, bound, _] = ctx.resource.srv_buf_range_map[srv.range_id];
   if (index) {
-    auto _bound = ctx.builder.CreateLShr(co_yield bound(nullptr), ctx.builder.getInt32(2));
+    auto _bound =
+      ctx.builder.CreateLShr(co_yield bound(nullptr), ctx.builder.getInt32(2));
 
-    auto is_oob = ctx.builder.CreateICmpUGE(
-      index, _bound
-    );
+    auto is_oob = ctx.builder.CreateICmpUGE(index, _bound);
     if (oob) {
       *oob = is_oob;
     };
@@ -3700,7 +3670,8 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
               case air::TextureKind::texture_1d: {
                 ret = co_yield call_read(
                   res, res_h, co_yield extract_element(0)(coord),
-                  co_yield get_int(load.offsets[0])
+                  co_yield get_int(load.offsets[0]), nullptr, nullptr, nullptr,
+                  co_yield extract_element(3)(coord)
                 );
                 break;
               }
@@ -3708,7 +3679,8 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                 ret = co_yield call_read(
                   res, res_h, co_yield extract_element(0)(coord),
                   co_yield get_int(load.offsets[0]), nullptr,
-                  co_yield extract_element(1)(coord)
+                  co_yield extract_element(1)(coord), nullptr,
+                  co_yield extract_element(3)(coord)
                 );
                 break;
               }
@@ -3716,7 +3688,8 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
               case air::TextureKind::texture_2d: {
                 ret = co_yield call_read(
                   res, res_h, co_yield truncate_vec(2)(coord),
-                  co_yield get_int2(load.offsets[0], load.offsets[1])
+                  co_yield get_int2(load.offsets[0], load.offsets[1]), nullptr,
+                  nullptr, nullptr, co_yield extract_element(3)(coord)
                 );
                 break;
               }
@@ -3725,7 +3698,8 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                 ret = co_yield call_read(
                   res, res_h, co_yield truncate_vec(2)(coord),
                   co_yield get_int2(load.offsets[0], load.offsets[1]), nullptr,
-                  co_yield extract_element(2)(coord)
+                  co_yield extract_element(2)(coord), nullptr,
+                  co_yield extract_element(3)(coord)
                 );
                 break;
               }
@@ -3734,7 +3708,8 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                   res, res_h, co_yield truncate_vec(3)(coord),
                   co_yield get_int3(
                     load.offsets[0], load.offsets[1], load.offsets[2]
-                  )
+                  ),
+                  nullptr, nullptr, nullptr, co_yield extract_element(3)(coord)
                 );
                 break;
               }
@@ -4374,8 +4349,11 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
               load_src_op<false>(mad.src2, mask),
               [=](auto a, auto b, auto c) {
                 return store_dst_op_masked<false>(
-                  // should always use unsigned (because signed saturate to 0x7fffffff)
-                  mad.dst, call_integer_madsat(a, b, c, false)
+                  mad.dst, make_irvalue([=](struct context ctx) {
+                    return ctx.builder.CreateAdd(
+                      ctx.builder.CreateMul(a, b), c
+                    );
+                  })
                 );
               }
             );
