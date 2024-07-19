@@ -516,6 +516,10 @@ HRESULT CreateMTLTextureView<D3D11_DEPTH_STENCIL_VIEW_DESC>(
     break;
   }
   case D3D11_DSV_DIMENSION_TEXTURE2DMS: {
+    if (texture_type == MTL::TextureType2DMultisample) {
+      *ppView = pResource->newTextureView(metal_format.PixelFormat);
+      return S_OK;
+    }
     break;
   }
   case D3D11_DSV_DIMENSION_TEXTURE2DMSARRAY: {
