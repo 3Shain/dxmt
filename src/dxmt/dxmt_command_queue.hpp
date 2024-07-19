@@ -380,9 +380,8 @@ public:
     }
   };
 
-  void YieldUntilCoherenceBoundaryUpdate() {
-    cpu_coherent.wait(cpu_coherent.load(std::memory_order_acquire),
-                      std::memory_order_acquire);
+  void FIXME_YieldUntilCoherenceBoundaryUpdate(uint64_t seq_id) {
+    cpu_coherent.wait(seq_id, std::memory_order_acquire);
   };
 
   std::tuple<void *, MTL::Buffer *, uint64_t>

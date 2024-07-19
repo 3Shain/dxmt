@@ -248,7 +248,7 @@ public:
           PromoteFlush();
         }
         TRACE("staging map block");
-        cmd_queue.YieldUntilCoherenceBoundaryUpdate();
+        cmd_queue.FIXME_YieldUntilCoherenceBoundaryUpdate(coh);
       };
     };
     D3D11_ASSERT(0 && "unknown mapped resource (USAGE_DEFAULT?)");
