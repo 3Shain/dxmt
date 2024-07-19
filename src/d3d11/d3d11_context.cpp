@@ -335,7 +335,7 @@ public:
               [tex = bindable->UseBindable(cmd_queue.CurrentSeqId()),
                value](auto encoder, auto &ctx) {
                 ctx.queue->clear_cmd.ClearTextureBufferUint(
-                    encoder, tex.texture(ctx), value);
+                    encoder, tex.texture(&ctx), value);
               });
         }
       }
@@ -351,7 +351,7 @@ public:
       ctx.EmitComputeCommandChk<true>(
           [tex = bindable->UseBindable(cmd_queue.CurrentSeqId()),
            value](auto encoder, auto &ctx) {
-            ctx.queue->clear_cmd.ClearTexture2DUint(encoder, tex.texture(ctx),
+            ctx.queue->clear_cmd.ClearTexture2DUint(encoder, tex.texture(&ctx),
                                                     value);
           });
       break;
