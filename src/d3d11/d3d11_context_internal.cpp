@@ -468,6 +468,7 @@ public:
           encoder->copyFromBuffer(src, SrcBox.left, dst, DstX,
                                   SrcBox.right - SrcBox.left);
         });
+        promote_flush = true;
       } else {
         D3D11_ASSERT(0 && "todo");
       }
@@ -590,6 +591,7 @@ public:
               /* offset */ 0, bytes_per_row, 0);
           // offset should be DstX*BytesPerTexel
         });
+        promote_flush = true;
       } else {
         D3D11_ASSERT(0 && "todo");
       }
@@ -717,6 +719,7 @@ public:
                   dst.ptr(), /* offset */ 0, bytes_per_row, 0);
               // offset should be DstY*bytes_per_row + DstX*BytesPerTexel
             });
+        promote_flush = true;
       } else {
         D3D11_ASSERT(0 && "todo");
       }
@@ -814,14 +817,17 @@ public:
 
 #pragma region CommandEncoder Maintain State
 
+  bool promote_flush = false;
+
   /**
   Render pass can be invalidated by reasons:
   - render target changes (including depth stencil)
   All pass can be invalidated by reasons:
   - a encoder type switch
   - flush/present
+  Return value indicates if a commit happens
   */
-  void InvalidateCurrentPass() {
+  bool InvalidateCurrentPass() {
     CommandChunk *chk = cmd_queue.CurrentChunk();
     switch (cmdbuf_state) {
     case CommandBufferState::Idle:
@@ -852,6 +858,13 @@ public:
     }
 
     cmdbuf_state = CommandBufferState::Idle;
+    if (promote_flush) {
+      promote_flush = false;
+      Commit();
+      return true;
+    }
+
+    return false;
   }
 
   /**
@@ -1855,7 +1868,8 @@ public:
     }
   };
 
-  template <bool Force = false, typename Fn> void EmitComputeCommandChk(Fn &&fn) {
+  template <bool Force = false, typename Fn>
+  void EmitComputeCommandChk(Fn &&fn) {
     if (Force) {
       SwitchToComputeEncoder();
     }

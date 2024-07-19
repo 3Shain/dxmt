@@ -171,7 +171,8 @@ public:
       return E_INVALIDARG;
 
     if (GetDataFlags != D3D11_ASYNC_GETDATA_DONOTFLUSH) {
-      PromoteFlush();
+      Flush();
+      ctx.InvalidateCurrentPass();
     }
 
     D3D11_QUERY_DESC desc;
@@ -246,7 +247,8 @@ public:
         // FIXME: bugprone
         if (ret + coh == cmd_queue.CurrentSeqId()) {
           TRACE("Map: forced flush");
-          PromoteFlush();
+          Flush();
+          ctx.InvalidateCurrentPass();
         }
         TRACE("staging map block");
         cmd_queue.FIXME_YieldUntilCoherenceBoundaryUpdate(coh);
@@ -269,7 +271,10 @@ public:
   }
 
   void Flush() override {
-    FlushInternal([](auto) {}, []() {}, false);
+    if (cmd_queue.CurrentChunk()->has_no_work_encoded_yet()) {
+      return;
+    }
+    ctx.promote_flush = true;
   }
 
   void ExecuteCommandList(ID3D11CommandList *pCommandList,
@@ -1793,24 +1798,18 @@ public:
 
 #pragma endregion
 
-  void PromoteFlush() {
-    if (cmd_queue.CurrentChunk()->has_no_work_encoded_yet()) {
-      return;
-    }
-    FlushInternal([](auto) {}, []() {}, false);
-  };
-
   void FlushInternal(std::function<void(MTL::CommandBuffer *)> &&beforeCommit,
                      std::function<void(void)> &&onFinished,
                      bool present_) final {
-    ctx.InvalidateCurrentPass();
     cmd_queue.CurrentChunk()->emit(
         [bc = std::move(beforeCommit),
          _ = DestructorWrapper([of = std::move(onFinished)]() { of(); },
                                nullptr)](CommandChunk::context &ctx) {
           bc(ctx.cmdbuf);
         });
-    ctx.Commit();
+    if (!ctx.InvalidateCurrentPass()) {
+      ctx.Commit();
+    }
     if (present_) {
       cmd_queue.PresentBoundary();
     }
@@ -1833,7 +1832,7 @@ public:
 
   virtual void WaitUntilGPUIdle() override {
     uint64_t seq = cmd_queue.CurrentSeqId();
-    Flush();
+    FlushInternal([](auto) {}, []() {}, false);
     cmd_queue.WaitCPUFence(seq);
   };
 };
