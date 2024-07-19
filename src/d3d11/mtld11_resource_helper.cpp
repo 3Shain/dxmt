@@ -304,11 +304,9 @@ CreateMTLTextureDescriptorInternal(
   if (Format == DXGI_FORMAT_R32_TYPELESS &&
       (BindFlags & D3D11_BIND_DEPTH_STENCIL)) {
     desc->setPixelFormat(MTL::PixelFormatDepth32Float);
-    metal_usage |= MTL::TextureUsagePixelFormatView;
   } else if (Format == DXGI_FORMAT_R16_TYPELESS &&
              (BindFlags & D3D11_BIND_DEPTH_STENCIL)) {
     desc->setPixelFormat(MTL::PixelFormatDepth16Unorm);
-    metal_usage |= MTL::TextureUsagePixelFormatView;
   } else {
     desc->setPixelFormat(metal_format.PixelFormat);
   }
@@ -325,10 +323,6 @@ CreateMTLTextureDescriptorInternal(
     if (BindFlags & D3D11_BIND_UNORDERED_ACCESS)
       metal_usage |= MTL::TextureUsageShaderRead | MTL::TextureUsageShaderWrite;
     // decoder not supported: D3D11_BIND_DECODER, D3D11_BIND_VIDEO_ENCODER
-  }
-
-  if (metal_format.Typeless) {
-    metal_usage |= MTL::TextureUsagePixelFormatView;
   }
 
   desc->setUsage(metal_usage);
