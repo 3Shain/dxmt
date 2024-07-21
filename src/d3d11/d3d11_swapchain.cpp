@@ -9,9 +9,11 @@
 #include "util_error.hpp"
 #include "d3d11_device.hpp"
 #include "util_string.hpp"
+#include "wsi_monitor.hpp"
 #include "wsi_platform_win32.hpp"
 #include "wsi_window.hpp"
 #include <atomic>
+#include <cfloat>
 
 /**
 Metal support at most 3 swapchain
@@ -51,6 +53,14 @@ public:
       fullscreen_desc_ = *pFullscreenDesc;
     } else {
       fullscreen_desc_.Windowed = true;
+    }
+
+    wsi::WsiMode current_mode;
+    if (wsi::getCurrentDisplayMode(monitor_, &current_mode) &&
+        current_mode.refreshRate.denominator != 0 &&
+        current_mode.refreshRate.numerator != 0) {
+      init_refresh_rate_ = (double)current_mode.refreshRate.numerator /
+                           (double)current_mode.refreshRate.denominator;
     }
   };
 
@@ -289,9 +299,11 @@ public:
       return S_OK;
     frame_latency_fence.fetch_sub(1, std::memory_order_relaxed);
 
+    double vsync_duration = SyncInterval * 1.0 / init_refresh_rate_;
     device_context_->FlushInternal(
-        [this, backbuffer = backbuffer_](MTL::CommandBuffer *cmdbuf) {
-          backbuffer->Present(cmdbuf);
+        [this, backbuffer = backbuffer_,
+         vsync_duration](MTL::CommandBuffer *cmdbuf) {
+          backbuffer->Present(cmdbuf, vsync_duration);
           ReleaseSemaphore(present_semaphore_, 1, nullptr);
         },
         [this]() {
@@ -434,6 +446,8 @@ private:
   HMONITOR monitor_;
   uint32_t frame_latency;
   uint32_t frame_latency_diff = 0;
+  double init_refresh_rate_ = DBL_MAX;
+
   bool destroyed = false;
 };
 

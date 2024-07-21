@@ -65,6 +65,10 @@ public:
 
     bool                     displaySyncEnabled() const;
     void                     setDisplaySyncEnabled(bool v);
+
+
+    bool                     opaque() const;
+    void                     setOpaque(bool v);
 };
 } // namespace CA
 
@@ -155,5 +159,21 @@ _CA_INLINE bool CA::MetalLayer::displaySyncEnabled() const
 _CA_INLINE void CA::MetalLayer::setDisplaySyncEnabled(bool value)
 {
     return Object::sendMessage<void>(this, _CA_PRIVATE_SEL(setDisplaySyncEnabled_),
+        value);
+}
+
+//-------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+_CA_INLINE bool CA::MetalLayer::opaque() const
+{
+    return Object::sendMessage<bool>(this,
+        _CA_PRIVATE_SEL(opaque_));
+}
+
+//-------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+_CA_INLINE void CA::MetalLayer::setOpaque(bool value)
+{
+    return Object::sendMessage<void>(this, _CA_PRIVATE_SEL(setOpaque_),
         value);
 }

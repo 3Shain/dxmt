@@ -159,11 +159,15 @@ public:
           str::format("Unsupported swapchain format ", pDesc->Format));
     }
     layer_->setDevice(pDevice->GetMTLDevice());
-    // FIXME: will this cause problem if copy to buffer?
+    // FIXME: can't omit it, will cause problem when copying
     // FIXME: this is restricted
     // https://developer.apple.com/documentation/quartzcore/cametallayer/1478155-pixelformat
     // although it never causes problem
+    // FIXME: direct to display will never happen
+    // if the format is not natively supported by the display
+    // (but it's kinda broken on built-in retina display anyway)
     layer_->setPixelFormat(metal_format.PixelFormat);
+    layer_->setOpaque(true);
     pixel_format_ = metal_format.PixelFormat;
     if constexpr (EnableMetalFX) {
       layer_->setDrawableSize(
@@ -171,7 +175,7 @@ public:
     } else {
       layer_->setDrawableSize({(double)pDesc->Width, (double)pDesc->Height});
     }
-    // layer_->setDisplaySyncEnabled(false);
+    layer_->setDisplaySyncEnabled(false);
     desc.ArraySize = 1;
     desc.SampleDesc = {1, 0};
     desc.MipLevels = 1;
@@ -342,7 +346,7 @@ public:
     }
   };
 
-  void Present(MTL::CommandBuffer *cmdbuf) override {
+  void Present(MTL::CommandBuffer *cmdbuf, double vsync_duration) override {
     auto drawable = current_drawable;
     if (drawable) {
       if constexpr (EnableMetalFX) {
@@ -351,7 +355,7 @@ public:
         metalfx_scaler->setOutputTexture(drawable->texture());
         metalfx_scaler->encodeToCommandBuffer(cmdbuf);
       }
-      cmdbuf->presentDrawable(drawable);
+      cmdbuf->presentDrawableAfterMinimumDuration(drawable, vsync_duration);
       current_drawable = nullptr; // "swap"
     }
   }

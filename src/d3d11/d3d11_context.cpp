@@ -1801,15 +1801,14 @@ public:
   void FlushInternal(std::function<void(MTL::CommandBuffer *)> &&beforeCommit,
                      std::function<void(void)> &&onFinished,
                      bool present_) final {
+    D3D11_ASSERT(!ctx.InvalidateCurrentPass(true));
     cmd_queue.CurrentChunk()->emit(
         [bc = std::move(beforeCommit),
          _ = DestructorWrapper([of = std::move(onFinished)]() { of(); },
                                nullptr)](CommandChunk::context &ctx) {
           bc(ctx.cmdbuf);
         });
-    if (!ctx.InvalidateCurrentPass()) {
-      ctx.Commit();
-    }
+    ctx.Commit();
     if (present_) {
       cmd_queue.PresentBoundary();
     }

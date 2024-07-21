@@ -827,7 +827,7 @@ public:
   - flush/present
   Return value indicates if a commit happens
   */
-  bool InvalidateCurrentPass() {
+  bool InvalidateCurrentPass(bool defer_commit = false) {
     CommandChunk *chk = cmd_queue.CurrentChunk();
     switch (cmdbuf_state) {
     case CommandBufferState::Idle:
@@ -858,7 +858,7 @@ public:
     }
 
     cmdbuf_state = CommandBufferState::Idle;
-    if (promote_flush) {
+    if (promote_flush && !defer_commit) {
       promote_flush = false;
       Commit();
       return true;

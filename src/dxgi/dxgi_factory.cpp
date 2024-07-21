@@ -198,7 +198,9 @@ public:
 
   HRESULT STDMETHODCALLTYPE MakeWindowAssociation(HWND WindowHandle,
                                                   UINT Flags) final {
-    WARN("Ignoring flags");
+    if (Flags) {
+      WARN("MakeWindowAssociation: Ignoring flags ", Flags);
+    }
     m_associatedWindow = WindowHandle;
     return S_OK;
   }
