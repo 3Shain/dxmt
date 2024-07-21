@@ -1336,8 +1336,9 @@ public:
     device->CreateGraphicsPipeline(&pipelineDesc, &pipeline);
 
     chk->emit([pso = std::move(pipeline)](CommandChunk::context &ctx) {
-      MTL_COMPILED_GRAPHICS_PIPELINE GraphicsPipeline;
+      MTL_COMPILED_GRAPHICS_PIPELINE GraphicsPipeline {};
       pso->GetPipeline(&GraphicsPipeline); // may block
+      D3D11_ASSERT(GraphicsPipeline.PipelineState);
       ctx.render_encoder->setRenderPipelineState(
           GraphicsPipeline.PipelineState);
     });
@@ -1431,8 +1432,9 @@ public:
     device->CreateGraphicsPipeline(&pipelineDesc, &pipeline);
 
     chk->emit([pso = std::move(pipeline)](CommandChunk::context &ctx) {
-      MTL_COMPILED_GRAPHICS_PIPELINE GraphicsPipeline;
+      MTL_COMPILED_GRAPHICS_PIPELINE GraphicsPipeline {};
       pso->GetPipeline(&GraphicsPipeline); // may block
+      D3D11_ASSERT(GraphicsPipeline.PipelineState);
       ctx.render_encoder->setRenderPipelineState(
           GraphicsPipeline.PipelineState);
     });

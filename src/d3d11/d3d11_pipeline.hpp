@@ -10,7 +10,7 @@
 #include "d3d11_state_object.hpp"
 
 struct MTL_COMPILED_GRAPHICS_PIPELINE {
-  MTL::RenderPipelineState *PipelineState;
+  MTL::RenderPipelineState *PipelineState = nullptr;
 };
 
 struct MTL_COMPILED_COMPUTE_PIPELINE {
