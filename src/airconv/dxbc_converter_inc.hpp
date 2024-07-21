@@ -175,7 +175,7 @@ std::string type_overload_suffix(
   if (type->isHalfTy()) {
     if (sign == air::Sign::inapplicable)
       return ".f16";
-    return ".f.f32";
+    return ".f.f16";
   }
   if (type->isIntegerTy()) {
     assert(llvm::cast<llvm::IntegerType>(type)->getBitWidth() == 32);
@@ -301,15 +301,76 @@ auto get_int3(uint32_t value0, uint32_t value1, uint32_t value2) -> IRValue {
   });
 };
 
-auto get_int4_splat(uint32_t value) -> IRValue {
-  return make_irvalue([=](context ctx) {
-    return llvm::ConstantVector::get(
-      {llvm::ConstantInt::get(ctx.llvm, llvm::APInt{32, value, true}),
-       llvm::ConstantInt::get(ctx.llvm, llvm::APInt{32, value, true}),
-       llvm::ConstantInt::get(ctx.llvm, llvm::APInt{32, value, true}),
-       llvm::ConstantInt::get(ctx.llvm, llvm::APInt{32, value, true})}
-    );
+auto get_splat_constant(uint32_t value, uint32_t mask) -> IRValue {
+  assert(mask);
+  return make_irvalue([=](context ctx) -> pvalue {
+    switch (mask) {
+    case 0b1:
+    case 0b10:
+    case 0b100:
+    case 0b1000: {
+      return llvm::ConstantInt::get(ctx.llvm, llvm::APInt{32, value, true});
+    }
+    case 0b11:
+    case 0b110:
+    case 0b101:
+    case 0b1100:
+    case 0b1010:
+    case 0b1001: {
+      return llvm::ConstantVector::get(
+        {llvm::ConstantInt::get(ctx.llvm, llvm::APInt{32, value, true}),
+         llvm::ConstantInt::get(ctx.llvm, llvm::APInt{32, value, true})}
+      );
+    }
+    case 0b111:
+    case 0b1101:
+    case 0b1011:
+    case 0b1110: {
+      return llvm::ConstantVector::get(
+        {llvm::ConstantInt::get(ctx.llvm, llvm::APInt{32, value, true}),
+         llvm::ConstantInt::get(ctx.llvm, llvm::APInt{32, value, true}),
+         llvm::ConstantInt::get(ctx.llvm, llvm::APInt{32, value, true})}
+      );
+    }
+    default: {
+      return llvm::ConstantVector::get(
+        {llvm::ConstantInt::get(ctx.llvm, llvm::APInt{32, value, true}),
+         llvm::ConstantInt::get(ctx.llvm, llvm::APInt{32, value, true}),
+         llvm::ConstantInt::get(ctx.llvm, llvm::APInt{32, value, true}),
+         llvm::ConstantInt::get(ctx.llvm, llvm::APInt{32, value, true})}
+      );
+    }
+    }
   });
+};
+
+auto get_splat_type(llvm::Type *scalar, uint32_t mask) -> llvm::Type * {
+  assert(mask);
+  switch (mask) {
+  case 0b1:
+  case 0b10:
+  case 0b100:
+  case 0b1000: {
+    return scalar;
+  }
+  case 0b11:
+  case 0b110:
+  case 0b101:
+  case 0b1100:
+  case 0b1010:
+  case 0b1001: {
+    return llvm::FixedVectorType::get(scalar, 2);
+  }
+  case 0b111:
+  case 0b1101:
+  case 0b1011:
+  case 0b1110: {
+    return llvm::FixedVectorType::get(scalar, 3);
+  }
+  default: {
+    return llvm::FixedVectorType::get(scalar, 4);
+  }
+  }
 };
 
 auto get_int(uint32_t value) -> IRValue {
@@ -2112,19 +2173,8 @@ SrcOperandModifier get_modifier(SrcOperand src) {
   );
 };
 
-IRValue apply_float_src_operand_modifier(
-  SrcOperandModifier c, llvm::Value *fvec4, uint32_t mask
-) {
+IRValue get_valid_components(pvalue ret, uint32_t mask) {
   auto ctx = co_yield get_context();
-  assert(fvec4->getType() == ctx.types._float4);
-
-  auto ret = fvec4;
-  if (c.swizzle != swizzle_identity) {
-    ret = ctx.builder.CreateShuffleVector(
-      ret, {c.swizzle.x, c.swizzle.y, c.swizzle.z, c.swizzle.w}
-    );
-  }
-  /* optimization for scaler */
   switch (mask) {
   case 0b1:
     ret = co_yield extract_element(0)(ret);
@@ -2172,6 +2222,23 @@ IRValue apply_float_src_operand_modifier(
   default:
     break;
   }
+  co_return ret;
+}
+
+IRValue apply_float_src_operand_modifier(
+  SrcOperandModifier c, llvm::Value *fvec4, uint32_t mask
+) {
+  auto ctx = co_yield get_context();
+  assert(fvec4->getType() == ctx.types._float4);
+
+  auto ret = fvec4;
+  if (c.swizzle != swizzle_identity) {
+    ret = ctx.builder.CreateShuffleVector(
+      ret, {c.swizzle.x, c.swizzle.y, c.swizzle.z, c.swizzle.w}
+    );
+  }
+  /* optimization for scaler */
+  ret = co_yield get_valid_components(ret, mask);
   if (c.abs) {
     ret = co_yield call_float_unary_op("fabs", ret);
   }
@@ -2193,53 +2260,7 @@ IRValue apply_integer_src_operand_modifier(
     );
   }
   /* optimization for scaler */
-  switch (mask) {
-  case 0b1:
-    ret = co_yield extract_element(0)(ret);
-    break;
-  case 0b10:
-    ret = co_yield extract_element(1)(ret);
-    break;
-  case 0b100:
-    ret = co_yield extract_element(2)(ret);
-    break;
-  case 0b1000:
-    ret = co_yield extract_element(3)(ret);
-    break;
-  case 0b1100:
-    ret = ctx.builder.CreateShuffleVector(ret, {2, 3});
-    break;
-  case 0b0110:
-    ret = ctx.builder.CreateShuffleVector(ret, {1, 2});
-    break;
-  case 0b0011:
-    ret = ctx.builder.CreateShuffleVector(ret, {0, 1});
-    break;
-  case 0b1010:
-    ret = ctx.builder.CreateShuffleVector(ret, {1, 3});
-    break;
-  case 0b0101:
-    ret = ctx.builder.CreateShuffleVector(ret, {0, 2});
-    break;
-  case 0b1001:
-    ret = ctx.builder.CreateShuffleVector(ret, {0, 3});
-    break;
-  case 0b1101:
-    ret = ctx.builder.CreateShuffleVector(ret, {0, 2, 3});
-    break;
-  case 0b1011:
-    ret = ctx.builder.CreateShuffleVector(ret, {0, 1, 3});
-    break;
-  case 0b1110:
-    ret = ctx.builder.CreateShuffleVector(ret, {1, 2, 3});
-    break;
-  case 0b0111:
-    ret = ctx.builder.CreateShuffleVector(ret, {0, 1, 2});
-    break;
-  case 0b1111:
-  default:
-    break;
-  }
+  ret = co_yield get_valid_components(ret, mask);
   if (c.abs) {
     assert(0 && "otherwise dxbc spec is wrong");
   }
@@ -3049,25 +3070,27 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
               auto src0 = co_yield load_src_op<true>(swapc.src0);
               auto src1 = co_yield load_src_op<true>(swapc.src1);
               auto cond = co_yield load_src_op<false>(swapc.src_cond);
-              co_yield store_dst_op<true>(
-                swapc.dst0, make_irvalue([=](auto ctx) {
-                  return ctx.builder.CreateSelect(
-                    ctx.builder.CreateICmpNE(
-                      cond, llvm::ConstantAggregateZero::get(ctx.types._int4)
-                    ),
-                    src1, src0
-                  );
-                })
+              auto mask_dst0 = get_dst_mask(swapc.dst0);
+              co_yield store_dst_op_masked<true>(
+                swapc.dst0, pure(ctx.builder.CreateSelect(
+                              ctx.builder.CreateICmpNE(
+                                co_yield get_valid_components(cond, mask_dst0),
+                                co_yield get_splat_constant(0, mask_dst0)
+                              ),
+                              co_yield get_valid_components(src1, mask_dst0),
+                              co_yield get_valid_components(src0, mask_dst0)
+                            ))
               );
-              co_yield store_dst_op<true>(
-                swapc.dst1, make_irvalue([=](auto ctx) {
-                  return ctx.builder.CreateSelect(
-                    ctx.builder.CreateICmpNE(
-                      cond, llvm::ConstantAggregateZero::get(ctx.types._int4)
-                    ),
-                    src0, src1
-                  );
-                })
+              auto mask_dst1 = get_dst_mask(swapc.dst1);
+              co_yield store_dst_op_masked<true>(
+                swapc.dst1, pure(ctx.builder.CreateSelect(
+                              ctx.builder.CreateICmpNE(
+                                co_yield get_valid_components(cond, mask_dst1),
+                                co_yield get_splat_constant(0, mask_dst1)
+                              ),
+                              co_yield get_valid_components(src0, mask_dst1),
+                              co_yield get_valid_components(src1, mask_dst1)
+                            ))
               );
               co_return {};
             });
@@ -4496,18 +4519,17 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
             auto mask = get_dst_mask(convert.dst);
             switch (convert.op) {
             case ConversionOp::HalfToFloat: {
-              effect << store_dst_op<true>(
+              effect << store_dst_op_masked<true>(
                 convert.dst,
                 make_irvalue_bind([=](struct context ctx) -> IRValue {
                   // FIXME: neg modifier might be wrong?!
-                  auto src = co_yield load_src_op<false>(convert.src); // int4
+                  auto src = co_yield load_src_op<false>(convert.src, mask);
+                  auto src_type = get_splat_type(
+                    llvm::IntegerType::getInt16Ty(ctx.llvm), mask
+                  );
+                  auto dst_type = get_splat_type(ctx.types._half, mask);
                   auto half4 = ctx.builder.CreateBitCast(
-                    ctx.builder.CreateTrunc(
-                      src, llvm::FixedVectorType::get(
-                             llvm::IntegerType::getInt16Ty(ctx.llvm), 4
-                           )
-                    ),
-                    ctx.types._half4
+                    ctx.builder.CreateTrunc(src, src_type), dst_type
                   );
                   co_return co_yield call_convert(
                     half4, ctx.types._float, air::Sign::with_sign /* intended */
@@ -4517,24 +4539,20 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
               break;
             }
             case ConversionOp::FloatToHalf: {
-              effect << store_dst_op<false>(
+              effect << store_dst_op_masked<false>(
                 convert.dst,
                 make_irvalue_bind([=](struct context ctx) -> IRValue {
                   // FIXME: neg modifier might be wrong?!
-                  auto src = co_yield load_src_op<true>(convert.src);
-                  auto half4 = co_yield call_convert(
+                  auto src = co_yield load_src_op<true>(convert.src, mask);
+                  auto half_src = co_yield call_convert(
                     src, ctx.types._half, air::Sign::with_sign /* intended */
                   );
-                  co_return ctx.builder.CreateBitCast(
-                    ctx.builder.CreateZExt(
-                      ctx.builder.CreateBitCast(
-                        half4, llvm::FixedVectorType::get(
-                                 llvm::IntegerType::getInt16Ty(ctx.llvm), 4
-                               )
-                      ),
-                      ctx.types._int4
-                    ),
-                    ctx.types._int4
+                  auto src_type = get_splat_type(
+                    llvm::IntegerType::getInt16Ty(ctx.llvm), mask
+                  );
+                  auto dst_type = get_splat_type(ctx.types._int, mask);
+                  co_return ctx.builder.CreateZExt(
+                    ctx.builder.CreateBitCast(half_src, src_type), dst_type
                   );
                 })
               );
@@ -4591,20 +4609,27 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
             }
           },
           [&effect](InstIntegerBinaryOpWithTwoDst bin) {
+            auto dst_hi_mask = get_dst_mask(bin.dst_hi);
+            auto dst_lo_mask = get_dst_mask(bin.dst_low);
             switch (bin.op) {
             case IntegerBinaryOpWithTwoDst::IMul:
             case IntegerBinaryOpWithTwoDst::UMul: {
               effect << make_effect_bind([=](struct context ctx) -> IREffect {
                 auto a = co_yield load_src_op<false>(bin.src0);
                 auto b = co_yield load_src_op<false>(bin.src1);
-                co_yield store_dst_op<false>(
+                co_yield store_dst_op_masked<false>(
                   bin.dst_hi,
                   call_integer_binop(
-                    "mul_hi", a, b, bin.op == IntegerBinaryOpWithTwoDst::IMul
+                    "mul_hi", co_yield get_valid_components(a, dst_hi_mask),
+                    co_yield get_valid_components(b, dst_hi_mask),
+                    bin.op == IntegerBinaryOpWithTwoDst::IMul
                   )
                 );
-                co_yield store_dst_op<false>(
-                  bin.dst_low, pure(ctx.builder.CreateMul(a, b))
+                co_yield store_dst_op_masked<false>(
+                  bin.dst_low, pure(ctx.builder.CreateMul(
+                                 co_yield get_valid_components(a, dst_lo_mask),
+                                 co_yield get_valid_components(b, dst_lo_mask)
+                               ))
                 );
                 co_return {};
               });
@@ -4636,44 +4661,50 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
             }
           },
           [&effect](InstExtractBits extract) {
-            effect << store_dst_op<false>(
+            auto mask = get_dst_mask(extract.dst);
+            effect << store_dst_op_masked<false>(
               extract.dst,
               make_irvalue_bind([=](struct context ctx) -> IRValue {
-                auto src0 = co_yield load_src_op<false>(extract.src0);
-                auto src1 = co_yield load_src_op<false>(extract.src1);
-                auto src2 = co_yield load_src_op<false>(extract.src2);
-                auto width =
-                  ctx.builder.CreateAnd(src0, co_yield get_int4_splat(0b11111));
-                auto offset =
-                  ctx.builder.CreateAnd(src1, co_yield get_int4_splat(0b11111));
-                auto width_is_zero =
-                  ctx.builder.CreateICmpEQ(width, co_yield get_int4_splat(0));
+                auto src0 = co_yield load_src_op<false>(extract.src0, mask);
+                auto src1 = co_yield load_src_op<false>(extract.src1, mask);
+                auto src2 = co_yield load_src_op<false>(extract.src2, mask);
+                auto width = ctx.builder.CreateAnd(
+                  src0, co_yield get_splat_constant(0b11111, mask)
+                );
+                auto offset = ctx.builder.CreateAnd(
+                  src1, co_yield get_splat_constant(0b11111, mask)
+                );
+                auto width_is_zero = ctx.builder.CreateICmpEQ(
+                  width, co_yield get_splat_constant(0, mask)
+                );
                 auto width_offset_sum = ctx.builder.CreateAdd(width, offset);
-                auto width_cp =
-                  ctx.builder.CreateSub(co_yield get_int4_splat(32), width);
+                auto width_cp = ctx.builder.CreateSub(
+                  co_yield get_splat_constant(32, mask), width
+                );
                 auto clamp_src = ctx.builder.CreateShl(
-                  src2, ctx.builder.CreateSub(
-                          co_yield get_int4_splat(32), width_offset_sum
-                        )
+                  src2,
+                  ctx.builder.CreateSub(
+                    co_yield get_splat_constant(32, mask), width_offset_sum
+                  )
                 );
                 if (!extract.is_signed) {
                   auto need_clamp = ctx.builder.CreateICmpULT(
-                    width_offset_sum, co_yield get_int4_splat(32)
+                    width_offset_sum, co_yield get_splat_constant(32, mask)
                   );
                   auto no_clamp = ctx.builder.CreateLShr(src2, offset);
                   auto clamped = ctx.builder.CreateLShr(clamp_src, width_cp);
                   co_return ctx.builder.CreateSelect(
-                    width_is_zero, co_yield get_int4_splat(0),
+                    width_is_zero, co_yield get_splat_constant(0, mask),
                     ctx.builder.CreateSelect(need_clamp, clamped, no_clamp)
                   );
                 } else {
                   auto need_clamp = ctx.builder.CreateICmpSLT(
-                    width_offset_sum, co_yield get_int4_splat(32)
+                    width_offset_sum, co_yield get_splat_constant(32, mask)
                   );
                   auto no_clamp = ctx.builder.CreateAShr(src2, offset);
                   auto clamped = ctx.builder.CreateAShr(clamp_src, width_cp);
                   co_return ctx.builder.CreateSelect(
-                    width_is_zero, co_yield get_int4_splat(0),
+                    width_is_zero, co_yield get_splat_constant(0, mask),
                     ctx.builder.CreateSelect(need_clamp, clamped, no_clamp)
                   );
                 }
@@ -4681,22 +4712,29 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
             );
           },
           [&effect](InstBitFiledInsert bfi) {
-            effect << store_dst_op<false>(
+            auto mask = get_dst_mask(bfi.dst);
+            effect << store_dst_op_masked<false>(
               bfi.dst, make_irvalue_bind([=](struct context ctx) -> IRValue {
-                auto src0 = co_yield load_src_op<false>(bfi.src0);
-                auto src1 = co_yield load_src_op<false>(bfi.src1);
-                auto src2 = co_yield load_src_op<false>(bfi.src2);
-                auto src3 = co_yield load_src_op<false>(bfi.src3);
-                auto width =
-                  ctx.builder.CreateAnd(src0, co_yield get_int4_splat(0b11111));
-                auto offset =
-                  ctx.builder.CreateAnd(src1, co_yield get_int4_splat(0b11111));
+                auto src0 = co_yield load_src_op<false>(bfi.src0, mask);
+                auto src1 = co_yield load_src_op<false>(bfi.src1, mask);
+                auto src2 = co_yield load_src_op<false>(bfi.src2, mask);
+                auto src3 = co_yield load_src_op<false>(bfi.src3, mask);
+                auto width = ctx.builder.CreateAnd(
+                  src0, co_yield get_splat_constant(0b11111, mask)
+                );
+                auto offset = ctx.builder.CreateAnd(
+                  src1, co_yield get_splat_constant(0b11111, mask)
+                );
                 auto bitmask = ctx.builder.CreateAnd(
-                  co_yield get_int4_splat(0xffffffff), // is this necessary?
+                  co_yield get_splat_constant(
+                    0xffffffff, mask
+                  ), // is this necessary?
                   ctx.builder.CreateShl(
                     ctx.builder.CreateSub(
-                      ctx.builder.CreateShl(co_yield get_int4_splat(1), width),
-                      co_yield get_int4_splat(1)
+                      ctx.builder.CreateShl(
+                        co_yield get_splat_constant(1, mask), width
+                      ),
+                      co_yield get_splat_constant(1, mask)
                     ),
                     offset
                   )

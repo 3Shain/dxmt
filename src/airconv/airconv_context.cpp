@@ -8,6 +8,7 @@
 #include "llvm/Passes/OptimizationLevel.h"
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/Support/VersionTuple.h"
+#include "llvm/Transforms/Scalar/Scalarizer.h"
 
 #include "airconv_context.hpp"
 
@@ -71,48 +72,6 @@ void initializeModule(llvm::Module &M, const ModuleOptions &opts) {
   ));
 };
 
-class InstShuffleVectorCombinePass
-    : public PassInfoMixin<InstShuffleVectorCombinePass> {
-public:
-  PreservedAnalyses run(Function &F, FunctionAnalysisManager &AM) {
-    std::vector<Instruction *> to_delete;
-    for (auto &B : F) {
-      for (auto &I : B) {
-        if (isa<ShuffleVectorInst>(I)) {
-          auto sv = cast<ShuffleVectorInst>(&I);
-          auto first_op = sv->getOperand(0);
-          auto second_op = sv->getOperand(1);
-          if (isa<PoisonValue>(second_op) && isa<ShuffleVectorInst>(first_op) &&
-              first_op->getNumUses() == 1) {
-            auto first_op_as_shufflevector = cast<ShuffleVectorInst>(first_op);
-            auto replaced_first_op = first_op_as_shufflevector->getOperand(0);
-            auto replaced_second_op = first_op_as_shufflevector->getOperand(1);
-            IRBuilder<> builder(first_op_as_shufflevector->getNextNode());
-            auto old_mask = first_op_as_shufflevector->getShuffleMask().vec();
-            auto new_mask = sv->getShuffleMask().vec();
-            for (unsigned i = 0; i < new_mask.size(); i++) {
-              new_mask[i] =
-                new_mask[i] == UndefMaskElem
-                  ? UndefMaskElem
-                  : first_op_as_shufflevector->getMaskValue(new_mask[i]);
-            }
-            sv->replaceAllUsesWith(builder.CreateShuffleVector(
-              replaced_first_op, replaced_second_op, new_mask,
-              "combined_shuffle"
-            ));
-            to_delete.push_back(sv);
-            to_delete.push_back(first_op_as_shufflevector);
-          }
-        }
-      }
-    }
-    for (auto inst : to_delete) {
-      inst->eraseFromParent();
-    }
-    return PreservedAnalyses::all();
-  }
-};
-
 void runOptimizationPasses(llvm::Module &M, llvm::OptimizationLevel opt) {
 
   // Create the analysis managers.
@@ -139,7 +98,7 @@ void runOptimizationPasses(llvm::Module &M, llvm::OptimizationLevel opt) {
   ModulePassManager MPM = PB.buildPerModuleDefaultPipeline(opt);
 
   FunctionPassManager FPM;
-  FPM.addPass(InstShuffleVectorCombinePass());
+  FPM.addPass(ScalarizerPass());
 
   MPM.addPass(createModuleToFunctionPassAdaptor(std::move(FPM)));
   MPM.addPass(VerifierPass());
