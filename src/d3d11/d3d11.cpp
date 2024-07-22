@@ -38,7 +38,7 @@ D3D11CoreCreateDevice(IDXGIFactory *pFactory, IDXGIAdapter *pAdapter,
   // so far stick to 11.0
   // Find the highest feature level supported by the device.
   // This works because the feature level array is ordered.
-  D3D_FEATURE_LEVEL maxFeatureLevel = D3D_FEATURE_LEVEL_11_1;
+  D3D_FEATURE_LEVEL maxFeatureLevel = D3D_FEATURE_LEVEL_11_0;
   D3D_FEATURE_LEVEL minFeatureLevel = D3D_FEATURE_LEVEL();
   D3D_FEATURE_LEVEL devFeatureLevel = D3D_FEATURE_LEVEL();
 
