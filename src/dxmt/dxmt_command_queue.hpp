@@ -380,7 +380,7 @@ public:
       if (current == seq) {
         return;
       }
-      cpu_coherent.wait(current);
+      cpu_coherent.wait(current, std::memory_order_acquire);
     }
   };
 
@@ -390,13 +390,16 @@ public:
 
   std::tuple<void *, MTL::Buffer *, uint64_t>
   AllocateStagingBuffer(size_t size, size_t alignment) {
-    return staging_allocator.allocate(ready_for_encode, cpu_coherent, size,
-                                      alignment);
+    return staging_allocator.allocate(ready_for_encode,
+                                      cpu_coherent.load(std::memory_order_acquire),
+                                      size, alignment);
   }
 
   std::tuple<void *, MTL::Buffer *, uint64_t>
   AllocateTempBuffer(uint64_t seq, size_t size, size_t alignment) {
-    return copy_temp_allocator.allocate(seq, cpu_coherent, size, alignment);
+    return copy_temp_allocator.allocate(seq,
+                                        cpu_coherent.load(std::memory_order_acquire),
+                                        size, alignment);
   }
 };
 

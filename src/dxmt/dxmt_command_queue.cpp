@@ -196,10 +196,10 @@ uint32_t CommandQueue::WaitForFinishThread() {
     }
 
     chunk.reset();
-    chunk_ongoing.fetch_sub(1, std::memory_order_release);
-    chunk_ongoing.notify_one();
     cpu_coherent.fetch_add(1, std::memory_order_relaxed);
+    chunk_ongoing.fetch_sub(1, std::memory_order_release);
     cpu_coherent.notify_all();
+    chunk_ongoing.notify_one();
 
     staging_allocator.free_blocks(internal_seq);
 
