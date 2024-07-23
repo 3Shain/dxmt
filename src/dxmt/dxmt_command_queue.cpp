@@ -6,6 +6,8 @@
 #include "util_env.hpp"
 #include <atomic>
 
+#define ASYNC_ENCODING 1
+
 namespace dxmt {
 
 ENCODER_CLEARPASS_INFO *CommandChunk::mark_clear_pass() {
@@ -80,12 +82,13 @@ void CommandQueue::CommitCurrentChunk(uint64_t occlusion_counter_begin,
   chunk.frame_ = present_seq;
   chunk.visibility_result_seq_begin = occlusion_counter_begin;
   chunk.visibility_result_seq_end = occlusion_counter_end;
-#ifndef SYNC_ENCODING
+#if ASYNC_ENCODING
   ready_for_encode.fetch_add(1, std::memory_order_release);
   ready_for_encode.notify_all();
 #else
-  CommitChunkInternal(chunk);
-  ready_for_encode.fetch_add(1, std::memory_order_release);
+  CommitChunkInternal(chunk, 
+    ready_for_encode.fetch_add(1, std::memory_order_release)
+  );
 #endif
 }
 
@@ -133,7 +136,7 @@ void CommandQueue::CommitChunkInternal(CommandChunk &chunk, uint64_t seq) {
 }
 
 uint32_t CommandQueue::EncodingThread() {
-#ifndef SYNC_ENCODING
+#if ASYNC_ENCODING
   env::setThreadName("dxmt-encode-thread");
   SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
   uint64_t internal_seq = 1;
