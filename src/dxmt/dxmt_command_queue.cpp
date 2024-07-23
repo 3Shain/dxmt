@@ -76,7 +76,7 @@ CommandQueue::~CommandQueue() {
 
 void CommandQueue::CommitCurrentChunk(uint64_t occlusion_counter_begin,
                                       uint64_t occlusion_counter_end) {
-  chunk_ongoing.wait(kCommandChunkCount - 1, std::memory_order_relaxed);
+  chunk_ongoing.wait(kCommandChunkCount - 1, std::memory_order_acquire);
   chunk_ongoing.fetch_add(1, std::memory_order_relaxed);
   auto &chunk = chunks[ready_for_encode % kCommandChunkCount];
   chunk.frame_ = present_seq;
@@ -194,8 +194,8 @@ uint32_t CommandQueue::WaitForFinishThread() {
     }
 
     chunk.reset();
-    chunk_ongoing.fetch_sub(1, std::memory_order_relaxed);
-    chunk_ongoing.notify_all();
+    chunk_ongoing.fetch_sub(1, std::memory_order_release);
+    chunk_ongoing.notify_one();
     cpu_coherent.fetch_add(1, std::memory_order_relaxed);
     cpu_coherent.notify_all();
 
