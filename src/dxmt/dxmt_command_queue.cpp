@@ -62,7 +62,7 @@ CommandQueue::~CommandQueue() {
   ready_for_encode++;
   ready_for_encode.notify_one();
   ready_for_commit++;
-  ready_for_commit.notify_all();
+  ready_for_commit.notify_one();
   encodeThread.join();
   finishThread.join();
   for (unsigned i = 0; i < kCommandChunkCount; i++) {
@@ -133,8 +133,8 @@ void CommandQueue::CommitChunkInternal(CommandChunk &chunk, uint64_t seq) {
     c->stopCapture();
   }
 
-  ready_for_commit.fetch_add(1, std::memory_order_relaxed);
-  ready_for_commit.notify_all();
+  ready_for_commit.fetch_add(1, std::memory_order_release);
+  ready_for_commit.notify_one();
 }
 
 uint32_t CommandQueue::EncodingThread() {
