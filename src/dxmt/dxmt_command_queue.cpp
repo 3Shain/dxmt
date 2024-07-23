@@ -60,7 +60,7 @@ CommandQueue::~CommandQueue() {
   TRACE("Destructing command queue");
   stopped.store(true);
   ready_for_encode++;
-  ready_for_encode.notify_all();
+  ready_for_encode.notify_one();
   ready_for_commit++;
   ready_for_commit.notify_all();
   encodeThread.join();
@@ -78,16 +78,18 @@ void CommandQueue::CommitCurrentChunk(uint64_t occlusion_counter_begin,
                                       uint64_t occlusion_counter_end) {
   chunk_ongoing.wait(kCommandChunkCount - 1, std::memory_order_acquire);
   chunk_ongoing.fetch_add(1, std::memory_order_relaxed);
-  auto &chunk = chunks[ready_for_encode % kCommandChunkCount];
+  auto &chunk = chunks[
+    ready_for_encode.load(std::memory_order_relaxed) % kCommandChunkCount
+  ];
   chunk.frame_ = present_seq;
   chunk.visibility_result_seq_begin = occlusion_counter_begin;
   chunk.visibility_result_seq_end = occlusion_counter_end;
 #if ASYNC_ENCODING
   ready_for_encode.fetch_add(1, std::memory_order_release);
-  ready_for_encode.notify_all();
+  ready_for_encode.notify_one();
 #else
   CommitChunkInternal(chunk, 
-    ready_for_encode.fetch_add(1, std::memory_order_release)
+    ready_for_encode.fetch_add(1, std::memory_order_relaxed)
   );
 #endif
 }

@@ -307,7 +307,7 @@ private:
   uint32_t WaitForFinishThread();
 
   std::atomic_uint64_t ready_for_encode =
-      1; // we start from 1, so 0 is aways coherent
+      1; // we start from 1, so 0 is always coherent
   std::atomic_uint64_t ready_for_commit = 1;
   std::atomic_uint64_t chunk_ongoing = 0;
   std::atomic_uint64_t cpu_coherent = 0;
