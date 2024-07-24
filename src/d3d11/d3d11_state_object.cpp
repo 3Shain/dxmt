@@ -716,13 +716,14 @@ HRESULT CreateSamplerState(ID3D11Device *pDevice,
     mtl_sampler_desc->setRAddressMode(kAddressModeMap[desc.AddressW - 1]);
   }
 
-  // comparison function
-  if (desc.ComparisonFunc < 1 || desc.ComparisonFunc > 8) {
-    WARN("CreateSamplerState: invalid ComparisonFunc");
-    mtl_sampler_desc->setCompareFunction(MTL::CompareFunctionNever);
-  } else {
-    mtl_sampler_desc->setCompareFunction(
-        kCompareFunctionMap[desc.ComparisonFunc]);
+  if (D3D11_DECODE_IS_COMPARISON_FILTER(desc.Filter)) {
+    if (desc.ComparisonFunc < 1 || desc.ComparisonFunc > 8) {
+      WARN("CreateSamplerState: invalid ComparisonFunc");
+      mtl_sampler_desc->setCompareFunction(MTL::CompareFunctionNever);
+    } else {
+      mtl_sampler_desc->setCompareFunction(
+          kCompareFunctionMap[desc.ComparisonFunc]);
+    }
   }
 
   // border color
