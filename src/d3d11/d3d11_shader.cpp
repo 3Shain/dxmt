@@ -138,6 +138,9 @@ public:
       : ComObject<IMTLCompiledShader>(), device_(pDevice), shader_(shader),
         compilation_args(compilation_args) {
     shader_->AddRef(); // ???
+    identity_data.type = SM50_SHADER_DEBUG_IDENTITY;
+    identity_data.id = shader_->id;
+    identity_data.next = compilation_args;
   }
 
   void SubmitWork() { device_->SubmitThreadgroupWork(this, &work_state_); }
@@ -199,7 +202,7 @@ public:
       std::string func_name = "shader_main_" + std::to_string(shader_->id);
       if (auto ret = SM50Compile(
               shader_->sm50,
-              (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)compilation_args,
+              (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)&identity_data,
               func_name.c_str(), &compile_result, &sm50_err)) {
         if (ret == 42) {
           ERR("Failed to compile shader due to failed assertation");
@@ -252,6 +255,7 @@ private:
   Sha1Hash hash_;
   Obj<MTL::Function> function_;
   void *compilation_args;
+  SM50_SHADER_DEBUG_IDENTITY_DATA identity_data;
 };
 
 template <typename tag>
@@ -302,7 +306,9 @@ void TShaderBase<tag_emulated_vertex_so>::GetCompiledShader(
     precompiled_ = new AirconvShaderEmulatedVertexSO(this->m_parent, this, 0);
     precompiled_->SubmitWork();
   }
-  *pShader = precompiled_.ref();
+  if(pShader) {
+    *pShader = precompiled_.ref();
+  }
   return;
 }
 
@@ -312,7 +318,9 @@ void TShaderBase<tag>::GetCompiledShader(IMTLCompiledShader **pShader) {
     precompiled_ = new AirconvShader(this->m_parent, this, nullptr);
     precompiled_->SubmitWork();
   }
-  *pShader = precompiled_.ref();
+  if(pShader) {
+    *pShader = precompiled_.ref();
+  }
   return;
 }
 

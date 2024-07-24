@@ -99,6 +99,7 @@ llvm::Error convertDXBC(
   uint64_t sign_mask = 0;
   SM50_SHADER_COMPILATION_ARGUMENT_DATA *arg = pArgs;
   SM50_SHADER_EMULATE_VERTEX_STREAM_OUTPUT_DATA *vertex_so = nullptr;
+  uint64_t debug_id = ~0u;
   while (arg) {
     switch (arg->type) {
     case SM50_SHADER_COMPILATION_INPUT_SIGN_MASK:
@@ -109,6 +110,9 @@ llvm::Error convertDXBC(
       if (shader_type != microsoft::D3D10_SB_VERTEX_SHADER)
         break;
       vertex_so = (SM50_SHADER_EMULATE_VERTEX_STREAM_OUTPUT_DATA *)arg;
+      break;
+    case SM50_SHADER_DEBUG_IDENTITY:
+      debug_id = ((SM50_SHADER_DEBUG_IDENTITY_DATA *)arg)->id;
       break;
     }
     arg = (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)arg->next;
