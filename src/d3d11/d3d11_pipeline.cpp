@@ -137,7 +137,7 @@ Com<IMTLCompiledGraphicsPipeline> CreateGraphicsPipeline(
     IMTLCompiledShader *pPixelShader, IMTLD3D11InputLayout *pInputLayout,
     IMTLD3D11BlendState *pBlendState, UINT NumRTVs,
     MTL::PixelFormat const *RTVFormats, MTL::PixelFormat DepthStencilFormat) {
-  auto pipeline = new MTLCompiledGraphicsPipeline(
+  Com<IMTLCompiledGraphicsPipeline> pipeline = new MTLCompiledGraphicsPipeline(
       pDevice, pVertexShader, pPixelShader, pInputLayout, pBlendState, NumRTVs,
       RTVFormats, DepthStencilFormat);
   pipeline->SubmitWork();
@@ -215,7 +215,7 @@ private:
 Com<IMTLCompiledComputePipeline>
 CreateComputePipeline(IMTLD3D11Device *pDevice,
                       IMTLCompiledShader *pComputeShader) {
-  auto pipeline = new MTLCompiledComputePipeline(pDevice, pComputeShader);
+  Com<IMTLCompiledComputePipeline> pipeline = new MTLCompiledComputePipeline(pDevice, pComputeShader);
   pipeline->SubmitWork();
   return pipeline;
 }

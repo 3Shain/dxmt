@@ -5,6 +5,7 @@
 #include "com/com_pointer.hpp"
 #include "d3d11_3.h"
 #include "Metal/MTLDevice.hpp"
+#include "d3d11_private.h"
 #include "dxgi_interfaces.h"
 #include "threadpool.hpp"
 
@@ -17,7 +18,7 @@ struct threadpool_trait {
   using work_type = IMTLThreadpoolWork;
   constexpr void invoke_work(work_type *work) {
     work->RunThreadpoolWork();
-    work->Release();
+    D3D11_ASSERT(work->Release());
   };
 };
 

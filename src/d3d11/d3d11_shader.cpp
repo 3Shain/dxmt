@@ -306,7 +306,7 @@ void TShaderBase<tag_emulated_vertex_so>::GetCompiledShader(
     precompiled_ = new AirconvShaderEmulatedVertexSO(this->m_parent, this, 0);
     precompiled_->SubmitWork();
   }
-  if(pShader) {
+  if (pShader) {
     *pShader = precompiled_.ref();
   }
   return;
@@ -318,7 +318,7 @@ void TShaderBase<tag>::GetCompiledShader(IMTLCompiledShader **pShader) {
     precompiled_ = new AirconvShader(this->m_parent, this, nullptr);
     precompiled_->SubmitWork();
   }
-  if(pShader) {
+  if (pShader) {
     *pShader = precompiled_.ref();
   }
   return;
@@ -335,9 +335,9 @@ void TShaderBase<tag_emulated_vertex_so>::GetCompiledShaderWithInputLayerFixup(
   } else {
     IMTLCompiledShader *shader =
         new AirconvShaderEmulatedVertexSO(this->m_parent, this, sign_mask);
-    shader->SubmitWork();
     with_input_layout_fixup_.emplace(sign_mask, shader);
     *pShader = ref(shader);
+    shader->SubmitWork();
   }
 }
 
@@ -352,9 +352,9 @@ void TShaderBase<tag>::GetCompiledShaderWithInputLayerFixup(
   } else {
     IMTLCompiledShader *shader = new AirconvShaderWithInputLayoutFixup<tag>(
         this->m_parent, this, sign_mask);
-    shader->SubmitWork();
     with_input_layout_fixup_.emplace(sign_mask, shader);
     *pShader = ref(shader);
+    shader->SubmitWork();
   }
 }
 

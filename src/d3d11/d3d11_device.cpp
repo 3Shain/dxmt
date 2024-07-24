@@ -910,7 +910,9 @@ public:
 
   void SubmitThreadgroupWork(IMTLThreadpoolWork *pWork,
                              THREADGROUP_WORK_STATE *pState) override {
-    pWork->AddRef();
+    D3D11_ASSERT(pWork->AddRef() > 1 &&
+                 "otherwise there is a risk the object get destoryed before "
+                 "this call return");
     pool_.enqueue(pWork, pState);
   }
 
