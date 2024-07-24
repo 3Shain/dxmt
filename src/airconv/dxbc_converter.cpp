@@ -1213,7 +1213,7 @@ int SM50Initialize(
           break;
         }
         prelogue_.push_back([=](IREffect &prelogue) {
-          prelogue << init_input_reg(assigned_index, reg, mask);
+          prelogue << init_input_reg(assigned_index, reg, mask, siv == D3D10_SB_NAME_POSITION);
         });
         max_input_register = std::max(reg + 1, max_input_register);
         break;

@@ -672,14 +672,16 @@ auto store_at_vec_array_masked(
   };
 };
 
-auto init_input_reg(uint32_t with_fnarg_at, uint32_t to_reg, uint32_t mask)
-  -> IREffect {
+auto init_input_reg(
+  uint32_t with_fnarg_at, uint32_t to_reg, uint32_t mask,
+  bool fix_w_component = false
+) -> IREffect {
   // no it doesn't work like this
   // regular input can be masked like .zw
   // assert((mask & 1) && "todo: handle input register sharing correctly");
   // FIXME: it's buggy as hell
   return make_effect_bind([=](context ctx) {
-    auto arg = ctx.function->getArg(with_fnarg_at);
+    pvalue arg = ctx.function->getArg(with_fnarg_at);
     auto const_index =
       llvm::ConstantInt::get(ctx.llvm, llvm::APInt{32, to_reg, false});
     if (arg->getType()->getScalarType()->isIntegerTy()) {
@@ -697,6 +699,14 @@ auto init_input_reg(uint32_t with_fnarg_at, uint32_t to_reg, uint32_t mask)
         ctx.resource.input.ptr_int4, const_index, arg, mask
       );
     } else if (arg->getType()->getScalarType()->isFloatTy()) {
+      if (fix_w_component && isa<llvm::FixedVectorType>(arg->getType()) &&
+          cast<llvm::FixedVectorType>(arg->getType())->getNumElements() == 4) {
+        auto w_component = ctx.builder.CreateExtractElement(arg, 3);
+        auto rcp_w = ctx.builder.CreateFDiv(
+          llvm::ConstantFP::get(ctx.types._float, 1), w_component
+        );
+        arg = ctx.builder.CreateInsertElement(arg, rcp_w, 3);
+      }
       return store_at_vec4_array_masked(
         ctx.resource.input.ptr_float4, const_index, arg, mask
       );
