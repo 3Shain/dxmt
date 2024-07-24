@@ -3,6 +3,7 @@
 #include "Metal/MTLStageInputOutputDescriptor.hpp"
 #include "Metal/MTLVertexDescriptor.hpp"
 #include "com/com_guid.hpp"
+#include "dxgi_options.hpp"
 #include "util_string.hpp"
 #include "log/log.hpp"
 #include "wsi_monitor.hpp"
@@ -17,8 +18,8 @@ Com<IDXGIOutput> CreateOutput(IMTLDXGIAdatper *pAadapter, HMONITOR monitor);
 
 class MTLDXGIAdatper : public MTLDXGIObject<IMTLDXGIAdatper> {
 public:
-  MTLDXGIAdatper(MTL::Device *device, IDXGIFactory *factory)
-      : m_deivce(device), m_factory(factory) {
+  MTLDXGIAdatper(MTL::Device *device, IDXGIFactory *factory, Config &config)
+      : m_deivce(device), m_factory(factory), options(config) {
     format_inspector.Inspect(device);
   };
   ~MTLDXGIAdatper() { m_deivce->release(); }
@@ -99,25 +100,44 @@ public:
     if (pDesc == nullptr)
       return E_INVALIDARG;
 
-    wcscpy(pDesc->Description,
-           (const wchar_t *)m_deivce->name()->cString(NS::UTF16StringEncoding));
+    std::memset(pDesc->Description, 0, sizeof(pDesc->Description));
 
-    // FIXME: fill the correct values
-    pDesc->VendorId = 4098;
-    pDesc->DeviceId = 26287;
+    if (!options.customDeviceDesc.empty()) {
+      str::transcodeString(
+          pDesc->Description,
+          sizeof(pDesc->Description) / sizeof(pDesc->Description[0]) - 1,
+          options.customDeviceDesc.c_str(), options.customDeviceDesc.size());
+    } else {
+      wcscpy(pDesc->Description, (const wchar_t *)m_deivce->name()->cString(
+                                     NS::UTF16StringEncoding));
+    }
+
+    if (options.customVendorId >= 0) {
+      pDesc->VendorId = options.customVendorId;
+    } else {
+      pDesc->VendorId = 0x106B;
+    }
+
+    if (options.customDeviceId >= 0) {
+      pDesc->DeviceId = options.customDeviceId;
+    } else {
+      pDesc->DeviceId = 0;
+    }
+
     pDesc->SubSysId = 0;
     pDesc->Revision = 0;
-    pDesc->DedicatedVideoMemory = 2290653168;
-    pDesc->DedicatedSystemMemory = 2290653168;
-    pDesc->SharedSystemMemory = 2290653168;
+    /**
+    FIXME: divided by 2 is not necessary
+     */
+    pDesc->DedicatedVideoMemory = m_deivce->recommendedMaxWorkingSetSize() / 2;
+    pDesc->DedicatedSystemMemory = 0;
+    pDesc->SharedSystemMemory = 0;
     pDesc->AdapterLuid = LUID{1168, 1};
     pDesc->Flags = DXGI_ADAPTER_FLAG_NONE;
     pDesc->GraphicsPreemptionGranularity =
         DXGI_GRAPHICS_PREEMPTION_DMA_BUFFER_BOUNDARY;
     pDesc->ComputePreemptionGranularity =
         DXGI_COMPUTE_PREEMPTION_DMA_BUFFER_BOUNDARY;
-
-    // TODO
 
     return S_OK;
   }
@@ -901,11 +921,12 @@ private:
   Obj<MTL::Device> m_deivce;
   Com<IDXGIFactory> m_factory;
   FormatCapabilityInspector format_inspector;
+  DxgiOptions options;
 };
 
 Com<IMTLDXGIAdatper> CreateAdapter(MTL::Device *pDevice,
-                                   IDXGIFactory2 *pFactory) {
-  return new MTLDXGIAdatper(pDevice, pFactory);
+                                   IDXGIFactory2 *pFactory, Config &config) {
+  return new MTLDXGIAdatper(pDevice, pFactory, config);
 }
 
 } // namespace dxmt

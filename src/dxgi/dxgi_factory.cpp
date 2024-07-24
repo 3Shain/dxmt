@@ -1,21 +1,27 @@
+#include "config/config.hpp"
 #include "dxgi1_2.h"
 #include "dxgi_interfaces.h"
 #include "dxgi_object.hpp"
 #include "Metal/MTLDevice.hpp"
 #include "com/com_guid.hpp"
 #include "log/log.hpp"
+#include "util_env.hpp"
 #include "util_string.hpp"
 #include "wsi_window.hpp"
 
 namespace dxmt {
 
 Com<IMTLDXGIAdatper> CreateAdapter(MTL::Device *pDevice,
-                                   IDXGIFactory2 *pFactory);
+                                   IDXGIFactory2 *pFactory, Config &config);
 
 class MTLDXGIFactory : public MTLDXGIObject<IDXGIFactory5> {
 
 public:
-  MTLDXGIFactory(UINT Flags) : flags_(Flags) {};
+  MTLDXGIFactory(UINT Flags) : flags_(Flags) {
+    config = Config::getUserConfig();
+    config.merge(Config::getAppConfig(env::getExePath()));
+    // config.logOptions();
+  };
 
   HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid,
                                            void **ppvObject) final {
@@ -177,7 +183,7 @@ public:
 
     auto device = devices->object<MTL::Device>(Adapter);
 
-    *ppAdapter = CreateAdapter(device, this);
+    *ppAdapter = CreateAdapter(device, this, config);
     // devices->release(); // no you should not release it...
     return S_OK;
   }
@@ -278,6 +284,7 @@ private:
   UINT flags_;
 
   HWND m_associatedWindow = nullptr;
+  Config config;
 };
 
 extern "C" HRESULT __stdcall CreateDXGIFactory2(UINT Flags, REFIID riid,

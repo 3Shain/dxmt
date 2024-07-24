@@ -2,6 +2,7 @@ dxgi_src = [
   'dxgi_adapter.cpp',
   'dxgi_factory.cpp',
   'dxgi_output.cpp',
+  'dxgi_options.cpp',
   'dxgi.cpp',
 ]
 

@@ -95,10 +95,13 @@ MTLD3D11Inspection::MTLD3D11Inspection(MTL::Device *pDevice)
       D3D11_CONSERVATIVE_RASTERIZATION_NOT_SUPPORTED;
   m_d3d11Options2.PSSpecifiedStencilRefSupported = TRUE;
   m_d3d11Options2.ROVsSupported = TRUE;
-  m_d3d11Options2.MapOnDefaultTextures = FALSE;
+  m_d3d11Options2.MapOnDefaultTextures = TRUE;
   m_d3d11Options2.StandardSwizzle = TRUE;
   m_d3d11Options2.TypedUAVLoadAdditionalFormats = TRUE;
-  m_d3d11Options2.UnifiedMemoryArchitecture = TRUE;
+  /**
+  It's an intention to not report UMA
+   */
+  m_d3d11Options2.UnifiedMemoryArchitecture = FALSE;
 }
 
 HRESULT MTLD3D11Inspection::GetFeatureData(D3D11_FEATURE Feature,
