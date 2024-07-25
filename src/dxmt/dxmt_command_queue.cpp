@@ -6,6 +6,8 @@
 #include "util_env.hpp"
 #include <atomic>
 
+#define ASYNC_ENCODING 1
+
 namespace dxmt {
 
 ENCODER_CLEARPASS_INFO *CommandChunk::mark_clear_pass() {
@@ -58,9 +60,9 @@ CommandQueue::~CommandQueue() {
   TRACE("Destructing command queue");
   stopped.store(true);
   ready_for_encode++;
-  ready_for_encode.notify_all();
+  ready_for_encode.notify_one();
   ready_for_commit++;
-  ready_for_commit.notify_all();
+  ready_for_commit.notify_one();
   encodeThread.join();
   finishThread.join();
   for (unsigned i = 0; i < kCommandChunkCount; i++) {
@@ -74,18 +76,21 @@ CommandQueue::~CommandQueue() {
 
 void CommandQueue::CommitCurrentChunk(uint64_t occlusion_counter_begin,
                                       uint64_t occlusion_counter_end) {
-  chunk_ongoing.wait(kCommandChunkCount - 1, std::memory_order_relaxed);
+  chunk_ongoing.wait(kCommandChunkCount - 1, std::memory_order_acquire);
   chunk_ongoing.fetch_add(1, std::memory_order_relaxed);
-  auto &chunk = chunks[ready_for_encode % kCommandChunkCount];
+  auto &chunk = chunks[
+    ready_for_encode.load(std::memory_order_relaxed) % kCommandChunkCount
+  ];
   chunk.frame_ = present_seq;
   chunk.visibility_result_seq_begin = occlusion_counter_begin;
   chunk.visibility_result_seq_end = occlusion_counter_end;
-#ifndef SYNC_ENCODING
+#if ASYNC_ENCODING
   ready_for_encode.fetch_add(1, std::memory_order_release);
-  ready_for_encode.notify_all();
+  ready_for_encode.notify_one();
 #else
-  CommitChunkInternal(chunk);
-  ready_for_encode.fetch_add(1, std::memory_order_release);
+  CommitChunkInternal(chunk, 
+    ready_for_encode.fetch_add(1, std::memory_order_relaxed)
+  );
 #endif
 }
 
@@ -128,12 +133,12 @@ void CommandQueue::CommitChunkInternal(CommandChunk &chunk, uint64_t seq) {
     c->stopCapture();
   }
 
-  ready_for_commit.fetch_add(1, std::memory_order_relaxed);
-  ready_for_commit.notify_all();
+  ready_for_commit.fetch_add(1, std::memory_order_release);
+  ready_for_commit.notify_one();
 }
 
 uint32_t CommandQueue::EncodingThread() {
-#ifndef SYNC_ENCODING
+#if ASYNC_ENCODING
   env::setThreadName("dxmt-encode-thread");
   SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
   uint64_t internal_seq = 1;
@@ -191,10 +196,10 @@ uint32_t CommandQueue::WaitForFinishThread() {
     }
 
     chunk.reset();
-    chunk_ongoing.fetch_sub(1, std::memory_order_relaxed);
-    chunk_ongoing.notify_all();
     cpu_coherent.fetch_add(1, std::memory_order_relaxed);
+    chunk_ongoing.fetch_sub(1, std::memory_order_release);
     cpu_coherent.notify_all();
+    chunk_ongoing.notify_one();
 
     staging_allocator.free_blocks(internal_seq);
 
