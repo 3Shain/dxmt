@@ -794,6 +794,30 @@ public:
                   MTL::Origin::Make(DstX, DstY, DstZ));
               return;
             }
+            if (IsBlockCompressionFormat(src_format) &&
+                FormatBytesPerTexel(src_format) ==
+                    FormatBytesPerTexel(dst_format)) {
+              D3D11_ASSERT((align((SrcBox.right - SrcBox.left), 4) ==
+                            (SrcBox.right - SrcBox.left)));
+              D3D11_ASSERT((align((SrcBox.bottom - SrcBox.top), 4) ==
+                            (SrcBox.bottom - SrcBox.top)));
+              auto block_w = ((SrcBox.right - SrcBox.left) >> 2);
+              auto block_h = ((SrcBox.bottom - SrcBox.top) >> 2);
+              auto bytes_per_row = block_w * FormatBytesPerTexel(src_format);
+              auto [_, buffer, offset] = ctx.queue->AllocateTempBuffer(
+                  currentChunkId, bytes_per_row * block_h, 16);
+              encoder->copyFromTexture(
+                  src, src_slice, src_level,
+                  MTL::Origin::Make(SrcBox.left, SrcBox.top, 0),
+                  MTL::Size::Make(SrcBox.right - SrcBox.left,
+                                  SrcBox.bottom - SrcBox.top, 1),
+                  buffer, offset, bytes_per_row, 0);
+              encoder->copyFromBuffer(buffer, offset, bytes_per_row, 0,
+                                      MTL::Size::Make(block_w, block_h, 1), dst,
+                                      dst_slice, dst_level,
+                                      MTL::Origin::Make(DstX, DstY, DstZ));
+              return;
+            }
             ERR("Texture2D format mismatch! src: ", src_format, ", dst ",
                 dst_format);
             return;
