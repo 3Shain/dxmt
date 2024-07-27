@@ -19,7 +19,7 @@ Com<IDXGIOutput> CreateOutput(IMTLDXGIAdatper *pAadapter, HMONITOR monitor);
 class MTLDXGIAdatper : public MTLDXGIObject<IMTLDXGIAdatper> {
 public:
   MTLDXGIAdatper(MTL::Device *device, IDXGIFactory *factory, Config &config)
-      : m_deivce(device), m_factory(factory), options(config) {
+      : m_deivce(device), m_factory(factory), options(config), config(config) {
     format_inspector.Inspect(device);
   };
   ~MTLDXGIAdatper() { m_deivce->release(); }
@@ -917,11 +917,22 @@ public:
     return S_OK;
   };
 
+  virtual int STDMETHODCALLTYPE GetConfigInt(const char *name,
+                                             int defaultValue) override {
+    return config.getOption<int>(name, defaultValue);
+  }
+
+  virtual float STDMETHODCALLTYPE GetConfigFloat(const char *name,
+                                                 float defaultValue) override {
+    return config.getOption<float>(name, defaultValue);
+  }
+
 private:
   Obj<MTL::Device> m_deivce;
   Com<IDXGIFactory> m_factory;
   FormatCapabilityInspector format_inspector;
   DxgiOptions options;
+  Config &config;
 };
 
 Com<IMTLDXGIAdatper> CreateAdapter(MTL::Device *pDevice,

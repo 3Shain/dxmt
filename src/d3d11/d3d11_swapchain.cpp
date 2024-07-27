@@ -55,6 +55,10 @@ public:
       fullscreen_desc_.Windowed = true;
     }
 
+    Com<IMTLDXGIAdatper> adapter;
+    device_->GetAdapter(&adapter);
+    preferred_max_frame_rate =
+        adapter->GetConfigInt("d3d11.preferredMaxFrameRate", 0);
     wsi::WsiMode current_mode;
     if (wsi::getCurrentDisplayMode(monitor_, &current_mode) &&
         current_mode.refreshRate.denominator != 0 &&
@@ -299,7 +303,11 @@ public:
       return S_OK;
     frame_latency_fence.fetch_sub(1, std::memory_order_relaxed);
 
-    double vsync_duration = SyncInterval * 1.0 / init_refresh_rate_;
+    double vsync_duration =
+        std::max(SyncInterval * 1.0 /
+                     (preferred_max_frame_rate ? preferred_max_frame_rate
+                                               : init_refresh_rate_),
+                 preferred_max_frame_rate ? 1.0 / preferred_max_frame_rate : 0);
     device_context_->FlushInternal(
         [this, backbuffer = backbuffer_,
          vsync_duration](MTL::CommandBuffer *cmdbuf) {
@@ -447,6 +455,7 @@ private:
   uint32_t frame_latency;
   uint32_t frame_latency_diff = 0;
   double init_refresh_rate_ = DBL_MAX;
+  int preferred_max_frame_rate = 0;
 
   bool destroyed = false;
 };
