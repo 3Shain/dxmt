@@ -72,7 +72,7 @@ public:
   void release() = delete;
 
   T *operator->() const {
-#ifndef NDEBUG
+#ifdef DXMT_DEBUG
     if (m_ptr == nullptr) {
       __builtin_trap();
     }
