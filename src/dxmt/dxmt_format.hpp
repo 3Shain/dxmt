@@ -29,11 +29,16 @@ const FormatCapability ALL_CAP = static_cast<FormatCapability>(
 const FormatCapability TEXTURE_BUFFER_ALL_CAP = static_cast<FormatCapability>(
     FormatCapability::TextureBufferRead | FormatCapability::TextureBufferWrite |
     FormatCapability::TextureBufferReadWrite);
+const FormatCapability TEXTURE_BUFFER_READ_OR_WRITE = static_cast<FormatCapability>(
+    FormatCapability::TextureBufferRead | FormatCapability::TextureBufferWrite);
 const FormatCapability NO_ATOMIC_RESOLVE = static_cast<FormatCapability>(
     FormatCapability::Filter | FormatCapability::Write |
     FormatCapability::Color | FormatCapability::MSAA | FormatCapability::Blend |
     FormatCapability::Sparse);
 const FormatCapability APPLE_INT_FORMAT_CAP =
+    FormatCapability::Write | FormatCapability::Color | FormatCapability::MSAA |
+    FormatCapability::Sparse;
+const FormatCapability NONAPPLE_INT_FORMAT_CAP =
     FormatCapability::Write | FormatCapability::Color | FormatCapability::MSAA |
     FormatCapability::Sparse;
 
