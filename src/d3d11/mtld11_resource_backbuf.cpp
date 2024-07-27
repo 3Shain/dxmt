@@ -170,8 +170,10 @@ public:
     layer_->setOpaque(true);
     pixel_format_ = metal_format.PixelFormat;
     if constexpr (EnableMetalFX) {
-      layer_->setDrawableSize(
-          {(double)pDesc->Width * 2, (double)pDesc->Height * 2});
+      auto scale_factor = std::max(
+          adapter->GetConfigFloat("d3d11.metalSpatialUpscaleFactor", 2), 1.0f);
+      layer_->setDrawableSize({(double)pDesc->Width * scale_factor,
+                               (double)pDesc->Height * scale_factor});
     } else {
       layer_->setDrawableSize({(double)pDesc->Width, (double)pDesc->Height});
     }
@@ -207,8 +209,8 @@ public:
           transfer(MTLFX::SpatialScalerDescriptor::alloc()->init());
       scaler_descriptor->setInputHeight(desc.Height);
       scaler_descriptor->setInputWidth(desc.Width);
-      scaler_descriptor->setOutputHeight(desc.Height * 2);
-      scaler_descriptor->setOutputWidth(desc.Width * 2);
+      scaler_descriptor->setOutputHeight(layer_->drawableSize().height);
+      scaler_descriptor->setOutputWidth(layer_->drawableSize().width);
       scaler_descriptor->setOutputTextureFormat(layer_->pixelFormat());
       scaler_descriptor->setColorTextureFormat(descriptor->pixelFormat());
       metalfx_scaler = transfer(
