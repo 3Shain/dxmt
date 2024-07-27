@@ -357,7 +357,11 @@ public:
         metalfx_scaler->setOutputTexture(drawable->texture());
         metalfx_scaler->encodeToCommandBuffer(cmdbuf);
       }
-      cmdbuf->presentDrawableAfterMinimumDuration(drawable, vsync_duration);
+      if (vsync_duration > 0) {
+        cmdbuf->presentDrawableAfterMinimumDuration(drawable, vsync_duration);
+      } else {
+        cmdbuf->presentDrawable(drawable);
+      }
       current_drawable = nullptr; // "swap"
     }
   }
