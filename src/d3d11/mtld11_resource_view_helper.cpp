@@ -408,6 +408,16 @@ CreateMTLRenderTargetView(IMTLD3D11Device *pDevice, MTL::Texture *pResource,
     break;
   }
   case D3D11_RTV_DIMENSION_TEXTURE2DMS: {
+    if (texture_type == MTL::TextureType2DMultisample) {
+      *ppView = pResource->newTextureView(
+          metal_format.PixelFormat, MTL::TextureType3D, NS::Range::Make(0, 1),
+          NS::Range::Make(0, 1));
+      pMTLDesc->Slice = 0;
+      pMTLDesc->Level = 0;
+      pMTLDesc->DepthPlane = 0;
+      pMTLDesc->RenderTargetArrayLength = 0;
+      return S_OK;
+    }
     break;
   }
   case D3D11_RTV_DIMENSION_TEXTURE2DMSARRAY: {
