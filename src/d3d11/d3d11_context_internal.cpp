@@ -861,7 +861,7 @@ public:
       chk->emit([](CommandChunk::context &ctx) {
         ctx.render_encoder->endEncoding();
         ctx.render_encoder = nullptr;
-        ctx.dsv_valid = false;
+        ctx.dsv_planar_flags = 0;
       });
       occlusion_query_seq++;
       break;
@@ -935,24 +935,30 @@ public:
         attachmentz->setLoadAction(MTL::LoadActionClear);
         attachmentz->setStoreAction(MTL::StoreActionStore);
       }
-      if (clear_pass->clear_depth_stencil & D3D11_CLEAR_DEPTH) {
-        auto attachmentz = enc_descriptor->depthAttachment();
-        attachmentz->setClearDepth(clear_pass->clear_depth);
-        attachmentz->setTexture(
-            clear_pass->clear_depth_stencil_attachment.texture(&ctx));
-        attachmentz->setLoadAction(MTL::LoadActionClear);
-        attachmentz->setStoreAction(MTL::StoreActionStore);
+      if (clear_pass->depth_stencil_flags) {
+        MTL::Texture *texture =
+            clear_pass->clear_depth_stencil_attachment.texture(&ctx);
+        uint32_t planar_flags = DepthStencilPlanarFlags(texture->pixelFormat());
+        if (clear_pass->depth_stencil_flags & planar_flags &
+            D3D11_CLEAR_DEPTH) {
+          auto attachmentz = enc_descriptor->depthAttachment();
+          attachmentz->setClearDepth(clear_pass->clear_depth);
+          attachmentz->setTexture(texture);
+          attachmentz->setLoadAction(MTL::LoadActionClear);
+          attachmentz->setStoreAction(MTL::StoreActionStore);
+        }
+        if (clear_pass->depth_stencil_flags & planar_flags &
+            D3D11_CLEAR_STENCIL) {
+          auto attachmentz = enc_descriptor->stencilAttachment();
+          attachmentz->setClearStencil(clear_pass->clear_stencil);
+          attachmentz->setTexture(texture);
+          attachmentz->setLoadAction(MTL::LoadActionClear);
+          attachmentz->setStoreAction(MTL::StoreActionStore);
+        }
       }
-      if (clear_pass->clear_depth_stencil & D3D11_CLEAR_STENCIL) {
-        auto attachmentz = enc_descriptor->stencilAttachment();
-        attachmentz->setClearStencil(clear_pass->clear_stencil);
-        attachmentz->setTexture(
-            clear_pass->clear_depth_stencil_attachment.texture(&ctx));
-        attachmentz->setLoadAction(MTL::LoadActionClear);
-        attachmentz->setStoreAction(MTL::StoreActionStore);
-      }
+
       if (clear_pass->num_color_attachments == 0) {
-        if (clear_pass->clear_depth_stencil == 0) {
+        if (clear_pass->depth_stencil_flags == 0) {
           return;
         }
         auto texture = clear_pass->clear_depth_stencil_attachment.texture(&ctx);
@@ -1018,7 +1024,7 @@ public:
         // if it's the same target
         if (previous_clearpass->clear_depth_stencil_attachment == target) {
           // override previous value
-          previous_clearpass->clear_depth_stencil |= ClearFlags;
+          previous_clearpass->depth_stencil_flags |= ClearFlags;
           if (ClearFlags & D3D11_CLEAR_DEPTH) {
             previous_clearpass->clear_depth = Depth;
           }
@@ -1032,7 +1038,7 @@ public:
       }
       // no depth stencil attachment, just set it
       previous_clearpass->clear_depth_stencil_attachment = std::move(target);
-      previous_clearpass->clear_depth_stencil = ClearFlags;
+      previous_clearpass->depth_stencil_flags = ClearFlags;
       if (ClearFlags & D3D11_CLEAR_DEPTH) {
         previous_clearpass->clear_depth = Depth;
       }
@@ -1044,7 +1050,7 @@ public:
 
     auto clear_pass = chk->mark_clear_pass();
     clear_pass->clear_depth_stencil_attachment = std::move(target);
-    clear_pass->clear_depth_stencil = ClearFlags;
+    clear_pass->depth_stencil_flags = ClearFlags;
     if (ClearFlags & D3D11_CLEAR_DEPTH) {
       clear_pass->clear_depth = Depth;
     }
@@ -1091,7 +1097,7 @@ public:
         UINT DepthPlane;
         MTL::PixelFormat PixelFormat = MTL::PixelFormatInvalid;
         MTL::LoadAction LoadAction{MTL::LoadActionLoad};
-        MTL::ClearColor ClearColor{};
+        MTL::ClearColor ClearColor{0, 0, 0, 0};
       };
 
       uint32_t effective_render_target = 0;
@@ -1155,11 +1161,11 @@ public:
             previous_clearpass->clear_depth_stencil_attachment = {};
             skip_clear_ds = 1;
             dsv_info.DepthLoadAction =
-                previous_clearpass->clear_depth_stencil & D3D11_CLEAR_DEPTH
+                previous_clearpass->depth_stencil_flags & D3D11_CLEAR_DEPTH
                     ? MTL::LoadActionClear
                     : MTL::LoadActionLoad;
             dsv_info.StencilLoadAction =
-                previous_clearpass->clear_depth_stencil & D3D11_CLEAR_STENCIL
+                previous_clearpass->depth_stencil_flags & D3D11_CLEAR_STENCIL
                     ? MTL::LoadActionClear
                     : MTL::LoadActionLoad;
             dsv_info.ClearDepth = previous_clearpass->clear_depth;
@@ -1190,8 +1196,8 @@ public:
           if (!skip_clear_ds) {
             remain_clearpass->clear_depth_stencil_attachment =
                 std::move(previous_clearpass->clear_depth_stencil_attachment);
-            remain_clearpass->clear_depth_stencil =
-                previous_clearpass->clear_depth_stencil;
+            remain_clearpass->depth_stencil_flags =
+                previous_clearpass->depth_stencil_flags;
             remain_clearpass->clear_depth = previous_clearpass->clear_depth;
             remain_clearpass->clear_stencil = previous_clearpass->clear_stencil;
           }
@@ -1225,24 +1231,25 @@ public:
           colorAttachment->setClearColor(rtv.ClearColor);
           colorAttachment->setStoreAction(MTL::StoreActionStore);
         };
-        bool dsv_valid = false;
-        if (dsv.Texture) {
-          dsv_valid = true;
-          // TODO: ...should know more about store behavior (e.g. DiscardView)
-          auto depthAttachment = renderPassDescriptor->depthAttachment();
-          depthAttachment->setTexture(dsv.Texture.texture(&ctx));
-          depthAttachment->setLevel(dsv.MipSlice);
-          depthAttachment->setSlice(dsv.ArrayIndex);
-          depthAttachment->setLoadAction(dsv.DepthLoadAction);
-          depthAttachment->setClearDepth(dsv.ClearDepth);
-          depthAttachment->setStoreAction(MTL::StoreActionStore);
+        uint32_t dsv_planar_flags = 0;
 
-          // TODO: should know if depth buffer has stencil bits
-          if (dsv.PixelFormat == MTL::PixelFormatDepth32Float_Stencil8 ||
-              dsv.PixelFormat == MTL::PixelFormatDepth24Unorm_Stencil8 ||
-              dsv.PixelFormat == MTL::PixelFormatStencil8) {
+        if (dsv.Texture) {
+          dsv_planar_flags = DepthStencilPlanarFlags(dsv.PixelFormat);
+          MTL::Texture *texture = dsv.Texture.texture(&ctx);
+          // TODO: ...should know more about store behavior (e.g. DiscardView)
+          if (dsv_planar_flags & 1) {
+            auto depthAttachment = renderPassDescriptor->depthAttachment();
+            depthAttachment->setTexture(texture);
+            depthAttachment->setLevel(dsv.MipSlice);
+            depthAttachment->setSlice(dsv.ArrayIndex);
+            depthAttachment->setLoadAction(dsv.DepthLoadAction);
+            depthAttachment->setClearDepth(dsv.ClearDepth);
+            depthAttachment->setStoreAction(MTL::StoreActionStore);
+          }
+
+          if (dsv_planar_flags & 2) {
             auto stencilAttachment = renderPassDescriptor->stencilAttachment();
-            stencilAttachment->setTexture(dsv.Texture.texture(&ctx));
+            stencilAttachment->setTexture(texture);
             stencilAttachment->setLevel(dsv.MipSlice);
             stencilAttachment->setSlice(dsv.ArrayIndex);
             stencilAttachment->setLoadAction(dsv.StencilLoadAction);
@@ -1251,7 +1258,7 @@ public:
           }
         }
         if (effective_render_target == 0) {
-          D3D11_ASSERT(dsv_valid);
+          D3D11_ASSERT(dsv_planar_flags);
           auto dsv_tex = dsv.Texture.texture(&ctx);
           renderPassDescriptor->setRenderTargetHeight(dsv_tex->height());
           renderPassDescriptor->setRenderTargetWidth(dsv_tex->width());
@@ -1261,7 +1268,7 @@ public:
         ctx.render_encoder =
             ctx.cmdbuf->renderCommandEncoder(renderPassDescriptor);
         auto [h, _] = ctx.chk->inspect_gpu_heap();
-        ctx.dsv_valid = dsv_valid;
+        ctx.dsv_planar_flags = dsv_planar_flags;
         D3D11_ASSERT(ctx.render_encoder);
         ctx.render_encoder->setVertexBuffer(h, 0, 29);
         ctx.render_encoder->setVertexBuffer(h, 0, 30);
@@ -1483,7 +1490,7 @@ public:
                     CommandChunk::context &ctx) {
         auto encoder = ctx.render_encoder;
         encoder->setDepthStencilState(
-            state->GetDepthStencilState(ctx.dsv_valid));
+            state->GetDepthStencilState(ctx.dsv_planar_flags));
         encoder->setStencilReferenceValue(stencil_ref);
       });
     }

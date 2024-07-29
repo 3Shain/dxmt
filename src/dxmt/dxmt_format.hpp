@@ -62,4 +62,6 @@ bool IsBlockCompressionFormat(MTL::PixelFormat format);
 
 size_t FormatBytesPerTexel(MTL::PixelFormat format);
 
+uint32_t DepthStencilPlanarFlags(MTL::PixelFormat format);
+
 } // namespace dxmt

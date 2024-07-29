@@ -36,7 +36,7 @@ struct ENCODER_CLEARPASS_INFO {
   uint64_t encoder_id;
   uint32_t skipped = 0; // this can be flipped by later render pass
   uint32_t num_color_attachments = 0;
-  uint32_t clear_depth_stencil = 0;
+  uint32_t depth_stencil_flags = 0;
   BindingRef clear_depth_stencil_attachment;
   float clear_depth = 0.0;
   uint8_t clear_stencil = 0;
@@ -163,7 +163,7 @@ class CommandChunk {
     // we don't need an extra reference here
     // since it's guaranteed to be captured by closure
     MTL::Buffer *current_index_buffer_ref{};
-    bool dsv_valid = false;
+    uint32_t dsv_planar_flags = 0;
 
     context_t(CommandChunk *chk, MTL::CommandBuffer *cmdbuf)
         : chk(chk), queue(chk->queue), cmdbuf(cmdbuf) {}

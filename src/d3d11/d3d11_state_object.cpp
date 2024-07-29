@@ -509,10 +509,12 @@ public:
   friend class MTLD3D11DeviceContext;
   MTLD3D11DepthStencilState(IMTLD3D11Device *device,
                             MTL::DepthStencilState *state,
-                            MTL::DepthStencilState *state_disabled,
+                            MTL::DepthStencilState *stencil_disabled,
+                            MTL::DepthStencilState *depthsteancil_disabled,
                             const D3D11_DEPTH_STENCIL_DESC &desc)
       : MTLD3D11StateObject<IMTLD3D11DepthStencilState>(device), m_desc(desc),
-        metal_depth_stencil_state_(state), state_disabled_(state_disabled) {}
+        state_default_(state), state_stencil_disabled_(stencil_disabled),
+        state_depthstencil_disabled_(depthsteancil_disabled) {}
   ~MTLD3D11DepthStencilState() {};
 
   HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid,
@@ -541,15 +543,25 @@ public:
     *pDesc = m_desc;
   }
 
-  virtual MTL::DepthStencilState *GetDepthStencilState(bool DSVAttached) {
-    return DSVAttached ? metal_depth_stencil_state_.ptr()
-                       : state_disabled_.ptr();
+  virtual MTL::DepthStencilState *GetDepthStencilState(uint32_t planar_flags) {
+    switch (planar_flags) {
+    case 0:
+      return state_depthstencil_disabled_.ptr();
+    case 1: /* depth without stencil */
+      return state_stencil_disabled_.ptr();
+    case 2: /* stencil without depth */
+      ERR("stencil only dsv is not properly handled");
+      return state_default_.ptr();
+    default:
+      return state_default_.ptr();
+    }
   }
 
 private:
   const D3D11_DEPTH_STENCIL_DESC m_desc;
-  Obj<MTL::DepthStencilState> metal_depth_stencil_state_;
-  Obj<MTL::DepthStencilState> state_disabled_;
+  Obj<MTL::DepthStencilState> state_default_;
+  Obj<MTL::DepthStencilState> state_stencil_disabled_;
+  Obj<MTL::DepthStencilState> state_depthstencil_disabled_;
 };
 
 HRESULT CreateDepthStencilState(ID3D11Device *pDevice,
@@ -576,7 +588,7 @@ HRESULT CreateDepthStencilState(ID3D11Device *pDevice,
                               D3D11_DEPTH_WRITE_MASK_ALL);
   } else {
     dsd->setDepthCompareFunction(MTL::CompareFunctionAlways);
-    dsd->setDepthWriteEnabled(0);
+    dsd->setDepthWriteEnabled(false);
   }
 
   if (pDesc->StencilEnable) {
@@ -610,18 +622,41 @@ HRESULT CreateDepthStencilState(ID3D11Device *pDevice,
     }
   }
 
-  auto state = transfer(metal->GetMTLDevice()->newDepthStencilState(dsd.ptr()));
+  auto state_default =
+      transfer(metal->GetMTLDevice()->newDepthStencilState(dsd.ptr()));
 
-  if (pDesc->DepthEnable && pDesc->DepthFunc != D3D11_COMPARISON_ALWAYS) {
-    dsd->setDepthCompareFunction(MTL::CompareFunctionAlways);
-    dsd->setDepthWriteEnabled(0);
-    auto state_effective_disabled =
+  if (pDesc->StencilEnable) {
+    dsd->setFrontFaceStencil(nullptr);
+    dsd->setBackFaceStencil(nullptr);
+    auto stencil_effective_disabled =
         transfer(metal->GetMTLDevice()->newDepthStencilState(dsd.ptr()));
-    *ppDepthStencilState = ref(new MTLD3D11DepthStencilState(
-        metal.ptr(), state.ptr(), state_effective_disabled.ptr(), *pDesc));
+    if (pDesc->DepthEnable) {
+      dsd->setDepthCompareFunction(MTL::CompareFunctionAlways);
+      dsd->setDepthWriteEnabled(false);
+      auto depthstencil_effective_disabled =
+          transfer(metal->GetMTLDevice()->newDepthStencilState(dsd.ptr()));
+      *ppDepthStencilState = ref(new MTLD3D11DepthStencilState(
+          metal.ptr(), state_default, stencil_effective_disabled,
+          depthstencil_effective_disabled, *pDesc));
+    } else {
+      // stencil_effective_disabled has no depth either...
+      *ppDepthStencilState = ref(new MTLD3D11DepthStencilState(
+          metal.ptr(), state_default, stencil_effective_disabled,
+          stencil_effective_disabled, *pDesc));
+    }
   } else {
-    *ppDepthStencilState = ref(new MTLD3D11DepthStencilState(
-        metal.ptr(), state.ptr(), state.ptr(), *pDesc));
+    if (pDesc->DepthEnable) {
+      dsd->setDepthCompareFunction(MTL::CompareFunctionAlways);
+      dsd->setDepthWriteEnabled(false);
+      auto depth_effective_disabled =
+          transfer(metal->GetMTLDevice()->newDepthStencilState(dsd.ptr()));
+      *ppDepthStencilState = ref(new MTLD3D11DepthStencilState(
+          metal.ptr(), state_default, state_default, depth_effective_disabled,
+          *pDesc));
+    } else {
+      *ppDepthStencilState = ref(new MTLD3D11DepthStencilState(
+          metal.ptr(), state_default, state_default, state_default, *pDesc));
+    }
   }
   return S_OK;
 }

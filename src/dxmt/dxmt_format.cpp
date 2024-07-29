@@ -572,4 +572,19 @@ size_t FormatBytesPerTexel(MTL::PixelFormat format) {
   }
 }
 
+uint32_t DepthStencilPlanarFlags(MTL::PixelFormat format) {
+  switch (format) {
+  case MTL::PixelFormatDepth32Float_Stencil8:
+  case MTL::PixelFormatDepth24Unorm_Stencil8:
+    return 3;
+  case MTL::PixelFormatDepth32Float:
+  case MTL::PixelFormatDepth16Unorm:
+    return 1;
+  case MTL::PixelFormatStencil8:
+    return 2;
+  default:
+    return 0;
+  }
+}
+
 } // namespace dxmt
