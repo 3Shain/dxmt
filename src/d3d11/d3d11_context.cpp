@@ -541,8 +541,10 @@ public:
       if (auto bindable = com_cast<IMTLBindable>(pDstResource)) {
         if (!bindable->GetContentionState(cmd_queue.CoherentSeqId())) {
           auto _ = bindable->UseBindable(cmd_queue.CurrentSeqId());
-          memcpy(((char *)_.buffer()->contents()) + copy_offset, pSrcData,
+          auto buffer = _.buffer();
+          memcpy(((char *)buffer->contents()) + copy_offset, pSrcData,
                  copy_len);
+          buffer->didModifyRange(NS::Range::Make(copy_offset, copy_len));
           return;
         }
         auto [ptr, staging_buffer, offset] =
