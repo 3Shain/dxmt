@@ -53,6 +53,7 @@ public:
 };
 
 MTL::PixelFormat Forget_sRGB(MTL::PixelFormat format);
+MTL::PixelFormat Recall_sRGB(MTL::PixelFormat format);
 
 constexpr bool Is_sRGBVariant(MTL::PixelFormat format) {
   return Forget_sRGB(format) != format;

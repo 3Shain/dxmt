@@ -385,6 +385,47 @@ MTL::PixelFormat Forget_sRGB(MTL::PixelFormat format) {
   }
 }
 
+MTL::PixelFormat Recall_sRGB(MTL::PixelFormat format) {
+  switch (format) {
+  case MTL::PixelFormat::PixelFormatR8Unorm:
+    return MTL::PixelFormatR8Unorm_sRGB;
+  case MTL::PixelFormat::PixelFormatRG8Unorm:
+    return MTL::PixelFormatRG8Unorm_sRGB;
+  case MTL::PixelFormat::PixelFormatRGBA8Unorm:
+    return MTL::PixelFormatRGBA8Unorm_sRGB;
+  case MTL::PixelFormat::PixelFormatBGRA8Unorm:
+    return MTL::PixelFormatBGRA8Unorm_sRGB;
+  case MTL::PixelFormat::PixelFormatBGR10_XR:
+    return MTL::PixelFormatBGR10_XR_sRGB;
+  case MTL::PixelFormat::PixelFormatBGRA10_XR:
+    return MTL::PixelFormatBGRA10_XR_sRGB;
+  case MTL::PixelFormatBC1_RGBA:
+    return MTL::PixelFormatBC1_RGBA_sRGB;
+  case MTL::PixelFormat::PixelFormatBC2_RGBA:
+    return MTL::PixelFormatBC2_RGBA_sRGB;
+  case MTL::PixelFormat::PixelFormatBC3_RGBA:
+    return MTL::PixelFormatBC3_RGBA_sRGB;
+  case MTL::PixelFormat::PixelFormatBC7_RGBAUnorm:
+    return MTL::PixelFormatBC7_RGBAUnorm_sRGB;
+  case MTL::PixelFormat::PixelFormatPVRTC_RGBA_2BPP:
+    return MTL::PixelFormatPVRTC_RGBA_2BPP_sRGB;
+  case MTL::PixelFormat::PixelFormatPVRTC_RGBA_4BPP:
+    return MTL::PixelFormatPVRTC_RGBA_4BPP_sRGB;
+  case MTL::PixelFormat::PixelFormatPVRTC_RGB_2BPP:
+    return MTL::PixelFormatPVRTC_RGB_2BPP_sRGB;
+  case MTL::PixelFormat::PixelFormatPVRTC_RGB_4BPP:
+    return MTL::PixelFormatPVRTC_RGB_4BPP_sRGB;
+  case MTL::PixelFormat::PixelFormatEAC_RGBA8:
+    return MTL::PixelFormatEAC_RGBA8_sRGB;
+  case MTL::PixelFormat::PixelFormatETC2_RGB8:
+    return MTL::PixelFormatETC2_RGB8_sRGB;
+  case MTL::PixelFormat::PixelFormatETC2_RGB8A1:
+    return MTL::PixelFormatETC2_RGB8A1_sRGB;
+  default:
+    return format;
+  }
+}
+
 bool IsBlockCompressionFormat(MTL::PixelFormat format) {
   switch (format) {
   case MTL::PixelFormatBC1_RGBA:

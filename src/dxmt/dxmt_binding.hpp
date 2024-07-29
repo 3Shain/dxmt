@@ -9,7 +9,7 @@
 
 DEFINE_COM_INTERFACE("12c69ed2-ebae-438d-ac9c-ecdb7c08065b", BackBufferSource)
     : public IUnknown {
-  virtual MTL::Texture *GetCurrentFrameBackBuffer() = 0;
+  virtual MTL::Texture *GetCurrentFrameBackBuffer(bool srgb) = 0;
 };
 
 namespace dxmt {
@@ -28,7 +28,8 @@ class BindingRef {
     BoundedBuffer = 0b11,
     UAVWithCounter = 0b111,
     JustTexture = 0b10000000,
-    BackBufferSource = 0b100000000,
+    BackBufferSource_sRGB = 0b100000000,
+    BackBufferSource_Linear = 0b1000000000,
   };
   Type type;
   MTL::Resource *resource_ptr;
@@ -55,8 +56,10 @@ public:
   BindingRef(IUnknown *ref, MTL::Texture *texture) noexcept
       : type(Type::JustTexture), resource_ptr(texture), reference_holder(ref) {}
   BindingRef(std::nullopt_t _) noexcept : type(Type::Null) {};
-  BindingRef(BackBufferSource *t) noexcept
-      : type(Type::BackBufferSource), reference_holder(t) {}
+  BindingRef(BackBufferSource *t, bool srgb) noexcept
+      : type(srgb ? BindingRef::Type::BackBufferSource_sRGB
+                  : BindingRef::Type::BackBufferSource_Linear),
+        reference_holder(t) {}
 
   operator bool() const noexcept { return type != Type::Null; }
   BindingRef(const BindingRef &copy) = delete;
@@ -110,12 +113,16 @@ public:
       return resource_ptr == other.resource_ptr &&
              byte_offset == other.byte_offset &&
              element_width == other.element_width && counter_ == other.counter_;
-    case Type::BackBufferSource:
+    case Type::BackBufferSource_sRGB:
+    case Type::BackBufferSource_Linear:
       return reference_holder == other.reference_holder;
     }
   };
 
-  bool requiresContext() const { return type == Type::BackBufferSource; };
+  bool requiresContext() const {
+    return type == Type::BackBufferSource_sRGB ||
+           type == Type::BackBufferSource_Linear;
+  };
 
   MTL::Buffer *buffer() const {
     if ((uint64_t)type & (uint64_t)Type::UnboundedBuffer) {
@@ -133,9 +140,13 @@ public:
     if ((uint64_t)type & (uint64_t)Type::JustTexture) {
       return (MTL::Texture *)resource_ptr;
     }
-    if ((uint64_t)type & (uint64_t)Type::BackBufferSource) {
+    if ((uint64_t)type & (uint64_t)Type::BackBufferSource_sRGB) {
       return ((BackBufferSource *)reference_holder.ptr())
-          ->GetCurrentFrameBackBuffer();
+          ->GetCurrentFrameBackBuffer(true);
+    }
+    if ((uint64_t)type & (uint64_t)Type::BackBufferSource_Linear) {
+      return ((BackBufferSource *)reference_holder.ptr())
+          ->GetCurrentFrameBackBuffer(false);
     }
     return nullptr;
   }
@@ -166,9 +177,13 @@ public:
   MTL::Resource *resource() const { return resource_ptr; }
 
   MTL::Resource *resource(EncodingContext *context) const {
-    if ((uint64_t)type & (uint64_t)Type::BackBufferSource) {
+    if ((uint64_t)type & (uint64_t)Type::BackBufferSource_sRGB) {
       return ((BackBufferSource *)reference_holder.ptr())
-          ->GetCurrentFrameBackBuffer();
+          ->GetCurrentFrameBackBuffer(true);
+    }
+    if ((uint64_t)type & (uint64_t)Type::BackBufferSource_Linear) {
+      return ((BackBufferSource *)reference_holder.ptr())
+          ->GetCurrentFrameBackBuffer(false);
     }
     return resource();
   }
@@ -180,7 +195,8 @@ class ArgumentData {
     BoundedBuffer = 0b11,
     UAVWithCounter = 0b111,
     JustTexture = 0b10000000,
-    BackBufferSource = 0b100000000,
+    BackBufferSource_sRGB = 0b100000000,
+    BackBufferSource_Linear = 0b1000000000,
   };
   Type type;
   uint64_t resource_handle;
@@ -201,10 +217,15 @@ public:
   }
   ArgumentData(MTL::ResourceID id, MTL::Texture *) noexcept
       : type(Type::JustTexture), resource_handle(id._impl) {}
-  ArgumentData(BackBufferSource *t) noexcept
-      : type(Type::BackBufferSource), ptr(t) {}
+  ArgumentData(BackBufferSource *t, bool srgb) noexcept
+      : type(srgb ? Type::BackBufferSource_sRGB
+                  : Type::BackBufferSource_Linear),
+        ptr(t) {}
 
-  bool requiresContext() const { return type == Type::BackBufferSource; };
+  bool requiresContext() const {
+    return type == Type::BackBufferSource_sRGB ||
+           type == Type::BackBufferSource_Linear;
+  };
 
   uint64_t buffer() const {
     if ((uint64_t)type & (uint64_t)Type::UnboundedBuffer) {
@@ -238,8 +259,11 @@ public:
   uint64_t resource() const { return resource_handle; }
 
   uint64_t resource(EncodingContext *context) const {
-    if ((uint64_t)type & (uint64_t)Type::BackBufferSource) {
-      return ptr->GetCurrentFrameBackBuffer()->gpuResourceID()._impl;
+    if ((uint64_t)type & (uint64_t)Type::BackBufferSource_sRGB) {
+      return ptr->GetCurrentFrameBackBuffer(true)->gpuResourceID()._impl;
+    }
+    if ((uint64_t)type & (uint64_t)Type::BackBufferSource_Linear) {
+      return ptr->GetCurrentFrameBackBuffer(false)->gpuResourceID()._impl;
     }
     return resource();
   }

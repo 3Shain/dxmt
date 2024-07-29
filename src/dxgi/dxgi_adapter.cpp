@@ -288,7 +288,7 @@ public:
       pMtlDesc->VertexFormat = MTL::VertexFormatHalf4;
       pMtlDesc->AttributeFormat = MTL::AttributeFormatHalf4;
       pMtlDesc->BytesPerTexel = 8;
-      pMtlDesc->SupportBackBuffer = true;
+      pMtlDesc->SupportBackBuffer = true; // 11.1
       break;
     }
     case DXGI_FORMAT_R16G16B16A16_UNORM: {
@@ -384,7 +384,7 @@ public:
       pMtlDesc->VertexFormat = MTL::VertexFormatUInt1010102Normalized;
       pMtlDesc->AttributeFormat = MTL::AttributeFormatUInt1010102Normalized;
       pMtlDesc->BytesPerTexel = 4;
-      pMtlDesc->SupportBackBuffer = true;
+      pMtlDesc->SupportBackBuffer = true; // 11.1
       break;
     }
     case DXGI_FORMAT_R10G10B10A2_UINT: {
@@ -410,7 +410,7 @@ public:
       pMtlDesc->VertexFormat = MTL::VertexFormatUChar4Normalized;
       pMtlDesc->AttributeFormat = MTL::AttributeFormatUChar4Normalized;
       pMtlDesc->BytesPerTexel = 4;
-      pMtlDesc->SupportBackBuffer = TRUE;
+      pMtlDesc->SupportBackBuffer = TRUE; // 11.1, swizzle from BGRA8Unorm
       // FIXME: backbuffer format not supported!
       // need some workaround for GetDisplayModeList
       break;
@@ -418,6 +418,7 @@ public:
     case DXGI_FORMAT_R8G8B8A8_UNORM_SRGB: {
       pMtlDesc->PixelFormat = MTL::PixelFormatRGBA8Unorm_sRGB;
       pMtlDesc->BytesPerTexel = 4;
+      pMtlDesc->SupportBackBuffer = TRUE; // 11.1, swizzle from BGRA8Unorm
       break;
     }
     case DXGI_FORMAT_R8G8B8A8_UINT: {
@@ -811,13 +812,11 @@ public:
       pMtlDesc->VertexFormat = MTL::VertexFormatUChar4Normalized_BGRA;
       pMtlDesc->AttributeFormat = MTL::AttributeFormatUChar4Normalized_BGRA;
       pMtlDesc->BytesPerTexel = 4;
-      pMtlDesc->SupportBackBuffer = true;
+      pMtlDesc->SupportBackBuffer = true; // 11.1
       break;
     }
     case DXGI_FORMAT_B8G8R8X8_UNORM: {
       pMtlDesc->PixelFormat = MTL::PixelFormatBGRA8Unorm;
-      // pMtlDesc->VertexFormat = MTL::VertexFormatUChar4Normalized_BGRA;
-      // pMtlDesc->AttributeFormat = MTL::AttributeFormatUChar4Normalized_BGRA;
       pMtlDesc->BytesPerTexel = 4;
       pMtlDesc->SupportBackBuffer = true;
       break;
@@ -827,25 +826,18 @@ public:
       return E_FAIL;
     case DXGI_FORMAT_B8G8R8A8_UNORM_SRGB: {
       pMtlDesc->PixelFormat = MTL::PixelFormatBGRA8Unorm_sRGB;
-      // pMtlDesc->VertexFormat =MTL::VertexFormatUChar4Normalized_BGRA;
-      // pMtlDesc->AttributeFormat =MTL::AttributeFormatUChar4Normalized_BGRA;
       pMtlDesc->BytesPerTexel = 4;
-      pMtlDesc->SupportBackBuffer = true;
+      pMtlDesc->SupportBackBuffer = true; // 11.1
       break;
     }
     case DXGI_FORMAT_B8G8R8X8_TYPELESS: {
       pMtlDesc->PixelFormat = MTL::PixelFormatBGRA8Unorm;
-      // pMtlDesc->VertexFormat =MTL::VertexFormatUChar4Normalized_BGRA;
-      // pMtlDesc->AttributeFormat =MTL::AttributeFormatUChar4Normalized_BGRA;
       pMtlDesc->BytesPerTexel = 4;
       pMtlDesc->Typeless = 1;
-      // pMtlDesc->SupportBackBuffer = true;
       break;
     }
     case DXGI_FORMAT_B8G8R8X8_UNORM_SRGB: {
       pMtlDesc->PixelFormat = MTL::PixelFormatBGRA8Unorm_sRGB;
-      // pMtlDesc->VertexFormat =MTL::VertexFormatUChar4Normalized_BGRA;
-      // pMtlDesc->AttributeFormat =MTL::AttributeFormatUChar4Normalized_BGRA;
       pMtlDesc->BytesPerTexel = 4;
       pMtlDesc->SupportBackBuffer = true;
       break;

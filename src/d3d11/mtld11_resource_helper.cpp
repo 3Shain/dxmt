@@ -325,6 +325,11 @@ CreateMTLTextureDescriptorInternal(
     // decoder not supported: D3D11_BIND_DECODER, D3D11_BIND_VIDEO_ENCODER
   }
 
+  if(metal_format.Typeless) {
+    // well this is necessary for passing validation layer
+    metal_usage |= MTL::TextureUsagePixelFormatView;
+  }
+
   desc->setUsage(metal_usage);
 
   MTL::ResourceOptions options = 0;
