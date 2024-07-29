@@ -883,7 +883,6 @@ public:
 
     cmdbuf_state = CommandBufferState::Idle;
     if (promote_flush && !defer_commit) {
-      promote_flush = false;
       Commit();
       return true;
     }
@@ -1995,6 +1994,7 @@ public:
   }
 
   void Commit() {
+    promote_flush = false;
     D3D11_ASSERT(cmdbuf_state == CommandBufferState::Idle);
     cmd_queue.CommitCurrentChunk(occlusion_query_seq_chunk_start,
                                  ++occlusion_query_seq);
