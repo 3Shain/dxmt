@@ -410,7 +410,7 @@ CreateMTLRenderTargetView(IMTLD3D11Device *pDevice, MTL::Texture *pResource,
   case D3D11_RTV_DIMENSION_TEXTURE2DMS: {
     if (texture_type == MTL::TextureType2DMultisample) {
       *ppView = pResource->newTextureView(
-          metal_format.PixelFormat, MTL::TextureType3D, NS::Range::Make(0, 1),
+          metal_format.PixelFormat, MTL::TextureType2DMultisample, NS::Range::Make(0, 1),
           NS::Range::Make(0, 1));
       pMTLDesc->Slice = 0;
       pMTLDesc->Level = 0;
