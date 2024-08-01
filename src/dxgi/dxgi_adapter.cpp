@@ -822,8 +822,13 @@ public:
       break;
     }
     case DXGI_FORMAT_R10G10B10_XR_BIAS_A2_UNORM:
-    case DXGI_FORMAT_B8G8R8A8_TYPELESS:
       return E_FAIL;
+    case DXGI_FORMAT_B8G8R8A8_TYPELESS: {
+      pMtlDesc->PixelFormat = MTL::PixelFormatBGRA8Unorm;
+      pMtlDesc->BytesPerTexel = 4;
+      pMtlDesc->Typeless = true;
+      break;
+    }
     case DXGI_FORMAT_B8G8R8A8_UNORM_SRGB: {
       pMtlDesc->PixelFormat = MTL::PixelFormatBGRA8Unorm_sRGB;
       pMtlDesc->BytesPerTexel = 4;
