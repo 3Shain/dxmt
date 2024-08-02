@@ -3430,7 +3430,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                  auto dpdx =
                    co_yield load_src_op<true>(sample.src_x_derivative);
                  auto dpdy =
-                   co_yield load_src_op<true>(sample.src_x_derivative);
+                   co_yield load_src_op<true>(sample.src_y_derivative);
                  switch (res.resource_kind) {
                  case air::TextureKind::depth_2d:
                  case air::TextureKind::texture_2d: {
