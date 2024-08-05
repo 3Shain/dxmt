@@ -976,6 +976,20 @@ public:
                              const FLOAT ColorRGBA[4]) {
     CommandChunk *chk = cmd_queue.CurrentChunk();
 
+    auto rtv_props = pRenderTargetView->GetRenderTargetProps();
+    if (rtv_props->RenderTargetArrayLength > 0) {
+      // FIXME: definitely texture3d?
+      EmitComputeCommandChk<true>(
+          [texture = pRenderTargetView->GetBinding(cmd_queue.CurrentSeqId()),
+           clear_color =
+               std::array<float, 4>({ColorRGBA[0], ColorRGBA[1], ColorRGBA[2],
+                                     ColorRGBA[3]})](auto encoder, auto &ctx) {
+            ctx.queue->clear_cmd.ClearTexture3DFloat(
+                encoder, texture.texture(&ctx), clear_color);
+          });
+      return;
+    }
+
     auto target = pRenderTargetView->GetBinding(cmd_queue.CurrentSeqId());
     auto clear_color = MTL::ClearColor::Make(ColorRGBA[0], ColorRGBA[1],
                                              ColorRGBA[2], ColorRGBA[3]);
