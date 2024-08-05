@@ -30,8 +30,9 @@ struct tag_texture_backbuffer {
   static const D3D11_RESOURCE_DIMENSION dimension =
       D3D11_RESOURCE_DIMENSION_TEXTURE2D;
   using COM = ID3D11Texture2D;
+  using COM_IMPL = ID3D11Texture2D1;
   using DESC = D3D11_TEXTURE2D_DESC;
-  using DESC_S = D3D11_TEXTURE2D_DESC;
+  using DESC1 = D3D11_TEXTURE2D_DESC1;
 };
 
 template <bool EnableMetalFX>
@@ -67,7 +68,7 @@ private:
     MTL::PixelFormat interpreted_pixel_format;
 
   public:
-    BackBufferRTV(const D3D11_RENDER_TARGET_VIEW_DESC *pDesc,
+    BackBufferRTV(const D3D11_RENDER_TARGET_VIEW_DESC1 *pDesc,
                   EmulatedBackBufferTexture<EnableMetalFX> *context,
                   MTL::PixelFormat interpreted_pixel_format,
                   IMTLD3D11Device *pDevice)
@@ -98,7 +99,7 @@ private:
     bool srgb;
 
   public:
-    BackBufferSRV(const D3D11_SHADER_RESOURCE_VIEW_DESC *pDesc,
+    BackBufferSRV(const D3D11_SHADER_RESOURCE_VIEW_DESC1 *pDesc,
                   EmulatedBackBufferTexture<EnableMetalFX> *context,
                   IMTLD3D11Device *pDevice, bool srgb)
         : BackBufferSRVBase(pDesc, context, pDevice), srgb(srgb) {}
@@ -129,7 +130,7 @@ private:
     bool srgb;
 
   public:
-    BackBufferUAV(const D3D11_UNORDERED_ACCESS_VIEW_DESC *pDesc,
+    BackBufferUAV(const D3D11_UNORDERED_ACCESS_VIEW_DESC1 *pDesc,
                   EmulatedBackBufferTexture<EnableMetalFX> *context,
                   IMTLD3D11Device *pDevice, bool srgb)
         : BackBufferUAVBase(pDesc, context, pDevice), srgb(srgb) {}
@@ -156,7 +157,8 @@ public:
   EmulatedBackBufferTexture(const DXGI_SWAP_CHAIN_DESC1 *pDesc,
                             IMTLD3D11Device *pDevice, HWND hWnd)
       : TResourceBase<tag_texture_backbuffer, IMTLD3D11BackBuffer, IMTLBindable,
-                      BackBufferSource>(nullptr, pDevice),
+                      BackBufferSource>((tag_texture_backbuffer::DESC1{}),
+                                        pDevice),
         hWnd(hWnd) {
     if (FAILED(pDevice->QueryInterface(IID_PPV_ARGS(&layer_factory)))) {
       throw MTLD3DError("Failed to create CAMetalLayer");
@@ -240,7 +242,7 @@ public:
 
     if constexpr (EnableMetalFX) {
       Obj<MTL::TextureDescriptor> descriptor;
-      D3D11_TEXTURE2D_DESC out_desc; // only used as an output
+      D3D11_TEXTURE2D_DESC1 out_desc; // only used as an output
       if (FAILED((CreateMTLTextureDescriptor(pDevice, &desc, &out_desc,
                                              &descriptor)))) {
         throw MTLD3DError(str::format("MTLFX: failed to create texture"));
@@ -285,15 +287,19 @@ public:
     destroyed = true;
   }
 
-  HRESULT CreateRenderTargetView(const D3D11_RENDER_TARGET_VIEW_DESC *pDesc,
-                                 ID3D11RenderTargetView **ppView) override {
-    D3D11_RENDER_TARGET_VIEW_DESC final;
+  HRESULT CreateRenderTargetView(const D3D11_RENDER_TARGET_VIEW_DESC1 *pDesc,
+                                 ID3D11RenderTargetView1 **ppView) override {
+    D3D11_RENDER_TARGET_VIEW_DESC1 final;
     MTL::PixelFormat interpreted_pixel_format = pixel_format_;
     if (pDesc) {
       MTL_FORMAT_DESC metal_format;
       Com<IMTLDXGIAdatper> adapter;
       m_parent->GetAdapter(&adapter);
-      if (FAILED(adapter->QueryFormatDesc(pDesc->Format, &metal_format))) {
+      final.Format = pDesc->Format;
+      if (pDesc && pDesc->Format == DXGI_FORMAT_UNKNOWN) {
+        final.Format = desc.Format;
+      }
+      if (FAILED(adapter->QueryFormatDesc(final.Format, &metal_format))) {
         ERR("CreateRenderTargetView: invalid back buffer rtv format ",
             pDesc->Format);
         return E_INVALIDARG;
@@ -312,12 +318,10 @@ public:
         ERR("CreateRenderTargetView: Back buffer RTV mipslice must be 0");
         return E_INVALIDARG;
       }
-      final.Format = pDesc->Format;
-    } else {
-      final.Format = desc.Format;
     }
     final.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D;
     final.Texture2D.MipSlice = 0;
+    final.Texture2D.PlaneSlice = 0;
     if (!ppView)
       return S_FALSE;
 
@@ -327,14 +331,20 @@ public:
     return S_OK;
   }
 
-  HRESULT CreateShaderResourceView(const D3D11_SHADER_RESOURCE_VIEW_DESC *pDesc,
-                                   ID3D11ShaderResourceView **ppView) override {
-    D3D11_SHADER_RESOURCE_VIEW_DESC final;
+  HRESULT
+  CreateShaderResourceView(const D3D11_SHADER_RESOURCE_VIEW_DESC1 *pDesc,
+                           ID3D11ShaderResourceView1 **ppView) override {
+    D3D11_SHADER_RESOURCE_VIEW_DESC1 final;
     if (pDesc) {
-      if (pDesc->Format != desc.Format) {
+      if (pDesc->Format == DXGI_FORMAT_UNKNOWN) {
+        final.Format = desc.Format;
+      } else {
+        final.Format = pDesc->Format;
+      }
+      if (final.Format != desc.Format) {
         ERR("CreateRenderTargetView: Try to reinterpret back buffer SRV");
         ERR("previous: ", desc.Format);
-        ERR("new: ", pDesc->Format);
+        ERR("new: ", final.Format);
         return E_INVALIDARG;
       }
       if (pDesc->ViewDimension != D3D11_SRV_DIMENSION_TEXTURE2D) {
@@ -347,11 +357,13 @@ public:
         ERR("CreateRenderTargetView: Back buffer SRV mipslice must be 0");
         return E_INVALIDARG;
       }
+    } else {
+      final.Format = desc.Format;
     }
-    final.Format = desc.Format;
     final.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
     final.Texture2D.MostDetailedMip = 0;
     final.Texture2D.MipLevels = 1;
+    final.Texture2D.PlaneSlice = 0;
     if (!ppView)
       return S_FALSE;
 
@@ -362,9 +374,9 @@ public:
   }
 
   HRESULT
-  CreateUnorderedAccessView(const D3D11_UNORDERED_ACCESS_VIEW_DESC *pDesc,
-                            ID3D11UnorderedAccessView **ppView) override {
-    D3D11_UNORDERED_ACCESS_VIEW_DESC final;
+  CreateUnorderedAccessView(const D3D11_UNORDERED_ACCESS_VIEW_DESC1 *pDesc,
+                            ID3D11UnorderedAccessView1 **ppView) override {
+    D3D11_UNORDERED_ACCESS_VIEW_DESC1 final;
     if (pDesc) {
       if (pDesc->Format != desc.Format) {
         ERR("CreateRenderTargetView: Try to reinterpret back buffer UAV");
@@ -385,6 +397,7 @@ public:
     final.Format = desc.Format;
     final.ViewDimension = D3D11_UAV_DIMENSION_TEXTURE2D;
     final.Texture2D.MipSlice = 0;
+    final.Texture2D.PlaneSlice = 0;
     if (!ppView)
       return S_FALSE;
 

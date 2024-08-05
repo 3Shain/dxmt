@@ -1,17 +1,13 @@
 #include "dxmt_names.hpp"
-#include "Foundation/NSRange.hpp"
-#include "Metal/MTLPixelFormat.hpp"
 #include "Metal/MTLTexture.hpp"
 #include "d3d11_texture.hpp"
 #include "d3d11_device.hpp"
-#include "d3d11_private.h"
-#include "dxgi_interfaces.h"
 
 namespace dxmt {
 
 template <>
 void initWithSubresourceData(MTL::Texture *target,
-                             const D3D11_TEXTURE3D_DESC *desc,
+                             const D3D11_TEXTURE3D_DESC1 *desc,
                              const D3D11_SUBRESOURCE_DATA *subresources) {
   if (subresources == nullptr)
     return;
@@ -31,7 +27,7 @@ void initWithSubresourceData(MTL::Texture *target,
 
 template <>
 void initWithSubresourceData(MTL::Texture *target,
-                             const D3D11_TEXTURE2D_DESC *desc,
+                             const D3D11_TEXTURE2D_DESC1 *desc,
                              const D3D11_SUBRESOURCE_DATA *subresources) {
   if (subresources == nullptr)
     return;

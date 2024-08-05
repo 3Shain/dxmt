@@ -22,23 +22,24 @@ private:
   SIMPLE_OCCUPANCY_TRACKER occupancy{};
 
 public:
-  DeviceBuffer(const tag_buffer::DESC_S *desc,
+  DeviceBuffer(const tag_buffer::DESC1 *pDesc,
                const D3D11_SUBRESOURCE_DATA *pInitialData,
                IMTLD3D11Device *device)
-      : TResourceBase<tag_buffer, IMTLBindable>(desc, device) {
+      : TResourceBase<tag_buffer, IMTLBindable>(*pDesc, device) {
     auto metal = device->GetMTLDevice();
-    buffer = transfer(metal->newBuffer(
-        (desc->BindFlags & D3D11_BIND_UNORDERED_ACCESS) ? (desc->ByteWidth + 16)
-                                                        : desc->ByteWidth,
-        MTL::ResourceStorageModeManaged));
+    buffer = transfer(
+        metal->newBuffer((pDesc->BindFlags & D3D11_BIND_UNORDERED_ACCESS)
+                             ? (pDesc->ByteWidth + 16)
+                             : pDesc->ByteWidth,
+                         MTL::ResourceStorageModeManaged));
     if (pInitialData) {
-      memcpy(buffer->contents(), pInitialData->pSysMem, desc->ByteWidth);
-      buffer->didModifyRange({0, desc->ByteWidth});
+      memcpy(buffer->contents(), pInitialData->pSysMem, pDesc->ByteWidth);
+      buffer->didModifyRange({0, pDesc->ByteWidth});
     }
     buffer_handle = buffer->gpuAddress();
-    structured = desc->MiscFlags & D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
+    structured = pDesc->MiscFlags & D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
     allow_raw_view =
-        desc->MiscFlags & D3D11_RESOURCE_MISC_BUFFER_ALLOW_RAW_VIEWS;
+        pDesc->MiscFlags & D3D11_RESOURCE_MISC_BUFFER_ALLOW_RAW_VIEWS;
   }
 
   BindingRef UseBindable(uint64_t seq_id) override {
@@ -68,9 +69,8 @@ public:
     F f;
 
   public:
-    SRV(const tag_shader_resource_view<>::DESC_S *pDesc,
-        DeviceBuffer *pResource, IMTLD3D11Device *pDevice,
-        ArgumentData argument_data, F &&fn)
+    SRV(const tag_shader_resource_view<>::DESC1 *pDesc, DeviceBuffer *pResource,
+        IMTLD3D11Device *pDevice, ArgumentData argument_data, F &&fn)
         : SRVBase(pDesc, pResource, pDevice), argument_data(argument_data),
           f(std::forward<F>(fn)) {}
 
@@ -92,9 +92,9 @@ public:
   };
 
   HRESULT
-  CreateShaderResourceView(const D3D11_SHADER_RESOURCE_VIEW_DESC *pDesc,
-                           ID3D11ShaderResourceView **ppView) override {
-    D3D11_SHADER_RESOURCE_VIEW_DESC finalDesc;
+  CreateShaderResourceView(const D3D11_SHADER_RESOURCE_VIEW_DESC1 *pDesc,
+                           ID3D11ShaderResourceView1 **ppView) override {
+    D3D11_SHADER_RESOURCE_VIEW_DESC1 finalDesc;
     if (FAILED(ExtractEntireResourceViewDescription(&this->desc, pDesc,
                                                     &finalDesc))) {
       ERR("DeviceBuffer: Failed to extract srv description");
@@ -169,7 +169,7 @@ public:
     F f;
 
   public:
-    UAV(const tag_unordered_access_view<>::DESC_S *pDesc,
+    UAV(const tag_unordered_access_view<>::DESC1 *pDesc,
         DeviceBuffer *pResource, IMTLD3D11Device *pDevice,
         ArgumentData argument_data, F &&fn)
         : UAVBase(pDesc, pResource, pDevice), argument_data(argument_data),
@@ -193,9 +193,9 @@ public:
   };
 
   HRESULT
-  CreateUnorderedAccessView(const D3D11_UNORDERED_ACCESS_VIEW_DESC *pDesc1,
-                            ID3D11UnorderedAccessView **ppView) override {
-    D3D11_UNORDERED_ACCESS_VIEW_DESC finalDesc;
+  CreateUnorderedAccessView(const D3D11_UNORDERED_ACCESS_VIEW_DESC1 *pDesc1,
+                            ID3D11UnorderedAccessView1 **ppView) override {
+    D3D11_UNORDERED_ACCESS_VIEW_DESC1 finalDesc;
     if (FAILED(ExtractEntireResourceViewDescription(&this->desc, pDesc1,
                                                     &finalDesc))) {
       ERR("DeviceBuffer: Failed to extract uav description");
@@ -256,8 +256,8 @@ public:
     return S_OK;
   };
 
-  HRESULT CreateRenderTargetView(const D3D11_RENDER_TARGET_VIEW_DESC *desc,
-                                 ID3D11RenderTargetView **ppView) override {
+  HRESULT CreateRenderTargetView(const D3D11_RENDER_TARGET_VIEW_DESC1 *desc,
+                                 ID3D11RenderTargetView1 **ppView) override {
     ERR("DeviceBuffer: RTV not supported");
     return E_FAIL;
   };
@@ -307,7 +307,7 @@ private:
 
   public:
     TextureSRV(MTL::Texture *view,
-               const tag_shader_resource_view<>::DESC_S *pDesc,
+               const tag_shader_resource_view<>::DESC1 *pDesc,
                DeviceTexture *pResource, IMTLD3D11Device *pDevice)
         : SRVBase(pDesc, pResource, pDevice), view(view),
           view_handle(view->gpuResourceID()) {}
@@ -347,7 +347,7 @@ private:
 
   public:
     TextureUAV(MTL::Texture *view,
-               const tag_unordered_access_view<>::DESC_S *pDesc,
+               const tag_unordered_access_view<>::DESC1 *pDesc,
                DeviceTexture *pResource, IMTLD3D11Device *pDevice)
         : UAVBase(pDesc, pResource, pDevice), view(view),
           view_handle(view->gpuResourceID()) {}
@@ -385,8 +385,7 @@ private:
     MTL_RENDER_TARGET_VIEW_DESC mtl_rtv_desc;
 
   public:
-    TextureRTV(MTL::Texture *view,
-               const tag_render_target_view<>::DESC_S *pDesc,
+    TextureRTV(MTL::Texture *view, const tag_render_target_view<>::DESC1 *pDesc,
                DeviceTexture *pResource, IMTLD3D11Device *pDevice,
                const MTL_RENDER_TARGET_VIEW_DESC &mtl_rtv_desc)
         : RTVBase(pDesc, pResource, pDevice), view(view),
@@ -419,8 +418,7 @@ private:
     MTL::PixelFormat view_pixel_format;
 
   public:
-    TextureDSV(MTL::Texture *view,
-               const tag_depth_stencil_view<>::DESC_S *pDesc,
+    TextureDSV(MTL::Texture *view, const tag_depth_stencil_view<>::DESC1 *pDesc,
                DeviceTexture *pResource, IMTLD3D11Device *pDevice)
         : DSVBase(pDesc, pResource, pDevice), view(view),
           view_pixel_format(view->pixelFormat()) {}
@@ -441,9 +439,9 @@ private:
   };
 
 public:
-  DeviceTexture(const tag_texture::DESC_S *pDesc, MTL::Texture *texture,
+  DeviceTexture(const tag_texture::DESC1 *pDesc, MTL::Texture *texture,
                 IMTLD3D11Device *pDevice)
-      : TResourceBase<tag_texture, IMTLBindable>(pDesc, pDevice),
+      : TResourceBase<tag_texture, IMTLBindable>(*pDesc, pDevice),
         texture(texture), texture_handle(texture->gpuResourceID()) {}
 
   BindingRef UseBindable(uint64_t seq_id) override {
@@ -466,9 +464,9 @@ public:
     this->QueryInterface(riid, ppLogicalResource);
   };
 
-  HRESULT CreateRenderTargetView(const D3D11_RENDER_TARGET_VIEW_DESC *pDesc,
-                                 ID3D11RenderTargetView **ppView) override {
-    D3D11_RENDER_TARGET_VIEW_DESC finalDesc;
+  HRESULT CreateRenderTargetView(const D3D11_RENDER_TARGET_VIEW_DESC1 *pDesc,
+                                 ID3D11RenderTargetView1 **ppView) override {
+    D3D11_RENDER_TARGET_VIEW_DESC1 finalDesc;
     if (FAILED(ExtractEntireResourceViewDescription(&this->desc, pDesc,
                                                     &finalDesc))) {
       return E_INVALIDARG;
@@ -508,9 +506,10 @@ public:
     return S_OK;
   };
 
-  HRESULT CreateShaderResourceView(const D3D11_SHADER_RESOURCE_VIEW_DESC *pDesc,
-                                   ID3D11ShaderResourceView **ppView) override {
-    D3D11_SHADER_RESOURCE_VIEW_DESC finalDesc;
+  HRESULT
+  CreateShaderResourceView(const D3D11_SHADER_RESOURCE_VIEW_DESC1 *pDesc,
+                           ID3D11ShaderResourceView1 **ppView) override {
+    D3D11_SHADER_RESOURCE_VIEW_DESC1 finalDesc;
     if (FAILED(ExtractEntireResourceViewDescription(&this->desc, pDesc,
                                                     &finalDesc))) {
       ERR("DeviceTexture: Failed to create SRV descriptor");
@@ -543,9 +542,9 @@ public:
   };
 
   HRESULT
-  CreateUnorderedAccessView(const D3D11_UNORDERED_ACCESS_VIEW_DESC *pDesc,
-                            ID3D11UnorderedAccessView **ppView) override {
-    D3D11_UNORDERED_ACCESS_VIEW_DESC finalDesc;
+  CreateUnorderedAccessView(const D3D11_UNORDERED_ACCESS_VIEW_DESC1 *pDesc,
+                            ID3D11UnorderedAccessView1 **ppView) override {
+    D3D11_UNORDERED_ACCESS_VIEW_DESC1 finalDesc;
     if (FAILED(ExtractEntireResourceViewDescription(&this->desc, pDesc,
                                                     &finalDesc))) {
       return E_INVALIDARG;
@@ -574,12 +573,12 @@ public:
 
 template <typename tag>
 HRESULT CreateDeviceTextureInternal(IMTLD3D11Device *pDevice,
-                                    const typename tag::DESC_S *pDesc,
+                                    const typename tag::DESC1 *pDesc,
                                     const D3D11_SUBRESOURCE_DATA *pInitialData,
-                                    typename tag::COM **ppTexture) {
+                                    typename tag::COM_IMPL **ppTexture) {
   auto metal = pDevice->GetMTLDevice();
   Obj<MTL::TextureDescriptor> textureDescriptor;
-  typename tag::DESC_S finalDesc;
+  typename tag::DESC1 finalDesc;
   if (FAILED(CreateMTLTextureDescriptor(pDevice, pDesc, &finalDesc,
                                         &textureDescriptor))) {
     return E_INVALIDARG;
@@ -603,18 +602,18 @@ CreateDeviceTexture1D(IMTLD3D11Device *pDevice,
 
 HRESULT
 CreateDeviceTexture2D(IMTLD3D11Device *pDevice,
-                      const D3D11_TEXTURE2D_DESC *pDesc,
+                      const D3D11_TEXTURE2D_DESC1 *pDesc,
                       const D3D11_SUBRESOURCE_DATA *pInitialData,
-                      ID3D11Texture2D **ppTexture) {
+                      ID3D11Texture2D1 **ppTexture) {
   return CreateDeviceTextureInternal<tag_texture_2d>(pDevice, pDesc,
                                                      pInitialData, ppTexture);
 }
 
 HRESULT
 CreateDeviceTexture3D(IMTLD3D11Device *pDevice,
-                      const D3D11_TEXTURE3D_DESC *pDesc,
+                      const D3D11_TEXTURE3D_DESC1 *pDesc,
                       const D3D11_SUBRESOURCE_DATA *pInitialData,
-                      ID3D11Texture3D **ppTexture) {
+                      ID3D11Texture3D1 **ppTexture) {
   return CreateDeviceTextureInternal<tag_texture_3d>(pDevice, pDesc,
                                                      pInitialData, ppTexture);
 }

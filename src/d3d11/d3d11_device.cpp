@@ -33,7 +33,7 @@ template <> struct hash<MTL_GRAPHICS_PIPELINE_DESC> {
     state.add((size_t)v.VertexShader); // FIXME: don't use pointer?
     state.add((size_t)v.PixelShader);  // FIXME: don't use pointer?
     state.add((size_t)v.InputLayout);  // FIXME: don't use pointer?
-    state.add(v.BlendState ? v.BlendState->GetHash(): 0);
+    state.add(v.BlendState ? v.BlendState->GetHash() : 0);
     state.add((size_t)v.DepthStencilFormat);
     state.add((size_t)v.NumColorAttachments);
     for (unsigned i = 0; i < std::size(v.ColorAttachmentFormats); i++) {
@@ -142,116 +142,59 @@ public:
   CreateTexture2D(const D3D11_TEXTURE2D_DESC *pDesc,
                   const D3D11_SUBRESOURCE_DATA *pInitialData,
                   ID3D11Texture2D **ppTexture2D) override {
-    InitReturnPtr(ppTexture2D);
-
-    if (!pDesc)
-      return E_INVALIDARG;
-
-    if ((pDesc->MiscFlags & D3D11_RESOURCE_MISC_TILED))
-      return E_INVALIDARG; // not supported yet
-
-    try {
-      switch (pDesc->Usage) {
-      case D3D11_USAGE_DEFAULT:
-      case D3D11_USAGE_IMMUTABLE:
-        return CreateDeviceTexture2D(this, pDesc, pInitialData, ppTexture2D);
-      case D3D11_USAGE_DYNAMIC:
-        return CreateDynamicTexture2D(this, pDesc, pInitialData, ppTexture2D);
-      case D3D11_USAGE_STAGING:
-        if (pDesc->BindFlags != 0) {
-          return E_INVALIDARG;
-        }
-        return CreateStagingTexture2D(this, pDesc, pInitialData, ppTexture2D);
-      }
-      return S_OK;
-    } catch (const MTLD3DError &err) {
-      ERR(err.message());
-      return E_FAIL;
-    }
+    D3D11_TEXTURE2D_DESC1 desc1;
+    UpgradeResourceDescription(pDesc, desc1);
+    return CreateTexture2D1(&desc1, pInitialData,
+                            (ID3D11Texture2D1 **)ppTexture2D);
   }
 
   HRESULT STDMETHODCALLTYPE
   CreateTexture3D(const D3D11_TEXTURE3D_DESC *pDesc,
                   const D3D11_SUBRESOURCE_DATA *pInitialData,
                   ID3D11Texture3D **ppTexture3D) override {
-    InitReturnPtr(ppTexture3D);
-
-    if (!pDesc)
-      return E_INVALIDARG;
-
-    if ((pDesc->MiscFlags & D3D11_RESOURCE_MISC_TILED))
-      return E_INVALIDARG; // not supported yet
-
-    try {
-      switch (pDesc->Usage) {
-      case D3D11_USAGE_DEFAULT:
-      case D3D11_USAGE_IMMUTABLE:
-        return CreateDeviceTexture3D(this, pDesc, pInitialData, ppTexture3D);
-      case D3D11_USAGE_DYNAMIC:
-        ERR("dynamic texture 3d not supported yet");
-        return E_NOTIMPL;
-      case D3D11_USAGE_STAGING:
-        if (pDesc->BindFlags != 0) {
-          return E_INVALIDARG;
-        }
-        return CreateStagingTexture3D(this, pDesc, pInitialData, ppTexture3D);
-      }
-      return S_OK;
-    } catch (const MTLD3DError &err) {
-      ERR(err.message());
-      return E_FAIL;
-    }
+    D3D11_TEXTURE3D_DESC1 desc1;
+    UpgradeResourceDescription(pDesc, desc1);
+    return CreateTexture3D1(&desc1, pInitialData,
+                            (ID3D11Texture3D1 **)ppTexture3D);
   }
 
   HRESULT STDMETHODCALLTYPE CreateShaderResourceView(
       ID3D11Resource *pResource, const D3D11_SHADER_RESOURCE_VIEW_DESC *pDesc,
       ID3D11ShaderResourceView **ppSRView) override {
-    InitReturnPtr(ppSRView);
-
-    if (!pResource)
-      return E_INVALIDARG;
-
-    if (!ppSRView)
-      return S_FALSE;
-
-    if (auto res = Com<IDXMTResource>::queryFrom(pResource); res != nullptr) {
-      return res->CreateShaderResourceView(pDesc, ppSRView);
+    if (pDesc) {
+      D3D11_SHADER_RESOURCE_VIEW_DESC1 desc1;
+      UpgradeViewDescription(pDesc, desc1);
+      return CreateShaderResourceView1(pResource, &desc1,
+                                       (ID3D11ShaderResourceView1 **)ppSRView);
     }
-    return E_FAIL;
+    return CreateShaderResourceView1(pResource, nullptr,
+                                     (ID3D11ShaderResourceView1 **)ppSRView);
   }
 
   HRESULT STDMETHODCALLTYPE CreateUnorderedAccessView(
       ID3D11Resource *pResource, const D3D11_UNORDERED_ACCESS_VIEW_DESC *pDesc,
       ID3D11UnorderedAccessView **ppUAView) override {
-    InitReturnPtr(ppUAView);
-
-    if (!pResource)
-      return E_INVALIDARG;
-
-    if (!ppUAView)
-      return S_FALSE;
-
-    if (auto res = Com<IDXMTResource>::queryFrom(pResource); res != nullptr) {
-      return res->CreateUnorderedAccessView(pDesc, ppUAView);
+    if (pDesc) {
+      D3D11_UNORDERED_ACCESS_VIEW_DESC1 desc1;
+      UpgradeViewDescription(pDesc, desc1);
+      return CreateUnorderedAccessView1(
+          pResource, &desc1, (ID3D11UnorderedAccessView1 **)ppUAView);
     }
-    return E_FAIL;
+    return CreateUnorderedAccessView1(pResource, nullptr,
+                                      (ID3D11UnorderedAccessView1 **)ppUAView);
   }
 
   HRESULT STDMETHODCALLTYPE CreateRenderTargetView(
       ID3D11Resource *pResource, const D3D11_RENDER_TARGET_VIEW_DESC *pDesc,
       ID3D11RenderTargetView **ppRTView) override {
-    InitReturnPtr(ppRTView);
-
-    if (!pResource)
-      return E_INVALIDARG;
-
-    if (!ppRTView)
-      return S_FALSE;
-
-    if (auto res = Com<IDXMTResource>::queryFrom(pResource); res != nullptr) {
-      return res->CreateRenderTargetView(pDesc, ppRTView);
+    if (pDesc) {
+      D3D11_RENDER_TARGET_VIEW_DESC1 desc1;
+      UpgradeViewDescription(pDesc, desc1);
+      return CreateRenderTargetView1(pResource, &desc1,
+                                     (ID3D11RenderTargetView1 **)ppRTView);
     }
-    return E_FAIL;
+    return CreateRenderTargetView1(pResource, nullptr,
+                                   (ID3D11RenderTargetView1 **)ppRTView);
   }
 
   HRESULT STDMETHODCALLTYPE CreateDepthStencilView(
@@ -462,8 +405,8 @@ public:
   HRESULT STDMETHODCALLTYPE
   CreateRasterizerState(const D3D11_RASTERIZER_DESC *pRasterizerDesc,
                         ID3D11RasterizerState **ppRasterizerState) override {
-    ID3D11RasterizerState1 *pRasterizerState1;
-    D3D11_RASTERIZER_DESC1 desc;
+    ID3D11RasterizerState2 *pRasterizerState;
+    D3D11_RASTERIZER_DESC2 desc;
     desc.FillMode = pRasterizerDesc->FillMode;
     desc.CullMode = pRasterizerDesc->CullMode;
     desc.FrontCounterClockwise = pRasterizerDesc->FrontCounterClockwise;
@@ -475,8 +418,9 @@ public:
     desc.MultisampleEnable = pRasterizerDesc->MultisampleEnable;
     desc.AntialiasedLineEnable = pRasterizerDesc->AntialiasedLineEnable;
     desc.ForcedSampleCount = 0;
-    auto hr = CreateRasterizerState1(&desc, &pRasterizerState1);
-    *ppRasterizerState = pRasterizerState1;
+    desc.ConservativeRaster = D3D11_CONSERVATIVE_RASTERIZATION_MODE_OFF;
+    auto hr = CreateRasterizerState2(&desc, &pRasterizerState);
+    *ppRasterizerState = pRasterizerState;
     return hr;
   }
 
@@ -504,7 +448,9 @@ public:
       return S_OK;
     }
     case D3D11_QUERY_TIMESTAMP_DISJOINT: {
-      *ppQuery = ref(new MTLD3D11DummyQuery<D3D11_QUERY_DATA_TIMESTAMP_DISJOINT>(this, pQueryDesc));
+      *ppQuery =
+          ref(new MTLD3D11DummyQuery<D3D11_QUERY_DATA_TIMESTAMP_DISJOINT>(
+              this, pQueryDesc));
       return S_OK;
     }
     default:
@@ -753,8 +699,23 @@ public:
   HRESULT STDMETHODCALLTYPE
   CreateRasterizerState1(const D3D11_RASTERIZER_DESC1 *pRasterizerDesc,
                          ID3D11RasterizerState1 **ppRasterizerState) override {
-    return dxmt::CreateRasterizerState(this, pRasterizerDesc,
-                                       ppRasterizerState);
+    ID3D11RasterizerState2 *pRasterizerState;
+    D3D11_RASTERIZER_DESC2 desc;
+    desc.FillMode = pRasterizerDesc->FillMode;
+    desc.CullMode = pRasterizerDesc->CullMode;
+    desc.FrontCounterClockwise = pRasterizerDesc->FrontCounterClockwise;
+    desc.DepthBias = pRasterizerDesc->DepthBias;
+    desc.DepthBiasClamp = pRasterizerDesc->DepthBiasClamp;
+    desc.SlopeScaledDepthBias = pRasterizerDesc->SlopeScaledDepthBias;
+    desc.DepthClipEnable = pRasterizerDesc->DepthClipEnable;
+    desc.ScissorEnable = pRasterizerDesc->ScissorEnable;
+    desc.MultisampleEnable = pRasterizerDesc->MultisampleEnable;
+    desc.AntialiasedLineEnable = pRasterizerDesc->AntialiasedLineEnable;
+    desc.ForcedSampleCount = pRasterizerDesc->ForcedSampleCount;
+    desc.ConservativeRaster = D3D11_CONSERVATIVE_RASTERIZATION_MODE_OFF;
+    auto hr = CreateRasterizerState2(&desc, &pRasterizerState);
+    *ppRasterizerState = pRasterizerState;
+    return hr;
   }
 
   HRESULT STDMETHODCALLTYPE CreateDeviceContextState(
@@ -840,37 +801,127 @@ public:
   }
 
   HRESULT STDMETHODCALLTYPE
-  CreateTexture2D1(const D3D11_TEXTURE2D_DESC1 *desc,
-                   const D3D11_SUBRESOURCE_DATA *initial_data,
-                   ID3D11Texture2D1 **texture) override{IMPLEMENT_ME}
+  CreateTexture2D1(const D3D11_TEXTURE2D_DESC1 *pDesc,
+                   const D3D11_SUBRESOURCE_DATA *pInitialData,
+                   ID3D11Texture2D1 **ppTexture2D) override {
+    InitReturnPtr(ppTexture2D);
+
+    if (!pDesc)
+      return E_INVALIDARG;
+
+    if ((pDesc->MiscFlags & D3D11_RESOURCE_MISC_TILED))
+      return E_INVALIDARG; // not supported yet
+
+    try {
+      switch (pDesc->Usage) {
+      case D3D11_USAGE_DEFAULT:
+      case D3D11_USAGE_IMMUTABLE:
+        return CreateDeviceTexture2D(this, pDesc, pInitialData, ppTexture2D);
+      case D3D11_USAGE_DYNAMIC:
+        return CreateDynamicTexture2D(this, pDesc, pInitialData, ppTexture2D);
+      case D3D11_USAGE_STAGING:
+        if (pDesc->BindFlags != 0) {
+          return E_INVALIDARG;
+        }
+        return CreateStagingTexture2D(this, pDesc, pInitialData, ppTexture2D);
+      }
+      return S_OK;
+    } catch (const MTLD3DError &err) {
+      ERR(err.message());
+      return E_FAIL;
+    }
+  }
 
   HRESULT STDMETHODCALLTYPE
-      CreateTexture3D1(const D3D11_TEXTURE3D_DESC1 *desc,
-                       const D3D11_SUBRESOURCE_DATA *initial_data,
-                       ID3D11Texture3D1 **texture) override{IMPLEMENT_ME}
+  CreateTexture3D1(const D3D11_TEXTURE3D_DESC1 *pDesc,
+                   const D3D11_SUBRESOURCE_DATA *pInitialData,
+                   ID3D11Texture3D1 **ppTexture3D) override {
+    InitReturnPtr(ppTexture3D);
+
+    if (!pDesc)
+      return E_INVALIDARG;
+
+    if ((pDesc->MiscFlags & D3D11_RESOURCE_MISC_TILED))
+      return E_INVALIDARG; // not supported yet
+
+    try {
+      switch (pDesc->Usage) {
+      case D3D11_USAGE_DEFAULT:
+      case D3D11_USAGE_IMMUTABLE:
+        return CreateDeviceTexture3D(this, pDesc, pInitialData, ppTexture3D);
+      case D3D11_USAGE_DYNAMIC:
+        ERR("dynamic texture 3d not supported yet");
+        return E_NOTIMPL;
+      case D3D11_USAGE_STAGING:
+        if (pDesc->BindFlags != 0) {
+          return E_INVALIDARG;
+        }
+        return CreateStagingTexture3D(this, pDesc, pInitialData, ppTexture3D);
+      }
+      return S_OK;
+    } catch (const MTLD3DError &err) {
+      ERR(err.message());
+      return E_FAIL;
+    }
+  }
 
   HRESULT STDMETHODCALLTYPE
-      CreateRasterizerState2(const D3D11_RASTERIZER_DESC2 *desc,
-                             ID3D11RasterizerState2 **state) override{
-          IMPLEMENT_ME}
+  CreateRasterizerState2(const D3D11_RASTERIZER_DESC2 *pRasterizerDesc,
+                         ID3D11RasterizerState2 **ppRasterizerState) override {
+    return dxmt::CreateRasterizerState(this, pRasterizerDesc,
+                                       ppRasterizerState);
+  }
 
-  HRESULT STDMETHODCALLTYPE
-      CreateShaderResourceView1(ID3D11Resource *resource,
-                                const D3D11_SHADER_RESOURCE_VIEW_DESC1 *desc,
-                                ID3D11ShaderResourceView1 **view) override{
-          IMPLEMENT_ME}
+  HRESULT STDMETHODCALLTYPE CreateShaderResourceView1(
+      ID3D11Resource *pResource, const D3D11_SHADER_RESOURCE_VIEW_DESC1 *pDesc,
+      ID3D11ShaderResourceView1 **ppSRView) override {
+    InitReturnPtr(ppSRView);
 
-  HRESULT STDMETHODCALLTYPE
-      CreateUnorderedAccessView1(ID3D11Resource *resource,
-                                 const D3D11_UNORDERED_ACCESS_VIEW_DESC1 *desc,
-                                 ID3D11UnorderedAccessView1 **view) override{
-          IMPLEMENT_ME}
+    if (!pResource)
+      return E_INVALIDARG;
 
-  HRESULT STDMETHODCALLTYPE
-      CreateRenderTargetView1(ID3D11Resource *resource,
-                              const D3D11_RENDER_TARGET_VIEW_DESC1 *desc,
-                              ID3D11RenderTargetView1 **view) override{
-          IMPLEMENT_ME}
+    if (!ppSRView)
+      return S_FALSE;
+
+    if (auto res = Com<IDXMTResource>::queryFrom(pResource); res != nullptr) {
+      return res->CreateShaderResourceView(pDesc, ppSRView);
+    }
+    return E_FAIL;
+  }
+
+  HRESULT STDMETHODCALLTYPE CreateUnorderedAccessView1(
+      ID3D11Resource *pResource, const D3D11_UNORDERED_ACCESS_VIEW_DESC1 *pDesc,
+      ID3D11UnorderedAccessView1 **ppUAView) override {
+    InitReturnPtr(ppUAView);
+
+    if (!pResource)
+      return E_INVALIDARG;
+
+    if (!ppUAView)
+      return S_FALSE;
+
+    if (auto res = Com<IDXMTResource>::queryFrom(pResource); res != nullptr) {
+      return res->CreateUnorderedAccessView(pDesc, ppUAView);
+    }
+    return E_FAIL;
+  }
+
+  HRESULT STDMETHODCALLTYPE CreateRenderTargetView1(
+      ID3D11Resource *pResource, const D3D11_RENDER_TARGET_VIEW_DESC1 *pDesc,
+      ID3D11RenderTargetView1 **ppRTView) override {
+    InitReturnPtr(ppRTView);
+
+    if (!pResource)
+      return E_INVALIDARG;
+
+    if (!ppRTView)
+      return S_FALSE;
+
+    if (auto res = Com<IDXMTResource>::queryFrom(pResource); res != nullptr) {
+      return res->CreateRenderTargetView(pDesc, ppRTView);
+    }
+    return E_FAIL;
+  }
 
   HRESULT STDMETHODCALLTYPE CreateQuery1(const D3D11_QUERY_DESC1 *desc,
                                          ID3D11Query1 **query) override {

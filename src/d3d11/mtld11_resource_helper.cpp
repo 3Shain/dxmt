@@ -1,3 +1,4 @@
+#include "d3d11_device.hpp"
 #include "d3d11_private.h"
 #include "mtld11_resource.hpp"
 #include "d3d11_1.h"
@@ -8,9 +9,9 @@ namespace dxmt {
 
 template <>
 HRESULT ExtractEntireResourceViewDescription<D3D11_BUFFER_DESC,
-                                             D3D11_SHADER_RESOURCE_VIEW_DESC>(
+                                             D3D11_SHADER_RESOURCE_VIEW_DESC1>(
     const D3D11_BUFFER_DESC *pResourceDesc,
-    D3D11_SHADER_RESOURCE_VIEW_DESC *pViewDescOut) {
+    D3D11_SHADER_RESOURCE_VIEW_DESC1 *pViewDescOut) {
   if (pResourceDesc->MiscFlags & D3D11_RESOURCE_MISC_BUFFER_STRUCTURED) {
     pViewDescOut->Format = DXGI_FORMAT_UNKNOWN;
     pViewDescOut->ViewDimension = D3D11_SRV_DIMENSION_BUFFER;
@@ -25,9 +26,9 @@ HRESULT ExtractEntireResourceViewDescription<D3D11_BUFFER_DESC,
 
 template <>
 HRESULT ExtractEntireResourceViewDescription<D3D11_BUFFER_DESC,
-                                             D3D11_UNORDERED_ACCESS_VIEW_DESC>(
+                                             D3D11_UNORDERED_ACCESS_VIEW_DESC1>(
     const D3D11_BUFFER_DESC *pResourceDesc,
-    D3D11_UNORDERED_ACCESS_VIEW_DESC *pViewDescOut) {
+    D3D11_UNORDERED_ACCESS_VIEW_DESC1 *pViewDescOut) {
   if (pResourceDesc->MiscFlags & D3D11_RESOURCE_MISC_BUFFER_STRUCTURED) {
     pViewDescOut->Format = DXGI_FORMAT_UNKNOWN;
     pViewDescOut->ViewDimension = D3D11_UAV_DIMENSION_BUFFER;
@@ -43,9 +44,9 @@ HRESULT ExtractEntireResourceViewDescription<D3D11_BUFFER_DESC,
 
 template <>
 HRESULT ExtractEntireResourceViewDescription<D3D11_TEXTURE1D_DESC,
-                                             D3D11_SHADER_RESOURCE_VIEW_DESC>(
+                                             D3D11_SHADER_RESOURCE_VIEW_DESC1>(
     const D3D11_TEXTURE1D_DESC *pResourceDesc,
-    D3D11_SHADER_RESOURCE_VIEW_DESC *pViewDescOut) {
+    D3D11_SHADER_RESOURCE_VIEW_DESC1 *pViewDescOut) {
   pViewDescOut->Format = pResourceDesc->Format;
 
   if (pResourceDesc->ArraySize == 1) {
@@ -64,9 +65,9 @@ HRESULT ExtractEntireResourceViewDescription<D3D11_TEXTURE1D_DESC,
 
 template <>
 HRESULT ExtractEntireResourceViewDescription<D3D11_TEXTURE1D_DESC,
-                                             D3D11_UNORDERED_ACCESS_VIEW_DESC>(
+                                             D3D11_UNORDERED_ACCESS_VIEW_DESC1>(
     const D3D11_TEXTURE1D_DESC *pResourceDesc,
-    D3D11_UNORDERED_ACCESS_VIEW_DESC *pViewDescOut) {
+    D3D11_UNORDERED_ACCESS_VIEW_DESC1 *pViewDescOut) {
   pViewDescOut->Format = pResourceDesc->Format;
 
   if (pResourceDesc->ArraySize == 1) {
@@ -83,9 +84,9 @@ HRESULT ExtractEntireResourceViewDescription<D3D11_TEXTURE1D_DESC,
 
 template <>
 HRESULT ExtractEntireResourceViewDescription<D3D11_TEXTURE1D_DESC,
-                                             D3D11_RENDER_TARGET_VIEW_DESC>(
+                                             D3D11_RENDER_TARGET_VIEW_DESC1>(
     const D3D11_TEXTURE1D_DESC *pResourceDesc,
-    D3D11_RENDER_TARGET_VIEW_DESC *pViewDescOut) {
+    D3D11_RENDER_TARGET_VIEW_DESC1 *pViewDescOut) {
   pViewDescOut->Format = pResourceDesc->Format;
   if (pResourceDesc->ArraySize == 1) {
     pViewDescOut->ViewDimension = D3D11_RTV_DIMENSION_TEXTURE1D;
@@ -119,10 +120,10 @@ HRESULT ExtractEntireResourceViewDescription<D3D11_TEXTURE1D_DESC,
 }
 
 template <>
-HRESULT ExtractEntireResourceViewDescription<D3D11_TEXTURE2D_DESC,
-                                             D3D11_SHADER_RESOURCE_VIEW_DESC>(
-    const D3D11_TEXTURE2D_DESC *pResourceDesc,
-    D3D11_SHADER_RESOURCE_VIEW_DESC *pViewDescOut) {
+HRESULT ExtractEntireResourceViewDescription<D3D11_TEXTURE2D_DESC1,
+                                             D3D11_SHADER_RESOURCE_VIEW_DESC1>(
+    const D3D11_TEXTURE2D_DESC1 *pResourceDesc,
+    D3D11_SHADER_RESOURCE_VIEW_DESC1 *pViewDescOut) {
   pViewDescOut->Format = pResourceDesc->Format;
 
   if (pResourceDesc->SampleDesc.Count == 1) {
@@ -130,14 +131,14 @@ HRESULT ExtractEntireResourceViewDescription<D3D11_TEXTURE2D_DESC,
       pViewDescOut->ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
       pViewDescOut->Texture2D.MostDetailedMip = 0;
       pViewDescOut->Texture2D.MipLevels = pResourceDesc->MipLevels;
-      // pViewDescOut->Texture2D.PlaneSlice      = 0;
+      pViewDescOut->Texture2D.PlaneSlice = 0;
     } else {
       pViewDescOut->ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2DARRAY;
       pViewDescOut->Texture2DArray.MostDetailedMip = 0;
       pViewDescOut->Texture2DArray.MipLevels = pResourceDesc->MipLevels;
       pViewDescOut->Texture2DArray.FirstArraySlice = 0;
       pViewDescOut->Texture2DArray.ArraySize = pResourceDesc->ArraySize;
-      // pViewDescOut->Texture2DArray.PlaneSlice      = 0;
+      pViewDescOut->Texture2DArray.PlaneSlice = 0;
     }
   } else {
     if (pResourceDesc->ArraySize == 1) {
@@ -152,21 +153,23 @@ HRESULT ExtractEntireResourceViewDescription<D3D11_TEXTURE2D_DESC,
 }
 
 template <>
-HRESULT ExtractEntireResourceViewDescription<D3D11_TEXTURE2D_DESC,
-                                             D3D11_UNORDERED_ACCESS_VIEW_DESC>(
-    const D3D11_TEXTURE2D_DESC *pResourceDesc,
-    D3D11_UNORDERED_ACCESS_VIEW_DESC *pViewDescOut) {
+HRESULT ExtractEntireResourceViewDescription<D3D11_TEXTURE2D_DESC1,
+                                             D3D11_UNORDERED_ACCESS_VIEW_DESC1>(
+    const D3D11_TEXTURE2D_DESC1 *pResourceDesc,
+    D3D11_UNORDERED_ACCESS_VIEW_DESC1 *pViewDescOut) {
   pViewDescOut->Format = pResourceDesc->Format;
 
   if (pResourceDesc->SampleDesc.Count == 1) {
     if (pResourceDesc->ArraySize == 1) {
       pViewDescOut->ViewDimension = D3D11_UAV_DIMENSION_TEXTURE2D;
       pViewDescOut->Texture2D.MipSlice = 0;
+      pViewDescOut->Texture2D.PlaneSlice = 0;
     } else {
       pViewDescOut->ViewDimension = D3D11_UAV_DIMENSION_TEXTURE2DARRAY;
       pViewDescOut->Texture2DArray.MipSlice = 0;
       pViewDescOut->Texture2DArray.FirstArraySlice = 0;
       pViewDescOut->Texture2DArray.ArraySize = pResourceDesc->ArraySize;
+      pViewDescOut->Texture2DArray.PlaneSlice = 0;
     }
   } else {
     ERR("Invalid to create DSV from muiltisampled texture");
@@ -176,9 +179,9 @@ HRESULT ExtractEntireResourceViewDescription<D3D11_TEXTURE2D_DESC,
 }
 
 template <>
-HRESULT ExtractEntireResourceViewDescription<D3D11_TEXTURE2D_DESC,
+HRESULT ExtractEntireResourceViewDescription<D3D11_TEXTURE2D_DESC1,
                                              D3D11_DEPTH_STENCIL_VIEW_DESC>(
-    const D3D11_TEXTURE2D_DESC *pResourceDesc,
+    const D3D11_TEXTURE2D_DESC1 *pResourceDesc,
     D3D11_DEPTH_STENCIL_VIEW_DESC *pViewDescOut) {
   pViewDescOut->Format = pResourceDesc->Format;
   if (pResourceDesc->SampleDesc.Count == 1) {
@@ -204,22 +207,22 @@ HRESULT ExtractEntireResourceViewDescription<D3D11_TEXTURE2D_DESC,
 }
 
 template <>
-HRESULT ExtractEntireResourceViewDescription<D3D11_TEXTURE2D_DESC,
-                                             D3D11_RENDER_TARGET_VIEW_DESC>(
-    const D3D11_TEXTURE2D_DESC *pResourceDesc,
-    D3D11_RENDER_TARGET_VIEW_DESC *pViewDescOut) {
+HRESULT ExtractEntireResourceViewDescription<D3D11_TEXTURE2D_DESC1,
+                                             D3D11_RENDER_TARGET_VIEW_DESC1>(
+    const D3D11_TEXTURE2D_DESC1 *pResourceDesc,
+    D3D11_RENDER_TARGET_VIEW_DESC1 *pViewDescOut) {
   pViewDescOut->Format = pResourceDesc->Format;
   if (pResourceDesc->SampleDesc.Count == 1) {
     if (pResourceDesc->ArraySize == 1) {
       pViewDescOut->ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D;
       pViewDescOut->Texture2D.MipSlice = 0;
-      //   pViewDescOut->Texture2D.PlaneSlice = 0;
+      pViewDescOut->Texture2D.PlaneSlice = 0;
     } else {
       pViewDescOut->ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2DARRAY;
       pViewDescOut->Texture2DArray.MipSlice = 0;
       pViewDescOut->Texture2DArray.FirstArraySlice = 0;
       pViewDescOut->Texture2DArray.ArraySize = pResourceDesc->ArraySize;
-      // pViewDescOut->Texture2DArray.PlaneSlice = 0;
+      pViewDescOut->Texture2DArray.PlaneSlice = 0;
     }
   } else {
     if (pResourceDesc->ArraySize == 1) {
@@ -234,10 +237,10 @@ HRESULT ExtractEntireResourceViewDescription<D3D11_TEXTURE2D_DESC,
 }
 
 template <>
-HRESULT ExtractEntireResourceViewDescription<D3D11_TEXTURE3D_DESC,
-                                             D3D11_SHADER_RESOURCE_VIEW_DESC>(
-    const D3D11_TEXTURE3D_DESC *pResourceDesc,
-    D3D11_SHADER_RESOURCE_VIEW_DESC *pViewDescOut) {
+HRESULT ExtractEntireResourceViewDescription<D3D11_TEXTURE3D_DESC1,
+                                             D3D11_SHADER_RESOURCE_VIEW_DESC1>(
+    const D3D11_TEXTURE3D_DESC1 *pResourceDesc,
+    D3D11_SHADER_RESOURCE_VIEW_DESC1 *pViewDescOut) {
   pViewDescOut->Format = pResourceDesc->Format;
 
   pViewDescOut->ViewDimension = D3D11_SRV_DIMENSION_TEXTURE3D;
@@ -247,10 +250,10 @@ HRESULT ExtractEntireResourceViewDescription<D3D11_TEXTURE3D_DESC,
 }
 
 template <>
-HRESULT ExtractEntireResourceViewDescription<D3D11_TEXTURE3D_DESC,
-                                             D3D11_UNORDERED_ACCESS_VIEW_DESC>(
-    const D3D11_TEXTURE3D_DESC *pResourceDesc,
-    D3D11_UNORDERED_ACCESS_VIEW_DESC *pViewDescOut) {
+HRESULT ExtractEntireResourceViewDescription<D3D11_TEXTURE3D_DESC1,
+                                             D3D11_UNORDERED_ACCESS_VIEW_DESC1>(
+    const D3D11_TEXTURE3D_DESC1 *pResourceDesc,
+    D3D11_UNORDERED_ACCESS_VIEW_DESC1 *pViewDescOut) {
   pViewDescOut->Format = pResourceDesc->Format;
   pViewDescOut->ViewDimension = D3D11_UAV_DIMENSION_TEXTURE3D;
   pViewDescOut->Texture3D.MipSlice = 0;
@@ -260,19 +263,19 @@ HRESULT ExtractEntireResourceViewDescription<D3D11_TEXTURE3D_DESC,
 }
 
 template <>
-HRESULT ExtractEntireResourceViewDescription<D3D11_TEXTURE3D_DESC,
+HRESULT ExtractEntireResourceViewDescription<D3D11_TEXTURE3D_DESC1,
                                              D3D11_DEPTH_STENCIL_VIEW_DESC>(
-    const D3D11_TEXTURE3D_DESC *pResourceDesc,
+    const D3D11_TEXTURE3D_DESC1 *pResourceDesc,
     D3D11_DEPTH_STENCIL_VIEW_DESC *pViewDescOut) {
   ERR("Invalid to create DSV from Texture3D");
   return E_FAIL;
 }
 
 template <>
-HRESULT ExtractEntireResourceViewDescription<D3D11_TEXTURE3D_DESC,
-                                             D3D11_RENDER_TARGET_VIEW_DESC>(
-    const D3D11_TEXTURE3D_DESC *pResourceDesc,
-    D3D11_RENDER_TARGET_VIEW_DESC *pViewDescOut) {
+HRESULT ExtractEntireResourceViewDescription<D3D11_TEXTURE3D_DESC1,
+                                             D3D11_RENDER_TARGET_VIEW_DESC1>(
+    const D3D11_TEXTURE3D_DESC1 *pResourceDesc,
+    D3D11_RENDER_TARGET_VIEW_DESC1 *pViewDescOut) {
   pViewDescOut->Format = pResourceDesc->Format;
   pViewDescOut->ViewDimension = D3D11_RTV_DIMENSION_TEXTURE3D;
   pViewDescOut->Texture3D.MipSlice = 0;
@@ -325,7 +328,7 @@ CreateMTLTextureDescriptorInternal(
     // decoder not supported: D3D11_BIND_DECODER, D3D11_BIND_VIDEO_ENCODER
   }
 
-  if(metal_format.Typeless) {
+  if (metal_format.Typeless) {
     // well this is necessary for passing validation layer
     metal_usage |= MTL::TextureUsagePixelFormatView;
   }
@@ -434,8 +437,8 @@ HRESULT CreateMTLTextureDescriptor(IMTLD3D11Device *pDevice,
 
 template <>
 HRESULT CreateMTLTextureDescriptor(IMTLD3D11Device *pDevice,
-                                   const D3D11_TEXTURE2D_DESC *pDesc,
-                                   D3D11_TEXTURE2D_DESC *pOutDesc,
+                                   const D3D11_TEXTURE2D_DESC1 *pDesc,
+                                   D3D11_TEXTURE2D_DESC1 *pOutDesc,
                                    MTL::TextureDescriptor **pMtlDescOut) {
   Com<IMTLDXGIAdatper> adapter;
   pDevice->GetAdapter(&adapter);
@@ -453,8 +456,8 @@ HRESULT CreateMTLTextureDescriptor(IMTLD3D11Device *pDevice,
 
 template <>
 HRESULT CreateMTLTextureDescriptor(IMTLD3D11Device *pDevice,
-                                   const D3D11_TEXTURE3D_DESC *pDesc,
-                                   D3D11_TEXTURE3D_DESC *pOutDesc,
+                                   const D3D11_TEXTURE3D_DESC1 *pDesc,
+                                   D3D11_TEXTURE3D_DESC1 *pOutDesc,
                                    MTL::TextureDescriptor **pMtlDescOut) {
   Com<IMTLDXGIAdatper> adapter;
   pDevice->GetAdapter(&adapter);
@@ -487,7 +490,23 @@ void GetMipmapSize(const D3D11_TEXTURE2D_DESC *pDesc, uint32_t level,
 }
 
 template <>
+void GetMipmapSize(const D3D11_TEXTURE2D_DESC1 *pDesc, uint32_t level,
+                   uint32_t *pWidth, uint32_t *pHeight, uint32_t *pDepth) {
+  *pDepth = 1;
+  *pWidth = std::max(1u, pDesc->Width >> level);
+  *pHeight = std::max(1u, pDesc->Height >> level);
+}
+
+template <>
 void GetMipmapSize(const D3D11_TEXTURE3D_DESC *pDesc, uint32_t level,
+                   uint32_t *pWidth, uint32_t *pHeight, uint32_t *pDepth) {
+  *pWidth = std::max(1u, pDesc->Width >> level);
+  *pHeight = std::max(1u, pDesc->Height >> level);
+  *pDepth = std::max(1u, pDesc->Depth >> level);
+}
+
+template <>
+void GetMipmapSize(const D3D11_TEXTURE3D_DESC1 *pDesc, uint32_t level,
                    uint32_t *pWidth, uint32_t *pHeight, uint32_t *pDepth) {
   *pWidth = std::max(1u, pDesc->Width >> level);
   *pHeight = std::max(1u, pDesc->Height >> level);
@@ -532,7 +551,7 @@ HRESULT GetLinearTextureLayout(IMTLD3D11Device *pDevice,
 
 template <>
 HRESULT GetLinearTextureLayout(IMTLD3D11Device *pDevice,
-                               const D3D11_TEXTURE2D_DESC *pDesc,
+                               const D3D11_TEXTURE2D_DESC1 *pDesc,
                                uint32_t level, uint32_t *pBytesPerRow,
                                uint32_t *pBytesPerImage,
                                uint32_t *pBytesPerSlice) {
@@ -578,7 +597,7 @@ HRESULT GetLinearTextureLayout(IMTLD3D11Device *pDevice,
 
 template <>
 HRESULT GetLinearTextureLayout(IMTLD3D11Device *pDevice,
-                               const D3D11_TEXTURE3D_DESC *pDesc,
+                               const D3D11_TEXTURE3D_DESC1 *pDesc,
                                uint32_t level, uint32_t *pBytesPerRow,
                                uint32_t *pBytesPerImage,
                                uint32_t *pBytesPerSlice) {
@@ -611,5 +630,65 @@ HRESULT GetLinearTextureLayout(IMTLD3D11Device *pDevice,
   *pBytesPerSlice = aligned_bytes_per_row * h * d;
   return S_OK;
 };
+
+template <>
+void DowngradeResourceDescription<D3D11_TEXTURE2D_DESC1, D3D11_TEXTURE2D_DESC>(
+    D3D11_TEXTURE2D_DESC1 const &source, D3D11_TEXTURE2D_DESC *dst) {
+  dst->Width = source.Width;
+  dst->Height = source.Height;
+  dst->MipLevels = source.MipLevels;
+  dst->ArraySize = source.ArraySize;
+  dst->Format = source.Format;
+  dst->SampleDesc = source.SampleDesc;
+  dst->Usage = source.Usage;
+  dst->BindFlags = source.BindFlags;
+  dst->CPUAccessFlags = source.CPUAccessFlags;
+  dst->MiscFlags = source.MiscFlags;
+}
+
+template <>
+void UpgradeResourceDescription<D3D11_TEXTURE2D_DESC, D3D11_TEXTURE2D_DESC1>(
+    D3D11_TEXTURE2D_DESC const *source, D3D11_TEXTURE2D_DESC1 &dst) {
+  dst.Width = source->Width;
+  dst.Height = source->Height;
+  dst.MipLevels = source->MipLevels;
+  dst.ArraySize = source->ArraySize;
+  dst.Format = source->Format;
+  dst.SampleDesc = source->SampleDesc;
+  dst.Usage = source->Usage;
+  dst.BindFlags = source->BindFlags;
+  dst.CPUAccessFlags = source->CPUAccessFlags;
+  dst.MiscFlags = source->MiscFlags;
+  dst.TextureLayout = D3D11_TEXTURE_LAYOUT_UNDEFINED;
+}
+
+template <>
+void DowngradeResourceDescription<D3D11_TEXTURE3D_DESC1, D3D11_TEXTURE3D_DESC>(
+    D3D11_TEXTURE3D_DESC1 const &source, D3D11_TEXTURE3D_DESC *dst) {
+  dst->Width = source.Width;
+  dst->Height = source.Height;
+  dst->Depth = source.Depth;
+  dst->MipLevels = source.MipLevels;
+  dst->Format = source.Format;
+  dst->Usage = source.Usage;
+  dst->BindFlags = source.BindFlags;
+  dst->CPUAccessFlags = source.CPUAccessFlags;
+  dst->MiscFlags = source.MiscFlags;
+}
+
+template <>
+void UpgradeResourceDescription<D3D11_TEXTURE3D_DESC, D3D11_TEXTURE3D_DESC1>(
+    D3D11_TEXTURE3D_DESC const *source, D3D11_TEXTURE3D_DESC1 &dst) {
+  dst.Width = source->Width;
+  dst.Height = source->Height;
+  dst.Depth = source->Depth;
+  dst.MipLevels = source->MipLevels;
+  dst.Format = source->Format;
+  dst.Usage = source->Usage;
+  dst.BindFlags = source->BindFlags;
+  dst.CPUAccessFlags = source->CPUAccessFlags;
+  dst.MiscFlags = source->MiscFlags;
+  dst.TextureLayout = D3D11_TEXTURE_LAYOUT_UNDEFINED;
+}
 
 }; // namespace dxmt

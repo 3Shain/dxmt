@@ -96,7 +96,7 @@ private:
     SIMPLE_RESIDENCY_TRACKER tracker{};
 
   public:
-    SRV(const tag_shader_resource_view<>::DESC_S *pDesc,
+    SRV(const tag_shader_resource_view<>::DESC1 *pDesc,
         DynamicBuffer *pResource, IMTLD3D11Device *pDevice, size_t offset,
         size_t width)
         : SRVBase(pDesc, pResource, pDevice), offset(offset), width(width) {}
@@ -139,7 +139,7 @@ private:
     uint64_t byte_offset;
 
   public:
-    TBufferSRV(const tag_shader_resource_view<>::DESC_S *pDesc,
+    TBufferSRV(const tag_shader_resource_view<>::DESC1 *pDesc,
                DynamicBuffer *pResource, IMTLD3D11Device *pDevice,
                Obj<MTL::TextureDescriptor> &&view_desc, uint64_t byte_offset)
         : SRVBase(pDesc, pResource, pDevice), view_desc(std::move(view_desc)),
@@ -200,26 +200,26 @@ private:
   SIMPLE_RESIDENCY_TRACKER tracker{};
 
 public:
-  DynamicBuffer(const tag_buffer::DESC_S *desc,
+  DynamicBuffer(const tag_buffer::DESC1 *pDesc,
                 const D3D11_SUBRESOURCE_DATA *pInitialData,
                 IMTLD3D11Device *device)
       : TResourceBase<tag_buffer, IMTLDynamicBuffer, IMTLDynamicBindable>(
-            desc, device) {
+            *pDesc, device) {
     auto metal = device->GetMTLDevice();
     // sadly it needs to be tracked since it's a legal blit dst
     auto options = MTL::ResourceOptionCPUCacheModeWriteCombined;
-    buffer_dynamic = transfer(metal->newBuffer(desc->ByteWidth, options));
+    buffer_dynamic = transfer(metal->newBuffer(pDesc->ByteWidth, options));
     if (pInitialData) {
       memcpy(buffer_dynamic->contents(), pInitialData->pSysMem,
-             desc->ByteWidth);
+             pDesc->ByteWidth);
     }
     buffer_handle = buffer_dynamic->gpuAddress();
     buffer_len = buffer_dynamic->length();
     buffer_mapped = buffer_dynamic->contents();
-    pool = std::make_unique<BufferPool>(metal, desc->ByteWidth, options);
-    structured = desc->MiscFlags & D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
+    pool = std::make_unique<BufferPool>(metal, pDesc->ByteWidth, options);
+    structured = pDesc->MiscFlags & D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
     allow_raw_view =
-        desc->MiscFlags & D3D11_RESOURCE_MISC_BUFFER_ALLOW_RAW_VIEWS;
+        pDesc->MiscFlags & D3D11_RESOURCE_MISC_BUFFER_ALLOW_RAW_VIEWS;
   }
 
   void *GetMappedMemory(UINT *pBytesPerRow, UINT *pBytesPerImage) override {
@@ -281,9 +281,9 @@ public:
   }
 
   HRESULT
-  CreateShaderResourceView(const D3D11_SHADER_RESOURCE_VIEW_DESC *pDesc,
-                           ID3D11ShaderResourceView **ppView) override {
-    D3D11_SHADER_RESOURCE_VIEW_DESC finalDesc;
+  CreateShaderResourceView(const D3D11_SHADER_RESOURCE_VIEW_DESC1 *pDesc,
+                           ID3D11ShaderResourceView1 **ppView) override {
+    D3D11_SHADER_RESOURCE_VIEW_DESC1 finalDesc;
     if (FAILED(ExtractEntireResourceViewDescription(&this->desc, pDesc,
                                                     &finalDesc))) {
       return E_INVALIDARG;
@@ -389,7 +389,7 @@ private:
     SIMPLE_RESIDENCY_TRACKER tracker{};
 
   public:
-    SRV(const tag_shader_resource_view<>::DESC_S *pDesc,
+    SRV(const tag_shader_resource_view<>::DESC1 *pDesc,
         DynamicTexture2D *pResource, IMTLD3D11Device *pDevice,
         Obj<MTL::TextureDescriptor> &&view_desc)
         : SRVBase(pDesc, pResource, pDevice), view_desc(std::move(view_desc)) {}
@@ -446,10 +446,10 @@ private:
   std::unique_ptr<BufferPool> pool_;
 
 public:
-  DynamicTexture2D(const tag_texture_2d::DESC_S *desc,
+  DynamicTexture2D(const tag_texture_2d::DESC1 *pDesc,
                    Obj<MTL::Buffer> &&buffer, IMTLD3D11Device *device,
                    UINT bytesPerRow)
-      : TResourceBase<tag_texture_2d, IMTLDynamicBuffer>(desc, device),
+      : TResourceBase<tag_texture_2d, IMTLDynamicBuffer>(*pDesc, device),
         buffer(std::move(buffer)), buffer_handle(this->buffer->gpuAddress()),
         buffer_mapped(this->buffer->contents()), bytes_per_row(bytesPerRow) {
 
@@ -486,9 +486,9 @@ public:
     vec.erase(std::remove(vec.begin(), vec.end(), pBindable), vec.end());
   }
 
-  HRESULT CreateShaderResourceView(const D3D11_SHADER_RESOURCE_VIEW_DESC *pDesc,
-                                   ID3D11ShaderResourceView **ppView) override {
-    D3D11_SHADER_RESOURCE_VIEW_DESC finalDesc;
+  HRESULT CreateShaderResourceView(const D3D11_SHADER_RESOURCE_VIEW_DESC1 *pDesc,
+                                   ID3D11ShaderResourceView1 **ppView) override {
+    D3D11_SHADER_RESOURCE_VIEW_DESC1 finalDesc;
     if (FAILED(ExtractEntireResourceViewDescription(&this->desc, pDesc,
                                                     &finalDesc))) {
       return E_INVALIDARG;
@@ -536,9 +536,9 @@ public:
 
 HRESULT
 CreateDynamicTexture2D(IMTLD3D11Device *pDevice,
-                       const D3D11_TEXTURE2D_DESC *pDesc,
+                       const D3D11_TEXTURE2D_DESC1 *pDesc,
                        const D3D11_SUBRESOURCE_DATA *pInitialData,
-                       ID3D11Texture2D **ppTexture) {
+                       ID3D11Texture2D1 **ppTexture) {
   Com<IMTLDXGIAdatper> adapter;
   pDevice->GetAdapter(&adapter);
   MTL_FORMAT_DESC format;
@@ -550,7 +550,7 @@ CreateDynamicTexture2D(IMTLD3D11Device *pDevice,
     return E_FAIL;
   }
   Obj<MTL::TextureDescriptor> textureDescriptor;
-  D3D11_TEXTURE2D_DESC finalDesc;
+  D3D11_TEXTURE2D_DESC1 finalDesc;
   if (FAILED(CreateMTLTextureDescriptor(pDevice, pDesc, &finalDesc,
                                         &textureDescriptor))) {
     return E_INVALIDARG;

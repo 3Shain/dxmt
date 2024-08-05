@@ -164,7 +164,7 @@ constexpr MTL::ColorWriteMask kColorWriteMaskMap[] = {
         MTL::ColorWriteMaskRed | MTL::ColorWriteMaskGreen,
 };
 
-constexpr D3D11_RASTERIZER_DESC1 kDefaultRasterizerDesc = {
+constexpr D3D11_RASTERIZER_DESC2 kDefaultRasterizerDesc = {
     .FillMode = D3D11_FILL_SOLID,
     .CullMode = D3D11_CULL_BACK,
     .FrontCounterClockwise = FALSE,
@@ -176,6 +176,7 @@ constexpr D3D11_RASTERIZER_DESC1 kDefaultRasterizerDesc = {
     .MultisampleEnable = FALSE,
     .AntialiasedLineEnable = FALSE,
     .ForcedSampleCount = 0,
+    .ConservativeRaster = D3D11_CONSERVATIVE_RASTERIZATION_MODE_OFF,
 };
 
 constexpr D3D11_RENDER_TARGET_BLEND_DESC1 kDefaultRenderTargetBlendDesc = {
@@ -401,7 +402,7 @@ class MTLD3D11RasterizerState
 public:
   friend class MTLD3D11DeviceContext;
   MTLD3D11RasterizerState(IMTLD3D11Device *device,
-                          const D3D11_RASTERIZER_DESC1 *desc)
+                          const D3D11_RASTERIZER_DESC2 *desc)
       : MTLD3D11StateObject<IMTLD3D11RasterizerState>(device), m_desc(*desc) {}
   ~MTLD3D11RasterizerState() {};
 
@@ -441,6 +442,20 @@ public:
   }
 
   void STDMETHODCALLTYPE GetDesc1(D3D11_RASTERIZER_DESC1 *pDesc) final {
+    pDesc->FillMode = m_desc.FillMode;
+    pDesc->CullMode = m_desc.CullMode;
+    pDesc->FrontCounterClockwise = m_desc.FrontCounterClockwise;
+    pDesc->DepthBias = m_desc.DepthBias;
+    pDesc->DepthBiasClamp = m_desc.DepthBiasClamp;
+    pDesc->SlopeScaledDepthBias = m_desc.SlopeScaledDepthBias;
+    pDesc->DepthClipEnable = m_desc.DepthClipEnable;
+    pDesc->ScissorEnable = m_desc.ScissorEnable;
+    pDesc->MultisampleEnable = m_desc.MultisampleEnable;
+    pDesc->AntialiasedLineEnable = m_desc.AntialiasedLineEnable;
+    pDesc->ForcedSampleCount = m_desc.ForcedSampleCount;
+  }
+
+  void STDMETHODCALLTYPE GetDesc2(D3D11_RASTERIZER_DESC2 *pDesc) final {
     *pDesc = m_desc;
   }
 
@@ -497,7 +512,7 @@ public:
   bool IsScissorEnabled() { return m_desc.ScissorEnable; }
 
 private:
-  const D3D11_RASTERIZER_DESC1 m_desc;
+  const D3D11_RASTERIZER_DESC2 m_desc;
 };
 
 // DepthStencilState
@@ -662,8 +677,8 @@ HRESULT CreateDepthStencilState(ID3D11Device *pDevice,
 }
 
 HRESULT CreateRasterizerState(ID3D11Device *pDevice,
-                              const D3D11_RASTERIZER_DESC1 *pRasterizerDesc,
-                              ID3D11RasterizerState1 **ppRasterizerState) {
+                              const D3D11_RASTERIZER_DESC2 *pRasterizerDesc,
+                              ID3D11RasterizerState2 **ppRasterizerState) {
   InitReturnPtr(ppRasterizerState);
 
   // TODO: validate
@@ -810,26 +825,23 @@ HRESULT CreateBlendState(ID3D11Device *pDevice,
 Com<IMTLD3D11RasterizerState>
 CreateDefaultRasterizerState(ID3D11Device *pDevice) {
   Com<IMTLD3D11RasterizerState> ret;
-  // double pointer is awful
-  // because neither covariance and contravariance works
-  // wtf
-  D3D11_ASSERT(SUCCEEDED(CreateRasterizerState(pDevice, &kDefaultRasterizerDesc,
-                                         (ID3D11RasterizerState1 **)&ret)));
+  D3D11_ASSERT(SUCCEEDED(CreateRasterizerState(
+      pDevice, &kDefaultRasterizerDesc, (ID3D11RasterizerState2 **)&ret)));
   return ret;
 };
 
 Com<IMTLD3D11DepthStencilState>
 CreateDefaultDepthStencilState(ID3D11Device *pDevice) {
   Com<IMTLD3D11DepthStencilState> ret;
-  D3D11_ASSERT(SUCCEEDED(CreateDepthStencilState(pDevice, &kDefaultDepthStencilDesc,
-                                           (ID3D11DepthStencilState **)&ret)));
+  D3D11_ASSERT(SUCCEEDED(CreateDepthStencilState(
+      pDevice, &kDefaultDepthStencilDesc, (ID3D11DepthStencilState **)&ret)));
   return ret;
 }
 
 Com<IMTLD3D11BlendState> CreateDefaultBlendState(ID3D11Device *pDevice) {
   Com<IMTLD3D11BlendState> ret;
   D3D11_ASSERT(SUCCEEDED(CreateBlendState(pDevice, &kDefaultBlendDesc,
-                                    (ID3D11BlendState1 **)&ret)));
+                                          (ID3D11BlendState1 **)&ret)));
   return ret;
 }
 

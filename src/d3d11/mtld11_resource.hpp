@@ -24,14 +24,14 @@ typedef struct MappedResource {
 DEFINE_COM_INTERFACE("d8a49d20-9a1f-4bb8-9ee6-442e064dce23", IDXMTResource)
     : public IUnknown {
   virtual HRESULT STDMETHODCALLTYPE CreateShaderResourceView(
-      const D3D11_SHADER_RESOURCE_VIEW_DESC *pDesc,
-      ID3D11ShaderResourceView **ppView) = 0;
+      const D3D11_SHADER_RESOURCE_VIEW_DESC1 *pDesc,
+      ID3D11ShaderResourceView1 **ppView) = 0;
   virtual HRESULT STDMETHODCALLTYPE CreateUnorderedAccessView(
-      const D3D11_UNORDERED_ACCESS_VIEW_DESC *pDesc,
-      ID3D11UnorderedAccessView **ppView) = 0;
+      const D3D11_UNORDERED_ACCESS_VIEW_DESC1 *pDesc,
+      ID3D11UnorderedAccessView1 **ppView) = 0;
   virtual HRESULT STDMETHODCALLTYPE CreateRenderTargetView(
-      const D3D11_RENDER_TARGET_VIEW_DESC *pDesc,
-      ID3D11RenderTargetView **ppView) = 0;
+      const D3D11_RENDER_TARGET_VIEW_DESC1 *pDesc,
+      ID3D11RenderTargetView1 **ppView) = 0;
   virtual HRESULT STDMETHODCALLTYPE CreateDepthStencilView(
       const D3D11_DEPTH_STENCIL_VIEW_DESC *pDesc,
       ID3D11DepthStencilView **ppView) = 0;
@@ -205,49 +205,82 @@ DEFINE_COM_INTERFACE("252c1a0e-1c61-42e7-9b57-23dfe3d73d49", IMTLD3D11Staging)
 
 namespace dxmt {
 
+template <typename RESOURCE_DESC>
+void UpgradeResourceDescription(const RESOURCE_DESC *pSrc, RESOURCE_DESC &dst) {
+  dst = *pSrc;
+}
+template <typename RESOURCE_DESC>
+void DowngradeResourceDescription(const RESOURCE_DESC &src,
+                                  RESOURCE_DESC *pDst) {
+  *pDst = src;
+}
+
+template <typename RESOURCE_DESC_SRC, typename RESOURCE_DESC_DST>
+void UpgradeResourceDescription(const RESOURCE_DESC_SRC *pSrc,
+                                RESOURCE_DESC_DST &dst);
+template <typename RESOURCE_DESC_SRC, typename RESOURCE_DESC_DST>
+void DowngradeResourceDescription(const RESOURCE_DESC_SRC &src,
+                                  RESOURCE_DESC_DST *pDst);
+
+template <typename VIEW_DESC>
+void UpgradeViewDescription(const VIEW_DESC *pSrc, VIEW_DESC &dst) {
+  dst = *pSrc;
+}
+template <typename VIEW_DESC>
+void DowngradeViewDescription(const VIEW_DESC &src, VIEW_DESC *pDst) {
+  *pDst = src;
+}
+
+template <typename VIEW_DESC_SRC, typename VIEW_DESC_DST>
+void UpgradeViewDescription(const VIEW_DESC_SRC *pSrc, VIEW_DESC_DST &dst);
+template <typename VIEW_DESC_SRC, typename VIEW_DESC_DST>
+void DowngradeViewDescription(const VIEW_DESC_SRC &src, VIEW_DESC_DST *pDst);
+
 struct tag_buffer {
   static const D3D11_RESOURCE_DIMENSION dimension =
       D3D11_RESOURCE_DIMENSION_BUFFER;
   using COM = ID3D11Buffer;
+  using COM_IMPL = ID3D11Buffer;
   using DESC = D3D11_BUFFER_DESC;
-  using DESC_S = D3D11_BUFFER_DESC;
+  using DESC1 = D3D11_BUFFER_DESC;
 };
 
 struct tag_texture_1d {
   static const D3D11_RESOURCE_DIMENSION dimension =
       D3D11_RESOURCE_DIMENSION_TEXTURE1D;
   using COM = ID3D11Texture1D;
+  using COM_IMPL = ID3D11Texture1D;
   using DESC = D3D11_TEXTURE1D_DESC;
-  using DESC_S = D3D11_TEXTURE1D_DESC;
+  using DESC1 = D3D11_TEXTURE1D_DESC;
 };
 
 struct tag_texture_2d {
   static const D3D11_RESOURCE_DIMENSION dimension =
       D3D11_RESOURCE_DIMENSION_TEXTURE2D;
   using COM = ID3D11Texture2D;
+  using COM_IMPL = ID3D11Texture2D1;
   using DESC = D3D11_TEXTURE2D_DESC;
-  using DESC_S = D3D11_TEXTURE2D_DESC;
+  using DESC1 = D3D11_TEXTURE2D_DESC1;
 };
 
 struct tag_texture_3d {
   static const D3D11_RESOURCE_DIMENSION dimension =
       D3D11_RESOURCE_DIMENSION_TEXTURE3D;
   using COM = ID3D11Texture3D;
+  using COM_IMPL = ID3D11Texture3D1;
   using DESC = D3D11_TEXTURE3D_DESC;
-  using DESC_S = D3D11_TEXTURE3D_DESC;
+  using DESC1 = D3D11_TEXTURE3D_DESC1;
 };
 
 template <typename tag, typename... Base>
-class TResourceBase
-    : public MTLD3D11DeviceChild<typename tag::COM, IDXMTResource, Base...> {
+class TResourceBase : public MTLD3D11DeviceChild<typename tag::COM_IMPL,
+                                                 IDXMTResource, Base...> {
 public:
-  TResourceBase(const tag::DESC_S *pDesc, IMTLD3D11Device *device)
-      : MTLD3D11DeviceChild<typename tag::COM, IDXMTResource, Base...>(device),
-        dxgi_resource(new MTLDXGIResource<TResourceBase<tag, Base...>>(this)) {
-    if (pDesc) {
-      desc = *pDesc;
-    }
-  }
+  TResourceBase(const tag::DESC1 &desc, IMTLD3D11Device *device)
+      : MTLD3D11DeviceChild<typename tag::COM_IMPL, IDXMTResource, Base...>(
+            device),
+        desc(desc),
+        dxgi_resource(new MTLDXGIResource<TResourceBase<tag, Base...>>(this)) {}
 
   template <std::size_t n> HRESULT ResolveBase(REFIID riid, void **ppvObject) {
     return E_NOINTERFACE;
@@ -275,8 +308,9 @@ public:
 
     if (riid == __uuidof(IUnknown) || riid == __uuidof(ID3D11DeviceChild) ||
         riid == __uuidof(ID3D11Resource) ||
-        riid == __uuidof(typename tag::COM)) {
-      *ppvObject = ref_and_cast<typename tag::COM>(this);
+        riid == __uuidof(typename tag::COM) ||
+        riid == __uuidof(typename tag::COM_IMPL)) {
+      *ppvObject = ref_and_cast<typename tag::COM_IMPL>(this);
       return S_OK;
     }
 
@@ -306,7 +340,11 @@ public:
     return E_NOINTERFACE;
   }
 
-  void GetDesc(tag::DESC *pDesc) final { *pDesc = desc; }
+  void GetDesc(tag::DESC *pDesc) final {
+    ::dxmt::DowngradeResourceDescription(desc, pDesc);
+  }
+
+  void GetDesc1(tag::DESC1 *pDesc) /* override / final */ { *pDesc = desc; }
 
   void GetType(D3D11_RESOURCE_DIMENSION *pResourceDimension) final {
     *pResourceDimension = tag::dimension;
@@ -331,18 +369,18 @@ public:
   }
 
   virtual HRESULT STDMETHODCALLTYPE
-  CreateShaderResourceView(const D3D11_SHADER_RESOURCE_VIEW_DESC *pDesc,
-                           ID3D11ShaderResourceView **ppView) {
+  CreateShaderResourceView(const D3D11_SHADER_RESOURCE_VIEW_DESC1 *pDesc,
+                           ID3D11ShaderResourceView1 **ppView) {
     return E_INVALIDARG;
   };
   virtual HRESULT STDMETHODCALLTYPE
-  CreateUnorderedAccessView(const D3D11_UNORDERED_ACCESS_VIEW_DESC *pDesc,
-                            ID3D11UnorderedAccessView **ppView) {
+  CreateUnorderedAccessView(const D3D11_UNORDERED_ACCESS_VIEW_DESC1 *pDesc,
+                            ID3D11UnorderedAccessView1 **ppView) {
     return E_INVALIDARG;
   };
   virtual HRESULT STDMETHODCALLTYPE
-  CreateRenderTargetView(const D3D11_RENDER_TARGET_VIEW_DESC *pDesc,
-                         ID3D11RenderTargetView **ppView) {
+  CreateRenderTargetView(const D3D11_RENDER_TARGET_VIEW_DESC1 *pDesc,
+                         ID3D11RenderTargetView1 **ppView) {
     return E_INVALIDARG;
   };
   virtual HRESULT STDMETHODCALLTYPE
@@ -352,7 +390,7 @@ public:
   };
 
 protected:
-  tag::DESC_S desc;
+  tag::DESC1 desc;
   std::unique_ptr<IDXGIResource1> dxgi_resource;
 };
 
@@ -360,51 +398,55 @@ template <typename RESOURCE_IMPL_ = ID3D11Resource,
           typename COM_IMPL_ = IMTLD3D11RenderTargetView>
 struct tag_render_target_view {
   using COM = ID3D11RenderTargetView;
+  using COM1 = ID3D11RenderTargetView1;
   using COM_IMPL = COM_IMPL_;
   using RESOURCE = ID3D11Resource;
   using RESOURCE_IMPL = RESOURCE_IMPL_;
   using DESC = D3D11_RENDER_TARGET_VIEW_DESC;
-  using DESC_S = D3D11_RENDER_TARGET_VIEW_DESC;
+  using DESC1 = D3D11_RENDER_TARGET_VIEW_DESC1;
 };
 
 template <typename RESOURCE_IMPL_ = ID3D11Resource,
           typename COM_IMPL_ = IMTLD3D11DepthStencilView>
 struct tag_depth_stencil_view {
   using COM = ID3D11DepthStencilView;
+  using COM1 = ID3D11DepthStencilView;
   using COM_IMPL = COM_IMPL_;
   using RESOURCE = ID3D11Resource;
   using RESOURCE_IMPL = RESOURCE_IMPL_;
   using DESC = D3D11_DEPTH_STENCIL_VIEW_DESC;
-  using DESC_S = D3D11_DEPTH_STENCIL_VIEW_DESC;
+  using DESC1 = D3D11_DEPTH_STENCIL_VIEW_DESC;
 };
 
 template <typename RESOURCE_IMPL_ = ID3D11Resource,
           typename COM_IMPL_ = IMTLD3D11ShaderResourceView>
 struct tag_shader_resource_view {
   using COM = ID3D11ShaderResourceView;
+  using COM1 = ID3D11ShaderResourceView1;
   using COM_IMPL = COM_IMPL_;
   using RESOURCE = ID3D11Resource;
   using RESOURCE_IMPL = RESOURCE_IMPL_;
   using DESC = D3D11_SHADER_RESOURCE_VIEW_DESC;
-  using DESC_S = D3D11_SHADER_RESOURCE_VIEW_DESC;
+  using DESC1 = D3D11_SHADER_RESOURCE_VIEW_DESC1;
 };
 
 template <typename RESOURCE_IMPL_ = ID3D11Resource,
           typename COM_IMPL_ = IMTLD3D11UnorderedAccessView>
 struct tag_unordered_access_view {
   using COM = ID3D11UnorderedAccessView;
+  using COM1 = ID3D11UnorderedAccessView1;
   using COM_IMPL = COM_IMPL_;
   using RESOURCE = ID3D11Resource;
   using RESOURCE_IMPL = RESOURCE_IMPL_;
   using DESC = D3D11_UNORDERED_ACCESS_VIEW_DESC;
-  using DESC_S = D3D11_UNORDERED_ACCESS_VIEW_DESC;
+  using DESC1 = D3D11_UNORDERED_ACCESS_VIEW_DESC1;
 };
 
 template <typename tag, typename... Base>
 class TResourceViewBase
     : public MTLD3D11DeviceChild<typename tag::COM_IMPL, Base...> {
 public:
-  TResourceViewBase(const tag::DESC_S *pDesc, tag::RESOURCE_IMPL *pResource,
+  TResourceViewBase(const tag::DESC1 *pDesc, tag::RESOURCE_IMPL *pResource,
                     IMTLD3D11Device *device)
       : MTLD3D11DeviceChild<typename tag::COM_IMPL, Base...>(device),
         resource(pResource) {
@@ -439,8 +481,9 @@ public:
 
     if (riid == __uuidof(IUnknown) || riid == __uuidof(ID3D11DeviceChild) ||
         riid == __uuidof(ID3D11View) || riid == __uuidof(typename tag::COM) ||
+        riid == __uuidof(typename tag::COM1) ||
         riid == __uuidof(typename tag::COM_IMPL)) {
-      *ppvObject = ref_and_cast<typename tag::COM>(this);
+      *ppvObject = ref_and_cast<typename tag::COM_IMPL>(this);
       return S_OK;
     }
 
@@ -457,7 +500,11 @@ public:
     return E_NOINTERFACE;
   }
 
-  void GetDesc(tag::DESC *pDesc) final { *pDesc = desc; }
+  void GetDesc(tag::DESC *pDesc) final {
+    DowngradeViewDescription(desc, pDesc);
+  }
+
+  void GetDesc1(tag::DESC1 *pDesc) /* override / final */ { *pDesc = desc; }
 
   void GetResource(tag::RESOURCE **ppResource) final {
     resource->QueryInterface(IID_PPV_ARGS(ppResource));
@@ -470,7 +517,7 @@ public:
   virtual bool GetContentionState(uint64_t finishedSeqId) { return true; };
 
 protected:
-  tag::DESC_S desc;
+  tag::DESC1 desc;
   /**
   strong ref to resource
   */
@@ -492,15 +539,15 @@ CreateStagingTexture1D(IMTLD3D11Device *pDevice,
 
 HRESULT
 CreateStagingTexture2D(IMTLD3D11Device *pDevice,
-                       const D3D11_TEXTURE2D_DESC *pDesc,
+                       const D3D11_TEXTURE2D_DESC1 *pDesc,
                        const D3D11_SUBRESOURCE_DATA *pInitialData,
-                       ID3D11Texture2D **ppTexture);
+                       ID3D11Texture2D1 **ppTexture);
 
 HRESULT
 CreateStagingTexture3D(IMTLD3D11Device *pDevice,
-                       const D3D11_TEXTURE3D_DESC *pDesc,
+                       const D3D11_TEXTURE3D_DESC1 *pDesc,
                        const D3D11_SUBRESOURCE_DATA *pInitialData,
-                       ID3D11Texture3D **ppTexture);
+                       ID3D11Texture3D1 **ppTexture);
 
 HRESULT
 CreateDeviceBuffer(IMTLD3D11Device *pDevice, const D3D11_BUFFER_DESC *pDesc,
@@ -513,14 +560,14 @@ HRESULT CreateDeviceTexture1D(IMTLD3D11Device *pDevice,
                               ID3D11Texture1D **ppTexture);
 
 HRESULT CreateDeviceTexture2D(IMTLD3D11Device *pDevice,
-                              const D3D11_TEXTURE2D_DESC *pDesc,
+                              const D3D11_TEXTURE2D_DESC1 *pDesc,
                               const D3D11_SUBRESOURCE_DATA *pInitialData,
-                              ID3D11Texture2D **ppTexture);
+                              ID3D11Texture2D1 **ppTexture);
 
 HRESULT CreateDeviceTexture3D(IMTLD3D11Device *pDevice,
-                              const D3D11_TEXTURE3D_DESC *pDesc,
+                              const D3D11_TEXTURE3D_DESC1 *pDesc,
                               const D3D11_SUBRESOURCE_DATA *pInitialData,
-                              ID3D11Texture3D **ppTexture);
+                              ID3D11Texture3D1 **ppTexture);
 
 HRESULT
 CreateDynamicBuffer(IMTLD3D11Device *pDevice, const D3D11_BUFFER_DESC *pDesc,
@@ -528,9 +575,9 @@ CreateDynamicBuffer(IMTLD3D11Device *pDevice, const D3D11_BUFFER_DESC *pDesc,
                     ID3D11Buffer **ppBuffer);
 
 HRESULT CreateDynamicTexture2D(IMTLD3D11Device *pDevice,
-                               const D3D11_TEXTURE2D_DESC *pDesc,
+                               const D3D11_TEXTURE2D_DESC1 *pDesc,
                                const D3D11_SUBRESOURCE_DATA *pInitialData,
-                               ID3D11Texture2D **ppTexture);
+                               ID3D11Texture2D1 **ppTexture);
 #pragma endregion
 
 #pragma region Helper
@@ -567,7 +614,7 @@ HRESULT CreateMTLTextureView(IMTLD3D11Device *pDevice, MTL::Texture *pResource,
 
 HRESULT
 CreateMTLRenderTargetView(IMTLD3D11Device *pDevice, MTL::Texture *pResource,
-                          const D3D11_RENDER_TARGET_VIEW_DESC *pViewDesc,
+                          const D3D11_RENDER_TARGET_VIEW_DESC1 *pViewDesc,
                           MTL::Texture **ppView,
                           MTL_RENDER_TARGET_VIEW_DESC *pMTLDesc);
 

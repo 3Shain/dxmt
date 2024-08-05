@@ -96,9 +96,9 @@ private:
   StagingBufferInternal internal;
 
 public:
-  StagingBuffer(const tag_buffer::DESC_S *desc, IMTLD3D11Device *device,
+  StagingBuffer(const tag_buffer::DESC1 *pDesc, IMTLD3D11Device *device,
                 StagingBufferInternal &&internal)
-      : TResourceBase<tag_buffer, IMTLD3D11Staging>(desc, device),
+      : TResourceBase<tag_buffer, IMTLD3D11Staging>(*pDesc, device),
         internal(std::move(internal)) {}
 
   bool UseCopyDestination(uint32_t Subresource, uint64_t seq_id,
@@ -163,9 +163,9 @@ class StagingTexture : public TResourceBase<tag_texture, IMTLD3D11Staging> {
   uint32_t subresource_count;
 
 public:
-  StagingTexture(const tag_texture::DESC_S *pDesc, IMTLD3D11Device *pDevice,
+  StagingTexture(const tag_texture::DESC1 *pDesc, IMTLD3D11Device *pDevice,
                  std::vector<StagingBufferInternal> &&subresources)
-      : TResourceBase<tag_texture, IMTLD3D11Staging>(pDesc, pDevice),
+      : TResourceBase<tag_texture, IMTLD3D11Staging>(*pDesc, pDevice),
         subresources(std::move(subresources)),
         subresource_count(this->subresources.size()) {}
 
@@ -218,11 +218,11 @@ public:
 
 template <typename tag>
 HRESULT CreateStagingTextureInternal(IMTLD3D11Device *pDevice,
-                                     const typename tag::DESC_S *pDesc,
+                                     const typename tag::DESC1 *pDesc,
                                      const D3D11_SUBRESOURCE_DATA *pInitialData,
-                                     typename tag::COM **ppTexture) {
+                                     typename tag::COM_IMPL **ppTexture) {
   auto metal = pDevice->GetMTLDevice();
-  typename tag::DESC_S finalDesc;
+  typename tag::DESC1 finalDesc;
   Obj<MTL::TextureDescriptor> texDesc; // unused
   // clang-format, why do you piss me off
   // is this really expected to be read by human?
@@ -267,18 +267,18 @@ CreateStagingTexture1D(IMTLD3D11Device *pDevice,
 
 HRESULT
 CreateStagingTexture2D(IMTLD3D11Device *pDevice,
-                       const D3D11_TEXTURE2D_DESC *pDesc,
+                       const D3D11_TEXTURE2D_DESC1 *pDesc,
                        const D3D11_SUBRESOURCE_DATA *pInitialData,
-                       ID3D11Texture2D **ppTexture) {
+                       ID3D11Texture2D1 **ppTexture) {
   return CreateStagingTextureInternal<tag_texture_2d>(pDevice, pDesc,
                                                       pInitialData, ppTexture);
 }
 
 HRESULT
 CreateStagingTexture3D(IMTLD3D11Device *pDevice,
-                       const D3D11_TEXTURE3D_DESC *pDesc,
+                       const D3D11_TEXTURE3D_DESC1 *pDesc,
                        const D3D11_SUBRESOURCE_DATA *pInitialData,
-                       ID3D11Texture3D **ppTexture) {
+                       ID3D11Texture3D1 **ppTexture) {
   return CreateStagingTextureInternal<tag_texture_3d>(pDevice, pDesc,
                                                       pInitialData, ppTexture);
 }

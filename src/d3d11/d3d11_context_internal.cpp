@@ -818,6 +818,26 @@ public:
                                       MTL::Origin::Make(DstX, DstY, DstZ));
               return;
             }
+            if (FormatBytesPerTexel(src_format) ==
+                FormatBytesPerTexel(dst_format)) {
+              // FIXME: very broken
+              auto width = (SrcBox.right - SrcBox.left);
+              auto height = (SrcBox.bottom - SrcBox.top);
+              auto bytes_per_row = width * FormatBytesPerTexel(src_format);
+              auto [_, buffer, offset] = ctx.queue->AllocateTempBuffer(
+                  currentChunkId, bytes_per_row * height, 16);
+              encoder->copyFromTexture(
+                  src, src_slice, src_level,
+                  MTL::Origin::Make(SrcBox.left, SrcBox.top, 0),
+                  MTL::Size::Make(width, height, 1), buffer, offset,
+                  bytes_per_row, 0);
+              encoder->copyFromBuffer(buffer, offset, bytes_per_row, 0,
+                                      MTL::Size::Make(width, height, 1), dst,
+                                      dst_slice, dst_level,
+                                      MTL::Origin::Make(DstX, DstY, DstZ));
+              return;
+            }
+
             ERR("Texture2D format mismatch! src: ", src_format, ", dst ",
                 dst_format);
             return;

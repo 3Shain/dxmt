@@ -4,9 +4,9 @@
 namespace dxmt {
 
 template <>
-HRESULT CreateMTLTextureView<D3D11_SHADER_RESOURCE_VIEW_DESC>(
+HRESULT CreateMTLTextureView<D3D11_SHADER_RESOURCE_VIEW_DESC1>(
     IMTLD3D11Device *pDevice, MTL::Texture *pResource,
-    const D3D11_SHADER_RESOURCE_VIEW_DESC *pViewDesc, MTL::Texture **ppView) {
+    const D3D11_SHADER_RESOURCE_VIEW_DESC1 *pViewDesc, MTL::Texture **ppView) {
   Com<IMTLDXGIAdatper> adapter;
   pDevice->GetAdapter(&adapter);
   MTL_FORMAT_DESC metal_format;
@@ -186,9 +186,9 @@ HRESULT CreateMTLTextureView<D3D11_SHADER_RESOURCE_VIEW_DESC>(
 }
 
 template <>
-HRESULT CreateMTLTextureView<D3D11_UNORDERED_ACCESS_VIEW_DESC>(
+HRESULT CreateMTLTextureView<D3D11_UNORDERED_ACCESS_VIEW_DESC1>(
     IMTLD3D11Device *pDevice, MTL::Texture *pResource,
-    const D3D11_UNORDERED_ACCESS_VIEW_DESC *pViewDesc, MTL::Texture **ppView) {
+    const D3D11_UNORDERED_ACCESS_VIEW_DESC1 *pViewDesc, MTL::Texture **ppView) {
   Com<IMTLDXGIAdatper> adapter;
   pDevice->GetAdapter(&adapter);
   MTL_FORMAT_DESC metal_format;
@@ -295,7 +295,7 @@ HRESULT CreateMTLTextureView<D3D11_UNORDERED_ACCESS_VIEW_DESC>(
 
 HRESULT
 CreateMTLRenderTargetView(IMTLD3D11Device *pDevice, MTL::Texture *pResource,
-                          const D3D11_RENDER_TARGET_VIEW_DESC *pViewDesc,
+                          const D3D11_RENDER_TARGET_VIEW_DESC1 *pViewDesc,
                           MTL::Texture **ppView,
                           MTL_RENDER_TARGET_VIEW_DESC *pMTLDesc) {
   Com<IMTLDXGIAdatper> adapter;
@@ -410,8 +410,8 @@ CreateMTLRenderTargetView(IMTLD3D11Device *pDevice, MTL::Texture *pResource,
   case D3D11_RTV_DIMENSION_TEXTURE2DMS: {
     if (texture_type == MTL::TextureType2DMultisample) {
       *ppView = pResource->newTextureView(
-          metal_format.PixelFormat, MTL::TextureType2DMultisample, NS::Range::Make(0, 1),
-          NS::Range::Make(0, 1));
+          metal_format.PixelFormat, MTL::TextureType2DMultisample,
+          NS::Range::Make(0, 1), NS::Range::Make(0, 1));
       pMTLDesc->Slice = 0;
       pMTLDesc->Level = 0;
       pMTLDesc->DepthPlane = 0;
@@ -542,9 +542,9 @@ HRESULT CreateMTLTextureView<D3D11_DEPTH_STENCIL_VIEW_DESC>(
 }
 
 template <>
-HRESULT CreateMTLTextureView<D3D11_SHADER_RESOURCE_VIEW_DESC>(
+HRESULT CreateMTLTextureView<D3D11_SHADER_RESOURCE_VIEW_DESC1>(
     IMTLD3D11Device *pDevice, MTL::Buffer *pResource,
-    const D3D11_SHADER_RESOURCE_VIEW_DESC *pViewDesc, MTL::Texture **ppView) {
+    const D3D11_SHADER_RESOURCE_VIEW_DESC1 *pViewDesc, MTL::Texture **ppView) {
   Com<IMTLDXGIAdatper> adapter;
   pDevice->GetAdapter(&adapter);
   MTL_FORMAT_DESC metal_format;
@@ -584,9 +584,9 @@ HRESULT CreateMTLTextureView<D3D11_SHADER_RESOURCE_VIEW_DESC>(
 }
 
 template <>
-HRESULT CreateMTLTextureView<D3D11_UNORDERED_ACCESS_VIEW_DESC>(
+HRESULT CreateMTLTextureView<D3D11_UNORDERED_ACCESS_VIEW_DESC1>(
     IMTLD3D11Device *pDevice, MTL::Buffer *pResource,
-    const D3D11_UNORDERED_ACCESS_VIEW_DESC *pViewDesc, MTL::Texture **ppView) {
+    const D3D11_UNORDERED_ACCESS_VIEW_DESC1 *pViewDesc, MTL::Texture **ppView) {
   Com<IMTLDXGIAdatper> adapter;
   pDevice->GetAdapter(&adapter);
   MTL_FORMAT_DESC metal_format;
@@ -620,5 +620,255 @@ HRESULT CreateMTLTextureView<D3D11_UNORDERED_ACCESS_VIEW_DESC>(
       "\n Desired: ", pViewDesc->ViewDimension);
   return E_FAIL;
 }
+
+template <>
+void DowngradeViewDescription(const D3D11_SHADER_RESOURCE_VIEW_DESC1 &src,
+                              D3D11_SHADER_RESOURCE_VIEW_DESC *pDst) {
+  pDst->ViewDimension = src.ViewDimension;
+  pDst->Format = src.Format;
+  switch (src.ViewDimension) {
+  case D3D_SRV_DIMENSION_UNKNOWN:
+    break;
+  case D3D_SRV_DIMENSION_BUFFER:
+    pDst->Buffer = src.Buffer;
+    break;
+  case D3D_SRV_DIMENSION_TEXTURE1D:
+    pDst->Texture1D = src.Texture1D;
+    break;
+  case D3D_SRV_DIMENSION_TEXTURE1DARRAY:
+    pDst->Texture1DArray = src.Texture1DArray;
+    break;
+  case D3D_SRV_DIMENSION_TEXTURE2D: {
+    pDst->Texture2D.MipLevels = src.Texture2D.MipLevels;
+    pDst->Texture2D.MostDetailedMip = src.Texture2D.MostDetailedMip;
+    break;
+  }
+  case D3D_SRV_DIMENSION_TEXTURE2DARRAY: {
+    pDst->Texture2DArray.ArraySize = src.Texture2DArray.ArraySize;
+    pDst->Texture2DArray.FirstArraySlice = src.Texture2DArray.FirstArraySlice;
+    pDst->Texture2DArray.MipLevels = src.Texture2DArray.MipLevels;
+    pDst->Texture2DArray.MostDetailedMip = src.Texture2DArray.MostDetailedMip;
+    break;
+  }
+  case D3D_SRV_DIMENSION_TEXTURE2DMS:
+    pDst->Texture2DMS = src.Texture2DMS;
+    break;
+  case D3D_SRV_DIMENSION_TEXTURE2DMSARRAY:
+    pDst->Texture2DMSArray = src.Texture2DMSArray;
+    break;
+  case D3D_SRV_DIMENSION_TEXTURE3D:
+    pDst->Texture3D = src.Texture3D;
+    break;
+  case D3D_SRV_DIMENSION_TEXTURECUBE:
+    pDst->TextureCube = src.TextureCube;
+    break;
+  case D3D_SRV_DIMENSION_TEXTURECUBEARRAY:
+    pDst->TextureCubeArray = src.TextureCubeArray;
+    break;
+  case D3D_SRV_DIMENSION_BUFFEREX:
+    pDst->BufferEx = src.BufferEx;
+    break;
+  }
+}
+
+template <>
+void DowngradeViewDescription(const D3D11_RENDER_TARGET_VIEW_DESC1 &src,
+                              D3D11_RENDER_TARGET_VIEW_DESC *pDst) {
+  pDst->ViewDimension = src.ViewDimension;
+  pDst->Format = src.Format;
+  switch (src.ViewDimension) {
+  case D3D11_RTV_DIMENSION_UNKNOWN:
+    break;
+  case D3D11_RTV_DIMENSION_BUFFER:
+    pDst->Buffer = src.Buffer;
+    break;
+  case D3D11_RTV_DIMENSION_TEXTURE1D:
+    pDst->Texture1D = src.Texture1D;
+    break;
+  case D3D11_RTV_DIMENSION_TEXTURE1DARRAY:
+    pDst->Texture1DArray = src.Texture1DArray;
+    break;
+  case D3D11_RTV_DIMENSION_TEXTURE2D: {
+    pDst->Texture2D.MipSlice = src.Texture2D.MipSlice;
+    break;
+  }
+  case D3D11_RTV_DIMENSION_TEXTURE2DARRAY: {
+    pDst->Texture2DArray.ArraySize = src.Texture2DArray.ArraySize;
+    pDst->Texture2DArray.FirstArraySlice = src.Texture2DArray.FirstArraySlice;
+    pDst->Texture2DArray.MipSlice = src.Texture2DArray.MipSlice;
+    break;
+  }
+  case D3D11_RTV_DIMENSION_TEXTURE2DMS:
+    pDst->Texture2DMS = src.Texture2DMS;
+    break;
+  case D3D11_RTV_DIMENSION_TEXTURE2DMSARRAY:
+    pDst->Texture2DMSArray = src.Texture2DMSArray;
+    break;
+  case D3D11_RTV_DIMENSION_TEXTURE3D:
+    pDst->Texture3D = src.Texture3D;
+    break;
+  }
+}
+
+template <>
+void DowngradeViewDescription(const D3D11_UNORDERED_ACCESS_VIEW_DESC1 &src,
+                              D3D11_UNORDERED_ACCESS_VIEW_DESC *pDst) {
+  pDst->ViewDimension = src.ViewDimension;
+  pDst->Format = src.Format;
+  switch (src.ViewDimension) {
+  case D3D11_UAV_DIMENSION_UNKNOWN:
+    break;
+  case D3D11_UAV_DIMENSION_BUFFER:
+    pDst->Buffer = src.Buffer;
+    break;
+  case D3D11_UAV_DIMENSION_TEXTURE1D:
+    pDst->Texture1D = src.Texture1D;
+    break;
+  case D3D11_UAV_DIMENSION_TEXTURE1DARRAY:
+    pDst->Texture1DArray = src.Texture1DArray;
+    break;
+  case D3D11_UAV_DIMENSION_TEXTURE2D: {
+    pDst->Texture2D.MipSlice = src.Texture2D.MipSlice;
+    break;
+  }
+  case D3D11_UAV_DIMENSION_TEXTURE2DARRAY: {
+    pDst->Texture2DArray.MipSlice = src.Texture2DArray.MipSlice;
+    pDst->Texture2DArray.FirstArraySlice = src.Texture2DArray.FirstArraySlice;
+    pDst->Texture2DArray.ArraySize = src.Texture2DArray.ArraySize;
+    break;
+  }
+  case D3D11_UAV_DIMENSION_TEXTURE3D:
+    pDst->Texture3D = src.Texture3D;
+    break;
+  }
+}
+
+template <>
+void UpgradeViewDescription(const D3D11_SHADER_RESOURCE_VIEW_DESC *pSrc,
+                            D3D11_SHADER_RESOURCE_VIEW_DESC1 &dst) {
+  dst.Format = pSrc->Format;
+  dst.ViewDimension = pSrc->ViewDimension;
+  switch (pSrc->ViewDimension) {
+  case D3D_SRV_DIMENSION_UNKNOWN:
+    break;
+  case D3D_SRV_DIMENSION_BUFFER:
+    dst.Buffer = pSrc->Buffer;
+    break;
+  case D3D_SRV_DIMENSION_TEXTURE1D:
+    dst.Texture1D = pSrc->Texture1D;
+    break;
+  case D3D_SRV_DIMENSION_TEXTURE1DARRAY:
+    dst.Texture1DArray = pSrc->Texture1DArray;
+    break;
+  case D3D_SRV_DIMENSION_TEXTURE2D: {
+    dst.Texture2D.MipLevels = pSrc->Texture2D.MipLevels;
+    dst.Texture2D.MostDetailedMip = pSrc->Texture2D.MostDetailedMip;
+    dst.Texture2D.PlaneSlice = 0;
+    break;
+  }
+  case D3D_SRV_DIMENSION_TEXTURE2DARRAY: {
+    dst.Texture2DArray.MipLevels = pSrc->Texture2DArray.MipLevels;
+    dst.Texture2DArray.MostDetailedMip = pSrc->Texture2DArray.MostDetailedMip;
+    dst.Texture2DArray.ArraySize = pSrc->Texture2DArray.ArraySize;
+    dst.Texture2DArray.FirstArraySlice = pSrc->Texture2DArray.FirstArraySlice;
+    dst.Texture2DArray.PlaneSlice = 0;
+    break;
+  }
+  case D3D_SRV_DIMENSION_TEXTURE2DMS:
+    dst.Texture2DMS = pSrc->Texture2DMS;
+    break;
+  case D3D_SRV_DIMENSION_TEXTURE2DMSARRAY:
+    dst.Texture2DMSArray = pSrc->Texture2DMSArray;
+    break;
+  case D3D_SRV_DIMENSION_TEXTURE3D:
+    dst.Texture3D = pSrc->Texture3D;
+    break;
+  case D3D_SRV_DIMENSION_TEXTURECUBE:
+    dst.TextureCube = pSrc->TextureCube;
+    break;
+  case D3D_SRV_DIMENSION_TEXTURECUBEARRAY:
+    dst.TextureCubeArray = pSrc->TextureCubeArray;
+    break;
+  case D3D_SRV_DIMENSION_BUFFEREX:
+    dst.BufferEx = pSrc->BufferEx;
+    break;
+  }
+};
+
+template <>
+void UpgradeViewDescription(const D3D11_UNORDERED_ACCESS_VIEW_DESC *pSrc,
+                            D3D11_UNORDERED_ACCESS_VIEW_DESC1 &dst) {
+  dst.Format = pSrc->Format;
+  dst.ViewDimension = pSrc->ViewDimension;
+  switch (pSrc->ViewDimension) {
+  case D3D11_UAV_DIMENSION_UNKNOWN:
+    break;
+  case D3D11_UAV_DIMENSION_BUFFER:
+    dst.Buffer = pSrc->Buffer;
+    break;
+  case D3D11_UAV_DIMENSION_TEXTURE1D:
+    dst.Texture1D = pSrc->Texture1D;
+    break;
+  case D3D11_UAV_DIMENSION_TEXTURE1DARRAY:
+    dst.Texture1DArray = pSrc->Texture1DArray;
+    break;
+  case D3D11_UAV_DIMENSION_TEXTURE2D: {
+    dst.Texture2D.MipSlice = pSrc->Texture2D.MipSlice;
+    dst.Texture2D.PlaneSlice = 0;
+    break;
+  }
+  case D3D11_UAV_DIMENSION_TEXTURE2DARRAY: {
+    dst.Texture2DArray.MipSlice = pSrc->Texture2DArray.MipSlice;
+    dst.Texture2DArray.ArraySize = pSrc->Texture2DArray.ArraySize;
+    dst.Texture2DArray.FirstArraySlice = pSrc->Texture2DArray.FirstArraySlice;
+    dst.Texture2DArray.PlaneSlice = 0;
+    break;
+  }
+  case D3D11_UAV_DIMENSION_TEXTURE3D:
+    dst.Texture3D = pSrc->Texture3D;
+    break;
+  }
+};
+
+template <>
+void UpgradeViewDescription(const D3D11_RENDER_TARGET_VIEW_DESC *pSrc,
+                            D3D11_RENDER_TARGET_VIEW_DESC1 &dst) {
+  dst.Format = pSrc->Format;
+  dst.ViewDimension = pSrc->ViewDimension;
+  switch (pSrc->ViewDimension) {
+  case D3D11_RTV_DIMENSION_UNKNOWN:
+    break;
+  case D3D11_RTV_DIMENSION_BUFFER:
+    dst.Buffer = pSrc->Buffer;
+    break;
+  case D3D11_RTV_DIMENSION_TEXTURE1D:
+    dst.Texture1D = pSrc->Texture1D;
+    break;
+  case D3D11_RTV_DIMENSION_TEXTURE1DARRAY:
+    dst.Texture1DArray = pSrc->Texture1DArray;
+    break;
+  case D3D11_RTV_DIMENSION_TEXTURE2D: {
+    dst.Texture2D.MipSlice = pSrc->Texture2D.MipSlice;
+    dst.Texture2D.PlaneSlice = 0;
+    break;
+  }
+  case D3D11_RTV_DIMENSION_TEXTURE2DARRAY: {
+    dst.Texture2DArray.MipSlice = pSrc->Texture2DArray.MipSlice;
+    dst.Texture2DArray.ArraySize = pSrc->Texture2DArray.ArraySize;
+    dst.Texture2DArray.FirstArraySlice = pSrc->Texture2DArray.FirstArraySlice;
+    dst.Texture2DArray.PlaneSlice = 0;
+    break;
+  }
+  case D3D11_RTV_DIMENSION_TEXTURE2DMS:
+    dst.Texture2DMS = pSrc->Texture2DMS;
+    break;
+  case D3D11_RTV_DIMENSION_TEXTURE2DMSARRAY:
+    dst.Texture2DMSArray = pSrc->Texture2DMSArray;
+    break;
+  case D3D11_RTV_DIMENSION_TEXTURE3D:
+    dst.Texture3D = pSrc->Texture3D;
+    break;
+  }
+};
 
 } // namespace dxmt
