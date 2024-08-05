@@ -241,7 +241,7 @@ public:
       return;
     for (auto i = 0u; i < NumViews; i++) {
       if (ShaderStage.SRVs.test_bound(StartSlot + i)) {
-        ShaderStage.SRVs[i].SRV->GetLogicalResourceOrView(
+        ShaderStage.SRVs[StartSlot + i].SRV->GetLogicalResourceOrView(
             IID_PPV_ARGS(&ppShaderResourceViews[i]));
       } else {
         ppShaderResourceViews[i] = nullptr;

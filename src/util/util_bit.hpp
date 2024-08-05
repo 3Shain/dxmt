@@ -257,7 +257,7 @@ public:
       bit = idx % 64;
     }
 
-    return m_qwords[qword] & (1u << bit);
+    return m_qwords[qword] & (1uLL << bit);
   }
 
   constexpr void set(uint64_t idx, bool value) {
@@ -271,9 +271,9 @@ public:
     }
 
     if (value)
-      m_qwords[qword] |= 1u << bit;
+      m_qwords[qword] |= 1uLL << bit;
     else
-      m_qwords[qword] &= ~(1u << bit);
+      m_qwords[qword] &= ~(1uLL << bit);
   }
 
   constexpr bool exchange(uint64_t idx, bool value) {
@@ -292,7 +292,7 @@ public:
       bit = idx % 64;
     }
 
-    m_qwords[dword] ^= 1u << bit;
+    m_qwords[dword] ^= 1uLL << bit;
   }
 
   constexpr void setAll() {
@@ -303,7 +303,7 @@ public:
       for (size_t i = 0; i < Qwords - 1; i++)
         m_qwords[i] = std::numeric_limits<uint64_t>::max();
 
-      m_qwords[Qwords - 1] = (1u << (Bits % 64)) - 1;
+      m_qwords[Qwords - 1] = (1uLL << (Bits % 64)) - 1;
     }
   }
 
@@ -337,7 +337,7 @@ public:
       m_qwords[i] = std::numeric_limits<uint64_t>::max();
 
     if (offset > 0)
-      m_qwords[fullqwords] = (1u << offset) - 1;
+      m_qwords[fullqwords] = (1uLL << offset) - 1;
   }
 
 private:
@@ -350,7 +350,7 @@ public:
     uint32_t dword = idx / 32;
     uint32_t bit = idx % 32;
 
-    return m_dwords[dword] & (1u << bit);
+    return m_dwords[dword] & (1uLL << bit);
   }
 
   void ensureSize(uint32_t bitCount) {
@@ -368,9 +368,9 @@ public:
     uint32_t bit = idx;
 
     if (value)
-      m_dwords[dword] |= 1u << bit;
+      m_dwords[dword] |= 1uLL << bit;
     else
-      m_dwords[dword] &= ~(1u << bit);
+      m_dwords[dword] &= ~(1uLL << bit);
   }
 
   bool exchange(uint32_t idx, bool value) {
@@ -387,7 +387,7 @@ public:
     uint32_t dword = idx / 32;
     uint32_t bit = idx % 32;
 
-    m_dwords[dword] ^= 1u << bit;
+    m_dwords[dword] ^= 1uLL << bit;
   }
 
   void setAll() {
@@ -398,7 +398,7 @@ public:
       for (size_t i = 0; i < m_dwords.size() - 1; i++)
         m_dwords[i] = std::numeric_limits<uint32_t>::max();
 
-      m_dwords[m_dwords.size() - 1] = (1u << (m_bitCount % 32)) - 1;
+      m_dwords[m_dwords.size() - 1] = (1uLL << (m_bitCount % 32)) - 1;
     }
   }
 
@@ -434,7 +434,7 @@ public:
       m_dwords[i] = std::numeric_limits<uint32_t>::max();
 
     if (offset > 0)
-      m_dwords[fullDwords] = (1u << offset) - 1;
+      m_dwords[fullDwords] = (1uLL << offset) - 1;
   }
 
 private:
