@@ -1626,6 +1626,7 @@ auto readInstruction(
     return inst;
   };
   case microsoft::D3D11_SB_OPCODE_ATOMIC_CMP_STORE: {
+    shader_info.use_cmp_exch = true;
     return InstAtomicImmCmpExchange{
       .dst = DstOperandSideEffect{},
       .dst_resource = readAtomicDst(Inst.m_Operands[0]),
@@ -1660,6 +1661,7 @@ auto readInstruction(
   };
 
   case microsoft::D3D11_SB_OPCODE_IMM_ATOMIC_CMP_EXCH: {
+    shader_info.use_cmp_exch = true;
     return InstAtomicImmCmpExchange{
       .dst = readDstOperand(Inst.m_Operands[0]),
       .dst_resource = readAtomicDst(Inst.m_Operands[1]),

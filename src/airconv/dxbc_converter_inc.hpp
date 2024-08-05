@@ -91,6 +91,8 @@ struct io_binding_map {
   llvm::AllocaInst *depth_output_reg = nullptr;
   llvm::AllocaInst *stencil_ref_reg = nullptr;
   llvm::AllocaInst *coverage_mask_reg = nullptr;
+
+  llvm::AllocaInst *cmp_exch_temp = nullptr;
 };
 
 struct context {
@@ -2084,7 +2086,8 @@ IRValue call_atomic_cmp_exchange(
     context, {{1U, Attribute::get(context, Attribute::AttrKind::NoCapture)},
               {2U, Attribute::get(context, Attribute::AttrKind::NoCapture)},
               {~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)},
-              {~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)}}
+              {~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)},
+              {~0U, Attribute::get(context, Attribute::AttrKind::MustProgress)}}
   );
 
   assert(operand->getType() == types._int);
@@ -2107,7 +2110,7 @@ IRValue call_atomic_cmp_exchange(
     ),
     att
   );
-  auto alloca = ctx.builder.CreateAlloca(types._int);
+  auto alloca = ctx.resource.cmp_exch_temp;
   auto ptr = ctx.builder.CreateConstGEP1_64(types._int, alloca, 0);
   ctx.builder.CreateLifetimeStart(alloca, ctx.builder.getInt64(4));
   ctx.builder.CreateStore(compared, ptr);

@@ -799,6 +799,7 @@ public:
   air::ArgumentBufferBuilder binding_table;
   bool skipOptimization = false;
   bool refactoringAllowed = true;
+  bool use_cmp_exch = false;
 };
 
 } // namespace dxmt::dxbc

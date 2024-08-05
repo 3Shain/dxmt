@@ -416,6 +416,9 @@ llvm::Error convertDXBC(
       ptr_int_vec, ptr_float_vec, (uint32_t)channel_count
     };
   }
+  if(shader_info->use_cmp_exch) {
+    resource_map.cmp_exch_temp = builder.CreateAlloca(types._int);
+  }
 
   struct context ctx {
     .builder = builder, .llvm = context, .module = module, .function = function,
