@@ -1237,6 +1237,10 @@ int SM50Initialize(
           assert(interpolation == Interpolation::flat);
           assigned_index = func_signature.DefineInput(InputSampleIndex{});
           break;
+        case microsoft::D3D10_SB_NAME_PRIMITIVE_ID:
+          assigned_index = 
+            func_signature.DefineInput(InputPrimitiveID{});
+          break;
         default:
           assert(0 && "Unexpected/unhandled input system value");
           break;
