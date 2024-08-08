@@ -489,6 +489,11 @@ public:
       *pFormatSupport = 0;
     }
 
+    if(Format == DXGI_FORMAT_UNKNOWN) {
+      *pFormatSupport = D3D11_FORMAT_SUPPORT_BUFFER | D3D11_FORMAT_SUPPORT_CPU_LOCKABLE;
+      return S_OK;
+    }
+
     MTL_FORMAT_DESC metal_format;
 
     if (FAILED(adapter_->QueryFormatDesc(Format, &metal_format))) {
@@ -605,6 +610,17 @@ public:
       if (FeatureSupportDataSize != sizeof(*info))
         return E_INVALIDARG;
       info->OutFormatSupport2 = 0;
+
+      if(info->InFormat == DXGI_FORMAT_UNKNOWN) {
+        info->OutFormatSupport2 |=
+            D3D11_FORMAT_SUPPORT2_UAV_ATOMIC_ADD |
+            D3D11_FORMAT_SUPPORT2_UAV_ATOMIC_BITWISE_OPS |
+            D3D11_FORMAT_SUPPORT2_UAV_ATOMIC_COMPARE_STORE_OR_COMPARE_EXCHANGE |
+            D3D11_FORMAT_SUPPORT2_UAV_ATOMIC_EXCHANGE |
+            D3D11_FORMAT_SUPPORT2_UAV_ATOMIC_SIGNED_MIN_OR_MAX |
+            D3D11_FORMAT_SUPPORT2_UAV_ATOMIC_UNSIGNED_MIN_OR_MAX;
+        return S_OK;
+      }
 
       MTL_FORMAT_DESC desc;
       if (FAILED(adapter_->QueryFormatDesc(info->InFormat, &desc))) {
