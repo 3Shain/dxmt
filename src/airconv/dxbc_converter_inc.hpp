@@ -1778,9 +1778,9 @@ IRValue call_calc_lod(
   auto op_info = co_yield get_operation_info(texture_type);
   assert(!op_info.is_ms);
   assert(!op_info.is_1d_or_1d_array);
-  auto fn_name = is_unclamped
-                   ? "air.calculate_unclamped_lod_"
-                   : "air.calculate_clamped_lod_" + op_info.air_symbol_suffix;
+  auto fn_name = (is_unclamped ? "air.calculate_unclamped_lod_"
+                               : "air.calculate_clamped_lod_") +
+                 op_info.air_symbol_suffix;
   std::vector<llvm::Type *> args_type;
   std::vector<pvalue> args_value;
 
