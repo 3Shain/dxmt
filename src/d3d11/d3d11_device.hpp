@@ -36,6 +36,7 @@ struct MTL_GRAPHICS_PIPELINE_DESC {
   UINT NumColorAttachments;
   MTL::PixelFormat ColorAttachmentFormats[8];
   MTL::PixelFormat DepthStencilFormat;
+  bool RasterizationEnabled;
 };
 struct IMTLCompiledGraphicsPipeline;
 struct IMTLCompiledComputePipeline;

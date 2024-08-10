@@ -1000,7 +1000,8 @@ public:
     auto temp = dxmt::CreateGraphicsPipeline(
         this, pDesc->VertexShader, pDesc->PixelShader, pDesc->InputLayout,
         pDesc->BlendState, pDesc->NumColorAttachments,
-        pDesc->ColorAttachmentFormats, pDesc->DepthStencilFormat);
+        pDesc->ColorAttachmentFormats, pDesc->DepthStencilFormat,
+        pDesc->RasterizationEnabled);
     D3D11_ASSERT(pipelines_.insert({*pDesc, temp}).second); // copy
     *ppPipeline = std::move(temp);                          // move
     return S_OK;

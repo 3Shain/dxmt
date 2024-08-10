@@ -1432,6 +1432,7 @@ public:
     pipelineDesc.NumColorAttachments = 0;
     pipelineDesc.BlendState = nullptr;
     pipelineDesc.DepthStencilFormat = MTL::PixelFormatInvalid;
+    pipelineDesc.RasterizationEnabled = false;
 
     device->CreateGraphicsPipeline(&pipelineDesc, &pipeline);
 
@@ -1476,10 +1477,6 @@ public:
       // ERR("geometry shader is not supported yet, skip drawcall");
       return false;
     }
-    if (!state_.ShaderStages[(UINT)ShaderType::Pixel].Shader) {
-      // ERR("stream-out is not supported yet, skip drawcall");
-      return false;
-    }
     if (!state_.OutputMerger.NumRTVs && !state_.OutputMerger.DSV) {
       return false;
     }
@@ -1505,9 +1502,12 @@ public:
           .Shader //
           ->GetCompiledShader(&vs);
     }
-    state_.ShaderStages[(UINT)ShaderType::Pixel]
-        .Shader //
-        ->GetCompiledShader(&ps);
+
+    if (state_.ShaderStages[(UINT)ShaderType::Pixel].Shader) {
+      state_.ShaderStages[(UINT)ShaderType::Pixel]
+            .Shader //
+            ->GetCompiledShader(&ps);
+    }
     MTL_GRAPHICS_PIPELINE_DESC pipelineDesc;
     pipelineDesc.VertexShader = vs.ptr();
     pipelineDesc.PixelShader = ps.ptr();
@@ -1528,6 +1528,7 @@ public:
     pipelineDesc.DepthStencilFormat =
         state_.OutputMerger.DSV ? state_.OutputMerger.DSV->GetPixelFormat()
                                 : MTL::PixelFormatInvalid;
+    pipelineDesc.RasterizationEnabled = true;
 
     device->CreateGraphicsPipeline(&pipelineDesc, &pipeline);
 
