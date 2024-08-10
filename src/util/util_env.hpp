@@ -84,4 +84,6 @@ void setThreadName(const std::string &name);
  */
 bool createDirectory(const std::string &path);
 
+std::string getUnixPath(const std::string &path);
+
 } // namespace dxmt::env

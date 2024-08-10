@@ -129,4 +129,27 @@ bool createDirectory(const std::string &path) {
 #endif
 }
 
+std::string getUnixPath(const std::string &path) {
+#if defined(_WIN32)
+  using GetUnixFileName = LPSTR (*CDECL)(LPCWSTR);
+
+  static auto wine_get_unix_file_name =
+      reinterpret_cast<GetUnixFileName>(::GetProcAddress(
+          ::GetModuleHandleW(L"kernel32.dll"), "wine_get_unix_file_name"));
+
+  if (wine_get_unix_file_name) {
+    std::array<WCHAR, MAX_PATH + 1> widePath;
+
+    size_t length = str::transcodeString(widePath.data(), widePath.size() - 1,
+                                       path.data(), path.size());
+
+    widePath[length] = L'\0';
+    return std::string(wine_get_unix_file_name(widePath.data()));
+  }
+  return "";
+#else
+  return path;
+#endif
+}
+
 } // namespace dxmt::env
