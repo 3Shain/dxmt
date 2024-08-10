@@ -1601,7 +1601,10 @@ public:
         state_.OutputMerger.BlendFactor[2] = 1.0f;
         state_.OutputMerger.BlendFactor[3] = 1.0f;
       }
+    }
+    if(state_.OutputMerger.SampleMask != SampleMask) {
       state_.OutputMerger.SampleMask = SampleMask;
+      should_invalidate_pipeline = true;
     }
     if (should_invalidate_pipeline) {
       ctx.InvalidateRenderPipeline();

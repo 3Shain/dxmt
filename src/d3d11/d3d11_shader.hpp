@@ -32,6 +32,8 @@ DEFINE_COM_INTERFACE("e95ba1c7-e43f-49c3-a907-4ac669c9fb42", IMTLD3D11Shader)
   virtual void GetCompiledShader(IMTLCompiledShader * *ppShader) = 0;
   virtual void GetCompiledShaderWithInputLayerFixup(
       uint64_t sign_mask, IMTLCompiledShader * *ppShader) = 0;
+  virtual void GetCompiledPixelShaderWithSampleMask(
+      uint32_t sample_mask, IMTLCompiledShader * *ppShader) = 0;
   virtual void GetReflection(MTL_SHADER_REFLECTION * *pRefl) = 0;
 };
 

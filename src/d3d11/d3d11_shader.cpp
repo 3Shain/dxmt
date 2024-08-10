@@ -19,7 +19,7 @@ struct tag_vertex_shader {
 
 struct tag_pixel_shader {
   using COM = ID3D11PixelShader;
-  using DATA = void *;
+  using DATA = std::unordered_map<uint32_t, Com<IMTLCompiledShader>>;
 };
 
 struct tag_hull_shader {
@@ -112,6 +112,10 @@ public:
 
   void GetCompiledShaderWithInputLayerFixup(uint64_t sign_mask,
                                             IMTLCompiledShader **pShader) final;
+
+  virtual void
+  GetCompiledPixelShaderWithSampleMask(uint32_t sample_mask,
+                                       IMTLCompiledShader **ppShader) final;
 
   void GetReflection(MTL_SHADER_REFLECTION **pRefl) final {
     *pRefl = &reflection;
@@ -274,6 +278,22 @@ private:
   SM50_SHADER_COMPILATION_INPUT_SIGN_MASK_DATA data;
 };
 
+class AirconvPixelShaderWithSampleMask
+    : public AirconvShader<tag_pixel_shader> {
+public:
+  AirconvPixelShaderWithSampleMask(IMTLD3D11Device *pDevice,
+                                   TShaderBase<tag_pixel_shader> *shader,
+                                   uint32_t sample_mask)
+      : AirconvShader<tag_pixel_shader>(pDevice, shader, &data) {
+    data.type = SM50_SHADER_PSO_SAMPLE_MASK;
+    data.next = nullptr;
+    data.sample_mask = sample_mask;
+  };
+
+private:
+  SM50_SHADER_PSO_SAMPLE_MASK_DATA data;
+};
+
 class AirconvShaderEmulatedVertexSO
     : public AirconvShader<tag_emulated_vertex_so> {
 public:
@@ -359,6 +379,29 @@ void TShaderBase<tag>::GetCompiledShaderWithInputLayerFixup(
 }
 
 template <typename tag>
+void TShaderBase<tag>::GetCompiledPixelShaderWithSampleMask(
+    uint32_t sample_mask, IMTLCompiledShader **pShader) {
+  D3D11_ASSERT(0 && "should not call this function");
+}
+
+template <>
+void TShaderBase<tag_pixel_shader>::GetCompiledPixelShaderWithSampleMask(
+    uint32_t sample_mask, IMTLCompiledShader **pShader) {
+  if (sample_mask == 0xffffffff) {
+    return GetCompiledShader(pShader);
+  }
+  if (data.contains(sample_mask)) {
+    *pShader = data[sample_mask].ref();
+  } else {
+    IMTLCompiledShader *shader =
+        new AirconvPixelShaderWithSampleMask(this->m_parent, this, sample_mask);
+    with_input_layout_fixup_.emplace(sample_mask, shader);
+    *pShader = ref(shader);
+    shader->SubmitWork();
+  }
+}
+
+template <typename tag>
 HRESULT CreateShaderInternal(IMTLD3D11Device *pDevice,
                              const void *pShaderBytecode, SIZE_T BytecodeLength,
                              typename tag::COM **ppShader) {
@@ -375,8 +418,8 @@ HRESULT CreateShaderInternal(IMTLD3D11Device *pDevice,
     SM50Destroy(sm50);
     return S_FALSE;
   }
-  *ppShader = ref(new TShaderBase<tag>(
-      pDevice, sm50, reflection, pShaderBytecode, BytecodeLength, nullptr));
+  *ppShader = ref(new TShaderBase<tag>(pDevice, sm50, reflection,
+                                       pShaderBytecode, BytecodeLength, {}));
   return S_OK;
 }
 
@@ -434,6 +477,11 @@ public:
   void GetCompiledShaderWithInputLayerFixup(uint64_t,
                                             IMTLCompiledShader **) final {
     // D3D11_ASSERT(0 && "should not call this function");
+  };
+
+  void GetCompiledPixelShaderWithSampleMask(uint32_t,
+                                            IMTLCompiledShader **) final {
+    D3D11_ASSERT(0 && "should not call this function");
   };
 
   void GetReflection(MTL_SHADER_REFLECTION **pRefl) final {

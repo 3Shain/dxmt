@@ -1504,10 +1504,19 @@ public:
     }
 
     if (state_.ShaderStages[(UINT)ShaderType::Pixel].Shader) {
-      state_.ShaderStages[(UINT)ShaderType::Pixel]
+      if (state_.OutputMerger.SampleMask != 0xffffffff) {
+        // WARN("Emulate SampleMask PSO");
+        state_.ShaderStages[(UINT)ShaderType::Pixel]
+            .Shader //
+            ->GetCompiledPixelShaderWithSampleMask(
+                state_.OutputMerger.SampleMask, &ps);
+      } else {
+        state_.ShaderStages[(UINT)ShaderType::Pixel]
             .Shader //
             ->GetCompiledShader(&ps);
+      }
     }
+
     MTL_GRAPHICS_PIPELINE_DESC pipelineDesc;
     pipelineDesc.VertexShader = vs.ptr();
     pipelineDesc.PixelShader = ps.ptr();

@@ -120,9 +120,7 @@ struct D3D11OutputMergerStageState {
   Com<IMTLD3D11BlendState> BlendState;
   FLOAT BlendFactor[4];
 
-  // See https://github.com/gpuweb/gpuweb/issues/267
-  // Currently ignored, should be able to emulate it as AND operation in shader
-  UINT SampleMask;
+  UINT SampleMask = 0xffffffff;
 };
 
 struct STREAM_OUTPUT_BUFFER_B {

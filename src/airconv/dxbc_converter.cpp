@@ -115,6 +115,10 @@ llvm::Error convertDXBC(
     case SM50_SHADER_DEBUG_IDENTITY:
       debug_id = ((SM50_SHADER_DEBUG_IDENTITY_DATA *)arg)->id;
       break;
+    case SM50_SHADER_PSO_SAMPLE_MASK:
+      pso_sample_mask = 
+        ((SM50_SHADER_PSO_SAMPLE_MASK_DATA *)arg)->sample_mask;
+      break;
     }
     arg = (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)arg->next;
   }
