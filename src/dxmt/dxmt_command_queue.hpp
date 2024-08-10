@@ -24,7 +24,7 @@
 
 namespace dxmt {
 
-enum class EncoderKind : uint32_t { Nil, ClearPass, Render, Compute, Blit };
+enum class EncoderKind : uint32_t { Nil, ClearPass, Render, Compute, Blit, Resolve };
 
 struct ENCODER_INFO {
   EncoderKind kind;

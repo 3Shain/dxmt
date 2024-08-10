@@ -417,8 +417,43 @@ public:
   void ResolveSubresource(ID3D11Resource *pDstResource, UINT DstSubresource,
                           ID3D11Resource *pSrcResource, UINT SrcSubresource,
                           DXGI_FORMAT Format) override {
-    // Metal does not provide methods for explicit resolve action.
-    IMPLEMENT_ME
+    D3D11_RESOURCE_DIMENSION dimension;
+    pDstResource->GetType(&dimension);
+    if (dimension != D3D11_RESOURCE_DIMENSION_TEXTURE2D)
+      return;
+    pSrcResource->GetType(&dimension);
+    if (dimension != D3D11_RESOURCE_DIMENSION_TEXTURE2D)
+      return;
+    D3D11_TEXTURE2D_DESC desc;
+    uint32_t width, height;
+    ((ID3D11Texture2D *)pSrcResource)->GetDesc(&desc);
+    if (desc.SampleDesc.Count < 2) {
+      ERR("ResolveSubresource: Source is not multisampled ", desc.SampleDesc.Count);
+      return;
+    }
+    if (desc.ArraySize <= DstSubresource) {
+      return;
+    }
+    width = desc.Width;
+    height = desc.Height;
+    ((ID3D11Texture2D *)pDstResource)->GetDesc(&desc);
+    if (desc.SampleDesc.Count > 1) {
+      ERR("ResolveSubresource: Destination is not valid resolve target");
+      return;
+    }
+    uint32_t dst_level = DstSubresource % desc.MipLevels;
+    uint32_t dst_slice = DstSubresource / desc.MipLevels;
+    if (width != std::max(1u, desc.Width >> dst_level) ||
+        height != std::max(1u, desc.Height >> dst_level)) {
+      ERR("ResolveSubresource: Size doesn't match");
+      return;
+    }
+    if (auto dst = com_cast<IMTLBindable>(pDstResource)) {
+      if (auto src = com_cast<IMTLBindable>(pSrcResource)) {
+        ctx.ResolveSubresource(src.ptr(), SrcSubresource, dst.ptr(), dst_level,
+                               dst_slice);
+      }
+    }
   }
 
   void CopyResource(ID3D11Resource *pDstResource,

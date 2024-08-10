@@ -1093,6 +1093,42 @@ public:
     EncodeClearPass(clear_pass);
   }
 
+  void ResolveSubresource(
+    IMTLBindable* pSrc,
+    UINT SrcSlice,
+    IMTLBindable* pDst,
+    UINT DstLevel,
+    UINT DstSlice
+  ) {
+    CommandChunk *chk = cmd_queue.CurrentChunk();
+
+    chk->mark_pass(EncoderKind::Resolve);
+    InvalidateCurrentPass();
+    chk->emit([
+      src = pSrc->UseBindable(cmd_queue.CurrentSeqId()),
+      dst = pDst->UseBindable(cmd_queue.CurrentSeqId()),
+      SrcSlice, DstSlice, DstLevel
+    ](CommandChunk::context &ctx) {
+      auto pool = transfer(NS::AutoreleasePool::alloc()->init());
+      auto enc_descriptor = MTL::RenderPassDescriptor::renderPassDescriptor();
+
+      auto attachment = enc_descriptor->colorAttachments()->object(0);
+      
+      attachment->setTexture(src.texture(&ctx));
+      attachment->setResolveTexture(dst.texture(&ctx));
+      attachment->setLoadAction(MTL::LoadActionLoad);
+      attachment->setStoreAction(MTL::StoreActionMultisampleResolve);
+      attachment->setSlice(SrcSlice);
+      attachment->setResolveLevel(DstLevel);
+      attachment->setResolveSlice(DstSlice);
+      attachment->setResolveDepthPlane(0);
+
+      auto enc = ctx.cmdbuf->renderCommandEncoder(enc_descriptor);
+      enc->setLabel(NS::String::string("ResolvePass", NS::ASCIIStringEncoding));
+      enc->endEncoding();
+    });
+  }
+
   /**
   Switch to render encoder and set all states (expect for pipeline state)
   */
