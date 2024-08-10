@@ -9,7 +9,7 @@
 
 DEFINE_COM_INTERFACE("3a3f085a-d0fe-4324-b0ae-fe04de18571c",
                      IMTLD3D11DeviceContext)
-    : public ID3D11DeviceContext2 {
+    : public ID3D11DeviceContext4 {
 
   virtual void STDMETHODCALLTYPE FlushInternal(
       std::function<void(MTL::CommandBuffer *)> && beforeCommit,

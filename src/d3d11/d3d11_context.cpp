@@ -101,6 +101,8 @@ public:
         riid == __uuidof(ID3D11DeviceContext) ||
         riid == __uuidof(ID3D11DeviceContext1) ||
         riid == __uuidof(ID3D11DeviceContext2) ||
+        riid == __uuidof(ID3D11DeviceContext3) ||
+        riid == __uuidof(ID3D11DeviceContext4) ||
         riid == __uuidof(IMTLD3D11DeviceContext)) {
       *ppvObject = ref(this);
       return S_OK;
@@ -1837,6 +1839,34 @@ public:
   }
 
   UINT GetContextFlags() override { return 0; }
+
+#pragma endregion
+
+#pragma region 11.3
+
+  void STDMETHODCALLTYPE Flush1(D3D11_CONTEXT_TYPE type,
+                                HANDLE event) override {
+    IMPLEMENT_ME;
+  }
+
+  void STDMETHODCALLTYPE SetHardwareProtectionState(WINBOOL enable) override {
+    WARN("SetHardwareProtectionState: stub");
+  }
+
+  void STDMETHODCALLTYPE GetHardwareProtectionState(WINBOOL *enable) override {
+    *enable = false;
+    WARN("GetHardwareProtectionState: stub");
+  }
+
+  virtual HRESULT STDMETHODCALLTYPE Signal(ID3D11Fence *fence,
+                                           UINT64 value) override {
+    IMPLEMENT_ME
+  }
+
+  virtual HRESULT STDMETHODCALLTYPE Wait(ID3D11Fence *fence,
+                                         UINT64 value) override {
+    IMPLEMENT_ME
+  }
 
 #pragma endregion
 
