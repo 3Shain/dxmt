@@ -1,11 +1,11 @@
-#include "dxmt_clear_command.hpp"
+#include "dxmt_command.hpp"
 #include "Foundation/NSAutoreleasePool.hpp"
 #include "Foundation/NSError.hpp"
 #include "Foundation/NSString.hpp"
 #include "Metal/MTLLibrary.hpp"
 
-extern "C" unsigned char dxmt_clear_command_metallib[];
-extern "C" unsigned int dxmt_clear_command_metallib_len;
+extern "C" unsigned char dxmt_command_metallib[];
+extern "C" unsigned int dxmt_command_metallib_len;
 
 #define CREATE_PIPELINE(name)                                                  \
   auto name##_function = transfer(library->newFunction(                        \
@@ -14,11 +14,11 @@ extern "C" unsigned int dxmt_clear_command_metallib_len;
       transfer(device->newComputePipelineState(name##_function, &error));
 
 namespace dxmt {
-ClearCommandContext::ClearCommandContext(MTL::Device *device) {
+DXMTCommandContext::DXMTCommandContext(MTL::Device *device) {
   auto pool = transfer(NS::AutoreleasePool::alloc()->init());
   auto dispatch_data =
-      dispatch_data_create(dxmt_clear_command_metallib,
-                           dxmt_clear_command_metallib_len, nullptr, nullptr);
+      dispatch_data_create(dxmt_command_metallib,
+                           dxmt_command_metallib_len, nullptr, nullptr);
 
   Obj<NS::Error> error;
   auto library = transfer(device->newLibrary(dispatch_data, &error));

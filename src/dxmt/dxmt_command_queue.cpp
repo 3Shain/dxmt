@@ -2,7 +2,6 @@
 #include "Metal/MTLCaptureManager.hpp"
 #include "Metal/MTLFunctionLog.hpp"
 #include "Foundation/NSAutoreleasePool.hpp"
-#include "dxmt_clear_command.hpp"
 #include "util_env.hpp"
 #include <atomic>
 

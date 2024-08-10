@@ -9,7 +9,7 @@
 #include "Metal/MTLDevice.hpp"
 #include "Metal/MTLTypes.hpp"
 #include "dxmt_binding.hpp"
-#include "dxmt_clear_command.hpp"
+#include "dxmt_command.hpp"
 #include "dxmt_occlusion_query.hpp"
 #include "dxmt_ring_bump_allocator.hpp"
 #include "log/log.hpp"
@@ -335,7 +335,7 @@ private:
   RingBumpAllocator<false> copy_temp_allocator;
 
 public:
-  ClearCommandContext clear_cmd;
+  DXMTCommandContext clear_cmd;
 
   CommandQueue(MTL::Device *device);
 

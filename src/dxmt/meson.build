@@ -3,11 +3,11 @@ dxmt_src = [
   'dxmt_names.cpp',
   'dxmt_buffer_pool.cpp',
   'dxmt_command_queue.cpp',
-  'dxmt_clear_command.cpp',
+  'dxmt_command.cpp',
 ]
 
 air = custom_target('metal_air',
-  input: 'dxmt_clear_command.metal',
+  input: 'dxmt_command.metal',
   output: 'metal_air',
   command: [
     find_program('xcrun'), '-sdk', 'macosx', 'metal',
@@ -25,11 +25,11 @@ metal_lib = custom_target('metal_lib',
 )
 
 metal_lib_bin = custom_target('objectify-data',
-  output : 'clear_command_bin.c',
+  output : 'command_bin.c',
   input : metal_lib,
   command : [ 
     find_program('xxd'),
-    '-n', 'dxmt_clear_command_metallib',
+    '-n', 'dxmt_command_metallib',
     '-i', '@INPUT@',
     '@OUTPUT@', 
   ]

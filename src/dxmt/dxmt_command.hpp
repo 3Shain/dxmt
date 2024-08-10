@@ -9,9 +9,9 @@
 
 namespace dxmt {
 
-class ClearCommandContext {
+class DXMTCommandContext {
 public:
-  ClearCommandContext(MTL::Device *device);
+  DXMTCommandContext(MTL::Device *device);
 
   void ClearBufferUint(MTL::ComputeCommandEncoder *encoder, MTL::Buffer *buffer,
                        uint64_t byte_offset, uint64_t elements_uint,
