@@ -444,10 +444,14 @@ struct InputVertexStageIn {
 struct OutputVertex {
   std::string user;
   MSLScalerOrVectorType type;
+
+  bool operator==(OutputVertex const& rhs) const { return user == rhs.user; }
 };
 
 struct OutputPosition {
   MSLScalerOrVectorType type;
+
+  bool operator==(OutputPosition const& rhs) const { return true; }
 };
 
 struct InputFragmentStageIn {
@@ -480,12 +484,20 @@ struct InputThreadgroupPositionInGrid {};   // uint3
 struct OutputRenderTarget {
   uint32_t index;
   MSLScalerOrVectorType type;
+
+  bool operator==(OutputRenderTarget const& rhs) const { return index == rhs.index; }
 };
 
 enum class DepthArgument { any = 0, greater = 1, less = 2 };
 
 struct OutputDepth {
   DepthArgument depth_argument;
+
+  bool operator==(OutputDepth const& rhs) const { return true; }
+};
+
+struct OutputCoverageMask {
+  bool operator==(OutputCoverageMask const& rhs) const { return true; }
 };
 
 using FunctionInput = template_concat_t<
@@ -498,7 +510,7 @@ using FunctionInput = template_concat_t<
     /* fragment */
     InputPrimitiveID, InputViewportArrayIndex, InputRenderTargetArrayIndex,
     InputFrontFacing, InputPosition, InputSampleIndex, //
-    InputFragmentStageIn,
+    InputFragmentStageIn, InputInputCoverage,
     /* kernel */
     InputThreadIndexInThreadgroup, InputThreadPositionInThreadgroup,
     InputThreadPositionInGrid, InputThreadgroupPositionInGrid>>;
@@ -507,7 +519,7 @@ using FunctionOutput = std::variant<
   /* vertex */
   OutputVertex, OutputPosition,
   /* fragment */
-  OutputRenderTarget, OutputDepth>;
+  OutputRenderTarget, OutputDepth, OutputCoverageMask>;
 
 class FunctionSignatureBuilder {
 public:

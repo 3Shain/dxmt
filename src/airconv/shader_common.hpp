@@ -32,7 +32,6 @@ enum class ResourceType {
 /* It's often called System Generated Value in DirectX */
 enum class InputAttribute {
   VertexId,
-  PrimitiveId,
   InstanceId,
 
   /* For compute */
@@ -45,6 +44,10 @@ enum class InputAttribute {
   ThreadGroupId,
   /* uint */
   ThreadIdInGroupFlatten,
+
+  /* Fragment */
+  PrimitiveId,
+  CoverageMask,
 };
 
 } // namespace dxmt::shader::common

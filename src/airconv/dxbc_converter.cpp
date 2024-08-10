@@ -97,6 +97,7 @@ llvm::Error convertDXBC(
   uint32_t const &max_input_register = pShaderInternal->max_input_register;
   uint32_t const &max_output_register = pShaderInternal->max_output_register;
   uint64_t sign_mask = 0;
+  uint32_t pso_sample_mask = 0xffffffff;
   SM50_SHADER_COMPILATION_ARGUMENT_DATA *arg = pArgs;
   SM50_SHADER_EMULATE_VERTEX_STREAM_OUTPUT_DATA *vertex_so = nullptr;
   uint64_t debug_id = ~0u;
@@ -180,6 +181,16 @@ llvm::Error convertDXBC(
       }
       return nullptr;
     });
+  }
+  if(pso_sample_mask != 0xffffffff) {
+    auto assigned_index = func_signature.DefineOutput(air::OutputCoverageMask {});
+    epilogue >> [=](pvalue value) -> IRValue {
+      return make_irvalue([=](struct context ctx) {
+      auto &builder = ctx.builder;
+      if(ctx.resource.coverage_mask_reg) return value;
+      return builder.CreateInsertValue(value, builder.getInt32(ctx.pso_sample_mask), {assigned_index});
+    });
+    };
   }
 
   io_binding_map resource_map;
@@ -422,7 +433,7 @@ llvm::Error convertDXBC(
 
   struct context ctx {
     .builder = builder, .llvm = context, .module = module, .function = function,
-    .resource = resource_map, .types = types
+    .resource = resource_map, .types = types, .pso_sample_mask = pso_sample_mask
   };
   // then we can start build ... real IR code (visit all basicblocks)
   auto prelogue_result = prelogue.build(ctx);
@@ -1052,23 +1063,6 @@ int SM50Initialize(
           });
           break;
         }
-        // FIXME: these sgv are pixel shader only
-        // case D3D10_SB_NAME_SAMPLE_INDEX: {
-        //   auto assigned_index =
-        //   func_signature.DefineInput(InputSampleIndex{});
-        //   prelogue_.push_back([=](IREffect &prelogue) {
-        //     prelogue << init_input_reg(assigned_index, reg, mask);
-        //   });
-        //   break;
-        // }
-        // case D3D10_SB_NAME_PRIMITIVE_ID: {
-        //   auto assigned_index =
-        //   func_signature.DefineInput(InputPrimitiveID{});
-        //   prelogue_.push_back([=](IREffect &prelogue) {
-        //     prelogue << init_input_reg(assigned_index, reg, mask);
-        //   });
-        //   break;
-        // }
         default:
           assert(0 && "Unexpected/unhandled input system value");
           break;
@@ -1080,9 +1074,18 @@ int SM50Initialize(
         D3D10_SB_OPERAND_TYPE RegType = Inst.m_Operands[0].m_Type;
 
         switch (RegType) {
-        case D3D11_SB_OPERAND_TYPE_INPUT_COVERAGE_MASK:
-          assert(0);
+        case D3D11_SB_OPERAND_TYPE_INPUT_COVERAGE_MASK: {
+          auto assigned_index =
+            func_signature.DefineInput(InputInputCoverage{});
+          prelogue_.push_back([=](IREffect &prelogue) {
+            prelogue << make_effect([=](struct context ctx) {
+              auto attr = ctx.function->getArg(assigned_index);
+              ctx.resource.coverage_mask_arg = attr;
+              return std::monostate{};
+            });
+          });
           break;
+        }
 
         case D3D11_SB_OPERAND_TYPE_INNER_COVERAGE:
           assert(0);
@@ -1349,9 +1352,42 @@ int SM50Initialize(
           });
           break;
         }
-        case D3D11_SB_OPERAND_TYPE_OUTPUT_STENCIL_REF:
-        case D3D10_SB_OPERAND_TYPE_OUTPUT_COVERAGE_MASK: {
+        case D3D11_SB_OPERAND_TYPE_OUTPUT_STENCIL_REF:  {
           assert(0 && "todo");
+          break;
+        }
+        case D3D10_SB_OPERAND_TYPE_OUTPUT_COVERAGE_MASK: {
+          prelogue_.push_back([=](IREffect &prelogue) {
+            prelogue << make_effect([](struct context ctx) -> std::monostate {
+              assert(
+                ctx.resource.coverage_mask_reg == nullptr &&
+                "otherwise oMask is defined twice"
+              );
+              ctx.resource.coverage_mask_reg =
+                ctx.builder.CreateAlloca(ctx.types._int);
+              return {};
+            });
+          });
+          auto assigned_index = func_signature.DefineOutput(OutputCoverageMask {});
+          epilogue_.push_back([=](IRValue &epilogue) {
+            epilogue >> [=](pvalue v) {
+              return make_irvalue([=](struct context ctx) {
+                auto odepth = ctx.builder.CreateLoad(
+                    ctx.types._int,
+                    ctx.builder.CreateConstInBoundsGEP1_32(
+                      ctx.types._int, ctx.resource.coverage_mask_reg, 0
+                    )
+                  );
+                return ctx.builder.CreateInsertValue(
+                  v,
+                  ctx.pso_sample_mask != 0xffffffff ? 
+                    ctx.builder.CreateAnd(odepth, ctx.pso_sample_mask)
+                    : odepth,
+                  {assigned_index}
+                );
+              });
+            };
+          });
           break;
         }
 

@@ -86,6 +86,7 @@ struct io_binding_map {
   llvm::Value *thread_group_id_arg = nullptr;
   llvm::Value *thread_id_in_group_arg = nullptr;
   llvm::Value *thread_id_in_group_flat_arg = nullptr;
+  llvm::Value *coverage_mask_arg = nullptr;
 
   // special registers (output)
   llvm::AllocaInst *depth_output_reg = nullptr;
@@ -102,6 +103,7 @@ struct context {
   llvm::Function *function;
   io_binding_map &resource;
   air::AirType &types; // hmmm
+  uint32_t pso_sample_mask;
 };
 
 template <typename T = std::monostate>
@@ -2292,6 +2294,7 @@ uint32_t get_dst_mask(DstOperand dst) {
       [](DstOperandTemp dst) { return dst._.mask; },
       [](DstOperandIndexableTemp dst) { return dst._.mask; },
       [](DstOperandOutputDepth) { return (uint32_t)1; },
+      [](DstOperandOutputCoverageMask) { return (uint32_t)1; },
       [](auto s) {
         llvm::outs() << "get_dst_mask: unhandled dst operand type "
                      << decltype(s)::debug_name << "\n";
@@ -2521,6 +2524,17 @@ IRValue load_src<SrcOperandAttribute, false>(SrcOperandAttribute attr) {
   case shader::common::InputAttribute::ThreadIdInGroupFlatten: {
     assert(ctx.resource.thread_id_in_group_flat_arg);
     vec = co_yield extend_to_vec4(ctx.resource.thread_id_in_group_flat_arg);
+    break;
+  }
+  case shader::common::InputAttribute::CoverageMask: {
+    assert(ctx.resource.coverage_mask_arg);
+    vec = co_yield extend_to_vec4(
+      ctx.pso_sample_mask != 0xffffffff
+        ? ctx.builder.CreateAnd(
+            ctx.resource.coverage_mask_arg, ctx.pso_sample_mask
+          )
+        : ctx.resource.coverage_mask_arg
+    );
     break;
   }
   }
@@ -2780,6 +2794,46 @@ store_dst<DstOperandOutputDepth, true>(DstOperandOutputDepth, IRValue &&value) {
         ctx.types._float, ctx.resource.depth_output_reg, 0
       );
       ctx.builder.CreateStore(depth, ptr);
+      co_return {};
+    }
+  );
+};
+
+template <>
+IREffect store_dst<DstOperandOutputCoverageMask, false>(
+  DstOperandOutputCoverageMask, IRValue &&value
+) {
+  // coroutine + rvalue reference = SHOOT YOURSELF IN THE FOOT
+  return make_effect_bind(
+    [value = std::move(value)](context ctx) mutable -> IREffect {
+      // FIXME: extend_to_vec4 is kinda silly
+      pvalue sample_mask = co_yield (std::move(value) >>= extend_to_vec4) >>=
+        extract_element(0);
+      auto ptr = ctx.builder.CreateConstGEP1_32(
+        ctx.types._int, ctx.resource.coverage_mask_reg, 0
+      );
+      ctx.builder.CreateStore(sample_mask, ptr);
+      co_return {};
+    }
+  );
+};
+
+template <>
+IREffect store_dst<DstOperandOutputCoverageMask, true>(
+  DstOperandOutputCoverageMask, IRValue &&value
+) {
+  // coroutine + rvalue reference = SHOOT YOURSELF IN THE FOOT
+  return make_effect_bind(
+    [value = std::move(value)](context ctx) mutable -> IREffect {
+      // FIXME: extend_to_vec4 is kinda silly
+      pvalue sample_mask = co_yield (std::move(value) >>= extend_to_vec4) >>=
+        extract_element(0);
+      auto ptr = ctx.builder.CreateConstGEP1_32(
+        ctx.types._int, ctx.resource.coverage_mask_reg, 0
+      );
+      ctx.builder.CreateStore(
+        ctx.builder.CreateBitCast(sample_mask, ctx.types._int), ptr
+      );
       co_return {};
     }
   );

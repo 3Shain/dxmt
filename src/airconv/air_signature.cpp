@@ -434,8 +434,12 @@ uint32_t FunctionSignatureBuilder::DefineInput(const FunctionInput &input) {
 };
 
 uint32_t FunctionSignatureBuilder::DefineOutput(const FunctionOutput &output) {
-  // TODO: check duplication (in case it's already defined)
   uint32_t index = outputs.size();
+  for(uint32_t i = 0; i < index; i++) {
+    if(outputs[i] == output) {
+      return i;
+    }
+  }
   outputs.push_back(output);
   return index;
 };
@@ -638,6 +642,14 @@ auto FunctionSignatureBuilder::CreateFunction(
             ->string("mtl_primitive_id");
           return msl_uint.get_llvm_type(context);
         },
+        [&](const InputInputCoverage &) {
+          metadata_field.string("air.sample_mask_in")
+            ->string("air.arg_type_name")
+            ->string("uint") // HARDCODED
+            ->string("air.arg_name")
+            ->string("mtl_sample_mask");
+          return msl_uint.get_llvm_type(context);
+        },
         [](auto _) {
           assert(0 && "Unhandled input");
           return (llvm::Type *)nullptr;
@@ -695,6 +707,14 @@ auto FunctionSignatureBuilder::CreateFunction(
             ->string("air.arg_name")
             ->string("mtl_depth");
           return Type::getFloatTy(context);
+        },
+        [&](const OutputCoverageMask) {
+          md.string("air.sample_mask")
+            ->string("air.arg_type_name")
+            ->string("uint")
+            ->string("air.arg_name")
+            ->string("mtl_coverage_mask");
+          return (llvm::Type*)Type::getInt32Ty(context);
         },
         [](auto _) {
           assert(0 && "Unhandled output");

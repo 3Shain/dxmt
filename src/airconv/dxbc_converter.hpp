@@ -161,6 +161,11 @@ struct DstOperandOutputDepth {
   DstOperandCommon _;
 };
 
+struct DstOperandOutputCoverageMask {
+  static constexpr std::string_view debug_name = "omask";
+  DstOperandCommon _;
+};
+
 #pragma endregion
 
 #pragma region instructions
@@ -232,7 +237,7 @@ struct AtomicOperandTGSM {
 
 using DstOperand = std::variant<
   DstOperandNull, DstOperandSideEffect, DstOperandTemp, DstOperandIndexableTemp,
-  DstOperandOutput, DstOperandOutputDepth>;
+  DstOperandOutput, DstOperandOutputDepth, DstOperandOutputCoverageMask>;
 
 #pragma mark mov instructions
 namespace {

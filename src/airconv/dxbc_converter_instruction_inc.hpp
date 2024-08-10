@@ -194,8 +194,10 @@ auto readDstOperand(const microsoft::D3D10ShaderBinary::COperandBase &O
   case D3D11_SB_OPERAND_TYPE_OUTPUT_DEPTH_LESS_EQUAL: {
     return DstOperandOutputDepth{};
   }
-  case D3D11_SB_OPERAND_TYPE_OUTPUT_STENCIL_REF:
   case D3D10_SB_OPERAND_TYPE_OUTPUT_COVERAGE_MASK: {
+    return DstOperandOutputCoverageMask{};
+  }
+  case D3D11_SB_OPERAND_TYPE_OUTPUT_STENCIL_REF: {
     DXASSERT_DXBC(O.m_IndexDimension == D3D10_SB_OPERAND_INDEX_0D);
     // for (unsigned c = 0; c < DXBC::kWidth; c++) {
     //   if (!Mask.IsSet(c))
@@ -381,6 +383,12 @@ auto readSrcOperand(const microsoft::D3D10ShaderBinary::COperandBase &O
     return SrcOperandAttribute{
       ._ = readSrcOperandCommon(O),
       .attribute = shader::common::InputAttribute::ThreadIdInGroupFlatten
+    };
+  }
+  case D3D11_SB_OPERAND_TYPE_INPUT_COVERAGE_MASK: {
+    return SrcOperandAttribute {
+      ._ = readSrcOperandCommon(O),
+      .attribute = shader::common::InputAttribute::CoverageMask
     };
   }
   default:
