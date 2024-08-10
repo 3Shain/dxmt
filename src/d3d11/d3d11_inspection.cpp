@@ -87,7 +87,7 @@ MTLD3D11Inspection::MTLD3D11Inspection(MTL::Device *pDevice)
 
   m_d3d11Options1.ClearViewAlsoSupportsDepthOnlyFormats = TRUE;
   m_d3d11Options1.MapOnDefaultBuffers = TRUE;
-  m_d3d11Options1.MinMaxFiltering = TRUE;
+  m_d3d11Options1.MinMaxFiltering = FALSE;
   m_d3d11Options1.TiledResourcesTier = D3D11_TILED_RESOURCES_NOT_SUPPORTED;
 
   m_d3d11Options2.TiledResourcesTier = D3D11_TILED_RESOURCES_NOT_SUPPORTED;
