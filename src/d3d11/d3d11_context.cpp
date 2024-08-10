@@ -179,7 +179,9 @@ public:
     ((ID3D11Query *)pAsync)->GetDesc(&desc);
     switch (desc.Query) {
     case D3D11_QUERY_EVENT: {
-      return ((IMTLD3DEventQuery *)pAsync)->GetData(cmd_queue.CoherentSeqId());
+      BOOL null_data;
+      BOOL *data_ptr = pData ? (BOOL *)pData : &null_data;
+      return ((IMTLD3DEventQuery *)pAsync)->GetData(data_ptr, cmd_queue.CoherentSeqId());
     }
     case D3D11_QUERY_OCCLUSION: {
       uint64_t null_data;

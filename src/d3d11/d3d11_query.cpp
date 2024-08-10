@@ -20,12 +20,14 @@ class EventQuery : public MTLD3DQueryBase<IMTLD3DEventQuery> {
     should_be_signaled_at = current_seq_id;
   };
 
-  virtual HRESULT GetData(uint64_t coherent_seq_id) override {
-    if (state == QueryState::Signaled ||
+  virtual HRESULT GetData(BOOL* data, uint64_t coherent_seq_id) override {
+    if (state == QueryState::Issued ||
         should_be_signaled_at <= coherent_seq_id) {
       state = QueryState::Signaled;
+      *data = TRUE;
       return S_OK;
     }
+    *data = FALSE;
     return S_FALSE;
   };
 };
@@ -95,7 +97,12 @@ class OcculusionQuery : public MTLD3DQueryBase<IMTLD3DOcclusionQuery>,
       // simply ignore
       return false;
     }
-    if (occlusion_counter >= occlusion_counter_end) {
+    if (occlusion_counter == occlusion_counter_end) {
+      // this is possible if End happens immediately after Begin
+      state = QueryState::Signaled;
+      return true;
+    }
+    if (occlusion_counter > occlusion_counter_end) {
       D3D11_ASSERT(0 && "unreachable");
     }
     accumulated_value += value;

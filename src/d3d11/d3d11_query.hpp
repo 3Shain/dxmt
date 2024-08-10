@@ -17,7 +17,7 @@ DEFINE_COM_INTERFACE("a301e56d-d87e-4b69-8440-bd003e285904",
 
 DEFINE_COM_INTERFACE("81fe1837-05fa-4927-811f-3699f997cb9f", IMTLD3DEventQuery)
     : public ID3D11Query {
-  virtual HRESULT GetData(uint64_t coherent_seq_id) = 0;
+  virtual HRESULT GetData(BOOL* data, uint64_t coherent_seq_id) = 0;
   virtual void Issue(uint64_t current_seq_id) = 0;
 };
 

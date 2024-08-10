@@ -454,7 +454,7 @@ public:
       return S_OK;
     }
     default:
-      // ERR("CreateQuery: query type not implemented: ", pQueryDesc->Query);
+      ERR("CreateQuery: query type not implemented: ", pQueryDesc->Query);
       return E_NOTIMPL;
     }
   }
