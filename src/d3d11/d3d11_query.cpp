@@ -21,7 +21,7 @@ class EventQuery : public MTLD3DQueryBase<IMTLD3DEventQuery> {
   };
 
   virtual HRESULT GetData(BOOL* data, uint64_t coherent_seq_id) override {
-    if (state == QueryState::Issued ||
+    if (state == QueryState::Signaled ||
         should_be_signaled_at <= coherent_seq_id) {
       state = QueryState::Signaled;
       *data = TRUE;
