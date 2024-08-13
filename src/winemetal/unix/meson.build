@@ -5,7 +5,6 @@ winemetal_unix_src = [
 winemetal_unix_ld_args = [
   '-install_name', 
   '@rpath/winemetal.so',
-  join_paths(meson.source_root(), 'toolchains/wine/lib/wine/x86_64-unix/ntdll.so'),
   join_paths(meson.source_root(), 'toolchains/wine/lib/wine/x86_64-unix/winemac.so'),
   '-weak_framework', 'CoreFoundation', '-weak_framework', 'Metal', 
   '-framework', 'MetalFX',

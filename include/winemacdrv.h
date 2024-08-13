@@ -51,7 +51,6 @@ macdrv_view_create_metal_view(macdrv_view v, macdrv_metal_device d);
 extern macdrv_metal_layer SYSV_ABI
 macdrv_view_get_metal_layer(macdrv_metal_view v);
 extern void SYSV_ABI macdrv_view_release_metal_view(macdrv_metal_view v);
-extern macdrv_view SYSV_ABI macdrv_get_cocoa_view(HWND hwnd);
 extern macdrv_view SYSV_ABI macdrv_get_client_cocoa_view(HWND hwnd);
 extern struct macdrv_win_data *SYSV_ABI get_win_data(HWND hwnd);
 extern void SYSV_ABI release_win_data(struct macdrv_win_data *data);

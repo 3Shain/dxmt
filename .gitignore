@@ -16,3 +16,4 @@ ref.sh
 *.js
 *.test
 releases
+prefixes
