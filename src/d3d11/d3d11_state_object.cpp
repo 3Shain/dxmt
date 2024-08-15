@@ -579,7 +579,7 @@ private:
   Obj<MTL::DepthStencilState> state_depthstencil_disabled_;
 };
 
-HRESULT CreateDepthStencilState(ID3D11Device *pDevice,
+HRESULT CreateDepthStencilState(IMTLD3D11Device *pDevice,
                                 const D3D11_DEPTH_STENCIL_DESC *pDesc,
                                 ID3D11DepthStencilState **ppDepthStencilState) {
   InitReturnPtr(ppDepthStencilState);
@@ -588,10 +588,6 @@ HRESULT CreateDepthStencilState(ID3D11Device *pDevice,
 
   if (!ppDepthStencilState)
     return S_FALSE;
-
-  Com<IMTLD3D11Device> metal;
-  if (!(metal = com_cast<IMTLD3D11Device>(pDevice)))
-    return E_INVALIDARG;
 
   using SD = MTL::StencilDescriptor;
 
@@ -638,25 +634,25 @@ HRESULT CreateDepthStencilState(ID3D11Device *pDevice,
   }
 
   auto state_default =
-      transfer(metal->GetMTLDevice()->newDepthStencilState(dsd.ptr()));
+      transfer(pDevice->GetMTLDevice()->newDepthStencilState(dsd.ptr()));
 
   if (pDesc->StencilEnable) {
     dsd->setFrontFaceStencil(nullptr);
     dsd->setBackFaceStencil(nullptr);
     auto stencil_effective_disabled =
-        transfer(metal->GetMTLDevice()->newDepthStencilState(dsd.ptr()));
+        transfer(pDevice->GetMTLDevice()->newDepthStencilState(dsd.ptr()));
     if (pDesc->DepthEnable) {
       dsd->setDepthCompareFunction(MTL::CompareFunctionAlways);
       dsd->setDepthWriteEnabled(false);
       auto depthstencil_effective_disabled =
-          transfer(metal->GetMTLDevice()->newDepthStencilState(dsd.ptr()));
+          transfer(pDevice->GetMTLDevice()->newDepthStencilState(dsd.ptr()));
       *ppDepthStencilState = ref(new MTLD3D11DepthStencilState(
-          metal.ptr(), state_default, stencil_effective_disabled,
+          pDevice, state_default, stencil_effective_disabled,
           depthstencil_effective_disabled, *pDesc));
     } else {
       // stencil_effective_disabled has no depth either...
       *ppDepthStencilState = ref(new MTLD3D11DepthStencilState(
-          metal.ptr(), state_default, stencil_effective_disabled,
+          pDevice, state_default, stencil_effective_disabled,
           stencil_effective_disabled, *pDesc));
     }
   } else {
@@ -664,39 +660,35 @@ HRESULT CreateDepthStencilState(ID3D11Device *pDevice,
       dsd->setDepthCompareFunction(MTL::CompareFunctionAlways);
       dsd->setDepthWriteEnabled(false);
       auto depth_effective_disabled =
-          transfer(metal->GetMTLDevice()->newDepthStencilState(dsd.ptr()));
+          transfer(pDevice->GetMTLDevice()->newDepthStencilState(dsd.ptr()));
       *ppDepthStencilState = ref(new MTLD3D11DepthStencilState(
-          metal.ptr(), state_default, state_default, depth_effective_disabled,
+          pDevice, state_default, state_default, depth_effective_disabled,
           *pDesc));
     } else {
       *ppDepthStencilState = ref(new MTLD3D11DepthStencilState(
-          metal.ptr(), state_default, state_default, state_default, *pDesc));
+          pDevice, state_default, state_default, state_default, *pDesc));
     }
   }
   return S_OK;
 }
 
-HRESULT CreateRasterizerState(ID3D11Device *pDevice,
+HRESULT CreateRasterizerState(IMTLD3D11Device *pDevice,
                               const D3D11_RASTERIZER_DESC2 *pRasterizerDesc,
                               ID3D11RasterizerState2 **ppRasterizerState) {
   InitReturnPtr(ppRasterizerState);
 
   // TODO: validate
 
-  Com<IMTLD3D11Device> metal;
-  if (!(metal = com_cast<IMTLD3D11Device>(pDevice)))
-    return E_INVALIDARG;
-
   if (ppRasterizerState) {
     *ppRasterizerState =
-        ref(new MTLD3D11RasterizerState(metal.ptr(), pRasterizerDesc));
+        ref(new MTLD3D11RasterizerState(pDevice, pRasterizerDesc));
     return S_OK;
   } else {
     return S_FALSE;
   }
 }
 
-HRESULT CreateSamplerState(ID3D11Device *pDevice,
+HRESULT CreateSamplerState(IMTLD3D11Device *pDevice,
                            const D3D11_SAMPLER_DESC *pSamplerDesc,
                            ID3D11SamplerState **ppSamplerState) {
 
@@ -711,10 +703,6 @@ HRESULT CreateSamplerState(ID3D11Device *pDevice,
 
   if (!ppSamplerState)
     return S_FALSE;
-
-  Com<IMTLD3D11Device> metal;
-  if (!(metal = com_cast<IMTLD3D11Device>(pDevice)))
-    return E_INVALIDARG;
 
   auto mtl_sampler_desc = transfer(MTL::SamplerDescriptor::alloc()->init());
 
@@ -795,14 +783,14 @@ HRESULT CreateSamplerState(ID3D11Device *pDevice,
   mtl_sampler_desc->setSupportArgumentBuffers(true);
 
   auto mtl_sampler =
-      transfer(metal->GetMTLDevice()->newSamplerState(mtl_sampler_desc.ptr()));
+      transfer(pDevice->GetMTLDevice()->newSamplerState(mtl_sampler_desc.ptr()));
 
   *ppSamplerState =
-      ref(new MTLD3D11SamplerState(metal.ptr(), mtl_sampler.ptr(), desc));
+      ref(new MTLD3D11SamplerState(pDevice, mtl_sampler.ptr(), desc));
   return S_OK;
 }
 
-HRESULT CreateBlendState(ID3D11Device *pDevice,
+HRESULT CreateBlendState(IMTLD3D11Device *pDevice,
                          const D3D11_BLEND_DESC1 *pBlendStateDesc,
                          ID3D11BlendState1 **ppBlendState) {
   InitReturnPtr(ppBlendState);
@@ -810,12 +798,8 @@ HRESULT CreateBlendState(ID3D11Device *pDevice,
   // TODO: validate
   // if(pBlendStateDesc->AlphaToCoverageEnable)
 
-  Com<IMTLD3D11Device> metal;
-  if (!(metal = com_cast<IMTLD3D11Device>(pDevice)))
-    return E_INVALIDARG;
-
   if (ppBlendState) {
-    *ppBlendState = ref(new MTLD3D11BlendState(metal.ptr(), *pBlendStateDesc));
+    *ppBlendState = ref(new MTLD3D11BlendState(pDevice, *pBlendStateDesc));
     return S_OK;
   } else {
     return S_FALSE;
@@ -823,7 +807,7 @@ HRESULT CreateBlendState(ID3D11Device *pDevice,
 }
 
 Com<IMTLD3D11RasterizerState>
-CreateDefaultRasterizerState(ID3D11Device *pDevice) {
+CreateDefaultRasterizerState(IMTLD3D11Device *pDevice) {
   Com<IMTLD3D11RasterizerState> ret;
   D3D11_ASSERT(SUCCEEDED(CreateRasterizerState(
       pDevice, &kDefaultRasterizerDesc, (ID3D11RasterizerState2 **)&ret)));
@@ -831,14 +815,14 @@ CreateDefaultRasterizerState(ID3D11Device *pDevice) {
 };
 
 Com<IMTLD3D11DepthStencilState>
-CreateDefaultDepthStencilState(ID3D11Device *pDevice) {
+CreateDefaultDepthStencilState(IMTLD3D11Device *pDevice) {
   Com<IMTLD3D11DepthStencilState> ret;
   D3D11_ASSERT(SUCCEEDED(CreateDepthStencilState(
       pDevice, &kDefaultDepthStencilDesc, (ID3D11DepthStencilState **)&ret)));
   return ret;
 }
 
-Com<IMTLD3D11BlendState> CreateDefaultBlendState(ID3D11Device *pDevice) {
+Com<IMTLD3D11BlendState> CreateDefaultBlendState(IMTLD3D11Device *pDevice) {
   Com<IMTLD3D11BlendState> ret;
   D3D11_ASSERT(SUCCEEDED(CreateBlendState(pDevice, &kDefaultBlendDesc,
                                           (ID3D11BlendState1 **)&ret)));

@@ -36,8 +36,6 @@ public:
  + greater than they expect. DXVK sometimes requires
  * holding on to objects which the application wants
  * to delete.
-
- * ^3Shain: not sure DXMT will have the same behaviour
  */
 template <typename... Base> class ComObject : public Base... {
 

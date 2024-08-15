@@ -86,9 +86,6 @@ auto to_metal_topology(D3D11_PRIMITIVE_TOPOLOGY topo) {
   }
 }
 
-using MTLD3D11DeviceContextBase =
-    MTLD3D11DeviceChild<IMTLD3D11DeviceContext, IMTLDynamicBufferExchange>;
-
 class MTLD3D11DeviceContext : public MTLD3D11DeviceContextBase {
 public:
   HRESULT QueryInterface(REFIID riid, void **ppvObject) override {
@@ -1908,8 +1905,9 @@ public:
   };
 };
 
-Com<IMTLD3D11DeviceContext> CreateD3D11DeviceContext(IMTLD3D11Device *pDevice) {
-  return new MTLD3D11DeviceContext(pDevice);
+std::unique_ptr<MTLD3D11DeviceContextBase>
+InitializeImmediateContext(IMTLD3D11Device *pDevice) {
+  return std::make_unique<MTLD3D11DeviceContext>(pDevice);
 }
 
 } // namespace dxmt

@@ -69,9 +69,11 @@ public:
                  D3D_FEATURE_LEVEL FeatureLevel, UINT FeatureFlags)
       : m_container(container), adapter_(pAdapter),
         m_FeatureLevel(FeatureLevel), m_FeatureFlags(FeatureFlags),
-        m_features(container->GetMTLDevice()) {}
+        m_features(container->GetMTLDevice()) {
+    context_ = InitializeImmediateContext(this);
+  }
 
-  ~MTLD3D11Device() { context_ = nullptr; }
+  ~MTLD3D11Device() {}
 
   HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid,
                                            void **ppvObject) override {
@@ -764,15 +766,8 @@ public:
 
   void STDMETHODCALLTYPE
   GetImmediateContext2(ID3D11DeviceContext2 **ppImmediateContext) override {
-    if (!context_) {
-      /*
-      lazy construction by design
-      to solve an awkward com_cast on refcount=0 object
-      (generally shouldn't pass this to others in constructor)
-      */
-      context_ = CreateD3D11DeviceContext(this);
-    }
-    *ppImmediateContext = context_.ref();
+    static_cast<ID3D11DeviceContext2 *>(context_.get())
+        ->QueryInterface(IID_PPV_ARGS(ppImmediateContext));
   }
 
   HRESULT STDMETHODCALLTYPE
@@ -1029,7 +1024,7 @@ private:
   D3D_FEATURE_LEVEL m_FeatureLevel;
   UINT m_FeatureFlags;
   MTLD3D11Inspection m_features;
-  Com<IMTLD3D11DeviceContext> context_;
+  std::unique_ptr<MTLD3D11DeviceContextBase> context_;
   threadpool<threadpool_trait> pool_;
 
   std::unordered_map<MTL_GRAPHICS_PIPELINE_DESC,
