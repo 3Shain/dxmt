@@ -7,6 +7,7 @@
  *
  * See <https://github.com/doitsujin/dxvk/blob/master/LICENSE>
  */
+#pragma once
 
 #include <cstddef>
 

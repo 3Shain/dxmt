@@ -32,7 +32,6 @@ DEFINE_COM_INTERFACE("279a1d66-2fc1-460c-a0a7-a7a5f2b7a48f",
     : public ID3D11BlendState1 {
   virtual void SetupMetalPipelineDescriptor(MTL::RenderPipelineDescriptor *
                                             render_pipeline_descriptor) = 0;
-  virtual SIZE_T GetHash() = 0;
 };
 
 namespace std {

@@ -41,6 +41,10 @@ public:
         attributes_(attributes), layouts_(layouts), sign_mask_(sign_mask),
         input_slot_mask_(input_slot_mask) {}
 
+  ~MTLD3D11InputLayout() {
+    D3D11_ASSERT(0 && "unexpected destruction");
+  }
+
   HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid,
                                            void **ppvObject) final {
     if (ppvObject == nullptr)

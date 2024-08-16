@@ -304,25 +304,6 @@ public:
         desc_.AlphaToCoverageEnable);
   }
 
-  SIZE_T GetHash() {
-    HashState state;
-    state.add(desc_.AlphaToCoverageEnable);
-    state.add(desc_.IndependentBlendEnable);
-    for (auto x : desc_.RenderTarget) {
-      state.add(x.BlendEnable);
-      state.add(x.RenderTargetWriteMask);
-      state.add(x.LogicOpEnable);
-      state.add(x.LogicOpEnable ? x.LogicOp : 0);
-      state.add(x.BlendOp);
-      state.add(x.BlendOpAlpha);
-      state.add(x.SrcBlendAlpha);
-      state.add(x.DestBlendAlpha);
-      state.add(x.SrcBlend);
-      state.add(x.DestBlend);
-    }
-    return state;
-  };
-
 private:
   const D3D11_BLEND_DESC1 desc_;
 };

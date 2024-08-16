@@ -1439,6 +1439,7 @@ public:
     pipelineDesc.PixelShader = nullptr;
     pipelineDesc.InputLayout = state_.InputAssembler.InputLayout.ptr();
     pipelineDesc.NumColorAttachments = 0;
+    memset(pipelineDesc.ColorAttachmentFormats, 0, sizeof(pipelineDesc.ColorAttachmentFormats));
     pipelineDesc.BlendState = nullptr;
     pipelineDesc.DepthStencilFormat = MTL::PixelFormatInvalid;
     pipelineDesc.RasterizationEnabled = false;
@@ -1531,7 +1532,7 @@ public:
     pipelineDesc.PixelShader = ps.ptr();
     pipelineDesc.InputLayout = state_.InputAssembler.InputLayout.ptr();
     pipelineDesc.NumColorAttachments = state_.OutputMerger.NumRTVs;
-    for (unsigned i = 0; i < pipelineDesc.NumColorAttachments; i++) {
+    for (unsigned i = 0; i < ARRAYSIZE(state_.OutputMerger.RTVs); i++) {
       auto &rtv = state_.OutputMerger.RTVs[i];
       if (rtv) {
         pipelineDesc.ColorAttachmentFormats[i] =

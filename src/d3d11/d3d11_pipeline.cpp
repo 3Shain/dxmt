@@ -83,8 +83,8 @@ public:
       pBlendState->SetupMetalPipelineDescriptor(pipelineDescriptor);
     }
 
-    pInputLayout = nullptr;
-    pBlendState = nullptr;
+    // pInputLayout = nullptr;
+    // pBlendState = nullptr;
     // pVertexShader = nullptr;
     // pPixelShader = nullptr;
 

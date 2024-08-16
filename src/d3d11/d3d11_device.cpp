@@ -33,7 +33,8 @@ template <> struct hash<MTL_GRAPHICS_PIPELINE_DESC> {
     state.add((size_t)v.VertexShader); // FIXME: don't use pointer?
     state.add((size_t)v.PixelShader);  // FIXME: don't use pointer?
     state.add((size_t)v.InputLayout);  // FIXME: don't use pointer?
-    state.add(v.BlendState ? v.BlendState->GetHash() : 0);
+    /* IMTLD3D11BlendState pointer is safe to be used as hash input */
+    state.add((size_t)v.BlendState);
     state.add((size_t)v.DepthStencilFormat);
     state.add((size_t)v.NumColorAttachments);
     for (unsigned i = 0; i < std::size(v.ColorAttachmentFormats); i++) {
@@ -56,7 +57,8 @@ template <> struct equal_to<MTL_GRAPHICS_PIPELINE_DESC> {
            (x.VertexShader == y.VertexShader) &&
            (x.PixelShader == y.PixelShader) &&
            (x.InputLayout == y.InputLayout) &&
-           (x.DepthStencilFormat == y.DepthStencilFormat);
+           (x.DepthStencilFormat == y.DepthStencilFormat) &&
+           (x.RasterizationEnabled == y.RasterizationEnabled);
   }
 };
 } // namespace std

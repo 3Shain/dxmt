@@ -147,6 +147,10 @@ public:
     identity_data.next = compilation_args;
   }
 
+  ~AirconvShader() {
+    D3D11_ASSERT(0 && "unexpected destruction");
+  }
+
   void SubmitWork() { device_->SubmitThreadgroupWork(this, &work_state_); }
 
   HRESULT QueryInterface(REFIID riid, void **ppvObject) {
