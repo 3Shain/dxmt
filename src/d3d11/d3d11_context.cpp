@@ -1651,10 +1651,10 @@ public:
     if (pRasterizerState) {
       if (auto expected =
               com_cast<IMTLD3D11RasterizerState>(pRasterizerState)) {
-        auto &current_rs = state_.Rasterizer.RasterizerState
-                               ? state_.Rasterizer.RasterizerState
+        auto current_rs = state_.Rasterizer.RasterizerState
+                               ? state_.Rasterizer.RasterizerState.ptr()
                                : ctx.default_rasterizer_state;
-        if (current_rs == expected) {
+        if (current_rs == expected.ptr()) {
           return;
         }
         if (current_rs->IsScissorEnabled() != expected->IsScissorEnabled()) {
@@ -1702,9 +1702,10 @@ public:
       state_.Rasterizer.viewports[i] = pViewports[i];
     }
     ctx.dirty_state.set(ContextInternal::DirtyState::Viewport);
-    auto &current_rs = state_.Rasterizer.RasterizerState
-                           ? state_.Rasterizer.RasterizerState
-                           : ctx.default_rasterizer_state;
+    IMTLD3D11RasterizerState *current_rs =
+        state_.Rasterizer.RasterizerState
+            ? state_.Rasterizer.RasterizerState.ptr()
+            : ctx.default_rasterizer_state;
     if (!current_rs->IsScissorEnabled()) {
       ctx.dirty_state.set(ContextInternal::DirtyState::Scissors);
     }
@@ -1734,9 +1735,10 @@ public:
     for (unsigned i = 0; i < NumRects; i++) {
       state_.Rasterizer.scissor_rects[i] = pRects[i];
     }
-    auto &current_rs = state_.Rasterizer.RasterizerState
-                           ? state_.Rasterizer.RasterizerState
-                           : ctx.default_rasterizer_state;
+    IMTLD3D11RasterizerState *current_rs =
+        state_.Rasterizer.RasterizerState
+            ? state_.Rasterizer.RasterizerState.ptr()
+            : ctx.default_rasterizer_state;
     if (current_rs->IsScissorEnabled()) {
       ctx.dirty_state.set(ContextInternal::DirtyState::Scissors);
       // otherwise no need to update scissor because it's either already dirty

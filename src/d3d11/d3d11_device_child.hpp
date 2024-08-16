@@ -105,33 +105,6 @@ public:
   // }
 };
 
-template <typename Base>
-class MTLD3D11StateObject : public MTLD3D11DeviceObject<ComObject<Base>> {
-
-public:
-  MTLD3D11StateObject(IMTLD3D11Device *pDevice)
-      : MTLD3D11DeviceObject<ComObject<Base>>(pDevice) {}
-
-  // ULONG STDMETHODCALLTYPE AddRef() {
-  //   uint32_t refCount = this->m_refCount++;
-  //   // if (unlikely(!refCount))
-  //   //   this->GetParentInterface()->AddRef();
-
-  //   return refCount + 1;
-  // }
-
-  // ULONG STDMETHODCALLTYPE Release() {
-  //   uint32_t refCount = --this->m_refCount;
-  //   // if (unlikely(!refCount))
-  //   //   this->GetParentInterface()->Release();
-
-  //   return refCount;
-  // }
-
-  // private:
-  // std::atomic<uint32_t> m_refCount = {0u};
-};
-
 /**
 Object lifetime is maintained separately
 So `AddRef`/`Release` only maintains a refcount that makes

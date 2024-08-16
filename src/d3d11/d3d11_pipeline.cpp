@@ -129,7 +129,7 @@ private:
   Com<IMTLCompiledShader> pVertexShader;
   Com<IMTLCompiledShader> pPixelShader;
   Com<IMTLD3D11InputLayout> pInputLayout;
-  Com<IMTLD3D11BlendState> pBlendState;
+  IMTLD3D11BlendState* pBlendState;
   Obj<MTL::RenderPipelineState> state_;
   bool RasterizationEnabled;
 };

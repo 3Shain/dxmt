@@ -65,11 +65,12 @@ namespace dxmt {
 
 class MTLD3D11Device final : public IMTLD3D11Device {
 public:
-  MTLD3D11Device(IMTLDXGIDevice *container, IMTLDXGIAdatper *pAdapter,
+  MTLD3D11Device(MTLDXGIObject<IMTLDXGIDevice> *container, IMTLDXGIAdatper *pAdapter,
                  D3D_FEATURE_LEVEL FeatureLevel, UINT FeatureFlags)
       : m_container(container), adapter_(pAdapter),
         m_FeatureLevel(FeatureLevel), m_FeatureFlags(FeatureFlags),
-        m_features(container->GetMTLDevice()) {
+        m_features(container->GetMTLDevice()), sampler_states(this),
+        blend_states(this), rasterizer_states(this), depthstencil_states(this) {
     context_ = InitializeImmediateContext(this);
   }
 
@@ -83,6 +84,10 @@ public:
   ULONG STDMETHODCALLTYPE AddRef() override { return m_container->AddRef(); }
 
   ULONG STDMETHODCALLTYPE Release() override { return m_container->Release(); }
+
+  void AddRefPrivate() override { return m_container->AddRefPrivate(); }
+
+  void ReleasePrivate() override { return m_container->ReleasePrivate(); }
 
   HRESULT STDMETHODCALLTYPE
   CreateBuffer(const D3D11_BUFFER_DESC *pDesc,
@@ -401,7 +406,8 @@ public:
   HRESULT STDMETHODCALLTYPE CreateDepthStencilState(
       const D3D11_DEPTH_STENCIL_DESC *pDesc,
       ID3D11DepthStencilState **ppDepthStencilState) override {
-    return dxmt::CreateDepthStencilState(this, pDesc, ppDepthStencilState);
+    return depthstencil_states.CreateStateObject(
+        pDesc, (IMTLD3D11DepthStencilState **)ppDepthStencilState);
   }
 
   HRESULT STDMETHODCALLTYPE
@@ -429,7 +435,8 @@ public:
   HRESULT STDMETHODCALLTYPE
   CreateSamplerState(const D3D11_SAMPLER_DESC *pSamplerDesc,
                      ID3D11SamplerState **ppSamplerState) override {
-    return dxmt::CreateSamplerState(this, pSamplerDesc, ppSamplerState);
+    return sampler_states.CreateStateObject(
+        pSamplerDesc, (IMTLD3D11SamplerState **)ppSamplerState);
   }
 
   HRESULT STDMETHODCALLTYPE CreateQuery(const D3D11_QUERY_DESC *pQueryDesc,
@@ -491,8 +498,9 @@ public:
       *pFormatSupport = 0;
     }
 
-    if(Format == DXGI_FORMAT_UNKNOWN) {
-      *pFormatSupport = D3D11_FORMAT_SUPPORT_BUFFER | D3D11_FORMAT_SUPPORT_CPU_LOCKABLE;
+    if (Format == DXGI_FORMAT_UNKNOWN) {
+      *pFormatSupport =
+          D3D11_FORMAT_SUPPORT_BUFFER | D3D11_FORMAT_SUPPORT_CPU_LOCKABLE;
       return S_OK;
     }
 
@@ -613,7 +621,7 @@ public:
         return E_INVALIDARG;
       info->OutFormatSupport2 = 0;
 
-      if(info->InFormat == DXGI_FORMAT_UNKNOWN) {
+      if (info->InFormat == DXGI_FORMAT_UNKNOWN) {
         info->OutFormatSupport2 |=
             D3D11_FORMAT_SUPPORT2_UAV_ATOMIC_ADD |
             D3D11_FORMAT_SUPPORT2_UAV_ATOMIC_BITWISE_OPS |
@@ -711,7 +719,8 @@ public:
   HRESULT STDMETHODCALLTYPE
       CreateBlendState1(const D3D11_BLEND_DESC1 *pBlendStateDesc,
                         ID3D11BlendState1 **ppBlendState) override {
-    return dxmt::CreateBlendState(this, pBlendStateDesc, ppBlendState);
+    return blend_states.CreateStateObject(pBlendStateDesc,
+                                          (IMTLD3D11BlendState **)ppBlendState);
   }
 
   HRESULT STDMETHODCALLTYPE
@@ -879,8 +888,8 @@ public:
   HRESULT STDMETHODCALLTYPE
   CreateRasterizerState2(const D3D11_RASTERIZER_DESC2 *pRasterizerDesc,
                          ID3D11RasterizerState2 **ppRasterizerState) override {
-    return dxmt::CreateRasterizerState(this, pRasterizerDesc,
-                                       ppRasterizerState);
+    return rasterizer_states.CreateStateObject(
+        pRasterizerDesc, (IMTLD3D11RasterizerState **)ppRasterizerState);
   }
 
   HRESULT STDMETHODCALLTYPE CreateShaderResourceView1(
@@ -1019,12 +1028,11 @@ public:
   };
 
 private:
-  IMTLDXGIDevice *m_container;
+  MTLDXGIObject<IMTLDXGIDevice> *m_container;
   IMTLDXGIAdatper *adapter_;
   D3D_FEATURE_LEVEL m_FeatureLevel;
   UINT m_FeatureFlags;
   MTLD3D11Inspection m_features;
-  std::unique_ptr<MTLD3D11DeviceContextBase> context_;
   threadpool<threadpool_trait> pool_;
 
   std::unordered_map<MTL_GRAPHICS_PIPELINE_DESC,
@@ -1035,6 +1043,14 @@ private:
   std::unordered_map<IMTLCompiledShader *, Com<IMTLCompiledComputePipeline>>
       pipelines_cs_;
   dxmt::mutex mutex_cs_;
+
+  StateObjectCache<D3D11_SAMPLER_DESC, IMTLD3D11SamplerState> sampler_states;
+  StateObjectCache<D3D11_BLEND_DESC1, IMTLD3D11BlendState> blend_states;
+  StateObjectCache<D3D11_RASTERIZER_DESC2, IMTLD3D11RasterizerState> rasterizer_states;
+  StateObjectCache<D3D11_DEPTH_STENCIL_DESC, IMTLD3D11DepthStencilState> depthstencil_states;
+  
+  /** ensure destructor called first */
+  std::unique_ptr<MTLD3D11DeviceContextBase> context_;
 };
 
 /**
