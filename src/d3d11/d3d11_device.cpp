@@ -1053,6 +1053,12 @@ public:
         d3d11_device_(this, adapter, feature_level, feature_flags) {}
 
   ~MTLD3D11DXGIDevice() override {}
+
+  bool FinalRelase() override {
+    dxmt::thread([this](){ delete this; }).detach();
+    return true;
+  }
+
   HRESULT
   STDMETHODCALLTYPE
   QueryInterface(REFIID riid, void **ppvObject) override {
@@ -1207,6 +1213,7 @@ private:
 Com<IMTLDXGIDevice> CreateD3D11Device(IMTLDXGIAdatper *adapter,
                                       D3D_FEATURE_LEVEL feature_level,
                                       UINT feature_flags) {
-  return new MTLD3D11DXGIDevice(adapter, feature_level, feature_flags);
+  return Com<IMTLDXGIDevice>::transferFrom(
+      new MTLD3D11DXGIDevice(adapter, feature_level, feature_flags));
 };
 } // namespace dxmt

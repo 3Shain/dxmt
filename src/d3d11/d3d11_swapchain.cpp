@@ -472,8 +472,8 @@ HRESULT CreateSwapChain(IDXGIFactory1 *pFactory, IMTLDXGIDevice *pDevice,
   }
   InitReturnPtr(ppSwapChain);
   try {
-    *ppSwapChain = ref(
-        new MTLD3D11SwapChain(pFactory, pDevice, hWnd, pDesc, pFullscreenDesc));
+    *ppSwapChain =
+        new MTLD3D11SwapChain(pFactory, pDevice, hWnd, pDesc, pFullscreenDesc);
     return S_OK;
   } catch (MTLD3DError &err) {
     ERR(err.message());

@@ -1,3 +1,4 @@
+#include "com/com_pointer.hpp"
 #include "config/config.hpp"
 #include "dxgi1_2.h"
 #include "dxgi_interfaces.h"
@@ -290,8 +291,9 @@ private:
 extern "C" HRESULT __stdcall CreateDXGIFactory2(UINT Flags, REFIID riid,
                                                 void **ppFactory) {
   try {
-    Com<MTLDXGIFactory> factory = new MTLDXGIFactory(Flags);
+    MTLDXGIFactory* factory = new MTLDXGIFactory(Flags);
     HRESULT hr = factory->QueryInterface(riid, ppFactory);
+    factory->Release();
 
     if (FAILED(hr))
       return hr;

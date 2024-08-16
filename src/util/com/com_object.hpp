@@ -73,6 +73,51 @@ protected:
   std::atomic<uint32_t> m_refPrivate = {0ul};
 };
 
+template <typename... Base> class ComObjectWithInitialRef : public Base... {
+
+public:
+  virtual ~ComObjectWithInitialRef() {}
+
+  ULONG STDMETHODCALLTYPE AddRef() {
+    uint32_t refCount = m_refCount++;
+    if (unlikely(!refCount))
+      AddRefPrivate();
+    return refCount + 1;
+  }
+
+  ULONG STDMETHODCALLTYPE Release() {
+    uint32_t refCount = --m_refCount;
+    if (unlikely(!refCount))
+      ReleasePrivate();
+    return refCount;
+  }
+
+  void AddRefPrivate() { ++m_refPrivate; }
+
+  void ReleasePrivate() {
+    uint32_t refPrivate = --m_refPrivate;
+    if (unlikely(!refPrivate)) {
+      m_refPrivate += 0x80000000;
+      if(!FinalRelase())
+        delete this;
+    }
+  }
+
+  /**
+   * In certain case we would like to defer destruction,
+   * in case it's too late to do anything intersting
+   * in destructor
+   *
+   * \return true to override default behavior that
+   * will `delete this` immediately.
+   */
+  virtual bool FinalRelase() { return false; }
+
+protected:
+  std::atomic<uint32_t> m_refCount = {1ul};
+  std::atomic<uint32_t> m_refPrivate = {1ul};
+};
+
 /**
  * \brief Clamped, reference-counted COM object
  *
