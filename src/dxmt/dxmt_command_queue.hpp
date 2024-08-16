@@ -164,6 +164,7 @@ class CommandChunk {
     MTL::Buffer *current_index_buffer_ref{};
     uint32_t dsv_planar_flags = 0;
     bool skip_drawcall = false;
+    bool skip_dispatch = false;
 
     context_t(CommandChunk *chk, MTL::CommandBuffer *cmdbuf)
         : chk(chk), queue(chk->queue), cmdbuf(cmdbuf) {}

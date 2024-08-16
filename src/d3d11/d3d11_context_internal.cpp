@@ -901,6 +901,7 @@ public:
       chk->emit([](CommandChunk::context &ctx) {
         ctx.compute_encoder->endEncoding();
         ctx.compute_encoder = nullptr;
+        ctx.skip_dispatch = false;
       });
       break;
     case CommandBufferState::BlitEncoderActive:
@@ -1716,10 +1717,15 @@ public:
                                    shader_data.Reflection->ThreadgroupSize[2])](
             CommandChunk::context &ctx) {
           MTL_COMPILED_COMPUTE_PIPELINE ComputePipeline;
-          pso->GetPipeline(&ComputePipeline); // may block
-          ctx.compute_encoder->setComputePipelineState(
-              ComputePipeline.PipelineState);
-          ctx.cs_threadgroup_size = tg_size;
+          if (pso->IsReady()) {
+            pso->GetPipeline(&ComputePipeline); // may block
+            ctx.compute_encoder->setComputePipelineState(
+                ComputePipeline.PipelineState);
+            ctx.cs_threadgroup_size = tg_size;
+            ctx.skip_dispatch = false;
+          } else {
+            ctx.skip_dispatch = true;
+          }
         });
 
     cmdbuf_state = CommandBufferState::ComputePipelineReady;
@@ -2002,6 +2008,8 @@ public:
         cmdbuf_state == CommandBufferState::ComputePipelineReady) {
       CommandChunk *chk = cmd_queue.CurrentChunk();
       chk->emit([fn = std::forward<Fn>(fn)](CommandChunk::context &ctx) {
+        if(ctx.skip_dispatch)
+          return;
         std::invoke(fn, ctx.compute_encoder.ptr(), ctx.cs_threadgroup_size);
       });
     }
