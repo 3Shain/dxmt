@@ -891,6 +891,7 @@ public:
         ctx.render_encoder->endEncoding();
         ctx.render_encoder = nullptr;
         ctx.dsv_planar_flags = 0;
+        ctx.skip_drawcall = false;
       });
       occlusion_query_seq++;
       break;
@@ -1447,11 +1448,16 @@ public:
     device->CreateGraphicsPipeline(&pipelineDesc, &pipeline);
 
     chk->emit([pso = std::move(pipeline)](CommandChunk::context &ctx) {
-      MTL_COMPILED_GRAPHICS_PIPELINE GraphicsPipeline {};
-      pso->GetPipeline(&GraphicsPipeline); // may block
-      D3D11_ASSERT(GraphicsPipeline.PipelineState);
-      ctx.render_encoder->setRenderPipelineState(
-          GraphicsPipeline.PipelineState);
+      MTL_COMPILED_GRAPHICS_PIPELINE GraphicsPipeline{};
+      if (pso->IsReady()) {
+        pso->GetPipeline(&GraphicsPipeline); // may block
+        D3D11_ASSERT(GraphicsPipeline.PipelineState);
+        ctx.render_encoder->setRenderPipelineState(
+            GraphicsPipeline.PipelineState);
+        ctx.skip_drawcall = false;
+      } else {
+        ctx.skip_drawcall = true;
+      }
     });
 
     cmdbuf_state = CommandBufferState::RenderPipelineReady;
@@ -1552,11 +1558,16 @@ public:
     device->CreateGraphicsPipeline(&pipelineDesc, &pipeline);
 
     chk->emit([pso = std::move(pipeline)](CommandChunk::context &ctx) {
-      MTL_COMPILED_GRAPHICS_PIPELINE GraphicsPipeline {};
-      pso->GetPipeline(&GraphicsPipeline); // may block
-      D3D11_ASSERT(GraphicsPipeline.PipelineState);
-      ctx.render_encoder->setRenderPipelineState(
-          GraphicsPipeline.PipelineState);
+      MTL_COMPILED_GRAPHICS_PIPELINE GraphicsPipeline{};
+      if (pso->IsReady()) {
+        pso->GetPipeline(&GraphicsPipeline); // may block
+        D3D11_ASSERT(GraphicsPipeline.PipelineState);
+        ctx.render_encoder->setRenderPipelineState(
+            GraphicsPipeline.PipelineState);
+        ctx.skip_drawcall = false;
+      } else {
+        ctx.skip_drawcall = true;
+      }
     });
 
     cmdbuf_state = CommandBufferState::RenderPipelineReady;
@@ -1966,6 +1977,8 @@ public:
                  cmdbuf_state == CommandBufferState::RenderPipelineReady);
     CommandChunk *chk = cmd_queue.CurrentChunk();
     chk->emit([fn = std::forward<Fn>(fn)](CommandChunk::context &ctx) {
+      if (ctx.skip_drawcall)
+        return;
       std::invoke(fn, ctx.render_encoder.ptr());
     });
   };
@@ -1975,6 +1988,8 @@ public:
                  cmdbuf_state == CommandBufferState::RenderPipelineReady);
     CommandChunk *chk = cmd_queue.CurrentChunk();
     chk->emit([fn = std::forward<Fn>(fn)](CommandChunk::context &ctx) {
+      if (ctx.skip_drawcall)
+        return;
       std::invoke(fn, ctx);
     });
   };

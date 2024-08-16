@@ -163,6 +163,7 @@ class CommandChunk {
     // since it's guaranteed to be captured by closure
     MTL::Buffer *current_index_buffer_ref{};
     uint32_t dsv_planar_flags = 0;
+    bool skip_drawcall = false;
 
     context_t(CommandChunk *chk, MTL::CommandBuffer *cmdbuf)
         : chk(chk), queue(chk->queue), cmdbuf(cmdbuf) {}
