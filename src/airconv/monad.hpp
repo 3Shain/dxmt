@@ -15,6 +15,10 @@ struct is_specialization : std::false_type {};
 template <template <typename...> class Ref, typename... Args>
 struct is_specialization<Ref<Args...>, Ref> : std::true_type {};
 
+template <typename Src, typename Dst> struct environment_cast {
+  Dst cast(Src &src);
+};
+
 template <typename Env, typename V> class ReaderIO {
 
   class BaseFunction {
@@ -44,6 +48,14 @@ public:
     if (factory != nullptr) {
       delete factory;
     }
+  }
+
+  template <typename Env2> ReaderIO(ReaderIO<Env2, V> &&castable) {
+    auto f = [castable = std::move(castable)](Env e) mutable {
+      struct environment_cast<Env, Env2> cast;
+      return castable.build(cast.cast(e));
+    };
+    factory = new ErasureFunction<decltype(f)>(std::move(f));
   }
 
   ReaderIO(ReaderIO &&other) {
@@ -107,6 +119,13 @@ public:
     trivial_value_awaiter<S> yield_value(ReaderIO<Env, S> &&s) {
       assert(to_be_filled);
       return {s.build(*to_be_filled)};
+    };
+
+    template <typename Env2, std::move_constructible S>
+    trivial_value_awaiter<S> yield_value(ReaderIO<Env2, S> &&s) {
+      assert(to_be_filled);
+      struct environment_cast<Env, Env2> cast;
+      return {s.build(cast.cast(*to_be_filled))};
     };
 
     void return_value(V value) {

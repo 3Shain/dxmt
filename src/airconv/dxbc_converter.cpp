@@ -27,7 +27,7 @@
 
 /* separated implementation details */
 #include "dxbc_converter_inc.hpp"
-#include "dxbc_converter_instruction_inc.hpp"
+#include "dxbc_instructions.hpp"
 #include "metallib_writer.hpp"
 #include "shader_common.hpp"
 
@@ -116,8 +116,7 @@ llvm::Error convertDXBC(
       debug_id = ((SM50_SHADER_DEBUG_IDENTITY_DATA *)arg)->id;
       break;
     case SM50_SHADER_PSO_SAMPLE_MASK:
-      pso_sample_mask = 
-        ((SM50_SHADER_PSO_SAMPLE_MASK_DATA *)arg)->sample_mask;
+      pso_sample_mask = ((SM50_SHADER_PSO_SAMPLE_MASK_DATA *)arg)->sample_mask;
       break;
     }
     arg = (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)arg->next;
@@ -186,14 +185,18 @@ llvm::Error convertDXBC(
       return nullptr;
     });
   }
-  if(pso_sample_mask != 0xffffffff) {
-    auto assigned_index = func_signature.DefineOutput(air::OutputCoverageMask {});
+  if (pso_sample_mask != 0xffffffff) {
+    auto assigned_index =
+      func_signature.DefineOutput(air::OutputCoverageMask{});
     epilogue >> [=](pvalue value) -> IRValue {
       return make_irvalue([=](struct context ctx) {
-      auto &builder = ctx.builder;
-      if(ctx.resource.coverage_mask_reg) return value;
-      return builder.CreateInsertValue(value, builder.getInt32(ctx.pso_sample_mask), {assigned_index});
-    });
+        auto &builder = ctx.builder;
+        if (ctx.resource.coverage_mask_reg)
+          return value;
+        return builder.CreateInsertValue(
+          value, builder.getInt32(ctx.pso_sample_mask), {assigned_index}
+        );
+      });
     };
   }
 
@@ -431,7 +434,7 @@ llvm::Error convertDXBC(
       ptr_int_vec, ptr_float_vec, (uint32_t)channel_count
     };
   }
-  if(shader_info->use_cmp_exch) {
+  if (shader_info->use_cmp_exch) {
     resource_map.cmp_exch_temp = builder.CreateAlloca(types._int);
   }
 
@@ -1223,7 +1226,9 @@ int SM50Initialize(
           break;
         }
         prelogue_.push_back([=](IREffect &prelogue) {
-          prelogue << init_input_reg(assigned_index, reg, mask, siv == D3D10_SB_NAME_POSITION);
+          prelogue << init_input_reg(
+            assigned_index, reg, mask, siv == D3D10_SB_NAME_POSITION
+          );
         });
         max_input_register = std::max(reg + 1, max_input_register);
         break;
@@ -1245,8 +1250,7 @@ int SM50Initialize(
           assigned_index = func_signature.DefineInput(InputSampleIndex{});
           break;
         case microsoft::D3D10_SB_NAME_PRIMITIVE_ID:
-          assigned_index = 
-            func_signature.DefineInput(InputPrimitiveID{});
+          assigned_index = func_signature.DefineInput(InputPrimitiveID{});
           break;
         default:
           assert(0 && "Unexpected/unhandled input system value");
@@ -1356,7 +1360,7 @@ int SM50Initialize(
           });
           break;
         }
-        case D3D11_SB_OPERAND_TYPE_OUTPUT_STENCIL_REF:  {
+        case D3D11_SB_OPERAND_TYPE_OUTPUT_STENCIL_REF: {
           assert(0 && "todo");
           break;
         }
@@ -1372,20 +1376,21 @@ int SM50Initialize(
               return {};
             });
           });
-          auto assigned_index = func_signature.DefineOutput(OutputCoverageMask {});
+          auto assigned_index =
+            func_signature.DefineOutput(OutputCoverageMask{});
           epilogue_.push_back([=](IRValue &epilogue) {
             epilogue >> [=](pvalue v) {
               return make_irvalue([=](struct context ctx) {
                 auto odepth = ctx.builder.CreateLoad(
-                    ctx.types._int,
-                    ctx.builder.CreateConstInBoundsGEP1_32(
-                      ctx.types._int, ctx.resource.coverage_mask_reg, 0
-                    )
-                  );
+                  ctx.types._int,
+                  ctx.builder.CreateConstInBoundsGEP1_32(
+                    ctx.types._int, ctx.resource.coverage_mask_reg, 0
+                  )
+                );
                 return ctx.builder.CreateInsertValue(
                   v,
-                  ctx.pso_sample_mask != 0xffffffff ? 
-                    ctx.builder.CreateAnd(odepth, ctx.pso_sample_mask)
+                  ctx.pso_sample_mask != 0xffffffff
+                    ? ctx.builder.CreateAnd(odepth, ctx.pso_sample_mask)
                     : odepth,
                   {assigned_index}
                 );
@@ -1408,18 +1413,15 @@ int SM50Initialize(
               .index = reg,
               .type = to_msl_type(sig.componentType()),
             });
-            epilogue_.push_back([=](IRValue &epilogue) {
-              epilogue >> pop_output_reg(reg, mask, assigned_index);
-            });
           } else {
             assigned_index = func_signature.DefineOutput(OutputVertex{
               .user = sig.fullSemanticString(),
               .type = to_msl_type(sig.componentType()),
             });
-            epilogue_.push_back([=](IRValue &epilogue) {
-              epilogue >> pop_output_reg(reg, mask, assigned_index);
-            });
           }
+          epilogue_.push_back([=](IRValue &epilogue) {
+            epilogue >> pop_output_reg(reg, mask, assigned_index);
+          });
           max_output_register = std::max(reg + 1, max_output_register);
           break;
         }
@@ -1464,7 +1466,9 @@ int SM50Initialize(
 #pragma endregion
       default: {
         // insert instruction into BasicBlock
-        ctx->instructions.push_back(readInstruction(Inst, *shader_info));
+        ctx->instructions.push_back(
+          dxmt::dxbc::readInstruction(Inst, *shader_info)
+        );
         break;
       }
       }
