@@ -169,9 +169,8 @@ public:
                                                     &native_view_))) {
       throw MTLD3DError("Failed to create CAMetalLayer");
     }
-    Com<IMTLDXGIDevice> dxgiDevice = com_cast<IMTLDXGIDevice>(pDevice);
     Com<IMTLDXGIAdatper> adapter;
-    if (FAILED(dxgiDevice->GetParent(IID_PPV_ARGS(&adapter)))) {
+    if (FAILED(layer_factory->GetParent(IID_PPV_ARGS(&adapter)))) {
       throw MTLD3DError("Unknown DXGIAdapter");
     }
     MTL_FORMAT_DESC metal_format;

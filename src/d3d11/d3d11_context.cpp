@@ -86,9 +86,6 @@ auto to_metal_topology(D3D11_PRIMITIVE_TOPOLOGY topo) {
   }
 }
 
-using MTLD3D11DeviceContextBase =
-    MTLD3D11DeviceChild<IMTLD3D11DeviceContext, IMTLDynamicBufferExchange>;
-
 class MTLD3D11DeviceContext : public MTLD3D11DeviceContextBase {
 public:
   HRESULT QueryInterface(REFIID riid, void **ppvObject) override {
@@ -1591,8 +1588,8 @@ public:
                        const FLOAT BlendFactor[4], UINT SampleMask) override {
     bool should_invalidate_pipeline = false;
     if (auto expected = com_cast<IMTLD3D11BlendState>(pBlendState)) {
-      if (expected.ptr() != state_.OutputMerger.BlendState.ptr()) {
-        state_.OutputMerger.BlendState = std::move(expected);
+      if (expected.ptr() != state_.OutputMerger.BlendState) {
+        state_.OutputMerger.BlendState = expected.ptr();
         should_invalidate_pipeline = true;
       }
       if (BlendFactor) {
@@ -1616,7 +1613,7 @@ public:
   void OMGetBlendState(ID3D11BlendState **ppBlendState, FLOAT BlendFactor[4],
                        UINT *pSampleMask) override {
     if (ppBlendState) {
-      *ppBlendState = state_.OutputMerger.BlendState.ref();
+      state_.OutputMerger.BlendState->QueryInterface(IID_PPV_ARGS(ppBlendState));
     }
     if (BlendFactor) {
       memcpy(BlendFactor, state_.OutputMerger.BlendFactor, sizeof(float[4]));
@@ -1630,7 +1627,7 @@ public:
                               UINT StencilRef) override {
     if (auto expected =
             com_cast<IMTLD3D11DepthStencilState>(pDepthStencilState)) {
-      state_.OutputMerger.DepthStencilState = std::move(expected);
+      state_.OutputMerger.DepthStencilState = expected.ptr();
       state_.OutputMerger.StencilRef = StencilRef;
       ctx.dirty_state.set(ContextInternal::DirtyState::DepthStencilState);
     }
@@ -1639,7 +1636,8 @@ public:
   void OMGetDepthStencilState(ID3D11DepthStencilState **ppDepthStencilState,
                               UINT *pStencilRef) override {
     if (ppDepthStencilState) {
-      *ppDepthStencilState = state_.OutputMerger.DepthStencilState.ref();
+      state_.OutputMerger.DepthStencilState->QueryInterface(
+          IID_PPV_ARGS(ppDepthStencilState));
     }
     if (pStencilRef) {
       *pStencilRef = state_.OutputMerger.StencilRef;
@@ -1654,16 +1652,16 @@ public:
     if (pRasterizerState) {
       if (auto expected =
               com_cast<IMTLD3D11RasterizerState>(pRasterizerState)) {
-        auto &current_rs = state_.Rasterizer.RasterizerState
+        auto current_rs = state_.Rasterizer.RasterizerState
                                ? state_.Rasterizer.RasterizerState
                                : ctx.default_rasterizer_state;
-        if (current_rs == expected) {
+        if (current_rs == expected.ptr()) {
           return;
         }
         if (current_rs->IsScissorEnabled() != expected->IsScissorEnabled()) {
           ctx.dirty_state.set(ContextInternal::DirtyState::Scissors);
         }
-        state_.Rasterizer.RasterizerState = expected;
+        state_.Rasterizer.RasterizerState = expected.ptr();
         ctx.dirty_state.set(ContextInternal::DirtyState::RasterizerState);
       } else {
         ERR("RSSetState: invalid ID3D11RasterizerState object.");
@@ -1705,9 +1703,9 @@ public:
       state_.Rasterizer.viewports[i] = pViewports[i];
     }
     ctx.dirty_state.set(ContextInternal::DirtyState::Viewport);
-    auto &current_rs = state_.Rasterizer.RasterizerState
-                           ? state_.Rasterizer.RasterizerState
-                           : ctx.default_rasterizer_state;
+    IMTLD3D11RasterizerState *current_rs =
+        state_.Rasterizer.RasterizerState ? state_.Rasterizer.RasterizerState
+                                          : ctx.default_rasterizer_state;
     if (!current_rs->IsScissorEnabled()) {
       ctx.dirty_state.set(ContextInternal::DirtyState::Scissors);
     }
@@ -1737,9 +1735,10 @@ public:
     for (unsigned i = 0; i < NumRects; i++) {
       state_.Rasterizer.scissor_rects[i] = pRects[i];
     }
-    auto &current_rs = state_.Rasterizer.RasterizerState
-                           ? state_.Rasterizer.RasterizerState
-                           : ctx.default_rasterizer_state;
+    IMTLD3D11RasterizerState *current_rs =
+        state_.Rasterizer.RasterizerState
+            ? state_.Rasterizer.RasterizerState
+            : ctx.default_rasterizer_state;
     if (current_rs->IsScissorEnabled()) {
       ctx.dirty_state.set(ContextInternal::DirtyState::Scissors);
       // otherwise no need to update scissor because it's either already dirty
@@ -1908,8 +1907,9 @@ public:
   };
 };
 
-Com<IMTLD3D11DeviceContext> CreateD3D11DeviceContext(IMTLD3D11Device *pDevice) {
-  return new MTLD3D11DeviceContext(pDevice);
+std::unique_ptr<MTLD3D11DeviceContextBase>
+InitializeImmediateContext(IMTLD3D11Device *pDevice) {
+  return std::make_unique<MTLD3D11DeviceContext>(pDevice);
 }
 
 } // namespace dxmt

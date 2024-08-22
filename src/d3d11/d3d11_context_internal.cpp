@@ -59,9 +59,18 @@ public:
   ContextInternal(IMTLD3D11Device *pDevice, D3D11ContextState &state,
                   CommandQueue &cmd_queue)
       : device(pDevice), state_(state), cmd_queue(cmd_queue) {
-    default_rasterizer_state = CreateDefaultRasterizerState(pDevice);
-    default_depth_stencil_state = CreateDefaultDepthStencilState(pDevice);
-    default_blend_state = CreateDefaultBlendState(pDevice);
+    pDevice->CreateRasterizerState2(
+        &kDefaultRasterizerDesc,
+        (ID3D11RasterizerState2 **)&default_rasterizer_state);
+    pDevice->CreateBlendState1(&kDefaultBlendDesc,
+                               (ID3D11BlendState1 **)&default_blend_state);
+    pDevice->CreateDepthStencilState(
+        &kDefaultDepthStencilDesc,
+        (ID3D11DepthStencilState **)&default_depth_stencil_state);
+    /* we don't need the extra reference as they are always valid */
+    default_rasterizer_state->Release();
+    default_blend_state->Release();
+    default_depth_stencil_state->Release();
   }
 
 #pragma region ShaderCommon
@@ -261,7 +270,7 @@ public:
         if (!replaced)
           continue;
         if (auto expected = com_cast<IMTLD3D11SamplerState>(pSampler)) {
-          entry.Sampler = std::move(expected);
+          entry.Sampler = expected.ptr();
         } else {
           D3D11_ASSERT(0 && "wtf");
         }
@@ -279,8 +288,8 @@ public:
     if (ppSamplers) {
       for (unsigned Slot = StartSlot; Slot < StartSlot + NumSamplers; Slot++) {
         if (ShaderStage.Samplers.test_bound(Slot)) {
-          ppSamplers[Slot - StartSlot] =
-              ShaderStage.Samplers[Slot].Sampler.ref();
+          ShaderStage.Samplers[Slot].Sampler->QueryInterface(
+              IID_PPV_ARGS(&ppSamplers[Slot - StartSlot]));
         } else {
           ppSamplers[Slot - StartSlot] = nullptr;
         }
@@ -1430,6 +1439,7 @@ public:
     pipelineDesc.PixelShader = nullptr;
     pipelineDesc.InputLayout = state_.InputAssembler.InputLayout.ptr();
     pipelineDesc.NumColorAttachments = 0;
+    memset(pipelineDesc.ColorAttachmentFormats, 0, sizeof(pipelineDesc.ColorAttachmentFormats));
     pipelineDesc.BlendState = nullptr;
     pipelineDesc.DepthStencilFormat = MTL::PixelFormatInvalid;
     pipelineDesc.RasterizationEnabled = false;
@@ -1522,7 +1532,7 @@ public:
     pipelineDesc.PixelShader = ps.ptr();
     pipelineDesc.InputLayout = state_.InputAssembler.InputLayout.ptr();
     pipelineDesc.NumColorAttachments = state_.OutputMerger.NumRTVs;
-    for (unsigned i = 0; i < pipelineDesc.NumColorAttachments; i++) {
+    for (unsigned i = 0; i < ARRAYSIZE(state_.OutputMerger.RTVs); i++) {
       auto &rtv = state_.OutputMerger.RTVs[i];
       if (rtv) {
         pipelineDesc.ColorAttachmentFormats[i] =
@@ -1532,8 +1542,8 @@ public:
       }
     }
     pipelineDesc.BlendState = state_.OutputMerger.BlendState
-                                  ? state_.OutputMerger.BlendState.ptr()
-                                  : default_blend_state.ptr();
+                                  ? state_.OutputMerger.BlendState
+                                  : default_blend_state;
     pipelineDesc.DepthStencilFormat =
         state_.OutputMerger.DSV ? state_.OutputMerger.DSV->GetPixelFormat()
                                 : MTL::PixelFormatInvalid;
@@ -1561,11 +1571,11 @@ public:
     UpdateVertexBuffer();
     UpdateSOTargets();
     if (dirty_state.any(DirtyState::DepthStencilState)) {
-      auto state = state_.OutputMerger.DepthStencilState
-                       ? state_.OutputMerger.DepthStencilState
-                       : default_depth_stencil_state;
-      chk->emit([state = std::move(state),
-                 stencil_ref = state_.OutputMerger.StencilRef](
+      IMTLD3D11DepthStencilState *state =
+          state_.OutputMerger.DepthStencilState
+              ? state_.OutputMerger.DepthStencilState
+              : default_depth_stencil_state;
+      chk->emit([state, stencil_ref = state_.OutputMerger.StencilRef](
                     CommandChunk::context &ctx) {
         auto encoder = ctx.render_encoder;
         encoder->setDepthStencilState(
@@ -1574,10 +1584,11 @@ public:
       });
     }
     if (dirty_state.any(DirtyState::RasterizerState)) {
-      auto state = state_.Rasterizer.RasterizerState
-                       ? state_.Rasterizer.RasterizerState
-                       : default_rasterizer_state;
-      chk->emit([state = std::move(state)](CommandChunk::context &ctx) {
+      IMTLD3D11RasterizerState *state =
+          state_.Rasterizer.RasterizerState
+              ? state_.Rasterizer.RasterizerState
+              : default_rasterizer_state;
+      chk->emit([state](CommandChunk::context &ctx) {
         auto &encoder = ctx.render_encoder;
         state->SetupRasterizerState(encoder);
       });
@@ -1594,9 +1605,10 @@ public:
         encoder->setStencilReferenceValue(stencil_ref);
       });
     }
-    auto &current_rs = state_.Rasterizer.RasterizerState
-                           ? state_.Rasterizer.RasterizerState
-                           : default_rasterizer_state;
+    IMTLD3D11RasterizerState *current_rs =
+        state_.Rasterizer.RasterizerState
+            ? state_.Rasterizer.RasterizerState
+            : default_rasterizer_state;
     bool allow_scissor =
         current_rs->IsScissorEnabled() &&
         state_.Rasterizer.NumViewports == state_.Rasterizer.NumScissorRects;
@@ -2076,6 +2088,10 @@ public:
   void Commit() {
     promote_flush = false;
     D3D11_ASSERT(cmdbuf_state == CommandBufferState::Idle);
+    /** FIXME: it might be unnecessary? */
+    CommandChunk *chk = cmd_queue.CurrentChunk();
+    chk->emit([device = Com<IMTLD3D11Device, false>(device)](
+                  CommandChunk::context &ctx) {});
     cmd_queue.CommitCurrentChunk(occlusion_query_seq_chunk_start,
                                  ++occlusion_query_seq);
     occlusion_query_seq_chunk_start = occlusion_query_seq;
@@ -2121,14 +2137,10 @@ public:
   };
 
 #pragma region Default State
-  /**
-  Don't bind them to state or provide to API consumer
-  (use COM just in case it's referenced by encoding thread)
-  ...tricky
-  */
-  Com<IMTLD3D11RasterizerState> default_rasterizer_state;
-  Com<IMTLD3D11DepthStencilState> default_depth_stencil_state;
-  Com<IMTLD3D11BlendState> default_blend_state;
+
+  IMTLD3D11RasterizerState* default_rasterizer_state;
+  IMTLD3D11DepthStencilState* default_depth_stencil_state;
+  IMTLD3D11BlendState* default_blend_state;
 
 #pragma endregion
 

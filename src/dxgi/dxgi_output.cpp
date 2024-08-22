@@ -2,6 +2,7 @@
 #include <numeric>
 
 #include "com/com_guid.hpp"
+#include "com/com_pointer.hpp"
 #include "dxgi_interfaces.h"
 #include "dxgi_object.hpp"
 #include "log/log.hpp"
@@ -579,7 +580,7 @@ private:
 };
 
 Com<IDXGIOutput> CreateOutput(IMTLDXGIAdatper *pAadapter, HMONITOR monitor) {
-  return new MTLDXGIOutput(pAadapter, monitor);
+  return Com<IDXGIOutput>::transfer(new MTLDXGIOutput(pAadapter, monitor));
 };
 
 } // namespace dxmt

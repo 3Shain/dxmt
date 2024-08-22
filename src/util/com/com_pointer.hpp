@@ -166,6 +166,12 @@ public:
     return ret;
   }
 
+  static Com<T> transfer(T *ptr) {
+    Com<T, Public> ret(nullptr);
+    ret.m_ptr = ptr;
+    return ret;
+  };
+
 private:
   T *m_ptr = nullptr;
 

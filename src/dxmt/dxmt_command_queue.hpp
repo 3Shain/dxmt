@@ -14,8 +14,7 @@
 #include "dxmt_ring_bump_allocator.hpp"
 #include "log/log.hpp"
 #include "objc_pointer.hpp"
-// #include "thread.hpp"
-#include <thread>
+#include "thread.hpp"
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
@@ -317,12 +316,8 @@ private:
   uint64_t encoder_seq = 1;
   uint64_t present_seq = 0;
 
-  /**
-  FIXME: dxmt::thread cause access page fault when
-  program shutdown. recheck this later
-  */
-  std::thread encodeThread;
-  std::thread finishThread;
+  dxmt::thread encodeThread;
+  dxmt::thread finishThread;
   Obj<MTL::CommandQueue> commandQueue;
 
   friend class CommandChunk;

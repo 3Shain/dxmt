@@ -24,6 +24,7 @@
 #include "dxgi_object.hpp"
 #include <iterator>
 #include <mutex>
+#include <thread>
 #include <unordered_map>
 
 namespace std {
@@ -33,7 +34,8 @@ template <> struct hash<MTL_GRAPHICS_PIPELINE_DESC> {
     state.add((size_t)v.VertexShader); // FIXME: don't use pointer?
     state.add((size_t)v.PixelShader);  // FIXME: don't use pointer?
     state.add((size_t)v.InputLayout);  // FIXME: don't use pointer?
-    state.add(v.BlendState ? v.BlendState->GetHash() : 0);
+    /* IMTLD3D11BlendState pointer is safe to be used as hash input */
+    state.add((size_t)v.BlendState);
     state.add((size_t)v.DepthStencilFormat);
     state.add((size_t)v.NumColorAttachments);
     for (unsigned i = 0; i < std::size(v.ColorAttachmentFormats); i++) {
@@ -56,7 +58,8 @@ template <> struct equal_to<MTL_GRAPHICS_PIPELINE_DESC> {
            (x.VertexShader == y.VertexShader) &&
            (x.PixelShader == y.PixelShader) &&
            (x.InputLayout == y.InputLayout) &&
-           (x.DepthStencilFormat == y.DepthStencilFormat);
+           (x.DepthStencilFormat == y.DepthStencilFormat) &&
+           (x.RasterizationEnabled == y.RasterizationEnabled);
   }
 };
 } // namespace std
@@ -65,13 +68,17 @@ namespace dxmt {
 
 class MTLD3D11Device final : public IMTLD3D11Device {
 public:
-  MTLD3D11Device(IMTLDXGIDevice *container, IMTLDXGIAdatper *pAdapter,
-                 D3D_FEATURE_LEVEL FeatureLevel, UINT FeatureFlags)
+  MTLD3D11Device(MTLDXGIObject<IMTLDXGIDevice> *container,
+                 IMTLDXGIAdatper *pAdapter, D3D_FEATURE_LEVEL FeatureLevel,
+                 UINT FeatureFlags)
       : m_container(container), adapter_(pAdapter),
         m_FeatureLevel(FeatureLevel), m_FeatureFlags(FeatureFlags),
-        m_features(container->GetMTLDevice()) {}
+        m_features(container->GetMTLDevice()), sampler_states(this),
+        blend_states(this), rasterizer_states(this), depthstencil_states(this) {
+    context_ = InitializeImmediateContext(this);
+  }
 
-  ~MTLD3D11Device() { context_ = nullptr; }
+  ~MTLD3D11Device() {}
 
   HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid,
                                            void **ppvObject) override {
@@ -81,6 +88,10 @@ public:
   ULONG STDMETHODCALLTYPE AddRef() override { return m_container->AddRef(); }
 
   ULONG STDMETHODCALLTYPE Release() override { return m_container->Release(); }
+
+  void AddRefPrivate() override { return m_container->AddRefPrivate(); }
+
+  void ReleasePrivate() override { return m_container->ReleasePrivate(); }
 
   HRESULT STDMETHODCALLTYPE
   CreateBuffer(const D3D11_BUFFER_DESC *pDesc,
@@ -399,7 +410,8 @@ public:
   HRESULT STDMETHODCALLTYPE CreateDepthStencilState(
       const D3D11_DEPTH_STENCIL_DESC *pDesc,
       ID3D11DepthStencilState **ppDepthStencilState) override {
-    return dxmt::CreateDepthStencilState(this, pDesc, ppDepthStencilState);
+    return depthstencil_states.CreateStateObject(
+        pDesc, (IMTLD3D11DepthStencilState **)ppDepthStencilState);
   }
 
   HRESULT STDMETHODCALLTYPE
@@ -427,7 +439,8 @@ public:
   HRESULT STDMETHODCALLTYPE
   CreateSamplerState(const D3D11_SAMPLER_DESC *pSamplerDesc,
                      ID3D11SamplerState **ppSamplerState) override {
-    return dxmt::CreateSamplerState(this, pSamplerDesc, ppSamplerState);
+    return sampler_states.CreateStateObject(
+        pSamplerDesc, (IMTLD3D11SamplerState **)ppSamplerState);
   }
 
   HRESULT STDMETHODCALLTYPE CreateQuery(const D3D11_QUERY_DESC *pQueryDesc,
@@ -489,8 +502,9 @@ public:
       *pFormatSupport = 0;
     }
 
-    if(Format == DXGI_FORMAT_UNKNOWN) {
-      *pFormatSupport = D3D11_FORMAT_SUPPORT_BUFFER | D3D11_FORMAT_SUPPORT_CPU_LOCKABLE;
+    if (Format == DXGI_FORMAT_UNKNOWN) {
+      *pFormatSupport =
+          D3D11_FORMAT_SUPPORT_BUFFER | D3D11_FORMAT_SUPPORT_CPU_LOCKABLE;
       return S_OK;
     }
 
@@ -611,7 +625,7 @@ public:
         return E_INVALIDARG;
       info->OutFormatSupport2 = 0;
 
-      if(info->InFormat == DXGI_FORMAT_UNKNOWN) {
+      if (info->InFormat == DXGI_FORMAT_UNKNOWN) {
         info->OutFormatSupport2 |=
             D3D11_FORMAT_SUPPORT2_UAV_ATOMIC_ADD |
             D3D11_FORMAT_SUPPORT2_UAV_ATOMIC_BITWISE_OPS |
@@ -709,7 +723,8 @@ public:
   HRESULT STDMETHODCALLTYPE
       CreateBlendState1(const D3D11_BLEND_DESC1 *pBlendStateDesc,
                         ID3D11BlendState1 **ppBlendState) override {
-    return dxmt::CreateBlendState(this, pBlendStateDesc, ppBlendState);
+    return blend_states.CreateStateObject(pBlendStateDesc,
+                                          (IMTLD3D11BlendState **)ppBlendState);
   }
 
   HRESULT STDMETHODCALLTYPE
@@ -764,15 +779,8 @@ public:
 
   void STDMETHODCALLTYPE
   GetImmediateContext2(ID3D11DeviceContext2 **ppImmediateContext) override {
-    if (!context_) {
-      /*
-      lazy construction by design
-      to solve an awkward com_cast on refcount=0 object
-      (generally shouldn't pass this to others in constructor)
-      */
-      context_ = CreateD3D11DeviceContext(this);
-    }
-    *ppImmediateContext = context_.ref();
+    static_cast<ID3D11DeviceContext2 *>(context_.get())
+        ->QueryInterface(IID_PPV_ARGS(ppImmediateContext));
   }
 
   HRESULT STDMETHODCALLTYPE
@@ -884,8 +892,8 @@ public:
   HRESULT STDMETHODCALLTYPE
   CreateRasterizerState2(const D3D11_RASTERIZER_DESC2 *pRasterizerDesc,
                          ID3D11RasterizerState2 **ppRasterizerState) override {
-    return dxmt::CreateRasterizerState(this, pRasterizerDesc,
-                                       ppRasterizerState);
+    return rasterizer_states.CreateStateObject(
+        pRasterizerDesc, (IMTLD3D11RasterizerState **)ppRasterizerState);
   }
 
   HRESULT STDMETHODCALLTYPE CreateShaderResourceView1(
@@ -1024,12 +1032,11 @@ public:
   };
 
 private:
-  IMTLDXGIDevice *m_container;
+  MTLDXGIObject<IMTLDXGIDevice> *m_container;
   IMTLDXGIAdatper *adapter_;
   D3D_FEATURE_LEVEL m_FeatureLevel;
   UINT m_FeatureFlags;
   MTLD3D11Inspection m_features;
-  Com<IMTLD3D11DeviceContext> context_;
   threadpool<threadpool_trait> pool_;
 
   std::unordered_map<MTL_GRAPHICS_PIPELINE_DESC,
@@ -1040,6 +1047,16 @@ private:
   std::unordered_map<IMTLCompiledShader *, Com<IMTLCompiledComputePipeline>>
       pipelines_cs_;
   dxmt::mutex mutex_cs_;
+
+  StateObjectCache<D3D11_SAMPLER_DESC, IMTLD3D11SamplerState> sampler_states;
+  StateObjectCache<D3D11_BLEND_DESC1, IMTLD3D11BlendState> blend_states;
+  StateObjectCache<D3D11_RASTERIZER_DESC2, IMTLD3D11RasterizerState>
+      rasterizer_states;
+  StateObjectCache<D3D11_DEPTH_STENCIL_DESC, IMTLD3D11DepthStencilState>
+      depthstencil_states;
+
+  /** ensure destructor called first */
+  std::unique_ptr<MTLD3D11DeviceContextBase> context_;
 };
 
 /**
@@ -1058,6 +1075,17 @@ public:
         d3d11_device_(this, adapter, feature_level, feature_flags) {}
 
   ~MTLD3D11DXGIDevice() override {}
+
+  bool FinalRelase() override {
+    // FIXME: doesn't reliably work
+    auto t = std::thread([this]() {
+      delete this;
+      ExitThread(0); 
+    });
+    t.detach();
+    return true;
+  }
+
   HRESULT
   STDMETHODCALLTYPE
   QueryInterface(REFIID riid, void **ppvObject) override {
@@ -1212,6 +1240,7 @@ private:
 Com<IMTLDXGIDevice> CreateD3D11Device(IMTLDXGIAdatper *adapter,
                                       D3D_FEATURE_LEVEL feature_level,
                                       UINT feature_flags) {
-  return new MTLD3D11DXGIDevice(adapter, feature_level, feature_flags);
+  return Com<IMTLDXGIDevice>::transfer(
+      new MTLD3D11DXGIDevice(adapter, feature_level, feature_flags));
 };
 } // namespace dxmt

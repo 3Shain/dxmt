@@ -2,11 +2,10 @@
 
 #include "com/com_private_data.hpp"
 #include "com/com_object.hpp"
-#include "com/com_pointer.hpp"
 
 namespace dxmt {
 
-template <typename Base> class MTLDXGIObject : public ComObject<Base> {
+template <typename Base> class MTLDXGIObject : public ComObjectWithInitialRef<Base> {
 
 public:
   HRESULT STDMETHODCALLTYPE GetPrivateData(REFGUID Name, UINT *pDataSize,
@@ -37,7 +36,7 @@ public:
   }
 
 protected:
-  Com<IUnknown> m_device;
+  IUnknown* m_device;
 };
 
 } // namespace dxmt

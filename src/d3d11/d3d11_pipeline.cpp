@@ -83,11 +83,6 @@ public:
       pBlendState->SetupMetalPipelineDescriptor(pipelineDescriptor);
     }
 
-    pInputLayout = nullptr;
-    pBlendState = nullptr;
-    // pVertexShader = nullptr;
-    // pPixelShader = nullptr;
-
     for (unsigned i = 0; i < num_rtvs; i++) {
       if (rtv_formats[i] == MTL::PixelFormatInvalid)
         continue;
@@ -129,7 +124,7 @@ private:
   Com<IMTLCompiledShader> pVertexShader;
   Com<IMTLCompiledShader> pPixelShader;
   Com<IMTLD3D11InputLayout> pInputLayout;
-  Com<IMTLD3D11BlendState> pBlendState;
+  IMTLD3D11BlendState* pBlendState;
   Obj<MTL::RenderPipelineState> state_;
   bool RasterizationEnabled;
 };

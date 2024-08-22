@@ -54,6 +54,7 @@ struct tag_emulated_vertex_so {
 };
 
 static std::atomic_uint64_t global_id = 0;
+static std::atomic_uint64_t global_variant_id = 1;
 
 template <typename tag>
 class TShaderBase
@@ -145,7 +146,10 @@ public:
     identity_data.type = SM50_SHADER_DEBUG_IDENTITY;
     identity_data.id = shader_->id;
     identity_data.next = compilation_args;
+    variant_id = global_variant_id++;
   }
+
+  ~AirconvShader() {}
 
   void SubmitWork() { device_->SubmitThreadgroupWork(this, &work_state_); }
 
@@ -185,6 +189,8 @@ public:
     WARN("shader dump disabled");
 #endif
   }
+
+  uint64_t GetId() { return variant_id; }
 
   void RunThreadpoolWork() {
     D3D11_ASSERT(!ready_ && "?wtf"); // TODO: should use a lock?
@@ -260,6 +266,7 @@ private:
   Obj<MTL::Function> function_;
   void *compilation_args;
   SM50_SHADER_DEBUG_IDENTITY_DATA identity_data;
+  uint64_t variant_id;
 };
 
 template <typename tag>

@@ -3,6 +3,7 @@
 #include "Metal/MTLStageInputOutputDescriptor.hpp"
 #include "Metal/MTLVertexDescriptor.hpp"
 #include "com/com_guid.hpp"
+#include "com/com_pointer.hpp"
 #include "dxgi_options.hpp"
 #include "util_string.hpp"
 #include "log/log.hpp"
@@ -934,7 +935,7 @@ private:
 
 Com<IMTLDXGIAdatper> CreateAdapter(MTL::Device *pDevice,
                                    IDXGIFactory2 *pFactory, Config &config) {
-  return new MTLDXGIAdatper(pDevice, pFactory, config);
+  return Com<IMTLDXGIAdatper>::transfer(new MTLDXGIAdatper(pDevice, pFactory, config));
 }
 
 } // namespace dxmt
