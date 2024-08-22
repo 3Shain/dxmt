@@ -83,11 +83,6 @@ public:
       pBlendState->SetupMetalPipelineDescriptor(pipelineDescriptor);
     }
 
-    // pInputLayout = nullptr;
-    // pBlendState = nullptr;
-    // pVertexShader = nullptr;
-    // pPixelShader = nullptr;
-
     for (unsigned i = 0; i < num_rtvs; i++) {
       if (rtv_formats[i] == MTL::PixelFormatInvalid)
         continue;

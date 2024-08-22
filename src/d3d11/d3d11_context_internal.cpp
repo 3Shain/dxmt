@@ -270,7 +270,7 @@ public:
         if (!replaced)
           continue;
         if (auto expected = com_cast<IMTLD3D11SamplerState>(pSampler)) {
-          entry.Sampler = std::move(expected);
+          entry.Sampler = expected.ptr();
         } else {
           D3D11_ASSERT(0 && "wtf");
         }
@@ -288,8 +288,8 @@ public:
     if (ppSamplers) {
       for (unsigned Slot = StartSlot; Slot < StartSlot + NumSamplers; Slot++) {
         if (ShaderStage.Samplers.test_bound(Slot)) {
-          ppSamplers[Slot - StartSlot] =
-              ShaderStage.Samplers[Slot].Sampler.ref();
+          ShaderStage.Samplers[Slot].Sampler->QueryInterface(
+              IID_PPV_ARGS(&ppSamplers[Slot - StartSlot]));
         } else {
           ppSamplers[Slot - StartSlot] = nullptr;
         }
@@ -1542,7 +1542,7 @@ public:
       }
     }
     pipelineDesc.BlendState = state_.OutputMerger.BlendState
-                                  ? state_.OutputMerger.BlendState.ptr()
+                                  ? state_.OutputMerger.BlendState
                                   : default_blend_state;
     pipelineDesc.DepthStencilFormat =
         state_.OutputMerger.DSV ? state_.OutputMerger.DSV->GetPixelFormat()
@@ -1573,7 +1573,7 @@ public:
     if (dirty_state.any(DirtyState::DepthStencilState)) {
       IMTLD3D11DepthStencilState *state =
           state_.OutputMerger.DepthStencilState
-              ? state_.OutputMerger.DepthStencilState.ptr()
+              ? state_.OutputMerger.DepthStencilState
               : default_depth_stencil_state;
       chk->emit([state, stencil_ref = state_.OutputMerger.StencilRef](
                     CommandChunk::context &ctx) {
@@ -1586,7 +1586,7 @@ public:
     if (dirty_state.any(DirtyState::RasterizerState)) {
       IMTLD3D11RasterizerState *state =
           state_.Rasterizer.RasterizerState
-              ? state_.Rasterizer.RasterizerState.ptr()
+              ? state_.Rasterizer.RasterizerState
               : default_rasterizer_state;
       chk->emit([state](CommandChunk::context &ctx) {
         auto &encoder = ctx.render_encoder;
@@ -1607,7 +1607,7 @@ public:
     }
     IMTLD3D11RasterizerState *current_rs =
         state_.Rasterizer.RasterizerState
-            ? state_.Rasterizer.RasterizerState.ptr()
+            ? state_.Rasterizer.RasterizerState
             : default_rasterizer_state;
     bool allow_scissor =
         current_rs->IsScissorEnabled() &&

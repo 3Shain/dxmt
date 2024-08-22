@@ -24,6 +24,7 @@
 #include "dxgi_object.hpp"
 #include <iterator>
 #include <mutex>
+#include <thread>
 #include <unordered_map>
 
 namespace std {
@@ -67,8 +68,9 @@ namespace dxmt {
 
 class MTLD3D11Device final : public IMTLD3D11Device {
 public:
-  MTLD3D11Device(MTLDXGIObject<IMTLDXGIDevice> *container, IMTLDXGIAdatper *pAdapter,
-                 D3D_FEATURE_LEVEL FeatureLevel, UINT FeatureFlags)
+  MTLD3D11Device(MTLDXGIObject<IMTLDXGIDevice> *container,
+                 IMTLDXGIAdatper *pAdapter, D3D_FEATURE_LEVEL FeatureLevel,
+                 UINT FeatureFlags)
       : m_container(container), adapter_(pAdapter),
         m_FeatureLevel(FeatureLevel), m_FeatureFlags(FeatureFlags),
         m_features(container->GetMTLDevice()), sampler_states(this),
@@ -1048,9 +1050,11 @@ private:
 
   StateObjectCache<D3D11_SAMPLER_DESC, IMTLD3D11SamplerState> sampler_states;
   StateObjectCache<D3D11_BLEND_DESC1, IMTLD3D11BlendState> blend_states;
-  StateObjectCache<D3D11_RASTERIZER_DESC2, IMTLD3D11RasterizerState> rasterizer_states;
-  StateObjectCache<D3D11_DEPTH_STENCIL_DESC, IMTLD3D11DepthStencilState> depthstencil_states;
-  
+  StateObjectCache<D3D11_RASTERIZER_DESC2, IMTLD3D11RasterizerState>
+      rasterizer_states;
+  StateObjectCache<D3D11_DEPTH_STENCIL_DESC, IMTLD3D11DepthStencilState>
+      depthstencil_states;
+
   /** ensure destructor called first */
   std::unique_ptr<MTLD3D11DeviceContextBase> context_;
 };
@@ -1073,7 +1077,12 @@ public:
   ~MTLD3D11DXGIDevice() override {}
 
   bool FinalRelase() override {
-    dxmt::thread([this](){ delete this; }).detach();
+    // FIXME: doesn't reliably work
+    auto t = std::thread([this]() {
+      delete this;
+      ExitThread(0); 
+    });
+    t.detach();
     return true;
   }
 

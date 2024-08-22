@@ -25,6 +25,8 @@ DEFINE_COM_INTERFACE("a8bfeef7-a453-4bce-90c1-912b02cf5cdf", IMTLCompiledShader)
   virtual void GetShader(MTL_COMPILED_SHADER * pShaderData) = 0;
 
   virtual void Dump() = 0;
+
+  virtual uint64_t GetId() = 0;
 };
 
 DEFINE_COM_INTERFACE("e95ba1c7-e43f-49c3-a907-4ac669c9fb42", IMTLD3D11Shader)
