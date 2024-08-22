@@ -1240,7 +1240,7 @@ private:
 Com<IMTLDXGIDevice> CreateD3D11Device(IMTLDXGIAdatper *adapter,
                                       D3D_FEATURE_LEVEL feature_level,
                                       UINT feature_flags) {
-  return Com<IMTLDXGIDevice>::transferFrom(
+  return Com<IMTLDXGIDevice>::transfer(
       new MTLD3D11DXGIDevice(adapter, feature_level, feature_flags));
 };
 } // namespace dxmt

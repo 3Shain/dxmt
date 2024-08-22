@@ -580,7 +580,7 @@ private:
 };
 
 Com<IDXGIOutput> CreateOutput(IMTLDXGIAdatper *pAadapter, HMONITOR monitor) {
-  return Com<IDXGIOutput>::transferFrom(new MTLDXGIOutput(pAadapter, monitor));
+  return Com<IDXGIOutput>::transfer(new MTLDXGIOutput(pAadapter, monitor));
 };
 
 } // namespace dxmt

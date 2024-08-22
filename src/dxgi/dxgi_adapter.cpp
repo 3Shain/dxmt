@@ -935,7 +935,7 @@ private:
 
 Com<IMTLDXGIAdatper> CreateAdapter(MTL::Device *pDevice,
                                    IDXGIFactory2 *pFactory, Config &config) {
-  return Com<IMTLDXGIAdatper>::transferFrom(new MTLDXGIAdatper(pDevice, pFactory, config));
+  return Com<IMTLDXGIAdatper>::transfer(new MTLDXGIAdatper(pDevice, pFactory, config));
 }
 
 } // namespace dxmt
