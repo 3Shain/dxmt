@@ -60,6 +60,12 @@ AIRBuilderResult get_int(uint32_t value) {
   return make_op([=](auto ctx) { return ctx.builder.getInt32(value); });
 };
 
+AIRBuilderResult get_float(float value) {
+  return make_op([=](auto ctx) {
+    return llvm::ConstantFP::get(ctx.llvm, llvm::APFloat{value});
+  });
+};
+
 AIRBuilderResult call_integer_unary_op(std::string op, pvalue a) {
   return make_op([=](struct AIRBuilderContext ctx) {
     using namespace llvm;
@@ -1509,7 +1515,7 @@ AIRBuilderResult unpack_fvec4_from_addr(
     dst_type = types._float2;
     break;
   case MTLAttributeFormat::Short4Normalized:
-    op = "unorm4x16.v4f32";
+    op = "snorm4x16.v4f32";
     src_type = types._long;
     align = 2;
     dst_type = types._float4;
@@ -1521,10 +1527,11 @@ AIRBuilderResult unpack_fvec4_from_addr(
     dst_type = types._float4;
     break;
   case MTLAttributeFormat::Int1010102Normalized:
-    op = "snorm.rgb10a2.v4f32";
-    src_type = types._int;
-    align = 4;
-    dst_type = types._float4;
+    assert(0 && "unused");
+    // op = "unorm.rgb10a2.v4f32";
+    // src_type = types._int;
+    // align = 4;
+    // dst_type = types._float4;
     break;
   case MTLAttributeFormat::FloatRG11B10:
     op = "unorm.rg11b10f.v3f32";
@@ -1541,10 +1548,11 @@ AIRBuilderResult unpack_fvec4_from_addr(
   default:
     break;
   }
+  assert(src_type && dst_type);
   pvalue ret = co_yield call_unpack_impl(
     op,
     co_yield load_from_device_buffer(
-      dst_type, base_addr, aligned_offest, 0, align
+      src_type, base_addr, aligned_offest, 0, align
     ),
     src_type, dst_type
   );
@@ -1552,11 +1560,19 @@ AIRBuilderResult unpack_fvec4_from_addr(
     ret = builder.CreateShuffleVector(ret, {2, 1, 0, 3});
   }
   if (dst_type == types._float) {
-    ret = builder.CreateShuffleVector(ret, {0, -1, -1, -1});
+    ret = builder.CreateInsertElement(
+      llvm::PoisonValue::get(types._float4), ret, (int)0
+    );
+    ret = builder.CreateInsertElement(ret, co_yield get_float(0), (int)1);
+    ret = builder.CreateInsertElement(ret, co_yield get_float(0), (int)2);
+    ret = builder.CreateInsertElement(ret, co_yield get_float(1), (int)3);
   } else if (dst_type == types._float2) {
     ret = builder.CreateShuffleVector(ret, {0, 1, -1, -1});
+    ret = builder.CreateInsertElement(ret, co_yield get_float(0), (int)2);
+    ret = builder.CreateInsertElement(ret, co_yield get_float(1), (int)3);
   } else if (dst_type == types._float3) {
     ret = builder.CreateShuffleVector(ret, {0, 1, 2, -1});
+    ret = builder.CreateInsertElement(ret, co_yield get_float(1), (int)3);
   }
   co_return ret;
 };
@@ -1579,6 +1595,9 @@ AIRBuilderResult pull_vec4_from_addr(
     value = builder.CreateInsertElement(
       llvm::PoisonValue::get(types._int4), value, (int)0
     );
+    value = builder.CreateInsertElement(value, co_yield get_int(0), (int)1);
+    value = builder.CreateInsertElement(value, co_yield get_int(0), (int)2);
+    value = builder.CreateInsertElement(value, co_yield get_int(1), (int)3);
     break;
   case MTLAttributeFormat::Char2:
     value = co_yield load_from_device_buffer(
@@ -1586,6 +1605,8 @@ AIRBuilderResult pull_vec4_from_addr(
     );
     value = builder.CreateSExt(value, types._int2);
     value = builder.CreateShuffleVector(value, {0, 1, -1, -1});
+    value = builder.CreateInsertElement(value, co_yield get_int(0), (int)2);
+    value = builder.CreateInsertElement(value, co_yield get_int(1), (int)3);
     break;
   case MTLAttributeFormat::Char4:
     value = co_yield load_from_device_buffer(
@@ -1601,6 +1622,9 @@ AIRBuilderResult pull_vec4_from_addr(
     value = builder.CreateInsertElement(
       llvm::PoisonValue::get(types._int4), value, (int)0
     );
+    value = builder.CreateInsertElement(value, co_yield get_int(0), (int)1);
+    value = builder.CreateInsertElement(value, co_yield get_int(0), (int)2);
+    value = builder.CreateInsertElement(value, co_yield get_int(1), (int)3);
     break;
   case MTLAttributeFormat::UChar2:
     value = co_yield load_from_device_buffer(
@@ -1608,6 +1632,8 @@ AIRBuilderResult pull_vec4_from_addr(
     );
     value = builder.CreateZExt(value, types._int2);
     value = builder.CreateShuffleVector(value, {0, 1, -1, -1});
+    value = builder.CreateInsertElement(value, co_yield get_int(0), (int)2);
+    value = builder.CreateInsertElement(value, co_yield get_int(1), (int)3);
     break;
   case MTLAttributeFormat::UChar4:
     value = co_yield load_from_device_buffer(
@@ -1623,6 +1649,9 @@ AIRBuilderResult pull_vec4_from_addr(
     value = builder.CreateInsertElement(
       llvm::PoisonValue::get(types._int4), value, (int)0
     );
+    value = builder.CreateInsertElement(value, co_yield get_int(0), (int)1);
+    value = builder.CreateInsertElement(value, co_yield get_int(0), (int)2);
+    value = builder.CreateInsertElement(value, co_yield get_int(1), (int)3);
     break;
   case MTLAttributeFormat::Short2:
     value = co_yield load_from_device_buffer(
@@ -1630,6 +1659,8 @@ AIRBuilderResult pull_vec4_from_addr(
     );
     value = builder.CreateSExt(value, types._int2);
     value = builder.CreateShuffleVector(value, {0, 1, -1, -1});
+    value = builder.CreateInsertElement(value, co_yield get_int(0), (int)2);
+    value = builder.CreateInsertElement(value, co_yield get_int(1), (int)3);
     break;
   case MTLAttributeFormat::Short4:
     value = co_yield load_from_device_buffer(
@@ -1645,6 +1676,9 @@ AIRBuilderResult pull_vec4_from_addr(
     value = builder.CreateInsertElement(
       llvm::PoisonValue::get(types._int4), value, (int)0
     );
+    value = builder.CreateInsertElement(value, co_yield get_int(0), (int)1);
+    value = builder.CreateInsertElement(value, co_yield get_int(0), (int)2);
+    value = builder.CreateInsertElement(value, co_yield get_int(1), (int)3);
     break;
   case MTLAttributeFormat::UShort2:
     value = co_yield load_from_device_buffer(
@@ -1652,6 +1686,8 @@ AIRBuilderResult pull_vec4_from_addr(
     );
     value = builder.CreateZExt(value, types._int2);
     value = builder.CreateShuffleVector(value, {0, 1, -1, -1});
+    value = builder.CreateInsertElement(value, co_yield get_int(0), (int)2);
+    value = builder.CreateInsertElement(value, co_yield get_int(1), (int)3);
     break;
   case MTLAttributeFormat::UShort4:
     value = co_yield load_from_device_buffer(
@@ -1663,23 +1699,28 @@ AIRBuilderResult pull_vec4_from_addr(
     value = co_yield load_from_device_buffer(
       types._half, base_addr, byte_offset, 0, 2
     );
-    value = co_yield call_convert(value, types._float, Sign::inapplicable);
+    value = co_yield call_convert(value, types._float, Sign::with_sign);
     value = builder.CreateInsertElement(
       llvm::PoisonValue::get(types._float4), value, (int)0
     );
+    value = builder.CreateInsertElement(value, co_yield get_float(0), (int)1);
+    value = builder.CreateInsertElement(value, co_yield get_float(0), (int)2);
+    value = builder.CreateInsertElement(value, co_yield get_float(1), (int)3);
     break;
   case MTLAttributeFormat::Half2:
     value = co_yield load_from_device_buffer(
       types._half2, base_addr, byte_offset, 0, 2
     );
-    value = co_yield call_convert(value, types._float2, Sign::inapplicable);
+    value = co_yield call_convert(value, types._float, Sign::with_sign);
     value = builder.CreateShuffleVector(value, {0, 1, -1, -1});
+    value = builder.CreateInsertElement(value, co_yield get_float(0), (int)2);
+    value = builder.CreateInsertElement(value, co_yield get_float(1), (int)3);
     break;
   case MTLAttributeFormat::Half4:
     value = co_yield load_from_device_buffer(
       types._half4, base_addr, byte_offset, 0, 2
     );
-    value = co_yield call_convert(value, types._float4, Sign::inapplicable);
+    value = co_yield call_convert(value, types._float, Sign::with_sign);
     break;
   case MTLAttributeFormat::Float:
     value = co_yield load_from_device_buffer(
@@ -1688,18 +1729,24 @@ AIRBuilderResult pull_vec4_from_addr(
     value = builder.CreateInsertElement(
       llvm::PoisonValue::get(types._float4), value, (int)0
     );
+    value = builder.CreateInsertElement(value, co_yield get_float(0), (int)1);
+    value = builder.CreateInsertElement(value, co_yield get_float(0), (int)2);
+    value = builder.CreateInsertElement(value, co_yield get_float(1), (int)3);
     break;
   case MTLAttributeFormat::Float2:
     value = co_yield load_from_device_buffer(
       types._float2, base_addr, byte_offset, 0, 4
     );
     value = builder.CreateShuffleVector(value, {0, 1, -1, -1});
+    value = builder.CreateInsertElement(value, co_yield get_float(0), (int)2);
+    value = builder.CreateInsertElement(value, co_yield get_float(1), (int)3);
     break;
   case MTLAttributeFormat::Float3:
     value = co_yield load_from_device_buffer(
       types._float3, base_addr, byte_offset, 0, 4
     );
     value = builder.CreateShuffleVector(value, {0, 1, 2, -1});
+    value = builder.CreateInsertElement(value, co_yield get_float(1), (int)3);
     break;
   case MTLAttributeFormat::Float4:
     value = co_yield load_from_device_buffer(
@@ -1714,6 +1761,9 @@ AIRBuilderResult pull_vec4_from_addr(
     value = builder.CreateInsertElement(
       llvm::PoisonValue::get(types._int4), value, (int)0
     );
+    value = builder.CreateInsertElement(value, co_yield get_int(0), (int)1);
+    value = builder.CreateInsertElement(value, co_yield get_int(0), (int)2);
+    value = builder.CreateInsertElement(value, co_yield get_int(1), (int)3);
     break;
   case MTLAttributeFormat::UInt2:
   case MTLAttributeFormat::Int2:
@@ -1721,6 +1771,8 @@ AIRBuilderResult pull_vec4_from_addr(
       types._int2, base_addr, byte_offset, 0, 4
     );
     value = builder.CreateShuffleVector(value, {0, 1, -1, -1});
+    value = builder.CreateInsertElement(value, co_yield get_int(0), (int)2);
+    value = builder.CreateInsertElement(value, co_yield get_int(1), (int)3);
     break;
   case MTLAttributeFormat::UInt3:
   case MTLAttributeFormat::Int3:
@@ -1728,6 +1780,7 @@ AIRBuilderResult pull_vec4_from_addr(
       types._int3, base_addr, byte_offset, 0, 4
     );
     value = builder.CreateShuffleVector(value, {0, 1, 2, -1});
+    value = builder.CreateInsertElement(value, co_yield get_int(1), (int)3);
     break;
   case MTLAttributeFormat::UInt4:
   case MTLAttributeFormat::Int4:
