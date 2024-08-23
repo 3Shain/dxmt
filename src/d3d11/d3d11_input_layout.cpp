@@ -17,14 +17,7 @@
 
 namespace dxmt {
 
-struct Attribute {
-  uint32_t index = 0xffffffff;
-  uint32_t slot;
-  uint32_t offset;
-  uint32_t format; // the same as MTL::VertexFormat
-  D3D11_INPUT_CLASSIFICATION step_function : 1;
-  uint32_t step_rate : 31 = 0;
-};
+using Attribute = MTL_SHADER_INPUT_LAYOUT_ELEMENT;
 
 class MTLD3D11InputLayout final
     : public MTLD3D11DeviceChild<IMTLD3D11InputLayout> {
@@ -97,6 +90,12 @@ public:
 
   virtual uint32_t STDMETHODCALLTYPE GetInputSlotMask() final {
     return input_slot_mask_;
+  }
+
+  virtual uint32_t STDMETHODCALLTYPE
+  GetInputLayoutElements(MTL_SHADER_INPUT_LAYOUT_ELEMENT **ppElements) final {
+    *ppElements = attributes_.data();
+    return attributes_.size();
   }
 
 private:

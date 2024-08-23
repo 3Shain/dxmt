@@ -76,9 +76,11 @@ public:
       pipelineDescriptor->setFragmentFunction(ps.Function);
     }
     pipelineDescriptor->setRasterizationEnabled(RasterizationEnabled);
+#ifndef DXMT_SHADER_VERTEX_PULLING
     if (pInputLayout) {
       pInputLayout->Bind(pipelineDescriptor);
     }
+#endif
     if (pBlendState) {
       pBlendState->SetupMetalPipelineDescriptor(pipelineDescriptor);
     }

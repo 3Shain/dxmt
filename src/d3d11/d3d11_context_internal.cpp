@@ -1422,18 +1422,36 @@ public:
       return false;
     }
 
+#ifdef DXMT_SHADER_VERTEX_PULLING
+    /* TODO: they don't work together */
+    return false;
+#endif
+
     CommandChunk *chk = cmd_queue.CurrentChunk();
 
     Com<IMTLCompiledGraphicsPipeline> pipeline;
     Com<IMTLCompiledShader> vs;
+#ifndef DXMT_SHADER_VERTEX_PULLING
     if (state_.InputAssembler.InputLayout &&
         state_.InputAssembler.InputLayout->NeedsFixup()) {
       MTL_SHADER_INPUT_LAYOUT_FIXUP fixup;
       state_.InputAssembler.InputLayout->GetShaderFixupInfo(&fixup);
-      pVertexShader->GetCompiledShaderWithInputLayerFixup(fixup.sign_mask, &vs);
+      pVertexShader->GetCompiledShaderWithInputLayoutFixup(fixup.sign_mask, &vs);
     } else {
       pVertexShader->GetCompiledShader(&vs);
     }
+#else
+    if (state_.InputAssembler.InputLayout) {
+      state_.ShaderStages[(UINT)ShaderType::Vertex]
+          .Shader //
+          ->GetCompiledVertexShaderWithVertexPulling(
+              state_.InputAssembler.InputLayout.ptr(), &vs);
+    } else {
+      state_.ShaderStages[(UINT)ShaderType::Vertex]
+          .Shader //
+          ->GetCompiledShader(&vs);
+    }
+#endif
     MTL_GRAPHICS_PIPELINE_DESC pipelineDesc;
     pipelineDesc.VertexShader = vs.ptr();
     pipelineDesc.PixelShader = nullptr;
@@ -1499,6 +1517,7 @@ public:
 
     Com<IMTLCompiledGraphicsPipeline> pipeline;
     Com<IMTLCompiledShader> vs, ps;
+#ifndef DXMT_SHADER_VERTEX_PULLING
     if (state_.InputAssembler.InputLayout &&
         state_.InputAssembler.InputLayout->NeedsFixup()) {
 
@@ -1506,12 +1525,24 @@ public:
       state_.InputAssembler.InputLayout->GetShaderFixupInfo(&fixup);
       state_.ShaderStages[(UINT)ShaderType::Vertex]
           .Shader //
-          ->GetCompiledShaderWithInputLayerFixup(fixup.sign_mask, &vs);
+          ->GetCompiledShaderWithInputLayoutFixup(fixup.sign_mask, &vs);
     } else {
       state_.ShaderStages[(UINT)ShaderType::Vertex]
           .Shader //
           ->GetCompiledShader(&vs);
     }
+#else
+    if (state_.InputAssembler.InputLayout) {
+      state_.ShaderStages[(UINT)ShaderType::Vertex]
+          .Shader //
+          ->GetCompiledVertexShaderWithVertexPulling(
+              state_.InputAssembler.InputLayout.ptr(), &vs);
+    } else {
+      state_.ShaderStages[(UINT)ShaderType::Vertex]
+          .Shader //
+          ->GetCompiledShader(&vs);
+    }
+#endif
 
     if (state_.ShaderStages[(UINT)ShaderType::Pixel].Shader) {
       if (state_.OutputMerger.SampleMask != 0xffffffff) {
@@ -2031,6 +2062,7 @@ public:
             (uint64_t)state_.InputAssembler.InputLayout->GetInputSlotMask())) {
       return;
     }
+#ifndef DXMT_SHADER_VERTEX_PULLING
     for (unsigned index = 0; index < 16; index++) {
       if (!VertexBuffers.test_bound(index) ||
           !VertexBuffers.test_dirty(index)) {
@@ -2045,6 +2077,48 @@ public:
       });
       VertexBuffers.clear_dirty(index);
     };
+#else
+    struct VERTEX_BUFFER_ENTRY {
+      uint64_t buffer_handle;
+      uint32_t stride;
+      uint32_t length;
+    };
+
+    constexpr uint32_t VERTEX_BUFFER_SLOTS = 16; /* should be 32*/
+
+    CommandChunk *chk = cmd_queue.CurrentChunk();
+    auto currentChunkId = chk->current_encoder_id();
+    auto [heap, offset] = chk->allocate_gpu_heap(16 * VERTEX_BUFFER_SLOTS, 16);
+    VERTEX_BUFFER_ENTRY *entries =
+        (VERTEX_BUFFER_ENTRY *)(((char *)heap->contents()) + offset);
+    for (unsigned index = 0; index < VERTEX_BUFFER_SLOTS; index++) {
+      if (!VertexBuffers.test_bound(index) ||
+          !VertexBuffers.test_dirty(index)) {
+        continue;
+      }
+      auto &state = VertexBuffers[index];
+      MTL_BINDABLE_RESIDENCY_MASK newResidencyMask = MTL_RESIDENCY_NULL;
+      SIMPLE_RESIDENCY_TRACKER *pTracker;
+      auto handle = state.Buffer->GetArgumentData(&pTracker);
+      entries[index].buffer_handle = handle.buffer() + state.Offset;
+      entries[index].stride = state.Stride;
+      entries[index].length = 0; // TODO: handle.width() - state.Offset;
+      pTracker->CheckResidency(
+          currentChunkId, GetResidencyMask(ShaderType::Vertex, true, false),
+          &newResidencyMask);
+      if (newResidencyMask) {
+        chk->emit([res = state.Buffer->UseBindable(currentChunkId),
+                   newResidencyMask](CommandChunk::context &ctx) {
+          ctx.render_encoder->useResource(
+              res.buffer(), GetUsageFromResidencyMask(newResidencyMask),
+              GetStagesFromResidencyMask(newResidencyMask));
+        });
+      }
+    };
+    chk->emit([heap, offset](CommandChunk::context &ctx) {
+      ctx.render_encoder->setVertexBuffer(heap, offset, 16);
+    });
+#endif
   }
 
   void UpdateSOTargets() {
