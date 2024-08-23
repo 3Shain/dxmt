@@ -121,6 +121,7 @@ enum SM50_SHADER_COMPILATION_ARGUMENT_TYPE {
   SM50_SHADER_EMULATE_VERTEX_STREAM_OUTPUT = 1,
   SM50_SHADER_DEBUG_IDENTITY = 2,
   SM50_SHADER_PSO_SAMPLE_MASK = 3,
+  SM50_SHADER_IA_INPUT_LAYOUT = 4,
 };
 
 struct SM50_SHADER_COMPILATION_ARGUMENT_DATA {
@@ -160,6 +161,23 @@ struct SM50_SHADER_PSO_SAMPLE_MASK_DATA {
   void *next;
   enum SM50_SHADER_COMPILATION_ARGUMENT_TYPE type;
   uint32_t sample_mask;
+};
+
+struct SM50_IA_INPUT_ELEMENT {
+  uint32_t reg;
+  uint32_t slot;
+  uint32_t aligned_byte_offset;
+  /** MTLAttributeFormat */
+  uint32_t format;
+  uint32_t step_function: 1;
+  uint32_t step_rate: 31;
+};
+
+struct SM50_SHADER_IA_INPUT_LAYOUT_DATA {
+  void *next;
+  enum SM50_SHADER_COMPILATION_ARGUMENT_TYPE type;
+  uint32_t num_elements;
+  struct SM50_IA_INPUT_ELEMENT *elements;
 };
 
 AIRCONV_EXPORT int SM50Initialize(

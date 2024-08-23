@@ -15,6 +15,13 @@ public:
 
   llvm::Type *_bool;
   llvm::Type *_byte;
+  llvm::Type *_char2;
+  llvm::Type *_char3;
+  llvm::Type *_char4;
+  llvm::Type *_short;
+  llvm::Type *_short2;
+  llvm::Type *_short3;
+  llvm::Type *_short4;
   llvm::Type *_float;
   llvm::Type *_float2;
   llvm::Type *_float3;
@@ -25,9 +32,13 @@ public:
   llvm::Type *_int4;
   llvm::Type *_int8;
   llvm::Type *_half;
+  llvm::Type *_half2;
+  llvm::Type *_half3;
   llvm::Type *_half4;
   llvm::Type *_long;
   llvm::Type *_long4;
+
+  llvm::Type *_dxmt_vertex_buffer_entry;
 
   llvm::Type *_sampler;
 

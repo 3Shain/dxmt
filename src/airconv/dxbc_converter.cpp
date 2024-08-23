@@ -43,6 +43,9 @@ public:
   dxmt::dxbc::ShaderInfo shader_info;
   dxmt::air::FunctionSignatureBuilder func_signature;
   std::shared_ptr<dxmt::dxbc::BasicBlock> entry;
+  std::vector<std::function<
+    void(dxmt::dxbc::IREffect &, dxmt::air::FunctionSignatureBuilder *, SM50_SHADER_IA_INPUT_LAYOUT_DATA *)>>
+    input_prelogue_;
   std::vector<std::function<void(dxmt::dxbc::IREffect &)>> prelogue_;
   std::vector<std::function<void(dxmt::dxbc::IRValue &)>> epilogue_;
   microsoft::D3D10_SB_TOKENIZED_PROGRAM_TYPE shader_type;
@@ -100,6 +103,7 @@ llvm::Error convertDXBC(
   uint32_t pso_sample_mask = 0xffffffff;
   SM50_SHADER_COMPILATION_ARGUMENT_DATA *arg = pArgs;
   SM50_SHADER_EMULATE_VERTEX_STREAM_OUTPUT_DATA *vertex_so = nullptr;
+  SM50_SHADER_IA_INPUT_LAYOUT_DATA *ia_layout = nullptr;
   uint64_t debug_id = ~0u;
   while (arg) {
     switch (arg->type) {
@@ -118,6 +122,9 @@ llvm::Error convertDXBC(
     case SM50_SHADER_PSO_SAMPLE_MASK:
       pso_sample_mask = ((SM50_SHADER_PSO_SAMPLE_MASK_DATA *)arg)->sample_mask;
       break;
+    case SM50_SHADER_IA_INPUT_LAYOUT:
+      ia_layout = ((SM50_SHADER_IA_INPUT_LAYOUT_DATA *)arg);
+      break;
     }
     arg = (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)arg->next;
   }
@@ -130,6 +137,9 @@ llvm::Error convertDXBC(
     }
     return llvm::UndefValue::get(retTy);
   });
+  for (auto &p : pShaderInternal->input_prelogue_) {
+    p(prelogue, &func_signature, ia_layout);
+  }
   for (auto &p : pShaderInternal->prelogue_) {
     p(prelogue);
   }
@@ -586,6 +596,7 @@ int SM50Initialize(
   uint32_t &max_output_register = sm50_shader->max_output_register;
 
   auto &prelogue_ = sm50_shader->prelogue_;
+  auto &input_prelogue_ = sm50_shader->input_prelogue_;
   auto &epilogue_ = sm50_shader->epilogue_;
 
   readControlFlow = [&](
@@ -1175,14 +1186,29 @@ int SM50Initialize(
             auto sig = findInputElement([=](Signature &sig) {
               return (sig.reg() == reg) && ((sig.mask() & mask) != 0);
             });
-            auto assigned_index = func_signature.DefineInput(InputVertexStageIn{
-              .attribute = reg,
-              .type = (InputAttributeComponentType)sig.componentType(),
-              .name = sig.fullSemanticString()
-            });
-            prelogue_.push_back([=](IREffect &prelogue) {
-              prelogue << init_input_reg(assigned_index, reg, mask);
-            });
+            input_prelogue_.push_back(
+              [=, type = (InputAttributeComponentType)sig.componentType(),
+               name = sig.fullSemanticString()](
+                IREffect &prelogue, auto func_signature,
+                SM50_SHADER_IA_INPUT_LAYOUT_DATA *ia_layout
+              ) {
+                if (ia_layout) {
+                  for(unsigned i = 0; i< ia_layout->num_elements; i++)
+                  {
+                    if(ia_layout->elements[i].reg == reg) {
+                      prelogue << pull_vertex_input(func_signature, reg, mask, ia_layout->elements[i]);
+                      break;
+                    }
+                  }
+                } else {
+                  auto assigned_index =
+                    func_signature->DefineInput(InputVertexStageIn{
+                      .attribute = reg, .type = type, .name = name
+                    });
+                  prelogue << init_input_reg(assigned_index, reg, mask);
+                }
+              }
+            );
           } else {
             assert(0 && "Unknown input register type");
           }

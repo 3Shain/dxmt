@@ -3,6 +3,7 @@
 #include "air_signature.hpp"
 #include "air_type.hpp"
 #include "airconv_error.hpp"
+#include "airconv_public.h"
 #include "dxbc_instructions.hpp"
 #include "ftl.hpp"
 #include "llvm/ADT/APFloat.h"
@@ -94,6 +95,12 @@ struct io_binding_map {
   llvm::AllocaInst *coverage_mask_reg = nullptr;
 
   llvm::AllocaInst *cmp_exch_temp = nullptr;
+
+  // temp for fast look-up
+  llvm::Value *vertex_id_with_base = nullptr;
+  llvm::Value *instance_id_with_base = nullptr;
+  llvm::Value *base_instance_id = nullptr;
+  llvm::Value *vertex_buffer_table = nullptr;
 };
 
 struct context {
@@ -618,10 +625,10 @@ auto store_at_vec_array_masked(
   };
 };
 
-auto init_input_reg(
+IREffect init_input_reg(
   uint32_t with_fnarg_at, uint32_t to_reg, uint32_t mask,
   bool fix_w_component = false
-) -> IREffect {
+) {
   // no it doesn't work like this
   // regular input can be masked like .zw
   // assert((mask & 1) && "todo: handle input register sharing correctly");
@@ -683,6 +690,96 @@ pop_output_reg(uint32_t from_reg, uint32_t mask, uint32_t to_element) {
     });
   };
 }
+
+IREffect pull_vertex_input(
+  air::FunctionSignatureBuilder *func_signature, uint32_t to_reg, uint32_t mask,
+  SM50_IA_INPUT_ELEMENT element_info
+) {
+  auto vertex_id = func_signature->DefineInput(air::InputVertexID{});
+  auto instance_id = func_signature->DefineInput(air::InputInstanceID{});
+  auto base_instance = func_signature->DefineInput(air::InputBaseInstance{});
+  auto vbuf_table = func_signature->DefineInput(air::ArgumentBindingBuffer{
+    .buffer_size = {},
+    .location_index = 16,
+    .array_size = 0,
+    .memory_access = air::MemoryAccess::read,
+    .address_space = air::AddressSpace::constant,
+    .type = air::msl_uint,
+    .arg_name = "vertex_buffers",
+    .raster_order_group = {},
+  });
+  return make_effect_bind([=](context ctx) -> IREffect {
+    auto &types = ctx.types;
+    auto &builder = ctx.builder;
+    pvalue index;                   // uint
+    if (element_info.step_function) // per_instance
+    {
+      if (!ctx.resource.base_instance_id) {
+        ctx.resource.base_instance_id = ctx.function->getArg(base_instance);
+      }
+      if (element_info.step_rate) {
+        if (!ctx.resource.instance_id_with_base) {
+          ctx.resource.instance_id_with_base =
+            ctx.function->getArg(instance_id);
+        }
+        index = builder.CreateAdd(
+          ctx.resource.base_instance_id,
+          builder.CreateUDiv(
+            builder.CreateSub(
+              ctx.resource.instance_id_with_base, ctx.resource.base_instance_id
+            ),
+            builder.getInt32(element_info.step_rate)
+          )
+        );
+      } else {
+        // 0 takes special meaning, that the instance data should never be
+        // stepped at all
+        index = ctx.resource.base_instance_id;
+      }
+    } else {
+      if (!ctx.resource.vertex_id_with_base) {
+        ctx.resource.vertex_id_with_base = ctx.function->getArg(vertex_id);
+      }
+      index = ctx.resource.vertex_id_with_base;
+    }
+    if (!ctx.resource.vertex_buffer_table) {
+      ctx.resource.vertex_buffer_table = ctx.builder.CreateBitCast(
+        ctx.function->getArg(vbuf_table),
+        ctx.types._dxmt_vertex_buffer_entry->getPointerTo((uint32_t
+        )air::AddressSpace::constant)
+      );
+    }
+    auto vertex_buffer_table = ctx.resource.vertex_buffer_table;
+    auto vertex_buffer_entry = builder.CreateLoad(
+      types._dxmt_vertex_buffer_entry,
+      builder.CreateConstGEP1_32(
+        types._dxmt_vertex_buffer_entry, vertex_buffer_table, element_info.slot
+      )
+    );
+    auto base_addr = builder.CreateExtractValue(vertex_buffer_entry, {0});
+    auto stride = builder.CreateExtractValue(vertex_buffer_entry, {1});
+    auto byte_offset = builder.CreateAdd(
+      builder.CreateMul(stride, index),
+      builder.getInt32(element_info.aligned_byte_offset)
+    );
+    auto vec4 = co_yield air::pull_vec4_from_addr(
+      (air::MTLAttributeFormat)element_info.format, base_addr, byte_offset
+    );
+    if (vec4->getType() == types._float4) {
+      co_yield store_at_vec4_array_masked(
+        ctx.resource.input.ptr_float4, builder.getInt32(element_info.reg), vec4,
+        mask
+      );
+    } else {
+      assert(vec4->getType() == types._int4);
+      co_yield store_at_vec4_array_masked(
+        ctx.resource.input.ptr_int4, builder.getInt32(element_info.reg), vec4,
+        mask
+      );
+    }
+    co_return {};
+  });
+};
 
 auto saturate(bool sat) {
   return [sat](pvalue floaty) -> IRValue {
