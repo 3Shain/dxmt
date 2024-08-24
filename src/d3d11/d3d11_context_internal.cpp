@@ -1422,11 +1422,6 @@ public:
       return false;
     }
 
-#ifdef DXMT_SHADER_VERTEX_PULLING
-    /* TODO: they don't work together */
-    return false;
-#endif
-
     CommandChunk *chk = cmd_queue.CurrentChunk();
 
     Com<IMTLCompiledGraphicsPipeline> pipeline;
@@ -1442,14 +1437,10 @@ public:
     }
 #else
     if (state_.InputAssembler.InputLayout) {
-      state_.ShaderStages[(UINT)ShaderType::Vertex]
-          .Shader //
-          ->GetCompiledVertexShaderWithVertexPulling(
-              state_.InputAssembler.InputLayout.ptr(), &vs);
+      pVertexShader->GetCompiledVertexShaderWithVertexPulling(
+          state_.InputAssembler.InputLayout.ptr(), &vs);
     } else {
-      state_.ShaderStages[(UINT)ShaderType::Vertex]
-          .Shader //
-          ->GetCompiledShader(&vs);
+      pVertexShader->GetCompiledShader(&vs);
     }
 #endif
     MTL_GRAPHICS_PIPELINE_DESC pipelineDesc;
