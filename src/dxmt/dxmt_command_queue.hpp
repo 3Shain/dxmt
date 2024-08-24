@@ -86,7 +86,7 @@ inline void *ptr_add(const void *const p,
 
 constexpr uint32_t kCommandChunkCount = 8;
 constexpr size_t kCommandChunkCPUHeapSize = 0x800000; // is 8MB too large?
-constexpr size_t kCommandChunkGPUHeapSize = 0x200000;
+constexpr size_t kCommandChunkGPUHeapSize = 0x800000;
 constexpr size_t kOcclusionSampleCount = 1024;
 
 class CommandQueue;

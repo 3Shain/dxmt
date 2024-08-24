@@ -33,6 +33,8 @@ DEFINE_COM_INTERFACE("b56c6a99-80cf-4c7f-a756-9e9ceb38730f",
       MTL_SHADER_INPUT_LAYOUT_ELEMENT * *ppElements) = 0;
 };
 
+#define DXMT_SHADER_VERTEX_PULLING 1
+
 namespace dxmt {
 
 HRESULT CreateInputLayout(IMTLD3D11Device *device,
