@@ -417,10 +417,26 @@ uint32_t FunctionSignatureBuilder::DefineInput(const FunctionInput &input) {
                 return s.user ==
                        std::get<InputFragmentStageIn>(element.value()).user;
               },
-              [&](const ArgumentBindingBuffer s) { return false; },
-              [&](const ArgumentBindingSampler s) { return false; },
-              [&](const ArgumentBindingTexture s) { return false; },
-              [&](const ArgumentBindingIndirectBuffer s) { return false; },
+              [&](const ArgumentBindingBuffer s) {
+                return s.location_index ==
+                       std::get<ArgumentBindingBuffer>(element.value())
+                         .location_index;
+              },
+              [&](const ArgumentBindingSampler s) {
+                return s.location_index ==
+                       std::get<ArgumentBindingSampler>(element.value())
+                         .location_index;
+              },
+              [&](const ArgumentBindingTexture s) {
+                return s.location_index ==
+                       std::get<ArgumentBindingTexture>(element.value())
+                         .location_index;
+              },
+              [&](const ArgumentBindingIndirectBuffer s) {
+                return s.location_index ==
+                       std::get<ArgumentBindingIndirectBuffer>(element.value())
+                         .location_index;
+              },
               [](auto) { return true; }
             },
             input
@@ -435,8 +451,8 @@ uint32_t FunctionSignatureBuilder::DefineInput(const FunctionInput &input) {
 
 uint32_t FunctionSignatureBuilder::DefineOutput(const FunctionOutput &output) {
   uint32_t index = outputs.size();
-  for(uint32_t i = 0; i < index; i++) {
-    if(outputs[i] == output) {
+  for (uint32_t i = 0; i < index; i++) {
+    if (outputs[i] == output) {
       return i;
     }
   }
@@ -714,7 +730,7 @@ auto FunctionSignatureBuilder::CreateFunction(
             ->string("uint")
             ->string("air.arg_name")
             ->string("mtl_coverage_mask");
-          return (llvm::Type*)Type::getInt32Ty(context);
+          return (llvm::Type *)Type::getInt32Ty(context);
         },
         [](auto _) {
           assert(0 && "Unhandled output");

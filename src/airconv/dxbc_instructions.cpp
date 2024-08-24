@@ -1,97 +1,11 @@
-#pragma once
-
-#include "dxbc_converter.hpp"
+#include "dxbc_instructions.hpp"
 
 #include "DXBCParser/ShaderBinary.h"
-#include "DXBCParser/d3d12tokenizedprogramformat.hpp"
 #include "air_signature.hpp"
+#include "dxbc_converter.hpp"
 #include "shader_common.hpp"
-#include "llvm/Support/raw_ostream.h"
-
-// it's suposed to be include by specific file
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wunused-function"
-#pragma clang diagnostic ignored "-Wunknown-pragmas"
-// NOLINTBEGIN(misc-definitions-in-headers)
 
 namespace dxmt::dxbc {
-
-#define DXASSERT_DXBC(x) assert(x);
-
-air::Interpolation
-to_air_interpolation(microsoft::D3D10_SB_INTERPOLATION_MODE mode) {
-  using namespace microsoft;
-  switch (mode) {
-  case D3D10_SB_INTERPOLATION_LINEAR_NOPERSPECTIVE_SAMPLE:
-    return air::Interpolation::sample_no_perspective;
-  case D3D10_SB_INTERPOLATION_LINEAR_SAMPLE:
-    return air::Interpolation::sample_perspective;
-  case D3D10_SB_INTERPOLATION_LINEAR_NOPERSPECTIVE_CENTROID:
-    return air::Interpolation::centroid_no_perspective;
-  case D3D10_SB_INTERPOLATION_LINEAR_CENTROID:
-    return air::Interpolation::centroid_perspective;
-  case D3D10_SB_INTERPOLATION_CONSTANT:
-    return air::Interpolation::flat;
-  case D3D10_SB_INTERPOLATION_LINEAR:
-    return air::Interpolation::center_perspective;
-  case D3D10_SB_INTERPOLATION_LINEAR_NOPERSPECTIVE:
-    return air::Interpolation::center_no_perspective;
-  default:
-    assert(0 && "Unexpected D3D10_SB_INTERPOLATION_MODE");
-  }
-}
-
-dxmt::shader::common::ResourceType
-to_shader_resource_type(microsoft::D3D10_SB_RESOURCE_DIMENSION dim) {
-  switch (dim) {
-  case microsoft::D3D10_SB_RESOURCE_DIMENSION_UNKNOWN:
-  case microsoft::D3D10_SB_RESOURCE_DIMENSION_BUFFER:
-  case microsoft::D3D11_SB_RESOURCE_DIMENSION_RAW_BUFFER:
-  case microsoft::D3D11_SB_RESOURCE_DIMENSION_STRUCTURED_BUFFER:
-    return shader::common::ResourceType::TextureBuffer;
-  case microsoft::D3D10_SB_RESOURCE_DIMENSION_TEXTURE1D:
-    return shader::common::ResourceType::Texture1D;
-  case microsoft::D3D10_SB_RESOURCE_DIMENSION_TEXTURE2D:
-    return shader::common::ResourceType::Texture2D;
-  case microsoft::D3D10_SB_RESOURCE_DIMENSION_TEXTURE2DMS:
-    return shader::common::ResourceType::Texture2DMultisampled;
-  case microsoft::D3D10_SB_RESOURCE_DIMENSION_TEXTURE3D:
-    return shader::common::ResourceType::Texture3D;
-  case microsoft::D3D10_SB_RESOURCE_DIMENSION_TEXTURECUBE:
-    return shader::common::ResourceType::TextureCube;
-  case microsoft::D3D10_SB_RESOURCE_DIMENSION_TEXTURE1DARRAY:
-    return shader::common::ResourceType::Texture1DArray;
-  case microsoft::D3D10_SB_RESOURCE_DIMENSION_TEXTURE2DARRAY:
-    return shader::common::ResourceType::Texture2DArray;
-  case microsoft::D3D10_SB_RESOURCE_DIMENSION_TEXTURE2DMSARRAY:
-    return shader::common::ResourceType::Texture2DMultisampledArray;
-  case microsoft::D3D10_SB_RESOURCE_DIMENSION_TEXTURECUBEARRAY:
-    return shader::common::ResourceType::TextureCubeArray;
-  }
-  assert(0 && "invalid D3D10_SB_RESOURCE_DIMENSION");
-};
-
-dxmt::shader::common::ScalerDataType
-to_shader_scaler_type(microsoft::D3D10_SB_RESOURCE_RETURN_TYPE type) {
-  switch (type) {
-
-  case microsoft::D3D10_SB_RETURN_TYPE_UNORM:
-  case microsoft::D3D10_SB_RETURN_TYPE_SNORM:
-  case microsoft::D3D10_SB_RETURN_TYPE_FLOAT:
-    return shader::common::ScalerDataType::Float;
-  case microsoft::D3D10_SB_RETURN_TYPE_SINT:
-    return shader::common::ScalerDataType::Int;
-  case microsoft::D3D10_SB_RETURN_TYPE_UINT:
-    return shader::common::ScalerDataType::Uint;
-  case microsoft::D3D10_SB_RETURN_TYPE_MIXED:
-    return shader::common::ScalerDataType::Uint; // kinda weird but ok
-  case microsoft::D3D11_SB_RETURN_TYPE_DOUBLE:
-  case microsoft::D3D11_SB_RETURN_TYPE_CONTINUED:
-  case microsoft::D3D11_SB_RETURN_TYPE_UNUSED:
-    break;
-  }
-  assert(0 && "invalid D3D10_SB_RESOURCE_RETURN_TYPE");
-}
 
 auto readOperandRelativeIndex(
   const microsoft::D3D10ShaderBinary::COperandIndex &OpIndex,
@@ -272,8 +186,7 @@ auto readSrcOperandCommon(const microsoft::D3D10ShaderBinary::COperandBase &O
   };
 }
 
-auto readSrcOperand(const microsoft::D3D10ShaderBinary::COperandBase &O
-) -> SrcOperand {
+SrcOperand readSrcOperand(const microsoft::D3D10ShaderBinary::COperandBase &O) {
   using namespace microsoft;
   switch (O.m_Type) {
   case D3D10_SB_OPERAND_TYPE_IMMEDIATE32: {
@@ -386,7 +299,7 @@ auto readSrcOperand(const microsoft::D3D10ShaderBinary::COperandBase &O
     };
   }
   case D3D11_SB_OPERAND_TYPE_INPUT_COVERAGE_MASK: {
-    return SrcOperandAttribute {
+    return SrcOperandAttribute{
       ._ = readSrcOperandCommon(O),
       .attribute = shader::common::InputAttribute::CoverageMask
     };
@@ -530,10 +443,10 @@ auto readInstructionCommon(
   return InstructionCommon{.saturate = Inst.m_bSaturate != 0};
 };
 
-auto readInstruction(
+Instruction readInstruction(
   const microsoft::D3D10ShaderBinary::CInstruction &Inst,
   ShaderInfo &shader_info
-) -> Instruction {
+) {
   using namespace microsoft;
   switch (Inst.m_OpCode) {
   case microsoft::D3D10_SB_OPCODE_MOV: {
@@ -1845,7 +1758,7 @@ auto readInstruction(
   }
 };
 
-auto readCondition(
+BasicBlockCondition readCondition(
   const microsoft::D3D10ShaderBinary::CInstruction &Inst, uint32_t OpIdx
 ) {
   using namespace microsoft;
@@ -1858,6 +1771,3 @@ auto readCondition(
   };
 }
 } // namespace dxmt::dxbc
-
-// NOLINTEND(misc-definitions-in-headers)
-#pragma clang diagnostic pop

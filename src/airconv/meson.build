@@ -2,7 +2,9 @@ airconv_src = files([
  'airconv_context.cpp',
  'air_type.cpp',
  'air_signature.cpp',
+ 'air_operations.cpp',
  'dxbc_converter.cpp',
+ 'dxbc_instructions.cpp',
  'metallib_writer.cpp'
 ])
 

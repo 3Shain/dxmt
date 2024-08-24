@@ -11,38 +11,25 @@
 #include "dxgi_interfaces.h"
 #include "log/log.hpp"
 #include "objc_pointer.hpp"
+#include "util_math.hpp"
 #include "util_string.hpp"
 #include <algorithm>
 
 namespace dxmt {
 
-struct Attribute {
-  uint32_t index = 0xffffffff;
-  uint32_t slot;
-  uint32_t offset;
-  MTL::AttributeFormat format; // the same as MTL::VertexFormat
-  uint32_t element_stride;
-};
-
-struct Layout {
-  // uint32_t stride;
-  D3D11_INPUT_CLASSIFICATION step_function;
-  uint32_t step_rate = 0;
-};
+using Attribute = MTL_SHADER_INPUT_LAYOUT_ELEMENT;
 
 class MTLD3D11InputLayout final
     : public MTLD3D11DeviceChild<IMTLD3D11InputLayout> {
 public:
   MTLD3D11InputLayout(IMTLD3D11Device *device,
-                      std::vector<Attribute> &&attributes,
-                      std::vector<Layout> &&layouts, uint64_t sign_mask,
+                      std::vector<Attribute> &&attributes, uint64_t sign_mask,
                       uint32_t input_slot_mask)
       : MTLD3D11DeviceChild<IMTLD3D11InputLayout>(device),
-        attributes_(attributes), layouts_(layouts), sign_mask_(sign_mask),
+        attributes_(attributes), sign_mask_(sign_mask),
         input_slot_mask_(input_slot_mask) {}
 
-  ~MTLD3D11InputLayout() {
-  }
+  ~MTLD3D11InputLayout() {}
 
   HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid,
                                            void **ppvObject) final {
@@ -76,16 +63,11 @@ public:
       attr_desc->setBufferIndex(attr.slot);
       attr_desc->setFormat((MTL::VertexFormat)attr.format);
       attr_desc->setOffset(attr.offset);
-    }
 
-    unsigned _slot = 0;
-    for (auto &layout : layouts_) {
-      unsigned slot = _slot++;
-      if (layout.step_rate == 0)
-        continue;
-      auto layout_desc = vertex_desc->layouts()->object(slot);
-      layout_desc->setStepRate(layout.step_rate);
-      layout_desc->setStepFunction(layout.step_function ==
+      /* same buffer layout may be set multiple time, it doesn't hurt though */
+      auto layout_desc = vertex_desc->layouts()->object(attr.slot);
+      layout_desc->setStepRate(attr.step_rate);
+      layout_desc->setStepFunction(attr.step_function ==
                                            D3D11_INPUT_PER_INSTANCE_DATA
                                        ? MTL::VertexStepFunctionPerInstance
                                        : MTL::VertexStepFunctionPerVertex);
@@ -110,9 +92,14 @@ public:
     return input_slot_mask_;
   }
 
+  virtual uint32_t STDMETHODCALLTYPE
+  GetInputLayoutElements(MTL_SHADER_INPUT_LAYOUT_ELEMENT **ppElements) final {
+    *ppElements = attributes_.data();
+    return attributes_.size();
+  }
+
 private:
   std::vector<Attribute> attributes_;
-  std::vector<Layout> layouts_;
   uint64_t sign_mask_;
   uint32_t input_slot_mask_;
 };
@@ -123,7 +110,7 @@ HRESULT CreateInputLayout(IMTLD3D11Device *device,
                           UINT NumElements, ID3D11InputLayout **ppInputLayout) {
   using namespace microsoft;
   std::vector<Attribute> elements(NumElements);
-  std::vector<Layout> layout(16);
+  uint16_t append_offset[32] = {0};
   uint64_t sign_mask = 0;
   uint32_t input_slot_mask = 0;
 
@@ -198,7 +185,6 @@ HRESULT CreateInputLayout(IMTLD3D11Device *device,
         sign_mask |= (1 << inputSig.Register);
       }
     }
-    attribute.element_stride = metal_format.BytesPerTexel;
     attribute.slot = desc.InputSlot;
     attribute.index = inputSig.Register;
     if (attribute.slot >= 16) {
@@ -209,36 +195,25 @@ HRESULT CreateInputLayout(IMTLD3D11Device *device,
     input_slot_mask |= (1 << desc.InputSlot);
 
     if (desc.AlignedByteOffset == D3D11_APPEND_ALIGNED_ELEMENT) {
-      Attribute last_attr_in_same_slot = {
-          .slot = 0xffffffff, .offset = 0, .element_stride = 0};
-      if (attributeCount > 1) {
-        for (signed j = attributeCount - 2; j >= 0; j--) {
-          if (elements[j].slot == //
-              attribute.slot) {
-            last_attr_in_same_slot = elements[j];
-            break;
-          }
-        }
-      }
-      uint32_t unaligned_offset =
-          last_attr_in_same_slot.offset + last_attr_in_same_slot.element_stride;
-      attribute.offset = unaligned_offset; // FIXME: this is problematic
+      attribute.offset = align(append_offset[attribute.slot],
+                               std::min(4u, metal_format.BytesPerTexel));
     } else {
       attribute.offset = desc.AlignedByteOffset;
     }
+    append_offset[attribute.slot] =
+        attribute.offset + metal_format.BytesPerTexel;
     // the layout stride is provided in IASetVertexBuffer
-    layout.at(attribute.slot).step_function = desc.InputSlotClass;
-    layout.at(attribute.slot).step_rate =
-        desc.InputSlotClass == D3D11_INPUT_PER_INSTANCE_DATA
-            ? desc.InstanceDataStepRate
-            : 1;
+    attribute.step_function = desc.InputSlotClass;
+    attribute.step_rate = desc.InputSlotClass == D3D11_INPUT_PER_INSTANCE_DATA
+                              ? desc.InstanceDataStepRate
+                              : 1;
   }
   if (ppInputLayout == NULL) {
     return S_FALSE;
   }
+  elements.resize(attributeCount);
   *ppInputLayout = ref(new MTLD3D11InputLayout(device, std::move(elements),
-                                               std::move(layout), sign_mask,
-                                               input_slot_mask));
+                                               sign_mask, input_slot_mask));
   return S_OK;
 };
 

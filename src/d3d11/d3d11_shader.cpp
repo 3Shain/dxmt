@@ -1,5 +1,5 @@
+#include "d3d11_input_layout.hpp"
 #include <atomic>
-#include <fstream>
 #include <string>
 #define __METALCPP__ 1
 #include "d3d11_private.h"
@@ -14,7 +14,8 @@ namespace dxmt {
 
 struct tag_vertex_shader {
   using COM = ID3D11VertexShader;
-  using DATA = void *;
+  using DATA =
+      std::unordered_map<IMTLD3D11InputLayout *, Com<IMTLCompiledShader>>;
 };
 
 struct tag_pixel_shader {
@@ -111,8 +112,12 @@ public:
 
   void GetCompiledShader(IMTLCompiledShader **pShader) final;
 
-  void GetCompiledShaderWithInputLayerFixup(uint64_t sign_mask,
-                                            IMTLCompiledShader **pShader) final;
+  void
+  GetCompiledShaderWithInputLayoutFixup(uint64_t sign_mask,
+                                        IMTLCompiledShader **pShader) final;
+
+  void GetCompiledVertexShaderWithVertexPulling(IMTLD3D11InputLayout *,
+                                                IMTLCompiledShader **) final;
 
   virtual void
   GetCompiledPixelShaderWithSampleMask(uint32_t sample_mask,
@@ -285,6 +290,23 @@ private:
   SM50_SHADER_COMPILATION_INPUT_SIGN_MASK_DATA data;
 };
 
+class AirconvVertexShaderWithVertexPulling
+    : public AirconvShader<tag_vertex_shader> {
+public:
+  AirconvVertexShaderWithVertexPulling(IMTLD3D11Device *pDevice,
+                                       TShaderBase<tag_vertex_shader> *shader,
+                                       IMTLD3D11InputLayout *pInputLayout)
+      : AirconvShader<tag_vertex_shader>(pDevice, shader, &data) {
+    data.type = SM50_SHADER_IA_INPUT_LAYOUT;
+    data.next = nullptr;
+    data.num_elements = pInputLayout->GetInputLayoutElements(
+        (MTL_SHADER_INPUT_LAYOUT_ELEMENT **)&data.elements);
+  };
+
+private:
+  SM50_SHADER_IA_INPUT_LAYOUT_DATA data;
+};
+
 class AirconvPixelShaderWithSampleMask
     : public AirconvShader<tag_pixel_shader> {
 public:
@@ -326,6 +348,32 @@ private:
   SM50_SHADER_COMPILATION_INPUT_SIGN_MASK_DATA data_sign_mask;
 };
 
+class AirconvShaderEmulatedVertexSOWithVertexPulling
+    : public AirconvShader<tag_emulated_vertex_so> {
+public:
+  AirconvShaderEmulatedVertexSOWithVertexPulling(
+      IMTLD3D11Device *pDevice, TShaderBase<tag_emulated_vertex_so> *shader,
+      IMTLD3D11InputLayout *pInputLayout)
+      : AirconvShader<tag_emulated_vertex_so>(pDevice, shader, &data) {
+    data.type = SM50_SHADER_EMULATE_VERTEX_STREAM_OUTPUT;
+    data.next = &data_vertex_pulling;
+    data.num_output_slots = shader->data.NumSlots;
+    data.num_elements = shader->data.Elements.size();
+    memcpy(data.strides, shader->data.Strides.data(), sizeof(data.strides));
+    data.elements = shader->data.Elements.data();
+
+    data_vertex_pulling.type = SM50_SHADER_IA_INPUT_LAYOUT;
+    data_vertex_pulling.next = nullptr;
+    data_vertex_pulling.num_elements = pInputLayout->GetInputLayoutElements(
+        (MTL_SHADER_INPUT_LAYOUT_ELEMENT **)&data_vertex_pulling.elements);
+  };
+
+private:
+  std::vector<uint32_t> entries;
+  SM50_SHADER_EMULATE_VERTEX_STREAM_OUTPUT_DATA data;
+  SM50_SHADER_IA_INPUT_LAYOUT_DATA data_vertex_pulling;
+};
+
 template <>
 void TShaderBase<tag_emulated_vertex_so>::GetCompiledShader(
     IMTLCompiledShader **pShader) {
@@ -352,8 +400,11 @@ void TShaderBase<tag>::GetCompiledShader(IMTLCompiledShader **pShader) {
 }
 
 template <>
-void TShaderBase<tag_emulated_vertex_so>::GetCompiledShaderWithInputLayerFixup(
+void TShaderBase<tag_emulated_vertex_so>::GetCompiledShaderWithInputLayoutFixup(
     uint64_t sign_mask, IMTLCompiledShader **pShader) {
+#ifdef DXMT_SHADER_VERTEX_PULLING
+  D3D11_ASSERT(0 && "should not call this function");
+#endif
   if (sign_mask == 0) {
     return GetCompiledShader(pShader);
   }
@@ -369,7 +420,7 @@ void TShaderBase<tag_emulated_vertex_so>::GetCompiledShaderWithInputLayerFixup(
 }
 
 template <typename tag>
-void TShaderBase<tag>::GetCompiledShaderWithInputLayerFixup(
+void TShaderBase<tag>::GetCompiledShaderWithInputLayoutFixup(
     uint64_t sign_mask, IMTLCompiledShader **pShader) {
   if (sign_mask == 0) {
     return GetCompiledShader(pShader);
@@ -380,6 +431,42 @@ void TShaderBase<tag>::GetCompiledShaderWithInputLayerFixup(
     IMTLCompiledShader *shader = new AirconvShaderWithInputLayoutFixup<tag>(
         this->m_parent, this, sign_mask);
     with_input_layout_fixup_.emplace(sign_mask, shader);
+    *pShader = ref(shader);
+    shader->SubmitWork();
+  }
+}
+
+template <typename tag>
+void TShaderBase<tag>::GetCompiledVertexShaderWithVertexPulling(
+    IMTLD3D11InputLayout *pInputLayout, IMTLCompiledShader **pShader) {
+  D3D11_ASSERT(0 && "should not call this function");
+}
+
+template <>
+void TShaderBase<tag_vertex_shader>::GetCompiledVertexShaderWithVertexPulling(
+    IMTLD3D11InputLayout *pInputLayout, IMTLCompiledShader **pShader) {
+  if (data.contains(pInputLayout)) {
+    *pShader = data[pInputLayout].ref();
+  } else {
+    IMTLCompiledShader *shader = new AirconvVertexShaderWithVertexPulling(
+        this->m_parent, this, pInputLayout);
+    data.emplace(pInputLayout, shader);
+    *pShader = ref(shader);
+    shader->SubmitWork();
+  }
+}
+
+template <>
+void TShaderBase<tag_emulated_vertex_so>::
+    GetCompiledVertexShaderWithVertexPulling(IMTLD3D11InputLayout *pInputLayout,
+                                             IMTLCompiledShader **pShader) {
+  if (with_input_layout_fixup_.contains((uint64_t)pInputLayout)) {
+    *pShader = with_input_layout_fixup_[(uint64_t)pInputLayout].ref();
+  } else {
+    IMTLCompiledShader *shader =
+        new AirconvShaderEmulatedVertexSOWithVertexPulling(this->m_parent, this,
+                                                           pInputLayout);
+    with_input_layout_fixup_.emplace((uint64_t)pInputLayout, shader);
     *pShader = ref(shader);
     shader->SubmitWork();
   }
@@ -481,8 +568,13 @@ public:
     *ppShader = nullptr;
   };
 
-  void GetCompiledShaderWithInputLayerFixup(uint64_t,
-                                            IMTLCompiledShader **) final {
+  void GetCompiledShaderWithInputLayoutFixup(uint64_t,
+                                             IMTLCompiledShader **) final {
+    // D3D11_ASSERT(0 && "should not call this function");
+  };
+
+  void GetCompiledVertexShaderWithVertexPulling(IMTLD3D11InputLayout *,
+                                                IMTLCompiledShader **) final {
     // D3D11_ASSERT(0 && "should not call this function");
   };
 
