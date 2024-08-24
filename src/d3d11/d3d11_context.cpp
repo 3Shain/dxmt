@@ -1613,7 +1613,11 @@ public:
   void OMGetBlendState(ID3D11BlendState **ppBlendState, FLOAT BlendFactor[4],
                        UINT *pSampleMask) override {
     if (ppBlendState) {
-      state_.OutputMerger.BlendState->QueryInterface(IID_PPV_ARGS(ppBlendState));
+      if(state_.OutputMerger.BlendState) {
+        state_.OutputMerger.BlendState->QueryInterface(IID_PPV_ARGS(ppBlendState));
+      } else {
+        *ppBlendState = nullptr;
+      }
     }
     if (BlendFactor) {
       memcpy(BlendFactor, state_.OutputMerger.BlendFactor, sizeof(float[4]));
@@ -1636,8 +1640,12 @@ public:
   void OMGetDepthStencilState(ID3D11DepthStencilState **ppDepthStencilState,
                               UINT *pStencilRef) override {
     if (ppDepthStencilState) {
-      state_.OutputMerger.DepthStencilState->QueryInterface(
-          IID_PPV_ARGS(ppDepthStencilState));
+      if (state_.OutputMerger.DepthStencilState) {
+        state_.OutputMerger.DepthStencilState->QueryInterface(
+            IID_PPV_ARGS(ppDepthStencilState));
+      } else {
+        *ppDepthStencilState = nullptr;
+      }
     }
     if (pStencilRef) {
       *pStencilRef = state_.OutputMerger.StencilRef;
