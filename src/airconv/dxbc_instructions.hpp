@@ -90,6 +90,33 @@ struct SrcOperandInput {
   uint32_t regid;
 };
 
+struct SrcOperandInput2D {
+  static constexpr std::string_view debug_name = "input_2d";
+  SrcOperandModifier _;
+  OperandIndex cpid;
+  uint32_t regid;
+};
+
+struct SrcOperandInputOCP {
+  static constexpr std::string_view debug_name = "input_vocp";
+  SrcOperandModifier _;
+  OperandIndex cpid;
+  uint32_t regid;
+};
+
+struct SrcOperandInputICP {
+  static constexpr std::string_view debug_name = "input_vicp";
+  SrcOperandModifier _;
+  OperandIndex cpid;
+  uint32_t regid;
+};
+
+struct SrcOperandInputPC {
+  static constexpr std::string_view debug_name = "input_vpc";
+  SrcOperandModifier _;
+  uint32_t regid;
+};
+
 struct SrcOperandIndexableInput {
   static constexpr std::string_view debug_name = "indexable_input";
   SrcOperandModifier _;
@@ -153,6 +180,12 @@ struct DstOperandOutput {
   uint32_t regid;
 };
 
+struct DstOperandIndexableOutput {
+  static constexpr std::string_view debug_name = "indexable_output";
+  DstOperandCommon _;
+  OperandIndex regindex;
+};
+
 struct DstOperandOutputDepth {
   static constexpr std::string_view debug_name = "odepth";
   DstOperandCommon _;
@@ -187,7 +220,8 @@ struct DclOutput {};
 using SrcOperand = std::variant<
   SrcOperandImmediate32, SrcOperandTemp, SrcOperandIndexableTemp,
   SrcOperandInput, SrcOperandConstantBuffer, SrcOperandImmediateConstantBuffer,
-  SrcOperandAttribute, SrcOperandIndexableInput>;
+  SrcOperandAttribute, SrcOperandIndexableInput, SrcOperandInput2D,
+  SrcOperandInputICP, SrcOperandInputOCP, SrcOperandInputPC>;
 
 struct SrcOperandResource {
   uint32_t range_id;
@@ -234,7 +268,8 @@ struct AtomicOperandTGSM {
 
 using DstOperand = std::variant<
   DstOperandNull, DstOperandSideEffect, DstOperandTemp, DstOperandIndexableTemp,
-  DstOperandOutput, DstOperandOutputDepth, DstOperandOutputCoverageMask>;
+  DstOperandOutput, DstOperandOutputDepth, DstOperandOutputCoverageMask,
+  DstOperandIndexableOutput>;
 
 #pragma mark mov instructions
 

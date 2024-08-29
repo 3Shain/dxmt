@@ -1187,7 +1187,7 @@ IRValue load_src<SrcOperandIndexableInput, false>(SrcOperandIndexableInput input
 template <>
 IRValue load_src<SrcOperandAttribute, false>(SrcOperandAttribute attr) {
   auto ctx = co_yield get_context();
-  pvalue vec;
+  pvalue vec = nullptr;
   switch (attr.attribute) {
   case shader::common::InputAttribute::VertexId:
   case shader::common::InputAttribute::PrimitiveId:
@@ -1224,6 +1224,11 @@ IRValue load_src<SrcOperandAttribute, false>(SrcOperandAttribute attr) {
         : ctx.resource.coverage_mask_arg
     );
     break;
+  }
+  case shader::common::InputAttribute::OutputControlPointId:
+  case shader::common::InputAttribute::ForkInstanceId:
+  case shader::common::InputAttribute::JoinInstanceId: {
+    co_yield throwUnsupported("TODO");
   }
   }
   co_return vec;
@@ -1269,6 +1274,11 @@ IRValue load_src<SrcOperandAttribute, true>(SrcOperandAttribute attr) {
         : ctx.resource.coverage_mask_arg
     ) >>= bitcast_float4;
     break;
+  }
+  case shader::common::InputAttribute::OutputControlPointId:
+  case shader::common::InputAttribute::ForkInstanceId:
+  case shader::common::InputAttribute::JoinInstanceId: {
+    co_yield throwUnsupported("TODO");
   }
   }
   co_return vec;

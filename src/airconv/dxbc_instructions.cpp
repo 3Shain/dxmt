@@ -96,11 +96,16 @@ auto readDstOperand(const microsoft::D3D10ShaderBinary::COperandBase &O
 
   case D3D10_SB_OPERAND_TYPE_OUTPUT: {
     unsigned Reg = O.m_Index[0].m_RegIndex;
-    return DstOperandOutput{
+    if (O.m_IndexType[0] == D3D10_SB_OPERAND_INDEX_IMMEDIATE32) {
+      return DstOperandOutput{
+        ._ = {.mask = O.m_WriteMask >> 4},
+        .regid = Reg,
+      };
+    }
+    return DstOperandIndexableOutput{
       ._ = {.mask = O.m_WriteMask >> 4},
-      .regid = Reg,
+      .regindex = readOperandIndex(O.m_Index[0], O.m_IndexType[0])
     };
-    break;
   }
 
   case D3D10_SB_OPERAND_TYPE_OUTPUT_DEPTH:
@@ -225,6 +230,14 @@ SrcOperand readSrcOperand(const microsoft::D3D10ShaderBinary::COperandBase &O) {
     };
   }
   case D3D10_SB_OPERAND_TYPE_INPUT: {
+    if (O.m_IndexDimension == D3D10_SB_OPERAND_INDEX_2D) {
+      DXASSERT_DXBC(O.m_IndexType[1] == D3D10_SB_OPERAND_INDEX_IMMEDIATE32);
+      return SrcOperandInput2D{
+        ._ = readSrcOperandCommon(O),
+        .cpid = readOperandIndex(O.m_Index[0], O.m_IndexType[0]),
+        .regid = O.m_Index[1].m_RegIndex,
+      };
+    }
     DXASSERT_DXBC(O.m_IndexDimension == D3D10_SB_OPERAND_INDEX_1D);
     if (O.m_IndexType[0] == D3D10_SB_OPERAND_INDEX_IMMEDIATE32) {
 
@@ -239,7 +252,27 @@ SrcOperand readSrcOperand(const microsoft::D3D10ShaderBinary::COperandBase &O) {
       .regindex = readOperandIndex(O.m_Index[0], O.m_IndexType[0])
     };
   }
-
+  case D3D11_SB_OPERAND_TYPE_INPUT_CONTROL_POINT: {
+    return SrcOperandInputICP{
+      ._ = readSrcOperandCommon(O),
+      .cpid = readOperandIndex(O.m_Index[0], O.m_IndexType[0]),
+      .regid = O.m_Index[1].m_RegIndex,
+    };
+  }
+  case D3D11_SB_OPERAND_TYPE_OUTPUT_CONTROL_POINT: {
+    return SrcOperandInputOCP{
+      ._ = readSrcOperandCommon(O),
+      .cpid = readOperandIndex(O.m_Index[0], O.m_IndexType[0]),
+      .regid = O.m_Index[1].m_RegIndex,
+    };
+  }
+  case D3D11_SB_OPERAND_TYPE_INPUT_PATCH_CONSTANT: {
+    unsigned Reg = O.m_Index[0].m_RegIndex;
+    return SrcOperandInputPC{
+      ._ = readSrcOperandCommon(O),
+      .regid = Reg,
+    };
+  }
   case D3D10_SB_OPERAND_TYPE_INDEXABLE_TEMP: {
     DXASSERT_DXBC(O.m_IndexDimension == D3D10_SB_OPERAND_INDEX_2D);
     DXASSERT_DXBC(O.m_IndexType[0] == D3D10_SB_OPERAND_INDEX_IMMEDIATE32);
@@ -302,6 +335,31 @@ SrcOperand readSrcOperand(const microsoft::D3D10ShaderBinary::COperandBase &O) {
     return SrcOperandAttribute{
       ._ = readSrcOperandCommon(O),
       .attribute = shader::common::InputAttribute::CoverageMask
+    };
+  }
+  case D3D11_SB_OPERAND_TYPE_OUTPUT_CONTROL_POINT_ID: {
+    return SrcOperandAttribute{
+      // providing swizzle here because compiler emits
+      // D3D10_SB_OPERAND_4_COMPONENT_MASK_MODE for selection mode
+      ._ =
+        {
+          .swizzle = swizzle_identity,
+          .abs = (O.m_Modifier & microsoft::D3D10_SB_OPERAND_MODIFIER_ABS) != 0,
+          .neg = (O.m_Modifier & microsoft::D3D10_SB_OPERAND_MODIFIER_NEG) != 0,
+        },
+      .attribute = shader::common::InputAttribute::OutputControlPointId
+    };
+  }
+  case D3D11_SB_OPERAND_TYPE_INPUT_FORK_INSTANCE_ID: {
+    return SrcOperandAttribute{
+      ._ = readSrcOperandCommon(O),
+      .attribute = shader::common::InputAttribute::ForkInstanceId
+    };
+  }
+  case D3D11_SB_OPERAND_TYPE_INPUT_JOIN_INSTANCE_ID: {
+    return SrcOperandAttribute{
+      ._ = readSrcOperandCommon(O),
+      .attribute = shader::common::InputAttribute::JoinInstanceId
     };
   }
   default:
