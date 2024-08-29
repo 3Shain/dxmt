@@ -144,6 +144,13 @@ struct ThreadgroupBufferInfo {
 
 #pragma endregion
 
+struct PhaseInfo {
+  uint32_t tempRegisterCount = 0;
+  std::unordered_map<
+    uint32_t, std::pair<uint32_t /* count */, uint32_t /* mask */>>
+    indexableTempRegisterCounts;
+};
+
 class ShaderInfo {
 public:
   std::vector<std::array<uint32_t, 4>> immConstantBufferData;
@@ -161,11 +168,12 @@ public:
   bool skipOptimization = false;
   bool refactoringAllowed = true;
   bool use_cmp_exch = false;
+  std::vector<PhaseInfo> phases;
 };
 
 Instruction readInstruction(
   const microsoft::D3D10ShaderBinary::CInstruction &Inst,
-  ShaderInfo &shader_info
+  ShaderInfo &shader_info, uint32_t phase
 );
 
 } // namespace dxmt::dxbc

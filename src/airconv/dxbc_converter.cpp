@@ -51,9 +51,12 @@ public:
   microsoft::D3D10_SB_TOKENIZED_PROGRAM_TYPE shader_type;
   uint32_t max_input_register = 0;
   uint32_t max_output_register = 0;
+  uint32_t max_patch_constant_output_register = 0;
   std::vector<MTL_SM50_SHADER_ARGUMENT> args_reflection_cbuffer;
   std::vector<MTL_SM50_SHADER_ARGUMENT> args_reflection;
   uint32_t threadgroup_size[3] = {0};
+  uint32_t input_control_point_count = ~0u;
+  uint32_t output_control_point_count = ~0u;
 };
 
 class SM50CompiledBitcodeInternal {
@@ -577,12 +580,14 @@ int SM50Initialize(
     const std::shared_ptr<BasicBlock> &continue_point,
     const std::shared_ptr<BasicBlock> &break_point,
     const std::shared_ptr<BasicBlock> &return_point,
-    std::shared_ptr<BasicBlockSwitch> &switch_context
+    std::shared_ptr<BasicBlockSwitch> &switch_context,
+    std::shared_ptr<BasicBlockInstanceBarrier> &instance_barrier_context
   )>
     readControlFlow;
 
   std::shared_ptr<BasicBlock> null_bb;
   std::shared_ptr<BasicBlockSwitch> null_switch_context;
+  std::shared_ptr<BasicBlockInstanceBarrier> null_instance_barrier_context;
 
   bool sm_ver_5_1_ = CodeParser.ShaderMajorVersion() == 5 &&
                      CodeParser.ShaderMinorVersion() >= 1;
@@ -594,19 +599,25 @@ int SM50Initialize(
 
   uint32_t &max_input_register = sm50_shader->max_input_register;
   uint32_t &max_output_register = sm50_shader->max_output_register;
+  uint32_t &max_patch_constant_output_register =
+    sm50_shader->max_patch_constant_output_register;
+
+  uint32_t phase = ~0u;
 
   auto &prelogue_ = sm50_shader->prelogue_;
   auto &input_prelogue_ = sm50_shader->input_prelogue_;
   auto &epilogue_ = sm50_shader->epilogue_;
 
-  readControlFlow = [&](
-                      const std::shared_ptr<BasicBlock> &ctx,
-                      const std::shared_ptr<BasicBlock> &block_after_endif,
-                      const std::shared_ptr<BasicBlock> &continue_point,
-                      const std::shared_ptr<BasicBlock> &break_point,
-                      const std::shared_ptr<BasicBlock> &return_point,
-                      std::shared_ptr<BasicBlockSwitch> &switch_context
-                    ) -> std::shared_ptr<BasicBlock> {
+  readControlFlow =
+    [&](
+      const std::shared_ptr<BasicBlock> &ctx,
+      const std::shared_ptr<BasicBlock> &block_after_endif,
+      const std::shared_ptr<BasicBlock> &continue_point,
+      const std::shared_ptr<BasicBlock> &break_point,
+      const std::shared_ptr<BasicBlock> &return_point,
+      std::shared_ptr<BasicBlockSwitch> &switch_context,
+      std::shared_ptr<BasicBlockInstanceBarrier> &instance_barrier_context
+    ) -> std::shared_ptr<BasicBlock> {
     while (!CodeParser.EndOfShader()) {
       D3D10ShaderBinary::CInstruction Inst;
       CodeParser.ParseInstruction(&Inst);
@@ -622,12 +633,12 @@ int SM50Initialize(
         };
         auto after_endif = readControlFlow(
           true_, alternative_, continue_point, break_point, return_point,
-          null_switch_context
+          null_switch_context, null_instance_barrier_context
         ); // read till ENDIF
         // scope end
         return readControlFlow(
           after_endif, block_after_endif, continue_point, break_point,
-          return_point, switch_context
+          return_point, switch_context, null_instance_barrier_context
         );
       }
       case D3D10_SB_OPCODE_ELSE: {
@@ -636,7 +647,7 @@ int SM50Initialize(
         ctx->target = BasicBlockUnconditionalBranch{real_exit};
         return readControlFlow(
           block_after_endif, real_exit, continue_point, break_point,
-          return_point, switch_context
+          return_point, switch_context, null_instance_barrier_context
         );
       }
       case D3D10_SB_OPCODE_ENDIF: {
@@ -651,13 +662,13 @@ int SM50Initialize(
         ctx->target = BasicBlockUnconditionalBranch{loop_entrance};
         auto _ = readControlFlow(
           loop_entrance, null_bb, loop_entrance, after_endloop, return_point,
-          null_switch_context
+          null_switch_context, null_instance_barrier_context
         ); // return from ENDLOOP
         assert(_.get() == after_endloop.get());
         // scope end
         return readControlFlow(
           after_endloop, block_after_endif, continue_point, break_point,
-          return_point, switch_context
+          return_point, switch_context, null_instance_barrier_context
         );
       }
       case D3D10_SB_OPCODE_BREAK: {
@@ -665,7 +676,7 @@ int SM50Initialize(
         auto after_break = std::make_shared<BasicBlock>("after_break");
         return readControlFlow(
           after_break, block_after_endif, continue_point, break_point,
-          return_point, switch_context
+          return_point, switch_context, null_instance_barrier_context
         ); // ?
       }
       case D3D10_SB_OPCODE_BREAKC: {
@@ -675,7 +686,7 @@ int SM50Initialize(
         };
         return readControlFlow(
           after_break, block_after_endif, continue_point, break_point,
-          return_point, switch_context
+          return_point, switch_context, null_instance_barrier_context
         ); // ?
       }
       case D3D10_SB_OPCODE_CONTINUE: {
@@ -683,8 +694,7 @@ int SM50Initialize(
         auto after_continue = std::make_shared<BasicBlock>("after_continue");
         return readControlFlow(
           after_continue, block_after_endif, continue_point, break_point,
-          return_point,
-          switch_context
+          return_point, switch_context, null_instance_barrier_context
         ); // ?
       }
       case D3D10_SB_OPCODE_CONTINUEC: {
@@ -694,8 +704,7 @@ int SM50Initialize(
         };
         return readControlFlow(
           after_continue, block_after_endif, continue_point, break_point,
-          return_point,
-          switch_context
+          return_point, switch_context, null_instance_barrier_context
         ); // ?
       }
       case D3D10_SB_OPCODE_ENDLOOP: {
@@ -712,14 +721,14 @@ int SM50Initialize(
            // first case (and then ignored)
         auto _ = readControlFlow(
           empty_body, null_bb, continue_point, after_endswitch, return_point,
-          local_switch_context
+          local_switch_context, null_instance_barrier_context
         );
         assert(_.get() == after_endswitch.get());
         ctx->target = std::move(*local_switch_context);
         // scope end
         return readControlFlow(
           after_endswitch, block_after_endif, continue_point, break_point,
-          return_point, switch_context
+          return_point, switch_context, null_instance_barrier_context
         );
       }
       case D3D10_SB_OPCODE_CASE: {
@@ -737,7 +746,7 @@ int SM50Initialize(
         switch_context->cases.insert(std::make_pair(case_value, case_body));
         return readControlFlow(
           case_body, block_after_endif, continue_point, break_point,
-          return_point, switch_context
+          return_point, switch_context, null_instance_barrier_context
         );
       }
       case D3D10_SB_OPCODE_DEFAULT: {
@@ -746,7 +755,7 @@ int SM50Initialize(
         switch_context->case_default = case_body;
         return readControlFlow(
           case_body, block_after_endif, continue_point, break_point,
-          return_point, switch_context
+          return_point, switch_context, null_instance_barrier_context
         );
       }
       case D3D10_SB_OPCODE_ENDSWITCH: {
@@ -767,7 +776,7 @@ int SM50Initialize(
         // if it's inside a scope, then return is not the end
         return readControlFlow(
           after_ret, block_after_endif, continue_point, break_point,
-          return_point, switch_context
+          return_point, switch_context, null_instance_barrier_context
         );
       }
       case D3D10_SB_OPCODE_RETC: {
@@ -777,7 +786,7 @@ int SM50Initialize(
         };
         return readControlFlow(
           after_retc, block_after_endif, continue_point, break_point,
-          return_point, switch_context
+          return_point, switch_context, null_instance_barrier_context
         );
       }
       case D3D10_SB_OPCODE_DISCARD: {
@@ -790,8 +799,70 @@ int SM50Initialize(
         fulfilled_->instructions.push_back(InstPixelDiscard{});
         return readControlFlow(
           otherwise_, block_after_endif, continue_point, break_point,
-          return_point, switch_context
+          return_point, switch_context, null_instance_barrier_context
         );
+      }
+      case D3D11_SB_OPCODE_HS_CONTROL_POINT_PHASE: {
+        auto control_point_active =
+          std::make_shared<BasicBlock>("control_point_active");
+        auto control_point_end =
+          std::make_shared<BasicBlock>("control_point_end");
+        control_point_end->instructions.push_back(InstSync{
+          .boundary = InstSync::Boundary::group,
+          .threadGroupMemoryFence = true,
+          .threadGroupExecutionFence = true,
+        });
+
+        auto local_context =
+          std::make_shared<BasicBlockInstanceBarrier>(BasicBlockInstanceBarrier{
+            sm50_shader->output_control_point_count, control_point_active,
+            control_point_end
+          });
+        auto _ = readControlFlow(
+          control_point_active, null_bb, null_bb, null_bb, control_point_end,
+          null_switch_context, local_context
+        );
+        assert(_.get() == control_point_end.get());
+        ctx->target = std::move(*local_context);
+        return readControlFlow(
+          control_point_end, null_bb, null_bb, null_bb, return_point,
+          null_switch_context, null_instance_barrier_context
+        );
+      }
+      case D3D11_SB_OPCODE_HS_JOIN_PHASE:
+      case D3D11_SB_OPCODE_HS_FORK_PHASE: {
+        phase++;
+        shader_info->phases.push_back(PhaseInfo{});
+
+        auto fork_join_active =
+          std::make_shared<BasicBlock>("fork_join_active");
+        auto fork_join_end = std::make_shared<BasicBlock>("fork_join_end");
+        fork_join_end->instructions.push_back(InstSync{
+          .boundary = InstSync::Boundary::group,
+          .threadGroupMemoryFence = true,
+          .threadGroupExecutionFence = true,
+        });
+
+        auto local_context = std::make_shared<BasicBlockInstanceBarrier>(
+          BasicBlockInstanceBarrier{1, fork_join_active, fork_join_end}
+        );
+        auto _ = readControlFlow(
+          fork_join_active, null_bb, null_bb, null_bb, fork_join_end,
+          null_switch_context, local_context
+        );
+        assert(_.get() == fork_join_end.get());
+        ctx->target = std::move(*local_context);
+        return readControlFlow(
+          fork_join_end, null_bb, null_bb, null_bb, return_point,
+          null_switch_context, null_instance_barrier_context
+        );
+      }
+      case D3D11_SB_OPCODE_DCL_HS_JOIN_PHASE_INSTANCE_COUNT:
+      case D3D11_SB_OPCODE_DCL_HS_FORK_PHASE_INSTANCE_COUNT: {
+        assert(instance_barrier_context.get());
+        instance_barrier_context->instance_count =
+          Inst.m_HSForkPhaseInstanceCountDecl.InstanceCount;
+        break;
       }
 #pragma endregion
 #pragma region declaration
@@ -970,10 +1041,25 @@ int SM50Initialize(
         break;
       }
       case D3D10_SB_OPCODE_DCL_TEMPS: {
+        if (phase != ~0u) {
+          assert(shader_info->phases.size() > phase);
+          shader_info->phases[phase].tempRegisterCount =
+            Inst.m_TempsDecl.NumTemps;
+          break;
+        }
         shader_info->tempRegisterCount = Inst.m_TempsDecl.NumTemps;
         break;
       }
       case D3D10_SB_OPCODE_DCL_INDEXABLE_TEMP: {
+        if (phase != ~0u) {
+          assert(shader_info->phases.size() > phase);
+          shader_info->phases[phase].indexableTempRegisterCounts
+            [Inst.m_IndexableTempDecl.IndexableTempNumber] = std::make_pair(
+            Inst.m_IndexableTempDecl.NumRegisters,
+            Inst.m_IndexableTempDecl.Mask >> 4
+          );
+          break;
+        }
         shader_info->indexableTempRegisterCounts[Inst.m_IndexableTempDecl
                                                    .IndexableTempNumber] =
           std::make_pair(
@@ -1340,7 +1426,12 @@ int SM50Initialize(
           assert(0 && "Unexpected/unhandled input system value");
           break;
         }
-        max_output_register = std::max(reg + 1, max_output_register);
+        if (phase != ~0u) {
+          max_patch_constant_output_register =
+            std::max(reg + 1, max_patch_constant_output_register);
+        } else {
+          max_output_register = std::max(reg + 1, max_output_register);
+        }
         break;
       }
       case D3D10_SB_OPCODE_DCL_OUTPUT: {
@@ -1444,11 +1535,12 @@ int SM50Initialize(
               .user = sig.fullSemanticString(),
               .type = to_msl_type(sig.componentType()),
             });
+          if (phase != ~0u) {
+            max_patch_constant_output_register =
+              std::max(reg + 1, max_patch_constant_output_register);
+          } else {
+            max_output_register = std::max(reg + 1, max_output_register);
           }
-          epilogue_.push_back([=](IRValue &epilogue) {
-            epilogue >> pop_output_reg(reg, mask, assigned_index);
-          });
-          max_output_register = std::max(reg + 1, max_output_register);
           break;
         }
         }
@@ -1478,35 +1570,75 @@ int SM50Initialize(
       case D3D11_SB_OPCODE_DCL_FUNCTION_TABLE:
       case D3D11_SB_OPCODE_DCL_FUNCTION_BODY:
       case D3D10_SB_OPCODE_LABEL:
-      case D3D11_SB_OPCODE_DCL_TESS_PARTITIONING:
-      case D3D11_SB_OPCODE_DCL_TESS_OUTPUT_PRIMITIVE:
-      case D3D11_SB_OPCODE_DCL_TESS_DOMAIN:
-      case D3D11_SB_OPCODE_DCL_INPUT_CONTROL_POINT_COUNT:
-      case D3D11_SB_OPCODE_DCL_OUTPUT_CONTROL_POINT_COUNT:
-      case D3D11_SB_OPCODE_DCL_HS_FORK_PHASE_INSTANCE_COUNT:
-      case D3D11_SB_OPCODE_DCL_HS_JOIN_PHASE_INSTANCE_COUNT:
-      case D3D11_SB_OPCODE_DCL_HS_MAX_TESSFACTOR: {
+      case D3D11_SB_OPCODE_HS_DECLS:
         // ignore atm
+        break;
+      case D3D11_SB_OPCODE_DCL_TESS_PARTITIONING: {
+
+        break;
+      }
+      case D3D11_SB_OPCODE_DCL_TESS_OUTPUT_PRIMITIVE: {
+
+        break;
+      }
+      case D3D11_SB_OPCODE_DCL_INPUT_CONTROL_POINT_COUNT: {
+        sm50_shader->input_control_point_count =
+          Inst.m_InputControlPointCountDecl.InputControlPointCount;
+        break;
+      }
+      case D3D11_SB_OPCODE_DCL_OUTPUT_CONTROL_POINT_COUNT: {
+        sm50_shader->output_control_point_count =
+          Inst.m_OutputControlPointCountDecl.OutputControlPointCount;
+        break;
+      }
+      case D3D11_SB_OPCODE_DCL_TESS_DOMAIN: {
+        assert(sm50_shader->input_control_point_count != ~0u);
+        switch (Inst.m_TessellatorDomainDecl.TessellatorDomain) {
+        case microsoft::D3D11_SB_TESSELLATOR_DOMAIN_UNDEFINED:
+        case microsoft::D3D11_SB_TESSELLATOR_DOMAIN_ISOLINE:
+          assert(0 && "unsupported tesselator domain");
+          break;
+        case microsoft::D3D11_SB_TESSELLATOR_DOMAIN_TRI:
+          sm50_shader->func_signature.UsePatch(
+            dxmt::air::PostTessellationPatch::triangle,
+            sm50_shader->input_control_point_count
+          );
+          break;
+        case microsoft::D3D11_SB_TESSELLATOR_DOMAIN_QUAD:
+          sm50_shader->func_signature.UsePatch(
+            dxmt::air::PostTessellationPatch::quad,
+            sm50_shader->input_control_point_count
+          );
+          break;
+        }
+        break;
+      }
+      case D3D11_SB_OPCODE_DCL_HS_MAX_TESSFACTOR: {
+
         break;
       }
 #pragma endregion
       default: {
         // insert instruction into BasicBlock
         ctx->instructions.push_back(
-          dxmt::dxbc::readInstruction(Inst, *shader_info)
+          dxmt::dxbc::readInstruction(Inst, *shader_info, phase)
         );
         break;
       }
       }
     }
-    assert(0 && "Unexpected end of shader instructions.");
+    assert(return_point && sm50_shader->shader_type == D3D11_SB_HULL_SHADER);
+    ctx->target = BasicBlockUnconditionalBranch{return_point};
+    return return_point;
+    // assert(0 && "Unexpected end of shader instructions.");
   };
 
   auto entry = std::make_shared<BasicBlock>("entrybb");
   auto return_point = std::make_shared<BasicBlock>("returnbb");
   return_point->target = BasicBlockReturn{};
   auto _ = readControlFlow(
-    entry, null_bb, null_bb, null_bb, return_point, null_switch_context
+    entry, null_bb, null_bb, null_bb, return_point, null_switch_context,
+    null_instance_barrier_context
   );
   assert(_.get() == return_point.get());
 

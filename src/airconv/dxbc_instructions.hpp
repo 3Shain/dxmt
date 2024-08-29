@@ -165,6 +165,7 @@ struct DstOperandTemp {
   static constexpr std::string_view debug_name = "temp";
   DstOperandCommon _;
   uint32_t regid;
+  uint32_t phase;
 };
 
 struct DstOperandIndexableTemp {
@@ -172,18 +173,21 @@ struct DstOperandIndexableTemp {
   DstOperandCommon _;
   uint32_t regfile;
   OperandIndex regindex;
+  uint32_t phase;
 };
 
 struct DstOperandOutput {
   static constexpr std::string_view debug_name = "output";
   DstOperandCommon _;
   uint32_t regid;
+  uint32_t phase;
 };
 
 struct DstOperandIndexableOutput {
   static constexpr std::string_view debug_name = "indexable_output";
   DstOperandCommon _;
   OperandIndex regindex;
+  uint32_t phase;
 };
 
 struct DstOperandOutputDepth {
@@ -744,9 +748,15 @@ struct BasicBlockReturn {};
 
 struct BasicBlockUndefined {};
 
+struct BasicBlockInstanceBarrier {
+  uint32_t instance_count;
+  std::shared_ptr<BasicBlock> active;
+  std::shared_ptr<BasicBlock> sync;
+};
+
 using BasicBlockTarget = std::variant<
   BasicBlockConditionalBranch, BasicBlockUnconditionalBranch, BasicBlockSwitch,
-  BasicBlockReturn, BasicBlockUndefined>;
+  BasicBlockReturn, BasicBlockInstanceBarrier, BasicBlockUndefined>;
 
 class BasicBlock {
 public:

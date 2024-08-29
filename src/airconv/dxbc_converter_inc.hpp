@@ -4189,7 +4189,30 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
               // unconditional jump to return bb
               builder.CreateBr(return_bb);
               return llvm::Error::success();
-            }
+            },
+            [&](BasicBlockInstanceBarrier instance) -> llvm::Error {
+              if (visited.count(instance.active.get()) == 0) {
+                if (auto err = readBasicBlock(instance.active)) {
+                  return err;
+                };
+              }
+              if (visited.count(instance.sync.get()) == 0) {
+                if (auto err = readBasicBlock(instance.sync)) {
+                  return err;
+                };
+              }
+              auto target_true_bb = visited[instance.active.get()];
+              auto target_false_bb = visited[instance.sync.get()];
+              builder.CreateCondBr(
+                ctx.builder.CreateICmp(
+                  llvm::CmpInst::ICMP_ULT,
+                  ctx.resource.thread_id_in_group_flat_arg,
+                  ctx.builder.getInt32(instance.instance_count)
+                ),
+                target_true_bb, target_false_bb
+              );
+              return llvm::Error::success();
+            },
           },
           current->target
         )) {
