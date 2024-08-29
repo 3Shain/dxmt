@@ -479,7 +479,8 @@ llvm::Error convertDXBC(
     builder.CreateRet(value);
   }
 
-  if (shader_type == D3D10_SB_VERTEX_SHADER) {
+  if (shader_type == D3D10_SB_VERTEX_SHADER ||
+      shader_type == D3D11_SB_DOMAIN_SHADER) {
     module.getOrInsertNamedMetadata("air.vertex")
       ->addOperand(function_metadata);
   } else if (shader_type == D3D10_SB_PIXEL_SHADER) {
@@ -488,6 +489,8 @@ llvm::Error convertDXBC(
   } else if (shader_type == D3D11_SB_COMPUTE_SHADER) {
     module.getOrInsertNamedMetadata("air.kernel")
       ->addOperand(function_metadata);
+  } else if (shader_type == D3D11_SB_HULL_SHADER) {
+    module.getOrInsertNamedMetadata("air.mesh")->addOperand(function_metadata);
   } else {
     // throw
     assert(0 && "Unsupported shader type");
@@ -1233,6 +1236,9 @@ int SM50Initialize(
           });
           break;
         }
+        case D3D11_SB_OPERAND_TYPE_OUTPUT_CONTROL_POINT_ID:
+        case D3D11_SB_OPERAND_TYPE_INPUT_FORK_INSTANCE_ID:
+        case D3D11_SB_OPERAND_TYPE_INPUT_JOIN_INSTANCE_ID:
         case D3D11_SB_OPERAND_TYPE_INPUT_THREAD_ID_IN_GROUP_FLATTENED: {
           auto assigned_index =
             func_signature.DefineInput(InputThreadIndexInThreadgroup{});
@@ -1245,11 +1251,30 @@ int SM50Initialize(
           });
           break;
         }
-        case D3D11_SB_OPERAND_TYPE_INPUT_DOMAIN_POINT:
-        case D3D11_SB_OPERAND_TYPE_OUTPUT_CONTROL_POINT_ID:
-        case D3D10_SB_OPERAND_TYPE_INPUT_PRIMITIVEID:
-        case D3D11_SB_OPERAND_TYPE_INPUT_FORK_INSTANCE_ID:
-        case D3D11_SB_OPERAND_TYPE_INPUT_JOIN_INSTANCE_ID:
+        case D3D11_SB_OPERAND_TYPE_INPUT_DOMAIN_POINT: {
+          auto assigned_index = func_signature.DefineInput(InputPositionInPatch{
+            .patch = sm50_shader->func_signature.GetPatchType()
+          });
+          prelogue_.push_back([=](IREffect &prelogue) {
+            prelogue << make_effect([=](struct context ctx) {
+              auto attr = ctx.function->getArg(assigned_index);
+              ctx.resource.domain = attr;
+              return std::monostate{};
+            });
+          });
+          break;
+        }
+        case D3D10_SB_OPERAND_TYPE_INPUT_PRIMITIVEID: {
+          auto assigned_index = func_signature.DefineInput(InputPatchID{});
+          prelogue_.push_back([=](IREffect &prelogue) {
+            prelogue << make_effect([=](struct context ctx) {
+              auto attr = ctx.function->getArg(assigned_index);
+              ctx.resource.patch_id = attr;
+              return std::monostate{};
+            });
+          });
+          break;
+        }
         case D3D11_SB_OPERAND_TYPE_INPUT_GS_INSTANCE_ID:
           assert(0 && "unimplemented input registers");
           break;
@@ -1535,6 +1560,10 @@ int SM50Initialize(
               .user = sig.fullSemanticString(),
               .type = to_msl_type(sig.componentType()),
             });
+          }
+          epilogue_.push_back([=](IRValue &epilogue) {
+            epilogue >> pop_output_reg(reg, mask, assigned_index);
+          });
           if (phase != ~0u) {
             max_patch_constant_output_register =
               std::max(reg + 1, max_patch_constant_output_register);

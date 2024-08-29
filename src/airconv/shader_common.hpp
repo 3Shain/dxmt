@@ -53,6 +53,9 @@ enum class InputAttribute {
   OutputControlPointId,
   ForkInstanceId,
   JoinInstanceId,
+
+  /* Domain */
+  Domain,
 };
 
 } // namespace dxmt::shader::common

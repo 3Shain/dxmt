@@ -367,6 +367,23 @@ SrcOperand readSrcOperand(const microsoft::D3D10ShaderBinary::COperandBase &O) {
       .attribute = shader::common::InputAttribute::JoinInstanceId
     };
   }
+  case D3D11_SB_OPERAND_TYPE_INPUT_DOMAIN_POINT: {
+    return SrcOperandAttribute{
+      ._ = readSrcOperandCommon(O),
+      .attribute = shader::common::InputAttribute::Domain
+    };
+  }
+  case D3D10_SB_OPERAND_TYPE_INPUT_PRIMITIVEID: {
+    return SrcOperandAttribute{
+      ._ =
+        {
+          .swizzle = swizzle_identity,
+          .abs = (O.m_Modifier & microsoft::D3D10_SB_OPERAND_MODIFIER_ABS) != 0,
+          .neg = (O.m_Modifier & microsoft::D3D10_SB_OPERAND_MODIFIER_NEG) != 0,
+        },
+      .attribute = shader::common::InputAttribute::PrimitiveId
+    };
+  }
   default:
     DXASSERT_DXBC(false && "unhandled src operand");
   }

@@ -89,6 +89,9 @@ struct io_binding_map {
   llvm::Value *thread_id_in_group_flat_arg = nullptr;
   llvm::Value *coverage_mask_arg = nullptr;
 
+  llvm::Value *domain = nullptr;
+  llvm::Value *patch_id = nullptr;
+
   // special registers (output)
   llvm::AllocaInst *depth_output_reg = nullptr;
   llvm::AllocaInst *stencil_ref_reg = nullptr;
@@ -865,6 +868,10 @@ SrcOperandModifier get_modifier(SrcOperand src) {
       [](SrcOperandTemp src) { return src._; },
       [](SrcOperandIndexableTemp src) { return src._; },
       [](SrcOperandIndexableInput src) { return src._; },
+      [](SrcOperandInput2D src) { return src._; },
+      [](SrcOperandInputICP src) { return src._; },
+      [](SrcOperandInputOCP src) { return src._; },
+      [](SrcOperandInputPC src) { return src._; },
       [](auto s) {
         llvm::outs() << "get_modifier: unhandled src operand type "
                      << decltype(s)::debug_name << "\n";
@@ -983,6 +990,7 @@ uint32_t get_dst_mask(DstOperand dst) {
       [](DstOperandIndexableTemp dst) { return dst._.mask; },
       [](DstOperandOutputDepth) { return (uint32_t)1; },
       [](DstOperandOutputCoverageMask) { return (uint32_t)1; },
+      [](DstOperandIndexableOutput dst) { return dst._.mask; },
       [](auto s) {
         llvm::outs() << "get_dst_mask: unhandled dst operand type "
                      << decltype(s)::debug_name << "\n";
@@ -1190,7 +1198,6 @@ IRValue load_src<SrcOperandAttribute, false>(SrcOperandAttribute attr) {
   pvalue vec = nullptr;
   switch (attr.attribute) {
   case shader::common::InputAttribute::VertexId:
-  case shader::common::InputAttribute::PrimitiveId:
   case shader::common::InputAttribute::InstanceId:
     assert(0 && "never reached: should be handled separately");
     break;
@@ -1209,6 +1216,9 @@ IRValue load_src<SrcOperandAttribute, false>(SrcOperandAttribute attr) {
     vec = co_yield extend_to_vec4(ctx.resource.thread_group_id_arg);
     break;
   }
+  case shader::common::InputAttribute::OutputControlPointId:
+  case shader::common::InputAttribute::ForkInstanceId:
+  case shader::common::InputAttribute::JoinInstanceId:
   case shader::common::InputAttribute::ThreadIdInGroupFlatten: {
     assert(ctx.resource.thread_id_in_group_flat_arg);
     vec = co_yield extend_to_vec4(ctx.resource.thread_id_in_group_flat_arg);
@@ -1225,10 +1235,14 @@ IRValue load_src<SrcOperandAttribute, false>(SrcOperandAttribute attr) {
     );
     break;
   }
-  case shader::common::InputAttribute::OutputControlPointId:
-  case shader::common::InputAttribute::ForkInstanceId:
-  case shader::common::InputAttribute::JoinInstanceId: {
-    co_yield throwUnsupported("TODO");
+  case shader::common::InputAttribute::Domain: {
+    vec = co_yield extend_to_vec4(ctx.resource.domain) >>= bitcast_int4;
+    break;
+  }
+  case shader::common::InputAttribute::PrimitiveId: {
+    assert(ctx.resource.patch_id);
+    vec = co_yield extend_to_vec4(ctx.resource.patch_id);
+    break;
   }
   }
   co_return vec;
@@ -1240,7 +1254,6 @@ IRValue load_src<SrcOperandAttribute, true>(SrcOperandAttribute attr) {
   pvalue vec = nullptr;
   switch (attr.attribute) {
   case shader::common::InputAttribute::VertexId:
-  case shader::common::InputAttribute::PrimitiveId:
   case shader::common::InputAttribute::InstanceId:
     assert(0 && "never reached: should be handled separately");
     break;
@@ -1259,6 +1272,9 @@ IRValue load_src<SrcOperandAttribute, true>(SrcOperandAttribute attr) {
       bitcast_float4;
     break;
   }
+  case shader::common::InputAttribute::OutputControlPointId:
+  case shader::common::InputAttribute::ForkInstanceId:
+  case shader::common::InputAttribute::JoinInstanceId:
   case shader::common::InputAttribute::ThreadIdInGroupFlatten: {
     vec = co_yield extend_to_vec4(ctx.resource.thread_id_in_group_flat_arg) >>=
       bitcast_float4;
@@ -1275,10 +1291,14 @@ IRValue load_src<SrcOperandAttribute, true>(SrcOperandAttribute attr) {
     ) >>= bitcast_float4;
     break;
   }
-  case shader::common::InputAttribute::OutputControlPointId:
-  case shader::common::InputAttribute::ForkInstanceId:
-  case shader::common::InputAttribute::JoinInstanceId: {
-    co_yield throwUnsupported("TODO");
+  case shader::common::InputAttribute::Domain: {
+    vec = co_yield extend_to_vec4(ctx.resource.domain);
+    break;
+  }
+  case shader::common::InputAttribute::PrimitiveId: {
+    assert(ctx.resource.patch_id);
+    vec = co_yield extend_to_vec4(ctx.resource.patch_id) >>= bitcast_float4;
+    break;
   }
   }
   co_return vec;

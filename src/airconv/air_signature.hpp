@@ -557,6 +557,11 @@ public:
     this->patch = std::make_pair(patch, num_control_points);
   }
 
+  PostTessellationPatch GetPatchType() {
+    assert(patch.has_value() && "not a domain shader");
+    return patch->first;
+  };
+
   auto CreateFunction(
     std::string name, llvm::LLVMContext &context, llvm::Module &module,
     uint64_t sign_mask, bool skip_output
