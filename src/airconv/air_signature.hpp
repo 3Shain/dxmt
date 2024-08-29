@@ -54,7 +54,13 @@ enum class MemoryAccess : uint32_t {
   read_write = 3
 };
 
-enum class AddressSpace : uint32_t { unknown, device, constant, threadgroup };
+enum class AddressSpace : uint32_t {
+  unknown,
+  device,
+  constant,
+  threadgroup,
+  object_data = 6
+};
 
 enum class Sign { inapplicable, with_sign, no_sign };
 
@@ -87,6 +93,8 @@ enum class Interpolation {
   sample_no_perspective,
   flat
 };
+
+enum class PostTessellationPatch { triangle, quad };
 
 struct MSLFloat {
   std::string get_name() const { return "float"; };
@@ -472,6 +480,14 @@ struct InputFrontFacing {};
 struct InputInputCoverage {};
 struct InputSampleIndex {};
 
+struct InputPatchID {};
+struct InputPositionInPatch {
+  PostTessellationPatch patch;
+};
+struct InputPayload {
+  uint32_t size;
+};
+
 struct InputPosition {
   Interpolation interpolation;
 };
@@ -511,6 +527,10 @@ using FunctionInput = template_concat_t<
     InputPrimitiveID, InputViewportArrayIndex, InputRenderTargetArrayIndex,
     InputFrontFacing, InputPosition, InputSampleIndex, //
     InputFragmentStageIn, InputInputCoverage,
+    /* post-tessellation */
+    InputPatchID, InputPositionInPatch,
+    /* object & mesh */
+    InputPayload,
     /* kernel */
     InputThreadIndexInThreadgroup, InputThreadPositionInThreadgroup,
     InputThreadPositionInGrid, InputThreadgroupPositionInGrid>>;
@@ -533,6 +553,9 @@ public:
   uint32_t DefineOutput(const FunctionOutput &output);
   void UseEarlyFragmentTests() { early_fragment_tests = true; }
   void UseMaxWorkgroupSize(uint32_t size) { max_work_group_size = size; }
+  void UsePatch(PostTessellationPatch patch, uint32_t num_control_points) {
+    this->patch = std::make_pair(patch, num_control_points);
+  }
 
   auto CreateFunction(
     std::string name, llvm::LLVMContext &context, llvm::Module &module,
@@ -544,6 +567,7 @@ private:
   std::vector<FunctionOutput> outputs;
   bool early_fragment_tests = false;
   uint32_t max_work_group_size = 0;
+  std::optional<std::pair<PostTessellationPatch, uint32_t>> patch;
 };
 
 inline TextureKind to_air_resource_type(
