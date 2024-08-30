@@ -1,10 +1,9 @@
-#pragma once
 #include "air_operations.hpp"
 #include "air_signature.hpp"
 #include "air_type.hpp"
 #include "airconv_error.hpp"
 #include "airconv_public.h"
-#include "dxbc_instructions.hpp"
+#include "dxbc_converter.hpp"
 #include "ftl.hpp"
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/APInt.h"
@@ -23,108 +22,10 @@
 #include "llvm/IR/Type.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/raw_ostream.h"
-#include <algorithm>
-#include <cstdint>
-#include <functional>
-#include <string>
-#include <variant>
 
-// it's suposed to be include by specific file
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wunused-function"
-#pragma clang diagnostic ignored "-Wunknown-pragmas"
-// NOLINTBEGIN(misc-definitions-in-headers)
+char dxmt::UnsupportedFeature::ID;
 
 namespace dxmt::dxbc {
-
-using pvalue = dxmt::air::pvalue;
-using epvalue = llvm::Expected<pvalue>;
-using dxbc::Swizzle;
-using dxbc::swizzle_identity;
-
-struct context;
-using IRValue = ReaderIO<context, pvalue>;
-using IREffect = ReaderIO<context, std::monostate>;
-using IndexedIRValue = std::function<IRValue(pvalue)>;
-
-struct register_file {
-  llvm::Value *ptr_int4 = nullptr;
-  llvm::Value *ptr_float4 = nullptr;
-};
-
-struct indexable_register_file {
-  llvm::Value *ptr_int_vec = nullptr;
-  llvm::Value *ptr_float_vec = nullptr;
-  uint32_t vec_size = 0;
-};
-
-struct phase_temp {
-  register_file temp{};
-  std::unordered_map<uint32_t, indexable_register_file> indexable_temp_map{};
-};
-
-struct io_binding_map {
-  llvm::GlobalVariable *icb = nullptr;
-  llvm::Value *icb_float = nullptr;
-  std::unordered_map<uint32_t, IndexedIRValue> cb_range_map{};
-  std::unordered_map<uint32_t, IndexedIRValue> sampler_range_map{};
-  std::unordered_map<uint32_t, std::tuple<air::MSLTexture, IndexedIRValue>>
-    srv_range_map{};
-  std::unordered_map<
-    uint32_t, std::tuple<IndexedIRValue, IndexedIRValue, uint32_t>>
-    srv_buf_range_map{};
-  std::unordered_map<uint32_t, std::tuple<air::MSLTexture, IndexedIRValue>>
-    uav_range_map{};
-  std::unordered_map<
-    uint32_t, std::tuple<IndexedIRValue, IndexedIRValue, uint32_t>>
-    uav_buf_range_map{};
-  std::unordered_map<uint32_t, std::pair<uint32_t, llvm::GlobalVariable *>>
-    tgsm_map{};
-  std::unordered_map<uint32_t, IndexedIRValue> uav_counter_range_map{};
-
-  register_file input{};
-  register_file output{};
-  register_file temp{};
-  std::unordered_map<uint32_t, indexable_register_file> indexable_temp_map{};
-  std::vector<phase_temp> phases;
-  register_file patch_constant_output{};
-  uint32_t input_element_count;
-  uint32_t output_element_count;
-
-  // special registers (input)
-  llvm::Value *thread_id_arg = nullptr;
-  llvm::Value *thread_group_id_arg = nullptr;
-  llvm::Value *thread_id_in_group_arg = nullptr;
-  llvm::Value *thread_id_in_group_flat_arg = nullptr;
-  llvm::Value *coverage_mask_arg = nullptr;
-
-  llvm::Value *domain = nullptr;
-  llvm::Value *patch_id = nullptr;
-
-  // special registers (output)
-  llvm::AllocaInst *depth_output_reg = nullptr;
-  llvm::AllocaInst *stencil_ref_reg = nullptr;
-  llvm::AllocaInst *coverage_mask_reg = nullptr;
-
-  llvm::AllocaInst *cmp_exch_temp = nullptr;
-
-  // temp for fast look-up
-  llvm::Value *vertex_id_with_base = nullptr;
-  llvm::Value *instance_id_with_base = nullptr;
-  llvm::Value *base_instance_id = nullptr;
-  llvm::Value *vertex_buffer_table = nullptr;
-};
-
-struct context {
-  llvm::IRBuilder<> &builder;
-  llvm::LLVMContext &llvm;
-  llvm::Module &module;
-  llvm::Function *function;
-  io_binding_map &resource;
-  air::AirType &types; // hmmm
-  uint32_t pso_sample_mask;
-  microsoft::D3D10_SB_TOKENIZED_PROGRAM_TYPE shader_type;
-};
 
 template <typename T = std::monostate>
 ReaderIO<context, T> throwUnsupported(llvm::StringRef ref) {
@@ -150,26 +51,6 @@ ReaderIO<context, T> throwUnsupported(llvm::StringRef ref) {
 ReaderIO<context, context> get_context() {
   return ReaderIO<context, context>([](struct context ctx) { return ctx; });
 };
-
-template <typename S> IRValue make_irvalue(S &&fs) {
-  return IRValue(std::forward<S>(fs));
-}
-
-template <typename S> IRValue make_irvalue_bind(S &&fs) {
-  return IRValue([fs = std::forward<S>(fs)](auto ctx) {
-    return fs(ctx).build(ctx);
-  });
-}
-
-template <typename S> IREffect make_effect(S &&fs) {
-  return IREffect(std::forward<S>(fs));
-}
-
-template <typename S> IREffect make_effect_bind(S &&fs) {
-  return IREffect([fs = std::forward<S>(fs)](auto ctx) mutable {
-    return fs(ctx).build(ctx);
-  });
-}
 
 auto bitcast_float4(pvalue vec4) {
   return make_irvalue([=](context s) {
@@ -476,24 +357,6 @@ auto get_function_arg(uint32_t arg_index) {
   });
 };
 
-auto get_item_in_argbuf_binding_table(uint32_t argbuf_index, uint32_t index) {
-  return make_irvalue([=](context ctx) {
-    auto argbuf = ctx.function->getArg(argbuf_index);
-    auto argbuf_struct_type = llvm::cast<llvm::StructType>(
-      llvm::cast<llvm::PointerType>(argbuf->getType())
-        ->getNonOpaquePointerElementType()
-    );
-    return ctx.builder.CreateLoad(
-      argbuf_struct_type->getElementType(index),
-      ctx.builder.CreateStructGEP(
-        llvm::cast<llvm::PointerType>(argbuf->getType())
-          ->getNonOpaquePointerElementType(),
-        argbuf, index
-      )
-    );
-  });
-};
-
 auto get_shuffle_mask(uint32_t writeMask) {
   // original value: 0 1 2 3
   // new value: 4 5 6 7
@@ -572,9 +435,9 @@ auto store_to_array_at(
   });
 };
 
-auto store_at_vec4_array_masked(
+IREffect store_at_vec4_array_masked(
   llvm::Value *array, pvalue index, pvalue maybe_vec4, uint32_t mask
-) -> IREffect {
+) {
   return extend_to_vec4(maybe_vec4) >>= [=](pvalue vec4) {
     return make_effect_bind([=](context ctx) {
       if (mask == 0b1111) {
@@ -640,7 +503,7 @@ auto store_at_vec_array_masked(
 
 IREffect init_input_reg(
   uint32_t with_fnarg_at, uint32_t to_reg, uint32_t mask,
-  bool fix_w_component = false
+  bool fix_w_component
 ) {
   // no it doesn't work like this
   // regular input can be masked like .zw
@@ -1125,6 +988,30 @@ template <>
 IRValue load_src<SrcOperandImmediate32, true>(SrcOperandImmediate32 imm) {
   return make_irvalue([=](context ctx) {
     return llvm::ConstantDataVector::get(ctx.llvm, imm.fvalue);
+  });
+};
+
+template <>
+IRValue load_src<SrcOperandInputOCP, true>(SrcOperandInputOCP input2d) {
+  return make_irvalue([=](context ctx) {
+    // TODO
+    return llvm::ConstantAggregateZero::get(ctx.types._float4);
+  });
+};
+
+template <>
+IRValue load_src<SrcOperandInputICP, true>(SrcOperandInputICP input2d) {
+  return make_irvalue([=](context ctx) {
+    // TODO
+    return llvm::ConstantAggregateZero::get(ctx.types._float4);
+  });
+};
+
+template <>
+IRValue load_src<SrcOperandInputPC, true>(SrcOperandInputPC input2d) {
+  return make_irvalue([=](context ctx) {
+    // TODO
+    return llvm::ConstantAggregateZero::get(ctx.types._float4);
   });
 };
 
@@ -4425,6 +4312,3 @@ struct environment_cast<::dxmt::dxbc::context, ::dxmt::air::AIRBuilderContext> {
     return {src.llvm, src.module, src.builder, src.types};
   };
 };
-
-// NOLINTEND(misc-definitions-in-headers)
-#pragma clang diagnostic pop

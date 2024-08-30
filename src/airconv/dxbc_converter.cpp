@@ -1,11 +1,7 @@
 #include "dxbc_converter.hpp"
 #include "DXBCParser/BlobContainer.h"
-#include "DXBCParser/DXBCUtils.h"
 #include "DXBCParser/ShaderBinary.h"
-#include "DXBCParser/d3d12tokenizedprogramformat.hpp"
 #include "DXBCParser/winerror.h"
-#include "air_signature.hpp"
-#include "air_type.hpp"
 #include "airconv_error.hpp"
 #include "dxbc_constants.hpp"
 #include "dxbc_signature.hpp"
@@ -25,42 +21,15 @@
 #include <string>
 #include <vector>
 
-/* separated implementation details */
-#include "dxbc_converter_inc.hpp"
-#include "dxbc_instructions.hpp"
 #include "metallib_writer.hpp"
 #include "shader_common.hpp"
 
 #include "airconv_context.hpp"
-#include "airconv_public.h"
 
 #include "abrt_handle.h"
 
-char dxmt::UnsupportedFeature::ID;
+#include "ftl.hpp"
 
-class SM50ShaderInternal {
-public:
-  dxmt::dxbc::ShaderInfo shader_info;
-  dxmt::air::FunctionSignatureBuilder func_signature;
-  std::shared_ptr<dxmt::dxbc::BasicBlock> entry;
-  std::vector<std::function<
-    void(dxmt::dxbc::IREffect &, dxmt::air::FunctionSignatureBuilder *, SM50_SHADER_IA_INPUT_LAYOUT_DATA *)>>
-    input_prelogue_;
-  std::vector<std::function<void(dxmt::dxbc::IREffect &)>> prelogue_;
-  std::vector<std::function<void(dxmt::dxbc::IRValue &)>> epilogue_;
-  microsoft::D3D10_SB_TOKENIZED_PROGRAM_TYPE shader_type;
-  uint32_t max_input_register = 0;
-  uint32_t max_output_register = 0;
-  uint32_t max_patch_constant_output_register = 0;
-  std::vector<MTL_SM50_SHADER_ARGUMENT> args_reflection_cbuffer;
-  std::vector<MTL_SM50_SHADER_ARGUMENT> args_reflection;
-  uint32_t threadgroup_size[3] = {0};
-  uint32_t input_control_point_count = ~0u;
-  uint32_t output_control_point_count = ~0u;
-  uint32_t tessellation_partition = 0;
-  float max_tesselation_factor = 64.0f;
-  bool tessellation_anticlockwise = false;
-};
 
 class SM50CompiledBitcodeInternal {
 public:
@@ -74,21 +43,23 @@ public:
 
 namespace dxmt::dxbc {
 
-constexpr air::MSLScalerOrVectorType to_msl_type(RegisterComponentType type) {
-  switch (type) {
-  case RegisterComponentType::Unknown: {
-    assert(0 && "unknown component type");
-    break;
-  }
-  case RegisterComponentType::Uint:
-    return air::msl_uint4;
-  case RegisterComponentType::Int:
-    return air::msl_int4;
-  case RegisterComponentType::Float:
-    return air::msl_float4;
-    break;
-  }
-}
+auto get_item_in_argbuf_binding_table(uint32_t argbuf_index, uint32_t index) {
+  return make_irvalue([=](context ctx) {
+    auto argbuf = ctx.function->getArg(argbuf_index);
+    auto argbuf_struct_type = llvm::cast<llvm::StructType>(
+      llvm::cast<llvm::PointerType>(argbuf->getType())
+        ->getNonOpaquePointerElementType()
+    );
+    return ctx.builder.CreateLoad(
+      argbuf_struct_type->getElementType(index),
+      ctx.builder.CreateStructGEP(
+        llvm::cast<llvm::PointerType>(argbuf->getType())
+          ->getNonOpaquePointerElementType(),
+        argbuf, index
+      )
+    );
+  });
+};
 
 llvm::Error convertDXBC(
   SM50Shader *pShader, const char *name, llvm::LLVMContext &context,
@@ -435,7 +406,8 @@ llvm::Error convertDXBC(
                    )
                      ->getPointerTo((uint32_t)air::AddressSpace::object_data)
     );
-    resource_map.input_element_count = hull_meta->input_control_point_vec4_count;
+    resource_map.input_element_count =
+      hull_meta->input_control_point_vec4_count;
 
     assert(pShaderInternal->output_control_point_count != ~0u);
 
@@ -502,7 +474,7 @@ llvm::Error convertDXBC(
   );
   for (auto &phase : shader_info->phases) {
     resource_map.phases.push_back({});
-    auto& phase_temp = resource_map.phases.back();
+    auto &phase_temp = resource_map.phases.back();
 
     phase_temp.temp.ptr_int4 = builder.CreateAlloca(
       llvm::ArrayType::get(types._int4, phase.tempRegisterCount)
@@ -563,7 +535,8 @@ llvm::Error convertDXBC(
 
   struct context ctx {
     .builder = builder, .llvm = context, .module = module, .function = function,
-    .resource = resource_map, .types = types, .pso_sample_mask = pso_sample_mask,
+    .resource = resource_map, .types = types,
+    .pso_sample_mask = pso_sample_mask,
     .shader_type = pShaderInternal->shader_type,
   };
   // then we can start build ... real IR code (visit all basicblocks)
@@ -664,30 +637,6 @@ int SM50Initialize(
     return 1;
   }
 
-  auto findInputElement = [&](auto matcher) -> Signature {
-    const D3D11_SIGNATURE_PARAMETER *parameters;
-    inputParser.GetParameters(&parameters);
-    for (unsigned i = 0; i < inputParser.GetNumParameters(); i++) {
-      auto sig = Signature(parameters[i]);
-      if (matcher(sig)) {
-        return sig;
-      }
-    }
-    assert(inputParser.GetNumParameters());
-    assert(0 && "try to access an undefined input");
-  };
-  auto findOutputElement = [&](auto matcher) -> Signature {
-    const D3D11_SIGNATURE_PARAMETER *parameters;
-    outputParser.GetParameters(&parameters);
-    for (unsigned i = 0; i < outputParser.GetNumParameters(); i++) {
-      auto sig = Signature(parameters[i]);
-      if (matcher(sig)) {
-        return sig;
-      }
-    }
-    assert(0 && "try to access an undefined output");
-  };
-
   std::function<std::shared_ptr<BasicBlock>(
     const std::shared_ptr<BasicBlock> &ctx,
     const std::shared_ptr<BasicBlock> &block_after_endif,
@@ -711,16 +660,7 @@ int SM50Initialize(
   auto shader_info = &(sm50_shader->shader_info);
   auto &func_signature = sm50_shader->func_signature;
 
-  uint32_t &max_input_register = sm50_shader->max_input_register;
-  uint32_t &max_output_register = sm50_shader->max_output_register;
-  uint32_t &max_patch_constant_output_register =
-    sm50_shader->max_patch_constant_output_register;
-
   uint32_t phase = ~0u;
-
-  auto &prelogue_ = sm50_shader->prelogue_;
-  auto &input_prelogue_ = sm50_shader->input_prelogue_;
-  auto &epilogue_ = sm50_shader->epilogue_;
 
   readControlFlow =
     [&](
@@ -1232,458 +1172,18 @@ int SM50Initialize(
         }
         break;
       }
-      case D3D10_SB_OPCODE_DCL_INPUT_SIV: {
-        assert(0 && "dcl_input_siv should not happen for now");
-        // because we don't support hull/domain/geometry
-        // and pixel shader has its own dcl_input_ps
-        break;
-      }
-      case D3D10_SB_OPCODE_DCL_INPUT_SGV: {
-        unsigned reg = Inst.m_Operands[0].m_Index[0].m_RegIndex;
-        auto mask = Inst.m_Operands[0].m_WriteMask >> 4;
-        // auto MinPrecision = Inst.m_Operands[0].m_MinPrecision; // not used
-        auto sgv = Inst.m_InputDeclSGV.Name;
-        switch (sgv) {
-        case D3D10_SB_NAME_VERTEX_ID: {
-          auto assigned_index = func_signature.DefineInput(InputVertexID{});
-          auto assigned_index_base =
-            func_signature.DefineInput(InputBaseVertex{});
-          prelogue_.push_back([=](IREffect &prelogue) {
-            prelogue << make_effect_bind([=](struct context ctx) {
-              auto vertex_id = ctx.function->getArg(assigned_index);
-              auto base_vertex = ctx.function->getArg(assigned_index_base);
-              auto const_index =
-                llvm::ConstantInt::get(ctx.llvm, llvm::APInt{32, reg, false});
-              return store_at_vec4_array_masked(
-                ctx.resource.input.ptr_int4, const_index,
-                ctx.builder.CreateSub(vertex_id, base_vertex), mask
-              );
-            });
-          });
-          break;
-        }
-        case D3D10_SB_NAME_INSTANCE_ID: {
-          auto assigned_index = func_signature.DefineInput(InputInstanceID{});
-          auto assigned_index_base =
-            func_signature.DefineInput(InputBaseInstance{});
-          prelogue_.push_back([=](IREffect &prelogue) {
-            // and perform side effect here
-            prelogue << make_effect_bind([=](struct context ctx) {
-              auto instance_id = ctx.function->getArg(assigned_index);
-              auto base_instance = ctx.function->getArg(assigned_index_base);
-              auto const_index =
-                llvm::ConstantInt::get(ctx.llvm, llvm::APInt{32, reg, false});
-              return store_at_vec4_array_masked(
-                ctx.resource.input.ptr_int4, const_index,
-                ctx.builder.CreateSub(instance_id, base_instance), mask
-              );
-            });
-          });
-          break;
-        }
-        default:
-          assert(0 && "Unexpected/unhandled input system value");
-          break;
-        }
-        max_input_register = std::max(reg + 1, max_input_register);
-        break;
-      }
-      case D3D10_SB_OPCODE_DCL_INPUT: {
-        D3D10_SB_OPERAND_TYPE RegType = Inst.m_Operands[0].m_Type;
-
-        switch (RegType) {
-        case D3D11_SB_OPERAND_TYPE_INPUT_COVERAGE_MASK: {
-          auto assigned_index =
-            func_signature.DefineInput(InputInputCoverage{});
-          prelogue_.push_back([=](IREffect &prelogue) {
-            prelogue << make_effect([=](struct context ctx) {
-              auto attr = ctx.function->getArg(assigned_index);
-              ctx.resource.coverage_mask_arg = attr;
-              return std::monostate{};
-            });
-          });
-          break;
-        }
-
-        case D3D11_SB_OPERAND_TYPE_INNER_COVERAGE:
-          assert(0);
-          break;
-
-        case D3D11_SB_OPERAND_TYPE_CYCLE_COUNTER:
-          break; // ignore it atm
-        case D3D11_SB_OPERAND_TYPE_INPUT_THREAD_ID: {
-          auto assigned_index =
-            func_signature.DefineInput(InputThreadPositionInGrid{});
-          prelogue_.push_back([=](IREffect &prelogue) {
-            prelogue << make_effect([=](struct context ctx) {
-              auto attr = ctx.function->getArg(assigned_index);
-              ctx.resource.thread_id_arg = attr;
-              return std::monostate{};
-            });
-          });
-          break;
-        }
-        case D3D11_SB_OPERAND_TYPE_INPUT_THREAD_GROUP_ID: {
-          auto assigned_index =
-            func_signature.DefineInput(InputThreadgroupPositionInGrid{});
-          prelogue_.push_back([=](IREffect &prelogue) {
-            prelogue << make_effect([=](struct context ctx) {
-              auto attr = ctx.function->getArg(assigned_index);
-              ctx.resource.thread_group_id_arg = attr;
-              return std::monostate{};
-            });
-          });
-          break;
-        }
-        case D3D11_SB_OPERAND_TYPE_INPUT_THREAD_ID_IN_GROUP: {
-          auto assigned_index =
-            func_signature.DefineInput(InputThreadPositionInThreadgroup{});
-          prelogue_.push_back([=](IREffect &prelogue) {
-            prelogue << make_effect([=](struct context ctx) {
-              auto attr = ctx.function->getArg(assigned_index);
-              ctx.resource.thread_id_in_group_arg = attr;
-              return std::monostate{};
-            });
-          });
-          break;
-        }
-        case D3D11_SB_OPERAND_TYPE_OUTPUT_CONTROL_POINT_ID:
-        case D3D11_SB_OPERAND_TYPE_INPUT_FORK_INSTANCE_ID:
-        case D3D11_SB_OPERAND_TYPE_INPUT_JOIN_INSTANCE_ID:
-        case D3D11_SB_OPERAND_TYPE_INPUT_THREAD_ID_IN_GROUP_FLATTENED: {
-          auto assigned_index =
-            func_signature.DefineInput(InputThreadIndexInThreadgroup{});
-          prelogue_.push_back([=](IREffect &prelogue) {
-            prelogue << make_effect([=](struct context ctx) {
-              auto attr = ctx.function->getArg(assigned_index);
-              ctx.resource.thread_id_in_group_flat_arg = attr;
-              return std::monostate{};
-            });
-          });
-          break;
-        }
-        case D3D11_SB_OPERAND_TYPE_INPUT_DOMAIN_POINT: {
-          auto assigned_index = func_signature.DefineInput(InputPositionInPatch{
-            .patch = sm50_shader->func_signature.GetPatchType()
-          });
-          prelogue_.push_back([=](IREffect &prelogue) {
-            prelogue << make_effect([=](struct context ctx) {
-              auto attr = ctx.function->getArg(assigned_index);
-              ctx.resource.domain = attr;
-              return std::monostate{};
-            });
-          });
-          break;
-        }
-        case D3D10_SB_OPERAND_TYPE_INPUT_PRIMITIVEID: {
-          auto assigned_index = func_signature.DefineInput(InputPatchID{});
-          prelogue_.push_back([=](IREffect &prelogue) {
-            prelogue << make_effect([=](struct context ctx) {
-              auto attr = ctx.function->getArg(assigned_index);
-              ctx.resource.patch_id = attr;
-              return std::monostate{};
-            });
-          });
-          break;
-        }
-        case D3D11_SB_OPERAND_TYPE_INPUT_GS_INSTANCE_ID:
-          assert(0 && "unimplemented input registers");
-          break;
-
-        default: {
-          unsigned reg = 0;
-          switch (Inst.m_Operands[0].m_IndexDimension) {
-          case D3D10_SB_OPERAND_INDEX_1D:
-            reg = Inst.m_Operands[0].m_Index[0].m_RegIndex;
-            break;
-          case D3D10_SB_OPERAND_INDEX_2D:
-            assert(0 && "Hull/Domain shader not supported yet");
-            break;
-          default:
-            assert(0 && "there should no other index dimensions");
-          }
-
-          if (RegType == D3D10_SB_OPERAND_TYPE_INPUT) {
-            auto mask = Inst.m_Operands[0].m_WriteMask >> 4;
-            auto sig = findInputElement([=](Signature &sig) {
-              return (sig.reg() == reg) && ((sig.mask() & mask) != 0);
-            });
-            input_prelogue_.push_back(
-              [=, type = (InputAttributeComponentType)sig.componentType(),
-               name = sig.fullSemanticString()](
-                IREffect &prelogue, auto func_signature,
-                SM50_SHADER_IA_INPUT_LAYOUT_DATA *ia_layout
-              ) {
-                if (ia_layout) {
-                  for(unsigned i = 0; i< ia_layout->num_elements; i++)
-                  {
-                    if(ia_layout->elements[i].reg == reg) {
-                      prelogue << pull_vertex_input(func_signature, reg, mask, ia_layout->elements[i]);
-                      break;
-                    }
-                  }
-                } else {
-                  auto assigned_index =
-                    func_signature->DefineInput(InputVertexStageIn{
-                      .attribute = reg, .type = type, .name = name
-                    });
-                  prelogue << init_input_reg(assigned_index, reg, mask);
-                }
-              }
-            );
-          } else {
-            assert(0 && "Unknown input register type");
-          }
-          max_input_register = std::max(reg + 1, max_input_register);
-          break;
-        }
-        }
-        break;
-      }
-      case D3D10_SB_OPCODE_DCL_INPUT_PS_SIV: {
-        unsigned reg = Inst.m_Operands[0].m_Index[0].m_RegIndex;
-        auto mask = Inst.m_Operands[0].m_WriteMask >> 4;
-        auto siv = Inst.m_InputPSDeclSIV.Name;
-        auto interpolation =
-          to_air_interpolation(Inst.m_InputPSDeclSIV.InterpolationMode);
-        uint32_t assigned_index;
-        switch (siv) {
-        case D3D10_SB_NAME_POSITION:
-          // assert(
-          //   interpolation == Interpolation::center_no_perspective ||
-          //   // in case it's per-sample, FIXME: will this cause problem?
-          //   interpolation == Interpolation::sample_no_perspective
-          // );
-          assigned_index = func_signature.DefineInput(
-            // the only supported interpolation for [[position]]
-            InputPosition{.interpolation = interpolation}
-          );
-          break;
-        case D3D10_SB_NAME_RENDER_TARGET_ARRAY_INDEX:
-          assert(interpolation == Interpolation::flat);
-          assigned_index =
-            func_signature.DefineInput(InputRenderTargetArrayIndex{});
-          break;
-        case D3D10_SB_NAME_VIEWPORT_ARRAY_INDEX:
-          assert(interpolation == Interpolation::flat);
-          assigned_index =
-            func_signature.DefineInput(InputViewportArrayIndex{});
-          break;
-        default:
-          assert(0 && "Unexpected/unhandled input system value");
-          break;
-        }
-        prelogue_.push_back([=](IREffect &prelogue) {
-          prelogue << init_input_reg(
-            assigned_index, reg, mask, siv == D3D10_SB_NAME_POSITION
-          );
-        });
-        max_input_register = std::max(reg + 1, max_input_register);
-        break;
-      }
-      case D3D10_SB_OPCODE_DCL_INPUT_PS_SGV: {
-        unsigned reg = Inst.m_Operands[0].m_Index[0].m_RegIndex;
-        auto mask = Inst.m_Operands[0].m_WriteMask >> 4;
-        auto siv = Inst.m_InputPSDeclSIV.Name;
-        auto interpolation =
-          to_air_interpolation(Inst.m_InputPSDeclSGV.InterpolationMode);
-        uint32_t assigned_index;
-        switch (siv) {
-        case microsoft::D3D10_SB_NAME_IS_FRONT_FACE:
-          assert(interpolation == Interpolation::flat);
-          assigned_index = func_signature.DefineInput(InputFrontFacing{});
-          break;
-        case microsoft::D3D10_SB_NAME_SAMPLE_INDEX:
-          assert(interpolation == Interpolation::flat);
-          assigned_index = func_signature.DefineInput(InputSampleIndex{});
-          break;
-        case microsoft::D3D10_SB_NAME_PRIMITIVE_ID:
-          assigned_index = func_signature.DefineInput(InputPrimitiveID{});
-          break;
-        default:
-          assert(0 && "Unexpected/unhandled input system value");
-          break;
-        }
-        prelogue_.push_back([=](IREffect &prelogue) {
-          prelogue << init_input_reg(assigned_index, reg, mask);
-        });
-        max_input_register = std::max(reg + 1, max_input_register);
-        break;
-      }
-      case D3D10_SB_OPCODE_DCL_INPUT_PS: {
-        unsigned reg = Inst.m_Operands[0].m_Index[0].m_RegIndex;
-        auto mask = Inst.m_Operands[0].m_WriteMask >> 4;
-        auto interpolation =
-          to_air_interpolation(Inst.m_InputPSDecl.InterpolationMode);
-        auto sig = findInputElement([=](Signature sig) {
-          return (sig.reg() == reg) && ((sig.mask() & mask) != 0);
-        });
-        auto name = sig.fullSemanticString();
-        auto assigned_index = func_signature.DefineInput(InputFragmentStageIn{
-          .user = name,
-          .type = to_msl_type(sig.componentType()),
-          .interpolation = interpolation
-        });
-        prelogue_.push_back([=](IREffect &prelogue) {
-          prelogue << init_input_reg(assigned_index, reg, mask);
-        });
-        max_input_register = std::max(reg + 1, max_input_register);
-        break;
-      }
-      case D3D10_SB_OPCODE_DCL_OUTPUT_SGV: {
-        assert(0 && "dcl_output_sgv should not happen for now");
-        // only GS PrimitiveID uses this, but we don't support GS for now
-        break;
-      }
-      case D3D10_SB_OPCODE_DCL_OUTPUT_SIV: {
-        unsigned reg = Inst.m_Operands[0].m_Index[0].m_RegIndex;
-        auto mask = Inst.m_Operands[0].m_WriteMask >> 4;
-        auto siv = Inst.m_OutputDeclSIV.Name;
-        switch (siv) {
-        case D3D10_SB_NAME_CLIP_DISTANCE: {
-          assert(0 && "Should be handled separately"); // becuase it can defined
-                                                       // multiple times
-          break;
-        }
-        case D3D10_SB_NAME_CULL_DISTANCE:
-          assert(0 && "Metal doesn't support shader output: cull distance");
-          break;
-        case D3D10_SB_NAME_POSITION: {
-          auto assigned_index =
-            func_signature.DefineOutput(OutputPosition{.type = msl_float4});
-          epilogue_.push_back([=](IRValue &epilogue) {
-            epilogue >> pop_output_reg(reg, mask, assigned_index);
-          });
-          break;
-        }
-        case D3D10_SB_NAME_RENDER_TARGET_ARRAY_INDEX:
-        case D3D10_SB_NAME_VIEWPORT_ARRAY_INDEX:
-        default:
-          assert(0 && "Unexpected/unhandled input system value");
-          break;
-        }
-        if (phase != ~0u) {
-          max_patch_constant_output_register =
-            std::max(reg + 1, max_patch_constant_output_register);
-        } else {
-          max_output_register = std::max(reg + 1, max_output_register);
-        }
-        break;
-      }
+      case D3D10_SB_OPCODE_DCL_INPUT_SIV:
+      case D3D10_SB_OPCODE_DCL_INPUT_SGV:
+      case D3D10_SB_OPCODE_DCL_INPUT:
+      case D3D10_SB_OPCODE_DCL_INPUT_PS_SIV:
+      case D3D10_SB_OPCODE_DCL_INPUT_PS_SGV:
+      case D3D10_SB_OPCODE_DCL_INPUT_PS:
+      case D3D10_SB_OPCODE_DCL_OUTPUT_SGV:
+      case D3D10_SB_OPCODE_DCL_OUTPUT_SIV:
       case D3D10_SB_OPCODE_DCL_OUTPUT: {
-        D3D10_SB_OPERAND_TYPE RegType = Inst.m_Operands[0].m_Type;
-        switch (RegType) {
-        case D3D10_SB_OPERAND_TYPE_OUTPUT_DEPTH:
-        case D3D11_SB_OPERAND_TYPE_OUTPUT_DEPTH_GREATER_EQUAL:
-        case D3D11_SB_OPERAND_TYPE_OUTPUT_DEPTH_LESS_EQUAL: {
-          prelogue_.push_back([=](IREffect &prelogue) {
-            prelogue << make_effect([](struct context ctx) -> std::monostate {
-              assert(
-                ctx.resource.depth_output_reg == nullptr &&
-                "otherwise oDepth is defined twice"
-              );
-              ctx.resource.depth_output_reg =
-                ctx.builder.CreateAlloca(ctx.types._float);
-              return {};
-            });
-          });
-          auto assigned_index = func_signature.DefineOutput(OutputDepth{
-            .depth_argument =
-              RegType == D3D11_SB_OPERAND_TYPE_OUTPUT_DEPTH_GREATER_EQUAL
-                ? DepthArgument::greater
-              : RegType == D3D11_SB_OPERAND_TYPE_OUTPUT_DEPTH_LESS_EQUAL
-                ? DepthArgument::less
-                : DepthArgument::any
-          });
-          epilogue_.push_back([=](IRValue &epilogue) {
-            epilogue >> [=](pvalue v) {
-              return make_irvalue([=](struct context ctx) {
-                return ctx.builder.CreateInsertValue(
-                  v,
-                  ctx.builder.CreateLoad(
-                    ctx.types._float,
-                    ctx.builder.CreateConstInBoundsGEP1_32(
-                      ctx.types._float, ctx.resource.depth_output_reg, 0
-                    )
-                  ),
-                  {assigned_index}
-                );
-              });
-            };
-          });
-          break;
-        }
-        case D3D11_SB_OPERAND_TYPE_OUTPUT_STENCIL_REF: {
-          assert(0 && "todo");
-          break;
-        }
-        case D3D10_SB_OPERAND_TYPE_OUTPUT_COVERAGE_MASK: {
-          prelogue_.push_back([=](IREffect &prelogue) {
-            prelogue << make_effect([](struct context ctx) -> std::monostate {
-              assert(
-                ctx.resource.coverage_mask_reg == nullptr &&
-                "otherwise oMask is defined twice"
-              );
-              ctx.resource.coverage_mask_reg =
-                ctx.builder.CreateAlloca(ctx.types._int);
-              return {};
-            });
-          });
-          auto assigned_index =
-            func_signature.DefineOutput(OutputCoverageMask{});
-          epilogue_.push_back([=](IRValue &epilogue) {
-            epilogue >> [=](pvalue v) {
-              return make_irvalue([=](struct context ctx) {
-                auto odepth = ctx.builder.CreateLoad(
-                  ctx.types._int,
-                  ctx.builder.CreateConstInBoundsGEP1_32(
-                    ctx.types._int, ctx.resource.coverage_mask_reg, 0
-                  )
-                );
-                return ctx.builder.CreateInsertValue(
-                  v,
-                  ctx.pso_sample_mask != 0xffffffff
-                    ? ctx.builder.CreateAnd(odepth, ctx.pso_sample_mask)
-                    : odepth,
-                  {assigned_index}
-                );
-              });
-            };
-          });
-          break;
-        }
-
-        default: {
-          // normal output register
-          auto reg = Inst.m_Operands[0].m_Index[0].m_RegIndex;
-          auto mask = Inst.m_Operands[0].m_WriteMask >> 4;
-          auto sig = findOutputElement([=](Signature sig) {
-            return (sig.reg() == reg) && ((sig.mask() & mask) != 0);
-          });
-          uint32_t assigned_index;
-          if (sm50_shader->shader_type == D3D10_SB_PIXEL_SHADER) {
-            assigned_index = func_signature.DefineOutput(OutputRenderTarget{
-              .index = reg,
-              .type = to_msl_type(sig.componentType()),
-            });
-          } else {
-            assigned_index = func_signature.DefineOutput(OutputVertex{
-              .user = sig.fullSemanticString(),
-              .type = to_msl_type(sig.componentType()),
-            });
-          }
-          epilogue_.push_back([=](IRValue &epilogue) {
-            epilogue >> pop_output_reg(reg, mask, assigned_index);
-          });
-          if (phase != ~0u) {
-            max_patch_constant_output_register =
-              std::max(reg + 1, max_patch_constant_output_register);
-          } else {
-            max_output_register = std::max(reg + 1, max_output_register);
-          }
-          break;
-        }
-        }
+        handle_signature(
+          inputParser, outputParser, Inst, (SM50Shader *)sm50_shader, phase
+        );
         break;
       }
       case D3D10_SB_OPCODE_CUSTOMDATA: {
