@@ -57,6 +57,9 @@ public:
   uint32_t threadgroup_size[3] = {0};
   uint32_t input_control_point_count = ~0u;
   uint32_t output_control_point_count = ~0u;
+  uint32_t tessellation_partition = 0;
+  float max_tesselation_factor = 64.0f;
+  bool tessellation_anticlockwise = false;
 };
 
 class SM50CompiledBitcodeInternal {
@@ -1634,11 +1637,25 @@ int SM50Initialize(
         // ignore atm
         break;
       case D3D11_SB_OPCODE_DCL_TESS_PARTITIONING: {
-
+        sm50_shader->tessellation_partition =
+          Inst.m_TessellatorPartitioningDecl.TessellatorPartitioning;
         break;
       }
       case D3D11_SB_OPCODE_DCL_TESS_OUTPUT_PRIMITIVE: {
-
+        switch (Inst.m_TessellatorOutputPrimitiveDecl.TessellatorOutputPrimitive
+        ) {
+        case microsoft::D3D11_SB_TESSELLATOR_OUTPUT_TRIANGLE_CW:
+          sm50_shader->tessellation_anticlockwise = false;
+          break;
+        case microsoft::D3D11_SB_TESSELLATOR_OUTPUT_TRIANGLE_CCW:
+          sm50_shader->tessellation_anticlockwise = true;
+          break;
+        case microsoft::D3D11_SB_TESSELLATOR_OUTPUT_UNDEFINED:
+        case microsoft::D3D11_SB_TESSELLATOR_OUTPUT_POINT:
+        case microsoft::D3D11_SB_TESSELLATOR_OUTPUT_LINE:
+          assert(0 && "unsupported tessellator output primitive");
+          break;
+        }
         break;
       }
       case D3D11_SB_OPCODE_DCL_INPUT_CONTROL_POINT_COUNT: {
@@ -1652,6 +1669,9 @@ int SM50Initialize(
         break;
       }
       case D3D11_SB_OPCODE_DCL_TESS_DOMAIN: {
+        if (sm50_shader->shader_type != D3D11_SB_DOMAIN_SHADER) {
+          break;
+        }
         assert(sm50_shader->input_control_point_count != ~0u);
         switch (Inst.m_TessellatorDomainDecl.TessellatorDomain) {
         case microsoft::D3D11_SB_TESSELLATOR_DOMAIN_UNDEFINED:
@@ -1674,7 +1694,8 @@ int SM50Initialize(
         break;
       }
       case D3D11_SB_OPCODE_DCL_HS_MAX_TESSFACTOR: {
-
+        sm50_shader->max_tesselation_factor =
+          Inst.m_HSMaxTessFactorDecl.MaxTessFactor;
         break;
       }
 #pragma endregion
@@ -1859,6 +1880,13 @@ int SM50Initialize(
       pRefl->ThreadgroupSize[0] = sm50_shader->threadgroup_size[0];
       pRefl->ThreadgroupSize[1] = sm50_shader->threadgroup_size[1];
       pRefl->ThreadgroupSize[2] = sm50_shader->threadgroup_size[2];
+    }
+    if (sm50_shader->shader_type == microsoft::D3D11_SB_HULL_SHADER) {
+      pRefl->Tessellator = {
+        .Partition = sm50_shader->tessellation_partition,
+        .MaxFactor = sm50_shader->max_tesselation_factor,
+        .AntiClockwise = sm50_shader->tessellation_anticlockwise,
+      };
     }
   }
 

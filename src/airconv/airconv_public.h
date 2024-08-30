@@ -55,6 +55,12 @@ struct MTL_SM50_SHADER_ARGUMENT {
   uint32_t StructurePtrOffset;
 };
 
+struct MTL_TESSELLATOR_REFLECTION {
+  uint32_t Partition;
+  float MaxFactor;
+  bool AntiClockwise;
+};
+
 struct MTL_SHADER_REFLECTION {
   uint32_t ConstanttBufferTableBindIndex;
   uint32_t ArgumentBufferBindIndex;
@@ -64,6 +70,7 @@ struct MTL_SHADER_REFLECTION {
   struct MTL_SM50_SHADER_ARGUMENT *Arguments;
   union {
     uint32_t ThreadgroupSize[3];
+    struct MTL_TESSELLATOR_REFLECTION Tessellator;
   };
   uint16_t ConstantBufferSlotMask;
   uint16_t SamplerSlotMask;
