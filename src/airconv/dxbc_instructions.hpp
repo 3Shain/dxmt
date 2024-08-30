@@ -75,6 +75,7 @@ struct SrcOperandTemp {
   static constexpr std::string_view debug_name = "temp";
   SrcOperandModifier _;
   uint32_t regid;
+  uint32_t phase;
 };
 
 struct SrcOperandIndexableTemp {
@@ -82,6 +83,7 @@ struct SrcOperandIndexableTemp {
   SrcOperandModifier _;
   uint32_t regfile;
   OperandIndex regindex;
+  uint32_t phase;
 };
 
 struct SrcOperandInput {
@@ -770,8 +772,11 @@ public:
 
 #pragma endregion
 
-SrcOperand readSrcOperand(const microsoft::D3D10ShaderBinary::COperandBase &O);
+SrcOperand readSrcOperand(
+  const microsoft::D3D10ShaderBinary::COperandBase &O, uint32_t phase
+);
 BasicBlockCondition readCondition(
-  const microsoft::D3D10ShaderBinary::CInstruction &Inst, uint32_t OpIdx
+  const microsoft::D3D10ShaderBinary::CInstruction &Inst, uint32_t OpIdx,
+  uint32_t phase
 );
 } // namespace dxmt::dxbc

@@ -196,7 +196,9 @@ auto readSrcOperandCommon(const microsoft::D3D10ShaderBinary::COperandBase &O
   };
 }
 
-SrcOperand readSrcOperand(const microsoft::D3D10ShaderBinary::COperandBase &O) {
+SrcOperand readSrcOperand(
+  const microsoft::D3D10ShaderBinary::COperandBase &O, uint32_t phase
+) {
   using namespace microsoft;
   switch (O.m_Type) {
   case D3D10_SB_OPERAND_TYPE_IMMEDIATE32: {
@@ -232,6 +234,7 @@ SrcOperand readSrcOperand(const microsoft::D3D10ShaderBinary::COperandBase &O) {
     return SrcOperandTemp{
       ._ = readSrcOperandCommon(O),
       .regid = Reg,
+      .phase = phase,
     };
   }
   case D3D10_SB_OPERAND_TYPE_INPUT: {
@@ -285,7 +288,8 @@ SrcOperand readSrcOperand(const microsoft::D3D10ShaderBinary::COperandBase &O) {
     return SrcOperandIndexableTemp{
       ._ = readSrcOperandCommon(O),
       .regfile = Reg,
-      .regindex = readOperandIndex(O.m_Index[1], O.m_IndexType[1])
+      .regindex = readOperandIndex(O.m_Index[1], O.m_IndexType[1]),
+      .phase = phase,
     };
   }
 
@@ -533,31 +537,31 @@ Instruction readInstruction(
     return InstMov{
       ._ = readInstructionCommon(Inst),
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src = readSrcOperand(Inst.m_Operands[1]),
+      .src = readSrcOperand(Inst.m_Operands[1], phase),
     };
   };
   case microsoft::D3D10_SB_OPCODE_MOVC: {
     return InstMovConditional{
       ._ = readInstructionCommon(Inst),
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src_cond = readSrcOperand(Inst.m_Operands[1]),
-      .src0 = readSrcOperand(Inst.m_Operands[2]),
-      .src1 = readSrcOperand(Inst.m_Operands[3]),
+      .src_cond = readSrcOperand(Inst.m_Operands[1], phase),
+      .src0 = readSrcOperand(Inst.m_Operands[2], phase),
+      .src1 = readSrcOperand(Inst.m_Operands[3], phase),
     };
   };
   case microsoft::D3D11_SB_OPCODE_SWAPC: {
     return InstSwapConditional{
       .dst0 = readDstOperand(Inst.m_Operands[0], phase),
       .dst1 = readDstOperand(Inst.m_Operands[1], phase),
-      .src_cond = readSrcOperand(Inst.m_Operands[2]),
-      .src0 = readSrcOperand(Inst.m_Operands[3]),
-      .src1 = readSrcOperand(Inst.m_Operands[4]),
+      .src_cond = readSrcOperand(Inst.m_Operands[2], phase),
+      .src0 = readSrcOperand(Inst.m_Operands[3], phase),
+      .src1 = readSrcOperand(Inst.m_Operands[4], phase),
     };
   };
   case microsoft::D3D10_SB_OPCODE_SAMPLE: {
     auto inst = InstSample{
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src_address = readSrcOperand(Inst.m_Operands[1]),
+      .src_address = readSrcOperand(Inst.m_Operands[1], phase),
       .src_resource = readSrcOperandResource(Inst.m_Operands[2]),
       .src_sampler = readSrcOperandSampler(Inst.m_Operands[3]),
       .offsets =
@@ -571,10 +575,10 @@ Instruction readInstruction(
   case microsoft::D3D10_SB_OPCODE_SAMPLE_B: {
     auto inst = InstSampleBias{
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src_address = readSrcOperand(Inst.m_Operands[1]),
+      .src_address = readSrcOperand(Inst.m_Operands[1], phase),
       .src_resource = readSrcOperandResource(Inst.m_Operands[2]),
       .src_sampler = readSrcOperandSampler(Inst.m_Operands[3]),
-      .src_bias = readSrcOperand(Inst.m_Operands[4]),
+      .src_bias = readSrcOperand(Inst.m_Operands[4], phase),
       .offsets =
         {Inst.m_TexelOffset[0], Inst.m_TexelOffset[1], Inst.m_TexelOffset[2]},
     };
@@ -584,11 +588,11 @@ Instruction readInstruction(
   case microsoft::D3D10_SB_OPCODE_SAMPLE_D: {
     auto inst = InstSampleDerivative{
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src_address = readSrcOperand(Inst.m_Operands[1]),
+      .src_address = readSrcOperand(Inst.m_Operands[1], phase),
       .src_resource = readSrcOperandResource(Inst.m_Operands[2]),
       .src_sampler = readSrcOperandSampler(Inst.m_Operands[3]),
-      .src_x_derivative = readSrcOperand(Inst.m_Operands[4]),
-      .src_y_derivative = readSrcOperand(Inst.m_Operands[5]),
+      .src_x_derivative = readSrcOperand(Inst.m_Operands[4], phase),
+      .src_y_derivative = readSrcOperand(Inst.m_Operands[5], phase),
       .offsets =
         {Inst.m_TexelOffset[0], Inst.m_TexelOffset[1], Inst.m_TexelOffset[2]},
     };
@@ -598,10 +602,10 @@ Instruction readInstruction(
   case microsoft::D3D10_SB_OPCODE_SAMPLE_L: {
     auto inst = InstSampleLOD{
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src_address = readSrcOperand(Inst.m_Operands[1]),
+      .src_address = readSrcOperand(Inst.m_Operands[1], phase),
       .src_resource = readSrcOperandResource(Inst.m_Operands[2]),
       .src_sampler = readSrcOperandSampler(Inst.m_Operands[3]),
-      .src_lod = readSrcOperand(Inst.m_Operands[4]),
+      .src_lod = readSrcOperand(Inst.m_Operands[4], phase),
       .offsets =
         {Inst.m_TexelOffset[0], Inst.m_TexelOffset[1], Inst.m_TexelOffset[2]},
     };
@@ -612,10 +616,10 @@ Instruction readInstruction(
   case microsoft::D3D10_SB_OPCODE_SAMPLE_C: {
     auto inst = InstSampleCompare{
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src_address = readSrcOperand(Inst.m_Operands[1]),
+      .src_address = readSrcOperand(Inst.m_Operands[1], phase),
       .src_resource = readSrcOperandResource(Inst.m_Operands[2]),
       .src_sampler = readSrcOperandSampler(Inst.m_Operands[3]),
-      .src_reference = readSrcOperand(Inst.m_Operands[4]),
+      .src_reference = readSrcOperand(Inst.m_Operands[4], phase),
       .offsets =
         {Inst.m_TexelOffset[0], Inst.m_TexelOffset[1], Inst.m_TexelOffset[2]},
       .min_lod_clamp = {},
@@ -628,7 +632,7 @@ Instruction readInstruction(
   case microsoft::D3D10_1_SB_OPCODE_GATHER4: {
     auto inst = InstGather{
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src_address = readSrcOperand(Inst.m_Operands[1]),
+      .src_address = readSrcOperand(Inst.m_Operands[1], phase),
       .src_resource = readSrcOperandResource(Inst.m_Operands[2]),
       .src_sampler = readSrcOperandSampler(Inst.m_Operands[3]),
       .offset =
@@ -643,10 +647,10 @@ Instruction readInstruction(
   case microsoft::D3D11_SB_OPCODE_GATHER4_C: {
     auto inst = InstGatherCompare{
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src_address = readSrcOperand(Inst.m_Operands[1]),
+      .src_address = readSrcOperand(Inst.m_Operands[1], phase),
       .src_resource = readSrcOperandResource(Inst.m_Operands[2]),
       .src_sampler = readSrcOperandSampler(Inst.m_Operands[3]),
-      .src_reference = readSrcOperand(Inst.m_Operands[4]),
+      .src_reference = readSrcOperand(Inst.m_Operands[4], phase),
       .offset =
         SrcOperandImmediate32{
           .ivalue = {Inst.m_TexelOffset[0], Inst.m_TexelOffset[1], 0, 0}
@@ -659,10 +663,10 @@ Instruction readInstruction(
   case microsoft::D3D11_SB_OPCODE_GATHER4_PO: {
     auto inst = InstGather{
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src_address = readSrcOperand(Inst.m_Operands[1]),
+      .src_address = readSrcOperand(Inst.m_Operands[1], phase),
       .src_resource = readSrcOperandResource(Inst.m_Operands[3]),
       .src_sampler = readSrcOperandSampler(Inst.m_Operands[4]),
-      .offset = readSrcOperand(Inst.m_Operands[2]),
+      .offset = readSrcOperand(Inst.m_Operands[2], phase),
       .feedback = {},
     };
     shader_info.srvMap[inst.src_resource.range_id].sampled = true;
@@ -671,11 +675,11 @@ Instruction readInstruction(
   case microsoft::D3D11_SB_OPCODE_GATHER4_PO_C: {
     auto inst = InstGatherCompare{
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src_address = readSrcOperand(Inst.m_Operands[1]),
+      .src_address = readSrcOperand(Inst.m_Operands[1], phase),
       .src_resource = readSrcOperandResource(Inst.m_Operands[3]),
       .src_sampler = readSrcOperandSampler(Inst.m_Operands[4]),
-      .src_reference = readSrcOperand(Inst.m_Operands[5]),
-      .offset = readSrcOperand(Inst.m_Operands[2]),
+      .src_reference = readSrcOperand(Inst.m_Operands[5], phase),
+      .offset = readSrcOperand(Inst.m_Operands[2], phase),
       .feedback = {},
     };
     shader_info.srvMap[inst.src_resource.range_id].compared = true;
@@ -705,13 +709,13 @@ Instruction readInstruction(
       return InstSamplePos{
         .dst = readDstOperand(Inst.m_Operands[0], phase),
         .src = {},
-        .src_sample_index = readSrcOperand(Inst.m_Operands[2])
+        .src_sample_index = readSrcOperand(Inst.m_Operands[2], phase)
       };
     } else {
       return InstSamplePos{
         .dst = readDstOperand(Inst.m_Operands[0], phase),
         .src = readSrcOperandResource(Inst.m_Operands[1]),
-        .src_sample_index = readSrcOperand(Inst.m_Operands[2])
+        .src_sample_index = readSrcOperand(Inst.m_Operands[2], phase)
       };
     };
   };
@@ -732,7 +736,7 @@ Instruction readInstruction(
         : InstResourceInfo::M::none;
     return InstResourceInfo{
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src_mip_level = readSrcOperand(Inst.m_Operands[1]),
+      .src_mip_level = readSrcOperand(Inst.m_Operands[1], phase),
       .src_resource = readSrcResourceOrUAV(Inst.m_Operands[2]),
       .modifier = modifier
     };
@@ -740,7 +744,7 @@ Instruction readInstruction(
   case microsoft::D3D10_SB_OPCODE_LD: {
     auto inst = InstLoad{
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src_address = readSrcOperand(Inst.m_Operands[1]),
+      .src_address = readSrcOperand(Inst.m_Operands[1], phase),
       .src_resource = readSrcOperandResource(Inst.m_Operands[2]),
       .src_sample_index = {},
       .offsets =
@@ -752,9 +756,9 @@ Instruction readInstruction(
   case microsoft::D3D10_SB_OPCODE_LD_MS: {
     auto inst = InstLoad{
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src_address = readSrcOperand(Inst.m_Operands[1]),
+      .src_address = readSrcOperand(Inst.m_Operands[1], phase),
       .src_resource = readSrcOperandResource(Inst.m_Operands[2]),
-      .src_sample_index = readSrcOperand(Inst.m_Operands[3]),
+      .src_sample_index = readSrcOperand(Inst.m_Operands[3], phase),
       .offsets =
         {Inst.m_TexelOffset[0], Inst.m_TexelOffset[1], Inst.m_TexelOffset[2]},
     };
@@ -764,7 +768,7 @@ Instruction readInstruction(
   case microsoft::D3D11_SB_OPCODE_LD_UAV_TYPED: {
     auto inst = InstLoadUAVTyped{
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src_address = readSrcOperand(Inst.m_Operands[1]),
+      .src_address = readSrcOperand(Inst.m_Operands[1], phase),
       .src_uav = readSrcOperandUAV(Inst.m_Operands[2]),
     };
     shader_info.uavMap[inst.src_uav.range_id].read = true;
@@ -773,8 +777,8 @@ Instruction readInstruction(
   case microsoft::D3D11_SB_OPCODE_STORE_UAV_TYPED: {
     auto inst = InstStoreUAVTyped{
       .dst = readDstOperandUAV(Inst.m_Operands[0]),
-      .src_address = readSrcOperand(Inst.m_Operands[1]),
-      .src = readSrcOperand(Inst.m_Operands[2]),
+      .src_address = readSrcOperand(Inst.m_Operands[1], phase),
+      .src = readSrcOperand(Inst.m_Operands[2], phase),
     };
     shader_info.uavMap[inst.dst.range_id].written = true;
     return inst;
@@ -782,7 +786,7 @@ Instruction readInstruction(
   case microsoft::D3D11_SB_OPCODE_LD_RAW: {
     auto inst = InstLoadRaw{
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src_byte_offset = readSrcOperand(Inst.m_Operands[1]),
+      .src_byte_offset = readSrcOperand(Inst.m_Operands[1], phase),
       .src = readTypelessSrc(Inst.m_Operands[2]),
     };
     std::visit(
@@ -811,8 +815,8 @@ Instruction readInstruction(
   case microsoft::D3D11_SB_OPCODE_STORE_RAW: {
     auto inst = InstStoreRaw{
       .dst = readAtomicDst(Inst.m_Operands[0]),
-      .dst_byte_offset = readSrcOperand(Inst.m_Operands[1]),
-      .src = readSrcOperand(Inst.m_Operands[2]),
+      .dst_byte_offset = readSrcOperand(Inst.m_Operands[1], phase),
+      .src = readSrcOperand(Inst.m_Operands[2], phase),
     };
     std::visit(
       patterns{
@@ -828,8 +832,8 @@ Instruction readInstruction(
   case microsoft::D3D11_SB_OPCODE_LD_STRUCTURED: {
     auto inst = InstLoadStructured{
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src_address = readSrcOperand(Inst.m_Operands[1]),
-      .src_byte_offset = readSrcOperand(Inst.m_Operands[2]),
+      .src_address = readSrcOperand(Inst.m_Operands[1], phase),
+      .src_byte_offset = readSrcOperand(Inst.m_Operands[2], phase),
       .src = readTypelessSrc(Inst.m_Operands[3]),
     };
     std::visit(
@@ -858,9 +862,9 @@ Instruction readInstruction(
   case microsoft::D3D11_SB_OPCODE_STORE_STRUCTURED: {
     auto inst = InstStoreStructured{
       .dst = readAtomicDst(Inst.m_Operands[0]),
-      .dst_address = readSrcOperand(Inst.m_Operands[1]),
-      .dst_byte_offset = readSrcOperand(Inst.m_Operands[2]),
-      .src = readSrcOperand(Inst.m_Operands[3]),
+      .dst_address = readSrcOperand(Inst.m_Operands[1], phase),
+      .dst_byte_offset = readSrcOperand(Inst.m_Operands[2], phase),
+      .src = readSrcOperand(Inst.m_Operands[3], phase),
     };
     std::visit(
       patterns{
@@ -877,8 +881,8 @@ Instruction readInstruction(
     return InstDotProduct{
       ._ = readInstructionCommon(Inst),
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src0 = readSrcOperand(Inst.m_Operands[1]),
-      .src1 = readSrcOperand(Inst.m_Operands[2]),
+      .src0 = readSrcOperand(Inst.m_Operands[1], phase),
+      .src1 = readSrcOperand(Inst.m_Operands[2], phase),
       .dimension = 2,
     };
   };
@@ -886,8 +890,8 @@ Instruction readInstruction(
     return InstDotProduct{
       ._ = readInstructionCommon(Inst),
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src0 = readSrcOperand(Inst.m_Operands[1]),
-      .src1 = readSrcOperand(Inst.m_Operands[2]),
+      .src0 = readSrcOperand(Inst.m_Operands[1], phase),
+      .src1 = readSrcOperand(Inst.m_Operands[2], phase),
       .dimension = 3,
     };
   };
@@ -895,8 +899,8 @@ Instruction readInstruction(
     return InstDotProduct{
       ._ = readInstructionCommon(Inst),
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src0 = readSrcOperand(Inst.m_Operands[1]),
-      .src1 = readSrcOperand(Inst.m_Operands[2]),
+      .src0 = readSrcOperand(Inst.m_Operands[1], phase),
+      .src1 = readSrcOperand(Inst.m_Operands[2], phase),
       .dimension = 4,
     };
   };
@@ -905,7 +909,7 @@ Instruction readInstruction(
       ._ = readInstructionCommon(Inst),
       .op = FloatUnaryOp::Rsq,
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src = readSrcOperand(Inst.m_Operands[1]),
+      .src = readSrcOperand(Inst.m_Operands[1], phase),
     };
   }
   case microsoft::D3D11_SB_OPCODE_RCP: {
@@ -913,7 +917,7 @@ Instruction readInstruction(
       ._ = readInstructionCommon(Inst),
       .op = FloatUnaryOp::Rcp,
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src = readSrcOperand(Inst.m_Operands[1]),
+      .src = readSrcOperand(Inst.m_Operands[1], phase),
     };
   }
   case microsoft::D3D10_SB_OPCODE_LOG: {
@@ -921,7 +925,7 @@ Instruction readInstruction(
       ._ = readInstructionCommon(Inst),
       .op = FloatUnaryOp::Log2,
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src = readSrcOperand(Inst.m_Operands[1]),
+      .src = readSrcOperand(Inst.m_Operands[1], phase),
     };
   }
   case microsoft::D3D10_SB_OPCODE_EXP: {
@@ -929,7 +933,7 @@ Instruction readInstruction(
       ._ = readInstructionCommon(Inst),
       .op = FloatUnaryOp::Exp2,
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src = readSrcOperand(Inst.m_Operands[1]),
+      .src = readSrcOperand(Inst.m_Operands[1], phase),
     };
   }
   case microsoft::D3D10_SB_OPCODE_SQRT: {
@@ -937,7 +941,7 @@ Instruction readInstruction(
       ._ = readInstructionCommon(Inst),
       .op = FloatUnaryOp::Sqrt,
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src = readSrcOperand(Inst.m_Operands[1]),
+      .src = readSrcOperand(Inst.m_Operands[1], phase),
     };
   }
   case microsoft::D3D10_SB_OPCODE_ROUND_Z: {
@@ -945,7 +949,7 @@ Instruction readInstruction(
       ._ = readInstructionCommon(Inst),
       .op = FloatUnaryOp::RoundZero,
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src = readSrcOperand(Inst.m_Operands[1]),
+      .src = readSrcOperand(Inst.m_Operands[1], phase),
     };
   }
   case microsoft::D3D10_SB_OPCODE_ROUND_PI: {
@@ -953,7 +957,7 @@ Instruction readInstruction(
       ._ = readInstructionCommon(Inst),
       .op = FloatUnaryOp::RoundPositiveInf,
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src = readSrcOperand(Inst.m_Operands[1]),
+      .src = readSrcOperand(Inst.m_Operands[1], phase),
     };
   }
   case microsoft::D3D10_SB_OPCODE_ROUND_NI: {
@@ -961,7 +965,7 @@ Instruction readInstruction(
       ._ = readInstructionCommon(Inst),
       .op = FloatUnaryOp::RoundNegativeInf,
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src = readSrcOperand(Inst.m_Operands[1]),
+      .src = readSrcOperand(Inst.m_Operands[1], phase),
     };
   }
   case microsoft::D3D10_SB_OPCODE_ROUND_NE: {
@@ -969,7 +973,7 @@ Instruction readInstruction(
       ._ = readInstructionCommon(Inst),
       .op = FloatUnaryOp::RoundNearestEven,
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src = readSrcOperand(Inst.m_Operands[1]),
+      .src = readSrcOperand(Inst.m_Operands[1], phase),
     };
   }
   case microsoft::D3D10_SB_OPCODE_FRC: {
@@ -977,7 +981,7 @@ Instruction readInstruction(
       ._ = readInstructionCommon(Inst),
       .op = FloatUnaryOp::Fraction,
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src = readSrcOperand(Inst.m_Operands[1]),
+      .src = readSrcOperand(Inst.m_Operands[1], phase),
     };
   }
   case microsoft::D3D10_SB_OPCODE_ADD: {
@@ -985,8 +989,8 @@ Instruction readInstruction(
       ._ = readInstructionCommon(Inst),
       .op = FloatBinaryOp::Add,
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src0 = readSrcOperand(Inst.m_Operands[1]),
-      .src1 = readSrcOperand(Inst.m_Operands[2]),
+      .src0 = readSrcOperand(Inst.m_Operands[1], phase),
+      .src1 = readSrcOperand(Inst.m_Operands[2], phase),
     };
   };
   case microsoft::D3D10_SB_OPCODE_MUL: {
@@ -994,8 +998,8 @@ Instruction readInstruction(
       ._ = readInstructionCommon(Inst),
       .op = FloatBinaryOp::Mul,
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src0 = readSrcOperand(Inst.m_Operands[1]),
-      .src1 = readSrcOperand(Inst.m_Operands[2]),
+      .src0 = readSrcOperand(Inst.m_Operands[1], phase),
+      .src1 = readSrcOperand(Inst.m_Operands[2], phase),
     };
   };
   case microsoft::D3D10_SB_OPCODE_DIV: {
@@ -1003,8 +1007,8 @@ Instruction readInstruction(
       ._ = readInstructionCommon(Inst),
       .op = FloatBinaryOp::Div,
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src0 = readSrcOperand(Inst.m_Operands[1]),
-      .src1 = readSrcOperand(Inst.m_Operands[2]),
+      .src0 = readSrcOperand(Inst.m_Operands[1], phase),
+      .src1 = readSrcOperand(Inst.m_Operands[2], phase),
     };
   };
   case microsoft::D3D10_SB_OPCODE_MAX: {
@@ -1012,8 +1016,8 @@ Instruction readInstruction(
       ._ = readInstructionCommon(Inst),
       .op = FloatBinaryOp::Max,
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src0 = readSrcOperand(Inst.m_Operands[1]),
-      .src1 = readSrcOperand(Inst.m_Operands[2]),
+      .src0 = readSrcOperand(Inst.m_Operands[1], phase),
+      .src1 = readSrcOperand(Inst.m_Operands[2], phase),
     };
   };
   case microsoft::D3D10_SB_OPCODE_MIN: {
@@ -1021,43 +1025,43 @@ Instruction readInstruction(
       ._ = readInstructionCommon(Inst),
       .op = FloatBinaryOp::Min,
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src0 = readSrcOperand(Inst.m_Operands[1]),
-      .src1 = readSrcOperand(Inst.m_Operands[2]),
+      .src0 = readSrcOperand(Inst.m_Operands[1], phase),
+      .src1 = readSrcOperand(Inst.m_Operands[2], phase),
     };
   };
   case microsoft::D3D10_SB_OPCODE_MAD: {
     return InstFloatMAD{
       ._ = readInstructionCommon(Inst),
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src0 = readSrcOperand(Inst.m_Operands[1]),
-      .src1 = readSrcOperand(Inst.m_Operands[2]),
-      .src2 = readSrcOperand(Inst.m_Operands[3]),
+      .src0 = readSrcOperand(Inst.m_Operands[1], phase),
+      .src1 = readSrcOperand(Inst.m_Operands[2], phase),
+      .src2 = readSrcOperand(Inst.m_Operands[3], phase),
     };
   };
   case microsoft::D3D10_SB_OPCODE_IMAD: {
     return InstIntegerMAD{
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src0 = readSrcOperand(Inst.m_Operands[1]),
-      .src1 = readSrcOperand(Inst.m_Operands[2]),
-      .src2 = readSrcOperand(Inst.m_Operands[3]),
+      .src0 = readSrcOperand(Inst.m_Operands[1], phase),
+      .src1 = readSrcOperand(Inst.m_Operands[2], phase),
+      .src2 = readSrcOperand(Inst.m_Operands[3], phase),
       .is_signed = true,
     };
   };
   case microsoft::D3D10_SB_OPCODE_UMAD: {
     return InstIntegerMAD{
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src0 = readSrcOperand(Inst.m_Operands[1]),
-      .src1 = readSrcOperand(Inst.m_Operands[2]),
-      .src2 = readSrcOperand(Inst.m_Operands[3]),
+      .src0 = readSrcOperand(Inst.m_Operands[1], phase),
+      .src1 = readSrcOperand(Inst.m_Operands[2], phase),
+      .src2 = readSrcOperand(Inst.m_Operands[3], phase),
       .is_signed = false,
     };
   };
   case microsoft::D3D11_1_SB_OPCODE_MSAD: {
     return InstMaskedSumOfAbsDiff{
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src0 = readSrcOperand(Inst.m_Operands[1]),
-      .src1 = readSrcOperand(Inst.m_Operands[2]),
-      .src2 = readSrcOperand(Inst.m_Operands[3]),
+      .src0 = readSrcOperand(Inst.m_Operands[1], phase),
+      .src1 = readSrcOperand(Inst.m_Operands[2], phase),
+      .src2 = readSrcOperand(Inst.m_Operands[3], phase),
     };
   };
   case microsoft::D3D10_SB_OPCODE_SINCOS: {
@@ -1065,7 +1069,7 @@ Instruction readInstruction(
       ._ = readInstructionCommon(Inst),
       .dst_sin = readDstOperand(Inst.m_Operands[0], phase),
       .dst_cos = readDstOperand(Inst.m_Operands[1], phase),
-      .src = readSrcOperand(Inst.m_Operands[2]),
+      .src = readSrcOperand(Inst.m_Operands[2], phase),
     };
   };
   case microsoft::D3D10_SB_OPCODE_EQ: {
@@ -1073,8 +1077,8 @@ Instruction readInstruction(
       ._ = readInstructionCommon(Inst),
       .cmp = FloatComparison::Equal,
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src0 = readSrcOperand(Inst.m_Operands[1]),
-      .src1 = readSrcOperand(Inst.m_Operands[2]),
+      .src0 = readSrcOperand(Inst.m_Operands[1], phase),
+      .src1 = readSrcOperand(Inst.m_Operands[2], phase),
     };
   };
   case microsoft::D3D10_SB_OPCODE_GE: {
@@ -1082,8 +1086,8 @@ Instruction readInstruction(
       ._ = readInstructionCommon(Inst),
       .cmp = FloatComparison::GreaterEqual,
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src0 = readSrcOperand(Inst.m_Operands[1]),
-      .src1 = readSrcOperand(Inst.m_Operands[2]),
+      .src0 = readSrcOperand(Inst.m_Operands[1], phase),
+      .src1 = readSrcOperand(Inst.m_Operands[2], phase),
     };
   };
   case microsoft::D3D10_SB_OPCODE_LT: {
@@ -1091,8 +1095,8 @@ Instruction readInstruction(
       ._ = readInstructionCommon(Inst),
       .cmp = FloatComparison::LessThan,
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src0 = readSrcOperand(Inst.m_Operands[1]),
-      .src1 = readSrcOperand(Inst.m_Operands[2]),
+      .src0 = readSrcOperand(Inst.m_Operands[1], phase),
+      .src1 = readSrcOperand(Inst.m_Operands[2], phase),
     };
   };
   case microsoft::D3D10_SB_OPCODE_NE: {
@@ -1100,131 +1104,131 @@ Instruction readInstruction(
       ._ = readInstructionCommon(Inst),
       .cmp = FloatComparison::NotEqual,
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src0 = readSrcOperand(Inst.m_Operands[1]),
-      .src1 = readSrcOperand(Inst.m_Operands[2]),
+      .src0 = readSrcOperand(Inst.m_Operands[1], phase),
+      .src1 = readSrcOperand(Inst.m_Operands[2], phase),
     };
   };
   case microsoft::D3D10_SB_OPCODE_IEQ: {
     return InstIntegerCompare{
       .cmp = IntegerComparison::Equal,
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src0 = readSrcOperand(Inst.m_Operands[1]),
-      .src1 = readSrcOperand(Inst.m_Operands[2]),
+      .src0 = readSrcOperand(Inst.m_Operands[1], phase),
+      .src1 = readSrcOperand(Inst.m_Operands[2], phase),
     };
   };
   case microsoft::D3D10_SB_OPCODE_INE: {
     return InstIntegerCompare{
       .cmp = IntegerComparison::NotEqual,
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src0 = readSrcOperand(Inst.m_Operands[1]),
-      .src1 = readSrcOperand(Inst.m_Operands[2]),
+      .src0 = readSrcOperand(Inst.m_Operands[1], phase),
+      .src1 = readSrcOperand(Inst.m_Operands[2], phase),
     };
   };
   case microsoft::D3D10_SB_OPCODE_IGE: {
     return InstIntegerCompare{
       .cmp = IntegerComparison::SignedGreaterEqual,
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src0 = readSrcOperand(Inst.m_Operands[1]),
-      .src1 = readSrcOperand(Inst.m_Operands[2]),
+      .src0 = readSrcOperand(Inst.m_Operands[1], phase),
+      .src1 = readSrcOperand(Inst.m_Operands[2], phase),
     };
   };
   case microsoft::D3D10_SB_OPCODE_ILT: {
     return InstIntegerCompare{
       .cmp = IntegerComparison::SignedLessThan,
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src0 = readSrcOperand(Inst.m_Operands[1]),
-      .src1 = readSrcOperand(Inst.m_Operands[2]),
+      .src0 = readSrcOperand(Inst.m_Operands[1], phase),
+      .src1 = readSrcOperand(Inst.m_Operands[2], phase),
     };
   };
   case microsoft::D3D10_SB_OPCODE_UGE: {
     return InstIntegerCompare{
       .cmp = IntegerComparison::UnsignedGreaterEqual,
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src0 = readSrcOperand(Inst.m_Operands[1]),
-      .src1 = readSrcOperand(Inst.m_Operands[2]),
+      .src0 = readSrcOperand(Inst.m_Operands[1], phase),
+      .src1 = readSrcOperand(Inst.m_Operands[2], phase),
     };
   };
   case microsoft::D3D10_SB_OPCODE_ULT: {
     return InstIntegerCompare{
       .cmp = IntegerComparison::UnsignedLessThan,
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src0 = readSrcOperand(Inst.m_Operands[1]),
-      .src1 = readSrcOperand(Inst.m_Operands[2]),
+      .src0 = readSrcOperand(Inst.m_Operands[1], phase),
+      .src1 = readSrcOperand(Inst.m_Operands[2], phase),
     };
   };
   case microsoft::D3D10_SB_OPCODE_NOT: {
     return InstIntegerUnaryOp{
       .op = IntegerUnaryOp::Not,
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src = readSrcOperand(Inst.m_Operands[1]),
+      .src = readSrcOperand(Inst.m_Operands[1], phase),
     };
   };
   case microsoft::D3D10_SB_OPCODE_INEG: {
     return InstIntegerUnaryOp{
       .op = IntegerUnaryOp::Neg,
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src = readSrcOperand(Inst.m_Operands[1]),
+      .src = readSrcOperand(Inst.m_Operands[1], phase),
     };
   };
   case microsoft::D3D11_SB_OPCODE_BFREV: {
     return InstIntegerUnaryOp{
       .op = IntegerUnaryOp::ReverseBits,
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src = readSrcOperand(Inst.m_Operands[1]),
+      .src = readSrcOperand(Inst.m_Operands[1], phase),
     };
   };
   case microsoft::D3D11_SB_OPCODE_COUNTBITS: {
     return InstIntegerUnaryOp{
       .op = IntegerUnaryOp::CountBits,
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src = readSrcOperand(Inst.m_Operands[1]),
+      .src = readSrcOperand(Inst.m_Operands[1], phase),
     };
   };
   case microsoft::D3D11_SB_OPCODE_FIRSTBIT_HI: {
     return InstIntegerUnaryOp{
       .op = IntegerUnaryOp::FirstHiBit,
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src = readSrcOperand(Inst.m_Operands[1]),
+      .src = readSrcOperand(Inst.m_Operands[1], phase),
     };
   };
   case microsoft::D3D11_SB_OPCODE_FIRSTBIT_SHI: {
     return InstIntegerUnaryOp{
       .op = IntegerUnaryOp::FirstHiBitSigned,
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src = readSrcOperand(Inst.m_Operands[1]),
+      .src = readSrcOperand(Inst.m_Operands[1], phase),
     };
   };
   case microsoft::D3D11_SB_OPCODE_FIRSTBIT_LO: {
     return InstIntegerUnaryOp{
       .op = IntegerUnaryOp::FirstLowBit,
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src = readSrcOperand(Inst.m_Operands[1]),
+      .src = readSrcOperand(Inst.m_Operands[1], phase),
     };
   };
   case microsoft::D3D11_SB_OPCODE_BFI: {
     return InstBitFiledInsert{
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src0 = readSrcOperand(Inst.m_Operands[1]),
-      .src1 = readSrcOperand(Inst.m_Operands[2]),
-      .src2 = readSrcOperand(Inst.m_Operands[3]),
-      .src3 = readSrcOperand(Inst.m_Operands[4]),
+      .src0 = readSrcOperand(Inst.m_Operands[1], phase),
+      .src1 = readSrcOperand(Inst.m_Operands[2], phase),
+      .src2 = readSrcOperand(Inst.m_Operands[3], phase),
+      .src3 = readSrcOperand(Inst.m_Operands[4], phase),
     };
   };
   case microsoft::D3D11_SB_OPCODE_UBFE: {
     return InstExtractBits{
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src0 = readSrcOperand(Inst.m_Operands[1]),
-      .src1 = readSrcOperand(Inst.m_Operands[2]),
-      .src2 = readSrcOperand(Inst.m_Operands[3]),
+      .src0 = readSrcOperand(Inst.m_Operands[1], phase),
+      .src1 = readSrcOperand(Inst.m_Operands[2], phase),
+      .src2 = readSrcOperand(Inst.m_Operands[3], phase),
       .is_signed = false
     };
   };
   case microsoft::D3D11_SB_OPCODE_IBFE: {
     return InstExtractBits{
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src0 = readSrcOperand(Inst.m_Operands[1]),
-      .src1 = readSrcOperand(Inst.m_Operands[2]),
-      .src2 = readSrcOperand(Inst.m_Operands[3]),
+      .src0 = readSrcOperand(Inst.m_Operands[1], phase),
+      .src1 = readSrcOperand(Inst.m_Operands[2], phase),
+      .src2 = readSrcOperand(Inst.m_Operands[3], phase),
       .is_signed = true
     };
   };
@@ -1232,88 +1236,88 @@ Instruction readInstruction(
     return InstIntegerBinaryOp{
       .op = IntegerBinaryOp::IShl,
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src0 = readSrcOperand(Inst.m_Operands[1]),
-      .src1 = readSrcOperand(Inst.m_Operands[2]),
+      .src0 = readSrcOperand(Inst.m_Operands[1], phase),
+      .src1 = readSrcOperand(Inst.m_Operands[2], phase),
     };
   };
   case microsoft::D3D10_SB_OPCODE_ISHR: {
     return InstIntegerBinaryOp{
       .op = IntegerBinaryOp::IShr,
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src0 = readSrcOperand(Inst.m_Operands[1]),
-      .src1 = readSrcOperand(Inst.m_Operands[2]),
+      .src0 = readSrcOperand(Inst.m_Operands[1], phase),
+      .src1 = readSrcOperand(Inst.m_Operands[2], phase),
     };
   };
   case microsoft::D3D10_SB_OPCODE_USHR: {
     return InstIntegerBinaryOp{
       .op = IntegerBinaryOp::UShr,
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src0 = readSrcOperand(Inst.m_Operands[1]),
-      .src1 = readSrcOperand(Inst.m_Operands[2]),
+      .src0 = readSrcOperand(Inst.m_Operands[1], phase),
+      .src1 = readSrcOperand(Inst.m_Operands[2], phase),
     };
   };
   case microsoft::D3D10_SB_OPCODE_XOR: {
     return InstIntegerBinaryOp{
       .op = IntegerBinaryOp::Xor,
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src0 = readSrcOperand(Inst.m_Operands[1]),
-      .src1 = readSrcOperand(Inst.m_Operands[2]),
+      .src0 = readSrcOperand(Inst.m_Operands[1], phase),
+      .src1 = readSrcOperand(Inst.m_Operands[2], phase),
     };
   };
   case microsoft::D3D10_SB_OPCODE_OR: {
     return InstIntegerBinaryOp{
       .op = IntegerBinaryOp::Or,
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src0 = readSrcOperand(Inst.m_Operands[1]),
-      .src1 = readSrcOperand(Inst.m_Operands[2]),
+      .src0 = readSrcOperand(Inst.m_Operands[1], phase),
+      .src1 = readSrcOperand(Inst.m_Operands[2], phase),
     };
   };
   case microsoft::D3D10_SB_OPCODE_AND: {
     return InstIntegerBinaryOp{
       .op = IntegerBinaryOp::And,
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src0 = readSrcOperand(Inst.m_Operands[1]),
-      .src1 = readSrcOperand(Inst.m_Operands[2]),
+      .src0 = readSrcOperand(Inst.m_Operands[1], phase),
+      .src1 = readSrcOperand(Inst.m_Operands[2], phase),
     };
   };
   case microsoft::D3D10_SB_OPCODE_UMIN: {
     return InstIntegerBinaryOp{
       .op = IntegerBinaryOp::UMin,
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src0 = readSrcOperand(Inst.m_Operands[1]),
-      .src1 = readSrcOperand(Inst.m_Operands[2]),
+      .src0 = readSrcOperand(Inst.m_Operands[1], phase),
+      .src1 = readSrcOperand(Inst.m_Operands[2], phase),
     };
   };
   case microsoft::D3D10_SB_OPCODE_UMAX: {
     return InstIntegerBinaryOp{
       .op = IntegerBinaryOp::UMax,
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src0 = readSrcOperand(Inst.m_Operands[1]),
-      .src1 = readSrcOperand(Inst.m_Operands[2]),
+      .src0 = readSrcOperand(Inst.m_Operands[1], phase),
+      .src1 = readSrcOperand(Inst.m_Operands[2], phase),
     };
   };
   case microsoft::D3D10_SB_OPCODE_IMIN: {
     return InstIntegerBinaryOp{
       .op = IntegerBinaryOp::IMin,
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src0 = readSrcOperand(Inst.m_Operands[1]),
-      .src1 = readSrcOperand(Inst.m_Operands[2]),
+      .src0 = readSrcOperand(Inst.m_Operands[1], phase),
+      .src1 = readSrcOperand(Inst.m_Operands[2], phase),
     };
   };
   case microsoft::D3D10_SB_OPCODE_IMAX: {
     return InstIntegerBinaryOp{
       .op = IntegerBinaryOp::IMax,
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src0 = readSrcOperand(Inst.m_Operands[1]),
-      .src1 = readSrcOperand(Inst.m_Operands[2]),
+      .src0 = readSrcOperand(Inst.m_Operands[1], phase),
+      .src1 = readSrcOperand(Inst.m_Operands[2], phase),
     };
   };
   case microsoft::D3D10_SB_OPCODE_IADD: {
     return InstIntegerBinaryOp{
       .op = IntegerBinaryOp::Add,
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src0 = readSrcOperand(Inst.m_Operands[1]),
-      .src1 = readSrcOperand(Inst.m_Operands[2]),
+      .src0 = readSrcOperand(Inst.m_Operands[1], phase),
+      .src1 = readSrcOperand(Inst.m_Operands[2], phase),
     };
   };
   case microsoft::D3D10_SB_OPCODE_IMUL: {
@@ -1322,8 +1326,8 @@ Instruction readInstruction(
       .op = IntegerBinaryOpWithTwoDst::IMul,
       .dst_hi = readDstOperand(Inst.m_Operands[0], phase),
       .dst_low = readDstOperand(Inst.m_Operands[1], phase),
-      .src0 = readSrcOperand(Inst.m_Operands[2]),
-      .src1 = readSrcOperand(Inst.m_Operands[3]),
+      .src0 = readSrcOperand(Inst.m_Operands[2], phase),
+      .src1 = readSrcOperand(Inst.m_Operands[3], phase),
     };
   };
   case microsoft::D3D10_SB_OPCODE_UMUL: {
@@ -1332,8 +1336,8 @@ Instruction readInstruction(
       .op = IntegerBinaryOpWithTwoDst::UMul,
       .dst_hi = readDstOperand(Inst.m_Operands[0], phase),
       .dst_low = readDstOperand(Inst.m_Operands[1], phase),
-      .src0 = readSrcOperand(Inst.m_Operands[2]),
-      .src1 = readSrcOperand(Inst.m_Operands[3]),
+      .src0 = readSrcOperand(Inst.m_Operands[2], phase),
+      .src1 = readSrcOperand(Inst.m_Operands[3], phase),
     };
   };
   case microsoft::D3D10_SB_OPCODE_UDIV: {
@@ -1342,8 +1346,8 @@ Instruction readInstruction(
       .op = IntegerBinaryOpWithTwoDst::UDiv,
       .dst_hi = readDstOperand(Inst.m_Operands[0], phase),
       .dst_low = readDstOperand(Inst.m_Operands[1], phase),
-      .src0 = readSrcOperand(Inst.m_Operands[2]),
-      .src1 = readSrcOperand(Inst.m_Operands[3]),
+      .src0 = readSrcOperand(Inst.m_Operands[2], phase),
+      .src1 = readSrcOperand(Inst.m_Operands[3], phase),
     };
   };
   case microsoft::D3D11_SB_OPCODE_UADDC: {
@@ -1352,8 +1356,8 @@ Instruction readInstruction(
       .op = IntegerBinaryOpWithTwoDst::UAddCarry,
       .dst_hi = readDstOperand(Inst.m_Operands[0], phase),
       .dst_low = readDstOperand(Inst.m_Operands[1], phase),
-      .src0 = readSrcOperand(Inst.m_Operands[2]),
-      .src1 = readSrcOperand(Inst.m_Operands[3]),
+      .src0 = readSrcOperand(Inst.m_Operands[2], phase),
+      .src1 = readSrcOperand(Inst.m_Operands[3], phase),
     };
   };
   case microsoft::D3D11_SB_OPCODE_USUBB: {
@@ -1362,50 +1366,50 @@ Instruction readInstruction(
       .op = IntegerBinaryOpWithTwoDst::USubBorrow,
       .dst_hi = readDstOperand(Inst.m_Operands[0], phase),
       .dst_low = readDstOperand(Inst.m_Operands[1], phase),
-      .src0 = readSrcOperand(Inst.m_Operands[2]),
-      .src1 = readSrcOperand(Inst.m_Operands[3]),
+      .src0 = readSrcOperand(Inst.m_Operands[2], phase),
+      .src1 = readSrcOperand(Inst.m_Operands[3], phase),
     };
   };
   case microsoft::D3D11_SB_OPCODE_F16TOF32: {
     return InstConvert{
       .op = ConversionOp::HalfToFloat,
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src = readSrcOperand(Inst.m_Operands[1]),
+      .src = readSrcOperand(Inst.m_Operands[1], phase),
     };
   };
   case microsoft::D3D11_SB_OPCODE_F32TOF16: {
     return InstConvert{
       .op = ConversionOp::FloatToHalf,
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src = readSrcOperand(Inst.m_Operands[1]),
+      .src = readSrcOperand(Inst.m_Operands[1], phase),
     };
   };
   case microsoft::D3D10_SB_OPCODE_FTOI: {
     return InstConvert{
       .op = ConversionOp::FloatToSigned,
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src = readSrcOperand(Inst.m_Operands[1]),
+      .src = readSrcOperand(Inst.m_Operands[1], phase),
     };
   };
   case microsoft::D3D10_SB_OPCODE_FTOU: {
     return InstConvert{
       .op = ConversionOp::FloatToUnsigned,
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src = readSrcOperand(Inst.m_Operands[1]),
+      .src = readSrcOperand(Inst.m_Operands[1], phase),
     };
   };
   case microsoft::D3D10_SB_OPCODE_ITOF: {
     return InstConvert{
       .op = ConversionOp::SignedToFloat,
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src = readSrcOperand(Inst.m_Operands[1]),
+      .src = readSrcOperand(Inst.m_Operands[1], phase),
     };
   };
   case microsoft::D3D10_SB_OPCODE_UTOF: {
     return InstConvert{
       .op = ConversionOp::UnsignedToFloat,
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src = readSrcOperand(Inst.m_Operands[1]),
+      .src = readSrcOperand(Inst.m_Operands[1], phase),
     };
   };
   case microsoft::D3D10_SB_OPCODE_DERIV_RTX:
@@ -1413,7 +1417,7 @@ Instruction readInstruction(
     return InstPartialDerivative{
       ._ = readInstructionCommon(Inst),
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src = readSrcOperand(Inst.m_Operands[1]),
+      .src = readSrcOperand(Inst.m_Operands[1], phase),
       .ddy = false,
       .coarse = false,
     };
@@ -1423,7 +1427,7 @@ Instruction readInstruction(
     return InstPartialDerivative{
       ._ = readInstructionCommon(Inst),
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src = readSrcOperand(Inst.m_Operands[1]),
+      .src = readSrcOperand(Inst.m_Operands[1], phase),
       .ddy = true,
       .coarse = false,
     };
@@ -1432,7 +1436,7 @@ Instruction readInstruction(
     return InstPartialDerivative{
       ._ = readInstructionCommon(Inst),
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src = readSrcOperand(Inst.m_Operands[1]),
+      .src = readSrcOperand(Inst.m_Operands[1], phase),
       .ddy = false,
       .coarse = true,
     };
@@ -1441,7 +1445,7 @@ Instruction readInstruction(
     return InstPartialDerivative{
       ._ = readInstructionCommon(Inst),
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src = readSrcOperand(Inst.m_Operands[1]),
+      .src = readSrcOperand(Inst.m_Operands[1], phase),
       .ddy = true,
       .coarse = true,
     };
@@ -1449,7 +1453,7 @@ Instruction readInstruction(
   case microsoft::D3D10_1_SB_OPCODE_LOD: {
     return InstCalcLOD{
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src_address = readSrcOperand(Inst.m_Operands[1]),
+      .src_address = readSrcOperand(Inst.m_Operands[1], phase),
       .src_resource = readSrcOperandResource(Inst.m_Operands[2]),
       .src_sampler = readSrcOperandSampler(Inst.m_Operands[3]),
     };
@@ -1470,8 +1474,8 @@ Instruction readInstruction(
     auto inst = InstAtomicBinOp{
       .op = AtomicBinaryOp::And,
       .dst = readAtomicDst(Inst.m_Operands[0]),
-      .dst_address = readSrcOperand(Inst.m_Operands[1]),
-      .src = readSrcOperand(Inst.m_Operands[2]),
+      .dst_address = readSrcOperand(Inst.m_Operands[1], phase),
+      .src = readSrcOperand(Inst.m_Operands[2], phase),
       .dst_original = DstOperandSideEffect{},
     };
     std::visit(
@@ -1490,8 +1494,8 @@ Instruction readInstruction(
     auto inst = InstAtomicBinOp{
       .op = AtomicBinaryOp::Or,
       .dst = readAtomicDst(Inst.m_Operands[0]),
-      .dst_address = readSrcOperand(Inst.m_Operands[1]),
-      .src = readSrcOperand(Inst.m_Operands[2]),
+      .dst_address = readSrcOperand(Inst.m_Operands[1], phase),
+      .src = readSrcOperand(Inst.m_Operands[2], phase),
       .dst_original = DstOperandSideEffect{},
     };
     std::visit(
@@ -1510,8 +1514,8 @@ Instruction readInstruction(
     auto inst = InstAtomicBinOp{
       .op = AtomicBinaryOp::Xor,
       .dst = readAtomicDst(Inst.m_Operands[0]),
-      .dst_address = readSrcOperand(Inst.m_Operands[1]),
-      .src = readSrcOperand(Inst.m_Operands[2]),
+      .dst_address = readSrcOperand(Inst.m_Operands[1], phase),
+      .src = readSrcOperand(Inst.m_Operands[2], phase),
       .dst_original = DstOperandSideEffect{},
     };
     std::visit(
@@ -1530,8 +1534,8 @@ Instruction readInstruction(
     auto inst = InstAtomicBinOp{
       .op = AtomicBinaryOp::Add,
       .dst = readAtomicDst(Inst.m_Operands[0]),
-      .dst_address = readSrcOperand(Inst.m_Operands[1]),
-      .src = readSrcOperand(Inst.m_Operands[2]),
+      .dst_address = readSrcOperand(Inst.m_Operands[1], phase),
+      .src = readSrcOperand(Inst.m_Operands[2], phase),
       .dst_original = DstOperandSideEffect{},
     };
     std::visit(
@@ -1550,8 +1554,8 @@ Instruction readInstruction(
     auto inst = InstAtomicBinOp{
       .op = AtomicBinaryOp::IMax,
       .dst = readAtomicDst(Inst.m_Operands[0]),
-      .dst_address = readSrcOperand(Inst.m_Operands[1]),
-      .src = readSrcOperand(Inst.m_Operands[2]),
+      .dst_address = readSrcOperand(Inst.m_Operands[1], phase),
+      .src = readSrcOperand(Inst.m_Operands[2], phase),
       .dst_original = DstOperandSideEffect{},
     };
     std::visit(
@@ -1570,8 +1574,8 @@ Instruction readInstruction(
     auto inst = InstAtomicBinOp{
       .op = AtomicBinaryOp::IMin,
       .dst = readAtomicDst(Inst.m_Operands[0]),
-      .dst_address = readSrcOperand(Inst.m_Operands[1]),
-      .src = readSrcOperand(Inst.m_Operands[2]),
+      .dst_address = readSrcOperand(Inst.m_Operands[1], phase),
+      .src = readSrcOperand(Inst.m_Operands[2], phase),
       .dst_original = DstOperandSideEffect{},
     };
     std::visit(
@@ -1590,8 +1594,8 @@ Instruction readInstruction(
     auto inst = InstAtomicBinOp{
       .op = AtomicBinaryOp::UMax,
       .dst = readAtomicDst(Inst.m_Operands[0]),
-      .dst_address = readSrcOperand(Inst.m_Operands[1]),
-      .src = readSrcOperand(Inst.m_Operands[2]),
+      .dst_address = readSrcOperand(Inst.m_Operands[1], phase),
+      .src = readSrcOperand(Inst.m_Operands[2], phase),
       .dst_original = DstOperandSideEffect{},
     };
     std::visit(
@@ -1610,8 +1614,8 @@ Instruction readInstruction(
     auto inst = InstAtomicBinOp{
       .op = AtomicBinaryOp::UMin,
       .dst = readAtomicDst(Inst.m_Operands[0]),
-      .dst_address = readSrcOperand(Inst.m_Operands[1]),
-      .src = readSrcOperand(Inst.m_Operands[2]),
+      .dst_address = readSrcOperand(Inst.m_Operands[1], phase),
+      .src = readSrcOperand(Inst.m_Operands[2], phase),
       .dst_original = DstOperandSideEffect{},
     };
     std::visit(
@@ -1631,9 +1635,9 @@ Instruction readInstruction(
     return InstAtomicImmCmpExchange{
       .dst = DstOperandSideEffect{},
       .dst_resource = readAtomicDst(Inst.m_Operands[0]),
-      .dst_address = readSrcOperand(Inst.m_Operands[1]),
-      .src0 = readSrcOperand(Inst.m_Operands[2]),
-      .src1 = readSrcOperand(Inst.m_Operands[3]),
+      .dst_address = readSrcOperand(Inst.m_Operands[1], phase),
+      .src0 = readSrcOperand(Inst.m_Operands[2], phase),
+      .src1 = readSrcOperand(Inst.m_Operands[3], phase),
     };
   };
   case microsoft::D3D11_SB_OPCODE_IMM_ATOMIC_ALLOC: {
@@ -1656,8 +1660,8 @@ Instruction readInstruction(
     return InstAtomicImmExchange{
       .dst = readDstOperand(Inst.m_Operands[0], phase),
       .dst_resource = readAtomicDst(Inst.m_Operands[1]),
-      .dst_address = readSrcOperand(Inst.m_Operands[2]),
-      .src = readSrcOperand(Inst.m_Operands[3]),
+      .dst_address = readSrcOperand(Inst.m_Operands[2], phase),
+      .src = readSrcOperand(Inst.m_Operands[3], phase),
     };
   };
 
@@ -1666,17 +1670,17 @@ Instruction readInstruction(
     return InstAtomicImmCmpExchange{
       .dst = readDstOperand(Inst.m_Operands[0], phase),
       .dst_resource = readAtomicDst(Inst.m_Operands[1]),
-      .dst_address = readSrcOperand(Inst.m_Operands[2]),
-      .src0 = readSrcOperand(Inst.m_Operands[3]),
-      .src1 = readSrcOperand(Inst.m_Operands[4]),
+      .dst_address = readSrcOperand(Inst.m_Operands[2], phase),
+      .src0 = readSrcOperand(Inst.m_Operands[3], phase),
+      .src1 = readSrcOperand(Inst.m_Operands[4], phase),
     };
   };
   case microsoft::D3D11_SB_OPCODE_IMM_ATOMIC_AND: {
     auto inst = InstAtomicBinOp{
       .op = AtomicBinaryOp::And,
       .dst = readAtomicDst(Inst.m_Operands[1]),
-      .dst_address = readSrcOperand(Inst.m_Operands[2]),
-      .src = readSrcOperand(Inst.m_Operands[3]),
+      .dst_address = readSrcOperand(Inst.m_Operands[2], phase),
+      .src = readSrcOperand(Inst.m_Operands[3], phase),
       .dst_original = readDstOperand(Inst.m_Operands[0], phase),
     };
     std::visit(
@@ -1695,8 +1699,8 @@ Instruction readInstruction(
     auto inst = InstAtomicBinOp{
       .op = AtomicBinaryOp::Or,
       .dst = readAtomicDst(Inst.m_Operands[1]),
-      .dst_address = readSrcOperand(Inst.m_Operands[2]),
-      .src = readSrcOperand(Inst.m_Operands[3]),
+      .dst_address = readSrcOperand(Inst.m_Operands[2], phase),
+      .src = readSrcOperand(Inst.m_Operands[3], phase),
       .dst_original = readDstOperand(Inst.m_Operands[0], phase),
     };
     std::visit(
@@ -1715,8 +1719,8 @@ Instruction readInstruction(
     auto inst = InstAtomicBinOp{
       .op = AtomicBinaryOp::Xor,
       .dst = readAtomicDst(Inst.m_Operands[1]),
-      .dst_address = readSrcOperand(Inst.m_Operands[2]),
-      .src = readSrcOperand(Inst.m_Operands[3]),
+      .dst_address = readSrcOperand(Inst.m_Operands[2], phase),
+      .src = readSrcOperand(Inst.m_Operands[3], phase),
       .dst_original = readDstOperand(Inst.m_Operands[0], phase),
     };
     std::visit(
@@ -1735,8 +1739,8 @@ Instruction readInstruction(
     auto inst = InstAtomicBinOp{
       .op = AtomicBinaryOp::Add,
       .dst = readAtomicDst(Inst.m_Operands[1]),
-      .dst_address = readSrcOperand(Inst.m_Operands[2]),
-      .src = readSrcOperand(Inst.m_Operands[3]),
+      .dst_address = readSrcOperand(Inst.m_Operands[2], phase),
+      .src = readSrcOperand(Inst.m_Operands[3], phase),
       .dst_original = readDstOperand(Inst.m_Operands[0], phase),
     };
     std::visit(
@@ -1755,8 +1759,8 @@ Instruction readInstruction(
     auto inst = InstAtomicBinOp{
       .op = AtomicBinaryOp::UMax,
       .dst = readAtomicDst(Inst.m_Operands[1]),
-      .dst_address = readSrcOperand(Inst.m_Operands[2]),
-      .src = readSrcOperand(Inst.m_Operands[3]),
+      .dst_address = readSrcOperand(Inst.m_Operands[2], phase),
+      .src = readSrcOperand(Inst.m_Operands[3], phase),
       .dst_original = readDstOperand(Inst.m_Operands[0], phase),
     };
     std::visit(
@@ -1775,8 +1779,8 @@ Instruction readInstruction(
     auto inst = InstAtomicBinOp{
       .op = AtomicBinaryOp::UMin,
       .dst = readAtomicDst(Inst.m_Operands[1]),
-      .dst_address = readSrcOperand(Inst.m_Operands[2]),
-      .src = readSrcOperand(Inst.m_Operands[3]),
+      .dst_address = readSrcOperand(Inst.m_Operands[2], phase),
+      .src = readSrcOperand(Inst.m_Operands[3], phase),
       .dst_original = readDstOperand(Inst.m_Operands[0], phase),
     };
     std::visit(
@@ -1795,8 +1799,8 @@ Instruction readInstruction(
     auto inst = InstAtomicBinOp{
       .op = AtomicBinaryOp::IMax,
       .dst = readAtomicDst(Inst.m_Operands[1]),
-      .dst_address = readSrcOperand(Inst.m_Operands[2]),
-      .src = readSrcOperand(Inst.m_Operands[3]),
+      .dst_address = readSrcOperand(Inst.m_Operands[2], phase),
+      .src = readSrcOperand(Inst.m_Operands[3], phase),
       .dst_original = readDstOperand(Inst.m_Operands[0], phase),
     };
     std::visit(
@@ -1815,8 +1819,8 @@ Instruction readInstruction(
     auto inst = InstAtomicBinOp{
       .op = AtomicBinaryOp::IMin,
       .dst = readAtomicDst(Inst.m_Operands[1]),
-      .dst_address = readSrcOperand(Inst.m_Operands[2]),
-      .src = readSrcOperand(Inst.m_Operands[3]),
+      .dst_address = readSrcOperand(Inst.m_Operands[2], phase),
+      .src = readSrcOperand(Inst.m_Operands[3], phase),
       .dst_original = readDstOperand(Inst.m_Operands[0], phase),
     };
     std::visit(
@@ -1839,14 +1843,15 @@ Instruction readInstruction(
 };
 
 BasicBlockCondition readCondition(
-  const microsoft::D3D10ShaderBinary::CInstruction &Inst, uint32_t OpIdx
+  const microsoft::D3D10ShaderBinary::CInstruction &Inst, uint32_t OpIdx,
+  uint32_t phase
 ) {
   using namespace microsoft;
   const microsoft::D3D10ShaderBinary::COperandBase &O = Inst.m_Operands[OpIdx];
   D3D10_SB_INSTRUCTION_TEST_BOOLEAN TestType = Inst.m_Test;
 
   return BasicBlockCondition{
-    .operand = readSrcOperand(O),
+    .operand = readSrcOperand(O, phase),
     .test_nonzero = TestType == D3D10_SB_INSTRUCTION_TEST_NONZERO
   };
 }

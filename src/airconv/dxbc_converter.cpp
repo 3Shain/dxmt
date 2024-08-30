@@ -421,6 +421,37 @@ llvm::Error convertDXBC(
     llvm::ArrayType::get(types._float4, shader_info->tempRegisterCount)
       ->getPointerTo()
   );
+  for (auto &phase : shader_info->phases) {
+    resource_map.phases.push_back({});
+    auto& phase_temp = resource_map.phases.back();
+
+    phase_temp.temp.ptr_int4 = builder.CreateAlloca(
+      llvm::ArrayType::get(types._int4, phase.tempRegisterCount)
+    );
+    phase_temp.temp.ptr_float4 = builder.CreateBitCast(
+      phase_temp.temp.ptr_int4,
+      llvm::ArrayType::get(types._float4, phase.tempRegisterCount)
+        ->getPointerTo()
+    );
+
+    for (auto &[idx, info] : phase.indexableTempRegisterCounts) {
+      auto &[numRegisters, mask] = info;
+      auto channel_count = std::bit_width(mask);
+      auto ptr_int_vec = builder.CreateAlloca(llvm::ArrayType::get(
+        llvm::FixedVectorType::get(types._int, channel_count), numRegisters
+      ));
+      auto ptr_float_vec = builder.CreateBitCast(
+        ptr_int_vec,
+        llvm::ArrayType::get(
+          llvm::FixedVectorType::get(types._float, channel_count), numRegisters
+        )
+          ->getPointerTo()
+      );
+      phase_temp.indexable_temp_map[idx] = {
+        ptr_int_vec, ptr_float_vec, (uint32_t)channel_count
+      };
+    }
+  }
   if (shader_info->immConstantBufferData.size()) {
     resource_map.icb_float = builder.CreateBitCast(
       resource_map.icb,
@@ -632,7 +663,7 @@ int SM50Initialize(
         auto alternative_ = std::make_shared<BasicBlock>("if_alternative");
         // alternative_ might be the block after ENDIF, but ELSE is possible
         ctx->target = BasicBlockConditionalBranch{
-          readCondition(Inst, 0), true_, alternative_
+          readCondition(Inst, 0, phase), true_, alternative_
         };
         auto after_endif = readControlFlow(
           true_, alternative_, continue_point, break_point, return_point,
@@ -685,7 +716,7 @@ int SM50Initialize(
       case D3D10_SB_OPCODE_BREAKC: {
         auto after_break = std::make_shared<BasicBlock>("after_breakc");
         ctx->target = BasicBlockConditionalBranch{
-          readCondition(Inst, 0), break_point, after_break
+          readCondition(Inst, 0, phase), break_point, after_break
         };
         return readControlFlow(
           after_break, block_after_endif, continue_point, break_point,
@@ -703,7 +734,7 @@ int SM50Initialize(
       case D3D10_SB_OPCODE_CONTINUEC: {
         auto after_continue = std::make_shared<BasicBlock>("after_continuec");
         ctx->target = BasicBlockConditionalBranch{
-          readCondition(Inst, 0), continue_point, after_continue
+          readCondition(Inst, 0, phase), continue_point, after_continue
         };
         return readControlFlow(
           after_continue, block_after_endif, continue_point, break_point,
@@ -718,7 +749,7 @@ int SM50Initialize(
         auto after_endswitch = std::make_shared<BasicBlock>("endswitch");
         // scope start: switch
         auto local_switch_context = std::make_shared<BasicBlockSwitch>();
-        local_switch_context->value = readSrcOperand(Inst.Operand(0));
+        local_switch_context->value = readSrcOperand(Inst.Operand(0), phase);
         auto empty_body = std::make_shared<BasicBlock>("switch_empty"
         ); // it will unconditional jump to
            // first case (and then ignored)
@@ -785,7 +816,7 @@ int SM50Initialize(
       case D3D10_SB_OPCODE_RETC: {
         auto after_retc = std::make_shared<BasicBlock>("after_retc");
         ctx->target = BasicBlockConditionalBranch{
-          readCondition(Inst, 0), return_point, after_retc
+          readCondition(Inst, 0, phase), return_point, after_retc
         };
         return readControlFlow(
           after_retc, block_after_endif, continue_point, break_point,
@@ -796,7 +827,7 @@ int SM50Initialize(
         auto fulfilled_ = std::make_shared<BasicBlock>("discard_fulfilled");
         auto otherwise_ = std::make_shared<BasicBlock>("discard_otherwise");
         ctx->target = BasicBlockConditionalBranch{
-          readCondition(Inst, 0), fulfilled_, otherwise_
+          readCondition(Inst, 0, phase), fulfilled_, otherwise_
         };
         fulfilled_->target = BasicBlockUnconditionalBranch{otherwise_};
         fulfilled_->instructions.push_back(InstPixelDiscard{});

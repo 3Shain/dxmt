@@ -58,6 +58,11 @@ struct indexable_register_file {
   uint32_t vec_size = 0;
 };
 
+struct phase_temp {
+  register_file temp{};
+  std::unordered_map<uint32_t, indexable_register_file> indexable_temp_map{};
+};
+
 struct io_binding_map {
   llvm::GlobalVariable *icb = nullptr;
   llvm::Value *icb_float = nullptr;
@@ -81,6 +86,7 @@ struct io_binding_map {
   register_file output{};
   register_file temp{};
   std::unordered_map<uint32_t, indexable_register_file> indexable_temp_map{};
+  std::vector<phase_temp> phases;
 
   // special registers (input)
   llvm::Value *thread_id_arg = nullptr;
@@ -1121,24 +1127,43 @@ IRValue load_src<SrcOperandImmediate32, true>(SrcOperandImmediate32 imm) {
 
 template <> IRValue load_src<SrcOperandTemp, true>(SrcOperandTemp temp) {
   auto ctx = co_yield get_context();
-  auto s = co_yield load_from_array_at(
+  if (temp.phase != ~0u) {
+    assert(temp.phase < ctx.resource.phases.size());
+    co_return co_yield load_from_array_at(
+      ctx.resource.phases[temp.phase].temp.ptr_float4,
+      ctx.builder.getInt32(temp.regid)
+    );
+  }
+  co_return co_yield load_from_array_at(
     ctx.resource.temp.ptr_float4, ctx.builder.getInt32(temp.regid)
   );
-  co_return s;
 };
 
 template <> IRValue load_src<SrcOperandTemp, false>(SrcOperandTemp temp) {
-  auto ctx = co_yield get_context();
-  auto s = co_yield load_from_array_at(
+  auto ctx = co_yield get_context();  
+  if (temp.phase != ~0u) {
+    assert(temp.phase < ctx.resource.phases.size());
+    co_return co_yield load_from_array_at(
+      ctx.resource.phases[temp.phase].temp.ptr_int4,
+      ctx.builder.getInt32(temp.regid)
+    );
+  }
+  co_return co_yield load_from_array_at(
     ctx.resource.temp.ptr_int4, ctx.builder.getInt32(temp.regid)
   );
-  co_return s;
 };
 
 template <>
 IRValue load_src<SrcOperandIndexableTemp, true>(SrcOperandIndexableTemp itemp) {
   auto ctx = co_yield get_context();
-  auto regfile = ctx.resource.indexable_temp_map[itemp.regfile];
+  indexable_register_file regfile;
+  if (itemp.phase != ~0u) {
+    assert(itemp.phase < ctx.resource.phases.size());
+    regfile =
+      ctx.resource.phases[itemp.phase].indexable_temp_map[itemp.regfile];
+  } else {
+    regfile = ctx.resource.indexable_temp_map[itemp.regfile];
+  }
   auto s = co_yield load_from_array_at(
     regfile.ptr_float_vec, co_yield load_operand_index(itemp.regindex)
   );
@@ -1149,7 +1174,14 @@ template <>
 IRValue load_src<SrcOperandIndexableTemp, false>(SrcOperandIndexableTemp itemp
 ) {
   auto ctx = co_yield get_context();
-  auto regfile = ctx.resource.indexable_temp_map[itemp.regfile];
+  indexable_register_file regfile;
+  if (itemp.phase != ~0u) {
+    assert(itemp.phase < ctx.resource.phases.size());
+    regfile =
+      ctx.resource.phases[itemp.phase].indexable_temp_map[itemp.regfile];
+  } else {
+    regfile = ctx.resource.indexable_temp_map[itemp.regfile];
+  }
   auto s = co_yield load_from_array_at(
     regfile.ptr_int_vec, co_yield load_operand_index(itemp.regindex)
   );
@@ -1429,6 +1461,13 @@ store_dst<DstOperandTemp, false>(DstOperandTemp temp, IRValue &&value) {
   // coroutine + rvalue reference = SHOOT YOURSELF IN THE FOOT
   return make_effect_bind(
     [value = std::move(value), temp](auto ctx) mutable -> IREffect {
+      if (temp.phase != ~0u) {
+        assert(temp.phase < ctx.resource.phases.size());
+        co_return co_yield store_at_vec4_array_masked(
+          ctx.resource.phases[temp.phase].temp.ptr_int4,
+          co_yield get_int(temp.regid), co_yield std::move(value), temp._.mask
+        );
+      }
       co_return co_yield store_at_vec4_array_masked(
         ctx.resource.temp.ptr_int4, co_yield get_int(temp.regid),
         co_yield std::move(value), temp._.mask
@@ -1442,6 +1481,13 @@ IREffect store_dst<DstOperandTemp, true>(DstOperandTemp temp, IRValue &&value) {
   // coroutine + rvalue reference = SHOOT YOURSELF IN THE FOOT
   return make_effect_bind(
     [value = std::move(value), temp](auto ctx) mutable -> IREffect {
+      if (temp.phase != ~0u) {
+        assert(temp.phase < ctx.resource.phases.size());
+        co_return co_yield store_at_vec4_array_masked(
+          ctx.resource.phases[temp.phase].temp.ptr_float4,
+          co_yield get_int(temp.regid), co_yield std::move(value), temp._.mask
+        );
+      }
       co_return co_yield store_at_vec4_array_masked(
         ctx.resource.temp.ptr_float4, co_yield get_int(temp.regid),
         co_yield std::move(value), temp._.mask
@@ -1457,7 +1503,14 @@ IREffect store_dst<DstOperandIndexableTemp, false>(
   // coroutine + rvalue reference = SHOOT YOURSELF IN THE FOOT
   return make_effect_bind(
     [value = std::move(value), itemp](auto ctx) mutable -> IREffect {
-      auto regfile = ctx.resource.indexable_temp_map[itemp.regfile];
+      indexable_register_file regfile;
+      if (itemp.phase != ~0u) {
+        assert(itemp.phase < ctx.resource.phases.size());
+        regfile =
+          ctx.resource.phases[itemp.phase].indexable_temp_map[itemp.regfile];
+      } else {
+        regfile = ctx.resource.indexable_temp_map[itemp.regfile];
+      }
       co_return co_yield store_at_vec_array_masked(
         regfile.ptr_int_vec, co_yield load_operand_index(itemp.regindex),
         co_yield std::move(value), itemp._.mask
@@ -1473,7 +1526,14 @@ IREffect store_dst<DstOperandIndexableTemp, true>(
   // coroutine + rvalue reference = SHOOT YOURSELF IN THE FOOT
   return make_effect_bind(
     [value = std::move(value), itemp](auto ctx) mutable -> IREffect {
-      auto regfile = ctx.resource.indexable_temp_map[itemp.regfile];
+      indexable_register_file regfile;
+      if (itemp.phase != ~0u) {
+        assert(itemp.phase < ctx.resource.phases.size());
+        regfile =
+          ctx.resource.phases[itemp.phase].indexable_temp_map[itemp.regfile];
+      } else {
+        regfile = ctx.resource.indexable_temp_map[itemp.regfile];
+      }
       co_return co_yield store_at_vec_array_masked(
         regfile.ptr_float_vec, co_yield load_operand_index(itemp.regindex),
         co_yield std::move(value), itemp._.mask
