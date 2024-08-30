@@ -103,13 +103,17 @@ llvm::Error convertDXBC(
 
   uint32_t binding_table_index = ~0u;
   uint32_t cbuf_table_index = ~0u;
-  uint32_t const &max_input_register = pShaderInternal->max_input_register;
-  uint32_t const &max_output_register = pShaderInternal->max_output_register;
+  uint32_t max_input_register = pShaderInternal->max_input_register;
+  uint32_t max_output_register = pShaderInternal->max_output_register;
+  uint32_t max_patch_constant_output_register =
+    pShaderInternal->max_patch_constant_output_register;
   uint64_t sign_mask = 0;
   uint32_t pso_sample_mask = 0xffffffff;
   SM50_SHADER_COMPILATION_ARGUMENT_DATA *arg = pArgs;
   SM50_SHADER_EMULATE_VERTEX_STREAM_OUTPUT_DATA *vertex_so = nullptr;
   SM50_SHADER_IA_INPUT_LAYOUT_DATA *ia_layout = nullptr;
+  SM50_HULL_SHADER_META_DATA *hull_meta = nullptr;
+  SM50_DOMAIN_SHADER_META_DATA *domain_meta = nullptr;
   uint64_t debug_id = ~0u;
   while (arg) {
     switch (arg->type) {
@@ -130,6 +134,12 @@ llvm::Error convertDXBC(
       break;
     case SM50_SHADER_IA_INPUT_LAYOUT:
       ia_layout = ((SM50_SHADER_IA_INPUT_LAYOUT_DATA *)arg);
+      break;
+    case SM50_HULL_SHADER_META:
+      hull_meta = ((SM50_HULL_SHADER_META_DATA *)arg);
+      break;
+    case SM50_DOMAIN_SHADER_META:
+      domain_meta = ((SM50_DOMAIN_SHADER_META_DATA *)arg);
       break;
     }
     arg = (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)arg->next;
@@ -383,6 +393,11 @@ llvm::Error convertDXBC(
         .arg_name = "cbuffer_table",
       });
   }
+  uint32_t payload_idx = ~0u;
+  if (pShaderInternal->input_control_point_count != ~0u) {
+    payload_idx = func_signature.DefineInput(air::InputPayload{.size = 16256});
+  }
+
   auto [function, function_metadata] = func_signature.CreateFunction(
     name, context, module, sign_mask, vertex_so != nullptr
   );
@@ -403,19 +418,80 @@ llvm::Error convertDXBC(
       }
     }
   }
-  resource_map.input.ptr_int4 =
-    builder.CreateAlloca(llvm::ArrayType::get(types._int4, max_input_register));
-  resource_map.input.ptr_float4 = builder.CreateBitCast(
-    resource_map.input.ptr_int4,
-    llvm::ArrayType::get(types._float4, max_input_register)->getPointerTo()
-  );
-  resource_map.output.ptr_int4 =
-    builder.CreateAlloca(llvm::ArrayType::get(types._int4, max_output_register)
+  if (shader_type == microsoft::D3D11_SB_HULL_SHADER) {
+    assert(pShaderInternal->input_control_point_count != ~0u);
+    auto payload_ptr = function->getArg(payload_idx);
+    resource_map.input.ptr_int4 = builder.CreateBitCast(
+      payload_ptr, llvm::ArrayType::get(
+                     types._int4, hull_meta->input_control_point_vec4_count *
+                                    pShaderInternal->input_control_point_count
+                   )
+                     ->getPointerTo((uint32_t)air::AddressSpace::object_data)
     );
-  resource_map.output.ptr_float4 = builder.CreateBitCast(
-    resource_map.output.ptr_int4,
-    llvm::ArrayType::get(types._float4, max_output_register)->getPointerTo()
-  );
+    resource_map.input.ptr_float4 = builder.CreateBitCast(
+      payload_ptr, llvm::ArrayType::get(
+                     types._float4, hull_meta->input_control_point_vec4_count *
+                                      pShaderInternal->input_control_point_count
+                   )
+                     ->getPointerTo((uint32_t)air::AddressSpace::object_data)
+    );
+    resource_map.input_element_count = hull_meta->input_control_point_vec4_count;
+
+    assert(pShaderInternal->output_control_point_count != ~0u);
+
+    auto control_point_output_size =
+      max_output_register * pShaderInternal->output_control_point_count;
+    auto type = llvm::ArrayType::get(types._int4, control_point_output_size);
+    llvm::GlobalVariable *control_point_phase_out = new llvm::GlobalVariable(
+      module, type, false, llvm::GlobalValue::InternalLinkage,
+      llvm::UndefValue::get(type), "hull_control_point_phase_out", nullptr,
+      llvm::GlobalValue::NotThreadLocal,
+      (uint32_t)air::AddressSpace::threadgroup
+    );
+    control_point_phase_out->setAlignment(llvm::Align(16));
+    resource_map.output.ptr_int4 = control_point_phase_out;
+    resource_map.output.ptr_float4 = builder.CreateBitCast(
+      resource_map.output.ptr_int4,
+      llvm::ArrayType::get(types._float4, control_point_output_size)
+        ->getPointerTo((uint32_t)air::AddressSpace::threadgroup)
+    );
+    resource_map.output_element_count = max_output_register;
+  } else {
+    resource_map.input.ptr_int4 =
+      builder.CreateAlloca(llvm::ArrayType::get(types._int4, max_input_register)
+      );
+    resource_map.input.ptr_float4 = builder.CreateBitCast(
+      resource_map.input.ptr_int4,
+      llvm::ArrayType::get(types._float4, max_input_register)->getPointerTo()
+    );
+    resource_map.input_element_count = max_input_register;
+    resource_map.output.ptr_int4 = builder.CreateAlloca(
+      llvm::ArrayType::get(types._int4, max_output_register)
+    );
+    resource_map.output.ptr_float4 = builder.CreateBitCast(
+      resource_map.output.ptr_int4,
+      llvm::ArrayType::get(types._float4, max_output_register)->getPointerTo()
+    );
+    resource_map.output_element_count = max_output_register;
+  }
+  if (max_patch_constant_output_register) {
+    /* all instances write to the same output (threadgroup memory) */
+    auto type =
+      llvm::ArrayType::get(types._int4, max_patch_constant_output_register);
+    llvm::GlobalVariable *patch_constant_out = new llvm::GlobalVariable(
+      module, type, false, llvm::GlobalValue::InternalLinkage,
+      llvm::UndefValue::get(type), "hull_patch_constant_out", nullptr,
+      llvm::GlobalValue::NotThreadLocal,
+      (uint32_t)air::AddressSpace::threadgroup
+    );
+    patch_constant_out->setAlignment(llvm::Align(16));
+    resource_map.patch_constant_output.ptr_int4 = patch_constant_out;
+    resource_map.patch_constant_output.ptr_float4 = builder.CreateBitCast(
+      resource_map.patch_constant_output.ptr_int4,
+      llvm::ArrayType::get(types._float4, max_patch_constant_output_register)
+        ->getPointerTo((uint32_t)air::AddressSpace::threadgroup)
+    );
+  }
   resource_map.temp.ptr_int4 = builder.CreateAlloca(
     llvm::ArrayType::get(types._int4, shader_info->tempRegisterCount)
   );
@@ -487,7 +563,8 @@ llvm::Error convertDXBC(
 
   struct context ctx {
     .builder = builder, .llvm = context, .module = module, .function = function,
-    .resource = resource_map, .types = types, .pso_sample_mask = pso_sample_mask
+    .resource = resource_map, .types = types, .pso_sample_mask = pso_sample_mask,
+    .shader_type = pShaderInternal->shader_type,
   };
   // then we can start build ... real IR code (visit all basicblocks)
   auto prelogue_result = prelogue.build(ctx);

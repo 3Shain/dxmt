@@ -87,6 +87,9 @@ struct io_binding_map {
   register_file temp{};
   std::unordered_map<uint32_t, indexable_register_file> indexable_temp_map{};
   std::vector<phase_temp> phases;
+  register_file patch_constant_output{};
+  uint32_t input_element_count;
+  uint32_t output_element_count;
 
   // special registers (input)
   llvm::Value *thread_id_arg = nullptr;
@@ -120,6 +123,7 @@ struct context {
   io_binding_map &resource;
   air::AirType &types; // hmmm
   uint32_t pso_sample_mask;
+  microsoft::D3D10_SB_TOKENIZED_PROGRAM_TYPE shader_type;
 };
 
 template <typename T = std::monostate>
@@ -874,7 +878,6 @@ SrcOperandModifier get_modifier(SrcOperand src) {
       [](SrcOperandTemp src) { return src._; },
       [](SrcOperandIndexableTemp src) { return src._; },
       [](SrcOperandIndexableInput src) { return src._; },
-      [](SrcOperandInput2D src) { return src._; },
       [](SrcOperandInputICP src) { return src._; },
       [](SrcOperandInputOCP src) { return src._; },
       [](SrcOperandInputPC src) { return src._; },
@@ -1547,7 +1550,27 @@ IREffect
 store_dst<DstOperandOutput, false>(DstOperandOutput output, IRValue &&value) {
   // coroutine + rvalue reference = SHOOT YOURSELF IN THE FOOT
   return make_effect_bind(
-    [value = std::move(value), output](auto ctx) mutable -> IREffect {
+    [value = std::move(value), output](context ctx) mutable -> IREffect {
+      if (output.phase != ~0u) {
+        co_return co_yield store_at_vec4_array_masked(
+          ctx.resource.patch_constant_output.ptr_int4,
+          co_yield get_int(output.regid), co_yield std::move(value),
+          output._.mask
+        );
+      }
+      if (ctx.shader_type == microsoft::D3D11_SB_HULL_SHADER) {
+        co_return co_yield store_at_vec4_array_masked(
+          ctx.resource.output.ptr_int4,
+          ctx.builder.CreateAdd(
+            ctx.builder.CreateMul(
+              ctx.resource.thread_id_in_group_flat_arg,
+              ctx.builder.getInt32(ctx.resource.output_element_count)
+            ),
+            ctx.builder.getInt32(output.regid)
+          ),
+          co_yield std::move(value), output._.mask
+        );
+      }
       co_return co_yield store_at_vec4_array_masked(
         ctx.resource.output.ptr_int4, co_yield get_int(output.regid),
         co_yield std::move(value), output._.mask
@@ -1562,6 +1585,26 @@ store_dst<DstOperandOutput, true>(DstOperandOutput output, IRValue &&value) {
   // coroutine + rvalue reference = SHOOT YOURSELF IN THE FOOT
   return make_effect_bind(
     [value = std::move(value), output](auto ctx) mutable -> IREffect {
+      if (output.phase != ~0u) {
+        co_return co_yield store_at_vec4_array_masked(
+          ctx.resource.patch_constant_output.ptr_float4,
+          co_yield get_int(output.regid), co_yield std::move(value),
+          output._.mask
+        );
+      }
+      if (ctx.shader_type == microsoft::D3D11_SB_HULL_SHADER) {
+        co_return co_yield store_at_vec4_array_masked(
+          ctx.resource.output.ptr_float4,
+          ctx.builder.CreateAdd(
+            ctx.builder.CreateMul(
+              ctx.resource.thread_id_in_group_flat_arg,
+              ctx.builder.getInt32(ctx.resource.output_element_count)
+            ),
+            ctx.builder.getInt32(output.regid)
+          ),
+          co_yield std::move(value), output._.mask
+        );
+      }
       co_return co_yield store_at_vec4_array_masked(
         ctx.resource.output.ptr_float4, co_yield get_int(output.regid),
         co_yield std::move(value), output._.mask
@@ -1624,6 +1667,72 @@ IREffect store_dst<DstOperandOutputCoverageMask, true>(
         ctx.builder.CreateBitCast(sample_mask, ctx.types._int), ptr
       );
       co_return {};
+    }
+  );
+};
+
+template <>
+IREffect store_dst<
+  DstOperandIndexableOutput, true>(DstOperandIndexableOutput output, IRValue && value) {
+  return make_effect_bind(
+    [value = std::move(value), output](context ctx) mutable -> IREffect {
+      auto index = co_yield load_operand_index(output.regindex);
+      if (output.phase != ~0u) {
+        co_return co_yield store_at_vec4_array_masked(
+          ctx.resource.patch_constant_output.ptr_float4, index,
+          co_yield std::move(value), output._.mask
+        );
+      }
+      if (ctx.shader_type == microsoft::D3D11_SB_HULL_SHADER) {
+        co_return co_yield store_at_vec4_array_masked(
+          ctx.resource.output.ptr_float4,
+          ctx.builder.CreateAdd(
+            ctx.builder.CreateMul(
+              ctx.resource.thread_id_in_group_flat_arg,
+              ctx.builder.getInt32(ctx.resource.output_element_count)
+            ),
+            index
+          ),
+          co_yield std::move(value), output._.mask
+        );
+      }
+      co_return co_yield store_at_vec4_array_masked(
+        ctx.resource.output.ptr_float4, index, co_yield std::move(value),
+        output._.mask
+      );
+    }
+  );
+};
+
+template <>
+IREffect store_dst<
+  DstOperandIndexableOutput, false>(DstOperandIndexableOutput output, IRValue && value) {
+  return make_effect_bind(
+    [value = std::move(value), output](context ctx) mutable -> IREffect {
+      auto index = co_yield load_operand_index(output.regindex);
+      if (output.phase != ~0u) {
+        co_return co_yield store_at_vec4_array_masked(
+          ctx.resource.patch_constant_output.ptr_int4, index,
+          co_yield std::move(value), output._.mask
+        );
+      }
+      if (ctx.shader_type == microsoft::D3D11_SB_HULL_SHADER) {
+        co_return co_yield store_at_vec4_array_masked(
+          ctx.resource.output.ptr_int4,
+          ctx.builder.CreateAdd(
+            ctx.builder.CreateMul(
+              ctx.resource.thread_id_in_group_flat_arg,
+              ctx.builder.getInt32(ctx.resource.output_element_count)
+            ),
+            index
+          ),
+          co_yield std::move(value), output._.mask
+        );
+      }
+      co_return co_yield store_at_vec4_array_masked(
+        ctx.resource.output.ptr_int4, index, co_yield std::move(value),
+        output._.mask
+      );
     }
   );
 };
