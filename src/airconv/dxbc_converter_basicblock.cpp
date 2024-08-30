@@ -439,17 +439,23 @@ IREffect store_at_vec4_array_masked(
   llvm::Value *array, pvalue index, pvalue maybe_vec4, uint32_t mask
 ) {
   return extend_to_vec4(maybe_vec4) >>= [=](pvalue vec4) {
-    return make_effect_bind([=](context ctx) {
-      if (mask == 0b1111) {
-        return store_to_array_at(array, index, vec4);
-      }
-      return load_from_array_at(array, index) >>= [=](auto current) {
-        assert(current->getType() == vec4->getType());
-        auto new_value = ctx.builder.CreateShuffleVector(
-          current, vec4, get_shuffle_mask(mask)
+    if (mask == 0b1111) {
+      return store_to_array_at(array, index, vec4);
+    }
+    return make_effect([=](context ctx) {
+      for (unsigned i = 0; i < 4; i++) {
+        if ((mask & (1 << i)) == 0)
+          continue;
+        auto component_ptr =  ctx.builder.CreateGEP(
+          llvm::cast<llvm::PointerType>(array->getType())
+            ->getNonOpaquePointerElementType(),
+          array, {ctx.builder.getInt32(0), index, ctx.builder.getInt32(i)}
         );
-        return store_to_array_at(array, index, new_value);
-      };
+        ctx.builder.CreateStore(
+          ctx.builder.CreateExtractElement(vec4, i), component_ptr
+        );
+      }
+      return std::monostate();
     });
   };
 };
@@ -463,42 +469,20 @@ auto store_at_vec_array_masked(
   );
   auto components =
     cast<llvm::FixedVectorType>(array_ty->getElementType())->getNumElements();
-  return extend_to_vec4(maybe_vec4) >>= [=](pvalue vec4) {
-    return make_effect_bind([=](context ctx) {
-      return (load_from_array_at(array, index) >>=
-              extend_to_vec4) >>= [=](auto current) {
-        auto cx = mask & 1 ? 4 : 0;
-        auto cy = mask & 2 ? 5 : 1;
-        auto cz = mask & 4 ? 6 : 2;
-        auto cw = mask & 8 ? 7 : 3;
-        switch (components) {
-        case 1: {
-          auto new_value = ctx.builder.CreateShuffleVector(current, vec4, {cx});
-          return store_to_array_at(array, index, new_value);
-        };
-        case 2: {
-          auto new_value =
-            ctx.builder.CreateShuffleVector(current, vec4, {cx, cy});
-          return store_to_array_at(array, index, new_value);
-        };
-        case 3: {
-          auto new_value =
-            ctx.builder.CreateShuffleVector(current, vec4, {cx, cy, cz});
-          return store_to_array_at(array, index, new_value);
-        };
-        case 4: {
-          auto new_value =
-            ctx.builder.CreateShuffleVector(current, vec4, {cx, cy, cz, cw});
-          return store_to_array_at(array, index, new_value);
-        };
-        default: {
-          assert(0 && "UNREACHABLE");
-          break;
-        }
-        }
-      };
-    });
-  };
+  return make_effect([=](context ctx) {
+    for (unsigned i = 0; i < components; i++) {
+      if ((mask & (1 << i)) == 0)
+        continue;
+      auto component_ptr = ctx.builder.CreateGEP(
+        array_ty,
+        array, {ctx.builder.getInt32(0), index, ctx.builder.getInt32(i)}
+      );
+      ctx.builder.CreateStore(
+        ctx.builder.CreateExtractElement(maybe_vec4, i), component_ptr
+      );
+    }
+    return std::monostate();
+  });
 };
 
 IREffect init_input_reg(
