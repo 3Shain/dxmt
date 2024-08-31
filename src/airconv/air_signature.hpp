@@ -104,6 +104,14 @@ struct MSLFloat {
   };
 };
 
+struct MSLHalf {
+  std::string get_name() const { return "half"; };
+
+  llvm::Type *get_llvm_type(llvm::LLVMContext &context) const {
+    return llvm::Type::getHalfTy(context);
+  };
+};
+
 struct MSLInt {
   std::string get_name() const { return "int"; };
 
@@ -143,7 +151,7 @@ constexpr auto msl_uint = MSLUint{};
 constexpr auto msl_float = MSLFloat{};
 
 using MSLScalerType =
-  std::variant<MSLFloat, MSLInt, MSLUint, MSLBool>; // incomplete list
+  std::variant<MSLFloat, MSLInt, MSLUint, MSLBool, MSLHalf>; // incomplete list
 
 constexpr auto msl_sampler = MSLSampler{};
 

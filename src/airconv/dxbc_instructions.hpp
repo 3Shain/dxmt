@@ -92,13 +92,6 @@ struct SrcOperandInput {
   uint32_t regid;
 };
 
-struct SrcOperandInput2D {
-  static constexpr std::string_view debug_name = "input_2d";
-  SrcOperandModifier _;
-  OperandIndex cpid;
-  uint32_t regid;
-};
-
 struct SrcOperandInputOCP {
   static constexpr std::string_view debug_name = "input_vocp";
   SrcOperandModifier _;
@@ -116,7 +109,7 @@ struct SrcOperandInputICP {
 struct SrcOperandInputPC {
   static constexpr std::string_view debug_name = "input_vpc";
   SrcOperandModifier _;
-  uint32_t regid;
+  OperandIndex regindex;
 };
 
 struct SrcOperandIndexableInput {
@@ -226,8 +219,8 @@ struct DclOutput {};
 using SrcOperand = std::variant<
   SrcOperandImmediate32, SrcOperandTemp, SrcOperandIndexableTemp,
   SrcOperandInput, SrcOperandConstantBuffer, SrcOperandImmediateConstantBuffer,
-  SrcOperandAttribute, SrcOperandIndexableInput, SrcOperandInput2D,
-  SrcOperandInputICP, SrcOperandInputOCP, SrcOperandInputPC>;
+  SrcOperandAttribute, SrcOperandIndexableInput, SrcOperandInputICP,
+  SrcOperandInputOCP, SrcOperandInputPC>;
 
 struct SrcOperandResource {
   uint32_t range_id;

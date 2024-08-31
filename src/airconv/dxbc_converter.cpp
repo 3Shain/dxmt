@@ -365,8 +365,80 @@ llvm::Error convertDXBC(
       });
   }
   uint32_t payload_idx = ~0u;
-  if (pShaderInternal->input_control_point_count != ~0u) {
+  uint32_t patch_id_idx = ~0u;
+  uint32_t domain_cp_buffer_idx = ~0u;
+  uint32_t domain_pc_buffer_idx = ~0u;
+  uint32_t domain_tessfactor_buffer_idx = ~0u;
+  if(shader_type == microsoft::D3D11_SB_DOMAIN_SHADER) {
+    patch_id_idx = func_signature.DefineInput(air::InputPatchID{});
+    domain_cp_buffer_idx =
+      func_signature.DefineInput(air::ArgumentBindingBuffer{
+        .buffer_size = {},
+        .location_index = 20,
+        .array_size = 0,
+        .memory_access = air::MemoryAccess::read,
+        .address_space = air::AddressSpace::device,
+        .type = air::msl_int4,
+        .arg_name = "domain_cp_buffer",
+        .raster_order_group = {}
+      });
+    domain_pc_buffer_idx =
+      func_signature.DefineInput(air::ArgumentBindingBuffer{
+        .buffer_size = {},
+        .location_index = 21,
+        .array_size = 0,
+        .memory_access = air::MemoryAccess::read,
+        .address_space = air::AddressSpace::device,
+        .type = air::MSLUint{},
+        .arg_name = "domain_cp_buffer",
+        .raster_order_group = {}
+      });
+    domain_tessfactor_buffer_idx =
+      func_signature.DefineInput(air::ArgumentBindingBuffer{
+        .buffer_size = {},
+        .location_index = 22,
+        .array_size = 0,
+        .memory_access = air::MemoryAccess::read,
+        .address_space = air::AddressSpace::device,
+        .type = air::MSLHalf{},
+        .arg_name = "domain_tess_factor_buffer",
+        .raster_order_group = {}
+      });
+  } else if(shader_type == microsoft::D3D11_SB_HULL_SHADER) {
     payload_idx = func_signature.DefineInput(air::InputPayload{.size = 16256});
+    domain_cp_buffer_idx =
+      func_signature.DefineInput(air::ArgumentBindingBuffer{
+        .buffer_size = {},
+        .location_index = 20,
+        .array_size = 0,
+        .memory_access = air::MemoryAccess::write,
+        .address_space = air::AddressSpace::device,
+        .type = air::msl_int4,
+        .arg_name = "hull_cp_buffer",
+        .raster_order_group = {}
+      });
+    domain_pc_buffer_idx =
+      func_signature.DefineInput(air::ArgumentBindingBuffer{
+        .buffer_size = {},
+        .location_index = 21,
+        .array_size = 0,
+        .memory_access = air::MemoryAccess::write,
+        .address_space = air::AddressSpace::device,
+        .type = air::MSLUint{},
+        .arg_name = "hull_cp_buffer",
+        .raster_order_group = {}
+      });
+    domain_tessfactor_buffer_idx =
+      func_signature.DefineInput(air::ArgumentBindingBuffer{
+        .buffer_size = {},
+        .location_index = 22,
+        .array_size = 0,
+        .memory_access = air::MemoryAccess::write,
+        .address_space = air::AddressSpace::device,
+        .type = air::MSLHalf{},
+        .arg_name = "hull_tess_factor_buffer",
+        .raster_order_group = {}
+      });
   }
 
   auto [function, function_metadata] = func_signature.CreateFunction(
@@ -391,7 +463,7 @@ llvm::Error convertDXBC(
   }
   if (shader_type == microsoft::D3D11_SB_HULL_SHADER) {
     assert(pShaderInternal->input_control_point_count != ~0u);
-    auto payload_ptr = function->getArg(payload_idx);
+    auto payload_ptr = builder.CreateConstInBoundsGEP1_32(types._int, function->getArg(payload_idx), 4);
     resource_map.input.ptr_int4 = builder.CreateBitCast(
       payload_ptr, llvm::ArrayType::get(
                      types._int4, hull_meta->input_control_point_vec4_count *
@@ -409,23 +481,86 @@ llvm::Error convertDXBC(
     resource_map.input_element_count =
       hull_meta->input_control_point_vec4_count;
 
-    assert(pShaderInternal->output_control_point_count != ~0u);
+    /* patch id (primitive id) in payload */
+    resource_map.patch_id = builder.CreateLoad(types._int, payload_ptr);
+    resource_map.control_point_buffer = function->getArg(domain_cp_buffer_idx);
+    resource_map.patch_constant_buffer = function->getArg(domain_pc_buffer_idx);
+    resource_map.tess_factor_buffer = function->getArg(domain_tessfactor_buffer_idx);
 
-    auto control_point_output_size =
-      max_output_register * pShaderInternal->output_control_point_count;
-    auto type = llvm::ArrayType::get(types._int4, control_point_output_size);
-    llvm::GlobalVariable *control_point_phase_out = new llvm::GlobalVariable(
-      module, type, false, llvm::GlobalValue::InternalLinkage,
-      llvm::UndefValue::get(type), "hull_control_point_phase_out", nullptr,
-      llvm::GlobalValue::NotThreadLocal,
-      (uint32_t)air::AddressSpace::threadgroup
+    if(shader_info->no_control_point_phase_passthrough) {
+      assert(pShaderInternal->output_control_point_count != ~0u);
+
+      auto control_point_output_size =
+        max_output_register * pShaderInternal->output_control_point_count;
+      auto type = llvm::ArrayType::get(types._int4, control_point_output_size);
+      llvm::GlobalVariable *control_point_phase_out = new llvm::GlobalVariable(
+        module, type, false, llvm::GlobalValue::InternalLinkage,
+        llvm::UndefValue::get(type), "hull_control_point_phase_out", nullptr,
+        llvm::GlobalValue::NotThreadLocal,
+        (uint32_t)air::AddressSpace::threadgroup
+      );
+      control_point_phase_out->setAlignment(llvm::Align(16));
+      resource_map.output.ptr_int4 = control_point_phase_out;
+      resource_map.output.ptr_float4 = builder.CreateBitCast(
+        resource_map.output.ptr_int4,
+        llvm::ArrayType::get(types._float4, control_point_output_size)
+          ->getPointerTo((uint32_t)air::AddressSpace::threadgroup)
+      );
+      resource_map.output_element_count = max_output_register;
+    } else {
+      /* since no control point phase */
+      resource_map.output.ptr_float4 = resource_map.input.ptr_float4;
+      resource_map.output.ptr_int4 = resource_map.input.ptr_int4;
+      resource_map.output_element_count = resource_map.input_element_count;
+    }
+  } else if (shader_type == microsoft::D3D11_SB_DOMAIN_SHADER) {
+    resource_map.patch_id = function->getArg(patch_id_idx);
+    resource_map.control_point_buffer = function->getArg(domain_cp_buffer_idx);
+    resource_map.patch_constant_buffer = function->getArg(domain_pc_buffer_idx);
+    resource_map.tess_factor_buffer = function->getArg(domain_tessfactor_buffer_idx);
+
+    auto control_point_input_array_type_float4 = llvm::ArrayType::get(
+      types._float4, domain_meta->input_control_point_vec4_count *
+                       pShaderInternal->input_control_point_count
     );
-    control_point_phase_out->setAlignment(llvm::Align(16));
-    resource_map.output.ptr_int4 = control_point_phase_out;
+    resource_map.input.ptr_float4 = builder.CreateGEP(
+      control_point_input_array_type_float4,
+      builder.CreateBitCast(
+        resource_map.control_point_buffer,
+        control_point_input_array_type_float4->getPointerTo((uint32_t
+        )air::AddressSpace::device)
+      ),
+      {resource_map.patch_id}
+    );
+    auto control_point_input_array_type_int4 = llvm::ArrayType::get(
+      types._int4, domain_meta->input_control_point_vec4_count *
+                       pShaderInternal->input_control_point_count
+    );
+    resource_map.input.ptr_int4 = builder.CreateGEP(
+      control_point_input_array_type_int4,
+      builder.CreateBitCast(
+        resource_map.control_point_buffer,
+        control_point_input_array_type_int4->getPointerTo((uint32_t
+        )air::AddressSpace::device)
+      ),
+      {resource_map.patch_id}
+    );
+    resource_map.input_element_count = domain_meta->input_control_point_vec4_count;
+
+    resource_map.patch_constant_output.ptr_int4 =
+      builder.CreateAlloca(llvm::ArrayType::get(types._int4, max_input_register)
+      );
+    resource_map.patch_constant_output.ptr_float4 = builder.CreateBitCast(
+      resource_map.patch_constant_output.ptr_int4,
+      llvm::ArrayType::get(types._float4, max_input_register)->getPointerTo()
+    );
+
+    resource_map.output.ptr_int4 = builder.CreateAlloca(
+      llvm::ArrayType::get(types._int4, max_output_register)
+    );
     resource_map.output.ptr_float4 = builder.CreateBitCast(
       resource_map.output.ptr_int4,
-      llvm::ArrayType::get(types._float4, control_point_output_size)
-        ->getPointerTo((uint32_t)air::AddressSpace::threadgroup)
+      llvm::ArrayType::get(types._float4, max_output_register)->getPointerTo()
     );
     resource_map.output_element_count = max_output_register;
   } else {
@@ -857,6 +992,7 @@ int SM50Initialize(
         );
       }
       case D3D11_SB_OPCODE_HS_CONTROL_POINT_PHASE: {
+        shader_info->no_control_point_phase_passthrough = true;
         auto control_point_active =
           std::make_shared<BasicBlock>("control_point_active");
         auto control_point_end =

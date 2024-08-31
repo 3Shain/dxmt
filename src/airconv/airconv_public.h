@@ -199,6 +199,7 @@ struct SM50_PATCH_CONSTANT_SCALAR_OUTPUT {
 };
 
 struct SM50_DOMAIN_SHADER_META_DATA {
+  uint32_t input_control_point_vec4_count;
   uint32_t num_patch_constant_scalar_output;
   struct SM50_PATCH_CONSTANT_SCALAR_OUTPUT *patch_constant_scalar_output;
 };

@@ -976,27 +976,87 @@ IRValue load_src<SrcOperandImmediate32, true>(SrcOperandImmediate32 imm) {
 };
 
 template <>
-IRValue load_src<SrcOperandInputOCP, true>(SrcOperandInputOCP input2d) {
-  return make_irvalue([=](context ctx) {
-    // TODO
-    return llvm::ConstantAggregateZero::get(ctx.types._float4);
-  });
+IRValue load_src<SrcOperandInputOCP, true>(SrcOperandInputOCP input_ocp) {
+
+  auto ctx = co_yield get_context();
+  co_return co_yield load_from_array_at(
+    ctx.resource.output.ptr_float4,
+    ctx.builder.CreateAdd(
+      ctx.builder.CreateMul(
+        co_yield load_operand_index(input_ocp.cpid),
+        ctx.builder.getInt32(ctx.resource.output_element_count)
+      ),
+      ctx.builder.getInt32(input_ocp.regid)
+    )
+  );
+};
+
+template <>
+IRValue load_src<SrcOperandInputOCP, false>(SrcOperandInputOCP input_ocp) {
+
+  auto ctx = co_yield get_context();
+  co_return co_yield load_from_array_at(
+    ctx.resource.output.ptr_int4,
+    ctx.builder.CreateAdd(
+      ctx.builder.CreateMul(
+        co_yield load_operand_index(input_ocp.cpid),
+        ctx.builder.getInt32(ctx.resource.output_element_count)
+      ),
+      ctx.builder.getInt32(input_ocp.regid)
+    )
+  );
 };
 
 template <>
 IRValue load_src<SrcOperandInputICP, true>(SrcOperandInputICP input2d) {
-  return make_irvalue([=](context ctx) {
-    // TODO
-    return llvm::ConstantAggregateZero::get(ctx.types._float4);
-  });
+  auto ctx = co_yield get_context();
+  /* applies to both hull and domain shader */
+  co_return co_yield load_from_array_at(
+    ctx.resource.input.ptr_float4,
+    ctx.builder.CreateAdd(
+      ctx.builder.CreateMul(
+        co_yield load_operand_index(input2d.cpid),
+        ctx.builder.getInt32(ctx.resource.input_element_count)
+      ),
+      ctx.builder.getInt32(input2d.regid)
+    )
+  );
 };
 
 template <>
-IRValue load_src<SrcOperandInputPC, true>(SrcOperandInputPC input2d) {
-  return make_irvalue([=](context ctx) {
-    // TODO
-    return llvm::ConstantAggregateZero::get(ctx.types._float4);
-  });
+IRValue load_src<SrcOperandInputICP, false>(SrcOperandInputICP input2d) {
+  auto ctx = co_yield get_context();
+  /* applies to both hull and domain shader */
+  co_return co_yield load_from_array_at(
+    ctx.resource.input.ptr_int4,
+    ctx.builder.CreateAdd(
+      ctx.builder.CreateMul(
+        co_yield load_operand_index(input2d.cpid),
+        ctx.builder.getInt32(ctx.resource.input_element_count)
+      ),
+      ctx.builder.getInt32(input2d.regid)
+    )
+  );
+};
+
+template <>
+IRValue load_src<SrcOperandInputPC, true>(SrcOperandInputPC input_patch_constant
+) {
+  auto ctx = co_yield get_context();
+  co_return co_yield load_from_array_at(
+    ctx.resource.patch_constant_output.ptr_float4,
+    co_yield load_operand_index(input_patch_constant.regindex)
+  );
+};
+
+template<>
+IRValue load_src<SrcOperandInputPC, false>(SrcOperandInputPC input_patch_constant
+) {
+  auto ctx = co_yield get_context();
+  co_return co_yield load_from_array_at(
+    ctx.resource.patch_constant_output.ptr_int4,
+    co_yield load_operand_index(input_patch_constant.regindex)
+  );
 };
 
 template <> IRValue load_src<SrcOperandTemp, true>(SrcOperandTemp temp) {

@@ -505,7 +505,7 @@ void handle_signature_hs(
     auto sgv = Inst.m_InputDeclSGV.Name;
     switch (sgv) {
     default:
-      assert(0 && "Unexpected/unhandled pixel shader sgv");
+      assert(0 && "Unexpected/unhandled hull shader sgv");
       break;
     }
     max_input_register = std::max(reg + 1, max_input_register);
@@ -515,22 +515,6 @@ void handle_signature_hs(
     D3D10_SB_OPERAND_TYPE RegType = Inst.m_Operands[0].m_Type;
 
     switch (RegType) {
-    case D3D11_SB_OPERAND_TYPE_INPUT_COVERAGE_MASK: {
-      auto assigned_index = func_signature.DefineInput(InputInputCoverage{});
-      prelogue_.push_back([=](IREffect &prelogue) {
-        prelogue << make_effect([=](struct context ctx) {
-          auto attr = ctx.function->getArg(assigned_index);
-          ctx.resource.coverage_mask_arg = attr;
-          return std::monostate{};
-        });
-      });
-      break;
-    }
-
-    case D3D11_SB_OPERAND_TYPE_INNER_COVERAGE:
-      assert(0);
-      break;
-
     case D3D11_SB_OPERAND_TYPE_OUTPUT_CONTROL_POINT_ID:
     case D3D11_SB_OPERAND_TYPE_INPUT_FORK_INSTANCE_ID:
     case D3D11_SB_OPERAND_TYPE_INPUT_JOIN_INSTANCE_ID: {
@@ -545,13 +529,16 @@ void handle_signature_hs(
       });
       break;
     }
-    case D3D11_SB_OPERAND_TYPE_INPUT_GS_INSTANCE_ID:
-      assert(0 && "unimplemented input registers");
-      break;
     case D3D10_SB_OPERAND_TYPE_INPUT: {
       break;
     }
     case D3D11_SB_OPERAND_TYPE_INPUT_PATCH_CONSTANT: {
+      break;
+    }
+    case D3D11_SB_OPERAND_TYPE_INPUT_CONTROL_POINT: {
+      break;
+    }
+    case D3D11_SB_OPERAND_TYPE_OUTPUT_CONTROL_POINT: {
       break;
     }
 
@@ -661,16 +648,7 @@ void handle_signature_ds(
     break;
   }
   case D3D10_SB_OPCODE_DCL_INPUT_SGV: {
-    unsigned reg = Inst.m_Operands[0].m_Index[0].m_RegIndex;
-    // auto mask = Inst.m_Operands[0].m_WriteMask >> 4;
-    // auto MinPrecision = Inst.m_Operands[0].m_MinPrecision; // not used
-    auto sgv = Inst.m_InputDeclSGV.Name;
-    switch (sgv) {
-    default:
-      assert(0 && "Unexpected/unhandled input system value");
-      break;
-    }
-    max_input_register = std::max(reg + 1, max_input_register);
+    assert(0);
     break;
   }
   case D3D10_SB_OPCODE_DCL_INPUT: {
@@ -702,7 +680,16 @@ void handle_signature_ds(
       break;
     }
     case D3D10_SB_OPERAND_TYPE_INPUT:
-    case D3D11_SB_OPERAND_TYPE_INPUT_PATCH_CONSTANT:
+      break;
+    case D3D11_SB_OPERAND_TYPE_INPUT_PATCH_CONSTANT: 
+    {
+      unsigned reg = Inst.m_Operands[0].m_Index[0].m_RegIndex;
+      assert(Inst.m_Operands[0].m_IndexDimension == D3D10_SB_OPERAND_INDEX_1D);
+
+      max_input_register = std::max(reg + 1, max_input_register);
+      break;
+    }
+    case D3D11_SB_OPERAND_TYPE_INPUT_CONTROL_POINT:
       break;
     default:
       assert(0 && "unhandeld domain shader input");

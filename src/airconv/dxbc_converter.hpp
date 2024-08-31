@@ -171,6 +171,7 @@ public:
   bool skipOptimization = false;
   bool refactoringAllowed = true;
   bool use_cmp_exch = false;
+  bool no_control_point_phase_passthrough = false;
   std::vector<PhaseInfo> phases;
 };
 
@@ -249,6 +250,11 @@ struct io_binding_map {
   llvm::AllocaInst *coverage_mask_reg = nullptr;
 
   llvm::AllocaInst *cmp_exch_temp = nullptr;
+
+  // special buffers for tessellation
+  llvm::Value* control_point_buffer; // int4*
+  llvm::Value* patch_constant_buffer; // int*
+  llvm::Value* tess_factor_buffer; // half*
 
   // temp for fast look-up
   llvm::Value *vertex_id_with_base = nullptr;
@@ -339,6 +345,7 @@ public:
   std::vector<std::function<void(dxmt::dxbc::IREffect &)>> prelogue_;
   std::vector<std::function<void(dxmt::dxbc::IRValue &)>> epilogue_;
   microsoft::D3D10_SB_TOKENIZED_PROGRAM_TYPE shader_type;
+  /* for domain shader, it refers to patch constant input count */
   uint32_t max_input_register = 0;
   uint32_t max_output_register = 0;
   uint32_t max_patch_constant_output_register = 0;

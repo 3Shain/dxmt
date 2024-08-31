@@ -240,7 +240,8 @@ SrcOperand readSrcOperand(
   case D3D10_SB_OPERAND_TYPE_INPUT: {
     if (O.m_IndexDimension == D3D10_SB_OPERAND_INDEX_2D) {
       DXASSERT_DXBC(O.m_IndexType[1] == D3D10_SB_OPERAND_INDEX_IMMEDIATE32);
-      return SrcOperandInput2D{
+      DXASSERT_DXBC(phase == ~0u);
+      return SrcOperandInputICP{
         ._ = readSrcOperandCommon(O),
         .cpid = readOperandIndex(O.m_Index[0], O.m_IndexType[0]),
         .regid = O.m_Index[1].m_RegIndex,
@@ -275,10 +276,9 @@ SrcOperand readSrcOperand(
     };
   }
   case D3D11_SB_OPERAND_TYPE_INPUT_PATCH_CONSTANT: {
-    unsigned Reg = O.m_Index[0].m_RegIndex;
     return SrcOperandInputPC{
       ._ = readSrcOperandCommon(O),
-      .regid = Reg,
+      .regindex = readOperandIndex(O.m_Index[0], O.m_IndexType[0]),
     };
   }
   case D3D10_SB_OPERAND_TYPE_INDEXABLE_TEMP: {
