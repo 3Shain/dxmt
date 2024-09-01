@@ -733,6 +733,27 @@ llvm::Error convert_dxbc_domain_shader(
   );
   resource_map.output_element_count = max_output_register;
 
+  /* setup patch constant register */
+  for (auto x : llvm::enumerate(pHullStage->patch_constant_scalars)) {
+    auto src_ptr = builder.CreateGEP(
+      types._int, resource_map.patch_constant_buffer,
+      {builder.CreateAdd(
+        builder.CreateMul(
+          resource_map.patch_id,
+          builder.getInt32(pHullStage->patch_constant_scalars.size())
+        ),
+        builder.getInt32(x.index())
+      )}
+    );
+    auto dst_ptr = builder.CreateGEP(
+      llvm::ArrayType::get(types._int4, max_input_register),
+      resource_map.patch_constant_output.ptr_int4,
+      {builder.getInt32(0), builder.getInt32(x.value().reg),
+       builder.getInt32(x.value().component)}
+    );
+    builder.CreateStore(builder.CreateLoad(types._int, src_ptr), dst_ptr);
+  }
+
   setup_temp_register(shader_info, resource_map, types, module, builder);
   setup_immediate_constant_buffer(
     shader_info, resource_map, types, module, builder
@@ -2089,7 +2110,7 @@ int SM50Initialize(
   return 0;
 };
 
-void SM50Destroy(SM50Shader *pShader) { delete (SM50ShaderInternal *)pShader; }
+void SM50Destroy(SM50Shader *pShader) { delete (dxmt::dxbc::SM50ShaderInternal *)pShader; }
 
 ABRT_HANDLE_INIT
 
@@ -2118,8 +2139,8 @@ int SM50Compile(
 
   context.setOpaquePointers(false); // I suspect Metal uses LLVM 14...
 
-  auto &shader_info = ((SM50ShaderInternal *)pShader)->shader_info;
-  auto shader_type = ((SM50ShaderInternal *)pShader)->shader_type;
+  auto &shader_info = ((dxmt::dxbc::SM50ShaderInternal *)pShader)->shader_info;
+  auto shader_type = ((dxmt::dxbc::SM50ShaderInternal *)pShader)->shader_type;
 
   auto pModule = std::make_unique<Module>("shader.air", context);
   initializeModule(

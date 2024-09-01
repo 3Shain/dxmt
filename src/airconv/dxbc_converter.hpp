@@ -252,8 +252,10 @@ constexpr air::MSLScalerOrVectorType to_msl_type(RegisterComponentType type) {
   }
 }
 
-} // namespace dxmt::dxbc
-
+struct PatchConstantScalarInfo {
+  uint8_t component: 2;
+  uint8_t reg: 6; 
+};
 
 class SM50ShaderInternal {
 public:
@@ -278,4 +280,13 @@ public:
   uint32_t tessellation_partition = 0;
   float max_tesselation_factor = 64.0f;
   bool tessellation_anticlockwise = false;
+  std::vector<PatchConstantScalarInfo> patch_constant_scalars;
+
 };
+
+llvm::Error convert_dxbc_domain_shader(
+  SM50ShaderInternal *pShaderInternal, const char *name,
+  SM50ShaderInternal *pHullStage, llvm::LLVMContext &context,
+  llvm::Module &module, SM50_SHADER_COMPILATION_ARGUMENT_DATA *pArgs
+);
+}

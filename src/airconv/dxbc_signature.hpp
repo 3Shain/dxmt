@@ -45,10 +45,10 @@ static_assert(
   sizeof(Signature) == sizeof(void *), "ensure inline implementation"
 );
 
-
 void handle_signature(
-  microsoft::CSignatureParser &inputParser, microsoft::CSignatureParser &outputParser,
-  microsoft::D3D10ShaderBinary::CInstruction &Inst, SM50Shader* sm50_shader,
+  microsoft::CSignatureParser &inputParser,
+  microsoft::CSignatureParser &outputParser,
+  microsoft::D3D10ShaderBinary::CInstruction &Inst, SM50Shader *sm50_shader,
   uint32_t phase
 );
 } // namespace dxmt::dxbc

@@ -615,12 +615,18 @@ void handle_signature_hs(
     case D3D10_SB_OPERAND_TYPE_OUTPUT: {
       // normal output register
       auto reg = Inst.m_Operands[0].m_Index[0].m_RegIndex;
-      //   auto mask = Inst.m_Operands[0].m_WriteMask >> 4;
-      //   auto sig = findOutputElement([=](Signature sig) {
-      //     return (sig.reg() == reg) && ((sig.mask() & mask) != 0);
-      //   });
-      // TODO:
+      auto mask = Inst.m_Operands[0].m_WriteMask >> 4;
       if (phase != ~0u) {
+        assert(
+          Inst.m_Operands[0].m_IndexDimension == D3D10_SB_OPERAND_INDEX_1D
+        );
+        for (unsigned i = 0; i < 4; i++) {
+          if (mask & (1 << i)) {
+            sm50_shader->patch_constant_scalars.push_back(
+              {.component = (uint8_t)(i), .reg = (uint8_t)reg}
+            );
+          }
+        }
         max_patch_constant_output_register =
           std::max(reg + 1, max_patch_constant_output_register);
       } else {
@@ -703,12 +709,11 @@ void handle_signature_ds(
       break;
     }
     case D3D10_SB_OPERAND_TYPE_INPUT:
+      assert(0);
       break;
-    case D3D11_SB_OPERAND_TYPE_INPUT_PATCH_CONSTANT: 
-    {
+    case D3D11_SB_OPERAND_TYPE_INPUT_PATCH_CONSTANT: {
       unsigned reg = Inst.m_Operands[0].m_Index[0].m_RegIndex;
       assert(Inst.m_Operands[0].m_IndexDimension == D3D10_SB_OPERAND_INDEX_1D);
-
       max_input_register = std::max(reg + 1, max_input_register);
       break;
     }

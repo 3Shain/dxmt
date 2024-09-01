@@ -1,6 +1,7 @@
 #include "airconv_context.hpp"
 #include "airconv_public.h"
 #include "metallib_writer.hpp"
+#include "dxbc_converter.hpp"
 #include "llvm/Bitcode/BitcodeReader.h"
 #include "llvm/Bitcode/BitcodeWriter.h"
 #include "llvm/IR/DiagnosticInfo.h"
@@ -29,6 +30,9 @@ static cl::opt<std::string>
 static cl::opt<std::string> OutputFilename(
   "o", cl::desc("Override output filename"), cl::value_desc("filename")
 );
+
+static cl::opt<std::string>
+  HullBeforeDomain("hull-before-domain", cl::desc("Compile domain shader with supplied hull shader"));
 
 static cl::opt<bool>
   EmitLLVM("S", cl::init(false), cl::desc("Write output as LLVM assembly"));
@@ -199,9 +203,40 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  if (auto err = dxmt::dxbc::convertDXBC(sm50, "shader_main", Context, M, nullptr)) {
-    errs() << err << '\n';
-    return 1;
+  if (!HullBeforeDomain.getValue().empty()) {
+    ErrorOr<std::unique_ptr<MemoryBuffer>> FileOrErr =
+      MemoryBuffer::getFile(HullBeforeDomain, /*IsText=*/false);
+    if (std::error_code EC = FileOrErr.getError()) {
+      SMDiagnostic(
+        HullBeforeDomain, SourceMgr::DK_Error,
+        "Could not open input file: " + EC.message()
+      )
+        .print(argv[0], errs());
+      return 1;
+    }
+    auto MemRef = FileOrErr->get()->getMemBufferRef();
+    SM50Shader *sm50_hull;
+    if (SM50Initialize(
+          MemRef.getBufferStart(), MemRef.getBufferSize(), &sm50_hull, nullptr,
+          &err
+        )) {
+      errs() << SM50GetErrorMesssage(err) << '\n';
+      SM50FreeError(err);
+      return 1;
+    }
+    if (auto err = dxmt::dxbc::convert_dxbc_domain_shader(
+          (dxmt::dxbc::SM50ShaderInternal *)sm50, "shader_main",
+          (dxmt::dxbc::SM50ShaderInternal *)sm50_hull, Context, M, nullptr
+        )) {
+      errs() << err << '\n';
+      return 1;
+    }
+  } else {
+    if (auto err =
+          dxmt::dxbc::convertDXBC(sm50, "shader_main", Context, M, nullptr)) {
+      errs() << err << '\n';
+      return 1;
+    }
   }
 
   SM50Destroy(sm50);
