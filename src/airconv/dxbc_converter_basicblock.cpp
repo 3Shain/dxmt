@@ -318,26 +318,36 @@ auto swizzle(Swizzle swizzle) {
   };
 }
 
-auto to_desired_type_from_int_vec4(pvalue vec4, llvm::Type *desired) {
+auto to_desired_type_from_int_vec4(pvalue vec4, llvm::Type *desired, uint32_t mask) {
   return make_irvalue([=](context ctx) {
     assert(vec4->getType() == ctx.types._int4);
     std::function<pvalue(pvalue, llvm::Type *)> convert =
-      [&ctx, &convert](pvalue vec4, llvm::Type *desired) {
+      [&ctx, &convert, mask](pvalue vec4, llvm::Type *desired) {
+        auto masked = [mask](int i) {
+          return (mask & (1 << i)) ? i : llvm::UndefMaskElem;
+        };
         if (desired == ctx.types._int4)
-          return vec4;
+          return ctx.builder.CreateShuffleVector(
+            vec4, {masked(0), masked(1), masked(2), masked(3)}
+          );
         if (desired == ctx.types._float4)
-          return ctx.builder.CreateBitCast(vec4, ctx.types._float4);
+          return ctx.builder.CreateShuffleVector(
+            ctx.builder.CreateBitCast(vec4, ctx.types._float4),
+            {masked(0), masked(1), masked(2), masked(3)}
+          );
         if (desired == ctx.types._int3)
-          return ctx.builder.CreateShuffleVector(vec4, {0, 1, 2});
+          return ctx.builder.CreateShuffleVector(
+            vec4, {masked(0), masked(1), masked(2)}
+          );
         if (desired == ctx.types._float3)
           return ctx.builder.CreateShuffleVector(
-            convert(vec4, ctx.types._float4), {0, 1, 2}
+            convert(vec4, ctx.types._float4), {masked(0), masked(1), masked(2)}
           );
         if (desired == ctx.types._int2)
-          return ctx.builder.CreateShuffleVector(vec4, {0, 1});
+          return ctx.builder.CreateShuffleVector(vec4, {masked(0), masked(1)});
         if (desired == ctx.types._float2)
           return ctx.builder.CreateShuffleVector(
-            convert(vec4, ctx.types._float4), {0, 1}
+            convert(vec4, ctx.types._float4), {masked(0), masked(1)}
           );
         if (desired == ctx.types._int)
           return ctx.builder.CreateExtractElement(vec4, (uint64_t)0);
@@ -542,7 +552,7 @@ pop_output_reg(uint32_t from_reg, uint32_t mask, uint32_t to_element) {
              ) >>= [=, &ctx](auto ivec4) {
         auto desired_type =
           ctx.function->getReturnType()->getStructElementType(to_element);
-        return to_desired_type_from_int_vec4(ivec4, desired_type) |
+        return to_desired_type_from_int_vec4(ivec4, desired_type, mask) |
                [=, &ctx](auto value) {
                  return ctx.builder.CreateInsertValue(ret, value, {to_element});
                };
