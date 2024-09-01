@@ -434,10 +434,10 @@ public:
   uint32_t
   DefineFloat32(std::string name, uint32_t location_index = UINT32_MAX);
 
-  auto Build(llvm::LLVMContext &context, const llvm::DataLayout &layout)
+  auto Build(llvm::LLVMContext &context, const llvm::DataLayout &layout) const
     -> std::tuple<llvm::StructType *, llvm::MDNode *>;
 
-  auto empty() { return fieldsType.empty(); }
+  auto empty() const { return fieldsType.empty(); }
 
 private:
   std::vector<ArgumentBufferArguments> fieldsType;

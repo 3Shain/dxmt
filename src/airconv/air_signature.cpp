@@ -323,7 +323,7 @@ auto insert_inteterpolation(StreamMDHelper &md, Interpolation interpolation) {
 
 auto ArgumentBufferBuilder::Build(
   llvm::LLVMContext &context, const llvm::DataLayout &layout
-) -> std::tuple<llvm::StructType *, llvm::MDNode *> {
+) const -> std::tuple<llvm::StructType *, llvm::MDNode *> {
   std::vector<llvm::Type *> fields;
   std::vector<llvm::Metadata *> indirect_argument;
   uint32_t offset = 0;
