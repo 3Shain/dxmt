@@ -277,7 +277,7 @@ auto setup_immediate_constant_buffer(
     module, type, true, llvm::GlobalValue::InternalLinkage, const_data, "icb",
     nullptr, llvm::GlobalValue::NotThreadLocal, 2
   );
-  icb->setAlignment(llvm::Align(16));
+  icb->setAlignment(llvm::Align(4));
   resource_map.icb = icb;
   resource_map.icb_float = builder.CreateBitCast(
     resource_map.icb, llvm::ArrayType::get(
@@ -384,9 +384,9 @@ auto setup_fastmath_flag(llvm::Module &module, llvm::IRBuilder<> &builder) {
 }
 
 llvm::Error convert_dxbc_hull_shader(
-  SM50ShaderInternal *pShaderInternal, const char *name, SM50ShaderInternal * pVertexStage,
-  llvm::LLVMContext &context, llvm::Module &module,
-  SM50_SHADER_COMPILATION_ARGUMENT_DATA *pArgs
+  SM50ShaderInternal *pShaderInternal, const char *name,
+  SM50ShaderInternal *pVertexStage, llvm::LLVMContext &context,
+  llvm::Module &module, SM50_SHADER_COMPILATION_ARGUMENT_DATA *pArgs
 ) {
   using namespace microsoft;
 
@@ -511,18 +511,35 @@ llvm::Error convert_dxbc_hull_shader(
     auto control_point_output_size =
       max_output_register * pShaderInternal->output_control_point_count;
     auto type = llvm::ArrayType::get(types._int4, control_point_output_size);
-    llvm::GlobalVariable *control_point_phase_out = new llvm::GlobalVariable(
-      module, type, false, llvm::GlobalValue::InternalLinkage,
-      llvm::UndefValue::get(type), "hull_control_point_phase_out", nullptr,
-      llvm::GlobalValue::NotThreadLocal,
-      (uint32_t)air::AddressSpace::threadgroup
-    );
-    control_point_phase_out->setAlignment(llvm::Align(16));
-    resource_map.output.ptr_int4 = control_point_phase_out;
+    if (shader_info->output_control_point_read) {
+      llvm::GlobalVariable *control_point_phase_out = new llvm::GlobalVariable(
+        module, type, false, llvm::GlobalValue::InternalLinkage,
+        llvm::UndefValue::get(type), "hull_control_point_phase_out", nullptr,
+        llvm::GlobalValue::NotThreadLocal,
+        (uint32_t)air::AddressSpace::threadgroup
+      );
+      control_point_phase_out->setAlignment(llvm::Align(4));
+      resource_map.output.ptr_int4 = control_point_phase_out;
+    } else {
+      resource_map.output.ptr_int4 = builder.CreateGEP(
+        type,
+        builder.CreateBitCast(
+          resource_map.control_point_buffer,
+          type->getPointerTo(cast<llvm::PointerType>(
+                               resource_map.control_point_buffer->getType()
+          )
+                               ->getPointerAddressSpace())
+        ),
+        {resource_map.patch_id}
+      );
+    }
     resource_map.output.ptr_float4 = builder.CreateBitCast(
       resource_map.output.ptr_int4,
       llvm::ArrayType::get(types._float4, control_point_output_size)
-        ->getPointerTo((uint32_t)air::AddressSpace::threadgroup)
+        ->getPointerTo(
+          cast<llvm::PointerType>(resource_map.output.ptr_int4->getType())
+            ->getPointerAddressSpace()
+        )
     );
     resource_map.output_element_count = max_output_register;
   } else {
@@ -542,7 +559,7 @@ llvm::Error convert_dxbc_hull_shader(
       llvm::GlobalValue::NotThreadLocal,
       (uint32_t)air::AddressSpace::threadgroup
     );
-    patch_constant_out->setAlignment(llvm::Align(16));
+    patch_constant_out->setAlignment(llvm::Align(4));
     resource_map.patch_constant_output.ptr_int4 = patch_constant_out;
     resource_map.patch_constant_output.ptr_float4 = builder.CreateBitCast(
       resource_map.patch_constant_output.ptr_int4,
@@ -573,9 +590,28 @@ llvm::Error convert_dxbc_hull_shader(
 
   builder.SetInsertPoint(epilogue_bb);
 
+  /* populate patch constant output */
+
+  auto write_patch_constant =
+    llvm::BasicBlock::Create(context, "write_patch_constant", function);
+  auto real_return = llvm::BasicBlock::Create(context, "real_return", function);
+  builder.CreateCondBr(
+    builder.CreateICmp(
+      llvm::CmpInst::ICMP_EQ, resource_map.thread_id_in_group_flat_arg,
+      builder.getInt32(0)
+    ),
+    write_patch_constant, real_return
+  );
+
+  builder.SetInsertPoint(write_patch_constant);
+
   if (auto err = epilogue.build(ctx).takeError()) {
     return err;
   }
+
+  builder.CreateBr(real_return);
+  builder.SetInsertPoint(real_return);
+
   builder.CreateRetVoid();
 
   module.getOrInsertNamedMetadata("air.mesh")->addOperand(function_metadata);
@@ -690,8 +726,8 @@ llvm::Error convert_dxbc_domain_shader(
     function->getArg(domain_tessfactor_buffer_idx);
 
   auto control_point_input_array_type_float4 = llvm::ArrayType::get(
-    types._float4, pHullStage->max_output_register *
-                     pShaderInternal->input_control_point_count
+    types._float4,
+    pHullStage->max_output_register * pShaderInternal->input_control_point_count
   );
   resource_map.input.ptr_float4 = builder.CreateGEP(
     control_point_input_array_type_float4,
@@ -703,8 +739,8 @@ llvm::Error convert_dxbc_domain_shader(
     {resource_map.patch_id}
   );
   auto control_point_input_array_type_int4 = llvm::ArrayType::get(
-    types._int4, pHullStage->max_output_register *
-                   pShaderInternal->input_control_point_count
+    types._int4,
+    pHullStage->max_output_register * pShaderInternal->input_control_point_count
   );
   resource_map.input.ptr_int4 = builder.CreateGEP(
     control_point_input_array_type_int4,
@@ -1210,7 +1246,9 @@ llvm::Error convertDXBC(
     );
   case microsoft::D3D11_SB_HULL_SHADER:
   case microsoft::D3D11_SB_DOMAIN_SHADER:
-  return llvm::make_error<UnsupportedFeature>("Hull and domain shader cannot be independently converted.");
+    return llvm::make_error<UnsupportedFeature>(
+      "Hull and domain shader cannot be independently converted."
+    );
   case microsoft::D3D10_SB_GEOMETRY_SHADER:
   case microsoft::D3D12_SB_MESH_SHADER:
   case microsoft::D3D12_SB_AMPLIFICATION_SHADER:
@@ -1924,10 +1962,19 @@ int SM50Initialize(
       }
       }
     }
-    assert(return_point && sm50_shader->shader_type == D3D11_SB_HULL_SHADER);
-    ctx->target = BasicBlockUnconditionalBranch{return_point};
-    return return_point;
-    // assert(0 && "Unexpected end of shader instructions.");
+    if (sm50_shader->shader_type == D3D11_SB_HULL_SHADER) {
+      assert(return_point && sm50_shader->shader_type == D3D11_SB_HULL_SHADER);
+      if (shader_info->output_control_point_read) {
+        ctx->target = BasicBlockHullShaderWriteOutput{
+          sm50_shader->output_control_point_count, return_point
+        };
+      } else {
+        ctx->target = BasicBlockUnconditionalBranch{return_point};
+      }
+      return return_point;
+    } else {
+      assert(0 && "Unexpected end of shader instructions.");
+    }
   };
 
   auto entry = std::make_shared<BasicBlock>("entrybb");
@@ -2110,7 +2157,9 @@ int SM50Initialize(
   return 0;
 };
 
-void SM50Destroy(SM50Shader *pShader) { delete (dxmt::dxbc::SM50ShaderInternal *)pShader; }
+void SM50Destroy(SM50Shader *pShader) {
+  delete (dxmt::dxbc::SM50ShaderInternal *)pShader;
+}
 
 ABRT_HANDLE_INIT
 

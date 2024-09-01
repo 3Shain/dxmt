@@ -93,6 +93,7 @@ public:
   bool refactoringAllowed = true;
   bool use_cmp_exch = false;
   bool no_control_point_phase_passthrough = false;
+  bool output_control_point_read = false;
   std::vector<PhaseInfo> phases;
 };
 
@@ -173,9 +174,9 @@ struct io_binding_map {
   llvm::AllocaInst *cmp_exch_temp = nullptr;
 
   // special buffers for tessellation
-  llvm::Value* control_point_buffer; // int4*
-  llvm::Value* patch_constant_buffer; // int*
-  llvm::Value* tess_factor_buffer; // half*
+  llvm::Value *control_point_buffer;  // int4*
+  llvm::Value *patch_constant_buffer; // int*
+  llvm::Value *tess_factor_buffer;    // half*
 
   // temp for fast look-up
   llvm::Value *vertex_id_with_base = nullptr;
@@ -227,6 +228,10 @@ IREffect init_input_reg(
 std::function<IRValue(pvalue)>
 pop_output_reg(uint32_t from_reg, uint32_t mask, uint32_t to_element);
 
+std::function<IRValue(pvalue)> pop_output_tess_factor(
+  uint32_t from_reg, uint32_t mask, uint32_t to_factor_indx, uint32_t factor_num
+);
+
 IREffect pull_vertex_input(
   air::FunctionSignatureBuilder *func_signature, uint32_t to_reg, uint32_t mask,
   SM50_IA_INPUT_ELEMENT element_info
@@ -253,8 +258,8 @@ constexpr air::MSLScalerOrVectorType to_msl_type(RegisterComponentType type) {
 }
 
 struct PatchConstantScalarInfo {
-  uint8_t component: 2;
-  uint8_t reg: 6; 
+  uint8_t component : 2;
+  uint8_t reg : 6;
 };
 
 class SM50ShaderInternal {
@@ -281,12 +286,17 @@ public:
   float max_tesselation_factor = 64.0f;
   bool tessellation_anticlockwise = false;
   std::vector<PatchConstantScalarInfo> patch_constant_scalars;
-
 };
+
+llvm::Error convert_dxbc_hull_shader(
+  SM50ShaderInternal *pShaderInternal, const char *name,
+  SM50ShaderInternal *pVertexStage, llvm::LLVMContext &context,
+  llvm::Module &module, SM50_SHADER_COMPILATION_ARGUMENT_DATA *pArgs
+);
 
 llvm::Error convert_dxbc_domain_shader(
   SM50ShaderInternal *pShaderInternal, const char *name,
   SM50ShaderInternal *pHullStage, llvm::LLVMContext &context,
   llvm::Module &module, SM50_SHADER_COMPILATION_ARGUMENT_DATA *pArgs
 );
-}
+} // namespace dxmt::dxbc

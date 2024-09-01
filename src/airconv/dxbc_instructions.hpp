@@ -733,6 +733,11 @@ struct BasicBlockUnconditionalBranch {
   std::shared_ptr<BasicBlock> target;
 };
 
+struct BasicBlockHullShaderWriteOutput {
+  uint32_t instance_count;
+  std::shared_ptr<BasicBlock> epilogue;
+};
+
 struct BasicBlockSwitch {
   SrcOperand value;
   std::map<uint32_t, std::shared_ptr<BasicBlock>> cases;
@@ -751,7 +756,8 @@ struct BasicBlockInstanceBarrier {
 
 using BasicBlockTarget = std::variant<
   BasicBlockConditionalBranch, BasicBlockUnconditionalBranch, BasicBlockSwitch,
-  BasicBlockReturn, BasicBlockInstanceBarrier, BasicBlockUndefined>;
+  BasicBlockReturn, BasicBlockInstanceBarrier, BasicBlockHullShaderWriteOutput,
+  BasicBlockUndefined>;
 
 class BasicBlock {
 public:

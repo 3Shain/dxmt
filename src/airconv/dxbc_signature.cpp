@@ -518,6 +518,7 @@ void handle_signature_hs(
   uint32_t &max_patch_constant_output_register =
     sm50_shader->max_patch_constant_output_register;
   auto &prelogue_ = sm50_shader->prelogue_;
+  auto &epilogue_ = sm50_shader->epilogue_;
   auto &func_signature = sm50_shader->func_signature;
 
   switch (Inst.m_OpCode) {
@@ -562,6 +563,7 @@ void handle_signature_hs(
       break;
     }
     case D3D11_SB_OPERAND_TYPE_OUTPUT_CONTROL_POINT: {
+      sm50_shader->shader_info.output_control_point_read = true;
       break;
     }
 
@@ -578,7 +580,7 @@ void handle_signature_hs(
   }
   case D3D10_SB_OPCODE_DCL_OUTPUT_SIV: {
     unsigned reg = Inst.m_Operands[0].m_Index[0].m_RegIndex;
-    // auto mask = Inst.m_Operands[0].m_WriteMask >> 4;
+    auto mask = Inst.m_Operands[0].m_WriteMask >> 4;
     auto siv = Inst.m_OutputDeclSIV.Name;
     switch (siv) {
     case D3D11_SB_NAME_FINAL_QUAD_U_EQ_0_EDGE_TESSFACTOR:
@@ -587,14 +589,24 @@ void handle_signature_hs(
     case D3D11_SB_NAME_FINAL_QUAD_V_EQ_1_EDGE_TESSFACTOR:
     case D3D11_SB_NAME_FINAL_QUAD_U_INSIDE_TESSFACTOR:
     case D3D11_SB_NAME_FINAL_QUAD_V_INSIDE_TESSFACTOR: {
-      // TODO
+      epilogue_.push_back([=](IRValue &epilogue) {
+        epilogue >> pop_output_tess_factor(
+                      reg, mask,
+                      (siv - D3D11_SB_NAME_FINAL_QUAD_U_EQ_0_EDGE_TESSFACTOR), 6
+                    );
+      });
       break;
     }
     case D3D11_SB_NAME_FINAL_TRI_U_EQ_0_EDGE_TESSFACTOR:
     case D3D11_SB_NAME_FINAL_TRI_V_EQ_0_EDGE_TESSFACTOR:
     case D3D11_SB_NAME_FINAL_TRI_W_EQ_0_EDGE_TESSFACTOR:
     case D3D11_SB_NAME_FINAL_TRI_INSIDE_TESSFACTOR: {
-      // TODO
+      epilogue_.push_back([=](IRValue &epilogue) {
+        epilogue >> pop_output_tess_factor(
+                      reg, mask,
+                      (siv - D3D11_SB_NAME_FINAL_TRI_U_EQ_0_EDGE_TESSFACTOR), 4
+                    );
+      });
       break;
     }
     default:

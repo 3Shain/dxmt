@@ -561,6 +561,38 @@ pop_output_reg(uint32_t from_reg, uint32_t mask, uint32_t to_element) {
   };
 }
 
+std::function<IRValue(pvalue)> pop_output_tess_factor(
+  uint32_t from_reg, uint32_t mask, uint32_t factor_index, uint32_t factor_count
+) {
+  return [=](pvalue ret) -> IRValue {
+    auto ctx = co_yield get_context();
+    auto array = ctx.resource.patch_constant_output.ptr_float4;
+    auto array_ty = llvm::cast<llvm::ArrayType>( // force line break
+      llvm::cast<llvm::PointerType>(array->getType())
+        ->getNonOpaquePointerElementType()
+    );
+    auto component_ptr = ctx.builder.CreateGEP(
+      array_ty, array,
+      {ctx.builder.getInt32(0), ctx.builder.getInt32(from_reg),
+       ctx.builder.getInt32(__builtin_ctz(mask))}
+    );
+    auto to_half = co_yield call_convert(
+      ctx.builder.CreateLoad(ctx.types._float, component_ptr), ctx.types._half,
+      air::Sign::with_sign /* intended */
+    );
+    auto dst_ptr = ctx.builder.CreateGEP(
+      ctx.types._half, ctx.resource.tess_factor_buffer,
+      {ctx.builder.CreateAdd(ctx.builder.CreateMul(
+         ctx.resource.patch_id, ctx.builder.getInt32(factor_count)
+       ),
+       ctx.builder.getInt32(factor_index))}
+    );
+    ctx.builder.CreateStore(to_half, dst_ptr);
+
+    co_return nullptr;
+  };
+}
+
 IREffect pull_vertex_input(
   air::FunctionSignatureBuilder *func_signature, uint32_t to_reg, uint32_t mask,
   SM50_IA_INPUT_ELEMENT element_info
@@ -4341,6 +4373,78 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                 ),
                 target_true_bb, target_false_bb
               );
+              return llvm::Error::success();
+            },
+            [&](BasicBlockHullShaderWriteOutput hull_end) -> llvm::Error {
+              if (visited.count(hull_end.epilogue.get()) == 0) {
+                if (auto err = readBasicBlock(hull_end.epilogue)) {
+                  return err;
+                }
+              }
+
+              auto active = llvm::BasicBlock::Create(
+                context, "write_control_point", function
+              );
+              auto sync = llvm::BasicBlock::Create(
+                context, "write_control_point_end", function
+              );
+
+              builder.CreateCondBr(
+                ctx.builder.CreateICmp(
+                  llvm::CmpInst::ICMP_ULT,
+                  ctx.resource.thread_id_in_group_flat_arg,
+                  ctx.builder.getInt32(hull_end.instance_count)
+                ),
+                active, sync
+              );
+              builder.SetInsertPoint(active);
+              auto dst_ptr = builder.CreateGEP(
+                ctx.types._int4, ctx.resource.control_point_buffer,
+                {builder.CreateMul(
+                  ctx.resource.patch_id, builder.getInt32(
+                                           ctx.resource.output_element_count *
+                                           hull_end.instance_count
+                                         )
+                )}
+              );
+              for (unsigned i = 0; i < ctx.resource.output_element_count; i++) {
+                auto dst_ptr_offset = builder.CreateGEP(
+                  ctx.types._int4, dst_ptr,
+                  {builder.CreateAdd(
+                    builder.CreateMul(
+                      ctx.resource.thread_id_in_group_flat_arg,
+                      builder.getInt32(ctx.resource.output_element_count)
+                    ),
+                    builder.getInt32(i)
+                  )}
+                );
+                auto src_ptr_offset = builder.CreateGEP(
+                  llvm::ArrayType::get(ctx.types._int4, ctx.resource.output_element_count * hull_end.instance_count),
+                  ctx.resource.output.ptr_int4,
+                  {builder.getInt32(0),
+                   builder.CreateAdd(
+                     builder.CreateMul(
+                       ctx.resource.thread_id_in_group_flat_arg,
+                       builder.getInt32(ctx.resource.output_element_count)
+                     ),
+                     builder.getInt32(i)
+                   )}
+                );
+                builder.CreateStore(
+                  builder.CreateLoad(ctx.types._int4, src_ptr_offset),
+                  dst_ptr_offset
+                );
+              }
+              builder.CreateBr(sync);
+              builder.SetInsertPoint(sync);
+              if (auto err = call_threadgroup_barrier(mem_flags::threadgroup)
+                               .build(ctx)
+                               .takeError()) {
+                return err;
+              }
+
+              auto target_bb = visited[hull_end.epilogue.get()];
+              builder.CreateBr(target_bb);
               return llvm::Error::success();
             },
           },
