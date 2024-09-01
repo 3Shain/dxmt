@@ -1,7 +1,6 @@
 #include "airconv_context.hpp"
 #include "airconv_public.h"
 #include "metallib_writer.hpp"
-#include "dxbc_converter.hpp"
 #include "llvm/Bitcode/BitcodeReader.h"
 #include "llvm/Bitcode/BitcodeWriter.h"
 #include "llvm/IR/DiagnosticInfo.h"
@@ -21,6 +20,7 @@
 #ifdef __WIN32
 #include "d3dcompiler.h"
 #endif
+#include "dxbc_converter.hpp"
 
 using namespace llvm;
 
