@@ -129,8 +129,6 @@ enum SM50_SHADER_COMPILATION_ARGUMENT_TYPE {
   SM50_SHADER_DEBUG_IDENTITY = 2,
   SM50_SHADER_PSO_SAMPLE_MASK = 3,
   SM50_SHADER_IA_INPUT_LAYOUT = 4,
-  SM50_HULL_SHADER_META = 5,
-  SM50_DOMAIN_SHADER_META = 6,
 };
 
 struct SM50_SHADER_COMPILATION_ARGUMENT_DATA {
@@ -187,21 +185,6 @@ struct SM50_SHADER_IA_INPUT_LAYOUT_DATA {
   enum SM50_SHADER_COMPILATION_ARGUMENT_TYPE type;
   uint32_t num_elements;
   struct SM50_IA_INPUT_ELEMENT *elements;
-};
-
-struct SM50_HULL_SHADER_META_DATA {
-  uint32_t input_control_point_vec4_count;
-};
-
-struct SM50_PATCH_CONSTANT_SCALAR_OUTPUT {
-  uint8_t component : 2;
-  uint8_t reg : 6;
-};
-
-struct SM50_DOMAIN_SHADER_META_DATA {
-  uint32_t input_control_point_vec4_count;
-  uint32_t num_patch_constant_scalar_output;
-  struct SM50_PATCH_CONSTANT_SCALAR_OUTPUT *patch_constant_scalar_output;
 };
 
 AIRCONV_EXPORT int SM50Initialize(

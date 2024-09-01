@@ -30,7 +30,6 @@
 
 #include "ftl.hpp"
 
-
 class SM50CompiledBitcodeInternal {
 public:
   llvm::SmallVector<char, 0> vec;
@@ -42,6 +41,58 @@ public:
 };
 
 namespace dxmt::dxbc {
+
+inline dxmt::shader::common::ResourceType
+to_shader_resource_type(microsoft::D3D10_SB_RESOURCE_DIMENSION dim) {
+  switch (dim) {
+  case microsoft::D3D10_SB_RESOURCE_DIMENSION_UNKNOWN:
+  case microsoft::D3D10_SB_RESOURCE_DIMENSION_BUFFER:
+  case microsoft::D3D11_SB_RESOURCE_DIMENSION_RAW_BUFFER:
+  case microsoft::D3D11_SB_RESOURCE_DIMENSION_STRUCTURED_BUFFER:
+    return shader::common::ResourceType::TextureBuffer;
+  case microsoft::D3D10_SB_RESOURCE_DIMENSION_TEXTURE1D:
+    return shader::common::ResourceType::Texture1D;
+  case microsoft::D3D10_SB_RESOURCE_DIMENSION_TEXTURE2D:
+    return shader::common::ResourceType::Texture2D;
+  case microsoft::D3D10_SB_RESOURCE_DIMENSION_TEXTURE2DMS:
+    return shader::common::ResourceType::Texture2DMultisampled;
+  case microsoft::D3D10_SB_RESOURCE_DIMENSION_TEXTURE3D:
+    return shader::common::ResourceType::Texture3D;
+  case microsoft::D3D10_SB_RESOURCE_DIMENSION_TEXTURECUBE:
+    return shader::common::ResourceType::TextureCube;
+  case microsoft::D3D10_SB_RESOURCE_DIMENSION_TEXTURE1DARRAY:
+    return shader::common::ResourceType::Texture1DArray;
+  case microsoft::D3D10_SB_RESOURCE_DIMENSION_TEXTURE2DARRAY:
+    return shader::common::ResourceType::Texture2DArray;
+  case microsoft::D3D10_SB_RESOURCE_DIMENSION_TEXTURE2DMSARRAY:
+    return shader::common::ResourceType::Texture2DMultisampledArray;
+  case microsoft::D3D10_SB_RESOURCE_DIMENSION_TEXTURECUBEARRAY:
+    return shader::common::ResourceType::TextureCubeArray;
+  }
+  assert(0 && "invalid D3D10_SB_RESOURCE_DIMENSION");
+};
+
+inline dxmt::shader::common::ScalerDataType
+to_shader_scaler_type(microsoft::D3D10_SB_RESOURCE_RETURN_TYPE type) {
+  switch (type) {
+
+  case microsoft::D3D10_SB_RETURN_TYPE_UNORM:
+  case microsoft::D3D10_SB_RETURN_TYPE_SNORM:
+  case microsoft::D3D10_SB_RETURN_TYPE_FLOAT:
+    return shader::common::ScalerDataType::Float;
+  case microsoft::D3D10_SB_RETURN_TYPE_SINT:
+    return shader::common::ScalerDataType::Int;
+  case microsoft::D3D10_SB_RETURN_TYPE_UINT:
+    return shader::common::ScalerDataType::Uint;
+  case microsoft::D3D10_SB_RETURN_TYPE_MIXED:
+    return shader::common::ScalerDataType::Uint; // kinda weird but ok
+  case microsoft::D3D11_SB_RETURN_TYPE_DOUBLE:
+  case microsoft::D3D11_SB_RETURN_TYPE_CONTINUED:
+  case microsoft::D3D11_SB_RETURN_TYPE_UNUSED:
+    break;
+  }
+  assert(0 && "invalid D3D10_SB_RESOURCE_RETURN_TYPE");
+}
 
 auto get_item_in_argbuf_binding_table(uint32_t argbuf_index, uint32_t index) {
   return make_irvalue([=](context ctx) {
@@ -61,31 +112,901 @@ auto get_item_in_argbuf_binding_table(uint32_t argbuf_index, uint32_t index) {
   });
 };
 
-llvm::Error convertDXBC(
-  SM50Shader *pShader, const char *name, llvm::LLVMContext &context,
+auto setup_binding_table(
+  const ShaderInfo *shader_info, io_binding_map &resource_map,
+  air::FunctionSignatureBuilder &func_signature, llvm::Module &module
+) {
+  uint32_t binding_table_index = ~0u;
+  uint32_t cbuf_table_index = ~0u;
+  if (!shader_info->binding_table.empty()) {
+    auto [type, metadata] = shader_info->binding_table.Build(
+      module.getContext(), module.getDataLayout()
+    );
+    binding_table_index =
+      func_signature.DefineInput(air::ArgumentBindingIndirectBuffer{
+        .location_index = 30, // kArgumentBufferBindIndex
+        .array_size = 1,
+        .memory_access = air::MemoryAccess::read,
+        .address_space = air::AddressSpace::constant,
+        .struct_type = type,
+        .struct_type_info = metadata,
+        .arg_name = "binding_table",
+      });
+  }
+  if (!shader_info->binding_table_cbuffer.empty()) {
+    auto [type, metadata] = shader_info->binding_table_cbuffer.Build(
+      module.getContext(), module.getDataLayout()
+    );
+    cbuf_table_index =
+      func_signature.DefineInput(air::ArgumentBindingIndirectBuffer{
+        .location_index = 29, // kConstantBufferBindIndex
+        .array_size = 1,
+        .memory_access = air::MemoryAccess::read,
+        .address_space = air::AddressSpace::constant,
+        .struct_type = type,
+        .struct_type_info = metadata,
+        .arg_name = "cbuffer_table",
+      });
+  }
+
+  for (auto &[range_id, cbv] : shader_info->cbufferMap) {
+    // TODO: abstract SM 5.0 binding
+    auto index = cbv.arg_index;
+    resource_map.cb_range_map[range_id] = [=](pvalue) {
+      // ignore index in SM 5.0
+      return get_item_in_argbuf_binding_table(cbuf_table_index, index);
+    };
+  }
+  for (auto &[range_id, sampler] : shader_info->samplerMap) {
+    // TODO: abstract SM 5.0 binding
+    auto index = sampler.arg_index;
+    resource_map.sampler_range_map[range_id] = [=](pvalue) {
+      // ignore index in SM 5.0
+      return get_item_in_argbuf_binding_table(binding_table_index, index);
+    };
+  }
+  for (auto &[range_id, srv] : shader_info->srvMap) {
+    if (srv.resource_type != shader::common::ResourceType::NonApplicable) {
+      // TODO: abstract SM 5.0 binding
+      auto access =
+        srv.sampled ? air::MemoryAccess::sample : air::MemoryAccess::read;
+      auto texture_kind =
+        air::to_air_resource_type(srv.resource_type, srv.compared);
+      auto scaler_type = air::to_air_scaler_type(srv.scaler_type);
+      auto index = srv.arg_index;
+      resource_map.srv_range_map[range_id] = {
+        air::MSLTexture{
+          .component_type = scaler_type,
+          .memory_access = access,
+          .resource_kind = texture_kind,
+        },
+        [=](pvalue) {
+          // ignore index in SM 5.0
+          return get_item_in_argbuf_binding_table(binding_table_index, index);
+        }
+      };
+    } else {
+      auto argbuf_index_bufptr = srv.arg_index;
+      auto argbuf_index_size = srv.arg_size_index;
+      resource_map.srv_buf_range_map[range_id] = {
+        [=](pvalue) {
+          return get_item_in_argbuf_binding_table(
+            binding_table_index, argbuf_index_bufptr
+          );
+        },
+        [=](pvalue) {
+          return get_item_in_argbuf_binding_table(
+            binding_table_index, argbuf_index_size
+          );
+        },
+        srv.strucure_stride
+      };
+    }
+  }
+  for (auto &[range_id, uav] : shader_info->uavMap) {
+    auto access = uav.written ? (uav.read ? air::MemoryAccess::read_write
+                                          : air::MemoryAccess::write)
+                              : air::MemoryAccess::read;
+    if (uav.resource_type != shader::common::ResourceType::NonApplicable) {
+      auto texture_kind = air::to_air_resource_type(uav.resource_type);
+      auto scaler_type = air::to_air_scaler_type(uav.scaler_type);
+      auto index = uav.arg_index;
+      resource_map.uav_range_map[range_id] = {
+        air::MSLTexture{
+          .component_type = scaler_type,
+          .memory_access = access,
+          .resource_kind = texture_kind,
+        },
+        [=](pvalue) {
+          // ignore index in SM 5.0
+          return get_item_in_argbuf_binding_table(binding_table_index, index);
+        }
+      };
+    } else {
+      auto argbuf_index_bufptr = uav.arg_index;
+      auto argbuf_index_size = uav.arg_size_index;
+      resource_map.uav_buf_range_map[range_id] = {
+        [=](pvalue) {
+          return get_item_in_argbuf_binding_table(
+            binding_table_index, argbuf_index_bufptr
+          );
+        },
+        [=](pvalue) {
+          return get_item_in_argbuf_binding_table(
+            binding_table_index, argbuf_index_size
+          );
+        },
+        uav.strucure_stride
+      };
+      if (uav.with_counter) {
+        auto argbuf_index_counterptr = uav.arg_counter_index;
+        resource_map.uav_counter_range_map[range_id] = [=](pvalue) {
+          return get_item_in_argbuf_binding_table(
+            binding_table_index, argbuf_index_counterptr
+          );
+        };
+      }
+    }
+  }
+};
+
+auto setup_immediate_constant_buffer(
+  const ShaderInfo *shader_info, io_binding_map &resource_map,
+  air::AirType &types, llvm::Module &module, llvm::IRBuilder<> &builder
+) {
+  if (!shader_info->immConstantBufferData.size()) {
+    return;
+  }
+  auto &context = module.getContext();
+  auto type = llvm::ArrayType::get(
+    types._int4, shader_info->immConstantBufferData.size()
+  );
+  auto const_data = llvm::ConstantArray::get(
+    type,
+    shader_info->immConstantBufferData |
+      [&](auto data) {
+        return llvm::ConstantVector::get(
+          {llvm::ConstantInt::get(context, llvm::APInt{32, data[0], false}),
+           llvm::ConstantInt::get(context, llvm::APInt{32, data[1], false}),
+           llvm::ConstantInt::get(context, llvm::APInt{32, data[2], false}),
+           llvm::ConstantInt::get(context, llvm::APInt{32, data[3], false})}
+        );
+      }
+  );
+  llvm::GlobalVariable *icb = new llvm::GlobalVariable(
+    module, type, true, llvm::GlobalValue::InternalLinkage, const_data, "icb",
+    nullptr, llvm::GlobalValue::NotThreadLocal, 2
+  );
+  icb->setAlignment(llvm::Align(16));
+  resource_map.icb = icb;
+  resource_map.icb_float = builder.CreateBitCast(
+    resource_map.icb, llvm::ArrayType::get(
+                        types._float4, shader_info->immConstantBufferData.size()
+                      )
+                        ->getPointerTo(2)
+  );
+}
+
+auto setup_tgsm(
+  const ShaderInfo *shader_info, io_binding_map &resource_map,
+  air::AirType &types, llvm::Module &module
+) {
+  for (auto &[id, tgsm] : shader_info->tgsmMap) {
+    auto type = llvm::ArrayType::get(types._int, tgsm.size_in_uint);
+    llvm::GlobalVariable *tgsm_h = new llvm::GlobalVariable(
+      module, type, false, llvm::GlobalValue::InternalLinkage,
+      llvm::UndefValue::get(type), "g" + std::to_string(id), nullptr,
+      llvm::GlobalValue::NotThreadLocal, 3
+    );
+    tgsm_h->setAlignment(llvm::Align(4));
+    resource_map.tgsm_map[id] = {tgsm.structured ? tgsm.stride : 0, tgsm_h};
+  }
+}
+
+auto setup_temp_register(
+  const ShaderInfo *shader_info, io_binding_map &resource_map,
+  air::AirType &types, llvm::Module &module, llvm::IRBuilder<> &builder
+) {
+  resource_map.temp.ptr_int4 = builder.CreateAlloca(
+    llvm::ArrayType::get(types._int4, shader_info->tempRegisterCount)
+  );
+  resource_map.temp.ptr_float4 = builder.CreateBitCast(
+    resource_map.temp.ptr_int4,
+    llvm::ArrayType::get(types._float4, shader_info->tempRegisterCount)
+      ->getPointerTo()
+  );
+  for (auto &phase : shader_info->phases) {
+    resource_map.phases.push_back({});
+    auto &phase_temp = resource_map.phases.back();
+
+    phase_temp.temp.ptr_int4 = builder.CreateAlloca(
+      llvm::ArrayType::get(types._int4, phase.tempRegisterCount)
+    );
+    phase_temp.temp.ptr_float4 = builder.CreateBitCast(
+      phase_temp.temp.ptr_int4,
+      llvm::ArrayType::get(types._float4, phase.tempRegisterCount)
+        ->getPointerTo()
+    );
+
+    for (auto &[idx, info] : phase.indexableTempRegisterCounts) {
+      auto &[numRegisters, mask] = info;
+      auto channel_count = std::bit_width(mask);
+      auto ptr_int_vec = builder.CreateAlloca(llvm::ArrayType::get(
+        llvm::FixedVectorType::get(types._int, channel_count), numRegisters
+      ));
+      auto ptr_float_vec = builder.CreateBitCast(
+        ptr_int_vec,
+        llvm::ArrayType::get(
+          llvm::FixedVectorType::get(types._float, channel_count), numRegisters
+        )
+          ->getPointerTo()
+      );
+      phase_temp.indexable_temp_map[idx] = {
+        ptr_int_vec, ptr_float_vec, (uint32_t)channel_count
+      };
+    }
+  }
+  for (auto &[idx, info] : shader_info->indexableTempRegisterCounts) {
+    auto &[numRegisters, mask] = info;
+    auto channel_count = std::bit_width(mask);
+    auto ptr_int_vec = builder.CreateAlloca(llvm::ArrayType::get(
+      llvm::FixedVectorType::get(types._int, channel_count), numRegisters
+    ));
+    auto ptr_float_vec = builder.CreateBitCast(
+      ptr_int_vec,
+      llvm::ArrayType::get(
+        llvm::FixedVectorType::get(types._float, channel_count), numRegisters
+      )
+        ->getPointerTo()
+    );
+    resource_map.indexable_temp_map[idx] = {
+      ptr_int_vec, ptr_float_vec, (uint32_t)channel_count
+    };
+  }
+  if (shader_info->use_cmp_exch) {
+    resource_map.cmp_exch_temp = builder.CreateAlloca(types._int);
+  }
+}
+
+auto setup_fastmath_flag(llvm::Module &module, llvm::IRBuilder<> &builder) {
+  if (auto options = module.getNamedMetadata("air.compile_options")) {
+    for (auto operand : options->operands()) {
+      if (isa<llvm::MDTuple>(operand) &&
+          cast<llvm::MDTuple>(operand)->getNumOperands() == 1 &&
+          isa<llvm::MDString>(cast<llvm::MDTuple>(operand)->getOperand(0)) &&
+          cast<llvm::MDString>(cast<llvm::MDTuple>(operand)->getOperand(0))
+              ->getString()
+              .compare("air.compile.fast_math_enable") == 0) {
+        builder.getFastMathFlags().setFast(true);
+      }
+    }
+  }
+}
+
+llvm::Error convert_dxbc_hull_shader(
+  SM50ShaderInternal *pShaderInternal, const char *name, SM50ShaderInternal * pVertexStage,
+  llvm::LLVMContext &context, llvm::Module &module,
+  SM50_SHADER_COMPILATION_ARGUMENT_DATA *pArgs
+) {
+  using namespace microsoft;
+
+  auto func_signature = pShaderInternal->func_signature; // copy
+  auto shader_info = &(pShaderInternal->shader_info);
+
+  uint32_t max_output_register = pShaderInternal->max_output_register;
+  uint32_t max_patch_constant_output_register =
+    pShaderInternal->max_patch_constant_output_register;
+  SM50_SHADER_COMPILATION_ARGUMENT_DATA *arg = pArgs;
+  // uint64_t debug_id = ~0u;
+  while (arg) {
+    switch (arg->type) {
+    // case SM50_SHADER_DEBUG_IDENTITY:
+    //   debug_id = ((SM50_SHADER_DEBUG_IDENTITY_DATA *)arg)->id;
+    //   break;
+    default:
+      break;
+    }
+    arg = (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)arg->next;
+  }
+
+  IREffect prelogue([](auto) { return std::monostate(); });
+  IRValue epilogue([](struct context ctx) -> pvalue {
+    auto retTy = ctx.function->getReturnType();
+    if (retTy->isVoidTy()) {
+      return nullptr;
+    }
+    return llvm::UndefValue::get(retTy);
+  });
+  for (auto &p : pShaderInternal->input_prelogue_) {
+    p(prelogue, &func_signature, nullptr);
+  }
+  for (auto &p : pShaderInternal->prelogue_) {
+    p(prelogue);
+  }
+  for (auto &e : pShaderInternal->epilogue_) {
+    e(epilogue);
+  }
+
+  io_binding_map resource_map;
+  air::AirType types(context);
+
+  setup_binding_table(shader_info, resource_map, func_signature, module);
+  setup_tgsm(shader_info, resource_map, types, module);
+
+  uint32_t payload_idx =
+    func_signature.DefineInput(air::InputPayload{.size = 16256});
+  uint32_t domain_cp_buffer_idx =
+    func_signature.DefineInput(air::ArgumentBindingBuffer{
+      .buffer_size = {},
+      .location_index = 20,
+      .array_size = 0,
+      .memory_access = air::MemoryAccess::write,
+      .address_space = air::AddressSpace::device,
+      .type = air::msl_int4,
+      .arg_name = "hull_cp_buffer",
+      .raster_order_group = {}
+    });
+  uint32_t domain_pc_buffer_idx =
+    func_signature.DefineInput(air::ArgumentBindingBuffer{
+      .buffer_size = {},
+      .location_index = 21,
+      .array_size = 0,
+      .memory_access = air::MemoryAccess::write,
+      .address_space = air::AddressSpace::device,
+      .type = air::MSLUint{},
+      .arg_name = "hull_cp_buffer",
+      .raster_order_group = {}
+    });
+  uint32_t domain_tessfactor_buffer_idx =
+    func_signature.DefineInput(air::ArgumentBindingBuffer{
+      .buffer_size = {},
+      .location_index = 22,
+      .array_size = 0,
+      .memory_access = air::MemoryAccess::write,
+      .address_space = air::AddressSpace::device,
+      .type = air::MSLHalf{},
+      .arg_name = "hull_tess_factor_buffer",
+      .raster_order_group = {}
+    });
+
+  auto [function, function_metadata] =
+    func_signature.CreateFunction(name, context, module, 0, false);
+
+  auto entry_bb = llvm::BasicBlock::Create(context, "entry", function);
+  auto epilogue_bb = llvm::BasicBlock::Create(context, "epilogue", function);
+  llvm::IRBuilder<> builder(entry_bb);
+
+  setup_fastmath_flag(module, builder);
+
+  assert(pShaderInternal->input_control_point_count != ~0u);
+  auto payload_ptr = builder.CreateConstInBoundsGEP1_32(
+    types._int, function->getArg(payload_idx), 4
+  );
+  resource_map.input.ptr_int4 = builder.CreateBitCast(
+    payload_ptr, llvm::ArrayType::get(
+                   types._int4, pVertexStage->max_output_register *
+                                  pShaderInternal->input_control_point_count
+                 )
+                   ->getPointerTo((uint32_t)air::AddressSpace::object_data)
+  );
+  resource_map.input.ptr_float4 = builder.CreateBitCast(
+    payload_ptr, llvm::ArrayType::get(
+                   types._float4, pVertexStage->max_output_register *
+                                    pShaderInternal->input_control_point_count
+                 )
+                   ->getPointerTo((uint32_t)air::AddressSpace::object_data)
+  );
+  resource_map.input_element_count = pVertexStage->max_output_register;
+
+  /* patch id (primitive id) in payload */
+  resource_map.patch_id = builder.CreateLoad(types._int, payload_ptr);
+  resource_map.control_point_buffer = function->getArg(domain_cp_buffer_idx);
+  resource_map.patch_constant_buffer = function->getArg(domain_pc_buffer_idx);
+  resource_map.tess_factor_buffer =
+    function->getArg(domain_tessfactor_buffer_idx);
+
+  if (shader_info->no_control_point_phase_passthrough) {
+    assert(pShaderInternal->output_control_point_count != ~0u);
+
+    auto control_point_output_size =
+      max_output_register * pShaderInternal->output_control_point_count;
+    auto type = llvm::ArrayType::get(types._int4, control_point_output_size);
+    llvm::GlobalVariable *control_point_phase_out = new llvm::GlobalVariable(
+      module, type, false, llvm::GlobalValue::InternalLinkage,
+      llvm::UndefValue::get(type), "hull_control_point_phase_out", nullptr,
+      llvm::GlobalValue::NotThreadLocal,
+      (uint32_t)air::AddressSpace::threadgroup
+    );
+    control_point_phase_out->setAlignment(llvm::Align(16));
+    resource_map.output.ptr_int4 = control_point_phase_out;
+    resource_map.output.ptr_float4 = builder.CreateBitCast(
+      resource_map.output.ptr_int4,
+      llvm::ArrayType::get(types._float4, control_point_output_size)
+        ->getPointerTo((uint32_t)air::AddressSpace::threadgroup)
+    );
+    resource_map.output_element_count = max_output_register;
+  } else {
+    /* since no control point phase */
+    resource_map.output.ptr_float4 = resource_map.input.ptr_float4;
+    resource_map.output.ptr_int4 = resource_map.input.ptr_int4;
+    resource_map.output_element_count = resource_map.input_element_count;
+  }
+
+  if (max_patch_constant_output_register) {
+    /* all instances write to the same output (threadgroup memory) */
+    auto type =
+      llvm::ArrayType::get(types._int4, max_patch_constant_output_register);
+    llvm::GlobalVariable *patch_constant_out = new llvm::GlobalVariable(
+      module, type, false, llvm::GlobalValue::InternalLinkage,
+      llvm::UndefValue::get(type), "hull_patch_constant_out", nullptr,
+      llvm::GlobalValue::NotThreadLocal,
+      (uint32_t)air::AddressSpace::threadgroup
+    );
+    patch_constant_out->setAlignment(llvm::Align(16));
+    resource_map.patch_constant_output.ptr_int4 = patch_constant_out;
+    resource_map.patch_constant_output.ptr_float4 = builder.CreateBitCast(
+      resource_map.patch_constant_output.ptr_int4,
+      llvm::ArrayType::get(types._float4, max_patch_constant_output_register)
+        ->getPointerTo((uint32_t)air::AddressSpace::threadgroup)
+    );
+  }
+  setup_temp_register(shader_info, resource_map, types, module, builder);
+  setup_immediate_constant_buffer(
+    shader_info, resource_map, types, module, builder
+  );
+
+  struct context ctx {
+    .builder = builder, .llvm = context, .module = module, .function = function,
+    .resource = resource_map, .types = types, .pso_sample_mask = 0xffffffff,
+    .shader_type = pShaderInternal->shader_type,
+  };
+
+  if (auto err = prelogue.build(ctx).takeError()) {
+    return err;
+  }
+  auto real_entry =
+    convert_basicblocks(pShaderInternal->entry, ctx, epilogue_bb);
+  if (auto err = real_entry.takeError()) {
+    return err;
+  }
+  builder.CreateBr(real_entry.get());
+
+  builder.SetInsertPoint(epilogue_bb);
+
+  if (auto err = epilogue.build(ctx).takeError()) {
+    return err;
+  }
+  builder.CreateRetVoid();
+
+  module.getOrInsertNamedMetadata("air.mesh")->addOperand(function_metadata);
+
+  return llvm::Error::success();
+}
+
+llvm::Error convert_dxbc_domain_shader(
+  SM50ShaderInternal *pShaderInternal, const char *name,
+  SM50ShaderInternal *pHullStage, llvm::LLVMContext &context,
   llvm::Module &module, SM50_SHADER_COMPILATION_ARGUMENT_DATA *pArgs
 ) {
   using namespace microsoft;
 
-  auto pShaderInternal = (SM50ShaderInternal *)pShader;
-  auto func_signature = pShaderInternal->func_signature; // we need to copy one!
+  auto func_signature = pShaderInternal->func_signature; // copy
   auto shader_info = &(pShaderInternal->shader_info);
-  auto shader_type = pShaderInternal->shader_type;
 
-  uint32_t binding_table_index = ~0u;
-  uint32_t cbuf_table_index = ~0u;
   uint32_t max_input_register = pShaderInternal->max_input_register;
   uint32_t max_output_register = pShaderInternal->max_output_register;
-  uint32_t max_patch_constant_output_register =
-    pShaderInternal->max_patch_constant_output_register;
   uint64_t sign_mask = 0;
-  uint32_t pso_sample_mask = 0xffffffff;
   SM50_SHADER_COMPILATION_ARGUMENT_DATA *arg = pArgs;
   SM50_SHADER_EMULATE_VERTEX_STREAM_OUTPUT_DATA *vertex_so = nullptr;
   SM50_SHADER_IA_INPUT_LAYOUT_DATA *ia_layout = nullptr;
-  SM50_HULL_SHADER_META_DATA *hull_meta = nullptr;
-  SM50_DOMAIN_SHADER_META_DATA *domain_meta = nullptr;
-  uint64_t debug_id = ~0u;
+  // uint64_t debug_id = ~0u;
+  while (arg) {
+    switch (arg->type) {
+      vertex_so = (SM50_SHADER_EMULATE_VERTEX_STREAM_OUTPUT_DATA *)arg;
+      break;
+    case SM50_SHADER_DEBUG_IDENTITY:
+      // debug_id = ((SM50_SHADER_DEBUG_IDENTITY_DATA *)arg)->id;
+      break;
+    default:
+      break;
+    }
+    arg = (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)arg->next;
+  }
+
+  IREffect prelogue([](auto) { return std::monostate(); });
+  IRValue epilogue([](struct context ctx) -> pvalue {
+    auto retTy = ctx.function->getReturnType();
+    if (retTy->isVoidTy()) {
+      return nullptr;
+    }
+    return llvm::UndefValue::get(retTy);
+  });
+  for (auto &p : pShaderInternal->input_prelogue_) {
+    p(prelogue, &func_signature, ia_layout);
+  }
+  for (auto &p : pShaderInternal->prelogue_) {
+    p(prelogue);
+  }
+  for (auto &e : pShaderInternal->epilogue_) {
+    if (vertex_so)
+      continue;
+    e(epilogue);
+  }
+
+  io_binding_map resource_map;
+  air::AirType types(context);
+
+  setup_binding_table(shader_info, resource_map, func_signature, module);
+  setup_tgsm(shader_info, resource_map, types, module);
+  uint32_t patch_id_idx = func_signature.DefineInput(air::InputPatchID{});
+  uint32_t domain_cp_buffer_idx =
+    func_signature.DefineInput(air::ArgumentBindingBuffer{
+      .buffer_size = {},
+      .location_index = 20,
+      .array_size = 0,
+      .memory_access = air::MemoryAccess::read,
+      .address_space = air::AddressSpace::device,
+      .type = air::msl_int4,
+      .arg_name = "domain_cp_buffer",
+      .raster_order_group = {}
+    });
+  uint32_t domain_pc_buffer_idx =
+    func_signature.DefineInput(air::ArgumentBindingBuffer{
+      .buffer_size = {},
+      .location_index = 21,
+      .array_size = 0,
+      .memory_access = air::MemoryAccess::read,
+      .address_space = air::AddressSpace::device,
+      .type = air::MSLUint{},
+      .arg_name = "domain_cp_buffer",
+      .raster_order_group = {}
+    });
+  uint32_t domain_tessfactor_buffer_idx =
+    func_signature.DefineInput(air::ArgumentBindingBuffer{
+      .buffer_size = {},
+      .location_index = 22,
+      .array_size = 0,
+      .memory_access = air::MemoryAccess::read,
+      .address_space = air::AddressSpace::device,
+      .type = air::MSLHalf{},
+      .arg_name = "domain_tess_factor_buffer",
+      .raster_order_group = {}
+    });
+
+  auto [function, function_metadata] = func_signature.CreateFunction(
+    name, context, module, sign_mask, vertex_so != nullptr
+  );
+
+  auto entry_bb = llvm::BasicBlock::Create(context, "entry", function);
+  auto epilogue_bb = llvm::BasicBlock::Create(context, "epilogue", function);
+  llvm::IRBuilder<> builder(entry_bb);
+
+  setup_fastmath_flag(module, builder);
+
+  resource_map.patch_id = function->getArg(patch_id_idx);
+  resource_map.control_point_buffer = function->getArg(domain_cp_buffer_idx);
+  resource_map.patch_constant_buffer = function->getArg(domain_pc_buffer_idx);
+  resource_map.tess_factor_buffer =
+    function->getArg(domain_tessfactor_buffer_idx);
+
+  auto control_point_input_array_type_float4 = llvm::ArrayType::get(
+    types._float4, pHullStage->max_output_register *
+                     pShaderInternal->input_control_point_count
+  );
+  resource_map.input.ptr_float4 = builder.CreateGEP(
+    control_point_input_array_type_float4,
+    builder.CreateBitCast(
+      resource_map.control_point_buffer,
+      control_point_input_array_type_float4->getPointerTo((uint32_t
+      )air::AddressSpace::device)
+    ),
+    {resource_map.patch_id}
+  );
+  auto control_point_input_array_type_int4 = llvm::ArrayType::get(
+    types._int4, pHullStage->max_output_register *
+                   pShaderInternal->input_control_point_count
+  );
+  resource_map.input.ptr_int4 = builder.CreateGEP(
+    control_point_input_array_type_int4,
+    builder.CreateBitCast(
+      resource_map.control_point_buffer,
+      control_point_input_array_type_int4->getPointerTo((uint32_t
+      )air::AddressSpace::device)
+    ),
+    {resource_map.patch_id}
+  );
+  resource_map.input_element_count = pHullStage->max_output_register;
+
+  resource_map.patch_constant_output.ptr_int4 =
+    builder.CreateAlloca(llvm::ArrayType::get(types._int4, max_input_register));
+  resource_map.patch_constant_output.ptr_float4 = builder.CreateBitCast(
+    resource_map.patch_constant_output.ptr_int4,
+    llvm::ArrayType::get(types._float4, max_input_register)->getPointerTo()
+  );
+
+  resource_map.output.ptr_int4 =
+    builder.CreateAlloca(llvm::ArrayType::get(types._int4, max_output_register)
+    );
+  resource_map.output.ptr_float4 = builder.CreateBitCast(
+    resource_map.output.ptr_int4,
+    llvm::ArrayType::get(types._float4, max_output_register)->getPointerTo()
+  );
+  resource_map.output_element_count = max_output_register;
+
+  setup_temp_register(shader_info, resource_map, types, module, builder);
+  setup_immediate_constant_buffer(
+    shader_info, resource_map, types, module, builder
+  );
+
+  struct context ctx {
+    .builder = builder, .llvm = context, .module = module, .function = function,
+    .resource = resource_map, .types = types, .pso_sample_mask = 0xffffffff,
+    .shader_type = pShaderInternal->shader_type,
+  };
+
+  if (auto err = prelogue.build(ctx).takeError()) {
+    return err;
+  }
+  auto real_entry =
+    convert_basicblocks(pShaderInternal->entry, ctx, epilogue_bb);
+  if (auto err = real_entry.takeError()) {
+    return err;
+  }
+  builder.CreateBr(real_entry.get());
+
+  builder.SetInsertPoint(epilogue_bb);
+  auto epilogue_result = epilogue.build(ctx);
+  if (auto err = epilogue_result.takeError()) {
+    return err;
+  }
+  auto value = epilogue_result.get();
+  if (value == nullptr) {
+    builder.CreateRetVoid();
+  } else {
+    builder.CreateRet(value);
+  }
+
+  module.getOrInsertNamedMetadata("air.vertex")->addOperand(function_metadata);
+
+  return llvm::Error::success();
+};
+
+llvm::Error convert_dxbc_pixel_shader(
+  SM50ShaderInternal *pShaderInternal, const char *name,
+  llvm::LLVMContext &context, llvm::Module &module,
+  SM50_SHADER_COMPILATION_ARGUMENT_DATA *pArgs
+) {
+  using namespace microsoft;
+
+  auto func_signature = pShaderInternal->func_signature; // copy
+  auto shader_info = &(pShaderInternal->shader_info);
+
+  uint32_t max_input_register = pShaderInternal->max_input_register;
+  uint32_t max_output_register = pShaderInternal->max_output_register;
+  uint32_t pso_sample_mask = 0xffffffff;
+  SM50_SHADER_COMPILATION_ARGUMENT_DATA *arg = pArgs;
+  // uint64_t debug_id = ~0u;
+  while (arg) {
+    switch (arg->type) {
+    case SM50_SHADER_DEBUG_IDENTITY:
+      // debug_id = ((SM50_SHADER_DEBUG_IDENTITY_DATA *)arg)->id;
+      break;
+    case SM50_SHADER_PSO_SAMPLE_MASK:
+      pso_sample_mask = ((SM50_SHADER_PSO_SAMPLE_MASK_DATA *)arg)->sample_mask;
+      break;
+    default:
+      break;
+    }
+    arg = (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)arg->next;
+  }
+
+  IREffect prelogue([](auto) { return std::monostate(); });
+  IRValue epilogue([](struct context ctx) -> pvalue {
+    auto retTy = ctx.function->getReturnType();
+    if (retTy->isVoidTy()) {
+      return nullptr;
+    }
+    return llvm::UndefValue::get(retTy);
+  });
+  for (auto &p : pShaderInternal->input_prelogue_) {
+    p(prelogue, &func_signature, nullptr);
+  }
+  for (auto &p : pShaderInternal->prelogue_) {
+    p(prelogue);
+  }
+  for (auto &e : pShaderInternal->epilogue_) {
+    e(epilogue);
+  }
+  if (pso_sample_mask != 0xffffffff) {
+    auto assigned_index =
+      func_signature.DefineOutput(air::OutputCoverageMask{});
+    epilogue >> [=](pvalue value) -> IRValue {
+      return make_irvalue([=](struct context ctx) {
+        auto &builder = ctx.builder;
+        if (ctx.resource.coverage_mask_reg)
+          return value;
+        return builder.CreateInsertValue(
+          value, builder.getInt32(ctx.pso_sample_mask), {assigned_index}
+        );
+      });
+    };
+  }
+
+  io_binding_map resource_map;
+  air::AirType types(context);
+
+  setup_binding_table(shader_info, resource_map, func_signature, module);
+  setup_tgsm(shader_info, resource_map, types, module);
+
+  auto [function, function_metadata] =
+    func_signature.CreateFunction(name, context, module, 0, false);
+
+  auto entry_bb = llvm::BasicBlock::Create(context, "entry", function);
+  auto epilogue_bb = llvm::BasicBlock::Create(context, "epilogue", function);
+  llvm::IRBuilder<> builder(entry_bb);
+
+  setup_fastmath_flag(module, builder);
+
+  resource_map.input.ptr_int4 =
+    builder.CreateAlloca(llvm::ArrayType::get(types._int4, max_input_register));
+  resource_map.input.ptr_float4 = builder.CreateBitCast(
+    resource_map.input.ptr_int4,
+    llvm::ArrayType::get(types._float4, max_input_register)->getPointerTo()
+  );
+  resource_map.input_element_count = max_input_register;
+  resource_map.output.ptr_int4 =
+    builder.CreateAlloca(llvm::ArrayType::get(types._int4, max_output_register)
+    );
+  resource_map.output.ptr_float4 = builder.CreateBitCast(
+    resource_map.output.ptr_int4,
+    llvm::ArrayType::get(types._float4, max_output_register)->getPointerTo()
+  );
+  resource_map.output_element_count = max_output_register;
+
+  setup_temp_register(shader_info, resource_map, types, module, builder);
+  setup_immediate_constant_buffer(
+    shader_info, resource_map, types, module, builder
+  );
+
+  struct context ctx {
+    .builder = builder, .llvm = context, .module = module, .function = function,
+    .resource = resource_map, .types = types,
+    .pso_sample_mask = pso_sample_mask,
+    .shader_type = pShaderInternal->shader_type,
+  };
+
+  if (auto err = prelogue.build(ctx).takeError()) {
+    return err;
+  }
+  auto real_entry =
+    convert_basicblocks(pShaderInternal->entry, ctx, epilogue_bb);
+  if (auto err = real_entry.takeError()) {
+    return err;
+  }
+  builder.CreateBr(real_entry.get());
+
+  builder.SetInsertPoint(epilogue_bb);
+  auto epilogue_result = epilogue.build(ctx);
+  if (auto err = epilogue_result.takeError()) {
+    return err;
+  }
+  auto value = epilogue_result.get();
+  if (value == nullptr) {
+    builder.CreateRetVoid();
+  } else {
+    builder.CreateRet(value);
+  }
+
+  module.getOrInsertNamedMetadata("air.fragment")
+    ->addOperand(function_metadata);
+
+  return llvm::Error::success();
+};
+
+llvm::Error convert_dxbc_compute_shader(
+  SM50ShaderInternal *pShaderInternal, const char *name,
+  llvm::LLVMContext &context, llvm::Module &module,
+  SM50_SHADER_COMPILATION_ARGUMENT_DATA *pArgs
+) {
+  using namespace microsoft;
+
+  auto func_signature = pShaderInternal->func_signature; // copy
+  auto shader_info = &(pShaderInternal->shader_info);
+
+  SM50_SHADER_COMPILATION_ARGUMENT_DATA *arg = pArgs;
+  // uint64_t debug_id = ~0u;
+  while (arg) {
+    switch (arg->type) {
+    case SM50_SHADER_DEBUG_IDENTITY:
+      // debug_id = ((SM50_SHADER_DEBUG_IDENTITY_DATA *)arg)->id;
+      break;
+    default:
+      break;
+    }
+    arg = (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)arg->next;
+  }
+
+  IREffect prelogue([](auto) { return std::monostate(); });
+  IRValue epilogue([](struct context ctx) -> pvalue {
+    auto retTy = ctx.function->getReturnType();
+    if (retTy->isVoidTy()) {
+      return nullptr;
+    }
+    return llvm::UndefValue::get(retTy);
+  });
+  for (auto &p : pShaderInternal->input_prelogue_) {
+    p(prelogue, &func_signature, nullptr);
+  }
+  for (auto &p : pShaderInternal->prelogue_) {
+    p(prelogue);
+  }
+  assert(pShaderInternal->epilogue_.empty());
+
+  io_binding_map resource_map;
+  air::AirType types(context);
+
+  setup_binding_table(shader_info, resource_map, func_signature, module);
+  setup_tgsm(shader_info, resource_map, types, module);
+
+  auto [function, function_metadata] =
+    func_signature.CreateFunction(name, context, module, 0, false);
+
+  auto entry_bb = llvm::BasicBlock::Create(context, "entry", function);
+  auto epilogue_bb = llvm::BasicBlock::Create(context, "epilogue", function);
+  llvm::IRBuilder<> builder(entry_bb);
+
+  setup_fastmath_flag(module, builder);
+  setup_temp_register(shader_info, resource_map, types, module, builder);
+  setup_immediate_constant_buffer(
+    shader_info, resource_map, types, module, builder
+  );
+
+  struct context ctx {
+    .builder = builder, .llvm = context, .module = module, .function = function,
+    .resource = resource_map, .types = types, .pso_sample_mask = 0xffffffff,
+    .shader_type = pShaderInternal->shader_type,
+  };
+
+  if (auto err = prelogue.build(ctx).takeError()) {
+    return err;
+  }
+  auto real_entry =
+    convert_basicblocks(pShaderInternal->entry, ctx, epilogue_bb);
+  if (auto err = real_entry.takeError()) {
+    return err;
+  }
+  builder.CreateBr(real_entry.get());
+
+  builder.SetInsertPoint(epilogue_bb);
+
+  if (auto err = epilogue.build(ctx).takeError()) {
+    return err;
+  }
+  builder.CreateRetVoid();
+
+  module.getOrInsertNamedMetadata("air.kernel")->addOperand(function_metadata);
+
+  return llvm::Error::success();
+};
+
+llvm::Error convert_dxbc_vertex_shader(
+  SM50ShaderInternal *pShaderInternal, const char *name,
+  llvm::LLVMContext &context, llvm::Module &module,
+  SM50_SHADER_COMPILATION_ARGUMENT_DATA *pArgs
+) {
+  using namespace microsoft;
+
+  auto func_signature = pShaderInternal->func_signature; // copy
+  auto shader_info = &(pShaderInternal->shader_info);
+  auto shader_type = pShaderInternal->shader_type;
+
+  uint32_t max_input_register = pShaderInternal->max_input_register;
+  uint32_t max_output_register = pShaderInternal->max_output_register;
+  uint64_t sign_mask = 0;
+  SM50_SHADER_COMPILATION_ARGUMENT_DATA *arg = pArgs;
+  SM50_SHADER_EMULATE_VERTEX_STREAM_OUTPUT_DATA *vertex_so = nullptr;
+  SM50_SHADER_IA_INPUT_LAYOUT_DATA *ia_layout = nullptr;
+  // uint64_t debug_id = ~0u;
   while (arg) {
     switch (arg->type) {
     case SM50_SHADER_COMPILATION_INPUT_SIGN_MASK:
@@ -98,19 +1019,12 @@ llvm::Error convertDXBC(
       vertex_so = (SM50_SHADER_EMULATE_VERTEX_STREAM_OUTPUT_DATA *)arg;
       break;
     case SM50_SHADER_DEBUG_IDENTITY:
-      debug_id = ((SM50_SHADER_DEBUG_IDENTITY_DATA *)arg)->id;
-      break;
-    case SM50_SHADER_PSO_SAMPLE_MASK:
-      pso_sample_mask = ((SM50_SHADER_PSO_SAMPLE_MASK_DATA *)arg)->sample_mask;
+      // debug_id = ((SM50_SHADER_DEBUG_IDENTITY_DATA *)arg)->id;
       break;
     case SM50_SHADER_IA_INPUT_LAYOUT:
       ia_layout = ((SM50_SHADER_IA_INPUT_LAYOUT_DATA *)arg);
       break;
-    case SM50_HULL_SHADER_META:
-      hull_meta = ((SM50_HULL_SHADER_META_DATA *)arg);
-      break;
-    case SM50_DOMAIN_SHADER_META:
-      domain_meta = ((SM50_DOMAIN_SHADER_META_DATA *)arg);
+    default:
       break;
     }
     arg = (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)arg->next;
@@ -182,264 +1096,12 @@ llvm::Error convertDXBC(
       return nullptr;
     });
   }
-  if (pso_sample_mask != 0xffffffff) {
-    auto assigned_index =
-      func_signature.DefineOutput(air::OutputCoverageMask{});
-    epilogue >> [=](pvalue value) -> IRValue {
-      return make_irvalue([=](struct context ctx) {
-        auto &builder = ctx.builder;
-        if (ctx.resource.coverage_mask_reg)
-          return value;
-        return builder.CreateInsertValue(
-          value, builder.getInt32(ctx.pso_sample_mask), {assigned_index}
-        );
-      });
-    };
-  }
 
   io_binding_map resource_map;
-
-  // post convert
-  for (auto &[range_id, cbv] : shader_info->cbufferMap) {
-    // TODO: abstract SM 5.0 binding
-    auto index = cbv.arg_index;
-    resource_map.cb_range_map[range_id] = [=, &cbuf_table_index](pvalue) {
-      // ignore index in SM 5.0
-      return get_item_in_argbuf_binding_table(cbuf_table_index, index);
-    };
-  }
-  for (auto &[range_id, sampler] : shader_info->samplerMap) {
-    // TODO: abstract SM 5.0 binding
-    auto index = sampler.arg_index;
-    resource_map.sampler_range_map[range_id] = [=,
-                                                &binding_table_index](pvalue) {
-      // ignore index in SM 5.0
-      return get_item_in_argbuf_binding_table(binding_table_index, index);
-    };
-  }
-  for (auto &[range_id, srv] : shader_info->srvMap) {
-    if (srv.resource_type != shader::common::ResourceType::NonApplicable) {
-      // TODO: abstract SM 5.0 binding
-      auto access =
-        srv.sampled ? air::MemoryAccess::sample : air::MemoryAccess::read;
-      auto texture_kind =
-        air::to_air_resource_type(srv.resource_type, srv.compared);
-      auto scaler_type = air::to_air_scaler_type(srv.scaler_type);
-      auto index = srv.arg_index;
-      resource_map.srv_range_map[range_id] = {
-        air::MSLTexture{
-          .component_type = scaler_type,
-          .memory_access = access,
-          .resource_kind = texture_kind,
-        },
-        [=, &binding_table_index](pvalue) {
-          // ignore index in SM 5.0
-          return get_item_in_argbuf_binding_table(binding_table_index, index);
-        }
-      };
-    } else {
-      auto argbuf_index_bufptr = srv.arg_index;
-      auto argbuf_index_size = srv.arg_size_index;
-      resource_map.srv_buf_range_map[range_id] = {
-        [=, &binding_table_index](pvalue) {
-          return get_item_in_argbuf_binding_table(
-            binding_table_index, argbuf_index_bufptr
-          );
-        },
-        [=, &binding_table_index](pvalue) {
-          return get_item_in_argbuf_binding_table(
-            binding_table_index, argbuf_index_size
-          );
-        },
-        srv.strucure_stride
-      };
-    }
-  }
-  for (auto &[range_id, uav] : shader_info->uavMap) {
-    auto access = uav.written ? (uav.read ? air::MemoryAccess::read_write
-                                          : air::MemoryAccess::write)
-                              : air::MemoryAccess::read;
-    if (uav.resource_type != shader::common::ResourceType::NonApplicable) {
-      auto texture_kind = air::to_air_resource_type(uav.resource_type);
-      auto scaler_type = air::to_air_scaler_type(uav.scaler_type);
-      auto index = uav.arg_index;
-      resource_map.uav_range_map[range_id] = {
-        air::MSLTexture{
-          .component_type = scaler_type,
-          .memory_access = access,
-          .resource_kind = texture_kind,
-        },
-        [=, &binding_table_index](pvalue) {
-          // ignore index in SM 5.0
-          return get_item_in_argbuf_binding_table(binding_table_index, index);
-        }
-      };
-    } else {
-      auto argbuf_index_bufptr = uav.arg_index;
-      auto argbuf_index_size = uav.arg_size_index;
-      resource_map.uav_buf_range_map[range_id] = {
-        [=, &binding_table_index](pvalue) {
-          return get_item_in_argbuf_binding_table(
-            binding_table_index, argbuf_index_bufptr
-          );
-        },
-        [=, &binding_table_index](pvalue) {
-          return get_item_in_argbuf_binding_table(
-            binding_table_index, argbuf_index_size
-          );
-        },
-        uav.strucure_stride
-      };
-      if (uav.with_counter) {
-        auto argbuf_index_counterptr = uav.arg_counter_index;
-        resource_map.uav_counter_range_map[range_id] =
-          [=, &binding_table_index](pvalue) {
-            return get_item_in_argbuf_binding_table(
-              binding_table_index, argbuf_index_counterptr
-            );
-          };
-      }
-    }
-  }
   air::AirType types(context);
-  for (auto &[id, tgsm] : shader_info->tgsmMap) {
-    auto type = llvm::ArrayType::get(types._int, tgsm.size_in_uint);
-    llvm::GlobalVariable *tgsm_h = new llvm::GlobalVariable(
-      module, type, false, llvm::GlobalValue::InternalLinkage,
-      llvm::UndefValue::get(type), "g" + std::to_string(id), nullptr,
-      llvm::GlobalValue::NotThreadLocal, 3
-    );
-    tgsm_h->setAlignment(llvm::Align(4));
-    resource_map.tgsm_map[id] = {tgsm.structured ? tgsm.stride : 0, tgsm_h};
-  }
-  if (shader_info->immConstantBufferData.size()) {
-    auto type = llvm::ArrayType::get(
-      types._int4, shader_info->immConstantBufferData.size()
-    );
-    auto const_data = llvm::ConstantArray::get(
-      type,
-      shader_info->immConstantBufferData |
-        [&](auto data) {
-          return llvm::ConstantVector::get(
-            {llvm::ConstantInt::get(context, llvm::APInt{32, data[0], false}),
-             llvm::ConstantInt::get(context, llvm::APInt{32, data[1], false}),
-             llvm::ConstantInt::get(context, llvm::APInt{32, data[2], false}),
-             llvm::ConstantInt::get(context, llvm::APInt{32, data[3], false})}
-          );
-        }
-    );
-    llvm::GlobalVariable *icb = new llvm::GlobalVariable(
-      module, type, true, llvm::GlobalValue::InternalLinkage, const_data, "icb",
-      nullptr, llvm::GlobalValue::NotThreadLocal, 2
-    );
-    icb->setAlignment(llvm::Align(16));
-    resource_map.icb = icb;
-  }
 
-  if (!shader_info->binding_table.empty()) {
-    auto [type, metadata] =
-      shader_info->binding_table.Build(context, module.getDataLayout());
-    binding_table_index =
-      func_signature.DefineInput(air::ArgumentBindingIndirectBuffer{
-        .location_index = 30, // kArgumentBufferBindIndex
-        .array_size = 1,
-        .memory_access = air::MemoryAccess::read,
-        .address_space = air::AddressSpace::constant,
-        .struct_type = type,
-        .struct_type_info = metadata,
-        .arg_name = "binding_table",
-      });
-  }
-  if (!shader_info->binding_table_cbuffer.empty()) {
-    auto [type, metadata] =
-      shader_info->binding_table_cbuffer.Build(context, module.getDataLayout());
-    cbuf_table_index =
-      func_signature.DefineInput(air::ArgumentBindingIndirectBuffer{
-        .location_index = 29, // kConstantBufferBindIndex
-        .array_size = 1,
-        .memory_access = air::MemoryAccess::read,
-        .address_space = air::AddressSpace::constant,
-        .struct_type = type,
-        .struct_type_info = metadata,
-        .arg_name = "cbuffer_table",
-      });
-  }
-  uint32_t payload_idx = ~0u;
-  uint32_t patch_id_idx = ~0u;
-  uint32_t domain_cp_buffer_idx = ~0u;
-  uint32_t domain_pc_buffer_idx = ~0u;
-  uint32_t domain_tessfactor_buffer_idx = ~0u;
-  if(shader_type == microsoft::D3D11_SB_DOMAIN_SHADER) {
-    patch_id_idx = func_signature.DefineInput(air::InputPatchID{});
-    domain_cp_buffer_idx =
-      func_signature.DefineInput(air::ArgumentBindingBuffer{
-        .buffer_size = {},
-        .location_index = 20,
-        .array_size = 0,
-        .memory_access = air::MemoryAccess::read,
-        .address_space = air::AddressSpace::device,
-        .type = air::msl_int4,
-        .arg_name = "domain_cp_buffer",
-        .raster_order_group = {}
-      });
-    domain_pc_buffer_idx =
-      func_signature.DefineInput(air::ArgumentBindingBuffer{
-        .buffer_size = {},
-        .location_index = 21,
-        .array_size = 0,
-        .memory_access = air::MemoryAccess::read,
-        .address_space = air::AddressSpace::device,
-        .type = air::MSLUint{},
-        .arg_name = "domain_cp_buffer",
-        .raster_order_group = {}
-      });
-    domain_tessfactor_buffer_idx =
-      func_signature.DefineInput(air::ArgumentBindingBuffer{
-        .buffer_size = {},
-        .location_index = 22,
-        .array_size = 0,
-        .memory_access = air::MemoryAccess::read,
-        .address_space = air::AddressSpace::device,
-        .type = air::MSLHalf{},
-        .arg_name = "domain_tess_factor_buffer",
-        .raster_order_group = {}
-      });
-  } else if(shader_type == microsoft::D3D11_SB_HULL_SHADER) {
-    payload_idx = func_signature.DefineInput(air::InputPayload{.size = 16256});
-    domain_cp_buffer_idx =
-      func_signature.DefineInput(air::ArgumentBindingBuffer{
-        .buffer_size = {},
-        .location_index = 20,
-        .array_size = 0,
-        .memory_access = air::MemoryAccess::write,
-        .address_space = air::AddressSpace::device,
-        .type = air::msl_int4,
-        .arg_name = "hull_cp_buffer",
-        .raster_order_group = {}
-      });
-    domain_pc_buffer_idx =
-      func_signature.DefineInput(air::ArgumentBindingBuffer{
-        .buffer_size = {},
-        .location_index = 21,
-        .array_size = 0,
-        .memory_access = air::MemoryAccess::write,
-        .address_space = air::AddressSpace::device,
-        .type = air::MSLUint{},
-        .arg_name = "hull_cp_buffer",
-        .raster_order_group = {}
-      });
-    domain_tessfactor_buffer_idx =
-      func_signature.DefineInput(air::ArgumentBindingBuffer{
-        .buffer_size = {},
-        .location_index = 22,
-        .array_size = 0,
-        .memory_access = air::MemoryAccess::write,
-        .address_space = air::AddressSpace::device,
-        .type = air::MSLHalf{},
-        .arg_name = "hull_tess_factor_buffer",
-        .raster_order_group = {}
-      });
-  }
+  setup_binding_table(shader_info, resource_map, func_signature, module);
+  setup_tgsm(shader_info, resource_map, types, module);
 
   auto [function, function_metadata] = func_signature.CreateFunction(
     name, context, module, sign_mask, vertex_so != nullptr
@@ -448,235 +1110,37 @@ llvm::Error convertDXBC(
   auto entry_bb = llvm::BasicBlock::Create(context, "entry", function);
   auto epilogue_bb = llvm::BasicBlock::Create(context, "epilogue", function);
   llvm::IRBuilder<> builder(entry_bb);
-  // what a mess
-  if (auto options = module.getNamedMetadata("air.compile_options")) {
-    for (auto operand : options->operands()) {
-      if (isa<llvm::MDTuple>(operand) &&
-          cast<llvm::MDTuple>(operand)->getNumOperands() == 1 &&
-          isa<llvm::MDString>(cast<llvm::MDTuple>(operand)->getOperand(0)) &&
-          cast<llvm::MDString>(cast<llvm::MDTuple>(operand)->getOperand(0))
-              ->getString()
-              .compare("air.compile.fast_math_enable") == 0) {
-        builder.getFastMathFlags().setFast(true);
-      }
-    }
-  }
-  if (shader_type == microsoft::D3D11_SB_HULL_SHADER) {
-    assert(pShaderInternal->input_control_point_count != ~0u);
-    auto payload_ptr = builder.CreateConstInBoundsGEP1_32(types._int, function->getArg(payload_idx), 4);
-    resource_map.input.ptr_int4 = builder.CreateBitCast(
-      payload_ptr, llvm::ArrayType::get(
-                     types._int4, hull_meta->input_control_point_vec4_count *
-                                    pShaderInternal->input_control_point_count
-                   )
-                     ->getPointerTo((uint32_t)air::AddressSpace::object_data)
-    );
-    resource_map.input.ptr_float4 = builder.CreateBitCast(
-      payload_ptr, llvm::ArrayType::get(
-                     types._float4, hull_meta->input_control_point_vec4_count *
-                                      pShaderInternal->input_control_point_count
-                   )
-                     ->getPointerTo((uint32_t)air::AddressSpace::object_data)
-    );
-    resource_map.input_element_count =
-      hull_meta->input_control_point_vec4_count;
 
-    /* patch id (primitive id) in payload */
-    resource_map.patch_id = builder.CreateLoad(types._int, payload_ptr);
-    resource_map.control_point_buffer = function->getArg(domain_cp_buffer_idx);
-    resource_map.patch_constant_buffer = function->getArg(domain_pc_buffer_idx);
-    resource_map.tess_factor_buffer = function->getArg(domain_tessfactor_buffer_idx);
+  setup_fastmath_flag(module, builder);
 
-    if(shader_info->no_control_point_phase_passthrough) {
-      assert(pShaderInternal->output_control_point_count != ~0u);
-
-      auto control_point_output_size =
-        max_output_register * pShaderInternal->output_control_point_count;
-      auto type = llvm::ArrayType::get(types._int4, control_point_output_size);
-      llvm::GlobalVariable *control_point_phase_out = new llvm::GlobalVariable(
-        module, type, false, llvm::GlobalValue::InternalLinkage,
-        llvm::UndefValue::get(type), "hull_control_point_phase_out", nullptr,
-        llvm::GlobalValue::NotThreadLocal,
-        (uint32_t)air::AddressSpace::threadgroup
-      );
-      control_point_phase_out->setAlignment(llvm::Align(16));
-      resource_map.output.ptr_int4 = control_point_phase_out;
-      resource_map.output.ptr_float4 = builder.CreateBitCast(
-        resource_map.output.ptr_int4,
-        llvm::ArrayType::get(types._float4, control_point_output_size)
-          ->getPointerTo((uint32_t)air::AddressSpace::threadgroup)
-      );
-      resource_map.output_element_count = max_output_register;
-    } else {
-      /* since no control point phase */
-      resource_map.output.ptr_float4 = resource_map.input.ptr_float4;
-      resource_map.output.ptr_int4 = resource_map.input.ptr_int4;
-      resource_map.output_element_count = resource_map.input_element_count;
-    }
-  } else if (shader_type == microsoft::D3D11_SB_DOMAIN_SHADER) {
-    resource_map.patch_id = function->getArg(patch_id_idx);
-    resource_map.control_point_buffer = function->getArg(domain_cp_buffer_idx);
-    resource_map.patch_constant_buffer = function->getArg(domain_pc_buffer_idx);
-    resource_map.tess_factor_buffer = function->getArg(domain_tessfactor_buffer_idx);
-
-    auto control_point_input_array_type_float4 = llvm::ArrayType::get(
-      types._float4, domain_meta->input_control_point_vec4_count *
-                       pShaderInternal->input_control_point_count
-    );
-    resource_map.input.ptr_float4 = builder.CreateGEP(
-      control_point_input_array_type_float4,
-      builder.CreateBitCast(
-        resource_map.control_point_buffer,
-        control_point_input_array_type_float4->getPointerTo((uint32_t
-        )air::AddressSpace::device)
-      ),
-      {resource_map.patch_id}
-    );
-    auto control_point_input_array_type_int4 = llvm::ArrayType::get(
-      types._int4, domain_meta->input_control_point_vec4_count *
-                       pShaderInternal->input_control_point_count
-    );
-    resource_map.input.ptr_int4 = builder.CreateGEP(
-      control_point_input_array_type_int4,
-      builder.CreateBitCast(
-        resource_map.control_point_buffer,
-        control_point_input_array_type_int4->getPointerTo((uint32_t
-        )air::AddressSpace::device)
-      ),
-      {resource_map.patch_id}
-    );
-    resource_map.input_element_count = domain_meta->input_control_point_vec4_count;
-
-    resource_map.patch_constant_output.ptr_int4 =
-      builder.CreateAlloca(llvm::ArrayType::get(types._int4, max_input_register)
-      );
-    resource_map.patch_constant_output.ptr_float4 = builder.CreateBitCast(
-      resource_map.patch_constant_output.ptr_int4,
-      llvm::ArrayType::get(types._float4, max_input_register)->getPointerTo()
-    );
-
-    resource_map.output.ptr_int4 = builder.CreateAlloca(
-      llvm::ArrayType::get(types._int4, max_output_register)
-    );
-    resource_map.output.ptr_float4 = builder.CreateBitCast(
-      resource_map.output.ptr_int4,
-      llvm::ArrayType::get(types._float4, max_output_register)->getPointerTo()
-    );
-    resource_map.output_element_count = max_output_register;
-  } else {
-    resource_map.input.ptr_int4 =
-      builder.CreateAlloca(llvm::ArrayType::get(types._int4, max_input_register)
-      );
-    resource_map.input.ptr_float4 = builder.CreateBitCast(
-      resource_map.input.ptr_int4,
-      llvm::ArrayType::get(types._float4, max_input_register)->getPointerTo()
-    );
-    resource_map.input_element_count = max_input_register;
-    resource_map.output.ptr_int4 = builder.CreateAlloca(
-      llvm::ArrayType::get(types._int4, max_output_register)
-    );
-    resource_map.output.ptr_float4 = builder.CreateBitCast(
-      resource_map.output.ptr_int4,
-      llvm::ArrayType::get(types._float4, max_output_register)->getPointerTo()
-    );
-    resource_map.output_element_count = max_output_register;
-  }
-  if (max_patch_constant_output_register) {
-    /* all instances write to the same output (threadgroup memory) */
-    auto type =
-      llvm::ArrayType::get(types._int4, max_patch_constant_output_register);
-    llvm::GlobalVariable *patch_constant_out = new llvm::GlobalVariable(
-      module, type, false, llvm::GlobalValue::InternalLinkage,
-      llvm::UndefValue::get(type), "hull_patch_constant_out", nullptr,
-      llvm::GlobalValue::NotThreadLocal,
-      (uint32_t)air::AddressSpace::threadgroup
-    );
-    patch_constant_out->setAlignment(llvm::Align(16));
-    resource_map.patch_constant_output.ptr_int4 = patch_constant_out;
-    resource_map.patch_constant_output.ptr_float4 = builder.CreateBitCast(
-      resource_map.patch_constant_output.ptr_int4,
-      llvm::ArrayType::get(types._float4, max_patch_constant_output_register)
-        ->getPointerTo((uint32_t)air::AddressSpace::threadgroup)
-    );
-  }
-  resource_map.temp.ptr_int4 = builder.CreateAlloca(
-    llvm::ArrayType::get(types._int4, shader_info->tempRegisterCount)
+  resource_map.input.ptr_int4 =
+    builder.CreateAlloca(llvm::ArrayType::get(types._int4, max_input_register));
+  resource_map.input.ptr_float4 = builder.CreateBitCast(
+    resource_map.input.ptr_int4,
+    llvm::ArrayType::get(types._float4, max_input_register)->getPointerTo()
   );
-  resource_map.temp.ptr_float4 = builder.CreateBitCast(
-    resource_map.temp.ptr_int4,
-    llvm::ArrayType::get(types._float4, shader_info->tempRegisterCount)
-      ->getPointerTo()
+  resource_map.input_element_count = max_input_register;
+  resource_map.output.ptr_int4 =
+    builder.CreateAlloca(llvm::ArrayType::get(types._int4, max_output_register)
+    );
+  resource_map.output.ptr_float4 = builder.CreateBitCast(
+    resource_map.output.ptr_int4,
+    llvm::ArrayType::get(types._float4, max_output_register)->getPointerTo()
   );
-  for (auto &phase : shader_info->phases) {
-    resource_map.phases.push_back({});
-    auto &phase_temp = resource_map.phases.back();
+  resource_map.output_element_count = max_output_register;
 
-    phase_temp.temp.ptr_int4 = builder.CreateAlloca(
-      llvm::ArrayType::get(types._int4, phase.tempRegisterCount)
-    );
-    phase_temp.temp.ptr_float4 = builder.CreateBitCast(
-      phase_temp.temp.ptr_int4,
-      llvm::ArrayType::get(types._float4, phase.tempRegisterCount)
-        ->getPointerTo()
-    );
-
-    for (auto &[idx, info] : phase.indexableTempRegisterCounts) {
-      auto &[numRegisters, mask] = info;
-      auto channel_count = std::bit_width(mask);
-      auto ptr_int_vec = builder.CreateAlloca(llvm::ArrayType::get(
-        llvm::FixedVectorType::get(types._int, channel_count), numRegisters
-      ));
-      auto ptr_float_vec = builder.CreateBitCast(
-        ptr_int_vec,
-        llvm::ArrayType::get(
-          llvm::FixedVectorType::get(types._float, channel_count), numRegisters
-        )
-          ->getPointerTo()
-      );
-      phase_temp.indexable_temp_map[idx] = {
-        ptr_int_vec, ptr_float_vec, (uint32_t)channel_count
-      };
-    }
-  }
-  if (shader_info->immConstantBufferData.size()) {
-    resource_map.icb_float = builder.CreateBitCast(
-      resource_map.icb,
-      llvm::ArrayType::get(
-        types._float4, shader_info->immConstantBufferData.size()
-      )
-        ->getPointerTo(2)
-    );
-  }
-  for (auto &[idx, info] : shader_info->indexableTempRegisterCounts) {
-    auto &[numRegisters, mask] = info;
-    auto channel_count = std::bit_width(mask);
-    auto ptr_int_vec = builder.CreateAlloca(llvm::ArrayType::get(
-      llvm::FixedVectorType::get(types._int, channel_count), numRegisters
-    ));
-    auto ptr_float_vec = builder.CreateBitCast(
-      ptr_int_vec,
-      llvm::ArrayType::get(
-        llvm::FixedVectorType::get(types._float, channel_count), numRegisters
-      )
-        ->getPointerTo()
-    );
-    resource_map.indexable_temp_map[idx] = {
-      ptr_int_vec, ptr_float_vec, (uint32_t)channel_count
-    };
-  }
-  if (shader_info->use_cmp_exch) {
-    resource_map.cmp_exch_temp = builder.CreateAlloca(types._int);
-  }
+  setup_temp_register(shader_info, resource_map, types, module, builder);
+  setup_immediate_constant_buffer(
+    shader_info, resource_map, types, module, builder
+  );
 
   struct context ctx {
     .builder = builder, .llvm = context, .module = module, .function = function,
-    .resource = resource_map, .types = types,
-    .pso_sample_mask = pso_sample_mask,
+    .resource = resource_map, .types = types, .pso_sample_mask = 0xffffffff,
     .shader_type = pShaderInternal->shader_type,
   };
-  // then we can start build ... real IR code (visit all basicblocks)
-  auto prelogue_result = prelogue.build(ctx);
-  if (auto err = prelogue_result.takeError()) {
+
+  if (auto err = prelogue.build(ctx).takeError()) {
     return err;
   }
   auto real_entry =
@@ -698,23 +1162,41 @@ llvm::Error convertDXBC(
     builder.CreateRet(value);
   }
 
-  if (shader_type == D3D10_SB_VERTEX_SHADER ||
-      shader_type == D3D11_SB_DOMAIN_SHADER) {
-    module.getOrInsertNamedMetadata("air.vertex")
-      ->addOperand(function_metadata);
-  } else if (shader_type == D3D10_SB_PIXEL_SHADER) {
-    module.getOrInsertNamedMetadata("air.fragment")
-      ->addOperand(function_metadata);
-  } else if (shader_type == D3D11_SB_COMPUTE_SHADER) {
-    module.getOrInsertNamedMetadata("air.kernel")
-      ->addOperand(function_metadata);
-  } else if (shader_type == D3D11_SB_HULL_SHADER) {
-    module.getOrInsertNamedMetadata("air.mesh")->addOperand(function_metadata);
-  } else {
-    // throw
-    assert(0 && "Unsupported shader type");
-  }
+  module.getOrInsertNamedMetadata("air.vertex")->addOperand(function_metadata);
   return llvm::Error::success();
+};
+
+llvm::Error convertDXBC(
+  SM50Shader *pShader, const char *name, llvm::LLVMContext &context,
+  llvm::Module &module, SM50_SHADER_COMPILATION_ARGUMENT_DATA *pArgs
+) {
+  using namespace microsoft;
+
+  auto pShaderInternal = (SM50ShaderInternal *)pShader;
+
+  switch (pShaderInternal->shader_type) {
+  case microsoft::D3D10_SB_PIXEL_SHADER:
+    return convert_dxbc_pixel_shader(
+      pShaderInternal, name, context, module, pArgs
+    );
+  case microsoft::D3D10_SB_VERTEX_SHADER:
+    return convert_dxbc_vertex_shader(
+      pShaderInternal, name, context, module, pArgs
+    );
+  case microsoft::D3D11_SB_COMPUTE_SHADER:
+    return convert_dxbc_compute_shader(
+      pShaderInternal, name, context, module, pArgs
+    );
+  case microsoft::D3D11_SB_HULL_SHADER:
+  case microsoft::D3D11_SB_DOMAIN_SHADER:
+  return llvm::make_error<UnsupportedFeature>("Hull and domain shader cannot be independently converted.");
+  case microsoft::D3D10_SB_GEOMETRY_SHADER:
+  case microsoft::D3D12_SB_MESH_SHADER:
+  case microsoft::D3D12_SB_AMPLIFICATION_SHADER:
+  case microsoft::D3D11_SB_RESERVED0:
+    break;
+  }
+  return llvm::make_error<UnsupportedFeature>("Not supported shader type");
 };
 } // namespace dxmt::dxbc
 

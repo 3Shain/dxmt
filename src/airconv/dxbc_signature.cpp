@@ -7,6 +7,29 @@ using namespace dxmt::shader::common;
 
 namespace dxmt::dxbc {
 
+inline air::Interpolation
+to_air_interpolation(microsoft::D3D10_SB_INTERPOLATION_MODE mode) {
+  using namespace microsoft;
+  switch (mode) {
+  case D3D10_SB_INTERPOLATION_LINEAR_NOPERSPECTIVE_SAMPLE:
+    return air::Interpolation::sample_no_perspective;
+  case D3D10_SB_INTERPOLATION_LINEAR_SAMPLE:
+    return air::Interpolation::sample_perspective;
+  case D3D10_SB_INTERPOLATION_LINEAR_NOPERSPECTIVE_CENTROID:
+    return air::Interpolation::centroid_no_perspective;
+  case D3D10_SB_INTERPOLATION_LINEAR_CENTROID:
+    return air::Interpolation::centroid_perspective;
+  case D3D10_SB_INTERPOLATION_CONSTANT:
+    return air::Interpolation::flat;
+  case D3D10_SB_INTERPOLATION_LINEAR:
+    return air::Interpolation::center_perspective;
+  case D3D10_SB_INTERPOLATION_LINEAR_NOPERSPECTIVE:
+    return air::Interpolation::center_no_perspective;
+  default:
+    assert(0 && "Unexpected D3D10_SB_INTERPOLATION_MODE");
+  }
+}
+
 void handle_signature_vs(
   CSignatureParser &inputParser, CSignatureParser &outputParser,
   D3D10ShaderBinary::CInstruction &Inst, SM50ShaderInternal *sm50_shader,
