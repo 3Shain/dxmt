@@ -179,8 +179,11 @@ struct io_binding_map {
   llvm::Value *tess_factor_buffer;    // half*
 
   // temp for fast look-up
+  llvm::Value *vertex_id = nullptr;
   llvm::Value *vertex_id_with_base = nullptr;
+  llvm::Value *instance_id = nullptr;
   llvm::Value *instance_id_with_base = nullptr;
+  llvm::Value *base_vertex_id = nullptr;
   llvm::Value *base_instance_id = nullptr;
   llvm::Value *vertex_buffer_table = nullptr;
 };
@@ -270,7 +273,6 @@ public:
   std::vector<std::function<
     void(dxmt::dxbc::IREffect &, dxmt::air::FunctionSignatureBuilder *, SM50_SHADER_IA_INPUT_LAYOUT_DATA *)>>
     input_prelogue_;
-  std::vector<std::function<void(dxmt::dxbc::IREffect &)>> prelogue_;
   std::vector<std::function<void(dxmt::dxbc::IRValue &)>> epilogue_;
   microsoft::D3D10_SB_TOKENIZED_PROGRAM_TYPE shader_type;
   /* for domain shader, it refers to patch constant input count */
@@ -298,5 +300,12 @@ llvm::Error convert_dxbc_domain_shader(
   SM50ShaderInternal *pShaderInternal, const char *name,
   SM50ShaderInternal *pHullStage, llvm::LLVMContext &context,
   llvm::Module &module, SM50_SHADER_COMPILATION_ARGUMENT_DATA *pArgs
+);
+
+llvm::Error convert_dxbc_vertex_for_hull_shader(
+  const SM50ShaderInternal *pShaderInternal, const char *name,
+  const SM50ShaderInternal *pHullStage,
+  llvm::LLVMContext &context, llvm::Module &module,
+  SM50_SHADER_COMPILATION_ARGUMENT_DATA *pArgs
 );
 } // namespace dxmt::dxbc

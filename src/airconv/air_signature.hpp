@@ -128,6 +128,14 @@ struct MSLUint {
   };
 };
 
+struct MSLUshort {
+  std::string get_name() const { return "ushort"; };
+
+  llvm::Type *get_llvm_type(llvm::LLVMContext &context) const {
+    return llvm::Type::getInt16Ty(context);
+  };
+};
+
 struct MSLBool {
   std::string get_name() const { return "bool"; };
 
@@ -151,7 +159,7 @@ constexpr auto msl_uint = MSLUint{};
 constexpr auto msl_float = MSLFloat{};
 
 using MSLScalerType =
-  std::variant<MSLFloat, MSLInt, MSLUint, MSLBool, MSLHalf>; // incomplete list
+  std::variant<MSLFloat, MSLInt, MSLUint, MSLBool, MSLHalf, MSLUshort>; // incomplete list
 
 constexpr auto msl_sampler = MSLSampler{};
 
@@ -496,6 +504,8 @@ struct InputPayload {
   uint32_t size;
 };
 
+struct InputMeshGridProperties {};
+
 struct InputPosition {
   Interpolation interpolation;
 };
@@ -504,6 +514,8 @@ struct InputThreadIndexInThreadgroup {};    // uint
 struct InputThreadPositionInThreadgroup {}; // uint3
 struct InputThreadPositionInGrid {};        // uint3
 struct InputThreadgroupPositionInGrid {};   // uint3
+
+struct InputThreadgroupsPerGrid {};         // uint3
 
 struct OutputRenderTarget {
   uint32_t index;
@@ -538,10 +550,11 @@ using FunctionInput = template_concat_t<
     /* post-tessellation */
     InputPatchID, InputPositionInPatch,
     /* object & mesh */
-    InputPayload,
+    InputPayload, InputMeshGridProperties,
     /* kernel */
     InputThreadIndexInThreadgroup, InputThreadPositionInThreadgroup,
-    InputThreadPositionInGrid, InputThreadgroupPositionInGrid>>;
+    InputThreadPositionInGrid, InputThreadgroupPositionInGrid,
+    InputThreadgroupsPerGrid>>;
 
 using FunctionOutput = std::variant<
   /* vertex */

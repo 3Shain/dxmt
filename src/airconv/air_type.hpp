@@ -39,8 +39,11 @@ public:
   llvm::Type *_long4;
 
   llvm::Type *_dxmt_vertex_buffer_entry;
+  llvm::Type *_dxmt_draw_arguments;
 
   llvm::Type *_sampler;
+
+  llvm::Type *_mesh_grid_properties;
 
   llvm::Type *_texture1d;
   llvm::Type *_texture1d_array;

@@ -37,7 +37,6 @@ void handle_signature_vs(
 ) {
   uint32_t &max_input_register = sm50_shader->max_input_register;
   uint32_t &max_output_register = sm50_shader->max_output_register;
-  auto &prelogue_ = sm50_shader->prelogue_;
   auto &input_prelogue_ = sm50_shader->input_prelogue_;
   auto &epilogue_ = sm50_shader->epilogue_;
   auto &func_signature = sm50_shader->func_signature;
@@ -74,36 +73,22 @@ void handle_signature_vs(
     auto sgv = Inst.m_InputDeclSGV.Name;
     switch (sgv) {
     case D3D10_SB_NAME_VERTEX_ID: {
-      auto assigned_index = func_signature.DefineInput(InputVertexID{});
-      auto assigned_index_base = func_signature.DefineInput(InputBaseVertex{});
-      prelogue_.push_back([=](IREffect &prelogue) {
+      input_prelogue_.push_back([=](IREffect &prelogue, auto, auto) {
         prelogue << make_effect_bind([=](struct context ctx) {
-          auto vertex_id = ctx.function->getArg(assigned_index);
-          auto base_vertex = ctx.function->getArg(assigned_index_base);
-          auto const_index =
-            llvm::ConstantInt::get(ctx.llvm, llvm::APInt{32, reg, false});
           return store_at_vec4_array_masked(
-            ctx.resource.input.ptr_int4, const_index,
-            ctx.builder.CreateSub(vertex_id, base_vertex), mask
+            ctx.resource.input.ptr_int4, ctx.builder.getInt32(reg),
+            ctx.resource.vertex_id, mask
           );
         });
       });
       break;
     }
     case D3D10_SB_NAME_INSTANCE_ID: {
-      auto assigned_index = func_signature.DefineInput(InputInstanceID{});
-      auto assigned_index_base =
-        func_signature.DefineInput(InputBaseInstance{});
-      prelogue_.push_back([=](IREffect &prelogue) {
-        // and perform side effect here
+      input_prelogue_.push_back([=](IREffect &prelogue, auto, auto) {
         prelogue << make_effect_bind([=](struct context ctx) {
-          auto instance_id = ctx.function->getArg(assigned_index);
-          auto base_instance = ctx.function->getArg(assigned_index_base);
-          auto const_index =
-            llvm::ConstantInt::get(ctx.llvm, llvm::APInt{32, reg, false});
           return store_at_vec4_array_masked(
-            ctx.resource.input.ptr_int4, const_index,
-            ctx.builder.CreateSub(instance_id, base_instance), mask
+            ctx.resource.input.ptr_int4, ctx.builder.getInt32(reg),
+            ctx.resource.instance_id, mask
           );
         });
       });
@@ -229,7 +214,7 @@ void handle_signature_ps(
 ) {
   uint32_t &max_input_register = sm50_shader->max_input_register;
   uint32_t &max_output_register = sm50_shader->max_output_register;
-  auto &prelogue_ = sm50_shader->prelogue_;
+  auto &prelogue_ = sm50_shader->input_prelogue_;
   auto &epilogue_ = sm50_shader->epilogue_;
   auto &func_signature = sm50_shader->func_signature;
 
@@ -271,7 +256,7 @@ void handle_signature_ps(
     switch (RegType) {
     case D3D11_SB_OPERAND_TYPE_INPUT_COVERAGE_MASK: {
       auto assigned_index = func_signature.DefineInput(InputInputCoverage{});
-      prelogue_.push_back([=](IREffect &prelogue) {
+      prelogue_.push_back([=](IREffect &prelogue, auto, auto) {
         prelogue << make_effect([=](struct context ctx) {
           auto attr = ctx.function->getArg(assigned_index);
           ctx.resource.coverage_mask_arg = attr;
@@ -321,7 +306,7 @@ void handle_signature_ps(
       assert(0 && "Unexpected/unhandled input system value");
       break;
     }
-    prelogue_.push_back([=](IREffect &prelogue) {
+    prelogue_.push_back([=](IREffect &prelogue, auto, auto) {
       prelogue << init_input_reg(
         assigned_index, reg, mask, siv == D3D10_SB_NAME_POSITION
       );
@@ -352,7 +337,7 @@ void handle_signature_ps(
       assert(0 && "Unexpected/unhandled input system value");
       break;
     }
-    prelogue_.push_back([=](IREffect &prelogue) {
+    prelogue_.push_back([=](IREffect &prelogue, auto, auto) {
       prelogue << init_input_reg(assigned_index, reg, mask);
     });
     max_input_register = std::max(reg + 1, max_input_register);
@@ -372,7 +357,7 @@ void handle_signature_ps(
       .type = to_msl_type(sig.componentType()),
       .interpolation = interpolation
     });
-    prelogue_.push_back([=](IREffect &prelogue) {
+    prelogue_.push_back([=](IREffect &prelogue, auto, auto) {
       prelogue << init_input_reg(assigned_index, reg, mask);
     });
     max_input_register = std::max(reg + 1, max_input_register);
@@ -403,7 +388,7 @@ void handle_signature_ps(
     case D3D10_SB_OPERAND_TYPE_OUTPUT_DEPTH:
     case D3D11_SB_OPERAND_TYPE_OUTPUT_DEPTH_GREATER_EQUAL:
     case D3D11_SB_OPERAND_TYPE_OUTPUT_DEPTH_LESS_EQUAL: {
-      prelogue_.push_back([=](IREffect &prelogue) {
+      prelogue_.push_back([=](IREffect &prelogue, auto, auto) {
         prelogue << make_effect([](struct context ctx) -> std::monostate {
           assert(
             ctx.resource.depth_output_reg == nullptr &&
@@ -445,7 +430,7 @@ void handle_signature_ps(
       break;
     }
     case D3D10_SB_OPERAND_TYPE_OUTPUT_COVERAGE_MASK: {
-      prelogue_.push_back([=](IREffect &prelogue) {
+      prelogue_.push_back([=](IREffect &prelogue, auto, auto) {
         prelogue << make_effect([](struct context ctx) -> std::monostate {
           assert(
             ctx.resource.coverage_mask_reg == nullptr &&
@@ -517,7 +502,7 @@ void handle_signature_hs(
   uint32_t &max_output_register = sm50_shader->max_output_register;
   uint32_t &max_patch_constant_output_register =
     sm50_shader->max_patch_constant_output_register;
-  auto &prelogue_ = sm50_shader->prelogue_;
+  auto &prelogue_ = sm50_shader->input_prelogue_;
   auto &epilogue_ = sm50_shader->epilogue_;
   auto &func_signature = sm50_shader->func_signature;
 
@@ -544,7 +529,7 @@ void handle_signature_hs(
     case D3D11_SB_OPERAND_TYPE_INPUT_JOIN_INSTANCE_ID: {
       auto assigned_index =
         func_signature.DefineInput(InputThreadIndexInThreadgroup{});
-      prelogue_.push_back([=](IREffect &prelogue) {
+      prelogue_.push_back([=](IREffect &prelogue, auto, auto) {
         prelogue << make_effect([=](struct context ctx) {
           auto attr = ctx.function->getArg(assigned_index);
           ctx.resource.thread_id_in_group_flat_arg = attr;
@@ -602,10 +587,10 @@ void handle_signature_hs(
     case D3D11_SB_NAME_FINAL_TRI_W_EQ_0_EDGE_TESSFACTOR:
     case D3D11_SB_NAME_FINAL_TRI_INSIDE_TESSFACTOR: {
       epilogue_.push_back([=](IRValue &epilogue) {
-        epilogue >> pop_output_tess_factor(
-                      reg, mask,
-                      (siv - D3D11_SB_NAME_FINAL_TRI_U_EQ_0_EDGE_TESSFACTOR), 4
-                    );
+        epilogue >>
+          pop_output_tess_factor(
+            reg, mask, (siv - D3D11_SB_NAME_FINAL_TRI_U_EQ_0_EDGE_TESSFACTOR), 4
+          );
       });
       break;
     }
@@ -665,7 +650,7 @@ void handle_signature_ds(
 ) {
   uint32_t &max_input_register = sm50_shader->max_input_register;
   uint32_t &max_output_register = sm50_shader->max_output_register;
-  auto &prelogue_ = sm50_shader->prelogue_;
+  auto &prelogue_ = sm50_shader->input_prelogue_;
   auto &epilogue_ = sm50_shader->epilogue_;
   auto &func_signature = sm50_shader->func_signature;
 
@@ -700,7 +685,7 @@ void handle_signature_ds(
       auto assigned_index = func_signature.DefineInput(
         InputPositionInPatch{.patch = func_signature.GetPatchType()}
       );
-      prelogue_.push_back([=](IREffect &prelogue) {
+      prelogue_.push_back([=](IREffect &prelogue, auto, auto) {
         prelogue << make_effect([=](struct context ctx) {
           auto attr = ctx.function->getArg(assigned_index);
           ctx.resource.domain = attr;
@@ -711,7 +696,7 @@ void handle_signature_ds(
     }
     case D3D10_SB_OPERAND_TYPE_INPUT_PRIMITIVEID: {
       auto assigned_index = func_signature.DefineInput(InputPatchID{});
-      prelogue_.push_back([=](IREffect &prelogue) {
+      prelogue_.push_back([=](IREffect &prelogue, auto, auto) {
         prelogue << make_effect([=](struct context ctx) {
           auto attr = ctx.function->getArg(assigned_index);
           ctx.resource.patch_id = attr;
@@ -809,7 +794,7 @@ void handle_signature_cs(
   D3D10ShaderBinary::CInstruction &Inst, SM50ShaderInternal *sm50_shader,
   uint32_t phase_unused
 ) {
-  auto &prelogue_ = sm50_shader->prelogue_;
+  auto &prelogue_ = sm50_shader->input_prelogue_;
   auto &func_signature = sm50_shader->func_signature;
 
   switch (Inst.m_OpCode) {
@@ -824,7 +809,7 @@ void handle_signature_cs(
     case D3D11_SB_OPERAND_TYPE_INPUT_THREAD_ID: {
       auto assigned_index =
         func_signature.DefineInput(InputThreadPositionInGrid{});
-      prelogue_.push_back([=](IREffect &prelogue) {
+      prelogue_.push_back([=](IREffect &prelogue, auto, auto) {
         prelogue << make_effect([=](struct context ctx) {
           auto attr = ctx.function->getArg(assigned_index);
           ctx.resource.thread_id_arg = attr;
@@ -836,7 +821,7 @@ void handle_signature_cs(
     case D3D11_SB_OPERAND_TYPE_INPUT_THREAD_GROUP_ID: {
       auto assigned_index =
         func_signature.DefineInput(InputThreadgroupPositionInGrid{});
-      prelogue_.push_back([=](IREffect &prelogue) {
+      prelogue_.push_back([=](IREffect &prelogue, auto, auto) {
         prelogue << make_effect([=](struct context ctx) {
           auto attr = ctx.function->getArg(assigned_index);
           ctx.resource.thread_group_id_arg = attr;
@@ -848,7 +833,7 @@ void handle_signature_cs(
     case D3D11_SB_OPERAND_TYPE_INPUT_THREAD_ID_IN_GROUP: {
       auto assigned_index =
         func_signature.DefineInput(InputThreadPositionInThreadgroup{});
-      prelogue_.push_back([=](IREffect &prelogue) {
+      prelogue_.push_back([=](IREffect &prelogue, auto, auto) {
         prelogue << make_effect([=](struct context ctx) {
           auto attr = ctx.function->getArg(assigned_index);
           ctx.resource.thread_id_in_group_arg = attr;
@@ -860,7 +845,7 @@ void handle_signature_cs(
     case D3D11_SB_OPERAND_TYPE_INPUT_THREAD_ID_IN_GROUP_FLATTENED: {
       auto assigned_index =
         func_signature.DefineInput(InputThreadIndexInThreadgroup{});
-      prelogue_.push_back([=](IREffect &prelogue) {
+      prelogue_.push_back([=](IREffect &prelogue, auto, auto) {
         prelogue << make_effect([=](struct context ctx) {
           auto attr = ctx.function->getArg(assigned_index);
           ctx.resource.thread_id_in_group_flat_arg = attr;

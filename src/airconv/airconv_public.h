@@ -183,6 +183,7 @@ struct SM50_IA_INPUT_ELEMENT {
 struct SM50_SHADER_IA_INPUT_LAYOUT_DATA {
   void *next;
   enum SM50_SHADER_COMPILATION_ARGUMENT_TYPE type;
+  uint32_t index_buffer_format;
   uint32_t num_elements;
   struct SM50_IA_INPUT_ELEMENT *elements;
 };

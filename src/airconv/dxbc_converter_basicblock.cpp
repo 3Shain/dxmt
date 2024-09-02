@@ -597,9 +597,6 @@ IREffect pull_vertex_input(
   air::FunctionSignatureBuilder *func_signature, uint32_t to_reg, uint32_t mask,
   SM50_IA_INPUT_ELEMENT element_info
 ) {
-  auto vertex_id = func_signature->DefineInput(air::InputVertexID{});
-  auto instance_id = func_signature->DefineInput(air::InputInstanceID{});
-  auto base_instance = func_signature->DefineInput(air::InputBaseInstance{});
   auto vbuf_table = func_signature->DefineInput(air::ArgumentBindingBuffer{
     .buffer_size = {},
     .location_index = 16,
@@ -616,20 +613,11 @@ IREffect pull_vertex_input(
     pvalue index;                   // uint
     if (element_info.step_function) // per_instance
     {
-      if (!ctx.resource.base_instance_id) {
-        ctx.resource.base_instance_id = ctx.function->getArg(base_instance);
-      }
       if (element_info.step_rate) {
-        if (!ctx.resource.instance_id_with_base) {
-          ctx.resource.instance_id_with_base =
-            ctx.function->getArg(instance_id);
-        }
         index = builder.CreateAdd(
           ctx.resource.base_instance_id,
           builder.CreateUDiv(
-            builder.CreateSub(
-              ctx.resource.instance_id_with_base, ctx.resource.base_instance_id
-            ),
+            ctx.resource.instance_id,
             builder.getInt32(element_info.step_rate)
           )
         );
@@ -639,9 +627,6 @@ IREffect pull_vertex_input(
         index = ctx.resource.base_instance_id;
       }
     } else {
-      if (!ctx.resource.vertex_id_with_base) {
-        ctx.resource.vertex_id_with_base = ctx.function->getArg(vertex_id);
-      }
       index = ctx.resource.vertex_id_with_base;
     }
     if (!ctx.resource.vertex_buffer_table) {

@@ -420,9 +420,6 @@ llvm::Error convert_dxbc_hull_shader(
   for (auto &p : pShaderInternal->input_prelogue_) {
     p(prelogue, &func_signature, nullptr);
   }
-  for (auto &p : pShaderInternal->prelogue_) {
-    p(prelogue);
-  }
   for (auto &e : pShaderInternal->epilogue_) {
     e(epilogue);
   }
@@ -631,15 +628,10 @@ llvm::Error convert_dxbc_domain_shader(
 
   uint32_t max_input_register = pShaderInternal->max_input_register;
   uint32_t max_output_register = pShaderInternal->max_output_register;
-  uint64_t sign_mask = 0;
   SM50_SHADER_COMPILATION_ARGUMENT_DATA *arg = pArgs;
-  SM50_SHADER_EMULATE_VERTEX_STREAM_OUTPUT_DATA *vertex_so = nullptr;
-  SM50_SHADER_IA_INPUT_LAYOUT_DATA *ia_layout = nullptr;
   // uint64_t debug_id = ~0u;
   while (arg) {
     switch (arg->type) {
-      vertex_so = (SM50_SHADER_EMULATE_VERTEX_STREAM_OUTPUT_DATA *)arg;
-      break;
     case SM50_SHADER_DEBUG_IDENTITY:
       // debug_id = ((SM50_SHADER_DEBUG_IDENTITY_DATA *)arg)->id;
       break;
@@ -658,14 +650,9 @@ llvm::Error convert_dxbc_domain_shader(
     return llvm::UndefValue::get(retTy);
   });
   for (auto &p : pShaderInternal->input_prelogue_) {
-    p(prelogue, &func_signature, ia_layout);
-  }
-  for (auto &p : pShaderInternal->prelogue_) {
-    p(prelogue);
+    p(prelogue, &func_signature, nullptr);
   }
   for (auto &e : pShaderInternal->epilogue_) {
-    if (vertex_so)
-      continue;
     e(epilogue);
   }
 
@@ -709,9 +696,8 @@ llvm::Error convert_dxbc_domain_shader(
       .raster_order_group = {}
     });
 
-  auto [function, function_metadata] = func_signature.CreateFunction(
-    name, context, module, sign_mask, vertex_so != nullptr
-  );
+  auto [function, function_metadata] =
+    func_signature.CreateFunction(name, context, module, 0, false);
 
   auto entry_bb = llvm::BasicBlock::Create(context, "entry", function);
   auto epilogue_bb = llvm::BasicBlock::Create(context, "epilogue", function);
@@ -868,9 +854,6 @@ llvm::Error convert_dxbc_pixel_shader(
   for (auto &p : pShaderInternal->input_prelogue_) {
     p(prelogue, &func_signature, nullptr);
   }
-  for (auto &p : pShaderInternal->prelogue_) {
-    p(prelogue);
-  }
   for (auto &e : pShaderInternal->epilogue_) {
     e(epilogue);
   }
@@ -994,9 +977,6 @@ llvm::Error convert_dxbc_compute_shader(
   for (auto &p : pShaderInternal->input_prelogue_) {
     p(prelogue, &func_signature, nullptr);
   }
-  for (auto &p : pShaderInternal->prelogue_) {
-    p(prelogue);
-  }
   assert(pShaderInternal->epilogue_.empty());
 
   io_binding_map resource_map;
@@ -1098,9 +1078,6 @@ llvm::Error convert_dxbc_vertex_shader(
   for (auto &p : pShaderInternal->input_prelogue_) {
     p(prelogue, &func_signature, ia_layout);
   }
-  for (auto &p : pShaderInternal->prelogue_) {
-    p(prelogue);
-  }
   for (auto &e : pShaderInternal->epilogue_) {
     if (vertex_so)
       continue;
@@ -1154,6 +1131,12 @@ llvm::Error convert_dxbc_vertex_shader(
     });
   }
 
+  uint32_t vertex_idx = func_signature.DefineInput(air::InputVertexID{});
+  uint32_t base_vertex_idx = func_signature.DefineInput(air::InputBaseVertex{});
+  uint32_t instance_idx = func_signature.DefineInput(air::InputInstanceID{});
+  uint32_t base_instance_idx =
+    func_signature.DefineInput(air::InputBaseInstance{});
+
   io_binding_map resource_map;
   air::AirType types(context);
 
@@ -1169,6 +1152,17 @@ llvm::Error convert_dxbc_vertex_shader(
   llvm::IRBuilder<> builder(entry_bb);
 
   setup_fastmath_flag(module, builder);
+
+  resource_map.vertex_id_with_base = function->getArg(vertex_idx);
+  resource_map.base_vertex_id = function->getArg(base_vertex_idx);
+  resource_map.instance_id_with_base = function->getArg(instance_idx);
+  resource_map.base_instance_id = function->getArg(base_instance_idx);
+  resource_map.vertex_id = builder.CreateSub(
+    resource_map.vertex_id_with_base, resource_map.base_vertex_id
+  );
+  resource_map.instance_id = builder.CreateSub(
+    resource_map.instance_id_with_base, resource_map.base_instance_id
+  );
 
   resource_map.input.ptr_int4 =
     builder.CreateAlloca(llvm::ArrayType::get(types._int4, max_input_register));
@@ -1220,6 +1214,271 @@ llvm::Error convert_dxbc_vertex_shader(
   }
 
   module.getOrInsertNamedMetadata("air.vertex")->addOperand(function_metadata);
+  return llvm::Error::success();
+};
+
+llvm::Error convert_dxbc_vertex_for_hull_shader(
+  const SM50ShaderInternal *pShaderInternal, const char *name,
+  const SM50ShaderInternal *pHullStage, llvm::LLVMContext &context,
+  llvm::Module &module, SM50_SHADER_COMPILATION_ARGUMENT_DATA *pArgs
+) {
+  using namespace microsoft;
+
+  auto func_signature = pShaderInternal->func_signature; // copy
+  auto shader_info = &(pShaderInternal->shader_info);
+
+  uint32_t max_input_register = pShaderInternal->max_input_register;
+  uint32_t max_output_register = pShaderInternal->max_output_register;
+  SM50_SHADER_COMPILATION_ARGUMENT_DATA *arg = pArgs;
+  SM50_SHADER_IA_INPUT_LAYOUT_DATA *ia_layout = nullptr;
+  // uint64_t debug_id = ~0u;
+  while (arg) {
+    switch (arg->type) {
+    case SM50_SHADER_DEBUG_IDENTITY:
+      // debug_id = ((SM50_SHADER_DEBUG_IDENTITY_DATA *)arg)->id;
+      break;
+    case SM50_SHADER_IA_INPUT_LAYOUT:
+      ia_layout = ((SM50_SHADER_IA_INPUT_LAYOUT_DATA *)arg);
+      break;
+    default:
+      break;
+    }
+    arg = (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)arg->next;
+  }
+
+  IREffect prelogue([](auto) { return std::monostate(); });
+  IRValue epilogue([](struct context ctx) -> pvalue {
+    auto retTy = ctx.function->getReturnType();
+    if (retTy->isVoidTy()) {
+      return nullptr;
+    }
+    return llvm::UndefValue::get(retTy);
+  });
+  for (auto &p : pShaderInternal->input_prelogue_) {
+    p(prelogue, &func_signature, ia_layout);
+  }
+  // for (auto &e : pShaderInternal->epilogue_) {
+  //   e(epilogue);
+  // }
+
+  io_binding_map resource_map;
+  air::AirType types(context);
+
+  setup_binding_table(shader_info, resource_map, func_signature, module);
+  setup_tgsm(shader_info, resource_map, types, module);
+
+  uint32_t payload_idx =
+    func_signature.DefineInput(air::InputPayload{.size = 16256});
+  uint32_t thread_id_idx =
+    func_signature.DefineInput(air::InputThreadIndexInThreadgroup{});
+  // (patch_count, instance_count, 1)
+  uint32_t grid_size_idx =
+    func_signature.DefineInput(air::InputThreadgroupsPerGrid{});
+  // (patch_id, instance_id, 0)
+  uint32_t tg_id_idx =
+    func_signature.DefineInput(air::InputThreadgroupPositionInGrid{});
+  uint32_t mesh_props_idx =
+    func_signature.DefineInput(air::InputMeshGridProperties{});
+  uint32_t draw_argument_idx =
+    func_signature.DefineInput(air::ArgumentBindingBuffer{
+      .buffer_size = {},
+      .location_index = 21,
+      .array_size = 0,
+      .memory_access = air::MemoryAccess::read,
+      .address_space = air::AddressSpace::constant,
+      .type =
+        air::MSLWhateverStruct{"draw_arguments", types._dxmt_draw_arguments},
+      .arg_name = "draw_arguments",
+      .raster_order_group = {}
+    });
+
+  uint32_t index_buffer_idx = ~0u;
+  if (ia_layout && ia_layout->index_buffer_format > 0) {
+    index_buffer_idx = func_signature.DefineInput(air::ArgumentBindingBuffer{
+      .buffer_size = {},
+      .location_index = 20,
+      .array_size = 0,
+      .memory_access = air::MemoryAccess::read,
+      .address_space = air::AddressSpace::device,
+      .type = ia_layout->index_buffer_format == 1
+                ? air::MSLRepresentableType(air::MSLUshort{})
+                : air::MSLRepresentableType(air::MSLUint{}),
+      .raster_order_group = {}
+    });
+  }
+
+  auto [function, function_metadata] =
+    func_signature.CreateFunction(name, context, module, 0, true);
+
+  auto entry_bb = llvm::BasicBlock::Create(context, "entry", function);
+  auto epilogue_bb = llvm::BasicBlock::Create(context, "epilogue", function);
+  llvm::IRBuilder<> builder(entry_bb);
+
+  setup_fastmath_flag(module, builder);
+
+  auto active = llvm::BasicBlock::Create(context, "active", function);
+  auto dispatch = llvm::BasicBlock::Create(context, "dispatch", function);
+  auto return_ = llvm::BasicBlock::Create(context, "return", function);
+
+  auto thread_id_arg = function->getArg(thread_id_idx);
+
+  auto grid_size = function->getArg(grid_size_idx);
+  auto tg_id = function->getArg(tg_id_idx);
+  auto draw_arguments = builder.CreateLoad(
+    types._dxmt_draw_arguments, function->getArg(draw_argument_idx)
+  );
+
+  if (index_buffer_idx != ~0u) {
+    auto start_index = builder.CreateExtractElement(draw_arguments, 1);
+    auto index_offset = builder.CreateAdd(
+      builder.CreateMul(
+        builder.CreateExtractElement(tg_id, (uint32_t)0),
+        builder.getInt32(pHullStage->input_control_point_count)
+      ),
+      thread_id_arg
+    );
+    auto index_buffer = function->getArg(index_buffer_idx);
+    auto index_buffer_element_type =
+      index_buffer->getType()->getNonOpaquePointerElementType();
+    auto vertex_id = builder.CreateLoad(
+      index_buffer_element_type,
+      builder.CreateGEP(
+        index_buffer_element_type, index_buffer,
+        {builder.CreateAdd(start_index, index_offset)}
+      )
+    );
+    resource_map.vertex_id = builder.CreateZExt(vertex_id, types._int);
+    resource_map.base_vertex_id = builder.CreateExtractValue(draw_arguments, 4);
+  } else {
+    resource_map.vertex_id = builder.CreateExtractElement(tg_id, (uint32_t)0);
+    resource_map.base_vertex_id = builder.CreateExtractValue(draw_arguments, 1);
+  }
+  resource_map.instance_id = builder.CreateExtractElement(tg_id, (uint32_t)1);
+  resource_map.vertex_id_with_base =
+    builder.CreateAdd(resource_map.vertex_id, resource_map.base_vertex_id);
+  resource_map.base_instance_id = builder.CreateExtractValue(draw_arguments, 3);
+  resource_map.instance_id_with_base =
+    builder.CreateAdd(resource_map.instance_id, resource_map.base_instance_id);
+
+  resource_map.input.ptr_int4 =
+    builder.CreateAlloca(llvm::ArrayType::get(types._int4, max_input_register));
+  resource_map.input.ptr_float4 = builder.CreateBitCast(
+    resource_map.input.ptr_int4,
+    llvm::ArrayType::get(types._float4, max_input_register)->getPointerTo()
+  );
+  resource_map.input_element_count = max_input_register;
+
+  auto payload_ptr = builder.CreateConstInBoundsGEP1_32(
+    types._int, function->getArg(payload_idx), 4
+  );
+  resource_map.output.ptr_int4 = builder.CreateBitCast(
+    payload_ptr, llvm::ArrayType::get(types._int4, max_output_register)
+                   ->getPointerTo((uint32_t)air::AddressSpace::object_data)
+  );
+  resource_map.output.ptr_int4 = builder.CreateGEP(
+    resource_map.output.ptr_int4->getType()->getNonOpaquePointerElementType(),
+    resource_map.output.ptr_int4, {thread_id_arg}
+  );
+  resource_map.output.ptr_float4 = builder.CreateBitCast(
+    payload_ptr, llvm::ArrayType::get(types._float4, max_output_register)
+                   ->getPointerTo((uint32_t)air::AddressSpace::object_data)
+  );
+  resource_map.output.ptr_float4 = builder.CreateGEP(
+    resource_map.output.ptr_float4->getType()->getNonOpaquePointerElementType(),
+    resource_map.output.ptr_float4, {thread_id_arg}
+  );
+
+  resource_map.output_element_count = max_output_register;
+
+  setup_temp_register(shader_info, resource_map, types, module, builder);
+  setup_immediate_constant_buffer(
+    shader_info, resource_map, types, module, builder
+  );
+
+  struct context ctx {
+    .builder = builder, .llvm = context, .module = module, .function = function,
+    .resource = resource_map, .types = types, .pso_sample_mask = 0xffffffff,
+    .shader_type = pShaderInternal->shader_type,
+  };
+
+  builder.CreateCondBr(
+    builder.CreateICmp(
+      llvm::CmpInst::ICMP_ULT, thread_id_arg,
+      builder.getInt32(pHullStage->input_control_point_count)
+    ),
+    active, return_
+  );
+  builder.SetInsertPoint(active);
+
+  if (auto err = prelogue.build(ctx).takeError()) {
+    return err;
+  }
+  auto real_entry =
+    convert_basicblocks(pShaderInternal->entry, ctx, epilogue_bb);
+  if (auto err = real_entry.takeError()) {
+    return err;
+  }
+  builder.CreateBr(real_entry.get());
+
+  builder.SetInsertPoint(epilogue_bb);
+  auto epilogue_result = epilogue.build(ctx);
+  if (auto err = epilogue_result.takeError()) {
+    return err;
+  }
+
+  builder.CreateCondBr(
+    builder.CreateICmp(
+      llvm::CmpInst::ICMP_EQ, thread_id_arg, builder.getInt32(0)
+    ),
+    dispatch, return_
+  );
+  builder.SetInsertPoint(dispatch);
+
+  builder.CreateStore(
+    builder.CreateAdd(
+      builder.CreateMul(
+        builder.CreateExtractElement(tg_id, 1),              // instance_id
+        builder.CreateExtractElement(grid_size, (uint32_t)0) // patch_count
+      ),
+      builder.CreateExtractElement(tg_id, (uint32_t)0) // patch_id
+    ),
+    builder.CreateConstInBoundsGEP1_32(
+      types._int, function->getArg(payload_idx), 0
+    )
+  );
+
+  builder.CreateStore(
+    builder.CreateExtractElement(tg_id, (uint32_t)0), // patch_id
+    builder.CreateConstInBoundsGEP1_32(
+      types._int, function->getArg(payload_idx), 1
+    )
+  );
+
+  if (auto err =
+        air::call_set_mesh_properties(
+          ctx.builder.CreateBitCast(
+            function->getArg(mesh_props_idx),
+            types._mesh_grid_properties->getPointerTo(3)
+          ),
+          llvm::ConstantVector::getIntegerValue(types._int3, llvm::APInt{32, 1})
+        )
+          .build(
+            {.llvm = context,
+             .module = module,
+             .builder = builder,
+             .types = types}
+          )
+          .takeError()) {
+    return err;
+  }
+
+  builder.CreateBr(return_);
+
+  builder.SetInsertPoint(return_);
+
+  builder.CreateRetVoid();
+
+  module.getOrInsertNamedMetadata("air.object")->addOperand(function_metadata);
   return llvm::Error::success();
 };
 

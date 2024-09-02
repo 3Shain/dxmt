@@ -60,6 +60,18 @@ AirType::AirType(LLVMContext &context) : context(context) {
     "dxmt_vertex_buffer_entry"
   );
 
+  _dxmt_draw_arguments = StructType::create(
+    context,
+    {
+      _int, // vertex count/ index count
+      _int, // base vertex/ start index
+      _int, // instance count
+      _int, // base instance
+      _int, // base vertex (if not indexed draw)
+    },
+    "dxmt_draw_arguments"
+  );
+
   auto tyOpaque = get_or_create_struct(context, "opaque");
   _ptr_device = PointerType::get(tyOpaque, 1);
   _ptr_constant = PointerType::get(tyOpaque, 2);
@@ -91,6 +103,7 @@ AirType::AirType(LLVMContext &context) : context(context) {
     get_or_create_struct(context, "struct._depth_cube_array_t");
 
   _sampler = get_or_create_struct(context, "struct._sampler_t");
+  _mesh_grid_properties = get_or_create_struct(context, "struct._mesh_grid_properties_t");
 
   typeContext = {
     {"bool", _bool},     {"int", _int},        {"uint", _int},

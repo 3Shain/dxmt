@@ -123,6 +123,9 @@ AIRBuilderResult call_atomic_cmp_exchange(
 
 AIRBuilderResult call_derivative(pvalue fvec4, bool dfdy);
 
+AIRBuilderResult
+call_set_mesh_properties(pvalue mesh_grid_props, pvalue grid_size);
+
 enum class MTLAttributeFormat {
   Invalid = 0,
   UChar2 = 1,

@@ -618,6 +618,14 @@ auto FunctionSignatureBuilder::CreateFunction(
             ->string("mtl_thread_index_in_threadgroup");
           return msl_uint.get_llvm_type(context);
         },
+        [&](const InputThreadgroupsPerGrid &) {
+          metadata_field.string("air.threadgroups_per_grid")
+            ->string("air.arg_type_name")
+            ->string("uint3") // HARDCODED
+            ->string("air.arg_name")
+            ->string("mtl_threadgroups_per_grid");
+          return msl_uint3.get_llvm_type(context);
+        },
         [&](const InputVertexID &) {
           metadata_field.string("air.vertex_id")
             ->string("air.arg_type_name")
@@ -703,6 +711,17 @@ auto FunctionSignatureBuilder::CreateFunction(
             ->string("mtl_payload");
           return msl_uint.get_llvm_type(context)->getPointerTo( //
             (uint32_t)AddressSpace::object_data
+          );
+        },
+        [&](const InputMeshGridProperties &) -> llvm::Type * {
+          metadata_field.string("air.mesh_grid_properties")
+            ->string("air.arg_type_name")
+            ->string("mesh_grid_properties") // HARDCODED
+            ->string("air.arg_name")
+            ->string("mtl_mesh_grid_properties");
+          // will cast it anyway. TODO: get correct type from AirType
+          return msl_uint.get_llvm_type(context)->getPointerTo( //
+            (uint32_t)AddressSpace::threadgroup
           );
         },
         [](auto _) {
