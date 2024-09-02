@@ -833,6 +833,7 @@ auto FunctionSignatureBuilder::CreateFunction(
   }
   if (patch.has_value()) {
     auto [patch_type, num_control_point] = patch.value();
+    // don't use num_control_point here, as we pull input directly from buffer
     auto tuple = MDTuple::get(
       context,
       {MDString::get(context, "air.patch"),
@@ -842,7 +843,7 @@ auto FunctionSignatureBuilder::CreateFunction(
        ),
        MDString::get(context, "air.patch_control_point"),
        ConstantAsMetadata::get(
-         ConstantInt::get(context, APInt{32, num_control_point})
+         ConstantInt::get(context, APInt{32, 0})
        )}
     );
     function_def_tuple.push_back(tuple);
