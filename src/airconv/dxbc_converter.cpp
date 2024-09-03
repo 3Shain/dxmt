@@ -1360,7 +1360,7 @@ llvm::Error convert_dxbc_vertex_for_hull_shader(
   );
 
   if (index_buffer_idx != ~0u) {
-    auto start_index = builder.CreateExtractElement(draw_arguments, 1);
+    auto start_index = builder.CreateExtractValue(draw_arguments, 1);
     auto index_offset = builder.CreateAdd(
       builder.CreateMul(
         builder.CreateExtractElement(tg_id, (uint32_t)0),
