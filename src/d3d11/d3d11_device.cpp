@@ -2,7 +2,6 @@
 #include "Metal/MTLVertexDescriptor.hpp"
 #include "com/com_guid.hpp"
 #include "d3d11_pipeline.hpp"
-#include "util_hash.hpp"
 #include "d3d11_class_linkage.hpp"
 #include "d3d11_inspection.hpp"
 #include "d3d11_context.hpp"
@@ -22,47 +21,9 @@
 #include "threadpool.hpp"
 #include "winemacdrv.h"
 #include "dxgi_object.hpp"
-#include <iterator>
 #include <mutex>
 #include <thread>
 #include <unordered_map>
-
-namespace std {
-template <> struct hash<MTL_GRAPHICS_PIPELINE_DESC> {
-  size_t operator()(const MTL_GRAPHICS_PIPELINE_DESC &v) const noexcept {
-    dxmt::HashState state;
-    state.add((size_t)v.VertexShader); // FIXME: don't use pointer?
-    state.add((size_t)v.PixelShader);  // FIXME: don't use pointer?
-    state.add((size_t)v.InputLayout);  // FIXME: don't use pointer?
-    /* IMTLD3D11BlendState pointer is safe to be used as hash input */
-    state.add((size_t)v.BlendState);
-    state.add((size_t)v.DepthStencilFormat);
-    state.add((size_t)v.NumColorAttachments);
-    for (unsigned i = 0; i < std::size(v.ColorAttachmentFormats); i++) {
-      state.add(i < v.NumColorAttachments ? v.ColorAttachmentFormats[i]
-                                          : MTL::PixelFormatInvalid);
-    }
-    return state;
-  };
-};
-template <> struct equal_to<MTL_GRAPHICS_PIPELINE_DESC> {
-  bool operator()(const MTL_GRAPHICS_PIPELINE_DESC &x,
-                  const MTL_GRAPHICS_PIPELINE_DESC &y) const {
-    if (x.NumColorAttachments != y.NumColorAttachments)
-      return false;
-    for (unsigned i = 0; i < x.NumColorAttachments; i++) {
-      if (x.ColorAttachmentFormats[i] != y.ColorAttachmentFormats[i])
-        return false;
-    }
-    return (x.BlendState == y.BlendState) &&
-           (x.VertexShader == y.VertexShader) &&
-           (x.PixelShader == y.PixelShader) &&
-           (x.InputLayout == y.InputLayout) &&
-           (x.DepthStencilFormat == y.DepthStencilFormat) &&
-           (x.RasterizationEnabled == y.RasterizationEnabled);
-  }
-};
-} // namespace std
 
 namespace dxmt {
 
@@ -333,8 +294,8 @@ public:
 
     if (!ppHullShader)
       return S_FALSE;
-    ERR("CreateHullShader: not supported, return a dummy");
-    return dxmt::CreateDummyHullShader(this, pShaderBytecode, BytecodeLength,
+
+    return dxmt::CreateHullShader(this, pShaderBytecode, BytecodeLength,
                                        ppHullShader);
   }
 
@@ -348,8 +309,8 @@ public:
 
     if (!ppDomainShader)
       return S_FALSE;
-    ERR("CreateDomainShader: not supported, return a dummy");
-    return dxmt::CreateDummyDomainShader(this, pShaderBytecode, BytecodeLength,
+
+    return dxmt::CreateDomainShader(this, pShaderBytecode, BytecodeLength,
                                          ppDomainShader);
   }
 
@@ -1031,6 +992,23 @@ public:
     return S_OK;
   };
 
+  HRESULT
+  CreateTessellationPipeline(
+      MTL_TESSELLATION_PIPELINE_DESC *pDesc,
+      IMTLCompiledTessellationPipeline **ppPipeline) override {
+    std::lock_guard<dxmt::mutex> lock(mutex_);
+
+    auto iter = pipelines_ts_.find(*pDesc);
+    if (iter != pipelines_ts_.end()) {
+      *ppPipeline = iter->second.ref();
+      return S_OK;
+    }
+    auto temp = dxmt::CreateTessellationPipeline(this, pDesc);
+    D3D11_ASSERT(pipelines_ts_.insert({*pDesc, temp}).second); // copy
+    *ppPipeline = std::move(temp);                             // move
+    return S_OK;
+  };
+
 private:
   MTLDXGIObject<IMTLDXGIDevice> *m_container;
   IMTLDXGIAdatper *adapter_;
@@ -1043,6 +1021,11 @@ private:
                      Com<IMTLCompiledGraphicsPipeline>>
       pipelines_;
   dxmt::mutex mutex_;
+
+  std::unordered_map<MTL_TESSELLATION_PIPELINE_DESC,
+                     Com<IMTLCompiledTessellationPipeline>>
+      pipelines_ts_;
+  dxmt::mutex mutex_ts_;
 
   std::unordered_map<IMTLCompiledShader *, Com<IMTLCompiledComputePipeline>>
       pipelines_cs_;

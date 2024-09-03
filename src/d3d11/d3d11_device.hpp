@@ -1,6 +1,5 @@
 #pragma once
 
-#include "Metal/MTLPixelFormat.hpp"
 #include "com/com_guid.hpp"
 #include "com/com_pointer.hpp"
 #include "d3d11_3.h"
@@ -26,20 +25,13 @@ struct threadpool_trait {
 typedef dxmt::threadpool<threadpool_trait>::work_handle THREADGROUP_WORK_STATE;
 
 struct IMTLCompiledShader;
-struct IMTLD3D11BlendState;
-struct IMTLD3D11InputLayout;
-struct MTL_GRAPHICS_PIPELINE_DESC {
-  IMTLCompiledShader *VertexShader;
-  IMTLCompiledShader *PixelShader;
-  IMTLD3D11BlendState *BlendState;
-  IMTLD3D11InputLayout *InputLayout;
-  UINT NumColorAttachments;
-  MTL::PixelFormat ColorAttachmentFormats[8];
-  MTL::PixelFormat DepthStencilFormat;
-  bool RasterizationEnabled;
-};
+
 struct IMTLCompiledGraphicsPipeline;
 struct IMTLCompiledComputePipeline;
+struct IMTLCompiledTessellationPipeline;
+
+struct MTL_GRAPHICS_PIPELINE_DESC;
+struct MTL_TESSELLATION_PIPELINE_DESC;
 
 DEFINE_COM_INTERFACE("a46de9a7-0233-4a94-b75c-9c0f8f364cda", IMTLD3D11Device)
     : public ID3D11Device3 {
@@ -66,6 +58,10 @@ DEFINE_COM_INTERFACE("a46de9a7-0233-4a94-b75c-9c0f8f364cda", IMTLD3D11Device)
   virtual HRESULT CreateComputePipeline(IMTLCompiledShader * pComputeShader,
                                         IMTLCompiledComputePipeline *
                                             *ppPipeline) = 0;
+
+  virtual HRESULT CreateTessellationPipeline(MTL_TESSELLATION_PIPELINE_DESC * pDesc,
+                                         IMTLCompiledTessellationPipeline *
+                                             *ppPipeline) = 0;
 };
 
 namespace dxmt {
