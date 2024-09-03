@@ -165,6 +165,7 @@ struct io_binding_map {
 
   llvm::Value *domain = nullptr;
   llvm::Value *patch_id = nullptr;
+  llvm::Value *instanced_patch_id = nullptr;
 
   // special registers (output)
   llvm::AllocaInst *depth_output_reg = nullptr;

@@ -476,27 +476,38 @@ llvm::Error convert_dxbc_hull_shader(
   setup_fastmath_flag(module, builder);
 
   assert(pShaderInternal->input_control_point_count != ~0u);
-  auto payload_ptr = builder.CreateConstInBoundsGEP1_32(
+  auto input_control_point_ptr = builder.CreateConstInBoundsGEP1_32(
     types._int, function->getArg(payload_idx), 4
   );
   resource_map.input.ptr_int4 = builder.CreateBitCast(
-    payload_ptr, llvm::ArrayType::get(
-                   types._int4, pVertexStage->max_output_register *
-                                  pShaderInternal->input_control_point_count
-                 )
-                   ->getPointerTo((uint32_t)air::AddressSpace::object_data)
+    input_control_point_ptr,
+    llvm::ArrayType::get(
+      types._int4, pVertexStage->max_output_register *
+                     pShaderInternal->input_control_point_count
+    )
+      ->getPointerTo((uint32_t)air::AddressSpace::object_data)
   );
   resource_map.input.ptr_float4 = builder.CreateBitCast(
-    payload_ptr, llvm::ArrayType::get(
-                   types._float4, pVertexStage->max_output_register *
-                                    pShaderInternal->input_control_point_count
-                 )
-                   ->getPointerTo((uint32_t)air::AddressSpace::object_data)
+    input_control_point_ptr,
+    llvm::ArrayType::get(
+      types._float4, pVertexStage->max_output_register *
+                       pShaderInternal->input_control_point_count
+    )
+      ->getPointerTo((uint32_t)air::AddressSpace::object_data)
   );
   resource_map.input_element_count = pVertexStage->max_output_register;
 
   /* patch id (primitive id) in payload */
-  resource_map.patch_id = builder.CreateLoad(types._int, payload_ptr);
+  resource_map.instanced_patch_id = builder.CreateLoad(
+    types._int, builder.CreateConstInBoundsGEP1_32(
+                  types._int, function->getArg(payload_idx), 0
+                )
+  );
+  resource_map.patch_id = builder.CreateLoad(
+    types._int, builder.CreateConstInBoundsGEP1_32(
+                  types._int, function->getArg(payload_idx), 1
+                )
+  );
   resource_map.control_point_buffer = function->getArg(domain_cp_buffer_idx);
   resource_map.patch_constant_buffer = function->getArg(domain_pc_buffer_idx);
   resource_map.tess_factor_buffer =
@@ -527,7 +538,7 @@ llvm::Error convert_dxbc_hull_shader(
           )
                                ->getPointerAddressSpace())
         ),
-        {resource_map.patch_id}
+        {resource_map.instanced_patch_id}
       );
     }
     resource_map.output.ptr_float4 = builder.CreateBitCast(

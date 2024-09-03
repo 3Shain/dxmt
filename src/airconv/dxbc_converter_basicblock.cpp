@@ -583,7 +583,7 @@ std::function<IRValue(pvalue)> pop_output_tess_factor(
     auto dst_ptr = ctx.builder.CreateGEP(
       ctx.types._half, ctx.resource.tess_factor_buffer,
       {ctx.builder.CreateAdd(ctx.builder.CreateMul(
-         ctx.resource.patch_id, ctx.builder.getInt32(factor_count)
+         ctx.resource.instanced_patch_id, ctx.builder.getInt32(factor_count)
        ),
        ctx.builder.getInt32(factor_index))}
     );
@@ -4386,7 +4386,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
               auto dst_ptr = builder.CreateGEP(
                 ctx.types._int4, ctx.resource.control_point_buffer,
                 {builder.CreateMul(
-                  ctx.resource.patch_id, builder.getInt32(
+                  ctx.resource.instanced_patch_id, builder.getInt32(
                                            ctx.resource.output_element_count *
                                            hull_end.instance_count
                                          )
