@@ -3,6 +3,7 @@
 #include "Metal/MTLBuffer.hpp"
 #include "Metal/MTLDevice.hpp"
 #include "Metal/MTLResource.hpp"
+#include "log/log.hpp"
 #include "thread.hpp"
 #include "util_math.hpp"
 #include <mutex>
@@ -10,7 +11,7 @@
 
 namespace dxmt {
 
-constexpr size_t kStagingBlockSize = 0x800000; // 8MB
+constexpr size_t kStagingBlockSize = 0x2000000; // 32MB
 constexpr size_t kStagingBlockLifetime = 300;
 
 template <bool cpu_visible> class RingBumpAllocator {
@@ -74,13 +75,16 @@ private:
                                         size_t block_size) {
     if (!fifo.empty()) {
       auto front = fifo.front();
-      if (front.last_used_seq_id < coherent_id &&
-          front.total_size >= block_size) {
-        front.last_used_seq_id = seq_id;
-        front.allocated_size = 0;
-        fifo.push(front);
-        fifo.pop();
-        return fifo.back();
+      if (front.last_used_seq_id < coherent_id) {
+        if (front.total_size >= block_size) {
+          front.last_used_seq_id = seq_id;
+          front.allocated_size = 0;
+          fifo.push(front);
+          fifo.pop();
+          return fifo.back();
+        } else {
+          ERR("forced to allocate new block of size ", block_size);
+        }
       }
     }
     if constexpr (cpu_visible) {
