@@ -59,6 +59,8 @@ enum class FunctionType : uint8_t {
   Vertex = 0x00,
   Fragment = 0x01,
   Kernel = 0x02,
+  Mesh = 0x07,
+  Object = 0x08,
 };
 
 struct __attribute__((packed)) MTLB_TYPE_TAG {
