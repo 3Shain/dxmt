@@ -85,6 +85,27 @@ public:
 #endif
   }
 
+  bool dumped = false;
+
+  void Dump() {
+    if(dumped) {
+      return;
+    }
+#ifdef DXMT_DEBUG
+    std::fstream dump_out;
+    dump_out.open("shader_dump_" + std::to_string(id) + ".cso",
+                  std::ios::out | std::ios::binary);
+    if (dump_out) {
+      dump_out.write((char *)dump, dump_len);
+    }
+    dump_out.close();
+    ERR("dumped to ./shader_dump_" + std::to_string(id) + ".cso");
+#else
+    WARN("shader dump disabled");
+#endif
+    dumped = true;
+  }
+
   HRESULT QueryInterface(REFIID riid, void **ppvObject) {
     if (ppvObject == nullptr)
       return E_POINTER;
@@ -536,6 +557,27 @@ public:
 #ifdef DXMT_DEBUG
     free(dump);
 #endif
+  }
+
+  bool dumped = false;
+
+  void Dump() {
+    if(dumped) {
+      return;
+    }
+#ifdef DXMT_DEBUG
+    std::fstream dump_out;
+    dump_out.open("shader_dump_" + std::to_string(id) + ".cso",
+                  std::ios::out | std::ios::binary);
+    if (dump_out) {
+      dump_out.write((char *)dump, dump_len);
+    }
+    dump_out.close();
+    ERR("dumped to ./shader_dump_" + std::to_string(id) + ".cso");
+#else
+    WARN("shader dump disabled");
+#endif
+  dumped = true;
   }
 
   HRESULT QueryInterface(REFIID riid, void **ppvObject) {

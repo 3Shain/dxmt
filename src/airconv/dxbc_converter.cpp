@@ -464,6 +464,8 @@ llvm::Error convert_dxbc_hull_shader(
       .arg_name = "hull_tess_factor_buffer",
       .raster_order_group = {}
     });
+  uint32_t thread_id_idx =
+    func_signature.DefineInput(air::InputThreadIndexInThreadgroup{});
 
   auto [function, function_metadata] =
     func_signature.CreateFunction(name, context, module, 0, false);
@@ -511,6 +513,7 @@ llvm::Error convert_dxbc_hull_shader(
   resource_map.patch_constant_buffer = function->getArg(domain_pc_buffer_idx);
   resource_map.tess_factor_buffer =
     function->getArg(domain_tessfactor_buffer_idx);
+  resource_map.thread_id_in_group_flat_arg = function->getArg(thread_id_idx);
 
   if (shader_info->no_control_point_phase_passthrough) {
     assert(pShaderInternal->output_control_point_count != ~0u);
@@ -2254,7 +2257,8 @@ int SM50Initialize(
     }
     if (sm50_shader->shader_type == D3D11_SB_HULL_SHADER) {
       assert(return_point && sm50_shader->shader_type == D3D11_SB_HULL_SHADER);
-      if (shader_info->output_control_point_read) {
+      if (shader_info->output_control_point_read ||
+          !shader_info->no_control_point_phase_passthrough) {
         ctx->target = BasicBlockHullShaderWriteOutput{
           sm50_shader->output_control_point_count, return_point
         };
@@ -2415,6 +2419,11 @@ int SM50Initialize(
     binding_uav_mask |= (1 << range_id);
   }
 
+  if (sm50_shader->shader_type == microsoft::D3D11_SB_HULL_SHADER &&
+      !sm50_shader->shader_info.no_control_point_phase_passthrough) {
+    sm50_shader->max_output_register = inputParser.GetNumParameters();
+  }
+
   if (pRefl) {
     pRefl->ConstanttBufferTableBindIndex =
       sm50_shader->args_reflection_cbuffer.size() > 0 ? 29 : ~0u;
@@ -2440,14 +2449,10 @@ int SM50Initialize(
         .MaxFactor = sm50_shader->max_tesselation_factor,
         .AntiClockwise = sm50_shader->tessellation_anticlockwise,
       };
-      
-      pRefl->NumOutputElement = sm50_shader->max_output_register;
-      pRefl->NumPatchConstantOutputScalar =
-        sm50_shader->patch_constant_scalars.size();
-    } else {
-      pRefl->NumOutputElement = sm50_shader->max_output_register;
-      pRefl->NumPatchConstantOutputScalar = 0;
     }
+    pRefl->NumOutputElement = sm50_shader->max_output_register;
+    pRefl->NumPatchConstantOutputScalar =
+      sm50_shader->patch_constant_scalars.size();
   }
 
   *ppShader = (SM50Shader *)sm50_shader;
