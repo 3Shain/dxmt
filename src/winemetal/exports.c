@@ -48,4 +48,7 @@ ASM_FORWARD(SM50GetErrorMesssage, 40)
 ASM_FORWARD(SM50FreeError, 41)
 ASM_FORWARD(winemetal_unix_init, 42)
 ASM_FORWARD(objc_msgSend_fpret, 43)
+ASM_FORWARD(SM50CompileTessellationPipelineVertex, 44)
+ASM_FORWARD(SM50CompileTessellationPipelineHull, 45)
+ASM_FORWARD(SM50CompileTessellationPipelineDomain, 46)
 extern void *__wine_unixlib_handle;

@@ -3,7 +3,6 @@
 #include "DXBCParser/ShaderBinary.h"
 #include "DXBCParser/winerror.h"
 #include "airconv_error.hpp"
-#include "dxbc_constants.hpp"
 #include "dxbc_signature.hpp"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/IR/BasicBlock.h"
@@ -2508,6 +2507,211 @@ int SM50Compile(
   }
 
   // pModule->print(outs(), nullptr);
+
+  // Serialize AIR
+  auto compiled = new SM50CompiledBitcodeInternal();
+
+  raw_svector_ostream OS(compiled->vec);
+
+  metallib::MetallibWriter writer;
+
+  writer.Write(*pModule, OS);
+
+  pModule.reset();
+
+  *ppBitcode = (SM50CompiledBitcode *)compiled;
+  return 0;
+}
+
+int SM50CompileTessellationPipelineVertex(
+  SM50Shader *pVertexShader, SM50Shader *pHullShader,
+  struct SM50_SHADER_COMPILATION_ARGUMENT_DATA *pVertexShaderArgs,
+  const char *FunctionName, SM50CompiledBitcode **ppBitcode, SM50Error **ppError
+) {
+  ABRT_HANDLE_RETURN(42)
+
+  using namespace llvm;
+  using namespace dxmt;
+
+  if (ppError) {
+    *ppError = nullptr;
+  }
+  auto errorObj = new SM50ErrorInternal();
+  llvm::raw_svector_ostream errorOut(errorObj->buf);
+  if (ppBitcode == nullptr) {
+    errorOut << "ppBitcode can not be null\0";
+    *ppError = (SM50Error *)errorObj;
+    return 1;
+  }
+
+  // pArgs is ignored for now
+  LLVMContext context;
+
+  context.setOpaquePointers(false); // I suspect Metal uses LLVM 14...
+
+  auto &shader_info =
+    ((dxmt::dxbc::SM50ShaderInternal *)pVertexShader)->shader_info;
+
+  auto pModule = std::make_unique<Module>("shader.air", context);
+  initializeModule(*pModule, {.enableFastMath = false});
+
+  if (auto err = dxmt::dxbc::convert_dxbc_vertex_for_hull_shader(
+        (dxbc::SM50ShaderInternal *)pVertexShader, FunctionName,
+        (dxbc::SM50ShaderInternal *)pHullShader, context, *pModule,
+        pVertexShaderArgs
+      )) {
+    llvm::handleAllErrors(std::move(err), [&](const UnsupportedFeature &u) {
+      errorOut << u.msg;
+    });
+    *ppError = (SM50Error *)errorObj;
+    return 1;
+  }
+
+  if (!shader_info.skipOptimization) {
+    runOptimizationPasses(*pModule, OptimizationLevel::O2);
+  }
+
+  // pModule->print(outs(), nullptr);
+
+  // Serialize AIR
+  auto compiled = new SM50CompiledBitcodeInternal();
+
+  raw_svector_ostream OS(compiled->vec);
+
+  metallib::MetallibWriter writer;
+
+  writer.Write(*pModule, OS);
+
+  pModule.reset();
+
+  *ppBitcode = (SM50CompiledBitcode *)compiled;
+  return 0;
+}
+
+int SM50CompileTessellationPipelineHull(
+  SM50Shader *pVertexShader, SM50Shader *pHullShader,
+  struct SM50_SHADER_COMPILATION_ARGUMENT_DATA *pHullShaderArgs,
+  const char *FunctionName, SM50CompiledBitcode **ppBitcode, SM50Error **ppError
+) {
+  ABRT_HANDLE_RETURN(42)
+
+  using namespace llvm;
+  using namespace dxmt;
+
+  if (ppError) {
+    *ppError = nullptr;
+  }
+  auto errorObj = new SM50ErrorInternal();
+  llvm::raw_svector_ostream errorOut(errorObj->buf);
+  if (ppBitcode == nullptr) {
+    errorOut << "ppBitcode can not be null\0";
+    *ppError = (SM50Error *)errorObj;
+    return 1;
+  }
+
+  // pArgs is ignored for now
+  LLVMContext context;
+
+  context.setOpaquePointers(false); // I suspect Metal uses LLVM 14...
+
+  auto &shader_info =
+    ((dxmt::dxbc::SM50ShaderInternal *)pHullShader)->shader_info;
+
+  auto pModule = std::make_unique<Module>("shader.air", context);
+  initializeModule(
+    *pModule,
+    {.enableFastMath =
+       (!shader_info.skipOptimization && shader_info.refactoringAllowed)}
+  );
+
+  if (auto err = dxmt::dxbc::convert_dxbc_hull_shader(
+        (dxbc::SM50ShaderInternal *)pHullShader, FunctionName,
+        (dxbc::SM50ShaderInternal *)pVertexShader, context, *pModule,
+        pHullShaderArgs
+      )) {
+    llvm::handleAllErrors(std::move(err), [&](const UnsupportedFeature &u) {
+      errorOut << u.msg;
+    });
+    *ppError = (SM50Error *)errorObj;
+    return 1;
+  }
+
+  if (!shader_info.skipOptimization) {
+    runOptimizationPasses(*pModule, OptimizationLevel::O2);
+  }
+
+  // Serialize AIR
+  auto compiled = new SM50CompiledBitcodeInternal();
+
+  raw_svector_ostream OS(compiled->vec);
+
+  metallib::MetallibWriter writer;
+
+  writer.Write(*pModule, OS);
+
+  pModule.reset();
+
+  *ppBitcode = (SM50CompiledBitcode *)compiled;
+  return 0;
+}
+
+int SM50CompileTessellationPipelineDomain(
+  SM50Shader *pHullShader, SM50Shader *pDomainShader,
+  struct SM50_SHADER_COMPILATION_ARGUMENT_DATA *pDomainShaderArgs,
+  const char *FunctionName, SM50CompiledBitcode **ppBitcode, SM50Error **ppError
+) {
+  ABRT_HANDLE_RETURN(42)
+
+  using namespace llvm;
+  using namespace dxmt;
+
+  if (ppError) {
+    *ppError = nullptr;
+  }
+  auto errorObj = new SM50ErrorInternal();
+  llvm::raw_svector_ostream errorOut(errorObj->buf);
+  if (ppBitcode == nullptr) {
+    errorOut << "ppBitcode can not be null\0";
+    *ppError = (SM50Error *)errorObj;
+    return 1;
+  }
+
+  // pArgs is ignored for now
+  LLVMContext context;
+
+  context.setOpaquePointers(false); // I suspect Metal uses LLVM 14...
+
+  auto &shader_info =
+    ((dxmt::dxbc::SM50ShaderInternal *)pDomainShader)->shader_info;
+  auto shader_type =
+    ((dxmt::dxbc::SM50ShaderInternal *)pDomainShader)->shader_type;
+
+  auto pModule = std::make_unique<Module>("shader.air", context);
+  initializeModule(
+    *pModule,
+    {.enableFastMath =
+       (!shader_info.skipOptimization && shader_info.refactoringAllowed &&
+        // this is by design: vertex functions are usually not the
+        // bottle-neck of pipeline, and precise calculation on pixel can reduce
+        // flickering
+        shader_type != microsoft::D3D10_SB_VERTEX_SHADER)}
+  );
+
+  if (auto err = dxmt::dxbc::convert_dxbc_domain_shader(
+        (dxbc::SM50ShaderInternal *)pDomainShader, FunctionName,
+        (dxbc::SM50ShaderInternal *)pHullShader, context, *pModule,
+        pDomainShaderArgs
+      )) {
+    llvm::handleAllErrors(std::move(err), [&](const UnsupportedFeature &u) {
+      errorOut << u.msg;
+    });
+    *ppError = (SM50Error *)errorObj;
+    return 1;
+  }
+
+  if (!shader_info.skipOptimization) {
+    runOptimizationPasses(*pModule, OptimizationLevel::O2);
+  }
 
   // Serialize AIR
   auto compiled = new SM50CompiledBitcodeInternal();
