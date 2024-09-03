@@ -617,6 +617,27 @@ llvm::Error convert_dxbc_hull_shader(
     return err;
   }
 
+  auto pc_out = builder.CreateGEP(
+    types._int, resource_map.patch_constant_buffer,
+    {builder.CreateMul(
+      builder.getInt32(pShaderInternal->patch_constant_scalars.size()),
+      resource_map.instanced_patch_id
+    )}
+  );
+  for (unsigned i = 0; i < pShaderInternal->patch_constant_scalars.size();
+       i++) {
+    auto pc_scalar = pShaderInternal->patch_constant_scalars[i];
+    auto dst_ptr = builder.CreateConstGEP1_32(types._int, pc_out, i);
+    auto src_ptr = builder.CreateGEP(
+      resource_map.patch_constant_output.ptr_int4->getType()
+        ->getNonOpaquePointerElementType(),
+      resource_map.patch_constant_output.ptr_int4,
+      {builder.getInt32(0), builder.getInt32(pc_scalar.reg),
+       builder.getInt32(pc_scalar.component)}
+    );
+    builder.CreateStore(builder.CreateLoad(types._int, src_ptr), dst_ptr);
+  };
+
   builder.CreateBr(real_return);
   builder.SetInsertPoint(real_return);
 
