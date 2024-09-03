@@ -450,7 +450,7 @@ llvm::Error convert_dxbc_hull_shader(
       .memory_access = air::MemoryAccess::write,
       .address_space = air::AddressSpace::device,
       .type = air::MSLUint{},
-      .arg_name = "hull_cp_buffer",
+      .arg_name = "hull_pc_buffer",
       .raster_order_group = {}
     });
   uint32_t domain_tessfactor_buffer_idx =
@@ -712,7 +712,7 @@ llvm::Error convert_dxbc_domain_shader(
       .memory_access = air::MemoryAccess::read,
       .address_space = air::AddressSpace::device,
       .type = air::MSLUint{},
-      .arg_name = "domain_cp_buffer",
+      .arg_name = "domain_pc_buffer",
       .raster_order_group = {}
     });
   uint32_t domain_tessfactor_buffer_idx =
@@ -2440,6 +2440,13 @@ int SM50Initialize(
         .MaxFactor = sm50_shader->max_tesselation_factor,
         .AntiClockwise = sm50_shader->tessellation_anticlockwise,
       };
+      
+      pRefl->NumOutputElement = sm50_shader->max_output_register;
+      pRefl->NumPatchConstantOutputScalar =
+        sm50_shader->patch_constant_scalars.size();
+    } else {
+      pRefl->NumOutputElement = sm50_shader->max_output_register;
+      pRefl->NumPatchConstantOutputScalar = 0;
     }
   }
 
