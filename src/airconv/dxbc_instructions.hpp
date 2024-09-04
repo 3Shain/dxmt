@@ -39,6 +39,7 @@ constexpr Swizzle swizzle_identity = {0, 1, 2, 3};
 #pragma region operand index
 struct IndexByTempComponent {
   uint32_t regid;
+  uint32_t phase;
   uint8_t component;
   uint32_t offset;
 };
@@ -46,6 +47,7 @@ struct IndexByTempComponent {
 struct IndexByIndexableTempComponent {
   uint32_t regfile;
   uint32_t regid;
+  uint32_t phase;
   uint8_t component;
   uint32_t offset;
 };

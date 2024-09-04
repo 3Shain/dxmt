@@ -895,11 +895,12 @@ auto load_operand_index(OperandIndex idx) {
       },
       [&](IndexByTempComponent ot) {
         return make_irvalue([=](context ctx) -> llvm::Expected<pvalue> {
+          pvalue reg = ctx.resource.temp.ptr_int4;
+          if (ot.phase != ~0u) {
+            reg = ctx.resource.phases[ot.phase].temp.ptr_int4;
+          }
           auto temp =
-            load_from_array_at(
-              ctx.resource.temp.ptr_int4, ctx.builder.getInt32(ot.regid)
-            )
-              .build(ctx);
+            load_from_array_at(reg, ctx.builder.getInt32(ot.regid)).build(ctx);
           if (auto err = temp.takeError()) {
             return std::move(err);
           }
