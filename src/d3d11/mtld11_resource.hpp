@@ -249,6 +249,7 @@ struct tag_buffer {
   using COM_IMPL = ID3D11Buffer;
   using DESC = D3D11_BUFFER_DESC;
   using DESC1 = D3D11_BUFFER_DESC;
+  static constexpr std::string_view debug_name = "buffer";
 };
 
 struct tag_texture_1d {
@@ -258,6 +259,7 @@ struct tag_texture_1d {
   using COM_IMPL = ID3D11Texture1D;
   using DESC = D3D11_TEXTURE1D_DESC;
   using DESC1 = D3D11_TEXTURE1D_DESC;
+  static constexpr std::string_view debug_name = "tex1d";
 };
 
 struct tag_texture_2d {
@@ -267,6 +269,7 @@ struct tag_texture_2d {
   using COM_IMPL = ID3D11Texture2D1;
   using DESC = D3D11_TEXTURE2D_DESC;
   using DESC1 = D3D11_TEXTURE2D_DESC1;
+  static constexpr std::string_view debug_name = "tex2d";
 };
 
 struct tag_texture_3d {
@@ -276,6 +279,7 @@ struct tag_texture_3d {
   using COM_IMPL = ID3D11Texture3D1;
   using DESC = D3D11_TEXTURE3D_DESC;
   using DESC1 = D3D11_TEXTURE3D_DESC1;
+  static constexpr std::string_view debug_name = "tex3d";
 };
 
 template <typename tag, typename... Base>
@@ -340,7 +344,7 @@ public:
     }
 
     if (logQueryInterfaceError(__uuidof(typename tag::COM), riid)) {
-      WARN("D3D11Resource: Unknown interface query ", str::format(riid));
+      WARN("D3D11Resource(", tag::debug_name ,"): Unknown interface query ", str::format(riid));
     }
 
     return E_NOINTERFACE;
