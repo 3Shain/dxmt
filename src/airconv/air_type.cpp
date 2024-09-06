@@ -64,7 +64,7 @@ AirType::AirType(LLVMContext &context) : context(context) {
     context,
     {
       _int, // vertex count/ index count
-      _int, // base vertex/ start index
+      _int, // start index
       _int, // instance count
       _int, // base instance
       _int, // base vertex (if not indexed draw)
