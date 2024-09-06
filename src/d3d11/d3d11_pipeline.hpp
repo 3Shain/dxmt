@@ -127,6 +127,7 @@ template <> struct hash<MTL_TESSELLATION_PIPELINE_DESC> {
     /* IMTLD3D11BlendState pointer is safe to be used as hash input */
     state.add((size_t)v.BlendState);
     state.add((size_t)v.DepthStencilFormat);
+    state.add((size_t)v.IndexBufferFormat);
     state.add((size_t)v.NumColorAttachments);
     for (unsigned i = 0; i < std::size(v.ColorAttachmentFormats); i++) {
       state.add(i < v.NumColorAttachments ? v.ColorAttachmentFormats[i]
@@ -150,7 +151,8 @@ template <> struct equal_to<MTL_TESSELLATION_PIPELINE_DESC> {
            (x.DomainShader == y.DomainShader) &&
            (x.InputLayout == y.InputLayout) &&
            (x.DepthStencilFormat == y.DepthStencilFormat) &&
-           (x.RasterizationEnabled == y.RasterizationEnabled);
+           (x.RasterizationEnabled == y.RasterizationEnabled) &&
+           (x.IndexBufferFormat == y.IndexBufferFormat);
   }
 };
 } // namespace std
