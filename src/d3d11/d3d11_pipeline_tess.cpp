@@ -269,7 +269,8 @@ public:
     ready_.wait(false, std::memory_order_acquire);
     *pPipeline = {state_mesh_.ptr(), state_rasterization_.ptr(),
                   hull_reflection.NumOutputElement,
-                  hull_reflection.NumPatchConstantOutputScalar};
+                  hull_reflection.NumPatchConstantOutputScalar,
+                  hull_reflection.ThreadsPerPatch};
   }
 
   void RunThreadpoolWork() {

@@ -1210,12 +1210,17 @@ IRValue load_src<SrcOperandAttribute, false>(SrcOperandAttribute attr) {
     vec = co_yield extend_to_vec4(ctx.resource.thread_group_id_arg);
     break;
   }
-  case shader::common::InputAttribute::OutputControlPointId:
-  case shader::common::InputAttribute::ForkInstanceId:
-  case shader::common::InputAttribute::JoinInstanceId:
   case shader::common::InputAttribute::ThreadIdInGroupFlatten: {
     assert(ctx.resource.thread_id_in_group_flat_arg);
     vec = co_yield extend_to_vec4(ctx.resource.thread_id_in_group_flat_arg);
+    break;
+  }
+  
+  case shader::common::InputAttribute::OutputControlPointId:
+  case shader::common::InputAttribute::ForkInstanceId:
+  case shader::common::InputAttribute::JoinInstanceId: {
+    assert(ctx.resource.thread_id_in_patch);
+    vec = co_yield extend_to_vec4(ctx.resource.thread_id_in_patch);
     break;
   }
   case shader::common::InputAttribute::CoverageMask: {
@@ -1266,11 +1271,15 @@ IRValue load_src<SrcOperandAttribute, true>(SrcOperandAttribute attr) {
       bitcast_float4;
     break;
   }
-  case shader::common::InputAttribute::OutputControlPointId:
-  case shader::common::InputAttribute::ForkInstanceId:
-  case shader::common::InputAttribute::JoinInstanceId:
   case shader::common::InputAttribute::ThreadIdInGroupFlatten: {
     vec = co_yield extend_to_vec4(ctx.resource.thread_id_in_group_flat_arg) >>=
+      bitcast_float4;
+    break;
+  }
+  case shader::common::InputAttribute::OutputControlPointId:
+  case shader::common::InputAttribute::ForkInstanceId:
+  case shader::common::InputAttribute::JoinInstanceId: {
+    vec = co_yield extend_to_vec4(ctx.resource.thread_id_in_patch) >>=
       bitcast_float4;
     break;
   }
@@ -1522,7 +1531,7 @@ store_dst<DstOperandOutput, false>(DstOperandOutput output, IRValue &&value) {
           ctx.resource.output.ptr_int4,
           ctx.builder.CreateAdd(
             ctx.builder.CreateMul(
-              ctx.resource.thread_id_in_group_flat_arg,
+              ctx.resource.thread_id_in_patch,
               ctx.builder.getInt32(ctx.resource.output_element_count)
             ),
             ctx.builder.getInt32(output.regid)
@@ -1556,7 +1565,7 @@ store_dst<DstOperandOutput, true>(DstOperandOutput output, IRValue &&value) {
           ctx.resource.output.ptr_float4,
           ctx.builder.CreateAdd(
             ctx.builder.CreateMul(
-              ctx.resource.thread_id_in_group_flat_arg,
+              ctx.resource.thread_id_in_patch,
               ctx.builder.getInt32(ctx.resource.output_element_count)
             ),
             ctx.builder.getInt32(output.regid)
@@ -1647,7 +1656,7 @@ IREffect store_dst<
           ctx.resource.output.ptr_float4,
           ctx.builder.CreateAdd(
             ctx.builder.CreateMul(
-              ctx.resource.thread_id_in_group_flat_arg,
+              ctx.resource.thread_id_in_patch,
               ctx.builder.getInt32(ctx.resource.output_element_count)
             ),
             index
@@ -1680,7 +1689,7 @@ IREffect store_dst<
           ctx.resource.output.ptr_int4,
           ctx.builder.CreateAdd(
             ctx.builder.CreateMul(
-              ctx.resource.thread_id_in_group_flat_arg,
+              ctx.resource.thread_id_in_patch,
               ctx.builder.getInt32(ctx.resource.output_element_count)
             ),
             index
@@ -4354,7 +4363,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
               builder.CreateCondBr(
                 ctx.builder.CreateICmp(
                   llvm::CmpInst::ICMP_ULT,
-                  ctx.resource.thread_id_in_group_flat_arg,
+                  ctx.resource.thread_id_in_patch,
                   ctx.builder.getInt32(instance.instance_count)
                 ),
                 target_true_bb, target_false_bb
@@ -4378,7 +4387,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
               builder.CreateCondBr(
                 ctx.builder.CreateICmp(
                   llvm::CmpInst::ICMP_ULT,
-                  ctx.resource.thread_id_in_group_flat_arg,
+                  ctx.resource.thread_id_in_patch,
                   ctx.builder.getInt32(hull_end.instance_count)
                 ),
                 active, sync
@@ -4398,7 +4407,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                   ctx.types._int4, dst_ptr,
                   {builder.CreateAdd(
                     builder.CreateMul(
-                      ctx.resource.thread_id_in_group_flat_arg,
+                      ctx.resource.thread_id_in_patch,
                       builder.getInt32(ctx.resource.output_element_count)
                     ),
                     builder.getInt32(i)
@@ -4410,7 +4419,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                   {builder.getInt32(0),
                    builder.CreateAdd(
                      builder.CreateMul(
-                       ctx.resource.thread_id_in_group_flat_arg,
+                       ctx.resource.thread_id_in_patch,
                        builder.getInt32(ctx.resource.output_element_count)
                      ),
                      builder.getInt32(i)

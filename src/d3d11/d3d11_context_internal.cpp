@@ -1568,6 +1568,8 @@ public:
           GraphicsPipeline.NumControlPointOutputElement;
       ctx.tess_num_output_patch_constant_scalar =
           GraphicsPipeline.NumPatchConstantOutputScalar;
+      ctx.tess_threads_per_patch =
+          GraphicsPipeline.ThreadsPerPatch;
     });
 
     cmdbuf_state = CommandBufferState::TessellationRenderPipelineReady;

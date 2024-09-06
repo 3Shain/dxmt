@@ -502,9 +502,7 @@ void handle_signature_hs(
   uint32_t &max_output_register = sm50_shader->max_output_register;
   uint32_t &max_patch_constant_output_register =
     sm50_shader->max_patch_constant_output_register;
-  auto &prelogue_ = sm50_shader->input_prelogue_;
   auto &epilogue_ = sm50_shader->epilogue_;
-  auto &func_signature = sm50_shader->func_signature;
 
   switch (Inst.m_OpCode) {
   case D3D10_SB_OPCODE_DCL_INPUT_SGV: {
@@ -527,15 +525,6 @@ void handle_signature_hs(
     case D3D11_SB_OPERAND_TYPE_OUTPUT_CONTROL_POINT_ID:
     case D3D11_SB_OPERAND_TYPE_INPUT_FORK_INSTANCE_ID:
     case D3D11_SB_OPERAND_TYPE_INPUT_JOIN_INSTANCE_ID: {
-      auto assigned_index =
-        func_signature.DefineInput(InputThreadIndexInThreadgroup{});
-      prelogue_.push_back([=](IREffect &prelogue, auto, auto) {
-        prelogue << make_effect([=](struct context ctx) {
-          auto attr = ctx.function->getArg(assigned_index);
-          ctx.resource.thread_id_in_group_flat_arg = attr;
-          return std::monostate{};
-        });
-      });
       break;
     }
     case D3D10_SB_OPERAND_TYPE_INPUT: {

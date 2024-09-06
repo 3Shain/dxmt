@@ -168,6 +168,7 @@ class CommandChunk {
     MTL::RenderPipelineState* tess_raster_pso;
     uint32_t tess_num_output_control_point_element;
     uint32_t tess_num_output_patch_constant_scalar;
+    uint32_t tess_threads_per_patch;
 
     context_t(CommandChunk *chk, MTL::CommandBuffer *cmdbuf)
         : chk(chk), queue(chk->queue), cmdbuf(cmdbuf) {}

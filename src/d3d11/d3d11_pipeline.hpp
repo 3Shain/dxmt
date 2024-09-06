@@ -48,6 +48,7 @@ struct MTL_COMPILED_TESSELLATION_PIPELINE {
   MTL::RenderPipelineState *RasterizationPipelineState;
   uint32_t NumControlPointOutputElement;
   uint32_t NumPatchConstantOutputScalar;
+  uint32_t ThreadsPerPatch;
 };
 
 DEFINE_COM_INTERFACE("7ee15804-8604-41fc-ad0c-4ecf97e2e6fe",

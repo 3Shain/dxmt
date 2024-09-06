@@ -167,6 +167,8 @@ struct io_binding_map {
   llvm::Value *patch_id = nullptr;
   llvm::Value *instanced_patch_id = nullptr;
 
+  llvm::Value *thread_id_in_patch = nullptr;
+
   // special registers (output)
   llvm::AllocaInst *depth_output_reg = nullptr;
   llvm::AllocaInst *stencil_ref_reg = nullptr;
@@ -289,6 +291,7 @@ public:
   float max_tesselation_factor = 64.0f;
   bool tessellation_anticlockwise = false;
   std::vector<PatchConstantScalarInfo> patch_constant_scalars;
+  uint32_t hull_maximum_threads_per_patch = 0;
 };
 
 llvm::Error convert_dxbc_hull_shader(

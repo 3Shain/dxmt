@@ -754,7 +754,8 @@ public:
     auto [Primitive, ControlPointCount] =
         to_metal_topology(state_.InputAssembler.Topology);
     if (ControlPointCount) {
-      return;
+      return TessellationDraw(ControlPointCount, VertexCount, 1,
+                              StartVertexLocation, 0);
     }
     // TODO: skip invalid topology
     ctx.EmitRenderCommand([Primitive, StartVertexLocation,
@@ -794,66 +795,6 @@ public:
     });
   }
 
-  void TessellationDrawIndexed(UINT NumControlPoint, UINT IndexCountPerInstance,
-                               UINT StartIndexLocation, INT BaseVertexLocation,
-                               UINT InstanceCount, UINT BaseInstance) {
-    assert(NumControlPoint);
-    auto IndexBufferOffset =
-        state_.InputAssembler.IndexBufferOffset +
-        StartIndexLocation *
-            (state_.InputAssembler.IndexBufferFormat == DXGI_FORMAT_R32_UINT
-                 ? 4
-                 : 2);
-    // allocate draw arguments
-    CommandChunk *chk = cmd_queue.CurrentChunk();
-    auto currentChunkId = cmd_queue.CurrentSeqId();
-    auto [heap, offset] = chk->allocate_gpu_heap(4 * 5, 4);
-    auto PatchCountPerInstance = IndexCountPerInstance / NumControlPoint;
-    DXMT_DRAW_ARGUMENTS *draw_arugment =
-        (DXMT_DRAW_ARGUMENTS *)(((char *)heap->contents()) + offset);
-    draw_arugment->BaseVertex = BaseVertexLocation;
-    draw_arugment->IndexCount = IndexCountPerInstance;
-    draw_arugment->StartIndex = 0; // already provided offset
-    draw_arugment->InstanceCount = InstanceCount;
-    draw_arugment->StartInstance = BaseInstance;
-    ctx.EmitRenderCommandChk([=](CommandChunk::context &ctx) {
-      D3D11_ASSERT(ctx.current_index_buffer_ref);
-      auto &encoder = ctx.render_encoder;
-      encoder->setObjectBuffer(ctx.current_index_buffer_ref, IndexBufferOffset,
-                               20);
-      encoder->setObjectBuffer(heap, offset, 21);
-      assert(ctx.tess_num_output_control_point_element);
-      auto [_0, cp_buffer, cp_offset] = ctx.queue->AllocateTempBuffer(
-          currentChunkId,
-          ctx.tess_num_output_control_point_element * 16 *
-              IndexCountPerInstance * InstanceCount,
-          16);
-      auto [_1, pc_buffer, pc_offset] = ctx.queue->AllocateTempBuffer(
-          currentChunkId,
-          ctx.tess_num_output_patch_constant_scalar * 4 * PatchCountPerInstance  * InstanceCount, 4);
-      auto [_2, tess_factor_buffer, tess_factor_offset] =
-          ctx.queue->AllocateTempBuffer(currentChunkId, 6 * 2 * PatchCountPerInstance  * InstanceCount, 4);
-      encoder->setMeshBuffer(cp_buffer, cp_offset, 20);
-      encoder->setMeshBuffer(pc_buffer, pc_offset, 21);
-      encoder->setMeshBuffer(tess_factor_buffer, tess_factor_offset, 22);
-      encoder->setRenderPipelineState(ctx.tess_mesh_pso);
-
-      encoder->drawMeshThreadgroups(MTL::Size(PatchCountPerInstance, InstanceCount, 1),
-                                    MTL::Size(32, 1, 1), MTL::Size(32, 1, 1));
-
-      encoder->memoryBarrier(MTL::BarrierScopeBuffers, MTL::RenderStageMesh,
-                             MTL::RenderStageVertex);
-
-      encoder->setRenderPipelineState(ctx.tess_raster_pso);
-      encoder->setVertexBuffer(cp_buffer, cp_offset, 20);
-      encoder->setVertexBuffer(pc_buffer, pc_offset, 21);
-      encoder->setVertexBuffer(tess_factor_buffer, tess_factor_offset, 22);
-      encoder->setTessellationFactorBuffer(tess_factor_buffer,
-                                           tess_factor_offset, 0 /* TODO: */);
-      encoder->drawPatches(NumControlPoint, 0, PatchCountPerInstance * InstanceCount, nullptr, 0, 1, 0);
-    });
-  }
-
   void DrawInstanced(UINT VertexCountPerInstance, UINT InstanceCount,
                      UINT StartVertexLocation,
                      UINT StartInstanceLocation) override {
@@ -862,7 +803,9 @@ public:
     auto [Primitive, ControlPointCount] =
         to_metal_topology(state_.InputAssembler.Topology);
     if (ControlPointCount) {
-      return;
+      return TessellationDraw(ControlPointCount, VertexCountPerInstance,
+                              InstanceCount, StartVertexLocation,
+                              StartInstanceLocation);
     }
     // TODO: skip invalid topology
     ctx.EmitRenderCommand(
@@ -908,6 +851,142 @@ public:
               ctx.current_index_buffer_ref, IndexBufferOffset, InstanceCount,
               BaseVertexLocation, StartInstanceLocation);
         });
+  }
+
+  void TessellationDraw(UINT NumControlPoint, UINT VertexCountPerInstance,
+                        UINT InstanceCount, UINT StartVertexLocation,
+                        UINT StartInstanceLocation) {
+    assert(NumControlPoint);
+    // allocate draw arguments
+    CommandChunk *chk = cmd_queue.CurrentChunk();
+    auto currentChunkId = cmd_queue.CurrentSeqId();
+    auto [heap, offset] = chk->allocate_gpu_heap(4 * 5, 4);
+    auto PatchCountPerInstance = VertexCountPerInstance / NumControlPoint;
+    DXMT_DRAW_ARGUMENTS *draw_arugment =
+        (DXMT_DRAW_ARGUMENTS *)(((char *)heap->contents()) + offset);
+    draw_arugment->BaseVertex = StartVertexLocation;
+    draw_arugment->IndexCount = VertexCountPerInstance;
+    draw_arugment->StartIndex = 0;
+    draw_arugment->InstanceCount = InstanceCount;
+    draw_arugment->StartInstance = StartInstanceLocation;
+    ctx.EmitRenderCommandChk([=](CommandChunk::context &ctx) {
+      D3D11_ASSERT(ctx.current_index_buffer_ref);
+      auto &encoder = ctx.render_encoder;
+      encoder->setObjectBuffer(heap, offset, 21);
+      assert(ctx.tess_num_output_control_point_element);
+      auto PatchPerGroup = 32 / ctx.tess_threads_per_patch;
+      auto PatchPerMeshInstance =
+          (PatchCountPerInstance - 1) / PatchPerGroup + 1;
+      auto [_0, cp_buffer, cp_offset] = ctx.queue->AllocateTempBuffer(
+          currentChunkId,
+          ctx.tess_num_output_control_point_element * 16 *
+              VertexCountPerInstance * InstanceCount,
+          16);
+      auto [_1, pc_buffer, pc_offset] = ctx.queue->AllocateTempBuffer(
+          currentChunkId,
+          ctx.tess_num_output_patch_constant_scalar * 4 *
+              PatchCountPerInstance * InstanceCount,
+          4);
+      auto [_2, tess_factor_buffer, tess_factor_offset] =
+          ctx.queue->AllocateTempBuffer(
+              currentChunkId, 6 * 2 * PatchCountPerInstance * InstanceCount, 4);
+      encoder->setMeshBuffer(cp_buffer, cp_offset, 20);
+      encoder->setMeshBuffer(pc_buffer, pc_offset, 21);
+      encoder->setMeshBuffer(tess_factor_buffer, tess_factor_offset, 22);
+      encoder->setRenderPipelineState(ctx.tess_mesh_pso);
+
+      encoder->drawMeshThreadgroups(
+          MTL::Size(PatchPerMeshInstance, InstanceCount, 1),
+          MTL::Size(ctx.tess_threads_per_patch, 32 / ctx.tess_threads_per_patch,
+                    1),
+          MTL::Size(ctx.tess_threads_per_patch, 32 / ctx.tess_threads_per_patch,
+                    1));
+
+      encoder->memoryBarrier(MTL::BarrierScopeBuffers, MTL::RenderStageMesh,
+                             MTL::RenderStageVertex);
+
+      encoder->setRenderPipelineState(ctx.tess_raster_pso);
+      encoder->setVertexBuffer(cp_buffer, cp_offset, 20);
+      encoder->setVertexBuffer(pc_buffer, pc_offset, 21);
+      encoder->setVertexBuffer(tess_factor_buffer, tess_factor_offset, 22);
+      encoder->setTessellationFactorBuffer(tess_factor_buffer,
+                                           tess_factor_offset, 0);
+      encoder->drawPatches(NumControlPoint, 0,
+                           PatchCountPerInstance * InstanceCount, //
+                           nullptr, 0, 1, 0);
+    });
+  }
+
+  void TessellationDrawIndexed(UINT NumControlPoint, UINT IndexCountPerInstance,
+                               UINT StartIndexLocation, INT BaseVertexLocation,
+                               UINT InstanceCount, UINT BaseInstance) {
+    assert(NumControlPoint);
+    auto IndexBufferOffset =
+        state_.InputAssembler.IndexBufferOffset +
+        StartIndexLocation *
+            (state_.InputAssembler.IndexBufferFormat == DXGI_FORMAT_R32_UINT
+                 ? 4
+                 : 2);
+    // allocate draw arguments
+    CommandChunk *chk = cmd_queue.CurrentChunk();
+    auto currentChunkId = cmd_queue.CurrentSeqId();
+    auto [heap, offset] = chk->allocate_gpu_heap(4 * 5, 4);
+    auto PatchCountPerInstance = IndexCountPerInstance / NumControlPoint;
+    DXMT_DRAW_ARGUMENTS *draw_arugment =
+        (DXMT_DRAW_ARGUMENTS *)(((char *)heap->contents()) + offset);
+    draw_arugment->BaseVertex = BaseVertexLocation;
+    draw_arugment->IndexCount = IndexCountPerInstance;
+    draw_arugment->StartIndex = 0; // already provided offset
+    draw_arugment->InstanceCount = InstanceCount;
+    draw_arugment->StartInstance = BaseInstance;
+    ctx.EmitRenderCommandChk([=](CommandChunk::context &ctx) {
+      D3D11_ASSERT(ctx.current_index_buffer_ref);
+      auto &encoder = ctx.render_encoder;
+      encoder->setObjectBuffer(ctx.current_index_buffer_ref, IndexBufferOffset,
+                               20);
+      encoder->setObjectBuffer(heap, offset, 21);
+      assert(ctx.tess_num_output_control_point_element);
+      auto PatchPerGroup = 32 / ctx.tess_threads_per_patch;
+      auto PatchPerMeshInstance =
+          (PatchCountPerInstance - 1) / PatchPerGroup + 1;
+      auto [_0, cp_buffer, cp_offset] = ctx.queue->AllocateTempBuffer(
+          currentChunkId,
+          ctx.tess_num_output_control_point_element * 16 *
+              IndexCountPerInstance * InstanceCount,
+          16);
+      auto [_1, pc_buffer, pc_offset] = ctx.queue->AllocateTempBuffer(
+          currentChunkId,
+          ctx.tess_num_output_patch_constant_scalar * 4 *
+              PatchCountPerInstance * InstanceCount,
+          4);
+      auto [_2, tess_factor_buffer, tess_factor_offset] =
+          ctx.queue->AllocateTempBuffer(
+              currentChunkId, 6 * 2 * PatchCountPerInstance * InstanceCount, 4);
+      encoder->setMeshBuffer(cp_buffer, cp_offset, 20);
+      encoder->setMeshBuffer(pc_buffer, pc_offset, 21);
+      encoder->setMeshBuffer(tess_factor_buffer, tess_factor_offset, 22);
+      encoder->setRenderPipelineState(ctx.tess_mesh_pso);
+
+      encoder->drawMeshThreadgroups(
+          MTL::Size(PatchPerMeshInstance, InstanceCount, 1),
+          MTL::Size(ctx.tess_threads_per_patch, 32 / ctx.tess_threads_per_patch,
+                    1),
+          MTL::Size(ctx.tess_threads_per_patch, 32 / ctx.tess_threads_per_patch,
+                    1));
+
+      encoder->memoryBarrier(MTL::BarrierScopeBuffers, MTL::RenderStageMesh,
+                             MTL::RenderStageVertex);
+
+      encoder->setRenderPipelineState(ctx.tess_raster_pso);
+      encoder->setVertexBuffer(cp_buffer, cp_offset, 20);
+      encoder->setVertexBuffer(pc_buffer, pc_offset, 21);
+      encoder->setVertexBuffer(tess_factor_buffer, tess_factor_offset, 22);
+      encoder->setTessellationFactorBuffer(tess_factor_buffer,
+                                           tess_factor_offset, 0 /* TODO: */);
+      encoder->drawPatches(NumControlPoint, 0,
+                           PatchCountPerInstance * InstanceCount, //
+                           nullptr, 0, 1, 0);
+    });
   }
 
   void DrawIndexedInstancedIndirect(ID3D11Buffer *pBufferForArgs,

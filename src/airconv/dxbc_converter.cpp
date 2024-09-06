@@ -93,6 +93,10 @@ to_shader_scaler_type(microsoft::D3D10_SB_RESOURCE_RETURN_TYPE type) {
   assert(0 && "invalid D3D10_SB_RESOURCE_RETURN_TYPE");
 }
 
+uint32_t next_pow2(uint32_t x) {
+  return x == 1 ? 1 : 1 << (32 - __builtin_clz(x - 1));
+}
+
 auto get_item_in_argbuf_binding_table(uint32_t argbuf_index, uint32_t index) {
   return make_irvalue([=](context ctx) {
     auto argbuf = ctx.function->getArg(argbuf_index);
@@ -464,8 +468,8 @@ llvm::Error convert_dxbc_hull_shader(
       .arg_name = "hull_tess_factor_buffer",
       .raster_order_group = {}
     });
-  uint32_t thread_id_idx =
-    func_signature.DefineInput(air::InputThreadIndexInThreadgroup{});
+  uint32_t thread_id_in_group_idx =
+    func_signature.DefineInput(air::InputThreadPositionInThreadgroup{});
 
   auto [function, function_metadata] =
     func_signature.CreateFunction(name, context, module, 0, false);
@@ -476,44 +480,84 @@ llvm::Error convert_dxbc_hull_shader(
 
   setup_fastmath_flag(module, builder);
 
+  auto thread_position_in_group = function->getArg(thread_id_in_group_idx);
+  auto thread_id_in_patch =
+    builder.CreateExtractElement(thread_position_in_group, (uint32_t)0);
+  auto patch_offset_in_group =
+    builder.CreateExtractElement(thread_position_in_group, 1);
+
   assert(pShaderInternal->input_control_point_count != ~0u);
   auto input_control_point_ptr = builder.CreateConstInBoundsGEP1_32(
     types._int, function->getArg(payload_idx), 4
   );
+  auto input_ptr_int4_type = llvm::ArrayType::get(
+    types._int4, pVertexStage->max_output_register *
+                   pShaderInternal->input_control_point_count
+  );
   resource_map.input.ptr_int4 = builder.CreateBitCast(
     input_control_point_ptr,
-    llvm::ArrayType::get(
-      types._int4, pVertexStage->max_output_register *
+    input_ptr_int4_type->getPointerTo((uint32_t)air::AddressSpace::object_data)
+  );
+  resource_map.input.ptr_int4 = builder.CreateGEP(
+    input_ptr_int4_type, resource_map.input.ptr_int4, {patch_offset_in_group}
+  );
+  auto input_ptr_float4_type = llvm::ArrayType::get(
+    types._float4, pVertexStage->max_output_register *
                      pShaderInternal->input_control_point_count
-    )
-      ->getPointerTo((uint32_t)air::AddressSpace::object_data)
   );
   resource_map.input.ptr_float4 = builder.CreateBitCast(
-    input_control_point_ptr,
-    llvm::ArrayType::get(
-      types._float4, pVertexStage->max_output_register *
-                       pShaderInternal->input_control_point_count
-    )
-      ->getPointerTo((uint32_t)air::AddressSpace::object_data)
+    input_control_point_ptr, input_ptr_float4_type->getPointerTo((uint32_t
+                             )air::AddressSpace::object_data)
+  );
+  resource_map.input.ptr_float4 = builder.CreateGEP(
+    input_ptr_float4_type, resource_map.input.ptr_float4,
+    {patch_offset_in_group}
   );
   resource_map.input_element_count = pVertexStage->max_output_register;
 
-  /* patch id (primitive id) in payload */
-  resource_map.instanced_patch_id = builder.CreateLoad(
+  resource_map.instance_id = builder.CreateLoad(
     types._int, builder.CreateConstInBoundsGEP1_32(
                   types._int, function->getArg(payload_idx), 0
                 )
   );
-  resource_map.patch_id = builder.CreateLoad(
+
+  auto batched_patch_start = builder.CreateLoad(
     types._int, builder.CreateConstInBoundsGEP1_32(
                   types._int, function->getArg(payload_idx), 1
                 )
   );
+
+  auto patch_count = builder.CreateLoad(
+    types._int, builder.CreateConstInBoundsGEP1_32(
+                  types._int, function->getArg(payload_idx), 2
+                )
+  );
+
+  resource_map.patch_id =
+    builder.CreateAdd(batched_patch_start, patch_offset_in_group);
+
+  resource_map.instanced_patch_id = builder.CreateAdd(
+    builder.CreateMul(patch_count, resource_map.instance_id),
+    resource_map.patch_id
+  );
+
   resource_map.control_point_buffer = function->getArg(domain_cp_buffer_idx);
   resource_map.patch_constant_buffer = function->getArg(domain_pc_buffer_idx);
   resource_map.tess_factor_buffer =
     function->getArg(domain_tessfactor_buffer_idx);
-  resource_map.thread_id_in_group_flat_arg = function->getArg(thread_id_idx);
+  resource_map.thread_id_in_patch = builder.CreateSelect(
+    builder.CreateICmp(
+      llvm::CmpInst::ICMP_ULT, resource_map.patch_id, patch_count
+    ),
+    thread_id_in_patch, builder.getInt32(32) // so all phases are effectively skipped
+  );
+
+
+  uint32_t threads_per_patch =
+    next_pow2(pShaderInternal->hull_maximum_threads_per_patch);
+
+  uint32_t patch_per_group =
+    next_pow2(32 / threads_per_patch);
 
   if (shader_info->no_control_point_phase_passthrough) {
     assert(pShaderInternal->output_control_point_count != ~0u);
@@ -522,14 +566,19 @@ llvm::Error convert_dxbc_hull_shader(
       max_output_register * pShaderInternal->output_control_point_count;
     auto type = llvm::ArrayType::get(types._int4, control_point_output_size);
     if (shader_info->output_control_point_read) {
+      auto type_all_patch = llvm::ArrayType::get(types._int4, control_point_output_size * patch_per_group);
       llvm::GlobalVariable *control_point_phase_out = new llvm::GlobalVariable(
-        module, type, false, llvm::GlobalValue::InternalLinkage,
-        llvm::UndefValue::get(type), "hull_control_point_phase_out", nullptr,
+        module, type_all_patch, false, llvm::GlobalValue::InternalLinkage,
+        llvm::UndefValue::get(type_all_patch), "hull_control_point_phase_out", nullptr,
         llvm::GlobalValue::NotThreadLocal,
         (uint32_t)air::AddressSpace::threadgroup
       );
       control_point_phase_out->setAlignment(llvm::Align(4));
-      resource_map.output.ptr_int4 = control_point_phase_out;
+      resource_map.output.ptr_int4 = builder.CreateGEP(
+        type,
+        builder.CreateBitCast(control_point_phase_out, type->getPointerTo(3)),
+        {patch_offset_in_group}
+      );
     } else {
       resource_map.output.ptr_int4 = builder.CreateGEP(
         type,
@@ -561,16 +610,21 @@ llvm::Error convert_dxbc_hull_shader(
 
   if (max_patch_constant_output_register) {
     /* all instances write to the same output (threadgroup memory) */
+    auto type_all_pc =
+      llvm::ArrayType::get(types._int4, max_patch_constant_output_register * patch_per_group);
     auto type =
       llvm::ArrayType::get(types._int4, max_patch_constant_output_register);
     llvm::GlobalVariable *patch_constant_out = new llvm::GlobalVariable(
-      module, type, false, llvm::GlobalValue::InternalLinkage,
-      llvm::UndefValue::get(type), "hull_patch_constant_out", nullptr,
+      module, type_all_pc, false, llvm::GlobalValue::InternalLinkage,
+      llvm::UndefValue::get(type_all_pc), "hull_patch_constant_out", nullptr,
       llvm::GlobalValue::NotThreadLocal,
       (uint32_t)air::AddressSpace::threadgroup
     );
     patch_constant_out->setAlignment(llvm::Align(4));
-    resource_map.patch_constant_output.ptr_int4 = patch_constant_out;
+    resource_map.patch_constant_output.ptr_int4 = builder.CreateGEP(
+      type, builder.CreateBitCast(patch_constant_out, type->getPointerTo(3)),
+      {patch_offset_in_group}
+    );
     resource_map.patch_constant_output.ptr_float4 = builder.CreateBitCast(
       resource_map.patch_constant_output.ptr_int4,
       llvm::ArrayType::get(types._float4, max_patch_constant_output_register)
@@ -607,7 +661,7 @@ llvm::Error convert_dxbc_hull_shader(
   auto real_return = llvm::BasicBlock::Create(context, "real_return", function);
   builder.CreateCondBr(
     builder.CreateICmp(
-      llvm::CmpInst::ICMP_EQ, resource_map.thread_id_in_group_flat_arg,
+      llvm::CmpInst::ICMP_EQ, resource_map.thread_id_in_patch,
       builder.getInt32(0)
     ),
     write_patch_constant, real_return
@@ -1299,16 +1353,15 @@ llvm::Error convert_dxbc_vertex_for_hull_shader(
   air::AirType types(context);
 
   setup_binding_table(shader_info, resource_map, func_signature, module);
-  setup_tgsm(shader_info, resource_map, types, module);
+
+  uint32_t threads_per_patch =
+    next_pow2(pHullStage->hull_maximum_threads_per_patch);
 
   uint32_t payload_idx =
     func_signature.DefineInput(air::InputPayload{.size = 16256});
   uint32_t thread_id_idx =
-    func_signature.DefineInput(air::InputThreadIndexInThreadgroup{});
-  // (patch_count, instance_count, 1)
-  uint32_t grid_size_idx =
-    func_signature.DefineInput(air::InputThreadgroupsPerGrid{});
-  // (patch_id, instance_id, 0)
+    func_signature.DefineInput(air::InputThreadPositionInThreadgroup{});
+  // (batched_patch_id_start, instance_id, 0)
   uint32_t tg_id_idx =
     func_signature.DefineInput(air::InputThreadgroupPositionInGrid{});
   uint32_t mesh_props_idx =
@@ -1354,23 +1407,45 @@ llvm::Error convert_dxbc_vertex_for_hull_shader(
   auto dispatch = llvm::BasicBlock::Create(context, "dispatch", function);
   auto return_ = llvm::BasicBlock::Create(context, "return", function);
 
-  auto thread_id_arg = function->getArg(thread_id_idx);
+  auto thread_position_in_group = function->getArg(thread_id_idx);
+  auto control_point_id_in_patch =
+    builder.CreateExtractElement(thread_position_in_group, (uint32_t)0);
+  auto patch_offset_in_group =
+    builder.CreateExtractElement(thread_position_in_group, 1);
 
-  auto grid_size = function->getArg(grid_size_idx);
-  auto tg_id = function->getArg(tg_id_idx);
+  auto threadgroup_position_in_grid = function->getArg(tg_id_idx);
+  auto batched_patch_start = builder.CreateMul(
+    builder.CreateExtractElement(threadgroup_position_in_grid, (uint32_t)0),
+    builder.getInt32(32 / threads_per_patch)
+  );
+  auto patch_id = builder.CreateAdd(batched_patch_start, patch_offset_in_group);
+  auto instance_id =
+    builder.CreateExtractElement(threadgroup_position_in_grid, (uint32_t)1);
+  auto control_point_index = builder.CreateAdd(
+    builder.CreateMul(
+      patch_id, builder.getInt32(pHullStage->input_control_point_count)
+    ),
+    control_point_id_in_patch
+  );
+  auto control_point_index_in_threadgroup = builder.CreateAdd(
+    builder.CreateMul(
+      patch_offset_in_group,
+      builder.getInt32(pHullStage->input_control_point_count)
+    ),
+    control_point_id_in_patch
+  );
+
   auto draw_arguments = builder.CreateLoad(
     types._dxmt_draw_arguments, function->getArg(draw_argument_idx)
   );
 
+  auto patch_count = builder.CreateUDiv(
+    builder.CreateExtractValue(draw_arguments, 0),
+    builder.getInt32(pHullStage->input_control_point_count)
+  );
+
   if (index_buffer_idx != ~0u) {
     auto start_index = builder.CreateExtractValue(draw_arguments, 1);
-    auto index_offset = builder.CreateAdd(
-      builder.CreateMul(
-        builder.CreateExtractElement(tg_id, (uint32_t)0),
-        builder.getInt32(pHullStage->input_control_point_count)
-      ),
-      thread_id_arg
-    );
     auto index_buffer = function->getArg(index_buffer_idx);
     auto index_buffer_element_type =
       index_buffer->getType()->getNonOpaquePointerElementType();
@@ -1378,16 +1453,15 @@ llvm::Error convert_dxbc_vertex_for_hull_shader(
       index_buffer_element_type,
       builder.CreateGEP(
         index_buffer_element_type, index_buffer,
-        {builder.CreateAdd(start_index, index_offset)}
+        {builder.CreateAdd(start_index, control_point_index)}
       )
     );
     resource_map.vertex_id = builder.CreateZExt(vertex_id, types._int);
-    resource_map.base_vertex_id = builder.CreateExtractValue(draw_arguments, 4);
   } else {
-    resource_map.vertex_id = builder.CreateExtractElement(tg_id, (uint32_t)0);
-    resource_map.base_vertex_id = builder.CreateExtractValue(draw_arguments, 1);
+    resource_map.vertex_id = control_point_index;
   }
-  resource_map.instance_id = builder.CreateExtractElement(tg_id, (uint32_t)1);
+  resource_map.base_vertex_id = builder.CreateExtractValue(draw_arguments, 4);
+  resource_map.instance_id = instance_id;
   resource_map.vertex_id_with_base =
     builder.CreateAdd(resource_map.vertex_id, resource_map.base_vertex_id);
   resource_map.base_instance_id = builder.CreateExtractValue(draw_arguments, 3);
@@ -1411,7 +1485,7 @@ llvm::Error convert_dxbc_vertex_for_hull_shader(
   );
   resource_map.output.ptr_int4 = builder.CreateGEP(
     resource_map.output.ptr_int4->getType()->getNonOpaquePointerElementType(),
-    resource_map.output.ptr_int4, {thread_id_arg}
+    resource_map.output.ptr_int4, {control_point_index_in_threadgroup}
   );
   resource_map.output.ptr_float4 = builder.CreateBitCast(
     payload_ptr, llvm::ArrayType::get(types._float4, max_output_register)
@@ -1419,7 +1493,7 @@ llvm::Error convert_dxbc_vertex_for_hull_shader(
   );
   resource_map.output.ptr_float4 = builder.CreateGEP(
     resource_map.output.ptr_float4->getType()->getNonOpaquePointerElementType(),
-    resource_map.output.ptr_float4, {thread_id_arg}
+    resource_map.output.ptr_float4, {control_point_index_in_threadgroup}
   );
 
   resource_map.output_element_count = max_output_register;
@@ -1436,9 +1510,12 @@ llvm::Error convert_dxbc_vertex_for_hull_shader(
   };
 
   builder.CreateCondBr(
-    builder.CreateICmp(
-      llvm::CmpInst::ICMP_ULT, thread_id_arg,
-      builder.getInt32(pHullStage->input_control_point_count)
+    builder.CreateLogicalAnd(
+      builder.CreateICmp(
+        llvm::CmpInst::ICMP_ULT, control_point_id_in_patch,
+        builder.getInt32(pHullStage->input_control_point_count)
+      ),
+      builder.CreateICmp(llvm::CmpInst::ICMP_ULT, patch_id, patch_count)
     ),
     active, return_
   );
@@ -1461,31 +1538,34 @@ llvm::Error convert_dxbc_vertex_for_hull_shader(
   }
 
   builder.CreateCondBr(
-    builder.CreateICmp(
-      llvm::CmpInst::ICMP_EQ, thread_id_arg, builder.getInt32(0)
+    builder.CreateLogicalAnd(
+      builder.CreateICmp(
+        llvm::CmpInst::ICMP_EQ, control_point_id_in_patch, builder.getInt32(0)
+      ),
+      builder.CreateICmp(
+        llvm::CmpInst::ICMP_EQ, patch_offset_in_group, builder.getInt32(0)
+      )
     ),
     dispatch, return_
   );
   builder.SetInsertPoint(dispatch);
 
   builder.CreateStore(
-    builder.CreateAdd(
-      builder.CreateMul(
-        builder.CreateExtractElement(tg_id, 1),              // instance_id
-        builder.CreateExtractElement(grid_size, (uint32_t)0) // patch_count
-      ),
-      builder.CreateExtractElement(tg_id, (uint32_t)0) // patch_id
-    ),
-    builder.CreateConstInBoundsGEP1_32(
-      types._int, function->getArg(payload_idx), 0
-    )
+    instance_id, builder.CreateConstInBoundsGEP1_32(
+                   types._int, function->getArg(payload_idx), 0
+                 )
   );
 
   builder.CreateStore(
-    builder.CreateExtractElement(tg_id, (uint32_t)0), // patch_id
-    builder.CreateConstInBoundsGEP1_32(
-      types._int, function->getArg(payload_idx), 1
-    )
+    batched_patch_start, builder.CreateConstInBoundsGEP1_32(
+                           types._int, function->getArg(payload_idx), 1
+                         )
+  );
+
+  builder.CreateStore(
+    patch_count, builder.CreateConstInBoundsGEP1_32(
+                   types._int, function->getArg(payload_idx), 2
+                 )
   );
 
   if (auto err =
@@ -1886,6 +1966,10 @@ int SM50Initialize(
         assert(instance_barrier_context.get());
         instance_barrier_context->instance_count =
           Inst.m_HSForkPhaseInstanceCountDecl.InstanceCount;
+        sm50_shader->hull_maximum_threads_per_patch = std::max(
+          sm50_shader->hull_maximum_threads_per_patch,
+          Inst.m_HSForkPhaseInstanceCountDecl.InstanceCount
+        );
         break;
       }
 #pragma endregion
@@ -2208,11 +2292,19 @@ int SM50Initialize(
       case D3D11_SB_OPCODE_DCL_INPUT_CONTROL_POINT_COUNT: {
         sm50_shader->input_control_point_count =
           Inst.m_InputControlPointCountDecl.InputControlPointCount;
+        sm50_shader->hull_maximum_threads_per_patch = std::max(
+          sm50_shader->hull_maximum_threads_per_patch,
+          Inst.m_InputControlPointCountDecl.InputControlPointCount
+        );
         break;
       }
       case D3D11_SB_OPCODE_DCL_OUTPUT_CONTROL_POINT_COUNT: {
         sm50_shader->output_control_point_count =
           Inst.m_OutputControlPointCountDecl.OutputControlPointCount;
+        sm50_shader->hull_maximum_threads_per_patch = std::max(
+          sm50_shader->hull_maximum_threads_per_patch,
+          Inst.m_OutputControlPointCountDecl.OutputControlPointCount
+        );
         break;
       }
       case D3D11_SB_OPCODE_DCL_TESS_DOMAIN: {
@@ -2453,6 +2545,8 @@ int SM50Initialize(
     pRefl->NumOutputElement = sm50_shader->max_output_register;
     pRefl->NumPatchConstantOutputScalar =
       sm50_shader->patch_constant_scalars.size();
+    pRefl->ThreadsPerPatch =
+      next_pow2(sm50_shader->hull_maximum_threads_per_patch);
   }
 
   *ppShader = (SM50Shader *)sm50_shader;

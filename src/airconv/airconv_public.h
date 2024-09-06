@@ -79,6 +79,7 @@ struct MTL_SHADER_REFLECTION {
   uint64_t SRVSlotMaskLo;
   uint32_t NumOutputElement;
   uint32_t NumPatchConstantOutputScalar;
+  uint32_t ThreadsPerPatch;
 };
 
 struct MTL_SHADER_BITCODE {
