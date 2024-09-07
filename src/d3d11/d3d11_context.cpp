@@ -911,7 +911,7 @@ public:
       encoder->setVertexBuffer(tess_factor_buffer, tess_factor_offset, 22);
       encoder->setTessellationFactorBuffer(tess_factor_buffer,
                                            tess_factor_offset, 0);
-      encoder->drawPatches(NumControlPoint, 0,
+      encoder->drawPatches(0, 0,
                            PatchCountPerInstance * InstanceCount, //
                            nullptr, 0, 1, 0);
     });
@@ -983,7 +983,7 @@ public:
       encoder->setVertexBuffer(tess_factor_buffer, tess_factor_offset, 22);
       encoder->setTessellationFactorBuffer(tess_factor_buffer,
                                            tess_factor_offset, 0 /* TODO: */);
-      encoder->drawPatches(NumControlPoint, 0,
+      encoder->drawPatches(0, 0,
                            PatchCountPerInstance * InstanceCount, //
                            nullptr, 0, 1, 0);
     });
