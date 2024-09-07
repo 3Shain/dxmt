@@ -475,7 +475,7 @@ public:
     MTL_FORMAT_DESC metal_format;
 
     if (FAILED(adapter_->QueryFormatDesc(Format, &metal_format))) {
-      return S_OK;
+      return E_INVALIDARG;
     }
 
     UINT outFormatSupport = 0;
@@ -490,11 +490,15 @@ public:
 
     /* UNCHECKED */
     outFormatSupport |=
-        D3D11_FORMAT_SUPPORT_BUFFER | D3D11_FORMAT_SUPPORT_TEXTURE1D |
-        D3D11_FORMAT_SUPPORT_TEXTURE2D | D3D11_FORMAT_SUPPORT_TEXTURE3D |
-        D3D11_FORMAT_SUPPORT_TEXTURECUBE | D3D11_FORMAT_SUPPORT_MIP |
-        D3D11_FORMAT_SUPPORT_MIP_AUTOGEN | // ?
+        D3D11_FORMAT_SUPPORT_TEXTURE1D | D3D11_FORMAT_SUPPORT_TEXTURE2D |
+        D3D11_FORMAT_SUPPORT_TEXTURE3D | D3D11_FORMAT_SUPPORT_TEXTURECUBE |
+        D3D11_FORMAT_SUPPORT_MIP | D3D11_FORMAT_SUPPORT_MIP_AUTOGEN | // ?
         D3D11_FORMAT_SUPPORT_CAST_WITHIN_BIT_LAYOUT;
+
+    if (!metal_format.IsCompressed && !metal_format.Typeless &&
+        !metal_format.DepthStencilFlag) {
+      outFormatSupport |= D3D11_FORMAT_SUPPORT_BUFFER;
+    }
 
     if (metal_format.SupportBackBuffer) {
       outFormatSupport |= D3D11_FORMAT_SUPPORT_DISPLAY;
@@ -534,6 +538,18 @@ public:
     if (any_bit_set(metal_format.Capability & FormatCapability::Write)) {
       outFormatSupport |= D3D11_FORMAT_SUPPORT_TYPED_UNORDERED_ACCESS_VIEW;
     }
+
+    if (Format == DXGI_FORMAT_R32_FLOAT || Format == DXGI_FORMAT_R32_UINT ||
+        Format == DXGI_FORMAT_R32_SINT || Format == DXGI_FORMAT_R32G32_FLOAT ||
+        Format == DXGI_FORMAT_R32G32_UINT ||
+        Format == DXGI_FORMAT_R32G32_SINT ||
+        Format == DXGI_FORMAT_R32G32B32_FLOAT ||
+        Format == DXGI_FORMAT_R32G32B32_UINT ||
+        Format == DXGI_FORMAT_R32G32B32_SINT ||
+        Format == DXGI_FORMAT_R32G32B32A32_FLOAT ||
+        Format == DXGI_FORMAT_R32G32B32A32_UINT ||
+        Format == DXGI_FORMAT_R32G32B32A32_SINT)
+      outFormatSupport |= D3D11_FORMAT_SUPPORT_SO_BUFFER;
 
     if (pFormatSupport) {
       *pFormatSupport = outFormatSupport;
@@ -596,13 +612,40 @@ public:
             D3D11_FORMAT_SUPPORT2_UAV_ATOMIC_COMPARE_STORE_OR_COMPARE_EXCHANGE |
             D3D11_FORMAT_SUPPORT2_UAV_ATOMIC_EXCHANGE |
             D3D11_FORMAT_SUPPORT2_UAV_ATOMIC_SIGNED_MIN_OR_MAX |
-            D3D11_FORMAT_SUPPORT2_UAV_ATOMIC_UNSIGNED_MIN_OR_MAX;
+            D3D11_FORMAT_SUPPORT2_UAV_ATOMIC_UNSIGNED_MIN_OR_MAX |
+            D3D11_FORMAT_SUPPORT2_UAV_TYPED_LOAD |
+            D3D11_FORMAT_SUPPORT2_UAV_TYPED_STORE |
+            D3D11_FORMAT_SUPPORT2_SHAREABLE;
         return S_OK;
       }
 
       MTL_FORMAT_DESC desc;
       if (FAILED(adapter_->QueryFormatDesc(info->InFormat, &desc))) {
+        info->OutFormatSupport2 |=
+            D3D11_FORMAT_SUPPORT2_UAV_ATOMIC_ADD |
+            D3D11_FORMAT_SUPPORT2_UAV_ATOMIC_BITWISE_OPS |
+            D3D11_FORMAT_SUPPORT2_UAV_ATOMIC_COMPARE_STORE_OR_COMPARE_EXCHANGE |
+            D3D11_FORMAT_SUPPORT2_UAV_ATOMIC_EXCHANGE |
+            D3D11_FORMAT_SUPPORT2_UAV_ATOMIC_SIGNED_MIN_OR_MAX |
+            D3D11_FORMAT_SUPPORT2_UAV_ATOMIC_UNSIGNED_MIN_OR_MAX |
+            D3D11_FORMAT_SUPPORT2_UAV_TYPED_LOAD |
+            D3D11_FORMAT_SUPPORT2_UAV_TYPED_STORE |
+            D3D11_FORMAT_SUPPORT2_SHAREABLE;
         return S_OK;
+      }
+
+      if (any_bit_set(desc.Capability & FormatCapability::TextureBufferRead)) {
+        info->OutFormatSupport2 |= D3D11_FORMAT_SUPPORT2_UAV_TYPED_LOAD;
+      }
+
+      if (any_bit_set(desc.Capability & FormatCapability::TextureBufferWrite)) {
+        info->OutFormatSupport2 |= D3D11_FORMAT_SUPPORT2_UAV_TYPED_STORE;
+      }
+
+      if (any_bit_set(desc.Capability &
+                      FormatCapability::TextureBufferReadWrite)) {
+        info->OutFormatSupport2 |= D3D11_FORMAT_SUPPORT2_UAV_TYPED_LOAD |
+                                   D3D11_FORMAT_SUPPORT2_UAV_TYPED_STORE;
       }
 
       if (any_bit_set(desc.Capability & FormatCapability::Atomic)) {
@@ -612,13 +655,16 @@ public:
             D3D11_FORMAT_SUPPORT2_UAV_ATOMIC_COMPARE_STORE_OR_COMPARE_EXCHANGE |
             D3D11_FORMAT_SUPPORT2_UAV_ATOMIC_EXCHANGE |
             D3D11_FORMAT_SUPPORT2_UAV_ATOMIC_SIGNED_MIN_OR_MAX |
-            D3D11_FORMAT_SUPPORT2_UAV_ATOMIC_UNSIGNED_MIN_OR_MAX;
+            D3D11_FORMAT_SUPPORT2_UAV_ATOMIC_UNSIGNED_MIN_OR_MAX |
+            D3D11_FORMAT_SUPPORT2_SHAREABLE;
+      }
 
 #ifndef DXMT_NO_PRIVATE_API
+      if (any_bit_set(desc.Capability & FormatCapability::Blend)) {
         /* UNCHECKED */
         info->OutFormatSupport2 |= D3D11_FORMAT_SUPPORT2_OUTPUT_MERGER_LOGIC_OP;
-#endif
       }
+#endif
 
       if (any_bit_set(desc.Capability & FormatCapability::Sparse)) {
         info->OutFormatSupport2 |= D3D11_FORMAT_SUPPORT2_TILED;
@@ -765,10 +811,10 @@ public:
     if (Flags) {
       IMPLEMENT_ME;
     }
+    *pNumQualityLevels = 0;
     MTL_FORMAT_DESC desc;
     adapter_->QueryFormatDesc(Format, &desc);
     if (desc.PixelFormat == MTL::PixelFormatInvalid) {
-      *pNumQualityLevels = 0;
       return E_INVALIDARG;
     }
 
@@ -783,9 +829,8 @@ public:
     if (GetMTLDevice()->supportsTextureSampleCount(SampleCount)) {
       *pNumQualityLevels = 1; // always 1: in metal there is no concept of
                               // Quality Level (so is it in vulkan iirc)
-      return S_OK;
     }
-    return S_FALSE;
+    return S_OK;
   }
 
   HRESULT STDMETHODCALLTYPE
