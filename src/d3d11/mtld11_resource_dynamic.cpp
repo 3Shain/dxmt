@@ -207,7 +207,9 @@ public:
             *pDesc, device) {
     auto metal = device->GetMTLDevice();
     // sadly it needs to be tracked since it's a legal blit dst
-    auto options = MTL::ResourceOptionCPUCacheModeWriteCombined;
+    auto options = m_parent->IsTraced()
+                       ? MTL::ResourceCPUCacheModeDefaultCache
+                       : MTL::ResourceOptionCPUCacheModeWriteCombined;
     buffer_dynamic = transfer(metal->newBuffer(pDesc->ByteWidth, options));
     if (pInitialData) {
       memcpy(buffer_dynamic->contents(), pInitialData->pSysMem,
@@ -338,7 +340,9 @@ public:
     desc->setSampleCount(1);
     desc->setUsage(MTL::TextureUsageShaderRead);
     desc->setStorageMode(MTL::StorageModeShared);
-    desc->setCpuCacheMode(MTL::CPUCacheModeWriteCombined);
+    desc->setCpuCacheMode(m_parent->IsTraced()
+                              ? MTL::CPUCacheModeDefaultCache
+                              : MTL::CPUCacheModeWriteCombined);
     desc->setPixelFormat(format.PixelFormat);
     auto srv = ref(
         new TBufferSRV(&finalDesc, this, m_parent, std::move(desc),
@@ -522,7 +526,9 @@ public:
     desc->setSampleCount(1);
     desc->setUsage(MTL::TextureUsageShaderRead);
     desc->setStorageMode(MTL::StorageModeShared);
-    desc->setCpuCacheMode(MTL::CPUCacheModeWriteCombined);
+    desc->setCpuCacheMode(m_parent->IsTraced()
+                              ? MTL::CPUCacheModeDefaultCache
+                              : MTL::CPUCacheModeWriteCombined);
     desc->setPixelFormat(format.PixelFormat);
     auto srv = ref(new SRV(&finalDesc, this, m_parent, std::move(desc)));
     weak_srvs.push_back(srv);
@@ -562,7 +568,9 @@ CreateDynamicTexture2D(IMTLD3D11Device *pDevice,
   }
   auto metal = pDevice->GetMTLDevice();
   auto buffer = transfer(metal->newBuffer(
-      bufferLen, MTL::ResourceOptionCPUCacheModeWriteCombined));
+      bufferLen, pDevice->IsTraced()
+                     ? MTL::ResourceCPUCacheModeDefaultCache
+                     : MTL::ResourceOptionCPUCacheModeWriteCombined));
   if (pInitialData) {
     D3D11_ASSERT(pInitialData->SysMemPitch == bytesPerRow);
     memcpy(buffer->contents(), pInitialData->pSysMem, bufferLen);

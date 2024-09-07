@@ -37,6 +37,7 @@ public:
         m_features(container->GetMTLDevice()), sampler_states(this),
         blend_states(this), rasterizer_states(this), depthstencil_states(this) {
     context_ = InitializeImmediateContext(this);
+    is_traced_ = !!::GetModuleHandle("dxgitrace.dll");
   }
 
   ~MTLD3D11Device() {}
@@ -53,6 +54,8 @@ public:
   void AddRefPrivate() override { return m_container->AddRefPrivate(); }
 
   void ReleasePrivate() override { return m_container->ReleasePrivate(); }
+
+  bool IsTraced() override { return is_traced_; }
 
   HRESULT STDMETHODCALLTYPE
   CreateBuffer(const D3D11_BUFFER_DESC *pDesc,
@@ -1016,6 +1019,8 @@ private:
   UINT m_FeatureFlags;
   MTLD3D11Inspection m_features;
   threadpool<threadpool_trait> pool_;
+
+  bool is_traced_;
 
   std::unordered_map<MTL_GRAPHICS_PIPELINE_DESC,
                      Com<IMTLCompiledGraphicsPipeline>>
