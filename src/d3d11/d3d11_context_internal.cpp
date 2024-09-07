@@ -1227,12 +1227,27 @@ public:
       };
       // auto &dsv = state_.OutputMerger.DSV;
       DEPTH_STENCIL_STATE dsv_info;
+      uint32_t uav_only_render_target_width = 0;
+      uint32_t uav_only_render_target_height = 0;
+      bool uav_only = false;
+      uint32_t uav_only_sample_count = 0;
       if (state_.OutputMerger.DSV) {
         dsv_info.Texture = state_.OutputMerger.DSV->GetBinding(currentChunkId);
         dsv_info.PixelFormat = state_.OutputMerger.DSV->GetPixelFormat();
       } else if (effective_render_target == 0) {
-        // FIXME: No-Rasterization Stream-Out Pipeline
-        return false;
+        if (state_.OutputMerger.NumRTVs) {
+          return false;
+        }
+        D3D11_ASSERT(state_.Rasterizer.NumViewports);
+        IMTLD3D11RasterizerState *state =
+            state_.Rasterizer.RasterizerState
+                ? state_.Rasterizer.RasterizerState
+                : default_rasterizer_state;
+        auto &viewport = state_.Rasterizer.viewports[0];
+        uav_only_render_target_width = viewport.Width;
+        uav_only_render_target_height = viewport.Height;
+        uav_only_sample_count = state->UAVOnlySampleCount();
+        uav_only = true;
       }
 
       auto previous_encoder = chk->get_last_encoder();
@@ -1310,7 +1325,9 @@ public:
       auto bump_offset = NextOcclusionQuerySeq() % kOcclusionSampleCount;
 
       chk->emit([rtvs = std::move(rtvs), dsv = std::move(dsv_info), bump_offset,
-                 effective_render_target](CommandChunk::context &ctx) {
+                 effective_render_target, uav_only,
+                 uav_only_render_target_height, uav_only_render_target_width,
+                 uav_only_sample_count](CommandChunk::context &ctx) {
         auto pool = transfer(NS::AutoreleasePool::alloc()->init());
         auto renderPassDescriptor =
             MTL::RenderPassDescriptor::renderPassDescriptor();
@@ -1356,10 +1373,19 @@ public:
           }
         }
         if (effective_render_target == 0) {
-          D3D11_ASSERT(dsv_planar_flags);
-          auto dsv_tex = dsv.Texture.texture(&ctx);
-          renderPassDescriptor->setRenderTargetHeight(dsv_tex->height());
-          renderPassDescriptor->setRenderTargetWidth(dsv_tex->width());
+          if (uav_only) {
+            renderPassDescriptor->setRenderTargetHeight(
+                uav_only_render_target_height);
+            renderPassDescriptor->setRenderTargetWidth(
+                uav_only_render_target_width);
+            renderPassDescriptor->setDefaultRasterSampleCount(
+                uav_only_sample_count);
+          } else {
+            D3D11_ASSERT(dsv_planar_flags);
+            auto dsv_tex = dsv.Texture.texture(&ctx);
+            renderPassDescriptor->setRenderTargetHeight(dsv_tex->height());
+            renderPassDescriptor->setRenderTargetWidth(dsv_tex->width());
+          }
         }
         renderPassDescriptor->setVisibilityResultBuffer(
             ctx.chk->visibility_result_heap);
@@ -1505,9 +1531,6 @@ public:
       ERR("tessellation-geometry pipeline is not supported yet, skip drawcall");
       return false;
     }
-    if (!state_.OutputMerger.NumRTVs && !state_.OutputMerger.DSV) {
-      return false;
-    }
 
     if (!SwitchToRenderEncoder()) {
       return false;
@@ -1598,9 +1621,6 @@ public:
             state_.ShaderStages[(UINT)ShaderType::Geometry].Shader.ptr());
       }
       // ERR("geometry shader is not supported yet, skip drawcall");
-      return false;
-    }
-    if (!state_.OutputMerger.NumRTVs && !state_.OutputMerger.DSV) {
       return false;
     }
 

@@ -420,10 +420,12 @@ public:
 
     // m_desc.ScissorEnable : handled outside
 
-    // m_desc.ForcedSampleCount : not supported?
+    // m_desc.ForcedSampleCount : handled outside
   }
 
   bool IsScissorEnabled() { return m_desc.ScissorEnable; }
+
+  uint32_t UAVOnlySampleCount() { return std::max(1u, m_desc.ForcedSampleCount); }
 
 private:
   const D3D11_RASTERIZER_DESC2 m_desc;
