@@ -197,7 +197,7 @@ public:
           SM50CompiledBitcode *compile_result = nullptr;
           SM50Error *sm50_err = nullptr;
           std::string func_name =
-              "shader_main_" + std::to_string(hs->GetUniqueId());
+              "shader_main_" + std::to_string(ds->GetUniqueId());
           if (auto ret = SM50CompileTessellationPipelineDomain(
                   (SM50Shader *)hs->GetAirconvHandle(),
                   (SM50Shader *)ds->GetAirconvHandle(), nullptr,
