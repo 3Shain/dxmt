@@ -1501,25 +1501,8 @@ public:
 
     Com<IMTLCompiledGraphicsPipeline> pipeline;
     Com<IMTLCompiledShader> vs;
-#ifndef DXMT_SHADER_VERTEX_PULLING
-    if (state_.InputAssembler.InputLayout &&
-        state_.InputAssembler.InputLayout->NeedsFixup()) {
-      MTL_SHADER_INPUT_LAYOUT_FIXUP fixup;
-      state_.InputAssembler.InputLayout->GetShaderFixupInfo(&fixup);
-      pVertexShader->GetCompiledShaderWithInputLayoutFixup(fixup.sign_mask, &vs);
-    } else {
-      pVertexShader->GetCompiledShader(&vs);
-    }
-#else
-    if (state_.InputAssembler.InputLayout) {
-      pVertexShader->GetCompiledVertexShaderWithVertexPulling(
-          state_.InputAssembler.InputLayout.ptr(), &vs);
-    } else {
-      pVertexShader->GetCompiledShader(&vs);
-    }
-#endif
     MTL_GRAPHICS_PIPELINE_DESC pipelineDesc;
-    pipelineDesc.VertexShader = vs.ptr();
+    pipelineDesc.VertexShader = pVertexShader;
     pipelineDesc.PixelShader = nullptr;
     pipelineDesc.InputLayout = state_.InputAssembler.InputLayout.ptr();
     pipelineDesc.NumColorAttachments = 0;
@@ -1527,6 +1510,7 @@ public:
     pipelineDesc.BlendState = nullptr;
     pipelineDesc.DepthStencilFormat = MTL::PixelFormatInvalid;
     pipelineDesc.RasterizationEnabled = false;
+    pipelineDesc.SampleMask = D3D11_DEFAULT_SAMPLE_MASK;
 
     device->CreateGraphicsPipeline(&pipelineDesc, &pipeline);
 
@@ -1593,6 +1577,7 @@ public:
         state_.OutputMerger.DSV ? state_.OutputMerger.DSV->GetPixelFormat()
                                 : MTL::PixelFormatInvalid;
     pipelineDesc.RasterizationEnabled = true;
+    pipelineDesc.SampleMask = state_.OutputMerger.SampleMask;
     if (indexed_draw) {
 
       pipelineDesc.IndexBufferFormat =
@@ -1656,50 +1641,12 @@ public:
     CommandChunk *chk = cmd_queue.CurrentChunk();
 
     Com<IMTLCompiledGraphicsPipeline> pipeline;
-    Com<IMTLCompiledShader> vs, ps;
-#ifndef DXMT_SHADER_VERTEX_PULLING
-    if (state_.InputAssembler.InputLayout &&
-        state_.InputAssembler.InputLayout->NeedsFixup()) {
-
-      MTL_SHADER_INPUT_LAYOUT_FIXUP fixup;
-      state_.InputAssembler.InputLayout->GetShaderFixupInfo(&fixup);
-      state_.ShaderStages[(UINT)ShaderType::Vertex]
-          .Shader //
-          ->GetCompiledShaderWithInputLayoutFixup(fixup.sign_mask, &vs);
-    } else {
-      state_.ShaderStages[(UINT)ShaderType::Vertex]
-          .Shader //
-          ->GetCompiledShader(&vs);
-    }
-#else
-    if (state_.InputAssembler.InputLayout) {
-      state_.ShaderStages[(UINT)ShaderType::Vertex]
-          .Shader //
-          ->GetCompiledVertexShaderWithVertexPulling(
-              state_.InputAssembler.InputLayout.ptr(), &vs);
-    } else {
-      state_.ShaderStages[(UINT)ShaderType::Vertex]
-          .Shader //
-          ->GetCompiledShader(&vs);
-    }
-#endif
-
-    auto current_blend_state = state_.OutputMerger.BlendState
-                                   ? state_.OutputMerger.BlendState
-                                   : default_blend_state;
-
-    if (state_.ShaderStages[(UINT)ShaderType::Pixel].Shader) {
-
-      state_.ShaderStages[(UINT)ShaderType::Pixel]
-          .Shader //
-          ->GetCompiledPixelShader(state_.OutputMerger.SampleMask,
-                                   current_blend_state->IsDualSourceBlending(),
-                                   &ps);
-    }
 
     MTL_GRAPHICS_PIPELINE_DESC pipelineDesc;
-    pipelineDesc.VertexShader = vs.ptr();
-    pipelineDesc.PixelShader = ps.ptr();
+    pipelineDesc.VertexShader = state_.ShaderStages[(UINT)ShaderType::Vertex]
+            .Shader.ptr();
+    pipelineDesc.PixelShader = state_.ShaderStages[(UINT)ShaderType::Pixel]
+            .Shader.ptr();
     pipelineDesc.InputLayout = state_.InputAssembler.InputLayout.ptr();
     pipelineDesc.NumColorAttachments = state_.OutputMerger.NumRTVs;
     for (unsigned i = 0; i < ARRAYSIZE(state_.OutputMerger.RTVs); i++) {
@@ -1711,11 +1658,14 @@ public:
         pipelineDesc.ColorAttachmentFormats[i] = MTL::PixelFormatInvalid;
       }
     }
-    pipelineDesc.BlendState = current_blend_state;
+    pipelineDesc.BlendState = state_.OutputMerger.BlendState
+                                   ? state_.OutputMerger.BlendState
+                                   : default_blend_state;
     pipelineDesc.DepthStencilFormat =
         state_.OutputMerger.DSV ? state_.OutputMerger.DSV->GetPixelFormat()
                                 : MTL::PixelFormatInvalid;
     pipelineDesc.RasterizationEnabled = true;
+    pipelineDesc.SampleMask = state_.OutputMerger.SampleMask;
 
     device->CreateGraphicsPipeline(&pipelineDesc, &pipeline);
 

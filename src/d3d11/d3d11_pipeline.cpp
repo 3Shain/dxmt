@@ -1,9 +1,5 @@
 #include "d3d11_private.h"
-#include "Metal/MTLComputePipeline.hpp"
-#include "Metal/MTLDevice.hpp"
 #include "d3d11_pipeline.hpp"
-#include "Metal/MTLPixelFormat.hpp"
-#include "Metal/MTLRenderPipeline.hpp"
 #include "com/com_object.hpp"
 #include "d3d11_device.hpp"
 #include "d3d11_shader.hpp"
@@ -18,20 +14,36 @@ class MTLCompiledGraphicsPipeline
     : public ComObject<IMTLCompiledGraphicsPipeline> {
 public:
   MTLCompiledGraphicsPipeline(IMTLD3D11Device *pDevice,
-                              IMTLCompiledShader *pVertexShader,
-                              IMTLCompiledShader *pPixelShader,
-                              IMTLD3D11InputLayout *pInputLayout,
-                              IMTLD3D11BlendState *pBlendState, UINT NumRTVs,
-                              MTL::PixelFormat const *RTVFormats,
-                              MTL::PixelFormat DepthStencilFormat,
-                              bool RasterizationEnabled)
-      : ComObject<IMTLCompiledGraphicsPipeline>(), num_rtvs(NumRTVs),
-        depth_stencil_format(DepthStencilFormat), device_(pDevice),
-        pVertexShader(pVertexShader), pPixelShader(pPixelShader),
-        pInputLayout(pInputLayout), pBlendState(pBlendState),
-        RasterizationEnabled(RasterizationEnabled) {
-    for (unsigned i = 0; i < NumRTVs; i++) {
-      rtv_formats[i] = RTVFormats[i];
+                              MTL_GRAPHICS_PIPELINE_DESC *pDesc)
+      : ComObject<IMTLCompiledGraphicsPipeline>(),
+        num_rtvs(pDesc->NumColorAttachments),
+        depth_stencil_format(pDesc->DepthStencilFormat), device_(pDevice),
+        pInputLayout(pDesc->InputLayout), pBlendState(pDesc->BlendState),
+        RasterizationEnabled(pDesc->RasterizationEnabled) {
+    for (unsigned i = 0; i < num_rtvs; i++) {
+      rtv_formats[i] = pDesc->ColorAttachmentFormats[i];
+    }
+#ifndef DXMT_SHADER_VERTEX_PULLING
+    if (pDesc->InputLayout && pDesc->InputLayout->NeedsFixup()) {
+      MTL_SHADER_INPUT_LAYOUT_FIXUP fixup;
+      pDesc->InputLayout->GetShaderFixupInfo(&fixup);
+      pDesc->VertexShader->GetCompiledShaderWithInputLayoutFixup(
+          fixup.sign_mask, &VertexShader);
+    } else {
+      pDesc->VertexShader->GetCompiledShader(&VertexShader);
+    }
+#else
+    if (pDesc->InputLayout) {
+      pDesc->VertexShader->GetCompiledVertexShaderWithVertexPulling(
+          pDesc->InputLayout, &VertexShader);
+    } else {
+      pDesc->VertexShader->GetCompiledShader(&VertexShader);
+    }
+#endif
+    if (pDesc->PixelShader) {
+      pDesc->PixelShader->GetCompiledPixelShader(
+          pDesc->SampleMask, pDesc->BlendState->IsDualSourceBlending(),
+          &PixelShader);
     }
   }
 
@@ -69,10 +81,10 @@ public:
 
     auto pipelineDescriptor =
         transfer(MTL::RenderPipelineDescriptor::alloc()->init());
-    pVertexShader->GetShader(&vs); // may block
+    VertexShader->GetShader(&vs); // may block
     pipelineDescriptor->setVertexFunction(vs.Function);
-    if (pPixelShader) {
-      pPixelShader->GetShader(&ps); // may block
+    if (PixelShader) {
+      PixelShader->GetShader(&ps); // may block
       pipelineDescriptor->setFragmentFunction(ps.Function);
     }
     pipelineDescriptor->setRasterizationEnabled(RasterizationEnabled);
@@ -123,22 +135,19 @@ private:
   IMTLD3D11Device *device_;
   std::atomic_bool ready_;
   THREADGROUP_WORK_STATE work_state_;
-  Com<IMTLCompiledShader> pVertexShader;
-  Com<IMTLCompiledShader> pPixelShader;
+  Com<IMTLCompiledShader> VertexShader;
+  Com<IMTLCompiledShader> PixelShader;
   Com<IMTLD3D11InputLayout> pInputLayout;
-  IMTLD3D11BlendState* pBlendState;
+  IMTLD3D11BlendState *pBlendState;
   Obj<MTL::RenderPipelineState> state_;
   bool RasterizationEnabled;
 };
 
-Com<IMTLCompiledGraphicsPipeline> CreateGraphicsPipeline(
-    IMTLD3D11Device *pDevice, IMTLCompiledShader *pVertexShader,
-    IMTLCompiledShader *pPixelShader, IMTLD3D11InputLayout *pInputLayout,
-    IMTLD3D11BlendState *pBlendState, UINT NumRTVs,
-    MTL::PixelFormat const *RTVFormats, MTL::PixelFormat DepthStencilFormat, bool RasterizationEnabled) {
-  Com<IMTLCompiledGraphicsPipeline> pipeline = new MTLCompiledGraphicsPipeline(
-      pDevice, pVertexShader, pPixelShader, pInputLayout, pBlendState, NumRTVs,
-      RTVFormats, DepthStencilFormat, RasterizationEnabled);
+Com<IMTLCompiledGraphicsPipeline>
+CreateGraphicsPipeline(IMTLD3D11Device *pDevice,
+                       MTL_GRAPHICS_PIPELINE_DESC *pDesc) {
+  Com<IMTLCompiledGraphicsPipeline> pipeline =
+      new MTLCompiledGraphicsPipeline(pDevice, pDesc);
   pipeline->SubmitWork();
   return pipeline;
 }
@@ -214,7 +223,8 @@ private:
 Com<IMTLCompiledComputePipeline>
 CreateComputePipeline(IMTLD3D11Device *pDevice,
                       IMTLCompiledShader *pComputeShader) {
-  Com<IMTLCompiledComputePipeline> pipeline = new MTLCompiledComputePipeline(pDevice, pComputeShader);
+  Com<IMTLCompiledComputePipeline> pipeline =
+      new MTLCompiledComputePipeline(pDevice, pComputeShader);
   pipeline->SubmitWork();
   return pipeline;
 }

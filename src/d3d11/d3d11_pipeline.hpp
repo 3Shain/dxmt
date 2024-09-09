@@ -11,14 +11,15 @@
 #include "util_hash.hpp"
 
 struct MTL_GRAPHICS_PIPELINE_DESC {
-  IMTLCompiledShader *VertexShader;
-  IMTLCompiledShader *PixelShader;
+  IMTLD3D11Shader *VertexShader;
+  IMTLD3D11Shader *PixelShader;
   IMTLD3D11BlendState *BlendState;
   IMTLD3D11InputLayout *InputLayout;
   UINT NumColorAttachments;
   MTL::PixelFormat ColorAttachmentFormats[8];
   MTL::PixelFormat DepthStencilFormat;
-  bool RasterizationEnabled;
+  bool RasterizationEnabled = false;
+  uint32_t SampleMask = 0;
 };
 
 struct MTL_TESSELLATION_PIPELINE_DESC {
@@ -33,6 +34,7 @@ struct MTL_TESSELLATION_PIPELINE_DESC {
   MTL::PixelFormat DepthStencilFormat;
   bool RasterizationEnabled;
   SM50_INDEX_BUFFER_FORAMT IndexBufferFormat;
+  uint32_t SampleMask = 0;
 };
 
 struct MTL_COMPILED_GRAPHICS_PIPELINE {
@@ -91,6 +93,7 @@ template <> struct hash<MTL_GRAPHICS_PIPELINE_DESC> {
     /* IMTLD3D11BlendState pointer is safe to be used as hash input */
     state.add((size_t)v.BlendState);
     state.add((size_t)v.DepthStencilFormat);
+    state.add((size_t)v.SampleMask);
     state.add((size_t)v.NumColorAttachments);
     for (unsigned i = 0; i < std::size(v.ColorAttachmentFormats); i++) {
       state.add(i < v.NumColorAttachments ? v.ColorAttachmentFormats[i]
@@ -113,7 +116,8 @@ template <> struct equal_to<MTL_GRAPHICS_PIPELINE_DESC> {
            (x.PixelShader == y.PixelShader) &&
            (x.InputLayout == y.InputLayout) &&
            (x.DepthStencilFormat == y.DepthStencilFormat) &&
-           (x.RasterizationEnabled == y.RasterizationEnabled);
+           (x.RasterizationEnabled == y.RasterizationEnabled)&&
+           (x.SampleMask == y.SampleMask);
   }
 };
 template <> struct hash<MTL_TESSELLATION_PIPELINE_DESC> {
@@ -128,6 +132,7 @@ template <> struct hash<MTL_TESSELLATION_PIPELINE_DESC> {
     state.add((size_t)v.BlendState);
     state.add((size_t)v.DepthStencilFormat);
     state.add((size_t)v.IndexBufferFormat);
+    state.add((size_t)v.SampleMask);
     state.add((size_t)v.NumColorAttachments);
     for (unsigned i = 0; i < std::size(v.ColorAttachmentFormats); i++) {
       state.add(i < v.NumColorAttachments ? v.ColorAttachmentFormats[i]
@@ -152,7 +157,8 @@ template <> struct equal_to<MTL_TESSELLATION_PIPELINE_DESC> {
            (x.InputLayout == y.InputLayout) &&
            (x.DepthStencilFormat == y.DepthStencilFormat) &&
            (x.RasterizationEnabled == y.RasterizationEnabled) &&
-           (x.IndexBufferFormat == y.IndexBufferFormat);
+           (x.IndexBufferFormat == y.IndexBufferFormat)&&
+           (x.SampleMask == y.SampleMask);
   }
 };
 } // namespace std
@@ -160,11 +166,7 @@ template <> struct equal_to<MTL_TESSELLATION_PIPELINE_DESC> {
 namespace dxmt {
 
 Com<IMTLCompiledGraphicsPipeline> CreateGraphicsPipeline(
-    IMTLD3D11Device *pDevice, IMTLCompiledShader *pVertexShader,
-    IMTLCompiledShader *pPixelShader, IMTLD3D11InputLayout *pInputLayout,
-    IMTLD3D11BlendState *pBlendState, UINT NumRTVs,
-    MTL::PixelFormat const *RTVFormats, MTL::PixelFormat DepthStencilFormat,
-    bool RasterizationEnabled);
+    IMTLD3D11Device *pDevice, MTL_GRAPHICS_PIPELINE_DESC* pDesc);
 
 Com<IMTLCompiledComputePipeline>
 CreateComputePipeline(IMTLD3D11Device *pDevice,

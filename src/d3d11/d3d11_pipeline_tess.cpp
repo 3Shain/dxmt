@@ -237,8 +237,9 @@ public:
           return function_;
         });
     if (pDesc->PixelShader) {
-      // TODO: sample mask
-      pDesc->PixelShader->GetCompiledShader(&PixelShader);
+      pDesc->PixelShader->GetCompiledPixelShader(
+          pDesc->SampleMask, pDesc->BlendState->IsDualSourceBlending(),
+          &PixelShader);
     }
     hull_reflection = *pDesc->HullShader->GetReflection();
     VertexShader->SubmitWork();
