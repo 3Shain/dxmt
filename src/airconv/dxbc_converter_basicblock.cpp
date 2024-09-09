@@ -4212,9 +4212,13 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                      pvalue vec_ret = llvm::PoisonValue::get(ctx.types._float4);
                      vec_ret = ctx.builder.CreateInsertElement(
                        vec_ret,
-                       co_yield call_convert(
-                         mip_count, ctx.types._float, air::Sign::no_sign
-                       ),
+                       resinfo.modifier == InstResourceInfo::M::uint
+                         ? ctx.builder.CreateBitCast(
+                             mip_count, ctx.types._float
+                           )
+                         : co_yield call_convert(
+                             mip_count, ctx.types._float, air::Sign::no_sign
+                           ),
                        3
                      );
                      switch (resinfo.modifier) {
