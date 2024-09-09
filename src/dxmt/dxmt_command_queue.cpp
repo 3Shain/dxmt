@@ -201,6 +201,7 @@ uint32_t CommandQueue::WaitForFinishThread() {
     chunk_ongoing.notify_one();
 
     staging_allocator.free_blocks(internal_seq);
+    copy_temp_allocator.free_blocks(internal_seq);
 
     internal_seq++;
   }

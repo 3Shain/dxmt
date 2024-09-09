@@ -1,3 +1,5 @@
+dxgi_res = wrc_generator.process('version.rc')
+
 dxgi_src = [
   'dxgi_adapter.cpp',
   'dxgi_factory.cpp',
@@ -9,7 +11,7 @@ dxgi_src = [
 dxgi_ld_args      = []
 dxgi_link_depends = []
 
-dxgi_dll = shared_library('dxgi', dxgi_src,
+dxgi_dll = shared_library('dxgi', dxgi_src, dxgi_res,
   name_prefix         : '',
   dependencies        : [ dxmt_dep, util_dep, winemetal_dep ],
   include_directories : [ dxmt_include_path ],

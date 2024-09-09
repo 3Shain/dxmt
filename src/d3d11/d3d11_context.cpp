@@ -28,25 +28,26 @@ public:
   };
 };
 
-auto to_metal_topology(D3D11_PRIMITIVE_TOPOLOGY topo) {
+std::pair<MTL::PrimitiveType, uint32_t>
+to_metal_topology(D3D11_PRIMITIVE_TOPOLOGY topo) {
 
   switch (topo) {
   case D3D_PRIMITIVE_TOPOLOGY_POINTLIST:
-    return MTL::PrimitiveTypePoint;
+    return {MTL::PrimitiveTypePoint, 0};
   case D3D_PRIMITIVE_TOPOLOGY_LINELIST:
-    return MTL::PrimitiveTypeLine;
+    return {MTL::PrimitiveTypeLine, 0};
   case D3D_PRIMITIVE_TOPOLOGY_LINESTRIP:
-    return MTL::PrimitiveTypeLineStrip;
+    return {MTL::PrimitiveTypeLineStrip, 0};
   case D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST:
-    return MTL::PrimitiveTypeTriangle;
+    return {MTL::PrimitiveTypeTriangle, 0};
   case D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP:
-    return MTL::PrimitiveTypeTriangleStrip;
+    return {MTL::PrimitiveTypeTriangleStrip, 0};
   case D3D_PRIMITIVE_TOPOLOGY_LINELIST_ADJ:
   case D3D_PRIMITIVE_TOPOLOGY_LINESTRIP_ADJ:
   case D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST_ADJ:
   case D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP_ADJ:
     // FIXME
-    return MTL::PrimitiveTypePoint;
+    return {MTL::PrimitiveTypePoint, 0};
   case D3D_PRIMITIVE_TOPOLOGY_1_CONTROL_POINT_PATCHLIST:
   case D3D_PRIMITIVE_TOPOLOGY_2_CONTROL_POINT_PATCHLIST:
   case D3D_PRIMITIVE_TOPOLOGY_3_CONTROL_POINT_PATCHLIST:
@@ -80,11 +81,19 @@ auto to_metal_topology(D3D11_PRIMITIVE_TOPOLOGY topo) {
   case D3D_PRIMITIVE_TOPOLOGY_31_CONTROL_POINT_PATCHLIST:
   case D3D_PRIMITIVE_TOPOLOGY_32_CONTROL_POINT_PATCHLIST:
     // FIXME
-    return MTL::PrimitiveTypePoint;
+    return {MTL::PrimitiveTypePoint, topo - 32};
   case D3D_PRIMITIVE_TOPOLOGY_UNDEFINED:
     throw MTLD3DError("Invalid topology");
   }
 }
+
+struct DXMT_DRAW_ARGUMENTS {
+  uint32_t IndexCount;
+  uint32_t StartIndex;
+  uint32_t InstanceCount;
+  uint32_t StartInstance;
+  uint32_t BaseVertex;
+};
 
 class MTLD3D11DeviceContext : public MTLD3D11DeviceContextBase {
 public:
@@ -180,7 +189,8 @@ public:
     case D3D11_QUERY_EVENT: {
       BOOL null_data;
       BOOL *data_ptr = pData ? (BOOL *)pData : &null_data;
-      return ((IMTLD3DEventQuery *)pAsync)->GetData(data_ptr, cmd_queue.CoherentSeqId());
+      return ((IMTLD3DEventQuery *)pAsync)
+          ->GetData(data_ptr, cmd_queue.CoherentSeqId());
     }
     case D3D11_QUERY_OCCLUSION: {
       uint64_t null_data;
@@ -739,10 +749,14 @@ public:
 #pragma region DrawCall
 
   void Draw(UINT VertexCount, UINT StartVertexLocation) override {
-    if (!ctx.PreDraw())
+    if (!ctx.PreDraw(false))
       return;
-    MTL::PrimitiveType Primitive =
+    auto [Primitive, ControlPointCount] =
         to_metal_topology(state_.InputAssembler.Topology);
+    if (ControlPointCount) {
+      return TessellationDraw(ControlPointCount, VertexCount, 1,
+                              StartVertexLocation, 0);
+    }
     // TODO: skip invalid topology
     ctx.EmitRenderCommand([Primitive, StartVertexLocation,
                            VertexCount](MTL::RenderCommandEncoder *encoder) {
@@ -752,10 +766,15 @@ public:
 
   void DrawIndexed(UINT IndexCount, UINT StartIndexLocation,
                    INT BaseVertexLocation) override {
-    if (!ctx.PreDraw())
+    if (!ctx.PreDraw(true))
       return;
-    MTL::PrimitiveType Primitive =
+    auto [Primitive, ControlPointCount] =
         to_metal_topology(state_.InputAssembler.Topology);
+    if (ControlPointCount) {
+      return TessellationDrawIndexed(ControlPointCount, IndexCount,
+                                     StartIndexLocation, BaseVertexLocation, 1,
+                                     0);
+    };
     auto IndexType =
         state_.InputAssembler.IndexBufferFormat == DXGI_FORMAT_R32_UINT
             ? MTL::IndexTypeUInt32
@@ -779,10 +798,15 @@ public:
   void DrawInstanced(UINT VertexCountPerInstance, UINT InstanceCount,
                      UINT StartVertexLocation,
                      UINT StartInstanceLocation) override {
-    if (!ctx.PreDraw())
+    if (!ctx.PreDraw(false))
       return;
-    MTL::PrimitiveType Primitive =
+    auto [Primitive, ControlPointCount] =
         to_metal_topology(state_.InputAssembler.Topology);
+    if (ControlPointCount) {
+      return TessellationDraw(ControlPointCount, VertexCountPerInstance,
+                              InstanceCount, StartVertexLocation,
+                              StartInstanceLocation);
+    }
     // TODO: skip invalid topology
     ctx.EmitRenderCommand(
         [Primitive, StartVertexLocation, VertexCountPerInstance, InstanceCount,
@@ -796,10 +820,16 @@ public:
   void DrawIndexedInstanced(UINT IndexCountPerInstance, UINT InstanceCount,
                             UINT StartIndexLocation, INT BaseVertexLocation,
                             UINT StartInstanceLocation) override {
-    if (!ctx.PreDraw())
+    if (!ctx.PreDraw(true))
       return;
-    MTL::PrimitiveType Primitive =
+    auto [Primitive, ControlPointCount] =
         to_metal_topology(state_.InputAssembler.Topology);
+    if (ControlPointCount) {
+      return TessellationDrawIndexed(ControlPointCount, IndexCountPerInstance,
+                                     StartIndexLocation, BaseVertexLocation,
+                                     InstanceCount, StartInstanceLocation);
+      return;
+    }
     // TODO: skip invalid topology
     auto IndexType =
         state_.InputAssembler.IndexBufferFormat == DXGI_FORMAT_R32_UINT
@@ -823,14 +853,153 @@ public:
         });
   }
 
+  void TessellationDraw(UINT NumControlPoint, UINT VertexCountPerInstance,
+                        UINT InstanceCount, UINT StartVertexLocation,
+                        UINT StartInstanceLocation) {
+    assert(NumControlPoint);
+    // allocate draw arguments
+    CommandChunk *chk = cmd_queue.CurrentChunk();
+    auto currentChunkId = cmd_queue.CurrentSeqId();
+    auto [heap, offset] = chk->allocate_gpu_heap(4 * 5, 4);
+    auto PatchCountPerInstance = VertexCountPerInstance / NumControlPoint;
+    DXMT_DRAW_ARGUMENTS *draw_arugment =
+        (DXMT_DRAW_ARGUMENTS *)(((char *)heap->contents()) + offset);
+    draw_arugment->BaseVertex = StartVertexLocation;
+    draw_arugment->IndexCount = VertexCountPerInstance;
+    draw_arugment->StartIndex = 0;
+    draw_arugment->InstanceCount = InstanceCount;
+    draw_arugment->StartInstance = StartInstanceLocation;
+    ctx.EmitRenderCommandChk([=](CommandChunk::context &ctx) {
+      D3D11_ASSERT(ctx.current_index_buffer_ref);
+      auto &encoder = ctx.render_encoder;
+      encoder->setObjectBuffer(heap, offset, 21);
+      assert(ctx.tess_num_output_control_point_element);
+      auto PatchPerGroup = 32 / ctx.tess_threads_per_patch;
+      auto PatchPerMeshInstance =
+          (PatchCountPerInstance - 1) / PatchPerGroup + 1;
+      auto [_0, cp_buffer, cp_offset] = ctx.queue->AllocateTempBuffer(
+          currentChunkId,
+          ctx.tess_num_output_control_point_element * 16 *
+              VertexCountPerInstance * InstanceCount,
+          16);
+      auto [_1, pc_buffer, pc_offset] = ctx.queue->AllocateTempBuffer(
+          currentChunkId,
+          ctx.tess_num_output_patch_constant_scalar * 4 *
+              PatchCountPerInstance * InstanceCount,
+          4);
+      auto [_2, tess_factor_buffer, tess_factor_offset] =
+          ctx.queue->AllocateTempBuffer(
+              currentChunkId, 6 * 2 * PatchCountPerInstance * InstanceCount, 4);
+      encoder->setMeshBuffer(cp_buffer, cp_offset, 20);
+      encoder->setMeshBuffer(pc_buffer, pc_offset, 21);
+      encoder->setMeshBuffer(tess_factor_buffer, tess_factor_offset, 22);
+      encoder->setRenderPipelineState(ctx.tess_mesh_pso);
+
+      encoder->drawMeshThreadgroups(
+          MTL::Size(PatchPerMeshInstance, InstanceCount, 1),
+          MTL::Size(ctx.tess_threads_per_patch, 32 / ctx.tess_threads_per_patch,
+                    1),
+          MTL::Size(ctx.tess_threads_per_patch, 32 / ctx.tess_threads_per_patch,
+                    1));
+
+      encoder->memoryBarrier(MTL::BarrierScopeBuffers, MTL::RenderStageMesh,
+                             MTL::RenderStageVertex);
+
+      encoder->setRenderPipelineState(ctx.tess_raster_pso);
+      encoder->setVertexBuffer(cp_buffer, cp_offset, 20);
+      encoder->setVertexBuffer(pc_buffer, pc_offset, 21);
+      encoder->setVertexBuffer(tess_factor_buffer, tess_factor_offset, 22);
+      encoder->setTessellationFactorBuffer(tess_factor_buffer,
+                                           tess_factor_offset, 0);
+      encoder->drawPatches(0, 0,
+                           PatchCountPerInstance * InstanceCount, //
+                           nullptr, 0, 1, 0);
+    });
+  }
+
+  void TessellationDrawIndexed(UINT NumControlPoint, UINT IndexCountPerInstance,
+                               UINT StartIndexLocation, INT BaseVertexLocation,
+                               UINT InstanceCount, UINT BaseInstance) {
+    assert(NumControlPoint);
+    auto IndexBufferOffset =
+        state_.InputAssembler.IndexBufferOffset +
+        StartIndexLocation *
+            (state_.InputAssembler.IndexBufferFormat == DXGI_FORMAT_R32_UINT
+                 ? 4
+                 : 2);
+    // allocate draw arguments
+    CommandChunk *chk = cmd_queue.CurrentChunk();
+    auto currentChunkId = cmd_queue.CurrentSeqId();
+    auto [heap, offset] = chk->allocate_gpu_heap(4 * 5, 4);
+    auto PatchCountPerInstance = IndexCountPerInstance / NumControlPoint;
+    DXMT_DRAW_ARGUMENTS *draw_arugment =
+        (DXMT_DRAW_ARGUMENTS *)(((char *)heap->contents()) + offset);
+    draw_arugment->BaseVertex = BaseVertexLocation;
+    draw_arugment->IndexCount = IndexCountPerInstance;
+    draw_arugment->StartIndex = 0; // already provided offset
+    draw_arugment->InstanceCount = InstanceCount;
+    draw_arugment->StartInstance = BaseInstance;
+    ctx.EmitRenderCommandChk([=](CommandChunk::context &ctx) {
+      D3D11_ASSERT(ctx.current_index_buffer_ref);
+      auto &encoder = ctx.render_encoder;
+      encoder->setObjectBuffer(ctx.current_index_buffer_ref, IndexBufferOffset,
+                               20);
+      encoder->setObjectBuffer(heap, offset, 21);
+      assert(ctx.tess_num_output_control_point_element);
+      auto PatchPerGroup = 32 / ctx.tess_threads_per_patch;
+      auto PatchPerMeshInstance =
+          (PatchCountPerInstance - 1) / PatchPerGroup + 1;
+      auto [_0, cp_buffer, cp_offset] = ctx.queue->AllocateTempBuffer(
+          currentChunkId,
+          ctx.tess_num_output_control_point_element * 16 *
+              IndexCountPerInstance * InstanceCount,
+          16);
+      auto [_1, pc_buffer, pc_offset] = ctx.queue->AllocateTempBuffer(
+          currentChunkId,
+          ctx.tess_num_output_patch_constant_scalar * 4 *
+              PatchCountPerInstance * InstanceCount,
+          4);
+      auto [_2, tess_factor_buffer, tess_factor_offset] =
+          ctx.queue->AllocateTempBuffer(
+              currentChunkId, 6 * 2 * PatchCountPerInstance * InstanceCount, 4);
+      encoder->setMeshBuffer(cp_buffer, cp_offset, 20);
+      encoder->setMeshBuffer(pc_buffer, pc_offset, 21);
+      encoder->setMeshBuffer(tess_factor_buffer, tess_factor_offset, 22);
+      encoder->setRenderPipelineState(ctx.tess_mesh_pso);
+
+      encoder->drawMeshThreadgroups(
+          MTL::Size(PatchPerMeshInstance, InstanceCount, 1),
+          MTL::Size(ctx.tess_threads_per_patch, 32 / ctx.tess_threads_per_patch,
+                    1),
+          MTL::Size(ctx.tess_threads_per_patch, 32 / ctx.tess_threads_per_patch,
+                    1));
+
+      encoder->memoryBarrier(MTL::BarrierScopeBuffers, MTL::RenderStageMesh,
+                             MTL::RenderStageVertex);
+
+      encoder->setRenderPipelineState(ctx.tess_raster_pso);
+      encoder->setVertexBuffer(cp_buffer, cp_offset, 20);
+      encoder->setVertexBuffer(pc_buffer, pc_offset, 21);
+      encoder->setVertexBuffer(tess_factor_buffer, tess_factor_offset, 22);
+      encoder->setTessellationFactorBuffer(tess_factor_buffer,
+                                           tess_factor_offset, 0 /* TODO: */);
+      encoder->drawPatches(0, 0,
+                           PatchCountPerInstance * InstanceCount, //
+                           nullptr, 0, 1, 0);
+    });
+  }
+
   void DrawIndexedInstancedIndirect(ID3D11Buffer *pBufferForArgs,
                                     UINT AlignedByteOffsetForArgs) override {
-    if (!ctx.PreDraw())
+    if (!ctx.PreDraw(true))
       return;
     auto currentChunkId = cmd_queue.CurrentSeqId();
-    MTL::PrimitiveType Primitive =
+    auto [Primitive, ControlPointCount] =
         to_metal_topology(state_.InputAssembler.Topology);
     // TODO: skip invalid topology
+    if (ControlPointCount) {
+      return;
+    }
     auto IndexType =
         state_.InputAssembler.IndexBufferFormat == DXGI_FORMAT_R32_UINT
             ? MTL::IndexTypeUInt32

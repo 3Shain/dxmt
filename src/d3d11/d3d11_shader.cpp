@@ -85,6 +85,27 @@ public:
 #endif
   }
 
+  bool dumped = false;
+
+  void Dump() {
+    if(dumped) {
+      return;
+    }
+#ifdef DXMT_DEBUG
+    std::fstream dump_out;
+    dump_out.open("shader_dump_" + std::to_string(id) + ".cso",
+                  std::ios::out | std::ios::binary);
+    if (dump_out) {
+      dump_out.write((char *)dump, dump_len);
+    }
+    dump_out.close();
+    ERR("dumped to ./shader_dump_" + std::to_string(id) + ".cso");
+#else
+    WARN("shader dump disabled");
+#endif
+    dumped = true;
+  }
+
   HRESULT QueryInterface(REFIID riid, void **ppvObject) {
     if (ppvObject == nullptr)
       return E_POINTER;
@@ -112,6 +133,10 @@ public:
 
   void GetCompiledShader(IMTLCompiledShader **pShader) final;
 
+  uint64_t GetUniqueId() final { return id; }
+
+  void *GetAirconvHandle() final { return sm50; }
+
   void
   GetCompiledShaderWithInputLayoutFixup(uint64_t sign_mask,
                                         IMTLCompiledShader **pShader) final;
@@ -123,9 +148,7 @@ public:
   GetCompiledPixelShaderWithSampleMask(uint32_t sample_mask,
                                        IMTLCompiledShader **ppShader) final;
 
-  void GetReflection(MTL_SHADER_REFLECTION **pRefl) final {
-    *pRefl = &reflection;
-  }
+  const MTL_SHADER_REFLECTION *GetReflection() final { return &reflection; }
 
   SM50Shader *sm50;
   MTL_SHADER_REFLECTION reflection;
@@ -177,7 +200,7 @@ public:
 
   void GetShader(MTL_COMPILED_SHADER *pShaderData) final {
     ready_.wait(false, std::memory_order_acquire);
-    *pShaderData = {function_.ptr(), &hash_, &shader_->reflection};
+    *pShaderData = {function_.ptr(), &hash_};
   }
 
   void Dump() {
@@ -194,8 +217,6 @@ public:
     WARN("shader dump disabled");
 #endif
   }
-
-  uint64_t GetId() { return variant_id; }
 
   void RunThreadpoolWork() {
     D3D11_ASSERT(!ready_ && "?wtf"); // TODO: should use a lock?
@@ -538,6 +559,27 @@ public:
 #endif
   }
 
+  bool dumped = false;
+
+  void Dump() {
+    if(dumped) {
+      return;
+    }
+#ifdef DXMT_DEBUG
+    std::fstream dump_out;
+    dump_out.open("shader_dump_" + std::to_string(id) + ".cso",
+                  std::ios::out | std::ios::binary);
+    if (dump_out) {
+      dump_out.write((char *)dump, dump_len);
+    }
+    dump_out.close();
+    ERR("dumped to ./shader_dump_" + std::to_string(id) + ".cso");
+#else
+    WARN("shader dump disabled");
+#endif
+  dumped = true;
+  }
+
   HRESULT QueryInterface(REFIID riid, void **ppvObject) {
     if (ppvObject == nullptr)
       return E_POINTER;
@@ -563,6 +605,10 @@ public:
     return E_NOINTERFACE;
   }
 
+  uint64_t GetUniqueId() final { return id; }
+
+  void *GetAirconvHandle() final { return nullptr; }
+
   void GetCompiledShader(IMTLCompiledShader **ppShader) final {
     // D3D11_ASSERT(0 && "should not call this function");
     *ppShader = nullptr;
@@ -583,9 +629,9 @@ public:
     D3D11_ASSERT(0 && "should not call this function");
   };
 
-  void GetReflection(MTL_SHADER_REFLECTION **pRefl) final {
+  const MTL_SHADER_REFLECTION *GetReflection() final {
     D3D11_ASSERT(0 && "should not call this function");
-    *pRefl = &reflection;
+    return nullptr;
   }
 
   MTL_SHADER_REFLECTION reflection{};
@@ -618,20 +664,17 @@ HRESULT CreatePixelShader(IMTLD3D11Device *pDevice, const void *pShaderBytecode,
                                                 BytecodeLength, ppShader);
 }
 
-HRESULT CreateDummyHullShader(IMTLD3D11Device *pDevice,
-                              const void *pShaderBytecode,
-                              SIZE_T BytecodeLength,
-                              ID3D11HullShader **ppShader) {
-  return CreateDummyShaderInternal<tag_hull_shader>(pDevice, pShaderBytecode,
-                                                    BytecodeLength, ppShader);
+HRESULT CreateHullShader(IMTLD3D11Device *pDevice, const void *pShaderBytecode,
+                         SIZE_T BytecodeLength, ID3D11HullShader **ppShader) {
+  return CreateShaderInternal<tag_hull_shader>(pDevice, pShaderBytecode,
+                                               BytecodeLength, ppShader);
 }
 
-HRESULT CreateDummyDomainShader(IMTLD3D11Device *pDevice,
-                                const void *pShaderBytecode,
-                                SIZE_T BytecodeLength,
-                                ID3D11DomainShader **ppShader) {
-  return CreateDummyShaderInternal<tag_domain_shader>(pDevice, pShaderBytecode,
-                                                      BytecodeLength, ppShader);
+HRESULT CreateDomainShader(IMTLD3D11Device *pDevice,
+                           const void *pShaderBytecode, SIZE_T BytecodeLength,
+                           ID3D11DomainShader **ppShader) {
+  return CreateShaderInternal<tag_domain_shader>(pDevice, pShaderBytecode,
+                                                 BytecodeLength, ppShader);
 }
 
 HRESULT CreateDummyGeometryShader(IMTLD3D11Device *pDevice,

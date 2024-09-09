@@ -64,6 +64,11 @@ public:
     return (bound.qword(0) & mask) == mask;
   }
 
+  constexpr uint32_t max_binding_64() noexcept {
+    auto qword = dirty.qword(0);
+    return qword == 0 ? 0: 64 - __builtin_clzll(qword);
+  }
+
   inline void clear_dirty() { dirty.clearAll(); }
 
   inline void clear_dirty(size_t slot) { dirty.set(slot, false); }

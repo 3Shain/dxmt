@@ -17,18 +17,27 @@ since it is for internal use only
 
 namespace dxmt {
 
+template <bool Tessellation>
 inline MTL_BINDABLE_RESIDENCY_MASK GetResidencyMask(ShaderType type, bool read,
                                                     bool write) {
   switch (type) {
   case ShaderType::Vertex:
-    return (read ? MTL_RESIDENCY_VERTEX_READ : MTL_RESIDENCY_NULL) |
-           (write ? MTL_RESIDENCY_VERTEX_WRITE : MTL_RESIDENCY_NULL);
+    if constexpr (Tessellation)
+      return (read ? MTL_RESIDENCY_OBJECT_READ : MTL_RESIDENCY_NULL) |
+             (write ? MTL_RESIDENCY_OBJECT_WRITE : MTL_RESIDENCY_NULL);
+    else
+      return (read ? MTL_RESIDENCY_VERTEX_READ : MTL_RESIDENCY_NULL) |
+             (write ? MTL_RESIDENCY_VERTEX_WRITE : MTL_RESIDENCY_NULL);
   case ShaderType::Pixel:
     return (read ? MTL_RESIDENCY_FRAGMENT_READ : MTL_RESIDENCY_NULL) |
            (write ? MTL_RESIDENCY_FRAGMENT_WRITE : MTL_RESIDENCY_NULL);
-  case ShaderType::Geometry:
   case ShaderType::Hull:
+    return (read ? MTL_RESIDENCY_MESH_READ : MTL_RESIDENCY_NULL) |
+           (write ? MTL_RESIDENCY_MESH_WRITE : MTL_RESIDENCY_NULL);
   case ShaderType::Domain:
+    return (read ? MTL_RESIDENCY_VERTEX_READ : MTL_RESIDENCY_NULL) |
+           (write ? MTL_RESIDENCY_VERTEX_WRITE : MTL_RESIDENCY_NULL);
+  case ShaderType::Geometry:
     D3D11_ASSERT(0 && "TODO");
     break;
   case ShaderType::Compute:
@@ -50,6 +59,13 @@ GetStagesFromResidencyMask(MTL_BINDABLE_RESIDENCY_MASK mask) {
               : 0) |
          ((mask & (MTL_RESIDENCY_VERTEX_READ | MTL_RESIDENCY_VERTEX_WRITE))
               ? MTL::RenderStageVertex
+              : 0) |
+         ((mask & (MTL_RESIDENCY_OBJECT_READ | MTL_RESIDENCY_OBJECT_WRITE))
+              ? MTL::RenderStageObject
+              : 0)
+              |
+         ((mask & (MTL_RESIDENCY_MESH_READ | MTL_RESIDENCY_MESH_WRITE))
+              ? MTL::RenderStageMesh
               : 0);
 }
 
@@ -83,8 +99,8 @@ public:
     if (pShader) {
       if (auto expected = com_cast<IMTLD3D11Shader>(pShader)) {
         ShaderStage.Shader = std::move(expected);
-        Com<IMTLCompiledShader> _;
-        ShaderStage.Shader->GetCompiledShader(&_);
+        // Com<IMTLCompiledShader> _;
+        // ShaderStage.Shader->GetCompiledShader(&_);
         ShaderStage.ConstantBuffers.set_dirty();
         ShaderStage.SRVs.set_dirty();
         ShaderStage.Samplers.set_dirty();
@@ -886,7 +902,8 @@ public:
     case CommandBufferState::Idle:
       break;
     case CommandBufferState::RenderEncoderActive:
-    case CommandBufferState::RenderPipelineReady: {
+    case CommandBufferState::RenderPipelineReady:
+    case CommandBufferState::TessellationRenderPipelineReady: {
       chk->emit([](CommandChunk::context &ctx) {
         ctx.render_encoder->endEncoding();
         ctx.render_encoder = nullptr;
@@ -929,7 +946,8 @@ public:
   -
   */
   void InvalidateRenderPipeline() {
-    if (cmdbuf_state != CommandBufferState::RenderPipelineReady)
+    if (cmdbuf_state != CommandBufferState::RenderPipelineReady &&
+        cmdbuf_state != CommandBufferState::TessellationRenderPipelineReady)
       return;
     cmdbuf_state = CommandBufferState::RenderEncoderActive;
   }
@@ -1144,6 +1162,8 @@ public:
   bool SwitchToRenderEncoder() {
     if (cmdbuf_state == CommandBufferState::RenderPipelineReady)
       return true;
+    if (cmdbuf_state == CommandBufferState::TessellationRenderPipelineReady)
+      return true;
     if (cmdbuf_state == CommandBufferState::RenderEncoderActive)
       return true;
     InvalidateCurrentPass();
@@ -1207,12 +1227,27 @@ public:
       };
       // auto &dsv = state_.OutputMerger.DSV;
       DEPTH_STENCIL_STATE dsv_info;
+      uint32_t uav_only_render_target_width = 0;
+      uint32_t uav_only_render_target_height = 0;
+      bool uav_only = false;
+      uint32_t uav_only_sample_count = 0;
       if (state_.OutputMerger.DSV) {
         dsv_info.Texture = state_.OutputMerger.DSV->GetBinding(currentChunkId);
         dsv_info.PixelFormat = state_.OutputMerger.DSV->GetPixelFormat();
       } else if (effective_render_target == 0) {
-        // FIXME: No-Rasterization Stream-Out Pipeline
-        return false;
+        if (state_.OutputMerger.NumRTVs) {
+          return false;
+        }
+        D3D11_ASSERT(state_.Rasterizer.NumViewports);
+        IMTLD3D11RasterizerState *state =
+            state_.Rasterizer.RasterizerState
+                ? state_.Rasterizer.RasterizerState
+                : default_rasterizer_state;
+        auto &viewport = state_.Rasterizer.viewports[0];
+        uav_only_render_target_width = viewport.Width;
+        uav_only_render_target_height = viewport.Height;
+        uav_only_sample_count = state->UAVOnlySampleCount();
+        uav_only = true;
       }
 
       auto previous_encoder = chk->get_last_encoder();
@@ -1290,7 +1325,9 @@ public:
       auto bump_offset = NextOcclusionQuerySeq() % kOcclusionSampleCount;
 
       chk->emit([rtvs = std::move(rtvs), dsv = std::move(dsv_info), bump_offset,
-                 effective_render_target](CommandChunk::context &ctx) {
+                 effective_render_target, uav_only,
+                 uav_only_render_target_height, uav_only_render_target_width,
+                 uav_only_sample_count](CommandChunk::context &ctx) {
         auto pool = transfer(NS::AutoreleasePool::alloc()->init());
         auto renderPassDescriptor =
             MTL::RenderPassDescriptor::renderPassDescriptor();
@@ -1336,10 +1373,19 @@ public:
           }
         }
         if (effective_render_target == 0) {
-          D3D11_ASSERT(dsv_planar_flags);
-          auto dsv_tex = dsv.Texture.texture(&ctx);
-          renderPassDescriptor->setRenderTargetHeight(dsv_tex->height());
-          renderPassDescriptor->setRenderTargetWidth(dsv_tex->width());
+          if (uav_only) {
+            renderPassDescriptor->setRenderTargetHeight(
+                uav_only_render_target_height);
+            renderPassDescriptor->setRenderTargetWidth(
+                uav_only_render_target_width);
+            renderPassDescriptor->setDefaultRasterSampleCount(
+                uav_only_sample_count);
+          } else {
+            D3D11_ASSERT(dsv_planar_flags);
+            auto dsv_tex = dsv.Texture.texture(&ctx);
+            renderPassDescriptor->setRenderTargetHeight(dsv_tex->height());
+            renderPassDescriptor->setRenderTargetWidth(dsv_tex->width());
+          }
         }
         renderPassDescriptor->setVisibilityResultBuffer(
             ctx.chk->visibility_result_heap);
@@ -1350,6 +1396,10 @@ public:
         D3D11_ASSERT(ctx.render_encoder);
         ctx.render_encoder->setVertexBuffer(h, 0, 29);
         ctx.render_encoder->setVertexBuffer(h, 0, 30);
+        ctx.render_encoder->setMeshBuffer(h, 0, 29);
+        ctx.render_encoder->setMeshBuffer(h, 0, 30);
+        ctx.render_encoder->setObjectBuffer(h, 0, 29);
+        ctx.render_encoder->setObjectBuffer(h, 0, 30);
         ctx.render_encoder->setFragmentBuffer(h, 0, 29);
         ctx.render_encoder->setFragmentBuffer(h, 0, 30);
         // TODO: need to check if there is any query in building
@@ -1467,36 +1517,110 @@ public:
     return true;
   };
 
+  bool FinalizeTessellationRenderPipeline(bool indexed_draw) {
+
+    if (cmdbuf_state == CommandBufferState::TessellationRenderPipelineReady)
+      return true;
+    if (!state_.ShaderStages[(UINT)ShaderType::Hull].Shader) {
+      return false;
+    }
+    if (!state_.ShaderStages[(UINT)ShaderType::Domain].Shader) {
+      return false;
+    }
+    if (state_.ShaderStages[(UINT)ShaderType::Geometry].Shader) {
+      ERR("tessellation-geometry pipeline is not supported yet, skip drawcall");
+      return false;
+    }
+
+    if (!SwitchToRenderEncoder()) {
+      return false;
+    }
+
+    CommandChunk *chk = cmd_queue.CurrentChunk();
+
+    Com<IMTLCompiledTessellationPipeline> pipeline;
+    Com<IMTLCompiledShader> vs, ps;
+
+    MTL_TESSELLATION_PIPELINE_DESC pipelineDesc;
+    pipelineDesc.VertexShader =
+        state_.ShaderStages[(UINT)ShaderType::Vertex].Shader.ptr();
+    pipelineDesc.PixelShader =
+        state_.ShaderStages[(UINT)ShaderType::Pixel].Shader.ptr();
+    pipelineDesc.HullShader =
+        state_.ShaderStages[(UINT)ShaderType::Hull].Shader.ptr();
+    pipelineDesc.DomainShader =
+        state_.ShaderStages[(UINT)ShaderType::Domain].Shader.ptr();
+    pipelineDesc.InputLayout = state_.InputAssembler.InputLayout.ptr();
+    pipelineDesc.NumColorAttachments = state_.OutputMerger.NumRTVs;
+    for (unsigned i = 0; i < ARRAYSIZE(state_.OutputMerger.RTVs); i++) {
+      auto &rtv = state_.OutputMerger.RTVs[i];
+      if (rtv) {
+        pipelineDesc.ColorAttachmentFormats[i] =
+            state_.OutputMerger.RTVs[i]->GetPixelFormat();
+      } else {
+        pipelineDesc.ColorAttachmentFormats[i] = MTL::PixelFormatInvalid;
+      }
+    }
+    pipelineDesc.BlendState = state_.OutputMerger.BlendState
+                                  ? state_.OutputMerger.BlendState
+                                  : default_blend_state;
+    pipelineDesc.DepthStencilFormat =
+        state_.OutputMerger.DSV ? state_.OutputMerger.DSV->GetPixelFormat()
+                                : MTL::PixelFormatInvalid;
+    pipelineDesc.RasterizationEnabled = true;
+    if (indexed_draw) {
+
+      pipelineDesc.IndexBufferFormat =
+          state_.InputAssembler.IndexBufferFormat == DXGI_FORMAT_R32_UINT
+              ? SM50_INDEX_BUFFER_FORMAT_UINT32
+              : SM50_INDEX_BUFFER_FORMAT_UINT16;
+    } else {
+      pipelineDesc.IndexBufferFormat = SM50_INDEX_BUFFER_FORMAT_NONE;
+    }
+
+    device->CreateTessellationPipeline(&pipelineDesc, &pipeline);
+
+    chk->emit([pso = std::move(pipeline)](CommandChunk::context &ctx) {
+      MTL_COMPILED_TESSELLATION_PIPELINE GraphicsPipeline{};
+      pso->GetPipeline(&GraphicsPipeline); // may block
+      D3D11_ASSERT(GraphicsPipeline.MeshPipelineState);
+      D3D11_ASSERT(GraphicsPipeline.RasterizationPipelineState);
+      ctx.tess_mesh_pso = GraphicsPipeline.MeshPipelineState;
+      ctx.tess_raster_pso = GraphicsPipeline.RasterizationPipelineState;
+      ctx.tess_num_output_control_point_element =
+          GraphicsPipeline.NumControlPointOutputElement;
+      ctx.tess_num_output_patch_constant_scalar =
+          GraphicsPipeline.NumPatchConstantOutputScalar;
+      ctx.tess_threads_per_patch =
+          GraphicsPipeline.ThreadsPerPatch;
+    });
+
+    cmdbuf_state = CommandBufferState::TessellationRenderPipelineReady;
+    return true;
+  }
+
   /**
   Assume we have all things needed to build PSO
   If the current encoder is not a render encoder, switch to it.
   */
-  bool FinalizeCurrentRenderPipeline() {
+  bool FinalizeCurrentRenderPipeline(bool indexed_draw) {
     if (state_.InputAssembler.InputLayout &&
         !state_.InputAssembler.VertexBuffers.all_bound_masked(
             state_.InputAssembler.InputLayout->GetInputSlotMask())) {
       // ERR("missing vertex buffer binding");
       return false;
     }
+    if (state_.ShaderStages[(UINT)ShaderType::Hull].Shader) {
+      return FinalizeTessellationRenderPipeline(indexed_draw);
+    }
     if (cmdbuf_state == CommandBufferState::RenderPipelineReady)
       return true;
-    if (state_.ShaderStages[(UINT)ShaderType::Hull].Shader) {
-      // ERR("tessellation is not supported yet, skip drawcall");
-      return false;
-    }
-    if (state_.ShaderStages[(UINT)ShaderType::Domain].Shader) {
-      // ERR("tessellation is not supported yet, skip drawcall");
-      return false;
-    }
     if (state_.ShaderStages[(UINT)ShaderType::Geometry].Shader) {
       if (!state_.ShaderStages[(UINT)ShaderType::Pixel].Shader) {
         return FinalizeNoRasterizationRenderPipeline(
             state_.ShaderStages[(UINT)ShaderType::Geometry].Shader.ptr());
       }
       // ERR("geometry shader is not supported yet, skip drawcall");
-      return false;
-    }
-    if (!state_.OutputMerger.NumRTVs && !state_.OutputMerger.DSV) {
       return false;
     }
 
@@ -1585,8 +1709,8 @@ public:
     return true;
   }
 
-  bool PreDraw() {
-    if (!FinalizeCurrentRenderPipeline()) {
+  bool PreDraw(bool indexed_draw) {
+    if (!FinalizeCurrentRenderPipeline(indexed_draw)) {
       return false;
     }
     CommandChunk *chk = cmd_queue.CurrentChunk();
@@ -1692,8 +1816,14 @@ public:
       }
     }
     dirty_state.clrAll();
-    return UploadShaderStageResourceBinding<ShaderType::Vertex>() &&
-           UploadShaderStageResourceBinding<ShaderType::Pixel>();
+    if (cmdbuf_state == CommandBufferState::TessellationRenderPipelineReady) {
+      return UploadShaderStageResourceBinding<ShaderType::Vertex, true>() &&
+             UploadShaderStageResourceBinding<ShaderType::Pixel, true>() &&
+             UploadShaderStageResourceBinding<ShaderType::Hull, true>() &&
+             UploadShaderStageResourceBinding<ShaderType::Domain, true>();
+    }
+    return UploadShaderStageResourceBinding<ShaderType::Vertex, false>() &&
+           UploadShaderStageResourceBinding<ShaderType::Pixel, false>();
   }
 
   /**
@@ -1719,19 +1849,21 @@ public:
     Com<IMTLCompiledComputePipeline> pipeline;
     device->CreateComputePipeline(shader.ptr(), &pipeline);
 
+    const MTL_SHADER_REFLECTION *reflection =
+        state_.ShaderStages[(UINT)ShaderType::Compute].Shader->GetReflection();
+
     CommandChunk *chk = cmd_queue.CurrentChunk();
-    chk->emit(
-        [pso = std::move(pipeline),
-         tg_size = MTL::Size::Make(shader_data.Reflection->ThreadgroupSize[0],
-                                   shader_data.Reflection->ThreadgroupSize[1],
-                                   shader_data.Reflection->ThreadgroupSize[2])](
-            CommandChunk::context &ctx) {
-          MTL_COMPILED_COMPUTE_PIPELINE ComputePipeline;
-          pso->GetPipeline(&ComputePipeline); // may block
-          ctx.compute_encoder->setComputePipelineState(
-              ComputePipeline.PipelineState);
-          ctx.cs_threadgroup_size = tg_size;
-        });
+    chk->emit([pso = std::move(pipeline),
+               tg_size = MTL::Size::Make(reflection->ThreadgroupSize[0],
+                                         reflection->ThreadgroupSize[1],
+                                         reflection->ThreadgroupSize[2])](
+                  CommandChunk::context &ctx) {
+      MTL_COMPILED_COMPUTE_PIPELINE ComputePipeline;
+      pso->GetPipeline(&ComputePipeline); // may block
+      ctx.compute_encoder->setComputePipelineState(
+          ComputePipeline.PipelineState);
+      ctx.cs_threadgroup_size = tg_size;
+    });
 
     cmdbuf_state = CommandBufferState::ComputePipelineReady;
     return true;
@@ -1741,11 +1873,12 @@ public:
     if (!FinalizeCurrentComputePipeline()) {
       return false;
     }
-    UploadShaderStageResourceBinding<ShaderType::Compute>();
+    UploadShaderStageResourceBinding<ShaderType::Compute, false>();
     return true;
   }
 
-  template <ShaderType stage> bool UploadShaderStageResourceBinding() {
+  template <ShaderType stage, bool Tessellation>
+  bool UploadShaderStageResourceBinding() {
     auto &ShaderStage = state_.ShaderStages[(UINT)stage];
     if (!ShaderStage.Shader) {
       return true;
@@ -1754,8 +1887,8 @@ public:
                               ? state_.ComputeStageUAV.UAVs
                               : state_.OutputMerger.UAVs;
 
-    MTL_SHADER_REFLECTION *reflection;
-    ShaderStage.Shader->GetReflection(&reflection);
+    const MTL_SHADER_REFLECTION *reflection =
+        ShaderStage.Shader->GetReflection();
 
     bool dirty_cbuffer = ShaderStage.ConstantBuffers.any_dirty_masked(
         reflection->ConstantBufferSlotMask);
@@ -1781,6 +1914,8 @@ public:
             switch (stage) {
             case ShaderType::Vertex:
             case ShaderType::Pixel:
+            case ShaderType::Hull:
+            case ShaderType::Domain:
               ctx.render_encoder->useResource(
                   res.resource(&ctx), GetUsageFromResidencyMask(residencyMask),
                   GetStagesFromResidencyMask(residencyMask));
@@ -1790,8 +1925,6 @@ public:
                   res.resource(&ctx), GetUsageFromResidencyMask(residencyMask));
               break;
             case ShaderType::Geometry:
-            case ShaderType::Hull:
-            case ShaderType::Domain:
               D3D11_ASSERT(0 && "Not implemented");
               break;
             }
@@ -1819,9 +1952,9 @@ public:
           write_to_it[arg.StructurePtrOffset] =
               argbuf.buffer() + (cbuf.FirstConstant << 4);
           ShaderStage.ConstantBuffers.clear_dirty(slot);
-          pTracker->CheckResidency(encoderId,
-                                   GetResidencyMask(stage, true, false),
-                                   &newResidencyMask);
+          pTracker->CheckResidency(
+              encoderId, GetResidencyMask<Tessellation>(stage, true, false),
+              &newResidencyMask);
           if (newResidencyMask) {
             useResource(cbuf.Buffer->UseBindable(currentChunkId),
                         newResidencyMask);
@@ -1836,11 +1969,19 @@ public:
       /* kConstantBufferTableBinding = 29 */
       chk->emit([offset](CommandChunk::context &ctx) {
         if constexpr (stage == ShaderType::Vertex) {
-          ctx.render_encoder->setVertexBufferOffset(offset, 29);
+          if constexpr (Tessellation) {
+            ctx.render_encoder->setObjectBufferOffset(offset, 29);
+          } else {
+            ctx.render_encoder->setVertexBufferOffset(offset, 29);
+          }
         } else if constexpr (stage == ShaderType::Pixel) {
           ctx.render_encoder->setFragmentBufferOffset(offset, 29);
         } else if constexpr (stage == ShaderType::Compute) {
           ctx.compute_encoder->setBufferOffset(offset, 29);
+        } else if constexpr (stage == ShaderType::Hull) {
+          ctx.render_encoder->setMeshBufferOffset(offset, 29);
+        } else if constexpr (stage == ShaderType::Domain) {
+          ctx.render_encoder->setVertexBufferOffset(offset, 29);
         } else {
           D3D11_ASSERT(0 && "Not implemented");
         }
@@ -1904,9 +2045,9 @@ public:
           if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_UAV_COUNTER) {
           }
           ShaderStage.SRVs.clear_dirty(slot);
-          pTracker->CheckResidency(encoderId,
-                                   GetResidencyMask(stage, true, false),
-                                   &newResidencyMask);
+          pTracker->CheckResidency(
+              encoderId, GetResidencyMask<Tessellation>(stage, true, false),
+              &newResidencyMask);
           if (newResidencyMask) {
             useResource(srv.SRV->UseBindable(currentChunkId), newResidencyMask);
           }
@@ -1952,12 +2093,13 @@ public:
             return false;
           }
           UAVBindingSet.clear_dirty(slot);
-          pTracker->CheckResidency(
-              encoderId,
-              GetResidencyMask(stage,
-                               // FIXME: don't use literal constant...
-                               (arg.Flags >> 10) & 1, (arg.Flags >> 10) & 2),
-              &newResidencyMask);
+          pTracker->CheckResidency(encoderId,
+                                   GetResidencyMask<Tessellation>(
+                                       stage,
+                                       // FIXME: don't use literal constant...
+                                       (arg.Flags >> 10) & 1,
+                                       (arg.Flags >> 10) & 2),
+                                   &newResidencyMask);
           if (newResidencyMask) {
             useResource(uav.View->UseBindable(currentChunkId),
                         newResidencyMask);
@@ -1970,11 +2112,19 @@ public:
       /* kArgumentBufferBinding = 30 */
       chk->emit([offset](CommandChunk::context &ctx) {
         if constexpr (stage == ShaderType::Vertex) {
-          ctx.render_encoder->setVertexBufferOffset(offset, 30);
+          if constexpr (Tessellation) {
+            ctx.render_encoder->setObjectBufferOffset(offset, 30);
+          } else {
+            ctx.render_encoder->setVertexBufferOffset(offset, 30);
+          }
         } else if constexpr (stage == ShaderType::Pixel) {
           ctx.render_encoder->setFragmentBufferOffset(offset, 30);
         } else if constexpr (stage == ShaderType::Compute) {
           ctx.compute_encoder->setBufferOffset(offset, 30);
+        } else if constexpr (stage == ShaderType::Hull) {
+          ctx.render_encoder->setMeshBufferOffset(offset, 30);
+        } else if constexpr (stage == ShaderType::Domain) {
+          ctx.render_encoder->setVertexBufferOffset(offset, 30);
         } else {
           D3D11_ASSERT(0 && "Not implemented");
         }
@@ -1985,7 +2135,9 @@ public:
 
   template <typename Fn> void EmitRenderCommand(Fn &&fn) {
     D3D11_ASSERT(cmdbuf_state == CommandBufferState::RenderEncoderActive ||
-                 cmdbuf_state == CommandBufferState::RenderPipelineReady);
+                 cmdbuf_state == CommandBufferState::RenderPipelineReady ||
+                 cmdbuf_state ==
+                     CommandBufferState::TessellationRenderPipelineReady);
     CommandChunk *chk = cmd_queue.CurrentChunk();
     chk->emit([fn = std::forward<Fn>(fn)](CommandChunk::context &ctx) {
       std::invoke(fn, ctx.render_encoder.ptr());
@@ -1994,7 +2146,9 @@ public:
 
   template <typename Fn> void EmitRenderCommandChk(Fn &&fn) {
     D3D11_ASSERT(cmdbuf_state == CommandBufferState::RenderEncoderActive ||
-                 cmdbuf_state == CommandBufferState::RenderPipelineReady);
+                 cmdbuf_state == CommandBufferState::RenderPipelineReady ||
+                 cmdbuf_state ==
+                     CommandBufferState::TessellationRenderPipelineReady);
     CommandChunk *chk = cmd_queue.CurrentChunk();
     chk->emit([fn = std::forward<Fn>(fn)](CommandChunk::context &ctx) {
       std::invoke(fn, ctx);
@@ -2049,10 +2203,10 @@ public:
       return;
     }
     auto &VertexBuffers = state_.InputAssembler.VertexBuffers;
-    if (!VertexBuffers.any_dirty_masked(
-            (uint64_t)state_.InputAssembler.InputLayout->GetInputSlotMask())) {
-      return;
-    }
+    // if (!VertexBuffers.any_dirty_masked(
+    //         (uint64_t)state_.InputAssembler.InputLayout->GetInputSlotMask())) {
+    //   return;
+    // }
 #ifndef DXMT_SHADER_VERTEX_PULLING
     for (unsigned index = 0; index < 16; index++) {
       if (!VertexBuffers.test_bound(index) ||
@@ -2075,16 +2229,18 @@ public:
       uint32_t length;
     };
 
-    constexpr uint32_t VERTEX_BUFFER_SLOTS = 16; /* should be 32*/
+    uint32_t VERTEX_BUFFER_SLOTS = VertexBuffers.max_binding_64();
+
+    if (VERTEX_BUFFER_SLOTS == 0)
+      return;
 
     CommandChunk *chk = cmd_queue.CurrentChunk();
-    auto currentChunkId = chk->current_encoder_id();
+    auto currentChunkId = cmd_queue.CurrentSeqId();
     auto [heap, offset] = chk->allocate_gpu_heap(16 * VERTEX_BUFFER_SLOTS, 16);
     VERTEX_BUFFER_ENTRY *entries =
         (VERTEX_BUFFER_ENTRY *)(((char *)heap->contents()) + offset);
     for (unsigned index = 0; index < VERTEX_BUFFER_SLOTS; index++) {
-      if (!VertexBuffers.test_bound(index) ||
-          !VertexBuffers.test_dirty(index)) {
+      if (!VertexBuffers.test_bound(index)) {
         continue;
       }
       auto &state = VertexBuffers[index];
@@ -2095,7 +2251,10 @@ public:
       entries[index].stride = state.Stride;
       entries[index].length = 0; // TODO: handle.width() - state.Offset;
       pTracker->CheckResidency(
-          currentChunkId, GetResidencyMask(ShaderType::Vertex, true, false),
+          currentChunkId,
+          cmdbuf_state == CommandBufferState::TessellationRenderPipelineReady
+              ? GetResidencyMask<true>(ShaderType::Vertex, true, false)
+              : GetResidencyMask<false>(ShaderType::Vertex, true, false),
           &newResidencyMask);
       if (newResidencyMask) {
         chk->emit([res = state.Buffer->UseBindable(currentChunkId),
@@ -2106,9 +2265,15 @@ public:
         });
       }
     };
-    chk->emit([heap, offset](CommandChunk::context &ctx) {
-      ctx.render_encoder->setVertexBuffer(heap, offset, 16);
-    });
+    if (cmdbuf_state == CommandBufferState::TessellationRenderPipelineReady) {
+      chk->emit([heap, offset](CommandChunk::context &ctx) {
+        ctx.render_encoder->setObjectBuffer(heap, offset, 16);
+      });
+    } else {
+      chk->emit([heap, offset](CommandChunk::context &ctx) {
+        ctx.render_encoder->setVertexBuffer(heap, offset, 16);
+      });
+    }
 #endif
   }
 
@@ -2169,7 +2334,8 @@ private:
 public:
   uint64_t NextOcclusionQuerySeq() {
     if (cmdbuf_state == CommandBufferState::RenderEncoderActive ||
-        cmdbuf_state == CommandBufferState::RenderPipelineReady) {
+        cmdbuf_state == CommandBufferState::RenderPipelineReady ||
+        cmdbuf_state == CommandBufferState::TessellationRenderPipelineReady) {
       uint64_t bump_offset = (++occlusion_query_seq) % kOcclusionSampleCount;
       CommandChunk *chk = cmd_queue.CurrentChunk();
       chk->emit([bump_offset](CommandChunk::context &ctx) {
@@ -2196,6 +2362,7 @@ public:
     Idle,
     RenderEncoderActive,
     RenderPipelineReady,
+    TessellationRenderPipelineReady,
     ComputeEncoderActive,
     ComputePipelineReady,
     BlitEncoderActive

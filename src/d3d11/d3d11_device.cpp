@@ -2,7 +2,6 @@
 #include "Metal/MTLVertexDescriptor.hpp"
 #include "com/com_guid.hpp"
 #include "d3d11_pipeline.hpp"
-#include "util_hash.hpp"
 #include "d3d11_class_linkage.hpp"
 #include "d3d11_inspection.hpp"
 #include "d3d11_context.hpp"
@@ -22,47 +21,9 @@
 #include "threadpool.hpp"
 #include "winemacdrv.h"
 #include "dxgi_object.hpp"
-#include <iterator>
 #include <mutex>
 #include <thread>
 #include <unordered_map>
-
-namespace std {
-template <> struct hash<MTL_GRAPHICS_PIPELINE_DESC> {
-  size_t operator()(const MTL_GRAPHICS_PIPELINE_DESC &v) const noexcept {
-    dxmt::HashState state;
-    state.add((size_t)v.VertexShader); // FIXME: don't use pointer?
-    state.add((size_t)v.PixelShader);  // FIXME: don't use pointer?
-    state.add((size_t)v.InputLayout);  // FIXME: don't use pointer?
-    /* IMTLD3D11BlendState pointer is safe to be used as hash input */
-    state.add((size_t)v.BlendState);
-    state.add((size_t)v.DepthStencilFormat);
-    state.add((size_t)v.NumColorAttachments);
-    for (unsigned i = 0; i < std::size(v.ColorAttachmentFormats); i++) {
-      state.add(i < v.NumColorAttachments ? v.ColorAttachmentFormats[i]
-                                          : MTL::PixelFormatInvalid);
-    }
-    return state;
-  };
-};
-template <> struct equal_to<MTL_GRAPHICS_PIPELINE_DESC> {
-  bool operator()(const MTL_GRAPHICS_PIPELINE_DESC &x,
-                  const MTL_GRAPHICS_PIPELINE_DESC &y) const {
-    if (x.NumColorAttachments != y.NumColorAttachments)
-      return false;
-    for (unsigned i = 0; i < x.NumColorAttachments; i++) {
-      if (x.ColorAttachmentFormats[i] != y.ColorAttachmentFormats[i])
-        return false;
-    }
-    return (x.BlendState == y.BlendState) &&
-           (x.VertexShader == y.VertexShader) &&
-           (x.PixelShader == y.PixelShader) &&
-           (x.InputLayout == y.InputLayout) &&
-           (x.DepthStencilFormat == y.DepthStencilFormat) &&
-           (x.RasterizationEnabled == y.RasterizationEnabled);
-  }
-};
-} // namespace std
 
 namespace dxmt {
 
@@ -76,6 +37,7 @@ public:
         m_features(container->GetMTLDevice()), sampler_states(this),
         blend_states(this), rasterizer_states(this), depthstencil_states(this) {
     context_ = InitializeImmediateContext(this);
+    is_traced_ = !!::GetModuleHandle("dxgitrace.dll");
   }
 
   ~MTLD3D11Device() {}
@@ -92,6 +54,8 @@ public:
   void AddRefPrivate() override { return m_container->AddRefPrivate(); }
 
   void ReleasePrivate() override { return m_container->ReleasePrivate(); }
+
+  bool IsTraced() override { return is_traced_; }
 
   HRESULT STDMETHODCALLTYPE
   CreateBuffer(const D3D11_BUFFER_DESC *pDesc,
@@ -333,8 +297,8 @@ public:
 
     if (!ppHullShader)
       return S_FALSE;
-    ERR("CreateHullShader: not supported, return a dummy");
-    return dxmt::CreateDummyHullShader(this, pShaderBytecode, BytecodeLength,
+
+    return dxmt::CreateHullShader(this, pShaderBytecode, BytecodeLength,
                                        ppHullShader);
   }
 
@@ -348,8 +312,8 @@ public:
 
     if (!ppDomainShader)
       return S_FALSE;
-    ERR("CreateDomainShader: not supported, return a dummy");
-    return dxmt::CreateDummyDomainShader(this, pShaderBytecode, BytecodeLength,
+
+    return dxmt::CreateDomainShader(this, pShaderBytecode, BytecodeLength,
                                          ppDomainShader);
   }
 
@@ -511,7 +475,7 @@ public:
     MTL_FORMAT_DESC metal_format;
 
     if (FAILED(adapter_->QueryFormatDesc(Format, &metal_format))) {
-      return S_OK;
+      return E_INVALIDARG;
     }
 
     UINT outFormatSupport = 0;
@@ -526,11 +490,15 @@ public:
 
     /* UNCHECKED */
     outFormatSupport |=
-        D3D11_FORMAT_SUPPORT_BUFFER | D3D11_FORMAT_SUPPORT_TEXTURE1D |
-        D3D11_FORMAT_SUPPORT_TEXTURE2D | D3D11_FORMAT_SUPPORT_TEXTURE3D |
-        D3D11_FORMAT_SUPPORT_TEXTURECUBE | D3D11_FORMAT_SUPPORT_MIP |
-        D3D11_FORMAT_SUPPORT_MIP_AUTOGEN | // ?
+        D3D11_FORMAT_SUPPORT_TEXTURE1D | D3D11_FORMAT_SUPPORT_TEXTURE2D |
+        D3D11_FORMAT_SUPPORT_TEXTURE3D | D3D11_FORMAT_SUPPORT_TEXTURECUBE |
+        D3D11_FORMAT_SUPPORT_MIP | D3D11_FORMAT_SUPPORT_MIP_AUTOGEN | // ?
         D3D11_FORMAT_SUPPORT_CAST_WITHIN_BIT_LAYOUT;
+
+    if (!metal_format.IsCompressed && !metal_format.Typeless &&
+        !metal_format.DepthStencilFlag) {
+      outFormatSupport |= D3D11_FORMAT_SUPPORT_BUFFER;
+    }
 
     if (metal_format.SupportBackBuffer) {
       outFormatSupport |= D3D11_FORMAT_SUPPORT_DISPLAY;
@@ -570,6 +538,18 @@ public:
     if (any_bit_set(metal_format.Capability & FormatCapability::Write)) {
       outFormatSupport |= D3D11_FORMAT_SUPPORT_TYPED_UNORDERED_ACCESS_VIEW;
     }
+
+    if (Format == DXGI_FORMAT_R32_FLOAT || Format == DXGI_FORMAT_R32_UINT ||
+        Format == DXGI_FORMAT_R32_SINT || Format == DXGI_FORMAT_R32G32_FLOAT ||
+        Format == DXGI_FORMAT_R32G32_UINT ||
+        Format == DXGI_FORMAT_R32G32_SINT ||
+        Format == DXGI_FORMAT_R32G32B32_FLOAT ||
+        Format == DXGI_FORMAT_R32G32B32_UINT ||
+        Format == DXGI_FORMAT_R32G32B32_SINT ||
+        Format == DXGI_FORMAT_R32G32B32A32_FLOAT ||
+        Format == DXGI_FORMAT_R32G32B32A32_UINT ||
+        Format == DXGI_FORMAT_R32G32B32A32_SINT)
+      outFormatSupport |= D3D11_FORMAT_SUPPORT_SO_BUFFER;
 
     if (pFormatSupport) {
       *pFormatSupport = outFormatSupport;
@@ -632,13 +612,40 @@ public:
             D3D11_FORMAT_SUPPORT2_UAV_ATOMIC_COMPARE_STORE_OR_COMPARE_EXCHANGE |
             D3D11_FORMAT_SUPPORT2_UAV_ATOMIC_EXCHANGE |
             D3D11_FORMAT_SUPPORT2_UAV_ATOMIC_SIGNED_MIN_OR_MAX |
-            D3D11_FORMAT_SUPPORT2_UAV_ATOMIC_UNSIGNED_MIN_OR_MAX;
+            D3D11_FORMAT_SUPPORT2_UAV_ATOMIC_UNSIGNED_MIN_OR_MAX |
+            D3D11_FORMAT_SUPPORT2_UAV_TYPED_LOAD |
+            D3D11_FORMAT_SUPPORT2_UAV_TYPED_STORE |
+            D3D11_FORMAT_SUPPORT2_SHAREABLE;
         return S_OK;
       }
 
       MTL_FORMAT_DESC desc;
       if (FAILED(adapter_->QueryFormatDesc(info->InFormat, &desc))) {
+        info->OutFormatSupport2 |=
+            D3D11_FORMAT_SUPPORT2_UAV_ATOMIC_ADD |
+            D3D11_FORMAT_SUPPORT2_UAV_ATOMIC_BITWISE_OPS |
+            D3D11_FORMAT_SUPPORT2_UAV_ATOMIC_COMPARE_STORE_OR_COMPARE_EXCHANGE |
+            D3D11_FORMAT_SUPPORT2_UAV_ATOMIC_EXCHANGE |
+            D3D11_FORMAT_SUPPORT2_UAV_ATOMIC_SIGNED_MIN_OR_MAX |
+            D3D11_FORMAT_SUPPORT2_UAV_ATOMIC_UNSIGNED_MIN_OR_MAX |
+            D3D11_FORMAT_SUPPORT2_UAV_TYPED_LOAD |
+            D3D11_FORMAT_SUPPORT2_UAV_TYPED_STORE |
+            D3D11_FORMAT_SUPPORT2_SHAREABLE;
         return S_OK;
+      }
+
+      if (any_bit_set(desc.Capability & FormatCapability::TextureBufferRead)) {
+        info->OutFormatSupport2 |= D3D11_FORMAT_SUPPORT2_UAV_TYPED_LOAD;
+      }
+
+      if (any_bit_set(desc.Capability & FormatCapability::TextureBufferWrite)) {
+        info->OutFormatSupport2 |= D3D11_FORMAT_SUPPORT2_UAV_TYPED_STORE;
+      }
+
+      if (any_bit_set(desc.Capability &
+                      FormatCapability::TextureBufferReadWrite)) {
+        info->OutFormatSupport2 |= D3D11_FORMAT_SUPPORT2_UAV_TYPED_LOAD |
+                                   D3D11_FORMAT_SUPPORT2_UAV_TYPED_STORE;
       }
 
       if (any_bit_set(desc.Capability & FormatCapability::Atomic)) {
@@ -648,13 +655,16 @@ public:
             D3D11_FORMAT_SUPPORT2_UAV_ATOMIC_COMPARE_STORE_OR_COMPARE_EXCHANGE |
             D3D11_FORMAT_SUPPORT2_UAV_ATOMIC_EXCHANGE |
             D3D11_FORMAT_SUPPORT2_UAV_ATOMIC_SIGNED_MIN_OR_MAX |
-            D3D11_FORMAT_SUPPORT2_UAV_ATOMIC_UNSIGNED_MIN_OR_MAX;
+            D3D11_FORMAT_SUPPORT2_UAV_ATOMIC_UNSIGNED_MIN_OR_MAX |
+            D3D11_FORMAT_SUPPORT2_SHAREABLE;
+      }
 
 #ifndef DXMT_NO_PRIVATE_API
+      if (any_bit_set(desc.Capability & FormatCapability::Blend)) {
         /* UNCHECKED */
         info->OutFormatSupport2 |= D3D11_FORMAT_SUPPORT2_OUTPUT_MERGER_LOGIC_OP;
-#endif
       }
+#endif
 
       if (any_bit_set(desc.Capability & FormatCapability::Sparse)) {
         info->OutFormatSupport2 |= D3D11_FORMAT_SUPPORT2_TILED;
@@ -801,10 +811,10 @@ public:
     if (Flags) {
       IMPLEMENT_ME;
     }
+    *pNumQualityLevels = 0;
     MTL_FORMAT_DESC desc;
     adapter_->QueryFormatDesc(Format, &desc);
     if (desc.PixelFormat == MTL::PixelFormatInvalid) {
-      *pNumQualityLevels = 0;
       return E_INVALIDARG;
     }
 
@@ -819,9 +829,8 @@ public:
     if (GetMTLDevice()->supportsTextureSampleCount(SampleCount)) {
       *pNumQualityLevels = 1; // always 1: in metal there is no concept of
                               // Quality Level (so is it in vulkan iirc)
-      return S_OK;
     }
-    return S_FALSE;
+    return S_OK;
   }
 
   HRESULT STDMETHODCALLTYPE
@@ -1031,6 +1040,23 @@ public:
     return S_OK;
   };
 
+  HRESULT
+  CreateTessellationPipeline(
+      MTL_TESSELLATION_PIPELINE_DESC *pDesc,
+      IMTLCompiledTessellationPipeline **ppPipeline) override {
+    std::lock_guard<dxmt::mutex> lock(mutex_);
+
+    auto iter = pipelines_ts_.find(*pDesc);
+    if (iter != pipelines_ts_.end()) {
+      *ppPipeline = iter->second.ref();
+      return S_OK;
+    }
+    auto temp = dxmt::CreateTessellationPipeline(this, pDesc);
+    D3D11_ASSERT(pipelines_ts_.insert({*pDesc, temp}).second); // copy
+    *ppPipeline = std::move(temp);                             // move
+    return S_OK;
+  };
+
 private:
   MTLDXGIObject<IMTLDXGIDevice> *m_container;
   IMTLDXGIAdatper *adapter_;
@@ -1039,10 +1065,17 @@ private:
   MTLD3D11Inspection m_features;
   threadpool<threadpool_trait> pool_;
 
+  bool is_traced_;
+
   std::unordered_map<MTL_GRAPHICS_PIPELINE_DESC,
                      Com<IMTLCompiledGraphicsPipeline>>
       pipelines_;
   dxmt::mutex mutex_;
+
+  std::unordered_map<MTL_TESSELLATION_PIPELINE_DESC,
+                     Com<IMTLCompiledTessellationPipeline>>
+      pipelines_ts_;
+  dxmt::mutex mutex_ts_;
 
   std::unordered_map<IMTLCompiledShader *, Com<IMTLCompiledComputePipeline>>
       pipelines_cs_;

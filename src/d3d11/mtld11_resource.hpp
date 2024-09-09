@@ -63,9 +63,15 @@ enum MTL_BINDABLE_RESIDENCY_MASK : uint32_t {
   MTL_RESIDENCY_VERTEX_WRITE = 1 << 1,
   MTL_RESIDENCY_FRAGMENT_READ = 1 << 2,
   MTL_RESIDENCY_FRAGMENT_WRITE = 1 << 3,
-  MTL_RESIDENCY_READ = MTL_RESIDENCY_VERTEX_READ | MTL_RESIDENCY_FRAGMENT_READ,
-  MTL_RESIDENCY_WRITE =
-      MTL_RESIDENCY_VERTEX_WRITE | MTL_RESIDENCY_FRAGMENT_WRITE,
+  MTL_RESIDENCY_OBJECT_READ = 1 << 4,
+  MTL_RESIDENCY_OBJECT_WRITE = 1 << 5,
+  MTL_RESIDENCY_MESH_READ = 1 << 6,
+  MTL_RESIDENCY_MESH_WRITE = 1 << 7,
+  MTL_RESIDENCY_READ = MTL_RESIDENCY_VERTEX_READ | MTL_RESIDENCY_FRAGMENT_READ |
+                       MTL_RESIDENCY_OBJECT_READ | MTL_RESIDENCY_MESH_READ,
+  MTL_RESIDENCY_WRITE = MTL_RESIDENCY_VERTEX_WRITE |
+                        MTL_RESIDENCY_FRAGMENT_WRITE |
+                        MTL_RESIDENCY_OBJECT_WRITE | MTL_RESIDENCY_MESH_WRITE,
 };
 
 struct SIMPLE_RESIDENCY_TRACKER {
@@ -243,6 +249,7 @@ struct tag_buffer {
   using COM_IMPL = ID3D11Buffer;
   using DESC = D3D11_BUFFER_DESC;
   using DESC1 = D3D11_BUFFER_DESC;
+  static constexpr std::string_view debug_name = "buffer";
 };
 
 struct tag_texture_1d {
@@ -252,6 +259,7 @@ struct tag_texture_1d {
   using COM_IMPL = ID3D11Texture1D;
   using DESC = D3D11_TEXTURE1D_DESC;
   using DESC1 = D3D11_TEXTURE1D_DESC;
+  static constexpr std::string_view debug_name = "tex1d";
 };
 
 struct tag_texture_2d {
@@ -261,6 +269,7 @@ struct tag_texture_2d {
   using COM_IMPL = ID3D11Texture2D1;
   using DESC = D3D11_TEXTURE2D_DESC;
   using DESC1 = D3D11_TEXTURE2D_DESC1;
+  static constexpr std::string_view debug_name = "tex2d";
 };
 
 struct tag_texture_3d {
@@ -270,6 +279,7 @@ struct tag_texture_3d {
   using COM_IMPL = ID3D11Texture3D1;
   using DESC = D3D11_TEXTURE3D_DESC;
   using DESC1 = D3D11_TEXTURE3D_DESC1;
+  static constexpr std::string_view debug_name = "tex3d";
 };
 
 template <typename tag, typename... Base>
@@ -334,7 +344,7 @@ public:
     }
 
     if (logQueryInterfaceError(__uuidof(typename tag::COM), riid)) {
-      WARN("D3D11Resource: Unknown interface query ", str::format(riid));
+      WARN("D3D11Resource(", tag::debug_name ,"): Unknown interface query ", str::format(riid));
     }
 
     return E_NOINTERFACE;

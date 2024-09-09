@@ -48,6 +48,14 @@ enum class InputAttribute {
   /* Fragment */
   PrimitiveId,
   CoverageMask,
+
+  /* Hull */
+  OutputControlPointId,
+  ForkInstanceId,
+  JoinInstanceId,
+
+  /* Domain */
+  Domain,
 };
 
 } // namespace dxmt::shader::common

@@ -1,10 +1,9 @@
-#pragma once
 #include "air_operations.hpp"
 #include "air_signature.hpp"
 #include "air_type.hpp"
 #include "airconv_error.hpp"
 #include "airconv_public.h"
-#include "dxbc_instructions.hpp"
+#include "dxbc_converter.hpp"
 #include "ftl.hpp"
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/APInt.h"
@@ -23,95 +22,10 @@
 #include "llvm/IR/Type.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/raw_ostream.h"
-#include <algorithm>
-#include <cstdint>
-#include <functional>
-#include <string>
-#include <variant>
 
-// it's suposed to be include by specific file
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wunused-function"
-#pragma clang diagnostic ignored "-Wunknown-pragmas"
-// NOLINTBEGIN(misc-definitions-in-headers)
+char dxmt::UnsupportedFeature::ID;
 
 namespace dxmt::dxbc {
-
-using pvalue = dxmt::air::pvalue;
-using epvalue = llvm::Expected<pvalue>;
-using dxbc::Swizzle;
-using dxbc::swizzle_identity;
-
-struct context;
-using IRValue = ReaderIO<context, pvalue>;
-using IREffect = ReaderIO<context, std::monostate>;
-using IndexedIRValue = std::function<IRValue(pvalue)>;
-
-struct register_file {
-  llvm::Value *ptr_int4 = nullptr;
-  llvm::Value *ptr_float4 = nullptr;
-};
-
-struct indexable_register_file {
-  llvm::Value *ptr_int_vec = nullptr;
-  llvm::Value *ptr_float_vec = nullptr;
-  uint32_t vec_size = 0;
-};
-
-struct io_binding_map {
-  llvm::GlobalVariable *icb = nullptr;
-  llvm::Value *icb_float = nullptr;
-  std::unordered_map<uint32_t, IndexedIRValue> cb_range_map{};
-  std::unordered_map<uint32_t, IndexedIRValue> sampler_range_map{};
-  std::unordered_map<uint32_t, std::tuple<air::MSLTexture, IndexedIRValue>>
-    srv_range_map{};
-  std::unordered_map<
-    uint32_t, std::tuple<IndexedIRValue, IndexedIRValue, uint32_t>>
-    srv_buf_range_map{};
-  std::unordered_map<uint32_t, std::tuple<air::MSLTexture, IndexedIRValue>>
-    uav_range_map{};
-  std::unordered_map<
-    uint32_t, std::tuple<IndexedIRValue, IndexedIRValue, uint32_t>>
-    uav_buf_range_map{};
-  std::unordered_map<uint32_t, std::pair<uint32_t, llvm::GlobalVariable *>>
-    tgsm_map{};
-  std::unordered_map<uint32_t, IndexedIRValue> uav_counter_range_map{};
-
-  register_file input{};
-  register_file output{};
-  register_file temp{};
-  std::unordered_map<uint32_t, indexable_register_file> indexable_temp_map{};
-
-  // special registers (input)
-  llvm::Value *thread_id_arg = nullptr;
-  llvm::Value *thread_group_id_arg = nullptr;
-  llvm::Value *thread_id_in_group_arg = nullptr;
-  llvm::Value *thread_id_in_group_flat_arg = nullptr;
-  llvm::Value *coverage_mask_arg = nullptr;
-
-  // special registers (output)
-  llvm::AllocaInst *depth_output_reg = nullptr;
-  llvm::AllocaInst *stencil_ref_reg = nullptr;
-  llvm::AllocaInst *coverage_mask_reg = nullptr;
-
-  llvm::AllocaInst *cmp_exch_temp = nullptr;
-
-  // temp for fast look-up
-  llvm::Value *vertex_id_with_base = nullptr;
-  llvm::Value *instance_id_with_base = nullptr;
-  llvm::Value *base_instance_id = nullptr;
-  llvm::Value *vertex_buffer_table = nullptr;
-};
-
-struct context {
-  llvm::IRBuilder<> &builder;
-  llvm::LLVMContext &llvm;
-  llvm::Module &module;
-  llvm::Function *function;
-  io_binding_map &resource;
-  air::AirType &types; // hmmm
-  uint32_t pso_sample_mask;
-};
 
 template <typename T = std::monostate>
 ReaderIO<context, T> throwUnsupported(llvm::StringRef ref) {
@@ -137,26 +51,6 @@ ReaderIO<context, T> throwUnsupported(llvm::StringRef ref) {
 ReaderIO<context, context> get_context() {
   return ReaderIO<context, context>([](struct context ctx) { return ctx; });
 };
-
-template <typename S> IRValue make_irvalue(S &&fs) {
-  return IRValue(std::forward<S>(fs));
-}
-
-template <typename S> IRValue make_irvalue_bind(S &&fs) {
-  return IRValue([fs = std::forward<S>(fs)](auto ctx) {
-    return fs(ctx).build(ctx);
-  });
-}
-
-template <typename S> IREffect make_effect(S &&fs) {
-  return IREffect(std::forward<S>(fs));
-}
-
-template <typename S> IREffect make_effect_bind(S &&fs) {
-  return IREffect([fs = std::forward<S>(fs)](auto ctx) mutable {
-    return fs(ctx).build(ctx);
-  });
-}
 
 auto bitcast_float4(pvalue vec4) {
   return make_irvalue([=](context s) {
@@ -424,26 +318,36 @@ auto swizzle(Swizzle swizzle) {
   };
 }
 
-auto to_desired_type_from_int_vec4(pvalue vec4, llvm::Type *desired) {
+auto to_desired_type_from_int_vec4(pvalue vec4, llvm::Type *desired, uint32_t mask) {
   return make_irvalue([=](context ctx) {
     assert(vec4->getType() == ctx.types._int4);
     std::function<pvalue(pvalue, llvm::Type *)> convert =
-      [&ctx, &convert](pvalue vec4, llvm::Type *desired) {
+      [&ctx, &convert, mask](pvalue vec4, llvm::Type *desired) {
+        auto masked = [mask](int i) {
+          return (mask & (1 << i)) ? i : llvm::UndefMaskElem;
+        };
         if (desired == ctx.types._int4)
-          return vec4;
+          return ctx.builder.CreateShuffleVector(
+            vec4, {masked(0), masked(1), masked(2), masked(3)}
+          );
         if (desired == ctx.types._float4)
-          return ctx.builder.CreateBitCast(vec4, ctx.types._float4);
+          return ctx.builder.CreateShuffleVector(
+            ctx.builder.CreateBitCast(vec4, ctx.types._float4),
+            {masked(0), masked(1), masked(2), masked(3)}
+          );
         if (desired == ctx.types._int3)
-          return ctx.builder.CreateShuffleVector(vec4, {0, 1, 2});
+          return ctx.builder.CreateShuffleVector(
+            vec4, {masked(0), masked(1), masked(2)}
+          );
         if (desired == ctx.types._float3)
           return ctx.builder.CreateShuffleVector(
-            convert(vec4, ctx.types._float4), {0, 1, 2}
+            convert(vec4, ctx.types._float4), {masked(0), masked(1), masked(2)}
           );
         if (desired == ctx.types._int2)
-          return ctx.builder.CreateShuffleVector(vec4, {0, 1});
+          return ctx.builder.CreateShuffleVector(vec4, {masked(0), masked(1)});
         if (desired == ctx.types._float2)
           return ctx.builder.CreateShuffleVector(
-            convert(vec4, ctx.types._float4), {0, 1}
+            convert(vec4, ctx.types._float4), {masked(0), masked(1)}
           );
         if (desired == ctx.types._int)
           return ctx.builder.CreateExtractElement(vec4, (uint64_t)0);
@@ -460,24 +364,6 @@ auto to_desired_type_from_int_vec4(pvalue vec4, llvm::Type *desired) {
 auto get_function_arg(uint32_t arg_index) {
   return make_irvalue([=](context ctx) {
     return ctx.function->getArg(arg_index);
-  });
-};
-
-auto get_item_in_argbuf_binding_table(uint32_t argbuf_index, uint32_t index) {
-  return make_irvalue([=](context ctx) {
-    auto argbuf = ctx.function->getArg(argbuf_index);
-    auto argbuf_struct_type = llvm::cast<llvm::StructType>(
-      llvm::cast<llvm::PointerType>(argbuf->getType())
-        ->getNonOpaquePointerElementType()
-    );
-    return ctx.builder.CreateLoad(
-      argbuf_struct_type->getElementType(index),
-      ctx.builder.CreateStructGEP(
-        llvm::cast<llvm::PointerType>(argbuf->getType())
-          ->getNonOpaquePointerElementType(),
-        argbuf, index
-      )
-    );
   });
 };
 
@@ -559,21 +445,27 @@ auto store_to_array_at(
   });
 };
 
-auto store_at_vec4_array_masked(
+IREffect store_at_vec4_array_masked(
   llvm::Value *array, pvalue index, pvalue maybe_vec4, uint32_t mask
-) -> IREffect {
+) {
   return extend_to_vec4(maybe_vec4) >>= [=](pvalue vec4) {
-    return make_effect_bind([=](context ctx) {
-      if (mask == 0b1111) {
-        return store_to_array_at(array, index, vec4);
-      }
-      return load_from_array_at(array, index) >>= [=](auto current) {
-        assert(current->getType() == vec4->getType());
-        auto new_value = ctx.builder.CreateShuffleVector(
-          current, vec4, get_shuffle_mask(mask)
+    if (mask == 0b1111) {
+      return store_to_array_at(array, index, vec4);
+    }
+    return make_effect([=](context ctx) {
+      for (unsigned i = 0; i < 4; i++) {
+        if ((mask & (1 << i)) == 0)
+          continue;
+        auto component_ptr =  ctx.builder.CreateGEP(
+          llvm::cast<llvm::PointerType>(array->getType())
+            ->getNonOpaquePointerElementType(),
+          array, {ctx.builder.getInt32(0), index, ctx.builder.getInt32(i)}
         );
-        return store_to_array_at(array, index, new_value);
-      };
+        ctx.builder.CreateStore(
+          ctx.builder.CreateExtractElement(vec4, i), component_ptr
+        );
+      }
+      return std::monostate();
     });
   };
 };
@@ -587,47 +479,25 @@ auto store_at_vec_array_masked(
   );
   auto components =
     cast<llvm::FixedVectorType>(array_ty->getElementType())->getNumElements();
-  return extend_to_vec4(maybe_vec4) >>= [=](pvalue vec4) {
-    return make_effect_bind([=](context ctx) {
-      return (load_from_array_at(array, index) >>=
-              extend_to_vec4) >>= [=](auto current) {
-        auto cx = mask & 1 ? 4 : 0;
-        auto cy = mask & 2 ? 5 : 1;
-        auto cz = mask & 4 ? 6 : 2;
-        auto cw = mask & 8 ? 7 : 3;
-        switch (components) {
-        case 1: {
-          auto new_value = ctx.builder.CreateShuffleVector(current, vec4, {cx});
-          return store_to_array_at(array, index, new_value);
-        };
-        case 2: {
-          auto new_value =
-            ctx.builder.CreateShuffleVector(current, vec4, {cx, cy});
-          return store_to_array_at(array, index, new_value);
-        };
-        case 3: {
-          auto new_value =
-            ctx.builder.CreateShuffleVector(current, vec4, {cx, cy, cz});
-          return store_to_array_at(array, index, new_value);
-        };
-        case 4: {
-          auto new_value =
-            ctx.builder.CreateShuffleVector(current, vec4, {cx, cy, cz, cw});
-          return store_to_array_at(array, index, new_value);
-        };
-        default: {
-          assert(0 && "UNREACHABLE");
-          break;
-        }
-        }
-      };
-    });
-  };
+  return make_effect([=](context ctx) {
+    for (unsigned i = 0; i < components; i++) {
+      if ((mask & (1 << i)) == 0)
+        continue;
+      auto component_ptr = ctx.builder.CreateGEP(
+        array_ty,
+        array, {ctx.builder.getInt32(0), index, ctx.builder.getInt32(i)}
+      );
+      ctx.builder.CreateStore(
+        ctx.builder.CreateExtractElement(maybe_vec4, i), component_ptr
+      );
+    }
+    return std::monostate();
+  });
 };
 
 IREffect init_input_reg(
   uint32_t with_fnarg_at, uint32_t to_reg, uint32_t mask,
-  bool fix_w_component = false
+  bool fix_w_component
 ) {
   // no it doesn't work like this
   // regular input can be masked like .zw
@@ -682,7 +552,7 @@ pop_output_reg(uint32_t from_reg, uint32_t mask, uint32_t to_element) {
              ) >>= [=, &ctx](auto ivec4) {
         auto desired_type =
           ctx.function->getReturnType()->getStructElementType(to_element);
-        return to_desired_type_from_int_vec4(ivec4, desired_type) |
+        return to_desired_type_from_int_vec4(ivec4, desired_type, mask) |
                [=, &ctx](auto value) {
                  return ctx.builder.CreateInsertValue(ret, value, {to_element});
                };
@@ -691,13 +561,42 @@ pop_output_reg(uint32_t from_reg, uint32_t mask, uint32_t to_element) {
   };
 }
 
+std::function<IRValue(pvalue)> pop_output_tess_factor(
+  uint32_t from_reg, uint32_t mask, uint32_t factor_index, uint32_t factor_count
+) {
+  return [=](pvalue ret) -> IRValue {
+    auto ctx = co_yield get_context();
+    auto array = ctx.resource.patch_constant_output.ptr_float4;
+    auto array_ty = llvm::cast<llvm::ArrayType>( // force line break
+      llvm::cast<llvm::PointerType>(array->getType())
+        ->getNonOpaquePointerElementType()
+    );
+    auto component_ptr = ctx.builder.CreateGEP(
+      array_ty, array,
+      {ctx.builder.getInt32(0), ctx.builder.getInt32(from_reg),
+       ctx.builder.getInt32(__builtin_ctz(mask))}
+    );
+    auto to_half = co_yield call_convert(
+      ctx.builder.CreateLoad(ctx.types._float, component_ptr), ctx.types._half,
+      air::Sign::with_sign /* intended */
+    );
+    auto dst_ptr = ctx.builder.CreateGEP(
+      ctx.types._half, ctx.resource.tess_factor_buffer,
+      {ctx.builder.CreateAdd(ctx.builder.CreateMul(
+         ctx.resource.instanced_patch_id, ctx.builder.getInt32(factor_count)
+       ),
+       ctx.builder.getInt32(factor_index))}
+    );
+    ctx.builder.CreateStore(to_half, dst_ptr);
+
+    co_return nullptr;
+  };
+}
+
 IREffect pull_vertex_input(
   air::FunctionSignatureBuilder *func_signature, uint32_t to_reg, uint32_t mask,
   SM50_IA_INPUT_ELEMENT element_info
 ) {
-  auto vertex_id = func_signature->DefineInput(air::InputVertexID{});
-  auto instance_id = func_signature->DefineInput(air::InputInstanceID{});
-  auto base_instance = func_signature->DefineInput(air::InputBaseInstance{});
   auto vbuf_table = func_signature->DefineInput(air::ArgumentBindingBuffer{
     .buffer_size = {},
     .location_index = 16,
@@ -714,20 +613,11 @@ IREffect pull_vertex_input(
     pvalue index;                   // uint
     if (element_info.step_function) // per_instance
     {
-      if (!ctx.resource.base_instance_id) {
-        ctx.resource.base_instance_id = ctx.function->getArg(base_instance);
-      }
       if (element_info.step_rate) {
-        if (!ctx.resource.instance_id_with_base) {
-          ctx.resource.instance_id_with_base =
-            ctx.function->getArg(instance_id);
-        }
         index = builder.CreateAdd(
           ctx.resource.base_instance_id,
           builder.CreateUDiv(
-            builder.CreateSub(
-              ctx.resource.instance_id_with_base, ctx.resource.base_instance_id
-            ),
+            ctx.resource.instance_id,
             builder.getInt32(element_info.step_rate)
           )
         );
@@ -737,9 +627,6 @@ IREffect pull_vertex_input(
         index = ctx.resource.base_instance_id;
       }
     } else {
-      if (!ctx.resource.vertex_id_with_base) {
-        ctx.resource.vertex_id_with_base = ctx.function->getArg(vertex_id);
-      }
       index = ctx.resource.vertex_id_with_base;
     }
     if (!ctx.resource.vertex_buffer_table) {
@@ -865,6 +752,9 @@ SrcOperandModifier get_modifier(SrcOperand src) {
       [](SrcOperandTemp src) { return src._; },
       [](SrcOperandIndexableTemp src) { return src._; },
       [](SrcOperandIndexableInput src) { return src._; },
+      [](SrcOperandInputICP src) { return src._; },
+      [](SrcOperandInputOCP src) { return src._; },
+      [](SrcOperandInputPC src) { return src._; },
       [](auto s) {
         llvm::outs() << "get_modifier: unhandled src operand type "
                      << decltype(s)::debug_name << "\n";
@@ -983,6 +873,7 @@ uint32_t get_dst_mask(DstOperand dst) {
       [](DstOperandIndexableTemp dst) { return dst._.mask; },
       [](DstOperandOutputDepth) { return (uint32_t)1; },
       [](DstOperandOutputCoverageMask) { return (uint32_t)1; },
+      [](DstOperandIndexableOutput dst) { return dst._.mask; },
       [](auto s) {
         llvm::outs() << "get_dst_mask: unhandled dst operand type "
                      << decltype(s)::debug_name << "\n";
@@ -1004,11 +895,12 @@ auto load_operand_index(OperandIndex idx) {
       },
       [&](IndexByTempComponent ot) {
         return make_irvalue([=](context ctx) -> llvm::Expected<pvalue> {
+          pvalue reg = ctx.resource.temp.ptr_int4;
+          if (ot.phase != ~0u) {
+            reg = ctx.resource.phases[ot.phase].temp.ptr_int4;
+          }
           auto temp =
-            load_from_array_at(
-              ctx.resource.temp.ptr_int4, ctx.builder.getInt32(ot.regid)
-            )
-              .build(ctx);
+            load_from_array_at(reg, ctx.builder.getInt32(ot.regid)).build(ctx);
           if (auto err = temp.takeError()) {
             return std::move(err);
           }
@@ -1111,26 +1003,129 @@ IRValue load_src<SrcOperandImmediate32, true>(SrcOperandImmediate32 imm) {
   });
 };
 
+template <>
+IRValue load_src<SrcOperandInputOCP, true>(SrcOperandInputOCP input_ocp) {
+
+  auto ctx = co_yield get_context();
+  co_return co_yield load_from_array_at(
+    ctx.resource.output.ptr_float4,
+    ctx.builder.CreateAdd(
+      ctx.builder.CreateMul(
+        co_yield load_operand_index(input_ocp.cpid),
+        ctx.builder.getInt32(ctx.resource.output_element_count)
+      ),
+      ctx.builder.getInt32(input_ocp.regid)
+    )
+  );
+};
+
+template <>
+IRValue load_src<SrcOperandInputOCP, false>(SrcOperandInputOCP input_ocp) {
+
+  auto ctx = co_yield get_context();
+  co_return co_yield load_from_array_at(
+    ctx.resource.output.ptr_int4,
+    ctx.builder.CreateAdd(
+      ctx.builder.CreateMul(
+        co_yield load_operand_index(input_ocp.cpid),
+        ctx.builder.getInt32(ctx.resource.output_element_count)
+      ),
+      ctx.builder.getInt32(input_ocp.regid)
+    )
+  );
+};
+
+template <>
+IRValue load_src<SrcOperandInputICP, true>(SrcOperandInputICP input2d) {
+  auto ctx = co_yield get_context();
+  /* applies to both hull and domain shader */
+  co_return co_yield load_from_array_at(
+    ctx.resource.input.ptr_float4,
+    ctx.builder.CreateAdd(
+      ctx.builder.CreateMul(
+        co_yield load_operand_index(input2d.cpid),
+        ctx.builder.getInt32(ctx.resource.input_element_count)
+      ),
+      ctx.builder.getInt32(input2d.regid)
+    )
+  );
+};
+
+template <>
+IRValue load_src<SrcOperandInputICP, false>(SrcOperandInputICP input2d) {
+  auto ctx = co_yield get_context();
+  /* applies to both hull and domain shader */
+  co_return co_yield load_from_array_at(
+    ctx.resource.input.ptr_int4,
+    ctx.builder.CreateAdd(
+      ctx.builder.CreateMul(
+        co_yield load_operand_index(input2d.cpid),
+        ctx.builder.getInt32(ctx.resource.input_element_count)
+      ),
+      ctx.builder.getInt32(input2d.regid)
+    )
+  );
+};
+
+template <>
+IRValue load_src<SrcOperandInputPC, true>(SrcOperandInputPC input_patch_constant
+) {
+  auto ctx = co_yield get_context();
+  co_return co_yield load_from_array_at(
+    ctx.resource.patch_constant_output.ptr_float4,
+    co_yield load_operand_index(input_patch_constant.regindex)
+  );
+};
+
+template<>
+IRValue load_src<SrcOperandInputPC, false>(SrcOperandInputPC input_patch_constant
+) {
+  auto ctx = co_yield get_context();
+  co_return co_yield load_from_array_at(
+    ctx.resource.patch_constant_output.ptr_int4,
+    co_yield load_operand_index(input_patch_constant.regindex)
+  );
+};
+
 template <> IRValue load_src<SrcOperandTemp, true>(SrcOperandTemp temp) {
   auto ctx = co_yield get_context();
-  auto s = co_yield load_from_array_at(
+  if (temp.phase != ~0u) {
+    assert(temp.phase < ctx.resource.phases.size());
+    co_return co_yield load_from_array_at(
+      ctx.resource.phases[temp.phase].temp.ptr_float4,
+      ctx.builder.getInt32(temp.regid)
+    );
+  }
+  co_return co_yield load_from_array_at(
     ctx.resource.temp.ptr_float4, ctx.builder.getInt32(temp.regid)
   );
-  co_return s;
 };
 
 template <> IRValue load_src<SrcOperandTemp, false>(SrcOperandTemp temp) {
-  auto ctx = co_yield get_context();
-  auto s = co_yield load_from_array_at(
+  auto ctx = co_yield get_context();  
+  if (temp.phase != ~0u) {
+    assert(temp.phase < ctx.resource.phases.size());
+    co_return co_yield load_from_array_at(
+      ctx.resource.phases[temp.phase].temp.ptr_int4,
+      ctx.builder.getInt32(temp.regid)
+    );
+  }
+  co_return co_yield load_from_array_at(
     ctx.resource.temp.ptr_int4, ctx.builder.getInt32(temp.regid)
   );
-  co_return s;
 };
 
 template <>
 IRValue load_src<SrcOperandIndexableTemp, true>(SrcOperandIndexableTemp itemp) {
   auto ctx = co_yield get_context();
-  auto regfile = ctx.resource.indexable_temp_map[itemp.regfile];
+  indexable_register_file regfile;
+  if (itemp.phase != ~0u) {
+    assert(itemp.phase < ctx.resource.phases.size());
+    regfile =
+      ctx.resource.phases[itemp.phase].indexable_temp_map[itemp.regfile];
+  } else {
+    regfile = ctx.resource.indexable_temp_map[itemp.regfile];
+  }
   auto s = co_yield load_from_array_at(
     regfile.ptr_float_vec, co_yield load_operand_index(itemp.regindex)
   );
@@ -1141,7 +1136,14 @@ template <>
 IRValue load_src<SrcOperandIndexableTemp, false>(SrcOperandIndexableTemp itemp
 ) {
   auto ctx = co_yield get_context();
-  auto regfile = ctx.resource.indexable_temp_map[itemp.regfile];
+  indexable_register_file regfile;
+  if (itemp.phase != ~0u) {
+    assert(itemp.phase < ctx.resource.phases.size());
+    regfile =
+      ctx.resource.phases[itemp.phase].indexable_temp_map[itemp.regfile];
+  } else {
+    regfile = ctx.resource.indexable_temp_map[itemp.regfile];
+  }
   auto s = co_yield load_from_array_at(
     regfile.ptr_int_vec, co_yield load_operand_index(itemp.regindex)
   );
@@ -1187,10 +1189,9 @@ IRValue load_src<SrcOperandIndexableInput, false>(SrcOperandIndexableInput input
 template <>
 IRValue load_src<SrcOperandAttribute, false>(SrcOperandAttribute attr) {
   auto ctx = co_yield get_context();
-  pvalue vec;
+  pvalue vec = nullptr;
   switch (attr.attribute) {
   case shader::common::InputAttribute::VertexId:
-  case shader::common::InputAttribute::PrimitiveId:
   case shader::common::InputAttribute::InstanceId:
     assert(0 && "never reached: should be handled separately");
     break;
@@ -1214,6 +1215,14 @@ IRValue load_src<SrcOperandAttribute, false>(SrcOperandAttribute attr) {
     vec = co_yield extend_to_vec4(ctx.resource.thread_id_in_group_flat_arg);
     break;
   }
+  
+  case shader::common::InputAttribute::OutputControlPointId:
+  case shader::common::InputAttribute::ForkInstanceId:
+  case shader::common::InputAttribute::JoinInstanceId: {
+    assert(ctx.resource.thread_id_in_patch);
+    vec = co_yield extend_to_vec4(ctx.resource.thread_id_in_patch);
+    break;
+  }
   case shader::common::InputAttribute::CoverageMask: {
     assert(ctx.resource.coverage_mask_arg);
     vec = co_yield extend_to_vec4(
@@ -1223,6 +1232,15 @@ IRValue load_src<SrcOperandAttribute, false>(SrcOperandAttribute attr) {
           )
         : ctx.resource.coverage_mask_arg
     );
+    break;
+  }
+  case shader::common::InputAttribute::Domain: {
+    vec = co_yield extend_to_vec4(ctx.resource.domain) >>= bitcast_int4;
+    break;
+  }
+  case shader::common::InputAttribute::PrimitiveId: {
+    assert(ctx.resource.patch_id);
+    vec = co_yield extend_to_vec4(ctx.resource.patch_id);
     break;
   }
   }
@@ -1235,7 +1253,6 @@ IRValue load_src<SrcOperandAttribute, true>(SrcOperandAttribute attr) {
   pvalue vec = nullptr;
   switch (attr.attribute) {
   case shader::common::InputAttribute::VertexId:
-  case shader::common::InputAttribute::PrimitiveId:
   case shader::common::InputAttribute::InstanceId:
     assert(0 && "never reached: should be handled separately");
     break;
@@ -1259,6 +1276,13 @@ IRValue load_src<SrcOperandAttribute, true>(SrcOperandAttribute attr) {
       bitcast_float4;
     break;
   }
+  case shader::common::InputAttribute::OutputControlPointId:
+  case shader::common::InputAttribute::ForkInstanceId:
+  case shader::common::InputAttribute::JoinInstanceId: {
+    vec = co_yield extend_to_vec4(ctx.resource.thread_id_in_patch) >>=
+      bitcast_float4;
+    break;
+  }
   case shader::common::InputAttribute::CoverageMask: {
     assert(ctx.resource.coverage_mask_arg);
     vec = co_yield extend_to_vec4(
@@ -1268,6 +1292,15 @@ IRValue load_src<SrcOperandAttribute, true>(SrcOperandAttribute attr) {
           )
         : ctx.resource.coverage_mask_arg
     ) >>= bitcast_float4;
+    break;
+  }
+  case shader::common::InputAttribute::Domain: {
+    vec = co_yield extend_to_vec4(ctx.resource.domain);
+    break;
+  }
+  case shader::common::InputAttribute::PrimitiveId: {
+    assert(ctx.resource.patch_id);
+    vec = co_yield extend_to_vec4(ctx.resource.patch_id) >>= bitcast_float4;
     break;
   }
   }
@@ -1399,6 +1432,13 @@ store_dst<DstOperandTemp, false>(DstOperandTemp temp, IRValue &&value) {
   // coroutine + rvalue reference = SHOOT YOURSELF IN THE FOOT
   return make_effect_bind(
     [value = std::move(value), temp](auto ctx) mutable -> IREffect {
+      if (temp.phase != ~0u) {
+        assert(temp.phase < ctx.resource.phases.size());
+        co_return co_yield store_at_vec4_array_masked(
+          ctx.resource.phases[temp.phase].temp.ptr_int4,
+          co_yield get_int(temp.regid), co_yield std::move(value), temp._.mask
+        );
+      }
       co_return co_yield store_at_vec4_array_masked(
         ctx.resource.temp.ptr_int4, co_yield get_int(temp.regid),
         co_yield std::move(value), temp._.mask
@@ -1412,6 +1452,13 @@ IREffect store_dst<DstOperandTemp, true>(DstOperandTemp temp, IRValue &&value) {
   // coroutine + rvalue reference = SHOOT YOURSELF IN THE FOOT
   return make_effect_bind(
     [value = std::move(value), temp](auto ctx) mutable -> IREffect {
+      if (temp.phase != ~0u) {
+        assert(temp.phase < ctx.resource.phases.size());
+        co_return co_yield store_at_vec4_array_masked(
+          ctx.resource.phases[temp.phase].temp.ptr_float4,
+          co_yield get_int(temp.regid), co_yield std::move(value), temp._.mask
+        );
+      }
       co_return co_yield store_at_vec4_array_masked(
         ctx.resource.temp.ptr_float4, co_yield get_int(temp.regid),
         co_yield std::move(value), temp._.mask
@@ -1427,7 +1474,14 @@ IREffect store_dst<DstOperandIndexableTemp, false>(
   // coroutine + rvalue reference = SHOOT YOURSELF IN THE FOOT
   return make_effect_bind(
     [value = std::move(value), itemp](auto ctx) mutable -> IREffect {
-      auto regfile = ctx.resource.indexable_temp_map[itemp.regfile];
+      indexable_register_file regfile;
+      if (itemp.phase != ~0u) {
+        assert(itemp.phase < ctx.resource.phases.size());
+        regfile =
+          ctx.resource.phases[itemp.phase].indexable_temp_map[itemp.regfile];
+      } else {
+        regfile = ctx.resource.indexable_temp_map[itemp.regfile];
+      }
       co_return co_yield store_at_vec_array_masked(
         regfile.ptr_int_vec, co_yield load_operand_index(itemp.regindex),
         co_yield std::move(value), itemp._.mask
@@ -1443,7 +1497,14 @@ IREffect store_dst<DstOperandIndexableTemp, true>(
   // coroutine + rvalue reference = SHOOT YOURSELF IN THE FOOT
   return make_effect_bind(
     [value = std::move(value), itemp](auto ctx) mutable -> IREffect {
-      auto regfile = ctx.resource.indexable_temp_map[itemp.regfile];
+      indexable_register_file regfile;
+      if (itemp.phase != ~0u) {
+        assert(itemp.phase < ctx.resource.phases.size());
+        regfile =
+          ctx.resource.phases[itemp.phase].indexable_temp_map[itemp.regfile];
+      } else {
+        regfile = ctx.resource.indexable_temp_map[itemp.regfile];
+      }
       co_return co_yield store_at_vec_array_masked(
         regfile.ptr_float_vec, co_yield load_operand_index(itemp.regindex),
         co_yield std::move(value), itemp._.mask
@@ -1457,7 +1518,27 @@ IREffect
 store_dst<DstOperandOutput, false>(DstOperandOutput output, IRValue &&value) {
   // coroutine + rvalue reference = SHOOT YOURSELF IN THE FOOT
   return make_effect_bind(
-    [value = std::move(value), output](auto ctx) mutable -> IREffect {
+    [value = std::move(value), output](context ctx) mutable -> IREffect {
+      if (output.phase != ~0u) {
+        co_return co_yield store_at_vec4_array_masked(
+          ctx.resource.patch_constant_output.ptr_int4,
+          co_yield get_int(output.regid), co_yield std::move(value),
+          output._.mask
+        );
+      }
+      if (ctx.shader_type == microsoft::D3D11_SB_HULL_SHADER) {
+        co_return co_yield store_at_vec4_array_masked(
+          ctx.resource.output.ptr_int4,
+          ctx.builder.CreateAdd(
+            ctx.builder.CreateMul(
+              ctx.resource.thread_id_in_patch,
+              ctx.builder.getInt32(ctx.resource.output_element_count)
+            ),
+            ctx.builder.getInt32(output.regid)
+          ),
+          co_yield std::move(value), output._.mask
+        );
+      }
       co_return co_yield store_at_vec4_array_masked(
         ctx.resource.output.ptr_int4, co_yield get_int(output.regid),
         co_yield std::move(value), output._.mask
@@ -1472,6 +1553,26 @@ store_dst<DstOperandOutput, true>(DstOperandOutput output, IRValue &&value) {
   // coroutine + rvalue reference = SHOOT YOURSELF IN THE FOOT
   return make_effect_bind(
     [value = std::move(value), output](auto ctx) mutable -> IREffect {
+      if (output.phase != ~0u) {
+        co_return co_yield store_at_vec4_array_masked(
+          ctx.resource.patch_constant_output.ptr_float4,
+          co_yield get_int(output.regid), co_yield std::move(value),
+          output._.mask
+        );
+      }
+      if (ctx.shader_type == microsoft::D3D11_SB_HULL_SHADER) {
+        co_return co_yield store_at_vec4_array_masked(
+          ctx.resource.output.ptr_float4,
+          ctx.builder.CreateAdd(
+            ctx.builder.CreateMul(
+              ctx.resource.thread_id_in_patch,
+              ctx.builder.getInt32(ctx.resource.output_element_count)
+            ),
+            ctx.builder.getInt32(output.regid)
+          ),
+          co_yield std::move(value), output._.mask
+        );
+      }
       co_return co_yield store_at_vec4_array_masked(
         ctx.resource.output.ptr_float4, co_yield get_int(output.regid),
         co_yield std::move(value), output._.mask
@@ -1534,6 +1635,72 @@ IREffect store_dst<DstOperandOutputCoverageMask, true>(
         ctx.builder.CreateBitCast(sample_mask, ctx.types._int), ptr
       );
       co_return {};
+    }
+  );
+};
+
+template <>
+IREffect store_dst<
+  DstOperandIndexableOutput, true>(DstOperandIndexableOutput output, IRValue && value) {
+  return make_effect_bind(
+    [value = std::move(value), output](context ctx) mutable -> IREffect {
+      auto index = co_yield load_operand_index(output.regindex);
+      if (output.phase != ~0u) {
+        co_return co_yield store_at_vec4_array_masked(
+          ctx.resource.patch_constant_output.ptr_float4, index,
+          co_yield std::move(value), output._.mask
+        );
+      }
+      if (ctx.shader_type == microsoft::D3D11_SB_HULL_SHADER) {
+        co_return co_yield store_at_vec4_array_masked(
+          ctx.resource.output.ptr_float4,
+          ctx.builder.CreateAdd(
+            ctx.builder.CreateMul(
+              ctx.resource.thread_id_in_patch,
+              ctx.builder.getInt32(ctx.resource.output_element_count)
+            ),
+            index
+          ),
+          co_yield std::move(value), output._.mask
+        );
+      }
+      co_return co_yield store_at_vec4_array_masked(
+        ctx.resource.output.ptr_float4, index, co_yield std::move(value),
+        output._.mask
+      );
+    }
+  );
+};
+
+template <>
+IREffect store_dst<
+  DstOperandIndexableOutput, false>(DstOperandIndexableOutput output, IRValue && value) {
+  return make_effect_bind(
+    [value = std::move(value), output](context ctx) mutable -> IREffect {
+      auto index = co_yield load_operand_index(output.regindex);
+      if (output.phase != ~0u) {
+        co_return co_yield store_at_vec4_array_masked(
+          ctx.resource.patch_constant_output.ptr_int4, index,
+          co_yield std::move(value), output._.mask
+        );
+      }
+      if (ctx.shader_type == microsoft::D3D11_SB_HULL_SHADER) {
+        co_return co_yield store_at_vec4_array_masked(
+          ctx.resource.output.ptr_int4,
+          ctx.builder.CreateAdd(
+            ctx.builder.CreateMul(
+              ctx.resource.thread_id_in_patch,
+              ctx.builder.getInt32(ctx.resource.output_element_count)
+            ),
+            index
+          ),
+          co_yield std::move(value), output._.mask
+        );
+      }
+      co_return co_yield store_at_vec4_array_masked(
+        ctx.resource.output.ptr_int4, index, co_yield std::move(value),
+        output._.mask
+      );
     }
   );
 };
@@ -3435,16 +3602,24 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
             }
             case IntegerBinaryOpWithTwoDst::UDiv: {
               effect << make_effect_bind([=](struct context ctx) -> IREffect {
-                auto a = co_yield load_src_op<false>(bin.src0);
-                auto b = co_yield load_src_op<false>(bin.src1);
-                co_yield store_dst_op<false>(
-                  bin.dst_quot, make_irvalue([=](struct context ctx) {
-                    return ctx.builder.CreateUDiv(a, b);
+                co_yield store_dst_op_masked<false>(
+                  bin.dst_quot,
+                  make_irvalue_bind([=](struct context ctx) -> IRValue {
+                    auto a =
+                      co_yield load_src_op<false>(bin.src0, dst_hi_mask);
+                    auto b =
+                      co_yield load_src_op<false>(bin.src1, dst_hi_mask);
+                    co_return ctx.builder.CreateUDiv(a, b);
                   })
                 );
-                co_yield store_dst_op<false>(
-                  bin.dst_rem, make_irvalue([=](struct context ctx) {
-                    return ctx.builder.CreateURem(a, b);
+                co_yield store_dst_op_masked<false>(
+                  bin.dst_rem,
+                  make_irvalue_bind([=](struct context ctx) -> IRValue {
+                    auto a =
+                      co_yield load_src_op<false>(bin.src0, dst_lo_mask);
+                    auto b =
+                      co_yield load_src_op<false>(bin.src1, dst_lo_mask);
+                    co_return ctx.builder.CreateURem(a, b);
                   })
                 );
                 co_return {};
@@ -4179,7 +4354,102 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
               // unconditional jump to return bb
               builder.CreateBr(return_bb);
               return llvm::Error::success();
-            }
+            },
+            [&](BasicBlockInstanceBarrier instance) -> llvm::Error {
+              if (visited.count(instance.active.get()) == 0) {
+                if (auto err = readBasicBlock(instance.active)) {
+                  return err;
+                };
+              }
+              if (visited.count(instance.sync.get()) == 0) {
+                if (auto err = readBasicBlock(instance.sync)) {
+                  return err;
+                };
+              }
+              auto target_true_bb = visited[instance.active.get()];
+              auto target_false_bb = visited[instance.sync.get()];
+              builder.CreateCondBr(
+                ctx.builder.CreateICmp(
+                  llvm::CmpInst::ICMP_ULT,
+                  ctx.resource.thread_id_in_patch,
+                  ctx.builder.getInt32(instance.instance_count)
+                ),
+                target_true_bb, target_false_bb
+              );
+              return llvm::Error::success();
+            },
+            [&](BasicBlockHullShaderWriteOutput hull_end) -> llvm::Error {
+              if (visited.count(hull_end.epilogue.get()) == 0) {
+                if (auto err = readBasicBlock(hull_end.epilogue)) {
+                  return err;
+                }
+              }
+
+              auto active = llvm::BasicBlock::Create(
+                context, "write_control_point", function
+              );
+              auto sync = llvm::BasicBlock::Create(
+                context, "write_control_point_end", function
+              );
+
+              builder.CreateCondBr(
+                ctx.builder.CreateICmp(
+                  llvm::CmpInst::ICMP_ULT,
+                  ctx.resource.thread_id_in_patch,
+                  ctx.builder.getInt32(hull_end.instance_count)
+                ),
+                active, sync
+              );
+              builder.SetInsertPoint(active);
+              auto dst_ptr = builder.CreateGEP(
+                ctx.types._int4, ctx.resource.control_point_buffer,
+                {builder.CreateMul(
+                  ctx.resource.instanced_patch_id, builder.getInt32(
+                                           ctx.resource.output_element_count *
+                                           hull_end.instance_count
+                                         )
+                )}
+              );
+              for (unsigned i = 0; i < ctx.resource.output_element_count; i++) {
+                auto dst_ptr_offset = builder.CreateGEP(
+                  ctx.types._int4, dst_ptr,
+                  {builder.CreateAdd(
+                    builder.CreateMul(
+                      ctx.resource.thread_id_in_patch,
+                      builder.getInt32(ctx.resource.output_element_count)
+                    ),
+                    builder.getInt32(i)
+                  )}
+                );
+                auto src_ptr_offset = builder.CreateGEP(
+                  llvm::ArrayType::get(ctx.types._int4, ctx.resource.output_element_count * hull_end.instance_count),
+                  ctx.resource.output.ptr_int4,
+                  {builder.getInt32(0),
+                   builder.CreateAdd(
+                     builder.CreateMul(
+                       ctx.resource.thread_id_in_patch,
+                       builder.getInt32(ctx.resource.output_element_count)
+                     ),
+                     builder.getInt32(i)
+                   )}
+                );
+                builder.CreateStore(
+                  builder.CreateLoad(ctx.types._int4, src_ptr_offset),
+                  dst_ptr_offset
+                );
+              }
+              builder.CreateBr(sync);
+              builder.SetInsertPoint(sync);
+              if (auto err = call_threadgroup_barrier(mem_flags::threadgroup)
+                               .build(ctx)
+                               .takeError()) {
+                return err;
+              }
+
+              auto target_bb = visited[hull_end.epilogue.get()];
+              builder.CreateBr(target_bb);
+              return llvm::Error::success();
+            },
           },
           current->target
         )) {
@@ -4203,6 +4473,3 @@ struct environment_cast<::dxmt::dxbc::context, ::dxmt::air::AIRBuilderContext> {
     return {src.llvm, src.module, src.builder, src.types};
   };
 };
-
-// NOLINTEND(misc-definitions-in-headers)
-#pragma clang diagnostic pop

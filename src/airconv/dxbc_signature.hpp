@@ -1,6 +1,8 @@
 #pragma once
 
 #include "DXBCParser/DXBCUtils.h"
+#include "DXBCParser/ShaderBinary.h"
+#include "airconv_public.h"
 #include "dxbc_constants.hpp"
 #include <string>
 
@@ -41,5 +43,12 @@ private:
 
 static_assert(
   sizeof(Signature) == sizeof(void *), "ensure inline implementation"
+);
+
+void handle_signature(
+  microsoft::CSignatureParser &inputParser,
+  microsoft::CSignatureParser &outputParser,
+  microsoft::D3D10ShaderBinary::CInstruction &Inst, SM50Shader *sm50_shader,
+  uint32_t phase
 );
 } // namespace dxmt::dxbc

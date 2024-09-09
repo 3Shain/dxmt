@@ -86,6 +86,9 @@ const void *__wine_unix_call_funcs[] = {
     &SM50FreeError,
     &winemetal_unix_init,
     &objc_msgSend_fpret,
+    &SM50CompileTessellationPipelineVertex,
+    &SM50CompileTessellationPipelineHull,
+    &SM50CompileTessellationPipelineDomain,
 };
 // wow64: things become funny
 

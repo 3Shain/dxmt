@@ -230,7 +230,7 @@ public:
     *ppvObject = nullptr;
 
     if (riid == __uuidof(IUnknown) || riid == __uuidof(ID3D11DeviceChild) ||
-        riid == __uuidof(ID3D11DepthStencilState) ||
+        riid == __uuidof(ID3D11BlendState) ||
         riid == __uuidof(IMTLD3D11BlendState)) {
       *ppvObject = ref(this);
       return S_OK;
@@ -420,10 +420,12 @@ public:
 
     // m_desc.ScissorEnable : handled outside
 
-    // m_desc.ForcedSampleCount : not supported?
+    // m_desc.ForcedSampleCount : handled outside
   }
 
   bool IsScissorEnabled() { return m_desc.ScissorEnable; }
+
+  uint32_t UAVOnlySampleCount() { return std::max(1u, m_desc.ForcedSampleCount); }
 
 private:
   const D3D11_RASTERIZER_DESC2 m_desc;

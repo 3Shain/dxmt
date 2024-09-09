@@ -39,6 +39,7 @@ constexpr Swizzle swizzle_identity = {0, 1, 2, 3};
 #pragma region operand index
 struct IndexByTempComponent {
   uint32_t regid;
+  uint32_t phase;
   uint8_t component;
   uint32_t offset;
 };
@@ -46,6 +47,7 @@ struct IndexByTempComponent {
 struct IndexByIndexableTempComponent {
   uint32_t regfile;
   uint32_t regid;
+  uint32_t phase;
   uint8_t component;
   uint32_t offset;
 };
@@ -75,6 +77,7 @@ struct SrcOperandTemp {
   static constexpr std::string_view debug_name = "temp";
   SrcOperandModifier _;
   uint32_t regid;
+  uint32_t phase;
 };
 
 struct SrcOperandIndexableTemp {
@@ -82,12 +85,33 @@ struct SrcOperandIndexableTemp {
   SrcOperandModifier _;
   uint32_t regfile;
   OperandIndex regindex;
+  uint32_t phase;
 };
 
 struct SrcOperandInput {
   static constexpr std::string_view debug_name = "input";
   SrcOperandModifier _;
   uint32_t regid;
+};
+
+struct SrcOperandInputOCP {
+  static constexpr std::string_view debug_name = "input_vocp";
+  SrcOperandModifier _;
+  OperandIndex cpid;
+  uint32_t regid;
+};
+
+struct SrcOperandInputICP {
+  static constexpr std::string_view debug_name = "input_vicp";
+  SrcOperandModifier _;
+  OperandIndex cpid;
+  uint32_t regid;
+};
+
+struct SrcOperandInputPC {
+  static constexpr std::string_view debug_name = "input_vpc";
+  SrcOperandModifier _;
+  OperandIndex regindex;
 };
 
 struct SrcOperandIndexableInput {
@@ -138,6 +162,7 @@ struct DstOperandTemp {
   static constexpr std::string_view debug_name = "temp";
   DstOperandCommon _;
   uint32_t regid;
+  uint32_t phase;
 };
 
 struct DstOperandIndexableTemp {
@@ -145,12 +170,21 @@ struct DstOperandIndexableTemp {
   DstOperandCommon _;
   uint32_t regfile;
   OperandIndex regindex;
+  uint32_t phase;
 };
 
 struct DstOperandOutput {
   static constexpr std::string_view debug_name = "output";
   DstOperandCommon _;
   uint32_t regid;
+  uint32_t phase;
+};
+
+struct DstOperandIndexableOutput {
+  static constexpr std::string_view debug_name = "indexable_output";
+  DstOperandCommon _;
+  OperandIndex regindex;
+  uint32_t phase;
 };
 
 struct DstOperandOutputDepth {
@@ -187,7 +221,8 @@ struct DclOutput {};
 using SrcOperand = std::variant<
   SrcOperandImmediate32, SrcOperandTemp, SrcOperandIndexableTemp,
   SrcOperandInput, SrcOperandConstantBuffer, SrcOperandImmediateConstantBuffer,
-  SrcOperandAttribute, SrcOperandIndexableInput>;
+  SrcOperandAttribute, SrcOperandIndexableInput, SrcOperandInputICP,
+  SrcOperandInputOCP, SrcOperandInputPC>;
 
 struct SrcOperandResource {
   uint32_t range_id;
@@ -234,7 +269,8 @@ struct AtomicOperandTGSM {
 
 using DstOperand = std::variant<
   DstOperandNull, DstOperandSideEffect, DstOperandTemp, DstOperandIndexableTemp,
-  DstOperandOutput, DstOperandOutputDepth, DstOperandOutputCoverageMask>;
+  DstOperandOutput, DstOperandOutputDepth, DstOperandOutputCoverageMask,
+  DstOperandIndexableOutput>;
 
 #pragma mark mov instructions
 
@@ -699,6 +735,11 @@ struct BasicBlockUnconditionalBranch {
   std::shared_ptr<BasicBlock> target;
 };
 
+struct BasicBlockHullShaderWriteOutput {
+  uint32_t instance_count;
+  std::shared_ptr<BasicBlock> epilogue;
+};
+
 struct BasicBlockSwitch {
   SrcOperand value;
   std::map<uint32_t, std::shared_ptr<BasicBlock>> cases;
@@ -709,9 +750,16 @@ struct BasicBlockReturn {};
 
 struct BasicBlockUndefined {};
 
+struct BasicBlockInstanceBarrier {
+  uint32_t instance_count;
+  std::shared_ptr<BasicBlock> active;
+  std::shared_ptr<BasicBlock> sync;
+};
+
 using BasicBlockTarget = std::variant<
   BasicBlockConditionalBranch, BasicBlockUnconditionalBranch, BasicBlockSwitch,
-  BasicBlockReturn, BasicBlockUndefined>;
+  BasicBlockReturn, BasicBlockInstanceBarrier, BasicBlockHullShaderWriteOutput,
+  BasicBlockUndefined>;
 
 class BasicBlock {
 public:
@@ -725,8 +773,11 @@ public:
 
 #pragma endregion
 
-SrcOperand readSrcOperand(const microsoft::D3D10ShaderBinary::COperandBase &O);
+SrcOperand readSrcOperand(
+  const microsoft::D3D10ShaderBinary::COperandBase &O, uint32_t phase
+);
 BasicBlockCondition readCondition(
-  const microsoft::D3D10ShaderBinary::CInstruction &Inst, uint32_t OpIdx
+  const microsoft::D3D10ShaderBinary::CInstruction &Inst, uint32_t OpIdx,
+  uint32_t phase
 );
 } // namespace dxmt::dxbc

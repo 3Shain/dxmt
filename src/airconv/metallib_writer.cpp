@@ -261,6 +261,88 @@ void MetallibWriter::Write(const llvm::Module &module, raw_ostream &OS) {
         private_metadata_stream << "ENDT";
       }
     }
+
+    auto objectFns = module.getNamedMetadata("air.object");
+    if (objectFns) {
+      for (auto fn : objectFns->operands()) {
+        fn_count++;
+        auto func = dyn_cast<Function>(
+          dyn_cast<ConstantAsMetadata>(fn->getOperand(0).get())->getValue()
+        );
+        auto name = func->getName();
+        function_def_stream << "NAME";
+        function_def_stream << value((uint16_t)(name.size() + 1));
+        function_def_stream << name << '\0';
+        function_def_stream
+          << value(MTLB_TYPE_TAG{.type = FunctionType::Object});
+        function_def_stream << value(MTLB_HASH_TAG{.hash = hash});
+        function_def_stream
+          << value(MTLB_MDSZ_TAG{.bitcodeSize = bitcode.size()});
+        function_def_stream << value(MTLB_OFFT_TAG{
+          .PublicMetadataOffset = public_metadata_stream.tell(),
+          .PrivateMetadataOffset = private_metadata_stream.tell(),
+          .BitcodeOffset = 0, // ??
+        });
+        function_def_stream << value(MTLB_VERS_TAG{
+          .airVersionMajor = 2,
+          .airVersionMinor = 6,
+          .languageVersionMajor = 3,
+          .languageVersionMinor = 1,
+        });
+        function_def_stream << "ENDT";
+
+        SmallVector<char, 0> fn_public_metadata;
+        raw_svector_ostream fn_public_metadata_stream(fn_public_metadata);
+        fn_public_metadata_stream << "ENDT";
+
+        public_metadata_stream << value((uint32_t)fn_public_metadata.size());
+        public_metadata_stream << fn_public_metadata;
+
+        private_metadata_stream << value(4);
+        private_metadata_stream << "ENDT";
+      }
+    }
+
+    auto meshFns = module.getNamedMetadata("air.mesh");
+    if (meshFns) {
+      for (auto fn : meshFns->operands()) {
+        fn_count++;
+        auto func = dyn_cast<Function>(
+          dyn_cast<ConstantAsMetadata>(fn->getOperand(0).get())->getValue()
+        );
+        auto name = func->getName();
+        function_def_stream << "NAME";
+        function_def_stream << value((uint16_t)(name.size() + 1));
+        function_def_stream << name << '\0';
+        function_def_stream
+          << value(MTLB_TYPE_TAG{.type = FunctionType::Mesh});
+        function_def_stream << value(MTLB_HASH_TAG{.hash = hash});
+        function_def_stream
+          << value(MTLB_MDSZ_TAG{.bitcodeSize = bitcode.size()});
+        function_def_stream << value(MTLB_OFFT_TAG{
+          .PublicMetadataOffset = public_metadata_stream.tell(),
+          .PrivateMetadataOffset = private_metadata_stream.tell(),
+          .BitcodeOffset = 0, // ??
+        });
+        function_def_stream << value(MTLB_VERS_TAG{
+          .airVersionMajor = 2,
+          .airVersionMinor = 6,
+          .languageVersionMajor = 3,
+          .languageVersionMinor = 1,
+        });
+        function_def_stream << "ENDT";
+
+        SmallVector<char, 0> fn_public_metadata;
+        raw_svector_ostream fn_public_metadata_stream(fn_public_metadata);
+        fn_public_metadata_stream << "ENDT";
+
+        public_metadata_stream << value((uint32_t)fn_public_metadata.size());
+        public_metadata_stream << fn_public_metadata;
+
+        private_metadata_stream << value(4);
+        private_metadata_stream << "ENDT";
+      }
+    }
   }
 
   MTLBHeader header;

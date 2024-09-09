@@ -54,7 +54,13 @@ enum class MemoryAccess : uint32_t {
   read_write = 3
 };
 
-enum class AddressSpace : uint32_t { unknown, device, constant, threadgroup };
+enum class AddressSpace : uint32_t {
+  unknown,
+  device,
+  constant,
+  threadgroup,
+  object_data = 6
+};
 
 enum class Sign { inapplicable, with_sign, no_sign };
 
@@ -88,11 +94,21 @@ enum class Interpolation {
   flat
 };
 
+enum class PostTessellationPatch { triangle, quad };
+
 struct MSLFloat {
   std::string get_name() const { return "float"; };
 
   llvm::Type *get_llvm_type(llvm::LLVMContext &context) const {
     return llvm::Type::getFloatTy(context);
+  };
+};
+
+struct MSLHalf {
+  std::string get_name() const { return "half"; };
+
+  llvm::Type *get_llvm_type(llvm::LLVMContext &context) const {
+    return llvm::Type::getHalfTy(context);
   };
 };
 
@@ -109,6 +125,14 @@ struct MSLUint {
 
   llvm::Type *get_llvm_type(llvm::LLVMContext &context) const {
     return llvm::Type::getInt32Ty(context);
+  };
+};
+
+struct MSLUshort {
+  std::string get_name() const { return "ushort"; };
+
+  llvm::Type *get_llvm_type(llvm::LLVMContext &context) const {
+    return llvm::Type::getInt16Ty(context);
   };
 };
 
@@ -135,7 +159,7 @@ constexpr auto msl_uint = MSLUint{};
 constexpr auto msl_float = MSLFloat{};
 
 using MSLScalerType =
-  std::variant<MSLFloat, MSLInt, MSLUint, MSLBool>; // incomplete list
+  std::variant<MSLFloat, MSLInt, MSLUint, MSLBool, MSLHalf, MSLUshort>; // incomplete list
 
 constexpr auto msl_sampler = MSLSampler{};
 
@@ -418,10 +442,10 @@ public:
   uint32_t
   DefineFloat32(std::string name, uint32_t location_index = UINT32_MAX);
 
-  auto Build(llvm::LLVMContext &context, const llvm::DataLayout &layout)
+  auto Build(llvm::LLVMContext &context, const llvm::DataLayout &layout) const
     -> std::tuple<llvm::StructType *, llvm::MDNode *>;
 
-  auto empty() { return fieldsType.empty(); }
+  auto empty() const { return fieldsType.empty(); }
 
 private:
   std::vector<ArgumentBufferArguments> fieldsType;
@@ -472,6 +496,16 @@ struct InputFrontFacing {};
 struct InputInputCoverage {};
 struct InputSampleIndex {};
 
+struct InputPatchID {};
+struct InputPositionInPatch {
+  PostTessellationPatch patch;
+};
+struct InputPayload {
+  uint32_t size;
+};
+
+struct InputMeshGridProperties {};
+
 struct InputPosition {
   Interpolation interpolation;
 };
@@ -480,6 +514,8 @@ struct InputThreadIndexInThreadgroup {};    // uint
 struct InputThreadPositionInThreadgroup {}; // uint3
 struct InputThreadPositionInGrid {};        // uint3
 struct InputThreadgroupPositionInGrid {};   // uint3
+
+struct InputThreadgroupsPerGrid {};         // uint3
 
 struct OutputRenderTarget {
   uint32_t index;
@@ -511,9 +547,14 @@ using FunctionInput = template_concat_t<
     InputPrimitiveID, InputViewportArrayIndex, InputRenderTargetArrayIndex,
     InputFrontFacing, InputPosition, InputSampleIndex, //
     InputFragmentStageIn, InputInputCoverage,
+    /* post-tessellation */
+    InputPatchID, InputPositionInPatch,
+    /* object & mesh */
+    InputPayload, InputMeshGridProperties,
     /* kernel */
     InputThreadIndexInThreadgroup, InputThreadPositionInThreadgroup,
-    InputThreadPositionInGrid, InputThreadgroupPositionInGrid>>;
+    InputThreadPositionInGrid, InputThreadgroupPositionInGrid,
+    InputThreadgroupsPerGrid>>;
 
 using FunctionOutput = std::variant<
   /* vertex */
@@ -533,6 +574,14 @@ public:
   uint32_t DefineOutput(const FunctionOutput &output);
   void UseEarlyFragmentTests() { early_fragment_tests = true; }
   void UseMaxWorkgroupSize(uint32_t size) { max_work_group_size = size; }
+  void UsePatch(PostTessellationPatch patch, uint32_t num_control_points) {
+    this->patch = std::make_pair(patch, num_control_points);
+  }
+
+  PostTessellationPatch GetPatchType() {
+    assert(patch.has_value() && "not a domain shader");
+    return patch->first;
+  };
 
   auto CreateFunction(
     std::string name, llvm::LLVMContext &context, llvm::Module &module,
@@ -544,6 +593,7 @@ private:
   std::vector<FunctionOutput> outputs;
   bool early_fragment_tests = false;
   uint32_t max_work_group_size = 0;
+  std::optional<std::pair<PostTessellationPatch, uint32_t>> patch;
 };
 
 inline TextureKind to_air_resource_type(

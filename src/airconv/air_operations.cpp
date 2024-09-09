@@ -1815,4 +1815,30 @@ AIRBuilderResult pull_vec4_from_addr(
   co_return value;
 };
 
+AIRBuilderResult
+call_set_mesh_properties(pvalue mesh_grid_props, pvalue grid_size) {
+  return make_op([=](struct AIRBuilderContext ctx) {
+    using namespace llvm;
+    auto &context = ctx.llvm;
+    auto &module = ctx.module;
+    auto att = AttributeList::get(
+      context,
+      {{1U, Attribute::get(context, Attribute::AttrKind::NoCapture)},
+       {~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)},
+       {~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)},
+       {~0U, Attribute::get(context, Attribute::AttrKind::ArgMemOnly)},
+       {~0U, Attribute::get(context, Attribute::AttrKind::MustProgress)}}
+    );
+    auto fn = (module.getOrInsertFunction(
+      "air.set_threadgroups_per_grid_mesh_properties",
+      llvm::FunctionType::get(
+        llvm::Type::getVoidTy(context),
+        {ctx.types._mesh_grid_properties->getPointerTo(3), ctx.types._int3}, false
+      ),
+      att
+    ));
+    return ctx.builder.CreateCall(fn, {mesh_grid_props, grid_size});
+  });
+};
+
 }; // namespace dxmt::air
