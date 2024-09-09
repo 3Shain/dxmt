@@ -9,6 +9,7 @@
 #include "Metal/MTLDevice.hpp"
 #include "Metal/MTLTypes.hpp"
 #include "dxmt_binding.hpp"
+#include "dxmt_capture.hpp"
 #include "dxmt_command.hpp"
 #include "dxmt_occlusion_query.hpp"
 #include "dxmt_ring_bump_allocator.hpp"
@@ -334,6 +335,7 @@ private:
 
   RingBumpAllocator<true> staging_allocator;
   RingBumpAllocator<false> copy_temp_allocator;
+  CaptureState capture_state;
 
 public:
   DXMTCommandContext clear_cmd;

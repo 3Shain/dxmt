@@ -4,6 +4,7 @@ dxmt_src = [
   'dxmt_buffer_pool.cpp',
   'dxmt_command_queue.cpp',
   'dxmt_command.cpp',
+  'dxmt_capture.cpp',
 ]
 
 air = custom_target('metal_air',
