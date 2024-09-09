@@ -3602,24 +3602,24 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
             }
             case IntegerBinaryOpWithTwoDst::UDiv: {
               effect << make_effect_bind([=](struct context ctx) -> IREffect {
+                auto a = co_yield load_src_op<false>(bin.src0);
+                auto b = co_yield load_src_op<false>(bin.src1);
                 co_yield store_dst_op_masked<false>(
                   bin.dst_quot,
                   make_irvalue_bind([=](struct context ctx) -> IRValue {
-                    auto a =
-                      co_yield load_src_op<false>(bin.src0, dst_hi_mask);
-                    auto b =
-                      co_yield load_src_op<false>(bin.src1, dst_hi_mask);
-                    co_return ctx.builder.CreateUDiv(a, b);
+                    co_return ctx.builder.CreateUDiv(
+                      co_yield get_valid_components(a, dst_hi_mask),
+                      co_yield get_valid_components(b, dst_hi_mask)
+                    );
                   })
                 );
                 co_yield store_dst_op_masked<false>(
                   bin.dst_rem,
                   make_irvalue_bind([=](struct context ctx) -> IRValue {
-                    auto a =
-                      co_yield load_src_op<false>(bin.src0, dst_lo_mask);
-                    auto b =
-                      co_yield load_src_op<false>(bin.src1, dst_lo_mask);
-                    co_return ctx.builder.CreateURem(a, b);
+                    co_return ctx.builder.CreateURem(
+                      co_yield get_valid_components(a, dst_lo_mask),
+                      co_yield get_valid_components(b, dst_lo_mask)
+                    );
                   })
                 );
                 co_return {};
