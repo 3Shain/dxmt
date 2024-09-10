@@ -71,7 +71,7 @@ class MTLCompiledTessellationPipeline
     : public ComObject<IMTLCompiledTessellationPipeline> {
 public:
   MTLCompiledTessellationPipeline(IMTLD3D11Device *pDevice,
-                                  const MTL_TESSELLATION_PIPELINE_DESC *pDesc)
+                                  const MTL_GRAPHICS_PIPELINE_DESC *pDesc)
       : ComObject<IMTLCompiledTessellationPipeline>(),
         num_rtvs(pDesc->NumColorAttachments),
         depth_stencil_format(pDesc->DepthStencilFormat), device_(pDevice),
@@ -419,7 +419,7 @@ private:
 
 Com<IMTLCompiledTessellationPipeline>
 CreateTessellationPipeline(IMTLD3D11Device *pDevice,
-                           MTL_TESSELLATION_PIPELINE_DESC *pDesc) {
+                           MTL_GRAPHICS_PIPELINE_DESC *pDesc) {
   Com<IMTLCompiledTessellationPipeline> pipeline =
       new MTLCompiledTessellationPipeline(pDevice, pDesc);
   pipeline->SubmitWork();

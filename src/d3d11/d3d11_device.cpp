@@ -1024,7 +1024,7 @@ public:
 
   HRESULT
   CreateTessellationPipeline(
-      MTL_TESSELLATION_PIPELINE_DESC *pDesc,
+      MTL_GRAPHICS_PIPELINE_DESC *pDesc,
       IMTLCompiledTessellationPipeline **ppPipeline) override {
     pipeline_cache_->GetTessellationPipeline(pDesc, ppPipeline);
     return S_OK;

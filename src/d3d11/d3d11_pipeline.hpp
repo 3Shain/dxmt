@@ -12,18 +12,6 @@
 
 struct MTL_GRAPHICS_PIPELINE_DESC {
   IMTLD3D11Shader *VertexShader;
-  IMTLD3D11Shader *PixelShader;
-  IMTLD3D11BlendState *BlendState;
-  IMTLD3D11InputLayout *InputLayout;
-  UINT NumColorAttachments;
-  MTL::PixelFormat ColorAttachmentFormats[8];
-  MTL::PixelFormat DepthStencilFormat;
-  bool RasterizationEnabled = false;
-  uint32_t SampleMask = 0;
-};
-
-struct MTL_TESSELLATION_PIPELINE_DESC {
-  IMTLD3D11Shader *VertexShader;
   IMTLD3D11Shader *HullShader;
   IMTLD3D11Shader *DomainShader;
   IMTLD3D11Shader *PixelShader;
@@ -34,7 +22,7 @@ struct MTL_TESSELLATION_PIPELINE_DESC {
   MTL::PixelFormat DepthStencilFormat;
   bool RasterizationEnabled;
   SM50_INDEX_BUFFER_FORAMT IndexBufferFormat;
-  uint32_t SampleMask = 0;
+  uint32_t SampleMask;
 };
 
 struct MTL_COMPILED_GRAPHICS_PIPELINE {
@@ -87,48 +75,12 @@ namespace std {
 template <> struct hash<MTL_GRAPHICS_PIPELINE_DESC> {
   size_t operator()(const MTL_GRAPHICS_PIPELINE_DESC &v) const noexcept {
     dxmt::HashState state;
-    state.add((size_t)v.VertexShader); // FIXME: don't use pointer?
-    state.add((size_t)v.PixelShader);  // FIXME: don't use pointer?
-    state.add((size_t)v.InputLayout);  // FIXME: don't use pointer?
-    /* IMTLD3D11BlendState pointer is safe to be used as hash input */
-    state.add((size_t)v.BlendState);
-    state.add((size_t)v.DepthStencilFormat);
-    state.add((size_t)v.SampleMask);
-    state.add((size_t)v.NumColorAttachments);
-    for (unsigned i = 0; i < std::size(v.ColorAttachmentFormats); i++) {
-      state.add(i < v.NumColorAttachments ? v.ColorAttachmentFormats[i]
-                                          : MTL::PixelFormatInvalid);
-    }
-    return state;
-  };
-};
-template <> struct equal_to<MTL_GRAPHICS_PIPELINE_DESC> {
-  bool operator()(const MTL_GRAPHICS_PIPELINE_DESC &x,
-                  const MTL_GRAPHICS_PIPELINE_DESC &y) const {
-    if (x.NumColorAttachments != y.NumColorAttachments)
-      return false;
-    for (unsigned i = 0; i < x.NumColorAttachments; i++) {
-      if (x.ColorAttachmentFormats[i] != y.ColorAttachmentFormats[i])
-        return false;
-    }
-    return (x.BlendState == y.BlendState) &&
-           (x.VertexShader == y.VertexShader) &&
-           (x.PixelShader == y.PixelShader) &&
-           (x.InputLayout == y.InputLayout) &&
-           (x.DepthStencilFormat == y.DepthStencilFormat) &&
-           (x.RasterizationEnabled == y.RasterizationEnabled)&&
-           (x.SampleMask == y.SampleMask);
-  }
-};
-template <> struct hash<MTL_TESSELLATION_PIPELINE_DESC> {
-  size_t operator()(const MTL_TESSELLATION_PIPELINE_DESC &v) const noexcept {
-    dxmt::HashState state;
     state.add((size_t)v.VertexShader);
     state.add((size_t)v.PixelShader);
     state.add((size_t)v.HullShader);
     state.add((size_t)v.DomainShader);
+    /* these pointers is safe to be used as hash input */
     state.add((size_t)v.InputLayout);
-    /* IMTLD3D11BlendState pointer is safe to be used as hash input */
     state.add((size_t)v.BlendState);
     state.add((size_t)v.DepthStencilFormat);
     state.add((size_t)v.IndexBufferFormat);
@@ -141,9 +93,9 @@ template <> struct hash<MTL_TESSELLATION_PIPELINE_DESC> {
     return state;
   };
 };
-template <> struct equal_to<MTL_TESSELLATION_PIPELINE_DESC> {
-  bool operator()(const MTL_TESSELLATION_PIPELINE_DESC &x,
-                  const MTL_TESSELLATION_PIPELINE_DESC &y) const {
+template <> struct equal_to<MTL_GRAPHICS_PIPELINE_DESC> {
+  bool operator()(const MTL_GRAPHICS_PIPELINE_DESC &x,
+                  const MTL_GRAPHICS_PIPELINE_DESC &y) const {
     if (x.NumColorAttachments != y.NumColorAttachments)
       return false;
     for (unsigned i = 0; i < x.NumColorAttachments; i++) {
@@ -173,6 +125,7 @@ CreateComputePipeline(IMTLD3D11Device *pDevice,
                       IMTLCompiledShader *pComputeShader);
 
 Com<IMTLCompiledTessellationPipeline>
-CreateTessellationPipeline(IMTLD3D11Device *pDevice, MTL_TESSELLATION_PIPELINE_DESC* pDesc);
+CreateTessellationPipeline(IMTLD3D11Device *pDevice,
+                           MTL_GRAPHICS_PIPELINE_DESC *pDesc);
 
 }; // namespace dxmt

@@ -16,7 +16,7 @@ class PipelineCache : public MTLD3D11PipelineCacheBase {
       pipelines_;
   dxmt::mutex mutex_;
 
-  std::unordered_map<MTL_TESSELLATION_PIPELINE_DESC,
+  std::unordered_map<MTL_GRAPHICS_PIPELINE_DESC,
                      Com<IMTLCompiledTessellationPipeline>>
       pipelines_ts_;
   dxmt::mutex mutex_ts_;
@@ -101,7 +101,7 @@ class PipelineCache : public MTLD3D11PipelineCacheBase {
   }
 
   void GetTessellationPipeline(
-      MTL_TESSELLATION_PIPELINE_DESC *pDesc,
+      MTL_GRAPHICS_PIPELINE_DESC *pDesc,
       IMTLCompiledTessellationPipeline **ppPipeline) override {
     std::lock_guard<dxmt::mutex> lock(mutex_ts_);
 

@@ -30,7 +30,7 @@ DEFINE_COM_INTERFACE("1a59c71f-f6bc-4aa1-b97e-35732f75a4eb",
                                    IMTLCompiledGraphicsPipeline *
                                        *ppPipeline) = 0;
   virtual void GetTessellationPipeline(
-      MTL_TESSELLATION_PIPELINE_DESC * pPiplineDesc,
+      MTL_GRAPHICS_PIPELINE_DESC * pPiplineDesc,
       IMTLCompiledTessellationPipeline * *ppPipeline) = 0;
 };
 
