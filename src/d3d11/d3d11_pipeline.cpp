@@ -1,3 +1,4 @@
+#include "Metal/MTLComputePipeline.hpp"
 #include "d3d11_private.h"
 #include "d3d11_pipeline.hpp"
 #include "com/com_object.hpp"
@@ -23,23 +24,14 @@ public:
     for (unsigned i = 0; i < num_rtvs; i++) {
       rtv_formats[i] = pDesc->ColorAttachmentFormats[i];
     }
-#ifndef DXMT_SHADER_VERTEX_PULLING
-    if (pDesc->InputLayout && pDesc->InputLayout->NeedsFixup()) {
-      MTL_SHADER_INPUT_LAYOUT_FIXUP fixup;
-      pDesc->InputLayout->GetShaderFixupInfo(&fixup);
-      pDesc->VertexShader->GetCompiledShaderWithInputLayoutFixup(
-          fixup.sign_mask, &VertexShader);
-    } else {
-      pDesc->VertexShader->GetCompiledShader(&VertexShader);
-    }
-#else
+
     if (pDesc->InputLayout) {
       pDesc->VertexShader->GetCompiledVertexShaderWithVertexPulling(
           pDesc->InputLayout, &VertexShader);
     } else {
       pDesc->VertexShader->GetCompiledShader(&VertexShader);
     }
-#endif
+
     if (pDesc->PixelShader) {
       pDesc->PixelShader->GetCompiledPixelShader(
           pDesc->SampleMask, pDesc->BlendState->IsDualSourceBlending(),
@@ -88,11 +80,7 @@ public:
       pipelineDescriptor->setFragmentFunction(ps.Function);
     }
     pipelineDescriptor->setRasterizationEnabled(RasterizationEnabled);
-#ifndef DXMT_SHADER_VERTEX_PULLING
-    if (pInputLayout) {
-      pInputLayout->Bind(pipelineDescriptor);
-    }
-#endif
+
     if (pBlendState) {
       pBlendState->SetupMetalPipelineDescriptor(pipelineDescriptor);
     }

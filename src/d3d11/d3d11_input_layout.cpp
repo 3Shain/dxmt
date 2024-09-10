@@ -12,10 +12,9 @@ public:
   MTLD3D11InputLayout(
       IMTLD3D11Device *device,
       std::vector<MTL_SHADER_INPUT_LAYOUT_ELEMENT_DESC> &&attributes,
-      uint64_t sign_mask, uint32_t input_slot_mask)
+      uint32_t input_slot_mask)
       : ManagedDeviceChild<IMTLD3D11InputLayout>(device),
-        attributes_(attributes), sign_mask_(sign_mask),
-        input_slot_mask_(input_slot_mask) {}
+        attributes_(attributes), input_slot_mask_(input_slot_mask) {}
 
   ~MTLD3D11InputLayout() {}
 
@@ -38,42 +37,6 @@ public:
     }
 
     return E_NOINTERFACE;
-  };
-
-  virtual void STDMETHODCALLTYPE
-  Bind(MTL::RenderPipelineDescriptor *desc) final {
-    auto pool = transfer(NS::AutoreleasePool::alloc()->init());
-    auto vertex_desc = (MTL::VertexDescriptor::vertexDescriptor());
-    for (auto &attr : attributes_) {
-      if (attr.index == 0xffffffff)
-        continue;
-      auto attr_desc = vertex_desc->attributes()->object(attr.index);
-      attr_desc->setBufferIndex(attr.slot);
-      attr_desc->setFormat((MTL::VertexFormat)attr.format);
-      attr_desc->setOffset(attr.offset);
-
-      /* same buffer layout may be set multiple time, it doesn't hurt though */
-      auto layout_desc = vertex_desc->layouts()->object(attr.slot);
-      layout_desc->setStepRate(attr.step_rate);
-      layout_desc->setStepFunction(attr.step_function ==
-                                           D3D11_INPUT_PER_INSTANCE_DATA
-                                       ? MTL::VertexStepFunctionPerInstance
-                                       : MTL::VertexStepFunctionPerVertex);
-      layout_desc->setStride(MTL::BufferLayoutStrideDynamic);
-    }
-
-    desc->setVertexDescriptor(vertex_desc);
-  };
-  virtual void STDMETHODCALLTYPE
-  Bind(MTL::ComputePipelineDescriptor *desc) final {
-    IMPLEMENT_ME
-  };
-
-  virtual bool STDMETHODCALLTYPE NeedsFixup() final { return sign_mask_ > 0; };
-
-  virtual void STDMETHODCALLTYPE
-  GetShaderFixupInfo(MTL_SHADER_INPUT_LAYOUT_FIXUP *pFixup) final {
-    pFixup->sign_mask = sign_mask_;
   };
 
   virtual uint32_t STDMETHODCALLTYPE GetInputSlotMask() final {
@@ -148,11 +111,6 @@ HRESULT ExtractMTLInputLayoutElements(
 
     attribute.slot = desc.InputSlot;
     attribute.index = inputSig.Register;
-    if (attribute.slot >= 16) {
-      ERR("CreateInputLayout: InputSlot greater than 15 is not supported "
-          "(yet)");
-      return E_FAIL;
-    }
 
     if (desc.AlignedByteOffset == D3D11_APPEND_ALIGNED_ELEMENT) {
       attribute.offset = align(append_offset[attribute.slot],
@@ -191,7 +149,8 @@ HRESULT StateObjectCache<MTL_INPUT_LAYOUT_DESC, IMTLD3D11InputLayout>::
     return S_OK;
   }
 
-  std::vector<MTL_SHADER_INPUT_LAYOUT_ELEMENT_DESC> elements = *pInputLayoutDesc;
+  std::vector<MTL_SHADER_INPUT_LAYOUT_ELEMENT_DESC> elements =
+      *pInputLayoutDesc;
   uint32_t input_slot_mask = 0;
   for (auto &element : elements) {
     input_slot_mask |= (1 << element.slot);
@@ -199,7 +158,7 @@ HRESULT StateObjectCache<MTL_INPUT_LAYOUT_DESC, IMTLD3D11InputLayout>::
 
   cache.emplace(*pInputLayoutDesc,
                 std::make_unique<MTLD3D11InputLayout>(
-                    device, std::move(elements), 0, input_slot_mask));
+                    device, std::move(elements), input_slot_mask));
   cache.at(*pInputLayoutDesc)->QueryInterface(IID_PPV_ARGS(ppInputLayout));
 
   return S_OK;

@@ -2234,22 +2234,7 @@ public:
     //         (uint64_t)state_.InputAssembler.InputLayout->GetInputSlotMask())) {
     //   return;
     // }
-#ifndef DXMT_SHADER_VERTEX_PULLING
-    for (unsigned index = 0; index < 16; index++) {
-      if (!VertexBuffers.test_bound(index) ||
-          !VertexBuffers.test_dirty(index)) {
-        continue;
-      }
-      auto &state = VertexBuffers[index];
-      // a ref is necessary (in case buffer destroyed before encoding)
-      EmitRenderCommand([buffer = state.BufferRaw, ref = Com(state.RawPointer),
-                         offset = state.Offset, stride = state.Stride,
-                         index](MTL::RenderCommandEncoder *encoder) {
-        encoder->setVertexBuffer(buffer, offset, stride, index);
-      });
-      VertexBuffers.clear_dirty(index);
-    };
-#else
+
     struct VERTEX_BUFFER_ENTRY {
       uint64_t buffer_handle;
       uint32_t stride;
@@ -2296,12 +2281,12 @@ public:
       chk->emit([heap, offset](CommandChunk::context &ctx) {
         ctx.render_encoder->setObjectBuffer(heap, offset, 16);
       });
-    } else {
+    }
+    if (cmdbuf_state == CommandBufferState::RenderPipelineReady) {
       chk->emit([heap, offset](CommandChunk::context &ctx) {
         ctx.render_encoder->setVertexBuffer(heap, offset, 16);
       });
     }
-#endif
   }
 
   void UpdateSOTargets() {
