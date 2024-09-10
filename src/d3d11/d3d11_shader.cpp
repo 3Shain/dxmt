@@ -321,7 +321,7 @@ public:
     data.type = SM50_SHADER_IA_INPUT_LAYOUT;
     data.next = nullptr;
     data.num_elements = pInputLayout->GetInputLayoutElements(
-        (MTL_SHADER_INPUT_LAYOUT_ELEMENT **)&data.elements);
+        (MTL_SHADER_INPUT_LAYOUT_ELEMENT_DESC **)&data.elements);
   };
 
 private:
@@ -387,7 +387,7 @@ public:
     data_vertex_pulling.type = SM50_SHADER_IA_INPUT_LAYOUT;
     data_vertex_pulling.next = nullptr;
     data_vertex_pulling.num_elements = pInputLayout->GetInputLayoutElements(
-        (MTL_SHADER_INPUT_LAYOUT_ELEMENT **)&data_vertex_pulling.elements);
+        (MTL_SHADER_INPUT_LAYOUT_ELEMENT_DESC **)&data_vertex_pulling.elements);
   };
 
 private:

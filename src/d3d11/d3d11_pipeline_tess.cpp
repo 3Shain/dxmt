@@ -88,7 +88,7 @@ public:
           SM50_SHADER_IA_INPUT_LAYOUT_DATA ia_layout;
           ia_layout.index_buffer_format = index_buffer_format;
           ia_layout.num_elements = ia->GetInputLayoutElements(
-              (MTL_SHADER_INPUT_LAYOUT_ELEMENT **)&ia_layout.elements);
+              (MTL_SHADER_INPUT_LAYOUT_ELEMENT_DESC **)&ia_layout.elements);
           ia_layout.type = SM50_SHADER_IA_INPUT_LAYOUT;
           ia_layout.next = nullptr;
 

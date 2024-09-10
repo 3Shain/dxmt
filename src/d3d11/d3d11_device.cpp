@@ -1,6 +1,7 @@
 #include "Metal/MTLPixelFormat.hpp"
 #include "Metal/MTLVertexDescriptor.hpp"
 #include "com/com_guid.hpp"
+#include "d3d11_input_layout.hpp"
 #include "d3d11_pipeline.hpp"
 #include "d3d11_class_linkage.hpp"
 #include "d3d11_inspection.hpp"
@@ -209,9 +210,9 @@ public:
       return S_FALSE;
     }
 
-    return pipeline_cache_->AddInputLayout(pShaderBytecodeWithInputSignature,
-                                           pInputElementDescs, NumElements,
-                                           ppInputLayout);
+    return pipeline_cache_->AddInputLayout(
+        pShaderBytecodeWithInputSignature, pInputElementDescs, NumElements,
+        (IMTLD3D11InputLayout **)ppInputLayout);
   }
 
   HRESULT STDMETHODCALLTYPE

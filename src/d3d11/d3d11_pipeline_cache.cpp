@@ -1,5 +1,4 @@
 #include "d3d11_pipeline_cache.hpp"
-#include "d3d11_input_layout.hpp"
 #include "d3d11_shader.hpp"
 #include "d3d11_pipeline.hpp"
 
@@ -9,6 +8,8 @@ class PipelineCache : public MTLD3D11PipelineCacheBase {
 
   IMTLD3D11Device *device;
   StateObjectCache<D3D11_BLEND_DESC1, IMTLD3D11BlendState> blend_states;
+
+  StateObjectCache<MTL_INPUT_LAYOUT_DESC, IMTLD3D11InputLayout> input_layouts;
 
   std::unordered_map<MTL_GRAPHICS_PIPELINE_DESC,
                      Com<IMTLCompiledGraphicsPipeline>>
@@ -68,9 +69,16 @@ class PipelineCache : public MTLD3D11PipelineCacheBase {
   HRESULT AddInputLayout(const void *pShaderBytecodeWithInputSignature,
                          const D3D11_INPUT_ELEMENT_DESC *pInputElementDesc,
                          UINT NumElements,
-                         ID3D11InputLayout **ppInputLayout) override {
-    return CreateInputLayout(device, pShaderBytecodeWithInputSignature,
-                             pInputElementDesc, NumElements, ppInputLayout);
+                         IMTLD3D11InputLayout **ppInputLayout) override {
+    std::vector<MTL_SHADER_INPUT_LAYOUT_ELEMENT_DESC> buffer(NumElements);
+    uint32_t num_metal_ia_elements;
+    if (FAILED(ExtractMTLInputLayoutElements(
+            device, pShaderBytecodeWithInputSignature, pInputElementDesc,
+            NumElements, buffer.data(), &num_metal_ia_elements))) {
+      return E_FAIL;
+    }
+    buffer.resize(num_metal_ia_elements);
+    return input_layouts.CreateStateObject(&buffer, ppInputLayout);
   }
 
   HRESULT AddBlendState(const D3D11_BLEND_DESC1 *pBlendDesc,
@@ -110,7 +118,7 @@ class PipelineCache : public MTLD3D11PipelineCacheBase {
 public:
   PipelineCache(IMTLD3D11Device *pDevice)
       : MTLD3D11PipelineCacheBase(pDevice), device(pDevice),
-        blend_states(pDevice) {
+        blend_states(pDevice), input_layouts(pDevice) {
 
         };
 };

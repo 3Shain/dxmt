@@ -1,5 +1,6 @@
 #pragma once
 #include "com/com_guid.hpp"
+#include "d3d11_input_layout.hpp"
 #include "d3d11_state_object.hpp"
 
 DEFINE_COM_INTERFACE("1a59c71f-f6bc-4aa1-b97e-35732f75a4eb",
@@ -22,7 +23,7 @@ DEFINE_COM_INTERFACE("1a59c71f-f6bc-4aa1-b97e-35732f75a4eb",
   virtual HRESULT AddInputLayout(
       const void *pShaderBytecodeWithInputSignature,
       const D3D11_INPUT_ELEMENT_DESC *pInputElementDesc, UINT NumElements,
-      ID3D11InputLayout **ppInputLayout) = 0;
+      IMTLD3D11InputLayout **ppInputLayout) = 0;
   virtual HRESULT AddBlendState(const D3D11_BLEND_DESC1 *pBlendDesc,
                                 IMTLD3D11BlendState **ppBlendState) = 0;
   virtual void GetGraphicsPipeline(MTL_GRAPHICS_PIPELINE_DESC * pPipelineDesc,
