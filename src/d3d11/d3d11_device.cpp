@@ -7,7 +7,7 @@
 #include "d3d11_context.hpp"
 #include "d3d11_context_state.hpp"
 #include "d3d11_device.hpp"
-#include "d3d11_input_layout.hpp"
+#include "d3d11_pipeline_cache.hpp"
 #include "d3d11_private.h"
 #include "d3d11_query.hpp"
 #include "d3d11_shader.hpp"
@@ -36,8 +36,9 @@ public:
       : m_container(container), adapter_(pAdapter),
         m_FeatureLevel(FeatureLevel), m_FeatureFlags(FeatureFlags),
         m_features(container->GetMTLDevice()), sampler_states(this),
-        blend_states(this), rasterizer_states(this), depthstencil_states(this),
+        rasterizer_states(this), depthstencil_states(this),
         cmd_queue_(cmd_queue) {
+    pipeline_cache_ = InitializePipelineCache(this);
     context_ = InitializeImmediateContext(this, cmd_queue);
     is_traced_ = !!::GetModuleHandle("dxgitrace.dll");
   }
@@ -208,9 +209,9 @@ public:
       return S_FALSE;
     }
 
-    return dxmt::CreateInputLayout(this, pShaderBytecodeWithInputSignature,
-                                   pInputElementDescs, NumElements,
-                                   ppInputLayout);
+    return pipeline_cache_->AddInputLayout(pShaderBytecodeWithInputSignature,
+                                           pInputElementDescs, NumElements,
+                                           ppInputLayout);
   }
 
   HRESULT STDMETHODCALLTYPE
@@ -221,13 +222,8 @@ public:
     if (pClassLinkage != nullptr)
       WARN("Class linkage not supported");
 
-    try {
-      return dxmt::CreateVertexShader(this, pShaderBytecode, BytecodeLength,
-                                      ppVertexShader);
-    } catch (const MTLD3DError &err) {
-      ERR(err.message());
-      return E_FAIL;
-    }
+    return pipeline_cache_->AddVertexShader(pShaderBytecode, BytecodeLength,
+                                            ppVertexShader);
   }
 
   HRESULT STDMETHODCALLTYPE
@@ -241,8 +237,9 @@ public:
     if (!ppGeometryShader)
       return S_FALSE;
     ERR("CreateGeometryShader: not supported, return a dummy");
-    return dxmt::CreateDummyGeometryShader(this, pShaderBytecode,
-                                           BytecodeLength, ppGeometryShader);
+
+    return pipeline_cache_->AddGeometryShader(pShaderBytecode, BytecodeLength,
+                                              ppGeometryShader);
   }
 
   HRESULT STDMETHODCALLTYPE CreateGeometryShaderWithStreamOutput(
@@ -280,13 +277,8 @@ public:
     if (pClassLinkage != nullptr)
       WARN("Class linkage not supported");
 
-    try {
-      return dxmt::CreatePixelShader(this, pShaderBytecode, BytecodeLength,
-                                     ppPixelShader);
-    } catch (const MTLD3DError &err) {
-      ERR(err.message());
-      return E_FAIL;
-    }
+    return pipeline_cache_->AddPixelShader(pShaderBytecode, BytecodeLength,
+                                           ppPixelShader);
   }
 
   HRESULT STDMETHODCALLTYPE
@@ -300,8 +292,8 @@ public:
     if (!ppHullShader)
       return S_FALSE;
 
-    return dxmt::CreateHullShader(this, pShaderBytecode, BytecodeLength,
-                                       ppHullShader);
+    return pipeline_cache_->AddHullShader(pShaderBytecode, BytecodeLength,
+                                          ppHullShader);
   }
 
   HRESULT STDMETHODCALLTYPE
@@ -315,8 +307,8 @@ public:
     if (!ppDomainShader)
       return S_FALSE;
 
-    return dxmt::CreateDomainShader(this, pShaderBytecode, BytecodeLength,
-                                         ppDomainShader);
+    return pipeline_cache_->AddDomainShader(pShaderBytecode, BytecodeLength,
+                                            ppDomainShader);
   }
 
   HRESULT STDMETHODCALLTYPE
@@ -735,7 +727,7 @@ public:
   HRESULT STDMETHODCALLTYPE
       CreateBlendState1(const D3D11_BLEND_DESC1 *pBlendStateDesc,
                         ID3D11BlendState1 **ppBlendState) override {
-    return blend_states.CreateStateObject(pBlendStateDesc,
+    return pipeline_cache_->AddBlendState(pBlendStateDesc,
                                           (IMTLD3D11BlendState **)ppBlendState);
   }
 
@@ -1009,16 +1001,7 @@ public:
   HRESULT
   CreateGraphicsPipeline(MTL_GRAPHICS_PIPELINE_DESC *pDesc,
                          IMTLCompiledGraphicsPipeline **ppPipeline) override {
-    std::lock_guard<dxmt::mutex> lock(mutex_);
-
-    auto iter = pipelines_.find(*pDesc);
-    if (iter != pipelines_.end()) {
-      *ppPipeline = iter->second.ref();
-      return S_OK;
-    }
-    auto temp = dxmt::CreateGraphicsPipeline(this, pDesc);
-    D3D11_ASSERT(pipelines_.insert({*pDesc, temp}).second); // copy
-    *ppPipeline = std::move(temp);                          // move
+    pipeline_cache_->GetGraphicsPipeline(pDesc, ppPipeline);
     return S_OK;
   };
 
@@ -1042,16 +1025,7 @@ public:
   CreateTessellationPipeline(
       MTL_TESSELLATION_PIPELINE_DESC *pDesc,
       IMTLCompiledTessellationPipeline **ppPipeline) override {
-    std::lock_guard<dxmt::mutex> lock(mutex_);
-
-    auto iter = pipelines_ts_.find(*pDesc);
-    if (iter != pipelines_ts_.end()) {
-      *ppPipeline = iter->second.ref();
-      return S_OK;
-    }
-    auto temp = dxmt::CreateTessellationPipeline(this, pDesc);
-    D3D11_ASSERT(pipelines_ts_.insert({*pDesc, temp}).second); // copy
-    *ppPipeline = std::move(temp);                             // move
+    pipeline_cache_->GetTessellationPipeline(pDesc, ppPipeline);
     return S_OK;
   };
 
@@ -1075,27 +1049,17 @@ private:
 
   bool is_traced_;
 
-  std::unordered_map<MTL_GRAPHICS_PIPELINE_DESC,
-                     Com<IMTLCompiledGraphicsPipeline>>
-      pipelines_;
-  dxmt::mutex mutex_;
-
-  std::unordered_map<MTL_TESSELLATION_PIPELINE_DESC,
-                     Com<IMTLCompiledTessellationPipeline>>
-      pipelines_ts_;
-  dxmt::mutex mutex_ts_;
-
   std::unordered_map<IMTLCompiledShader *, Com<IMTLCompiledComputePipeline>>
       pipelines_cs_;
   dxmt::mutex mutex_cs_;
 
   StateObjectCache<D3D11_SAMPLER_DESC, IMTLD3D11SamplerState> sampler_states;
-  StateObjectCache<D3D11_BLEND_DESC1, IMTLD3D11BlendState> blend_states;
   StateObjectCache<D3D11_RASTERIZER_DESC2, IMTLD3D11RasterizerState>
       rasterizer_states;
   StateObjectCache<D3D11_DEPTH_STENCIL_DESC, IMTLD3D11DepthStencilState>
       depthstencil_states;
 
+  std::unique_ptr<MTLD3D11PipelineCacheBase> pipeline_cache_;
   CommandQueue& cmd_queue_;
   /** ensure destructor called first */
   std::unique_ptr<MTLD3D11DeviceContextBase> context_;
