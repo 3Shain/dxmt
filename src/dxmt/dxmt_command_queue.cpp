@@ -155,6 +155,7 @@ uint32_t CommandQueue::EncodingThread() {
 #if ASYNC_ENCODING
   env::setThreadName("dxmt-encode-thread");
   SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
+  __pthread_set_qos_class_self_np(__QOS_CLASS_USER_INTERACTIVE, 0);
   uint64_t internal_seq = 1;
   while (!stopped.load()) {
     ready_for_encode.wait(internal_seq, std::memory_order_acquire);
@@ -173,6 +174,7 @@ uint32_t CommandQueue::EncodingThread() {
 uint32_t CommandQueue::WaitForFinishThread() {
   env::setThreadName("dxmt-finish-thread");
   SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
+  __pthread_set_qos_class_self_np(__QOS_CLASS_USER_INTERACTIVE, 0);
   uint64_t internal_seq = 1;
   while (!stopped.load()) {
     ready_for_commit.wait(internal_seq, std::memory_order_acquire);

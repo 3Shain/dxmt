@@ -89,6 +89,7 @@ const void *__wine_unix_call_funcs[] = {
     &SM50CompileTessellationPipelineVertex,
     &SM50CompileTessellationPipelineHull,
     &SM50CompileTessellationPipelineDomain,
+    &pthread_set_qos_class_self_np,
 };
 // wow64: things become funny
 
