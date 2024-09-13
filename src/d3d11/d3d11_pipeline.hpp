@@ -79,16 +79,15 @@ template <> struct hash<MTL_GRAPHICS_PIPELINE_DESC> {
     state.add((size_t)v.PixelShader);
     state.add((size_t)v.HullShader);
     state.add((size_t)v.DomainShader);
-    /* these pointers is safe to be used as hash input */
     state.add((size_t)v.InputLayout);
-    state.add((size_t)v.BlendState);
+    /* don't add blend */
+    // state.add((size_t)v.BlendState);
     state.add((size_t)v.DepthStencilFormat);
     state.add((size_t)v.IndexBufferFormat);
     state.add((size_t)v.SampleMask);
     state.add((size_t)v.NumColorAttachments);
-    for (unsigned i = 0; i < std::size(v.ColorAttachmentFormats); i++) {
-      state.add(i < v.NumColorAttachments ? v.ColorAttachmentFormats[i]
-                                          : MTL::PixelFormatInvalid);
+    for (unsigned i = 0; i < v.NumColorAttachments; i++) {
+      state.add(v.ColorAttachmentFormats[i]);
     }
     return state;
   };
@@ -102,14 +101,53 @@ template <> struct equal_to<MTL_GRAPHICS_PIPELINE_DESC> {
       if (x.ColorAttachmentFormats[i] != y.ColorAttachmentFormats[i])
         return false;
     }
-    return (x.BlendState == y.BlendState) &&
-           (x.VertexShader == y.VertexShader) &&
+    if (x.BlendState != y.BlendState) {
+      D3D11_BLEND_DESC1 x_, y_;
+      x.BlendState->GetDesc1(&x_);
+      y.BlendState->GetDesc1(&y_);
+      if (x_.IndependentBlendEnable != y_.IndependentBlendEnable)
+        return false;
+      if (x_.AlphaToCoverageEnable != y_.AlphaToCoverageEnable)
+        return false;
+      uint32_t num_blend_target =
+          x_.IndependentBlendEnable ? x.NumColorAttachments : 1;
+      for (unsigned i = 0; i < num_blend_target; i++) {
+        auto &blend_target_x = x_.RenderTarget[i];
+        auto &blend_target_y = y_.RenderTarget[i];
+        if (blend_target_x.RenderTargetWriteMask !=
+            blend_target_y.RenderTargetWriteMask)
+          return false;
+        if (blend_target_x.BlendEnable != blend_target_y.BlendEnable)
+          return false;
+        if (blend_target_x.LogicOpEnable != blend_target_y.LogicOpEnable)
+          return false;
+        if (blend_target_x.BlendEnable) {
+          if (blend_target_x.BlendOp != blend_target_y.BlendOp)
+            return false;
+          if (blend_target_x.BlendOpAlpha != blend_target_y.BlendOpAlpha)
+            return false;
+          if (blend_target_x.SrcBlend != blend_target_y.SrcBlend)
+            return false;
+          if (blend_target_x.SrcBlendAlpha != blend_target_y.SrcBlendAlpha)
+            return false;
+          if (blend_target_x.DestBlend != blend_target_y.DestBlend)
+            return false;
+          if (blend_target_x.DestBlendAlpha != blend_target_y.DestBlendAlpha)
+            return false;
+        }
+        if (blend_target_x.LogicOpEnable) {
+          if (blend_target_x.LogicOp != blend_target_y.LogicOp)
+            return false;
+        }
+      }
+    }
+    return (x.VertexShader == y.VertexShader) &&
            (x.PixelShader == y.PixelShader) && (x.HullShader == y.HullShader) &&
            (x.DomainShader == y.DomainShader) &&
            (x.InputLayout == y.InputLayout) &&
            (x.DepthStencilFormat == y.DepthStencilFormat) &&
            (x.RasterizationEnabled == y.RasterizationEnabled) &&
-           (x.IndexBufferFormat == y.IndexBufferFormat)&&
+           (x.IndexBufferFormat == y.IndexBufferFormat) &&
            (x.SampleMask == y.SampleMask);
   }
 };
