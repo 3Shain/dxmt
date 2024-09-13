@@ -9,6 +9,7 @@
 #include "d3d11_device_child.hpp"
 #include "objc_pointer.hpp"
 #include "DXBCParser/DXBCUtils.h"
+#include "log/log.hpp"
 
 namespace dxmt {
 
@@ -175,7 +176,7 @@ public:
 
   ~AirconvShader() {}
 
-  void SubmitWork() { device_->SubmitThreadgroupWork(this, &work_state_); }
+  void SubmitWork() { device_->SubmitThreadgroupWork(this); }
 
   HRESULT QueryInterface(REFIID riid, void **ppvObject) {
     if (ppvObject == nullptr)
@@ -192,11 +193,12 @@ public:
     return E_NOINTERFACE;
   }
 
-  bool IsReady() final { return ready_.load(std::memory_order_relaxed); }
-
-  void GetShader(MTL_COMPILED_SHADER *pShaderData) final {
-    ready_.wait(false, std::memory_order_acquire);
-    *pShaderData = {function_.ptr(), &hash_};
+  bool GetShader(MTL_COMPILED_SHADER *pShaderData) final {
+    bool ret = false;
+    if ((ret = ready_.load(std::memory_order_acquire))) {
+      *pShaderData = {function_.ptr(), &hash_};
+    }
+    return ret;
   }
 
   void Dump() {
@@ -214,7 +216,7 @@ public:
 #endif
   }
 
-  void RunThreadpoolWork() {
+  IMTLThreadpoolWork* RunThreadpoolWork() {
     D3D11_ASSERT(!ready_ && "?wtf"); // TODO: should use a lock?
 
     /**
@@ -243,7 +245,7 @@ public:
           SM50FreeError(sm50_err);
         }
         Dump();
-        return;
+        return this;
       }
       MTL_SHADER_BITCODE bitcode;
       SM50GetCompiledBitcode(compile_result, &bitcode);
@@ -257,7 +259,7 @@ public:
       if (err) {
         ERR("Failed to create MTLLibrary: ",
             err->localizedDescription()->utf8String());
-        return; // FIXME: ready_ always false? should propagate error
+        return this;
       }
 
       dispatch_release(dispatch_data);
@@ -266,7 +268,7 @@ public:
           NS::String::string(func_name.c_str(), NS::UTF8StringEncoding)));
       if (function_ == nullptr) {
         ERR("Failed to create MTLFunction: ", func_name);
-        return;
+        return this;
       }
     }
 
@@ -275,15 +277,21 @@ public:
     /* workaround end: ensure shader bytecode is accessible */
     shader_->Release();
 
-    ready_.store(true);
-    ready_.notify_all();
+    return this;
+  }
+
+  bool GetIsDone() {
+    return ready_;
+  }
+
+  void SetIsDone(bool state) {
+    ready_.store(state);
   }
 
 private:
   IMTLD3D11Device *device_;
   TShaderBase<tag> *shader_; // TODO: should hold strong reference?
   std::atomic_bool ready_;
-  THREADGROUP_WORK_STATE work_state_;
   Sha1Hash hash_;
   Obj<MTL::Function> function_;
   void *compilation_args;

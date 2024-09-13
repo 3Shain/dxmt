@@ -39,7 +39,7 @@ public:
     }
   }
 
-  void SubmitWork() { device_->SubmitThreadgroupWork(this, &work_state_); }
+  void SubmitWork() { device_->SubmitThreadgroupWork(this); }
 
   HRESULT QueryInterface(REFIID riid, void **ppvObject) {
     if (ppvObject == nullptr)
@@ -63,20 +63,25 @@ public:
     *pPipeline = {state_.ptr()};
   }
 
-  void RunThreadpoolWork() {
-    D3D11_ASSERT(!ready_ && "?wtf"); // TODO: should use a lock?
+  IMTLThreadpoolWork *RunThreadpoolWork() {
 
     TRACE("Start compiling 1 PSO");
 
     Obj<NS::Error> err;
     MTL_COMPILED_SHADER vs, ps;
+    if (!VertexShader->GetShader(&vs)) {
+      return VertexShader.ptr();
+    }
+    if (PixelShader && !PixelShader->GetShader(&ps)) {
+      return PixelShader.ptr();
+    }
 
     auto pipelineDescriptor =
         transfer(MTL::RenderPipelineDescriptor::alloc()->init());
-    VertexShader->GetShader(&vs); // may block
+
     pipelineDescriptor->setVertexFunction(vs.Function);
+
     if (PixelShader) {
-      PixelShader->GetShader(&ps); // may block
       pipelineDescriptor->setFragmentFunction(ps.Function);
     }
     pipelineDescriptor->setRasterizationEnabled(RasterizationEnabled);
@@ -107,12 +112,18 @@ public:
 
     if (state_ == nullptr) {
       ERR("Failed to create PSO: ", err->localizedDescription()->utf8String());
-      return; // ready_?
+      return this;
     }
 
     TRACE("Compiled 1 PSO");
 
-    ready_.store(true);
+    return this;
+  }
+
+  bool GetIsDone() { return ready_; }
+
+  void SetIsDone(bool state) {
+    ready_.store(state);
     ready_.notify_all();
   }
 
@@ -122,7 +133,6 @@ private:
   MTL::PixelFormat depth_stencil_format;
   IMTLD3D11Device *device_;
   std::atomic_bool ready_;
-  THREADGROUP_WORK_STATE work_state_;
   Com<IMTLCompiledShader> VertexShader;
   Com<IMTLCompiledShader> PixelShader;
   Com<IMTLD3D11InputLayout> pInputLayout;
@@ -148,9 +158,7 @@ public:
       : ComObject<IMTLCompiledComputePipeline>(), device_(pDevice),
         pComputeShader(pComputeShader) {}
 
-  void SubmitWork() final {
-    device_->SubmitThreadgroupWork(this, &work_state_);
-  }
+  void SubmitWork() final { device_->SubmitThreadgroupWork(this); }
 
   HRESULT QueryInterface(REFIID riid, void **ppvObject) {
     if (ppvObject == nullptr)
@@ -174,14 +182,16 @@ public:
     *pPipeline = {state_.ptr()};
   }
 
-  void RunThreadpoolWork() {
+  IMTLThreadpoolWork *RunThreadpoolWork() {
     D3D11_ASSERT(!ready_ && "?wtf"); // TODO: should use a lock?
 
     TRACE("Start compiling 1 PSO");
 
     Obj<NS::Error> err;
     MTL_COMPILED_SHADER cs;
-    pComputeShader->GetShader(&cs); // may block
+    if (!pComputeShader->GetShader(&cs)) {
+      return pComputeShader.ptr();
+    }
 
     auto desc = transfer(MTL::ComputePipelineDescriptor::alloc()->init());
     desc->setComputeFunction(cs.Function);
@@ -191,19 +201,24 @@ public:
 
     if (state_ == nullptr) {
       ERR("Failed to create PSO: ", err->localizedDescription()->utf8String());
-      return; // ready_?
+      return this;
     }
 
     TRACE("Compiled 1 PSO");
 
-    ready_.store(true);
+    return this;
+  }
+
+  bool GetIsDone() { return ready_; }
+
+  void SetIsDone(bool state) {
+    ready_.store(state);
     ready_.notify_all();
   }
 
 private:
   IMTLD3D11Device *device_;
   std::atomic_bool ready_;
-  THREADGROUP_WORK_STATE work_state_;
   Com<IMTLCompiledShader> pComputeShader;
   Obj<MTL::ComputePipelineState> state_;
 };

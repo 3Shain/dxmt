@@ -3,6 +3,7 @@
 #include "DXBCParser/DXBCUtils.h"
 #include "d3d11_state_object.hpp"
 #include "util_math.hpp"
+#include "log/log.hpp"
 
 namespace dxmt {
 

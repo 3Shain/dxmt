@@ -6,6 +6,8 @@
 #include "airconv_public.h"
 #include "d3d11_device.hpp"
 #include "d3d11_pipeline.hpp"
+#include "d3d11_shader.hpp"
+#include "log/log.hpp"
 
 namespace dxmt {
 
@@ -18,7 +20,7 @@ public:
 
   ~GeneralShaderCompileTask() {}
 
-  void SubmitWork() { device_->SubmitThreadgroupWork(this, &work_state_); }
+  void SubmitWork() { device_->SubmitThreadgroupWork(this); }
 
   HRESULT QueryInterface(REFIID riid, void **ppvObject) {
     if (ppvObject == nullptr)
@@ -35,31 +37,33 @@ public:
     return E_NOINTERFACE;
   }
 
-  bool IsReady() final { return ready_.load(std::memory_order_relaxed); }
-
-  void GetShader(MTL_COMPILED_SHADER *pShaderData) final {
-    ready_.wait(false, std::memory_order_acquire);
-    *pShaderData = {function_.ptr(), &hash_};
+  bool GetShader(MTL_COMPILED_SHADER *pShaderData) final {
+    bool ret = false;
+    if ((ret = ready_.load(std::memory_order_acquire))) {
+      *pShaderData = {function_.ptr(), &hash_};
+    }
+    return ret;
   }
 
   void Dump() {}
 
-  void RunThreadpoolWork() {
-    D3D11_ASSERT(!ready_ && "?wtf"); // TODO: should use a lock?
+  IMTLThreadpoolWork *RunThreadpoolWork() {
+    function_ = transfer(proc(&hash_));
+    return this;
+  }
 
-    if (!(function_ = transfer(proc(&hash_)))) {
-      return;
-    }
+  bool GetIsDone() {
+    return ready_;
+  }
 
-    ready_.store(true);
-    ready_.notify_all();
+  void SetIsDone(bool state) {
+    ready_.store(state);
   }
 
 private:
   Proc proc;
   IMTLD3D11Device *device_;
   std::atomic_bool ready_;
-  THREADGROUP_WORK_STATE work_state_;
   Sha1Hash hash_;
   Obj<MTL::Function> function_;
   void *compilation_args;
@@ -247,7 +251,7 @@ public:
     DomainShader->SubmitWork();
   }
 
-  void SubmitWork() { device_->SubmitThreadgroupWork(this, &work_state_); }
+  void SubmitWork() { device_->SubmitThreadgroupWork(this); }
 
   HRESULT QueryInterface(REFIID riid, void **ppvObject) {
     if (ppvObject == nullptr)
@@ -274,16 +278,27 @@ public:
                   hull_reflection.ThreadsPerPatch};
   }
 
-  void RunThreadpoolWork() {
+  IMTLThreadpoolWork* RunThreadpoolWork() {
 
     Obj<NS::Error> err;
     MTL_COMPILED_SHADER vs, hs, ds, ps;
 
+    if (!VertexShader->GetShader(&vs)) {
+      return VertexShader.ptr();
+    }
+    if (!HullShader->GetShader(&hs)) {
+      return HullShader.ptr();
+    }
+    if (!DomainShader->GetShader(&ds)) {
+      return DomainShader.ptr();
+    }
+    if (PixelShader && !PixelShader->GetShader(&ps)) {
+      return PixelShader.ptr();
+    }
+
     auto mesh_pipeline_desc =
         transfer(MTL::MeshRenderPipelineDescriptor::alloc()->init());
 
-    VertexShader->GetShader(&vs);
-    HullShader->GetShader(&hs);
 
     mesh_pipeline_desc->setObjectFunction(vs.Function);
     mesh_pipeline_desc->setMeshFunction(hs.Function);
@@ -320,16 +335,14 @@ public:
     if (state_mesh_ == nullptr) {
       ERR("Failed to create mesh PSO: ",
           err->localizedDescription()->utf8String());
-      return; // ready_?
+      return this;
     }
 
     auto pipelineDescriptor =
         transfer(MTL::RenderPipelineDescriptor::alloc()->init());
-    DomainShader->GetShader(&ds);
 
     pipelineDescriptor->setVertexFunction(ds.Function);
     if (PixelShader) {
-      PixelShader->GetShader(&ps);
       pipelineDescriptor->setFragmentFunction(ps.Function);
     }
     pipelineDescriptor->setRasterizationEnabled(RasterizationEnabled);
@@ -393,7 +406,15 @@ public:
         transfer(device_->GetMTLDevice()->newRenderPipelineState(
             pipelineDescriptor, &err));
 
-    ready_.store(true);
+    return this;
+  }
+
+  bool GetIsDone() {
+    return ready_;
+  }
+
+  void SetIsDone(bool state) {
+    ready_.store(state);
     ready_.notify_all();
   }
 
@@ -403,7 +424,6 @@ private:
   MTL::PixelFormat depth_stencil_format;
   IMTLD3D11Device *device_;
   std::atomic_bool ready_;
-  THREADGROUP_WORK_STATE work_state_;
   IMTLD3D11BlendState *pBlendState;
   Obj<MTL::RenderPipelineState> state_mesh_;
   Obj<MTL::RenderPipelineState> state_rasterization_;

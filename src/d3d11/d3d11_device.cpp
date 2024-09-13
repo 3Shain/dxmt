@@ -17,10 +17,10 @@
 #include "dxgi_interfaces.h"
 #include "dxmt_command_queue.hpp"
 #include "dxmt_format.hpp"
+#include "dxmt_tasks.hpp"
 #include "ftl.hpp"
 #include "mtld11_resource.hpp"
 #include "thread.hpp"
-#include "threadpool.hpp"
 #include "winemacdrv.h"
 #include "dxgi_object.hpp"
 #include <mutex>
@@ -28,6 +28,19 @@
 #include <unordered_map>
 
 namespace dxmt {
+
+template<>
+struct task_trait<IMTLThreadpoolWork*> {
+  IMTLThreadpoolWork* run_task(IMTLThreadpoolWork* task) {
+    return task->RunThreadpoolWork();
+  }
+  bool get_done(IMTLThreadpoolWork* task) {
+    return task->GetIsDone();
+  }
+  void set_done(IMTLThreadpoolWork* task) {
+    task->SetIsDone(true);
+  }
+};
 
 class MTLD3D11Device final : public IMTLD3D11Device {
 public:
@@ -987,16 +1000,8 @@ public:
     *ppAdapter = ref(adapter_);
   }
 
-  void SubmitThreadgroupWork(IMTLThreadpoolWork *pWork,
-                             THREADGROUP_WORK_STATE *pState) override {
-    D3D11_ASSERT(pWork->AddRef() > 1 &&
-                 "otherwise there is a risk the object get destoryed before "
-                 "this call return");
-    pool_.enqueue(pWork, pState);
-  }
-
-  void WaitThreadgroupWork(THREADGROUP_WORK_STATE *pState) override {
-    pool_.wait(pState);
+  void SubmitThreadgroupWork(IMTLThreadpoolWork *pWork) override {
+    scheduler_.submit(pWork);
   }
 
   HRESULT
@@ -1046,7 +1051,8 @@ private:
   D3D_FEATURE_LEVEL m_FeatureLevel;
   UINT m_FeatureFlags;
   MTLD3D11Inspection m_features;
-  threadpool<threadpool_trait> pool_;
+
+  task_scheduler<IMTLThreadpoolWork*> scheduler_;
 
   bool is_traced_;
 

@@ -5,6 +5,7 @@
 #include "d3d11_3.h"
 #include "d3d11_device.hpp"
 #include "d3d11_device_child.hpp"
+#include "thread.hpp"
 #include "util_hash.hpp"
 
 DEFINE_COM_INTERFACE("77f0bbd5-2be7-4e9e-ad61-70684ff19e01",
