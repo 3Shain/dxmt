@@ -24,33 +24,39 @@ constexpr tag_swapchain_backbuffer_t tag_swapchain_backbuffer{};
 class BindingRef {
   enum class Type : uint64_t {
     Null = 0,
+    JustBuffer = 0b1,
     BoundedBuffer = 0b11,
     UAVWithCounter = 0b111,
+    WithBoundInformation = 0b10,
     JustTexture = 0b10000000,
+    TextureViewOfBuffer = 0b11000010,
     BackBufferSource_sRGB = 0b100000000,
     BackBufferSource_Linear = 0b1000000000,
   };
   Type type;
   MTL::Resource *resource_ptr;
-  MTL::Buffer *counter_;
-  uint32_t element_width = 0;
+  MTL::Buffer *buffer_ptr;
+  uint32_t byte_width = 0;
   uint32_t byte_offset = 0;
   Com<IUnknown> reference_holder = nullptr;
 
 public:
   BindingRef() noexcept : type(Type::Null) {};
-  BindingRef(IUnknown *ref, MTL::Buffer *buffer, uint32_t element_width,
+  BindingRef(IUnknown *ref, MTL::Buffer *buffer, uint32_t byte_width,
              uint32_t offset) noexcept
-      : type(Type::BoundedBuffer), resource_ptr(buffer),
-        element_width(element_width), byte_offset(offset),
-        reference_holder(ref) {}
+      : type(Type::BoundedBuffer), resource_ptr(buffer), byte_width(byte_width),
+        byte_offset(offset), reference_holder(ref) {}
   BindingRef(IUnknown *ref, MTL::Buffer *buffer, uint32_t element_width,
              uint32_t offset, MTL::Buffer *counter) noexcept
-      : type(Type::UAVWithCounter), resource_ptr(buffer), counter_(counter),
-        element_width(element_width), byte_offset(offset),
-        reference_holder(ref) {}
+      : type(Type::UAVWithCounter), resource_ptr(buffer), buffer_ptr(counter),
+        byte_width(element_width), byte_offset(offset), reference_holder(ref) {}
   BindingRef(IUnknown *ref, MTL::Texture *texture) noexcept
       : type(Type::JustTexture), resource_ptr(texture), reference_holder(ref) {}
+  BindingRef(IUnknown *ref, MTL::Texture *texture, MTL::Buffer *buffer,
+             uint32_t byte_width, uint32_t byte_offset) noexcept
+      : type(Type::TextureViewOfBuffer), resource_ptr(texture),
+        buffer_ptr(buffer), byte_width(byte_width), byte_offset(byte_offset),
+        reference_holder(ref) {}
   BindingRef(std::nullopt_t _) noexcept : type(Type::Null) {};
   BindingRef(BackBufferSource *t, bool srgb) noexcept
       : type(srgb ? BindingRef::Type::BackBufferSource_sRGB
@@ -62,13 +68,13 @@ public:
   BindingRef(BindingRef &&move) {
     type = move.type;
     resource_ptr = move.resource_ptr;
-    counter_ = move.counter_;
-    element_width = move.element_width;
+    buffer_ptr = move.buffer_ptr;
+    byte_width = move.byte_width;
     byte_offset = move.byte_offset;
     reference_holder = std::move(move.reference_holder);
     move.type = Type::Null;
     move.byte_offset = 0;
-    move.element_width = 0;
+    move.byte_width = 0;
     // move.reference_holder = nullptr;
   };
 
@@ -76,13 +82,13 @@ public:
     // ahh this is redunant
     type = move.type;
     resource_ptr = move.resource_ptr;
-    counter_ = move.counter_;
-    element_width = move.element_width;
+    buffer_ptr = move.buffer_ptr;
+    byte_width = move.byte_width;
     byte_offset = move.byte_offset;
     reference_holder = std::move(move.reference_holder);
     move.type = Type::Null;
     move.byte_offset = 0;
-    move.element_width = 0;
+    move.byte_width = 0;
     // move.reference_holder = 0;
     return *this;
   };
@@ -100,14 +106,17 @@ public:
     case Type::BoundedBuffer:
       return resource_ptr == other.resource_ptr &&
              byte_offset == other.byte_offset &&
-             element_width == other.element_width;
+             byte_width == other.byte_width;
+    case Type::TextureViewOfBuffer:
     case Type::UAVWithCounter:
       return resource_ptr == other.resource_ptr &&
              byte_offset == other.byte_offset &&
-             element_width == other.element_width && counter_ == other.counter_;
+             byte_width == other.byte_width && buffer_ptr == other.buffer_ptr;
     case Type::BackBufferSource_sRGB:
     case Type::BackBufferSource_Linear:
       return reference_holder == other.reference_holder;
+    default:
+      return false; // invalid
     }
   };
 
@@ -117,8 +126,11 @@ public:
   };
 
   MTL::Buffer *buffer() const {
-    if ((uint64_t)type & (uint64_t)Type::BoundedBuffer) {
+    if ((uint64_t)type & (uint64_t)Type::JustBuffer) {
       return (MTL::Buffer *)resource_ptr;
+    }
+    if(type == Type::TextureViewOfBuffer) {
+      return buffer_ptr;
     }
     return nullptr;
   }
@@ -143,16 +155,16 @@ public:
     return nullptr;
   }
   uint32_t width() const {
-    if (((uint64_t)type & (uint64_t)Type::BoundedBuffer) ==
-        (uint64_t)Type::BoundedBuffer) {
-      return element_width;
+    if (((uint64_t)type & (uint64_t)Type::WithBoundInformation) ==
+        (uint64_t)Type::WithBoundInformation) {
+      return byte_width;
     }
     return 0;
   }
 
   uint32_t offset() const {
-    if (((uint64_t)type & (uint64_t)Type::BoundedBuffer) ==
-        (uint64_t)Type::BoundedBuffer) {
+    if (((uint64_t)type & (uint64_t)Type::WithBoundInformation) ==
+        (uint64_t)Type::WithBoundInformation) {
       return byte_offset;
     }
     return 0;
@@ -161,7 +173,7 @@ public:
   MTL::Buffer *counter() const {
     if (((uint64_t)type & (uint64_t)Type::UAVWithCounter) ==
         (uint64_t)Type::UAVWithCounter) {
-      return counter_;
+      return buffer_ptr;
     }
     return nullptr;
   }
@@ -182,30 +194,36 @@ public:
 };
 
 class ArgumentData {
-  enum class Type : uint64_t {
+  enum class Type : uint32_t {
+    JustBuffer = 0b1,
     BoundedBuffer = 0b11,
     UAVWithCounter = 0b111,
+    WithBoundInformation = 0b10,
     JustTexture = 0b10000000,
+    TextureViewOfBuffer = 0b10000010,
     BackBufferSource_sRGB = 0b100000000,
     BackBufferSource_Linear = 0b1000000000,
   };
   Type type;
-  uint64_t resource_handle;
   uint32_t size;
+  uint64_t resource_handle;
   union {
-    uint64_t counter_handle;
+    uint64_t buffer_handle;
     BackBufferSource *ptr;
   };
 
 public:
   ArgumentData(uint64_t h, uint32_t c) noexcept
-      : type(Type::BoundedBuffer), resource_handle(h), size(c) {}
+      : type(Type::BoundedBuffer), size(c), resource_handle(h) {}
   ArgumentData(uint64_t h, uint32_t c, uint64_t ctr) noexcept
-      : type(Type::UAVWithCounter), resource_handle(h), size(c) {
-    counter_handle = ctr;
-  }
+      : type(Type::UAVWithCounter), size(c), resource_handle(h),
+        buffer_handle(ctr) {}
   ArgumentData(MTL::ResourceID id, MTL::Texture *) noexcept
       : type(Type::JustTexture), resource_handle(id._impl) {}
+  ArgumentData(MTL::ResourceID id, MTL::Texture *, uint64_t buffer_handle,
+               uint32_t size) noexcept
+      : type(Type::TextureViewOfBuffer), size(size), resource_handle(id._impl),
+        buffer_handle(buffer_handle) {}
   ArgumentData(BackBufferSource *t, bool srgb) noexcept
       : type(srgb ? Type::BackBufferSource_sRGB
                   : Type::BackBufferSource_Linear),
@@ -217,8 +235,11 @@ public:
   };
 
   uint64_t buffer() const {
-    if ((uint64_t)type & (uint64_t)Type::BoundedBuffer) {
+    if ((uint64_t)type & (uint64_t)Type::JustBuffer) {
       return resource_handle;
+    }
+    if (type == Type::TextureViewOfBuffer) {
+      return buffer_handle;
     }
     return 0;
   }
@@ -230,8 +251,8 @@ public:
   }
 
   uint64_t width() const {
-    if (((uint64_t)type & (uint64_t)Type::BoundedBuffer) ==
-        (uint64_t)Type::BoundedBuffer) {
+    if (((uint64_t)type & (uint64_t)Type::WithBoundInformation) ==
+        (uint64_t)Type::WithBoundInformation) {
       return size + (((uint64_t)size) << 32);
     }
     return 0;
@@ -240,7 +261,7 @@ public:
   uint64_t counter() const {
     if (((uint64_t)type & (uint64_t)Type::UAVWithCounter) ==
         (uint64_t)Type::UAVWithCounter) {
-      return counter_handle;
+      return buffer_handle;
     }
     return 0;
   }

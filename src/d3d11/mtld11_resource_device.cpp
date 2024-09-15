@@ -151,12 +151,16 @@ public:
                                     &view))) {
       return E_FAIL;
     }
+    uint32_t offset = view->bufferOffset();
+    uint32_t size = view->bufferBytesPerRow();
     *ppView = ref(new SRV(&finalDesc, this, m_parent,
-                          ArgumentData(view->gpuResourceID(), view.ptr()),
-                          [view = std::move(view)](auto _this) {
+                          ArgumentData(view->gpuResourceID(), view.ptr(),
+                                       buffer_handle + offset, size),
+                          [view = std::move(view), buffer = this->buffer.ptr(),
+                           size, offset](auto _this) {
                             return BindingRef(
                                 static_cast<ID3D11ShaderResourceView *>(_this),
-                                view.ptr());
+                                view.ptr(), buffer, size, offset);
                           }));
     return S_OK;
   };
@@ -247,12 +251,16 @@ public:
                                     &view))) {
       return E_FAIL;
     }
+    uint32_t offset = view->bufferOffset();
+    uint32_t size = view->bufferBytesPerRow();
     *ppView = ref(new UAV(&finalDesc, this, m_parent,
-                          ArgumentData(view->gpuResourceID(), view.ptr()),
-                          [view = std::move(view)](auto _this) {
+                          ArgumentData(view->gpuResourceID(), view.ptr(),
+                                       buffer_handle + offset, size),
+                          [view = std::move(view), buffer = this->buffer.ptr(),
+                           size, offset](auto _this) {
                             return BindingRef(
                                 static_cast<ID3D11UnorderedAccessView *>(_this),
-                                view.ptr());
+                                view.ptr(), buffer, size, offset);
                           }));
     return S_OK;
   };
