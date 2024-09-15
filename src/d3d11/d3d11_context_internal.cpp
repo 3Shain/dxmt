@@ -1076,6 +1076,7 @@ public:
     auto target = pDepthStencilView->GetBinding(cmd_queue.CurrentSeqId());
 
     auto previous_encoder = chk->get_last_encoder();
+    bool inherit_rtvs_from_previous_encoder = false;
     // use `while` instead of `if`, for short circuiting
     while (previous_encoder->kind == EncoderKind::ClearPass) {
       auto previous_clearpass = (ENCODER_CLEARPASS_INFO *)previous_encoder;
@@ -1094,6 +1095,7 @@ public:
           return;
         }
         // otherwise we must create a new clearpass
+        inherit_rtvs_from_previous_encoder = true;
         break;
       }
       // no depth stencil attachment, just set it
@@ -1116,6 +1118,17 @@ public:
     }
     if (ClearFlags & D3D11_CLEAR_STENCIL) {
       clear_pass->clear_stencil = Stencil;
+    }
+    if (inherit_rtvs_from_previous_encoder) {
+      auto previous_clearpass = (ENCODER_CLEARPASS_INFO *)previous_encoder;
+      clear_pass->num_color_attachments =
+          previous_clearpass->num_color_attachments;
+      for (unsigned i = 0; i < clear_pass->num_color_attachments; i++) {
+        clear_pass->clear_colors[i] = previous_clearpass->clear_colors[i];
+        clear_pass->clear_color_attachments[i] =
+            std::move(previous_clearpass->clear_color_attachments[i]);
+        previous_clearpass->num_color_attachments = 0;
+      }
     }
     EncodeClearPass(clear_pass);
   }
@@ -1297,7 +1310,7 @@ public:
           auto remain_clearpass = chk->mark_clear_pass();
           for (unsigned i = 0; i < previous_clearpass->num_color_attachments;
                i++) {
-            if (skip_clear_color_mask | (1 << i))
+            if (skip_clear_color_mask & (1 << i))
               continue;
             auto j = remain_clearpass->num_color_attachments;
             remain_clearpass->num_color_attachments++;
