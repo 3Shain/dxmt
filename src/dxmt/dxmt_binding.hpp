@@ -24,7 +24,6 @@ constexpr tag_swapchain_backbuffer_t tag_swapchain_backbuffer{};
 class BindingRef {
   enum class Type : uint64_t {
     Null = 0,
-    UnboundedBuffer = 0b1,
     BoundedBuffer = 0b11,
     UAVWithCounter = 0b111,
     JustTexture = 0b10000000,
@@ -40,9 +39,6 @@ class BindingRef {
 
 public:
   BindingRef() noexcept : type(Type::Null) {};
-  BindingRef(IUnknown *ref, MTL::Buffer *buffer) noexcept
-      : type(Type::UnboundedBuffer), resource_ptr(buffer),
-        reference_holder(ref) {}
   BindingRef(IUnknown *ref, MTL::Buffer *buffer, uint32_t element_width,
              uint32_t offset) noexcept
       : type(Type::BoundedBuffer), resource_ptr(buffer),
@@ -101,10 +97,6 @@ public:
     case Type::Null:
       return true; // FIXME: is this intended?
     case Type::JustTexture:
-    case Type::UnboundedBuffer:
-      return resource_ptr == other.resource_ptr &&
-             byte_offset == other.byte_offset;
-      ;
     case Type::BoundedBuffer:
       return resource_ptr == other.resource_ptr &&
              byte_offset == other.byte_offset &&
@@ -125,7 +117,7 @@ public:
   };
 
   MTL::Buffer *buffer() const {
-    if ((uint64_t)type & (uint64_t)Type::UnboundedBuffer) {
+    if ((uint64_t)type & (uint64_t)Type::BoundedBuffer) {
       return (MTL::Buffer *)resource_ptr;
     }
     return nullptr;
@@ -191,7 +183,6 @@ public:
 
 class ArgumentData {
   enum class Type : uint64_t {
-    UnboundedBuffer = 0b1,
     BoundedBuffer = 0b11,
     UAVWithCounter = 0b111,
     JustTexture = 0b10000000,
@@ -207,12 +198,10 @@ class ArgumentData {
   };
 
 public:
-  ArgumentData(uint64_t h) noexcept
-      : type(Type::UnboundedBuffer), resource_handle(h) {}
   ArgumentData(uint64_t h, uint32_t c) noexcept
       : type(Type::BoundedBuffer), resource_handle(h), size(c) {}
   ArgumentData(uint64_t h, uint32_t c, uint64_t ctr) noexcept
-      : type(Type::UnboundedBuffer), resource_handle(h), size(c) {
+      : type(Type::UAVWithCounter), resource_handle(h), size(c) {
     counter_handle = ctr;
   }
   ArgumentData(MTL::ResourceID id, MTL::Texture *) noexcept
@@ -228,7 +217,7 @@ public:
   };
 
   uint64_t buffer() const {
-    if ((uint64_t)type & (uint64_t)Type::UnboundedBuffer) {
+    if ((uint64_t)type & (uint64_t)Type::BoundedBuffer) {
       return resource_handle;
     }
     return 0;

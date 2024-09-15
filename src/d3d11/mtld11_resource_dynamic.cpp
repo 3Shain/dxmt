@@ -236,11 +236,11 @@ public:
         static_cast<ID3D11Buffer *>(this), std::move(onBufferSwap),
         [this](uint64_t) {
           return BindingRef(static_cast<ID3D11Resource *>(this),
-                            buffer_dynamic.ptr());
+                            buffer_dynamic.ptr(), this->buffer_len, 0);
         },
         [this](SIMPLE_RESIDENCY_TRACKER **ppTracker) {
           *ppTracker = &tracker;
-          return ArgumentData(this->buffer_handle);
+          return ArgumentData(this->buffer_handle, this->buffer_len);
         },
         [this](IMTLNotifiedBindable *_binding) {
           this->RemoveObserver(_binding);

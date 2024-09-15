@@ -44,12 +44,13 @@ public:
 
   BindingRef UseBindable(uint64_t seq_id) override {
     occupancy.MarkAsOccupied(seq_id);
-    return BindingRef(static_cast<ID3D11DeviceChild *>(this), buffer.ptr());
+    return BindingRef(static_cast<ID3D11DeviceChild *>(this), buffer.ptr(),
+                      desc.ByteWidth, 0);
   };
 
   ArgumentData GetArgumentData(SIMPLE_RESIDENCY_TRACKER **ppTracker) override {
     *ppTracker = &residency;
-    return ArgumentData(buffer_handle);
+    return ArgumentData(buffer_handle, desc.ByteWidth);
   }
 
   bool GetContentionState(uint64_t finished_seq_id) override {
