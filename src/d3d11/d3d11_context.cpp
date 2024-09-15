@@ -156,6 +156,7 @@ public:
       break;
     case D3D11_QUERY_OCCLUSION: {
       ((IMTLD3DOcclusionQuery *)pAsync)->End(ctx.NextOcclusionQuerySeq());
+      ctx.promote_flush = true;
       break;
     }
     case D3D11_QUERY_TIMESTAMP:
