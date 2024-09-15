@@ -3456,24 +3456,23 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
           },
           [&effect](InstSinCos sincos) {
             auto mask_cos = get_dst_mask(sincos.dst_cos);
-            effect << store_dst_op_masked<true>(
-              sincos.dst_cos,
-              load_src_op<true>(sincos.src, mask_cos) >>=
-              [=](auto src) -> IRValue {
-                return air::call_float_unary_op("cos", src) >>=
-                       air::saturate(sincos._.saturate);
-              }
-            );
-
             auto mask_sin = get_dst_mask(sincos.dst_sin);
-            effect << store_dst_op_masked<true>(
-              sincos.dst_sin,
-              load_src_op<true>(sincos.src, mask_sin) >>=
-              [=](auto src) -> IRValue {
-                return air::call_float_unary_op("sin", src) >>=
-                       air::saturate(sincos._.saturate);
-              }
-            );
+            effect << make_effect_bind([=](struct context ctx) -> IREffect {
+              auto src = co_yield load_src_op<true>(sincos.src);
+              co_yield store_dst_op_masked<true>(
+                sincos.dst_cos,
+                air::call_float_unary_op(
+                  "cos", co_yield get_valid_components(src, mask_cos)
+                ) >>= air::saturate(sincos._.saturate)
+              );
+              co_yield store_dst_op_masked<true>(
+                sincos.dst_sin,
+                air::call_float_unary_op(
+                  "sin", co_yield get_valid_components(src, mask_sin)
+                ) >>= air::saturate(sincos._.saturate)
+              );
+              co_return {};
+            });
           },
           [&effect](InstConvert convert) {
             auto mask = get_dst_mask(convert.dst);
