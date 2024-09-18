@@ -12,6 +12,8 @@ DEFINE_COM_INTERFACE("12c69ed2-ebae-438d-ac9c-ecdb7c08065b", BackBufferSource)
   virtual MTL::Texture *GetCurrentFrameBackBuffer(bool srgb) = 0;
 };
 
+#define DXMT_NO_COUNTER ~0uLL
+
 namespace dxmt {
 
 struct EncodingContext {
@@ -35,7 +37,10 @@ class BindingRef {
   };
   Type type;
   MTL::Resource *resource_ptr;
-  MTL::Buffer *buffer_ptr;
+  union {
+    uint64_t counter_handle_;
+    MTL::Buffer* buffer_ptr;
+  };
   uint32_t byte_width = 0;
   uint32_t byte_offset = 0;
   Com<IUnknown> reference_holder = nullptr;
@@ -47,8 +52,8 @@ public:
       : type(Type::BoundedBuffer), resource_ptr(buffer), byte_width(byte_width),
         byte_offset(offset), reference_holder(ref) {}
   BindingRef(IUnknown *ref, MTL::Buffer *buffer, uint32_t element_width,
-             uint32_t offset, MTL::Buffer *counter) noexcept
-      : type(Type::UAVWithCounter), resource_ptr(buffer), buffer_ptr(counter),
+             uint32_t offset, uint64_t counter_handle) noexcept
+      : type(Type::UAVWithCounter), resource_ptr(buffer), counter_handle_(counter_handle),
         byte_width(element_width), byte_offset(offset), reference_holder(ref) {}
   BindingRef(IUnknown *ref, MTL::Texture *texture) noexcept
       : type(Type::JustTexture), resource_ptr(texture), reference_holder(ref) {}
@@ -170,12 +175,11 @@ public:
     return 0;
   }
 
-  MTL::Buffer *counter() const {
-    if (((uint64_t)type & (uint64_t)Type::UAVWithCounter) ==
-        (uint64_t)Type::UAVWithCounter) {
-      return buffer_ptr;
+  uint64_t counter_handle() const {
+    if (type == Type::UAVWithCounter) {
+      return counter_handle_;
     }
-    return nullptr;
+    return DXMT_NO_COUNTER;
   }
 
   MTL::Resource *resource() const { return resource_ptr; }
@@ -258,12 +262,11 @@ public:
     return 0;
   }
 
-  uint64_t counter() const {
-    if (((uint64_t)type & (uint64_t)Type::UAVWithCounter) ==
-        (uint64_t)Type::UAVWithCounter) {
+  uint64_t counter_handle() const {
+    if (type == Type::UAVWithCounter) {
       return buffer_handle;
     }
-    return 0;
+    return DXMT_NO_COUNTER;
   }
 
   uint64_t resource() const { return resource_handle; }

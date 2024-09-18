@@ -37,6 +37,7 @@ DEFINE_COM_INTERFACE("a8f906f1-137a-49a6-b9fa-3f89ef52e3eb",
     : public ID3D11UnorderedAccessView1 {
   virtual ULONG64 GetUnderlyingResourceId() = 0;
   virtual dxmt::ResourceSubset GetViewRange() = 0;
+  virtual uint64_t SwapCounter(uint64_t handle) = 0;
 };
 
 DEFINE_COM_INTERFACE("acfa8c6e-699a-4607-b229-a55532dde5fd",
