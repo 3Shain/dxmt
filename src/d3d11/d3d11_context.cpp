@@ -1022,7 +1022,25 @@ public:
 
   void DrawInstancedIndirect(ID3D11Buffer *pBufferForArgs,
                              UINT AlignedByteOffsetForArgs) override {
-    IMPLEMENT_ME
+    if (!ctx.PreDraw(true))
+      return;
+    auto currentChunkId = cmd_queue.CurrentSeqId();
+    auto [Primitive, ControlPointCount] =
+        to_metal_topology(state_.InputAssembler.Topology);
+    if (ControlPointCount) {
+      return;
+    }
+    if (auto bindable = com_cast<IMTLBindable>(pBufferForArgs)) {
+      ctx.EmitRenderCommandChk(
+          [Primitive,
+           ArgBuffer = bindable->UseBindable(currentChunkId),
+           AlignedByteOffsetForArgs](CommandChunk::context &ctx) {
+            D3D11_ASSERT(ctx.current_index_buffer_ref);
+            ctx.render_encoder->drawPrimitives(
+                Primitive, ArgBuffer.buffer(),
+                AlignedByteOffsetForArgs);
+          });
+    }
   }
 
   void DrawAuto() override {
