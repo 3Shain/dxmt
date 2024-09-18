@@ -2062,7 +2062,9 @@ public:
           }
           if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE) {
             if (arg_data.requiresContext()) {
-              D3D11_ASSERT(0 && "todo");
+              chk->emit([=, ref = srv.SRV](CommandChunk::context &ctx) {
+                write_to_it[arg.StructurePtrOffset] = arg_data.resource(&ctx);
+              });
             } else {
               write_to_it[arg.StructurePtrOffset] = arg_data.texture();
             }
