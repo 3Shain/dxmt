@@ -504,7 +504,22 @@ public:
 
   void CopyStructureCount(ID3D11Buffer *pDstBuffer, UINT DstAlignedByteOffset,
                           ID3D11UnorderedAccessView *pSrcView) override {
-    IMPLEMENT_ME
+    if (auto dst_bind = com_cast<IMTLBindable>(pDstBuffer)) {
+      if (auto uav = com_cast<IMTLD3D11UnorderedAccessView>(pSrcView)) {
+        auto counter_handle = uav->SwapCounter(DXMT_NO_COUNTER);
+        if (counter_handle == DXMT_NO_COUNTER) {
+          return;
+        }
+        auto counter = cmd_queue.counter_pool.GetCounter(counter_handle);
+        ctx.EmitBlitCommand<true>(
+            [counter, DstAlignedByteOffset,
+             dst = dst_bind->UseBindable(cmd_queue.CurrentSeqId())](
+                MTL::BlitCommandEncoder *enc, auto &ctx) {
+              enc->copyFromBuffer(counter.Buffer, counter.Offset, dst.buffer(),
+                                  DstAlignedByteOffset, 4);
+            });
+      }
+    }
   }
 
   void CopySubresourceRegion(ID3D11Resource *pDstResource, UINT DstSubresource,
