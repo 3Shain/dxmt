@@ -16,7 +16,6 @@ namespace dxmt {
 struct UAV_B {
   IUnknown *RawPointer = 0;
   Com<IMTLBindable> View;
-  UINT InitialCountValue;
 };
 
 typedef BindingSet<UAV_B, 64> UAVBindingSet;

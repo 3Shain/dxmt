@@ -14,6 +14,7 @@
 #include "d3d11_swapchain.hpp"
 #include "d3d11_state_object.hpp"
 #include "dxgi_interfaces.h"
+#include "dxmt_command_queue.hpp"
 #include "dxmt_format.hpp"
 #include "ftl.hpp"
 #include "mtld11_resource.hpp"
@@ -31,12 +32,13 @@ class MTLD3D11Device final : public IMTLD3D11Device {
 public:
   MTLD3D11Device(MTLDXGIObject<IMTLDXGIDevice> *container,
                  IMTLDXGIAdatper *pAdapter, D3D_FEATURE_LEVEL FeatureLevel,
-                 UINT FeatureFlags)
+                 UINT FeatureFlags, CommandQueue &cmd_queue)
       : m_container(container), adapter_(pAdapter),
         m_FeatureLevel(FeatureLevel), m_FeatureFlags(FeatureFlags),
         m_features(container->GetMTLDevice()), sampler_states(this),
-        blend_states(this), rasterizer_states(this), depthstencil_states(this) {
-    context_ = InitializeImmediateContext(this);
+        blend_states(this), rasterizer_states(this), depthstencil_states(this),
+        cmd_queue_(cmd_queue) {
+    context_ = InitializeImmediateContext(this, cmd_queue);
     is_traced_ = !!::GetModuleHandle("dxgitrace.dll");
   }
 
@@ -1057,6 +1059,16 @@ public:
     return S_OK;
   };
 
+  uint64_t AloocateCounter(uint32_t InitialValue) override {
+    return cmd_queue_.counter_pool.AllocateCounter(cmd_queue_.CurrentSeqId(),
+                                                   InitialValue);
+  }
+
+  void DiscardCounter(uint64_t ConterHandle) override {
+    cmd_queue_.counter_pool.DiscardCounter(cmd_queue_.CurrentSeqId(),
+                                           ConterHandle);
+  }
+
 private:
   MTLDXGIObject<IMTLDXGIDevice> *m_container;
   IMTLDXGIAdatper *adapter_;
@@ -1088,6 +1100,7 @@ private:
   StateObjectCache<D3D11_DEPTH_STENCIL_DESC, IMTLD3D11DepthStencilState>
       depthstencil_states;
 
+  CommandQueue& cmd_queue_;
   /** ensure destructor called first */
   std::unique_ptr<MTLD3D11DeviceContextBase> context_;
 };
@@ -1104,8 +1117,9 @@ public:
 
   MTLD3D11DXGIDevice(IMTLDXGIAdatper *adapter, D3D_FEATURE_LEVEL feature_level,
                      UINT feature_flags)
-      : adapter_(adapter),
-        d3d11_device_(this, adapter, feature_level, feature_flags) {}
+      : adapter_(adapter), cmd_queue_(adapter->GetMTLDevice()),
+        d3d11_device_(this, adapter, feature_level, feature_flags, cmd_queue_) {
+  }
 
   ~MTLD3D11DXGIDevice() override {}
 
@@ -1267,6 +1281,7 @@ public:
 
 private:
   Com<IMTLDXGIAdatper> adapter_;
+  CommandQueue cmd_queue_;
   MTLD3D11Device d3d11_device_;
 };
 

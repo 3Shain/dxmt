@@ -11,6 +11,7 @@
 #include "dxmt_binding.hpp"
 #include "dxmt_capture.hpp"
 #include "dxmt_command.hpp"
+#include "dxmt_counter_pool.hpp"
 #include "dxmt_occlusion_query.hpp"
 #include "dxmt_ring_bump_allocator.hpp"
 #include "log/log.hpp"
@@ -339,6 +340,7 @@ private:
 
 public:
   DXMTCommandContext clear_cmd;
+  CounterPool counter_pool;
 
   CommandQueue(MTL::Device *device);
 

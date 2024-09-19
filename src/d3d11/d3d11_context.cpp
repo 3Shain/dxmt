@@ -504,7 +504,22 @@ public:
 
   void CopyStructureCount(ID3D11Buffer *pDstBuffer, UINT DstAlignedByteOffset,
                           ID3D11UnorderedAccessView *pSrcView) override {
-    IMPLEMENT_ME
+    if (auto dst_bind = com_cast<IMTLBindable>(pDstBuffer)) {
+      if (auto uav = com_cast<IMTLD3D11UnorderedAccessView>(pSrcView)) {
+        auto counter_handle = uav->SwapCounter(DXMT_NO_COUNTER);
+        if (counter_handle == DXMT_NO_COUNTER) {
+          return;
+        }
+        auto counter = cmd_queue.counter_pool.GetCounter(counter_handle);
+        ctx.EmitBlitCommand<true>(
+            [counter, DstAlignedByteOffset,
+             dst = dst_bind->UseBindable(cmd_queue.CurrentSeqId())](
+                MTL::BlitCommandEncoder *enc, auto &ctx) {
+              enc->copyFromBuffer(counter.Buffer, counter.Offset, dst.buffer(),
+                                  DstAlignedByteOffset, 4);
+            });
+      }
+    }
   }
 
   void CopySubresourceRegion(ID3D11Resource *pDstResource, UINT DstSubresource,
@@ -1022,7 +1037,25 @@ public:
 
   void DrawInstancedIndirect(ID3D11Buffer *pBufferForArgs,
                              UINT AlignedByteOffsetForArgs) override {
-    IMPLEMENT_ME
+    if (!ctx.PreDraw(true))
+      return;
+    auto currentChunkId = cmd_queue.CurrentSeqId();
+    auto [Primitive, ControlPointCount] =
+        to_metal_topology(state_.InputAssembler.Topology);
+    if (ControlPointCount) {
+      return;
+    }
+    if (auto bindable = com_cast<IMTLBindable>(pBufferForArgs)) {
+      ctx.EmitRenderCommandChk(
+          [Primitive,
+           ArgBuffer = bindable->UseBindable(currentChunkId),
+           AlignedByteOffsetForArgs](CommandChunk::context &ctx) {
+            D3D11_ASSERT(ctx.current_index_buffer_ref);
+            ctx.render_encoder->drawPrimitives(
+                Primitive, ArgBuffer.buffer(),
+                AlignedByteOffsetForArgs);
+          });
+    }
   }
 
   void DrawAuto() override {
@@ -2064,17 +2097,15 @@ public:
   }
 
 private:
-  Obj<MTL::Device> metal_device_;
   D3D11ContextState state_;
 
-  CommandQueue cmd_queue;
+  CommandQueue &cmd_queue;
   ContextInternal ctx;
 
 public:
-  MTLD3D11DeviceContext(IMTLD3D11Device *pDevice)
-      : MTLD3D11DeviceContextBase(pDevice),
-        metal_device_(m_parent->GetMTLDevice()), state_(),
-        cmd_queue(metal_device_), ctx(pDevice, state_, cmd_queue) {}
+  MTLD3D11DeviceContext(IMTLD3D11Device *pDevice, CommandQueue &cmd_queue)
+      : MTLD3D11DeviceContextBase(pDevice), state_(), cmd_queue(cmd_queue),
+        ctx(pDevice, state_, cmd_queue) {}
 
   ~MTLD3D11DeviceContext() {}
 
@@ -2086,8 +2117,8 @@ public:
 };
 
 std::unique_ptr<MTLD3D11DeviceContextBase>
-InitializeImmediateContext(IMTLD3D11Device *pDevice) {
-  return std::make_unique<MTLD3D11DeviceContext>(pDevice);
+InitializeImmediateContext(IMTLD3D11Device *pDevice, CommandQueue &cmd_queue) {
+  return std::make_unique<MTLD3D11DeviceContext>(pDevice, cmd_queue);
 }
 
 } // namespace dxmt

@@ -152,6 +152,8 @@ private:
                                   void **ppLogicalResource) override {
       this->QueryInterface(riid, ppLogicalResource);
     };
+
+    virtual uint64_t SwapCounter(uint64_t handle) override { return handle; };
   };
 
 public:

@@ -340,19 +340,31 @@ public:
     //   return false;
     // });
 
+    auto currentChunkId = cmd_queue.CurrentSeqId();
+
     for (unsigned slot = StartSlot; slot < StartSlot + NumUAVs; slot++) {
       auto pUAV = ppUnorderedAccessViews[slot - StartSlot];
       auto InitialCount =
           pUAVInitialCounts ? pUAVInitialCounts[slot - StartSlot] : ~0u;
       if (pUAV) {
+        auto uav = com_cast<IMTLD3D11UnorderedAccessView>(pUAV);
         bool replaced = false;
         auto &entry = binding_set.bind(slot, {pUAV}, replaced);
+        if (InitialCount != ~0u) {
+          auto new_counter_handle = cmd_queue.counter_pool.AllocateCounter(
+              currentChunkId, InitialCount);
+          // it's possible that old_counter_handle == new_counter_handle 
+          // if the uav doesn't support counter
+          // thus it becomes essentially a no-op.
+          auto old_counter_handle = uav->SwapCounter(new_counter_handle);
+          if (old_counter_handle != DXMT_NO_COUNTER) {
+            cmd_queue.counter_pool.DiscardCounter(currentChunkId,
+                                                  old_counter_handle);
+          }
+        }
         if (!replaced) {
-          // FIXME: update initial count
           continue;
         }
-        // FIXME: handle keep current counter...
-        entry.InitialCountValue = InitialCount;
         if (auto expected = com_cast<IMTLBindable>(pUAV)) {
           entry.View = std::move(expected);
         } else {
@@ -2004,7 +2016,7 @@ public:
     if (BindingCount && (dirty_sampler || dirty_srv || dirty_uav)) {
 
       /* FIXME: we are over-allocating */
-      auto [heap, offset] = chk->allocate_gpu_heap(BindingCount << 4, 16);
+      auto [heap, offset] = chk->allocate_gpu_heap(BindingCount * 8 * 3, 16);
       uint64_t *write_to_it = chk->gpu_argument_heap_contents + (offset >> 3);
 
       for (unsigned i = 0; i < BindingCount; i++) {
@@ -2050,12 +2062,15 @@ public:
           }
           if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE) {
             if (arg_data.requiresContext()) {
-              D3D11_ASSERT(0 && "todo");
+              chk->emit([=, ref = srv.SRV](CommandChunk::context &ctx) {
+                write_to_it[arg.StructurePtrOffset] = arg_data.resource(&ctx);
+              });
             } else {
               write_to_it[arg.StructurePtrOffset] = arg_data.texture();
             }
           }
           if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_UAV_COUNTER) {
+            D3D11_ASSERT(0 && "srv can not have counter associated");
           }
           ShaderStage.SRVs.clear_dirty(slot);
           pTracker->CheckResidency(
@@ -2102,8 +2117,35 @@ public:
             }
           }
           if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_UAV_COUNTER) {
-            ERR("todo: implement uav counter binding");
-            return false;
+            auto counter_handle = arg_data.counter_handle();
+            if (counter_handle != DXMT_NO_COUNTER) {
+              auto counter = cmd_queue.counter_pool.GetCounter(counter_handle);
+              chk->emit([counter](CommandChunk::context &ctx) {
+                switch (stage) {
+                case ShaderType::Vertex:
+                case ShaderType::Pixel:
+                case ShaderType::Hull:
+                case ShaderType::Domain:
+                  ctx.render_encoder->useResource(counter.Buffer,
+                                                  MTL::ResourceUsageRead |
+                                                      MTL::ResourceUsageWrite);
+                  break;
+                case ShaderType::Compute:
+                  ctx.compute_encoder->useResource(counter.Buffer,
+                                                   MTL::ResourceUsageRead |
+                                                       MTL::ResourceUsageWrite);
+                  break;
+                case ShaderType::Geometry:
+                  D3D11_ASSERT(0 && "Not implemented");
+                  break;
+                }
+              });
+              write_to_it[arg.StructurePtrOffset + 2] =
+                  counter.Buffer->gpuAddress() + counter.Offset;
+            } else {
+              ERR("use uninitialized counter!");
+              write_to_it[arg.StructurePtrOffset + 2] = 0;
+            };
           }
           UAVBindingSet.clear_dirty(slot);
           pTracker->CheckResidency(encoderId,

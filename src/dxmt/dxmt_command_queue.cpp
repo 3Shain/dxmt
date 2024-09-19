@@ -35,7 +35,7 @@ CommandQueue::CommandQueue(MTL::Device *device)
                                     MTL::ResourceStorageModeShared),
       copy_temp_allocator(device, MTL::ResourceHazardTrackingModeUntracked |
                                       MTL::ResourceStorageModePrivate),
-      clear_cmd(device) {
+      clear_cmd(device), counter_pool(device) {
   commandQueue = transfer(device->newCommandQueue(kCommandChunkCount));
   for (unsigned i = 0; i < kCommandChunkCount; i++) {
     auto &chunk = chunks[i];
@@ -143,6 +143,7 @@ void CommandQueue::CommitChunkInternal(CommandChunk &chunk, uint64_t seq) {
 
   chunk.attached_cmdbuf = commandQueue->commandBuffer();
   auto cmdbuf = chunk.attached_cmdbuf;
+  counter_pool.FillCounters(seq, cmdbuf);
   chunk.encode(cmdbuf);
   cmdbuf->commit();
 
@@ -216,6 +217,7 @@ uint32_t CommandQueue::WaitForFinishThread() {
 
     staging_allocator.free_blocks(internal_seq);
     copy_temp_allocator.free_blocks(internal_seq);
+    counter_pool.ReleaseCounters(internal_seq);
 
     internal_seq++;
   }

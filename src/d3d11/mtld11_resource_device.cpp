@@ -195,6 +195,51 @@ public:
                                   void **ppLogicalResource) override {
       QueryInterface(riid, ppLogicalResource);
     };
+
+    virtual uint64_t SwapCounter(uint64_t handle) override { return handle; };
+  };
+
+  template <typename A, typename F> class UAVWithCounter : public UAVBase {
+  private:
+    A a;
+    F f;
+
+  public:
+    uint64_t counter_handle;
+
+    UAVWithCounter(const tag_unordered_access_view<>::DESC1 *pDesc,
+                   DeviceBuffer *pResource, IMTLD3D11Device *pDevice, A &&a,
+                   F &&fn)
+        : UAVBase(pDesc, pResource, pDevice), a(std::forward<A>(a)),
+          f(std::forward<F>(fn)) {
+      counter_handle = pDevice->AloocateCounter(0);
+    }
+
+    ~UAVWithCounter() { m_parent->DiscardCounter(counter_handle); }
+
+    BindingRef UseBindable(uint64_t seq_id) override {
+      this->resource->occupancy.MarkAsOccupied(seq_id);
+      return std::invoke(f, this);
+    };
+
+    ArgumentData
+    GetArgumentData(SIMPLE_RESIDENCY_TRACKER **ppTracker) override {
+      *ppTracker = &resource->residency;
+      return std::invoke(a, this);
+    };
+
+    void GetLogicalResourceOrView(REFIID riid,
+                                  void **ppLogicalResource) override {
+      QueryInterface(riid, ppLogicalResource);
+    };
+
+    virtual uint64_t SwapCounter(uint64_t handle) override {
+      uint64_t current = counter_handle;
+      if (~handle != 0) {
+        counter_handle = handle;
+      }
+      return current;
+    };
   };
 
   HRESULT
@@ -209,23 +254,39 @@ public:
     if (finalDesc.ViewDimension != D3D11_UAV_DIMENSION_BUFFER) {
       return E_INVALIDARG;
     }
-    D3D11_ASSERT(finalDesc.Buffer.Flags < 2 && "TODO: uav counter");
     if (structured) {
       if (finalDesc.Format != DXGI_FORMAT_UNKNOWN) {
         return E_INVALIDARG;
       }
+      bool with_counter =
+          finalDesc.Buffer.Flags &
+          (D3D11_BUFFER_UAV_FLAG_APPEND | D3D11_BUFFER_UAV_FLAG_COUNTER);
       // StructuredBuffer
       uint32_t offset, size;
       CalculateBufferViewOffsetAndSize(
           desc, desc.StructureByteStride, finalDesc.Buffer.FirstElement,
           finalDesc.Buffer.NumElements, offset, size);
-      *ppView = ref(new UAV(
-          &finalDesc, this, m_parent,
-          ArgumentData(buffer_handle + offset, size),
-          [ctx = Com(this), offset, size](auto _this) {
-            return BindingRef(static_cast<ID3D11UnorderedAccessView *>(_this),
-                              ctx->buffer.ptr(), size, offset);
-          }));
+      if (with_counter) {
+        *ppView = ref(new UAVWithCounter(
+            &finalDesc, this, m_parent,
+            [buffer_handle = this->buffer_handle, offset, size](auto _this) {
+              return ArgumentData(buffer_handle + offset, size,
+                                  _this->counter_handle);
+            },
+            [ctx = Com(this), offset, size](auto _this) {
+              return BindingRef(static_cast<ID3D11UnorderedAccessView *>(_this),
+                                ctx->buffer.ptr(), size, offset,
+                                _this->counter_handle);
+            }));
+      } else {
+        *ppView = ref(new UAV(
+            &finalDesc, this, m_parent,
+            ArgumentData(buffer_handle + offset, size),
+            [ctx = Com(this), offset, size](auto _this) {
+              return BindingRef(static_cast<ID3D11UnorderedAccessView *>(_this),
+                                ctx->buffer.ptr(), size, offset);
+            }));
+      }
       return S_OK;
     }
     if (finalDesc.Buffer.Flags & D3D11_BUFFER_UAV_FLAG_RAW) {
@@ -383,6 +444,8 @@ private:
       }
       view->setLabel(NS::String::string((char *)Name, NS::ASCIIStringEncoding));
     }
+
+    virtual uint64_t SwapCounter(uint64_t handle) override { return handle; };
   };
 
   using RTVBase =
