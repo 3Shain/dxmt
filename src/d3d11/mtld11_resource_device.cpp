@@ -205,13 +205,17 @@ public:
     F f;
 
   public:
-    uint64_t counter_handle = DXMT_NO_COUNTER;
+    uint64_t counter_handle;
 
     UAVWithCounter(const tag_unordered_access_view<>::DESC1 *pDesc,
                    DeviceBuffer *pResource, IMTLD3D11Device *pDevice, A &&a,
                    F &&fn)
         : UAVBase(pDesc, pResource, pDevice), a(std::forward<A>(a)),
-          f(std::forward<F>(fn)) {}
+          f(std::forward<F>(fn)) {
+      counter_handle = pDevice->AloocateCounter(0);
+    }
+
+    ~UAVWithCounter() { m_parent->DiscardCounter(counter_handle); }
 
     BindingRef UseBindable(uint64_t seq_id) override {
       this->resource->occupancy.MarkAsOccupied(seq_id);

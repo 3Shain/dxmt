@@ -36,7 +36,8 @@ public:
       : m_container(container), adapter_(pAdapter),
         m_FeatureLevel(FeatureLevel), m_FeatureFlags(FeatureFlags),
         m_features(container->GetMTLDevice()), sampler_states(this),
-        blend_states(this), rasterizer_states(this), depthstencil_states(this) {
+        blend_states(this), rasterizer_states(this), depthstencil_states(this),
+        cmd_queue_(cmd_queue) {
     context_ = InitializeImmediateContext(this, cmd_queue);
     is_traced_ = !!::GetModuleHandle("dxgitrace.dll");
   }
@@ -1058,6 +1059,16 @@ public:
     return S_OK;
   };
 
+  uint64_t AloocateCounter(uint32_t InitialValue) override {
+    return cmd_queue_.counter_pool.AllocateCounter(cmd_queue_.CurrentSeqId(),
+                                                   InitialValue);
+  }
+
+  void DiscardCounter(uint64_t ConterHandle) override {
+    cmd_queue_.counter_pool.DiscardCounter(cmd_queue_.CurrentSeqId(),
+                                           ConterHandle);
+  }
+
 private:
   MTLDXGIObject<IMTLDXGIDevice> *m_container;
   IMTLDXGIAdatper *adapter_;
@@ -1089,6 +1100,7 @@ private:
   StateObjectCache<D3D11_DEPTH_STENCIL_DESC, IMTLD3D11DepthStencilState>
       depthstencil_states;
 
+  CommandQueue& cmd_queue_;
   /** ensure destructor called first */
   std::unique_ptr<MTLD3D11DeviceContextBase> context_;
 };
