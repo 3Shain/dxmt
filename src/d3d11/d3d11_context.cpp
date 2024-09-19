@@ -2097,17 +2097,15 @@ public:
   }
 
 private:
-  Obj<MTL::Device> metal_device_;
   D3D11ContextState state_;
 
-  CommandQueue cmd_queue;
+  CommandQueue &cmd_queue;
   ContextInternal ctx;
 
 public:
-  MTLD3D11DeviceContext(IMTLD3D11Device *pDevice)
-      : MTLD3D11DeviceContextBase(pDevice),
-        metal_device_(m_parent->GetMTLDevice()), state_(),
-        cmd_queue(metal_device_), ctx(pDevice, state_, cmd_queue) {}
+  MTLD3D11DeviceContext(IMTLD3D11Device *pDevice, CommandQueue &cmd_queue)
+      : MTLD3D11DeviceContextBase(pDevice), state_(), cmd_queue(cmd_queue),
+        ctx(pDevice, state_, cmd_queue) {}
 
   ~MTLD3D11DeviceContext() {}
 
@@ -2119,8 +2117,8 @@ public:
 };
 
 std::unique_ptr<MTLD3D11DeviceContextBase>
-InitializeImmediateContext(IMTLD3D11Device *pDevice) {
-  return std::make_unique<MTLD3D11DeviceContext>(pDevice);
+InitializeImmediateContext(IMTLD3D11Device *pDevice, CommandQueue &cmd_queue) {
+  return std::make_unique<MTLD3D11DeviceContext>(pDevice, cmd_queue);
 }
 
 } // namespace dxmt

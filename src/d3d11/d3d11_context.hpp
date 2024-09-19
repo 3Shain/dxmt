@@ -24,7 +24,9 @@ namespace dxmt {
 using MTLD3D11DeviceContextBase =
     ManagedDeviceChild<IMTLD3D11DeviceContext, IMTLDynamicBufferExchange>;
 
+class CommandQueue;
+
 std::unique_ptr<MTLD3D11DeviceContextBase>
-InitializeImmediateContext(IMTLD3D11Device *device);
+InitializeImmediateContext(IMTLD3D11Device *device, CommandQueue& cmd_queue);
 
 } // namespace dxmt
