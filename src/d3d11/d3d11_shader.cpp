@@ -144,9 +144,9 @@ public:
   void GetCompiledVertexShaderWithVertexPulling(IMTLD3D11InputLayout *,
                                                 IMTLCompiledShader **) final;
 
-  virtual void
-  GetCompiledPixelShaderWithSampleMask(uint32_t sample_mask,
-                                       IMTLCompiledShader **ppShader) final;
+  virtual void GetCompiledPixelShader(uint32_t sample_mask,
+                                      bool dual_source_blending,
+                                      IMTLCompiledShader **ppShader) final;
 
   const MTL_SHADER_REFLECTION *GetReflection() final { return &reflection; }
 
@@ -328,20 +328,21 @@ private:
   SM50_SHADER_IA_INPUT_LAYOUT_DATA data;
 };
 
-class AirconvPixelShaderWithSampleMask
+class AirconvPixelShader
     : public AirconvShader<tag_pixel_shader> {
 public:
-  AirconvPixelShaderWithSampleMask(IMTLD3D11Device *pDevice,
+  AirconvPixelShader(IMTLD3D11Device *pDevice,
                                    TShaderBase<tag_pixel_shader> *shader,
-                                   uint32_t sample_mask)
+                                   uint32_t sample_mask, bool dual_source_blending)
       : AirconvShader<tag_pixel_shader>(pDevice, shader, &data) {
-    data.type = SM50_SHADER_PSO_SAMPLE_MASK;
+    data.type = SM50_SHADER_PSO_PIXEL_SHADER;
     data.next = nullptr;
     data.sample_mask = sample_mask;
+    data.dual_source_blending = dual_source_blending;
   };
 
 private:
-  SM50_SHADER_PSO_SAMPLE_MASK_DATA data;
+  SM50_SHADER_PSO_PIXEL_SHADER_DATA data;
 };
 
 class AirconvShaderEmulatedVertexSO
@@ -494,23 +495,21 @@ void TShaderBase<tag_emulated_vertex_so>::
 }
 
 template <typename tag>
-void TShaderBase<tag>::GetCompiledPixelShaderWithSampleMask(
-    uint32_t sample_mask, IMTLCompiledShader **pShader) {
+void TShaderBase<tag>::GetCompiledPixelShader(uint32_t sample_mask, bool,
+                                              IMTLCompiledShader **pShader) {
   D3D11_ASSERT(0 && "should not call this function");
 }
 
 template <>
-void TShaderBase<tag_pixel_shader>::GetCompiledPixelShaderWithSampleMask(
-    uint32_t sample_mask, IMTLCompiledShader **pShader) {
-  if (sample_mask == 0xffffffff) {
-    return GetCompiledShader(pShader);
-  }
-  if (data.contains(sample_mask)) {
-    *pShader = data[sample_mask].ref();
+void TShaderBase<tag_pixel_shader>::GetCompiledPixelShader(
+    uint32_t SampleMask, bool DualSourceBlending, IMTLCompiledShader **pShader) {
+  /* FIXME: implementation is broken */
+  if (data.contains(SampleMask)) {
+    *pShader = data[SampleMask].ref();
   } else {
     IMTLCompiledShader *shader =
-        new AirconvPixelShaderWithSampleMask(this->m_parent, this, sample_mask);
-    with_input_layout_fixup_.emplace(sample_mask, shader);
+        new AirconvPixelShader(this->m_parent, this, SampleMask, DualSourceBlending);
+    data.emplace(SampleMask, shader);
     *pShader = ref(shader);
     shader->SubmitWork();
   }
@@ -624,8 +623,7 @@ public:
     // D3D11_ASSERT(0 && "should not call this function");
   };
 
-  void GetCompiledPixelShaderWithSampleMask(uint32_t,
-                                            IMTLCompiledShader **) final {
+  void GetCompiledPixelShader(uint32_t, bool, IMTLCompiledShader **) final {
     D3D11_ASSERT(0 && "should not call this function");
   };
 

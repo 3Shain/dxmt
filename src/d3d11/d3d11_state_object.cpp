@@ -219,7 +219,14 @@ class MTLD3D11BlendState : public ManagedDeviceChild<IMTLD3D11BlendState> {
 public:
   friend class MTLD3D11DeviceContext;
   MTLD3D11BlendState(IMTLD3D11Device *device, const D3D11_BLEND_DESC1 &desc)
-      : ManagedDeviceChild<IMTLD3D11BlendState>(device), desc_(desc) {}
+      : ManagedDeviceChild<IMTLD3D11BlendState>(device), desc_(desc) {
+    dual_source_blending_ =
+        !desc_.IndependentBlendEnable &&
+        (desc_.RenderTarget[0].SrcBlend >= D3D11_BLEND_SRC1_COLOR ||
+         desc_.RenderTarget[0].SrcBlendAlpha >= D3D11_BLEND_SRC1_COLOR ||
+         desc_.RenderTarget[0].DestBlendAlpha >= D3D11_BLEND_SRC1_COLOR ||
+         desc_.RenderTarget[0].DestBlend >= D3D11_BLEND_SRC1_COLOR);
+  }
   ~MTLD3D11BlendState() {}
 
   HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid,
@@ -264,6 +271,8 @@ public:
     *pDesc = desc_;
   }
 
+  bool IsDualSourceBlending() { return dual_source_blending_; }
+
   void SetupMetalPipelineDescriptor(
       MTL::RenderPipelineDescriptor *render_pipeline_descriptor) {
     for (unsigned rt = 0; rt < D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT; rt++) {
@@ -295,10 +304,6 @@ public:
           kBlendFactorMap[renderTarget.DestBlend]);
       attachment_desc->setWriteMask(
           kColorWriteMaskMap[renderTarget.RenderTargetWriteMask]);
-      D3D11_ASSERT(renderTarget.SrcBlend < D3D11_BLEND_SRC1_COLOR);
-      D3D11_ASSERT(renderTarget.SrcBlendAlpha < D3D11_BLEND_SRC1_COLOR);
-      D3D11_ASSERT(renderTarget.DestBlendAlpha < D3D11_BLEND_SRC1_COLOR);
-      D3D11_ASSERT(renderTarget.DestBlend < D3D11_BLEND_SRC1_COLOR);
     }
     render_pipeline_descriptor->setAlphaToCoverageEnabled(
         desc_.AlphaToCoverageEnable);
@@ -306,6 +311,7 @@ public:
 
 private:
   const D3D11_BLEND_DESC1 desc_;
+  bool dual_source_blending_;
 };
 
 // RasterizerState

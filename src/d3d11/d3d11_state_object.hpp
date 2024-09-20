@@ -31,6 +31,7 @@ DEFINE_COM_INTERFACE("b01aaffa-b4d3-478a-91be-6195f215aaba",
 DEFINE_COM_INTERFACE("279a1d66-2fc1-460c-a0a7-a7a5f2b7a48f",
                      IMTLD3D11BlendState)
     : public ID3D11BlendState1 {
+  virtual bool IsDualSourceBlending() = 0;
   virtual void SetupMetalPipelineDescriptor(MTL::RenderPipelineDescriptor *
                                             render_pipeline_descriptor) = 0;
 };

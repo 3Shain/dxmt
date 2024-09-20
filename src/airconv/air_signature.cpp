@@ -752,9 +752,19 @@ auto FunctionSignatureBuilder::CreateFunction(
           return get_llvm_type(vertex_out.type, context);
         },
         [&](const OutputRenderTarget &render_target) {
+          if (render_target.dual_source_blending) {
+            md.string("air.render_target")
+              ->integer(0)
+              ->integer(render_target.index)
+              ->string("air.arg_type_name")
+              ->string(get_name(render_target.type))
+              ->string("air.arg_name")
+              ->string("render_target_" + std::to_string(render_target.index));
+            return get_llvm_type(render_target.type, context);
+          }
           md.string("air.render_target")
             ->integer(render_target.index)
-            ->integer(0) // TODO: dual source blending
+            ->integer(0)
             ->string("air.arg_type_name")
             ->string(get_name(render_target.type))
             ->string("air.arg_name")

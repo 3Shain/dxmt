@@ -1684,18 +1684,17 @@ public:
     }
 #endif
 
+    auto current_blend_state = state_.OutputMerger.BlendState
+                                   ? state_.OutputMerger.BlendState
+                                   : default_blend_state;
+
     if (state_.ShaderStages[(UINT)ShaderType::Pixel].Shader) {
-      if (state_.OutputMerger.SampleMask != 0xffffffff) {
-        // WARN("Emulate SampleMask PSO");
-        state_.ShaderStages[(UINT)ShaderType::Pixel]
-            .Shader //
-            ->GetCompiledPixelShaderWithSampleMask(
-                state_.OutputMerger.SampleMask, &ps);
-      } else {
-        state_.ShaderStages[(UINT)ShaderType::Pixel]
-            .Shader //
-            ->GetCompiledShader(&ps);
-      }
+
+      state_.ShaderStages[(UINT)ShaderType::Pixel]
+          .Shader //
+          ->GetCompiledPixelShader(state_.OutputMerger.SampleMask,
+                                   current_blend_state->IsDualSourceBlending(),
+                                   &ps);
     }
 
     MTL_GRAPHICS_PIPELINE_DESC pipelineDesc;
@@ -1712,9 +1711,7 @@ public:
         pipelineDesc.ColorAttachmentFormats[i] = MTL::PixelFormatInvalid;
       }
     }
-    pipelineDesc.BlendState = state_.OutputMerger.BlendState
-                                  ? state_.OutputMerger.BlendState
-                                  : default_blend_state;
+    pipelineDesc.BlendState = current_blend_state;
     pipelineDesc.DepthStencilFormat =
         state_.OutputMerger.DSV ? state_.OutputMerger.DSV->GetPixelFormat()
                                 : MTL::PixelFormatInvalid;

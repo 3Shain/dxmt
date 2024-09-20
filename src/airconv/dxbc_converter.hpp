@@ -276,7 +276,7 @@ public:
   std::vector<std::function<
     void(dxmt::dxbc::IREffect &, dxmt::air::FunctionSignatureBuilder *, SM50_SHADER_IA_INPUT_LAYOUT_DATA *)>>
     input_prelogue_;
-  std::vector<std::function<void(dxmt::dxbc::IRValue &)>> epilogue_;
+  std::vector<std::function<void(dxmt::dxbc::IRValue &, dxmt::air::FunctionSignatureBuilder *,  bool)>> epilogue_;
   microsoft::D3D10_SB_TOKENIZED_PROGRAM_TYPE shader_type;
   /* for domain shader, it refers to patch constant input count */
   uint32_t max_input_register = 0;

@@ -424,7 +424,7 @@ llvm::Error convert_dxbc_hull_shader(
     p(prelogue, &func_signature, nullptr);
   }
   for (auto &e : pShaderInternal->epilogue_) {
-    e(epilogue);
+    e(epilogue, &func_signature, false);
   }
 
   io_binding_map resource_map;
@@ -741,7 +741,7 @@ llvm::Error convert_dxbc_domain_shader(
     p(prelogue, &func_signature, nullptr);
   }
   for (auto &e : pShaderInternal->epilogue_) {
-    e(epilogue);
+    e(epilogue, &func_signature, false);
   }
 
   uint32_t clip_distance_out_idx = ~0u;
@@ -946,6 +946,7 @@ llvm::Error convert_dxbc_pixel_shader(
   uint32_t max_input_register = pShaderInternal->max_input_register;
   uint32_t max_output_register = pShaderInternal->max_output_register;
   uint32_t pso_sample_mask = 0xffffffff;
+  bool pso_dual_source_blending = false;
   SM50_SHADER_COMPILATION_ARGUMENT_DATA *arg = pArgs;
   // uint64_t debug_id = ~0u;
   while (arg) {
@@ -953,8 +954,9 @@ llvm::Error convert_dxbc_pixel_shader(
     case SM50_SHADER_DEBUG_IDENTITY:
       // debug_id = ((SM50_SHADER_DEBUG_IDENTITY_DATA *)arg)->id;
       break;
-    case SM50_SHADER_PSO_SAMPLE_MASK:
-      pso_sample_mask = ((SM50_SHADER_PSO_SAMPLE_MASK_DATA *)arg)->sample_mask;
+    case SM50_SHADER_PSO_PIXEL_SHADER:
+      pso_sample_mask = ((SM50_SHADER_PSO_PIXEL_SHADER_DATA *)arg)->sample_mask;
+      pso_dual_source_blending = ((SM50_SHADER_PSO_PIXEL_SHADER_DATA *)arg)->dual_source_blending;
       break;
     default:
       break;
@@ -974,7 +976,7 @@ llvm::Error convert_dxbc_pixel_shader(
     p(prelogue, &func_signature, nullptr);
   }
   for (auto &e : pShaderInternal->epilogue_) {
-    e(epilogue);
+    e(epilogue, &func_signature, pso_dual_source_blending);
   }
   if (pso_sample_mask != 0xffffffff) {
     auto assigned_index =
@@ -1200,7 +1202,7 @@ llvm::Error convert_dxbc_vertex_shader(
   for (auto &e : pShaderInternal->epilogue_) {
     if (vertex_so)
       continue;
-    e(epilogue);
+    e(epilogue, &func_signature, false);
   }
   if (vertex_so) {
     auto bv = func_signature.DefineInput(air::InputBaseVertex{});

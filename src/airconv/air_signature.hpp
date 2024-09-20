@@ -518,6 +518,7 @@ struct InputThreadgroupPositionInGrid {};   // uint3
 struct InputThreadgroupsPerGrid {};         // uint3
 
 struct OutputRenderTarget {
+  bool dual_source_blending;
   uint32_t index;
   MSLScalerOrVectorType type;
 

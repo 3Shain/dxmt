@@ -166,7 +166,7 @@ void handle_signature_vs(
     case D3D10_SB_NAME_POSITION: {
       auto assigned_index =
         func_signature.DefineOutput(OutputPosition{.type = msl_float4});
-      epilogue_.push_back([=](IRValue &epilogue) {
+      epilogue_.push_back([=](IRValue &epilogue, auto, auto) {
         epilogue >> pop_output_reg(reg, mask, assigned_index);
       });
       break;
@@ -194,7 +194,7 @@ void handle_signature_vs(
         .user = sig.fullSemanticString(),
         .type = to_msl_type(sig.componentType()),
       });
-      epilogue_.push_back([=](IRValue &epilogue) {
+      epilogue_.push_back([=](IRValue &epilogue, auto, auto) {
         epilogue >> pop_output_reg(reg, mask, assigned_index);
       });
       max_output_register = std::max(reg + 1, max_output_register);
@@ -412,7 +412,7 @@ void handle_signature_ps(
             ? DepthArgument::less
             : DepthArgument::any
       });
-      epilogue_.push_back([=](IRValue &epilogue) {
+      epilogue_.push_back([=](IRValue &epilogue, auto, auto) {
         epilogue >> [=](pvalue v) {
           return make_irvalue([=](struct context ctx) {
             return ctx.builder.CreateInsertValue(
@@ -447,7 +447,7 @@ void handle_signature_ps(
         });
       });
       auto assigned_index = func_signature.DefineOutput(OutputCoverageMask{});
-      epilogue_.push_back([=](IRValue &epilogue) {
+      epilogue_.push_back([=](IRValue &epilogue, auto, auto) {
         epilogue >> [=](pvalue v) {
           return make_irvalue([=](struct context ctx) {
             auto odepth = ctx.builder.CreateLoad(
@@ -476,13 +476,28 @@ void handle_signature_ps(
       auto sig = findOutputElement([=](Signature sig) {
         return (sig.reg() == reg) && ((sig.mask() & mask) != 0);
       });
-      uint32_t assigned_index = func_signature.DefineOutput(OutputRenderTarget{
-        .index = reg,
-        .type = to_msl_type(sig.componentType()),
-      });
-      epilogue_.push_back([=](IRValue &epilogue) {
-        epilogue >> pop_output_reg(reg, mask, assigned_index);
-      });
+      auto type = sig.componentType();
+      epilogue_.push_back(
+        [=](IRValue &epilogue, auto func_signature, bool dual_source_belnding) {
+          uint32_t assigned_index;
+          if (dual_source_belnding) {
+            if (reg > 1 || reg < 0)
+              return;
+            assigned_index = func_signature->DefineOutput(OutputRenderTarget{
+              .dual_source_blending = true,
+              .index = reg,
+              .type = to_msl_type(type),
+            });
+          } else {
+            assigned_index = func_signature->DefineOutput(OutputRenderTarget{
+              .dual_source_blending = false,
+              .index = reg,
+              .type = to_msl_type(type),
+            });
+          }
+          epilogue >> pop_output_reg(reg, mask, assigned_index);
+        }
+      );
       max_output_register = std::max(reg + 1, max_output_register);
       break;
     }
@@ -568,7 +583,7 @@ void handle_signature_hs(
     case D3D11_SB_NAME_FINAL_QUAD_V_EQ_1_EDGE_TESSFACTOR:
     case D3D11_SB_NAME_FINAL_QUAD_U_INSIDE_TESSFACTOR:
     case D3D11_SB_NAME_FINAL_QUAD_V_INSIDE_TESSFACTOR: {
-      epilogue_.push_back([=](IRValue &epilogue) {
+      epilogue_.push_back([=](IRValue &epilogue, auto, auto) {
         epilogue >> pop_output_tess_factor(
                       reg, mask,
                       (siv - D3D11_SB_NAME_FINAL_QUAD_U_EQ_0_EDGE_TESSFACTOR), 6
@@ -580,7 +595,7 @@ void handle_signature_hs(
     case D3D11_SB_NAME_FINAL_TRI_V_EQ_0_EDGE_TESSFACTOR:
     case D3D11_SB_NAME_FINAL_TRI_W_EQ_0_EDGE_TESSFACTOR:
     case D3D11_SB_NAME_FINAL_TRI_INSIDE_TESSFACTOR: {
-      epilogue_.push_back([=](IRValue &epilogue) {
+      epilogue_.push_back([=](IRValue &epilogue, auto, auto) {
         epilogue >>
           pop_output_tess_factor(
             reg, mask, (siv - D3D11_SB_NAME_FINAL_TRI_U_EQ_0_EDGE_TESSFACTOR), 4
@@ -742,7 +757,7 @@ void handle_signature_ds(
     case D3D10_SB_NAME_POSITION: {
       auto assigned_index =
         func_signature.DefineOutput(OutputPosition{.type = msl_float4});
-      epilogue_.push_back([=](IRValue &epilogue) {
+      epilogue_.push_back([=](IRValue &epilogue, auto, auto) {
         epilogue >> pop_output_reg(reg, mask, assigned_index);
       });
       break;
@@ -770,7 +785,7 @@ void handle_signature_ds(
         .user = sig.fullSemanticString(),
         .type = to_msl_type(sig.componentType()),
       });
-      epilogue_.push_back([=](IRValue &epilogue) {
+      epilogue_.push_back([=](IRValue &epilogue, auto, auto) {
         epilogue >> pop_output_reg(reg, mask, assigned_index);
       });
       max_output_register = std::max(reg + 1, max_output_register);
