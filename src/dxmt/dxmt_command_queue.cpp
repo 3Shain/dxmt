@@ -154,6 +154,7 @@ void CommandQueue::CommitChunkInternal(CommandChunk &chunk, uint64_t seq) {
 uint32_t CommandQueue::EncodingThread() {
 #if ASYNC_ENCODING
   env::setThreadName("dxmt-encode-thread");
+  __pthread_set_qos_class_self_np(__QOS_CLASS_USER_INTERACTIVE, 0);
   SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
   uint64_t internal_seq = 1;
   while (!stopped.load()) {
@@ -172,6 +173,7 @@ uint32_t CommandQueue::EncodingThread() {
 
 uint32_t CommandQueue::WaitForFinishThread() {
   env::setThreadName("dxmt-finish-thread");
+  __pthread_set_qos_class_self_np(__QOS_CLASS_USER_INTERACTIVE, 0);
   SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
   uint64_t internal_seq = 1;
   while (!stopped.load()) {

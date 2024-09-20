@@ -1491,6 +1491,7 @@ public:
     cmdbuf_state = CommandBufferState::ComputeEncoderActive;
   }
 
+  template<bool IndexedDraw>
   bool FinalizeNoRasterizationRenderPipeline(IMTLD3D11Shader *pVertexShader) {
 
     if (!SwitchToRenderEncoder()) {
@@ -1501,32 +1502,27 @@ public:
 
     Com<IMTLCompiledGraphicsPipeline> pipeline;
     Com<IMTLCompiledShader> vs;
-#ifndef DXMT_SHADER_VERTEX_PULLING
-    if (state_.InputAssembler.InputLayout &&
-        state_.InputAssembler.InputLayout->NeedsFixup()) {
-      MTL_SHADER_INPUT_LAYOUT_FIXUP fixup;
-      state_.InputAssembler.InputLayout->GetShaderFixupInfo(&fixup);
-      pVertexShader->GetCompiledShaderWithInputLayoutFixup(fixup.sign_mask, &vs);
-    } else {
-      pVertexShader->GetCompiledShader(&vs);
-    }
-#else
-    if (state_.InputAssembler.InputLayout) {
-      pVertexShader->GetCompiledVertexShaderWithVertexPulling(
-          state_.InputAssembler.InputLayout.ptr(), &vs);
-    } else {
-      pVertexShader->GetCompiledShader(&vs);
-    }
-#endif
     MTL_GRAPHICS_PIPELINE_DESC pipelineDesc;
-    pipelineDesc.VertexShader = vs.ptr();
+    pipelineDesc.VertexShader = pVertexShader;
     pipelineDesc.PixelShader = nullptr;
+    pipelineDesc.HullShader = nullptr;
+    pipelineDesc.DomainShader = nullptr;
     pipelineDesc.InputLayout = state_.InputAssembler.InputLayout.ptr();
     pipelineDesc.NumColorAttachments = 0;
-    memset(pipelineDesc.ColorAttachmentFormats, 0, sizeof(pipelineDesc.ColorAttachmentFormats));
-    pipelineDesc.BlendState = nullptr;
+    memset(pipelineDesc.ColorAttachmentFormats, 0,
+           sizeof(pipelineDesc.ColorAttachmentFormats));
+    pipelineDesc.BlendState = default_blend_state;
     pipelineDesc.DepthStencilFormat = MTL::PixelFormatInvalid;
     pipelineDesc.RasterizationEnabled = false;
+    pipelineDesc.SampleMask = D3D11_DEFAULT_SAMPLE_MASK;
+    if constexpr (IndexedDraw) {
+      pipelineDesc.IndexBufferFormat =
+          state_.InputAssembler.IndexBufferFormat == DXGI_FORMAT_R32_UINT
+              ? SM50_INDEX_BUFFER_FORMAT_UINT32
+              : SM50_INDEX_BUFFER_FORMAT_UINT16;
+    } else {
+      pipelineDesc.IndexBufferFormat = SM50_INDEX_BUFFER_FORMAT_NONE;
+    }
 
     device->CreateGraphicsPipeline(&pipelineDesc, &pipeline);
 
@@ -1542,7 +1538,8 @@ public:
     return true;
   };
 
-  bool FinalizeTessellationRenderPipeline(bool indexed_draw) {
+  template<bool IndexedDraw>
+  bool FinalizeTessellationRenderPipeline() {
 
     if (cmdbuf_state == CommandBufferState::TessellationRenderPipelineReady)
       return true;
@@ -1566,7 +1563,7 @@ public:
     Com<IMTLCompiledTessellationPipeline> pipeline;
     Com<IMTLCompiledShader> vs, ps;
 
-    MTL_TESSELLATION_PIPELINE_DESC pipelineDesc;
+    MTL_GRAPHICS_PIPELINE_DESC pipelineDesc;
     pipelineDesc.VertexShader =
         state_.ShaderStages[(UINT)ShaderType::Vertex].Shader.ptr();
     pipelineDesc.PixelShader =
@@ -1579,7 +1576,7 @@ public:
     pipelineDesc.NumColorAttachments = state_.OutputMerger.NumRTVs;
     for (unsigned i = 0; i < ARRAYSIZE(state_.OutputMerger.RTVs); i++) {
       auto &rtv = state_.OutputMerger.RTVs[i];
-      if (rtv) {
+      if (rtv && i < pipelineDesc.NumColorAttachments) {
         pipelineDesc.ColorAttachmentFormats[i] =
             state_.OutputMerger.RTVs[i]->GetPixelFormat();
       } else {
@@ -1593,8 +1590,8 @@ public:
         state_.OutputMerger.DSV ? state_.OutputMerger.DSV->GetPixelFormat()
                                 : MTL::PixelFormatInvalid;
     pipelineDesc.RasterizationEnabled = true;
-    if (indexed_draw) {
-
+    pipelineDesc.SampleMask = state_.OutputMerger.SampleMask;
+    if constexpr (IndexedDraw) {
       pipelineDesc.IndexBufferFormat =
           state_.InputAssembler.IndexBufferFormat == DXGI_FORMAT_R32_UINT
               ? SM50_INDEX_BUFFER_FORMAT_UINT32
@@ -1628,7 +1625,8 @@ public:
   Assume we have all things needed to build PSO
   If the current encoder is not a render encoder, switch to it.
   */
-  bool FinalizeCurrentRenderPipeline(bool indexed_draw) {
+  template<bool IndexedDraw>
+  bool FinalizeCurrentRenderPipeline() {
     if (state_.InputAssembler.InputLayout &&
         !state_.InputAssembler.VertexBuffers.all_bound_masked(
             state_.InputAssembler.InputLayout->GetInputSlotMask())) {
@@ -1636,13 +1634,13 @@ public:
       return false;
     }
     if (state_.ShaderStages[(UINT)ShaderType::Hull].Shader) {
-      return FinalizeTessellationRenderPipeline(indexed_draw);
+      return FinalizeTessellationRenderPipeline<IndexedDraw>();
     }
     if (cmdbuf_state == CommandBufferState::RenderPipelineReady)
       return true;
     if (state_.ShaderStages[(UINT)ShaderType::Geometry].Shader) {
       if (!state_.ShaderStages[(UINT)ShaderType::Pixel].Shader) {
-        return FinalizeNoRasterizationRenderPipeline(
+        return FinalizeNoRasterizationRenderPipeline<IndexedDraw>(
             state_.ShaderStages[(UINT)ShaderType::Geometry].Shader.ptr());
       }
       // ERR("geometry shader is not supported yet, skip drawcall");
@@ -1656,66 +1654,41 @@ public:
     CommandChunk *chk = cmd_queue.CurrentChunk();
 
     Com<IMTLCompiledGraphicsPipeline> pipeline;
-    Com<IMTLCompiledShader> vs, ps;
-#ifndef DXMT_SHADER_VERTEX_PULLING
-    if (state_.InputAssembler.InputLayout &&
-        state_.InputAssembler.InputLayout->NeedsFixup()) {
-
-      MTL_SHADER_INPUT_LAYOUT_FIXUP fixup;
-      state_.InputAssembler.InputLayout->GetShaderFixupInfo(&fixup);
-      state_.ShaderStages[(UINT)ShaderType::Vertex]
-          .Shader //
-          ->GetCompiledShaderWithInputLayoutFixup(fixup.sign_mask, &vs);
-    } else {
-      state_.ShaderStages[(UINT)ShaderType::Vertex]
-          .Shader //
-          ->GetCompiledShader(&vs);
-    }
-#else
-    if (state_.InputAssembler.InputLayout) {
-      state_.ShaderStages[(UINT)ShaderType::Vertex]
-          .Shader //
-          ->GetCompiledVertexShaderWithVertexPulling(
-              state_.InputAssembler.InputLayout.ptr(), &vs);
-    } else {
-      state_.ShaderStages[(UINT)ShaderType::Vertex]
-          .Shader //
-          ->GetCompiledShader(&vs);
-    }
-#endif
-
-    auto current_blend_state = state_.OutputMerger.BlendState
-                                   ? state_.OutputMerger.BlendState
-                                   : default_blend_state;
-
-    if (state_.ShaderStages[(UINT)ShaderType::Pixel].Shader) {
-
-      state_.ShaderStages[(UINT)ShaderType::Pixel]
-          .Shader //
-          ->GetCompiledPixelShader(state_.OutputMerger.SampleMask,
-                                   current_blend_state->IsDualSourceBlending(),
-                                   &ps);
-    }
 
     MTL_GRAPHICS_PIPELINE_DESC pipelineDesc;
-    pipelineDesc.VertexShader = vs.ptr();
-    pipelineDesc.PixelShader = ps.ptr();
+    pipelineDesc.VertexShader = state_.ShaderStages[(UINT)ShaderType::Vertex]
+            .Shader.ptr();
+    pipelineDesc.PixelShader = state_.ShaderStages[(UINT)ShaderType::Pixel]
+            .Shader.ptr();
+    pipelineDesc.HullShader = nullptr;
+    pipelineDesc.DomainShader = nullptr;
     pipelineDesc.InputLayout = state_.InputAssembler.InputLayout.ptr();
     pipelineDesc.NumColorAttachments = state_.OutputMerger.NumRTVs;
     for (unsigned i = 0; i < ARRAYSIZE(state_.OutputMerger.RTVs); i++) {
       auto &rtv = state_.OutputMerger.RTVs[i];
-      if (rtv) {
+      if (rtv && i < pipelineDesc.NumColorAttachments) {
         pipelineDesc.ColorAttachmentFormats[i] =
             state_.OutputMerger.RTVs[i]->GetPixelFormat();
       } else {
         pipelineDesc.ColorAttachmentFormats[i] = MTL::PixelFormatInvalid;
       }
     }
-    pipelineDesc.BlendState = current_blend_state;
+    pipelineDesc.BlendState = state_.OutputMerger.BlendState
+                                   ? state_.OutputMerger.BlendState
+                                   : default_blend_state;
     pipelineDesc.DepthStencilFormat =
         state_.OutputMerger.DSV ? state_.OutputMerger.DSV->GetPixelFormat()
                                 : MTL::PixelFormatInvalid;
     pipelineDesc.RasterizationEnabled = true;
+    pipelineDesc.SampleMask = state_.OutputMerger.SampleMask;
+    if constexpr (IndexedDraw) {
+      pipelineDesc.IndexBufferFormat =
+          state_.InputAssembler.IndexBufferFormat == DXGI_FORMAT_R32_UINT
+              ? SM50_INDEX_BUFFER_FORMAT_UINT32
+              : SM50_INDEX_BUFFER_FORMAT_UINT16;
+    } else {
+      pipelineDesc.IndexBufferFormat = SM50_INDEX_BUFFER_FORMAT_NONE;
+    }
 
     device->CreateGraphicsPipeline(&pipelineDesc, &pipeline);
 
@@ -1731,8 +1704,10 @@ public:
     return true;
   }
 
-  bool PreDraw(bool indexed_draw) {
-    if (!FinalizeCurrentRenderPipeline(indexed_draw)) {
+
+  template<bool IndexedDraw>
+  bool PreDraw() {
+    if (!FinalizeCurrentRenderPipeline<IndexedDraw>()) {
       return false;
     }
     CommandChunk *chk = cmd_queue.CurrentChunk();
@@ -2259,22 +2234,7 @@ public:
     //         (uint64_t)state_.InputAssembler.InputLayout->GetInputSlotMask())) {
     //   return;
     // }
-#ifndef DXMT_SHADER_VERTEX_PULLING
-    for (unsigned index = 0; index < 16; index++) {
-      if (!VertexBuffers.test_bound(index) ||
-          !VertexBuffers.test_dirty(index)) {
-        continue;
-      }
-      auto &state = VertexBuffers[index];
-      // a ref is necessary (in case buffer destroyed before encoding)
-      EmitRenderCommand([buffer = state.BufferRaw, ref = Com(state.RawPointer),
-                         offset = state.Offset, stride = state.Stride,
-                         index](MTL::RenderCommandEncoder *encoder) {
-        encoder->setVertexBuffer(buffer, offset, stride, index);
-      });
-      VertexBuffers.clear_dirty(index);
-    };
-#else
+
     struct VERTEX_BUFFER_ENTRY {
       uint64_t buffer_handle;
       uint32_t stride;
@@ -2321,12 +2281,12 @@ public:
       chk->emit([heap, offset](CommandChunk::context &ctx) {
         ctx.render_encoder->setObjectBuffer(heap, offset, 16);
       });
-    } else {
+    }
+    if (cmdbuf_state == CommandBufferState::RenderPipelineReady) {
       chk->emit([heap, offset](CommandChunk::context &ctx) {
         ctx.render_encoder->setVertexBuffer(heap, offset, 16);
       });
     }
-#endif
   }
 
   void UpdateSOTargets() {

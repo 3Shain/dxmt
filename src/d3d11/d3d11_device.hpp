@@ -6,23 +6,13 @@
 #include "Metal/MTLDevice.hpp"
 #include "d3d11_private.h"
 #include "dxgi_interfaces.h"
-#include "threadpool.hpp"
 
 DEFINE_COM_INTERFACE("14e1e5e4-3f08-4741-a8e3-597d79373266", IMTLThreadpoolWork)
     : public IUnknown {
-  virtual void RunThreadpoolWork() = 0;
+  virtual IMTLThreadpoolWork* RunThreadpoolWork() = 0;
+  virtual bool GetIsDone() = 0;
+  virtual void SetIsDone(bool state) = 0;
 };
-
-struct threadpool_trait {
-  using work_type = IMTLThreadpoolWork;
-  constexpr void invoke_work(work_type *work) {
-    work->RunThreadpoolWork();
-    D3D11_ASSERT(work->Release());
-  };
-};
-
-// struct THREADGROUP_WORK_STATE_OPAQUE;
-typedef dxmt::threadpool<threadpool_trait>::work_handle THREADGROUP_WORK_STATE;
 
 struct IMTLCompiledShader;
 
@@ -31,7 +21,6 @@ struct IMTLCompiledComputePipeline;
 struct IMTLCompiledTessellationPipeline;
 
 struct MTL_GRAPHICS_PIPELINE_DESC;
-struct MTL_TESSELLATION_PIPELINE_DESC;
 
 DEFINE_COM_INTERFACE("a46de9a7-0233-4a94-b75c-9c0f8f364cda", IMTLD3D11Device)
     : public ID3D11Device3 {
@@ -47,9 +36,7 @@ DEFINE_COM_INTERFACE("a46de9a7-0233-4a94-b75c-9c0f8f364cda", IMTLD3D11Device)
   In theory a work can be submitted multiple time,
   if that makes sense (usually not)
   */
-  virtual void SubmitThreadgroupWork(IMTLThreadpoolWork * pWork,
-                                     THREADGROUP_WORK_STATE * pState) = 0;
-  virtual void WaitThreadgroupWork(THREADGROUP_WORK_STATE * pState) = 0;
+  virtual void SubmitThreadgroupWork(IMTLThreadpoolWork * pWork) = 0;
 
   virtual HRESULT CreateGraphicsPipeline(MTL_GRAPHICS_PIPELINE_DESC * pDesc,
                                          IMTLCompiledGraphicsPipeline *
@@ -59,9 +46,9 @@ DEFINE_COM_INTERFACE("a46de9a7-0233-4a94-b75c-9c0f8f364cda", IMTLD3D11Device)
                                         IMTLCompiledComputePipeline *
                                             *ppPipeline) = 0;
 
-  virtual HRESULT CreateTessellationPipeline(MTL_TESSELLATION_PIPELINE_DESC * pDesc,
-                                         IMTLCompiledTessellationPipeline *
-                                             *ppPipeline) = 0;
+  virtual HRESULT CreateTessellationPipeline(MTL_GRAPHICS_PIPELINE_DESC * pDesc,
+                                             IMTLCompiledTessellationPipeline *
+                                                 *ppPipeline) = 0;
 
   virtual bool IsTraced() = 0;
 

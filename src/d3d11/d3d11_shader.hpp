@@ -19,11 +19,10 @@ struct IMTLD3D11InputLayout;
 DEFINE_COM_INTERFACE("a8bfeef7-a453-4bce-90c1-912b02cf5cdf", IMTLCompiledShader)
     : public IMTLThreadpoolWork {
   virtual void SubmitWork() = 0;
-  virtual bool IsReady() = 0;
   /**
-  NOTE: the current thread is blocked if it's not ready
+  return false if it's not ready
    */
-  virtual void GetShader(MTL_COMPILED_SHADER * pShaderData) = 0;
+  virtual bool GetShader(MTL_COMPILED_SHADER * pShaderData) = 0;
 
   virtual void Dump() = 0;
 };
@@ -34,8 +33,6 @@ DEFINE_COM_INTERFACE("e95ba1c7-e43f-49c3-a907-4ac669c9fb42", IMTLD3D11Shader)
   virtual uint64_t GetUniqueId() = 0;
   virtual void *GetAirconvHandle() = 0;
   virtual void GetCompiledShader(IMTLCompiledShader * *ppShader) = 0;
-  virtual void GetCompiledShaderWithInputLayoutFixup(
-      uint64_t sign_mask, IMTLCompiledShader * *ppShader) = 0;
   virtual void GetCompiledPixelShader(uint32_t SampleMask,
                                       bool DualSourceBlending,
                                       IMTLCompiledShader **ppShader) = 0;
@@ -43,8 +40,6 @@ DEFINE_COM_INTERFACE("e95ba1c7-e43f-49c3-a907-4ac669c9fb42", IMTLD3D11Shader)
       IMTLD3D11InputLayout * pInputLayout, IMTLCompiledShader * *pShader) = 0;
   virtual const MTL_SHADER_REFLECTION *GetReflection() = 0;
 };
-
-#define DXMT_SHADER_VERTEX_PULLING 1
 
 namespace dxmt {
 

@@ -22,6 +22,7 @@ d3d11_src = [
   'd3d11_pipeline.cpp',
   'd3d11_pipeline_tess.cpp',
   'd3d11_enumerable.cpp',
+  'd3d11_pipeline_cache.cpp',
 ]
 
 d3d11_ld_args      = []

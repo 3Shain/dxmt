@@ -2,6 +2,7 @@
 #include "com/com_guid.hpp"
 #include "d3d11_device_child.hpp"
 #include "dxmt_occlusion_query.hpp"
+#include "log/log.hpp"
 
 DEFINE_COM_INTERFACE("a301e56d-d87e-4b69-8440-bd003e285904",
                      IMTLD3DOcclusionQuery)

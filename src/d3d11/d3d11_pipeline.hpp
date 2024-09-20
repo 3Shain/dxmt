@@ -11,17 +11,6 @@
 #include "util_hash.hpp"
 
 struct MTL_GRAPHICS_PIPELINE_DESC {
-  IMTLCompiledShader *VertexShader;
-  IMTLCompiledShader *PixelShader;
-  IMTLD3D11BlendState *BlendState;
-  IMTLD3D11InputLayout *InputLayout;
-  UINT NumColorAttachments;
-  MTL::PixelFormat ColorAttachmentFormats[8];
-  MTL::PixelFormat DepthStencilFormat;
-  bool RasterizationEnabled;
-};
-
-struct MTL_TESSELLATION_PIPELINE_DESC {
   IMTLD3D11Shader *VertexShader;
   IMTLD3D11Shader *HullShader;
   IMTLD3D11Shader *DomainShader;
@@ -33,6 +22,7 @@ struct MTL_TESSELLATION_PIPELINE_DESC {
   MTL::PixelFormat DepthStencilFormat;
   bool RasterizationEnabled;
   SM50_INDEX_BUFFER_FORAMT IndexBufferFormat;
+  uint32_t SampleMask;
 };
 
 struct MTL_COMPILED_GRAPHICS_PIPELINE {
@@ -85,16 +75,19 @@ namespace std {
 template <> struct hash<MTL_GRAPHICS_PIPELINE_DESC> {
   size_t operator()(const MTL_GRAPHICS_PIPELINE_DESC &v) const noexcept {
     dxmt::HashState state;
-    state.add((size_t)v.VertexShader); // FIXME: don't use pointer?
-    state.add((size_t)v.PixelShader);  // FIXME: don't use pointer?
-    state.add((size_t)v.InputLayout);  // FIXME: don't use pointer?
-    /* IMTLD3D11BlendState pointer is safe to be used as hash input */
-    state.add((size_t)v.BlendState);
+    state.add((size_t)v.VertexShader);
+    state.add((size_t)v.PixelShader);
+    state.add((size_t)v.HullShader);
+    state.add((size_t)v.DomainShader);
+    state.add((size_t)v.InputLayout);
+    /* don't add blend */
+    // state.add((size_t)v.BlendState);
     state.add((size_t)v.DepthStencilFormat);
+    state.add((size_t)v.IndexBufferFormat);
+    state.add((size_t)v.SampleMask);
     state.add((size_t)v.NumColorAttachments);
-    for (unsigned i = 0; i < std::size(v.ColorAttachmentFormats); i++) {
-      state.add(i < v.NumColorAttachments ? v.ColorAttachmentFormats[i]
-                                          : MTL::PixelFormatInvalid);
+    for (unsigned i = 0; i < v.NumColorAttachments; i++) {
+      state.add(v.ColorAttachmentFormats[i]);
     }
     return state;
   };
@@ -108,51 +101,54 @@ template <> struct equal_to<MTL_GRAPHICS_PIPELINE_DESC> {
       if (x.ColorAttachmentFormats[i] != y.ColorAttachmentFormats[i])
         return false;
     }
-    return (x.BlendState == y.BlendState) &&
-           (x.VertexShader == y.VertexShader) &&
-           (x.PixelShader == y.PixelShader) &&
-           (x.InputLayout == y.InputLayout) &&
-           (x.DepthStencilFormat == y.DepthStencilFormat) &&
-           (x.RasterizationEnabled == y.RasterizationEnabled);
-  }
-};
-template <> struct hash<MTL_TESSELLATION_PIPELINE_DESC> {
-  size_t operator()(const MTL_TESSELLATION_PIPELINE_DESC &v) const noexcept {
-    dxmt::HashState state;
-    state.add((size_t)v.VertexShader);
-    state.add((size_t)v.PixelShader);
-    state.add((size_t)v.HullShader);
-    state.add((size_t)v.DomainShader);
-    state.add((size_t)v.InputLayout);
-    /* IMTLD3D11BlendState pointer is safe to be used as hash input */
-    state.add((size_t)v.BlendState);
-    state.add((size_t)v.DepthStencilFormat);
-    state.add((size_t)v.IndexBufferFormat);
-    state.add((size_t)v.NumColorAttachments);
-    for (unsigned i = 0; i < std::size(v.ColorAttachmentFormats); i++) {
-      state.add(i < v.NumColorAttachments ? v.ColorAttachmentFormats[i]
-                                          : MTL::PixelFormatInvalid);
-    }
-    return state;
-  };
-};
-template <> struct equal_to<MTL_TESSELLATION_PIPELINE_DESC> {
-  bool operator()(const MTL_TESSELLATION_PIPELINE_DESC &x,
-                  const MTL_TESSELLATION_PIPELINE_DESC &y) const {
-    if (x.NumColorAttachments != y.NumColorAttachments)
-      return false;
-    for (unsigned i = 0; i < x.NumColorAttachments; i++) {
-      if (x.ColorAttachmentFormats[i] != y.ColorAttachmentFormats[i])
+    if (x.BlendState != y.BlendState) {
+      D3D11_BLEND_DESC1 x_, y_;
+      x.BlendState->GetDesc1(&x_);
+      y.BlendState->GetDesc1(&y_);
+      if (x_.IndependentBlendEnable != y_.IndependentBlendEnable)
         return false;
+      if (x_.AlphaToCoverageEnable != y_.AlphaToCoverageEnable)
+        return false;
+      uint32_t num_blend_target =
+          x_.IndependentBlendEnable ? x.NumColorAttachments : 1;
+      for (unsigned i = 0; i < num_blend_target; i++) {
+        auto &blend_target_x = x_.RenderTarget[i];
+        auto &blend_target_y = y_.RenderTarget[i];
+        if (blend_target_x.RenderTargetWriteMask !=
+            blend_target_y.RenderTargetWriteMask)
+          return false;
+        if (blend_target_x.BlendEnable != blend_target_y.BlendEnable)
+          return false;
+        if (blend_target_x.LogicOpEnable != blend_target_y.LogicOpEnable)
+          return false;
+        if (blend_target_x.BlendEnable) {
+          if (blend_target_x.BlendOp != blend_target_y.BlendOp)
+            return false;
+          if (blend_target_x.BlendOpAlpha != blend_target_y.BlendOpAlpha)
+            return false;
+          if (blend_target_x.SrcBlend != blend_target_y.SrcBlend)
+            return false;
+          if (blend_target_x.SrcBlendAlpha != blend_target_y.SrcBlendAlpha)
+            return false;
+          if (blend_target_x.DestBlend != blend_target_y.DestBlend)
+            return false;
+          if (blend_target_x.DestBlendAlpha != blend_target_y.DestBlendAlpha)
+            return false;
+        }
+        if (blend_target_x.LogicOpEnable) {
+          if (blend_target_x.LogicOp != blend_target_y.LogicOp)
+            return false;
+        }
+      }
     }
-    return (x.BlendState == y.BlendState) &&
-           (x.VertexShader == y.VertexShader) &&
+    return (x.VertexShader == y.VertexShader) &&
            (x.PixelShader == y.PixelShader) && (x.HullShader == y.HullShader) &&
            (x.DomainShader == y.DomainShader) &&
            (x.InputLayout == y.InputLayout) &&
            (x.DepthStencilFormat == y.DepthStencilFormat) &&
            (x.RasterizationEnabled == y.RasterizationEnabled) &&
-           (x.IndexBufferFormat == y.IndexBufferFormat);
+           (x.IndexBufferFormat == y.IndexBufferFormat) &&
+           (x.SampleMask == y.SampleMask);
   }
 };
 } // namespace std
@@ -160,17 +156,14 @@ template <> struct equal_to<MTL_TESSELLATION_PIPELINE_DESC> {
 namespace dxmt {
 
 Com<IMTLCompiledGraphicsPipeline> CreateGraphicsPipeline(
-    IMTLD3D11Device *pDevice, IMTLCompiledShader *pVertexShader,
-    IMTLCompiledShader *pPixelShader, IMTLD3D11InputLayout *pInputLayout,
-    IMTLD3D11BlendState *pBlendState, UINT NumRTVs,
-    MTL::PixelFormat const *RTVFormats, MTL::PixelFormat DepthStencilFormat,
-    bool RasterizationEnabled);
+    IMTLD3D11Device *pDevice, MTL_GRAPHICS_PIPELINE_DESC* pDesc);
 
 Com<IMTLCompiledComputePipeline>
 CreateComputePipeline(IMTLD3D11Device *pDevice,
                       IMTLCompiledShader *pComputeShader);
 
 Com<IMTLCompiledTessellationPipeline>
-CreateTessellationPipeline(IMTLD3D11Device *pDevice, MTL_TESSELLATION_PIPELINE_DESC* pDesc);
+CreateTessellationPipeline(IMTLD3D11Device *pDevice,
+                           MTL_GRAPHICS_PIPELINE_DESC *pDesc);
 
 }; // namespace dxmt
