@@ -151,8 +151,13 @@ void handle_signature_vs(
     auto siv = Inst.m_OutputDeclSIV.Name;
     switch (siv) {
     case D3D10_SB_NAME_CLIP_DISTANCE: {
-      assert(0 && "Should be handled separately"); // becuase it can defined
-                                                   // multiple times
+      for (unsigned i = 0; i < 4; i++) {
+        if (mask & (1 << i)) {
+          sm50_shader->clip_distance_scalars.push_back(
+            {.component = (uint8_t)(i), .reg = (uint8_t)reg}
+          );
+        }
+      }
       break;
     }
     case D3D10_SB_NAME_CULL_DISTANCE:
@@ -722,8 +727,13 @@ void handle_signature_ds(
     auto siv = Inst.m_OutputDeclSIV.Name;
     switch (siv) {
     case D3D10_SB_NAME_CLIP_DISTANCE: {
-      assert(0 && "Should be handled separately"); // becuase it can defined
-                                                   // multiple times
+      for (unsigned i = 0; i < 4; i++) {
+        if (mask & (1 << i)) {
+          sm50_shader->clip_distance_scalars.push_back(
+            {.component = (uint8_t)(i), .reg = (uint8_t)reg}
+          );
+        }
+      }
       break;
     }
     case D3D10_SB_NAME_CULL_DISTANCE:

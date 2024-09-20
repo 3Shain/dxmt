@@ -263,7 +263,7 @@ constexpr air::MSLScalerOrVectorType to_msl_type(RegisterComponentType type) {
   }
 }
 
-struct PatchConstantScalarInfo {
+struct ScalarInfo {
   uint8_t component : 2;
   uint8_t reg : 6;
 };
@@ -290,8 +290,9 @@ public:
   uint32_t tessellation_partition = 0;
   float max_tesselation_factor = 64.0f;
   bool tessellation_anticlockwise = false;
-  std::vector<PatchConstantScalarInfo> patch_constant_scalars;
+  std::vector<ScalarInfo> patch_constant_scalars;
   uint32_t hull_maximum_threads_per_patch = 0;
+  std::vector<ScalarInfo> clip_distance_scalars;
 };
 
 llvm::Error convert_dxbc_hull_shader(

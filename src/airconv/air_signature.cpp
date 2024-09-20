@@ -790,6 +790,18 @@ auto FunctionSignatureBuilder::CreateFunction(
             ->string("mtl_coverage_mask");
           return (llvm::Type *)Type::getInt32Ty(context);
         },
+        [&](const OutputClipDistance clip_distance) {
+          md.string("air.clip_distance")
+            ->string("air.clip_distance_array_size")
+            ->integer(clip_distance.count)
+            ->string("air.arg_type_name")
+            ->string("float")
+            ->string("air.arg_name")
+            ->string("mtl_clip_distance");
+          return (llvm::Type *)ArrayType::get(
+            Type::getFloatTy(context), clip_distance.count
+          );
+        },
         [](auto _) {
           assert(0 && "Unhandled output");
           return (llvm::Type *)nullptr;

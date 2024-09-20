@@ -744,6 +744,13 @@ llvm::Error convert_dxbc_domain_shader(
     e(epilogue);
   }
 
+  uint32_t clip_distance_out_idx = ~0u;
+  if (pShaderInternal->clip_distance_scalars.size()) {
+    clip_distance_out_idx = func_signature.DefineOutput(
+      air::OutputClipDistance{pShaderInternal->clip_distance_scalars.size()}
+    );
+  };
+
   io_binding_map resource_map;
   air::AirType types(context);
 
@@ -891,6 +898,30 @@ llvm::Error convert_dxbc_domain_shader(
     return err;
   }
   auto value = epilogue_result.get();
+
+  if (pShaderInternal->clip_distance_scalars.size()) {
+    auto clip_distance_ty = llvm::ArrayType::get(
+      types._float, pShaderInternal->clip_distance_scalars.size()
+    );
+    pvalue clip_distance_array = llvm::UndefValue::get(clip_distance_ty);
+    unsigned clip_distance_idx = 0;
+    for (auto &scalar : pShaderInternal->clip_distance_scalars) {
+      auto src_ptr = builder.CreateGEP(
+        resource_map.output.ptr_float4->getType()
+          ->getNonOpaquePointerElementType(),
+        resource_map.output.ptr_float4,
+        {builder.getInt32(0), builder.getInt32(scalar.reg),
+         builder.getInt32(scalar.component)}
+      );
+      clip_distance_array = builder.CreateInsertValue(
+        clip_distance_array, builder.CreateLoad(types._float, src_ptr), {clip_distance_idx++}
+      );
+    }
+    value = builder.CreateInsertValue(
+      value, clip_distance_array, {clip_distance_out_idx}
+    );
+  };
+
   if (value == nullptr) {
     builder.CreateRetVoid();
   } else {
@@ -1225,6 +1256,13 @@ llvm::Error convert_dxbc_vertex_shader(
   uint32_t base_instance_idx =
     func_signature.DefineInput(air::InputBaseInstance{});
 
+  uint32_t clip_distance_out_idx = ~0u;
+  if (pShaderInternal->clip_distance_scalars.size()) {
+    clip_distance_out_idx = func_signature.DefineOutput(
+      air::OutputClipDistance{pShaderInternal->clip_distance_scalars.size()}
+    );
+  };
+
   io_binding_map resource_map;
   air::AirType types(context);
 
@@ -1295,6 +1333,30 @@ llvm::Error convert_dxbc_vertex_shader(
     return err;
   }
   auto value = epilogue_result.get();
+
+  if (pShaderInternal->clip_distance_scalars.size()) {
+    auto clip_distance_ty = llvm::ArrayType::get(
+      types._float, pShaderInternal->clip_distance_scalars.size()
+    );
+    pvalue clip_distance_array = llvm::UndefValue::get(clip_distance_ty);
+    unsigned clip_distance_idx = 0;
+    for (auto &scalar : pShaderInternal->clip_distance_scalars) {
+      auto src_ptr = builder.CreateGEP(
+        resource_map.output.ptr_float4->getType()
+          ->getNonOpaquePointerElementType(),
+        resource_map.output.ptr_float4,
+        {builder.getInt32(0), builder.getInt32(scalar.reg),
+         builder.getInt32(scalar.component)}
+      );
+      clip_distance_array = builder.CreateInsertValue(
+        clip_distance_array, builder.CreateLoad(types._float, src_ptr), {clip_distance_idx++}
+      );
+    }
+    value = builder.CreateInsertValue(
+      value, clip_distance_array, {clip_distance_out_idx}
+    );
+  };
+
   if (value == nullptr) {
     builder.CreateRetVoid();
   } else {

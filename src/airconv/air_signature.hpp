@@ -536,6 +536,11 @@ struct OutputCoverageMask {
   bool operator==(OutputCoverageMask const& rhs) const { return true; }
 };
 
+struct OutputClipDistance {
+  size_t count;
+  bool operator==(OutputClipDistance const& rhs) const { return true; }
+};
+
 using FunctionInput = template_concat_t<
   FunctionArguments,
   std::variant<
@@ -558,7 +563,7 @@ using FunctionInput = template_concat_t<
 
 using FunctionOutput = std::variant<
   /* vertex */
-  OutputVertex, OutputPosition,
+  OutputVertex, OutputPosition, OutputClipDistance,
   /* fragment */
   OutputRenderTarget, OutputDepth, OutputCoverageMask>;
 
