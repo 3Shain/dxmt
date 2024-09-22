@@ -4321,11 +4321,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
               return llvm::Error::success();
             },
             [&](BasicBlockSwitch swc) -> llvm::Error {
-              // TODO: ensure default always presented? no...
               if (visited.count(swc.case_default.get()) == 0) {
-                assert(
-                  swc.case_default.get() && "switch has no default branch"
-                );
                 if (auto err = readBasicBlock(swc.case_default)) {
                   return err;
                 };

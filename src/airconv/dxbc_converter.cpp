@@ -1883,6 +1883,8 @@ int SM50Initialize(
         // scope start: switch
         auto local_switch_context = std::make_shared<BasicBlockSwitch>();
         local_switch_context->value = readSrcOperand(Inst.Operand(0), phase);
+        // ensure the existence of default case
+        local_switch_context->case_default = after_endswitch;
         auto empty_body = std::make_shared<BasicBlock>("switch_empty"
         ); // it will unconditional jump to
            // first case (and then ignored)
