@@ -1968,6 +1968,9 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
   std::unordered_map<BasicBlock *, llvm::BasicBlock *> visited;
   std::function<llvm::Error(std::shared_ptr<BasicBlock>)> readBasicBlock =
     [&](std::shared_ptr<BasicBlock> current) -> llvm::Error {
+    if (visited.contains(current.get())) {
+      return llvm::Error::success();
+    }
     auto bb = llvm::BasicBlock::Create(context, current->debug_name, function);
     assert(visited.insert({current.get(), bb}).second);
     IREffect effect([](auto) { return std::monostate(); });
@@ -4289,26 +4292,20 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
               );
             },
             [&](BasicBlockUnconditionalBranch uncond) -> llvm::Error {
-              if (visited.count(uncond.target.get()) == 0) {
-                if (auto err = readBasicBlock(uncond.target)) {
-                  return err;
-                }
+              if (auto err = readBasicBlock(uncond.target)) {
+                return err;
               }
               auto target_bb = visited[uncond.target.get()];
               builder.CreateBr(target_bb);
               return llvm::Error::success();
             },
             [&](BasicBlockConditionalBranch cond) -> llvm::Error {
-              if (visited.count(cond.true_branch.get()) == 0) {
-                if (auto err = readBasicBlock(cond.true_branch)) {
-                  return err;
-                };
-              }
-              if (visited.count(cond.false_branch.get()) == 0) {
-                if (auto err = readBasicBlock(cond.false_branch)) {
-                  return err;
-                };
-              }
+              if (auto err = readBasicBlock(cond.true_branch)) {
+                return err;
+              };
+              if (auto err = readBasicBlock(cond.false_branch)) {
+                return err;
+              };
               auto target_true_bb = visited[cond.true_branch.get()];
               auto target_false_bb = visited[cond.false_branch.get()];
               auto test =
@@ -4321,11 +4318,9 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
               return llvm::Error::success();
             },
             [&](BasicBlockSwitch swc) -> llvm::Error {
-              if (visited.count(swc.case_default.get()) == 0) {
-                if (auto err = readBasicBlock(swc.case_default)) {
-                  return err;
-                };
-              }
+              if (auto err = readBasicBlock(swc.case_default)) {
+                return err;
+              };
               auto value =
                 (load_src_op<false>(swc.value) >>= extract_element(0))
                   .build(ctx);
@@ -4336,10 +4331,8 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                 value.get(), visited[swc.case_default.get()], swc.cases.size()
               );
               for (auto &[val, case_bb] : swc.cases) {
-                if (visited.count(case_bb.get()) == 0) {
-                  if (auto err = readBasicBlock(case_bb)) {
-                    return err;
-                  };
+                if (auto err = readBasicBlock(case_bb)) {
+                  return err;
                 }
                 switch_inst->addCase(
                   llvm::ConstantInt::get(context, llvm::APInt(32, val)),
@@ -4355,15 +4348,11 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
               return llvm::Error::success();
             },
             [&](BasicBlockInstanceBarrier instance) -> llvm::Error {
-              if (visited.count(instance.active.get()) == 0) {
-                if (auto err = readBasicBlock(instance.active)) {
-                  return err;
-                };
+              if (auto err = readBasicBlock(instance.active)) {
+                return err;
               }
-              if (visited.count(instance.sync.get()) == 0) {
-                if (auto err = readBasicBlock(instance.sync)) {
-                  return err;
-                };
+              if (auto err = readBasicBlock(instance.sync)) {
+                return err;
               }
               auto target_true_bb = visited[instance.active.get()];
               auto target_false_bb = visited[instance.sync.get()];
@@ -4378,10 +4367,8 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
               return llvm::Error::success();
             },
             [&](BasicBlockHullShaderWriteOutput hull_end) -> llvm::Error {
-              if (visited.count(hull_end.epilogue.get()) == 0) {
-                if (auto err = readBasicBlock(hull_end.epilogue)) {
-                  return err;
-                }
+              if (auto err = readBasicBlock(hull_end.epilogue)) {
+                return err;
               }
 
               auto active = llvm::BasicBlock::Create(
