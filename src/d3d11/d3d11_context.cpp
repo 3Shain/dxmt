@@ -468,15 +468,17 @@ public:
 
   void CopyResource(ID3D11Resource *pDstResource,
                     ID3D11Resource *pSrcResource) override {
-    D3D11_RESOURCE_DIMENSION dst_dim, src_dim;
-    pDstResource->GetType(&dst_dim);
-    pSrcResource->GetType(&src_dim);
-    if (dst_dim != src_dim)
-      return;
-    switch (dst_dim) {
+    Com<IMTLDXGIAdatper> adapter;
+    this->m_parent->GetAdapter(&adapter);
+    BlitObject Dst(adapter.ptr(), pDstResource);
+    BlitObject Src(adapter.ptr(), pSrcResource);
+
+    switch (Dst.Dimension) {
     case D3D11_RESOURCE_DIMENSION_UNKNOWN:
       break;
     case D3D11_RESOURCE_DIMENSION_BUFFER: {
+      if (Src.Dimension != D3D11_RESOURCE_DIMENSION_BUFFER)
+        return;
       ctx.CopyBuffer((ID3D11Buffer *)pDstResource, 0, 0, 0, 0,
                      (ID3D11Buffer *)pSrcResource, 0, nullptr);
       break;
@@ -489,9 +491,8 @@ public:
       D3D11_TEXTURE2D_DESC desc;
       ((ID3D11Texture2D *)pSrcResource)->GetDesc(&desc);
       for (auto sub : EnumerateSubresources(desc)) {
-        ctx.CopyTexture2D((ID3D11Texture2D *)pDstResource, sub.SubresourceId, 0,
-                          0, 0, (ID3D11Texture2D *)pSrcResource,
-                          sub.SubresourceId, nullptr);
+        ctx.CopyTexture(TextureCopyCommand(Dst, sub.SubresourceId, 0, 0, 0, Src,
+                                           sub.SubresourceId, nullptr));
       }
       break;
     }
@@ -535,37 +536,31 @@ public:
                               ID3D11Resource *pSrcResource, UINT SrcSubresource,
                               const D3D11_BOX *pSrcBox,
                               UINT CopyFlags) override {
-    D3D11_RESOURCE_DIMENSION dst_dim, src_dim;
-    pDstResource->GetType(&dst_dim);
-    pSrcResource->GetType(&src_dim);
-    if (dst_dim != src_dim)
+    if (!pDstResource)
       return;
-    switch (dst_dim) {
-    case D3D11_RESOURCE_DIMENSION_UNKNOWN: {
+    if (!pSrcResource)
+      return;
+
+    Com<IMTLDXGIAdatper> adapter;
+    this->m_parent->GetAdapter(&adapter);
+    BlitObject Dst(adapter.ptr(), pDstResource);
+    BlitObject Src(adapter.ptr(), pSrcResource);
+
+    switch (Dst.Dimension) {
+    case D3D11_RESOURCE_DIMENSION_UNKNOWN:
       break;
-    }
     case D3D11_RESOURCE_DIMENSION_BUFFER: {
+      if (Src.Dimension != D3D11_RESOURCE_DIMENSION_BUFFER)
+        return;
       ctx.CopyBuffer((ID3D11Buffer *)pDstResource, DstSubresource, DstX, DstY,
                      DstZ, (ID3D11Buffer *)pSrcResource, SrcSubresource,
                      pSrcBox);
       break;
     }
-    case D3D11_RESOURCE_DIMENSION_TEXTURE1D: {
-      ctx.CopyTexture1D((ID3D11Texture1D *)pDstResource, DstSubresource, DstX,
-                        DstY, DstZ, (ID3D11Texture1D *)pSrcResource,
-                        SrcSubresource, pSrcBox);
+    default:
+      ctx.CopyTexture(TextureCopyCommand(Dst, DstSubresource, DstX, DstY, DstZ,
+                                         Src, SrcSubresource, pSrcBox));
       break;
-    }
-    case D3D11_RESOURCE_DIMENSION_TEXTURE2D: {
-      ctx.CopyTexture2D((ID3D11Texture2D *)pDstResource, DstSubresource, DstX,
-                        DstY, DstZ, (ID3D11Texture2D *)pSrcResource,
-                        SrcSubresource, pSrcBox);
-      break;
-    }
-    case D3D11_RESOURCE_DIMENSION_TEXTURE3D: {
-      D3D11_ASSERT(0 && "TODO: CopySubresourceRegion1 for tex3d");
-      break;
-    }
     }
   }
 
@@ -582,20 +577,20 @@ public:
                           UINT CopyFlags) override {
     if (!pDstResource)
       return;
-    if (pDstBox != NULL) {
-      if (pDstBox->right <= pDstBox->left || pDstBox->bottom <= pDstBox->top ||
-          pDstBox->back <= pDstBox->front) {
-        return;
-      }
-    }
-    D3D11_RESOURCE_DIMENSION dim;
-    pDstResource->GetType(&dim);
-    if (dim == D3D11_RESOURCE_DIMENSION_BUFFER) {
+
+    Com<IMTLDXGIAdatper> adapter;
+    this->m_parent->GetAdapter(&adapter);
+    BlitObject Dst(adapter.ptr(), pDstResource);
+
+    if (Dst.Dimension == D3D11_RESOURCE_DIMENSION_BUFFER) {
       D3D11_BUFFER_DESC desc;
       ((ID3D11Buffer *)pDstResource)->GetDesc(&desc);
       uint32_t copy_offset = 0;
       uint32_t copy_len = desc.ByteWidth;
       if (pDstBox) {
+        if (pDstBox->right <= pDstBox->left) {
+          return;
+        }
         copy_offset = pDstBox->left;
         copy_len = pDstBox->right - copy_offset;
       }
@@ -618,7 +613,8 @@ public:
              copy_len](MTL::BlitCommandEncoder *enc, auto &ctx) {
               enc->copyFromBuffer(staging_buffer, offset, dst.buffer(),
                                   copy_offset, copy_len);
-            });
+            },
+            ContextInternal::CommandBufferState::UpdateBlitEncoderActive);
       } else if (auto dynamic = com_cast<IMTLDynamicBindable>(pDstResource)) {
         D3D11_ASSERT(CopyFlags && "otherwise resource cannot be dynamic");
         D3D11_ASSERT(0 && "UpdateSubresource1: TODO");
@@ -627,119 +623,9 @@ public:
       }
       return;
     }
-    if (dim == D3D11_RESOURCE_DIMENSION_TEXTURE2D) {
-      D3D11_TEXTURE2D_DESC desc;
-      ((ID3D11Texture2D *)pDstResource)->GetDesc(&desc);
-      if (DstSubresource >= desc.MipLevels * desc.ArraySize) {
-        ERR("out of bound texture write");
-        return;
-      }
-      auto slice = DstSubresource / desc.MipLevels;
-      auto level = DstSubresource % desc.MipLevels;
-      uint32_t copy_rows = std::max(desc.Height >> level, 1u);
-      uint32_t copy_columns = std::max(desc.Width >> level, 1u);
-      uint32_t origin_x = 0;
-      uint32_t origin_y = 0;
-      if (pDstBox) {
-        copy_rows = pDstBox->bottom - pDstBox->top;
-        copy_columns = pDstBox->right - pDstBox->left;
-        origin_x = pDstBox->left;
-        origin_y = pDstBox->top;
-      }
-      if (auto bindable = com_cast<IMTLBindable>(pDstResource)) {
-        while (!bindable->GetContentionState(cmd_queue.CoherentSeqId())) {
-          auto dst = bindable->UseBindable(cmd_queue.CurrentSeqId());
-          auto texture = dst.texture();
-          if (!texture)
-            break;
-          texture->replaceRegion(
-              MTL::Region::Make2D(origin_x, origin_y, copy_columns, copy_rows),
-              level, slice, pSrcData, SrcRowPitch, 0);
-          return;
-        }
-        auto copy_len = copy_rows * SrcRowPitch;
-        auto [ptr, staging_buffer, offset] =
-            cmd_queue.AllocateStagingBuffer(copy_len, 16);
-        memcpy(ptr, pSrcData, copy_len);
-        ctx.EmitBlitCommand<true>(
-            [staging_buffer, offset,
-             dst = bindable->UseBindable(cmd_queue.CurrentSeqId()), SrcRowPitch,
-             copy_rows, copy_columns, origin_x, origin_y, slice,
-             level](MTL::BlitCommandEncoder *enc, auto &ctx) {
-              enc->copyFromBuffer(staging_buffer, offset, SrcRowPitch, 0,
-                                  MTL::Size::Make(copy_columns, copy_rows, 1),
-                                  dst.texture(&ctx), slice, level,
-                                  MTL::Origin::Make(origin_x, origin_y, 0));
-            });
-      } else if (auto dynamic = com_cast<IMTLDynamicBindable>(pDstResource)) {
-        D3D11_ASSERT(CopyFlags && "otherwise resource cannot be dynamic");
-        D3D11_ASSERT(0 && "UpdateSubresource1: TODO");
-      } else {
-        // staging: ...
-        D3D11_ASSERT(0 && "UpdateSubresource1: TODO: texture2d");
-      }
-      return;
-    }
-    if (dim == D3D11_RESOURCE_DIMENSION_TEXTURE3D) {
-      D3D11_TEXTURE3D_DESC desc;
-      ((ID3D11Texture3D *)pDstResource)->GetDesc(&desc);
-      if (DstSubresource >= desc.MipLevels) {
-        ERR("out of bound texture write");
-        return;
-      }
-      auto level = DstSubresource % desc.MipLevels;
-      uint32_t copy_rows = std::max(desc.Height >> level, 1u);
-      uint32_t copy_columns = std::max(desc.Width >> level, 1u);
-      uint32_t copy_w = std::max(desc.Depth >> level, 1u);
-      uint32_t origin_x = 0;
-      uint32_t origin_y = 0;
-      uint32_t origin_z = 0;
-      if (pDstBox) {
-        copy_rows = pDstBox->bottom - pDstBox->top;
-        copy_columns = pDstBox->right - pDstBox->left;
-        copy_w = pDstBox->back - pDstBox->front;
-        origin_x = pDstBox->left;
-        origin_y = pDstBox->top;
-        origin_z = pDstBox->front;
-      }
-      if (auto bindable = com_cast<IMTLBindable>(pDstResource)) {
-        while (!bindable->GetContentionState(cmd_queue.CoherentSeqId())) {
-          auto dst = bindable->UseBindable(cmd_queue.CurrentSeqId());
-          auto texture = dst.texture();
-          if (!texture)
-            break;
-          texture->replaceRegion(
-              MTL::Region::Make3D(origin_x, origin_y, origin_z, copy_columns,
-                                  copy_rows, copy_w),
-              level, 0, pSrcData, SrcRowPitch, SrcDepthPitch);
-          return;
-        }
-        auto copy_len = copy_w * SrcDepthPitch;
-        auto [ptr, staging_buffer, offset] =
-            cmd_queue.AllocateStagingBuffer(copy_len, 16);
-        memcpy(ptr, pSrcData, copy_len);
-        ctx.EmitBlitCommand<true>(
-            [staging_buffer, offset,
-             dst = bindable->UseBindable(cmd_queue.CurrentSeqId()), SrcRowPitch,
-             SrcDepthPitch, copy_rows, copy_columns, copy_w, origin_x, origin_y,
-             origin_z, level](MTL::BlitCommandEncoder *enc, auto &ctx) {
-              enc->copyFromBuffer(
-                  staging_buffer, offset, SrcRowPitch, SrcDepthPitch,
-                  MTL::Size::Make(copy_columns, copy_rows, copy_w),
-                  dst.texture(&ctx), 0, level,
-                  MTL::Origin::Make(origin_x, origin_y, origin_z));
-            });
-      } else if (auto dynamic = com_cast<IMTLDynamicBindable>(pDstResource)) {
-        D3D11_ASSERT(CopyFlags && "otherwise resource cannot be dynamic");
-        D3D11_ASSERT(0 && "UpdateSubresource1: TODO");
-      } else {
-        // staging: ...
-        D3D11_ASSERT(0 && "UpdateSubresource1: TODO: texture2d");
-      }
-      return;
-    }
 
-    IMPLEMENT_ME
+    ctx.UpdateTexture(TextureUpdateCommand(Dst, DstSubresource, pDstBox),
+                      pSrcData, SrcRowPitch, SrcDepthPitch, CopyFlags);
   }
 
   void DiscardResource(ID3D11Resource *pResource) override {

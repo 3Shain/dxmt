@@ -69,6 +69,321 @@ GetStagesFromResidencyMask(MTL_BINDABLE_RESIDENCY_MASK mask) {
               : 0);
 }
 
+struct Subresource {
+  DXGI_FORMAT Format;
+  uint32_t MipLevel;
+  uint32_t ArraySlice;
+  uint32_t Width;
+  uint32_t Height;
+  uint32_t Depth;
+};
+
+class BlitObject {
+public:
+  ID3D11Resource *pResource;
+  MTL_FORMAT_DESC FormatDescription;
+  D3D11_RESOURCE_DIMENSION Dimension;
+  union {
+    D3D11_TEXTURE1D_DESC Texture1DDesc;
+    D3D11_TEXTURE2D_DESC1 Texture2DDesc;
+    D3D11_TEXTURE3D_DESC1 Texture3DDesc;
+    D3D11_BUFFER_DESC BufferDesc;
+  };
+
+  BlitObject(IMTLDXGIAdatper *pAdapter, ID3D11Resource *pResource)
+      : pResource(pResource) {
+    pResource->GetType(&Dimension);
+    switch (Dimension) {
+    case D3D11_RESOURCE_DIMENSION_UNKNOWN:
+      break;
+    case D3D11_RESOURCE_DIMENSION_BUFFER:
+      reinterpret_cast<ID3D11Buffer *>(pResource)->GetDesc(&BufferDesc);
+      break;
+    case D3D11_RESOURCE_DIMENSION_TEXTURE1D:
+      reinterpret_cast<ID3D11Texture1D *>(pResource)->GetDesc(&Texture1DDesc);
+      pAdapter->QueryFormatDesc(Texture1DDesc.Format, &FormatDescription);
+      break;
+    case D3D11_RESOURCE_DIMENSION_TEXTURE2D:
+      reinterpret_cast<ID3D11Texture2D1 *>(pResource)->GetDesc1(&Texture2DDesc);
+      pAdapter->QueryFormatDesc(Texture2DDesc.Format, &FormatDescription);
+      break;
+    case D3D11_RESOURCE_DIMENSION_TEXTURE3D:
+      reinterpret_cast<ID3D11Texture3D1 *>(pResource)->GetDesc1(&Texture3DDesc);
+      pAdapter->QueryFormatDesc(Texture3DDesc.Format, &FormatDescription);
+      break;
+    }
+  };
+};
+
+class TextureCopyCommand {
+public:
+  ID3D11Resource *pSrc;
+  ID3D11Resource *pDst;
+  uint32_t SrcSubresource;
+  uint32_t DstSubresource;
+
+  Subresource Src;
+  Subresource Dst;
+  MTL::Origin SrcOrigin;
+  MTL::Size SrcSize;
+  MTL::Origin DstOrigin;
+
+  MTL_FORMAT_DESC SrcFormat;
+  MTL_FORMAT_DESC DstFormat;
+
+  bool Invalid = true;
+
+  TextureCopyCommand(BlitObject &Dst_, UINT DstSubresource, UINT DstX,
+                     UINT DstY, UINT DstZ, BlitObject &Src_,
+                     UINT SrcSubresource, const D3D11_BOX *pSrcBox)
+      : pSrc(Src_.pResource), pDst(Dst_.pResource), SrcSubresource(SrcSubresource),
+        DstSubresource(DstSubresource), SrcFormat(Src_.FormatDescription),
+        DstFormat(Dst_.FormatDescription) {
+    if (Dst_.Dimension != Src_.Dimension)
+      return;
+
+    if(SrcFormat.PixelFormat == MTL::PixelFormatInvalid)
+      return;
+    if(DstFormat.PixelFormat == MTL::PixelFormatInvalid)
+      return;
+
+    switch (Dst_.Dimension) {
+    default: {
+      return;
+    }
+    case D3D11_RESOURCE_DIMENSION_TEXTURE1D: {
+      D3D11_TEXTURE1D_DESC& dst_desc = Dst_.Texture1DDesc;
+      D3D11_TEXTURE1D_DESC& src_desc = Src_.Texture1DDesc;
+
+      Src.Format = src_desc.Format;
+      Src.MipLevel = SrcSubresource % src_desc.MipLevels;
+      Src.ArraySlice = SrcSubresource / src_desc.MipLevels;
+      Src.Width = std::max(1u, src_desc.Width >> Src.MipLevel);
+      Src.Height = 1;
+      Src.Depth = 1;
+
+      Dst.Format = dst_desc.Format;
+      Dst.MipLevel = DstSubresource % dst_desc.MipLevels;
+      Dst.ArraySlice = DstSubresource / dst_desc.MipLevels;
+      Dst.Width = std::max(1u, dst_desc.Width >> Dst.MipLevel);
+      Dst.Height = 1;
+      Dst.Depth = 1;
+      break;
+    }
+    case D3D11_RESOURCE_DIMENSION_TEXTURE2D: {
+      D3D11_TEXTURE2D_DESC1& dst_desc = Dst_.Texture2DDesc;
+      D3D11_TEXTURE2D_DESC1& src_desc = Src_.Texture2DDesc;
+
+      Src.Format = src_desc.Format;
+      Src.MipLevel = SrcSubresource % src_desc.MipLevels;
+      Src.ArraySlice = SrcSubresource / src_desc.MipLevels;
+      Src.Width = std::max(1u, src_desc.Width >> Src.MipLevel);
+      Src.Height = std::max(1u, src_desc.Height >> Src.MipLevel);
+      Src.Depth = 1;
+
+      Dst.Format = dst_desc.Format;
+      Dst.MipLevel = DstSubresource % dst_desc.MipLevels;
+      Dst.ArraySlice = DstSubresource / dst_desc.MipLevels;
+      Dst.Width = std::max(1u, dst_desc.Width >> Dst.MipLevel);
+      Dst.Height = std::max(1u, dst_desc.Height >> Dst.MipLevel);
+      Dst.Depth = 1;
+      break;
+    }
+    case D3D11_RESOURCE_DIMENSION_TEXTURE3D: {
+      D3D11_TEXTURE3D_DESC1& dst_desc = Dst_.Texture3DDesc;
+      D3D11_TEXTURE3D_DESC1& src_desc = Src_.Texture3DDesc;
+
+      Src.Format = src_desc.Format;
+      Src.MipLevel = SrcSubresource;
+      Src.ArraySlice = 0;
+      Src.Width = std::max(1u, src_desc.Width >> Src.MipLevel);
+      Src.Height = std::max(1u, src_desc.Height >> Src.MipLevel);
+      Src.Depth = std::max(1u, src_desc.Depth >> Src.MipLevel);
+
+      Dst.Format = dst_desc.Format;
+      Dst.MipLevel = DstSubresource;
+      Dst.ArraySlice = 0;
+      Dst.Width = std::max(1u, dst_desc.Width >> Dst.MipLevel);
+      Dst.Height = std::max(1u, dst_desc.Height >> Dst.MipLevel);
+      Dst.Depth = std::max(1u, dst_desc.Depth >> Dst.MipLevel);
+
+      break;
+    }
+    }
+
+    D3D11_BOX SrcBox;
+
+    if (pSrcBox) {
+      if (pSrcBox->left >= pSrcBox->right)
+        return;
+      if (pSrcBox->top >= pSrcBox->bottom)
+        return;
+      if (pSrcBox->front >= pSrcBox->back)
+        return;
+      SrcBox = *pSrcBox;
+    } else {
+      SrcBox = {0, 0, 0, Src.Width, Src.Height, Src.Depth};
+    }
+
+    // Discard, if source box does't overlap with source size at all
+    if (SrcBox.left >= Src.Width)
+      return;
+    if (SrcBox.top >= Src.Height)
+      return;
+    if (SrcBox.front >= Src.Depth)
+      return;
+
+    // Discard, if dest origin is not even within dest
+    if (DstX >= Dst.Width)
+      return;
+    if (DstY >= Dst.Height)
+      return;
+    if (DstZ >= Dst.Depth)
+      return;
+
+    // Clip source box, if it's larger than source size
+    // It is useful for copying between BC textures
+    // since Metal takes virtual size
+    // while D3D11 requires block size aligned (typically 4x)
+    SrcBox.right = std::min(SrcBox.right, Src.Width);
+    SrcBox.bottom = std::min(SrcBox.bottom, Src.Height);
+    SrcBox.back = std::min(SrcBox.back, Src.Depth);
+
+    if (DstFormat.IsCompressed == SrcFormat.IsCompressed) {
+      // Discard, if the copy overflow
+      if ((DstX + SrcBox.right - SrcBox.left) > Dst.Width)
+        return;
+      if ((DstY + SrcBox.bottom - SrcBox.top) > Dst.Height)
+        return;
+      if ((DstZ + SrcBox.back - SrcBox.front) > Dst.Depth)
+        return;
+    }
+
+    DstOrigin = {DstX, DstY, DstZ};
+    SrcOrigin = {SrcBox.left, SrcBox.top, SrcBox.front};
+    SrcSize = {SrcBox.right - SrcBox.left, SrcBox.bottom - SrcBox.top,
+               SrcBox.back - SrcBox.front};
+
+    Invalid = false;
+  }
+};
+
+class TextureUpdateCommand {
+public:
+  ID3D11Resource *pDst;
+  Subresource Dst;
+  MTL::Region DstRegion;
+  uint32_t EffectiveBytesPerRow;
+  uint32_t EffectiveRows;
+
+  MTL_FORMAT_DESC DstFormat;
+
+  bool Invalid = true;
+
+  TextureUpdateCommand(BlitObject &Dst_, UINT DstSubresource,
+                       const D3D11_BOX *pDstBox)
+      : pDst(Dst_.pResource), DstFormat(Dst_.FormatDescription) {
+
+    if(DstFormat.PixelFormat == MTL::PixelFormatInvalid)
+      return;
+
+    switch (Dst_.Dimension) {
+    default: {
+      return;
+    }
+    case D3D11_RESOURCE_DIMENSION_TEXTURE1D: {
+      D3D11_TEXTURE1D_DESC &dst_desc = Dst_.Texture1DDesc;
+
+      if(DstSubresource >= dst_desc.MipLevels * dst_desc.ArraySize)
+        return;
+
+      Dst.Format = dst_desc.Format;
+      Dst.MipLevel = DstSubresource % dst_desc.MipLevels;
+      Dst.ArraySlice = DstSubresource / dst_desc.MipLevels;
+      Dst.Width = std::max(1u, dst_desc.Width >> Dst.MipLevel);
+      Dst.Height = 1;
+      Dst.Depth = 1;
+      break;
+    }
+    case D3D11_RESOURCE_DIMENSION_TEXTURE2D: {
+      D3D11_TEXTURE2D_DESC1 dst_desc = Dst_.Texture2DDesc;
+
+      if(DstSubresource >= dst_desc.MipLevels * dst_desc.ArraySize)
+        return;
+
+      Dst.Format = dst_desc.Format;
+      Dst.MipLevel = DstSubresource % dst_desc.MipLevels;
+      Dst.ArraySlice = DstSubresource / dst_desc.MipLevels;
+      Dst.Width = std::max(1u, dst_desc.Width >> Dst.MipLevel);
+      Dst.Height = std::max(1u, dst_desc.Height >> Dst.MipLevel);
+      Dst.Depth = 1;
+      break;
+    }
+    case D3D11_RESOURCE_DIMENSION_TEXTURE3D: {
+      D3D11_TEXTURE3D_DESC1 dst_desc = Dst_.Texture3DDesc;
+
+      if(DstSubresource >= dst_desc.MipLevels)
+        return;
+
+      Dst.Format = dst_desc.Format;
+      Dst.MipLevel = DstSubresource;
+      Dst.ArraySlice = 0;
+      Dst.Width = std::max(1u, dst_desc.Width >> Dst.MipLevel);
+      Dst.Height = std::max(1u, dst_desc.Height >> Dst.MipLevel);
+      Dst.Depth = std::max(1u, dst_desc.Depth >> Dst.MipLevel);
+      break;
+    }
+    }
+
+    D3D11_BOX DstBox;
+
+    if (pDstBox) {
+      if (pDstBox->left >= pDstBox->right)
+        return;
+      if (pDstBox->top >= pDstBox->bottom)
+        return;
+      if (pDstBox->front >= pDstBox->back)
+        return;
+      DstBox = *pDstBox;
+    } else {
+      DstBox = {0, 0, 0, Dst.Width, Dst.Height, Dst.Depth};
+    }
+
+    // Discard, if box does't overlap with the texure at all
+    if (DstBox.left >= Dst.Width)
+      return;
+    if (DstBox.top >= Dst.Height)
+      return;
+    if (DstBox.front >= Dst.Depth)
+      return;
+
+    // It is useful for copying between BC textures
+    // since Metal takes virtual size
+    // while D3D11 requires block size aligned (typically 4x)
+    DstBox.right = std::min(DstBox.right, Dst.Width);
+    DstBox.bottom = std::min(DstBox.bottom, Dst.Height);
+    DstBox.back = std::min(DstBox.back, Dst.Depth);
+
+    DstRegion = {DstBox.left,
+                 DstBox.top,
+                 DstBox.front,
+                 DstBox.right - DstBox.left,
+                 DstBox.bottom - DstBox.top,
+                 DstBox.back - DstBox.front};
+
+    if (DstFormat.IsCompressed) {
+      EffectiveBytesPerRow =
+          (align(DstRegion.size.width, 4u) >> 2) * DstFormat.BytesPerTexel;
+      EffectiveRows = align(DstRegion.size.height, 4u) >> 2;
+    } else {
+      EffectiveBytesPerRow = DstRegion.size.width * DstFormat.BytesPerTexel;
+      EffectiveRows = DstRegion.size.height;
+    }
+
+    Invalid = false;
+  }
+};
+
 class ContextInternal {
 
 public:
@@ -88,6 +403,27 @@ public:
     default_blend_state->Release();
     default_depth_stencil_state->Release();
   }
+
+  /**
+  Valid transition:
+  * -> Idle
+  Idle -> RenderEncoderActive
+  Idle -> ComputeEncoderActive
+  Idle -> (Upload|Readback)BlitEncoderActive
+  RenderEncoderActive <-> RenderPipelineReady
+  ComputeEncoderActive <-> CoputePipelineReady
+  */
+  enum class CommandBufferState {
+    Idle,
+    RenderEncoderActive,
+    RenderPipelineReady,
+    TessellationRenderPipelineReady,
+    ComputeEncoderActive,
+    ComputePipelineReady,
+    BlitEncoderActive,
+    UpdateBlitEncoderActive,
+    ReadbackBlitEncoderActive
+  };
 
 #pragma region ShaderCommon
 
@@ -504,7 +840,7 @@ public:
           auto src = src_.buffer();
           encoder->copyFromBuffer(src, SrcBox.left, dst, DstX,
                                   SrcBox.right - SrcBox.left);
-        });
+        }, ContextInternal::CommandBufferState::ReadbackBlitEncoderActive);
         promote_flush = true;
       } else {
         D3D11_ASSERT(0 && "todo");
@@ -582,315 +918,274 @@ public:
     }
   }
 
-  void CopyTexture1D(ID3D11Texture1D *pDstResource, uint32_t DstSubresource,
-                     uint32_t DstX, uint32_t DstY, uint32_t DstZ,
-                     ID3D11Texture1D *pSrcResource, uint32_t SrcSubresource,
-                     const D3D11_BOX *pSrcBox) {
-    D3D11_TEXTURE1D_DESC dst_desc;
-    D3D11_TEXTURE1D_DESC src_desc;
-    pDstResource->GetDesc(&dst_desc);
-    pSrcResource->GetDesc(&src_desc);
-    auto src_width =
-        std::max(1u, src_desc.Width >> (SrcSubresource % src_desc.MipLevels));
-    D3D11_BOX SrcBox;
-    if (pSrcBox) {
-      SrcBox = *pSrcBox;
-    } else {
-      SrcBox.left = 0;
-      SrcBox.right = src_width;
-    }
-    if (SrcBox.right <= SrcBox.left)
+  void CopyTexture(TextureCopyCommand &&cmd) {
+    if (cmd.Invalid)
       return;
-    auto currentChunkId = cmd_queue.CurrentSeqId();
-    if (auto staging_dst = com_cast<IMTLD3D11Staging>(pDstResource)) {
-      if (auto staging_src = com_cast<IMTLD3D11Staging>(pSrcResource)) {
-        D3D11_ASSERT(0 && "tod: copy between staging");
-      } else if (auto src = com_cast<IMTLBindable>(pSrcResource)) {
-        // copy from device to staging
-        MTL_STAGING_RESOURCE dst_bind;
-        uint32_t bytes_per_row, bytes_per_image;
-        if (!staging_dst->UseCopyDestination(DstSubresource, currentChunkId,
-                                             &dst_bind, &bytes_per_row,
-                                             &bytes_per_image))
-          return;
-        EmitBlitCommand<true>([src_ = src->UseBindable(currentChunkId),
-                               dst = Obj(dst_bind.Buffer), bytes_per_row,
-                               SrcSubresource, DstX, SrcBox](
-                                  MTL::BlitCommandEncoder *encoder, auto &ctx) {
-          auto src = src_.texture(&ctx);
-          auto src_mips = src->mipmapLevelCount();
-          auto src_level = SrcSubresource % src_mips;
-          auto src_slice = SrcSubresource / src_mips;
-          D3D11_ASSERT(DstX == 0);
-          encoder->copyFromTexture(
-              src, src_slice, src_level, MTL::Origin::Make(SrcBox.left, 0, 0),
-              MTL::Size::Make(SrcBox.right - SrcBox.left, 1, 1), dst.ptr(),
-              /* offset */ 0, bytes_per_row, 0);
-          // offset should be DstX*BytesPerTexel
-        });
-        promote_flush = true;
+    if (cmd.SrcFormat.IsCompressed != cmd.DstFormat.IsCompressed) {
+      if (cmd.SrcFormat.IsCompressed) {
+        return CopyTextureFromCompressed(std::move(cmd));
       } else {
-        D3D11_ASSERT(0 && "todo");
+        return CopyTextureToCompressed(std::move(cmd));
       }
-    } else if (dst_desc.Usage == D3D11_USAGE_DEFAULT) {
-      auto dst = com_cast<IMTLBindable>(pDstResource);
-      D3D11_ASSERT(dst);
-      if (auto staging_src = com_cast<IMTLD3D11Staging>(pSrcResource)) {
-        // copy from staging to default
-        MTL_STAGING_RESOURCE src_bind;
-        uint32_t bytes_per_row, bytes_per_image;
-        if (!staging_src->UseCopySource(SrcSubresource, currentChunkId,
-                                        &src_bind, &bytes_per_row,
-                                        &bytes_per_image))
-          return;
-        EmitBlitCommand<true>(
-            [dst_ = dst->UseBindable(currentChunkId),
-             src = Obj(src_bind.Buffer), bytes_per_row, DstSubresource, DstX,
-             DstY, DstZ, SrcBox](MTL::BlitCommandEncoder *encoder, auto &ctx) {
-              auto dst = dst_.texture(&ctx);
-              auto dst_mips = dst->mipmapLevelCount();
-              auto dst_level = DstSubresource % dst_mips;
-              auto dst_slice = DstSubresource / dst_mips;
-              // FIXME: offste should be calculated from SrcBox
-              encoder->copyFromBuffer(
-                  src, 0, bytes_per_row, 0,
-                  MTL::Size::Make(SrcBox.right - SrcBox.left, 1, 1), dst,
-                  dst_slice, dst_level, MTL::Origin::Make(DstX, DstY, DstZ));
-            });
-      } else if (auto src = com_cast<IMTLBindable>(pSrcResource)) {
-        // on-device copy
-        EmitBlitCommand<true>([dst_ = dst->UseBindable(currentChunkId),
-                               src_ = src->UseBindable(currentChunkId),
-                               DstSubresource, SrcSubresource, DstX, DstY, DstZ,
-                               SrcBox](MTL::BlitCommandEncoder *encoder,
-                                       auto &ctx) {
-          auto src = src_.texture(&ctx);
-          auto dst = dst_.texture(&ctx);
-          auto src_mips = src->mipmapLevelCount();
-          auto src_level = SrcSubresource % src_mips;
-          auto src_slice = SrcSubresource / src_mips;
-          auto dst_mips = dst->mipmapLevelCount();
-          auto dst_level = DstSubresource % dst_mips;
-          auto dst_slice = DstSubresource / dst_mips;
-          if (Forget_sRGB(src->pixelFormat()) !=
-              Forget_sRGB(dst->pixelFormat())) {
-            ERR("Texture1D format mismatch! src: ", src->pixelFormat(),
-                ", dst ", dst->pixelFormat());
-            return;
-          }
-          encoder->copyFromTexture(
-              src, src_slice, src_level, MTL::Origin::Make(SrcBox.left, 0, 0),
-              MTL::Size::Make(SrcBox.right - SrcBox.left, 1, 1), dst, dst_slice,
-              dst_level, MTL::Origin::Make(DstX, DstY, DstZ));
-        });
-      } else {
-        D3D11_ASSERT(0 && "todo");
-      }
-    } else {
-      D3D11_ASSERT(0 && "todo");
     }
+    return CopyTextureBitcast(std::move(cmd));
   }
 
-  void CopyTexture2D(ID3D11Texture2D *pDstResource, uint32_t DstSubresource,
-                     uint32_t DstX, uint32_t DstY, uint32_t DstZ,
-                     ID3D11Texture2D *pSrcResource, uint32_t SrcSubresource,
-                     const D3D11_BOX *pSrcBox) {
-    D3D11_TEXTURE2D_DESC dst_desc;
-    D3D11_TEXTURE2D_DESC src_desc;
-    pDstResource->GetDesc(&dst_desc);
-    pSrcResource->GetDesc(&src_desc);
-    auto src_width =
-        std::max(1u, src_desc.Width >> (SrcSubresource % src_desc.MipLevels));
-    auto src_height =
-        std::max(1u, src_desc.Height >> (SrcSubresource % src_desc.MipLevels));
-    auto dst_width =
-        std::max(1u, dst_desc.Width >> (DstSubresource % dst_desc.MipLevels));
-    auto dst_height =
-        std::max(1u, dst_desc.Height >> (DstSubresource % dst_desc.MipLevels));
-    D3D11_BOX SrcBox;
-    if (pSrcBox) {
-      SrcBox = *pSrcBox;
-    } else {
-      SrcBox.left = 0;
-      SrcBox.top = 0;
-      SrcBox.right = src_width;
-      SrcBox.bottom = src_height;
-    }
-    // !HACK: just make validation layer happy
-    // all block compression format should be properly handled later
-    if (src_desc.Format == DXGI_FORMAT_BC7_UNORM_SRGB ||
-        src_desc.Format == DXGI_FORMAT_BC7_UNORM ||
-        src_desc.Format == DXGI_FORMAT_BC7_TYPELESS) {
-      SrcBox.right = align(SrcBox.right, 4u);
-      SrcBox.bottom = align(SrcBox.bottom, 4u);
-    }
-    if (SrcBox.right <= SrcBox.left || SrcBox.bottom <= SrcBox.top)
-      return;
+  void CopyTextureBitcast(TextureCopyCommand &&cmd) {
     auto currentChunkId = cmd_queue.CurrentSeqId();
-    if (auto staging_dst = com_cast<IMTLD3D11Staging>(pDstResource)) {
-      if (auto staging_src = com_cast<IMTLD3D11Staging>(pSrcResource)) {
-        D3D11_ASSERT(0 && "tod: copy between staging");
-      } else if (auto src = com_cast<IMTLBindable>(pSrcResource)) {
+    if (auto staging_dst = com_cast<IMTLD3D11Staging>(cmd.pDst)) {
+      if (auto staging_src = com_cast<IMTLD3D11Staging>(cmd.pSrc)) {
+        D3D11_ASSERT(0 && "TODO: copy between staging");
+      } else if (auto src = com_cast<IMTLBindable>(cmd.pSrc)) {
         // copy from device to staging
         MTL_STAGING_RESOURCE dst_bind;
         uint32_t bytes_per_row, bytes_per_image;
-        if (!staging_dst->UseCopyDestination(DstSubresource, currentChunkId,
+        if (!staging_dst->UseCopyDestination(cmd.DstSubresource, currentChunkId,
                                              &dst_bind, &bytes_per_row,
                                              &bytes_per_image))
           return;
         EmitBlitCommand<true>(
             [src_ = src->UseBindable(currentChunkId),
-             dst = Obj(dst_bind.Buffer), bytes_per_row, SrcSubresource, DstX,
-             DstY, SrcBox](MTL::BlitCommandEncoder *encoder, auto &ctx) {
+             dst = Obj(dst_bind.Buffer), bytes_per_row, bytes_per_image,
+             cmd = std::move(cmd)](MTL::BlitCommandEncoder *encoder,
+                                   auto &ctx) {
               auto src = src_.texture(&ctx);
-              auto src_mips = src->mipmapLevelCount();
-              auto src_level = SrcSubresource % src_mips;
-              auto src_slice = SrcSubresource / src_mips;
-              D3D11_ASSERT(DstX == 0);
-              D3D11_ASSERT(DstY == 0);
-              encoder->copyFromTexture(
-                  src, src_slice, src_level,
-                  MTL::Origin::Make(SrcBox.left, SrcBox.top, 0),
-                  MTL::Size::Make(SrcBox.right - SrcBox.left,
-                                  SrcBox.bottom - SrcBox.top, 1),
-                  dst.ptr(), /* offset */ 0, bytes_per_row, 0);
-              // offset should be DstY*bytes_per_row + DstX*BytesPerTexel
-            });
+              // auto offset = DstOrigin.z * bytes_per_image +
+              //               DstOrigin.y * bytes_per_row +
+              //               DstOrigin.x * bytes_per_texel;
+              encoder->copyFromTexture(src, cmd.Src.ArraySlice,
+                                       cmd.Src.MipLevel, cmd.SrcOrigin,
+                                       cmd.SrcSize, dst.ptr(), 0 /* offset */,
+                                       bytes_per_row, bytes_per_image);
+            },
+            ContextInternal::CommandBufferState::ReadbackBlitEncoderActive);
         promote_flush = true;
       } else {
-        D3D11_ASSERT(0 && "todo");
+        D3D11_ASSERT(0 && "TODO: copy from dynamic to staging");
       }
-    } else if (dst_desc.Usage == D3D11_USAGE_DEFAULT) {
-      auto dst = com_cast<IMTLBindable>(pDstResource);
-      D3D11_ASSERT(dst);
-      if (auto staging_src = com_cast<IMTLD3D11Staging>(pSrcResource)) {
+    } else if (auto dst = com_cast<IMTLBindable>(cmd.pDst)) {
+      if (auto staging_src = com_cast<IMTLD3D11Staging>(cmd.pSrc)) {
         // copy from staging to default
         MTL_STAGING_RESOURCE src_bind;
         uint32_t bytes_per_row, bytes_per_image;
-        if (!staging_src->UseCopySource(SrcSubresource, currentChunkId,
+        if (!staging_src->UseCopySource(cmd.SrcSubresource, currentChunkId,
                                         &src_bind, &bytes_per_row,
                                         &bytes_per_image))
           return;
 
-        SrcBox.right = std::min(SrcBox.right, dst_width - DstX + SrcBox.left);
-        SrcBox.bottom = std::min(SrcBox.bottom, dst_height - DstY + SrcBox.top);
-        EmitBlitCommand<true>(
-            [dst_ = dst->UseBindable(currentChunkId),
-             src = Obj(src_bind.Buffer), bytes_per_row, DstSubresource, DstX,
-             DstY, SrcBox](MTL::BlitCommandEncoder *encoder, auto &ctx) {
-              auto dst = dst_.texture(&ctx);
-              auto dst_mips = dst->mipmapLevelCount();
-              auto dst_level = DstSubresource % dst_mips;
-              auto dst_slice = DstSubresource / dst_mips;
-              D3D11_ASSERT(DstX == 0);
-              D3D11_ASSERT(DstY == 0);
-              // FIXME: offste should be calculated from SrcBox
-              encoder->copyFromBuffer(
-                  src, 0, bytes_per_row, 0,
-                  MTL::Size::Make(SrcBox.right - SrcBox.left,
-                                  SrcBox.bottom - SrcBox.top, 1),
-                  dst, dst_slice, dst_level, MTL::Origin::Make(DstX, DstY, 0));
-            });
-      } else if (auto src = com_cast<IMTLBindable>(pSrcResource)) {
+        EmitBlitCommand<true>([dst_ = dst->UseBindable(currentChunkId),
+                               src = Obj(src_bind.Buffer), bytes_per_row,
+                               bytes_per_image, cmd = std::move(cmd)](
+                                  MTL::BlitCommandEncoder *encoder, auto &ctx) {
+          auto dst = dst_.texture(&ctx);
+          // auto offset = SrcBox.front * bytes_per_image +
+          //               SrcBox.top * bytes_per_row +
+          //               SrcBox.left * bytes_per_texel;
+          encoder->copyFromBuffer(
+              src, 0 /* offset */, bytes_per_row, bytes_per_image, cmd.SrcSize,
+              dst, cmd.Dst.ArraySlice, cmd.Dst.MipLevel, cmd.DstOrigin);
+        });
+      } else if (auto src = com_cast<IMTLBindable>(cmd.pSrc)) {
         // on-device copy
         EmitBlitCommand<true>([dst_ = dst->UseBindable(currentChunkId),
                                src_ = src->UseBindable(currentChunkId),
-                               DstSubresource, SrcSubresource, DstX, DstY, DstZ,
-                               SrcBox, currentChunkId](
+                               cmd = std::move(cmd), currentChunkId](
                                   MTL::BlitCommandEncoder *encoder, auto &ctx) {
           auto src = src_.texture(&ctx);
           auto dst = dst_.texture(&ctx);
-          auto src_mips = src->mipmapLevelCount();
           auto src_format = src->pixelFormat();
-          auto src_level = SrcSubresource % src_mips;
-          auto src_slice = SrcSubresource / src_mips;
-          auto dst_mips = dst->mipmapLevelCount();
-          auto dst_level = DstSubresource % dst_mips;
-          auto dst_slice = DstSubresource / dst_mips;
           auto dst_format = dst->pixelFormat();
           if (Forget_sRGB(dst_format) != Forget_sRGB(src_format)) {
-            if (IsBlockCompressionFormat(dst_format) &&
-                FormatBytesPerTexel(src_format) ==
-                    FormatBytesPerTexel(dst_format)) {
-              auto bytes_per_row = (SrcBox.right - SrcBox.left) *
-                                   FormatBytesPerTexel(src_format);
-              auto [_, buffer, offset] = ctx.queue->AllocateTempBuffer(
-                  currentChunkId, bytes_per_row * (SrcBox.bottom - SrcBox.top),
-                  16);
-              encoder->copyFromTexture(
-                  src, src_slice, src_level,
-                  MTL::Origin::Make(SrcBox.left, SrcBox.top, 0),
-                  MTL::Size::Make(SrcBox.right - SrcBox.left,
-                                  SrcBox.bottom - SrcBox.top, 1),
-                  buffer, offset, bytes_per_row, 0);
-              encoder->copyFromBuffer(
-                  buffer, offset, bytes_per_row, 0,
-                  MTL::Size::Make((SrcBox.right - SrcBox.left) * 4,
-                                  (SrcBox.bottom - SrcBox.top) * 4, 1),
-                  dst, dst_slice, dst_level,
-                  MTL::Origin::Make(DstX, DstY, DstZ));
-              return;
+            // bitcast, using a temporary buffer
+            size_t bytes_per_row, bytes_per_image, bytes_total;
+            if (cmd.SrcFormat.IsCompressed) {
+              bytes_per_row = (align(cmd.SrcSize.width, 4u) >> 2) *
+                              cmd.SrcFormat.BytesPerTexel;
+              bytes_per_image =
+                  bytes_per_row * (align(cmd.SrcSize.height, 4u) >> 2);
+            } else {
+              bytes_per_row = cmd.SrcSize.width * cmd.SrcFormat.BytesPerTexel;
+              bytes_per_image = bytes_per_row * cmd.SrcSize.height;
             }
-            if (IsBlockCompressionFormat(src_format) &&
-                FormatBytesPerTexel(src_format) ==
-                    FormatBytesPerTexel(dst_format)) {
-              D3D11_ASSERT((align((SrcBox.right - SrcBox.left), 4) ==
-                            (SrcBox.right - SrcBox.left)));
-              D3D11_ASSERT((align((SrcBox.bottom - SrcBox.top), 4) ==
-                            (SrcBox.bottom - SrcBox.top)));
-              auto block_w = ((SrcBox.right - SrcBox.left) >> 2);
-              auto block_h = ((SrcBox.bottom - SrcBox.top) >> 2);
-              auto bytes_per_row = block_w * FormatBytesPerTexel(src_format);
-              auto [_, buffer, offset] = ctx.queue->AllocateTempBuffer(
-                  currentChunkId, bytes_per_row * block_h, 16);
-              encoder->copyFromTexture(
-                  src, src_slice, src_level,
-                  MTL::Origin::Make(SrcBox.left, SrcBox.top, 0),
-                  MTL::Size::Make(SrcBox.right - SrcBox.left,
-                                  SrcBox.bottom - SrcBox.top, 1),
-                  buffer, offset, bytes_per_row, 0);
-              encoder->copyFromBuffer(buffer, offset, bytes_per_row, 0,
-                                      MTL::Size::Make(block_w, block_h, 1), dst,
-                                      dst_slice, dst_level,
-                                      MTL::Origin::Make(DstX, DstY, DstZ));
-              return;
-            }
-            if (FormatBytesPerTexel(src_format) ==
-                FormatBytesPerTexel(dst_format)) {
-              // FIXME: very broken
-              auto width = (SrcBox.right - SrcBox.left);
-              auto height = (SrcBox.bottom - SrcBox.top);
-              auto bytes_per_row = width * FormatBytesPerTexel(src_format);
-              auto [_, buffer, offset] = ctx.queue->AllocateTempBuffer(
-                  currentChunkId, bytes_per_row * height, 16);
-              encoder->copyFromTexture(
-                  src, src_slice, src_level,
-                  MTL::Origin::Make(SrcBox.left, SrcBox.top, 0),
-                  MTL::Size::Make(width, height, 1), buffer, offset,
-                  bytes_per_row, 0);
-              encoder->copyFromBuffer(buffer, offset, bytes_per_row, 0,
-                                      MTL::Size::Make(width, height, 1), dst,
-                                      dst_slice, dst_level,
-                                      MTL::Origin::Make(DstX, DstY, DstZ));
-              return;
-            }
-
-            ERR("Texture2D format mismatch! src: ", src_format, ", dst ",
-                dst_format);
+            bytes_total = bytes_per_image * cmd.SrcSize.depth;
+            auto [_, buffer, offset] =
+                ctx.queue->AllocateTempBuffer(currentChunkId, bytes_total, 16);
+            encoder->copyFromTexture(src, cmd.Src.ArraySlice, cmd.Src.MipLevel,
+                                     cmd.SrcOrigin, cmd.SrcSize, buffer, offset,
+                                     bytes_per_row, bytes_per_image);
+            encoder->copyFromBuffer(
+                buffer, offset, bytes_per_row, bytes_per_image, cmd.SrcSize,
+                dst, cmd.Dst.ArraySlice, cmd.Dst.MipLevel, cmd.DstOrigin);
             return;
           }
-          encoder->copyFromTexture(
-              src, src_slice, src_level,
-              MTL::Origin::Make(SrcBox.left, SrcBox.top, 0),
-              MTL::Size::Make(SrcBox.right - SrcBox.left,
-                              SrcBox.bottom - SrcBox.top, 1),
-              dst, dst_slice, dst_level, MTL::Origin::Make(DstX, DstY, DstZ));
+          encoder->copyFromTexture(src, cmd.Src.ArraySlice, cmd.Src.MipLevel,
+                                   cmd.SrcOrigin, cmd.SrcSize, dst,
+                                   cmd.Dst.ArraySlice, cmd.Dst.MipLevel,
+                                   cmd.DstOrigin);
         });
       } else {
-        D3D11_ASSERT(0 && "todo");
+        D3D11_ASSERT(0 && "TODO: copy from dynamic to device");
       }
     } else {
-      D3D11_ASSERT(0 && "todo");
+      D3D11_ASSERT(0 && "TODO: copy to dynamic?");
+    }
+  }
+
+  void CopyTextureFromCompressed(TextureCopyCommand &&cmd) {
+    auto currentChunkId = cmd_queue.CurrentSeqId();
+    if (auto staging_dst = com_cast<IMTLD3D11Staging>(cmd.pDst)) {
+      if (auto staging_src = com_cast<IMTLD3D11Staging>(cmd.pSrc)) {
+        D3D11_ASSERT(0 && "TODO: copy between staging (from compressed)");
+      } else if (auto src = com_cast<IMTLBindable>(cmd.pSrc)) {
+        D3D11_ASSERT(0 && "TODO: copy from compressed device to staging");
+      } else {
+        D3D11_ASSERT(0 && "TODO: copy from compressed dynamic to staging");
+      }
+    } else if (auto dst = com_cast<IMTLBindable>(cmd.pDst)) {
+      if (auto staging_src = com_cast<IMTLD3D11Staging>(cmd.pSrc)) {
+        // copy from staging to default
+        D3D11_ASSERT(0 && "TODO: copy from compressed staging to default");
+      } else if (auto src = com_cast<IMTLBindable>(cmd.pSrc)) {
+        // on-device copy
+        EmitBlitCommand<true>([dst_ = dst->UseBindable(currentChunkId),
+                               src_ = src->UseBindable(currentChunkId),
+                               cmd = std::move(cmd), currentChunkId](
+                                  MTL::BlitCommandEncoder *encoder, auto &ctx) {
+          auto src = src_.texture(&ctx);
+          auto dst = dst_.texture(&ctx);
+          auto block_w = (align(cmd.SrcSize.width, 4u) >> 2);
+          auto block_h = (align(cmd.SrcSize.height, 4u) >> 2);
+          auto bytes_per_row = block_w * cmd.SrcFormat.BytesPerTexel;
+          auto bytes_per_image = bytes_per_row * block_h;
+          auto [_, buffer, offset] = ctx.queue->AllocateTempBuffer(
+              currentChunkId, bytes_per_image * cmd.SrcSize.depth, 16);
+          encoder->copyFromTexture(src, cmd.Src.ArraySlice, cmd.Src.MipLevel,
+                                   cmd.SrcOrigin, cmd.SrcSize, buffer, offset,
+                                   bytes_per_row, bytes_per_image);
+          encoder->copyFromBuffer(
+              buffer, offset, bytes_per_row, bytes_per_image,
+              MTL::Size::Make(block_w, block_h, cmd.SrcSize.depth), dst,
+              cmd.Dst.ArraySlice, cmd.Dst.MipLevel, cmd.DstOrigin);
+          return;
+        });
+      } else {
+        D3D11_ASSERT(0 && "TODO: copy from compressed dynamic to device");
+      }
+    } else {
+      D3D11_ASSERT(0 && "TODO: copy from compressed ? to dynamic");
+    }
+  }
+
+  void CopyTextureToCompressed(TextureCopyCommand &&cmd) {
+    auto currentChunkId = cmd_queue.CurrentSeqId();
+    if (auto staging_dst = com_cast<IMTLD3D11Staging>(cmd.pDst)) {
+      if (auto staging_src = com_cast<IMTLD3D11Staging>(cmd.pSrc)) {
+        D3D11_ASSERT(0 && "TODO: copy between staging (to compressed)");
+      } else if (auto src = com_cast<IMTLBindable>(cmd.pSrc)) {
+        D3D11_ASSERT(0 && "TODO: copy from device to compressed staging");
+      } else {
+        D3D11_ASSERT(0 && "TODO: copy from dynamic to compressed staging");
+      }
+    } else if (auto dst = com_cast<IMTLBindable>(cmd.pDst)) {
+      if (auto staging_src = com_cast<IMTLD3D11Staging>(cmd.pSrc)) {
+        // copy from staging to default
+        D3D11_ASSERT(0 && "TODO: copy from staging to compressed default");
+      } else if (auto src = com_cast<IMTLBindable>(cmd.pSrc)) {
+        // on-device copy
+        EmitBlitCommand<true>([dst_ = dst->UseBindable(currentChunkId),
+                               src_ = src->UseBindable(currentChunkId),
+                               cmd = std::move(cmd), currentChunkId](
+                                  MTL::BlitCommandEncoder *encoder, auto &ctx) {
+          auto src = src_.texture(&ctx);
+          auto dst = dst_.texture(&ctx);
+          auto bytes_per_row = cmd.SrcSize.width * cmd.SrcFormat.BytesPerTexel;
+          auto bytes_per_image = cmd.SrcSize.height * bytes_per_row;
+          auto [_, buffer, offset] = ctx.queue->AllocateTempBuffer(
+              currentChunkId, bytes_per_image * cmd.SrcSize.depth, 16);
+          encoder->copyFromTexture(src, cmd.Src.ArraySlice, cmd.Src.MipLevel,
+                                   cmd.SrcOrigin, cmd.SrcSize, buffer, offset,
+                                   bytes_per_row, bytes_per_image);
+          auto clamped_src_width = std::min(
+              cmd.SrcSize.width << 2,
+              std::max<uint32_t>(dst->width() >> cmd.Dst.MipLevel, 1u) -
+                  cmd.DstOrigin.x);
+          auto clamped_src_height = std::min(
+              cmd.SrcSize.height << 2,
+              std::max<uint32_t>(dst->height() >> cmd.Dst.MipLevel, 1u) -
+                  cmd.DstOrigin.y);
+          encoder->copyFromBuffer(
+              buffer, offset, bytes_per_row, bytes_per_image,
+              MTL::Size::Make(clamped_src_width, clamped_src_height,
+                              cmd.SrcSize.depth),
+              dst, cmd.Dst.ArraySlice, cmd.Dst.MipLevel, cmd.DstOrigin);
+          return;
+        });
+      } else {
+        D3D11_ASSERT(0 && "TODO: copy from dynamic to compressed device");
+      }
+    } else {
+      D3D11_ASSERT(0 && "TODO: copy to compressed dynamic");
+    }
+  }
+
+  void UpdateTexture(TextureUpdateCommand &&cmd, const void *pSrcData,
+                     UINT SrcRowPitch, UINT SrcDepthPitch, UINT CopyFlags) {
+    if (cmd.Invalid)
+      return;
+
+    if (auto bindable = com_cast<IMTLBindable>(cmd.pDst)) {
+      while (!bindable->GetContentionState(cmd_queue.CoherentSeqId())) {
+        auto dst = bindable->UseBindable(cmd_queue.CurrentSeqId());
+        auto texture = dst.texture();
+        if (!texture)
+          break;
+        texture->replaceRegion(cmd.DstRegion, cmd.Dst.MipLevel,
+                               cmd.Dst.ArraySlice, pSrcData, SrcRowPitch,
+                               SrcDepthPitch);
+        return;
+      }
+      auto bytes_per_depth_slice = cmd.EffectiveRows * cmd.EffectiveBytesPerRow;
+      auto [ptr, staging_buffer, offset] = cmd_queue.AllocateStagingBuffer(
+          bytes_per_depth_slice * cmd.DstRegion.size.depth, 16);
+      if (cmd.EffectiveBytesPerRow == SrcRowPitch) {
+        for (unsigned depthSlice = 0; depthSlice < cmd.DstRegion.size.depth;
+             depthSlice++) {
+          char *dst = ((char *)ptr) + depthSlice * bytes_per_depth_slice;
+          const char *src =
+              ((const char *)pSrcData) + depthSlice * SrcDepthPitch;
+          memcpy(dst, src, bytes_per_depth_slice);
+        }
+      } else {
+        for (unsigned depthSlice = 0; depthSlice < cmd.DstRegion.size.depth;
+             depthSlice++) {
+          for (unsigned row = 0; row < cmd.EffectiveRows; row++) {
+            char *dst = ((char *)ptr) + row * cmd.EffectiveBytesPerRow +
+                        depthSlice * bytes_per_depth_slice;
+            const char *src = ((const char *)pSrcData) + row * SrcRowPitch +
+                              depthSlice * SrcDepthPitch;
+            memcpy(dst, src, cmd.EffectiveBytesPerRow);
+          }
+        }
+      }
+      EmitBlitCommand<true>(
+          [staging_buffer, offset,
+           dst = bindable->UseBindable(cmd_queue.CurrentSeqId()),
+           cmd = std::move(cmd),
+           bytes_per_depth_slice](MTL::BlitCommandEncoder *enc, auto &ctx) {
+            enc->copyFromBuffer(
+                staging_buffer, offset, cmd.EffectiveBytesPerRow,
+                bytes_per_depth_slice, cmd.DstRegion.size, dst.texture(&ctx),
+                cmd.Dst.ArraySlice, cmd.Dst.MipLevel, cmd.DstRegion.origin);
+          },
+          ContextInternal::CommandBufferState::UpdateBlitEncoderActive);
+    } else if (auto dynamic = com_cast<IMTLDynamicBindable>(cmd.pDst)) {
+      D3D11_ASSERT(CopyFlags && "otherwise resource cannot be dynamic");
+      D3D11_ASSERT(0 && "TODO: UpdateSubresource1: update dynamic texture");
+    } else if (auto staging_dst = com_cast<IMTLD3D11Staging>(cmd.pDst)) {
+      // staging: ...
+      D3D11_ASSERT(0 && "TODO: UpdateSubresource1: update staging texture");
+    } else {
+      D3D11_ASSERT(0 && "TODO: UpdateSubresource1: unknown texture");
     }
   }
 
@@ -931,6 +1226,8 @@ public:
         ctx.compute_encoder = nullptr;
       });
       break;
+    case CommandBufferState::UpdateBlitEncoderActive:
+    case CommandBufferState::ReadbackBlitEncoderActive:
     case CommandBufferState::BlitEncoderActive:
       chk->emit([](CommandChunk::context &ctx) {
         ctx.blit_encoder->endEncoding();
@@ -1440,8 +1737,8 @@ public:
   /**
   Switch to blit encoder
   */
-  void SwitchToBlitEncoder() {
-    if (cmdbuf_state == CommandBufferState::BlitEncoderActive)
+  void SwitchToBlitEncoder(CommandBufferState BlitKind) {
+    if (cmdbuf_state == BlitKind)
       return;
     InvalidateCurrentPass();
 
@@ -1456,7 +1753,7 @@ public:
       });
     }
 
-    cmdbuf_state = CommandBufferState::BlitEncoderActive;
+    cmdbuf_state = BlitKind;
   }
 
   /**
@@ -2209,11 +2506,13 @@ public:
     }
   };
 
-  template <bool Force = false, typename Fn> void EmitBlitCommand(Fn &&fn) {
+  template <bool Force = false, typename Fn>
+  void EmitBlitCommand(Fn &&fn, CommandBufferState BlitKind =
+                                    CommandBufferState::BlitEncoderActive) {
     if (Force) {
-      SwitchToBlitEncoder();
+      SwitchToBlitEncoder(BlitKind);
     }
-    if (cmdbuf_state == CommandBufferState::BlitEncoderActive) {
+    if (cmdbuf_state == BlitKind) {
       CommandChunk *chk = cmd_queue.CurrentChunk();
       chk->emit([fn = std::forward<Fn>(fn)](CommandChunk::context &ctx) {
         fn(ctx.blit_encoder.ptr(), ctx);
@@ -2360,25 +2659,6 @@ public:
   };
 
 #pragma endregion
-
-  /**
-  Valid transition:
-  * -> Idle
-  Idle -> RenderEncoderActive
-  Idle -> ComputeEncoderActive
-  Idle -> BlitEncoderActive
-  RenderEncoderActive <-> RenderPipelineReady
-  ComputeEncoderActive <-> CoputePipelineReady
-  */
-  enum class CommandBufferState {
-    Idle,
-    RenderEncoderActive,
-    RenderPipelineReady,
-    TessellationRenderPipelineReady,
-    ComputeEncoderActive,
-    ComputePipelineReady,
-    BlitEncoderActive
-  };
 
 #pragma region Default State
 
