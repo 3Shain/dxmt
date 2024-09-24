@@ -66,6 +66,30 @@ void MetallibWriter::Write(const llvm::Module &module, raw_ostream &OS) {
           .languageVersionMajor = 3,
           .languageVersionMinor = 1,
         });
+        while (fn->getNumOperands() > 3 && isa<MDTuple>(fn->getOperand(3).get())
+        ) {
+          auto maybe_patch_tuple = cast<MDTuple>(fn->getOperand(3).get());
+          if (maybe_patch_tuple->getNumOperands() != 4)
+            break;
+          if (!isa<MDString>(maybe_patch_tuple->getOperand(0).get()))
+            break;
+          auto air_patch =
+            cast<MDString>(maybe_patch_tuple->getOperand(0).get());
+          if (air_patch->getString() != "air.patch")
+            break;
+          if (!isa<MDString>(maybe_patch_tuple->getOperand(1).get()))
+            break;
+          auto air_patch_value =
+            cast<MDString>(maybe_patch_tuple->getOperand(1).get());
+          if (air_patch_value->getString() == "triangle") {
+            function_def_stream
+              << value(MTLB_TESS_TAG{.patchType = 1, .controlPointCount = 0});
+          } else {
+            function_def_stream
+              << value(MTLB_TESS_TAG{.patchType = 2, .controlPointCount = 0});
+          }
+          break;
+        }
         function_def_stream << "ENDT";
         auto inputs = dyn_cast<MDTuple>(fn->getOperand(2).get());
 
