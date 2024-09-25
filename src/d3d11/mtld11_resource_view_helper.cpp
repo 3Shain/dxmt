@@ -225,9 +225,25 @@ HRESULT CreateMTLTextureView<D3D11_UNORDERED_ACCESS_VIEW_DESC1>(
           NS::Range::Make(0, 1));
       return S_OK;
     }
+    if (texture_type == MTL::TextureTypeCube) {
+      D3D11_ASSERT(pViewDesc->Texture2D.PlaneSlice == 0);
+      *ppView = pResource->newTextureView(
+          metal_format.PixelFormat, MTL::TextureType2D,
+          NS::Range::Make(pViewDesc->Texture2D.MipSlice, 1),
+          NS::Range::Make(0, 1));
+      return S_OK;
+    }
     break;
   }
   case D3D11_UAV_DIMENSION_TEXTURE2DARRAY: {
+    if (texture_type == MTL::TextureType2D) {
+      D3D11_ASSERT(pViewDesc->Texture2D.PlaneSlice == 0);
+      *ppView = pResource->newTextureView(
+          metal_format.PixelFormat, MTL::TextureType2DArray,
+          NS::Range::Make(pViewDesc->Texture2DArray.MipSlice, 1),
+          NS::Range::Make(0, 1));
+      return S_OK;
+    }
     if (texture_type == MTL::TextureType2DArray) {
       auto array_size = pViewDesc->Texture2DArray.ArraySize == 0xffffffff
                             ? pResource->arrayLength() -
@@ -313,15 +329,19 @@ CreateMTLRenderTargetView(IMTLD3D11Device *pDevice, MTL::Texture *pResource,
   }
   case D3D11_RTV_DIMENSION_TEXTURE1DARRAY: {
     if (texture_type == MTL::TextureType1DArray) {
+      auto array_size = pViewDesc->Texture1DArray.ArraySize == 0xffffffff
+                            ? pResource->arrayLength() -
+                                  pViewDesc->Texture1DArray.FirstArraySlice
+                            : pViewDesc->Texture1DArray.ArraySize;
       *ppView = pResource->newTextureView(
           metal_format.PixelFormat, MTL::TextureType1DArray,
           NS::Range::Make(pViewDesc->Texture1DArray.MipSlice, 1),
           NS::Range::Make(pViewDesc->Texture1DArray.FirstArraySlice,
-                          pViewDesc->Texture1DArray.ArraySize));
+                          array_size));
       pMTLDesc->Slice = 0; // use the original texture if format is the same?
       pMTLDesc->Level = 0;
       pMTLDesc->DepthPlane = 0;
-      pMTLDesc->RenderTargetArrayLength = 0; // FIXME: really?
+      pMTLDesc->RenderTargetArrayLength = array_size;
       return S_OK;
     }
     break;
@@ -335,27 +355,21 @@ CreateMTLRenderTargetView(IMTLD3D11Device *pDevice, MTL::Texture *pResource,
       pMTLDesc->Slice = 0; // use the original texture if format is the same?
       pMTLDesc->Level = 0;
       pMTLDesc->DepthPlane = 0;
-      pMTLDesc->RenderTargetArrayLength = 0; // FIXME: really?
+      pMTLDesc->RenderTargetArrayLength = 0;
       return S_OK;
     }
     break;
   }
   case D3D11_RTV_DIMENSION_TEXTURE2DARRAY: {
     if (texture_type == MTL::TextureType2D) {
-      auto array_size = pViewDesc->Texture2DArray.ArraySize == 0xffffffff
-                            ? pResource->arrayLength() -
-                                  pViewDesc->Texture2DArray.FirstArraySlice
-                            : pViewDesc->Texture2DArray.ArraySize;
       *ppView = pResource->newTextureView(
           metal_format.PixelFormat, MTL::TextureType2DArray,
           NS::Range::Make(pViewDesc->Texture2DArray.MipSlice, 1),
-          NS::Range::Make(pViewDesc->Texture2DArray.FirstArraySlice,
-                          array_size));
-      // D3D11_ASSERT();
+          NS::Range::Make(0, 1));
       pMTLDesc->Slice = 0; // use the original texture if format is the same?
       pMTLDesc->Level = 0;
       pMTLDesc->DepthPlane = 0;
-      pMTLDesc->RenderTargetArrayLength = 0; // FIXME: really?
+      pMTLDesc->RenderTargetArrayLength = 1;
       return S_OK;
     }
     if (texture_type == MTL::TextureType2DArray) {
@@ -371,7 +385,7 @@ CreateMTLRenderTargetView(IMTLD3D11Device *pDevice, MTL::Texture *pResource,
       pMTLDesc->Slice = 0; // use the original texture if format is the same?
       pMTLDesc->Level = 0;
       pMTLDesc->DepthPlane = 0;
-      pMTLDesc->RenderTargetArrayLength = 0; // FIXME: really?
+      pMTLDesc->RenderTargetArrayLength = array_size;
       return S_OK;
     }
     if (texture_type == MTL::TextureTypeCube) {
@@ -386,7 +400,7 @@ CreateMTLRenderTargetView(IMTLD3D11Device *pDevice, MTL::Texture *pResource,
       pMTLDesc->Slice = 0; // use the original texture if format is the same?
       pMTLDesc->Level = 0;
       pMTLDesc->DepthPlane = 0;
-      pMTLDesc->RenderTargetArrayLength = 0; // FIXME: really?
+      pMTLDesc->RenderTargetArrayLength = array_size;
       return S_OK;
     }
     if (texture_type == MTL::TextureTypeCubeArray) {
@@ -402,7 +416,7 @@ CreateMTLRenderTargetView(IMTLD3D11Device *pDevice, MTL::Texture *pResource,
       pMTLDesc->Slice = 0; // use the original texture if format is the same?
       pMTLDesc->Level = 0;
       pMTLDesc->DepthPlane = 0;
-      pMTLDesc->RenderTargetArrayLength = 0; // FIXME: really?
+      pMTLDesc->RenderTargetArrayLength = array_size;
       return S_OK;
     }
     break;
@@ -421,6 +435,16 @@ CreateMTLRenderTargetView(IMTLD3D11Device *pDevice, MTL::Texture *pResource,
     break;
   }
   case D3D11_RTV_DIMENSION_TEXTURE2DMSARRAY: {
+    if (texture_type == MTL::TextureType2DMultisample) {
+      *ppView = pResource->newTextureView(
+          metal_format.PixelFormat, MTL::TextureType2DMultisampleArray,
+          NS::Range::Make(0, 1), NS::Range::Make(0, 1));
+      pMTLDesc->Slice = 0;
+      pMTLDesc->Level = 0;
+      pMTLDesc->DepthPlane = 0;
+      pMTLDesc->RenderTargetArrayLength = 1;
+      return S_OK;
+    }
     break;
   }
   case D3D11_RTV_DIMENSION_TEXTURE3D: {
@@ -446,8 +470,7 @@ CreateMTLRenderTargetView(IMTLD3D11Device *pDevice, MTL::Texture *pResource,
         pMTLDesc->Slice = 0;
         pMTLDesc->Level = 0;
         pMTLDesc->DepthPlane = 0;
-        pMTLDesc->RenderTargetArrayLength = pResource->depth(); // ?
-        // we can't really use tex3d as multi layer render target?
+        pMTLDesc->RenderTargetArrayLength = pResource->depth();
         return S_OK;
       }
       ERR("tex3d rtv creation not properly handled: ",
