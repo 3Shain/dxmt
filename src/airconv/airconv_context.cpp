@@ -72,7 +72,18 @@ void initializeModule(llvm::Module &M, const ModuleOptions &opts) {
   ));
 };
 
+static std::atomic_flag llvm_overwrite = false;
+
 void runOptimizationPasses(llvm::Module &M, llvm::OptimizationLevel opt) {
+
+  if (!llvm_overwrite.test_and_set()) {
+    auto Map = cl::getRegisteredOptions();
+    auto InfiniteLoopThreshold = Map["instcombine-infinite-loop-threshold"];
+    if (InfiniteLoopThreshold) {
+      reinterpret_cast<cl::opt<unsigned> *>(InfiniteLoopThreshold)
+        ->setValue(1000);
+    }
+  }
 
   // Create the analysis managers.
   // These must be declared in this order so that they are destroyed in the
