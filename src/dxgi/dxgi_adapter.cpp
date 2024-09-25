@@ -422,7 +422,7 @@ public:
       break;
     }
     case DXGI_FORMAT_R8G8B8A8_TYPELESS: {
-      pMtlDesc->PixelFormat = MTL::PixelFormatRGBA8Uint;
+      pMtlDesc->PixelFormat = MTL::PixelFormatRGBA8Unorm;
       pMtlDesc->BytesPerTexel = 4;
       pMtlDesc->Typeless = 1;
       break;
