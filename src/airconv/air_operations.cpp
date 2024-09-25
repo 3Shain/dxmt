@@ -1577,7 +1577,7 @@ AIRBuilderResult unpack_fvec4_from_addr(
   co_return ret;
 };
 
-AIRBuilderResult pull_vec4_from_addr(
+AIRBuilderResult pull_vec4_from_addr_checked(
   MTLAttributeFormat format, pvalue base_addr, pvalue byte_offset
 ) {
   auto ctx = co_yield get_context();
@@ -1813,6 +1813,46 @@ AIRBuilderResult pull_vec4_from_addr(
   assert(value);
 
   co_return value;
+};
+
+AIRBuilderResult pull_vec4_from_addr(
+  MTLAttributeFormat format, pvalue base_addr, pvalue byte_offset
+) {
+  return make_op([=](struct AIRBuilderContext ctx) -> llvm::Expected<pvalue> {
+    using namespace llvm;
+    auto &context = ctx.llvm;
+    auto &builder = ctx.builder;
+
+    auto current = builder.GetInsertBlock();
+
+    auto is_null_binding = builder.CreateICmpEQ(
+      builder.CreatePtrToInt(base_addr, ctx.types._long), builder.getInt64(0)
+    );
+
+    auto pull_vertex =
+      llvm::BasicBlock::Create(context, "", current->getParent());
+    auto continuation =
+      llvm::BasicBlock::Create(context, "", current->getParent());
+
+    builder.CreateCondBr(is_null_binding, continuation, pull_vertex);
+    builder.SetInsertPoint(pull_vertex);
+
+    auto ret =
+      pull_vec4_from_addr_checked(format, base_addr, byte_offset).build(ctx);
+    if (auto err = ret.takeError()) {
+      return err;
+    }
+    auto value = ret.get();
+
+    builder.CreateBr(continuation);
+    builder.SetInsertPoint(continuation);
+
+    auto phi = builder.CreatePHI(value->getType(), 2);
+    phi->addIncoming(ConstantAggregateZero::get(value->getType()), current);
+    phi->addIncoming(value, pull_vertex);
+
+    return phi;
+  });
 };
 
 AIRBuilderResult

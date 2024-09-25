@@ -1716,10 +1716,12 @@ public:
         auto [h, _] = ctx.chk->inspect_gpu_heap();
         ctx.dsv_planar_flags = dsv_planar_flags;
         D3D11_ASSERT(ctx.render_encoder);
+        ctx.render_encoder->setVertexBuffer(h, 0, 16);
         ctx.render_encoder->setVertexBuffer(h, 0, 29);
         ctx.render_encoder->setVertexBuffer(h, 0, 30);
         ctx.render_encoder->setMeshBuffer(h, 0, 29);
         ctx.render_encoder->setMeshBuffer(h, 0, 30);
+        ctx.render_encoder->setObjectBuffer(h, 0, 16);
         ctx.render_encoder->setObjectBuffer(h, 0, 29);
         ctx.render_encoder->setObjectBuffer(h, 0, 30);
         ctx.render_encoder->setFragmentBuffer(h, 0, 29);
@@ -1924,12 +1926,6 @@ public:
   */
   template<bool IndexedDraw>
   bool FinalizeCurrentRenderPipeline() {
-    if (state_.InputAssembler.InputLayout &&
-        !state_.InputAssembler.VertexBuffers.all_bound_masked(
-            state_.InputAssembler.InputLayout->GetInputSlotMask())) {
-      // ERR("missing vertex buffer binding");
-      return false;
-    }
     if (state_.ShaderStages[(UINT)ShaderType::Hull].Shader) {
       return FinalizeTessellationRenderPipeline<IndexedDraw>();
     }
@@ -2525,14 +2521,16 @@ public:
   - index buffer and input topology are provided in draw commands
   */
   void UpdateVertexBuffer() {
-    if (!state_.InputAssembler.InputLayout) {
+    if (!state_.InputAssembler.InputLayout)
       return;
-    }
+
+    uint32_t slot_mask = state_.InputAssembler.InputLayout->GetInputSlotMask();
+    if (slot_mask == 0) // effectively empty input layout
+      return;
+
     auto &VertexBuffers = state_.InputAssembler.VertexBuffers;
-    // if (!VertexBuffers.any_dirty_masked(
-    //         (uint64_t)state_.InputAssembler.InputLayout->GetInputSlotMask())) {
-    //   return;
-    // }
+    if (!VertexBuffers.any_dirty_masked((uint64_t)slot_mask))
+      return;
 
     struct VERTEX_BUFFER_ENTRY {
       uint64_t buffer_handle;
@@ -2540,10 +2538,7 @@ public:
       uint32_t length;
     };
 
-    uint32_t VERTEX_BUFFER_SLOTS = VertexBuffers.max_binding_64();
-
-    if (VERTEX_BUFFER_SLOTS == 0)
-      return;
+    uint32_t VERTEX_BUFFER_SLOTS = 32 - __builtin_clz(slot_mask);
 
     CommandChunk *chk = cmd_queue.CurrentChunk();
     auto currentChunkId = cmd_queue.CurrentSeqId();
@@ -2552,6 +2547,9 @@ public:
         (VERTEX_BUFFER_ENTRY *)(((char *)heap->contents()) + offset);
     for (unsigned index = 0; index < VERTEX_BUFFER_SLOTS; index++) {
       if (!VertexBuffers.test_bound(index)) {
+        entries[index].buffer_handle = 0;
+        entries[index].stride = 0;
+        entries[index].length = 0;
         continue;
       }
       auto &state = VertexBuffers[index];
@@ -2560,7 +2558,8 @@ public:
       auto handle = state.Buffer->GetArgumentData(&pTracker);
       entries[index].buffer_handle = handle.buffer() + state.Offset;
       entries[index].stride = state.Stride;
-      entries[index].length = 0; // TODO: handle.width() - state.Offset;
+      entries[index].length =
+          handle.width() > state.Offset ? handle.width() - state.Offset : 0;
       pTracker->CheckResidency(
           currentChunkId,
           cmdbuf_state == CommandBufferState::TessellationRenderPipelineReady
@@ -2577,13 +2576,13 @@ public:
       }
     };
     if (cmdbuf_state == CommandBufferState::TessellationRenderPipelineReady) {
-      chk->emit([heap, offset](CommandChunk::context &ctx) {
-        ctx.render_encoder->setObjectBuffer(heap, offset, 16);
+      chk->emit([offset](CommandChunk::context &ctx) {
+        ctx.render_encoder->setObjectBufferOffset(offset, 16);
       });
     }
     if (cmdbuf_state == CommandBufferState::RenderPipelineReady) {
-      chk->emit([heap, offset](CommandChunk::context &ctx) {
-        ctx.render_encoder->setVertexBuffer(heap, offset, 16);
+      chk->emit([offset](CommandChunk::context &ctx) {
+        ctx.render_encoder->setVertexBufferOffset(offset, 16);
       });
     }
   }
