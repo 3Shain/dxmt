@@ -437,10 +437,6 @@ public:
     D3D11_TEXTURE2D_DESC desc;
     uint32_t width, height;
     ((ID3D11Texture2D *)pSrcResource)->GetDesc(&desc);
-    if (desc.SampleDesc.Count < 2) {
-      ERR("ResolveSubresource: Source is not multisampled ", desc.SampleDesc.Count);
-      return;
-    }
     if (desc.ArraySize <= DstSubresource) {
       return;
     }
