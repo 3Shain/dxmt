@@ -1281,16 +1281,23 @@ public:
         return;
       }
       auto pool = transfer(NS::AutoreleasePool::alloc()->init());
-      auto enc_descriptor = MTL::RenderPassDescriptor::renderPassDescriptor();
-      for (unsigned i = 0; i < clear_pass->num_color_attachments; i++) {
-        auto attachmentz = enc_descriptor->colorAttachments()->object(i);
-        attachmentz->setClearColor(clear_pass->clear_colors[i]);
+      for (; clear_pass->num_color_attachments > 0;
+           clear_pass->num_color_attachments--) {
+        auto index = clear_pass->num_color_attachments - 1;
+
+        auto enc_descriptor = MTL::RenderPassDescriptor::renderPassDescriptor();
+        auto attachmentz = enc_descriptor->colorAttachments()->object(0);
+        attachmentz->setClearColor(clear_pass->clear_colors[index]);
         attachmentz->setTexture(
-            clear_pass->clear_color_attachments[i].texture(&ctx));
+            clear_pass->clear_color_attachments[index].texture(&ctx));
         attachmentz->setLoadAction(MTL::LoadActionClear);
         attachmentz->setStoreAction(MTL::StoreActionStore);
+        auto enc = ctx.cmdbuf->renderCommandEncoder(enc_descriptor);
+        enc->setLabel(NS::String::string("ClearPass", NS::ASCIIStringEncoding));
+        enc->endEncoding();
       }
       if (clear_pass->depth_stencil_flags) {
+        auto enc_descriptor = MTL::RenderPassDescriptor::renderPassDescriptor();
         MTL::Texture *texture =
             clear_pass->clear_depth_stencil_attachment.texture(&ctx);
         uint32_t planar_flags = DepthStencilPlanarFlags(texture->pixelFormat());
@@ -1310,21 +1317,14 @@ public:
           attachmentz->setLoadAction(MTL::LoadActionClear);
           attachmentz->setStoreAction(MTL::StoreActionStore);
         }
-      }
-
-      if (clear_pass->num_color_attachments == 0) {
-        if (clear_pass->depth_stencil_flags == 0) {
-          return;
-        }
-        auto texture = clear_pass->clear_depth_stencil_attachment.texture(&ctx);
         enc_descriptor->setRenderTargetHeight(texture->height());
         enc_descriptor->setRenderTargetWidth(texture->width());
         enc_descriptor->setDefaultRasterSampleCount(1);
+        auto enc = ctx.cmdbuf->renderCommandEncoder(enc_descriptor);
+        enc->setLabel(NS::String::string("ClearDepthPass", NS::ASCIIStringEncoding));
+        enc->endEncoding();
       }
 
-      auto enc = ctx.cmdbuf->renderCommandEncoder(enc_descriptor);
-      enc->setLabel(NS::String::string("ClearPass", NS::ASCIIStringEncoding));
-      enc->endEncoding();
     });
   };
 
