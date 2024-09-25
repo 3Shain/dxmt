@@ -1168,11 +1168,17 @@ public:
     return S_OK;
   }
 
-  HRESULT STDMETHODCALLTYPE SetMaximumFrameLatency(UINT MaxLatency) override{
-      IMPLEMENT_ME}
+  HRESULT STDMETHODCALLTYPE SetMaximumFrameLatency(UINT MaxLatency) override {
+    max_latency_ = MaxLatency;
+    return S_OK;
+  }
 
-  HRESULT STDMETHODCALLTYPE
-      GetMaximumFrameLatency(UINT *pMaxLatency) override{IMPLEMENT_ME}
+  HRESULT STDMETHODCALLTYPE GetMaximumFrameLatency(UINT *pMaxLatency) override {
+    if (pMaxLatency) {
+      *pMaxLatency = max_latency_;
+    }
+    return S_OK;
+  }
 
   HRESULT STDMETHODCALLTYPE
       OfferResources(UINT NumResources, IDXGIResource *const *ppResources,
@@ -1250,6 +1256,7 @@ private:
   Com<IMTLDXGIAdatper> adapter_;
   CommandQueue cmd_queue_;
   MTLD3D11Device d3d11_device_;
+  uint32_t max_latency_ = 3;
 };
 
 Com<IMTLDXGIDevice> CreateD3D11Device(IMTLDXGIAdatper *adapter,
