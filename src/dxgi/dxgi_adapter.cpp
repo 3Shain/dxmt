@@ -187,16 +187,37 @@ public:
     assert(0 && "TODO");
   }
 
-  HRESULT STDMETHODCALLTYPE
-  QueryVideoMemoryInfo(UINT node_index, DXGI_MEMORY_SEGMENT_GROUP segment_group,
-                       DXGI_QUERY_VIDEO_MEMORY_INFO *memory_info) override {
-    assert(0 && "TODO");
+  HRESULT STDMETHODCALLTYPE QueryVideoMemoryInfo(
+      UINT NodeIndex, DXGI_MEMORY_SEGMENT_GROUP MemorySegmentGroup,
+      DXGI_QUERY_VIDEO_MEMORY_INFO *pVideoMemoryInfo) override {
+    if (NodeIndex > 0 || !pVideoMemoryInfo)
+      return E_INVALIDARG;
+
+    if (MemorySegmentGroup != DXGI_MEMORY_SEGMENT_GROUP_LOCAL &&
+        MemorySegmentGroup != DXGI_MEMORY_SEGMENT_GROUP_NON_LOCAL)
+      return E_INVALIDARG;
+
+    // we don't actually care about MemorySegmentGroup
+    pVideoMemoryInfo->Budget = m_deivce->recommendedMaxWorkingSetSize();
+    pVideoMemoryInfo->CurrentUsage = m_deivce->currentAllocatedSize();
+    pVideoMemoryInfo->AvailableForReservation = 0;
+    pVideoMemoryInfo->CurrentReservation =
+        mem_reserved_[uint32_t(MemorySegmentGroup)];
+    return S_OK;
   }
 
   HRESULT STDMETHODCALLTYPE SetVideoMemoryReservation(
-      UINT node_index, DXGI_MEMORY_SEGMENT_GROUP segment_group,
-      UINT64 reservation) override {
-    assert(0 && "TODO");
+      UINT NodeIndex, DXGI_MEMORY_SEGMENT_GROUP MemorySegmentGroup,
+      UINT64 Reservation) override {
+    if (NodeIndex > 0)
+      return E_INVALIDARG;
+
+    if (MemorySegmentGroup != DXGI_MEMORY_SEGMENT_GROUP_LOCAL &&
+        MemorySegmentGroup != DXGI_MEMORY_SEGMENT_GROUP_NON_LOCAL)
+      return E_INVALIDARG;
+
+    mem_reserved_[uint32_t(MemorySegmentGroup)] = Reservation;
+    return S_OK;
   }
 
   HRESULT STDMETHODCALLTYPE RegisterVideoMemoryBudgetChangeNotificationEvent(
@@ -931,6 +952,7 @@ private:
   FormatCapabilityInspector format_inspector;
   DxgiOptions options;
   Config &config;
+  uint64_t mem_reserved_[2] = {0, 0};
 };
 
 Com<IMTLDXGIAdatper> CreateAdapter(MTL::Device *pDevice,
