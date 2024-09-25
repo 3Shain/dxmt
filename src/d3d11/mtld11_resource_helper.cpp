@@ -387,6 +387,11 @@ CreateMTLTextureDescriptorInternal(
       }
     } else {
       if (SampleCount > 1) {
+        if (!pAdapter->GetMTLDevice()->supportsTextureSampleCount(SampleCount)) {
+          ERR("CreateMTLTextureDescriptorInternal: sample count ", SampleCount,
+              " is not supported.");
+          return E_INVALIDARG;
+        }
         if (ArraySize > 1) {
           desc->setTextureType(MTL::TextureType2DMultisampleArray);
           desc->setArrayLength(ArraySize);
