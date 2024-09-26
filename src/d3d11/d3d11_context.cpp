@@ -768,7 +768,6 @@ public:
     draw_arugment->InstanceCount = InstanceCount;
     draw_arugment->StartInstance = StartInstanceLocation;
     ctx.EmitRenderCommandChk([=](CommandChunk::context &ctx) {
-      D3D11_ASSERT(ctx.current_index_buffer_ref);
       auto &encoder = ctx.render_encoder;
       encoder->setObjectBuffer(heap, offset, 21);
       assert(ctx.tess_num_output_control_point_element);
@@ -1015,7 +1014,7 @@ public:
 
   void IASetInputLayout(ID3D11InputLayout *pInputLayout) override {
     if (auto expected = com_cast<IMTLD3D11InputLayout>(pInputLayout)) {
-      state_.InputAssembler.InputLayout = std::move(expected);
+      state_.InputAssembler.InputLayout = expected.ptr();
     } else {
       state_.InputAssembler.InputLayout = nullptr;
     }
@@ -1023,7 +1022,12 @@ public:
   }
   void IAGetInputLayout(ID3D11InputLayout **ppInputLayout) override {
     if (ppInputLayout) {
-      *ppInputLayout = state_.InputAssembler.InputLayout.ref();
+      if (state_.InputAssembler.InputLayout) {
+        state_.InputAssembler.InputLayout->QueryInterface(
+            IID_PPV_ARGS(ppInputLayout));
+      } else {
+        *ppInputLayout = nullptr;
+      }
     }
   }
 
@@ -1677,16 +1681,21 @@ public:
         state_.OutputMerger.BlendState = expected.ptr();
         should_invalidate_pipeline = true;
       }
-      if (BlendFactor) {
-        memcpy(state_.OutputMerger.BlendFactor, BlendFactor, sizeof(float[4]));
-      } else {
-        state_.OutputMerger.BlendFactor[0] = 1.0f;
-        state_.OutputMerger.BlendFactor[1] = 1.0f;
-        state_.OutputMerger.BlendFactor[2] = 1.0f;
-        state_.OutputMerger.BlendFactor[3] = 1.0f;
+    } else {
+      if (state_.OutputMerger.BlendState) {
+        state_.OutputMerger.BlendState = nullptr;
+        should_invalidate_pipeline = true;
       }
     }
-    if(state_.OutputMerger.SampleMask != SampleMask) {
+    if (BlendFactor) {
+      memcpy(state_.OutputMerger.BlendFactor, BlendFactor, sizeof(float[4]));
+    } else {
+      state_.OutputMerger.BlendFactor[0] = 1.0f;
+      state_.OutputMerger.BlendFactor[1] = 1.0f;
+      state_.OutputMerger.BlendFactor[2] = 1.0f;
+      state_.OutputMerger.BlendFactor[3] = 1.0f;
+    }
+    if (state_.OutputMerger.SampleMask != SampleMask) {
       state_.OutputMerger.SampleMask = SampleMask;
       should_invalidate_pipeline = true;
     }
@@ -1717,9 +1726,11 @@ public:
     if (auto expected =
             com_cast<IMTLD3D11DepthStencilState>(pDepthStencilState)) {
       state_.OutputMerger.DepthStencilState = expected.ptr();
-      state_.OutputMerger.StencilRef = StencilRef;
-      ctx.dirty_state.set(ContextInternal::DirtyState::DepthStencilState);
+    } else {
+      state_.OutputMerger.DepthStencilState = nullptr;
     }
+    state_.OutputMerger.StencilRef = StencilRef;
+    ctx.dirty_state.set(ContextInternal::DirtyState::DepthStencilState);
   }
 
   void OMGetDepthStencilState(ID3D11DepthStencilState **ppDepthStencilState,

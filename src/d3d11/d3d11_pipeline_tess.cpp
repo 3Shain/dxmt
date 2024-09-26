@@ -88,7 +88,7 @@ public:
         pDevice,
         [vs = Com(pDesc->VertexShader), hs = Com(pDesc->HullShader), pDevice,
          index_buffer_format = pDesc->IndexBufferFormat,
-         ia = Com(pDesc->InputLayout)](auto hash_) -> MTL::Function * {
+         ia = pDesc->InputLayout](auto hash_) -> MTL::Function * {
           SM50_SHADER_IA_INPUT_LAYOUT_DATA ia_layout;
           ia_layout.index_buffer_format = index_buffer_format;
           ia_layout.num_elements = ia->GetInputLayoutElements(

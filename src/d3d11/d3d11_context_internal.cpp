@@ -1805,7 +1805,7 @@ public:
     pipelineDesc.PixelShader = nullptr;
     pipelineDesc.HullShader = nullptr;
     pipelineDesc.DomainShader = nullptr;
-    pipelineDesc.InputLayout = state_.InputAssembler.InputLayout.ptr();
+    pipelineDesc.InputLayout = state_.InputAssembler.InputLayout;
     pipelineDesc.NumColorAttachments = 0;
     memset(pipelineDesc.ColorAttachmentFormats, 0,
            sizeof(pipelineDesc.ColorAttachmentFormats));
@@ -1870,7 +1870,7 @@ public:
         state_.ShaderStages[(UINT)ShaderType::Hull].Shader.ptr();
     pipelineDesc.DomainShader =
         state_.ShaderStages[(UINT)ShaderType::Domain].Shader.ptr();
-    pipelineDesc.InputLayout = state_.InputAssembler.InputLayout.ptr();
+    pipelineDesc.InputLayout = state_.InputAssembler.InputLayout;
     pipelineDesc.NumColorAttachments = state_.OutputMerger.NumRTVs;
     for (unsigned i = 0; i < ARRAYSIZE(state_.OutputMerger.RTVs); i++) {
       auto &rtv = state_.OutputMerger.RTVs[i];
@@ -1954,7 +1954,7 @@ public:
             .Shader.ptr();
     pipelineDesc.HullShader = nullptr;
     pipelineDesc.DomainShader = nullptr;
-    pipelineDesc.InputLayout = state_.InputAssembler.InputLayout.ptr();
+    pipelineDesc.InputLayout = state_.InputAssembler.InputLayout;
     pipelineDesc.NumColorAttachments = state_.OutputMerger.NumRTVs;
     for (unsigned i = 0; i < ARRAYSIZE(state_.OutputMerger.RTVs); i++) {
       auto &rtv = state_.OutputMerger.RTVs[i];

@@ -135,7 +135,7 @@ private:
   std::atomic_bool ready_;
   Com<IMTLCompiledShader> VertexShader;
   Com<IMTLCompiledShader> PixelShader;
-  Com<IMTLD3D11InputLayout> pInputLayout;
+  IMTLD3D11InputLayout *pInputLayout;
   IMTLD3D11BlendState *pBlendState;
   Obj<MTL::RenderPipelineState> state_;
   bool RasterizationEnabled;
