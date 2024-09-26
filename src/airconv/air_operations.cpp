@@ -382,6 +382,7 @@ auto get_operation_info(MSLTexture texture
   }
   case TextureKind::depth_2d: {
     ret.coord_type = types._float2;
+    ret.sample_unknown_bit = true;
     ret.air_symbol_suffix = "depth_2d";
     ret.is_depth = true;
     ret.offset_type = types._int2;
