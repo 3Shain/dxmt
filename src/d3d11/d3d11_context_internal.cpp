@@ -1281,10 +1281,8 @@ public:
         return;
       }
       auto pool = transfer(NS::AutoreleasePool::alloc()->init());
-      for (; clear_pass->num_color_attachments > 0;
-           clear_pass->num_color_attachments--) {
-        auto index = clear_pass->num_color_attachments - 1;
-
+      unsigned index = clear_pass->num_color_attachments;
+      while (index--) {
         auto enc_descriptor = MTL::RenderPassDescriptor::renderPassDescriptor();
         auto attachmentz = enc_descriptor->colorAttachments()->object(0);
         attachmentz->setClearColor(clear_pass->clear_colors[index]);
