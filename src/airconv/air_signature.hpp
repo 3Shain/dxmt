@@ -542,6 +542,14 @@ struct OutputClipDistance {
   bool operator==(OutputClipDistance const& rhs) const { return true; }
 };
 
+struct OutputRenderTargetArrayIndex {
+  bool operator==(OutputRenderTargetArrayIndex const& rhs) const { return true; }
+};
+
+struct OutputViewportArrayIndex {
+  bool operator==(OutputViewportArrayIndex const& rhs) const { return true; }
+};
+
 using FunctionInput = template_concat_t<
   FunctionArguments,
   std::variant<
@@ -565,6 +573,7 @@ using FunctionInput = template_concat_t<
 using FunctionOutput = std::variant<
   /* vertex */
   OutputVertex, OutputPosition, OutputClipDistance,
+  OutputRenderTargetArrayIndex, OutputViewportArrayIndex,
   /* fragment */
   OutputRenderTarget, OutputDepth, OutputCoverageMask>;
 

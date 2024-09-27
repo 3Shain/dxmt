@@ -171,8 +171,22 @@ void handle_signature_vs(
       });
       break;
     }
-    case D3D10_SB_NAME_RENDER_TARGET_ARRAY_INDEX:
-    case D3D10_SB_NAME_VIEWPORT_ARRAY_INDEX:
+    case D3D10_SB_NAME_RENDER_TARGET_ARRAY_INDEX: {
+      auto assigned_index =
+        func_signature.DefineOutput(OutputRenderTargetArrayIndex{});
+      epilogue_.push_back([=](IRValue &epilogue, auto, auto) {
+        epilogue >> pop_output_reg(reg, mask, assigned_index);
+      });
+      break;
+    }
+    case D3D10_SB_NAME_VIEWPORT_ARRAY_INDEX: {
+      auto assigned_index =
+        func_signature.DefineOutput(OutputViewportArrayIndex{});
+      epilogue_.push_back([=](IRValue &epilogue, auto, auto) {
+        epilogue >> pop_output_reg(reg, mask, assigned_index);
+      });
+      break;
+    }
     default:
       assert(0 && "Unexpected/unhandled input system value");
       break;
@@ -378,8 +392,6 @@ void handle_signature_ps(
     // auto mask = Inst.m_Operands[0].m_WriteMask >> 4;
     auto siv = Inst.m_OutputDeclSIV.Name;
     switch (siv) {
-    case D3D10_SB_NAME_RENDER_TARGET_ARRAY_INDEX:
-    case D3D10_SB_NAME_VIEWPORT_ARRAY_INDEX:
     default:
       assert(0 && "Unexpected/unhandled input system value");
       break;
@@ -763,8 +775,22 @@ void handle_signature_ds(
       });
       break;
     }
-    case D3D10_SB_NAME_RENDER_TARGET_ARRAY_INDEX:
-    case D3D10_SB_NAME_VIEWPORT_ARRAY_INDEX:
+    case D3D10_SB_NAME_RENDER_TARGET_ARRAY_INDEX: {
+      auto assigned_index =
+        func_signature.DefineOutput(OutputRenderTargetArrayIndex{});
+      epilogue_.push_back([=](IRValue &epilogue, auto, auto) {
+        epilogue >> pop_output_reg(reg, mask, assigned_index);
+      });
+      break;
+    }
+    case D3D10_SB_NAME_VIEWPORT_ARRAY_INDEX: {
+      auto assigned_index =
+        func_signature.DefineOutput(OutputViewportArrayIndex{});
+      epilogue_.push_back([=](IRValue &epilogue, auto, auto) {
+        epilogue >> pop_output_reg(reg, mask, assigned_index);
+      });
+      break;
+    }
     default:
       assert(0 && "Unexpected/unhandled input system value");
       break;

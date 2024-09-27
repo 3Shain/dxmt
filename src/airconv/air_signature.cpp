@@ -812,6 +812,22 @@ auto FunctionSignatureBuilder::CreateFunction(
             Type::getFloatTy(context), clip_distance.count
           );
         },
+        [&](const OutputRenderTargetArrayIndex) {
+          md.string("air.render_target_array_index")
+            ->string("air.arg_type_name")
+            ->string("uint")
+            ->string("air.arg_name")
+            ->string("mtl_render_target_array_index");
+          return (llvm::Type *)Type::getInt32Ty(context);
+        },
+        [&](const OutputViewportArrayIndex) {
+          md.string("air.viewport_array_index")
+            ->string("air.arg_type_name")
+            ->string("uint")
+            ->string("air.arg_name")
+            ->string("mtl_viewport_array_index");
+          return (llvm::Type *)Type::getInt32Ty(context);
+        },
         [](auto _) {
           assert(0 && "Unhandled output");
           return (llvm::Type *)nullptr;
