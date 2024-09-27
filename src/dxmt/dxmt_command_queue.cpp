@@ -9,6 +9,15 @@
 
 namespace dxmt {
 
+ENCODER_RENDER_INFO *CommandChunk::mark_render_pass() {
+  linear_allocator<ENCODER_RENDER_INFO> allocator(this);
+  auto ptr = allocator.allocate(1);
+  new (ptr) ENCODER_RENDER_INFO();
+  ptr->encoder_id = queue->GetNextEncoderId();
+  last_encoder_info = (ENCODER_INFO *)ptr;
+  return ptr;
+};
+
 ENCODER_CLEARPASS_INFO *CommandChunk::mark_clear_pass() {
   linear_allocator<ENCODER_CLEARPASS_INFO> allocator(this);
   auto ptr = allocator.allocate(1);

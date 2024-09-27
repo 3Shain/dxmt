@@ -1641,14 +1641,14 @@ public:
         }
       };
 
-      chk->mark_pass(EncoderKind::Render);
+      auto pass_info = chk->mark_render_pass();
 
       auto bump_offset = NextOcclusionQuerySeq() % kOcclusionSampleCount;
 
       chk->emit([rtvs = std::move(rtvs), dsv = std::move(dsv_info), bump_offset,
                  effective_render_target, uav_only,
                  uav_only_render_target_height, uav_only_render_target_width,
-                 uav_only_sample_count](CommandChunk::context &ctx) {
+                 uav_only_sample_count, pass_info](CommandChunk::context &ctx) {
         auto pool = transfer(NS::AutoreleasePool::alloc()->init());
         auto renderPassDescriptor =
             MTL::RenderPassDescriptor::renderPassDescriptor();
@@ -1718,13 +1718,15 @@ public:
         ctx.render_encoder->setVertexBuffer(h, 0, 16);
         ctx.render_encoder->setVertexBuffer(h, 0, 29);
         ctx.render_encoder->setVertexBuffer(h, 0, 30);
-        ctx.render_encoder->setMeshBuffer(h, 0, 29);
-        ctx.render_encoder->setMeshBuffer(h, 0, 30);
-        ctx.render_encoder->setObjectBuffer(h, 0, 16);
-        ctx.render_encoder->setObjectBuffer(h, 0, 29);
-        ctx.render_encoder->setObjectBuffer(h, 0, 30);
         ctx.render_encoder->setFragmentBuffer(h, 0, 29);
         ctx.render_encoder->setFragmentBuffer(h, 0, 30);
+        if (pass_info->tessellation_pass) {
+          ctx.render_encoder->setMeshBuffer(h, 0, 29);
+          ctx.render_encoder->setMeshBuffer(h, 0, 30);
+          ctx.render_encoder->setObjectBuffer(h, 0, 16);
+          ctx.render_encoder->setObjectBuffer(h, 0, 29);
+          ctx.render_encoder->setObjectBuffer(h, 0, 30);
+        }
         // TODO: need to check if there is any query in building
         ctx.render_encoder->setVisibilityResultMode(
             MTL::VisibilityResultModeCounting, bump_offset << 3);
@@ -1857,6 +1859,12 @@ public:
     }
 
     CommandChunk *chk = cmd_queue.CurrentChunk();
+
+    auto previous_encoder = chk->get_last_encoder();
+    if (previous_encoder->kind == EncoderKind::Render) {
+      auto previous_clearpass = (ENCODER_RENDER_INFO *)previous_encoder;
+      previous_clearpass->tessellation_pass = 1;
+    }
 
     Com<IMTLCompiledTessellationPipeline> pipeline;
     Com<IMTLCompiledShader> vs, ps;

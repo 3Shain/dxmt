@@ -32,6 +32,12 @@ struct ENCODER_INFO {
   uint64_t encoder_id;
 };
 
+struct ENCODER_RENDER_INFO {
+  EncoderKind kind = EncoderKind::Render;
+  uint64_t encoder_id;
+  uint32_t tessellation_pass = 0;
+};
+
 struct ENCODER_CLEARPASS_INFO {
   EncoderKind kind = EncoderKind::ClearPass;
   uint64_t encoder_id;
@@ -247,6 +253,8 @@ public:
       cur = cur->next;
     }
   };
+
+  ENCODER_RENDER_INFO *mark_render_pass();
 
   ENCODER_CLEARPASS_INFO *mark_clear_pass();
 
