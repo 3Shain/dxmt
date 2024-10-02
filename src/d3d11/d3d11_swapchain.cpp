@@ -240,11 +240,22 @@ public:
 
   HRESULT
   STDMETHODCALLTYPE
-  GetContainingOutput(IDXGIOutput **output) final { IMPLEMENT_ME; };
+  GetContainingOutput(IDXGIOutput **output) final {
+    WARN("DXGISwapChain::GetContainingOutput: stub");
+    return E_FAIL;
+  };
 
   HRESULT
   STDMETHODCALLTYPE
-  GetFrameStatistics(DXGI_FRAME_STATISTICS *stats) final { IMPLEMENT_ME; };
+  GetFrameStatistics(DXGI_FRAME_STATISTICS *stats) final {
+    WARN("DXGISwapChain::GetFrameStatistics: stub");
+    stats->PresentCount = presentation_count_;
+    stats->SyncRefreshCount = presentation_count_;
+    stats->PresentRefreshCount = presentation_count_;
+    stats->SyncGPUTime = {};
+    stats->SyncQPCTime = {};
+    return S_OK;
+  };
 
   HRESULT
   STDMETHODCALLTYPE
