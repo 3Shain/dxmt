@@ -408,20 +408,16 @@ public:
         desc.ViewDimension == D3D11_SRV_DIMENSION_BUFFEREX) {
       return;
     }
-    if (desc.ViewDimension == D3D11_SRV_DIMENSION_TEXTURE2D) {
-      if (auto com = com_cast<IMTLBindable>(pShaderResourceView)) {
-        ctx.EmitBlitCommand<true>(
-            [tex = com->UseBindable(cmd_queue.CurrentSeqId())](
-                MTL::BlitCommandEncoder *enc, CommandChunk::context &ctx) {
-              enc->generateMipmaps(tex.texture(&ctx));
-            });
-      } else {
-        // FIXME: any other possible case?
-        D3D11_ASSERT(0 && "unhandled genmips");
-      }
-      return;
+    if (auto com = com_cast<IMTLBindable>(pShaderResourceView)) {
+      ctx.EmitBlitCommand<true>(
+          [tex = com->UseBindable(cmd_queue.CurrentSeqId())](
+              MTL::BlitCommandEncoder *enc, CommandChunk::context &ctx) {
+            enc->generateMipmaps(tex.texture(&ctx));
+          });
+    } else {
+      // FIXME: any other possible case?
+      D3D11_ASSERT(0 && "unhandled genmips on staging or dynamic resource?");
     }
-    IMPLEMENT_ME
   }
 
   void ResolveSubresource(ID3D11Resource *pDstResource, UINT DstSubresource,
