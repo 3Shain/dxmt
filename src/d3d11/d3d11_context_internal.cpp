@@ -17,6 +17,60 @@ since it is for internal use only
 
 namespace dxmt {
 
+MTL::PrimitiveTopologyClass
+to_metal_primitive_topology(D3D11_PRIMITIVE_TOPOLOGY topo) {
+  switch (topo) {
+  case D3D_PRIMITIVE_TOPOLOGY_POINTLIST:
+    return MTL::PrimitiveTopologyClassPoint;
+  case D3D_PRIMITIVE_TOPOLOGY_LINELIST:
+  case D3D_PRIMITIVE_TOPOLOGY_LINESTRIP:
+  case D3D_PRIMITIVE_TOPOLOGY_LINELIST_ADJ:
+  case D3D_PRIMITIVE_TOPOLOGY_LINESTRIP_ADJ:
+    return MTL::PrimitiveTopologyClassLine;
+  case D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST:
+  case D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP:
+  case D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST_ADJ:
+  case D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP_ADJ:
+    return MTL::PrimitiveTopologyClassTriangle;
+  case D3D_PRIMITIVE_TOPOLOGY_1_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_2_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_3_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_4_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_5_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_6_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_7_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_8_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_9_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_10_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_11_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_12_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_13_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_14_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_15_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_16_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_17_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_18_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_19_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_20_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_21_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_22_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_23_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_24_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_25_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_26_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_27_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_28_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_29_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_30_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_31_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_32_CONTROL_POINT_PATCHLIST:
+    // Metal tessellation only support triangle as output primitive
+    return MTL::PrimitiveTopologyClassTriangle;
+  case D3D_PRIMITIVE_TOPOLOGY_UNDEFINED:
+    throw MTLD3DError("Invalid topology");
+  }
+}
+
 template <bool Tessellation>
 inline MTL_BINDABLE_RESIDENCY_MASK GetResidencyMask(ShaderType type, bool read,
                                                     bool write) {
@@ -1331,16 +1385,20 @@ public:
     CommandChunk *chk = cmd_queue.CurrentChunk();
 
     auto rtv_props = pRenderTargetView->GetRenderTargetProps();
-    if (rtv_props->RenderTargetArrayLength > 0) {
+    if (rtv_props->RenderTargetArrayLength > 1) {
       EmitComputeCommandChk<true>(
           [texture = pRenderTargetView->GetBinding(cmd_queue.CurrentSeqId()),
+           size = rtv_props->RenderTargetArrayLength,
            clear_color =
                std::array<float, 4>({ColorRGBA[0], ColorRGBA[1], ColorRGBA[2],
                                      ColorRGBA[3]})](auto encoder, auto &ctx) {
-            D3D11_ASSERT(texture.texture(&ctx)->textureType() ==
-                         MTL::TextureType3D);
-            ctx.queue->clear_cmd.ClearTexture3DFloat(
-                encoder, texture.texture(&ctx), clear_color);
+            if (texture.texture(&ctx)->textureType() == MTL::TextureType3D) {
+              ctx.queue->clear_cmd.ClearTexture3DFloat(
+                  encoder, texture.texture(&ctx), clear_color);
+            } else {
+              ERR("unhandled rtv array clear: ",
+                  texture.texture(&ctx)->textureType(), " of size ", size);
+            }
           });
       return;
     }
@@ -1520,12 +1578,21 @@ public:
       };
 
       uint32_t effective_render_target = 0;
+      uint32_t render_target_array = ~0u;
       auto rtvs =
           chk->reserve_vector<RENDER_TARGET_STATE>(state_.OutputMerger.NumRTVs);
       for (unsigned i = 0; i < state_.OutputMerger.NumRTVs; i++) {
         auto &rtv = state_.OutputMerger.RTVs[i];
         if (rtv) {
           auto props = rtv->GetRenderTargetProps();
+          if (render_target_array == ~0u) {
+            render_target_array = props->RenderTargetArrayLength;
+          } else {
+            if (render_target_array != props->RenderTargetArrayLength) {
+              ERR("mismatched render target array!");
+              return false;
+            }
+          }
           rtvs.push_back({rtv->GetBinding(currentChunkId), i, props->Level,
                           props->Slice, props->DepthPlane,
                           rtv->GetPixelFormat()});
@@ -1648,7 +1715,8 @@ public:
       chk->emit([rtvs = std::move(rtvs), dsv = std::move(dsv_info), bump_offset,
                  effective_render_target, uav_only,
                  uav_only_render_target_height, uav_only_render_target_width,
-                 uav_only_sample_count, pass_info](CommandChunk::context &ctx) {
+                 uav_only_sample_count, pass_info,
+                 render_target_array](CommandChunk::context &ctx) {
         auto pool = transfer(NS::AutoreleasePool::alloc()->init());
         auto renderPassDescriptor =
             MTL::RenderPassDescriptor::renderPassDescriptor();
@@ -1710,6 +1778,10 @@ public:
         }
         renderPassDescriptor->setVisibilityResultBuffer(
             ctx.chk->visibility_result_heap);
+
+        if (render_target_array != ~0u && render_target_array > 0) {
+          renderPassDescriptor->setRenderTargetArrayLength(render_target_array);
+        }
         ctx.render_encoder =
             ctx.cmdbuf->renderCommandEncoder(renderPassDescriptor);
         auto [h, _] = ctx.chk->inspect_gpu_heap();
@@ -1813,6 +1885,7 @@ public:
            sizeof(pipelineDesc.ColorAttachmentFormats));
     pipelineDesc.BlendState = default_blend_state;
     pipelineDesc.DepthStencilFormat = MTL::PixelFormatInvalid;
+    pipelineDesc.TopologyClass = to_metal_primitive_topology(state_.InputAssembler.Topology);
     pipelineDesc.RasterizationEnabled = false;
     pipelineDesc.SampleMask = D3D11_DEFAULT_SAMPLE_MASK;
     if constexpr (IndexedDraw) {
@@ -1895,6 +1968,7 @@ public:
     pipelineDesc.DepthStencilFormat =
         state_.OutputMerger.DSV ? state_.OutputMerger.DSV->GetPixelFormat()
                                 : MTL::PixelFormatInvalid;
+    pipelineDesc.TopologyClass = to_metal_primitive_topology(state_.InputAssembler.Topology);
     pipelineDesc.RasterizationEnabled = true;
     pipelineDesc.SampleMask = state_.OutputMerger.SampleMask;
     if constexpr (IndexedDraw) {
@@ -1979,6 +2053,7 @@ public:
     pipelineDesc.DepthStencilFormat =
         state_.OutputMerger.DSV ? state_.OutputMerger.DSV->GetPixelFormat()
                                 : MTL::PixelFormatInvalid;
+    pipelineDesc.TopologyClass = to_metal_primitive_topology(state_.InputAssembler.Topology);
     pipelineDesc.RasterizationEnabled = true;
     pipelineDesc.SampleMask = state_.OutputMerger.SampleMask;
     if constexpr (IndexedDraw) {
@@ -2383,7 +2458,9 @@ public:
           }
           if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE) {
             if (arg_data.requiresContext()) {
-              D3D11_ASSERT(0 && "todo");
+              chk->emit([=, ref = uav.View](CommandChunk::context &ctx) {
+                write_to_it[arg.StructurePtrOffset] = arg_data.resource(&ctx);
+              });
             } else {
               write_to_it[arg.StructurePtrOffset] = arg_data.texture();
             }

@@ -29,7 +29,7 @@ public:
 };
 
 std::pair<MTL::PrimitiveType, uint32_t>
-to_metal_topology(D3D11_PRIMITIVE_TOPOLOGY topo) {
+to_metal_primitive_type(D3D11_PRIMITIVE_TOPOLOGY topo) {
 
   switch (topo) {
   case D3D_PRIMITIVE_TOPOLOGY_POINTLIST:
@@ -82,8 +82,8 @@ to_metal_topology(D3D11_PRIMITIVE_TOPOLOGY topo) {
   case D3D_PRIMITIVE_TOPOLOGY_32_CONTROL_POINT_PATCHLIST:
     // FIXME
     return {MTL::PrimitiveTypePoint, topo - 32};
-  case D3D_PRIMITIVE_TOPOLOGY_UNDEFINED:
-    throw MTLD3DError("Invalid topology");
+  default:
+    D3D11_ASSERT(0 && "Invalid topology");
   }
 }
 
@@ -650,7 +650,7 @@ public:
     if (!ctx.PreDraw<false>())
       return;
     auto [Primitive, ControlPointCount] =
-        to_metal_topology(state_.InputAssembler.Topology);
+        to_metal_primitive_type(state_.InputAssembler.Topology);
     if (ControlPointCount) {
       return TessellationDraw(ControlPointCount, VertexCount, 1,
                               StartVertexLocation, 0);
@@ -667,7 +667,7 @@ public:
     if (!ctx.PreDraw<true>())
       return;
     auto [Primitive, ControlPointCount] =
-        to_metal_topology(state_.InputAssembler.Topology);
+        to_metal_primitive_type(state_.InputAssembler.Topology);
     if (ControlPointCount) {
       return TessellationDrawIndexed(ControlPointCount, IndexCount,
                                      StartIndexLocation, BaseVertexLocation, 1,
@@ -699,7 +699,7 @@ public:
     if (!ctx.PreDraw<false>())
       return;
     auto [Primitive, ControlPointCount] =
-        to_metal_topology(state_.InputAssembler.Topology);
+        to_metal_primitive_type(state_.InputAssembler.Topology);
     if (ControlPointCount) {
       return TessellationDraw(ControlPointCount, VertexCountPerInstance,
                               InstanceCount, StartVertexLocation,
@@ -721,7 +721,7 @@ public:
     if (!ctx.PreDraw<true>())
       return;
     auto [Primitive, ControlPointCount] =
-        to_metal_topology(state_.InputAssembler.Topology);
+        to_metal_primitive_type(state_.InputAssembler.Topology);
     if (ControlPointCount) {
       return TessellationDrawIndexed(ControlPointCount, IndexCountPerInstance,
                                      StartIndexLocation, BaseVertexLocation,
@@ -892,8 +892,7 @@ public:
       return;
     auto currentChunkId = cmd_queue.CurrentSeqId();
     auto [Primitive, ControlPointCount] =
-        to_metal_topology(state_.InputAssembler.Topology);
-    // TODO: skip invalid topology
+        to_metal_primitive_type(state_.InputAssembler.Topology);
     if (ControlPointCount) {
       return;
     }
@@ -922,7 +921,7 @@ public:
       return;
     auto currentChunkId = cmd_queue.CurrentSeqId();
     auto [Primitive, ControlPointCount] =
-        to_metal_topology(state_.InputAssembler.Topology);
+        to_metal_primitive_type(state_.InputAssembler.Topology);
     if (ControlPointCount) {
       return;
     }

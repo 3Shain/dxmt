@@ -18,7 +18,8 @@ public:
                               MTL_GRAPHICS_PIPELINE_DESC *pDesc)
       : ComObject<IMTLCompiledGraphicsPipeline>(),
         num_rtvs(pDesc->NumColorAttachments),
-        depth_stencil_format(pDesc->DepthStencilFormat), device_(pDevice),
+        depth_stencil_format(pDesc->DepthStencilFormat),
+        topology_class(pDesc->TopologyClass), device_(pDevice),
         pInputLayout(pDesc->InputLayout), pBlendState(pDesc->BlendState),
         RasterizationEnabled(pDesc->RasterizationEnabled) {
     for (unsigned i = 0; i < num_rtvs; i++) {
@@ -107,6 +108,8 @@ public:
       pipelineDescriptor->setStencilAttachmentPixelFormat(depth_stencil_format);
     }
 
+    pipelineDescriptor->setInputPrimitiveTopology(topology_class);
+
     state_ = transfer(device_->GetMTLDevice()->newRenderPipelineState(
         pipelineDescriptor, &err));
 
@@ -129,8 +132,9 @@ public:
 
 private:
   UINT num_rtvs;
-  MTL::PixelFormat rtv_formats[8]; // 8?
+  MTL::PixelFormat rtv_formats[8];
   MTL::PixelFormat depth_stencil_format;
+  MTL::PrimitiveTopologyClass topology_class;
   IMTLD3D11Device *device_;
   std::atomic_bool ready_;
   Com<IMTLCompiledShader> VertexShader;
@@ -200,7 +204,7 @@ public:
         desc, 0, nullptr, &err));
 
     if (state_ == nullptr) {
-      ERR("Failed to create PSO: ", err->localizedDescription()->utf8String());
+      ERR("Failed to create compute PSO: ", err->localizedDescription()->utf8String());
       return this;
     }
 

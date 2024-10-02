@@ -78,7 +78,8 @@ public:
                                   const MTL_GRAPHICS_PIPELINE_DESC *pDesc)
       : ComObject<IMTLCompiledTessellationPipeline>(),
         num_rtvs(pDesc->NumColorAttachments),
-        depth_stencil_format(pDesc->DepthStencilFormat), device_(pDevice),
+        depth_stencil_format(pDesc->DepthStencilFormat),
+        topology_class(pDesc->TopologyClass), device_(pDevice),
         pBlendState(pDesc->BlendState),
         RasterizationEnabled(pDesc->RasterizationEnabled) {
     for (unsigned i = 0; i < num_rtvs; i++) {
@@ -402,6 +403,8 @@ public:
       pipelineDescriptor->setStencilAttachmentPixelFormat(depth_stencil_format);
     }
 
+    pipelineDescriptor->setInputPrimitiveTopology(topology_class);
+
     state_rasterization_ =
         transfer(device_->GetMTLDevice()->newRenderPipelineState(
             pipelineDescriptor, &err));
@@ -422,6 +425,7 @@ private:
   UINT num_rtvs;
   MTL::PixelFormat rtv_formats[8];
   MTL::PixelFormat depth_stencil_format;
+  MTL::PrimitiveTopologyClass topology_class;
   IMTLD3D11Device *device_;
   std::atomic_bool ready_;
   IMTLD3D11BlendState *pBlendState;
