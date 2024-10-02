@@ -388,7 +388,6 @@ public:
       pMtlDesc->Typeless = 1;
       break;
     }
-      return E_FAIL;
     case DXGI_FORMAT_X32_TYPELESS_G8X24_UINT: {
       pMtlDesc->PixelFormat = MTL::PixelFormatX32_Stencil8;
       pMtlDesc->BytesPerTexel = 8;

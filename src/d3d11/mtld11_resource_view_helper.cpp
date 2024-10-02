@@ -15,6 +15,26 @@ HRESULT CreateMTLTextureView<D3D11_SHADER_RESOURCE_VIEW_DESC1>(
     return E_FAIL;
   }
   auto texture_type = pResource->textureType();
+  MTL::TextureSwizzleChannels swizzle = {
+      MTL::TextureSwizzleRed, MTL::TextureSwizzleGreen, MTL::TextureSwizzleBlue,
+      MTL::TextureSwizzleAlpha};
+  switch (metal_format.PixelFormat) {
+  case MTL::PixelFormatDepth24Unorm_Stencil8:
+  case MTL::PixelFormatDepth32Float_Stencil8:
+  case MTL::PixelFormatDepth16Unorm:
+  case MTL::PixelFormatDepth32Float:
+  case MTL::PixelFormatStencil8:
+    swizzle = {MTL::TextureSwizzleRed, MTL::TextureSwizzleZero,
+               MTL::TextureSwizzleZero, MTL::TextureSwizzleOne};
+    break;
+  case MTL::PixelFormatX24_Stencil8:
+  case MTL::PixelFormatX32_Stencil8:
+    swizzle = {MTL::TextureSwizzleZero, MTL::TextureSwizzleRed,
+               MTL::TextureSwizzleZero, MTL::TextureSwizzleOne};
+    break;
+  default:
+    break;
+  }
   switch (pViewDesc->ViewDimension) {
   default:
     break;
@@ -35,7 +55,7 @@ HRESULT CreateMTLTextureView<D3D11_SHADER_RESOURCE_VIEW_DESC1>(
                               ? pResource->mipmapLevelCount() -
                                     pViewDesc->Texture1DArray.MostDetailedMip
                               : pViewDesc->Texture1DArray.MipLevels),
-          NS::Range::Make(0, 1));
+          NS::Range::Make(0, 1), swizzle);
       return S_OK;
     }
     if (texture_type == MTL::TextureType1DArray) {
@@ -51,7 +71,8 @@ HRESULT CreateMTLTextureView<D3D11_SHADER_RESOURCE_VIEW_DESC1>(
                                     pViewDesc->Texture1DArray.MostDetailedMip
                               : pViewDesc->Texture1DArray.MipLevels),
           NS::Range::Make(pViewDesc->Texture1DArray.FirstArraySlice,
-                          array_size));
+                          array_size),
+          swizzle);
       return S_OK;
     }
     break;
@@ -65,7 +86,7 @@ HRESULT CreateMTLTextureView<D3D11_SHADER_RESOURCE_VIEW_DESC1>(
                               ? pResource->mipmapLevelCount() -
                                     pViewDesc->Texture2D.MostDetailedMip
                               : pViewDesc->Texture2D.MipLevels),
-          NS::Range::Make(0, 1));
+          NS::Range::Make(0, 1), swizzle);
       return S_OK;
     }
     break;
@@ -79,7 +100,7 @@ HRESULT CreateMTLTextureView<D3D11_SHADER_RESOURCE_VIEW_DESC1>(
                               ? pResource->mipmapLevelCount() -
                                     pViewDesc->Texture2D.MostDetailedMip
                               : pViewDesc->Texture2D.MipLevels),
-          NS::Range::Make(0, 1));
+          NS::Range::Make(0, 1), swizzle);
       return S_OK;
     }
     if (texture_type == MTL::TextureType2DArray) {
@@ -95,7 +116,8 @@ HRESULT CreateMTLTextureView<D3D11_SHADER_RESOURCE_VIEW_DESC1>(
                                     pViewDesc->Texture2DArray.MostDetailedMip
                               : pViewDesc->Texture2DArray.MipLevels),
           NS::Range::Make(pViewDesc->Texture2DArray.FirstArraySlice,
-                          array_size));
+                          array_size),
+          swizzle);
       return S_OK;
     }
     if (texture_type == MTL::TextureTypeCube) {
@@ -110,14 +132,17 @@ HRESULT CreateMTLTextureView<D3D11_SHADER_RESOURCE_VIEW_DESC1>(
                                     pViewDesc->Texture2DArray.MostDetailedMip
                               : pViewDesc->Texture2DArray.MipLevels),
           NS::Range::Make(pViewDesc->Texture2DArray.FirstArraySlice,
-                          array_size));
+                          array_size),
+          swizzle);
       return S_OK;
     }
     break;
   }
   case D3D_SRV_DIMENSION_TEXTURE2DMS: {
     if (texture_type == MTL::TextureType2DMultisample) {
-      *ppView = pResource->newTextureView(metal_format.PixelFormat);
+      *ppView = pResource->newTextureView(
+          metal_format.PixelFormat, MTL::TextureType2DMultisample,
+          NS::Range::Make(0, 1), NS::Range::Make(0, 1), swizzle);
       return S_OK;
     }
     break;
@@ -134,7 +159,7 @@ HRESULT CreateMTLTextureView<D3D11_SHADER_RESOURCE_VIEW_DESC1>(
                               ? pResource->mipmapLevelCount() -
                                     pViewDesc->Texture3D.MostDetailedMip
                               : pViewDesc->Texture3D.MipLevels),
-          NS::Range::Make(0, 1));
+          NS::Range::Make(0, 1), swizzle);
       return S_OK;
     }
     break;
@@ -148,7 +173,7 @@ HRESULT CreateMTLTextureView<D3D11_SHADER_RESOURCE_VIEW_DESC1>(
                               ? pResource->mipmapLevelCount() -
                                     pViewDesc->TextureCube.MostDetailedMip
                               : pViewDesc->TextureCube.MipLevels),
-          NS::Range::Make(0, 6));
+          NS::Range::Make(0, 6), swizzle);
       return S_OK;
     }
     break;
@@ -162,7 +187,7 @@ HRESULT CreateMTLTextureView<D3D11_SHADER_RESOURCE_VIEW_DESC1>(
                               ? pResource->mipmapLevelCount() -
                                     pViewDesc->TextureCube.MostDetailedMip
                               : pViewDesc->TextureCube.MipLevels),
-          NS::Range::Make(0, 6));
+          NS::Range::Make(0, 6), swizzle);
       return S_OK;
     }
     if (texture_type == MTL::TextureTypeCubeArray) {
@@ -174,7 +199,8 @@ HRESULT CreateMTLTextureView<D3D11_SHADER_RESOURCE_VIEW_DESC1>(
                                     pViewDesc->TextureCubeArray.MostDetailedMip
                               : pViewDesc->TextureCube.MipLevels),
           NS::Range::Make(pViewDesc->TextureCubeArray.First2DArrayFace,
-                          pViewDesc->TextureCubeArray.NumCubes * 6));
+                          pViewDesc->TextureCubeArray.NumCubes * 6),
+          swizzle);
       return S_OK;
     }
     break;
@@ -526,11 +552,18 @@ HRESULT CreateMTLTextureView<D3D11_DEPTH_STENCIL_VIEW_DESC>(
     break;
   }
   case D3D11_DSV_DIMENSION_TEXTURE2DARRAY: {
-    auto array_size = pViewDesc->Texture2DArray.ArraySize == 0xffffffff
-                          ? 6 * pResource->arrayLength() -
-                                pViewDesc->Texture2DArray.FirstArraySlice
-                          : pViewDesc->Texture2DArray.ArraySize;
     if (texture_type == MTL::TextureType2D) {
+      *ppView = pResource->newTextureView(
+          metal_format.PixelFormat, MTL::TextureType2DArray,
+          NS::Range::Make(pViewDesc->Texture2DArray.MipSlice, 1),
+          NS::Range::Make(0, 1));
+      return S_OK;
+    }
+    if (texture_type == MTL::TextureType2DArray) {
+      auto array_size = pViewDesc->Texture2DArray.ArraySize == 0xffffffff
+                            ? pResource->arrayLength() -
+                                  pViewDesc->Texture2DArray.FirstArraySlice
+                            : pViewDesc->Texture2DArray.ArraySize;
       *ppView = pResource->newTextureView(
           metal_format.PixelFormat, MTL::TextureType2DArray,
           NS::Range::Make(pViewDesc->Texture2DArray.MipSlice, 1),
@@ -538,7 +571,11 @@ HRESULT CreateMTLTextureView<D3D11_DEPTH_STENCIL_VIEW_DESC>(
                           array_size));
       return S_OK;
     }
-    if (texture_type == MTL::TextureType2DArray) {
+    if (texture_type == MTL::TextureTypeCube) {
+      auto array_size = pViewDesc->Texture2DArray.ArraySize == 0xffffffff
+                            ? 6 * pResource->arrayLength() -
+                                  pViewDesc->Texture2DArray.FirstArraySlice
+                            : pViewDesc->Texture2DArray.ArraySize;
       *ppView = pResource->newTextureView(
           metal_format.PixelFormat, MTL::TextureType2DArray,
           NS::Range::Make(pViewDesc->Texture2DArray.MipSlice, 1),
