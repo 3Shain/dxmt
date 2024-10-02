@@ -146,7 +146,7 @@ private:
           byte_offset(byte_offset) {}
 
     ~TBufferSRV() {
-      auto vec = resource->weak_srvs_tbuffer;
+      auto &vec = resource->weak_srvs_tbuffer;
       vec.erase(std::remove(vec.begin(), vec.end(), this), vec.end());
     }
 
@@ -399,7 +399,7 @@ private:
         : SRVBase(pDesc, pResource, pDevice), view_desc(std::move(view_desc)) {}
 
     ~SRV() {
-      auto vec = resource->weak_srvs;
+      auto& vec = resource->weak_srvs;
       vec.erase(std::remove(vec.begin(), vec.end(), this), vec.end());
     }
 
