@@ -172,6 +172,7 @@ struct SM50_SHADER_PSO_PIXEL_SHADER_DATA {
   enum SM50_SHADER_COMPILATION_ARGUMENT_TYPE type;
   uint32_t sample_mask;
   bool dual_source_blending;
+  bool disable_depth_output;
 };
 
 struct SM50_IA_INPUT_ELEMENT {

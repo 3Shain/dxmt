@@ -239,7 +239,7 @@ std::function<IRValue(pvalue)> pop_output_tess_factor(
 );
 
 IREffect pull_vertex_input(
-  air::FunctionSignatureBuilder *func_signature, uint32_t to_reg, uint32_t mask,
+  air::FunctionSignatureBuilder &func_signature, uint32_t to_reg, uint32_t mask,
   SM50_IA_INPUT_ELEMENT element_info
 );
 
@@ -268,15 +268,22 @@ struct ScalarInfo {
   uint8_t reg : 6;
 };
 
+struct SignatureContext {
+  dxmt::dxbc::IREffect& prologue;
+  dxmt::dxbc::IRValue& epilogue;
+  dxmt::air::FunctionSignatureBuilder& func_signature;
+  SM50_SHADER_IA_INPUT_LAYOUT_DATA * ia_layout;
+  bool dual_source_blending;
+  bool disable_depth_output;
+  bool skip_vertex_output;
+};
+
 class SM50ShaderInternal {
 public:
   dxmt::dxbc::ShaderInfo shader_info;
   dxmt::air::FunctionSignatureBuilder func_signature;
   std::shared_ptr<dxmt::dxbc::BasicBlock> entry;
-  std::vector<std::function<
-    void(dxmt::dxbc::IREffect &, dxmt::air::FunctionSignatureBuilder *, SM50_SHADER_IA_INPUT_LAYOUT_DATA *)>>
-    input_prelogue_;
-  std::vector<std::function<void(dxmt::dxbc::IRValue &, dxmt::air::FunctionSignatureBuilder *,  bool)>> epilogue_;
+  std::vector<std::function<void(SignatureContext &)>> signature_handlers;
   microsoft::D3D10_SB_TOKENIZED_PROGRAM_TYPE shader_type;
   /* for domain shader, it refers to patch constant input count */
   uint32_t max_input_register = 0;

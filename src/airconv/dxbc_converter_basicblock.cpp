@@ -594,10 +594,10 @@ std::function<IRValue(pvalue)> pop_output_tess_factor(
 }
 
 IREffect pull_vertex_input(
-  air::FunctionSignatureBuilder *func_signature, uint32_t to_reg, uint32_t mask,
+  air::FunctionSignatureBuilder &func_signature, uint32_t to_reg, uint32_t mask,
   SM50_IA_INPUT_ELEMENT element_info
 ) {
-  auto vbuf_table = func_signature->DefineInput(air::ArgumentBindingBuffer{
+  auto vbuf_table = func_signature.DefineInput(air::ArgumentBindingBuffer{
     .buffer_size = {},
     .location_index = 16,
     .array_size = 0,

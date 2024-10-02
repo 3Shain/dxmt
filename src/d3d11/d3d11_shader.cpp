@@ -143,6 +143,7 @@ public:
 
   virtual void GetCompiledPixelShader(uint32_t sample_mask,
                                       bool dual_source_blending,
+                                      bool disable_depth_output,
                                       IMTLCompiledShader **ppShader) final;
 
   const MTL_SHADER_REFLECTION *GetReflection() final { return &reflection; }
@@ -332,17 +333,18 @@ private:
   SM50_SHADER_IA_INPUT_LAYOUT_DATA data;
 };
 
-class AirconvPixelShader
-    : public AirconvShader<tag_pixel_shader> {
+class AirconvPixelShader : public AirconvShader<tag_pixel_shader> {
 public:
   AirconvPixelShader(IMTLD3D11Device *pDevice,
-                                   TShaderBase<tag_pixel_shader> *shader,
-                                   uint32_t sample_mask, bool dual_source_blending)
+                     TShaderBase<tag_pixel_shader> *shader,
+                     uint32_t sample_mask, bool dual_source_blending,
+                     bool disable_depth_output)
       : AirconvShader<tag_pixel_shader>(pDevice, shader, &data) {
     data.type = SM50_SHADER_PSO_PIXEL_SHADER;
     data.next = nullptr;
     data.sample_mask = sample_mask;
     data.dual_source_blending = dual_source_blending;
+    data.disable_depth_output = disable_depth_output;
   };
 
 private:
@@ -457,20 +459,21 @@ void TShaderBase<tag_emulated_vertex_so>::
 }
 
 template <typename tag>
-void TShaderBase<tag>::GetCompiledPixelShader(uint32_t sample_mask, bool,
+void TShaderBase<tag>::GetCompiledPixelShader(uint32_t sample_mask, bool, bool,
                                               IMTLCompiledShader **pShader) {
   D3D11_ASSERT(0 && "should not call this function");
 }
 
 template <>
 void TShaderBase<tag_pixel_shader>::GetCompiledPixelShader(
-    uint32_t SampleMask, bool DualSourceBlending,
+    uint32_t SampleMask, bool DualSourceBlending, bool DisableDepthOutput,
     IMTLCompiledShader **pShader) {
   if (!DualSourceBlending && data.contains(SampleMask)) {
     *pShader = data[SampleMask].ref();
   } else {
-    IMTLCompiledShader *shader = new AirconvPixelShader(
-        this->m_parent, this, SampleMask, DualSourceBlending);
+    IMTLCompiledShader *shader =
+        new AirconvPixelShader(this->m_parent, this, SampleMask,
+                               DualSourceBlending, DisableDepthOutput);
     if (!DualSourceBlending)
       data.emplace(SampleMask, shader);
     *pShader = ref(shader);
@@ -581,7 +584,8 @@ public:
     // D3D11_ASSERT(0 && "should not call this function");
   };
 
-  void GetCompiledPixelShader(uint32_t, bool, IMTLCompiledShader **) final {
+  void GetCompiledPixelShader(uint32_t, bool, bool,
+                              IMTLCompiledShader **) final {
     D3D11_ASSERT(0 && "should not call this function");
   };
 

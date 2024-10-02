@@ -412,7 +412,7 @@ llvm::Error convert_dxbc_hull_shader(
     arg = (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)arg->next;
   }
 
-  IREffect prelogue([](auto) { return std::monostate(); });
+  IREffect prologue([](auto) { return std::monostate(); });
   IRValue epilogue([](struct context ctx) -> pvalue {
     auto retTy = ctx.function->getReturnType();
     if (retTy->isVoidTy()) {
@@ -420,11 +420,12 @@ llvm::Error convert_dxbc_hull_shader(
     }
     return llvm::UndefValue::get(retTy);
   });
-  for (auto &p : pShaderInternal->input_prelogue_) {
-    p(prelogue, &func_signature, nullptr);
-  }
-  for (auto &e : pShaderInternal->epilogue_) {
-    e(epilogue, &func_signature, false);
+  {
+    SignatureContext sig_ctx{prologue, epilogue, func_signature, nullptr,
+                             false,    false,    false};
+    for (auto &p : pShaderInternal->signature_handlers) {
+      p(sig_ctx);
+    }
   }
 
   io_binding_map resource_map;
@@ -642,7 +643,7 @@ llvm::Error convert_dxbc_hull_shader(
     .shader_type = pShaderInternal->shader_type,
   };
 
-  if (auto err = prelogue.build(ctx).takeError()) {
+  if (auto err = prologue.build(ctx).takeError()) {
     return err;
   }
   auto real_entry =
@@ -729,7 +730,7 @@ llvm::Error convert_dxbc_domain_shader(
     arg = (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)arg->next;
   }
 
-  IREffect prelogue([](auto) { return std::monostate(); });
+  IREffect prologue([](auto) { return std::monostate(); });
   IRValue epilogue([](struct context ctx) -> pvalue {
     auto retTy = ctx.function->getReturnType();
     if (retTy->isVoidTy()) {
@@ -737,11 +738,12 @@ llvm::Error convert_dxbc_domain_shader(
     }
     return llvm::UndefValue::get(retTy);
   });
-  for (auto &p : pShaderInternal->input_prelogue_) {
-    p(prelogue, &func_signature, nullptr);
-  }
-  for (auto &e : pShaderInternal->epilogue_) {
-    e(epilogue, &func_signature, false);
+  {
+    SignatureContext sig_ctx{prologue, epilogue, func_signature, nullptr,
+                             false,    false,    false};
+    for (auto &p : pShaderInternal->signature_handlers) {
+      p(sig_ctx);
+    }
   }
 
   uint32_t clip_distance_out_idx = ~0u;
@@ -882,7 +884,7 @@ llvm::Error convert_dxbc_domain_shader(
     .shader_type = pShaderInternal->shader_type,
   };
 
-  if (auto err = prelogue.build(ctx).takeError()) {
+  if (auto err = prologue.build(ctx).takeError()) {
     return err;
   }
   auto real_entry =
@@ -947,6 +949,7 @@ llvm::Error convert_dxbc_pixel_shader(
   uint32_t max_output_register = pShaderInternal->max_output_register;
   uint32_t pso_sample_mask = 0xffffffff;
   bool pso_dual_source_blending = false;
+  bool pso_disable_depth_output = false;
   SM50_SHADER_COMPILATION_ARGUMENT_DATA *arg = pArgs;
   // uint64_t debug_id = ~0u;
   while (arg) {
@@ -956,7 +959,10 @@ llvm::Error convert_dxbc_pixel_shader(
       break;
     case SM50_SHADER_PSO_PIXEL_SHADER:
       pso_sample_mask = ((SM50_SHADER_PSO_PIXEL_SHADER_DATA *)arg)->sample_mask;
-      pso_dual_source_blending = ((SM50_SHADER_PSO_PIXEL_SHADER_DATA *)arg)->dual_source_blending;
+      pso_dual_source_blending =
+        ((SM50_SHADER_PSO_PIXEL_SHADER_DATA *)arg)->dual_source_blending;
+      pso_disable_depth_output =
+        ((SM50_SHADER_PSO_PIXEL_SHADER_DATA *)arg)->disable_depth_output;
       break;
     default:
       break;
@@ -964,7 +970,7 @@ llvm::Error convert_dxbc_pixel_shader(
     arg = (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)arg->next;
   }
 
-  IREffect prelogue([](auto) { return std::monostate(); });
+  IREffect prologue([](auto) { return std::monostate(); });
   IRValue epilogue([](struct context ctx) -> pvalue {
     auto retTy = ctx.function->getReturnType();
     if (retTy->isVoidTy()) {
@@ -972,11 +978,19 @@ llvm::Error convert_dxbc_pixel_shader(
     }
     return llvm::UndefValue::get(retTy);
   });
-  for (auto &p : pShaderInternal->input_prelogue_) {
-    p(prelogue, &func_signature, nullptr);
-  }
-  for (auto &e : pShaderInternal->epilogue_) {
-    e(epilogue, &func_signature, pso_dual_source_blending);
+  {
+    SignatureContext sig_ctx{
+      prologue,
+      epilogue,
+      func_signature,
+      nullptr,
+      pso_dual_source_blending,
+      pso_disable_depth_output,
+      false
+    };
+    for (auto &p : pShaderInternal->signature_handlers) {
+      p(sig_ctx);
+    }
   }
   if (pso_sample_mask != 0xffffffff) {
     auto assigned_index =
@@ -1036,7 +1050,7 @@ llvm::Error convert_dxbc_pixel_shader(
     .shader_type = pShaderInternal->shader_type,
   };
 
-  if (auto err = prelogue.build(ctx).takeError()) {
+  if (auto err = prologue.build(ctx).takeError()) {
     return err;
   }
   auto real_entry =
@@ -1087,7 +1101,7 @@ llvm::Error convert_dxbc_compute_shader(
     arg = (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)arg->next;
   }
 
-  IREffect prelogue([](auto) { return std::monostate(); });
+  IREffect prologue([](auto) { return std::monostate(); });
   IRValue epilogue([](struct context ctx) -> pvalue {
     auto retTy = ctx.function->getReturnType();
     if (retTy->isVoidTy()) {
@@ -1095,10 +1109,13 @@ llvm::Error convert_dxbc_compute_shader(
     }
     return llvm::UndefValue::get(retTy);
   });
-  for (auto &p : pShaderInternal->input_prelogue_) {
-    p(prelogue, &func_signature, nullptr);
+  {
+    SignatureContext sig_ctx{prologue, epilogue, func_signature, nullptr,
+                             false,    false,    false};
+    for (auto &p : pShaderInternal->signature_handlers) {
+      p(sig_ctx);
+    }
   }
-  assert(pShaderInternal->epilogue_.empty());
 
   io_binding_map resource_map;
   air::AirType types(context);
@@ -1125,7 +1142,7 @@ llvm::Error convert_dxbc_compute_shader(
     .shader_type = pShaderInternal->shader_type,
   };
 
-  if (auto err = prelogue.build(ctx).takeError()) {
+  if (auto err = prologue.build(ctx).takeError()) {
     return err;
   }
   auto real_entry =
@@ -1188,7 +1205,7 @@ llvm::Error convert_dxbc_vertex_shader(
     arg = (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)arg->next;
   }
 
-  IREffect prelogue([](auto) { return std::monostate(); });
+  IREffect prologue([](auto) { return std::monostate(); });
   IRValue epilogue([](struct context ctx) -> pvalue {
     auto retTy = ctx.function->getReturnType();
     if (retTy->isVoidTy()) {
@@ -1196,13 +1213,12 @@ llvm::Error convert_dxbc_vertex_shader(
     }
     return llvm::UndefValue::get(retTy);
   });
-  for (auto &p : pShaderInternal->input_prelogue_) {
-    p(prelogue, &func_signature, ia_layout);
-  }
-  for (auto &e : pShaderInternal->epilogue_) {
-    if (vertex_so)
-      continue;
-    e(epilogue, &func_signature, false);
+  {
+    SignatureContext sig_ctx{prologue, epilogue, func_signature,      ia_layout,
+                             false,    false,    vertex_so != nullptr};
+    for (auto &p : pShaderInternal->signature_handlers) {
+      p(sig_ctx);
+    }
   }
   if (vertex_so) {
     auto bv = func_signature.DefineInput(air::InputBaseVertex{});
@@ -1319,7 +1335,7 @@ llvm::Error convert_dxbc_vertex_shader(
     .shader_type = pShaderInternal->shader_type,
   };
 
-  if (auto err = prelogue.build(ctx).takeError()) {
+  if (auto err = prologue.build(ctx).takeError()) {
     return err;
   }
   auto real_entry =
@@ -1398,7 +1414,7 @@ llvm::Error convert_dxbc_vertex_for_hull_shader(
     arg = (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)arg->next;
   }
 
-  IREffect prelogue([](auto) { return std::monostate(); });
+  IREffect prologue([](auto) { return std::monostate(); });
   IRValue epilogue([](struct context ctx) -> pvalue {
     auto retTy = ctx.function->getReturnType();
     if (retTy->isVoidTy()) {
@@ -1406,12 +1422,14 @@ llvm::Error convert_dxbc_vertex_for_hull_shader(
     }
     return llvm::UndefValue::get(retTy);
   });
-  for (auto &p : pShaderInternal->input_prelogue_) {
-    p(prelogue, &func_signature, ia_layout);
+  {
+    SignatureContext sig_ctx{prologue,  epilogue, func_signature,
+                             ia_layout, false,    false,
+                             true};
+    for (auto &p : pShaderInternal->signature_handlers) {
+      p(sig_ctx);
+    }
   }
-  // for (auto &e : pShaderInternal->epilogue_) {
-  //   e(epilogue);
-  // }
 
   io_binding_map resource_map;
   air::AirType types(context);
@@ -1585,7 +1603,7 @@ llvm::Error convert_dxbc_vertex_for_hull_shader(
   );
   builder.SetInsertPoint(active);
 
-  if (auto err = prelogue.build(ctx).takeError()) {
+  if (auto err = prologue.build(ctx).takeError()) {
     return err;
   }
   auto real_entry =

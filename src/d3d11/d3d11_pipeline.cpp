@@ -36,7 +36,7 @@ public:
     if (pDesc->PixelShader) {
       pDesc->PixelShader->GetCompiledPixelShader(
           pDesc->SampleMask, pDesc->BlendState->IsDualSourceBlending(),
-          &PixelShader);
+          depth_stencil_format == MTL::PixelFormatInvalid, &PixelShader);
     }
   }
 
@@ -204,7 +204,8 @@ public:
         desc, 0, nullptr, &err));
 
     if (state_ == nullptr) {
-      ERR("Failed to create compute PSO: ", err->localizedDescription()->utf8String());
+      ERR("Failed to create compute PSO: ",
+          err->localizedDescription()->utf8String());
       return this;
     }
 

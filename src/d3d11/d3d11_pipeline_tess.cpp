@@ -244,7 +244,7 @@ public:
     if (pDesc->PixelShader) {
       pDesc->PixelShader->GetCompiledPixelShader(
           pDesc->SampleMask, pDesc->BlendState->IsDualSourceBlending(),
-          &PixelShader);
+          depth_stencil_format == MTL::PixelFormatInvalid, &PixelShader);
     }
     hull_reflection = *pDesc->HullShader->GetReflection();
     VertexShader->SubmitWork();
@@ -313,22 +313,6 @@ public:
     mesh_pipeline_desc->objectBuffers()->object(20)->setMutability(
         MTL::MutabilityMutable);
 
-    for (unsigned i = 0; i < num_rtvs; i++) {
-      if (rtv_formats[i] == MTL::PixelFormatInvalid)
-        continue;
-      mesh_pipeline_desc->colorAttachments()->object(i)->setPixelFormat(
-          rtv_formats[i]);
-    }
-
-    if (depth_stencil_format != MTL::PixelFormatInvalid) {
-      mesh_pipeline_desc->setDepthAttachmentPixelFormat(depth_stencil_format);
-    }
-    // FIXME: don't hardcoding!
-    if (depth_stencil_format == MTL::PixelFormatDepth32Float_Stencil8 ||
-        depth_stencil_format == MTL::PixelFormatDepth24Unorm_Stencil8 ||
-        depth_stencil_format == MTL::PixelFormatStencil8) {
-      mesh_pipeline_desc->setStencilAttachmentPixelFormat(depth_stencil_format);
-    }
 
     state_mesh_ = transfer(device_->GetMTLDevice()->newRenderPipelineState(
         mesh_pipeline_desc.ptr(), MTL::PipelineOptionNone, nullptr, &err));
