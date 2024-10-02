@@ -1032,11 +1032,18 @@ public:
                                bytes_per_image, cmd = std::move(cmd)](
                                   MTL::BlitCommandEncoder *encoder, auto &ctx) {
           auto dst = dst_.texture(&ctx);
-          // auto offset = SrcBox.front * bytes_per_image +
-          //               SrcBox.top * bytes_per_row +
-          //               SrcBox.left * bytes_per_texel;
+          uint32_t offset;
+          if (cmd.SrcFormat.IsCompressed) {
+            offset = cmd.SrcOrigin.z * bytes_per_image +
+                     (cmd.SrcOrigin.y >> 2) * bytes_per_row +
+                     (cmd.SrcOrigin.x >> 2) * cmd.SrcFormat.BytesPerTexel;
+          } else {
+            offset = cmd.SrcOrigin.z * bytes_per_image +
+                     cmd.SrcOrigin.y * bytes_per_row +
+                     cmd.SrcOrigin.x * cmd.SrcFormat.BytesPerTexel;
+          }
           encoder->copyFromBuffer(
-              src, 0 /* offset */, bytes_per_row, bytes_per_image, cmd.SrcSize,
+              src, offset, bytes_per_row, bytes_per_image, cmd.SrcSize,
               dst, cmd.Dst.ArraySlice, cmd.Dst.MipLevel, cmd.DstOrigin);
         });
       } else if (auto src = com_cast<IMTLBindable>(cmd.pSrc)) {
