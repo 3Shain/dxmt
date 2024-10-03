@@ -1,6 +1,5 @@
 #include "com/com_pointer.hpp"
 #include "config/config.hpp"
-#include "dxgi1_2.h"
 #include "dxgi_interfaces.h"
 #include "dxgi_object.hpp"
 #include "Metal/MTLDevice.hpp"
@@ -15,7 +14,7 @@ namespace dxmt {
 Com<IMTLDXGIAdatper> CreateAdapter(MTL::Device *pDevice,
                                    IDXGIFactory2 *pFactory, Config &config);
 
-class MTLDXGIFactory : public MTLDXGIObject<IDXGIFactory5> {
+class MTLDXGIFactory : public MTLDXGIObject<IDXGIFactory6> {
 
 public:
   MTLDXGIFactory(UINT Flags) : flags_(Flags) {
@@ -279,6 +278,19 @@ public:
       return E_INVALIDARG;
     }
     }
+  };
+
+  HRESULT STDMETHODCALLTYPE
+  EnumAdapterByGpuPreference(UINT Adapter, DXGI_GPU_PREFERENCE GpuPreference,
+                             REFIID riid, void **ppvAdapter) override {
+    // GpuPreference ignored, since Apple Silicon has only 1 GPU anyway
+    // FIXME: support Intel Mac with dedicated GPU
+    Com<IDXGIAdapter1> adapter;
+    HRESULT hr = this->EnumAdapters1(Adapter, &adapter);
+
+    if (FAILED(hr))
+      return hr;
+    return adapter->QueryInterface(riid, ppvAdapter);
   };
 
 private:
