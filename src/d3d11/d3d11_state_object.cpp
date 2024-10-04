@@ -683,6 +683,10 @@ StateObjectCache<D3D11_SAMPLER_DESC, IMTLD3D11SamplerState>::CreateStateObject(
         MTL::SamplerMipFilter::SamplerMipFilterNearest);
   }
 
+  if(desc.MipLODBias) {
+    ERR("CreateSamplerState: unhandled sampler miplodbias ", desc.MipLODBias);
+  }
+
   // LOD
   // MipLODBias is not supported
   // FIXME: it can be done in shader, see MSL spec page 186:  bias(float value)
