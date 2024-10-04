@@ -486,9 +486,9 @@ CreateMTLRenderTargetView(IMTLD3D11Device *pDevice, MTL::Texture *pResource,
         pMTLDesc->RenderTargetArrayLength = 0; // FIXME: really?
         return S_OK;
       }
-      if ((pViewDesc->Texture3D.WSize == pResource->depth() ||
-           (pViewDesc->Texture3D.WSize == 0xffffffff)) &&
-          pViewDesc->Texture3D.FirstWSlice == 0) {
+      if (pViewDesc->Texture3D.WSize == pResource->depth() ||
+          ((pViewDesc->Texture3D.WSize == 0xffffffff) &&
+           pViewDesc->Texture3D.FirstWSlice == 0)) {
         *ppView = pResource->newTextureView(
             metal_format.PixelFormat, MTL::TextureType3D,
             NS::Range::Make(pViewDesc->Texture3D.MipSlice, 1),
