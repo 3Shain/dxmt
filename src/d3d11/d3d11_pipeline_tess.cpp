@@ -194,10 +194,14 @@ public:
         });
     DomainShader = new GeneralShaderCompileTask(
         pDevice,
-        [hs = Com(pDesc->HullShader), ds = Com(pDesc->DomainShader),
-         pDevice](auto hash_) -> MTL::Function * {
+        [hs = Com(pDesc->HullShader), ds = Com(pDesc->DomainShader), pDevice,
+         GSPassthrough = pDesc->GSPassthrough](auto hash_) -> MTL::Function * {
           auto pool = transfer(NS::AutoreleasePool::alloc()->init());
           Obj<NS::Error> err;
+
+          SM50_SHADER_GS_PASS_THROUGH_DATA gs_passthrough;
+          gs_passthrough.DataEncoded = GSPassthrough;
+          gs_passthrough.next = nullptr;
 
           SM50CompiledBitcode *compile_result = nullptr;
           SM50Error *sm50_err = nullptr;
@@ -205,7 +209,8 @@ public:
               "shader_main_" + std::to_string(ds->GetUniqueId());
           if (auto ret = SM50CompileTessellationPipelineDomain(
                   (SM50Shader *)hs->GetAirconvHandle(),
-                  (SM50Shader *)ds->GetAirconvHandle(), nullptr,
+                  (SM50Shader *)ds->GetAirconvHandle(),
+                  (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)&gs_passthrough,
                   func_name.c_str(), &compile_result, &sm50_err)) {
             if (ret == 42) {
               ERR("Failed to compile shader due to failed assertation");

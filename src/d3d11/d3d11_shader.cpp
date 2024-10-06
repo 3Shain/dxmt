@@ -138,8 +138,9 @@ public:
 
   void *GetAirconvHandle() final { return sm50; }
 
-  void GetCompiledVertexShaderWithVertexPulling(IMTLD3D11InputLayout *,
-                                                IMTLCompiledShader **) final;
+  void GetCompiledVertexShader(IMTLD3D11InputLayout *pInputLayout,
+                               uint32_t GSPassthrough,
+                               IMTLCompiledShader **pShader) final;
 
   virtual void GetCompiledPixelShader(uint32_t sample_mask,
                                       bool dual_source_blending,
@@ -316,21 +317,29 @@ private:
   SM50_SHADER_COMPILATION_INPUT_SIGN_MASK_DATA data;
 };
 
-class AirconvVertexShaderWithVertexPulling
-    : public AirconvShader<tag_vertex_shader> {
+class AirconvVertexShader : public AirconvShader<tag_vertex_shader> {
 public:
-  AirconvVertexShaderWithVertexPulling(IMTLD3D11Device *pDevice,
-                                       TShaderBase<tag_vertex_shader> *shader,
-                                       IMTLD3D11InputLayout *pInputLayout)
-      : AirconvShader<tag_vertex_shader>(pDevice, shader, &data) {
-    data.type = SM50_SHADER_IA_INPUT_LAYOUT;
-    data.next = nullptr;
-    data.num_elements = pInputLayout->GetInputLayoutElements(
-        (MTL_SHADER_INPUT_LAYOUT_ELEMENT_DESC **)&data.elements);
+  AirconvVertexShader(IMTLD3D11Device *pDevice,
+                      TShaderBase<tag_vertex_shader> *shader,
+                      IMTLD3D11InputLayout *pInputLayout,
+                      uint32_t GSPassthrough)
+      : AirconvShader<tag_vertex_shader>(pDevice, shader,
+                                         &data_gs_passthrough) {
+    data_gs_passthrough.type = SM50_SHADER_GS_PASS_THROUGH;
+    data_gs_passthrough.DataEncoded = GSPassthrough;
+    data_gs_passthrough.next = nullptr;
+    if (pInputLayout) {
+      data_gs_passthrough.next = &data_ia_layout;
+      data_ia_layout.type = SM50_SHADER_IA_INPUT_LAYOUT;
+      data_ia_layout.next = nullptr;
+      data_ia_layout.num_elements = pInputLayout->GetInputLayoutElements(
+          (MTL_SHADER_INPUT_LAYOUT_ELEMENT_DESC **)&data_ia_layout.elements);
+    }
   };
 
 private:
-  SM50_SHADER_IA_INPUT_LAYOUT_DATA data;
+  SM50_SHADER_IA_INPUT_LAYOUT_DATA data_ia_layout;
+  SM50_SHADER_GS_PASS_THROUGH_DATA data_gs_passthrough;
 };
 
 class AirconvPixelShader : public AirconvShader<tag_pixel_shader> {
@@ -428,29 +437,33 @@ void TShaderBase<tag>::GetCompiledShader(IMTLCompiledShader **pShader) {
 }
 
 template <typename tag>
-void TShaderBase<tag>::GetCompiledVertexShaderWithVertexPulling(
-    IMTLD3D11InputLayout *pInputLayout, IMTLCompiledShader **pShader) {
+void TShaderBase<tag>::GetCompiledVertexShader(
+    IMTLD3D11InputLayout *pInputLayout, uint32_t GSPassthrough,
+    IMTLCompiledShader **pShader) {
   D3D11_ASSERT(0 && "should not call this function");
 }
 
 template <>
-void TShaderBase<tag_vertex_shader>::GetCompiledVertexShaderWithVertexPulling(
-    IMTLD3D11InputLayout *pInputLayout, IMTLCompiledShader **pShader) {
-  if (data.contains(pInputLayout)) {
+void TShaderBase<tag_vertex_shader>::GetCompiledVertexShader(
+    IMTLD3D11InputLayout *pInputLayout, uint32_t GSPassthrough,
+    IMTLCompiledShader **pShader) {
+  if (GSPassthrough == ~0u && data.contains(pInputLayout)) {
     *pShader = data[pInputLayout].ref();
   } else {
-    IMTLCompiledShader *shader = new AirconvVertexShaderWithVertexPulling(
-        this->m_parent, this, pInputLayout);
-    data.emplace(pInputLayout, shader);
+    IMTLCompiledShader *shader = new AirconvVertexShader(
+        this->m_parent, this, pInputLayout, GSPassthrough);
+    if (GSPassthrough == ~0u)
+      data.emplace(pInputLayout, shader);
     *pShader = ref(shader);
     shader->SubmitWork();
   }
 }
 
 template <>
-void TShaderBase<tag_emulated_vertex_so>::
-    GetCompiledVertexShaderWithVertexPulling(IMTLD3D11InputLayout *pInputLayout,
-                                             IMTLCompiledShader **pShader) {
+void TShaderBase<tag_emulated_vertex_so>::GetCompiledVertexShader(
+    IMTLD3D11InputLayout *pInputLayout, uint32_t GSPassthrough,
+    IMTLCompiledShader **pShader) {
+  // GSPassthrough is ignored because of no rasterization
   IMTLCompiledShader *shader =
       new AirconvShaderEmulatedVertexSOWithVertexPulling(this->m_parent, this,
                                                          pInputLayout);

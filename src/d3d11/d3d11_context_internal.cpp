@@ -1895,6 +1895,7 @@ public:
     pipelineDesc.TopologyClass = to_metal_primitive_topology(state_.InputAssembler.Topology);
     pipelineDesc.RasterizationEnabled = false;
     pipelineDesc.SampleMask = D3D11_DEFAULT_SAMPLE_MASK;
+    pipelineDesc.GSPassthrough = ~0u;
     if constexpr (IndexedDraw) {
       pipelineDesc.IndexBufferFormat =
           state_.InputAssembler.IndexBufferFormat == DXGI_FORMAT_R32_UINT
@@ -1929,7 +1930,8 @@ public:
     if (!state_.ShaderStages[(UINT)ShaderType::Domain].Shader) {
       return false;
     }
-    if (state_.ShaderStages[(UINT)ShaderType::Geometry].Shader) {
+    auto &GS = state_.ShaderStages[(UINT)ShaderType::Geometry].Shader;
+    if (GS && GS->GetReflection()->GeometryShader.GSPassThrough == ~0u) {
       ERR("tessellation-geometry pipeline is not supported yet, skip drawcall");
       return false;
     }
@@ -1978,6 +1980,8 @@ public:
     pipelineDesc.TopologyClass = to_metal_primitive_topology(state_.InputAssembler.Topology);
     pipelineDesc.RasterizationEnabled = true;
     pipelineDesc.SampleMask = state_.OutputMerger.SampleMask;
+    pipelineDesc.GSPassthrough =
+        GS ? GS->GetReflection()->GeometryShader.GSPassThrough : ~0u;
     if constexpr (IndexedDraw) {
       pipelineDesc.IndexBufferFormat =
           state_.InputAssembler.IndexBufferFormat == DXGI_FORMAT_R32_UINT
@@ -2019,13 +2023,16 @@ public:
     }
     if (cmdbuf_state == CommandBufferState::RenderPipelineReady)
       return true;
-    if (state_.ShaderStages[(UINT)ShaderType::Geometry].Shader) {
-      if (!state_.ShaderStages[(UINT)ShaderType::Pixel].Shader) {
-        return FinalizeNoRasterizationRenderPipeline<IndexedDraw>(
-            state_.ShaderStages[(UINT)ShaderType::Geometry].Shader.ptr());
+    auto &GS = state_.ShaderStages[(UINT)ShaderType::Geometry].Shader;
+    auto &PS = state_.ShaderStages[(UINT)ShaderType::Pixel].Shader;
+    if (GS) {
+      if (!PS) {
+        return FinalizeNoRasterizationRenderPipeline<IndexedDraw>(GS.ptr());
       }
-      // ERR("geometry shader is not supported yet, skip drawcall");
-      return false;
+      if (GS->GetReflection()->GeometryShader.GSPassThrough == ~0u) {
+        ERR("geometry shader is not supported yet, skip drawcall");
+        return false;
+      }
     }
 
     if (!SwitchToRenderEncoder()) {
@@ -2037,10 +2044,9 @@ public:
     Com<IMTLCompiledGraphicsPipeline> pipeline;
 
     MTL_GRAPHICS_PIPELINE_DESC pipelineDesc;
-    pipelineDesc.VertexShader = state_.ShaderStages[(UINT)ShaderType::Vertex]
-            .Shader.ptr();
-    pipelineDesc.PixelShader = state_.ShaderStages[(UINT)ShaderType::Pixel]
-            .Shader.ptr();
+    pipelineDesc.VertexShader =
+        state_.ShaderStages[(UINT)ShaderType::Vertex].Shader.ptr();
+    pipelineDesc.PixelShader = PS.ptr();
     pipelineDesc.HullShader = nullptr;
     pipelineDesc.DomainShader = nullptr;
     pipelineDesc.InputLayout = state_.InputAssembler.InputLayout;
@@ -2063,6 +2069,8 @@ public:
     pipelineDesc.TopologyClass = to_metal_primitive_topology(state_.InputAssembler.Topology);
     pipelineDesc.RasterizationEnabled = true;
     pipelineDesc.SampleMask = state_.OutputMerger.SampleMask;
+    pipelineDesc.GSPassthrough =
+        GS ? GS->GetReflection()->GeometryShader.GSPassThrough : ~0u;
     if constexpr (IndexedDraw) {
       pipelineDesc.IndexBufferFormat =
           state_.InputAssembler.IndexBufferFormat == DXGI_FORMAT_R32_UINT
