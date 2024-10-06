@@ -1844,6 +1844,13 @@ Instruction readInstruction(
     );
     return inst;
   };
+  case microsoft::D3D10_SB_OPCODE_EMIT:
+  case microsoft::D3D10_SB_OPCODE_EMITTHENCUT:
+  case microsoft::D3D11_SB_OPCODE_EMIT_STREAM:
+  case microsoft::D3D11_SB_OPCODE_CUT_STREAM:
+  case microsoft::D3D11_SB_OPCODE_EMITTHENCUT_STREAM: {
+    return InstNop{};
+  }
   default: {
     llvm::outs() << "unhandled dxbc instruction " << Inst.OpCode() << "\n";
     assert(0 && "unhandled dxbc instruction");

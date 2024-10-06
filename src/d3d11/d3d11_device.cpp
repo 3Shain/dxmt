@@ -263,7 +263,6 @@ public:
 
     if (!ppGeometryShader)
       return S_FALSE;
-    ERR("CreateGeometryShader: not supported, return a dummy");
 
     return pipeline_cache_->AddGeometryShader(pShaderBytecode, BytecodeLength,
                                               ppGeometryShader);
@@ -292,7 +291,7 @@ public:
           pSODeclaration, NumStrides, pBufferStrides);
     }
     ERR("CreateGeometryShaderWithStreamOutput: not supported, expect problem");
-    return dxmt::CreateDummyGeometryShader(this, pShaderBytecode,
+    return dxmt::CreateGeometryShader(this, pShaderBytecode,
                                            BytecodeLength, ppGeometryShader);
   }
 

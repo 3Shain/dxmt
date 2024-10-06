@@ -1714,6 +1714,94 @@ llvm::Error convertDXBC(
 };
 } // namespace dxmt::dxbc
 
+bool CheckGSBBIsPassThrough(dxmt::dxbc::BasicBlock *bb) {
+  using namespace dxmt::dxbc;
+  for (auto &inst : bb->instructions) {
+    bool matched = std::visit(
+      patterns{
+        [](InstNop &) { return true; }, [](InstMov &mov) { return true; },
+        [](auto &) { return false; }
+      },
+      inst
+    );
+    if (matched)
+      continue;
+    return matched;
+  }
+
+  return std::visit(
+    patterns{
+      [](dxmt::dxbc::BasicBlockReturn) { return true; },
+      [](dxmt::dxbc::BasicBlockUnconditionalBranch uncond) {
+        return CheckGSBBIsPassThrough(uncond.target.get());
+      },
+      [](auto) { return false; }
+    },
+    bb->target
+  );
+}
+
+bool CheckGSSignatureIsPassThrough(
+  microsoft::CSignatureParser &input, microsoft::CSignatureParser5 &output,
+  MTL_GEOMETRY_SHADER_REFLECTION &reflection
+) {
+  using namespace microsoft;
+
+  reflection.RenderTargetArrayIndexComponent = 0;
+  reflection.RenderTargetArrayIndexReg = 255;
+  reflection.ViewportArrayIndexComponent = 0;
+  reflection.ViewportArrayIndexReg = 255;
+
+  if (output.NumStreams() > 1) {
+    return false;
+  }
+  if (output.RasterizedStream()) {
+    return false;
+  }
+
+  const D3D11_SIGNATURE_PARAMETER *input_parameters, *output_parameters;
+  input.GetParameters(&input_parameters);
+  output.Signature(0)->GetParameters(&output_parameters);
+  size_t num_input, num_output;
+  num_input = input.GetNumParameters();
+  num_output = output.Signature(0)->GetNumParameters();
+  if (num_output > num_input) {
+    // at least it is a non-trival shader that generates new data
+    return false;
+  }
+  bool has_match_record;
+  for (unsigned i = 0; i < num_output; i++) {
+    has_match_record = false;
+    const D3D11_SIGNATURE_PARAMETER &out = output_parameters[i];
+    for (unsigned j = 0; j < num_input; j++) {
+      const D3D11_SIGNATURE_PARAMETER &in = input_parameters[j];
+      if (out.Register == in.Register && (out.Mask & in.Mask) == out.Mask) {
+        if (out.SystemValue == D3D10_SB_NAME_RENDER_TARGET_ARRAY_INDEX) {
+          reflection.RenderTargetArrayIndexReg = out.Register;
+          reflection.RenderTargetArrayIndexComponent = __builtin_ctz(out.Mask);
+        } else if (out.SystemValue == D3D10_SB_NAME_VIEWPORT_ARRAY_INDEX) {
+          reflection.ViewportArrayIndexReg = out.Register;
+          reflection.ViewportArrayIndexComponent = __builtin_ctz(out.Mask);
+        } else {
+          if (out.SemanticIndex != in.SemanticIndex) {
+            return false;
+          }
+          if (strcasecmp(out.SemanticName, in.SemanticName)) {
+            return false;
+          }
+        }
+        has_match_record = true;
+        break;
+      }
+    }
+    if (!has_match_record) {
+      return false;
+    }
+  }
+
+  return true;
+};
+
 int SM50Initialize(
   const void *pBytecode, size_t BytecodeSize, SM50Shader **ppShader,
   MTL_SHADER_REFLECTION *pRefl, SM50Error **ppError
@@ -1761,7 +1849,7 @@ int SM50Initialize(
     *ppError = (SM50Error *)errorObj;
     return 1;
   }
-  CSignatureParser outputParser;
+  CSignatureParser5 outputParser;
   if (DXBCGetOutputSignature(pBytecode, &outputParser) != S_OK) {
     errorOut << "Invalid DXBC bytecode: output signature not found\0";
     *ppError = (SM50Error *)errorObj;
@@ -2625,6 +2713,17 @@ int SM50Initialize(
         .MaxFactor = sm50_shader->max_tesselation_factor,
         .AntiClockwise = sm50_shader->tessellation_anticlockwise,
       };
+    }
+    if (sm50_shader->shader_type == microsoft::D3D10_SB_GEOMETRY_SHADER) {
+      if (binding_cbuffer_mask || binding_sampler_mask || binding_uav_mask ||
+          binding_srv_hi_mask || binding_srv_lo_mask ||
+          !CheckGSBBIsPassThrough(entry.get())) {
+        pRefl->GeometryShader.PassThrough = false;
+      } else {
+        pRefl->GeometryShader.PassThrough = CheckGSSignatureIsPassThrough(
+          inputParser, outputParser, pRefl->GeometryShader
+        );
+      }
     }
     pRefl->NumOutputElement = sm50_shader->max_output_register;
     pRefl->NumPatchConstantOutputScalar =

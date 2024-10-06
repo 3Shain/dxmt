@@ -61,6 +61,14 @@ struct MTL_TESSELLATOR_REFLECTION {
   bool AntiClockwise;
 };
 
+struct MTL_GEOMETRY_SHADER_REFLECTION {
+  bool PassThrough;
+  uint8_t RenderTargetArrayIndexReg;
+  uint8_t RenderTargetArrayIndexComponent;
+  uint8_t ViewportArrayIndexReg;
+  uint8_t ViewportArrayIndexComponent;
+};
+
 struct MTL_SHADER_REFLECTION {
   uint32_t ConstanttBufferTableBindIndex;
   uint32_t ArgumentBufferBindIndex;
@@ -71,6 +79,7 @@ struct MTL_SHADER_REFLECTION {
   union {
     uint32_t ThreadgroupSize[3];
     struct MTL_TESSELLATOR_REFLECTION Tessellator;
+    struct MTL_GEOMETRY_SHADER_REFLECTION GeometryShader;
   };
   uint16_t ConstantBufferSlotMask;
   uint16_t SamplerSlotMask;

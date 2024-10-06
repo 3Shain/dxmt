@@ -637,12 +637,11 @@ HRESULT CreateDomainShader(IMTLD3D11Device *pDevice,
                                                  BytecodeLength, ppShader);
 }
 
-HRESULT CreateDummyGeometryShader(IMTLD3D11Device *pDevice,
-                                  const void *pShaderBytecode,
-                                  SIZE_T BytecodeLength,
-                                  ID3D11GeometryShader **ppShader) {
-  return CreateDummyShaderInternal<tag_geometry_shader>(
-      pDevice, pShaderBytecode, BytecodeLength, ppShader);
+HRESULT CreateGeometryShader(IMTLD3D11Device *pDevice,
+                             const void *pShaderBytecode, SIZE_T BytecodeLength,
+                             ID3D11GeometryShader **ppShader) {
+  return CreateShaderInternal<tag_geometry_shader>(pDevice, pShaderBytecode,
+                                                   BytecodeLength, ppShader);
 }
 
 HRESULT CreateComputeShader(IMTLD3D11Device *pDevice,

@@ -66,10 +66,9 @@ HRESULT CreateDomainShader(IMTLD3D11Device *pDevice,
                            const void *pShaderBytecode, SIZE_T BytecodeLength,
                            ID3D11DomainShader **ppShader);
 
-HRESULT CreateDummyGeometryShader(IMTLD3D11Device *pDevice,
-                                  const void *pShaderBytecode,
-                                  SIZE_T BytecodeLength,
-                                  ID3D11GeometryShader **ppShader);
+HRESULT CreateGeometryShader(IMTLD3D11Device *pDevice,
+                             const void *pShaderBytecode, SIZE_T BytecodeLength,
+                             ID3D11GeometryShader **ppShader);
 
 HRESULT CreateEmulatedVertexStreamOutputShader(
     IMTLD3D11Device *pDevice, const void *pShaderBytecode,
