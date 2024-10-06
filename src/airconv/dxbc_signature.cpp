@@ -31,7 +31,7 @@ to_air_interpolation(microsoft::D3D10_SB_INTERPOLATION_MODE mode) {
 }
 
 void handle_signature_vs(
-  CSignatureParser &inputParser, CSignatureParser &outputParser,
+  CSignatureParser &inputParser, const CSignatureParser &outputParser,
   D3D10ShaderBinary::CInstruction &Inst, SM50ShaderInternal *sm50_shader,
   uint32_t phase_unused
 ) {
@@ -231,7 +231,7 @@ void handle_signature_vs(
 };
 
 void handle_signature_ps(
-  CSignatureParser &inputParser, CSignatureParser &outputParser,
+  CSignatureParser &inputParser, const CSignatureParser &outputParser,
   D3D10ShaderBinary::CInstruction &Inst, SM50ShaderInternal *sm50_shader,
   uint32_t phase_unused
 ) {
@@ -529,7 +529,7 @@ void handle_signature_ps(
 };
 
 void handle_signature_hs(
-  CSignatureParser &inputParser, CSignatureParser &outputParser,
+  CSignatureParser &inputParser, const CSignatureParser &outputParser,
   D3D10ShaderBinary::CInstruction &Inst, SM50ShaderInternal *sm50_shader,
   uint32_t phase
 ) {
@@ -670,7 +670,7 @@ void handle_signature_hs(
 };
 
 void handle_signature_ds(
-  CSignatureParser &inputParser, CSignatureParser &outputParser,
+  CSignatureParser &inputParser, const CSignatureParser &outputParser,
   D3D10ShaderBinary::CInstruction &Inst, SM50ShaderInternal *sm50_shader,
   uint32_t phase_unused
 ) {
@@ -834,7 +834,7 @@ void handle_signature_ds(
 };
 
 void handle_signature_cs(
-  CSignatureParser &inputParser_unused, CSignatureParser &outputParser_unused,
+  CSignatureParser &inputParser_unused, const CSignatureParser &outputParser_unused,
   D3D10ShaderBinary::CInstruction &Inst, SM50ShaderInternal *sm50_shader,
   uint32_t phase_unused
 ) {
@@ -912,22 +912,25 @@ void handle_signature_cs(
 
 void handle_signature(
   microsoft::CSignatureParser &inputParser,
-  microsoft::CSignatureParser &outputParser,
+  microsoft::CSignatureParser5 &outputParser,
   microsoft::D3D10ShaderBinary::CInstruction &Inst, SM50Shader *sm50_shader,
   uint32_t phase
 ) {
   auto shader = (SM50ShaderInternal *)sm50_shader;
   switch (shader->shader_type) {
   case D3D10_SB_PIXEL_SHADER:
-    return handle_signature_ps(inputParser, outputParser, Inst, shader, phase);
+    return handle_signature_ps(inputParser, *outputParser.Signature(0), Inst, shader, phase);
   case D3D10_SB_VERTEX_SHADER:
-    return handle_signature_vs(inputParser, outputParser, Inst, shader, phase);
+    return handle_signature_vs(inputParser, *outputParser.Signature(0), Inst, shader, phase);
   case D3D11_SB_HULL_SHADER:
-    return handle_signature_hs(inputParser, outputParser, Inst, shader, phase);
+    return handle_signature_hs(inputParser, *outputParser.Signature(0), Inst, shader, phase);
   case D3D11_SB_DOMAIN_SHADER:
-    return handle_signature_ds(inputParser, outputParser, Inst, shader, phase);
+    return handle_signature_ds(inputParser, *outputParser.Signature(0), Inst, shader, phase);
   case D3D11_SB_COMPUTE_SHADER:
-    return handle_signature_cs(inputParser, outputParser, Inst, shader, phase);
+    return handle_signature_cs(inputParser, *outputParser.Signature(0), Inst, shader, phase);
+  case D3D10_SB_GEOMETRY_SHADER:
+    // nop
+    return;
   default:
     assert(0);
     break;

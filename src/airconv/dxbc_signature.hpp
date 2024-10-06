@@ -47,7 +47,7 @@ static_assert(
 
 void handle_signature(
   microsoft::CSignatureParser &inputParser,
-  microsoft::CSignatureParser &outputParser,
+  microsoft::CSignatureParser5 &outputParser,
   microsoft::D3D10ShaderBinary::CInstruction &Inst, SM50Shader *sm50_shader,
   uint32_t phase
 );

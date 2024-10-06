@@ -62,8 +62,7 @@ class PipelineCache : public MTLD3D11PipelineCacheBase {
   virtual HRESULT AddGeometryShader(const void *pBytecode,
                                     uint32_t BytecodeLength,
                                     ID3D11GeometryShader **ppShader) override {
-    return CreateDummyGeometryShader(device, pBytecode, BytecodeLength,
-                                     ppShader);
+    return CreateGeometryShader(device, pBytecode, BytecodeLength, ppShader);
   }
 
   HRESULT AddInputLayout(const void *pShaderBytecodeWithInputSignature,

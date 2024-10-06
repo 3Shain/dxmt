@@ -36,8 +36,9 @@ DEFINE_COM_INTERFACE("e95ba1c7-e43f-49c3-a907-4ac669c9fb42", IMTLD3D11Shader)
   virtual void GetCompiledPixelShader(
       uint32_t SampleMask, bool DualSourceBlending, bool DisableDepthOutput,
       IMTLCompiledShader **ppShader) = 0;
-  virtual void GetCompiledVertexShaderWithVertexPulling(
-      IMTLD3D11InputLayout * pInputLayout, IMTLCompiledShader * *pShader) = 0;
+  virtual void GetCompiledVertexShader(IMTLD3D11InputLayout * pInputLayout,
+                                       uint32_t GSPassthrough,
+                                       IMTLCompiledShader * *ppShader) = 0;
   virtual const MTL_SHADER_REFLECTION *GetReflection() = 0;
 };
 
@@ -66,10 +67,9 @@ HRESULT CreateDomainShader(IMTLD3D11Device *pDevice,
                            const void *pShaderBytecode, SIZE_T BytecodeLength,
                            ID3D11DomainShader **ppShader);
 
-HRESULT CreateDummyGeometryShader(IMTLD3D11Device *pDevice,
-                                  const void *pShaderBytecode,
-                                  SIZE_T BytecodeLength,
-                                  ID3D11GeometryShader **ppShader);
+HRESULT CreateGeometryShader(IMTLD3D11Device *pDevice,
+                             const void *pShaderBytecode, SIZE_T BytecodeLength,
+                             ID3D11GeometryShader **ppShader);
 
 HRESULT CreateEmulatedVertexStreamOutputShader(
     IMTLD3D11Device *pDevice, const void *pShaderBytecode,

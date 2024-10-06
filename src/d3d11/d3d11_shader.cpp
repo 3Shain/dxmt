@@ -138,8 +138,9 @@ public:
 
   void *GetAirconvHandle() final { return sm50; }
 
-  void GetCompiledVertexShaderWithVertexPulling(IMTLD3D11InputLayout *,
-                                                IMTLCompiledShader **) final;
+  void GetCompiledVertexShader(IMTLD3D11InputLayout *pInputLayout,
+                               uint32_t GSPassthrough,
+                               IMTLCompiledShader **pShader) final;
 
   virtual void GetCompiledPixelShader(uint32_t sample_mask,
                                       bool dual_source_blending,
@@ -316,21 +317,29 @@ private:
   SM50_SHADER_COMPILATION_INPUT_SIGN_MASK_DATA data;
 };
 
-class AirconvVertexShaderWithVertexPulling
-    : public AirconvShader<tag_vertex_shader> {
+class AirconvVertexShader : public AirconvShader<tag_vertex_shader> {
 public:
-  AirconvVertexShaderWithVertexPulling(IMTLD3D11Device *pDevice,
-                                       TShaderBase<tag_vertex_shader> *shader,
-                                       IMTLD3D11InputLayout *pInputLayout)
-      : AirconvShader<tag_vertex_shader>(pDevice, shader, &data) {
-    data.type = SM50_SHADER_IA_INPUT_LAYOUT;
-    data.next = nullptr;
-    data.num_elements = pInputLayout->GetInputLayoutElements(
-        (MTL_SHADER_INPUT_LAYOUT_ELEMENT_DESC **)&data.elements);
+  AirconvVertexShader(IMTLD3D11Device *pDevice,
+                      TShaderBase<tag_vertex_shader> *shader,
+                      IMTLD3D11InputLayout *pInputLayout,
+                      uint32_t GSPassthrough)
+      : AirconvShader<tag_vertex_shader>(pDevice, shader,
+                                         &data_gs_passthrough) {
+    data_gs_passthrough.type = SM50_SHADER_GS_PASS_THROUGH;
+    data_gs_passthrough.DataEncoded = GSPassthrough;
+    data_gs_passthrough.next = nullptr;
+    if (pInputLayout) {
+      data_gs_passthrough.next = &data_ia_layout;
+      data_ia_layout.type = SM50_SHADER_IA_INPUT_LAYOUT;
+      data_ia_layout.next = nullptr;
+      data_ia_layout.num_elements = pInputLayout->GetInputLayoutElements(
+          (MTL_SHADER_INPUT_LAYOUT_ELEMENT_DESC **)&data_ia_layout.elements);
+    }
   };
 
 private:
-  SM50_SHADER_IA_INPUT_LAYOUT_DATA data;
+  SM50_SHADER_IA_INPUT_LAYOUT_DATA data_ia_layout;
+  SM50_SHADER_GS_PASS_THROUGH_DATA data_gs_passthrough;
 };
 
 class AirconvPixelShader : public AirconvShader<tag_pixel_shader> {
@@ -428,29 +437,33 @@ void TShaderBase<tag>::GetCompiledShader(IMTLCompiledShader **pShader) {
 }
 
 template <typename tag>
-void TShaderBase<tag>::GetCompiledVertexShaderWithVertexPulling(
-    IMTLD3D11InputLayout *pInputLayout, IMTLCompiledShader **pShader) {
+void TShaderBase<tag>::GetCompiledVertexShader(
+    IMTLD3D11InputLayout *pInputLayout, uint32_t GSPassthrough,
+    IMTLCompiledShader **pShader) {
   D3D11_ASSERT(0 && "should not call this function");
 }
 
 template <>
-void TShaderBase<tag_vertex_shader>::GetCompiledVertexShaderWithVertexPulling(
-    IMTLD3D11InputLayout *pInputLayout, IMTLCompiledShader **pShader) {
-  if (data.contains(pInputLayout)) {
+void TShaderBase<tag_vertex_shader>::GetCompiledVertexShader(
+    IMTLD3D11InputLayout *pInputLayout, uint32_t GSPassthrough,
+    IMTLCompiledShader **pShader) {
+  if (GSPassthrough == ~0u && data.contains(pInputLayout)) {
     *pShader = data[pInputLayout].ref();
   } else {
-    IMTLCompiledShader *shader = new AirconvVertexShaderWithVertexPulling(
-        this->m_parent, this, pInputLayout);
-    data.emplace(pInputLayout, shader);
+    IMTLCompiledShader *shader = new AirconvVertexShader(
+        this->m_parent, this, pInputLayout, GSPassthrough);
+    if (GSPassthrough == ~0u)
+      data.emplace(pInputLayout, shader);
     *pShader = ref(shader);
     shader->SubmitWork();
   }
 }
 
 template <>
-void TShaderBase<tag_emulated_vertex_so>::
-    GetCompiledVertexShaderWithVertexPulling(IMTLD3D11InputLayout *pInputLayout,
-                                             IMTLCompiledShader **pShader) {
+void TShaderBase<tag_emulated_vertex_so>::GetCompiledVertexShader(
+    IMTLD3D11InputLayout *pInputLayout, uint32_t GSPassthrough,
+    IMTLCompiledShader **pShader) {
+  // GSPassthrough is ignored because of no rasterization
   IMTLCompiledShader *shader =
       new AirconvShaderEmulatedVertexSOWithVertexPulling(this->m_parent, this,
                                                          pInputLayout);
@@ -503,114 +516,6 @@ HRESULT CreateShaderInternal(IMTLD3D11Device *pDevice,
   return S_OK;
 }
 
-template <typename tag>
-class TDummyShaderBase
-    : public MTLD3D11DeviceChild<typename tag::COM, IMTLD3D11Shader> {
-public:
-  TDummyShaderBase(IMTLD3D11Device *device, const void *pShaderBytecode,
-                   SIZE_T BytecodeLength)
-      : MTLD3D11DeviceChild<typename tag::COM, IMTLD3D11Shader>(device) {
-    id = ++global_id;
-#ifdef DXMT_DEBUG
-    dump_len = BytecodeLength;
-    dump = malloc(BytecodeLength);
-    memcpy(dump, pShaderBytecode, BytecodeLength);
-#endif
-  }
-
-  ~TDummyShaderBase() {
-#ifdef DXMT_DEBUG
-    free(dump);
-#endif
-  }
-
-  bool dumped = false;
-
-  void Dump() {
-    if(dumped) {
-      return;
-    }
-#ifdef DXMT_DEBUG
-    std::fstream dump_out;
-    dump_out.open("shader_dump_" + std::to_string(id) + ".cso",
-                  std::ios::out | std::ios::binary);
-    if (dump_out) {
-      dump_out.write((char *)dump, dump_len);
-    }
-    dump_out.close();
-    ERR("dumped to ./shader_dump_" + std::to_string(id) + ".cso");
-#else
-    WARN("shader dump disabled");
-#endif
-  dumped = true;
-  }
-
-  HRESULT QueryInterface(REFIID riid, void **ppvObject) {
-    if (ppvObject == nullptr)
-      return E_POINTER;
-
-    *ppvObject = nullptr;
-
-    if (riid == __uuidof(IUnknown) || riid == __uuidof(ID3D11DeviceChild) ||
-        riid == __uuidof(ID3D11View) || riid == __uuidof(typename tag::COM) ||
-        riid == __uuidof(typename tag::COM)) {
-      *ppvObject = ref_and_cast<typename tag::COM>(this);
-      return S_OK;
-    }
-
-    if (riid == __uuidof(IMTLD3D11Shader)) {
-      *ppvObject = ref_and_cast<IMTLD3D11Shader>(this);
-      return S_OK;
-    }
-
-    if (logQueryInterfaceError(__uuidof(typename tag::COM), riid)) {
-      WARN("D3D11Shader: Unknown interface query ", str::format(riid));
-    }
-
-    return E_NOINTERFACE;
-  }
-
-  uint64_t GetUniqueId() final { return id; }
-
-  void *GetAirconvHandle() final { return nullptr; }
-
-  void GetCompiledShader(IMTLCompiledShader **ppShader) final {
-    // D3D11_ASSERT(0 && "should not call this function");
-    *ppShader = nullptr;
-  };
-
-  void GetCompiledVertexShaderWithVertexPulling(IMTLD3D11InputLayout *,
-                                                IMTLCompiledShader **) final {
-    // D3D11_ASSERT(0 && "should not call this function");
-  };
-
-  void GetCompiledPixelShader(uint32_t, bool, bool,
-                              IMTLCompiledShader **) final {
-    D3D11_ASSERT(0 && "should not call this function");
-  };
-
-  const MTL_SHADER_REFLECTION *GetReflection() final {
-    D3D11_ASSERT(0 && "should not call this function");
-    return nullptr;
-  }
-
-  MTL_SHADER_REFLECTION reflection{};
-  uint64_t id;
-#ifdef DXMT_DEBUG
-  void *dump;
-  uint64_t dump_len;
-#endif
-};
-
-template <typename tag>
-HRESULT
-CreateDummyShaderInternal(IMTLD3D11Device *pDevice, const void *pShaderBytecode,
-                          SIZE_T BytecodeLength, typename tag::COM **ppShader) {
-  *ppShader =
-      ref(new TDummyShaderBase<tag>(pDevice, pShaderBytecode, BytecodeLength));
-  return S_OK;
-}
-
 HRESULT CreateVertexShader(IMTLD3D11Device *pDevice,
                            const void *pShaderBytecode, SIZE_T BytecodeLength,
                            ID3D11VertexShader **ppShader) {
@@ -637,12 +542,11 @@ HRESULT CreateDomainShader(IMTLD3D11Device *pDevice,
                                                  BytecodeLength, ppShader);
 }
 
-HRESULT CreateDummyGeometryShader(IMTLD3D11Device *pDevice,
-                                  const void *pShaderBytecode,
-                                  SIZE_T BytecodeLength,
-                                  ID3D11GeometryShader **ppShader) {
-  return CreateDummyShaderInternal<tag_geometry_shader>(
-      pDevice, pShaderBytecode, BytecodeLength, ppShader);
+HRESULT CreateGeometryShader(IMTLD3D11Device *pDevice,
+                             const void *pShaderBytecode, SIZE_T BytecodeLength,
+                             ID3D11GeometryShader **ppShader) {
+  return CreateShaderInternal<tag_geometry_shader>(pDevice, pShaderBytecode,
+                                                   BytecodeLength, ppShader);
 }
 
 HRESULT CreateComputeShader(IMTLD3D11Device *pDevice,

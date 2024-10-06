@@ -718,11 +718,15 @@ llvm::Error convert_dxbc_domain_shader(
   uint32_t max_input_register = pShaderInternal->max_input_register;
   uint32_t max_output_register = pShaderInternal->max_output_register;
   SM50_SHADER_COMPILATION_ARGUMENT_DATA *arg = pArgs;
+  MTL_GEOMETRY_SHADER_PASS_THROUGH *gs_passthrough = nullptr;
   // uint64_t debug_id = ~0u;
   while (arg) {
     switch (arg->type) {
     case SM50_SHADER_DEBUG_IDENTITY:
       // debug_id = ((SM50_SHADER_DEBUG_IDENTITY_DATA *)arg)->id;
+      break;
+    case SM50_SHADER_GS_PASS_THROUGH:
+      gs_passthrough = &((SM50_SHADER_GS_PASS_THROUGH_DATA *)arg)->Data;
       break;
     default:
       break;
@@ -792,6 +796,16 @@ llvm::Error convert_dxbc_domain_shader(
       .arg_name = "domain_tess_factor_buffer",
       .raster_order_group = {}
     });
+
+  uint32_t rta_idx_out = ~0u;
+  if (gs_passthrough && gs_passthrough->RenderTargetArrayIndexReg != 255) {
+    rta_idx_out =
+      func_signature.DefineOutput(air::OutputRenderTargetArrayIndex{});
+  }
+  uint32_t va_idx_out = ~0u;
+  if (gs_passthrough && gs_passthrough->ViewportArrayIndexReg != 255) {
+    va_idx_out = func_signature.DefineOutput(air::OutputViewportArrayIndex{});
+  }
 
   auto [function, function_metadata] =
     func_signature.CreateFunction(name, context, module, 0, false);
@@ -927,6 +941,32 @@ llvm::Error convert_dxbc_domain_shader(
   if (value == nullptr) {
     builder.CreateRetVoid();
   } else {
+    if (rta_idx_out != ~0u) {
+      auto src_ptr = builder.CreateGEP(
+        resource_map.output.ptr_int4->getType()->getNonOpaquePointerElementType(
+        ),
+        resource_map.output.ptr_int4,
+        {builder.getInt32(0),
+         builder.getInt32(gs_passthrough->RenderTargetArrayIndexReg),
+         builder.getInt32(gs_passthrough->RenderTargetArrayIndexComponent)}
+      );
+      value = builder.CreateInsertValue(
+        value, builder.CreateLoad(types._int, src_ptr), {rta_idx_out}
+      );
+    }
+    if (va_idx_out != ~0u) {
+      auto src_ptr = builder.CreateGEP(
+        resource_map.output.ptr_int4->getType()->getNonOpaquePointerElementType(
+        ),
+        resource_map.output.ptr_int4,
+        {builder.getInt32(0),
+         builder.getInt32(gs_passthrough->ViewportArrayIndexReg),
+         builder.getInt32(gs_passthrough->ViewportArrayIndexComponent)}
+      );
+      value = builder.CreateInsertValue(
+        value, builder.CreateLoad(types._int, src_ptr), {va_idx_out}
+      );
+    }
     builder.CreateRet(value);
   }
 
@@ -1181,6 +1221,7 @@ llvm::Error convert_dxbc_vertex_shader(
   SM50_SHADER_COMPILATION_ARGUMENT_DATA *arg = pArgs;
   SM50_SHADER_EMULATE_VERTEX_STREAM_OUTPUT_DATA *vertex_so = nullptr;
   SM50_SHADER_IA_INPUT_LAYOUT_DATA *ia_layout = nullptr;
+  MTL_GEOMETRY_SHADER_PASS_THROUGH *gs_passthrough = nullptr;
   // uint64_t debug_id = ~0u;
   while (arg) {
     switch (arg->type) {
@@ -1198,6 +1239,9 @@ llvm::Error convert_dxbc_vertex_shader(
       break;
     case SM50_SHADER_IA_INPUT_LAYOUT:
       ia_layout = ((SM50_SHADER_IA_INPUT_LAYOUT_DATA *)arg);
+      break;
+    case SM50_SHADER_GS_PASS_THROUGH:
+      gs_passthrough = &((SM50_SHADER_GS_PASS_THROUGH_DATA *)arg)->Data;
       break;
     default:
       break;
@@ -1286,6 +1330,16 @@ llvm::Error convert_dxbc_vertex_shader(
 
   setup_binding_table(shader_info, resource_map, func_signature, module);
   setup_tgsm(shader_info, resource_map, types, module);
+
+  uint32_t rta_idx_out = ~0u;
+  if (gs_passthrough && gs_passthrough->RenderTargetArrayIndexReg != 255) {
+    rta_idx_out =
+      func_signature.DefineOutput(air::OutputRenderTargetArrayIndex{});
+  }
+  uint32_t va_idx_out = ~0u;
+  if (gs_passthrough && gs_passthrough->ViewportArrayIndexReg != 255) {
+    va_idx_out = func_signature.DefineOutput(air::OutputViewportArrayIndex{});
+  }
 
   auto [function, function_metadata] = func_signature.CreateFunction(
     name, context, module, sign_mask, vertex_so != nullptr
@@ -1378,6 +1432,32 @@ llvm::Error convert_dxbc_vertex_shader(
   if (value == nullptr) {
     builder.CreateRetVoid();
   } else {
+    if (rta_idx_out != ~0u) {
+      auto src_ptr = builder.CreateGEP(
+        resource_map.output.ptr_int4->getType()->getNonOpaquePointerElementType(
+        ),
+        resource_map.output.ptr_int4,
+        {builder.getInt32(0),
+         builder.getInt32(gs_passthrough->RenderTargetArrayIndexReg),
+         builder.getInt32(gs_passthrough->RenderTargetArrayIndexComponent)}
+      );
+      value = builder.CreateInsertValue(
+        value, builder.CreateLoad(types._int, src_ptr), {rta_idx_out}
+      );
+    }
+    if (va_idx_out != ~0u) {
+      auto src_ptr = builder.CreateGEP(
+        resource_map.output.ptr_int4->getType()->getNonOpaquePointerElementType(
+        ),
+        resource_map.output.ptr_int4,
+        {builder.getInt32(0),
+         builder.getInt32(gs_passthrough->ViewportArrayIndexReg),
+         builder.getInt32(gs_passthrough->ViewportArrayIndexComponent)}
+      );
+      value = builder.CreateInsertValue(
+        value, builder.CreateLoad(types._int, src_ptr), {va_idx_out}
+      );
+    }
     builder.CreateRet(value);
   }
 
@@ -1714,6 +1794,94 @@ llvm::Error convertDXBC(
 };
 } // namespace dxmt::dxbc
 
+bool CheckGSBBIsPassThrough(dxmt::dxbc::BasicBlock *bb) {
+  using namespace dxmt::dxbc;
+  for (auto &inst : bb->instructions) {
+    bool matched = std::visit(
+      patterns{
+        [](InstNop &) { return true; }, [](InstMov &mov) { return true; },
+        [](auto &) { return false; }
+      },
+      inst
+    );
+    if (matched)
+      continue;
+    return matched;
+  }
+
+  return std::visit(
+    patterns{
+      [](dxmt::dxbc::BasicBlockReturn) { return true; },
+      [](dxmt::dxbc::BasicBlockUnconditionalBranch uncond) {
+        return CheckGSBBIsPassThrough(uncond.target.get());
+      },
+      [](auto) { return false; }
+    },
+    bb->target
+  );
+}
+
+bool CheckGSSignatureIsPassThrough(
+  microsoft::CSignatureParser &input, microsoft::CSignatureParser5 &output,
+  MTL_GEOMETRY_SHADER_PASS_THROUGH &data
+) {
+  using namespace microsoft;
+
+  data.RenderTargetArrayIndexComponent = 255;
+  data.RenderTargetArrayIndexReg = 255;
+  data.ViewportArrayIndexComponent = 255;
+  data.ViewportArrayIndexReg = 255;
+
+  if (output.NumStreams() > 1) {
+    return false;
+  }
+  if (output.RasterizedStream()) {
+    return false;
+  }
+
+  const D3D11_SIGNATURE_PARAMETER *input_parameters, *output_parameters;
+  input.GetParameters(&input_parameters);
+  output.Signature(0)->GetParameters(&output_parameters);
+  size_t num_input, num_output;
+  num_input = input.GetNumParameters();
+  num_output = output.Signature(0)->GetNumParameters();
+  if (num_output > num_input) {
+    // at least it is a non-trival shader that generates new data
+    return false;
+  }
+  bool has_match_record;
+  for (unsigned i = 0; i < num_output; i++) {
+    has_match_record = false;
+    const D3D11_SIGNATURE_PARAMETER &out = output_parameters[i];
+    for (unsigned j = 0; j < num_input; j++) {
+      const D3D11_SIGNATURE_PARAMETER &in = input_parameters[j];
+      if (out.Register == in.Register && (out.Mask & in.Mask) == out.Mask) {
+        if (out.SystemValue == D3D10_SB_NAME_RENDER_TARGET_ARRAY_INDEX) {
+          data.RenderTargetArrayIndexReg = out.Register;
+          data.RenderTargetArrayIndexComponent = __builtin_ctz(out.Mask);
+        } else if (out.SystemValue == D3D10_SB_NAME_VIEWPORT_ARRAY_INDEX) {
+          data.ViewportArrayIndexReg = out.Register;
+          data.ViewportArrayIndexComponent = __builtin_ctz(out.Mask);
+        } else {
+          if (out.SemanticIndex != in.SemanticIndex) {
+            return false;
+          }
+          if (strcasecmp(out.SemanticName, in.SemanticName)) {
+            return false;
+          }
+        }
+        has_match_record = true;
+        break;
+      }
+    }
+    if (!has_match_record) {
+      return false;
+    }
+  }
+
+  return true;
+};
+
 int SM50Initialize(
   const void *pBytecode, size_t BytecodeSize, SM50Shader **ppShader,
   MTL_SHADER_REFLECTION *pRefl, SM50Error **ppError
@@ -1761,7 +1929,7 @@ int SM50Initialize(
     *ppError = (SM50Error *)errorObj;
     return 1;
   }
-  CSignatureParser outputParser;
+  CSignatureParser5 outputParser;
   if (DXBCGetOutputSignature(pBytecode, &outputParser) != S_OK) {
     errorOut << "Invalid DXBC bytecode: output signature not found\0";
     *ppError = (SM50Error *)errorObj;
@@ -2625,6 +2793,17 @@ int SM50Initialize(
         .MaxFactor = sm50_shader->max_tesselation_factor,
         .AntiClockwise = sm50_shader->tessellation_anticlockwise,
       };
+    }
+    if (sm50_shader->shader_type == microsoft::D3D10_SB_GEOMETRY_SHADER) {
+      if (binding_cbuffer_mask || binding_sampler_mask || binding_uav_mask ||
+          binding_srv_hi_mask || binding_srv_lo_mask ||
+          !CheckGSBBIsPassThrough(entry.get())) {
+        pRefl->GeometryShader.GSPassThrough = ~0u;
+      } else {
+        CheckGSSignatureIsPassThrough(
+          inputParser, outputParser, pRefl->GeometryShader.Data
+        );
+      }
     }
     pRefl->NumOutputElement = sm50_shader->max_output_register;
     pRefl->NumPatchConstantOutputScalar =

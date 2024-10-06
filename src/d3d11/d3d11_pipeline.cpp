@@ -26,12 +26,8 @@ public:
       rtv_formats[i] = pDesc->ColorAttachmentFormats[i];
     }
 
-    if (pDesc->InputLayout) {
-      pDesc->VertexShader->GetCompiledVertexShaderWithVertexPulling(
-          pDesc->InputLayout, &VertexShader);
-    } else {
-      pDesc->VertexShader->GetCompiledShader(&VertexShader);
-    }
+    pDesc->VertexShader->GetCompiledVertexShader(
+        pDesc->InputLayout, pDesc->GSPassthrough, &VertexShader);
 
     if (pDesc->PixelShader) {
       pDesc->PixelShader->GetCompiledPixelShader(

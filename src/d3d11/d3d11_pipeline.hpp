@@ -24,6 +24,7 @@ struct MTL_GRAPHICS_PIPELINE_DESC {
   bool RasterizationEnabled;
   SM50_INDEX_BUFFER_FORAMT IndexBufferFormat;
   uint32_t SampleMask;
+  uint32_t GSPassthrough;
 };
 
 struct MTL_COMPILED_GRAPHICS_PIPELINE {
@@ -87,6 +88,7 @@ template <> struct hash<MTL_GRAPHICS_PIPELINE_DESC> {
     state.add((size_t)v.TopologyClass);
     state.add((size_t)v.IndexBufferFormat);
     state.add((size_t)v.SampleMask);
+    state.add((size_t)v.GSPassthrough);
     state.add((size_t)v.NumColorAttachments);
     for (unsigned i = 0; i < v.NumColorAttachments; i++) {
       state.add(v.ColorAttachmentFormats[i]);
@@ -151,7 +153,8 @@ template <> struct equal_to<MTL_GRAPHICS_PIPELINE_DESC> {
            (x.TopologyClass == y.TopologyClass) &&
            (x.RasterizationEnabled == y.RasterizationEnabled) &&
            (x.IndexBufferFormat == y.IndexBufferFormat) &&
-           (x.SampleMask == y.SampleMask);
+           (x.SampleMask == y.SampleMask) &&
+           (x.GSPassthrough == y.GSPassthrough);
   }
 };
 } // namespace std

@@ -61,6 +61,20 @@ struct MTL_TESSELLATOR_REFLECTION {
   bool AntiClockwise;
 };
 
+struct MTL_GEOMETRY_SHADER_PASS_THROUGH {
+  uint8_t RenderTargetArrayIndexReg;
+  uint8_t RenderTargetArrayIndexComponent;
+  uint8_t ViewportArrayIndexReg;
+  uint8_t ViewportArrayIndexComponent;
+};
+
+struct MTL_GEOMETRY_SHADER_REFLECTION {
+  union {
+    struct MTL_GEOMETRY_SHADER_PASS_THROUGH Data;
+    uint32_t GSPassThrough;
+  };
+};
+
 struct MTL_SHADER_REFLECTION {
   uint32_t ConstanttBufferTableBindIndex;
   uint32_t ArgumentBufferBindIndex;
@@ -71,6 +85,7 @@ struct MTL_SHADER_REFLECTION {
   union {
     uint32_t ThreadgroupSize[3];
     struct MTL_TESSELLATOR_REFLECTION Tessellator;
+    struct MTL_GEOMETRY_SHADER_REFLECTION GeometryShader;
   };
   uint16_t ConstantBufferSlotMask;
   uint16_t SamplerSlotMask;
@@ -132,6 +147,7 @@ enum SM50_SHADER_COMPILATION_ARGUMENT_TYPE {
   SM50_SHADER_DEBUG_IDENTITY = 2,
   SM50_SHADER_PSO_PIXEL_SHADER = 3,
   SM50_SHADER_IA_INPUT_LAYOUT = 4,
+  SM50_SHADER_GS_PASS_THROUGH = 5,
 };
 
 struct SM50_SHADER_COMPILATION_ARGUMENT_DATA {
@@ -197,6 +213,15 @@ struct SM50_SHADER_IA_INPUT_LAYOUT_DATA {
   enum SM50_INDEX_BUFFER_FORAMT index_buffer_format;
   uint32_t num_elements;
   struct SM50_IA_INPUT_ELEMENT *elements;
+};
+
+struct SM50_SHADER_GS_PASS_THROUGH_DATA {
+  void *next;
+  enum SM50_SHADER_COMPILATION_ARGUMENT_TYPE type;
+  union {
+    struct MTL_GEOMETRY_SHADER_PASS_THROUGH Data;
+    uint32_t DataEncoded;
+  };
 };
 
 AIRCONV_EXPORT int SM50Initialize(
