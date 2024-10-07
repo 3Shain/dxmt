@@ -396,6 +396,7 @@ public:
       D3D11_ASSERT(0 && "tex3d clear");
       break;
     }
+    ctx.InvalidateComputePipeline();
   }
 
   void
@@ -460,6 +461,7 @@ public:
       D3D11_ASSERT(0 && "tex3d clear");
       break;
     }
+    ctx.InvalidateComputePipeline();
   }
 
   void ClearDepthStencilView(ID3D11DepthStencilView *pDepthStencilView,

@@ -1349,6 +1349,7 @@ public:
                   texture.texture(&ctx)->textureType(), " of size ", size);
             }
           });
+      InvalidateComputePipeline();
       return;
     }
 
