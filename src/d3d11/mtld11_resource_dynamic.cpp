@@ -12,67 +12,10 @@
 
 namespace dxmt {
 
-#pragma region DynamicViewBindable
-struct IMTLNotifiedBindable : public IMTLBindable {
-  virtual void NotifyObserver(MTL::Buffer *resource) = 0;
-};
-
-template <typename BindableMap, typename GetArgumentData_,
-          typename ReleaseCallback>
-class DynamicBinding : public ComObject<IMTLNotifiedBindable> {
-private:
-  Com<IUnknown> parent;
-  BufferSwapCallback observer;
-  BindableMap fn;
-  GetArgumentData_ get_argument_data;
-  ReleaseCallback cb;
-
-public:
-  DynamicBinding(IUnknown *parent, BufferSwapCallback &&observer,
-                 BindableMap &&fn, GetArgumentData_ &&get_argument_data,
-                 ReleaseCallback &&cb)
-      : ComObject(), parent(parent), observer(std::move(observer)),
-        fn(std::forward<BindableMap>(fn)),
-        get_argument_data(std::forward<GetArgumentData_>(get_argument_data)),
-        cb(std::forward<ReleaseCallback>(cb)) {}
-
-  ~DynamicBinding() { std::invoke(cb, this); }
-
-  HRESULT QueryInterface(REFIID riid, void **ppvObject) override {
-    if (ppvObject == nullptr)
-      return E_POINTER;
-
-    *ppvObject = nullptr;
-
-    if (riid == __uuidof(IUnknown) || riid == __uuidof(IMTLBindable)) {
-      *ppvObject = ref(this);
-      return S_OK;
-    }
-
-    return E_NOINTERFACE;
-  }
-
-  BindingRef UseBindable(uint64_t x) override { return std::invoke(fn, x); };
-
-  ArgumentData GetArgumentData(SIMPLE_RESIDENCY_TRACKER **ppTracker) override {
-    return std::invoke(get_argument_data, ppTracker);
-  }
-
-  bool GetContentionState(uint64_t finishedSeqId) override { return true; }
-
-  void GetLogicalResourceOrView(REFIID riid,
-                                void **ppLogicalResource) override {
-    parent->QueryInterface(riid, ppLogicalResource);
-  };
-
-  void NotifyObserver(MTL::Buffer *resource) override { observer(resource); };
-};
-#pragma endregion
-
 #pragma region DynamicBuffer
 
 class DynamicBuffer
-    : public TResourceBase<tag_buffer, IMTLDynamicBuffer, IMTLDynamicBindable> {
+    : public TResourceBase<tag_buffer, IMTLDynamicBuffer, IMTLBindable> {
 private:
   Obj<MTL::Buffer> buffer_dynamic;
   uint64_t buffer_handle;
@@ -84,10 +27,8 @@ private:
   bool structured;
   bool allow_raw_view;
 
-  std::vector<IMTLNotifiedBindable *> observers;
-
   using SRVBase = TResourceViewBase<tag_shader_resource_view<DynamicBuffer>,
-                                    IMTLDynamicBindable>;
+                                    IMTLBindable>;
 
   class SRV : public SRVBase {
   private:
@@ -106,26 +47,22 @@ private:
       vec.erase(std::remove(vec.begin(), vec.end(), this), vec.end());
     }
 
-    void GetBindable(IMTLBindable **ppResource,
-                     BufferSwapCallback &&onBufferSwap) override {
-      IMTLNotifiedBindable *ret = ref(new DynamicBinding(
-          static_cast<ID3D11ShaderResourceView *>(this),
-          std::move(onBufferSwap),
-          [this](uint64_t) {
-            return BindingRef(static_cast<ID3D11View *>(this),
-                              this->resource->buffer_dynamic, this->width,
-                              this->offset);
-          },
-          [this](SIMPLE_RESIDENCY_TRACKER **ppTracker) {
-            *ppTracker = &tracker;
-            return ArgumentData(this->resource->buffer_handle + this->offset,
-                                this->width);
-          },
-          [u = this->resource.ptr()](IMTLNotifiedBindable *_this) {
-            u->RemoveObserver(_this);
-          }));
-      resource->AddObserver(ret);
-      *ppResource = ret;
+    BindingRef UseBindable(uint64_t x) override {
+      return BindingRef(static_cast<ID3D11View *>(this),
+                        resource->buffer_dynamic, width, offset);
+    };
+
+    ArgumentData
+    GetArgumentData(SIMPLE_RESIDENCY_TRACKER **ppTracker) override {
+      *ppTracker = &tracker;
+      return ArgumentData(resource->buffer_handle + offset, width);
+    }
+
+    bool GetContentionState(uint64_t) override { return true; }
+
+    void GetLogicalResourceOrView(REFIID riid,
+                                  void **ppLogicalResource) override {
+      QueryInterface(riid, ppLogicalResource);
     };
 
     void RotateView() { tracker = {}; };
@@ -150,24 +87,21 @@ private:
       vec.erase(std::remove(vec.begin(), vec.end(), this), vec.end());
     }
 
-    void GetBindable(IMTLBindable **ppResource,
-                     BufferSwapCallback &&onBufferSwap) override {
-      auto ret = ref(new DynamicBinding(
-          static_cast<ID3D11ShaderResourceView *>(this),
-          std::move(onBufferSwap),
-          [this](uint64_t) {
-            return BindingRef(static_cast<ID3D11View *>(this),
-                              this->view.ptr());
-          },
-          [this](SIMPLE_RESIDENCY_TRACKER **ppTracker) {
-            *ppTracker = &tracker;
-            return ArgumentData(this->view_handle, this->view.ptr());
-          },
-          [u = this->resource.ptr()](IMTLNotifiedBindable *_this) {
-            u->RemoveObserver(_this);
-          }));
-      resource->AddObserver(ret);
-      *ppResource = ret;
+    BindingRef UseBindable(uint64_t) override {
+      return BindingRef(static_cast<ID3D11View *>(this), view.ptr());
+    }
+
+    ArgumentData
+    GetArgumentData(SIMPLE_RESIDENCY_TRACKER **ppTracker) override {
+      *ppTracker = &tracker;
+      return ArgumentData(view_handle, view.ptr());
+    }
+
+    bool GetContentionState(uint64_t) override { return true; }
+
+    void GetLogicalResourceOrView(REFIID riid,
+                                  void **ppLogicalResource) override {
+      QueryInterface(riid, ppLogicalResource);
     }
 
     struct ViewCache {
@@ -203,7 +137,7 @@ public:
   DynamicBuffer(const tag_buffer::DESC1 *pDesc,
                 const D3D11_SUBRESOURCE_DATA *pInitialData,
                 IMTLD3D11Device *device)
-      : TResourceBase<tag_buffer, IMTLDynamicBuffer, IMTLDynamicBindable>(
+      : TResourceBase<tag_buffer, IMTLDynamicBuffer, IMTLBindable>(
             *pDesc, device) {
     auto metal = device->GetMTLDevice();
     // sadly it needs to be tracked since it's a legal blit dst
@@ -230,24 +164,26 @@ public:
     return buffer_mapped;
   };
 
-  void GetBindable(IMTLBindable **ppResource,
-                   BufferSwapCallback &&onBufferSwap) override {
-    auto ret = ref(new DynamicBinding(
-        static_cast<ID3D11Buffer *>(this), std::move(onBufferSwap),
-        [this](uint64_t) {
-          return BindingRef(static_cast<ID3D11Resource *>(this),
-                            buffer_dynamic.ptr(), this->buffer_len, 0);
-        },
-        [this](SIMPLE_RESIDENCY_TRACKER **ppTracker) {
-          *ppTracker = &tracker;
-          return ArgumentData(this->buffer_handle, this->buffer_len);
-        },
-        [this](IMTLNotifiedBindable *_binding) {
-          this->RemoveObserver(_binding);
-        }));
-    AddObserver(ret);
-    *ppResource = ret;
-  };
+  D3D11_BIND_FLAG GetBindFlag() override {
+    return (D3D11_BIND_FLAG)desc.BindFlags;
+  }
+
+  BindingRef UseBindable(uint64_t) override {
+    return BindingRef(static_cast<ID3D11Resource *>(this), buffer_dynamic.ptr(),
+                      buffer_len, 0);
+  }
+
+  ArgumentData GetArgumentData(SIMPLE_RESIDENCY_TRACKER **ppTracker) override {
+    *ppTracker = &tracker;
+    return ArgumentData(buffer_handle, buffer_len);
+  }
+
+  bool GetContentionState(uint64_t finishedSeqId) override { return true; }
+
+  void GetLogicalResourceOrView(REFIID riid,
+                                void **ppLogicalResource) override {
+    QueryInterface(riid, ppLogicalResource);
+  }
 
   void RotateBuffer(IMTLDynamicBufferExchange *exch) override {
     tracker = {};
@@ -266,20 +202,6 @@ public:
     for (auto srv : weak_srvs_tbuffer) {
       srv->RotateView();
     }
-    for (auto &observer : observers) {
-      observer->NotifyObserver(buffer_dynamic.ptr());
-    }
-  };
-
-  void AddObserver(IMTLNotifiedBindable *pBindable) {
-    observers.push_back(pBindable);
-  }
-
-  void RemoveObserver(IMTLNotifiedBindable *pBindable) {
-    // D3D11_ASSERT(observers.erase(pBindable) == 1 &&
-    //        "it must be 1 unless the destructor called twice");
-    auto &vec = observers;
-    vec.erase(std::remove(vec.begin(), vec.end(), pBindable), vec.end());
   }
 
   HRESULT
@@ -384,7 +306,7 @@ private:
   size_t bytes_per_row;
 
   using SRVBase = TResourceViewBase<tag_shader_resource_view<DynamicTexture2D>,
-                                    IMTLDynamicBindable>;
+                                    IMTLBindable>;
 
   class SRV : public SRVBase {
     Obj<MTL::Texture> view;
@@ -403,24 +325,21 @@ private:
       vec.erase(std::remove(vec.begin(), vec.end(), this), vec.end());
     }
 
-    void GetBindable(IMTLBindable **ppResource,
-                     BufferSwapCallback &&onBufferSwap) override {
-      auto ret = ref(new DynamicBinding(
-          static_cast<ID3D11ShaderResourceView *>(this),
-          std::move(onBufferSwap),
-          [this](uint64_t) {
-            return BindingRef(static_cast<ID3D11View *>(this),
-                              this->view.ptr());
-          },
-          [this](SIMPLE_RESIDENCY_TRACKER **ppTracker) {
-            *ppTracker = &tracker;
-            return ArgumentData(this->view_handle, this->view.ptr());
-          },
-          [u = this->resource.ptr()](IMTLNotifiedBindable *_this) {
-            u->RemoveObserver(_this);
-          }));
-      resource->AddObserver(ret);
-      *ppResource = ret;
+    BindingRef UseBindable(uint64_t) override {
+      return BindingRef(static_cast<ID3D11View *>(this), view.ptr());
+    };
+
+    ArgumentData
+    GetArgumentData(SIMPLE_RESIDENCY_TRACKER **ppTracker) override {
+      *ppTracker = &tracker;
+      return ArgumentData(view_handle, view.ptr());
+    }
+
+    bool GetContentionState(uint64_t) override { return true; }
+
+    void GetLogicalResourceOrView(REFIID riid,
+                                  void **ppLogicalResource) override {
+      this->QueryInterface(riid, ppLogicalResource);
     }
 
     struct ViewCache {
@@ -445,7 +364,6 @@ private:
     };
   };
 
-  std::vector<IMTLNotifiedBindable *> observers;
   std::vector<SRV *> weak_srvs;
   std::unique_ptr<BufferPool> pool_;
 
@@ -474,20 +392,10 @@ public:
     for (auto srv : weak_srvs) {
       srv->RotateView();
     }
-    for (auto &observer : observers) {
-      observer->NotifyObserver(buffer.ptr());
-    }
   };
 
-  void AddObserver(IMTLNotifiedBindable *pBindable) {
-    observers.push_back(pBindable);
-  }
-
-  void RemoveObserver(IMTLNotifiedBindable *pBindable) {
-    // D3D11_ASSERT(observers.erase(pBindable) == 1 &&
-    //        "it must be 1 unless the destructor called twice");
-    auto &vec = observers;
-    vec.erase(std::remove(vec.begin(), vec.end(), pBindable), vec.end());
+  D3D11_BIND_FLAG GetBindFlag() override {
+    return (D3D11_BIND_FLAG)desc.BindFlags;
   }
 
   HRESULT CreateShaderResourceView(const D3D11_SHADER_RESOURCE_VIEW_DESC1 *pDesc,

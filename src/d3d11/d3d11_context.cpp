@@ -229,6 +229,23 @@ public:
         return E_INVALIDARG;
       case D3D11_MAP_WRITE_DISCARD: {
         dynamic->RotateBuffer(this);
+        auto bind_flag = dynamic->GetBindFlag();
+        if (bind_flag & D3D11_BIND_VERTEX_BUFFER) {
+          state_.InputAssembler.VertexBuffers.set_dirty();
+        }
+        if (bind_flag & D3D11_BIND_INDEX_BUFFER) {
+          ctx.dirty_state.set(ContextInternal::DirtyState::IndexBuffer);
+        }
+        if (bind_flag & D3D11_BIND_CONSTANT_BUFFER) {
+          for (auto &stage : state_.ShaderStages) {
+            stage.ConstantBuffers.set_dirty();
+          }
+        }
+        if (bind_flag & D3D11_BIND_SHADER_RESOURCE) {
+          for (auto &stage : state_.ShaderStages) {
+            stage.SRVs.set_dirty();
+          }
+        }
         Out.pData = dynamic->GetMappedMemory(&Out.RowPitch, &Out.DepthPitch);
         break;
       }
@@ -665,9 +682,6 @@ public:
                                   copy_offset, copy_len);
             },
             ContextInternal::CommandBufferState::UpdateBlitEncoderActive);
-      } else if (auto dynamic = com_cast<IMTLDynamicBindable>(pDstResource)) {
-        D3D11_ASSERT(CopyFlags && "otherwise resource cannot be dynamic");
-        D3D11_ASSERT(0 && "UpdateSubresource1: TODO");
       } else {
         D3D11_ASSERT(0 && "UpdateSubresource1: TODO: staging?");
       }
@@ -1100,12 +1114,7 @@ public:
 
   void IASetIndexBuffer(ID3D11Buffer *pIndexBuffer, DXGI_FORMAT Format,
                         UINT Offset) override {
-    if (auto dynamic = com_cast<IMTLDynamicBindable>(pIndexBuffer)) {
-      state_.InputAssembler.IndexBuffer = nullptr;
-      dynamic->GetBindable(&state_.InputAssembler.IndexBuffer, [this](auto) {
-        ctx.dirty_state.set(ContextInternal::DirtyState::IndexBuffer);
-      });
-    } else if (auto expected = com_cast<IMTLBindable>(pIndexBuffer)) {
+    if (auto expected = com_cast<IMTLBindable>(pIndexBuffer)) {
       state_.InputAssembler.IndexBuffer = std::move(expected);
     } else {
       state_.InputAssembler.IndexBuffer = nullptr;

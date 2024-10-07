@@ -488,6 +488,9 @@ public:
 
     if (pShader) {
       if (auto expected = com_cast<IMTLD3D11Shader>(pShader)) {
+        if (ShaderStage.Shader.ptr() == expected.ptr()) {
+          return;
+        }
         ShaderStage.Shader = std::move(expected);
         // Com<IMTLCompiledShader> _;
         // ShaderStage.Shader->GetCompiledShader(&_);
@@ -500,7 +503,7 @@ public:
           state_.OutputMerger.UAVs.set_dirty();
         }
       } else {
-        D3D11_ASSERT(0 && "wtf");
+        D3D11_ASSERT(0 && "unexpected shader object");
       }
     } else {
       ShaderStage.Shader = nullptr;
@@ -571,18 +574,10 @@ public:
           pConstantBuffer->GetDesc(&desc);
           entry.NumConstants = desc.ByteWidth >> 4;
         }
-        if (auto dynamic = com_cast<IMTLDynamicBindable>(pConstantBuffer)) {
-          auto old = std::move(entry.Buffer); // FIXME: it looks so weird!
-          // should migrate vertex buffer storage to BindingSet
-          // once we have implemented BindingSet iteration
-          dynamic->GetBindable(
-              &entry.Buffer, [slot, &set = ShaderStage.ConstantBuffers](auto) {
-                set.set_dirty(slot);
-              });
-        } else if (auto expected = com_cast<IMTLBindable>(pConstantBuffer)) {
+        if (auto expected = com_cast<IMTLBindable>(pConstantBuffer)) {
           entry.Buffer = std::move(expected);
         } else {
-          D3D11_ASSERT(0 && "wtf");
+          D3D11_ASSERT(0 && "unexpected constant buffer object");
         }
       } else {
         // BIND NULL
@@ -631,14 +626,10 @@ public:
         auto &entry = ShaderStage.SRVs.bind(slot, {pView}, replaced);
         if (!replaced)
           continue;
-        if (auto dynamic = com_cast<IMTLDynamicBindable>(pView)) {
-          entry.SRV = nullptr;
-          dynamic->GetBindable(&entry.SRV, [slot, &set = ShaderStage.SRVs](
-                                               auto) { set.set_dirty(slot); });
-        } else if (auto expected = com_cast<IMTLBindable>(pView)) {
+        else if (auto expected = com_cast<IMTLBindable>(pView)) {
           entry.SRV = std::move(expected);
         } else {
-          D3D11_ASSERT(0 && "wtf");
+          D3D11_ASSERT(0 && "unexpected shader resource object");
         }
       } else {
         // BIND NULL
@@ -796,17 +787,10 @@ public:
           }
           continue;
         }
-        if (auto dynamic = com_cast<IMTLDynamicBindable>(pVertexBuffer)) {
-          entry.Buffer = nullptr;
-          dynamic->GetBindable(&entry.Buffer, [&VertexBuffers, slot,
-                                               &entry](MTL::Buffer *buffer) {
-            VertexBuffers.set_dirty(slot);
-            entry.BufferRaw = buffer;
-          });
-        } else if (auto expected = com_cast<IMTLBindable>(pVertexBuffer)) {
+        if (auto expected = com_cast<IMTLBindable>(pVertexBuffer)) {
           entry.Buffer = std::move(expected);
         } else {
-          D3D11_ASSERT(0 && "wtf");
+          D3D11_ASSERT(0 && "unexpected vertex buffer object");
         }
         if (pStrides) {
           entry.Stride = pStrides[slot - StartSlot];
@@ -820,8 +804,6 @@ public:
           ERR("SetVertexBuffers: offset is null");
           entry.Stride = 0;
         }
-        entry.BufferRaw =
-            entry.Buffer->UseBindable(this->cmd_queue.CurrentSeqId()).buffer();
       } else {
         VertexBuffers.unbind(slot);
       }
@@ -899,9 +881,7 @@ public:
       } else {
         D3D11_ASSERT(0 && "todo");
       }
-    } else if (dst_desc.Usage == D3D11_USAGE_DEFAULT) {
-      auto dst = com_cast<IMTLBindable>(pDstResource);
-      D3D11_ASSERT(dst);
+    } else if (auto dst = com_cast<IMTLBindable>(pDstResource)) {
       if (auto staging_src = com_cast<IMTLD3D11Staging>(pSrcResource)) {
         // copy from staging to default
         MTL_STAGING_RESOURCE src_bind;
@@ -926,41 +906,6 @@ public:
              SrcBox](MTL::BlitCommandEncoder *encoder, auto &ctx) {
               auto src = src_.buffer();
               auto dst = dst_.buffer();
-              encoder->copyFromBuffer(src, SrcBox.left, dst, DstX,
-                                      SrcBox.right - SrcBox.left);
-            });
-      } else {
-        D3D11_ASSERT(0 && "todo");
-      }
-    } else if (dst_desc.Usage == D3D11_USAGE_DYNAMIC) {
-      auto dst_dynamic = com_cast<IMTLDynamicBindable>(pDstResource);
-      D3D11_ASSERT(dst_dynamic);
-      Com<IMTLBindable> dst;
-      dst_dynamic->GetBindable(&dst, [](auto) {});
-      if (auto staging_src = com_cast<IMTLD3D11Staging>(pSrcResource)) {
-        // copy from staging to dynamic
-        MTL_STAGING_RESOURCE src_bind;
-        uint32_t bytes_per_row, bytes_per_image;
-        if (!staging_src->UseCopySource(SrcSubresource, currentChunkId,
-                                        &src_bind, &bytes_per_row,
-                                        &bytes_per_image))
-          return;
-        EmitBlitCommand<true>([dst_ = dst->UseBindable(currentChunkId).buffer(),
-                               src = Obj(src_bind.Buffer), DstX, SrcBox](
-                                  MTL::BlitCommandEncoder *encoder, auto &ctx) {
-          auto dst = dst_;
-          // FIXME: offste should be calculated from SrcBox
-          encoder->copyFromBuffer(src, SrcBox.left, dst, DstX,
-                                  SrcBox.right - SrcBox.left);
-        });
-      } else if (auto src = com_cast<IMTLBindable>(pSrcResource)) {
-        // device to dynamic
-        EmitBlitCommand<true>(
-            [dst_ = dst->UseBindable(currentChunkId).buffer(),
-             src_ = src->UseBindable(currentChunkId), DstX,
-             SrcBox](MTL::BlitCommandEncoder *encoder, auto &ctx) {
-              auto src = src_.buffer();
-              auto dst = dst_;
               encoder->copyFromBuffer(src, SrcBox.left, dst, DstX,
                                       SrcBox.right - SrcBox.left);
             });
@@ -1239,9 +1184,6 @@ public:
                 cmd.Dst.ArraySlice, cmd.Dst.MipLevel, cmd.DstRegion.origin);
           },
           ContextInternal::CommandBufferState::UpdateBlitEncoderActive);
-    } else if (auto dynamic = com_cast<IMTLDynamicBindable>(cmd.pDst)) {
-      D3D11_ASSERT(CopyFlags && "otherwise resource cannot be dynamic");
-      D3D11_ASSERT(0 && "TODO: UpdateSubresource1: update dynamic texture");
     } else if (auto staging_dst = com_cast<IMTLD3D11Staging>(cmd.pDst)) {
       // staging: ...
       D3D11_ASSERT(0 && "TODO: UpdateSubresource1: update staging texture");

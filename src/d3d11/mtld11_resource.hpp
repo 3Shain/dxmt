@@ -162,28 +162,10 @@ DEFINE_COM_INTERFACE("65feb8c5-01de-49df-bf58-d115007a117d", IMTLDynamicBuffer)
     : public IUnknown {
   virtual void *GetMappedMemory(UINT * pBytesPerRow, UINT * pBytesPerImage) = 0;
   virtual void RotateBuffer(IMTLDynamicBufferExchange * pool) = 0;
+  virtual D3D11_BIND_FLAG GetBindFlag() = 0;
 };
 
 using BufferSwapCallback = std::function<void(MTL::Buffer *resource)>;
-
-/**
-It's separated from IMTLDynamicBuffer because of dynamic texture,
-which is not bindable (but a shader resource view is)
- */
-DEFINE_COM_INTERFACE("0988488c-75fb-44f3-859a-b6fb2d022239",
-                     IMTLDynamicBindable)
-    : public IUnknown {
-  /**
-  Get a Bindable from the dynamic resource, and callback when
-  the underlying buffer renamed/rotated.
-  Note the returned Bindable will have refcount+=1, and when
-  it becomes 0, the callback will be automatically unregistered
-  The ideal usage of callback is to simply set a dirty bit, so
-  that MAP_DISCARD can be predictably efficient
-   */
-  virtual void GetBindable(IMTLBindable * *ppResource,
-                           BufferSwapCallback && onBufferSwap) = 0;
-};
 
 DEFINE_COM_INTERFACE("252c1a0e-1c61-42e7-9b57-23dfe3d73d49", IMTLD3D11Staging)
     : public IUnknown {
@@ -337,7 +319,6 @@ public:
     }
 
     if (riid == __uuidof(IMTLDynamicBuffer) || riid == __uuidof(IMTLBindable) ||
-        riid == __uuidof(IMTLDynamicBindable) ||
         riid == __uuidof(IMTLD3D11Staging)) {
       // silent these interfaces
       return E_NOINTERFACE;
@@ -497,8 +478,7 @@ public:
       return S_OK;
     }
 
-    if (riid == __uuidof(IMTLDynamicBuffer) || riid == __uuidof(IMTLBindable) ||
-        riid == __uuidof(IMTLDynamicBindable)) {
+    if (riid == __uuidof(IMTLDynamicBuffer) || riid == __uuidof(IMTLBindable)) {
       // silent these interfaces
       return E_NOINTERFACE;
     }
