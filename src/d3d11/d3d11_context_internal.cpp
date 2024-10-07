@@ -2341,6 +2341,7 @@ public:
           auto &sampler = ShaderStage.Samplers[slot];
           write_to_it[arg.StructurePtrOffset] =
               sampler.Sampler->GetArgumentHandle();
+          write_to_it[arg.StructurePtrOffset + 1] = 0;
           ShaderStage.Samplers.clear_dirty(slot);
           break;
         }
@@ -2350,20 +2351,13 @@ public:
             // ERR("expect shader resource at slot ", slot, " but none is
             // bound.");
             write_to_it[arg.StructurePtrOffset] = 0;
-            // ? we are doing something dangerous
-            // need to verify that 0 have defined behavior (e.g. no gpu crash)
-            if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_ELEMENT_WIDTH) {
-              write_to_it[arg.StructurePtrOffset + 1] = 0;
-            }
+            write_to_it[arg.StructurePtrOffset + 1] = 0;
             break;
           }
           auto &srv = ShaderStage.SRVs[slot];
           auto arg_data = srv.SRV->GetArgumentData(&pTracker);
           if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_BUFFER) {
             write_to_it[arg.StructurePtrOffset] = arg_data.buffer();
-          }
-          if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_ELEMENT_WIDTH) {
-            write_to_it[arg.StructurePtrOffset + 1] = arg_data.width();
           }
           if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE) {
             if (arg_data.requiresContext()) {
@@ -2373,6 +2367,11 @@ public:
             } else {
               write_to_it[arg.StructurePtrOffset] = arg_data.texture();
             }
+          }
+          if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_ELEMENT_WIDTH) {
+            write_to_it[arg.StructurePtrOffset + 1] = arg_data.width();
+          } else {
+            write_to_it[arg.StructurePtrOffset + 1] = 0;
           }
           if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_UAV_COUNTER) {
             D3D11_ASSERT(0 && "srv can not have counter associated");
@@ -2413,6 +2412,8 @@ public:
           }
           if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_ELEMENT_WIDTH) {
             write_to_it[arg.StructurePtrOffset + 1] = arg_data.width();
+          } else {
+            write_to_it[arg.StructurePtrOffset + 1] = 0;
           }
           if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE) {
             if (arg_data.requiresContext()) {
