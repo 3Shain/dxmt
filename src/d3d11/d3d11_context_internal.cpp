@@ -2341,7 +2341,8 @@ public:
           auto &sampler = ShaderStage.Samplers[slot];
           write_to_it[arg.StructurePtrOffset] =
               sampler.Sampler->GetArgumentHandle();
-          write_to_it[arg.StructurePtrOffset + 1] = 0;
+          write_to_it[arg.StructurePtrOffset + 1] =
+              (uint64_t)std::bit_cast<uint32_t>(sampler.Sampler->GetLODBias());
           ShaderStage.Samplers.clear_dirty(slot);
           break;
         }
