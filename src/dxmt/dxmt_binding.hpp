@@ -23,18 +23,22 @@ struct EncodingContext {
 struct tag_swapchain_backbuffer_t {};
 constexpr tag_swapchain_backbuffer_t tag_swapchain_backbuffer{};
 
+namespace impl {
+enum class BindingType : uint32_t {
+  Null = 0,
+  JustBuffer = 0b1,
+  BoundedBuffer = 0b11,
+  UAVWithCounter = 0b111,
+  WithBoundInformation = 0b10,
+  JustTexture = 0b1000'0000,
+  TextureViewOfBuffer = 0b1100'0010,
+  BackBufferSource_sRGB = 0b1'0000'0000,
+  BackBufferSource_Linear = 0b10'0000'0000,
+};
+}
+
 class BindingRef {
-  enum class Type : uint64_t {
-    Null = 0,
-    JustBuffer = 0b1,
-    BoundedBuffer = 0b11,
-    UAVWithCounter = 0b111,
-    WithBoundInformation = 0b10,
-    JustTexture = 0b10000000,
-    TextureViewOfBuffer = 0b11000010,
-    BackBufferSource_sRGB = 0b100000000,
-    BackBufferSource_Linear = 0b1000000000,
-  };
+  using Type = impl::BindingType;
   Type type;
   MTL::Resource *resource_ptr;
   union {
@@ -198,16 +202,7 @@ public:
 };
 
 class ArgumentData {
-  enum class Type : uint32_t {
-    JustBuffer = 0b1,
-    BoundedBuffer = 0b11,
-    UAVWithCounter = 0b111,
-    WithBoundInformation = 0b10,
-    JustTexture = 0b10000000,
-    TextureViewOfBuffer = 0b10000010,
-    BackBufferSource_sRGB = 0b100000000,
-    BackBufferSource_Linear = 0b1000000000,
-  };
+  using Type = impl::BindingType;
   Type type;
   uint32_t size;
   uint64_t resource_handle;
