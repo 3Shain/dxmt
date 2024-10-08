@@ -121,7 +121,7 @@ auto setup_binding_table(
 ) {
   uint32_t binding_table_index = ~0u;
   uint32_t cbuf_table_index = ~0u;
-  if (!shader_info->binding_table.empty()) {
+  if (!shader_info->binding_table.Empty()) {
     auto [type, metadata] = shader_info->binding_table.Build(
       module.getContext(), module.getDataLayout()
     );
@@ -136,7 +136,7 @@ auto setup_binding_table(
         .arg_name = "binding_table",
       });
   }
-  if (!shader_info->binding_table_cbuffer.empty()) {
+  if (!shader_info->binding_table_cbuffer.Empty()) {
     auto [type, metadata] = shader_info->binding_table_cbuffer.Build(
       module.getContext(), module.getDataLayout()
     );
@@ -2810,6 +2810,7 @@ int SM50Initialize(
       sm50_shader->patch_constant_scalars.size();
     pRefl->ThreadsPerPatch =
       next_pow2(sm50_shader->hull_maximum_threads_per_patch);
+    pRefl->ArgumentTableQwords = binding_table.Size();
   }
 
   *ppShader = (SM50Shader *)sm50_shader;

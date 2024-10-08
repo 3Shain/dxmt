@@ -2234,6 +2234,7 @@ public:
 
     auto ConstantBufferCount = reflection->NumConstantBuffers;
     auto BindingCount = reflection->NumArguments;
+    auto ArgumentTableQwords = reflection->ArgumentTableQwords;
     CommandChunk *chk = cmd_queue.CurrentChunk();
     auto encoderId = chk->current_encoder_id();
 
@@ -2319,9 +2320,7 @@ public:
     }
 
     if (BindingCount && (dirty_sampler || dirty_srv || dirty_uav)) {
-
-      /* FIXME: we are over-allocating */
-      auto [heap, offset] = chk->allocate_gpu_heap(BindingCount * 8 * 3, 16);
+      auto [heap, offset] = chk->allocate_gpu_heap(ArgumentTableQwords * 8, 16);
       uint64_t *write_to_it = chk->gpu_argument_heap_contents + (offset >> 3);
 
       for (unsigned i = 0; i < BindingCount; i++) {

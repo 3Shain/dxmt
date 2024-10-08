@@ -453,7 +453,9 @@ public:
   auto Build(llvm::LLVMContext &context, const llvm::DataLayout &layout) const
     -> std::tuple<llvm::StructType *, llvm::MDNode *>;
 
-  auto empty() const { return fieldsType.empty(); }
+  auto Empty() const { return fieldsType.empty(); }
+
+  auto Size() const { return fieldsType.size(); }
 
 private:
   std::vector<ArgumentBufferArguments> fieldsType;
