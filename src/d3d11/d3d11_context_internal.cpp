@@ -2363,7 +2363,7 @@ public:
           if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE) {
             if (arg_data.requiresContext()) {
               chk->emit([=, ref = srv.SRV](CommandChunk::context &ctx) {
-                write_to_it[arg.StructurePtrOffset] = arg_data.resource(&ctx);
+                write_to_it[arg.StructurePtrOffset] = arg_data.texture(&ctx);
               });
             } else {
               write_to_it[arg.StructurePtrOffset] = arg_data.texture();
@@ -2419,7 +2419,7 @@ public:
           if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE) {
             if (arg_data.requiresContext()) {
               chk->emit([=, ref = uav.View](CommandChunk::context &ctx) {
-                write_to_it[arg.StructurePtrOffset] = arg_data.resource(&ctx);
+                write_to_it[arg.StructurePtrOffset] = arg_data.texture(&ctx);
               });
             } else {
               write_to_it[arg.StructurePtrOffset] = arg_data.texture();

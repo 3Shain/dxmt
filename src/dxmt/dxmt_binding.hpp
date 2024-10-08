@@ -249,6 +249,19 @@ public:
     return 0;
   }
 
+  uint64_t texture(EncodingContext *context) const {
+    if ((uint64_t)type & (uint64_t)Type::BackBufferSource_sRGB) {
+      return ptr->GetCurrentFrameBackBuffer(true)->gpuResourceID()._impl;
+    }
+    if ((uint64_t)type & (uint64_t)Type::BackBufferSource_Linear) {
+      return ptr->GetCurrentFrameBackBuffer(false)->gpuResourceID()._impl;
+    }
+    if ((uint64_t)type & (uint64_t)Type::JustTexture) {
+      return resource_handle;
+    }
+    return 0;
+  }
+
   uint64_t width() const {
     if (((uint64_t)type & (uint64_t)Type::WithBoundInformation) ==
         (uint64_t)Type::WithBoundInformation) {
@@ -262,18 +275,6 @@ public:
       return buffer_handle;
     }
     return DXMT_NO_COUNTER;
-  }
-
-  uint64_t resource() const { return resource_handle; }
-
-  uint64_t resource(EncodingContext *context) const {
-    if ((uint64_t)type & (uint64_t)Type::BackBufferSource_sRGB) {
-      return ptr->GetCurrentFrameBackBuffer(true)->gpuResourceID()._impl;
-    }
-    if ((uint64_t)type & (uint64_t)Type::BackBufferSource_Linear) {
-      return ptr->GetCurrentFrameBackBuffer(false)->gpuResourceID()._impl;
-    }
-    return resource();
   }
 };
 } // namespace dxmt
