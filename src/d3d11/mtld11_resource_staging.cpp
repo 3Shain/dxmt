@@ -33,7 +33,6 @@ public:
     }
     cpu_coherent_after_finished_seq_id = seq_id; // coherent read-after-write
     gpu_occupied_until_finished_seq_id = seq_id; // coherent write-after-write
-    pBuffer->Type = MTL_BIND_BUFFER_UNBOUNDED;
     pBuffer->Buffer = buffer.ptr();
     *pBytesPerRow = bytes_per_row;
     *pBytesPerImage = bytes_per_image;
@@ -47,7 +46,6 @@ public:
     }
     // read-after-read doesn't hurt anyway
     gpu_occupied_until_finished_seq_id = seq_id; // coherent write-after-read
-    pBuffer->Type = MTL_BIND_BUFFER_UNBOUNDED;
     pBuffer->Buffer = buffer.ptr();
     *pBytesPerRow = bytes_per_row;
     *pBytesPerImage = bytes_per_image;
