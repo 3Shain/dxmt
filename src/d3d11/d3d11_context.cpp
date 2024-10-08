@@ -315,12 +315,15 @@ public:
   }
 
   void SetResourceMinLOD(ID3D11Resource *pResource, FLOAT MinLOD) override {
-    // FIXME: `min_lod_clamp` can do this but it's in the shader
-    ERR_ONCE("Not implemented");
+    if (auto expected = com_cast<IMTLMinLODClampable>(pResource)) {
+      expected->SetMinLOD(MinLOD);
+    }
   }
 
   FLOAT GetResourceMinLOD(ID3D11Resource *pResource) override {
-    ERR_ONCE("Not implemented");
+    if (auto expected = com_cast<IMTLMinLODClampable>(pResource)) {
+      return expected->GetMinLOD();
+    }
     return 0.0f;
   }
 

@@ -173,6 +173,13 @@ DEFINE_COM_INTERFACE("252c1a0e-1c61-42e7-9b57-23dfe3d73d49", IMTLD3D11Staging)
   virtual void Unmap(uint32_t Subresource) = 0;
 };
 
+DEFINE_COM_INTERFACE("9a6f6549-d4b1-45ea-8794-8503d190d3d1",
+                     IMTLMinLODClampable)
+    : public IUnknown {
+  virtual void SetMinLOD(float MinLOD) = 0;
+  virtual float GetMinLOD() = 0;
+};
+
 namespace dxmt {
 
 template <typename RESOURCE_DESC>
