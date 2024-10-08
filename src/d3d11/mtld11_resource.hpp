@@ -597,9 +597,19 @@ CreateMTLRenderTargetView(IMTLD3D11Device *pDevice, MTL::Texture *pResource,
                           MTL::Texture **ppView,
                           MTL_RENDER_TARGET_VIEW_DESC *pMTLDesc);
 
+struct MTL_TEXTURE_BUFFER_LAYOUT {
+  uint32_t ByteOffset;
+  uint32_t ByteWidth;
+  uint32_t ViewElementOffset;
+  uint32_t AdjustedByteOffset;
+  uint32_t AdjustedBytesPerRow;
+};
+
 template <typename VIEW_DESC>
-HRESULT CreateMTLTextureView(IMTLD3D11Device *pDevice, MTL::Buffer *pResource,
-                             const VIEW_DESC *pViewDesc, MTL::Texture **ppView);
+HRESULT CreateMTLTextureBufferView(IMTLD3D11Device *pDevice,
+                                   const VIEW_DESC *pViewDesc,
+                                   MTL::TextureDescriptor **ppViewDesc,
+                                   MTL_TEXTURE_BUFFER_LAYOUT *pLayout);
 
 template <typename TEXTURE_DESC>
 void GetMipmapSize(const TEXTURE_DESC *pDesc, uint32_t level, uint32_t *pWidth,

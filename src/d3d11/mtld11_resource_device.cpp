@@ -146,21 +146,27 @@ public:
       return S_OK;
     }
 
-    Obj<MTL::Texture> view;
-    if (FAILED(CreateMTLTextureView(this->m_parent, this->buffer, &finalDesc,
-                                    &view))) {
+    Obj<MTL::TextureDescriptor> view_desc;
+    MTL_TEXTURE_BUFFER_LAYOUT layout;
+    if (FAILED(CreateMTLTextureBufferView(this->m_parent, &finalDesc,
+                                          &view_desc, &layout))) {
       return E_FAIL;
     }
-    uint32_t offset = view->bufferOffset();
-    uint32_t size = view->bufferBytesPerRow();
+    view_desc->setResourceOptions(buffer->resourceOptions());
+    auto byte_offset = layout.ByteOffset;
+    auto byte_width = layout.ByteWidth;
+    auto element_offset = layout.ViewElementOffset;
+    Obj<MTL::Texture> view = buffer->newTexture(
+        view_desc, layout.AdjustedByteOffset, layout.AdjustedBytesPerRow);
     *ppView = ref(new SRV(&finalDesc, this, m_parent,
-                          ArgumentData(view->gpuResourceID(), view.ptr(),
-                                       buffer_handle + offset, size),
+                          ArgumentData(view->gpuResourceID(),
+                                       buffer_handle + byte_offset, byte_width,
+                                       element_offset),
                           [view = std::move(view), buffer = this->buffer.ptr(),
-                           size, offset](auto _this) {
+                           byte_width, byte_offset](auto _this) {
                             return BindingRef(
                                 static_cast<ID3D11ShaderResourceView *>(_this),
-                                view.ptr(), buffer, size, offset);
+                                view.ptr(), buffer, byte_width, byte_offset);
                           }));
     return S_OK;
   };
@@ -307,21 +313,27 @@ public:
           }));
       return S_OK;
     }
-    Obj<MTL::Texture> view;
-    if (FAILED(CreateMTLTextureView(this->m_parent, this->buffer, &finalDesc,
-                                    &view))) {
+    Obj<MTL::TextureDescriptor> view_desc;
+    MTL_TEXTURE_BUFFER_LAYOUT layout;
+    if (FAILED(CreateMTLTextureBufferView(this->m_parent, &finalDesc,
+                                          &view_desc, &layout))) {
       return E_FAIL;
     }
-    uint32_t offset = view->bufferOffset();
-    uint32_t size = view->bufferBytesPerRow();
+    view_desc->setResourceOptions(buffer->resourceOptions());
+    auto byte_offset = layout.ByteOffset;
+    auto byte_width = layout.ByteWidth;
+    auto element_offset = layout.ViewElementOffset;
+    Obj<MTL::Texture> view = buffer->newTexture(
+        view_desc, layout.AdjustedByteOffset, layout.AdjustedBytesPerRow);
     *ppView = ref(new UAV(&finalDesc, this, m_parent,
-                          ArgumentData(view->gpuResourceID(), view.ptr(),
-                                       buffer_handle + offset, size),
+                          ArgumentData(view->gpuResourceID(),
+                                       buffer_handle + byte_offset, byte_width,
+                                       element_offset),
                           [view = std::move(view), buffer = this->buffer.ptr(),
-                           size, offset](auto _this) {
+                           byte_offset, byte_width](auto _this) {
                             return BindingRef(
                                 static_cast<ID3D11UnorderedAccessView *>(_this),
-                                view.ptr(), buffer, size, offset);
+                                view.ptr(), buffer, byte_offset, byte_width);
                           }));
     return S_OK;
   };
