@@ -96,6 +96,9 @@ public:
     try {
       switch (pDesc->Usage) {
       case D3D11_USAGE_DEFAULT:
+        if (pDesc->BindFlags == D3D11_BIND_CONSTANT_BUFFER)
+          return CreateDynamicBuffer(this, pDesc, pInitialData, ppBuffer);
+        return CreateDeviceBuffer(this, pDesc, pInitialData, ppBuffer);
       case D3D11_USAGE_IMMUTABLE:
         return CreateDeviceBuffer(this, pDesc, pInitialData, ppBuffer);
       case D3D11_USAGE_DYNAMIC:

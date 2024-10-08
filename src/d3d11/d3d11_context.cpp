@@ -667,6 +667,15 @@ public:
         copy_len = pDstBox->right - copy_offset;
       }
 
+      if (auto dynamic = com_cast<IMTLDynamicBuffer>(pDstResource)) {
+        if (copy_len == desc.ByteWidth) {
+          D3D11_MAPPED_SUBRESOURCE mapped;
+          Map(pDstResource, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
+          memcpy(mapped.pData, pSrcData, copy_len);
+          Unmap(pDstResource, 0);
+          return;
+        }
+      }
       if (auto bindable = com_cast<IMTLBindable>(pDstResource)) {
         if (!bindable->GetContentionState(cmd_queue.CoherentSeqId())) {
           auto _ = bindable->UseBindable(cmd_queue.CurrentSeqId());
