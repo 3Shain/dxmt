@@ -277,9 +277,7 @@ public:
                                           &desc, &layout))) {
       return E_FAIL;
     }
-    desc->setCpuCacheMode(m_parent->IsTraced()
-                              ? MTL::CPUCacheModeDefaultCache
-                              : MTL::CPUCacheModeWriteCombined);
+    desc->setResourceOptions(this->buffer_dynamic->resourceOptions());
     auto srv = ref(
         new TBufferSRV(&finalDesc, this, m_parent, std::move(desc), layout));
     {
@@ -450,9 +448,8 @@ public:
     desc->setSampleCount(1);
     desc->setUsage(MTL::TextureUsageShaderRead);
     desc->setStorageMode(MTL::StorageModeShared);
-    desc->setCpuCacheMode(m_parent->IsTraced()
-                              ? MTL::CPUCacheModeDefaultCache
-                              : MTL::CPUCacheModeWriteCombined);
+
+    desc->setResourceOptions(buffer->resourceOptions());
     desc->setPixelFormat(format.PixelFormat);
     auto srv = ref(new SRV(&finalDesc, this, m_parent, std::move(desc)));
 
