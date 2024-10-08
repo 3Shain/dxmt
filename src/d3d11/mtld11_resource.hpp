@@ -165,8 +165,6 @@ DEFINE_COM_INTERFACE("65feb8c5-01de-49df-bf58-d115007a117d", IMTLDynamicBuffer)
   virtual D3D11_BIND_FLAG GetBindFlag() = 0;
 };
 
-using BufferSwapCallback = std::function<void(MTL::Buffer *resource)>;
-
 DEFINE_COM_INTERFACE("252c1a0e-1c61-42e7-9b57-23dfe3d73d49", IMTLD3D11Staging)
     : public IUnknown {
 
