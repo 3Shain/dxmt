@@ -2426,7 +2426,7 @@ public:
             }
           }
           if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_UAV_COUNTER) {
-            auto counter_handle = arg_data.counter_handle();
+            auto counter_handle = arg_data.counter();
             if (counter_handle != DXMT_NO_COUNTER) {
               auto counter = cmd_queue.counter_pool.GetCounter(counter_handle);
               chk->emit([counter](CommandChunk::context &ctx) {
