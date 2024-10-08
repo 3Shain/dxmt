@@ -43,6 +43,7 @@ private:
         : SRVBase(pDesc, pResource, pDevice), offset(offset), width(width) {}
 
     ~SRV() {
+      std::lock_guard lock(resource->srv_lock);
       auto &vec = resource->weak_srvs;
       vec.erase(std::remove(vec.begin(), vec.end(), this), vec.end());
     }
@@ -84,6 +85,7 @@ private:
           layout(layout) {}
 
     ~TBufferSRV() {
+      std::lock_guard lock(resource->srv_lock);
       auto &vec = resource->weak_srvs_tbuffer;
       vec.erase(std::remove(vec.begin(), vec.end(), this), vec.end());
     }
@@ -131,6 +133,7 @@ private:
 
   std::vector<SRV *> weak_srvs;
   std::vector<TBufferSRV *> weak_srvs_tbuffer;
+  dxmt::mutex srv_lock;
 
   std::unique_ptr<BufferPool> pool;
 
@@ -199,11 +202,14 @@ public:
           NS::String::string(debug_name.c_str(), NS::ASCIIStringEncoding));
     }
 #endif
-    for (auto srv : weak_srvs) {
-      srv->RotateView();
-    }
-    for (auto srv : weak_srvs_tbuffer) {
-      srv->RotateView();
+    {
+      std::lock_guard lock(srv_lock);
+      for (auto srv : weak_srvs) {
+        srv->RotateView();
+      }
+      for (auto srv : weak_srvs_tbuffer) {
+        srv->RotateView();
+      }
     }
   }
 
@@ -231,7 +237,12 @@ public:
       CalculateBufferViewOffsetAndSize(
           this->desc, desc.StructureByteStride, finalDesc.Buffer.FirstElement,
           finalDesc.Buffer.NumElements, offset, size);
-      *ppView = ref(new SRV(&finalDesc, this, m_parent, offset, size));
+      auto srv = ref(new SRV(&finalDesc, this, m_parent, offset, size));
+      {
+        std::lock_guard lock(srv_lock);
+        weak_srvs.push_back(srv);
+      }
+      *ppView = srv;
       return S_OK;
     }
     if (finalDesc.ViewDimension == D3D11_SRV_DIMENSION_BUFFEREX &&
@@ -244,7 +255,12 @@ public:
       CalculateBufferViewOffsetAndSize(
           this->desc, sizeof(uint32_t), finalDesc.Buffer.FirstElement,
           finalDesc.Buffer.NumElements, offset, size);
-      *ppView = ref(new SRV(&finalDesc, this, m_parent, offset, size));
+      auto srv = ref(new SRV(&finalDesc, this, m_parent, offset, size));
+      {
+        std::lock_guard lock(srv_lock);
+        weak_srvs.push_back(srv);
+      }
+      *ppView = srv;
       return S_OK;
     }
 
@@ -266,7 +282,10 @@ public:
                               : MTL::CPUCacheModeWriteCombined);
     auto srv = ref(
         new TBufferSRV(&finalDesc, this, m_parent, std::move(desc), layout));
-    weak_srvs_tbuffer.push_back(srv);
+    {
+      std::lock_guard lock(srv_lock);
+      weak_srvs_tbuffer.push_back(srv);
+    }
     *ppView = srv;
     srv->RotateView();
     return S_OK;
@@ -436,6 +455,7 @@ public:
                               : MTL::CPUCacheModeWriteCombined);
     desc->setPixelFormat(format.PixelFormat);
     auto srv = ref(new SRV(&finalDesc, this, m_parent, std::move(desc)));
+
     weak_srvs.push_back(srv);
     *ppView = srv;
     srv->RotateView();
