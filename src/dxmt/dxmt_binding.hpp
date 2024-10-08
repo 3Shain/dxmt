@@ -29,6 +29,7 @@ enum class BindingType : uint32_t {
   JustTexture = 0b1000'0000,
   WithBackedBuffer = 0b0100'0000,
   WithLODClamp = 0b0010'0000,
+  WithElementOffset = 0b0001'0000,
   BackBufferSource_sRGB = 0b1'0000'0000,
   BackBufferSource_Linear = 0b10'0000'0000,
 };
@@ -222,7 +223,10 @@ class ArgumentData {
   Type type;
   union {
     float min_lod_;
-    uint32_t size;
+    struct {
+      uint32_t size : 28;
+      uint32_t element_offset : 4;
+    } packed_tbuffer_data;
   };
   uint64_t resource_handle;
   union {
@@ -233,11 +237,11 @@ class ArgumentData {
 
 public:
   ArgumentData(uint64_t h, uint32_t c) noexcept
-      : type(Type::JustBuffer | Type::WithBoundInformation), size(c),
-        resource_handle(h) {}
+      : type(Type::JustBuffer | Type::WithBoundInformation),
+        packed_tbuffer_data({c, 0}), resource_handle(h) {}
   ArgumentData(uint64_t h, uint32_t c, uint64_t ctr) noexcept
       : type(Type::JustBuffer | Type::WithBoundInformation | Type::WithCounter),
-        size(c), resource_handle(h), counter_handle(ctr) {}
+        packed_tbuffer_data({c, 0}), resource_handle(h), counter_handle(ctr) {}
   ArgumentData(MTL::ResourceID id, MTL::Texture *) noexcept
       : type(Type::JustTexture), resource_handle(id._impl) {}
   ArgumentData(MTL::ResourceID id, float min_lod) noexcept
@@ -247,7 +251,14 @@ public:
                uint32_t size) noexcept
       : type(Type::JustTexture | Type::WithBackedBuffer |
              Type::WithBoundInformation),
-        size(size), resource_handle(id._impl), buffer_handle(buffer_handle) {}
+        packed_tbuffer_data({size, 0}), resource_handle(id._impl),
+        buffer_handle(buffer_handle) {}
+  ArgumentData(MTL::ResourceID id, uint64_t buffer_handle, uint32_t size,
+               uint32_t element_offset) noexcept
+      : type(Type::JustTexture | Type::WithBackedBuffer |
+             Type::WithBoundInformation | Type::WithElementOffset),
+        packed_tbuffer_data({size, element_offset}), resource_handle(id._impl),
+        buffer_handle(buffer_handle) {}
   ArgumentData(BackBufferSource *t, bool srgb) noexcept
       : type(srgb ? Type::BackBufferSource_sRGB
                   : Type::BackBufferSource_Linear),
@@ -290,7 +301,7 @@ public:
 
   uint32_t width() const {
     if (type & Type::WithBoundInformation) {
-      return size;
+      return packed_tbuffer_data.size;
     }
     return 0;
   }
@@ -307,6 +318,13 @@ public:
       return min_lod_;
     }
     return 0.0f;
+  }
+
+  uint32_t element_offset() const {
+    if (type & Type::WithElementOffset) {
+      return packed_tbuffer_data.element_offset;
+    }
+    return 0;
   }
 };
 } // namespace dxmt

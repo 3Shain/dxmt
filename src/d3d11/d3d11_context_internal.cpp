@@ -2370,8 +2370,13 @@ public:
           }
           if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_ELEMENT_WIDTH) {
             write_to_it[arg.StructurePtrOffset + 1] = arg_data.width();
-          } else {
-            write_to_it[arg.StructurePtrOffset + 1] = 0;
+          }
+          if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE_MINLOD_CLAMP) {
+            write_to_it[arg.StructurePtrOffset + 1] =
+                std::bit_cast<uint32_t>(arg_data.min_lod());
+          }
+          if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_TBUFFER_OFFSET) {
+            write_to_it[arg.StructurePtrOffset + 1] = arg_data.element_offset();
           }
           if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_UAV_COUNTER) {
             D3D11_ASSERT(0 && "srv can not have counter associated");
@@ -2410,11 +2415,6 @@ public:
           if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_BUFFER) {
             write_to_it[arg.StructurePtrOffset] = arg_data.buffer();
           }
-          if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_ELEMENT_WIDTH) {
-            write_to_it[arg.StructurePtrOffset + 1] = arg_data.width();
-          } else {
-            write_to_it[arg.StructurePtrOffset + 1] = 0;
-          }
           if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE) {
             if (arg_data.requiresContext()) {
               chk->emit([=, ref = uav.View](CommandChunk::context &ctx) {
@@ -2423,6 +2423,16 @@ public:
             } else {
               write_to_it[arg.StructurePtrOffset] = arg_data.texture();
             }
+          }
+          if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_ELEMENT_WIDTH) {
+            write_to_it[arg.StructurePtrOffset + 1] = arg_data.width();
+          }
+          if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE_MINLOD_CLAMP) {
+            write_to_it[arg.StructurePtrOffset + 1] =
+                std::bit_cast<uint32_t>(arg_data.min_lod());
+          }
+          if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_TBUFFER_OFFSET) {
+            write_to_it[arg.StructurePtrOffset + 1] = arg_data.element_offset();
           }
           if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_UAV_COUNTER) {
             auto counter_handle = arg_data.counter();

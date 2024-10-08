@@ -2692,8 +2692,12 @@ int SM50Initialize(
     if (srv.resource_type == ResourceType::NonApplicable) {
       flags |= MTL_SM50_SHADER_ARGUMENT_ELEMENT_WIDTH |
                MTL_SM50_SHADER_ARGUMENT_BUFFER;
+    } else if (srv.resource_type == ResourceType::TextureBuffer) {
+      flags |= MTL_SM50_SHADER_ARGUMENT_TBUFFER_OFFSET |
+               MTL_SM50_SHADER_ARGUMENT_TEXTURE;
     } else {
-      flags |= MTL_SM50_SHADER_ARGUMENT_TEXTURE;
+      flags |= MTL_SM50_SHADER_ARGUMENT_TEXTURE_MINLOD_CLAMP |
+               MTL_SM50_SHADER_ARGUMENT_TEXTURE;
     }
     if (srv.read || srv.sampled || srv.compared) {
       flags |= MTL_SM50_SHADER_ARGUMENT_READ_ACCESS;
@@ -2742,8 +2746,12 @@ int SM50Initialize(
     if (uav.resource_type == ResourceType::NonApplicable) {
       flags |= MTL_SM50_SHADER_ARGUMENT_ELEMENT_WIDTH |
                MTL_SM50_SHADER_ARGUMENT_BUFFER;
+    } else if (uav.resource_type == ResourceType::TextureBuffer) {
+      flags |= MTL_SM50_SHADER_ARGUMENT_TBUFFER_OFFSET |
+               MTL_SM50_SHADER_ARGUMENT_TEXTURE;
     } else {
-      flags |= MTL_SM50_SHADER_ARGUMENT_TEXTURE;
+      flags |= MTL_SM50_SHADER_ARGUMENT_TEXTURE_MINLOD_CLAMP |
+               MTL_SM50_SHADER_ARGUMENT_TEXTURE;
     }
     if (uav.read) {
       flags |= MTL_SM50_SHADER_ARGUMENT_READ_ACCESS;
