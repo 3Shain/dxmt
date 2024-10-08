@@ -2594,6 +2594,7 @@ public:
     uint32_t VERTEX_BUFFER_SLOTS = 32 - __builtin_clz(slot_mask);
 
     CommandChunk *chk = cmd_queue.CurrentChunk();
+    auto encoderId = chk->current_encoder_id();
     auto currentChunkId = cmd_queue.CurrentSeqId();
     auto [heap, offset] = chk->allocate_gpu_heap(16 * VERTEX_BUFFER_SLOTS, 16);
     VERTEX_BUFFER_ENTRY *entries =
@@ -2614,7 +2615,7 @@ public:
       entries[index].length =
           handle.width() > state.Offset ? handle.width() - state.Offset : 0;
       pTracker->CheckResidency(
-          currentChunkId,
+          encoderId,
           cmdbuf_state == CommandBufferState::TessellationRenderPipelineReady
               ? GetResidencyMask<true>(ShaderType::Vertex, true, false)
               : GetResidencyMask<false>(ShaderType::Vertex, true, false),
