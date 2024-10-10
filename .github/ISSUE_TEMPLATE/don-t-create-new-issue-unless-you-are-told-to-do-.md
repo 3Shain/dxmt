@@ -1,6 +1,6 @@
 ---
-name: Don't create new issue unless you are told to do.
-about: Go to https://discord.gg/9AAKEGWZ first! Otherwise it will be closed!
+name: Don't create new issue unless you are a developer.
+about: Go to https://discord.gg/zh4tKrs6K4 first! Otherwise it will be closed!
 title: ''
 labels: ''
 assignees: ''
