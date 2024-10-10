@@ -68,6 +68,7 @@ public:
   private:
     ArgumentData argument_data;
     F f;
+    SIMPLE_RESIDENCY_TRACKER tracker{};
 
   public:
     SRV(const tag_shader_resource_view<>::DESC1 *pDesc, DeviceBuffer *pResource,
@@ -82,7 +83,7 @@ public:
 
     ArgumentData
     GetArgumentData(SIMPLE_RESIDENCY_TRACKER **ppTracker) override {
-      *ppTracker = &resource->residency;
+      *ppTracker = &tracker;
       return argument_data;
     };
 
@@ -146,21 +147,27 @@ public:
       return S_OK;
     }
 
-    Obj<MTL::Texture> view;
-    if (FAILED(CreateMTLTextureView(this->m_parent, this->buffer, &finalDesc,
-                                    &view))) {
+    Obj<MTL::TextureDescriptor> view_desc;
+    MTL_TEXTURE_BUFFER_LAYOUT layout;
+    if (FAILED(CreateMTLTextureBufferView(this->m_parent, &finalDesc,
+                                          &view_desc, &layout))) {
       return E_FAIL;
     }
-    uint32_t offset = view->bufferOffset();
-    uint32_t size = view->bufferBytesPerRow();
+    view_desc->setResourceOptions(buffer->resourceOptions());
+    auto byte_offset = layout.ByteOffset;
+    auto byte_width = layout.ByteWidth;
+    auto element_offset = layout.ViewElementOffset;
+    Obj<MTL::Texture> view = buffer->newTexture(
+        view_desc, layout.AdjustedByteOffset, layout.AdjustedBytesPerRow);
     *ppView = ref(new SRV(&finalDesc, this, m_parent,
-                          ArgumentData(view->gpuResourceID(), view.ptr(),
-                                       buffer_handle + offset, size),
+                          ArgumentData(view->gpuResourceID(),
+                                       buffer_handle + byte_offset, byte_width,
+                                       element_offset),
                           [view = std::move(view), buffer = this->buffer.ptr(),
-                           size, offset](auto _this) {
+                           byte_width, byte_offset](auto _this) {
                             return BindingRef(
                                 static_cast<ID3D11ShaderResourceView *>(_this),
-                                view.ptr(), buffer, size, offset);
+                                view.ptr(), buffer, byte_width, byte_offset);
                           }));
     return S_OK;
   };
@@ -172,6 +179,7 @@ public:
   private:
     ArgumentData argument_data;
     F f;
+    SIMPLE_RESIDENCY_TRACKER tracker{};
 
   public:
     UAV(const tag_unordered_access_view<>::DESC1 *pDesc,
@@ -187,7 +195,7 @@ public:
 
     ArgumentData
     GetArgumentData(SIMPLE_RESIDENCY_TRACKER **ppTracker) override {
-      *ppTracker = &resource->residency;
+      *ppTracker = &tracker;
       return argument_data;
     };
 
@@ -307,21 +315,27 @@ public:
           }));
       return S_OK;
     }
-    Obj<MTL::Texture> view;
-    if (FAILED(CreateMTLTextureView(this->m_parent, this->buffer, &finalDesc,
-                                    &view))) {
+    Obj<MTL::TextureDescriptor> view_desc;
+    MTL_TEXTURE_BUFFER_LAYOUT layout;
+    if (FAILED(CreateMTLTextureBufferView(this->m_parent, &finalDesc,
+                                          &view_desc, &layout))) {
       return E_FAIL;
     }
-    uint32_t offset = view->bufferOffset();
-    uint32_t size = view->bufferBytesPerRow();
+    view_desc->setResourceOptions(buffer->resourceOptions());
+    auto byte_offset = layout.ByteOffset;
+    auto byte_width = layout.ByteWidth;
+    auto element_offset = layout.ViewElementOffset;
+    Obj<MTL::Texture> view = buffer->newTexture(
+        view_desc, layout.AdjustedByteOffset, layout.AdjustedBytesPerRow);
     *ppView = ref(new UAV(&finalDesc, this, m_parent,
-                          ArgumentData(view->gpuResourceID(), view.ptr(),
-                                       buffer_handle + offset, size),
+                          ArgumentData(view->gpuResourceID(),
+                                       buffer_handle + byte_offset, byte_width,
+                                       element_offset),
                           [view = std::move(view), buffer = this->buffer.ptr(),
-                           size, offset](auto _this) {
+                           byte_offset, byte_width](auto _this) {
                             return BindingRef(
                                 static_cast<ID3D11UnorderedAccessView *>(_this),
-                                view.ptr(), buffer, size, offset);
+                                view.ptr(), buffer, byte_offset, byte_width);
                           }));
     return S_OK;
   };
@@ -359,12 +373,13 @@ CreateDeviceBuffer(IMTLD3D11Device *pDevice, const D3D11_BUFFER_DESC *pDesc,
 #pragma region DeviceTexture
 
 template <typename tag_texture>
-class DeviceTexture : public TResourceBase<tag_texture, IMTLBindable> {
+class DeviceTexture : public TResourceBase<tag_texture, IMTLBindable, IMTLMinLODClampable> {
 private:
   Obj<MTL::Texture> texture;
   MTL::ResourceID texture_handle;
   SIMPLE_RESIDENCY_TRACKER residency{};
   SIMPLE_OCCUPANCY_TRACKER occupancy{};
+  float min_lod = 0.0;
 
   using SRVBase =
       TResourceViewBase<tag_shader_resource_view<DeviceTexture<tag_texture>>,
@@ -390,7 +405,7 @@ private:
     ArgumentData
     GetArgumentData(SIMPLE_RESIDENCY_TRACKER **ppTracker) override {
       *ppTracker = &tracker;
-      return ArgumentData(view_handle, view.ptr());
+      return ArgumentData(view_handle, this->resource->min_lod);
     };
 
     void GetLogicalResourceOrView(REFIID riid,
@@ -430,7 +445,7 @@ private:
     ArgumentData
     GetArgumentData(SIMPLE_RESIDENCY_TRACKER **ppTracker) override {
       *ppTracker = &tracker;
-      return ArgumentData(view_handle, view.ptr());
+      return ArgumentData(view_handle, this->resource->min_lod);
     };
 
     void GetLogicalResourceOrView(REFIID riid,
@@ -513,7 +528,8 @@ private:
 public:
   DeviceTexture(const tag_texture::DESC1 *pDesc, MTL::Texture *texture,
                 IMTLD3D11Device *pDevice)
-      : TResourceBase<tag_texture, IMTLBindable>(*pDesc, pDevice),
+      : TResourceBase<tag_texture, IMTLBindable, IMTLMinLODClampable>(*pDesc,
+                                                                      pDevice),
         texture(texture), texture_handle(texture->gpuResourceID()) {}
 
   BindingRef UseBindable(uint64_t seq_id) override {
@@ -641,6 +657,10 @@ public:
     texture->setLabel(
         NS::String::string((char *)Name, NS::ASCIIStringEncoding));
   }
+
+  void SetMinLOD(float MinLod) override { min_lod = MinLod; }
+
+  float GetMinLOD() override { return min_lod; }
 };
 
 template <typename tag>

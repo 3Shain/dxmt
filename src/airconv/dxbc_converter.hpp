@@ -34,7 +34,7 @@ struct ShaderResourceViewInfo {
 
   uint32_t strucure_stride = 0;
   uint32_t arg_index;
-  uint32_t arg_size_index;
+  uint32_t arg_metadata_index;
 };
 struct UnorderedAccessViewInfo {
   ResourceRange range;
@@ -48,7 +48,7 @@ struct UnorderedAccessViewInfo {
 
   uint32_t strucure_stride = 0;
   uint32_t arg_index;
-  uint32_t arg_size_index;
+  uint32_t arg_metadata_index;
   uint32_t arg_counter_index;
 };
 struct ConstantBufferInfo {
@@ -59,6 +59,7 @@ struct ConstantBufferInfo {
 struct SamplerInfo {
   ResourceRange range;
   uint32_t arg_index;
+  uint32_t arg_metadata_index;
 };
 
 struct ThreadgroupBufferInfo {
@@ -128,21 +129,32 @@ struct phase_temp {
   std::unordered_map<uint32_t, indexable_register_file> indexable_temp_map{};
 };
 
+struct sampler_descriptor {
+  IndexedIRValue handle;
+  IndexedIRValue bias;
+};
+
+struct texture_descriptor {
+  air::MSLTexture texture_info;
+  IndexedIRValue resource_id;
+  IndexedIRValue metadata;
+};
+
+struct buffer_descriptor {
+  uint32_t structure_stride;
+  IndexedIRValue resource_id;
+  IndexedIRValue metadata;
+};
+
 struct io_binding_map {
   llvm::GlobalVariable *icb = nullptr;
   llvm::Value *icb_float = nullptr;
   std::unordered_map<uint32_t, IndexedIRValue> cb_range_map{};
-  std::unordered_map<uint32_t, IndexedIRValue> sampler_range_map{};
-  std::unordered_map<uint32_t, std::tuple<air::MSLTexture, IndexedIRValue>>
-    srv_range_map{};
-  std::unordered_map<
-    uint32_t, std::tuple<IndexedIRValue, IndexedIRValue, uint32_t>>
-    srv_buf_range_map{};
-  std::unordered_map<uint32_t, std::tuple<air::MSLTexture, IndexedIRValue>>
-    uav_range_map{};
-  std::unordered_map<
-    uint32_t, std::tuple<IndexedIRValue, IndexedIRValue, uint32_t>>
-    uav_buf_range_map{};
+  std::unordered_map<uint32_t, sampler_descriptor> sampler_range_map{};
+  std::unordered_map<uint32_t, texture_descriptor> srv_range_map{};
+  std::unordered_map<uint32_t, buffer_descriptor> srv_buf_range_map{};
+  std::unordered_map<uint32_t, texture_descriptor> uav_range_map{};
+  std::unordered_map<uint32_t, buffer_descriptor> uav_buf_range_map{};
   std::unordered_map<uint32_t, std::pair<uint32_t, llvm::GlobalVariable *>>
     tgsm_map{};
   std::unordered_map<uint32_t, IndexedIRValue> uav_counter_range_map{};

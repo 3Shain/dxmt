@@ -37,24 +37,8 @@ DEFINE_COM_INTERFACE("d8a49d20-9a1f-4bb8-9ee6-442e064dce23", IDXMTResource)
       ID3D11DepthStencilView **ppView) = 0;
 };
 
-enum MTL_CTX_BIND_TYPE {
-  MTL_BIND_BUFFER_UNBOUNDED = 0,
-  MTL_BIND_TEXTURE = 1,
-  MTL_BIND_BUFFER_BOUNDED = 2,
-  // MTL_BIND_TEXTURE_MINLOD = 3,
-  MTL_BIND_UAV_WITH_COUNTER = 4
-  // MTL_BIND_SWAPCHAIN_BACKBUFFER = 5,
-};
-
 struct MTL_STAGING_RESOURCE {
-  MTL_CTX_BIND_TYPE Type;
-  UINT Padding_unused;
-  union {
-    MTL::Buffer *Buffer;
-    MTL::Texture *Texture;
-  };
-  uint32_t BoundOffset;
-  uint32_t BoundSize;
+  MTL::Buffer *Buffer;
 };
 
 enum MTL_BINDABLE_RESIDENCY_MASK : uint32_t {
@@ -165,8 +149,6 @@ DEFINE_COM_INTERFACE("65feb8c5-01de-49df-bf58-d115007a117d", IMTLDynamicBuffer)
   virtual D3D11_BIND_FLAG GetBindFlag() = 0;
 };
 
-using BufferSwapCallback = std::function<void(MTL::Buffer *resource)>;
-
 DEFINE_COM_INTERFACE("252c1a0e-1c61-42e7-9b57-23dfe3d73d49", IMTLD3D11Staging)
     : public IUnknown {
 
@@ -189,6 +171,13 @@ DEFINE_COM_INTERFACE("252c1a0e-1c61-42e7-9b57-23dfe3d73d49", IMTLD3D11Staging)
                          D3D11_MAP flag,
                          D3D11_MAPPED_SUBRESOURCE * pMappedResource) = 0;
   virtual void Unmap(uint32_t Subresource) = 0;
+};
+
+DEFINE_COM_INTERFACE("9a6f6549-d4b1-45ea-8794-8503d190d3d1",
+                     IMTLMinLODClampable)
+    : public IUnknown {
+  virtual void SetMinLOD(float MinLOD) = 0;
+  virtual float GetMinLOD() = 0;
 };
 
 namespace dxmt {
@@ -608,9 +597,19 @@ CreateMTLRenderTargetView(IMTLD3D11Device *pDevice, MTL::Texture *pResource,
                           MTL::Texture **ppView,
                           MTL_RENDER_TARGET_VIEW_DESC *pMTLDesc);
 
+struct MTL_TEXTURE_BUFFER_LAYOUT {
+  uint32_t ByteOffset;
+  uint32_t ByteWidth;
+  uint32_t ViewElementOffset;
+  uint32_t AdjustedByteOffset;
+  uint32_t AdjustedBytesPerRow;
+};
+
 template <typename VIEW_DESC>
-HRESULT CreateMTLTextureView(IMTLD3D11Device *pDevice, MTL::Buffer *pResource,
-                             const VIEW_DESC *pViewDesc, MTL::Texture **ppView);
+HRESULT CreateMTLTextureBufferView(IMTLD3D11Device *pDevice,
+                                   const VIEW_DESC *pViewDesc,
+                                   MTL::TextureDescriptor **ppViewDesc,
+                                   MTL_TEXTURE_BUFFER_LAYOUT *pLayout);
 
 template <typename TEXTURE_DESC>
 void GetMipmapSize(const TEXTURE_DESC *pDesc, uint32_t level, uint32_t *pWidth,

@@ -1,5 +1,6 @@
 #include "mtld11_resource.hpp"
 #include "objc_pointer.hpp"
+#include "util_math.hpp"
 
 namespace dxmt {
 
@@ -602,9 +603,9 @@ HRESULT CreateMTLTextureView<D3D11_DEPTH_STENCIL_VIEW_DESC>(
 }
 
 template <>
-HRESULT CreateMTLTextureView<D3D11_SHADER_RESOURCE_VIEW_DESC1>(
-    IMTLD3D11Device *pDevice, MTL::Buffer *pResource,
-    const D3D11_SHADER_RESOURCE_VIEW_DESC1 *pViewDesc, MTL::Texture **ppView) {
+HRESULT CreateMTLTextureBufferView<D3D11_SHADER_RESOURCE_VIEW_DESC1>(
+    IMTLD3D11Device *pDevice, const D3D11_SHADER_RESOURCE_VIEW_DESC1 *pViewDesc,
+    MTL::TextureDescriptor **ppViewDesc, MTL_TEXTURE_BUFFER_LAYOUT *pLayout) {
   Com<IMTLDXGIAdatper> adapter;
   pDevice->GetAdapter(&adapter);
   MTL_FORMAT_DESC metal_format;
@@ -612,27 +613,41 @@ HRESULT CreateMTLTextureView<D3D11_SHADER_RESOURCE_VIEW_DESC1>(
     ERR("Failed to create SRV due to unsupported format ", pViewDesc->Format);
     return E_FAIL;
   }
-  // TODO: check PixelFormat is ordinary/packed
-  auto bytes_per_pixel = metal_format.BytesPerTexel;
-  switch (pViewDesc->ViewDimension) {
-  case D3D11_SRV_DIMENSION_BUFFEREX: {
-    if (pViewDesc->BufferEx.Flags) {
-      return E_INVALIDARG;
-    }
-    [[fallthrough]];
+  if (metal_format.IsCompressed) {
+    ERR("Failed to create texture buffer SRV: compressed format not supported");
+    return E_INVALIDARG;
   }
+  switch (pViewDesc->ViewDimension) {
+  case D3D11_SRV_DIMENSION_BUFFEREX:
   case D3D11_SRV_DIMENSION_BUFFER: {
+    auto bytes_per_pixel = metal_format.BytesPerTexel;
     auto first_element = pViewDesc->Buffer.FirstElement;
     auto num_elements = pViewDesc->Buffer.NumElements;
-    auto pool = transfer(NS::AutoreleasePool::alloc()->init());
-    auto texture_desc = MTL::TextureDescriptor::textureBufferDescriptor(
-        metal_format.PixelFormat, num_elements, pResource->resourceOptions(),
-        MTL::TextureUsageShaderRead);
-    // TODO: check offset is aligned with
-    // minimumLinearTextureAlignmentForPixelFormat
-    *ppView =
-        pResource->newTexture(texture_desc, bytes_per_pixel * first_element,
-                              bytes_per_pixel * num_elements);
+    auto byte_offset = first_element * bytes_per_pixel;
+    auto byte_width = num_elements * bytes_per_pixel;
+    auto minimum_alignment =
+        pDevice->GetMTLDevice()->minimumTextureBufferAlignmentForPixelFormat(
+            metal_format.PixelFormat);
+    auto desc = MTL::TextureDescriptor::alloc()->init();
+    desc->setTextureType(MTL::TextureTypeTextureBuffer);
+    desc->setHeight(1);
+    desc->setDepth(1);
+    desc->setArrayLength(1);
+    desc->setMipmapLevelCount(1);
+    desc->setSampleCount(1);
+    desc->setUsage(MTL::TextureUsageShaderRead);
+    desc->setPixelFormat(metal_format.PixelFormat);
+
+    auto offset_for_alignment =
+        byte_offset - alignDown(byte_offset, minimum_alignment);
+    auto element_offset = offset_for_alignment / bytes_per_pixel;
+    desc->setWidth(element_offset + num_elements);
+
+    *ppViewDesc = desc;
+    *pLayout = {byte_offset, byte_width, element_offset,
+                byte_offset - offset_for_alignment,
+                byte_width + offset_for_alignment};
+
     return S_OK;
   }
   default:
@@ -644,33 +659,50 @@ HRESULT CreateMTLTextureView<D3D11_SHADER_RESOURCE_VIEW_DESC1>(
 }
 
 template <>
-HRESULT CreateMTLTextureView<D3D11_UNORDERED_ACCESS_VIEW_DESC1>(
-    IMTLD3D11Device *pDevice, MTL::Buffer *pResource,
-    const D3D11_UNORDERED_ACCESS_VIEW_DESC1 *pViewDesc, MTL::Texture **ppView) {
+HRESULT CreateMTLTextureBufferView<D3D11_UNORDERED_ACCESS_VIEW_DESC1>(
+    IMTLD3D11Device *pDevice,
+    const D3D11_UNORDERED_ACCESS_VIEW_DESC1 *pViewDesc,
+    MTL::TextureDescriptor **ppViewDesc, MTL_TEXTURE_BUFFER_LAYOUT *pLayout) {
   Com<IMTLDXGIAdatper> adapter;
   pDevice->GetAdapter(&adapter);
   MTL_FORMAT_DESC metal_format;
   if (FAILED(adapter->QueryFormatDesc(pViewDesc->Format, &metal_format))) {
     return E_FAIL;
   }
-  // TODO: check PixelFormat is ordinary/packed
-  auto bytes_per_pixel = metal_format.BytesPerTexel;
+  if (metal_format.IsCompressed) {
+    ERR("Failed to create texture buffer SRV: compressed format not supported");
+    return E_INVALIDARG;
+  }
   switch (pViewDesc->ViewDimension) {
   case D3D11_UAV_DIMENSION_BUFFER: {
-    if (pViewDesc->Buffer.Flags) {
-      return E_INVALIDARG;
-    }
+    auto bytes_per_pixel = metal_format.BytesPerTexel;
     auto first_element = pViewDesc->Buffer.FirstElement;
     auto num_elements = pViewDesc->Buffer.NumElements;
-    auto pool = transfer(NS::AutoreleasePool::alloc()->init());
-    auto texture_desc = MTL::TextureDescriptor::textureBufferDescriptor(
-        metal_format.PixelFormat, num_elements, pResource->resourceOptions(),
-        MTL::TextureUsageShaderRead | MTL::TextureUsageShaderWrite);
-    // TODO: check offset is aligned with
-    // minimumLinearTextureAlignmentForPixelFormat
-    *ppView =
-        pResource->newTexture(texture_desc, bytes_per_pixel * first_element,
-                              bytes_per_pixel * num_elements);
+    auto byte_offset = first_element * bytes_per_pixel;
+    auto byte_width = num_elements * bytes_per_pixel;
+    auto minimum_alignment =
+        pDevice->GetMTLDevice()->minimumTextureBufferAlignmentForPixelFormat(
+            metal_format.PixelFormat);
+    auto desc = MTL::TextureDescriptor::alloc()->init();
+    desc->setTextureType(MTL::TextureTypeTextureBuffer);
+    desc->setHeight(1);
+    desc->setDepth(1);
+    desc->setArrayLength(1);
+    desc->setMipmapLevelCount(1);
+    desc->setSampleCount(1);
+    desc->setUsage(MTL::TextureUsageShaderRead | MTL::TextureUsageShaderWrite);
+    desc->setPixelFormat(metal_format.PixelFormat);
+
+    auto offset_for_alignment =
+        byte_offset - alignDown(byte_offset, minimum_alignment);
+    auto element_offset = offset_for_alignment / bytes_per_pixel;
+    desc->setWidth(element_offset + num_elements);
+
+    *ppViewDesc = desc;
+    *pLayout = {byte_offset, byte_width, element_offset,
+                byte_offset - offset_for_alignment,
+                byte_width + offset_for_alignment};
+
     return S_OK;
   }
   default:

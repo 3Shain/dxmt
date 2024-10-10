@@ -168,10 +168,11 @@ class MTLD3D11SamplerState : public ManagedDeviceChild<IMTLD3D11SamplerState> {
 public:
   friend class MTLD3D11DeviceContext;
   MTLD3D11SamplerState(IMTLD3D11Device *device, MTL::SamplerState *samplerState,
-                       const D3D11_SAMPLER_DESC &desc)
+                       const D3D11_SAMPLER_DESC &desc, float lod_bias)
       : ManagedDeviceChild<IMTLD3D11SamplerState>(device), desc_(desc),
         metal_sampler_state_(samplerState),
-        argument_handle_(samplerState->gpuResourceID()._impl) {}
+        argument_handle_(samplerState->gpuResourceID()._impl),
+        lod_bias(lod_bias) {}
   ~MTLD3D11SamplerState() {}
 
   HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid,
@@ -205,10 +206,13 @@ public:
 
   virtual uint64_t GetArgumentHandle() { return argument_handle_; }
 
+  virtual float GetLODBias() { return lod_bias; }
+
 private:
   const D3D11_SAMPLER_DESC desc_;
   Obj<MTL::SamplerState> metal_sampler_state_;
   uint64_t argument_handle_;
+  float lod_bias;
 };
 
 // BlendState
@@ -683,13 +687,6 @@ StateObjectCache<D3D11_SAMPLER_DESC, IMTLD3D11SamplerState>::CreateStateObject(
         MTL::SamplerMipFilter::SamplerMipFilterNearest);
   }
 
-  if(desc.MipLODBias) {
-    ERR("CreateSamplerState: unhandled sampler miplodbias ", desc.MipLODBias);
-  }
-
-  // LOD
-  // MipLODBias is not supported
-  // FIXME: it can be done in shader, see MSL spec page 186:  bias(float value)
   mtl_sampler_desc->setLodMinClamp(
       desc.MinLOD); // -FLT_MAX vs 0?
                     // https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11devicecontext-vssetsamplers
@@ -743,8 +740,9 @@ StateObjectCache<D3D11_SAMPLER_DESC, IMTLD3D11SamplerState>::CreateStateObject(
   auto mtl_sampler =
       transfer(device->GetMTLDevice()->newSamplerState(mtl_sampler_desc.ptr()));
 
-  cache.emplace(*pSamplerDesc, std::make_unique<MTLD3D11SamplerState>(
-                                   device, mtl_sampler.ptr(), desc));
+  cache.emplace(*pSamplerDesc,
+                std::make_unique<MTLD3D11SamplerState>(
+                    device, mtl_sampler.ptr(), desc, desc.MipLODBias));
   cache.at(*pSamplerDesc)->QueryInterface(IID_PPV_ARGS(ppSamplerState));
 
   return S_OK;

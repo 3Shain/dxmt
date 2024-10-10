@@ -144,6 +144,14 @@ struct MSLBool {
   };
 };
 
+struct MSLUlong {
+  std::string get_name() const { return "ulong"; };
+
+  llvm::Type *get_llvm_type(llvm::LLVMContext &context) const {
+    return llvm::Type::getInt64Ty(context);
+  };
+};
+
 struct MSLSampler {
   std::string get_name() const { return "sampler"; };
 
@@ -157,9 +165,11 @@ constexpr auto msl_bool = MSLBool{};
 constexpr auto msl_int = MSLInt{};
 constexpr auto msl_uint = MSLUint{};
 constexpr auto msl_float = MSLFloat{};
+constexpr auto msl_ulong = MSLUlong{};
 
-using MSLScalerType =
-  std::variant<MSLFloat, MSLInt, MSLUint, MSLBool, MSLHalf, MSLUshort>; // incomplete list
+using MSLScalerType = std::variant<
+  MSLFloat, MSLInt, MSLUint, MSLBool, MSLHalf, MSLUshort,
+  MSLUlong>; // incomplete list
 
 constexpr auto msl_sampler = MSLSampler{};
 
@@ -438,14 +448,14 @@ public:
   uint32_t
   DefineSampler(std::string name, uint32_t location_index = UINT32_MAX);
   uint32_t
-  DefineInteger32(std::string name, uint32_t location_index = UINT32_MAX);
-  uint32_t
-  DefineFloat32(std::string name, uint32_t location_index = UINT32_MAX);
+  DefineInteger64(std::string name, uint32_t location_index = UINT32_MAX);
 
   auto Build(llvm::LLVMContext &context, const llvm::DataLayout &layout) const
     -> std::tuple<llvm::StructType *, llvm::MDNode *>;
 
-  auto empty() const { return fieldsType.empty(); }
+  auto Empty() const { return fieldsType.empty(); }
+
+  auto Size() const { return fieldsType.size(); }
 
 private:
   std::vector<ArgumentBufferArguments> fieldsType;
