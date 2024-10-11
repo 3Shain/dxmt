@@ -60,12 +60,12 @@ static std::atomic_uint64_t global_variant_id = 1;
 
 template <typename tag>
 class TShaderBase
-    : public MTLD3D11DeviceChild<typename tag::COM, IMTLD3D11Shader> {
+    : public ManagedDeviceChild<typename tag::COM, IMTLD3D11Shader> {
 public:
   TShaderBase(IMTLD3D11Device *device, SM50Shader *sm50,
               MTL_SHADER_REFLECTION &reflection, const void *pShaderBytecode,
               SIZE_T BytecodeLength, typename tag::DATA &&data)
-      : MTLD3D11DeviceChild<typename tag::COM, IMTLD3D11Shader>(device),
+      : ManagedDeviceChild<typename tag::COM, IMTLD3D11Shader>(device),
         sm50(sm50), reflection(reflection),
         data(std::forward<typename tag::DATA>(data)) {
     id = ++global_id;
