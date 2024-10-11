@@ -2293,10 +2293,19 @@ public:
               ctx.render_encoder->useResource(
                   res.resource(&ctx), GetUsageFromResidencyMask(residencyMask),
                   GetStagesFromResidencyMask(residencyMask));
+              if (res.withBackedBuffer()) {
+                ctx.render_encoder->useResource(
+                    res.buffer(), GetUsageFromResidencyMask(residencyMask),
+                    GetStagesFromResidencyMask(residencyMask));
+              }
               break;
             case ShaderType::Compute:
               ctx.compute_encoder->useResource(
                   res.resource(&ctx), GetUsageFromResidencyMask(residencyMask));
+              if (res.withBackedBuffer()) {
+                ctx.compute_encoder->useResource(
+                    res.buffer(), GetUsageFromResidencyMask(residencyMask));
+              }
               break;
             case ShaderType::Geometry:
               D3D11_ASSERT(0 && "Not implemented");

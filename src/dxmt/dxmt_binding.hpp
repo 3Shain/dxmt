@@ -216,6 +216,8 @@ public:
     }
     return resource();
   }
+
+  bool withBackedBuffer() const { return type & Type::WithBackedBuffer; };
 };
 
 class ArgumentData {
