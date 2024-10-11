@@ -4275,7 +4275,9 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                   if (ctx.resource.uav_buf_range_map.contains(uav.range_id)) {
                     auto &[stride, _, metadata] =
                       ctx.resource.uav_buf_range_map[uav.range_id];
-                    auto byte_width = co_yield metadata(nullptr);
+                    auto byte_width = co_yield metadata_get_raw_buffer_length(
+                      co_yield metadata(nullptr)
+                    );
                     if (stride) {
                       co_return ctx.builder.CreateUDiv(
                         byte_width, ctx.builder.getInt32(stride)
