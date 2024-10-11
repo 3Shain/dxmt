@@ -1261,6 +1261,7 @@ public:
     if (cmdbuf_state != CommandBufferState::RenderPipelineReady &&
         cmdbuf_state != CommandBufferState::TessellationRenderPipelineReady)
       return;
+    previous_render_pipeline_state = cmdbuf_state;
     cmdbuf_state = CommandBufferState::RenderEncoderActive;
   }
 
@@ -1504,6 +1505,12 @@ public:
     state_.ShaderStages[1].ConstantBuffers.set_dirty();
     state_.ShaderStages[1].Samplers.set_dirty();
     state_.ShaderStages[1].SRVs.set_dirty();
+    state_.ShaderStages[3].ConstantBuffers.set_dirty();
+    state_.ShaderStages[3].Samplers.set_dirty();
+    state_.ShaderStages[3].SRVs.set_dirty();
+    state_.ShaderStages[4].ConstantBuffers.set_dirty();
+    state_.ShaderStages[4].Samplers.set_dirty();
+    state_.ShaderStages[4].SRVs.set_dirty();
     state_.InputAssembler.VertexBuffers.set_dirty();
     dirty_state.set(DirtyState::BlendFactorAndStencilRef,
                     DirtyState::RasterizerState, DirtyState::DepthStencilState,
@@ -1756,6 +1763,7 @@ public:
     }
 
     cmdbuf_state = CommandBufferState::RenderEncoderActive;
+    previous_render_pipeline_state = cmdbuf_state;
     return true;
   }
 
@@ -1859,6 +1867,17 @@ public:
     });
 
     cmdbuf_state = CommandBufferState::RenderPipelineReady;
+
+    if (previous_render_pipeline_state !=
+        CommandBufferState::RenderPipelineReady) {
+      state_.InputAssembler.VertexBuffers.set_dirty();
+      state_.ShaderStages[(UINT)ShaderType::Vertex].ConstantBuffers.set_dirty();
+      state_.ShaderStages[(UINT)ShaderType::Vertex].SRVs.set_dirty();
+      state_.ShaderStages[(UINT)ShaderType::Vertex].Samplers.set_dirty();
+      previous_render_pipeline_state =
+          CommandBufferState::RenderPipelineReady;
+    }
+
     return true;
   };
 
@@ -1952,6 +1971,20 @@ public:
     });
 
     cmdbuf_state = CommandBufferState::TessellationRenderPipelineReady;
+
+    if (previous_render_pipeline_state !=
+        CommandBufferState::TessellationRenderPipelineReady) {
+      state_.InputAssembler.VertexBuffers.set_dirty();
+      state_.ShaderStages[(UINT)ShaderType::Vertex].ConstantBuffers.set_dirty();
+      state_.ShaderStages[(UINT)ShaderType::Vertex].SRVs.set_dirty();
+      state_.ShaderStages[(UINT)ShaderType::Vertex].Samplers.set_dirty();
+      state_.ShaderStages[(UINT)ShaderType::Domain].ConstantBuffers.set_dirty();
+      state_.ShaderStages[(UINT)ShaderType::Domain].SRVs.set_dirty();
+      state_.ShaderStages[(UINT)ShaderType::Domain].Samplers.set_dirty();
+      previous_render_pipeline_state =
+          CommandBufferState::TessellationRenderPipelineReady;
+    }
+
     return true;
   }
 
@@ -2034,6 +2067,16 @@ public:
     });
 
     cmdbuf_state = CommandBufferState::RenderPipelineReady;
+
+    if (previous_render_pipeline_state !=
+        CommandBufferState::RenderPipelineReady) {
+      state_.InputAssembler.VertexBuffers.set_dirty();
+      state_.ShaderStages[(UINT)ShaderType::Vertex].ConstantBuffers.set_dirty();
+      state_.ShaderStages[(UINT)ShaderType::Vertex].SRVs.set_dirty();
+      state_.ShaderStages[(UINT)ShaderType::Vertex].Samplers.set_dirty();
+      previous_render_pipeline_state = CommandBufferState::RenderPipelineReady;
+    }
+
     return true;
   }
 
@@ -2725,6 +2768,7 @@ private:
   IMTLD3D11Device *device;
   D3D11ContextState &state_;
   CommandBufferState cmdbuf_state;
+  CommandBufferState previous_render_pipeline_state;
   CommandQueue &cmd_queue;
 
 public:
