@@ -43,6 +43,7 @@ private:
         : SRVBase(pDesc, pResource, pDevice), offset(offset), width(width) {}
 
     ~SRV() {
+      std::lock_guard lock(resource->srv_lock);
       auto &vec = resource->weak_srvs;
       vec.erase(std::remove(vec.begin(), vec.end(), this), vec.end());
     }
@@ -73,16 +74,18 @@ private:
     MTL::ResourceID view_handle;
     Obj<MTL::TextureDescriptor> view_desc;
     SIMPLE_RESIDENCY_TRACKER tracker{};
-    uint64_t byte_offset;
+    MTL_TEXTURE_BUFFER_LAYOUT layout;
 
   public:
     TBufferSRV(const tag_shader_resource_view<>::DESC1 *pDesc,
                DynamicBuffer *pResource, IMTLD3D11Device *pDevice,
-               Obj<MTL::TextureDescriptor> &&view_desc, uint64_t byte_offset)
+               Obj<MTL::TextureDescriptor> &&view_desc,
+               MTL_TEXTURE_BUFFER_LAYOUT &layout)
         : SRVBase(pDesc, pResource, pDevice), view_desc(std::move(view_desc)),
-          byte_offset(byte_offset) {}
+          layout(layout) {}
 
     ~TBufferSRV() {
+      std::lock_guard lock(resource->srv_lock);
       auto &vec = resource->weak_srvs_tbuffer;
       vec.erase(std::remove(vec.begin(), vec.end(), this), vec.end());
     }
@@ -94,7 +97,9 @@ private:
     ArgumentData
     GetArgumentData(SIMPLE_RESIDENCY_TRACKER **ppTracker) override {
       *ppTracker = &tracker;
-      return ArgumentData(view_handle, view.ptr());
+      return ArgumentData(view_handle,
+                          resource->buffer_handle + layout.ByteOffset,
+                          layout.ByteWidth, layout.ViewElementOffset);
     }
 
     bool GetContentionState(uint64_t) override { return true; }
@@ -118,7 +123,7 @@ private:
       auto &item = insert.first->second;
       if (insert.second) {
         item.view = transfer(resource->buffer_dynamic->newTexture(
-            view_desc, byte_offset, resource->buffer_len));
+            view_desc, layout.AdjustedByteOffset, layout.AdjustedBytesPerRow));
         item.view_handle = item.view->gpuResourceID();
       }
       view = item.view;
@@ -128,6 +133,7 @@ private:
 
   std::vector<SRV *> weak_srvs;
   std::vector<TBufferSRV *> weak_srvs_tbuffer;
+  dxmt::mutex srv_lock;
 
   std::unique_ptr<BufferPool> pool;
 
@@ -196,11 +202,14 @@ public:
           NS::String::string(debug_name.c_str(), NS::ASCIIStringEncoding));
     }
 #endif
-    for (auto srv : weak_srvs) {
-      srv->RotateView();
-    }
-    for (auto srv : weak_srvs_tbuffer) {
-      srv->RotateView();
+    {
+      std::lock_guard lock(srv_lock);
+      for (auto srv : weak_srvs) {
+        srv->RotateView();
+      }
+      for (auto srv : weak_srvs_tbuffer) {
+        srv->RotateView();
+      }
     }
   }
 
@@ -228,7 +237,12 @@ public:
       CalculateBufferViewOffsetAndSize(
           this->desc, desc.StructureByteStride, finalDesc.Buffer.FirstElement,
           finalDesc.Buffer.NumElements, offset, size);
-      *ppView = ref(new SRV(&finalDesc, this, m_parent, offset, size));
+      auto srv = ref(new SRV(&finalDesc, this, m_parent, offset, size));
+      {
+        std::lock_guard lock(srv_lock);
+        weak_srvs.push_back(srv);
+      }
+      *ppView = srv;
       return S_OK;
     }
     if (finalDesc.ViewDimension == D3D11_SRV_DIMENSION_BUFFEREX &&
@@ -241,7 +255,12 @@ public:
       CalculateBufferViewOffsetAndSize(
           this->desc, sizeof(uint32_t), finalDesc.Buffer.FirstElement,
           finalDesc.Buffer.NumElements, offset, size);
-      *ppView = ref(new SRV(&finalDesc, this, m_parent, offset, size));
+      auto srv = ref(new SRV(&finalDesc, this, m_parent, offset, size));
+      {
+        std::lock_guard lock(srv_lock);
+        weak_srvs.push_back(srv);
+      }
+      *ppView = srv;
       return S_OK;
     }
 
@@ -252,24 +271,19 @@ public:
       return E_FAIL;
     }
 
-    auto desc = transfer(MTL::TextureDescriptor::alloc()->init());
-    desc->setTextureType(MTL::TextureTypeTextureBuffer);
-    desc->setWidth(finalDesc.Buffer.NumElements);
-    desc->setHeight(1);
-    desc->setDepth(1);
-    desc->setArrayLength(1);
-    desc->setMipmapLevelCount(1);
-    desc->setSampleCount(1);
-    desc->setUsage(MTL::TextureUsageShaderRead);
-    desc->setStorageMode(MTL::StorageModeShared);
-    desc->setCpuCacheMode(m_parent->IsTraced()
-                              ? MTL::CPUCacheModeDefaultCache
-                              : MTL::CPUCacheModeWriteCombined);
-    desc->setPixelFormat(format.PixelFormat);
+    Obj<MTL::TextureDescriptor> desc;
+    MTL_TEXTURE_BUFFER_LAYOUT layout;
+    if (FAILED(CreateMTLTextureBufferView(this->m_parent, &finalDesc,
+                                          &desc, &layout))) {
+      return E_FAIL;
+    }
+    desc->setResourceOptions(this->buffer_dynamic->resourceOptions());
     auto srv = ref(
-        new TBufferSRV(&finalDesc, this, m_parent, std::move(desc),
-                       finalDesc.Buffer.FirstElement * format.BytesPerTexel));
-    weak_srvs_tbuffer.push_back(srv);
+        new TBufferSRV(&finalDesc, this, m_parent, std::move(desc), layout));
+    {
+      std::lock_guard lock(srv_lock);
+      weak_srvs_tbuffer.push_back(srv);
+    }
     *ppView = srv;
     srv->RotateView();
     return S_OK;
@@ -434,11 +448,11 @@ public:
     desc->setSampleCount(1);
     desc->setUsage(MTL::TextureUsageShaderRead);
     desc->setStorageMode(MTL::StorageModeShared);
-    desc->setCpuCacheMode(m_parent->IsTraced()
-                              ? MTL::CPUCacheModeDefaultCache
-                              : MTL::CPUCacheModeWriteCombined);
+
+    desc->setResourceOptions(buffer->resourceOptions());
     desc->setPixelFormat(format.PixelFormat);
     auto srv = ref(new SRV(&finalDesc, this, m_parent, std::move(desc)));
+
     weak_srvs.push_back(srv);
     *ppView = srv;
     srv->RotateView();

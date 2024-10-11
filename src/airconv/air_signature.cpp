@@ -127,7 +127,7 @@ uint32_t ArgumentBufferBuilder::DefineTexture(
   return element_index;
 };
 
-uint32_t ArgumentBufferBuilder::DefineInteger32(
+uint32_t ArgumentBufferBuilder::DefineInteger64(
   std::string name, uint32_t location_index
 ) {
   auto element_index = fieldsType.size();
@@ -136,7 +136,7 @@ uint32_t ArgumentBufferBuilder::DefineInteger32(
     .location_index =
       location_index == UINT32_MAX ? (uint32_t)element_index : location_index,
     .array_size = 1,
-    .type = msl_uint,
+    .type = msl_ulong,
     .arg_name = name
   });
   return element_index;

@@ -1261,6 +1261,7 @@ public:
     if (cmdbuf_state != CommandBufferState::RenderPipelineReady &&
         cmdbuf_state != CommandBufferState::TessellationRenderPipelineReady)
       return;
+    previous_render_pipeline_state = cmdbuf_state;
     cmdbuf_state = CommandBufferState::RenderEncoderActive;
   }
 
@@ -1504,6 +1505,12 @@ public:
     state_.ShaderStages[1].ConstantBuffers.set_dirty();
     state_.ShaderStages[1].Samplers.set_dirty();
     state_.ShaderStages[1].SRVs.set_dirty();
+    state_.ShaderStages[3].ConstantBuffers.set_dirty();
+    state_.ShaderStages[3].Samplers.set_dirty();
+    state_.ShaderStages[3].SRVs.set_dirty();
+    state_.ShaderStages[4].ConstantBuffers.set_dirty();
+    state_.ShaderStages[4].Samplers.set_dirty();
+    state_.ShaderStages[4].SRVs.set_dirty();
     state_.InputAssembler.VertexBuffers.set_dirty();
     dirty_state.set(DirtyState::BlendFactorAndStencilRef,
                     DirtyState::RasterizerState, DirtyState::DepthStencilState,
@@ -1756,6 +1763,7 @@ public:
     }
 
     cmdbuf_state = CommandBufferState::RenderEncoderActive;
+    previous_render_pipeline_state = cmdbuf_state;
     return true;
   }
 
@@ -1859,6 +1867,17 @@ public:
     });
 
     cmdbuf_state = CommandBufferState::RenderPipelineReady;
+
+    if (previous_render_pipeline_state !=
+        CommandBufferState::RenderPipelineReady) {
+      state_.InputAssembler.VertexBuffers.set_dirty();
+      state_.ShaderStages[(UINT)ShaderType::Vertex].ConstantBuffers.set_dirty();
+      state_.ShaderStages[(UINT)ShaderType::Vertex].SRVs.set_dirty();
+      state_.ShaderStages[(UINT)ShaderType::Vertex].Samplers.set_dirty();
+      previous_render_pipeline_state =
+          CommandBufferState::RenderPipelineReady;
+    }
+
     return true;
   };
 
@@ -1952,6 +1971,20 @@ public:
     });
 
     cmdbuf_state = CommandBufferState::TessellationRenderPipelineReady;
+
+    if (previous_render_pipeline_state !=
+        CommandBufferState::TessellationRenderPipelineReady) {
+      state_.InputAssembler.VertexBuffers.set_dirty();
+      state_.ShaderStages[(UINT)ShaderType::Vertex].ConstantBuffers.set_dirty();
+      state_.ShaderStages[(UINT)ShaderType::Vertex].SRVs.set_dirty();
+      state_.ShaderStages[(UINT)ShaderType::Vertex].Samplers.set_dirty();
+      state_.ShaderStages[(UINT)ShaderType::Domain].ConstantBuffers.set_dirty();
+      state_.ShaderStages[(UINT)ShaderType::Domain].SRVs.set_dirty();
+      state_.ShaderStages[(UINT)ShaderType::Domain].Samplers.set_dirty();
+      previous_render_pipeline_state =
+          CommandBufferState::TessellationRenderPipelineReady;
+    }
+
     return true;
   }
 
@@ -2034,6 +2067,16 @@ public:
     });
 
     cmdbuf_state = CommandBufferState::RenderPipelineReady;
+
+    if (previous_render_pipeline_state !=
+        CommandBufferState::RenderPipelineReady) {
+      state_.InputAssembler.VertexBuffers.set_dirty();
+      state_.ShaderStages[(UINT)ShaderType::Vertex].ConstantBuffers.set_dirty();
+      state_.ShaderStages[(UINT)ShaderType::Vertex].SRVs.set_dirty();
+      state_.ShaderStages[(UINT)ShaderType::Vertex].Samplers.set_dirty();
+      previous_render_pipeline_state = CommandBufferState::RenderPipelineReady;
+    }
+
     return true;
   }
 
@@ -2234,6 +2277,7 @@ public:
 
     auto ConstantBufferCount = reflection->NumConstantBuffers;
     auto BindingCount = reflection->NumArguments;
+    auto ArgumentTableQwords = reflection->ArgumentTableQwords;
     CommandChunk *chk = cmd_queue.CurrentChunk();
     auto encoderId = chk->current_encoder_id();
 
@@ -2249,10 +2293,19 @@ public:
               ctx.render_encoder->useResource(
                   res.resource(&ctx), GetUsageFromResidencyMask(residencyMask),
                   GetStagesFromResidencyMask(residencyMask));
+              if (res.withBackedBuffer()) {
+                ctx.render_encoder->useResource(
+                    res.buffer(), GetUsageFromResidencyMask(residencyMask),
+                    GetStagesFromResidencyMask(residencyMask));
+              }
               break;
             case ShaderType::Compute:
               ctx.compute_encoder->useResource(
                   res.resource(&ctx), GetUsageFromResidencyMask(residencyMask));
+              if (res.withBackedBuffer()) {
+                ctx.compute_encoder->useResource(
+                    res.buffer(), GetUsageFromResidencyMask(residencyMask));
+              }
               break;
             case ShaderType::Geometry:
               D3D11_ASSERT(0 && "Not implemented");
@@ -2319,9 +2372,7 @@ public:
     }
 
     if (BindingCount && (dirty_sampler || dirty_srv || dirty_uav)) {
-
-      /* FIXME: we are over-allocating */
-      auto [heap, offset] = chk->allocate_gpu_heap(BindingCount * 8 * 3, 16);
+      auto [heap, offset] = chk->allocate_gpu_heap(ArgumentTableQwords * 8, 16);
       uint64_t *write_to_it = chk->gpu_argument_heap_contents + (offset >> 3);
 
       for (unsigned i = 0; i < BindingCount; i++) {
@@ -2341,6 +2392,8 @@ public:
           auto &sampler = ShaderStage.Samplers[slot];
           write_to_it[arg.StructurePtrOffset] =
               sampler.Sampler->GetArgumentHandle();
+          write_to_it[arg.StructurePtrOffset + 1] =
+              (uint64_t)std::bit_cast<uint32_t>(sampler.Sampler->GetLODBias());
           ShaderStage.Samplers.clear_dirty(slot);
           break;
         }
@@ -2350,11 +2403,7 @@ public:
             // ERR("expect shader resource at slot ", slot, " but none is
             // bound.");
             write_to_it[arg.StructurePtrOffset] = 0;
-            // ? we are doing something dangerous
-            // need to verify that 0 have defined behavior (e.g. no gpu crash)
-            if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_ELEMENT_WIDTH) {
-              write_to_it[arg.StructurePtrOffset + 1] = 0;
-            }
+            write_to_it[arg.StructurePtrOffset + 1] = 0;
             break;
           }
           auto &srv = ShaderStage.SRVs[slot];
@@ -2362,17 +2411,24 @@ public:
           if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_BUFFER) {
             write_to_it[arg.StructurePtrOffset] = arg_data.buffer();
           }
-          if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_ELEMENT_WIDTH) {
-            write_to_it[arg.StructurePtrOffset + 1] = arg_data.width();
-          }
           if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE) {
             if (arg_data.requiresContext()) {
               chk->emit([=, ref = srv.SRV](CommandChunk::context &ctx) {
-                write_to_it[arg.StructurePtrOffset] = arg_data.resource(&ctx);
+                write_to_it[arg.StructurePtrOffset] = arg_data.texture(&ctx);
               });
             } else {
               write_to_it[arg.StructurePtrOffset] = arg_data.texture();
             }
+          }
+          if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_ELEMENT_WIDTH) {
+            write_to_it[arg.StructurePtrOffset + 1] = arg_data.width();
+          }
+          if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE_MINLOD_CLAMP) {
+            write_to_it[arg.StructurePtrOffset + 1] =
+                std::bit_cast<uint32_t>(arg_data.min_lod());
+          }
+          if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_TBUFFER_OFFSET) {
+            write_to_it[arg.StructurePtrOffset + 1] = arg_data.element_offset();
           }
           if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_UAV_COUNTER) {
             D3D11_ASSERT(0 && "srv can not have counter associated");
@@ -2411,20 +2467,27 @@ public:
           if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_BUFFER) {
             write_to_it[arg.StructurePtrOffset] = arg_data.buffer();
           }
-          if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_ELEMENT_WIDTH) {
-            write_to_it[arg.StructurePtrOffset + 1] = arg_data.width();
-          }
           if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE) {
             if (arg_data.requiresContext()) {
               chk->emit([=, ref = uav.View](CommandChunk::context &ctx) {
-                write_to_it[arg.StructurePtrOffset] = arg_data.resource(&ctx);
+                write_to_it[arg.StructurePtrOffset] = arg_data.texture(&ctx);
               });
             } else {
               write_to_it[arg.StructurePtrOffset] = arg_data.texture();
             }
           }
+          if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_ELEMENT_WIDTH) {
+            write_to_it[arg.StructurePtrOffset + 1] = arg_data.width();
+          }
+          if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE_MINLOD_CLAMP) {
+            write_to_it[arg.StructurePtrOffset + 1] =
+                std::bit_cast<uint32_t>(arg_data.min_lod());
+          }
+          if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_TBUFFER_OFFSET) {
+            write_to_it[arg.StructurePtrOffset + 1] = arg_data.element_offset();
+          }
           if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_UAV_COUNTER) {
-            auto counter_handle = arg_data.counter_handle();
+            auto counter_handle = arg_data.counter();
             if (counter_handle != DXMT_NO_COUNTER) {
               auto counter = cmd_queue.counter_pool.GetCounter(counter_handle);
               chk->emit([counter](CommandChunk::context &ctx) {
@@ -2583,6 +2646,7 @@ public:
     uint32_t VERTEX_BUFFER_SLOTS = 32 - __builtin_clz(slot_mask);
 
     CommandChunk *chk = cmd_queue.CurrentChunk();
+    auto encoderId = chk->current_encoder_id();
     auto currentChunkId = cmd_queue.CurrentSeqId();
     auto [heap, offset] = chk->allocate_gpu_heap(16 * VERTEX_BUFFER_SLOTS, 16);
     VERTEX_BUFFER_ENTRY *entries =
@@ -2603,7 +2667,7 @@ public:
       entries[index].length =
           handle.width() > state.Offset ? handle.width() - state.Offset : 0;
       pTracker->CheckResidency(
-          currentChunkId,
+          encoderId,
           cmdbuf_state == CommandBufferState::TessellationRenderPipelineReady
               ? GetResidencyMask<true>(ShaderType::Vertex, true, false)
               : GetResidencyMask<false>(ShaderType::Vertex, true, false),
@@ -2713,6 +2777,7 @@ private:
   IMTLD3D11Device *device;
   D3D11ContextState &state_;
   CommandBufferState cmdbuf_state;
+  CommandBufferState previous_render_pipeline_state;
   CommandQueue &cmd_queue;
 
 public:

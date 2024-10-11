@@ -1719,6 +1719,28 @@ auto load_condition(SrcOperand src, bool non_zero_test) {
   };
 };
 
+auto metadata_get_sampler_bias(pvalue metadata) -> IRValue {
+  auto ctx = co_yield get_context();
+  co_return ctx.builder.CreateBitCast(
+    ctx.builder.CreateTrunc(metadata, ctx.types._int), ctx.types._float
+  );
+};
+
+auto metadata_get_min_lod_clamp(pvalue metadata) -> IRValue {
+  // unintentional but they have the same representation
+  return metadata_get_sampler_bias(metadata);
+};
+
+auto metadata_get_texture_buffer_offset(pvalue metadata) -> IRValue {
+  auto ctx = co_yield get_context();
+  co_return ctx.builder.CreateTrunc(metadata, ctx.types._int);
+};
+
+auto metadata_get_raw_buffer_length(pvalue metadata) -> IRValue {
+  // unintentional but they have the same representation
+  return metadata_get_texture_buffer_offset(metadata);
+};
+
 /**
 it might be a constant, device or threadgroup buffer of `uint*`
 */
@@ -1831,10 +1853,11 @@ auto read_uint_buf_addr(
 ) -> IRValue {
   auto ctx = co_yield get_context();
   assert(ctx.resource.uav_buf_range_map.contains(uav.range_id));
-  auto &[handle, bound, _] = ctx.resource.uav_buf_range_map[uav.range_id];
+  auto &[_, handle, metadata] = ctx.resource.uav_buf_range_map[uav.range_id];
   if (index) {
-    auto _bound =
-      ctx.builder.CreateLShr(co_yield bound(nullptr), ctx.builder.getInt32(2));
+    auto bound =
+      co_yield metadata_get_raw_buffer_length(co_yield metadata(nullptr));
+    auto _bound = ctx.builder.CreateLShr(bound, ctx.builder.getInt32(2));
 
     auto is_oob = ctx.builder.CreateICmpUGE(index, _bound);
     if (oob) {
@@ -1855,10 +1878,11 @@ auto read_uint_buf_addr(
 ) -> IRValue {
   auto ctx = co_yield get_context();
   assert(ctx.resource.uav_buf_range_map.contains(uav.range_id));
-  auto &[handle, bound, _] = ctx.resource.uav_buf_range_map[uav.range_id];
+  auto &[_, handle, metadata] = ctx.resource.uav_buf_range_map[uav.range_id];
   if (index) {
-    auto _bound =
-      ctx.builder.CreateLShr(co_yield bound(nullptr), ctx.builder.getInt32(2));
+    auto bound =
+      co_yield metadata_get_raw_buffer_length(co_yield metadata(nullptr));
+    auto _bound = ctx.builder.CreateLShr(bound, ctx.builder.getInt32(2));
 
     auto is_oob = ctx.builder.CreateICmpUGE(index, _bound);
     if (oob) {
@@ -1879,10 +1903,11 @@ auto read_uint_buf_addr(
 ) -> IRValue {
   auto ctx = co_yield get_context();
   assert(ctx.resource.srv_buf_range_map.contains(srv.range_id));
-  auto &[handle, bound, _] = ctx.resource.srv_buf_range_map[srv.range_id];
+  auto &[_, handle, metadata] = ctx.resource.srv_buf_range_map[srv.range_id];
   if (index) {
-    auto _bound =
-      ctx.builder.CreateLShr(co_yield bound(nullptr), ctx.builder.getInt32(2));
+    auto bound =
+      co_yield metadata_get_raw_buffer_length(co_yield metadata(nullptr));
+    auto _bound = ctx.builder.CreateLShr(bound, ctx.builder.getInt32(2));
 
     auto is_oob = ctx.builder.CreateICmpUGE(index, _bound);
     if (oob) {
@@ -1917,7 +1942,7 @@ auto read_atomic_index(AtomicOperandTGSM tgsm, pvalue vec4) -> IRValue {
 auto read_atomic_index(AtomicDstOperandUAV uav, pvalue addr_vec4) -> IRValue {
   auto ctx = co_yield get_context();
   assert(ctx.resource.uav_buf_range_map.contains(uav.range_id));
-  auto &[_, __, stride] = ctx.resource.uav_buf_range_map[uav.range_id];
+  auto &[stride, _, __] = ctx.resource.uav_buf_range_map[uav.range_id];
   auto &builder = ctx.builder;
   co_return builder.CreateLShr(
     stride > 0
@@ -2052,12 +2077,18 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                       llvm::APInt{32, (uint64_t)sample.offsets[2], true}
                     )}
                  );
-                 auto [res, res_handle_fn] =
+                 auto &[res, res_handle_fn, res_metadata] =
                    ctx.resource.srv_range_map[sample.src_resource.range_id];
-                 auto sampler_handle_fn =
+                 auto &[sampler_handle_fn, sampler_metadata] =
                    ctx.resource.sampler_range_map[sample.src_sampler.range_id];
                  auto res_h = co_yield res_handle_fn(nullptr);
                  auto sampler_h = co_yield sampler_handle_fn(nullptr);
+                 auto res_min_lod_clamp = co_yield metadata_get_min_lod_clamp(
+                   co_yield res_metadata(nullptr)
+                 );
+                 auto sampler_bias = co_yield metadata_get_sampler_bias(
+                   co_yield sampler_metadata(nullptr)
+                 );
                  auto coord = co_yield load_src_op<true>(sample.src_address);
                  switch (res.resource_kind) {
                  case air::TextureKind::texture_1d: {
@@ -2081,7 +2112,8 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                      res, res_h, sampler_h,
                      co_yield truncate_vec(2)(coord), // .rg
                      nullptr,
-                     co_yield truncate_vec(2)(offset_const) // 2d offset
+                     co_yield truncate_vec(2)(offset_const), // 2d offset
+                     sampler_bias, res_min_lod_clamp
                    );
                  }
                  case air::TextureKind::depth_2d_array:
@@ -2091,7 +2123,8 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                      co_yield truncate_vec(2)(coord), // .rg
                      co_yield extract_element(2)(coord) >>=
                      implicit_float_to_int,                 // .b
-                     co_yield truncate_vec(2)(offset_const) // 2d offset
+                     co_yield truncate_vec(2)(offset_const), // 2d offset
+                     sampler_bias, res_min_lod_clamp
                    );
                  }
                  case air::TextureKind::texture_3d: {
@@ -2099,7 +2132,8 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                      res, res_h, sampler_h,
                      co_yield truncate_vec(3)(coord), // .rgb
                      nullptr,
-                     co_yield truncate_vec(3)(offset_const) // 3d offset
+                     co_yield truncate_vec(3)(offset_const), // 3d offset
+                     sampler_bias, res_min_lod_clamp
                    );
                  }
                  case air::TextureKind::depth_cube:
@@ -2145,20 +2179,28 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                       llvm::APInt{32, (uint64_t)sample.offsets[2], true}
                     )}
                  );
-                 auto [res, res_handle_fn] =
+                 auto &[res, res_handle_fn, _] =
                    ctx.resource.srv_range_map[sample.src_resource.range_id];
-                 auto sampler_handle_fn =
+                 // Sampler states MIPLODBIAS and MAX/MINMIPLEVEL are honored.
+                 auto &[sampler_handle_fn, sampler_metadata] =
                    ctx.resource.sampler_range_map[sample.src_sampler.range_id];
                  auto res_h = co_yield res_handle_fn(nullptr);
                  auto sampler_h = co_yield sampler_handle_fn(nullptr);
                  auto coord = co_yield load_src_op<true>(sample.src_address);
-                 auto LOD = co_yield load_src_op<true>(sample.src_lod);
+                 auto sampler_bias = co_yield metadata_get_sampler_bias(
+                   co_yield sampler_metadata(nullptr)
+                 );
+                 auto LOD = ctx.builder.CreateFAdd(
+                   co_yield load_src_op<true>(sample.src_lod) >>=
+                   extract_element(0),
+                   sampler_bias
+                 );
                  switch (res.resource_kind) {
                  case air::TextureKind::texture_1d: {
                    co_return co_yield call_sample(
                      res, res_h, sampler_h, co_yield extract_element(0)(coord),
                      nullptr, co_yield extract_element(1)(offset_const),
-                     nullptr, nullptr, co_yield extract_element(0)(LOD)
+                     nullptr, nullptr, LOD
                    );
                  }
                  case air::TextureKind::texture_1d_array: {
@@ -2168,7 +2210,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                      co_yield extract_element(1)(coord) >>=
                      implicit_float_to_int,                     // .g
                      co_yield extract_element(1)(offset_const), // 1d offset
-                     nullptr, nullptr, co_yield extract_element(0)(LOD)
+                     nullptr, nullptr, LOD
                    );
                  }
                  case air::TextureKind::depth_2d:
@@ -2178,7 +2220,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                      co_yield truncate_vec(2)(coord), // .rg
                      nullptr,
                      co_yield truncate_vec(2)(offset_const), // 2d offset
-                     nullptr, nullptr, co_yield extract_element(0)(LOD)
+                     nullptr, nullptr, LOD
                    );
                  }
                  case air::TextureKind::depth_2d_array:
@@ -2189,7 +2231,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                      co_yield extract_element(2)(coord) >>=
                      implicit_float_to_int,                  // .b
                      co_yield truncate_vec(2)(offset_const), // 2d offset
-                     nullptr, nullptr, co_yield extract_element(0)(LOD)
+                     nullptr, nullptr, LOD
                    );
                  }
                  case air::TextureKind::texture_3d: {
@@ -2198,7 +2240,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                      co_yield truncate_vec(3)(coord), // .rgb
                      nullptr,
                      co_yield truncate_vec(3)(offset_const), // 3d offset
-                     nullptr, nullptr, co_yield extract_element(0)(LOD)
+                     nullptr, nullptr, LOD
                    );
                  }
                  case air::TextureKind::depth_cube:
@@ -2207,7 +2249,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                      res, res_h, sampler_h,
                      co_yield truncate_vec(3)(coord), // .rgb
                      nullptr, nullptr, nullptr, nullptr,
-                     co_yield extract_element(0)(LOD)
+                     LOD
                    );
                  }
                  case air::TextureKind::depth_cube_array:
@@ -2217,7 +2259,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                      co_yield truncate_vec(3)(coord), // .rgb
                      co_yield extract_element(3)(coord) >>=
                      implicit_float_to_int, // .a
-                     nullptr, nullptr, nullptr, co_yield extract_element(0)(LOD)
+                     nullptr, nullptr, nullptr, LOD
                    );
                  } break;
                  default: {
@@ -2246,20 +2288,31 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                       llvm::APInt{32, (uint64_t)sample.offsets[2], true}
                     )}
                  );
-                 auto [res, res_handle_fn] =
+                 auto& [res, res_handle_fn, res_metadata] =
                    ctx.resource.srv_range_map[sample.src_resource.range_id];
-                 auto sampler_handle_fn =
+                 auto& [sampler_handle_fn, sampler_metadata] =
                    ctx.resource.sampler_range_map[sample.src_sampler.range_id];
                  auto res_h = co_yield res_handle_fn(nullptr);
                  auto sampler_h = co_yield sampler_handle_fn(nullptr);
                  auto coord = co_yield load_src_op<true>(sample.src_address);
-                 auto bias = co_yield load_src_op<true>(sample.src_bias);
+                 
+                 auto sampler_bias = co_yield metadata_get_sampler_bias(
+                   co_yield sampler_metadata(nullptr)
+                 );
+                 auto bias = ctx.builder.CreateFAdd(
+                   co_yield load_src_op<true>(sample.src_bias) >>=
+                   extract_element(0),
+                   sampler_bias
+                 );
+                 auto res_min_lod_clamp = co_yield metadata_get_min_lod_clamp(
+                   co_yield res_metadata(nullptr)
+                 );
                  switch (res.resource_kind) {
                  case air::TextureKind::texture_1d: {
                    co_return co_yield call_sample(
                      res, res_h, sampler_h, co_yield extract_element(0)(coord),
                      nullptr, co_yield extract_element(1)(offset_const),
-                     co_yield extract_element(0)(bias)
+                     bias, res_min_lod_clamp
                    );
                  }
                  case air::TextureKind::texture_1d_array: {
@@ -2269,7 +2322,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                      co_yield extract_element(1)(coord) >>=
                      implicit_float_to_int,                     // .g
                      co_yield extract_element(1)(offset_const), // 1d offset
-                     co_yield extract_element(0)(bias)
+                     bias, res_min_lod_clamp
                    );
                  }
                  case air::TextureKind::depth_2d:
@@ -2279,7 +2332,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                      co_yield truncate_vec(2)(coord), // .rg
                      nullptr,
                      co_yield truncate_vec(2)(offset_const), // 2d offset
-                     co_yield extract_element(0)(bias)
+                     bias, res_min_lod_clamp
                    );
                  }
                  case air::TextureKind::depth_2d_array:
@@ -2290,7 +2343,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                      co_yield extract_element(2)(coord) >>=
                      implicit_float_to_int,                  // .b
                      co_yield truncate_vec(2)(offset_const), // 2d offset
-                     co_yield extract_element(0)(bias)
+                     bias, res_min_lod_clamp
                    );
                  }
                  case air::TextureKind::texture_3d: {
@@ -2299,7 +2352,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                      co_yield truncate_vec(3)(coord), // .rgb
                      nullptr,
                      co_yield truncate_vec(3)(offset_const), // 3d offset
-                     co_yield extract_element(0)(bias)
+                     bias, res_min_lod_clamp
                    );
                  }
                  case air::TextureKind::depth_cube:
@@ -2307,7 +2360,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                    co_return co_yield call_sample(
                      res, res_h, sampler_h,
                      co_yield truncate_vec(3)(coord), // .rgb
-                     nullptr, nullptr, co_yield extract_element(0)(bias)
+                     nullptr, nullptr, bias, res_min_lod_clamp
                    );
                  }
                  case air::TextureKind::depth_cube_array:
@@ -2317,7 +2370,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                      co_yield truncate_vec(3)(coord), // .rgb
                      co_yield extract_element(3)(coord) >>=
                      implicit_float_to_int, // .a
-                     nullptr, co_yield extract_element(0)(bias)
+                     nullptr, bias, res_min_lod_clamp
                    );
                  } break;
                  default: {
@@ -2346,9 +2399,12 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                       llvm::APInt{32, (uint64_t)sample.offsets[2], true}
                     )}
                  );
-                 auto [res, res_handle_fn] =
+
+                 // min_lod_clamp ignored
+                 auto &[res, res_handle_fn, __] =
                    ctx.resource.srv_range_map[sample.src_resource.range_id];
-                 auto sampler_handle_fn =
+                 // sampler bias ignored
+                 auto &[sampler_handle_fn, _] =
                    ctx.resource.sampler_range_map[sample.src_sampler.range_id];
                  auto res_h = co_yield res_handle_fn(nullptr);
                  auto sampler_h = co_yield sampler_handle_fn(nullptr);
@@ -2438,15 +2494,21 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                       llvm::APInt{32, (uint64_t)sample.offsets[2], true}
                     )}
                  );
-                 auto [res, res_handle_fn] =
+                 auto &[res, res_handle_fn, res_metadata] =
                    ctx.resource.srv_range_map[sample.src_resource.range_id];
-                 auto sampler_handle_fn =
+                 auto &[sampler_handle_fn, sampler_metadata] =
                    ctx.resource.sampler_range_map[sample.src_sampler.range_id];
                  auto res_h = co_yield res_handle_fn(nullptr);
                  auto sampler_h = co_yield sampler_handle_fn(nullptr);
                  auto coord = co_yield load_src_op<true>(sample.src_address);
                  auto reference =
                    co_yield load_src_op<true>(sample.src_reference);
+                 auto res_min_lod_clamp = co_yield metadata_get_min_lod_clamp(
+                   co_yield res_metadata(nullptr)
+                 );
+                 auto sampler_bias = co_yield metadata_get_sampler_bias(
+                   co_yield sampler_metadata(nullptr)
+                 );
                  switch (res.resource_kind) {
                  case air::TextureKind::depth_2d: {
                    co_return co_yield call_sample_compare(
@@ -2455,7 +2517,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                      nullptr,                                // array_index
                      co_yield extract_element(0)(reference), // reference
                      co_yield truncate_vec(2)(offset_const), // 2d offset
-                     nullptr, nullptr,
+                     sampler_bias, res_min_lod_clamp,
                      sample.level_zero
                        ? llvm::ConstantFP::getZero(ctx.types._float)
                        : nullptr
@@ -2469,7 +2531,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                      implicit_float_to_int,                  // array_index
                      co_yield extract_element(0)(reference), // reference
                      co_yield truncate_vec(2)(offset_const), // 2d offset
-                     nullptr, nullptr,
+                     sampler_bias, res_min_lod_clamp,
                      sample.level_zero
                        ? llvm::ConstantFP::getZero(ctx.types._float)
                        : nullptr
@@ -2481,7 +2543,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                      co_yield truncate_vec(3)(coord),        // .rgb
                      nullptr,                                // array_index
                      co_yield extract_element(0)(reference), // reference
-                     nullptr, nullptr, nullptr,
+                     nullptr, sampler_bias, res_min_lod_clamp,
                      sample.level_zero
                        ? llvm::ConstantFP::getZero(ctx.types._float)
                        : nullptr
@@ -2494,7 +2556,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                      co_yield extract_element(3)(coord) >>=
                      implicit_float_to_int,                  // array_index
                      co_yield extract_element(0)(reference), // reference
-                     nullptr, nullptr, nullptr,
+                     nullptr, sampler_bias, res_min_lod_clamp,
                      sample.level_zero
                        ? llvm::ConstantFP::getZero(ctx.types._float)
                        : nullptr
@@ -2512,9 +2574,11 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
             effect << store_dst_op<true>(
               sample.dst,
               (make_irvalue_bind([=](struct context ctx) -> IRValue {
-                 auto [res, res_handle_fn] =
+                 // min_lod_clamp ignored
+                 auto &[res, res_handle_fn, __] =
                    ctx.resource.srv_range_map[sample.src_resource.range_id];
-                 auto sampler_handle_fn =
+                 // sampler bias ignored
+                 auto &[sampler_handle_fn, _] =
                    ctx.resource.sampler_range_map[sample.src_sampler.range_id];
                  auto res_h = co_yield res_handle_fn(nullptr);
                  auto sampler_h = co_yield sampler_handle_fn(nullptr);
@@ -2567,9 +2631,11 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
             effect << store_dst_op<true>(
               sample.dst,
               (make_irvalue_bind([=](struct context ctx) -> IRValue {
-                 auto [res, res_handle_fn] =
+                 // min_lod_clamp ignored
+                 auto &[res, res_handle_fn, __] =
                    ctx.resource.srv_range_map[sample.src_resource.range_id];
-                 auto sampler_handle_fn =
+                 // sampler bias ignored
+                 auto &[sampler_handle_fn, sampler_metadata] =
                    ctx.resource.sampler_range_map[sample.src_sampler.range_id];
                  auto res_h = co_yield res_handle_fn(nullptr);
                  auto sampler_h = co_yield sampler_handle_fn(nullptr);
@@ -2619,13 +2685,26 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
 
           [&effect](InstLoad load) {
             effect << make_effect_bind([=](struct context ctx) -> IREffect {
-              auto [res, res_handle_fn] =
+              auto &[res, res_handle_fn, metadata] =
                 ctx.resource.srv_range_map[load.src_resource.range_id];
               auto res_h = co_yield res_handle_fn(nullptr);
               auto coord = co_yield load_src_op<false>(load.src_address);
               pvalue ret;
               switch (res.resource_kind) {
-              case air::TextureKind::texture_buffer:
+              case air::TextureKind::texture_buffer: {
+                auto offset = co_yield metadata_get_texture_buffer_offset(
+                  co_yield metadata(nullptr)
+                );
+                ret = co_yield call_read(
+                  res, res_h,
+                  ctx.builder.CreateAdd(
+                    co_yield extract_element(0)(coord), offset
+                  ),
+                  co_yield get_int(load.offsets[0]), nullptr, nullptr, nullptr,
+                  co_yield extract_element(3)(coord)
+                );
+                break;
+              }
               case air::TextureKind::texture_1d: {
                 ret = co_yield call_read(
                   res, res_h, co_yield extract_element(0)(coord),
@@ -2717,13 +2796,24 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
           },
           [&effect](InstLoadUAVTyped load) {
             effect << make_effect_bind([=](struct context ctx) -> IREffect {
-              auto [res, res_handle_fn] =
+              auto &[res, res_handle_fn, metadata] =
                 ctx.resource.uav_range_map[load.src_uav.range_id];
               auto res_h = co_yield res_handle_fn(nullptr);
               auto coord = co_yield load_src_op<false>(load.src_address);
               pvalue ret;
               switch (res.resource_kind) {
-              case air::TextureKind::texture_buffer:
+              case air::TextureKind::texture_buffer: {
+                auto offset = co_yield metadata_get_texture_buffer_offset(
+                  co_yield metadata(nullptr)
+                );
+                ret = co_yield call_read(
+                  res, res_h,
+                  ctx.builder.CreateAdd(
+                    co_yield extract_element(0)(coord), offset
+                  )
+                );
+                break;
+              }
               case air::TextureKind::texture_1d: {
                 ret = co_yield call_read(
                   res, res_h, co_yield extract_element(0)(coord)
@@ -2779,7 +2869,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
           },
           [&effect](InstStoreUAVTyped store) {
             effect << make_effect_bind([=](struct context ctx) -> IREffect {
-              auto [res, res_handle_fn] =
+              auto &[res, res_handle_fn, metadata] =
                 ctx.resource.uav_range_map[store.dst.range_id];
               auto res_h = co_yield res_handle_fn(nullptr);
               auto address = co_yield load_src_op<false>(store.src_address);
@@ -2792,12 +2882,19 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
               );
 
               switch (res.resource_kind) {
-              case air::TextureKind::texture_buffer:
+              case air::TextureKind::texture_buffer: {
+                auto offset = co_yield metadata_get_texture_buffer_offset(
+                  co_yield metadata(nullptr)
+                );
                 co_yield call_write(
-                  res, res_h, co_yield extract_element(0)(address), nullptr,
-                  nullptr, value, ctx.builder.getInt32(0)
+                  res, res_h,
+                  ctx.builder.CreateAdd(
+                    co_yield extract_element(0)(address), offset
+                  ),
+                  nullptr, nullptr, value, ctx.builder.getInt32(0)
                 );
                 break;
+              }
               case air::TextureKind::texture_1d:
                 co_yield call_write(
                   res, res_h, co_yield extract_element(0)(address), nullptr,
@@ -2862,7 +2959,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                 },
                 [&](SrcOperandResource srv) {
                   return make_effect_bind([=](struct context ctx) -> IREffect {
-                    auto [__, _, stride] =
+                    auto& [stride, __, _] =
                       ctx.resource.srv_buf_range_map[srv.range_id];
                     pvalue oob = nullptr;
                     co_return co_yield store_dst_op<false>(
@@ -2887,7 +2984,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                 },
                 [&](SrcOperandUAV uav) {
                   return make_effect_bind([=](struct context ctx) -> IREffect {
-                    auto [__, _, stride] =
+                    auto &[stride, __, _] =
                       ctx.resource.uav_buf_range_map[uav.range_id];
                     pvalue oob = nullptr;
                     co_return co_yield store_dst_op<false>(
@@ -2919,7 +3016,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
               patterns{
                 [&](AtomicOperandTGSM tgsm) {
                   return make_effect_bind([=](struct context ctx) -> IREffect {
-                    auto [stride, _] = ctx.resource.tgsm_map[tgsm.id];
+                    auto& [stride, _] = ctx.resource.tgsm_map[tgsm.id];
                     co_return co_yield store_to_uint_bufptr(
                       co_yield read_uint_buf_addr(
                         tgsm, co_yield calc_uint_ptr_index(
@@ -2933,7 +3030,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                 },
                 [&](AtomicDstOperandUAV uav) {
                   return make_effect_bind([=](struct context ctx) -> IREffect {
-                    auto [__, _, stride] =
+                    auto& [stride, __, _] =
                       ctx.resource.uav_buf_range_map[uav.range_id];
                     co_return co_yield store_to_uint_bufptr(
                       co_yield read_uint_buf_addr(
@@ -3741,9 +3838,10 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
             effect << store_dst_op<true>(
               calc.dst,
               make_irvalue_bind([=](struct context ctx) -> IRValue {
-                auto [res, res_handle_fn] =
+                auto &[res, res_handle_fn, _] =
                   ctx.resource.srv_range_map[calc.src_resource.range_id];
-                auto sampler_handle_fn =
+                // FIXME: sampelr bias is not respected
+                auto &[sampler_handle_fn, __] =
                   ctx.resource.sampler_range_map[calc.src_sampler.range_id];
                 auto res_h = co_yield res_handle_fn(nullptr);
                 auto sampler_h = co_yield sampler_handle_fn(nullptr);
@@ -3868,13 +3966,27 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                                           )
                       );
                     }
-                    auto [res, res_handle_fn] =
+                    auto &[res, res_handle_fn, metadata] =
                       ctx.resource.uav_range_map.at(uav.range_id);
                     auto res_h = co_yield res_handle_fn(nullptr);
                     auto address = co_yield load_src_op<false>(bin.dst_address);
                     auto value = co_yield load_src_op<false>(bin.src);
                     switch (res.resource_kind) {
-                    case air::TextureKind::texture_buffer:
+                    case air::TextureKind::texture_buffer: {
+                      auto offset = co_yield metadata_get_texture_buffer_offset(
+                        co_yield metadata(nullptr)
+                      );
+                      co_return co_yield store_dst_op<false>(
+                        bin.dst_original,
+                        call_texture_atomic_fetch_explicit(
+                          res, res_h, op, is_signed,
+                          ctx.builder.CreateAdd(
+                            co_yield extract_element(0)(address), offset
+                          ),
+                          nullptr, value
+                        )
+                      );
+                    }
                     case air::TextureKind::texture_1d:
                       co_return co_yield store_dst_op<false>(
                         bin.dst_original,
@@ -3968,14 +4080,28 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                                   )
                       );
                     }
-                    auto [res, res_handle_fn] =
+                    auto &[res, res_handle_fn, metadata] =
                       ctx.resource.uav_range_map.at(uav.range_id);
                     auto res_h = co_yield res_handle_fn(nullptr);
                     auto address =
                       co_yield load_src_op<false>(exch.dst_address);
                     auto value = co_yield load_src_op<false>(exch.src);
                     switch (res.resource_kind) {
-                    case air::TextureKind::texture_buffer:
+                    case air::TextureKind::texture_buffer: {
+                      auto offset = co_yield metadata_get_texture_buffer_offset(
+                        co_yield metadata(nullptr)
+                      );
+                      co_return co_yield store_dst_op<false>(
+                        exch.dst,
+                        call_texture_atomic_exchange(
+                          res, res_h,
+                          ctx.builder.CreateAdd(
+                            co_yield extract_element(0)(address), offset
+                          ),
+                          nullptr, value
+                        )
+                      );
+                    }
                     case air::TextureKind::texture_1d:
                       co_return co_yield store_dst_op<false>(
                         exch.dst,
@@ -4118,9 +4244,11 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                 [](SrcOperandResource srv) -> IRValue {
                   auto ctx = co_yield get_context();
                   if (ctx.resource.srv_buf_range_map.contains(srv.range_id)) {
-                    auto &[_, srv_c, stride] =
+                    auto &[stride, _, metadata] =
                       ctx.resource.srv_buf_range_map[srv.range_id];
-                    auto byte_width = co_yield srv_c(nullptr);
+                    auto byte_width = co_yield metadata_get_raw_buffer_length(
+                      co_yield metadata(nullptr)
+                    );
                     if (stride) {
                       co_return ctx.builder.CreateUDiv(
                         byte_width, ctx.builder.getInt32(stride)
@@ -4128,20 +4256,28 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                     }
                     co_return byte_width;
                   } else {
-                    auto &[tex, srv_h] =
+                    auto &[tex, srv_h, metadata] =
                       ctx.resource.srv_range_map[srv.range_id];
-                    co_return co_yield IRValue(call_get_texture_info(
-                      tex, co_yield srv_h(nullptr), air::TextureInfoType::width,
-                      co_yield get_int(0)
-                    )) >>= swizzle(srv.read_swizzle);
+                    auto offset = co_yield metadata_get_texture_buffer_offset(
+                      co_yield metadata(nullptr)
+                    );
+                    co_return ctx.builder.CreateSub(
+                      co_yield call_get_texture_info(
+                        tex, co_yield srv_h(nullptr),
+                        air::TextureInfoType::width, co_yield get_int(0)
+                      ),
+                      offset
+                    );
                   }
                 },
                 [](SrcOperandUAV uav) -> IRValue {
                   auto ctx = co_yield get_context();
                   if (ctx.resource.uav_buf_range_map.contains(uav.range_id)) {
-                    auto &[_, uav_c, stride] =
+                    auto &[stride, _, metadata] =
                       ctx.resource.uav_buf_range_map[uav.range_id];
-                    auto byte_width = co_yield uav_c(nullptr);
+                    auto byte_width = co_yield metadata_get_raw_buffer_length(
+                      co_yield metadata(nullptr)
+                    );
                     if (stride) {
                       co_return ctx.builder.CreateUDiv(
                         byte_width, ctx.builder.getInt32(stride)
@@ -4149,12 +4285,18 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                     }
                     co_return byte_width;
                   } else {
-                    auto &[tex, uav_h] =
+                    auto &[tex, uav_h, metadata] =
                       ctx.resource.uav_range_map[uav.range_id];
-                    co_return co_yield IRValue(call_get_texture_info(
-                      tex, co_yield uav_h(nullptr), air::TextureInfoType::width,
-                      co_yield get_int(0)
-                    )) >>= swizzle(uav.read_swizzle);
+                    auto offset = co_yield metadata_get_texture_buffer_offset(
+                      co_yield metadata(nullptr)
+                    );
+                    co_return ctx.builder.CreateSub(
+                      co_yield call_get_texture_info(
+                        tex, co_yield uav_h(nullptr),
+                        air::TextureInfoType::width, co_yield get_int(0)
+                      ),
+                      offset
+                    );
                   }
                 }
               },
@@ -4165,6 +4307,11 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
           [&effect](InstResourceInfo resinfo) {
             using T = std::tuple<air::MSLTexture, pvalue, Swizzle>;
             using V = ReaderIO<struct context, T>;
+            /*
+            If the a per-resource mip clamp has been specified on srcResource,
+            resinfo always returns the total number of mipmaps in the view for
+            the mip count, regardless of the clamp.
+            */
             effect
               << (std::visit(
                     patterns{
@@ -4172,7 +4319,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                         auto ctx = co_yield get_context();
                         assert(ctx.resource.srv_range_map.contains(srv.range_id)
                         );
-                        auto &[tex, res_h] =
+                        auto &[tex, res_h, _] =
                           ctx.resource.srv_range_map[srv.range_id];
                         co_return {
                           tex, co_yield res_h(nullptr), srv.read_swizzle
@@ -4182,7 +4329,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                         auto ctx = co_yield get_context();
                         assert(ctx.resource.uav_range_map.contains(uav.range_id)
                         );
-                        auto &[tex, res_h] =
+                        auto &[tex, res_h, _] =
                           ctx.resource.uav_range_map[uav.range_id];
                         co_return {
                           tex, co_yield res_h(nullptr), uav.read_swizzle
