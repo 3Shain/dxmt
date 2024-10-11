@@ -21,7 +21,7 @@ struct EncodingContext {
 };
 
 namespace impl {
-enum class BindingType : uint32_t {
+enum BindingType : uint32_t {
   Null = 0,
   JustBuffer = 0b1,
   WithCounter = 0b100,
@@ -29,20 +29,21 @@ enum class BindingType : uint32_t {
   JustTexture = 0b1000'0000,
   WithBackedBuffer = 0b0100'0000,
   WithLODClamp = 0b0010'0000,
-  WithElementOffset = 0b0001'0000,
   BackBufferSource_sRGB = 0b1'0000'0000,
   BackBufferSource_Linear = 0b10'0000'0000,
+  WithElementOffset = 0b1111 << 27,
 };
 
-inline bool operator&(BindingType a, BindingType b) {
-  return static_cast<uint32_t>(a) & static_cast<uint32_t>(b);
+inline BindingType operator&(BindingType a, BindingType b) {
+  return static_cast<BindingType>(static_cast<uint32_t>(a) &
+                                  static_cast<uint32_t>(b));
 }
 
 inline BindingType operator|(BindingType a, BindingType b) {
   return static_cast<BindingType>(static_cast<uint32_t>(a) |
                                   static_cast<uint32_t>(b));
 }
-}
+} // namespace impl
 
 class BindingRef {
   using Type = impl::BindingType;
@@ -225,10 +226,7 @@ class ArgumentData {
   Type type;
   union {
     float min_lod_;
-    struct {
-      uint32_t size : 28;
-      uint32_t element_offset : 4;
-    } packed_tbuffer_data;
+    uint32_t byte_width_;
   };
   uint64_t resource_handle;
   union {
@@ -240,10 +238,10 @@ class ArgumentData {
 public:
   ArgumentData(uint64_t h, uint32_t c) noexcept
       : type(Type::JustBuffer | Type::WithBoundInformation),
-        packed_tbuffer_data({c, 0}), resource_handle(h) {}
+        byte_width_(c), resource_handle(h) {}
   ArgumentData(uint64_t h, uint32_t c, uint64_t ctr) noexcept
       : type(Type::JustBuffer | Type::WithBoundInformation | Type::WithCounter),
-        packed_tbuffer_data({c, 0}), resource_handle(h), counter_handle(ctr) {}
+        byte_width_(c), resource_handle(h), counter_handle(ctr) {}
   ArgumentData(MTL::ResourceID id, MTL::Texture *) noexcept
       : type(Type::JustTexture), resource_handle(id._impl) {}
   ArgumentData(MTL::ResourceID id, float min_lod) noexcept
@@ -253,13 +251,14 @@ public:
                uint32_t size) noexcept
       : type(Type::JustTexture | Type::WithBackedBuffer |
              Type::WithBoundInformation),
-        packed_tbuffer_data({size, 0}), resource_handle(id._impl),
+        byte_width_(size), resource_handle(id._impl),
         buffer_handle(buffer_handle) {}
   ArgumentData(MTL::ResourceID id, uint64_t buffer_handle, uint32_t size,
                uint32_t element_offset) noexcept
       : type(Type::JustTexture | Type::WithBackedBuffer |
-             Type::WithBoundInformation | Type::WithElementOffset),
-        packed_tbuffer_data({size, element_offset}), resource_handle(id._impl),
+             Type::WithBoundInformation |
+             ((Type)(element_offset << 27) & Type::WithElementOffset)),
+        byte_width_(size), resource_handle(id._impl),
         buffer_handle(buffer_handle) {}
   ArgumentData(BackBufferSource *t, bool srgb) noexcept
       : type(srgb ? Type::BackBufferSource_sRGB
@@ -303,7 +302,7 @@ public:
 
   uint32_t width() const {
     if (type & Type::WithBoundInformation) {
-      return packed_tbuffer_data.size;
+      return byte_width_;
     }
     return 0;
   }
@@ -323,10 +322,7 @@ public:
   }
 
   uint32_t element_offset() const {
-    if (type & Type::WithElementOffset) {
-      return packed_tbuffer_data.element_offset;
-    }
-    return 0;
+    return (type & Type::WithElementOffset) >> 27;
   }
 };
 } // namespace dxmt
