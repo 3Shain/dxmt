@@ -22,15 +22,13 @@ CounterPool::~CounterPool() {
   }
 }
 
-CounterHandle CounterPool::AllocateCounter(uint64_t SeqId,
-                                           uint32_t InitialValue) {
+CounterHandle
+CounterPool::AllocateCounter(uint64_t SeqId, uint32_t InitialValue) {
   if (!free_.size()) {
     auto pool = transfer(NS::AutoreleasePool::alloc()->init());
-    MTL::Buffer *buffer =
-        device->newBuffer(kCounterBufferSize, MTL::ResourceStorageModePrivate);
+    MTL::Buffer *buffer = device->newBuffer(kCounterBufferSize, MTL::ResourceStorageModePrivate);
     underlying_buffers_.push_back(buffer);
-    buffer->setLabel(
-        NS::String::string("dxmt_uav_counter", NS::UTF8StringEncoding));
+    buffer->setLabel(NS::String::string("dxmt_uav_counter", NS::UTF8StringEncoding));
     for (unsigned i = 0; i < kCounterBufferSize; i += 4) {
       free_.push_back(counter_pool_.size());
       counter_pool_.push_back({buffer, i});
@@ -46,17 +44,20 @@ CounterHandle CounterPool::AllocateCounter(uint64_t SeqId,
   return handle;
 }
 
-void CounterPool::DiscardCounter(uint64_t SeqId, CounterHandle Handle) {
+void
+CounterPool::DiscardCounter(uint64_t SeqId, CounterHandle Handle) {
   auto inserted = to_discard_.insert({SeqId, {}});
   inserted.first->second.push_back(Handle);
 }
 
-Counter CounterPool::GetCounter(CounterHandle Handle) {
+Counter
+CounterPool::GetCounter(CounterHandle Handle) {
   assert(Handle < counter_pool_.size());
   return counter_pool_[Handle];
 }
 
-void CounterPool::FillCounters(uint64_t SeqId, MTL::CommandBuffer *pCmdbuf) {
+void
+CounterPool::FillCounters(uint64_t SeqId, MTL::CommandBuffer *pCmdbuf) {
   if (!to_initialize_.contains(SeqId)) {
     return;
   }
@@ -70,7 +71,8 @@ void CounterPool::FillCounters(uint64_t SeqId, MTL::CommandBuffer *pCmdbuf) {
   encoder->endEncoding();
 }
 
-void CounterPool::ReleaseCounters(uint64_t SeqId) {
+void
+CounterPool::ReleaseCounters(uint64_t SeqId) {
   if (!to_discard_.contains(SeqId)) {
     return;
   }

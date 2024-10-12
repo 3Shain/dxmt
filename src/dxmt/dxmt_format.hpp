@@ -23,28 +23,26 @@ enum class FormatCapability : int {
 };
 
 const FormatCapability ALL_CAP = static_cast<FormatCapability>(
-    FormatCapability::Filter | FormatCapability::Write |
-    FormatCapability::Color | FormatCapability::MSAA | FormatCapability::Blend |
-    FormatCapability::Sparse | FormatCapability::Resolve);
+    FormatCapability::Filter | FormatCapability::Write | FormatCapability::Color | FormatCapability::MSAA |
+    FormatCapability::Blend | FormatCapability::Sparse | FormatCapability::Resolve
+);
 const FormatCapability TEXTURE_BUFFER_ALL_CAP = static_cast<FormatCapability>(
     FormatCapability::TextureBufferRead | FormatCapability::TextureBufferWrite |
-    FormatCapability::TextureBufferReadWrite);
-const FormatCapability TEXTURE_BUFFER_READ_OR_WRITE = static_cast<FormatCapability>(
-    FormatCapability::TextureBufferRead | FormatCapability::TextureBufferWrite);
+    FormatCapability::TextureBufferReadWrite
+);
+const FormatCapability TEXTURE_BUFFER_READ_OR_WRITE =
+    static_cast<FormatCapability>(FormatCapability::TextureBufferRead | FormatCapability::TextureBufferWrite);
 const FormatCapability NO_ATOMIC_RESOLVE = static_cast<FormatCapability>(
-    FormatCapability::Filter | FormatCapability::Write |
-    FormatCapability::Color | FormatCapability::MSAA | FormatCapability::Blend |
-    FormatCapability::Sparse);
+    FormatCapability::Filter | FormatCapability::Write | FormatCapability::Color | FormatCapability::MSAA |
+    FormatCapability::Blend | FormatCapability::Sparse
+);
 const FormatCapability APPLE_INT_FORMAT_CAP =
-    FormatCapability::Write | FormatCapability::Color | FormatCapability::MSAA |
-    FormatCapability::Sparse;
+    FormatCapability::Write | FormatCapability::Color | FormatCapability::MSAA | FormatCapability::Sparse;
 const FormatCapability NONAPPLE_INT_FORMAT_CAP =
-    FormatCapability::Write | FormatCapability::Color | FormatCapability::MSAA |
-    FormatCapability::Sparse;
+    FormatCapability::Write | FormatCapability::Color | FormatCapability::MSAA | FormatCapability::Sparse;
 
 const FormatCapability APPLE_INT_FORMAT_CAP_32 =
-    FormatCapability::Write | FormatCapability::Color |
-    FormatCapability::Sparse | FormatCapability::Atomic;
+    FormatCapability::Write | FormatCapability::Color | FormatCapability::Sparse | FormatCapability::Atomic;
 
 class FormatCapabilityInspector {
 public:
@@ -55,7 +53,8 @@ public:
 MTL::PixelFormat Forget_sRGB(MTL::PixelFormat format);
 MTL::PixelFormat Recall_sRGB(MTL::PixelFormat format);
 
-constexpr bool Is_sRGBVariant(MTL::PixelFormat format) {
+constexpr bool
+Is_sRGBVariant(MTL::PixelFormat format) {
   return Forget_sRGB(format) != format;
 }
 

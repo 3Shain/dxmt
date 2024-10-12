@@ -9,7 +9,8 @@
 
 namespace dxmt {
 
-ENCODER_RENDER_INFO *CommandChunk::mark_render_pass() {
+ENCODER_RENDER_INFO *
+CommandChunk::mark_render_pass() {
   linear_allocator<ENCODER_RENDER_INFO> allocator(this);
   auto ptr = allocator.allocate(1);
   new (ptr) ENCODER_RENDER_INFO();
@@ -18,7 +19,8 @@ ENCODER_RENDER_INFO *CommandChunk::mark_render_pass() {
   return ptr;
 };
 
-ENCODER_CLEARPASS_INFO *CommandChunk::mark_clear_pass() {
+ENCODER_CLEARPASS_INFO *
+CommandChunk::mark_clear_pass() {
   linear_allocator<ENCODER_CLEARPASS_INFO> allocator(this);
   auto ptr = allocator.allocate(1);
   new (ptr) ENCODER_CLEARPASS_INFO();
@@ -27,7 +29,8 @@ ENCODER_CLEARPASS_INFO *CommandChunk::mark_clear_pass() {
   return ptr;
 };
 
-ENCODER_INFO *CommandChunk::mark_pass(EncoderKind kind) {
+ENCODER_INFO *
+CommandChunk::mark_pass(EncoderKind kind) {
   linear_allocator<ENCODER_INFO> allocator(this);
   auto ptr = allocator.allocate(1);
   ptr->kind = kind;
@@ -36,30 +39,30 @@ ENCODER_INFO *CommandChunk::mark_pass(EncoderKind kind) {
   return ptr;
 };
 
-CommandQueue::CommandQueue(MTL::Device *device)
-    : encodeThread([this]() { this->EncodingThread(); }),
-      finishThread([this]() { this->WaitForFinishThread(); }),
-      staging_allocator(device, MTL::ResourceOptionCPUCacheModeWriteCombined |
-                                    MTL::ResourceHazardTrackingModeUntracked |
-                                    MTL::ResourceStorageModeShared),
-      copy_temp_allocator(device, MTL::ResourceHazardTrackingModeUntracked |
-                                      MTL::ResourceStorageModePrivate),
-      clear_cmd(device), counter_pool(device) {
+CommandQueue::CommandQueue(MTL::Device *device) :
+    encodeThread([this]() { this->EncodingThread(); }),
+    finishThread([this]() { this->WaitForFinishThread(); }),
+    staging_allocator(
+        device, MTL::ResourceOptionCPUCacheModeWriteCombined | MTL::ResourceHazardTrackingModeUntracked |
+                    MTL::ResourceStorageModeShared
+    ),
+    copy_temp_allocator(device, MTL::ResourceHazardTrackingModeUntracked | MTL::ResourceStorageModePrivate),
+    clear_cmd(device),
+    counter_pool(device) {
   commandQueue = transfer(device->newCommandQueue(kCommandChunkCount));
   for (unsigned i = 0; i < kCommandChunkCount; i++) {
     auto &chunk = chunks[i];
     chunk.queue = this;
     chunk.cpu_argument_heap = (char *)malloc(kCommandChunkCPUHeapSize);
     chunk.gpu_argument_heap = transfer(device->newBuffer(
-        kCommandChunkGPUHeapSize, MTL::ResourceHazardTrackingModeUntracked |
-                                      MTL::ResourceCPUCacheModeWriteCombined |
-                                      MTL::ResourceStorageModeShared));
-    chunk.visibility_result_heap =
-        transfer(device->newBuffer(kOcclusionSampleCount * sizeof(uint64_t),
-                                   MTL::ResourceHazardTrackingModeUntracked |
-                                       MTL::ResourceStorageModeShared));
-    chunk.gpu_argument_heap_contents =
-        (uint64_t *)chunk.gpu_argument_heap->contents();
+        kCommandChunkGPUHeapSize, MTL::ResourceHazardTrackingModeUntracked | MTL::ResourceCPUCacheModeWriteCombined |
+                                      MTL::ResourceStorageModeShared
+    ));
+    chunk.visibility_result_heap = transfer(device->newBuffer(
+        kOcclusionSampleCount * sizeof(uint64_t),
+        MTL::ResourceHazardTrackingModeUntracked | MTL::ResourceStorageModeShared
+    ));
+    chunk.gpu_argument_heap_contents = (uint64_t *)chunk.gpu_argument_heap->contents();
     chunk.reset();
   };
 
@@ -91,13 +94,11 @@ CommandQueue::~CommandQueue() {
   TRACE("Destructed command queue");
 }
 
-void CommandQueue::CommitCurrentChunk(uint64_t occlusion_counter_begin,
-                                      uint64_t occlusion_counter_end) {
+void
+CommandQueue::CommitCurrentChunk(uint64_t occlusion_counter_begin, uint64_t occlusion_counter_end) {
   chunk_ongoing.wait(kCommandChunkCount - 1, std::memory_order_acquire);
   chunk_ongoing.fetch_add(1, std::memory_order_relaxed);
-  auto &chunk = chunks[
-    ready_for_encode.load(std::memory_order_relaxed) % kCommandChunkCount
-  ];
+  auto &chunk = chunks[ready_for_encode.load(std::memory_order_relaxed) % kCommandChunkCount];
   chunk.frame_ = present_seq;
   chunk.visibility_result_seq_begin = occlusion_counter_begin;
   chunk.visibility_result_seq_end = occlusion_counter_end;
@@ -105,13 +106,12 @@ void CommandQueue::CommitCurrentChunk(uint64_t occlusion_counter_begin,
   ready_for_encode.fetch_add(1, std::memory_order_release);
   ready_for_encode.notify_one();
 #else
-  CommitChunkInternal(chunk, 
-    ready_for_encode.fetch_add(1, std::memory_order_relaxed)
-  );
+  CommitChunkInternal(chunk, ready_for_encode.fetch_add(1, std::memory_order_relaxed));
 #endif
 }
 
-void CommandQueue::CommitChunkInternal(CommandChunk &chunk, uint64_t seq) {
+void
+CommandQueue::CommitChunkInternal(CommandChunk &chunk, uint64_t seq) {
 
   auto pool = transfer(NS::AutoreleasePool::alloc()->init());
 
@@ -124,12 +124,10 @@ void CommandQueue::CommitChunkInternal(CommandChunk &chunk, uint64_t seq) {
     char filename[1024];
     std::time_t now;
     std::time(&now);
-    std::strftime(filename, 1024, "-capture-%H-%M-%S_%m-%d-%y.gputrace",
-                  std::localtime(&now));
+    std::strftime(filename, 1024, "-capture-%H-%M-%S_%m-%d-%y.gputrace", std::localtime(&now));
     auto fileUrl = env::getUnixPath(env::getExeBaseName() + filename);
-    WARN("A new capture will be saved to " ,fileUrl);
-    NS::URL *pURL = NS::URL::alloc()->initFileURLWithPath(
-        NS::String::string(fileUrl.c_str(), NS::UTF8StringEncoding));
+    WARN("A new capture will be saved to ", fileUrl);
+    NS::URL *pURL = NS::URL::alloc()->initFileURLWithPath(NS::String::string(fileUrl.c_str(), NS::UTF8StringEncoding));
 
     NS::Error *pError = nullptr;
     capture_desc->setOutputURL(pURL);
@@ -160,7 +158,8 @@ void CommandQueue::CommitChunkInternal(CommandChunk &chunk, uint64_t seq) {
   ready_for_commit.notify_one();
 }
 
-uint32_t CommandQueue::EncodingThread() {
+uint32_t
+CommandQueue::EncodingThread() {
 #if ASYNC_ENCODING
   env::setThreadName("dxmt-encode-thread");
   __pthread_set_qos_class_self_np(__QOS_CLASS_USER_INTERACTIVE, 0);
@@ -180,7 +179,8 @@ uint32_t CommandQueue::EncodingThread() {
   return 0;
 }
 
-uint32_t CommandQueue::WaitForFinishThread() {
+uint32_t
+CommandQueue::WaitForFinishThread() {
   env::setThreadName("dxmt-finish-thread");
   __pthread_set_qos_class_self_np(__QOS_CLASS_USER_INTERACTIVE, 0);
   SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
@@ -194,29 +194,23 @@ uint32_t CommandQueue::WaitForFinishThread() {
       chunk.attached_cmdbuf->waitUntilCompleted();
     }
     if (chunk.attached_cmdbuf->status() == MTL::CommandBufferStatusError) {
-      ERR("Device error at frame ", chunk.frame_, ", : ",
-          chunk.attached_cmdbuf->error()->localizedDescription()->cString(
-              NS::ASCIIStringEncoding));
+      ERR("Device error at frame ", chunk.frame_,
+          ", : ", chunk.attached_cmdbuf->error()->localizedDescription()->cString(NS::ASCIIStringEncoding));
     }
     if (chunk.attached_cmdbuf->logs()) {
       if (((NS::Array *)chunk.attached_cmdbuf->logs())->count()) {
         ERR("logs at frame ", chunk.frame_);
-        ERR(chunk.attached_cmdbuf->logs()->debugDescription()->cString(
-            NS::ASCIIStringEncoding));
+        ERR(chunk.attached_cmdbuf->logs()->debugDescription()->cString(NS::ASCIIStringEncoding));
       }
     }
-    uint64_t *visibility_result_buffer =
-        (uint64_t *)chunk.visibility_result_heap->contents();
+    uint64_t *visibility_result_buffer = (uint64_t *)chunk.visibility_result_heap->contents();
     {
       std::lock_guard<dxmt::mutex> lock(mutex_observers);
-      for (auto seq = chunk.visibility_result_seq_begin;
-           seq < chunk.visibility_result_seq_end; seq++) {
-        uint64_t counter_value =
-            visibility_result_buffer[seq % kOcclusionSampleCount];
-        std::erase_if(visibility_result_observers,
-                      [=](VisibilityResultObserver *observer) {
-                        return observer->Update(seq, counter_value);
-                      });
+      for (auto seq = chunk.visibility_result_seq_begin; seq < chunk.visibility_result_seq_end; seq++) {
+        uint64_t counter_value = visibility_result_buffer[seq % kOcclusionSampleCount];
+        std::erase_if(visibility_result_observers, [=](VisibilityResultObserver *observer) {
+          return observer->Update(seq, counter_value);
+        });
       }
     }
 

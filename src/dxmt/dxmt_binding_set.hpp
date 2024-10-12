@@ -24,58 +24,85 @@ public:
     dirty = move.bound; // intended behavior
   };
 
-  BindingSet &operator=(BindingSet &&move) {
+  BindingSet &
+  operator=(BindingSet &&move) {
     storage = std::move(move.storage);
     bound = move.bound;
     dirty = move.bound; // intended behavior
     return *this;
   }
 
-  constexpr Element &at(uint64_t index) noexcept { return storage[index]; };
+  constexpr Element &
+  at(uint64_t index) noexcept {
+    return storage[index];
+  };
 
-  constexpr Element &operator[](uint64_t index) noexcept {
+  constexpr Element &
+  operator[](uint64_t index) noexcept {
     assert(bound.get(index));
     return storage[index];
   };
 
-  constexpr bool test_bound(size_t slot) const noexcept {
+  constexpr bool
+  test_bound(size_t slot) const noexcept {
     return bound.get(slot);
   };
 
-  constexpr bool test_dirty(size_t slot) const noexcept {
+  constexpr bool
+  test_dirty(size_t slot) const noexcept {
     return dirty.get(slot);
   };
 
-  constexpr bool any_dirty() const noexcept { return dirty.any(); }
+  constexpr bool
+  any_dirty() const noexcept {
+    return dirty.any();
+  }
 
-  constexpr bool any_dirty_masked(uint16_t mask) noexcept {
+  constexpr bool
+  any_dirty_masked(uint16_t mask) noexcept {
     return (dirty.qword(0) & (uint64_t)mask) != 0;
   }
 
-  constexpr bool any_dirty_masked(uint64_t mask) noexcept {
+  constexpr bool
+  any_dirty_masked(uint64_t mask) noexcept {
     return (dirty.qword(0) & mask) != 0;
   }
 
-  constexpr bool any_dirty_masked(uint64_t mask_hi, uint64_t mask_lo) noexcept {
+  constexpr bool
+  any_dirty_masked(uint64_t mask_hi, uint64_t mask_lo) noexcept {
     return ((dirty.qword(0) & mask_lo) | (dirty.qword(1) & mask_hi)) != 0;
   }
 
-  constexpr bool all_bound_masked(uint32_t mask) noexcept {
+  constexpr bool
+  all_bound_masked(uint32_t mask) noexcept {
     return (bound.qword(0) & mask) == mask;
   }
 
-  constexpr uint32_t max_binding_64() noexcept {
+  constexpr uint32_t
+  max_binding_64() noexcept {
     auto qword = dirty.qword(0);
-    return qword == 0 ? 0: 64 - __builtin_clzll(qword);
+    return qword == 0 ? 0 : 64 - __builtin_clzll(qword);
   }
 
-  inline void clear_dirty() { dirty.clearAll(); }
+  inline void
+  clear_dirty() {
+    dirty.clearAll();
+  }
 
-  inline void clear_dirty(size_t slot) { dirty.set(slot, false); }
+  inline void
+  clear_dirty(size_t slot) {
+    dirty.set(slot, false);
+  }
 
-  inline void set_dirty() { dirty = bound; };
+  inline void
+  set_dirty() {
+    dirty = bound;
+  };
 
-  inline void set_dirty(size_t slot) { dirty.set(slot, true); };
+  inline void
+  set_dirty(size_t slot) {
+    dirty.set(slot, true);
+  };
 
   /**
   try to bind element at specific slot, and return a reference to the
@@ -83,10 +110,10 @@ public:
   this is useful because we don't have to fully initalize the element
   (so no initialization overhead if no replacement)
   */
-  inline Element &bind(size_t slot, Element &&element, bool &replacement) {
+  inline Element &
+  bind(size_t slot, Element &&element, bool &replacement) {
     if (bound.get(slot)) {
-      if (redunant_binding_trait<Element>::is_redunant(storage[slot],
-                                                       element)) {
+      if (redunant_binding_trait<Element>::is_redunant(storage[slot], element)) {
         return storage[slot];
       }
     } else {
@@ -101,7 +128,8 @@ public:
     return storage[slot];
   };
 
-  inline void unbind(size_t slot) {
+  inline void
+  unbind(size_t slot) {
     if (bound.get(slot)) {
       // storage[slot].~Element();
       // yeah that's weird but since we don't use placement construction

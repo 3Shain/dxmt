@@ -7,18 +7,14 @@
 extern "C" unsigned char dxmt_command_metallib[];
 extern "C" unsigned int dxmt_command_metallib_len;
 
-#define CREATE_PIPELINE(name)                                                  \
-  auto name##_function = transfer(library->newFunction(                        \
-      NS::String::string(#name, NS::ASCIIStringEncoding)));                    \
-  name##_pipeline =                                                            \
-      transfer(device->newComputePipelineState(name##_function, &error));
+#define CREATE_PIPELINE(name)                                                                                          \
+  auto name##_function = transfer(library->newFunction(NS::String::string(#name, NS::ASCIIStringEncoding)));           \
+  name##_pipeline = transfer(device->newComputePipelineState(name##_function, &error));
 
 namespace dxmt {
 DXMTCommandContext::DXMTCommandContext(MTL::Device *device) {
   auto pool = transfer(NS::AutoreleasePool::alloc()->init());
-  auto dispatch_data =
-      dispatch_data_create(dxmt_command_metallib,
-                           dxmt_command_metallib_len, nullptr, nullptr);
+  auto dispatch_data = dispatch_data_create(dxmt_command_metallib, dxmt_command_metallib_len, nullptr, nullptr);
 
   Obj<NS::Error> error;
   auto library = transfer(device->newLibrary(dispatch_data, &error));

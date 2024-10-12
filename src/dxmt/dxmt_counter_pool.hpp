@@ -30,8 +30,7 @@ public:
 private:
   std::vector<Counter> counter_pool_;
   std::vector<CounterHandle> free_;
-  std::unordered_map<uint64_t, std::vector<std::pair<CounterHandle, uint32_t>>>
-      to_initialize_;
+  std::unordered_map<uint64_t, std::vector<std::pair<CounterHandle, uint32_t>>> to_initialize_;
   std::unordered_map<uint64_t, std::vector<CounterHandle>> to_discard_;
   std::vector<MTL::Buffer *> underlying_buffers_;
   MTL::Device *device;

@@ -2,7 +2,8 @@
 #include "util_names.hpp"
 #include "Metal/MTLPixelFormat.hpp"
 
-std::ostream &operator<<(std::ostream &os, D3D_FEATURE_LEVEL e) {
+std::ostream &
+operator<<(std::ostream &os, D3D_FEATURE_LEVEL e) {
   switch (e) {
     ENUM_NAME(D3D_FEATURE_LEVEL_9_1);
     ENUM_NAME(D3D_FEATURE_LEVEL_9_2);
@@ -17,7 +18,8 @@ std::ostream &operator<<(std::ostream &os, D3D_FEATURE_LEVEL e) {
   }
 }
 
-std::ostream &operator<<(std::ostream &os, D3D11_RESOURCE_DIMENSION e) {
+std::ostream &
+operator<<(std::ostream &os, D3D11_RESOURCE_DIMENSION e) {
   switch (e) {
     ENUM_NAME(D3D11_RESOURCE_DIMENSION_UNKNOWN);
     ENUM_NAME(D3D11_RESOURCE_DIMENSION_BUFFER);
@@ -28,7 +30,8 @@ std::ostream &operator<<(std::ostream &os, D3D11_RESOURCE_DIMENSION e) {
   }
 }
 
-std::ostream &operator<<(std::ostream &os, DXGI_FORMAT e) {
+std::ostream &
+operator<<(std::ostream &os, DXGI_FORMAT e) {
   switch (e) {
     ENUM_NAME(DXGI_FORMAT_UNKNOWN);
     ENUM_NAME(DXGI_FORMAT_R32G32B32A32_TYPELESS);
@@ -152,7 +155,8 @@ std::ostream &operator<<(std::ostream &os, DXGI_FORMAT e) {
 
 namespace MTL {
 
-std::ostream &operator<<(std::ostream &os, PixelFormat e) {
+std::ostream &
+operator<<(std::ostream &os, PixelFormat e) {
   switch (e) {
     ENUM_NAME(PixelFormatInvalid);
     ENUM_NAME(PixelFormatA8Unorm);

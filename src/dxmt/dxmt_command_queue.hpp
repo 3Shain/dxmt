@@ -69,7 +69,8 @@ struct ENCODER_CLEARPASS_INFO {
     };
   };
 
-  [[nodiscard("")]] CLEARPASS_CLEANUP use_clearpass() {
+  [[nodiscard("")]] CLEARPASS_CLEANUP
+  use_clearpass() {
     return CLEARPASS_CLEANUP(this);
   }
 };
@@ -80,15 +81,14 @@ concept cpu_cmd = requires(F f, context &ctx) {
 };
 
 inline std::size_t
-align_forward_adjustment(const void *const ptr,
-                         const std::size_t &alignment) noexcept {
+align_forward_adjustment(const void *const ptr, const std::size_t &alignment) noexcept {
   const auto iptr = reinterpret_cast<std::uintptr_t>(ptr);
   const auto aligned = (iptr - 1u + alignment) & -alignment;
   return aligned - iptr;
 }
 
-inline void *ptr_add(const void *const p,
-                     const std::uintptr_t &amount) noexcept {
+inline void *
+ptr_add(const void *const p, const std::uintptr_t &amount) noexcept {
   return reinterpret_cast<void *>(reinterpret_cast<std::uintptr_t>(p) + amount);
 }
 
@@ -108,20 +108,23 @@ class CommandChunk {
     linear_allocator() = delete;
     linear_allocator(CommandChunk *chunk) : chunk(chunk) {};
 
-    [[nodiscard]] constexpr T *allocate(std::size_t n) {
-      return reinterpret_cast<T *>(
-          chunk->allocate_cpu_heap(n * sizeof(T), alignof(T)));
+    [[nodiscard]] constexpr T *
+    allocate(std::size_t n) {
+      return reinterpret_cast<T *>(chunk->allocate_cpu_heap(n * sizeof(T), alignof(T)));
     }
 
-    constexpr void deallocate(T *p, [[maybe_unused]] std::size_t n) noexcept {
+    constexpr void
+    deallocate(T *p, [[maybe_unused]] std::size_t n) noexcept {
       // do nothing
     }
 
-    bool operator==(const linear_allocator<T> &rhs) const noexcept {
+    bool
+    operator==(const linear_allocator<T> &rhs) const noexcept {
       return chunk == rhs.chunk;
     }
 
-    bool operator!=(const linear_allocator<T> &rhs) const noexcept {
+    bool
+    operator!=(const linear_allocator<T> &rhs) const noexcept {
       return !(*this == rhs);
     }
 
@@ -134,10 +137,12 @@ class CommandChunk {
     virtual ~BFunc() noexcept {};
   };
 
-  template <typename context, typename F>
-  class EFunc final : public BFunc<context> {
+  template <typename context, typename F> class EFunc final : public BFunc<context> {
   public:
-    void invoke(context &ctx) final { std::invoke(func, ctx); };
+    void
+    invoke(context &ctx) final {
+      std::invoke(func, ctx);
+    };
     ~EFunc() noexcept final = default;
     EFunc(F &&ff) : func(std::forward<F>(ff)) {}
     EFunc(const EFunc &copy) = delete;
@@ -172,51 +177,50 @@ class CommandChunk {
     MTL::Buffer *current_index_buffer_ref{};
     uint32_t dsv_planar_flags = 0;
 
-    MTL::RenderPipelineState* tess_mesh_pso;
-    MTL::RenderPipelineState* tess_raster_pso;
+    MTL::RenderPipelineState *tess_mesh_pso;
+    MTL::RenderPipelineState *tess_raster_pso;
     uint32_t tess_num_output_control_point_element;
     uint32_t tess_num_output_patch_constant_scalar;
     uint32_t tess_threads_per_patch;
 
-    context_t(CommandChunk *chk, MTL::CommandBuffer *cmdbuf)
-        : chk(chk), queue(chk->queue), cmdbuf(cmdbuf) {}
+    context_t(CommandChunk *chk, MTL::CommandBuffer *cmdbuf) : chk(chk), queue(chk->queue), cmdbuf(cmdbuf) {}
 
   private:
   };
 
 public:
-  template <typename T>
-  using fixed_vector_on_heap = std::vector<T, linear_allocator<T>>;
+  template <typename T> using fixed_vector_on_heap = std::vector<T, linear_allocator<T>>;
 
   CommandChunk(const CommandChunk &) = delete; // delete copy constructor
 
-  template <typename T> fixed_vector_on_heap<T> reserve_vector(size_t n = 1) {
+  template <typename T>
+  fixed_vector_on_heap<T>
+  reserve_vector(size_t n = 1) {
     linear_allocator<T> allocator(this);
     fixed_vector_on_heap<T> ret(allocator);
     ret.reserve(n);
     return ret;
   }
 
-  void *allocate_cpu_heap(size_t size, size_t alignment) {
-    std::size_t adjustment =
-        align_forward_adjustment((void *)cpu_arugment_heap_offset, alignment);
+  void *
+  allocate_cpu_heap(size_t size, size_t alignment) {
+    std::size_t adjustment = align_forward_adjustment((void *)cpu_arugment_heap_offset, alignment);
     auto aligned = cpu_arugment_heap_offset + adjustment;
     cpu_arugment_heap_offset = aligned + size;
     if (cpu_arugment_heap_offset >= kCommandChunkCPUHeapSize) {
-      ERR(cpu_arugment_heap_offset,
-          " - cpu argument heap overflow, expect error.");
+      ERR(cpu_arugment_heap_offset, " - cpu argument heap overflow, expect error.");
     }
     return ptr_add(cpu_argument_heap, aligned);
   }
 
-  std::pair<MTL::Buffer *, uint64_t> inspect_gpu_heap() {
+  std::pair<MTL::Buffer *, uint64_t>
+  inspect_gpu_heap() {
     return {gpu_argument_heap, gpu_arugment_heap_offset};
   }
 
-  std::pair<MTL::Buffer *, uint64_t> allocate_gpu_heap(size_t size,
-                                                       size_t alignment) {
-    std::size_t adjustment =
-        align_forward_adjustment((void *)gpu_arugment_heap_offset, alignment);
+  std::pair<MTL::Buffer *, uint64_t>
+  allocate_gpu_heap(size_t size, size_t alignment) {
+    std::size_t adjustment = align_forward_adjustment((void *)gpu_arugment_heap_offset, alignment);
     auto aligned = gpu_arugment_heap_offset + adjustment;
     gpu_arugment_heap_offset = aligned + size;
     if (gpu_arugment_heap_offset > kCommandChunkGPUHeapSize) {
@@ -229,7 +233,9 @@ public:
 
   using context = context_t;
 
-  template <cpu_cmd<context> F> void emit(F &&func) {
+  template <cpu_cmd<context> F>
+  void
+  emit(F &&func) {
     linear_allocator<EFunc<context, F>> allocator(this);
     auto ptr = allocator.allocate(1);
     new (ptr) EFunc<context, F>(std::forward<F>(func)); // in placement
@@ -241,14 +247,14 @@ public:
     list_end = ptr_node;
   }
 
-  void encode(MTL::CommandBuffer *cmdbuf) {
+  void
+  encode(MTL::CommandBuffer *cmdbuf) {
     attached_cmdbuf = cmdbuf;
     context_t context(this, cmdbuf);
     auto cur = monoid_list.next;
     while (cur) {
       assert((uint64_t)cur->value >= (uint64_t)cpu_argument_heap);
-      assert((uint64_t)cur->value <
-             ((uint64_t)cpu_argument_heap + cpu_arugment_heap_offset));
+      assert((uint64_t)cur->value < ((uint64_t)cpu_argument_heap + cpu_arugment_heap_offset));
       cur->value->invoke(context);
       cur = cur->next;
     }
@@ -260,11 +266,18 @@ public:
 
   ENCODER_INFO *mark_pass(EncoderKind kind);
 
-  ENCODER_INFO *get_last_encoder() { return last_encoder_info; }
+  ENCODER_INFO *
+  get_last_encoder() {
+    return last_encoder_info;
+  }
 
-  uint64_t current_encoder_id() { return last_encoder_info->encoder_id; }
+  uint64_t
+  current_encoder_id() {
+    return last_encoder_info->encoder_id;
+  }
 
-  uint32_t has_no_work_encoded_yet() {
+  uint32_t
+  has_no_work_encoded_yet() {
     return last_encoder_info->kind == EncoderKind::Nil ? 1u : 0u;
   }
 
@@ -290,16 +303,18 @@ private:
   friend class CommandQueue;
 
 public:
-  CommandChunk()
-      : monoid(), monoid_list{&monoid, nullptr}, list_end(&monoid_list),
-        last_encoder_info(&init_encoder_info) {}
+  CommandChunk() :
+      monoid(),
+      monoid_list{&monoid, nullptr},
+      list_end(&monoid_list),
+      last_encoder_info(&init_encoder_info) {}
 
-  void reset() noexcept {
+  void
+  reset() noexcept {
     auto cur = monoid_list.next;
     while (cur) {
       assert((uint64_t)cur->value >= (uint64_t)cpu_argument_heap);
-      assert((uint64_t)cur->value <
-             ((uint64_t)cpu_argument_heap + cpu_arugment_heap_offset));
+      assert((uint64_t)cur->value < ((uint64_t)cpu_argument_heap + cpu_arugment_heap_offset));
       cur->value->~BFunc<context>(); // call destructor
       cur = cur->next;
     }
@@ -321,8 +336,7 @@ private:
 
   uint32_t WaitForFinishThread();
 
-  std::atomic_uint64_t ready_for_encode =
-      1; // we start from 1, so 0 is always coherent
+  std::atomic_uint64_t ready_for_encode = 1; // we start from 1, so 0 is always coherent
   std::atomic_uint64_t ready_for_commit = 1;
   std::atomic_uint64_t chunk_ongoing = 0;
   std::atomic_uint64_t cpu_coherent = 0;
@@ -337,7 +351,10 @@ private:
   Obj<MTL::CommandQueue> commandQueue;
 
   friend class CommandChunk;
-  uint64_t GetNextEncoderId() { return encoder_seq++; }
+  uint64_t
+  GetNextEncoderId() {
+    return encoder_seq++;
+  }
 
   std::vector<VisibilityResultObserver *> visibility_result_observers;
   dxmt::mutex mutex_observers;
@@ -354,25 +371,30 @@ public:
 
   ~CommandQueue();
 
-  void RegisterVisibilityResultObserver(VisibilityResultObserver *observer) {
+  void
+  RegisterVisibilityResultObserver(VisibilityResultObserver *observer) {
     std::lock_guard<dxmt::mutex> lock(mutex_observers);
     visibility_result_observers.push_back(observer);
   }
 
-  CommandChunk *CurrentChunk() {
+  CommandChunk *
+  CurrentChunk() {
     auto id = ready_for_encode.load(std::memory_order_relaxed);
     return &chunks[id % kCommandChunkCount];
   };
 
-  uint64_t CoherentSeqId() {
+  uint64_t
+  CoherentSeqId() {
     return cpu_coherent.load(std::memory_order_acquire);
   };
 
-  uint64_t CurrentSeqId() {
+  uint64_t
+  CurrentSeqId() {
     return ready_for_encode.load(std::memory_order_relaxed);
   };
 
-  uint64_t EncodedWorkFinishAt() {
+  uint64_t
+  EncodedWorkFinishAt() {
     auto id = ready_for_encode.load(std::memory_order_relaxed);
     return id - chunks[id % kCommandChunkCount].has_no_work_encoded_yet();
   };
@@ -382,12 +404,15 @@ public:
   CurrentChunk & CommitCurrentChunk should be called on the same thread
 
   */
-  void CommitCurrentChunk(uint64_t occlusion_counter_begin,
-                          uint64_t occlusion_counter_end);
+  void CommitCurrentChunk(uint64_t occlusion_counter_begin, uint64_t occlusion_counter_end);
 
-  void PresentBoundary() { present_seq++; }
+  void
+  PresentBoundary() {
+    present_seq++;
+  }
 
-  void WaitCPUFence(uint64_t seq) {
+  void
+  WaitCPUFence(uint64_t seq) {
     uint64_t current;
     while ((current = cpu_coherent.load(std::memory_order_relaxed))) {
       if (current == seq) {
@@ -397,22 +422,19 @@ public:
     }
   };
 
-  void FIXME_YieldUntilCoherenceBoundaryUpdate(uint64_t seq_id) {
+  void
+  FIXME_YieldUntilCoherenceBoundaryUpdate(uint64_t seq_id) {
     cpu_coherent.wait(seq_id, std::memory_order_acquire);
   };
 
   std::tuple<void *, MTL::Buffer *, uint64_t>
   AllocateStagingBuffer(size_t size, size_t alignment) {
-    return staging_allocator.allocate(ready_for_encode,
-                                      cpu_coherent.load(std::memory_order_acquire),
-                                      size, alignment);
+    return staging_allocator.allocate(ready_for_encode, cpu_coherent.load(std::memory_order_acquire), size, alignment);
   }
 
   std::tuple<void *, MTL::Buffer *, uint64_t>
   AllocateTempBuffer(uint64_t seq, size_t size, size_t alignment) {
-    return copy_temp_allocator.allocate(seq,
-                                        cpu_coherent.load(std::memory_order_acquire),
-                                        size, alignment);
+    return copy_temp_allocator.allocate(seq, cpu_coherent.load(std::memory_order_acquire), size, alignment);
   }
 };
 

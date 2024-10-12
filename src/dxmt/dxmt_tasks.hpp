@@ -20,7 +20,8 @@ public:
   task_scheduler();
   ~task_scheduler();
 
-  uint64_t get_running_threads() {
+  uint64_t
+  get_running_threads() {
     return running.load(std::memory_order_relaxed);
   }
 
@@ -44,7 +45,6 @@ private:
 };
 
 template <typename Task> task_scheduler<Task>::task_scheduler() {
-  // 
   max_threads = dxmt::thread::hardware_concurrency() * 2;
   workers_.reserve(max_threads);
   threads = 2;
@@ -64,7 +64,9 @@ template <typename Task> task_scheduler<Task>::~task_scheduler() {
   workers_.clear();
 }
 
-template <typename Task> void task_scheduler<Task>::worker_func() {
+template <typename Task>
+void
+task_scheduler<Task>::worker_func() {
   __pthread_set_qos_class_self_np(__QOS_CLASS_USER_INTERACTIVE, 0);
   struct task_trait<Task> task_trait;
   std::vector<Task> continutation_buffer;
@@ -75,8 +77,7 @@ template <typename Task> void task_scheduler<Task>::worker_func() {
 
       if (task_queue_.empty() && task_continuation_queue_.empty()) {
         worker_cond_.wait(lock, [this]() {
-          return task_queue_.size() || task_continuation_queue_.size() ||
-                 destroyed.load();
+          return task_queue_.size() || task_continuation_queue_.size() || destroyed.load();
         });
       }
 
@@ -125,12 +126,13 @@ template <typename Task> void task_scheduler<Task>::worker_func() {
   }
 };
 
-template <typename Task> void task_scheduler<Task>::submit(Task task) {
+template <typename Task>
+void
+task_scheduler<Task>::submit(Task task) {
   std::unique_lock<dxmt::mutex> lock(worker_mutex_);
   task_queue_.push(task);
 
-  if (running.load(std::memory_order_relaxed) == threads &&
-      threads < max_threads) {
+  if (running.load(std::memory_order_relaxed) == threads && threads < max_threads) {
     workers_.emplace_back([this]() { worker_func(); });
     threads++;
   }

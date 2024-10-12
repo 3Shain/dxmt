@@ -17,9 +17,10 @@ class BufferPool {
   std::queue<QueueEntry> fifo;
 
 public:
-  BufferPool(MTL::Device *device, size_t buffer_len,
-             MTL::ResourceOptions options)
-      : device(device), buffer_len(buffer_len), options(options) {};
+  BufferPool(MTL::Device *device, size_t buffer_len, MTL::ResourceOptions options) :
+      device(device),
+      buffer_len(buffer_len),
+      options(options) {};
 
   ~BufferPool() {
     while (fifo.size()) {
@@ -28,8 +29,7 @@ public:
     }
   };
 
-  void GetNext(uint64_t currentSeqId, uint64_t coherentSeqId,
-               MTL::Buffer **next, uint64_t *gpuAddr, void **cpuAddr);
+  void GetNext(uint64_t currentSeqId, uint64_t coherentSeqId, MTL::Buffer **next, uint64_t *gpuAddr, void **cpuAddr);
 
   MTL::Device *device;
   size_t buffer_len;

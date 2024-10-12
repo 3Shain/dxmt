@@ -3,13 +3,11 @@
 
 namespace dxmt {
 
-void BufferPool::GetNext(uint64_t currentSeqId, uint64_t coherentSeqId,
-                         MTL::Buffer **next, uint64_t *gpuAddr,
-                         void **cpuAddr) {
-  fifo.push(QueueEntry{.buffer = *next,
-                       .gpu_addr = *gpuAddr,
-                       .cpu_addr = *cpuAddr,
-                       .will_free_at = currentSeqId});
+void
+BufferPool::GetNext(
+    uint64_t currentSeqId, uint64_t coherentSeqId, MTL::Buffer **next, uint64_t *gpuAddr, void **cpuAddr
+) {
+  fifo.push(QueueEntry{.buffer = *next, .gpu_addr = *gpuAddr, .cpu_addr = *cpuAddr, .will_free_at = currentSeqId});
   for (;;) {
     if (fifo.empty()) {
       break;

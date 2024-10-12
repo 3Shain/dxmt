@@ -12,7 +12,8 @@ namespace dxmt {
 
 static std::atomic_flag dont_capture_next_frame = 1;
 
-CaptureState::NextAction CaptureState::getNextAction(uint64_t frame) {
+CaptureState::NextAction
+CaptureState::getNextAction(uint64_t frame) {
   switch (state) {
   case State::Idle:
     break;
@@ -33,7 +34,8 @@ CaptureState::NextAction CaptureState::getNextAction(uint64_t frame) {
   return NextAction::Nothing;
 };
 
-void CaptureState::scheduleNextFrameCapture(uint64_t next) {
+void
+CaptureState::scheduleNextFrameCapture(uint64_t next) {
   if (state != State::Idle) {
     return;
   }
@@ -41,7 +43,8 @@ void CaptureState::scheduleNextFrameCapture(uint64_t next) {
   next_capture_frame = next;
 }
 
-bool CaptureState::shouldCaptureNextFrame() {
+bool
+CaptureState::shouldCaptureNextFrame() {
   return !dont_capture_next_frame.test_and_set();
 };
 
@@ -49,23 +52,23 @@ bool CaptureState::shouldCaptureNextFrame() {
 
 static HHOOK global_hook = NULL;
 
-LRESULT CALLBACK KeyboardProc(_In_ int nCode, _In_ WPARAM wParam,
-                              _In_ LPARAM lParam) {
+LRESULT CALLBACK
+KeyboardProc(_In_ int nCode, _In_ WPARAM wParam, _In_ LPARAM lParam) {
   if (wParam == VK_F10 && !(lParam & (KF_UP << 16))) {
     dont_capture_next_frame.clear();
   }
   return CallNextHookEx(global_hook, nCode, wParam, lParam);
 };
 
-void initialize_io_hook() {
+void
+initialize_io_hook() {
   if (global_hook)
     return;
   if (env::getEnvVar("MTL_CAPTURE_ENABLED") != "1")
     return;
   if (env::getExeBaseName() != env::getEnvVar("DXMT_CAPTURE_EXECUTABLE"))
     return;
-  global_hook =
-      SetWindowsHookEx(WH_KEYBOARD, KeyboardProc, GetModuleHandle(NULL), 0);
+  global_hook = SetWindowsHookEx(WH_KEYBOARD, KeyboardProc, GetModuleHandle(NULL), 0);
   if (!global_hook) {
     ERR("Failed to register windows hook");
     return;
@@ -73,7 +76,8 @@ void initialize_io_hook() {
   WARN("DXMT capture enabled");
 }
 
-void uninitialize_io_hook() {
+void
+uninitialize_io_hook() {
   if (!global_hook)
     return;
   UnhookWindowsHookEx(global_hook);
@@ -82,9 +86,11 @@ void uninitialize_io_hook() {
 
 #else
 
-void initialize_io_hook() {}
+void
+initialize_io_hook() {}
 
-void uninitialize_io_hook() {}
+void
+uninitialize_io_hook() {}
 
 #endif
 
