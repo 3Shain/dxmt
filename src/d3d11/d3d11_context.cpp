@@ -181,7 +181,6 @@ public:
 
     if (GetDataFlags != D3D11_ASYNC_GETDATA_DONOTFLUSH) {
       Flush();
-      ctx.InvalidateCurrentPass();
     }
 
     D3D11_QUERY_DESC desc;
@@ -273,12 +272,10 @@ public:
         if (MapFlags & D3D11_MAP_FLAG_DO_NOT_WAIT) {
           return DXGI_ERROR_WAS_STILL_DRAWING;
         }
-        // FIXME: bugprone
-        if (ret + coh == cmd_queue.CurrentSeqId()) {
-          TRACE("Map: forced flush");
-          Flush();
-          ctx.InvalidateCurrentPass();
-        }
+        // even it's in a while loop
+        // only the first flush will have effect
+        // and the following calls are essentially no-op
+        Flush();
         TRACE("staging map block");
         cmd_queue.FIXME_YieldUntilCoherenceBoundaryUpdate(coh);
       };
@@ -304,6 +301,7 @@ public:
       return;
     }
     ctx.promote_flush = true;
+    ctx.InvalidateCurrentPass();
   }
 
   void ExecuteCommandList(ID3D11CommandList *pCommandList,
