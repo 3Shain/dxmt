@@ -19,20 +19,25 @@ public:
       : ComObject<IMTLCompiledGraphicsPipeline>(),
         num_rtvs(pDesc->NumColorAttachments),
         depth_stencil_format(pDesc->DepthStencilFormat),
-        topology_class(pDesc->TopologyClass), device_(pDevice),
-        pInputLayout(pDesc->InputLayout), pBlendState(pDesc->BlendState),
+        topology_class(pDesc->TopologyClass), device_(pDevice), pBlendState(pDesc->BlendState),
         RasterizationEnabled(pDesc->RasterizationEnabled) {
     for (unsigned i = 0; i < num_rtvs; i++) {
       rtv_formats[i] = pDesc->ColorAttachmentFormats[i];
     }
 
-    pDesc->VertexShader->GetCompiledVertexShader(
-        pDesc->InputLayout, pDesc->GSPassthrough, &VertexShader);
+    if (pDesc->SOLayout) {
+      VertexShader =
+          pDesc->VertexShader->get_shader(ShaderVariantVertexStreamOutput{
+              (uint64_t)pDesc->InputLayout, (uint64_t)pDesc->SOLayout});
+    } else {
+      VertexShader = pDesc->VertexShader->get_shader(ShaderVariantVertex{
+          (uint64_t)pDesc->InputLayout, pDesc->GSPassthrough});
+    }
 
     if (pDesc->PixelShader) {
-      pDesc->PixelShader->GetCompiledPixelShader(
+      PixelShader = pDesc->PixelShader->get_shader(ShaderVariantPixel{
           pDesc->SampleMask, pDesc->BlendState->IsDualSourceBlending(),
-          depth_stencil_format == MTL::PixelFormatInvalid, &PixelShader);
+          depth_stencil_format == MTL::PixelFormatInvalid});
     }
   }
 
@@ -135,7 +140,6 @@ private:
   std::atomic_bool ready_;
   Com<IMTLCompiledShader> VertexShader;
   Com<IMTLCompiledShader> PixelShader;
-  IMTLD3D11InputLayout *pInputLayout;
   IMTLD3D11BlendState *pBlendState;
   Obj<MTL::RenderPipelineState> state_;
   bool RasterizationEnabled;
@@ -153,10 +157,10 @@ CreateGraphicsPipeline(IMTLD3D11Device *pDevice,
 class MTLCompiledComputePipeline
     : public ComObject<IMTLCompiledComputePipeline> {
 public:
-  MTLCompiledComputePipeline(IMTLD3D11Device *pDevice,
-                             IMTLCompiledShader *pComputeShader)
-      : ComObject<IMTLCompiledComputePipeline>(), device_(pDevice),
-        pComputeShader(pComputeShader) {}
+  MTLCompiledComputePipeline(IMTLD3D11Device *pDevice, ManagedShader shader)
+      : ComObject<IMTLCompiledComputePipeline>(), device_(pDevice) {
+    ComputeShader = shader->get_shader(ShaderVariantDefault{});
+  }
 
   void SubmitWork() final { device_->SubmitThreadgroupWork(this); }
 
@@ -189,8 +193,8 @@ public:
 
     Obj<NS::Error> err;
     MTL_COMPILED_SHADER cs;
-    if (!pComputeShader->GetShader(&cs)) {
-      return pComputeShader.ptr();
+    if (!ComputeShader->GetShader(&cs)) {
+      return ComputeShader.ptr();
     }
 
     auto desc = transfer(MTL::ComputePipelineDescriptor::alloc()->init());
@@ -220,15 +224,14 @@ public:
 private:
   IMTLD3D11Device *device_;
   std::atomic_bool ready_;
-  Com<IMTLCompiledShader> pComputeShader;
+  Com<IMTLCompiledShader> ComputeShader;
   Obj<MTL::ComputePipelineState> state_;
 };
 
 Com<IMTLCompiledComputePipeline>
-CreateComputePipeline(IMTLD3D11Device *pDevice,
-                      IMTLCompiledShader *pComputeShader) {
+CreateComputePipeline(IMTLD3D11Device *pDevice, ManagedShader ComputeShader) {
   Com<IMTLCompiledComputePipeline> pipeline =
-      new MTLCompiledComputePipeline(pDevice, pComputeShader);
+      new MTLCompiledComputePipeline(pDevice, ComputeShader);
   pipeline->SubmitWork();
   return pipeline;
 }

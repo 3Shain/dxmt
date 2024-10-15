@@ -11,12 +11,13 @@
 #include "util_hash.hpp"
 
 struct MTL_GRAPHICS_PIPELINE_DESC {
-  IMTLD3D11Shader *VertexShader;
-  IMTLD3D11Shader *HullShader;
-  IMTLD3D11Shader *DomainShader;
-  IMTLD3D11Shader *PixelShader;
+  ManagedShader VertexShader;
+  ManagedShader HullShader;
+  ManagedShader DomainShader;
+  ManagedShader PixelShader;
   IMTLD3D11BlendState *BlendState;
   IMTLD3D11InputLayout *InputLayout;
+  IMTLD3D11StreamOutputLayout *SOLayout;
   UINT NumColorAttachments;
   MTL::PixelFormat ColorAttachmentFormats[8];
   MTL::PixelFormat DepthStencilFormat;
@@ -25,6 +26,10 @@ struct MTL_GRAPHICS_PIPELINE_DESC {
   SM50_INDEX_BUFFER_FORAMT IndexBufferFormat;
   uint32_t SampleMask;
   uint32_t GSPassthrough;
+};
+
+struct MTL_COMPUTE_PIPELINE_DESC {
+  ManagedShader ComputeShader;
 };
 
 struct MTL_COMPILED_GRAPHICS_PIPELINE {
@@ -165,8 +170,7 @@ Com<IMTLCompiledGraphicsPipeline> CreateGraphicsPipeline(
     IMTLD3D11Device *pDevice, MTL_GRAPHICS_PIPELINE_DESC* pDesc);
 
 Com<IMTLCompiledComputePipeline>
-CreateComputePipeline(IMTLD3D11Device *pDevice,
-                      IMTLCompiledShader *pComputeShader);
+CreateComputePipeline(IMTLD3D11Device *pDevice, ManagedShader ComputeShader);
 
 Com<IMTLCompiledTessellationPipeline>
 CreateTessellationPipeline(IMTLD3D11Device *pDevice,

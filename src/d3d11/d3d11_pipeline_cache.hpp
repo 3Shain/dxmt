@@ -20,6 +20,9 @@ DEFINE_COM_INTERFACE("1a59c71f-f6bc-4aa1-b97e-35732f75a4eb",
   virtual HRESULT AddGeometryShader(const void *pBytecode,
                                     uint32_t BytecodeLength,
                                     ID3D11GeometryShader **ppShader) = 0;
+  virtual HRESULT AddComputeShader(const void *pBytecode,
+                                    uint32_t BytecodeLength,
+                                    ID3D11ComputeShader **ppShader) = 0;
   virtual HRESULT AddInputLayout(
       const void *pShaderBytecodeWithInputSignature,
       const D3D11_INPUT_ELEMENT_DESC *pInputElementDesc, UINT NumElements,

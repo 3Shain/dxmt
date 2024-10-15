@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "util_hash.hpp"
 #include <array>
 #include <cstring>
 #include <string>
@@ -60,3 +61,24 @@ private:
 };
 
 } // namespace dxmt
+
+namespace std {
+template <> struct hash<dxmt::Sha1Hash> {
+  size_t operator()(const dxmt::Sha1Hash &v) const noexcept {
+    dxmt::HashState result;
+
+    for (uint32_t i = 0; i < 5; i++)
+      result.add(v.dword(i));
+
+    return result;
+  };
+};
+
+template <> struct equal_to<dxmt::Sha1Hash> {
+  bool operator()(const dxmt::Sha1Hash &x, const dxmt::Sha1Hash &y) const {
+    constexpr size_t binsize = sizeof(x);
+    return std::string_view({reinterpret_cast<const char *>(&x), binsize}) ==
+           std::string_view({reinterpret_cast<const char *>(&y), binsize});
+  }
+};
+} // namespace std

@@ -1,5 +1,4 @@
 #include "DXBCParser/d3d12tokenizedprogramformat.hpp"
-#include "Metal/MTLLibrary.hpp"
 #include "Metal/MTLPipeline.hpp"
 #include "Metal/MTLRenderCommandEncoder.hpp"
 #include "Metal/MTLRenderPipeline.hpp"
@@ -10,66 +9,6 @@
 #include "log/log.hpp"
 
 namespace dxmt {
-
-template <typename Proc>
-class GeneralShaderCompileTask : public ComObject<IMTLCompiledShader> {
-public:
-  GeneralShaderCompileTask(IMTLD3D11Device *pDevice, Proc &&proc)
-      : ComObject<IMTLCompiledShader>(), proc(std::forward<Proc>(proc)),
-        device_(pDevice) {}
-
-  ~GeneralShaderCompileTask() {}
-
-  void SubmitWork() { device_->SubmitThreadgroupWork(this); }
-
-  HRESULT QueryInterface(REFIID riid, void **ppvObject) {
-    if (ppvObject == nullptr)
-      return E_POINTER;
-
-    *ppvObject = nullptr;
-
-    if (riid == __uuidof(IUnknown) || riid == __uuidof(IMTLThreadpoolWork) ||
-        riid == __uuidof(IMTLCompiledShader)) {
-      *ppvObject = ref(this);
-      return S_OK;
-    }
-
-    return E_NOINTERFACE;
-  }
-
-  bool GetShader(MTL_COMPILED_SHADER *pShaderData) final {
-    bool ret = false;
-    if ((ret = ready_.load(std::memory_order_acquire))) {
-      *pShaderData = {function_.ptr(), &hash_};
-    }
-    return ret;
-  }
-
-  void Dump() {}
-
-  IMTLThreadpoolWork *RunThreadpoolWork() {
-    function_ = transfer(proc(&hash_));
-    return this;
-  }
-
-  bool GetIsDone() {
-    return ready_;
-  }
-
-  void SetIsDone(bool state) {
-    ready_.store(state);
-  }
-
-private:
-  Proc proc;
-  IMTLD3D11Device *device_;
-  std::atomic_bool ready_;
-  Sha1Hash hash_;
-  Obj<MTL::Function> function_;
-  void *compilation_args;
-  SM50_SHADER_DEBUG_IDENTITY_DATA identity_data;
-  uint64_t variant_id;
-};
 
 class MTLCompiledTessellationPipeline
     : public ComObject<IMTLCompiledTessellationPipeline> {
@@ -85,176 +24,21 @@ public:
     for (unsigned i = 0; i < num_rtvs; i++) {
       rtv_formats[i] = pDesc->ColorAttachmentFormats[i];
     }
-    VertexShader = new GeneralShaderCompileTask(
-        pDevice,
-        [vs = Com(pDesc->VertexShader), hs = Com(pDesc->HullShader), pDevice,
-         index_buffer_format = pDesc->IndexBufferFormat,
-         ia = pDesc->InputLayout](auto hash_) -> MTL::Function * {
-          SM50_SHADER_IA_INPUT_LAYOUT_DATA ia_layout;
-          ia_layout.index_buffer_format = index_buffer_format;
-          ia_layout.num_elements = ia->GetInputLayoutElements(
-              (MTL_SHADER_INPUT_LAYOUT_ELEMENT_DESC **)&ia_layout.elements);
-          ia_layout.type = SM50_SHADER_IA_INPUT_LAYOUT;
-          ia_layout.next = nullptr;
-
-          auto pool = transfer(NS::AutoreleasePool::alloc()->init());
-          Obj<NS::Error> err;
-
-          SM50CompiledBitcode *compile_result = nullptr;
-          SM50Error *sm50_err = nullptr;
-          std::string func_name =
-              "shader_main_" + std::to_string(vs->GetUniqueId());
-          if (auto ret = SM50CompileTessellationPipelineVertex(
-                  (SM50Shader *)vs->GetAirconvHandle(),
-                  (SM50Shader *)hs->GetAirconvHandle(),
-                  (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)&ia_layout,
-                  func_name.c_str(), &compile_result, &sm50_err)) {
-            if (ret == 42) {
-              ERR("Failed to compile shader due to failed assertation");
-            } else {
-              ERR("Failed to compile shader: ", SM50GetErrorMesssage(sm50_err));
-              SM50FreeError(sm50_err);
-            }
-            return nullptr;
-          }
-          MTL_SHADER_BITCODE bitcode;
-          SM50GetCompiledBitcode(compile_result, &bitcode);
-          hash_->compute(bitcode.Data, bitcode.Size);
-          auto dispatch_data = dispatch_data_create(bitcode.Data, bitcode.Size,
-                                                    nullptr, nullptr);
-          D3D11_ASSERT(dispatch_data);
-          Obj<MTL::Library> library = transfer(
-              pDevice->GetMTLDevice()->newLibrary(dispatch_data, &err));
-
-          if (err) {
-            ERR("Failed to create MTLLibrary: ",
-                err->localizedDescription()->utf8String());
-            return nullptr;
-          }
-
-          dispatch_release(dispatch_data);
-          SM50DestroyBitcode(compile_result);
-          auto function_ = (library->newFunction(
-              NS::String::string(func_name.c_str(), NS::UTF8StringEncoding)));
-          if (function_ == nullptr) {
-            ERR("Failed to create MTLFunction: ", func_name);
-            return nullptr;
-          }
-
-          return function_;
-        });
-    HullShader = new GeneralShaderCompileTask(
-        pDevice,
-        [hs = Com(pDesc->HullShader), vs = Com(pDesc->VertexShader),
-         pDevice](auto hash_) -> MTL::Function * {
-          auto pool = transfer(NS::AutoreleasePool::alloc()->init());
-          Obj<NS::Error> err;
-
-          SM50CompiledBitcode *compile_result = nullptr;
-          SM50Error *sm50_err = nullptr;
-          std::string func_name =
-              "shader_main_" + std::to_string(hs->GetUniqueId());
-          if (auto ret = SM50CompileTessellationPipelineHull(
-                  (SM50Shader *)vs->GetAirconvHandle(),
-                  (SM50Shader *)hs->GetAirconvHandle(), nullptr,
-                  func_name.c_str(), &compile_result, &sm50_err)) {
-            if (ret == 42) {
-              ERR("Failed to compile shader due to failed assertation");
-            } else {
-              ERR("Failed to compile shader: ", SM50GetErrorMesssage(sm50_err));
-              SM50FreeError(sm50_err);
-            }
-            return nullptr;
-          }
-          MTL_SHADER_BITCODE bitcode;
-          SM50GetCompiledBitcode(compile_result, &bitcode);
-          hash_->compute(bitcode.Data, bitcode.Size);
-          auto dispatch_data = dispatch_data_create(bitcode.Data, bitcode.Size,
-                                                    nullptr, nullptr);
-          D3D11_ASSERT(dispatch_data);
-          Obj<MTL::Library> library = transfer(
-              pDevice->GetMTLDevice()->newLibrary(dispatch_data, &err));
-
-          if (err) {
-            ERR("Failed to create MTLLibrary: ",
-                err->localizedDescription()->utf8String());
-            return nullptr;
-          }
-
-          dispatch_release(dispatch_data);
-          SM50DestroyBitcode(compile_result);
-          auto function_ = (library->newFunction(
-              NS::String::string(func_name.c_str(), NS::UTF8StringEncoding)));
-          if (function_ == nullptr) {
-            ERR("Failed to create MTLFunction: ", func_name);
-            return nullptr;
-          }
-
-          return function_;
-        });
-    DomainShader = new GeneralShaderCompileTask(
-        pDevice,
-        [hs = Com(pDesc->HullShader), ds = Com(pDesc->DomainShader), pDevice,
-         GSPassthrough = pDesc->GSPassthrough](auto hash_) -> MTL::Function * {
-          auto pool = transfer(NS::AutoreleasePool::alloc()->init());
-          Obj<NS::Error> err;
-
-          SM50_SHADER_GS_PASS_THROUGH_DATA gs_passthrough;
-          gs_passthrough.DataEncoded = GSPassthrough;
-          gs_passthrough.next = nullptr;
-
-          SM50CompiledBitcode *compile_result = nullptr;
-          SM50Error *sm50_err = nullptr;
-          std::string func_name =
-              "shader_main_" + std::to_string(ds->GetUniqueId());
-          if (auto ret = SM50CompileTessellationPipelineDomain(
-                  (SM50Shader *)hs->GetAirconvHandle(),
-                  (SM50Shader *)ds->GetAirconvHandle(),
-                  (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)&gs_passthrough,
-                  func_name.c_str(), &compile_result, &sm50_err)) {
-            if (ret == 42) {
-              ERR("Failed to compile shader due to failed assertation");
-            } else {
-              ERR("Failed to compile shader: ", SM50GetErrorMesssage(sm50_err));
-              SM50FreeError(sm50_err);
-            }
-            return nullptr;
-          }
-          MTL_SHADER_BITCODE bitcode;
-          SM50GetCompiledBitcode(compile_result, &bitcode);
-          hash_->compute(bitcode.Data, bitcode.Size);
-          auto dispatch_data = dispatch_data_create(bitcode.Data, bitcode.Size,
-                                                    nullptr, nullptr);
-          D3D11_ASSERT(dispatch_data);
-          Obj<MTL::Library> library = transfer(
-              pDevice->GetMTLDevice()->newLibrary(dispatch_data, &err));
-
-          if (err) {
-            ERR("Failed to create MTLLibrary: ",
-                err->localizedDescription()->utf8String());
-            return nullptr;
-          }
-
-          dispatch_release(dispatch_data);
-          SM50DestroyBitcode(compile_result);
-          auto function_ = (library->newFunction(
-              NS::String::string(func_name.c_str(), NS::UTF8StringEncoding)));
-          if (function_ == nullptr) {
-            ERR("Failed to create MTLFunction: ", func_name);
-            return nullptr;
-          }
-
-          return function_;
-        });
+    VertexShader =
+        pDesc->VertexShader->get_shader(ShaderVariantTessellationVertex{
+            (uint64_t)pDesc->InputLayout, (uint64_t)pDesc->HullShader->handle(),
+            pDesc->IndexBufferFormat});
+    HullShader = pDesc->HullShader->get_shader(
+        ShaderVariantTessellationHull{(uint64_t)pDesc->VertexShader->handle()});
+    DomainShader =
+        pDesc->DomainShader->get_shader(ShaderVariantTessellationDomain{
+            (uint64_t)pDesc->HullShader->handle(), pDesc->GSPassthrough});
     if (pDesc->PixelShader) {
-      pDesc->PixelShader->GetCompiledPixelShader(
+      PixelShader = pDesc->PixelShader->get_shader(ShaderVariantPixel{
           pDesc->SampleMask, pDesc->BlendState->IsDualSourceBlending(),
-          depth_stencil_format == MTL::PixelFormatInvalid, &PixelShader);
+          depth_stencil_format == MTL::PixelFormatInvalid});
     }
-    hull_reflection = *pDesc->HullShader->GetReflection();
-    VertexShader->SubmitWork();
-    HullShader->SubmitWork();
-    DomainShader->SubmitWork();
+    hull_reflection = pDesc->HullShader->reflection();
   }
 
   void SubmitWork() { device_->SubmitThreadgroupWork(this); }
@@ -284,7 +68,7 @@ public:
                   hull_reflection.ThreadsPerPatch};
   }
 
-  IMTLThreadpoolWork* RunThreadpoolWork() {
+  IMTLThreadpoolWork *RunThreadpoolWork() {
 
     Obj<NS::Error> err;
     MTL_COMPILED_SHADER vs, hs, ds, ps;
@@ -305,7 +89,6 @@ public:
     auto mesh_pipeline_desc =
         transfer(MTL::MeshRenderPipelineDescriptor::alloc()->init());
 
-
     mesh_pipeline_desc->setObjectFunction(vs.Function);
     mesh_pipeline_desc->setMeshFunction(hs.Function);
     mesh_pipeline_desc->setRasterizationEnabled(false);
@@ -317,7 +100,6 @@ public:
         MTL::MutabilityImmutable);
     mesh_pipeline_desc->objectBuffers()->object(20)->setMutability(
         MTL::MutabilityMutable);
-
 
     state_mesh_ = transfer(device_->GetMTLDevice()->newRenderPipelineState(
         mesh_pipeline_desc.ptr(), MTL::PipelineOptionNone, nullptr, &err));
@@ -401,9 +183,7 @@ public:
     return this;
   }
 
-  bool GetIsDone() {
-    return ready_;
-  }
+  bool GetIsDone() { return ready_; }
 
   void SetIsDone(bool state) {
     ready_.store(state);

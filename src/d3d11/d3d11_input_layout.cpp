@@ -1,6 +1,7 @@
 #include "d3d11_input_layout.hpp"
 #include "d3d11_device_child.hpp"
 #include "DXBCParser/DXBCUtils.h"
+#include "d3d11_shader.hpp"
 #include "d3d11_state_object.hpp"
 #include "util_math.hpp"
 #include "log/log.hpp"
@@ -123,9 +124,10 @@ HRESULT ExtractMTLInputLayoutElements(
         attribute.Offset + metal_format.BytesPerTexel;
     // the layout stride is provided in IASetVertexBuffer
     attribute.StepFunction = desc.InputSlotClass;
-    attribute.InstanceStepRate = desc.InputSlotClass == D3D11_INPUT_PER_INSTANCE_DATA
-                              ? desc.InstanceDataStepRate
-                              : 1;
+    attribute.InstanceStepRate =
+        desc.InputSlotClass == D3D11_INPUT_PER_INSTANCE_DATA
+            ? desc.InstanceDataStepRate
+            : 1;
   }
   *pNumElementsOut = attribute_count;
 
@@ -170,7 +172,8 @@ class MTLD3D11StreamOutputLayout final
 public:
   MTLD3D11StreamOutputLayout(IMTLD3D11Device *device,
                              const MTL_STREAM_OUTPUT_DESC &desc)
-      : ManagedDeviceChild<IMTLD3D11StreamOutputLayout>(device), desc_(desc) {}
+      : ManagedDeviceChild<IMTLD3D11StreamOutputLayout>(device), desc_(desc),
+        null_gs(this) {}
 
   ~MTLD3D11StreamOutputLayout() {}
 
@@ -185,6 +188,11 @@ public:
         riid == __uuidof(ID3D11GeometryShader) ||
         riid == __uuidof(IMTLD3D11StreamOutputLayout)) {
       *ppvObject = ref(this);
+      return S_OK;
+    }
+
+    if (riid == __uuidof(IMTLD3D11Shader)) {
+      *ppvObject = ref(&null_gs);
       return S_OK;
     }
 
@@ -206,6 +214,23 @@ public:
 
 private:
   MTL_STREAM_OUTPUT_DESC desc_;
+
+  class NullGeometryShader : public IMTLD3D11Shader {
+    IUnknown *container;
+
+  public:
+    NullGeometryShader(IUnknown *container) : container(container) {};
+
+    ULONG AddRef() override { return container->AddRef(); }
+    ULONG Release() override { return container->Release(); }
+    HRESULT QueryInterface(REFIID riid, void **ppvObject) override {
+      return container->QueryInterface(riid, ppvObject);
+    }
+
+    virtual ManagedShader GetManagedShader() override { return nullptr; };
+  };
+
+  NullGeometryShader null_gs;
 };
 
 HRESULT ExtractMTLStreamOutputElements(

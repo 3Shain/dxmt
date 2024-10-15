@@ -289,17 +289,17 @@ public:
       // FIXME: ensure the input shader is a vertex shader
       WARN("Emulate stream output");
 
-      Com<IMTLD3D11StreamOutputLayout> so;
-      pipeline_cache_->AddStreamOutputLayout(pShaderBytecode, NumEntries,
-                                             pSODeclaration, NumStrides,
-                                             pBufferStrides, &so);
-
-      return dxmt::CreateEmulatedVertexStreamOutputShader(
-          this, pShaderBytecode, BytecodeLength, so.ptr(), ppGeometryShader);
+      Com<IMTLD3D11StreamOutputLayout> so_layout;
+      HRESULT hr = pipeline_cache_->AddStreamOutputLayout(
+          pShaderBytecode, NumEntries, pSODeclaration, NumStrides,
+          pBufferStrides, &so_layout);
+      if (FAILED(hr))
+        return hr;
+      return so_layout->QueryInterface(IID_PPV_ARGS(ppGeometryShader));
     }
     ERR("CreateGeometryShaderWithStreamOutput: not supported, expect problem");
-    return dxmt::CreateGeometryShader(this, pShaderBytecode,
-                                           BytecodeLength, ppGeometryShader);
+    return pipeline_cache_->AddGeometryShader(pShaderBytecode, BytecodeLength,
+                                              ppGeometryShader);
   }
 
   HRESULT STDMETHODCALLTYPE
@@ -352,13 +352,8 @@ public:
     if (pClassLinkage != nullptr)
       WARN("Class linkage not supported");
 
-    try {
-      return dxmt::CreateComputeShader(this, pShaderBytecode, BytecodeLength,
-                                       ppComputeShader);
-    } catch (const MTLD3DError &err) {
-      ERR(err.message());
-      return E_FAIL;
-    }
+    return pipeline_cache_->AddComputeShader(pShaderBytecode, BytecodeLength,
+                                             ppComputeShader);
   }
 
   HRESULT STDMETHODCALLTYPE
@@ -1031,17 +1026,17 @@ public:
   };
 
   HRESULT
-  CreateComputePipeline(IMTLCompiledShader *pShader,
+  CreateComputePipeline(MTL_COMPUTE_PIPELINE_DESC *pDesc,
                         IMTLCompiledComputePipeline **ppPipeline) override {
     std::lock_guard<dxmt::mutex> lock(mutex_cs_);
 
-    auto iter = pipelines_cs_.find(pShader);
+    auto iter = pipelines_cs_.find(pDesc->ComputeShader);
     if (iter != pipelines_cs_.end()) {
       *ppPipeline = iter->second.ref();
       return S_OK;
     }
-    auto temp = dxmt::CreateComputePipeline(this, pShader);
-    D3D11_ASSERT(pipelines_cs_.insert({pShader, temp}).second); // copy
+    auto temp = dxmt::CreateComputePipeline(this, pDesc->ComputeShader);
+    D3D11_ASSERT(pipelines_cs_.insert({pDesc->ComputeShader, temp}).second); // copy
     *ppPipeline = std::move(temp);                              // move
     return S_OK;
   };
@@ -1075,7 +1070,7 @@ private:
 
   bool is_traced_;
 
-  std::unordered_map<IMTLCompiledShader *, Com<IMTLCompiledComputePipeline>>
+  std::unordered_map<ManagedShader, Com<IMTLCompiledComputePipeline>>
       pipelines_cs_;
   dxmt::mutex mutex_cs_;
 

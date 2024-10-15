@@ -1821,69 +1821,13 @@ public:
     cmdbuf_state = CommandBufferState::ComputeEncoderActive;
   }
 
-  template<bool IndexedDraw>
-  bool FinalizeNoRasterizationRenderPipeline(IMTLD3D11Shader *pVertexShader) {
-
-    if (!SwitchToRenderEncoder()) {
-      return false;
-    }
-
-    CommandChunk *chk = cmd_queue.CurrentChunk();
-
-    Com<IMTLCompiledGraphicsPipeline> pipeline;
-    Com<IMTLCompiledShader> vs;
-    MTL_GRAPHICS_PIPELINE_DESC pipelineDesc;
-    pipelineDesc.VertexShader = pVertexShader;
-    pipelineDesc.PixelShader = nullptr;
-    pipelineDesc.HullShader = nullptr;
-    pipelineDesc.DomainShader = nullptr;
-    pipelineDesc.InputLayout = state_.InputAssembler.InputLayout;
-    pipelineDesc.NumColorAttachments = 0;
-    memset(pipelineDesc.ColorAttachmentFormats, 0,
-           sizeof(pipelineDesc.ColorAttachmentFormats));
-    pipelineDesc.BlendState = default_blend_state;
-    pipelineDesc.DepthStencilFormat = MTL::PixelFormatInvalid;
-    pipelineDesc.TopologyClass = to_metal_primitive_topology(state_.InputAssembler.Topology);
-    pipelineDesc.RasterizationEnabled = false;
-    pipelineDesc.SampleMask = D3D11_DEFAULT_SAMPLE_MASK;
-    pipelineDesc.GSPassthrough = ~0u;
-    if constexpr (IndexedDraw) {
-      pipelineDesc.IndexBufferFormat =
-          state_.InputAssembler.IndexBufferFormat == DXGI_FORMAT_R32_UINT
-              ? SM50_INDEX_BUFFER_FORMAT_UINT32
-              : SM50_INDEX_BUFFER_FORMAT_UINT16;
-    } else {
-      pipelineDesc.IndexBufferFormat = SM50_INDEX_BUFFER_FORMAT_NONE;
-    }
-
-    device->CreateGraphicsPipeline(&pipelineDesc, &pipeline);
-
-    chk->emit([pso = std::move(pipeline)](CommandChunk::context &ctx) {
-      MTL_COMPILED_GRAPHICS_PIPELINE GraphicsPipeline {};
-      pso->GetPipeline(&GraphicsPipeline); // may block
-      D3D11_ASSERT(GraphicsPipeline.PipelineState);
-      ctx.render_encoder->setRenderPipelineState(
-          GraphicsPipeline.PipelineState);
-    });
-
-    cmdbuf_state = CommandBufferState::RenderPipelineReady;
-
-    if (previous_render_pipeline_state !=
-        CommandBufferState::RenderPipelineReady) {
-      state_.InputAssembler.VertexBuffers.set_dirty();
-      state_.ShaderStages[(UINT)ShaderType::Vertex].ConstantBuffers.set_dirty();
-      state_.ShaderStages[(UINT)ShaderType::Vertex].SRVs.set_dirty();
-      state_.ShaderStages[(UINT)ShaderType::Vertex].Samplers.set_dirty();
-      previous_render_pipeline_state =
-          CommandBufferState::RenderPipelineReady;
-    }
-
-    return true;
+  template <ShaderType Type> ManagedShader GetManagedShader() {
+    auto ptr = state_.ShaderStages[(UINT)Type].Shader.ptr();
+    return ptr ? ptr->GetManagedShader() : nullptr;
   };
 
   template<bool IndexedDraw>
   bool FinalizeTessellationRenderPipeline() {
-
     if (cmdbuf_state == CommandBufferState::TessellationRenderPipelineReady)
       return true;
     if (!state_.ShaderStages[(UINT)ShaderType::Hull].Shader) {
@@ -1892,8 +1836,8 @@ public:
     if (!state_.ShaderStages[(UINT)ShaderType::Domain].Shader) {
       return false;
     }
-    auto &GS = state_.ShaderStages[(UINT)ShaderType::Geometry].Shader;
-    if (GS && GS->GetReflection()->GeometryShader.GSPassThrough == ~0u) {
+    auto GS = GetManagedShader<ShaderType::Geometry>();
+    if (GS && GS->reflection().GeometryShader.GSPassThrough == ~0u) {
       ERR("tessellation-geometry pipeline is not supported yet, skip drawcall");
       return false;
     }
@@ -1914,15 +1858,17 @@ public:
     Com<IMTLCompiledShader> vs, ps;
 
     MTL_GRAPHICS_PIPELINE_DESC pipelineDesc;
-    pipelineDesc.VertexShader =
-        state_.ShaderStages[(UINT)ShaderType::Vertex].Shader.ptr();
-    pipelineDesc.PixelShader =
-        state_.ShaderStages[(UINT)ShaderType::Pixel].Shader.ptr();
-    pipelineDesc.HullShader =
-        state_.ShaderStages[(UINT)ShaderType::Hull].Shader.ptr();
-    pipelineDesc.DomainShader =
-        state_.ShaderStages[(UINT)ShaderType::Domain].Shader.ptr();
+    pipelineDesc.VertexShader = GetManagedShader<ShaderType::Vertex>();
+    pipelineDesc.PixelShader = GetManagedShader<ShaderType::Pixel>();
+    pipelineDesc.HullShader = GetManagedShader<ShaderType::Hull>();
+    pipelineDesc.DomainShader = GetManagedShader<ShaderType::Domain>();
     pipelineDesc.InputLayout = state_.InputAssembler.InputLayout;
+    if (auto so_layout = com_cast<IMTLD3D11StreamOutputLayout>(
+            state_.ShaderStages[(UINT)ShaderType::Geometry].Shader.ptr())) {
+      pipelineDesc.SOLayout = so_layout.ptr();
+    } else {
+      pipelineDesc.SOLayout = nullptr;
+    }
     pipelineDesc.NumColorAttachments = state_.OutputMerger.NumRTVs;
     for (unsigned i = 0; i < ARRAYSIZE(state_.OutputMerger.RTVs); i++) {
       auto &rtv = state_.OutputMerger.RTVs[i];
@@ -1940,10 +1886,10 @@ public:
         state_.OutputMerger.DSV ? state_.OutputMerger.DSV->GetPixelFormat()
                                 : MTL::PixelFormatInvalid;
     pipelineDesc.TopologyClass = to_metal_primitive_topology(state_.InputAssembler.Topology);
-    pipelineDesc.RasterizationEnabled = true;
+    pipelineDesc.RasterizationEnabled = !pipelineDesc.SOLayout;
     pipelineDesc.SampleMask = state_.OutputMerger.SampleMask;
     pipelineDesc.GSPassthrough =
-        GS ? GS->GetReflection()->GeometryShader.GSPassThrough : ~0u;
+        GS ? GS->reflection().GeometryShader.GSPassThrough : ~0u;
     if constexpr (IndexedDraw) {
       pipelineDesc.IndexBufferFormat =
           state_.InputAssembler.IndexBufferFormat == DXGI_FORMAT_R32_UINT
@@ -1999,13 +1945,10 @@ public:
     }
     if (cmdbuf_state == CommandBufferState::RenderPipelineReady)
       return true;
-    auto &GS = state_.ShaderStages[(UINT)ShaderType::Geometry].Shader;
-    auto &PS = state_.ShaderStages[(UINT)ShaderType::Pixel].Shader;
+    auto GS =  GetManagedShader<ShaderType::Geometry>();
+    auto PS =  GetManagedShader<ShaderType::Pixel>();
     if (GS) {
-      if (!PS) {
-        return FinalizeNoRasterizationRenderPipeline<IndexedDraw>(GS.ptr());
-      }
-      if (GS->GetReflection()->GeometryShader.GSPassThrough == ~0u) {
+      if (GS->reflection().GeometryShader.GSPassThrough == ~0u) {
         ERR("geometry shader is not supported yet, skip drawcall");
         return false;
       }
@@ -2020,12 +1963,17 @@ public:
     Com<IMTLCompiledGraphicsPipeline> pipeline;
 
     MTL_GRAPHICS_PIPELINE_DESC pipelineDesc;
-    pipelineDesc.VertexShader =
-        state_.ShaderStages[(UINT)ShaderType::Vertex].Shader.ptr();
-    pipelineDesc.PixelShader = PS.ptr();
+    pipelineDesc.VertexShader = GetManagedShader<ShaderType::Vertex>();
+    pipelineDesc.PixelShader = PS;
     pipelineDesc.HullShader = nullptr;
     pipelineDesc.DomainShader = nullptr;
     pipelineDesc.InputLayout = state_.InputAssembler.InputLayout;
+    if (auto so_layout = com_cast<IMTLD3D11StreamOutputLayout>(
+            state_.ShaderStages[(UINT)ShaderType::Geometry].Shader.ptr())) {
+      pipelineDesc.SOLayout = so_layout.ptr();
+    } else {
+      pipelineDesc.SOLayout = nullptr;
+    }
     pipelineDesc.NumColorAttachments = state_.OutputMerger.NumRTVs;
     for (unsigned i = 0; i < ARRAYSIZE(state_.OutputMerger.RTVs); i++) {
       auto &rtv = state_.OutputMerger.RTVs[i];
@@ -2043,10 +1991,10 @@ public:
         state_.OutputMerger.DSV ? state_.OutputMerger.DSV->GetPixelFormat()
                                 : MTL::PixelFormatInvalid;
     pipelineDesc.TopologyClass = to_metal_primitive_topology(state_.InputAssembler.Topology);
-    pipelineDesc.RasterizationEnabled = true;
+    pipelineDesc.RasterizationEnabled = !pipelineDesc.SOLayout;
     pipelineDesc.SampleMask = state_.OutputMerger.SampleMask;
     pipelineDesc.GSPassthrough =
-        GS ? GS->GetReflection()->GeometryShader.GSPassThrough : ~0u;
+        GS ? GS->reflection().GeometryShader.GSPassThrough : ~0u;
     if constexpr (IndexedDraw) {
       pipelineDesc.IndexBufferFormat =
           state_.InputAssembler.IndexBufferFormat == DXGI_FORMAT_R32_UINT
@@ -2209,27 +2157,21 @@ public:
 
     SwitchToComputeEncoder();
 
-    Com<IMTLCompiledShader> shader;
-    state_.ShaderStages[(UINT)ShaderType::Compute]
-        .Shader //
-        ->GetCompiledShader(&shader);
-    if (!shader) {
+    auto CS  = GetManagedShader<ShaderType::Compute>();
+
+    if (!CS) {
       ERR("Shader not found?");
       return false;
     }
-    MTL_COMPILED_SHADER shader_data;
-    shader->GetShader(&shader_data);
     Com<IMTLCompiledComputePipeline> pipeline;
-    device->CreateComputePipeline(shader.ptr(), &pipeline);
-
-    const MTL_SHADER_REFLECTION *reflection =
-        state_.ShaderStages[(UINT)ShaderType::Compute].Shader->GetReflection();
+    MTL_COMPUTE_PIPELINE_DESC desc{CS};
+    device->CreateComputePipeline(&desc, &pipeline);
 
     CommandChunk *chk = cmd_queue.CurrentChunk();
     chk->emit([pso = std::move(pipeline),
-               tg_size = MTL::Size::Make(reflection->ThreadgroupSize[0],
-                                         reflection->ThreadgroupSize[1],
-                                         reflection->ThreadgroupSize[2])](
+               tg_size = MTL::Size::Make(CS->reflection().ThreadgroupSize[0],
+                                         CS->reflection().ThreadgroupSize[1],
+                                         CS->reflection().ThreadgroupSize[2])](
                   CommandChunk::context &ctx) {
       MTL_COMPILED_COMPUTE_PIPELINE ComputePipeline;
       pso->GetPipeline(&ComputePipeline); // may block
@@ -2261,7 +2203,7 @@ public:
                               : state_.OutputMerger.UAVs;
 
     const MTL_SHADER_REFLECTION *reflection =
-        ShaderStage.Shader->GetReflection();
+        &ShaderStage.Shader->GetManagedShader()->reflection();
 
     bool dirty_cbuffer = ShaderStage.ConstantBuffers.any_dirty_masked(
         reflection->ConstantBufferSlotMask);

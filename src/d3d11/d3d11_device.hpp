@@ -21,6 +21,7 @@ struct IMTLCompiledComputePipeline;
 struct IMTLCompiledTessellationPipeline;
 
 struct MTL_GRAPHICS_PIPELINE_DESC;
+struct MTL_COMPUTE_PIPELINE_DESC;
 
 DEFINE_COM_INTERFACE("a46de9a7-0233-4a94-b75c-9c0f8f364cda", IMTLD3D11Device)
     : public ID3D11Device3 {
@@ -42,7 +43,7 @@ DEFINE_COM_INTERFACE("a46de9a7-0233-4a94-b75c-9c0f8f364cda", IMTLD3D11Device)
                                          IMTLCompiledGraphicsPipeline *
                                              *ppPipeline) = 0;
 
-  virtual HRESULT CreateComputePipeline(IMTLCompiledShader * pComputeShader,
+  virtual HRESULT CreateComputePipeline(MTL_COMPUTE_PIPELINE_DESC * pDesc,
                                         IMTLCompiledComputePipeline *
                                             *ppPipeline) = 0;
 
