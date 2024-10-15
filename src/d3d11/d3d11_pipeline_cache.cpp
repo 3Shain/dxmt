@@ -1,8 +1,62 @@
 #include "d3d11_pipeline_cache.hpp"
+#include "airconv_public.h"
+#include "d3d11_device.hpp"
 #include "d3d11_shader.hpp"
 #include "d3d11_pipeline.hpp"
+#include "log/log.hpp"
+#include <shared_mutex>
 
 namespace dxmt {
+
+std::atomic_uint64_t global_id = 0;
+
+class CachedSM50Shader final : public Shader {
+  IMTLD3D11Device *device;
+  SM50Shader *shader = nullptr;
+  MTL_SHADER_REFLECTION reflection_;
+  uint64_t id_ = ~0uLL;
+  std::unordered_map<ShaderVariant, std::unique_ptr<IMTLCompiledShader>>
+      variants;
+
+public:
+  CachedSM50Shader(IMTLD3D11Device *device, SM50Shader *shader_transfered,
+                   MTL_SHADER_REFLECTION &reflection)
+      : device(device), shader(shader_transfered), reflection_(reflection) {
+    id_ = global_id++;
+  }
+
+  ~CachedSM50Shader() {
+    if (shader) {
+      SM50Destroy(shader);
+      shader = nullptr;
+    }
+  };
+
+  CachedSM50Shader(CachedSM50Shader &&moved) {
+    memcpy(&reflection_, &moved.reflection_, sizeof(reflection_));
+    id_ = moved.id_;
+    moved.id_ = ~0uLL;
+    shader = moved.shader;
+    moved.shader = nullptr;
+  };
+  CachedSM50Shader(const CachedSM50Shader &copy) = delete;
+
+  virtual SM50Shader *handle() { return shader; };
+  virtual MTL_SHADER_REFLECTION &reflection() { return reflection_; }
+  virtual Com<IMTLCompiledShader> get_shader(ShaderVariant variant) {
+    auto c = variants.insert({variant, nullptr});
+    if (c.second) {
+      c.first->second = std::visit(
+          [=, this](auto var) {
+            return CreateVariantShader(device, this, var);
+          },
+          variant);
+      c.first->second.get()->SubmitWork(); // FIXME: ?
+    }
+    return c.first->second.get();
+  }
+  virtual uint64_t id() { return id_; };
+};
 
 class PipelineCache : public MTLD3D11PipelineCacheBase {
 
@@ -23,6 +77,9 @@ class PipelineCache : public MTLD3D11PipelineCacheBase {
       pipelines_ts_;
   dxmt::mutex mutex_ts_;
 
+  std::unordered_map<Sha1Hash, std::unique_ptr<CachedSM50Shader>> shaders_;
+  std::shared_mutex mutex_shares;
+
   HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid,
                                            void **ppvObject) final {
     if (ppvObject == nullptr)
@@ -39,32 +96,101 @@ class PipelineCache : public MTLD3D11PipelineCacheBase {
     return E_NOINTERFACE;
   }
 
+  CachedSM50Shader *CreateShader(const void *pBytecode,
+                                 uint32_t BytecodeLength) {
+    auto sha1 = Sha1Hash::compute(pBytecode, BytecodeLength);
+    {
+      std::shared_lock<std::shared_mutex> lock(mutex_shares);
+      auto result = shaders_.find(sha1);
+      if (result != shaders_.end()) {
+        return shaders_.at(sha1).get();
+      }
+    }
+    SM50Error *err;
+    SM50Shader *sm50;
+    MTL_SHADER_REFLECTION reflection;
+    if (SM50Initialize(pBytecode, BytecodeLength, &sm50, &reflection, &err)) {
+      ERR("Failed to initialize shader: ", SM50GetErrorMesssage(err));
+      SM50FreeError(err);
+      return nullptr;
+    }
+    auto shader = std::make_unique<CachedSM50Shader>(device, sm50, reflection);
+    {
+      std::unique_lock<std::shared_mutex> lock(mutex_shares);
+      auto result = shaders_.find(sha1);
+      if (result != shaders_.end()) {
+        return shaders_.at(sha1).get();
+      }
+      return shaders_.emplace(sha1, std::move(shader)).first->second.get();
+    }
+  }
+
   virtual HRESULT AddVertexShader(const void *pBytecode,
                                   uint32_t BytecodeLength,
                                   ID3D11VertexShader **ppShader) override {
-    return CreateVertexShader(device, pBytecode, BytecodeLength, ppShader);
+    auto managed_shader = CreateShader(pBytecode, BytecodeLength);
+    if (!managed_shader) {
+      return E_FAIL;
+    }
+    *ppShader =
+        ref(new TShaderBase<ID3D11VertexShader>(device, managed_shader));
+    return S_OK;
   }
 
   virtual HRESULT AddPixelShader(const void *pBytecode, uint32_t BytecodeLength,
                                  ID3D11PixelShader **ppShader) override {
-    return CreatePixelShader(device, pBytecode, BytecodeLength, ppShader);
+    auto managed_shader = CreateShader(pBytecode, BytecodeLength);
+    if (!managed_shader) {
+      return E_FAIL;
+    }
+    *ppShader = ref(new TShaderBase<ID3D11PixelShader>(device, managed_shader));
+    return S_OK;
   }
 
   virtual HRESULT AddHullShader(const void *pBytecode, uint32_t BytecodeLength,
                                 ID3D11HullShader **ppShader) override {
-    return CreateHullShader(device, pBytecode, BytecodeLength, ppShader);
+    auto managed_shader = CreateShader(pBytecode, BytecodeLength);
+    if (!managed_shader) {
+      return E_FAIL;
+    }
+    *ppShader = ref(new TShaderBase<ID3D11HullShader>(device, managed_shader));
+    return S_OK;
   }
 
   virtual HRESULT AddDomainShader(const void *pBytecode,
                                   uint32_t BytecodeLength,
                                   ID3D11DomainShader **ppShader) override {
-    return CreateDomainShader(device, pBytecode, BytecodeLength, ppShader);
+    auto managed_shader = CreateShader(pBytecode, BytecodeLength);
+    if (!managed_shader) {
+      return E_FAIL;
+    }
+    *ppShader =
+        ref(new TShaderBase<ID3D11DomainShader>(device, managed_shader));
+    return S_OK;
   }
 
   virtual HRESULT AddGeometryShader(const void *pBytecode,
                                     uint32_t BytecodeLength,
                                     ID3D11GeometryShader **ppShader) override {
-    return CreateGeometryShader(device, pBytecode, BytecodeLength, ppShader);
+    auto managed_shader = CreateShader(pBytecode, BytecodeLength);
+    if (!managed_shader) {
+      return E_FAIL;
+    }
+    *ppShader =
+        ref(new TShaderBase<ID3D11GeometryShader>(device, managed_shader));
+    return S_OK;
+  }
+
+  virtual HRESULT AddComputeShader(const void *pBytecode,
+                                   uint32_t BytecodeLength,
+                                   ID3D11ComputeShader **ppShader) override {
+    auto managed_shader = CreateShader(pBytecode, BytecodeLength);
+    if (!managed_shader) {
+      return E_FAIL;
+    }
+    *ppShader =
+        ref(new TShaderBase<ID3D11ComputeShader>(device, managed_shader));
+    return S_OK;
   }
 
   HRESULT AddInputLayout(const void *pShaderBytecodeWithInputSignature,
