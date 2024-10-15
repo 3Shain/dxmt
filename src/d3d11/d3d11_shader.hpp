@@ -15,6 +15,7 @@ struct MTL_COMPILED_SHADER {
 };
 
 struct IMTLD3D11InputLayout;
+struct IMTLD3D11StreamOutputLayout;
 
 DEFINE_COM_INTERFACE("a8bfeef7-a453-4bce-90c1-912b02cf5cdf", IMTLCompiledShader)
     : public IMTLThreadpoolWork {
@@ -73,9 +74,8 @@ HRESULT CreateGeometryShader(IMTLD3D11Device *pDevice,
 
 HRESULT CreateEmulatedVertexStreamOutputShader(
     IMTLD3D11Device *pDevice, const void *pShaderBytecode,
-    SIZE_T BytecodeLength, ID3D11GeometryShader **ppShader, UINT NumEntries,
-    const D3D11_SO_DECLARATION_ENTRY *pEntries, UINT NumStrides,
-    const UINT *pStrides);
+    SIZE_T BytecodeLength, IMTLD3D11StreamOutputLayout *pSOLayout,
+    ID3D11GeometryShader **ppShader);
 
 HRESULT CreateComputeShader(IMTLD3D11Device *pDevice,
                             const void *pShaderBytecode, SIZE_T BytecodeLength,

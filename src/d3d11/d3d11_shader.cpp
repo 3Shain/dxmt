@@ -8,7 +8,6 @@
 #include "airconv_public.h"
 #include "d3d11_device_child.hpp"
 #include "objc_pointer.hpp"
-#include "DXBCParser/DXBCUtils.h"
 #include "log/log.hpp"
 
 namespace dxmt {
@@ -52,7 +51,7 @@ struct EMULATED_VERTEX_SO_DATA {
 
 struct tag_emulated_vertex_so {
   using COM = ID3D11GeometryShader;
-  using DATA = EMULATED_VERTEX_SO_DATA;
+  using DATA = IMTLD3D11StreamOutputLayout*;
 };
 
 static std::atomic_uint64_t global_id = 0;
@@ -369,10 +368,9 @@ public:
       : AirconvShader<tag_emulated_vertex_so>(pDevice, shader, &data) {
     data.type = SM50_SHADER_EMULATE_VERTEX_STREAM_OUTPUT;
     data.next = &data_sign_mask;
-    data.num_output_slots = shader->data.NumSlots;
-    data.num_elements = shader->data.Elements.size();
-    memcpy(data.strides, shader->data.Strides.data(), sizeof(data.strides));
-    data.elements = shader->data.Elements.data();
+    data.num_output_slots = 0;
+    data.num_elements = shader->data->GetStreamOutputElements(
+        (MTL_SHADER_STREAM_OUTPUT_ELEMENT_DESC **)&data.elements, data.strides);
 
     data_sign_mask.type = SM50_SHADER_COMPILATION_INPUT_SIGN_MASK;
     data_sign_mask.next = nullptr;
@@ -394,10 +392,9 @@ public:
       : AirconvShader<tag_emulated_vertex_so>(pDevice, shader, &data) {
     data.type = SM50_SHADER_EMULATE_VERTEX_STREAM_OUTPUT;
     data.next = &data_vertex_pulling;
-    data.num_output_slots = shader->data.NumSlots;
-    data.num_elements = shader->data.Elements.size();
-    memcpy(data.strides, shader->data.Strides.data(), sizeof(data.strides));
-    data.elements = shader->data.Elements.data();
+    data.num_output_slots = 0;
+    data.num_elements = shader->data->GetStreamOutputElements(
+        (MTL_SHADER_STREAM_OUTPUT_ELEMENT_DESC **)&data.elements, data.strides);
 
     data_vertex_pulling.type = SM50_SHADER_IA_INPUT_LAYOUT;
     data_vertex_pulling.next = nullptr;
@@ -558,83 +555,8 @@ HRESULT CreateComputeShader(IMTLD3D11Device *pDevice,
 
 HRESULT CreateEmulatedVertexStreamOutputShader(
     IMTLD3D11Device *pDevice, const void *pShaderBytecode,
-    SIZE_T BytecodeLength, ID3D11GeometryShader **ppShader, UINT NumEntries,
-    const D3D11_SO_DECLARATION_ENTRY *pEntries, UINT NumStrides,
-    const UINT *pStrides) {
-  using namespace microsoft;
-  EMULATED_VERTEX_SO_DATA data{};
-  std::array<uint32_t, 4> &strides = data.Strides;
-  std::array<uint32_t, 4> &offsets = strides;
-  CSignatureParser parser;
-  HRESULT hr = DXBCGetOutputSignature(pShaderBytecode, &parser);
-  if (FAILED(hr)) {
-    return hr;
-  }
-  const D3D11_SIGNATURE_PARAMETER *pParamters;
-  auto numParameteres = parser.GetParameters(&pParamters);
-  for (unsigned i = 0; i < NumEntries; i++) {
-    auto entry = pEntries[i];
-    if (entry.Stream != 0) {
-      ERR("CreateEmulatedVertexStreamOutputShader: stream must be 0");
-      return E_INVALIDARG;
-    }
-    if (entry.OutputSlot > 3 || entry.OutputSlot < 0) {
-      ERR("CreateEmulatedVertexStreamOutputShader: invalid output slot ",
-          entry.OutputSlot);
-      return E_INVALIDARG;
-    }
-    // FIXME: support more than 1 output slot
-    if (entry.OutputSlot != 0) {
-      ERR("CreateEmulatedVertexStreamOutputShader: only slot 0 supported");
-      return E_INVALIDARG;
-    }
-    if ((entry.ComponentCount - entry.StartComponent) < 0 ||
-        (entry.ComponentCount + entry.StartComponent) > 4) {
-      ERR("CreateEmulatedVertexStreamOutputShader: invalid components");
-      return E_INVALIDARG;
-    }
-    if ((entry.ComponentCount - entry.StartComponent) == 0) {
-      continue;
-    }
-    if (entry.SemanticName == nullptr) {
-      // skip hole
-      for (unsigned i = 0; i < entry.ComponentCount; i++) {
-        auto offset = offsets[entry.OutputSlot];
-        offsets[entry.OutputSlot] += sizeof(float);
-        auto component = entry.StartComponent + i;
-        data.Elements.push_back({.reg_id = 0xffffffff,
-                                 .component = component,
-                                 .output_slot = entry.OutputSlot,
-                                 .offset = offset});
-      }
-      continue;
-    }
-    auto pDesc = std::find_if(
-        pParamters, pParamters + numParameteres,
-        [&](const D3D11_SIGNATURE_PARAMETER &Ele) {
-          return Ele.SemanticIndex == entry.SemanticIndex &&
-                 strcasecmp(Ele.SemanticName, entry.SemanticName) == 0;
-        });
-    if (pDesc == pParamters + numParameteres) {
-      ERR("CreateEmulatedVertexStreamOutputShader: output parameter not found");
-      return E_INVALIDARG;
-    }
-    auto reg_id = pDesc->Register;
-    for (unsigned i = 0; i < entry.ComponentCount; i++) {
-      auto offset = offsets[entry.OutputSlot];
-      offsets[entry.OutputSlot] += sizeof(float);
-      auto component = entry.StartComponent + i;
-      data.Elements.push_back({.reg_id = reg_id,
-                               .component = component,
-                               .output_slot = entry.OutputSlot,
-                               .offset = offset});
-    }
-  }
-
-  for (unsigned slot = 0; slot < NumStrides; slot++) {
-    strides[slot] = pStrides[slot];
-  }
-
+    SIZE_T BytecodeLength, IMTLD3D11StreamOutputLayout *pSOLayout,
+    ID3D11GeometryShader **ppShader) {
   SM50Shader *sm50;
   SM50Error *err;
   MTL_SHADER_REFLECTION reflection;
@@ -650,7 +572,7 @@ HRESULT CreateEmulatedVertexStreamOutputShader(
   }
   *ppShader = ref(new TShaderBase<tag_emulated_vertex_so>(
       pDevice, sm50, reflection, pShaderBytecode, BytecodeLength,
-      std::move(data)));
+      std::move(pSOLayout)));
   return S_OK;
 }
 

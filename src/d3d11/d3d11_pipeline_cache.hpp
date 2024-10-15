@@ -24,6 +24,10 @@ DEFINE_COM_INTERFACE("1a59c71f-f6bc-4aa1-b97e-35732f75a4eb",
       const void *pShaderBytecodeWithInputSignature,
       const D3D11_INPUT_ELEMENT_DESC *pInputElementDesc, UINT NumElements,
       IMTLD3D11InputLayout **ppInputLayout) = 0;
+  virtual HRESULT AddStreamOutputLayout(
+      const void *pShaderBytecode, UINT NumEntries,
+      const D3D11_SO_DECLARATION_ENTRY *pEntries, UINT NumStrides,
+      const UINT *pStrides, IMTLD3D11StreamOutputLayout **ppSOLayout) = 0;
   virtual HRESULT AddBlendState(const D3D11_BLEND_DESC1 *pBlendDesc,
                                 IMTLD3D11BlendState **ppBlendState) = 0;
   virtual void GetGraphicsPipeline(MTL_GRAPHICS_PIPELINE_DESC * pPipelineDesc,

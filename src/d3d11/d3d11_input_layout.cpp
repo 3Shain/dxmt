@@ -108,22 +108,22 @@ HRESULT ExtractMTLInputLayoutElements(
       ERR("CreateInputLayout: Unsupported vertex format ", desc.Format);
       return E_INVALIDARG;
     }
-    attribute.format = metal_format.AttributeFormat;
+    attribute.Format = metal_format.AttributeFormat;
 
-    attribute.slot = desc.InputSlot;
-    attribute.index = inputSig.Register;
+    attribute.Slot = desc.InputSlot;
+    attribute.Index = inputSig.Register;
 
     if (desc.AlignedByteOffset == D3D11_APPEND_ALIGNED_ELEMENT) {
-      attribute.offset = align(append_offset[attribute.slot],
+      attribute.Offset = align(append_offset[attribute.Slot],
                                std::min(4u, metal_format.BytesPerTexel));
     } else {
-      attribute.offset = desc.AlignedByteOffset;
+      attribute.Offset = desc.AlignedByteOffset;
     }
-    append_offset[attribute.slot] =
-        attribute.offset + metal_format.BytesPerTexel;
+    append_offset[attribute.Slot] =
+        attribute.Offset + metal_format.BytesPerTexel;
     // the layout stride is provided in IASetVertexBuffer
-    attribute.step_function = desc.InputSlotClass;
-    attribute.step_rate = desc.InputSlotClass == D3D11_INPUT_PER_INSTANCE_DATA
+    attribute.StepFunction = desc.InputSlotClass;
+    attribute.InstanceStepRate = desc.InputSlotClass == D3D11_INPUT_PER_INSTANCE_DATA
                               ? desc.InstanceDataStepRate
                               : 1;
   }
@@ -154,13 +154,158 @@ HRESULT StateObjectCache<MTL_INPUT_LAYOUT_DESC, IMTLD3D11InputLayout>::
       *pInputLayoutDesc;
   uint32_t input_slot_mask = 0;
   for (auto &element : elements) {
-    input_slot_mask |= (1 << element.slot);
+    input_slot_mask |= (1 << element.Slot);
   }
 
   cache.emplace(*pInputLayoutDesc,
                 std::make_unique<MTLD3D11InputLayout>(
                     device, std::move(elements), input_slot_mask));
   cache.at(*pInputLayoutDesc)->QueryInterface(IID_PPV_ARGS(ppInputLayout));
+
+  return S_OK;
+}
+
+class MTLD3D11StreamOutputLayout final
+    : public ManagedDeviceChild<IMTLD3D11StreamOutputLayout> {
+public:
+  MTLD3D11StreamOutputLayout(IMTLD3D11Device *device,
+                             const MTL_STREAM_OUTPUT_DESC &desc)
+      : ManagedDeviceChild<IMTLD3D11StreamOutputLayout>(device), desc_(desc) {}
+
+  ~MTLD3D11StreamOutputLayout() {}
+
+  HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid,
+                                           void **ppvObject) final {
+    if (ppvObject == nullptr)
+      return E_POINTER;
+
+    *ppvObject = nullptr;
+
+    if (riid == __uuidof(IUnknown) || riid == __uuidof(ID3D11DeviceChild) ||
+        riid == __uuidof(ID3D11GeometryShader) ||
+        riid == __uuidof(IMTLD3D11StreamOutputLayout)) {
+      *ppvObject = ref(this);
+      return S_OK;
+    }
+
+    if (logQueryInterfaceError(__uuidof(IMTLD3D11StreamOutputLayout), riid)) {
+      WARN("IMTLD3D11StreamOutputLayout: Unknown interface query ",
+           str::format(riid));
+    }
+
+    return E_NOINTERFACE;
+  };
+
+  uint32_t STDMETHODCALLTYPE
+  GetStreamOutputElements(MTL_SHADER_STREAM_OUTPUT_ELEMENT_DESC **ppElements,
+                          uint32_t Strides[4]) override {
+    *ppElements = desc_.Elements.data();
+    memcpy(Strides, desc_.Strides, sizeof(desc_.Strides));
+    return desc_.Elements.size();
+  }
+
+private:
+  MTL_STREAM_OUTPUT_DESC desc_;
+};
+
+HRESULT ExtractMTLStreamOutputElements(
+    IMTLD3D11Device *pDevice, const void *pShaderBytecode, UINT NumEntries,
+    const D3D11_SO_DECLARATION_ENTRY *pEntries,
+    MTL_SHADER_STREAM_OUTPUT_ELEMENT_DESC *pStreamOut,
+    uint32_t *pNumElementsOut) {
+  using namespace microsoft;
+  std::array<uint32_t, 4> offsets = {{}};
+  uint32_t element_count = 0;
+  CSignatureParser parser;
+  HRESULT hr = DXBCGetOutputSignature(pShaderBytecode, &parser);
+  if (FAILED(hr)) {
+    return hr;
+  }
+  const D3D11_SIGNATURE_PARAMETER *pParamters;
+  auto numParameteres = parser.GetParameters(&pParamters);
+  for (unsigned i = 0; i < NumEntries; i++) {
+    auto entry = pEntries[i];
+    if (entry.Stream != 0) {
+      ERR("CreateEmulatedVertexStreamOutputShader: stream must be 0");
+      return E_INVALIDARG;
+    }
+    if (entry.OutputSlot > 3 || entry.OutputSlot < 0) {
+      ERR("CreateEmulatedVertexStreamOutputShader: invalid output slot ",
+          entry.OutputSlot);
+      return E_INVALIDARG;
+    }
+    // FIXME: support more than 1 output slot
+    if (entry.OutputSlot != 0) {
+      ERR("CreateEmulatedVertexStreamOutputShader: only slot 0 supported");
+      return E_INVALIDARG;
+    }
+    if ((entry.ComponentCount - entry.StartComponent) < 0 ||
+        (entry.ComponentCount + entry.StartComponent) > 4) {
+      ERR("CreateEmulatedVertexStreamOutputShader: invalid components");
+      return E_INVALIDARG;
+    }
+    if ((entry.ComponentCount - entry.StartComponent) == 0) {
+      continue;
+    }
+    if (entry.SemanticName == nullptr) {
+      // skip hole
+      for (unsigned i = 0; i < entry.ComponentCount; i++) {
+        auto offset = offsets[entry.OutputSlot];
+        offsets[entry.OutputSlot] += sizeof(float);
+        auto component = entry.StartComponent + i;
+        pStreamOut[element_count++] = {.Register = 0xffffffff,
+                                       .Component = component,
+                                       .OutputSlot = entry.OutputSlot,
+                                       .Offset = offset};
+      }
+      continue;
+    }
+    auto pDesc = std::find_if(
+        pParamters, pParamters + numParameteres,
+        [&](const D3D11_SIGNATURE_PARAMETER &Ele) {
+          return Ele.SemanticIndex == entry.SemanticIndex &&
+                 strcasecmp(Ele.SemanticName, entry.SemanticName) == 0;
+        });
+    if (pDesc == pParamters + numParameteres) {
+      ERR("CreateEmulatedVertexStreamOutputShader: output parameter not found");
+      return E_INVALIDARG;
+    }
+    auto reg_id = pDesc->Register;
+    for (unsigned i = 0; i < entry.ComponentCount; i++) {
+      auto offset = offsets[entry.OutputSlot];
+      offsets[entry.OutputSlot] += sizeof(float);
+      auto component = entry.StartComponent + i;
+      pStreamOut[element_count++] = {.Register = reg_id,
+                                     .Component = component,
+                                     .OutputSlot = entry.OutputSlot,
+                                     .Offset = offset};
+    }
+  }
+  *pNumElementsOut = element_count;
+  return S_OK;
+}
+
+template <>
+HRESULT StateObjectCache<MTL_STREAM_OUTPUT_DESC, IMTLD3D11StreamOutputLayout>::
+    CreateStateObject(const MTL_STREAM_OUTPUT_DESC *pSOLayoutDesc,
+                      IMTLD3D11StreamOutputLayout **ppSOLayout) {
+  std::lock_guard<dxmt::mutex> lock(mutex_cache);
+  InitReturnPtr(ppSOLayout);
+
+  if (!pSOLayoutDesc)
+    return E_INVALIDARG;
+
+  if (!ppSOLayout)
+    return S_FALSE;
+
+  if (cache.contains(*pSOLayoutDesc)) {
+    cache.at(*pSOLayoutDesc)->QueryInterface(IID_PPV_ARGS(ppSOLayout));
+    return S_OK;
+  }
+
+  cache.emplace(*pSOLayoutDesc, std::make_unique<MTLD3D11StreamOutputLayout>(
+                                    device, *pSOLayoutDesc));
+  cache.at(*pSOLayoutDesc)->QueryInterface(IID_PPV_ARGS(ppSOLayout));
 
   return S_OK;
 }

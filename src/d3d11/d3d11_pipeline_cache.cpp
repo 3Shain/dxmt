@@ -10,6 +10,8 @@ class PipelineCache : public MTLD3D11PipelineCacheBase {
   StateObjectCache<D3D11_BLEND_DESC1, IMTLD3D11BlendState> blend_states;
 
   StateObjectCache<MTL_INPUT_LAYOUT_DESC, IMTLD3D11InputLayout> input_layouts;
+  StateObjectCache<MTL_STREAM_OUTPUT_DESC, IMTLD3D11StreamOutputLayout>
+      so_layouts;
 
   std::unordered_map<MTL_GRAPHICS_PIPELINE_DESC,
                      Com<IMTLCompiledGraphicsPipeline>>
@@ -80,6 +82,29 @@ class PipelineCache : public MTLD3D11PipelineCacheBase {
     return input_layouts.CreateStateObject(&buffer, ppInputLayout);
   }
 
+  HRESULT
+  AddStreamOutputLayout(const void *pShaderBytecode, UINT NumEntries,
+                        const D3D11_SO_DECLARATION_ENTRY *pEntries,
+                        UINT NumStrides, const UINT *pStrides,
+                        IMTLD3D11StreamOutputLayout **ppSOLayout) override {
+    std::vector<MTL_SHADER_STREAM_OUTPUT_ELEMENT_DESC> buffer(NumEntries * 4);
+    std::array<uint32_t, 4> strides = {{}};
+    uint32_t num_metal_so_elements;
+    if (FAILED(ExtractMTLStreamOutputElements(
+            device, pShaderBytecode, NumEntries, pEntries, buffer.data(),
+            &num_metal_so_elements))) {
+      return E_FAIL;
+    }
+    buffer.resize(num_metal_so_elements);
+    for (unsigned i = 0; i < NumStrides; i++) {
+      strides[i] = pStrides[i];
+    }
+    MTL_STREAM_OUTPUT_DESC desc;
+    memcpy(desc.Strides, strides.data(), sizeof(strides));
+    desc.Elements = std::move(buffer);
+    return so_layouts.CreateStateObject(&desc, ppSOLayout);
+  };
+
   HRESULT AddBlendState(const D3D11_BLEND_DESC1 *pBlendDesc,
                         IMTLD3D11BlendState **ppBlendState) override {
     return blend_states.CreateStateObject(pBlendDesc, ppBlendState);
@@ -117,7 +142,7 @@ class PipelineCache : public MTLD3D11PipelineCacheBase {
 public:
   PipelineCache(IMTLD3D11Device *pDevice)
       : MTLD3D11PipelineCacheBase(pDevice), device(pDevice),
-        blend_states(pDevice), input_layouts(pDevice) {
+        blend_states(pDevice), input_layouts(pDevice), so_layouts(pDevice) {
 
         };
 };

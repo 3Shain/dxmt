@@ -289,9 +289,13 @@ public:
       // FIXME: ensure the input shader is a vertex shader
       WARN("Emulate stream output");
 
+      Com<IMTLD3D11StreamOutputLayout> so;
+      pipeline_cache_->AddStreamOutputLayout(pShaderBytecode, NumEntries,
+                                             pSODeclaration, NumStrides,
+                                             pBufferStrides, &so);
+
       return dxmt::CreateEmulatedVertexStreamOutputShader(
-          this, pShaderBytecode, BytecodeLength, ppGeometryShader, NumEntries,
-          pSODeclaration, NumStrides, pBufferStrides);
+          this, pShaderBytecode, BytecodeLength, so.ptr(), ppGeometryShader);
     }
     ERR("CreateGeometryShaderWithStreamOutput: not supported, expect problem");
     return dxmt::CreateGeometryShader(this, pShaderBytecode,
