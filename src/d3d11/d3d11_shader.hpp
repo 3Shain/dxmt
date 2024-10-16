@@ -16,18 +16,6 @@ struct MTL_COMPILED_SHADER {
   dxmt::Sha1Hash *MetallibHash;
 };
 
-DEFINE_COM_INTERFACE("a8bfeef7-a453-4bce-90c1-912b02cf5cdf", IMTLCompiledShader)
-    : public IMTLThreadpoolWork {
-  virtual ~IMTLCompiledShader(){};
-  virtual void SubmitWork() = 0;
-  /**
-  return false if it's not ready
-   */
-  virtual bool GetShader(MTL_COMPILED_SHADER * pShaderData) = 0;
-
-  virtual void Dump() = 0;
-};
-
 namespace dxmt {
 class Shader;
 };
@@ -160,6 +148,15 @@ enum class ShaderType {
   Compute = 5
 };
 
+class CompiledShader : public IMTLThreadpoolWork {
+public:
+  virtual ~CompiledShader() {};
+  /**
+  return false if it's not ready
+   */
+  virtual bool GetShader(MTL_COMPILED_SHADER *pShaderData) = 0;
+};
+
 class Shader {
 public:
   virtual ~Shader() {};
@@ -167,12 +164,12 @@ public:
   virtual SM50Shader *handle();
   /* FIXME: exposed implementation detail */
   virtual MTL_SHADER_REFLECTION &reflection();
-  virtual Com<IMTLCompiledShader> get_shader(ShaderVariant variant);
+  virtual Com<CompiledShader> get_shader(ShaderVariant variant);
   virtual uint64_t id();
 };
 
 template <typename Variant>
-std::unique_ptr<IMTLCompiledShader>
+std::unique_ptr<CompiledShader>
 CreateVariantShader(IMTLD3D11Device *, ManagedShader, Variant);
 
 } // namespace dxmt

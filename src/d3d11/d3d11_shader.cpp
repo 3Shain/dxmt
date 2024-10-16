@@ -6,15 +6,14 @@
 namespace dxmt {
 
 template <typename Proc>
-class GeneralShaderCompileTask : public IMTLCompiledShader {
+class GeneralShaderCompileTask : public CompiledShader {
 public:
-  GeneralShaderCompileTask(IMTLD3D11Device *pDevice, Proc &&proc)
-      : IMTLCompiledShader(), proc(std::forward<Proc>(proc)), device_(pDevice) {
-  }
+  GeneralShaderCompileTask(IMTLD3D11Device *pDevice, ManagedShader shader,
+                           Proc &&proc)
+      : CompiledShader(), proc(std::forward<Proc>(proc)), device_(pDevice),
+        shader_(shader) {}
 
   ~GeneralShaderCompileTask() {}
-
-  void SubmitWork() { device_->SubmitThreadgroupWork(this); }
 
   ULONG STDMETHODCALLTYPE AddRef() {
     uint32_t refCount = m_refCount++;
@@ -32,8 +31,7 @@ public:
 
     *ppvObject = nullptr;
 
-    if (riid == __uuidof(IUnknown) || riid == __uuidof(IMTLThreadpoolWork) ||
-        riid == __uuidof(IMTLCompiledShader)) {
+    if (riid == __uuidof(IUnknown) || riid == __uuidof(IMTLThreadpoolWork)) {
       *ppvObject = ref(this);
       return S_OK;
     }
@@ -49,10 +47,38 @@ public:
     return ret;
   }
 
-  void Dump() {}
-
   IMTLThreadpoolWork *RunThreadpoolWork() {
-    function_ = transfer(proc(&hash_));
+    auto pool = transfer(NS::AutoreleasePool::alloc()->init());
+    Obj<NS::Error> err;
+    std::string func_name = "shader_main_" + std::to_string(shader_->id());
+    SM50CompiledBitcode *compile_result = proc(func_name.c_str());
+
+    if (!compile_result)
+      return this;
+
+    MTL_SHADER_BITCODE bitcode;
+    SM50GetCompiledBitcode(compile_result, &bitcode);
+    hash_.compute(bitcode.Data, bitcode.Size);
+    auto dispatch_data =
+        dispatch_data_create(bitcode.Data, bitcode.Size, nullptr, nullptr);
+    D3D11_ASSERT(dispatch_data);
+    Obj<MTL::Library> library =
+        transfer(device_->GetMTLDevice()->newLibrary(dispatch_data, &err));
+
+    if (err) {
+      ERR("Failed to create MTLLibrary: ",
+          err->localizedDescription()->utf8String());
+      return this;
+    }
+
+    dispatch_release(dispatch_data);
+    SM50DestroyBitcode(compile_result);
+    function_ = transfer(library->newFunction(
+        NS::String::string(func_name.c_str(), NS::UTF8StringEncoding)));
+    if (function_ == nullptr) {
+      ERR("Failed to create MTLFunction: ", func_name);
+    }
+
     return this;
   }
 
@@ -63,24 +89,19 @@ public:
 private:
   Proc proc;
   IMTLD3D11Device *device_;
+  ManagedShader shader_;
   std::atomic_bool ready_;
   Sha1Hash hash_;
   Obj<MTL::Function> function_;
-  void *compilation_args;
-  SM50_SHADER_DEBUG_IDENTITY_DATA identity_data;
-  uint64_t variant_id;
   std::atomic<uint32_t> m_refCount = {0ul};
 };
 
 template <>
-std::unique_ptr<IMTLCompiledShader>
+std::unique_ptr<CompiledShader>
 CreateVariantShader(IMTLD3D11Device *pDevice, ManagedShader shader,
                     ShaderVariantVertex variant) {
 
-  auto proc = [=](Sha1Hash *hash_) -> MTL::Function * {
-    auto pool = transfer(NS::AutoreleasePool::alloc()->init());
-    Obj<NS::Error> err;
-
+  auto proc = [=](const char *func_name) -> SM50CompiledBitcode * {
     SM50_SHADER_IA_INPUT_LAYOUT_DATA data_ia_layout;
     SM50_SHADER_GS_PASS_THROUGH_DATA data_gs_passthrough;
     data_gs_passthrough.type = SM50_SHADER_GS_PASS_THROUGH;
@@ -98,11 +119,10 @@ CreateVariantShader(IMTLD3D11Device *pDevice, ManagedShader shader,
 
     SM50CompiledBitcode *compile_result = nullptr;
     SM50Error *sm50_err = nullptr;
-    std::string func_name = "shader_main_" + std::to_string(shader->id());
     if (auto ret = SM50Compile(
             shader->handle(),
             (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)&data_gs_passthrough,
-            func_name.c_str(), &compile_result, &sm50_err)) {
+            func_name, &compile_result, &sm50_err)) {
       if (ret == 42) {
         ERR("Failed to compile shader due to failed assertation");
       } else {
@@ -111,44 +131,17 @@ CreateVariantShader(IMTLD3D11Device *pDevice, ManagedShader shader,
       }
       return nullptr;
     }
-    MTL_SHADER_BITCODE bitcode;
-    SM50GetCompiledBitcode(compile_result, &bitcode);
-    hash_->compute(bitcode.Data, bitcode.Size);
-    auto dispatch_data =
-        dispatch_data_create(bitcode.Data, bitcode.Size, nullptr, nullptr);
-    D3D11_ASSERT(dispatch_data);
-    Obj<MTL::Library> library =
-        transfer(pDevice->GetMTLDevice()->newLibrary(dispatch_data, &err));
-
-    if (err) {
-      ERR("Failed to create MTLLibrary: ",
-          err->localizedDescription()->utf8String());
-      return nullptr;
-    }
-
-    dispatch_release(dispatch_data);
-    SM50DestroyBitcode(compile_result);
-    auto function_ = (library->newFunction(
-        NS::String::string(func_name.c_str(), NS::UTF8StringEncoding)));
-    if (function_ == nullptr) {
-      ERR("Failed to create MTLFunction: ", func_name);
-      return nullptr;
-    }
-
-    return function_;
+    return compile_result;
   };
   return std::make_unique<GeneralShaderCompileTask<decltype(proc)>>(
-      pDevice, std::move(proc));
+      pDevice, shader, std::move(proc));
 };
 
 template <>
-std::unique_ptr<IMTLCompiledShader>
+std::unique_ptr<CompiledShader>
 CreateVariantShader(IMTLD3D11Device *pDevice, ManagedShader shader,
                     ShaderVariantPixel variant) {
-  auto proc = [=](Sha1Hash *hash_) -> MTL::Function * {
-    auto pool = transfer(NS::AutoreleasePool::alloc()->init());
-    Obj<NS::Error> err;
-
+  auto proc = [=](const char *func_name) -> SM50CompiledBitcode * {
     SM50_SHADER_PSO_PIXEL_SHADER_DATA data;
     data.type = SM50_SHADER_PSO_PIXEL_SHADER;
     data.next = nullptr;
@@ -158,10 +151,9 @@ CreateVariantShader(IMTLD3D11Device *pDevice, ManagedShader shader,
 
     SM50CompiledBitcode *compile_result = nullptr;
     SM50Error *sm50_err = nullptr;
-    std::string func_name = "shader_main_" + std::to_string(shader->id());
     if (auto ret = SM50Compile(shader->handle(),
                                (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)&data,
-                               func_name.c_str(), &compile_result, &sm50_err)) {
+                               func_name, &compile_result, &sm50_err)) {
       if (ret == 42) {
         ERR("Failed to compile shader due to failed assertation");
       } else {
@@ -170,48 +162,20 @@ CreateVariantShader(IMTLD3D11Device *pDevice, ManagedShader shader,
       }
       return nullptr;
     }
-    MTL_SHADER_BITCODE bitcode;
-    SM50GetCompiledBitcode(compile_result, &bitcode);
-    hash_->compute(bitcode.Data, bitcode.Size);
-    auto dispatch_data =
-        dispatch_data_create(bitcode.Data, bitcode.Size, nullptr, nullptr);
-    D3D11_ASSERT(dispatch_data);
-    Obj<MTL::Library> library =
-        transfer(pDevice->GetMTLDevice()->newLibrary(dispatch_data, &err));
-
-    if (err) {
-      ERR("Failed to create MTLLibrary: ",
-          err->localizedDescription()->utf8String());
-      return nullptr;
-    }
-
-    dispatch_release(dispatch_data);
-    SM50DestroyBitcode(compile_result);
-    auto function_ = (library->newFunction(
-        NS::String::string(func_name.c_str(), NS::UTF8StringEncoding)));
-    if (function_ == nullptr) {
-      ERR("Failed to create MTLFunction: ", func_name);
-      return nullptr;
-    }
-
-    return function_;
+    return compile_result;
   };
   return std::make_unique<GeneralShaderCompileTask<decltype(proc)>>(
-      pDevice, std::move(proc));
+      pDevice, shader, std::move(proc));
 };
 
 template <>
-std::unique_ptr<IMTLCompiledShader>
+std::unique_ptr<CompiledShader>
 CreateVariantShader(IMTLD3D11Device *pDevice, ManagedShader shader,
                     ShaderVariantDefault) {
-  auto proc = [=](Sha1Hash *hash_) -> MTL::Function * {
-    auto pool = transfer(NS::AutoreleasePool::alloc()->init());
-    Obj<NS::Error> err;
-
+  auto proc = [=](const char *func_name) -> SM50CompiledBitcode * {
     SM50CompiledBitcode *compile_result = nullptr;
     SM50Error *sm50_err = nullptr;
-    std::string func_name = "shader_main_" + std::to_string(shader->id());
-    if (auto ret = SM50Compile(shader->handle(), nullptr, func_name.c_str(),
+    if (auto ret = SM50Compile(shader->handle(), nullptr, func_name,
                                &compile_result, &sm50_err)) {
       if (ret == 42) {
         ERR("Failed to compile shader due to failed assertation");
@@ -221,44 +185,17 @@ CreateVariantShader(IMTLD3D11Device *pDevice, ManagedShader shader,
       }
       return nullptr;
     }
-    MTL_SHADER_BITCODE bitcode;
-    SM50GetCompiledBitcode(compile_result, &bitcode);
-    hash_->compute(bitcode.Data, bitcode.Size);
-    auto dispatch_data =
-        dispatch_data_create(bitcode.Data, bitcode.Size, nullptr, nullptr);
-    D3D11_ASSERT(dispatch_data);
-    Obj<MTL::Library> library =
-        transfer(pDevice->GetMTLDevice()->newLibrary(dispatch_data, &err));
-
-    if (err) {
-      ERR("Failed to create MTLLibrary: ",
-          err->localizedDescription()->utf8String());
-      return nullptr;
-    }
-
-    dispatch_release(dispatch_data);
-    SM50DestroyBitcode(compile_result);
-    auto function_ = (library->newFunction(
-        NS::String::string(func_name.c_str(), NS::UTF8StringEncoding)));
-    if (function_ == nullptr) {
-      ERR("Failed to create MTLFunction: ", func_name);
-      return nullptr;
-    }
-
-    return function_;
+    return compile_result;
   };
   return std::make_unique<GeneralShaderCompileTask<decltype(proc)>>(
-      pDevice, std::move(proc));
+      pDevice, shader, std::move(proc));
 };
 
 template <>
-std::unique_ptr<IMTLCompiledShader>
+std::unique_ptr<CompiledShader>
 CreateVariantShader(IMTLD3D11Device *pDevice, ManagedShader shader,
                     ShaderVariantTessellationVertex variant) {
-  auto proc = [=](Sha1Hash *hash_) -> MTL::Function * {
-    auto pool = transfer(NS::AutoreleasePool::alloc()->init());
-    Obj<NS::Error> err;
-
+  auto proc = [=](const char *func_name) -> SM50CompiledBitcode * {
     SM50_SHADER_IA_INPUT_LAYOUT_DATA ia_layout;
     ia_layout.index_buffer_format = variant.index_buffer_format;
     ia_layout.num_elements =
@@ -270,11 +207,10 @@ CreateVariantShader(IMTLD3D11Device *pDevice, ManagedShader shader,
 
     SM50CompiledBitcode *compile_result = nullptr;
     SM50Error *sm50_err = nullptr;
-    std::string func_name = "shader_main_" + std::to_string(shader->id());
     if (auto ret = SM50CompileTessellationPipelineVertex(
             shader->handle(), (SM50Shader *)variant.hull_shader_handle,
-            (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)&ia_layout,
-            func_name.c_str(), &compile_result, &sm50_err)) {
+            (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)&ia_layout, func_name,
+            &compile_result, &sm50_err)) {
       if (ret == 42) {
         ERR("Failed to compile shader due to failed assertation");
       } else {
@@ -283,50 +219,22 @@ CreateVariantShader(IMTLD3D11Device *pDevice, ManagedShader shader,
       }
       return nullptr;
     }
-    MTL_SHADER_BITCODE bitcode;
-    SM50GetCompiledBitcode(compile_result, &bitcode);
-    hash_->compute(bitcode.Data, bitcode.Size);
-    auto dispatch_data =
-        dispatch_data_create(bitcode.Data, bitcode.Size, nullptr, nullptr);
-    D3D11_ASSERT(dispatch_data);
-    Obj<MTL::Library> library =
-        transfer(pDevice->GetMTLDevice()->newLibrary(dispatch_data, &err));
-
-    if (err) {
-      ERR("Failed to create MTLLibrary: ",
-          err->localizedDescription()->utf8String());
-      return nullptr;
-    }
-
-    dispatch_release(dispatch_data);
-    SM50DestroyBitcode(compile_result);
-    auto function_ = (library->newFunction(
-        NS::String::string(func_name.c_str(), NS::UTF8StringEncoding)));
-    if (function_ == nullptr) {
-      ERR("Failed to create MTLFunction: ", func_name);
-      return nullptr;
-    }
-
-    return function_;
+    return compile_result;
   };
   return std::make_unique<GeneralShaderCompileTask<decltype(proc)>>(
-      pDevice, std::move(proc));
+      pDevice, shader, std::move(proc));
 }
 
 template <>
-std::unique_ptr<IMTLCompiledShader>
+std::unique_ptr<CompiledShader>
 CreateVariantShader(IMTLD3D11Device *pDevice, ManagedShader shader,
                     ShaderVariantTessellationHull variant) {
-  auto proc = [=](Sha1Hash *hash_) -> MTL::Function * {
-    auto pool = transfer(NS::AutoreleasePool::alloc()->init());
-    Obj<NS::Error> err;
-
+  auto proc = [=](const char *func_name) -> SM50CompiledBitcode * {
     SM50CompiledBitcode *compile_result = nullptr;
     SM50Error *sm50_err = nullptr;
-    std::string func_name = "shader_main_" + std::to_string(shader->id());
     if (auto ret = SM50CompileTessellationPipelineHull(
             (SM50Shader *)variant.vertex_shader_handle, shader->handle(),
-            nullptr, func_name.c_str(), &compile_result, &sm50_err)) {
+            nullptr, func_name, &compile_result, &sm50_err)) {
       if (ret == 42) {
         ERR("Failed to compile shader due to failed assertation");
       } else {
@@ -335,55 +243,27 @@ CreateVariantShader(IMTLD3D11Device *pDevice, ManagedShader shader,
       }
       return nullptr;
     }
-    MTL_SHADER_BITCODE bitcode;
-    SM50GetCompiledBitcode(compile_result, &bitcode);
-    hash_->compute(bitcode.Data, bitcode.Size);
-    auto dispatch_data =
-        dispatch_data_create(bitcode.Data, bitcode.Size, nullptr, nullptr);
-    D3D11_ASSERT(dispatch_data);
-    Obj<MTL::Library> library =
-        transfer(pDevice->GetMTLDevice()->newLibrary(dispatch_data, &err));
-
-    if (err) {
-      ERR("Failed to create MTLLibrary: ",
-          err->localizedDescription()->utf8String());
-      return nullptr;
-    }
-
-    dispatch_release(dispatch_data);
-    SM50DestroyBitcode(compile_result);
-    auto function_ = (library->newFunction(
-        NS::String::string(func_name.c_str(), NS::UTF8StringEncoding)));
-    if (function_ == nullptr) {
-      ERR("Failed to create MTLFunction: ", func_name);
-      return nullptr;
-    }
-
-    return function_;
+    return compile_result;
   };
   return std::make_unique<GeneralShaderCompileTask<decltype(proc)>>(
-      pDevice, std::move(proc));
+      pDevice, shader, std::move(proc));
 }
 
 template <>
-std::unique_ptr<IMTLCompiledShader>
+std::unique_ptr<CompiledShader>
 CreateVariantShader(IMTLD3D11Device *pDevice, ManagedShader shader,
                     ShaderVariantTessellationDomain variant) {
-  auto proc = [=](Sha1Hash *hash_) -> MTL::Function * {
-    auto pool = transfer(NS::AutoreleasePool::alloc()->init());
-    Obj<NS::Error> err;
-
+  auto proc = [=](const char *func_name) -> SM50CompiledBitcode * {
     SM50_SHADER_GS_PASS_THROUGH_DATA gs_passthrough;
     gs_passthrough.DataEncoded = variant.gs_passthrough;
     gs_passthrough.next = nullptr;
 
     SM50CompiledBitcode *compile_result = nullptr;
     SM50Error *sm50_err = nullptr;
-    std::string func_name = "shader_main_" + std::to_string(shader->id());
     if (auto ret = SM50CompileTessellationPipelineDomain(
             (SM50Shader *)variant.hull_shader_handle, shader->handle(),
-            (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)&gs_passthrough,
-            func_name.c_str(), &compile_result, &sm50_err)) {
+            (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)&gs_passthrough, func_name,
+            &compile_result, &sm50_err)) {
       if (ret == 42) {
         ERR("Failed to compile shader due to failed assertation");
       } else {
@@ -392,45 +272,18 @@ CreateVariantShader(IMTLD3D11Device *pDevice, ManagedShader shader,
       }
       return nullptr;
     }
-    MTL_SHADER_BITCODE bitcode;
-    SM50GetCompiledBitcode(compile_result, &bitcode);
-    hash_->compute(bitcode.Data, bitcode.Size);
-    auto dispatch_data =
-        dispatch_data_create(bitcode.Data, bitcode.Size, nullptr, nullptr);
-    D3D11_ASSERT(dispatch_data);
-    Obj<MTL::Library> library =
-        transfer(pDevice->GetMTLDevice()->newLibrary(dispatch_data, &err));
-
-    if (err) {
-      ERR("Failed to create MTLLibrary: ",
-          err->localizedDescription()->utf8String());
-      return nullptr;
-    }
-
-    dispatch_release(dispatch_data);
-    SM50DestroyBitcode(compile_result);
-    auto function_ = (library->newFunction(
-        NS::String::string(func_name.c_str(), NS::UTF8StringEncoding)));
-    if (function_ == nullptr) {
-      ERR("Failed to create MTLFunction: ", func_name);
-      return nullptr;
-    }
-
-    return function_;
+    return compile_result;
   };
   return std::make_unique<GeneralShaderCompileTask<decltype(proc)>>(
-      pDevice, std::move(proc));
+      pDevice, shader, std::move(proc));
 }
 
 template <>
-std::unique_ptr<IMTLCompiledShader>
+std::unique_ptr<CompiledShader>
 CreateVariantShader(IMTLD3D11Device *pDevice, ManagedShader shader,
                     ShaderVariantVertexStreamOutput variant) {
 
-  auto proc = [=](Sha1Hash *hash_) -> MTL::Function * {
-    auto pool = transfer(NS::AutoreleasePool::alloc()->init());
-    Obj<NS::Error> err;
-
+  auto proc = [=](const char *func_name) -> SM50CompiledBitcode * {
     SM50_SHADER_EMULATE_VERTEX_STREAM_OUTPUT_DATA data_so;
     SM50_SHADER_IA_INPUT_LAYOUT_DATA data_vertex_pulling;
     data_so.type = SM50_SHADER_EMULATE_VERTEX_STREAM_OUTPUT;
@@ -454,10 +307,9 @@ CreateVariantShader(IMTLD3D11Device *pDevice, ManagedShader shader,
 
     SM50CompiledBitcode *compile_result = nullptr;
     SM50Error *sm50_err = nullptr;
-    std::string func_name = "shader_main_" + std::to_string(shader->id());
     if (auto ret = SM50Compile(
             shader->handle(), (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)&data_so,
-            func_name.c_str(), &compile_result, &sm50_err)) {
+            func_name, &compile_result, &sm50_err)) {
       if (ret == 42) {
         ERR("Failed to compile shader due to failed assertation");
       } else {
@@ -466,34 +318,10 @@ CreateVariantShader(IMTLD3D11Device *pDevice, ManagedShader shader,
       }
       return nullptr;
     }
-    MTL_SHADER_BITCODE bitcode;
-    SM50GetCompiledBitcode(compile_result, &bitcode);
-    hash_->compute(bitcode.Data, bitcode.Size);
-    auto dispatch_data =
-        dispatch_data_create(bitcode.Data, bitcode.Size, nullptr, nullptr);
-    D3D11_ASSERT(dispatch_data);
-    Obj<MTL::Library> library =
-        transfer(pDevice->GetMTLDevice()->newLibrary(dispatch_data, &err));
-
-    if (err) {
-      ERR("Failed to create MTLLibrary: ",
-          err->localizedDescription()->utf8String());
-      return nullptr;
-    }
-
-    dispatch_release(dispatch_data);
-    SM50DestroyBitcode(compile_result);
-    auto function_ = (library->newFunction(
-        NS::String::string(func_name.c_str(), NS::UTF8StringEncoding)));
-    if (function_ == nullptr) {
-      ERR("Failed to create MTLFunction: ", func_name);
-      return nullptr;
-    }
-
-    return function_;
+    return compile_result;
   };
   return std::make_unique<GeneralShaderCompileTask<decltype(proc)>>(
-      pDevice, std::move(proc));
+      pDevice, shader, std::move(proc));
 };
 
 } // namespace dxmt

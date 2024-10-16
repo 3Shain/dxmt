@@ -15,7 +15,7 @@ class CachedSM50Shader final : public Shader {
   SM50Shader *shader = nullptr;
   MTL_SHADER_REFLECTION reflection_;
   uint64_t id_ = ~0uLL;
-  std::unordered_map<ShaderVariant, std::unique_ptr<IMTLCompiledShader>>
+  std::unordered_map<ShaderVariant, std::unique_ptr<CompiledShader>>
       variants;
 
 public:
@@ -43,7 +43,7 @@ public:
 
   virtual SM50Shader *handle() { return shader; };
   virtual MTL_SHADER_REFLECTION &reflection() { return reflection_; }
-  virtual Com<IMTLCompiledShader> get_shader(ShaderVariant variant) {
+  virtual Com<CompiledShader> get_shader(ShaderVariant variant) {
     auto c = variants.insert({variant, nullptr});
     if (c.second) {
       c.first->second = std::visit(
@@ -51,7 +51,7 @@ public:
             return CreateVariantShader(device, this, var);
           },
           variant);
-      c.first->second.get()->SubmitWork(); // FIXME: ?
+      device->SubmitThreadgroupWork(c.first->second.get());
     }
     return c.first->second.get();
   }

@@ -204,10 +204,10 @@ private:
 
   MTL_SHADER_REFLECTION hull_reflection;
 
-  Com<IMTLCompiledShader> VertexShader;
-  Com<IMTLCompiledShader> PixelShader;
-  Com<IMTLCompiledShader> HullShader;
-  Com<IMTLCompiledShader> DomainShader;
+  Com<CompiledShader> VertexShader;
+  Com<CompiledShader> PixelShader;
+  Com<CompiledShader> HullShader;
+  Com<CompiledShader> DomainShader;
 };
 
 Com<IMTLCompiledTessellationPipeline>

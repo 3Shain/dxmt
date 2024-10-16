@@ -138,8 +138,8 @@ private:
   MTL::PrimitiveTopologyClass topology_class;
   IMTLD3D11Device *device_;
   std::atomic_bool ready_;
-  Com<IMTLCompiledShader> VertexShader;
-  Com<IMTLCompiledShader> PixelShader;
+  Com<CompiledShader> VertexShader;
+  Com<CompiledShader> PixelShader;
   IMTLD3D11BlendState *pBlendState;
   Obj<MTL::RenderPipelineState> state_;
   bool RasterizationEnabled;
@@ -224,7 +224,7 @@ public:
 private:
   IMTLD3D11Device *device_;
   std::atomic_bool ready_;
-  Com<IMTLCompiledShader> ComputeShader;
+  Com<CompiledShader> ComputeShader;
   Obj<MTL::ComputePipelineState> state_;
 };
 
