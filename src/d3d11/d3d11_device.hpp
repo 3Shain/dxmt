@@ -14,8 +14,6 @@ DEFINE_COM_INTERFACE("14e1e5e4-3f08-4741-a8e3-597d79373266", IMTLThreadpoolWork)
   virtual void SetIsDone(bool state) = 0;
 };
 
-struct IMTLCompiledShader;
-
 struct IMTLCompiledGraphicsPipeline;
 struct IMTLCompiledComputePipeline;
 struct IMTLCompiledTessellationPipeline;

@@ -492,8 +492,6 @@ public:
           return;
         }
         ShaderStage.Shader = std::move(expected);
-        // Com<IMTLCompiledShader> _;
-        // ShaderStage.Shader->GetCompiledShader(&_);
         ShaderStage.ConstantBuffers.set_dirty();
         ShaderStage.SRVs.set_dirty();
         ShaderStage.Samplers.set_dirty();
@@ -1855,7 +1853,6 @@ public:
     }
 
     Com<IMTLCompiledTessellationPipeline> pipeline;
-    Com<IMTLCompiledShader> vs, ps;
 
     MTL_GRAPHICS_PIPELINE_DESC pipelineDesc;
     pipelineDesc.VertexShader = GetManagedShader<ShaderType::Vertex>();
