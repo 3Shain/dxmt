@@ -1,16 +1,11 @@
-#include "d3d11_private.h"
-#include "d3d11_state_object.hpp"
+
 #include "Metal/MTLDepthStencil.hpp"
-#include "com/com_guid.hpp"
-#include "com/com_pointer.hpp"
-#include "d3d11_device.hpp"
-#include "log/log.hpp"
-#include "util_string.hpp"
-#include "d3d11_device_child.hpp"
 #include "Metal/MTLRenderCommandEncoder.hpp"
 #include "Metal/MTLSampler.hpp"
+#include "d3d11_device.hpp"
+#include "d3d11_state_object.hpp"
+#include "log/log.hpp"
 #include "objc_pointer.hpp"
-#include <cassert>
 
 namespace dxmt {
 
@@ -720,21 +715,28 @@ StateObjectCache<D3D11_SAMPLER_DESC, IMTLD3D11SamplerState>::CreateStateObject(
   }
 
   // border color
-  if (desc.BorderColor[0] == 0.0f && desc.BorderColor[1] == 0.0f &&
-      desc.BorderColor[2] == 0.0f && desc.BorderColor[3] == 0.0f) {
-    mtl_sampler_desc->setBorderColor(
-        MTL::SamplerBorderColor::SamplerBorderColorTransparentBlack);
-  } else if (desc.BorderColor[0] == 0.0f && desc.BorderColor[1] == 0.0f &&
-             desc.BorderColor[2] == 0.0f && desc.BorderColor[3] == 1.0f) {
-    mtl_sampler_desc->setBorderColor(
-        MTL::SamplerBorderColor::SamplerBorderColorOpaqueBlack);
-  } else if (desc.BorderColor[0] == 1.0f && desc.BorderColor[1] == 1.0f &&
-             desc.BorderColor[2] == 1.0f && desc.BorderColor[3] == 1.0f) {
-    mtl_sampler_desc->setBorderColor(
-        MTL::SamplerBorderColor::SamplerBorderColorOpaqueWhite);
-  } else {
-    WARN("CreateSamplerState: Unsupported border color");
+  if ((desc.AddressU == D3D11_TEXTURE_ADDRESS_BORDER ||
+       desc.AddressV == D3D11_TEXTURE_ADDRESS_BORDER ||
+       desc.AddressW == D3D11_TEXTURE_ADDRESS_BORDER)) {
+    if (desc.BorderColor[0] == 0.0f && desc.BorderColor[1] == 0.0f &&
+        desc.BorderColor[2] == 0.0f && desc.BorderColor[3] == 0.0f) {
+      mtl_sampler_desc->setBorderColor(
+          MTL::SamplerBorderColor::SamplerBorderColorTransparentBlack);
+    } else if (desc.BorderColor[0] == 0.0f && desc.BorderColor[1] == 0.0f &&
+               desc.BorderColor[2] == 0.0f && desc.BorderColor[3] == 1.0f) {
+      mtl_sampler_desc->setBorderColor(
+          MTL::SamplerBorderColor::SamplerBorderColorOpaqueBlack);
+    } else if (desc.BorderColor[0] == 1.0f && desc.BorderColor[1] == 1.0f &&
+               desc.BorderColor[2] == 1.0f && desc.BorderColor[3] == 1.0f) {
+      mtl_sampler_desc->setBorderColor(
+          MTL::SamplerBorderColor::SamplerBorderColorOpaqueWhite);
+    } else {
+      WARN("CreateSamplerState: Unsupported border color (",
+           desc.BorderColor[0], ", ", desc.BorderColor[1], ", ",
+           desc.BorderColor[2], ", ", desc.BorderColor[3], ")");
+    }
   }
+
   mtl_sampler_desc->setSupportArgumentBuffers(true);
 
   auto mtl_sampler =
