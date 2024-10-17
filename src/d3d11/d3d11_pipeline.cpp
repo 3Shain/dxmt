@@ -19,8 +19,10 @@ public:
       : ComObject<IMTLCompiledGraphicsPipeline>(),
         num_rtvs(pDesc->NumColorAttachments),
         depth_stencil_format(pDesc->DepthStencilFormat),
-        topology_class(pDesc->TopologyClass), device_(pDevice), pBlendState(pDesc->BlendState),
-        RasterizationEnabled(pDesc->RasterizationEnabled) {
+        topology_class(pDesc->TopologyClass), device_(pDevice),
+        pBlendState(pDesc->BlendState),
+        RasterizationEnabled(pDesc->RasterizationEnabled),
+        SampleCount(pDesc->SampleCount) {
     for (unsigned i = 0; i < num_rtvs; i++) {
       rtv_formats[i] = pDesc->ColorAttachmentFormats[i];
     }
@@ -110,6 +112,7 @@ public:
     }
 
     pipelineDescriptor->setInputPrimitiveTopology(topology_class);
+    pipelineDescriptor->setRasterSampleCount(SampleCount);
 
     state_ = transfer(device_->GetMTLDevice()->newRenderPipelineState(
         pipelineDescriptor, &err));
@@ -143,6 +146,7 @@ private:
   IMTLD3D11BlendState *pBlendState;
   Obj<MTL::RenderPipelineState> state_;
   bool RasterizationEnabled;
+  UINT SampleCount;
 };
 
 Com<IMTLCompiledGraphicsPipeline>

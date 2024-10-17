@@ -1332,11 +1332,11 @@ public:
                              const FLOAT ColorRGBA[4]) {
     CommandChunk *chk = cmd_queue.CurrentChunk();
 
-    auto rtv_props = pRenderTargetView->GetRenderTargetProps();
-    if (rtv_props->RenderTargetArrayLength > 1) {
+    auto rtv_props = pRenderTargetView->GetAttachmentDesc();
+    if (rtv_props.RenderTargetArrayLength > 1) {
       EmitComputeCommandChk<true>(
           [texture = pRenderTargetView->GetBinding(cmd_queue.CurrentSeqId()),
-           size = rtv_props->RenderTargetArrayLength,
+           size = rtv_props.RenderTargetArrayLength,
            clear_color =
                std::array<float, 4>({ColorRGBA[0], ColorRGBA[1], ColorRGBA[2],
                                      ColorRGBA[3]})](auto encoder, auto &ctx) {
@@ -1533,23 +1533,16 @@ public:
       };
 
       uint32_t effective_render_target = 0;
-      uint32_t render_target_array = ~0u;
+      // FIXME: is this value always valid?
+      uint32_t render_target_array = state_.OutputMerger.ArrayLength;
       auto rtvs =
           chk->reserve_vector<RENDER_TARGET_STATE>(state_.OutputMerger.NumRTVs);
       for (unsigned i = 0; i < state_.OutputMerger.NumRTVs; i++) {
         auto &rtv = state_.OutputMerger.RTVs[i];
         if (rtv) {
-          auto props = rtv->GetRenderTargetProps();
-          if (render_target_array == ~0u) {
-            render_target_array = props->RenderTargetArrayLength;
-          } else {
-            if (render_target_array != props->RenderTargetArrayLength) {
-              ERR("mismatched render target array!");
-              return false;
-            }
-          }
-          rtvs.push_back({rtv->GetBinding(currentChunkId), i, props->Level,
-                          props->Slice, props->DepthPlane,
+          auto props = rtv->GetAttachmentDesc();
+          rtvs.push_back({rtv->GetBinding(currentChunkId), i, props.Level,
+                          props.Slice, props.DepthPlane,
                           rtv->GetPixelFormat()});
           D3D11_ASSERT(rtv->GetPixelFormat() != MTL::PixelFormatInvalid);
           effective_render_target++;
@@ -1579,6 +1572,7 @@ public:
         dsv_info.PixelFormat = state_.OutputMerger.DSV->GetPixelFormat();
       } else if (effective_render_target == 0) {
         if (state_.OutputMerger.NumRTVs) {
+          ERR("NumRTVs is non-zero but all render targets are null.");
           return false;
         }
         D3D11_ASSERT(state_.Rasterizer.NumViewports);
@@ -1734,9 +1728,7 @@ public:
         renderPassDescriptor->setVisibilityResultBuffer(
             ctx.chk->visibility_result_heap);
 
-        if (render_target_array != ~0u && render_target_array > 0) {
-          renderPassDescriptor->setRenderTargetArrayLength(render_target_array);
-        }
+        renderPassDescriptor->setRenderTargetArrayLength(render_target_array);
         ctx.render_encoder =
             ctx.cmdbuf->renderCommandEncoder(renderPassDescriptor);
         auto [h, _] = ctx.chk->inspect_gpu_heap();
@@ -1895,6 +1887,7 @@ public:
     } else {
       pipelineDesc.IndexBufferFormat = SM50_INDEX_BUFFER_FORMAT_NONE;
     }
+    pipelineDesc.SampleCount = state_.OutputMerger.SampleCount;
 
     device->CreateTessellationPipeline(&pipelineDesc, &pipeline);
 
@@ -2000,6 +1993,7 @@ public:
     } else {
       pipelineDesc.IndexBufferFormat = SM50_INDEX_BUFFER_FORMAT_NONE;
     }
+    pipelineDesc.SampleCount = state_.OutputMerger.SampleCount;
 
     device->CreateGraphicsPipeline(&pipelineDesc, &pipeline);
 

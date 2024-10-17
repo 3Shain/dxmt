@@ -75,7 +75,7 @@ private:
                   IMTLD3D11Device *pDevice)
         : BackBufferRTVBase(pDesc, context, pDevice),
           interpreted_pixel_format(interpreted_pixel_format) {}
-    MTL_RENDER_TARGET_VIEW_DESC props{0, 0, 0, 0}; // FIXME: bugprone
+    MTL_RENDER_PASS_ATTACHMENT_DESC props{0, 1, 0, 0, 0}; // FIXME: bugprone
 
     MTL::PixelFormat GetPixelFormat() final {
       return this->resource->rgb_swizzle_fix
@@ -88,7 +88,7 @@ private:
                         Is_sRGBVariant(interpreted_pixel_format));
     };
 
-    MTL_RENDER_TARGET_VIEW_DESC *GetRenderTargetProps() { return &props; };
+    MTL_RENDER_PASS_ATTACHMENT_DESC &GetAttachmentDesc() { return props; };
   };
   friend class BackBufferRTV;
 
