@@ -23,6 +23,7 @@ struct MTL_GRAPHICS_PIPELINE_DESC {
   MTL::PixelFormat DepthStencilFormat;
   MTL::PrimitiveTopologyClass TopologyClass;
   bool RasterizationEnabled;
+  uint8_t SampleCount;
   SM50_INDEX_BUFFER_FORAMT IndexBufferFormat;
   uint32_t SampleMask;
   uint32_t GSPassthrough;
@@ -94,6 +95,7 @@ template <> struct hash<MTL_GRAPHICS_PIPELINE_DESC> {
     state.add((size_t)v.IndexBufferFormat);
     state.add((size_t)v.SampleMask);
     state.add((size_t)v.GSPassthrough);
+    state.add((size_t)v.SampleCount);
     state.add((size_t)v.NumColorAttachments);
     for (unsigned i = 0; i < v.NumColorAttachments; i++) {
       state.add(v.ColorAttachmentFormats[i]);
@@ -157,6 +159,7 @@ template <> struct equal_to<MTL_GRAPHICS_PIPELINE_DESC> {
            (x.DepthStencilFormat == y.DepthStencilFormat) &&
            (x.TopologyClass == y.TopologyClass) &&
            (x.RasterizationEnabled == y.RasterizationEnabled) &&
+           (x.SampleCount == y.SampleCount) &&
            (x.IndexBufferFormat == y.IndexBufferFormat) &&
            (x.SampleMask == y.SampleMask) &&
            (x.GSPassthrough == y.GSPassthrough);

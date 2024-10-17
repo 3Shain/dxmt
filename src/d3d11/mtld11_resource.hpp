@@ -595,7 +595,13 @@ HRESULT
 CreateMTLRenderTargetView(IMTLD3D11Device *pDevice, MTL::Texture *pResource,
                           const D3D11_RENDER_TARGET_VIEW_DESC1 *pViewDesc,
                           MTL::Texture **ppView,
-                          MTL_RENDER_TARGET_VIEW_DESC *pMTLDesc);
+                          MTL_RENDER_PASS_ATTACHMENT_DESC &AttachmentDesc);
+
+HRESULT
+CreateMTLDepthStencilView(IMTLD3D11Device *pDevice, MTL::Texture *pResource,
+                          const D3D11_DEPTH_STENCIL_VIEW_DESC *pViewDesc,
+                          MTL::Texture **ppView,
+                          MTL_RENDER_PASS_ATTACHMENT_DESC &AttachmentDesc);
 
 struct MTL_TEXTURE_BUFFER_LAYOUT {
   uint32_t ByteOffset;

@@ -20,7 +20,8 @@ public:
         depth_stencil_format(pDesc->DepthStencilFormat),
         topology_class(pDesc->TopologyClass), device_(pDevice),
         pBlendState(pDesc->BlendState),
-        RasterizationEnabled(pDesc->RasterizationEnabled) {
+        RasterizationEnabled(pDesc->RasterizationEnabled),
+        SampleCount(pDesc->SampleCount) {
     for (unsigned i = 0; i < num_rtvs; i++) {
       rtv_formats[i] = pDesc->ColorAttachmentFormats[i];
     }
@@ -175,6 +176,7 @@ public:
     }
 
     pipelineDescriptor->setInputPrimitiveTopology(topology_class);
+    pipelineDescriptor->setSampleCount(SampleCount);
 
     state_rasterization_ =
         transfer(device_->GetMTLDevice()->newRenderPipelineState(
@@ -201,6 +203,7 @@ private:
   Obj<MTL::RenderPipelineState> state_mesh_;
   Obj<MTL::RenderPipelineState> state_rasterization_;
   bool RasterizationEnabled;
+  UINT SampleCount;
 
   MTL_SHADER_REFLECTION hull_reflection;
 

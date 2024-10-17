@@ -1657,6 +1657,47 @@ public:
                                               ppDepthStencilView, 0, 0, NULL);
   }
 
+  bool
+  ValidateSetRenderTargets(UINT NumRTVs,
+                           ID3D11RenderTargetView *const *ppRenderTargetViews,
+                           ID3D11DepthStencilView *pDepthStencilView) {
+    MTL_RENDER_PASS_ATTACHMENT_DESC *ref = nullptr;
+
+    // FIXME: static_cast? but I don't really want a com_cast
+    auto dsv = static_cast<IMTLD3D11DepthStencilView *>(pDepthStencilView);
+
+    if (dsv) {
+      ref = &dsv->GetAttachmentDesc();
+    }
+
+    for (unsigned i = 0; i < NumRTVs; i++) {
+      auto rtv =
+          static_cast<IMTLD3D11RenderTargetView *>(ppRenderTargetViews[i]);
+      if (rtv) {
+        // TODO: render target type and size should be checked as well
+        if (ref) {
+          auto &props = rtv->GetAttachmentDesc();
+          if (props.SampleCount != ref->SampleCount)
+            return false;
+          if (props.RenderTargetArrayLength != ref->RenderTargetArrayLength)
+            return false;
+        } else {
+          ref = &rtv->GetAttachmentDesc();
+        }
+      }
+    }
+
+    if (ref) {
+      state_.OutputMerger.SampleCount = ref->SampleCount;
+      state_.OutputMerger.ArrayLength = ref->RenderTargetArrayLength;
+    } else {
+      state_.OutputMerger.SampleCount = 1;
+      state_.OutputMerger.ArrayLength = 0;
+    }
+
+    return true;
+  };
+
   void OMSetRenderTargetsAndUnorderedAccessViews(
       UINT NumRTVs, ID3D11RenderTargetView *const *ppRenderTargetViews,
       ID3D11DepthStencilView *pDepthStencilView, UINT UAVStartSlot,
@@ -1666,6 +1707,9 @@ public:
     bool should_invalidate_pass = false;
 
     if (NumRTVs != D3D11_KEEP_RENDER_TARGETS_AND_DEPTH_STENCIL) {
+      if (!ValidateSetRenderTargets(NumRTVs, ppRenderTargetViews,
+                                    pDepthStencilView))
+        return;
       auto &BoundRTVs = state_.OutputMerger.RTVs;
       constexpr unsigned RTVSlotCount = D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT;
       for (unsigned rtv_index = 0; rtv_index < RTVSlotCount; rtv_index++) {
