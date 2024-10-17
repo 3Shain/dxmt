@@ -119,6 +119,10 @@ struct D3D11OutputMergerStageState {
   FLOAT BlendFactor[4];
 
   UINT SampleMask = 0xffffffff;
+
+  // state derived from valid RTV/DSV
+  UINT SampleCount = 1;
+  UINT ArrayLength = 0;
 };
 
 struct STREAM_OUTPUT_BUFFER_B {

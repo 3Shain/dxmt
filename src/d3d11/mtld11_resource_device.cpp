@@ -1,10 +1,10 @@
 #include "Metal/MTLPixelFormat.hpp"
 #include "Metal/MTLResource.hpp"
 #include "Metal/MTLTexture.hpp"
-#include "d3d11_private.h"
 #include "com/com_pointer.hpp"
 #include "d3d11_device.hpp"
 #include "d3d11_texture.hpp"
+#include "d3d11_view.hpp"
 #include "dxmt_binding.hpp"
 #include "mtld11_resource.hpp"
 
@@ -469,19 +469,19 @@ private:
   private:
     Obj<MTL::Texture> view;
     MTL::PixelFormat view_pixel_format;
-    MTL_RENDER_TARGET_VIEW_DESC mtl_rtv_desc;
+    MTL_RENDER_PASS_ATTACHMENT_DESC attachment_desc;
 
   public:
     TextureRTV(MTL::Texture *view, const tag_render_target_view<>::DESC1 *pDesc,
                DeviceTexture *pResource, IMTLD3D11Device *pDevice,
-               const MTL_RENDER_TARGET_VIEW_DESC &mtl_rtv_desc)
+               const MTL_RENDER_PASS_ATTACHMENT_DESC &mtl_rtv_desc)
         : RTVBase(pDesc, pResource, pDevice), view(view),
-          view_pixel_format(view->pixelFormat()), mtl_rtv_desc(mtl_rtv_desc) {}
+          view_pixel_format(view->pixelFormat()), attachment_desc(mtl_rtv_desc) {}
 
     MTL::PixelFormat GetPixelFormat() final { return view_pixel_format; }
 
-    MTL_RENDER_TARGET_VIEW_DESC *GetRenderTargetProps() final {
-      return &mtl_rtv_desc;
+    MTL_RENDER_PASS_ATTACHMENT_DESC &GetAttachmentDesc() final {
+      return attachment_desc;
     };
 
     BindingRef GetBinding(uint64_t seq_id) final {
@@ -503,12 +503,15 @@ private:
   private:
     Obj<MTL::Texture> view;
     MTL::PixelFormat view_pixel_format;
+    MTL_RENDER_PASS_ATTACHMENT_DESC attachment_desc;
 
   public:
     TextureDSV(MTL::Texture *view, const tag_depth_stencil_view<>::DESC1 *pDesc,
-               DeviceTexture *pResource, IMTLD3D11Device *pDevice)
+               DeviceTexture *pResource, IMTLD3D11Device *pDevice,
+               const MTL_RENDER_PASS_ATTACHMENT_DESC &attachment_desc)
         : DSVBase(pDesc, pResource, pDevice), view(view),
-          view_pixel_format(view->pixelFormat()) {}
+          view_pixel_format(view->pixelFormat()),
+          attachment_desc(attachment_desc) {}
 
     MTL::PixelFormat GetPixelFormat() final { return view_pixel_format; }
 
@@ -516,6 +519,10 @@ private:
       this->resource->occupancy.MarkAsOccupied(seq_id);
       return BindingRef(static_cast<ID3D11View *>(this), view.ptr());
     }
+
+    MTL_RENDER_PASS_ATTACHMENT_DESC &GetAttachmentDesc() final {
+      return attachment_desc;
+    };
 
     void OnSetDebugObjectName(LPCSTR Name) override {
       if (!Name) {
@@ -560,14 +567,14 @@ public:
       return E_INVALIDARG;
     }
     Obj<MTL::Texture> view;
-    MTL_RENDER_TARGET_VIEW_DESC mtl_rtv_desc;
+    MTL_RENDER_PASS_ATTACHMENT_DESC attachment_desc;
     if (FAILED(CreateMTLRenderTargetView(this->m_parent, this->texture,
-                                         &finalDesc, &view, &mtl_rtv_desc))) {
+                                         &finalDesc, &view, attachment_desc))) {
       return E_FAIL;
     }
     if (ppView) {
-      *ppView = ref(
-          new TextureRTV(view, &finalDesc, this, this->m_parent, mtl_rtv_desc));
+      *ppView = ref(new TextureRTV(view, &finalDesc, this, this->m_parent,
+                                   attachment_desc));
     } else {
       return S_FALSE;
     }
@@ -582,12 +589,13 @@ public:
       return E_INVALIDARG;
     }
     Obj<MTL::Texture> view;
-    if (FAILED(CreateMTLTextureView(this->m_parent, this->texture, &finalDesc,
-                                    &view))) {
+    MTL_RENDER_PASS_ATTACHMENT_DESC attachment_desc;
+    if (FAILED(CreateMTLDepthStencilView(this->m_parent, this->texture,
+                                         &finalDesc, &view, attachment_desc))) {
       return E_FAIL;
     }
     if (ppView) {
-      *ppView = ref(new TextureDSV(view, &finalDesc, this, this->m_parent));
+      *ppView = ref(new TextureDSV(view, &finalDesc, this, this->m_parent, attachment_desc));
     } else {
       return S_FALSE;
     }
