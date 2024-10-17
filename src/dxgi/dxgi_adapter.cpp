@@ -300,7 +300,7 @@ public:
       break;
     }
     case DXGI_FORMAT_R16G16B16A16_TYPELESS: {
-      pMtlDesc->PixelFormat = MTL::PixelFormatRGBA16Uint;
+      pMtlDesc->PixelFormat = MTL::PixelFormatRGBA16Unorm;
       pMtlDesc->BytesPerTexel = 8;
       pMtlDesc->Typeless = 1;
       break;
