@@ -494,6 +494,10 @@ public:
     }
   }
 
+  virtual bool IsEnabled() {
+    return m_desc.DepthEnable || m_desc.StencilEnable;
+  }
+
 private:
   const D3D11_DEPTH_STENCIL_DESC m_desc;
   Obj<MTL::DepthStencilState> state_default_;

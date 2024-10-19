@@ -1816,6 +1816,66 @@ public:
     return ptr ? ptr->GetManagedShader() : nullptr;
   };
 
+  template <bool IndexedDraw>
+  void InitializeGraphicsPipelineDesc(MTL_GRAPHICS_PIPELINE_DESC &Desc) {
+    // TODO: reduce branching
+    auto PS = GetManagedShader<ShaderType::Pixel>();
+    auto GS = GetManagedShader<ShaderType::Geometry>();
+    Desc.VertexShader = GetManagedShader<ShaderType::Vertex>();
+    Desc.PixelShader = PS;
+    // FIXME: ensure valid state: hull and domain shader none or both are bound
+    Desc.HullShader = GetManagedShader<ShaderType::Hull>();
+    Desc.DomainShader = GetManagedShader<ShaderType::Domain>();
+    if (state_.InputAssembler.InputLayout) {
+      Desc.InputLayout =
+          state_.InputAssembler.InputLayout->GetManagedInputLayout();
+    } else {
+      Desc.InputLayout = nullptr;
+    }
+    if (auto so_layout = com_cast<IMTLD3D11StreamOutputLayout>(
+            state_.ShaderStages[(UINT)ShaderType::Geometry].Shader.ptr())) {
+      Desc.SOLayout = so_layout.ptr();
+    } else {
+      Desc.SOLayout = nullptr;
+    }
+    Desc.NumColorAttachments = state_.OutputMerger.NumRTVs;
+    for (unsigned i = 0; i < ARRAYSIZE(state_.OutputMerger.RTVs); i++) {
+      auto &rtv = state_.OutputMerger.RTVs[i];
+      if (rtv && i < Desc.NumColorAttachments) {
+        Desc.ColorAttachmentFormats[i] =
+            state_.OutputMerger.RTVs[i]->GetPixelFormat();
+      } else {
+        Desc.ColorAttachmentFormats[i] = MTL::PixelFormatInvalid;
+      }
+    }
+    Desc.BlendState = state_.OutputMerger.BlendState
+                          ? state_.OutputMerger.BlendState
+                          : default_blend_state;
+    Desc.DepthStencilFormat = state_.OutputMerger.DSV
+                                  ? state_.OutputMerger.DSV->GetPixelFormat()
+                                  : MTL::PixelFormatInvalid;
+    Desc.TopologyClass =
+        to_metal_primitive_topology(state_.InputAssembler.Topology);
+    bool ds_enabled = (state_.OutputMerger.DepthStencilState
+                           ? state_.OutputMerger.DepthStencilState
+                           : default_depth_stencil_state)
+                          ->IsEnabled();
+    // FIXME: corner case: DSV is not bound or missing planar
+    Desc.RasterizationEnabled = PS || ds_enabled;
+    Desc.SampleMask = state_.OutputMerger.SampleMask;
+    Desc.GSPassthrough =
+        GS ? GS->reflection().GeometryShader.GSPassThrough : ~0u;
+    if constexpr (IndexedDraw) {
+      Desc.IndexBufferFormat =
+          state_.InputAssembler.IndexBufferFormat == DXGI_FORMAT_R32_UINT
+              ? SM50_INDEX_BUFFER_FORMAT_UINT32
+              : SM50_INDEX_BUFFER_FORMAT_UINT16;
+    } else {
+      Desc.IndexBufferFormat = SM50_INDEX_BUFFER_FORMAT_NONE;
+    }
+    Desc.SampleCount = state_.OutputMerger.SampleCount;
+  }
+
   template<bool IndexedDraw>
   bool FinalizeTessellationRenderPipeline() {
     if (cmdbuf_state == CommandBufferState::TessellationRenderPipelineReady)
@@ -1847,52 +1907,7 @@ public:
     Com<IMTLCompiledTessellationPipeline> pipeline;
 
     MTL_GRAPHICS_PIPELINE_DESC pipelineDesc;
-    pipelineDesc.VertexShader = GetManagedShader<ShaderType::Vertex>();
-    pipelineDesc.PixelShader = GetManagedShader<ShaderType::Pixel>();
-    pipelineDesc.HullShader = GetManagedShader<ShaderType::Hull>();
-    pipelineDesc.DomainShader = GetManagedShader<ShaderType::Domain>();
-    if (state_.InputAssembler.InputLayout) {
-      pipelineDesc.InputLayout =
-          state_.InputAssembler.InputLayout->GetManagedInputLayout();
-    } else {
-      pipelineDesc.InputLayout = nullptr;
-    }
-    if (auto so_layout = com_cast<IMTLD3D11StreamOutputLayout>(
-            state_.ShaderStages[(UINT)ShaderType::Geometry].Shader.ptr())) {
-      pipelineDesc.SOLayout = so_layout.ptr();
-    } else {
-      pipelineDesc.SOLayout = nullptr;
-    }
-    pipelineDesc.NumColorAttachments = state_.OutputMerger.NumRTVs;
-    for (unsigned i = 0; i < ARRAYSIZE(state_.OutputMerger.RTVs); i++) {
-      auto &rtv = state_.OutputMerger.RTVs[i];
-      if (rtv && i < pipelineDesc.NumColorAttachments) {
-        pipelineDesc.ColorAttachmentFormats[i] =
-            state_.OutputMerger.RTVs[i]->GetPixelFormat();
-      } else {
-        pipelineDesc.ColorAttachmentFormats[i] = MTL::PixelFormatInvalid;
-      }
-    }
-    pipelineDesc.BlendState = state_.OutputMerger.BlendState
-                                  ? state_.OutputMerger.BlendState
-                                  : default_blend_state;
-    pipelineDesc.DepthStencilFormat =
-        state_.OutputMerger.DSV ? state_.OutputMerger.DSV->GetPixelFormat()
-                                : MTL::PixelFormatInvalid;
-    pipelineDesc.TopologyClass = to_metal_primitive_topology(state_.InputAssembler.Topology);
-    pipelineDesc.RasterizationEnabled = !pipelineDesc.SOLayout;
-    pipelineDesc.SampleMask = state_.OutputMerger.SampleMask;
-    pipelineDesc.GSPassthrough =
-        GS ? GS->reflection().GeometryShader.GSPassThrough : ~0u;
-    if constexpr (IndexedDraw) {
-      pipelineDesc.IndexBufferFormat =
-          state_.InputAssembler.IndexBufferFormat == DXGI_FORMAT_R32_UINT
-              ? SM50_INDEX_BUFFER_FORMAT_UINT32
-              : SM50_INDEX_BUFFER_FORMAT_UINT16;
-    } else {
-      pipelineDesc.IndexBufferFormat = SM50_INDEX_BUFFER_FORMAT_NONE;
-    }
-    pipelineDesc.SampleCount = state_.OutputMerger.SampleCount;
+    InitializeGraphicsPipelineDesc<IndexedDraw>(pipelineDesc);
 
     device->CreateTessellationPipeline(&pipelineDesc, &pipeline);
 
@@ -1940,8 +1955,7 @@ public:
     }
     if (cmdbuf_state == CommandBufferState::RenderPipelineReady)
       return true;
-    auto GS =  GetManagedShader<ShaderType::Geometry>();
-    auto PS =  GetManagedShader<ShaderType::Pixel>();
+    auto GS = GetManagedShader<ShaderType::Geometry>();
     if (GS) {
       if (GS->reflection().GeometryShader.GSPassThrough == ~0u) {
         ERR("geometry shader is not supported yet, skip drawcall");
@@ -1958,52 +1972,7 @@ public:
     Com<IMTLCompiledGraphicsPipeline> pipeline;
 
     MTL_GRAPHICS_PIPELINE_DESC pipelineDesc;
-    pipelineDesc.VertexShader = GetManagedShader<ShaderType::Vertex>();
-    pipelineDesc.PixelShader = PS;
-    pipelineDesc.HullShader = nullptr;
-    pipelineDesc.DomainShader = nullptr;
-    if (state_.InputAssembler.InputLayout) {
-      pipelineDesc.InputLayout =
-          state_.InputAssembler.InputLayout->GetManagedInputLayout();
-    } else {
-      pipelineDesc.InputLayout = nullptr;
-    }
-    if (auto so_layout = com_cast<IMTLD3D11StreamOutputLayout>(
-            state_.ShaderStages[(UINT)ShaderType::Geometry].Shader.ptr())) {
-      pipelineDesc.SOLayout = so_layout.ptr();
-    } else {
-      pipelineDesc.SOLayout = nullptr;
-    }
-    pipelineDesc.NumColorAttachments = state_.OutputMerger.NumRTVs;
-    for (unsigned i = 0; i < ARRAYSIZE(state_.OutputMerger.RTVs); i++) {
-      auto &rtv = state_.OutputMerger.RTVs[i];
-      if (rtv && i < pipelineDesc.NumColorAttachments) {
-        pipelineDesc.ColorAttachmentFormats[i] =
-            state_.OutputMerger.RTVs[i]->GetPixelFormat();
-      } else {
-        pipelineDesc.ColorAttachmentFormats[i] = MTL::PixelFormatInvalid;
-      }
-    }
-    pipelineDesc.BlendState = state_.OutputMerger.BlendState
-                                   ? state_.OutputMerger.BlendState
-                                   : default_blend_state;
-    pipelineDesc.DepthStencilFormat =
-        state_.OutputMerger.DSV ? state_.OutputMerger.DSV->GetPixelFormat()
-                                : MTL::PixelFormatInvalid;
-    pipelineDesc.TopologyClass = to_metal_primitive_topology(state_.InputAssembler.Topology);
-    pipelineDesc.RasterizationEnabled = !pipelineDesc.SOLayout;
-    pipelineDesc.SampleMask = state_.OutputMerger.SampleMask;
-    pipelineDesc.GSPassthrough =
-        GS ? GS->reflection().GeometryShader.GSPassThrough : ~0u;
-    if constexpr (IndexedDraw) {
-      pipelineDesc.IndexBufferFormat =
-          state_.InputAssembler.IndexBufferFormat == DXGI_FORMAT_R32_UINT
-              ? SM50_INDEX_BUFFER_FORMAT_UINT32
-              : SM50_INDEX_BUFFER_FORMAT_UINT16;
-    } else {
-      pipelineDesc.IndexBufferFormat = SM50_INDEX_BUFFER_FORMAT_NONE;
-    }
-    pipelineDesc.SampleCount = state_.OutputMerger.SampleCount;
+    InitializeGraphicsPipelineDesc<IndexedDraw>(pipelineDesc);
 
     device->CreateGraphicsPipeline(&pipelineDesc, &pipeline);
 
