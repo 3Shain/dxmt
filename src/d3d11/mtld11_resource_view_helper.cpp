@@ -3,6 +3,23 @@
 
 namespace dxmt {
 
+void FixDepthStencilFormat(MTL::Texture *pTexture, MTL_FORMAT_DESC &Desc) {
+  switch (pTexture->pixelFormat()) {
+  case MTL::PixelFormatDepth16Unorm:
+    // DXGI_FORMAT_R16_TYPELESS
+    // DXGI_FORMAT_R16_UNORM
+    Desc.PixelFormat = MTL::PixelFormatDepth16Unorm;
+    break;
+  case MTL::PixelFormatDepth32Float:
+    // DXGI_FORMAT_R32_TYPELESS
+    // DXGI_FORMAT_R32_FLOAT
+    Desc.PixelFormat = MTL::PixelFormatDepth32Float;
+    break;
+  default:
+    break;
+  }
+}
+
 template <>
 HRESULT CreateMTLTextureView<D3D11_SHADER_RESOURCE_VIEW_DESC1>(
     IMTLD3D11Device *pDevice, MTL::Texture *pResource,
@@ -14,6 +31,7 @@ HRESULT CreateMTLTextureView<D3D11_SHADER_RESOURCE_VIEW_DESC1>(
     ERR("Failed to create SRV due to unsupported format ", pViewDesc->Format);
     return E_FAIL;
   }
+  FixDepthStencilFormat(pResource, metal_format);
   auto texture_type = pResource->textureType();
   MTL::TextureSwizzleChannels swizzle = {
       MTL::TextureSwizzleRed, MTL::TextureSwizzleGreen, MTL::TextureSwizzleBlue,
@@ -221,6 +239,7 @@ HRESULT CreateMTLTextureView<D3D11_UNORDERED_ACCESS_VIEW_DESC1>(
   if (FAILED(adapter->QueryFormatDesc(pViewDesc->Format, &metal_format))) {
     return E_FAIL;
   }
+  FixDepthStencilFormat(pResource, metal_format);
   auto texture_type = pResource->textureType();
   switch (pViewDesc->ViewDimension) {
   default:
