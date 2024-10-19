@@ -301,18 +301,31 @@ CreateMTLTextureDescriptorInternal(
     return E_FAIL;
   }
 
-  MTL::TextureUsage metal_usage = 0; // actually corresponding to BindFlags
-
-  // DIRTY HACK!
-  if (Format == DXGI_FORMAT_R32_TYPELESS &&
-      (BindFlags & D3D11_BIND_DEPTH_STENCIL)) {
-    desc->setPixelFormat(MTL::PixelFormatDepth32Float);
-  } else if (Format == DXGI_FORMAT_R16_TYPELESS &&
-             (BindFlags & D3D11_BIND_DEPTH_STENCIL)) {
-    desc->setPixelFormat(MTL::PixelFormatDepth16Unorm);
-  } else {
-    desc->setPixelFormat(metal_format.PixelFormat);
+  if (BindFlags & D3D11_BIND_DEPTH_STENCIL) {
+    switch (Format) {
+    case DXGI_FORMAT_R32_TYPELESS:
+      metal_format.PixelFormat = MTL::PixelFormatDepth32Float;
+      break;
+    case DXGI_FORMAT_R16_TYPELESS:
+      metal_format.PixelFormat = MTL::PixelFormatDepth16Unorm;
+      break;
+    case DXGI_FORMAT_D32_FLOAT_S8X24_UINT:
+    case DXGI_FORMAT_D24_UNORM_S8_UINT:
+    case DXGI_FORMAT_R32_FLOAT_X8X24_TYPELESS:
+    case DXGI_FORMAT_R24_UNORM_X8_TYPELESS:
+    case DXGI_FORMAT_X32_TYPELESS_G8X24_UINT:
+    case DXGI_FORMAT_X24_TYPELESS_G8_UINT:
+    case DXGI_FORMAT_R32G8X24_TYPELESS:
+    case DXGI_FORMAT_R24G8_TYPELESS:
+      break;
+    default:
+      ERR("Unhandled depth stencil format ", Format);
+      break;
+    }
   }
+  desc->setPixelFormat(metal_format.PixelFormat);
+
+  MTL::TextureUsage metal_usage = 0; // actually corresponding to BindFlags
 
   if (BindFlags & (D3D11_BIND_CONSTANT_BUFFER | D3D11_BIND_VERTEX_BUFFER |
                    D3D11_BIND_INDEX_BUFFER | D3D11_BIND_STREAM_OUTPUT)) {
