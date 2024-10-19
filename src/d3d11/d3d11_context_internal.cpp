@@ -1851,7 +1851,12 @@ public:
     pipelineDesc.PixelShader = GetManagedShader<ShaderType::Pixel>();
     pipelineDesc.HullShader = GetManagedShader<ShaderType::Hull>();
     pipelineDesc.DomainShader = GetManagedShader<ShaderType::Domain>();
-    pipelineDesc.InputLayout = state_.InputAssembler.InputLayout;
+    if (state_.InputAssembler.InputLayout) {
+      pipelineDesc.InputLayout =
+          state_.InputAssembler.InputLayout->GetManagedInputLayout();
+    } else {
+      pipelineDesc.InputLayout = nullptr;
+    }
     if (auto so_layout = com_cast<IMTLD3D11StreamOutputLayout>(
             state_.ShaderStages[(UINT)ShaderType::Geometry].Shader.ptr())) {
       pipelineDesc.SOLayout = so_layout.ptr();
@@ -1957,7 +1962,12 @@ public:
     pipelineDesc.PixelShader = PS;
     pipelineDesc.HullShader = nullptr;
     pipelineDesc.DomainShader = nullptr;
-    pipelineDesc.InputLayout = state_.InputAssembler.InputLayout;
+    if (state_.InputAssembler.InputLayout) {
+      pipelineDesc.InputLayout =
+          state_.InputAssembler.InputLayout->GetManagedInputLayout();
+    } else {
+      pipelineDesc.InputLayout = nullptr;
+    }
     if (auto so_layout = com_cast<IMTLD3D11StreamOutputLayout>(
             state_.ShaderStages[(UINT)ShaderType::Geometry].Shader.ptr())) {
       pipelineDesc.SOLayout = so_layout.ptr();
@@ -2562,7 +2572,9 @@ public:
     if (!state_.InputAssembler.InputLayout)
       return;
 
-    uint32_t slot_mask = state_.InputAssembler.InputLayout->GetInputSlotMask();
+    uint32_t slot_mask =
+        state_.InputAssembler.InputLayout->GetManagedInputLayout()
+            ->input_slot_mask();
     if (slot_mask == 0) // effectively empty input layout
       return;
 

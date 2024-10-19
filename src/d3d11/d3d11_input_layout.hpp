@@ -13,12 +13,15 @@ struct MTL_SHADER_INPUT_LAYOUT_ELEMENT_DESC {
   uint32_t InstanceStepRate : 31 = 0;
 };
 
+namespace dxmt {
+class InputLayout;
+};
+typedef dxmt::InputLayout *ManagedInputLayout;
+
 DEFINE_COM_INTERFACE("b56c6a99-80cf-4c7f-a756-9e9ceb38730f",
                      IMTLD3D11InputLayout)
     : public ID3D11InputLayout {
-  virtual uint32_t STDMETHODCALLTYPE GetInputSlotMask() = 0;
-  virtual uint32_t STDMETHODCALLTYPE GetInputLayoutElements(
-      MTL_SHADER_INPUT_LAYOUT_ELEMENT_DESC * *ppElements) = 0;
+  virtual ManagedInputLayout GetManagedInputLayout() = 0;
 };
 
 struct MTL_SHADER_STREAM_OUTPUT_ELEMENT_DESC {
@@ -37,6 +40,13 @@ DEFINE_COM_INTERFACE("fd58f76b-7c22-4605-b43c-28048c8b4a64",
 };
 
 namespace dxmt {
+
+class InputLayout {
+public:
+  virtual uint32_t input_slot_mask() = 0;
+  virtual uint32_t
+  input_layout_element(MTL_SHADER_INPUT_LAYOUT_ELEMENT_DESC **ppElements) = 0;
+};
 
 HRESULT ExtractMTLInputLayoutElements(
     IMTLD3D11Device *device, const void *pShaderBytecodeWithInputSignature,

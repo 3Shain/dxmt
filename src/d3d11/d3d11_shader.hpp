@@ -4,6 +4,7 @@
 #include "com/com_guid.hpp"
 #include "d3d11_device.hpp"
 #include "d3d11_device_child.hpp"
+#include "d3d11_input_layout.hpp"
 #include "objc-wrapper/dispatch.h"
 #include "sha1/sha1_util.hpp"
 #include "log/log.hpp"
@@ -55,6 +56,11 @@ public:
     if (riid == __uuidof(IMTLD3D11Shader)) {
       *ppvObject = ref_and_cast<IMTLD3D11Shader>(this);
       return S_OK;
+    }
+
+    // FIXME: should it really be here?
+    if (riid == __uuidof(IMTLD3D11StreamOutputLayout)) {
+      return E_NOINTERFACE;
     }
 
     if (logQueryInterfaceError(__uuidof(Interface), riid)) {
@@ -161,11 +167,12 @@ class Shader {
 public:
   virtual ~Shader() {};
   /* FIXME: exposed implementation detail */
-  virtual SM50Shader *handle();
+  virtual SM50Shader *handle() = 0;
   /* FIXME: exposed implementation detail */
-  virtual MTL_SHADER_REFLECTION &reflection();
-  virtual Com<CompiledShader> get_shader(ShaderVariant variant);
-  virtual uint64_t id();
+  virtual MTL_SHADER_REFLECTION &reflection() = 0;
+  virtual Com<CompiledShader> get_shader(ShaderVariant variant) = 0;
+  virtual uint64_t id() = 0;
+  virtual void dump() = 0;
 };
 
 template <typename Variant>

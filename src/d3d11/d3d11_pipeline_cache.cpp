@@ -56,6 +56,74 @@ public:
     return c.first->second.get();
   }
   virtual uint64_t id() { return id_; };
+
+  virtual void dump() {
+    // FIXME: bytecode is not copied
+    // std::fstream dump_out;
+    // dump_out.open("shader_dump_" + std::to_string(shader->id()) + ".cso",
+    //               std::ios::out | std::ios::binary);
+    // if (dump_out) {
+    //   dump_out.write((char *)pBytecode, BytecodeLength);
+    // }
+    // dump_out.close();
+    // ERR("dumped to ./shader_dump_" + std::to_string(shader->id()) + ".cso");
+  }
+};
+
+class CachedInputLayout final : public InputLayout {
+private:
+public:
+  CachedInputLayout(
+      std::vector<MTL_SHADER_INPUT_LAYOUT_ELEMENT_DESC> &&attributes,
+      uint32_t input_slot_mask)
+      : attributes_(attributes), input_slot_mask_(input_slot_mask) {}
+
+  virtual uint32_t input_slot_mask() final { return input_slot_mask_; }
+
+  virtual uint32_t input_layout_element(
+      MTL_SHADER_INPUT_LAYOUT_ELEMENT_DESC **ppElements) final {
+    *ppElements = attributes_.data();
+    return attributes_.size();
+  }
+
+  std::vector<MTL_SHADER_INPUT_LAYOUT_ELEMENT_DESC> attributes_;
+  uint32_t input_slot_mask_;
+};
+
+class MTLD3D11InputLayout final
+    : public MTLD3D11DeviceChild<IMTLD3D11InputLayout> {
+public:
+  MTLD3D11InputLayout(IMTLD3D11Device *device, ManagedInputLayout input_layout)
+      : MTLD3D11DeviceChild<IMTLD3D11InputLayout>(device),
+        input_layout(input_layout) {}
+
+  ~MTLD3D11InputLayout() {}
+
+  HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid,
+                                           void **ppvObject) final {
+    if (ppvObject == nullptr)
+      return E_POINTER;
+
+    *ppvObject = nullptr;
+
+    if (riid == __uuidof(IUnknown) || riid == __uuidof(ID3D11DeviceChild) ||
+        riid == __uuidof(ID3D11InputLayout) ||
+        riid == __uuidof(IMTLD3D11InputLayout)) {
+      *ppvObject = ref(this);
+      return S_OK;
+    }
+
+    if (logQueryInterfaceError(__uuidof(ID3D11InputLayout), riid)) {
+      WARN("D3D311InputLayout: Unknown interface query ", str::format(riid));
+    }
+
+    return E_NOINTERFACE;
+  };
+
+  ManagedInputLayout GetManagedInputLayout() override { return input_layout; }
+
+private:
+  ManagedInputLayout input_layout;
 };
 
 class PipelineCache : public MTLD3D11PipelineCacheBase {
@@ -63,7 +131,8 @@ class PipelineCache : public MTLD3D11PipelineCacheBase {
   IMTLD3D11Device *device;
   StateObjectCache<D3D11_BLEND_DESC1, IMTLD3D11BlendState> blend_states;
 
-  StateObjectCache<MTL_INPUT_LAYOUT_DESC, IMTLD3D11InputLayout> input_layouts;
+  std::unordered_map<MTL_INPUT_LAYOUT_DESC, std::unique_ptr<CachedInputLayout>> input_layouts;
+
   StateObjectCache<MTL_STREAM_OUTPUT_DESC, IMTLD3D11StreamOutputLayout>
       so_layouts;
 
@@ -205,7 +274,17 @@ class PipelineCache : public MTLD3D11PipelineCacheBase {
       return E_FAIL;
     }
     buffer.resize(num_metal_ia_elements);
-    return input_layouts.CreateStateObject(&buffer, ppInputLayout);
+    if (!input_layouts.contains(buffer)) {
+      uint32_t input_slot_mask = 0;
+      for (auto &element : buffer) {
+        input_slot_mask |= (1 << element.Slot);
+      }
+      input_layouts.emplace(buffer, std::make_unique<CachedInputLayout>(
+                                        std::move(buffer), input_slot_mask));
+    }
+    *ppInputLayout =
+        ref(new MTLD3D11InputLayout(device, input_layouts.at(buffer).get()));
+    return S_OK;
   }
 
   HRESULT
@@ -268,7 +347,7 @@ class PipelineCache : public MTLD3D11PipelineCacheBase {
 public:
   PipelineCache(IMTLD3D11Device *pDevice)
       : MTLD3D11PipelineCacheBase(pDevice), device(pDevice),
-        blend_states(pDevice), input_layouts(pDevice), so_layouts(pDevice) {
+        blend_states(pDevice), so_layouts(pDevice) {
 
         };
 };
