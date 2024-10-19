@@ -927,6 +927,7 @@ public:
     case DXGI_FORMAT_V408:
     case DXGI_FORMAT_FORCE_UINT:
     case DXGI_FORMAT_UNKNOWN:
+    default:
       return E_FAIL;
     }
     pMtlDesc->Capability =
