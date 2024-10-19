@@ -8,55 +8,6 @@
 
 namespace dxmt {
 
-class MTLD3D11InputLayout final
-    : public ManagedDeviceChild<IMTLD3D11InputLayout> {
-public:
-  MTLD3D11InputLayout(
-      IMTLD3D11Device *device,
-      std::vector<MTL_SHADER_INPUT_LAYOUT_ELEMENT_DESC> &&attributes,
-      uint32_t input_slot_mask)
-      : ManagedDeviceChild<IMTLD3D11InputLayout>(device),
-        attributes_(attributes), input_slot_mask_(input_slot_mask) {}
-
-  ~MTLD3D11InputLayout() {}
-
-  HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid,
-                                           void **ppvObject) final {
-    if (ppvObject == nullptr)
-      return E_POINTER;
-
-    *ppvObject = nullptr;
-
-    if (riid == __uuidof(IUnknown) || riid == __uuidof(ID3D11DeviceChild) ||
-        riid == __uuidof(ID3D11InputLayout) ||
-        riid == __uuidof(IMTLD3D11InputLayout)) {
-      *ppvObject = ref(this);
-      return S_OK;
-    }
-
-    if (logQueryInterfaceError(__uuidof(ID3D11InputLayout), riid)) {
-      WARN("D3D311InputLayout: Unknown interface query ", str::format(riid));
-    }
-
-    return E_NOINTERFACE;
-  };
-
-  virtual uint32_t STDMETHODCALLTYPE GetInputSlotMask() final {
-    return input_slot_mask_;
-  }
-
-  virtual uint32_t STDMETHODCALLTYPE GetInputLayoutElements(
-      MTL_SHADER_INPUT_LAYOUT_ELEMENT_DESC **ppElements) final {
-    *ppElements = attributes_.data();
-    return attributes_.size();
-  }
-
-private:
-  std::vector<MTL_SHADER_INPUT_LAYOUT_ELEMENT_DESC> attributes_;
-  uint64_t sign_mask_;
-  uint32_t input_slot_mask_;
-};
-
 HRESULT ExtractMTLInputLayoutElements(
     IMTLD3D11Device *device, const void *pShaderBytecodeWithInputSignature,
     const D3D11_INPUT_ELEMENT_DESC *pInputElementDescs, uint32_t NumElements,
@@ -130,39 +81,6 @@ HRESULT ExtractMTLInputLayoutElements(
             : 1;
   }
   *pNumElementsOut = attribute_count;
-
-  return S_OK;
-}
-
-template <>
-HRESULT StateObjectCache<MTL_INPUT_LAYOUT_DESC, IMTLD3D11InputLayout>::
-    CreateStateObject(const MTL_INPUT_LAYOUT_DESC *pInputLayoutDesc,
-                      IMTLD3D11InputLayout **ppInputLayout) {
-  std::lock_guard<dxmt::mutex> lock(mutex_cache);
-  InitReturnPtr(ppInputLayout);
-
-  if (!pInputLayoutDesc)
-    return E_INVALIDARG;
-
-  if (!ppInputLayout)
-    return S_FALSE;
-
-  if (cache.contains(*pInputLayoutDesc)) {
-    cache.at(*pInputLayoutDesc)->QueryInterface(IID_PPV_ARGS(ppInputLayout));
-    return S_OK;
-  }
-
-  std::vector<MTL_SHADER_INPUT_LAYOUT_ELEMENT_DESC> elements =
-      *pInputLayoutDesc;
-  uint32_t input_slot_mask = 0;
-  for (auto &element : elements) {
-    input_slot_mask |= (1 << element.Slot);
-  }
-
-  cache.emplace(*pInputLayoutDesc,
-                std::make_unique<MTLD3D11InputLayout>(
-                    device, std::move(elements), input_slot_mask));
-  cache.at(*pInputLayoutDesc)->QueryInterface(IID_PPV_ARGS(ppInputLayout));
 
   return S_OK;
 }

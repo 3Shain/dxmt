@@ -16,7 +16,7 @@ struct MTL_GRAPHICS_PIPELINE_DESC {
   ManagedShader DomainShader;
   ManagedShader PixelShader;
   IMTLD3D11BlendState *BlendState;
-  IMTLD3D11InputLayout *InputLayout;
+  ManagedInputLayout InputLayout;
   IMTLD3D11StreamOutputLayout *SOLayout;
   UINT NumColorAttachments;
   MTL::PixelFormat ColorAttachmentFormats[8];
