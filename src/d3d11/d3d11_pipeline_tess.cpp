@@ -33,7 +33,7 @@ public:
         ShaderVariantTessellationHull{(uint64_t)pDesc->VertexShader->handle()});
     DomainShader =
         pDesc->DomainShader->get_shader(ShaderVariantTessellationDomain{
-            (uint64_t)pDesc->HullShader->handle(), pDesc->GSPassthrough});
+            (uint64_t)pDesc->HullShader->handle(), pDesc->GSPassthrough, !pDesc->RasterizationEnabled});
     if (pDesc->PixelShader) {
       PixelShader = pDesc->PixelShader->get_shader(ShaderVariantPixel{
           pDesc->SampleMask, pDesc->BlendState->IsDualSourceBlending(),
