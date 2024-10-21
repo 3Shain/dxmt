@@ -155,7 +155,8 @@ public:
     if (target) {
       *target = NULL;
       // TODO
-      WARN("GetFullscreenState return null");
+      if (!fullscreen_desc_.Windowed)
+        WARN("GetFullscreenState return null");
     }
     return S_OK;
   };
