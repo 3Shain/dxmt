@@ -718,6 +718,7 @@ llvm::Error convert_dxbc_domain_shader(
   uint32_t max_output_register = pShaderInternal->max_output_register;
   SM50_SHADER_COMPILATION_ARGUMENT_DATA *arg = pArgs;
   MTL_GEOMETRY_SHADER_PASS_THROUGH *gs_passthrough = nullptr;
+  bool rasterization_disabled = false;
   // uint64_t debug_id = ~0u;
   while (arg) {
     switch (arg->type) {
@@ -726,6 +727,7 @@ llvm::Error convert_dxbc_domain_shader(
       break;
     case SM50_SHADER_GS_PASS_THROUGH:
       gs_passthrough = &((SM50_SHADER_GS_PASS_THROUGH_DATA *)arg)->Data;
+      rasterization_disabled = ((SM50_SHADER_GS_PASS_THROUGH_DATA *)arg)->RasterizationDisabled;
       break;
     default:
       break;
@@ -743,7 +745,7 @@ llvm::Error convert_dxbc_domain_shader(
   });
   {
     SignatureContext sig_ctx{prologue, epilogue, func_signature, nullptr,
-                             false,    false,    false};
+                             false,    false,    rasterization_disabled};
     for (auto &p : pShaderInternal->signature_handlers) {
       p(sig_ctx);
     }
@@ -807,7 +809,7 @@ llvm::Error convert_dxbc_domain_shader(
   }
 
   auto [function, function_metadata] =
-    func_signature.CreateFunction(name, context, module, 0, false);
+    func_signature.CreateFunction(name, context, module, 0, rasterization_disabled);
 
   auto entry_bb = llvm::BasicBlock::Create(context, "entry", function);
   auto epilogue_bb = llvm::BasicBlock::Create(context, "epilogue", function);
@@ -1221,6 +1223,7 @@ llvm::Error convert_dxbc_vertex_shader(
   SM50_SHADER_EMULATE_VERTEX_STREAM_OUTPUT_DATA *vertex_so = nullptr;
   SM50_SHADER_IA_INPUT_LAYOUT_DATA *ia_layout = nullptr;
   MTL_GEOMETRY_SHADER_PASS_THROUGH *gs_passthrough = nullptr;
+  bool rasterization_disabled = false;
   // uint64_t debug_id = ~0u;
   while (arg) {
     switch (arg->type) {
@@ -1241,12 +1244,14 @@ llvm::Error convert_dxbc_vertex_shader(
       break;
     case SM50_SHADER_GS_PASS_THROUGH:
       gs_passthrough = &((SM50_SHADER_GS_PASS_THROUGH_DATA *)arg)->Data;
+      rasterization_disabled = ((SM50_SHADER_GS_PASS_THROUGH_DATA *)arg)->RasterizationDisabled;
       break;
     default:
       break;
     }
     arg = (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)arg->next;
   }
+  rasterization_disabled = rasterization_disabled || (vertex_so != nullptr);
 
   IREffect prologue([](auto) { return std::monostate(); });
   IRValue epilogue([](struct context ctx) -> pvalue {
@@ -1258,7 +1263,7 @@ llvm::Error convert_dxbc_vertex_shader(
   });
   {
     SignatureContext sig_ctx{prologue, epilogue, func_signature,      ia_layout,
-                             false,    false,    vertex_so != nullptr};
+                             false,    false,    rasterization_disabled};
     for (auto &p : pShaderInternal->signature_handlers) {
       p(sig_ctx);
     }
@@ -1341,7 +1346,8 @@ llvm::Error convert_dxbc_vertex_shader(
   }
 
   auto [function, function_metadata] = func_signature.CreateFunction(
-    name, context, module, sign_mask, vertex_so != nullptr
+    name, context, module, sign_mask,
+    rasterization_disabled
   );
 
   auto entry_bb = llvm::BasicBlock::Create(context, "entry", function);

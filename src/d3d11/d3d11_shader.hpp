@@ -77,9 +77,11 @@ struct ShaderVariantVertex {
   using this_type = ShaderVariantVertex;
   uint64_t input_layout_handle;
   uint32_t gs_passthrough;
+  bool rasterization_disabled;
   bool operator==(const this_type &rhs) const {
     return input_layout_handle == rhs.input_layout_handle &&
-           gs_passthrough == rhs.gs_passthrough;
+           gs_passthrough == rhs.gs_passthrough &&
+           rasterization_disabled == rhs.rasterization_disabled;
   }
 };
 
@@ -119,9 +121,11 @@ struct ShaderVariantTessellationDomain {
   using this_type = ShaderVariantTessellationDomain;
   uint64_t hull_shader_handle;
   uint32_t gs_passthrough;
+  bool rasterization_disabled;
   bool operator==(const this_type &rhs) const {
     return hull_shader_handle == rhs.hull_shader_handle &&
-           gs_passthrough == rhs.gs_passthrough;
+           gs_passthrough == rhs.gs_passthrough &&
+           rasterization_disabled == rhs.rasterization_disabled;
   }
 };
 

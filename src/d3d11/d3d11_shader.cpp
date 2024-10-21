@@ -106,6 +106,7 @@ CreateVariantShader(IMTLD3D11Device *pDevice, ManagedShader shader,
     SM50_SHADER_GS_PASS_THROUGH_DATA data_gs_passthrough;
     data_gs_passthrough.type = SM50_SHADER_GS_PASS_THROUGH;
     data_gs_passthrough.DataEncoded = variant.gs_passthrough;
+    data_gs_passthrough.RasterizationDisabled = variant.rasterization_disabled;
     data_gs_passthrough.next = nullptr;
     if (variant.input_layout_handle) {
       data_gs_passthrough.next = &data_ia_layout;
@@ -256,6 +257,7 @@ CreateVariantShader(IMTLD3D11Device *pDevice, ManagedShader shader,
   auto proc = [=](const char *func_name) -> SM50CompiledBitcode * {
     SM50_SHADER_GS_PASS_THROUGH_DATA gs_passthrough;
     gs_passthrough.DataEncoded = variant.gs_passthrough;
+    gs_passthrough.RasterizationDisabled = variant.rasterization_disabled;
     gs_passthrough.next = nullptr;
 
     SM50CompiledBitcode *compile_result = nullptr;

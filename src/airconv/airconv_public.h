@@ -74,6 +74,7 @@ struct MTL_GEOMETRY_SHADER_REFLECTION {
   union {
     struct MTL_GEOMETRY_SHADER_PASS_THROUGH Data;
     uint32_t GSPassThrough;
+    bool RasterizationDisabled;
   };
 };
 
@@ -225,6 +226,7 @@ struct SM50_SHADER_GS_PASS_THROUGH_DATA {
     struct MTL_GEOMETRY_SHADER_PASS_THROUGH Data;
     uint32_t DataEncoded;
   };
+  bool RasterizationDisabled;
 };
 
 AIRCONV_EXPORT int SM50Initialize(
