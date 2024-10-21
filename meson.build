@@ -88,6 +88,12 @@ if dxmt_debug
 add_project_arguments('-DDXMT_DEBUG=1', language: 'cpp')
 endif
 
+dxmt_version = vcs_tag(
+  command: ['git', 'describe', '--always'],
+  input:  'version.h.in',
+  output: 'version.h',
+)
+
 subdir('libs')
 subdir('src')
 subdir('tests')

@@ -1,4 +1,5 @@
 #include "d3d11_swapchain.hpp"
+#include "QuartzCore/CADeveloperHUDProperties.hpp"
 #include "com/com_guid.hpp"
 #include "d3d11_private.h"
 #include "dxgi_interfaces.h"
@@ -12,6 +13,7 @@
 #include "wsi_monitor.hpp"
 #include "wsi_platform_win32.hpp"
 #include "wsi_window.hpp"
+#include "dxmt_info.hpp"
 #include <atomic>
 #include <cfloat>
 
@@ -32,7 +34,8 @@ public:
                     const DXGI_SWAP_CHAIN_DESC1 *pDesc,
                     const DXGI_SWAP_CHAIN_FULLSCREEN_DESC *pFullscreenDesc)
       : MTLDXGISubObject(pDevice), factory_(pFactory), presentation_count_(0),
-        desc_(*pDesc), hWnd(hWnd), monitor_(wsi::getWindowMonitor(hWnd)) {
+        desc_(*pDesc), hWnd(hWnd), monitor_(wsi::getWindowMonitor(hWnd)),
+        hud(CA::DeveloperHUDProperties::instance()) {
 
     device_ = Com<IMTLD3D11Device>::queryFrom(pDevice);
 
@@ -66,6 +69,16 @@ public:
       init_refresh_rate_ = (double)current_mode.refreshRate.numerator /
                            (double)current_mode.refreshRate.denominator;
     }
+
+    auto pool = transfer(NS::AutoreleasePool::alloc()->init());
+    auto str_dxmt_version = NS::String::string("com.github.3shain.dxmt-version",
+                                               NS::ASCIIStringEncoding);
+    hud->addLabel(str_dxmt_version,
+                  NS::String::string("com.apple.hud-graph.default",
+                                     NS::ASCIIStringEncoding));
+    hud->updateLabel(str_dxmt_version,
+                     NS::String::string(GetVersionDescriptionText(11, device_->GetFeatureLevel()).c_str(),
+                                        NS::UTF8StringEncoding));
   };
 
   ~MTLD3D11SwapChain() {
@@ -467,6 +480,7 @@ private:
   uint32_t frame_latency_diff = 0;
   double init_refresh_rate_ = DBL_MAX;
   int preferred_max_frame_rate = 0;
+  CA::DeveloperHUDProperties* hud;
 
   bool destroyed = false;
 };

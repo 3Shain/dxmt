@@ -24,5 +24,6 @@
 
 #include "CAMetalDrawable.hpp"
 #include "CAMetalLayer.hpp"
+#include "CADeveloperHUDProperties.hpp"
 
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------

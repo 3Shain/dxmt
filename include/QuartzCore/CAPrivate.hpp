@@ -130,6 +130,12 @@ namespace Private
             "setPixelFormat:");
         _CA_PRIVATE_DEF_SEL(texture,
             "texture");
+        _CA_PRIVATE_DEF_SEL(instance,
+            "instance");
+        _CA_PRIVATE_DEF_SEL(addLabel_,
+            "addLabel:after:");
+        _CA_PRIVATE_DEF_SEL(updateLabel_,
+            "updateLabel:value:");
     } // Class
 } // Private
 } // CA
