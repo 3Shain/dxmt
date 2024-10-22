@@ -163,11 +163,11 @@ namespace dxmt {
 
 template <typename DESC, typename Object> class StateObjectCache {
 public:
-  StateObjectCache(IMTLD3D11Device *device) : device(device) {};
+  StateObjectCache(MTLD3D11Device *device) : device(device) {};
   HRESULT CreateStateObject(const DESC *pDesc, Object **ppRet);
 
 private:
-  IMTLD3D11Device *device;
+  MTLD3D11Device *device;
   std::unordered_map<DESC, std::unique_ptr<ManagedDeviceChild<Object>>> cache;
   dxmt::mutex mutex_cache;
 };

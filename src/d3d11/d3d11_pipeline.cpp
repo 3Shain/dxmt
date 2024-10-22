@@ -14,7 +14,7 @@ namespace dxmt {
 class MTLCompiledGraphicsPipeline
     : public ComObject<IMTLCompiledGraphicsPipeline> {
 public:
-  MTLCompiledGraphicsPipeline(IMTLD3D11Device *pDevice,
+  MTLCompiledGraphicsPipeline(MTLD3D11Device *pDevice,
                               MTL_GRAPHICS_PIPELINE_DESC *pDesc)
       : ComObject<IMTLCompiledGraphicsPipeline>(),
         num_rtvs(pDesc->NumColorAttachments),
@@ -139,7 +139,7 @@ private:
   MTL::PixelFormat rtv_formats[8];
   MTL::PixelFormat depth_stencil_format;
   MTL::PrimitiveTopologyClass topology_class;
-  IMTLD3D11Device *device_;
+  MTLD3D11Device *device_;
   std::atomic_bool ready_;
   Com<CompiledShader> VertexShader;
   Com<CompiledShader> PixelShader;
@@ -150,7 +150,7 @@ private:
 };
 
 Com<IMTLCompiledGraphicsPipeline>
-CreateGraphicsPipeline(IMTLD3D11Device *pDevice,
+CreateGraphicsPipeline(MTLD3D11Device *pDevice,
                        MTL_GRAPHICS_PIPELINE_DESC *pDesc) {
   Com<IMTLCompiledGraphicsPipeline> pipeline =
       new MTLCompiledGraphicsPipeline(pDevice, pDesc);
@@ -161,7 +161,7 @@ CreateGraphicsPipeline(IMTLD3D11Device *pDevice,
 class MTLCompiledComputePipeline
     : public ComObject<IMTLCompiledComputePipeline> {
 public:
-  MTLCompiledComputePipeline(IMTLD3D11Device *pDevice, ManagedShader shader)
+  MTLCompiledComputePipeline(MTLD3D11Device *pDevice, ManagedShader shader)
       : ComObject<IMTLCompiledComputePipeline>(), device_(pDevice) {
     ComputeShader = shader->get_shader(ShaderVariantDefault{});
   }
@@ -226,14 +226,14 @@ public:
   }
 
 private:
-  IMTLD3D11Device *device_;
+  MTLD3D11Device *device_;
   std::atomic_bool ready_;
   Com<CompiledShader> ComputeShader;
   Obj<MTL::ComputePipelineState> state_;
 };
 
 Com<IMTLCompiledComputePipeline>
-CreateComputePipeline(IMTLD3D11Device *pDevice, ManagedShader ComputeShader) {
+CreateComputePipeline(MTLD3D11Device *pDevice, ManagedShader ComputeShader) {
   Com<IMTLCompiledComputePipeline> pipeline =
       new MTLCompiledComputePipeline(pDevice, ComputeShader);
   pipeline->SubmitWork();

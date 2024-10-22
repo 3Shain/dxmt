@@ -24,7 +24,7 @@ private:
 public:
   DeviceBuffer(const tag_buffer::DESC1 *pDesc,
                const D3D11_SUBRESOURCE_DATA *pInitialData,
-               IMTLD3D11Device *device)
+               MTLD3D11Device *device)
       : TResourceBase<tag_buffer, IMTLBindable>(*pDesc, device) {
     auto metal = device->GetMTLDevice();
     buffer = transfer(
@@ -72,7 +72,7 @@ public:
 
   public:
     SRV(const tag_shader_resource_view<>::DESC1 *pDesc, DeviceBuffer *pResource,
-        IMTLD3D11Device *pDevice, ArgumentData argument_data, F &&fn)
+        MTLD3D11Device *pDevice, ArgumentData argument_data, F &&fn)
         : SRVBase(pDesc, pResource, pDevice), argument_data(argument_data),
           f(std::forward<F>(fn)) {}
 
@@ -183,7 +183,7 @@ public:
 
   public:
     UAV(const tag_unordered_access_view<>::DESC1 *pDesc,
-        DeviceBuffer *pResource, IMTLD3D11Device *pDevice,
+        DeviceBuffer *pResource, MTLD3D11Device *pDevice,
         ArgumentData argument_data, F &&fn)
         : UAVBase(pDesc, pResource, pDevice), argument_data(argument_data),
           f(std::forward<F>(fn)) {}
@@ -216,14 +216,15 @@ public:
     uint64_t counter_handle;
 
     UAVWithCounter(const tag_unordered_access_view<>::DESC1 *pDesc,
-                   DeviceBuffer *pResource, IMTLD3D11Device *pDevice, A &&a,
-                   F &&fn)
+                   DeviceBuffer *pResource, MTLD3D11Device *pDevice, A &&a, F &&fn)
         : UAVBase(pDesc, pResource, pDevice), a(std::forward<A>(a)),
           f(std::forward<F>(fn)) {
-      counter_handle = pDevice->AloocateCounter(0);
+      counter_handle = pDevice->GetDXMTDevice().queue().AllocateCounter(0);
     }
 
-    ~UAVWithCounter() { m_parent->DiscardCounter(counter_handle); }
+    ~UAVWithCounter() {
+      m_parent->GetDXMTDevice().queue().DiscardCounter(counter_handle);
+    }
 
     BindingRef UseBindable(uint64_t seq_id) override {
       this->resource->occupancy.MarkAsOccupied(seq_id);
@@ -361,7 +362,7 @@ public:
 };
 
 HRESULT
-CreateDeviceBuffer(IMTLD3D11Device *pDevice, const D3D11_BUFFER_DESC *pDesc,
+CreateDeviceBuffer(MTLD3D11Device *pDevice, const D3D11_BUFFER_DESC *pDesc,
                    const D3D11_SUBRESOURCE_DATA *pInitialData,
                    ID3D11Buffer **ppBuffer) {
   *ppBuffer = ref(new DeviceBuffer(pDesc, pInitialData, pDevice));
@@ -393,7 +394,7 @@ private:
   public:
     TextureSRV(MTL::Texture *view,
                const tag_shader_resource_view<>::DESC1 *pDesc,
-               DeviceTexture *pResource, IMTLD3D11Device *pDevice)
+               DeviceTexture *pResource, MTLD3D11Device *pDevice)
         : SRVBase(pDesc, pResource, pDevice), view(view),
           view_handle(view->gpuResourceID()) {}
 
@@ -433,7 +434,7 @@ private:
   public:
     TextureUAV(MTL::Texture *view,
                const tag_unordered_access_view<>::DESC1 *pDesc,
-               DeviceTexture *pResource, IMTLD3D11Device *pDevice)
+               DeviceTexture *pResource, MTLD3D11Device *pDevice)
         : UAVBase(pDesc, pResource, pDevice), view(view),
           view_handle(view->gpuResourceID()) {}
 
@@ -473,7 +474,7 @@ private:
 
   public:
     TextureRTV(MTL::Texture *view, const tag_render_target_view<>::DESC1 *pDesc,
-               DeviceTexture *pResource, IMTLD3D11Device *pDevice,
+               DeviceTexture *pResource, MTLD3D11Device *pDevice,
                const MTL_RENDER_PASS_ATTACHMENT_DESC &mtl_rtv_desc)
         : RTVBase(pDesc, pResource, pDevice), view(view),
           view_pixel_format(view->pixelFormat()), attachment_desc(mtl_rtv_desc) {}
@@ -507,7 +508,7 @@ private:
 
   public:
     TextureDSV(MTL::Texture *view, const tag_depth_stencil_view<>::DESC1 *pDesc,
-               DeviceTexture *pResource, IMTLD3D11Device *pDevice,
+               DeviceTexture *pResource, MTLD3D11Device *pDevice,
                const MTL_RENDER_PASS_ATTACHMENT_DESC &attachment_desc)
         : DSVBase(pDesc, pResource, pDevice), view(view),
           view_pixel_format(view->pixelFormat()),
@@ -534,7 +535,7 @@ private:
 
 public:
   DeviceTexture(const tag_texture::DESC1 *pDesc, MTL::Texture *texture,
-                IMTLD3D11Device *pDevice)
+                MTLD3D11Device *pDevice)
       : TResourceBase<tag_texture, IMTLBindable, IMTLMinLODClampable>(*pDesc,
                                                                       pDevice),
         texture(texture), texture_handle(texture->gpuResourceID()) {}
@@ -660,7 +661,7 @@ public:
 };
 
 template <typename tag>
-HRESULT CreateDeviceTextureInternal(IMTLD3D11Device *pDevice,
+HRESULT CreateDeviceTextureInternal(MTLD3D11Device *pDevice,
                                     const typename tag::DESC1 *pDesc,
                                     const D3D11_SUBRESOURCE_DATA *pInitialData,
                                     typename tag::COM_IMPL **ppTexture) {
@@ -680,7 +681,7 @@ HRESULT CreateDeviceTextureInternal(IMTLD3D11Device *pDevice,
 }
 
 HRESULT
-CreateDeviceTexture1D(IMTLD3D11Device *pDevice,
+CreateDeviceTexture1D(MTLD3D11Device *pDevice,
                       const D3D11_TEXTURE1D_DESC *pDesc,
                       const D3D11_SUBRESOURCE_DATA *pInitialData,
                       ID3D11Texture1D **ppTexture) {
@@ -689,7 +690,7 @@ CreateDeviceTexture1D(IMTLD3D11Device *pDevice,
 }
 
 HRESULT
-CreateDeviceTexture2D(IMTLD3D11Device *pDevice,
+CreateDeviceTexture2D(MTLD3D11Device *pDevice,
                       const D3D11_TEXTURE2D_DESC1 *pDesc,
                       const D3D11_SUBRESOURCE_DATA *pInitialData,
                       ID3D11Texture2D1 **ppTexture) {
@@ -698,7 +699,7 @@ CreateDeviceTexture2D(IMTLD3D11Device *pDevice,
 }
 
 HRESULT
-CreateDeviceTexture3D(IMTLD3D11Device *pDevice,
+CreateDeviceTexture3D(MTLD3D11Device *pDevice,
                       const D3D11_TEXTURE3D_DESC1 *pDesc,
                       const D3D11_SUBRESOURCE_DATA *pInitialData,
                       ID3D11Texture3D1 **ppTexture) {

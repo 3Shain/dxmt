@@ -35,7 +35,7 @@ private:
   ManagedShader shader;
 
 public:
-  TShaderBase(IMTLD3D11Device *device, ManagedShader shader)
+  TShaderBase(MTLD3D11Device *device, ManagedShader shader)
       : MTLD3D11DeviceChild<Interface, IMTLD3D11Shader>(device),
         shader(shader) {}
 
@@ -181,7 +181,7 @@ public:
 
 template <typename Variant>
 std::unique_ptr<CompiledShader>
-CreateVariantShader(IMTLD3D11Device *, ManagedShader, Variant);
+CreateVariantShader(MTLD3D11Device *, ManagedShader, Variant);
 
 } // namespace dxmt
 

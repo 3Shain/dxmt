@@ -115,6 +115,8 @@ namespace dxmt {
 
     static std::string toLower(std::string str);
 
+    static Config &getInstance();
+
   private:
 
     OptionMap m_options;

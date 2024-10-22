@@ -6,6 +6,7 @@
 #include "Metal/MTLDevice.hpp"
 #include "d3d11_private.h"
 #include "dxgi_interfaces.h"
+#include "dxmt_device.hpp"
 
 DEFINE_COM_INTERFACE("14e1e5e4-3f08-4741-a8e3-597d79373266", IMTLThreadpoolWork)
     : public IUnknown {
@@ -21,14 +22,16 @@ struct IMTLCompiledTessellationPipeline;
 struct MTL_GRAPHICS_PIPELINE_DESC;
 struct MTL_COMPUTE_PIPELINE_DESC;
 
-DEFINE_COM_INTERFACE("a46de9a7-0233-4a94-b75c-9c0f8f364cda", IMTLD3D11Device)
-    : public ID3D11Device3 {
+
+namespace dxmt {
+
+class MTLD3D11Device : public ID3D11Device3 {
+public:
 
   virtual void AddRefPrivate() = 0;
   virtual void ReleasePrivate() = 0;
 
   virtual MTL::Device *STDMETHODCALLTYPE GetMTLDevice() = 0;
-  virtual void GetAdapter(IMTLDXGIAdapter * *ppAdapter) = 0;
   /**
   TODO: should ensure pWork is not released before executed
   or support cancellation.
@@ -51,13 +54,11 @@ DEFINE_COM_INTERFACE("a46de9a7-0233-4a94-b75c-9c0f8f364cda", IMTLD3D11Device)
 
   virtual bool IsTraced() = 0;
 
-  virtual uint64_t AloocateCounter(uint32_t InitialValue) = 0;
-
-  virtual void DiscardCounter(uint64_t ConterHandle) = 0;
+  virtual Device& GetDXMTDevice() = 0;
 };
 
-namespace dxmt {
-Com<IMTLDXGIDevice> CreateD3D11Device(IMTLDXGIAdapter *pAdapter,
+Com<IMTLDXGIDevice> CreateD3D11Device(std::unique_ptr<Device> &&device,
+                                      IMTLDXGIAdapter *pAdapter,
                                       D3D_FEATURE_LEVEL FeatureLevel,
                                       UINT Flags);
 } // namespace dxmt

@@ -8,8 +8,6 @@
 DEFINE_COM_INTERFACE("acdf3ef1-b33a-4cb6-97bd-1c1974827e6d", IMTLDXGIAdapter)
     : public IDXGIAdapter3 {
   virtual MTL::Device *STDMETHODCALLTYPE GetMTLDevice() = 0;
-  virtual int STDMETHODCALLTYPE GetConfigInt(const char* name, int defaultValue) = 0;
-  virtual float STDMETHODCALLTYPE GetConfigFloat(const char* name, float defaultValue) = 0;
 };
 
 DEFINE_COM_INTERFACE("6bfa1657-9cb1-471a-a4fb-7cacf8a81207", IMTLDXGIDevice)

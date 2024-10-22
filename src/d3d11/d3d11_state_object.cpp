@@ -162,7 +162,7 @@ class MTLD3D11SamplerState : public ManagedDeviceChild<IMTLD3D11SamplerState> {
 
 public:
   friend class MTLD3D11DeviceContext;
-  MTLD3D11SamplerState(IMTLD3D11Device *device, MTL::SamplerState *samplerState,
+  MTLD3D11SamplerState(MTLD3D11Device *device, MTL::SamplerState *samplerState,
                        const D3D11_SAMPLER_DESC &desc, float lod_bias)
       : ManagedDeviceChild<IMTLD3D11SamplerState>(device), desc_(desc),
         metal_sampler_state_(samplerState),
@@ -216,7 +216,7 @@ class MTLD3D11BlendState : public ManagedDeviceChild<IMTLD3D11BlendState> {
 
 public:
   friend class MTLD3D11DeviceContext;
-  MTLD3D11BlendState(IMTLD3D11Device *device, const D3D11_BLEND_DESC1 &desc)
+  MTLD3D11BlendState(MTLD3D11Device *device, const D3D11_BLEND_DESC1 &desc)
       : ManagedDeviceChild<IMTLD3D11BlendState>(device), desc_(desc) {
     dual_source_blending_ =
         !desc_.IndependentBlendEnable &&
@@ -321,7 +321,7 @@ class MTLD3D11RasterizerState
 
 public:
   friend class MTLD3D11DeviceContext;
-  MTLD3D11RasterizerState(IMTLD3D11Device *device,
+  MTLD3D11RasterizerState(MTLD3D11Device *device,
                           const D3D11_RASTERIZER_DESC2 *desc)
       : ManagedDeviceChild<IMTLD3D11RasterizerState>(device), m_desc(*desc) {}
   ~MTLD3D11RasterizerState() {};
@@ -444,7 +444,7 @@ class MTLD3D11DepthStencilState
 
 public:
   friend class MTLD3D11DeviceContext;
-  MTLD3D11DepthStencilState(IMTLD3D11Device *device,
+  MTLD3D11DepthStencilState(MTLD3D11Device *device,
                             MTL::DepthStencilState *state,
                             MTL::DepthStencilState *stencil_disabled,
                             MTL::DepthStencilState *depthsteancil_disabled,

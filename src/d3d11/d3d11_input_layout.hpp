@@ -49,13 +49,13 @@ public:
 };
 
 HRESULT ExtractMTLInputLayoutElements(
-    IMTLD3D11Device *device, const void *pShaderBytecodeWithInputSignature,
+    MTLD3D11Device *device, const void *pShaderBytecodeWithInputSignature,
     const D3D11_INPUT_ELEMENT_DESC *pInputElementDescs, uint32_t NumElements,
     MTL_SHADER_INPUT_LAYOUT_ELEMENT_DESC *pInputLayoutElementOut,
     uint32_t *pNumElementsOut);
 
 HRESULT ExtractMTLStreamOutputElements(
-    IMTLD3D11Device *pDevice, const void *pShaderBytecode, UINT NumEntries,
+    MTLD3D11Device *pDevice, const void *pShaderBytecode, UINT NumEntries,
     const D3D11_SO_DECLARATION_ENTRY *pEntries,
     MTL_SHADER_STREAM_OUTPUT_ELEMENT_DESC *pStreamOut,
     uint32_t *pNumElementsOut);

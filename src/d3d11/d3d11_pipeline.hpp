@@ -170,13 +170,13 @@ template <> struct equal_to<MTL_GRAPHICS_PIPELINE_DESC> {
 namespace dxmt {
 
 Com<IMTLCompiledGraphicsPipeline> CreateGraphicsPipeline(
-    IMTLD3D11Device *pDevice, MTL_GRAPHICS_PIPELINE_DESC* pDesc);
+    MTLD3D11Device *pDevice, MTL_GRAPHICS_PIPELINE_DESC* pDesc);
 
 Com<IMTLCompiledComputePipeline>
-CreateComputePipeline(IMTLD3D11Device *pDevice, ManagedShader ComputeShader);
+CreateComputePipeline(MTLD3D11Device *pDevice, ManagedShader ComputeShader);
 
 Com<IMTLCompiledTessellationPipeline>
-CreateTessellationPipeline(IMTLD3D11Device *pDevice,
+CreateTessellationPipeline(MTLD3D11Device *pDevice,
                            MTL_GRAPHICS_PIPELINE_DESC *pDesc);
 
 }; // namespace dxmt

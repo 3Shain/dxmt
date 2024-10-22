@@ -258,7 +258,7 @@ template <typename tag, typename... Base>
 class TResourceBase : public MTLD3D11DeviceChild<typename tag::COM_IMPL,
                                                  IDXMTResource, Base...> {
 public:
-  TResourceBase(const tag::DESC1 &desc, IMTLD3D11Device *device)
+  TResourceBase(const tag::DESC1 &desc, MTLD3D11Device *device)
       : MTLD3D11DeviceChild<typename tag::COM_IMPL, IDXMTResource, Base...>(
             device),
         desc(desc),
@@ -428,7 +428,7 @@ class TResourceViewBase
     : public MTLD3D11DeviceChild<typename tag::COM_IMPL, Base...> {
 public:
   TResourceViewBase(const tag::DESC1 *pDesc, tag::RESOURCE_IMPL *pResource,
-                    IMTLD3D11Device *device)
+                    MTLD3D11Device *device)
       : MTLD3D11DeviceChild<typename tag::COM_IMPL, Base...>(device),
         resource(pResource) {
     if (pDesc) {
@@ -507,54 +507,54 @@ protected:
 #pragma region Resource Factory
 
 HRESULT
-CreateStagingBuffer(IMTLD3D11Device *pDevice, const D3D11_BUFFER_DESC *pDesc,
+CreateStagingBuffer(MTLD3D11Device *pDevice, const D3D11_BUFFER_DESC *pDesc,
                     const D3D11_SUBRESOURCE_DATA *pInitialData,
                     ID3D11Buffer **ppBuffer);
 
 HRESULT
-CreateStagingTexture1D(IMTLD3D11Device *pDevice,
+CreateStagingTexture1D(MTLD3D11Device *pDevice,
                        const D3D11_TEXTURE1D_DESC *pDesc,
                        const D3D11_SUBRESOURCE_DATA *pInitialData,
                        ID3D11Texture1D **ppTexture);
 
 HRESULT
-CreateStagingTexture2D(IMTLD3D11Device *pDevice,
+CreateStagingTexture2D(MTLD3D11Device *pDevice,
                        const D3D11_TEXTURE2D_DESC1 *pDesc,
                        const D3D11_SUBRESOURCE_DATA *pInitialData,
                        ID3D11Texture2D1 **ppTexture);
 
 HRESULT
-CreateStagingTexture3D(IMTLD3D11Device *pDevice,
+CreateStagingTexture3D(MTLD3D11Device *pDevice,
                        const D3D11_TEXTURE3D_DESC1 *pDesc,
                        const D3D11_SUBRESOURCE_DATA *pInitialData,
                        ID3D11Texture3D1 **ppTexture);
 
 HRESULT
-CreateDeviceBuffer(IMTLD3D11Device *pDevice, const D3D11_BUFFER_DESC *pDesc,
+CreateDeviceBuffer(MTLD3D11Device *pDevice, const D3D11_BUFFER_DESC *pDesc,
                    const D3D11_SUBRESOURCE_DATA *pInitialData,
                    ID3D11Buffer **ppBuffer);
 
-HRESULT CreateDeviceTexture1D(IMTLD3D11Device *pDevice,
+HRESULT CreateDeviceTexture1D(MTLD3D11Device *pDevice,
                               const D3D11_TEXTURE1D_DESC *pDesc,
                               const D3D11_SUBRESOURCE_DATA *pInitialData,
                               ID3D11Texture1D **ppTexture);
 
-HRESULT CreateDeviceTexture2D(IMTLD3D11Device *pDevice,
+HRESULT CreateDeviceTexture2D(MTLD3D11Device *pDevice,
                               const D3D11_TEXTURE2D_DESC1 *pDesc,
                               const D3D11_SUBRESOURCE_DATA *pInitialData,
                               ID3D11Texture2D1 **ppTexture);
 
-HRESULT CreateDeviceTexture3D(IMTLD3D11Device *pDevice,
+HRESULT CreateDeviceTexture3D(MTLD3D11Device *pDevice,
                               const D3D11_TEXTURE3D_DESC1 *pDesc,
                               const D3D11_SUBRESOURCE_DATA *pInitialData,
                               ID3D11Texture3D1 **ppTexture);
 
 HRESULT
-CreateDynamicBuffer(IMTLD3D11Device *pDevice, const D3D11_BUFFER_DESC *pDesc,
+CreateDynamicBuffer(MTLD3D11Device *pDevice, const D3D11_BUFFER_DESC *pDesc,
                     const D3D11_SUBRESOURCE_DATA *pInitialData,
                     ID3D11Buffer **ppBuffer);
 
-HRESULT CreateDynamicTexture2D(IMTLD3D11Device *pDevice,
+HRESULT CreateDynamicTexture2D(MTLD3D11Device *pDevice,
                                const D3D11_TEXTURE2D_DESC1 *pDesc,
                                const D3D11_SUBRESOURCE_DATA *pInitialData,
                                ID3D11Texture2D1 **ppTexture);
@@ -583,23 +583,23 @@ HRESULT ExtractEntireResourceViewDescription(const RESOURCE_DESC *pResourceDesc,
 }
 
 template <typename TEXTURE_DESC>
-HRESULT CreateMTLTextureDescriptor(IMTLD3D11Device *pDevice,
+HRESULT CreateMTLTextureDescriptor(MTLD3D11Device *pDevice,
                                    const TEXTURE_DESC *pDesc,
                                    TEXTURE_DESC *pOutDesc,
                                    MTL::TextureDescriptor **pMtlDescOut);
 
 template <typename VIEW_DESC>
-HRESULT CreateMTLTextureView(IMTLD3D11Device *pDevice, MTL::Texture *pResource,
+HRESULT CreateMTLTextureView(MTLD3D11Device *pDevice, MTL::Texture *pResource,
                              const VIEW_DESC *pViewDesc, MTL::Texture **ppView);
 
 HRESULT
-CreateMTLRenderTargetView(IMTLD3D11Device *pDevice, MTL::Texture *pResource,
+CreateMTLRenderTargetView(MTLD3D11Device *pDevice, MTL::Texture *pResource,
                           const D3D11_RENDER_TARGET_VIEW_DESC1 *pViewDesc,
                           MTL::Texture **ppView,
                           MTL_RENDER_PASS_ATTACHMENT_DESC &AttachmentDesc);
 
 HRESULT
-CreateMTLDepthStencilView(IMTLD3D11Device *pDevice, MTL::Texture *pResource,
+CreateMTLDepthStencilView(MTLD3D11Device *pDevice, MTL::Texture *pResource,
                           const D3D11_DEPTH_STENCIL_VIEW_DESC *pViewDesc,
                           MTL::Texture **ppView,
                           MTL_RENDER_PASS_ATTACHMENT_DESC &AttachmentDesc);
@@ -613,7 +613,7 @@ struct MTL_TEXTURE_BUFFER_LAYOUT {
 };
 
 template <typename VIEW_DESC>
-HRESULT CreateMTLTextureBufferView(IMTLD3D11Device *pDevice,
+HRESULT CreateMTLTextureBufferView(MTLD3D11Device *pDevice,
                                    const VIEW_DESC *pViewDesc,
                                    MTL::TextureDescriptor **ppViewDesc,
                                    MTL_TEXTURE_BUFFER_LAYOUT *pLayout);
@@ -623,7 +623,7 @@ void GetMipmapSize(const TEXTURE_DESC *pDesc, uint32_t level, uint32_t *pWidth,
                    uint32_t *pHeight, uint32_t *pDepth);
 
 template <typename TEXTURE_DESC>
-HRESULT GetLinearTextureLayout(IMTLD3D11Device *pDevice,
+HRESULT GetLinearTextureLayout(MTLD3D11Device *pDevice,
                                const TEXTURE_DESC *pDesc, uint32_t level,
                                uint32_t *pBytesPerRow, uint32_t *pBytesPerImage,
                                uint32_t *pBytesPerSlice);

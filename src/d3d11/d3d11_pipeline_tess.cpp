@@ -13,7 +13,7 @@ namespace dxmt {
 class MTLCompiledTessellationPipeline
     : public ComObject<IMTLCompiledTessellationPipeline> {
 public:
-  MTLCompiledTessellationPipeline(IMTLD3D11Device *pDevice,
+  MTLCompiledTessellationPipeline(MTLD3D11Device *pDevice,
                                   const MTL_GRAPHICS_PIPELINE_DESC *pDesc)
       : ComObject<IMTLCompiledTessellationPipeline>(),
         num_rtvs(pDesc->NumColorAttachments),
@@ -197,7 +197,7 @@ private:
   MTL::PixelFormat rtv_formats[8];
   MTL::PixelFormat depth_stencil_format;
   MTL::PrimitiveTopologyClass topology_class;
-  IMTLD3D11Device *device_;
+  MTLD3D11Device *device_;
   std::atomic_bool ready_;
   IMTLD3D11BlendState *pBlendState;
   Obj<MTL::RenderPipelineState> state_mesh_;
@@ -214,7 +214,7 @@ private:
 };
 
 Com<IMTLCompiledTessellationPipeline>
-CreateTessellationPipeline(IMTLD3D11Device *pDevice,
+CreateTessellationPipeline(MTLD3D11Device *pDevice,
                            MTL_GRAPHICS_PIPELINE_DESC *pDesc) {
   Com<IMTLCompiledTessellationPipeline> pipeline =
       new MTLCompiledTessellationPipeline(pDevice, pDesc);

@@ -63,7 +63,9 @@ D3D11CoreCreateDevice(IDXGIFactory *pFactory, IDXGIAdapter *pAdapter,
   try {
     Logger::info(str::format("Using feature level ", devFeatureLevel));
 
-    auto device = CreateD3D11Device(dxgi_adapter.ptr(), devFeatureLevel, Flags);
+    auto device = CreateD3D11Device(
+        CreateDXMTDevice({.device = dxgi_adapter->GetMTLDevice()}),
+        dxgi_adapter.ptr(), devFeatureLevel, Flags);
 
     return device->QueryInterface(IID_PPV_ARGS(ppDevice));
   } catch (const MTLD3DError &e) {

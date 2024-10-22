@@ -15,6 +15,7 @@
 #include "d3d11_state_object.hpp"
 #include "dxgi_interfaces.h"
 #include "dxmt_command_queue.hpp"
+#include "dxmt_device.hpp"
 #include "dxmt_format.hpp"
 #include "dxmt_tasks.hpp"
 #include "ftl.hpp"
@@ -54,23 +55,23 @@ const GUID kGpaUUID = {0xccffef16,
                        0x468f,
                        {0xbc, 0xe3, 0xcd, 0x95, 0x33, 0x69, 0xa3, 0x9a}};
 
-class MTLD3D11Device final : public IMTLD3D11Device {
+class MTLD3D11DeviceImpl final : public MTLD3D11Device {
 public:
-  MTLD3D11Device(MTLDXGIObject<IMTLDXGIDevice> *container,
+  MTLD3D11DeviceImpl(MTLDXGIObject<IMTLDXGIDevice> *container,
                  IMTLDXGIAdapter *pAdapter, D3D_FEATURE_LEVEL FeatureLevel,
-                 UINT FeatureFlags, CommandQueue &cmd_queue)
+                 UINT FeatureFlags, Device &device)
       : m_container(container), adapter_(pAdapter),
         m_FeatureLevel(FeatureLevel), m_FeatureFlags(FeatureFlags),
         m_features(container->GetMTLDevice()), sampler_states(this),
         rasterizer_states(this), depthstencil_states(this),
-        cmd_queue_(cmd_queue) {
+        device_(device) {
     pipeline_cache_ = InitializePipelineCache(this);
-    context_ = InitializeImmediateContext(this, cmd_queue);
+    context_ = InitializeImmediateContext(this, device_.queue());
     is_traced_ = !!::GetModuleHandle("dxgitrace.dll");
     format_inspector.Inspect(container->GetMTLDevice());
   }
 
-  ~MTLD3D11Device() {}
+  ~MTLD3D11DeviceImpl() {}
 
   HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid,
                                            void **ppvObject) override {
@@ -1005,10 +1006,6 @@ public:
     return m_container->GetMTLDevice();
   }
 
-  void GetAdapter(IMTLDXGIAdapter **ppAdapter) override {
-    *ppAdapter = ref(adapter_);
-  }
-
   void SubmitThreadgroupWork(IMTLThreadpoolWork *pWork) override {
     scheduler_.submit(pWork);
   }
@@ -1044,15 +1041,7 @@ public:
     return S_OK;
   };
 
-  uint64_t AloocateCounter(uint32_t InitialValue) override {
-    return cmd_queue_.counter_pool.AllocateCounter(cmd_queue_.CurrentSeqId(),
-                                                   InitialValue);
-  }
-
-  void DiscardCounter(uint64_t ConterHandle) override {
-    cmd_queue_.counter_pool.DiscardCounter(cmd_queue_.CurrentSeqId(),
-                                           ConterHandle);
-  }
+  Device &GetDXMTDevice() override { return device_; };
 
 private:
   MTLDXGIObject<IMTLDXGIDevice> *m_container;
@@ -1077,7 +1066,7 @@ private:
       depthstencil_states;
 
   std::unique_ptr<MTLD3D11PipelineCacheBase> pipeline_cache_;
-  CommandQueue& cmd_queue_;
+  Device& device_;
   /** ensure destructor called first */
   std::unique_ptr<MTLD3D11DeviceContextBase> context_;
 };
@@ -1092,11 +1081,12 @@ class MTLD3D11DXGIDevice final : public MTLDXGIObject<IMTLDXGIDevice> {
 public:
   friend class MTLDXGIMetalLayerFactory;
 
-  MTLD3D11DXGIDevice(IMTLDXGIAdapter *adapter, D3D_FEATURE_LEVEL feature_level,
-                     UINT feature_flags)
-      : adapter_(adapter), cmd_queue_(adapter->GetMTLDevice()),
-        d3d11_device_(this, adapter, feature_level, feature_flags, cmd_queue_) {
-  }
+  MTLD3D11DXGIDevice(std::unique_ptr<Device> &&device, IMTLDXGIAdapter *adapter,
+                     D3D_FEATURE_LEVEL feature_level, UINT feature_flags)
+      : adapter_(adapter), device(std::move(device)),
+        cmd_queue_(this->device->queue()),
+        d3d11_device_(this, adapter, feature_level, feature_flags,
+                      *this->device.get()) {}
 
   ~MTLD3D11DXGIDevice() override {}
 
@@ -1127,8 +1117,7 @@ public:
     }
 
     if (riid == __uuidof(ID3D11Device) || riid == __uuidof(ID3D11Device1) ||
-        riid == __uuidof(ID3D11Device2) || riid == __uuidof(ID3D11Device3) ||
-        riid == __uuidof(IMTLD3D11Device)) {
+        riid == __uuidof(ID3D11Device2) || riid == __uuidof(ID3D11Device3)) {
       *ppvObject = ref(&d3d11_device_);
       return S_OK;
     }
@@ -1222,7 +1211,7 @@ public:
       const DXGI_SWAP_CHAIN_FULLSCREEN_DESC *pFullscreenDesc,
       IDXGISwapChain1 **ppSwapChain) override {
 
-    return dxmt::CreateSwapChain(pFactory, this, hWnd, pDesc, pFullscreenDesc,
+    return dxmt::CreateSwapChain(pFactory, &d3d11_device_, hWnd, pDesc, pFullscreenDesc,
                                  ppSwapChain);
   }
 
@@ -1267,15 +1256,17 @@ public:
 
 private:
   Com<IMTLDXGIAdapter> adapter_;
-  CommandQueue cmd_queue_;
-  MTLD3D11Device d3d11_device_;
+  std::unique_ptr<Device> device;
+  CommandQueue &cmd_queue_;
+  MTLD3D11DeviceImpl d3d11_device_;
   uint32_t max_latency_ = 3;
 };
 
-Com<IMTLDXGIDevice> CreateD3D11Device(IMTLDXGIAdapter *adapter,
+Com<IMTLDXGIDevice> CreateD3D11Device(std::unique_ptr<Device> &&device,
+                                      IMTLDXGIAdapter *adapter,
                                       D3D_FEATURE_LEVEL feature_level,
                                       UINT feature_flags) {
-  return Com<IMTLDXGIDevice>::transfer(
-      new MTLD3D11DXGIDevice(adapter, feature_level, feature_flags));
+  return Com<IMTLDXGIDevice>::transfer(new MTLD3D11DXGIDevice(
+      std::move(device), adapter, feature_level, feature_flags));
 };
 } // namespace dxmt

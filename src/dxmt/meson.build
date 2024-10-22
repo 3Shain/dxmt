@@ -7,6 +7,7 @@ dxmt_src = [
   'dxmt_capture.cpp',
   'dxmt_counter_pool.cpp',
   'dxmt_info.cpp',
+  'dxmt_device.cpp',
 ]
 
 air = custom_target('metal_air',

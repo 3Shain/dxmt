@@ -117,7 +117,7 @@ class OcculusionQuery : public MTLD3DQueryBase<IMTLD3DOcclusionQuery>,
   }
 };
 
-HRESULT CreateEventQuery(IMTLD3D11Device *pDevice,
+HRESULT CreateEventQuery(MTLD3D11Device *pDevice,
                          const D3D11_QUERY_DESC *pDesc, ID3D11Query **ppQuery) {
   if (ppQuery) {
     *ppQuery = ref(new EventQuery(pDevice, pDesc));
@@ -126,7 +126,7 @@ HRESULT CreateEventQuery(IMTLD3D11Device *pDevice,
   return S_FALSE;
 }
 
-HRESULT CreateOcculusionQuery(IMTLD3D11Device *pDevice,
+HRESULT CreateOcculusionQuery(MTLD3D11Device *pDevice,
                               const D3D11_QUERY_DESC *pDesc,
                               ID3D11Query **ppQuery) {
   if (ppQuery) {

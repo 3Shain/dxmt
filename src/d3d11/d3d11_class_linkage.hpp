@@ -10,7 +10,7 @@ class MTLD3D11Device;
 class MTLD3D11ClassLinkage : public MTLD3D11DeviceChild<ID3D11ClassLinkage> {
 
 public:
-  MTLD3D11ClassLinkage(IMTLD3D11Device *pDevice);
+  MTLD3D11ClassLinkage(MTLD3D11Device *pDevice);
 
   ~MTLD3D11ClassLinkage();
 

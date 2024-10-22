@@ -27,16 +27,16 @@ private:
   ComPrivateData m_privateData;
 };
 
-template <typename Base> class MTLDXGISubObject : public MTLDXGIObject<Base> {
+template <typename Base, typename Device = IUnknown> class MTLDXGISubObject : public MTLDXGIObject<Base> {
 public:
-  MTLDXGISubObject(IUnknown *device) { m_device = device; }
+  MTLDXGISubObject(Device *device) { m_device = device; }
 
   HRESULT STDMETHODCALLTYPE GetDevice(REFIID riid, void **device) final {
     return m_device->QueryInterface(riid, device);
   }
 
 protected:
-  IUnknown* m_device;
+  Device* m_device;
 };
 
 } // namespace dxmt

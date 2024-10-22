@@ -15,8 +15,7 @@ Com<IDXGIOutput> CreateOutput(IMTLDXGIAdapter *pAadapter, HMONITOR monitor);
 class MTLDXGIAdatper : public MTLDXGIObject<IMTLDXGIAdapter> {
 public:
   MTLDXGIAdatper(MTL::Device *device, IDXGIFactory *factory, Config &config)
-      : m_deivce(device), m_factory(factory), options(config),
-        config(config) {};
+      : m_deivce(device), m_factory(factory), options(config) {};
   ~MTLDXGIAdatper() { m_deivce->release(); }
   HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid,
                                            void **ppvObject) final {
@@ -226,27 +225,17 @@ public:
 
   MTL::Device *STDMETHODCALLTYPE GetMTLDevice() final { return m_deivce.ptr(); }
 
-  virtual int STDMETHODCALLTYPE GetConfigInt(const char *name,
-                                             int defaultValue) override {
-    return config.getOption<int>(name, defaultValue);
-  }
-
-  virtual float STDMETHODCALLTYPE GetConfigFloat(const char *name,
-                                                 float defaultValue) override {
-    return config.getOption<float>(name, defaultValue);
-  }
-
 private:
   Obj<MTL::Device> m_deivce;
   Com<IDXGIFactory> m_factory;
   DxgiOptions options;
-  Config &config;
   uint64_t mem_reserved_[2] = {0, 0};
 };
 
 Com<IMTLDXGIAdapter> CreateAdapter(MTL::Device *pDevice,
                                    IDXGIFactory2 *pFactory, Config &config) {
-  return Com<IMTLDXGIAdapter>::transfer(new MTLDXGIAdatper(pDevice, pFactory, config));
+  return Com<IMTLDXGIAdapter>::transfer(
+      new MTLDXGIAdatper(pDevice, pFactory, config));
 }
 
 } // namespace dxmt

@@ -27,6 +27,6 @@ using MTLD3D11DeviceContextBase =
 class CommandQueue;
 
 std::unique_ptr<MTLD3D11DeviceContextBase>
-InitializeImmediateContext(IMTLD3D11Device *device, CommandQueue& cmd_queue);
+InitializeImmediateContext(MTLD3D11Device *device, CommandQueue& cmd_queue);
 
 } // namespace dxmt

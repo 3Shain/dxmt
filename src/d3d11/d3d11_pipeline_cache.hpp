@@ -46,6 +46,6 @@ namespace dxmt {
 using MTLD3D11PipelineCacheBase = ManagedDeviceChild<IMTLD3D11PipeineCache>;
 
 std::unique_ptr<MTLD3D11PipelineCacheBase>
-InitializePipelineCache(IMTLD3D11Device *device);
+InitializePipelineCache(MTLD3D11Device *device);
 
 } // namespace dxmt

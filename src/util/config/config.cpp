@@ -23,6 +23,19 @@
 
 namespace dxmt {
 
+  class SingletonConfig : public Config {
+  public:
+    SingletonConfig() {
+      merge(Config::getUserConfig());
+      merge(Config::getAppConfig(env::getExePath()));
+    };
+
+    SingletonConfig(SingletonConfig const&) = delete;             
+    SingletonConfig(SingletonConfig&&) = delete;                 
+    SingletonConfig& operator=(SingletonConfig const&) = delete; 
+    SingletonConfig& operator=(SingletonConfig &&) = delete;  
+  };
+
   using ProfileList = std::vector<std::pair<const char*, Config>>;
 
 
@@ -359,6 +372,11 @@ namespace dxmt {
     return config;
   }
 
+  Config &Config::getInstance() {
+    // FIXME: it's only a singleton in module but it's used in multiple modules
+    static SingletonConfig config;
+    return config;
+  }
 
   void Config::logOptions() const {
     if (!m_options.empty()) {

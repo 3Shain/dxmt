@@ -8,7 +8,7 @@ namespace dxmt {
 template <typename Proc>
 class GeneralShaderCompileTask : public CompiledShader {
 public:
-  GeneralShaderCompileTask(IMTLD3D11Device *pDevice, ManagedShader shader,
+  GeneralShaderCompileTask(MTLD3D11Device *pDevice, ManagedShader shader,
                            Proc &&proc)
       : CompiledShader(), proc(std::forward<Proc>(proc)), device_(pDevice),
         shader_(shader) {}
@@ -88,7 +88,7 @@ public:
 
 private:
   Proc proc;
-  IMTLD3D11Device *device_;
+  MTLD3D11Device *device_;
   ManagedShader shader_;
   std::atomic_bool ready_;
   Sha1Hash hash_;
@@ -98,7 +98,7 @@ private:
 
 template <>
 std::unique_ptr<CompiledShader>
-CreateVariantShader(IMTLD3D11Device *pDevice, ManagedShader shader,
+CreateVariantShader(MTLD3D11Device *pDevice, ManagedShader shader,
                     ShaderVariantVertex variant) {
 
   auto proc = [=](const char *func_name) -> SM50CompiledBitcode * {
@@ -140,7 +140,7 @@ CreateVariantShader(IMTLD3D11Device *pDevice, ManagedShader shader,
 
 template <>
 std::unique_ptr<CompiledShader>
-CreateVariantShader(IMTLD3D11Device *pDevice, ManagedShader shader,
+CreateVariantShader(MTLD3D11Device *pDevice, ManagedShader shader,
                     ShaderVariantPixel variant) {
   auto proc = [=](const char *func_name) -> SM50CompiledBitcode * {
     SM50_SHADER_PSO_PIXEL_SHADER_DATA data;
@@ -171,7 +171,7 @@ CreateVariantShader(IMTLD3D11Device *pDevice, ManagedShader shader,
 
 template <>
 std::unique_ptr<CompiledShader>
-CreateVariantShader(IMTLD3D11Device *pDevice, ManagedShader shader,
+CreateVariantShader(MTLD3D11Device *pDevice, ManagedShader shader,
                     ShaderVariantDefault) {
   auto proc = [=](const char *func_name) -> SM50CompiledBitcode * {
     SM50CompiledBitcode *compile_result = nullptr;
@@ -194,7 +194,7 @@ CreateVariantShader(IMTLD3D11Device *pDevice, ManagedShader shader,
 
 template <>
 std::unique_ptr<CompiledShader>
-CreateVariantShader(IMTLD3D11Device *pDevice, ManagedShader shader,
+CreateVariantShader(MTLD3D11Device *pDevice, ManagedShader shader,
                     ShaderVariantTessellationVertex variant) {
   auto proc = [=](const char *func_name) -> SM50CompiledBitcode * {
     SM50_SHADER_IA_INPUT_LAYOUT_DATA ia_layout;
@@ -228,7 +228,7 @@ CreateVariantShader(IMTLD3D11Device *pDevice, ManagedShader shader,
 
 template <>
 std::unique_ptr<CompiledShader>
-CreateVariantShader(IMTLD3D11Device *pDevice, ManagedShader shader,
+CreateVariantShader(MTLD3D11Device *pDevice, ManagedShader shader,
                     ShaderVariantTessellationHull variant) {
   auto proc = [=](const char *func_name) -> SM50CompiledBitcode * {
     SM50CompiledBitcode *compile_result = nullptr;
@@ -252,7 +252,7 @@ CreateVariantShader(IMTLD3D11Device *pDevice, ManagedShader shader,
 
 template <>
 std::unique_ptr<CompiledShader>
-CreateVariantShader(IMTLD3D11Device *pDevice, ManagedShader shader,
+CreateVariantShader(MTLD3D11Device *pDevice, ManagedShader shader,
                     ShaderVariantTessellationDomain variant) {
   auto proc = [=](const char *func_name) -> SM50CompiledBitcode * {
     SM50_SHADER_GS_PASS_THROUGH_DATA gs_passthrough;
@@ -282,7 +282,7 @@ CreateVariantShader(IMTLD3D11Device *pDevice, ManagedShader shader,
 
 template <>
 std::unique_ptr<CompiledShader>
-CreateVariantShader(IMTLD3D11Device *pDevice, ManagedShader shader,
+CreateVariantShader(MTLD3D11Device *pDevice, ManagedShader shader,
                     ShaderVariantVertexStreamOutput variant) {
 
   auto proc = [=](const char *func_name) -> SM50CompiledBitcode * {

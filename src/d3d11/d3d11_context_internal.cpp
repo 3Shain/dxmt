@@ -145,7 +145,7 @@ public:
     D3D11_BUFFER_DESC BufferDesc;
   };
 
-  BlitObject(IMTLD3D11Device *pDevice, ID3D11Resource *pResource)
+  BlitObject(MTLD3D11Device *pDevice, ID3D11Resource *pResource)
       : pResource(pResource) {
     pResource->GetType(&Dimension);
     switch (Dimension) {
@@ -446,7 +446,7 @@ public:
 class ContextInternal {
 
 public:
-  ContextInternal(IMTLD3D11Device *pDevice, D3D11ContextState &state,
+  ContextInternal(MTLD3D11Device *pDevice, D3D11ContextState &state,
                   CommandQueue &cmd_queue)
       : device(pDevice), state_(state), cmd_queue(cmd_queue) {
     pDevice->CreateRasterizerState2(
@@ -2656,7 +2656,7 @@ public:
     D3D11_ASSERT(cmdbuf_state == CommandBufferState::Idle);
     /** FIXME: it might be unnecessary? */
     CommandChunk *chk = cmd_queue.CurrentChunk();
-    chk->emit([device = Com<IMTLD3D11Device, false>(device)](
+    chk->emit([device = Com<MTLD3D11Device, false>(device)](
                   CommandChunk::context &ctx) {});
     cmd_queue.CommitCurrentChunk(occlusion_query_seq_chunk_start,
                                  ++occlusion_query_seq);
@@ -2694,7 +2694,7 @@ public:
 #pragma endregion
 
 private:
-  IMTLD3D11Device *device;
+  MTLD3D11Device *device;
   D3D11ContextState &state_;
   CommandBufferState cmdbuf_state;
   CommandBufferState previous_render_pipeline_state;

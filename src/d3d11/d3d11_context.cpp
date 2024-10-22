@@ -2108,7 +2108,7 @@ private:
   ContextInternal ctx;
 
 public:
-  MTLD3D11DeviceContext(IMTLD3D11Device *pDevice, CommandQueue &cmd_queue)
+  MTLD3D11DeviceContext(MTLD3D11Device *pDevice, CommandQueue &cmd_queue)
       : MTLD3D11DeviceContextBase(pDevice), state_(), cmd_queue(cmd_queue),
         ctx(pDevice, state_, cmd_queue) {}
 
@@ -2122,7 +2122,7 @@ public:
 };
 
 std::unique_ptr<MTLD3D11DeviceContextBase>
-InitializeImmediateContext(IMTLD3D11Device *pDevice, CommandQueue &cmd_queue) {
+InitializeImmediateContext(MTLD3D11Device *pDevice, CommandQueue &cmd_queue) {
   return std::make_unique<MTLD3D11DeviceContext>(pDevice, cmd_queue);
 }
 

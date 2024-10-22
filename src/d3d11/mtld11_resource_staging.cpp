@@ -94,7 +94,7 @@ private:
   StagingBufferInternal internal;
 
 public:
-  StagingBuffer(const tag_buffer::DESC1 *pDesc, IMTLD3D11Device *device,
+  StagingBuffer(const tag_buffer::DESC1 *pDesc, MTLD3D11Device *device,
                 StagingBufferInternal &&internal)
       : TResourceBase<tag_buffer, IMTLD3D11Staging>(*pDesc, device),
         internal(std::move(internal)) {}
@@ -135,7 +135,7 @@ public:
 };
 
 HRESULT
-CreateStagingBuffer(IMTLD3D11Device *pDevice, const D3D11_BUFFER_DESC *pDesc,
+CreateStagingBuffer(MTLD3D11Device *pDevice, const D3D11_BUFFER_DESC *pDesc,
                     const D3D11_SUBRESOURCE_DATA *pInitialData,
                     ID3D11Buffer **ppBuffer) {
   auto metal = pDevice->GetMTLDevice();
@@ -161,7 +161,7 @@ class StagingTexture : public TResourceBase<tag_texture, IMTLD3D11Staging> {
   uint32_t subresource_count;
 
 public:
-  StagingTexture(const tag_texture::DESC1 *pDesc, IMTLD3D11Device *pDevice,
+  StagingTexture(const tag_texture::DESC1 *pDesc, MTLD3D11Device *pDevice,
                  std::vector<StagingBufferInternal> &&subresources)
       : TResourceBase<tag_texture, IMTLD3D11Staging>(*pDesc, pDevice),
         subresources(std::move(subresources)),
@@ -215,7 +215,7 @@ public:
 #pragma endregion
 
 template <typename tag>
-HRESULT CreateStagingTextureInternal(IMTLD3D11Device *pDevice,
+HRESULT CreateStagingTextureInternal(MTLD3D11Device *pDevice,
                                      const typename tag::DESC1 *pDesc,
                                      const D3D11_SUBRESOURCE_DATA *pInitialData,
                                      typename tag::COM_IMPL **ppTexture) {
@@ -255,7 +255,7 @@ HRESULT CreateStagingTextureInternal(IMTLD3D11Device *pDevice,
 }
 
 HRESULT
-CreateStagingTexture1D(IMTLD3D11Device *pDevice,
+CreateStagingTexture1D(MTLD3D11Device *pDevice,
                        const D3D11_TEXTURE1D_DESC *pDesc,
                        const D3D11_SUBRESOURCE_DATA *pInitialData,
                        ID3D11Texture1D **ppTexture) {
@@ -264,7 +264,7 @@ CreateStagingTexture1D(IMTLD3D11Device *pDevice,
 }
 
 HRESULT
-CreateStagingTexture2D(IMTLD3D11Device *pDevice,
+CreateStagingTexture2D(MTLD3D11Device *pDevice,
                        const D3D11_TEXTURE2D_DESC1 *pDesc,
                        const D3D11_SUBRESOURCE_DATA *pInitialData,
                        ID3D11Texture2D1 **ppTexture) {
@@ -273,7 +273,7 @@ CreateStagingTexture2D(IMTLD3D11Device *pDevice,
 }
 
 HRESULT
-CreateStagingTexture3D(IMTLD3D11Device *pDevice,
+CreateStagingTexture3D(MTLD3D11Device *pDevice,
                        const D3D11_TEXTURE3D_DESC1 *pDesc,
                        const D3D11_SUBRESOURCE_DATA *pInitialData,
                        ID3D11Texture3D1 **ppTexture) {

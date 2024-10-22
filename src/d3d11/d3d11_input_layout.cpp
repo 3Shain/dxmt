@@ -10,7 +10,7 @@
 namespace dxmt {
 
 HRESULT ExtractMTLInputLayoutElements(
-    IMTLD3D11Device *device, const void *pShaderBytecodeWithInputSignature,
+    MTLD3D11Device *device, const void *pShaderBytecodeWithInputSignature,
     const D3D11_INPUT_ELEMENT_DESC *pInputElementDescs, uint32_t NumElements,
     MTL_SHADER_INPUT_LAYOUT_ELEMENT_DESC *pInputLayout,
     uint32_t *pNumElementsOut) {
@@ -88,7 +88,7 @@ HRESULT ExtractMTLInputLayoutElements(
 class MTLD3D11StreamOutputLayout final
     : public ManagedDeviceChild<IMTLD3D11StreamOutputLayout> {
 public:
-  MTLD3D11StreamOutputLayout(IMTLD3D11Device *device,
+  MTLD3D11StreamOutputLayout(MTLD3D11Device *device,
                              const MTL_STREAM_OUTPUT_DESC &desc)
       : ManagedDeviceChild<IMTLD3D11StreamOutputLayout>(device), desc_(desc),
         null_gs(this) {}
@@ -152,7 +152,7 @@ private:
 };
 
 HRESULT ExtractMTLStreamOutputElements(
-    IMTLD3D11Device *pDevice, const void *pShaderBytecode, UINT NumEntries,
+    MTLD3D11Device *pDevice, const void *pShaderBytecode, UINT NumEntries,
     const D3D11_SO_DECLARATION_ENTRY *pEntries,
     MTL_SHADER_STREAM_OUTPUT_ELEMENT_DESC *pStreamOut,
     uint32_t *pNumElementsOut) {

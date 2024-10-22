@@ -11,7 +11,7 @@ namespace dxmt {
 std::atomic_uint64_t global_id = 0;
 
 class CachedSM50Shader final : public Shader {
-  IMTLD3D11Device *device;
+  MTLD3D11Device *device;
   SM50Shader *shader = nullptr;
   MTL_SHADER_REFLECTION reflection_;
   uint64_t id_ = ~0uLL;
@@ -19,7 +19,7 @@ class CachedSM50Shader final : public Shader {
       variants;
 
 public:
-  CachedSM50Shader(IMTLD3D11Device *device, SM50Shader *shader_transfered,
+  CachedSM50Shader(MTLD3D11Device *device, SM50Shader *shader_transfered,
                    MTL_SHADER_REFLECTION &reflection)
       : device(device), shader(shader_transfered), reflection_(reflection) {
     id_ = global_id++;
@@ -93,7 +93,7 @@ public:
 class MTLD3D11InputLayout final
     : public MTLD3D11DeviceChild<IMTLD3D11InputLayout> {
 public:
-  MTLD3D11InputLayout(IMTLD3D11Device *device, ManagedInputLayout input_layout)
+  MTLD3D11InputLayout(MTLD3D11Device *device, ManagedInputLayout input_layout)
       : MTLD3D11DeviceChild<IMTLD3D11InputLayout>(device),
         input_layout(input_layout) {}
 
@@ -128,7 +128,7 @@ private:
 
 class PipelineCache : public MTLD3D11PipelineCacheBase {
 
-  IMTLD3D11Device *device;
+  MTLD3D11Device *device;
   StateObjectCache<D3D11_BLEND_DESC1, IMTLD3D11BlendState> blend_states;
 
   std::unordered_map<MTL_INPUT_LAYOUT_DESC, std::unique_ptr<CachedInputLayout>> input_layouts;
@@ -345,7 +345,7 @@ class PipelineCache : public MTLD3D11PipelineCacheBase {
   }
 
 public:
-  PipelineCache(IMTLD3D11Device *pDevice)
+  PipelineCache(MTLD3D11Device *pDevice)
       : MTLD3D11PipelineCacheBase(pDevice), device(pDevice),
         blend_states(pDevice), so_layouts(pDevice) {
 
@@ -353,7 +353,7 @@ public:
 };
 
 std::unique_ptr<MTLD3D11PipelineCacheBase>
-InitializePipelineCache(IMTLD3D11Device *device) {
+InitializePipelineCache(MTLD3D11Device *device) {
   return std::make_unique<PipelineCache>(device);
 }
 

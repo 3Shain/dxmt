@@ -23,7 +23,7 @@ void FixDepthStencilFormat(MTL::Texture *pTexture, MTL_DXGI_FORMAT_DESC &Desc) {
 
 template <>
 HRESULT CreateMTLTextureView<D3D11_SHADER_RESOURCE_VIEW_DESC1>(
-    IMTLD3D11Device *pDevice, MTL::Texture *pResource,
+    MTLD3D11Device *pDevice, MTL::Texture *pResource,
     const D3D11_SHADER_RESOURCE_VIEW_DESC1 *pViewDesc, MTL::Texture **ppView) {
   MTL_DXGI_FORMAT_DESC metal_format;
   if (FAILED(MTLQueryDXGIFormat(pDevice->GetMTLDevice(), pViewDesc->Format,
@@ -231,7 +231,7 @@ HRESULT CreateMTLTextureView<D3D11_SHADER_RESOURCE_VIEW_DESC1>(
 
 template <>
 HRESULT CreateMTLTextureView<D3D11_UNORDERED_ACCESS_VIEW_DESC1>(
-    IMTLD3D11Device *pDevice, MTL::Texture *pResource,
+    MTLD3D11Device *pDevice, MTL::Texture *pResource,
     const D3D11_UNORDERED_ACCESS_VIEW_DESC1 *pViewDesc, MTL::Texture **ppView) {
   MTL_DXGI_FORMAT_DESC metal_format;
   if (FAILED(MTLQueryDXGIFormat(pDevice->GetMTLDevice(), pViewDesc->Format,
@@ -354,7 +354,7 @@ HRESULT CreateMTLTextureView<D3D11_UNORDERED_ACCESS_VIEW_DESC1>(
 }
 
 HRESULT
-CreateMTLRenderTargetView(IMTLD3D11Device *pDevice, MTL::Texture *pResource,
+CreateMTLRenderTargetView(MTLD3D11Device *pDevice, MTL::Texture *pResource,
                           const D3D11_RENDER_TARGET_VIEW_DESC1 *pViewDesc,
                           MTL::Texture **ppView,
                           MTL_RENDER_PASS_ATTACHMENT_DESC &AttachmentDesc) {
@@ -510,7 +510,7 @@ CreateMTLRenderTargetView(IMTLD3D11Device *pDevice, MTL::Texture *pResource,
 }
 
 HRESULT
-CreateMTLDepthStencilView(IMTLD3D11Device *pDevice, MTL::Texture *pResource,
+CreateMTLDepthStencilView(MTLD3D11Device *pDevice, MTL::Texture *pResource,
                           const D3D11_DEPTH_STENCIL_VIEW_DESC *pViewDesc,
                           MTL::Texture **ppView,
                           MTL_RENDER_PASS_ATTACHMENT_DESC &AttachmentDesc) {
@@ -604,7 +604,7 @@ CreateMTLDepthStencilView(IMTLD3D11Device *pDevice, MTL::Texture *pResource,
 
 template <>
 HRESULT CreateMTLTextureBufferView<D3D11_SHADER_RESOURCE_VIEW_DESC1>(
-    IMTLD3D11Device *pDevice, const D3D11_SHADER_RESOURCE_VIEW_DESC1 *pViewDesc,
+    MTLD3D11Device *pDevice, const D3D11_SHADER_RESOURCE_VIEW_DESC1 *pViewDesc,
     MTL::TextureDescriptor **ppViewDesc, MTL_TEXTURE_BUFFER_LAYOUT *pLayout) {
   MTL_DXGI_FORMAT_DESC metal_format;
   if (FAILED(MTLQueryDXGIFormat(pDevice->GetMTLDevice(), pViewDesc->Format,
@@ -659,7 +659,7 @@ HRESULT CreateMTLTextureBufferView<D3D11_SHADER_RESOURCE_VIEW_DESC1>(
 
 template <>
 HRESULT CreateMTLTextureBufferView<D3D11_UNORDERED_ACCESS_VIEW_DESC1>(
-    IMTLD3D11Device *pDevice,
+    MTLD3D11Device *pDevice,
     const D3D11_UNORDERED_ACCESS_VIEW_DESC1 *pViewDesc,
     MTL::TextureDescriptor **ppViewDesc, MTL_TEXTURE_BUFFER_LAYOUT *pLayout) {
   MTL_DXGI_FORMAT_DESC metal_format;

@@ -27,7 +27,7 @@ namespace dxmt {
 template <typename Query>
 class MTLD3DQueryBase : public MTLD3D11DeviceChild<Query> {
 public:
-  MTLD3DQueryBase(IMTLD3D11Device *pDevice, const D3D11_QUERY_DESC *desc)
+  MTLD3DQueryBase(MTLD3D11Device *pDevice, const D3D11_QUERY_DESC *desc)
       : MTLD3D11DeviceChild<Query>(pDevice), desc_(*desc) {}
   ~MTLD3DQueryBase() {};
 
@@ -65,7 +65,7 @@ private:
 template <typename DataType>
 class MTLD3D11DummyQuery : public MTLD3DQueryBase<ID3D11Query> {
 public:
-  MTLD3D11DummyQuery(IMTLD3D11Device *pDevice, const D3D11_QUERY_DESC *desc)
+  MTLD3D11DummyQuery(MTLD3D11Device *pDevice, const D3D11_QUERY_DESC *desc)
       : MTLD3DQueryBase<ID3D11Query>(pDevice, desc) {}
 
   virtual UINT STDMETHODCALLTYPE GetDataSize() override {
@@ -110,10 +110,10 @@ enum class QueryState {
   Signaled,
 };
 
-HRESULT CreateEventQuery(IMTLD3D11Device *pDevice,
+HRESULT CreateEventQuery(MTLD3D11Device *pDevice,
                          const D3D11_QUERY_DESC *pDesc, ID3D11Query **ppQuery);
 
-HRESULT CreateOcculusionQuery(IMTLD3D11Device *pDevice,
+HRESULT CreateOcculusionQuery(MTLD3D11Device *pDevice,
                               const D3D11_QUERY_DESC *pDesc,
                               ID3D11Query **ppQuery);
 

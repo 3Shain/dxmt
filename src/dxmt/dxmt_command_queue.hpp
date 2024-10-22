@@ -436,6 +436,16 @@ public:
   AllocateTempBuffer(uint64_t seq, size_t size, size_t alignment) {
     return copy_temp_allocator.allocate(seq, cpu_coherent.load(std::memory_order_acquire), size, alignment);
   }
+
+  uint64_t
+  AllocateCounter(uint32_t InitialValue) {
+    return counter_pool.AllocateCounter(CurrentSeqId(), InitialValue);
+  }
+
+  void
+  DiscardCounter(uint64_t CounterHandle) {
+    counter_pool.DiscardCounter(CurrentSeqId(), CounterHandle);
+  }
 };
 
 } // namespace dxmt

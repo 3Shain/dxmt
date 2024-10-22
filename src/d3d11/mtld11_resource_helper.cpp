@@ -287,7 +287,7 @@ HRESULT ExtractEntireResourceViewDescription<D3D11_TEXTURE3D_DESC1,
 
 HRESULT
 CreateMTLTextureDescriptorInternal(
-    IMTLD3D11Device *pDevice, D3D11_RESOURCE_DIMENSION Dimension, UINT Width,
+    MTLD3D11Device *pDevice, D3D11_RESOURCE_DIMENSION Dimension, UINT Width,
     UINT Height, UINT Depth, UINT ArraySize, UINT SampleCount, UINT BindFlags,
     UINT CPUAccessFlags, UINT MiscFlags, D3D11_USAGE Usage, UINT MipLevels,
     DXGI_FORMAT Format, MTL::TextureDescriptor **ppDescOut) {
@@ -436,7 +436,7 @@ CreateMTLTextureDescriptorInternal(
 };
 
 template <>
-HRESULT CreateMTLTextureDescriptor(IMTLD3D11Device *pDevice,
+HRESULT CreateMTLTextureDescriptor(MTLD3D11Device *pDevice,
                                    const D3D11_TEXTURE1D_DESC *pDesc,
                                    D3D11_TEXTURE1D_DESC *pOutDesc,
                                    MTL::TextureDescriptor **pMtlDescOut) {
@@ -453,7 +453,7 @@ HRESULT CreateMTLTextureDescriptor(IMTLD3D11Device *pDevice,
 }
 
 template <>
-HRESULT CreateMTLTextureDescriptor(IMTLD3D11Device *pDevice,
+HRESULT CreateMTLTextureDescriptor(MTLD3D11Device *pDevice,
                                    const D3D11_TEXTURE2D_DESC1 *pDesc,
                                    D3D11_TEXTURE2D_DESC1 *pOutDesc,
                                    MTL::TextureDescriptor **pMtlDescOut) {
@@ -470,7 +470,7 @@ HRESULT CreateMTLTextureDescriptor(IMTLD3D11Device *pDevice,
 }
 
 template <>
-HRESULT CreateMTLTextureDescriptor(IMTLD3D11Device *pDevice,
+HRESULT CreateMTLTextureDescriptor(MTLD3D11Device *pDevice,
                                    const D3D11_TEXTURE3D_DESC1 *pDesc,
                                    D3D11_TEXTURE3D_DESC1 *pOutDesc,
                                    MTL::TextureDescriptor **pMtlDescOut) {
@@ -527,7 +527,7 @@ void GetMipmapSize(const D3D11_TEXTURE3D_DESC1 *pDesc, uint32_t level,
 }
 
 template <>
-HRESULT GetLinearTextureLayout(IMTLD3D11Device *pDevice,
+HRESULT GetLinearTextureLayout(MTLD3D11Device *pDevice,
                                const D3D11_TEXTURE1D_DESC *pDesc,
                                uint32_t level, uint32_t *pBytesPerRow,
                                uint32_t *pBytesPerImage,
@@ -561,7 +561,7 @@ HRESULT GetLinearTextureLayout(IMTLD3D11Device *pDevice,
 };
 
 template <>
-HRESULT GetLinearTextureLayout(IMTLD3D11Device *pDevice,
+HRESULT GetLinearTextureLayout(MTLD3D11Device *pDevice,
                                const D3D11_TEXTURE2D_DESC1 *pDesc,
                                uint32_t level, uint32_t *pBytesPerRow,
                                uint32_t *pBytesPerImage,
@@ -605,7 +605,7 @@ HRESULT GetLinearTextureLayout(IMTLD3D11Device *pDevice,
 };
 
 template <>
-HRESULT GetLinearTextureLayout(IMTLD3D11Device *pDevice,
+HRESULT GetLinearTextureLayout(MTLD3D11Device *pDevice,
                                const D3D11_TEXTURE3D_DESC1 *pDesc,
                                uint32_t level, uint32_t *pBytesPerRow,
                                uint32_t *pBytesPerImage,

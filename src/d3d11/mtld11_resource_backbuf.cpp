@@ -1,3 +1,4 @@
+#include "config/config.hpp"
 #include "d3d11_private.h"
 #include "dxmt_binding.hpp"
 #include "dxmt_format.hpp"
@@ -73,7 +74,7 @@ private:
     BackBufferRTV(const D3D11_RENDER_TARGET_VIEW_DESC1 *pDesc,
                   EmulatedBackBufferTexture<EnableMetalFX> *context,
                   MTL::PixelFormat interpreted_pixel_format,
-                  IMTLD3D11Device *pDevice)
+                  MTLD3D11Device *pDevice)
         : BackBufferRTVBase(pDesc, context, pDevice),
           interpreted_pixel_format(interpreted_pixel_format) {}
     MTL_RENDER_PASS_ATTACHMENT_DESC props{0, 1, 0, 0, 0}; // FIXME: bugprone
@@ -103,7 +104,7 @@ private:
   public:
     BackBufferSRV(const D3D11_SHADER_RESOURCE_VIEW_DESC1 *pDesc,
                   EmulatedBackBufferTexture<EnableMetalFX> *context,
-                  IMTLD3D11Device *pDevice, bool srgb)
+                  MTLD3D11Device *pDevice, bool srgb)
         : BackBufferSRVBase(pDesc, context, pDevice), srgb(srgb) {}
 
     BindingRef UseBindable(uint64_t) override {
@@ -134,7 +135,7 @@ private:
   public:
     BackBufferUAV(const D3D11_UNORDERED_ACCESS_VIEW_DESC1 *pDesc,
                   EmulatedBackBufferTexture<EnableMetalFX> *context,
-                  IMTLD3D11Device *pDevice, bool srgb)
+                  MTLD3D11Device *pDevice, bool srgb)
         : BackBufferUAVBase(pDesc, context, pDevice), srgb(srgb) {}
 
     BindingRef UseBindable(uint64_t) override {
@@ -159,7 +160,7 @@ private:
 
 public:
   EmulatedBackBufferTexture(const DXGI_SWAP_CHAIN_DESC1 *pDesc,
-                            IMTLD3D11Device *pDevice, HWND hWnd)
+                            MTLD3D11Device *pDevice, HWND hWnd)
       : TResourceBase<tag_texture_backbuffer, IMTLD3D11BackBuffer, IMTLBindable,
                       BackBufferSource>((tag_texture_backbuffer::DESC1{}),
                                         pDevice),
@@ -210,13 +211,10 @@ public:
     }
     layer_->setOpaque(true);
     pixel_format_ = metal_format.PixelFormat;
-    Com<IMTLDXGIAdapter> adapter;
-    if (FAILED(layer_factory->GetParent(IID_PPV_ARGS(&adapter)))) {
-      throw MTLD3DError("Unknown DXGIAdapter");
-    }
     if constexpr (EnableMetalFX) {
-      auto scale_factor = std::max(
-          adapter->GetConfigFloat("d3d11.metalSpatialUpscaleFactor", 2), 1.0f);
+      auto scale_factor = std::max(Config::getInstance().getOption<float>(
+                                       "d3d11.metalSpatialUpscaleFactor", 2),
+                                   1.0f);
       layer_->setDrawableSize({(double)pDesc->Width * scale_factor,
                                (double)pDesc->Height * scale_factor});
     } else {
@@ -476,7 +474,7 @@ public:
 };
 
 Com<IMTLD3D11BackBuffer>
-CreateEmulatedBackBuffer(IMTLD3D11Device *pDevice,
+CreateEmulatedBackBuffer(MTLD3D11Device *pDevice,
                          const DXGI_SWAP_CHAIN_DESC1 *pDesc, HWND hWnd) {
   if (env::getEnvVar("DXMT_METALFX_SPATIAL_SWAPCHAIN") == "1") {
     return new EmulatedBackBufferTexture<true>(pDesc, pDevice, hWnd);

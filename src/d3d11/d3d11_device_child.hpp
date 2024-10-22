@@ -10,7 +10,7 @@ namespace dxmt {
 template <typename... Base> class MTLD3D11DeviceObject : public Base... {
 
 public:
-  MTLD3D11DeviceObject(IMTLD3D11Device *pDevice) : m_parent(pDevice) {}
+  MTLD3D11DeviceObject(MTLD3D11Device *pDevice) : m_parent(pDevice) {}
 
   virtual void OnSetDebugObjectName(LPCSTR Name) {}
 
@@ -43,7 +43,7 @@ protected:
     return reinterpret_cast<ID3D11Device *>(m_parent);
   }
 
-  IMTLD3D11Device *const m_parent;
+  MTLD3D11Device *const m_parent;
 
 private:
   ComPrivateData m_privateData;
@@ -81,7 +81,7 @@ template <typename... Base>
 class MTLD3D11DeviceChild : public MTLD3D11DeviceObject<ComObject<Base...>> {
 
 public:
-  MTLD3D11DeviceChild(IMTLD3D11Device *pDevice)
+  MTLD3D11DeviceChild(MTLD3D11Device *pDevice)
       : MTLD3D11DeviceObject<ComObject<Base...>>(pDevice) {}
 
   // ULONG STDMETHODCALLTYPE AddRef() {
@@ -115,7 +115,7 @@ template <typename... Base>
 class ManagedDeviceChild : public MTLD3D11DeviceObject<Base...> {
 
 public:
-  ManagedDeviceChild(IMTLD3D11Device *pDevice)
+  ManagedDeviceChild(MTLD3D11Device *pDevice)
       : MTLD3D11DeviceObject<Base...>(pDevice) {}
 
   virtual ~ManagedDeviceChild() {};

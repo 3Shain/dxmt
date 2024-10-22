@@ -1,6 +1,7 @@
 #include "d3d11_swapchain.hpp"
 #include "QuartzCore/CADeveloperHUDProperties.hpp"
 #include "com/com_guid.hpp"
+#include "config/config.hpp"
 #include "d3d11_private.h"
 #include "dxgi_interfaces.h"
 #include "dxgi_object.hpp"
@@ -25,22 +26,20 @@ constexpr size_t kSwapchainLatency = 3;
 namespace dxmt {
 
 Com<IMTLD3D11BackBuffer>
-CreateEmulatedBackBuffer(IMTLD3D11Device *pDevice,
+CreateEmulatedBackBuffer(MTLD3D11Device *pDevice,
                          const DXGI_SWAP_CHAIN_DESC1 *pDesc, HWND hWnd);
 
-class MTLD3D11SwapChain final : public MTLDXGISubObject<IDXGISwapChain4> {
+class MTLD3D11SwapChain final : public MTLDXGISubObject<IDXGISwapChain4, MTLD3D11Device> {
 public:
-  MTLD3D11SwapChain(IDXGIFactory1 *pFactory, IMTLDXGIDevice *pDevice, HWND hWnd,
+  MTLD3D11SwapChain(IDXGIFactory1 *pFactory, MTLD3D11Device *pDevice, HWND hWnd,
                     const DXGI_SWAP_CHAIN_DESC1 *pDesc,
                     const DXGI_SWAP_CHAIN_FULLSCREEN_DESC *pFullscreenDesc)
       : MTLDXGISubObject(pDevice), factory_(pFactory), presentation_count_(0),
         desc_(*pDesc), hWnd(hWnd), monitor_(wsi::getWindowMonitor(hWnd)),
         hud(CA::DeveloperHUDProperties::instance()) {
 
-    device_ = Com<IMTLD3D11Device>::queryFrom(pDevice);
-
     Com<ID3D11DeviceContext1> context;
-    device_->GetImmediateContext1(&context);
+    m_device->GetImmediateContext1(&context);
     context->QueryInterface(IID_PPV_ARGS(&device_context_));
 
     frame_latency = kSwapchainLatency;
@@ -58,10 +57,8 @@ public:
       fullscreen_desc_.Windowed = true;
     }
 
-    Com<IMTLDXGIAdapter> adapter;
-    device_->GetAdapter(&adapter);
     preferred_max_frame_rate =
-        adapter->GetConfigInt("d3d11.preferredMaxFrameRate", 0);
+        Config::getInstance().getOption<int>("d3d11.preferredMaxFrameRate", 0);
     wsi::WsiMode current_mode;
     if (wsi::getCurrentDisplayMode(monitor_, &current_mode) &&
         current_mode.refreshRate.denominator != 0 &&
@@ -77,7 +74,7 @@ public:
                   NS::String::string("com.apple.hud-graph.default",
                                      NS::ASCIIStringEncoding));
     hud->updateLabel(str_dxmt_version,
-                     NS::String::string(GetVersionDescriptionText(11, device_->GetFeatureLevel()).c_str(),
+                     NS::String::string(GetVersionDescriptionText(11, m_device->GetFeatureLevel()).c_str(),
                                         NS::UTF8StringEncoding));
   };
 
@@ -130,7 +127,7 @@ public:
   GetBuffer(UINT buffer_idx, REFIID riid, void **surface) final {
     if (buffer_idx == 0) {
       if (!backbuffer_) {
-        backbuffer_ = CreateEmulatedBackBuffer(device_.ptr(), &desc_, hWnd);
+        backbuffer_ = CreateEmulatedBackBuffer(m_device, &desc_, hWnd);
       }
       return backbuffer_->QueryInterface(riid, surface);
     } else {
@@ -470,7 +467,6 @@ private:
   ULONG presentation_count_;
   DXGI_SWAP_CHAIN_DESC1 desc_;
   DXGI_SWAP_CHAIN_FULLSCREEN_DESC fullscreen_desc_;
-  Com<IMTLD3D11Device> device_;
   Com<IMTLD3D11DeviceContext> device_context_;
   Com<IMTLD3D11BackBuffer> backbuffer_;
   HANDLE present_semaphore_;
@@ -486,7 +482,7 @@ private:
   bool destroyed = false;
 };
 
-HRESULT CreateSwapChain(IDXGIFactory1 *pFactory, IMTLDXGIDevice *pDevice,
+HRESULT CreateSwapChain(IDXGIFactory1 *pFactory, MTLD3D11Device *pDevice,
                         HWND hWnd, const DXGI_SWAP_CHAIN_DESC1 *pDesc,
                         const DXGI_SWAP_CHAIN_FULLSCREEN_DESC *pFullscreenDesc,
                         IDXGISwapChain1 **ppSwapChain) {

@@ -38,7 +38,7 @@ private:
 
   public:
     SRV(const tag_shader_resource_view<>::DESC1 *pDesc,
-        DynamicBuffer *pResource, IMTLD3D11Device *pDevice, size_t offset,
+        DynamicBuffer *pResource, MTLD3D11Device *pDevice, size_t offset,
         size_t width)
         : SRVBase(pDesc, pResource, pDevice), offset(offset), width(width) {}
 
@@ -78,7 +78,7 @@ private:
 
   public:
     TBufferSRV(const tag_shader_resource_view<>::DESC1 *pDesc,
-               DynamicBuffer *pResource, IMTLD3D11Device *pDevice,
+               DynamicBuffer *pResource, MTLD3D11Device *pDevice,
                Obj<MTL::TextureDescriptor> &&view_desc,
                MTL_TEXTURE_BUFFER_LAYOUT &layout)
         : SRVBase(pDesc, pResource, pDevice), view_desc(std::move(view_desc)),
@@ -142,7 +142,7 @@ private:
 public:
   DynamicBuffer(const tag_buffer::DESC1 *pDesc,
                 const D3D11_SUBRESOURCE_DATA *pInitialData,
-                IMTLD3D11Device *device)
+                MTLD3D11Device *device)
       : TResourceBase<tag_buffer, IMTLDynamicBuffer, IMTLBindable>(
             *pDesc, device) {
     auto metal = device->GetMTLDevice();
@@ -301,7 +301,7 @@ public:
 #pragma endregion
 
 HRESULT
-CreateDynamicBuffer(IMTLD3D11Device *pDevice, const D3D11_BUFFER_DESC *pDesc,
+CreateDynamicBuffer(MTLD3D11Device *pDevice, const D3D11_BUFFER_DESC *pDesc,
                     const D3D11_SUBRESOURCE_DATA *pInitialData,
                     ID3D11Buffer **ppBuffer) {
   *ppBuffer = ref(new DynamicBuffer(pDesc, pInitialData, pDevice));
@@ -329,7 +329,7 @@ private:
 
   public:
     SRV(const tag_shader_resource_view<>::DESC1 *pDesc,
-        DynamicTexture2D *pResource, IMTLD3D11Device *pDevice,
+        DynamicTexture2D *pResource, MTLD3D11Device *pDevice,
         Obj<MTL::TextureDescriptor> &&view_desc)
         : SRVBase(pDesc, pResource, pDevice), view_desc(std::move(view_desc)) {}
 
@@ -382,7 +382,7 @@ private:
 
 public:
   DynamicTexture2D(const tag_texture_2d::DESC1 *pDesc,
-                   Obj<MTL::Buffer> &&buffer, IMTLD3D11Device *device,
+                   Obj<MTL::Buffer> &&buffer, MTLD3D11Device *device,
                    UINT bytesPerRow)
       : TResourceBase<tag_texture_2d, IMTLDynamicBuffer>(*pDesc, device),
         buffer(std::move(buffer)), buffer_handle(this->buffer->gpuAddress()),
@@ -461,7 +461,7 @@ public:
 #pragma endregion
 
 HRESULT
-CreateDynamicTexture2D(IMTLD3D11Device *pDevice,
+CreateDynamicTexture2D(MTLD3D11Device *pDevice,
                        const D3D11_TEXTURE2D_DESC1 *pDesc,
                        const D3D11_SUBRESOURCE_DATA *pInitialData,
                        ID3D11Texture2D1 **ppTexture) {

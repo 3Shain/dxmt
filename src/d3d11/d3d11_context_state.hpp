@@ -173,7 +173,7 @@ class MTLD3D11DeviceContextState
   friend class MTLD3D11DeviceContext;
 
 public:
-  MTLD3D11DeviceContextState(IMTLD3D11Device *pDevice)
+  MTLD3D11DeviceContextState(MTLD3D11Device *pDevice)
       : MTLD3D11DeviceChild<ID3DDeviceContextState>(pDevice) {}
 
   ~MTLD3D11DeviceContextState() {}

@@ -5,7 +5,6 @@
 #include "Metal/MTLDevice.hpp"
 #include "com/com_guid.hpp"
 #include "log/log.hpp"
-#include "util_env.hpp"
 #include "util_string.hpp"
 #include "wsi_window.hpp"
 
@@ -17,11 +16,7 @@ Com<IMTLDXGIAdapter> CreateAdapter(MTL::Device *pDevice,
 class MTLDXGIFactory : public MTLDXGIObject<IDXGIFactory6> {
 
 public:
-  MTLDXGIFactory(UINT Flags) : flags_(Flags) {
-    config = Config::getUserConfig();
-    config.merge(Config::getAppConfig(env::getExePath()));
-    // config.logOptions();
-  };
+  MTLDXGIFactory(UINT Flags) : flags_(Flags) {};
 
   HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid,
                                            void **ppvObject) final {
@@ -183,7 +178,7 @@ public:
 
     auto device = devices->object<MTL::Device>(Adapter);
 
-    *ppAdapter = CreateAdapter(device, this, config);
+    *ppAdapter = CreateAdapter(device, this, Config::getInstance());
     // devices->release(); // no you should not release it...
     return S_OK;
   }
@@ -297,7 +292,6 @@ private:
   UINT flags_;
 
   HWND m_associatedWindow = nullptr;
-  Config config;
 };
 
 extern "C" HRESULT __stdcall CreateDXGIFactory2(UINT Flags, REFIID riid,
