@@ -2,7 +2,7 @@
 
 #include "Metal/MTLDevice.hpp"
 #include "Metal/MTLPixelFormat.hpp"
-#include "ftl.hpp"
+#include "Metal/MTLStageInputOutputDescriptor.hpp"
 #include <map>
 
 namespace dxmt {
@@ -21,28 +21,6 @@ enum class FormatCapability : int {
   TextureBufferWrite = 0x400,
   TextureBufferReadWrite = 0x800
 };
-
-const FormatCapability ALL_CAP = static_cast<FormatCapability>(
-    FormatCapability::Filter | FormatCapability::Write | FormatCapability::Color | FormatCapability::MSAA |
-    FormatCapability::Blend | FormatCapability::Sparse | FormatCapability::Resolve
-);
-const FormatCapability TEXTURE_BUFFER_ALL_CAP = static_cast<FormatCapability>(
-    FormatCapability::TextureBufferRead | FormatCapability::TextureBufferWrite |
-    FormatCapability::TextureBufferReadWrite
-);
-const FormatCapability TEXTURE_BUFFER_READ_OR_WRITE =
-    static_cast<FormatCapability>(FormatCapability::TextureBufferRead | FormatCapability::TextureBufferWrite);
-const FormatCapability NO_ATOMIC_RESOLVE = static_cast<FormatCapability>(
-    FormatCapability::Filter | FormatCapability::Write | FormatCapability::Color | FormatCapability::MSAA |
-    FormatCapability::Blend | FormatCapability::Sparse
-);
-const FormatCapability APPLE_INT_FORMAT_CAP =
-    FormatCapability::Write | FormatCapability::Color | FormatCapability::MSAA | FormatCapability::Sparse;
-const FormatCapability NONAPPLE_INT_FORMAT_CAP =
-    FormatCapability::Write | FormatCapability::Color | FormatCapability::MSAA | FormatCapability::Sparse;
-
-const FormatCapability APPLE_INT_FORMAT_CAP_32 =
-    FormatCapability::Write | FormatCapability::Color | FormatCapability::Sparse | FormatCapability::Atomic;
 
 class FormatCapabilityInspector {
 public:
@@ -63,5 +41,26 @@ bool IsBlockCompressionFormat(MTL::PixelFormat format);
 size_t FormatBytesPerTexel(MTL::PixelFormat format);
 
 uint32_t DepthStencilPlanarFlags(MTL::PixelFormat format);
+
+enum MTL_DXGI_FORMAT_FLAG {
+  MTL_DXGI_FORMAT_TYPELESS = 1,
+  MTL_DXGI_FORMAT_BC = 2,
+  MTL_DXGI_FORMAT_BACKBUFFER = 4,
+  MTL_DXGI_FORMAT_DEPTH_PLANER = 16,
+  MTL_DXGI_FORMAT_STENCIL_PLANER = 32,
+  MTL_DXGI_FORMAT_EMULATED_D24 = 256,
+};
+
+struct MTL_DXGI_FORMAT_DESC {
+  MTL::PixelFormat PixelFormat;
+  MTL::AttributeFormat AttributeFormat;
+  union {
+    UINT BytesPerTexel;
+    UINT BlockSize;
+  };
+  UINT Flag;
+};
+
+int32_t MTLQueryDXGIFormat(MTL::Device *device, uint32_t format, MTL_DXGI_FORMAT_DESC &description);
 
 } // namespace dxmt

@@ -4,8 +4,8 @@
 #include "d3d11_private.h"
 #include "com/com_pointer.hpp"
 #include "d3d11_device.hpp"
-#include "dxgi_interfaces.h"
 #include "dxmt_buffer_pool.hpp"
+#include "dxmt_format.hpp"
 #include "mtld11_resource.hpp"
 #include "objc_pointer.hpp"
 #include <vector>
@@ -264,17 +264,16 @@ public:
       return S_OK;
     }
 
-    MTL_FORMAT_DESC format;
-    Com<IMTLDXGIAdatper> adapter;
-    m_parent->GetAdapter(&adapter);
-    if (FAILED(adapter->QueryFormatDesc(finalDesc.Format, &format))) {
+    MTL_DXGI_FORMAT_DESC format;
+    if (FAILED(MTLQueryDXGIFormat(m_parent->GetMTLDevice(), finalDesc.Format,
+                                  format))) {
       return E_FAIL;
     }
 
     Obj<MTL::TextureDescriptor> desc;
     MTL_TEXTURE_BUFFER_LAYOUT layout;
-    if (FAILED(CreateMTLTextureBufferView(this->m_parent, &finalDesc,
-                                          &desc, &layout))) {
+    if (FAILED(CreateMTLTextureBufferView(this->m_parent, &finalDesc, &desc,
+                                          &layout))) {
       return E_FAIL;
     }
     desc->setResourceOptions(this->buffer_dynamic->resourceOptions());
@@ -431,10 +430,9 @@ public:
     if (!ppView) {
       return S_FALSE;
     }
-    MTL_FORMAT_DESC format;
-    Com<IMTLDXGIAdatper> adapter;
-    m_parent->GetAdapter(&adapter);
-    if (FAILED(adapter->QueryFormatDesc(finalDesc.Format, &format))) {
+    MTL_DXGI_FORMAT_DESC format;
+    if (FAILED(MTLQueryDXGIFormat(m_parent->GetMTLDevice(), finalDesc.Format,
+                                  format))) {
       return E_FAIL;
     }
 
@@ -467,11 +465,9 @@ CreateDynamicTexture2D(IMTLD3D11Device *pDevice,
                        const D3D11_TEXTURE2D_DESC1 *pDesc,
                        const D3D11_SUBRESOURCE_DATA *pInitialData,
                        ID3D11Texture2D1 **ppTexture) {
-  Com<IMTLDXGIAdatper> adapter;
-  pDevice->GetAdapter(&adapter);
-  MTL_FORMAT_DESC format;
-  adapter->QueryFormatDesc(pDesc->Format, &format);
-  if (format.IsCompressed) {
+  MTL_DXGI_FORMAT_DESC format;
+  MTLQueryDXGIFormat(pDevice->GetMTLDevice(), pDesc->Format, format);
+  if (format.Flag  & MTL_DXGI_FORMAT_BC) {
     return E_FAIL;
   }
   if (format.PixelFormat == MTL::PixelFormatInvalid) {

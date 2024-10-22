@@ -1,12 +1,36 @@
+#include "ftl.hpp"
 #include "dxmt_format.hpp"
 #include "Metal/MTLDevice.hpp"
 #include "Metal/MTLPixelFormat.hpp"
 #include "util_error.hpp"
-#include <cassert>
+#include "dxgi.h"
 
 #define APPEND_CAP(format, caps) textureCapabilities[format] = textureCapabilities[format] | caps;
 
 namespace dxmt {
+
+constexpr FormatCapability ALL_CAP = static_cast<FormatCapability>(
+    FormatCapability::Filter | FormatCapability::Write | FormatCapability::Color | FormatCapability::MSAA |
+    FormatCapability::Blend | FormatCapability::Sparse | FormatCapability::Resolve
+);
+constexpr FormatCapability TEXTURE_BUFFER_ALL_CAP = static_cast<FormatCapability>(
+    FormatCapability::TextureBufferRead | FormatCapability::TextureBufferWrite |
+    FormatCapability::TextureBufferReadWrite
+);
+constexpr FormatCapability TEXTURE_BUFFER_READ_OR_WRITE =
+    static_cast<FormatCapability>(FormatCapability::TextureBufferRead | FormatCapability::TextureBufferWrite);
+constexpr FormatCapability NO_ATOMIC_RESOLVE = static_cast<FormatCapability>(
+    FormatCapability::Filter | FormatCapability::Write | FormatCapability::Color | FormatCapability::MSAA |
+    FormatCapability::Blend | FormatCapability::Sparse
+);
+constexpr FormatCapability APPLE_INT_FORMAT_CAP =
+    FormatCapability::Write | FormatCapability::Color | FormatCapability::MSAA | FormatCapability::Sparse;
+constexpr FormatCapability NONAPPLE_INT_FORMAT_CAP =
+    FormatCapability::Write | FormatCapability::Color | FormatCapability::MSAA | FormatCapability::Sparse;
+
+constexpr FormatCapability APPLE_INT_FORMAT_CAP_32 =
+    FormatCapability::Write | FormatCapability::Color | FormatCapability::Sparse | FormatCapability::Atomic;
+
 void
 FormatCapabilityInspector::Inspect(MTL::Device *device) {
   if (device->supportsFamily(MTL::GPUFamilyApple7)) {
@@ -566,6 +590,643 @@ DepthStencilPlanarFlags(MTL::PixelFormat format) {
   default:
     return 0;
   }
+}
+
+int32_t
+MTLQueryDXGIFormat(MTL::Device *device, uint32_t format, MTL_DXGI_FORMAT_DESC &description) {
+  description.PixelFormat = MTL::PixelFormatInvalid;
+  description.AttributeFormat = MTL::AttributeFormatInvalid;
+  description.BytesPerTexel = 0;
+  description.Flag = 0;
+
+  switch (format) {
+  case DXGI_FORMAT_R32G32B32A32_TYPELESS: {
+    description.PixelFormat = MTL::PixelFormatRGBA32Uint;
+    description.BytesPerTexel = 16;
+    description.Flag = MTL_DXGI_FORMAT_TYPELESS;
+    break;
+  }
+  case DXGI_FORMAT_R32G32B32A32_UINT: {
+    description.PixelFormat = MTL::PixelFormatRGBA32Uint;
+    description.AttributeFormat = MTL::AttributeFormatUInt4;
+    description.BytesPerTexel = 16;
+    break;
+  }
+  case DXGI_FORMAT_R32G32B32A32_SINT: {
+    description.PixelFormat = MTL::PixelFormatRGBA32Sint;
+    description.AttributeFormat = MTL::AttributeFormatInt4;
+    description.BytesPerTexel = 16;
+    break;
+  }
+  case DXGI_FORMAT_R32G32B32A32_FLOAT: {
+    description.PixelFormat = MTL::PixelFormatRGBA32Float;
+    description.AttributeFormat = MTL::AttributeFormatFloat4;
+    description.BytesPerTexel = 16;
+    break;
+  }
+  case DXGI_FORMAT_R32G32B32_TYPELESS: {
+    description.BytesPerTexel = 12;
+    description.Flag = MTL_DXGI_FORMAT_TYPELESS;
+    break;
+  }
+  case DXGI_FORMAT_R32G32B32_UINT: {
+    description.AttributeFormat = MTL::AttributeFormatUInt3;
+    description.BytesPerTexel = 12;
+    break;
+  }
+  case DXGI_FORMAT_R32G32B32_SINT: {
+    description.AttributeFormat = MTL::AttributeFormatInt3;
+    description.BytesPerTexel = 12;
+    break;
+  }
+  case DXGI_FORMAT_R32G32B32_FLOAT: {
+    description.AttributeFormat = MTL::AttributeFormatFloat3;
+    description.BytesPerTexel = 12;
+    break;
+  }
+  case DXGI_FORMAT_R16G16B16A16_TYPELESS: {
+    description.PixelFormat = MTL::PixelFormatRGBA16Unorm;
+    description.BytesPerTexel = 8;
+    description.Flag = MTL_DXGI_FORMAT_TYPELESS;
+    break;
+  }
+  case DXGI_FORMAT_R16G16B16A16_FLOAT: {
+    description.PixelFormat = MTL::PixelFormatRGBA16Float;
+    description.AttributeFormat = MTL::AttributeFormatHalf4;
+    description.BytesPerTexel = 8;
+    description.Flag = MTL_DXGI_FORMAT_BACKBUFFER; // 11.1
+    break;
+  }
+  case DXGI_FORMAT_R16G16B16A16_UNORM: {
+    description.PixelFormat = MTL::PixelFormatRGBA16Unorm;
+    description.AttributeFormat = MTL::AttributeFormatUShort4Normalized;
+    description.BytesPerTexel = 8;
+    break;
+  }
+  case DXGI_FORMAT_R16G16B16A16_UINT: {
+    description.PixelFormat = MTL::PixelFormatRGBA16Uint;
+    description.AttributeFormat = MTL::AttributeFormatUShort4;
+    description.BytesPerTexel = 8;
+    break;
+  }
+  case DXGI_FORMAT_R16G16B16A16_SNORM: {
+    description.PixelFormat = MTL::PixelFormatRGBA16Snorm;
+    description.AttributeFormat = MTL::AttributeFormatShort4Normalized;
+    description.BytesPerTexel = 8;
+    break;
+  }
+  case DXGI_FORMAT_R16G16B16A16_SINT: {
+    description.PixelFormat = MTL::PixelFormatRGBA16Sint;
+    description.AttributeFormat = MTL::AttributeFormatShort4;
+    description.BytesPerTexel = 8;
+    break;
+  }
+  case DXGI_FORMAT_R32G32_TYPELESS: {
+    description.PixelFormat = MTL::PixelFormatRG32Uint;
+    description.BytesPerTexel = 8;
+    description.Flag = MTL_DXGI_FORMAT_TYPELESS;
+    break;
+  }
+  case DXGI_FORMAT_R32G32_FLOAT: {
+    description.PixelFormat = MTL::PixelFormatRG32Float;
+    description.AttributeFormat = MTL::AttributeFormatFloat2;
+    description.BytesPerTexel = 8;
+    break;
+  }
+  case DXGI_FORMAT_R32G32_UINT: {
+    description.PixelFormat = MTL::PixelFormatRG32Uint;
+    description.AttributeFormat = MTL::AttributeFormatUInt2;
+    description.BytesPerTexel = 8;
+    break;
+  }
+  case DXGI_FORMAT_R32G32_SINT: {
+    description.PixelFormat = MTL::PixelFormatRG32Sint;
+    description.AttributeFormat = MTL::AttributeFormatInt2;
+    description.BytesPerTexel = 8;
+    break;
+  }
+  case DXGI_FORMAT_R32G8X24_TYPELESS: {
+    description.PixelFormat = MTL::PixelFormatDepth32Float_Stencil8;
+    description.BytesPerTexel = 8;
+    description.Flag = MTL_DXGI_FORMAT_TYPELESS | MTL_DXGI_FORMAT_DEPTH_PLANER | MTL_DXGI_FORMAT_STENCIL_PLANER;
+    break;
+  }
+  case DXGI_FORMAT_D32_FLOAT_S8X24_UINT: {
+    description.PixelFormat = MTL::PixelFormatDepth32Float_Stencil8;
+    description.BytesPerTexel = 8;
+    description.Flag = MTL_DXGI_FORMAT_DEPTH_PLANER | MTL_DXGI_FORMAT_STENCIL_PLANER;
+    break;
+  }
+  case DXGI_FORMAT_R32_FLOAT_X8X24_TYPELESS: {
+    description.PixelFormat = MTL::PixelFormatDepth32Float_Stencil8;
+    description.BytesPerTexel = 8;
+    description.Flag = MTL_DXGI_FORMAT_TYPELESS | MTL_DXGI_FORMAT_DEPTH_PLANER;
+    break;
+  }
+  case DXGI_FORMAT_X32_TYPELESS_G8X24_UINT: {
+    description.PixelFormat = MTL::PixelFormatX32_Stencil8;
+    description.BytesPerTexel = 8;
+    description.Flag = MTL_DXGI_FORMAT_TYPELESS | MTL_DXGI_FORMAT_STENCIL_PLANER;
+    break;
+  }
+  case DXGI_FORMAT_R10G10B10A2_TYPELESS: {
+    description.PixelFormat = MTL::PixelFormatRGB10A2Uint;
+    description.BytesPerTexel = 4;
+    description.Flag = MTL_DXGI_FORMAT_TYPELESS;
+    break;
+  }
+  case DXGI_FORMAT_R10G10B10A2_UNORM: {
+    description.PixelFormat = MTL::PixelFormatRGB10A2Unorm;
+    description.AttributeFormat = MTL::AttributeFormatUInt1010102Normalized;
+    description.BytesPerTexel = 4;
+    description.Flag = MTL_DXGI_FORMAT_BACKBUFFER; // 11.1
+    break;
+  }
+  case DXGI_FORMAT_R10G10B10A2_UINT: {
+    description.PixelFormat = MTL::PixelFormatRGB10A2Uint;
+    description.BytesPerTexel = 4;
+    break;
+  }
+  case DXGI_FORMAT_R11G11B10_FLOAT: {
+    description.PixelFormat = MTL::PixelFormatRG11B10Float;
+    description.AttributeFormat = MTL::AttributeFormatFloatRG11B10;
+    description.BytesPerTexel = 4;
+    break;
+  }
+  case DXGI_FORMAT_R8G8B8A8_TYPELESS: {
+    description.PixelFormat = MTL::PixelFormatRGBA8Unorm;
+    description.BytesPerTexel = 4;
+    description.Flag = MTL_DXGI_FORMAT_TYPELESS;
+    break;
+  }
+  case DXGI_FORMAT_R8G8B8A8_UNORM: {
+    description.PixelFormat = MTL::PixelFormatRGBA8Unorm;
+    description.AttributeFormat = MTL::AttributeFormatUChar4Normalized;
+    description.BytesPerTexel = 4;
+    description.Flag = MTL_DXGI_FORMAT_BACKBUFFER; // 11.1, swizzle from BGRA8Unorm
+    // FIXME: backbuffer format not supported!
+    // need some workaround for GetDisplayModeList
+    break;
+  }
+  case DXGI_FORMAT_R8G8B8A8_UNORM_SRGB: {
+    description.PixelFormat = MTL::PixelFormatRGBA8Unorm_sRGB;
+    description.BytesPerTexel = 4;
+    description.Flag = MTL_DXGI_FORMAT_BACKBUFFER; // 11.1, swizzle from BGRA8Unorm
+    break;
+  }
+  case DXGI_FORMAT_R8G8B8A8_UINT: {
+    description.PixelFormat = MTL::PixelFormatRGBA8Uint;
+    description.AttributeFormat = MTL::AttributeFormatUChar4;
+    description.BytesPerTexel = 4;
+    break;
+  }
+  case DXGI_FORMAT_R8G8B8A8_SNORM: {
+    description.PixelFormat = MTL::PixelFormatRGBA8Snorm;
+    description.AttributeFormat = MTL::AttributeFormatChar4Normalized;
+    description.BytesPerTexel = 4;
+    break;
+  }
+  case DXGI_FORMAT_R8G8B8A8_SINT: {
+    description.PixelFormat = MTL::PixelFormatRGBA8Sint;
+    description.AttributeFormat = MTL::AttributeFormatChar4;
+    description.BytesPerTexel = 4;
+    break;
+  }
+  case DXGI_FORMAT_R16G16_TYPELESS: {
+    description.PixelFormat = MTL::PixelFormatRG16Uint;
+    description.BytesPerTexel = 4;
+    description.Flag = MTL_DXGI_FORMAT_TYPELESS;
+    break;
+  }
+  case DXGI_FORMAT_R16G16_FLOAT: {
+    description.PixelFormat = MTL::PixelFormatRG16Float;
+    description.AttributeFormat = MTL::AttributeFormatHalf2;
+    description.BytesPerTexel = 4;
+    break;
+  }
+  case DXGI_FORMAT_R16G16_UNORM: {
+    description.PixelFormat = MTL::PixelFormatRG16Unorm;
+    description.AttributeFormat = MTL::AttributeFormatUShort2Normalized;
+    description.BytesPerTexel = 4;
+    break;
+  }
+  case DXGI_FORMAT_R16G16_UINT: {
+    description.PixelFormat = MTL::PixelFormatRG16Uint;
+    description.AttributeFormat = MTL::AttributeFormatUShort2;
+    description.BytesPerTexel = 4;
+    break;
+  }
+  case DXGI_FORMAT_R16G16_SNORM: {
+    description.PixelFormat = MTL::PixelFormatRG16Snorm;
+    description.AttributeFormat = MTL::AttributeFormatShort2Normalized;
+    description.BytesPerTexel = 4;
+    break;
+  }
+  case DXGI_FORMAT_R16G16_SINT: {
+    description.PixelFormat = MTL::PixelFormatRG16Sint;
+    description.AttributeFormat = MTL::AttributeFormatShort2;
+    description.BytesPerTexel = 4;
+    break;
+  }
+  case DXGI_FORMAT_R32_TYPELESS: {
+    description.PixelFormat = MTL::PixelFormatR32Uint;
+    description.BytesPerTexel = 4;
+    description.Flag = MTL_DXGI_FORMAT_TYPELESS;
+    break;
+  }
+  case DXGI_FORMAT_D32_FLOAT: {
+    description.PixelFormat = MTL::PixelFormatDepth32Float;
+    description.BytesPerTexel = 4;
+    break;
+  }
+  case DXGI_FORMAT_R32_FLOAT: {
+    description.PixelFormat = MTL::PixelFormatR32Float;
+    description.AttributeFormat = MTL::AttributeFormatFloat;
+    description.BytesPerTexel = 4;
+    break;
+  }
+  case DXGI_FORMAT_R32_UINT: {
+    description.PixelFormat = MTL::PixelFormatR32Uint;
+    description.AttributeFormat = MTL::AttributeFormatUInt;
+    description.BytesPerTexel = 4;
+    break;
+  }
+  case DXGI_FORMAT_R32_SINT: {
+    description.PixelFormat = MTL::PixelFormatR32Sint;
+    description.AttributeFormat = MTL::AttributeFormatInt;
+    description.BytesPerTexel = 4;
+    break;
+  }
+  case DXGI_FORMAT_R24G8_TYPELESS: {
+    if (device->depth24Stencil8PixelFormatSupported()) {
+      description.PixelFormat = MTL::PixelFormatDepth24Unorm_Stencil8;
+    } else {
+      description.Flag |= MTL_DXGI_FORMAT_EMULATED_D24;
+      description.PixelFormat = MTL::PixelFormatDepth32Float_Stencil8;
+    }
+    break;
+  }
+  case DXGI_FORMAT_D24_UNORM_S8_UINT: {
+    description.Flag = MTL_DXGI_FORMAT_DEPTH_PLANER | MTL_DXGI_FORMAT_STENCIL_PLANER;
+    if (device->depth24Stencil8PixelFormatSupported()) {
+      description.PixelFormat = MTL::PixelFormatDepth24Unorm_Stencil8;
+    } else {
+      description.Flag |= MTL_DXGI_FORMAT_EMULATED_D24;
+      description.PixelFormat = MTL::PixelFormatDepth32Float_Stencil8;
+    }
+    break;
+  }
+  case DXGI_FORMAT_R24_UNORM_X8_TYPELESS: {
+    description.Flag = MTL_DXGI_FORMAT_DEPTH_PLANER;
+    if (device->depth24Stencil8PixelFormatSupported()) {
+      description.PixelFormat = MTL::PixelFormatDepth24Unorm_Stencil8;
+    } else {
+      description.Flag |= MTL_DXGI_FORMAT_EMULATED_D24;
+      description.PixelFormat = MTL::PixelFormatDepth32Float_Stencil8;
+    }
+    break;
+  }
+  case DXGI_FORMAT_X24_TYPELESS_G8_UINT: {
+    description.Flag = MTL_DXGI_FORMAT_STENCIL_PLANER;
+    if (device->depth24Stencil8PixelFormatSupported()) {
+      description.PixelFormat = MTL::PixelFormatX24_Stencil8;
+    } else {
+      description.Flag |= MTL_DXGI_FORMAT_EMULATED_D24;
+      description.PixelFormat = MTL::PixelFormatX32_Stencil8;
+    }
+    break;
+  }
+  case DXGI_FORMAT_R8G8_TYPELESS: {
+    description.PixelFormat = MTL::PixelFormatRG8Uint;
+    description.BytesPerTexel = 2;
+    description.Flag = MTL_DXGI_FORMAT_TYPELESS;
+    break;
+  }
+  case DXGI_FORMAT_R8G8_UNORM: {
+    description.PixelFormat = MTL::PixelFormatRG8Unorm;
+    description.AttributeFormat = MTL::AttributeFormatUChar2Normalized;
+    description.BytesPerTexel = 2;
+    break;
+  }
+  case DXGI_FORMAT_R8G8_UINT: {
+    description.PixelFormat = MTL::PixelFormatRG8Uint;
+    description.AttributeFormat = MTL::AttributeFormatUChar2;
+    description.BytesPerTexel = 2;
+    break;
+  }
+  case DXGI_FORMAT_R8G8_SNORM: {
+    description.PixelFormat = MTL::PixelFormatRG8Snorm;
+    description.AttributeFormat = MTL::AttributeFormatChar2Normalized;
+    description.BytesPerTexel = 2;
+    break;
+  }
+  case DXGI_FORMAT_R8G8_SINT: {
+    description.PixelFormat = MTL::PixelFormatRG8Sint;
+    description.AttributeFormat = MTL::AttributeFormatChar2;
+    description.BytesPerTexel = 2;
+    break;
+  }
+  case DXGI_FORMAT_R16_TYPELESS: {
+    description.PixelFormat = MTL::PixelFormatR16Uint;
+    description.BytesPerTexel = 2;
+    description.Flag = MTL_DXGI_FORMAT_TYPELESS;
+    break;
+  }
+  case DXGI_FORMAT_R16_FLOAT: {
+    description.PixelFormat = MTL::PixelFormatR16Float;
+    description.AttributeFormat = MTL::AttributeFormatHalf;
+    description.BytesPerTexel = 2;
+    break;
+  }
+  case DXGI_FORMAT_D16_UNORM: {
+    description.PixelFormat = MTL::PixelFormatDepth16Unorm;
+    description.BytesPerTexel = 2;
+    break;
+  }
+  case DXGI_FORMAT_R16_UNORM: {
+    description.PixelFormat = MTL::PixelFormatR16Unorm;
+    description.AttributeFormat = MTL::AttributeFormatUShortNormalized;
+    description.BytesPerTexel = 2;
+    break;
+  }
+  case DXGI_FORMAT_R16_UINT: {
+    description.PixelFormat = MTL::PixelFormatR16Uint;
+    description.AttributeFormat = MTL::AttributeFormatUShort;
+    description.BytesPerTexel = 2;
+    break;
+  }
+  case DXGI_FORMAT_R16_SNORM: {
+    description.PixelFormat = MTL::PixelFormatR16Snorm;
+    description.AttributeFormat = MTL::AttributeFormatShortNormalized;
+    description.BytesPerTexel = 2;
+    break;
+  }
+  case DXGI_FORMAT_R16_SINT: {
+    description.PixelFormat = MTL::PixelFormatR16Sint;
+    description.AttributeFormat = MTL::AttributeFormatShort;
+    description.BytesPerTexel = 2;
+    break;
+  }
+  case DXGI_FORMAT_R8_TYPELESS: {
+    description.PixelFormat = MTL::PixelFormatR8Uint;
+    description.BytesPerTexel = 1;
+    description.Flag = MTL_DXGI_FORMAT_TYPELESS;
+    break;
+  }
+  case DXGI_FORMAT_R8_UNORM: {
+    description.PixelFormat = MTL::PixelFormatR8Unorm;
+    description.AttributeFormat = MTL::AttributeFormatUCharNormalized;
+    description.BytesPerTexel = 1;
+    break;
+  }
+  case DXGI_FORMAT_R8_UINT: {
+    description.PixelFormat = MTL::PixelFormatR8Uint;
+    description.AttributeFormat = MTL::AttributeFormatUChar;
+    description.BytesPerTexel = 1;
+    break;
+  }
+  case DXGI_FORMAT_R8_SNORM: {
+    description.PixelFormat = MTL::PixelFormatR8Snorm;
+    description.AttributeFormat = MTL::AttributeFormatCharNormalized;
+    description.BytesPerTexel = 1;
+    break;
+  }
+  case DXGI_FORMAT_R8_SINT: {
+    description.PixelFormat = MTL::PixelFormatR8Sint;
+    description.AttributeFormat = MTL::AttributeFormatChar;
+    description.BytesPerTexel = 1;
+    break;
+  }
+  case DXGI_FORMAT_A8_UNORM: {
+    description.PixelFormat = MTL::PixelFormatA8Unorm;
+    description.BytesPerTexel = 1;
+    break;
+  }
+  case DXGI_FORMAT_R1_UNORM: {
+    return E_FAIL;
+  }
+  case DXGI_FORMAT_R9G9B9E5_SHAREDEXP: {
+    description.PixelFormat = MTL::PixelFormatRGB9E5Float;
+    description.AttributeFormat = MTL::AttributeFormatFloatRGB9E5;
+    description.BytesPerTexel = 4;
+    break;
+  }
+  case DXGI_FORMAT_R8G8_B8G8_UNORM: {
+    description.PixelFormat = MTL::PixelFormatBGRG422;
+    description.BytesPerTexel = 4;
+    break;
+  }
+  case DXGI_FORMAT_G8R8_G8B8_UNORM: {
+    description.PixelFormat = MTL::PixelFormatGBGR422;
+    description.BytesPerTexel = 4;
+    break;
+  }
+  case DXGI_FORMAT_BC1_TYPELESS: {
+    description.PixelFormat = MTL::PixelFormatBC1_RGBA;
+    description.Flag = MTL_DXGI_FORMAT_TYPELESS | MTL_DXGI_FORMAT_BC;
+    description.BlockSize = 8;
+    break;
+  }
+  /**
+  from doc:
+  Reinterpretation of image data between pixel formats is supported:
+  - sRGB and non-sRGB forms of the same compressed format
+  */
+  case DXGI_FORMAT_BC1_UNORM: {
+    description.PixelFormat = MTL::PixelFormatBC1_RGBA;
+    description.Flag = MTL_DXGI_FORMAT_BC;
+    description.BlockSize = 8;
+    break;
+  }
+  case DXGI_FORMAT_BC1_UNORM_SRGB: {
+    description.PixelFormat = MTL::PixelFormatBC1_RGBA_sRGB;
+    description.Flag = MTL_DXGI_FORMAT_BC;
+    description.BlockSize = 8;
+    break;
+  }
+  case DXGI_FORMAT_BC2_TYPELESS: {
+    description.PixelFormat = MTL::PixelFormatBC2_RGBA;
+    description.Flag = MTL_DXGI_FORMAT_TYPELESS | MTL_DXGI_FORMAT_BC;
+    description.BlockSize = 16;
+    break;
+  }
+  case DXGI_FORMAT_BC2_UNORM: {
+    description.PixelFormat = MTL::PixelFormatBC2_RGBA;
+    description.Flag = MTL_DXGI_FORMAT_BC;
+    description.BlockSize = 16;
+    break;
+  }
+  case DXGI_FORMAT_BC2_UNORM_SRGB: {
+    description.PixelFormat = MTL::PixelFormatBC2_RGBA_sRGB;
+    description.Flag = MTL_DXGI_FORMAT_BC;
+    description.BlockSize = 16;
+    break;
+  }
+  case DXGI_FORMAT_BC3_TYPELESS: {
+    description.PixelFormat = MTL::PixelFormatBC3_RGBA;
+    description.Flag = MTL_DXGI_FORMAT_TYPELESS | MTL_DXGI_FORMAT_BC;
+    description.BlockSize = 16;
+    break;
+  }
+  case DXGI_FORMAT_BC3_UNORM: {
+    description.PixelFormat = MTL::PixelFormatBC3_RGBA;
+    description.Flag = MTL_DXGI_FORMAT_BC;
+    description.BlockSize = 16;
+    break;
+  }
+  case DXGI_FORMAT_BC3_UNORM_SRGB: {
+    description.PixelFormat = MTL::PixelFormatBC3_RGBA_sRGB;
+    description.Flag = MTL_DXGI_FORMAT_BC;
+    description.BlockSize = 16;
+    break;
+  }
+  case DXGI_FORMAT_BC4_TYPELESS: {
+    description.PixelFormat = MTL::PixelFormatBC4_RUnorm;
+    description.Flag = MTL_DXGI_FORMAT_TYPELESS | MTL_DXGI_FORMAT_BC;
+    description.BlockSize = 8;
+    break;
+  }
+  case DXGI_FORMAT_BC4_UNORM: {
+    description.PixelFormat = MTL::PixelFormatBC4_RUnorm;
+    description.Flag = MTL_DXGI_FORMAT_BC;
+    description.BlockSize = 8;
+    break;
+  }
+  case DXGI_FORMAT_BC4_SNORM: {
+    description.PixelFormat = MTL::PixelFormatBC4_RSnorm;
+    description.Flag = MTL_DXGI_FORMAT_BC;
+    description.BlockSize = 8;
+    break;
+  }
+  case DXGI_FORMAT_BC5_TYPELESS: {
+    description.PixelFormat = MTL::PixelFormatBC5_RGUnorm;
+    description.Flag = MTL_DXGI_FORMAT_TYPELESS | MTL_DXGI_FORMAT_BC;
+    description.BlockSize = 16;
+    break;
+  }
+  case DXGI_FORMAT_BC5_UNORM: {
+    description.PixelFormat = MTL::PixelFormatBC5_RGUnorm;
+    description.Flag = MTL_DXGI_FORMAT_BC;
+    description.BlockSize = 16;
+    break;
+  }
+  case DXGI_FORMAT_BC5_SNORM: {
+    description.PixelFormat = MTL::PixelFormatBC5_RGSnorm;
+    description.Flag = MTL_DXGI_FORMAT_BC;
+    description.BlockSize = 16;
+    break;
+  }
+  case DXGI_FORMAT_B5G6R5_UNORM: {
+    description.PixelFormat = MTL::PixelFormatB5G6R5Unorm;
+    description.BytesPerTexel = 2;
+    break;
+  }
+  case DXGI_FORMAT_B5G5R5A1_UNORM: {
+    description.PixelFormat = MTL::PixelFormatBGR5A1Unorm;
+    description.BytesPerTexel = 2;
+    break;
+  }
+  case DXGI_FORMAT_B8G8R8A8_UNORM: {
+    description.PixelFormat = MTL::PixelFormatBGRA8Unorm;
+    description.AttributeFormat = MTL::AttributeFormatUChar4Normalized_BGRA;
+    description.BytesPerTexel = 4;
+    description.Flag = MTL_DXGI_FORMAT_BACKBUFFER; // 11.1
+    break;
+  }
+  case DXGI_FORMAT_B8G8R8X8_UNORM: {
+    description.PixelFormat = MTL::PixelFormatBGRA8Unorm;
+    description.BytesPerTexel = 4;
+    description.Flag = MTL_DXGI_FORMAT_BACKBUFFER;
+    break;
+  }
+  case DXGI_FORMAT_R10G10B10_XR_BIAS_A2_UNORM:
+    return E_FAIL;
+  case DXGI_FORMAT_B8G8R8A8_TYPELESS: {
+    description.PixelFormat = MTL::PixelFormatBGRA8Unorm;
+    description.BytesPerTexel = 4;
+    description.Flag = MTL_DXGI_FORMAT_TYPELESS;
+    break;
+  }
+  case DXGI_FORMAT_B8G8R8A8_UNORM_SRGB: {
+    description.PixelFormat = MTL::PixelFormatBGRA8Unorm_sRGB;
+    description.BytesPerTexel = 4;
+    description.Flag = MTL_DXGI_FORMAT_BACKBUFFER; // 11.1
+    break;
+  }
+  case DXGI_FORMAT_B8G8R8X8_TYPELESS: {
+    description.PixelFormat = MTL::PixelFormatBGRA8Unorm;
+    description.BytesPerTexel = 4;
+    description.Flag = MTL_DXGI_FORMAT_TYPELESS;
+    break;
+  }
+  case DXGI_FORMAT_B8G8R8X8_UNORM_SRGB: {
+    description.PixelFormat = MTL::PixelFormatBGRA8Unorm_sRGB;
+    description.BytesPerTexel = 4;
+    description.Flag = MTL_DXGI_FORMAT_BACKBUFFER;
+    break;
+  }
+  case DXGI_FORMAT_BC6H_TYPELESS: {
+    description.PixelFormat = MTL::PixelFormatBC6H_RGBUfloat;
+    description.Flag = MTL_DXGI_FORMAT_TYPELESS | MTL_DXGI_FORMAT_BC;
+    description.BlockSize = 16;
+    break;
+  }
+  case DXGI_FORMAT_BC6H_UF16: {
+    description.PixelFormat = MTL::PixelFormatBC6H_RGBUfloat;
+    description.Flag = MTL_DXGI_FORMAT_BC;
+    description.BlockSize = 16;
+    break;
+  }
+  case DXGI_FORMAT_BC6H_SF16: {
+    description.PixelFormat = MTL::PixelFormatBC6H_RGBFloat;
+    description.Flag = MTL_DXGI_FORMAT_BC;
+    description.BlockSize = 16;
+    break;
+  }
+  case DXGI_FORMAT_BC7_TYPELESS: {
+    description.PixelFormat = MTL::PixelFormatBC7_RGBAUnorm;
+    description.Flag = MTL_DXGI_FORMAT_TYPELESS | MTL_DXGI_FORMAT_BC;
+    description.BlockSize = 16;
+    break;
+  }
+  case DXGI_FORMAT_BC7_UNORM: {
+    description.PixelFormat = MTL::PixelFormatBC7_RGBAUnorm;
+    description.Flag = MTL_DXGI_FORMAT_BC;
+    description.BlockSize = 16;
+    break;
+  }
+  case DXGI_FORMAT_BC7_UNORM_SRGB: {
+    description.PixelFormat = MTL::PixelFormatBC7_RGBAUnorm_sRGB;
+    description.Flag = MTL_DXGI_FORMAT_BC;
+    description.BlockSize = 16;
+    break;
+  }
+  case DXGI_FORMAT_AYUV:
+  case DXGI_FORMAT_Y410:
+  case DXGI_FORMAT_Y416:
+  case DXGI_FORMAT_NV12:
+  case DXGI_FORMAT_P010:
+  case DXGI_FORMAT_P016:
+  case DXGI_FORMAT_420_OPAQUE:
+  case DXGI_FORMAT_YUY2:
+  case DXGI_FORMAT_Y210:
+  case DXGI_FORMAT_Y216:
+  case DXGI_FORMAT_NV11:
+  case DXGI_FORMAT_AI44:
+  case DXGI_FORMAT_IA44:
+  case DXGI_FORMAT_P8:
+  case DXGI_FORMAT_A8P8:
+  case DXGI_FORMAT_B4G4R4A4_UNORM:
+  case DXGI_FORMAT_P208:
+  case DXGI_FORMAT_V208:
+  case DXGI_FORMAT_V408:
+  case DXGI_FORMAT_FORCE_UINT:
+  case DXGI_FORMAT_UNKNOWN:
+  default:
+    return E_FAIL;
+  }
+
+  return S_OK;
 }
 
 } // namespace dxmt

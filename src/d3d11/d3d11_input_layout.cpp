@@ -3,6 +3,7 @@
 #include "DXBCParser/DXBCUtils.h"
 #include "d3d11_shader.hpp"
 #include "d3d11_state_object.hpp"
+#include "dxmt_format.hpp"
 #include "util_math.hpp"
 #include "log/log.hpp"
 
@@ -48,15 +49,14 @@ HRESULT ExtractMTLInputLayoutElements(
     D3D11_ASSERT(attribute_count < NumElements);
     auto &attribute = pInputLayout[attribute_count++];
 
-    Com<IMTLDXGIAdatper> dxgi_adapter;
-    device->GetAdapter(&dxgi_adapter);
-    MTL_FORMAT_DESC metal_format;
-    if (FAILED(dxgi_adapter->QueryFormatDesc(pDesc->Format, &metal_format))) {
+    MTL_DXGI_FORMAT_DESC metal_format;
+    if (FAILED(MTLQueryDXGIFormat(device->GetMTLDevice(), pDesc->Format,
+                                  metal_format))) {
       ERR("CreateInputLayout: Unsupported vertex format ", desc.Format);
       return E_FAIL;
     }
 
-    if (metal_format.VertexFormat == MTL::VertexFormatInvalid) {
+    if (!metal_format.AttributeFormat) {
       ERR("CreateInputLayout: Unsupported vertex format ", desc.Format);
       return E_INVALIDARG;
     }

@@ -1,5 +1,4 @@
 #include "Metal/MTLPixelFormat.hpp"
-#include "Metal/MTLVertexDescriptor.hpp"
 #include "com/com_guid.hpp"
 #include "d3d11_input_layout.hpp"
 #include "d3d11_pipeline.hpp"
@@ -58,7 +57,7 @@ const GUID kGpaUUID = {0xccffef16,
 class MTLD3D11Device final : public IMTLD3D11Device {
 public:
   MTLD3D11Device(MTLDXGIObject<IMTLDXGIDevice> *container,
-                 IMTLDXGIAdatper *pAdapter, D3D_FEATURE_LEVEL FeatureLevel,
+                 IMTLDXGIAdapter *pAdapter, D3D_FEATURE_LEVEL FeatureLevel,
                  UINT FeatureFlags, CommandQueue &cmd_queue)
       : m_container(container), adapter_(pAdapter),
         m_FeatureLevel(FeatureLevel), m_FeatureFlags(FeatureFlags),
@@ -68,6 +67,7 @@ public:
     pipeline_cache_ = InitializePipelineCache(this);
     context_ = InitializeImmediateContext(this, cmd_queue);
     is_traced_ = !!::GetModuleHandle("dxgitrace.dll");
+    format_inspector.Inspect(container->GetMTLDevice());
   }
 
   ~MTLD3D11Device() {}
@@ -494,9 +494,8 @@ public:
       return S_OK;
     }
 
-    MTL_FORMAT_DESC metal_format;
-
-    if (FAILED(adapter_->QueryFormatDesc(Format, &metal_format))) {
+    MTL_DXGI_FORMAT_DESC metal_format;
+    if (FAILED(MTLQueryDXGIFormat(GetMTLDevice(), Format, metal_format))) {
       return E_INVALIDARG;
     }
 
@@ -517,16 +516,17 @@ public:
         D3D11_FORMAT_SUPPORT_MIP | D3D11_FORMAT_SUPPORT_MIP_AUTOGEN | // ?
         D3D11_FORMAT_SUPPORT_CAST_WITHIN_BIT_LAYOUT;
 
-    if (!metal_format.IsCompressed && !metal_format.Typeless &&
-        !metal_format.DepthStencilFlag) {
+    if (!(metal_format.Flag &
+          (MTL_DXGI_FORMAT_BC | MTL_DXGI_FORMAT_DEPTH_PLANER |
+           MTL_DXGI_FORMAT_STENCIL_PLANER))) {
       outFormatSupport |= D3D11_FORMAT_SUPPORT_BUFFER;
     }
 
-    if (metal_format.SupportBackBuffer) {
+    if (metal_format.Flag & MTL_DXGI_FORMAT_BACKBUFFER) {
       outFormatSupport |= D3D11_FORMAT_SUPPORT_DISPLAY;
     }
 
-    if (metal_format.VertexFormat != MTL::VertexFormatInvalid) {
+    if (metal_format.AttributeFormat) {
       outFormatSupport |= D3D11_FORMAT_SUPPORT_IA_VERTEX_BUFFER;
     }
 
@@ -535,29 +535,32 @@ public:
       outFormatSupport |= D3D11_FORMAT_SUPPORT_IA_INDEX_BUFFER;
     }
 
-    if (any_bit_set(metal_format.Capability & FormatCapability::Color)) {
+    auto Capability =
+        format_inspector.textureCapabilities[metal_format.PixelFormat];
+
+    if (any_bit_set(Capability & FormatCapability::Color)) {
       outFormatSupport |= D3D11_FORMAT_SUPPORT_RENDER_TARGET;
     }
 
-    if (any_bit_set(metal_format.Capability & FormatCapability::Blend)) {
+    if (any_bit_set(Capability & FormatCapability::Blend)) {
       outFormatSupport |= D3D11_FORMAT_SUPPORT_BLENDABLE;
     }
 
-    if (any_bit_set(metal_format.Capability & FormatCapability::DepthStencil)) {
+    if (any_bit_set(Capability & FormatCapability::DepthStencil)) {
       outFormatSupport |= D3D11_FORMAT_SUPPORT_DEPTH_STENCIL |
                           D3D11_FORMAT_SUPPORT_SHADER_SAMPLE_COMPARISON |
                           D3D11_FORMAT_SUPPORT_SHADER_GATHER_COMPARISON;
     }
 
-    if (any_bit_set(metal_format.Capability & FormatCapability::Resolve)) {
+    if (any_bit_set(Capability & FormatCapability::Resolve)) {
       outFormatSupport |= D3D11_FORMAT_SUPPORT_MULTISAMPLE_RESOLVE;
     }
 
-    if (any_bit_set(metal_format.Capability & FormatCapability::MSAA)) {
+    if (any_bit_set(Capability & FormatCapability::MSAA)) {
       outFormatSupport |= D3D11_FORMAT_SUPPORT_MULTISAMPLE_RENDERTARGET;
     }
 
-    if (any_bit_set(metal_format.Capability & FormatCapability::Write)) {
+    if (any_bit_set(Capability & FormatCapability::Write)) {
       outFormatSupport |= D3D11_FORMAT_SUPPORT_TYPED_UNORDERED_ACCESS_VIEW;
     }
 
@@ -641,36 +644,28 @@ public:
         return S_OK;
       }
 
-      MTL_FORMAT_DESC desc;
-      if (FAILED(adapter_->QueryFormatDesc(info->InFormat, &desc))) {
-        info->OutFormatSupport2 |=
-            D3D11_FORMAT_SUPPORT2_UAV_ATOMIC_ADD |
-            D3D11_FORMAT_SUPPORT2_UAV_ATOMIC_BITWISE_OPS |
-            D3D11_FORMAT_SUPPORT2_UAV_ATOMIC_COMPARE_STORE_OR_COMPARE_EXCHANGE |
-            D3D11_FORMAT_SUPPORT2_UAV_ATOMIC_EXCHANGE |
-            D3D11_FORMAT_SUPPORT2_UAV_ATOMIC_SIGNED_MIN_OR_MAX |
-            D3D11_FORMAT_SUPPORT2_UAV_ATOMIC_UNSIGNED_MIN_OR_MAX |
-            D3D11_FORMAT_SUPPORT2_UAV_TYPED_LOAD |
-            D3D11_FORMAT_SUPPORT2_UAV_TYPED_STORE |
-            D3D11_FORMAT_SUPPORT2_SHAREABLE;
-        return S_OK;
+      MTL_DXGI_FORMAT_DESC metal_format;
+      if (FAILED(MTLQueryDXGIFormat(GetMTLDevice(), info->InFormat,
+                                    metal_format))) {
+        return E_INVALIDARG;
       }
+      auto Capability =
+          format_inspector.textureCapabilities[metal_format.PixelFormat];
 
-      if (any_bit_set(desc.Capability & FormatCapability::TextureBufferRead)) {
+      if (any_bit_set(Capability & FormatCapability::TextureBufferRead)) {
         info->OutFormatSupport2 |= D3D11_FORMAT_SUPPORT2_UAV_TYPED_LOAD;
       }
 
-      if (any_bit_set(desc.Capability & FormatCapability::TextureBufferWrite)) {
+      if (any_bit_set(Capability & FormatCapability::TextureBufferWrite)) {
         info->OutFormatSupport2 |= D3D11_FORMAT_SUPPORT2_UAV_TYPED_STORE;
       }
 
-      if (any_bit_set(desc.Capability &
-                      FormatCapability::TextureBufferReadWrite)) {
+      if (any_bit_set(Capability & FormatCapability::TextureBufferReadWrite)) {
         info->OutFormatSupport2 |= D3D11_FORMAT_SUPPORT2_UAV_TYPED_LOAD |
                                    D3D11_FORMAT_SUPPORT2_UAV_TYPED_STORE;
       }
 
-      if (any_bit_set(desc.Capability & FormatCapability::Atomic)) {
+      if (any_bit_set(Capability & FormatCapability::Atomic)) {
         info->OutFormatSupport2 |=
             D3D11_FORMAT_SUPPORT2_UAV_ATOMIC_ADD |
             D3D11_FORMAT_SUPPORT2_UAV_ATOMIC_BITWISE_OPS |
@@ -682,13 +677,13 @@ public:
       }
 
 #ifndef DXMT_NO_PRIVATE_API
-      if (any_bit_set(desc.Capability & FormatCapability::Blend)) {
+      if (any_bit_set(Capability & FormatCapability::Blend)) {
         /* UNCHECKED */
         info->OutFormatSupport2 |= D3D11_FORMAT_SUPPORT2_OUTPUT_MERGER_LOGIC_OP;
       }
 #endif
 
-      if (any_bit_set(desc.Capability & FormatCapability::Sparse)) {
+      if (any_bit_set(Capability & FormatCapability::Sparse)) {
         info->OutFormatSupport2 |= D3D11_FORMAT_SUPPORT2_TILED;
       }
 
@@ -834,9 +829,9 @@ public:
       IMPLEMENT_ME;
     }
     *pNumQualityLevels = 0;
-    MTL_FORMAT_DESC desc;
-    adapter_->QueryFormatDesc(Format, &desc);
-    if (desc.PixelFormat == MTL::PixelFormatInvalid) {
+    MTL_DXGI_FORMAT_DESC desc;
+    if (FAILED(MTLQueryDXGIFormat(GetMTLDevice(), Format, desc)) ||
+        desc.PixelFormat == MTL::PixelFormatInvalid) {
       return E_INVALIDARG;
     }
 
@@ -1010,7 +1005,7 @@ public:
     return m_container->GetMTLDevice();
   }
 
-  void GetAdapter(IMTLDXGIAdatper **ppAdapter) override {
+  void GetAdapter(IMTLDXGIAdapter **ppAdapter) override {
     *ppAdapter = ref(adapter_);
   }
 
@@ -1061,10 +1056,11 @@ public:
 
 private:
   MTLDXGIObject<IMTLDXGIDevice> *m_container;
-  IMTLDXGIAdatper *adapter_;
+  IMTLDXGIAdapter *adapter_;
   D3D_FEATURE_LEVEL m_FeatureLevel;
   UINT m_FeatureFlags;
   MTLD3D11Inspection m_features;
+  FormatCapabilityInspector format_inspector;
 
   task_scheduler<IMTLThreadpoolWork*> scheduler_;
 
@@ -1096,7 +1092,7 @@ class MTLD3D11DXGIDevice final : public MTLDXGIObject<IMTLDXGIDevice> {
 public:
   friend class MTLDXGIMetalLayerFactory;
 
-  MTLD3D11DXGIDevice(IMTLDXGIAdatper *adapter, D3D_FEATURE_LEVEL feature_level,
+  MTLD3D11DXGIDevice(IMTLDXGIAdapter *adapter, D3D_FEATURE_LEVEL feature_level,
                      UINT feature_flags)
       : adapter_(adapter), cmd_queue_(adapter->GetMTLDevice()),
         d3d11_device_(this, adapter, feature_level, feature_flags, cmd_queue_) {
@@ -1270,13 +1266,13 @@ public:
   }
 
 private:
-  Com<IMTLDXGIAdatper> adapter_;
+  Com<IMTLDXGIAdapter> adapter_;
   CommandQueue cmd_queue_;
   MTLD3D11Device d3d11_device_;
   uint32_t max_latency_ = 3;
 };
 
-Com<IMTLDXGIDevice> CreateD3D11Device(IMTLDXGIAdatper *adapter,
+Com<IMTLDXGIDevice> CreateD3D11Device(IMTLDXGIAdapter *adapter,
                                       D3D_FEATURE_LEVEL feature_level,
                                       UINT feature_flags) {
   return Com<IMTLDXGIDevice>::transfer(

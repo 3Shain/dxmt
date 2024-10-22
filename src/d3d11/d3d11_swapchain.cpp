@@ -58,7 +58,7 @@ public:
       fullscreen_desc_.Windowed = true;
     }
 
-    Com<IMTLDXGIAdatper> adapter;
+    Com<IMTLDXGIAdapter> adapter;
     device_->GetAdapter(&adapter);
     preferred_max_frame_rate =
         adapter->GetConfigInt("d3d11.preferredMaxFrameRate", 0);

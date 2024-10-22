@@ -11,6 +11,7 @@ since it is for internal use only
 #include "d3d11_device.hpp"
 #include "d3d11_pipeline.hpp"
 #include "dxmt_command_queue.hpp"
+#include "dxmt_format.hpp"
 #include "mtld11_resource.hpp"
 #include "util_flags.hpp"
 #include "util_math.hpp"
@@ -135,7 +136,7 @@ struct Subresource {
 class BlitObject {
 public:
   ID3D11Resource *pResource;
-  MTL_FORMAT_DESC FormatDescription;
+  MTL_DXGI_FORMAT_DESC FormatDescription;
   D3D11_RESOURCE_DIMENSION Dimension;
   union {
     D3D11_TEXTURE1D_DESC Texture1DDesc;
@@ -144,7 +145,7 @@ public:
     D3D11_BUFFER_DESC BufferDesc;
   };
 
-  BlitObject(IMTLDXGIAdatper *pAdapter, ID3D11Resource *pResource)
+  BlitObject(IMTLD3D11Device *pDevice, ID3D11Resource *pResource)
       : pResource(pResource) {
     pResource->GetType(&Dimension);
     switch (Dimension) {
@@ -155,15 +156,18 @@ public:
       break;
     case D3D11_RESOURCE_DIMENSION_TEXTURE1D:
       reinterpret_cast<ID3D11Texture1D *>(pResource)->GetDesc(&Texture1DDesc);
-      pAdapter->QueryFormatDesc(Texture1DDesc.Format, &FormatDescription);
+      MTLQueryDXGIFormat(pDevice->GetMTLDevice(), Texture1DDesc.Format,
+                         FormatDescription);
       break;
     case D3D11_RESOURCE_DIMENSION_TEXTURE2D:
       reinterpret_cast<ID3D11Texture2D1 *>(pResource)->GetDesc1(&Texture2DDesc);
-      pAdapter->QueryFormatDesc(Texture2DDesc.Format, &FormatDescription);
+      MTLQueryDXGIFormat(pDevice->GetMTLDevice(), Texture2DDesc.Format,
+                         FormatDescription);
       break;
     case D3D11_RESOURCE_DIMENSION_TEXTURE3D:
       reinterpret_cast<ID3D11Texture3D1 *>(pResource)->GetDesc1(&Texture3DDesc);
-      pAdapter->QueryFormatDesc(Texture3DDesc.Format, &FormatDescription);
+      MTLQueryDXGIFormat(pDevice->GetMTLDevice(), Texture3DDesc.Format,
+                         FormatDescription);
       break;
     }
   };
@@ -182,8 +186,8 @@ public:
   MTL::Size SrcSize;
   MTL::Origin DstOrigin;
 
-  MTL_FORMAT_DESC SrcFormat;
-  MTL_FORMAT_DESC DstFormat;
+  MTL_DXGI_FORMAT_DESC SrcFormat;
+  MTL_DXGI_FORMAT_DESC DstFormat;
 
   bool Invalid = true;
 
@@ -303,7 +307,8 @@ public:
     SrcBox.bottom = std::min(SrcBox.bottom, Src.Height);
     SrcBox.back = std::min(SrcBox.back, Src.Depth);
 
-    if (DstFormat.IsCompressed == SrcFormat.IsCompressed) {
+    if ((DstFormat.Flag & MTL_DXGI_FORMAT_BC) ==
+        (SrcFormat.Flag & MTL_DXGI_FORMAT_BC)) {
       // Discard, if the copy overflow
       if ((DstX + SrcBox.right - SrcBox.left) > Dst.Width)
         return;
@@ -330,7 +335,7 @@ public:
   uint32_t EffectiveBytesPerRow;
   uint32_t EffectiveRows;
 
-  MTL_FORMAT_DESC DstFormat;
+  MTL_DXGI_FORMAT_DESC DstFormat;
 
   bool Invalid = true;
 
@@ -425,7 +430,7 @@ public:
                  DstBox.bottom - DstBox.top,
                  DstBox.back - DstBox.front};
 
-    if (DstFormat.IsCompressed) {
+    if (DstFormat.Flag & MTL_DXGI_FORMAT_BC) {
       EffectiveBytesPerRow =
           (align(DstRegion.size.width, 4u) >> 2) * DstFormat.BytesPerTexel;
       EffectiveRows = align(DstRegion.size.height, 4u) >> 2;
@@ -918,8 +923,9 @@ public:
   void CopyTexture(TextureCopyCommand &&cmd) {
     if (cmd.Invalid)
       return;
-    if (cmd.SrcFormat.IsCompressed != cmd.DstFormat.IsCompressed) {
-      if (cmd.SrcFormat.IsCompressed) {
+    if ((cmd.SrcFormat.Flag & MTL_DXGI_FORMAT_BC) !=
+        (cmd.DstFormat.Flag & MTL_DXGI_FORMAT_BC)) {
+      if (cmd.SrcFormat.Flag & MTL_DXGI_FORMAT_BC) {
         return CopyTextureFromCompressed(std::move(cmd));
       } else {
         return CopyTextureToCompressed(std::move(cmd));
@@ -976,7 +982,7 @@ public:
                                   MTL::BlitCommandEncoder *encoder, auto &ctx) {
           auto dst = dst_.texture(&ctx);
           uint32_t offset;
-          if (cmd.SrcFormat.IsCompressed) {
+          if (cmd.SrcFormat.Flag & MTL_DXGI_FORMAT_BC) {
             offset = cmd.SrcOrigin.z * bytes_per_image +
                      (cmd.SrcOrigin.y >> 2) * bytes_per_row +
                      (cmd.SrcOrigin.x >> 2) * cmd.SrcFormat.BytesPerTexel;
@@ -1002,7 +1008,7 @@ public:
           if (Forget_sRGB(dst_format) != Forget_sRGB(src_format)) {
             // bitcast, using a temporary buffer
             size_t bytes_per_row, bytes_per_image, bytes_total;
-            if (cmd.SrcFormat.IsCompressed) {
+            if (cmd.SrcFormat.Flag & MTL_DXGI_FORMAT_BC) {
               bytes_per_row = (align(cmd.SrcSize.width, 4u) >> 2) *
                               cmd.SrcFormat.BytesPerTexel;
               bytes_per_image =

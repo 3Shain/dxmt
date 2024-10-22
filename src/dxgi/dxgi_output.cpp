@@ -5,6 +5,7 @@
 #include "com/com_pointer.hpp"
 #include "dxgi_interfaces.h"
 #include "dxgi_object.hpp"
+#include "dxmt_format.hpp"
 #include "log/log.hpp"
 #include "util_string.hpp"
 #include "wsi_monitor.hpp"
@@ -134,7 +135,7 @@ void FilterModesByDesc(std::vector<DXGI_MODE_DESC1> &Modes,
 
 class MTLDXGIOutput : public MTLDXGIObject<IDXGIOutput6> {
 public:
-  MTLDXGIOutput(IMTLDXGIAdatper *adapter, HMONITOR monitor)
+  MTLDXGIOutput(IMTLDXGIAdapter *adapter, HMONITOR monitor)
       : m_adapter(adapter), m_monitor(monitor) {}
   ~MTLDXGIOutput() {}
 
@@ -324,9 +325,10 @@ public:
       *pNumModes = 0;
       return S_OK;
     }
-    MTL_FORMAT_DESC formatDesc;
-    if (FAILED(m_adapter->QueryFormatDesc(EnumFormat, &formatDesc)) ||
-        !formatDesc.SupportBackBuffer) {
+    MTL_DXGI_FORMAT_DESC formatDesc;
+    if (FAILED(MTLQueryDXGIFormat(this->m_adapter->GetMTLDevice(), EnumFormat,
+                                  formatDesc)) ||
+        !(formatDesc.Flag & MTL_DXGI_FORMAT_BACKBUFFER)) {
       *pNumModes = 0;
       return S_OK;
     }
@@ -575,11 +577,11 @@ public:
   }
 
 private:
-  Com<IMTLDXGIAdatper> m_adapter = nullptr;
+  Com<IMTLDXGIAdapter> m_adapter = nullptr;
   HMONITOR m_monitor = nullptr;
 };
 
-Com<IDXGIOutput> CreateOutput(IMTLDXGIAdatper *pAadapter, HMONITOR monitor) {
+Com<IDXGIOutput> CreateOutput(IMTLDXGIAdapter *pAadapter, HMONITOR monitor) {
   return Com<IDXGIOutput>::transfer(new MTLDXGIOutput(pAadapter, monitor));
 };
 

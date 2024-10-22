@@ -15,7 +15,7 @@ D3D11CoreCreateDevice(IDXGIFactory *pFactory, IDXGIAdapter *pAdapter,
                       UINT FeatureLevels, ID3D11Device **ppDevice) {
   InitReturnPtr(ppDevice);
 
-  Com<IMTLDXGIAdatper> dxgi_adapter;
+  Com<IMTLDXGIAdapter> dxgi_adapter;
 
   // Try to find the corresponding Metal device for the DXGI adapter
   if (FAILED(pAdapter->QueryInterface(IID_PPV_ARGS(&dxgi_adapter)))) {

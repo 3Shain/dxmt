@@ -11,7 +11,7 @@
 
 namespace dxmt {
 
-Com<IMTLDXGIAdatper> CreateAdapter(MTL::Device *pDevice,
+Com<IMTLDXGIAdapter> CreateAdapter(MTL::Device *pDevice,
                                    IDXGIFactory2 *pFactory, Config &config);
 
 class MTLDXGIFactory : public MTLDXGIObject<IDXGIFactory6> {

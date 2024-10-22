@@ -538,10 +538,8 @@ public:
 
   void CopyResource(ID3D11Resource *pDstResource,
                     ID3D11Resource *pSrcResource) override {
-    Com<IMTLDXGIAdatper> adapter;
-    this->m_parent->GetAdapter(&adapter);
-    BlitObject Dst(adapter.ptr(), pDstResource);
-    BlitObject Src(adapter.ptr(), pSrcResource);
+    BlitObject Dst(m_parent, pDstResource);
+    BlitObject Src(m_parent, pSrcResource);
 
     switch (Dst.Dimension) {
     case D3D11_RESOURCE_DIMENSION_UNKNOWN:
@@ -611,10 +609,8 @@ public:
     if (!pSrcResource)
       return;
 
-    Com<IMTLDXGIAdatper> adapter;
-    this->m_parent->GetAdapter(&adapter);
-    BlitObject Dst(adapter.ptr(), pDstResource);
-    BlitObject Src(adapter.ptr(), pSrcResource);
+    BlitObject Dst(m_parent, pDstResource);
+    BlitObject Src(m_parent, pSrcResource);
 
     switch (Dst.Dimension) {
     case D3D11_RESOURCE_DIMENSION_UNKNOWN:
@@ -648,9 +644,7 @@ public:
     if (!pDstResource)
       return;
 
-    Com<IMTLDXGIAdatper> adapter;
-    this->m_parent->GetAdapter(&adapter);
-    BlitObject Dst(adapter.ptr(), pDstResource);
+    BlitObject Dst(m_parent, pDstResource);
 
     if (Dst.Dimension == D3D11_RESOURCE_DIMENSION_BUFFER) {
       D3D11_BUFFER_DESC desc;

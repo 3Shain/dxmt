@@ -28,7 +28,7 @@ DEFINE_COM_INTERFACE("a46de9a7-0233-4a94-b75c-9c0f8f364cda", IMTLD3D11Device)
   virtual void ReleasePrivate() = 0;
 
   virtual MTL::Device *STDMETHODCALLTYPE GetMTLDevice() = 0;
-  virtual void GetAdapter(IMTLDXGIAdatper * *ppAdapter) = 0;
+  virtual void GetAdapter(IMTLDXGIAdapter * *ppAdapter) = 0;
   /**
   TODO: should ensure pWork is not released before executed
   or support cancellation.
@@ -57,7 +57,7 @@ DEFINE_COM_INTERFACE("a46de9a7-0233-4a94-b75c-9c0f8f364cda", IMTLD3D11Device)
 };
 
 namespace dxmt {
-Com<IMTLDXGIDevice> CreateD3D11Device(IMTLDXGIAdatper *pAdapter,
+Com<IMTLDXGIDevice> CreateD3D11Device(IMTLDXGIAdapter *pAdapter,
                                       D3D_FEATURE_LEVEL FeatureLevel,
                                       UINT Flags);
 } // namespace dxmt

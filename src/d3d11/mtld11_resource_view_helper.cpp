@@ -1,9 +1,10 @@
+#include "dxmt_format.hpp"
 #include "mtld11_resource.hpp"
 #include "util_math.hpp"
 
 namespace dxmt {
 
-void FixDepthStencilFormat(MTL::Texture *pTexture, MTL_FORMAT_DESC &Desc) {
+void FixDepthStencilFormat(MTL::Texture *pTexture, MTL_DXGI_FORMAT_DESC &Desc) {
   switch (pTexture->pixelFormat()) {
   case MTL::PixelFormatDepth16Unorm:
     // DXGI_FORMAT_R16_TYPELESS
@@ -24,10 +25,9 @@ template <>
 HRESULT CreateMTLTextureView<D3D11_SHADER_RESOURCE_VIEW_DESC1>(
     IMTLD3D11Device *pDevice, MTL::Texture *pResource,
     const D3D11_SHADER_RESOURCE_VIEW_DESC1 *pViewDesc, MTL::Texture **ppView) {
-  Com<IMTLDXGIAdatper> adapter;
-  pDevice->GetAdapter(&adapter);
-  MTL_FORMAT_DESC metal_format;
-  if (FAILED(adapter->QueryFormatDesc(pViewDesc->Format, &metal_format))) {
+  MTL_DXGI_FORMAT_DESC metal_format;
+  if (FAILED(MTLQueryDXGIFormat(pDevice->GetMTLDevice(), pViewDesc->Format,
+                                metal_format))) {
     ERR("Failed to create SRV due to unsupported format ", pViewDesc->Format);
     return E_FAIL;
   }
@@ -233,10 +233,9 @@ template <>
 HRESULT CreateMTLTextureView<D3D11_UNORDERED_ACCESS_VIEW_DESC1>(
     IMTLD3D11Device *pDevice, MTL::Texture *pResource,
     const D3D11_UNORDERED_ACCESS_VIEW_DESC1 *pViewDesc, MTL::Texture **ppView) {
-  Com<IMTLDXGIAdatper> adapter;
-  pDevice->GetAdapter(&adapter);
-  MTL_FORMAT_DESC metal_format;
-  if (FAILED(adapter->QueryFormatDesc(pViewDesc->Format, &metal_format))) {
+  MTL_DXGI_FORMAT_DESC metal_format;
+  if (FAILED(MTLQueryDXGIFormat(pDevice->GetMTLDevice(), pViewDesc->Format,
+                                metal_format))) {
     return E_FAIL;
   }
   FixDepthStencilFormat(pResource, metal_format);
@@ -359,10 +358,9 @@ CreateMTLRenderTargetView(IMTLD3D11Device *pDevice, MTL::Texture *pResource,
                           const D3D11_RENDER_TARGET_VIEW_DESC1 *pViewDesc,
                           MTL::Texture **ppView,
                           MTL_RENDER_PASS_ATTACHMENT_DESC &AttachmentDesc) {
-  Com<IMTLDXGIAdatper> adapter;
-  pDevice->GetAdapter(&adapter);
-  MTL_FORMAT_DESC metal_format;
-  if (FAILED(adapter->QueryFormatDesc(pViewDesc->Format, &metal_format))) {
+  MTL_DXGI_FORMAT_DESC metal_format;
+  if (FAILED(MTLQueryDXGIFormat(pDevice->GetMTLDevice(), pViewDesc->Format,
+                                metal_format))) {
     return E_FAIL;
   }
 
@@ -516,10 +514,9 @@ CreateMTLDepthStencilView(IMTLD3D11Device *pDevice, MTL::Texture *pResource,
                           const D3D11_DEPTH_STENCIL_VIEW_DESC *pViewDesc,
                           MTL::Texture **ppView,
                           MTL_RENDER_PASS_ATTACHMENT_DESC &AttachmentDesc) {
-  Com<IMTLDXGIAdatper> adapter;
-  pDevice->GetAdapter(&adapter);
-  MTL_FORMAT_DESC metal_format;
-  if (FAILED(adapter->QueryFormatDesc(pViewDesc->Format, &metal_format))) {
+  MTL_DXGI_FORMAT_DESC metal_format;
+  if (FAILED(MTLQueryDXGIFormat(pDevice->GetMTLDevice(), pViewDesc->Format,
+                                metal_format))) {
     ERR("Failed to create DSV due to unsupported format ", pViewDesc->Format);
     return E_FAIL;
   }
@@ -609,14 +606,13 @@ template <>
 HRESULT CreateMTLTextureBufferView<D3D11_SHADER_RESOURCE_VIEW_DESC1>(
     IMTLD3D11Device *pDevice, const D3D11_SHADER_RESOURCE_VIEW_DESC1 *pViewDesc,
     MTL::TextureDescriptor **ppViewDesc, MTL_TEXTURE_BUFFER_LAYOUT *pLayout) {
-  Com<IMTLDXGIAdatper> adapter;
-  pDevice->GetAdapter(&adapter);
-  MTL_FORMAT_DESC metal_format;
-  if (FAILED(adapter->QueryFormatDesc(pViewDesc->Format, &metal_format))) {
+  MTL_DXGI_FORMAT_DESC metal_format;
+  if (FAILED(MTLQueryDXGIFormat(pDevice->GetMTLDevice(), pViewDesc->Format,
+                                metal_format))) {
     ERR("Failed to create SRV due to unsupported format ", pViewDesc->Format);
     return E_FAIL;
   }
-  if (metal_format.IsCompressed) {
+  if (metal_format.Flag & MTL_DXGI_FORMAT_BC) {
     ERR("Failed to create texture buffer SRV: compressed format not supported");
     return E_INVALIDARG;
   }
@@ -666,13 +662,12 @@ HRESULT CreateMTLTextureBufferView<D3D11_UNORDERED_ACCESS_VIEW_DESC1>(
     IMTLD3D11Device *pDevice,
     const D3D11_UNORDERED_ACCESS_VIEW_DESC1 *pViewDesc,
     MTL::TextureDescriptor **ppViewDesc, MTL_TEXTURE_BUFFER_LAYOUT *pLayout) {
-  Com<IMTLDXGIAdatper> adapter;
-  pDevice->GetAdapter(&adapter);
-  MTL_FORMAT_DESC metal_format;
-  if (FAILED(adapter->QueryFormatDesc(pViewDesc->Format, &metal_format))) {
+  MTL_DXGI_FORMAT_DESC metal_format;
+  if (FAILED(MTLQueryDXGIFormat(pDevice->GetMTLDevice(), pViewDesc->Format,
+                                metal_format))) {
     return E_FAIL;
   }
-  if (metal_format.IsCompressed) {
+  if (metal_format.Flag & MTL_DXGI_FORMAT_BC) {
     ERR("Failed to create texture buffer SRV: compressed format not supported");
     return E_INVALIDARG;
   }

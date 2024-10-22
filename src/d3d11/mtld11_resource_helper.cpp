@@ -1,5 +1,6 @@
 #include "d3d11_device.hpp"
 #include "d3d11_private.h"
+#include "dxmt_format.hpp"
 #include "mtld11_resource.hpp"
 #include "d3d11_1.h"
 #include "objc_pointer.hpp"
@@ -286,15 +287,15 @@ HRESULT ExtractEntireResourceViewDescription<D3D11_TEXTURE3D_DESC1,
 
 HRESULT
 CreateMTLTextureDescriptorInternal(
-    IMTLDXGIAdatper *pAdapter, D3D11_RESOURCE_DIMENSION Dimension, UINT Width,
+    IMTLD3D11Device *pDevice, D3D11_RESOURCE_DIMENSION Dimension, UINT Width,
     UINT Height, UINT Depth, UINT ArraySize, UINT SampleCount, UINT BindFlags,
     UINT CPUAccessFlags, UINT MiscFlags, D3D11_USAGE Usage, UINT MipLevels,
     DXGI_FORMAT Format, MTL::TextureDescriptor **ppDescOut) {
   auto desc = transfer(MTL::TextureDescriptor::alloc()->init());
 
-  MTL_FORMAT_DESC metal_format;
-
-  if (FAILED(pAdapter->QueryFormatDesc(Format, &metal_format))) {
+  MTL_DXGI_FORMAT_DESC metal_format;
+  if (FAILED(
+          MTLQueryDXGIFormat(pDevice->GetMTLDevice(), Format, metal_format))) {
     ERR("CreateMTLTextureDescriptorInternal: creating a texture of invalid "
         "format: ",
         Format);
@@ -341,7 +342,7 @@ CreateMTLTextureDescriptorInternal(
     // decoder not supported: D3D11_BIND_DECODER, D3D11_BIND_VIDEO_ENCODER
   }
 
-  if (metal_format.Typeless) {
+  if (metal_format.Flag & MTL_DXGI_FORMAT_TYPELESS) {
     // well this is necessary for passing validation layer
     metal_usage |= MTL::TextureUsagePixelFormatView;
   }
@@ -400,7 +401,7 @@ CreateMTLTextureDescriptorInternal(
       }
     } else {
       if (SampleCount > 1) {
-        if (!pAdapter->GetMTLDevice()->supportsTextureSampleCount(SampleCount)) {
+        if (!pDevice->GetMTLDevice()->supportsTextureSampleCount(SampleCount)) {
           ERR("CreateMTLTextureDescriptorInternal: sample count ", SampleCount,
               " is not supported.");
           return E_INVALIDARG;
@@ -439,10 +440,8 @@ HRESULT CreateMTLTextureDescriptor(IMTLD3D11Device *pDevice,
                                    const D3D11_TEXTURE1D_DESC *pDesc,
                                    D3D11_TEXTURE1D_DESC *pOutDesc,
                                    MTL::TextureDescriptor **pMtlDescOut) {
-  Com<IMTLDXGIAdatper> adapter;
-  pDevice->GetAdapter(&adapter);
   auto hr = CreateMTLTextureDescriptorInternal(
-      adapter.ptr(), D3D11_RESOURCE_DIMENSION_TEXTURE1D, pDesc->Width, 1, 1,
+      pDevice, D3D11_RESOURCE_DIMENSION_TEXTURE1D, pDesc->Width, 1, 1,
       pDesc->ArraySize, 0, pDesc->BindFlags, pDesc->CPUAccessFlags,
       pDesc->MiscFlags, pDesc->Usage, pDesc->MipLevels, pDesc->Format,
       pMtlDescOut);
@@ -458,13 +457,11 @@ HRESULT CreateMTLTextureDescriptor(IMTLD3D11Device *pDevice,
                                    const D3D11_TEXTURE2D_DESC1 *pDesc,
                                    D3D11_TEXTURE2D_DESC1 *pOutDesc,
                                    MTL::TextureDescriptor **pMtlDescOut) {
-  Com<IMTLDXGIAdatper> adapter;
-  pDevice->GetAdapter(&adapter);
   auto hr = CreateMTLTextureDescriptorInternal(
-      adapter.ptr(), D3D11_RESOURCE_DIMENSION_TEXTURE2D, pDesc->Width,
-      pDesc->Height, 1, pDesc->ArraySize, pDesc->SampleDesc.Count,
-      pDesc->BindFlags, pDesc->CPUAccessFlags, pDesc->MiscFlags, pDesc->Usage,
-      pDesc->MipLevels, pDesc->Format, pMtlDescOut);
+      pDevice, D3D11_RESOURCE_DIMENSION_TEXTURE2D, pDesc->Width, pDesc->Height,
+      1, pDesc->ArraySize, pDesc->SampleDesc.Count, pDesc->BindFlags,
+      pDesc->CPUAccessFlags, pDesc->MiscFlags, pDesc->Usage, pDesc->MipLevels,
+      pDesc->Format, pMtlDescOut);
   if (SUCCEEDED(hr)) {
     *pOutDesc = *pDesc;
     pOutDesc->MipLevels = (*pMtlDescOut)->mipmapLevelCount();
@@ -477,13 +474,11 @@ HRESULT CreateMTLTextureDescriptor(IMTLD3D11Device *pDevice,
                                    const D3D11_TEXTURE3D_DESC1 *pDesc,
                                    D3D11_TEXTURE3D_DESC1 *pOutDesc,
                                    MTL::TextureDescriptor **pMtlDescOut) {
-  Com<IMTLDXGIAdatper> adapter;
-  pDevice->GetAdapter(&adapter);
   auto hr = CreateMTLTextureDescriptorInternal(
-      adapter.ptr(), D3D11_RESOURCE_DIMENSION_TEXTURE3D, pDesc->Width,
-      pDesc->Height, pDesc->Depth, 1, 1, pDesc->BindFlags,
-      pDesc->CPUAccessFlags, pDesc->MiscFlags, pDesc->Usage, pDesc->MipLevels,
-      pDesc->Format, pMtlDescOut);
+      pDevice, D3D11_RESOURCE_DIMENSION_TEXTURE3D, pDesc->Width, pDesc->Height,
+      pDesc->Depth, 1, 1, pDesc->BindFlags, pDesc->CPUAccessFlags,
+      pDesc->MiscFlags, pDesc->Usage, pDesc->MipLevels, pDesc->Format,
+      pMtlDescOut);
   if (SUCCEEDED(hr)) {
     *pOutDesc = *pDesc;
     pOutDesc->MipLevels = (*pMtlDescOut)->mipmapLevelCount();
@@ -537,12 +532,10 @@ HRESULT GetLinearTextureLayout(IMTLD3D11Device *pDevice,
                                uint32_t level, uint32_t *pBytesPerRow,
                                uint32_t *pBytesPerImage,
                                uint32_t *pBytesPerSlice) {
-  Com<IMTLDXGIAdatper> pAdapter;
-  pDevice->GetAdapter(&pAdapter);
   auto metal = pDevice->GetMTLDevice();
-  MTL_FORMAT_DESC metal_format;
+  MTL_DXGI_FORMAT_DESC metal_format;
 
-  if (FAILED(pAdapter->QueryFormatDesc(pDesc->Format, &metal_format))) {
+  if (FAILED(MTLQueryDXGIFormat(metal, pDesc->Format, metal_format))) {
     ERR("GetLinearTextureLayout: invalid format: ", pDesc->Format);
     return E_FAIL;
   }
@@ -573,12 +566,10 @@ HRESULT GetLinearTextureLayout(IMTLD3D11Device *pDevice,
                                uint32_t level, uint32_t *pBytesPerRow,
                                uint32_t *pBytesPerImage,
                                uint32_t *pBytesPerSlice) {
-  Com<IMTLDXGIAdatper> pAdapter;
-  pDevice->GetAdapter(&pAdapter);
   auto metal = pDevice->GetMTLDevice();
-  MTL_FORMAT_DESC metal_format;
+  MTL_DXGI_FORMAT_DESC metal_format;
 
-  if (FAILED(pAdapter->QueryFormatDesc(pDesc->Format, &metal_format))) {
+  if (FAILED(MTLQueryDXGIFormat(metal, pDesc->Format, metal_format))) {
     ERR("GetLinearTextureLayout: invalid format: ", pDesc->Format);
     return E_FAIL;
   }
@@ -593,7 +584,7 @@ HRESULT GetLinearTextureLayout(IMTLD3D11Device *pDevice,
   }
   uint32_t w, h, d;
   GetMipmapSize(pDesc, level, &w, &h, &d);
-  if (metal_format.IsCompressed) {
+  if (metal_format.Flag & MTL_DXGI_FORMAT_BC) {
     D3D11_ASSERT(w != 0 && h != 0);
     auto w_phisical = align(w, 4);
     auto h_phisical = align(h, 4);
@@ -619,12 +610,10 @@ HRESULT GetLinearTextureLayout(IMTLD3D11Device *pDevice,
                                uint32_t level, uint32_t *pBytesPerRow,
                                uint32_t *pBytesPerImage,
                                uint32_t *pBytesPerSlice) {
-  Com<IMTLDXGIAdatper> pAdapter;
-  pDevice->GetAdapter(&pAdapter);
   auto metal = pDevice->GetMTLDevice();
-  MTL_FORMAT_DESC metal_format;
+  MTL_DXGI_FORMAT_DESC metal_format;
 
-  if (FAILED(pAdapter->QueryFormatDesc(pDesc->Format, &metal_format))) {
+  if (FAILED(MTLQueryDXGIFormat(metal, pDesc->Format, metal_format))) {
     ERR("GetLinearTextureLayout: invalid format: ", pDesc->Format);
     return E_FAIL;
   }

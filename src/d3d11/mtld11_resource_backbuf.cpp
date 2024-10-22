@@ -1,5 +1,6 @@
 #include "d3d11_private.h"
 #include "dxmt_binding.hpp"
+#include "dxmt_format.hpp"
 #include "dxmt_names.hpp"
 #include "Metal/MTLPixelFormat.hpp"
 #include "Metal/MTLTexture.hpp"
@@ -172,12 +173,9 @@ public:
                                                     &native_view_))) {
       throw MTLD3DError("Failed to create CAMetalLayer");
     }
-    Com<IMTLDXGIAdatper> adapter;
-    if (FAILED(layer_factory->GetParent(IID_PPV_ARGS(&adapter)))) {
-      throw MTLD3DError("Unknown DXGIAdapter");
-    }
-    MTL_FORMAT_DESC metal_format;
-    if (FAILED(adapter->QueryFormatDesc(pDesc->Format, &metal_format))) {
+    MTL_DXGI_FORMAT_DESC metal_format;
+    if (FAILED(MTLQueryDXGIFormat(pDevice->GetMTLDevice(), pDesc->Format,
+                                  metal_format))) {
       throw MTLD3DError(
           str::format("Unsupported swapchain format ", pDesc->Format));
     }
@@ -212,6 +210,10 @@ public:
     }
     layer_->setOpaque(true);
     pixel_format_ = metal_format.PixelFormat;
+    Com<IMTLDXGIAdapter> adapter;
+    if (FAILED(layer_factory->GetParent(IID_PPV_ARGS(&adapter)))) {
+      throw MTLD3DError("Unknown DXGIAdapter");
+    }
     if constexpr (EnableMetalFX) {
       auto scale_factor = std::max(
           adapter->GetConfigFloat("d3d11.metalSpatialUpscaleFactor", 2), 1.0f);
@@ -294,14 +296,13 @@ public:
     D3D11_RENDER_TARGET_VIEW_DESC1 final;
     MTL::PixelFormat interpreted_pixel_format = pixel_format_;
     if (pDesc) {
-      MTL_FORMAT_DESC metal_format;
-      Com<IMTLDXGIAdatper> adapter;
-      m_parent->GetAdapter(&adapter);
+      MTL_DXGI_FORMAT_DESC metal_format;
       final.Format = pDesc->Format;
       if (pDesc && pDesc->Format == DXGI_FORMAT_UNKNOWN) {
         final.Format = desc.Format;
-      }
-      if (FAILED(adapter->QueryFormatDesc(final.Format, &metal_format))) {
+      } 
+      if (FAILED(MTLQueryDXGIFormat(m_parent->GetMTLDevice(), final.Format,
+                                    metal_format))) {
         ERR("CreateRenderTargetView: invalid back buffer rtv format ",
             pDesc->Format);
         return E_INVALIDARG;
