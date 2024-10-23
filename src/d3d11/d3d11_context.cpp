@@ -1,6 +1,7 @@
 
 
 #include "d3d11_context.hpp"
+#include "d3d11_device.hpp"
 #include "d3d11_enumerable.hpp"
 #include "d3d11_private.h"
 #include "d3d11_query.hpp"
@@ -552,12 +553,17 @@ public:
       break;
     }
     case D3D11_RESOURCE_DIMENSION_TEXTURE1D: {
-      IMPLEMENT_ME
+      D3D11_TEXTURE1D_DESC desc;
+      ((ID3D11Texture1D *)pSrcResource)->GetDesc(&desc);
+      for (auto sub : EnumerateSubresources(desc)) {
+        ctx.CopyTexture(TextureCopyCommand(Dst, sub.SubresourceId, 0, 0, 0, Src,
+                                           sub.SubresourceId, nullptr));
+      }
       break;
     }
     case D3D11_RESOURCE_DIMENSION_TEXTURE2D: {
-      D3D11_TEXTURE2D_DESC desc;
-      ((ID3D11Texture2D *)pSrcResource)->GetDesc(&desc);
+      D3D11_TEXTURE2D_DESC1 desc;
+      ((ID3D11Texture2D1 *)pSrcResource)->GetDesc1(&desc);
       for (auto sub : EnumerateSubresources(desc)) {
         ctx.CopyTexture(TextureCopyCommand(Dst, sub.SubresourceId, 0, 0, 0, Src,
                                            sub.SubresourceId, nullptr));
@@ -565,7 +571,12 @@ public:
       break;
     }
     case D3D11_RESOURCE_DIMENSION_TEXTURE3D: {
-      IMPLEMENT_ME
+      D3D11_TEXTURE3D_DESC1 desc;
+      ((ID3D11Texture3D1 *)pSrcResource)->GetDesc1(&desc);
+      for (auto sub : EnumerateSubresources(desc)) {
+        ctx.CopyTexture(TextureCopyCommand(Dst, sub.SubresourceId, 0, 0, 0, Src,
+                                           sub.SubresourceId, nullptr));
+      }
       break;
     }
     }
