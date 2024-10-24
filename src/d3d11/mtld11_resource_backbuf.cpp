@@ -85,7 +85,7 @@ private:
                  : interpreted_pixel_format;
     };
 
-    BindingRef GetBinding(uint64_t) {
+    BindingRef UseBindable(uint64_t) {
       return BindingRef(static_cast<BackBufferSource *>(this->resource.ptr()),
                         Is_sRGBVariant(interpreted_pixel_format));
     };

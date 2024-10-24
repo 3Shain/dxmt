@@ -19,7 +19,7 @@ DEFINE_COM_INTERFACE("f1d21087-fbde-44b3-bc2c-b69be540a0ad",
   virtual MTL::PixelFormat GetPixelFormat() = 0;
   virtual ULONG64 GetUnderlyingResourceId() = 0;
   virtual dxmt::ResourceSubset GetViewRange() = 0;
-  virtual dxmt::BindingRef GetBinding(uint64_t) = 0;
+  virtual dxmt::BindingRef UseBindable(uint64_t) = 0;
   virtual MTL_RENDER_PASS_ATTACHMENT_DESC &GetAttachmentDesc() = 0;
 };
 
@@ -29,7 +29,7 @@ DEFINE_COM_INTERFACE("42e48164-8733-422b-8421-4c57229641f9",
   virtual ULONG64 GetUnderlyingResourceId() = 0;
   virtual dxmt::ResourceSubset GetViewRange() = 0;
   virtual MTL::PixelFormat GetPixelFormat() = 0;
-  virtual dxmt::BindingRef GetBinding(uint64_t) = 0;
+  virtual dxmt::BindingRef UseBindable(uint64_t) = 0;
   virtual MTL_RENDER_PASS_ATTACHMENT_DESC &GetAttachmentDesc() = 0;
 };
 
