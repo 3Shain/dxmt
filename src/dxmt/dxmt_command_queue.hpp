@@ -38,17 +38,26 @@ struct ENCODER_RENDER_INFO {
   uint32_t tessellation_pass = 0;
 };
 
+struct CLEAR_DEPTH_STENCIL {
+  float depth;
+  uint8_t stencil;
+};
+
 struct ENCODER_CLEARPASS_INFO {
   EncoderKind kind = EncoderKind::ClearPass;
   uint64_t encoder_id;
   uint32_t skipped = 0; // this can be flipped by later render pass
-  uint32_t num_color_attachments = 0;
   uint32_t depth_stencil_flags = 0;
-  BindingRef clear_depth_stencil_attachment;
-  float clear_depth = 0.0;
-  uint8_t clear_stencil = 0;
-  std::array<BindingRef, 8> clear_color_attachments;
-  std::array<MTL::ClearColor, 8> clear_colors;
+  uint32_t array_length;
+  uint32_t level;
+  uint32_t slice;
+  uint32_t depth_plane;
+  struct ENCODER_CLEARPASS_INFO *previous_clearpass = nullptr;
+  BindingRef clear_attachment;
+  union {
+    CLEAR_DEPTH_STENCIL depth_stencil;
+    MTL::ClearColor color;
+  };
 
   struct CLEARPASS_CLEANUP {
     ENCODER_CLEARPASS_INFO *info;
@@ -57,10 +66,7 @@ struct ENCODER_CLEARPASS_INFO {
       // FIXME: too complicated
       if (!info || info->skipped)
         return;
-      for (unsigned i = 0; i < info->num_color_attachments; i++) {
-        info->clear_color_attachments[i].~BindingRef();
-      }
-      info->clear_depth_stencil_attachment.~BindingRef();
+      info->clear_attachment.~BindingRef();
     }
     CLEARPASS_CLEANUP(const CLEARPASS_CLEANUP &copy) = delete;
     CLEARPASS_CLEANUP(CLEARPASS_CLEANUP &&move) {
