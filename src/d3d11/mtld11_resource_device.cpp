@@ -485,7 +485,7 @@ private:
       return attachment_desc;
     };
 
-    BindingRef GetBinding(uint64_t seq_id) final {
+    BindingRef UseBindable(uint64_t seq_id) final {
       this->resource->occupancy.MarkAsOccupied(seq_id);
       return BindingRef(static_cast<ID3D11View *>(this), view.ptr());
     }
@@ -516,7 +516,7 @@ private:
 
     MTL::PixelFormat GetPixelFormat() final { return view_pixel_format; }
 
-    BindingRef GetBinding(uint64_t seq_id) final {
+    BindingRef UseBindable(uint64_t seq_id) final {
       this->resource->occupancy.MarkAsOccupied(seq_id);
       return BindingRef(static_cast<ID3D11View *>(this), view.ptr());
     }
