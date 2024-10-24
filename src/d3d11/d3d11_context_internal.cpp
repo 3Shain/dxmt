@@ -1341,7 +1341,7 @@ public:
     auto rtv_props = pRenderTargetView->GetAttachmentDesc();
     if (rtv_props.RenderTargetArrayLength > 1) {
       EmitComputeCommandChk<true>(
-          [texture = pRenderTargetView->GetBinding(cmd_queue.CurrentSeqId()),
+          [texture = pRenderTargetView->UseBindable(cmd_queue.CurrentSeqId()),
            size = rtv_props.RenderTargetArrayLength,
            clear_color =
                std::array<float, 4>({ColorRGBA[0], ColorRGBA[1], ColorRGBA[2],
@@ -1358,7 +1358,7 @@ public:
       return;
     }
 
-    auto target = pRenderTargetView->GetBinding(cmd_queue.CurrentSeqId());
+    auto target = pRenderTargetView->UseBindable(cmd_queue.CurrentSeqId());
     auto clear_color = MTL::ClearColor::Make(ColorRGBA[0], ColorRGBA[1],
                                              ColorRGBA[2], ColorRGBA[3]);
 
@@ -1394,7 +1394,7 @@ public:
     if (ClearFlags == 0)
       return;
     CommandChunk *chk = cmd_queue.CurrentChunk();
-    auto target = pDepthStencilView->GetBinding(cmd_queue.CurrentSeqId());
+    auto target = pDepthStencilView->UseBindable(cmd_queue.CurrentSeqId());
 
     auto previous_encoder = chk->get_last_encoder();
     bool inherit_rtvs_from_previous_encoder = false;
@@ -1547,7 +1547,7 @@ public:
         auto &rtv = state_.OutputMerger.RTVs[i];
         if (rtv) {
           auto props = rtv->GetAttachmentDesc();
-          rtvs.push_back({rtv->GetBinding(currentChunkId), i, props.Level,
+          rtvs.push_back({rtv->UseBindable(currentChunkId), i, props.Level,
                           props.Slice, props.DepthPlane,
                           rtv->GetPixelFormat()});
           D3D11_ASSERT(rtv->GetPixelFormat() != MTL::PixelFormatInvalid);
@@ -1574,7 +1574,7 @@ public:
       bool uav_only = false;
       uint32_t uav_only_sample_count = 0;
       if (state_.OutputMerger.DSV) {
-        dsv_info.Texture = state_.OutputMerger.DSV->GetBinding(currentChunkId);
+        dsv_info.Texture = state_.OutputMerger.DSV->UseBindable(currentChunkId);
         dsv_info.PixelFormat = state_.OutputMerger.DSV->GetPixelFormat();
       } else if (effective_render_target == 0) {
         if (state_.OutputMerger.NumRTVs) {
