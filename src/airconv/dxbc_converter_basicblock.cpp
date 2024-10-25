@@ -595,7 +595,7 @@ std::function<IRValue(pvalue)> pop_output_tess_factor(
 
 IREffect pull_vertex_input(
   air::FunctionSignatureBuilder &func_signature, uint32_t to_reg, uint32_t mask,
-  SM50_IA_INPUT_ELEMENT element_info
+  SM50_IA_INPUT_ELEMENT element_info, uint32_t slot_mask
 ) {
   auto vbuf_table = func_signature.DefineInput(air::ArgumentBindingBuffer{
     .buffer_size = {},
@@ -636,11 +636,15 @@ IREffect pull_vertex_input(
         )air::AddressSpace::constant)
       );
     }
+    unsigned int shift = 32u - element_info.slot;
+    unsigned int vertex_buffer_entry_index =
+      element_info.slot ? __builtin_popcount((slot_mask << shift) >> shift) : 0;
     auto vertex_buffer_table = ctx.resource.vertex_buffer_table;
     auto vertex_buffer_entry = builder.CreateLoad(
       types._dxmt_vertex_buffer_entry,
       builder.CreateConstGEP1_32(
-        types._dxmt_vertex_buffer_entry, vertex_buffer_table, element_info.slot
+        types._dxmt_vertex_buffer_entry, vertex_buffer_table,
+        vertex_buffer_entry_index
       )
     );
     auto base_addr = builder.CreateExtractValue(vertex_buffer_entry, {0});

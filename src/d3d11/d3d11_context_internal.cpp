@@ -2470,28 +2470,31 @@ public:
       uint32_t length;
     };
 
-    uint32_t VERTEX_BUFFER_SLOTS = 32 - __builtin_clz(slot_mask);
+    uint32_t max_slot = 32 - __builtin_clz(slot_mask);
+    uint32_t num_slots = __builtin_popcount(slot_mask);
 
     CommandChunk *chk = cmd_queue.CurrentChunk();
     auto encoderId = chk->current_encoder_id();
     auto currentChunkId = cmd_queue.CurrentSeqId();
-    auto [heap, offset] = chk->allocate_gpu_heap(16 * VERTEX_BUFFER_SLOTS, 16);
+    auto [heap, offset] = chk->allocate_gpu_heap(16 * num_slots, 16);
     VERTEX_BUFFER_ENTRY *entries =
         (VERTEX_BUFFER_ENTRY *)(((char *)heap->contents()) + offset);
-    for (unsigned index = 0; index < VERTEX_BUFFER_SLOTS; index++) {
-      if (!VertexBuffers.test_bound(index)) {
+    for (unsigned slot = 0, index = 0; slot < max_slot; slot++) {
+      if (!(slot_mask & (1 << slot)))
+        continue;
+      if (!VertexBuffers.test_bound(slot)) {
         entries[index].buffer_handle = 0;
         entries[index].stride = 0;
-        entries[index].length = 0;
+        entries[index++].length = 0;
         continue;
       }
-      auto &state = VertexBuffers[index];
+      auto &state = VertexBuffers[slot];
       MTL_BINDABLE_RESIDENCY_MASK newResidencyMask = MTL_RESIDENCY_NULL;
       SIMPLE_RESIDENCY_TRACKER *pTracker;
       auto handle = state.Buffer->GetArgumentData(&pTracker);
       entries[index].buffer_handle = handle.buffer() + state.Offset;
       entries[index].stride = state.Stride;
-      entries[index].length =
+      entries[index++].length =
           handle.width() > state.Offset ? handle.width() - state.Offset : 0;
       pTracker->CheckResidency(
           encoderId,

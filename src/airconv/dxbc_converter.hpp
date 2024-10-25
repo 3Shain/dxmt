@@ -252,7 +252,7 @@ std::function<IRValue(pvalue)> pop_output_tess_factor(
 
 IREffect pull_vertex_input(
   air::FunctionSignatureBuilder &func_signature, uint32_t to_reg, uint32_t mask,
-  SM50_IA_INPUT_ELEMENT element_info
+  SM50_IA_INPUT_ELEMENT element_info, uint32_t slot_mask
 );
 
 llvm::Expected<llvm::BasicBlock *> convert_basicblocks(

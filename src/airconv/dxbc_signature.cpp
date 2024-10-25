@@ -119,7 +119,8 @@ void handle_signature_vs(
             for (unsigned i = 0; i < ctx.ia_layout->num_elements; i++) {
               if (ctx.ia_layout->elements[i].reg == reg) {
                 ctx.prologue << pull_vertex_input(
-                  ctx.func_signature, reg, mask, ctx.ia_layout->elements[i]
+                  ctx.func_signature, reg, mask, ctx.ia_layout->elements[i],
+                  ctx.ia_layout->slot_mask
                 );
                 break;
               }

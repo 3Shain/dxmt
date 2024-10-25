@@ -112,6 +112,8 @@ CreateVariantShader(MTLD3D11Device *pDevice, ManagedShader shader,
       data_gs_passthrough.next = &data_ia_layout;
       data_ia_layout.type = SM50_SHADER_IA_INPUT_LAYOUT;
       data_ia_layout.next = nullptr;
+      data_ia_layout.slot_mask =
+          ((ManagedInputLayout)variant.input_layout_handle)->input_slot_mask();
       data_ia_layout.num_elements =
           ((ManagedInputLayout)variant.input_layout_handle)
               ->input_layout_element((MTL_SHADER_INPUT_LAYOUT_ELEMENT_DESC *
@@ -199,6 +201,8 @@ CreateVariantShader(MTLD3D11Device *pDevice, ManagedShader shader,
   auto proc = [=](const char *func_name) -> SM50CompiledBitcode * {
     SM50_SHADER_IA_INPUT_LAYOUT_DATA ia_layout;
     ia_layout.index_buffer_format = variant.index_buffer_format;
+    ia_layout.slot_mask =
+        ((ManagedInputLayout)variant.input_layout_handle)->input_slot_mask();
     ia_layout.num_elements =
         ((ManagedInputLayout)variant.input_layout_handle)
             ->input_layout_element(
@@ -301,6 +305,8 @@ CreateVariantShader(MTLD3D11Device *pDevice, ManagedShader shader,
       data_so.next = &data_vertex_pulling;
       data_vertex_pulling.type = SM50_SHADER_IA_INPUT_LAYOUT;
       data_vertex_pulling.next = nullptr;
+      data_vertex_pulling.slot_mask =
+          ((ManagedInputLayout)variant.input_layout_handle)->input_slot_mask();
       data_vertex_pulling.num_elements =
           ((ManagedInputLayout)variant.input_layout_handle)
               ->input_layout_element((MTL_SHADER_INPUT_LAYOUT_ELEMENT_DESC *
