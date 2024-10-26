@@ -2616,9 +2616,9 @@ public:
   };
 };
 
-std::unique_ptr<MTLD3D11DeviceContextBase>
-InitializeImmediateContext(MTLD3D11Device *pDevice, CommandQueue &cmd_queue) {
-  return std::make_unique<MTLD3D11DeviceContext>(pDevice, cmd_queue);
-}
+// std::unique_ptr<MTLD3D11DeviceContextBase>
+// InitializeImmediateContext(MTLD3D11Device *pDevice, CommandQueue &cmd_queue) {
+//   return std::make_unique<MTLD3D11DeviceContext>(pDevice, cmd_queue);
+// }
 
 } // namespace dxmt
