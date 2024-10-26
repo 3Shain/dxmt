@@ -287,6 +287,7 @@ public:
     return last_encoder_info->kind == EncoderKind::Nil ? 1u : 0u;
   }
 
+  uint64_t chunk_id;
   uint64_t frame_;
   uint64_t visibility_result_seq_begin;
   uint64_t visibility_result_seq_end;
