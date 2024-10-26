@@ -84,6 +84,8 @@ public:
   MTLD3D11DeviceChild(MTLD3D11Device *pDevice)
       : MTLD3D11DeviceObject<ComObject<Base...>>(pDevice) {}
 
+  virtual ~MTLD3D11DeviceChild() {};
+
   // ULONG STDMETHODCALLTYPE AddRef() {
   //   uint32_t refCount = this->m_refCount++;
   //   if (unlikely(!refCount)) {

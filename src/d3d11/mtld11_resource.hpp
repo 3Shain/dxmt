@@ -12,7 +12,6 @@
 #include "dxmt_binding.hpp"
 #include "dxmt_resource_binding.hpp"
 #include "log/log.hpp"
-#include "mtld11_interfaces.hpp"
 #include <memory>
 #include <type_traits>
 
@@ -146,7 +145,7 @@ DEFINE_COM_INTERFACE("daf21510-d136-44dd-bb16-068a94690775",
 DEFINE_COM_INTERFACE("65feb8c5-01de-49df-bf58-d115007a117d", IMTLDynamicBuffer)
     : public IUnknown {
   virtual void *GetMappedMemory(UINT * pBytesPerRow, UINT * pBytesPerImage) = 0;
-  virtual void RotateBuffer(IMTLDynamicBufferExchange * pool) = 0;
+  virtual void RotateBuffer(dxmt::MTLD3D11Device * pool) = 0;
   virtual D3D11_BIND_FLAG GetBindFlag() = 0;
 };
 

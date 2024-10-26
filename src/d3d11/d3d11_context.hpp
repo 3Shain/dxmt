@@ -4,7 +4,6 @@
 #include "com/com_guid.hpp"
 #include "d3d11_device.hpp"
 #include "d3d11_device_child.hpp"
-#include "mtld11_interfaces.hpp"
 
 #include "Metal/MTLCommandBuffer.hpp"
 
@@ -22,7 +21,7 @@ DEFINE_COM_INTERFACE("3a3f085a-d0fe-4324-b0ae-fe04de18571c",
 namespace dxmt {
 
 using MTLD3D11DeviceContextBase =
-    ManagedDeviceChild<IMTLD3D11DeviceContext, IMTLDynamicBufferExchange>;
+    MTLD3D11DeviceChild<IMTLD3D11DeviceContext>;
 
 class CommandQueue;
 
