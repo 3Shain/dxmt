@@ -7,6 +7,12 @@
 #include "d3d11_query.hpp"
 #include "dxmt_command_queue.hpp"
 
+namespace dxmt {
+struct ContextInternalState {
+  CommandQueue &cmd_queue;
+};
+}
+
 #include "./d3d11_context_internal.cpp"
 
 namespace dxmt {
@@ -87,6 +93,498 @@ to_metal_primitive_type(D3D11_PRIMITIVE_TOPOLOGY topo) {
     D3D11_ASSERT(0 && "Invalid topology");
   }
 }
+
+template <typename Fn> void ContextInternal::EmitCommand(Fn &&fn) {
+  CommandChunk *chk = ctx_state.cmd_queue.CurrentChunk();
+  chk->emit([fn = std::forward<Fn>(fn)](CommandChunk::context &ctx) {
+    std::invoke(fn, ctx);
+  });
+}
+
+BindingRef ContextInternal::Use(IMTLBindable *bindable) {
+  return bindable->UseBindable(ctx_state.cmd_queue.CurrentSeqId());
+}
+
+BindingRef ContextInternal::Use(IMTLD3D11RenderTargetView *rtv) {
+  return rtv->UseBindable(ctx_state.cmd_queue.CurrentSeqId());
+}
+
+BindingRef ContextInternal::Use(IMTLD3D11DepthStencilView *dsv) {
+  return dsv->UseBindable(ctx_state.cmd_queue.CurrentSeqId());
+}
+
+ENCODER_INFO *ContextInternal::GetLastEncoder() {
+  CommandChunk *chk = ctx_state.cmd_queue.CurrentChunk();
+  return chk->get_last_encoder();
+}
+ENCODER_CLEARPASS_INFO *ContextInternal::MarkClearPass() {
+  CommandChunk *chk = ctx_state.cmd_queue.CurrentChunk();
+  return chk->mark_clear_pass();
+}
+ENCODER_RENDER_INFO *ContextInternal::MarkRenderPass() {
+  CommandChunk *chk = ctx_state.cmd_queue.CurrentChunk();
+  return chk->mark_render_pass();
+}
+ENCODER_INFO *ContextInternal::MarkPass(EncoderKind kind) {
+  CommandChunk *chk = ctx_state.cmd_queue.CurrentChunk();
+  return chk->mark_pass(kind);
+}
+
+template <typename T>
+CommandChunk::fixed_vector_on_heap<T> ContextInternal::ReserveVector(size_t n) {
+  CommandChunk *chk = ctx_state.cmd_queue.CurrentChunk();
+  return chk->reserve_vector<T>(n);
+}
+
+void ContextInternal::UpdateUAVCounter(IMTLD3D11UnorderedAccessView *uav,
+                                       uint32_t value) {
+  auto currentChunkId = ctx_state.cmd_queue.CurrentSeqId();
+  auto new_counter_handle =
+      ctx_state.cmd_queue.counter_pool.AllocateCounter(currentChunkId, value);
+  // it's possible that old_counter_handle == new_counter_handle
+  // if the uav doesn't support counter
+  // thus it becomes essentially a no-op.
+  auto old_counter_handle = uav->SwapCounter(new_counter_handle);
+  if (old_counter_handle != DXMT_NO_COUNTER) {
+    ctx_state.cmd_queue.counter_pool.DiscardCounter(currentChunkId, old_counter_handle);
+  }
+};
+
+std::tuple<void *, MTL::Buffer *, uint64_t>
+ContextInternal::AllocateStagingBuffer(size_t size, size_t alignment) {
+  return ctx_state.cmd_queue.AllocateStagingBuffer(size, alignment);
+}
+
+bool ContextInternal::UseCopyDestination(IMTLD3D11Staging *pResource,
+                                         uint32_t Subresource,
+                                         MTL_STAGING_RESOURCE *pBuffer,
+                                         uint32_t *pBytesPerRow,
+                                         uint32_t *pBytesPerImage) {
+  return pResource->UseCopyDestination(Subresource, ctx_state.cmd_queue.CurrentSeqId(),
+                                       pBuffer, pBytesPerRow, pBytesPerImage);
+}
+bool ContextInternal::UseCopySource(IMTLD3D11Staging *pResource,
+                                    uint32_t Subresource,
+                                    MTL_STAGING_RESOURCE *pBuffer,
+                                    uint32_t *pBytesPerRow,
+                                    uint32_t *pBytesPerImage) {
+  return pResource->UseCopySource(Subresource, ctx_state.cmd_queue.CurrentSeqId(),
+                                  pBuffer, pBytesPerRow, pBytesPerImage);
+}
+
+BindingRef ContextInternal::UseImmediate(IMTLBindable *bindable) {
+  if (bindable->GetContentionState(ctx_state.cmd_queue.CoherentSeqId()))
+    return BindingRef();
+  return bindable->UseBindable(ctx_state.cmd_queue.CurrentSeqId());
+}
+
+template <ShaderType stage, bool Tessellation>
+bool ContextInternal::UploadShaderStageResourceBinding() {
+  auto &ShaderStage = state_.ShaderStages[(UINT)stage];
+  if (!ShaderStage.Shader) {
+    return true;
+  }
+  auto &UAVBindingSet = stage == ShaderType::Compute
+                            ? state_.ComputeStageUAV.UAVs
+                            : state_.OutputMerger.UAVs;
+
+  const MTL_SHADER_REFLECTION *reflection =
+      &ShaderStage.Shader->GetManagedShader()->reflection();
+
+  bool dirty_cbuffer = ShaderStage.ConstantBuffers.any_dirty_masked(
+      reflection->ConstantBufferSlotMask);
+  bool dirty_sampler =
+      ShaderStage.Samplers.any_dirty_masked(reflection->SamplerSlotMask);
+  bool dirty_srv = ShaderStage.SRVs.any_dirty_masked(reflection->SRVSlotMaskHi,
+                                                     reflection->SRVSlotMaskLo);
+  bool dirty_uav = UAVBindingSet.any_dirty_masked(reflection->UAVSlotMask);
+  if (!dirty_cbuffer && !dirty_sampler && !dirty_srv && !dirty_uav)
+    return true;
+
+  auto currentChunkId = ctx_state.cmd_queue.CurrentSeqId();
+
+  auto ConstantBufferCount = reflection->NumConstantBuffers;
+  auto BindingCount = reflection->NumArguments;
+  auto ArgumentTableQwords = reflection->ArgumentTableQwords;
+  CommandChunk *chk = ctx_state.cmd_queue.CurrentChunk();
+  auto encoderId = chk->current_encoder_id();
+
+  auto useResource = [&](BindingRef &&res,
+                         MTL_BINDABLE_RESIDENCY_MASK residencyMask) {
+    chk->emit(
+        [res = std::move(res), residencyMask](CommandChunk::context &ctx) {
+          switch (stage) {
+          case ShaderType::Vertex:
+          case ShaderType::Pixel:
+          case ShaderType::Hull:
+          case ShaderType::Domain:
+            ctx.render_encoder->useResource(
+                res.resource(&ctx), GetUsageFromResidencyMask(residencyMask),
+                GetStagesFromResidencyMask(residencyMask));
+            if (res.withBackedBuffer()) {
+              ctx.render_encoder->useResource(
+                  res.buffer(), GetUsageFromResidencyMask(residencyMask),
+                  GetStagesFromResidencyMask(residencyMask));
+            }
+            break;
+          case ShaderType::Compute:
+            ctx.compute_encoder->useResource(
+                res.resource(&ctx), GetUsageFromResidencyMask(residencyMask));
+            if (res.withBackedBuffer()) {
+              ctx.compute_encoder->useResource(
+                  res.buffer(), GetUsageFromResidencyMask(residencyMask));
+            }
+            break;
+          case ShaderType::Geometry:
+            D3D11_ASSERT(0 && "Not implemented");
+            break;
+          }
+        });
+  };
+  if (ConstantBufferCount && dirty_cbuffer) {
+
+    auto [heap, offset] = chk->allocate_gpu_heap(ConstantBufferCount << 3, 16);
+    uint64_t *write_to_it = chk->gpu_argument_heap_contents + (offset >> 3);
+
+    for (unsigned i = 0; i < ConstantBufferCount; i++) {
+      auto &arg = reflection->ConstantBuffers[i];
+      auto slot = arg.SM50BindingSlot;
+      MTL_BINDABLE_RESIDENCY_MASK newResidencyMask = MTL_RESIDENCY_NULL;
+      SIMPLE_RESIDENCY_TRACKER *pTracker;
+      switch (arg.Type) {
+      case SM50BindingType::ConstantBuffer: {
+        if (!ShaderStage.ConstantBuffers.test_bound(slot)) {
+          ERR("expect constant buffer at slot ", slot, " but none is bound.");
+          return false;
+        }
+        auto &cbuf = ShaderStage.ConstantBuffers[slot];
+        auto argbuf = cbuf.Buffer->GetArgumentData(&pTracker);
+        write_to_it[arg.StructurePtrOffset] =
+            argbuf.buffer() + (cbuf.FirstConstant << 4);
+        ShaderStage.ConstantBuffers.clear_dirty(slot);
+        pTracker->CheckResidency(
+            encoderId, GetResidencyMask<Tessellation>(stage, true, false),
+            &newResidencyMask);
+        if (newResidencyMask) {
+          useResource(Use(cbuf.Buffer), newResidencyMask);
+        }
+        break;
+      }
+      default:
+        D3D11_ASSERT(0 && "unreachable");
+      }
+    }
+
+    /* kConstantBufferTableBinding = 29 */
+    chk->emit([offset](CommandChunk::context &ctx) {
+      if constexpr (stage == ShaderType::Vertex) {
+        if constexpr (Tessellation) {
+          ctx.render_encoder->setObjectBufferOffset(offset, 29);
+        } else {
+          ctx.render_encoder->setVertexBufferOffset(offset, 29);
+        }
+      } else if constexpr (stage == ShaderType::Pixel) {
+        ctx.render_encoder->setFragmentBufferOffset(offset, 29);
+      } else if constexpr (stage == ShaderType::Compute) {
+        ctx.compute_encoder->setBufferOffset(offset, 29);
+      } else if constexpr (stage == ShaderType::Hull) {
+        ctx.render_encoder->setMeshBufferOffset(offset, 29);
+      } else if constexpr (stage == ShaderType::Domain) {
+        ctx.render_encoder->setVertexBufferOffset(offset, 29);
+      } else {
+        D3D11_ASSERT(0 && "Not implemented");
+      }
+    });
+  }
+
+  if (BindingCount && (dirty_sampler || dirty_srv || dirty_uav)) {
+    auto [heap, offset] = chk->allocate_gpu_heap(ArgumentTableQwords * 8, 16);
+    uint64_t *write_to_it = chk->gpu_argument_heap_contents + (offset >> 3);
+
+    for (unsigned i = 0; i < BindingCount; i++) {
+      auto &arg = reflection->Arguments[i];
+      auto slot = arg.SM50BindingSlot;
+      MTL_BINDABLE_RESIDENCY_MASK newResidencyMask = MTL_RESIDENCY_NULL;
+      SIMPLE_RESIDENCY_TRACKER *pTracker;
+      switch (arg.Type) {
+      case SM50BindingType::ConstantBuffer: {
+        D3D11_ASSERT(0 && "unreachable");
+      }
+      case SM50BindingType::Sampler: {
+        if (!ShaderStage.Samplers.test_bound(slot)) {
+          ERR("expect sample at slot ", slot, " but none is bound.");
+          return false;
+        }
+        auto &sampler = ShaderStage.Samplers[slot];
+        write_to_it[arg.StructurePtrOffset] =
+            sampler.Sampler->GetArgumentHandle();
+        write_to_it[arg.StructurePtrOffset + 1] =
+            (uint64_t)std::bit_cast<uint32_t>(sampler.Sampler->GetLODBias());
+        ShaderStage.Samplers.clear_dirty(slot);
+        break;
+      }
+      case SM50BindingType::SRV: {
+        if (!ShaderStage.SRVs.test_bound(slot)) {
+          // TODO: debug only
+          // ERR("expect shader resource at slot ", slot, " but none is
+          // bound.");
+          write_to_it[arg.StructurePtrOffset] = 0;
+          write_to_it[arg.StructurePtrOffset + 1] = 0;
+          break;
+        }
+        auto &srv = ShaderStage.SRVs[slot];
+        auto arg_data = srv.SRV->GetArgumentData(&pTracker);
+        if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_BUFFER) {
+          write_to_it[arg.StructurePtrOffset] = arg_data.buffer();
+        }
+        if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE) {
+          if (arg_data.requiresContext()) {
+            chk->emit([=, ref = srv.SRV](CommandChunk::context &ctx) {
+              write_to_it[arg.StructurePtrOffset] = arg_data.texture(&ctx);
+            });
+          } else {
+            write_to_it[arg.StructurePtrOffset] = arg_data.texture();
+          }
+        }
+        if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_ELEMENT_WIDTH) {
+          write_to_it[arg.StructurePtrOffset + 1] = arg_data.width();
+        }
+        if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE_MINLOD_CLAMP) {
+          write_to_it[arg.StructurePtrOffset + 1] =
+              std::bit_cast<uint32_t>(arg_data.min_lod());
+        }
+        if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_TBUFFER_OFFSET) {
+          write_to_it[arg.StructurePtrOffset + 1] = arg_data.element_offset();
+        }
+        if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_UAV_COUNTER) {
+          D3D11_ASSERT(0 && "srv can not have counter associated");
+        }
+        ShaderStage.SRVs.clear_dirty(slot);
+        pTracker->CheckResidency(
+            encoderId, GetResidencyMask<Tessellation>(stage, true, false),
+            &newResidencyMask);
+        if (newResidencyMask) {
+          useResource(srv.SRV->UseBindable(currentChunkId), newResidencyMask);
+        }
+        break;
+      }
+      case SM50BindingType::UAV: {
+        if constexpr (stage == ShaderType::Vertex) {
+          ERR("uav in vertex shader! need to workaround");
+          return false;
+        }
+        // FIXME: currently only pixel shader use uav from OM
+        // REFACTOR NEEDED
+        // TODO: consider separately handle uav
+        if (!UAVBindingSet.test_bound(arg.SM50BindingSlot)) {
+          // ERR("expect uav at slot ", arg.SM50BindingSlot,
+          //     " but none is bound.");
+          write_to_it[arg.StructurePtrOffset] = 0;
+          if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_ELEMENT_WIDTH) {
+            write_to_it[arg.StructurePtrOffset + 1] = 0;
+          }
+          if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_UAV_COUNTER) {
+            write_to_it[arg.StructurePtrOffset + 2] = 0;
+          }
+          break;
+        }
+        auto &uav = UAVBindingSet[arg.SM50BindingSlot];
+        auto arg_data = uav.View->GetArgumentData(&pTracker);
+        if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_BUFFER) {
+          write_to_it[arg.StructurePtrOffset] = arg_data.buffer();
+        }
+        if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE) {
+          if (arg_data.requiresContext()) {
+            chk->emit([=, ref = uav.View](CommandChunk::context &ctx) {
+              write_to_it[arg.StructurePtrOffset] = arg_data.texture(&ctx);
+            });
+          } else {
+            write_to_it[arg.StructurePtrOffset] = arg_data.texture();
+          }
+        }
+        if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_ELEMENT_WIDTH) {
+          write_to_it[arg.StructurePtrOffset + 1] = arg_data.width();
+        }
+        if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE_MINLOD_CLAMP) {
+          write_to_it[arg.StructurePtrOffset + 1] =
+              std::bit_cast<uint32_t>(arg_data.min_lod());
+        }
+        if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_TBUFFER_OFFSET) {
+          write_to_it[arg.StructurePtrOffset + 1] = arg_data.element_offset();
+        }
+        if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_UAV_COUNTER) {
+          auto counter_handle = arg_data.counter();
+          if (counter_handle != DXMT_NO_COUNTER) {
+            auto counter = ctx_state.cmd_queue.counter_pool.GetCounter(counter_handle);
+            chk->emit([counter](CommandChunk::context &ctx) {
+              switch (stage) {
+              case ShaderType::Vertex:
+              case ShaderType::Pixel:
+              case ShaderType::Hull:
+              case ShaderType::Domain:
+                ctx.render_encoder->useResource(counter.Buffer,
+                                                MTL::ResourceUsageRead |
+                                                    MTL::ResourceUsageWrite);
+                break;
+              case ShaderType::Compute:
+                ctx.compute_encoder->useResource(counter.Buffer,
+                                                 MTL::ResourceUsageRead |
+                                                     MTL::ResourceUsageWrite);
+                break;
+              case ShaderType::Geometry:
+                D3D11_ASSERT(0 && "Not implemented");
+                break;
+              }
+            });
+            write_to_it[arg.StructurePtrOffset + 2] =
+                counter.Buffer->gpuAddress() + counter.Offset;
+          } else {
+            ERR("use uninitialized counter!");
+            write_to_it[arg.StructurePtrOffset + 2] = 0;
+          };
+        }
+        UAVBindingSet.clear_dirty(slot);
+        pTracker->CheckResidency(encoderId,
+                                 GetResidencyMask<Tessellation>(
+                                     stage,
+                                     // FIXME: don't use literal constant...
+                                     (arg.Flags >> 10) & 1,
+                                     (arg.Flags >> 10) & 2),
+                                 &newResidencyMask);
+        if (newResidencyMask) {
+          useResource(uav.View->UseBindable(currentChunkId), newResidencyMask);
+        }
+        break;
+      }
+      }
+    }
+
+    /* kArgumentBufferBinding = 30 */
+    chk->emit([offset](CommandChunk::context &ctx) {
+      if constexpr (stage == ShaderType::Vertex) {
+        if constexpr (Tessellation) {
+          ctx.render_encoder->setObjectBufferOffset(offset, 30);
+        } else {
+          ctx.render_encoder->setVertexBufferOffset(offset, 30);
+        }
+      } else if constexpr (stage == ShaderType::Pixel) {
+        ctx.render_encoder->setFragmentBufferOffset(offset, 30);
+      } else if constexpr (stage == ShaderType::Compute) {
+        ctx.compute_encoder->setBufferOffset(offset, 30);
+      } else if constexpr (stage == ShaderType::Hull) {
+        ctx.render_encoder->setMeshBufferOffset(offset, 30);
+      } else if constexpr (stage == ShaderType::Domain) {
+        ctx.render_encoder->setVertexBufferOffset(offset, 30);
+      } else {
+        D3D11_ASSERT(0 && "Not implemented");
+      }
+    });
+  }
+  return true;
+}
+
+/**
+it's just about vertex buffer
+- index buffer and input topology are provided in draw commands
+*/
+void ContextInternal::UpdateVertexBuffer() {
+  if (!state_.InputAssembler.InputLayout)
+    return;
+
+  uint32_t slot_mask =
+      state_.InputAssembler.InputLayout->GetManagedInputLayout()
+          ->input_slot_mask();
+  if (slot_mask == 0) // effectively empty input layout
+    return;
+
+  auto &VertexBuffers = state_.InputAssembler.VertexBuffers;
+  if (!VertexBuffers.any_dirty_masked((uint64_t)slot_mask))
+    return;
+
+  struct VERTEX_BUFFER_ENTRY {
+    uint64_t buffer_handle;
+    uint32_t stride;
+    uint32_t length;
+  };
+
+  uint32_t max_slot = 32 - __builtin_clz(slot_mask);
+  uint32_t num_slots = __builtin_popcount(slot_mask);
+
+  CommandChunk *chk = ctx_state.cmd_queue.CurrentChunk();
+  auto encoderId = chk->current_encoder_id();
+  auto [heap, offset] = chk->allocate_gpu_heap(16 * num_slots, 16);
+  VERTEX_BUFFER_ENTRY *entries =
+      (VERTEX_BUFFER_ENTRY *)(((char *)heap->contents()) + offset);
+  for (unsigned slot = 0, index = 0; slot < max_slot; slot++) {
+    if (!(slot_mask & (1 << slot)))
+      continue;
+    if (!VertexBuffers.test_bound(slot)) {
+      entries[index].buffer_handle = 0;
+      entries[index].stride = 0;
+      entries[index++].length = 0;
+      continue;
+    }
+    auto &state = VertexBuffers[slot];
+    MTL_BINDABLE_RESIDENCY_MASK newResidencyMask = MTL_RESIDENCY_NULL;
+    SIMPLE_RESIDENCY_TRACKER *pTracker;
+    auto handle = state.Buffer->GetArgumentData(&pTracker);
+    entries[index].buffer_handle = handle.buffer() + state.Offset;
+    entries[index].stride = state.Stride;
+    entries[index++].length =
+        handle.width() > state.Offset ? handle.width() - state.Offset : 0;
+    pTracker->CheckResidency(
+        encoderId,
+        cmdbuf_state == CommandBufferState::TessellationRenderPipelineReady
+            ? GetResidencyMask<true>(ShaderType::Vertex, true, false)
+            : GetResidencyMask<false>(ShaderType::Vertex, true, false),
+        &newResidencyMask);
+    if (newResidencyMask) {
+      chk->emit([res = Use(state.Buffer),
+                 newResidencyMask](CommandChunk::context &ctx) {
+        ctx.render_encoder->useResource(
+            res.buffer(), GetUsageFromResidencyMask(newResidencyMask),
+            GetStagesFromResidencyMask(newResidencyMask));
+      });
+    }
+  };
+  if (cmdbuf_state == CommandBufferState::TessellationRenderPipelineReady) {
+    EmitCommand([offset](CommandChunk::context &ctx) {
+      ctx.render_encoder->setObjectBufferOffset(offset, 16);
+    });
+  }
+  if (cmdbuf_state == CommandBufferState::RenderPipelineReady) {
+    EmitCommand([offset](CommandChunk::context &ctx) {
+      ctx.render_encoder->setVertexBufferOffset(offset, 16);
+    });
+  }
+}
+
+void ContextInternal::Commit() {
+  promote_flush = false;
+  D3D11_ASSERT(cmdbuf_state == CommandBufferState::Idle);
+  /** FIXME: it might be unnecessary? */
+  CommandChunk *chk = ctx_state.cmd_queue.CurrentChunk();
+  chk->emit([device = Com<MTLD3D11Device, false>(device)](
+                CommandChunk::context &ctx) {});
+  ctx_state.cmd_queue.CommitCurrentChunk(occlusion_query_seq_chunk_start,
+                               ++occlusion_query_seq);
+  occlusion_query_seq_chunk_start = occlusion_query_seq;
+};
+
+uint64_t ContextInternal::NextOcclusionQuerySeq() {
+  if (cmdbuf_state == CommandBufferState::RenderEncoderActive ||
+      cmdbuf_state == CommandBufferState::RenderPipelineReady ||
+      cmdbuf_state == CommandBufferState::TessellationRenderPipelineReady) {
+    uint64_t bump_offset = (++occlusion_query_seq) % kOcclusionSampleCount;
+    CommandChunk *chk = ctx_state.cmd_queue.CurrentChunk();
+    chk->emit([bump_offset](CommandChunk::context &ctx) {
+      D3D11_ASSERT(ctx.render_encoder);
+      ctx.render_encoder->setVisibilityResultMode(
+          MTL::VisibilityResultModeCounting, bump_offset << 3);
+    });
+  }
+  return occlusion_query_seq;
+};
 
 struct DXMT_DRAW_ARGUMENTS {
   uint32_t IndexCount;
@@ -351,7 +849,7 @@ public:
     case D3D11_UAV_DIMENSION_BUFFER: {
       if (desc.Buffer.Flags & D3D11_BUFFER_UAV_FLAG_RAW) {
         ctx.EmitComputeCommandChk<true>(
-            [buffer = bindable->UseBindable(cmd_queue.CurrentSeqId()),
+            [buffer = ctx.Use(bindable),
              value](auto encoder, auto &ctx) {
               ctx.queue->clear_cmd.ClearBufferUint(encoder, buffer.buffer(),
                                                    buffer.offset(),
@@ -360,7 +858,7 @@ public:
       } else {
         if (desc.Format == DXGI_FORMAT_UNKNOWN) {
           ctx.EmitComputeCommandChk<true>(
-              [buffer = bindable->UseBindable(cmd_queue.CurrentSeqId()),
+              [buffer = ctx.Use(bindable),
                value](auto encoder, auto &ctx) {
                 ctx.queue->clear_cmd.ClearBufferUint(
                     encoder, buffer.buffer(), buffer.offset(),
@@ -368,7 +866,7 @@ public:
               });
         } else {
           ctx.EmitComputeCommandChk<true>(
-              [tex = bindable->UseBindable(cmd_queue.CurrentSeqId()),
+              [tex = ctx.Use(bindable),
                value](auto encoder, auto &ctx) {
                 ctx.queue->clear_cmd.ClearTextureBufferUint(
                     encoder, tex.texture(&ctx), value);
@@ -385,7 +883,7 @@ public:
       break;
     case D3D11_UAV_DIMENSION_TEXTURE2D:
       ctx.EmitComputeCommandChk<true>(
-          [tex = bindable->UseBindable(cmd_queue.CurrentSeqId()),
+          [tex = ctx.Use(bindable),
            value](auto encoder, auto &ctx) {
             ctx.queue->clear_cmd.ClearTexture2DUint(encoder, tex.texture(&ctx),
                                                     value);
@@ -416,7 +914,7 @@ public:
     case D3D11_UAV_DIMENSION_BUFFER: {
       if (desc.Buffer.Flags & D3D11_BUFFER_UAV_FLAG_RAW) {
         ctx.EmitComputeCommandChk<true>(
-            [buffer = bindable->UseBindable(cmd_queue.CurrentSeqId()),
+            [buffer = ctx.Use(bindable),
              value](auto encoder, auto &ctx) {
               ctx.queue->clear_cmd.ClearBufferFloat(encoder, buffer.buffer(),
                                                     buffer.offset(),
@@ -425,7 +923,7 @@ public:
       } else {
         if (desc.Format == DXGI_FORMAT_UNKNOWN) {
           ctx.EmitComputeCommandChk<true>(
-              [buffer = bindable->UseBindable(cmd_queue.CurrentSeqId()),
+              [buffer = ctx.Use(bindable),
                value](auto encoder, auto &ctx) {
                 ctx.queue->clear_cmd.ClearBufferFloat(
                     encoder, buffer.buffer(), buffer.offset(),
@@ -433,7 +931,7 @@ public:
               });
         } else {
           ctx.EmitComputeCommandChk<true>(
-              [tex = bindable->UseBindable(cmd_queue.CurrentSeqId()),
+              [tex = ctx.Use(bindable),
                value](auto encoder, auto &ctx) {
                 ctx.queue->clear_cmd.ClearTextureBufferFloat(
                     encoder, tex.texture(&ctx), value);
@@ -450,7 +948,7 @@ public:
       break;
     case D3D11_UAV_DIMENSION_TEXTURE2D:
       ctx.EmitComputeCommandChk<true>(
-          [tex = bindable->UseBindable(cmd_queue.CurrentSeqId()),
+          [tex = ctx.Use(bindable),
            value](auto encoder, auto &ctx) {
             ctx.queue->clear_cmd.ClearTexture2DFloat(encoder, tex.texture(&ctx),
                                                      value);
@@ -489,7 +987,7 @@ public:
     }
     if (auto com = com_cast<IMTLBindable>(pShaderResourceView)) {
       ctx.EmitBlitCommand<true>(
-          [tex = com->UseBindable(cmd_queue.CurrentSeqId())](
+          [tex = ctx.Use(com)](
               MTL::BlitCommandEncoder *enc, CommandChunk::context &ctx) {
             enc->generateMipmaps(tex.texture(&ctx));
           });
@@ -593,7 +1091,7 @@ public:
         auto counter = cmd_queue.counter_pool.GetCounter(counter_handle);
         ctx.EmitBlitCommand<true>(
             [counter, DstAlignedByteOffset,
-             dst = dst_bind->UseBindable(cmd_queue.CurrentSeqId())](
+             dst = ctx.Use(dst_bind)](
                 MTL::BlitCommandEncoder *enc, auto &ctx) {
               enc->copyFromBuffer(counter.Buffer, counter.Offset, dst.buffer(),
                                   DstAlignedByteOffset, 4);
@@ -681,7 +1179,7 @@ public:
       }
       if (auto bindable = com_cast<IMTLBindable>(pDstResource)) {
         if (!bindable->GetContentionState(cmd_queue.CoherentSeqId())) {
-          auto _ = bindable->UseBindable(cmd_queue.CurrentSeqId());
+          auto _ = ctx.Use(bindable);
           auto buffer = _.buffer();
           memcpy(((char *)buffer->contents()) + copy_offset, pSrcData,
                  copy_len);
@@ -689,11 +1187,11 @@ public:
           return;
         }
         auto [ptr, staging_buffer, offset] =
-            cmd_queue.AllocateStagingBuffer(copy_len, 16);
+            ctx.AllocateStagingBuffer(copy_len, 16);
         memcpy(ptr, pSrcData, copy_len);
         ctx.EmitBlitCommand<true>(
             [staging_buffer, offset,
-             dst = bindable->UseBindable(cmd_queue.CurrentSeqId()), copy_offset,
+             dst = ctx.Use(bindable), copy_offset,
              copy_len](MTL::BlitCommandEncoder *enc, auto &ctx) {
               enc->copyFromBuffer(staging_buffer, offset, dst.buffer(),
                                   copy_offset, copy_len);
@@ -768,7 +1266,7 @@ public:
             (state_.InputAssembler.IndexBufferFormat == DXGI_FORMAT_R32_UINT
                  ? 4
                  : 2);
-    ctx.EmitRenderCommandChk([IndexType, IndexBufferOffset, Primitive,
+    ctx.EmitCommand([IndexType, IndexBufferOffset, Primitive,
                               IndexCount,
                               BaseVertexLocation](CommandChunk::context &ctx) {
       D3D11_ASSERT(ctx.current_index_buffer_ref);
@@ -824,7 +1322,7 @@ public:
             (state_.InputAssembler.IndexBufferFormat == DXGI_FORMAT_R32_UINT
                  ? 4
                  : 2);
-    ctx.EmitRenderCommandChk(
+    ctx.EmitCommand(
         [IndexType, IndexBufferOffset, Primitive, InstanceCount,
          BaseVertexLocation, StartInstanceLocation,
          IndexCountPerInstance](CommandChunk::context &ctx) {
@@ -842,7 +1340,6 @@ public:
     assert(NumControlPoint);
     // allocate draw arguments
     CommandChunk *chk = cmd_queue.CurrentChunk();
-    auto currentChunkId = cmd_queue.CurrentSeqId();
     auto [heap, offset] = chk->allocate_gpu_heap(4 * 5, 4);
     auto PatchCountPerInstance = VertexCountPerInstance / NumControlPoint;
     DXMT_DRAW_ARGUMENTS *draw_arugment =
@@ -852,7 +1349,7 @@ public:
     draw_arugment->StartIndex = 0;
     draw_arugment->InstanceCount = InstanceCount;
     draw_arugment->StartInstance = StartInstanceLocation;
-    ctx.EmitRenderCommandChk([=](CommandChunk::context &ctx) {
+    ctx.EmitCommand([=](CommandChunk::context &ctx) {
       auto &encoder = ctx.render_encoder;
       encoder->setObjectBuffer(heap, offset, 21);
       assert(ctx.tess_num_output_control_point_element);
@@ -860,18 +1357,19 @@ public:
       auto PatchPerMeshInstance =
           (PatchCountPerInstance - 1) / PatchPerGroup + 1;
       auto [_0, cp_buffer, cp_offset] = ctx.queue->AllocateTempBuffer(
-          currentChunkId,
+          ctx.chk->chunk_id,
           ctx.tess_num_output_control_point_element * 16 *
               VertexCountPerInstance * InstanceCount,
           16);
       auto [_1, pc_buffer, pc_offset] = ctx.queue->AllocateTempBuffer(
-          currentChunkId,
+          ctx.chk->chunk_id,
           ctx.tess_num_output_patch_constant_scalar * 4 *
               PatchCountPerInstance * InstanceCount,
           4);
       auto [_2, tess_factor_buffer, tess_factor_offset] =
           ctx.queue->AllocateTempBuffer(
-              currentChunkId, 6 * 2 * PatchCountPerInstance * InstanceCount, 4);
+              ctx.chk->chunk_id, 6 * 2 * PatchCountPerInstance * InstanceCount,
+              4);
       encoder->setMeshBuffer(cp_buffer, cp_offset, 20);
       encoder->setMeshBuffer(pc_buffer, pc_offset, 21);
       encoder->setMeshBuffer(tess_factor_buffer, tess_factor_offset, 22);
@@ -911,7 +1409,6 @@ public:
                  : 2);
     // allocate draw arguments
     CommandChunk *chk = cmd_queue.CurrentChunk();
-    auto currentChunkId = cmd_queue.CurrentSeqId();
     auto [heap, offset] = chk->allocate_gpu_heap(4 * 5, 4);
     auto PatchCountPerInstance = IndexCountPerInstance / NumControlPoint;
     DXMT_DRAW_ARGUMENTS *draw_arugment =
@@ -921,7 +1418,7 @@ public:
     draw_arugment->StartIndex = 0; // already provided offset
     draw_arugment->InstanceCount = InstanceCount;
     draw_arugment->StartInstance = BaseInstance;
-    ctx.EmitRenderCommandChk([=](CommandChunk::context &ctx) {
+    ctx.EmitCommand([=](CommandChunk::context &ctx) {
       D3D11_ASSERT(ctx.current_index_buffer_ref);
       auto &encoder = ctx.render_encoder;
       encoder->setObjectBuffer(ctx.current_index_buffer_ref, IndexBufferOffset,
@@ -932,18 +1429,18 @@ public:
       auto PatchPerMeshInstance =
           (PatchCountPerInstance - 1) / PatchPerGroup + 1;
       auto [_0, cp_buffer, cp_offset] = ctx.queue->AllocateTempBuffer(
-          currentChunkId,
+          ctx.chk->chunk_id,
           ctx.tess_num_output_control_point_element * 16 *
               IndexCountPerInstance * InstanceCount,
           16);
       auto [_1, pc_buffer, pc_offset] = ctx.queue->AllocateTempBuffer(
-          currentChunkId,
+          ctx.chk->chunk_id,
           ctx.tess_num_output_patch_constant_scalar * 4 *
               PatchCountPerInstance * InstanceCount,
           4);
       auto [_2, tess_factor_buffer, tess_factor_offset] =
           ctx.queue->AllocateTempBuffer(
-              currentChunkId, 6 * 2 * PatchCountPerInstance * InstanceCount, 4);
+              ctx.chk->chunk_id, 6 * 2 * PatchCountPerInstance * InstanceCount, 4);
       encoder->setMeshBuffer(cp_buffer, cp_offset, 20);
       encoder->setMeshBuffer(pc_buffer, pc_offset, 21);
       encoder->setMeshBuffer(tess_factor_buffer, tess_factor_offset, 22);
@@ -975,7 +1472,6 @@ public:
                                     UINT AlignedByteOffsetForArgs) override {
     if (!ctx.PreDraw<true>())
       return;
-    auto currentChunkId = cmd_queue.CurrentSeqId();
     auto [Primitive, ControlPointCount] =
         to_metal_primitive_type(state_.InputAssembler.Topology);
     if (ControlPointCount) {
@@ -987,9 +1483,9 @@ public:
             : MTL::IndexTypeUInt16;
     auto IndexBufferOffset = state_.InputAssembler.IndexBufferOffset;
     if (auto bindable = com_cast<IMTLBindable>(pBufferForArgs)) {
-      ctx.EmitRenderCommandChk(
+      ctx.EmitCommand(
           [IndexType, IndexBufferOffset, Primitive,
-           ArgBuffer = bindable->UseBindable(currentChunkId),
+           ArgBuffer = ctx.Use(bindable),
            AlignedByteOffsetForArgs](CommandChunk::context &ctx) {
             D3D11_ASSERT(ctx.current_index_buffer_ref);
             ctx.render_encoder->drawIndexedPrimitives(
@@ -1004,16 +1500,15 @@ public:
                              UINT AlignedByteOffsetForArgs) override {
     if (!ctx.PreDraw<true>())
       return;
-    auto currentChunkId = cmd_queue.CurrentSeqId();
     auto [Primitive, ControlPointCount] =
         to_metal_primitive_type(state_.InputAssembler.Topology);
     if (ControlPointCount) {
       return;
     }
     if (auto bindable = com_cast<IMTLBindable>(pBufferForArgs)) {
-      ctx.EmitRenderCommandChk(
+      ctx.EmitCommand(
           [Primitive,
-           ArgBuffer = bindable->UseBindable(currentChunkId),
+           ArgBuffer = ctx.Use(bindable),
            AlignedByteOffsetForArgs](CommandChunk::context &ctx) {
             D3D11_ASSERT(ctx.current_index_buffer_ref);
             ctx.render_encoder->drawPrimitives(
@@ -1049,7 +1544,7 @@ public:
     if (auto bindable = com_cast<IMTLBindable>(pBufferForArgs)) {
       ctx.EmitComputeCommand<true>(
           [AlignedByteOffsetForArgs,
-           ArgBuffer = bindable->UseBindable(cmd_queue.CurrentSeqId())](
+           ArgBuffer = ctx.Use(bindable)](
               MTL::ComputeCommandEncoder *encoder, MTL::Size &tg_size) {
             encoder->dispatchThreadgroups(ArgBuffer.buffer(),
                                           AlignedByteOffsetForArgs, tg_size);
@@ -2116,12 +2611,13 @@ private:
   D3D11ContextState state_;
 
   CommandQueue &cmd_queue;
+  ContextInternalState ctx_state;
   ContextInternal ctx;
 
 public:
   MTLD3D11DeviceContext(MTLD3D11Device *pDevice, CommandQueue &cmd_queue)
       : MTLD3D11DeviceContextBase(pDevice), state_(), cmd_queue(cmd_queue),
-        ctx(pDevice, state_, cmd_queue) {}
+        ctx_state(cmd_queue), ctx(pDevice, state_, ctx_state) {}
 
   ~MTLD3D11DeviceContext() {}
 

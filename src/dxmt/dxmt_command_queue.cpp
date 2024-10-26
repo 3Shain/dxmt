@@ -98,7 +98,9 @@ void
 CommandQueue::CommitCurrentChunk(uint64_t occlusion_counter_begin, uint64_t occlusion_counter_end) {
   chunk_ongoing.wait(kCommandChunkCount - 1, std::memory_order_acquire);
   chunk_ongoing.fetch_add(1, std::memory_order_relaxed);
-  auto &chunk = chunks[ready_for_encode.load(std::memory_order_relaxed) % kCommandChunkCount];
+  auto chunk_id = ready_for_encode.load(std::memory_order_relaxed);
+  auto &chunk = chunks[chunk_id % kCommandChunkCount];
+  chunk.chunk_id = chunk_id;
   chunk.frame_ = present_seq;
   chunk.visibility_result_seq_begin = occlusion_counter_begin;
   chunk.visibility_result_seq_end = occlusion_counter_end;
