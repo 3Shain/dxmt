@@ -191,7 +191,7 @@ public:
     QueryInterface(riid, ppLogicalResource);
   }
 
-  void RotateBuffer(IMTLDynamicBufferExchange *exch) override {
+  void RotateBuffer(MTLD3D11Device *exch) override {
     tracker = {};
     exch->ExchangeFromPool(&buffer_dynamic, &buffer_handle, &buffer_mapped,
                            pool.get());
@@ -399,7 +399,7 @@ public:
     return buffer_mapped;
   };
 
-  void RotateBuffer(IMTLDynamicBufferExchange *exch) override {
+  void RotateBuffer(MTLD3D11Device *exch) override {
     exch->ExchangeFromPool(&buffer, &buffer_handle, &buffer_mapped,
                            pool_.get());
     for (auto srv : weak_srvs) {

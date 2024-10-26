@@ -6,6 +6,7 @@
 #include "Metal/MTLDevice.hpp"
 #include "d3d11_private.h"
 #include "dxgi_interfaces.h"
+#include "dxmt_buffer_pool.hpp"
 #include "dxmt_device.hpp"
 
 DEFINE_COM_INTERFACE("14e1e5e4-3f08-4741-a8e3-597d79373266", IMTLThreadpoolWork)
@@ -55,6 +56,16 @@ public:
   virtual bool IsTraced() = 0;
 
   virtual Device& GetDXMTDevice() = 0;
+
+    /**
+  Provide a buffer (include its ownership) and return a buffer of
+  the same size (also include its ownership).
+  "buffer" is specifically a dynamic buffer: cpu write-only, gpu
+  read-only.
+
+  */
+  virtual void ExchangeFromPool(MTL::Buffer * *ppBuffer, uint64_t * gpuAddr,
+                                void **cpuAddr, dxmt::BufferPool *pool) = 0;
 };
 
 Com<IMTLDXGIDevice> CreateD3D11Device(std::unique_ptr<Device> &&device,

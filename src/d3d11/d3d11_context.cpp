@@ -726,7 +726,7 @@ public:
       case D3D11_MAP_READ_WRITE:
         return E_INVALIDARG;
       case D3D11_MAP_WRITE_DISCARD: {
-        dynamic->RotateBuffer(this);
+        dynamic->RotateBuffer(m_parent);
         auto bind_flag = dynamic->GetBindFlag();
         if (bind_flag & D3D11_BIND_VERTEX_BUFFER) {
           state_.InputAssembler.VertexBuffers.set_dirty();
@@ -2538,18 +2538,6 @@ public:
   };
 
   void STDMETHODCALLTYPE EndEvent() override { IMPLEMENT_ME };
-
-#pragma endregion
-
-#pragma region DynamicBufferPool
-
-  void ExchangeFromPool(MTL::Buffer **pBuffer, uint64_t *gpuAddr,
-                        void **cpuAddr, BufferPool *pool) final {
-    D3D11_ASSERT(*pBuffer);
-    D3D11_ASSERT(pool);
-    pool->GetNext(cmd_queue.CurrentSeqId(), cmd_queue.CoherentSeqId(), pBuffer,
-                  gpuAddr, cpuAddr);
-  }
 
 #pragma endregion
 
