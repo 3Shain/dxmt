@@ -1,6 +1,7 @@
 #include "d3d11_device.hpp"
 #include "d3d11_private.h"
 #include "d3d11_context_impl.cpp"
+#include "dxmt_command_queue.hpp"
 
 namespace dxmt {
 
@@ -56,8 +57,8 @@ DeferredContextBase::MarkPass(EncoderKind kind) {
 
 template <>
 template <typename T>
-CommandChunk::fixed_vector_on_heap<T>
-DeferredContextBase::ReserveVector(size_t n) {
+moveonly_list<T>
+DeferredContextBase::AllocateCommandData(size_t n) {
   IMPLEMENT_ME;
 }
 

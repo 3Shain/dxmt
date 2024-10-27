@@ -21,6 +21,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <span>
 #include <vector>
 
 namespace dxmt {
@@ -84,6 +85,53 @@ struct ENCODER_CLEARPASS_INFO {
 template <typename F, typename context>
 concept cpu_cmd = requires(F f, context &ctx) {
   { f(ctx) } -> std::same_as<void>;
+};
+
+template <typename T> class moveonly_list {
+public:
+  moveonly_list(T *storage, size_t size) : storage(storage), size_(size) {
+    for (unsigned i = 0; i < size_; i++) {
+      new (storage + i) T();
+    }
+  }
+
+  moveonly_list(const moveonly_list &copy) = delete;
+  moveonly_list(moveonly_list &&move) {
+    storage = move.storage;
+    move.storage = nullptr;
+    size_ = move.size_;
+    move.size_ = 0;
+  };
+
+  ~moveonly_list() {
+    for (unsigned i = 0; i < size_; i++) {
+      storage[i].~T();
+    }
+  };
+
+  T &
+  operator[](int index) {
+    return storage[index];
+  }
+
+  std::span<T>
+  span() const {
+    return std::span<T>(storage, size_);
+  }
+
+  T *
+  data() const {
+    return storage;
+  }
+
+  size_t
+  size() const {
+    return size_;
+  }
+
+private:
+  T *storage;
+  size_t size_;
 };
 
 inline std::size_t
@@ -195,18 +243,7 @@ class CommandChunk {
   };
 
 public:
-  template <typename T> using fixed_vector_on_heap = std::vector<T, linear_allocator<T>>;
-
   CommandChunk(const CommandChunk &) = delete; // delete copy constructor
-
-  template <typename T>
-  fixed_vector_on_heap<T>
-  reserve_vector(size_t n = 1) {
-    linear_allocator<T> allocator(this);
-    fixed_vector_on_heap<T> ret(allocator);
-    ret.reserve(n);
-    return ret;
-  }
 
   void *
   allocate_cpu_heap(size_t size, size_t alignment) {

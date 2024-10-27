@@ -62,10 +62,10 @@ ImmediateContextBase::MarkPass(EncoderKind kind) {
 
 template <>
 template <typename T>
-CommandChunk::fixed_vector_on_heap<T>
-ImmediateContextBase::ReserveVector(size_t n) {
+moveonly_list<T>
+ImmediateContextBase::AllocateCommandData(size_t n) {
   CommandChunk *chk = ctx_state.cmd_queue.CurrentChunk();
-  return chk->reserve_vector<T>(n);
+  return moveonly_list<T>((T *)chk->allocate_cpu_heap(sizeof(T) * n, alignof(T)), n);
 }
 
 template <>
