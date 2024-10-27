@@ -501,8 +501,7 @@ struct DXMT_DRAW_ARGUMENTS {
   uint32_t BaseVertex;
 };
 
-template<typename ContextInternalState>
-class MTLD3D11DeviceContextImplBase : public MTLD3D11DeviceContextBase {
+template <typename ContextInternalState> class MTLD3D11DeviceContextImplBase : public MTLD3D11DeviceContextBase {
 public:
   HRESULT
   QueryInterface(REFIID riid, void **ppvObject) override {
@@ -2121,7 +2120,7 @@ public:
   ENCODER_RENDER_INFO *MarkRenderPass();
   ENCODER_INFO *MarkPass(EncoderKind kind);
 
-  template <typename T> CommandChunk::fixed_vector_on_heap<T> ReserveVector(size_t n = 1);
+  template <typename T> moveonly_list<T> AllocateCommandData(size_t n = 1);
 
   void UpdateUAVCounter(IMTLD3D11UnorderedAccessView *uav, uint32_t value);
 
@@ -3087,16 +3086,16 @@ public:
       uint32_t effective_render_target = 0;
       // FIXME: is this value always valid?
       uint32_t render_target_array = state_.OutputMerger.ArrayLength;
-      auto rtvs = ReserveVector<RENDER_TARGET_STATE>(state_.OutputMerger.NumRTVs);
+      auto rtvs = AllocateCommandData<RENDER_TARGET_STATE>(state_.OutputMerger.NumRTVs);
       for (unsigned i = 0; i < state_.OutputMerger.NumRTVs; i++) {
         auto &rtv = state_.OutputMerger.RTVs[i];
         if (rtv) {
           auto props = rtv->GetAttachmentDesc();
-          rtvs.push_back({Use(rtv.ptr()), i, props.Level, props.Slice, props.DepthPlane, rtv->GetPixelFormat()});
+          rtvs[i] = {Use(rtv.ptr()), i, props.Level, props.Slice, props.DepthPlane, rtv->GetPixelFormat()};
           D3D11_ASSERT(rtv->GetPixelFormat() != MTL::PixelFormatInvalid);
           effective_render_target++;
         } else {
-          rtvs.push_back({BindingRef(std::nullopt), i, 0, 0, 0, MTL::PixelFormatInvalid});
+          rtvs[i].RenderTargetIndex = i;
         }
       }
       struct DEPTH_STENCIL_STATE {
@@ -3158,7 +3157,7 @@ public:
               }
             }
           } else {
-            for (auto &rtv : rtvs) {
+            for (auto &rtv : rtvs.span()) {
               if (previous_clearpass->clear_attachment == rtv.Texture && rtv.LoadAction != MTL::LoadActionClear) {
                 rtv.LoadAction = MTL::LoadActionClear;
                 rtv.ClearColor = previous_clearpass->color;
@@ -3181,7 +3180,7 @@ public:
                    render_target_array](CommandChunk::context &ctx) {
         auto pool = transfer(NS::AutoreleasePool::alloc()->init());
         auto renderPassDescriptor = MTL::RenderPassDescriptor::renderPassDescriptor();
-        for (auto &rtv : rtvs) {
+        for (auto &rtv : rtvs.span()) {
           if (rtv.PixelFormat == MTL::PixelFormatInvalid) {
             continue;
           }
@@ -3525,13 +3524,11 @@ public:
       ERR("FIXME: handle multiple viewports with single scissor rect.");
     }
     if (dirty_state.any(DirtyState::Viewport)) {
-      auto viewports = ReserveVector<MTL::Viewport>(state_.Rasterizer.NumViewports);
+      auto viewports = AllocateCommandData<MTL::Viewport>(state_.Rasterizer.NumViewports);
       for (unsigned i = 0; i < state_.Rasterizer.NumViewports; i++) {
         auto &d3dViewport = state_.Rasterizer.viewports[i];
-        viewports.push_back(
-            {d3dViewport.TopLeftX, d3dViewport.TopLeftY, d3dViewport.Width, d3dViewport.Height, d3dViewport.MinDepth,
-             d3dViewport.MaxDepth}
-        );
+        viewports[i] = {d3dViewport.TopLeftX, d3dViewport.TopLeftY, d3dViewport.Width,
+                        d3dViewport.Height,   d3dViewport.MinDepth, d3dViewport.MaxDepth};
       }
       EmitCommand([viewports = std::move(viewports)](CommandChunk::context &ctx) {
         auto &encoder = ctx.render_encoder;
@@ -3539,24 +3536,23 @@ public:
       });
     }
     if (dirty_state.any(DirtyState::Scissors)) {
-      auto scissors = ReserveVector<MTL::ScissorRect>(
+      auto scissors = AllocateCommandData<MTL::ScissorRect>(
           allow_scissor ? state_.Rasterizer.NumScissorRects : state_.Rasterizer.NumViewports
       );
       if (allow_scissor) {
         for (unsigned i = 0; i < state_.Rasterizer.NumScissorRects; i++) {
           auto &d3dRect = state_.Rasterizer.scissor_rects[i];
-          scissors.push_back(
-              {(UINT)d3dRect.left, (UINT)d3dRect.top, (UINT)d3dRect.right - d3dRect.left,
-               (UINT)d3dRect.bottom - d3dRect.top}
-          );
+          scissors[i] = {
+              (UINT)d3dRect.left, (UINT)d3dRect.top, (UINT)d3dRect.right - d3dRect.left,
+              (UINT)d3dRect.bottom - d3dRect.top
+          };
         }
       } else {
         for (unsigned i = 0; i < state_.Rasterizer.NumViewports; i++) {
           auto &d3dViewport = state_.Rasterizer.viewports[i];
-          scissors.push_back(
-              {(UINT)d3dViewport.TopLeftX, (UINT)d3dViewport.TopLeftY, (UINT)d3dViewport.Width, (UINT)d3dViewport.Height
-              }
-          );
+          scissors[i] = {
+              (UINT)d3dViewport.TopLeftX, (UINT)d3dViewport.TopLeftY, (UINT)d3dViewport.Width, (UINT)d3dViewport.Height
+          };
         }
       }
       EmitCommand([scissors = std::move(scissors)](CommandChunk::context &ctx) {

@@ -95,7 +95,6 @@ public:
       byte_width(byte_width),
       byte_offset(byte_offset),
       reference_holder(ref) {}
-  BindingRef(std::nullopt_t _) noexcept : type(Type::Null) {};
   BindingRef(BackBufferSource *t, bool srgb) noexcept :
       type(srgb ? BindingRef::Type::BackBufferSource_sRGB : BindingRef::Type::BackBufferSource_Linear),
       reference_holder(t) {}
