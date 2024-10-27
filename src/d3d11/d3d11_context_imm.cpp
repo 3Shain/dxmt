@@ -1,85 +1,76 @@
 #include "d3d11_query.hpp"
 #include "dxmt_command_queue.hpp"
+#include "d3d11_context_impl.cpp"
 
 namespace dxmt {
 struct ContextInternalState {
   CommandQueue &cmd_queue;
 };
-}; // namespace dxmt
 
-#include "d3d11_context_impl.cpp"
+using ImmediateContextBase = MTLD3D11DeviceContextImplBase<ContextInternalState>;
 
-namespace dxmt {
-template <typename F> class DestructorWrapper {
-  F f;
-  bool destroyed = false;
-
-public:
-  DestructorWrapper(const DestructorWrapper &) = delete;
-  DestructorWrapper(DestructorWrapper &&move) : f(std::forward<F>(move.f)), destroyed(move.destroyed) {
-    move.destroyed = true;
-  };
-  DestructorWrapper(F &&f, std::nullptr_t) : f(std::forward<F>(f)) {}
-  ~DestructorWrapper() {
-    if (!destroyed) {
-      std::invoke(f);
-      destroyed = true;
-    }
-  };
-};
-
+template <>
 template <typename Fn>
 void
-MTLD3D11DeviceContext::EmitCommand(Fn &&fn) {
+ImmediateContextBase::EmitCommand(Fn &&fn) {
   CommandChunk *chk = ctx_state.cmd_queue.CurrentChunk();
   chk->emit([fn = std::forward<Fn>(fn)](CommandChunk::context &ctx) { std::invoke(fn, ctx); });
 }
 
+template <>
 BindingRef
-MTLD3D11DeviceContext::Use(IMTLBindable *bindable) {
+ImmediateContextBase::Use(IMTLBindable *bindable) {
   return bindable->UseBindable(ctx_state.cmd_queue.CurrentSeqId());
 }
 
+template <>
 BindingRef
-MTLD3D11DeviceContext::Use(IMTLD3D11RenderTargetView *rtv) {
+ImmediateContextBase::Use(IMTLD3D11RenderTargetView *rtv) {
   return rtv->UseBindable(ctx_state.cmd_queue.CurrentSeqId());
 }
 
+template <>
 BindingRef
-MTLD3D11DeviceContext::Use(IMTLD3D11DepthStencilView *dsv) {
+ImmediateContextBase::Use(IMTLD3D11DepthStencilView *dsv) {
   return dsv->UseBindable(ctx_state.cmd_queue.CurrentSeqId());
 }
 
+template <>
 ENCODER_INFO *
-MTLD3D11DeviceContext::GetLastEncoder() {
+ImmediateContextBase::GetLastEncoder() {
   CommandChunk *chk = ctx_state.cmd_queue.CurrentChunk();
   return chk->get_last_encoder();
 }
+template <>
 ENCODER_CLEARPASS_INFO *
-MTLD3D11DeviceContext::MarkClearPass() {
+ImmediateContextBase::MarkClearPass() {
   CommandChunk *chk = ctx_state.cmd_queue.CurrentChunk();
   return chk->mark_clear_pass();
 }
+template <>
 ENCODER_RENDER_INFO *
-MTLD3D11DeviceContext::MarkRenderPass() {
+ImmediateContextBase::MarkRenderPass() {
   CommandChunk *chk = ctx_state.cmd_queue.CurrentChunk();
   return chk->mark_render_pass();
 }
+template <>
 ENCODER_INFO *
-MTLD3D11DeviceContext::MarkPass(EncoderKind kind) {
+ImmediateContextBase::MarkPass(EncoderKind kind) {
   CommandChunk *chk = ctx_state.cmd_queue.CurrentChunk();
   return chk->mark_pass(kind);
 }
 
+template <>
 template <typename T>
 CommandChunk::fixed_vector_on_heap<T>
-MTLD3D11DeviceContext::ReserveVector(size_t n) {
+ImmediateContextBase::ReserveVector(size_t n) {
   CommandChunk *chk = ctx_state.cmd_queue.CurrentChunk();
   return chk->reserve_vector<T>(n);
 }
 
+template <>
 void
-MTLD3D11DeviceContext::UpdateUAVCounter(IMTLD3D11UnorderedAccessView *uav, uint32_t value) {
+ImmediateContextBase::UpdateUAVCounter(IMTLD3D11UnorderedAccessView *uav, uint32_t value) {
   auto currentChunkId = ctx_state.cmd_queue.CurrentSeqId();
   auto new_counter_handle = ctx_state.cmd_queue.counter_pool.AllocateCounter(currentChunkId, value);
   // it's possible that old_counter_handle == new_counter_handle
@@ -91,13 +82,15 @@ MTLD3D11DeviceContext::UpdateUAVCounter(IMTLD3D11UnorderedAccessView *uav, uint3
   }
 };
 
+template <>
 std::tuple<void *, MTL::Buffer *, uint64_t>
-MTLD3D11DeviceContext::AllocateStagingBuffer(size_t size, size_t alignment) {
+ImmediateContextBase::AllocateStagingBuffer(size_t size, size_t alignment) {
   return ctx_state.cmd_queue.AllocateStagingBuffer(size, alignment);
 }
 
+template <>
 bool
-MTLD3D11DeviceContext::UseCopyDestination(
+ImmediateContextBase::UseCopyDestination(
     IMTLD3D11Staging *pResource, uint32_t Subresource, MTL_STAGING_RESOURCE *pBuffer, uint32_t *pBytesPerRow,
     uint32_t *pBytesPerImage
 ) {
@@ -105,8 +98,9 @@ MTLD3D11DeviceContext::UseCopyDestination(
       Subresource, ctx_state.cmd_queue.CurrentSeqId(), pBuffer, pBytesPerRow, pBytesPerImage
   );
 }
+template <>
 bool
-MTLD3D11DeviceContext::UseCopySource(
+ImmediateContextBase::UseCopySource(
     IMTLD3D11Staging *pResource, uint32_t Subresource, MTL_STAGING_RESOURCE *pBuffer, uint32_t *pBytesPerRow,
     uint32_t *pBytesPerImage
 ) {
@@ -115,16 +109,18 @@ MTLD3D11DeviceContext::UseCopySource(
   );
 }
 
+template <>
 BindingRef
-MTLD3D11DeviceContext::UseImmediate(IMTLBindable *bindable) {
+ImmediateContextBase::UseImmediate(IMTLBindable *bindable) {
   if (bindable->GetContentionState(ctx_state.cmd_queue.CoherentSeqId()))
     return BindingRef();
   return bindable->UseBindable(ctx_state.cmd_queue.CurrentSeqId());
 }
 
+template <>
 template <ShaderType stage, bool Tessellation>
 bool
-MTLD3D11DeviceContext::UploadShaderStageResourceBinding() {
+ImmediateContextBase::UploadShaderStageResourceBinding() {
   auto &ShaderStage = state_.ShaderStages[(UINT)stage];
   if (!ShaderStage.Shader) {
     return true;
@@ -410,8 +406,9 @@ MTLD3D11DeviceContext::UploadShaderStageResourceBinding() {
 it's just about vertex buffer
 - index buffer and input topology are provided in draw commands
 */
+template <>
 void
-MTLD3D11DeviceContext::UpdateVertexBuffer() {
+ImmediateContextBase::UpdateVertexBuffer() {
   if (!state_.InputAssembler.InputLayout)
     return;
 
@@ -475,10 +472,10 @@ MTLD3D11DeviceContext::UpdateVertexBuffer() {
   }
 }
 
-class MTLD3D11ImmediateContext : public MTLD3D11DeviceContext {
+class MTLD3D11ImmediateContext : public ImmediateContextBase {
 public:
   MTLD3D11ImmediateContext(MTLD3D11Device *pDevice, CommandQueue &cmd_queue) :
-      MTLD3D11DeviceContext(pDevice, ctx_state),
+      ImmediateContextBase(pDevice, ctx_state),
       cmd_queue(cmd_queue),
       ctx_state({cmd_queue}) {}
 
