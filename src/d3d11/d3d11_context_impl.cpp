@@ -20,7 +20,7 @@ since it is for internal use only
 
 namespace dxmt {
 
-inline static std::pair<MTL::PrimitiveType, uint32_t>
+inline std::pair<MTL::PrimitiveType, uint32_t>
 to_metal_primitive_type(D3D11_PRIMITIVE_TOPOLOGY topo) {
 
   switch (topo) {
@@ -79,7 +79,7 @@ to_metal_primitive_type(D3D11_PRIMITIVE_TOPOLOGY topo) {
   }
 }
 
-inline static MTL::PrimitiveTopologyClass
+inline MTL::PrimitiveTopologyClass
 to_metal_primitive_topology(D3D11_PRIMITIVE_TOPOLOGY topo) {
   switch (topo) {
   case D3D_PRIMITIVE_TOPOLOGY_POINTLIST:
@@ -129,7 +129,7 @@ to_metal_primitive_topology(D3D11_PRIMITIVE_TOPOLOGY topo) {
     // Metal tessellation only support triangle as output primitive
     return MTL::PrimitiveTopologyClassTriangle;
   case D3D_PRIMITIVE_TOPOLOGY_UNDEFINED:
-    throw MTLD3DError("Invalid topology");
+    D3D11_ASSERT(0 && "Invalid topology");
   }
 }
 
@@ -501,9 +501,8 @@ struct DXMT_DRAW_ARGUMENTS {
   uint32_t BaseVertex;
 };
 
-struct ContextInternalState;
-
-class MTLD3D11DeviceContext : public MTLD3D11DeviceContextBase {
+template<typename ContextInternalState>
+class MTLD3D11DeviceContextImplBase : public MTLD3D11DeviceContextBase {
 public:
   HRESULT
   QueryInterface(REFIID riid, void **ppvObject) override {
@@ -3740,7 +3739,7 @@ protected:
   D3D11ContextState state_;
 
 public:
-  MTLD3D11DeviceContext(MTLD3D11Device *pDevice, ContextInternalState &ctx_state) :
+  MTLD3D11DeviceContextImplBase(MTLD3D11Device *pDevice, ContextInternalState &ctx_state) :
       MTLD3D11DeviceChild(pDevice),
       device(pDevice),
       ctx_state(ctx_state),
@@ -3755,6 +3754,24 @@ public:
     default_blend_state->Release();
     default_depth_stencil_state->Release();
   }
+};
+
+template <typename F> class DestructorWrapper {
+  F f;
+  bool destroyed = false;
+
+public:
+  DestructorWrapper(const DestructorWrapper &) = delete;
+  DestructorWrapper(DestructorWrapper &&move) : f(std::forward<F>(move.f)), destroyed(move.destroyed) {
+    move.destroyed = true;
+  };
+  DestructorWrapper(F &&f, std::nullptr_t) : f(std::forward<F>(f)) {}
+  ~DestructorWrapper() {
+    if (!destroyed) {
+      std::invoke(f);
+      destroyed = true;
+    }
+  };
 };
 
 } // namespace dxmt

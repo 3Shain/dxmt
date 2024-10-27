@@ -165,12 +165,9 @@ struct D3D11ContextState {
   BOOL predicate_value = FALSE;
 };
 
-class MTLD3D11DeviceContext;
-
 // TODO: implemente it properly
 class MTLD3D11DeviceContextState
     : public MTLD3D11DeviceChild<ID3DDeviceContextState> {
-  friend class MTLD3D11DeviceContext;
 
 public:
   MTLD3D11DeviceContextState(MTLD3D11Device *pDevice)
