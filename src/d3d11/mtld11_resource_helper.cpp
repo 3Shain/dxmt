@@ -305,9 +305,11 @@ CreateMTLTextureDescriptorInternal(
   if (BindFlags & D3D11_BIND_DEPTH_STENCIL) {
     switch (Format) {
     case DXGI_FORMAT_R32_TYPELESS:
+    case DXGI_FORMAT_D32_FLOAT:
       metal_format.PixelFormat = MTL::PixelFormatDepth32Float;
       break;
     case DXGI_FORMAT_R16_TYPELESS:
+    case DXGI_FORMAT_D16_UNORM:
       metal_format.PixelFormat = MTL::PixelFormatDepth16Unorm;
       break;
     case DXGI_FORMAT_D32_FLOAT_S8X24_UINT:

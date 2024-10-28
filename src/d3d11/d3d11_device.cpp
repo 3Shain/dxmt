@@ -476,7 +476,12 @@ public:
 
   HRESULT STDMETHODCALLTYPE CreateDeferredContext(
       UINT ContextFlags,
-      ID3D11DeviceContext **ppDeferredContext) override{IMPLEMENT_ME}
+      ID3D11DeviceContext **ppDeferredContext) override{
+    ID3D11DeviceContext3 *ppDeferredContext3;
+    HRESULT hr = CreateDeferredContext3(ContextFlags, &ppDeferredContext3);
+    *ppDeferredContext = static_cast<ID3D11DeviceContext *>(ppDeferredContext3);
+    return hr;
+  }
 
   HRESULT STDMETHODCALLTYPE
       OpenSharedResource(HANDLE hResource, REFIID ReturnedInterface,
@@ -726,7 +731,7 @@ public:
 
   void STDMETHODCALLTYPE
   GetImmediateContext(ID3D11DeviceContext **ppImmediateContext) override {
-    GetImmediateContext2((ID3D11DeviceContext2 **)ppImmediateContext);
+    context_->QueryInterface(IID_PPV_ARGS(ppImmediateContext));
   }
 
   HRESULT STDMETHODCALLTYPE SetExceptionMode(UINT RaiseFlags) override {
@@ -741,12 +746,17 @@ public:
 
   void STDMETHODCALLTYPE
   GetImmediateContext1(ID3D11DeviceContext1 **ppImmediateContext) override {
-    GetImmediateContext2((ID3D11DeviceContext2 **)ppImmediateContext);
+    context_->QueryInterface(IID_PPV_ARGS(ppImmediateContext));
   }
 
   HRESULT STDMETHODCALLTYPE CreateDeferredContext1(
       UINT ContextFlags,
-      ID3D11DeviceContext1 **ppDeferredContext) override{IMPLEMENT_ME}
+      ID3D11DeviceContext1 **ppDeferredContext) override{
+    ID3D11DeviceContext3 *ppDeferredContext3;
+    HRESULT hr = CreateDeferredContext3(ContextFlags, &ppDeferredContext3);
+    *ppDeferredContext = static_cast<ID3D11DeviceContext1 *>(ppDeferredContext3);
+    return hr;
+  }
 
   HRESULT STDMETHODCALLTYPE
       CreateBlendState1(const D3D11_BLEND_DESC1 *pBlendStateDesc,
@@ -807,13 +817,15 @@ public:
 
   void STDMETHODCALLTYPE
   GetImmediateContext2(ID3D11DeviceContext2 **ppImmediateContext) override {
-    static_cast<ID3D11DeviceContext2 *>(context_.get())
-        ->QueryInterface(IID_PPV_ARGS(ppImmediateContext));
+    context_->QueryInterface(IID_PPV_ARGS(ppImmediateContext));
   }
 
   HRESULT STDMETHODCALLTYPE
-  CreateDeferredContext2(UINT flags, ID3D11DeviceContext2 **context) override {
-    IMPLEMENT_ME;
+  CreateDeferredContext2(UINT ContextFlags, ID3D11DeviceContext2 **ppDeferredContext) override {
+    ID3D11DeviceContext3 *ppDeferredContext3;
+    HRESULT hr = CreateDeferredContext3(ContextFlags, &ppDeferredContext3);
+    *ppDeferredContext = static_cast<ID3D11DeviceContext2 *>(ppDeferredContext3);
+    return hr;
   }
 
   void STDMETHODCALLTYPE GetResourceTiling(
@@ -980,12 +992,14 @@ public:
   }
 
   void STDMETHODCALLTYPE
-  GetImmediateContext3(ID3D11DeviceContext3 **context) override{IMPLEMENT_ME}
+  GetImmediateContext3(ID3D11DeviceContext3 **ppImmediateContext) override{
+    context_->QueryInterface(IID_PPV_ARGS(ppImmediateContext));
+  }
 
-  HRESULT STDMETHODCALLTYPE
-      CreateDeferredContext3(UINT flags,
-                             ID3D11DeviceContext3 **context) override {
-    IMPLEMENT_ME
+  HRESULT STDMETHODCALLTYPE CreateDeferredContext3(
+    UINT ContextFlags, ID3D11DeviceContext3 **ppDeferredContext) override {
+    *ppDeferredContext = std::move(dxmt::CreateDeferredContext(this, ContextFlags));
+    return S_OK;
   }
 
   void STDMETHODCALLTYPE WriteToSubresource(ID3D11Resource *dst_resource,

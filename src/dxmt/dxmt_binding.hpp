@@ -19,6 +19,10 @@ struct EncodingContext {
   // virtual MTL::Texture *GetCurrentSwapchainBackbuffer() = 0;
 };
 
+struct deferred_binding_t {
+
+};
+
 namespace impl {
 enum BindingType : uint32_t {
   Null = 0,
@@ -30,6 +34,7 @@ enum BindingType : uint32_t {
   WithLODClamp = 0b0010'0000,
   BackBufferSource_sRGB = 0b1'0000'0000,
   BackBufferSource_Linear = 0b10'0000'0000,
+  Deferred = 0b1'0000'0000'0000,
   WithElementOffset = 0b1111 << 27,
 };
 
@@ -49,7 +54,7 @@ class BindingRef {
   Type type;
   union {
     float min_lod;
-    uint32_t unused;
+    uint32_t defered_binding_table_index;
   };
   MTL::Resource *resource_ptr;
   union {
@@ -62,6 +67,7 @@ class BindingRef {
 
 public:
   BindingRef() noexcept : type(Type::Null) {};
+  BindingRef(uint32_t index, deferred_binding_t) noexcept : type(Type::Deferred), defered_binding_table_index(index) {};
   BindingRef(IUnknown *ref, MTL::Buffer *buffer, uint32_t byte_width, uint32_t offset) noexcept :
       type(Type::JustBuffer | Type::WithBoundInformation),
       resource_ptr(buffer),
@@ -106,11 +112,13 @@ public:
   BindingRef(BindingRef &&move) {
     type = move.type;
     resource_ptr = move.resource_ptr;
+    min_lod = move.min_lod;
     buffer_ptr = move.buffer_ptr;
     byte_width = move.byte_width;
     byte_offset = move.byte_offset;
     reference_holder = std::move(move.reference_holder);
     move.type = Type::Null;
+    move.min_lod = 0;
     move.byte_offset = 0;
     move.byte_width = 0;
     // move.reference_holder = nullptr;
@@ -122,10 +130,12 @@ public:
     type = move.type;
     resource_ptr = move.resource_ptr;
     buffer_ptr = move.buffer_ptr;
+    min_lod = move.min_lod;
     byte_width = move.byte_width;
     byte_offset = move.byte_offset;
     reference_holder = std::move(move.reference_holder);
     move.type = Type::Null;
+    move.min_lod = 0;
     move.byte_offset = 0;
     move.byte_width = 0;
     // move.reference_holder = 0;
@@ -167,6 +177,10 @@ public:
       if (reference_holder != other.reference_holder)
         return false;
     }
+    if (type & Type::Deferred) {
+      if (defered_binding_table_index != other.defered_binding_table_index)
+        return false;
+    }
 
     return true;
   };
@@ -184,12 +198,18 @@ public:
     if (type & Type::WithBackedBuffer) {
       return buffer_ptr;
     }
+    if(type & Type::Deferred) {
+      return lut[defered_binding_table_index].buffer();
+    }
     return nullptr;
   }
   MTL::Texture *
   texture() const {
     if (type & Type::JustTexture) {
       return (MTL::Texture *)resource_ptr;
+    }
+    if(type & Type::Deferred) {
+      return lut[defered_binding_table_index].texture();
     }
     return nullptr;
   }
@@ -204,12 +224,18 @@ public:
     if (type & Type::BackBufferSource_Linear) {
       return ((BackBufferSource *)reference_holder.ptr())->GetCurrentFrameBackBuffer(false);
     }
+    if(type & Type::Deferred) {
+      return lut[defered_binding_table_index].texture(context);
+    }
     return nullptr;
   }
   uint32_t
   width() const {
     if (type & Type::WithBoundInformation) {
       return byte_width;
+    }
+    if(type & Type::Deferred) {
+      return lut[defered_binding_table_index].width();
     }
     return 0;
   }
@@ -219,11 +245,17 @@ public:
     if (type & Type::WithBoundInformation) {
       return byte_offset;
     }
+    if(type & Type::Deferred) {
+      return lut[defered_binding_table_index].offset();
+    }
     return 0;
   }
 
   MTL::Resource *
   resource() const {
+    if(type & Type::Deferred) {
+      return lut[defered_binding_table_index].resource();
+    }
     return resource_ptr;
   }
 
@@ -240,8 +272,21 @@ public:
 
   bool
   withBackedBuffer() const {
+    if(type & Type::Deferred) {
+      return lut[defered_binding_table_index].withBackedBuffer();
+    }
     return type & Type::WithBackedBuffer;
   };
+
+  thread_local static const BindingRef* lut;
+
+  static void SetLookupTable(const BindingRef* lut_, const BindingRef** old) {
+    /* FIXME: I don't think it's a good idea... */
+    if(old) {
+      *old = lut;
+    }
+    lut = lut_;
+  }
 };
 
 class ArgumentData {
@@ -259,6 +304,8 @@ class ArgumentData {
   };
 
 public:
+  ArgumentData() noexcept :
+      type(Type::Null) {}
   ArgumentData(uint64_t h, uint32_t c) noexcept :
       type(Type::JustBuffer | Type::WithBoundInformation),
       byte_width_(c),

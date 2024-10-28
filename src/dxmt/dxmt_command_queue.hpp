@@ -26,7 +26,7 @@
 
 namespace dxmt {
 
-enum class EncoderKind : uint32_t { Nil, ClearPass, Render, Compute, Blit, Resolve };
+enum class EncoderKind : uint32_t { Nil, ClearPass, Render, Compute, Blit, Resolve, ExecuteCommandList };
 
 struct ENCODER_INFO {
   EncoderKind kind;
@@ -184,7 +184,7 @@ class CommandChunk {
 
     CommandChunk *chunk;
   };
-
+public:
   template <typename context> class BFunc {
   public:
     virtual void invoke(context &) = 0;

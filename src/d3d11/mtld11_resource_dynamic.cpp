@@ -48,7 +48,9 @@ private:
       vec.erase(std::remove(vec.begin(), vec.end(), this), vec.end());
     }
 
-    BindingRef UseBindable(uint64_t x) override {
+    BindingRef UseBindable(uint64_t seq_id) override {
+      if (!seq_id)
+        return BindingRef();
       return BindingRef(static_cast<ID3D11View *>(this),
                         resource->buffer_dynamic, width, offset);
     };
@@ -90,7 +92,9 @@ private:
       vec.erase(std::remove(vec.begin(), vec.end(), this), vec.end());
     }
 
-    BindingRef UseBindable(uint64_t) override {
+    BindingRef UseBindable(uint64_t seq_id) override {
+      if (!seq_id)
+        return BindingRef();
       return BindingRef(static_cast<ID3D11View *>(this), view.ptr());
     }
 
@@ -170,11 +174,19 @@ public:
     return buffer_mapped;
   };
 
+  UINT GetSize(UINT *pBytesPerRow, UINT *pBytesPerImage) override {
+    *pBytesPerRow = buffer_len;
+    *pBytesPerImage = buffer_len;
+    return buffer_len;
+  };
+
   D3D11_BIND_FLAG GetBindFlag() override {
     return (D3D11_BIND_FLAG)desc.BindFlags;
   }
 
-  BindingRef UseBindable(uint64_t) override {
+  BindingRef UseBindable(uint64_t seq_id) override {
+    if (!seq_id)
+      return BindingRef();
     return BindingRef(static_cast<ID3D11Resource *>(this), buffer_dynamic.ptr(),
                       buffer_len, 0);
   }
@@ -338,7 +350,9 @@ private:
       vec.erase(std::remove(vec.begin(), vec.end(), this), vec.end());
     }
 
-    BindingRef UseBindable(uint64_t) override {
+    BindingRef UseBindable(uint64_t seq_id) override {
+      if (!seq_id)
+        return BindingRef();
       return BindingRef(static_cast<ID3D11View *>(this), view.ptr());
     };
 
@@ -397,6 +411,12 @@ public:
     *pBytesPerRow = bytes_per_row;
     *pBytesPerImage = bytes_per_row * desc.Height;
     return buffer_mapped;
+  };
+
+  UINT GetSize(UINT *pBytesPerRow, UINT *pBytesPerImage) override {
+    *pBytesPerRow = bytes_per_row;
+    *pBytesPerImage = bytes_per_row * desc.Height;
+    return buffer->length();
   };
 
   void RotateBuffer(MTLD3D11Device *exch) override {

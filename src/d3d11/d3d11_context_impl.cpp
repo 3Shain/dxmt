@@ -17,6 +17,7 @@ since it is for internal use only
 #include "mtld11_resource.hpp"
 #include "util_flags.hpp"
 #include "util_math.hpp"
+#include <unordered_set>
 
 namespace dxmt {
 
@@ -3250,8 +3251,10 @@ public:
           ctx.render_encoder->setObjectBuffer(h, 0, 29);
           ctx.render_encoder->setObjectBuffer(h, 0, 30);
         }
+#ifndef __DXMT_DISABLE_OCCLUSION_QUERY__
         // TODO: need to check if there is any query in building
         ctx.render_encoder->setVisibilityResultMode(MTL::VisibilityResultModeCounting, bump_offset << 3);
+#endif
       });
     }
 
@@ -3768,6 +3771,343 @@ public:
       destroyed = true;
     }
   };
+};
+
+class MTLD3D11CommandList : public MTLD3D11DeviceChild<ID3D11CommandList> {
+public:
+  MTLD3D11CommandList(MTLD3D11Device *pDevice, UINT context_flag) :
+      MTLD3D11DeviceChild(pDevice),
+      context_flag(context_flag),
+      monoid(),
+      monoid_list(&monoid, nullptr),
+      list_end(&monoid_list),
+      monoid_event(),
+      monoid_list_event(&monoid_event),
+      list_end_event(&monoid_list_event),
+      last_encoder_info(&init_encoder_info),
+      staging_allocator(
+          pDevice->GetMTLDevice(), MTL::ResourceOptionCPUCacheModeWriteCombined |
+                                       MTL::ResourceHazardTrackingModeUntracked | MTL::ResourceStorageModeShared
+      ) {
+    cpu_argument_heap = (char *)malloc(kCommandChunkCPUHeapSize);
+  };
+
+  ~MTLD3D11CommandList() {
+    {
+      for (auto bindable : track_bindable)
+        bindable->Release();
+      for (auto rtv : track_rtv)
+        rtv->Release();
+      for (auto dsv : track_dsv)
+        dsv->Release();
+    }
+    {
+      for (auto ptr : dynamic_buffer)
+        free(ptr);
+    }
+    staging_allocator.free_blocks(~0uLL);
+    {
+      auto cur = monoid_list.next;
+      while (cur) {
+        assert((uint64_t)cur->value >= (uint64_t)cpu_argument_heap);
+        assert((uint64_t)cur->value < ((uint64_t)cpu_argument_heap + cpu_arugment_heap_offset));
+        cur->value->~BFunc<CommandChunk::context>();
+        cur = cur->next;
+      }
+    }
+    {
+      auto cur = monoid_list_event.next;
+      while (cur) {
+        assert((uint64_t)cur->value >= (uint64_t)cpu_argument_heap);
+        assert((uint64_t)cur->value < ((uint64_t)cpu_argument_heap + cpu_arugment_heap_offset));
+        cur->value->~BFunc<EventContext>();
+        cur = cur->next;
+      }
+    }
+    free(cpu_argument_heap);
+  }
+
+  HRESULT
+  QueryInterface(REFIID riid, void **ppvObject) override {
+    if (ppvObject == nullptr)
+      return E_POINTER;
+
+    *ppvObject = nullptr;
+
+    if (riid == __uuidof(IUnknown) || riid == __uuidof(ID3D11DeviceChild) || riid == __uuidof(ID3D11CommandList)) {
+      *ppvObject = ref(this);
+      return S_OK;
+    }
+
+    if (logQueryInterfaceError(__uuidof(ID3D11CommandList), riid)) {
+      WARN("D3D11CommandList: Unknown interface query ", str::format(riid));
+    }
+    return E_NOINTERFACE;
+  }
+
+  UINT
+  GetContextFlags() override {
+    return context_flag;
+  };
+
+#pragma region DeferredContext-related
+
+  struct EventContext {
+    CommandQueue &cmd_queue;
+    MTLD3D11Device *device;
+    MTL::Buffer *heap;
+    uint64_t *gpu_argument_heap_contents;
+    std::vector<ArgumentData> &argument_table;
+    std::vector<BindingRef> &binding_table;
+  };
+
+  template <typename Fn>
+  void
+  EmitEvent(Fn &&fn) {
+    using TT = CommandChunk::EFunc<EventContext, Fn>;
+    using NodeT = CommandChunk::Node<CommandChunk::BFunc<EventContext> *>;
+    auto ptr = allocate_cpu_heap<TT>();
+    new (ptr) TT(std::forward<Fn>(fn));
+    auto ptr_node = allocate_cpu_heap<NodeT>();
+    *ptr_node = {ptr, nullptr};
+    list_end_event->next = ptr_node;
+    list_end_event = ptr_node;
+  }
+
+  template <typename Fn>
+  void
+  EmitCommand(Fn &&fn) {
+    using TT = CommandChunk::EFunc<CommandChunk::context, Fn>;
+    using NodeT = CommandChunk::Node<CommandChunk::BFunc<CommandChunk::context> *>;
+    auto ptr = allocate_cpu_heap<TT>();
+    new (ptr) TT(std::forward<Fn>(fn));
+    auto ptr_node = allocate_cpu_heap<NodeT>();
+    *ptr_node = {ptr, nullptr};
+    list_end->next = ptr_node;
+    list_end = ptr_node;
+  }
+
+  BindingRef
+  Use(IMTLBindable *bindable) {
+    auto immediate = bindable->UseBindable(0);
+    if (immediate) {
+      if (track_bindable.insert(bindable).second) {
+        bindable->AddRef();
+      }
+      return immediate;
+    } else {
+      Com<IMTLDynamicBuffer> dynamic;
+      bindable->GetLogicalResourceOrView(IID_PPV_ARGS(&dynamic));
+      D3D11_ASSERT(dynamic);
+      auto index = num_bindingref++;
+      EmitEvent([index, bindable = Com(bindable)](EventContext &ctx) {
+        ctx.binding_table[index] = bindable->UseBindable(ctx.cmd_queue.CurrentSeqId());
+      });
+      dynamic_view.insert({dynamic.ptr(), bindable});
+      return BindingRef(index, deferred_binding_t{});
+    }
+  }
+
+  BindingRef
+  Use(IMTLD3D11RenderTargetView *rtv) {
+    auto immediate = rtv->UseBindable(0);
+    if (immediate) {
+      if (track_rtv.insert(rtv).second) {
+        rtv->AddRef();
+      }
+      return immediate;
+    } else {
+      D3D11_ASSERT(0 && "Unhandled dynamic RTV");
+    }
+  }
+
+  BindingRef
+  Use(IMTLD3D11DepthStencilView *dsv) {
+    auto immediate = dsv->UseBindable(0);
+    if (immediate) {
+      if (track_dsv.insert(dsv).second) {
+        dsv->AddRef();
+      }
+      return immediate;
+    } else {
+      D3D11_ASSERT(0 && "Unhandled dynamic DSV");
+    }
+  }
+
+  ENCODER_INFO *
+  GetLastEncoder() {
+    return last_encoder_info;
+  }
+  ENCODER_CLEARPASS_INFO *
+  MarkClearPass() {
+    auto ptr = allocate_cpu_heap<ENCODER_CLEARPASS_INFO>();
+    new (ptr) ENCODER_CLEARPASS_INFO();
+    ptr->encoder_id = encoder_seq_local++;
+    last_encoder_info = (ENCODER_INFO *)ptr;
+    return ptr;
+  }
+  ENCODER_RENDER_INFO *
+  MarkRenderPass() {
+    auto ptr = allocate_cpu_heap<ENCODER_RENDER_INFO>();
+    new (ptr) ENCODER_RENDER_INFO();
+    ptr->encoder_id = encoder_seq_local++;
+    last_encoder_info = (ENCODER_INFO *)ptr;
+    return ptr;
+  }
+  ENCODER_INFO *
+  MarkPass(EncoderKind kind) {
+    auto ptr = allocate_cpu_heap<ENCODER_INFO>();
+    ptr->kind = kind;
+    ptr->encoder_id = encoder_seq_local++;
+    last_encoder_info = ptr;
+    return ptr;
+  }
+
+  template <typename T>
+  moveonly_list<T>
+  AllocateCommandData(size_t n) {
+    return moveonly_list<T>((T *)allocate_cpu_heap(sizeof(T) * n, alignof(T)), n);
+  }
+
+  std::tuple<void *, MTL::Buffer *, uint64_t>
+  AllocateStagingBuffer(size_t size, size_t alignment) {
+    return staging_allocator.allocate(1, 0, size, alignment);
+  }
+
+  void *
+  allocate_cpu_heap(size_t size, size_t alignment) {
+    std::size_t adjustment = align_forward_adjustment((void *)cpu_arugment_heap_offset, alignment);
+    auto aligned = cpu_arugment_heap_offset + adjustment;
+    cpu_arugment_heap_offset = aligned + size;
+    if (cpu_arugment_heap_offset >= kCommandChunkCPUHeapSize) {
+      ERR(cpu_arugment_heap_offset, " - cpu argument heap overflow, expect error.");
+    }
+    return ptr_add(cpu_argument_heap, aligned);
+  }
+
+  template <typename T>
+  T *
+  allocate_cpu_heap() {
+    return (T *)allocate_cpu_heap(sizeof(T), alignof(T));
+  }
+
+  void *
+  AllocateDynamicTempBuffer(IMTLDynamicBuffer *token, size_t size) {
+    auto ptr = malloc(size);
+    dynamic_buffer.push_back(ptr);
+    dynamic_buffer_map[token] = ptr;
+    auto [begin, end] = dynamic_view.equal_range(token);
+    for (auto &[_, view] : std::ranges::subrange(begin, end)) {
+      // insert doesn't hurt
+      residency_tracker[view] = {};
+    }
+    return ptr;
+  };
+
+  void *
+  GetDynamicTempBuffer(IMTLDynamicBuffer *token) {
+    if (dynamic_buffer_map.contains(token)) {
+      return dynamic_buffer_map.at(token);
+    }
+    return nullptr;
+  };
+
+  uint32_t
+  GetArgumentDataId(IMTLBindable *bindable, SIMPLE_RESIDENCY_TRACKER **tracker) {
+    auto index = num_argument_data++;
+    EmitEvent([index, bindable = Com(bindable)](EventContext &ctx) {
+      SIMPLE_RESIDENCY_TRACKER *_;
+      ctx.argument_table[index] = bindable->GetArgumentData(&_);
+    });
+    *tracker = &residency_tracker.insert({bindable, {}}).first->second;
+    return index;
+  };
+
+  uint64_t
+  ReserveGpuHeap(uint64_t size, uint64_t alignment) {
+    std::size_t adjustment = align_forward_adjustment((void *)gpu_arugment_heap_offset, alignment);
+    auto aligned = gpu_arugment_heap_offset + adjustment;
+    gpu_arugment_heap_offset = aligned + size;
+    return aligned;
+  };
+
+#pragma endregion
+
+#pragma region ImmediateContext-related
+
+  bool Noop() {
+    return cpu_arugment_heap_offset == 0 && gpu_arugment_heap_offset == 0;
+  };
+
+  void
+  ProcessEvents(EventContext &ctx) {
+    {
+      for (auto bindable : track_bindable)
+        bindable->UseBindable(ctx.cmd_queue.CurrentSeqId());
+      for (auto rtv : track_rtv)
+        rtv->UseBindable(ctx.cmd_queue.CurrentSeqId());
+      for (auto dsv : track_dsv)
+        dsv->UseBindable(ctx.cmd_queue.CurrentSeqId());
+    }
+
+    auto cur = monoid_list_event.next;
+    while (cur) {
+      assert((uint64_t)cur->value >= (uint64_t)cpu_argument_heap);
+      assert((uint64_t)cur->value < ((uint64_t)cpu_argument_heap + cpu_arugment_heap_offset));
+      cur->value->invoke(ctx);
+      cur = cur->next;
+    }
+  }
+
+  void
+  EncodeCommands(CommandChunk::context &ctx) {
+    auto cur = monoid_list.next;
+    while (cur) {
+      assert((uint64_t)cur->value >= (uint64_t)cpu_argument_heap);
+      assert((uint64_t)cur->value < ((uint64_t)cpu_argument_heap + cpu_arugment_heap_offset));
+      cur->value->invoke(ctx);
+      cur = cur->next;
+    }
+  }
+
+#pragma endregion
+
+  uint32_t num_argument_data = 0;
+  uint32_t num_bindingref = 0;
+  uint64_t gpu_arugment_heap_offset = 0;
+
+private:
+  UINT context_flag;
+
+  std::vector<Obj<MTL::Buffer>> staging_buffers;
+
+  uint64_t cpu_arugment_heap_offset = 0;
+  char *cpu_argument_heap;
+
+  CommandChunk::MFunc<CommandChunk::context> monoid;
+  CommandChunk::Node<CommandChunk::BFunc<CommandChunk::context> *> monoid_list;
+  CommandChunk::Node<CommandChunk::BFunc<CommandChunk::context> *> *list_end;
+
+  CommandChunk::MFunc<EventContext> monoid_event;
+  CommandChunk::Node<CommandChunk::BFunc<EventContext> *> monoid_list_event;
+  CommandChunk::Node<CommandChunk::BFunc<EventContext> *> *list_end_event;
+
+  ENCODER_INFO init_encoder_info{EncoderKind::Nil, 0};
+  ENCODER_INFO *last_encoder_info;
+  uint64_t encoder_seq_local = 1;
+
+  std::unordered_set<IMTLBindable *> track_bindable;
+  std::unordered_set<IMTLD3D11RenderTargetView *> track_rtv;
+  std::unordered_set<IMTLD3D11DepthStencilView *> track_dsv;
+
+  std::vector<void *> dynamic_buffer;
+  std::unordered_map<IMTLDynamicBuffer *, void *> dynamic_buffer_map;
+
+  std::unordered_map<IMTLBindable *, SIMPLE_RESIDENCY_TRACKER> residency_tracker;
+
+  std::unordered_multimap<IMTLDynamicBuffer *, IMTLBindable *> dynamic_view;
+
+  RingBumpAllocator<true> staging_allocator;
 };
 
 } // namespace dxmt
