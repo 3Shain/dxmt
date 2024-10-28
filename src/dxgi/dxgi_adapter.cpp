@@ -7,6 +7,7 @@
 #include "dxgi_interfaces.h"
 #include "dxgi_object.hpp"
 #include "objc_pointer.hpp"
+#include "d3d10_1.h"
 
 namespace dxmt {
 
@@ -153,7 +154,8 @@ public:
   CheckInterfaceSupport(const GUID &guid, LARGE_INTEGER *umd_version) final {
     HRESULT hr = DXGI_ERROR_UNSUPPORTED;
 
-    if (guid == __uuidof(IDXGIDevice))
+    if (guid == __uuidof(IDXGIDevice) || guid == __uuidof(ID3D10Device) ||
+        guid == __uuidof(ID3D10Device1))
       hr = S_OK;
 
     // We can't really reconstruct the version numbers
