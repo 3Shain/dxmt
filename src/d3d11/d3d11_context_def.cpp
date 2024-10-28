@@ -1,11 +1,14 @@
 #include "d3d11_device.hpp"
 #include "d3d11_private.h"
+#define __DXMT_DISABLE_OCCLUSION_QUERY__ 1
 #include "d3d11_context_impl.cpp"
 #include "dxmt_command_queue.hpp"
 
 namespace dxmt {
 
-struct DeferredContextInternalState {};
+struct DeferredContextInternalState {
+  Com<MTLD3D11CommandList> current_cmdlist;
+};
 
 using DeferredContextBase = MTLD3D11DeviceContextImplBase<DeferredContextInternalState>;
 
@@ -13,53 +16,53 @@ template <>
 template <typename Fn>
 void
 DeferredContextBase::EmitCommand(Fn &&fn) {
-  IMPLEMENT_ME;
+  ctx_state.current_cmdlist->EmitCommand(std::forward<Fn>(fn));
 }
 
 template <>
 BindingRef
 DeferredContextBase::Use(IMTLBindable *bindable) {
-  IMPLEMENT_ME;
+  return ctx_state.current_cmdlist->Use(bindable);
 }
 
 template <>
 BindingRef
 DeferredContextBase::Use(IMTLD3D11RenderTargetView *rtv) {
-  IMPLEMENT_ME;
+  return ctx_state.current_cmdlist->Use(rtv);
 }
 
 template <>
 BindingRef
 DeferredContextBase::Use(IMTLD3D11DepthStencilView *dsv) {
-  IMPLEMENT_ME;
+  return ctx_state.current_cmdlist->Use(dsv);
 }
 
 template <>
 ENCODER_INFO *
 DeferredContextBase::GetLastEncoder() {
-  IMPLEMENT_ME;
+  return ctx_state.current_cmdlist->GetLastEncoder();
 }
 template <>
 ENCODER_CLEARPASS_INFO *
 DeferredContextBase::MarkClearPass() {
-  IMPLEMENT_ME;
+  return ctx_state.current_cmdlist->MarkClearPass();
 }
 template <>
 ENCODER_RENDER_INFO *
 DeferredContextBase::MarkRenderPass() {
-  IMPLEMENT_ME;
+  return ctx_state.current_cmdlist->MarkRenderPass();
 }
 template <>
 ENCODER_INFO *
 DeferredContextBase::MarkPass(EncoderKind kind) {
-  IMPLEMENT_ME;
+  return ctx_state.current_cmdlist->MarkPass(kind);
 }
 
 template <>
 template <typename T>
 moveonly_list<T>
 DeferredContextBase::AllocateCommandData(size_t n) {
-  IMPLEMENT_ME;
+  return ctx_state.current_cmdlist->AllocateCommandData<T>(n);
 }
 
 template <>
@@ -71,7 +74,7 @@ DeferredContextBase::UpdateUAVCounter(IMTLD3D11UnorderedAccessView *uav, uint32_
 template <>
 std::tuple<void *, MTL::Buffer *, uint64_t>
 DeferredContextBase::AllocateStagingBuffer(size_t size, size_t alignment) {
-  IMPLEMENT_ME;
+  return ctx_state.current_cmdlist->AllocateStagingBuffer(size, alignment);
 }
 
 template <>
@@ -117,272 +120,291 @@ DeferredContextBase::UploadShaderStageResourceBinding() {
   if (!dirty_cbuffer && !dirty_sampler && !dirty_srv && !dirty_uav)
     return true;
 
-  return false; // TODO
+  auto &cmd_list = ctx_state.current_cmdlist;
+  auto ConstantBufferCount = reflection->NumConstantBuffers;
+  auto BindingCount = reflection->NumArguments;
+  auto ArgumentTableQwords = reflection->ArgumentTableQwords;
+  auto encoderId = cmd_list->GetLastEncoder()->encoder_id;
 
-  //   auto currentChunkId = ctx_state.cmd_queue.CurrentSeqId();
+  auto useResource = [&](IMTLBindable *bindable, MTL_BINDABLE_RESIDENCY_MASK residencyMask) {
+    cmd_list->EmitCommand([res = Use(bindable), residencyMask](CommandChunk::context &ctx) {
+      switch (stage) {
+      case ShaderType::Vertex:
+      case ShaderType::Pixel:
+      case ShaderType::Hull:
+      case ShaderType::Domain:
+        ctx.render_encoder->useResource(
+            res.resource(&ctx), GetUsageFromResidencyMask(residencyMask), GetStagesFromResidencyMask(residencyMask)
+        );
+        if (res.withBackedBuffer()) {
+          ctx.render_encoder->useResource(
+              res.buffer(), GetUsageFromResidencyMask(residencyMask), GetStagesFromResidencyMask(residencyMask)
+          );
+        }
+        break;
+      case ShaderType::Compute:
+        ctx.compute_encoder->useResource(res.resource(&ctx), GetUsageFromResidencyMask(residencyMask));
+        if (res.withBackedBuffer()) {
+          ctx.compute_encoder->useResource(res.buffer(), GetUsageFromResidencyMask(residencyMask));
+        }
+        break;
+      case ShaderType::Geometry:
+        D3D11_ASSERT(0 && "Not implemented");
+        break;
+      }
+    });
+  };
+  if (ConstantBufferCount && dirty_cbuffer) {
+    auto offset = cmd_list->ReserveGpuHeap(ConstantBufferCount << 3, 16);
 
-  //   auto ConstantBufferCount = reflection->NumConstantBuffers;
-  //   auto BindingCount = reflection->NumArguments;
-  //   auto ArgumentTableQwords = reflection->ArgumentTableQwords;
-  //   CommandChunk *chk = ctx_state.cmd_queue.CurrentChunk();
-  //   auto encoderId = chk->current_encoder_id();
+    for (unsigned i = 0; i < ConstantBufferCount; i++) {
+      auto &arg = reflection->ConstantBuffers[i];
+      auto slot = arg.SM50BindingSlot;
+      MTL_BINDABLE_RESIDENCY_MASK newResidencyMask = MTL_RESIDENCY_NULL;
+      SIMPLE_RESIDENCY_TRACKER *pTracker;
+      switch (arg.Type) {
+      case SM50BindingType::ConstantBuffer: {
+        if (!ShaderStage.ConstantBuffers.test_bound(slot)) {
+          ERR("expect constant buffer at slot ", slot, " but none is bound.");
+          return false;
+        }
+        auto &cbuf = ShaderStage.ConstantBuffers[slot];
+        auto index = cmd_list->GetArgumentDataId(cbuf.Buffer.ptr(), &pTracker);
+        cmd_list->EmitEvent([offset, index, arg_offset = arg.StructurePtrOffset,
+                             first_constant = cbuf.FirstConstant](auto &ctx) {
+          uint64_t *write_to_it = ctx.gpu_argument_heap_contents + (offset >> 3);
+          auto &argbuf = ctx.argument_table[index];
+          write_to_it[arg_offset] = argbuf.buffer() + (first_constant << 4);
+        });
+        ShaderStage.ConstantBuffers.clear_dirty(slot);
+        pTracker->CheckResidency(encoderId, GetResidencyMask<Tessellation>(stage, true, false), &newResidencyMask);
+        if (newResidencyMask) {
+          useResource(cbuf.Buffer.ptr(), newResidencyMask);
+        }
+        break;
+      }
+      default:
+        D3D11_ASSERT(0 && "unreachable");
+      }
+    }
 
-  //   auto useResource = [&](BindingRef &&res, MTL_BINDABLE_RESIDENCY_MASK residencyMask) {
-  //     chk->emit([res = std::move(res), residencyMask](CommandChunk::context &ctx) {
-  //       switch (stage) {
-  //       case ShaderType::Vertex:
-  //       case ShaderType::Pixel:
-  //       case ShaderType::Hull:
-  //       case ShaderType::Domain:
-  //         ctx.render_encoder->useResource(
-  //             res.resource(&ctx), GetUsageFromResidencyMask(residencyMask), GetStagesFromResidencyMask(residencyMask)
-  //         );
-  //         if (res.withBackedBuffer()) {
-  //           ctx.render_encoder->useResource(
-  //               res.buffer(), GetUsageFromResidencyMask(residencyMask), GetStagesFromResidencyMask(residencyMask)
-  //           );
-  //         }
-  //         break;
-  //       case ShaderType::Compute:
-  //         ctx.compute_encoder->useResource(res.resource(&ctx), GetUsageFromResidencyMask(residencyMask));
-  //         if (res.withBackedBuffer()) {
-  //           ctx.compute_encoder->useResource(res.buffer(), GetUsageFromResidencyMask(residencyMask));
-  //         }
-  //         break;
-  //       case ShaderType::Geometry:
-  //         D3D11_ASSERT(0 && "Not implemented");
-  //         break;
-  //       }
-  //     });
-  //   };
-  //   if (ConstantBufferCount && dirty_cbuffer) {
+    /* kConstantBufferTableBinding = 29 */
+    cmd_list->EmitCommand([offset](CommandChunk::context &ctx) {
+      if constexpr (stage == ShaderType::Vertex) {
+        if constexpr (Tessellation) {
+          ctx.render_encoder->setObjectBufferOffset(offset, 29);
+        } else {
+          ctx.render_encoder->setVertexBufferOffset(offset, 29);
+        }
+      } else if constexpr (stage == ShaderType::Pixel) {
+        ctx.render_encoder->setFragmentBufferOffset(offset, 29);
+      } else if constexpr (stage == ShaderType::Compute) {
+        ctx.compute_encoder->setBufferOffset(offset, 29);
+      } else if constexpr (stage == ShaderType::Hull) {
+        ctx.render_encoder->setMeshBufferOffset(offset, 29);
+      } else if constexpr (stage == ShaderType::Domain) {
+        ctx.render_encoder->setVertexBufferOffset(offset, 29);
+      } else {
+        D3D11_ASSERT(0 && "Not implemented");
+      }
+    });
+  }
 
-  //     auto [heap, offset] = chk->allocate_gpu_heap(ConstantBufferCount << 3, 16);
-  //     uint64_t *write_to_it = chk->gpu_argument_heap_contents + (offset >> 3);
+  if (BindingCount && (dirty_sampler || dirty_srv || dirty_uav)) {
+    auto offset = cmd_list->ReserveGpuHeap(ArgumentTableQwords * 8, 16);
 
-  //     for (unsigned i = 0; i < ConstantBufferCount; i++) {
-  //       auto &arg = reflection->ConstantBuffers[i];
-  //       auto slot = arg.SM50BindingSlot;
-  //       MTL_BINDABLE_RESIDENCY_MASK newResidencyMask = MTL_RESIDENCY_NULL;
-  //       SIMPLE_RESIDENCY_TRACKER *pTracker;
-  //       switch (arg.Type) {
-  //       case SM50BindingType::ConstantBuffer: {
-  //         if (!ShaderStage.ConstantBuffers.test_bound(slot)) {
-  //           ERR("expect constant buffer at slot ", slot, " but none is bound.");
-  //           return false;
-  //         }
-  //         auto &cbuf = ShaderStage.ConstantBuffers[slot];
-  //         auto argbuf = cbuf.Buffer->GetArgumentData(&pTracker);
-  //         write_to_it[arg.StructurePtrOffset] = argbuf.buffer() + (cbuf.FirstConstant << 4);
-  //         ShaderStage.ConstantBuffers.clear_dirty(slot);
-  //         pTracker->CheckResidency(encoderId, GetResidencyMask<Tessellation>(stage, true, false), &newResidencyMask);
-  //         if (newResidencyMask) {
-  //           useResource(Use(cbuf.Buffer), newResidencyMask);
-  //         }
-  //         break;
-  //       }
-  //       default:
-  //         D3D11_ASSERT(0 && "unreachable");
-  //       }
-  //     }
+    for (unsigned i = 0; i < BindingCount; i++) {
+      auto &arg = reflection->Arguments[i];
+      auto slot = arg.SM50BindingSlot;
+      MTL_BINDABLE_RESIDENCY_MASK newResidencyMask = MTL_RESIDENCY_NULL;
+      SIMPLE_RESIDENCY_TRACKER *pTracker;
+      switch (arg.Type) {
+      case SM50BindingType::ConstantBuffer: {
+        D3D11_ASSERT(0 && "unreachable");
+      }
+      case SM50BindingType::Sampler: {
+        if (!ShaderStage.Samplers.test_bound(slot)) {
+          ERR("expect sample at slot ", slot, " but none is bound.");
+          return false;
+        }
+        auto &sampler = ShaderStage.Samplers[slot];
+        cmd_list->EmitEvent([offset, sampler = sampler.Sampler, arg_offset = arg.StructurePtrOffset](auto &ctx) {
+          uint64_t *write_to_it = ctx.gpu_argument_heap_contents + (offset >> 3);
+          write_to_it[arg_offset] = sampler->GetArgumentHandle();
+          write_to_it[arg_offset + 1] = (uint64_t)std::bit_cast<uint32_t>(sampler->GetLODBias());
+        });
+        ShaderStage.Samplers.clear_dirty(slot);
+        break;
+      }
+      case SM50BindingType::SRV: {
+        if (!ShaderStage.SRVs.test_bound(slot)) {
+          // TODO: debug only
+          // ERR("expect shader resource at slot ", slot, " but none is
+          // bound.");
+          cmd_list->EmitEvent([offset, arg_offset = arg.StructurePtrOffset](auto &ctx) {
+            uint64_t *write_to_it = ctx.gpu_argument_heap_contents + (offset >> 3);
+            write_to_it[arg_offset] = 0;
+            write_to_it[arg_offset + 1] = 0;
+          });
+          break;
+        }
+        auto &srv = ShaderStage.SRVs[slot];
 
-  //     /* kConstantBufferTableBinding = 29 */
-  //     chk->emit([offset](CommandChunk::context &ctx) {
-  //       if constexpr (stage == ShaderType::Vertex) {
-  //         if constexpr (Tessellation) {
-  //           ctx.render_encoder->setObjectBufferOffset(offset, 29);
-  //         } else {
-  //           ctx.render_encoder->setVertexBufferOffset(offset, 29);
-  //         }
-  //       } else if constexpr (stage == ShaderType::Pixel) {
-  //         ctx.render_encoder->setFragmentBufferOffset(offset, 29);
-  //       } else if constexpr (stage == ShaderType::Compute) {
-  //         ctx.compute_encoder->setBufferOffset(offset, 29);
-  //       } else if constexpr (stage == ShaderType::Hull) {
-  //         ctx.render_encoder->setMeshBufferOffset(offset, 29);
-  //       } else if constexpr (stage == ShaderType::Domain) {
-  //         ctx.render_encoder->setVertexBufferOffset(offset, 29);
-  //       } else {
-  //         D3D11_ASSERT(0 && "Not implemented");
-  //       }
-  //     });
-  //   }
+        auto index = cmd_list->GetArgumentDataId(srv.SRV.ptr(), &pTracker);
+        cmd_list->EmitEvent([offset, index, arg_offset = arg.StructurePtrOffset, arg_flags = arg.Flags](auto &ctx) {
+          uint64_t *write_to_it = ctx.gpu_argument_heap_contents + (offset >> 3);
+          auto &arg_data = ctx.argument_table[index];
+          if (arg_flags & MTL_SM50_SHADER_ARGUMENT_BUFFER) {
+            write_to_it[arg_offset] = arg_data.buffer();
+          }
+          if (arg_flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE) {
+            if (arg_data.requiresContext()) {
+              IMPLEMENT_ME;
+              // chk->emit([=, ref = srv.SRV](CommandChunk::context &ctx) {
+              //   write_to_it[arg_offset] = arg_data.texture(&ctx);
+              // });
+            } else {
+              write_to_it[arg_offset] = arg_data.texture();
+            }
+          }
+          if (arg_flags & MTL_SM50_SHADER_ARGUMENT_ELEMENT_WIDTH) {
+            write_to_it[arg_offset + 1] = arg_data.width();
+          }
+          if (arg_flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE_MINLOD_CLAMP) {
+            write_to_it[arg_offset + 1] = std::bit_cast<uint32_t>(arg_data.min_lod());
+          }
+          if (arg_flags & MTL_SM50_SHADER_ARGUMENT_TBUFFER_OFFSET) {
+            write_to_it[arg_offset + 1] = arg_data.element_offset();
+          }
+        });
+        if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_UAV_COUNTER) {
+          D3D11_ASSERT(0 && "srv can not have counter associated");
+        }
+        ShaderStage.SRVs.clear_dirty(slot);
+        pTracker->CheckResidency(encoderId, GetResidencyMask<Tessellation>(stage, true, false), &newResidencyMask);
+        if (newResidencyMask) {
+          useResource(srv.SRV.ptr(), newResidencyMask);
+        }
+        break;
+      }
+      case SM50BindingType::UAV: {
+        if constexpr (stage == ShaderType::Vertex) {
+          ERR("uav in vertex shader! need to workaround");
+          return false;
+        }
+        // FIXME: currently only pixel shader use uav from OM
+        // REFACTOR NEEDED
+        // TODO: consider separately handle uav
+        if (!UAVBindingSet.test_bound(arg.SM50BindingSlot)) {
+          // ERR("expect uav at slot ", arg.SM50BindingSlot,
+          //     " but none is bound.");
+          cmd_list->EmitEvent([offset, arg_offset = arg.StructurePtrOffset, arg_flags = arg.Flags](auto &ctx) {
+            uint64_t *write_to_it = ctx.gpu_argument_heap_contents + (offset >> 3);
+            write_to_it[arg_offset] = 0;
+            if (arg_flags & MTL_SM50_SHADER_ARGUMENT_ELEMENT_WIDTH) {
+              write_to_it[arg_offset + 1] = 0;
+            }
+            if (arg_flags & MTL_SM50_SHADER_ARGUMENT_UAV_COUNTER) {
+              write_to_it[arg_offset + 2] = 0;
+            }
+          });
+          break;
+        }
+        auto &uav = UAVBindingSet[arg.SM50BindingSlot];
+        auto index = cmd_list->GetArgumentDataId(uav.View.ptr(), &pTracker);
+        cmd_list->EmitEvent([offset, index, arg_offset = arg.StructurePtrOffset, arg_flags = arg.Flags](auto &ctx) {
+          uint64_t *write_to_it = ctx.gpu_argument_heap_contents + (offset >> 3);
+          auto &arg_data = ctx.argument_table[index];
+          if (arg_flags & MTL_SM50_SHADER_ARGUMENT_BUFFER) {
+            write_to_it[arg_offset] = arg_data.buffer();
+          }
+          if (arg_flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE) {
+            if (arg_data.requiresContext()) {
+              IMPLEMENT_ME;
+              // chk->emit([=, ref = uav.View](CommandChunk::context &ctx) {
+              //   write_to_it[arg.StructurePtrOffset] = arg_data.texture(&ctx);
+              // });
+            } else {
+              write_to_it[arg_offset] = arg_data.texture();
+            }
+          }
+          if (arg_flags & MTL_SM50_SHADER_ARGUMENT_ELEMENT_WIDTH) {
+            write_to_it[arg_offset + 1] = arg_data.width();
+          }
+          if (arg_flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE_MINLOD_CLAMP) {
+            write_to_it[arg_offset + 1] = std::bit_cast<uint32_t>(arg_data.min_lod());
+          }
+          if (arg_flags & MTL_SM50_SHADER_ARGUMENT_TBUFFER_OFFSET) {
+            write_to_it[arg_offset + 1] = arg_data.element_offset();
+          }
+        });
+        if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_UAV_COUNTER) {
+          D3D11_ASSERT(0 && "Unhandled uav counter on deferred context");
+          // auto counter_handle = arg_data.counter();
+          // if (counter_handle != DXMT_NO_COUNTER) {
+          //   auto counter = ctx_state.cmd_queue.counter_pool.GetCounter(counter_handle);
+          //   chk->emit([counter](CommandChunk::context &ctx) {
+          //     switch (stage) {
+          //     case ShaderType::Vertex:
+          //     case ShaderType::Pixel:
+          //     case ShaderType::Hull:
+          //     case ShaderType::Domain:
+          //       ctx.render_encoder->useResource(counter.Buffer, MTL::ResourceUsageRead |
+          //       MTL::ResourceUsageWrite); break;
+          //     case ShaderType::Compute:
+          //       ctx.compute_encoder->useResource(counter.Buffer, MTL::ResourceUsageRead |
+          //       MTL::ResourceUsageWrite); break;
+          //     case ShaderType::Geometry:
+          //       D3D11_ASSERT(0 && "Not implemented");
+          //       break;
+          //     }
+          //   });
+          //   write_to_it[arg.StructurePtrOffset + 2] = counter.Buffer->gpuAddress() + counter.Offset;
+          // } else {
+          //   ERR("use uninitialized counter!");
+          //   write_to_it[arg.StructurePtrOffset + 2] = 0;
+          // };
+        }
+        UAVBindingSet.clear_dirty(slot);
+        pTracker->CheckResidency(
+            encoderId,
+            GetResidencyMask<Tessellation>(
+                stage,
+                // FIXME: don't use literal constant...
+                (arg.Flags >> 10) & 1, (arg.Flags >> 10) & 2
+            ),
+            &newResidencyMask
+        );
+        if (newResidencyMask) {
+          useResource(uav.View.ptr(), newResidencyMask);
+        }
+        break;
+      }
+      }
+    }
 
-  //   if (BindingCount && (dirty_sampler || dirty_srv || dirty_uav)) {
-  //     auto [heap, offset] = chk->allocate_gpu_heap(ArgumentTableQwords * 8, 16);
-  //     uint64_t *write_to_it = chk->gpu_argument_heap_contents + (offset >> 3);
-
-  //     for (unsigned i = 0; i < BindingCount; i++) {
-  //       auto &arg = reflection->Arguments[i];
-  //       auto slot = arg.SM50BindingSlot;
-  //       MTL_BINDABLE_RESIDENCY_MASK newResidencyMask = MTL_RESIDENCY_NULL;
-  //       SIMPLE_RESIDENCY_TRACKER *pTracker;
-  //       switch (arg.Type) {
-  //       case SM50BindingType::ConstantBuffer: {
-  //         D3D11_ASSERT(0 && "unreachable");
-  //       }
-  //       case SM50BindingType::Sampler: {
-  //         if (!ShaderStage.Samplers.test_bound(slot)) {
-  //           ERR("expect sample at slot ", slot, " but none is bound.");
-  //           return false;
-  //         }
-  //         auto &sampler = ShaderStage.Samplers[slot];
-  //         write_to_it[arg.StructurePtrOffset] = sampler.Sampler->GetArgumentHandle();
-  //         write_to_it[arg.StructurePtrOffset + 1] = (uint64_t)std::bit_cast<uint32_t>(sampler.Sampler->GetLODBias());
-  //         ShaderStage.Samplers.clear_dirty(slot);
-  //         break;
-  //       }
-  //       case SM50BindingType::SRV: {
-  //         if (!ShaderStage.SRVs.test_bound(slot)) {
-  //           // TODO: debug only
-  //           // ERR("expect shader resource at slot ", slot, " but none is
-  //           // bound.");
-  //           write_to_it[arg.StructurePtrOffset] = 0;
-  //           write_to_it[arg.StructurePtrOffset + 1] = 0;
-  //           break;
-  //         }
-  //         auto &srv = ShaderStage.SRVs[slot];
-  //         auto arg_data = srv.SRV->GetArgumentData(&pTracker);
-  //         if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_BUFFER) {
-  //           write_to_it[arg.StructurePtrOffset] = arg_data.buffer();
-  //         }
-  //         if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE) {
-  //           if (arg_data.requiresContext()) {
-  //             chk->emit([=, ref = srv.SRV](CommandChunk::context &ctx) {
-  //               write_to_it[arg.StructurePtrOffset] = arg_data.texture(&ctx);
-  //             });
-  //           } else {
-  //             write_to_it[arg.StructurePtrOffset] = arg_data.texture();
-  //           }
-  //         }
-  //         if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_ELEMENT_WIDTH) {
-  //           write_to_it[arg.StructurePtrOffset + 1] = arg_data.width();
-  //         }
-  //         if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE_MINLOD_CLAMP) {
-  //           write_to_it[arg.StructurePtrOffset + 1] = std::bit_cast<uint32_t>(arg_data.min_lod());
-  //         }
-  //         if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_TBUFFER_OFFSET) {
-  //           write_to_it[arg.StructurePtrOffset + 1] = arg_data.element_offset();
-  //         }
-  //         if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_UAV_COUNTER) {
-  //           D3D11_ASSERT(0 && "srv can not have counter associated");
-  //         }
-  //         ShaderStage.SRVs.clear_dirty(slot);
-  //         pTracker->CheckResidency(encoderId, GetResidencyMask<Tessellation>(stage, true, false), &newResidencyMask);
-  //         if (newResidencyMask) {
-  //           useResource(srv.SRV->UseBindable(currentChunkId), newResidencyMask);
-  //         }
-  //         break;
-  //       }
-  //       case SM50BindingType::UAV: {
-  //         if constexpr (stage == ShaderType::Vertex) {
-  //           ERR("uav in vertex shader! need to workaround");
-  //           return false;
-  //         }
-  //         // FIXME: currently only pixel shader use uav from OM
-  //         // REFACTOR NEEDED
-  //         // TODO: consider separately handle uav
-  //         if (!UAVBindingSet.test_bound(arg.SM50BindingSlot)) {
-  //           // ERR("expect uav at slot ", arg.SM50BindingSlot,
-  //           //     " but none is bound.");
-  //           write_to_it[arg.StructurePtrOffset] = 0;
-  //           if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_ELEMENT_WIDTH) {
-  //             write_to_it[arg.StructurePtrOffset + 1] = 0;
-  //           }
-  //           if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_UAV_COUNTER) {
-  //             write_to_it[arg.StructurePtrOffset + 2] = 0;
-  //           }
-  //           break;
-  //         }
-  //         auto &uav = UAVBindingSet[arg.SM50BindingSlot];
-  //         auto arg_data = uav.View->GetArgumentData(&pTracker);
-  //         if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_BUFFER) {
-  //           write_to_it[arg.StructurePtrOffset] = arg_data.buffer();
-  //         }
-  //         if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE) {
-  //           if (arg_data.requiresContext()) {
-  //             chk->emit([=, ref = uav.View](CommandChunk::context &ctx) {
-  //               write_to_it[arg.StructurePtrOffset] = arg_data.texture(&ctx);
-  //             });
-  //           } else {
-  //             write_to_it[arg.StructurePtrOffset] = arg_data.texture();
-  //           }
-  //         }
-  //         if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_ELEMENT_WIDTH) {
-  //           write_to_it[arg.StructurePtrOffset + 1] = arg_data.width();
-  //         }
-  //         if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE_MINLOD_CLAMP) {
-  //           write_to_it[arg.StructurePtrOffset + 1] = std::bit_cast<uint32_t>(arg_data.min_lod());
-  //         }
-  //         if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_TBUFFER_OFFSET) {
-  //           write_to_it[arg.StructurePtrOffset + 1] = arg_data.element_offset();
-  //         }
-  //         if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_UAV_COUNTER) {
-  //           auto counter_handle = arg_data.counter();
-  //           if (counter_handle != DXMT_NO_COUNTER) {
-  //             auto counter = ctx_state.cmd_queue.counter_pool.GetCounter(counter_handle);
-  //             chk->emit([counter](CommandChunk::context &ctx) {
-  //               switch (stage) {
-  //               case ShaderType::Vertex:
-  //               case ShaderType::Pixel:
-  //               case ShaderType::Hull:
-  //               case ShaderType::Domain:
-  //                 ctx.render_encoder->useResource(counter.Buffer, MTL::ResourceUsageRead | MTL::ResourceUsageWrite);
-  //                 break;
-  //               case ShaderType::Compute:
-  //                 ctx.compute_encoder->useResource(counter.Buffer, MTL::ResourceUsageRead | MTL::ResourceUsageWrite);
-  //                 break;
-  //               case ShaderType::Geometry:
-  //                 D3D11_ASSERT(0 && "Not implemented");
-  //                 break;
-  //               }
-  //             });
-  //             write_to_it[arg.StructurePtrOffset + 2] = counter.Buffer->gpuAddress() + counter.Offset;
-  //           } else {
-  //             ERR("use uninitialized counter!");
-  //             write_to_it[arg.StructurePtrOffset + 2] = 0;
-  //           };
-  //         }
-  //         UAVBindingSet.clear_dirty(slot);
-  //         pTracker->CheckResidency(
-  //             encoderId,
-  //             GetResidencyMask<Tessellation>(
-  //                 stage,
-  //                 // FIXME: don't use literal constant...
-  //                 (arg.Flags >> 10) & 1, (arg.Flags >> 10) & 2
-  //             ),
-  //             &newResidencyMask
-  //         );
-  //         if (newResidencyMask) {
-  //           useResource(uav.View->UseBindable(currentChunkId), newResidencyMask);
-  //         }
-  //         break;
-  //       }
-  //       }
-  //     }
-
-  //     /* kArgumentBufferBinding = 30 */
-  //     chk->emit([offset](CommandChunk::context &ctx) {
-  //       if constexpr (stage == ShaderType::Vertex) {
-  //         if constexpr (Tessellation) {
-  //           ctx.render_encoder->setObjectBufferOffset(offset, 30);
-  //         } else {
-  //           ctx.render_encoder->setVertexBufferOffset(offset, 30);
-  //         }
-  //       } else if constexpr (stage == ShaderType::Pixel) {
-  //         ctx.render_encoder->setFragmentBufferOffset(offset, 30);
-  //       } else if constexpr (stage == ShaderType::Compute) {
-  //         ctx.compute_encoder->setBufferOffset(offset, 30);
-  //       } else if constexpr (stage == ShaderType::Hull) {
-  //         ctx.render_encoder->setMeshBufferOffset(offset, 30);
-  //       } else if constexpr (stage == ShaderType::Domain) {
-  //         ctx.render_encoder->setVertexBufferOffset(offset, 30);
-  //       } else {
-  //         D3D11_ASSERT(0 && "Not implemented");
-  //       }
-  //     });
-  //   }
-  //   return true;
+    /* kArgumentBufferBinding = 30 */
+    EmitCommand([offset](CommandChunk::context &ctx) {
+      if constexpr (stage == ShaderType::Vertex) {
+        if constexpr (Tessellation) {
+          ctx.render_encoder->setObjectBufferOffset(offset, 30);
+        } else {
+          ctx.render_encoder->setVertexBufferOffset(offset, 30);
+        }
+      } else if constexpr (stage == ShaderType::Pixel) {
+        ctx.render_encoder->setFragmentBufferOffset(offset, 30);
+      } else if constexpr (stage == ShaderType::Compute) {
+        ctx.compute_encoder->setBufferOffset(offset, 30);
+      } else if constexpr (stage == ShaderType::Hull) {
+        ctx.render_encoder->setMeshBufferOffset(offset, 30);
+      } else if constexpr (stage == ShaderType::Domain) {
+        ctx.render_encoder->setVertexBufferOffset(offset, 30);
+      } else {
+        D3D11_ASSERT(0 && "Not implemented");
+      }
+    });
+  }
+  return true;
 }
 
 /**
@@ -409,55 +431,84 @@ DeferredContextBase::UpdateVertexBuffer() {
     uint32_t length;
   };
 
-  //   uint32_t max_slot = 32 - __builtin_clz(slot_mask);
-  //   uint32_t num_slots = __builtin_popcount(slot_mask);
+  auto &cmd_list = ctx_state.current_cmdlist;
 
-  //   CommandChunk *chk = ctx_state.cmd_queue.CurrentChunk();
-  //   auto encoderId = chk->current_encoder_id();
-  //   auto [heap, offset] = chk->allocate_gpu_heap(16 * num_slots, 16);
-  //   VERTEX_BUFFER_ENTRY *entries = (VERTEX_BUFFER_ENTRY *)(((char *)heap->contents()) + offset);
-  //   for (unsigned slot = 0, index = 0; slot < max_slot; slot++) {
-  //     if (!(slot_mask & (1 << slot)))
-  //       continue;
-  //     if (!VertexBuffers.test_bound(slot)) {
-  //       entries[index].buffer_handle = 0;
-  //       entries[index].stride = 0;
-  //       entries[index++].length = 0;
-  //       continue;
-  //     }
-  //     auto &state = VertexBuffers[slot];
-  //     MTL_BINDABLE_RESIDENCY_MASK newResidencyMask = MTL_RESIDENCY_NULL;
-  //     SIMPLE_RESIDENCY_TRACKER *pTracker;
-  //     auto handle = state.Buffer->GetArgumentData(&pTracker);
-  //     entries[index].buffer_handle = handle.buffer() + state.Offset;
-  //     entries[index].stride = state.Stride;
-  //     entries[index++].length = handle.width() > state.Offset ? handle.width() - state.Offset : 0;
-  //     pTracker->CheckResidency(
-  //         encoderId,
-  //         cmdbuf_state == CommandBufferState::TessellationRenderPipelineReady
-  //             ? GetResidencyMask<true>(ShaderType::Vertex, true, false)
-  //             : GetResidencyMask<false>(ShaderType::Vertex, true, false),
-  //         &newResidencyMask
-  //     );
-  //     if (newResidencyMask) {
-  //       chk->emit([res = Use(state.Buffer), newResidencyMask](CommandChunk::context &ctx) {
-  //         ctx.render_encoder->useResource(
-  //             res.buffer(), GetUsageFromResidencyMask(newResidencyMask), GetStagesFromResidencyMask(newResidencyMask)
-  //         );
-  //       });
-  //     }
-  //   };
-  //   if (cmdbuf_state == CommandBufferState::TessellationRenderPipelineReady) {
-  //     EmitCommand([offset](CommandChunk::context &ctx) { ctx.render_encoder->setObjectBufferOffset(offset, 16); });
-  //   }
-  //   if (cmdbuf_state == CommandBufferState::RenderPipelineReady) {
-  //     EmitCommand([offset](CommandChunk::context &ctx) { ctx.render_encoder->setVertexBufferOffset(offset, 16); });
-  //   }
+  uint32_t max_slot = 32 - __builtin_clz(slot_mask);
+  uint32_t num_slots = __builtin_popcount(slot_mask);
+
+  struct OMG {
+    uint32_t arg_index;
+    uint32_t stride;
+    uint32_t offset;
+  };
+
+  auto vertex_resource = cmd_list->AllocateCommandData<OMG>(num_slots);
+
+  for (unsigned slot = 0, index = 0; slot < max_slot; slot++) {
+    if (!(slot_mask & (1 << slot)))
+      continue;
+    if (!VertexBuffers.test_bound(slot)) {
+      vertex_resource[index++] = {~0u, 0, 0};
+      continue;
+    }
+    auto &state = VertexBuffers[slot];
+    MTL_BINDABLE_RESIDENCY_MASK newResidencyMask = MTL_RESIDENCY_NULL;
+    SIMPLE_RESIDENCY_TRACKER *pTracker;
+    vertex_resource[index++] = {cmd_list->GetArgumentDataId(state.Buffer.ptr(), &pTracker), state.Stride, state.Offset};
+    pTracker->CheckResidency(
+        cmd_list->GetLastEncoder()->encoder_id,
+        cmdbuf_state == CommandBufferState::TessellationRenderPipelineReady
+            ? GetResidencyMask<true>(ShaderType::Vertex, true, false)
+            : GetResidencyMask<false>(ShaderType::Vertex, true, false),
+        &newResidencyMask
+    );
+    if (newResidencyMask) {
+      cmd_list->EmitCommand([res = Use(state.Buffer), newResidencyMask](CommandChunk::context &ctx) {
+        ctx.render_encoder->useResource(
+            res.buffer(), GetUsageFromResidencyMask(newResidencyMask), GetStagesFromResidencyMask(newResidencyMask)
+        );
+      });
+    }
+  };
+
+  auto offset = cmd_list->ReserveGpuHeap(16 * num_slots, 16);
+
+  cmd_list->EmitEvent([offset, vertex_resource = std::move(vertex_resource)](auto &event_ctx) {
+    VERTEX_BUFFER_ENTRY *entries = (VERTEX_BUFFER_ENTRY *)(((char *)event_ctx.heap->contents()) + offset);
+    unsigned index = 0;
+    for (auto vertex_buffer : vertex_resource.span()) {
+      if (vertex_buffer.arg_index == ~0u) {
+        entries[index].buffer_handle = 0;
+        entries[index].stride = 0;
+        entries[index++].length = 0;
+      } else {
+        auto &handle = event_ctx.argument_table[vertex_buffer.arg_index];
+        entries[index].buffer_handle = handle.buffer() + vertex_buffer.offset;
+        entries[index].stride = vertex_buffer.stride;
+        entries[index++].length = handle.width() > vertex_buffer.offset ? handle.width() - vertex_buffer.offset : 0;
+      }
+    }
+  });
+  if (cmdbuf_state == CommandBufferState::TessellationRenderPipelineReady) {
+    cmd_list->EmitCommand([offset](CommandChunk::context &ctx) {
+      ctx.render_encoder->setObjectBufferOffset(offset, 16);
+    });
+  }
+  if (cmdbuf_state == CommandBufferState::RenderPipelineReady) {
+    cmd_list->EmitCommand([offset](CommandChunk::context &ctx) {
+      ctx.render_encoder->setVertexBufferOffset(offset, 16);
+    });
+  }
 }
 
 class MTLD3D11DeferredContext : public DeferredContextBase {
 public:
-  MTLD3D11DeferredContext(MTLD3D11Device *pDevice) : DeferredContextBase(pDevice, ctx_state), ctx_state() {}
+  MTLD3D11DeferredContext(MTLD3D11Device *pDevice, UINT ContextFlags) :
+      DeferredContextBase(pDevice, ctx_state),
+      ctx_state(),
+      context_flag(ContextFlags) {
+    ctx_state.current_cmdlist = new MTLD3D11CommandList(device, ContextFlags);
+  }
 
   ULONG STDMETHODCALLTYPE
   AddRef() override {
@@ -472,8 +523,10 @@ public:
   Release() override {
     uint32_t refCount = --this->refcount;
     D3D11_ASSERT(refCount != ~0u && "try to release a 0 reference object");
-    if (unlikely(!refCount))
+    if (unlikely(!refCount)) {
       this->m_parent->Release();
+      delete this;
+    }
 
     return refCount;
   }
@@ -482,6 +535,7 @@ public:
   Map(ID3D11Resource *pResource, UINT Subresource, D3D11_MAP MapType, UINT MapFlags,
       D3D11_MAPPED_SUBRESOURCE *pMappedResource) override {
     if (auto dynamic = com_cast<IMTLDynamicBuffer>(pResource)) {
+      auto &cmd_list = ctx_state.current_cmdlist;
       D3D11_MAPPED_SUBRESOURCE Out;
       switch (MapType) {
       case D3D11_MAP_READ:
@@ -489,31 +543,38 @@ public:
       case D3D11_MAP_READ_WRITE:
         return E_INVALIDARG;
       case D3D11_MAP_WRITE_DISCARD: {
-        IMPLEMENT_ME;
-        // dynamic->RotateBuffer(device);
-        // auto bind_flag = dynamic->GetBindFlag();
-        // if (bind_flag & D3D11_BIND_VERTEX_BUFFER) {
-        //   state_.InputAssembler.VertexBuffers.set_dirty();
-        // }
-        // if (bind_flag & D3D11_BIND_INDEX_BUFFER) {
-        //   dirty_state.set(DirtyState::IndexBuffer);
-        // }
-        // if (bind_flag & D3D11_BIND_CONSTANT_BUFFER) {
-        //   for (auto &stage : state_.ShaderStages) {
-        //     stage.ConstantBuffers.set_dirty();
-        //   }
-        // }
-        // if (bind_flag & D3D11_BIND_SHADER_RESOURCE) {
-        //   for (auto &stage : state_.ShaderStages) {
-        //     stage.SRVs.set_dirty();
-        //   }
-        // }
-        // Out.pData = dynamic->GetMappedMemory(&Out.RowPitch, &Out.DepthPitch);
+        auto bind_flag = dynamic->GetBindFlag();
+        if (bind_flag & D3D11_BIND_VERTEX_BUFFER) {
+          state_.InputAssembler.VertexBuffers.set_dirty();
+        }
+        if (bind_flag & D3D11_BIND_INDEX_BUFFER) {
+          dirty_state.set(DirtyState::IndexBuffer);
+        }
+        if (bind_flag & D3D11_BIND_CONSTANT_BUFFER) {
+          for (auto &stage : state_.ShaderStages) {
+            stage.ConstantBuffers.set_dirty();
+          }
+        }
+        if (bind_flag & D3D11_BIND_SHADER_RESOURCE) {
+          for (auto &stage : state_.ShaderStages) {
+            stage.SRVs.set_dirty();
+          }
+        }
+        auto size = dynamic->GetSize(&Out.RowPitch, &Out.DepthPitch);
+        Out.pData = cmd_list->AllocateDynamicTempBuffer(dynamic.ptr(), size);
+        cmd_list->EmitEvent([addr = Out.pData, size, dynamic = Com(dynamic)](MTLD3D11CommandList::EventContext &ctx) {
+          dynamic->RotateBuffer(ctx.device);
+          uint32_t _, __;
+          auto buffer_dst = dynamic->GetMappedMemory(&_, &__);
+          memcpy(buffer_dst, addr, size);
+        });
         break;
       }
       case D3D11_MAP_WRITE_NO_OVERWRITE: {
-        IMPLEMENT_ME;
-        // Out.pData = dynamic->GetMappedMemory(&Out.RowPitch, &Out.DepthPitch);
+        dynamic->GetSize(&Out.RowPitch, &Out.DepthPitch);
+        Out.pData = cmd_list->GetDynamicTempBuffer(dynamic.ptr());
+        if (!Out.pData)
+          return E_FAIL;
         break;
       }
       }
@@ -530,18 +591,12 @@ public:
     if (auto dynamic = com_cast<IMTLDynamicBuffer>(pResource)) {
       return;
     }
-    // if (auto staging = com_cast<IMTLD3D11Staging>(pResource)) {
-    //   staging->Unmap(Subresource);
-    //   return;
-    // };
-    // D3D11_ASSERT(0 && "unknown mapped resource (USAGE_DEFAULT?)");
     IMPLEMENT_ME;
   }
 
   void
   Begin(ID3D11Asynchronous *pAsync) override {
-    // in theory pAsync could be any of them: { Query, Predicate, Counter }.
-    // However `Predicate` and `Counter` are not supported at all
+    IMPLEMENT_ME;
     // D3D11_QUERY_DESC desc;
     // ((ID3D11Query *)pAsync)->GetDesc(&desc);
     // switch (desc.Query) {
@@ -562,10 +617,8 @@ public:
     //   ERR("Unknown query type ", desc.Query);
     //   break;
     // }
-    IMPLEMENT_ME;
   }
 
-  // See Begin()
   void
   End(ID3D11Asynchronous *pAsync) override {
     IMPLEMENT_ME;
@@ -612,7 +665,12 @@ public:
   ExecuteCommandList(ID3D11CommandList *pCommandList, BOOL RestoreContextState) override{IMPLEMENT_ME}
 
   HRESULT FinishCommandList(BOOL RestoreDeferredContextState, ID3D11CommandList **ppCommandList) override {
-    IMPLEMENT_ME;
+    InvalidateCurrentPass();
+    *ppCommandList = ctx_state.current_cmdlist.ref();
+    ctx_state.current_cmdlist = new MTLD3D11CommandList(device, 0);
+    if (!RestoreDeferredContextState)
+      ClearState();
+    return S_OK;
   }
 
   void
@@ -630,12 +688,15 @@ public:
 
   uint64_t
   NextOcclusionQuerySeq() override {
-    IMPLEMENT_ME;
+    // IMPLEMENT_ME;
+
+    // FIXME: occlusion query on deferred context
+    return 0;
   };
 
   void
   BumpOcclusionQueryOffset() override {
-    IMPLEMENT_ME;
+    // IMPLEMENT_ME;
   }
 
   void Commit() override {
@@ -645,11 +706,14 @@ public:
 private:
   DeferredContextInternalState ctx_state;
   std::atomic<uint32_t> refcount = 0;
+  UINT context_flag;
 };
 
-std::unique_ptr<MTLD3D11DeviceContextBase>
-InitializeDeferredContext(MTLD3D11Device *pDevice) {
-  return std::make_unique<MTLD3D11DeferredContext>(pDevice);
+Com<MTLD3D11DeviceContextBase>
+CreateDeferredContext(MTLD3D11Device *pDevice, UINT ContextFlags) {
+  return new MTLD3D11DeferredContext(pDevice, ContextFlags);
 }
+
+thread_local const BindingRef *BindingRef::lut;
 
 }; // namespace dxmt

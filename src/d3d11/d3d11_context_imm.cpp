@@ -698,9 +698,42 @@ public:
   }
 
   void
-  ExecuteCommandList(ID3D11CommandList *pCommandList, BOOL RestoreContextState) override{IMPLEMENT_ME}
+  ExecuteCommandList(ID3D11CommandList *pCommandList, BOOL RestoreContextState) override {
+    auto cmd_list = static_cast<MTLD3D11CommandList *>(pCommandList);
 
-  HRESULT FinishCommandList(BOOL RestoreDeferredContextState, ID3D11CommandList **ppCommandList) override {
+    if (cmd_list->Noop())
+      return;
+
+    Flush();
+
+    CommandChunk *chk = ctx_state.cmd_queue.CurrentChunk();
+
+    std::vector<ArgumentData> argument_table(cmd_list->num_argument_data);
+    std::vector<BindingRef> bindingref_table(cmd_list->num_bindingref);
+    assert(chk->inspect_gpu_heap().second == 0);
+
+    chk->mark_pass(EncoderKind::ExecuteCommandList);
+
+    MTLD3D11CommandList::EventContext ctx{
+        cmd_queue,      device,          chk->inspect_gpu_heap().first, chk->gpu_argument_heap_contents,
+        argument_table, bindingref_table
+    };
+    cmd_list->ProcessEvents(ctx);
+
+    chk->allocate_gpu_heap(cmd_list->gpu_arugment_heap_offset, 16);
+    chk->emit([cmd_list = Com(cmd_list), table = std::move(bindingref_table)](auto &ctx) {
+      const BindingRef *old_lut;
+      BindingRef::SetLookupTable(table.data(), &old_lut);
+      cmd_list->EncodeCommands(ctx);
+      BindingRef::SetLookupTable(old_lut, nullptr);
+    });
+
+    if (!RestoreContextState)
+      ClearState();
+  }
+
+  HRESULT
+  FinishCommandList(BOOL RestoreDeferredContextState, ID3D11CommandList **ppCommandList) override {
     return DXGI_ERROR_INVALID_CALL;
   }
 
