@@ -28,7 +28,7 @@ else
 llvm_include_path_darwin = include_directories('/usr/local/opt/llvm@15/include') # FIXME: in favor of path relative to project
 llvm_ld_flags_darwin = [
  '-L'+join_paths('/usr/local/opt/llvm@15/lib'),
- '-lm', '-lz', '-lcurses', '-lxml2'
+ '-lm', '-lz', '-lcurses', '-lxml2', '/usr/local/opt/zstd/lib/libzstd.a', '/usr/local/opt/llvm@15/lib/libunwind.a'
 ]
 endif
 
