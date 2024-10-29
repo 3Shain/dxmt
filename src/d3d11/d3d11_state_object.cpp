@@ -236,6 +236,7 @@ public:
 
     if (riid == __uuidof(IUnknown) || riid == __uuidof(ID3D11DeviceChild) ||
         riid == __uuidof(ID3D11BlendState) ||
+        riid == __uuidof(ID3D11BlendState1) ||
         riid == __uuidof(IMTLD3D11BlendState)) {
       *ppvObject = ref(this);
       return S_OK;
@@ -332,6 +333,7 @@ public:
     if (riid == __uuidof(IUnknown) || riid == __uuidof(ID3D11DeviceChild) ||
         riid == __uuidof(ID3D11RasterizerState) ||
         riid == __uuidof(ID3D11RasterizerState1) ||
+        riid == __uuidof(ID3D11RasterizerState2) ||
         riid == __uuidof(IMTLD3D11RasterizerState)) {
       *ppvObject = ref(this);
       return S_OK;
