@@ -272,8 +272,8 @@ public:
   bool IsDualSourceBlending() { return dual_source_blending_; }
 
   void SetupMetalPipelineDescriptor(
-      MTL::RenderPipelineDescriptor *render_pipeline_descriptor) {
-    for (unsigned rt = 0; rt < D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT; rt++) {
+      MTL::RenderPipelineDescriptor *render_pipeline_descriptor, uint32_t num_rt) {
+    for (unsigned rt = 0; rt < num_rt; rt++) {
       auto i = desc_.IndependentBlendEnable ? rt : 0;
       auto &renderTarget = desc_.RenderTarget[i];
       if (renderTarget.LogicOpEnable) {
@@ -286,15 +286,13 @@ public:
             kLogicOpMap[renderTarget.LogicOp]);
 #endif
       }
-      auto attachment_desc =
-          render_pipeline_descriptor->colorAttachments()->object(rt);
-      attachment_desc->setAlphaBlendOperation(
-          kBlendOpMap[renderTarget.BlendOpAlpha]);
-      attachment_desc->setRgbBlendOperation(kBlendOpMap[renderTarget.BlendOp]);
-      attachment_desc->setBlendingEnabled(renderTarget.BlendEnable);
+      auto attachment_desc = render_pipeline_descriptor->colorAttachments()->object(rt);
+      attachment_desc->setWriteMask(kColorWriteMaskMap[renderTarget.RenderTargetWriteMask]);
       if (renderTarget.BlendEnable) {
-        attachment_desc->setSourceAlphaBlendFactor(
-            kBlendFactorMap[renderTarget.SrcBlendAlpha]);
+        attachment_desc->setAlphaBlendOperation(kBlendOpMap[renderTarget.BlendOpAlpha]);
+        attachment_desc->setRgbBlendOperation(kBlendOpMap[renderTarget.BlendOp]);
+        attachment_desc->setBlendingEnabled(renderTarget.BlendEnable);
+        attachment_desc->setSourceAlphaBlendFactor(kBlendFactorMap[renderTarget.SrcBlendAlpha]);
         attachment_desc->setSourceRGBBlendFactor(
             kBlendFactorMap[renderTarget.SrcBlend]);
         attachment_desc->setDestinationAlphaBlendFactor(
@@ -302,8 +300,6 @@ public:
         attachment_desc->setDestinationRGBBlendFactor(
             kBlendFactorMap[renderTarget.DestBlend]);
       }
-      attachment_desc->setWriteMask(
-          kColorWriteMaskMap[renderTarget.RenderTargetWriteMask]);
     }
     render_pipeline_descriptor->setAlphaToCoverageEnabled(
         desc_.AlphaToCoverageEnable);

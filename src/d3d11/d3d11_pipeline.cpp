@@ -91,7 +91,7 @@ public:
     pipelineDescriptor->setRasterizationEnabled(RasterizationEnabled);
 
     if (pBlendState) {
-      pBlendState->SetupMetalPipelineDescriptor(pipelineDescriptor);
+      pBlendState->SetupMetalPipelineDescriptor(pipelineDescriptor, num_rtvs);
     }
 
     for (unsigned i = 0; i < num_rtvs; i++) {

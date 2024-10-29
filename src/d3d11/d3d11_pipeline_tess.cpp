@@ -121,7 +121,7 @@ public:
     pipelineDescriptor->setRasterizationEnabled(RasterizationEnabled);
 
     if (pBlendState) {
-      pBlendState->SetupMetalPipelineDescriptor(pipelineDescriptor);
+      pBlendState->SetupMetalPipelineDescriptor(pipelineDescriptor, num_rtvs);
     }
 
     pipelineDescriptor->setMaxTessellationFactor(
