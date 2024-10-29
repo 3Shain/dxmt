@@ -2,10 +2,16 @@ winemetal_unix_src = [
   'unix.c',
 ]
 
+if wine_build_path == ''
+  winemac_so = join_paths(meson.source_root(), 'toolchains/wine/lib/wine/x86_64-unix/winemac.so')
+else
+  winemac_so = join_paths(wine_build_path, 'dlls/winemac.drv/winemac.so')
+endif
+
 winemetal_unix_ld_args = [
   '-install_name', 
   '@rpath/winemetal.so',
-  join_paths(meson.source_root(), 'toolchains/wine/lib/wine/x86_64-unix/winemac.so'),
+  winemac_so,
   '-weak_framework', 'CoreFoundation', '-weak_framework', 'Metal', 
   '-framework', 'MetalFX',
 ]
