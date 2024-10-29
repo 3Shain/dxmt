@@ -4478,7 +4478,12 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                  });
           },
           [](InstSampleInfo) { assert(0 && "unhandled sampleinfo"); },
-          [](InstSamplePos) { assert(0 && "unhandled samplepos"); },
+          [&](InstSamplePos sample_pos) {
+            // FIXME: stub
+            effect << store_dst_op<true>(sample_pos.dst, make_irvalue([](struct context s) {
+              return llvm::ConstantAggregateZero::get(s.types._float4);
+            }));
+           },
         },
         inst
       );
