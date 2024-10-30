@@ -1,5 +1,6 @@
 #include "d3d11_device.hpp"
 #include "d3d11_private.h"
+#include "d3d11_query.hpp"
 #define __DXMT_DISABLE_OCCLUSION_QUERY__ 1
 #include "d3d11_context_impl.cpp"
 #include "dxmt_command_queue.hpp"
@@ -602,52 +603,54 @@ public:
 
   void
   Begin(ID3D11Asynchronous *pAsync) override {
-    IMPLEMENT_ME;
-    // D3D11_QUERY_DESC desc;
-    // ((ID3D11Query *)pAsync)->GetDesc(&desc);
-    // switch (desc.Query) {
-    // case D3D11_QUERY_EVENT:
-    //   break;
+    D3D11_QUERY_DESC desc;
+    ((ID3D11Query *)pAsync)->GetDesc(&desc);
+    switch (desc.Query) {
+    case D3D11_QUERY_EVENT:
+      break;
     // case D3D11_QUERY_OCCLUSION: {
     //   if (auto observer = ((IMTLD3DOcclusionQuery *)pAsync)->Begin(NextOcclusionQuerySeq())) {
     //     cmd_queue.RegisterVisibilityResultObserver(observer);
     //   }
     //   break;
     // }
-    // case D3D11_QUERY_TIMESTAMP:
-    // case D3D11_QUERY_TIMESTAMP_DISJOINT: {
-    //   // ignore
-    //   break;
-    // }
-    // default:
-    //   ERR("Unknown query type ", desc.Query);
-    //   break;
-    // }
+    case D3D11_QUERY_TIMESTAMP:
+    case D3D11_QUERY_TIMESTAMP_DISJOINT: {
+      // ignore
+      break;
+    }
+    default:
+      ERR("Deferred context: unhandled query type ", desc.Query);
+      break;
+    }
   }
 
   void
   End(ID3D11Asynchronous *pAsync) override {
-    IMPLEMENT_ME;
-    // D3D11_QUERY_DESC desc;
-    // ((ID3D11Query *)pAsync)->GetDesc(&desc);
-    // switch (desc.Query) {
-    // case D3D11_QUERY_EVENT:
-    //   ((IMTLD3DEventQuery *)pAsync)->Issue(cmd_queue.EncodedWorkFinishAt());
-    //   break;
+    D3D11_QUERY_DESC desc;
+    ((ID3D11Query *)pAsync)->GetDesc(&desc);
+    switch (desc.Query) {
+    case D3D11_QUERY_EVENT:
+      ctx_state.current_cmdlist->EmitEvent([event = Com((IMTLD3DEventQuery *)pAsync
+                                            )](MTLD3D11CommandList::EventContext &ctx) {
+        // granularity is command list
+        event->Issue(ctx.cmd_queue.CurrentSeqId());
+      });
+      break;
     // case D3D11_QUERY_OCCLUSION: {
     //   ((IMTLD3DOcclusionQuery *)pAsync)->End(NextOcclusionQuerySeq());
     //   promote_flush = true;
     //   break;
     // }
-    // case D3D11_QUERY_TIMESTAMP:
-    // case D3D11_QUERY_TIMESTAMP_DISJOINT: {
-    //   // ignore
-    //   break;
-    // }
-    // default:
-    //   ERR("Unknown query type ", desc.Query);
-    //   break;
-    // }
+    case D3D11_QUERY_TIMESTAMP:
+    case D3D11_QUERY_TIMESTAMP_DISJOINT: {
+      // ignore
+      break;
+    }
+    default:
+      ERR("Deferred context: unhandled query type ", desc.Query);
+      break;
+    }
   }
 
   void
