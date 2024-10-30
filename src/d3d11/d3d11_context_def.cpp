@@ -38,6 +38,12 @@ DeferredContextBase::Use(IMTLD3D11DepthStencilView *dsv) {
 }
 
 template <>
+BindingRef
+DeferredContextBase::Use(IMTLDynamicBuffer *dynamic_buffer) {
+  return ctx_state.current_cmdlist->Use(dynamic_buffer);
+}
+
+template <>
 ENCODER_INFO *
 DeferredContextBase::GetLastEncoder() {
   return ctx_state.current_cmdlist->GetLastEncoder();

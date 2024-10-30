@@ -2115,6 +2115,7 @@ public:
   }
   BindingRef Use(IMTLD3D11RenderTargetView *rtv);
   BindingRef Use(IMTLD3D11DepthStencilView *dsv);
+  BindingRef Use(IMTLDynamicBuffer *dynamic_buffer);
 
   ENCODER_INFO *GetLastEncoder();
   ENCODER_CLEARPASS_INFO *MarkClearPass();
@@ -2676,8 +2677,29 @@ public:
               cmd.Dst.MipLevel, cmd.DstOrigin
           );
         });
+      } else if (auto dynamic_src = com_cast<IMTLDynamicBuffer>(cmd.pSrc)) {
+        uint32_t bytes_per_row, bytes_per_image;
+        dynamic_src->GetSize(&bytes_per_row, &bytes_per_image);
+        EmitBlitCommand<true>([dst_ = Use(dst), src_buffer = Use(dynamic_src.ptr()), bytes_per_row, bytes_per_image,
+                               cmd = std::move(cmd)](MTL::BlitCommandEncoder *encoder, auto &ctx) {
+          auto dst = dst_.texture(&ctx);
+          auto src = src_buffer.buffer();
+          uint32_t offset;
+          if (cmd.SrcFormat.Flag & MTL_DXGI_FORMAT_BC) {
+            D3D11_ASSERT(0 && "Unexpected dynamic BC texture");
+            offset = cmd.SrcOrigin.z * bytes_per_image + (cmd.SrcOrigin.y >> 2) * bytes_per_row +
+                     (cmd.SrcOrigin.x >> 2) * cmd.SrcFormat.BytesPerTexel;
+          } else {
+            offset = cmd.SrcOrigin.z * bytes_per_image + cmd.SrcOrigin.y * bytes_per_row +
+                     cmd.SrcOrigin.x * cmd.SrcFormat.BytesPerTexel;
+          }
+          encoder->copyFromBuffer(
+              src, offset, bytes_per_row, bytes_per_image, cmd.SrcSize, dst, cmd.Dst.ArraySlice, cmd.Dst.MipLevel,
+              cmd.DstOrigin
+          );
+        });
       } else {
-        D3D11_ASSERT(0 && "TODO: copy from dynamic to device");
+        D3D11_ASSERT(0 && "Unexpected texture copy source");
       }
     } else {
       D3D11_ASSERT(0 && "TODO: copy to dynamic?");
@@ -3932,6 +3954,15 @@ public:
     } else {
       D3D11_ASSERT(0 && "Unhandled dynamic DSV");
     }
+  }
+
+  BindingRef
+  Use(IMTLDynamicBuffer *dynamic_buffer) {
+    auto index = num_bindingref++;
+    EmitEvent([index, dynamic_buffer = Com(dynamic_buffer)](EventContext &ctx) {
+      ctx.binding_table[index] = dynamic_buffer->GetCurrentBufferBinding();
+    });
+    return BindingRef(index, deferred_binding_t{});
   }
 
   ENCODER_INFO *

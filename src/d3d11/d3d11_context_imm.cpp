@@ -36,6 +36,12 @@ ImmediateContextBase::Use(IMTLD3D11DepthStencilView *dsv) {
 }
 
 template <>
+BindingRef
+ImmediateContextBase::Use(IMTLDynamicBuffer *dynamic_buffer) {
+  return dynamic_buffer->GetCurrentBufferBinding();
+}
+
+template <>
 ENCODER_INFO *
 ImmediateContextBase::GetLastEncoder() {
   CommandChunk *chk = ctx_state.cmd_queue.CurrentChunk();
