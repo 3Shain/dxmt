@@ -442,6 +442,7 @@ public:
       return CreateEventQuery(this, pQueryDesc, ppQuery);
       return S_OK;
     case D3D11_QUERY_OCCLUSION:
+    case D3D11_QUERY_OCCLUSION_PREDICATE:
       return CreateOcculusionQuery(this, pQueryDesc, ppQuery);
     case D3D11_QUERY_TIMESTAMP: {
       *ppQuery = ref(new MTLD3D11DummyQuery<UINT64>(this, pQueryDesc));

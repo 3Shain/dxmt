@@ -7,7 +7,7 @@
 DEFINE_COM_INTERFACE("a301e56d-d87e-4b69-8440-bd003e285904",
                      IMTLD3DOcclusionQuery)
     : public ID3D11Query {
-  virtual HRESULT GetData(uint64_t * data) = 0;
+  virtual HRESULT GetData(void * data) = 0;
   /**
   Note: this will add a ref if the query is in `Signaled` state
   */
@@ -58,7 +58,7 @@ public:
     }
   };
 
-private:
+protected:
   D3D11_QUERY_DESC desc_;
 };
 
