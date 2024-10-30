@@ -147,6 +147,7 @@ DEFINE_COM_INTERFACE("65feb8c5-01de-49df-bf58-d115007a117d", IMTLDynamicBuffer)
   virtual void *GetMappedMemory(UINT * pBytesPerRow, UINT * pBytesPerImage) = 0;
   virtual UINT GetSize(UINT * pBytesPerRow, UINT * pBytesPerImage) = 0;
   virtual void RotateBuffer(dxmt::MTLD3D11Device * pool) = 0;
+  virtual dxmt::BindingRef GetCurrentBufferBinding() = 0;
   virtual D3D11_BIND_FLAG GetBindFlag() = 0;
 };
 

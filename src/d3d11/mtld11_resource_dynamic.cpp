@@ -180,6 +180,11 @@ public:
     return buffer_len;
   };
 
+  BindingRef GetCurrentBufferBinding() override {
+    return BindingRef(static_cast<ID3D11Resource *>(this), buffer_dynamic.ptr(),
+                      buffer_len, 0);
+  };
+
   D3D11_BIND_FLAG GetBindFlag() override {
     return (D3D11_BIND_FLAG)desc.BindFlags;
   }
@@ -417,6 +422,11 @@ public:
     *pBytesPerRow = bytes_per_row;
     *pBytesPerImage = bytes_per_row * desc.Height;
     return buffer->length();
+  };
+
+  BindingRef GetCurrentBufferBinding() override {
+    return BindingRef(static_cast<ID3D11Resource *>(this), buffer.ptr(),
+                      buffer->length(), 0);
   };
 
   void RotateBuffer(MTLD3D11Device *exch) override {
