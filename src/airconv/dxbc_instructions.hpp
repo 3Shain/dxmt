@@ -693,6 +693,23 @@ struct InstAtomicImmCmpExchange {
   SrcOperand src1; // select one component
 };
 
+struct InstInterpolateCentroid {
+  DstOperand dst;
+  uint32_t regid;
+};
+
+struct InstInterpolateSample {
+  DstOperand dst;
+  SrcOperand sample_index;
+  uint32_t regid;
+};
+
+struct InstInterpolateOffset {
+  DstOperand dst;
+  SrcOperand offset;
+  uint32_t regid;
+};
+
 using Instruction = std::variant<
   /* Generic */
   InstMov, InstMovConditional, InstSwapConditional,                      //
@@ -711,6 +728,7 @@ using Instruction = std::variant<
   InstNop,
   /* Pixel Shader */
   InstPixelDiscard, InstPartialDerivative, InstCalcLOD,
+  InstInterpolateCentroid, InstInterpolateSample, InstInterpolateOffset,
   /* Atomics */
   InstSync, InstAtomicBinOp,                       //
   InstAtomicImmCmpExchange, InstAtomicImmExchange, //

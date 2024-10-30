@@ -74,7 +74,6 @@ struct MTL_GEOMETRY_SHADER_REFLECTION {
   union {
     struct MTL_GEOMETRY_SHADER_PASS_THROUGH Data;
     uint32_t GSPassThrough;
-    bool RasterizationDisabled;
   };
 };
 
