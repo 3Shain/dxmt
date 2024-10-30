@@ -3152,6 +3152,10 @@ public:
         uav_only_render_target_width = viewport.Width;
         uav_only_render_target_height = viewport.Height;
         uav_only_sample_count = state->UAVOnlySampleCount();
+        if (!(uav_only_render_target_width && uav_only_render_target_height)) {
+          ERR("uav only rendering is enabled but viewport is empty");
+          return false;
+        }
         uav_only = true;
       }
 
@@ -4066,7 +4070,8 @@ public:
 
 #pragma region ImmediateContext-related
 
-  bool Noop() {
+  bool
+  Noop() {
     return cpu_arugment_heap_offset == 0 && gpu_arugment_heap_offset == 0;
   };
 
