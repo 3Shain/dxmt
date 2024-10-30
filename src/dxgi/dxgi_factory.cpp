@@ -29,7 +29,7 @@ public:
         riid == __uuidof(IDXGIFactory) || riid == __uuidof(IDXGIFactory1) ||
         riid == __uuidof(IDXGIFactory2) || riid == __uuidof(IDXGIFactory2) ||
         riid == __uuidof(IDXGIFactory3) || riid == __uuidof(IDXGIFactory4) ||
-        riid == __uuidof(IDXGIFactory5)) {
+        riid == __uuidof(IDXGIFactory5) || riid == __uuidof(IDXGIFactory6)) {
       *ppvObject = ref(this);
       return S_OK;
     }
