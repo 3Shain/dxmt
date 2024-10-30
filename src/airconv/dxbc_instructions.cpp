@@ -1844,6 +1844,35 @@ Instruction readInstruction(
     );
     return inst;
   };
+  case microsoft::D3D11_SB_OPCODE_EVAL_CENTROID: {
+    assert(Inst.m_Operands[1].m_Type == microsoft::D3D10_SB_OPERAND_TYPE_INPUT);
+    assert(Inst.m_Operands[1].m_IndexType[0] == microsoft::D3D10_SB_OPERAND_INDEX_IMMEDIATE32);
+    auto regid = Inst.m_Operands[1].m_Index[0].m_RegIndex;
+    return InstInterpolateCentroid {
+      .dst = readDstOperand(Inst.m_Operands[0], phase),
+      .regid = regid
+    };
+  }
+  case microsoft::D3D11_SB_OPCODE_EVAL_SAMPLE_INDEX: {
+    assert(Inst.m_Operands[1].m_Type == microsoft::D3D10_SB_OPERAND_TYPE_INPUT);
+    assert(Inst.m_Operands[1].m_IndexType[0] == microsoft::D3D10_SB_OPERAND_INDEX_IMMEDIATE32);
+    auto regid = Inst.m_Operands[1].m_Index[0].m_RegIndex;
+    return InstInterpolateSample {
+      .dst = readDstOperand(Inst.m_Operands[0], phase),
+      .sample_index = readSrcOperand(Inst.m_Operands[2], phase),
+      .regid = regid
+    };
+  }
+  case microsoft::D3D11_SB_OPCODE_EVAL_SNAPPED: {
+    assert(Inst.m_Operands[1].m_Type == microsoft::D3D10_SB_OPERAND_TYPE_INPUT);
+    assert(Inst.m_Operands[1].m_IndexType[0] == microsoft::D3D10_SB_OPERAND_INDEX_IMMEDIATE32);
+    auto regid = Inst.m_Operands[1].m_Index[0].m_RegIndex;
+    return InstInterpolateOffset {
+      .dst = readDstOperand(Inst.m_Operands[0], phase),
+      .offset = readSrcOperand(Inst.m_Operands[2], phase),
+      .regid = regid
+    };
+  }
   case microsoft::D3D10_SB_OPCODE_EMIT:
   case microsoft::D3D10_SB_OPCODE_EMITTHENCUT:
   case microsoft::D3D11_SB_OPCODE_EMIT_STREAM:

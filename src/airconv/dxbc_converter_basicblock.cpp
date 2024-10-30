@@ -4484,6 +4484,9 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
               return llvm::ConstantAggregateZero::get(s.types._float4);
             }));
            },
+          [](InstInterpolateCentroid) { assert(0 && "unhandled eval_centroid"); },
+          [](InstInterpolateSample) { assert(0 && "unhandled eval_sample_index"); },
+          [](InstInterpolateOffset) { assert(0 && "unhandled eval_snapped"); },
         },
         inst
       );
