@@ -58,7 +58,14 @@ HRESULT CreateMTLTextureView<D3D11_SHADER_RESOURCE_VIEW_DESC1>(
     break;
   case D3D_SRV_DIMENSION_TEXTURE1D: {
     if (texture_type == MTL::TextureType1D) {
-      // pViewDesc->Texture1D.MipLevels;
+      *ppView = pResource->newTextureView(
+          metal_format.PixelFormat, MTL::TextureType1D,
+          NS::Range::Make(pViewDesc->Texture1D.MostDetailedMip,
+                          pViewDesc->Texture1D.MipLevels == 0xffffffffu
+                              ? pResource->mipmapLevelCount() -
+                                    pViewDesc->Texture1D.MostDetailedMip
+                              : pViewDesc->Texture1D.MipLevels), NS::Range::Make(0, 1), swizzle);
+      return S_OK;
     }
     if (texture_type == MTL::TextureType1DArray) {
     }
@@ -160,6 +167,13 @@ HRESULT CreateMTLTextureView<D3D11_SHADER_RESOURCE_VIEW_DESC1>(
     if (texture_type == MTL::TextureType2DMultisample) {
       *ppView = pResource->newTextureView(
           metal_format.PixelFormat, MTL::TextureType2DMultisample,
+          NS::Range::Make(0, 1), NS::Range::Make(0, 1), swizzle);
+      return S_OK;
+    }
+    if (texture_type == MTL::TextureType2D) {
+      WARN("A texture2d view is created on multisampled texture");
+      *ppView = pResource->newTextureView(
+          metal_format.PixelFormat, MTL::TextureType2D,
           NS::Range::Make(0, 1), NS::Range::Make(0, 1), swizzle);
       return S_OK;
     }
@@ -375,6 +389,13 @@ CreateMTLRenderTargetView(MTLD3D11Device *pDevice, MTL::Texture *pResource,
   default:
     break;
   case D3D11_RTV_DIMENSION_TEXTURE1D: {
+    if (texture_type == MTL::TextureType1D) {
+      *ppView = pResource->newTextureView(
+          metal_format.PixelFormat, MTL::TextureType1D,
+          NS::Range::Make(pViewDesc->Texture1D.MipSlice, 1),
+          NS::Range::Make(0, 1));
+      return S_OK;
+    }
     break;
   }
   case D3D11_RTV_DIMENSION_TEXTURE1DARRAY: {
@@ -545,6 +566,13 @@ CreateMTLDepthStencilView(MTLD3D11Device *pDevice, MTL::Texture *pResource,
           NS::Range::Make(0, 1));
       return S_OK;
     }
+    if (texture_type == MTL::TextureType2DArray) {
+      *ppView = pResource->newTextureView(
+          metal_format.PixelFormat, MTL::TextureType2D,
+          NS::Range::Make(pViewDesc->Texture2D.MipSlice, 1),
+          NS::Range::Make(0, 1));
+      return S_OK;
+    }
     break;
   }
   case D3D11_DSV_DIMENSION_TEXTURE2DARRAY: {
@@ -588,6 +616,13 @@ CreateMTLDepthStencilView(MTLD3D11Device *pDevice, MTL::Texture *pResource,
     if (texture_type == MTL::TextureType2DMultisample) {
       *ppView = pResource->newTextureView(
           metal_format.PixelFormat, MTL::TextureType2DMultisample,
+          NS::Range::Make(0, 1), NS::Range::Make(0, 1));
+      return S_OK;
+    }
+    if (texture_type == MTL::TextureType2D) {
+      WARN("A texture2d view is created on multisampled texture");
+      *ppView = pResource->newTextureView(
+          metal_format.PixelFormat, MTL::TextureType2D,
           NS::Range::Make(0, 1), NS::Range::Make(0, 1));
       return S_OK;
     }
