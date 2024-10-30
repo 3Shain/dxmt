@@ -1809,7 +1809,7 @@ public:
   ) override {
     if (ppRenderTargetViews) {
       for (unsigned i = 0; i < NumRTVs; i++) {
-        if (i < state_.OutputMerger.NumRTVs) {
+        if (i < state_.OutputMerger.NumRTVs && state_.OutputMerger.RTVs[i]) {
           state_.OutputMerger.RTVs[i]->QueryInterface(IID_PPV_ARGS(&ppRenderTargetViews[i]));
         } else {
           ppRenderTargetViews[i] = nullptr;
