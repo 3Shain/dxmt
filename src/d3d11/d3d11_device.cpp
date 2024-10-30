@@ -507,29 +507,25 @@ public:
 
     UINT outFormatSupport = 0;
 
-    // All graphics and compute kernels can read or sample a texture with any
-    // pixel format.
-    outFormatSupport |= D3D11_FORMAT_SUPPORT_SHADER_LOAD |
-                        D3D11_FORMAT_SUPPORT_SHADER_SAMPLE |
-                        D3D11_FORMAT_SUPPORT_SHADER_GATHER |
-                        D3D11_FORMAT_SUPPORT_MULTISAMPLE_LOAD |
-                        D3D11_FORMAT_SUPPORT_CPU_LOCKABLE;
+    if (metal_format.PixelFormat) {
+      // All graphics and compute kernels can read or sample a texture with any pixel format.
+      outFormatSupport |= D3D11_FORMAT_SUPPORT_SHADER_LOAD | D3D11_FORMAT_SUPPORT_SHADER_SAMPLE |
+                          D3D11_FORMAT_SUPPORT_SHADER_GATHER | D3D11_FORMAT_SUPPORT_MULTISAMPLE_LOAD |
+                          D3D11_FORMAT_SUPPORT_CPU_LOCKABLE;
 
-    /* UNCHECKED */
-    outFormatSupport |=
-        D3D11_FORMAT_SUPPORT_TEXTURE1D | D3D11_FORMAT_SUPPORT_TEXTURE2D |
-        D3D11_FORMAT_SUPPORT_TEXTURE3D | D3D11_FORMAT_SUPPORT_TEXTURECUBE |
-        D3D11_FORMAT_SUPPORT_MIP | D3D11_FORMAT_SUPPORT_MIP_AUTOGEN | // ?
-        D3D11_FORMAT_SUPPORT_CAST_WITHIN_BIT_LAYOUT;
+      /* UNCHECKED */
+      outFormatSupport |= D3D11_FORMAT_SUPPORT_TEXTURE1D | D3D11_FORMAT_SUPPORT_TEXTURE2D |
+                          D3D11_FORMAT_SUPPORT_TEXTURE3D | D3D11_FORMAT_SUPPORT_TEXTURECUBE | D3D11_FORMAT_SUPPORT_MIP |
+                          D3D11_FORMAT_SUPPORT_MIP_AUTOGEN | // ?
+                          D3D11_FORMAT_SUPPORT_CAST_WITHIN_BIT_LAYOUT;
 
-    if (!(metal_format.Flag &
-          (MTL_DXGI_FORMAT_BC | MTL_DXGI_FORMAT_DEPTH_PLANER |
-           MTL_DXGI_FORMAT_STENCIL_PLANER))) {
-      outFormatSupport |= D3D11_FORMAT_SUPPORT_BUFFER;
-    }
+      if (!(metal_format.Flag & (MTL_DXGI_FORMAT_BC | MTL_DXGI_FORMAT_DEPTH_PLANER | MTL_DXGI_FORMAT_STENCIL_PLANER))) {
+        outFormatSupport |= D3D11_FORMAT_SUPPORT_BUFFER;
+      }
 
-    if (metal_format.Flag & MTL_DXGI_FORMAT_BACKBUFFER) {
-      outFormatSupport |= D3D11_FORMAT_SUPPORT_DISPLAY;
+      if (metal_format.Flag & MTL_DXGI_FORMAT_BACKBUFFER) {
+        outFormatSupport |= D3D11_FORMAT_SUPPORT_DISPLAY;
+      }
     }
 
     if (metal_format.AttributeFormat) {
