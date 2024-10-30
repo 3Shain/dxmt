@@ -594,7 +594,8 @@ public:
     switch (desc.Query) {
     case D3D11_QUERY_EVENT:
       break;
-    case D3D11_QUERY_OCCLUSION: {
+    case D3D11_QUERY_OCCLUSION:
+    case D3D11_QUERY_OCCLUSION_PREDICATE: {
       if (auto observer = ((IMTLD3DOcclusionQuery *)pAsync)->Begin(NextOcclusionQuerySeq())) {
         cmd_queue.RegisterVisibilityResultObserver(observer);
       }
@@ -620,7 +621,8 @@ public:
     case D3D11_QUERY_EVENT:
       ((IMTLD3DEventQuery *)pAsync)->Issue(cmd_queue.EncodedWorkFinishAt());
       break;
-    case D3D11_QUERY_OCCLUSION: {
+    case D3D11_QUERY_OCCLUSION:
+    case D3D11_QUERY_OCCLUSION_PREDICATE: {
       ((IMTLD3DOcclusionQuery *)pAsync)->End(NextOcclusionQuerySeq());
       promote_flush = true;
       break;
@@ -674,6 +676,11 @@ public:
     case D3D11_QUERY_OCCLUSION: {
       uint64_t null_data;
       uint64_t *data_ptr = pData ? (uint64_t *)pData : &null_data;
+      return ((IMTLD3DOcclusionQuery *)pAsync)->GetData(data_ptr);
+    }
+    case D3D11_QUERY_OCCLUSION_PREDICATE: {
+      BOOL null_data;
+      BOOL *data_ptr = pData ? (BOOL *)pData : &null_data;
       return ((IMTLD3DOcclusionQuery *)pAsync)->GetData(data_ptr);
     }
     case D3D11_QUERY_TIMESTAMP: {

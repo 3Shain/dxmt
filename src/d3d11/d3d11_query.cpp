@@ -42,13 +42,19 @@ class OcculusionQuery : public MTLD3DQueryBase<IMTLD3DOcclusionQuery>,
   uint64_t occlusion_counter_end = 0;
   uint64_t accumulated_value = 0;
 
-  virtual UINT STDMETHODCALLTYPE GetDataSize() override {
-    return sizeof(UINT64);
+  virtual UINT STDMETHODCALLTYPE
+  GetDataSize() override {
+    return desc_.Query == D3D11_QUERY_OCCLUSION_PREDICATE ? sizeof(BOOL) : sizeof(UINT64);
   };
 
-  virtual HRESULT GetData(uint64_t *data) override {
+  virtual HRESULT
+  GetData(void *data) override {
     if (state == QueryState::Signaled) {
-      *data = accumulated_value;
+      if (desc_.Query == D3D11_QUERY_OCCLUSION_PREDICATE) {
+        *((BOOL *)data) = accumulated_value != 0;
+      } else {
+        *((uint64_t *)data) = accumulated_value;
+      }
       return S_OK;
     }
     return S_FALSE;
@@ -106,6 +112,12 @@ class OcculusionQuery : public MTLD3DQueryBase<IMTLD3DOcclusionQuery>,
       D3D11_ASSERT(0 && "unreachable");
     }
     accumulated_value += value;
+    if (desc_.Query == D3D11_QUERY_OCCLUSION_PREDICATE && accumulated_value) {
+      state = QueryState::Signaled;
+      Release();
+      // return true, so caller can know this query has done
+      return true;
+    }
     if (occlusion_counter + 1 == occlusion_counter_end) {
       D3D11_ASSERT(state == QueryState::Issued);
       state = QueryState::Signaled;
