@@ -28,11 +28,13 @@ public:
 
   bool UseCopyDestination(uint64_t seq_id, MTL_STAGING_RESOURCE *pBuffer,
                           uint32_t *pBytesPerRow, uint32_t *pBytesPerImage) {
-    if (mapped) {
+    if (seq_id && mapped) {
       return false;
     }
-    cpu_coherent_after_finished_seq_id = seq_id; // coherent read-after-write
-    gpu_occupied_until_finished_seq_id = seq_id; // coherent write-after-write
+    // coherent read-after-write
+    cpu_coherent_after_finished_seq_id = std::max(seq_id, cpu_coherent_after_finished_seq_id);
+    // coherent write-after-write
+    gpu_occupied_until_finished_seq_id = std::max(seq_id, gpu_occupied_until_finished_seq_id);
     pBuffer->Buffer = buffer.ptr();
     *pBytesPerRow = bytes_per_row;
     *pBytesPerImage = bytes_per_image;
@@ -41,11 +43,12 @@ public:
 
   bool UseCopySource(uint64_t seq_id, MTL_STAGING_RESOURCE *pBuffer,
                      uint32_t *pBytesPerRow, uint32_t *pBytesPerImage) {
-    if (mapped) {
+    if (seq_id && mapped) {
       return false;
     }
     // read-after-read doesn't hurt anyway
-    gpu_occupied_until_finished_seq_id = seq_id; // coherent write-after-read
+    // coherent write-after-read
+    gpu_occupied_until_finished_seq_id = std::max(seq_id, gpu_occupied_until_finished_seq_id);
     pBuffer->Buffer = buffer.ptr();
     *pBytesPerRow = bytes_per_row;
     *pBytesPerImage = bytes_per_image;
