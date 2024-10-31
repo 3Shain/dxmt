@@ -195,7 +195,7 @@ BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID reserved) {
 
 extern "C" void _massert(const char *_Message, const char *_File,
                          unsigned _Line) {
-  dxmt::Logger::err(dxmt::str::format("Assertation failed: ", _Message,
+  dxmt::Logger::err(dxmt::str::format("Assertion failed: ", _Message,
                                       "\nfile: ", _File, ":", _Line));
   std::terminate();
 }
