@@ -592,7 +592,9 @@ public:
       D3D11_ASSERT(0 && "tex2darr clear");
       break;
     case D3D11_UAV_DIMENSION_TEXTURE3D:
-      D3D11_ASSERT(0 && "tex3d clear");
+      EmitComputeCommandChk<true>([tex = Use(bindable), value](auto encoder, auto &ctx) {
+        ctx.queue->clear_cmd.ClearTexture3DUint(encoder, tex.texture(&ctx), value);
+      });
       break;
     }
     InvalidateComputePipeline();
