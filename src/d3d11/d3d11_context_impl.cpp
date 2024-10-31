@@ -2529,7 +2529,7 @@ public:
       return;
     if (auto staging_dst = com_cast<IMTLD3D11Staging>(pDstResource)) {
       if (auto staging_src = com_cast<IMTLD3D11Staging>(pSrcResource)) {
-        D3D11_ASSERT(0 && "tod: copy between staging");
+        D3D11_ASSERT(0 && "todo: copy between staging");
       } else if (auto src = com_cast<IMTLBindable>(pSrcResource)) {
         // copy from device to staging
         MTL_STAGING_RESOURCE dst_bind;
