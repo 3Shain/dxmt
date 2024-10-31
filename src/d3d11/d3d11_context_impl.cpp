@@ -1479,7 +1479,15 @@ public:
 
   void
   SOGetTargets(UINT NumBuffers, ID3D11Buffer **ppSOTargets) override {
-    IMPLEMENT_ME
+    if (!ppSOTargets)
+      return;
+    for (unsigned i = 0; i < std::min(4u, NumBuffers); i++) {
+      if (state_.StreamOutput.Targets.test_bound(i)) {
+        state_.StreamOutput.Targets[i].Buffer->QueryInterface(IID_PPV_ARGS(&ppSOTargets[i]));
+      } else {
+        ppSOTargets[i] = nullptr;
+      }
+    }
   }
 
 #pragma endregion
