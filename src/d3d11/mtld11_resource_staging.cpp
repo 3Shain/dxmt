@@ -232,7 +232,6 @@ HRESULT CreateStagingTextureInternal(MTLD3D11Device *pDevice,
     return E_INVALIDARG;
   }
   std::vector<StagingBufferInternal> subresources;
-  D3D11_ASSERT(!pInitialData);
   for (auto &sub : EnumerateSubresources(finalDesc)) {
     uint32_t w, h, d;
     GetMipmapSize(&finalDesc, sub.MipLevel, &w, &h, &d);
