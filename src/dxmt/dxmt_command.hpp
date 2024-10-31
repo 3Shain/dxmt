@@ -83,6 +83,16 @@ public:
     );
   }
 
+  void
+  ClearTexture3DUint(MTL::ComputeCommandEncoder *encoder, MTL::Texture *texture, const std::array<uint32_t, 4> &value) {
+    encoder->setComputePipelineState(clear_texture_3d_uint_pipeline);
+    encoder->setTexture(texture, 0);
+    encoder->setBytes(value.data(), 16, 1);
+    encoder->dispatchThreads(
+        MTL::Size::Make(texture->width(), texture->height(), texture->depth()), MTL::Size::Make(8, 8, 1)
+    );
+  }
+
 private:
   Obj<MTL::ComputePipelineState> clear_texture_1d_uint_pipeline;
   Obj<MTL::ComputePipelineState> clear_texture_1d_array_uint_pipeline;
