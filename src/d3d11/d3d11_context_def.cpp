@@ -90,15 +90,32 @@ DeferredContextBase::UseCopyDestination(
     IMTLD3D11Staging *pResource, uint32_t Subresource, MTL_STAGING_RESOURCE *pBuffer, uint32_t *pBytesPerRow,
     uint32_t *pBytesPerImage
 ) {
-  IMPLEMENT_ME;
+  pResource->UseCopyDestination(Subresource, 0, pBuffer, pBytesPerRow, pBytesPerImage);
+  ctx_state.current_cmdlist->EmitEvent([staging = Com(pResource), Subresource,
+                                        buffer_def = pBuffer->Buffer](auto &ctx) {
+    MTL_STAGING_RESOURCE buffer_imm;
+    uint32_t __, ___;
+    D3D11_ASSERT(staging->UseCopyDestination(Subresource, ctx.cmd_queue.CurrentSeqId(), &buffer_imm, &__, &___));
+    D3D11_ASSERT(buffer_def == buffer_imm.Buffer);
+  });
+  return true;
 }
+
 template <>
 bool
 DeferredContextBase::UseCopySource(
     IMTLD3D11Staging *pResource, uint32_t Subresource, MTL_STAGING_RESOURCE *pBuffer, uint32_t *pBytesPerRow,
     uint32_t *pBytesPerImage
 ) {
-  IMPLEMENT_ME;
+  pResource->UseCopySource(Subresource, 0, pBuffer, pBytesPerRow, pBytesPerImage);
+  ctx_state.current_cmdlist->EmitEvent([staging = Com(pResource), Subresource,
+                                        buffer_def = pBuffer->Buffer](auto &ctx) {
+    MTL_STAGING_RESOURCE buffer_imm;
+    uint32_t __, ___;
+    D3D11_ASSERT(staging->UseCopySource(Subresource, ctx.cmd_queue.CurrentSeqId(), &buffer_imm, &__, &___));
+    D3D11_ASSERT(buffer_def == buffer_imm.Buffer);
+  });
+  return true;
 }
 
 template <>
