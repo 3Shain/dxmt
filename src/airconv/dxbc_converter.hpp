@@ -308,7 +308,7 @@ public:
   uint32_t output_control_point_count = ~0u;
   uint32_t tessellation_partition = 0;
   float max_tesselation_factor = 64.0f;
-  bool tessellation_anticlockwise = false;
+  microsoft::D3D11_SB_TESSELLATOR_OUTPUT_PRIMITIVE tessellator_output_primitive = {};
   std::vector<ScalarInfo> patch_constant_scalars;
   uint32_t hull_maximum_threads_per_patch = 0;
   std::vector<ScalarInfo> clip_distance_scalars;

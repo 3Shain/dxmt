@@ -2533,15 +2533,14 @@ int SM50Initialize(
         switch (Inst.m_TessellatorOutputPrimitiveDecl.TessellatorOutputPrimitive
         ) {
         case microsoft::D3D11_SB_TESSELLATOR_OUTPUT_TRIANGLE_CW:
-          sm50_shader->tessellation_anticlockwise = false;
-          break;
         case microsoft::D3D11_SB_TESSELLATOR_OUTPUT_TRIANGLE_CCW:
-          sm50_shader->tessellation_anticlockwise = true;
-          break;
-        case microsoft::D3D11_SB_TESSELLATOR_OUTPUT_UNDEFINED:
         case microsoft::D3D11_SB_TESSELLATOR_OUTPUT_POINT:
         case microsoft::D3D11_SB_TESSELLATOR_OUTPUT_LINE:
-          assert(0 && "unsupported tessellator output primitive");
+          sm50_shader->tessellator_output_primitive =
+            Inst.m_TessellatorOutputPrimitiveDecl.TessellatorOutputPrimitive;
+          break;
+        default:
+          assert(0 && "unexpected tessellator output primitive");
           break;
         }
         break;
@@ -2572,7 +2571,7 @@ int SM50Initialize(
         switch (Inst.m_TessellatorDomainDecl.TessellatorDomain) {
         case microsoft::D3D11_SB_TESSELLATOR_DOMAIN_UNDEFINED:
         case microsoft::D3D11_SB_TESSELLATOR_DOMAIN_ISOLINE:
-          assert(0 && "unsupported tesselator domain");
+          // nop;
           break;
         case microsoft::D3D11_SB_TESSELLATOR_DOMAIN_TRI:
           sm50_shader->func_signature.UsePatch(
@@ -2805,7 +2804,8 @@ int SM50Initialize(
       pRefl->Tessellator = {
         .Partition = sm50_shader->tessellation_partition,
         .MaxFactor = sm50_shader->max_tesselation_factor,
-        .AntiClockwise = sm50_shader->tessellation_anticlockwise,
+        .OutputPrimitive = (MTL_TESSELLATOR_OUTPUT_PRIMITIVE
+        )sm50_shader->tessellator_output_primitive,
       };
     }
     if (sm50_shader->shader_type == microsoft::D3D10_SB_GEOMETRY_SHADER) {

@@ -604,7 +604,7 @@ public:
   }
 
   PostTessellationPatch GetPatchType() {
-    assert(patch.has_value() && "not a domain shader");
+    assert(patch.has_value() && "not a domain shader/unsupported isoline tessellation");
     return patch->first;
   };
 
