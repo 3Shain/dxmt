@@ -147,13 +147,17 @@ public:
     case microsoft::D3D11_SB_TESSELLATOR_PARTITIONING_UNDEFINED:
       break;
     }
+    switch (hull_reflection.Tessellator.OutputPrimitive) {
+    default:
+      D3D11_ASSERT(0 && "unexpected tessellator output primitive");
+      break;
     // TODO: figure out why it's inverted
-    if (!hull_reflection.Tessellator.AntiClockwise) {
-      pipelineDescriptor->setTessellationOutputWindingOrder(
-          MTL::WindingCounterClockwise);
-    } else {
-      pipelineDescriptor->setTessellationOutputWindingOrder(
-          MTL::WindingClockwise);
+    case MTL_TESSELLATOR_OUTPUT_TRIANGLE_CW:
+      pipelineDescriptor->setTessellationOutputWindingOrder(MTL::WindingCounterClockwise);
+      break;
+    case MTL_TESSELLATOR_TRIANGLE_CCW:
+      pipelineDescriptor->setTessellationOutputWindingOrder(MTL::WindingClockwise);
+      break;
     }
     pipelineDescriptor->setTessellationFactorStepFunction(
         MTL::TessellationFactorStepFunctionPerPatch);

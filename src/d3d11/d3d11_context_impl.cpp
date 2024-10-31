@@ -3405,8 +3405,19 @@ public:
   FinalizeTessellationRenderPipeline() {
     if (cmdbuf_state == CommandBufferState::TessellationRenderPipelineReady)
       return true;
-    if (!state_.ShaderStages[(UINT)ShaderType::Hull].Shader) {
+    auto HS = GetManagedShader<ShaderType::Hull>();
+    if (!HS) {
       return false;
+    }
+    switch (HS->reflection().Tessellator.OutputPrimitive) {
+    case MTL_TESSELLATOR_OUTPUT_LINE:
+      ERR("skip isoline tessellation");
+      return false;
+    case MTL_TESSELLATOR_OUTPUT_POINT:
+      ERR("skip point tessellation");
+      return false;
+    default:
+      break;
     }
     if (!state_.ShaderStages[(UINT)ShaderType::Domain].Shader) {
       return false;
