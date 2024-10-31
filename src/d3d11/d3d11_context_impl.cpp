@@ -2939,7 +2939,6 @@ public:
 
   void
   EncodeClearPass(ENCODER_CLEARPASS_INFO *clear_pass) {
-    InvalidateCurrentPass();
     EmitCommand([clear_pass, _ = clear_pass->use_clearpass()](CommandChunk::context &ctx) {
       if (clear_pass->skipped) {
         return;
@@ -2990,6 +2989,8 @@ public:
 
   void
   ClearRenderTargetView(IMTLD3D11RenderTargetView *pRenderTargetView, const FLOAT ColorRGBA[4]) {
+    InvalidateCurrentPass();
+
     auto &props = pRenderTargetView->GetAttachmentDesc();
     auto clear_color = MTL::ClearColor::Make(ColorRGBA[0], ColorRGBA[1], ColorRGBA[2], ColorRGBA[3]);
 
@@ -3013,6 +3014,8 @@ public:
   ClearDepthStencilView(IMTLD3D11DepthStencilView *pDepthStencilView, UINT ClearFlags, FLOAT Depth, UINT8 Stencil) {
     if (ClearFlags == 0)
       return;
+    InvalidateCurrentPass();
+
     auto &props = pDepthStencilView->GetAttachmentDesc();
 
     auto previous_encoder = GetLastEncoder();
@@ -3037,8 +3040,8 @@ public:
 
   void
   ResolveSubresource(IMTLBindable *pSrc, UINT SrcSlice, IMTLBindable *pDst, UINT DstLevel, UINT DstSlice) {
-    MarkPass(EncoderKind::Resolve);
     InvalidateCurrentPass();
+    MarkPass(EncoderKind::Resolve);
     EmitCommand([src = Use(pSrc), dst = Use(pDst), SrcSlice, DstSlice, DstLevel](CommandChunk::context &ctx) {
       auto pool = transfer(NS::AutoreleasePool::alloc()->init());
       auto enc_descriptor = MTL::RenderPassDescriptor::renderPassDescriptor();
@@ -3191,6 +3194,7 @@ public:
                 previous_clearpass->skipped = 1;
                 // you think this is unnecessary? not the case in C++!
                 previous_clearpass->clear_attachment = {};
+                break; // all non-null rtvs are mutually different
               }
             }
           }
