@@ -63,8 +63,12 @@ private:
 
     bool GetContentionState(uint64_t) override { return true; }
 
-    void GetLogicalResourceOrView(REFIID riid,
-                                  void **ppLogicalResource) override {
+    void
+    GetLogicalResourceOrView(REFIID riid, void **ppLogicalResource) override {
+      if (riid == __uuidof(IMTLDynamicBuffer)) {
+        resource->QueryInterface(riid, ppLogicalResource);
+        return;
+      }
       QueryInterface(riid, ppLogicalResource);
     };
 
@@ -108,8 +112,12 @@ private:
 
     bool GetContentionState(uint64_t) override { return true; }
 
-    void GetLogicalResourceOrView(REFIID riid,
-                                  void **ppLogicalResource) override {
+    void
+    GetLogicalResourceOrView(REFIID riid, void **ppLogicalResource) override {
+      if (riid == __uuidof(IMTLDynamicBuffer)) {
+        resource->QueryInterface(riid, ppLogicalResource);
+        return;
+      }
       QueryInterface(riid, ppLogicalResource);
     }
 
@@ -369,8 +377,12 @@ private:
 
     bool GetContentionState(uint64_t) override { return true; }
 
-    void GetLogicalResourceOrView(REFIID riid,
-                                  void **ppLogicalResource) override {
+    void
+    GetLogicalResourceOrView(REFIID riid, void **ppLogicalResource) override {
+      if (riid == __uuidof(IMTLDynamicBuffer)) {
+        resource->QueryInterface(riid, ppLogicalResource);
+        return;
+      }
       this->QueryInterface(riid, ppLogicalResource);
     }
 
