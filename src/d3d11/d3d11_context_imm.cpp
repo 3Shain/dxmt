@@ -717,32 +717,35 @@ public:
     if (cmd_list->Noop())
       return;
 
-    Flush();
-
     CommandChunk *chk = ctx_state.cmd_queue.CurrentChunk();
 
     std::vector<ArgumentData> argument_table(cmd_list->num_argument_data);
     std::vector<BindingRef> bindingref_table(cmd_list->num_bindingref);
-    assert(chk->inspect_gpu_heap().second == 0);
+
+    auto [heap, offset] = chk->allocate_gpu_heap(cmd_list->gpu_arugment_heap_offset, 16);
 
     chk->mark_pass(EncoderKind::ExecuteCommandList);
 
     MTLD3D11CommandList::EventContext ctx{
-        cmd_queue,      device,          chk->inspect_gpu_heap().first, chk->gpu_argument_heap_contents,
-        argument_table, bindingref_table
+        cmd_queue, device, (uint64_t *)((char *)heap->contents() + offset), argument_table, bindingref_table
     };
     cmd_list->ProcessEvents(ctx);
 
-    chk->allocate_gpu_heap(cmd_list->gpu_arugment_heap_offset, 16);
-    chk->emit([cmd_list = Com(cmd_list), table = std::move(bindingref_table)](auto &ctx) {
+    chk->emit([cmd_list = Com(cmd_list), table = std::move(bindingref_table), offset](auto &ctx) {
       const BindingRef *old_lut;
       BindingRef::SetLookupTable(table.data(), &old_lut);
+      auto offset_base = ctx.offset_base;
+      ctx.offset_base = offset;
       cmd_list->EncodeCommands(ctx);
+      ctx.offset_base = offset_base;
       BindingRef::SetLookupTable(old_lut, nullptr);
     });
 
     if (!RestoreContextState)
       ClearState();
+
+    if(cmd_list->promote_flush)
+      Flush();
   }
 
   HRESULT

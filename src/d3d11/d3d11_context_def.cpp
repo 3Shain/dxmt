@@ -216,18 +216,18 @@ DeferredContextBase::UploadShaderStageResourceBinding() {
     cmd_list->EmitCommand([offset](CommandChunk::context &ctx) {
       if constexpr (stage == ShaderType::Vertex) {
         if constexpr (Tessellation) {
-          ctx.render_encoder->setObjectBufferOffset(offset, 29);
+          ctx.render_encoder->setObjectBufferOffset(offset + ctx.offset_base, 29);
         } else {
-          ctx.render_encoder->setVertexBufferOffset(offset, 29);
+          ctx.render_encoder->setVertexBufferOffset(offset + ctx.offset_base, 29);
         }
       } else if constexpr (stage == ShaderType::Pixel) {
-        ctx.render_encoder->setFragmentBufferOffset(offset, 29);
+        ctx.render_encoder->setFragmentBufferOffset(offset + ctx.offset_base, 29);
       } else if constexpr (stage == ShaderType::Compute) {
-        ctx.compute_encoder->setBufferOffset(offset, 29);
+        ctx.compute_encoder->setBufferOffset(offset + ctx.offset_base, 29);
       } else if constexpr (stage == ShaderType::Hull) {
-        ctx.render_encoder->setMeshBufferOffset(offset, 29);
+        ctx.render_encoder->setMeshBufferOffset(offset + ctx.offset_base, 29);
       } else if constexpr (stage == ShaderType::Domain) {
-        ctx.render_encoder->setVertexBufferOffset(offset, 29);
+        ctx.render_encoder->setVertexBufferOffset(offset + ctx.offset_base, 29);
       } else {
         D3D11_ASSERT(0 && "Not implemented");
       }
@@ -411,18 +411,18 @@ DeferredContextBase::UploadShaderStageResourceBinding() {
     EmitCommand([offset](CommandChunk::context &ctx) {
       if constexpr (stage == ShaderType::Vertex) {
         if constexpr (Tessellation) {
-          ctx.render_encoder->setObjectBufferOffset(offset, 30);
+          ctx.render_encoder->setObjectBufferOffset(offset + ctx.offset_base, 30);
         } else {
-          ctx.render_encoder->setVertexBufferOffset(offset, 30);
+          ctx.render_encoder->setVertexBufferOffset(offset + ctx.offset_base, 30);
         }
       } else if constexpr (stage == ShaderType::Pixel) {
-        ctx.render_encoder->setFragmentBufferOffset(offset, 30);
+        ctx.render_encoder->setFragmentBufferOffset(offset + ctx.offset_base, 30);
       } else if constexpr (stage == ShaderType::Compute) {
-        ctx.compute_encoder->setBufferOffset(offset, 30);
+        ctx.compute_encoder->setBufferOffset(offset + ctx.offset_base, 30);
       } else if constexpr (stage == ShaderType::Hull) {
-        ctx.render_encoder->setMeshBufferOffset(offset, 30);
+        ctx.render_encoder->setMeshBufferOffset(offset + ctx.offset_base, 30);
       } else if constexpr (stage == ShaderType::Domain) {
-        ctx.render_encoder->setVertexBufferOffset(offset, 30);
+        ctx.render_encoder->setVertexBufferOffset(offset + ctx.offset_base, 30);
       } else {
         D3D11_ASSERT(0 && "Not implemented");
       }
@@ -498,7 +498,7 @@ DeferredContextBase::UpdateVertexBuffer() {
   auto offset = cmd_list->ReserveGpuHeap(16 * num_slots, 16);
 
   cmd_list->EmitEvent([offset, vertex_resource = std::move(vertex_resource)](auto &event_ctx) {
-    VERTEX_BUFFER_ENTRY *entries = (VERTEX_BUFFER_ENTRY *)(((char *)event_ctx.heap->contents()) + offset);
+    VERTEX_BUFFER_ENTRY *entries = (VERTEX_BUFFER_ENTRY *)(((char *)event_ctx.gpu_argument_heap_contents) + offset);
     unsigned index = 0;
     for (auto vertex_buffer : vertex_resource.span()) {
       if (vertex_buffer.arg_index == ~0u) {
@@ -515,12 +515,12 @@ DeferredContextBase::UpdateVertexBuffer() {
   });
   if (cmdbuf_state == CommandBufferState::TessellationRenderPipelineReady) {
     cmd_list->EmitCommand([offset](CommandChunk::context &ctx) {
-      ctx.render_encoder->setObjectBufferOffset(offset, 16);
+      ctx.render_encoder->setObjectBufferOffset(offset + ctx.offset_base, 16);
     });
   }
   if (cmdbuf_state == CommandBufferState::RenderPipelineReady) {
     cmd_list->EmitCommand([offset](CommandChunk::context &ctx) {
-      ctx.render_encoder->setVertexBufferOffset(offset, 16);
+      ctx.render_encoder->setVertexBufferOffset(offset + ctx.offset_base, 16);
     });
   }
 }
@@ -653,6 +653,7 @@ public:
         // granularity is command list
         event->Issue(ctx.cmd_queue.CurrentSeqId());
       });
+      promote_flush = true;
       break;
     // case D3D11_QUERY_OCCLUSION: {
     //   ((IMTLD3DOcclusionQuery *)pAsync)->End(NextOcclusionQuerySeq());
@@ -693,6 +694,8 @@ public:
   HRESULT FinishCommandList(BOOL RestoreDeferredContextState, ID3D11CommandList **ppCommandList) override {
     InvalidateCurrentPass();
     *ppCommandList = ctx_state.current_cmdlist.ref();
+    ctx_state.current_cmdlist->promote_flush = promote_flush;
+    promote_flush = false;
     ctx_state.current_cmdlist = new MTLD3D11CommandList(device, 0);
     if (!RestoreDeferredContextState)
       ClearState();

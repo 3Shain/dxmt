@@ -237,6 +237,8 @@ public:
     uint32_t tess_num_output_patch_constant_scalar;
     uint32_t tess_threads_per_patch;
 
+    uint64_t offset_base = 0;
+
     context_t(CommandChunk *chk, MTL::CommandBuffer *cmdbuf) : chk(chk), queue(chk->queue), cmdbuf(cmdbuf) {}
 
   private:
