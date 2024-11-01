@@ -3906,7 +3906,6 @@ public:
   struct EventContext {
     CommandQueue &cmd_queue;
     MTLD3D11Device *device;
-    MTL::Buffer *heap;
     uint64_t *gpu_argument_heap_contents;
     std::vector<ArgumentData> &argument_table;
     std::vector<BindingRef> &binding_table;
@@ -4136,6 +4135,7 @@ public:
   uint32_t num_argument_data = 0;
   uint32_t num_bindingref = 0;
   uint64_t gpu_arugment_heap_offset = 0;
+  bool promote_flush = false;
 
 private:
   UINT context_flag;
