@@ -95,7 +95,7 @@ DeferredContextBase::UseCopyDestination(
                                         buffer_def = pBuffer->Buffer](auto &ctx) {
     MTL_STAGING_RESOURCE buffer_imm;
     uint32_t __, ___;
-    D3D11_ASSERT(staging->UseCopyDestination(Subresource, ctx.cmd_queue.CurrentSeqId(), &buffer_imm, &__, &___));
+    staging->UseCopyDestination(Subresource, ctx.cmd_queue.CurrentSeqId(), &buffer_imm, &__, &___);
     D3D11_ASSERT(buffer_def == buffer_imm.Buffer);
   });
   return true;
@@ -112,7 +112,7 @@ DeferredContextBase::UseCopySource(
                                         buffer_def = pBuffer->Buffer](auto &ctx) {
     MTL_STAGING_RESOURCE buffer_imm;
     uint32_t __, ___;
-    D3D11_ASSERT(staging->UseCopySource(Subresource, ctx.cmd_queue.CurrentSeqId(), &buffer_imm, &__, &___));
+    staging->UseCopySource(Subresource, ctx.cmd_queue.CurrentSeqId(), &buffer_imm, &__, &___);
     D3D11_ASSERT(buffer_def == buffer_imm.Buffer);
   });
   return true;
