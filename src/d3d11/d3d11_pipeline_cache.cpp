@@ -325,7 +325,10 @@ class PipelineCache : public MTLD3D11PipelineCacheBase {
       return;
     }
     auto temp = dxmt::CreateGraphicsPipeline(device, pDesc);
-    D3D11_ASSERT(pipelines_.insert({*pDesc, temp}).second); // copy
+    if (!pipelines_.insert({*pDesc, temp}).second) // copy
+    {
+      D3D11_ASSERT(0 && "duplicated graphics pipeline");
+    }
     *ppPipeline = std::move(temp);                          // move
   }
 
@@ -340,7 +343,10 @@ class PipelineCache : public MTLD3D11PipelineCacheBase {
       return;
     }
     auto temp = dxmt::CreateTessellationPipeline(device, pDesc);
-    D3D11_ASSERT(pipelines_ts_.insert({*pDesc, temp}).second); // copy
+    if (!pipelines_ts_.insert({*pDesc, temp}).second) // copy
+    {
+      D3D11_ASSERT(0 && "duplicated tessellation pipeline");
+    }
     *ppPipeline = std::move(temp);
   }
 

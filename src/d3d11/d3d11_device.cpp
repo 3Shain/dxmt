@@ -1040,8 +1040,11 @@ public:
       return S_OK;
     }
     auto temp = dxmt::CreateComputePipeline(this, pDesc->ComputeShader);
-    D3D11_ASSERT(pipelines_cs_.insert({pDesc->ComputeShader, temp}).second); // copy
-    *ppPipeline = std::move(temp);                              // move
+    if (!pipelines_cs_.insert({pDesc->ComputeShader, temp}).second) // copy
+    {
+      D3D11_ASSERT(0 && "duplicated compute pipeline");
+    }
+    *ppPipeline = std::move(temp); // move
     return S_OK;
   };
 

@@ -642,7 +642,9 @@ public:
   FlushInternal(
       std::function<void(MTL::CommandBuffer *)> &&beforeCommit, std::function<void(void)> &&onFinished, bool present_
   ) final {
-    D3D11_ASSERT(!InvalidateCurrentPass(true));
+    if (InvalidateCurrentPass(true)) {
+      D3D11_ASSERT(0 && "unexpected commit");
+    }
     cmd_queue.CurrentChunk()->emit([bc = std::move(beforeCommit), _ = DestructorWrapper(
                                                                       [of = std::move(onFinished)]() { of(); }, nullptr
                                                                   )](CommandChunk::context &ctx) { bc(ctx.cmdbuf); });
