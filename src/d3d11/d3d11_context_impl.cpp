@@ -3824,11 +3824,12 @@ public:
   };
 };
 
-class MTLD3D11CommandList : public MTLD3D11DeviceChild<ID3D11CommandList> {
+class MTLD3D11CommandList : public MTLD3D11DeviceObject<ID3D11CommandList> {
 public:
-  MTLD3D11CommandList(MTLD3D11Device *pDevice, UINT context_flag) :
-      MTLD3D11DeviceChild(pDevice),
+  MTLD3D11CommandList(MTLD3D11Device *pDevice, MTLD3D11CommandListPoolBase *pPool, UINT context_flag) :
+      MTLD3D11DeviceObject(pDevice),
       context_flag(context_flag),
+      cmdlist_pool(pPool),
       monoid(),
       monoid_list(&monoid, nullptr),
       list_end(&monoid_list),
@@ -3841,22 +3842,41 @@ public:
                                        MTL::ResourceHazardTrackingModeUntracked | MTL::ResourceStorageModeShared
       ) {
     cpu_argument_heap = (char *)malloc(kCommandChunkCPUHeapSize);
+    cpu_dynamic_heap = (char *)malloc(kCommandChunkCPUHeapSize);
   };
 
   ~MTLD3D11CommandList() {
-    {
-      for (auto bindable : track_bindable)
-        bindable->Release();
-      for (auto rtv : track_rtv)
-        rtv->Release();
-      for (auto dsv : track_dsv)
-        dsv->Release();
-    }
-    {
-      for (auto ptr : dynamic_buffer)
-        free(ptr);
-    }
+    Reset();
     staging_allocator.free_blocks(~0uLL);
+    free(cpu_argument_heap);
+    free(cpu_dynamic_heap);
+  }
+
+  ULONG
+  AddRef() override {
+    uint32_t refCount = this->m_refCount++;
+    if (unlikely(!refCount))
+      this->m_parent->AddRef();
+
+    return refCount + 1;
+  }
+
+  ULONG
+  Release() override {
+    uint32_t refCount = --this->m_refCount;
+    D3D11_ASSERT(refCount != ~0u && "try to release a 0 reference object");
+    if (unlikely(!refCount)) {
+      this->m_parent->Release();
+      Reset();
+      cmdlist_pool->RecycleCommandList(this);
+    }
+
+    return refCount;
+  }
+
+  void
+  Reset() {
+    staging_allocator.free_blocks(++local_coherence);
     {
       auto cur = monoid_list.next;
       while (cur) {
@@ -3875,8 +3895,38 @@ public:
         cur = cur->next;
       }
     }
-    free(cpu_argument_heap);
-  }
+
+    {
+      for (auto bindable : track_bindable)
+        bindable->Release();
+      for (auto rtv : track_rtv)
+        rtv->Release();
+      for (auto dsv : track_dsv)
+        dsv->Release();
+      track_bindable.clear();
+      track_rtv.clear();
+      track_dsv.clear();
+    }
+    {
+      dynamic_buffer.clear();
+      dynamic_buffer_map.clear();
+      residency_tracker.clear();
+      dynamic_view.clear();
+    }
+    cpu_arugment_heap_offset = 0;
+    cpu_dynamic_heap_offset = 0;
+    gpu_arugment_heap_offset = 0;
+    monoid_list.next = nullptr;
+    list_end = &monoid_list;
+    monoid_list_event.next = nullptr;
+    list_end_event = &monoid_list_event;
+    last_encoder_info = &init_encoder_info;
+    encoder_seq_local = 1;
+
+    num_argument_data = 0;
+    num_bindingref = 0;
+    promote_flush = false;
+  };
 
   HRESULT
   QueryInterface(REFIID riid, void **ppvObject) override {
@@ -3946,14 +3996,14 @@ public:
       }
       return immediate;
     } else {
-      Com<IMTLDynamicBuffer> dynamic;
-      bindable->GetLogicalResourceOrView(IID_PPV_ARGS(&dynamic));
-      D3D11_ASSERT(dynamic);
       auto index = num_bindingref++;
-      EmitEvent([index, bindable = Com(bindable)](EventContext &ctx) {
+      EmitEvent([index, bindable](EventContext &ctx) {
         ctx.binding_table[index] = bindable->UseBindable(ctx.cmd_queue.CurrentSeqId());
       });
-      dynamic_view.insert({dynamic.ptr(), bindable});
+      Com<IMTLDynamicBuffer> dynamic;
+      bindable->GetLogicalResourceOrView(IID_PPV_ARGS(&dynamic));
+      auto& set = dynamic_view[dynamic.ptr()];
+      set.insert(bindable);
       return BindingRef(index, deferred_binding_t{});
     }
   }
@@ -3999,6 +4049,8 @@ public:
   }
   ENCODER_CLEARPASS_INFO *
   MarkClearPass() {
+    dynamic_view.clear();
+    residency_tracker.clear();
     auto ptr = allocate_cpu_heap<ENCODER_CLEARPASS_INFO>();
     new (ptr) ENCODER_CLEARPASS_INFO();
     ptr->encoder_id = encoder_seq_local++;
@@ -4007,6 +4059,8 @@ public:
   }
   ENCODER_RENDER_INFO *
   MarkRenderPass() {
+    dynamic_view.clear();
+    residency_tracker.clear();
     auto ptr = allocate_cpu_heap<ENCODER_RENDER_INFO>();
     new (ptr) ENCODER_RENDER_INFO();
     ptr->encoder_id = encoder_seq_local++;
@@ -4015,6 +4069,8 @@ public:
   }
   ENCODER_INFO *
   MarkPass(EncoderKind kind) {
+    dynamic_view.clear();
+    residency_tracker.clear();
     auto ptr = allocate_cpu_heap<ENCODER_INFO>();
     ptr->kind = kind;
     ptr->encoder_id = encoder_seq_local++;
@@ -4052,11 +4108,14 @@ public:
 
   void *
   AllocateDynamicTempBuffer(IMTLDynamicBuffer *token, size_t size) {
-    auto ptr = malloc(size);
+    auto ptr = cpu_dynamic_heap + cpu_dynamic_heap_offset;
+    cpu_dynamic_heap_offset+=size;
+    if (cpu_dynamic_heap_offset >= kCommandChunkCPUHeapSize) {
+      ERR(cpu_dynamic_heap_offset, " - cpu dynamic heap overflow, expect error.");
+    }
     dynamic_buffer.push_back(ptr);
     dynamic_buffer_map[token] = ptr;
-    auto [begin, end] = dynamic_view.equal_range(token);
-    for (auto &[_, view] : std::ranges::subrange(begin, end)) {
+    for (auto view : dynamic_view[token]) {
       // insert doesn't hurt
       residency_tracker[view] = {};
     }
@@ -4139,11 +4198,12 @@ public:
 
 private:
   UINT context_flag;
-
-  std::vector<Obj<MTL::Buffer>> staging_buffers;
+  MTLD3D11CommandListPoolBase *cmdlist_pool;
 
   uint64_t cpu_arugment_heap_offset = 0;
   char *cpu_argument_heap;
+  char *cpu_dynamic_heap;
+  uint64_t cpu_dynamic_heap_offset = 0;
 
   CommandChunk::MFunc<CommandChunk::context> monoid;
   CommandChunk::Node<CommandChunk::BFunc<CommandChunk::context> *> monoid_list;
@@ -4166,9 +4226,12 @@ private:
 
   std::unordered_map<IMTLBindable *, SIMPLE_RESIDENCY_TRACKER> residency_tracker;
 
-  std::unordered_multimap<IMTLDynamicBuffer *, IMTLBindable *> dynamic_view;
+  std::unordered_map<IMTLDynamicBuffer *, std::unordered_set<IMTLBindable *>> dynamic_view;
 
   RingBumpAllocator<true> staging_allocator;
+
+  uint64_t local_coherence = 0;
+  std::atomic<uint32_t> m_refCount = {0u};
 };
 
 } // namespace dxmt

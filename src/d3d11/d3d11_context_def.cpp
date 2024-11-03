@@ -531,7 +531,7 @@ public:
       DeferredContextBase(pDevice, ctx_state),
       ctx_state(),
       context_flag(ContextFlags) {
-    ctx_state.current_cmdlist = new MTLD3D11CommandList(device, ContextFlags);
+    device->CreateCommandList((ID3D11CommandList **)&ctx_state.current_cmdlist);
   }
 
   ULONG STDMETHODCALLTYPE
@@ -693,10 +693,10 @@ public:
 
   HRESULT FinishCommandList(BOOL RestoreDeferredContextState, ID3D11CommandList **ppCommandList) override {
     InvalidateCurrentPass();
-    *ppCommandList = ctx_state.current_cmdlist.ref();
     ctx_state.current_cmdlist->promote_flush = promote_flush;
+    *ppCommandList = std::move(ctx_state.current_cmdlist);
     promote_flush = false;
-    ctx_state.current_cmdlist = new MTLD3D11CommandList(device, 0);
+    device->CreateCommandList((ID3D11CommandList **)&ctx_state.current_cmdlist);
     if (!RestoreDeferredContextState)
       ClearState();
     return S_OK;
@@ -744,5 +744,46 @@ CreateDeferredContext(MTLD3D11Device *pDevice, UINT ContextFlags) {
 }
 
 thread_local const BindingRef *BindingRef::lut;
+
+
+class MTLD3D11CommandListPool : public MTLD3D11CommandListPoolBase {
+public:
+  MTLD3D11CommandListPool(MTLD3D11Device *device) : device(device) {};
+
+  ~MTLD3D11CommandListPool() {
+
+  };
+
+  void
+  RecycleCommandList(ID3D11CommandList *cmdlist) override {
+    std::unique_lock<dxmt::mutex> lock(mutex);
+    free_commandlist.push_back((MTLD3D11CommandList *)cmdlist);
+  };
+
+  void
+  CreateCommandList(ID3D11CommandList **ppCommandList) override {
+    std::unique_lock<dxmt::mutex> lock(mutex);
+    if (!free_commandlist.empty()) {
+      free_commandlist.back()->QueryInterface(IID_PPV_ARGS(ppCommandList));
+      free_commandlist.pop_back();
+      return;
+    }
+    auto instance = std::make_unique<MTLD3D11CommandList>(device, this, 0);
+    *ppCommandList = ref(instance.get());
+    instances.push_back(std::move(instance));
+    return;
+  };
+
+private:
+  std::vector<MTLD3D11CommandList *> free_commandlist;
+  std::vector<std::unique_ptr<MTLD3D11CommandList>> instances;
+  MTLD3D11Device *device;
+  dxmt::mutex mutex;
+};
+
+std::unique_ptr<MTLD3D11CommandListPoolBase>
+InitializeCommandListPool(MTLD3D11Device *device) {
+  return std::make_unique<MTLD3D11CommandListPool>(device);
+}
 
 }; // namespace dxmt
