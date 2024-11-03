@@ -65,6 +65,7 @@ public:
         m_features(container->GetMTLDevice()), sampler_states(this),
         rasterizer_states(this), depthstencil_states(this),
         device_(device) {
+    commandlist_pool_ = InitializeCommandListPool(this);
     pipeline_cache_ = InitializePipelineCache(this);
     context_ = InitializeImmediateContext(this, device_.queue());
     is_traced_ = !!::GetModuleHandle("dxgitrace.dll");
@@ -1068,6 +1069,10 @@ public:
                   device_.queue().CoherentSeqId(), pBuffer, gpuAddr, cpuAddr);
   }
 
+  void CreateCommandList(ID3D11CommandList** pCommandList) final {
+    commandlist_pool_->CreateCommandList(pCommandList);
+  };
+
 #pragma endregion
 
 private:
@@ -1092,6 +1097,7 @@ private:
   StateObjectCache<D3D11_DEPTH_STENCIL_DESC, IMTLD3D11DepthStencilState>
       depthstencil_states;
 
+  std::unique_ptr<MTLD3D11CommandListPoolBase> commandlist_pool_;
   std::unique_ptr<MTLD3D11PipelineCacheBase> pipeline_cache_;
   Device& device_;
   /** ensure destructor called first */

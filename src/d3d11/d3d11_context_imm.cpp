@@ -258,8 +258,7 @@ ImmediateContextBase::UploadShaderStageResourceBinding() {
       case SM50BindingType::SRV: {
         if (!ShaderStage.SRVs.test_bound(slot)) {
           // TODO: debug only
-          // ERR("expect shader resource at slot ", slot, " but none is
-          // bound.");
+          // ERR("expect shader resource at slot ", slot, " but none is bound.");
           write_to_it[arg.StructurePtrOffset] = 0;
           write_to_it[arg.StructurePtrOffset + 1] = 0;
           break;
@@ -732,6 +731,8 @@ public:
         cmd_queue, device, (uint64_t *)((char *)heap->contents() + offset), argument_table, bindingref_table
     };
     cmd_list->ProcessEvents(ctx);
+    
+    InvalidateCurrentPass();
 
     chk->emit([cmd_list = Com(cmd_list), table = std::move(bindingref_table), offset](auto &ctx) {
       const BindingRef *old_lut;

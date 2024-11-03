@@ -66,6 +66,8 @@ public:
   */
   virtual void ExchangeFromPool(MTL::Buffer * *ppBuffer, uint64_t * gpuAddr,
                                 void **cpuAddr, dxmt::BufferPool *pool) = 0;
+
+  virtual void CreateCommandList(ID3D11CommandList** pCommandList) = 0;
 };
 
 Com<IMTLDXGIDevice> CreateD3D11Device(std::unique_ptr<Device> &&device,
