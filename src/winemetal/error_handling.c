@@ -48,7 +48,7 @@ void PrintStackTraceForThread(HANDLE hProcess, HANDLE hThread,
 
     // Print the symbol name.
     char buffer[512];
-    IMAGEHLP_SYMBOL64 *symbol = buffer;
+    IMAGEHLP_SYMBOL64 *symbol = (IMAGEHLP_SYMBOL64 *)buffer;
     memset(symbol, 0, sizeof(IMAGEHLP_SYMBOL64));
     symbol->SizeOfStruct = sizeof(IMAGEHLP_SYMBOL64);
     symbol->MaxNameLength = 512 - sizeof(IMAGEHLP_SYMBOL64);

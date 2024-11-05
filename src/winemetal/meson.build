@@ -5,7 +5,7 @@ winemetal_src = [
   'error_handling.c',
 ]
 
-winemetal_ld_args      = ['-Wl,/entry:WineMetalEntry']
+winemetal_ld_args      = ['-Wl,-eWineMetalEntry']
 winemetal_link_depends = []
 
 lib_winecrt0 = cc.find_library('winecrt0', dirs : [ join_paths(meson.source_root(), 'toolchains/wine/lib/wine/x86_64-windows') ])

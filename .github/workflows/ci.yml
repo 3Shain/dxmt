@@ -5,9 +5,6 @@ on: push
 jobs:
   build:
     runs-on: macos-14
-    defaults:
-      run:
-        shell: arch -x86_64 zsh -e {0}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -20,11 +17,9 @@ jobs:
             cache-key-${{ hashFiles('configure.sh') }}
           path: |
             ./toolchains
-      - name: Setup x86 Development Environment
-        run: /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
       - name: Install Development Environment
-        run: | # wtf?
-          /usr/local/bin/brew install ninja meson cmake || /usr/local/bin/brew link --overwrite python@3
+        run: |
+         brew install ninja meson mingw-w64
       - name: Configuration
         if: ${{ steps.cache-toolchains.outputs.cache-hit != 'true' }}
         run: ./configure.sh
@@ -38,7 +33,7 @@ jobs:
             ./toolchains
       - name: Build
         run: |
-          meson setup --cross-file build-win64.txt --native-file build-osx.txt -Dlocal_native_llvm=true -Dbuild_airconv_for_windows=true build --buildtype debugoptimized
+          meson setup --cross-file build-win64.txt --native-file build-osx.txt -Dlocal_native_llvm=true -Dbuild_airconv_for_windows=false build --buildtype debugoptimized
           meson compile -C build
       - name: Tar
         run: tar -zcf artifacts.tar.gz build/src

@@ -32,7 +32,7 @@ typedef double CFTimeInterval;
 
 namespace MTL
 {
-using DrawablePresentedHandler = void (^)(class Drawable*);
+// using DrawablePresentedHandler = void (^)(class Drawable*);
 
 using DrawablePresentedHandlerFunction = std::function<void(class Drawable*)>;
 
@@ -47,7 +47,7 @@ public:
 
     void           presentAfterMinimumDuration(CFTimeInterval duration);
 
-    void           addPresentedHandler(const MTL::DrawablePresentedHandler block);
+    // void           addPresentedHandler(const MTL::DrawablePresentedHandler block);
 
     CFTimeInterval presentedTime() const;
 
@@ -58,9 +58,9 @@ public:
 
 _MTL_INLINE void MTL::Drawable::addPresentedHandler(const MTL::DrawablePresentedHandlerFunction& function)
 {
-    __block DrawablePresentedHandlerFunction blockFunction = function;
+    // __block DrawablePresentedHandlerFunction blockFunction = function;
 
-    addPresentedHandler(^(Drawable* pDrawable) { blockFunction(pDrawable); });
+    // addPresentedHandler(^(Drawable* pDrawable) { blockFunction(pDrawable); });
 }
 
 // method: present
@@ -82,10 +82,10 @@ _MTL_INLINE void MTL::Drawable::presentAfterMinimumDuration(CFTimeInterval durat
 }
 
 // method: addPresentedHandler:
-_MTL_INLINE void MTL::Drawable::addPresentedHandler(const MTL::DrawablePresentedHandler block)
-{
-    Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(addPresentedHandler_), block);
-}
+// _MTL_INLINE void MTL::Drawable::addPresentedHandler(const MTL::DrawablePresentedHandler block)
+// {
+//     Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(addPresentedHandler_), block);
+// }
 
 // property: presentedTime
 _MTL_INLINE CFTimeInterval MTL::Drawable::presentedTime() const

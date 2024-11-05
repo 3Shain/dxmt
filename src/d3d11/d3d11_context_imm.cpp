@@ -810,9 +810,6 @@ public:
   Commit() override {
     promote_flush = false;
     D3D11_ASSERT(cmdbuf_state == CommandBufferState::Idle);
-    /** FIXME: it might be unnecessary? */
-    CommandChunk *chk = ctx_state.cmd_queue.CurrentChunk();
-    chk->emit([device = Com<MTLD3D11Device, false>(device)](CommandChunk::context &ctx) {});
     ctx_state.cmd_queue.CommitCurrentChunk(occlusion_query_seq_chunk_start, ++occlusion_query_seq);
     occlusion_query_seq_chunk_start = occlusion_query_seq;
   };

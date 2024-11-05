@@ -31,7 +31,7 @@ public:
 MTL::PixelFormat Forget_sRGB(MTL::PixelFormat format);
 MTL::PixelFormat Recall_sRGB(MTL::PixelFormat format);
 
-constexpr bool
+inline bool
 Is_sRGBVariant(MTL::PixelFormat format) {
   return Forget_sRGB(format) != format;
 }
@@ -55,10 +55,10 @@ struct MTL_DXGI_FORMAT_DESC {
   MTL::PixelFormat PixelFormat;
   MTL::AttributeFormat AttributeFormat;
   union {
-    UINT BytesPerTexel;
-    UINT BlockSize;
+    uint32_t BytesPerTexel;
+    uint32_t BlockSize;
   };
-  UINT Flag;
+  uint32_t Flag;
 };
 
 int32_t MTLQueryDXGIFormat(MTL::Device *device, uint32_t format, MTL_DXGI_FORMAT_DESC &description);

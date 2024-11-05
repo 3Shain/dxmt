@@ -43,15 +43,15 @@ public:
     NS::Dictionary* userInfo() const;
 };
 
-using ObserverBlock = void(^)(Notification*);
-using ObserverFunction = std::function<void(Notification*)>;
+// using ObserverBlock = void(^)(Notification*);
+// using ObserverFunction = std::function<void(Notification*)>;
 
 class NotificationCenter : public NS::Referencing<NotificationCenter>
 {
     public:
         static class NotificationCenter* defaultCenter();
-        Object* addObserver(NotificationName name, Object* pObj, void* pQueue, ObserverBlock block);
-        Object* addObserver(NotificationName name, Object* pObj, void* pQueue, ObserverFunction &handler);
+        // Object* addObserver(NotificationName name, Object* pObj, void* pQueue, ObserverBlock block);
+        // Object* addObserver(NotificationName name, Object* pObj, void* pQueue, ObserverFunction &handler);
         void removeObserver(Object* pObserver);
 
 };
@@ -87,19 +87,19 @@ _NS_INLINE NS::NotificationCenter* NS::NotificationCenter::defaultCenter()
 
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-_NS_INLINE NS::Object* NS::NotificationCenter::addObserver(NS::NotificationName name, Object* pObj, void* pQueue, NS::ObserverBlock block)
-{
-    return NS::Object::sendMessage<Object*>(this, _NS_PRIVATE_SEL(addObserverName_object_queue_block_), name, pObj, pQueue, block);
-}
+// _NS_INLINE NS::Object* NS::NotificationCenter::addObserver(NS::NotificationName name, Object* pObj, void* pQueue, NS::ObserverBlock block)
+// {
+//     return NS::Object::sendMessage<Object*>(this, _NS_PRIVATE_SEL(addObserverName_object_queue_block_), name, pObj, pQueue, block);
+// }
 
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-_NS_INLINE NS::Object* NS::NotificationCenter::addObserver(NS::NotificationName name, Object* pObj, void* pQueue, NS::ObserverFunction &handler)
-{
-    __block ObserverFunction blockFunction = handler;
+// _NS_INLINE NS::Object* NS::NotificationCenter::addObserver(NS::NotificationName name, Object* pObj, void* pQueue, NS::ObserverFunction &handler)
+// {
+    // __block ObserverFunction blockFunction = handler;
 
-    return addObserver(name, pObj, pQueue, ^(NS::Notification* pNotif) {blockFunction(pNotif);});
-}
+    // return addObserver(name, pObj, pQueue, ^(NS::Notification* pNotif) {blockFunction(pNotif);});
+// }
 
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------
 

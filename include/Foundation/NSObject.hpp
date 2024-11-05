@@ -183,22 +183,22 @@ _NS_INLINE constexpr bool NS::Object::doesRequireMsgSendStret<void>()
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 #if !defined(NS_PRIVATE_IMPLEMENTATION) && !defined(NDEBUG)
-#include "errhandlingapi.h"
+// #include "errhandlingapi.h"
 
-extern "C" void ____enter_scope(PCONTEXT C);
-extern "C" void ____exit_scope();
+// extern "C" void ____enter_scope(PCONTEXT C);
+// extern "C" void ____exit_scope();
 
-struct CaptureStackframe {    
-    CONTEXT C;
-    CaptureStackframe() {
-    C.ContextFlags = CONTEXT_FULL;
-        RtlCaptureContext(&C);
-        ____enter_scope(&C);
-    }
-    ~CaptureStackframe() {
-        ____exit_scope();
-    }
-};
+// struct CaptureStackframe {    
+//     CONTEXT C;
+//     CaptureStackframe() {
+//     C.ContextFlags = CONTEXT_FULL;
+//         RtlCaptureContext(&C);
+//         ____enter_scope(&C);
+//     }
+//     ~CaptureStackframe() {
+//         ____exit_scope();
+//     }
+// };
 #endif
 
 template <typename _Ret, typename... _Args>

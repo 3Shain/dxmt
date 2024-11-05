@@ -159,7 +159,7 @@ _NS_INLINE NS::SharedPtr<_Class>::SharedPtr()
 }
 
 template <class _Class>
-_NS_INLINE NS::SharedPtr<_Class>::~SharedPtr<_Class>()
+_NS_INLINE NS::SharedPtr<_Class>::~SharedPtr()
 {
     if (m_pObject)
     {

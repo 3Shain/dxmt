@@ -232,13 +232,13 @@ public:
 
     class Function*  newFunction(const NS::String* name, const class FunctionConstantValues* constantValues, NS::Error** error);
 
-    void             newFunction(const NS::String* name, const class FunctionConstantValues* constantValues, void (^completionHandler)(MTL::Function*, NS::Error*));
+    // void             newFunction(const NS::String* name, const class FunctionConstantValues* constantValues, void (^completionHandler)(MTL::Function*, NS::Error*));
 
-    void             newFunction(const class FunctionDescriptor* descriptor, void (^completionHandler)(MTL::Function*, NS::Error*));
+    // void             newFunction(const class FunctionDescriptor* descriptor, void (^completionHandler)(MTL::Function*, NS::Error*));
 
     class Function*  newFunction(const class FunctionDescriptor* descriptor, NS::Error** error);
 
-    void             newIntersectionFunction(const class IntersectionFunctionDescriptor* descriptor, void (^completionHandler)(MTL::Function*, NS::Error*));
+    // void             newIntersectionFunction(const class IntersectionFunctionDescriptor* descriptor, void (^completionHandler)(MTL::Function*, NS::Error*));
 
     class Function*  newIntersectionFunction(const class IntersectionFunctionDescriptor* descriptor, NS::Error** error);
 
@@ -595,23 +595,23 @@ _MTL_INLINE void MTL::CompileOptions::setMaxTotalThreadsPerThreadgroup(NS::UInte
 
 _MTL_INLINE void MTL::Library::newFunction(const NS::String* pFunctionName, const FunctionConstantValues* pConstantValues, const std::function<void(Function* pFunction, NS::Error* pError)>& completionHandler)
 {
-    __block std::function<void(Function * pFunction, NS::Error * pError)> blockCompletionHandler = completionHandler;
+    // __block std::function<void(Function * pFunction, NS::Error * pError)> blockCompletionHandler = completionHandler;
 
-    newFunction(pFunctionName, pConstantValues, ^(Function* pFunction, NS::Error* pError) { blockCompletionHandler(pFunction, pError); });
+    // newFunction(pFunctionName, pConstantValues, ^(Function* pFunction, NS::Error* pError) { blockCompletionHandler(pFunction, pError); });
 }
 
 _MTL_INLINE void MTL::Library::newFunction(const FunctionDescriptor* pDescriptor, const std::function<void(Function* pFunction, NS::Error* pError)>& completionHandler)
 {
-    __block std::function<void(Function * pFunction, NS::Error * pError)> blockCompletionHandler = completionHandler;
+    // __block std::function<void(Function * pFunction, NS::Error * pError)> blockCompletionHandler = completionHandler;
 
-    newFunction(pDescriptor, ^(Function* pFunction, NS::Error* pError) { blockCompletionHandler(pFunction, pError); });
+    // newFunction(pDescriptor, ^(Function* pFunction, NS::Error* pError) { blockCompletionHandler(pFunction, pError); });
 }
 
 _MTL_INLINE void MTL::Library::newIntersectionFunction(const IntersectionFunctionDescriptor* pDescriptor, const std::function<void(Function* pFunction, NS::Error* pError)>& completionHandler)
 {
-    __block std::function<void(Function * pFunction, NS::Error * pError)> blockCompletionHandler = completionHandler;
+    // __block std::function<void(Function * pFunction, NS::Error * pError)> blockCompletionHandler = completionHandler;
 
-    newIntersectionFunction(pDescriptor, ^(Function* pFunction, NS::Error* pError) { blockCompletionHandler(pFunction, pError); });
+    // newIntersectionFunction(pDescriptor, ^(Function* pFunction, NS::Error* pError) { blockCompletionHandler(pFunction, pError); });
 }
 
 // property: label
@@ -644,16 +644,16 @@ _MTL_INLINE MTL::Function* MTL::Library::newFunction(const NS::String* name, con
 }
 
 // method: newFunctionWithName:constantValues:completionHandler:
-_MTL_INLINE void MTL::Library::newFunction(const NS::String* name, const MTL::FunctionConstantValues* constantValues, void (^completionHandler)(MTL::Function*, NS::Error*))
-{
-    Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(newFunctionWithName_constantValues_completionHandler_), name, constantValues, completionHandler);
-}
+// _MTL_INLINE void MTL::Library::newFunction(const NS::String* name, const MTL::FunctionConstantValues* constantValues, void (^completionHandler)(MTL::Function*, NS::Error*))
+// {
+//     Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(newFunctionWithName_constantValues_completionHandler_), name, constantValues, completionHandler);
+// }
 
 // method: newFunctionWithDescriptor:completionHandler:
-_MTL_INLINE void MTL::Library::newFunction(const MTL::FunctionDescriptor* descriptor, void (^completionHandler)(MTL::Function*, NS::Error*))
-{
-    Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(newFunctionWithDescriptor_completionHandler_), descriptor, completionHandler);
-}
+// _MTL_INLINE void MTL::Library::newFunction(const MTL::FunctionDescriptor* descriptor, void (^completionHandler)(MTL::Function*, NS::Error*))
+// {
+//     Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(newFunctionWithDescriptor_completionHandler_), descriptor, completionHandler);
+// }
 
 // method: newFunctionWithDescriptor:error:
 _MTL_INLINE MTL::Function* MTL::Library::newFunction(const MTL::FunctionDescriptor* descriptor, NS::Error** error)
@@ -662,10 +662,10 @@ _MTL_INLINE MTL::Function* MTL::Library::newFunction(const MTL::FunctionDescript
 }
 
 // method: newIntersectionFunctionWithDescriptor:completionHandler:
-_MTL_INLINE void MTL::Library::newIntersectionFunction(const MTL::IntersectionFunctionDescriptor* descriptor, void (^completionHandler)(MTL::Function*, NS::Error*))
-{
-    Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(newIntersectionFunctionWithDescriptor_completionHandler_), descriptor, completionHandler);
-}
+// _MTL_INLINE void MTL::Library::newIntersectionFunction(const MTL::IntersectionFunctionDescriptor* descriptor, void (^completionHandler)(MTL::Function*, NS::Error*))
+// {
+//     Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(newIntersectionFunctionWithDescriptor_completionHandler_), descriptor, completionHandler);
+// }
 
 // method: newIntersectionFunctionWithDescriptor:error:
 _MTL_INLINE MTL::Function* MTL::Library::newIntersectionFunction(const MTL::IntersectionFunctionDescriptor* descriptor, NS::Error** error)

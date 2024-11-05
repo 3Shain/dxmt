@@ -31,6 +31,10 @@
 
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------
 
+#ifndef INFINITY
+#define INFINITY (unsigned)!((int)0)
+#endif
+
 namespace MTL
 {
 struct PackedFloat3
@@ -38,7 +42,7 @@ struct PackedFloat3
     PackedFloat3();
     PackedFloat3(float x, float y, float z);
 
-    float& operator[](int idx);
+    // float& operator[](int idx);
     float  operator[](int idx) const;
 
     union
@@ -96,10 +100,10 @@ _MTL_INLINE MTL::PackedFloat3::PackedFloat3(float _x, float _y, float _z)
 
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------
 
-_MTL_INLINE float& MTL::PackedFloat3::operator[](int idx)
-{
-    return elements[idx];
-}
+// _MTL_INLINE float& MTL::PackedFloat3::operator[](int idx)
+// {
+//     return elements[idx];
+// }
 
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------
 
