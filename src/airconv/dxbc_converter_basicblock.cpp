@@ -2001,7 +2001,8 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
       return llvm::Error::success();
     }
     auto bb = llvm::BasicBlock::Create(context, current->debug_name, function);
-    assert(visited.insert({current.get(), bb}).second);
+    auto [_, inserted] = visited.insert({current.get(), bb});
+    assert(inserted);
     IREffect effect([](auto) { return std::monostate(); });
     for (auto &inst : current->instructions) {
       std::visit(
