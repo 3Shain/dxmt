@@ -5,9 +5,6 @@ on: push
 jobs:
   build:
     runs-on: macos-14
-    defaults:
-      run:
-        shell: arch -x86_64 zsh -e {0}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -20,11 +17,9 @@ jobs:
             cache-key-${{ hashFiles('configure.sh') }}
           path: |
             ./toolchains
-      - name: Setup x86 Development Environment
-        run: /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
       - name: Install Development Environment
-        run: | # wtf?
-          /usr/local/bin/brew install ninja meson cmake || /usr/local/bin/brew link --overwrite python@3
+        run: |
+         brew install ninja meson
       - name: Configuration
         if: ${{ steps.cache-toolchains.outputs.cache-hit != 'true' }}
         run: ./configure.sh

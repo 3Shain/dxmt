@@ -82,6 +82,9 @@ add_project_arguments(clangpp.get_supported_arguments(native_compiler_args), lan
 add_project_arguments(cc.get_supported_arguments(compiler_args), language: 'c')
 add_project_link_arguments(cpp.get_supported_link_arguments(link_args), language: 'cpp')
 add_project_link_arguments(cc.get_supported_link_arguments(link_args), language: 'c')
+add_project_arguments(['-arch', 'x86_64'], language: 'c',  native: true)
+add_project_arguments(['-arch', 'x86_64'], language: 'cpp',  native: true)
+add_project_link_arguments(['-arch', 'x86_64'], language: 'cpp',  native: true)
 
 dxmt_debug = get_option('dxmt_debug')
 
