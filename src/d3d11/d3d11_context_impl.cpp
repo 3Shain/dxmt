@@ -1202,7 +1202,7 @@ public:
   void
   IASetInputLayout(ID3D11InputLayout *pInputLayout) override {
     if (auto expected = com_cast<IMTLD3D11InputLayout>(pInputLayout)) {
-      state_.InputAssembler.InputLayout = expected.ptr();
+      state_.InputAssembler.InputLayout = std::move(expected);
     } else {
       state_.InputAssembler.InputLayout = nullptr;
     }
