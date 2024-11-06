@@ -139,7 +139,7 @@ public:
     return refCount;
   }
 
-private:
+protected:
   std::atomic<uint32_t> m_refCount = {0u};
 };
 

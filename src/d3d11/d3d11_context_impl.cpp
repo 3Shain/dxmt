@@ -3824,10 +3824,10 @@ public:
   };
 };
 
-class MTLD3D11CommandList : public MTLD3D11DeviceObject<ID3D11CommandList> {
+class MTLD3D11CommandList : public ManagedDeviceChild<ID3D11CommandList> {
 public:
   MTLD3D11CommandList(MTLD3D11Device *pDevice, MTLD3D11CommandListPoolBase *pPool, UINT context_flag) :
-      MTLD3D11DeviceObject(pDevice),
+      ManagedDeviceChild(pDevice),
       context_flag(context_flag),
       cmdlist_pool(pPool),
       monoid(),
@@ -4231,7 +4231,6 @@ private:
   RingBumpAllocator<true> staging_allocator;
 
   uint64_t local_coherence = 0;
-  std::atomic<uint32_t> m_refCount = {0u};
 };
 
 } // namespace dxmt
