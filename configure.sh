@@ -10,6 +10,7 @@ curl -SL https://github.com/mstorsjo/llvm-mingw/releases/download/20231017/llvm-
 tar -zvxf ./llvm.tar.xz -C ./toolchains
 rm ./llvm.tar.xz
 
+export LLVM_TABLEGEN=$([ -e $(brew --prefix llvm@15) ] && echo "$(brew --prefix llvm@15)/bin/llvm-tblgen")
 
 git clone --depth 1 --branch llvmorg-15.0.7 https://github.com/llvm/llvm-project.git toolchains/llvm-project 
 mkdir -p ./toolchains/llvm-build
@@ -21,7 +22,7 @@ cmake -B ./toolchains/llvm-build -S ./toolchains/llvm-project/llvm -DCMAKE_SYSTE
   -DCMAKE_BUILD_TYPE=Release \
   -DLLVM_TARGETS_TO_BUILD="" \
   -DLLVM_BUILD_TOOLS=Off \
-  -DLLVM_NATIVE_TOOL_DIR="$(brew --prefix llvm@15)/bin" \
+  -DLLVM_TABLEGEN="$LLVM_TABLEGEN" \
   -DCMAKE_SYSROOT="$(pwd)/toolchains/llvm-mingw-20231017-ucrt-macos-universal" \
   -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc \
   -DBUG_REPORT_URL="https://github.com/3Shain/dxmt" \
@@ -43,7 +44,7 @@ cmake -B ./toolchains/llvm-darwin-build -S ./toolchains/llvm-project/llvm \
   -DCMAKE_BUILD_TYPE=Release \
   -DLLVM_TARGETS_TO_BUILD="" \
   -DLLVM_BUILD_TOOLS=Off \
-  -DLLVM_NATIVE_TOOL_DIR="$(brew --prefix llvm@15)/bin" \
+  -DLLVM_TABLEGEN="$LLVM_TABLEGEN" \
   -DBUG_REPORT_URL="https://github.com/3Shain/dxmt" \
   -DPACKAGE_VENDOR="DXMT" \
   -DLLVM_VERSION_PRINTER_SHOW_HOST_TARGET_INFO=Off \
