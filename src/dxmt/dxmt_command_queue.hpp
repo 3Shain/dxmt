@@ -12,7 +12,6 @@
 #include "dxmt_capture.hpp"
 #include "dxmt_command.hpp"
 #include "dxmt_counter_pool.hpp"
-#include "dxmt_occlusion_query.hpp"
 #include "dxmt_ring_bump_allocator.hpp"
 #include "log/log.hpp"
 #include "objc_pointer.hpp"
@@ -22,7 +21,6 @@
 #include <cstdint>
 #include <cstdlib>
 #include <span>
-#include <vector>
 
 namespace dxmt {
 
@@ -36,7 +34,8 @@ struct ENCODER_INFO {
 struct ENCODER_RENDER_INFO {
   EncoderKind kind = EncoderKind::Render;
   uint64_t encoder_id;
-  uint32_t tessellation_pass = 0;
+  uint32_t tessellation_pass: 1 = 0;
+  uint32_t use_visibility_result: 1 = 0;
 };
 
 struct CLEAR_DEPTH_STENCIL {
@@ -238,6 +237,7 @@ public:
     uint32_t tess_threads_per_patch;
 
     uint64_t offset_base = 0;
+    uint64_t visibility_offset_base = 0;
 
     context_t(CommandChunk *chk, MTL::CommandBuffer *cmdbuf) : chk(chk), queue(chk->queue), cmdbuf(cmdbuf) {}
 
@@ -328,8 +328,6 @@ public:
 
   uint64_t chunk_id;
   uint64_t frame_;
-  uint64_t visibility_result_seq_begin;
-  uint64_t visibility_result_seq_end;
   Obj<MTL::Buffer> visibility_result_heap;
 
 private:
@@ -402,9 +400,6 @@ private:
     return encoder_seq++;
   }
 
-  std::vector<VisibilityResultObserver *> visibility_result_observers;
-  dxmt::mutex mutex_observers;
-
   RingBumpAllocator<true> staging_allocator;
   RingBumpAllocator<false> copy_temp_allocator;
   CaptureState capture_state;
@@ -416,12 +411,6 @@ public:
   CommandQueue(MTL::Device *device);
 
   ~CommandQueue();
-
-  void
-  RegisterVisibilityResultObserver(VisibilityResultObserver *observer) {
-    std::lock_guard<dxmt::mutex> lock(mutex_observers);
-    visibility_result_observers.push_back(observer);
-  }
 
   CommandChunk *
   CurrentChunk() {
@@ -450,7 +439,7 @@ public:
   CurrentChunk & CommitCurrentChunk should be called on the same thread
 
   */
-  void CommitCurrentChunk(uint64_t occlusion_counter_begin, uint64_t occlusion_counter_end);
+  void CommitCurrentChunk();
 
   void
   PresentBoundary() {

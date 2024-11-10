@@ -13,7 +13,9 @@ since it is for internal use only
 #include "d3d11_context_state.hpp"
 #include "d3d11_device.hpp"
 #include "d3d11_pipeline.hpp"
+#include "d3d11_query.hpp"
 #include "dxmt_format.hpp"
+#include "dxmt_occlusion_query.hpp"
 #include "mtld11_resource.hpp"
 #include "util_flags.hpp"
 #include "util_math.hpp"
@@ -2155,8 +2157,6 @@ public:
   void UpdateVertexBuffer();
 
   virtual void Commit() = 0;
-  virtual uint64_t NextOcclusionQuerySeq() = 0;
-  virtual void BumpOcclusionQueryOffset() = 0;
 
   /**
   Valid transition:
@@ -2888,7 +2888,7 @@ public:
         ctx.render_encoder = nullptr;
         ctx.dsv_planar_flags = 0;
       });
-      BumpOcclusionQueryOffset();
+      vro_state.endEncoder();
       break;
     }
     case CommandBufferState::ComputeEncoderActive:
@@ -3214,9 +3214,9 @@ public:
 
       auto pass_info = MarkRenderPass();
 
-      auto bump_offset = NextOcclusionQuerySeq() % kOcclusionSampleCount;
+      vro_state.beginEncoder();
 
-      EmitCommand([rtvs = std::move(rtvs), dsv = std::move(dsv_info), bump_offset, effective_render_target, uav_only,
+      EmitCommand([rtvs = std::move(rtvs), dsv = std::move(dsv_info), effective_render_target, uav_only,
                    uav_only_render_target_height, uav_only_render_target_width, uav_only_sample_count, pass_info,
                    render_target_array](CommandChunk::context &ctx) {
         auto pool = transfer(NS::AutoreleasePool::alloc()->init());
@@ -3272,7 +3272,8 @@ public:
             renderPassDescriptor->setRenderTargetWidth(dsv_tex->width());
           }
         }
-        renderPassDescriptor->setVisibilityResultBuffer(ctx.chk->visibility_result_heap);
+        if (pass_info->use_visibility_result)
+          renderPassDescriptor->setVisibilityResultBuffer(ctx.chk->visibility_result_heap);
 
         renderPassDescriptor->setRenderTargetArrayLength(render_target_array);
         ctx.render_encoder = ctx.cmdbuf->renderCommandEncoder(renderPassDescriptor);
@@ -3291,10 +3292,6 @@ public:
           ctx.render_encoder->setObjectBuffer(h, 0, 29);
           ctx.render_encoder->setObjectBuffer(h, 0, 30);
         }
-#ifndef __DXMT_DISABLE_OCCLUSION_QUERY__
-        // TODO: need to check if there is any query in building
-        ctx.render_encoder->setVisibilityResultMode(MTL::VisibilityResultModeCounting, bump_offset << 3);
-#endif
       });
     }
 
@@ -3624,6 +3621,25 @@ public:
         EmitCommand([](CommandChunk::context &ctx) { ctx.current_index_buffer_ref = nullptr; });
       }
     }
+    auto previous_encoder = GetLastEncoder();
+    assert(previous_encoder->kind == EncoderKind::Render);
+    auto previous_renderpass = (ENCODER_RENDER_INFO *)previous_encoder;
+    if (!active_occlusion_queries.empty()) {
+      previous_renderpass->use_visibility_result = 1;
+      if (auto next_offset = vro_state.getNextWriteOffset(true); next_offset != ~0uLL) {
+        EmitCommand([next_offset](CommandChunk::context &ctx) {
+          ctx.render_encoder->setVisibilityResultMode(
+              MTL::VisibilityResultModeCounting, (ctx.visibility_offset_base + next_offset) << 3
+          );
+        });
+      }
+    } else {
+      if (vro_state.getNextWriteOffset(false) != ~0uLL && previous_renderpass->use_visibility_result) {
+        EmitCommand([](CommandChunk::context &ctx) {
+          ctx.render_encoder->setVisibilityResultMode(MTL::VisibilityResultModeDisabled, 0);
+        });
+      }
+    }
     dirty_state.clrAll();
     if (cmdbuf_state == CommandBufferState::TessellationRenderPipelineReady) {
       return UploadShaderStageResourceBinding<ShaderType::Vertex, true>() &&
@@ -3762,6 +3778,7 @@ public:
   }
 
 protected:
+  std::unordered_set<IMTLD3DOcclusionQuery*> active_occlusion_queries;
   MTLD3D11Device *device;
   CommandBufferState cmdbuf_state = CommandBufferState::Idle;
   CommandBufferState previous_render_pipeline_state = CommandBufferState::Idle;
@@ -3787,6 +3804,7 @@ public:
 
 protected:
   D3D11ContextState state_;
+  VisibilityResultOffsetBumpState vro_state;
 
 public:
   MTLD3D11DeviceContextImplBase(MTLD3D11Device *pDevice, ContextInternalState &ctx_state) :
@@ -3925,6 +3943,7 @@ public:
 
     num_argument_data = 0;
     num_bindingref = 0;
+    num_visibility_result = 0;
     promote_flush = false;
   };
 
@@ -3959,6 +3978,8 @@ public:
     uint64_t *gpu_argument_heap_contents;
     std::vector<ArgumentData> &argument_table;
     std::vector<BindingRef> &binding_table;
+    uint64_t visibility_result_offset;
+    std::vector<Com<IMTLD3DOcclusionQuery>> &pending_occlusion_queries;
   };
 
   template <typename Fn>
@@ -4194,6 +4215,7 @@ public:
   uint32_t num_argument_data = 0;
   uint32_t num_bindingref = 0;
   uint64_t gpu_arugment_heap_offset = 0;
+  uint64_t num_visibility_result = 0;
   bool promote_flush = false;
 
 private:

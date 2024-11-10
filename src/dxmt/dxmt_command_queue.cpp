@@ -95,15 +95,13 @@ CommandQueue::~CommandQueue() {
 }
 
 void
-CommandQueue::CommitCurrentChunk(uint64_t occlusion_counter_begin, uint64_t occlusion_counter_end) {
+CommandQueue::CommitCurrentChunk() {
   chunk_ongoing.wait(kCommandChunkCount - 1, std::memory_order_acquire);
   chunk_ongoing.fetch_add(1, std::memory_order_relaxed);
   auto chunk_id = ready_for_encode.load(std::memory_order_relaxed);
   auto &chunk = chunks[chunk_id % kCommandChunkCount];
   chunk.chunk_id = chunk_id;
   chunk.frame_ = present_seq;
-  chunk.visibility_result_seq_begin = occlusion_counter_begin;
-  chunk.visibility_result_seq_end = occlusion_counter_end;
 #if ASYNC_ENCODING
   ready_for_encode.fetch_add(1, std::memory_order_release);
   ready_for_encode.notify_one();
@@ -203,16 +201,6 @@ CommandQueue::WaitForFinishThread() {
       if (((NS::Array *)chunk.attached_cmdbuf->logs())->count()) {
         ERR("logs at frame ", chunk.frame_);
         ERR(chunk.attached_cmdbuf->logs()->debugDescription()->cString(NS::ASCIIStringEncoding));
-      }
-    }
-    uint64_t *visibility_result_buffer = (uint64_t *)chunk.visibility_result_heap->contents();
-    {
-      std::lock_guard<dxmt::mutex> lock(mutex_observers);
-      for (auto seq = chunk.visibility_result_seq_begin; seq < chunk.visibility_result_seq_end; seq++) {
-        uint64_t counter_value = visibility_result_buffer[seq % kOcclusionSampleCount];
-        std::erase_if(visibility_result_observers, [=](VisibilityResultObserver *observer) {
-          return observer->Update(seq, counter_value);
-        });
       }
     }
 

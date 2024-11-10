@@ -595,9 +595,11 @@ public:
       break;
     case D3D11_QUERY_OCCLUSION:
     case D3D11_QUERY_OCCLUSION_PREDICATE: {
-      if (auto observer = ((IMTLD3DOcclusionQuery *)pAsync)->Begin(NextOcclusionQuerySeq())) {
-        cmd_queue.RegisterVisibilityResultObserver(observer);
-      }
+      auto query = static_cast<IMTLD3DOcclusionQuery *>(pAsync);
+      query->Begin(cmd_queue.CurrentSeqId(), vro_state.getNextReadOffset());
+      active_occlusion_queries.insert(query);
+      // FIXME: remove duplication
+      pending_occlusion_queries.push_back(query);
       break;
     }
     case D3D11_QUERY_TIMESTAMP:
@@ -622,7 +624,10 @@ public:
       break;
     case D3D11_QUERY_OCCLUSION:
     case D3D11_QUERY_OCCLUSION_PREDICATE: {
-      ((IMTLD3DOcclusionQuery *)pAsync)->End(NextOcclusionQuerySeq());
+      auto query = static_cast<IMTLD3DOcclusionQuery *>(pAsync);
+      if (active_occlusion_queries.erase(query) == 0)
+        return; // invalid
+      query->End(cmd_queue.CurrentSeqId(), vro_state.getNextReadOffset());
       promote_flush = true;
       break;
     }
@@ -725,29 +730,40 @@ public:
 
     auto [heap, offset] = chk->allocate_gpu_heap(cmd_list->gpu_arugment_heap_offset, 16);
 
+    uint64_t visibility_offset = vro_state.preserveCount(cmd_list->num_visibility_result);
+
     chk->mark_pass(EncoderKind::ExecuteCommandList);
 
     MTLD3D11CommandList::EventContext ctx{
-        cmd_queue, device, (uint64_t *)((char *)heap->contents() + offset), argument_table, bindingref_table
+        cmd_queue,
+        device,
+        (uint64_t *)((char *)heap->contents() + offset),
+        argument_table,
+        bindingref_table,
+        visibility_offset,
+        pending_occlusion_queries
     };
     cmd_list->ProcessEvents(ctx);
-    
+
     InvalidateCurrentPass();
 
-    chk->emit([cmd_list = Com(cmd_list), table = std::move(bindingref_table), offset](auto &ctx) {
+    chk->emit([cmd_list = Com(cmd_list), table = std::move(bindingref_table), offset, visibility_offset](auto &ctx) {
       const BindingRef *old_lut;
       BindingRef::SetLookupTable(table.data(), &old_lut);
       auto offset_base = ctx.offset_base;
+      auto visibility_offset_base = ctx.visibility_offset_base;
       ctx.offset_base = offset;
+      ctx.visibility_offset_base = visibility_offset;
       cmd_list->EncodeCommands(ctx);
       ctx.offset_base = offset_base;
+      ctx.visibility_offset_base = visibility_offset_base;
       BindingRef::SetLookupTable(old_lut, nullptr);
     });
 
     if (!RestoreContextState)
       ClearState();
 
-    if(cmd_list->promote_flush)
+    if (cmd_list->promote_flush)
       Flush();
   }
 
@@ -786,42 +802,60 @@ public:
     cmd_queue.WaitCPUFence(seq);
   };
 
-  uint64_t
-  NextOcclusionQuerySeq() override {
-    if (cmdbuf_state == CommandBufferState::RenderEncoderActive ||
-        cmdbuf_state == CommandBufferState::RenderPipelineReady ||
-        cmdbuf_state == CommandBufferState::TessellationRenderPipelineReady) {
-      uint64_t bump_offset = (++occlusion_query_seq) % kOcclusionSampleCount;
-      CommandChunk *chk = ctx_state.cmd_queue.CurrentChunk();
-      chk->emit([bump_offset](CommandChunk::context &ctx) {
-        D3D11_ASSERT(ctx.render_encoder);
-        ctx.render_encoder->setVisibilityResultMode(MTL::VisibilityResultModeCounting, bump_offset << 3);
-      });
+  class VisibilityResultReadback {
+  public:
+    VisibilityResultReadback(
+        uint64_t seq_id, uint64_t num_results, std::vector<Com<IMTLD3DOcclusionQuery>> &&queries, CommandChunk *chk
+    ) :
+        seq_id(seq_id),
+        num_results(num_results),
+        queries(std::move(queries)),
+        chk(chk) {}
+    ~VisibilityResultReadback() {
+      for (auto query : queries) {
+        query->Issue(seq_id, (uint64_t *)chk->visibility_result_heap->contents(), num_results);
+      }
     }
-    return occlusion_query_seq;
-  };
 
-  void
-  BumpOcclusionQueryOffset() override {
-    occlusion_query_seq++;
-  }
+    VisibilityResultReadback(const VisibilityResultReadback &) = delete;
+    VisibilityResultReadback(VisibilityResultReadback &&) = default;
+
+    uint64_t seq_id;
+    uint64_t num_results;
+    std::vector<Com<IMTLD3DOcclusionQuery>> queries;
+    CommandChunk *chk;
+  };
 
   void
   Commit() override {
     promote_flush = false;
     D3D11_ASSERT(cmdbuf_state == CommandBufferState::Idle);
-    /** FIXME: it might be unnecessary? */
     CommandChunk *chk = ctx_state.cmd_queue.CurrentChunk();
+    if (auto count = vro_state.reset()) {
+      if (count > kOcclusionSampleCount && (count << 3) > chk->visibility_result_heap->length()) {
+        auto old_heap = std::move(chk->visibility_result_heap);
+        chk->visibility_result_heap = transfer(device->GetMTLDevice()->newBuffer(count << 3, old_heap->resourceOptions()));
+      }
+      chk->emit([_ = VisibilityResultReadback(
+                     cmd_queue.CurrentSeqId(), count, std::move(pending_occlusion_queries), chk
+                 )](auto) {});
+      pending_occlusion_queries = {};
+      if (!active_occlusion_queries.empty()) {
+        WARN("A chunk is commit while the visibility result is still queried");
+        for (auto s : active_occlusion_queries) {
+          pending_occlusion_queries.push_back(s);
+        }
+      }
+    }
+    /** FIXME: it might be unnecessary? */
     chk->emit([device = Com<MTLD3D11Device, false>(device)](CommandChunk::context &ctx) {});
-    ctx_state.cmd_queue.CommitCurrentChunk(occlusion_query_seq_chunk_start, ++occlusion_query_seq);
-    occlusion_query_seq_chunk_start = occlusion_query_seq;
+    ctx_state.cmd_queue.CommitCurrentChunk();
   };
 
 private:
+  std::vector<Com<IMTLD3DOcclusionQuery>> pending_occlusion_queries;
   CommandQueue &cmd_queue;
   ContextInternalState ctx_state;
-  uint64_t occlusion_query_seq_chunk_start = 0;
-  uint64_t occlusion_query_seq = 0;
   std::atomic<uint32_t> refcount = 0;
 };
 

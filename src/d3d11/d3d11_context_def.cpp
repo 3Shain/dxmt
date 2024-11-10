@@ -625,12 +625,18 @@ public:
     switch (desc.Query) {
     case D3D11_QUERY_EVENT:
       break;
-    // case D3D11_QUERY_OCCLUSION: {
-    //   if (auto observer = ((IMTLD3DOcclusionQuery *)pAsync)->Begin(NextOcclusionQuerySeq())) {
-    //     cmd_queue.RegisterVisibilityResultObserver(observer);
-    //   }
-    //   break;
-    // }
+    case D3D11_QUERY_OCCLUSION:
+    case D3D11_QUERY_OCCLUSION_PREDICATE: {
+      auto query = static_cast<IMTLD3DOcclusionQuery *>(pAsync);
+      ctx_state.current_cmdlist->EmitEvent([query = Com(query), offset = vro_state.getNextReadOffset(
+                                                                )](MTLD3D11CommandList::EventContext &ctx) {
+        query->Begin(ctx.cmd_queue.CurrentSeqId(), ctx.visibility_result_offset + offset);
+        // FIXME: remove duplication
+        ctx.pending_occlusion_queries.push_back(query);
+      });
+      active_occlusion_queries.insert(query);
+      break;
+    }
     case D3D11_QUERY_TIMESTAMP:
     case D3D11_QUERY_TIMESTAMP_DISJOINT: {
       // ignore
@@ -655,11 +661,18 @@ public:
       });
       promote_flush = true;
       break;
-    // case D3D11_QUERY_OCCLUSION: {
-    //   ((IMTLD3DOcclusionQuery *)pAsync)->End(NextOcclusionQuerySeq());
-    //   promote_flush = true;
-    //   break;
-    // }
+    case D3D11_QUERY_OCCLUSION:
+    case D3D11_QUERY_OCCLUSION_PREDICATE: {
+      auto query = static_cast<IMTLD3DOcclusionQuery *>(pAsync);
+      if (active_occlusion_queries.erase(query) == 0)
+        return; // invalid
+      ctx_state.current_cmdlist->EmitEvent([query = Com(query), offset = vro_state.getNextReadOffset(
+                                                                )](MTLD3D11CommandList::EventContext &ctx) {
+        query->End(ctx.cmd_queue.CurrentSeqId(), ctx.visibility_result_offset + offset);
+      });
+      promote_flush = true;
+      break;
+    }
     case D3D11_QUERY_TIMESTAMP:
     case D3D11_QUERY_TIMESTAMP_DISJOINT: {
       // ignore
@@ -694,6 +707,11 @@ public:
   HRESULT FinishCommandList(BOOL RestoreDeferredContextState, ID3D11CommandList **ppCommandList) override {
     InvalidateCurrentPass();
     ctx_state.current_cmdlist->promote_flush = promote_flush;
+    ctx_state.current_cmdlist->num_visibility_result = vro_state.reset();
+    if(!active_occlusion_queries.empty()) {
+      ERR("Occlusion query End() is not properly called before FinishCommandList()");
+      active_occlusion_queries.clear();
+    }
     *ppCommandList = std::move(ctx_state.current_cmdlist);
     promote_flush = false;
     device->CreateCommandList((ID3D11CommandList **)&ctx_state.current_cmdlist);
@@ -711,25 +729,12 @@ public:
     return D3D11_DEVICE_CONTEXT_DEFERRED;
   }
 
-  virtual void WaitUntilGPUIdle() override {
-    // nop
+  virtual void WaitUntilGPUIdle() override{
+      // nop
   };
 
-  uint64_t
-  NextOcclusionQuerySeq() override {
-    // IMPLEMENT_ME;
-
-    // FIXME: occlusion query on deferred context
-    return 0;
-  };
-
-  void
-  BumpOcclusionQueryOffset() override {
-    // IMPLEMENT_ME;
-  }
-
-  void Commit() override {
-    // nop
+  void Commit() override{
+      // nop
   };
 
 private:
@@ -745,12 +750,11 @@ CreateDeferredContext(MTLD3D11Device *pDevice, UINT ContextFlags) {
 
 thread_local const BindingRef *BindingRef::lut;
 
-
 class MTLD3D11CommandListPool : public MTLD3D11CommandListPoolBase {
 public:
-  MTLD3D11CommandListPool(MTLD3D11Device *device) : device(device) {};
+  MTLD3D11CommandListPool(MTLD3D11Device *device) : device(device){};
 
-  ~MTLD3D11CommandListPool() {
+  ~MTLD3D11CommandListPool(){
 
   };
 
