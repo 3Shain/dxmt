@@ -27,11 +27,13 @@ public:
                MTLD3D11Device *device)
       : TResourceBase<tag_buffer, IMTLBindable>(*pDesc, device) {
     auto metal = device->GetMTLDevice();
-    buffer = transfer(
-        metal->newBuffer((pDesc->BindFlags & D3D11_BIND_UNORDERED_ACCESS)
-                             ? (pDesc->ByteWidth + 16)
-                             : pDesc->ByteWidth,
-                         MTL::ResourceStorageModeManaged));
+    MTL::ResourceOptions options = MTL::ResourceStorageModeManaged;
+    if(pDesc->Usage == D3D11_USAGE_IMMUTABLE) {
+      options |= MTL::ResourceHazardTrackingModeUntracked;
+    }
+    buffer = transfer(metal->newBuffer(
+        (pDesc->BindFlags & D3D11_BIND_UNORDERED_ACCESS) ? (pDesc->ByteWidth + 16) : pDesc->ByteWidth, options
+    ));
     if (pInitialData) {
       memcpy(buffer->contents(), pInitialData->pSysMem, pDesc->ByteWidth);
       buffer->didModifyRange({0, pDesc->ByteWidth});
