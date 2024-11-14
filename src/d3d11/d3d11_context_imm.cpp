@@ -723,6 +723,8 @@ public:
     if (cmd_list->Noop())
       return;
 
+    InvalidateCurrentPass();
+
     CommandChunk *chk = ctx_state.cmd_queue.CurrentChunk();
 
     std::vector<ArgumentData> argument_table(cmd_list->num_argument_data);
@@ -744,8 +746,6 @@ public:
         pending_occlusion_queries
     };
     cmd_list->ProcessEvents(ctx);
-
-    InvalidateCurrentPass();
 
     chk->emit([cmd_list = Com(cmd_list), table = std::move(bindingref_table), offset, visibility_offset](auto &ctx) {
       const BindingRef *old_lut;
