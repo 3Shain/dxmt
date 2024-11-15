@@ -98,14 +98,9 @@ public:
     try {
       switch (pDesc->Usage) {
       case D3D11_USAGE_DEFAULT:
-        if (!(pDesc->BindFlags & (D3D11_BIND_UNORDERED_ACCESS | D3D11_BIND_STREAM_OUTPUT | D3D11_BIND_RENDER_TARGET |
-                                  D3D11_BIND_DEPTH_STENCIL)))
-          return CreateDynamicBuffer(this, pDesc, pInitialData, ppBuffer);
-        return CreateDeviceBuffer(this, pDesc, pInitialData, ppBuffer);
       case D3D11_USAGE_IMMUTABLE:
-        return CreateDeviceBuffer(this, pDesc, pInitialData, ppBuffer);
       case D3D11_USAGE_DYNAMIC:
-        return CreateDynamicBuffer(this, pDesc, pInitialData, ppBuffer);
+        return dxmt::CreateBuffer(this, pDesc, pInitialData, ppBuffer);
       case D3D11_USAGE_STAGING:
         return CreateStagingBuffer(this, pDesc, pInitialData, ppBuffer);
       }

@@ -530,11 +530,6 @@ CreateStagingTexture3D(MTLD3D11Device *pDevice,
                        const D3D11_SUBRESOURCE_DATA *pInitialData,
                        ID3D11Texture3D1 **ppTexture);
 
-HRESULT
-CreateDeviceBuffer(MTLD3D11Device *pDevice, const D3D11_BUFFER_DESC *pDesc,
-                   const D3D11_SUBRESOURCE_DATA *pInitialData,
-                   ID3D11Buffer **ppBuffer);
-
 HRESULT CreateDeviceTexture1D(MTLD3D11Device *pDevice,
                               const D3D11_TEXTURE1D_DESC *pDesc,
                               const D3D11_SUBRESOURCE_DATA *pInitialData,
@@ -551,7 +546,7 @@ HRESULT CreateDeviceTexture3D(MTLD3D11Device *pDevice,
                               ID3D11Texture3D1 **ppTexture);
 
 HRESULT
-CreateDynamicBuffer(MTLD3D11Device *pDevice, const D3D11_BUFFER_DESC *pDesc,
+CreateBuffer(MTLD3D11Device *pDevice, const D3D11_BUFFER_DESC *pDesc,
                     const D3D11_SUBRESOURCE_DATA *pInitialData,
                     ID3D11Buffer **ppBuffer);
 
@@ -612,12 +607,6 @@ struct MTL_TEXTURE_BUFFER_LAYOUT {
   uint32_t AdjustedByteOffset;
   uint32_t AdjustedBytesPerRow;
 };
-
-template <typename VIEW_DESC>
-HRESULT CreateMTLTextureBufferView(MTLD3D11Device *pDevice,
-                                   const VIEW_DESC *pViewDesc,
-                                   MTL::TextureDescriptor **ppViewDesc,
-                                   MTL_TEXTURE_BUFFER_LAYOUT *pLayout);
 
 template <typename TEXTURE_DESC>
 void GetMipmapSize(const TEXTURE_DESC *pDesc, uint32_t level, uint32_t *pWidth,

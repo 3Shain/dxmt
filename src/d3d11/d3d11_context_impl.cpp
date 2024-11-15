@@ -4189,8 +4189,8 @@ public:
   uint32_t
   GetArgumentDataId(IMTLBindable *bindable, SIMPLE_RESIDENCY_TRACKER **tracker) {
     auto index = num_argument_data++;
-    EmitEvent([index, bindable = Com(bindable)](EventContext &ctx) {
-      SIMPLE_RESIDENCY_TRACKER *_;
+    EmitEvent([index, bindable = Com(bindable), use_buffer = *tracker != nullptr](EventContext &ctx) {
+      SIMPLE_RESIDENCY_TRACKER *_ = use_buffer ? (SIMPLE_RESIDENCY_TRACKER *)(~0uLL) : nullptr;
       ctx.argument_table[index] = bindable->GetArgumentData(&_);
     });
     *tracker = &residency_tracker.insert({bindable, {}}).first->second;
