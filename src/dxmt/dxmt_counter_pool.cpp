@@ -4,6 +4,7 @@
 #include "Metal/MTLBlitCommandEncoder.hpp"
 #include "Metal/MTLCommandBuffer.hpp"
 #include "Metal/MTLDevice.hpp"
+#include "dxmt_binding.hpp"
 #include "objc_pointer.hpp"
 #include <cassert>
 
@@ -46,6 +47,8 @@ CounterPool::AllocateCounter(uint64_t SeqId, uint32_t InitialValue) {
 
 void
 CounterPool::DiscardCounter(uint64_t SeqId, CounterHandle Handle) {
+  if (Handle == DXMT_NO_COUNTER)
+    return;
   auto inserted = to_discard_.insert({SeqId, {}});
   inserted.first->second.push_back(Handle);
 }

@@ -19,9 +19,7 @@ struct EncodingContext {
   // virtual MTL::Texture *GetCurrentSwapchainBackbuffer() = 0;
 };
 
-struct deferred_binding_t {
-
-};
+struct deferred_binding_t {};
 
 namespace impl {
 enum BindingType : uint32_t {
@@ -35,7 +33,7 @@ enum BindingType : uint32_t {
   BackBufferSource_sRGB = 0b1'0000'0000,
   BackBufferSource_Linear = 0b10'0000'0000,
   Deferred = 0b1'0000'0000'0000,
-  WithElementOffset = 0b1111 << 27,
+  WithElementOffset = 0b0001'0000,
 };
 
 inline BindingType
@@ -66,8 +64,8 @@ class BindingRef {
   Com<IUnknown> reference_holder = nullptr;
 
 public:
-  BindingRef() noexcept : type(Type::Null) {};
-  BindingRef(uint32_t index, deferred_binding_t) noexcept : type(Type::Deferred), defered_binding_table_index(index) {};
+  BindingRef() noexcept : type(Type::Null){};
+  BindingRef(uint32_t index, deferred_binding_t) noexcept : type(Type::Deferred), defered_binding_table_index(index){};
   BindingRef(IUnknown *ref, MTL::Buffer *buffer, uint32_t byte_width, uint32_t offset) noexcept :
       type(Type::JustBuffer | Type::WithBoundInformation),
       resource_ptr(buffer),
@@ -92,12 +90,10 @@ public:
       min_lod(min_lod),
       resource_ptr(texture),
       reference_holder(ref) {}
-  BindingRef(
-      IUnknown *ref, MTL::Texture *texture, MTL::Buffer *buffer, uint32_t byte_width, uint32_t byte_offset
-  ) noexcept :
+  BindingRef(IUnknown *ref, MTL::Texture *texture, uint32_t byte_width, uint32_t byte_offset) noexcept :
       type(Type::JustTexture | Type::WithBackedBuffer | Type::WithBoundInformation),
       resource_ptr(texture),
-      buffer_ptr(buffer),
+      buffer_ptr(texture->buffer()),
       byte_width(byte_width),
       byte_offset(byte_offset),
       reference_holder(ref) {}
@@ -113,7 +109,7 @@ public:
     type = move.type;
     resource_ptr = move.resource_ptr;
     min_lod = move.min_lod;
-    buffer_ptr = move.buffer_ptr;
+    counter_handle_ = move.counter_handle_;
     byte_width = move.byte_width;
     byte_offset = move.byte_offset;
     reference_holder = std::move(move.reference_holder);
@@ -129,7 +125,7 @@ public:
     // ahh this is redunant
     type = move.type;
     resource_ptr = move.resource_ptr;
-    buffer_ptr = move.buffer_ptr;
+    counter_handle_ = move.counter_handle_;
     min_lod = move.min_lod;
     byte_width = move.byte_width;
     byte_offset = move.byte_offset;
@@ -165,10 +161,6 @@ public:
       if (counter_handle_ != other.counter_handle_)
         return false;
     }
-    if (type & Type::WithBackedBuffer) {
-      if (buffer_ptr != other.buffer_ptr)
-        return false;
-    }
     if (type & Type::WithLODClamp) {
       if (min_lod != other.min_lod)
         return false;
@@ -198,7 +190,7 @@ public:
     if (type & Type::WithBackedBuffer) {
       return buffer_ptr;
     }
-    if(type & Type::Deferred) {
+    if (type & Type::Deferred) {
       return lut[defered_binding_table_index].buffer();
     }
     return nullptr;
@@ -208,7 +200,7 @@ public:
     if (type & Type::JustTexture) {
       return (MTL::Texture *)resource_ptr;
     }
-    if(type & Type::Deferred) {
+    if (type & Type::Deferred) {
       return lut[defered_binding_table_index].texture();
     }
     return nullptr;
@@ -224,7 +216,7 @@ public:
     if (type & Type::BackBufferSource_Linear) {
       return ((BackBufferSource *)reference_holder.ptr())->GetCurrentFrameBackBuffer(false);
     }
-    if(type & Type::Deferred) {
+    if (type & Type::Deferred) {
       return lut[defered_binding_table_index].texture(context);
     }
     return nullptr;
@@ -234,7 +226,7 @@ public:
     if (type & Type::WithBoundInformation) {
       return byte_width;
     }
-    if(type & Type::Deferred) {
+    if (type & Type::Deferred) {
       return lut[defered_binding_table_index].width();
     }
     return 0;
@@ -245,7 +237,7 @@ public:
     if (type & Type::WithBoundInformation) {
       return byte_offset;
     }
-    if(type & Type::Deferred) {
+    if (type & Type::Deferred) {
       return lut[defered_binding_table_index].offset();
     }
     return 0;
@@ -253,7 +245,7 @@ public:
 
   MTL::Resource *
   resource() const {
-    if(type & Type::Deferred) {
+    if (type & Type::Deferred) {
       return lut[defered_binding_table_index].resource();
     }
     return resource_ptr;
@@ -272,17 +264,18 @@ public:
 
   bool
   withBackedBuffer() const {
-    if(type & Type::Deferred) {
+    if (type & Type::Deferred) {
       return lut[defered_binding_table_index].withBackedBuffer();
     }
     return type & Type::WithBackedBuffer;
   };
 
-  thread_local static const BindingRef* lut;
+  thread_local static const BindingRef *lut;
 
-  static void SetLookupTable(const BindingRef* lut_, const BindingRef** old) {
+  static void
+  SetLookupTable(const BindingRef *lut_, const BindingRef **old) {
     /* FIXME: I don't think it's a good idea... */
-    if(old) {
+    if (old) {
       *old = lut;
     }
     lut = lut_;
@@ -295,17 +288,18 @@ class ArgumentData {
   union {
     float min_lod_;
     uint32_t byte_width_;
+    uint32_t element_width_;
   };
   uint64_t resource_handle;
   union {
     uint64_t buffer_handle;
     uint64_t counter_handle;
     BackBufferSource *ptr;
+    uint32_t element_offset_;
   };
 
 public:
-  ArgumentData() noexcept :
-      type(Type::Null) {}
+  ArgumentData() noexcept : type(Type::Null) {}
   ArgumentData(uint64_t h, uint32_t c) noexcept :
       type(Type::JustBuffer | Type::WithBoundInformation),
       byte_width_(c),
@@ -320,19 +314,11 @@ public:
       type(Type::JustTexture | Type::WithLODClamp),
       min_lod_(min_lod),
       resource_handle(id._impl) {}
-  ArgumentData(MTL::ResourceID id, MTL::Texture *, uint64_t buffer_handle, uint32_t size) noexcept :
-      type(Type::JustTexture | Type::WithBackedBuffer | Type::WithBoundInformation),
-      byte_width_(size),
+  ArgumentData(MTL::ResourceID id, uint32_t size, uint32_t element_offset) noexcept :
+      type(Type::JustTexture | Type::WithBackedBuffer | Type::WithBoundInformation | Type::WithElementOffset),
+      element_width_(size),
       resource_handle(id._impl),
-      buffer_handle(buffer_handle) {}
-  ArgumentData(MTL::ResourceID id, uint64_t buffer_handle, uint32_t size, uint32_t element_offset) noexcept :
-      type(
-          Type::JustTexture | Type::WithBackedBuffer | Type::WithBoundInformation |
-          ((Type)(element_offset << 27) & Type::WithElementOffset)
-      ),
-      byte_width_(size),
-      resource_handle(id._impl),
-      buffer_handle(buffer_handle) {}
+      element_offset_(element_offset) {}
   ArgumentData(BackBufferSource *t, bool srgb) noexcept :
       type(srgb ? Type::BackBufferSource_sRGB : Type::BackBufferSource_Linear),
       ptr(t) {}
@@ -399,9 +385,12 @@ public:
     return 0.0f;
   }
 
-  uint32_t
-  element_offset() const {
-    return (type & Type::WithElementOffset) >> 27;
+  uint64_t
+  tbuffer_descriptor() const {
+    if (type & Type::WithElementOffset) {
+      return ((uint64_t)element_width_ << 32) | (uint64_t)element_offset_;
+    }
+    return (uint64_t)element_width_ << 32;
   }
 };
 } // namespace dxmt

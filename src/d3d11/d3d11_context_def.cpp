@@ -273,7 +273,11 @@ DeferredContextBase::UploadShaderStageResourceBinding() {
           break;
         }
         auto &srv = ShaderStage.SRVs[slot];
-
+        if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_BUFFER) {
+          pTracker = (SIMPLE_RESIDENCY_TRACKER *)(~0uLL);
+        } else {
+          pTracker = nullptr;
+        }
         auto index = cmd_list->GetArgumentDataId(srv.SRV.ptr(), &pTracker);
         cmd_list->EmitEvent([offset, index, arg_offset = arg.StructurePtrOffset, arg_flags = arg.Flags](auto &ctx) {
           uint64_t *write_to_it = ctx.gpu_argument_heap_contents + (offset >> 3);
@@ -298,7 +302,7 @@ DeferredContextBase::UploadShaderStageResourceBinding() {
             write_to_it[arg_offset + 1] = std::bit_cast<uint32_t>(arg_data.min_lod());
           }
           if (arg_flags & MTL_SM50_SHADER_ARGUMENT_TBUFFER_OFFSET) {
-            write_to_it[arg_offset + 1] = arg_data.element_offset();
+            write_to_it[arg_offset + 1] = arg_data.tbuffer_descriptor();
           }
         });
         if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_UAV_COUNTER) {
@@ -335,6 +339,11 @@ DeferredContextBase::UploadShaderStageResourceBinding() {
           break;
         }
         auto &uav = UAVBindingSet[arg.SM50BindingSlot];
+        if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_BUFFER) {
+          pTracker = (SIMPLE_RESIDENCY_TRACKER *)(~0uLL);
+        } else {
+          pTracker = nullptr;
+        }
         auto index = cmd_list->GetArgumentDataId(uav.View.ptr(), &pTracker);
         cmd_list->EmitEvent([offset, index, arg_offset = arg.StructurePtrOffset, arg_flags = arg.Flags](auto &ctx) {
           uint64_t *write_to_it = ctx.gpu_argument_heap_contents + (offset >> 3);
@@ -359,7 +368,7 @@ DeferredContextBase::UploadShaderStageResourceBinding() {
             write_to_it[arg_offset + 1] = std::bit_cast<uint32_t>(arg_data.min_lod());
           }
           if (arg_flags & MTL_SM50_SHADER_ARGUMENT_TBUFFER_OFFSET) {
-            write_to_it[arg_offset + 1] = arg_data.element_offset();
+            write_to_it[arg_offset + 1] = arg_data.tbuffer_descriptor();
           }
         });
         if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_UAV_COUNTER) {
