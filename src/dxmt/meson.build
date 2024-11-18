@@ -9,6 +9,7 @@ dxmt_src = [
   'dxmt_info.cpp',
   'dxmt_device.cpp',
   'dxmt_buffer.cpp',
+  'dxmt_texture.cpp',
 ]
 
 air = custom_target('metal_air',
