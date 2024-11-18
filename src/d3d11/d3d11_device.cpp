@@ -1054,21 +1054,9 @@ public:
 
   Device &GetDXMTDevice() override { return device_; };
 
-#pragma region DynamicBufferPool
-
-  void ExchangeFromPool(MTL::Buffer **pBuffer, uint64_t *gpuAddr,
-                        void **cpuAddr, BufferPool *pool) final {
-    D3D11_ASSERT(*pBuffer);
-    D3D11_ASSERT(pool);
-    pool->GetNext(device_.queue().CurrentSeqId(),
-                  device_.queue().CoherentSeqId(), pBuffer, gpuAddr, cpuAddr);
-  }
-
   void CreateCommandList(ID3D11CommandList** pCommandList) final {
     commandlist_pool_->CreateCommandList(pCommandList);
   };
-
-#pragma endregion
 
 private:
   MTLDXGIObject<IMTLDXGIDevice> *m_container;

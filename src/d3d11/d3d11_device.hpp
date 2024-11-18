@@ -57,16 +57,6 @@ public:
 
   virtual Device& GetDXMTDevice() = 0;
 
-    /**
-  Provide a buffer (include its ownership) and return a buffer of
-  the same size (also include its ownership).
-  "buffer" is specifically a dynamic buffer: cpu write-only, gpu
-  read-only.
-
-  */
-  virtual void ExchangeFromPool(MTL::Buffer * *ppBuffer, uint64_t * gpuAddr,
-                                void **cpuAddr, dxmt::BufferPool *pool) = 0;
-
   virtual void CreateCommandList(ID3D11CommandList** pCommandList) = 0;
 };
 
