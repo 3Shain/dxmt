@@ -1,4 +1,5 @@
 #pragma once
+#include "dxmt_texture.hpp"
 #include "ftl.hpp"
 #include "Metal/MTLBuffer.hpp"
 #include "Metal/MTLCommandBuffer.hpp"
@@ -585,8 +586,10 @@ HRESULT CreateMTLTextureDescriptor(MTLD3D11Device *pDevice,
                                    MTL::TextureDescriptor **pMtlDescOut);
 
 template <typename VIEW_DESC>
-HRESULT CreateMTLTextureView(MTLD3D11Device *pDevice, MTL::Texture *pResource,
-                             const VIEW_DESC *pViewDesc, MTL::Texture **ppView);
+HRESULT InitializeAndNormalizeViewDescriptor(
+    MTLD3D11Device *pDevice, unsigned MiplevelCount, unsigned ArraySize, Texture *pTexture, VIEW_DESC &ViewDesc,
+    TextureViewDescriptor &Descriptor
+);
 
 HRESULT
 CreateMTLRenderTargetView(MTLD3D11Device *pDevice, MTL::Texture *pResource,
@@ -599,14 +602,6 @@ CreateMTLDepthStencilView(MTLD3D11Device *pDevice, MTL::Texture *pResource,
                           const D3D11_DEPTH_STENCIL_VIEW_DESC *pViewDesc,
                           MTL::Texture **ppView,
                           MTL_RENDER_PASS_ATTACHMENT_DESC &AttachmentDesc);
-
-struct MTL_TEXTURE_BUFFER_LAYOUT {
-  uint32_t ByteOffset;
-  uint32_t ByteWidth;
-  uint32_t ViewElementOffset;
-  uint32_t AdjustedByteOffset;
-  uint32_t AdjustedBytesPerRow;
-};
 
 template <typename TEXTURE_DESC>
 void GetMipmapSize(const TEXTURE_DESC *pDesc, uint32_t level, uint32_t *pWidth,
