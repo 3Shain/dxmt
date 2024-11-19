@@ -79,6 +79,14 @@ public:
     return current_.ptr();
   }
 
+  MTL::TextureType textureType() {
+    return descriptor_->textureType();
+  }
+
+  MTL::PixelFormat pixelFormat() {
+    return descriptor_->pixelFormat();
+  }
+
   Rc<TextureAllocation> allocate(Flags<TextureAllocationFlag> flags);
 
   MTL::Texture *view(TextureViewKey key);
