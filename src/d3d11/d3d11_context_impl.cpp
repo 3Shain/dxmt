@@ -6,6 +6,7 @@ and should be not used as a compilation unit
 since it is for internal use only
 (and I don't want to deal with several thousands line of code)
 */
+#include "d3d11_annotation.hpp"
 #include "d3d11_context.hpp"
 #include "d3d11_device_child.hpp"
 #include "d3d11_enumerable.hpp"
@@ -518,6 +519,11 @@ public:
         riid == __uuidof(ID3D11DeviceContext3) || riid == __uuidof(ID3D11DeviceContext4) ||
         riid == __uuidof(IMTLD3D11DeviceContext)) {
       *ppvObject = ref(this);
+      return S_OK;
+    }
+
+    if (riid == __uuidof(ID3DUserDefinedAnnotation)) {
+      *ppvObject = ref(&annotation_);
       return S_OK;
     }
 
@@ -3804,6 +3810,7 @@ public:
 
 protected:
   D3D11ContextState state_;
+  D3D11UserDefinedAnnotation annotation_;
   VisibilityResultOffsetBumpState vro_state;
 
 public:
@@ -3811,7 +3818,8 @@ public:
       MTLD3D11DeviceChild(pDevice),
       device(pDevice),
       ctx_state(ctx_state),
-      state_() {
+      state_(),
+      annotation_(this) {
     pDevice->CreateRasterizerState2(&kDefaultRasterizerDesc, (ID3D11RasterizerState2 **)&default_rasterizer_state);
     pDevice->CreateBlendState1(&kDefaultBlendDesc, (ID3D11BlendState1 **)&default_blend_state);
     pDevice->CreateDepthStencilState(
