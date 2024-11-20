@@ -591,17 +591,11 @@ HRESULT InitializeAndNormalizeViewDescriptor(
     TextureViewDescriptor &Descriptor
 );
 
-HRESULT
-CreateMTLRenderTargetView(MTLD3D11Device *pDevice, MTL::Texture *pResource,
-                          const D3D11_RENDER_TARGET_VIEW_DESC1 *pViewDesc,
-                          MTL::Texture **ppView,
-                          MTL_RENDER_PASS_ATTACHMENT_DESC &AttachmentDesc);
-
-HRESULT
-CreateMTLDepthStencilView(MTLD3D11Device *pDevice, MTL::Texture *pResource,
-                          const D3D11_DEPTH_STENCIL_VIEW_DESC *pViewDesc,
-                          MTL::Texture **ppView,
-                          MTL_RENDER_PASS_ATTACHMENT_DESC &AttachmentDesc);
+template <typename VIEW_DESC>
+HRESULT InitializeAndNormalizeViewDescriptor(
+    MTLD3D11Device *pDevice, unsigned MiplevelCount, unsigned ArraySize, Texture* pTexture,
+    VIEW_DESC &ViewDesc, MTL_RENDER_PASS_ATTACHMENT_DESC &AttachmentDesc, TextureViewDescriptor &Descriptor
+);
 
 template <typename TEXTURE_DESC>
 void GetMipmapSize(const TEXTURE_DESC *pDesc, uint32_t level, uint32_t *pWidth,

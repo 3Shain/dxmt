@@ -55,30 +55,32 @@ Texture::prepareAllocationViews() {
     auto texture = current_->obj_.ptr();
     auto &view = viewDescriptors_[version];
 
-    switch (view.format) {
-    case MTL::PixelFormatDepth24Unorm_Stencil8:
-    case MTL::PixelFormatDepth32Float_Stencil8:
-    case MTL::PixelFormatDepth16Unorm:
-    case MTL::PixelFormatDepth32Float:
-    case MTL::PixelFormatStencil8:
-      current_->cached_view_.push_back(transfer(texture->newTextureView(
-          view.format, view.type, {view.firstMiplevel, view.miplevelCount}, {view.firstArraySlice, view.arraySize},
-          {MTL::TextureSwizzleRed, MTL::TextureSwizzleZero, MTL::TextureSwizzleZero, MTL::TextureSwizzleOne}
-      )));
-      break;
-    case MTL::PixelFormatX32_Stencil8:
-    case MTL::PixelFormatX24_Stencil8:
-      current_->cached_view_.push_back(transfer(texture->newTextureView(
-          view.format, view.type, {view.firstMiplevel, view.miplevelCount}, {view.firstArraySlice, view.arraySize},
-          {MTL::TextureSwizzleZero, MTL::TextureSwizzleRed, MTL::TextureSwizzleZero, MTL::TextureSwizzleOne}
-      )));
-      break;
-    default:
-      current_->cached_view_.push_back(transfer(texture->newTextureView(
-          view.format, view.type, {view.firstMiplevel, view.miplevelCount}, {view.firstArraySlice, view.arraySize}
-      )));
-      break;
+    if ((view.usage & MTL::TextureUsageRenderTarget) == 0) {
+      switch (view.format) {
+      case MTL::PixelFormatDepth24Unorm_Stencil8:
+      case MTL::PixelFormatDepth32Float_Stencil8:
+      case MTL::PixelFormatDepth16Unorm:
+      case MTL::PixelFormatDepth32Float:
+      case MTL::PixelFormatStencil8:
+        current_->cached_view_.push_back(transfer(texture->newTextureView(
+            view.format, view.type, {view.firstMiplevel, view.miplevelCount}, {view.firstArraySlice, view.arraySize},
+            {MTL::TextureSwizzleRed, MTL::TextureSwizzleZero, MTL::TextureSwizzleZero, MTL::TextureSwizzleOne}
+        )));
+        continue;
+      case MTL::PixelFormatX32_Stencil8:
+      case MTL::PixelFormatX24_Stencil8:
+        current_->cached_view_.push_back(transfer(texture->newTextureView(
+            view.format, view.type, {view.firstMiplevel, view.miplevelCount}, {view.firstArraySlice, view.arraySize},
+            {MTL::TextureSwizzleZero, MTL::TextureSwizzleRed, MTL::TextureSwizzleZero, MTL::TextureSwizzleOne}
+        )));
+        continue;
+      default:
+        break;
+      }
     }
+    current_->cached_view_.push_back(transfer(texture->newTextureView(
+        view.format, view.type, {view.firstMiplevel, view.miplevelCount}, {view.firstArraySlice, view.arraySize}
+    )));
   }
   current_->version_ = version_;
 }
@@ -91,6 +93,8 @@ Texture::createView(TextureViewDescriptor const &descriptor) {
     if (viewDescriptors_[i].format != descriptor.format)
       continue;
     if (viewDescriptors_[i].type != descriptor.type)
+      continue;
+    if ((viewDescriptors_[i].usage & descriptor.usage) != descriptor.usage)
       continue;
     if (viewDescriptors_[i].firstMiplevel != descriptor.firstMiplevel)
       continue;
@@ -111,13 +115,43 @@ Texture::Texture(Obj<MTL::TextureDescriptor> &&descriptor, MTL::Device *device) 
     descriptor_(std::move(descriptor)),
     device_(device) {
 
+  MTL::TextureUsage default_view_usage = descriptor_->usage();
+  switch (descriptor_->pixelFormat()) {
+  case MTL::PixelFormatDepth24Unorm_Stencil8:
+  case MTL::PixelFormatDepth32Float_Stencil8:
+  case MTL::PixelFormatDepth16Unorm:
+  case MTL::PixelFormatDepth32Float:
+  case MTL::PixelFormatStencil8:
+  case MTL::PixelFormatX32_Stencil8:
+  case MTL::PixelFormatX24_Stencil8:
+    /**
+    we need to remove read/write usage for default depth stencil view
+    because the swizzle will be reconfigured to match the D3D11 spec
+     */
+    default_view_usage = default_view_usage & ~(MTL::TextureUsageShaderRead | MTL::TextureUsageShaderWrite);
+    break;
+  default:
+    break;
+  }
+
+  uint32_t arraySize = (uint32_t)descriptor_->arrayLength();
+  switch (descriptor_->textureType()) {
+  case MTL::TextureTypeCubeArray:
+  case MTL::TextureTypeCube:
+    arraySize = arraySize * 6;
+    break;
+  default:
+    break;
+  }
+
   viewDescriptors_.push_back({
       .format = descriptor_->pixelFormat(),
       .type = descriptor_->textureType(),
+      .usage = default_view_usage,
       .firstMiplevel = 0,
-      .miplevelCount = (uint32_t)descriptor->mipmapLevelCount(),
+      .miplevelCount = (uint32_t)descriptor_->mipmapLevelCount(),
       .firstArraySlice = 0,
-      .arraySize = (uint32_t)descriptor->arrayLength(),
+      .arraySize = arraySize,
   });
   version_ = 1;
 }
@@ -137,6 +171,7 @@ Texture::Texture(
   viewDescriptors_.push_back({
       .format = descriptor_->pixelFormat(),
       .type = descriptor_->textureType(),
+      .usage = MTL::TextureUsageShaderRead | MTL::TextureUsageShaderWrite,
       .firstMiplevel = 0,
       .miplevelCount = 1,
       .firstArraySlice = 0,

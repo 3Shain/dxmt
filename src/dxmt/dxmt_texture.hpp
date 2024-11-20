@@ -21,8 +21,9 @@ enum class TextureAllocationFlag : uint32_t {
 typedef unsigned TextureViewKey;
 
 struct TextureViewDescriptor {
-  MTL::PixelFormat format;
-  MTL::TextureType type;
+  MTL::PixelFormat format: 32;
+  MTL::TextureType type : 32;
+  MTL::TextureUsage usage: 32;
   unsigned firstMiplevel = 0;
   unsigned miplevelCount = 1;
   unsigned firstArraySlice = 0;
@@ -85,6 +86,10 @@ public:
 
   MTL::PixelFormat pixelFormat() {
     return descriptor_->pixelFormat();
+  }
+
+  unsigned sampleCount() {
+    return descriptor_->sampleCount();
   }
 
   Rc<TextureAllocation> allocate(Flags<TextureAllocationFlag> flags);
