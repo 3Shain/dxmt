@@ -32,6 +32,7 @@ InitializeAndNormalizeViewDescriptor(
     return E_FAIL;
   }
 
+  Descriptor.usage = MTL::TextureUsageShaderRead;
   FixDepthStencilFormat(pTexture, metal_format);
   MTL::TextureType TextureType = pTexture->textureType();
   switch (ViewDesc.ViewDimension) {
@@ -191,6 +192,7 @@ InitializeAndNormalizeViewDescriptor(
     return E_FAIL;
   }
 
+  Descriptor.usage = MTL::TextureUsageShaderRead | MTL::TextureUsageShaderWrite;
   FixDepthStencilFormat(pTexture, metal_format);
   MTL::TextureType TextureType = pTexture->textureType();
   switch (ViewDesc.ViewDimension) {
@@ -276,263 +278,243 @@ InitializeAndNormalizeViewDescriptor(
   return E_FAIL;
 }
 
-HRESULT
-CreateMTLRenderTargetView(MTLD3D11Device *pDevice, MTL::Texture *pResource,
-                          const D3D11_RENDER_TARGET_VIEW_DESC1 *pViewDesc,
-                          MTL::Texture **ppView,
-                          MTL_RENDER_PASS_ATTACHMENT_DESC &AttachmentDesc) {
+template <>
+HRESULT InitializeAndNormalizeViewDescriptor(
+    MTLD3D11Device *pDevice, unsigned MiplevelCount, unsigned ArraySize, Texture* pTexture,
+    D3D11_RENDER_TARGET_VIEW_DESC1 &ViewDesc, MTL_RENDER_PASS_ATTACHMENT_DESC &AttachmentDesc, TextureViewDescriptor &Descriptor
+) {
   MTL_DXGI_FORMAT_DESC metal_format;
-  if (FAILED(MTLQueryDXGIFormat(pDevice->GetMTLDevice(), pViewDesc->Format,
+  if (FAILED(MTLQueryDXGIFormat(pDevice->GetMTLDevice(), ViewDesc.Format,
                                 metal_format))) {
     return E_FAIL;
   }
 
+  Descriptor.usage = MTL::TextureUsageRenderTarget;
   AttachmentDesc.Slice = 0; // use the original texture if format is the same?
   AttachmentDesc.Level = 0;
   AttachmentDesc.DepthPlane = 0;
   AttachmentDesc.RenderTargetArrayLength = 0;
-  AttachmentDesc.SampleCount = pResource->sampleCount();
+  AttachmentDesc.SampleCount = pTexture->sampleCount();
 
-  auto texture_type = pResource->textureType();
-  switch (pViewDesc->ViewDimension) {
+  auto texture_type = pTexture->textureType();
+  switch (ViewDesc.ViewDimension) {
   default:
     break;
   case D3D11_RTV_DIMENSION_TEXTURE1D: {
-    if (texture_type == MTL::TextureType1D) {
-      *ppView = pResource->newTextureView(
-          metal_format.PixelFormat, MTL::TextureType1D,
-          NS::Range::Make(pViewDesc->Texture1D.MipSlice, 1),
-          NS::Range::Make(0, 1));
+    if (texture_type == MTL::TextureType1D || texture_type == MTL::TextureType1DArray) {
+      Descriptor.type = MTL::TextureType1D;
+      Descriptor.format = metal_format.PixelFormat;
+      Descriptor.firstMiplevel = ViewDesc.Texture1D.MipSlice;
+      Descriptor.miplevelCount = 1;
+      Descriptor.firstArraySlice = 0;
+      Descriptor.arraySize = 1;
       return S_OK;
     }
     break;
   }
   case D3D11_RTV_DIMENSION_TEXTURE1DARRAY: {
-    if (texture_type == MTL::TextureType1DArray) {
-      auto array_size = pViewDesc->Texture1DArray.ArraySize == 0xffffffff
-                            ? pResource->arrayLength() -
-                                  pViewDesc->Texture1DArray.FirstArraySlice
-                            : pViewDesc->Texture1DArray.ArraySize;
-      *ppView = pResource->newTextureView(
-          metal_format.PixelFormat, MTL::TextureType1DArray,
-          NS::Range::Make(pViewDesc->Texture1DArray.MipSlice, 1),
-          NS::Range::Make(pViewDesc->Texture1DArray.FirstArraySlice,
-                          array_size));
-      AttachmentDesc.RenderTargetArrayLength = array_size;
+    if (~ViewDesc.Texture1DArray.ArraySize == 0)
+      ViewDesc.Texture1DArray.ArraySize = ArraySize - ViewDesc.Texture1DArray.FirstArraySlice;
+    if (texture_type == MTL::TextureType1D || texture_type == MTL::TextureType1DArray) {
+      Descriptor.type = MTL::TextureType1DArray;
+      Descriptor.format = metal_format.PixelFormat;
+      Descriptor.firstMiplevel = ViewDesc.Texture1DArray.MipSlice;
+      Descriptor.miplevelCount = 1;
+      Descriptor.firstArraySlice = ViewDesc.Texture1DArray.FirstArraySlice;
+      Descriptor.arraySize = ViewDesc.Texture1DArray.ArraySize;
+      AttachmentDesc.RenderTargetArrayLength = Descriptor.arraySize;
       return S_OK;
     }
     break;
   }
   case D3D11_RTV_DIMENSION_TEXTURE2D: {
-    if (texture_type == MTL::TextureType2D) {
-      *ppView = pResource->newTextureView(
-          metal_format.PixelFormat, MTL::TextureType2D,
-          NS::Range::Make(pViewDesc->Texture2D.MipSlice, 1),
-          NS::Range::Make(0, 1));
+    D3D11_ASSERT(ViewDesc.Texture2D.PlaneSlice == 0);
+    if (texture_type == MTL::TextureType2D || texture_type == MTL::TextureType2DArray) {
+      Descriptor.type = MTL::TextureType2D;
+      Descriptor.format = metal_format.PixelFormat;
+      Descriptor.firstMiplevel = ViewDesc.Texture2D.MipSlice;
+      Descriptor.miplevelCount = 1;
+      Descriptor.firstArraySlice = 0;
+      Descriptor.arraySize = 1;
       return S_OK;
     }
     break;
   }
   case D3D11_RTV_DIMENSION_TEXTURE2DARRAY: {
-    if (texture_type == MTL::TextureType2D) {
-      *ppView = pResource->newTextureView(
-          metal_format.PixelFormat, MTL::TextureType2DArray,
-          NS::Range::Make(pViewDesc->Texture2DArray.MipSlice, 1),
-          NS::Range::Make(0, 1));
-      AttachmentDesc.RenderTargetArrayLength = 1;
-      return S_OK;
-    }
-    if (texture_type == MTL::TextureType2DArray) {
-      auto array_size = pViewDesc->Texture2DArray.ArraySize == 0xffffffff
-                            ? pResource->arrayLength() -
-                                  pViewDesc->Texture2DArray.FirstArraySlice
-                            : pViewDesc->Texture2DArray.ArraySize;
-      *ppView = pResource->newTextureView(
-          metal_format.PixelFormat, MTL::TextureType2DArray,
-          NS::Range::Make(pViewDesc->Texture2DArray.MipSlice, 1),
-          NS::Range::Make(pViewDesc->Texture2DArray.FirstArraySlice,
-                          array_size));
-      AttachmentDesc.RenderTargetArrayLength = array_size;
-      return S_OK;
-    }
-    if (texture_type == MTL::TextureTypeCube) {
-      auto array_size = pViewDesc->Texture2DArray.ArraySize == 0xffffffff
-                            ? 6 - pViewDesc->Texture2DArray.FirstArraySlice
-                            : pViewDesc->Texture2DArray.ArraySize;
-      *ppView = pResource->newTextureView(
-          metal_format.PixelFormat, MTL::TextureType2DArray,
-          NS::Range::Make(pViewDesc->Texture2DArray.MipSlice, 1),
-          NS::Range::Make(pViewDesc->Texture2DArray.FirstArraySlice,
-                          array_size));
-      AttachmentDesc.RenderTargetArrayLength = array_size;
-      return S_OK;
-    }
-    if (texture_type == MTL::TextureTypeCubeArray) {
-      auto array_size = pViewDesc->Texture2DArray.ArraySize == 0xffffffff
-                            ? 6 * pResource->arrayLength() -
-                                  pViewDesc->Texture2DArray.FirstArraySlice
-                            : pViewDesc->Texture2DArray.ArraySize;
-      *ppView = pResource->newTextureView(
-          metal_format.PixelFormat, MTL::TextureType2DArray,
-          NS::Range::Make(pViewDesc->Texture2DArray.MipSlice, 1),
-          NS::Range::Make(pViewDesc->Texture2DArray.FirstArraySlice,
-                          array_size));
-      AttachmentDesc.RenderTargetArrayLength = array_size;
+    if (~ViewDesc.Texture2DArray.ArraySize == 0)
+      ViewDesc.Texture2DArray.ArraySize = ArraySize - ViewDesc.Texture2DArray.FirstArraySlice;
+    if (texture_type == MTL::TextureType2D || texture_type == MTL::TextureType2DArray ||
+        texture_type == MTL::TextureTypeCube || texture_type == MTL::TextureTypeCubeArray) {
+      Descriptor.type = MTL::TextureType2DArray;
+      Descriptor.format = metal_format.PixelFormat;
+      Descriptor.firstMiplevel = ViewDesc.Texture2DArray.MipSlice;
+      Descriptor.miplevelCount = 1;
+      Descriptor.firstArraySlice = ViewDesc.Texture2DArray.FirstArraySlice;
+      Descriptor.arraySize = ViewDesc.Texture2DArray.ArraySize;
+      AttachmentDesc.RenderTargetArrayLength = Descriptor.arraySize;
       return S_OK;
     }
     break;
   }
   case D3D11_RTV_DIMENSION_TEXTURE2DMS: {
     if (texture_type == MTL::TextureType2DMultisample) {
-      *ppView = pResource->newTextureView(
-          metal_format.PixelFormat, MTL::TextureType2DMultisample,
-          NS::Range::Make(0, 1), NS::Range::Make(0, 1));
+      Descriptor.type = MTL::TextureType2DMultisample;
+      Descriptor.format = metal_format.PixelFormat;
+      Descriptor.firstMiplevel = 0;
+      Descriptor.miplevelCount = 1;
+      Descriptor.firstArraySlice = 0;
+      Descriptor.arraySize = 1;
       return S_OK;
     }
     break;
   }
   case D3D11_RTV_DIMENSION_TEXTURE2DMSARRAY: {
+    if (~ViewDesc.Texture2DMSArray.ArraySize == 0)
+      ViewDesc.Texture2DMSArray.ArraySize = ArraySize - ViewDesc.Texture2DMSArray.FirstArraySlice;
     if (texture_type == MTL::TextureType2DMultisample) {
-      *ppView = pResource->newTextureView(
-          metal_format.PixelFormat, MTL::TextureType2DMultisampleArray,
-          NS::Range::Make(0, 1), NS::Range::Make(0, 1));
+      Descriptor.type = MTL::TextureType2DMultisampleArray;
+      Descriptor.format = metal_format.PixelFormat;
+      Descriptor.firstMiplevel = 0;
+      Descriptor.miplevelCount = 1;
+      Descriptor.firstArraySlice = 0; // FIXME: we only handle 2dms here!
+      Descriptor.arraySize = 1;
       AttachmentDesc.RenderTargetArrayLength = 1;
       return S_OK;
     }
     break;
   }
   case D3D11_RTV_DIMENSION_TEXTURE3D: {
+    if (~ViewDesc.Texture3D.WSize == 0)
+      ViewDesc.Texture3D.WSize = ArraySize - ViewDesc.Texture3D.FirstWSlice;
     if (texture_type == MTL::TextureType3D) {
-      if (pViewDesc->Texture3D.WSize == 1) {
-        *ppView = pResource->newTextureView(
-            metal_format.PixelFormat, MTL::TextureType3D,
-            NS::Range::Make(pViewDesc->Texture3D.MipSlice, 1),
-            NS::Range::Make(0, 1));
-        AttachmentDesc.DepthPlane = pViewDesc->Texture3D.FirstWSlice;
+      if ((ViewDesc.Texture3D.WSize == ArraySize) && (ViewDesc.Texture3D.FirstWSlice == 0)) {
+        Descriptor.type = MTL::TextureType3D;
+        Descriptor.format = metal_format.PixelFormat;
+        Descriptor.firstMiplevel = ViewDesc.Texture3D.MipSlice;
+        Descriptor.miplevelCount = 1;
+        Descriptor.firstArraySlice = 0;
+        Descriptor.arraySize = 1;
+        AttachmentDesc.RenderTargetArrayLength = ArraySize;
         return S_OK;
       }
-      if (pViewDesc->Texture3D.WSize == pResource->depth() ||
-          ((pViewDesc->Texture3D.WSize == 0xffffffff) &&
-           pViewDesc->Texture3D.FirstWSlice == 0)) {
-        *ppView = pResource->newTextureView(
-            metal_format.PixelFormat, MTL::TextureType3D,
-            NS::Range::Make(pViewDesc->Texture3D.MipSlice, 1),
-            NS::Range::Make(0, 1));
-        AttachmentDesc.RenderTargetArrayLength = pResource->depth();
+      if (ViewDesc.Texture3D.WSize == 1) {
+        Descriptor.type = MTL::TextureType3D;
+        Descriptor.format = metal_format.PixelFormat;
+        Descriptor.firstMiplevel = ViewDesc.Texture3D.MipSlice;
+        Descriptor.miplevelCount = 1;
+        Descriptor.firstArraySlice = 0;
+        Descriptor.arraySize = 1;
+        AttachmentDesc.DepthPlane = ViewDesc.Texture3D.FirstWSlice;
         return S_OK;
       }
-      ERR("tex3d rtv creation not properly handled: ",
-          pViewDesc->Texture3D.FirstWSlice, ":", pViewDesc->Texture3D.WSize,
-          ":", pResource->depth());
-      *ppView = pResource->newTextureView(
-          metal_format.PixelFormat, MTL::TextureType3D,
-          NS::Range::Make(pViewDesc->Texture3D.MipSlice, 1),
-          NS::Range::Make(0, 1));
-      AttachmentDesc.DepthPlane = pViewDesc->Texture3D.FirstWSlice;
-      return S_OK;
+      ERR("tex3d rtv creation not properly handled: ", ViewDesc.Texture3D.FirstWSlice, ":", ViewDesc.Texture3D.WSize,
+          ":", ArraySize);
     }
     break;
   }
   }
   ERR("Unhandled rtv creation: \n Source: ", texture_type,
-      "\n Desired: ", pViewDesc->ViewDimension);
+      "\n Desired: ", ViewDesc.ViewDimension);
   return E_FAIL;
 }
 
+template <>
 HRESULT
-CreateMTLDepthStencilView(MTLD3D11Device *pDevice, MTL::Texture *pResource,
-                          const D3D11_DEPTH_STENCIL_VIEW_DESC *pViewDesc,
-                          MTL::Texture **ppView,
-                          MTL_RENDER_PASS_ATTACHMENT_DESC &AttachmentDesc) {
+InitializeAndNormalizeViewDescriptor(
+    MTLD3D11Device *pDevice, unsigned MiplevelCount, unsigned ArraySize, Texture *pTexture,
+    D3D11_DEPTH_STENCIL_VIEW_DESC &ViewDesc, MTL_RENDER_PASS_ATTACHMENT_DESC &AttachmentDesc,
+    TextureViewDescriptor &Descriptor
+) {
   MTL_DXGI_FORMAT_DESC metal_format;
-  if (FAILED(MTLQueryDXGIFormat(pDevice->GetMTLDevice(), pViewDesc->Format,
-                                metal_format))) {
-    ERR("Failed to create DSV due to unsupported format ", pViewDesc->Format);
+  if (FAILED(MTLQueryDXGIFormat(pDevice->GetMTLDevice(), ViewDesc.Format, metal_format))) {
+    ERR("Failed to create DSV due to unsupported format ", ViewDesc.Format);
     return E_FAIL;
   }
 
+  Descriptor.usage = MTL::TextureUsageRenderTarget;
   AttachmentDesc.Slice = 0; // use the original texture if format is the same?
   AttachmentDesc.Level = 0;
   AttachmentDesc.DepthPlane = 0;
   AttachmentDesc.RenderTargetArrayLength = 0;
-  AttachmentDesc.SampleCount = pResource->sampleCount();
+  AttachmentDesc.SampleCount = pTexture->sampleCount();
 
-  auto texture_type = pResource->textureType();
-  switch (pViewDesc->ViewDimension) {
+  auto texture_type = pTexture->textureType();
+  switch (ViewDesc.ViewDimension) {
   default:
     break;
   case D3D11_DSV_DIMENSION_TEXTURE1D: {
+    if (texture_type == MTL::TextureType1D || texture_type == MTL::TextureType1DArray) {
+      Descriptor.type = MTL::TextureType1D;
+      Descriptor.format = metal_format.PixelFormat;
+      Descriptor.firstMiplevel = ViewDesc.Texture1D.MipSlice;
+      Descriptor.miplevelCount = 1;
+      Descriptor.firstArraySlice = 0;
+      Descriptor.arraySize = 1;
+      return S_OK;
+    }
     break;
   }
   case D3D11_DSV_DIMENSION_TEXTURE1DARRAY: {
+    if (~ViewDesc.Texture1DArray.ArraySize == 0)
+      ViewDesc.Texture1DArray.ArraySize = ArraySize - ViewDesc.Texture1DArray.FirstArraySlice;
+    if (texture_type == MTL::TextureType1D || texture_type == MTL::TextureType1DArray) {
+      Descriptor.type = MTL::TextureType1DArray;
+      Descriptor.format = metal_format.PixelFormat;
+      Descriptor.firstMiplevel = ViewDesc.Texture1DArray.MipSlice;
+      Descriptor.miplevelCount = 1;
+      Descriptor.firstArraySlice = ViewDesc.Texture1DArray.FirstArraySlice;
+      Descriptor.arraySize = ViewDesc.Texture1DArray.ArraySize;
+      AttachmentDesc.RenderTargetArrayLength = Descriptor.arraySize;
+      return S_OK;
+    }
     break;
   }
   case D3D11_DSV_DIMENSION_TEXTURE2D: {
-    if (texture_type == MTL::TextureType2D) {
-      *ppView = pResource->newTextureView(
-          metal_format.PixelFormat, MTL::TextureType2D,
-          NS::Range::Make(pViewDesc->Texture2D.MipSlice, 1),
-          NS::Range::Make(0, 1));
-      return S_OK;
-    }
-    if (texture_type == MTL::TextureType2DArray) {
-      *ppView = pResource->newTextureView(
-          metal_format.PixelFormat, MTL::TextureType2D,
-          NS::Range::Make(pViewDesc->Texture2D.MipSlice, 1),
-          NS::Range::Make(0, 1));
+    if (texture_type == MTL::TextureType2D || texture_type == MTL::TextureType2DArray) {
+      Descriptor.type = MTL::TextureType2D;
+      Descriptor.format = metal_format.PixelFormat;
+      Descriptor.firstMiplevel = ViewDesc.Texture2D.MipSlice;
+      Descriptor.miplevelCount = 1;
+      Descriptor.firstArraySlice = 0;
+      Descriptor.arraySize = 1;
       return S_OK;
     }
     break;
   }
   case D3D11_DSV_DIMENSION_TEXTURE2DARRAY: {
-    if (texture_type == MTL::TextureType2D) {
-      *ppView = pResource->newTextureView(
-          metal_format.PixelFormat, MTL::TextureType2DArray,
-          NS::Range::Make(pViewDesc->Texture2DArray.MipSlice, 1),
-          NS::Range::Make(0, 1));
-      AttachmentDesc.RenderTargetArrayLength = 1;
-      return S_OK;
-    }
-    if (texture_type == MTL::TextureType2DArray) {
-      auto array_size = pViewDesc->Texture2DArray.ArraySize == 0xffffffff
-                            ? pResource->arrayLength() -
-                                  pViewDesc->Texture2DArray.FirstArraySlice
-                            : pViewDesc->Texture2DArray.ArraySize;
-      *ppView = pResource->newTextureView(
-          metal_format.PixelFormat, MTL::TextureType2DArray,
-          NS::Range::Make(pViewDesc->Texture2DArray.MipSlice, 1),
-          NS::Range::Make(pViewDesc->Texture2DArray.FirstArraySlice,
-                          array_size));
-      AttachmentDesc.RenderTargetArrayLength = array_size;
-      return S_OK;
-    }
-    if (texture_type == MTL::TextureTypeCube) {
-      auto array_size = pViewDesc->Texture2DArray.ArraySize == 0xffffffff
-                            ? 6 * pResource->arrayLength() -
-                                  pViewDesc->Texture2DArray.FirstArraySlice
-                            : pViewDesc->Texture2DArray.ArraySize;
-      *ppView = pResource->newTextureView(
-          metal_format.PixelFormat, MTL::TextureType2DArray,
-          NS::Range::Make(pViewDesc->Texture2DArray.MipSlice, 1),
-          NS::Range::Make(pViewDesc->Texture2DArray.FirstArraySlice,
-                          array_size));
-      AttachmentDesc.RenderTargetArrayLength = array_size;
+    if (~ViewDesc.Texture2DArray.ArraySize == 0)
+      ViewDesc.Texture2DArray.ArraySize = ArraySize - ViewDesc.Texture2DArray.FirstArraySlice;
+    if (texture_type == MTL::TextureType2D || texture_type == MTL::TextureType2DArray ||
+        texture_type == MTL::TextureTypeCube || texture_type == MTL::TextureTypeCubeArray) {
+      Descriptor.type = MTL::TextureType2DArray;
+      Descriptor.format = metal_format.PixelFormat;
+      Descriptor.firstMiplevel = ViewDesc.Texture2DArray.MipSlice;
+      Descriptor.miplevelCount = 1;
+      Descriptor.firstArraySlice = ViewDesc.Texture2DArray.FirstArraySlice;
+      Descriptor.arraySize = ViewDesc.Texture2DArray.ArraySize;
+      AttachmentDesc.RenderTargetArrayLength = Descriptor.arraySize;
       return S_OK;
     }
     break;
   }
   case D3D11_DSV_DIMENSION_TEXTURE2DMS: {
     if (texture_type == MTL::TextureType2DMultisample) {
-      *ppView = pResource->newTextureView(
-          metal_format.PixelFormat, MTL::TextureType2DMultisample,
-          NS::Range::Make(0, 1), NS::Range::Make(0, 1));
+      Descriptor.type = MTL::TextureType2DMultisample;
+      Descriptor.format = metal_format.PixelFormat;
+      Descriptor.firstMiplevel = 0;
+      Descriptor.miplevelCount = 1;
+      Descriptor.firstArraySlice = 0;
+      Descriptor.arraySize = 1;
       return S_OK;
     }
     if (texture_type == MTL::TextureType2D) {
       WARN("A texture2d view is created on multisampled texture");
-      *ppView = pResource->newTextureView(
-          metal_format.PixelFormat, MTL::TextureType2D,
-          NS::Range::Make(0, 1), NS::Range::Make(0, 1));
+      Descriptor.type = MTL::TextureType2D;
+      Descriptor.format = metal_format.PixelFormat;
+      Descriptor.firstMiplevel = 0;
+      Descriptor.miplevelCount = 1;
+      Descriptor.firstArraySlice = 0;
+      Descriptor.arraySize = 1;
       return S_OK;
     }
     break;
@@ -541,8 +523,7 @@ CreateMTLDepthStencilView(MTLD3D11Device *pDevice, MTL::Texture *pResource,
     break;
   }
   }
-  ERR("Unhandled dsv creation: \n Source: ", texture_type,
-      "\n Desired: ", pViewDesc->ViewDimension);
+  ERR("Unhandled dsv creation: \n Source: ", texture_type, "\n Desired: ", ViewDesc.ViewDimension);
   return E_FAIL;
 }
 

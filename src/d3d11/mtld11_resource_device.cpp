@@ -16,8 +16,6 @@ template <typename tag_texture>
 class DeviceTexture : public TResourceBase<tag_texture, IMTLBindable, IMTLMinLODClampable> {
 private:
   std::unique_ptr<Texture> underlying_texture_;
-  Obj<MTL::Texture> texture;
-  MTL::ResourceID texture_handle;
   SIMPLE_RESIDENCY_TRACKER residency{};
   SIMPLE_OCCUPANCY_TRACKER occupancy{};
   float min_lod = 0.0;
@@ -94,18 +92,24 @@ private:
       TResourceViewBase<tag_render_target_view<DeviceTexture<tag_texture>>>;
   class TextureRTV : public RTVBase {
   private:
-    Obj<MTL::Texture> view;
-    MTL::PixelFormat view_pixel_format;
+    TextureViewKey view_key_;
+    MTL::PixelFormat view_format_;
     MTL_RENDER_PASS_ATTACHMENT_DESC attachment_desc;
 
   public:
-    TextureRTV(MTL::Texture *view, const tag_render_target_view<>::DESC1 *pDesc,
-               DeviceTexture *pResource, MTLD3D11Device *pDevice,
-               const MTL_RENDER_PASS_ATTACHMENT_DESC &mtl_rtv_desc)
-        : RTVBase(pDesc, pResource, pDevice), view(view),
-          view_pixel_format(view->pixelFormat()), attachment_desc(mtl_rtv_desc) {}
+    TextureRTV(
+        TextureViewKey view_key, MTL::PixelFormat view_format, const tag_render_target_view<>::DESC1 *pDesc,
+        DeviceTexture *pResource, MTLD3D11Device *pDevice, const MTL_RENDER_PASS_ATTACHMENT_DESC &mtl_rtv_desc
+    ) :
+        RTVBase(pDesc, pResource, pDevice),
+        view_key_(view_key),
+        view_format_(view_format),
+        attachment_desc(mtl_rtv_desc) {}
 
-    MTL::PixelFormat GetPixelFormat() final { return view_pixel_format; }
+    MTL::PixelFormat
+    GetPixelFormat() final {
+      return view_format_;
+    }
 
     MTL_RENDER_PASS_ATTACHMENT_DESC &GetAttachmentDesc() final {
       return attachment_desc;
@@ -113,14 +117,8 @@ private:
 
     BindingRef UseBindable(uint64_t seq_id) final {
       this->resource->occupancy.MarkAsOccupied(seq_id);
-      return BindingRef(static_cast<ID3D11View *>(this), view.ptr());
-    }
-
-    void OnSetDebugObjectName(LPCSTR Name) override {
-      if (!Name) {
-        return;
-      }
-      view->setLabel(NS::String::string((char *)Name, NS::ASCIIStringEncoding));
+      auto view = this->resource->underlying_texture_->view(view_key_);
+      return BindingRef(static_cast<ID3D11View *>(this), view);
     }
   };
 
@@ -128,53 +126,52 @@ private:
       TResourceViewBase<tag_depth_stencil_view<DeviceTexture<tag_texture>>>;
   class TextureDSV : public DSVBase {
   private:
-    Obj<MTL::Texture> view;
-    MTL::PixelFormat view_pixel_format;
+    TextureViewKey view_key_;
+    MTL::PixelFormat view_format_;
     MTL_RENDER_PASS_ATTACHMENT_DESC attachment_desc;
 
   public:
-    TextureDSV(MTL::Texture *view, const tag_depth_stencil_view<>::DESC1 *pDesc,
-               DeviceTexture *pResource, MTLD3D11Device *pDevice,
-               const MTL_RENDER_PASS_ATTACHMENT_DESC &attachment_desc)
-        : DSVBase(pDesc, pResource, pDevice), view(view),
-          view_pixel_format(view->pixelFormat()),
-          attachment_desc(attachment_desc) {}
+    TextureDSV(
+        TextureViewKey view_key, MTL::PixelFormat view_format, const tag_depth_stencil_view<>::DESC1 *pDesc,
+        DeviceTexture *pResource, MTLD3D11Device *pDevice, const MTL_RENDER_PASS_ATTACHMENT_DESC &attachment_desc
+    ) :
+        DSVBase(pDesc, pResource, pDevice),
+        view_key_(view_key),
+        view_format_(view_format),
+        attachment_desc(attachment_desc) {}
 
-    MTL::PixelFormat GetPixelFormat() final { return view_pixel_format; }
+    MTL::PixelFormat
+    GetPixelFormat() final {
+      return view_format_;
+    }
 
     BindingRef UseBindable(uint64_t seq_id) final {
       this->resource->occupancy.MarkAsOccupied(seq_id);
-      return BindingRef(static_cast<ID3D11View *>(this), view.ptr());
+      auto view = this->resource->underlying_texture_->view(view_key_);
+      return BindingRef(static_cast<ID3D11View *>(this), view);
     }
 
     MTL_RENDER_PASS_ATTACHMENT_DESC &GetAttachmentDesc() final {
       return attachment_desc;
     };
-
-    void OnSetDebugObjectName(LPCSTR Name) override {
-      if (!Name) {
-        return;
-      }
-      view->setLabel(NS::String::string((char *)Name, NS::ASCIIStringEncoding));
-    }
   };
 
 public:
   DeviceTexture(const tag_texture::DESC1 *pDesc, std::unique_ptr<Texture> &&u_texture, MTLD3D11Device *pDevice) :
       TResourceBase<tag_texture, IMTLBindable, IMTLMinLODClampable>(*pDesc, pDevice),
-      underlying_texture_(std::move(u_texture)),
-      texture(underlying_texture_->current()->texture()),
-      texture_handle(texture->gpuResourceID()) {}
+      underlying_texture_(std::move(u_texture)){}
 
-  BindingRef UseBindable(uint64_t seq_id) override {
+  BindingRef
+  UseBindable(uint64_t seq_id) override {
     occupancy.MarkAsOccupied(seq_id);
-    return BindingRef(static_cast<ID3D11Resource *>(this), texture.ptr());
+    return BindingRef(static_cast<ID3D11Resource *>(this), underlying_texture_->current()->texture());
   };
 
-  ArgumentData GetArgumentData(SIMPLE_RESIDENCY_TRACKER **ppTracker) override {
+  ArgumentData
+  GetArgumentData(SIMPLE_RESIDENCY_TRACKER **ppTracker) override {
     *ppTracker = &residency;
     // rarely used, since texture is not directly accessed by pipeline
-    return ArgumentData(texture_handle, texture.ptr());
+    return ArgumentData({underlying_texture_->current()->gpuResourceID}, underlying_texture_->current()->texture());
   }
 
   bool GetContentionState(uint64_t finished_seq_id) override {
@@ -193,18 +190,25 @@ public:
                                                     &finalDesc))) {
       return E_INVALIDARG;
     }
-    Obj<MTL::Texture> view;
+    TextureViewDescriptor descriptor;
+    uint32_t arraySize;
+    if constexpr (std::is_same_v<typename tag_texture::DESC1, D3D11_TEXTURE3D_DESC1>) {
+      arraySize = this->desc.Depth;
+    } else {
+      arraySize = this->desc.ArraySize;
+    }
     MTL_RENDER_PASS_ATTACHMENT_DESC attachment_desc;
-    if (FAILED(CreateMTLRenderTargetView(this->m_parent, this->texture,
-                                         &finalDesc, &view, attachment_desc))) {
+    if (FAILED(InitializeAndNormalizeViewDescriptor(
+            this->m_parent, this->desc.MipLevels, arraySize, this->underlying_texture_.get(), finalDesc,
+            attachment_desc, descriptor
+        ))) {
       return E_FAIL;
     }
-    if (ppView) {
-      *ppView = ref(new TextureRTV(view, &finalDesc, this, this->m_parent,
-                                   attachment_desc));
-    } else {
+    if (!ppView) {
       return S_FALSE;
     }
+    TextureViewKey key = underlying_texture_->createView(descriptor);
+    *ppView = ref(new TextureRTV(key, descriptor.format, &finalDesc, this, this->m_parent, attachment_desc));
     return S_OK;
   };
 
@@ -215,17 +219,25 @@ public:
                                                     &finalDesc))) {
       return E_INVALIDARG;
     }
-    Obj<MTL::Texture> view;
+        TextureViewDescriptor descriptor;
+    uint32_t arraySize;
+    if constexpr (std::is_same_v<typename tag_texture::DESC1, D3D11_TEXTURE3D_DESC1>) {
+      arraySize = this->desc.Depth;
+    } else {
+      arraySize = this->desc.ArraySize;
+    }
     MTL_RENDER_PASS_ATTACHMENT_DESC attachment_desc;
-    if (FAILED(CreateMTLDepthStencilView(this->m_parent, this->texture,
-                                         &finalDesc, &view, attachment_desc))) {
+    if (FAILED(InitializeAndNormalizeViewDescriptor(
+            this->m_parent, this->desc.MipLevels, arraySize, this->underlying_texture_.get(), finalDesc,
+            attachment_desc, descriptor
+        ))) {
       return E_FAIL;
     }
-    if (ppView) {
-      *ppView = ref(new TextureDSV(view, &finalDesc, this, this->m_parent, attachment_desc));
-    } else {
+    if (!ppView) {
       return S_FALSE;
     }
+    TextureViewKey key = underlying_texture_->createView(descriptor);
+    *ppView = ref(new TextureDSV(key, descriptor.format, &finalDesc, this, this->m_parent, attachment_desc));
     return S_OK;
   };
 
@@ -287,14 +299,6 @@ public:
     *ppView = ref(new TextureUAV(key, &finalDesc, this, this->m_parent));
     return S_OK;
   };
-
-  void OnSetDebugObjectName(LPCSTR Name) override {
-    if (!Name) {
-      return;
-    }
-    texture->setLabel(
-        NS::String::string((char *)Name, NS::ASCIIStringEncoding));
-  }
 
   void SetMinLOD(float MinLod) override { min_lod = MinLod; }
 
