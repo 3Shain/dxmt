@@ -630,6 +630,16 @@ HRESULT GetLinearTextureLayout(MTLD3D11Device *pDevice,
   }
   uint32_t w, h, d;
   GetMipmapSize(pDesc, level, &w, &h, &d);
+  if (metal_format.Flag & MTL_DXGI_FORMAT_BC) {
+    D3D11_ASSERT(w != 0 && h != 0);
+    auto w_phisical = align(w, 4);
+    auto h_phisical = align(h, 4);
+    auto aligned_bytes_per_row = metal_format.BytesPerTexel * w_phisical >> 2;
+    *pBytesPerRow = aligned_bytes_per_row; // 1 row of block is 4 row of pixel
+    *pBytesPerImage = aligned_bytes_per_row * h_phisical >> 2;
+    *pBytesPerSlice = aligned_bytes_per_row * h_phisical * d >> 2;
+    return S_OK;
+  }
   auto bytes_per_row_unaligned = metal_format.BytesPerTexel * w;
   auto alignment = metal->minimumLinearTextureAlignmentForPixelFormat(
       metal_format.PixelFormat);
