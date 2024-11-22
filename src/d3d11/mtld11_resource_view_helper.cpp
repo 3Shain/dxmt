@@ -208,6 +208,17 @@ HRESULT CreateMTLTextureView<D3D11_SHADER_RESOURCE_VIEW_DESC1>(
           NS::Range::Make(0, 6), swizzle);
       return S_OK;
     }
+    if (texture_type == MTL::TextureTypeCubeArray) {
+      *ppView = pResource->newTextureView(
+          metal_format.PixelFormat, MTL::TextureTypeCube,
+          NS::Range::Make(pViewDesc->TextureCube.MostDetailedMip,
+                          pViewDesc->TextureCube.MipLevels == 0xffffffffu
+                              ? pResource->mipmapLevelCount() -
+                                    pViewDesc->TextureCube.MostDetailedMip
+                              : pViewDesc->TextureCube.MipLevels),
+          NS::Range::Make(0, 6), swizzle);
+      return S_OK;
+    }
     break;
   }
   case D3D_SRV_DIMENSION_TEXTURECUBEARRAY: {
