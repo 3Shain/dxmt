@@ -24,26 +24,31 @@ since it is for internal use only
 
 namespace dxmt {
 
-inline std::pair<MTL::PrimitiveType, uint32_t>
-to_metal_primitive_type(D3D11_PRIMITIVE_TOPOLOGY topo) {
-
+inline bool
+to_metal_primitive_type(D3D11_PRIMITIVE_TOPOLOGY topo, MTL::PrimitiveType& primitive, uint32_t& control_point_num) {
+  control_point_num = 0;
   switch (topo) {
   case D3D_PRIMITIVE_TOPOLOGY_POINTLIST:
-    return {MTL::PrimitiveTypePoint, 0};
+    primitive = MTL::PrimitiveTypePoint;
+    break;
   case D3D_PRIMITIVE_TOPOLOGY_LINELIST:
-    return {MTL::PrimitiveTypeLine, 0};
+    primitive = MTL::PrimitiveTypeLine;
+    break;
   case D3D_PRIMITIVE_TOPOLOGY_LINESTRIP:
-    return {MTL::PrimitiveTypeLineStrip, 0};
+    primitive = MTL::PrimitiveTypeLineStrip;
+    break;
   case D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST:
-    return {MTL::PrimitiveTypeTriangle, 0};
+    primitive = MTL::PrimitiveTypeTriangle;
+    break;
   case D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP:
-    return {MTL::PrimitiveTypeTriangleStrip, 0};
+    primitive = MTL::PrimitiveTypeTriangleStrip;
+    break;
   case D3D_PRIMITIVE_TOPOLOGY_LINELIST_ADJ:
   case D3D_PRIMITIVE_TOPOLOGY_LINESTRIP_ADJ:
   case D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST_ADJ:
   case D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP_ADJ:
-    // FIXME
-    return {MTL::PrimitiveTypePoint, 0};
+    WARN("adjacency topology is not implemented.");
+    return false;
   case D3D_PRIMITIVE_TOPOLOGY_1_CONTROL_POINT_PATCHLIST:
   case D3D_PRIMITIVE_TOPOLOGY_2_CONTROL_POINT_PATCHLIST:
   case D3D_PRIMITIVE_TOPOLOGY_3_CONTROL_POINT_PATCHLIST:
@@ -76,11 +81,13 @@ to_metal_primitive_type(D3D11_PRIMITIVE_TOPOLOGY topo) {
   case D3D_PRIMITIVE_TOPOLOGY_30_CONTROL_POINT_PATCHLIST:
   case D3D_PRIMITIVE_TOPOLOGY_31_CONTROL_POINT_PATCHLIST:
   case D3D_PRIMITIVE_TOPOLOGY_32_CONTROL_POINT_PATCHLIST:
-    // FIXME
-    return {MTL::PrimitiveTypePoint, topo - 32};
+    primitive = MTL::PrimitiveTypePoint;
+    control_point_num = topo - 32;
+    break;
   default:
-    D3D11_ASSERT(0 && "Invalid topology");
+    return false;
   }
+  return true;
 }
 
 inline MTL::PrimitiveTopologyClass
@@ -898,9 +905,12 @@ public:
 
   void
   Draw(UINT VertexCount, UINT StartVertexLocation) override {
+    MTL::PrimitiveType Primitive;
+    uint32_t ControlPointCount;
+    if(!to_metal_primitive_type(state_.InputAssembler.Topology, Primitive, ControlPointCount))
+      return;
     if (!PreDraw<false>())
       return;
-    auto [Primitive, ControlPointCount] = to_metal_primitive_type(state_.InputAssembler.Topology);
     if (ControlPointCount) {
       return TessellationDraw(ControlPointCount, VertexCount, 1, StartVertexLocation, 0);
     }
@@ -912,9 +922,12 @@ public:
 
   void
   DrawIndexed(UINT IndexCount, UINT StartIndexLocation, INT BaseVertexLocation) override {
+    MTL::PrimitiveType Primitive;
+    uint32_t ControlPointCount;
+    if(!to_metal_primitive_type(state_.InputAssembler.Topology, Primitive, ControlPointCount))
+      return;
     if (!PreDraw<true>())
       return;
-    auto [Primitive, ControlPointCount] = to_metal_primitive_type(state_.InputAssembler.Topology);
     if (ControlPointCount) {
       return TessellationDrawIndexed(ControlPointCount, IndexCount, StartIndexLocation, BaseVertexLocation, 1, 0);
     };
@@ -934,15 +947,17 @@ public:
   void
   DrawInstanced(UINT VertexCountPerInstance, UINT InstanceCount, UINT StartVertexLocation, UINT StartInstanceLocation)
       override {
+    MTL::PrimitiveType Primitive;
+    uint32_t ControlPointCount;
+    if(!to_metal_primitive_type(state_.InputAssembler.Topology, Primitive, ControlPointCount))
+      return;
     if (!PreDraw<false>())
       return;
-    auto [Primitive, ControlPointCount] = to_metal_primitive_type(state_.InputAssembler.Topology);
     if (ControlPointCount) {
       return TessellationDraw(
           ControlPointCount, VertexCountPerInstance, InstanceCount, StartVertexLocation, StartInstanceLocation
       );
     }
-    // TODO: skip invalid topology
     EmitRenderCommand([Primitive, StartVertexLocation, VertexCountPerInstance, InstanceCount,
                        StartInstanceLocation](MTL::RenderCommandEncoder *encoder) {
       encoder->drawPrimitives(
@@ -956,9 +971,12 @@ public:
       UINT IndexCountPerInstance, UINT InstanceCount, UINT StartIndexLocation, INT BaseVertexLocation,
       UINT StartInstanceLocation
   ) override {
+    MTL::PrimitiveType Primitive;
+    uint32_t ControlPointCount;
+    if(!to_metal_primitive_type(state_.InputAssembler.Topology, Primitive, ControlPointCount))
+      return;
     if (!PreDraw<true>())
       return;
-    auto [Primitive, ControlPointCount] = to_metal_primitive_type(state_.InputAssembler.Topology);
     if (ControlPointCount) {
       return TessellationDrawIndexed(
           ControlPointCount, IndexCountPerInstance, StartIndexLocation, BaseVertexLocation, InstanceCount,
@@ -966,7 +984,6 @@ public:
       );
       return;
     }
-    // TODO: skip invalid topology
     auto IndexType =
         state_.InputAssembler.IndexBufferFormat == DXGI_FORMAT_R32_UINT ? MTL::IndexTypeUInt32 : MTL::IndexTypeUInt16;
     auto IndexBufferOffset =
@@ -1101,10 +1118,14 @@ public:
 
   void
   DrawIndexedInstancedIndirect(ID3D11Buffer *pBufferForArgs, UINT AlignedByteOffsetForArgs) override {
+    MTL::PrimitiveType Primitive;
+    uint32_t ControlPointCount;
+    if(!to_metal_primitive_type(state_.InputAssembler.Topology, Primitive, ControlPointCount))
+      return;
     if (!PreDraw<true>())
       return;
-    auto [Primitive, ControlPointCount] = to_metal_primitive_type(state_.InputAssembler.Topology);
     if (ControlPointCount) {
+      // TODO: indirect tessellation
       return;
     }
     auto IndexType =
@@ -1124,10 +1145,14 @@ public:
 
   void
   DrawInstancedIndirect(ID3D11Buffer *pBufferForArgs, UINT AlignedByteOffsetForArgs) override {
+    MTL::PrimitiveType Primitive;
+    uint32_t ControlPointCount;
+    if(!to_metal_primitive_type(state_.InputAssembler.Topology, Primitive, ControlPointCount))
+      return;
     if (!PreDraw<true>())
       return;
-    auto [Primitive, ControlPointCount] = to_metal_primitive_type(state_.InputAssembler.Topology);
     if (ControlPointCount) {
+      // TODO: indirect tessellation
       return;
     }
     if (auto bindable = com_cast<IMTLBindable>(pBufferForArgs)) {
