@@ -319,6 +319,8 @@ public:
   STDMETHODCALLTYPE
   Present1(UINT SyncInterval, UINT PresentFlags,
            const DXGI_PRESENT_PARAMETERS *pPresentParameters) final {
+    if (PresentFlags & DXGI_PRESENT_TEST)
+      return S_OK;
 
     frame_latency_fence.wait(0, std::memory_order_relaxed);
     if (destroyed)
