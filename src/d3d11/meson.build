@@ -17,7 +17,6 @@ d3d11_src = [
   'mtld11_resource_device.cpp',
   'mtld11_resource_dynamic.cpp',
   'mtld11_resource_staging.cpp',
-  'mtld11_resource_backbuf.cpp',
   'dxmt_resource_binding.cpp',
   'd3d11_pipeline.cpp',
   'd3d11_pipeline_tess.cpp',

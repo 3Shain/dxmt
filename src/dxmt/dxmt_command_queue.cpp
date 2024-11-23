@@ -47,7 +47,7 @@ CommandQueue::CommandQueue(MTL::Device *device) :
                     MTL::ResourceStorageModeShared
     ),
     copy_temp_allocator(device, MTL::ResourceHazardTrackingModeUntracked | MTL::ResourceStorageModePrivate),
-    clear_cmd(device),
+    emulated_cmd(device),
     counter_pool(device) {
   commandQueue = transfer(device->newCommandQueue(kCommandChunkCount));
   for (unsigned i = 0; i < kCommandChunkCount; i++) {
