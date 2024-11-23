@@ -693,13 +693,6 @@ public:
     }
   }
 
-  void
-  FlushInternal(
-      std::function<void(MTL::CommandBuffer *)> &&beforeCommit, std::function<void(void)> &&onFinished, bool present_
-  ) final {
-    // nop
-  }
-
   HRESULT
   GetData(ID3D11Asynchronous *pAsync, void *pData, UINT DataSize, UINT GetDataFlags) override {
     return E_FAIL;

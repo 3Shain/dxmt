@@ -577,16 +577,16 @@ public:
     case D3D11_UAV_DIMENSION_BUFFER: {
       if (desc.Buffer.Flags & D3D11_BUFFER_UAV_FLAG_RAW) {
         EmitComputeCommandChk<true>([buffer = Use(bindable), value](auto encoder, auto &ctx) {
-          ctx.queue->clear_cmd.ClearBufferUint(encoder, buffer.buffer(), buffer.offset(), buffer.width() >> 2, value);
+          ctx.queue->emulated_cmd.ClearBufferUint(encoder, buffer.buffer(), buffer.offset(), buffer.width() >> 2, value);
         });
       } else {
         if (desc.Format == DXGI_FORMAT_UNKNOWN) {
           EmitComputeCommandChk<true>([buffer = Use(bindable), value](auto encoder, auto &ctx) {
-            ctx.queue->clear_cmd.ClearBufferUint(encoder, buffer.buffer(), buffer.offset(), buffer.width() >> 2, value);
+            ctx.queue->emulated_cmd.ClearBufferUint(encoder, buffer.buffer(), buffer.offset(), buffer.width() >> 2, value);
           });
         } else {
           EmitComputeCommandChk<true>([tex = Use(bindable), value](auto encoder, auto &ctx) {
-            ctx.queue->clear_cmd.ClearTextureBufferUint(encoder, tex.texture(&ctx), value);
+            ctx.queue->emulated_cmd.ClearTextureBufferUint(encoder, tex.texture(&ctx), value);
           });
         }
       }
@@ -600,7 +600,7 @@ public:
       break;
     case D3D11_UAV_DIMENSION_TEXTURE2D:
       EmitComputeCommandChk<true>([tex = Use(bindable), value](auto encoder, auto &ctx) {
-        ctx.queue->clear_cmd.ClearTexture2DUint(encoder, tex.texture(&ctx), value);
+        ctx.queue->emulated_cmd.ClearTexture2DUint(encoder, tex.texture(&ctx), value);
       });
       break;
     case D3D11_UAV_DIMENSION_TEXTURE2DARRAY:
@@ -608,7 +608,7 @@ public:
       break;
     case D3D11_UAV_DIMENSION_TEXTURE3D:
       EmitComputeCommandChk<true>([tex = Use(bindable), value](auto encoder, auto &ctx) {
-        ctx.queue->clear_cmd.ClearTexture3DUint(encoder, tex.texture(&ctx), value);
+        ctx.queue->emulated_cmd.ClearTexture3DUint(encoder, tex.texture(&ctx), value);
       });
       break;
     }
@@ -628,18 +628,18 @@ public:
     case D3D11_UAV_DIMENSION_BUFFER: {
       if (desc.Buffer.Flags & D3D11_BUFFER_UAV_FLAG_RAW) {
         EmitComputeCommandChk<true>([buffer = Use(bindable), value](auto encoder, auto &ctx) {
-          ctx.queue->clear_cmd.ClearBufferFloat(encoder, buffer.buffer(), buffer.offset(), buffer.width() >> 2, value);
+          ctx.queue->emulated_cmd.ClearBufferFloat(encoder, buffer.buffer(), buffer.offset(), buffer.width() >> 2, value);
         });
       } else {
         if (desc.Format == DXGI_FORMAT_UNKNOWN) {
           EmitComputeCommandChk<true>([buffer = Use(bindable), value](auto encoder, auto &ctx) {
-            ctx.queue->clear_cmd.ClearBufferFloat(
+            ctx.queue->emulated_cmd.ClearBufferFloat(
                 encoder, buffer.buffer(), buffer.offset(), buffer.width() >> 2, value
             );
           });
         } else {
           EmitComputeCommandChk<true>([tex = Use(bindable), value](auto encoder, auto &ctx) {
-            ctx.queue->clear_cmd.ClearTextureBufferFloat(encoder, tex.texture(&ctx), value);
+            ctx.queue->emulated_cmd.ClearTextureBufferFloat(encoder, tex.texture(&ctx), value);
           });
         }
       }
@@ -653,7 +653,7 @@ public:
       break;
     case D3D11_UAV_DIMENSION_TEXTURE2D:
       EmitComputeCommandChk<true>([tex = Use(bindable), value](auto encoder, auto &ctx) {
-        ctx.queue->clear_cmd.ClearTexture2DFloat(encoder, tex.texture(&ctx), value);
+        ctx.queue->emulated_cmd.ClearTexture2DFloat(encoder, tex.texture(&ctx), value);
       });
       break;
     case D3D11_UAV_DIMENSION_TEXTURE2DARRAY:
@@ -2188,8 +2188,6 @@ public:
   template <ShaderType stage, bool Tessellation> bool UploadShaderStageResourceBinding();
 
   void UpdateVertexBuffer();
-
-  virtual void Commit() = 0;
 
   /**
   Valid transition:

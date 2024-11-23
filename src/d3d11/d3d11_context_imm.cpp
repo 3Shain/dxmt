@@ -652,22 +652,6 @@ public:
     }
   }
 
-  void
-  FlushInternal(
-      std::function<void(MTL::CommandBuffer *)> &&beforeCommit, std::function<void(void)> &&onFinished, bool present_
-  ) final {
-    if (InvalidateCurrentPass(true)) {
-      D3D11_ASSERT(0 && "unexpected commit");
-    }
-    cmd_queue.CurrentChunk()->emit([bc = std::move(beforeCommit), _ = DestructorWrapper(
-                                                                      [of = std::move(onFinished)]() { of(); }, nullptr
-                                                                  )](CommandChunk::context &ctx) { bc(ctx.cmdbuf); });
-    Commit();
-    if (present_) {
-      cmd_queue.PresentBoundary();
-    }
-  }
-
   HRESULT
   GetData(ID3D11Asynchronous *pAsync, void *pData, UINT DataSize, UINT GetDataFlags) override {
     if (!pAsync || (DataSize && !pData))
@@ -808,7 +792,8 @@ public:
   virtual void
   WaitUntilGPUIdle() override {
     uint64_t seq = cmd_queue.CurrentSeqId();
-    FlushInternal([](auto) {}, []() {}, false);
+    if(!InvalidateCurrentPass())
+      Commit();
     cmd_queue.WaitCPUFence(seq);
   };
 

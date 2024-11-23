@@ -1,4 +1,5 @@
 #include "d3d11_swapchain.hpp"
+#include "MetalFX/MTLFXSpatialScaler.hpp"
 #include "QuartzCore/CADeveloperHUDProperties.hpp"
 #include "com/com_guid.hpp"
 #include "config/config.hpp"
@@ -8,14 +9,13 @@
 #include "d3d11_context.hpp"
 #include "log/log.hpp"
 #include "mtld11_resource.hpp"
-#include "util_error.hpp"
 #include "d3d11_device.hpp"
+#include "util_env.hpp"
 #include "util_string.hpp"
 #include "wsi_monitor.hpp"
 #include "wsi_platform_win32.hpp"
 #include "wsi_window.hpp"
 #include "dxmt_info.hpp"
-#include <atomic>
 #include <cfloat>
 
 /**
@@ -25,18 +25,25 @@ constexpr size_t kSwapchainLatency = 3;
 
 namespace dxmt {
 
-Com<IMTLD3D11BackBuffer>
-CreateEmulatedBackBuffer(MTLD3D11Device *pDevice,
-                         const DXGI_SWAP_CHAIN_DESC1 *pDesc, HWND hWnd);
 
+template <bool EnableMetalFX>
 class MTLD3D11SwapChain final : public MTLDXGISubObject<IDXGISwapChain4, MTLD3D11Device> {
 public:
-  MTLD3D11SwapChain(IDXGIFactory1 *pFactory, MTLD3D11Device *pDevice, HWND hWnd,
-                    const DXGI_SWAP_CHAIN_DESC1 *pDesc,
-                    const DXGI_SWAP_CHAIN_FULLSCREEN_DESC *pFullscreenDesc)
-      : MTLDXGISubObject(pDevice), factory_(pFactory), presentation_count_(0),
-        desc_(*pDesc), hWnd(hWnd), monitor_(wsi::getWindowMonitor(hWnd)),
-        hud(CA::DeveloperHUDProperties::instance()) {
+  MTLD3D11SwapChain(
+      IDXGIFactory1 *pFactory, MTLD3D11Device *pDevice, IMTLDXGIDevice *pLayerFactoryWeakref,
+      CA::MetalLayer *pLayerWeakref, HWND hWnd, void *hNativeView, const DXGI_SWAP_CHAIN_DESC1 *pDesc,
+      const DXGI_SWAP_CHAIN_FULLSCREEN_DESC *pFullscreenDesc
+  ) :
+      MTLDXGISubObject(pDevice),
+      factory_(pFactory),
+      layer_factory_weak_(pLayerFactoryWeakref),
+      native_view_(hNativeView),
+      layer_weak_(pLayerWeakref),
+      presentation_count_(0),
+      desc_(*pDesc),
+      hWnd(hWnd),
+      monitor_(wsi::getWindowMonitor(hWnd)),
+      hud(CA::DeveloperHUDProperties::instance()) {
 
     Com<ID3D11DeviceContext1> context;
     m_device->GetImmediateContext1(&context);
@@ -45,7 +52,6 @@ public:
     frame_latency = kSwapchainLatency;
     present_semaphore_ = CreateSemaphore(nullptr, frame_latency,
                                          DXGI_MAX_SWAP_CHAIN_BUFFERS, nullptr);
-    frame_latency_fence = frame_latency;
 
     if (desc_.Width == 0 || desc_.Height == 0) {
       wsi::getWindowSize(hWnd, &desc_.Width, &desc_.Height);
@@ -76,13 +82,35 @@ public:
     hud->updateLabel(str_dxmt_version,
                      NS::String::string(GetVersionDescriptionText(11, m_device->GetFeatureLevel()).c_str(),
                                         NS::UTF8StringEncoding));
+
+    backbuffer_desc_ = D3D11_TEXTURE2D_DESC1 {
+      .Width = desc_.Width,
+      .Height = desc_.Height,
+      .MipLevels = 1,
+      .ArraySize = 1,
+      .Format = desc_.Format,
+      .SampleDesc = desc_.SampleDesc,
+      .Usage = D3D11_USAGE_DEFAULT,
+      .BindFlags = D3D11_BIND_RENDER_TARGET,
+      .CPUAccessFlags = {},
+      .MiscFlags = {},
+      .TextureLayout = {},
+    };
+    // if (desc_.BufferUsage & DXGI_USAGE_SHADER_INPUT)
+    backbuffer_desc_.BindFlags |= D3D11_BIND_SHADER_RESOURCE;
+    if (desc_.BufferUsage & DXGI_USAGE_UNORDERED_ACCESS)
+      backbuffer_desc_.BindFlags |= D3D11_BIND_UNORDERED_ACCESS;
+
+    if constexpr (EnableMetalFX) {
+      scale_factor = std::max(Config::getInstance().getOption<float>("d3d11.metalSpatialUpscaleFactor", 2), 1.0f);
+    }
+
+    ResizeBuffers(0, 0, 0, DXGI_FORMAT_UNKNOWN, desc_.Flags);
   };
 
   ~MTLD3D11SwapChain() {
+    layer_factory_weak_->ReleaseMetalLayer(hWnd, native_view_);
     CloseHandle(present_semaphore_);
-    frame_latency_fence = frame_latency;
-    destroyed = true;
-    frame_latency_fence.notify_all();
   };
 
   HRESULT
@@ -126,9 +154,6 @@ public:
   STDMETHODCALLTYPE
   GetBuffer(UINT buffer_idx, REFIID riid, void **surface) final {
     if (buffer_idx == 0) {
-      if (!backbuffer_) {
-        backbuffer_ = CreateEmulatedBackBuffer(m_device, &desc_, hWnd);
-      }
       return backbuffer_->QueryInterface(riid, surface);
     } else {
       ERR("Non zero-index buffer is not supported");
@@ -184,20 +209,6 @@ public:
   STDMETHODCALLTYPE
   ResizeBuffers(UINT BufferCount, UINT Width, UINT Height, DXGI_FORMAT Format,
                 UINT flags) final {
-    // FIXME: ... weird
-    if (backbuffer_) {
-      device_context_->WaitUntilGPUIdle();
-      auto _ = backbuffer_.takeOwnership();
-      // required behavior...
-      if (auto x = _->Release() != 0) {
-        ERR("outstanding buffer hold! ", x);
-        /**
-         usually shouldn't call it, but in case devs forget to
-         unbind RTV before calling `ResizeBuffers`
-         */
-        _->Destroy();
-      }
-    }
     /* BufferCount ignored */
     if (Width == 0 || Height == 0) {
       wsi::getWindowSize(hWnd, &desc_.Width, &desc_.Height);
@@ -208,6 +219,41 @@ public:
     if (Format != DXGI_FORMAT_UNKNOWN) {
       desc_.Format = Format;
     }
+
+    backbuffer_ = nullptr;
+    if (desc_.Width == 0 || desc_.Height == 0) {
+      backbuffer_desc_.Width = 1;
+      backbuffer_desc_.Height = 1;
+    } else {
+      backbuffer_desc_.Width = desc_.Width;
+      backbuffer_desc_.Height = desc_.Height;
+      ApplyResize();
+    }
+
+    backbuffer_desc_.Format = desc_.Format;
+
+    Com<ID3D11Texture2D1> backbuffer_texture2d;
+    if (FAILED(dxmt::CreateDeviceTexture2D(m_device, &backbuffer_desc_, nullptr, &backbuffer_texture2d)))
+      return E_FAIL;
+    backbuffer_ = nullptr;
+    backbuffer_texture2d->QueryInterface(IID_PPV_ARGS(&backbuffer_));
+
+    if constexpr (EnableMetalFX) {
+      auto scaler_descriptor =
+          transfer(MTLFX::SpatialScalerDescriptor::alloc()->init());
+      scaler_descriptor->setInputHeight(desc_.Height);
+      scaler_descriptor->setInputWidth(desc_.Width);
+      scaler_descriptor->setOutputHeight(layer_weak_->drawableSize().height);
+      scaler_descriptor->setOutputWidth(layer_weak_->drawableSize().width);
+      scaler_descriptor->setOutputTextureFormat(MTL::PixelFormatBGRA8Unorm_sRGB);
+      scaler_descriptor->setColorTextureFormat(MTL::PixelFormatBGRA8Unorm_sRGB);
+      scaler_descriptor->setColorProcessingMode(
+          MTLFX::SpatialScalerColorProcessingModePerceptual);
+      metalfx_scaler = transfer(
+          scaler_descriptor->newSpatialScaler(m_device->GetMTLDevice()));
+      D3D11_ASSERT(metalfx_scaler && "otherwise metalfx failed to initialize");
+    }
+
     return S_OK;
   };
 
@@ -247,6 +293,11 @@ public:
     }
 
     return S_OK;
+  };
+
+  void
+  ApplyResize() {
+    layer_weak_->setDrawableSize({(double)(desc_.Width * scale_factor), (double)(desc_.Height * scale_factor)});
   };
 
   HRESULT
@@ -319,38 +370,45 @@ public:
   STDMETHODCALLTYPE
   Present1(UINT SyncInterval, UINT PresentFlags,
            const DXGI_PRESENT_PARAMETERS *pPresentParameters) final {
+    HRESULT hr = S_OK;
+    if (desc_.Width == 0 || desc_.Height == 0)
+      hr = DXGI_STATUS_OCCLUDED;
     if (PresentFlags & DXGI_PRESENT_TEST)
-      return S_OK;
-
-    frame_latency_fence.wait(0, std::memory_order_relaxed);
-    if (destroyed)
-      return S_OK;
-    frame_latency_fence.fetch_sub(1, std::memory_order_relaxed);
+      return hr;
 
     double vsync_duration =
         std::max(SyncInterval * 1.0 /
                      (preferred_max_frame_rate ? preferred_max_frame_rate
                                                : init_refresh_rate_),
                  preferred_max_frame_rate ? 1.0 / preferred_max_frame_rate : 0);
-    device_context_->FlushInternal(
-        [this, backbuffer = backbuffer_,
-         vsync_duration](MTL::CommandBuffer *cmdbuf) {
-          backbuffer->Present(cmdbuf, vsync_duration);
-          ReleaseSemaphore(present_semaphore_, 1, nullptr);
-        },
-        [this]() {
-          if (frame_latency_diff) {
-            frame_latency_diff--;
-          } else {
-            frame_latency_fence.fetch_add(1, std::memory_order_relaxed);
-            frame_latency_fence.notify_one();
-          }
-        },
-        true);
+    device_context_->Flush();
+    auto &cmd_queue = m_device->GetDXMTDevice().queue();
+    auto chunk = cmd_queue.CurrentChunk();
+    chunk->emit([this, vsync_duration, backbuffer = backbuffer_->UseBindable(chunk->chunk_id)](auto &ctx) {
+      auto drawable = layer_weak_->nextDrawable();
+      auto out = drawable->texture();
+      auto buf = backbuffer.texture();
+      if constexpr (EnableMetalFX) {
+        D3D11_ASSERT(metalfx_scaler);
+        metalfx_scaler->setColorTexture(buf);
+        metalfx_scaler->setOutputTexture(out);
+        metalfx_scaler->encodeToCommandBuffer(ctx.cmdbuf);
+      } else {
+        ctx.queue->emulated_cmd.PresentToDrawable(ctx.cmdbuf, buf, out);
+      }
+
+      if (vsync_duration > 0)
+        ctx.cmdbuf->presentDrawableAfterMinimumDuration(drawable, vsync_duration);
+      else
+        ctx.cmdbuf->presentDrawable(drawable);
+      ReleaseSemaphore(present_semaphore_, 1, nullptr);
+    });
+    device_context_->Commit();
+    cmd_queue.PresentBoundary();
 
     presentation_count_ += 1;
 
-    return S_OK;
+    return hr;
   };
 
   BOOL STDMETHODCALLTYPE IsTemporaryMonoSupported() final { return FALSE; };
@@ -390,14 +448,11 @@ public:
       return E_INVALIDARG;
     }
     if (max_latency > frame_latency) {
-      frame_latency_fence.fetch_add(max_latency - frame_latency);
-      frame_latency_fence.notify_one();
       ReleaseSemaphore(present_semaphore_, max_latency - frame_latency,
                        nullptr);
-    } else {
-      frame_latency_diff = frame_latency - max_latency;
     }
     frame_latency = max_latency;
+    WARN("SetMaximumFrameLatency: stub: ", max_latency);
 
     return S_OK;
   };
@@ -466,43 +521,64 @@ public:
 
 private:
   Com<IDXGIFactory1> factory_;
+  IMTLDXGIDevice *layer_factory_weak_;
+  void *native_view_;
+  CA::MetalLayer *layer_weak_;
   ULONG presentation_count_;
   DXGI_SWAP_CHAIN_DESC1 desc_;
   DXGI_SWAP_CHAIN_FULLSCREEN_DESC fullscreen_desc_;
+  D3D11_TEXTURE2D_DESC1 backbuffer_desc_;
   Com<IMTLD3D11DeviceContext> device_context_;
-  Com<IMTLD3D11BackBuffer> backbuffer_;
+  Com<IMTLBindable> backbuffer_;
   HANDLE present_semaphore_;
-  std::atomic_uint64_t frame_latency_fence;
   HWND hWnd;
   HMONITOR monitor_;
   uint32_t frame_latency;
-  uint32_t frame_latency_diff = 0;
   double init_refresh_rate_ = DBL_MAX;
   int preferred_max_frame_rate = 0;
   CA::DeveloperHUDProperties* hud;
 
-  bool destroyed = false;
+  std::conditional<EnableMetalFX, Obj<MTLFX::SpatialScaler>, std::monostate>::type metalfx_scaler;
+  float scale_factor = 1.0;
 };
 
-HRESULT CreateSwapChain(IDXGIFactory1 *pFactory, MTLD3D11Device *pDevice,
-                        HWND hWnd, const DXGI_SWAP_CHAIN_DESC1 *pDesc,
-                        const DXGI_SWAP_CHAIN_FULLSCREEN_DESC *pFullscreenDesc,
-                        IDXGISwapChain1 **ppSwapChain) {
-  if (pDesc == NULL) {
+HRESULT
+CreateSwapChain(
+    IDXGIFactory1 *pFactory, MTLD3D11Device *pDevice, HWND hWnd, const DXGI_SWAP_CHAIN_DESC1 *pDesc,
+    const DXGI_SWAP_CHAIN_FULLSCREEN_DESC *pFullscreenDesc, IDXGISwapChain1 **ppSwapChain
+) {
+  if (pDesc == NULL)
     return DXGI_ERROR_INVALID_CALL;
-  }
-  if (ppSwapChain == NULL) {
+  if (ppSwapChain == NULL)
     return DXGI_ERROR_INVALID_CALL;
-  }
   InitReturnPtr(ppSwapChain);
-  try {
-    *ppSwapChain =
-        new MTLD3D11SwapChain(pFactory, pDevice, hWnd, pDesc, pFullscreenDesc);
-    return S_OK;
-  } catch (MTLD3DError &err) {
-    ERR(err.message());
+
+  Com<IMTLDXGIDevice> layer_factory;
+  if (FAILED(pDevice->QueryInterface(IID_PPV_ARGS(&layer_factory)))) {
+    ERR("CreateSwapChain: failed to get IMTLDXGIDevice");
     return E_FAIL;
   }
+  CA::MetalLayer *layer;
+  void *native_view;
+  if (FAILED(layer_factory->GetMetalLayerFromHwnd(hWnd, &layer, &native_view))) {
+    ERR("CreateSwapChain: failed to create CAMetalLayer");
+    return E_FAIL;
+  }
+  layer->setDevice(pDevice->GetMTLDevice());
+  layer->setOpaque(true);
+  layer->setDisplaySyncEnabled(false);
+  layer->setPixelFormat(MTL::PixelFormatBGRA8Unorm);
+  layer->setFramebufferOnly(true);
+  if (env::getEnvVar("DXMT_METALFX_SPATIAL_SWAPCHAIN") == "1") {
+    *ppSwapChain = new MTLD3D11SwapChain<true>(
+        pFactory, pDevice, layer_factory.ptr(), layer, hWnd, native_view, pDesc, pFullscreenDesc
+    );
+    return S_OK;
+  }
+  *ppSwapChain = new MTLD3D11SwapChain<false>(
+      pFactory, pDevice, layer_factory.ptr(), layer, hWnd, native_view, pDesc, pFullscreenDesc
+  );
+  return S_OK;
 };
 
 } // namespace dxmt

@@ -405,7 +405,7 @@ private:
   CaptureState capture_state;
 
 public:
-  DXMTCommandContext clear_cmd;
+  EmulatedCommandContext emulated_cmd;
   CounterPool counter_pool;
 
   CommandQueue(MTL::Device *device);
