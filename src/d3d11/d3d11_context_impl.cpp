@@ -3881,12 +3881,6 @@ public:
       ManagedDeviceChild(pDevice),
       context_flag(context_flag),
       cmdlist_pool(pPool),
-      monoid(),
-      monoid_list(&monoid, nullptr),
-      list_end(&monoid_list),
-      monoid_event(),
-      monoid_list_event(&monoid_event),
-      list_end_event(&monoid_list_event),
       last_encoder_info(&init_encoder_info),
       staging_allocator(
           pDevice->GetMTLDevice(), MTL::ResourceOptionCPUCacheModeWriteCombined |
@@ -3929,22 +3923,8 @@ public:
   Reset() {
     staging_allocator.free_blocks(++local_coherence);
     {
-      auto cur = monoid_list.next;
-      while (cur) {
-        assert((uint64_t)cur->value >= (uint64_t)cpu_argument_heap);
-        assert((uint64_t)cur->value < ((uint64_t)cpu_argument_heap + cpu_arugment_heap_offset));
-        cur->value->~BFunc<CommandChunk::context>();
-        cur = cur->next;
-      }
-    }
-    {
-      auto cur = monoid_list_event.next;
-      while (cur) {
-        assert((uint64_t)cur->value >= (uint64_t)cpu_argument_heap);
-        assert((uint64_t)cur->value < ((uint64_t)cpu_argument_heap + cpu_arugment_heap_offset));
-        cur->value->~BFunc<EventContext>();
-        cur = cur->next;
-      }
+      list_cmd.~CommandList();
+      list_event.~CommandList();
     }
 
     {
@@ -3967,10 +3947,6 @@ public:
     cpu_arugment_heap_offset = 0;
     cpu_dynamic_heap_offset = 0;
     gpu_arugment_heap_offset = 0;
-    monoid_list.next = nullptr;
-    list_end = &monoid_list;
-    monoid_list_event.next = nullptr;
-    list_end_event = &monoid_list_event;
     last_encoder_info = &init_encoder_info;
     encoder_seq_local = 1;
 
@@ -4018,27 +3994,13 @@ public:
   template <typename Fn>
   void
   EmitEvent(Fn &&fn) {
-    using TT = CommandChunk::EFunc<EventContext, Fn>;
-    using NodeT = CommandChunk::Node<CommandChunk::BFunc<EventContext> *>;
-    auto ptr = allocate_cpu_heap<TT>();
-    new (ptr) TT(std::forward<Fn>(fn));
-    auto ptr_node = allocate_cpu_heap<NodeT>();
-    *ptr_node = {ptr, nullptr};
-    list_end_event->next = ptr_node;
-    list_end_event = ptr_node;
+    list_event.emit(std::forward<Fn>(fn), allocate_cpu_heap(list_event.calculateCommandSize<Fn>(), 16));
   }
 
   template <typename Fn>
   void
   EmitCommand(Fn &&fn) {
-    using TT = CommandChunk::EFunc<CommandChunk::context, Fn>;
-    using NodeT = CommandChunk::Node<CommandChunk::BFunc<CommandChunk::context> *>;
-    auto ptr = allocate_cpu_heap<TT>();
-    new (ptr) TT(std::forward<Fn>(fn));
-    auto ptr_node = allocate_cpu_heap<NodeT>();
-    *ptr_node = {ptr, nullptr};
-    list_end->next = ptr_node;
-    list_end = ptr_node;
+    list_cmd.emit(std::forward<Fn>(fn), allocate_cpu_heap(list_cmd.calculateCommandSize<Fn>(), 16));
   }
 
   BindingRef
@@ -4223,24 +4185,12 @@ public:
         dsv->UseBindable(ctx.cmd_queue.CurrentSeqId());
     }
 
-    auto cur = monoid_list_event.next;
-    while (cur) {
-      assert((uint64_t)cur->value >= (uint64_t)cpu_argument_heap);
-      assert((uint64_t)cur->value < ((uint64_t)cpu_argument_heap + cpu_arugment_heap_offset));
-      cur->value->invoke(ctx);
-      cur = cur->next;
-    }
+    list_event.execute(ctx);
   }
 
   void
   EncodeCommands(CommandChunk::context &ctx) {
-    auto cur = monoid_list.next;
-    while (cur) {
-      assert((uint64_t)cur->value >= (uint64_t)cpu_argument_heap);
-      assert((uint64_t)cur->value < ((uint64_t)cpu_argument_heap + cpu_arugment_heap_offset));
-      cur->value->invoke(ctx);
-      cur = cur->next;
-    }
+    list_cmd.execute(ctx);
   }
 
 #pragma endregion
@@ -4260,13 +4210,8 @@ private:
   char *cpu_dynamic_heap;
   uint64_t cpu_dynamic_heap_offset = 0;
 
-  CommandChunk::MFunc<CommandChunk::context> monoid;
-  CommandChunk::Node<CommandChunk::BFunc<CommandChunk::context> *> monoid_list;
-  CommandChunk::Node<CommandChunk::BFunc<CommandChunk::context> *> *list_end;
-
-  CommandChunk::MFunc<EventContext> monoid_event;
-  CommandChunk::Node<CommandChunk::BFunc<EventContext> *> monoid_list_event;
-  CommandChunk::Node<CommandChunk::BFunc<EventContext> *> *list_end_event;
+  CommandList<CommandChunk::context> list_cmd;
+  CommandList<EventContext> list_event;
 
   ENCODER_INFO init_encoder_info{EncoderKind::Nil, 0};
   ENCODER_INFO *last_encoder_info;
