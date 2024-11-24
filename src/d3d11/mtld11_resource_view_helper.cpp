@@ -50,6 +50,14 @@ HRESULT CreateMTLTextureView<D3D11_SHADER_RESOURCE_VIEW_DESC1>(
     swizzle = {MTL::TextureSwizzleZero, MTL::TextureSwizzleRed,
                MTL::TextureSwizzleZero, MTL::TextureSwizzleOne};
     break;
+  case MTL::PixelFormatBGRA8Unorm:
+  case MTL::PixelFormatBGRA8Unorm_sRGB:
+    if (pViewDesc->Format == DXGI_FORMAT_B8G8R8X8_UNORM ||
+        pViewDesc->Format == DXGI_FORMAT_B8G8R8X8_UNORM_SRGB) {
+      swizzle = {MTL::TextureSwizzleRed, MTL::TextureSwizzleGreen,
+                 MTL::TextureSwizzleBlue, MTL::TextureSwizzleOne};
+    }
+    break;
   default:
     break;
   }
