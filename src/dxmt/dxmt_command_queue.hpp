@@ -11,6 +11,7 @@
 #include "dxmt_binding.hpp"
 #include "dxmt_capture.hpp"
 #include "dxmt_command.hpp"
+#include "dxmt_command_list.hpp"
 #include "dxmt_counter_pool.hpp"
 #include "dxmt_ring_bump_allocator.hpp"
 #include "log/log.hpp"
@@ -79,11 +80,6 @@ struct ENCODER_CLEARPASS_INFO {
   use_clearpass() {
     return CLEARPASS_CLEANUP(this);
   }
-};
-
-template <typename F, typename context>
-concept cpu_cmd = requires(F f, context &ctx) {
-  { f(ctx) } -> std::same_as<void>;
 };
 
 template <typename T> class moveonly_list {
@@ -184,37 +180,6 @@ class CommandChunk {
     CommandChunk *chunk;
   };
 public:
-  template <typename context> class BFunc {
-  public:
-    virtual void invoke(context &) = 0;
-    virtual ~BFunc() noexcept {};
-  };
-
-  template <typename context, typename F> class EFunc final : public BFunc<context> {
-  public:
-    void
-    invoke(context &ctx) final {
-      std::invoke(func, ctx);
-    };
-    ~EFunc() noexcept final = default;
-    EFunc(F &&ff) : func(std::forward<F>(ff)) {}
-    EFunc(const EFunc &copy) = delete;
-    EFunc &operator=(const EFunc &copy_assign) = delete;
-
-  private:
-    F func;
-  };
-
-  template <typename context> class MFunc final : public BFunc<context> {
-  public:
-    void invoke(context &ctx) final { /* nop */ };
-    ~MFunc() noexcept = default;
-  };
-
-  template <typename value_t> struct Node {
-    value_t value;
-    Node *next;
-  };
 
   class context_t : public EncodingContext {
   public:
@@ -278,31 +243,17 @@ public:
 
   using context = context_t;
 
-  template <cpu_cmd<context> F>
+  template <CommandWithContext<context> F>
   void
   emit(F &&func) {
-    linear_allocator<EFunc<context, F>> allocator(this);
-    auto ptr = allocator.allocate(1);
-    new (ptr) EFunc<context, F>(std::forward<F>(func)); // in placement
-    linear_allocator<Node<BFunc<context> *>>            // force break
-        allocator_node(this);
-    auto ptr_node = allocator_node.allocate(1);
-    *ptr_node = {ptr, nullptr};
-    list_end->next = ptr_node;
-    list_end = ptr_node;
+    list.emit(std::forward<F>(func), allocate_cpu_heap(list.calculateCommandSize<F>(), 16));
   }
 
   void
   encode(MTL::CommandBuffer *cmdbuf) {
     attached_cmdbuf = cmdbuf;
     context_t context(this, cmdbuf);
-    auto cur = monoid_list.next;
-    while (cur) {
-      assert((uint64_t)cur->value >= (uint64_t)cpu_argument_heap);
-      assert((uint64_t)cur->value < ((uint64_t)cpu_argument_heap + cpu_arugment_heap_offset));
-      cur->value->invoke(context);
-      cur = cur->next;
-    }
+    list.execute(context);
   };
 
   ENCODER_RENDER_INFO *mark_render_pass();
@@ -336,36 +287,24 @@ private:
   Obj<MTL::Buffer> gpu_argument_heap;
   uint64_t cpu_arugment_heap_offset;
   uint64_t gpu_arugment_heap_offset;
-  MFunc<context> monoid;
-  Node<BFunc<context> *> monoid_list;
-  Node<BFunc<context> *> *list_end;
   Obj<MTL::CommandBuffer> attached_cmdbuf;
   ENCODER_INFO init_encoder_info{EncoderKind::Nil, 0};
   ENCODER_INFO *last_encoder_info;
   uint64_t encoder_id;
+  
+  CommandList<context_t> list;
 
   friend class CommandQueue;
 
 public:
   CommandChunk() :
-      monoid(),
-      monoid_list{&monoid, nullptr},
-      list_end(&monoid_list),
       last_encoder_info(&init_encoder_info) {}
 
   void
   reset() noexcept {
-    auto cur = monoid_list.next;
-    while (cur) {
-      assert((uint64_t)cur->value >= (uint64_t)cpu_argument_heap);
-      assert((uint64_t)cur->value < ((uint64_t)cpu_argument_heap + cpu_arugment_heap_offset));
-      cur->value->~BFunc<context>(); // call destructor
-      cur = cur->next;
-    }
+    list.~CommandList();
     cpu_arugment_heap_offset = 0;
     gpu_arugment_heap_offset = 0;
-    monoid_list.next = nullptr;
-    list_end = &monoid_list;
     attached_cmdbuf = nullptr;
     last_encoder_info = &init_encoder_info;
   }
