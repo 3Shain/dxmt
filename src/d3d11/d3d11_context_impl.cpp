@@ -688,7 +688,9 @@ public:
     }
     if (auto com = com_cast<IMTLBindable>(pShaderResourceView)) {
       EmitBlitCommand<true>([tex = Use(com)](MTL::BlitCommandEncoder *enc, CommandChunk::context &ctx) {
-        enc->generateMipmaps(tex.texture(&ctx));
+        auto texture = tex.texture(&ctx);
+        if(texture->mipmapLevelCount() > 1)
+          enc->generateMipmaps(texture);
       });
     } else {
       // FIXME: any other possible case?
