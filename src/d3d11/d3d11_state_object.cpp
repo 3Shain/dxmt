@@ -111,6 +111,29 @@ constexpr MTL::BlendFactor kBlendFactorMap[] = {
     MTL::BlendFactorSourceAlphaSaturated,
     MTL::BlendFactorZero,       // invalid,12
     MTL::BlendFactorZero,       // invalid,13
+    MTL::BlendFactorBlendColor, // BLEND_FACTOR
+    MTL::BlendFactorOneMinusBlendAlpha,
+    MTL::BlendFactorSource1Color,
+    MTL::BlendFactorOneMinusSource1Color,
+    MTL::BlendFactorSource1Alpha,
+    MTL::BlendFactorOneMinusSource1Alpha,
+};
+
+constexpr MTL::BlendFactor kBlendAlphaFactorMap[] = {
+    MTL::BlendFactorZero, // padding 0
+    MTL::BlendFactorZero,
+    MTL::BlendFactorOne,
+    MTL::BlendFactorSourceColor,
+    MTL::BlendFactorOneMinusSourceColor,
+    MTL::BlendFactorSourceAlpha,
+    MTL::BlendFactorOneMinusSourceAlpha,
+    MTL::BlendFactorDestinationAlpha,
+    MTL::BlendFactorOneMinusDestinationAlpha,
+    MTL::BlendFactorDestinationColor,
+    MTL::BlendFactorOneMinusDestinationColor,
+    MTL::BlendFactorSourceAlphaSaturated,
+    MTL::BlendFactorZero,       // invalid,12
+    MTL::BlendFactorZero,       // invalid,13
     MTL::BlendFactorBlendAlpha, // BLEND_FACTOR
     MTL::BlendFactorOneMinusBlendAlpha,
     MTL::BlendFactorSource1Color,
@@ -293,11 +316,11 @@ public:
         attachment_desc->setAlphaBlendOperation(kBlendOpMap[renderTarget.BlendOpAlpha]);
         attachment_desc->setRgbBlendOperation(kBlendOpMap[renderTarget.BlendOp]);
         attachment_desc->setBlendingEnabled(renderTarget.BlendEnable);
-        attachment_desc->setSourceAlphaBlendFactor(kBlendFactorMap[renderTarget.SrcBlendAlpha]);
+        attachment_desc->setSourceAlphaBlendFactor(kBlendAlphaFactorMap[renderTarget.SrcBlendAlpha]);
         attachment_desc->setSourceRGBBlendFactor(
             kBlendFactorMap[renderTarget.SrcBlend]);
         attachment_desc->setDestinationAlphaBlendFactor(
-            kBlendFactorMap[renderTarget.DestBlendAlpha]);
+            kBlendAlphaFactorMap[renderTarget.DestBlendAlpha]);
         attachment_desc->setDestinationRGBBlendFactor(
             kBlendFactorMap[renderTarget.DestBlend]);
       }
