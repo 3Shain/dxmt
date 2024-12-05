@@ -192,10 +192,10 @@ public:
 
   void
   reset() noexcept {
+    visibility_readback = {};
     list_enc.~CommandList();
     cpu_arugment_heap_offset = 0;
     gpu_arugment_heap_offset = 0;
-    visibility_readback = {};
     attached_cmdbuf = nullptr;
   }
 };

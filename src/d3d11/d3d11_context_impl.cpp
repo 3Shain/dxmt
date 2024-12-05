@@ -3602,25 +3602,6 @@ public:
         });
       });
     }
-    // auto previous_encoder = GetLastEncoder();
-    // assert(previous_encoder->kind == EncoderKind::Render);
-    // auto previous_renderpass = (ENCODER_RENDER_INFO *)previous_encoder;
-    // if (!active_occlusion_queries.empty()) {
-    //   previous_renderpass->use_visibility_result = 1;
-    //   if (auto next_offset = vro_state.getNextWriteOffset(true); next_offset != ~0uLL) {
-    //     EmitCommand([next_offset](CommandChunk::context &ctx) {
-    //       ctx.render_encoder->setVisibilityResultMode(
-    //           MTL::VisibilityResultModeCounting, (ctx.visibility_offset_base + next_offset) << 3
-    //       );
-    //     });
-    //   }
-    // } else {
-    //   if (vro_state.getNextWriteOffset(false) != ~0uLL && previous_renderpass->use_visibility_result) {
-    //     EmitCommand([](CommandChunk::context &ctx) {
-    //       ctx.render_encoder->setVisibilityResultMode(MTL::VisibilityResultModeDisabled, 0);
-    //     });
-    //   }
-    // }
     dirty_state.clrAll();
     if (cmdbuf_state == CommandBufferState::TessellationRenderPipelineReady) {
       return UploadShaderStageResourceBinding<PipelineStage::Vertex, true>() &&

@@ -397,7 +397,7 @@ ArgumentEncodingContext::bumpVisibilityResultOffset() {
     render_encoder->use_visibility_result = 1;
     if (auto offset = vro_state_.getNextWriteOffset(true); offset != ~0uLL)
       encodeRenderCommand([offset](RenderCommandContext &ctx) {
-        ctx.encoder->setVisibilityResultMode(MTL::VisibilityResultModeCounting, offset >> 3);
+        ctx.encoder->setVisibilityResultMode(MTL::VisibilityResultModeCounting, offset << 3);
       });
   } else {
     if (vro_state_.getNextWriteOffset(false) != ~0uLL && render_encoder->use_visibility_result)
@@ -426,7 +426,6 @@ ArgumentEncodingContext::flushCommands(MTL::CommandBuffer *cmdbuf, uint64_t seqI
     assert(encoder_index == encoder_count);
   }
 
-  // TODO: optimize command order
   if (encoder_count > 1) {
     unsigned j, i;
     EncoderData *prev;
