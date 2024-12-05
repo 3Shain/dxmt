@@ -58,6 +58,7 @@ class OcculusionQuery : public MTLD3DQueryBase<IMTLD3DOcclusionQuery> {
       } else {
         *((uint64_t *)data) = accumulated_value;
       }
+      query = new VisibilityResultQuery();
       state = QueryState::Signaled;
       return S_OK;
     }
@@ -73,6 +74,7 @@ class OcculusionQuery : public MTLD3DQueryBase<IMTLD3DOcclusionQuery> {
     if (state == QueryState::Issued) {
       // discard previous issued query
       state = QueryState::Building;
+      query = new VisibilityResultQuery();
       return true;
     }
     // FIXME: it's effectively ignoring  Begin() after Begin()
@@ -83,6 +85,7 @@ class OcculusionQuery : public MTLD3DQueryBase<IMTLD3DOcclusionQuery> {
   End() override {
     if (state == QueryState::Signaled) {
       // ignore  a single End()
+      accumulated_value = 0;
       return false;
     }
     if (state == QueryState::Issued) {
