@@ -5,11 +5,11 @@ dxmt_src = [
   'dxmt_command_queue.cpp',
   'dxmt_command.cpp',
   'dxmt_capture.cpp',
-  'dxmt_counter_pool.cpp',
   'dxmt_info.cpp',
   'dxmt_device.cpp',
   'dxmt_buffer.cpp',
   'dxmt_texture.cpp',
+  'dxmt_context.cpp',
 ]
 
 air = custom_target('metal_air',
@@ -42,7 +42,7 @@ metal_lib_bin = custom_target('objectify-data',
 )
 
 dxmt_lib = static_library('dxmt', dxmt_src, metal_lib_bin, dxmt_version,
-  dependencies        : [ util_dep ],
+  dependencies        : [ util_dep, airconv_forward_dep ],
   include_directories : [ dxmt_include_path ],
 )
 

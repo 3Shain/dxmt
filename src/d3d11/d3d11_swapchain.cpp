@@ -7,6 +7,8 @@
 #include "dxgi_interfaces.h"
 #include "dxgi_object.hpp"
 #include "d3d11_context.hpp"
+#include "dxmt_context.hpp"
+#include "dxmt_texture.hpp"
 #include "log/log.hpp"
 #include "mtld11_resource.hpp"
 #include "d3d11_device.hpp"
@@ -109,6 +111,7 @@ public:
   };
 
   ~MTLD3D11SwapChain() {
+    device_context_->WaitUntilGPUIdle();
     layer_factory_weak_->ReleaseMetalLayer(hWnd, native_view_);
     CloseHandle(present_semaphore_);
   };
@@ -237,6 +240,9 @@ public:
       return E_FAIL;
     backbuffer_ = nullptr;
     backbuffer_texture2d->QueryInterface(IID_PPV_ARGS(&backbuffer_));
+
+    auto texture = backbuffer_->__texture();
+    alternative_buffer_ = texture->allocate(texture->current()->flags());
 
     if constexpr (EnableMetalFX) {
       auto scaler_descriptor =
@@ -381,26 +387,27 @@ public:
                      (preferred_max_frame_rate ? preferred_max_frame_rate
                                                : init_refresh_rate_),
                  preferred_max_frame_rate ? 1.0 / preferred_max_frame_rate : 0);
-    device_context_->Flush();
+    device_context_->PrepareFlush();
     auto &cmd_queue = m_device->GetDXMTDevice().queue();
     auto chunk = cmd_queue.CurrentChunk();
-    chunk->emit([this, vsync_duration, backbuffer = backbuffer_->UseBindable(chunk->chunk_id)](auto &ctx) {
+    chunk->emitcc([this, vsync_duration, backbuffer = backbuffer_->__texture()](ArgumentEncodingContext &ctx) mutable {
       auto drawable = layer_weak_->nextDrawable();
-      auto out = drawable->texture();
-      auto buf = backbuffer.texture();
-      if constexpr (EnableMetalFX) {
-        D3D11_ASSERT(metalfx_scaler);
-        metalfx_scaler->setColorTexture(buf);
-        metalfx_scaler->setOutputTexture(out);
-        metalfx_scaler->encodeToCommandBuffer(ctx.cmdbuf);
-      } else {
-        ctx.queue->emulated_cmd.PresentToDrawable(ctx.cmdbuf, buf, out);
-      }
+      // auto out = drawable->texture();
+      // auto buf = backbuffer.texture();
+      // if constexpr (EnableMetalFX) {
+      //   D3D11_ASSERT(metalfx_scaler);
+      //   metalfx_scaler->setColorTexture(buf);
+      //   metalfx_scaler->setOutputTexture(out);
+      //   metalfx_scaler->encodeToCommandBuffer(ctx.cmdbuf);
+      // } else {
+      //   ctx.queue->emulated_cmd.PresentToDrawable(ctx.cmdbuf, buf, out);
+      // }
 
-      if (vsync_duration > 0)
-        ctx.cmdbuf->presentDrawableAfterMinimumDuration(drawable, vsync_duration);
-      else
-        ctx.cmdbuf->presentDrawable(drawable);
+      ctx.present(backbuffer, drawable, vsync_duration);
+
+      // auto used = backbuffer->rename(std::move(alternative_buffer_));
+      // alternative_buffer_ = std::move(used);
+
       ReleaseSemaphore(present_semaphore_, 1, nullptr);
     });
     device_context_->Commit();
@@ -530,6 +537,7 @@ private:
   D3D11_TEXTURE2D_DESC1 backbuffer_desc_;
   Com<IMTLD3D11DeviceContext> device_context_;
   Com<IMTLBindable> backbuffer_;
+  Rc<TextureAllocation> alternative_buffer_;
   HANDLE present_semaphore_;
   HWND hWnd;
   HMONITOR monitor_;

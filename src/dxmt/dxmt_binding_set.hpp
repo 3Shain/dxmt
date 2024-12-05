@@ -95,6 +95,11 @@ public:
   }
 
   inline void
+  clear_dirty_mask(uint32_t mask) {
+    dirty.clearMask(mask);
+  }
+
+  inline void
   set_dirty() {
     dirty = bound;
   };
@@ -128,7 +133,7 @@ public:
     return storage[slot];
   };
 
-  inline void
+  inline bool
   unbind(size_t slot) {
     if (bound.get(slot)) {
       // storage[slot].~Element();
@@ -140,7 +145,9 @@ public:
       storage[slot] = {};
       bound.set(slot, false);
       dirty.set(slot, true);
+      return true;
     }
+    return false;
   }
 };
 } // namespace dxmt

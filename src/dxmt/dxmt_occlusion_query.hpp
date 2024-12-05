@@ -1,7 +1,12 @@
 #pragma once
 
+#include "Metal/MTLBuffer.hpp"
+#include "objc_pointer.hpp"
+#include "rc/util_rc_ptr.hpp"
+#include <atomic>
 #include <cassert>
 #include <cstdint>
+#include <vector>
 
 namespace dxmt {
 class VisibilityResultOffsetBumpState {
@@ -75,6 +80,96 @@ private:
   bool current_data_is_dirty = false;
   bool should_update_offset = false;
   uint64_t next_offset = 0;
+};
+
+class VisibilityResultQuery {
+public:
+  void
+  incRef() {
+    refcount_.fetch_add(1u, std::memory_order_acquire);
+  }
+  void
+  decRef() {
+    if (refcount_.fetch_sub(1u, std::memory_order_release) == 1u)
+      delete this;
+  }
+
+  void
+  begin(uint64_t seqId, unsigned offset) {
+    accumulated_value_ = 0;
+    seq_id_begin = seqId;
+    occlusion_counter_begin = offset;
+    seq_id_end = ~0uLL;
+    occlusion_counter_end = ~0uLL;
+  }
+
+  void
+  end(uint64_t seqId, unsigned offset) {
+    seq_id_end = seqId;
+    occlusion_counter_end = offset;
+  }
+
+  uint64_t queryEndAt() {
+    return seq_id_end;
+  };
+
+  void
+  issue(uint64_t seqId, uint64_t const *readbackBuffer, unsigned numResults) {
+    seq_id_issued = seqId;
+    assert(seq_id_issued >= seq_id_begin);
+    assert(seq_id_issued <= seq_id_end);
+    uint64_t const *start = seqId == seq_id_begin ? readbackBuffer + occlusion_counter_begin : readbackBuffer;
+    uint64_t const *end = seqId == seq_id_end ? readbackBuffer + occlusion_counter_end : readbackBuffer + numResults;
+    assert(start <= end);
+    while (start != end) {
+      accumulated_value_ += *start;
+      start++;
+    }
+  }
+
+  bool
+  getValue(uint64_t *value) {
+    if (seq_id_end <= seq_id_issued) {
+      *value = accumulated_value_;
+      return true;
+    }
+    *value = 0;
+    return false;
+  }
+
+private:
+  uint64_t accumulated_value_ = 0;
+  uint64_t seq_id_begin = 0;
+  uint64_t occlusion_counter_begin = 0;
+  uint64_t seq_id_end = 0;
+  uint64_t occlusion_counter_end = 0;
+  uint64_t seq_id_issued = 0;
+  std::atomic<uint32_t> refcount_ = {0u};
+};
+
+class VisibilityResultReadback {
+public:
+  VisibilityResultReadback(
+      uint64_t seq_id, uint64_t num_results, std::vector<Rc<VisibilityResultQuery>> &queries,
+      Obj<MTL::Buffer> &&visibility_result_heap
+  ) :
+      seq_id(seq_id),
+      num_results(num_results),
+      queries(queries),
+      visibility_result_heap(visibility_result_heap) {}
+  ~VisibilityResultReadback() {
+    for (auto query : queries) {
+      query->issue(seq_id, (uint64_t *)visibility_result_heap->contents(), num_results);
+    }
+  }
+
+  VisibilityResultReadback(const VisibilityResultReadback &) = delete;
+  VisibilityResultReadback(VisibilityResultReadback &&) = default;
+
+  uint64_t seq_id;
+  uint64_t num_results;
+  std::vector<Rc<VisibilityResultQuery>> queries;
+  Obj<MTL::Buffer> visibility_result_heap;
 };
 
 } // namespace dxmt

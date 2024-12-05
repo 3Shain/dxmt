@@ -4,6 +4,7 @@
 #include "Metal/MTLPixelFormat.hpp"
 #include "Metal/MTLTexture.hpp"
 #include "Metal/MTLDevice.hpp"
+#include "dxmt_residency.hpp"
 #include "objc_pointer.hpp"
 
 namespace dxmt {
@@ -45,14 +46,14 @@ TextureAllocation::decRef() {
 };
 
 void
-Texture::prepareAllocationViews() {
+Texture::prepareAllocationViews(TextureAllocation* allocaiton) {
   std::unique_lock<dxmt::mutex> lock(mutex_);
-  if (current_->version_ < 1) {
-    current_->cached_view_.push_back(current_->obj_.ptr());
-    current_->version_ = 1;
+  if (allocaiton->version_ < 1) {
+    allocaiton->cached_view_.push_back(std::make_unique<TextureView>(allocaiton->obj_.ptr()));
+    allocaiton->version_ = 1;
   }
-  for (unsigned version = current_->version_; version < version_; version++) {
-    auto texture = current_->obj_.ptr();
+  for (unsigned version = allocaiton->version_; version < version_; version++) {
+    auto texture = allocaiton->obj_.ptr();
     auto &view = viewDescriptors_[version];
 
     if ((view.usage & MTL::TextureUsageRenderTarget) == 0) {
@@ -62,27 +63,27 @@ Texture::prepareAllocationViews() {
       case MTL::PixelFormatDepth16Unorm:
       case MTL::PixelFormatDepth32Float:
       case MTL::PixelFormatStencil8:
-        current_->cached_view_.push_back(transfer(texture->newTextureView(
+        allocaiton->cached_view_.push_back(std::make_unique<TextureView>(transfer(texture->newTextureView(
             view.format, view.type, {view.firstMiplevel, view.miplevelCount}, {view.firstArraySlice, view.arraySize},
             {MTL::TextureSwizzleRed, MTL::TextureSwizzleZero, MTL::TextureSwizzleZero, MTL::TextureSwizzleOne}
-        )));
+        ))));
         continue;
       case MTL::PixelFormatX32_Stencil8:
       case MTL::PixelFormatX24_Stencil8:
-        current_->cached_view_.push_back(transfer(texture->newTextureView(
+        allocaiton->cached_view_.push_back(std::make_unique<TextureView>(transfer(texture->newTextureView(
             view.format, view.type, {view.firstMiplevel, view.miplevelCount}, {view.firstArraySlice, view.arraySize},
             {MTL::TextureSwizzleZero, MTL::TextureSwizzleRed, MTL::TextureSwizzleZero, MTL::TextureSwizzleOne}
-        )));
+        ))));
         continue;
       default:
         break;
       }
     }
-    current_->cached_view_.push_back(transfer(texture->newTextureView(
+    allocaiton->cached_view_.push_back(std::make_unique<TextureView>(transfer(texture->newTextureView(
         view.format, view.type, {view.firstMiplevel, view.miplevelCount}, {view.firstArraySlice, view.arraySize}
-    )));
+    ))));
   }
-  current_->version_ = version_;
+  allocaiton->version_ = version_;
 }
 
 TextureViewKey
@@ -205,12 +206,31 @@ Texture::allocate(Flags<TextureAllocationFlag> flags) {
   return new TextureAllocation(std::move(texture), flags);
 }
 
+
 MTL::Texture *
 Texture::view(TextureViewKey key) {
-  if (unlikely(current_->version_ != version_)) {
-    prepareAllocationViews();
+  return view(key, current_.ptr());
+}
+
+MTL::Texture *
+Texture::view(TextureViewKey key, TextureAllocation* allocation) {
+  if (unlikely(allocation->version_ != version_)) {
+    prepareAllocationViews(allocation);
   }
-  return current_->cached_view_[key];
+  return allocation->cached_view_[key]->texture.ptr();
+}
+
+DXMT_RESOURCE_RESIDENCY_STATE &
+Texture::residency(TextureViewKey key) {
+  return residency(key, current_.ptr());
+}
+
+DXMT_RESOURCE_RESIDENCY_STATE &
+Texture::residency(TextureViewKey key, TextureAllocation *allocation) {
+  if (unlikely(allocation->version_ != version_)) {
+    prepareAllocationViews(allocation);
+  }
+  return allocation->cached_view_[key]->residency;
 }
 
 Rc<TextureAllocation>
@@ -221,11 +241,12 @@ Texture::rename(Rc<TextureAllocation> &&newAllocation) {
 }
 
 void Texture::incRef(){
-
+  refcount_.fetch_add(1u, std::memory_order_acquire);
 };
 
 void Texture::decRef(){
-
+  if (refcount_.fetch_sub(1u, std::memory_order_release) == 1u)
+    delete this;
 };
 
 } // namespace dxmt

@@ -1,5 +1,6 @@
 #include "d3d11_query.hpp"
 #include "d3d11_private.h"
+#include "dxmt_occlusion_query.hpp"
 
 namespace dxmt {
 
@@ -38,10 +39,7 @@ class OcculusionQuery : public MTLD3DQueryBase<IMTLD3DOcclusionQuery> {
 
   QueryState state = QueryState::Signaled;
 
-  uint64_t seq_id_begin = 0;
-  uint64_t occlusion_counter_begin = 0;
-  uint64_t seq_id_end = 0;
-  uint64_t occlusion_counter_end = 0;
+  Rc<VisibilityResultQuery> query = new VisibilityResultQuery();
   uint64_t accumulated_value = 0;
 
   virtual UINT STDMETHODCALLTYPE
@@ -51,75 +49,52 @@ class OcculusionQuery : public MTLD3DQueryBase<IMTLD3DOcclusionQuery> {
 
   virtual HRESULT
   GetData(void *data) override {
-    if (state == QueryState::Signaled) {
+    if (state == QueryState::Building) {
+      return DXGI_ERROR_INVALID_CALL;
+    }
+    if (state == QueryState::Signaled || query->getValue(&accumulated_value)) {
       if (desc_.Query == D3D11_QUERY_OCCLUSION_PREDICATE) {
         *((BOOL *)data) = accumulated_value != 0;
       } else {
         *((uint64_t *)data) = accumulated_value;
       }
+      state = QueryState::Signaled;
       return S_OK;
     }
     return S_FALSE;
   }
 
-  virtual void
-  Begin(uint64_t seq_id, uint64_t occlusion_counter_begin) override {
-    seq_id_begin = seq_id;
-    seq_id_end = ~0uLL;
-    this->occlusion_counter_begin = occlusion_counter_begin;
-    occlusion_counter_end = ~0uLL;
-    accumulated_value = 0;
+  virtual bool
+  Begin() override {
     if (state == QueryState::Signaled) {
       state = QueryState::Building;
-      return;
+      return true;
     }
     if (state == QueryState::Issued) {
       // discard previous issued query
       state = QueryState::Building;
+      return true;
     }
-  };
-
-  virtual void
-  End(uint64_t seq_id, uint64_t occlusion_counter_end) override {
-    if (state == QueryState::Issued) {
-      // FIXME: is this actually allowed?
-      ERR("try to re-issue an occlusion query");
-      return;
-    }
-    if (state == QueryState::Signaled) {
-      // no effect
-      seq_id_begin = seq_id;
-      seq_id_end = seq_id;
-      occlusion_counter_begin = occlusion_counter_end;
-      this->occlusion_counter_end = occlusion_counter_end;
-      accumulated_value = 0;
-      return;
-    }
-    seq_id_end = seq_id;
-    this->occlusion_counter_end = occlusion_counter_end;
-    state = QueryState::Issued;
-    return;
+    // FIXME: it's effectively ignoring  Begin() after Begin()
+    return false;
   };
 
   virtual bool
-  Issue(uint64_t current_seq_id, uint64_t *data, uint64_t count) override {
-    D3D11_ASSERT(state != QueryState::Signaled);
-    if (current_seq_id < seq_id_begin) {
-      // ?
+  End() override {
+    if (state == QueryState::Signaled) {
+      // ignore  a single End()
       return false;
     }
-    uint64_t *start = current_seq_id == seq_id_begin ? data + occlusion_counter_begin : data;
-    uint64_t *end = current_seq_id == seq_id_end ? data + occlusion_counter_end : data + count;
-    D3D11_ASSERT(start <= end);
-    while (start != end) {
-      accumulated_value += *start;
-      start++;
+    if (state == QueryState::Issued) {
+      // FIXME: it's effectively ignoring End() after End()
+      return false;
     }
-    if (current_seq_id == seq_id_end) {
-      state = QueryState::Signaled;
-      return true;
-    }
-    return false;
+    state = QueryState::Issued;
+    return true;
+  };
+
+  virtual Rc<VisibilityResultQuery> __query() override {
+    return query;
   }
 };
 

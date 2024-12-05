@@ -1,69 +1,27 @@
+#include "d3d11_private.h"
 #include "d3d11_query.hpp"
 #include "dxmt_command_queue.hpp"
 #include "d3d11_context_impl.cpp"
+#include "dxmt_context.hpp"
 
 namespace dxmt {
 struct ContextInternalState {
   CommandQueue &cmd_queue;
 };
 
+
+template<typename Object> Rc<Object> forward_rc(Rc<Object>& obj) {
+  return std::move(obj);
+}
+
 using ImmediateContextBase = MTLD3D11DeviceContextImplBase<ContextInternalState>;
 
 template <>
-template <typename Fn>
+template <CommandWithContext<ArgumentEncodingContext> cmd>
 void
-ImmediateContextBase::EmitCommand(Fn &&fn) {
+ImmediateContextBase:: Emit(cmd &&fn) {
   CommandChunk *chk = ctx_state.cmd_queue.CurrentChunk();
-  chk->emit([fn = std::forward<Fn>(fn)](CommandChunk::context &ctx) { std::invoke(fn, ctx); });
-}
-
-template <>
-BindingRef
-ImmediateContextBase::Use(IMTLBindable *bindable) {
-  return bindable->UseBindable(ctx_state.cmd_queue.CurrentSeqId());
-}
-
-template <>
-BindingRef
-ImmediateContextBase::Use(IMTLD3D11RenderTargetView *rtv) {
-  return rtv->UseBindable(ctx_state.cmd_queue.CurrentSeqId());
-}
-
-template <>
-BindingRef
-ImmediateContextBase::Use(IMTLD3D11DepthStencilView *dsv) {
-  return dsv->UseBindable(ctx_state.cmd_queue.CurrentSeqId());
-}
-
-template <>
-BindingRef
-ImmediateContextBase::Use(IMTLDynamicBuffer *dynamic_buffer) {
-  return dynamic_buffer->GetCurrentBufferBinding();
-}
-
-template <>
-ENCODER_INFO *
-ImmediateContextBase::GetLastEncoder() {
-  CommandChunk *chk = ctx_state.cmd_queue.CurrentChunk();
-  return chk->get_last_encoder();
-}
-template <>
-ENCODER_CLEARPASS_INFO *
-ImmediateContextBase::MarkClearPass() {
-  CommandChunk *chk = ctx_state.cmd_queue.CurrentChunk();
-  return chk->mark_clear_pass();
-}
-template <>
-ENCODER_RENDER_INFO *
-ImmediateContextBase::MarkRenderPass() {
-  CommandChunk *chk = ctx_state.cmd_queue.CurrentChunk();
-  return chk->mark_render_pass();
-}
-template <>
-ENCODER_INFO *
-ImmediateContextBase::MarkPass(EncoderKind kind) {
-  CommandChunk *chk = ctx_state.cmd_queue.CurrentChunk();
-  return chk->mark_pass(kind);
+  chk->emitcc(std::forward<cmd>(fn));
 }
 
 template <>
@@ -75,416 +33,30 @@ ImmediateContextBase::AllocateCommandData(size_t n) {
 }
 
 template <>
-void
-ImmediateContextBase::UpdateUAVCounter(IMTLD3D11UnorderedAccessView *uav, uint32_t value) {
-  auto currentChunkId = ctx_state.cmd_queue.CurrentSeqId();
-  auto new_counter_handle = ctx_state.cmd_queue.counter_pool.AllocateCounter(currentChunkId, value);
-  // it's possible that old_counter_handle == new_counter_handle
-  // if the uav doesn't support counter
-  // thus it becomes essentially a no-op.
-  auto old_counter_handle = uav->SwapCounter(new_counter_handle);
-  if (old_counter_handle != DXMT_NO_COUNTER) {
-    ctx_state.cmd_queue.counter_pool.DiscardCounter(currentChunkId, old_counter_handle);
-  }
-};
-
-template <>
 std::tuple<void *, MTL::Buffer *, uint64_t>
 ImmediateContextBase::AllocateStagingBuffer(size_t size, size_t alignment) {
   return ctx_state.cmd_queue.AllocateStagingBuffer(size, alignment);
 }
 
 template <>
-bool
+void
 ImmediateContextBase::UseCopyDestination(
     IMTLD3D11Staging *pResource, uint32_t Subresource, MTL_STAGING_RESOURCE *pBuffer, uint32_t *pBytesPerRow,
     uint32_t *pBytesPerImage
 ) {
-  return pResource->UseCopyDestination(
+  pResource->UseCopyDestination(
       Subresource, ctx_state.cmd_queue.CurrentSeqId(), pBuffer, pBytesPerRow, pBytesPerImage
   );
 }
 template <>
-bool
+void
 ImmediateContextBase::UseCopySource(
     IMTLD3D11Staging *pResource, uint32_t Subresource, MTL_STAGING_RESOURCE *pBuffer, uint32_t *pBytesPerRow,
     uint32_t *pBytesPerImage
 ) {
-  return pResource->UseCopySource(
+  pResource->UseCopySource(
       Subresource, ctx_state.cmd_queue.CurrentSeqId(), pBuffer, pBytesPerRow, pBytesPerImage
   );
-}
-
-template <>
-BindingRef
-ImmediateContextBase::UseImmediate(IMTLBindable *bindable) {
-  if (bindable->GetContentionState(ctx_state.cmd_queue.CoherentSeqId()))
-    return BindingRef();
-  return bindable->UseBindable(ctx_state.cmd_queue.CurrentSeqId());
-}
-
-template <>
-template <ShaderType stage, bool Tessellation>
-bool
-ImmediateContextBase::UploadShaderStageResourceBinding() {
-  auto &ShaderStage = state_.ShaderStages[(UINT)stage];
-  if (!ShaderStage.Shader) {
-    return true;
-  }
-  auto &UAVBindingSet = stage == ShaderType::Compute ? state_.ComputeStageUAV.UAVs : state_.OutputMerger.UAVs;
-
-  const MTL_SHADER_REFLECTION *reflection = &ShaderStage.Shader->GetManagedShader()->reflection();
-
-  bool dirty_cbuffer = ShaderStage.ConstantBuffers.any_dirty_masked(reflection->ConstantBufferSlotMask);
-  bool dirty_sampler = ShaderStage.Samplers.any_dirty_masked(reflection->SamplerSlotMask);
-  bool dirty_srv = ShaderStage.SRVs.any_dirty_masked(reflection->SRVSlotMaskHi, reflection->SRVSlotMaskLo);
-  bool dirty_uav = UAVBindingSet.any_dirty_masked(reflection->UAVSlotMask);
-  if (!dirty_cbuffer && !dirty_sampler && !dirty_srv && !dirty_uav)
-    return true;
-
-  auto currentChunkId = ctx_state.cmd_queue.CurrentSeqId();
-
-  auto ConstantBufferCount = reflection->NumConstantBuffers;
-  auto BindingCount = reflection->NumArguments;
-  auto ArgumentTableQwords = reflection->ArgumentTableQwords;
-  CommandChunk *chk = ctx_state.cmd_queue.CurrentChunk();
-  auto encoderId = chk->current_encoder_id();
-
-  auto useResource = [&](BindingRef &&res, MTL_BINDABLE_RESIDENCY_MASK residencyMask) {
-    chk->emit([res = std::move(res), residencyMask](CommandChunk::context &ctx) {
-      switch (stage) {
-      case ShaderType::Vertex:
-      case ShaderType::Pixel:
-      case ShaderType::Hull:
-      case ShaderType::Domain:
-        ctx.render_encoder->useResource(
-            res.resource(&ctx), GetUsageFromResidencyMask(residencyMask), GetStagesFromResidencyMask(residencyMask)
-        );
-        if (res.withBackedBuffer()) {
-          ctx.render_encoder->useResource(
-              res.buffer(), GetUsageFromResidencyMask(residencyMask), GetStagesFromResidencyMask(residencyMask)
-          );
-        }
-        break;
-      case ShaderType::Compute:
-        ctx.compute_encoder->useResource(res.resource(&ctx), GetUsageFromResidencyMask(residencyMask));
-        if (res.withBackedBuffer()) {
-          ctx.compute_encoder->useResource(res.buffer(), GetUsageFromResidencyMask(residencyMask));
-        }
-        break;
-      case ShaderType::Geometry:
-        D3D11_ASSERT(0 && "Not implemented");
-        break;
-      }
-    });
-  };
-  if (ConstantBufferCount && dirty_cbuffer) {
-
-    auto [heap, offset] = chk->allocate_gpu_heap(ConstantBufferCount << 3, 16);
-    uint64_t *write_to_it = chk->gpu_argument_heap_contents + (offset >> 3);
-
-    for (unsigned i = 0; i < ConstantBufferCount; i++) {
-      auto &arg = reflection->ConstantBuffers[i];
-      auto slot = arg.SM50BindingSlot;
-      MTL_BINDABLE_RESIDENCY_MASK newResidencyMask = MTL_RESIDENCY_NULL;
-      SIMPLE_RESIDENCY_TRACKER *pTracker;
-      switch (arg.Type) {
-      case SM50BindingType::ConstantBuffer: {
-        if (!ShaderStage.ConstantBuffers.test_bound(slot)) {
-          ERR("expect constant buffer at slot ", slot, " but none is bound.");
-          return false;
-        }
-        auto &cbuf = ShaderStage.ConstantBuffers[slot];
-        auto argbuf = cbuf.Buffer->GetArgumentData(&pTracker);
-        write_to_it[arg.StructurePtrOffset] = argbuf.buffer() + (cbuf.FirstConstant << 4);
-        ShaderStage.ConstantBuffers.clear_dirty(slot);
-        pTracker->CheckResidency(encoderId, GetResidencyMask<Tessellation>(stage, true, false), &newResidencyMask);
-        if (newResidencyMask) {
-          useResource(Use(cbuf.Buffer), newResidencyMask);
-        }
-        break;
-      }
-      default:
-        D3D11_ASSERT(0 && "unreachable");
-      }
-    }
-
-    /* kConstantBufferTableBinding = 29 */
-    chk->emit([offset](CommandChunk::context &ctx) {
-      if constexpr (stage == ShaderType::Vertex) {
-        if constexpr (Tessellation) {
-          ctx.render_encoder->setObjectBufferOffset(offset, 29);
-        } else {
-          ctx.render_encoder->setVertexBufferOffset(offset, 29);
-        }
-      } else if constexpr (stage == ShaderType::Pixel) {
-        ctx.render_encoder->setFragmentBufferOffset(offset, 29);
-      } else if constexpr (stage == ShaderType::Compute) {
-        ctx.compute_encoder->setBufferOffset(offset, 29);
-      } else if constexpr (stage == ShaderType::Hull) {
-        ctx.render_encoder->setMeshBufferOffset(offset, 29);
-      } else if constexpr (stage == ShaderType::Domain) {
-        ctx.render_encoder->setVertexBufferOffset(offset, 29);
-      } else {
-        D3D11_ASSERT(0 && "Not implemented");
-      }
-    });
-  }
-
-  if (BindingCount && (dirty_sampler || dirty_srv || dirty_uav)) {
-    auto [heap, offset] = chk->allocate_gpu_heap(ArgumentTableQwords * 8, 16);
-    uint64_t *write_to_it = chk->gpu_argument_heap_contents + (offset >> 3);
-
-    for (unsigned i = 0; i < BindingCount; i++) {
-      auto &arg = reflection->Arguments[i];
-      auto slot = arg.SM50BindingSlot;
-      MTL_BINDABLE_RESIDENCY_MASK newResidencyMask = MTL_RESIDENCY_NULL;
-      SIMPLE_RESIDENCY_TRACKER *pTracker;
-      switch (arg.Type) {
-      case SM50BindingType::ConstantBuffer: {
-        D3D11_ASSERT(0 && "unreachable");
-      }
-      case SM50BindingType::Sampler: {
-        if (!ShaderStage.Samplers.test_bound(slot)) {
-          ERR("expect sample at slot ", slot, " but none is bound.");
-          return false;
-        }
-        auto &sampler = ShaderStage.Samplers[slot];
-        write_to_it[arg.StructurePtrOffset] = sampler.Sampler->GetArgumentHandle();
-        write_to_it[arg.StructurePtrOffset + 1] = (uint64_t)std::bit_cast<uint32_t>(sampler.Sampler->GetLODBias());
-        ShaderStage.Samplers.clear_dirty(slot);
-        break;
-      }
-      case SM50BindingType::SRV: {
-        if (!ShaderStage.SRVs.test_bound(slot)) {
-          // TODO: debug only
-          // ERR("expect shader resource at slot ", slot, " but none is bound.");
-          write_to_it[arg.StructurePtrOffset] = 0;
-          write_to_it[arg.StructurePtrOffset + 1] = 0;
-          break;
-        }
-        auto &srv = ShaderStage.SRVs[slot];
-        if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_BUFFER) {
-          pTracker = (SIMPLE_RESIDENCY_TRACKER *)(~0uLL);
-        } else {
-          pTracker = nullptr;
-        }
-        auto arg_data = srv.SRV->GetArgumentData(&pTracker);
-        if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_BUFFER) {
-          write_to_it[arg.StructurePtrOffset] = arg_data.buffer();
-        }
-        if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE) {
-          if (arg_data.requiresContext()) {
-            chk->emit([=, ref = srv.SRV](CommandChunk::context &ctx) {
-              write_to_it[arg.StructurePtrOffset] = arg_data.texture(&ctx);
-            });
-          } else {
-            write_to_it[arg.StructurePtrOffset] = arg_data.texture();
-          }
-        }
-        if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_ELEMENT_WIDTH) {
-          write_to_it[arg.StructurePtrOffset + 1] = arg_data.width();
-        }
-        if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE_MINLOD_CLAMP) {
-          write_to_it[arg.StructurePtrOffset + 1] = std::bit_cast<uint32_t>(arg_data.min_lod());
-        }
-        if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_TBUFFER_OFFSET) {
-          write_to_it[arg.StructurePtrOffset + 1] = arg_data.tbuffer_descriptor();
-        }
-        if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_UAV_COUNTER) {
-          D3D11_ASSERT(0 && "srv can not have counter associated");
-        }
-        ShaderStage.SRVs.clear_dirty(slot);
-        pTracker->CheckResidency(encoderId, GetResidencyMask<Tessellation>(stage, true, false), &newResidencyMask);
-        if (newResidencyMask) {
-          useResource(srv.SRV->UseBindable(currentChunkId), newResidencyMask);
-        }
-        break;
-      }
-      case SM50BindingType::UAV: {
-        if constexpr (stage == ShaderType::Vertex) {
-          ERR("uav in vertex shader! need to workaround");
-          return false;
-        }
-        // FIXME: currently only pixel shader use uav from OM
-        // REFACTOR NEEDED
-        // TODO: consider separately handle uav
-        if (!UAVBindingSet.test_bound(arg.SM50BindingSlot)) {
-          // ERR("expect uav at slot ", arg.SM50BindingSlot,
-          //     " but none is bound.");
-          write_to_it[arg.StructurePtrOffset] = 0;
-          if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_ELEMENT_WIDTH) {
-            write_to_it[arg.StructurePtrOffset + 1] = 0;
-          }
-          if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_UAV_COUNTER) {
-            write_to_it[arg.StructurePtrOffset + 2] = 0;
-          }
-          break;
-        }
-        auto &uav = UAVBindingSet[arg.SM50BindingSlot];
-        if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_BUFFER) {
-          pTracker = (SIMPLE_RESIDENCY_TRACKER *)(~0uLL);
-        } else {
-          pTracker = nullptr;
-        }
-        auto arg_data = uav.View->GetArgumentData(&pTracker);
-        if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_BUFFER) {
-          write_to_it[arg.StructurePtrOffset] = arg_data.buffer();
-        }
-        if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE) {
-          if (arg_data.requiresContext()) {
-            chk->emit([=, ref = uav.View](CommandChunk::context &ctx) {
-              write_to_it[arg.StructurePtrOffset] = arg_data.texture(&ctx);
-            });
-          } else {
-            write_to_it[arg.StructurePtrOffset] = arg_data.texture();
-          }
-        }
-        if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_ELEMENT_WIDTH) {
-          write_to_it[arg.StructurePtrOffset + 1] = arg_data.width();
-        }
-        if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE_MINLOD_CLAMP) {
-          write_to_it[arg.StructurePtrOffset + 1] = std::bit_cast<uint32_t>(arg_data.min_lod());
-        }
-        if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_TBUFFER_OFFSET) {
-          write_to_it[arg.StructurePtrOffset + 1] = arg_data.tbuffer_descriptor();
-        }
-        if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_UAV_COUNTER) {
-          auto counter_handle = arg_data.counter();
-          if (counter_handle != DXMT_NO_COUNTER) {
-            auto counter = ctx_state.cmd_queue.counter_pool.GetCounter(counter_handle);
-            chk->emit([counter](CommandChunk::context &ctx) {
-              switch (stage) {
-              case ShaderType::Vertex:
-              case ShaderType::Pixel:
-              case ShaderType::Hull:
-              case ShaderType::Domain:
-                ctx.render_encoder->useResource(counter.Buffer, MTL::ResourceUsageRead | MTL::ResourceUsageWrite);
-                break;
-              case ShaderType::Compute:
-                ctx.compute_encoder->useResource(counter.Buffer, MTL::ResourceUsageRead | MTL::ResourceUsageWrite);
-                break;
-              case ShaderType::Geometry:
-                D3D11_ASSERT(0 && "Not implemented");
-                break;
-              }
-            });
-            write_to_it[arg.StructurePtrOffset + 2] = counter.Buffer->gpuAddress() + counter.Offset;
-          } else {
-            ERR("use uninitialized counter!");
-            write_to_it[arg.StructurePtrOffset + 2] = 0;
-          };
-        }
-        UAVBindingSet.clear_dirty(slot);
-        pTracker->CheckResidency(
-            encoderId,
-            GetResidencyMask<Tessellation>(
-                stage,
-                // FIXME: don't use literal constant...
-                (arg.Flags >> 10) & 1, (arg.Flags >> 10) & 2
-            ),
-            &newResidencyMask
-        );
-        if (newResidencyMask) {
-          useResource(uav.View->UseBindable(currentChunkId), newResidencyMask);
-        }
-        break;
-      }
-      }
-    }
-
-    /* kArgumentBufferBinding = 30 */
-    chk->emit([offset](CommandChunk::context &ctx) {
-      if constexpr (stage == ShaderType::Vertex) {
-        if constexpr (Tessellation) {
-          ctx.render_encoder->setObjectBufferOffset(offset, 30);
-        } else {
-          ctx.render_encoder->setVertexBufferOffset(offset, 30);
-        }
-      } else if constexpr (stage == ShaderType::Pixel) {
-        ctx.render_encoder->setFragmentBufferOffset(offset, 30);
-      } else if constexpr (stage == ShaderType::Compute) {
-        ctx.compute_encoder->setBufferOffset(offset, 30);
-      } else if constexpr (stage == ShaderType::Hull) {
-        ctx.render_encoder->setMeshBufferOffset(offset, 30);
-      } else if constexpr (stage == ShaderType::Domain) {
-        ctx.render_encoder->setVertexBufferOffset(offset, 30);
-      } else {
-        D3D11_ASSERT(0 && "Not implemented");
-      }
-    });
-  }
-  return true;
-}
-
-/**
-it's just about vertex buffer
-- index buffer and input topology are provided in draw commands
-*/
-template <>
-void
-ImmediateContextBase::UpdateVertexBuffer() {
-  if (!state_.InputAssembler.InputLayout)
-    return;
-
-  uint32_t slot_mask = state_.InputAssembler.InputLayout->GetManagedInputLayout()->input_slot_mask();
-  if (slot_mask == 0) // effectively empty input layout
-    return;
-
-  auto &VertexBuffers = state_.InputAssembler.VertexBuffers;
-  if (!VertexBuffers.any_dirty_masked((uint64_t)slot_mask))
-    return;
-
-  struct VERTEX_BUFFER_ENTRY {
-    uint64_t buffer_handle;
-    uint32_t stride;
-    uint32_t length;
-  };
-
-  uint32_t max_slot = 32 - __builtin_clz(slot_mask);
-  uint32_t num_slots = __builtin_popcount(slot_mask);
-
-  CommandChunk *chk = ctx_state.cmd_queue.CurrentChunk();
-  auto encoderId = chk->current_encoder_id();
-  auto [heap, offset] = chk->allocate_gpu_heap(16 * num_slots, 16);
-  VERTEX_BUFFER_ENTRY *entries = (VERTEX_BUFFER_ENTRY *)(((char *)heap->contents()) + offset);
-  for (unsigned slot = 0, index = 0; slot < max_slot; slot++) {
-    if (!(slot_mask & (1 << slot)))
-      continue;
-    if (!VertexBuffers.test_bound(slot)) {
-      entries[index].buffer_handle = 0;
-      entries[index].stride = 0;
-      entries[index++].length = 0;
-      continue;
-    }
-    auto &state = VertexBuffers[slot];
-    MTL_BINDABLE_RESIDENCY_MASK newResidencyMask = MTL_RESIDENCY_NULL;
-    SIMPLE_RESIDENCY_TRACKER *pTracker;
-    auto handle = state.Buffer->GetArgumentData(&pTracker);
-    entries[index].buffer_handle = handle.buffer() + state.Offset;
-    entries[index].stride = state.Stride;
-    entries[index++].length = handle.width() > state.Offset ? handle.width() - state.Offset : 0;
-    pTracker->CheckResidency(
-        encoderId,
-        cmdbuf_state == CommandBufferState::TessellationRenderPipelineReady
-            ? GetResidencyMask<true>(ShaderType::Vertex, true, false)
-            : GetResidencyMask<false>(ShaderType::Vertex, true, false),
-        &newResidencyMask
-    );
-    if (newResidencyMask) {
-      chk->emit([res = Use(state.Buffer), newResidencyMask](CommandChunk::context &ctx) {
-        ctx.render_encoder->useResource(
-            res.buffer(), GetUsageFromResidencyMask(newResidencyMask), GetStagesFromResidencyMask(newResidencyMask)
-        );
-      });
-    }
-  };
-  if (cmdbuf_state == CommandBufferState::TessellationRenderPipelineReady) {
-    EmitCommand([offset](CommandChunk::context &ctx) { ctx.render_encoder->setObjectBufferOffset(offset, 16); });
-  }
-  if (cmdbuf_state == CommandBufferState::RenderPipelineReady) {
-    EmitCommand([offset](CommandChunk::context &ctx) { ctx.render_encoder->setVertexBufferOffset(offset, 16); });
-  }
 }
 
 class MTLD3D11ImmediateContext : public ImmediateContextBase {
@@ -526,12 +98,10 @@ public:
       case D3D11_MAP_WRITE_DISCARD: {
         dynamic->RotateBuffer(device);
         auto bind_flag = dynamic->GetBindFlag();
-        if (bind_flag & D3D11_BIND_VERTEX_BUFFER) {
+        // if (bind_flag & D3D11_BIND_VERTEX_BUFFER) {
+        // FIXME: bind_flag can be inaccurate
           state_.InputAssembler.VertexBuffers.set_dirty();
-        }
-        if (bind_flag & D3D11_BIND_INDEX_BUFFER) {
-          dirty_state.set(DirtyState::IndexBuffer);
-        }
+        // }
         if (bind_flag & D3D11_BIND_CONSTANT_BUFFER) {
           for (auto &stage : state_.ShaderStages) {
             stage.ConstantBuffers.set_dirty();
@@ -543,6 +113,17 @@ public:
           }
         }
         Out.pData = dynamic->GetMappedMemory(&Out.RowPitch, &Out.DepthPitch);
+        if (dynamic->__isBuffer_dyn()) {
+          Emit([buffer = dynamic->__buffer_dyn(),
+                allocation = dynamic->__bufferAllocated()](ArgumentEncodingContext &enc) mutable {
+            auto _ = buffer->rename(forward_rc(allocation));
+          });
+        } else {
+          Emit([texture = dynamic->__texture_dyn(),
+                allocation = dynamic->__textureAllocated()](ArgumentEncodingContext &enc) mutable {
+            auto _ = texture->rename(forward_rc(allocation));
+          });
+        }
         break;
       }
       case D3D11_MAP_WRITE_NO_OVERWRITE: {
@@ -606,10 +187,10 @@ public:
     case D3D11_QUERY_OCCLUSION:
     case D3D11_QUERY_OCCLUSION_PREDICATE: {
       auto query = static_cast<IMTLD3DOcclusionQuery *>(pAsync);
-      query->Begin(cmd_queue.CurrentSeqId(), vro_state.getNextReadOffset());
-      active_occlusion_queries.insert(query);
-      // FIXME: remove duplication
-      pending_occlusion_queries.push_back(query);
+      if (query->Begin())
+        Emit([query_ = query->__query()](ArgumentEncodingContext &enc) mutable {
+          enc.beginVisibilityResultQuery(std::move(query_));
+        });
       break;
     }
     case D3D11_QUERY_TIMESTAMP:
@@ -635,9 +216,10 @@ public:
     case D3D11_QUERY_OCCLUSION:
     case D3D11_QUERY_OCCLUSION_PREDICATE: {
       auto query = static_cast<IMTLD3DOcclusionQuery *>(pAsync);
-      if (active_occlusion_queries.erase(query) == 0)
-        return; // invalid
-      query->End(cmd_queue.CurrentSeqId(), vro_state.getNextReadOffset());
+      if (query->End())
+        Emit([qeury_ = query->__query()](ArgumentEncodingContext &enc) mutable {
+          enc.endVisibilityResultQuery(std::move(qeury_));
+        });
       promote_flush = true;
       break;
     }
@@ -710,78 +292,18 @@ public:
     InvalidateCurrentPass();
   }
 
+  void PrepareFlush() override {
+    InvalidateCurrentPass(true);
+  }
+
   void
   ExecuteCommandList(ID3D11CommandList *pCommandList, BOOL RestoreContextState) override {
-    auto cmd_list = static_cast<MTLD3D11CommandList *>(pCommandList);
-
-    if (cmd_list->Noop())
-      return;
-
-    InvalidateCurrentPass();
-
-    CommandChunk *chk = ctx_state.cmd_queue.CurrentChunk();
-
-    std::vector<ArgumentData> argument_table(cmd_list->num_argument_data);
-    std::vector<BindingRef> bindingref_table(cmd_list->num_bindingref);
-
-    auto [heap, offset] = chk->allocate_gpu_heap(cmd_list->gpu_arugment_heap_offset, 16);
-
-    uint64_t visibility_offset = vro_state.preserveCount(cmd_list->num_visibility_result);
-
-    chk->mark_pass(EncoderKind::ExecuteCommandList);
-
-    MTLD3D11CommandList::EventContext ctx{
-        cmd_queue,
-        device,
-        (uint64_t *)((char *)heap->contents() + offset),
-        argument_table,
-        bindingref_table,
-        visibility_offset,
-        pending_occlusion_queries
-    };
-    cmd_list->ProcessEvents(ctx);
-
-    chk->emit([cmd_list = Com(cmd_list), table = std::move(bindingref_table), offset, visibility_offset](auto &ctx) {
-      const BindingRef *old_lut;
-      BindingRef::SetLookupTable(table.data(), &old_lut);
-      auto offset_base = ctx.offset_base;
-      auto visibility_offset_base = ctx.visibility_offset_base;
-      ctx.offset_base = offset;
-      ctx.visibility_offset_base = visibility_offset;
-      cmd_list->EncodeCommands(ctx);
-      ctx.offset_base = offset_base;
-      ctx.visibility_offset_base = visibility_offset_base;
-      BindingRef::SetLookupTable(old_lut, nullptr);
-    });
-
-    if (!RestoreContextState)
-      ClearState();
-
-    if (cmd_list->promote_flush)
-      Flush();
+    IMPLEMENT_ME
   }
 
   HRESULT
   FinishCommandList(BOOL RestoreDeferredContextState, ID3D11CommandList **ppCommandList) override {
     return DXGI_ERROR_INVALID_CALL;
-  }
-
-  void
-  CopyStructureCount(ID3D11Buffer *pDstBuffer, UINT DstAlignedByteOffset, ID3D11UnorderedAccessView *pSrcView)
-      override {
-    if (auto dst_bind = com_cast<IMTLBindable>(pDstBuffer)) {
-      if (auto uav = com_cast<IMTLD3D11UnorderedAccessView>(pSrcView)) {
-        auto counter_handle = uav->SwapCounter(DXMT_NO_COUNTER);
-        if (counter_handle == DXMT_NO_COUNTER) {
-          return;
-        }
-        auto counter = cmd_queue.counter_pool.GetCounter(counter_handle);
-        EmitBlitCommand<true>([counter, DstAlignedByteOffset,
-                               dst = Use(dst_bind)](MTL::BlitCommandEncoder *enc, auto &ctx) {
-          enc->copyFromBuffer(counter.Buffer, counter.Offset, dst.buffer(), DstAlignedByteOffset, 4);
-        });
-      }
-    }
   }
 
   D3D11_DEVICE_CONTEXT_TYPE
@@ -797,53 +319,10 @@ public:
     cmd_queue.WaitCPUFence(seq);
   };
 
-  class VisibilityResultReadback {
-  public:
-    VisibilityResultReadback(
-        uint64_t seq_id, uint64_t num_results, std::vector<Com<IMTLD3DOcclusionQuery>> &&queries, CommandChunk *chk
-    ) :
-        seq_id(seq_id),
-        num_results(num_results),
-        queries(std::move(queries)),
-        chk(chk) {}
-    ~VisibilityResultReadback() {
-      for (auto query : queries) {
-        query->Issue(seq_id, (uint64_t *)chk->visibility_result_heap->contents(), num_results);
-      }
-    }
-
-    VisibilityResultReadback(const VisibilityResultReadback &) = delete;
-    VisibilityResultReadback(VisibilityResultReadback &&) = default;
-
-    uint64_t seq_id;
-    uint64_t num_results;
-    std::vector<Com<IMTLD3DOcclusionQuery>> queries;
-    CommandChunk *chk;
-  };
-
   void
   Commit() override {
     promote_flush = false;
     D3D11_ASSERT(cmdbuf_state == CommandBufferState::Idle);
-    CommandChunk *chk = ctx_state.cmd_queue.CurrentChunk();
-    if (auto count = vro_state.reset()) {
-      if (count > kOcclusionSampleCount && (count << 3) > chk->visibility_result_heap->length()) {
-        auto old_heap = std::move(chk->visibility_result_heap);
-        chk->visibility_result_heap = transfer(device->GetMTLDevice()->newBuffer(count << 3, old_heap->resourceOptions()));
-      }
-      chk->emit([_ = VisibilityResultReadback(
-                     cmd_queue.CurrentSeqId(), count, std::move(pending_occlusion_queries), chk
-                 )](auto) {});
-      pending_occlusion_queries = {};
-      if (!active_occlusion_queries.empty()) {
-        WARN("A chunk is commit while the visibility result is still queried");
-        for (auto s : active_occlusion_queries) {
-          pending_occlusion_queries.push_back(s);
-        }
-      }
-    }
-    /** FIXME: it might be unnecessary? */
-    chk->emit([device = Com<MTLD3D11Device, false>(device)](CommandChunk::context &ctx) {});
     ctx_state.cmd_queue.CommitCurrentChunk();
   };
 
