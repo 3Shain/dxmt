@@ -4,8 +4,8 @@
 
 namespace dxmt {
 
-void
-BufferPool2::Rename(uint64_t currentSeqId, uint64_t coherentSeqId) {
+Rc<BufferAllocation>
+BufferPool2::allocate(uint64_t coherentSeqId) {
   Rc<BufferAllocation> alloc;
   for (;;) {
     if (fifo.empty()) {
@@ -21,15 +21,17 @@ BufferPool2::Rename(uint64_t currentSeqId, uint64_t coherentSeqId) {
   }
   if (!alloc.ptr())
     alloc = buffer_->allocate(flags_);
-  auto old = buffer_->rename(std::move(alloc));
-  if (old.ptr()) {
-    fifo.push(QueryEntry{.allocation = std::move(old), .will_free_at = currentSeqId});
+  return alloc;
+}
+
+void BufferPool2::discard(Rc<BufferAllocation>&& allocation, uint64_t currentSeqId) {
+  if (allocation.ptr()) {
+    fifo.push(QueryEntry{.allocation = std::move(allocation), .will_free_at = currentSeqId});
   }
 }
 
-
-void
-DynamicTexturePool2::Rename(uint64_t currentSeqId, uint64_t coherentSeqId) {
+Rc<TextureAllocation>
+DynamicTexturePool2::allocate(uint64_t coherentSeqId) {
   Rc<TextureAllocation> alloc;
   for (;;) {
     if (fifo.empty()) {
@@ -45,9 +47,13 @@ DynamicTexturePool2::Rename(uint64_t currentSeqId, uint64_t coherentSeqId) {
   }
   if (!alloc.ptr())
     alloc = buffer_->allocate(flags_);
-  auto old = buffer_->rename(std::move(alloc));
-  if (old.ptr()) {
-    fifo.push(QueryEntry{.allocation = std::move(old), .will_free_at = currentSeqId});
+  return alloc;
+}
+
+void DynamicTexturePool2::discard(Rc<TextureAllocation>&& allocation, uint64_t currentSeqId) {
+  if (allocation.ptr()) {
+    fifo.push(QueryEntry{.allocation = std::move(allocation), .will_free_at = currentSeqId});
   }
 }
+
 }; // namespace dxmt

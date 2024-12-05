@@ -32,17 +32,35 @@ BufferAllocation::decRef() {
 
 MTL::Texture *
 Buffer::view(BufferViewKey key) {
-  if (unlikely(current_->version_ != version_)) {
-    prepareAllocationViews();
-  }
-  return current_->cached_view_[key];
+  return view(key, current_.ptr());
 };
 
+MTL::Texture *
+Buffer::view(BufferViewKey key, BufferAllocation* allocation) {
+  if (unlikely(allocation->version_ != version_)) {
+    prepareAllocationViews(allocation);
+  }
+  return allocation->cached_view_[key]->texture.ptr();
+};
+
+DXMT_RESOURCE_RESIDENCY_STATE &
+Buffer::residency(BufferViewKey key) {
+  return residency(key, current_.ptr());
+}
+
+DXMT_RESOURCE_RESIDENCY_STATE &
+Buffer::residency(BufferViewKey key, BufferAllocation *allocation) {
+  if (unlikely(allocation->version_ != version_)) {
+    prepareAllocationViews(allocation);
+  }
+  return allocation->cached_view_[key]->residency;
+}
+
 void
-Buffer::prepareAllocationViews() {
+Buffer::prepareAllocationViews(BufferAllocation* allocation) {
   std::unique_lock<dxmt::mutex> lock(mutex_);
-  for (unsigned version = current_->version_; version < version_; version++) {
-    auto buffer = current_->obj_.ptr();
+  for (unsigned version = allocation->version_; version < version_; version++) {
+    auto buffer = allocation->obj_.ptr();
     auto length = buffer->length();
     auto format = viewDescriptors_[version].format;
     auto texel_size = MTLGetTexelSize(format);
@@ -59,11 +77,11 @@ Buffer::prepareAllocationViews() {
     desc->setPixelFormat(format);
     desc->setResourceOptions(buffer->resourceOptions());
 
-    current_->cached_view_.push_back(transfer(buffer->newTexture(desc, 0, length)));
+    allocation->cached_view_.push_back(std::make_unique<BufferView>(transfer(buffer->newTexture(desc, 0, length))));
 
     desc->release();
   }
-  current_->version_ = version_;
+  allocation->version_ = version_;
 };
 
 BufferViewKey
@@ -106,11 +124,12 @@ Buffer::rename(Rc<BufferAllocation> &&newAllocation) {
 }
 
 void Buffer::incRef(){
-
+  refcount_.fetch_add(1u, std::memory_order_acquire);
 };
 
 void Buffer::decRef(){
-
+  if (refcount_.fetch_sub(1u, std::memory_order_release) == 1u)
+    delete this;
 };
 
 } // namespace dxmt

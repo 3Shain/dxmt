@@ -1,6 +1,7 @@
 #pragma once
 #include "Metal/MTLPixelFormat.hpp"
 #include "Metal/MTLTexture.hpp"
+#include "dxmt_residency.hpp"
 #include "objc_pointer.hpp"
 #include "rc/util_rc_ptr.hpp"
 #include "thread.hpp"
@@ -31,8 +32,10 @@ struct TextureViewDescriptor {
 };
 
 struct TextureView {
-  MTL::Texture *texture;
-  // TextureViewSubrange range;
+  Obj<MTL::Texture> texture;
+  DXMT_RESOURCE_RESIDENCY_STATE residency {};
+
+  TextureView(Obj<MTL::Texture> texture):texture(std::move(texture)) {}  
 };
 
 class TextureAllocation {
@@ -53,6 +56,7 @@ public:
 
   void *mappedMemory;
   uint64_t gpuResourceID;
+  DXMT_RESOURCE_RESIDENCY_STATE residencyState;
 
 private:
   TextureAllocation(
@@ -65,7 +69,7 @@ private:
   uint32_t version_ = 0;
   std::atomic<uint32_t> refcount_ = {0u};
   Flags<TextureAllocationFlag> flags_;
-  std::vector<Obj<MTL::Texture>> cached_view_;
+  std::vector<std::unique_ptr<TextureView>> cached_view_;
 };
 
 class Texture {
@@ -95,6 +99,11 @@ public:
   Rc<TextureAllocation> allocate(Flags<TextureAllocationFlag> flags);
 
   MTL::Texture *view(TextureViewKey key);
+  MTL::Texture *view(TextureViewKey key, TextureAllocation* allocation);
+
+
+  DXMT_RESOURCE_RESIDENCY_STATE &residency(TextureViewKey key);
+  DXMT_RESOURCE_RESIDENCY_STATE &residency(TextureViewKey key, TextureAllocation* allocation);
 
   Rc<TextureAllocation> rename(Rc<TextureAllocation> &&newAllocation);
 
@@ -105,7 +114,7 @@ public:
   );
 
 private:
-  void prepareAllocationViews();
+  void prepareAllocationViews(TextureAllocation* allocation);
 
   Obj<MTL::TextureDescriptor> descriptor_;
   unsigned bytes_per_image_ = 0;
@@ -113,6 +122,7 @@ private:
 
   Rc<TextureAllocation> current_;
   uint32_t version_ = 0;
+  std::atomic<uint32_t> refcount_ = {0u};
 
   std::vector<TextureViewDescriptor> viewDescriptors_;
   dxmt::mutex mutex_;

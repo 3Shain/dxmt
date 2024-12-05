@@ -14,21 +14,19 @@ namespace dxmt {
 
 #pragma region DynamicTexture
 
-class DynamicTexture2D : public TResourceBase<tag_texture_2d, IMTLDynamicBuffer> {
+class DynamicTexture2D : public TResourceBase<tag_texture_2d, IMTLBindable, IMTLDynamicBuffer> {
 private:
-  std::unique_ptr<Texture> texture;
+  Rc<Texture> texture;
+  Rc<TextureAllocation> allocation;
   size_t bytes_per_image_;
   size_t bytes_per_row_;
 
   std::unique_ptr<DynamicTexturePool2> pool;
-  SIMPLE_RESIDENCY_TRACKER tracker{};
-  SIMPLE_OCCUPANCY_TRACKER occupancy{};
 
   using SRVBase = TResourceViewBase<tag_shader_resource_view<DynamicTexture2D>, IMTLBindable>;
 
   class SRV : public SRVBase {
     TextureViewKey view_key;
-    SIMPLE_RESIDENCY_TRACKER tracker{};
 
   public:
     SRV(const tag_shader_resource_view<>::DESC1 *pDesc, DynamicTexture2D *pResource, MTLD3D11Device *pDevice,
@@ -38,35 +36,11 @@ private:
 
     ~SRV() {}
 
-    BindingRef
-    UseBindable(uint64_t seq_id) override {
-      if (!seq_id)
-        return BindingRef();
-      resource->occupancy.MarkAsOccupied(seq_id);
-      auto view = resource->texture->view(view_key);
-      return BindingRef(static_cast<ID3D11View *>(this), view);
-    };
-
-    ArgumentData
-    GetArgumentData(SIMPLE_RESIDENCY_TRACKER **ppTracker) override {
-      *ppTracker = &tracker;
-      auto view = resource->texture->view(view_key);
-      return ArgumentData(view->gpuResourceID(), view);
-    }
-
-    bool
-    GetContentionState(uint64_t) override {
-      return true;
-    }
-
-    void
-    GetLogicalResourceOrView(REFIID riid, void **ppLogicalResource) override {
-      if (riid == __uuidof(IMTLDynamicBuffer)) {
-        resource->QueryInterface(riid, ppLogicalResource);
-        return;
-      }
-      this->QueryInterface(riid, ppLogicalResource);
-    }
+    Rc<Buffer> __buffer() final { return {}; };
+    Rc<Texture> __texture() final { return this->resource->texture; };
+    unsigned __viewId() final { return view_key;};
+    bool __isBuffer() final { return false; }
+    BufferSlice __bufferSlice() final { return {};}
   };
 
 public:
@@ -74,10 +48,10 @@ public:
       const tag_texture_2d::DESC1 *pDesc, Obj<MTL::TextureDescriptor> &&descriptor,
       const D3D11_SUBRESOURCE_DATA *pInitialData, UINT bytes_per_image, UINT bytes_per_row, MTLD3D11Device *device
   ) :
-      TResourceBase<tag_texture_2d, IMTLDynamicBuffer>(*pDesc, device),
+      TResourceBase<tag_texture_2d, IMTLBindable, IMTLDynamicBuffer>(*pDesc, device),
       bytes_per_image_(bytes_per_image),
       bytes_per_row_(bytes_per_row) {
-    texture = std::make_unique<Texture>(bytes_per_image, bytes_per_row, std::move(descriptor), device->GetMTLDevice());
+    texture = new Texture(bytes_per_image, bytes_per_row, std::move(descriptor), device->GetMTLDevice());
     Flags<TextureAllocationFlag> flags;
     if (!m_parent->IsTraced() && pDesc->Usage == D3D11_USAGE_DYNAMIC)
       flags.set(TextureAllocationFlag::CpuWriteCombined);
@@ -86,22 +60,30 @@ public:
       flags.set(TextureAllocationFlag::GpuReadonly);
     if (pDesc->Usage != D3D11_USAGE_DYNAMIC)
       flags.set(TextureAllocationFlag::GpuManaged);
-    pool = std::make_unique<DynamicTexturePool2>(texture.get(), flags);
+    pool = std::make_unique<DynamicTexturePool2>(texture.ptr(), flags);
     RotateBuffer(device);
+    auto _ = texture->rename(Rc(allocation));
+    D3D11_ASSERT(_.ptr() == nullptr);
 
     if (pInitialData) {
       D3D11_ASSERT(pInitialData->SysMemPitch == bytes_per_row);
-      D3D11_ASSERT(texture->current()->mappedMemory);
-      memcpy(texture->current()->mappedMemory, pInitialData->pSysMem, bytes_per_image);
+      D3D11_ASSERT(allocation->mappedMemory);
+      memcpy(allocation->mappedMemory, pInitialData->pSysMem, bytes_per_image);
     }
   }
+
+  Rc<Buffer> __buffer() final { return {}; };
+  Rc<Texture> __texture() final { return this->texture; };
+  unsigned __viewId() final { return ~0;};
+  bool __isBuffer() final { return false; }
+  BufferSlice __bufferSlice() final { return {};}
 
   void *
   GetMappedMemory(UINT *pBytesPerRow, UINT *pBytesPerImage) override {
     *pBytesPerRow = bytes_per_row_;
     *pBytesPerImage = bytes_per_image_;
-    assert(texture->current()->mappedMemory);
-    return texture->current()->mappedMemory;
+    assert(allocation->mappedMemory);
+    return allocation->mappedMemory;
   };
 
   UINT
@@ -111,18 +93,19 @@ public:
     return bytes_per_image_;
   };
 
-  BindingRef
-  GetCurrentBufferBinding() override {
-    auto backbuffer = texture->current()->texture()->buffer();
-    return BindingRef(static_cast<ID3D11Resource *>(this), backbuffer, backbuffer->length(), 0);
-  };
+  dxmt::Rc<dxmt::Buffer> __buffer_dyn() final { return {}; };
+  dxmt::Rc<dxmt::Texture> __texture_dyn()final { return texture; };
+  bool __isBuffer_dyn() final { return false; };
+  dxmt::Rc<dxmt::BufferAllocation> __bufferAllocated() final { return {}; };
+  dxmt::Rc<dxmt::TextureAllocation> __textureAllocated() final { return allocation; };
 
   void
   RotateBuffer(MTLD3D11Device *exch) override {
-    tracker = {};
-    occupancy = {};
     auto &queue = exch->GetDXMTDevice().queue();
-    pool->Rename(queue.CurrentSeqId(), queue.CoherentSeqId());
+    if(allocation.ptr()) {
+      pool->discard(std::move(allocation), queue.CurrentSeqId());
+    }
+    allocation = pool->allocate(queue.CoherentSeqId());
   };
 
   D3D11_BIND_FLAG

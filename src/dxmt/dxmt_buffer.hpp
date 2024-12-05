@@ -3,6 +3,7 @@
 #include "Metal/MTLDevice.hpp"
 #include "Metal/MTLPixelFormat.hpp"
 #include "Metal/MTLTexture.hpp"
+#include "dxmt_residency.hpp"
 #include "objc_pointer.hpp"
 #include "rc/util_rc_ptr.hpp"
 #include "thread.hpp"
@@ -29,7 +30,10 @@ struct BufferViewDescriptor {
 class Buffer;
 
 struct BufferView {
-  MTL::Texture *texture;
+  Obj<MTL::Texture> texture;
+  DXMT_RESOURCE_RESIDENCY_STATE residency {};
+
+  BufferView(Obj<MTL::Texture> texture):texture(std::move(texture)) {}  
 };
 
 class BufferAllocation {
@@ -44,9 +48,6 @@ public:
     return obj_.ptr();
   }
 
-  // TODO: tracking state
-  // TODO: residency state
-
   Flags<BufferAllocationFlag>
   flags() {
     return flags_;
@@ -54,6 +55,7 @@ public:
 
   void* mappedMemory;
   uint64_t gpuAddress;
+  DXMT_RESOURCE_RESIDENCY_STATE residencyState;
 
 private:
   BufferAllocation(Obj<MTL::Buffer> &&buffer, Flags<BufferAllocationFlag> flags);
@@ -62,7 +64,7 @@ private:
   uint32_t version_ = 0;
   std::atomic<uint32_t> refcount_ = {0u};
   Flags<BufferAllocationFlag> flags_;
-  std::vector<Obj<MTL::Texture>> cached_view_;
+  std::vector<std::unique_ptr<BufferView>> cached_view_;
 };
 
 class Buffer {
@@ -84,22 +86,30 @@ public:
   Buffer(uint64_t length, MTL::Device *device) : length_(length), device_(device) {}
 
   MTL::Texture *view(BufferViewKey key);
+  MTL::Texture *view(BufferViewKey key, BufferAllocation* allocation);
+
+  DXMT_RESOURCE_RESIDENCY_STATE &residency(BufferViewKey key);
+  DXMT_RESOURCE_RESIDENCY_STATE &residency(BufferViewKey key, BufferAllocation* allocation);
 
 private:
-  void prepareAllocationViews();
+  void prepareAllocationViews(BufferAllocation* allocation);
 
   uint64_t length_;
 
   Rc<BufferAllocation> current_;
   uint32_t version_ = 0;
+  std::atomic<uint32_t> refcount_ = {0u};
 
   std::vector<BufferViewDescriptor> viewDescriptors_;
   dxmt::mutex mutex_;
   MTL::Device *device_;
 };
 
-class BufferSlice {
-public:
+struct BufferSlice {
+  uint32_t byteOffset = 0;
+  uint32_t byteLength = 0;
+  uint32_t firstElement = 0;
+  uint32_t elementCount = 0;
 };
 
 } // namespace dxmt

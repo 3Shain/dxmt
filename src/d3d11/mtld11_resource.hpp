@@ -1,16 +1,13 @@
 #pragma once
+#include "dxmt_buffer.hpp"
 #include "dxmt_texture.hpp"
-#include "ftl.hpp"
 #include "Metal/MTLBuffer.hpp"
-#include "Metal/MTLCommandBuffer.hpp"
 #include "Metal/MTLTexture.hpp"
-#include "d3d11_1.h"
 #include "d3d11_device_child.hpp"
 #include "com/com_pointer.hpp"
 #include "com/com_guid.hpp"
 #include "d3d11_view.hpp"
 #include "dxgi_resource.hpp"
-#include "dxmt_binding.hpp"
 #include "dxmt_resource_binding.hpp"
 #include "log/log.hpp"
 #include <memory>
@@ -42,105 +39,17 @@ struct MTL_STAGING_RESOURCE {
   MTL::Buffer *Buffer;
 };
 
-enum MTL_BINDABLE_RESIDENCY_MASK : uint32_t {
-  MTL_RESIDENCY_NULL = 0,
-  MTL_RESIDENCY_VERTEX_READ = 1 << 0,
-  MTL_RESIDENCY_VERTEX_WRITE = 1 << 1,
-  MTL_RESIDENCY_FRAGMENT_READ = 1 << 2,
-  MTL_RESIDENCY_FRAGMENT_WRITE = 1 << 3,
-  MTL_RESIDENCY_OBJECT_READ = 1 << 4,
-  MTL_RESIDENCY_OBJECT_WRITE = 1 << 5,
-  MTL_RESIDENCY_MESH_READ = 1 << 6,
-  MTL_RESIDENCY_MESH_WRITE = 1 << 7,
-  MTL_RESIDENCY_READ = MTL_RESIDENCY_VERTEX_READ | MTL_RESIDENCY_FRAGMENT_READ |
-                       MTL_RESIDENCY_OBJECT_READ | MTL_RESIDENCY_MESH_READ,
-  MTL_RESIDENCY_WRITE = MTL_RESIDENCY_VERTEX_WRITE |
-                        MTL_RESIDENCY_FRAGMENT_WRITE |
-                        MTL_RESIDENCY_OBJECT_WRITE | MTL_RESIDENCY_MESH_WRITE,
-};
-
-struct SIMPLE_RESIDENCY_TRACKER {
-  uint64_t last_encoder_id = 0;
-  MTL_BINDABLE_RESIDENCY_MASK last_residency_mask = MTL_RESIDENCY_NULL;
-  void CheckResidency(uint64_t encoderId,
-                      MTL_BINDABLE_RESIDENCY_MASK residencyMask,
-                      MTL_BINDABLE_RESIDENCY_MASK *newResidencyMask) {
-    if (encoderId > last_encoder_id) {
-      last_residency_mask = residencyMask;
-      last_encoder_id = encoderId;
-      *newResidencyMask = last_residency_mask;
-      return;
-    }
-    if (encoderId == last_encoder_id) {
-      if ((last_residency_mask & residencyMask) == residencyMask) {
-        // it's already resident
-        *newResidencyMask = MTL_RESIDENCY_NULL;
-        return;
-      }
-      last_residency_mask |= residencyMask;
-      *newResidencyMask = last_residency_mask;
-      return;
-    }
-    // invalid
-    *newResidencyMask = MTL_RESIDENCY_NULL;
-  };
-};
-
-struct SIMPLE_OCCUPANCY_TRACKER {
-  uint64_t last_used_seq = 0;
-  void MarkAsOccupied(uint64_t seq_id) {
-    last_used_seq = std::max(last_used_seq, seq_id);
-  }
-  bool IsOccupied(uint64_t finished_seq_id) {
-    return last_used_seq > finished_seq_id;
-  }
-};
-
 /**
 FIXME: don't hold a IMTLBindable in any places other than context state.
 especially don't capture it in command lambda.
  */
 DEFINE_COM_INTERFACE("1c7e7c98-6dd4-42f0-867b-67960806886e", IMTLBindable)
     : public IUnknown {
-  /**
-  Semantic: get a reference of the underlying metal resource and
-  other necessary information (e.g. size),record the time/seqId
-  of usage (no matter read/write)
-   */
-  virtual dxmt::BindingRef UseBindable(uint64_t bindAtSeqId) = 0;
-  /**
-  Semantic: 1. get all data required to fill the argument buffer
-  it's similar to `UseBindable`, but optimized for setting
-  argument buffer (which is frequent and needs to be performant!)
-  so it provides raw gpu handle/resource_id without extra reference
-  (no need to worry about missing reference, because `UseBindable`
-  will be called at least once for marking residency anyway)
-  2. provide current encoder id and intended residency state, get
-  the latest residency state in current encoder, or NULL if there
-  is no need to change residency state (in case it's already resident
-  before)
-   */
-  virtual dxmt::ArgumentData GetArgumentData(SIMPLE_RESIDENCY_TRACKER *
-                                             *ppTracker) = 0;
-  /**
-  Semantic: check if the resource is used by gpu at the moment
-  it guarantees true negative but can give false positive!
-  thus only use it as a potential to optimize updating from CPU
-  generally assume it return `true`
-   */
-  virtual bool GetContentionState(uint64_t finishedSeqId) = 0;
-  /**
-  Usually it's effectively just QueryInterface, except for dynamic resources
-   */
-  virtual void GetLogicalResourceOrView(REFIID riid,
-                                        void **ppLogicalResource) = 0;
-};
-
-DEFINE_COM_INTERFACE("daf21510-d136-44dd-bb16-068a94690775",
-                     IMTLD3D11BackBuffer)
-    : public IUnknown {
-  virtual void Present(MTL::CommandBuffer * cmdbuf, double vsync_duration) = 0;
-  virtual void Destroy() = 0;
+  virtual dxmt::Rc<dxmt::Buffer> __buffer() = 0;
+  virtual dxmt::Rc<dxmt::Texture> __texture() = 0;
+  virtual unsigned __viewId() = 0;
+  virtual bool __isBuffer() = 0;
+  virtual dxmt::BufferSlice __bufferSlice() = 0;
 };
 
 DEFINE_COM_INTERFACE("65feb8c5-01de-49df-bf58-d115007a117d", IMTLDynamicBuffer)
@@ -148,17 +57,22 @@ DEFINE_COM_INTERFACE("65feb8c5-01de-49df-bf58-d115007a117d", IMTLDynamicBuffer)
   virtual void *GetMappedMemory(UINT * pBytesPerRow, UINT * pBytesPerImage) = 0;
   virtual UINT GetSize(UINT * pBytesPerRow, UINT * pBytesPerImage) = 0;
   virtual void RotateBuffer(dxmt::MTLD3D11Device * pool) = 0;
-  virtual dxmt::BindingRef GetCurrentBufferBinding() = 0;
   virtual D3D11_BIND_FLAG GetBindFlag() = 0;
+
+  virtual dxmt::Rc<dxmt::Buffer> __buffer_dyn() = 0;
+  virtual dxmt::Rc<dxmt::Texture> __texture_dyn() = 0;
+  virtual bool __isBuffer_dyn() = 0;
+  virtual dxmt::Rc<dxmt::BufferAllocation> __bufferAllocated() = 0;
+  virtual dxmt::Rc<dxmt::TextureAllocation> __textureAllocated() = 0;
 };
 
 DEFINE_COM_INTERFACE("252c1a0e-1c61-42e7-9b57-23dfe3d73d49", IMTLD3D11Staging)
     : public IUnknown {
 
-  virtual bool UseCopyDestination(
+  virtual void UseCopyDestination(
       uint32_t Subresource, uint64_t seq_id, MTL_STAGING_RESOURCE * pBuffer,
       uint32_t * pBytesPerRow, uint32_t * pBytesPerImage) = 0;
-  virtual bool UseCopySource(
+  virtual void UseCopySource(
       uint32_t Subresource, uint64_t seq_id, MTL_STAGING_RESOURCE * pBuffer,
       uint32_t * pBytesPerRow, uint32_t * pBytesPerImage) = 0;
   /**
@@ -495,8 +409,6 @@ public:
   virtual ULONG64 GetUnderlyingResourceId() { return (ULONG64)resource.ptr(); };
 
   virtual dxmt::ResourceSubset GetViewRange() { return ResourceSubset(desc); };
-
-  virtual bool GetContentionState(uint64_t finishedSeqId) { return true; };
 
 protected:
   tag::DESC1 desc;

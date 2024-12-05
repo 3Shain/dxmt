@@ -15,7 +15,8 @@ class BufferPool2 {
 public:
   BufferPool2(Buffer *buffer, Flags<BufferAllocationFlag> flags) : buffer_(buffer), flags_(flags) {}
 
-  void Rename(uint64_t currentSeqId, uint64_t coherentSeqId);
+  Rc<BufferAllocation> allocate(uint64_t coherentSeqId);
+  void discard(Rc<BufferAllocation> &&allocation, uint64_t currentSeqId);
 
 private:
   Buffer *buffer_;
@@ -33,7 +34,8 @@ class DynamicTexturePool2 {
 public:
   DynamicTexturePool2(Texture *buffer, Flags<TextureAllocationFlag> flags) : buffer_(buffer), flags_(flags) {}
 
-  void Rename(uint64_t currentSeqId, uint64_t coherentSeqId);
+  Rc<TextureAllocation> allocate(uint64_t coherentSeqId);
+  void discard(Rc<TextureAllocation> &&allocation, uint64_t currentSeqId);
 
 private:
   Texture *buffer_;

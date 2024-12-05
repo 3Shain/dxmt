@@ -9,36 +9,6 @@
 
 namespace dxmt {
 
-ENCODER_RENDER_INFO *
-CommandChunk::mark_render_pass() {
-  linear_allocator<ENCODER_RENDER_INFO> allocator(this);
-  auto ptr = allocator.allocate(1);
-  new (ptr) ENCODER_RENDER_INFO();
-  ptr->encoder_id = queue->GetNextEncoderId();
-  last_encoder_info = (ENCODER_INFO *)ptr;
-  return ptr;
-};
-
-ENCODER_CLEARPASS_INFO *
-CommandChunk::mark_clear_pass() {
-  linear_allocator<ENCODER_CLEARPASS_INFO> allocator(this);
-  auto ptr = allocator.allocate(1);
-  new (ptr) ENCODER_CLEARPASS_INFO();
-  ptr->encoder_id = queue->GetNextEncoderId();
-  last_encoder_info = (ENCODER_INFO *)ptr;
-  return ptr;
-};
-
-ENCODER_INFO *
-CommandChunk::mark_pass(EncoderKind kind) {
-  linear_allocator<ENCODER_INFO> allocator(this);
-  auto ptr = allocator.allocate(1);
-  ptr->kind = kind;
-  ptr->encoder_id = queue->GetNextEncoderId();
-  last_encoder_info = ptr;
-  return ptr;
-};
-
 CommandQueue::CommandQueue(MTL::Device *device) :
     encodeThread([this]() { this->EncodingThread(); }),
     finishThread([this]() { this->WaitForFinishThread(); }),
@@ -48,7 +18,7 @@ CommandQueue::CommandQueue(MTL::Device *device) :
     ),
     copy_temp_allocator(device, MTL::ResourceHazardTrackingModeUntracked | MTL::ResourceStorageModePrivate),
     emulated_cmd(device),
-    counter_pool(device) {
+    argument_encoding_ctx(*this) {
   commandQueue = transfer(device->newCommandQueue(kCommandChunkCount));
   for (unsigned i = 0; i < kCommandChunkCount; i++) {
     auto &chunk = chunks[i];
@@ -57,10 +27,6 @@ CommandQueue::CommandQueue(MTL::Device *device) :
     chunk.gpu_argument_heap = transfer(device->newBuffer(
         kCommandChunkGPUHeapSize, MTL::ResourceHazardTrackingModeUntracked | MTL::ResourceCPUCacheModeWriteCombined |
                                       MTL::ResourceStorageModeShared
-    ));
-    chunk.visibility_result_heap = transfer(device->newBuffer(
-        kOcclusionSampleCount * sizeof(uint64_t),
-        MTL::ResourceHazardTrackingModeUntracked | MTL::ResourceStorageModeShared
     ));
     chunk.gpu_argument_heap_contents = (uint64_t *)chunk.gpu_argument_heap->contents();
     chunk.reset();
@@ -150,8 +116,7 @@ CommandQueue::CommitChunkInternal(CommandChunk &chunk, uint64_t seq) {
 
   chunk.attached_cmdbuf = commandQueue->commandBuffer();
   auto cmdbuf = chunk.attached_cmdbuf;
-  counter_pool.FillCounters(seq, cmdbuf);
-  chunk.encode(cmdbuf);
+  chunk.encode(cmdbuf, this->argument_encoding_ctx);
   cmdbuf->commit();
 
   ready_for_commit.fetch_add(1, std::memory_order_release);
@@ -212,7 +177,6 @@ CommandQueue::WaitForFinishThread() {
 
     staging_allocator.free_blocks(internal_seq);
     copy_temp_allocator.free_blocks(internal_seq);
-    counter_pool.ReleaseCounters(internal_seq);
 
     internal_seq++;
   }

@@ -1,9 +1,6 @@
-#include "Metal/MTLBuffer.hpp"
 #include "Metal/MTLPixelFormat.hpp"
-#include "Metal/MTLTexture.hpp"
 #include "com/com_pointer.hpp"
 #include "d3d11_device.hpp"
-#include "dxmt_binding.hpp"
 #include "dxmt_buffer.hpp"
 #include "dxmt_buffer_pool.hpp"
 #include "dxmt_format.hpp"
@@ -21,7 +18,8 @@ struct BufferViewInfo {
 
 class D3D11Buffer : public TResourceBase<tag_buffer, IMTLDynamicBuffer, IMTLBindable> {
 private:
-  std::unique_ptr<Buffer> buffer;
+  Rc<Buffer> buffer;
+  Rc<BufferAllocation> allocation;
 #ifdef DXMT_DEBUG
   std::string debug_name;
 #endif
@@ -29,13 +27,10 @@ private:
   bool allow_raw_view;
 
   std::unique_ptr<BufferPool2> pool;
-  SIMPLE_RESIDENCY_TRACKER tracker{};
-  SIMPLE_OCCUPANCY_TRACKER occupancy{};
 
   using SRVBase = TResourceViewBase<tag_shader_resource_view<D3D11Buffer>, IMTLBindable>;
 
   class TBufferSRV : public SRVBase {
-    SIMPLE_RESIDENCY_TRACKER tracker{};
     BufferViewInfo info;
 
   public:
@@ -48,109 +43,42 @@ private:
 
     ~TBufferSRV() {}
 
-    BindingRef
-    UseBindable(uint64_t seq_id) override {
-      if (!seq_id)
-        return BindingRef();
-      resource->occupancy.MarkAsOccupied(seq_id);
-      return BindingRef(
-          static_cast<ID3D11View *>(this), resource->buffer->view(info.viewKey), info.byteWidth, info.byteOffset
-      );
-    }
-
-    BufferAllocation *previous_allocation = nullptr;
-
-    ArgumentData
-    GetArgumentData(SIMPLE_RESIDENCY_TRACKER **ppTracker) override {
-      if (*ppTracker != nullptr) {
-        *ppTracker = &resource->tracker;
-        return ArgumentData(resource->buffer->current()->gpuAddress + info.byteOffset, info.byteWidth);
-      }
-      *ppTracker = &tracker;
-      if (previous_allocation != resource->buffer->current()) {
-        previous_allocation = resource->buffer->current();
-        tracker = {};
-      }
-      auto view = resource->buffer->view(info.viewKey);
-      return ArgumentData(view->gpuResourceID(), info.viewElementWidth, info.viewElementOffset);
-    }
-
-    void
-    GetLogicalResourceOrView(REFIID riid, void **ppLogicalResource) override {
-      if (riid == __uuidof(IMTLDynamicBuffer)) {
-        resource->QueryInterface(riid, ppLogicalResource);
-        return;
-      }
-      QueryInterface(riid, ppLogicalResource);
-    }
+    Rc<Buffer> __buffer() final { return resource->buffer; };
+    Rc<Texture> __texture() final { return {}; };
+    unsigned __viewId() final { return info.viewKey;};
+    bool __isBuffer() final { return true; }
+    BufferSlice __bufferSlice() final { return {info.byteOffset, info.byteWidth, info.viewElementOffset, info.viewElementWidth };}
   };
 
   using UAVBase = TResourceViewBase<tag_unordered_access_view<D3D11Buffer>, IMTLBindable>;
 
   class UAVWithCounter : public UAVBase {
   private:
-    SIMPLE_RESIDENCY_TRACKER tracker{};
     BufferViewInfo info;
-    uint64_t counter_handle;
+    Rc<Buffer> counter;
 
   public:
     UAVWithCounter(
         const tag_unordered_access_view<>::DESC1 *pDesc, D3D11Buffer *pResource, MTLD3D11Device *pDevice,
-        BufferViewInfo const &info, uint64_t counter_handle
+        BufferViewInfo const &info, Rc<Buffer>&& counter
     ) :
         UAVBase(pDesc, pResource, pDevice),
         info(info),
-        counter_handle(counter_handle) {}
+        counter(std::move(counter)) {}
 
-    ~UAVWithCounter() {
-      m_parent->GetDXMTDevice().queue().DiscardCounter(counter_handle);
-    }
-
-    BindingRef
-    UseBindable(uint64_t seq_id) override {
-      resource->occupancy.MarkAsOccupied(seq_id);
-      return BindingRef(
-          static_cast<ID3D11View *>(this), resource->buffer->view(info.viewKey), info.byteWidth, info.byteOffset
-      );
-    };
-
-    BufferAllocation *previous_allocation = nullptr;
-
-    ArgumentData
-    GetArgumentData(SIMPLE_RESIDENCY_TRACKER **ppTracker) override {
-      if (*ppTracker != nullptr) {
-        *ppTracker = &resource->tracker;
-        return ArgumentData(resource->buffer->current()->gpuAddress + info.byteOffset, info.byteWidth, counter_handle);
-      }
-      *ppTracker = &tracker;
-      if (previous_allocation != resource->buffer->current()) {
-        previous_allocation = resource->buffer->current();
-        tracker = {};
-      }
-      auto view = resource->buffer->view(info.viewKey);
-      return ArgumentData(view->gpuResourceID(), info.viewElementWidth, info.viewElementOffset);
-    };
-
-    void
-    GetLogicalResourceOrView(REFIID riid, void **ppLogicalResource) override {
-      QueryInterface(riid, ppLogicalResource);
-    };
-
-    virtual uint64_t
-    SwapCounter(uint64_t handle) override {
-      uint64_t current = counter_handle;
-      if (~handle != 0) {
-        counter_handle = handle;
-        return current;
-      }
-      return handle;
-    };
+    Rc<Buffer> __buffer() final { return resource->buffer; };
+    Rc<Texture> __texture() final { return {}; };
+    unsigned __viewId() final { return info.viewKey;};
+    bool __isBuffer() final { return true; }
+    BufferSlice __bufferSlice() final { return {info.byteOffset, info.byteWidth, info.viewElementOffset, info.viewElementWidth };}
+  
+    Rc<Buffer> __counter() final { return counter; };
   };
 
 public:
   D3D11Buffer(const tag_buffer::DESC1 *pDesc, const D3D11_SUBRESOURCE_DATA *pInitialData, MTLD3D11Device *device) :
       TResourceBase<tag_buffer, IMTLDynamicBuffer, IMTLBindable>(*pDesc, device) {
-    buffer = std::make_unique<Buffer>(
+    buffer = new Buffer(
         pDesc->BindFlags & D3D11_BIND_UNORDERED_ACCESS ? pDesc->ByteWidth + 16 : pDesc->ByteWidth,
         device->GetMTLDevice()
     );
@@ -162,11 +90,13 @@ public:
       flags.set(BufferAllocationFlag::GpuReadonly);
     if (pDesc->Usage != D3D11_USAGE_DYNAMIC)
       flags.set(BufferAllocationFlag::GpuManaged);
-    pool = std::make_unique<BufferPool2>(buffer.get(), flags);
+    pool = std::make_unique<BufferPool2>(buffer.ptr(), flags);
     RotateBuffer(m_parent);
     if (pInitialData) {
-      memcpy(buffer->current()->mappedMemory, pInitialData->pSysMem, pDesc->ByteWidth);
+      memcpy(allocation->mappedMemory, pInitialData->pSysMem, pDesc->ByteWidth);
     }
+    auto _ = buffer->rename(Rc(allocation));
+    D3D11_ASSERT(_.ptr() == nullptr);
     structured = pDesc->MiscFlags & D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
     allow_raw_view = pDesc->MiscFlags & D3D11_RESOURCE_MISC_BUFFER_ALLOW_RAW_VIEWS;
   }
@@ -175,8 +105,8 @@ public:
   GetMappedMemory(UINT *pBytesPerRow, UINT *pBytesPerImage) override {
     *pBytesPerRow = desc.ByteWidth;
     *pBytesPerImage = desc.ByteWidth;
-    assert(buffer->current()->mappedMemory);
-    return buffer->current()->mappedMemory;
+    assert(allocation->mappedMemory);
+    return allocation->mappedMemory;
   };
 
   UINT
@@ -186,34 +116,10 @@ public:
     return desc.ByteWidth;
   };
 
-  BindingRef
-  GetCurrentBufferBinding() override {
-    return BindingRef(static_cast<ID3D11Resource *>(this), buffer->current()->buffer(), desc.ByteWidth, 0);
-  };
-
   D3D11_BIND_FLAG
   GetBindFlag() override {
     return (D3D11_BIND_FLAG)desc.BindFlags;
   }
-
-  BindingRef
-  UseBindable(uint64_t seq_id) override {
-    if (!seq_id)
-      return BindingRef();
-    occupancy.MarkAsOccupied(seq_id);
-    return BindingRef(static_cast<ID3D11Resource *>(this), buffer->current()->buffer(), desc.ByteWidth, 0);
-  }
-
-  ArgumentData
-  GetArgumentData(SIMPLE_RESIDENCY_TRACKER **ppTracker) override {
-    *ppTracker = &tracker;
-    return ArgumentData(buffer->current()->gpuAddress, desc.ByteWidth);
-  }
-
-  bool
-  GetContentionState(uint64_t finished_seq_id) override {
-    return occupancy.IsOccupied(finished_seq_id);
-  };
 
   HRESULT
   QueryInterface(REFIID riid, void **ppvObject) override {
@@ -227,17 +133,25 @@ public:
     return TResourceBase<tag_buffer, IMTLDynamicBuffer, IMTLBindable>::QueryInterface(riid, ppvObject);
   }
 
-  void
-  GetLogicalResourceOrView(REFIID riid, void **ppLogicalResource) override {
-    QueryInterface(riid, ppLogicalResource);
-  }
+  Rc<Buffer> __buffer() final { return buffer; };
+  Rc<Texture> __texture() final { return {}; };
+  unsigned __viewId() final { return ~0; };
+  bool __isBuffer() final { return true; }
+  BufferSlice __bufferSlice() final { return {0, desc.ByteWidth, 0, 0};}
+
+  dxmt::Rc<dxmt::Buffer> __buffer_dyn() final { return buffer; };
+  dxmt::Rc<dxmt::Texture> __texture_dyn()final { return {}; };
+  bool __isBuffer_dyn() final { return true; };
+  dxmt::Rc<dxmt::BufferAllocation> __bufferAllocated() final { return allocation; };
+  dxmt::Rc<dxmt::TextureAllocation> __textureAllocated() final { return {}; };
 
   void
   RotateBuffer(MTLD3D11Device *exch) override {
-    tracker = {};
-    occupancy = {};
     auto &queue = exch->GetDXMTDevice().queue();
-    pool->Rename(queue.CurrentSeqId(), queue.CoherentSeqId());
+    if(allocation.ptr()) {
+      pool->discard(std::move(allocation), queue.CurrentSeqId());
+    }
+    allocation = pool->allocate(queue.CoherentSeqId());
 #ifdef DXMT_DEBUG
     {
       auto pool = transfer(NS::AutoreleasePool::alloc()->init());
@@ -326,7 +240,7 @@ public:
     }
     MTL::PixelFormat view_format = MTL::PixelFormatInvalid;
     uint32_t offset, size, viewElementOffset, viewElementWidth;
-    uint64_t counter_handle = DXMT_NO_COUNTER;
+    Rc<Buffer> counter = {};
     if (structured) {
       if (finalDesc.Format != DXGI_FORMAT_UNKNOWN) {
         return E_INVALIDARG;
@@ -341,7 +255,8 @@ public:
       viewElementOffset = finalDesc.Buffer.FirstElement * (desc.StructureByteStride >> 2);
       viewElementWidth = finalDesc.Buffer.NumElements * (desc.StructureByteStride >> 2);
       if (finalDesc.Buffer.Flags & (D3D11_BUFFER_UAV_FLAG_APPEND | D3D11_BUFFER_UAV_FLAG_COUNTER)) {
-        counter_handle = m_parent->GetDXMTDevice().queue().AllocateCounter(0);
+        counter = new dxmt::Buffer(sizeof(uint32_t), m_parent->GetMTLDevice());
+        counter->rename(counter->allocate(BufferAllocationFlag::GpuManaged));
       }
     } else if (finalDesc.Buffer.Flags & D3D11_BUFFER_UAV_FLAG_RAW) {
       if (!allow_raw_view)
@@ -382,7 +297,7 @@ public:
             .byteOffset = offset,
             .byteWidth = size,
         },
-        counter_handle
+        std::move(counter)
     ));
     *ppView = srv;
     return S_OK;
