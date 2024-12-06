@@ -242,18 +242,6 @@ public:
     entry.viewId = viewId;
   }
 
-  void
-  bindRenderTarget(unsigned rtIndex, Rc<Texture> &&texture, unsigned viewId) {
-    auto &entry = rtv_[rtIndex];
-    entry.texture = std::move(texture);
-    entry.viewId = viewId;
-  }
-  void
-  bindDepthStencilTarget(Rc<Texture> &&texture, unsigned viewId) {
-    dsv_.texture = std::move(texture);
-    dsv_.viewId = viewId;
-  }
-
   template <PipelineStage stage>
   void bindOutputBuffer(unsigned slot, Rc<Buffer> &&buffer, unsigned viewId, Rc<Buffer> &&counter, BufferSlice slice);
   template <>
@@ -320,8 +308,20 @@ public:
 
   MTL::Buffer *
   currentIndexBuffer() {
+    // TODO: useBuffer
+    // TODO: collect usage range
     return ibuf_->current()->buffer();
   };
+
+  void clearState() {
+    vbuf_ = {{}};
+    ibuf_ = {};
+    cbuf_ = {{}};
+    sampler_ = {{}};
+    resview_ = {{}};
+    om_uav_ = {{}};
+    cs_uav_ = {{}};
+  }
 
   template <bool TessellationDraw> void encodeVertexBuffers(uint32_t ia_slot_mask);
   template <PipelineStage stage, bool TessellationDraw>
@@ -510,9 +510,6 @@ private:
 
   std::array<UnorderedAccessViewBinding, kUAVBindings> om_uav_;
   std::array<UnorderedAccessViewBinding, kUAVBindings> cs_uav_;
-
-  std::array<ResourceViewBinding, 8> rtv_;
-  ResourceViewBinding dsv_;
 
   uint64_t *current_encoding_buffer_;
 
