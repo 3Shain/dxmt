@@ -11,7 +11,7 @@ struct DeferredContextInternalState {
 };
 
 template<typename Object> Rc<Object> forward_rc(Rc<Object>& obj) {
-  return Rc<Object>(obj.ptr());
+  return obj;
 }
 
 using DeferredContextBase = MTLD3D11DeviceContextImplBase<DeferredContextInternalState>;
@@ -20,7 +20,7 @@ template <>
 template <CommandWithContext<ArgumentEncodingContext> cmd>
 void
 DeferredContextBase:: Emit(cmd &&fn) {
-  IMPLEMENT_ME
+  ctx_state.current_cmdlist->Emit(std::forward<cmd>(fn));
 }
 
 template <>
@@ -166,14 +166,19 @@ public:
   ExecuteCommandList(ID3D11CommandList *pCommandList, BOOL RestoreContextState) override{IMPLEMENT_ME}
 
   HRESULT FinishCommandList(BOOL RestoreDeferredContextState, ID3D11CommandList **ppCommandList) override {
-    InvalidateCurrentPass();
+    ResetEncodingContextState();
+
     ctx_state.current_cmdlist->promote_flush = promote_flush;
+    promote_flush = false;
 
     *ppCommandList = std::move(ctx_state.current_cmdlist);
-    promote_flush = false;
     device->CreateCommandList((ID3D11CommandList **)&ctx_state.current_cmdlist);
-    if (!RestoreDeferredContextState)
-      ClearState();
+
+    if (RestoreDeferredContextState)
+      RestoreEncodingContextState();
+    else
+      ResetD3D11ContextState();
+
     return S_OK;
   }
 

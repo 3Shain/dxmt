@@ -14,14 +14,12 @@ since it is for internal use only
 #include "d3d11_context_state.hpp"
 #include "d3d11_device.hpp"
 #include "d3d11_pipeline.hpp"
-#include "d3d11_query.hpp"
 #include "dxmt_buffer.hpp"
 #include "dxmt_context.hpp"
 #include "dxmt_format.hpp"
 #include "mtld11_resource.hpp"
 #include "util_flags.hpp"
 #include "util_math.hpp"
-#include <unordered_set>
 
 namespace dxmt {
 
@@ -1254,7 +1252,8 @@ public:
 
   void
   ClearState() override {
-    state_ = {};
+    ResetEncodingContextState();
+    ResetD3D11ContextState();
   }
 
 #pragma region InputAssembler
@@ -3699,6 +3698,22 @@ public:
     }
   }
 
+  void RestoreEncodingContextState() {
+    IMPLEMENT_ME
+  }
+
+  void ResetEncodingContextState() {
+    InvalidateCurrentPass(true);
+    // TODO: optimize by clearing only bound resource
+    Emit([](ArgumentEncodingContext& enc) {
+      enc.clearState();
+    });
+  }
+
+  void ResetD3D11ContextState() {
+    state_ = {};
+  }
+
 protected:
   MTLD3D11Device *device;
   CommandBufferState cmdbuf_state = CommandBufferState::Idle;
@@ -3745,24 +3760,6 @@ public:
   }
 };
 
-template <typename F> class DestructorWrapper {
-  F f;
-  bool destroyed = false;
-
-public:
-  DestructorWrapper(const DestructorWrapper &) = delete;
-  DestructorWrapper(DestructorWrapper &&move) : f(std::forward<F>(move.f)), destroyed(move.destroyed) {
-    move.destroyed = true;
-  };
-  DestructorWrapper(F &&f, std::nullptr_t) : f(std::forward<F>(f)) {}
-  ~DestructorWrapper() {
-    if (!destroyed) {
-      std::invoke(f);
-      destroyed = true;
-    }
-  };
-};
-
 class MTLD3D11CommandList : public ManagedDeviceChild<ID3D11CommandList> {
 public:
   MTLD3D11CommandList(MTLD3D11Device *pDevice, MTLD3D11CommandListPoolBase *pPool, UINT context_flag) :
@@ -3774,14 +3771,12 @@ public:
                                        MTL::ResourceHazardTrackingModeUntracked | MTL::ResourceStorageModeShared
       ) {
     cpu_argument_heap = (char *)malloc(kCommandChunkCPUHeapSize);
-    cpu_dynamic_heap = (char *)malloc(kCommandChunkCPUHeapSize);
   };
 
   ~MTLD3D11CommandList() {
     Reset();
     staging_allocator.free_blocks(~0uLL);
     free(cpu_argument_heap);
-    free(cpu_dynamic_heap);
   }
 
   ULONG
@@ -3811,11 +3806,6 @@ public:
     staging_allocator.free_blocks(++local_coherence);
 
     cpu_arugment_heap_offset = 0;
-    cpu_dynamic_heap_offset = 0;
-    gpu_arugment_heap_offset = 0;
-    encoder_seq_local = 1;
-
-    num_argument_data = 0;
     promote_flush = false;
   };
 
@@ -3872,13 +3862,11 @@ public:
     return (T *)allocate_cpu_heap(sizeof(T), alignof(T));
   }
 
-  uint64_t
-  ReserveGpuHeap(uint64_t size, uint64_t alignment) {
-    std::size_t adjustment = align_forward_adjustment((void *)gpu_arugment_heap_offset, alignment);
-    auto aligned = gpu_arugment_heap_offset + adjustment;
-    gpu_arugment_heap_offset = aligned + size;
-    return aligned;
-  };
+  template <CommandWithContext<ArgumentEncodingContext> cmd>
+  void Emit(cmd &&fn) {
+    list.emit(std::forward<cmd>(fn),
+              allocate_cpu_heap(list.calculateCommandSize<cmd>(), 16));
+  }
 
 #pragma endregion
 
@@ -3886,13 +3874,15 @@ public:
 
   bool
   Noop() {
-    return cpu_arugment_heap_offset == 0 && gpu_arugment_heap_offset == 0;
+    return cpu_arugment_heap_offset == 0;
+  };
+
+  void Execute(ArgumentEncodingContext& ctx) {
+    list.execute(ctx);
   };
 
 #pragma endregion
 
-  uint32_t num_argument_data = 0;
-  uint64_t gpu_arugment_heap_offset = 0;
   bool promote_flush = false;
 
 private:
@@ -3901,10 +3891,8 @@ private:
 
   uint64_t cpu_arugment_heap_offset = 0;
   char *cpu_argument_heap;
-  char *cpu_dynamic_heap;
-  uint64_t cpu_dynamic_heap_offset = 0;
 
-  uint64_t encoder_seq_local = 1;
+  CommandList<ArgumentEncodingContext> list;
 
   RingBumpAllocator<true> staging_allocator;
 

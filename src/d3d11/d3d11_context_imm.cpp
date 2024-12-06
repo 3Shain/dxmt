@@ -159,7 +159,6 @@ public:
       };
     };
     D3D11_ASSERT(0 && "unknown mapped resource (USAGE_DEFAULT?)");
-    IMPLEMENT_ME;
   }
 
   void
@@ -172,7 +171,6 @@ public:
       return;
     };
     D3D11_ASSERT(0 && "unknown mapped resource (USAGE_DEFAULT?)");
-    IMPLEMENT_ME;
   }
 
   void
@@ -298,7 +296,23 @@ public:
 
   void
   ExecuteCommandList(ID3D11CommandList *pCommandList, BOOL RestoreContextState) override {
-    IMPLEMENT_ME
+    ResetEncodingContextState();
+
+    Com<MTLD3D11CommandList> cmdlist = static_cast<MTLD3D11CommandList *>(pCommandList);
+
+    promote_flush = cmdlist->promote_flush;
+
+    // TODO: handle command list query & staging resource tracking
+
+    Emit([cmdlist = std::move(cmdlist)](ArgumentEncodingContext& enc) {
+      // Finished command list should clean up the encoding context
+      cmdlist->Execute(enc);
+    });
+
+    if (RestoreContextState)
+      RestoreEncodingContextState();
+    else
+      ResetD3D11ContextState();
   }
 
   HRESULT
