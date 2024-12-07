@@ -866,6 +866,7 @@ MTLQueryDXGIFormat(MTL::Device *device, uint32_t format, MTL_DXGI_FORMAT_DESC &d
       description.Flag |= MTL_DXGI_FORMAT_EMULATED_D24;
       description.PixelFormat = MTL::PixelFormatDepth32Float_Stencil8;
     }
+    description.Flag = MTL_DXGI_FORMAT_TYPELESS | MTL_DXGI_FORMAT_DEPTH_PLANER | MTL_DXGI_FORMAT_STENCIL_PLANER;
     break;
   }
   case DXGI_FORMAT_D24_UNORM_S8_UINT: {
@@ -876,6 +877,7 @@ MTLQueryDXGIFormat(MTL::Device *device, uint32_t format, MTL_DXGI_FORMAT_DESC &d
       description.Flag |= MTL_DXGI_FORMAT_EMULATED_D24;
       description.PixelFormat = MTL::PixelFormatDepth32Float_Stencil8;
     }
+    description.Flag = MTL_DXGI_FORMAT_DEPTH_PLANER | MTL_DXGI_FORMAT_STENCIL_PLANER;
     break;
   }
   case DXGI_FORMAT_R24_UNORM_X8_TYPELESS: {
@@ -886,6 +888,7 @@ MTLQueryDXGIFormat(MTL::Device *device, uint32_t format, MTL_DXGI_FORMAT_DESC &d
       description.Flag |= MTL_DXGI_FORMAT_EMULATED_D24;
       description.PixelFormat = MTL::PixelFormatDepth32Float_Stencil8;
     }
+    description.Flag = MTL_DXGI_FORMAT_DEPTH_PLANER;
     break;
   }
   case DXGI_FORMAT_X24_TYPELESS_G8_UINT: {
@@ -896,6 +899,7 @@ MTLQueryDXGIFormat(MTL::Device *device, uint32_t format, MTL_DXGI_FORMAT_DESC &d
       description.Flag |= MTL_DXGI_FORMAT_EMULATED_D24;
       description.PixelFormat = MTL::PixelFormatX32_Stencil8;
     }
+    description.Flag = MTL_DXGI_FORMAT_STENCIL_PLANER;
     break;
   }
   case DXGI_FORMAT_R8G8_TYPELESS: {
