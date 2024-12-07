@@ -2272,10 +2272,10 @@ public:
 
 #pragma region ShaderCommon
 
-  template <PipelineStage Type, typename IShader>
+  template <PipelineStage stage, typename IShader>
   void
   SetShader(IShader *pShader, ID3D11ClassInstance *const *ppClassInstances, UINT NumClassInstances) {
-    auto &ShaderStage = state_.ShaderStages[Type];
+    auto &ShaderStage = state_.ShaderStages[stage];
 
     if (pShader) {
       if (auto expected = com_cast<IMTLD3D11Shader>(pShader)) {
@@ -2286,7 +2286,10 @@ public:
         ShaderStage.ConstantBuffers.set_dirty();
         ShaderStage.SRVs.set_dirty();
         ShaderStage.Samplers.set_dirty();
-        if (Type == PipelineStage::Compute) {
+        if constexpr (stage == PipelineStage::Vertex) {
+          state_.InputAssembler.VertexBuffers.set_dirty();
+        }
+        if constexpr (stage == PipelineStage::Compute) {
           state_.ComputeStageUAV.UAVs.set_dirty();
         } else {
           state_.OutputMerger.UAVs.set_dirty();
@@ -2301,7 +2304,7 @@ public:
     if (NumClassInstances)
       ERR("Class instances not supported");
 
-    if (Type == PipelineStage::Compute) {
+    if constexpr (stage == PipelineStage::Compute) {
       InvalidateComputePipeline();
     } else {
       InvalidateRenderPipeline();

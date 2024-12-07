@@ -98,10 +98,9 @@ public:
       case D3D11_MAP_WRITE_DISCARD: {
         dynamic->RotateBuffer(device);
         auto bind_flag = dynamic->GetBindFlag();
-        // if (bind_flag & D3D11_BIND_VERTEX_BUFFER) {
-        // FIXME: bind_flag can be inaccurate
+        if (bind_flag & D3D11_BIND_VERTEX_BUFFER) {
           state_.InputAssembler.VertexBuffers.set_dirty();
-        // }
+        }
         if (bind_flag & D3D11_BIND_CONSTANT_BUFFER) {
           for (auto &stage : state_.ShaderStages) {
             stage.ConstantBuffers.set_dirty();
