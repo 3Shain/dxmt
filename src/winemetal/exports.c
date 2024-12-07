@@ -52,4 +52,5 @@ ASM_FORWARD(SM50CompileTessellationPipelineVertex, 44)
 ASM_FORWARD(SM50CompileTessellationPipelineHull, 45)
 ASM_FORWARD(SM50CompileTessellationPipelineDomain, 46)
 ASM_FORWARD(__pthread_set_qos_class_self_np, 47)
+ASM_FORWARD(objc_msgSend_stret, 48)
 extern void *__wine_unixlib_handle;
