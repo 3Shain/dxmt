@@ -63,4 +63,6 @@ struct MTL_DXGI_FORMAT_DESC {
 
 int32_t MTLQueryDXGIFormat(MTL::Device *device, uint32_t format, MTL_DXGI_FORMAT_DESC &description);
 
+uint32_t MTLGetTexelSize(MTL::PixelFormat format);
+
 } // namespace dxmt

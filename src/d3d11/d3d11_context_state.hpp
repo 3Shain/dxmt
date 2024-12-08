@@ -153,8 +153,21 @@ struct D3D11RasterizerStageState {
   IMTLD3D11RasterizerState* RasterizerState;
 };
 
+template <typename T> class D3D11StagesState: public std::array<T, 6> {
+public:
+  T &
+  operator[](PipelineStage stage) {
+    return this->data()[(uint32_t)stage];
+  }
+
+  const T &
+  operator[](PipelineStage stage) const {
+    return this->data()[(uint32_t)stage];
+  }
+};
+
 struct D3D11ContextState {
-  std::array<D3D11ShaderStageState, 6> ShaderStages = {{}};
+  D3D11StagesState<D3D11ShaderStageState> ShaderStages = {{}};
   D3D11ComputeStageState ComputeStageUAV = {};
   D3D11StreamOutputStageState StreamOutput = {};
   D3D11InputAssemblerStageState InputAssembler = {};

@@ -1,39 +1,46 @@
 #pragma once
 
-#include "Metal/MTLBuffer.hpp"
+#include "dxmt_buffer.hpp"
+#include "dxmt_texture.hpp"
 #include <queue>
 namespace dxmt {
 
-class BufferPool {
-  struct QueueEntry {
-    // manually manage ownership
-    MTL::Buffer *buffer;
-    uint64_t gpu_addr;
-    void *cpu_addr;
-    uint64_t will_free_at;
-    // uint64_t offset; TODO: allow multiple entry defined on the same buffer
-  };
+class BufferPool2 {
 
-  std::queue<QueueEntry> fifo;
+  struct QueryEntry {
+    Rc<BufferAllocation> allocation;
+    uint64_t will_free_at;
+  };
 
 public:
-  BufferPool(MTL::Device *device, size_t buffer_len, MTL::ResourceOptions options) :
-      device(device),
-      buffer_len(buffer_len),
-      options(options) {};
+  BufferPool2(Buffer *buffer, Flags<BufferAllocationFlag> flags) : buffer_(buffer), flags_(flags) {}
 
-  ~BufferPool() {
-    while (fifo.size()) {
-      fifo.front().buffer->release();
-      fifo.pop();
-    }
+  Rc<BufferAllocation> allocate(uint64_t coherentSeqId);
+  void discard(Rc<BufferAllocation> &&allocation, uint64_t currentSeqId);
+
+private:
+  Buffer *buffer_;
+  std::queue<QueryEntry> fifo;
+  Flags<BufferAllocationFlag> flags_;
+};
+
+class DynamicTexturePool2 {
+
+  struct QueryEntry {
+    Rc<TextureAllocation> allocation;
+    uint64_t will_free_at;
   };
 
-  void GetNext(uint64_t currentSeqId, uint64_t coherentSeqId, MTL::Buffer **next, uint64_t *gpuAddr, void **cpuAddr);
+public:
+  DynamicTexturePool2(Texture *buffer, Flags<TextureAllocationFlag> flags) : buffer_(buffer), flags_(flags) {}
 
-  MTL::Device *device;
-  size_t buffer_len;
-  MTL::ResourceOptions options;
+  Rc<TextureAllocation> allocate(uint64_t coherentSeqId);
+  void discard(Rc<TextureAllocation> &&allocation, uint64_t currentSeqId);
+
+private:
+  Texture *buffer_;
+  std::queue<QueryEntry> fifo;
+  Flags<TextureAllocationFlag> flags_;
 };
 
 }; // namespace dxmt

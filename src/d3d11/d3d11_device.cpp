@@ -98,14 +98,9 @@ public:
     try {
       switch (pDesc->Usage) {
       case D3D11_USAGE_DEFAULT:
-        if (!(pDesc->BindFlags & (D3D11_BIND_UNORDERED_ACCESS | D3D11_BIND_STREAM_OUTPUT | D3D11_BIND_RENDER_TARGET |
-                                  D3D11_BIND_DEPTH_STENCIL)))
-          return CreateDynamicBuffer(this, pDesc, pInitialData, ppBuffer);
-        return CreateDeviceBuffer(this, pDesc, pInitialData, ppBuffer);
       case D3D11_USAGE_IMMUTABLE:
-        return CreateDeviceBuffer(this, pDesc, pInitialData, ppBuffer);
       case D3D11_USAGE_DYNAMIC:
-        return CreateDynamicBuffer(this, pDesc, pInitialData, ppBuffer);
+        return dxmt::CreateBuffer(this, pDesc, pInitialData, ppBuffer);
       case D3D11_USAGE_STAGING:
         return CreateStagingBuffer(this, pDesc, pInitialData, ppBuffer);
       }
@@ -1059,21 +1054,9 @@ public:
 
   Device &GetDXMTDevice() override { return device_; };
 
-#pragma region DynamicBufferPool
-
-  void ExchangeFromPool(MTL::Buffer **pBuffer, uint64_t *gpuAddr,
-                        void **cpuAddr, BufferPool *pool) final {
-    D3D11_ASSERT(*pBuffer);
-    D3D11_ASSERT(pool);
-    pool->GetNext(device_.queue().CurrentSeqId(),
-                  device_.queue().CoherentSeqId(), pBuffer, gpuAddr, cpuAddr);
-  }
-
   void CreateCommandList(ID3D11CommandList** pCommandList) final {
     commandlist_pool_->CreateCommandList(pCommandList);
   };
-
-#pragma endregion
 
 private:
   MTLDXGIObject<IMTLDXGIDevice> *m_container;
