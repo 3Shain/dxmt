@@ -534,6 +534,10 @@ public:
 private:
   DXMT_ENCODER_LIST_OP checkEncoderRelation(EncoderData* former, EncoderData* latter);
   bool hasDataDependency(EncoderData* from, EncoderData* to);
+  bool isEncoderSignatureMatched(RenderEncoderData* former, RenderEncoderData* latter);
+  MTL::RenderPassColorAttachmentDescriptor *isClearColorSignatureMatched(ClearEncoderData* former, RenderEncoderData* latter);
+  MTL::RenderPassDepthAttachmentDescriptor *isClearDepthSignatureMatched(ClearEncoderData* former, RenderEncoderData* latter);
+  MTL::RenderPassStencilAttachmentDescriptor *isClearStencilSignatureMatched(ClearEncoderData* former, RenderEncoderData* latter);
 
   std::array<VertexBufferBinding, kVertexBufferSlots> vbuf_;
   Rc<Buffer> ibuf_;
