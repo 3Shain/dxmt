@@ -50,9 +50,11 @@ template <typename Context> class CommandList {
   impl::CommandBase<Context> *list_end;
 
 public:
-  CommandList() : list_end(&empty) {}
+  CommandList() : list_end(&empty) {
+    empty.next = nullptr;
+  }
   ~CommandList() {
-    impl::CommandBase<Context> *cur = &empty;
+    impl::CommandBase<Context> *cur = empty.next;
     while (cur) {
       auto next = cur->next;
       cur->~CommandBase<Context>(); // call destructor
@@ -60,6 +62,25 @@ public:
     }
     empty.next = nullptr;
     list_end = &empty;
+  }
+
+  CommandList(const CommandList &copy) = delete;
+  CommandList(CommandList &&move) {
+    this->~CommandList();
+    empty.next = move.empty.next;
+    list_end = move.list_end;
+    move.empty.next = nullptr;
+    move.list_end = nullptr;
+  }
+
+  CommandList& operator=(CommandList&& move) {
+    assert(!empty.next);
+    this->~CommandList();
+    empty.next = move.empty.next;
+    list_end = move.list_end;
+    move.empty.next = nullptr;
+    move.list_end = nullptr;
+    return *this;
   }
 
   template <CommandWithContext<Context> Fn>
@@ -77,6 +98,13 @@ public:
     list_end->next = cmd_h;
     list_end = cmd_h;
     return sizeof(command_t);
+  }
+
+  void append(CommandList &&list) {
+    list_end->next = list.empty.next;
+    list_end = list.list_end;
+    list.empty.next = nullptr;
+    list.list_end = nullptr;
   }
 
   void
