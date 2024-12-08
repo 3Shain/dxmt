@@ -241,9 +241,6 @@ public:
     backbuffer_ = nullptr;
     backbuffer_texture2d->QueryInterface(IID_PPV_ARGS(&backbuffer_));
 
-    auto texture = backbuffer_->__texture();
-    alternative_buffer_ = texture->allocate(texture->current()->flags());
-
     if constexpr (EnableMetalFX) {
       auto scaler_descriptor =
           transfer(MTLFX::SpatialScalerDescriptor::alloc()->init());
@@ -537,7 +534,6 @@ private:
   D3D11_TEXTURE2D_DESC1 backbuffer_desc_;
   Com<IMTLD3D11DeviceContext> device_context_;
   Com<IMTLBindable> backbuffer_;
-  Rc<TextureAllocation> alternative_buffer_;
   HANDLE present_semaphore_;
   HWND hWnd;
   HMONITOR monitor_;
