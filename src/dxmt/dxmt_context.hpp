@@ -103,10 +103,9 @@ struct RenderEncoderData : EncoderData {
   CommandList<RenderCommandContext> cmds;
   CommandList<RenderCommandContext> pretess_cmds;
   uint32_t dsv_planar_flags;
+  uint32_t render_target_count = 0;
   bool use_visibility_result = 0;
   bool use_tessellation = 0;
-  bool coalesced_start = 0;
-  bool coalesced_end = 0;
 };
 
 struct ComputeCommandContext {
@@ -117,8 +116,6 @@ struct ComputeCommandContext {
 
 struct ComputeEncoderData : EncoderData {
   CommandList<ComputeCommandContext> cmds;
-  bool coalesced_start;
-  bool coalesced_end;
 };
 
 struct BlitCommandContext {
@@ -463,7 +460,8 @@ public:
   );
   void resolveTexture(Rc<Texture> &&src, unsigned srcSlice, Rc<Texture> &&dst, unsigned dstSlice, unsigned dstLevel);
 
-  RenderEncoderData *startRenderPass(Obj<MTL::RenderPassDescriptor> &&descriptor, uint32_t dsv_planar_flags);
+  RenderEncoderData *
+  startRenderPass(Obj<MTL::RenderPassDescriptor> &&descriptor, uint32_t dsv_planar_flags, uint32_t render_target_count);
   EncoderData *startComputePass();
   EncoderData *startBlitPass();
 
