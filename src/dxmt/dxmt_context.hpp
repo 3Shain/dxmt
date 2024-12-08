@@ -194,8 +194,45 @@ enum DXMT_ENCODER_LIST_OP {
 
 class CommandQueue;
 
+enum DXMT_ENCODER_RESOURCE_ACESS {
+  DXMT_ENCODER_RESOURCE_ACESS_READ = 1 <<0,
+  DXMT_ENCODER_RESOURCE_ACESS_WRITE = 1 << 1,
+};
+
 class ArgumentEncodingContext {
 public:
+  constexpr MTL::Buffer *
+  access(Rc<Buffer> const &buffer, unsigned offset, unsigned length, DXMT_ENCODER_RESOURCE_ACESS flags) {
+    auto allocation = buffer->current();
+    return allocation->buffer();
+  }
+
+  constexpr MTL::Texture *
+  access(Rc<Buffer> const &buffer, unsigned viewId, DXMT_ENCODER_RESOURCE_ACESS flags) {
+    return buffer->view(viewId);
+  }
+
+  constexpr MTL::Buffer *
+  access(Rc<Buffer> const &buffer, DXMT_ENCODER_RESOURCE_ACESS flags) {
+    auto allocation = buffer->current();
+    return allocation->buffer();
+  }
+
+  constexpr MTL::Texture *
+  access(Rc<Texture> const &texture, unsigned level, unsigned slice, DXMT_ENCODER_RESOURCE_ACESS flags) {
+    return texture->current()->texture();
+  }
+
+  constexpr MTL::Texture *
+  access(Rc<Texture> const &texture, unsigned viewId, DXMT_ENCODER_RESOURCE_ACESS flags) {
+    return texture->view(viewId);
+  }
+
+  constexpr MTL::Texture *
+  access(Rc<Texture> const &texture, DXMT_ENCODER_RESOURCE_ACESS flags) {
+    return texture->current()->texture();
+  }
+
   template <PipelineStage stage>
   void
   bindConstantBuffer(unsigned slot, unsigned offset, Rc<Buffer> &&buffer) {
@@ -306,11 +343,10 @@ public:
     ibuf_ = std::move(buffer);
   }
 
-  MTL::Buffer *
+  constexpr MTL::Buffer *
   currentIndexBuffer() {
-    // TODO: useBuffer
-    // TODO: collect usage range
-    return ibuf_->current()->buffer();
+    // because of indirect draw, we can't predicate the accessed buffer range
+    return access(ibuf_, 0, ibuf_->length(), DXMT_ENCODER_RESOURCE_ACESS_READ);
   };
 
   void clearState() {

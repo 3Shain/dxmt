@@ -537,21 +537,22 @@ public:
             is_raw = desc.Buffer.Flags & D3D11_BUFFER_UAV_FLAG_RAW,
             format = desc.Format](ArgumentEncodingContext &enc) {
         if (is_raw) {
-          // TODO: useBuffer
-          enc.encodeComputeCommand([&, buffer = buffer->current()->buffer()](ComputeCommandContext &ctx) {
+          enc.encodeComputeCommand([&, buffer = enc.access(
+                                           buffer, slice.byteOffset, slice.byteLength, DXMT_ENCODER_RESOURCE_ACESS_WRITE
+                                       )](ComputeCommandContext &ctx) {
             ctx.cmd.ClearBufferUint(ctx.encoder, buffer, slice.byteOffset, slice.byteLength >> 2, value);
           });
         } else {
           if (format == DXGI_FORMAT_UNKNOWN) {
-            // TODO: useBuffer
-            enc.encodeComputeCommand([&, buffer = buffer->current()->buffer()](ComputeCommandContext &ctx) {
-              ctx.cmd.ClearBufferUint(ctx.encoder, buffer, slice.byteOffset, slice.byteLength >> 2, value);
-            });
+            enc.encodeComputeCommand(
+                [&, buffer = enc.access(buffer, slice.byteOffset, slice.byteLength, DXMT_ENCODER_RESOURCE_ACESS_WRITE)](
+                    ComputeCommandContext &ctx
+                ) { ctx.cmd.ClearBufferUint(ctx.encoder, buffer, slice.byteOffset, slice.byteLength >> 2, value); }
+            );
           } else {
-            // TODO: useTexture
-            enc.encodeComputeCommand([&, texture = buffer->view(viewId)](ComputeCommandContext &ctx) {
-              ctx.cmd.ClearTextureBufferUint(ctx.encoder, texture, value);
-            });
+            enc.encodeComputeCommand([&, texture = enc.access(buffer, viewId, DXMT_ENCODER_RESOURCE_ACESS_WRITE)](
+                                         ComputeCommandContext &ctx
+                                     ) { ctx.cmd.ClearTextureBufferUint(ctx.encoder, texture, value); });
           }
         }
       });
@@ -569,8 +570,8 @@ public:
           D3D11_ASSERT(0 && "tex1darr clear");
           break;
         case D3D11_UAV_DIMENSION_TEXTURE2D:
-          // TODO: useTexture
-          enc.encodeComputeCommand([&, texture = texture->view(viewId)](auto &ctx) {
+          enc.encodeComputeCommand([&, texture =
+                                           enc.access(texture, viewId, DXMT_ENCODER_RESOURCE_ACESS_WRITE)](auto &ctx) {
             ctx.cmd.ClearTexture2DUint(ctx.encoder, texture, value);
           });
           break;
@@ -578,8 +579,8 @@ public:
           D3D11_ASSERT(0 && "tex2darr clear");
           break;
         case D3D11_UAV_DIMENSION_TEXTURE3D:
-          // TODO: useTexture
-          enc.encodeComputeCommand([&, texture = texture->view(viewId)](auto &ctx) {
+          enc.encodeComputeCommand([&, texture =
+                                           enc.access(texture, viewId, DXMT_ENCODER_RESOURCE_ACESS_WRITE)](auto &ctx) {
             ctx.cmd.ClearTexture3DUint(ctx.encoder, texture, value);
           });
           break;
@@ -602,21 +603,22 @@ public:
             is_raw = desc.Buffer.Flags & D3D11_BUFFER_UAV_FLAG_RAW,
             format = desc.Format](ArgumentEncodingContext &enc) {
         if (is_raw) {
-          // TODO: useBuffer
-          enc.encodeComputeCommand([&, buffer = buffer->current()->buffer()](ComputeCommandContext &ctx) {
+          enc.encodeComputeCommand([&, buffer = enc.access(
+                                           buffer, slice.byteOffset, slice.byteLength, DXMT_ENCODER_RESOURCE_ACESS_WRITE
+                                       )](ComputeCommandContext &ctx) {
             ctx.cmd.ClearBufferFloat(ctx.encoder, buffer, slice.byteOffset, slice.byteLength >> 2, value);
           });
         } else {
           if (format == DXGI_FORMAT_UNKNOWN) {
-            // TODO: useBuffer
-            enc.encodeComputeCommand([&, buffer = buffer->current()->buffer()](ComputeCommandContext &ctx) {
-              ctx.cmd.ClearBufferFloat(ctx.encoder, buffer, slice.byteOffset, slice.byteLength >> 2, value);
-            });
+            enc.encodeComputeCommand(
+                [&, buffer = enc.access(buffer, slice.byteOffset, slice.byteLength, DXMT_ENCODER_RESOURCE_ACESS_WRITE)](
+                    ComputeCommandContext &ctx
+                ) { ctx.cmd.ClearBufferFloat(ctx.encoder, buffer, slice.byteOffset, slice.byteLength >> 2, value); }
+            );
           } else {
-            // TODO: useTexture
-            enc.encodeComputeCommand([&, texture = buffer->view(viewId)](ComputeCommandContext &ctx) {
-              ctx.cmd.ClearTextureBufferFloat(ctx.encoder, texture, value);
-            });
+            enc.encodeComputeCommand([&, texture = enc.access(buffer, viewId, DXMT_ENCODER_RESOURCE_ACESS_WRITE)](
+                                         ComputeCommandContext &ctx
+                                     ) { ctx.cmd.ClearTextureBufferFloat(ctx.encoder, texture, value); });
           }
         }
       });
@@ -633,8 +635,8 @@ public:
           D3D11_ASSERT(0 && "tex1darr clear");
           break;
         case D3D11_UAV_DIMENSION_TEXTURE2D:
-          // TODO: useTexture
-          enc.encodeComputeCommand([&, texture = texture->view(viewId)](auto &ctx) {
+          enc.encodeComputeCommand([&, texture =
+                                           enc.access(texture, viewId, DXMT_ENCODER_RESOURCE_ACESS_WRITE)](auto &ctx) {
             ctx.cmd.ClearTexture2DFloat(ctx.encoder, texture, value);
           });
           break;
@@ -672,7 +674,7 @@ public:
     if (auto com = com_cast<IMTLBindable>(pShaderResourceView)) {
       SwitchToBlitEncoder(CommandBufferState::BlitEncoderActive);
       Emit([tex = com->__texture()](ArgumentEncodingContext &enc) {
-        auto texture = tex->current()->texture();
+        auto texture = enc.access(tex, DXMT_ENCODER_RESOURCE_ACESS_READ | DXMT_ENCODER_RESOURCE_ACESS_WRITE);
         if (texture->mipmapLevelCount() > 1) {
           enc.encodeBlitCommand([texture](BlitCommandContext &ctx) { ctx.encoder->generateMipmaps(texture); });
         }
@@ -808,8 +810,8 @@ public:
       if (auto uav = com_cast<IMTLD3D11UnorderedAccessView>(pSrcView)) {
         SwitchToBlitEncoder(CommandBufferState::BlitEncoderActive);
         Emit([=, dst = dst_bind->__buffer(), counter = uav->__counter()](ArgumentEncodingContext &enc) {
-          auto dst_buffer = dst->current()->buffer();         // TODO: useBuffer
-          auto counter_buffer = counter->current()->buffer(); // TODO: useBuffer
+          auto dst_buffer = enc.access(dst, DstAlignedByteOffset, 4, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
+          auto counter_buffer = enc.access(counter, 0, 4, DXMT_ENCODER_RESOURCE_ACESS_READ);
           enc.encodeBlitCommand([=](BlitCommandContext &ctx) {
             ctx.encoder->copyFromBuffer(counter_buffer, 0, dst_buffer, DstAlignedByteOffset, 4);
           });
@@ -869,7 +871,7 @@ public:
         memcpy(ptr, pSrcData, copy_len);
         SwitchToBlitEncoder(CommandBufferState::UpdateBlitEncoderActive);
         Emit([staging_buffer, offset, dst = bindable->__buffer(), copy_offset, copy_len](ArgumentEncodingContext &enc) {
-          auto dst_buffer = dst->current()->buffer(); // TODO: use;
+          auto dst_buffer = enc.access(dst, copy_offset, copy_len, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
           enc.encodeBlitCommand([&, dst_buffer](BlitCommandContext &ctx) {
             ctx.encoder->copyFromBuffer(staging_buffer, offset, dst_buffer, copy_offset, copy_len);
           });
@@ -1146,8 +1148,7 @@ public:
     if (auto bindable = com_cast<IMTLBindable>(pBufferForArgs)) {
       Emit([IndexType, IndexBufferOffset, Primitive, ArgBuffer = bindable->__buffer(),
             AlignedByteOffsetForArgs](ArgumentEncodingContext &enc) {
-        auto buffer = ArgBuffer->current()->buffer();
-        // TODO: useBuffer
+        auto buffer = enc.access(ArgBuffer, AlignedByteOffsetForArgs, 20, DXMT_ENCODER_RESOURCE_ACESS_READ);
         enc.bumpVisibilityResultOffset();
         enc.encodeRenderCommand([&, buffer, index_buffer = Obj(enc.currentIndexBuffer())](RenderCommandContext &ctx) {
           ctx.encoder->drawIndexedPrimitives(
@@ -1172,8 +1173,7 @@ public:
     }
     if (auto bindable = com_cast<IMTLBindable>(pBufferForArgs)) {
       Emit([Primitive, ArgBuffer = bindable->__buffer(), AlignedByteOffsetForArgs](ArgumentEncodingContext &enc) {
-        auto buffer = ArgBuffer->current()->buffer();
-        // TODO: useBuffer
+        auto buffer = enc.access(ArgBuffer, AlignedByteOffsetForArgs, 20, DXMT_ENCODER_RESOURCE_ACESS_READ);
         enc.bumpVisibilityResultOffset();
         enc.encodeRenderCommand([&, buffer](RenderCommandContext &ctx) {
           ctx.encoder->drawPrimitives(Primitive, buffer, AlignedByteOffsetForArgs);
@@ -1207,8 +1207,7 @@ public:
       return;
     if (auto bindable = com_cast<IMTLBindable>(pBufferForArgs)) {
       Emit([AlignedByteOffsetForArgs, ArgBuffer = bindable->__buffer()](ArgumentEncodingContext &enc) {
-        auto buffer = ArgBuffer->current()->buffer();
-        // TODO: useBuffer
+        auto buffer = enc.access(ArgBuffer, AlignedByteOffsetForArgs, 12, DXMT_ENCODER_RESOURCE_ACESS_READ);
         enc.encodeComputeCommand([&, buffer = Obj(buffer)](ComputeCommandContext &ctx) {
           ctx.encoder->dispatchThreadgroups(buffer, AlignedByteOffsetForArgs, ctx.threadgroup_size);
         });
@@ -2711,7 +2710,7 @@ public:
         UseCopyDestination(staging_dst.ptr(), DstSubresource, &dst_bind, &bytes_per_row, &bytes_per_image);
         SwitchToBlitEncoder(CommandBufferState::ReadbackBlitEncoderActive);
         Emit([src_ = src->__buffer(), dst = Obj(dst_bind.Buffer), DstX, SrcBox](ArgumentEncodingContext &enc) {
-          auto src = src_->current()->buffer(); // TODO: useBuffer
+          auto src = enc.access(src_, SrcBox.left, SrcBox.right - SrcBox.left, DXMT_ENCODER_RESOURCE_ACESS_READ);
           enc.encodeBlitCommand([=, &SrcBox, &dst](BlitCommandContext &ctx) {
             ctx.encoder->copyFromBuffer(src, SrcBox.left, dst, DstX, SrcBox.right - SrcBox.left);
           });
@@ -2727,12 +2726,10 @@ public:
         uint32_t bytes_per_row, bytes_per_image;
         UseCopySource(staging_src.ptr(), SrcSubresource, &src_bind, &bytes_per_row, &bytes_per_image);
         SwitchToBlitEncoder(CommandBufferState::UpdateBlitEncoderActive);
-        Emit([dst_ = dst->__buffer(), src = Obj(src_bind.Buffer), DstX,
-                               SrcBox](ArgumentEncodingContext &enc) {
-          auto dst = dst_->current()->buffer(); // TODO: useBuffer
+        Emit([dst_ = dst->__buffer(), src = Obj(src_bind.Buffer), DstX, SrcBox](ArgumentEncodingContext &enc) {
+          auto dst = enc.access(dst_, DstX, SrcBox.right - SrcBox.left, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
           enc.encodeBlitCommand([=, &SrcBox, &src](BlitCommandContext &ctx) {
             ctx.encoder->copyFromBuffer(src, SrcBox.left, dst, DstX, SrcBox.right - SrcBox.left);
-            ;
           });
         });
       } else if (auto src = com_cast<IMTLBindable>(pSrcResource)) {
@@ -2740,8 +2737,8 @@ public:
         SwitchToBlitEncoder(CommandBufferState::BlitEncoderActive);
         Emit([dst_ = dst->__buffer(), src_ = src->__buffer(), DstX,
                                SrcBox](ArgumentEncodingContext& enc) {
-          auto src = src_->current()->buffer(); // TODO: useBuffer
-          auto dst = dst_->current()->buffer(); // TODO: useBuffer
+          auto src = enc.access(src_, SrcBox.left, SrcBox.right - SrcBox.left, DXMT_ENCODER_RESOURCE_ACESS_READ);
+          auto dst = enc.access(dst_, DstX, SrcBox.right - SrcBox.left, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
           enc.encodeBlitCommand([&, src, dst](BlitCommandContext &ctx) {
             ctx.encoder->copyFromBuffer(src, SrcBox.left, dst, DstX, SrcBox.right - SrcBox.left);
           });
@@ -2781,7 +2778,7 @@ public:
         SwitchToBlitEncoder(CommandBufferState::ReadbackBlitEncoderActive);
         Emit([src_ = src->__texture(), dst = Obj(dst_bind.Buffer), bytes_per_row, bytes_per_image,
               cmd = std::move(cmd)](ArgumentEncodingContext &enc) {
-          auto src = src_->current()->texture(); // TODO: useTexture
+          auto src = enc.access(src_, cmd.Src.MipLevel, cmd.Src.ArraySlice, DXMT_ENCODER_RESOURCE_ACESS_READ);
           auto offset = cmd.DstOrigin.z * bytes_per_image + cmd.DstOrigin.y * bytes_per_row +
                         cmd.DstOrigin.x * cmd.DstFormat.BytesPerTexel;
           enc.encodeBlitCommand([=, &cmd, &dst](BlitCommandContext &ctx) {
@@ -2804,7 +2801,7 @@ public:
         SwitchToBlitEncoder(CommandBufferState::UpdateBlitEncoderActive);
         Emit([dst_ = dst->__texture(), src = Obj(src_bind.Buffer), bytes_per_row, bytes_per_image,
                                cmd = std::move(cmd)](ArgumentEncodingContext &enc) {
-          auto dst = dst_->current()->texture(); // TODO: useTexture
+          auto dst = enc.access(dst_, cmd.Dst.MipLevel, cmd.Dst.ArraySlice, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
           uint32_t offset;
           if (cmd.SrcFormat.Flag & MTL_DXGI_FORMAT_BC) {
             offset = cmd.SrcOrigin.z * bytes_per_image + (cmd.SrcOrigin.y >> 2) * bytes_per_row +
@@ -2828,8 +2825,8 @@ public:
                                cmd = std::move(cmd)](ArgumentEncodingContext& enc) {
           auto src_format = src_->pixelFormat();
           auto dst_format = dst_->pixelFormat();
-          auto src = src_->current()->texture(); // TODO: useTexture
-          auto dst = dst_->current()->texture(); // TODO: useTexture
+          auto src = enc.access(src_, cmd.Src.MipLevel, cmd.Src.ArraySlice, DXMT_ENCODER_RESOURCE_ACESS_READ);
+          auto dst = enc.access(dst_, cmd.Dst.MipLevel, cmd.Dst.ArraySlice, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
           if (Forget_sRGB(dst_format) != Forget_sRGB(src_format)) {
 
             // bitcast, using a temporary buffer
@@ -2889,8 +2886,8 @@ public:
         // on-device copy
         SwitchToBlitEncoder(CommandBufferState::BlitEncoderActive);
         Emit([dst_ = dst->__texture(), src_ = src->__texture(), cmd = std::move(cmd)](ArgumentEncodingContext &enc) {
-          auto src = src_->current()->texture(); // TODO: useTexture
-          auto dst = dst_->current()->texture(); // TODO: useTexture
+          auto src = enc.access(src_, cmd.Src.MipLevel, cmd.Src.ArraySlice, DXMT_ENCODER_RESOURCE_ACESS_READ);
+          auto dst = enc.access(dst_, cmd.Dst.MipLevel, cmd.Dst.ArraySlice, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
           auto block_w = (align(cmd.SrcSize.width, 4u) >> 2);
           auto block_h = (align(cmd.SrcSize.height, 4u) >> 2);
           auto bytes_per_row = block_w * cmd.SrcFormat.BytesPerTexel;
@@ -2933,8 +2930,8 @@ public:
         // on-device copy
         SwitchToBlitEncoder(CommandBufferState::BlitEncoderActive);
         Emit([dst_ = dst->__texture(), src_ = src->__texture(), cmd = std::move(cmd)](ArgumentEncodingContext &enc) {
-          auto src = src_->current()->texture(); // TODO: useTexture
-          auto dst = dst_->current()->texture(); // TODO: useTexture
+          auto src = enc.access(src_, cmd.Src.MipLevel, cmd.Src.ArraySlice, DXMT_ENCODER_RESOURCE_ACESS_READ);
+          auto dst = enc.access(dst_, cmd.Dst.MipLevel, cmd.Dst.ArraySlice, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
           auto bytes_per_row = cmd.SrcSize.width * cmd.SrcFormat.BytesPerTexel;
           auto bytes_per_image = cmd.SrcSize.height * bytes_per_row;
           auto [buffer, offset] = enc.allocateTempBuffer(bytes_per_image * cmd.SrcSize.depth, 16);
@@ -3001,8 +2998,7 @@ public:
       SwitchToBlitEncoder(CommandBufferState::UpdateBlitEncoderActive);
       Emit([staging_buffer, offset, dst = bindable->__texture(), cmd = std::move(cmd),
             bytes_per_depth_slice](ArgumentEncodingContext &enc) {
-        auto texture = dst->current()->texture();
-        // TODO: useTexture
+        auto texture = enc.access(dst, cmd.Dst.MipLevel, cmd.Dst.ArraySlice, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
         enc.encodeBlitCommand([&, texture](BlitCommandContext &ctx) {
           ctx.encoder->copyFromBuffer(
               staging_buffer, offset, cmd.EffectiveBytesPerRow, bytes_per_depth_slice, cmd.DstRegion.size,
@@ -3678,12 +3674,12 @@ public:
       if (so_slot0.Offset == 0xFFFFFFFF) {
         ERR("UpdateSOTargets: appending is not supported, expect problem");
         Emit([slot0 = so_slot0.Buffer->__buffer()](ArgumentEncodingContext &enc) {
-          auto buffer = slot0->current()->buffer(); // TODO: useBuffer
+          auto buffer = enc.access(slot0, 0, slot0->length(), DXMT_ENCODER_RESOURCE_ACESS_WRITE);
           enc.encodeRenderCommand([buffer](RenderCommandContext &ctx) { ctx.encoder->setVertexBuffer(buffer, 0, 20); });
         });
       } else {
         Emit([slot0 = so_slot0.Buffer->__buffer(), offset = so_slot0.Offset](ArgumentEncodingContext &enc) {
-          auto buffer = slot0->current()->buffer(); // TODO: useBuffer
+          auto buffer = enc.access(slot0, 0, slot0->length(), DXMT_ENCODER_RESOURCE_ACESS_WRITE);
           enc.encodeRenderCommand([buffer, offset](RenderCommandContext &ctx) {
             ctx.encoder->setVertexBuffer(buffer, offset, 20);
           });
