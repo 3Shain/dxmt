@@ -43,6 +43,8 @@ ArgumentEncodingContext::encodeVertexBuffers(uint32_t slot_mask) {
     entries[index].buffer_handle = current->gpuAddress + state.offset;
     entries[index].stride = state.stride;
     entries[index++].length = length > state.offset ? length - state.offset : 0;
+    // FIXME: did we intended to use the whole buffer?
+    access(buffer, DXMT_ENCODER_RESOURCE_ACESS_READ);
     makeResident<PipelineStage::Vertex, TessellationDraw>(buffer.ptr());
   };
   if constexpr (TessellationDraw)
@@ -85,6 +87,8 @@ ArgumentEncodingContext::encodeConstantBuffers(const MTL_SHADER_REFLECTION *refl
       }
       auto argbuf = cbuf.buffer;
       encoded_buffer[arg.StructurePtrOffset] = argbuf->current()->gpuAddress + (cbuf.offset);
+      // FIXME: did we intended to use the whole buffer?
+      access(argbuf, DXMT_ENCODER_RESOURCE_ACESS_READ);
       makeResident<stage, TessellationDraw>(argbuf.ptr());
       break;
     }
@@ -168,6 +172,7 @@ ArgumentEncodingContext::encodeShaderResources(const MTL_SHADER_REFLECTION *refl
         if (srv.buffer.ptr()) {
           encoded_buffer[arg.StructurePtrOffset] = srv.buffer->current()->gpuAddress + srv.slice.byteOffset;
           encoded_buffer[arg.StructurePtrOffset + 1] = srv.slice.byteLength;
+          access(srv.buffer, srv.slice.byteOffset, srv.slice.byteLength, DXMT_ENCODER_RESOURCE_ACESS_READ);
           makeResident<stage, TessellationDraw>(srv.buffer.ptr());
         } else {
           encoded_buffer[arg.StructurePtrOffset] = 0;
@@ -176,13 +181,15 @@ ArgumentEncodingContext::encodeShaderResources(const MTL_SHADER_REFLECTION *refl
       } else if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE) {
         if (srv.buffer.ptr()) {
           assert(arg.Flags & MTL_SM50_SHADER_ARGUMENT_TBUFFER_OFFSET);
-          encoded_buffer[arg.StructurePtrOffset] = srv.buffer->view(srv.viewId)->gpuResourceID()._impl;
+          encoded_buffer[arg.StructurePtrOffset] =
+              access(srv.buffer, srv.viewId, DXMT_ENCODER_RESOURCE_ACESS_READ)->gpuResourceID()._impl;
           encoded_buffer[arg.StructurePtrOffset + 1] =
               ((uint64_t)srv.slice.elementCount << 32) | (uint64_t)srv.slice.firstElement;
           makeResident<stage, TessellationDraw>(srv.buffer.ptr(), srv.viewId);
         } else if (srv.texture.ptr()) {
           assert(arg.Flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE_MINLOD_CLAMP);
-          encoded_buffer[arg.StructurePtrOffset] = srv.texture->view(srv.viewId)->gpuResourceID()._impl;
+          encoded_buffer[arg.StructurePtrOffset] =
+              access(srv.texture, srv.viewId, DXMT_ENCODER_RESOURCE_ACESS_READ)->gpuResourceID()._impl;
           encoded_buffer[arg.StructurePtrOffset + 1] = 0;
           makeResident<stage, TessellationDraw>(srv.texture.ptr(), srv.viewId);
         } else {
@@ -198,11 +205,13 @@ ArgumentEncodingContext::encodeShaderResources(const MTL_SHADER_REFLECTION *refl
     case SM50BindingType::UAV: {
       auto &uav = UAVBindingSet[arg.SM50BindingSlot];
       bool read = (arg.Flags >> 10) & 1, write = (arg.Flags >> 10) & 2;
+      auto access_flags =  (DXMT_ENCODER_RESOURCE_ACESS)((arg.Flags >> 10) & 3);
 
       if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_BUFFER) {
         if (uav.buffer.ptr()) {
           encoded_buffer[arg.StructurePtrOffset] = uav.buffer->current()->gpuAddress + uav.slice.byteOffset;
           encoded_buffer[arg.StructurePtrOffset + 1] = uav.slice.byteLength;
+          access(uav.buffer, uav.slice.byteOffset, uav.slice.byteLength, access_flags);
           makeResident<stage, TessellationDraw>(uav.buffer.ptr(), read, write);
         } else {
           encoded_buffer[arg.StructurePtrOffset] = 0;
@@ -211,13 +220,13 @@ ArgumentEncodingContext::encodeShaderResources(const MTL_SHADER_REFLECTION *refl
       } else if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE) {
         if (uav.buffer.ptr()) {
           assert(arg.Flags & MTL_SM50_SHADER_ARGUMENT_TBUFFER_OFFSET);
-          encoded_buffer[arg.StructurePtrOffset] = uav.buffer->view(uav.viewId)->gpuResourceID()._impl;
+          encoded_buffer[arg.StructurePtrOffset] = access(uav.buffer, uav.viewId, access_flags)->gpuResourceID()._impl;
           encoded_buffer[arg.StructurePtrOffset + 1] =
               ((uint64_t)uav.slice.elementCount << 32) | (uint64_t)uav.slice.firstElement;
           makeResident<stage, TessellationDraw>(uav.buffer.ptr(), uav.viewId, read, write);
         } else if (uav.texture.ptr()) {
           assert(arg.Flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE_MINLOD_CLAMP);
-          encoded_buffer[arg.StructurePtrOffset] = uav.texture->view(uav.viewId)->gpuResourceID()._impl;
+          encoded_buffer[arg.StructurePtrOffset] = access(uav.texture, uav.viewId, access_flags)->gpuResourceID()._impl;
           encoded_buffer[arg.StructurePtrOffset + 1] = 0;
           makeResident<stage, TessellationDraw>(uav.texture.ptr(), uav.viewId, read, write);
         } else {
@@ -227,6 +236,7 @@ ArgumentEncodingContext::encodeShaderResources(const MTL_SHADER_REFLECTION *refl
       }
       if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_UAV_COUNTER) {
         encoded_buffer[arg.StructurePtrOffset + 2] = uav.counter->current()->gpuAddress;
+        access(uav.counter, 0, 4, DXMT_ENCODER_RESOURCE_ACESS_READ | DXMT_ENCODER_RESOURCE_ACESS_WRITE);
         makeResident<stage, TessellationDraw>(uav.counter.ptr(), true, true);
       }
       break;

@@ -89,7 +89,12 @@ public:
   MTL::Texture *view(BufferViewKey key, BufferAllocation* allocation);
 
   DXMT_RESOURCE_RESIDENCY_STATE &residency(BufferViewKey key);
-  DXMT_RESOURCE_RESIDENCY_STATE &residency(BufferViewKey key, BufferAllocation* allocation);
+  DXMT_RESOURCE_RESIDENCY_STATE &residency(BufferViewKey key, BufferAllocation *allocation);
+
+  constexpr uint64_t
+  length() {
+    return length_;
+  };
 
 private:
   void prepareAllocationViews(BufferAllocation* allocation);
