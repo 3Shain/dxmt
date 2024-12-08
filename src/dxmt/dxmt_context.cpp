@@ -333,13 +333,16 @@ ArgumentEncodingContext::present(Rc<Texture> &texture, CA::MetalDrawable *drawab
 }
 
 RenderEncoderData *
-ArgumentEncodingContext::startRenderPass(Obj<MTL::RenderPassDescriptor> &&descriptor, uint32_t dsv_planar_flags) {
+ArgumentEncodingContext::startRenderPass(
+    Obj<MTL::RenderPassDescriptor> &&descriptor, uint32_t dsv_planar_flags, uint32_t render_target_count
+) {
   assert(!encoder_current);
   auto encoder_info = allocate<RenderEncoderData>();
   encoder_info->type = EncoderType::Render;
   encoder_info->id = nextEncoderId();
   encoder_info->descriptor = std::move(descriptor);
   encoder_info->dsv_planar_flags = dsv_planar_flags;
+  encoder_info->render_target_count = render_target_count;
   encoder_current = encoder_info;
 
   vro_state_.beginEncoder();
@@ -649,7 +652,7 @@ ArgumentEncodingContext::checkEncoderRelation(EncoderData *former, EncoderData *
         clear->type = EncoderType::Null;
         return DXMT_ENCODER_LIST_OP_COALESCE;
       } else {
-        for (unsigned i = 0; i < 8 /* FIXME: optimize constant */; i++) {
+        for (unsigned i = 0; i < render->render_target_count; i++) {
           auto attachment = render->descriptor->colorAttachments()->object(i);
           if (attachment->texture() == clear->texture.ptr() && attachment->loadAction() == MTL::LoadActionLoad) {
             attachment->setLoadAction(MTL::LoadActionClear);

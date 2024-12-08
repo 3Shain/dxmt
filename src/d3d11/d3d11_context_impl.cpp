@@ -3289,7 +3289,7 @@ public:
 
         renderPassDescriptor->setRenderTargetArrayLength(render_target_array);
 
-        ctx.startRenderPass(std::move(renderPassDescriptor), dsv_planar_flags);
+        ctx.startRenderPass(std::move(renderPassDescriptor), dsv_planar_flags, rtvs.size());
       });
     }
 
