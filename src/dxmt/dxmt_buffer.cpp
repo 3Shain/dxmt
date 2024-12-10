@@ -9,6 +9,8 @@
 
 namespace dxmt {
 
+std::atomic_uint64_t global_buffer_seq = {0};
+
 BufferAllocation::BufferAllocation(Obj<MTL::Buffer> &&buffer, Flags<BufferAllocationFlag> flags) :
     obj_(std::move(buffer)),
     flags_(flags) {
@@ -17,6 +19,7 @@ BufferAllocation::BufferAllocation(Obj<MTL::Buffer> &&buffer, Flags<BufferAlloca
   else
     mappedMemory = obj_->contents();
   gpuAddress = obj_->gpuAddress();
+  depkey = EncoderDepSet::generateNewKey(global_buffer_seq.fetch_add(1));
 };
 
 void

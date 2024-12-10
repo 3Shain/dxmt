@@ -6,8 +6,11 @@
 #include "Metal/MTLDevice.hpp"
 #include "dxmt_residency.hpp"
 #include "objc_pointer.hpp"
+#include <atomic>
 
 namespace dxmt {
+
+std::atomic_uint64_t global_texture_seq = {0};
 
 TextureAllocation::TextureAllocation(
     Obj<MTL::Buffer> &&buffer, Obj<MTL::TextureDescriptor> &&textureDescriptor, unsigned bytes_per_row,
@@ -20,6 +23,7 @@ TextureAllocation::TextureAllocation(
 
   mappedMemory = owned_buffer->contents();
   gpuResourceID = obj_->gpuResourceID()._impl;
+  depkey = EncoderDepSet::generateNewKey(global_texture_seq.fetch_add(1));
 };
 
 TextureAllocation::TextureAllocation(Obj<MTL::Texture> &&texture, Flags<TextureAllocationFlag> flags) :
@@ -27,6 +31,7 @@ TextureAllocation::TextureAllocation(Obj<MTL::Texture> &&texture, Flags<TextureA
     flags_(flags) {
   mappedMemory = nullptr;
   gpuResourceID = obj_->gpuResourceID()._impl;
+  depkey = EncoderDepSet::generateNewKey(global_texture_seq.fetch_add(1));
 };
 
 TextureAllocation::~TextureAllocation() {

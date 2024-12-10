@@ -11,6 +11,7 @@
 #include "dxmt_buffer.hpp"
 #include "dxmt_command.hpp"
 #include "dxmt_command_list.hpp"
+#include "dxmt_deptrack.hpp"
 #include "dxmt_occlusion_query.hpp"
 #include "dxmt_residency.hpp"
 #include "dxmt_texture.hpp"
@@ -89,8 +90,10 @@ struct EncoderData {
   EncoderType type;
   EncoderData *next = nullptr;
   uint64_t id;
-  // read list
-  // write list
+  EncoderDepSet buf_read;
+  EncoderDepSet buf_write;
+  EncoderDepSet tex_read;
+  EncoderDepSet tex_write;
 };
 
 struct RenderCommandContext {
@@ -134,7 +137,6 @@ struct ClearEncoderData : EncoderData {
   Obj<MTL::Texture> texture;
   unsigned clear_dsv;
   unsigned array_length;
-  bool skipped = false;
 
   ClearEncoderData() {}
 };
@@ -184,9 +186,8 @@ GetResidencyMask(PipelineStage type, bool read, bool write) {
 }
 
 enum DXMT_ENCODER_LIST_OP {
-  DXMT_ENCODER_LIST_OP_SYNCHRONIZE = 0,
-  DXMT_ENCODER_LIST_OP_SWAP = 1,
-  DXMT_ENCODER_LIST_OP_COALESCE = 2,
+  DXMT_ENCODER_LIST_OP_SWAP = 0,
+  DXMT_ENCODER_LIST_OP_SYNCHRONIZE = 1,
 };
 
 class CommandQueue;
@@ -197,37 +198,67 @@ enum DXMT_ENCODER_RESOURCE_ACESS {
 };
 
 class ArgumentEncodingContext {
+  void
+  trackBuffer(BufferAllocation *allocation, DXMT_ENCODER_RESOURCE_ACESS flags) {
+    if (allocation->flags().test(BufferAllocationFlag::GpuReadonly))
+      return;
+    if (flags & DXMT_ENCODER_RESOURCE_ACESS_READ)
+      encoder_current->buf_read.add(allocation->depkey);
+    if (flags & DXMT_ENCODER_RESOURCE_ACESS_WRITE)
+      encoder_current->buf_write.add(allocation->depkey);
+  }
+
+  void
+  trackTexture(TextureAllocation *allocation, DXMT_ENCODER_RESOURCE_ACESS flags) {
+    if (allocation->flags().test(TextureAllocationFlag::GpuReadonly))
+      return;
+    if (flags & DXMT_ENCODER_RESOURCE_ACESS_READ)
+      encoder_current->tex_read.add(allocation->depkey);
+    if (flags & DXMT_ENCODER_RESOURCE_ACESS_WRITE)
+      encoder_current->tex_write.add(allocation->depkey);
+  }
+
 public:
   constexpr MTL::Buffer *
   access(Rc<Buffer> const &buffer, unsigned offset, unsigned length, DXMT_ENCODER_RESOURCE_ACESS flags) {
     auto allocation = buffer->current();
+    trackBuffer(allocation, flags);
     return allocation->buffer();
   }
 
   constexpr MTL::Texture *
   access(Rc<Buffer> const &buffer, unsigned viewId, DXMT_ENCODER_RESOURCE_ACESS flags) {
+    auto allocation = buffer->current();
+    trackBuffer(allocation, flags);
     return buffer->view(viewId);
   }
 
   constexpr MTL::Buffer *
   access(Rc<Buffer> const &buffer, DXMT_ENCODER_RESOURCE_ACESS flags) {
     auto allocation = buffer->current();
+    trackBuffer(allocation, flags);
     return allocation->buffer();
   }
 
   constexpr MTL::Texture *
   access(Rc<Texture> const &texture, unsigned level, unsigned slice, DXMT_ENCODER_RESOURCE_ACESS flags) {
-    return texture->current()->texture();
+    auto allocation = texture->current();
+    trackTexture(allocation, flags);
+    return allocation->texture();
   }
 
   constexpr MTL::Texture *
   access(Rc<Texture> const &texture, unsigned viewId, DXMT_ENCODER_RESOURCE_ACESS flags) {
+    auto allocation = texture->current();
+    trackTexture(allocation, flags);
     return texture->view(viewId);
   }
 
   constexpr MTL::Texture *
   access(Rc<Texture> const &texture, DXMT_ENCODER_RESOURCE_ACESS flags) {
-    return texture->current()->texture();
+    auto allocation = texture->current();
+    trackTexture(allocation, flags);
+    return allocation->texture();
   }
 
   template <PipelineStage stage>

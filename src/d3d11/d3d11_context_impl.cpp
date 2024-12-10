@@ -3234,8 +3234,8 @@ public:
       }
 
       Emit([rtvs = std::move(rtvs), dsv = std::move(dsv_info), effective_render_target, uav_only,
-                   uav_only_render_target_height, uav_only_render_target_width, uav_only_sample_count,
-                   render_target_array](ArgumentEncodingContext &ctx) {
+            uav_only_render_target_height, uav_only_render_target_width, uav_only_sample_count,
+            render_target_array](ArgumentEncodingContext &ctx) {
         auto pool = transfer(NS::AutoreleasePool::alloc()->init());
         auto renderPassDescriptor = transfer(MTL::RenderPassDescriptor::alloc()->init());
         for (auto &rtv : rtvs.span()) {
@@ -3290,6 +3290,17 @@ public:
         renderPassDescriptor->setRenderTargetArrayLength(render_target_array);
 
         ctx.startRenderPass(std::move(renderPassDescriptor), dsv_planar_flags, rtvs.size());
+
+        for (auto &rtv : rtvs.span()) {
+          if (rtv.PixelFormat == MTL::PixelFormatInvalid) {
+            continue;
+          }
+          ctx.access(rtv.Texture, rtv.viewId, DXMT_ENCODER_RESOURCE_ACESS_READ | DXMT_ENCODER_RESOURCE_ACESS_WRITE);
+        };
+
+        if (dsv.Texture.ptr()) {
+          ctx.access(dsv.Texture, dsv.viewId, DXMT_ENCODER_RESOURCE_ACESS_READ | DXMT_ENCODER_RESOURCE_ACESS_WRITE);
+        }
       });
     }
 
