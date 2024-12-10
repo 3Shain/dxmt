@@ -312,6 +312,10 @@ public:
       m_qwords[i] = 0;
   }
 
+  constexpr void clearMask(uint32_t mask) {
+    m_qwords[0] &= ~((uint64_t)mask);
+  }
+
   constexpr bool any() const {
     for (size_t i = 0; i < Qwords; i++) {
       if (m_qwords[i] != 0)
