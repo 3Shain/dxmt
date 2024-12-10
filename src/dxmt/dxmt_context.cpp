@@ -279,6 +279,8 @@ ArgumentEncodingContext::clearColor(
   encoder_info->color = color;
   encoder_info->array_length = arrayLength;
 
+  encoder_info->tex_write.add(texture->current()->depkey);
+
   encoder_current = encoder_info;
   endPass();
 }
@@ -291,10 +293,12 @@ ArgumentEncodingContext::clearDepthStencil(
   auto encoder_info = allocate<ClearEncoderData>();
   encoder_info->type = EncoderType::Clear;
   encoder_info->id = nextEncoderId();
-  encoder_info->clear_dsv = flag;
+  encoder_info->clear_dsv = flag & DepthStencilPlanarFlags(texture->pixelFormat());;
   encoder_info->texture = texture->view(viewId);
   encoder_info->depth_stencil = {depth, stencil};
   encoder_info->array_length = arrayLength;
+
+  encoder_info->tex_write.add(texture->current()->depkey);
 
   encoder_current = encoder_info;
   endPass();
@@ -314,6 +318,9 @@ ArgumentEncodingContext::resolveTexture(
   encoder_info->dst_slice = dstSlice;
   encoder_info->dst_level = dstLevel;
 
+  encoder_info->tex_read.add(src->current()->depkey);
+  encoder_info->tex_write.add(dst->current()->depkey);
+
   encoder_current = encoder_info;
   endPass();
 };
@@ -327,6 +334,8 @@ ArgumentEncodingContext::present(Rc<Texture> &texture, CA::MetalDrawable *drawab
   encoder_info->backbuffer = texture->current()->texture();
   encoder_info->drawable = drawable;
   encoder_info->after = after;
+
+  encoder_info->tex_read.add(texture->current()->depkey);
 
   encoder_current = encoder_info;
   endPass();
@@ -420,6 +429,8 @@ ArgumentEncodingContext::bumpVisibilityResultOffset() {
   }
 }
 
+constexpr unsigned kEncoderOptimizerThreshold = 64;
+
 std::unique_ptr<VisibilityResultReadback>
 ArgumentEncodingContext::flushCommands(MTL::CommandBuffer *cmdbuf, uint64_t seqId) {
   assert(!encoder_current);
@@ -441,23 +452,15 @@ ArgumentEncodingContext::flushCommands(MTL::CommandBuffer *cmdbuf, uint64_t seqI
 
   if (encoder_count > 1) {
     unsigned j, i;
-    EncoderData *prev;
-    for (j = 0; j < encoder_count - 1; j++) {
-      prev = encoders[j];
-      if (prev->type == EncoderType::Null)
+    for (j = encoder_count - 2; j > 0; j--) {
+      if (encoders[j]->type == EncoderType::Null)
         continue;
-      for (i = j + 1; i < encoder_count; i++) {
-        switch (checkEncoderRelation(prev, encoders[i])) {
-        case DXMT_ENCODER_LIST_OP_SYNCHRONIZE:
-          goto end;
-        case DXMT_ENCODER_LIST_OP_SWAP:
+      for (i = j + 1; i < std::min(encoder_count, j + kEncoderOptimizerThreshold); i++) {
+        if (encoders[i]->type == EncoderType::Null)
+          continue;
+        if (checkEncoderRelation(encoders[j], encoders[i]) == DXMT_ENCODER_LIST_OP_SYNCHRONIZE)
           break;
-        case DXMT_ENCODER_LIST_OP_COALESCE:
-          prev->type = EncoderType::Null;
-          goto end;
-        }
       }
-    end:;
     }
   }
 
@@ -536,14 +539,11 @@ ArgumentEncodingContext::flushCommands(MTL::CommandBuffer *cmdbuf, uint64_t seqI
     }
     case EncoderType::Clear: {
       auto data = static_cast<ClearEncoderData *>(current);
-      if (data->skipped)
-        break;
       {
         auto enc_descriptor = MTL::RenderPassDescriptor::renderPassDescriptor();
         MTL::Texture *texture = data->texture;
         if (data->clear_dsv) {
-          uint32_t planar_flags = DepthStencilPlanarFlags(texture->pixelFormat());
-          if (data->clear_dsv & planar_flags & 1) {
+          if (data->clear_dsv & 1) {
             auto attachmentz = enc_descriptor->depthAttachment();
             attachmentz->setClearDepth(data->depth_stencil.first);
             attachmentz->setTexture(texture);
@@ -553,7 +553,7 @@ ArgumentEncodingContext::flushCommands(MTL::CommandBuffer *cmdbuf, uint64_t seqI
             attachmentz->setLevel(0);
             attachmentz->setDepthPlane(0);
           }
-          if (data->clear_dsv & planar_flags & 2) {
+          if (data->clear_dsv & 2) {
             auto attachmentz = enc_descriptor->stencilAttachment();
             attachmentz->setClearStencil(data->depth_stencil.second);
             attachmentz->setTexture(texture);
@@ -632,32 +632,58 @@ ArgumentEncodingContext::checkEncoderRelation(EncoderData *former, EncoderData *
 
       if (clear->clear_dsv) {
         if (auto depth_attachment = isClearDepthSignatureMatched(clear, render)) {
-          depth_attachment->setClearDepth(clear->depth_stencil.first);
-          depth_attachment->setLoadAction(MTL::LoadActionClear);
+          if (depth_attachment->loadAction() == MTL::LoadActionLoad) {
+            depth_attachment->setClearDepth(clear->depth_stencil.first);
+            depth_attachment->setLoadAction(MTL::LoadActionClear);
+            if (depth_attachment->storeAction() != MTL::StoreActionDontCare)
+              render->tex_write.merge(clear->tex_write);
+          }
           clear->clear_dsv &= ~1;
         }
         if (auto stencil_attachment = isClearStencilSignatureMatched(clear, render)) {
-          stencil_attachment->setClearStencil(clear->depth_stencil.second);
-          stencil_attachment->setLoadAction(MTL::LoadActionClear);
+          if (stencil_attachment->loadAction() == MTL::LoadActionLoad) {
+            stencil_attachment->setClearStencil(clear->depth_stencil.second);
+            stencil_attachment->setLoadAction(MTL::LoadActionClear);
+            if (stencil_attachment->storeAction() != MTL::StoreActionDontCare)
+              render->tex_write.merge(clear->tex_write);
+          }
           clear->clear_dsv &= ~2;
         }
         if (clear->clear_dsv == 0) {
           clear->~ClearEncoderData();
           clear->next = nullptr;
           clear->type = EncoderType::Null;
-          return DXMT_ENCODER_LIST_OP_COALESCE;
+          return DXMT_ENCODER_LIST_OP_SYNCHRONIZE;
         }
       } else {
         if (auto attachment = isClearColorSignatureMatched(clear, render)) {
-          attachment->setLoadAction(MTL::LoadActionClear);
-          attachment->setClearColor(clear->color);
+          if (attachment->loadAction() == MTL::LoadActionLoad) {
+            attachment->setLoadAction(MTL::LoadActionClear);
+            attachment->setClearColor(clear->color);
+            if (attachment->storeAction() != MTL::StoreActionDontCare)
+              render->tex_write.merge(clear->tex_write);
+          }
+
           clear->~ClearEncoderData();
           clear->next = nullptr;
           clear->type = EncoderType::Null;
-          return DXMT_ENCODER_LIST_OP_COALESCE;
+          return DXMT_ENCODER_LIST_OP_SYNCHRONIZE;
         }
       }
       break;
+    }
+    if (latter->type == EncoderType::Clear && former->type == EncoderType::Render) {
+      auto render = reinterpret_cast<RenderEncoderData *>(former);
+      auto clear = reinterpret_cast<ClearEncoderData *>(latter);
+
+      if (clear->clear_dsv) {
+        if (render->descriptor->depthAttachment()->texture() == clear->texture.ptr()) {
+          render->descriptor->depthAttachment()->setStoreAction(MTL::StoreActionDontCare);
+        }
+        if (render->descriptor->stencilAttachment()->texture() == clear->texture.ptr()) {
+          render->descriptor->stencilAttachment()->setStoreAction(MTL::StoreActionDontCare);
+        }
+      }
     }
     return hasDataDependency(latter, former) ? DXMT_ENCODER_LIST_OP_SYNCHRONIZE : DXMT_ENCODER_LIST_OP_SWAP;
   }
@@ -686,11 +712,16 @@ ArgumentEncodingContext::checkEncoderRelation(EncoderData *former, EncoderData *
       r1->use_tessellation = r0->use_tessellation || r1->use_tessellation;
       r1->use_visibility_result = r0->use_visibility_result || r1->use_visibility_result;
 
+      r1->buf_read.merge(r0->buf_read);
+      r1->buf_write.merge(r0->buf_write);
+      r1->tex_read.merge(r0->tex_read);
+      r1->tex_write.merge(r0->tex_write);
+
       r0->~RenderEncoderData();
       r0->next = nullptr;
       r0->type = EncoderType::Null;
 
-      return DXMT_ENCODER_LIST_OP_COALESCE;
+      return DXMT_ENCODER_LIST_OP_SYNCHRONIZE;
     }
   }
 
@@ -700,10 +731,25 @@ ArgumentEncodingContext::checkEncoderRelation(EncoderData *former, EncoderData *
 bool
 ArgumentEncodingContext::hasDataDependency(EncoderData *latter, EncoderData *former) {
   if (latter->type == EncoderType::Clear && former->type == EncoderType::Clear) {
-    // FIXME: potential bug: when the clear target is the same
+    // FIXME: prove it's safe to return false
     return false;
   }
-  return true; // TODO
+  // read-after-write
+  if (!former->buf_write.isDisjointWith(latter->buf_read))
+    return true;
+  if (!former->tex_write.isDisjointWith(latter->tex_read))
+    return true;
+  // write-after-write
+  if (!former->buf_write.isDisjointWith(latter->buf_write))
+    return true;
+  if (!former->tex_write.isDisjointWith(latter->tex_write))
+    return true;
+  // write-after-read
+  if (!former->buf_read.isDisjointWith(latter->buf_write))
+    return true;
+  if (!former->tex_read.isDisjointWith(latter->tex_write))
+    return true;
+  return false;
 }
 
 bool
@@ -740,7 +786,7 @@ MTL::RenderPassColorAttachmentDescriptor *
 ArgumentEncodingContext::isClearColorSignatureMatched(ClearEncoderData *clear, RenderEncoderData *render) {
   for (unsigned i = 0; i < render->render_target_count; i++) {
     auto attachment = render->descriptor->colorAttachments()->object(i);
-    if (attachment->texture() == clear->texture.ptr() && attachment->loadAction() == MTL::LoadActionLoad) {
+    if (attachment->texture() == clear->texture.ptr()) {
       return attachment;
     }
   }
@@ -754,8 +800,6 @@ ArgumentEncodingContext::isClearDepthSignatureMatched(ClearEncoderData *clear, R
   auto depth_attachment = render->descriptor->depthAttachment();
   if (depth_attachment->texture() != clear->texture.ptr())
     return nullptr;
-  if (depth_attachment->loadAction() != MTL::LoadActionLoad) 
-    return nullptr;
   return depth_attachment;
 }
 
@@ -765,8 +809,6 @@ ArgumentEncodingContext::isClearStencilSignatureMatched(ClearEncoderData *clear,
     return nullptr;
   auto stencil_attachment = render->descriptor->stencilAttachment();
   if (stencil_attachment->texture() != clear->texture.ptr())
-    return nullptr;
-  if (stencil_attachment->loadAction() != MTL::LoadActionLoad)
     return nullptr;
   return stencil_attachment;
 }

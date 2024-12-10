@@ -1,6 +1,7 @@
 #pragma once
 #include "Metal/MTLPixelFormat.hpp"
 #include "Metal/MTLTexture.hpp"
+#include "dxmt_deptrack.hpp"
 #include "dxmt_residency.hpp"
 #include "objc_pointer.hpp"
 #include "rc/util_rc_ptr.hpp"
@@ -50,13 +51,14 @@ public:
   }
 
   Flags<TextureAllocationFlag>
-  flags() {
+  flags() const {
     return flags_;
   }
 
   void *mappedMemory;
   uint64_t gpuResourceID;
   DXMT_RESOURCE_RESIDENCY_STATE residencyState;
+  EncoderDepKey depkey;
 
 private:
   TextureAllocation(

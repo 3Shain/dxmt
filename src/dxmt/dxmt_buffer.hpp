@@ -3,6 +3,7 @@
 #include "Metal/MTLDevice.hpp"
 #include "Metal/MTLPixelFormat.hpp"
 #include "Metal/MTLTexture.hpp"
+#include "dxmt_deptrack.hpp"
 #include "dxmt_residency.hpp"
 #include "objc_pointer.hpp"
 #include "rc/util_rc_ptr.hpp"
@@ -49,13 +50,14 @@ public:
   }
 
   Flags<BufferAllocationFlag>
-  flags() {
+  flags() const {
     return flags_;
   }
 
   void* mappedMemory;
   uint64_t gpuAddress;
   DXMT_RESOURCE_RESIDENCY_STATE residencyState;
+  EncoderDepKey depkey;
 
 private:
   BufferAllocation(Obj<MTL::Buffer> &&buffer, Flags<BufferAllocationFlag> flags);
