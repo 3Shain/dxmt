@@ -761,12 +761,22 @@ ArgumentEncodingContext::isEncoderSignatureMatched(RenderEncoderData *r0, Render
     return false;
   if (r0->descriptor->renderTargetArrayLength() != r1->descriptor->renderTargetArrayLength())
     return false;
-  if ((r0->dsv_planar_flags & 1) &&
-      r0->descriptor->depthAttachment()->texture() != r1->descriptor->depthAttachment()->texture())
-    return false;
-  if ((r0->dsv_planar_flags & 2) &&
-      r0->descriptor->stencilAttachment()->texture() != r1->descriptor->stencilAttachment()->texture())
-    return false;
+  if (r0->dsv_planar_flags & 1) {
+    if (r0->descriptor->depthAttachment()->texture() != r1->descriptor->depthAttachment()->texture())
+      return false;
+    if (r0->descriptor->depthAttachment()->storeAction() != MTL::StoreActionStore)
+      return false;
+    if (r1->descriptor->depthAttachment()->loadAction() != MTL::LoadActionLoad)
+      return false;
+  }
+  if (r0->dsv_planar_flags & 2) {
+    if (r0->descriptor->stencilAttachment()->texture() != r1->descriptor->stencilAttachment()->texture())
+      return false;
+    if (r0->descriptor->stencilAttachment()->storeAction() != MTL::StoreActionStore)
+      return false;
+    if (r1->descriptor->stencilAttachment()->loadAction() != MTL::LoadActionLoad)
+      return false;
+  }
   for (unsigned i = 0; i < r0->render_target_count; i++) {
     auto a0 = r0->descriptor->colorAttachments()->object(i);
     auto a1 = r1->descriptor->colorAttachments()->object(i);
