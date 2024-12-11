@@ -131,4 +131,22 @@ private:
   MTL::Device *device_;
 };
 
+class RenamableTexturePool {
+public:
+  void incRef();
+  void decRef();
+  Rc<TextureAllocation> getNext(uint64_t frame_);
+
+  RenamableTexturePool(Texture *texture, size_t capacity,Flags<TextureAllocationFlag> allocation_flags);
+
+private:
+  Rc<Texture> texture_;
+  std::vector<Rc<TextureAllocation>> allocations_;
+  uint64_t last_frame_ = 0;
+  Flags<TextureAllocationFlag> allocation_flags_;
+  unsigned capacity_;
+  unsigned current_index_ = 0;
+  std::atomic<uint32_t> refcount_ = {0u};
+};
+
 } // namespace dxmt

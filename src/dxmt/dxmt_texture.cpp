@@ -254,4 +254,35 @@ void Texture::decRef(){
     delete this;
 };
 
+RenamableTexturePool::RenamableTexturePool(
+    Texture *texture, size_t capacity, Flags<TextureAllocationFlag> allocation_flags
+) :
+    texture_(texture),
+    allocations_(capacity, nullptr),
+    allocation_flags_(allocation_flags),
+    capacity_(capacity) {}
+
+void
+RenamableTexturePool::incRef() {
+  refcount_.fetch_add(1u, std::memory_order_acquire);
+};
+
+void
+RenamableTexturePool::decRef() {
+  if (refcount_.fetch_sub(1u, std::memory_order_release) == 1u)
+    delete this;
+};
+
+Rc<TextureAllocation>
+RenamableTexturePool::getNext(uint64_t frame) {
+  if (frame > last_frame_) {
+    last_frame_ = frame;
+    current_index_ = 0;
+  }
+  auto current_index = current_index_++ % capacity_;
+  if (!allocations_[current_index].ptr())
+    allocations_[current_index] = texture_->allocate(allocation_flags_);
+  return allocations_[current_index];
+}
+
 } // namespace dxmt
