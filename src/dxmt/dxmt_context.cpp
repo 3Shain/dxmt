@@ -452,7 +452,7 @@ ArgumentEncodingContext::flushCommands(MTL::CommandBuffer *cmdbuf, uint64_t seqI
 
   if (encoder_count > 1) {
     unsigned j, i;
-    for (j = encoder_count - 2; j > 0; j--) {
+    for (j = encoder_count - 2; j != ~0u; j--) {
       if (encoders[j]->type == EncoderType::Null)
         continue;
       for (i = j + 1; i < std::min(encoder_count, j + kEncoderOptimizerThreshold); i++) {
