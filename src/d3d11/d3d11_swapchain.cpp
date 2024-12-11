@@ -107,7 +107,7 @@ public:
       scale_factor = std::max(Config::getInstance().getOption<float>("d3d11.metalSpatialUpscaleFactor", 2), 1.0f);
     }
 
-    ResizeBuffers(0, 0, 0, DXGI_FORMAT_UNKNOWN, desc_.Flags);
+    ResizeBuffers(0, desc_.Width, desc_.Height, DXGI_FORMAT_UNKNOWN, desc_.Flags);
   };
 
   ~MTLD3D11SwapChain() {
