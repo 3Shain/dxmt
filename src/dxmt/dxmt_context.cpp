@@ -759,8 +759,6 @@ ArgumentEncodingContext::isEncoderSignatureMatched(RenderEncoderData *r0, Render
     return false;
   if (r0->descriptor->renderTargetArrayLength() != r1->descriptor->renderTargetArrayLength())
     return false;
-  if (r0->descriptor->renderTargetArrayLength() != r1->descriptor->renderTargetArrayLength())
-    return false;
   if (r0->dsv_planar_flags & 1) {
     if (r0->descriptor->depthAttachment()->texture() != r1->descriptor->depthAttachment()->texture())
       return false;
@@ -782,6 +780,8 @@ ArgumentEncodingContext::isEncoderSignatureMatched(RenderEncoderData *r0, Render
     auto a1 = r1->descriptor->colorAttachments()->object(i);
     if (a0->texture() != a1->texture())
       return false;
+    if (!a0->texture())
+      continue;
     if (a0->storeAction() != MTL::StoreActionStore)
       return false;
     if (a1->loadAction() != MTL::LoadActionLoad)
