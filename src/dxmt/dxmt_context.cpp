@@ -584,8 +584,6 @@ ArgumentEncodingContext::flushCommands(MTL::CommandBuffer *cmdbuf, uint64_t seqI
     }
     case EncoderType::Resolve: {
       auto data = static_cast<ResolveEncoderData *>(current);
-      if (data->skipped)
-        break;
       {
         auto enc_descriptor = MTL::RenderPassDescriptor::renderPassDescriptor();
         auto attachmentz = enc_descriptor->colorAttachments()->object(0);
