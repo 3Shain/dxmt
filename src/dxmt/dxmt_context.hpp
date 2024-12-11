@@ -147,7 +147,6 @@ struct ResolveEncoderData : EncoderData {
   unsigned src_slice;
   unsigned dst_slice;
   unsigned dst_level;
-  bool skipped = false;
 };
 
 struct PresentData : EncoderData {

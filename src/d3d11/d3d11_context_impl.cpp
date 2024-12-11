@@ -3130,7 +3130,7 @@ public:
   void
   ResolveSubresource(IMTLBindable *pSrc, UINT SrcSlice, IMTLBindable *pDst, UINT DstLevel, UINT DstSlice) {
     InvalidateCurrentPass();
-    Emit([src = pSrc->__texture(), dst = pSrc->__texture(), SrcSlice, DstSlice, DstLevel](ArgumentEncodingContext &enc
+    Emit([src = pSrc->__texture(), dst = pDst->__texture(), SrcSlice, DstSlice, DstLevel](ArgumentEncodingContext &enc
          ) mutable { enc.resolveTexture(forward_rc(src), SrcSlice, forward_rc(dst), DstSlice, DstLevel); });
   }
 
