@@ -3121,12 +3121,12 @@ public:
     auto &props = pDepthStencilView->GetAttachmentDesc();
 
     Emit([texture = pDepthStencilView->__texture(), view = pDepthStencilView->__viewId(),
-          renamable = pDepthStencilView->__renamable(), array_length = props.RenderTargetArrayLength, ClearFlags, Depth,
-          Stencil](ArgumentEncodingContext &enc) mutable {
-      if (renamable.ptr()) {
+          renamable = pDepthStencilView->__renamable(), array_length = props.RenderTargetArrayLength,
+          ClearFlags = ClearFlags & 0b11, Depth, Stencil](ArgumentEncodingContext &enc) mutable {
+      if (renamable.ptr() && ClearFlags == DepthStencilPlanarFlags(texture->pixelFormat())) {
         texture->rename(renamable->getNext(enc.currentSeqId()));
       }
-      enc.clearDepthStencil(forward_rc(texture), view, array_length, ClearFlags & 0b11, Depth, Stencil);
+      enc.clearDepthStencil(forward_rc(texture), view, array_length, ClearFlags, Depth, Stencil);
     });
   }
 
