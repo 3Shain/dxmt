@@ -15,6 +15,7 @@ template <typename tag_texture>
 class DeviceTexture : public TResourceBase<tag_texture, IMTLBindable, IMTLMinLODClampable> {
 private:
   Rc<Texture> underlying_texture_;
+  Rc<RenamableTexturePool> renamable_;
   float min_lod = 0.0;
 
   using SRVBase =
@@ -129,12 +130,24 @@ private:
     unsigned __viewId() final {
       return view_key_;
     }
+
+    dxmt::Rc<dxmt::RenamableTexturePool> __renamable() final {
+      return this->resource->renamable_;
+    }
   };
 
 public:
   DeviceTexture(const tag_texture::DESC1 *pDesc, Rc<Texture> &&u_texture, MTLD3D11Device *pDevice) :
       TResourceBase<tag_texture, IMTLBindable, IMTLMinLODClampable>(*pDesc, pDevice),
-      underlying_texture_(std::move(u_texture)){}
+      underlying_texture_(std::move(u_texture)) {}
+
+  DeviceTexture(
+      const tag_texture::DESC1 *pDesc, Rc<Texture> &&u_texture, Rc<RenamableTexturePool> &&renamable,
+      MTLD3D11Device *pDevice
+  ) :
+      TResourceBase<tag_texture, IMTLBindable, IMTLMinLODClampable>(*pDesc, pDevice),
+      underlying_texture_(std::move(u_texture)),
+      renamable_(std::move(renamable)) {}
 
   Rc<Buffer> __buffer() final { return {}; };
   Rc<Texture> __texture() final { return this->underlying_texture_; };
@@ -276,17 +289,25 @@ HRESULT CreateDeviceTextureInternal(MTLD3D11Device *pDevice,
                                         &textureDescriptor))) {
     return E_INVALIDARG;
   }
+  bool single_subresource = textureDescriptor->mipmapLevelCount() * textureDescriptor->arrayLength() == 1;
   auto texture = Rc<Texture>(new Texture(std::move(textureDescriptor), metal));
   Flags<TextureAllocationFlag> flags;
   flags.set(TextureAllocationFlag::GpuManaged);
   if (finalDesc.Usage == D3D11_USAGE_IMMUTABLE)
     flags.set(TextureAllocationFlag::GpuReadonly);
-  auto default_allocation = texture->allocate(flags);
   if (pInitialData) {
+    auto default_allocation = texture->allocate(flags);
     initWithSubresourceData(default_allocation->texture(), &finalDesc, pInitialData);
+    texture->rename(std::move(default_allocation));
+    *ppTexture = ref(new DeviceTexture<tag>(&finalDesc, std::move(texture), pDevice));
+  } else if (single_subresource && (finalDesc.BindFlags & D3D11_BIND_DEPTH_STENCIL)) {
+    Rc<RenamableTexturePool> renamable = new RenamableTexturePool(texture.ptr(), 32, flags);
+    texture->rename(renamable->getNext(0));
+    *ppTexture = ref(new DeviceTexture<tag>(&finalDesc, std::move(texture), std::move(renamable), pDevice));
+  } else {
+    texture->rename(texture->allocate(flags));
+    *ppTexture = ref(new DeviceTexture<tag>(&finalDesc, std::move(texture), pDevice));
   }
-  texture->rename(std::move(default_allocation));
-  *ppTexture = ref(new DeviceTexture<tag>(&finalDesc, std::move(texture), pDevice));
   return S_OK;
 }
 

@@ -539,6 +539,8 @@ public:
 
   std::unique_ptr<VisibilityResultReadback> flushCommands(MTL::CommandBuffer *cmdbuf, uint64_t seqId);
 
+  uint64_t currentSeqId() {return seq_id_;}
+
   void
   $$setEncodingBuffer(
       void *cpu_buffer, uint64_t cpu_buffer_offset, MTL::Buffer *gpu_buffer, uint64_t gpu_bufer_offset, uint64_t seq_id
