@@ -12,15 +12,14 @@ namespace dxmt {
 #pragma region DeviceTexture
 
 template <typename tag_texture>
-class DeviceTexture : public TResourceBase<tag_texture, IMTLBindable, IMTLMinLODClampable> {
+class DeviceTexture : public TResourceBase<tag_texture, IMTLMinLODClampable> {
 private:
   Rc<Texture> underlying_texture_;
   Rc<RenamableTexturePool> renamable_;
   float min_lod = 0.0;
 
   using SRVBase =
-      TResourceViewBase<tag_shader_resource_view<DeviceTexture<tag_texture>>,
-                        IMTLBindable>;
+      TResourceViewBase<tag_shader_resource_view<DeviceTexture<tag_texture>>>;
   class TextureSRV : public SRVBase {
   private:
     TextureViewKey view_key_;
@@ -31,16 +30,14 @@ private:
                DeviceTexture *pResource, MTLD3D11Device *pDevice)
         : SRVBase(pDesc, pResource, pDevice), view_key_(view_key) {}
 
-    Rc<Buffer> __buffer() final { return {}; };
-    Rc<Texture> __texture() final { return this->resource->underlying_texture_; };
-    unsigned __viewId() final { return view_key_;};
-    bool __isBuffer() final { return false; }
-    BufferSlice __bufferSlice() final { return {};}
+    Rc<Buffer> buffer() final { return {}; };
+    Rc<Texture> texture() final { return this->resource->underlying_texture_; };
+    unsigned viewId() final { return view_key_;};
+    BufferSlice bufferSlice() final { return {};}
   };
 
   using UAVBase =
-      TResourceViewBase<tag_unordered_access_view<DeviceTexture<tag_texture>>,
-                        IMTLBindable>;
+      TResourceViewBase<tag_unordered_access_view<DeviceTexture<tag_texture>>>;
   class TextureUAV : public UAVBase {
   private:
     TextureViewKey view_key_;
@@ -51,13 +48,11 @@ private:
                DeviceTexture *pResource, MTLD3D11Device *pDevice)
         : UAVBase(pDesc, pResource, pDevice), view_key_(view_key){}
 
-    Rc<Buffer> __buffer() final { return {}; };
-    Rc<Texture> __texture() final { return this->resource->underlying_texture_; };
-    unsigned __viewId() final { return view_key_;};
-    bool __isBuffer() final { return false; }
-    BufferSlice __bufferSlice() final { return {};}
-
-    Rc<Buffer> __counter() final { return {}; };
+    Rc<Buffer> buffer() final { return {}; };
+    Rc<Texture> texture() final { return this->resource->underlying_texture_; };
+    unsigned viewId() final { return view_key_;};
+    BufferSlice bufferSlice() final { return {};}
+    Rc<Buffer> counter() final { return {}; };
   };
 
   using RTVBase =
@@ -138,22 +133,22 @@ private:
 
 public:
   DeviceTexture(const tag_texture::DESC1 *pDesc, Rc<Texture> &&u_texture, MTLD3D11Device *pDevice) :
-      TResourceBase<tag_texture, IMTLBindable, IMTLMinLODClampable>(*pDesc, pDevice),
+      TResourceBase<tag_texture, IMTLMinLODClampable>(*pDesc, pDevice),
       underlying_texture_(std::move(u_texture)) {}
 
   DeviceTexture(
       const tag_texture::DESC1 *pDesc, Rc<Texture> &&u_texture, Rc<RenamableTexturePool> &&renamable,
       MTLD3D11Device *pDevice
   ) :
-      TResourceBase<tag_texture, IMTLBindable, IMTLMinLODClampable>(*pDesc, pDevice),
+      TResourceBase<tag_texture, IMTLMinLODClampable>(*pDesc, pDevice),
       underlying_texture_(std::move(u_texture)),
       renamable_(std::move(renamable)) {}
 
-  Rc<Buffer> __buffer() final { return {}; };
-  Rc<Texture> __texture() final { return this->underlying_texture_; };
-  unsigned __viewId() final { return ~0;};
-  bool __isBuffer() final { return false; }
-  BufferSlice __bufferSlice() final { return {};}
+  Rc<Buffer> buffer() final { return {}; };
+  Rc<Texture> texture() final { return this->underlying_texture_; };
+  BufferSlice bufferSlice() final { return {};}
+  Com<IMTLDynamicBuffer> dynamic() final { return nullptr; }
+  Com<IMTLD3D11Staging> staging() final { return nullptr; }
 
   HRESULT CreateRenderTargetView(const D3D11_RENDER_TARGET_VIEW_DESC1 *pDesc,
                                  ID3D11RenderTargetView1 **ppView) override {
@@ -299,14 +294,18 @@ HRESULT CreateDeviceTextureInternal(MTLD3D11Device *pDevice,
     auto default_allocation = texture->allocate(flags);
     initWithSubresourceData(default_allocation->texture(), &finalDesc, pInitialData);
     texture->rename(std::move(default_allocation));
-    *ppTexture = ref(new DeviceTexture<tag>(&finalDesc, std::move(texture), pDevice));
+    *ppTexture =
+        reinterpret_cast<typename tag::COM_IMPL *>(
+          ref(new DeviceTexture<tag>(&finalDesc, std::move(texture), pDevice)));
   } else if (single_subresource && (finalDesc.BindFlags & D3D11_BIND_DEPTH_STENCIL)) {
     Rc<RenamableTexturePool> renamable = new RenamableTexturePool(texture.ptr(), 32, flags);
     texture->rename(renamable->getNext(0));
-    *ppTexture = ref(new DeviceTexture<tag>(&finalDesc, std::move(texture), std::move(renamable), pDevice));
+    *ppTexture = reinterpret_cast<typename tag::COM_IMPL *>(
+        ref(new DeviceTexture<tag>(&finalDesc, std::move(texture), std::move(renamable), pDevice)));
   } else {
     texture->rename(texture->allocate(flags));
-    *ppTexture = ref(new DeviceTexture<tag>(&finalDesc, std::move(texture), pDevice));
+    *ppTexture = reinterpret_cast<typename tag::COM_IMPL *>(
+      ref(new DeviceTexture<tag>(&finalDesc, std::move(texture), pDevice)));
   }
   return S_OK;
 }

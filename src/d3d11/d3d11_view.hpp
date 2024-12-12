@@ -39,18 +39,21 @@ DEFINE_COM_INTERFACE("42e48164-8733-422b-8421-4c57229641f9",
   virtual unsigned __viewId() = 0;
 };
 
-DEFINE_COM_INTERFACE("a8f906f1-137a-49a6-b9fa-3f89ef52e3eb",
-                     IMTLD3D11UnorderedAccessView)
-    : public ID3D11UnorderedAccessView1 {
-  virtual ULONG64 GetUnderlyingResourceId() = 0;
-  virtual dxmt::ResourceSubset GetViewRange() = 0;
+namespace dxmt {
 
-  virtual dxmt::Rc<dxmt::Buffer> __counter() = 0;
+struct D3D11ShaderResourceView : ID3D11ShaderResourceView1 {
+  virtual Rc<Buffer> buffer() = 0;
+  virtual BufferSlice bufferSlice() = 0;
+  virtual Rc<Texture> texture() = 0;
+  virtual unsigned viewId() = 0;
 };
 
-DEFINE_COM_INTERFACE("acfa8c6e-699a-4607-b229-a55532dde5fd",
-                     IMTLD3D11ShaderResourceView)
-    : public ID3D11ShaderResourceView1 {
-  virtual ULONG64 GetUnderlyingResourceId() = 0;
-  virtual dxmt::ResourceSubset GetViewRange() = 0;
+struct D3D11UnorderedAccessView : ID3D11UnorderedAccessView1 {
+  virtual Rc<Buffer> buffer() = 0;
+  virtual BufferSlice bufferSlice() = 0;
+  virtual Rc<Texture> texture() = 0;
+  virtual unsigned viewId() = 0;
+  virtual Rc<Buffer> counter() = 0;
 };
+
+}

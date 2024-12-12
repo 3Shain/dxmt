@@ -518,21 +518,22 @@ public:
 
   void
   ClearRenderTargetView(ID3D11RenderTargetView *pRenderTargetView, const FLOAT ColorRGBA[4]) override {
-    if (auto expected = com_cast<IMTLD3D11RenderTargetView>(pRenderTargetView)) {
-      ClearRenderTargetView(expected.ptr(), ColorRGBA);
-    }
+    ClearRenderTargetView(static_cast<IMTLD3D11RenderTargetView *>(pRenderTargetView), ColorRGBA);
   }
 
   void
   ClearUnorderedAccessViewUint(ID3D11UnorderedAccessView *pUnorderedAccessView, const UINT Values[4]) override {
+    ClearUnorderedAccessViewUint(static_cast<D3D11UnorderedAccessView *>(pUnorderedAccessView), Values);
+  }
+
+  void
+  ClearUnorderedAccessViewUint(D3D11UnorderedAccessView *pUAV, const UINT Values[4]) {
     InvalidateCurrentPass(true);
     SwitchToComputeEncoder();
     D3D11_UNORDERED_ACCESS_VIEW_DESC desc;
-    pUnorderedAccessView->GetDesc(&desc);
-    Com<IMTLBindable> bindable;
-    pUnorderedAccessView->QueryInterface(IID_PPV_ARGS(&bindable));
+    pUAV->GetDesc(&desc);
     if (desc.ViewDimension == D3D11_UAV_DIMENSION_BUFFER)
-      Emit([=, buffer = bindable->__buffer(), viewId = bindable->__viewId(), slice = bindable->__bufferSlice(),
+      Emit([=, buffer = pUAV->buffer(), viewId = pUAV->viewId(), slice = pUAV->bufferSlice(),
             value = std::array<uint32_t, 4>({Values[0], Values[1], Values[2], Values[3]}),
             is_raw = desc.Buffer.Flags & D3D11_BUFFER_UAV_FLAG_RAW,
             format = desc.Format](ArgumentEncodingContext &enc) {
@@ -557,7 +558,7 @@ public:
         }
       });
     else
-      Emit([=, texture = bindable->__texture(), viewId = bindable->__viewId(), dimension = desc.ViewDimension,
+      Emit([=, texture = pUAV->texture(), viewId = pUAV->viewId(), dimension = desc.ViewDimension,
             value =
                 std::array<uint32_t, 4>({Values[0], Values[1], Values[2], Values[3]})](ArgumentEncodingContext &enc) {
         switch (dimension) {
@@ -591,14 +592,17 @@ public:
 
   void
   ClearUnorderedAccessViewFloat(ID3D11UnorderedAccessView *pUnorderedAccessView, const FLOAT Values[4]) override {
+    ClearUnorderedAccessViewFloat(static_cast<D3D11UnorderedAccessView *>(pUnorderedAccessView), Values);
+  }
+
+  void
+  ClearUnorderedAccessViewFloat(D3D11UnorderedAccessView *pUAV, const FLOAT Values[4])  {
     InvalidateCurrentPass(true);
     SwitchToComputeEncoder();
     D3D11_UNORDERED_ACCESS_VIEW_DESC desc;
-    pUnorderedAccessView->GetDesc(&desc);
-    Com<IMTLBindable> bindable;
-    pUnorderedAccessView->QueryInterface(IID_PPV_ARGS(&bindable));
+    pUAV->GetDesc(&desc);
     if (desc.ViewDimension == D3D11_UAV_DIMENSION_BUFFER)
-      Emit([=, buffer = bindable->__buffer(), viewId = bindable->__viewId(), slice = bindable->__bufferSlice(),
+      Emit([=, buffer = pUAV->buffer(), viewId = pUAV->viewId(), slice = pUAV->bufferSlice(),
             value = std::array<float, 4>({Values[0], Values[1], Values[2], Values[3]}),
             is_raw = desc.Buffer.Flags & D3D11_BUFFER_UAV_FLAG_RAW,
             format = desc.Format](ArgumentEncodingContext &enc) {
@@ -623,7 +627,7 @@ public:
         }
       });
     else
-      Emit([=, texture = bindable->__texture(), viewId = bindable->__viewId(), dimension = desc.ViewDimension,
+      Emit([=, texture = pUAV->texture(), viewId = pUAV->viewId(), dimension = desc.ViewDimension,
             value = std::array<float, 4>({Values[0], Values[1], Values[2], Values[3]})](ArgumentEncodingContext &enc) {
         switch (dimension) {
         default:
@@ -654,9 +658,7 @@ public:
   void
   ClearDepthStencilView(ID3D11DepthStencilView *pDepthStencilView, UINT ClearFlags, FLOAT Depth, UINT8 Stencil)
       override {
-    if (auto expected = com_cast<IMTLD3D11DepthStencilView>(pDepthStencilView)) {
-      ClearDepthStencilView(expected.ptr(), ClearFlags, Depth, Stencil);
-    }
+    ClearDepthStencilView(static_cast<IMTLD3D11DepthStencilView*>(pDepthStencilView), ClearFlags, Depth, Stencil);
   }
 
   void
@@ -666,22 +668,19 @@ public:
 
   void
   GenerateMips(ID3D11ShaderResourceView *pShaderResourceView) override {
-    D3D11_SHADER_RESOURCE_VIEW_DESC desc;
-    pShaderResourceView->GetDesc(&desc);
-    if (desc.ViewDimension == D3D11_SRV_DIMENSION_BUFFER || desc.ViewDimension == D3D11_SRV_DIMENSION_BUFFEREX) {
-      return;
-    }
-    if (auto com = com_cast<IMTLBindable>(pShaderResourceView)) {
+    if (auto srv = static_cast<D3D11ShaderResourceView *>(pShaderResourceView)) {
+      D3D11_SHADER_RESOURCE_VIEW_DESC desc;
+      pShaderResourceView->GetDesc(&desc);
+      if (desc.ViewDimension == D3D11_SRV_DIMENSION_BUFFER || desc.ViewDimension == D3D11_SRV_DIMENSION_BUFFEREX) {
+        return;
+      }
       SwitchToBlitEncoder(CommandBufferState::BlitEncoderActive);
-      Emit([tex = com->__texture()](ArgumentEncodingContext &enc) {
+      Emit([tex = srv->texture()](ArgumentEncodingContext &enc) {
         auto texture = enc.access(tex, DXMT_ENCODER_RESOURCE_ACESS_READ | DXMT_ENCODER_RESOURCE_ACESS_WRITE);
         if (texture->mipmapLevelCount() > 1) {
           enc.encodeBlitCommand([texture](BlitCommandContext &ctx) { ctx.encoder->generateMipmaps(texture); });
         }
       });
-    } else {
-      // FIXME: any other possible case?
-      D3D11_ASSERT(0 && "unhandled genmips on staging or dynamic resource?");
     }
   }
 
@@ -716,11 +715,10 @@ public:
       ERR("ResolveSubresource: Size doesn't match");
       return;
     }
-    if (auto dst = com_cast<IMTLBindable>(pDstResource)) {
-      if (auto src = com_cast<IMTLBindable>(pSrcResource)) {
-        ResolveSubresource(src.ptr(), SrcSubresource, dst.ptr(), dst_level, dst_slice);
-      }
-    }
+    ResolveSubresource(
+        static_cast<D3D11ResourceCommon *>(pSrcResource), SrcSubresource,
+        static_cast<D3D11ResourceCommon *>(pDstResource), dst_level, dst_slice
+    );
   }
 
   void
@@ -806,10 +804,10 @@ public:
   void
   CopyStructureCount(ID3D11Buffer *pDstBuffer, UINT DstAlignedByteOffset, ID3D11UnorderedAccessView *pSrcView)
       override {
-    if (auto dst_bind = com_cast<IMTLBindable>(pDstBuffer)) {
-      if (auto uav = com_cast<IMTLD3D11UnorderedAccessView>(pSrcView)) {
+    if (auto dst_bind = reinterpret_cast<D3D11ResourceCommon *>(pDstBuffer)) {
+      if (auto uav = static_cast<D3D11UnorderedAccessView *>(pSrcView)) {
         SwitchToBlitEncoder(CommandBufferState::BlitEncoderActive);
-        Emit([=, dst = dst_bind->__buffer(), counter = uav->__counter()](ArgumentEncodingContext &enc) {
+        Emit([=, dst = dst_bind->buffer(), counter = uav->counter()](ArgumentEncodingContext &enc) {
           auto dst_buffer = enc.access(dst, DstAlignedByteOffset, 4, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
           auto counter_buffer = enc.access(counter, 0, 4, DXMT_ENCODER_RESOURCE_ACESS_READ);
           enc.encodeBlitCommand([=](BlitCommandContext &ctx) {
@@ -851,7 +849,7 @@ public:
         copy_len = pDstBox->right - copy_offset;
       }
 
-      if (auto dynamic = com_cast<IMTLDynamicBuffer>(pDstResource)) {
+      if (auto dynamic = GetDynamic(pDstResource)) {
         if (copy_len == desc.ByteWidth) {
           D3D11_MAPPED_SUBRESOURCE mapped;
           Map(pDstResource, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
@@ -860,7 +858,7 @@ public:
           return;
         }
       }
-      if (auto bindable = com_cast<IMTLBindable>(pDstResource)) {
+      if (auto bindable = reinterpret_cast<D3D11ResourceCommon *>(pDstResource)) {
         // if (auto _ = UseImmediate(bindable.ptr())) {
         //   auto buffer = _.buffer();
         //   memcpy(((char *)buffer->contents()) + copy_offset, pSrcData, copy_len);
@@ -870,7 +868,7 @@ public:
         auto [ptr, staging_buffer, offset] = AllocateStagingBuffer(copy_len, 16);
         memcpy(ptr, pSrcData, copy_len);
         SwitchToBlitEncoder(CommandBufferState::UpdateBlitEncoderActive);
-        Emit([staging_buffer, offset, dst = bindable->__buffer(), copy_offset, copy_len](ArgumentEncodingContext &enc) {
+        Emit([staging_buffer, offset, dst = bindable->buffer(), copy_offset, copy_len](ArgumentEncodingContext &enc) {
           auto dst_buffer = enc.access(dst, copy_offset, copy_len, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
           enc.encodeBlitCommand([&, dst_buffer](BlitCommandContext &ctx) {
             ctx.encoder->copyFromBuffer(staging_buffer, offset, dst_buffer, copy_offset, copy_len);
@@ -1145,8 +1143,8 @@ public:
     auto IndexType =
         state_.InputAssembler.IndexBufferFormat == DXGI_FORMAT_R32_UINT ? MTL::IndexTypeUInt32 : MTL::IndexTypeUInt16;
     auto IndexBufferOffset = state_.InputAssembler.IndexBufferOffset;
-    if (auto bindable = com_cast<IMTLBindable>(pBufferForArgs)) {
-      Emit([IndexType, IndexBufferOffset, Primitive, ArgBuffer = bindable->__buffer(),
+    if (auto bindable = reinterpret_cast<D3D11ResourceCommon *>(pBufferForArgs)) {
+      Emit([IndexType, IndexBufferOffset, Primitive, ArgBuffer = bindable->buffer(),
             AlignedByteOffsetForArgs](ArgumentEncodingContext &enc) {
         auto buffer = enc.access(ArgBuffer, AlignedByteOffsetForArgs, 20, DXMT_ENCODER_RESOURCE_ACESS_READ);
         enc.bumpVisibilityResultOffset();
@@ -1171,8 +1169,8 @@ public:
       // TODO: indirect tessellation
       return;
     }
-    if (auto bindable = com_cast<IMTLBindable>(pBufferForArgs)) {
-      Emit([Primitive, ArgBuffer = bindable->__buffer(), AlignedByteOffsetForArgs](ArgumentEncodingContext &enc) {
+    if (auto bindable = reinterpret_cast<D3D11ResourceCommon *>(pBufferForArgs)) {
+      Emit([Primitive, ArgBuffer = bindable->buffer(), AlignedByteOffsetForArgs](ArgumentEncodingContext &enc) {
         auto buffer = enc.access(ArgBuffer, AlignedByteOffsetForArgs, 20, DXMT_ENCODER_RESOURCE_ACESS_READ);
         enc.bumpVisibilityResultOffset();
         enc.encodeRenderCommand([&, buffer](RenderCommandContext &ctx) {
@@ -1205,8 +1203,8 @@ public:
   DispatchIndirect(ID3D11Buffer *pBufferForArgs, UINT AlignedByteOffsetForArgs) override {
     if (!PreDispatch())
       return;
-    if (auto bindable = com_cast<IMTLBindable>(pBufferForArgs)) {
-      Emit([AlignedByteOffsetForArgs, ArgBuffer = bindable->__buffer()](ArgumentEncodingContext &enc) {
+    if (auto bindable = reinterpret_cast<D3D11ResourceCommon *>(pBufferForArgs)) {
+      Emit([AlignedByteOffsetForArgs, ArgBuffer = bindable->buffer()](ArgumentEncodingContext &enc) {
         auto buffer = enc.access(ArgBuffer, AlignedByteOffsetForArgs, 12, DXMT_ENCODER_RESOURCE_ACESS_READ);
         enc.encodeComputeCommand([&, buffer = Obj(buffer)](ComputeCommandContext &ctx) {
           ctx.encoder->dispatchThreadgroups(buffer, AlignedByteOffsetForArgs, ctx.threadgroup_size);
@@ -1292,9 +1290,9 @@ public:
 
   void
   IASetIndexBuffer(ID3D11Buffer *pIndexBuffer, DXGI_FORMAT Format, UINT Offset) override {
-    if (auto expected = com_cast<IMTLBindable>(pIndexBuffer)) {
-      state_.InputAssembler.IndexBuffer = std::move(expected);
-      Emit([buffer = state_.InputAssembler.IndexBuffer->__buffer()](ArgumentEncodingContext &enc) mutable {
+    if (auto expected = reinterpret_cast<D3D11ResourceCommon *>(pIndexBuffer)) {
+      state_.InputAssembler.IndexBuffer = expected;
+      Emit([buffer = state_.InputAssembler.IndexBuffer->buffer()](ArgumentEncodingContext &enc) mutable {
         enc.bindIndexBuffer(forward_rc(buffer));
       });
     } else {
@@ -1530,10 +1528,8 @@ public:
           }
           continue;
         }
-        if (auto bindable = com_cast<IMTLBindable>(pBuffer)) {
-          entry.Buffer = std::move(bindable);
-          entry.Offset = pOffsets ? pOffsets[slot] : 0;
-        }
+        entry.Buffer = reinterpret_cast<D3D11ResourceCommon *>(pBuffer);
+        entry.Offset = pOffsets ? pOffsets[slot] : 0;
       } else {
         state_.StreamOutput.Targets.unbind(slot);
       }
@@ -1834,14 +1830,11 @@ public:
       constexpr unsigned RTVSlotCount = D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT;
       for (unsigned rtv_index = 0; rtv_index < RTVSlotCount; rtv_index++) {
         if (rtv_index < NumRTVs && ppRenderTargetViews[rtv_index]) {
-          if (auto expected = com_cast<IMTLD3D11RenderTargetView>(ppRenderTargetViews[rtv_index])) {
-            if (BoundRTVs[rtv_index].ptr() == expected.ptr())
-              continue;
-            BoundRTVs[rtv_index] = std::move(expected);
-            should_invalidate_pass = true;
-          } else {
-            D3D11_ASSERT(0 && "wtf");
-          }
+          auto rtv = static_cast<IMTLD3D11RenderTargetView *>(ppRenderTargetViews[rtv_index]);
+          if (BoundRTVs[rtv_index].ptr() == rtv)
+            continue;
+          BoundRTVs[rtv_index] = rtv;
+          should_invalidate_pass = true;
         } else {
           if (BoundRTVs[rtv_index]) {
             should_invalidate_pass = true;
@@ -1851,9 +1844,9 @@ public:
       }
       state_.OutputMerger.NumRTVs = NumRTVs;
 
-      if (auto expected = com_cast<IMTLD3D11DepthStencilView>(pDepthStencilView)) {
-        if (state_.OutputMerger.DSV.ptr() != expected.ptr()) {
-          state_.OutputMerger.DSV = std::move(expected);
+      if (auto dsv = static_cast<IMTLD3D11DepthStencilView *>(pDepthStencilView)) {
+        if (state_.OutputMerger.DSV.ptr() != dsv) {
+          state_.OutputMerger.DSV = dsv;
           should_invalidate_pass = true;
         }
       } else {
@@ -2367,22 +2360,13 @@ public:
           pConstantBuffer->GetDesc(&desc);
           entry.NumConstants = desc.ByteWidth >> 4;
         }
-        if (auto expected = com_cast<IMTLBindable>(pConstantBuffer)) {
-          entry.Buffer = std::move(expected);
-          Emit([=, buffer = entry.Buffer->__buffer(),
-                  offset = entry.FirstConstant
-                           << 4](ArgumentEncodingContext &enc) mutable {
-            enc.bindConstantBuffer<Stage>(slot, offset, forward_rc(buffer));
-          });
-        } else {
-          D3D11_ASSERT(0 && "unexpected constant buffer object");
-        }
+        entry.Buffer = reinterpret_cast<D3D11ResourceCommon *>(pConstantBuffer);
+        Emit([=, buffer = entry.Buffer->buffer(), offset = entry.FirstConstant << 4](ArgumentEncodingContext &enc
+             ) mutable { enc.bindConstantBuffer<Stage>(slot, offset, forward_rc(buffer)); });
       } else {
         // BIND NULL
         if (ShaderStage.ConstantBuffers.unbind(slot)) {
-          Emit([=](ArgumentEncodingContext& enc) {
-            enc.bindConstantBuffer<Stage>(slot, 0, {});
-          });
+          Emit([=](ArgumentEncodingContext &enc) { enc.bindConstantBuffer<Stage>(slot, 0, {}); });
         }
       }
     }
@@ -2421,25 +2405,22 @@ public:
 
     auto &ShaderStage = state_.ShaderStages[Stage];
     for (unsigned slot = StartSlot; slot < StartSlot + NumViews; slot++) {
-      auto pView = ppShaderResourceViews[slot - StartSlot];
+      auto pView = static_cast<D3D11ShaderResourceView *>(ppShaderResourceViews[slot - StartSlot]);
       if (pView) {
         bool replaced = false;
         auto &entry = ShaderStage.SRVs.bind(slot, {pView}, replaced);
         if (!replaced)
           continue;
-        else if (auto expected = com_cast<IMTLBindable>(pView)) {
-          entry.SRV = std::move(expected);
-          if (entry.SRV->__isBuffer()) {
-            Emit([=, buffer = entry.SRV->__buffer(), viewId = entry.SRV->__viewId(),
-                  slice = entry.SRV->__bufferSlice()](ArgumentEncodingContext &enc) mutable {
-              enc.bindBuffer<Stage>(slot, forward_rc(buffer), viewId, slice);
-            });
-          } else {
-            Emit([=, texture = entry.SRV->__texture(), viewId = entry.SRV->__viewId()](ArgumentEncodingContext &enc
-                 ) mutable { enc.bindTexture<Stage>(slot, forward_rc(texture), viewId); });
-          }
+        entry.SRV = pView;
+        if (auto buffer = entry.SRV->buffer()) {
+          Emit([=, buffer = std::move(buffer), viewId = pView->viewId(),
+                slice = pView->bufferSlice()](ArgumentEncodingContext &enc) mutable {
+            enc.bindBuffer<Stage>(slot, forward_rc(buffer), viewId, slice);
+          });
         } else {
-          D3D11_ASSERT(0 && "unexpected shader resource object");
+          Emit([=, texture = pView->texture(), viewId = pView->viewId()](ArgumentEncodingContext &enc) mutable {
+            enc.bindTexture<Stage>(slot, forward_rc(texture), viewId);
+          });
         }
       } else {
         // BIND NULL
@@ -2514,8 +2495,8 @@ public:
   }
 
   void
-  UpdateUAVCounter(IMTLD3D11UnorderedAccessView *uav, uint32_t value) {
-    Emit([counter = uav->__counter(), value](ArgumentEncodingContext &enc) {
+  UpdateUAVCounter(D3D11UnorderedAccessView *uav, uint32_t value) {
+    Emit([counter = uav->counter(), value](ArgumentEncodingContext &enc) {
       if (!counter.ptr())
         return;
       auto new_counter = counter->allocate(BufferAllocationFlag::GpuManaged);
@@ -2540,9 +2521,8 @@ public:
     //   if (slot < StartSlot || slot >= (StartSlot + NumUAVs))
     //     return false;
     //   for (auto i = 0u; i < NumUAVs; i++) {
-    //     if (auto uav = static_cast<IMTLD3D11UnorderedAccessView *>(
+    //     if (auto uav = static_cast<MTLD3D11UnorderedAccessView *>(
     //             ppUnorderedAccessViews[i])) {
-    //       // FIXME! GetViewRange is not defined on IMTLBindable
     //       // if (bound_uav.View->GetViewRange().CheckOverlap(
     //       //         uav->GetViewRange())) {
     //       //   return true;
@@ -2553,31 +2533,27 @@ public:
     // });
 
     for (unsigned slot = StartSlot; slot < StartSlot + NumUAVs; slot++) {
-      auto pUAV = ppUnorderedAccessViews[slot - StartSlot];
+      auto pUAV = static_cast<D3D11UnorderedAccessView*>(ppUnorderedAccessViews[slot - StartSlot]);
       auto InitialCount = pUAVInitialCounts ? pUAVInitialCounts[slot - StartSlot] : ~0u;
       if (pUAV) {
-        auto uav = com_cast<IMTLD3D11UnorderedAccessView>(pUAV);
         bool replaced = false;
         auto &entry = binding_set.bind(slot, {pUAV}, replaced);
         if (InitialCount != ~0u) {
-          UpdateUAVCounter(uav.ptr(), InitialCount);
+          UpdateUAVCounter(pUAV, InitialCount);
         }
         if (!replaced) {
           continue;
         }
-        if (auto expected = com_cast<IMTLBindable>(pUAV)) {
-          entry.View = std::move(expected);
-          if (entry.View->__isBuffer()) {
-            Emit([=, buffer = entry.View->__buffer(), viewId = entry.View->__viewId(),
-                  counter = uav->__counter(), slice = entry.View->__bufferSlice()](ArgumentEncodingContext &enc) mutable {
-              enc.bindOutputBuffer<Stage>(slot, forward_rc(buffer), viewId, forward_rc(counter), slice);
-            });
-          } else {
-            Emit([=, texture = entry.View->__texture(), viewId = entry.View->__viewId()](ArgumentEncodingContext &enc
-                 ) mutable { enc.bindOutputTexture<Stage>(slot, forward_rc(texture), viewId); });
-          }
+        entry.View = pUAV;
+        if (auto buffer = pUAV->buffer()) {
+          Emit([=, buffer = std::move(buffer), viewId = pUAV->viewId(), counter = pUAV->counter(),
+                slice = pUAV->bufferSlice()](ArgumentEncodingContext &enc) mutable {
+            enc.bindOutputBuffer<Stage>(slot, forward_rc(buffer), viewId, forward_rc(counter), slice);
+          });
         } else {
-          D3D11_ASSERT(0 && "wtf");
+          Emit([=, texture = pUAV->texture(), viewId = pUAV->viewId()](ArgumentEncodingContext &enc) mutable {
+            enc.bindOutputTexture<Stage>(slot, forward_rc(texture), viewId);
+          });
         }
         // FIXME: resolve srv hazard: unbind any cs srv that share the resource
         // std::erase_if(state_.ShaderStages[5].SRVs,
@@ -2634,15 +2610,11 @@ public:
           ERR("SetVertexBuffers: offset is null");
           entry.Stride = 0;
         }
-        if (auto expected = com_cast<IMTLBindable>(pVertexBuffer)) {
-          entry.Buffer = std::move(expected);
-          Emit([=, buffer = entry.Buffer->__buffer(), offset = entry.Offset,
+        entry.Buffer = reinterpret_cast<D3D11ResourceCommon *>(pVertexBuffer);
+          Emit([=, buffer = entry.Buffer->buffer(), offset = entry.Offset,
                 stride = entry.Stride](ArgumentEncodingContext &enc) mutable {
             enc.bindVertexBuffer(slot, offset, stride, forward_rc(buffer));
-          });
-        } else {
-          D3D11_ASSERT(0 && "unexpected vertex buffer object");
-        }
+        });
       } else {
         if (VertexBuffers.unbind(slot)) {
           Emit([=](ArgumentEncodingContext& enc) {
@@ -2700,16 +2672,16 @@ public:
     }
     if (SrcBox.right <= SrcBox.left)
       return;
-    if (auto staging_dst = com_cast<IMTLD3D11Staging>(pDstResource)) {
-      if (auto staging_src = com_cast<IMTLD3D11Staging>(pSrcResource)) {
+    if (auto staging_dst = GetStaging(pDstResource)) {
+      if (auto staging_src = GetStaging(pSrcResource)) {
         D3D11_ASSERT(0 && "todo: copy between staging");
-      } else if (auto src = com_cast<IMTLBindable>(pSrcResource)) {
+      } else if (auto src = reinterpret_cast<D3D11ResourceCommon *>(pSrcResource)) {
         // copy from device to staging
         MTL_STAGING_RESOURCE dst_bind;
         uint32_t bytes_per_row, bytes_per_image;
         UseCopyDestination(staging_dst.ptr(), DstSubresource, &dst_bind, &bytes_per_row, &bytes_per_image);
         SwitchToBlitEncoder(CommandBufferState::ReadbackBlitEncoderActive);
-        Emit([src_ = src->__buffer(), dst = Obj(dst_bind.Buffer), DstX, SrcBox](ArgumentEncodingContext &enc) {
+        Emit([src_ = src->buffer(), dst = Obj(dst_bind.Buffer), DstX, SrcBox](ArgumentEncodingContext &enc) {
           auto src = enc.access(src_, SrcBox.left, SrcBox.right - SrcBox.left, DXMT_ENCODER_RESOURCE_ACESS_READ);
           enc.encodeBlitCommand([=, &SrcBox, &dst](BlitCommandContext &ctx) {
             ctx.encoder->copyFromBuffer(src, SrcBox.left, dst, DstX, SrcBox.right - SrcBox.left);
@@ -2719,23 +2691,23 @@ public:
       } else {
         D3D11_ASSERT(0 && "todo");
       }
-    } else if (auto dst = com_cast<IMTLBindable>(pDstResource)) {
-      if (auto staging_src = com_cast<IMTLD3D11Staging>(pSrcResource)) {
+    } else if (auto dst = reinterpret_cast<D3D11ResourceCommon *>(pDstResource)) {
+      if (auto staging_src = GetStaging(pSrcResource)) {
         // copy from staging to default
         MTL_STAGING_RESOURCE src_bind;
         uint32_t bytes_per_row, bytes_per_image;
         UseCopySource(staging_src.ptr(), SrcSubresource, &src_bind, &bytes_per_row, &bytes_per_image);
         SwitchToBlitEncoder(CommandBufferState::UpdateBlitEncoderActive);
-        Emit([dst_ = dst->__buffer(), src = Obj(src_bind.Buffer), DstX, SrcBox](ArgumentEncodingContext &enc) {
+        Emit([dst_ = dst->buffer(), src = Obj(src_bind.Buffer), DstX, SrcBox](ArgumentEncodingContext &enc) {
           auto dst = enc.access(dst_, DstX, SrcBox.right - SrcBox.left, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
           enc.encodeBlitCommand([=, &SrcBox, &src](BlitCommandContext &ctx) {
             ctx.encoder->copyFromBuffer(src, SrcBox.left, dst, DstX, SrcBox.right - SrcBox.left);
           });
         });
-      } else if (auto src = com_cast<IMTLBindable>(pSrcResource)) {
+      } else if (auto src = reinterpret_cast<D3D11ResourceCommon *>(pSrcResource)) {
         // on-device copy
         SwitchToBlitEncoder(CommandBufferState::BlitEncoderActive);
-        Emit([dst_ = dst->__buffer(), src_ = src->__buffer(), DstX,
+        Emit([dst_ = dst->buffer(), src_ = src->buffer(), DstX,
                                SrcBox](ArgumentEncodingContext& enc) {
           auto src = enc.access(src_, SrcBox.left, SrcBox.right - SrcBox.left, DXMT_ENCODER_RESOURCE_ACESS_READ);
           auto dst = enc.access(dst_, DstX, SrcBox.right - SrcBox.left, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
@@ -2767,16 +2739,15 @@ public:
 
   void
   CopyTextureBitcast(TextureCopyCommand &&cmd) {
-    if (auto staging_dst = com_cast<IMTLD3D11Staging>(cmd.pDst)) {
-      if (auto staging_src = com_cast<IMTLD3D11Staging>(cmd.pSrc)) {
+    if (auto staging_dst = GetStaging(cmd.pDst)) {
+      if (auto staging_src = GetStaging(cmd.pSrc)) {
         D3D11_ASSERT(0 && "TODO: copy between staging");
-      } else if (auto src = com_cast<IMTLBindable>(cmd.pSrc)) {
-        // copy from device to staging
+      } else if (auto src = GetTexture(cmd.pSrc)) {
         MTL_STAGING_RESOURCE dst_bind;
         uint32_t bytes_per_row, bytes_per_image;
         UseCopyDestination(staging_dst.ptr(), cmd.DstSubresource, &dst_bind, &bytes_per_row, &bytes_per_image);
         SwitchToBlitEncoder(CommandBufferState::ReadbackBlitEncoderActive);
-        Emit([src_ = src->__texture(), dst = Obj(dst_bind.Buffer), bytes_per_row, bytes_per_image,
+        Emit([src_ = std::move(src), dst = Obj(dst_bind.Buffer), bytes_per_row, bytes_per_image,
               cmd = std::move(cmd)](ArgumentEncodingContext &enc) {
           auto src = enc.access(src_, cmd.Src.MipLevel, cmd.Src.ArraySlice, DXMT_ENCODER_RESOURCE_ACESS_READ);
           auto offset = cmd.DstOrigin.z * bytes_per_image + cmd.DstOrigin.y * bytes_per_row +
@@ -2790,17 +2761,17 @@ public:
         });
         promote_flush = true;
       } else {
-        D3D11_ASSERT(0 && "TODO: copy from dynamic to staging");
+        UNREACHABLE
       }
-    } else if (auto dst = com_cast<IMTLBindable>(cmd.pDst)) {
-      if (auto staging_src = com_cast<IMTLD3D11Staging>(cmd.pSrc)) {
+    } else if (auto dst = GetTexture(cmd.pDst)) {
+      if (auto staging_src = GetStaging(cmd.pSrc)) {
         // copy from staging to default
         MTL_STAGING_RESOURCE src_bind;
         uint32_t bytes_per_row, bytes_per_image;
         UseCopySource(staging_src.ptr(), cmd.SrcSubresource, &src_bind, &bytes_per_row, &bytes_per_image);
         SwitchToBlitEncoder(CommandBufferState::UpdateBlitEncoderActive);
-        Emit([dst_ = dst->__texture(), src = Obj(src_bind.Buffer), bytes_per_row, bytes_per_image,
-                               cmd = std::move(cmd)](ArgumentEncodingContext &enc) {
+        Emit([dst_ = std::move(dst), src = Obj(src_bind.Buffer), bytes_per_row, bytes_per_image,
+              cmd = std::move(cmd)](ArgumentEncodingContext &enc) {
           auto dst = enc.access(dst_, cmd.Dst.MipLevel, cmd.Dst.ArraySlice, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
           uint32_t offset;
           if (cmd.SrcFormat.Flag & MTL_DXGI_FORMAT_BC) {
@@ -2818,11 +2789,10 @@ public:
           });
           ;
         });
-      } else if (auto src = com_cast<IMTLBindable>(cmd.pSrc)) {
+      } else if (auto src = GetTexture(cmd.pSrc)) {
         // on-device copy
         SwitchToBlitEncoder(CommandBufferState::BlitEncoderActive);
-        Emit([dst_ = dst->__texture(), src_ = src->__texture(),
-                               cmd = std::move(cmd)](ArgumentEncodingContext& enc) {
+        Emit([dst_ = std::move(dst), src_ = std::move(src), cmd = std::move(cmd)](ArgumentEncodingContext &enc) {
           auto src_format = src_->pixelFormat();
           auto dst_format = dst_->pixelFormat();
           auto src = enc.access(src_, cmd.Src.MipLevel, cmd.Src.ArraySlice, DXMT_ENCODER_RESOURCE_ACESS_READ);
@@ -2841,7 +2811,7 @@ public:
             bytes_total = bytes_per_image * cmd.SrcSize.depth;
 
             auto [buffer, offset] = enc.allocateTempBuffer(bytes_total, 16);
-            enc.encodeBlitCommand([=, &cmd=cmd](BlitCommandContext &ctx) {
+            enc.encodeBlitCommand([=, &cmd = cmd](BlitCommandContext &ctx) {
               ctx.encoder->copyFromTexture(
                   src, cmd.Src.ArraySlice, cmd.Src.MipLevel, cmd.SrcOrigin, cmd.SrcSize, buffer, offset, bytes_per_row,
                   bytes_per_image
@@ -2861,31 +2831,25 @@ public:
           });
         });
       } else {
-        D3D11_ASSERT(0 && "Unexpected texture copy source");
+        UNREACHABLE
       }
     } else {
-      D3D11_ASSERT(0 && "TODO: copy to dynamic?");
+      UNREACHABLE
     }
   }
 
   void
   CopyTextureFromCompressed(TextureCopyCommand &&cmd) {
-    if (auto staging_dst = com_cast<IMTLD3D11Staging>(cmd.pDst)) {
-      if (auto staging_src = com_cast<IMTLD3D11Staging>(cmd.pSrc)) {
-        D3D11_ASSERT(0 && "TODO: copy between staging (from compressed)");
-      } else if (auto src = com_cast<IMTLBindable>(cmd.pSrc)) {
-        D3D11_ASSERT(0 && "TODO: copy from compressed device to staging");
-      } else {
-        D3D11_ASSERT(0 && "TODO: copy from compressed dynamic to staging");
-      }
-    } else if (auto dst = com_cast<IMTLBindable>(cmd.pDst)) {
-      if (auto staging_src = com_cast<IMTLD3D11Staging>(cmd.pSrc)) {
+    if (auto staging_dst = GetStaging(cmd.pDst)) {
+      IMPLEMENT_ME
+    } else if (auto dst = GetTexture(cmd.pDst)) {
+      if (auto staging_src = GetStaging(cmd.pSrc)) {
         // copy from staging to default
         D3D11_ASSERT(0 && "TODO: copy from compressed staging to default");
-      } else if (auto src = com_cast<IMTLBindable>(cmd.pSrc)) {
+      } else if (auto src = GetTexture(cmd.pSrc)) {
         // on-device copy
         SwitchToBlitEncoder(CommandBufferState::BlitEncoderActive);
-        Emit([dst_ = dst->__texture(), src_ = src->__texture(), cmd = std::move(cmd)](ArgumentEncodingContext &enc) {
+        Emit([dst_ = std::move(dst), src_ = std::move(src), cmd = std::move(cmd)](ArgumentEncodingContext &enc) {
           auto src = enc.access(src_, cmd.Src.MipLevel, cmd.Src.ArraySlice, DXMT_ENCODER_RESOURCE_ACESS_READ);
           auto dst = enc.access(dst_, cmd.Dst.MipLevel, cmd.Dst.ArraySlice, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
           auto block_w = (align(cmd.SrcSize.width, 4u) >> 2);
@@ -2905,31 +2869,25 @@ public:
           });
         });
       } else {
-        D3D11_ASSERT(0 && "TODO: copy from compressed dynamic to device");
+        UNREACHABLE
       }
     } else {
-      D3D11_ASSERT(0 && "TODO: copy from compressed ? to dynamic");
+      UNREACHABLE
     }
   }
 
   void
   CopyTextureToCompressed(TextureCopyCommand &&cmd) {
-    if (auto staging_dst = com_cast<IMTLD3D11Staging>(cmd.pDst)) {
-      if (auto staging_src = com_cast<IMTLD3D11Staging>(cmd.pSrc)) {
-        D3D11_ASSERT(0 && "TODO: copy between staging (to compressed)");
-      } else if (auto src = com_cast<IMTLBindable>(cmd.pSrc)) {
-        D3D11_ASSERT(0 && "TODO: copy from device to compressed staging");
-      } else {
-        D3D11_ASSERT(0 && "TODO: copy from dynamic to compressed staging");
-      }
-    } else if (auto dst = com_cast<IMTLBindable>(cmd.pDst)) {
-      if (auto staging_src = com_cast<IMTLD3D11Staging>(cmd.pSrc)) {
+    if (auto staging_dst = GetStaging(cmd.pDst)) {
+      IMPLEMENT_ME
+    } else if (auto dst = GetTexture(cmd.pDst)) {
+      if (auto staging_src = GetStaging(cmd.pSrc)) {
         // copy from staging to default
         D3D11_ASSERT(0 && "TODO: copy from staging to compressed default");
-      } else if (auto src = com_cast<IMTLBindable>(cmd.pSrc)) {
+      } else if (auto src = GetTexture(cmd.pSrc)) {
         // on-device copy
         SwitchToBlitEncoder(CommandBufferState::BlitEncoderActive);
-        Emit([dst_ = dst->__texture(), src_ = src->__texture(), cmd = std::move(cmd)](ArgumentEncodingContext &enc) {
+        Emit([dst_ = std::move(dst), src_ = std::move(src), cmd = std::move(cmd)](ArgumentEncodingContext &enc) {
           auto src = enc.access(src_, cmd.Src.MipLevel, cmd.Src.ArraySlice, DXMT_ENCODER_RESOURCE_ACESS_READ);
           auto dst = enc.access(dst_, cmd.Dst.MipLevel, cmd.Dst.ArraySlice, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
           auto bytes_per_row = cmd.SrcSize.width * cmd.SrcFormat.BytesPerTexel;
@@ -2954,10 +2912,10 @@ public:
           });
         });
       } else {
-        D3D11_ASSERT(0 && "TODO: copy from dynamic to compressed device");
+        UNREACHABLE
       }
     } else {
-      D3D11_ASSERT(0 && "TODO: copy to compressed dynamic");
+      UNREACHABLE
     }
   }
 
@@ -2968,16 +2926,7 @@ public:
     if (cmd.Invalid)
       return;
 
-    if (auto bindable = com_cast<IMTLBindable>(cmd.pDst)) {
-      // if (auto dst = UseImmediate(bindable.ptr())) {
-      //   auto texture = dst.texture();
-      //   if (texture) {
-      //     texture->replaceRegion(
-      //         cmd.DstRegion, cmd.Dst.MipLevel, cmd.Dst.ArraySlice, pSrcData, SrcRowPitch, SrcDepthPitch
-      //     );
-      //     return;
-      //   }
-      // }
+    if (auto dst = GetTexture(cmd.pDst)) {
       auto bytes_per_depth_slice = cmd.EffectiveRows * cmd.EffectiveBytesPerRow;
       auto [ptr, staging_buffer, offset] = AllocateStagingBuffer(bytes_per_depth_slice * cmd.DstRegion.size.depth, 16);
       if (cmd.EffectiveBytesPerRow == SrcRowPitch) {
@@ -2996,7 +2945,7 @@ public:
         }
       }
       SwitchToBlitEncoder(CommandBufferState::UpdateBlitEncoderActive);
-      Emit([staging_buffer, offset, dst = bindable->__texture(), cmd = std::move(cmd),
+      Emit([staging_buffer, offset, dst = std::move(dst), cmd = std::move(cmd),
             bytes_per_depth_slice](ArgumentEncodingContext &enc) {
         auto texture = enc.access(dst, cmd.Dst.MipLevel, cmd.Dst.ArraySlice, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
         enc.encodeBlitCommand([&, texture](BlitCommandContext &ctx) {
@@ -3006,7 +2955,7 @@ public:
           );
         });
       });
-    } else if (auto staging_dst = com_cast<IMTLD3D11Staging>(cmd.pDst)) {
+    } else if (auto staging_dst = GetStaging(cmd.pDst)) {
       // staging: ...
       D3D11_ASSERT(0 && "TODO: UpdateSubresource1: update staging texture");
     } else {
@@ -3131,9 +3080,9 @@ public:
   }
 
   void
-  ResolveSubresource(IMTLBindable *pSrc, UINT SrcSlice, IMTLBindable *pDst, UINT DstLevel, UINT DstSlice) {
+  ResolveSubresource(D3D11ResourceCommon *pSrc, UINT SrcSlice, D3D11ResourceCommon *pDst, UINT DstLevel, UINT DstSlice) {
     InvalidateCurrentPass();
-    Emit([src = pSrc->__texture(), dst = pDst->__texture(), SrcSlice, DstSlice, DstLevel](ArgumentEncodingContext &enc
+    Emit([src = pSrc->texture(), dst = pDst->texture(), SrcSlice, DstSlice, DstLevel](ArgumentEncodingContext &enc
          ) mutable { enc.resolveTexture(forward_rc(src), SrcSlice, forward_rc(dst), DstSlice, DstLevel); });
   }
 
@@ -3687,12 +3636,12 @@ public:
       auto &so_slot0 = state_.StreamOutput.Targets[0];
       if (so_slot0.Offset == 0xFFFFFFFF) {
         ERR("UpdateSOTargets: appending is not supported, expect problem");
-        Emit([slot0 = so_slot0.Buffer->__buffer()](ArgumentEncodingContext &enc) {
+        Emit([slot0 = so_slot0.Buffer->buffer()](ArgumentEncodingContext &enc) {
           auto buffer = enc.access(slot0, 0, slot0->length(), DXMT_ENCODER_RESOURCE_ACESS_WRITE);
           enc.encodeRenderCommand([buffer](RenderCommandContext &ctx) { ctx.encoder->setVertexBuffer(buffer, 0, 20); });
         });
       } else {
-        Emit([slot0 = so_slot0.Buffer->__buffer(), offset = so_slot0.Offset](ArgumentEncodingContext &enc) {
+        Emit([slot0 = so_slot0.Buffer->buffer(), offset = so_slot0.Offset](ArgumentEncodingContext &enc) {
           auto buffer = enc.access(slot0, 0, slot0->length(), DXMT_ENCODER_RESOURCE_ACESS_WRITE);
           enc.encodeRenderCommand([buffer, offset](RenderCommandContext &ctx) {
             ctx.encoder->setVertexBuffer(buffer, offset, 20);

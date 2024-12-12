@@ -14,16 +14,16 @@ namespace dxmt {
 
 #pragma region DynamicTexture
 
-class DynamicTexture2D : public TResourceBase<tag_texture_2d, IMTLBindable, IMTLDynamicBuffer> {
+class DynamicTexture2D : public TResourceBase<tag_texture_2d, IMTLDynamicBuffer> {
 private:
-  Rc<Texture> texture;
+  Rc<Texture> texture_;
   Rc<TextureAllocation> allocation;
   size_t bytes_per_image_;
   size_t bytes_per_row_;
 
   std::unique_ptr<DynamicTexturePool2> pool;
 
-  using SRVBase = TResourceViewBase<tag_shader_resource_view<DynamicTexture2D>, IMTLBindable>;
+  using SRVBase = TResourceViewBase<tag_shader_resource_view<DynamicTexture2D>>;
 
   class SRV : public SRVBase {
     TextureViewKey view_key;
@@ -36,11 +36,10 @@ private:
 
     ~SRV() {}
 
-    Rc<Buffer> __buffer() final { return {}; };
-    Rc<Texture> __texture() final { return this->resource->texture; };
-    unsigned __viewId() final { return view_key;};
-    bool __isBuffer() final { return false; }
-    BufferSlice __bufferSlice() final { return {};}
+    Rc<Buffer> buffer() final { return {}; };
+    Rc<Texture> texture() final { return this->resource->texture_; };
+    unsigned viewId() final { return view_key;};
+    BufferSlice bufferSlice() final { return {};}
   };
 
 public:
@@ -48,10 +47,10 @@ public:
       const tag_texture_2d::DESC1 *pDesc, Obj<MTL::TextureDescriptor> &&descriptor,
       const D3D11_SUBRESOURCE_DATA *pInitialData, UINT bytes_per_image, UINT bytes_per_row, MTLD3D11Device *device
   ) :
-      TResourceBase<tag_texture_2d, IMTLBindable, IMTLDynamicBuffer>(*pDesc, device),
+      TResourceBase<tag_texture_2d, IMTLDynamicBuffer>(*pDesc, device),
       bytes_per_image_(bytes_per_image),
       bytes_per_row_(bytes_per_row) {
-    texture = new Texture(bytes_per_image, bytes_per_row, std::move(descriptor), device->GetMTLDevice());
+    texture_ = new Texture(bytes_per_image, bytes_per_row, std::move(descriptor), device->GetMTLDevice());
     Flags<TextureAllocationFlag> flags;
     if (!m_parent->IsTraced() && pDesc->Usage == D3D11_USAGE_DYNAMIC)
       flags.set(TextureAllocationFlag::CpuWriteCombined);
@@ -60,9 +59,9 @@ public:
       flags.set(TextureAllocationFlag::GpuReadonly);
     if (pDesc->Usage != D3D11_USAGE_DYNAMIC)
       flags.set(TextureAllocationFlag::GpuManaged);
-    pool = std::make_unique<DynamicTexturePool2>(texture.ptr(), flags);
+    pool = std::make_unique<DynamicTexturePool2>(texture_.ptr(), flags);
     RotateBuffer(device);
-    auto _ = texture->rename(Rc(allocation));
+    auto _ = texture_->rename(Rc(allocation));
     D3D11_ASSERT(_.ptr() == nullptr);
 
     if (pInitialData) {
@@ -71,12 +70,6 @@ public:
       memcpy(allocation->mappedMemory, pInitialData->pSysMem, bytes_per_image);
     }
   }
-
-  Rc<Buffer> __buffer() final { return {}; };
-  Rc<Texture> __texture() final { return this->texture; };
-  unsigned __viewId() final { return ~0;};
-  bool __isBuffer() final { return false; }
-  BufferSlice __bufferSlice() final { return {};}
 
   void *
   GetMappedMemory(UINT *pBytesPerRow, UINT *pBytesPerImage) override {
@@ -94,10 +87,16 @@ public:
   };
 
   dxmt::Rc<dxmt::Buffer> __buffer_dyn() final { return {}; };
-  dxmt::Rc<dxmt::Texture> __texture_dyn()final { return texture; };
+  dxmt::Rc<dxmt::Texture> __texture_dyn()final { return texture_; };
   bool __isBuffer_dyn() final { return false; };
   dxmt::Rc<dxmt::BufferAllocation> __bufferAllocated() final { return {}; };
   dxmt::Rc<dxmt::TextureAllocation> __textureAllocated() final { return allocation; };
+
+  Rc<Buffer> buffer() final { return {}; };
+  Rc<Texture> texture() final { return this->texture_; };
+  BufferSlice bufferSlice() final { return {};}
+  Com<IMTLDynamicBuffer> dynamic() final { return this; }
+  Com<IMTLD3D11Staging> staging() final { return nullptr; }
 
   void
   RotateBuffer(MTLD3D11Device *exch) override {
@@ -135,7 +134,7 @@ public:
       return E_FAIL;
     }
 
-    auto view_key = texture->createView(
+    auto view_key = texture_->createView(
         {.format = format.PixelFormat,
          .type = MTL::TextureType2D,
          .firstMiplevel = 0,
@@ -176,8 +175,9 @@ CreateDynamicTexture2D(
     return E_FAIL;
   }
 
-  *ppTexture =
-      ref(new DynamicTexture2D(pDesc, std::move(textureDescriptor), pInitialData, bufferLen, bytesPerRow, pDevice));
+  *ppTexture = reinterpret_cast<ID3D11Texture2D1 *>(
+      ref(new DynamicTexture2D(pDesc, std::move(textureDescriptor), pInitialData, bufferLen, bytesPerRow, pDevice))
+  );
   return S_OK;
 }
 

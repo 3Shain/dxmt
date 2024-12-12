@@ -91,6 +91,8 @@ public:
   T *operator->() const { return m_object; }
   T *ptr() const { return m_object; }
 
+  operator bool() const { return this->m_object != nullptr; }
+
   bool operator==(const Rc &other) const { return m_object == other.m_object; }
   bool operator!=(const Rc &other) const { return m_object != other.m_object; }
 

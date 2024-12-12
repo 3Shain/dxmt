@@ -8,7 +8,6 @@
 #include "dxgi_object.hpp"
 #include "d3d11_context.hpp"
 #include "dxmt_context.hpp"
-#include "dxmt_texture.hpp"
 #include "log/log.hpp"
 #include "mtld11_resource.hpp"
 #include "d3d11_device.hpp"
@@ -235,11 +234,10 @@ public:
 
     backbuffer_desc_.Format = desc_.Format;
 
-    Com<ID3D11Texture2D1> backbuffer_texture2d;
-    if (FAILED(dxmt::CreateDeviceTexture2D(m_device, &backbuffer_desc_, nullptr, &backbuffer_texture2d)))
+    if (FAILED(dxmt::CreateDeviceTexture2D(
+            m_device, &backbuffer_desc_, nullptr, reinterpret_cast<ID3D11Texture2D1 **>(&backbuffer_)
+        )))
       return E_FAIL;
-    backbuffer_ = nullptr;
-    backbuffer_texture2d->QueryInterface(IID_PPV_ARGS(&backbuffer_));
 
     if constexpr (EnableMetalFX) {
       auto scaler_descriptor =
@@ -387,7 +385,7 @@ public:
     device_context_->PrepareFlush();
     auto &cmd_queue = m_device->GetDXMTDevice().queue();
     auto chunk = cmd_queue.CurrentChunk();
-    chunk->emitcc([this, vsync_duration, backbuffer = backbuffer_->__texture()](ArgumentEncodingContext &ctx) mutable {
+    chunk->emitcc([this, vsync_duration, backbuffer = backbuffer_->texture()](ArgumentEncodingContext &ctx) mutable {
       auto drawable = layer_weak_->nextDrawable();
       // auto out = drawable->texture();
       // auto buf = backbuffer.texture();
@@ -533,7 +531,7 @@ private:
   DXGI_SWAP_CHAIN_FULLSCREEN_DESC fullscreen_desc_;
   D3D11_TEXTURE2D_DESC1 backbuffer_desc_;
   Com<IMTLD3D11DeviceContext> device_context_;
-  Com<IMTLBindable> backbuffer_;
+  Com<D3D11ResourceCommon> backbuffer_;
   HANDLE present_semaphore_;
   HWND hWnd;
   HMONITOR monitor_;
