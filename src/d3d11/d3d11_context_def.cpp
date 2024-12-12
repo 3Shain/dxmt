@@ -95,7 +95,7 @@ public:
 
   void
   Unmap(ID3D11Resource *pResource, UINT Subresource) override {
-    if (auto dynamic = com_cast<IMTLDynamicBuffer>(pResource)) {
+    if (auto dynamic = GetDynamic(pResource)) {
       return;
     }
     IMPLEMENT_ME;

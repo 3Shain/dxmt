@@ -16,9 +16,9 @@ struct BufferViewInfo {
   uint32_t byteWidth;
 };
 
-class D3D11Buffer : public TResourceBase<tag_buffer, IMTLDynamicBuffer, IMTLBindable> {
+class D3D11Buffer : public TResourceBase<tag_buffer, IMTLDynamicBuffer> {
 private:
-  Rc<Buffer> buffer;
+  Rc<Buffer> buffer_;
   Rc<BufferAllocation> allocation;
 #ifdef DXMT_DEBUG
   std::string debug_name;
@@ -28,7 +28,7 @@ private:
 
   std::unique_ptr<BufferPool2> pool;
 
-  using SRVBase = TResourceViewBase<tag_shader_resource_view<D3D11Buffer>, IMTLBindable>;
+  using SRVBase = TResourceViewBase<tag_shader_resource_view<D3D11Buffer>>;
 
   class TBufferSRV : public SRVBase {
     BufferViewInfo info;
@@ -43,19 +43,18 @@ private:
 
     ~TBufferSRV() {}
 
-    Rc<Buffer> __buffer() final { return resource->buffer; };
-    Rc<Texture> __texture() final { return {}; };
-    unsigned __viewId() final { return info.viewKey;};
-    bool __isBuffer() final { return true; }
-    BufferSlice __bufferSlice() final { return {info.byteOffset, info.byteWidth, info.viewElementOffset, info.viewElementWidth };}
+    Rc<Buffer> buffer() final { return resource->buffer_; };
+    Rc<Texture> texture() final { return {}; };
+    unsigned viewId() final { return info.viewKey;};
+    BufferSlice bufferSlice() final { return {info.byteOffset, info.byteWidth, info.viewElementOffset, info.viewElementWidth };}
   };
 
-  using UAVBase = TResourceViewBase<tag_unordered_access_view<D3D11Buffer>, IMTLBindable>;
+  using UAVBase = TResourceViewBase<tag_unordered_access_view<D3D11Buffer>>;
 
   class UAVWithCounter : public UAVBase {
   private:
     BufferViewInfo info;
-    Rc<Buffer> counter;
+    Rc<Buffer> counter_;
 
   public:
     UAVWithCounter(
@@ -64,21 +63,19 @@ private:
     ) :
         UAVBase(pDesc, pResource, pDevice),
         info(info),
-        counter(std::move(counter)) {}
+        counter_(std::move(counter)) {}
 
-    Rc<Buffer> __buffer() final { return resource->buffer; };
-    Rc<Texture> __texture() final { return {}; };
-    unsigned __viewId() final { return info.viewKey;};
-    bool __isBuffer() final { return true; }
-    BufferSlice __bufferSlice() final { return {info.byteOffset, info.byteWidth, info.viewElementOffset, info.viewElementWidth };}
-  
-    Rc<Buffer> __counter() final { return counter; };
+    Rc<Buffer> buffer() final { return resource->buffer_; };
+    Rc<Texture> texture() final { return {}; };
+    unsigned viewId() final { return info.viewKey;};
+    BufferSlice bufferSlice() final { return {info.byteOffset, info.byteWidth, info.viewElementOffset, info.viewElementWidth };}
+    Rc<Buffer> counter() final { return counter_; };
   };
 
 public:
   D3D11Buffer(const tag_buffer::DESC1 *pDesc, const D3D11_SUBRESOURCE_DATA *pInitialData, MTLD3D11Device *device) :
-      TResourceBase<tag_buffer, IMTLDynamicBuffer, IMTLBindable>(*pDesc, device) {
-    buffer = new Buffer(
+      TResourceBase<tag_buffer, IMTLDynamicBuffer>(*pDesc, device) {
+    buffer_ = new Buffer(
         pDesc->BindFlags & D3D11_BIND_UNORDERED_ACCESS ? pDesc->ByteWidth + 16 : pDesc->ByteWidth,
         device->GetMTLDevice()
     );
@@ -90,12 +87,12 @@ public:
       flags.set(BufferAllocationFlag::GpuReadonly);
     if (pDesc->Usage != D3D11_USAGE_DYNAMIC)
       flags.set(BufferAllocationFlag::GpuManaged);
-    pool = std::make_unique<BufferPool2>(buffer.ptr(), flags);
+    pool = std::make_unique<BufferPool2>(buffer_.ptr(), flags);
     RotateBuffer(m_parent);
     if (pInitialData) {
       memcpy(allocation->mappedMemory, pInitialData->pSysMem, pDesc->ByteWidth);
     }
-    auto _ = buffer->rename(Rc(allocation));
+    auto _ = buffer_->rename(Rc(allocation));
     D3D11_ASSERT(_.ptr() == nullptr);
     structured = pDesc->MiscFlags & D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
     allow_raw_view = pDesc->MiscFlags & D3D11_RESOURCE_MISC_BUFFER_ALLOW_RAW_VIEWS;
@@ -130,20 +127,35 @@ public:
         __uuidof(IMTLDynamicBuffer) == riid)
       return E_NOINTERFACE;
 
-    return TResourceBase<tag_buffer, IMTLDynamicBuffer, IMTLBindable>::QueryInterface(riid, ppvObject);
+    return TResourceBase<tag_buffer, IMTLDynamicBuffer>::QueryInterface(riid, ppvObject);
   }
 
-  Rc<Buffer> __buffer() final { return buffer; };
-  Rc<Texture> __texture() final { return {}; };
-  unsigned __viewId() final { return ~0; };
-  bool __isBuffer() final { return true; }
-  BufferSlice __bufferSlice() final { return {0, desc.ByteWidth, 0, 0};}
-
-  dxmt::Rc<dxmt::Buffer> __buffer_dyn() final { return buffer; };
+  dxmt::Rc<dxmt::Buffer> __buffer_dyn() final { return buffer_; };
   dxmt::Rc<dxmt::Texture> __texture_dyn()final { return {}; };
   bool __isBuffer_dyn() final { return true; };
   dxmt::Rc<dxmt::BufferAllocation> __bufferAllocated() final { return allocation; };
   dxmt::Rc<dxmt::TextureAllocation> __textureAllocated() final { return {}; };
+
+  Rc<Buffer>
+  buffer() final {
+    return buffer_;
+  };
+  Rc<Texture>
+  texture() final {
+    return {};
+  };
+  BufferSlice
+  bufferSlice() final {
+    return {0, desc.ByteWidth, 0, 0};
+  }
+  Com<IMTLDynamicBuffer>
+  dynamic() final {
+    return (desc.BindFlags & (D3D11_BIND_UNORDERED_ACCESS | D3D11_BIND_STREAM_OUTPUT)) ? nullptr : this;
+  }
+  Com<IMTLD3D11Staging>
+  staging() final {
+    return nullptr;
+  }
 
   void
   RotateBuffer(MTLD3D11Device *exch) override {
@@ -212,7 +224,7 @@ public:
       return S_FALSE;
     }
 
-    auto viewId = buffer->createView({.format = view_format});
+    auto viewId = buffer_->createView({.format = view_format});
 
     auto srv = ref(new TBufferSRV(
         &finalDesc, this, m_parent,
@@ -286,7 +298,7 @@ public:
       return S_FALSE;
     }
 
-    auto viewId = buffer->createView({.format = view_format});
+    auto viewId = buffer_->createView({.format = view_format});
 
     auto srv = ref(new UAVWithCounter(
         &finalDesc, this, m_parent,
@@ -319,7 +331,7 @@ CreateBuffer(
     MTLD3D11Device *pDevice, const D3D11_BUFFER_DESC *pDesc, const D3D11_SUBRESOURCE_DATA *pInitialData,
     ID3D11Buffer **ppBuffer
 ) {
-  *ppBuffer = ref(new D3D11Buffer(pDesc, pInitialData, pDevice));
+  *ppBuffer = reinterpret_cast<ID3D11Buffer *>(ref(new D3D11Buffer(pDesc, pInitialData, pDevice)));
   return S_OK;
 }
 

@@ -129,6 +129,27 @@ public:
     internal.buffer->setLabel(
         NS::String::string((char *)Name, NS::ASCIIStringEncoding));
   }
+
+  Rc<Buffer>
+  buffer() final {
+    return {};
+  };
+  Rc<Texture>
+  texture() final {
+    return {};
+  };
+  BufferSlice
+  bufferSlice() final {
+    return {};
+  }
+  Com<IMTLDynamicBuffer>
+  dynamic() final {
+    return {};
+  }
+  Com<IMTLD3D11Staging>
+  staging() final {
+    return this;
+  }
 };
 
 HRESULT
@@ -142,9 +163,9 @@ CreateStagingBuffer(MTLD3D11Device *pDevice, const D3D11_BUFFER_DESC *pDesc,
   if (pInitialData) {
     memcpy(buffer->contents(), pInitialData->pSysMem, byte_width);
   }
-  *ppBuffer = ref(new StagingBuffer(
+  *ppBuffer = reinterpret_cast<ID3D11Buffer *>(ref(new StagingBuffer(
       pDesc, pDevice,
-      StagingBufferInternal(std::move(buffer), byte_width, byte_width)));
+      StagingBufferInternal(std::move(buffer), byte_width, byte_width))));
   return S_OK;
 }
 
@@ -207,6 +228,27 @@ public:
           NS::String::string((char *)Name, NS::ASCIIStringEncoding));
     }
   }
+
+  Rc<Buffer>
+  buffer() final {
+    return {};
+  };
+  Rc<Texture>
+  texture() final {
+    return {};
+  };
+  BufferSlice
+  bufferSlice() final {
+    return {};
+  }
+  Com<IMTLDynamicBuffer>
+  dynamic() final {
+    return {};
+  }
+  Com<IMTLD3D11Staging>
+  staging() final {
+    return this;
+  }
 };
 
 #pragma endregion
@@ -245,8 +287,8 @@ HRESULT CreateStagingTextureInternal(MTLD3D11Device *pDevice,
     subresources.push_back(StagingBufferInternal(std::move(buffer), bpr, bpi));
   }
 
-  *ppTexture = ref(
-      new StagingTexture<tag>(&finalDesc, pDevice, std::move(subresources)));
+  *ppTexture = reinterpret_cast<typename tag::COM_IMPL *>(ref(
+      new StagingTexture<tag>(&finalDesc, pDevice, std::move(subresources))));
   return S_OK;
 }
 

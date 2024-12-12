@@ -88,7 +88,7 @@ public:
   HRESULT
   Map(ID3D11Resource *pResource, UINT Subresource, D3D11_MAP MapType, UINT MapFlags,
       D3D11_MAPPED_SUBRESOURCE *pMappedResource) override {
-    if (auto dynamic = com_cast<IMTLDynamicBuffer>(pResource)) {
+    if (auto dynamic = GetDynamic(pResource)) {
       D3D11_MAPPED_SUBRESOURCE Out;
       switch (MapType) {
       case D3D11_MAP_READ:
@@ -135,7 +135,7 @@ public:
       }
       return S_OK;
     }
-    if (auto staging = com_cast<IMTLD3D11Staging>(pResource)) {
+    if (auto staging = GetStaging(pResource)) {
       while (true) {
         auto coh = cmd_queue.CoherentSeqId();
         auto ret = staging->TryMap(Subresource, coh, MapType, pMappedResource);
@@ -162,10 +162,10 @@ public:
 
   void
   Unmap(ID3D11Resource *pResource, UINT Subresource) override {
-    if (auto dynamic = com_cast<IMTLDynamicBuffer>(pResource)) {
+    if (auto dynamic = GetDynamic(pResource)) {
       return;
     }
-    if (auto staging = com_cast<IMTLD3D11Staging>(pResource)) {
+    if (auto staging = GetStaging(pResource)) {
       staging->Unmap(Subresource);
       return;
     };

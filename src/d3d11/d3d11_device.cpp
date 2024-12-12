@@ -214,10 +214,7 @@ public:
     if (!ppDepthStencilView)
       return S_FALSE;
 
-    if (auto res = Com<IDXMTResource>::queryFrom(pResource); res != nullptr) {
-      return res->CreateDepthStencilView(pDesc, ppDepthStencilView);
-    }
-    return E_FAIL;
+    return static_cast<D3D11ResourceCommon *>(pResource)->CreateDepthStencilView(pDesc, ppDepthStencilView);
   }
 
   HRESULT STDMETHODCALLTYPE CreateInputLayout(
@@ -940,10 +937,7 @@ public:
     if (!ppSRView)
       return S_FALSE;
 
-    if (auto res = Com<IDXMTResource>::queryFrom(pResource); res != nullptr) {
-      return res->CreateShaderResourceView(pDesc, ppSRView);
-    }
-    return E_FAIL;
+    return static_cast<D3D11ResourceCommon *>(pResource)->CreateShaderResourceView(pDesc, ppSRView);
   }
 
   HRESULT STDMETHODCALLTYPE CreateUnorderedAccessView1(
@@ -957,10 +951,7 @@ public:
     if (!ppUAView)
       return S_FALSE;
 
-    if (auto res = Com<IDXMTResource>::queryFrom(pResource); res != nullptr) {
-      return res->CreateUnorderedAccessView(pDesc, ppUAView);
-    }
-    return E_FAIL;
+    return static_cast<D3D11ResourceCommon *>(pResource)->CreateUnorderedAccessView(pDesc, ppUAView);
   }
 
   HRESULT STDMETHODCALLTYPE CreateRenderTargetView1(
@@ -974,10 +965,7 @@ public:
     if (!ppRTView)
       return S_FALSE;
 
-    if (auto res = Com<IDXMTResource>::queryFrom(pResource); res != nullptr) {
-      return res->CreateRenderTargetView(pDesc, ppRTView);
-    }
-    return E_FAIL;
+    return static_cast<D3D11ResourceCommon *>(pResource)->CreateRenderTargetView(pDesc, ppRTView);
   }
 
   HRESULT STDMETHODCALLTYPE CreateQuery1(const D3D11_QUERY_DESC1 *desc,
