@@ -581,8 +581,6 @@ private:
   std::array<UnorderedAccessViewBinding, kUAVBindings> om_uav_;
   std::array<UnorderedAccessViewBinding, kUAVBindings> cs_uav_;
 
-  uint64_t *current_encoding_buffer_;
-
   EncoderData encoder_head = {EncoderType::Null, nullptr};
   EncoderData *encoder_last = &encoder_head;
   EncoderData *encoder_current = nullptr;
