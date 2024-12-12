@@ -28,7 +28,6 @@ CommandQueue::CommandQueue(MTL::Device *device) :
         kCommandChunkGPUHeapSize, MTL::ResourceHazardTrackingModeUntracked | MTL::ResourceCPUCacheModeWriteCombined |
                                       MTL::ResourceStorageModeShared
     ));
-    chunk.gpu_argument_heap_contents = (uint64_t *)chunk.gpu_argument_heap->contents();
     chunk.reset();
   };
 

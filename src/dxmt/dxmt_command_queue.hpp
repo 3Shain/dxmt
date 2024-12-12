@@ -142,8 +142,6 @@ public:
     return {gpu_argument_heap, aligned};
   }
 
-  uint64_t *gpu_argument_heap_contents;
-
   using context = context_t;
 
   template <CommandWithContext<ArgumentEncodingContext> F>
