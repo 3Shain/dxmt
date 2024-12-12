@@ -15,7 +15,7 @@ namespace dxmt {
 
 struct UAV_B {
   IUnknown *RawPointer = 0;
-  Com<IMTLBindable> View;
+  Com<D3D11UnorderedAccessView> View;
 };
 
 typedef BindingSet<UAV_B, 64> UAVBindingSet;
@@ -32,7 +32,7 @@ struct D3D11ComputeStageState {
 
 struct CONSTANT_BUFFER_B {
   IUnknown *RawPointer = 0;
-  Com<IMTLBindable> Buffer;
+  Com<D3D11ResourceCommon> Buffer;
   UINT FirstConstant;
   UINT NumConstants;
 };
@@ -61,7 +61,7 @@ template <> struct redunant_binding_trait<SAMPLER_B> {
 
 struct SRV_B {
   IUnknown *RawPointer = 0;
-  Com<IMTLBindable> SRV;
+  Com<D3D11ShaderResourceView> SRV;
 };
 
 typedef BindingSet<SRV_B, 128> SRVBindingSet;
@@ -81,7 +81,7 @@ struct D3D11ShaderStageState {
 
 struct VERTEX_BUFFER_B {
   IUnknown *RawPointer = 0;
-  Com<IMTLBindable> Buffer;
+  Com<D3D11ResourceCommon> Buffer;
   UINT Stride;
   UINT Offset;
 };
@@ -96,7 +96,7 @@ template <> struct redunant_binding_trait<VERTEX_BUFFER_B> {
 struct D3D11InputAssemblerStageState {
   Com<IMTLD3D11InputLayout> InputLayout;
   BindingSet<VERTEX_BUFFER_B, 16> VertexBuffers;
-  Com<IMTLBindable> IndexBuffer;
+  Com<D3D11ResourceCommon> IndexBuffer;
   /**
   either DXGI_FORMAT_R16_UINT or DXGI_FORMAT_R32_UINT
   */
@@ -127,7 +127,7 @@ struct D3D11OutputMergerStageState {
 
 struct STREAM_OUTPUT_BUFFER_B {
   IUnknown *RawPointer = 0;
-  Com<IMTLBindable> Buffer;
+  Com<D3D11ResourceCommon> Buffer;
   UINT Offset;
 };
 
@@ -153,8 +153,21 @@ struct D3D11RasterizerStageState {
   IMTLD3D11RasterizerState* RasterizerState;
 };
 
+template <typename T> class D3D11StagesState: public std::array<T, 6> {
+public:
+  T &
+  operator[](PipelineStage stage) {
+    return this->data()[(uint32_t)stage];
+  }
+
+  const T &
+  operator[](PipelineStage stage) const {
+    return this->data()[(uint32_t)stage];
+  }
+};
+
 struct D3D11ContextState {
-  std::array<D3D11ShaderStageState, 6> ShaderStages = {{}};
+  D3D11StagesState<D3D11ShaderStageState> ShaderStages = {{}};
   D3D11ComputeStageState ComputeStageUAV = {};
   D3D11StreamOutputStageState StreamOutput = {};
   D3D11InputAssemblerStageState InputAssembler = {};

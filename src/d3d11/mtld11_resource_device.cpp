@@ -1,502 +1,93 @@
 #include "Metal/MTLPixelFormat.hpp"
-#include "Metal/MTLResource.hpp"
 #include "Metal/MTLTexture.hpp"
 #include "com/com_pointer.hpp"
 #include "d3d11_device.hpp"
 #include "d3d11_texture.hpp"
 #include "d3d11_view.hpp"
-#include "dxmt_binding.hpp"
+#include "dxmt_texture.hpp"
 #include "mtld11_resource.hpp"
 
 namespace dxmt {
 
-#pragma region DeviceBuffer
-
-class DeviceBuffer : public TResourceBase<tag_buffer, IMTLBindable> {
-private:
-  Obj<MTL::Buffer> buffer;
-  uint64_t buffer_handle;
-  bool structured;
-  bool allow_raw_view;
-  SIMPLE_RESIDENCY_TRACKER residency{};
-  SIMPLE_OCCUPANCY_TRACKER occupancy{};
-
-public:
-  DeviceBuffer(const tag_buffer::DESC1 *pDesc,
-               const D3D11_SUBRESOURCE_DATA *pInitialData,
-               MTLD3D11Device *device)
-      : TResourceBase<tag_buffer, IMTLBindable>(*pDesc, device) {
-    auto metal = device->GetMTLDevice();
-    MTL::ResourceOptions options = MTL::ResourceStorageModeManaged;
-    if(pDesc->Usage == D3D11_USAGE_IMMUTABLE) {
-      options |= MTL::ResourceHazardTrackingModeUntracked;
-    }
-    buffer = transfer(metal->newBuffer(
-        (pDesc->BindFlags & D3D11_BIND_UNORDERED_ACCESS) ? (pDesc->ByteWidth + 16) : pDesc->ByteWidth, options
-    ));
-    if (pInitialData) {
-      memcpy(buffer->contents(), pInitialData->pSysMem, pDesc->ByteWidth);
-      buffer->didModifyRange({0, pDesc->ByteWidth});
-    }
-    buffer_handle = buffer->gpuAddress();
-    structured = pDesc->MiscFlags & D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
-    allow_raw_view =
-        pDesc->MiscFlags & D3D11_RESOURCE_MISC_BUFFER_ALLOW_RAW_VIEWS;
-  }
-
-  BindingRef UseBindable(uint64_t seq_id) override {
-    occupancy.MarkAsOccupied(seq_id);
-    return BindingRef(static_cast<ID3D11DeviceChild *>(this), buffer.ptr(),
-                      desc.ByteWidth, 0);
-  };
-
-  ArgumentData GetArgumentData(SIMPLE_RESIDENCY_TRACKER **ppTracker) override {
-    *ppTracker = &residency;
-    return ArgumentData(buffer_handle, desc.ByteWidth);
-  }
-
-  bool GetContentionState(uint64_t finished_seq_id) override {
-    return occupancy.IsOccupied(finished_seq_id);
-  };
-
-  void GetLogicalResourceOrView(REFIID riid,
-                                void **ppLogicalResource) override {
-    QueryInterface(riid, ppLogicalResource);
-  };
-
-  using SRVBase =
-      TResourceViewBase<tag_shader_resource_view<DeviceBuffer>, IMTLBindable>;
-  template <typename F> class SRV : public SRVBase {
-  private:
-    ArgumentData argument_data;
-    F f;
-    SIMPLE_RESIDENCY_TRACKER tracker{};
-
-  public:
-    SRV(const tag_shader_resource_view<>::DESC1 *pDesc, DeviceBuffer *pResource,
-        MTLD3D11Device *pDevice, ArgumentData argument_data, F &&fn)
-        : SRVBase(pDesc, pResource, pDevice), argument_data(argument_data),
-          f(std::forward<F>(fn)) {}
-
-    BindingRef UseBindable(uint64_t seq_id) override {
-      this->resource->occupancy.MarkAsOccupied(seq_id);
-      return std::invoke(f, static_cast<SRV *>(this));
-    };
-
-    ArgumentData
-    GetArgumentData(SIMPLE_RESIDENCY_TRACKER **ppTracker) override {
-      *ppTracker = &tracker;
-      return argument_data;
-    };
-
-    void GetLogicalResourceOrView(REFIID riid,
-                                  void **ppLogicalResource) override {
-      QueryInterface(riid, ppLogicalResource);
-    };
-  };
-
-  HRESULT
-  CreateShaderResourceView(const D3D11_SHADER_RESOURCE_VIEW_DESC1 *pDesc,
-                           ID3D11ShaderResourceView1 **ppView) override {
-    D3D11_SHADER_RESOURCE_VIEW_DESC1 finalDesc;
-    if (FAILED(ExtractEntireResourceViewDescription(&this->desc, pDesc,
-                                                    &finalDesc))) {
-      ERR("DeviceBuffer: Failed to extract srv description");
-      return E_INVALIDARG;
-    }
-    if (finalDesc.ViewDimension != D3D11_SRV_DIMENSION_BUFFER &&
-        finalDesc.ViewDimension != D3D11_SRV_DIMENSION_BUFFEREX) {
-      return E_INVALIDARG;
-    }
-    if (!ppView) {
-      return S_FALSE;
-    }
-    if (structured) {
-      if (finalDesc.Format != DXGI_FORMAT_UNKNOWN) {
-        return E_INVALIDARG;
-      }
-      // StructuredBuffer
-      uint32_t offset, size;
-      CalculateBufferViewOffsetAndSize(
-          desc, desc.StructureByteStride, finalDesc.Buffer.FirstElement,
-          finalDesc.Buffer.NumElements, offset, size);
-      *ppView = ref(new SRV(
-          &finalDesc, this, m_parent,
-          ArgumentData(buffer_handle + offset, size),
-          [ctx = Com(this), offset, size](auto _this) {
-            return BindingRef(static_cast<ID3D11ShaderResourceView *>(_this),
-                              ctx->buffer.ptr(), size, offset);
-          }));
-      return S_OK;
-    }
-    if (finalDesc.ViewDimension == D3D11_SRV_DIMENSION_BUFFEREX &&
-        finalDesc.BufferEx.Flags & D3D11_BUFFEREX_SRV_FLAG_RAW) {
-      if (!allow_raw_view)
-        return E_INVALIDARG;
-      if (finalDesc.Format != DXGI_FORMAT_R32_TYPELESS)
-        return E_INVALIDARG;
-      uint32_t offset, size;
-      CalculateBufferViewOffsetAndSize(
-          desc, sizeof(uint32_t), finalDesc.Buffer.FirstElement,
-          finalDesc.Buffer.NumElements, offset, size);
-      *ppView = ref(new SRV(
-          &finalDesc, this, m_parent,
-          ArgumentData(buffer_handle + offset, size),
-          [ctx = Com(this), offset, size](auto _this) {
-            return BindingRef(static_cast<ID3D11ShaderResourceView *>(_this),
-                              ctx->buffer.ptr(), size, offset);
-          }));
-      return S_OK;
-    }
-
-    Obj<MTL::TextureDescriptor> view_desc;
-    MTL_TEXTURE_BUFFER_LAYOUT layout;
-    if (FAILED(CreateMTLTextureBufferView(this->m_parent, &finalDesc,
-                                          &view_desc, &layout))) {
-      return E_FAIL;
-    }
-    view_desc->setResourceOptions(buffer->resourceOptions());
-    auto byte_offset = layout.ByteOffset;
-    auto byte_width = layout.ByteWidth;
-    auto element_offset = layout.ViewElementOffset;
-    Obj<MTL::Texture> view = buffer->newTexture(
-        view_desc, layout.AdjustedByteOffset, layout.AdjustedBytesPerRow);
-    *ppView = ref(new SRV(&finalDesc, this, m_parent,
-                          ArgumentData(view->gpuResourceID(),
-                                       buffer_handle + byte_offset, byte_width,
-                                       element_offset),
-                          [view = std::move(view), buffer = this->buffer.ptr(),
-                           byte_width, byte_offset](auto _this) {
-                            return BindingRef(
-                                static_cast<ID3D11ShaderResourceView *>(_this),
-                                view.ptr(), buffer, byte_width, byte_offset);
-                          }));
-    return S_OK;
-  };
-
-  using UAVBase =
-      TResourceViewBase<tag_unordered_access_view<DeviceBuffer>, IMTLBindable>;
-
-  template <typename F> class UAV : public UAVBase {
-  private:
-    ArgumentData argument_data;
-    F f;
-    SIMPLE_RESIDENCY_TRACKER tracker{};
-
-  public:
-    UAV(const tag_unordered_access_view<>::DESC1 *pDesc,
-        DeviceBuffer *pResource, MTLD3D11Device *pDevice,
-        ArgumentData argument_data, F &&fn)
-        : UAVBase(pDesc, pResource, pDevice), argument_data(argument_data),
-          f(std::forward<F>(fn)) {}
-
-    BindingRef UseBindable(uint64_t seq_id) override {
-      this->resource->occupancy.MarkAsOccupied(seq_id);
-      return std::invoke(f, this);
-    };
-
-    ArgumentData
-    GetArgumentData(SIMPLE_RESIDENCY_TRACKER **ppTracker) override {
-      *ppTracker = &tracker;
-      return argument_data;
-    };
-
-    void GetLogicalResourceOrView(REFIID riid,
-                                  void **ppLogicalResource) override {
-      QueryInterface(riid, ppLogicalResource);
-    };
-
-    virtual uint64_t SwapCounter(uint64_t handle) override { return handle; };
-  };
-
-  template <typename A, typename F> class UAVWithCounter : public UAVBase {
-  private:
-    A a;
-    F f;
-
-  public:
-    uint64_t counter_handle;
-
-    UAVWithCounter(const tag_unordered_access_view<>::DESC1 *pDesc,
-                   DeviceBuffer *pResource, MTLD3D11Device *pDevice, A &&a, F &&fn)
-        : UAVBase(pDesc, pResource, pDevice), a(std::forward<A>(a)),
-          f(std::forward<F>(fn)) {
-      counter_handle = pDevice->GetDXMTDevice().queue().AllocateCounter(0);
-    }
-
-    ~UAVWithCounter() {
-      m_parent->GetDXMTDevice().queue().DiscardCounter(counter_handle);
-    }
-
-    BindingRef UseBindable(uint64_t seq_id) override {
-      this->resource->occupancy.MarkAsOccupied(seq_id);
-      return std::invoke(f, this);
-    };
-
-    ArgumentData
-    GetArgumentData(SIMPLE_RESIDENCY_TRACKER **ppTracker) override {
-      *ppTracker = &resource->residency;
-      return std::invoke(a, this);
-    };
-
-    void GetLogicalResourceOrView(REFIID riid,
-                                  void **ppLogicalResource) override {
-      QueryInterface(riid, ppLogicalResource);
-    };
-
-    virtual uint64_t SwapCounter(uint64_t handle) override {
-      uint64_t current = counter_handle;
-      if (~handle != 0) {
-        counter_handle = handle;
-      }
-      return current;
-    };
-  };
-
-  HRESULT
-  CreateUnorderedAccessView(const D3D11_UNORDERED_ACCESS_VIEW_DESC1 *pDesc1,
-                            ID3D11UnorderedAccessView1 **ppView) override {
-    D3D11_UNORDERED_ACCESS_VIEW_DESC1 finalDesc;
-    if (FAILED(ExtractEntireResourceViewDescription(&this->desc, pDesc1,
-                                                    &finalDesc))) {
-      ERR("DeviceBuffer: Failed to extract uav description");
-      return E_INVALIDARG;
-    }
-    if (finalDesc.ViewDimension != D3D11_UAV_DIMENSION_BUFFER) {
-      return E_INVALIDARG;
-    }
-    if (structured) {
-      if (finalDesc.Format != DXGI_FORMAT_UNKNOWN) {
-        return E_INVALIDARG;
-      }
-      bool with_counter =
-          finalDesc.Buffer.Flags &
-          (D3D11_BUFFER_UAV_FLAG_APPEND | D3D11_BUFFER_UAV_FLAG_COUNTER);
-      // StructuredBuffer
-      uint32_t offset, size;
-      CalculateBufferViewOffsetAndSize(
-          desc, desc.StructureByteStride, finalDesc.Buffer.FirstElement,
-          finalDesc.Buffer.NumElements, offset, size);
-      if (with_counter) {
-        *ppView = ref(new UAVWithCounter(
-            &finalDesc, this, m_parent,
-            [buffer_handle = this->buffer_handle, offset, size](auto _this) {
-              return ArgumentData(buffer_handle + offset, size,
-                                  _this->counter_handle);
-            },
-            [ctx = Com(this), offset, size](auto _this) {
-              return BindingRef(static_cast<ID3D11UnorderedAccessView *>(_this),
-                                ctx->buffer.ptr(), size, offset,
-                                _this->counter_handle);
-            }));
-      } else {
-        *ppView = ref(new UAV(
-            &finalDesc, this, m_parent,
-            ArgumentData(buffer_handle + offset, size),
-            [ctx = Com(this), offset, size](auto _this) {
-              return BindingRef(static_cast<ID3D11UnorderedAccessView *>(_this),
-                                ctx->buffer.ptr(), size, offset);
-            }));
-      }
-      return S_OK;
-    }
-    if (finalDesc.Buffer.Flags & D3D11_BUFFER_UAV_FLAG_RAW) {
-      if (!allow_raw_view)
-        return E_INVALIDARG;
-      if (finalDesc.Format != DXGI_FORMAT_R32_TYPELESS)
-        return E_INVALIDARG;
-      uint32_t offset, size;
-      CalculateBufferViewOffsetAndSize(
-          desc, sizeof(uint32_t), finalDesc.Buffer.FirstElement,
-          finalDesc.Buffer.NumElements, offset, size);
-      *ppView = ref(new UAV(
-          &finalDesc, this, m_parent,
-          ArgumentData(buffer_handle + offset, size),
-          [ctx = Com(this), offset, size](auto _this) {
-            return BindingRef(static_cast<ID3D11UnorderedAccessView *>(_this),
-                              ctx->buffer.ptr(), size, offset);
-          }));
-      return S_OK;
-    }
-    Obj<MTL::TextureDescriptor> view_desc;
-    MTL_TEXTURE_BUFFER_LAYOUT layout;
-    if (FAILED(CreateMTLTextureBufferView(this->m_parent, &finalDesc,
-                                          &view_desc, &layout))) {
-      return E_FAIL;
-    }
-    view_desc->setResourceOptions(buffer->resourceOptions());
-    auto byte_offset = layout.ByteOffset;
-    auto byte_width = layout.ByteWidth;
-    auto element_offset = layout.ViewElementOffset;
-    Obj<MTL::Texture> view = buffer->newTexture(
-        view_desc, layout.AdjustedByteOffset, layout.AdjustedBytesPerRow);
-    *ppView = ref(new UAV(&finalDesc, this, m_parent,
-                          ArgumentData(view->gpuResourceID(),
-                                       buffer_handle + byte_offset, byte_width,
-                                       element_offset),
-                          [view = std::move(view), buffer = this->buffer.ptr(),
-                           byte_offset, byte_width](auto _this) {
-                            return BindingRef(
-                                static_cast<ID3D11UnorderedAccessView *>(_this),
-                                view.ptr(), buffer, byte_offset, byte_width);
-                          }));
-    return S_OK;
-  };
-
-  HRESULT CreateRenderTargetView(const D3D11_RENDER_TARGET_VIEW_DESC1 *desc,
-                                 ID3D11RenderTargetView1 **ppView) override {
-    ERR("DeviceBuffer: RTV not supported");
-    return E_FAIL;
-  };
-
-  HRESULT CreateDepthStencilView(const D3D11_DEPTH_STENCIL_VIEW_DESC *desc,
-                                 ID3D11DepthStencilView **ppView) override {
-    ERR("DeviceBuffer: DSV not supported");
-    return E_FAIL;
-  };
-
-  void OnSetDebugObjectName(LPCSTR Name) override {
-    if (!Name) {
-      return;
-    }
-    buffer->setLabel(NS::String::string((char *)Name, NS::ASCIIStringEncoding));
-  }
-};
-
-HRESULT
-CreateDeviceBuffer(MTLD3D11Device *pDevice, const D3D11_BUFFER_DESC *pDesc,
-                   const D3D11_SUBRESOURCE_DATA *pInitialData,
-                   ID3D11Buffer **ppBuffer) {
-  *ppBuffer = ref(new DeviceBuffer(pDesc, pInitialData, pDevice));
-  return S_OK;
-}
-
-#pragma endregion
-
 #pragma region DeviceTexture
 
 template <typename tag_texture>
-class DeviceTexture : public TResourceBase<tag_texture, IMTLBindable, IMTLMinLODClampable> {
+class DeviceTexture : public TResourceBase<tag_texture, IMTLMinLODClampable> {
 private:
-  Obj<MTL::Texture> texture;
-  MTL::ResourceID texture_handle;
-  SIMPLE_RESIDENCY_TRACKER residency{};
-  SIMPLE_OCCUPANCY_TRACKER occupancy{};
+  Rc<Texture> underlying_texture_;
+  Rc<RenamableTexturePool> renamable_;
   float min_lod = 0.0;
 
   using SRVBase =
-      TResourceViewBase<tag_shader_resource_view<DeviceTexture<tag_texture>>,
-                        IMTLBindable>;
+      TResourceViewBase<tag_shader_resource_view<DeviceTexture<tag_texture>>>;
   class TextureSRV : public SRVBase {
   private:
-    Obj<MTL::Texture> view;
-    MTL::ResourceID view_handle;
-    SIMPLE_RESIDENCY_TRACKER tracker{};
+    TextureViewKey view_key_;
 
   public:
-    TextureSRV(MTL::Texture *view,
+    TextureSRV(TextureViewKey view_key,
                const tag_shader_resource_view<>::DESC1 *pDesc,
                DeviceTexture *pResource, MTLD3D11Device *pDevice)
-        : SRVBase(pDesc, pResource, pDevice), view(view),
-          view_handle(view->gpuResourceID()) {}
+        : SRVBase(pDesc, pResource, pDevice), view_key_(view_key) {}
 
-    BindingRef UseBindable(uint64_t seq_id) override {
-      this->resource->occupancy.MarkAsOccupied(seq_id);
-      return BindingRef(static_cast<ID3D11View *>(this), view.ptr());
-    };
-
-    ArgumentData
-    GetArgumentData(SIMPLE_RESIDENCY_TRACKER **ppTracker) override {
-      *ppTracker = &tracker;
-      return ArgumentData(view_handle, this->resource->min_lod);
-    };
-
-    void GetLogicalResourceOrView(REFIID riid,
-                                  void **ppLogicalResource) override {
-      this->QueryInterface(riid, ppLogicalResource);
-    };
-
-    void OnSetDebugObjectName(LPCSTR Name) override {
-      if (!Name) {
-        return;
-      }
-      view->setLabel(NS::String::string((char *)Name, NS::ASCIIStringEncoding));
-    }
+    Rc<Buffer> buffer() final { return {}; };
+    Rc<Texture> texture() final { return this->resource->underlying_texture_; };
+    unsigned viewId() final { return view_key_;};
+    BufferSlice bufferSlice() final { return {};}
   };
 
   using UAVBase =
-      TResourceViewBase<tag_unordered_access_view<DeviceTexture<tag_texture>>,
-                        IMTLBindable>;
+      TResourceViewBase<tag_unordered_access_view<DeviceTexture<tag_texture>>>;
   class TextureUAV : public UAVBase {
   private:
-    Obj<MTL::Texture> view;
-    MTL::ResourceID view_handle;
-    SIMPLE_RESIDENCY_TRACKER tracker{};
+    TextureViewKey view_key_;
 
   public:
-    TextureUAV(MTL::Texture *view,
+    TextureUAV(TextureViewKey view_key,
                const tag_unordered_access_view<>::DESC1 *pDesc,
                DeviceTexture *pResource, MTLD3D11Device *pDevice)
-        : UAVBase(pDesc, pResource, pDevice), view(view),
-          view_handle(view->gpuResourceID()) {}
+        : UAVBase(pDesc, pResource, pDevice), view_key_(view_key){}
 
-    BindingRef UseBindable(uint64_t seq_id) override {
-      this->resource->occupancy.MarkAsOccupied(seq_id);
-      return BindingRef(static_cast<ID3D11View *>(this), view.ptr());
-    };
-
-    ArgumentData
-    GetArgumentData(SIMPLE_RESIDENCY_TRACKER **ppTracker) override {
-      *ppTracker = &tracker;
-      return ArgumentData(view_handle, this->resource->min_lod);
-    };
-
-    void GetLogicalResourceOrView(REFIID riid,
-                                  void **ppLogicalResource) override {
-      this->QueryInterface(riid, ppLogicalResource);
-    };
-
-    void OnSetDebugObjectName(LPCSTR Name) override {
-      if (!Name) {
-        return;
-      }
-      view->setLabel(NS::String::string((char *)Name, NS::ASCIIStringEncoding));
-    }
-
-    virtual uint64_t SwapCounter(uint64_t handle) override { return handle; };
+    Rc<Buffer> buffer() final { return {}; };
+    Rc<Texture> texture() final { return this->resource->underlying_texture_; };
+    unsigned viewId() final { return view_key_;};
+    BufferSlice bufferSlice() final { return {};}
+    Rc<Buffer> counter() final { return {}; };
   };
 
   using RTVBase =
       TResourceViewBase<tag_render_target_view<DeviceTexture<tag_texture>>>;
   class TextureRTV : public RTVBase {
   private:
-    Obj<MTL::Texture> view;
-    MTL::PixelFormat view_pixel_format;
+    TextureViewKey view_key_;
+    MTL::PixelFormat view_format_;
     MTL_RENDER_PASS_ATTACHMENT_DESC attachment_desc;
 
   public:
-    TextureRTV(MTL::Texture *view, const tag_render_target_view<>::DESC1 *pDesc,
-               DeviceTexture *pResource, MTLD3D11Device *pDevice,
-               const MTL_RENDER_PASS_ATTACHMENT_DESC &mtl_rtv_desc)
-        : RTVBase(pDesc, pResource, pDevice), view(view),
-          view_pixel_format(view->pixelFormat()), attachment_desc(mtl_rtv_desc) {}
+    TextureRTV(
+        TextureViewKey view_key, MTL::PixelFormat view_format, const tag_render_target_view<>::DESC1 *pDesc,
+        DeviceTexture *pResource, MTLD3D11Device *pDevice, const MTL_RENDER_PASS_ATTACHMENT_DESC &mtl_rtv_desc
+    ) :
+        RTVBase(pDesc, pResource, pDevice),
+        view_key_(view_key),
+        view_format_(view_format),
+        attachment_desc(mtl_rtv_desc) {}
 
-    MTL::PixelFormat GetPixelFormat() final { return view_pixel_format; }
+    MTL::PixelFormat
+    GetPixelFormat() final {
+      return view_format_;
+    }
 
     MTL_RENDER_PASS_ATTACHMENT_DESC &GetAttachmentDesc() final {
       return attachment_desc;
     };
 
-    BindingRef UseBindable(uint64_t seq_id) final {
-      this->resource->occupancy.MarkAsOccupied(seq_id);
-      return BindingRef(static_cast<ID3D11View *>(this), view.ptr());
+    Rc<Texture> __texture() final {
+      return this->resource->underlying_texture_;
     }
 
-    void OnSetDebugObjectName(LPCSTR Name) override {
-      if (!Name) {
-        return;
-      }
-      view->setLabel(NS::String::string((char *)Name, NS::ASCIIStringEncoding));
+    unsigned __viewId() final {
+      return view_key_;
     }
   };
 
@@ -504,63 +95,60 @@ private:
       TResourceViewBase<tag_depth_stencil_view<DeviceTexture<tag_texture>>>;
   class TextureDSV : public DSVBase {
   private:
-    Obj<MTL::Texture> view;
-    MTL::PixelFormat view_pixel_format;
+    TextureViewKey view_key_;
+    MTL::PixelFormat view_format_;
     MTL_RENDER_PASS_ATTACHMENT_DESC attachment_desc;
 
   public:
-    TextureDSV(MTL::Texture *view, const tag_depth_stencil_view<>::DESC1 *pDesc,
-               DeviceTexture *pResource, MTLD3D11Device *pDevice,
-               const MTL_RENDER_PASS_ATTACHMENT_DESC &attachment_desc)
-        : DSVBase(pDesc, pResource, pDevice), view(view),
-          view_pixel_format(view->pixelFormat()),
-          attachment_desc(attachment_desc) {}
+    TextureDSV(
+        TextureViewKey view_key, MTL::PixelFormat view_format, const tag_depth_stencil_view<>::DESC1 *pDesc,
+        DeviceTexture *pResource, MTLD3D11Device *pDevice, const MTL_RENDER_PASS_ATTACHMENT_DESC &attachment_desc
+    ) :
+        DSVBase(pDesc, pResource, pDevice),
+        view_key_(view_key),
+        view_format_(view_format),
+        attachment_desc(attachment_desc) {}
 
-    MTL::PixelFormat GetPixelFormat() final { return view_pixel_format; }
-
-    BindingRef UseBindable(uint64_t seq_id) final {
-      this->resource->occupancy.MarkAsOccupied(seq_id);
-      return BindingRef(static_cast<ID3D11View *>(this), view.ptr());
+    MTL::PixelFormat
+    GetPixelFormat() final {
+      return view_format_;
     }
 
     MTL_RENDER_PASS_ATTACHMENT_DESC &GetAttachmentDesc() final {
       return attachment_desc;
     };
 
-    void OnSetDebugObjectName(LPCSTR Name) override {
-      if (!Name) {
-        return;
-      }
-      view->setLabel(NS::String::string((char *)Name, NS::ASCIIStringEncoding));
+    Rc<Texture> __texture() final {
+      return this->resource->underlying_texture_;
+    }
+
+    unsigned __viewId() final {
+      return view_key_;
+    }
+
+    dxmt::Rc<dxmt::RenamableTexturePool> __renamable() final {
+      return this->resource->renamable_;
     }
   };
 
 public:
-  DeviceTexture(const tag_texture::DESC1 *pDesc, MTL::Texture *texture,
-                MTLD3D11Device *pDevice)
-      : TResourceBase<tag_texture, IMTLBindable, IMTLMinLODClampable>(*pDesc,
-                                                                      pDevice),
-        texture(texture), texture_handle(texture->gpuResourceID()) {}
+  DeviceTexture(const tag_texture::DESC1 *pDesc, Rc<Texture> &&u_texture, MTLD3D11Device *pDevice) :
+      TResourceBase<tag_texture, IMTLMinLODClampable>(*pDesc, pDevice),
+      underlying_texture_(std::move(u_texture)) {}
 
-  BindingRef UseBindable(uint64_t seq_id) override {
-    occupancy.MarkAsOccupied(seq_id);
-    return BindingRef(static_cast<ID3D11Resource *>(this), texture.ptr());
-  };
+  DeviceTexture(
+      const tag_texture::DESC1 *pDesc, Rc<Texture> &&u_texture, Rc<RenamableTexturePool> &&renamable,
+      MTLD3D11Device *pDevice
+  ) :
+      TResourceBase<tag_texture, IMTLMinLODClampable>(*pDesc, pDevice),
+      underlying_texture_(std::move(u_texture)),
+      renamable_(std::move(renamable)) {}
 
-  ArgumentData GetArgumentData(SIMPLE_RESIDENCY_TRACKER **ppTracker) override {
-    *ppTracker = &residency;
-    // rarely used, since texture is not directly accessed by pipeline
-    return ArgumentData(texture_handle, texture.ptr());
-  }
-
-  bool GetContentionState(uint64_t finished_seq_id) override {
-    return occupancy.IsOccupied(finished_seq_id);
-  };
-
-  void GetLogicalResourceOrView(REFIID riid,
-                                void **ppLogicalResource) override {
-    this->QueryInterface(riid, ppLogicalResource);
-  };
+  Rc<Buffer> buffer() final { return {}; };
+  Rc<Texture> texture() final { return this->underlying_texture_; };
+  BufferSlice bufferSlice() final { return {};}
+  Com<IMTLDynamicBuffer> dynamic() final { return nullptr; }
+  Com<IMTLD3D11Staging> staging() final { return nullptr; }
 
   HRESULT CreateRenderTargetView(const D3D11_RENDER_TARGET_VIEW_DESC1 *pDesc,
                                  ID3D11RenderTargetView1 **ppView) override {
@@ -569,18 +157,25 @@ public:
                                                     &finalDesc))) {
       return E_INVALIDARG;
     }
-    Obj<MTL::Texture> view;
+    TextureViewDescriptor descriptor;
+    uint32_t arraySize;
+    if constexpr (std::is_same_v<typename tag_texture::DESC1, D3D11_TEXTURE3D_DESC1>) {
+      arraySize = this->desc.Depth;
+    } else {
+      arraySize = this->desc.ArraySize;
+    }
     MTL_RENDER_PASS_ATTACHMENT_DESC attachment_desc;
-    if (FAILED(CreateMTLRenderTargetView(this->m_parent, this->texture,
-                                         &finalDesc, &view, attachment_desc))) {
+    if (FAILED(InitializeAndNormalizeViewDescriptor(
+            this->m_parent, this->desc.MipLevels, arraySize, this->underlying_texture_.ptr(), finalDesc,
+            attachment_desc, descriptor
+        ))) {
       return E_FAIL;
     }
-    if (ppView) {
-      *ppView = ref(new TextureRTV(view, &finalDesc, this, this->m_parent,
-                                   attachment_desc));
-    } else {
+    if (!ppView) {
       return S_FALSE;
     }
+    TextureViewKey key = underlying_texture_->createView(descriptor);
+    *ppView = ref(new TextureRTV(key, descriptor.format, &finalDesc, this, this->m_parent, attachment_desc));
     return S_OK;
   };
 
@@ -591,17 +186,25 @@ public:
                                                     &finalDesc))) {
       return E_INVALIDARG;
     }
-    Obj<MTL::Texture> view;
+        TextureViewDescriptor descriptor;
+    uint32_t arraySize;
+    if constexpr (std::is_same_v<typename tag_texture::DESC1, D3D11_TEXTURE3D_DESC1>) {
+      arraySize = this->desc.Depth;
+    } else {
+      arraySize = this->desc.ArraySize;
+    }
     MTL_RENDER_PASS_ATTACHMENT_DESC attachment_desc;
-    if (FAILED(CreateMTLDepthStencilView(this->m_parent, this->texture,
-                                         &finalDesc, &view, attachment_desc))) {
+    if (FAILED(InitializeAndNormalizeViewDescriptor(
+            this->m_parent, this->desc.MipLevels, arraySize, this->underlying_texture_.ptr(), finalDesc,
+            attachment_desc, descriptor
+        ))) {
       return E_FAIL;
     }
-    if (ppView) {
-      *ppView = ref(new TextureDSV(view, &finalDesc, this, this->m_parent, attachment_desc));
-    } else {
+    if (!ppView) {
       return S_FALSE;
     }
+    TextureViewKey key = underlying_texture_->createView(descriptor);
+    *ppView = ref(new TextureDSV(key, descriptor.format, &finalDesc, this, this->m_parent, attachment_desc));
     return S_OK;
   };
 
@@ -614,17 +217,24 @@ public:
       ERR("DeviceTexture: Failed to create SRV descriptor");
       return E_INVALIDARG;
     }
-    Obj<MTL::Texture> view;
-    if (FAILED(CreateMTLTextureView(this->m_parent, this->texture, &finalDesc,
-                                    &view))) {
-      ERR("DeviceTexture: Failed to create SRV texture view");
+    TextureViewDescriptor descriptor;
+    uint32_t arraySize;
+    if constexpr (std::is_same_v<typename tag_texture::DESC1, D3D11_TEXTURE3D_DESC1>) {
+      arraySize = this->desc.Depth;
+    } else {
+      arraySize = this->desc.ArraySize;
+    }
+    if (FAILED(InitializeAndNormalizeViewDescriptor(
+            this->m_parent, this->desc.MipLevels, arraySize, this->underlying_texture_.ptr(), finalDesc, descriptor
+        ))) {
+      ERR("DeviceTexture: Failed to create texture SRV");
       return E_FAIL;
     }
-    if (ppView) {
-      *ppView = ref(new TextureSRV(view, &finalDesc, this, this->m_parent));
-    } else {
+    if (!ppView) {
       return S_FALSE;
     }
+    TextureViewKey key = underlying_texture_->createView(descriptor);
+    *ppView = ref(new TextureSRV(key, &finalDesc, this, this->m_parent));
     return S_OK;
   };
 
@@ -636,26 +246,26 @@ public:
                                                     &finalDesc))) {
       return E_INVALIDARG;
     }
-    Obj<MTL::Texture> view;
-    if (FAILED(CreateMTLTextureView(this->m_parent, this->texture, &finalDesc,
-                                    &view))) {
+    TextureViewDescriptor descriptor;
+    uint32_t arraySize;
+    if constexpr (std::is_same_v<typename tag_texture::DESC1, D3D11_TEXTURE3D_DESC1>) {
+      arraySize = this->desc.Depth;
+    } else {
+      arraySize = this->desc.ArraySize;
+    }
+    if (FAILED(InitializeAndNormalizeViewDescriptor(
+            this->m_parent, this->desc.MipLevels, arraySize, this->underlying_texture_.ptr(), finalDesc, descriptor
+        ))) {
+      ERR("DeviceTexture: Failed to create texture UAV");
       return E_FAIL;
     }
-    if (ppView) {
-      *ppView = ref(new TextureUAV(view, &finalDesc, this, this->m_parent));
-    } else {
+    if (!ppView) {
       return S_FALSE;
     }
+    TextureViewKey key = underlying_texture_->createView(descriptor);
+    *ppView = ref(new TextureUAV(key, &finalDesc, this, this->m_parent));
     return S_OK;
   };
-
-  void OnSetDebugObjectName(LPCSTR Name) override {
-    if (!Name) {
-      return;
-    }
-    texture->setLabel(
-        NS::String::string((char *)Name, NS::ASCIIStringEncoding));
-  }
 
   void SetMinLOD(float MinLod) override { min_lod = MinLod; }
 
@@ -674,11 +284,29 @@ HRESULT CreateDeviceTextureInternal(MTLD3D11Device *pDevice,
                                         &textureDescriptor))) {
     return E_INVALIDARG;
   }
-  auto texture = transfer(metal->newTexture(textureDescriptor));
+  bool single_subresource = textureDescriptor->mipmapLevelCount() * textureDescriptor->arrayLength() == 1;
+  auto texture = Rc<Texture>(new Texture(std::move(textureDescriptor), metal));
+  Flags<TextureAllocationFlag> flags;
+  flags.set(TextureAllocationFlag::GpuManaged);
+  if (finalDesc.Usage == D3D11_USAGE_IMMUTABLE)
+    flags.set(TextureAllocationFlag::GpuReadonly);
   if (pInitialData) {
-    initWithSubresourceData(texture, &finalDesc, pInitialData);
+    auto default_allocation = texture->allocate(flags);
+    initWithSubresourceData(default_allocation->texture(), &finalDesc, pInitialData);
+    texture->rename(std::move(default_allocation));
+    *ppTexture =
+        reinterpret_cast<typename tag::COM_IMPL *>(
+          ref(new DeviceTexture<tag>(&finalDesc, std::move(texture), pDevice)));
+  } else if (single_subresource && (finalDesc.BindFlags & D3D11_BIND_DEPTH_STENCIL)) {
+    Rc<RenamableTexturePool> renamable = new RenamableTexturePool(texture.ptr(), 32, flags);
+    texture->rename(renamable->getNext(0));
+    *ppTexture = reinterpret_cast<typename tag::COM_IMPL *>(
+        ref(new DeviceTexture<tag>(&finalDesc, std::move(texture), std::move(renamable), pDevice)));
+  } else {
+    texture->rename(texture->allocate(flags));
+    *ppTexture = reinterpret_cast<typename tag::COM_IMPL *>(
+      ref(new DeviceTexture<tag>(&finalDesc, std::move(texture), pDevice)));
   }
-  *ppTexture = ref(new DeviceTexture<tag>(&finalDesc, texture, pDevice));
   return S_OK;
 }
 

@@ -8,10 +8,11 @@
 #include "Metal/MTLRenderCommandEncoder.hpp"
 #include "Metal/MTLDevice.hpp"
 #include "Metal/MTLTypes.hpp"
-#include "dxmt_binding.hpp"
 #include "dxmt_capture.hpp"
 #include "dxmt_command.hpp"
-#include "dxmt_counter_pool.hpp"
+#include "dxmt_command_list.hpp"
+#include "dxmt_context.hpp"
+#include "dxmt_occlusion_query.hpp"
 #include "dxmt_ring_bump_allocator.hpp"
 #include "log/log.hpp"
 #include "objc_pointer.hpp"
@@ -24,66 +25,9 @@
 
 namespace dxmt {
 
-enum class EncoderKind : uint32_t { Nil, ClearPass, Render, Compute, Blit, Resolve, ExecuteCommandList };
-
-struct ENCODER_INFO {
-  EncoderKind kind;
-  uint64_t encoder_id;
-};
-
-struct ENCODER_RENDER_INFO {
-  EncoderKind kind = EncoderKind::Render;
-  uint64_t encoder_id;
-  uint32_t tessellation_pass: 1 = 0;
-  uint32_t use_visibility_result: 1 = 0;
-};
-
 struct CLEAR_DEPTH_STENCIL {
   float depth;
   uint8_t stencil;
-};
-
-struct ENCODER_CLEARPASS_INFO {
-  EncoderKind kind = EncoderKind::ClearPass;
-  uint64_t encoder_id;
-  uint32_t skipped = 0; // this can be flipped by later render pass
-  uint32_t depth_stencil_flags = 0;
-  uint32_t array_length;
-  uint32_t level;
-  uint32_t slice;
-  uint32_t depth_plane;
-  struct ENCODER_CLEARPASS_INFO *previous_clearpass = nullptr;
-  BindingRef clear_attachment;
-  union {
-    CLEAR_DEPTH_STENCIL depth_stencil;
-    MTL::ClearColor color;
-  };
-
-  struct CLEARPASS_CLEANUP {
-    ENCODER_CLEARPASS_INFO *info;
-    CLEARPASS_CLEANUP(ENCODER_CLEARPASS_INFO *info) : info(info) {}
-    ~CLEARPASS_CLEANUP() {
-      // FIXME: too complicated
-      if (!info || info->skipped)
-        return;
-      info->clear_attachment.~BindingRef();
-    }
-    CLEARPASS_CLEANUP(const CLEARPASS_CLEANUP &copy) = delete;
-    CLEARPASS_CLEANUP(CLEARPASS_CLEANUP &&move) {
-      info = move.info;
-      move.info = nullptr;
-    };
-  };
-
-  [[nodiscard("")]] CLEARPASS_CLEANUP
-  use_clearpass() {
-    return CLEARPASS_CLEANUP(this);
-  }
-};
-
-template <typename F, typename context>
-concept cpu_cmd = requires(F f, context &ctx) {
-  { f(ctx) } -> std::same_as<void>;
 };
 
 template <typename T> class moveonly_list {
@@ -133,90 +77,14 @@ private:
   size_t size_;
 };
 
-inline std::size_t
-align_forward_adjustment(const void *const ptr, const std::size_t &alignment) noexcept {
-  const auto iptr = reinterpret_cast<std::uintptr_t>(ptr);
-  const auto aligned = (iptr - 1u + alignment) & -alignment;
-  return aligned - iptr;
-}
-
-inline void *
-ptr_add(const void *const p, const std::uintptr_t &amount) noexcept {
-  return reinterpret_cast<void *>(reinterpret_cast<std::uintptr_t>(p) + amount);
-}
-
 constexpr uint32_t kCommandChunkCount = 8;
-constexpr size_t kCommandChunkCPUHeapSize = 0x800000; // is 8MB too large?
-constexpr size_t kCommandChunkGPUHeapSize = 0x400000;
-constexpr size_t kOcclusionSampleCount = 1024;
 
 class CommandQueue;
 
 class CommandChunk {
-
-  template <typename T> class linear_allocator {
-  public:
-    typedef T value_type;
-
-    linear_allocator() = delete;
-    linear_allocator(CommandChunk *chunk) : chunk(chunk) {};
-
-    [[nodiscard]] constexpr T *
-    allocate(std::size_t n) {
-      return reinterpret_cast<T *>(chunk->allocate_cpu_heap(n * sizeof(T), alignof(T)));
-    }
-
-    constexpr void
-    deallocate(T *p, [[maybe_unused]] std::size_t n) noexcept {
-      // do nothing
-    }
-
-    bool
-    operator==(const linear_allocator<T> &rhs) const noexcept {
-      return chunk == rhs.chunk;
-    }
-
-    bool
-    operator!=(const linear_allocator<T> &rhs) const noexcept {
-      return !(*this == rhs);
-    }
-
-    CommandChunk *chunk;
-  };
 public:
-  template <typename context> class BFunc {
-  public:
-    virtual void invoke(context &) = 0;
-    virtual ~BFunc() noexcept {};
-  };
 
-  template <typename context, typename F> class EFunc final : public BFunc<context> {
-  public:
-    void
-    invoke(context &ctx) final {
-      std::invoke(func, ctx);
-    };
-    ~EFunc() noexcept final = default;
-    EFunc(F &&ff) : func(std::forward<F>(ff)) {}
-    EFunc(const EFunc &copy) = delete;
-    EFunc &operator=(const EFunc &copy_assign) = delete;
-
-  private:
-    F func;
-  };
-
-  template <typename context> class MFunc final : public BFunc<context> {
-  public:
-    void invoke(context &ctx) final { /* nop */ };
-    ~MFunc() noexcept = default;
-  };
-
-  template <typename value_t> struct Node {
-    value_t value;
-    Node *next;
-  };
-
-  class context_t : public EncodingContext {
+  class context_t {
   public:
     CommandChunk *chk;
     CommandQueue *queue;
@@ -274,61 +142,36 @@ public:
     return {gpu_argument_heap, aligned};
   }
 
-  uint64_t *gpu_argument_heap_contents;
-
   using context = context_t;
 
-  template <cpu_cmd<context> F>
+  template <CommandWithContext<ArgumentEncodingContext> F>
   void
-  emit(F &&func) {
-    linear_allocator<EFunc<context, F>> allocator(this);
-    auto ptr = allocator.allocate(1);
-    new (ptr) EFunc<context, F>(std::forward<F>(func)); // in placement
-    linear_allocator<Node<BFunc<context> *>>            // force break
-        allocator_node(this);
-    auto ptr_node = allocator_node.allocate(1);
-    *ptr_node = {ptr, nullptr};
-    list_end->next = ptr_node;
-    list_end = ptr_node;
+  emitcc(F &&func) {
+    list_enc.emit(std::forward<F>(func), allocate_cpu_heap(list_enc.calculateCommandSize<F>(), 16));
   }
 
   void
-  encode(MTL::CommandBuffer *cmdbuf) {
+  encode(MTL::CommandBuffer *cmdbuf, ArgumentEncodingContext &enc) {
+    enc.$$setEncodingBuffer(
+      cpu_argument_heap,
+      cpu_arugment_heap_offset,
+      gpu_argument_heap.ptr(),
+      gpu_arugment_heap_offset,
+      chunk_id
+    );
+    list_enc.execute(enc);
     attached_cmdbuf = cmdbuf;
-    context_t context(this, cmdbuf);
-    auto cur = monoid_list.next;
-    while (cur) {
-      assert((uint64_t)cur->value >= (uint64_t)cpu_argument_heap);
-      assert((uint64_t)cur->value < ((uint64_t)cpu_argument_heap + cpu_arugment_heap_offset));
-      cur->value->invoke(context);
-      cur = cur->next;
-    }
+    visibility_readback = enc.flushCommands(cmdbuf, chunk_id);
   };
-
-  ENCODER_RENDER_INFO *mark_render_pass();
-
-  ENCODER_CLEARPASS_INFO *mark_clear_pass();
-
-  ENCODER_INFO *mark_pass(EncoderKind kind);
-
-  ENCODER_INFO *
-  get_last_encoder() {
-    return last_encoder_info;
-  }
-
-  uint64_t
-  current_encoder_id() {
-    return last_encoder_info->encoder_id;
-  }
 
   uint32_t
   has_no_work_encoded_yet() {
-    return last_encoder_info->kind == EncoderKind::Nil ? 1u : 0u;
+    return cpu_arugment_heap_offset == 0;
   }
 
   uint64_t chunk_id;
   uint64_t frame_;
-  Obj<MTL::Buffer> visibility_result_heap;
+  std::unique_ptr<VisibilityResultReadback> visibility_readback;
 
 private:
   CommandQueue *queue;
@@ -336,38 +179,22 @@ private:
   Obj<MTL::Buffer> gpu_argument_heap;
   uint64_t cpu_arugment_heap_offset;
   uint64_t gpu_arugment_heap_offset;
-  MFunc<context> monoid;
-  Node<BFunc<context> *> monoid_list;
-  Node<BFunc<context> *> *list_end;
   Obj<MTL::CommandBuffer> attached_cmdbuf;
-  ENCODER_INFO init_encoder_info{EncoderKind::Nil, 0};
-  ENCODER_INFO *last_encoder_info;
-  uint64_t encoder_id;
+  
+  CommandList<ArgumentEncodingContext> list_enc;
 
   friend class CommandQueue;
 
 public:
-  CommandChunk() :
-      monoid(),
-      monoid_list{&monoid, nullptr},
-      list_end(&monoid_list),
-      last_encoder_info(&init_encoder_info) {}
+  CommandChunk() {}
 
   void
   reset() noexcept {
-    auto cur = monoid_list.next;
-    while (cur) {
-      assert((uint64_t)cur->value >= (uint64_t)cpu_argument_heap);
-      assert((uint64_t)cur->value < ((uint64_t)cpu_argument_heap + cpu_arugment_heap_offset));
-      cur->value->~BFunc<context>(); // call destructor
-      cur = cur->next;
-    }
+    visibility_readback = {};
+    list_enc.~CommandList();
     cpu_arugment_heap_offset = 0;
     gpu_arugment_heap_offset = 0;
-    monoid_list.next = nullptr;
-    list_end = &monoid_list;
     attached_cmdbuf = nullptr;
-    last_encoder_info = &init_encoder_info;
   }
 };
 
@@ -405,8 +232,8 @@ private:
   CaptureState capture_state;
 
 public:
-  DXMTCommandContext clear_cmd;
-  CounterPool counter_pool;
+  EmulatedCommandContext emulated_cmd;
+  ArgumentEncodingContext argument_encoding_ctx;
 
   CommandQueue(MTL::Device *device);
 
@@ -470,16 +297,6 @@ public:
   std::tuple<void *, MTL::Buffer *, uint64_t>
   AllocateTempBuffer(uint64_t seq, size_t size, size_t alignment) {
     return copy_temp_allocator.allocate(seq, cpu_coherent.load(std::memory_order_acquire), size, alignment);
-  }
-
-  uint64_t
-  AllocateCounter(uint32_t InitialValue) {
-    return counter_pool.AllocateCounter(CurrentSeqId(), InitialValue);
-  }
-
-  void
-  DiscardCounter(uint64_t CounterHandle) {
-    counter_pool.DiscardCounter(CurrentSeqId(), CounterHandle);
   }
 };
 
