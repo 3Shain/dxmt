@@ -98,14 +98,9 @@ public:
     try {
       switch (pDesc->Usage) {
       case D3D11_USAGE_DEFAULT:
-        if (!(pDesc->BindFlags & (D3D11_BIND_UNORDERED_ACCESS | D3D11_BIND_STREAM_OUTPUT | D3D11_BIND_RENDER_TARGET |
-                                  D3D11_BIND_DEPTH_STENCIL)))
-          return CreateDynamicBuffer(this, pDesc, pInitialData, ppBuffer);
-        return CreateDeviceBuffer(this, pDesc, pInitialData, ppBuffer);
       case D3D11_USAGE_IMMUTABLE:
-        return CreateDeviceBuffer(this, pDesc, pInitialData, ppBuffer);
       case D3D11_USAGE_DYNAMIC:
-        return CreateDynamicBuffer(this, pDesc, pInitialData, ppBuffer);
+        return dxmt::CreateBuffer(this, pDesc, pInitialData, ppBuffer);
       case D3D11_USAGE_STAGING:
         return CreateStagingBuffer(this, pDesc, pInitialData, ppBuffer);
       }
@@ -219,10 +214,7 @@ public:
     if (!ppDepthStencilView)
       return S_FALSE;
 
-    if (auto res = Com<IDXMTResource>::queryFrom(pResource); res != nullptr) {
-      return res->CreateDepthStencilView(pDesc, ppDepthStencilView);
-    }
-    return E_FAIL;
+    return static_cast<D3D11ResourceCommon *>(pResource)->CreateDepthStencilView(pDesc, ppDepthStencilView);
   }
 
   HRESULT STDMETHODCALLTYPE CreateInputLayout(
@@ -945,10 +937,7 @@ public:
     if (!ppSRView)
       return S_FALSE;
 
-    if (auto res = Com<IDXMTResource>::queryFrom(pResource); res != nullptr) {
-      return res->CreateShaderResourceView(pDesc, ppSRView);
-    }
-    return E_FAIL;
+    return static_cast<D3D11ResourceCommon *>(pResource)->CreateShaderResourceView(pDesc, ppSRView);
   }
 
   HRESULT STDMETHODCALLTYPE CreateUnorderedAccessView1(
@@ -962,10 +951,7 @@ public:
     if (!ppUAView)
       return S_FALSE;
 
-    if (auto res = Com<IDXMTResource>::queryFrom(pResource); res != nullptr) {
-      return res->CreateUnorderedAccessView(pDesc, ppUAView);
-    }
-    return E_FAIL;
+    return static_cast<D3D11ResourceCommon *>(pResource)->CreateUnorderedAccessView(pDesc, ppUAView);
   }
 
   HRESULT STDMETHODCALLTYPE CreateRenderTargetView1(
@@ -979,10 +965,7 @@ public:
     if (!ppRTView)
       return S_FALSE;
 
-    if (auto res = Com<IDXMTResource>::queryFrom(pResource); res != nullptr) {
-      return res->CreateRenderTargetView(pDesc, ppRTView);
-    }
-    return E_FAIL;
+    return static_cast<D3D11ResourceCommon *>(pResource)->CreateRenderTargetView(pDesc, ppRTView);
   }
 
   HRESULT STDMETHODCALLTYPE CreateQuery1(const D3D11_QUERY_DESC1 *desc,
@@ -1059,21 +1042,9 @@ public:
 
   Device &GetDXMTDevice() override { return device_; };
 
-#pragma region DynamicBufferPool
-
-  void ExchangeFromPool(MTL::Buffer **pBuffer, uint64_t *gpuAddr,
-                        void **cpuAddr, BufferPool *pool) final {
-    D3D11_ASSERT(*pBuffer);
-    D3D11_ASSERT(pool);
-    pool->GetNext(device_.queue().CurrentSeqId(),
-                  device_.queue().CoherentSeqId(), pBuffer, gpuAddr, cpuAddr);
-  }
-
   void CreateCommandList(ID3D11CommandList** pCommandList) final {
     commandlist_pool_->CreateCommandList(pCommandList);
   };
-
-#pragma endregion
 
 private:
   MTLDXGIObject<IMTLDXGIDevice> *m_container;

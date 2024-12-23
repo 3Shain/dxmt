@@ -1740,6 +1740,13 @@ auto metadata_get_texture_buffer_offset(pvalue metadata) -> IRValue {
   co_return ctx.builder.CreateTrunc(metadata, ctx.types._int);
 };
 
+auto metadata_get_texture_buffer_length(pvalue metadata) -> IRValue {
+  auto ctx = co_yield get_context();
+  co_return ctx.builder.CreateTrunc(
+    ctx.builder.CreateLShr(metadata, 32uLL), ctx.types._int
+  );
+};
+
 auto metadata_get_raw_buffer_length(pvalue metadata) -> IRValue {
   // unintentional but they have the same representation
   return metadata_get_texture_buffer_offset(metadata);
@@ -4263,15 +4270,8 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                   } else {
                     auto &[tex, srv_h, metadata] =
                       ctx.resource.srv_range_map[srv.range_id];
-                    auto offset = co_yield metadata_get_texture_buffer_offset(
+                    co_return co_yield metadata_get_texture_buffer_length(
                       co_yield metadata(nullptr)
-                    );
-                    co_return ctx.builder.CreateSub(
-                      co_yield call_get_texture_info(
-                        tex, co_yield srv_h(nullptr),
-                        air::TextureInfoType::width, co_yield get_int(0)
-                      ),
-                      offset
                     );
                   }
                 },
@@ -4292,15 +4292,8 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                   } else {
                     auto &[tex, uav_h, metadata] =
                       ctx.resource.uav_range_map[uav.range_id];
-                    auto offset = co_yield metadata_get_texture_buffer_offset(
+                    co_return co_yield metadata_get_texture_buffer_length(
                       co_yield metadata(nullptr)
-                    );
-                    co_return ctx.builder.CreateSub(
-                      co_yield call_get_texture_info(
-                        tex, co_yield uav_h(nullptr),
-                        air::TextureInfoType::width, co_yield get_int(0)
-                      ),
-                      offset
                     );
                   }
                 }

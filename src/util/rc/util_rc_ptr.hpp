@@ -12,7 +12,6 @@
 
 #include <ostream>
 #include "../util_likely.hpp"
-#include "objc-wrapper/abi.h"
 
 namespace dxmt {
 
@@ -23,24 +22,18 @@ namespace dxmt {
  * and \c decRef methods that adjust the reference count.
  * \tparam T Object type
  */
-template <typename T, bool DebugAllocation = false> class Rc {
-  template <typename Tx, bool DebugAllocationX> friend class Rc;
+template <typename T> class Rc {
+  template <typename Tx> friend class Rc;
 
 public:
   Rc() {}
   Rc(std::nullptr_t) {}
 
   Rc(T *object) : m_object(object) {
-    if constexpr (DebugAllocation) {
-      unix_printf("normal construct happen\n");
-    };
     this->incRef();
   }
 
   Rc(const Rc &other) : m_object(other.m_object) {
-    if constexpr (DebugAllocation) {
-      unix_printf("copy happen\n");
-    };
     this->incRef();
   }
 
@@ -49,9 +42,6 @@ public:
   }
 
   Rc(Rc &&other) : m_object(other.m_object) {
-    if constexpr (DebugAllocation) {
-      unix_printf("move happen\n");
-    };
     other.m_object = nullptr;
   }
 
@@ -95,14 +85,13 @@ public:
 
   ~Rc() {
     this->decRef();
-    if constexpr (DebugAllocation) {
-      unix_printf("destruct happen\n");
-    };
   }
 
   T &operator*() const { return *m_object; }
   T *operator->() const { return m_object; }
   T *ptr() const { return m_object; }
+
+  operator bool() const { return this->m_object != nullptr; }
 
   bool operator==(const Rc &other) const { return m_object == other.m_object; }
   bool operator!=(const Rc &other) const { return m_object != other.m_object; }
@@ -120,17 +109,7 @@ private:
 
   force_inline void decRef() const {
     if (m_object != nullptr) {
-      auto w = m_object->decRef();
-      if (w == 0) {
-        if constexpr (DebugAllocation) {
-          unix_printf("delete happen\n");
-        }
-        delete m_object;
-      } else {
-        if constexpr (DebugAllocation) {
-          unix_printf("decRef to %d\n", w);
-        };
-      }
+      m_object->decRef();
     }
   }
 };

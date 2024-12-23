@@ -26,11 +26,9 @@ public:
         buffer_len(this->buffer->length()), bytes_per_row(bytes_per_row),
         bytes_per_image(bytes_per_image) {}
 
-  bool UseCopyDestination(uint64_t seq_id, MTL_STAGING_RESOURCE *pBuffer,
+  void UseCopyDestination(uint64_t seq_id, MTL_STAGING_RESOURCE *pBuffer,
                           uint32_t *pBytesPerRow, uint32_t *pBytesPerImage) {
-    if (seq_id && mapped) {
-      return false;
-    }
+    assert(!mapped && "write to staging resource while being mapped");
     // coherent read-after-write
     cpu_coherent_after_finished_seq_id = std::max(seq_id, cpu_coherent_after_finished_seq_id);
     // coherent write-after-write
@@ -38,21 +36,17 @@ public:
     pBuffer->Buffer = buffer.ptr();
     *pBytesPerRow = bytes_per_row;
     *pBytesPerImage = bytes_per_image;
-    return true;
   };
 
-  bool UseCopySource(uint64_t seq_id, MTL_STAGING_RESOURCE *pBuffer,
+  void UseCopySource(uint64_t seq_id, MTL_STAGING_RESOURCE *pBuffer,
                      uint32_t *pBytesPerRow, uint32_t *pBytesPerImage) {
-    if (seq_id && mapped) {
-      return false;
-    }
+    assert(!mapped && "read from staging resource while being mapped");
     // read-after-read doesn't hurt anyway
     // coherent write-after-read
     gpu_occupied_until_finished_seq_id = std::max(seq_id, gpu_occupied_until_finished_seq_id);
     pBuffer->Buffer = buffer.ptr();
     *pBytesPerRow = bytes_per_row;
     *pBytesPerImage = bytes_per_image;
-    return true;
   };
 
   int64_t TryMap(uint64_t finished_seq_id,
@@ -102,19 +96,19 @@ public:
       : TResourceBase<tag_buffer, IMTLD3D11Staging>(*pDesc, device),
         internal(std::move(internal)) {}
 
-  bool UseCopyDestination(uint32_t Subresource, uint64_t seq_id,
+  void UseCopyDestination(uint32_t Subresource, uint64_t seq_id,
                           MTL_STAGING_RESOURCE *pBuffer, uint32_t *pBytesPerRow,
                           uint32_t *pBytesPerImage) override {
     D3D11_ASSERT(Subresource == 0);
-    return internal.UseCopyDestination(seq_id, pBuffer, pBytesPerRow,
+    internal.UseCopyDestination(seq_id, pBuffer, pBytesPerRow,
                                        pBytesPerImage);
   };
 
-  bool UseCopySource(uint32_t Subresource, uint64_t seq_id,
+  void UseCopySource(uint32_t Subresource, uint64_t seq_id,
                      MTL_STAGING_RESOURCE *pBuffer, uint32_t *pBytesPerRow,
                      uint32_t *pBytesPerImage) override {
     D3D11_ASSERT(Subresource == 0);
-    return internal.UseCopySource(seq_id, pBuffer, pBytesPerRow,
+    internal.UseCopySource(seq_id, pBuffer, pBytesPerRow,
                                   pBytesPerImage);
   };
 
@@ -135,6 +129,27 @@ public:
     internal.buffer->setLabel(
         NS::String::string((char *)Name, NS::ASCIIStringEncoding));
   }
+
+  Rc<Buffer>
+  buffer() final {
+    return {};
+  };
+  Rc<Texture>
+  texture() final {
+    return {};
+  };
+  BufferSlice
+  bufferSlice() final {
+    return {};
+  }
+  Com<IMTLDynamicBuffer>
+  dynamic() final {
+    return {};
+  }
+  Com<IMTLD3D11Staging>
+  staging() final {
+    return this;
+  }
 };
 
 HRESULT
@@ -148,9 +163,9 @@ CreateStagingBuffer(MTLD3D11Device *pDevice, const D3D11_BUFFER_DESC *pDesc,
   if (pInitialData) {
     memcpy(buffer->contents(), pInitialData->pSysMem, byte_width);
   }
-  *ppBuffer = ref(new StagingBuffer(
+  *ppBuffer = reinterpret_cast<ID3D11Buffer *>(ref(new StagingBuffer(
       pDesc, pDevice,
-      StagingBufferInternal(std::move(buffer), byte_width, byte_width)));
+      StagingBufferInternal(std::move(buffer), byte_width, byte_width))));
   return S_OK;
 }
 
@@ -170,19 +185,19 @@ public:
         subresources(std::move(subresources)),
         subresource_count(this->subresources.size()) {}
 
-  bool UseCopyDestination(uint32_t Subresource, uint64_t seq_id,
+  void UseCopyDestination(uint32_t Subresource, uint64_t seq_id,
                           MTL_STAGING_RESOURCE *pBuffer, uint32_t *pBytesPerRow,
                           uint32_t *pBytesPerImage) override {
     D3D11_ASSERT(Subresource < subresource_count);
-    return subresources.at(Subresource)
+    subresources.at(Subresource)
         .UseCopyDestination(seq_id, pBuffer, pBytesPerRow, pBytesPerImage);
   };
 
-  bool UseCopySource(uint32_t Subresource, uint64_t seq_id,
+  void UseCopySource(uint32_t Subresource, uint64_t seq_id,
                      MTL_STAGING_RESOURCE *pBuffer, uint32_t *pBytesPerRow,
                      uint32_t *pBytesPerImage) override {
     D3D11_ASSERT(Subresource < subresource_count);
-    return subresources.at(Subresource)
+    subresources.at(Subresource)
         .UseCopySource(seq_id, pBuffer, pBytesPerRow, pBytesPerImage);
   };
 
@@ -212,6 +227,27 @@ public:
       sub.buffer->setLabel(
           NS::String::string((char *)Name, NS::ASCIIStringEncoding));
     }
+  }
+
+  Rc<Buffer>
+  buffer() final {
+    return {};
+  };
+  Rc<Texture>
+  texture() final {
+    return {};
+  };
+  BufferSlice
+  bufferSlice() final {
+    return {};
+  }
+  Com<IMTLDynamicBuffer>
+  dynamic() final {
+    return {};
+  }
+  Com<IMTLD3D11Staging>
+  staging() final {
+    return this;
   }
 };
 
@@ -251,8 +287,8 @@ HRESULT CreateStagingTextureInternal(MTLD3D11Device *pDevice,
     subresources.push_back(StagingBufferInternal(std::move(buffer), bpr, bpi));
   }
 
-  *ppTexture = ref(
-      new StagingTexture<tag>(&finalDesc, pDevice, std::move(subresources)));
+  *ppTexture = reinterpret_cast<typename tag::COM_IMPL *>(ref(
+      new StagingTexture<tag>(&finalDesc, pDevice, std::move(subresources))));
   return S_OK;
 }
 

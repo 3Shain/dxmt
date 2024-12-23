@@ -149,15 +149,6 @@ using ShaderVariant =
                  ShaderVariantTessellationVertex, ShaderVariantTessellationHull,
                  ShaderVariantTessellationDomain, ShaderVariantVertexStreamOutput>;
 
-enum class ShaderType {
-  Vertex = 0,
-  Pixel = 1,
-  Geometry = 2,
-  Hull = 3,
-  Domain = 4,
-  Compute = 5
-};
-
 class CompiledShader : public IMTLThreadpoolWork {
 public:
   virtual ~CompiledShader() {};
