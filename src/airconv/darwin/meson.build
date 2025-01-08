@@ -1,35 +1,24 @@
+native_llvm_path = get_option('native_llvm_path')
 
-use_local_native_llvm = get_option('local_native_llvm')
-
-if use_local_native_llvm
-# At project root:
-# 
-# mkdir -p ./toolchains/llvm-darwin-build
-# cmake -B ./toolchains/llvm-darwin-build -S ./toolchains/llvm-project/llvm-darwin \
-#   -DCMAKE_INSTALL_PREFIX="$(pwd)/toolchains/llvm-darwin" \
-#   -DLLVM_ENABLE_ASSERTIONS=On \
-#   -DCMAKE_BUILD_TYPE=Release \
-#   -DBUG_REPORT_URL="https://github.com/3Shain/dxmt" \
-#   -DPACKAGE_VENDOR="DXMT" \
-#   -DLLVM_VERSION_PRINTER_SHOW_HOST_TARGET_INFO=Off \
-#   -G Ninja
-# pushd ./toolchains/llvm-darwin-build
-# ninja
-# ninja install
-# popd
-
-llvm_include_path_darwin = include_directories('../../../toolchains/llvm-darwin/include') # FIXME: in favor of path relative to project
-llvm_ld_flags_darwin = [
- '-L'+join_paths(meson.source_root(), 'toolchains/llvm-darwin/lib'),
- '-lm', '-lz', '-lcurses', '-lxml2'
-]
+if not native_llvm_path.startswith('/')
+  # Meson only allows relative include paths in case the toolchains are located inside
+  # of the project source root, so handle that here.
+  llvm_include_path_darwin = include_directories(join_paths('../../..', native_llvm_path, 'include'))
+  native_llvm_path = join_paths(meson.project_source_root(), native_llvm_path)
 else
-# `brew install llvm@15`
-llvm_include_path_darwin = include_directories('/usr/local/opt/llvm@15/include') # FIXME: in favor of path relative to project
+  llvm_include_path_darwin = include_directories(join_paths(native_llvm_path, 'include'))
+endif
+
 llvm_ld_flags_darwin = [
- '-L'+join_paths('/usr/local/opt/llvm@15/lib'),
- '-lm', '-lz', '-lcurses', '-lxml2', '/usr/local/opt/zstd/lib/libzstd.a', '/usr/local/opt/llvm@15/lib/libunwind.a'
+  '-L'+join_paths(native_llvm_path, 'lib'),
+  '-lm', '-lz', '-lcurses', '-lxml2'
 ]
+
+if native_llvm_path.startswith('/usr/local/opt')
+  llvm_ld_flags_darwin = [
+    llvm_ld_flags_darwin,
+    '/usr/local/opt/zstd/lib/libzstd.a', '/usr/local/opt/llvm@15/lib/libunwind.a'
+  ]
 endif
 
 airconv_lib_darwin = static_library('airconv', airconv_src,
