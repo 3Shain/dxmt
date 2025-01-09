@@ -5,6 +5,7 @@
 #include "com/com_pointer.hpp"
 #include "d3d11_device.hpp"
 #include "dxmt_buffer_pool.hpp"
+#include "dxmt_dynamic.hpp"
 #include "dxmt_format.hpp"
 #include "dxmt_texture.hpp"
 #include "mtld11_resource.hpp"
@@ -97,6 +98,7 @@ public:
   BufferSlice bufferSlice() final { return {};}
   Com<IMTLDynamicBuffer> dynamic() final { return this; }
   Com<IMTLD3D11Staging> staging() final { return nullptr; }
+  Rc<DynamicBuffer> dynamicBuffer(UINT*, UINT*) final { return {}; };
 
   void
   RotateBuffer(MTLD3D11Device *exch) override {

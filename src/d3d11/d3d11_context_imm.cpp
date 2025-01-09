@@ -88,6 +88,54 @@ public:
   HRESULT
   Map(ID3D11Resource *pResource, UINT Subresource, D3D11_MAP MapType, UINT MapFlags,
       D3D11_MAPPED_SUBRESOURCE *pMappedResource) override {
+    UINT buffer_length = 0;
+    UINT bind_flag = 0;
+    if (auto dynamic = GetDynamicBuffer(pResource, &buffer_length, &bind_flag)) {
+      D3D11_MAPPED_SUBRESOURCE Out;
+      switch (MapType) {
+      case D3D11_MAP_READ:
+      case D3D11_MAP_WRITE:
+      case D3D11_MAP_READ_WRITE:
+        return E_INVALIDARG;
+      case D3D11_MAP_WRITE_DISCARD: {
+        if (bind_flag & D3D11_BIND_VERTEX_BUFFER) {
+          state_.InputAssembler.VertexBuffers.set_dirty();
+        }
+        if (bind_flag & D3D11_BIND_CONSTANT_BUFFER) {
+          for (auto &stage : state_.ShaderStages) {
+            stage.ConstantBuffers.set_dirty();
+          }
+        }
+        if (bind_flag & D3D11_BIND_SHADER_RESOURCE) {
+          for (auto &stage : state_.ShaderStages) {
+            stage.SRVs.set_dirty();
+          }
+        }
+
+        dynamic->discard(ctx_state.cmd_queue.CurrentSeqId(), std::move(dynamic->immediateContextAllocation));
+        dynamic->immediateContextAllocation = dynamic->allocate(ctx_state.cmd_queue.CoherentSeqId());
+        Emit([allocation = dynamic->immediateContextAllocation,
+              buffer = Rc(dynamic->buffer)](ArgumentEncodingContext &enc) mutable {
+          auto _ = buffer->rename(forward_rc(allocation));
+        });
+
+        Out.pData = dynamic->immediateContextAllocation->mappedMemory;
+        Out.RowPitch = buffer_length;
+        Out.DepthPitch = buffer_length;
+        break;
+      }
+      case D3D11_MAP_WRITE_NO_OVERWRITE: {
+        Out.pData = dynamic->immediateContextAllocation->mappedMemory;
+        Out.RowPitch = buffer_length;
+        Out.DepthPitch = buffer_length;
+        break;
+      }
+      }
+      if (pMappedResource) {
+        *pMappedResource = Out;
+      }
+      return S_OK;
+    }
     if (auto dynamic = GetDynamic(pResource)) {
       D3D11_MAPPED_SUBRESOURCE Out;
       switch (MapType) {
@@ -162,6 +210,11 @@ public:
 
   void
   Unmap(ID3D11Resource *pResource, UINT Subresource) override {
+    UINT buffer_length = 0;
+    UINT bind_flag = 0;
+    if (auto dynamic = GetDynamicBuffer(pResource, &buffer_length, &bind_flag)) {
+      return;
+    }
     if (auto dynamic = GetDynamic(pResource)) {
       return;
     }

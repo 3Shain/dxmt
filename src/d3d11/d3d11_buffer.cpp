@@ -2,7 +2,7 @@
 #include "com/com_pointer.hpp"
 #include "d3d11_device.hpp"
 #include "dxmt_buffer.hpp"
-#include "dxmt_buffer_pool.hpp"
+#include "dxmt_dynamic.hpp"
 #include "dxmt_format.hpp"
 #include "mtld11_resource.hpp"
 
@@ -16,17 +16,16 @@ struct BufferViewInfo {
   uint32_t byteWidth;
 };
 
-class D3D11Buffer : public TResourceBase<tag_buffer, IMTLDynamicBuffer> {
+class D3D11Buffer : public TResourceBase<tag_buffer> {
 private:
   Rc<Buffer> buffer_;
-  Rc<BufferAllocation> allocation;
 #ifdef DXMT_DEBUG
   std::string debug_name;
 #endif
   bool structured;
   bool allow_raw_view;
 
-  std::unique_ptr<BufferPool2> pool;
+  Rc<DynamicBuffer> dynamic_;
 
   using SRVBase = TResourceViewBase<tag_shader_resource_view<D3D11Buffer>>;
 
@@ -74,7 +73,7 @@ private:
 
 public:
   D3D11Buffer(const tag_buffer::DESC1 *pDesc, const D3D11_SUBRESOURCE_DATA *pInitialData, MTLD3D11Device *device) :
-      TResourceBase<tag_buffer, IMTLDynamicBuffer>(*pDesc, device) {
+      TResourceBase<tag_buffer>(*pDesc, device) {
     buffer_ = new Buffer(
         pDesc->BindFlags & D3D11_BIND_UNORDERED_ACCESS ? pDesc->ByteWidth + 16 : pDesc->ByteWidth,
         device->GetMTLDevice()
@@ -87,35 +86,17 @@ public:
       flags.set(BufferAllocationFlag::GpuReadonly);
     if (pDesc->Usage != D3D11_USAGE_DYNAMIC)
       flags.set(BufferAllocationFlag::GpuManaged);
-    pool = std::make_unique<BufferPool2>(buffer_.ptr(), flags);
-    RotateBuffer(m_parent);
+    auto allocation = buffer_->allocate(flags);
     if (pInitialData) {
       memcpy(allocation->mappedMemory, pInitialData->pSysMem, pDesc->ByteWidth);
     }
-    auto _ = buffer_->rename(Rc(allocation));
+    auto _ = buffer_->rename(std::move(allocation));
     D3D11_ASSERT(_.ptr() == nullptr);
     structured = pDesc->MiscFlags & D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
     allow_raw_view = pDesc->MiscFlags & D3D11_RESOURCE_MISC_BUFFER_ALLOW_RAW_VIEWS;
-  }
-
-  void *
-  GetMappedMemory(UINT *pBytesPerRow, UINT *pBytesPerImage) override {
-    *pBytesPerRow = desc.ByteWidth;
-    *pBytesPerImage = desc.ByteWidth;
-    assert(allocation->mappedMemory);
-    return allocation->mappedMemory;
-  };
-
-  UINT
-  GetSize(UINT *pBytesPerRow, UINT *pBytesPerImage) override {
-    *pBytesPerRow = desc.ByteWidth;
-    *pBytesPerImage = desc.ByteWidth;
-    return desc.ByteWidth;
-  };
-
-  D3D11_BIND_FLAG
-  GetBindFlag() override {
-    return (D3D11_BIND_FLAG)desc.BindFlags;
+    if (!(desc.BindFlags & (D3D11_BIND_UNORDERED_ACCESS | D3D11_BIND_STREAM_OUTPUT))) {
+      dynamic_ = new DynamicBuffer(buffer_.ptr(), flags);
+    }
   }
 
   HRESULT
@@ -123,18 +104,8 @@ public:
     if (ppvObject == nullptr)
       return E_POINTER;
 
-    if ((desc.BindFlags & (D3D11_BIND_UNORDERED_ACCESS | D3D11_BIND_STREAM_OUTPUT)) &&
-        __uuidof(IMTLDynamicBuffer) == riid)
-      return E_NOINTERFACE;
-
-    return TResourceBase<tag_buffer, IMTLDynamicBuffer>::QueryInterface(riid, ppvObject);
+    return TResourceBase<tag_buffer>::QueryInterface(riid, ppvObject);
   }
-
-  dxmt::Rc<dxmt::Buffer> __buffer_dyn() final { return buffer_; };
-  dxmt::Rc<dxmt::Texture> __texture_dyn()final { return {}; };
-  bool __isBuffer_dyn() final { return true; };
-  dxmt::Rc<dxmt::BufferAllocation> __bufferAllocated() final { return allocation; };
-  dxmt::Rc<dxmt::TextureAllocation> __textureAllocated() final { return {}; };
 
   Rc<Buffer>
   buffer() final {
@@ -150,26 +121,17 @@ public:
   }
   Com<IMTLDynamicBuffer>
   dynamic() final {
-    return (desc.BindFlags & (D3D11_BIND_UNORDERED_ACCESS | D3D11_BIND_STREAM_OUTPUT)) ? nullptr : this;
+    return nullptr;
   }
   Com<IMTLD3D11Staging>
   staging() final {
     return nullptr;
   }
-
-  void
-  RotateBuffer(MTLD3D11Device *exch) override {
-    auto &queue = exch->GetDXMTDevice().queue();
-    if(allocation.ptr()) {
-      pool->discard(std::move(allocation), queue.CurrentSeqId());
-    }
-    allocation = pool->allocate(queue.CoherentSeqId());
-#ifdef DXMT_DEBUG
-    {
-      auto pool = transfer(NS::AutoreleasePool::alloc()->init());
-      buffer_dynamic->setLabel(NS::String::string(debug_name.c_str(), NS::ASCIIStringEncoding));
-    }
-#endif
+  Rc<DynamicBuffer>
+  dynamicBuffer(UINT *pBufferLength, UINT *pBindFlags) override {
+    *pBufferLength = desc.ByteWidth;
+    *pBindFlags = desc.BindFlags;
+    return dynamic_;
   }
 
   HRESULT

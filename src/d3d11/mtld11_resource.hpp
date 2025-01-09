@@ -1,5 +1,6 @@
 #pragma once
 #include "dxmt_buffer.hpp"
+#include "dxmt_dynamic.hpp"
 #include "dxmt_texture.hpp"
 #include "Metal/MTLBuffer.hpp"
 #include "Metal/MTLTexture.hpp"
@@ -165,11 +166,16 @@ struct D3D11ResourceCommon : ID3D11Resource {
   virtual Rc<Texture> texture() = 0;
   virtual Com<IMTLD3D11Staging> staging() = 0;
   virtual Com<IMTLDynamicBuffer> dynamic() = 0;
+  virtual Rc<DynamicBuffer> dynamicBuffer(UINT *pBufferLength, UINT *pBindFlags) = 0;
 };
 
 inline Com<IMTLDynamicBuffer>
 GetDynamic(ID3D11Resource *pResource) {
   return static_cast<D3D11ResourceCommon *>(pResource)->dynamic();
+}
+inline Rc<DynamicBuffer>
+GetDynamicBuffer(ID3D11Resource *pResource, UINT *pBufferLength, UINT *pBindFlags) {
+  return static_cast<D3D11ResourceCommon *>(pResource)->dynamicBuffer(pBufferLength, pBindFlags);
 }
 inline Com<IMTLD3D11Staging>
 GetStaging(ID3D11Resource *pResource) {
