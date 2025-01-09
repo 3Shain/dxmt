@@ -31,6 +31,7 @@ private:
   Flags<BufferAllocationFlag> flags_;
   std::atomic<uint32_t> refcount_ = {0u};
   std::queue<QueueEntry> fifo;
+  dxmt::mutex mutex_;
 };
 
 class DynamicTexture {

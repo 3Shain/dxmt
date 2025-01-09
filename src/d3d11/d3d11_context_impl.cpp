@@ -3660,8 +3660,83 @@ public:
     }
   }
 
-  void RestoreEncodingContextState() {
-    IMPLEMENT_ME
+  template <PipelineStage Stage>
+  void RestoreEncodingContextStageState() {
+      auto &ShaderStage = state_.ShaderStages[Stage];
+      for (const auto &[slot, entry] : ShaderStage.ConstantBuffers) {
+        Emit([=, buffer = entry.Buffer->buffer(), offset = entry.FirstConstant << 4](ArgumentEncodingContext &enc
+             ) mutable { enc.bindConstantBuffer<Stage>(slot, offset, forward_rc(buffer)); });
+      }
+      for (const auto &[slot, entry] : ShaderStage.Samplers) {
+        Emit([=, sampler = entry.Sampler->GetSamplerState()](ArgumentEncodingContext &enc) {
+          enc.bindSampler<Stage>(slot, sampler);
+        });
+      }
+      for (const auto &[slot, entry] : ShaderStage.SRVs) {
+        auto pView = entry.SRV.ptr();
+        if (auto buffer = pView->buffer()) {
+          Emit([=, buffer = std::move(buffer), viewId = pView->viewId(),
+                slice = pView->bufferSlice()](ArgumentEncodingContext &enc) mutable {
+            enc.bindBuffer<Stage>(slot, forward_rc(buffer), viewId, slice);
+          });
+        } else {
+          Emit([=, texture = pView->texture(), viewId = pView->viewId()](ArgumentEncodingContext &enc) mutable {
+            enc.bindTexture<Stage>(slot, forward_rc(texture), viewId);
+          });
+        }
+      }
+  }
+
+  void
+  RestoreEncodingContextState() {
+    for (const auto &[slot, element] : state_.InputAssembler.VertexBuffers) {
+      Emit([=, buffer = element.Buffer->buffer(), offset = element.Offset,
+            stride = element.Stride](ArgumentEncodingContext &enc) mutable {
+        enc.bindVertexBuffer(slot, offset, stride, forward_rc(buffer));
+      });
+    }
+
+    if (state_.InputAssembler.IndexBuffer) {
+      Emit([buffer = state_.InputAssembler.IndexBuffer->buffer()](ArgumentEncodingContext &enc) mutable {
+        enc.bindIndexBuffer(forward_rc(buffer));
+      });
+    }
+
+    {
+      RestoreEncodingContextStageState<PipelineStage::Vertex>();
+      RestoreEncodingContextStageState<PipelineStage::Pixel>();
+      RestoreEncodingContextStageState<PipelineStage::Geometry>();
+      RestoreEncodingContextStageState<PipelineStage::Hull>();
+      RestoreEncodingContextStageState<PipelineStage::Domain>();
+      RestoreEncodingContextStageState<PipelineStage::Compute>();
+    }
+
+    for (const auto &[slot, entry] : state_.OutputMerger.UAVs) {
+      auto pUAV = entry.View.ptr();
+      if (auto buffer = pUAV->buffer()) {
+        Emit([=, buffer = std::move(buffer), viewId = pUAV->viewId(), counter = pUAV->counter(),
+              slice = pUAV->bufferSlice()](ArgumentEncodingContext &enc) mutable {
+          enc.bindOutputBuffer<PipelineStage::Pixel>(slot, forward_rc(buffer), viewId, forward_rc(counter), slice);
+        });
+      } else {
+        Emit([=, texture = pUAV->texture(), viewId = pUAV->viewId()](ArgumentEncodingContext &enc) mutable {
+          enc.bindOutputTexture<PipelineStage::Pixel>(slot, forward_rc(texture), viewId);
+        });
+      }
+    }
+    for (const auto &[slot, entry] : state_.OutputMerger.UAVs) {
+      auto pUAV = entry.View.ptr();
+      if (auto buffer = pUAV->buffer()) {
+        Emit([=, buffer = std::move(buffer), viewId = pUAV->viewId(), counter = pUAV->counter(),
+              slice = pUAV->bufferSlice()](ArgumentEncodingContext &enc) mutable {
+          enc.bindOutputBuffer<PipelineStage::Compute>(slot, forward_rc(buffer), viewId, forward_rc(counter), slice);
+        });
+      } else {
+        Emit([=, texture = pUAV->texture(), viewId = pUAV->viewId()](ArgumentEncodingContext &enc) mutable {
+          enc.bindOutputTexture<PipelineStage::Compute>(slot, forward_rc(texture), viewId);
+        });
+      }
+    }
   }
 
   void ResetEncodingContextState() {
@@ -3765,7 +3840,16 @@ public:
 
   void
   Reset() {
+    list.~CommandList();
     staging_allocator.free_blocks(++local_coherence);
+
+    auto current_seq_id = m_parent->GetDXMTDevice().queue().CurrentSeqId();
+
+    while (!used_dynamic_allocations.empty()) {
+      auto &[dynamic, allocation] = used_dynamic_allocations.back();
+      dynamic->discard(current_seq_id, std::move(allocation));
+      used_dynamic_allocations.pop_back();
+    }
 
     cpu_arugment_heap_offset = 0;
     promote_flush = false;
@@ -3846,6 +3930,8 @@ public:
 #pragma endregion
 
   bool promote_flush = false;
+
+  std::vector<std::pair<DynamicBuffer *, Rc<BufferAllocation>>> used_dynamic_allocations;
 
 private:
   UINT context_flag;
