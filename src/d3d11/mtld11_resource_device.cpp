@@ -4,6 +4,7 @@
 #include "d3d11_device.hpp"
 #include "d3d11_texture.hpp"
 #include "d3d11_view.hpp"
+#include "dxmt_dynamic.hpp"
 #include "dxmt_texture.hpp"
 #include "mtld11_resource.hpp"
 
@@ -149,6 +150,7 @@ public:
   BufferSlice bufferSlice() final { return {};}
   Com<IMTLDynamicBuffer> dynamic() final { return nullptr; }
   Com<IMTLD3D11Staging> staging() final { return nullptr; }
+  Rc<DynamicBuffer> dynamicBuffer(UINT*, UINT*) final { return {}; }
 
   HRESULT CreateRenderTargetView(const D3D11_RENDER_TARGET_VIEW_DESC1 *pDesc,
                                  ID3D11RenderTargetView1 **ppView) override {

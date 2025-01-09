@@ -1,5 +1,6 @@
 #include "d3d11_private.h"
 #include "d3d11_enumerable.hpp"
+#include "dxmt_dynamic.hpp"
 #include "mtld11_resource.hpp"
 #include "objc_pointer.hpp"
 
@@ -150,6 +151,10 @@ public:
   staging() final {
     return this;
   }
+  Rc<DynamicBuffer>
+  dynamicBuffer(UINT*, UINT*) final {
+    return {};
+  };
 };
 
 HRESULT
@@ -249,6 +254,10 @@ public:
   staging() final {
     return this;
   }
+  Rc<DynamicBuffer>
+  dynamicBuffer(UINT*, UINT*) final {
+    return {};
+  };
 };
 
 #pragma endregion
