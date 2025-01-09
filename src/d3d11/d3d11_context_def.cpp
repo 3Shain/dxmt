@@ -7,7 +7,9 @@
 namespace dxmt {
 
 struct DeferredContextInternalState {
+  CommandQueue &cmd_queue;
   Com<MTLD3D11CommandList> current_cmdlist;
+  std::unordered_map<DynamicBuffer *, Rc<BufferAllocation>> current_dynamic_buffer_allocations;
 };
 
 template<typename Object> Rc<Object> forward_rc(Rc<Object>& obj) {
@@ -60,7 +62,7 @@ class MTLD3D11DeferredContext : public DeferredContextBase {
 public:
   MTLD3D11DeferredContext(MTLD3D11Device *pDevice, UINT ContextFlags) :
       DeferredContextBase(pDevice, ctx_state),
-      ctx_state(),
+      ctx_state({pDevice->GetDXMTDevice().queue(), {}}),
       context_flag(ContextFlags) {
     device->CreateCommandList((ID3D11CommandList **)&ctx_state.current_cmdlist);
   }
@@ -89,13 +91,68 @@ public:
   HRESULT
   Map(ID3D11Resource *pResource, UINT Subresource, D3D11_MAP MapType, UINT MapFlags,
       D3D11_MAPPED_SUBRESOURCE *pMappedResource) override {
-    IMPLEMENT_ME
+    UINT buffer_length = 0;
+    UINT bind_flag = 0;
+    if (auto dynamic = GetDynamicBuffer(pResource, &buffer_length, &bind_flag)) {
+      D3D11_MAPPED_SUBRESOURCE Out;
+      switch (MapType) {
+      case D3D11_MAP_READ:
+      case D3D11_MAP_WRITE:
+      case D3D11_MAP_READ_WRITE:
+        return E_INVALIDARG;
+      case D3D11_MAP_WRITE_DISCARD: {
+        if (bind_flag & D3D11_BIND_VERTEX_BUFFER) {
+          state_.InputAssembler.VertexBuffers.set_dirty();
+        }
+        if (bind_flag & D3D11_BIND_CONSTANT_BUFFER) {
+          for (auto &stage : state_.ShaderStages) {
+            stage.ConstantBuffers.set_dirty();
+          }
+        }
+        if (bind_flag & D3D11_BIND_SHADER_RESOURCE) {
+          for (auto &stage : state_.ShaderStages) {
+            stage.SRVs.set_dirty();
+          }
+        }
+        Rc<BufferAllocation> new_allocation = dynamic->allocate(ctx_state.cmd_queue.CoherentSeqId());
+        // track the current allocation in case of a following NO_OVERWRITE map
+        ctx_state.current_dynamic_buffer_allocations.insert_or_assign(dynamic.ptr(), new_allocation);
+        // collect allocated buffers and recycle them when the command list is released
+        ctx_state.current_cmdlist->used_dynamic_allocations.push_back({dynamic.ptr(), new_allocation});
+        Emit([allocation = new_allocation, buffer = Rc(dynamic->buffer)](ArgumentEncodingContext &enc) mutable {
+          auto _ = buffer->rename(forward_rc(allocation));
+        });
+
+        Out.pData = new_allocation->mappedMemory;
+        Out.RowPitch = buffer_length;
+        Out.DepthPitch = buffer_length;
+        break;
+      }
+      case D3D11_MAP_WRITE_NO_OVERWRITE: {
+        auto ret = ctx_state.current_dynamic_buffer_allocations.find(dynamic.ptr());
+        if (ret == ctx_state.current_dynamic_buffer_allocations.end()) {
+          ERR("Invalid NO_OVERWRITE map on deferred context occurs without any prior DISCARD map.");
+          return E_INVALIDARG;
+        }
+        Out.pData = ret->second->mappedMemory;
+        Out.RowPitch = buffer_length;
+        Out.DepthPitch = buffer_length;
+        break;
+      }
+      }
+      if (pMappedResource) {
+        *pMappedResource = Out;
+      }
+      return S_OK;
+    }
     return E_FAIL;
   }
 
   void
   Unmap(ID3D11Resource *pResource, UINT Subresource) override {
-    if (auto dynamic = GetDynamic(pResource)) {
+    UINT buffer_length = 0;
+    UINT bind_flag = 0;
+    if (auto dynamic = GetDynamicBuffer(pResource, &buffer_length, &bind_flag)) {
       return;
     }
     IMPLEMENT_ME;
@@ -173,6 +230,7 @@ public:
 
     *ppCommandList = std::move(ctx_state.current_cmdlist);
     device->CreateCommandList((ID3D11CommandList **)&ctx_state.current_cmdlist);
+    ctx_state.current_dynamic_buffer_allocations.clear();
 
     if (RestoreDeferredContextState)
       RestoreEncodingContextState();

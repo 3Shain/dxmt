@@ -149,5 +149,65 @@ public:
     }
     return false;
   }
+
+  class bound_iterator {
+    const BindingSet &binding_set;
+    size_t current;
+
+    void
+    advance_to_next() {
+      while (current < NumElements && !binding_set.bound.get(current)) {
+        ++current;
+      }
+    }
+
+  public:
+    using iterator_category = std::forward_iterator_tag;
+    using value_type = std::pair<size_t, const Element &>;
+    using difference_type = std::ptrdiff_t;
+    using pointer = void;
+    using reference = std::pair<size_t, const Element &>;
+
+    bound_iterator(const BindingSet &set, size_t start) : binding_set(set), current(start) {
+      advance_to_next();
+    }
+
+    reference
+    operator*() const {
+      return std::pair<size_t, const Element&>(current, binding_set.storage[current]);
+    }
+
+    bound_iterator &
+    operator++() {
+      ++current;
+      advance_to_next();
+      return *this;
+    }
+
+    bound_iterator
+    operator++(int) {
+      bound_iterator temp = *this;
+      ++(*this);
+      return temp;
+    }
+
+    bool
+    operator==(const bound_iterator &other) const {
+      return current == other.current;
+    }
+    bool
+    operator!=(const bound_iterator &other) const {
+      return !(*this == other);
+    }
+  };
+
+  bound_iterator
+  begin() const {
+    return bound_iterator(*this, 0);
+  }
+  bound_iterator
+  end() const {
+    return bound_iterator(*this, NumElements);
+  }
 };
 } // namespace dxmt
