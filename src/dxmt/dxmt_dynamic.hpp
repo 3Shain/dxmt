@@ -39,12 +39,26 @@ public:
   void incRef();
   void decRef();
 
-  Rc<TextureAllocation> discardAndAllocateImmediate(uint64_t current_seq_id, uint64_t coherent_seq_id);
+  Rc<TextureAllocation> allocate(uint64_t coherent_seq_id);
+  void discard(uint64_t current_seq_id, Rc<TextureAllocation> &&allocation);
 
+  DynamicTexture(Texture *buffer, Flags<TextureAllocationFlag> flags);
+
+  struct QueueEntry {
+    Rc<TextureAllocation> allocation;
+    uint64_t will_free_at;
+  };
+  /**
+   * readonly
+   */
+  Texture *texture;
+
+  Rc<TextureAllocation> immediateContextAllocation;
 private:
-  Rc<TextureAllocation> current_;
-  Flags<TextureAllocationFlag> allocation_flags_;
+  Flags<TextureAllocationFlag> flags_;
   std::atomic<uint32_t> refcount_ = {0u};
+  std::queue<QueueEntry> fifo;
+  dxmt::mutex mutex_;
 };
 
 } // namespace dxmt

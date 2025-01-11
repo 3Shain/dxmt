@@ -148,9 +148,9 @@ public:
   Rc<Buffer> buffer() final { return {}; };
   Rc<Texture> texture() final { return this->underlying_texture_; };
   BufferSlice bufferSlice() final { return {};}
-  Com<IMTLDynamicBuffer> dynamic() final { return nullptr; }
   Com<IMTLD3D11Staging> staging() final { return nullptr; }
   Rc<DynamicBuffer> dynamicBuffer(UINT*, UINT*) final { return {}; }
+  Rc<DynamicTexture> dynamicTexture(UINT*, UINT*) final { return {}; };
 
   HRESULT CreateRenderTargetView(const D3D11_RENDER_TARGET_VIEW_DESC1 *pDesc,
                                  ID3D11RenderTargetView1 **ppView) override {

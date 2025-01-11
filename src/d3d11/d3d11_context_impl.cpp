@@ -849,9 +849,10 @@ public:
         copy_offset = pDstBox->left;
         copy_len = pDstBox->right - copy_offset;
       }
-
-      if (auto dynamic = GetDynamic(pDstResource)) {
-        if (copy_len == desc.ByteWidth) {
+      UINT buffer_len = 0;
+      UINT unused_bind_flag = 0;
+      if (auto dynamic = GetDynamicBuffer(pDstResource, &buffer_len, &unused_bind_flag)) {
+        if (copy_len == buffer_len) {
           D3D11_MAPPED_SUBRESOURCE mapped;
           Map(pDstResource, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
           memcpy(mapped.pData, pSrcData, copy_len);
@@ -3851,6 +3852,11 @@ public:
       dynamic->discard(current_seq_id, std::move(allocation));
       used_dynamic_allocations.pop_back();
     }
+    while (!used_dynamic_texture_allocations.empty()) {
+      auto &[dynamic, allocation] = used_dynamic_texture_allocations.back();
+      dynamic->discard(current_seq_id, std::move(allocation));
+      used_dynamic_texture_allocations.pop_back();
+    }
     visibility_query_count = 0;
     issued_visibility_query.clear();
     issued_event_query.clear();
@@ -3936,6 +3942,7 @@ public:
   bool promote_flush = false;
 
   std::vector<std::pair<DynamicBuffer *, Rc<BufferAllocation>>> used_dynamic_allocations;
+  std::vector<std::pair<DynamicTexture *, Rc<TextureAllocation>>> used_dynamic_texture_allocations;
   uint32_t visibility_query_count = 0;
   std::vector<std::pair<Com<IMTLD3DOcclusionQuery>, uint32_t>> issued_visibility_query;
   std::vector<Com<IMTLD3DEventQuery>> issued_event_query;

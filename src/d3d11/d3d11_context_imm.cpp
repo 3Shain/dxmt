@@ -136,7 +136,7 @@ public:
       }
       return S_OK;
     }
-    if (auto dynamic = GetDynamic(pResource)) {
+    if (auto dynamic = GetDynamicTexture(pResource, &buffer_length, &bind_flag)) {
       D3D11_MAPPED_SUBRESOURCE Out;
       switch (MapType) {
       case D3D11_MAP_READ:
@@ -144,37 +144,26 @@ public:
       case D3D11_MAP_READ_WRITE:
         return E_INVALIDARG;
       case D3D11_MAP_WRITE_DISCARD: {
-        dynamic->RotateBuffer(device);
-        auto bind_flag = dynamic->GetBindFlag();
-        if (bind_flag & D3D11_BIND_VERTEX_BUFFER) {
-          state_.InputAssembler.VertexBuffers.set_dirty();
+        for (auto &stage : state_.ShaderStages) {
+          stage.SRVs.set_dirty();
         }
-        if (bind_flag & D3D11_BIND_CONSTANT_BUFFER) {
-          for (auto &stage : state_.ShaderStages) {
-            stage.ConstantBuffers.set_dirty();
-          }
-        }
-        if (bind_flag & D3D11_BIND_SHADER_RESOURCE) {
-          for (auto &stage : state_.ShaderStages) {
-            stage.SRVs.set_dirty();
-          }
-        }
-        Out.pData = dynamic->GetMappedMemory(&Out.RowPitch, &Out.DepthPitch);
-        if (dynamic->__isBuffer_dyn()) {
-          Emit([buffer = dynamic->__buffer_dyn(),
-                allocation = dynamic->__bufferAllocated()](ArgumentEncodingContext &enc) mutable {
-            auto _ = buffer->rename(forward_rc(allocation));
-          });
-        } else {
-          Emit([texture = dynamic->__texture_dyn(),
-                allocation = dynamic->__textureAllocated()](ArgumentEncodingContext &enc) mutable {
-            auto _ = texture->rename(forward_rc(allocation));
-          });
-        }
+
+        dynamic->discard(ctx_state.cmd_queue.CurrentSeqId(), std::move(dynamic->immediateContextAllocation));
+        dynamic->immediateContextAllocation = dynamic->allocate(ctx_state.cmd_queue.CoherentSeqId());
+        Emit([allocation = dynamic->immediateContextAllocation,
+              texture = Rc(dynamic->texture)](ArgumentEncodingContext &enc) mutable {
+          auto _ = texture->rename(forward_rc(allocation));
+        });
+
+        Out.pData = dynamic->immediateContextAllocation->mappedMemory;
+        Out.RowPitch = buffer_length;
+        Out.DepthPitch = bind_flag;
         break;
       }
       case D3D11_MAP_WRITE_NO_OVERWRITE: {
-        Out.pData = dynamic->GetMappedMemory(&Out.RowPitch, &Out.DepthPitch);
+        Out.pData = dynamic->immediateContextAllocation->mappedMemory;
+        Out.RowPitch = buffer_length;
+        Out.DepthPitch = bind_flag;
         break;
       }
       }
@@ -215,7 +204,7 @@ public:
     if (auto dynamic = GetDynamicBuffer(pResource, &buffer_length, &bind_flag)) {
       return;
     }
-    if (auto dynamic = GetDynamic(pResource)) {
+    if (auto dynamic = GetDynamicTexture(pResource, &buffer_length, &bind_flag)) {
       return;
     }
     if (auto staging = GetStaging(pResource)) {

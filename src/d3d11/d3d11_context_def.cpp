@@ -9,6 +9,7 @@ struct DeferredContextInternalState {
   CommandQueue &cmd_queue;
   Com<MTLD3D11CommandList> current_cmdlist;
   std::unordered_map<DynamicBuffer *, Rc<BufferAllocation>> current_dynamic_buffer_allocations;
+  std::unordered_map<DynamicTexture *, Rc<TextureAllocation>> current_dynamic_texture_allocations;
   std::unordered_map<void *, std::pair<Com<IMTLD3DOcclusionQuery>, uint32_t>> building_visibility_queries;
 };
 
@@ -145,6 +146,48 @@ public:
       }
       return S_OK;
     }
+    if (auto dynamic = GetDynamicTexture(pResource, &buffer_length, &bind_flag)) {
+      D3D11_MAPPED_SUBRESOURCE Out;
+      switch (MapType) {
+      case D3D11_MAP_READ:
+      case D3D11_MAP_WRITE:
+      case D3D11_MAP_READ_WRITE:
+        return E_INVALIDARG;
+      case D3D11_MAP_WRITE_DISCARD: {
+        for (auto &stage : state_.ShaderStages) {
+            stage.SRVs.set_dirty();
+        }
+        Rc<TextureAllocation> new_allocation = dynamic->allocate(ctx_state.cmd_queue.CoherentSeqId());
+        // track the current allocation in case of a following NO_OVERWRITE map
+        ctx_state.current_dynamic_texture_allocations.insert_or_assign(dynamic.ptr(), new_allocation);
+        // collect allocated buffers and recycle them when the command list is released
+        ctx_state.current_cmdlist->used_dynamic_texture_allocations.push_back({dynamic.ptr(), new_allocation});
+        Emit([allocation = new_allocation, texture = Rc(dynamic->texture)](ArgumentEncodingContext &enc) mutable {
+          auto _ = texture->rename(forward_rc(allocation));
+        });
+
+        Out.pData = new_allocation->mappedMemory;
+        Out.RowPitch = buffer_length;
+        Out.DepthPitch = bind_flag;
+        break;
+      }
+      case D3D11_MAP_WRITE_NO_OVERWRITE: {
+        auto ret = ctx_state.current_dynamic_texture_allocations.find(dynamic.ptr());
+        if (ret == ctx_state.current_dynamic_texture_allocations.end()) {
+          ERR("DeferredContext: Invalid NO_OVERWRITE map on deferred context occurs without any prior DISCARD map.");
+          return E_INVALIDARG;
+        }
+        Out.pData = ret->second->mappedMemory;
+        Out.RowPitch = buffer_length;
+        Out.DepthPitch = bind_flag;
+        break;
+      }
+      }
+      if (pMappedResource) {
+        *pMappedResource = Out;
+      }
+      return S_OK;
+    }
     return E_FAIL;
   }
 
@@ -153,6 +196,9 @@ public:
     UINT buffer_length = 0;
     UINT bind_flag = 0;
     if (auto dynamic = GetDynamicBuffer(pResource, &buffer_length, &bind_flag)) {
+      return;
+    }
+    if (auto dynamic = GetDynamicTexture(pResource, &buffer_length, &bind_flag)) {
       return;
     }
     IMPLEMENT_ME;
@@ -263,6 +309,7 @@ public:
         ctx_state.current_cmdlist->visibility_query_count == ctx_state.current_cmdlist->issued_visibility_query.size()
     );
     ctx_state.current_dynamic_buffer_allocations.clear();
+    ctx_state.current_dynamic_texture_allocations.clear();
 
     *ppCommandList = std::move(ctx_state.current_cmdlist);
     device->CreateCommandList((ID3D11CommandList **)&ctx_state.current_cmdlist);
