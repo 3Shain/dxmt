@@ -12,9 +12,10 @@
 namespace dxmt {
 
 constexpr size_t kStagingBlockSize = 0x2000000; // 32MB
+constexpr size_t kStagingBlockSizeForDeferredContext = 0x200000; // 2MB
 constexpr size_t kStagingBlockLifetime = 300;
 
-template <bool cpu_visible> class RingBumpAllocator {
+template <bool CpuVisible, size_t BlockSize = kStagingBlockSize> class RingBumpAllocator {
 
 public:
   RingBumpAllocator(MTL::Device *device, MTL::ResourceOptions block_options) :
@@ -34,7 +35,7 @@ public:
     }
     return suballocate(
         allocate_or_reuse_block(
-            seq_id, coherent_id, std::max(size, kStagingBlockSize) // in case required size is larger than block size
+            seq_id, coherent_id, std::max(size, BlockSize) // in case required size is larger than block size
         ),
         size, alignment
     );
@@ -48,7 +49,7 @@ public:
       if (front.last_used_seq_id <= coherent_id && (coherent_id - front.last_used_seq_id) > kStagingBlockLifetime) {
         // can be deallocated
         front.buffer_gpu->release();
-        if constexpr (cpu_visible) {
+        if constexpr (CpuVisible) {
           free(front.buffer_cpu);
         }
         fifo.pop();
@@ -83,7 +84,7 @@ private:
         }
       }
     }
-    if constexpr (cpu_visible) {
+    if constexpr (CpuVisible) {
       auto cpu = malloc(block_size);
       auto gpu = device->newBuffer(cpu, block_size, block_options, nullptr);
       fifo.push(
