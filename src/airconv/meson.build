@@ -37,8 +37,6 @@ llvm_ld_flags = [
  '-L'+join_paths(meson.source_root(), 'toolchains/llvm/lib')
 ]
 
-llvm_include_path = include_directories('../../toolchains/llvm/include') # FIXME: in favor of path relative to project
-
 airconv_forward_dep = declare_dependency(
   include_directories : [ dxmt_include_path, include_directories('.') ],
 )
@@ -46,6 +44,8 @@ airconv_forward_dep = declare_dependency(
 build_airconv_for_windows = get_option('build_airconv_for_windows')
 
 if build_airconv_for_windows
+
+llvm_include_path = include_directories('../../toolchains/llvm/include') # FIXME: in favor of path relative to project
 
 airconv_lib = static_library('airconv', airconv_src,
   include_directories : [ dxmt_include_path, llvm_include_path ],

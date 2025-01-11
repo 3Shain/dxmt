@@ -8,9 +8,18 @@ winemetal_src = [
 winemetal_ld_args      = ['-Wl,/entry:WineMetalEntry']
 winemetal_link_depends = []
 
-lib_winecrt0 = cc.find_library('winecrt0', dirs : [ join_paths(meson.source_root(), 'toolchains/wine/lib/wine/x86_64-windows') ])
-lib_ntdll = cc.find_library('ntdll', dirs : [ join_paths(meson.source_root(), 'toolchains/wine/lib/wine/x86_64-windows') ])
-lib_dbghelp = cc.find_library('dbghelp', dirs : [ join_paths(meson.source_root(), 'toolchains/wine/lib/wine/x86_64-windows') ])
+wine_build_path = get_option('wine_build_path')
+if wine_build_path == ''
+  lib_winecrt0 = cc.find_library('winecrt0', dirs : [ join_paths(meson.source_root(), 'toolchains/wine/lib/wine/x86_64-windows') ])
+  lib_ntdll = cc.find_library('ntdll', dirs : [ join_paths(meson.source_root(), 'toolchains/wine/lib/wine/x86_64-windows') ])
+  lib_dbghelp = cc.find_library('dbghelp', dirs : [ join_paths(meson.source_root(), 'toolchains/wine/lib/wine/x86_64-windows') ])
+  winebuild = join_paths(meson.source_root(), 'toolchains/wine/bin/winebuild')
+else
+  lib_winecrt0 = cc.find_library('winecrt0', dirs : [ join_paths(wine_build_path, 'dlls/winecrt0/x86_64-windows') ])
+  lib_ntdll = cc.find_library('ntdll', dirs : [ join_paths(wine_build_path, 'dlls/ntdll/x86_64-windows') ])
+  lib_dbghelp = cc.find_library('dbghelp', dirs : [ join_paths(wine_build_path, 'dlls/dbghelp/x86_64-windows') ])
+  winebuild = join_paths(wine_build_path, 'tools/winebuild/winebuild')
+endif
 
 winemetal_dll = shared_library('winemetal', winemetal_src,
   name_prefix         : '',
@@ -29,7 +38,7 @@ winemetal_dep = declare_dependency(
 custom_target('postprocess_lib',
   input : winemetal_dll,
   output: 'winemetal.dll.postproc',
-  command : [join_paths(meson.source_root(), 'toolchains/wine/bin/winebuild'), '--builtin', '@INPUT@'],
+  command : [ winebuild, '--builtin', '@INPUT@' ],
   depends : winemetal_dll,
   build_by_default : true
 )

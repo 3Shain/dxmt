@@ -1,3 +1,4 @@
-option('local_native_llvm', type : 'boolean', value : false)
+option('native_llvm_path', type : 'string', value: '/usr/local/opt/llvm@15')
 option('build_airconv_for_windows', type : 'boolean', value : false)
 option('dxmt_debug', type : 'boolean', value : false)
+option('wine_build_path', type : 'string')
