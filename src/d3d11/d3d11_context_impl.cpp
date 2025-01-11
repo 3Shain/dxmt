@@ -14,6 +14,7 @@ since it is for internal use only
 #include "d3d11_context_state.hpp"
 #include "d3d11_device.hpp"
 #include "d3d11_pipeline.hpp"
+#include "d3d11_query.hpp"
 #include "dxmt_buffer.hpp"
 #include "dxmt_context.hpp"
 #include "dxmt_format.hpp"
@@ -3850,6 +3851,9 @@ public:
       dynamic->discard(current_seq_id, std::move(allocation));
       used_dynamic_allocations.pop_back();
     }
+    visibility_query_count = 0;
+    issued_visibility_query.clear();
+    issued_event_query.clear();
 
     cpu_arugment_heap_offset = 0;
     promote_flush = false;
@@ -3932,6 +3936,9 @@ public:
   bool promote_flush = false;
 
   std::vector<std::pair<DynamicBuffer *, Rc<BufferAllocation>>> used_dynamic_allocations;
+  uint32_t visibility_query_count = 0;
+  std::vector<std::pair<Com<IMTLD3DOcclusionQuery>, uint32_t>> issued_visibility_query;
+  std::vector<Com<IMTLD3DEventQuery>> issued_event_query;
 
 private:
   UINT context_flag;

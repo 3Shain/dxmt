@@ -1,6 +1,5 @@
 #include "d3d11_device.hpp"
 #include "d3d11_private.h"
-#define __DXMT_DISABLE_OCCLUSION_QUERY__ 1
 #include "d3d11_context_impl.cpp"
 #include "dxmt_command_queue.hpp"
 
@@ -10,6 +9,7 @@ struct DeferredContextInternalState {
   CommandQueue &cmd_queue;
   Com<MTLD3D11CommandList> current_cmdlist;
   std::unordered_map<DynamicBuffer *, Rc<BufferAllocation>> current_dynamic_buffer_allocations;
+  std::unordered_map<void *, std::pair<Com<IMTLD3DOcclusionQuery>, uint32_t>> building_visibility_queries;
 };
 
 template<typename Object> Rc<Object> forward_rc(Rc<Object>& obj) {
@@ -131,7 +131,7 @@ public:
       case D3D11_MAP_WRITE_NO_OVERWRITE: {
         auto ret = ctx_state.current_dynamic_buffer_allocations.find(dynamic.ptr());
         if (ret == ctx_state.current_dynamic_buffer_allocations.end()) {
-          ERR("Invalid NO_OVERWRITE map on deferred context occurs without any prior DISCARD map.");
+          ERR("DeferredContext: Invalid NO_OVERWRITE map on deferred context occurs without any prior DISCARD map.");
           return E_INVALIDARG;
         }
         Out.pData = ret->second->mappedMemory;
@@ -167,8 +167,24 @@ public:
       break;
     case D3D11_QUERY_OCCLUSION:
     case D3D11_QUERY_OCCLUSION_PREDICATE: {
-      // auto query = static_cast<IMTLD3DOcclusionQuery *>(pAsync);
-      IMPLEMENT_ME
+      auto building_query = ctx_state.building_visibility_queries.find(pAsync);
+      if (building_query != ctx_state.building_visibility_queries.end()) {
+        // need to figure out if it's the intended behavior
+        D3D11_ASSERT(0 && "unexpected branch condition hit, please file an issue.");
+        // Begin() after another Begin()
+        Emit([query_id = building_query->second.second](ArgumentEncodingContext &enc) mutable {
+          enc.endVisibilityResultQuery(enc.currentDeferredVisibilityQuery(query_id));
+        });
+        ctx_state.current_cmdlist->issued_visibility_query.push_back(std::move(building_query->second));
+        ctx_state.building_visibility_queries.erase(building_query);
+      }
+      auto query_id = ctx_state.current_cmdlist->visibility_query_count++;
+      Emit([=](ArgumentEncodingContext &enc) mutable {
+        enc.beginVisibilityResultQuery(enc.currentDeferredVisibilityQuery(query_id));
+      });
+      ctx_state.building_visibility_queries.insert(
+          {(void *)pAsync, {static_cast<IMTLD3DOcclusionQuery *>(pAsync), query_id}}
+      );
       break;
     }
     case D3D11_QUERY_TIMESTAMP:
@@ -177,7 +193,7 @@ public:
       break;
     }
     default:
-      ERR("Deferred context: unhandled query type ", desc.Query);
+      ERR("DeferredContext: unhandled query type ", desc.Query);
       break;
     }
   }
@@ -188,14 +204,25 @@ public:
     ((ID3D11Query *)pAsync)->GetDesc(&desc);
     switch (desc.Query) {
     case D3D11_QUERY_EVENT:
-      IMPLEMENT_ME;
       promote_flush = true;
+      ctx_state.current_cmdlist->issued_event_query.push_back(static_cast<IMTLD3DEventQuery *>(pAsync));
       break;
     case D3D11_QUERY_OCCLUSION:
     case D3D11_QUERY_OCCLUSION_PREDICATE: {
-      // auto query = static_cast<IMTLD3DOcclusionQuery *>(pAsync);
-      IMPLEMENT_ME;
+      auto building_query = ctx_state.building_visibility_queries.find(pAsync);
+      if (building_query == ctx_state.building_visibility_queries.end()) {
+        // need to figure out if it's the intended behavior
+        D3D11_ASSERT(0 && "unexpected branch condition hit, please file an issue.");
+        // no corresponding Begin()
+        WARN("DeferredContext: An occclusion query End() is called without corresponding Begin()");
+        return;
+      }
       promote_flush = true;
+      Emit([query_id = building_query->second.second](ArgumentEncodingContext &enc) mutable {
+        enc.endVisibilityResultQuery(enc.currentDeferredVisibilityQuery(query_id));
+      });
+      ctx_state.current_cmdlist->issued_visibility_query.push_back(std::move(building_query->second));
+      ctx_state.building_visibility_queries.erase(building_query);
       break;
     }
     case D3D11_QUERY_TIMESTAMP:
@@ -204,7 +231,7 @@ public:
       break;
     }
     default:
-      ERR("Deferred context: unhandled query type ", desc.Query);
+      ERR("DeferredContext: unhandled query type ", desc.Query);
       break;
     }
   }
@@ -228,9 +255,17 @@ public:
     ctx_state.current_cmdlist->promote_flush = promote_flush;
     promote_flush = false;
 
+    for (const auto &[_, building_query] : ctx_state.building_visibility_queries) {
+      End(building_query.first.ptr());
+    }
+    ctx_state.building_visibility_queries.clear();
+    D3D11_ASSERT(
+        ctx_state.current_cmdlist->visibility_query_count == ctx_state.current_cmdlist->issued_visibility_query.size()
+    );
+    ctx_state.current_dynamic_buffer_allocations.clear();
+
     *ppCommandList = std::move(ctx_state.current_cmdlist);
     device->CreateCommandList((ID3D11CommandList **)&ctx_state.current_cmdlist);
-    ctx_state.current_dynamic_buffer_allocations.clear();
 
     if (RestoreDeferredContextState)
       RestoreEncodingContextState();

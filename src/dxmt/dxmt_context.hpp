@@ -555,6 +555,20 @@ public:
   void bumpVisibilityResultOffset();
   void beginVisibilityResultQuery(Rc<VisibilityResultQuery> &&query);
   void endVisibilityResultQuery(Rc<VisibilityResultQuery> &&query);
+  void
+  pushDeferredVisibilityQuerys(Rc<VisibilityResultQuery> *list) {
+    deferred_visibility_query_stack_.push_back(list);
+  }
+  void
+  popDeferredVisibilityQuerys() {
+    assert(!deferred_visibility_query_stack_.empty());
+    deferred_visibility_query_stack_.pop_back();
+  }
+  Rc<VisibilityResultQuery>
+  currentDeferredVisibilityQuery(uint32_t query_id) {
+    assert(!deferred_visibility_query_stack_.empty());
+    return deferred_visibility_query_stack_.back()[query_id];
+  }
 
   ArgumentEncodingContext(CommandQueue &queue) :
       queue(queue){};
@@ -596,6 +610,7 @@ private:
   std::vector<Rc<VisibilityResultQuery>> pending_queries_;
   unsigned active_visibility_query_count_ = 0;
 
+  std::vector<Rc<VisibilityResultQuery> *> deferred_visibility_query_stack_;
 
   CommandQueue& queue;
 };
