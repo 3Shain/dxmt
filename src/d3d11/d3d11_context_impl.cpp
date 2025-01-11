@@ -3956,7 +3956,7 @@ private:
 
   CommandList<ArgumentEncodingContext> list;
 
-  RingBumpAllocator<true> staging_allocator;
+  RingBumpAllocator<true, kStagingBlockSizeForDeferredContext> staging_allocator;
 
   uint64_t local_coherence = 0;
 };
