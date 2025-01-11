@@ -88,10 +88,11 @@ public:
   HRESULT
   Map(ID3D11Resource *pResource, UINT Subresource, D3D11_MAP MapType, UINT MapFlags,
       D3D11_MAPPED_SUBRESOURCE *pMappedResource) override {
-    UINT buffer_length = 0;
-    UINT bind_flag = 0;
+    UINT buffer_length = 0, &row_pitch = buffer_length;
+    UINT bind_flag = 0, &depth_pitch = bind_flag;
     if (auto dynamic = GetDynamicBuffer(pResource, &buffer_length, &bind_flag)) {
-      D3D11_MAPPED_SUBRESOURCE Out;
+      if (!pMappedResource)
+        return E_INVALIDARG;
       switch (MapType) {
       case D3D11_MAP_READ:
       case D3D11_MAP_WRITE:
@@ -119,25 +120,23 @@ public:
           auto _ = buffer->rename(forward_rc(allocation));
         });
 
-        Out.pData = dynamic->immediateContextAllocation->mappedMemory;
-        Out.RowPitch = buffer_length;
-        Out.DepthPitch = buffer_length;
+        pMappedResource->pData = dynamic->immediateContextAllocation->mappedMemory;
+        pMappedResource->RowPitch = buffer_length;
+        pMappedResource->DepthPitch = buffer_length;
         break;
       }
       case D3D11_MAP_WRITE_NO_OVERWRITE: {
-        Out.pData = dynamic->immediateContextAllocation->mappedMemory;
-        Out.RowPitch = buffer_length;
-        Out.DepthPitch = buffer_length;
+        pMappedResource->pData = dynamic->immediateContextAllocation->mappedMemory;
+        pMappedResource->RowPitch = buffer_length;
+        pMappedResource->DepthPitch = buffer_length;
         break;
       }
       }
-      if (pMappedResource) {
-        *pMappedResource = Out;
-      }
       return S_OK;
     }
-    if (auto dynamic = GetDynamicTexture(pResource, &buffer_length, &bind_flag)) {
-      D3D11_MAPPED_SUBRESOURCE Out;
+    if (auto dynamic = GetDynamicTexture(pResource, &row_pitch, &depth_pitch)) {
+      if (!pMappedResource)
+        return E_INVALIDARG;
       switch (MapType) {
       case D3D11_MAP_READ:
       case D3D11_MAP_WRITE:
@@ -155,20 +154,17 @@ public:
           auto _ = texture->rename(forward_rc(allocation));
         });
 
-        Out.pData = dynamic->immediateContextAllocation->mappedMemory;
-        Out.RowPitch = buffer_length;
-        Out.DepthPitch = bind_flag;
+        pMappedResource->pData = dynamic->immediateContextAllocation->mappedMemory;
+        pMappedResource->RowPitch = row_pitch;
+        pMappedResource->DepthPitch = depth_pitch;
         break;
       }
       case D3D11_MAP_WRITE_NO_OVERWRITE: {
-        Out.pData = dynamic->immediateContextAllocation->mappedMemory;
-        Out.RowPitch = buffer_length;
-        Out.DepthPitch = bind_flag;
+        pMappedResource->pData = dynamic->immediateContextAllocation->mappedMemory;
+        pMappedResource->RowPitch = row_pitch;
+        pMappedResource->DepthPitch = depth_pitch;
         break;
       }
-      }
-      if (pMappedResource) {
-        *pMappedResource = Out;
       }
       return S_OK;
     }
@@ -199,12 +195,12 @@ public:
 
   void
   Unmap(ID3D11Resource *pResource, UINT Subresource) override {
-    UINT buffer_length = 0;
-    UINT bind_flag = 0;
+    UINT buffer_length = 0, &row_pitch = buffer_length;
+    UINT bind_flag = 0, &depth_pitch = bind_flag;
     if (auto dynamic = GetDynamicBuffer(pResource, &buffer_length, &bind_flag)) {
       return;
     }
-    if (auto dynamic = GetDynamicTexture(pResource, &buffer_length, &bind_flag)) {
+    if (auto dynamic = GetDynamicTexture(pResource, &row_pitch, &depth_pitch)) {
       return;
     }
     if (auto staging = GetStaging(pResource)) {
