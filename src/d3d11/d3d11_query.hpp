@@ -10,6 +10,7 @@ DEFINE_COM_INTERFACE("a301e56d-d87e-4b69-8440-bd003e285904",
   virtual HRESULT GetData(void *data) = 0;
   virtual bool Begin() = 0;
   virtual bool End() = 0;
+  virtual void DoDeferredQuery(dxmt::Rc<dxmt::VisibilityResultQuery> &deferred_query) = 0;
 
   virtual dxmt::Rc<dxmt::VisibilityResultQuery> __query() = 0;
 };

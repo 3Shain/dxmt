@@ -354,11 +354,22 @@ public:
 
     promote_flush = cmdlist->promote_flush;
 
-    // TODO: handle command list query & staging resource tracking
+    // TODO: handle staging resource tracking
+    auto query_list = AllocateCommandData<Rc<VisibilityResultQuery>>(cmdlist->visibility_query_count);
+    for (const auto &[query, index] : cmdlist->issued_visibility_query) {
+      query_list[index] = new VisibilityResultQuery();
+      query->DoDeferredQuery(query_list[index]);
+    }
 
-    Emit([cmdlist = std::move(cmdlist)](ArgumentEncodingContext& enc) {
+    for (const auto &query : cmdlist->issued_event_query) {
+      End(query.ptr());
+    }
+
+    Emit([cmdlist = std::move(cmdlist), query_list = std::move(query_list)](ArgumentEncodingContext &enc) {
       // Finished command list should clean up the encoding context
+      enc.pushDeferredVisibilityQuerys(query_list.data());
       cmdlist->Execute(enc);
+      enc.popDeferredVisibilityQuerys();
     });
 
     if (RestoreContextState)

@@ -96,6 +96,12 @@ class OcculusionQuery : public MTLD3DQueryBase<IMTLD3DOcclusionQuery> {
     return true;
   };
 
+  virtual void DoDeferredQuery(dxmt::Rc<dxmt::VisibilityResultQuery> &deferred_query) override{
+    accumulated_value = 0;
+    state = QueryState::Issued;
+    query = deferred_query;
+  };
+
   virtual Rc<VisibilityResultQuery> __query() override {
     return query;
   }
