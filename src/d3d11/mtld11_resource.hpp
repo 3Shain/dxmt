@@ -24,20 +24,6 @@ struct MTL_STAGING_RESOURCE {
   MTL::Buffer *Buffer;
 };
 
-DEFINE_COM_INTERFACE("65feb8c5-01de-49df-bf58-d115007a117d", IMTLDynamicBuffer)
-    : public IUnknown {
-  virtual void *GetMappedMemory(UINT * pBytesPerRow, UINT * pBytesPerImage) = 0;
-  virtual UINT GetSize(UINT * pBytesPerRow, UINT * pBytesPerImage) = 0;
-  virtual void RotateBuffer(dxmt::MTLD3D11Device * pool) = 0;
-  virtual D3D11_BIND_FLAG GetBindFlag() = 0;
-
-  virtual dxmt::Rc<dxmt::Buffer> __buffer_dyn() = 0;
-  virtual dxmt::Rc<dxmt::Texture> __texture_dyn() = 0;
-  virtual bool __isBuffer_dyn() = 0;
-  virtual dxmt::Rc<dxmt::BufferAllocation> __bufferAllocated() = 0;
-  virtual dxmt::Rc<dxmt::TextureAllocation> __textureAllocated() = 0;
-};
-
 DEFINE_COM_INTERFACE("252c1a0e-1c61-42e7-9b57-23dfe3d73d49", IMTLD3D11Staging)
     : public IUnknown {
 
@@ -165,17 +151,17 @@ struct D3D11ResourceCommon : ID3D11Resource {
   virtual BufferSlice bufferSlice() = 0;
   virtual Rc<Texture> texture() = 0;
   virtual Com<IMTLD3D11Staging> staging() = 0;
-  virtual Com<IMTLDynamicBuffer> dynamic() = 0;
   virtual Rc<DynamicBuffer> dynamicBuffer(UINT *pBufferLength, UINT *pBindFlags) = 0;
+  virtual Rc<DynamicTexture> dynamicTexture(UINT *pBytesPerRow, UINT *pBytesPerImage) = 0;
 };
 
-inline Com<IMTLDynamicBuffer>
-GetDynamic(ID3D11Resource *pResource) {
-  return static_cast<D3D11ResourceCommon *>(pResource)->dynamic();
-}
 inline Rc<DynamicBuffer>
 GetDynamicBuffer(ID3D11Resource *pResource, UINT *pBufferLength, UINT *pBindFlags) {
   return static_cast<D3D11ResourceCommon *>(pResource)->dynamicBuffer(pBufferLength, pBindFlags);
+}
+inline Rc<DynamicTexture>
+GetDynamicTexture(ID3D11Resource *pResource, UINT *pBytesPerRow, UINT *pBytesPerImage) {
+  return static_cast<D3D11ResourceCommon *>(pResource)->dynamicTexture(pBytesPerRow, pBytesPerImage);
 }
 inline Com<IMTLD3D11Staging>
 GetStaging(ID3D11Resource *pResource) {
@@ -234,7 +220,7 @@ public:
       return S_OK;
     }
 
-    if (riid == __uuidof(IMTLDynamicBuffer) || riid == __uuidof(IMTLD3D11Staging)) {
+    if (riid == __uuidof(IMTLD3D11Staging)) {
       // silent these interfaces
       return E_NOINTERFACE;
     }
@@ -390,11 +376,6 @@ public:
         riid == __uuidof(typename tag::COM1)) {
       *ppvObject = ref_and_cast<typename tag::COM_IMPL>(this);
       return S_OK;
-    }
-
-    if (riid == __uuidof(IMTLDynamicBuffer)) {
-      // silent these interfaces
-      return E_NOINTERFACE;
     }
 
     if (logQueryInterfaceError(__uuidof(typename tag::COM), riid)) {

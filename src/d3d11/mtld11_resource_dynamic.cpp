@@ -4,7 +4,6 @@
 #include "d3d11_private.h"
 #include "com/com_pointer.hpp"
 #include "d3d11_device.hpp"
-#include "dxmt_buffer_pool.hpp"
 #include "dxmt_dynamic.hpp"
 #include "dxmt_format.hpp"
 #include "dxmt_texture.hpp"
@@ -15,14 +14,12 @@ namespace dxmt {
 
 #pragma region DynamicTexture
 
-class DynamicTexture2D : public TResourceBase<tag_texture_2d, IMTLDynamicBuffer> {
+class DynamicTexture2D : public TResourceBase<tag_texture_2d> {
 private:
   Rc<Texture> texture_;
-  Rc<TextureAllocation> allocation;
+  Rc<DynamicTexture> dynamic_;
   size_t bytes_per_image_;
   size_t bytes_per_row_;
-
-  std::unique_ptr<DynamicTexturePool2> pool;
 
   using SRVBase = TResourceViewBase<tag_shader_resource_view<DynamicTexture2D>>;
 
@@ -48,7 +45,7 @@ public:
       const tag_texture_2d::DESC1 *pDesc, Obj<MTL::TextureDescriptor> &&descriptor,
       const D3D11_SUBRESOURCE_DATA *pInitialData, UINT bytes_per_image, UINT bytes_per_row, MTLD3D11Device *device
   ) :
-      TResourceBase<tag_texture_2d, IMTLDynamicBuffer>(*pDesc, device),
+      TResourceBase<tag_texture_2d>(*pDesc, device),
       bytes_per_image_(bytes_per_image),
       bytes_per_row_(bytes_per_row) {
     texture_ = new Texture(bytes_per_image, bytes_per_row, std::move(descriptor), device->GetMTLDevice());
@@ -60,8 +57,7 @@ public:
       flags.set(TextureAllocationFlag::GpuReadonly);
     if (pDesc->Usage != D3D11_USAGE_DYNAMIC)
       flags.set(TextureAllocationFlag::GpuManaged);
-    pool = std::make_unique<DynamicTexturePool2>(texture_.ptr(), flags);
-    RotateBuffer(device);
+    auto allocation = texture_->allocate(flags);
     auto _ = texture_->rename(Rc(allocation));
     D3D11_ASSERT(_.ptr() == nullptr);
 
@@ -70,49 +66,19 @@ public:
       D3D11_ASSERT(allocation->mappedMemory);
       memcpy(allocation->mappedMemory, pInitialData->pSysMem, bytes_per_image);
     }
+    dynamic_ = new DynamicTexture(texture_.ptr(), flags);
   }
-
-  void *
-  GetMappedMemory(UINT *pBytesPerRow, UINT *pBytesPerImage) override {
-    *pBytesPerRow = bytes_per_row_;
-    *pBytesPerImage = bytes_per_image_;
-    assert(allocation->mappedMemory);
-    return allocation->mappedMemory;
-  };
-
-  UINT
-  GetSize(UINT *pBytesPerRow, UINT *pBytesPerImage) override {
-    *pBytesPerRow = bytes_per_row_;
-    *pBytesPerImage = bytes_per_image_;
-    return bytes_per_image_;
-  };
-
-  dxmt::Rc<dxmt::Buffer> __buffer_dyn() final { return {}; };
-  dxmt::Rc<dxmt::Texture> __texture_dyn()final { return texture_; };
-  bool __isBuffer_dyn() final { return false; };
-  dxmt::Rc<dxmt::BufferAllocation> __bufferAllocated() final { return {}; };
-  dxmt::Rc<dxmt::TextureAllocation> __textureAllocated() final { return allocation; };
 
   Rc<Buffer> buffer() final { return {}; };
   Rc<Texture> texture() final { return this->texture_; };
   BufferSlice bufferSlice() final { return {};}
-  Com<IMTLDynamicBuffer> dynamic() final { return this; }
   Com<IMTLD3D11Staging> staging() final { return nullptr; }
   Rc<DynamicBuffer> dynamicBuffer(UINT*, UINT*) final { return {}; };
-
-  void
-  RotateBuffer(MTLD3D11Device *exch) override {
-    auto &queue = exch->GetDXMTDevice().queue();
-    if(allocation.ptr()) {
-      pool->discard(std::move(allocation), queue.CurrentSeqId());
-    }
-    allocation = pool->allocate(queue.CoherentSeqId());
+  Rc<DynamicTexture> dynamicTexture(UINT* pBytesPerRow, UINT* pBytesPerImage) final {
+    *pBytesPerRow = bytes_per_row_;
+    *pBytesPerImage = bytes_per_image_;
+    return dynamic_; 
   };
-
-  D3D11_BIND_FLAG
-  GetBindFlag() override {
-    return (D3D11_BIND_FLAG)desc.BindFlags;
-  }
 
   HRESULT
   CreateShaderResourceView(const D3D11_SHADER_RESOURCE_VIEW_DESC1 *pDesc, ID3D11ShaderResourceView1 **ppView) override {

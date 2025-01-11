@@ -119,10 +119,6 @@ public:
   bufferSlice() final {
     return {0, desc.ByteWidth, 0, 0};
   }
-  Com<IMTLDynamicBuffer>
-  dynamic() final {
-    return nullptr;
-  }
   Com<IMTLD3D11Staging>
   staging() final {
     return nullptr;
@@ -133,6 +129,10 @@ public:
     *pBindFlags = desc.BindFlags;
     return dynamic_;
   }
+  Rc<DynamicTexture>
+  dynamicTexture(UINT *, UINT *) final {
+    return {};
+  };
 
   HRESULT
   CreateShaderResourceView(const D3D11_SHADER_RESOURCE_VIEW_DESC1 *pDesc, ID3D11ShaderResourceView1 **ppView) override {

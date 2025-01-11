@@ -143,16 +143,16 @@ public:
   bufferSlice() final {
     return {};
   }
-  Com<IMTLDynamicBuffer>
-  dynamic() final {
-    return {};
-  }
   Com<IMTLD3D11Staging>
   staging() final {
     return this;
   }
   Rc<DynamicBuffer>
   dynamicBuffer(UINT*, UINT*) final {
+    return {};
+  };
+  Rc<DynamicTexture>
+  dynamicTexture(UINT *, UINT *) final {
     return {};
   };
 };
@@ -246,16 +246,16 @@ public:
   bufferSlice() final {
     return {};
   }
-  Com<IMTLDynamicBuffer>
-  dynamic() final {
-    return {};
-  }
   Com<IMTLD3D11Staging>
   staging() final {
     return this;
   }
   Rc<DynamicBuffer>
-  dynamicBuffer(UINT*, UINT*) final {
+  dynamicBuffer(UINT *, UINT *) final {
+    return {};
+  };
+  Rc<DynamicTexture>
+  dynamicTexture(UINT *, UINT *) final {
     return {};
   };
 };
