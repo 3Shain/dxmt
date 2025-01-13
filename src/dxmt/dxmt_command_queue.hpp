@@ -5,6 +5,7 @@
 #include "Metal/MTLCommandBuffer.hpp"
 #include "Metal/MTLCommandQueue.hpp"
 #include "Metal/MTLComputeCommandEncoder.hpp"
+#include "Metal/MTLEvent.hpp"
 #include "Metal/MTLRenderCommandEncoder.hpp"
 #include "Metal/MTLDevice.hpp"
 #include "Metal/MTLTypes.hpp"
@@ -234,6 +235,8 @@ private:
 public:
   EmulatedCommandContext emulated_cmd;
   ArgumentEncodingContext argument_encoding_ctx;
+  Obj<MTL::SharedEvent> event;
+  std::uint64_t current_event_seq_id = 1;
 
   CommandQueue(MTL::Device *device);
 
@@ -259,6 +262,16 @@ public:
   EncodedWorkFinishAt() {
     auto id = ready_for_encode.load(std::memory_order_relaxed);
     return id - chunks[id % kCommandChunkCount].has_no_work_encoded_yet();
+  };
+
+  uint64_t
+  GetNextEventSeqId() {
+    return current_event_seq_id++;
+  };
+
+  uint64_t
+  SignaledEventSeqId() {
+    return event->signaledValue();
   };
 
   /**

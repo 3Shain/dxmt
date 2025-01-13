@@ -86,6 +86,7 @@ enum class EncoderType {
   Resolve,
   Present,
   SpatialUpscale,
+  SignalEvent,
 };
 
 struct EncoderData {
@@ -161,6 +162,11 @@ struct SpatialUpscaleData : EncoderData {
   Obj<MTL::Texture> backbuffer;
   Obj<MTL::Texture> upscaled;
   Obj<MTLFX::SpatialScaler> scaler;
+};
+
+struct SignalEventData : EncoderData {
+  Obj<MTL::Event> event;
+  uint64_t value;
 };
 
 template <bool Tessellation>
@@ -487,6 +493,8 @@ public:
   void present(Rc<Texture> &texture, CA::MetalDrawable *drawable, double after);
 
   void upscale(Rc<Texture> &texture, Rc<Texture> &upscaled, Obj<MTLFX::SpatialScaler> &scaler);
+
+  void signalEvent(uint64_t value);
 
   uint64_t
   nextEncoderId() {

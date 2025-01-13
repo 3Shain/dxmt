@@ -1,5 +1,4 @@
 #include "d3d11_query.hpp"
-#include "d3d11_private.h"
 #include "dxmt_occlusion_query.hpp"
 
 namespace dxmt {
