@@ -341,6 +341,23 @@ ArgumentEncodingContext::present(Rc<Texture> &texture, CA::MetalDrawable *drawab
   endPass();
 }
 
+void
+ArgumentEncodingContext::upscale(Rc<Texture> &texture, Rc<Texture> &upscaled, Obj<MTLFX::SpatialScaler> &scaler) {
+  assert(!encoder_current);
+  auto encoder_info = allocate<SpatialUpscaleData>();
+  encoder_info->type = EncoderType::SpatialUpscale;
+  encoder_info->id = nextEncoderId();
+  encoder_info->backbuffer = texture->current()->texture();
+  encoder_info->upscaled = upscaled->current()->texture();
+  encoder_info->scaler = scaler;
+
+  encoder_info->tex_read.add(texture->current()->depkey);
+  encoder_info->tex_write.add(upscaled->current()->depkey);
+
+  encoder_current = encoder_info;
+  endPass();
+}
+
 RenderEncoderData *
 ArgumentEncodingContext::startRenderPass(
     Obj<MTL::RenderPassDescriptor> &&descriptor, uint32_t dsv_planar_flags, uint32_t render_target_count
@@ -601,6 +618,14 @@ ArgumentEncodingContext::flushCommands(MTL::CommandBuffer *cmdbuf, uint64_t seqI
         enc->endEncoding();
       }
       data->~ResolveEncoderData();
+      break;
+    }
+    case EncoderType::SpatialUpscale: {
+      auto data = static_cast<SpatialUpscaleData *>(current);
+      data->scaler->setColorTexture(data->backbuffer);
+      data->scaler->setOutputTexture(data->upscaled);
+      data->scaler->encodeToCommandBuffer(cmdbuf);
+      data->~SpatialUpscaleData();
       break;
     }
     default:
