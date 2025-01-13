@@ -377,6 +377,8 @@ public:
       enc.popDeferredVisibilityQuerys();
     });
 
+    InvalidateCurrentPass();
+
     if (RestoreContextState)
       RestoreEncodingContextState();
     else
