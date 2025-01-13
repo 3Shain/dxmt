@@ -119,8 +119,8 @@ public:
   bufferSlice() final {
     return {0, desc.ByteWidth, 0, 0};
   }
-  Com<IMTLD3D11Staging>
-  staging() final {
+  Rc<StagingResource>
+  staging(UINT Subresource) final {
     return nullptr;
   }
   Rc<DynamicBuffer>

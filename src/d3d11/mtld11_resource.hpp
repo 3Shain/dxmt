@@ -1,6 +1,7 @@
 #pragma once
 #include "dxmt_buffer.hpp"
 #include "dxmt_dynamic.hpp"
+#include "dxmt_staging.hpp"
 #include "dxmt_texture.hpp"
 #include "Metal/MTLBuffer.hpp"
 #include "Metal/MTLTexture.hpp"
@@ -13,40 +14,6 @@
 #include "log/log.hpp"
 #include <memory>
 #include <type_traits>
-
-typedef struct MappedResource {
-  void *pData;
-  uint32_t RowPitch;
-  uint32_t DepthPitch;
-} MappedResource;
-
-struct MTL_STAGING_RESOURCE {
-  MTL::Buffer *Buffer;
-};
-
-DEFINE_COM_INTERFACE("252c1a0e-1c61-42e7-9b57-23dfe3d73d49", IMTLD3D11Staging)
-    : public IUnknown {
-
-  virtual void UseCopyDestination(
-      uint32_t Subresource, uint64_t seq_id, MTL_STAGING_RESOURCE * pBuffer,
-      uint32_t * pBytesPerRow, uint32_t * pBytesPerImage) = 0;
-  virtual void UseCopySource(
-      uint32_t Subresource, uint64_t seq_id, MTL_STAGING_RESOURCE * pBuffer,
-      uint32_t * pBytesPerRow, uint32_t * pBytesPerImage) = 0;
-  /**
-  cpu_coherent_seq_id: any operation at/before seq_id is coherent to cpu
-  -
-  return:
-  = 0 - map success
-  > 0 - resource in use
-  < 0 - error (?)
-  */
-  virtual int64_t TryMap(uint32_t Subresource, uint64_t cpu_coherent_seq_id,
-                         // uint64_t commited_seq_id,
-                         D3D11_MAP flag,
-                         D3D11_MAPPED_SUBRESOURCE * pMappedResource) = 0;
-  virtual void Unmap(uint32_t Subresource) = 0;
-};
 
 DEFINE_COM_INTERFACE("9a6f6549-d4b1-45ea-8794-8503d190d3d1",
                      IMTLMinLODClampable)
@@ -150,7 +117,7 @@ struct D3D11ResourceCommon : ID3D11Resource {
   virtual Rc<Buffer> buffer() = 0;
   virtual BufferSlice bufferSlice() = 0;
   virtual Rc<Texture> texture() = 0;
-  virtual Com<IMTLD3D11Staging> staging() = 0;
+  virtual Rc<StagingResource> staging(UINT Subresource) = 0;
   virtual Rc<DynamicBuffer> dynamicBuffer(UINT *pBufferLength, UINT *pBindFlags) = 0;
   virtual Rc<DynamicTexture> dynamicTexture(UINT *pBytesPerRow, UINT *pBytesPerImage) = 0;
 };
@@ -163,10 +130,11 @@ inline Rc<DynamicTexture>
 GetDynamicTexture(ID3D11Resource *pResource, UINT *pBytesPerRow, UINT *pBytesPerImage) {
   return static_cast<D3D11ResourceCommon *>(pResource)->dynamicTexture(pBytesPerRow, pBytesPerImage);
 }
-inline Com<IMTLD3D11Staging>
-GetStaging(ID3D11Resource *pResource) {
-  return static_cast<D3D11ResourceCommon *>(pResource)->staging();
-}
+inline Rc<StagingResource>
+GetStagingResource(ID3D11Resource *pResource, UINT Subresource) {
+
+  return static_cast<D3D11ResourceCommon *>(pResource)->staging(Subresource);
+};
 inline Rc<Texture>
 GetTexture(ID3D11Resource *pResource) {
   return static_cast<D3D11ResourceCommon *>(pResource)->texture();
@@ -218,11 +186,6 @@ public:
         riid == __uuidof(IDXGIResource) || riid == __uuidof(IDXGIResource1)) {
       *ppvObject = ref(dxgi_resource.get());
       return S_OK;
-    }
-
-    if (riid == __uuidof(IMTLD3D11Staging)) {
-      // silent these interfaces
-      return E_NOINTERFACE;
     }
 
     if (logQueryInterfaceError(__uuidof(typename tag::COM), riid)) {

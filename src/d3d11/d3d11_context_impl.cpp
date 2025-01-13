@@ -18,6 +18,7 @@ since it is for internal use only
 #include "dxmt_buffer.hpp"
 #include "dxmt_context.hpp"
 #include "dxmt_format.hpp"
+#include "dxmt_staging.hpp"
 #include "mtld11_resource.hpp"
 #include "util_flags.hpp"
 #include "util_math.hpp"
@@ -350,6 +351,7 @@ public:
 class TextureUpdateCommand {
 public:
   ID3D11Resource *pDst;
+  UINT DstSubresource;
   Subresource Dst;
   MTL::Region DstRegion;
   uint32_t EffectiveBytesPerRow;
@@ -361,6 +363,7 @@ public:
 
   TextureUpdateCommand(BlitObject &Dst_, UINT DstSubresource, const D3D11_BOX *pDstBox) :
       pDst(Dst_.pResource),
+      DstSubresource(DstSubresource),
       DstFormat(Dst_.FormatDescription) {
 
     if (DstFormat.PixelFormat == MTL::PixelFormatInvalid)
@@ -2177,14 +2180,8 @@ public:
   template <typename T> moveonly_list<T> AllocateCommandData(size_t n = 1);
 
   std::tuple<void *, MTL::Buffer *, uint64_t> AllocateStagingBuffer(size_t size, size_t alignment);
-  void UseCopyDestination(
-      IMTLD3D11Staging *pResource, uint32_t Subresource, MTL_STAGING_RESOURCE *pBuffer, uint32_t *pBytesPerRow,
-      uint32_t *pBytesPerImage
-  );
-  void UseCopySource(
-      IMTLD3D11Staging *pResource, uint32_t Subresource, MTL_STAGING_RESOURCE *pBuffer, uint32_t *pBytesPerRow,
-      uint32_t *pBytesPerImage
-  );
+  void UseCopyDestination(Rc<StagingResource> &);
+  void UseCopySource(Rc<StagingResource> &);
 
   template <PipelineStage stage, bool Tessellation>
   bool
@@ -2674,19 +2671,17 @@ public:
     }
     if (SrcBox.right <= SrcBox.left)
       return;
-    if (auto staging_dst = GetStaging(pDstResource)) {
-      if (auto staging_src = GetStaging(pSrcResource)) {
+    if (auto staging_dst = GetStagingResource(pDstResource, DstSubresource)) {
+      if (auto staging_src = GetStagingResource(pSrcResource, SrcSubresource)) {
         D3D11_ASSERT(0 && "todo: copy between staging");
       } else if (auto src = reinterpret_cast<D3D11ResourceCommon *>(pSrcResource)) {
         // copy from device to staging
-        MTL_STAGING_RESOURCE dst_bind;
-        uint32_t bytes_per_row, bytes_per_image;
-        UseCopyDestination(staging_dst.ptr(), DstSubresource, &dst_bind, &bytes_per_row, &bytes_per_image);
+        UseCopyDestination(staging_dst);
         SwitchToBlitEncoder(CommandBufferState::ReadbackBlitEncoderActive);
-        Emit([src_ = src->buffer(), dst = Obj(dst_bind.Buffer), DstX, SrcBox](ArgumentEncodingContext &enc) {
+        Emit([src_ = src->buffer(), dst = std::move(staging_dst), DstX, SrcBox](ArgumentEncodingContext &enc) {
           auto src = enc.access(src_, SrcBox.left, SrcBox.right - SrcBox.left, DXMT_ENCODER_RESOURCE_ACESS_READ);
           enc.encodeBlitCommand([=, &SrcBox, &dst](BlitCommandContext &ctx) {
-            ctx.encoder->copyFromBuffer(src, SrcBox.left, dst, DstX, SrcBox.right - SrcBox.left);
+            ctx.encoder->copyFromBuffer(src, SrcBox.left, dst->current, DstX, SrcBox.right - SrcBox.left);
           });
         });
         promote_flush = true;
@@ -2694,16 +2689,13 @@ public:
         D3D11_ASSERT(0 && "todo");
       }
     } else if (auto dst = reinterpret_cast<D3D11ResourceCommon *>(pDstResource)) {
-      if (auto staging_src = GetStaging(pSrcResource)) {
-        // copy from staging to default
-        MTL_STAGING_RESOURCE src_bind;
-        uint32_t bytes_per_row, bytes_per_image;
-        UseCopySource(staging_src.ptr(), SrcSubresource, &src_bind, &bytes_per_row, &bytes_per_image);
+      if (auto staging_src = GetStagingResource(pSrcResource, SrcSubresource)) {
+        UseCopySource(staging_src);
         SwitchToBlitEncoder(CommandBufferState::UpdateBlitEncoderActive);
-        Emit([dst_ = dst->buffer(), src = Obj(src_bind.Buffer), DstX, SrcBox](ArgumentEncodingContext &enc) {
+        Emit([dst_ = dst->buffer(), src = std::move(staging_src), DstX, SrcBox](ArgumentEncodingContext &enc) {
           auto dst = enc.access(dst_, DstX, SrcBox.right - SrcBox.left, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
           enc.encodeBlitCommand([=, &SrcBox, &src](BlitCommandContext &ctx) {
-            ctx.encoder->copyFromBuffer(src, SrcBox.left, dst, DstX, SrcBox.right - SrcBox.left);
+            ctx.encoder->copyFromBuffer(src->current, SrcBox.left, dst, DstX, SrcBox.right - SrcBox.left);
           });
         });
       } else if (auto src = reinterpret_cast<D3D11ResourceCommon *>(pSrcResource)) {
@@ -2741,23 +2733,21 @@ public:
 
   void
   CopyTextureBitcast(TextureCopyCommand &&cmd) {
-    if (auto staging_dst = GetStaging(cmd.pDst)) {
-      if (auto staging_src = GetStaging(cmd.pSrc)) {
+    if (auto staging_dst = GetStagingResource(cmd.pDst, cmd.DstSubresource)) {
+      if (auto staging_src = GetStagingResource(cmd.pSrc, cmd.SrcSubresource)) {
         D3D11_ASSERT(0 && "TODO: copy between staging");
       } else if (auto src = GetTexture(cmd.pSrc)) {
-        MTL_STAGING_RESOURCE dst_bind;
-        uint32_t bytes_per_row, bytes_per_image;
-        UseCopyDestination(staging_dst.ptr(), cmd.DstSubresource, &dst_bind, &bytes_per_row, &bytes_per_image);
+        UseCopyDestination(staging_dst);
         SwitchToBlitEncoder(CommandBufferState::ReadbackBlitEncoderActive);
-        Emit([src_ = std::move(src), dst = Obj(dst_bind.Buffer), bytes_per_row, bytes_per_image,
+        Emit([src_ = std::move(src), dst = std::move(staging_dst),
               cmd = std::move(cmd)](ArgumentEncodingContext &enc) {
           auto src = enc.access(src_, cmd.Src.MipLevel, cmd.Src.ArraySlice, DXMT_ENCODER_RESOURCE_ACESS_READ);
-          auto offset = cmd.DstOrigin.z * bytes_per_image + cmd.DstOrigin.y * bytes_per_row +
+          auto offset = cmd.DstOrigin.z * dst->bytesPerImage + cmd.DstOrigin.y * dst->bytesPerRow +
                         cmd.DstOrigin.x * cmd.DstFormat.BytesPerTexel;
           enc.encodeBlitCommand([=, &cmd, &dst](BlitCommandContext &ctx) {
             ctx.encoder->copyFromTexture(
-                src, cmd.Src.ArraySlice, cmd.Src.MipLevel, cmd.SrcOrigin, cmd.SrcSize, dst.ptr(), offset, bytes_per_row,
-                bytes_per_image
+                src, cmd.Src.ArraySlice, cmd.Src.MipLevel, cmd.SrcOrigin, cmd.SrcSize, dst->current, offset, dst->bytesPerRow,
+                dst->bytesPerImage
             );
           });
         });
@@ -2766,26 +2756,24 @@ public:
         UNREACHABLE
       }
     } else if (auto dst = GetTexture(cmd.pDst)) {
-      if (auto staging_src = GetStaging(cmd.pSrc)) {
+      if (auto staging_src = GetStagingResource(cmd.pSrc, cmd.SrcSubresource)) {
         // copy from staging to default
-        MTL_STAGING_RESOURCE src_bind;
-        uint32_t bytes_per_row, bytes_per_image;
-        UseCopySource(staging_src.ptr(), cmd.SrcSubresource, &src_bind, &bytes_per_row, &bytes_per_image);
+        UseCopySource(staging_src);
         SwitchToBlitEncoder(CommandBufferState::UpdateBlitEncoderActive);
-        Emit([dst_ = std::move(dst), src = Obj(src_bind.Buffer), bytes_per_row, bytes_per_image,
+        Emit([dst_ = std::move(dst), src =std::move(staging_src),
               cmd = std::move(cmd)](ArgumentEncodingContext &enc) {
           auto dst = enc.access(dst_, cmd.Dst.MipLevel, cmd.Dst.ArraySlice, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
           uint32_t offset;
           if (cmd.SrcFormat.Flag & MTL_DXGI_FORMAT_BC) {
-            offset = cmd.SrcOrigin.z * bytes_per_image + (cmd.SrcOrigin.y >> 2) * bytes_per_row +
+            offset = cmd.SrcOrigin.z * src->bytesPerImage + (cmd.SrcOrigin.y >> 2) * src->bytesPerRow +
                      (cmd.SrcOrigin.x >> 2) * cmd.SrcFormat.BytesPerTexel;
           } else {
-            offset = cmd.SrcOrigin.z * bytes_per_image + cmd.SrcOrigin.y * bytes_per_row +
+            offset = cmd.SrcOrigin.z * src->bytesPerImage + cmd.SrcOrigin.y * src->bytesPerRow +
                      cmd.SrcOrigin.x * cmd.SrcFormat.BytesPerTexel;
           }
           enc.encodeBlitCommand([=, &cmd, &src](BlitCommandContext &ctx) {
             ctx.encoder->copyFromBuffer(
-                src, offset, bytes_per_row, bytes_per_image, cmd.SrcSize, dst, cmd.Dst.ArraySlice, cmd.Dst.MipLevel,
+                src->current, offset, src->bytesPerRow, src->bytesPerImage, cmd.SrcSize, dst, cmd.Dst.ArraySlice, cmd.Dst.MipLevel,
                 cmd.DstOrigin
             );
           });
@@ -2842,10 +2830,10 @@ public:
 
   void
   CopyTextureFromCompressed(TextureCopyCommand &&cmd) {
-    if (auto staging_dst = GetStaging(cmd.pDst)) {
+    if (auto staging_dst = GetStagingResource(cmd.pDst, cmd.DstSubresource)) {
       IMPLEMENT_ME
     } else if (auto dst = GetTexture(cmd.pDst)) {
-      if (auto staging_src = GetStaging(cmd.pSrc)) {
+      if (auto staging_src = GetStagingResource(cmd.pSrc, cmd.SrcSubresource)) {
         // copy from staging to default
         D3D11_ASSERT(0 && "TODO: copy from compressed staging to default");
       } else if (auto src = GetTexture(cmd.pSrc)) {
@@ -2880,10 +2868,10 @@ public:
 
   void
   CopyTextureToCompressed(TextureCopyCommand &&cmd) {
-    if (auto staging_dst = GetStaging(cmd.pDst)) {
+    if (auto staging_dst = GetStagingResource(cmd.pDst, cmd.DstSubresource)) {
       IMPLEMENT_ME
     } else if (auto dst = GetTexture(cmd.pDst)) {
-      if (auto staging_src = GetStaging(cmd.pSrc)) {
+      if (auto staging_src = GetStagingResource(cmd.pSrc, cmd.SrcSubresource)) {
         // copy from staging to default
         D3D11_ASSERT(0 && "TODO: copy from staging to compressed default");
       } else if (auto src = GetTexture(cmd.pSrc)) {
@@ -2957,7 +2945,7 @@ public:
           );
         });
       });
-    } else if (auto staging_dst = GetStaging(cmd.pDst)) {
+    } else if (auto staging_dst = GetStagingResource(cmd.pDst, cmd.DstSubresource)) {
       // staging: ...
       D3D11_ASSERT(0 && "TODO: UpdateSubresource1: update staging texture");
     } else {
@@ -3857,6 +3845,8 @@ public:
       dynamic->discard(current_seq_id, std::move(allocation));
       used_dynamic_texture_allocations.pop_back();
     }
+    read_staging_resources.clear();
+    written_staging_resources.clear();
     visibility_query_count = 0;
     issued_visibility_query.clear();
     issued_event_query.clear();
@@ -3943,6 +3933,8 @@ public:
 
   std::vector<std::pair<DynamicBuffer *, Rc<BufferAllocation>>> used_dynamic_allocations;
   std::vector<std::pair<DynamicTexture *, Rc<TextureAllocation>>> used_dynamic_texture_allocations;
+  std::vector<Rc<StagingResource>> read_staging_resources;
+  std::vector<Rc<StagingResource>> written_staging_resources;
   uint32_t visibility_query_count = 0;
   std::vector<std::pair<Com<IMTLD3DOcclusionQuery>, uint32_t>> issued_visibility_query;
   std::vector<Com<IMTLD3DEventQuery>> issued_event_query;

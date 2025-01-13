@@ -5,6 +5,7 @@
 #include "d3d11_texture.hpp"
 #include "d3d11_view.hpp"
 #include "dxmt_dynamic.hpp"
+#include "dxmt_staging.hpp"
 #include "dxmt_texture.hpp"
 #include "mtld11_resource.hpp"
 
@@ -148,7 +149,7 @@ public:
   Rc<Buffer> buffer() final { return {}; };
   Rc<Texture> texture() final { return this->underlying_texture_; };
   BufferSlice bufferSlice() final { return {};}
-  Com<IMTLD3D11Staging> staging() final { return nullptr; }
+  Rc<StagingResource> staging(UINT) final { return nullptr; }
   Rc<DynamicBuffer> dynamicBuffer(UINT*, UINT*) final { return {}; }
   Rc<DynamicTexture> dynamicTexture(UINT*, UINT*) final { return {}; };
 

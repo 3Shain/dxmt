@@ -40,23 +40,13 @@ DeferredContextBase::AllocateStagingBuffer(size_t size, size_t alignment) {
 }
 
 template <>
-void
-DeferredContextBase::UseCopyDestination(
-    IMTLD3D11Staging *pResource, uint32_t Subresource, MTL_STAGING_RESOURCE *pBuffer, uint32_t *pBytesPerRow,
-    uint32_t *pBytesPerImage
-) {
-  pResource->UseCopyDestination(Subresource, 0, pBuffer, pBytesPerRow, pBytesPerImage);
-  IMPLEMENT_ME // TODO: track usage
+void DeferredContextBase::UseCopyDestination(Rc<StagingResource> &staging) {
+  ctx_state.current_cmdlist->written_staging_resources.push_back(staging);
 }
 
 template <>
-void
-DeferredContextBase::UseCopySource(
-    IMTLD3D11Staging *pResource, uint32_t Subresource, MTL_STAGING_RESOURCE *pBuffer, uint32_t *pBytesPerRow,
-    uint32_t *pBytesPerImage
-) {
-  pResource->UseCopySource(Subresource, 0, pBuffer, pBytesPerRow, pBytesPerImage);
-  IMPLEMENT_ME // TODO: track usage
+void DeferredContextBase::UseCopySource(Rc<StagingResource> &staging) {
+  ctx_state.current_cmdlist->read_staging_resources.push_back(staging);
 }
 
 class MTLD3D11DeferredContext : public DeferredContextBase {
