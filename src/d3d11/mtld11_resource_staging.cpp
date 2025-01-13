@@ -1,134 +1,25 @@
 #include "d3d11_private.h"
 #include "d3d11_enumerable.hpp"
 #include "dxmt_dynamic.hpp"
+#include "dxmt_staging.hpp"
 #include "mtld11_resource.hpp"
 #include "objc_pointer.hpp"
 
 namespace dxmt {
 
-class StagingBufferInternal {
-  friend class StagingBuffer;
-  template <typename tag> friend class StagingTexture;
-  Obj<MTL::Buffer> buffer;
-  void *buffer_mapped;
-  uint64_t buffer_len;
-  uint32_t bytes_per_row;
-  uint32_t bytes_per_image;
-  // prevent read from staging before
-  uint64_t cpu_coherent_after_finished_seq_id = 0;
-  // prevent write to staging before
-  uint64_t gpu_occupied_until_finished_seq_id = 0;
-  bool mapped = false;
-
-public:
-  StagingBufferInternal(Obj<MTL::Buffer> &&buffer, uint32_t bytes_per_row,
-                        uint32_t bytes_per_image)
-      : buffer(std::move(buffer)), buffer_mapped(this->buffer->contents()),
-        buffer_len(this->buffer->length()), bytes_per_row(bytes_per_row),
-        bytes_per_image(bytes_per_image) {}
-
-  void UseCopyDestination(uint64_t seq_id, MTL_STAGING_RESOURCE *pBuffer,
-                          uint32_t *pBytesPerRow, uint32_t *pBytesPerImage) {
-    assert(!mapped && "write to staging resource while being mapped");
-    // coherent read-after-write
-    cpu_coherent_after_finished_seq_id = std::max(seq_id, cpu_coherent_after_finished_seq_id);
-    // coherent write-after-write
-    gpu_occupied_until_finished_seq_id = std::max(seq_id, gpu_occupied_until_finished_seq_id);
-    pBuffer->Buffer = buffer.ptr();
-    *pBytesPerRow = bytes_per_row;
-    *pBytesPerImage = bytes_per_image;
-  };
-
-  void UseCopySource(uint64_t seq_id, MTL_STAGING_RESOURCE *pBuffer,
-                     uint32_t *pBytesPerRow, uint32_t *pBytesPerImage) {
-    assert(!mapped && "read from staging resource while being mapped");
-    // read-after-read doesn't hurt anyway
-    // coherent write-after-read
-    gpu_occupied_until_finished_seq_id = std::max(seq_id, gpu_occupied_until_finished_seq_id);
-    pBuffer->Buffer = buffer.ptr();
-    *pBytesPerRow = bytes_per_row;
-    *pBytesPerImage = bytes_per_image;
-  };
-
-  int64_t TryMap(uint64_t finished_seq_id,
-                 // uint64_t commited_seq_id,
-                 D3D11_MAP flag, D3D11_MAPPED_SUBRESOURCE *pMappedResource) {
-    if (mapped)
-      return -1;
-    if (flag == D3D11_MAP_READ) {
-      if (finished_seq_id < cpu_coherent_after_finished_seq_id) {
-        return cpu_coherent_after_finished_seq_id - finished_seq_id;
-      }
-    } else if (flag == D3D11_MAP_WRITE) {
-      if (finished_seq_id < gpu_occupied_until_finished_seq_id) {
-        return gpu_occupied_until_finished_seq_id - finished_seq_id;
-      }
-    } else if (flag == D3D11_MAP_READ_WRITE) {
-      if (finished_seq_id < cpu_coherent_after_finished_seq_id) {
-        return cpu_coherent_after_finished_seq_id - finished_seq_id;
-      }
-      if (finished_seq_id < gpu_occupied_until_finished_seq_id) {
-        return gpu_occupied_until_finished_seq_id - finished_seq_id;
-      }
-    } else {
-      return -1;
-    }
-    pMappedResource->pData = buffer_mapped;
-    pMappedResource->RowPitch = bytes_per_row;
-    pMappedResource->DepthPitch = bytes_per_image;
-    return 0;
-  };
-  void Unmap() {
-    if (!mapped)
-      return;
-    mapped = false;
-  };
-};
-
 #pragma region StagingBuffer
 
-class StagingBuffer : public TResourceBase<tag_buffer, IMTLD3D11Staging> {
+class StagingBuffer : public TResourceBase<tag_buffer> {
 private:
-  StagingBufferInternal internal;
+  Rc<StagingResource> internal;
 
 public:
   StagingBuffer(const tag_buffer::DESC1 *pDesc, MTLD3D11Device *device,
-                StagingBufferInternal &&internal)
-      : TResourceBase<tag_buffer, IMTLD3D11Staging>(*pDesc, device),
+                Rc<StagingResource> &&internal)
+      : TResourceBase<tag_buffer>(*pDesc, device),
         internal(std::move(internal)) {}
 
-  void UseCopyDestination(uint32_t Subresource, uint64_t seq_id,
-                          MTL_STAGING_RESOURCE *pBuffer, uint32_t *pBytesPerRow,
-                          uint32_t *pBytesPerImage) override {
-    D3D11_ASSERT(Subresource == 0);
-    internal.UseCopyDestination(seq_id, pBuffer, pBytesPerRow,
-                                       pBytesPerImage);
-  };
-
-  void UseCopySource(uint32_t Subresource, uint64_t seq_id,
-                     MTL_STAGING_RESOURCE *pBuffer, uint32_t *pBytesPerRow,
-                     uint32_t *pBytesPerImage) override {
-    D3D11_ASSERT(Subresource == 0);
-    internal.UseCopySource(seq_id, pBuffer, pBytesPerRow,
-                                  pBytesPerImage);
-  };
-
-  virtual int64_t TryMap(uint32_t Subresource, uint64_t finished_seq_id,
-                         // uint64_t commited_seq_id,
-                         D3D11_MAP flag,
-                         D3D11_MAPPED_SUBRESOURCE *pMappedResource) override {
-    return internal.TryMap(finished_seq_id, flag, pMappedResource);
-  };
-  virtual void Unmap(uint32_t Subresource) override {
-    return internal.Unmap();
-  };
-
   void OnSetDebugObjectName(LPCSTR Name) override {
-    if (!Name) {
-      return;
-    }
-    internal.buffer->setLabel(
-        NS::String::string((char *)Name, NS::ASCIIStringEncoding));
   }
 
   Rc<Buffer>
@@ -143,9 +34,10 @@ public:
   bufferSlice() final {
     return {};
   }
-  Com<IMTLD3D11Staging>
-  staging() final {
-    return this;
+  Rc<StagingResource>
+  staging(UINT Subresource) final {
+    assert(Subresource == 0);
+    return internal;
   }
   Rc<DynamicBuffer>
   dynamicBuffer(UINT*, UINT*) final {
@@ -170,7 +62,7 @@ CreateStagingBuffer(MTLD3D11Device *pDevice, const D3D11_BUFFER_DESC *pDesc,
   }
   *ppBuffer = reinterpret_cast<ID3D11Buffer *>(ref(new StagingBuffer(
       pDesc, pDevice,
-      StagingBufferInternal(std::move(buffer), byte_width, byte_width))));
+      new StagingResource(std::move(buffer), byte_width, byte_width))));
   return S_OK;
 }
 
@@ -179,58 +71,20 @@ CreateStagingBuffer(MTLD3D11Device *pDevice, const D3D11_BUFFER_DESC *pDesc,
 #pragma region StagingTexture
 
 template <typename tag_texture>
-class StagingTexture : public TResourceBase<tag_texture, IMTLD3D11Staging> {
-  std::vector<StagingBufferInternal> subresources;
+class StagingTexture : public TResourceBase<tag_texture> {
+  std::vector<Rc<StagingResource>> subresources;
   uint32_t subresource_count;
 
 public:
   StagingTexture(const tag_texture::DESC1 *pDesc, MTLD3D11Device *pDevice,
-                 std::vector<StagingBufferInternal> &&subresources)
-      : TResourceBase<tag_texture, IMTLD3D11Staging>(*pDesc, pDevice),
+                 std::vector<Rc<StagingResource>> &&subresources)
+      : TResourceBase<tag_texture>(*pDesc, pDevice),
         subresources(std::move(subresources)),
         subresource_count(this->subresources.size()) {}
-
-  void UseCopyDestination(uint32_t Subresource, uint64_t seq_id,
-                          MTL_STAGING_RESOURCE *pBuffer, uint32_t *pBytesPerRow,
-                          uint32_t *pBytesPerImage) override {
-    D3D11_ASSERT(Subresource < subresource_count);
-    subresources.at(Subresource)
-        .UseCopyDestination(seq_id, pBuffer, pBytesPerRow, pBytesPerImage);
-  };
-
-  void UseCopySource(uint32_t Subresource, uint64_t seq_id,
-                     MTL_STAGING_RESOURCE *pBuffer, uint32_t *pBytesPerRow,
-                     uint32_t *pBytesPerImage) override {
-    D3D11_ASSERT(Subresource < subresource_count);
-    subresources.at(Subresource)
-        .UseCopySource(seq_id, pBuffer, pBytesPerRow, pBytesPerImage);
-  };
-
-  virtual int64_t TryMap(uint32_t Subresource, uint64_t finished_seq_id,
-                         // uint64_t commited_seq_id,
-                         D3D11_MAP flag,
-                         D3D11_MAPPED_SUBRESOURCE *pMappedResource) override {
-    if (Subresource >= subresource_count) {
-      ERR("Todo: ...");
-      return -1;
-    }
-    return subresources.at(Subresource)
-        .TryMap(finished_seq_id, flag, pMappedResource);
-  };
-  virtual void Unmap(uint32_t Subresource) override {
-    if (Subresource >= subresource_count) {
-      return;
-    }
-    return subresources.at(Subresource).Unmap();
-  };
 
   void OnSetDebugObjectName(LPCSTR Name) override {
     if (!Name) {
       return;
-    }
-    for (auto &sub : subresources) {
-      sub.buffer->setLabel(
-          NS::String::string((char *)Name, NS::ASCIIStringEncoding));
     }
   }
 
@@ -246,9 +100,9 @@ public:
   bufferSlice() final {
     return {};
   }
-  Com<IMTLD3D11Staging>
-  staging() final {
-    return this;
+  Rc<StagingResource>
+  staging(UINT Subresource) final {
+    return subresources.at(Subresource);
   }
   Rc<DynamicBuffer>
   dynamicBuffer(UINT *, UINT *) final {
@@ -276,7 +130,7 @@ HRESULT CreateStagingTextureInternal(MTLD3D11Device *pDevice,
           CreateMTLTextureDescriptor(pDevice, pDesc, &finalDesc, &texDesc))) {
     return E_INVALIDARG;
   }
-  std::vector<StagingBufferInternal> subresources;
+  std::vector<Rc<StagingResource>> subresources;
   for (auto &sub : EnumerateSubresources(finalDesc)) {
     uint32_t w, h, d;
     GetMipmapSize(&finalDesc, sub.MipLevel, &w, &h, &d);
@@ -293,7 +147,7 @@ HRESULT CreateStagingTextureInternal(MTLD3D11Device *pDevice,
       memcpy(buffer->contents(), pInitialData[sub.SubresourceId].pSysMem,
              buf_len);
     }
-    subresources.push_back(StagingBufferInternal(std::move(buffer), bpr, bpi));
+    subresources.push_back(new StagingResource(std::move(buffer), bpr, bpi));
   }
 
   *ppTexture = reinterpret_cast<typename tag::COM_IMPL *>(ref(

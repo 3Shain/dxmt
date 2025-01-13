@@ -40,23 +40,14 @@ ImmediateContextBase::AllocateStagingBuffer(size_t size, size_t alignment) {
 
 template <>
 void
-ImmediateContextBase::UseCopyDestination(
-    IMTLD3D11Staging *pResource, uint32_t Subresource, MTL_STAGING_RESOURCE *pBuffer, uint32_t *pBytesPerRow,
-    uint32_t *pBytesPerImage
-) {
-  pResource->UseCopyDestination(
-      Subresource, ctx_state.cmd_queue.CurrentSeqId(), pBuffer, pBytesPerRow, pBytesPerImage
-  );
+ImmediateContextBase::UseCopyDestination(Rc<StagingResource> &staging) {
+  staging->useCopyDestination(ctx_state.cmd_queue.CurrentSeqId());
 }
+
 template <>
 void
-ImmediateContextBase::UseCopySource(
-    IMTLD3D11Staging *pResource, uint32_t Subresource, MTL_STAGING_RESOURCE *pBuffer, uint32_t *pBytesPerRow,
-    uint32_t *pBytesPerImage
-) {
-  pResource->UseCopySource(
-      Subresource, ctx_state.cmd_queue.CurrentSeqId(), pBuffer, pBytesPerRow, pBytesPerImage
-  );
+ImmediateContextBase::UseCopySource(Rc<StagingResource> &staging) {
+  staging->useCopySource(ctx_state.cmd_queue.CurrentSeqId());
 }
 
 class MTLD3D11ImmediateContext : public ImmediateContextBase {
@@ -168,15 +159,31 @@ public:
       }
       return S_OK;
     }
-    if (auto staging = GetStaging(pResource)) {
+    if (auto staging = GetStagingResource(pResource, Subresource)) {
       while (true) {
         auto coh = cmd_queue.CoherentSeqId();
-        auto ret = staging->TryMap(Subresource, coh, MapType, pMappedResource);
+        int64_t ret = -1;
+        switch (MapType) {
+        case D3D11_MAP_READ:
+          ret = staging->tryMap(coh, true, false);
+          break;
+        case D3D11_MAP_READ_WRITE:
+          ret = staging->tryMap(coh, false, true);
+          break;
+        case D3D11_MAP_WRITE:
+          ret = staging->tryMap(coh, true, true);
+          break;
+        default:
+          break;
+        }
         if (ret < 0) {
           return E_FAIL;
         }
         if (ret == 0) {
           TRACE("staging map ready");
+          pMappedResource->pData = staging->current->contents();
+          pMappedResource->RowPitch = staging->bytesPerRow;
+          pMappedResource->DepthPitch = staging->bytesPerImage;
           return S_OK;
         }
         if (MapFlags & D3D11_MAP_FLAG_DO_NOT_WAIT) {
@@ -203,8 +210,8 @@ public:
     if (auto dynamic = GetDynamicTexture(pResource, &row_pitch, &depth_pitch)) {
       return;
     }
-    if (auto staging = GetStaging(pResource)) {
-      staging->Unmap(Subresource);
+    if (auto staging = GetStagingResource(pResource, Subresource)) {
+      staging->unmap();
       return;
     };
     D3D11_ASSERT(0 && "unknown mapped resource (USAGE_DEFAULT?)");
@@ -348,6 +355,14 @@ public:
 
     for (const auto &query : cmdlist->issued_event_query) {
       End(query.ptr());
+    }
+
+    for (const auto &staging : cmdlist->read_staging_resources) {
+      staging->useCopySource(ctx_state.cmd_queue.CurrentSeqId());
+    }
+
+    for (const auto &staging : cmdlist->written_staging_resources) {
+      staging->useCopyDestination(ctx_state.cmd_queue.CurrentSeqId());
     }
 
     Emit([cmdlist = std::move(cmdlist), query_list = std::move(query_list)](ArgumentEncodingContext &enc) {

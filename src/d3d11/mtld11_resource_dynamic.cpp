@@ -6,6 +6,7 @@
 #include "d3d11_device.hpp"
 #include "dxmt_dynamic.hpp"
 #include "dxmt_format.hpp"
+#include "dxmt_staging.hpp"
 #include "dxmt_texture.hpp"
 #include "mtld11_resource.hpp"
 #include "objc_pointer.hpp"
@@ -72,7 +73,7 @@ public:
   Rc<Buffer> buffer() final { return {}; };
   Rc<Texture> texture() final { return this->texture_; };
   BufferSlice bufferSlice() final { return {};}
-  Com<IMTLD3D11Staging> staging() final { return nullptr; }
+  Rc<StagingResource> staging(UINT) final { return nullptr; }
   Rc<DynamicBuffer> dynamicBuffer(UINT*, UINT*) final { return {}; };
   Rc<DynamicTexture> dynamicTexture(UINT* pBytesPerRow, UINT* pBytesPerImage) final {
     *pBytesPerRow = bytes_per_row_;
