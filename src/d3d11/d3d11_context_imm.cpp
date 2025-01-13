@@ -252,9 +252,14 @@ public:
     D3D11_QUERY_DESC desc;
     ((ID3D11Query *)pAsync)->GetDesc(&desc);
     switch (desc.Query) {
-    case D3D11_QUERY_EVENT:
-      ((IMTLD3DEventQuery *)pAsync)->Issue(cmd_queue.EncodedWorkFinishAt());
+    case D3D11_QUERY_EVENT: {
+      auto event_id = cmd_queue.GetNextEventSeqId();
+      ((IMTLD3DEventQuery *)pAsync)->Issue(event_id);
+      InvalidateCurrentPass();
+      Emit([event_id](ArgumentEncodingContext &enc) mutable { enc.signalEvent(event_id); });
+      promote_flush = true;
       break;
+    }
     case D3D11_QUERY_OCCLUSION:
     case D3D11_QUERY_OCCLUSION_PREDICATE: {
       auto query = static_cast<IMTLD3DOcclusionQuery *>(pAsync);
@@ -295,7 +300,7 @@ public:
     case D3D11_QUERY_EVENT: {
       BOOL null_data;
       BOOL *data_ptr = pData ? (BOOL *)pData : &null_data;
-      return ((IMTLD3DEventQuery *)pAsync)->GetData(data_ptr, cmd_queue.CoherentSeqId());
+      return ((IMTLD3DEventQuery *)pAsync)->GetData(data_ptr, cmd_queue.SignaledEventSeqId());
     }
     case D3D11_QUERY_OCCLUSION: {
       uint64_t null_data;

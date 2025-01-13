@@ -30,6 +30,7 @@ CommandQueue::CommandQueue(MTL::Device *device) :
     ));
     chunk.reset();
   };
+  event = transfer(device->newSharedEvent());
 
   std::string env = env::getEnvVar("DXMT_CAPTURE_FRAME");
 

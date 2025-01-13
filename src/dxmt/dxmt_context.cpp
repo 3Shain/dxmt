@@ -358,6 +358,19 @@ ArgumentEncodingContext::upscale(Rc<Texture> &texture, Rc<Texture> &upscaled, Ob
   endPass();
 }
 
+void
+ArgumentEncodingContext::signalEvent(uint64_t value) {
+  assert(!encoder_current);
+  auto encoder_info = allocate<SignalEventData>();
+  encoder_info->type = EncoderType::SignalEvent;
+  encoder_info->id = nextEncoderId();
+  encoder_info->event = queue.event;
+  encoder_info->value = value;
+
+  encoder_current = encoder_info;
+  endPass();
+}
+
 RenderEncoderData *
 ArgumentEncodingContext::startRenderPass(
     Obj<MTL::RenderPassDescriptor> &&descriptor, uint32_t dsv_planar_flags, uint32_t render_target_count
@@ -628,6 +641,12 @@ ArgumentEncodingContext::flushCommands(MTL::CommandBuffer *cmdbuf, uint64_t seqI
       data->~SpatialUpscaleData();
       break;
     }
+    case EncoderType::SignalEvent: {
+      auto data = static_cast<SignalEventData *>(current);
+      cmdbuf->encodeSignalEvent(data->event, data->value);
+      data->~SignalEventData();
+      break;
+    }
     default:
       break;
     }
@@ -646,6 +665,10 @@ ArgumentEncodingContext::checkEncoderRelation(EncoderData *former, EncoderData *
     return DXMT_ENCODER_LIST_OP_SWAP;
   if (latter->type == EncoderType::Null)
     return DXMT_ENCODER_LIST_OP_SWAP;
+  if (former->type == EncoderType::SignalEvent)
+    return DXMT_ENCODER_LIST_OP_SYNCHRONIZE;
+  if (latter->type == EncoderType::SignalEvent)
+    return DXMT_ENCODER_LIST_OP_SYNCHRONIZE;
 
   while (former->type != latter->type) {
     if (former->type == EncoderType::Clear && latter->type == EncoderType::Render) {
