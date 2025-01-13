@@ -7,6 +7,7 @@
 #include "Metal/MTLRenderPass.hpp"
 #include "Metal/MTLBuffer.hpp"
 #include "Metal/MTLSampler.hpp"
+#include "MetalFX/MTLFXSpatialScaler.hpp"
 #include "QuartzCore/CAMetalDrawable.hpp"
 #include "dxmt_buffer.hpp"
 #include "dxmt_command.hpp"
@@ -84,6 +85,7 @@ enum class EncoderType {
   Clear,
   Resolve,
   Present,
+  SpatialUpscale,
 };
 
 struct EncoderData {
@@ -153,6 +155,12 @@ struct PresentData : EncoderData {
   Obj<MTL::Texture> backbuffer;
   Obj<CA::MetalDrawable> drawable;
   double after;
+};
+
+struct SpatialUpscaleData : EncoderData {
+  Obj<MTL::Texture> backbuffer;
+  Obj<MTL::Texture> upscaled;
+  Obj<MTLFX::SpatialScaler> scaler;
 };
 
 template <bool Tessellation>
@@ -477,6 +485,8 @@ public:
   };
 
   void present(Rc<Texture> &texture, CA::MetalDrawable *drawable, double after);
+
+  void upscale(Rc<Texture> &texture, Rc<Texture> &upscaled, Obj<MTLFX::SpatialScaler> &scaler);
 
   uint64_t
   nextEncoderId() {

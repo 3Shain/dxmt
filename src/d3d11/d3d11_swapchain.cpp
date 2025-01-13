@@ -234,24 +234,30 @@ public:
 
     backbuffer_desc_.Format = desc_.Format;
 
+    backbuffer_ = nullptr;
     if (FAILED(dxmt::CreateDeviceTexture2D(
             m_device, &backbuffer_desc_, nullptr, reinterpret_cast<ID3D11Texture2D1 **>(&backbuffer_)
         )))
       return E_FAIL;
 
     if constexpr (EnableMetalFX) {
-      auto scaler_descriptor =
-          transfer(MTLFX::SpatialScalerDescriptor::alloc()->init());
+      D3D11_TEXTURE2D_DESC1 upscaled_desc_ = backbuffer_desc_;
+      upscaled_desc_.Height *= scale_factor;
+      upscaled_desc_.Width *= scale_factor;
+      upscaled_backbuffer_ = nullptr;
+      if (FAILED(dxmt::CreateDeviceTexture2D(
+              m_device, &upscaled_desc_, nullptr, reinterpret_cast<ID3D11Texture2D1 **>(&upscaled_backbuffer_)
+          )))
+        return E_FAIL;
+
+      auto scaler_descriptor = transfer(MTLFX::SpatialScalerDescriptor::alloc()->init());
       scaler_descriptor->setInputHeight(desc_.Height);
       scaler_descriptor->setInputWidth(desc_.Width);
       scaler_descriptor->setOutputHeight(layer_weak_->drawableSize().height);
       scaler_descriptor->setOutputWidth(layer_weak_->drawableSize().width);
-      scaler_descriptor->setOutputTextureFormat(MTL::PixelFormatBGRA8Unorm_sRGB);
-      scaler_descriptor->setColorTextureFormat(MTL::PixelFormatBGRA8Unorm_sRGB);
-      scaler_descriptor->setColorProcessingMode(
-          MTLFX::SpatialScalerColorProcessingModePerceptual);
-      metalfx_scaler = transfer(
-          scaler_descriptor->newSpatialScaler(m_device->GetMTLDevice()));
+      scaler_descriptor->setColorTextureFormat(backbuffer_->texture()->pixelFormat());
+      scaler_descriptor->setOutputTextureFormat(upscaled_backbuffer_->texture()->pixelFormat());
+      metalfx_scaler = transfer(scaler_descriptor->newSpatialScaler(m_device->GetMTLDevice()));
       D3D11_ASSERT(metalfx_scaler && "otherwise metalfx failed to initialize");
     }
 
@@ -385,26 +391,22 @@ public:
     device_context_->PrepareFlush();
     auto &cmd_queue = m_device->GetDXMTDevice().queue();
     auto chunk = cmd_queue.CurrentChunk();
-    chunk->emitcc([this, vsync_duration, backbuffer = backbuffer_->texture()](ArgumentEncodingContext &ctx) mutable {
-      auto drawable = layer_weak_->nextDrawable();
-      // auto out = drawable->texture();
-      // auto buf = backbuffer.texture();
-      // if constexpr (EnableMetalFX) {
-      //   D3D11_ASSERT(metalfx_scaler);
-      //   metalfx_scaler->setColorTexture(buf);
-      //   metalfx_scaler->setOutputTexture(out);
-      //   metalfx_scaler->encodeToCommandBuffer(ctx.cmdbuf);
-      // } else {
-      //   ctx.queue->emulated_cmd.PresentToDrawable(ctx.cmdbuf, buf, out);
-      // }
-
-      ctx.present(backbuffer, drawable, vsync_duration);
-
-      // auto used = backbuffer->rename(std::move(alternative_buffer_));
-      // alternative_buffer_ = std::move(used);
-
-      ReleaseSemaphore(present_semaphore_, 1, nullptr);
-    });
+    if constexpr (EnableMetalFX) {
+      chunk->emitcc([this, vsync_duration, backbuffer = backbuffer_->texture(),
+                     upscaled = upscaled_backbuffer_->texture(),
+                     scaler = this->metalfx_scaler](ArgumentEncodingContext &ctx) mutable {
+        ctx.upscale(backbuffer, upscaled, scaler);
+        auto drawable = layer_weak_->nextDrawable();
+        ctx.present(upscaled, drawable, vsync_duration);
+        ReleaseSemaphore(present_semaphore_, 1, nullptr);
+      });
+    } else {
+      chunk->emitcc([this, vsync_duration, backbuffer = backbuffer_->texture()](ArgumentEncodingContext &ctx) mutable {
+        auto drawable = layer_weak_->nextDrawable();
+        ctx.present(backbuffer, drawable, vsync_duration);
+        ReleaseSemaphore(present_semaphore_, 1, nullptr);
+      });
+    }
     device_context_->Commit();
     cmd_queue.PresentBoundary();
 
@@ -541,6 +543,7 @@ private:
   CA::DeveloperHUDProperties* hud;
 
   std::conditional<EnableMetalFX, Obj<MTLFX::SpatialScaler>, std::monostate>::type metalfx_scaler;
+  std::conditional<EnableMetalFX, Com<D3D11ResourceCommon>, std::monostate>::type upscaled_backbuffer_;
   float scale_factor = 1.0;
 };
 
@@ -572,10 +575,14 @@ CreateSwapChain(
   layer->setPixelFormat(MTL::PixelFormatBGRA8Unorm);
   layer->setFramebufferOnly(true);
   if (env::getEnvVar("DXMT_METALFX_SPATIAL_SWAPCHAIN") == "1") {
-    *ppSwapChain = new MTLD3D11SwapChain<true>(
-        pFactory, pDevice, layer_factory.ptr(), layer, hWnd, native_view, pDesc, pFullscreenDesc
-    );
-    return S_OK;
+    if (MTLFX::SpatialScalerDescriptor::supportsDevice(pDevice->GetMTLDevice())) {
+      *ppSwapChain = new MTLD3D11SwapChain<true>(
+          pFactory, pDevice, layer_factory.ptr(), layer, hWnd, native_view, pDesc, pFullscreenDesc
+      );
+      return S_OK;
+    } else {
+      WARN("MetalFX spatial scaler is not supported on this device");
+    }
   }
   *ppSwapChain = new MTLD3D11SwapChain<false>(
       pFactory, pDevice, layer_factory.ptr(), layer, hWnd, native_view, pDesc, pFullscreenDesc
