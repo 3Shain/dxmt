@@ -580,6 +580,7 @@ ArgumentEncodingContext::flushCommands(MTL::CommandBuffer *cmdbuf, uint64_t seqI
         enc->setLabel(NS::String::string("ClearPass", NS::ASCIIStringEncoding));
         enc->endEncoding();
       }
+      data->~ClearEncoderData();
       break;
     }
     case EncoderType::Resolve: {
@@ -599,6 +600,7 @@ ArgumentEncodingContext::flushCommands(MTL::CommandBuffer *cmdbuf, uint64_t seqI
         enc->setLabel(NS::String::string("ResolvePass", NS::ASCIIStringEncoding));
         enc->endEncoding();
       }
+      data->~ResolveEncoderData();
       break;
     }
     default:
