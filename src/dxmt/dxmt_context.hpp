@@ -60,6 +60,7 @@ struct ConstantBufferBinding {
 
 struct SamplerBinding {
   Obj<MTL::SamplerState> sampler;
+  float bias;
 };
 
 struct ResourceViewBinding {
@@ -293,10 +294,11 @@ public:
 
   template <PipelineStage stage>
   void
-  bindSampler(unsigned slot, MTL::SamplerState *sampler) {
+  bindSampler(unsigned slot, MTL::SamplerState *sampler, float bias) {
     unsigned idx = slot + 16 * unsigned(stage);
     auto &entry = sampler_[idx];
     entry.sampler = sampler;
+    entry.bias = bias;
   }
 
   template <PipelineStage stage>

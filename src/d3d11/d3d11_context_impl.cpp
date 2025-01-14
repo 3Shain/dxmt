@@ -2461,8 +2461,8 @@ public:
           continue;
         if (auto expected = com_cast<IMTLD3D11SamplerState>(pSampler)) {
           entry.Sampler = expected.ptr();
-          Emit([=, sampler = entry.Sampler->GetSamplerState()](ArgumentEncodingContext& enc) {
-            enc.bindSampler<Stage>(Slot, sampler);
+          Emit([=, sampler = entry.Sampler](ArgumentEncodingContext &enc) {
+            enc.bindSampler<Stage>(Slot, sampler->GetSamplerState(), sampler->GetLODBias());
           });
         } else {
           D3D11_ASSERT(0 && "wtf");
@@ -2471,7 +2471,7 @@ public:
         // BIND NULL
         if (ShaderStage.Samplers.unbind(Slot)) {
           Emit([=](ArgumentEncodingContext& enc) {
-            enc.bindSampler<Stage>(Slot, nullptr);
+            enc.bindSampler<Stage>(Slot, nullptr, 0);
           });
         }
       }
@@ -3658,8 +3658,8 @@ public:
              ) mutable { enc.bindConstantBuffer<Stage>(slot, offset, forward_rc(buffer)); });
       }
       for (const auto &[slot, entry] : ShaderStage.Samplers) {
-        Emit([=, sampler = entry.Sampler->GetSamplerState()](ArgumentEncodingContext &enc) {
-          enc.bindSampler<Stage>(slot, sampler);
+        Emit([=, sampler = entry.Sampler](ArgumentEncodingContext &enc) {
+          enc.bindSampler<Stage>(slot, sampler->GetSamplerState(), sampler->GetLODBias());
         });
       }
       for (const auto &[slot, entry] : ShaderStage.SRVs) {
