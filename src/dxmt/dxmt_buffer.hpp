@@ -76,7 +76,7 @@ public:
 
   BufferViewKey createView(BufferViewDescriptor const &);
 
-  BufferAllocation *
+  constexpr BufferAllocation *
   current() {
     return current_.ptr();
   }

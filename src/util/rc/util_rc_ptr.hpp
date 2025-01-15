@@ -88,8 +88,8 @@ public:
   }
 
   T &operator*() const { return *m_object; }
-  T *operator->() const { return m_object; }
-  T *ptr() const { return m_object; }
+  constexpr T *operator->() const { return m_object; }
+  constexpr T *ptr() const { return m_object; }
 
   operator bool() const { return this->m_object != nullptr; }
 

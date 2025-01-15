@@ -93,7 +93,7 @@ ArgumentEncodingContext::encodeConstantBuffers(const MTL_SHADER_REFLECTION *refl
       break;
     }
     default:
-      __builtin_unreachable();
+      DXMT_UNREACHABLE
     }
   }
 
@@ -150,7 +150,7 @@ ArgumentEncodingContext::encodeShaderResources(const MTL_SHADER_REFLECTION *refl
     auto &arg = reflection->Arguments[i];
     switch (arg.Type) {
     case SM50BindingType::ConstantBuffer: {
-      __builtin_unreachable();
+      DXMT_UNREACHABLE
     }
     case SM50BindingType::Sampler: {
       auto slot = 16 * unsigned(stage) + arg.SM50BindingSlot;
@@ -550,7 +550,6 @@ ArgumentEncodingContext::flushCommands(MTL::CommandBuffer *cmdbuf, uint64_t seqI
       auto data = static_cast<BlitEncoderData *>(current);
       BlitCommandContext ctx{cmdbuf->blitCommandEncoder()};
       data->cmds.execute(ctx);
-      data->cmds.~CommandList();
       ctx.encoder->endEncoding();
       data->~BlitEncoderData();
       break;

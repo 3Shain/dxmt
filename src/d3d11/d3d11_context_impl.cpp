@@ -145,6 +145,7 @@ to_metal_primitive_topology(D3D11_PRIMITIVE_TOPOLOGY topo) {
   case D3D_PRIMITIVE_TOPOLOGY_UNDEFINED:
     D3D11_ASSERT(0 && "Invalid topology");
   }
+  DXMT_UNREACHABLE
 }
 
 struct Subresource {
@@ -3139,7 +3140,7 @@ public:
       }
       struct DEPTH_STENCIL_STATE {
         Rc<Texture> Texture{};
-        unsigned viewId;
+        unsigned viewId{};
         UINT MipSlice{};
         UINT ArrayIndex{};
         MTL::PixelFormat PixelFormat = MTL::PixelFormatInvalid;

@@ -2,6 +2,7 @@
 #include "Metal/MTLBuffer.hpp"
 #include "objc_pointer.hpp"
 #include <cstdint>
+#include <atomic>
 
 namespace dxmt {
 

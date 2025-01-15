@@ -14,6 +14,7 @@
 #include <string>
 #include <sstream>
 #include <vector>
+#include <cstdint>
 #include "unknwn.h"
 
 namespace dxmt::str {

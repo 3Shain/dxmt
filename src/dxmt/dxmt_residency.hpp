@@ -50,20 +50,20 @@ CheckResourceResidency(DXMT_RESOURCE_RESIDENCY_STATE &state, uint64_t encoder_id
 
 constexpr MTL::ResourceUsage
 GetUsageFromResidencyMask(DXMT_RESOURCE_RESIDENCY mask) {
-  return ((mask & DXMT_RESOURCE_RESIDENCY_READ) ? MTL::ResourceUsageRead : 0) |
-         ((mask & DXMT_RESOURCE_RESIDENCY_WRITE) ? MTL::ResourceUsageWrite : 0);
+  return ((mask & DXMT_RESOURCE_RESIDENCY_READ) ? MTL::ResourceUsageRead : MTL::ResourceUsage(0)) |
+         ((mask & DXMT_RESOURCE_RESIDENCY_WRITE) ? MTL::ResourceUsageWrite : MTL::ResourceUsage(0));
 }
 
 constexpr MTL::RenderStages
 GetStagesFromResidencyMask(DXMT_RESOURCE_RESIDENCY mask) {
   return ((mask & (DXMT_RESOURCE_RESIDENCY_FRAGMENT_READ | DXMT_RESOURCE_RESIDENCY_FRAGMENT_WRITE))
               ? MTL::RenderStageFragment
-              : 0) |
+              : MTL::RenderStages(0)) |
          ((mask & (DXMT_RESOURCE_RESIDENCY_VERTEX_READ | DXMT_RESOURCE_RESIDENCY_VERTEX_WRITE)) ? MTL::RenderStageVertex
-                                                                                                : 0) |
+                                                                                                :  MTL::RenderStages(0)) |
          ((mask & (DXMT_RESOURCE_RESIDENCY_OBJECT_READ | DXMT_RESOURCE_RESIDENCY_OBJECT_WRITE)) ? MTL::RenderStageObject
-                                                                                                : 0) |
-         ((mask & (DXMT_RESOURCE_RESIDENCY_MESH_READ | DXMT_RESOURCE_RESIDENCY_MESH_WRITE)) ? MTL::RenderStageMesh : 0);
+                                                                                                : MTL::RenderStages(0)) |
+         ((mask & (DXMT_RESOURCE_RESIDENCY_MESH_READ | DXMT_RESOURCE_RESIDENCY_MESH_WRITE)) ? MTL::RenderStageMesh : MTL::RenderStages(0));
 }
 
 } // namespace dxmt

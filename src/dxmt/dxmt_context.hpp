@@ -22,6 +22,7 @@
 #include <cassert>
 
 #define DXMT_IMPLEMENT_ME __builtin_unreachable();
+#define DXMT_UNREACHABLE __builtin_unreachable();
 
 namespace dxmt {
 
@@ -197,6 +198,7 @@ GetResidencyMask(PipelineStage type, bool read, bool write) {
     return (read ? DXMT_RESOURCE_RESIDENCY_READ : DXMT_RESOURCE_RESIDENCY_NULL) |
            (write ? DXMT_RESOURCE_RESIDENCY_WRITE : DXMT_RESOURCE_RESIDENCY_NULL);
   }
+  DXMT_UNREACHABLE;
 }
 
 enum DXMT_ENCODER_LIST_OP {
@@ -233,42 +235,42 @@ class ArgumentEncodingContext {
   }
 
 public:
-  constexpr MTL::Buffer *
+  MTL::Buffer *
   access(Rc<Buffer> const &buffer, unsigned offset, unsigned length, DXMT_ENCODER_RESOURCE_ACESS flags) {
     auto allocation = buffer->current();
     trackBuffer(allocation, flags);
     return allocation->buffer();
   }
 
-  constexpr MTL::Texture *
+  MTL::Texture *
   access(Rc<Buffer> const &buffer, unsigned viewId, DXMT_ENCODER_RESOURCE_ACESS flags) {
     auto allocation = buffer->current();
     trackBuffer(allocation, flags);
     return buffer->view(viewId);
   }
 
-  constexpr MTL::Buffer *
+  MTL::Buffer *
   access(Rc<Buffer> const &buffer, DXMT_ENCODER_RESOURCE_ACESS flags) {
     auto allocation = buffer->current();
     trackBuffer(allocation, flags);
     return allocation->buffer();
   }
 
-  constexpr MTL::Texture *
+  MTL::Texture *
   access(Rc<Texture> const &texture, unsigned level, unsigned slice, DXMT_ENCODER_RESOURCE_ACESS flags) {
     auto allocation = texture->current();
     trackTexture(allocation, flags);
     return allocation->texture();
   }
 
-  constexpr MTL::Texture *
+  MTL::Texture *
   access(Rc<Texture> const &texture, unsigned viewId, DXMT_ENCODER_RESOURCE_ACESS flags) {
     auto allocation = texture->current();
     trackTexture(allocation, flags);
     return texture->view(viewId);
   }
 
-  constexpr MTL::Texture *
+  MTL::Texture *
   access(Rc<Texture> const &texture, DXMT_ENCODER_RESOURCE_ACESS flags) {
     auto allocation = texture->current();
     trackTexture(allocation, flags);
@@ -324,44 +326,8 @@ public:
 
   template <PipelineStage stage>
   void bindOutputBuffer(unsigned slot, Rc<Buffer> &&buffer, unsigned viewId, Rc<Buffer> &&counter, BufferSlice slice);
-  template <>
-  void
-  bindOutputBuffer<PipelineStage::Compute>(unsigned slot, Rc<Buffer> &&buffer, unsigned viewId, Rc<Buffer> &&counter, BufferSlice slice) {
-    auto &entry = cs_uav_[slot];
-    entry.texture = {};
-    entry.buffer = std::move(buffer);
-    entry.viewId = viewId;
-    entry.counter = std::move(counter);
-    entry.slice = slice;
-  }
-  template <>
-  void
-  bindOutputBuffer<PipelineStage::Pixel>(unsigned slot, Rc<Buffer> &&buffer, unsigned viewId, Rc<Buffer> &&counter, BufferSlice slice) {
-    auto &entry = om_uav_[slot];
-    entry.texture = {};
-    entry.buffer = std::move(buffer);
-    entry.viewId = viewId;
-    entry.counter = std::move(counter);
-    entry.slice = slice;
-  }
 
   template <PipelineStage stage> void bindOutputTexture(unsigned slot, Rc<Texture> &&texture, unsigned viewId);
-  template <>
-  void
-  bindOutputTexture<PipelineStage::Compute>(unsigned slot, Rc<Texture> &&texture, unsigned viewId) {
-    auto &entry = cs_uav_[slot];
-    entry.buffer = {};
-    entry.texture = std::move(texture);
-    entry.viewId = viewId;
-  }
-  template <>
-  void
-  bindOutputTexture<PipelineStage::Pixel>(unsigned slot, Rc<Texture> &&texture, unsigned viewId) {
-    auto &entry = om_uav_[slot];
-    entry.buffer = {};
-    entry.texture = std::move(texture);
-    entry.viewId = viewId;
-  }
 
   void bindStreamOutputBuffer(unsigned slot, unsigned offset, Rc<Buffer> &&buffer);
   void bindStreamOutputBufferOffset(unsigned slot, unsigned offset);
@@ -386,7 +352,7 @@ public:
     ibuf_ = std::move(buffer);
   }
 
-  constexpr MTL::Buffer *
+  MTL::Buffer *
   currentIndexBuffer() {
     // because of indirect draw, we can't predicate the accessed buffer range
     return access(ibuf_, 0, ibuf_->length(), DXMT_ENCODER_RESOURCE_ACESS_READ);
@@ -634,5 +600,51 @@ private:
 
   CommandQueue& queue;
 };
+
+template <>
+inline void
+ArgumentEncodingContext::bindOutputBuffer<PipelineStage::Compute>(
+    unsigned slot, Rc<Buffer> &&buffer, unsigned viewId, Rc<Buffer> &&counter, BufferSlice slice
+) {
+  auto &entry = cs_uav_[slot];
+  entry.texture = {};
+  entry.buffer = std::move(buffer);
+  entry.viewId = viewId;
+  entry.counter = std::move(counter);
+  entry.slice = slice;
+}
+template <>
+inline void
+ArgumentEncodingContext::bindOutputBuffer<PipelineStage::Pixel>(
+    unsigned slot, Rc<Buffer> &&buffer, unsigned viewId, Rc<Buffer> &&counter, BufferSlice slice
+) {
+  auto &entry = om_uav_[slot];
+  entry.texture = {};
+  entry.buffer = std::move(buffer);
+  entry.viewId = viewId;
+  entry.counter = std::move(counter);
+  entry.slice = slice;
+}
+
+template <>
+inline void
+ArgumentEncodingContext::bindOutputTexture<PipelineStage::Compute>(
+    unsigned slot, Rc<Texture> &&texture, unsigned viewId
+) {
+  auto &entry = cs_uav_[slot];
+  entry.buffer = {};
+  entry.texture = std::move(texture);
+  entry.viewId = viewId;
+}
+template <>
+inline void
+ArgumentEncodingContext::bindOutputTexture<PipelineStage::Pixel>(
+    unsigned slot, Rc<Texture> &&texture, unsigned viewId
+) {
+  auto &entry = om_uav_[slot];
+  entry.buffer = {};
+  entry.texture = std::move(texture);
+  entry.viewId = viewId;
+}
 
 } // namespace dxmt

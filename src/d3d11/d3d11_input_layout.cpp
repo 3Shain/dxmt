@@ -172,7 +172,7 @@ HRESULT ExtractMTLStreamOutputElements(
       ERR("CreateEmulatedVertexStreamOutputShader: stream must be 0");
       return E_INVALIDARG;
     }
-    if (entry.OutputSlot > 3 || entry.OutputSlot < 0) {
+    if (entry.OutputSlot > 3) {
       ERR("CreateEmulatedVertexStreamOutputShader: invalid output slot ",
           entry.OutputSlot);
       return E_INVALIDARG;

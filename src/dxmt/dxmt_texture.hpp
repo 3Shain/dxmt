@@ -81,7 +81,7 @@ public:
 
   TextureViewKey createView(TextureViewDescriptor const &descriptor);
 
-  TextureAllocation *
+  constexpr TextureAllocation *
   current() {
     return current_.ptr();
   }

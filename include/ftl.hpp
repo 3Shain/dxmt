@@ -2,6 +2,7 @@
 #include <type_traits>
 #include <utility>
 #include <vector>
+#include <algorithm>
 
 template <class Tp, typename Func>
 auto operator | (const std::vector<Tp> &vec, Func &&f)  {

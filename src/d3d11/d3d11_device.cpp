@@ -103,6 +103,8 @@ public:
         return dxmt::CreateBuffer(this, pDesc, pInitialData, ppBuffer);
       case D3D11_USAGE_STAGING:
         return CreateStagingBuffer(this, pDesc, pInitialData, ppBuffer);
+      default:
+        DXMT_UNREACHABLE
       }
     } catch (const MTLD3DError &err) {
       ERR(err.message());

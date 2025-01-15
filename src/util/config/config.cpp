@@ -8,12 +8,13 @@
  * See <https://github.com/doitsujin/dxvk/blob/master/LICENSE>
  */
 
- #include <array>
+#include <array>
 #include <fstream>
 #include <sstream>
 #include <iostream>
 #include <regex>
 #include <utility>
+#include <cmath>
 
 #include "config.hpp"
 
