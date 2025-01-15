@@ -5,7 +5,12 @@ winemetal_src = [
   'error_handling.c',
 ]
 
-winemetal_ld_args      = ['-Wl,/entry:WineMetalEntry']
+if cc.has_link_argument('/entry:WineMetalEntry')
+  winemetal_ld_args      = ['-Wl,/entry:WineMetalEntry']
+else
+  winemetal_ld_args      = ['-Wl,-eWineMetalEntry']
+endif
+
 winemetal_link_depends = []
 
 wine_build_path = get_option('wine_build_path')
