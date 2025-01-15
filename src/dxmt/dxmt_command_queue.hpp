@@ -192,7 +192,7 @@ public:
   void
   reset() noexcept {
     visibility_readback = {};
-    list_enc.~CommandList();
+    list_enc.reset();
     cpu_arugment_heap_offset = 0;
     gpu_arugment_heap_offset = 0;
     attached_cmdbuf = nullptr;
