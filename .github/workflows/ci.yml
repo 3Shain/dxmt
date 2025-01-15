@@ -25,7 +25,7 @@ jobs:
             ./toolchains
       - name: Install Development Environment
         run: |
-         brew install ninja meson
+         brew install ninja meson mingw-w64
       - name: Configuration
         if: ${{ steps.cache-toolchains.outputs.cache-hit != 'true' }}
         run: ./configure.sh
@@ -59,3 +59,14 @@ jobs:
         with:
           name: artifacts-release
           path: artifacts-release.tar.gz
+      - name: Build (gcc-release)
+        run: |
+          meson setup --cross-file build-win64-sys.txt --native-file build-osx.txt -Dnative_llvm_path=toolchains/llvm-darwin build-release-gcc --buildtype release
+          meson compile -C build-release-gcc
+      - name: Tar (gcc-release)
+        run: tar -zcf artifacts-release-gcc.tar.gz build-release-gcc/src
+      - name: Upload (gcc-releases)
+        uses: actions/upload-artifact@v4
+        with:
+          name: artifacts-release-gcc
+          path: artifacts-release-gcc.tar.gz
