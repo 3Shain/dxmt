@@ -570,10 +570,10 @@ public:
         default:
           break;
         case D3D11_UAV_DIMENSION_TEXTURE1D:
-          D3D11_ASSERT(0 && "tex1d clear");
+          UNIMPLEMENTED("tex1d clear");
           break;
         case D3D11_UAV_DIMENSION_TEXTURE1DARRAY:
-          D3D11_ASSERT(0 && "tex1darr clear");
+          UNIMPLEMENTED("tex1darr clear");
           break;
         case D3D11_UAV_DIMENSION_TEXTURE2D:
           enc.encodeComputeCommand([&, texture =
@@ -582,7 +582,7 @@ public:
           });
           break;
         case D3D11_UAV_DIMENSION_TEXTURE2DARRAY:
-          D3D11_ASSERT(0 && "tex2darr clear");
+          UNIMPLEMENTED("tex2darr clear");
           break;
         case D3D11_UAV_DIMENSION_TEXTURE3D:
           enc.encodeComputeCommand([&, texture =
@@ -638,10 +638,10 @@ public:
         default:
           break;
         case D3D11_UAV_DIMENSION_TEXTURE1D:
-          D3D11_ASSERT(0 && "tex1d clear");
+          UNIMPLEMENTED("tex1d clear");
           break;
         case D3D11_UAV_DIMENSION_TEXTURE1DARRAY:
-          D3D11_ASSERT(0 && "tex1darr clear");
+          UNIMPLEMENTED("tex1darr clear");
           break;
         case D3D11_UAV_DIMENSION_TEXTURE2D:
           enc.encodeComputeCommand([&, texture =
@@ -650,10 +650,10 @@ public:
           });
           break;
         case D3D11_UAV_DIMENSION_TEXTURE2DARRAY:
-          D3D11_ASSERT(0 && "tex2darr clear");
+          UNIMPLEMENTED("tex2darr clear");
           break;
         case D3D11_UAV_DIMENSION_TEXTURE3D:
-          D3D11_ASSERT(0 && "tex3d clear");
+          UNIMPLEMENTED("tex3d clear");
           break;
         }
       });
@@ -881,7 +881,7 @@ public:
           });
         });
       } else {
-        D3D11_ASSERT(0 && "UpdateSubresource1: TODO: staging?");
+        UNIMPLEMENTED("UpdateSubresource1: TODO: staging?");
       }
       return;
     }
@@ -2674,7 +2674,7 @@ public:
       return;
     if (auto staging_dst = GetStagingResource(pDstResource, DstSubresource)) {
       if (auto staging_src = GetStagingResource(pSrcResource, SrcSubresource)) {
-        D3D11_ASSERT(0 && "todo: copy between staging");
+        UNIMPLEMENTED("copy buffer between staging");
       } else if (auto src = reinterpret_cast<D3D11ResourceCommon *>(pSrcResource)) {
         // copy from device to staging
         UseCopyDestination(staging_dst);
@@ -2687,7 +2687,7 @@ public:
         });
         promote_flush = true;
       } else {
-        D3D11_ASSERT(0 && "todo");
+        UNIMPLEMENTED("todo");
       }
     } else if (auto dst = reinterpret_cast<D3D11ResourceCommon *>(pDstResource)) {
       if (auto staging_src = GetStagingResource(pSrcResource, SrcSubresource)) {
@@ -2711,10 +2711,10 @@ public:
           });
         });
       } else {
-        D3D11_ASSERT(0 && "todo");
+        UNIMPLEMENTED("todo");
       }
     } else {
-      D3D11_ASSERT(0 && "todo");
+      UNIMPLEMENTED("todo");
     }
   }
 
@@ -2736,7 +2736,7 @@ public:
   CopyTextureBitcast(TextureCopyCommand &&cmd) {
     if (auto staging_dst = GetStagingResource(cmd.pDst, cmd.DstSubresource)) {
       if (auto staging_src = GetStagingResource(cmd.pSrc, cmd.SrcSubresource)) {
-        D3D11_ASSERT(0 && "TODO: copy between staging");
+        UNIMPLEMENTED("copy between staging");
       } else if (auto src = GetTexture(cmd.pSrc)) {
         UseCopyDestination(staging_dst);
         SwitchToBlitEncoder(CommandBufferState::ReadbackBlitEncoderActive);
@@ -2836,7 +2836,7 @@ public:
     } else if (auto dst = GetTexture(cmd.pDst)) {
       if (auto staging_src = GetStagingResource(cmd.pSrc, cmd.SrcSubresource)) {
         // copy from staging to default
-        D3D11_ASSERT(0 && "TODO: copy from compressed staging to default");
+        UNIMPLEMENTED("copy from compressed staging to default");
       } else if (auto src = GetTexture(cmd.pSrc)) {
         // on-device copy
         SwitchToBlitEncoder(CommandBufferState::BlitEncoderActive);
@@ -2874,7 +2874,7 @@ public:
     } else if (auto dst = GetTexture(cmd.pDst)) {
       if (auto staging_src = GetStagingResource(cmd.pSrc, cmd.SrcSubresource)) {
         // copy from staging to default
-        D3D11_ASSERT(0 && "TODO: copy from staging to compressed default");
+        UNIMPLEMENTED("copy from staging to compressed default");
       } else if (auto src = GetTexture(cmd.pSrc)) {
         // on-device copy
         SwitchToBlitEncoder(CommandBufferState::BlitEncoderActive);
@@ -2948,9 +2948,9 @@ public:
       });
     } else if (auto staging_dst = GetStagingResource(cmd.pDst, cmd.DstSubresource)) {
       // staging: ...
-      D3D11_ASSERT(0 && "TODO: UpdateSubresource1: update staging texture");
+      UNIMPLEMENTED("update staging texture");
     } else {
-      D3D11_ASSERT(0 && "TODO: UpdateSubresource1: unknown texture");
+      UNIMPLEMENTED("unknown texture");
     }
   }
 

@@ -197,7 +197,7 @@ public:
         cmd_queue.FIXME_YieldUntilCoherenceBoundaryUpdate(coh);
       };
     };
-    D3D11_ASSERT(0 && "unknown mapped resource (USAGE_DEFAULT?)");
+    UNIMPLEMENTED("unknown mapped resource (USAGE_DEFAULT?)");
   }
 
   void
@@ -214,7 +214,7 @@ public:
       staging->unmap();
       return;
     };
-    D3D11_ASSERT(0 && "unknown mapped resource (USAGE_DEFAULT?)");
+    UNIMPLEMENTED("unknown mapped resource (USAGE_DEFAULT?)");
   }
 
   void
