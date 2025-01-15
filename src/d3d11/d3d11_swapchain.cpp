@@ -572,7 +572,6 @@ CreateSwapChain(
   layer->setDevice(pDevice->GetMTLDevice());
   layer->setOpaque(true);
   layer->setDisplaySyncEnabled(false);
-  layer->setPixelFormat(MTL::PixelFormatBGRA8Unorm);
   layer->setFramebufferOnly(true);
   if (env::getEnvVar("DXMT_METALFX_SPATIAL_SWAPCHAIN") == "1") {
     if (MTLFX::SpatialScalerDescriptor::supportsDevice(pDevice->GetMTLDevice())) {
