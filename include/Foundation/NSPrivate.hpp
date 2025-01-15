@@ -40,7 +40,7 @@
 #define _NS_PRIVATE_VISIBILITY __attribute__((visibility("default"),dllexport))
 #endif // METALCPP_SYMBOL_VISIBILITY_HIDDEN
 
-#define _NS_PRIVATE_IMPORT __attribute__((weak_import))
+#define _NS_PRIVATE_IMPORT
 
 #define _NS_PRIVATE_OBJC_LOOKUP_CLASS(symbol) objc_lookUpClass(#symbol)
 #define _NS_PRIVATE_OBJC_GET_PROTOCOL(symbol) objc_getProtocol(#symbol)
@@ -48,16 +48,14 @@
 #define _NS_PRIVATE_DEF_CLS(symbol) void* s_k##symbol _NS_PRIVATE_VISIBILITY = _NS_PRIVATE_OBJC_LOOKUP_CLASS(symbol)
 #define _NS_PRIVATE_DEF_PRO(symbol) void* s_k##symbol _NS_PRIVATE_VISIBILITY = _NS_PRIVATE_OBJC_GET_PROTOCOL(symbol)
 #define _NS_PRIVATE_DEF_SEL(accessor, symbol) SEL s_k##accessor _NS_PRIVATE_VISIBILITY = sel_registerName(symbol)
-#define _NS_PRIVATE_DEF_CONST(type, symbol)              \
-    _NS_EXTERN type const NS##symbol _NS_PRIVATE_IMPORT; \
-    type const                       NS::symbol = (nullptr != &NS##symbol) ? NS##symbol : nullptr
+#define _NS_PRIVATE_DEF_CONST(type, symbol)
 
 #else
 
 #define _NS_PRIVATE_DEF_CLS(symbol) extern void* s_k##symbol
 #define _NS_PRIVATE_DEF_PRO(symbol) extern void* s_k##symbol
 #define _NS_PRIVATE_DEF_SEL(accessor, symbol) extern SEL s_k##accessor
-#define _NS_PRIVATE_DEF_CONST(type, symbol) extern type const NS::symbol
+#define _NS_PRIVATE_DEF_CONST(type, symbol)
 
 #endif // NS_PRIVATE_IMPLEMENTATION
 

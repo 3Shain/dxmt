@@ -38,17 +38,9 @@ _MTL_ENUM(NS::Integer, IOStatus) {
     IOStatusComplete = 3,
 };
 
-using IOCommandBufferHandler = void (^)(class IOCommandBuffer*);
-
-using IOCommandBufferHandlerFunction = std::function<void(class IOCommandBuffer*)>;
-
 class IOCommandBuffer : public NS::Referencing<IOCommandBuffer>
 {
 public:
-    void          addCompletedHandler(const MTL::IOCommandBufferHandlerFunction& function);
-
-    void          addCompletedHandler(const MTL::IOCommandBufferHandler block);
-
     void          loadBytes(const void* pointer, NS::UInteger size, const class IOFileHandle* sourceHandle, NS::UInteger sourceHandleOffset);
 
     void          loadBuffer(const class Buffer* buffer, NS::UInteger offset, NS::UInteger size, const class IOFileHandle* sourceHandle, NS::UInteger sourceHandleOffset);
@@ -83,19 +75,6 @@ public:
     NS::Error*    error() const;
 };
 
-}
-
-_MTL_INLINE void MTL::IOCommandBuffer::addCompletedHandler(const MTL::IOCommandBufferHandlerFunction& function)
-{
-    __block IOCommandBufferHandlerFunction blockFunction = function;
-
-    addCompletedHandler(^(IOCommandBuffer* pCommandBuffer) { blockFunction(pCommandBuffer); });
-}
-
-// method: addCompletedHandler:
-_MTL_INLINE void MTL::IOCommandBuffer::addCompletedHandler(const MTL::IOCommandBufferHandler block)
-{
-    Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(addCompletedHandler_), block);
 }
 
 // method: loadBytes:size:sourceHandle:sourceHandleOffset:

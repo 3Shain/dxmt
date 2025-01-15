@@ -100,16 +100,9 @@ _MTL_ENUM(NS::UInteger, DispatchType) {
 
 class CommandBuffer;
 
-using CommandBufferHandler = void (^)(CommandBuffer*);
-
-using HandlerFunction = std::function<void(CommandBuffer*)>;
-
 class CommandBuffer : public NS::Referencing<CommandBuffer>
 {
 public:
-    void                                       addScheduledHandler(const HandlerFunction& function);
-
-    void                                       addCompletedHandler(const HandlerFunction& function);
 
     class Device*                              device() const;
 
@@ -136,8 +129,6 @@ public:
 
     void                                       commit();
 
-    void                                       addScheduledHandler(const MTL::CommandBufferHandler block);
-
     void                                       presentDrawable(const class Drawable* drawable);
 
     void                                       presentDrawableAtTime(const class Drawable* drawable, CFTimeInterval presentationTime);
@@ -145,8 +136,6 @@ public:
     void                                       presentDrawableAfterMinimumDuration(const class Drawable* drawable, CFTimeInterval duration);
 
     void                                       waitUntilScheduled();
-
-    void                                       addCompletedHandler(const MTL::CommandBufferHandler block);
 
     void                                       waitUntilCompleted();
 
@@ -239,20 +228,6 @@ _MTL_INLINE MTL::CommandEncoderErrorState MTL::CommandBufferEncoderInfo::errorSt
     return Object::sendMessage<MTL::CommandEncoderErrorState>(this, _MTL_PRIVATE_SEL(errorState));
 }
 
-_MTL_INLINE void MTL::CommandBuffer::addScheduledHandler(const HandlerFunction& function)
-{
-    __block HandlerFunction blockFunction = function;
-
-    addScheduledHandler(^(MTL::CommandBuffer* pCommandBuffer) { blockFunction(pCommandBuffer); });
-}
-
-_MTL_INLINE void MTL::CommandBuffer::addCompletedHandler(const HandlerFunction& function)
-{
-    __block HandlerFunction blockFunction = function;
-
-    addCompletedHandler(^(MTL::CommandBuffer* pCommandBuffer) { blockFunction(pCommandBuffer); });
-}
-
 // property: device
 _MTL_INLINE MTL::Device* MTL::CommandBuffer::device() const
 {
@@ -330,12 +305,6 @@ _MTL_INLINE void MTL::CommandBuffer::commit()
     Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(commit));
 }
 
-// method: addScheduledHandler:
-_MTL_INLINE void MTL::CommandBuffer::addScheduledHandler(const MTL::CommandBufferHandler block)
-{
-    Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(addScheduledHandler_), block);
-}
-
 // method: presentDrawable:
 _MTL_INLINE void MTL::CommandBuffer::presentDrawable(const MTL::Drawable* drawable)
 {
@@ -358,12 +327,6 @@ _MTL_INLINE void MTL::CommandBuffer::presentDrawableAfterMinimumDuration(const M
 _MTL_INLINE void MTL::CommandBuffer::waitUntilScheduled()
 {
     Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(waitUntilScheduled));
-}
-
-// method: addCompletedHandler:
-_MTL_INLINE void MTL::CommandBuffer::addCompletedHandler(const MTL::CommandBufferHandler block)
-{
-    Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(addCompletedHandler_), block);
 }
 
 // method: waitUntilCompleted

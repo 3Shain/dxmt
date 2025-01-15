@@ -27,7 +27,7 @@ extern dispatch_queue_t SYSV_ABI dispatch_get_main_queue(void);
 
 extern dispatch_data_t SYSV_ABI
 dispatch_data_create(const void *buffer, size_t size, dispatch_queue_t queue,
-                     nullptr_t destructor /* don't use block*/);
+                     void *destructor /* don't use block*/);
 
 #ifdef __cplusplus
 }

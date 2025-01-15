@@ -91,10 +91,6 @@ public:
 
     class Object*           beginActivity(ActivityOptions options, const class String* pReason);
     void                    endActivity(class Object* pActivity);
-    void                    performActivity(ActivityOptions options, const class String* pReason, void (^block)(void));
-    void                    performActivity(ActivityOptions options, const class String* pReason, const std::function<void()>& func);
-    void                    performExpiringActivity(const class String* pReason, void (^block)(bool expired));
-    void                    performExpiringActivity(const class String* pReason, const std::function<void(bool expired)>& func);
 
     ProcessInfoThermalState thermalState() const;
     bool                    isLowPowerModeEnabled() const;
@@ -289,38 +285,6 @@ _NS_INLINE NS::Object* NS::ProcessInfo::beginActivity(ActivityOptions options, c
 _NS_INLINE void NS::ProcessInfo::endActivity(Object* pActivity)
 {
     Object::sendMessage<void>(this, _NS_PRIVATE_SEL(endActivity_), pActivity);
-}
-
-//-------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-_NS_INLINE void NS::ProcessInfo::performActivity(ActivityOptions options, const String* pReason, void (^block)(void))
-{
-    Object::sendMessage<void>(this, _NS_PRIVATE_SEL(performActivityWithOptions_reason_usingBlock_), options, pReason, block);
-}
-
-//-------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-_NS_INLINE void NS::ProcessInfo::performActivity(ActivityOptions options, const String* pReason, const std::function<void()>& function)
-{
-    __block std::function<void()> blockFunction = function;
-
-    performActivity(options, pReason, ^() { blockFunction(); });
-}
-
-//-------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-_NS_INLINE void NS::ProcessInfo::performExpiringActivity(const String* pReason, void (^block)(bool expired))
-{
-    Object::sendMessageSafe<void>(this, _NS_PRIVATE_SEL(performExpiringActivityWithReason_usingBlock_), pReason, block);
-}
-
-//-------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-_NS_INLINE void NS::ProcessInfo::performExpiringActivity(const String* pReason, const std::function<void(bool expired)>& function)
-{
-    __block std::function<void(bool expired)> blockFunction = function;
-
-    performExpiringActivity(pReason, ^(bool expired) { blockFunction(expired); });
 }
 
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------

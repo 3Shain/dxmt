@@ -207,33 +207,9 @@ _MTL_CONST(DeviceNotificationName, DeviceRemovalRequestedNotification);
 _MTL_CONST(DeviceNotificationName, DeviceWasRemovedNotification);
 _MTL_CONST(NS::ErrorUserInfoKey, CommandBufferEncoderInfoErrorKey);
 
-using DeviceNotificationHandlerBlock = void (^)(class Device* pDevice, DeviceNotificationName notifyName);
-
-using DeviceNotificationHandlerFunction = std::function<void(class Device* pDevice, DeviceNotificationName notifyName)>;
-
 using AutoreleasedComputePipelineReflection = class ComputePipelineReflection*;
 
 using AutoreleasedRenderPipelineReflection = class RenderPipelineReflection*;
-
-using NewLibraryCompletionHandler = void (^)(class Library*, NS::Error*);
-
-using NewLibraryCompletionHandlerFunction = std::function<void(class Library*, NS::Error*)>;
-
-using NewRenderPipelineStateCompletionHandler = void (^)(class RenderPipelineState*, NS::Error*);
-
-using NewRenderPipelineStateCompletionHandlerFunction = std::function<void(class RenderPipelineState*, NS::Error*)>;
-
-using NewRenderPipelineStateWithReflectionCompletionHandler = void (^)(class RenderPipelineState*, class RenderPipelineReflection*, NS::Error*);
-
-using NewRenderPipelineStateWithReflectionCompletionHandlerFunction = std::function<void(class RenderPipelineState*, class RenderPipelineReflection*, NS::Error*)>;
-
-using NewComputePipelineStateCompletionHandler = void (^)(class ComputePipelineState*, NS::Error*);
-
-using NewComputePipelineStateCompletionHandlerFunction = std::function<void(class ComputePipelineState*, NS::Error*)>;
-
-using NewComputePipelineStateWithReflectionCompletionHandler = void (^)(class ComputePipelineState*, class ComputePipelineReflection*, NS::Error*);
-
-using NewComputePipelineStateWithReflectionCompletionHandlerFunction = std::function<void(class ComputePipelineState*, class ComputePipelineReflection*, NS::Error*)>;
 
 using Timestamp = std::uint64_t;
 
@@ -241,30 +217,11 @@ MTL::Device* CreateSystemDefaultDevice();
 
 NS::Array*   CopyAllDevices();
 
-NS::Array*   CopyAllDevicesWithObserver(NS::Object** pOutObserver, DeviceNotificationHandlerBlock handler);
-
-NS::Array*   CopyAllDevicesWithObserver(NS::Object** pOutObserver, const DeviceNotificationHandlerFunction& handler);
-
 void         RemoveDeviceObserver(const NS::Object* pObserver);
 
 class Device : public NS::Referencing<Device>
 {
 public:
-    void                            newLibrary(const NS::String* pSource, const class CompileOptions* pOptions, const NewLibraryCompletionHandlerFunction& completionHandler);
-
-    void                            newLibrary(const class StitchedLibraryDescriptor* pDescriptor, const MTL::NewLibraryCompletionHandlerFunction& completionHandler);
-
-    void                            newRenderPipelineState(const class RenderPipelineDescriptor* pDescriptor, const NewRenderPipelineStateCompletionHandlerFunction& completionHandler);
-
-    void                            newRenderPipelineState(const class RenderPipelineDescriptor* pDescriptor, PipelineOption options, const NewRenderPipelineStateWithReflectionCompletionHandlerFunction& completionHandler);
-
-    void                            newRenderPipelineState(const class TileRenderPipelineDescriptor* pDescriptor, PipelineOption options, const NewRenderPipelineStateWithReflectionCompletionHandlerFunction& completionHandler);
-
-    void                            newComputePipelineState(const class Function* pFunction, const NewComputePipelineStateCompletionHandlerFunction& completionHandler);
-
-    void                            newComputePipelineState(const class Function* pFunction, PipelineOption options, const NewComputePipelineStateWithReflectionCompletionHandlerFunction& completionHandler);
-
-    void                            newComputePipelineState(const class ComputePipelineDescriptor* pDescriptor, PipelineOption options, const NewComputePipelineStateWithReflectionCompletionHandlerFunction& completionHandler);
 
     bool                            isHeadless() const;
 
@@ -330,7 +287,7 @@ public:
 
     class Buffer*                   newBuffer(const void* pointer, NS::UInteger length, MTL::ResourceOptions options);
 
-    class Buffer*                   newBuffer(const void* pointer, NS::UInteger length, MTL::ResourceOptions options, void (^deallocator)(void*, NS::UInteger));
+    class Buffer*                   newBuffer(const void* pointer, NS::UInteger length, MTL::ResourceOptions options, void *deallocator);
 
     class DepthStencilState*        newDepthStencilState(const class DepthStencilDescriptor* descriptor);
 
@@ -356,31 +313,17 @@ public:
 
     class Library*                  newLibrary(const NS::String* source, const class CompileOptions* options, NS::Error** error);
 
-    void                            newLibrary(const NS::String* source, const class CompileOptions* options, const MTL::NewLibraryCompletionHandler completionHandler);
-
     class Library*                  newLibrary(const class StitchedLibraryDescriptor* descriptor, NS::Error** error);
-
-    void                            newLibrary(const class StitchedLibraryDescriptor* descriptor, const MTL::NewLibraryCompletionHandler completionHandler);
 
     class RenderPipelineState*      newRenderPipelineState(const class RenderPipelineDescriptor* descriptor, NS::Error** error);
 
     class RenderPipelineState*      newRenderPipelineState(const class RenderPipelineDescriptor* descriptor, MTL::PipelineOption options, const MTL::AutoreleasedRenderPipelineReflection* reflection, NS::Error** error);
 
-    void                            newRenderPipelineState(const class RenderPipelineDescriptor* descriptor, const MTL::NewRenderPipelineStateCompletionHandler completionHandler);
-
-    void                            newRenderPipelineState(const class RenderPipelineDescriptor* descriptor, MTL::PipelineOption options, const MTL::NewRenderPipelineStateWithReflectionCompletionHandler completionHandler);
-
     class ComputePipelineState*     newComputePipelineState(const class Function* computeFunction, NS::Error** error);
 
     class ComputePipelineState*     newComputePipelineState(const class Function* computeFunction, MTL::PipelineOption options, const MTL::AutoreleasedComputePipelineReflection* reflection, NS::Error** error);
 
-    void                            newComputePipelineState(const class Function* computeFunction, const MTL::NewComputePipelineStateCompletionHandler completionHandler);
-
-    void                            newComputePipelineState(const class Function* computeFunction, MTL::PipelineOption options, const MTL::NewComputePipelineStateWithReflectionCompletionHandler completionHandler);
-
     class ComputePipelineState*     newComputePipelineState(const class ComputePipelineDescriptor* descriptor, MTL::PipelineOption options, const MTL::AutoreleasedComputePipelineReflection* reflection, NS::Error** error);
-
-    void                            newComputePipelineState(const class ComputePipelineDescriptor* descriptor, MTL::PipelineOption options, const MTL::NewComputePipelineStateWithReflectionCompletionHandler completionHandler);
 
     class Fence*                    newFence();
 
@@ -396,11 +339,7 @@ public:
 
     class RenderPipelineState*      newRenderPipelineState(const class TileRenderPipelineDescriptor* descriptor, MTL::PipelineOption options, const MTL::AutoreleasedRenderPipelineReflection* reflection, NS::Error** error);
 
-    void                            newRenderPipelineState(const class TileRenderPipelineDescriptor* descriptor, MTL::PipelineOption options, const MTL::NewRenderPipelineStateWithReflectionCompletionHandler completionHandler);
-
     class RenderPipelineState*      newRenderPipelineState(const class MeshRenderPipelineDescriptor* descriptor, MTL::PipelineOption options, const MTL::AutoreleasedRenderPipelineReflection* reflection, NS::Error** error);
-
-    void                            newRenderPipelineState(const class MeshRenderPipelineDescriptor* descriptor, MTL::PipelineOption options, const MTL::NewRenderPipelineStateWithReflectionCompletionHandler completionHandler);
 
     NS::UInteger                    maxThreadgroupMemoryLength() const;
 
@@ -617,8 +556,6 @@ extern "C" MTL::Device* MTLCreateSystemDefaultDevice();
 
 extern "C" NS::Array*   MTLCopyAllDevices();
 
-extern "C" NS::Array*   MTLCopyAllDevicesWithObserver(NS::Object**, MTL::DeviceNotificationHandlerBlock);
-
 extern "C" void         MTLRemoveDeviceObserver(const NS::Object*);
 
 // #include <TargetConditionals.h>
@@ -633,87 +570,12 @@ _NS_EXPORT __attribute__((dllexport)) NS::Array* MTL::CopyAllDevices()
     return ::MTLCopyAllDevices();
 }
 
-_NS_EXPORT NS::Array* MTL::CopyAllDevicesWithObserver(NS::Object** pOutObserver, DeviceNotificationHandlerBlock handler)
-{
-#if TARGET_OS_OSX
-    return ::MTLCopyAllDevicesWithObserver(pOutObserver, handler);
-#else
-    (void)pOutObserver;
-    (void)handler;
-
-    return nullptr;
-#endif // TARGET_OS_OSX
-}
-
-_NS_EXPORT NS::Array* MTL::CopyAllDevicesWithObserver(NS::Object** pOutObserver, const DeviceNotificationHandlerFunction& handler)
-{
-    __block DeviceNotificationHandlerFunction function = handler;
-
-    return CopyAllDevicesWithObserver(pOutObserver, ^(Device* pDevice, DeviceNotificationName pNotificationName) { function(pDevice, pNotificationName); });
-}
-
 _NS_EXPORT void MTL::RemoveDeviceObserver(const NS::Object* pObserver)
 {
     ::MTLRemoveDeviceObserver(pObserver);
 }
 
 #endif // MTL_PRIVATE_IMPLEMENTATION
-
-_MTL_INLINE void MTL::Device::newLibrary(const NS::String* pSource, const CompileOptions* pOptions, const NewLibraryCompletionHandlerFunction& completionHandler)
-{
-    __block NewLibraryCompletionHandlerFunction blockCompletionHandler = completionHandler;
-
-    newLibrary(pSource, pOptions, ^(Library* pLibrary, NS::Error* pError) { blockCompletionHandler(pLibrary, pError); });
-}
-
-_MTL_INLINE void MTL::Device::newLibrary(const class StitchedLibraryDescriptor* pDescriptor, const MTL::NewLibraryCompletionHandlerFunction& completionHandler)
-{
-    __block NewLibraryCompletionHandlerFunction blockCompletionHandler = completionHandler;
-
-    newLibrary(pDescriptor, ^(Library* pLibrary, NS::Error* pError) { blockCompletionHandler(pLibrary, pError); });
-}
-
-_MTL_INLINE void MTL::Device::newRenderPipelineState(const RenderPipelineDescriptor* pDescriptor, const NewRenderPipelineStateCompletionHandlerFunction& completionHandler)
-{
-    __block NewRenderPipelineStateCompletionHandlerFunction blockCompletionHandler = completionHandler;
-
-    newRenderPipelineState(pDescriptor, ^(RenderPipelineState* pPipelineState, NS::Error* pError) { blockCompletionHandler(pPipelineState, pError); });
-}
-
-_MTL_INLINE void MTL::Device::newRenderPipelineState(const RenderPipelineDescriptor* pDescriptor, PipelineOption options, const NewRenderPipelineStateWithReflectionCompletionHandlerFunction& completionHandler)
-{
-    __block NewRenderPipelineStateWithReflectionCompletionHandlerFunction blockCompletionHandler = completionHandler;
-
-    newRenderPipelineState(pDescriptor, options, ^(RenderPipelineState* pPipelineState, class RenderPipelineReflection* pReflection, NS::Error* pError) { blockCompletionHandler(pPipelineState, pReflection, pError); });
-}
-
-_MTL_INLINE void MTL::Device::newRenderPipelineState(const TileRenderPipelineDescriptor* pDescriptor, PipelineOption options, const NewRenderPipelineStateWithReflectionCompletionHandlerFunction& completionHandler)
-{
-    __block NewRenderPipelineStateWithReflectionCompletionHandlerFunction blockCompletionHandler = completionHandler;
-
-    newRenderPipelineState(pDescriptor, options, ^(RenderPipelineState* pPipelineState, class RenderPipelineReflection* pReflection, NS::Error* pError) { blockCompletionHandler(pPipelineState, pReflection, pError); });
-}
-
-_MTL_INLINE void MTL::Device::newComputePipelineState(const class Function* pFunction, const NewComputePipelineStateCompletionHandlerFunction& completionHandler)
-{
-    __block NewComputePipelineStateCompletionHandlerFunction blockCompletionHandler = completionHandler;
-
-    newComputePipelineState(pFunction, ^(ComputePipelineState* pPipelineState, NS::Error* pError) { blockCompletionHandler(pPipelineState, pError); });
-}
-
-_MTL_INLINE void MTL::Device::newComputePipelineState(const Function* pFunction, PipelineOption options, const NewComputePipelineStateWithReflectionCompletionHandlerFunction& completionHandler)
-{
-    __block NewComputePipelineStateWithReflectionCompletionHandlerFunction blockCompletionHandler = completionHandler;
-
-    newComputePipelineState(pFunction, options, ^(ComputePipelineState* pPipelineState, ComputePipelineReflection* pReflection, NS::Error* pError) { blockCompletionHandler(pPipelineState, pReflection, pError); });
-}
-
-_MTL_INLINE void MTL::Device::newComputePipelineState(const ComputePipelineDescriptor* pDescriptor, PipelineOption options, const NewComputePipelineStateWithReflectionCompletionHandlerFunction& completionHandler)
-{
-    __block NewComputePipelineStateWithReflectionCompletionHandlerFunction blockCompletionHandler = completionHandler;
-
-    newComputePipelineState(pDescriptor, options, ^(ComputePipelineState* pPipelineState, ComputePipelineReflection* pReflection, NS::Error* pError) { blockCompletionHandler(pPipelineState, pReflection, pError); });
-}
 
 _MTL_INLINE bool MTL::Device::isHeadless() const
 {
@@ -907,7 +769,7 @@ _MTL_INLINE MTL::Buffer* MTL::Device::newBuffer(const void* pointer, NS::UIntege
 }
 
 // method: newBufferWithBytesNoCopy:length:options:deallocator:
-_MTL_INLINE MTL::Buffer* MTL::Device::newBuffer(const void* pointer, NS::UInteger length, MTL::ResourceOptions options, void (^deallocator)(void*, NS::UInteger))
+_MTL_INLINE MTL::Buffer* MTL::Device::newBuffer(const void* pointer, NS::UInteger length, MTL::ResourceOptions options, void *deallocator)
 {
     return Object::sendMessage<MTL::Buffer*>(this, _MTL_PRIVATE_SEL(newBufferWithBytesNoCopy_length_options_deallocator_), pointer, length, options, deallocator);
 }
@@ -984,22 +846,10 @@ _MTL_INLINE MTL::Library* MTL::Device::newLibrary(const NS::String* source, cons
     return Object::sendMessage<MTL::Library*>(this, _MTL_PRIVATE_SEL(newLibraryWithSource_options_error_), source, options, error);
 }
 
-// method: newLibraryWithSource:options:completionHandler:
-_MTL_INLINE void MTL::Device::newLibrary(const NS::String* source, const MTL::CompileOptions* options, const MTL::NewLibraryCompletionHandler completionHandler)
-{
-    Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(newLibraryWithSource_options_completionHandler_), source, options, completionHandler);
-}
-
 // method: newLibraryWithStitchedDescriptor:error:
 _MTL_INLINE MTL::Library* MTL::Device::newLibrary(const MTL::StitchedLibraryDescriptor* descriptor, NS::Error** error)
 {
     return Object::sendMessage<MTL::Library*>(this, _MTL_PRIVATE_SEL(newLibraryWithStitchedDescriptor_error_), descriptor, error);
-}
-
-// method: newLibraryWithStitchedDescriptor:completionHandler:
-_MTL_INLINE void MTL::Device::newLibrary(const MTL::StitchedLibraryDescriptor* descriptor, const MTL::NewLibraryCompletionHandler completionHandler)
-{
-    Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(newLibraryWithStitchedDescriptor_completionHandler_), descriptor, completionHandler);
 }
 
 // method: newRenderPipelineStateWithDescriptor:error:
@@ -1014,18 +864,6 @@ _MTL_INLINE MTL::RenderPipelineState* MTL::Device::newRenderPipelineState(const 
     return Object::sendMessage<MTL::RenderPipelineState*>(this, _MTL_PRIVATE_SEL(newRenderPipelineStateWithDescriptor_options_reflection_error_), descriptor, options, reflection, error);
 }
 
-// method: newRenderPipelineStateWithDescriptor:completionHandler:
-_MTL_INLINE void MTL::Device::newRenderPipelineState(const MTL::RenderPipelineDescriptor* descriptor, const MTL::NewRenderPipelineStateCompletionHandler completionHandler)
-{
-    Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(newRenderPipelineStateWithDescriptor_completionHandler_), descriptor, completionHandler);
-}
-
-// method: newRenderPipelineStateWithDescriptor:options:completionHandler:
-_MTL_INLINE void MTL::Device::newRenderPipelineState(const MTL::RenderPipelineDescriptor* descriptor, MTL::PipelineOption options, const MTL::NewRenderPipelineStateWithReflectionCompletionHandler completionHandler)
-{
-    Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(newRenderPipelineStateWithDescriptor_options_completionHandler_), descriptor, options, completionHandler);
-}
-
 // method: newComputePipelineStateWithFunction:error:
 _MTL_INLINE MTL::ComputePipelineState* MTL::Device::newComputePipelineState(const MTL::Function* computeFunction, NS::Error** error)
 {
@@ -1038,28 +876,10 @@ _MTL_INLINE MTL::ComputePipelineState* MTL::Device::newComputePipelineState(cons
     return Object::sendMessage<MTL::ComputePipelineState*>(this, _MTL_PRIVATE_SEL(newComputePipelineStateWithFunction_options_reflection_error_), computeFunction, options, reflection, error);
 }
 
-// method: newComputePipelineStateWithFunction:completionHandler:
-_MTL_INLINE void MTL::Device::newComputePipelineState(const MTL::Function* computeFunction, const MTL::NewComputePipelineStateCompletionHandler completionHandler)
-{
-    Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(newComputePipelineStateWithFunction_completionHandler_), computeFunction, completionHandler);
-}
-
-// method: newComputePipelineStateWithFunction:options:completionHandler:
-_MTL_INLINE void MTL::Device::newComputePipelineState(const MTL::Function* computeFunction, MTL::PipelineOption options, const MTL::NewComputePipelineStateWithReflectionCompletionHandler completionHandler)
-{
-    Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(newComputePipelineStateWithFunction_options_completionHandler_), computeFunction, options, completionHandler);
-}
-
 // method: newComputePipelineStateWithDescriptor:options:reflection:error:
 _MTL_INLINE MTL::ComputePipelineState* MTL::Device::newComputePipelineState(const MTL::ComputePipelineDescriptor* descriptor, MTL::PipelineOption options, const MTL::AutoreleasedComputePipelineReflection* reflection, NS::Error** error)
 {
     return Object::sendMessage<MTL::ComputePipelineState*>(this, _MTL_PRIVATE_SEL(newComputePipelineStateWithDescriptor_options_reflection_error_), descriptor, options, reflection, error);
-}
-
-// method: newComputePipelineStateWithDescriptor:options:completionHandler:
-_MTL_INLINE void MTL::Device::newComputePipelineState(const MTL::ComputePipelineDescriptor* descriptor, MTL::PipelineOption options, const MTL::NewComputePipelineStateWithReflectionCompletionHandler completionHandler)
-{
-    Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(newComputePipelineStateWithDescriptor_options_completionHandler_), descriptor, options, completionHandler);
 }
 
 // method: newFence
@@ -1104,22 +924,10 @@ _MTL_INLINE MTL::RenderPipelineState* MTL::Device::newRenderPipelineState(const 
     return Object::sendMessage<MTL::RenderPipelineState*>(this, _MTL_PRIVATE_SEL(newRenderPipelineStateWithTileDescriptor_options_reflection_error_), descriptor, options, reflection, error);
 }
 
-// method: newRenderPipelineStateWithTileDescriptor:options:completionHandler:
-_MTL_INLINE void MTL::Device::newRenderPipelineState(const MTL::TileRenderPipelineDescriptor* descriptor, MTL::PipelineOption options, const MTL::NewRenderPipelineStateWithReflectionCompletionHandler completionHandler)
-{
-    Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(newRenderPipelineStateWithTileDescriptor_options_completionHandler_), descriptor, options, completionHandler);
-}
-
 // method: newRenderPipelineStateWithMeshDescriptor:options:reflection:error:
 _MTL_INLINE MTL::RenderPipelineState* MTL::Device::newRenderPipelineState(const MTL::MeshRenderPipelineDescriptor* descriptor, MTL::PipelineOption options, const MTL::AutoreleasedRenderPipelineReflection* reflection, NS::Error** error)
 {
     return Object::sendMessage<MTL::RenderPipelineState*>(this, _MTL_PRIVATE_SEL(newRenderPipelineStateWithMeshDescriptor_options_reflection_error_), descriptor, options, reflection, error);
-}
-
-// method: newRenderPipelineStateWithMeshDescriptor:options:completionHandler:
-_MTL_INLINE void MTL::Device::newRenderPipelineState(const MTL::MeshRenderPipelineDescriptor* descriptor, MTL::PipelineOption options, const MTL::NewRenderPipelineStateWithReflectionCompletionHandler completionHandler)
-{
-    Object::sendMessage<void>(this, _MTL_PRIVATE_SEL(newRenderPipelineStateWithMeshDescriptor_options_completionHandler_), descriptor, options, completionHandler);
 }
 
 // property: maxThreadgroupMemoryLength

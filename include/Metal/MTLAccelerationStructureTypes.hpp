@@ -29,6 +29,8 @@
 
 #include "../Foundation/NSRange.hpp"
 
+#include <cmath>
+
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 namespace MTL
@@ -38,7 +40,6 @@ struct PackedFloat3
     PackedFloat3();
     PackedFloat3(float x, float y, float z);
 
-    float& operator[](int idx);
     float  operator[](int idx) const;
 
     union
@@ -92,13 +93,6 @@ _MTL_INLINE MTL::PackedFloat3::PackedFloat3(float _x, float _y, float _z)
     , y(_y)
     , z(_z)
 {
-}
-
-//-------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-_MTL_INLINE float& MTL::PackedFloat3::operator[](int idx)
-{
-    return elements[idx];
 }
 
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------
