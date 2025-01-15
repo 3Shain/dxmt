@@ -3831,7 +3831,7 @@ public:
 
   void
   Reset() {
-    list.~CommandList();
+    list.reset();
     staging_allocator.free_blocks(++local_coherence);
 
     auto current_seq_id = m_parent->GetDXMTDevice().queue().CurrentSeqId();

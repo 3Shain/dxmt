@@ -23,7 +23,7 @@ public:
     std::invoke(func, ctx);
   };
   ~LambdaCommand() noexcept final = default;
-  LambdaCommand(F &&ff) : func(std::forward<F>(ff)) {}
+  LambdaCommand(F &&ff) : CommandBase<context>(), func(std::forward<F>(ff)) {}
   LambdaCommand(const LambdaCommand &copy) = delete;
   LambdaCommand &operator=(const LambdaCommand &copy_assign) = delete;
 
@@ -54,6 +54,11 @@ public:
     empty.next = nullptr;
   }
   ~CommandList() {
+    reset();
+  }
+
+  void
+  reset() {
     impl::CommandBase<Context> *cur = empty.next;
     while (cur) {
       auto next = cur->next;
@@ -66,7 +71,7 @@ public:
 
   CommandList(const CommandList &copy) = delete;
   CommandList(CommandList &&move) {
-    this->~CommandList();
+    this->reset();
     empty.next = move.empty.next;
     list_end = move.list_end;
     move.empty.next = nullptr;
@@ -75,7 +80,7 @@ public:
 
   CommandList& operator=(CommandList&& move) {
     assert(!empty.next);
-    this->~CommandList();
+    this->reset();
     empty.next = move.empty.next;
     list_end = move.list_end;
     move.empty.next = nullptr;
