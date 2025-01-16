@@ -1,10 +1,11 @@
 #include "dxmt_dynamic.hpp"
+#include "dxmt_texture.hpp"
 
 namespace dxmt {
 DynamicBuffer::DynamicBuffer(Buffer *buffer, Flags<BufferAllocationFlag> flags) :
     buffer(buffer),
-    immediateContextAllocation(buffer->current()),
-    flags_(flags) {}
+    flags_(flags),
+    name_(buffer->current()) {}
 
 void
 DynamicBuffer::incRef() {
@@ -39,15 +40,31 @@ DynamicBuffer::allocate(uint64_t coherent_seq_id) {
 }
 
 void
-DynamicBuffer::discard(uint64_t current_seq_id, Rc<BufferAllocation> &&allocation) {
+DynamicBuffer::updateImmediateName(uint64_t current_seq_id, Rc<BufferAllocation> &&allocation, bool owned_by_command_list) {
   std::lock_guard<dxmt::mutex> lock(mutex_);
+  if (!owned_by_command_list_)
+    fifo.push(QueueEntry{.allocation = std::move(name_), .will_free_at = current_seq_id});
+  name_ = std::move(allocation);
+  owned_by_command_list_ = owned_by_command_list;
+}
+
+void
+DynamicBuffer::recycle(uint64_t current_seq_id, Rc<BufferAllocation> &&allocation) {
+  std::lock_guard<dxmt::mutex> lock(mutex_);
+  if (owned_by_command_list_) {
+    if (name_.ptr() == allocation.ptr()) {
+      owned_by_command_list_ = false;
+      auto _ = std::move(allocation);
+      return;
+    }
+  }
   fifo.push(QueueEntry{.allocation = std::move(allocation), .will_free_at = current_seq_id});
 }
 
 DynamicTexture::DynamicTexture(Texture *texture, Flags<TextureAllocationFlag> flags) :
     texture(texture),
-    immediateContextAllocation(texture->current()),
-    flags_(flags) {}
+    flags_(flags),
+    name_(texture->current()) {}
 
 void
 DynamicTexture::incRef() {
@@ -82,8 +99,24 @@ DynamicTexture::allocate(uint64_t coherent_seq_id) {
 }
 
 void
-DynamicTexture::discard(uint64_t current_seq_id, Rc<TextureAllocation> &&allocation) {
+DynamicTexture::updateImmediateName(uint64_t current_seq_id, Rc<TextureAllocation> &&allocation, bool owned_by_command_list) {
   std::lock_guard<dxmt::mutex> lock(mutex_);
+  if (!owned_by_command_list_)
+    fifo.push(QueueEntry{.allocation = std::move(name_), .will_free_at = current_seq_id});
+  name_ = std::move(allocation);
+  owned_by_command_list_ = owned_by_command_list;
+}
+
+void
+DynamicTexture::recycle(uint64_t current_seq_id, Rc<TextureAllocation> &&allocation) {
+  std::lock_guard<dxmt::mutex> lock(mutex_);
+  if (owned_by_command_list_) {
+    if (name_.ptr() == allocation.ptr()) {
+      owned_by_command_list_ = false;
+      auto _ = std::move(allocation);
+      return;
+    }
+  }
   fifo.push(QueueEntry{.allocation = std::move(allocation), .will_free_at = current_seq_id});
 }
 

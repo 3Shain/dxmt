@@ -104,20 +104,21 @@ public:
           }
         }
 
-        dynamic->discard(ctx_state.cmd_queue.CurrentSeqId(), std::move(dynamic->immediateContextAllocation));
-        dynamic->immediateContextAllocation = dynamic->allocate(ctx_state.cmd_queue.CoherentSeqId());
-        Emit([allocation = dynamic->immediateContextAllocation,
+        dynamic->updateImmediateName(
+          ctx_state.cmd_queue.CurrentSeqId(), 
+          dynamic->allocate(ctx_state.cmd_queue.CoherentSeqId()), false);
+        Emit([allocation = dynamic->immediateName(),
               buffer = Rc(dynamic->buffer)](ArgumentEncodingContext &enc) mutable {
           auto _ = buffer->rename(forward_rc(allocation));
         });
 
-        pMappedResource->pData = dynamic->immediateContextAllocation->mappedMemory;
+        pMappedResource->pData = dynamic->mappedMemory();
         pMappedResource->RowPitch = buffer_length;
         pMappedResource->DepthPitch = buffer_length;
         break;
       }
       case D3D11_MAP_WRITE_NO_OVERWRITE: {
-        pMappedResource->pData = dynamic->immediateContextAllocation->mappedMemory;
+        pMappedResource->pData = dynamic->mappedMemory();
         pMappedResource->RowPitch = buffer_length;
         pMappedResource->DepthPitch = buffer_length;
         break;
@@ -138,20 +139,21 @@ public:
           stage.SRVs.set_dirty();
         }
 
-        dynamic->discard(ctx_state.cmd_queue.CurrentSeqId(), std::move(dynamic->immediateContextAllocation));
-        dynamic->immediateContextAllocation = dynamic->allocate(ctx_state.cmd_queue.CoherentSeqId());
-        Emit([allocation = dynamic->immediateContextAllocation,
+        dynamic->updateImmediateName(
+          ctx_state.cmd_queue.CurrentSeqId(), 
+          dynamic->allocate(ctx_state.cmd_queue.CoherentSeqId()), false);
+        Emit([allocation = dynamic->immediateName(),
               texture = Rc(dynamic->texture)](ArgumentEncodingContext &enc) mutable {
           auto _ = texture->rename(forward_rc(allocation));
         });
 
-        pMappedResource->pData = dynamic->immediateContextAllocation->mappedMemory;
+        pMappedResource->pData = dynamic->mappedMemory();
         pMappedResource->RowPitch = row_pitch;
         pMappedResource->DepthPitch = depth_pitch;
         break;
       }
       case D3D11_MAP_WRITE_NO_OVERWRITE: {
-        pMappedResource->pData = dynamic->immediateContextAllocation->mappedMemory;
+        pMappedResource->pData = dynamic->mappedMemory();
         pMappedResource->RowPitch = row_pitch;
         pMappedResource->DepthPitch = depth_pitch;
         break;
@@ -348,10 +350,10 @@ public:
     ResetEncodingContextState();
 
     Com<MTLD3D11CommandList> cmdlist = static_cast<MTLD3D11CommandList *>(pCommandList);
+    auto seq_id = ctx_state.cmd_queue.CurrentSeqId();
 
     promote_flush = cmdlist->promote_flush;
 
-    // TODO: handle staging resource tracking
     auto query_list = AllocateCommandData<Rc<VisibilityResultQuery>>(cmdlist->visibility_query_count);
     for (const auto &[query, index] : cmdlist->issued_visibility_query) {
       query_list[index] = new VisibilityResultQuery();
@@ -363,11 +365,23 @@ public:
     }
 
     for (const auto &staging : cmdlist->read_staging_resources) {
-      staging->useCopySource(ctx_state.cmd_queue.CurrentSeqId());
+      staging->useCopySource(seq_id);
     }
 
     for (const auto &staging : cmdlist->written_staging_resources) {
-      staging->useCopyDestination(ctx_state.cmd_queue.CurrentSeqId());
+      staging->useCopyDestination(seq_id);
+    }
+
+    for (const auto &used_dynamic : cmdlist->used_dynamic_buffers) {
+      if (!used_dynamic.latest)
+        continue;
+      used_dynamic.buffer->updateImmediateName(seq_id, Rc(used_dynamic.allocation), true);
+    }
+
+    for (const auto &used_dynamic : cmdlist->used_dynamic_textures) {
+      if (!used_dynamic.latest)
+        continue;
+      used_dynamic.texture->updateImmediateName(seq_id, Rc(used_dynamic.allocation), true);
     }
 
     Emit([cmdlist = std::move(cmdlist), query_list = std::move(query_list)](ArgumentEncodingContext &enc) {

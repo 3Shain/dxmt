@@ -11,7 +11,18 @@ public:
   void decRef();
 
   Rc<BufferAllocation> allocate(uint64_t coherent_seq_id);
-  void discard(uint64_t current_seq_id, Rc<BufferAllocation> &&allocation);
+  void updateImmediateName(uint64_t current_seq_id, Rc<BufferAllocation> &&allocation, bool owned_by_command_list);
+  void recycle(uint64_t current_seq_id, Rc<BufferAllocation> &&allocation);
+
+  Rc<BufferAllocation>
+  immediateName() {
+    return name_;
+  };
+
+  void *
+  mappedMemory() {
+    return name_->mappedMemory;
+  }
 
   DynamicBuffer(Buffer *buffer, Flags<BufferAllocationFlag> flags);
 
@@ -25,13 +36,13 @@ public:
    */
   Buffer *buffer;
 
-  Rc<BufferAllocation> immediateContextAllocation;
-
 private:
   Flags<BufferAllocationFlag> flags_;
   std::atomic<uint32_t> refcount_ = {0u};
   std::queue<QueueEntry> fifo;
   dxmt::mutex mutex_;
+  Rc<BufferAllocation> name_;
+  bool owned_by_command_list_ = false;
 };
 
 class DynamicTexture {
@@ -40,7 +51,18 @@ public:
   void decRef();
 
   Rc<TextureAllocation> allocate(uint64_t coherent_seq_id);
-  void discard(uint64_t current_seq_id, Rc<TextureAllocation> &&allocation);
+  void updateImmediateName(uint64_t current_seq_id, Rc<TextureAllocation> &&allocation, bool owned_by_command_list);
+  void recycle(uint64_t current_seq_id, Rc<TextureAllocation> &&allocation);
+
+  Rc<TextureAllocation>
+  immediateName() {
+    return name_;
+  };
+
+  void *
+  mappedMemory() {
+    return name_->mappedMemory;
+  }
 
   DynamicTexture(Texture *buffer, Flags<TextureAllocationFlag> flags);
 
@@ -53,12 +75,13 @@ public:
    */
   Texture *texture;
 
-  Rc<TextureAllocation> immediateContextAllocation;
 private:
   Flags<TextureAllocationFlag> flags_;
   std::atomic<uint32_t> refcount_ = {0u};
   std::queue<QueueEntry> fifo;
   dxmt::mutex mutex_;
+  Rc<TextureAllocation> name_;
+  bool owned_by_command_list_ = false;
 };
 
 } // namespace dxmt

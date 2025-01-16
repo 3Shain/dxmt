@@ -3788,6 +3788,18 @@ public:
   }
 };
 
+struct used_dynamic_buffer {
+  Rc<DynamicBuffer> buffer;
+  Rc<BufferAllocation> allocation;
+  bool latest;
+};
+
+struct used_dynamic_texture {
+  Rc<DynamicTexture> texture;
+  Rc<TextureAllocation> allocation;
+  bool latest;
+};
+
 class MTLD3D11CommandList : public ManagedDeviceChild<ID3D11CommandList> {
 public:
   MTLD3D11CommandList(MTLD3D11Device *pDevice, MTLD3D11CommandListPoolBase *pPool, UINT context_flag) :
@@ -3831,26 +3843,25 @@ public:
 
   void
   Reset() {
-    list.reset();
-    staging_allocator.free_blocks(++local_coherence);
-
     auto current_seq_id = m_parent->GetDXMTDevice().queue().CurrentSeqId();
 
-    while (!used_dynamic_allocations.empty()) {
-      auto &[dynamic, allocation] = used_dynamic_allocations.back();
-      dynamic->discard(current_seq_id, std::move(allocation));
-      used_dynamic_allocations.pop_back();
+    while (!used_dynamic_buffers.empty()) {
+      auto &buffer = used_dynamic_buffers.back();
+      buffer.buffer->recycle(current_seq_id, std::move(buffer.allocation));
+      used_dynamic_buffers.pop_back();
     }
-    while (!used_dynamic_texture_allocations.empty()) {
-      auto &[dynamic, allocation] = used_dynamic_texture_allocations.back();
-      dynamic->discard(current_seq_id, std::move(allocation));
-      used_dynamic_texture_allocations.pop_back();
+    while (!used_dynamic_textures.empty()) {
+      auto &texture = used_dynamic_textures.back();
+      texture.texture->recycle(current_seq_id, std::move(texture.allocation));
+      used_dynamic_textures.pop_back();
     }
     read_staging_resources.clear();
     written_staging_resources.clear();
     visibility_query_count = 0;
     issued_visibility_query.clear();
     issued_event_query.clear();
+    list.reset();
+    staging_allocator.free_blocks(++local_coherence);
 
     cpu_arugment_heap_offset = 0;
     promote_flush = false;
@@ -3932,8 +3943,8 @@ public:
 
   bool promote_flush = false;
 
-  std::vector<std::pair<DynamicBuffer *, Rc<BufferAllocation>>> used_dynamic_allocations;
-  std::vector<std::pair<DynamicTexture *, Rc<TextureAllocation>>> used_dynamic_texture_allocations;
+  std::vector<used_dynamic_buffer> used_dynamic_buffers;
+  std::vector<used_dynamic_texture> used_dynamic_textures;
   std::vector<Rc<StagingResource>> read_staging_resources;
   std::vector<Rc<StagingResource>> written_staging_resources;
   uint32_t visibility_query_count = 0;

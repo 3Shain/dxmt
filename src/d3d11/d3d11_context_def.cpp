@@ -8,8 +8,8 @@ namespace dxmt {
 struct DeferredContextInternalState {
   CommandQueue &cmd_queue;
   Com<MTLD3D11CommandList> current_cmdlist;
-  std::unordered_map<DynamicBuffer *, Rc<BufferAllocation>> current_dynamic_buffer_allocations;
-  std::unordered_map<DynamicTexture *, Rc<TextureAllocation>> current_dynamic_texture_allocations;
+  std::unordered_map<DynamicBuffer *, std::pair<BufferAllocation *, uint32_t>> current_dynamic_buffer_allocations;
+  std::unordered_map<DynamicTexture *, std::pair<TextureAllocation *, uint32_t>> current_dynamic_texture_allocations;
   std::unordered_map<void *, std::pair<Com<IMTLD3DOcclusionQuery>, uint32_t>> building_visibility_queries;
 };
 
@@ -107,10 +107,19 @@ public:
           }
         }
         Rc<BufferAllocation> new_allocation = dynamic->allocate(ctx_state.cmd_queue.CoherentSeqId());
+        uint32_t id = ctx_state.current_cmdlist->used_dynamic_buffers.size();
         // track the current allocation in case of a following NO_OVERWRITE map
-        ctx_state.current_dynamic_buffer_allocations.insert_or_assign(dynamic.ptr(), new_allocation);
+        auto ret = ctx_state.current_dynamic_buffer_allocations.find(dynamic.ptr());
+        if (ret == ctx_state.current_dynamic_buffer_allocations.end()) {
+          ctx_state.current_dynamic_buffer_allocations.insert(
+              ret, {dynamic.ptr(), {new_allocation.ptr(), id}});
+        } else {
+          auto previous_allocation_id = ret->second.second;
+          ctx_state.current_cmdlist->used_dynamic_buffers[previous_allocation_id].latest = false;
+          ret->second = {new_allocation.ptr(), id};
+        }
         // collect allocated buffers and recycle them when the command list is released
-        ctx_state.current_cmdlist->used_dynamic_allocations.push_back({dynamic.ptr(), new_allocation});
+        ctx_state.current_cmdlist->used_dynamic_buffers.push_back(used_dynamic_buffer{dynamic.ptr(), new_allocation, true});
         Emit([allocation = new_allocation, buffer = Rc(dynamic->buffer)](ArgumentEncodingContext &enc) mutable {
           auto _ = buffer->rename(forward_rc(allocation));
         });
@@ -126,7 +135,7 @@ public:
           ERR("DeferredContext: Invalid NO_OVERWRITE map on deferred context occurs without any prior DISCARD map.");
           return E_INVALIDARG;
         }
-        pMappedResource->pData = ret->second->mappedMemory;
+        pMappedResource->pData = ret->second.first->mappedMemory;
         pMappedResource->RowPitch = buffer_length;
         pMappedResource->DepthPitch = buffer_length;
         break;
@@ -147,10 +156,19 @@ public:
             stage.SRVs.set_dirty();
         }
         Rc<TextureAllocation> new_allocation = dynamic->allocate(ctx_state.cmd_queue.CoherentSeqId());
+        uint32_t id = ctx_state.current_cmdlist->used_dynamic_textures.size();
         // track the current allocation in case of a following NO_OVERWRITE map
-        ctx_state.current_dynamic_texture_allocations.insert_or_assign(dynamic.ptr(), new_allocation);
+        auto ret = ctx_state.current_dynamic_texture_allocations.find(dynamic.ptr());
+        if (ret == ctx_state.current_dynamic_texture_allocations.end()) {
+          ctx_state.current_dynamic_texture_allocations.insert(
+              ret, {dynamic.ptr(), {new_allocation.ptr(), id}});
+        } else {
+          auto previous_allocation_id = ret->second.second;
+          ctx_state.current_cmdlist->used_dynamic_textures[previous_allocation_id].latest = false;
+          ret->second = {new_allocation.ptr(), id};
+        }
         // collect allocated buffers and recycle them when the command list is released
-        ctx_state.current_cmdlist->used_dynamic_texture_allocations.push_back({dynamic.ptr(), new_allocation});
+        ctx_state.current_cmdlist->used_dynamic_textures.push_back({dynamic, new_allocation, false});
         Emit([allocation = new_allocation, texture = Rc(dynamic->texture)](ArgumentEncodingContext &enc) mutable {
           auto _ = texture->rename(forward_rc(allocation));
         });
@@ -166,7 +184,7 @@ public:
           ERR("DeferredContext: Invalid NO_OVERWRITE map on deferred context occurs without any prior DISCARD map.");
           return E_INVALIDARG;
         }
-        pMappedResource->pData = ret->second->mappedMemory;
+        pMappedResource->pData = ret->second.first->mappedMemory;
         pMappedResource->RowPitch = row_pitch;
         pMappedResource->DepthPitch = depth_pitch;
         break;
