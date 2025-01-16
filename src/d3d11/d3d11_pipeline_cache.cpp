@@ -132,9 +132,11 @@ class PipelineCache : public MTLD3D11PipelineCacheBase {
   StateObjectCache<D3D11_BLEND_DESC1, IMTLD3D11BlendState> blend_states;
 
   std::unordered_map<MTL_INPUT_LAYOUT_DESC, std::unique_ptr<CachedInputLayout>> input_layouts;
+  dxmt::mutex mutex_ia_;
 
   StateObjectCache<MTL_STREAM_OUTPUT_DESC, IMTLD3D11StreamOutputLayout>
       so_layouts;
+  dxmt::mutex mutex_so_;
 
   std::unordered_map<MTL_GRAPHICS_PIPELINE_DESC,
                      Com<IMTLCompiledGraphicsPipeline>>
@@ -266,6 +268,7 @@ class PipelineCache : public MTLD3D11PipelineCacheBase {
                          const D3D11_INPUT_ELEMENT_DESC *pInputElementDesc,
                          UINT NumElements,
                          IMTLD3D11InputLayout **ppInputLayout) override {
+    std::lock_guard<dxmt::mutex> lock(mutex_ia_);
     std::vector<MTL_SHADER_INPUT_LAYOUT_ELEMENT_DESC> buffer(NumElements);
     uint32_t num_metal_ia_elements;
     if (FAILED(ExtractMTLInputLayoutElements(
@@ -292,6 +295,7 @@ class PipelineCache : public MTLD3D11PipelineCacheBase {
                         const D3D11_SO_DECLARATION_ENTRY *pEntries,
                         UINT NumStrides, const UINT *pStrides,
                         IMTLD3D11StreamOutputLayout **ppSOLayout) override {
+    std::lock_guard<dxmt::mutex> lock(mutex_so_);
     std::vector<MTL_SHADER_STREAM_OUTPUT_ELEMENT_DESC> buffer(NumEntries * 4);
     std::array<uint32_t, 4> strides = {{}};
     uint32_t num_metal_so_elements;
