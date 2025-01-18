@@ -1890,7 +1890,7 @@ public:
       if (state_.OutputMerger.DSV) {
         state_.OutputMerger.DSV->QueryInterface(IID_PPV_ARGS(ppDepthStencilView));
       } else {
-        ppDepthStencilView = nullptr;
+        *ppDepthStencilView = nullptr;
       }
     }
     if (ppUnorderedAccessViews) {
