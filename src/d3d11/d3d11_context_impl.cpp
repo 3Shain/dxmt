@@ -680,8 +680,8 @@ public:
         return;
       }
       SwitchToBlitEncoder(CommandBufferState::BlitEncoderActive);
-      Emit([tex = srv->texture()](ArgumentEncodingContext &enc) {
-        auto texture = enc.access(tex, DXMT_ENCODER_RESOURCE_ACESS_READ | DXMT_ENCODER_RESOURCE_ACESS_WRITE);
+      Emit([tex = srv->texture(), viewId = srv->viewId()](ArgumentEncodingContext &enc) {
+        auto texture = enc.access(tex, viewId, DXMT_ENCODER_RESOURCE_ACESS_READ | DXMT_ENCODER_RESOURCE_ACESS_WRITE);
         if (texture->mipmapLevelCount() > 1) {
           enc.encodeBlitCommand([texture](BlitCommandContext &ctx) { ctx.encoder->generateMipmaps(texture); });
         }
