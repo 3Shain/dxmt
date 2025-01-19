@@ -2714,9 +2714,9 @@ int SM50Initialize(
       .StructurePtrOffset = srv.arg_index,
     });
     if (range_id & 64) {
-      binding_srv_hi_mask |= (1 << (range_id >> 6));
+      binding_srv_hi_mask |= (1ULL << (range_id >> 6ULL));
     } else {
-      binding_srv_lo_mask |= (1 << range_id);
+      binding_srv_lo_mask |= (1ULL << range_id);
     }
   }
   for (auto &[range_id, uav] : shader_info->uavMap) {
@@ -2773,7 +2773,7 @@ int SM50Initialize(
       .Flags = flags,
       .StructurePtrOffset = uav.arg_index,
     });
-    binding_uav_mask |= (1 << range_id);
+    binding_uav_mask |= (1ULL << range_id);
   }
 
   if (sm50_shader->shader_type == microsoft::D3D11_SB_HULL_SHADER &&
