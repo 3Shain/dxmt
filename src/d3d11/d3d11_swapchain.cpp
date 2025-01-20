@@ -106,7 +106,10 @@ public:
       scale_factor = std::max(Config::getInstance().getOption<float>("d3d11.metalSpatialUpscaleFactor", 2), 1.0f);
     }
 
+    // FIXME: check HRESULT!
     ResizeBuffers(0, desc_.Width, desc_.Height, DXGI_FORMAT_UNKNOWN, desc_.Flags);
+    if (!fullscreen_desc_.Windowed)
+      EnterFullscreenMode(nullptr);
   };
 
   ~MTLD3D11SwapChain() {
@@ -165,24 +168,93 @@ public:
 
   HRESULT
   STDMETHODCALLTYPE
-  SetFullscreenState(BOOL fullscreen, IDXGIOutput *target) final {
-    WARN("SetFullscreenState: stub");
+  SetFullscreenState(BOOL Fullscreen, IDXGIOutput *pTarget) final {
+    Com<IDXGIOutput1> target;
+
+    if (pTarget) {
+      DXGI_OUTPUT_DESC desc;
+
+      pTarget->QueryInterface(IID_PPV_ARGS(&target));
+      target->GetDesc(&desc);
+
+      if (!fullscreen_desc_.Windowed && Fullscreen && monitor_ != desc.Monitor) {
+        HRESULT hr = LeaveFullscreenMode();
+        if (FAILED(hr))
+          return hr;
+      }
+    }
+
+    if (fullscreen_desc_.Windowed && Fullscreen)
+      return EnterFullscreenMode(target.ptr());
+    else if (!fullscreen_desc_.Windowed && !Fullscreen)
+      return LeaveFullscreenMode();
+
     return S_OK;
   };
 
+  HRESULT EnterFullscreenMode(IDXGIOutput1* pTarget) {
+    Com<IDXGIOutput1> output = pTarget;
+
+    if (!wsi::isWindow(hWnd))
+      return DXGI_ERROR_NOT_CURRENTLY_AVAILABLE;
+    
+    if (output == nullptr) {
+      if (FAILED(GetOutputFromMonitor(wsi::getWindowMonitor(hWnd), &output))) {
+       ERR("DXGI: EnterFullscreenMode: Cannot query containing output");
+        return E_FAIL;
+      }
+    }
+    
+    // Update swap chain description
+    fullscreen_desc_.Windowed = FALSE;
+    
+    // Move the window so that it covers the entire output
+    bool modeSwitch = (desc_.Flags & DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH) != 0u;
+
+    DXGI_OUTPUT_DESC desc;
+    output->GetDesc(&desc);
+
+    if (!wsi::enterFullscreenMode(desc.Monitor, hWnd, &window_state_, modeSwitch)) {
+      ERR("DXGI: EnterFullscreenMode: Failed to enter fullscreen mode");
+      return DXGI_ERROR_NOT_CURRENTLY_AVAILABLE;
+    }
+    
+    monitor_ = desc.Monitor;
+    target_  = std::move(output);
+
+    return S_OK;
+  }
+  
+  
+  HRESULT LeaveFullscreenMode() {
+    // Restore internal state
+    fullscreen_desc_.Windowed = TRUE;
+    target_  = nullptr;
+    monitor_ = wsi::getWindowMonitor(hWnd);
+    
+    if (!wsi::isWindow(hWnd))
+      return S_OK;
+    
+    if (!wsi::leaveFullscreenMode(hWnd, &window_state_, true)) {
+      ERR("DXGI: LeaveFullscreenMode: Failed to exit fullscreen mode");
+      return DXGI_ERROR_NOT_CURRENTLY_AVAILABLE;
+    }
+    
+    return S_OK;
+  }
+
   HRESULT
   STDMETHODCALLTYPE
-  GetFullscreenState(BOOL *fullscreen, IDXGIOutput **target) final {
-    if (fullscreen) {
-      *fullscreen = !fullscreen_desc_.Windowed;
-    }
-    if (target) {
-      *target = NULL;
-      // TODO
-      if (!fullscreen_desc_.Windowed)
-        WARN("GetFullscreenState return null");
-    }
-    return S_OK;
+  GetFullscreenState(BOOL *pFullscreen, IDXGIOutput **ppTarget) final {
+    HRESULT hr = S_OK;
+
+    if (pFullscreen != nullptr)
+      *pFullscreen = !fullscreen_desc_.Windowed;
+    
+    if (ppTarget != nullptr)
+      *ppTarget = target_.ref();
+
+    return hr;
   };
 
   HRESULT
@@ -289,14 +361,21 @@ public:
     fullscreen_desc_.ScanlineOrdering = newDisplayMode.ScanlineOrdering;
     fullscreen_desc_.Scaling = newDisplayMode.Scaling;
 
-    wsi::DXMTWindowState state;
     if (fullscreen_desc_.Windowed) {
-      // TODO: window state is concerned by fullscreen state
-      wsi::resizeWindow(hWnd, &state, newDisplayMode.Width,
+      wsi::resizeWindow(hWnd, &window_state_, newDisplayMode.Width,
                         newDisplayMode.Height);
     } else {
-      ERR("DXGISwapChain::ResizeTarget: fullscreen mode not supported yet.");
-      return E_FAIL;
+      /* 
+      FIXME: are we ignoring display mode on purpose?
+      */
+      wsi::updateFullscreenWindow(monitor_, hWnd, false);
+
+      /* 
+      FIXME: this is not elegant because the size of window is not changed!
+      However some games only invoke ResizeBuffers() on WM_SIZE, which should be actually
+      sent by changing display mode?
+       */
+      SendMessage(hWnd, WM_SIZE, 0, MAKELONG(newDisplayMode.Width, newDisplayMode.Height));
     }
 
     return S_OK;
@@ -306,12 +385,53 @@ public:
   ApplyResize() {
     layer_weak_->setDrawableSize({(double)(desc_.Width * scale_factor), (double)(desc_.Height * scale_factor)});
   };
+  
+  HRESULT GetOutputFromMonitor(
+          HMONITOR                  Monitor,
+          IDXGIOutput1**            ppOutput) {
+    if (!ppOutput)
+      return DXGI_ERROR_INVALID_CALL;
+
+    Com<IDXGIAdapter> adapter;
+    Com<IDXGIOutput> output;
+
+    if (FAILED(layer_factory_weak_->GetAdapter(&adapter)))
+      return E_FAIL;
+
+    for (uint32_t i = 0; SUCCEEDED(adapter->EnumOutputs(i, &output)); i++) {
+      DXGI_OUTPUT_DESC outputDesc;
+      output->GetDesc(&outputDesc);
+      
+      if (outputDesc.Monitor == Monitor)
+        return output->QueryInterface(IID_PPV_ARGS(ppOutput));
+      
+      output = nullptr;
+    }
+    
+    return DXGI_ERROR_NOT_FOUND;
+  }
 
   HRESULT
   STDMETHODCALLTYPE
-  GetContainingOutput(IDXGIOutput **output) final {
-    WARN("DXGISwapChain::GetContainingOutput: stub");
-    return E_FAIL;
+  GetContainingOutput(IDXGIOutput **ppOutput) final {
+    InitReturnPtr(ppOutput);
+    
+    if (!wsi::isWindow(hWnd))
+      return DXGI_ERROR_INVALID_CALL;
+    
+    Com<IDXGIOutput1> output;
+
+    if (target_ == nullptr) {
+      HRESULT hr = GetOutputFromMonitor(wsi::getWindowMonitor(hWnd), &output);
+
+      if (FAILED(hr))
+        return hr;
+    } else {
+      output = target_;
+    }
+
+    *ppOutput = output.ref();
+    return S_OK;
   };
 
   HRESULT
@@ -537,6 +657,8 @@ private:
   HANDLE present_semaphore_;
   HWND hWnd;
   HMONITOR monitor_;
+  Com<IDXGIOutput1> target_;
+  wsi::DXMTWindowState window_state_;
   uint32_t frame_latency;
   double init_refresh_rate_ = DBL_MAX;
   int preferred_max_frame_rate = 0;
