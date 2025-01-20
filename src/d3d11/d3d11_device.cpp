@@ -450,6 +450,12 @@ public:
               this, pQueryDesc));
       return S_OK;
     }
+    case D3D11_QUERY_PIPELINE_STATISTICS: {
+      *ppQuery =
+          ref(new MTLD3D11DummyQuery<D3D11_QUERY_DATA_PIPELINE_STATISTICS>(
+              this, pQueryDesc));
+      return S_OK;
+    }
     default:
       ERR("CreateQuery: query type not implemented: ", pQueryDesc->Query);
       return E_NOTIMPL;

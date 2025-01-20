@@ -238,7 +238,8 @@ public:
       break;
     }
     case D3D11_QUERY_TIMESTAMP:
-    case D3D11_QUERY_TIMESTAMP_DISJOINT: {
+    case D3D11_QUERY_TIMESTAMP_DISJOINT:
+    case D3D11_QUERY_PIPELINE_STATISTICS: {
       // ignore
       break;
     }
@@ -276,7 +277,8 @@ public:
       break;
     }
     case D3D11_QUERY_TIMESTAMP:
-    case D3D11_QUERY_TIMESTAMP_DISJOINT: {
+    case D3D11_QUERY_TIMESTAMP_DISJOINT:
+    case D3D11_QUERY_PIPELINE_STATISTICS: {
       // ignore
       break;
     }

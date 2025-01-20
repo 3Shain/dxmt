@@ -238,7 +238,8 @@ public:
       break;
     }
     case D3D11_QUERY_TIMESTAMP:
-    case D3D11_QUERY_TIMESTAMP_DISJOINT: {
+    case D3D11_QUERY_TIMESTAMP_DISJOINT:
+    case D3D11_QUERY_PIPELINE_STATISTICS: {
       // ignore
       break;
     }
@@ -273,7 +274,8 @@ public:
       break;
     }
     case D3D11_QUERY_TIMESTAMP:
-    case D3D11_QUERY_TIMESTAMP_DISJOINT: {
+    case D3D11_QUERY_TIMESTAMP_DISJOINT:
+    case D3D11_QUERY_PIPELINE_STATISTICS: {
       // ignore
       break;
     }
@@ -323,6 +325,12 @@ public:
     case D3D11_QUERY_TIMESTAMP_DISJOINT: {
       if (pData) {
         (*static_cast<D3D11_QUERY_DATA_TIMESTAMP_DISJOINT *>(pData)) = {1, TRUE};
+      }
+      return S_OK;
+    }
+    case D3D11_QUERY_PIPELINE_STATISTICS: {
+      if (pData) {
+        (*static_cast<D3D11_QUERY_DATA_PIPELINE_STATISTICS *>(pData)) = {};
       }
       return S_OK;
     }
