@@ -3262,7 +3262,11 @@ public:
   SwitchToBlitEncoder(CommandBufferState BlitKind) {
     if (cmdbuf_state == BlitKind)
       return;
-    InvalidateCurrentPass();
+
+    /**
+    Don't flush if it's a readback/upload blit pass
+     */
+    InvalidateCurrentPass(BlitKind != CommandBufferState::BlitEncoderActive);
 
     Emit([](ArgumentEncodingContext &enc) { enc.startBlitPass(); });
 

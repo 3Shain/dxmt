@@ -258,7 +258,7 @@ public:
     case D3D11_QUERY_EVENT: {
       auto event_id = cmd_queue.GetNextEventSeqId();
       ((IMTLD3DEventQuery *)pAsync)->Issue(event_id);
-      InvalidateCurrentPass();
+      InvalidateCurrentPass(true);
       Emit([event_id](ArgumentEncodingContext &enc) mutable { enc.signalEvent(event_id); });
       promote_flush = true;
       break;
