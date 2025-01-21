@@ -1143,7 +1143,9 @@ public:
     if (!PreDraw<true>())
       return;
     if (ControlPointCount) {
-      // TODO: indirect tessellation
+      Emit([](ArgumentEncodingContext &enc) {
+        enc.setCompatibilityFlag(FeatureCompatibility::UnsupportedIndirectTessellationDraw);
+      });
       return;
     }
     auto IndexType =
@@ -1172,7 +1174,9 @@ public:
     if (!PreDraw<true>())
       return;
     if (ControlPointCount) {
-      // TODO: indirect tessellation
+      Emit([](ArgumentEncodingContext &enc) {
+        enc.setCompatibilityFlag(FeatureCompatibility::UnsupportedIndirectTessellationDraw);
+      });
       return;
     }
     if (auto bindable = reinterpret_cast<D3D11ResourceCommon *>(pBufferForArgs)) {
@@ -1188,8 +1192,7 @@ public:
 
   void
   DrawAuto() override {
-    ERR("DrawAuto: ignored");
-    return;
+    Emit([](ArgumentEncodingContext &enc) { enc.setCompatibilityFlag(FeatureCompatibility::UnsupportedDrawAuto); });
   }
 
   void
@@ -1241,7 +1244,7 @@ public:
     state_.predicate = pPredicate;
     state_.predicate_value = PredicateValue;
 
-    ERR_ONCE("Stub");
+    Emit([](ArgumentEncodingContext &enc) { enc.setCompatibilityFlag(FeatureCompatibility::UnsupportedPredication); });
   }
 
   //-----------------------------------------------------------------------------
@@ -3310,8 +3313,8 @@ public:
     } else {
       Desc.InputLayout = nullptr;
     }
-    if (auto so_layout =
-            com_cast<IMTLD3D11StreamOutputLayout>(state_.ShaderStages[PipelineStage::Geometry].Shader.ptr())) {
+    auto so_layout = com_cast<IMTLD3D11StreamOutputLayout>(state_.ShaderStages[PipelineStage::Geometry].Shader.ptr());
+    if (unlikely(so_layout)) {
       Desc.SOLayout = so_layout.ptr();
     } else {
       Desc.SOLayout = nullptr;
@@ -3357,10 +3360,14 @@ public:
     }
     switch (HS->reflection().Tessellator.OutputPrimitive) {
     case MTL_TESSELLATOR_OUTPUT_LINE:
-      ERR("skip isoline tessellation");
+      Emit([](ArgumentEncodingContext &enc) {
+        enc.setCompatibilityFlag(FeatureCompatibility::UnsupportedTessellationOutputPrimitive);
+      });
       return false;
     case MTL_TESSELLATOR_OUTPUT_POINT:
-      ERR("skip point tessellation");
+      Emit([](ArgumentEncodingContext &enc) {
+        enc.setCompatibilityFlag(FeatureCompatibility::UnsupportedTessellationOutputPrimitive);
+      });
       return false;
     default:
       break;
@@ -3370,7 +3377,9 @@ public:
     }
     auto GS = GetManagedShader<PipelineStage::Geometry>();
     if (GS && GS->reflection().GeometryShader.GSPassThrough == ~0u) {
-      ERR("tessellation-geometry pipeline is not supported yet, skip drawcall");
+      Emit([](ArgumentEncodingContext &enc) {
+        enc.setCompatibilityFlag(FeatureCompatibility::UnsupportedGeometryTessellationDraw);
+      });
       return false;
     }
 
@@ -3432,7 +3441,9 @@ public:
     auto GS = GetManagedShader<PipelineStage::Geometry>();
     if (GS) {
       if (GS->reflection().GeometryShader.GSPassThrough == ~0u) {
-        ERR("geometry shader is not supported yet, skip drawcall");
+        Emit([](ArgumentEncodingContext &enc) {
+          enc.setCompatibilityFlag(FeatureCompatibility::UnsupportedGeometryDraw);
+        });
         return false;
       }
     }
@@ -3626,10 +3637,12 @@ public:
     if (state_.StreamOutput.Targets.test_bound(0)) {
       auto &so_slot0 = state_.StreamOutput.Targets[0];
       if (so_slot0.Offset == 0xFFFFFFFF) {
-        ERR("UpdateSOTargets: appending is not supported, expect problem");
         Emit([slot0 = so_slot0.Buffer->buffer()](ArgumentEncodingContext &enc) {
           auto buffer = enc.access(slot0, 0, slot0->length(), DXMT_ENCODER_RESOURCE_ACESS_WRITE);
-          enc.encodeRenderCommand([buffer](RenderCommandContext &ctx) { ctx.encoder->setVertexBuffer(buffer, 0, 20); });
+          enc.encodeRenderCommand([buffer](RenderCommandContext &ctx) {
+            ctx.encoder->setVertexBuffer(buffer, 0, 20);
+          });
+          enc.setCompatibilityFlag(FeatureCompatibility::UnsupportedStreamOutputAppending);
         });
       } else {
         Emit([slot0 = so_slot0.Buffer->buffer(), offset = so_slot0.Offset](ArgumentEncodingContext &enc) {
@@ -3646,8 +3659,9 @@ public:
     }
     state_.StreamOutput.Targets.clear_dirty(0);
     if (state_.StreamOutput.Targets.any_dirty()) {
-      ERR("UpdateSOTargets: non-zero slot is marked dirty but not bound, "
-          "expect problem");
+      Emit([](ArgumentEncodingContext &enc) {
+        enc.setCompatibilityFlag(FeatureCompatibility::UnsupportedMultipleStreamOutput);
+      });
     }
   }
 

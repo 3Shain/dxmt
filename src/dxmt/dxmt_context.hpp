@@ -201,6 +201,17 @@ GetResidencyMask(PipelineStage type, bool read, bool write) {
   DXMT_UNREACHABLE;
 }
 
+enum class FeatureCompatibility {
+  UnsupportedGeometryDraw,
+  UnsupportedTessellationOutputPrimitive,
+  UnsupportedIndirectTessellationDraw,
+  UnsupportedGeometryTessellationDraw,
+  UnsupportedDrawAuto,
+  UnsupportedPredication,
+  UnsupportedStreamOutputAppending,
+  UnsupportedMultipleStreamOutput,
+};
+
 enum DXMT_ENCODER_LIST_OP {
   DXMT_ENCODER_LIST_OP_SWAP = 0,
   DXMT_ENCODER_LIST_OP_SYNCHRONIZE = 1,
@@ -556,6 +567,18 @@ public:
     return deferred_visibility_query_stack_.back()[query_id];
   }
 
+  void
+  setCompatibilityFlag(FeatureCompatibility flag) {
+    compatibility_flag_.set(flag);
+  }
+
+  Flags<FeatureCompatibility>
+  clearCompatibilityFlag() {
+    auto ret = compatibility_flag_;
+    compatibility_flag_.clrAll();
+    return ret;
+  }
+
   ArgumentEncodingContext(CommandQueue &queue) :
       queue(queue){};
 
@@ -595,6 +618,7 @@ private:
   VisibilityResultOffsetBumpState vro_state_;
   std::vector<Rc<VisibilityResultQuery>> pending_queries_;
   unsigned active_visibility_query_count_ = 0;
+  Flags<FeatureCompatibility> compatibility_flag_;
 
   std::vector<Rc<VisibilityResultQuery> *> deferred_visibility_query_stack_;
 

@@ -83,6 +83,12 @@ public:
     hud->updateLabel(str_dxmt_version,
                      NS::String::string(GetVersionDescriptionText(11, m_device->GetFeatureLevel()).c_str(),
                                         NS::UTF8StringEncoding));
+    str_label_compatibility_flag_ =
+        transfer(NS::String::string("com.github.3shain.dxmt-compatibility", NS::ASCIIStringEncoding));
+    hud->addLabel(str_label_compatibility_flag_, str_dxmt_version);
+    hud->updateLabel(
+        str_label_compatibility_flag_, NS::String::string("---------------------------", NS::ASCIIStringEncoding)
+    );
 
     backbuffer_desc_ = D3D11_TEXTURE2D_DESC1 {
       .Width = desc_.Width,
@@ -519,12 +525,14 @@ public:
         auto drawable = layer_weak_->nextDrawable();
         ctx.present(upscaled, drawable, vsync_duration);
         ReleaseSemaphore(present_semaphore_, 1, nullptr);
+        this->UpdateCompatibilityFlagOnHud(ctx.clearCompatibilityFlag());
       });
     } else {
       chunk->emitcc([this, vsync_duration, backbuffer = backbuffer_->texture()](ArgumentEncodingContext &ctx) mutable {
         auto drawable = layer_weak_->nextDrawable();
         ctx.present(backbuffer, drawable, vsync_duration);
         ReleaseSemaphore(present_semaphore_, 1, nullptr);
+        this->UpdateCompatibilityFlagOnHud(ctx.clearCompatibilityFlag());
       });
     }
     device_context_->Commit();
@@ -534,6 +542,40 @@ public:
 
     return hr;
   };
+
+  void UpdateCompatibilityFlagOnHud(Flags<FeatureCompatibility> flags) {
+    char text[] = "---------------------------";
+    if (flags.test(FeatureCompatibility::UnsupportedGeometryDraw)) {
+      text[3] = 'G';
+    }
+    if (flags.test(FeatureCompatibility::UnsupportedTessellationOutputPrimitive)) {
+      text[5] = 'T';
+      text[6] = 'O';
+    }
+    if (flags.test(FeatureCompatibility::UnsupportedIndirectTessellationDraw)) {
+      text[8] = 'I';
+      text[9] = 'T';
+    }
+    if (flags.test(FeatureCompatibility::UnsupportedGeometryTessellationDraw)) {
+      text[11] = 'G';
+      text[12] = 'T';
+    }
+    if (flags.test(FeatureCompatibility::UnsupportedDrawAuto)) {
+      text[14] = 'A';
+    }
+    if (flags.test(FeatureCompatibility::UnsupportedPredication)) {
+      text[16] = 'P';
+    }
+    if (flags.test(FeatureCompatibility::UnsupportedStreamOutputAppending)) {
+      text[18] = 'S';
+      text[19] = 'A';
+    }
+    if (flags.test(FeatureCompatibility::UnsupportedMultipleStreamOutput)) {
+      text[21] = 'M';
+      text[22] = 'S';
+    }
+    hud->updateLabel(str_label_compatibility_flag_, NS::String::string(text, NS::ASCIIStringEncoding));
+  }
 
   BOOL STDMETHODCALLTYPE IsTemporaryMonoSupported() final { return FALSE; };
 
@@ -667,6 +709,7 @@ private:
   std::conditional<EnableMetalFX, Obj<MTLFX::SpatialScaler>, std::monostate>::type metalfx_scaler;
   std::conditional<EnableMetalFX, Com<D3D11ResourceCommon>, std::monostate>::type upscaled_backbuffer_;
   float scale_factor = 1.0;
+  Obj<NS::String> str_label_compatibility_flag_;
 };
 
 HRESULT
