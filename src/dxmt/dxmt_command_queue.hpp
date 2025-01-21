@@ -1,14 +1,10 @@
 #pragma once
 
 #include "Metal/MTLArgumentEncoder.hpp"
-#include "Metal/MTLBlitCommandEncoder.hpp"
 #include "Metal/MTLCommandBuffer.hpp"
 #include "Metal/MTLCommandQueue.hpp"
-#include "Metal/MTLComputeCommandEncoder.hpp"
 #include "Metal/MTLEvent.hpp"
-#include "Metal/MTLRenderCommandEncoder.hpp"
 #include "Metal/MTLDevice.hpp"
-#include "Metal/MTLTypes.hpp"
 #include "dxmt_capture.hpp"
 #include "dxmt_command.hpp"
 #include "dxmt_command_list.hpp"
@@ -25,11 +21,6 @@
 #include <span>
 
 namespace dxmt {
-
-struct CLEAR_DEPTH_STENCIL {
-  float depth;
-  uint8_t stencil;
-};
 
 template <typename T> class moveonly_list {
 public:
@@ -84,36 +75,6 @@ class CommandQueue;
 
 class CommandChunk {
 public:
-
-  class context_t {
-  public:
-    CommandChunk *chk;
-    CommandQueue *queue;
-    MTL::CommandBuffer *cmdbuf;
-    Obj<MTL::RenderCommandEncoder> render_encoder;
-    Obj<MTL::ComputeCommandEncoder> compute_encoder;
-    MTL::Size cs_threadgroup_size{};
-    Obj<MTL::BlitCommandEncoder> blit_encoder;
-    // we don't need an extra reference here
-    // since it's guaranteed to be captured by closure
-    MTL::Buffer *current_index_buffer_ref{};
-    uint32_t dsv_planar_flags = 0;
-
-    MTL::RenderPipelineState *tess_mesh_pso;
-    MTL::RenderPipelineState *tess_raster_pso;
-    uint32_t tess_num_output_control_point_element;
-    uint32_t tess_num_output_patch_constant_scalar;
-    uint32_t tess_threads_per_patch;
-
-    uint64_t offset_base = 0;
-    uint64_t visibility_offset_base = 0;
-
-    context_t(CommandChunk *chk, MTL::CommandBuffer *cmdbuf) : chk(chk), queue(chk->queue), cmdbuf(cmdbuf) {}
-
-  private:
-  };
-
-public:
   CommandChunk(const CommandChunk &) = delete; // delete copy constructor
 
   void *
@@ -142,8 +103,6 @@ public:
     }
     return {gpu_argument_heap, aligned};
   }
-
-  using context = context_t;
 
   template <CommandWithContext<ArgumentEncodingContext> F>
   void
