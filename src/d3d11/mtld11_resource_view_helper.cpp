@@ -290,8 +290,6 @@ HRESULT InitializeAndNormalizeViewDescriptor(
   }
 
   Descriptor.usage = MTL::TextureUsageRenderTarget;
-  AttachmentDesc.Slice = 0; // use the original texture if format is the same?
-  AttachmentDesc.Level = 0;
   AttachmentDesc.DepthPlane = 0;
   AttachmentDesc.RenderTargetArrayLength = 0;
   AttachmentDesc.SampleCount = pTexture->sampleCount();
@@ -432,8 +430,6 @@ InitializeAndNormalizeViewDescriptor(
   }
 
   Descriptor.usage = MTL::TextureUsageRenderTarget;
-  AttachmentDesc.Slice = 0; // use the original texture if format is the same?
-  AttachmentDesc.Level = 0;
   AttachmentDesc.DepthPlane = 0;
   AttachmentDesc.RenderTargetArrayLength = 0;
   AttachmentDesc.SampleCount = pTexture->sampleCount();

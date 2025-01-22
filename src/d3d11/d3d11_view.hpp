@@ -9,8 +9,6 @@
 struct MTL_RENDER_PASS_ATTACHMENT_DESC {
   uint32_t RenderTargetArrayLength;
   uint32_t SampleCount;
-  uint32_t Level;
-  uint32_t Slice;
   uint32_t DepthPlane;
 };
 

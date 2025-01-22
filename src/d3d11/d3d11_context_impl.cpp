@@ -3129,8 +3129,6 @@ public:
         Rc<Texture> Texture;
         unsigned viewId;
         UINT RenderTargetIndex;
-        UINT MipSlice;
-        UINT ArrayIndex;
         UINT DepthPlane;
         MTL::PixelFormat PixelFormat = MTL::PixelFormatInvalid;
         MTL::LoadAction LoadAction{MTL::LoadActionLoad};
@@ -3144,7 +3142,7 @@ public:
         auto &rtv = state_.OutputMerger.RTVs[i];
         if (rtv) {
           auto props = rtv->GetAttachmentDesc();
-          rtvs[i] = {rtv->__texture(), rtv->__viewId(), i, props.Level, props.Slice, props.DepthPlane, rtv->GetPixelFormat()};
+          rtvs[i] = {rtv->__texture(), rtv->__viewId(), i, props.DepthPlane, rtv->GetPixelFormat()};
           D3D11_ASSERT(rtv->GetPixelFormat() != MTL::PixelFormatInvalid);
           effective_render_target++;
         } else {
@@ -3200,8 +3198,6 @@ public:
           }
           auto colorAttachment = renderPassDescriptor->colorAttachments()->object(rtv.RenderTargetIndex);
           colorAttachment->setTexture(rtv.Texture->view(rtv.viewId));
-          colorAttachment->setLevel(rtv.MipSlice);
-          colorAttachment->setSlice(rtv.ArrayIndex);
           colorAttachment->setDepthPlane(rtv.DepthPlane);
           colorAttachment->setLoadAction(rtv.LoadAction);
           colorAttachment->setStoreAction(MTL::StoreActionStore);
