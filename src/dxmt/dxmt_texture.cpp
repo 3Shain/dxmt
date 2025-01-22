@@ -225,6 +225,54 @@ Texture::view(TextureViewKey key, TextureAllocation* allocation) {
   return allocation->cached_view_[key]->texture.ptr();
 }
 
+
+TextureViewKey Texture::checkViewUseArray(TextureViewKey key, bool isArray) {
+  auto &view = viewDescriptors_[key];
+  static constexpr uint32_t ARRAY_TYPE_MASK = 0b0101001010;
+  if (unlikely(bool((1 << uint32_t(view.type)) & ARRAY_TYPE_MASK) != isArray)) {
+    // TODO: this process can be cached
+    auto new_view_desc = view;
+    switch (view.type) {
+    case MTL::TextureType1D:
+      new_view_desc.type = MTL::TextureType1DArray;
+      new_view_desc.arraySize = 1;
+      break;
+    case MTL::TextureType1DArray:
+      new_view_desc.type = MTL::TextureType1D;
+      new_view_desc.arraySize = 1;
+      break;
+    case MTL::TextureType2D:
+      new_view_desc.type = MTL::TextureType2DArray;
+      new_view_desc.arraySize = 1;
+      break;
+    case MTL::TextureType2DArray:
+      new_view_desc.type = MTL::TextureType2D;
+      new_view_desc.arraySize = 1;
+      break;
+    case MTL::TextureType2DMultisample:
+      new_view_desc.type = MTL::TextureType2DMultisampleArray;
+      new_view_desc.arraySize = 1;
+      break;
+    case MTL::TextureType2DMultisampleArray:
+      new_view_desc.type = MTL::TextureType2DMultisample;
+      new_view_desc.arraySize = 1;
+      break;
+    case MTL::TextureTypeCube:
+      new_view_desc.type = MTL::TextureTypeCubeArray;
+      new_view_desc.arraySize = 6;
+      break;
+    case MTL::TextureTypeCubeArray:
+      new_view_desc.type = MTL::TextureTypeCube;
+      new_view_desc.arraySize = 6;
+      break;
+    default:
+      return key; // should be unreachable
+    }
+    return createView(new_view_desc);
+  }
+  return key;
+}
+
 DXMT_RESOURCE_RESIDENCY_STATE &
 Texture::residency(TextureViewKey key) {
   return residency(key, current_.ptr());

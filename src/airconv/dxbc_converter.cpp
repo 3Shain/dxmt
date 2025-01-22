@@ -2703,6 +2703,16 @@ int SM50Initialize(
     } else {
       flags |= MTL_SM50_SHADER_ARGUMENT_TEXTURE_MINLOD_CLAMP |
                MTL_SM50_SHADER_ARGUMENT_TEXTURE;
+      switch (srv.resource_type) {
+      case ResourceType::Texture1DArray:
+      case ResourceType::Texture2DArray:
+      case ResourceType::Texture2DMultisampledArray:
+      case ResourceType::TextureCubeArray:
+        flags |= MTL_SM50_SHADER_ARGUMENT_TEXTURE_ARRAY;
+        break;
+      default:
+        break;
+      }
     }
     if (srv.read || srv.sampled || srv.compared) {
       flags |= MTL_SM50_SHADER_ARGUMENT_READ_ACCESS;
@@ -2757,6 +2767,16 @@ int SM50Initialize(
     } else {
       flags |= MTL_SM50_SHADER_ARGUMENT_TEXTURE_MINLOD_CLAMP |
                MTL_SM50_SHADER_ARGUMENT_TEXTURE;
+      switch (uav.resource_type) {
+      case ResourceType::Texture1DArray:
+      case ResourceType::Texture2DArray:
+      case ResourceType::Texture2DMultisampledArray:
+      case ResourceType::TextureCubeArray:
+        flags |= MTL_SM50_SHADER_ARGUMENT_TEXTURE_ARRAY;
+        break;
+      default:
+        break;
+      }
     }
     if (uav.read) {
       flags |= MTL_SM50_SHADER_ARGUMENT_READ_ACCESS;

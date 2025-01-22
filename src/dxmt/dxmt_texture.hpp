@@ -111,6 +111,7 @@ public:
   MTL::Texture *view(TextureViewKey key);
   MTL::Texture *view(TextureViewKey key, TextureAllocation* allocation);
 
+  TextureViewKey checkViewUseArray(TextureViewKey key, bool isArray);
 
   DXMT_RESOURCE_RESIDENCY_STATE &residency(TextureViewKey key);
   DXMT_RESOURCE_RESIDENCY_STATE &residency(TextureViewKey key, TextureAllocation* allocation);

@@ -187,10 +187,11 @@ ArgumentEncodingContext::encodeShaderResources(const MTL_SHADER_REFLECTION *refl
           makeResident<stage, TessellationDraw>(srv.buffer.ptr(), srv.viewId);
         } else if (srv.texture.ptr()) {
           assert(arg.Flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE_MINLOD_CLAMP);
+          auto viewIdChecked = srv.texture->checkViewUseArray(srv.viewId, arg.Flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE_ARRAY);
           encoded_buffer[arg.StructurePtrOffset] =
-              access(srv.texture, srv.viewId, DXMT_ENCODER_RESOURCE_ACESS_READ)->gpuResourceID()._impl;
+              access(srv.texture, viewIdChecked, DXMT_ENCODER_RESOURCE_ACESS_READ)->gpuResourceID()._impl;
           encoded_buffer[arg.StructurePtrOffset + 1] = 0;
-          makeResident<stage, TessellationDraw>(srv.texture.ptr(), srv.viewId);
+          makeResident<stage, TessellationDraw>(srv.texture.ptr(), viewIdChecked);
         } else {
           encoded_buffer[arg.StructurePtrOffset] = 0;
           encoded_buffer[arg.StructurePtrOffset + 1] = 0;
@@ -225,9 +226,10 @@ ArgumentEncodingContext::encodeShaderResources(const MTL_SHADER_REFLECTION *refl
           makeResident<stage, TessellationDraw>(uav.buffer.ptr(), uav.viewId, read, write);
         } else if (uav.texture.ptr()) {
           assert(arg.Flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE_MINLOD_CLAMP);
-          encoded_buffer[arg.StructurePtrOffset] = access(uav.texture, uav.viewId, access_flags)->gpuResourceID()._impl;
+          auto viewIdChecked = uav.texture->checkViewUseArray(uav.viewId, arg.Flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE_ARRAY);
+          encoded_buffer[arg.StructurePtrOffset] = access(uav.texture, viewIdChecked, access_flags)->gpuResourceID()._impl;
           encoded_buffer[arg.StructurePtrOffset + 1] = 0;
-          makeResident<stage, TessellationDraw>(uav.texture.ptr(), uav.viewId, read, write);
+          makeResident<stage, TessellationDraw>(uav.texture.ptr(), viewIdChecked, read, write);
         } else {
           encoded_buffer[arg.StructurePtrOffset] = 0;
           encoded_buffer[arg.StructurePtrOffset + 1] = 0;
