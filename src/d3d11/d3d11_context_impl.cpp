@@ -1791,9 +1791,11 @@ public:
 
     // FIXME: static_cast? but I don't really want a com_cast
     auto dsv = static_cast<IMTLD3D11DepthStencilView *>(pDepthStencilView);
+    UINT render_target_array_length = 0;
 
     if (dsv) {
       ref = &dsv->GetAttachmentDesc();
+      render_target_array_length = ref->RenderTargetArrayLength;
     }
 
     for (unsigned i = 0; i < NumRTVs; i++) {
@@ -1804,17 +1806,23 @@ public:
           auto &props = rtv->GetAttachmentDesc();
           if (props.SampleCount != ref->SampleCount)
             return false;
-          if (props.RenderTargetArrayLength != ref->RenderTargetArrayLength)
-            return false;
+          if (props.RenderTargetArrayLength != ref->RenderTargetArrayLength) {
+            // array length can be different only if either is 0 or 1
+            if (std::max(props.RenderTargetArrayLength, ref->RenderTargetArrayLength) != 1)
+              return false;
+          }
+          // render_target_array_length will be 1 only if all render targets are array
+          render_target_array_length = std::min(render_target_array_length, props.RenderTargetArrayLength);
         } else {
           ref = &rtv->GetAttachmentDesc();
+          render_target_array_length = ref->RenderTargetArrayLength;
         }
       }
     }
 
     if (ref) {
       state_.OutputMerger.SampleCount = ref->SampleCount;
-      state_.OutputMerger.ArrayLength = ref->RenderTargetArrayLength;
+      state_.OutputMerger.ArrayLength = render_target_array_length;
     } else {
       state_.OutputMerger.SampleCount = 1;
       state_.OutputMerger.ArrayLength = 0;
@@ -1833,8 +1841,10 @@ public:
     bool should_invalidate_pass = false;
 
     if (NumRTVs != D3D11_KEEP_RENDER_TARGETS_AND_DEPTH_STENCIL) {
-      if (!ValidateSetRenderTargets(NumRTVs, ppRenderTargetViews, pDepthStencilView))
+      if (!ValidateSetRenderTargets(NumRTVs, ppRenderTargetViews, pDepthStencilView)) {
+        WARN("OMSetRenderTargets: invalid render targets");
         return;
+      }
       auto &BoundRTVs = state_.OutputMerger.RTVs;
       constexpr unsigned RTVSlotCount = D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT;
       for (unsigned rtv_index = 0; rtv_index < RTVSlotCount; rtv_index++) {

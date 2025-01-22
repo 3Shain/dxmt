@@ -291,6 +291,9 @@ CreateMTLTextureDescriptorInternal(
     UINT Height, UINT Depth, UINT ArraySize, UINT SampleCount, UINT BindFlags,
     UINT CPUAccessFlags, UINT MiscFlags, D3D11_USAGE Usage, UINT MipLevels,
     DXGI_FORMAT Format, MTL::TextureDescriptor **ppDescOut) {
+  if (Width == 0 || Height == 0 || Depth == 0 || ArraySize == 0 || SampleCount == 0)
+    return E_INVALIDARG;
+
   auto desc = transfer(MTL::TextureDescriptor::alloc()->init());
 
   MTL_DXGI_FORMAT_DESC metal_format;
@@ -444,7 +447,7 @@ HRESULT CreateMTLTextureDescriptor(MTLD3D11Device *pDevice,
                                    MTL::TextureDescriptor **pMtlDescOut) {
   auto hr = CreateMTLTextureDescriptorInternal(
       pDevice, D3D11_RESOURCE_DIMENSION_TEXTURE1D, pDesc->Width, 1, 1,
-      pDesc->ArraySize, 0, pDesc->BindFlags, pDesc->CPUAccessFlags,
+      pDesc->ArraySize, 1, pDesc->BindFlags, pDesc->CPUAccessFlags,
       pDesc->MiscFlags, pDesc->Usage, pDesc->MipLevels, pDesc->Format,
       pMtlDescOut);
   if (SUCCEEDED(hr)) {
