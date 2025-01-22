@@ -278,6 +278,12 @@ InitializeAndNormalizeViewDescriptor(
   return E_FAIL;
 }
 
+inline void
+GetRenderTargetSize(Texture *pTexture, uint32_t level, MTL_RENDER_PASS_ATTACHMENT_DESC &AttachmentDesc) {
+  AttachmentDesc.Width = std::max(1u, pTexture->width() >> level);
+  AttachmentDesc.Height = std::max(1u, pTexture->height() >> level);
+}
+
 template <>
 HRESULT InitializeAndNormalizeViewDescriptor(
     MTLD3D11Device *pDevice, unsigned MiplevelCount, unsigned ArraySize, Texture* pTexture,
@@ -306,6 +312,7 @@ HRESULT InitializeAndNormalizeViewDescriptor(
       Descriptor.miplevelCount = 1;
       Descriptor.firstArraySlice = 0;
       Descriptor.arraySize = 1;
+      GetRenderTargetSize(pTexture, Descriptor.firstMiplevel, AttachmentDesc);
       return S_OK;
     }
     break;
@@ -321,6 +328,7 @@ HRESULT InitializeAndNormalizeViewDescriptor(
       Descriptor.firstArraySlice = ViewDesc.Texture1DArray.FirstArraySlice;
       Descriptor.arraySize = ViewDesc.Texture1DArray.ArraySize;
       AttachmentDesc.RenderTargetArrayLength = Descriptor.arraySize;
+      GetRenderTargetSize(pTexture, Descriptor.firstMiplevel, AttachmentDesc);
       return S_OK;
     }
     break;
@@ -334,6 +342,7 @@ HRESULT InitializeAndNormalizeViewDescriptor(
       Descriptor.miplevelCount = 1;
       Descriptor.firstArraySlice = 0;
       Descriptor.arraySize = 1;
+      GetRenderTargetSize(pTexture, Descriptor.firstMiplevel, AttachmentDesc);
       return S_OK;
     }
     break;
@@ -350,6 +359,7 @@ HRESULT InitializeAndNormalizeViewDescriptor(
       Descriptor.firstArraySlice = ViewDesc.Texture2DArray.FirstArraySlice;
       Descriptor.arraySize = ViewDesc.Texture2DArray.ArraySize;
       AttachmentDesc.RenderTargetArrayLength = Descriptor.arraySize;
+      GetRenderTargetSize(pTexture, Descriptor.firstMiplevel, AttachmentDesc);
       return S_OK;
     }
     break;
@@ -362,6 +372,7 @@ HRESULT InitializeAndNormalizeViewDescriptor(
       Descriptor.miplevelCount = 1;
       Descriptor.firstArraySlice = 0;
       Descriptor.arraySize = 1;
+      GetRenderTargetSize(pTexture, Descriptor.firstMiplevel, AttachmentDesc);
       return S_OK;
     }
     break;
@@ -377,6 +388,7 @@ HRESULT InitializeAndNormalizeViewDescriptor(
       Descriptor.firstArraySlice = 0; // FIXME: we only handle 2dms here!
       Descriptor.arraySize = 1;
       AttachmentDesc.RenderTargetArrayLength = 1;
+      GetRenderTargetSize(pTexture, Descriptor.firstMiplevel, AttachmentDesc);
       return S_OK;
     }
     break;
@@ -393,6 +405,7 @@ HRESULT InitializeAndNormalizeViewDescriptor(
         Descriptor.firstArraySlice = 0;
         Descriptor.arraySize = 1;
         AttachmentDesc.RenderTargetArrayLength = ArraySize;
+        GetRenderTargetSize(pTexture, Descriptor.firstMiplevel, AttachmentDesc);
         return S_OK;
       }
       if (ViewDesc.Texture3D.WSize == 1) {
@@ -403,6 +416,7 @@ HRESULT InitializeAndNormalizeViewDescriptor(
         Descriptor.firstArraySlice = 0;
         Descriptor.arraySize = 1;
         AttachmentDesc.DepthPlane = ViewDesc.Texture3D.FirstWSlice;
+        GetRenderTargetSize(pTexture, Descriptor.firstMiplevel, AttachmentDesc);
         return S_OK;
       }
       ERR("tex3d rtv creation not properly handled: ", ViewDesc.Texture3D.FirstWSlice, ":", ViewDesc.Texture3D.WSize,
@@ -446,6 +460,7 @@ InitializeAndNormalizeViewDescriptor(
       Descriptor.miplevelCount = 1;
       Descriptor.firstArraySlice = 0;
       Descriptor.arraySize = 1;
+      GetRenderTargetSize(pTexture, Descriptor.firstMiplevel, AttachmentDesc);
       return S_OK;
     }
     break;
@@ -461,6 +476,7 @@ InitializeAndNormalizeViewDescriptor(
       Descriptor.firstArraySlice = ViewDesc.Texture1DArray.FirstArraySlice;
       Descriptor.arraySize = ViewDesc.Texture1DArray.ArraySize;
       AttachmentDesc.RenderTargetArrayLength = Descriptor.arraySize;
+      GetRenderTargetSize(pTexture, Descriptor.firstMiplevel, AttachmentDesc);
       return S_OK;
     }
     break;
@@ -473,6 +489,7 @@ InitializeAndNormalizeViewDescriptor(
       Descriptor.miplevelCount = 1;
       Descriptor.firstArraySlice = 0;
       Descriptor.arraySize = 1;
+      GetRenderTargetSize(pTexture, Descriptor.firstMiplevel, AttachmentDesc);
       return S_OK;
     }
     break;
@@ -489,6 +506,7 @@ InitializeAndNormalizeViewDescriptor(
       Descriptor.firstArraySlice = ViewDesc.Texture2DArray.FirstArraySlice;
       Descriptor.arraySize = ViewDesc.Texture2DArray.ArraySize;
       AttachmentDesc.RenderTargetArrayLength = Descriptor.arraySize;
+      GetRenderTargetSize(pTexture, Descriptor.firstMiplevel, AttachmentDesc);
       return S_OK;
     }
     break;
@@ -501,6 +519,7 @@ InitializeAndNormalizeViewDescriptor(
       Descriptor.miplevelCount = 1;
       Descriptor.firstArraySlice = 0;
       Descriptor.arraySize = 1;
+      GetRenderTargetSize(pTexture, Descriptor.firstMiplevel, AttachmentDesc);
       return S_OK;
     }
     if (texture_type == MTL::TextureType2D) {
@@ -511,6 +530,7 @@ InitializeAndNormalizeViewDescriptor(
       Descriptor.miplevelCount = 1;
       Descriptor.firstArraySlice = 0;
       Descriptor.arraySize = 1;
+      GetRenderTargetSize(pTexture, Descriptor.firstMiplevel, AttachmentDesc);
       return S_OK;
     }
     break;

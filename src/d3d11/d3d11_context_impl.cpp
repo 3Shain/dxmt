@@ -668,6 +668,27 @@ public:
 
   void
   ClearView(ID3D11View *pView, const FLOAT Color[4], const D3D11_RECT *pRect, UINT NumRects) override {
+    if (NumRects && !pRect)
+      return;
+
+    while (auto expected = com_cast<ID3D11RenderTargetView>(pView)) {
+      auto rtv = static_cast<IMTLD3D11RenderTargetView *>(expected.ptr());
+      if (NumRects > 1)
+        break;
+      if (NumRects) {
+        if (pRect[0].top != 0 || pRect[0].left != 0) {
+          break;
+        }
+        uint32_t rect_width = pRect[0].right - pRect[0].left;
+        uint32_t rect_height = pRect[0].bottom - pRect[0].top;
+        if (rect_width != rtv->GetAttachmentDesc().Width)
+          break;
+        if (rect_height != rtv->GetAttachmentDesc().Height)
+          break;
+      }
+      return ClearRenderTargetView(rtv, Color);
+    }
+
     IMPLEMENT_ME
   }
 
@@ -3953,11 +3974,6 @@ public:
 #pragma endregion
 
 #pragma region ImmediateContext-related
-
-  bool
-  Noop() {
-    return cpu_arugment_heap_offset == 0;
-  };
 
   void Execute(ArgumentEncodingContext& ctx) {
     list.execute(ctx);

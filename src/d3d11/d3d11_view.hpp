@@ -10,6 +10,8 @@ struct MTL_RENDER_PASS_ATTACHMENT_DESC {
   uint32_t RenderTargetArrayLength;
   uint32_t SampleCount;
   uint32_t DepthPlane;
+  uint32_t Width;
+  uint32_t Height;
 };
 
 DEFINE_COM_INTERFACE("f1d21087-fbde-44b3-bc2c-b69be540a0ad",

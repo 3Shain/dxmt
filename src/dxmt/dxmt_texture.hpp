@@ -86,16 +86,24 @@ public:
     return current_.ptr();
   }
 
-  MTL::TextureType textureType() {
+  constexpr MTL::TextureType textureType() {
     return descriptor_->textureType();
   }
 
-  MTL::PixelFormat pixelFormat() {
+  constexpr MTL::PixelFormat pixelFormat() {
     return descriptor_->pixelFormat();
   }
 
-  unsigned sampleCount() {
+  constexpr unsigned sampleCount() {
     return descriptor_->sampleCount();
+  }
+
+  constexpr unsigned width() {
+    return descriptor_->width();
+  }
+
+  constexpr unsigned height() {
+    return descriptor_->height();
   }
 
   Rc<TextureAllocation> allocate(Flags<TextureAllocationFlag> flags);
