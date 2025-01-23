@@ -18,7 +18,7 @@ CommandQueue::CommandQueue(MTL::Device *device) :
     ),
     copy_temp_allocator(device, MTL::ResourceHazardTrackingModeUntracked | MTL::ResourceStorageModePrivate),
     emulated_cmd(device),
-    argument_encoding_ctx(*this) {
+    argument_encoding_ctx(*this, device) {
   commandQueue = transfer(device->newCommandQueue(kCommandChunkCount));
   for (unsigned i = 0; i < kCommandChunkCount; i++) {
     auto &chunk = chunks[i];

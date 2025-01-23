@@ -10,6 +10,16 @@
 
 namespace dxmt {
 
+ArgumentEncodingContext::ArgumentEncodingContext(CommandQueue &queue, MTL::Device *device) : queue(queue) {
+  Obj<MTL::SamplerDescriptor> descriptor = transfer(MTL::SamplerDescriptor::alloc()->init());
+  dummy_sampler_ = transfer(device->newSamplerState(descriptor));
+  dummy_cbuffer_ = transfer(device->newBuffer(
+      65536, MTL::ResourceOptionCPUCacheModeWriteCombined | MTL::ResourceStorageModeShared |
+                 MTL::ResourceHazardTrackingModeUntracked
+  ));
+  std::memset(dummy_cbuffer_->contents(), 0, 65536);
+};
+
 template void ArgumentEncodingContext::encodeVertexBuffers<true>(uint32_t slot_mask);
 template void ArgumentEncodingContext::encodeVertexBuffers<false>(uint32_t slot_mask);
 
@@ -82,7 +92,8 @@ ArgumentEncodingContext::encodeConstantBuffers(const MTL_SHADER_REFLECTION *refl
     case SM50BindingType::ConstantBuffer: {
       auto &cbuf = cbuf_[slot];
       if (!cbuf.buffer.ptr()) {
-        encoded_buffer[arg.StructurePtrOffset] = 0;
+        encoded_buffer[arg.StructurePtrOffset] = dummy_cbuffer_->gpuAddress();
+        makeResident<stage, TessellationDraw>(dummy_cbuffer_, GetResidencyMask<TessellationDraw>(stage, true, false));
         continue;
       }
       auto argbuf = cbuf.buffer;
@@ -155,7 +166,7 @@ ArgumentEncodingContext::encodeShaderResources(const MTL_SHADER_REFLECTION *refl
     case SM50BindingType::Sampler: {
       auto slot = 16 * unsigned(stage) + arg.SM50BindingSlot;
       if (!sampler_[slot].sampler) {
-        encoded_buffer[arg.StructurePtrOffset] = 0;
+        encoded_buffer[arg.StructurePtrOffset] = dummy_sampler_->gpuResourceID()._impl;
         encoded_buffer[arg.StructurePtrOffset + 1] = (uint64_t)std::bit_cast<uint32_t>(0.0f);
         break;
       }

@@ -579,8 +579,7 @@ public:
     return ret;
   }
 
-  ArgumentEncodingContext(CommandQueue &queue) :
-      queue(queue){};
+  ArgumentEncodingContext(CommandQueue &queue, MTL::Device *device);
 
   uint32_t tess_num_output_control_point_element;
   uint32_t tess_num_output_patch_constant_scalar;
@@ -603,6 +602,9 @@ private:
 
   std::array<UnorderedAccessViewBinding, kUAVBindings> om_uav_;
   std::array<UnorderedAccessViewBinding, kUAVBindings> cs_uav_;
+
+  Obj<MTL::SamplerState> dummy_sampler_;
+  Obj<MTL::Buffer> dummy_cbuffer_;
 
   EncoderData encoder_head = {EncoderType::Null, nullptr};
   EncoderData *encoder_last = &encoder_head;
