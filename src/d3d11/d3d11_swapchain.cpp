@@ -84,7 +84,7 @@ public:
                      NS::String::string(GetVersionDescriptionText(11, m_device->GetFeatureLevel()).c_str(),
                                         NS::UTF8StringEncoding));
     str_label_compatibility_flag_ =
-        transfer(NS::String::string("com.github.3shain.dxmt-compatibility", NS::ASCIIStringEncoding));
+        transfer(NS::String::alloc()->init("com.github.3shain.dxmt-compatibility", NS::ASCIIStringEncoding));
     hud->addLabel(str_label_compatibility_flag_, str_dxmt_version);
     hud->updateLabel(
         str_label_compatibility_flag_, NS::String::string("---------------------------", NS::ASCIIStringEncoding)
