@@ -647,7 +647,7 @@ MTLQueryDXGIFormat(MTL::Device *device, uint32_t format, MTL_DXGI_FORMAT_DESC &d
     break;
   }
   case DXGI_FORMAT_R16G16B16A16_TYPELESS: {
-    description.PixelFormat = MTL::PixelFormatRGBA16Unorm;
+    description.PixelFormat = MTL::PixelFormatRGBA16Float;
     description.BytesPerTexel = 8;
     description.Flag = MTL_DXGI_FORMAT_TYPELESS;
     break;
