@@ -140,7 +140,7 @@ CreateDynamicTexture2D(
     return E_INVALIDARG;
   }
   uint32_t bytesPerRow, bytesPerImage, bufferLen;
-  if (FAILED(GetLinearTextureLayout(pDevice, &finalDesc, 0, &bytesPerRow, &bytesPerImage, &bufferLen))) {
+  if (FAILED(GetLinearTextureLayout(pDevice, finalDesc, 0, bytesPerRow, bytesPerImage, bufferLen))) {
     return E_FAIL;
   }
 

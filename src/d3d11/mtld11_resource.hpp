@@ -467,9 +467,9 @@ void GetMipmapSize(const TEXTURE_DESC *pDesc, uint32_t level, uint32_t *pWidth,
 
 template <typename TEXTURE_DESC>
 HRESULT GetLinearTextureLayout(MTLD3D11Device *pDevice,
-                               const TEXTURE_DESC *pDesc, uint32_t level,
-                               uint32_t *pBytesPerRow, uint32_t *pBytesPerImage,
-                               uint32_t *pBytesPerSlice);
+                               const TEXTURE_DESC &Desc, uint32_t Level,
+                               uint32_t &BytesPerRow, uint32_t &BytesPerImage,
+                               uint32_t &BytesPerSlice, bool Aligned = true);
 
 constexpr void
 CalculateBufferViewOffsetAndSize(const D3D11_BUFFER_DESC &buffer_desc,

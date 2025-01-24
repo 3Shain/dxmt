@@ -532,124 +532,118 @@ void GetMipmapSize(const D3D11_TEXTURE3D_DESC1 *pDesc, uint32_t level,
 }
 
 template <>
-HRESULT GetLinearTextureLayout(MTLD3D11Device *pDevice,
-                               const D3D11_TEXTURE1D_DESC *pDesc,
-                               uint32_t level, uint32_t *pBytesPerRow,
-                               uint32_t *pBytesPerImage,
-                               uint32_t *pBytesPerSlice) {
+HRESULT
+GetLinearTextureLayout(
+    MTLD3D11Device *pDevice, const D3D11_TEXTURE1D_DESC &Desc, uint32_t level, uint32_t &BytesPerRow,
+    uint32_t &BytesPerImage, uint32_t &BytesPerSlice, bool Aligned
+) {
   auto metal = pDevice->GetMTLDevice();
   MTL_DXGI_FORMAT_DESC metal_format;
 
-  if (FAILED(MTLQueryDXGIFormat(metal, pDesc->Format, metal_format))) {
-    ERR("GetLinearTextureLayout: invalid format: ", pDesc->Format);
+  if (FAILED(MTLQueryDXGIFormat(metal, Desc.Format, metal_format))) {
+    ERR("GetLinearTextureLayout: invalid format: ", Desc.Format);
     return E_FAIL;
   }
   if (metal_format.PixelFormat == MTL::PixelFormatInvalid) {
-    ERR("GetLinearTextureLayout: invalid format: ", pDesc->Format);
+    ERR("GetLinearTextureLayout: invalid format: ", Desc.Format);
     return E_FAIL;
   }
   if (metal_format.BytesPerTexel == 0) {
-    ERR("GetLinearTextureLayout: not an ordinary or packed format: ",
-        pDesc->Format);
+    ERR("GetLinearTextureLayout: not an ordinary or packed format: ", Desc.Format);
     return E_FAIL;
   }
   uint32_t w, h, d;
-  GetMipmapSize(pDesc, level, &w, &h, &d);
+  GetMipmapSize(&Desc, level, &w, &h, &d);
   auto bytes_per_row_unaligned = metal_format.BytesPerTexel * w;
-  auto alignment = metal->minimumLinearTextureAlignmentForPixelFormat(
-      metal_format.PixelFormat);
+  auto alignment = Aligned ? metal->minimumLinearTextureAlignmentForPixelFormat(metal_format.PixelFormat): 1;
   auto aligned_bytes_per_row = align(bytes_per_row_unaligned, alignment);
-  *pBytesPerRow = aligned_bytes_per_row;
-  *pBytesPerImage = 0;
-  *pBytesPerSlice = aligned_bytes_per_row;
+  BytesPerRow = aligned_bytes_per_row;
+  BytesPerImage = 0;
+  BytesPerSlice = aligned_bytes_per_row;
   return S_OK;
 };
 
 template <>
-HRESULT GetLinearTextureLayout(MTLD3D11Device *pDevice,
-                               const D3D11_TEXTURE2D_DESC1 *pDesc,
-                               uint32_t level, uint32_t *pBytesPerRow,
-                               uint32_t *pBytesPerImage,
-                               uint32_t *pBytesPerSlice) {
+HRESULT
+GetLinearTextureLayout(
+    MTLD3D11Device *pDevice, const D3D11_TEXTURE2D_DESC1 &Desc, uint32_t level, uint32_t &BytesPerRow,
+    uint32_t &BytesPerImage, uint32_t &BytesPerSlice, bool Aligned
+) {
   auto metal = pDevice->GetMTLDevice();
   MTL_DXGI_FORMAT_DESC metal_format;
 
-  if (FAILED(MTLQueryDXGIFormat(metal, pDesc->Format, metal_format))) {
-    ERR("GetLinearTextureLayout: invalid format: ", pDesc->Format);
+  if (FAILED(MTLQueryDXGIFormat(metal, Desc.Format, metal_format))) {
+    ERR("GetLinearTextureLayout: invalid format: ", Desc.Format);
     return E_FAIL;
   }
   if (metal_format.PixelFormat == MTL::PixelFormatInvalid) {
-    ERR("GetLinearTextureLayout: invalid format: ", pDesc->Format);
+    ERR("GetLinearTextureLayout: invalid format: ", Desc.Format);
     return E_FAIL;
   }
   if (metal_format.BytesPerTexel == 0) {
-    ERR("GetLinearTextureLayout: not an ordinary or packed format: ",
-        pDesc->Format);
+    ERR("GetLinearTextureLayout: not an ordinary or packed format: ", Desc.Format);
     return E_FAIL;
   }
   uint32_t w, h, d;
-  GetMipmapSize(pDesc, level, &w, &h, &d);
+  GetMipmapSize(&Desc, level, &w, &h, &d);
   if (metal_format.Flag & MTL_DXGI_FORMAT_BC) {
     D3D11_ASSERT(w != 0 && h != 0);
     auto w_phisical = align(w, 4);
     auto h_phisical = align(h, 4);
     auto aligned_bytes_per_row = metal_format.BytesPerTexel * w_phisical >> 2;
-    *pBytesPerRow = aligned_bytes_per_row; // 1 row of block is 4 row of pixel
-    *pBytesPerImage = aligned_bytes_per_row * h_phisical >> 2;
-    *pBytesPerSlice = aligned_bytes_per_row * h_phisical >> 2;
+    BytesPerRow = aligned_bytes_per_row; // 1 row of block is 4 row of pixel
+    BytesPerImage = aligned_bytes_per_row * h_phisical >> 2;
+    BytesPerSlice = aligned_bytes_per_row * h_phisical >> 2;
     return S_OK;
   }
   auto bytes_per_row_unaligned = metal_format.BytesPerTexel * w;
-  auto alignment = metal->minimumLinearTextureAlignmentForPixelFormat(
-      metal_format.PixelFormat);
+  auto alignment = Aligned ? metal->minimumLinearTextureAlignmentForPixelFormat(metal_format.PixelFormat): 1;
   auto aligned_bytes_per_row = align(bytes_per_row_unaligned, alignment);
-  *pBytesPerRow = aligned_bytes_per_row;
-  *pBytesPerImage = aligned_bytes_per_row * h;
-  *pBytesPerSlice = aligned_bytes_per_row * h;
+  BytesPerRow = aligned_bytes_per_row;
+  BytesPerImage = aligned_bytes_per_row * h;
+  BytesPerSlice = aligned_bytes_per_row * h;
   return S_OK;
 };
 
 template <>
-HRESULT GetLinearTextureLayout(MTLD3D11Device *pDevice,
-                               const D3D11_TEXTURE3D_DESC1 *pDesc,
-                               uint32_t level, uint32_t *pBytesPerRow,
-                               uint32_t *pBytesPerImage,
-                               uint32_t *pBytesPerSlice) {
+HRESULT
+GetLinearTextureLayout(
+    MTLD3D11Device *pDevice, const D3D11_TEXTURE3D_DESC1 &Desc, uint32_t level, uint32_t &BytesPerRow,
+    uint32_t &BytesPerImage, uint32_t &BytesPerSlice, bool Aligned
+) {
   auto metal = pDevice->GetMTLDevice();
   MTL_DXGI_FORMAT_DESC metal_format;
 
-  if (FAILED(MTLQueryDXGIFormat(metal, pDesc->Format, metal_format))) {
-    ERR("GetLinearTextureLayout: invalid format: ", pDesc->Format);
+  if (FAILED(MTLQueryDXGIFormat(metal, Desc.Format, metal_format))) {
+    ERR("GetLinearTextureLayout: invalid format: ", Desc.Format);
     return E_FAIL;
   }
   if (metal_format.PixelFormat == MTL::PixelFormatInvalid) {
-    ERR("GetLinearTextureLayout: invalid format: ", pDesc->Format);
+    ERR("GetLinearTextureLayout: invalid format: ", Desc.Format);
     return E_FAIL;
   }
   if (metal_format.BytesPerTexel == 0) {
-    ERR("GetLinearTextureLayout: not an ordinary or packed format: ",
-        pDesc->Format);
+    ERR("GetLinearTextureLayout: not an ordinary or packed format: ", Desc.Format);
     return E_FAIL;
   }
   uint32_t w, h, d;
-  GetMipmapSize(pDesc, level, &w, &h, &d);
+  GetMipmapSize(&Desc, level, &w, &h, &d);
   if (metal_format.Flag & MTL_DXGI_FORMAT_BC) {
     D3D11_ASSERT(w != 0 && h != 0);
     auto w_phisical = align(w, 4);
     auto h_phisical = align(h, 4);
     auto aligned_bytes_per_row = metal_format.BytesPerTexel * w_phisical >> 2;
-    *pBytesPerRow = aligned_bytes_per_row; // 1 row of block is 4 row of pixel
-    *pBytesPerImage = aligned_bytes_per_row * h_phisical >> 2;
-    *pBytesPerSlice = aligned_bytes_per_row * h_phisical * d >> 2;
+    BytesPerRow = aligned_bytes_per_row; // 1 row of block is 4 row of pixel
+    BytesPerImage = aligned_bytes_per_row * h_phisical >> 2;
+    BytesPerSlice = aligned_bytes_per_row * h_phisical * d >> 2;
     return S_OK;
   }
   auto bytes_per_row_unaligned = metal_format.BytesPerTexel * w;
-  auto alignment = metal->minimumLinearTextureAlignmentForPixelFormat(
-      metal_format.PixelFormat);
+  auto alignment = Aligned ? metal->minimumLinearTextureAlignmentForPixelFormat(metal_format.PixelFormat) : 1;
   auto aligned_bytes_per_row = align(bytes_per_row_unaligned, alignment);
-  *pBytesPerRow = aligned_bytes_per_row;
-  *pBytesPerImage = aligned_bytes_per_row * h;
-  *pBytesPerSlice = aligned_bytes_per_row * h * d;
+  BytesPerRow = aligned_bytes_per_row;
+  BytesPerImage = aligned_bytes_per_row * h;
+  BytesPerSlice = aligned_bytes_per_row * h * d;
   return S_OK;
 };
 

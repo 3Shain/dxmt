@@ -135,8 +135,7 @@ HRESULT CreateStagingTextureInternal(MTLD3D11Device *pDevice,
     uint32_t w, h, d;
     GetMipmapSize(&finalDesc, sub.MipLevel, &w, &h, &d);
     uint32_t bpr, bpi, buf_len;
-    if (FAILED(GetLinearTextureLayout(pDevice, &finalDesc, sub.MipLevel, &bpr,
-                                      &bpi, &buf_len))) {
+    if (FAILED(GetLinearTextureLayout(pDevice, finalDesc, sub.MipLevel, bpr, bpi, buf_len))) {
       return E_FAIL;
     }
     D3D11_ASSERT(subresources.size() == sub.SubresourceId);
