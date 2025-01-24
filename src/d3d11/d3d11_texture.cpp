@@ -6,15 +6,15 @@
 namespace dxmt {
 
 template <>
-void initWithSubresourceData(MTL::Texture *target,
-                             const D3D11_TEXTURE3D_DESC1 *desc,
+void InitializeTextureData(MTLD3D11Device * pDevice, MTL::Texture *target,
+                             const D3D11_TEXTURE3D_DESC1 &Desc,
                              const D3D11_SUBRESOURCE_DATA *subresources) {
   if (subresources == nullptr)
     return;
-  uint32_t width = desc->Width;
-  uint32_t height = desc->Height;
-  uint32_t depth = desc->Depth;
-  for (uint32_t level = 0; level < desc->MipLevels; level++) {
+  uint32_t width = Desc.Width;
+  uint32_t height = Desc.Height;
+  uint32_t depth = Desc.Depth;
+  for (uint32_t level = 0; level < Desc.MipLevels; level++) {
     auto region = MTL::Region::Make3D(0, 0, 0, width, height, depth);
     target->replaceRegion(region, level, 0, subresources[level].pSysMem,
                           subresources[level].SysMemPitch,
@@ -26,16 +26,16 @@ void initWithSubresourceData(MTL::Texture *target,
 };
 
 template <>
-void initWithSubresourceData(MTL::Texture *target,
-                             const D3D11_TEXTURE2D_DESC1 *desc,
+void InitializeTextureData(MTLD3D11Device * pDevice, MTL::Texture *target,
+                             const D3D11_TEXTURE2D_DESC1 &Desc,
                              const D3D11_SUBRESOURCE_DATA *subresources) {
   if (subresources == nullptr)
     return;
-  uint32_t width = desc->Width;
-  uint32_t height = desc->Height;
-  for (uint32_t level = 0; level < desc->MipLevels; level++) {
-    for (uint32_t slice = 0; slice < desc->ArraySize; slice++) {
-      auto idx = D3D11CalcSubresource(level, slice, desc->MipLevels);
+  uint32_t width = Desc.Width;
+  uint32_t height = Desc.Height;
+  for (uint32_t level = 0; level < Desc.MipLevels; level++) {
+    for (uint32_t slice = 0; slice < Desc.ArraySize; slice++) {
+      auto idx = D3D11CalcSubresource(level, slice, Desc.MipLevels);
       auto region = MTL::Region::Make2D(0, 0, width, height);
       target->replaceRegion(region, level, slice, subresources[idx].pSysMem,
                             subresources[idx].SysMemPitch, 0);
@@ -46,15 +46,15 @@ void initWithSubresourceData(MTL::Texture *target,
 };
 
 template <>
-void initWithSubresourceData(MTL::Texture *target,
-                             const D3D11_TEXTURE1D_DESC *desc,
+void InitializeTextureData(MTLD3D11Device * pDevice, MTL::Texture *target,
+                             const D3D11_TEXTURE1D_DESC &Desc,
                              const D3D11_SUBRESOURCE_DATA *subresources) {
   if (subresources == nullptr)
     return;
-  uint32_t width = desc->Width;
-  for (uint32_t level = 0; level < desc->MipLevels; level++) {
-    for (uint32_t slice = 0; slice < desc->ArraySize; slice++) {
-      auto idx = D3D11CalcSubresource(level, slice, desc->MipLevels);
+  uint32_t width = Desc.Width;
+  for (uint32_t level = 0; level < Desc.MipLevels; level++) {
+    for (uint32_t slice = 0; slice < Desc.ArraySize; slice++) {
+      auto idx = D3D11CalcSubresource(level, slice, Desc.MipLevels);
       auto region = MTL::Region::Make1D(0, width);
       target->replaceRegion(region, level, slice, subresources[idx].pSysMem, 0,
                             0);

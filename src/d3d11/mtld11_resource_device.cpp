@@ -295,7 +295,7 @@ HRESULT CreateDeviceTextureInternal(MTLD3D11Device *pDevice,
     flags.set(TextureAllocationFlag::GpuReadonly);
   if (pInitialData) {
     auto default_allocation = texture->allocate(flags);
-    initWithSubresourceData(default_allocation->texture(), &finalDesc, pInitialData);
+    InitializeTextureData(pDevice, default_allocation->texture(), finalDesc, pInitialData);
     texture->rename(std::move(default_allocation));
     *ppTexture =
         reinterpret_cast<typename tag::COM_IMPL *>(
