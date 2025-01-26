@@ -2715,8 +2715,8 @@ public:
         SwitchToBlitEncoder(CommandBufferState::ReadbackBlitEncoderActive);
         Emit([src_ = src->buffer(), dst = std::move(staging_dst), DstX, SrcBox](ArgumentEncodingContext &enc) {
           auto src = enc.access(src_, SrcBox.left, SrcBox.right - SrcBox.left, DXMT_ENCODER_RESOURCE_ACESS_READ);
-          enc.encodeBlitCommand([=, &SrcBox, &dst](BlitCommandContext &ctx) {
-            ctx.encoder->copyFromBuffer(src, SrcBox.left, dst->current, DstX, SrcBox.right - SrcBox.left);
+          enc.encodeBlitCommand([=, &SrcBox, dst = dst->current](BlitCommandContext &ctx) {
+            ctx.encoder->copyFromBuffer(src, SrcBox.left, dst, DstX, SrcBox.right - SrcBox.left);
           });
         });
         promote_flush = true;
@@ -2729,8 +2729,8 @@ public:
         SwitchToBlitEncoder(CommandBufferState::UpdateBlitEncoderActive);
         Emit([dst_ = dst->buffer(), src = std::move(staging_src), DstX, SrcBox](ArgumentEncodingContext &enc) {
           auto dst = enc.access(dst_, DstX, SrcBox.right - SrcBox.left, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
-          enc.encodeBlitCommand([=, &SrcBox, &src](BlitCommandContext &ctx) {
-            ctx.encoder->copyFromBuffer(src->current, SrcBox.left, dst, DstX, SrcBox.right - SrcBox.left);
+          enc.encodeBlitCommand([=, &SrcBox, src = src->current](BlitCommandContext &ctx) {
+            ctx.encoder->copyFromBuffer(src, SrcBox.left, dst, DstX, SrcBox.right - SrcBox.left);
           });
         });
       } else if (auto src = reinterpret_cast<D3D11ResourceCommon *>(pSrcResource)) {
@@ -2779,10 +2779,10 @@ public:
           auto src = enc.access(src_, cmd.Src.MipLevel, cmd.Src.ArraySlice, DXMT_ENCODER_RESOURCE_ACESS_READ);
           auto offset = cmd.DstOrigin.z * dst->bytesPerImage + cmd.DstOrigin.y * dst->bytesPerRow +
                         cmd.DstOrigin.x * cmd.DstFormat.BytesPerTexel;
-          enc.encodeBlitCommand([=, &cmd, &dst](BlitCommandContext &ctx) {
+          enc.encodeBlitCommand([=, &cmd, dst = dst->current, bpr = dst->bytesPerRow,
+                                 bpi = dst->bytesPerImage](BlitCommandContext &ctx) {
             ctx.encoder->copyFromTexture(
-                src, cmd.Src.ArraySlice, cmd.Src.MipLevel, cmd.SrcOrigin, cmd.SrcSize, dst->current, offset, dst->bytesPerRow,
-                dst->bytesPerImage
+                src, cmd.Src.ArraySlice, cmd.Src.MipLevel, cmd.SrcOrigin, cmd.SrcSize, dst, offset, bpr, bpi
             );
           });
         });
@@ -2806,13 +2806,12 @@ public:
             offset = cmd.SrcOrigin.z * src->bytesPerImage + cmd.SrcOrigin.y * src->bytesPerRow +
                      cmd.SrcOrigin.x * cmd.SrcFormat.BytesPerTexel;
           }
-          enc.encodeBlitCommand([=, &cmd, &src](BlitCommandContext &ctx) {
+          enc.encodeBlitCommand([=, &cmd, src = src->current, bpr = src->bytesPerRow,
+                                 bpi = src->bytesPerImage](BlitCommandContext &ctx) {
             ctx.encoder->copyFromBuffer(
-                src->current, offset, src->bytesPerRow, src->bytesPerImage, cmd.SrcSize, dst, cmd.Dst.ArraySlice, cmd.Dst.MipLevel,
-                cmd.DstOrigin
+                src, offset, bpr, bpi, cmd.SrcSize, dst, cmd.Dst.ArraySlice, cmd.Dst.MipLevel, cmd.DstOrigin
             );
           });
-          ;
         });
       } else if (auto src = GetTexture(cmd.pSrc)) {
         // on-device copy

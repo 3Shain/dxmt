@@ -3,6 +3,7 @@
 #include "dxmt_command_queue.hpp"
 #include "d3d11_context_impl.cpp"
 #include "dxmt_context.hpp"
+#include "dxmt_staging.hpp"
 
 namespace dxmt {
 struct ContextInternalState {
@@ -81,6 +82,8 @@ public:
       D3D11_MAPPED_SUBRESOURCE *pMappedResource) override {
     UINT buffer_length = 0, &row_pitch = buffer_length;
     UINT bind_flag = 0, &depth_pitch = bind_flag;
+    auto current_seq_id = cmd_queue.CurrentSeqId();
+    auto coherent_seq_id = cmd_queue.CoherentSeqId();
     if (auto dynamic = GetDynamicBuffer(pResource, &buffer_length, &bind_flag)) {
       if (!pMappedResource)
         return E_INVALIDARG;
@@ -104,9 +107,7 @@ public:
           }
         }
 
-        dynamic->updateImmediateName(
-          ctx_state.cmd_queue.CurrentSeqId(), 
-          dynamic->allocate(ctx_state.cmd_queue.CoherentSeqId()), false);
+        dynamic->updateImmediateName(current_seq_id, dynamic->allocate(coherent_seq_id), false);
         Emit([allocation = dynamic->immediateName(),
               buffer = Rc(dynamic->buffer)](ArgumentEncodingContext &enc) mutable {
           auto _ = buffer->rename(forward_rc(allocation));
@@ -139,9 +140,7 @@ public:
           stage.SRVs.set_dirty();
         }
 
-        dynamic->updateImmediateName(
-          ctx_state.cmd_queue.CurrentSeqId(), 
-          dynamic->allocate(ctx_state.cmd_queue.CoherentSeqId()), false);
+        dynamic->updateImmediateName(current_seq_id, dynamic->allocate(coherent_seq_id), false);
         Emit([allocation = dynamic->immediateName(),
               texture = Rc(dynamic->texture)](ArgumentEncodingContext &enc) mutable {
           auto _ = texture->rename(forward_rc(allocation));
@@ -162,28 +161,24 @@ public:
       return S_OK;
     }
     if (auto staging = GetStagingResource(pResource, Subresource)) {
+      if (MapType > 3 || MapType == 0)
+          return E_INVALIDARG;
       while (true) {
-        auto coh = cmd_queue.CoherentSeqId();
-        int64_t ret = -1;
-        switch (MapType) {
-        case D3D11_MAP_READ:
-          ret = staging->tryMap(coh, true, false);
-          break;
-        case D3D11_MAP_READ_WRITE:
-          ret = staging->tryMap(coh, false, true);
-          break;
-        case D3D11_MAP_WRITE:
-          ret = staging->tryMap(coh, true, true);
-          break;
-        default:
-          break;
-        }
-        if (ret < 0) {
+        auto result = staging->tryMap(coherent_seq_id, MapType & D3D11_MAP_READ, MapType & D3D11_MAP_WRITE);
+        if (result == StagingMapResult::Mapped)
           return E_FAIL;
+        if (result == StagingMapResult::Renamable) {
+          // when write to a buffer that is gpu-readonly
+          Obj<MTL::Buffer> new_name = staging->allocate(coherent_seq_id);
+          Emit([staging, new_name](ArgumentEncodingContext &enc) mutable { staging->current = std::move(new_name); });
+          // can't guarantee a full overwrite
+          std::memcpy(new_name->contents(), staging->mappedMemory(), new_name->length());
+          staging->updateImmediateName(current_seq_id, std::move(new_name));
+          result = StagingMapResult::Mappable;
         }
-        if (ret == 0) {
+        if (result == StagingMapResult::Mappable) {
           TRACE("staging map ready");
-          pMappedResource->pData = staging->current->contents();
+          pMappedResource->pData = staging->mappedMemory();
           pMappedResource->RowPitch = staging->bytesPerRow;
           pMappedResource->DepthPitch = staging->bytesPerImage;
           return S_OK;
@@ -196,7 +191,9 @@ public:
         // and the following calls are essentially no-op
         Flush();
         TRACE("staging map block");
-        cmd_queue.FIXME_YieldUntilCoherenceBoundaryUpdate(coh);
+        cmd_queue.FIXME_YieldUntilCoherenceBoundaryUpdate(coherent_seq_id);
+        current_seq_id = cmd_queue.CurrentSeqId();
+        coherent_seq_id = cmd_queue.CoherentSeqId();
       };
     };
     UNIMPLEMENTED("unknown mapped resource (USAGE_DEFAULT?)");
