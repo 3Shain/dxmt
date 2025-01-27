@@ -78,6 +78,11 @@ public:
     return (bound.qword(0) & mask) == mask;
   }
 
+  constexpr bool
+  any_bound() const noexcept {
+    return bound.any();
+  }
+
   constexpr uint32_t
   max_binding_64() noexcept {
     auto qword = dirty.qword(0);

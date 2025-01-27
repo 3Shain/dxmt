@@ -3193,8 +3193,8 @@ public:
         dsv_info.viewId = state_.OutputMerger.DSV->__viewId();
         dsv_info.PixelFormat = state_.OutputMerger.DSV->GetPixelFormat();
       } else if (effective_render_target == 0) {
-        if (state_.OutputMerger.NumRTVs) {
-          ERR("NumRTVs is non-zero but all render targets are null.");
+        if (!state_.OutputMerger.UAVs.any_bound()) {
+          ERR("No rendering attachment or uav is bounded");
           return false;
         }
         D3D11_ASSERT(state_.Rasterizer.NumViewports);
