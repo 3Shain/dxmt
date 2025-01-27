@@ -41,9 +41,9 @@ HRESULT ExtractMTLInputLayoutElements(
         });
     if (pDesc == pInputElementDescs + NumElements) {
       // Unmatched shader input signature
-      ERR("CreateInputLayout: Vertex shader expects ", inputSig.SemanticName,
-          "_", inputSig.SemanticIndex, " but it's not in pInputElementDescs");
-      return E_FAIL;
+      WARN("CreateInputLayout: Vertex shader expects ", inputSig.SemanticName,
+          "_", inputSig.SemanticIndex, " but it's not in input layout element descriptors");
+      return E_INVALIDARG;
     }
     auto &desc = *pDesc;
     D3D11_ASSERT(attribute_count < NumElements);

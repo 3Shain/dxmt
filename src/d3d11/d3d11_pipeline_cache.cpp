@@ -271,10 +271,11 @@ class PipelineCache : public MTLD3D11PipelineCacheBase {
     std::lock_guard<dxmt::mutex> lock(mutex_ia_);
     std::vector<MTL_SHADER_INPUT_LAYOUT_ELEMENT_DESC> buffer(NumElements);
     uint32_t num_metal_ia_elements;
-    if (FAILED(ExtractMTLInputLayoutElements(
+    HRESULT hr;
+    if (FAILED(hr = ExtractMTLInputLayoutElements(
             device, pShaderBytecodeWithInputSignature, pInputElementDesc,
             NumElements, buffer.data(), &num_metal_ia_elements))) {
-      return E_FAIL;
+      return hr;
     }
     buffer.resize(num_metal_ia_elements);
     if (!input_layouts.contains(buffer)) {
@@ -287,7 +288,7 @@ class PipelineCache : public MTLD3D11PipelineCacheBase {
     }
     *ppInputLayout =
         ref(new MTLD3D11InputLayout(device, input_layouts.at(buffer).get()));
-    return S_OK;
+    return hr;
   }
 
   HRESULT
