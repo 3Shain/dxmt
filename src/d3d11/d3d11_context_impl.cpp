@@ -3178,8 +3178,6 @@ public:
       struct DEPTH_STENCIL_STATE {
         Rc<Texture> Texture{};
         unsigned viewId{};
-        UINT MipSlice{};
-        UINT ArrayIndex{};
         MTL::PixelFormat PixelFormat = MTL::PixelFormatInvalid;
         MTL::LoadAction DepthLoadAction{MTL::LoadActionLoad};
         MTL::LoadAction StencilLoadAction{MTL::LoadActionLoad};
@@ -3237,8 +3235,6 @@ public:
           if (dsv_planar_flags & 1) {
             auto depthAttachment = renderPassDescriptor->depthAttachment();
             depthAttachment->setTexture(texture);
-            depthAttachment->setLevel(dsv.MipSlice);
-            depthAttachment->setSlice(dsv.ArrayIndex);
             depthAttachment->setLoadAction(dsv.DepthLoadAction);
             depthAttachment->setStoreAction(MTL::StoreActionStore);
           }
@@ -3246,8 +3242,6 @@ public:
           if (dsv_planar_flags & 2) {
             auto stencilAttachment = renderPassDescriptor->stencilAttachment();
             stencilAttachment->setTexture(texture);
-            stencilAttachment->setLevel(dsv.MipSlice);
-            stencilAttachment->setSlice(dsv.ArrayIndex);
             stencilAttachment->setLoadAction(dsv.StencilLoadAction);
             stencilAttachment->setStoreAction(MTL::StoreActionStore);
           }
