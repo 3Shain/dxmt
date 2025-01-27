@@ -3555,13 +3555,7 @@ public:
     }
     IMTLD3D11RasterizerState *current_rs =
         state_.Rasterizer.RasterizerState ? state_.Rasterizer.RasterizerState : default_rasterizer_state;
-    bool allow_scissor =
-        current_rs->IsScissorEnabled() && state_.Rasterizer.NumViewports == state_.Rasterizer.NumScissorRects;
-    // FIXME: multiple viewports with one scissor should be allowed?
-    if (current_rs->IsScissorEnabled() && state_.Rasterizer.NumViewports > 1 &&
-        state_.Rasterizer.NumScissorRects == 1) {
-      ERR("FIXME: handle multiple viewports with single scissor rect.");
-    }
+    bool allow_scissor = current_rs->IsScissorEnabled();
     if (dirty_state.any(DirtyState::Viewport)) {
       auto viewports = AllocateCommandData<MTL::Viewport>(state_.Rasterizer.NumViewports);
       for (unsigned i = 0; i < state_.Rasterizer.NumViewports; i++) {
@@ -3576,19 +3570,19 @@ public:
       });
     }
     if (dirty_state.any(DirtyState::Scissors)) {
-      auto scissors = AllocateCommandData<MTL::ScissorRect>(
-          allow_scissor ? state_.Rasterizer.NumScissorRects : state_.Rasterizer.NumViewports
-      );
-      if (allow_scissor) {
-        for (unsigned i = 0; i < state_.Rasterizer.NumScissorRects; i++) {
-          auto &d3dRect = state_.Rasterizer.scissor_rects[i];
-          scissors[i] = {
-              (UINT)d3dRect.left, (UINT)d3dRect.top, (UINT)d3dRect.right - d3dRect.left,
-              (UINT)d3dRect.bottom - d3dRect.top
-          };
-        }
-      } else {
-        for (unsigned i = 0; i < state_.Rasterizer.NumViewports; i++) {
+      auto scissors = AllocateCommandData<MTL::ScissorRect>(state_.Rasterizer.NumViewports);
+      for (unsigned i = 0; i < state_.Rasterizer.NumViewports; i++) {
+        if (allow_scissor) {
+          if (i < state_.Rasterizer.NumScissorRects) {
+            auto &d3dRect = state_.Rasterizer.scissor_rects[i];
+            scissors[i] = {
+                (UINT)d3dRect.left, (UINT)d3dRect.top, (UINT)d3dRect.right - d3dRect.left,
+                (UINT)d3dRect.bottom - d3dRect.top
+            };
+          } else {
+            scissors[i] = {0, 0, 0, 0};
+          }
+        } else {
           auto &d3dViewport = state_.Rasterizer.viewports[i];
           scissors[i] = {
               (UINT)d3dViewport.TopLeftX, (UINT)d3dViewport.TopLeftY, (UINT)d3dViewport.Width, (UINT)d3dViewport.Height
