@@ -291,9 +291,7 @@ public:
     if (DataSize && DataSize != pAsync->GetDataSize())
       return E_INVALIDARG;
 
-    if (GetDataFlags != D3D11_ASYNC_GETDATA_DONOTFLUSH) {
-      Flush();
-    }
+    HRESULT hr = S_FALSE;
 
     D3D11_QUERY_DESC desc;
     ((ID3D11Query *)pAsync)->GetDesc(&desc);
@@ -301,17 +299,20 @@ public:
     case D3D11_QUERY_EVENT: {
       BOOL null_data;
       BOOL *data_ptr = pData ? (BOOL *)pData : &null_data;
-      return ((IMTLD3DEventQuery *)pAsync)->GetData(data_ptr, cmd_queue.SignaledEventSeqId());
+      hr = ((IMTLD3DEventQuery *)pAsync)->GetData(data_ptr, cmd_queue.SignaledEventSeqId());
+      break;
     }
     case D3D11_QUERY_OCCLUSION: {
       uint64_t null_data;
       uint64_t *data_ptr = pData ? (uint64_t *)pData : &null_data;
-      return ((IMTLD3DOcclusionQuery *)pAsync)->GetData(data_ptr);
+      hr = ((IMTLD3DOcclusionQuery *)pAsync)->GetData(data_ptr);
+      break;
     }
     case D3D11_QUERY_OCCLUSION_PREDICATE: {
       BOOL null_data;
       BOOL *data_ptr = pData ? (BOOL *)pData : &null_data;
-      return ((IMTLD3DOcclusionQuery *)pAsync)->GetData(data_ptr);
+      hr = ((IMTLD3DOcclusionQuery *)pAsync)->GetData(data_ptr);
+      break;
     }
     case D3D11_QUERY_TIMESTAMP: {
       if (pData) {
@@ -335,6 +336,9 @@ public:
       ERR("Unknown query type ", desc.Query);
       return E_FAIL;
     }
+    if (hr == S_FALSE && GetDataFlags != D3D11_ASYNC_GETDATA_DONOTFLUSH)
+      Flush();
+    return hr;
   }
 
   void
@@ -395,8 +399,6 @@ public:
       cmdlist->Execute(enc);
       enc.popDeferredVisibilityQuerys();
     });
-
-    InvalidateCurrentPass();
 
     if (RestoreContextState)
       RestoreEncodingContextState();
