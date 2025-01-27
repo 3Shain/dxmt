@@ -877,10 +877,16 @@ public:
       UINT buffer_len = 0;
       UINT unused_bind_flag = 0;
       if (auto dynamic = GetDynamicBuffer(pDstResource, &buffer_len, &unused_bind_flag)) {
-        if (copy_len == buffer_len) {
-          D3D11_MAPPED_SUBRESOURCE mapped;
+        D3D11_MAPPED_SUBRESOURCE mapped;
+        if ((copy_len == buffer_len && copy_offset == 0) || (CopyFlags & D3D11_COPY_DISCARD)) {
           Map(pDstResource, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
-          memcpy(mapped.pData, pSrcData, copy_len);
+          std::memcpy(reinterpret_cast<char *>(mapped.pData) + copy_offset, pSrcData, copy_len);
+          Unmap(pDstResource, 0);
+          return;
+        }
+        if (CopyFlags & D3D11_COPY_NO_OVERWRITE) {
+          Map(pDstResource, 0, D3D11_MAP_WRITE_NO_OVERWRITE, 0, &mapped);
+          std::memcpy(reinterpret_cast<char *>(mapped.pData) + copy_offset, pSrcData, copy_len);
           Unmap(pDstResource, 0);
           return;
         }
