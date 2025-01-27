@@ -4364,6 +4364,8 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                      case air::TextureKind::depth_2d:
                      case air::TextureKind::texture_cube:
                      case air::TextureKind::depth_cube:
+                     case air::TextureKind::texture_2d_ms:
+                     case air::TextureKind::depth_2d_ms:
                        x = co_yield call_get_texture_info(
                          tex, res_h, TextureInfoType::width, miplevel
                        );
@@ -4375,6 +4377,8 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                      case air::TextureKind::depth_2d_array:
                      case air::TextureKind::texture_cube_array:
                      case air::TextureKind::depth_cube_array:
+                     case air::TextureKind::texture_2d_ms_array:
+                     case air::TextureKind::depth_2d_ms_array:
                        x = co_yield call_get_texture_info(
                          tex, res_h, TextureInfoType::width, miplevel
                        );
@@ -4400,15 +4404,22 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                        assert(0 && "resinfo: texture buffer not supported");
                        break;
                      }
-                     default: {
-                       assert(0 && "resinfo: ms texture not supported");
+                     }
+                     pvalue mip_count = nullptr;
+                     switch (tex.resource_kind) {
+                     case air::TextureKind::texture_buffer:
+                     case air::TextureKind::texture_2d_ms:
+                     case air::TextureKind::texture_2d_ms_array:
+                     case air::TextureKind::depth_2d_ms:
+                     case air::TextureKind::depth_2d_ms_array:
+                       mip_count = co_yield get_int(1);
+                       break;
+                     default:
+                       mip_count = co_yield call_get_texture_info(
+                         tex, res_h, TextureInfoType::num_mip_levels, zero
+                       );
                        break;
                      }
-                     }
-                     // CAUTION: it can't be texture_buffer or ms texture
-                     pvalue mip_count = co_yield call_get_texture_info(
-                       tex, res_h, TextureInfoType::num_mip_levels, zero
-                     );
                      pvalue vec_ret = llvm::PoisonValue::get(ctx.types._float4);
                      vec_ret = ctx.builder.CreateInsertElement(
                        vec_ret,
