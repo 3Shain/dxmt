@@ -4471,7 +4471,36 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                    });
                  });
           },
-          [](InstSampleInfo) { assert(0 && "unhandled sampleinfo"); },
+          [&](InstSampleInfo sample_info) {
+            effect << make_effect_bind([=](struct context ctx) -> IREffect {
+              using namespace dxmt::air;
+              pvalue sample_count = nullptr;
+              dxbc::Swizzle swiz = swizzle_identity;
+              if (sample_info.src.has_value()) {
+                auto &[tex, res_h, _] = ctx.resource.srv_range_map[sample_info.src->range_id];
+                sample_count = co_yield call_get_texture_info(
+                  tex, co_yield res_h(nullptr), TextureInfoType::num_samples, ctx.builder.getInt32(0)
+                );
+                swiz = sample_info.src->read_swizzle;
+              } else {
+                sample_count = co_yield call_get_num_samples();
+              }
+
+              if (sample_info.uint_result) {
+                pvalue vec_ret = ctx.builder.CreateInsertElement(
+                  llvm::ConstantAggregateZero::get(ctx.types._int4), sample_count, (uint64_t)0
+                );
+                co_return co_yield store_dst_op<false>(sample_info.dst, swizzle(swiz)(vec_ret));
+              } else {
+                pvalue vec_ret = ctx.builder.CreateInsertElement(
+                  llvm::ConstantAggregateZero::get(ctx.types._float4),
+                  co_yield call_convert(sample_count, ctx.types._float, air::Sign::no_sign),
+                  (uint64_t)0
+                );
+                co_return co_yield store_dst_op<true>(sample_info.dst, swizzle(swiz)(vec_ret));
+              }
+            });
+          },
           [&](InstSamplePos sample_pos) {
             // FIXME: stub
             effect << store_dst_op<true>(sample_pos.dst, make_irvalue([](struct context s) {

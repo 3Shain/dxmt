@@ -98,6 +98,8 @@ AIRBuilderResult call_get_texture_info(
   air::MSLTexture texture_type, pvalue handle, TextureInfoType type, pvalue lod
 );
 
+AIRBuilderResult call_get_num_samples();
+
 AIRBuilderResult call_texture_atomic_fetch_explicit(
   air::MSLTexture texture_type, pvalue handle, std::string op, bool is_signed,
   pvalue address, pvalue array_index, pvalue vec4

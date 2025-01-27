@@ -1166,6 +1166,28 @@ AIRBuilderResult call_get_texture_info(
   co_return ctx.builder.CreateCall(fn, args_value);
 }
 
+AIRBuilderResult call_get_num_samples() {
+  auto ctx = co_yield get_context();
+  using namespace llvm;
+  auto &context = ctx.llvm;
+  auto &module = ctx.module;
+  auto &types = ctx.types;
+  auto att = AttributeList::get(
+    context,
+    {
+      {~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)},
+      {~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)},
+      {~0U, Attribute::get(context, Attribute::AttrKind::ReadNone)},
+    }
+  );
+
+  auto fn = module.getOrInsertFunction(
+    "air.get_num_samples.i32",
+    llvm::FunctionType::get(types._int, {types._int}, false), att
+  );
+  co_return ctx.builder.CreateCall(fn, ctx.builder.getInt32(0));
+}
+
 /* are we assume that vec4 can only be integer? */
 AIRBuilderResult call_texture_atomic_fetch_explicit(
   air::MSLTexture texture_type, pvalue handle, std::string op, bool is_signed,
