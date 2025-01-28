@@ -1613,6 +1613,23 @@ store_dst<DstOperandOutputDepth, true>(DstOperandOutputDepth, IRValue &&value) {
 };
 
 template <>
+IREffect
+store_dst<DstOperandOutputDepth, false>(DstOperandOutputDepth, IRValue &&value) {
+  return make_effect_bind(
+    [value = std::move(value)](context ctx) mutable -> IREffect {
+      // FIXME: extend_to_vec4 is kinda silly
+      pvalue depth = co_yield (std::move(value) >>= extend_to_vec4) >>=
+        extract_element(0);
+      auto ptr = ctx.builder.CreateConstGEP1_32(
+        ctx.types._float, ctx.resource.depth_output_reg, 0
+      );
+      ctx.builder.CreateStore(ctx.builder.CreateBitCast(depth, ctx.types._float), ptr);
+      co_return {};
+    }
+  );
+};
+
+template <>
 IREffect store_dst<DstOperandOutputCoverageMask, false>(
   DstOperandOutputCoverageMask, IRValue &&value
 ) {
