@@ -104,6 +104,7 @@ AirType::AirType(LLVMContext &context) : context(context) {
 
   _sampler = get_or_create_struct(context, "struct._sampler_t");
   _mesh_grid_properties = get_or_create_struct(context, "struct._mesh_grid_properties_t");
+  _interpolant = get_or_create_struct(context, "struct._interpolant_t");
 
   typeContext = {
     {"bool", _bool},     {"int", _int},        {"uint", _int},

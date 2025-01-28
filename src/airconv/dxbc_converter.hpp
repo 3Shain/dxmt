@@ -96,6 +96,7 @@ public:
   bool no_control_point_phase_passthrough = false;
   bool output_control_point_read = false;
   std::vector<PhaseInfo> phases;
+  uint32_t pull_mode_reg_mask = 0;
 };
 
 Instruction readInstruction(
@@ -146,6 +147,11 @@ struct buffer_descriptor {
   IndexedIRValue metadata;
 };
 
+struct interpolant_descriptor {
+  IndexedIRValue interpolant;
+  bool perspective;
+};
+
 struct io_binding_map {
   llvm::GlobalVariable *icb = nullptr;
   llvm::Value *icb_float = nullptr;
@@ -158,6 +164,7 @@ struct io_binding_map {
   std::unordered_map<uint32_t, std::pair<uint32_t, llvm::GlobalVariable *>>
     tgsm_map{};
   std::unordered_map<uint32_t, IndexedIRValue> uav_counter_range_map{};
+  std::unordered_map<uint32_t, interpolant_descriptor> interpolant_map{};
 
   register_file input{};
   register_file output{};
@@ -288,6 +295,8 @@ struct SignatureContext {
   bool dual_source_blending;
   bool disable_depth_output;
   bool skip_vertex_output;
+  uint32_t pull_mode_reg_mask;
+  io_binding_map& resource;
 };
 
 class SM50ShaderInternal {

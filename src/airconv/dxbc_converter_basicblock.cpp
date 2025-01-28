@@ -138,6 +138,15 @@ auto get_int2(uint32_t value0, uint32_t value1) -> IRValue {
   });
 };
 
+auto get_float2(float value0, float value1) -> IRValue {
+  return make_irvalue([=](context ctx) {
+    return llvm::ConstantVector::get(
+      {llvm::ConstantFP::get(ctx.llvm, llvm::APFloat{value0}),
+       llvm::ConstantFP::get(ctx.llvm, llvm::APFloat{value1})}
+    );
+  });
+};
+
 auto get_int3(uint32_t value0, uint32_t value1, uint32_t value2) -> IRValue {
   return make_irvalue([=](context ctx) {
     return llvm::ConstantVector::get(
@@ -4517,10 +4526,58 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
             effect << store_dst_op<true>(sample_pos.dst, make_irvalue([](struct context s) {
               return llvm::ConstantAggregateZero::get(s.types._float4);
             }));
-           },
-          [](InstInterpolateCentroid) { assert(0 && "unhandled eval_centroid"); },
-          [](InstInterpolateSample) { assert(0 && "unhandled eval_sample_index"); },
-          [](InstInterpolateOffset) { assert(0 && "unhandled eval_snapped"); },
+          },
+          [&](InstInterpolateCentroid eval_centroid) {
+            assert(0 && "unhandled eval_centroid"); // remove this line if it's verified to work
+            effect << store_dst_op<true>(
+              eval_centroid.dst,
+              make_irvalue_bind([=](struct context ctx) -> IRValue {
+                auto desc = ctx.resource.interpolant_map.at(eval_centroid.regid);
+                co_return co_yield air::call_interpolate_at_centroid(
+                  co_yield desc.interpolant(nullptr), desc.perspective
+                );
+              })
+            );
+          },
+          [&](InstInterpolateSample eval_sample_index) {
+            effect << store_dst_op<true>(
+              eval_sample_index.dst,
+              make_irvalue_bind([=](struct context ctx) -> IRValue {
+                auto desc = ctx.resource.interpolant_map.at(eval_sample_index.regid);
+                co_return co_yield air::call_interpolate_at_sample(
+                  co_yield desc.interpolant(nullptr), desc.perspective,
+                  co_yield load_src_op<false>(eval_sample_index.sample_index) >>= extract_element(0)
+                );
+              })
+            );
+          },
+          [&](InstInterpolateOffset eval_snapped) {
+            assert(0 && "unhandled eval_snapped"); // remove this line if it's verified to work
+            effect << store_dst_op<true>(
+              eval_snapped.dst,
+              make_irvalue_bind([=](struct context ctx) -> IRValue {
+                auto desc = ctx.resource.interpolant_map.at(eval_snapped.regid);
+                auto offset = co_yield load_src_op<false>(eval_snapped.offset);
+                // truncated = (offset.xy + 8) & 0b1111
+                auto truncated = ctx.builder.CreateAnd(
+                  ctx.builder.CreateAdd(
+                    ctx.builder.CreateShuffleVector(offset, {0, 1}),
+                    co_yield get_int2(8, 8)
+                  ),
+                  co_yield get_int2(0b1111, 0b1111)
+                );
+                auto offset_f = ctx.builder.CreateFMul(
+                  co_yield call_convert(
+                    truncated, ctx.types._float, air::Sign::no_sign
+                  ),
+                  co_yield get_float2(1.0f / 16.0f, 1.0f / 16.0f)
+                );
+                co_return co_yield air::call_interpolate_at_offset(
+                  co_yield desc.interpolant(nullptr), desc.perspective, offset_f
+                );
+              })
+            );
+          },
         },
         inst
       );

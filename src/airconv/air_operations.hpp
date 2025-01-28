@@ -133,6 +133,10 @@ AIRBuilderResult call_derivative(pvalue fvec4, bool dfdy);
 AIRBuilderResult
 call_set_mesh_properties(pvalue mesh_grid_props, pvalue grid_size);
 
+AIRBuilderResult call_interpolate_at_centroid(pvalue interpolant, bool perspective);
+AIRBuilderResult call_interpolate_at_offset(pvalue interpolant, bool perspective, pvalue offset);
+AIRBuilderResult call_interpolate_at_sample(pvalue interpolant, bool perspective, pvalue index);
+
 enum class MTLAttributeFormat {
   Invalid = 0,
   UChar2 = 1,

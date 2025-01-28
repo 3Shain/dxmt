@@ -295,7 +295,25 @@ auto build_argument_binding_sampler(
     ->string(sampler.arg_name);
   return (MSLSampler{}).get_llvm_type(context);
 };
-auto insert_inteterpolation(StreamMDHelper &md, Interpolation interpolation) {
+auto insert_inteterpolation(StreamMDHelper &md, Interpolation interpolation, bool pull_mode) {
+  if (pull_mode) {
+    switch (interpolation) {
+    case Interpolation::center_perspective:
+    case Interpolation::centroid_perspective:
+    case Interpolation::sample_perspective:
+      md.string("air.interpolation_function")->string("air.perspective");
+      break;
+    case Interpolation::center_no_perspective:
+    case Interpolation::centroid_no_perspective:
+    case Interpolation::sample_no_perspective:
+      md.string("air.interpolation_function")->string("air.no_perspective");
+      break;
+    case Interpolation::flat:
+      assert(0 && "unreachable");
+      break;
+    }
+    return;
+  }
   switch (interpolation) {
   case Interpolation::center_perspective:
     md.string("air.center")->string("air.perspective");
@@ -514,14 +532,16 @@ auto FunctionSignatureBuilder::CreateFunction(
             ->string(vertex_in.name);
           return get_llvm_type(type, context);
         },
-        [&](const InputFragmentStageIn &frag_in) {
+        [&](const InputFragmentStageIn &frag_in) -> llvm::Type * {
           metadata_field.string("air.fragment_input")
             ->string(std::string("user(") + frag_in.user + ")");
-          insert_inteterpolation(metadata_field, frag_in.interpolation);
+          insert_inteterpolation(metadata_field, frag_in.interpolation, frag_in.pull_mode);
           metadata_field.string("air.arg_type_name")
             ->string(get_name(frag_in.type))
             ->string("air.arg_name")
             ->string(frag_in.user);
+          if (frag_in.pull_mode)
+            return getOrCreateStructType("struct._interpolant_t", context)->getPointerTo(1);
           return get_llvm_type(frag_in.type, context);
         },
         [&](const ArgumentBindingBuffer &buffer) {
@@ -546,7 +566,7 @@ auto FunctionSignatureBuilder::CreateFunction(
         },
         [&](const InputPosition &position) {
           metadata_field.string("air.position");
-          insert_inteterpolation(metadata_field, position.interpolation);
+          insert_inteterpolation(metadata_field, position.interpolation, false);
           metadata_field.string("air.arg_type_name")
             ->string("float4") // HARDCODED
             ->string("air.arg_name")

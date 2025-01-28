@@ -419,16 +419,18 @@ llvm::Error convert_dxbc_hull_shader(
     }
     return llvm::UndefValue::get(retTy);
   });
+
+  io_binding_map resource_map;
+  air::AirType types(context);
+
   {
-    SignatureContext sig_ctx{prologue, epilogue, func_signature, nullptr,
-                             false,    false,    false};
+    SignatureContext sig_ctx{prologue, epilogue, func_signature,
+                             nullptr,  false,    false,
+                             false,    0,        resource_map};
     for (auto &p : pShaderInternal->signature_handlers) {
       p(sig_ctx);
     }
   }
-
-  io_binding_map resource_map;
-  air::AirType types(context);
 
   setup_binding_table(shader_info, resource_map, func_signature, module);
   setup_tgsm(shader_info, resource_map, types, module);
@@ -743,9 +745,16 @@ llvm::Error convert_dxbc_domain_shader(
     }
     return llvm::UndefValue::get(retTy);
   });
+
+  io_binding_map resource_map;
+  air::AirType types(context);
+
   {
-    SignatureContext sig_ctx{prologue, epilogue, func_signature, nullptr,
-                             false,    false,    rasterization_disabled};
+    SignatureContext sig_ctx{
+      prologue,    epilogue, func_signature,         nullptr,
+      false,       false,    rasterization_disabled, 0,
+      resource_map
+    };
     for (auto &p : pShaderInternal->signature_handlers) {
       p(sig_ctx);
     }
@@ -757,9 +766,6 @@ llvm::Error convert_dxbc_domain_shader(
       air::OutputClipDistance{pShaderInternal->clip_distance_scalars.size()}
     );
   };
-
-  io_binding_map resource_map;
-  air::AirType types(context);
 
   setup_binding_table(shader_info, resource_map, func_signature, module);
   setup_tgsm(shader_info, resource_map, types, module);
@@ -1019,6 +1025,10 @@ llvm::Error convert_dxbc_pixel_shader(
     }
     return llvm::UndefValue::get(retTy);
   });
+
+  io_binding_map resource_map;
+  air::AirType types(context);
+
   {
     SignatureContext sig_ctx{
       prologue,
@@ -1027,7 +1037,9 @@ llvm::Error convert_dxbc_pixel_shader(
       nullptr,
       pso_dual_source_blending,
       pso_disable_depth_output,
-      false
+      false,
+      shader_info->pull_mode_reg_mask,
+      resource_map
     };
     for (auto &p : pShaderInternal->signature_handlers) {
       p(sig_ctx);
@@ -1047,9 +1059,6 @@ llvm::Error convert_dxbc_pixel_shader(
       });
     };
   }
-
-  io_binding_map resource_map;
-  air::AirType types(context);
 
   setup_binding_table(shader_info, resource_map, func_signature, module);
   setup_tgsm(shader_info, resource_map, types, module);
@@ -1150,16 +1159,18 @@ llvm::Error convert_dxbc_compute_shader(
     }
     return llvm::UndefValue::get(retTy);
   });
+
+  io_binding_map resource_map;
+  air::AirType types(context);
+
   {
-    SignatureContext sig_ctx{prologue, epilogue, func_signature, nullptr,
-                             false,    false,    false};
+    SignatureContext sig_ctx{prologue, epilogue, func_signature,
+                             nullptr,  false,    false,
+                             false,    0,        resource_map};
     for (auto &p : pShaderInternal->signature_handlers) {
       p(sig_ctx);
     }
   }
-
-  io_binding_map resource_map;
-  air::AirType types(context);
 
   setup_binding_table(shader_info, resource_map, func_signature, module);
   setup_tgsm(shader_info, resource_map, types, module);
@@ -1261,9 +1272,16 @@ llvm::Error convert_dxbc_vertex_shader(
     }
     return llvm::UndefValue::get(retTy);
   });
+
+  io_binding_map resource_map;
+  air::AirType types(context);
+
   {
-    SignatureContext sig_ctx{prologue, epilogue, func_signature,      ia_layout,
-                             false,    false,    rasterization_disabled};
+    SignatureContext sig_ctx{
+      prologue,    epilogue, func_signature,         ia_layout,
+      false,       false,    rasterization_disabled, 0,
+      resource_map
+    };
     for (auto &p : pShaderInternal->signature_handlers) {
       p(sig_ctx);
     }
@@ -1328,9 +1346,6 @@ llvm::Error convert_dxbc_vertex_shader(
       air::OutputClipDistance{pShaderInternal->clip_distance_scalars.size()}
     );
   };
-
-  io_binding_map resource_map;
-  air::AirType types(context);
 
   setup_binding_table(shader_info, resource_map, func_signature, module);
   setup_tgsm(shader_info, resource_map, types, module);
@@ -1507,17 +1522,18 @@ llvm::Error convert_dxbc_vertex_for_hull_shader(
     }
     return llvm::UndefValue::get(retTy);
   });
+
+  io_binding_map resource_map;
+  air::AirType types(context);
+
   {
     SignatureContext sig_ctx{prologue,  epilogue, func_signature,
                              ia_layout, false,    false,
-                             true};
+                             true,      0,        resource_map};
     for (auto &p : pShaderInternal->signature_handlers) {
       p(sig_ctx);
     }
   }
-
-  io_binding_map resource_map;
-  air::AirType types(context);
 
   setup_binding_table(shader_info, resource_map, func_signature, module);
 

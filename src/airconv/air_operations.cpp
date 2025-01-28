@@ -1959,4 +1959,82 @@ call_set_mesh_properties(pvalue mesh_grid_props, pvalue grid_size) {
   });
 };
 
+AIRBuilderResult
+call_interpolate_at_centroid(pvalue interpolant, bool perspective) {
+  return make_op([=](struct AIRBuilderContext ctx) {
+    using namespace llvm;
+    auto &context = ctx.llvm;
+    auto &module = ctx.module;
+    auto att = AttributeList::get(
+      context, {{1U, Attribute::get(context, Attribute::AttrKind::NoCapture)},
+                {1U, Attribute::get(context, Attribute::AttrKind::ReadOnly)},
+                {~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)},
+                {~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)},
+                {~0U, Attribute::get(context, Attribute::AttrKind::ArgMemOnly)}}
+    );
+    auto fn = (module.getOrInsertFunction(
+      perspective ? "air.interpolate_centroid_perspective.v4f32"
+                  : "air.interpolate_centroid_no_perspective.v4f32",
+      llvm::FunctionType::get(
+        ctx.types._float4, {ctx.types._interpolant->getPointerTo(1)}, false
+      ),
+      att
+    ));
+    return ctx.builder.CreateCall(fn, {interpolant});
+  });
+}
+
+AIRBuilderResult call_interpolate_at_offset(
+  pvalue interpolant, bool perspective, pvalue offset
+) {
+  return make_op([=](struct AIRBuilderContext ctx) {
+    using namespace llvm;
+    auto &context = ctx.llvm;
+    auto &module = ctx.module;
+    auto att = AttributeList::get(
+      context, {{1U, Attribute::get(context, Attribute::AttrKind::NoCapture)},
+                {1U, Attribute::get(context, Attribute::AttrKind::ReadOnly)},
+                {~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)},
+                {~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)},
+                {~0U, Attribute::get(context, Attribute::AttrKind::ArgMemOnly)}}
+    );
+    auto fn = (module.getOrInsertFunction(
+      perspective ? "air.interpolate_offset_perspective.v4f32"
+                  : "air.interpolate_offset_no_perspective.v4f32",
+      llvm::FunctionType::get(
+        ctx.types._float4,
+        {ctx.types._interpolant->getPointerTo(1), ctx.types._float2}, false
+      ),
+      att
+    ));
+    return ctx.builder.CreateCall(fn, {interpolant, offset});
+  });
+}
+
+AIRBuilderResult
+call_interpolate_at_sample(pvalue interpolant, bool perspective, pvalue index) {
+  return make_op([=](struct AIRBuilderContext ctx) {
+    using namespace llvm;
+    auto &context = ctx.llvm;
+    auto &module = ctx.module;
+    auto att = AttributeList::get(
+      context, {{1U, Attribute::get(context, Attribute::AttrKind::NoCapture)},
+                {1U, Attribute::get(context, Attribute::AttrKind::ReadOnly)},
+                {~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)},
+                {~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)},
+                {~0U, Attribute::get(context, Attribute::AttrKind::ArgMemOnly)}}
+    );
+    auto fn = (module.getOrInsertFunction(
+      perspective ? "air.interpolate_sample_perspective.v4f32"
+                  : "air.interpolate_sample_no_perspective.v4f32",
+      llvm::FunctionType::get(
+        ctx.types._float4,
+        {ctx.types._interpolant->getPointerTo(1), ctx.types._int}, false
+      ),
+      att
+    ));
+    return ctx.builder.CreateCall(fn, {interpolant, index});
+  });
+}
+
 }; // namespace dxmt::air

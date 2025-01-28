@@ -1848,6 +1848,7 @@ Instruction readInstruction(
     assert(Inst.m_Operands[1].m_Type == microsoft::D3D10_SB_OPERAND_TYPE_INPUT);
     assert(Inst.m_Operands[1].m_IndexType[0] == microsoft::D3D10_SB_OPERAND_INDEX_IMMEDIATE32);
     auto regid = Inst.m_Operands[1].m_Index[0].m_RegIndex;
+    shader_info.pull_mode_reg_mask |= (1 << regid);
     return InstInterpolateCentroid {
       .dst = readDstOperand(Inst.m_Operands[0], phase),
       .regid = regid
@@ -1857,6 +1858,7 @@ Instruction readInstruction(
     assert(Inst.m_Operands[1].m_Type == microsoft::D3D10_SB_OPERAND_TYPE_INPUT);
     assert(Inst.m_Operands[1].m_IndexType[0] == microsoft::D3D10_SB_OPERAND_INDEX_IMMEDIATE32);
     auto regid = Inst.m_Operands[1].m_Index[0].m_RegIndex;
+    shader_info.pull_mode_reg_mask |= (1 << regid);
     return InstInterpolateSample {
       .dst = readDstOperand(Inst.m_Operands[0], phase),
       .sample_index = readSrcOperand(Inst.m_Operands[2], phase),
@@ -1867,6 +1869,7 @@ Instruction readInstruction(
     assert(Inst.m_Operands[1].m_Type == microsoft::D3D10_SB_OPERAND_TYPE_INPUT);
     assert(Inst.m_Operands[1].m_IndexType[0] == microsoft::D3D10_SB_OPERAND_INDEX_IMMEDIATE32);
     auto regid = Inst.m_Operands[1].m_Index[0].m_RegIndex;
+    shader_info.pull_mode_reg_mask |= (1 << regid);
     return InstInterpolateOffset {
       .dst = readDstOperand(Inst.m_Operands[0], phase),
       .offset = readSrcOperand(Inst.m_Operands[2], phase),

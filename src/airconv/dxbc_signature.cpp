@@ -374,14 +374,27 @@ void handle_signature_ps(
     auto sig = findInputElement([=](Signature sig) {
       return (sig.reg() == reg) && ((sig.mask() & mask) != 0);
     });
-    auto name = sig.fullSemanticString();
-    auto assigned_index = func_signature.DefineInput(InputFragmentStageIn{
-      .user = name,
-      .type = to_msl_type(sig.componentType()),
-      .interpolation = interpolation
-    });
-    signature_handlers.push_back([=](SignatureContext &ctx) {
-      ctx.prologue << init_input_reg(assigned_index, reg, mask);
+    signature_handlers.push_back([=, type = sig.componentType(), name = sig.fullSemanticString()]
+    (SignatureContext &ctx) {
+      bool pull_mode = bool(ctx.pull_mode_reg_mask & (1 << reg)) && interpolation != air::Interpolation::flat;
+      auto assigned_index = ctx.func_signature.DefineInput(InputFragmentStageIn{
+        .user = name, .type = to_msl_type(type), .interpolation = interpolation, .pull_mode = pull_mode
+      });
+      if (pull_mode) {
+        ctx.resource.interpolant_map[reg] = interpolant_descriptor{
+          [=](auto) {
+            return make_irvalue([=](struct context ctx) {
+              return ctx.function->getArg(assigned_index);
+            });
+          },
+          (interpolation == air::Interpolation::sample_perspective ||
+           interpolation == air::Interpolation::center_perspective ||
+           interpolation == air::Interpolation::centroid_perspective)
+        };
+        // FIXME: the input register is undefined if not pulled!
+      } else {
+        ctx.prologue << init_input_reg(assigned_index, reg, mask);
+      }
     });
     max_input_register = std::max(reg + 1, max_input_register);
     break;

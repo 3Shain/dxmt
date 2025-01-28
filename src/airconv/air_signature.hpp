@@ -492,6 +492,7 @@ struct InputFragmentStageIn {
   std::string user;
   MSLScalerOrVectorType type;
   Interpolation interpolation;
+  bool pull_mode;
 };
 
 struct InputVertexID {};

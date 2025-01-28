@@ -66,6 +66,7 @@ public:
   llvm::Type* _ptr_constant;
   llvm::Type* _ptr_device;
   llvm::Type* _ptr_threadgroup;
+  llvm::Type *_interpolant;
   std::map<std::string, llvm::Type *> typeContext;
 
   llvm::Type* to_vec4_type(llvm::Type* scalar) {
