@@ -72,7 +72,7 @@ public:
     encoder->setComputePipelineState(clear_texture_2d_uint_pipeline);
     encoder->setTexture(texture, 0);
     encoder->setBytes(value.data(), 16, 1);
-    encoder->dispatchThreads(MTL::Size::Make(texture->width(), texture->height(), 1), MTL::Size::Make(8, 8, 1));
+    encoder->dispatchThreads(MTL::Size::Make(texture->width(), texture->height(), 1), MTL::Size::Make(8, 4, 1));
   }
 
   void
@@ -80,7 +80,23 @@ public:
     encoder->setComputePipelineState(clear_texture_2d_float_pipeline);
     encoder->setTexture(texture, 0);
     encoder->setBytes(value.data(), 16, 1);
-    encoder->dispatchThreads(MTL::Size::Make(texture->width(), texture->height(), 1), MTL::Size::Make(8, 8, 1));
+    encoder->dispatchThreads(MTL::Size::Make(texture->width(), texture->height(), 1), MTL::Size::Make(8, 4, 1));
+  }
+
+  void
+  ClearTexture2DArrayUint(MTL::ComputeCommandEncoder *encoder, MTL::Texture *texture, const std::array<uint32_t, 4> &value) {
+    encoder->setComputePipelineState(clear_texture_2d_array_uint_pipeline);
+    encoder->setTexture(texture, 0);
+    encoder->setBytes(value.data(), 16, 1);
+    encoder->dispatchThreads(MTL::Size::Make(texture->width(), texture->height(), texture->arrayLength()), MTL::Size::Make(8, 4, 1));
+  }
+
+  void
+  ClearTexture2DArrayFloat(MTL::ComputeCommandEncoder *encoder, MTL::Texture *texture, const std::array<float, 4> &value) {
+    encoder->setComputePipelineState(clear_texture_2d_array_float_pipeline);
+    encoder->setTexture(texture, 0);
+    encoder->setBytes(value.data(), 16, 1);
+    encoder->dispatchThreads(MTL::Size::Make(texture->width(), texture->height(), texture->arrayLength()), MTL::Size::Make(8, 4, 1));
   }
 
   void
@@ -89,7 +105,7 @@ public:
     encoder->setTexture(texture, 0);
     encoder->setBytes(value.data(), 16, 1);
     encoder->dispatchThreads(
-        MTL::Size::Make(texture->width(), texture->height(), texture->depth()), MTL::Size::Make(8, 8, 1)
+        MTL::Size::Make(texture->width(), texture->height(), texture->depth()), MTL::Size::Make(8, 4, 1)
     );
   }
 
@@ -99,7 +115,7 @@ public:
     encoder->setTexture(texture, 0);
     encoder->setBytes(value.data(), 16, 1);
     encoder->dispatchThreads(
-        MTL::Size::Make(texture->width(), texture->height(), texture->depth()), MTL::Size::Make(8, 8, 1)
+        MTL::Size::Make(texture->width(), texture->height(), texture->depth()), MTL::Size::Make(8, 4, 1)
     );
   }
 

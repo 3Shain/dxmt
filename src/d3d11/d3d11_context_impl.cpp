@@ -582,7 +582,10 @@ public:
           });
           break;
         case D3D11_UAV_DIMENSION_TEXTURE2DARRAY:
-          UNIMPLEMENTED("tex2darr clear");
+          enc.encodeComputeCommand([&, texture =
+                                           enc.access(texture, viewId, DXMT_ENCODER_RESOURCE_ACESS_WRITE)](auto &ctx) {
+            ctx.cmd.ClearTexture2DArrayUint(ctx.encoder, texture, value);
+          });
           break;
         case D3D11_UAV_DIMENSION_TEXTURE3D:
           enc.encodeComputeCommand([&, texture =
@@ -650,10 +653,16 @@ public:
           });
           break;
         case D3D11_UAV_DIMENSION_TEXTURE2DARRAY:
-          UNIMPLEMENTED("tex2darr clear");
+          enc.encodeComputeCommand([&, texture =
+                                           enc.access(texture, viewId, DXMT_ENCODER_RESOURCE_ACESS_WRITE)](auto &ctx) {
+            ctx.cmd.ClearTexture2DArrayFloat(ctx.encoder, texture, value);
+          });
           break;
         case D3D11_UAV_DIMENSION_TEXTURE3D:
-          UNIMPLEMENTED("tex3d clear");
+          enc.encodeComputeCommand([&, texture =
+                                           enc.access(texture, viewId, DXMT_ENCODER_RESOURCE_ACESS_WRITE)](auto &ctx) {
+            ctx.cmd.ClearTexture3DFloat(ctx.encoder, texture, value);
+          });
           break;
         }
       });
