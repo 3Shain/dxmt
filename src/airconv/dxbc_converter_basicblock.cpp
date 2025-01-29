@@ -2609,61 +2609,75 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
             );
           },
           [&effect](InstGather sample) {
-            effect << store_dst_op<true>(
-              sample.dst,
-              (make_irvalue_bind([=](struct context ctx) -> IRValue {
-                 // min_lod_clamp ignored
-                 auto &[res, res_handle_fn, __] =
-                   ctx.resource.srv_range_map[sample.src_resource.range_id];
-                 // sampler bias ignored
-                 auto &[sampler_handle_fn, _] =
-                   ctx.resource.sampler_range_map[sample.src_sampler.range_id];
-                 auto res_h = co_yield res_handle_fn(nullptr);
-                 auto sampler_h = co_yield sampler_handle_fn(nullptr);
-                 auto coord = co_yield load_src_op<true>(sample.src_address);
-                 auto offset = co_yield load_src_op<false>(sample.offset);
-                 auto component =
-                   co_yield get_int(sample.src_sampler.gather_channel);
-                 switch (res.resource_kind) {
-                 case air::TextureKind::depth_2d:
-                 case air::TextureKind::texture_2d: {
-                   co_return co_yield call_gather(
-                     res, res_h, sampler_h, co_yield truncate_vec(2)(coord),
-                     nullptr, co_yield truncate_vec(2)(offset), component
-                   );
-                 }
-                 case air::TextureKind::depth_2d_array:
-                 case air::TextureKind::texture_2d_array: {
-                   co_return co_yield call_gather(
-                     res, res_h, sampler_h, co_yield truncate_vec(2)(coord),
-                     co_yield extract_element(2)(coord) >>=
-                     implicit_float_to_int, // .b
-                     co_yield truncate_vec(2)(offset), component
-                   );
-                 }
-                 case air::TextureKind::depth_cube:
-                 case air::TextureKind::texture_cube: {
-                   co_return co_yield call_gather(
-                     res, res_h, sampler_h, co_yield truncate_vec(3)(coord),
-                     nullptr, nullptr, component
-                   );
-                 }
-                 case air::TextureKind::depth_cube_array:
-                 case air::TextureKind::texture_cube_array: {
-                   co_return co_yield call_gather(
-                     res, res_h, sampler_h, co_yield truncate_vec(3)(coord),
-                     co_yield extract_element(3)(coord) >>=
-                     implicit_float_to_int, // .b
-                     nullptr, component
-                   );
-                 } break;
-                 default: {
-                   assert(0 && "invalid sample resource type");
-                 }
-                 }
-               }) >>= extract_value(0)) >>=
-              swizzle(sample.src_resource.read_swizzle)
-            );
+            effect << make_effect_bind([=](struct context ctx) -> IREffect {
+              // min_lod_clamp ignored
+              auto &[res, res_handle_fn, __] =
+                ctx.resource.srv_range_map[sample.src_resource.range_id];
+              // sampler bias ignored
+              auto &[sampler_handle_fn, _] =
+                ctx.resource.sampler_range_map[sample.src_sampler.range_id];
+              auto res_h = co_yield res_handle_fn(nullptr);
+              auto sampler_h = co_yield sampler_handle_fn(nullptr);
+              auto coord = co_yield load_src_op<true>(sample.src_address);
+              auto offset = co_yield load_src_op<false>(sample.offset);
+              auto component =
+                co_yield get_int(sample.src_sampler.gather_channel);
+              pvalue ret;
+              switch (res.resource_kind) {
+              case air::TextureKind::depth_2d:
+              case air::TextureKind::texture_2d: {
+                ret = co_yield call_gather(
+                  res, res_h, sampler_h, co_yield truncate_vec(2)(coord),
+                  nullptr, co_yield truncate_vec(2)(offset), component
+                );
+                break;
+              }
+              case air::TextureKind::depth_2d_array:
+              case air::TextureKind::texture_2d_array: {
+                ret = co_yield call_gather(
+                  res, res_h, sampler_h, co_yield truncate_vec(2)(coord),
+                  co_yield extract_element(2)(coord) >>=
+                  implicit_float_to_int, // .b
+                  co_yield truncate_vec(2)(offset), component
+                );
+                break;
+              }
+              case air::TextureKind::depth_cube:
+              case air::TextureKind::texture_cube: {
+                ret = co_yield call_gather(
+                  res, res_h, sampler_h, co_yield truncate_vec(3)(coord),
+                  nullptr, nullptr, component
+                );
+                break;
+              }
+              case air::TextureKind::depth_cube_array:
+              case air::TextureKind::texture_cube_array: {
+                ret = co_yield call_gather(
+                  res, res_h, sampler_h, co_yield truncate_vec(3)(coord),
+                  co_yield extract_element(3)(coord) >>=
+                  implicit_float_to_int, // .b
+                  nullptr, component
+                );
+                break;
+              }
+              default: {
+                assert(0 && "invalid sample resource type");
+              }
+              }
+              ret = co_yield extract_value(0)(ret) >>=
+                swizzle(sample.src_resource.read_swizzle);
+              co_return co_yield std::visit(
+                patterns{
+                  [&](air::MSLFloat) {
+                    return store_dst_op<true>(sample.dst, air::pure(ret));
+                  },
+                  [&](auto) {
+                    return store_dst_op<false>(sample.dst, air::pure(ret));
+                  }
+                },
+                res.component_type
+              );
+            });
           },
           [&effect](InstGatherCompare sample) {
             effect << store_dst_op<true>(
