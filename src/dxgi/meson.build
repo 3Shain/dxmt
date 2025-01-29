@@ -25,3 +25,13 @@ dxgi_dep = declare_dependency(
   link_with           : [ dxgi_dll ],
   include_directories : [ dxmt_include_path, include_directories('.') ],
 )
+
+if wine_builtin_dll
+custom_target('postprocess_libdxgi',
+  input : dxgi_dll,
+  output: 'dxgi.dll.postproc',
+  command : [ winebuild, '--builtin', '@INPUT@' ],
+  depends : dxgi_dll,
+  build_by_default : true
+)
+endif

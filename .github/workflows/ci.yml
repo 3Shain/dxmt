@@ -39,7 +39,7 @@ jobs:
             ./toolchains
       - name: Build
         run: |
-          meson setup --cross-file build-win64.txt --native-file build-osx.txt -Dnative_llvm_path=toolchains/llvm-darwin -Dbuild_airconv_for_windows=true build --buildtype debugoptimized
+          meson setup --cross-file build-win64.txt --native-file build-osx.txt -Dwine_builtin_dll=true -Dnative_llvm_path=toolchains/llvm-darwin -Dbuild_airconv_for_windows=true build --buildtype debugoptimized
           meson compile -C build
       - name: Tar
         run: tar -zcf artifacts.tar.gz build/src
@@ -50,7 +50,7 @@ jobs:
           path: artifacts.tar.gz
       - name: Build (release)
         run: |
-          meson setup --cross-file build-win64.txt --native-file build-osx.txt -Dnative_llvm_path=toolchains/llvm-darwin build-release --buildtype release
+          meson setup --cross-file build-win64.txt --native-file build-osx.txt -Dwine_builtin_dll=true -Dnative_llvm_path=toolchains/llvm-darwin build-release --buildtype release
           meson compile -C build-release
       - name: Tar (release)
         run: tar -zcf artifacts-release.tar.gz build-release/src
@@ -61,7 +61,7 @@ jobs:
           path: artifacts-release.tar.gz
       - name: Build (gcc-release)
         run: |
-          meson setup --cross-file build-win64-sys.txt --native-file build-osx.txt -Dnative_llvm_path=toolchains/llvm-darwin build-release-gcc --buildtype release
+          meson setup --cross-file build-win64-sys.txt --native-file build-osx.txt -Dwine_builtin_dll=true -Dnative_llvm_path=toolchains/llvm-darwin build-release-gcc --buildtype release
           meson compile -C build-release-gcc
       - name: Tar (gcc-release)
         run: tar -zcf artifacts-release-gcc.tar.gz build-release-gcc/src

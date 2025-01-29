@@ -49,3 +49,13 @@ d3d11_dep = declare_dependency(
   link_with           : [ d3d11_dll ],
   include_directories : [ dxmt_include_path ],
 )
+
+if wine_builtin_dll
+custom_target('postprocess_libd3d11',
+  input : d3d11_dll,
+  output: 'd3d11.dll.postproc',
+  command : [ winebuild, '--builtin', '@INPUT@' ],
+  depends : d3d11_dll,
+  build_by_default : true
+)
+endif
