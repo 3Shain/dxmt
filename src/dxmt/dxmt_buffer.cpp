@@ -67,8 +67,8 @@ Buffer::prepareAllocationViews(BufferAllocation* allocation) {
     auto length = buffer->length();
     auto format = viewDescriptors_[version].format;
     auto texel_size = MTLGetTexelSize(format);
-    assert(!(length & (texel_size - 1)));
     assert(texel_size);
+    assert(!(length & (texel_size - 1)));
     auto desc = MTL::TextureDescriptor::alloc()->init();
     desc->setTextureType(MTL::TextureTypeTextureBuffer);
     desc->setWidth(length / texel_size);

@@ -627,21 +627,25 @@ MTLQueryDXGIFormat(MTL::Device *device, uint32_t format, MTL_DXGI_FORMAT_DESC &d
     break;
   }
   case DXGI_FORMAT_R32G32B32_TYPELESS: {
+    description.PixelFormat = MTL::PixelFormatR32Uint;
     description.BytesPerTexel = 12;
     description.Flag = MTL_DXGI_FORMAT_TYPELESS;
     break;
   }
   case DXGI_FORMAT_R32G32B32_UINT: {
+    description.PixelFormat = MTL::PixelFormatR32Uint;
     description.AttributeFormat = MTL::AttributeFormatUInt3;
     description.BytesPerTexel = 12;
     break;
   }
   case DXGI_FORMAT_R32G32B32_SINT: {
+    description.PixelFormat = MTL::PixelFormatR32Sint;
     description.AttributeFormat = MTL::AttributeFormatInt3;
     description.BytesPerTexel = 12;
     break;
   }
   case DXGI_FORMAT_R32G32B32_FLOAT: {
+    description.PixelFormat = MTL::PixelFormatR32Float;
     description.AttributeFormat = MTL::AttributeFormatFloat3;
     description.BytesPerTexel = 12;
     break;
