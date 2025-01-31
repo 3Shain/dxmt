@@ -110,6 +110,11 @@ AIRBuilderResult call_texture_atomic_exchange(
   pvalue array_index, pvalue vec4
 );
 
+AIRBuilderResult call_texture_atomic_compare_exchange(
+  air::MSLTexture texture_type, pvalue handle, pvalue address,
+  pvalue array_index, pvalue compared, pvalue operand
+);
+
 // TODO: not good, expose too much detail
 AIRBuilderResult
 call_convert(pvalue src, llvm::Type *dst_scaler_type, air::Sign sign);

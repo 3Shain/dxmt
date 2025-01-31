@@ -4255,7 +4255,61 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                                      )
                       );
                     }
-                    assert(0 && "unhandled imm_cmp_exch for typed uav");
+
+                    auto &[res, res_handle_fn, metadata] = ctx.resource.uav_range_map.at(uav.range_id);
+                    auto res_h = co_yield res_handle_fn(nullptr);
+                    auto address = co_yield load_src_op<false>(cmpexch.dst_address);
+                    auto src0 = co_yield load_src_op<false>(cmpexch.src0);
+                    auto src1 = co_yield load_src_op<false>(cmpexch.src1);
+                    switch (res.resource_kind_logical) {
+                    case air::TextureKind::texture_buffer: {
+                      auto offset = co_yield metadata_get_texture_buffer_offset(co_yield metadata(nullptr));
+                      co_return co_yield store_dst_op<false>(
+                        cmpexch.dst, call_texture_atomic_compare_exchange(
+                                       res, res_h, ctx.builder.CreateAdd(co_yield extract_element(0)(address), offset),
+                                       nullptr, src0, src1
+                                     )
+                      );
+                    }
+                    case air::TextureKind::texture_1d:
+                      co_return co_yield store_dst_op<false>(
+                        cmpexch.dst,
+                        call_texture_atomic_compare_exchange(
+                          res, res_h, co_yield extract_element(0)(address) >>= extend_to_int2, nullptr, src0, src1
+                        )
+                      );
+                    case air::TextureKind::texture_1d_array:
+                      co_return co_yield store_dst_op<false>(
+                        cmpexch.dst, call_texture_atomic_compare_exchange(
+                                       res, res_h, co_yield extract_element(0)(address) >>= extend_to_int2,
+                                       co_yield extract_element(1)(address), src0, src1
+                                     )
+                      );
+                    case air::TextureKind::texture_2d:
+                      co_return co_yield store_dst_op<false>(
+                        cmpexch.dst, call_texture_atomic_compare_exchange(
+                                       res, res_h, co_yield truncate_vec(2)(address), nullptr, src0, src1
+                                     )
+                      );
+                    case air::TextureKind::texture_2d_array: {
+                      co_return co_yield store_dst_op<false>(
+                        cmpexch.dst, call_texture_atomic_compare_exchange(
+                                       res, res_h, co_yield truncate_vec(2)(address),
+                                       co_yield extract_element(2)(address), src0, src1
+                                     )
+                      );
+                    }
+                    case air::TextureKind::texture_3d:
+                      co_return co_yield store_dst_op<false>(
+                        cmpexch.dst, call_texture_atomic_compare_exchange(
+                                       res, res_h, co_yield truncate_vec(3)(address), nullptr, src0, src1
+                                     )
+                      );
+                    default:
+                      assert(0 && "invalid texture kind for typed uav atomic");
+                    }
+
+                    co_return {};
                   });
                 }
               },

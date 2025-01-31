@@ -1302,6 +1302,75 @@ AIRBuilderResult call_texture_atomic_exchange(
   co_return ctx.builder.CreateCall(fn, args_value);
 };
 
+AIRBuilderResult call_texture_atomic_compare_exchange(
+  air::MSLTexture texture_type, pvalue handle, pvalue address,
+  pvalue array_index, pvalue compared, pvalue operand
+) {
+  auto ctx = co_yield get_context();
+  using namespace llvm;
+  auto &context = ctx.llvm;
+  auto &module = ctx.module;
+  auto &types = ctx.types;
+  auto att = AttributeList::get(
+    context,
+    {
+      {1U, Attribute::get(context, Attribute::AttrKind::NoCapture)},
+      {~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)},
+      {~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)},
+    }
+  );
+  auto op_info = co_yield get_operation_info(texture_type);
+  assert(!op_info.is_depth);
+  assert(!op_info.is_cube);
+  assert(!op_info.is_ms);
+  auto fn_name = "air.atomic_compare_exchange_weak_explicit_" + op_info.air_symbol_suffix +
+                 type_overload_suffix(operand->getType(), air::Sign::no_sign);
+  std::vector<llvm::Type *> args_type;
+  std::vector<pvalue> args_value;
+
+  args_type.push_back(texture_type.get_llvm_type(context));
+  args_value.push_back(handle);
+
+  assert(op_info.address_type);
+  args_type.push_back(op_info.address_type);
+  args_value.push_back(address);
+
+  if (op_info.is_array) {
+    args_type.push_back(types._int);
+    args_value.push_back(array_index);
+  }
+
+  auto alloca = ctx.builder.CreateAlloca(op_info.write_type, uint32_t(0));
+  auto ptr = ctx.builder.CreateConstGEP1_64(op_info.write_type, alloca, 0);
+  ctx.builder.CreateStore(compared, ptr);
+
+  args_type.push_back(op_info.write_type->getPointerTo());
+  args_value.push_back(alloca);
+
+  args_type.push_back(op_info.write_type);
+  args_value.push_back(operand);
+
+  args_type.push_back(types._int); // mem order success
+  args_value.push_back(ctx.builder.getInt32(0)); // memory order relaxed
+
+  args_type.push_back(types._int); // mem order failure
+  args_value.push_back(ctx.builder.getInt32(0)); // memory order relaxed
+
+  /* access */
+  args_type.push_back(types._int);
+  args_value.push_back(ctx.builder.getInt32((uint32_t)texture_type.memory_access
+  ));
+
+  auto fn = module.getOrInsertFunction(
+    fn_name, llvm::FunctionType::get(ctx.types._bool, args_type, false), att
+  );
+  // comparison result is ignored
+  ctx.builder.CreateCall(fn, args_value);
+  auto expected = ctx.builder.CreateLoad(op_info.write_type, ptr);
+  // this should be always the original value at ptr
+  co_return expected;
+}
+
 AIRBuilderResult
 call_convert(pvalue src, llvm::Type *dst_scaler_type, Sign sign) {
   using namespace llvm;
