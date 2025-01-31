@@ -119,7 +119,8 @@ uint32_t ArgumentBufferBuilder::DefineTexture(
       MSLTexture{
         .component_type = scaler_type,
         .memory_access = access,
-        .resource_kind = kind
+        .resource_kind =  air::lowering_texture_1d_to_2d(kind),
+        .resource_kind_logical = kind,
       },
     .arg_name = name,
     .raster_order_group = raster_order_group,

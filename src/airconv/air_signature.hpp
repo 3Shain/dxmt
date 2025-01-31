@@ -84,6 +84,18 @@ enum class TextureKind {
   depth_cube_array // 16
 };
 
+inline TextureKind lowering_texture_1d_to_2d(TextureKind kind) {
+  switch (kind) {
+  case TextureKind::texture_1d:
+    return TextureKind::texture_2d;
+  case TextureKind::texture_1d_array:
+    return TextureKind::texture_2d_array;
+  default:
+    break;
+  }
+  return kind;
+};
+
 enum class Interpolation {
   center_perspective,
   center_no_perspective,
@@ -208,6 +220,7 @@ struct MSLTexture {
   MSLScalerType component_type;
   MemoryAccess memory_access;
   TextureKind resource_kind;
+  TextureKind resource_kind_logical;
 
   std::string get_name() const {
     auto component =

@@ -59,9 +59,12 @@ void InitializeTextureData(MTLD3D11Device * pDevice, MTL::Texture *target,
   for (uint32_t level = 0; level < Desc.MipLevels; level++) {
     for (uint32_t slice = 0; slice < Desc.ArraySize; slice++) {
       auto idx = D3D11CalcSubresource(level, slice, Desc.MipLevels);
-      auto region = MTL::Region::Make1D(0, width);
-      target->replaceRegion(region, level, slice, subresources[idx].pSysMem, 0,
-                            0);
+      auto region = MTL::Region::Make2D(0, 0, width, 1);
+      uint32_t bytes_per_row = 0, _, __;
+      GetLinearTextureLayout(pDevice, Desc, level, bytes_per_row, _, __, false);
+      target->replaceRegion(
+          region, level, slice, subresources[idx].pSysMem, std::max(subresources[idx].SysMemPitch, bytes_per_row), 0
+      );
     }
     width = std::max(1u, width >> 1);
   }

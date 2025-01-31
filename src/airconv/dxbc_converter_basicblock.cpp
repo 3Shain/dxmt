@@ -750,6 +750,18 @@ auto implicit_float_to_int(pvalue num) -> IRValue {
   co_return co_yield call_convert(rounded, types._int, air::Sign::with_sign);
 };
 
+auto extend_to_int2(pvalue value) -> IRValue {
+  return make_irvalue([=](context ctx) {
+    return ctx.builder.CreateInsertElement(llvm::ConstantAggregateZero::get(ctx.types._int2), value, uint64_t(0));
+  });
+};
+
+auto extend_to_float2(pvalue value) -> IRValue {
+  return make_irvalue([=](context ctx) {
+    return ctx.builder.CreateInsertElement(llvm::ConstantAggregateZero::get(ctx.types._float2), value, uint64_t(0));
+  });
+};
+
 SrcOperandModifier get_modifier(SrcOperand src) {
   return std::visit(
     patterns{
@@ -2128,20 +2140,19 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                    co_yield sampler_metadata(nullptr)
                  );
                  auto coord = co_yield load_src_op<true>(sample.src_address);
-                 switch (res.resource_kind) {
+                 switch (res.resource_kind_logical) {
                  case air::TextureKind::texture_1d: {
                    co_return co_yield call_sample(
-                     res, res_h, sampler_h, co_yield extract_element(0)(coord),
-                     nullptr, co_yield extract_element(1)(offset_const)
+                     res, res_h, sampler_h, co_yield extract_element(0)(coord) >>= extend_to_float2, nullptr,
+                     co_yield extract_element(0)(offset_const) >>= extend_to_int2
                    );
                  }
                  case air::TextureKind::texture_1d_array: {
                    co_return co_yield call_sample(
                      res, res_h, sampler_h,
-                     co_yield extract_element(0)(coord), // .r
-                     co_yield extract_element(1)(coord) >>=
-                     implicit_float_to_int,                    // .g
-                     co_yield extract_element(1)(offset_const) // 1d offset
+                     co_yield extract_element(0)(coord) >>= extend_to_float2,      // .r
+                     co_yield extract_element(1)(coord) >>= implicit_float_to_int, // .g
+                     co_yield extract_element(0)(offset_const) >>= extend_to_int2  // 1d offset
                    );
                  }
                  case air::TextureKind::depth_2d:
@@ -2233,21 +2244,19 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                    extract_element(0),
                    sampler_bias
                  );
-                 switch (res.resource_kind) {
+                 switch (res.resource_kind_logical) {
                  case air::TextureKind::texture_1d: {
                    co_return co_yield call_sample(
-                     res, res_h, sampler_h, co_yield extract_element(0)(coord),
-                     nullptr, co_yield extract_element(1)(offset_const),
-                     nullptr, nullptr, LOD
+                     res, res_h, sampler_h, co_yield extract_element(0)(coord) >>= extend_to_float2, nullptr,
+                     co_yield extract_element(0)(offset_const) >>= extend_to_int2, nullptr, nullptr, LOD
                    );
                  }
                  case air::TextureKind::texture_1d_array: {
                    co_return co_yield call_sample(
                      res, res_h, sampler_h,
-                     co_yield extract_element(0)(coord), // .r
-                     co_yield extract_element(1)(coord) >>=
-                     implicit_float_to_int,                     // .g
-                     co_yield extract_element(1)(offset_const), // 1d offset
+                     co_yield extract_element(0)(coord) >>= extend_to_float2,      // .r
+                     co_yield extract_element(1)(coord) >>= implicit_float_to_int, // .g
+                     co_yield extract_element(0)(offset_const) >>= extend_to_int2, // 1d offset
                      nullptr, nullptr, LOD
                    );
                  }
@@ -2345,21 +2354,19 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                  auto res_min_lod_clamp = co_yield metadata_get_min_lod_clamp(
                    co_yield res_metadata(nullptr)
                  );
-                 switch (res.resource_kind) {
+                 switch (res.resource_kind_logical) {
                  case air::TextureKind::texture_1d: {
                    co_return co_yield call_sample(
-                     res, res_h, sampler_h, co_yield extract_element(0)(coord),
-                     nullptr, co_yield extract_element(1)(offset_const),
-                     bias, res_min_lod_clamp
+                     res, res_h, sampler_h, co_yield extract_element(0)(coord) >>= extend_to_float2, nullptr,
+                     co_yield extract_element(0)(offset_const) >>= extend_to_int2, bias, res_min_lod_clamp
                    );
                  }
                  case air::TextureKind::texture_1d_array: {
                    co_return co_yield call_sample(
                      res, res_h, sampler_h,
-                     co_yield extract_element(0)(coord), // .r
-                     co_yield extract_element(1)(coord) >>=
-                     implicit_float_to_int,                     // .g
-                     co_yield extract_element(1)(offset_const), // 1d offset
+                     co_yield extract_element(0)(coord) >>= extend_to_float2,      // .r
+                     co_yield extract_element(1)(coord) >>= implicit_float_to_int, // .g
+                     co_yield extract_element(0)(offset_const) >>= extend_to_int2, // 1d offset
                      bias, res_min_lod_clamp
                    );
                  }
@@ -2451,7 +2458,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                    co_yield load_src_op<true>(sample.src_x_derivative);
                  auto dpdy =
                    co_yield load_src_op<true>(sample.src_y_derivative);
-                 switch (res.resource_kind) {
+                 switch (res.resource_kind_logical) {
                  case air::TextureKind::depth_2d:
                  case air::TextureKind::texture_2d: {
                    co_return co_yield call_sample_grad(
@@ -2547,7 +2554,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                  auto sampler_bias = co_yield metadata_get_sampler_bias(
                    co_yield sampler_metadata(nullptr)
                  );
-                 switch (res.resource_kind) {
+                 switch (res.resource_kind_logical) {
                  case air::TextureKind::depth_2d: {
                    co_return co_yield call_sample_compare(
                      res, res_h, sampler_h,
@@ -2623,7 +2630,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
               auto component =
                 co_yield get_int(sample.src_sampler.gather_channel);
               pvalue ret;
-              switch (res.resource_kind) {
+              switch (res.resource_kind_logical) {
               case air::TextureKind::depth_2d:
               case air::TextureKind::texture_2d: {
                 ret = co_yield call_gather(
@@ -2695,7 +2702,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                  auto offset = co_yield load_src_op<false>(sample.offset);
                  auto reference =
                    co_yield load_src_op<true>(sample.src_reference);
-                 switch (res.resource_kind) {
+                 switch (res.resource_kind_logical) {
                  case air::TextureKind::depth_2d: {
                    co_return co_yield call_gather_compare(
                      res, res_h, sampler_h, co_yield truncate_vec(2)(coord),
@@ -2742,7 +2749,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
               auto res_h = co_yield res_handle_fn(nullptr);
               auto coord = co_yield load_src_op<false>(load.src_address);
               pvalue ret;
-              switch (res.resource_kind) {
+              switch (res.resource_kind_logical) {
               case air::TextureKind::texture_buffer: {
                 auto offset = co_yield metadata_get_texture_buffer_offset(
                   co_yield metadata(nullptr)
@@ -2759,17 +2766,15 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
               }
               case air::TextureKind::texture_1d: {
                 ret = co_yield call_read(
-                  res, res_h, co_yield extract_element(0)(coord),
-                  co_yield get_int(load.offsets[0]), nullptr, nullptr, nullptr,
-                  co_yield extract_element(3)(coord)
+                  res, res_h, co_yield extract_element(0)(coord) >>= extend_to_int2,
+                  co_yield get_int2(load.offsets[0], 0), nullptr, nullptr, nullptr, co_yield extract_element(3)(coord)
                 );
                 break;
               }
               case air::TextureKind::texture_1d_array: {
                 ret = co_yield call_read(
-                  res, res_h, co_yield extract_element(0)(coord),
-                  co_yield get_int(load.offsets[0]), nullptr,
-                  co_yield extract_element(1)(coord), nullptr,
+                  res, res_h, co_yield extract_element(0)(coord) >>= extend_to_int2,
+                  co_yield get_int2(load.offsets[0], 0), nullptr, co_yield extract_element(1)(coord), nullptr,
                   co_yield extract_element(3)(coord)
                 );
                 break;
@@ -2853,7 +2858,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
               auto res_h = co_yield res_handle_fn(nullptr);
               auto coord = co_yield load_src_op<false>(load.src_address);
               pvalue ret;
-              switch (res.resource_kind) {
+              switch (res.resource_kind_logical) {
               case air::TextureKind::texture_buffer: {
                 auto offset = co_yield metadata_get_texture_buffer_offset(
                   co_yield metadata(nullptr)
@@ -2867,15 +2872,13 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                 break;
               }
               case air::TextureKind::texture_1d: {
-                ret = co_yield call_read(
-                  res, res_h, co_yield extract_element(0)(coord)
-                );
+                ret = co_yield call_read(res, res_h, co_yield extract_element(0)(coord) >>= extend_to_int2);
                 break;
               }
               case air::TextureKind::texture_1d_array: {
                 ret = co_yield call_read(
-                  res, res_h, co_yield extract_element(0)(coord), nullptr,
-                  nullptr, co_yield extract_element(1)(coord)
+                  res, res_h, co_yield extract_element(0)(coord) >>= extend_to_int2, nullptr, nullptr,
+                  co_yield extract_element(1)(coord)
                 );
                 break;
               }
@@ -2933,7 +2936,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                 res.component_type
               );
 
-              switch (res.resource_kind) {
+              switch (res.resource_kind_logical) {
               case air::TextureKind::texture_buffer: {
                 auto offset = co_yield metadata_get_texture_buffer_offset(
                   co_yield metadata(nullptr)
@@ -2949,15 +2952,14 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
               }
               case air::TextureKind::texture_1d:
                 co_yield call_write(
-                  res, res_h, co_yield extract_element(0)(address), nullptr,
-                  nullptr, value, ctx.builder.getInt32(0)
+                  res, res_h, co_yield extract_element(0)(address) >>= extend_to_int2, nullptr, nullptr, value,
+                  ctx.builder.getInt32(0)
                 );
                 break;
               case air::TextureKind::texture_1d_array:
                 co_yield call_write(
-                  res, res_h, co_yield extract_element(0)(address), nullptr,
-                  co_yield extract_element(1)(address), value,
-                  ctx.builder.getInt32(0)
+                  res, res_h, co_yield extract_element(0)(address) >>= extend_to_int2, nullptr,
+                  co_yield extract_element(1)(address), value, ctx.builder.getInt32(0)
                 );
                 break;
               case air::TextureKind::texture_2d:
@@ -3899,12 +3901,15 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                 auto sampler_h = co_yield sampler_handle_fn(nullptr);
                 auto coord = co_yield load_src_op<true>(calc.src_address);
                 pvalue clamped_float = nullptr, unclamped_float = nullptr;
-                switch (res.resource_kind) {
+                switch (res.resource_kind_logical) {
                 case air::TextureKind::texture_1d:
                 case air::TextureKind::texture_1d_array: {
-                  // MSL Spec 6.12.2 mipmaps are not supported for 1D texture
-                  clamped_float = co_yield get_float(0.0f);
-                  unclamped_float = co_yield get_float(0.0f);
+                  clamped_float = co_yield call_calc_lod(
+                    res, res_h, sampler_h, co_yield extract_element(0)(coord) >>= extend_to_float2, false
+                  );
+                  unclamped_float = co_yield call_calc_lod(
+                    res, res_h, sampler_h, co_yield extract_element(0)(coord) >>= extend_to_float2, true
+                  );
                   break;
                 }
                 case air::TextureKind::depth_2d:
@@ -4023,7 +4028,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                     auto res_h = co_yield res_handle_fn(nullptr);
                     auto address = co_yield load_src_op<false>(bin.dst_address);
                     auto value = co_yield load_src_op<false>(bin.src);
-                    switch (res.resource_kind) {
+                    switch (res.resource_kind_logical) {
                     case air::TextureKind::texture_buffer: {
                       auto offset = co_yield metadata_get_texture_buffer_offset(
                         co_yield metadata(nullptr)
@@ -4041,18 +4046,16 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                     }
                     case air::TextureKind::texture_1d:
                       co_return co_yield store_dst_op<false>(
-                        bin.dst_original,
-                        call_texture_atomic_fetch_explicit(
-                          res, res_h, op, is_signed,
-                          co_yield extract_element(0)(address), nullptr, value
-                        )
+                        bin.dst_original, call_texture_atomic_fetch_explicit(
+                                            res, res_h, op, is_signed,
+                                            co_yield extract_element(0)(address) >>= extend_to_int2, nullptr, value
+                                          )
                       );
                     case air::TextureKind::texture_1d_array:
                       co_return co_yield store_dst_op<false>(
                         bin.dst_original,
                         call_texture_atomic_fetch_explicit(
-                          res, res_h, op, is_signed,
-                          co_yield extract_element(1)(address),
+                          res, res_h, op, is_signed, co_yield extract_element(0)(address) >>= extend_to_int2,
                           co_yield extract_element(1)(address), value
                         )
                       );
@@ -4138,7 +4141,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                     auto address =
                       co_yield load_src_op<false>(exch.dst_address);
                     auto value = co_yield load_src_op<false>(exch.src);
-                    switch (res.resource_kind) {
+                    switch (res.resource_kind_logical) {
                     case air::TextureKind::texture_buffer: {
                       auto offset = co_yield metadata_get_texture_buffer_offset(
                         co_yield metadata(nullptr)
@@ -4156,19 +4159,16 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                     }
                     case air::TextureKind::texture_1d:
                       co_return co_yield store_dst_op<false>(
-                        exch.dst,
-                        call_texture_atomic_exchange(
-                          res, res_h, co_yield extract_element(0)(address),
-                          nullptr, value
-                        )
+                        exch.dst, call_texture_atomic_exchange(
+                                    res, res_h, co_yield extract_element(0)(address) >>= extend_to_int2, nullptr, value
+                                  )
                       );
                     case air::TextureKind::texture_1d_array:
                       co_return co_yield store_dst_op<false>(
-                        exch.dst,
-                        call_texture_atomic_exchange(
-                          res, res_h, co_yield extract_element(1)(address),
-                          co_yield extract_element(1)(address), value
-                        )
+                        exch.dst, call_texture_atomic_exchange(
+                                    res, res_h, co_yield extract_element(0)(address) >>= extend_to_int2,
+                                    co_yield extract_element(1)(address), value
+                                  )
                       );
                     case air::TextureKind::texture_2d:
                       co_return co_yield store_dst_op<false>(
@@ -4386,15 +4386,15 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                      pvalue miplevel =
                        co_yield load_src_op<false>(resinfo.src_mip_level) >>=
                        extract_element(0);
-                     switch (tex.resource_kind) {
+                     switch (tex.resource_kind_logical) {
                      case air::TextureKind::texture_1d:
                        x = co_yield call_get_texture_info(
-                         tex, res_h, TextureInfoType::width, zero
+                         tex, res_h, TextureInfoType::width, miplevel
                        );
                        break;
                      case air::TextureKind::texture_1d_array:
                        x = co_yield call_get_texture_info(
-                         tex, res_h, TextureInfoType::width, zero
+                         tex, res_h, TextureInfoType::width, miplevel
                        );
                        y = co_yield call_get_texture_info(
                          tex, res_h, TextureInfoType::array_length, zero
@@ -4446,7 +4446,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                      }
                      }
                      pvalue mip_count = nullptr;
-                     switch (tex.resource_kind) {
+                     switch (tex.resource_kind_logical) {
                      case air::TextureKind::texture_buffer:
                      case air::TextureKind::texture_2d_ms:
                      case air::TextureKind::texture_2d_ms_array:

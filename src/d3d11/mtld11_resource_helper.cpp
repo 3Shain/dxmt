@@ -388,10 +388,10 @@ CreateMTLTextureDescriptorInternal(
   }
   case D3D11_RESOURCE_DIMENSION_TEXTURE1D:
     if (ArraySize > 1) {
-      desc->setTextureType(MTL::TextureType1DArray);
+      desc->setTextureType(MTL::TextureType2DArray);
       desc->setArrayLength(ArraySize);
     } else {
-      desc->setTextureType(MTL::TextureType1D);
+      desc->setTextureType(MTL::TextureType2D);
     }
     break;
   case D3D11_RESOURCE_DIMENSION_TEXTURE2D:

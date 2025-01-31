@@ -178,14 +178,14 @@ auto setup_binding_table(
       // TODO: abstract SM 5.0 binding
       auto access =
         srv.sampled ? air::MemoryAccess::sample : air::MemoryAccess::read;
-      auto texture_kind =
-        air::to_air_resource_type(srv.resource_type, srv.compared);
+      auto texture_kind_logical = air::to_air_resource_type(srv.resource_type, srv.compared);
       auto scaler_type = air::to_air_scaler_type(srv.scaler_type);
       resource_map.srv_range_map[range_id] = {
         air::MSLTexture{
           .component_type = scaler_type,
           .memory_access = access,
-          .resource_kind = texture_kind,
+          .resource_kind = air::lowering_texture_1d_to_2d(texture_kind_logical),
+          .resource_kind_logical = texture_kind_logical,
         },
         [=, index = srv.arg_index](pvalue) {
           // ignore index in SM 5.0
@@ -213,13 +213,14 @@ auto setup_binding_table(
                                           : air::MemoryAccess::write)
                               : air::MemoryAccess::read;
     if (uav.resource_type != shader::common::ResourceType::NonApplicable) {
-      auto texture_kind = air::to_air_resource_type(uav.resource_type);
+      auto texture_kind_logical = air::to_air_resource_type(uav.resource_type);
       auto scaler_type = air::to_air_scaler_type(uav.scaler_type);
       resource_map.uav_range_map[range_id] = {
         air::MSLTexture{
           .component_type = scaler_type,
           .memory_access = access,
-          .resource_kind = texture_kind,
+          .resource_kind = air::lowering_texture_1d_to_2d(texture_kind_logical),
+          .resource_kind_logical = texture_kind_logical,
         },
         [=, index = uav.arg_index](pvalue) {
           // ignore index in SM 5.0
