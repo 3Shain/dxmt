@@ -12,6 +12,7 @@ namespace dxmt {
 
 ArgumentEncodingContext::ArgumentEncodingContext(CommandQueue &queue, MTL::Device *device) : queue(queue) {
   Obj<MTL::SamplerDescriptor> descriptor = transfer(MTL::SamplerDescriptor::alloc()->init());
+  descriptor->setSupportArgumentBuffers(true);
   dummy_sampler_ = transfer(device->newSamplerState(descriptor));
   dummy_cbuffer_ = transfer(device->newBuffer(
       65536, MTL::ResourceOptionCPUCacheModeWriteCombined | MTL::ResourceStorageModeShared |
