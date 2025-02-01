@@ -106,7 +106,7 @@ public:
 
   inline void
   set_dirty() {
-    dirty = bound;
+    dirty.setAll();
   };
 
   inline void
