@@ -794,6 +794,7 @@ auto FunctionSignatureBuilder::CreateFunction(
         },
         [&](const OutputPosition &position) {
           md.string("air.position")
+            ->string("air.invariant")
             ->string("air.arg_type_name")
             ->string(get_name(position.type))
             ->string("air.arg_name")
