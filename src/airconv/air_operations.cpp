@@ -192,12 +192,15 @@ AIRBuilderResult call_dot_product(uint32_t dimension, pvalue a, pvalue b) {
 };
 
 AIRBuilderResult call_float_mad(pvalue a, pvalue b, pvalue c) {
-  return make_op([=](AIRBuilderContext ctx) {
+  return make_op([=](AIRBuilderContext ctx) -> pvalue {
     using namespace llvm;
     auto &context = ctx.llvm;
     auto &module = ctx.module;
     assert(a->getType() == b->getType());
     assert(a->getType() == c->getType());
+    if (!ctx.builder.getFastMathFlags().isFast()) {
+      return ctx.builder.CreateFAdd(ctx.builder.CreateFMul(a, b), c);
+    }
     auto att = AttributeList::get(
       context, {{~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)},
                 {~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)},
