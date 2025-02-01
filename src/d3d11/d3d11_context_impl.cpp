@@ -563,37 +563,41 @@ public:
         }
       });
     else
-      Emit([=, texture = pUAV->texture(), viewId = pUAV->viewId(), dimension = desc.ViewDimension,
-            value =
-                std::array<uint32_t, 4>({Values[0], Values[1], Values[2], Values[3]})](ArgumentEncodingContext &enc) {
-        switch (dimension) {
-        default:
-          break;
-        case D3D11_UAV_DIMENSION_TEXTURE1D:
-          UNIMPLEMENTED("tex1d clear");
-          break;
-        case D3D11_UAV_DIMENSION_TEXTURE1DARRAY:
-          UNIMPLEMENTED("tex1darr clear");
-          break;
-        case D3D11_UAV_DIMENSION_TEXTURE2D:
-          enc.encodeComputeCommand([&, texture =
-                                           enc.access(texture, viewId, DXMT_ENCODER_RESOURCE_ACESS_WRITE)](auto &ctx) {
-            ctx.cmd.ClearTexture2DUint(ctx.encoder, texture, value);
-          });
-          break;
-        case D3D11_UAV_DIMENSION_TEXTURE2DARRAY:
-          enc.encodeComputeCommand([&, texture =
-                                           enc.access(texture, viewId, DXMT_ENCODER_RESOURCE_ACESS_WRITE)](auto &ctx) {
-            ctx.cmd.ClearTexture2DArrayUint(ctx.encoder, texture, value);
-          });
-          break;
-        case D3D11_UAV_DIMENSION_TEXTURE3D:
-          enc.encodeComputeCommand([&, texture =
-                                           enc.access(texture, viewId, DXMT_ENCODER_RESOURCE_ACESS_WRITE)](auto &ctx) {
-            ctx.cmd.ClearTexture3DUint(ctx.encoder, texture, value);
-          });
-          break;
+      Emit([=, texture = pUAV->texture(), viewId = pUAV->viewId(),
+            value = std::array<uint32_t, 4>({Values[0], Values[1], Values[2], Values[3]}),
+            dimension = desc.ViewDimension](ArgumentEncodingContext &enc) mutable {
+        auto view_format = texture->view(viewId)->pixelFormat();
+        auto uint_format = MTLGetUnsignedIntegerFormat(view_format);
+        /* RG11B10Float is a special case */
+        if (view_format == MTL::PixelFormatRG11B10Float) {
+          uint_format = MTL::PixelFormatR32Uint;
+          value[0] = ((value[0] & 0x7FF) << 0) | ((value[1] & 0x7FF) << 11) | ((value[2] & 0x3FF) << 22);
         }
+
+        if (uint_format == MTL::PixelFormatInvalid) {
+          WARN("ClearUnorderedAccessViewUint: unhandled format ", view_format);
+          return;
+        }
+        auto viewChecked = texture->checkViewUseFormat(viewId, uint_format);
+        enc.encodeComputeCommand(
+            [&, dimension, texture = enc.access(texture, viewChecked, DXMT_ENCODER_RESOURCE_ACESS_WRITE)](auto &ctx) {
+              switch (dimension) {
+              default:
+                break;
+              case D3D11_UAV_DIMENSION_TEXTURE1D:
+              case D3D11_UAV_DIMENSION_TEXTURE2D:
+                ctx.cmd.ClearTexture2DUint(ctx.encoder, texture, value);
+                break;
+              case D3D11_UAV_DIMENSION_TEXTURE1DARRAY:
+              case D3D11_UAV_DIMENSION_TEXTURE2DARRAY:
+                ctx.cmd.ClearTexture2DArrayUint(ctx.encoder, texture, value);
+                break;
+              case D3D11_UAV_DIMENSION_TEXTURE3D:
+                ctx.cmd.ClearTexture3DUint(ctx.encoder, texture, value);
+                break;
+              }
+            }
+        );
       });
     InvalidateCurrentPass();
   }

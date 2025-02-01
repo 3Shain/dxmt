@@ -65,4 +65,6 @@ int32_t MTLQueryDXGIFormat(MTL::Device *device, uint32_t format, MTL_DXGI_FORMAT
 
 uint32_t MTLGetTexelSize(MTL::PixelFormat format);
 
+MTL::PixelFormat MTLGetUnsignedIntegerFormat(MTL::PixelFormat format);
+
 } // namespace dxmt

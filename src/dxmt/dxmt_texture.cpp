@@ -273,6 +273,16 @@ TextureViewKey Texture::checkViewUseArray(TextureViewKey key, bool isArray) {
   return key;
 }
 
+TextureViewKey Texture::checkViewUseFormat(TextureViewKey key, MTL::PixelFormat format) {
+  auto &view = viewDescriptors_[key];
+  if (unlikely(view.format != format)) {
+    auto new_view_desc = view;
+    new_view_desc.format = format;
+    return createView(new_view_desc);
+  }
+  return key;
+}
+
 DXMT_RESOURCE_RESIDENCY_STATE &
 Texture::residency(TextureViewKey key) {
   return residency(key, current_.ptr());
