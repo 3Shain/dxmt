@@ -1641,13 +1641,24 @@ Instruction readInstruction(
   };
   case microsoft::D3D11_SB_OPCODE_ATOMIC_CMP_STORE: {
     shader_info.use_cmp_exch = true;
-    return InstAtomicImmCmpExchange{
+    auto inst = InstAtomicImmCmpExchange{
       .dst = DstOperandSideEffect{},
       .dst_resource = readAtomicDst(Inst.m_Operands[0], phase),
       .dst_address = readSrcOperand(Inst.m_Operands[1], phase),
       .src0 = readSrcOperand(Inst.m_Operands[2], phase),
       .src1 = readSrcOperand(Inst.m_Operands[3], phase),
     };
+    std::visit(
+      patterns{
+        [&](AtomicDstOperandUAV uav) {
+          shader_info.uavMap[uav.range_id].read = true;
+          shader_info.uavMap[uav.range_id].written = true;
+        },
+        [](auto) {}
+      },
+      inst.dst_resource
+    );
+    return inst;
   };
   case microsoft::D3D11_SB_OPCODE_IMM_ATOMIC_ALLOC: {
     auto inst = InstAtomicImmIncrement{
@@ -1666,23 +1677,45 @@ Instruction readInstruction(
     return inst;
   };
   case microsoft::D3D11_SB_OPCODE_IMM_ATOMIC_EXCH: {
-    return InstAtomicImmExchange{
+    auto inst = InstAtomicImmExchange{
       .dst = readDstOperand(Inst.m_Operands[0], phase),
       .dst_resource = readAtomicDst(Inst.m_Operands[1], phase),
       .dst_address = readSrcOperand(Inst.m_Operands[2], phase),
       .src = readSrcOperand(Inst.m_Operands[3], phase),
     };
+    std::visit(
+      patterns{
+        [&](AtomicDstOperandUAV uav) {
+          shader_info.uavMap[uav.range_id].read = true;
+          shader_info.uavMap[uav.range_id].written = true;
+        },
+        [](auto) {}
+      },
+      inst.dst_resource
+    );
+    return inst;
   };
 
   case microsoft::D3D11_SB_OPCODE_IMM_ATOMIC_CMP_EXCH: {
     shader_info.use_cmp_exch = true;
-    return InstAtomicImmCmpExchange{
+    auto inst = InstAtomicImmCmpExchange{
       .dst = readDstOperand(Inst.m_Operands[0], phase),
       .dst_resource = readAtomicDst(Inst.m_Operands[1], phase),
       .dst_address = readSrcOperand(Inst.m_Operands[2], phase),
       .src0 = readSrcOperand(Inst.m_Operands[3], phase),
       .src1 = readSrcOperand(Inst.m_Operands[4], phase),
     };
+    std::visit(
+      patterns{
+        [&](AtomicDstOperandUAV uav) {
+          shader_info.uavMap[uav.range_id].read = true;
+          shader_info.uavMap[uav.range_id].written = true;
+        },
+        [](auto) {}
+      },
+      inst.dst_resource
+    );
+    return inst;
   };
   case microsoft::D3D11_SB_OPCODE_IMM_ATOMIC_AND: {
     auto inst = InstAtomicBinOp{
