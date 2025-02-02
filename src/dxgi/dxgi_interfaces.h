@@ -6,7 +6,7 @@
 #include "com/com_guid.hpp"
 
 DEFINE_COM_INTERFACE("acdf3ef1-b33a-4cb6-97bd-1c1974827e6d", IMTLDXGIAdapter)
-    : public IDXGIAdapter3 {
+    : public IDXGIAdapter4 {
   virtual MTL::Device *STDMETHODCALLTYPE GetMTLDevice() = 0;
 };
 
