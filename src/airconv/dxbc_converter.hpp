@@ -288,15 +288,21 @@ struct ScalarInfo {
 };
 
 struct SignatureContext {
-  dxmt::dxbc::IREffect& prologue;
-  dxmt::dxbc::IRValue& epilogue;
-  dxmt::air::FunctionSignatureBuilder& func_signature;
-  SM50_SHADER_IA_INPUT_LAYOUT_DATA * ia_layout;
+  IREffect &prologue;
+  IRValue &epilogue;
+  air::FunctionSignatureBuilder &func_signature;
+  io_binding_map &resource;
+  SM50_SHADER_IA_INPUT_LAYOUT_DATA *ia_layout;
   bool dual_source_blending;
   bool disable_depth_output;
   bool skip_vertex_output;
   uint32_t pull_mode_reg_mask;
-  io_binding_map& resource;
+
+  SignatureContext(
+    IREffect &prologue, IRValue &epilogue, air::FunctionSignatureBuilder &func_signature, io_binding_map &resource
+  )
+      : prologue(prologue), epilogue(epilogue), func_signature(func_signature), resource(resource), ia_layout(nullptr),
+        dual_source_blending(false), disable_depth_output(false), skip_vertex_output(false), pull_mode_reg_mask(0){};
 };
 
 class SM50ShaderInternal {

@@ -425,9 +425,7 @@ llvm::Error convert_dxbc_hull_shader(
   air::AirType types(context);
 
   {
-    SignatureContext sig_ctx{prologue, epilogue, func_signature,
-                             nullptr,  false,    false,
-                             false,    0,        resource_map};
+    SignatureContext sig_ctx(prologue, epilogue, func_signature, resource_map);
     for (auto &p : pShaderInternal->signature_handlers) {
       p(sig_ctx);
     }
@@ -751,11 +749,8 @@ llvm::Error convert_dxbc_domain_shader(
   air::AirType types(context);
 
   {
-    SignatureContext sig_ctx{
-      prologue,    epilogue, func_signature,         nullptr,
-      false,       false,    rasterization_disabled, 0,
-      resource_map
-    };
+    SignatureContext sig_ctx(prologue, epilogue, func_signature, resource_map);
+    sig_ctx.skip_vertex_output = rasterization_disabled;
     for (auto &p : pShaderInternal->signature_handlers) {
       p(sig_ctx);
     }
@@ -1031,17 +1026,10 @@ llvm::Error convert_dxbc_pixel_shader(
   air::AirType types(context);
 
   {
-    SignatureContext sig_ctx{
-      prologue,
-      epilogue,
-      func_signature,
-      nullptr,
-      pso_dual_source_blending,
-      pso_disable_depth_output,
-      false,
-      shader_info->pull_mode_reg_mask,
-      resource_map
-    };
+    SignatureContext sig_ctx(prologue, epilogue, func_signature, resource_map);
+    sig_ctx.dual_source_blending = pso_dual_source_blending;
+    sig_ctx.disable_depth_output = pso_disable_depth_output;
+    sig_ctx.pull_mode_reg_mask = shader_info->pull_mode_reg_mask;
     for (auto &p : pShaderInternal->signature_handlers) {
       p(sig_ctx);
     }
@@ -1165,9 +1153,7 @@ llvm::Error convert_dxbc_compute_shader(
   air::AirType types(context);
 
   {
-    SignatureContext sig_ctx{prologue, epilogue, func_signature,
-                             nullptr,  false,    false,
-                             false,    0,        resource_map};
+    SignatureContext sig_ctx(prologue, epilogue, func_signature, resource_map);
     for (auto &p : pShaderInternal->signature_handlers) {
       p(sig_ctx);
     }
@@ -1278,11 +1264,9 @@ llvm::Error convert_dxbc_vertex_shader(
   air::AirType types(context);
 
   {
-    SignatureContext sig_ctx{
-      prologue,    epilogue, func_signature,         ia_layout,
-      false,       false,    rasterization_disabled, 0,
-      resource_map
-    };
+    SignatureContext sig_ctx(prologue, epilogue, func_signature, resource_map);
+    sig_ctx.ia_layout = ia_layout;
+    sig_ctx.skip_vertex_output = rasterization_disabled;
     for (auto &p : pShaderInternal->signature_handlers) {
       p(sig_ctx);
     }
@@ -1528,9 +1512,9 @@ llvm::Error convert_dxbc_vertex_for_hull_shader(
   air::AirType types(context);
 
   {
-    SignatureContext sig_ctx{prologue,  epilogue, func_signature,
-                             ia_layout, false,    false,
-                             true,      0,        resource_map};
+    SignatureContext sig_ctx(prologue, epilogue, func_signature, resource_map);
+    sig_ctx.ia_layout = ia_layout;
+    sig_ctx.skip_vertex_output = true;
     for (auto &p : pShaderInternal->signature_handlers) {
       p(sig_ctx);
     }
