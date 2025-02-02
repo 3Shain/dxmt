@@ -525,7 +525,10 @@ void handle_signature_ps(
             .type = to_msl_type(type),
           });
         }
-        ctx.epilogue >> pop_output_reg(reg, mask, assigned_index);
+        if (type == RegisterComponentType::Float && ctx.unorm_output_reg_mask & (1 << reg))
+          ctx.epilogue >> pop_output_reg_fix_unorm(reg, mask, assigned_index);
+        else
+          ctx.epilogue >> pop_output_reg(reg, mask, assigned_index);
       });
       max_output_register = std::max(reg + 1, max_output_register);
       break;

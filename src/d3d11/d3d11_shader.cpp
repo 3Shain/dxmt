@@ -151,6 +151,7 @@ CreateVariantShader(MTLD3D11Device *pDevice, ManagedShader shader,
     data.sample_mask = variant.sample_mask;
     data.dual_source_blending = variant.dual_source_blending;
     data.disable_depth_output = variant.disable_depth_output;
+    data.unorm_output_reg_mask = variant.unorm_output_reg_mask;
 
     SM50CompiledBitcode *compile_result = nullptr;
     SM50Error *sm50_err = nullptr;

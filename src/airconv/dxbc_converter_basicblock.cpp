@@ -239,6 +239,17 @@ auto get_float(float value) -> IRValue {
   });
 };
 
+auto get_float4_splat(float value) -> IRValue {
+  return make_irvalue([=](context ctx) {
+    return llvm::ConstantVector::get(
+      {llvm::ConstantFP::get(ctx.llvm, llvm::APFloat{value}),
+       llvm::ConstantFP::get(ctx.llvm, llvm::APFloat{value}),
+       llvm::ConstantFP::get(ctx.llvm, llvm::APFloat{value}),
+       llvm::ConstantFP::get(ctx.llvm, llvm::APFloat{value})}
+    );
+  });
+};
+
 auto extend_to_vec4(pvalue value) {
   return make_irvalue([=](context ctx) {
     auto ty = value->getType();
@@ -566,6 +577,17 @@ pop_output_reg(uint32_t from_reg, uint32_t mask, uint32_t to_element) {
                  return ctx.builder.CreateInsertValue(ret, value, {to_element});
                };
       };
+    });
+  };
+}
+
+std::function<IRValue(pvalue)> pop_output_reg_fix_unorm(uint32_t from_reg, uint32_t mask, uint32_t to_element) {
+  return [=](pvalue ret) {
+    return make_irvalue_bind([=](context ctx) -> IRValue {
+      auto const_index = llvm::ConstantInt::get(ctx.llvm, llvm::APInt{32, from_reg, false});
+      auto fvec4 = co_yield load_from_array_at(ctx.resource.output.ptr_float4, const_index);
+      auto fixed = ctx.builder.CreateFSub(fvec4, co_yield get_float4_splat(1.0f / 127500.0f) /* magic delta ?! */);
+      co_return ctx.builder.CreateInsertValue(ret, fixed, {to_element});
     });
   };
 }

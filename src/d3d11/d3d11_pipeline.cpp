@@ -23,8 +23,10 @@ public:
         pBlendState(pDesc->BlendState),
         RasterizationEnabled(pDesc->RasterizationEnabled),
         SampleCount(pDesc->SampleCount) {
+    uint32_t unorm_output_reg_mask = 0;
     for (unsigned i = 0; i < num_rtvs; i++) {
       rtv_formats[i] = pDesc->ColorAttachmentFormats[i];
+      unorm_output_reg_mask |= (uint32_t(IsUnormRenderTargetFormat(pDesc->ColorAttachmentFormats[i])) << i);
     }
 
     if (pDesc->SOLayout) {
@@ -39,7 +41,8 @@ public:
     if (pDesc->PixelShader) {
       PixelShader = pDesc->PixelShader->get_shader(ShaderVariantPixel{
           pDesc->SampleMask, pDesc->BlendState->IsDualSourceBlending(),
-          depth_stencil_format == MTL::PixelFormatInvalid});
+          depth_stencil_format == MTL::PixelFormatInvalid,
+          unorm_output_reg_mask});
     }
   }
 

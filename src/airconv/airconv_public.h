@@ -200,6 +200,7 @@ struct SM50_SHADER_PSO_PIXEL_SHADER_DATA {
   uint32_t sample_mask;
   bool dual_source_blending;
   bool disable_depth_output;
+  uint32_t unorm_output_reg_mask;
 };
 
 struct SM50_IA_INPUT_ELEMENT {

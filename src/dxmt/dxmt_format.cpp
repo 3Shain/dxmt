@@ -1561,4 +1561,35 @@ MTLGetUnsignedIntegerFormat(MTL::PixelFormat format) {
   return MTL::PixelFormatInvalid;
 };
 
+bool
+IsUnormRenderTargetFormat(MTL::PixelFormat format, bool srgb) {
+  switch (format) {
+  case MTL::PixelFormatA8Unorm:
+  case MTL::PixelFormatR8Unorm:
+  case MTL::PixelFormatR16Unorm:
+  case MTL::PixelFormatRG8Unorm:
+  case MTL::PixelFormatB5G6R5Unorm:
+  case MTL::PixelFormatA1BGR5Unorm:
+  case MTL::PixelFormatABGR4Unorm:
+  case MTL::PixelFormatBGR5A1Unorm:
+  case MTL::PixelFormatRG16Unorm:
+  case MTL::PixelFormatRG16Snorm:
+  case MTL::PixelFormatRGBA8Unorm:
+  case MTL::PixelFormatBGRA8Unorm:
+  case MTL::PixelFormatRGB10A2Unorm:
+  case MTL::PixelFormatBGR10A2Unorm:
+  case MTL::PixelFormatRGBA16Unorm:
+  case MTL::PixelFormatDepth16Unorm:
+    return true;
+  case MTL::PixelFormatR8Unorm_sRGB:
+  case MTL::PixelFormatRG8Unorm_sRGB:
+  case MTL::PixelFormatRGBA8Unorm_sRGB:
+  case MTL::PixelFormatBGRA8Unorm_sRGB:
+    return srgb;
+  default:
+    break;
+  }
+  return false;
+}
+
 } // namespace dxmt

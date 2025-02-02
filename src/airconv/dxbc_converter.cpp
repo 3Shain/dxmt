@@ -993,6 +993,7 @@ llvm::Error convert_dxbc_pixel_shader(
   uint32_t pso_sample_mask = 0xffffffff;
   bool pso_dual_source_blending = false;
   bool pso_disable_depth_output = false;
+  uint32_t pso_unorm_output_reg_mask = 0;
   SM50_SHADER_COMPILATION_ARGUMENT_DATA *arg = pArgs;
   // uint64_t debug_id = ~0u;
   while (arg) {
@@ -1006,6 +1007,8 @@ llvm::Error convert_dxbc_pixel_shader(
         ((SM50_SHADER_PSO_PIXEL_SHADER_DATA *)arg)->dual_source_blending;
       pso_disable_depth_output =
         ((SM50_SHADER_PSO_PIXEL_SHADER_DATA *)arg)->disable_depth_output;
+      pso_unorm_output_reg_mask =
+        ((SM50_SHADER_PSO_PIXEL_SHADER_DATA *)arg)->unorm_output_reg_mask;
       break;
     default:
       break;
@@ -1030,6 +1033,7 @@ llvm::Error convert_dxbc_pixel_shader(
     sig_ctx.dual_source_blending = pso_dual_source_blending;
     sig_ctx.disable_depth_output = pso_disable_depth_output;
     sig_ctx.pull_mode_reg_mask = shader_info->pull_mode_reg_mask;
+    sig_ctx.unorm_output_reg_mask = pso_unorm_output_reg_mask;
     for (auto &p : pShaderInternal->signature_handlers) {
       p(sig_ctx);
     }
