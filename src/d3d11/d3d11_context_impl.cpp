@@ -3445,6 +3445,8 @@ public:
       enc.tess_num_output_control_point_element = GraphicsPipeline.NumControlPointOutputElement;
       enc.tess_num_output_patch_constant_scalar = GraphicsPipeline.NumPatchConstantOutputScalar;
       enc.tess_threads_per_patch = GraphicsPipeline.ThreadsPerPatch;
+      if (!(GraphicsPipeline.MeshPipelineState && GraphicsPipeline.RasterizationPipelineState))
+        return;
       enc.encodePreTessCommand([pso = GraphicsPipeline.MeshPipelineState](RenderCommandContext &ctx) {
         ctx.encoder->setRenderPipelineState(pso);
       });
@@ -3504,7 +3506,8 @@ public:
     Emit([pso = std::move(pipeline)](ArgumentEncodingContext& enc) {
       MTL_COMPILED_GRAPHICS_PIPELINE GraphicsPipeline{};
       pso->GetPipeline(&GraphicsPipeline); // may block
-      D3D11_ASSERT(GraphicsPipeline.PipelineState);
+      if (!GraphicsPipeline.PipelineState)
+        return;
       enc.encodeRenderCommand([pso = GraphicsPipeline.PipelineState](RenderCommandContext& ctx) {
         ctx.encoder->setRenderPipelineState(pso);
       });
@@ -3640,8 +3643,9 @@ public:
                                      )](ArgumentEncodingContext &enc) {
       MTL_COMPILED_COMPUTE_PIPELINE ComputePipeline;
       pso->GetPipeline(&ComputePipeline); // may block
+      if (!ComputePipeline.PipelineState)
+        return;
       enc.encodeComputeCommand([&, pso = ComputePipeline.PipelineState](ComputeCommandContext &ctx) {
-        assert(pso);
         ctx.encoder->setComputePipelineState(pso);
         ctx.threadgroup_size = tg_size;
       });
