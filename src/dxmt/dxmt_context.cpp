@@ -842,6 +842,8 @@ ArgumentEncodingContext::isEncoderSignatureMatched(RenderEncoderData *r0, Render
     auto a1 = r1->descriptor->colorAttachments()->object(i);
     if (a0->texture() != a1->texture())
       return false;
+    if (a0->depthPlane() != a1->depthPlane())
+      return false;
     if (!a0->texture())
       continue;
     if (a0->storeAction() != MTL::StoreActionStore)
