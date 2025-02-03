@@ -21,3 +21,13 @@ d3d10core_dep = declare_dependency(
   link_with           : [ d3d10core_dll ],
   include_directories : [ dxmt_include_path ],
 )
+
+if wine_builtin_dll
+custom_target('postprocess_libd3d10core',
+  input : d3d10core_dll,
+  output: 'd3d10core.dll.postproc',
+  command : [ winebuild, '--builtin', '@INPUT@' ],
+  depends : d3d10core_dll,
+  build_by_default : true
+)
+endif
