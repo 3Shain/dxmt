@@ -67,6 +67,6 @@ uint32_t MTLGetTexelSize(MTL::PixelFormat format);
 
 MTL::PixelFormat MTLGetUnsignedIntegerFormat(MTL::PixelFormat format);
 
-bool IsUnormRenderTargetFormat(MTL::PixelFormat format, bool srgb = false);
+bool IsUnorm8RenderTargetFormat(MTL::PixelFormat format);
 
 } // namespace dxmt

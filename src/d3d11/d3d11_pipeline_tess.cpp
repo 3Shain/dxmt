@@ -25,7 +25,7 @@ public:
     uint32_t unorm_output_reg_mask = 0;
     for (unsigned i = 0; i < num_rtvs; i++) {
       rtv_formats[i] = pDesc->ColorAttachmentFormats[i];
-      unorm_output_reg_mask |= (uint32_t(IsUnormRenderTargetFormat(pDesc->ColorAttachmentFormats[i])) << i);
+      unorm_output_reg_mask |= (uint32_t(IsUnorm8RenderTargetFormat(pDesc->ColorAttachmentFormats[i])) << i);
     }
     VertexShader =
         pDesc->VertexShader->get_shader(ShaderVariantTessellationVertex{
