@@ -1,3 +1,4 @@
+#include "config/config.hpp"
 #include "d3d11_private.h"
 #include "d3d11_query.hpp"
 #include "dxmt_command_queue.hpp"
@@ -56,7 +57,9 @@ public:
   MTLD3D11ImmediateContext(MTLD3D11Device *pDevice, CommandQueue &cmd_queue) :
       ImmediateContextBase(pDevice, ctx_state),
       cmd_queue(cmd_queue),
-      ctx_state({cmd_queue}) {}
+      ctx_state({cmd_queue}) {
+        ignore_map_flag_no_wait_ = Config::getInstance().getOption<bool>("d3d11.ignoreMapFlagNoWait", false);
+      }
 
   ULONG STDMETHODCALLTYPE
   AddRef() override {
@@ -163,6 +166,10 @@ public:
     if (auto staging = GetStagingResource(pResource, Subresource)) {
       if (MapType > 3 || MapType == 0)
           return E_INVALIDARG;
+
+      if (ignore_map_flag_no_wait_)
+        MapFlags &= ~D3D11_MAP_FLAG_DO_NOT_WAIT;
+
       while (true) {
         auto result = staging->tryMap(coherent_seq_id, MapType & D3D11_MAP_READ, MapType & D3D11_MAP_WRITE);
         if (result == StagingMapResult::Mapped)
@@ -436,6 +443,7 @@ private:
   CommandQueue &cmd_queue;
   ContextInternalState ctx_state;
   std::atomic<uint32_t> refcount = 0;
+  bool ignore_map_flag_no_wait_;
 };
 
 std::unique_ptr<MTLD3D11DeviceContextBase>
