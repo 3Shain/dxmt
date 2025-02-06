@@ -42,11 +42,16 @@ template <typename Env, typename V> class ReaderIO {
 
 public:
   template <std::invocable<Env> T> ReaderIO(T &&ff) {
-    factory = new ErasureFunction<T>(std::forward<T>(ff));
+    ops.push_back(new ErasureFunction<T>(std::forward<T>(ff)));
   }
   ~ReaderIO() {
-    if (factory != nullptr) {
-      delete factory;
+    destroy();
+  }
+
+  void destroy() {
+    while (!ops.empty()) {
+      delete ops.back();
+      ops.pop_back();
     }
   }
 
@@ -55,27 +60,37 @@ public:
       struct environment_cast<Env, Env2> cast;
       return castable.build(cast.cast(e));
     };
-    factory = new ErasureFunction<decltype(f)>(std::move(f));
+    ops.push_back(new ErasureFunction<decltype(f)>(std::move(f)));
   }
 
   ReaderIO(ReaderIO &&other) {
-    factory = other.factory;
-    other.factory = nullptr;
+    ops = std::move(other.ops);
+    other.ops = {};
   };
   ReaderIO &operator=(ReaderIO &&move_assign) {
-    factory = move_assign.factory;
-    move_assign.factory = nullptr;
+    ops = std::move(move_assign.ops);
+    move_assign.ops = {};
     return *this;
   };
   ReaderIO(const ReaderIO &copy) = delete;
   ReaderIO &operator=(const ReaderIO &copy_assign) = delete;
 
   llvm::Expected<V> build(Env ir) {
-    assert(factory && "value has been consumed or moved.");
-    llvm::Expected<V> ret = factory->invoke(ir);
-    delete factory;
-    factory = nullptr;
-    return ret;
+    assert(!ops.empty() && "value has been consumed or moved.");
+    unsigned i = 0;
+    while(i < ops.size()) {
+      llvm::Expected<V> ret = ops[i]->invoke(ir);
+      if (auto err = ret.takeError()) {
+        destroy();
+        return err;
+      }
+      i++;
+      if (i == ops.size()) {
+        destroy();
+        return ret.get();
+      }
+    }
+    __builtin_unreachable();
   };
 
   struct promise_type {
@@ -133,8 +148,16 @@ public:
     };
   };
 
+  ReaderIO &concat(ReaderIO&& b) {
+    for(auto f :b.ops) {
+      ops.push_back(f);
+    }
+    b.ops = {};
+    return *this;
+  };
+
 private:
-  BaseFunction *factory;
+  std::vector<BaseFunction *> ops;
 };
 
 /* bind */
@@ -176,16 +199,7 @@ auto operator|(ReaderIO<Env, V> &&src, Func &&fn) {
 /* in-place sequence: a = a then b */
 template <typename Env, typename A>
 ReaderIO<Env, A> &operator<<(ReaderIO<Env, A> &a, ReaderIO<Env, A> &&b) {
-  a = ReaderIO<Env, A>(
-    [a = std::move(a),
-     b = std::move(b)](auto context) mutable -> llvm::Expected<A> {
-      if (llvm::Error err = a.build(context).takeError()) {
-        return std::move(err);
-      }
-      return b.build(context);
-    }
-  );
-  return a;
+  return a.concat(std::move(b));
 };
 
 /* in-place bind: a = fn(result of a) */
