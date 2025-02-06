@@ -1,7 +1,9 @@
-#pragma once
-
 #include "stddef.h"
 #include "stdint.h"
+#include "stdbool.h"
+
+#ifndef __AIRCONV_H
+#define __AIRCONV_H
 
 #ifdef __cplusplus
 enum class ShaderType {
@@ -118,7 +120,15 @@ typedef struct __SM50Shader SM50Shader;
 typedef struct __SM50CompiledBitcode SM50CompiledBitcode;
 typedef struct __SM50Error SM50Error;
 
-#define AIRCONV_EXPORT __attribute__((sysv_abi))
+#ifdef _WIN32
+#ifdef WIN_EXPORT
+#define AIRCONV_API __attribute__((sysv_abi)) __declspec(dllexport)
+#else
+#define AIRCONV_API __attribute__((sysv_abi)) __declspec(dllimport)
+#endif
+#else
+#define AIRCONV_API __attribute__((sysv_abi))
+#endif
 
 #if __METALCPP__
 #include "Metal/MTLArgumentEncoder.hpp"
@@ -238,33 +248,33 @@ struct SM50_SHADER_GS_PASS_THROUGH_DATA {
   bool RasterizationDisabled;
 };
 
-AIRCONV_EXPORT int SM50Initialize(
+AIRCONV_API int SM50Initialize(
   const void *pBytecode, size_t BytecodeSize, SM50Shader **ppShader,
   struct MTL_SHADER_REFLECTION *pRefl, SM50Error **ppError
 );
-AIRCONV_EXPORT void SM50Destroy(SM50Shader *pShader);
-AIRCONV_EXPORT int SM50Compile(
+AIRCONV_API void SM50Destroy(SM50Shader *pShader);
+AIRCONV_API int SM50Compile(
   SM50Shader *pShader, struct SM50_SHADER_COMPILATION_ARGUMENT_DATA *pArgs,
   const char *FunctionName, SM50CompiledBitcode **ppBitcode, SM50Error **ppError
 );
-AIRCONV_EXPORT void SM50GetCompiledBitcode(
+AIRCONV_API void SM50GetCompiledBitcode(
   SM50CompiledBitcode *pBitcode, struct MTL_SHADER_BITCODE *pData
 );
-AIRCONV_EXPORT void SM50DestroyBitcode(SM50CompiledBitcode *pBitcode);
-AIRCONV_EXPORT const char *SM50GetErrorMesssage(SM50Error *pError);
-AIRCONV_EXPORT void SM50FreeError(SM50Error *pError);
+AIRCONV_API void SM50DestroyBitcode(SM50CompiledBitcode *pBitcode);
+AIRCONV_API const char *SM50GetErrorMesssage(SM50Error *pError);
+AIRCONV_API void SM50FreeError(SM50Error *pError);
 
-AIRCONV_EXPORT int SM50CompileTessellationPipelineVertex(
+AIRCONV_API int SM50CompileTessellationPipelineVertex(
   SM50Shader *pVertexShader, SM50Shader *pHullShader,
   struct SM50_SHADER_COMPILATION_ARGUMENT_DATA *pVertexShaderArgs,
   const char *FunctionName, SM50CompiledBitcode **ppBitcode, SM50Error **ppError
 );
-AIRCONV_EXPORT int SM50CompileTessellationPipelineHull(
+AIRCONV_API int SM50CompileTessellationPipelineHull(
   SM50Shader *pVertexShader, SM50Shader *pHullShader,
   struct SM50_SHADER_COMPILATION_ARGUMENT_DATA *pHullShaderArgs,
   const char *FunctionName, SM50CompiledBitcode **ppBitcode, SM50Error **ppError
 );
-AIRCONV_EXPORT int SM50CompileTessellationPipelineDomain(
+AIRCONV_API int SM50CompileTessellationPipelineDomain(
   SM50Shader *pHullShader, SM50Shader *pDomainShader,
   struct SM50_SHADER_COMPILATION_ARGUMENT_DATA *pDomainShaderArgs,
   const char *FunctionName, SM50CompiledBitcode **ppBitcode, SM50Error **ppError
@@ -272,4 +282,6 @@ AIRCONV_EXPORT int SM50CompileTessellationPipelineDomain(
 
 #ifdef __cplusplus
 };
+#endif
+
 #endif

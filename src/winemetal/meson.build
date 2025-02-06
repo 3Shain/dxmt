@@ -3,6 +3,7 @@ winemetal_src = [
   'exports.c',
   'metalcpp-impl.cpp',
   'error_handling.c',
+  'airconv_thunks.c',
 ]
 
 if cc.has_link_argument('/entry:WineMetalEntry')
@@ -28,7 +29,7 @@ endif
 
 winemetal_dll = shared_library('winemetal', winemetal_src,
   name_prefix         : '',
-  dependencies        : [ lib_winecrt0, lib_ntdll, lib_dbghelp ],
+  dependencies        : [ lib_winecrt0, lib_ntdll, lib_dbghelp, airconv_forward_dep ],
   include_directories : dxmt_include_path,
   install             : true,
   link_args           : winemetal_ld_args,

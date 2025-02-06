@@ -4,7 +4,10 @@
 #import <Metal/Metal.h>
 #include "dlfcn.h"
 #include "pthread.h"
-#include "airconv_public.h"
+#include "../airconv_thunks.h"
+
+typedef int NTSTATUS;
+#define STATUS_SUCCESS 0
 
 typedef struct macdrv_opaque_metal_device *macdrv_metal_device;
 typedef struct macdrv_opaque_metal_view *macdrv_metal_view;
@@ -30,6 +33,33 @@ struct macdrv_functions_t
 };
 
 static int winemetal_unix_init();
+
+static NTSTATUS thunk_SM50Initialize(void *args)
+{
+    struct sm50_initialize_params *params = args;
+
+    params->ret = SM50Initialize(params->bytecode, params->bytecode_size, params->shader, params->reflection, params->error);
+
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS thunk_SM50Destroy(void *args)
+{
+    struct sm50_destroy_params *params = args;
+
+    SM50Destroy(params->shader);
+
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS thunk_SM50Compile(void *args)
+{
+    struct sm50_compile_params *params = args;
+
+    params->ret = SM50Compile((SM50Shader*)params->shader, params->args, params->func_name, params->bitcode, params->error);
+
+    return STATUS_SUCCESS;
+}
 
 const void *__wine_unix_call_funcs[] = {
     &objc_lookUpClass,
@@ -76,9 +106,9 @@ const void *__wine_unix_call_funcs[] = {
     0,
     &dispatch_get_main_queue,
     &dispatch_data_create,
-    &SM50Initialize,
-    &SM50Destroy,
-    &SM50Compile,
+    &thunk_SM50Initialize,
+    &thunk_SM50Destroy,
+    &thunk_SM50Compile,
     &SM50GetCompiledBitcode,
     &SM50DestroyBitcode,
     &SM50GetErrorMesssage,
