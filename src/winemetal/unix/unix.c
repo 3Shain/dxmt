@@ -2,7 +2,6 @@
 #include "objc/message.h"
 #include "objc-wrapper/abi.h"
 #import <Metal/Metal.h>
-#include "Block.h"
 #include "dlfcn.h"
 #include "pthread.h"
 #include "airconv_public.h"
@@ -37,11 +36,11 @@ const void *__wine_unix_call_funcs[] = {
     &sel_registerName,
     &objc_msgSend,
     &objc_getProtocol,
-    _NSConcreteGlobalBlock, // 4
-    _NSConcreteStackBlock,  // 5
-    &_Block_object_assign,  // 6
-    &_Block_object_dispose, // 7
-    &dlsym,                 // 8
+    0,
+    0,
+    0,
+    0,
+    &dlsym,
     &MTLCreateSystemDefaultDevice,
     &MTLCopyAllDevices,
     &MTLCopyAllDevicesWithObserver,
@@ -69,12 +68,12 @@ const void *__wine_unix_call_funcs[] = {
     &dispatch_semaphore_wait,
     &printf,
     &dispatch_release,
-    &pthread_getspecific,
-    &pthread_setspecific,
+    0,
+    0,
     &malloc,
     &free,
-    &sigsetjmp,
-    &siglongjmp,
+    0,
+    0,
     &dispatch_get_main_queue,
     &dispatch_data_create,
     &SM50Initialize,
