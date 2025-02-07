@@ -1213,6 +1213,7 @@ AIRBuilderResult call_texture_atomic_fetch_explicit(
   assert(!op_info.is_depth);
   assert(!op_info.is_cube);
   assert(!op_info.is_ms);
+  assert(op_info.write_type == types._int4);
   auto fn_name =
     "air.atomic_fetch_" + op + "_explicit_" + op_info.air_symbol_suffix +
     type_overload_suffix(
@@ -1247,7 +1248,9 @@ AIRBuilderResult call_texture_atomic_fetch_explicit(
   auto fn = module.getOrInsertFunction(
     fn_name, llvm::FunctionType::get(op_info.write_type, args_type, false), att
   );
-  co_return ctx.builder.CreateCall(fn, args_value);
+  co_return ctx.builder.CreateExtractElement(
+    ctx.builder.CreateCall(fn, args_value), uint64_t(0)
+  );
 };
 
 AIRBuilderResult call_texture_atomic_exchange(
@@ -1271,6 +1274,7 @@ AIRBuilderResult call_texture_atomic_exchange(
   assert(!op_info.is_depth);
   assert(!op_info.is_cube);
   assert(!op_info.is_ms);
+  assert(op_info.write_type == types._int4);
   auto fn_name = "air.atomic_exchange_explicit_" + op_info.air_symbol_suffix +
                  type_overload_suffix(vec4->getType(), air::Sign::no_sign);
   std::vector<llvm::Type *> args_type;
@@ -1302,7 +1306,9 @@ AIRBuilderResult call_texture_atomic_exchange(
   auto fn = module.getOrInsertFunction(
     fn_name, llvm::FunctionType::get(op_info.write_type, args_type, false), att
   );
-  co_return ctx.builder.CreateCall(fn, args_value);
+  co_return ctx.builder.CreateExtractElement(
+    ctx.builder.CreateCall(fn, args_value), uint64_t(0)
+  );
 };
 
 AIRBuilderResult call_texture_atomic_compare_exchange(
@@ -1326,6 +1332,7 @@ AIRBuilderResult call_texture_atomic_compare_exchange(
   assert(!op_info.is_depth);
   assert(!op_info.is_cube);
   assert(!op_info.is_ms);
+  assert(op_info.write_type == types._int4);
   auto fn_name = "air.atomic_compare_exchange_weak_explicit_" + op_info.air_symbol_suffix +
                  type_overload_suffix(operand->getType(), air::Sign::no_sign);
   std::vector<llvm::Type *> args_type;
@@ -1371,7 +1378,7 @@ AIRBuilderResult call_texture_atomic_compare_exchange(
   ctx.builder.CreateCall(fn, args_value);
   auto expected = ctx.builder.CreateLoad(op_info.write_type, ptr);
   // this should be always the original value at ptr
-  co_return expected;
+  co_return ctx.builder.CreateExtractElement(expected, uint64_t(0));
 }
 
 AIRBuilderResult
