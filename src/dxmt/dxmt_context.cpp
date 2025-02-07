@@ -457,18 +457,16 @@ ArgumentEncodingContext::endVisibilityResultQuery(Rc<VisibilityResultQuery> &&qu
 void
 ArgumentEncodingContext::bumpVisibilityResultOffset() {
   auto render_encoder = currentRenderEncoder();
+  render_encoder->use_visibility_result = render_encoder->use_visibility_result || bool(active_visibility_query_count_);
 
-  if (active_visibility_query_count_) {
-    render_encoder->use_visibility_result = 1;
-    if (auto offset = vro_state_.getNextWriteOffset(true); offset != ~0uLL)
-      encodeRenderCommand([offset](RenderCommandContext &ctx) {
-        ctx.encoder->setVisibilityResultMode(MTL::VisibilityResultModeCounting, offset << 3);
-      });
-  } else {
-    if (vro_state_.getNextWriteOffset(false) != ~0uLL && render_encoder->use_visibility_result)
-      encodeRenderCommand([](RenderCommandContext &ctx) {
+  uint64_t offset;
+  if (vro_state_.tryGetNextWriteOffset(active_visibility_query_count_, offset)) {
+    encodeRenderCommand([offset](RenderCommandContext &ctx) {
+      if (~offset == 0)
         ctx.encoder->setVisibilityResultMode(MTL::VisibilityResultModeDisabled, 0);
-      });
+      else
+        ctx.encoder->setVisibilityResultMode(MTL::VisibilityResultModeCounting, offset << 3);
+    });
   }
 }
 

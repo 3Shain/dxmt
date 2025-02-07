@@ -15,35 +15,30 @@ public:
   beginEncoder() {
     assert(!within_encoder);
     assert(!current_data_is_dirty);
+    assert(!~previous_offset);
     within_encoder = true;
-    should_update_offset = true;
   }
 
-  uint64_t
-  getNextWriteOffset(bool has_active_occlusion_queries) {
-    if (has_active_occlusion_queries) {
-      if (!current_data_is_dirty) {
-        current_data_is_dirty = true;
-      }
+  bool
+  tryGetNextWriteOffset(bool has_active_occlusion_queries, uint64_t &offset) {
+    assert(within_encoder);
+    offset = getNextWriteOffset(has_active_occlusion_queries);
+    if (offset == previous_offset) {
+      return false;
     }
-    if (should_update_offset) {
-      should_update_offset = false;
-      return next_offset;
-    }
-    return ~0uLL;
-  };
+    previous_offset = offset;
+    return true;
+  }
 
   uint64_t
   getNextReadOffset() {
     if (within_encoder) {
       if (current_data_is_dirty) {
         current_data_is_dirty = false;
-        should_update_offset = true;
         return ++next_offset;
       }
-    } else {
-      assert(!current_data_is_dirty);
     }
+    assert(!current_data_is_dirty);
     return next_offset;
   }
 
@@ -51,6 +46,7 @@ public:
   endEncoder() {
     assert(within_encoder);
     within_encoder = false;
+    previous_offset = ~0uLL;
     if (current_data_is_dirty) {
       next_offset++;
       current_data_is_dirty = false;
@@ -66,19 +62,19 @@ public:
     return ret;
   }
 
-  uint64_t
-  preserveCount(uint64_t count) {
-    assert(!within_encoder && "encoder still active");
-    assert(!current_data_is_dirty && "encoder still active");
-    auto ret = next_offset;
-    next_offset += count;
-    return ret;
-  }
-
 private:
+  uint64_t
+  getNextWriteOffset(bool has_active_occlusion_queries) {
+    if (has_active_occlusion_queries) {
+      current_data_is_dirty = true;
+      return next_offset;
+    }
+    return ~0uLL;
+  };
+
   bool within_encoder = false;
   bool current_data_is_dirty = false;
-  bool should_update_offset = false;
+  uint64_t previous_offset = ~0uLL;
   uint64_t next_offset = 0;
 };
 
