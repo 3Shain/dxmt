@@ -121,9 +121,13 @@ namespace Private
         _CA_PRIVATE_DEF_SEL(setDisplaySyncEnabled_,
             "setDisplaySyncEnabled:");
         _CA_PRIVATE_DEF_SEL(opaque_,
-            "opaque:");
+            "opaque");
         _CA_PRIVATE_DEF_SEL(setOpaque_,
             "setOpaque:");
+        _CA_PRIVATE_DEF_SEL(contentsScale_,
+            "contentsScale");
+        _CA_PRIVATE_DEF_SEL(setContentsScale_,
+            "setContentsScale:");
         _CA_PRIVATE_DEF_SEL(setFramebufferOnly_,
             "setFramebufferOnly:");
         _CA_PRIVATE_DEF_SEL(setPixelFormat_,

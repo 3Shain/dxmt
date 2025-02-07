@@ -110,6 +110,7 @@ public:
 
     if constexpr (EnableMetalFX) {
       scale_factor = std::max(Config::getInstance().getOption<float>("d3d11.metalSpatialUpscaleFactor", 2), 1.0f);
+      layer_weak_->setContentsScale(layer_weak_->contentsScale() * scale_factor);
     }
 
     // FIXME: check HRESULT!

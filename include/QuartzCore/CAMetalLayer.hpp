@@ -69,6 +69,9 @@ public:
 
     bool                     opaque() const;
     void                     setOpaque(bool v);
+
+    double                   contentsScale() const;
+    void                     setContentsScale(double v);
 };
 } // namespace CA
 
@@ -175,5 +178,21 @@ _CA_INLINE bool CA::MetalLayer::opaque() const
 _CA_INLINE void CA::MetalLayer::setOpaque(bool value)
 {
     return Object::sendMessage<void>(this, _CA_PRIVATE_SEL(setOpaque_),
+        value);
+}
+
+//-------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+_CA_INLINE double CA::MetalLayer::contentsScale() const
+{
+    return Object::sendMessage<double>(this,
+        _CA_PRIVATE_SEL(contentsScale_));
+}
+
+//-------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+_CA_INLINE void CA::MetalLayer::setContentsScale(double value)
+{
+    return Object::sendMessage<void>(this, _CA_PRIVATE_SEL(setContentsScale_),
         value);
 }
