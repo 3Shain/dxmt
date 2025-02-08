@@ -381,6 +381,7 @@ void handle_signature_ps(
         .user = name, .type = to_msl_type(type), .interpolation = interpolation, .pull_mode = pull_mode
       });
       if (pull_mode) {
+        assert(type == RegisterComponentType::Float && "otherwise the input register contains mixed data type");
         ctx.resource.interpolant_map[reg] = interpolant_descriptor{
           [=](auto) {
             return make_irvalue([=](struct context ctx) {
@@ -391,7 +392,16 @@ void handle_signature_ps(
            interpolation == air::Interpolation::center_perspective ||
            interpolation == air::Interpolation::centroid_perspective)
         };
-        // FIXME: the input register is undefined if not pulled!
+        uint32_t sampleidx_at = ~0u;
+        switch (interpolation) {
+        case Interpolation::sample_perspective:
+        case Interpolation::sample_no_perspective:
+          sampleidx_at = ctx.func_signature.DefineInput(InputSampleIndex{});
+          break;
+        default:
+          break;
+        }
+        ctx.prologue << init_input_reg_with_interpolation(assigned_index, reg, mask, interpolation, sampleidx_at);
       } else {
         ctx.prologue << init_input_reg(assigned_index, reg, mask);
       }

@@ -2039,6 +2039,32 @@ call_set_mesh_properties(pvalue mesh_grid_props, pvalue grid_size) {
 };
 
 AIRBuilderResult
+call_interpolate_at_center(pvalue interpolant, bool perspective) {
+  return make_op([=](struct AIRBuilderContext ctx) {
+    using namespace llvm;
+    auto &context = ctx.llvm;
+    auto &module = ctx.module;
+    auto att = AttributeList::get(
+      context, {{1U, Attribute::get(context, Attribute::AttrKind::NoCapture)},
+                {1U, Attribute::get(context, Attribute::AttrKind::ReadOnly)},
+                {~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)},
+                {~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)},
+                {~0U, Attribute::get(context, Attribute::AttrKind::ArgMemOnly)},
+                {~0U, Attribute::get(context, Attribute::AttrKind::ReadOnly)}}
+    );
+    auto fn = (module.getOrInsertFunction(
+      perspective ? "air.interpolate_center_perspective.v4f32"
+                  : "air.interpolate_center_no_perspective.v4f32",
+      llvm::FunctionType::get(
+        ctx.types._float4, {ctx.types._interpolant->getPointerTo(1)}, false
+      ),
+      att
+    ));
+    return ctx.builder.CreateCall(fn, {interpolant});
+  });
+}
+
+AIRBuilderResult
 call_interpolate_at_centroid(pvalue interpolant, bool perspective) {
   return make_op([=](struct AIRBuilderContext ctx) {
     using namespace llvm;
@@ -2049,7 +2075,8 @@ call_interpolate_at_centroid(pvalue interpolant, bool perspective) {
                 {1U, Attribute::get(context, Attribute::AttrKind::ReadOnly)},
                 {~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)},
                 {~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)},
-                {~0U, Attribute::get(context, Attribute::AttrKind::ArgMemOnly)}}
+                {~0U, Attribute::get(context, Attribute::AttrKind::ArgMemOnly)},
+                {~0U, Attribute::get(context, Attribute::AttrKind::ReadOnly)}}
     );
     auto fn = (module.getOrInsertFunction(
       perspective ? "air.interpolate_centroid_perspective.v4f32"
@@ -2075,7 +2102,8 @@ AIRBuilderResult call_interpolate_at_offset(
                 {1U, Attribute::get(context, Attribute::AttrKind::ReadOnly)},
                 {~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)},
                 {~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)},
-                {~0U, Attribute::get(context, Attribute::AttrKind::ArgMemOnly)}}
+                {~0U, Attribute::get(context, Attribute::AttrKind::ArgMemOnly)},
+                {~0U, Attribute::get(context, Attribute::AttrKind::ReadOnly)}}
     );
     auto fn = (module.getOrInsertFunction(
       perspective ? "air.interpolate_offset_perspective.v4f32"

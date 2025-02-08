@@ -561,6 +561,45 @@ IREffect init_input_reg(
   });
 };
 
+IREffect init_input_reg_with_interpolation(
+  uint32_t with_fnarg_at, uint32_t to_reg, uint32_t mask,
+  air::Interpolation interpolation, uint32_t sampleidx_at
+) {
+  return make_effect_bind([=](context ctx) -> IREffect {
+    pvalue interpolant = ctx.function->getArg(with_fnarg_at);
+    auto const_index = llvm::ConstantInt::get(ctx.llvm, llvm::APInt{32, to_reg, false});
+    pvalue interpolated_val = nullptr;
+    switch(interpolation) {
+    case air::Interpolation::center_perspective:
+      interpolated_val = co_yield air::call_interpolate_at_center(interpolant, true);
+      break;
+    case air::Interpolation::center_no_perspective:
+      interpolated_val = co_yield air::call_interpolate_at_center(interpolant, false);
+      break;
+    case air::Interpolation::centroid_perspective:
+      interpolated_val = co_yield air::call_interpolate_at_centroid(interpolant, true);
+      break;
+    case air::Interpolation::centroid_no_perspective:
+      interpolated_val = co_yield air::call_interpolate_at_centroid(interpolant, false);
+      break;
+    case air::Interpolation::sample_perspective:
+      assert(~sampleidx_at);
+      interpolated_val = co_yield air::call_interpolate_at_sample(interpolant, true, ctx.function->getArg(sampleidx_at));
+      break;
+    case air::Interpolation::sample_no_perspective:
+      assert(~sampleidx_at);
+      interpolated_val = co_yield air::call_interpolate_at_sample(interpolant, false, ctx.function->getArg(sampleidx_at));
+      break;
+    case air::Interpolation::flat:
+      assert(0 && "unhandled interpolant mode");
+      break;
+    }
+    co_return co_yield store_at_vec4_array_masked(
+        ctx.resource.input.ptr_float4, const_index, interpolated_val, mask
+    );
+  });
+}
+
 std::function<IRValue(pvalue)>
 pop_output_reg(uint32_t from_reg, uint32_t mask, uint32_t to_element) {
   return [=](pvalue ret) {

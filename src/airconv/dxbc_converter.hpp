@@ -250,6 +250,11 @@ IREffect init_input_reg(
   bool fix_w_component = false
 );
 
+IREffect init_input_reg_with_interpolation(
+  uint32_t with_fnarg_at, uint32_t to_reg, uint32_t mask,
+  air::Interpolation interpolation, uint32_t sampleidx_at
+);
+
 std::function<IRValue(pvalue)>
 pop_output_reg(uint32_t from_reg, uint32_t mask, uint32_t to_element);
 
