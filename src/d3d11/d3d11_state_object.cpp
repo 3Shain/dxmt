@@ -242,7 +242,6 @@ public:
   MTLD3D11BlendState(MTLD3D11Device *device, const D3D11_BLEND_DESC1 &desc)
       : ManagedDeviceChild<IMTLD3D11BlendState>(device), desc_(desc) {
     dual_source_blending_ =
-        !desc_.IndependentBlendEnable &&
         (desc_.RenderTarget[0].SrcBlend >= D3D11_BLEND_SRC1_COLOR ||
          desc_.RenderTarget[0].SrcBlendAlpha >= D3D11_BLEND_SRC1_COLOR ||
          desc_.RenderTarget[0].DestBlendAlpha >= D3D11_BLEND_SRC1_COLOR ||
