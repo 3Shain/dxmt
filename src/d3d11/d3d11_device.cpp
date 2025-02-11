@@ -21,11 +21,13 @@
 #include "ftl.hpp"
 #include "mtld11_resource.hpp"
 #include "thread.hpp"
+#include "util_env.hpp"
 #include "winemacdrv.h"
 #include "dxgi_object.hpp"
 #include <mutex>
 #include <thread>
 #include <unordered_map>
+#include "d3d11_4.h"
 
 namespace dxmt {
 
@@ -1083,6 +1085,43 @@ private:
   std::unique_ptr<MTLD3D11DeviceContextBase> context_;
 };
 
+class MTLD3D11Multithread : public ID3D11Multithread {
+public:
+  MTLD3D11Multithread(MTLDXGIObject<IMTLDXGIDevice> *container)
+      : m_container(container) { };
+
+  HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid,
+                                           void **ppvObject) override {
+    return m_container->QueryInterface(riid, ppvObject);
+  }
+
+  ULONG STDMETHODCALLTYPE AddRef() override { return m_container->AddRef(); }
+
+  ULONG STDMETHODCALLTYPE Release() override { return m_container->Release(); }
+
+  void STDMETHODCALLTYPE Enter() override {
+
+  };
+
+  void STDMETHODCALLTYPE Leave() override {
+
+  };
+
+  WINBOOL STDMETHODCALLTYPE SetMultithreadProtected(WINBOOL enable) override {
+    bool current_state = protected_;
+    protected_ = enable;
+    return current_state;
+  };
+
+  WINBOOL STDMETHODCALLTYPE GetMultithreadProtected() override {
+    return protected_;
+  };
+
+private:
+  MTLDXGIObject<IMTLDXGIDevice> *m_container;
+  bool protected_ = false;
+};
+
 /**
  * \brief D3D11 device container
  *
@@ -1098,7 +1137,9 @@ public:
       : adapter_(adapter), device(std::move(device)),
         cmd_queue_(this->device->queue()),
         d3d11_device_(this, adapter, feature_level, feature_flags,
-                      *this->device.get()) {}
+                      *this->device.get()), mt_(this) {
+    expose_mt_layer_ = (env::getEnvVar("DXMT_UNSUPPORTED_MTLAYER") == "1");
+  }
 
   ~MTLD3D11DXGIDevice() override {}
 
@@ -1131,6 +1172,11 @@ public:
     if (riid == __uuidof(ID3D11Device) || riid == __uuidof(ID3D11Device1) ||
         riid == __uuidof(ID3D11Device2) || riid == __uuidof(ID3D11Device3)) {
       *ppvObject = ref(&d3d11_device_);
+      return S_OK;
+    }
+
+    if (riid == __uuidof(ID3D11Multithread) && expose_mt_layer_) {
+      *ppvObject = ref(&mt_);
       return S_OK;
     }
 
@@ -1271,7 +1317,9 @@ private:
   std::unique_ptr<Device> device;
   CommandQueue &cmd_queue_;
   MTLD3D11DeviceImpl d3d11_device_;
+  MTLD3D11Multithread mt_;
   uint32_t max_latency_ = 3;
+  bool expose_mt_layer_ = false;
 };
 
 Com<IMTLDXGIDevice> CreateD3D11Device(std::unique_ptr<Device> &&device,
