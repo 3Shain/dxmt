@@ -15,7 +15,9 @@ public:
     return cmd_queue_;
   };
 
-  DeviceImpl(const DEVICE_DESC &desc) : device_(desc.device), cmd_queue_(desc.device) {}
+  DeviceImpl(const DEVICE_DESC &desc) : device_(desc.device), cmd_queue_(desc.device) {
+    device_->setShouldMaximizeConcurrentCompilation(true);
+  }
 
 private:
   Obj<MTL::Device> device_;
