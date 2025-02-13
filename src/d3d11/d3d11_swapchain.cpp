@@ -8,6 +8,7 @@
 #include "dxgi_object.hpp"
 #include "d3d11_context.hpp"
 #include "dxmt_context.hpp"
+#include "dxmt_hud_state.hpp"
 #include "log/log.hpp"
 #include "mtld11_resource.hpp"
 #include "d3d11_device.hpp"
@@ -74,21 +75,7 @@ public:
                            (double)current_mode.refreshRate.denominator;
     }
 
-    auto pool = transfer(NS::AutoreleasePool::alloc()->init());
-    auto str_dxmt_version = NS::String::string("com.github.3shain.dxmt-version",
-                                               NS::ASCIIStringEncoding);
-    hud->addLabel(str_dxmt_version,
-                  NS::String::string("com.apple.hud-graph.default",
-                                     NS::ASCIIStringEncoding));
-    hud->updateLabel(str_dxmt_version,
-                     NS::String::string(GetVersionDescriptionText(11, m_device->GetFeatureLevel()).c_str(),
-                                        NS::UTF8StringEncoding));
-    str_label_compatibility_flag_ =
-        transfer(NS::String::alloc()->init("com.github.3shain.dxmt-compatibility", NS::ASCIIStringEncoding));
-    hud->addLabel(str_label_compatibility_flag_, str_dxmt_version);
-    hud->updateLabel(
-        str_label_compatibility_flag_, NS::String::string("---------------------------", NS::ASCIIStringEncoding)
-    );
+    hud.initialize(GetVersionDescriptionText(11, m_device->GetFeatureLevel()), 1);
 
     backbuffer_desc_ = D3D11_TEXTURE2D_DESC1 {
       .Width = desc_.Width,
@@ -546,6 +533,7 @@ public:
   };
 
   void UpdateCompatibilityFlagOnHud(Flags<FeatureCompatibility> flags) {
+    hud.begin();
     char text[] = "---------------------------";
     if (flags.test(FeatureCompatibility::UnsupportedGeometryDraw)) {
       text[3] = 'G';
@@ -576,7 +564,8 @@ public:
       text[21] = 'M';
       text[22] = 'S';
     }
-    hud->updateLabel(str_label_compatibility_flag_, NS::String::string(text, NS::ASCIIStringEncoding));
+    hud.printLine(text);
+    hud.end();
   }
 
   BOOL STDMETHODCALLTYPE IsTemporaryMonoSupported() final { return FALSE; };
@@ -706,12 +695,11 @@ private:
   uint32_t frame_latency;
   double init_refresh_rate_ = DBL_MAX;
   int preferred_max_frame_rate = 0;
-  CA::DeveloperHUDProperties* hud;
+  HUDState hud;
 
   std::conditional<EnableMetalFX, Obj<MTLFX::SpatialScaler>, std::monostate>::type metalfx_scaler;
   std::conditional<EnableMetalFX, Com<D3D11ResourceCommon>, std::monostate>::type upscaled_backbuffer_;
   float scale_factor = 1.0;
-  Obj<NS::String> str_label_compatibility_flag_;
 };
 
 HRESULT
