@@ -67,7 +67,7 @@ CommandQueue::CommitCurrentChunk() {
   auto chunk_id = ready_for_encode.load(std::memory_order_relaxed);
   auto &chunk = chunks[chunk_id % kCommandChunkCount];
   chunk.chunk_id = chunk_id;
-  chunk.frame_ = present_seq;
+  chunk.frame_ = frame_count;
 #if ASYNC_ENCODING
   ready_for_encode.fetch_add(1, std::memory_order_release);
   ready_for_encode.notify_one();
@@ -168,6 +168,9 @@ CommandQueue::WaitForFinishThread() {
         ERR(chunk.attached_cmdbuf->logs()->debugDescription()->cString(NS::ASCIIStringEncoding));
       }
     }
+
+    if (chunk.signal_frame_latency_fence_ != ~0ull)
+      frame_latency_fence_.signal(chunk.signal_frame_latency_fence_);
 
     chunk.reset();
     cpu_coherent.fetch_add(1, std::memory_order_relaxed);

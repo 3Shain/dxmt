@@ -14,6 +14,7 @@
 #include "log/log.hpp"
 #include "objc_pointer.hpp"
 #include "thread.hpp"
+#include "util_cpu_fence.hpp"
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
@@ -131,6 +132,7 @@ public:
 
   uint64_t chunk_id;
   uint64_t frame_;
+  uint64_t signal_frame_latency_fence_;
   std::unique_ptr<VisibilityResultReadback> visibility_readback;
 
 private:
@@ -150,6 +152,7 @@ public:
 
   void
   reset() noexcept {
+    signal_frame_latency_fence_ = ~0ull;
     visibility_readback = {};
     list_enc.reset();
     cpu_arugment_heap_offset = 0;
@@ -171,11 +174,13 @@ private:
   std::atomic_uint64_t ready_for_commit = 1;
   std::atomic_uint64_t chunk_ongoing = 0;
   std::atomic_uint64_t cpu_coherent = 0;
+  CpuFence frame_latency_fence_;
   std::atomic_bool stopped;
 
   std::array<CommandChunk, kCommandChunkCount> chunks;
   uint64_t encoder_seq = 1;
-  uint64_t present_seq = 0;
+  uint64_t frame_count = 0;
+  uint32_t max_latency_ = 3;
 
   dxmt::thread encodeThread;
   dxmt::thread finishThread;
@@ -240,10 +245,21 @@ public:
   */
   void CommitCurrentChunk();
 
+  uint64_t CurrentFrameSeq() {
+    return frame_count + 1;
+  }
+
   void
   PresentBoundary() {
-    present_seq++;
+    frame_count++;
+    // After present N-th frame (N starts from 1), wait for (N - max_latency)-th frame to finish rendering 
+    if (likely(frame_count > max_latency_))
+      frame_latency_fence_.wait(frame_count - max_latency_);
   }
+
+  uint32_t GetMaxLatency() { return max_latency_; }
+
+  void SetMaxLatency(uint32_t value) { max_latency_ = value; };
 
   void
   WaitCPUFence(uint64_t seq) {

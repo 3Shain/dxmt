@@ -1229,13 +1229,13 @@ public:
   }
 
   HRESULT STDMETHODCALLTYPE SetMaximumFrameLatency(UINT MaxLatency) override {
-    max_latency_ = MaxLatency;
+    cmd_queue_.SetMaxLatency(MaxLatency);
     return S_OK;
   }
 
   HRESULT STDMETHODCALLTYPE GetMaximumFrameLatency(UINT *pMaxLatency) override {
     if (pMaxLatency) {
-      *pMaxLatency = max_latency_;
+      *pMaxLatency = cmd_queue_.GetMaxLatency();
     }
     return S_OK;
   }
@@ -1318,7 +1318,6 @@ private:
   CommandQueue &cmd_queue_;
   MTLD3D11DeviceImpl d3d11_device_;
   MTLD3D11Multithread mt_;
-  uint32_t max_latency_ = 3;
   bool expose_mt_layer_ = false;
 };
 

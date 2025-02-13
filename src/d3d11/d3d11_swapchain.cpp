@@ -536,6 +536,7 @@ public:
         this->UpdateCompatibilityFlagOnHud(ctx.clearCompatibilityFlag());
       });
     }
+    chunk->signal_frame_latency_fence_ = cmd_queue.CurrentFrameSeq();
     device_context_->Commit();
     cmd_queue.PresentBoundary();
 
