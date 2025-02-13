@@ -23,6 +23,10 @@ public:
     value_.notify_all();
   }
 
+  uint64_t signaledValue() {
+    return value_.load(std::memory_order_acquire);
+  }
+
   CpuFence(): value_(0) {}
   CpuFence(uint64_t initial_value): value_(initial_value) {}
 

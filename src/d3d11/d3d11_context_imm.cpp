@@ -198,7 +198,7 @@ public:
         // and the following calls are essentially no-op
         Flush();
         TRACE("staging map block");
-        cmd_queue.FIXME_YieldUntilCoherenceBoundaryUpdate(coherent_seq_id);
+        cmd_queue.WaitCPUFence(coherent_seq_id + 1);
         current_seq_id = cmd_queue.CurrentSeqId();
         coherent_seq_id = cmd_queue.CoherentSeqId();
       };

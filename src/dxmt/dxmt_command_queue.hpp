@@ -173,7 +173,7 @@ private:
   std::atomic_uint64_t ready_for_encode = 1; // we start from 1, so 0 is always coherent
   std::atomic_uint64_t ready_for_commit = 1;
   std::atomic_uint64_t chunk_ongoing = 0;
-  std::atomic_uint64_t cpu_coherent = 0;
+  CpuFence cpu_coherent;
   CpuFence frame_latency_fence_;
   std::atomic_bool stopped;
 
@@ -214,7 +214,7 @@ public:
 
   uint64_t
   CoherentSeqId() {
-    return cpu_coherent.load(std::memory_order_acquire);
+    return cpu_coherent.signaledValue();
   };
 
   uint64_t
@@ -263,28 +263,17 @@ public:
 
   void
   WaitCPUFence(uint64_t seq) {
-    uint64_t current;
-    while ((current = cpu_coherent.load(std::memory_order_relaxed))) {
-      if (current == seq) {
-        return;
-      }
-      cpu_coherent.wait(current, std::memory_order_acquire);
-    }
-  };
-
-  void
-  FIXME_YieldUntilCoherenceBoundaryUpdate(uint64_t seq_id) {
-    cpu_coherent.wait(seq_id, std::memory_order_acquire);
+    cpu_coherent.wait(seq);
   };
 
   std::tuple<void *, MTL::Buffer *, uint64_t>
   AllocateStagingBuffer(size_t size, size_t alignment) {
-    return staging_allocator.allocate(ready_for_encode, cpu_coherent.load(std::memory_order_acquire), size, alignment);
+    return staging_allocator.allocate(ready_for_encode, cpu_coherent.signaledValue(), size, alignment);
   }
 
   std::tuple<void *, MTL::Buffer *, uint64_t>
   AllocateTempBuffer(uint64_t seq, size_t size, size_t alignment) {
-    return copy_temp_allocator.allocate(seq, cpu_coherent.load(std::memory_order_acquire), size, alignment);
+    return copy_temp_allocator.allocate(seq, cpu_coherent.signaledValue(), size, alignment);
   }
 };
 

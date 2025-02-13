@@ -173,9 +173,8 @@ CommandQueue::WaitForFinishThread() {
       frame_latency_fence_.signal(chunk.signal_frame_latency_fence_);
 
     chunk.reset();
-    cpu_coherent.fetch_add(1, std::memory_order_relaxed);
+    cpu_coherent.signal(internal_seq);
     chunk_ongoing.fetch_sub(1, std::memory_order_release);
-    cpu_coherent.notify_all();
     chunk_ongoing.notify_one();
 
     staging_allocator.free_blocks(internal_seq);
