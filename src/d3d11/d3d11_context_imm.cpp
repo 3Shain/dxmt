@@ -218,24 +218,17 @@ public:
         coherent_seq_id = cmd_queue.CoherentSeqId();
       };
     };
-    UNIMPLEMENTED("unknown mapped resource (USAGE_DEFAULT?)");
+    if (pMappedResource == nullptr) {
+      UNIMPLEMENTED("unimplemented USAGE_DEFAULT resource mapping");
+    }
+    return E_INVALIDARG;
   }
 
   void
   Unmap(ID3D11Resource *pResource, UINT Subresource) override {
-    UINT buffer_length = 0, &row_pitch = buffer_length;
-    UINT bind_flag = 0, &depth_pitch = bind_flag;
-    if (auto dynamic = GetDynamicBuffer(pResource, &buffer_length, &bind_flag)) {
-      return;
-    }
-    if (auto dynamic = GetDynamicTexture(pResource, &row_pitch, &depth_pitch)) {
-      return;
-    }
     if (auto staging = GetStagingResource(pResource, Subresource)) {
       staging->unmap();
-      return;
     };
-    UNIMPLEMENTED("unknown mapped resource (USAGE_DEFAULT?)");
   }
 
   void
