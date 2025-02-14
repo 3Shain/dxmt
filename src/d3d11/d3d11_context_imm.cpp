@@ -198,7 +198,12 @@ public:
         // and the following calls are essentially no-op
         Flush();
         TRACE("staging map block");
-        cmd_queue.WaitCPUFence(coherent_seq_id + 1);
+        auto& statistics = cmd_queue.CurrentFrameStatistics();
+        auto t0 = clock::now();
+        cmd_queue.WaitCPUFence(coherent_seq_id + uint64_t(result));
+        auto t1 = clock::now();
+        statistics.sync_count++;
+        statistics.sync_interval += (t1 - t0);
         current_seq_id = cmd_queue.CurrentSeqId();
         coherent_seq_id = cmd_queue.CoherentSeqId();
       };

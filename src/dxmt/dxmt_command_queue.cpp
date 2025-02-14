@@ -2,6 +2,7 @@
 #include "Metal/MTLCaptureManager.hpp"
 #include "Metal/MTLFunctionLog.hpp"
 #include "Foundation/NSAutoreleasePool.hpp"
+#include "dxmt_statistics.hpp"
 #include "util_env.hpp"
 #include <atomic>
 
@@ -62,15 +63,22 @@ CommandQueue::~CommandQueue() {
 
 void
 CommandQueue::CommitCurrentChunk() {
-  chunk_ongoing.wait(kCommandChunkCount - 1, std::memory_order_acquire);
-  chunk_ongoing.fetch_add(1, std::memory_order_relaxed);
   auto chunk_id = ready_for_encode.load(std::memory_order_relaxed);
   auto &chunk = chunks[chunk_id % kCommandChunkCount];
   chunk.chunk_id = chunk_id;
   chunk.frame_ = frame_count;
+  auto& statistics = CurrentFrameStatistics();
+  statistics.command_buffer_count++;
 #if ASYNC_ENCODING
   ready_for_encode.fetch_add(1, std::memory_order_release);
   ready_for_encode.notify_one();
+
+  auto t0 = clock::now();
+  chunk_ongoing.wait(kCommandChunkCount - 1, std::memory_order_acquire);
+  chunk_ongoing.fetch_add(1, std::memory_order_relaxed);
+  auto t1 = clock::now();
+  statistics.commit_interval += (t1 - t0);
+
 #else
   CommitChunkInternal(chunk, ready_for_encode.fetch_add(1, std::memory_order_relaxed));
 #endif

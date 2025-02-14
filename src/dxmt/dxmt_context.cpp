@@ -10,7 +10,7 @@
 
 namespace dxmt {
 
-ArgumentEncodingContext::ArgumentEncodingContext(CommandQueue &queue, MTL::Device *device) : queue(queue) {
+ArgumentEncodingContext::ArgumentEncodingContext(CommandQueue &queue, MTL::Device *device) : queue_(queue) {
   Obj<MTL::SamplerDescriptor> descriptor = transfer(MTL::SamplerDescriptor::alloc()->init());
   descriptor->setSupportArgumentBuffers(true);
   dummy_sampler_ = transfer(device->newSamplerState(descriptor));
@@ -295,6 +295,9 @@ ArgumentEncodingContext::clearColor(
   encoder_info->tex_write.add(texture->current()->depkey);
 
   encoder_current = encoder_info;
+
+  currentFrameStatistics().clear_pass_count++;
+
   endPass();
 }
 
@@ -314,6 +317,9 @@ ArgumentEncodingContext::clearDepthStencil(
   encoder_info->tex_write.add(texture->current()->depkey);
 
   encoder_current = encoder_info;
+
+  currentFrameStatistics().clear_pass_count++;
+  
   endPass();
 }
 
@@ -377,7 +383,7 @@ ArgumentEncodingContext::signalEvent(uint64_t value) {
   auto encoder_info = allocate<SignalEventData>();
   encoder_info->type = EncoderType::SignalEvent;
   encoder_info->id = nextEncoderId();
-  encoder_info->event = queue.event;
+  encoder_info->event = queue_.event;
   encoder_info->value = value;
 
   encoder_current = encoder_info;
@@ -397,6 +403,8 @@ ArgumentEncodingContext::startRenderPass(
   encoder_info->render_target_count = render_target_count;
   encoder_current = encoder_info;
 
+  currentFrameStatistics().render_pass_count++;
+
   vro_state_.beginEncoder();
 
   return encoder_info;
@@ -409,6 +417,9 @@ ArgumentEncodingContext::startComputePass() {
   encoder_info->type = EncoderType::Compute;
   encoder_info->id = nextEncoderId();
   encoder_current = encoder_info;
+
+  currentFrameStatistics().compute_pass_count++;
+
   return encoder_info;
 }
 
@@ -419,6 +430,8 @@ ArgumentEncodingContext::startBlitPass() {
   encoder_info->type = EncoderType::Blit;
   encoder_info->id = nextEncoderId();
   encoder_current = encoder_info;
+
+  currentFrameStatistics().blit_pass_count++;
 
   return encoder_info;
 }
@@ -438,7 +451,7 @@ ArgumentEncodingContext::endPass() {
 
 std::pair<MTL::Buffer *, size_t>
 ArgumentEncodingContext::allocateTempBuffer(size_t size, size_t alignment) {
-  auto [_, buffer, offset] = queue.AllocateTempBuffer(seq_id_, size, alignment);
+  auto [_, buffer, offset] = queue_.AllocateTempBuffer(seq_id_, size, alignment);
   return {buffer, offset};
 };
 
@@ -468,6 +481,11 @@ ArgumentEncodingContext::bumpVisibilityResultOffset() {
         ctx.encoder->setVisibilityResultMode(MTL::VisibilityResultModeCounting, offset << 3);
     });
   }
+}
+
+FrameStatistics&
+ArgumentEncodingContext::currentFrameStatistics() {
+  return queue_.statistics.at(frame_id_);
 }
 
 constexpr unsigned kEncoderOptimizerThreshold = 64;
@@ -550,7 +568,7 @@ ArgumentEncodingContext::flushCommands(MTL::CommandBuffer *cmdbuf, uint64_t seqI
     }
     case EncoderType::Compute: {
       auto data = static_cast<ComputeEncoderData *>(current);
-      ComputeCommandContext ctx{cmdbuf->computeCommandEncoder(), {}, queue.emulated_cmd};
+      ComputeCommandContext ctx{cmdbuf->computeCommandEncoder(), {}, queue_.emulated_cmd};
       ctx.encoder->setBuffer(gpu_buffer_, 0, 29);
       ctx.encoder->setBuffer(gpu_buffer_, 0, 30);
       data->cmds.execute(ctx);
@@ -569,7 +587,7 @@ ArgumentEncodingContext::flushCommands(MTL::CommandBuffer *cmdbuf, uint64_t seqI
     case EncoderType::Present: {
       auto data = static_cast<PresentData *>(current);
       auto drawable = data->drawable.ptr();
-      queue.emulated_cmd.PresentToDrawable(cmdbuf, data->backbuffer, drawable->texture());
+      queue_.emulated_cmd.PresentToDrawable(cmdbuf, data->backbuffer, drawable->texture());
       if (data->after > 0)
         cmdbuf->presentDrawableAfterMinimumDuration(drawable, data->after);
       else
@@ -708,6 +726,7 @@ ArgumentEncodingContext::checkEncoderRelation(EncoderData *former, EncoderData *
           clear->clear_dsv &= ~2;
         }
         if (clear->clear_dsv == 0) {
+          currentFrameStatistics().clear_pass_optimized++;
           clear->~ClearEncoderData();
           clear->next = nullptr;
           clear->type = EncoderType::Null;
@@ -722,6 +741,7 @@ ArgumentEncodingContext::checkEncoderRelation(EncoderData *former, EncoderData *
               render->tex_write.merge(clear->tex_write);
           }
 
+          currentFrameStatistics().clear_pass_optimized++;
           clear->~ClearEncoderData();
           clear->next = nullptr;
           clear->type = EncoderType::Null;
@@ -775,6 +795,7 @@ ArgumentEncodingContext::checkEncoderRelation(EncoderData *former, EncoderData *
       r1->tex_read.merge(r0->tex_read);
       r1->tex_write.merge(r0->tex_write);
 
+      currentFrameStatistics().render_pass_optimized++;
       r0->~RenderEncoderData();
       r0->next = nullptr;
       r0->type = EncoderType::Null;

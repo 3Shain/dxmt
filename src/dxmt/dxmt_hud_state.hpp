@@ -4,7 +4,6 @@
 #include "Foundation/NSString.hpp"
 #include "QuartzCore/CADeveloperHUDProperties.hpp"
 #include "objc_pointer.hpp"
-#include <cstddef>
 #include <string>
 #include <vector>
 
@@ -12,7 +11,7 @@ namespace dxmt {
 
 class HUDState {
 public:
-  void initialize(const std::string &heading, size_t lines);
+  void initialize(const std::string &heading);
 
   void begin();
 

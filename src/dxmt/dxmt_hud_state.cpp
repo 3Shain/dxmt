@@ -7,33 +7,29 @@
 namespace dxmt {
 
 void
-HUDState::initialize(const std::string &heading, size_t lines) {
+HUDState::initialize(const std::string &heading) {
   auto pool = transfer(NS::AutoreleasePool::alloc()->init());
-  auto str_dxmt_version = NS::String::string("com.github.3shain.dxmt-version", NS::ASCIIStringEncoding);
+  auto str_dxmt_version = NS::String::alloc()->init("com.github.3shain.dxmt-version", NS::ASCIIStringEncoding);
   hud_->addLabel(str_dxmt_version, NS::String::string("com.apple.hud-graph.default", NS::ASCIIStringEncoding));
   hud_->updateLabel(str_dxmt_version, NS::String::string(heading.c_str(), NS::UTF8StringEncoding));
-
-  NS::String *prev = str_dxmt_version;
-
-  for (unsigned i = 0; i < lines; i++) {
-    line_labels_.push_back(transfer(
-        NS::String::alloc()->init(("com.github.3shain.dxmt-line" + std::to_string(i)).c_str(), NS::ASCIIStringEncoding)
-    ));
-    hud_->addLabel(line_labels_.back(), prev);
-    prev = line_labels_.back();
-  };
+  line_labels_.push_back(std::move(str_dxmt_version));
 }
 
 void
 HUDState::begin() {
   pool_ = transfer(NS::AutoreleasePool::alloc()->init());
-  current_line_ = 0;
+  current_line_ = 1;
 }
 
 void
 HUDState::printLine(const char *c_str) {
-  if (current_line_ >= line_labels_.size())
-    return;
+  while (current_line_ >= line_labels_.size()) {
+    NS::String *prev = line_labels_.back();
+    line_labels_.push_back(transfer(
+      NS::String::alloc()->init(("com.github.3shain.dxmt-line" + std::to_string(line_labels_.size())).c_str(), NS::ASCIIStringEncoding)
+    ));
+    hud_->addLabel(line_labels_.back(), prev);
+  }
   hud_->updateLabel(line_labels_[current_line_], NS::String::string(c_str, NS::ASCIIStringEncoding));
   current_line_++;
 }

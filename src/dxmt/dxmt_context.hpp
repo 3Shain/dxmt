@@ -15,6 +15,7 @@
 #include "dxmt_deptrack.hpp"
 #include "dxmt_occlusion_query.hpp"
 #include "dxmt_residency.hpp"
+#include "dxmt_statistics.hpp"
 #include "dxmt_texture.hpp"
 #include "log/log.hpp"
 #include "rc/util_rc_ptr.hpp"
@@ -200,17 +201,6 @@ GetResidencyMask(PipelineStage type, bool read, bool write) {
   }
   DXMT_UNREACHABLE;
 }
-
-enum class FeatureCompatibility {
-  UnsupportedGeometryDraw,
-  UnsupportedTessellationOutputPrimitive,
-  UnsupportedIndirectTessellationDraw,
-  UnsupportedGeometryTessellationDraw,
-  UnsupportedDrawAuto,
-  UnsupportedPredication,
-  UnsupportedStreamOutputAppending,
-  UnsupportedMultipleStreamOutput,
-};
 
 enum DXMT_ENCODER_LIST_OP {
   DXMT_ENCODER_LIST_OP_SWAP = 0,
@@ -538,15 +528,22 @@ public:
 
   uint64_t currentSeqId() {return seq_id_;}
 
+  uint64_t currentFrameId() {return frame_id_;}
+
+  CommandQueue& queue() { return queue_;}
+
   void
-  $$setEncodingBuffer(
-      void *cpu_buffer, uint64_t cpu_buffer_offset, MTL::Buffer *gpu_buffer, uint64_t gpu_bufer_offset, uint64_t seq_id
+  $$setEncodingContext(
+      void *cpu_buffer, uint64_t cpu_buffer_offset, 
+      MTL::Buffer *gpu_buffer, uint64_t gpu_bufer_offset, 
+      uint64_t seq_id, uint64_t frame_id
   ) {
     cpu_buffer_ = cpu_buffer;
     cpu_buffer_offset_ = cpu_buffer_offset;
     gpu_buffer_ = gpu_buffer;
     gpu_bufer_offset_ = gpu_bufer_offset;
     seq_id_ = seq_id;
+    frame_id_ = frame_id;
   }
 
   void bumpVisibilityResultOffset();
@@ -567,16 +564,12 @@ public:
     return deferred_visibility_query_stack_.back()[query_id];
   }
 
+  FrameStatistics&
+  currentFrameStatistics();
+
   void
   setCompatibilityFlag(FeatureCompatibility flag) {
-    compatibility_flag_.set(flag);
-  }
-
-  Flags<FeatureCompatibility>
-  clearCompatibilityFlag() {
-    auto ret = compatibility_flag_;
-    compatibility_flag_.clrAll();
-    return ret;
+    currentFrameStatistics().compatibility_flags.set(flag);
   }
 
   ArgumentEncodingContext(CommandQueue &queue, MTL::Device *device);
@@ -616,6 +609,7 @@ private:
   MTL::Buffer *gpu_buffer_;
   uint64_t gpu_bufer_offset_;
   uint64_t seq_id_;
+  uint64_t frame_id_;
 
   VisibilityResultOffsetBumpState vro_state_;
   std::vector<Rc<VisibilityResultQuery>> pending_queries_;
@@ -624,7 +618,7 @@ private:
 
   std::vector<Rc<VisibilityResultQuery> *> deferred_visibility_query_stack_;
 
-  CommandQueue& queue;
+  CommandQueue& queue_;
 };
 
 template <>

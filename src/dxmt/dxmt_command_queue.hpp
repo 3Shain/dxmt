@@ -11,6 +11,7 @@
 #include "dxmt_context.hpp"
 #include "dxmt_occlusion_query.hpp"
 #include "dxmt_ring_bump_allocator.hpp"
+#include "dxmt_statistics.hpp"
 #include "log/log.hpp"
 #include "objc_pointer.hpp"
 #include "thread.hpp"
@@ -113,12 +114,13 @@ public:
 
   void
   encode(MTL::CommandBuffer *cmdbuf, ArgumentEncodingContext &enc) {
-    enc.$$setEncodingBuffer(
+    enc.$$setEncodingContext(
       cpu_argument_heap,
       cpu_arugment_heap_offset,
       gpu_argument_heap.ptr(),
       gpu_arugment_heap_offset,
-      chunk_id
+      chunk_id,
+      frame_
     );
     list_enc.execute(enc);
     attached_cmdbuf = cmdbuf;
@@ -201,6 +203,7 @@ public:
   ArgumentEncodingContext argument_encoding_ctx;
   Obj<MTL::SharedEvent> event;
   std::uint64_t current_event_seq_id = 1;
+  FrameStatisticsContainer statistics;
 
   CommandQueue(MTL::Device *device);
 
@@ -249,12 +252,18 @@ public:
     return frame_count + 1;
   }
 
+  FrameStatistics& CurrentFrameStatistics() {
+    return statistics.at(frame_count);
+  }
+
   void
   PresentBoundary() {
+    statistics.compute(frame_count);
     frame_count++;
     // After present N-th frame (N starts from 1), wait for (N - max_latency)-th frame to finish rendering 
     if (likely(frame_count > max_latency_))
       frame_latency_fence_.wait(frame_count - max_latency_);
+    statistics.at(frame_count).reset();
   }
 
   uint32_t GetMaxLatency() { return max_latency_; }

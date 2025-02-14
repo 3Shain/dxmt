@@ -9,6 +9,7 @@
 #include "d3d11_context.hpp"
 #include "dxmt_context.hpp"
 #include "dxmt_hud_state.hpp"
+#include "dxmt_statistics.hpp"
 #include "log/log.hpp"
 #include "mtld11_resource.hpp"
 #include "d3d11_device.hpp"
@@ -19,6 +20,7 @@
 #include "wsi_window.hpp"
 #include "dxmt_info.hpp"
 #include <cfloat>
+#include <format>
 
 /**
 Metal support at most 3 swapchain
@@ -75,7 +77,7 @@ public:
                            (double)current_mode.refreshRate.denominator;
     }
 
-    hud.initialize(GetVersionDescriptionText(11, m_device->GetFeatureLevel()), 1);
+    hud.initialize(GetVersionDescriptionText(11, m_device->GetFeatureLevel()));
 
     backbuffer_desc_ = D3D11_TEXTURE2D_DESC1 {
       .Width = desc_.Width,
@@ -513,14 +515,14 @@ public:
         auto drawable = layer_weak_->nextDrawable();
         ctx.present(upscaled, drawable, vsync_duration);
         ReleaseSemaphore(present_semaphore_, 1, nullptr);
-        this->UpdateCompatibilityFlagOnHud(ctx.clearCompatibilityFlag());
+        this->UpdateStatistics(ctx.queue().statistics, ctx.currentFrameId());
       });
     } else {
       chunk->emitcc([this, vsync_duration, backbuffer = backbuffer_->texture()](ArgumentEncodingContext &ctx) mutable {
         auto drawable = layer_weak_->nextDrawable();
         ctx.present(backbuffer, drawable, vsync_duration);
         ReleaseSemaphore(present_semaphore_, 1, nullptr);
-        this->UpdateCompatibilityFlagOnHud(ctx.clearCompatibilityFlag());
+        this->UpdateStatistics(ctx.queue().statistics, ctx.currentFrameId());
       });
     }
     chunk->signal_frame_latency_fence_ = cmd_queue.CurrentFrameSeq();
@@ -532,8 +534,10 @@ public:
     return hr;
   };
 
-  void UpdateCompatibilityFlagOnHud(Flags<FeatureCompatibility> flags) {
+  void UpdateStatistics(const FrameStatisticsContainer& statistics, uint64_t frame_id) {
     hud.begin();
+    auto &frame = statistics.at(frame_id - 1); // show the previous one frame statistics
+    Flags<FeatureCompatibility> flags = frame.compatibility_flags;
     char text[] = "---------------------------";
     if (flags.test(FeatureCompatibility::UnsupportedGeometryDraw)) {
       text[3] = 'G';
@@ -565,6 +569,23 @@ public:
       text[22] = 'S';
     }
     hud.printLine(text);
+    hud.printLine(std::format(
+        "Commit: {:2} -{:4.1f} -{:4.1f}",
+        std::min(frame.command_buffer_count, 99u),
+        std::min(statistics.average().commit_interval.count() / 1000000.0,
+                 99.9),
+        std::min(statistics.max().commit_interval.count() / 1000000.0, 99.9)));
+    hud.printLine(std::format(
+        "Sync:   {:2} -{:4.1f} -{:4.1f}", std::min(frame.sync_count, 99u),
+        std::min(statistics.average().sync_interval.count() / 1000000.0, 99.9),
+        std::min(statistics.max().sync_interval.count() / 1000000.0, 99.9)));
+    hud.printLine(std::format(
+        "Render:{:3}+{:<3} Clear:{:3}+{:<2}",
+        std::min(frame.render_pass_count - frame.render_pass_optimized,
+                 999u),
+        std::min(frame.render_pass_optimized, 999u),
+        std::min(frame.clear_pass_count - frame.clear_pass_optimized, 999u),
+        std::min(frame.clear_pass_optimized, 99u)));
     hud.end();
   }
 
