@@ -538,7 +538,7 @@ public:
     D3D11_UNORDERED_ACCESS_VIEW_DESC desc;
     pUAV->GetDesc(&desc);
     if (desc.ViewDimension == D3D11_UAV_DIMENSION_BUFFER)
-      Emit([=, buffer = pUAV->buffer(), viewId = pUAV->viewId(), slice = pUAV->bufferSlice(),
+      EmitOP([=, buffer = pUAV->buffer(), viewId = pUAV->viewId(), slice = pUAV->bufferSlice(),
             value = std::array<uint32_t, 4>({Values[0], Values[1], Values[2], Values[3]}),
             is_raw = desc.Buffer.Flags & D3D11_BUFFER_UAV_FLAG_RAW,
             format = desc.Format](ArgumentEncodingContext &enc) {
@@ -563,7 +563,7 @@ public:
         }
       });
     else
-      Emit([=, texture = pUAV->texture(), viewId = pUAV->viewId(),
+      EmitOP([=, texture = pUAV->texture(), viewId = pUAV->viewId(),
             value = std::array<uint32_t, 4>({Values[0], Values[1], Values[2], Values[3]}),
             dimension = desc.ViewDimension](ArgumentEncodingContext &enc) mutable {
         auto view_format = texture->view(viewId)->pixelFormat();
@@ -614,7 +614,7 @@ public:
     D3D11_UNORDERED_ACCESS_VIEW_DESC desc;
     pUAV->GetDesc(&desc);
     if (desc.ViewDimension == D3D11_UAV_DIMENSION_BUFFER)
-      Emit([=, buffer = pUAV->buffer(), viewId = pUAV->viewId(), slice = pUAV->bufferSlice(),
+      EmitOP([=, buffer = pUAV->buffer(), viewId = pUAV->viewId(), slice = pUAV->bufferSlice(),
             value = std::array<float, 4>({Values[0], Values[1], Values[2], Values[3]}),
             is_raw = desc.Buffer.Flags & D3D11_BUFFER_UAV_FLAG_RAW,
             format = desc.Format](ArgumentEncodingContext &enc) {
@@ -639,7 +639,7 @@ public:
         }
       });
     else
-      Emit([=, texture = pUAV->texture(), viewId = pUAV->viewId(), dimension = desc.ViewDimension,
+      EmitOP([=, texture = pUAV->texture(), viewId = pUAV->viewId(), dimension = desc.ViewDimension,
             value = std::array<float, 4>({Values[0], Values[1], Values[2], Values[3]})](ArgumentEncodingContext &enc) {
         switch (dimension) {
         default:
@@ -714,7 +714,7 @@ public:
         return;
       }
       SwitchToBlitEncoder(CommandBufferState::BlitEncoderActive);
-      Emit([tex = srv->texture(), viewId = srv->viewId()](ArgumentEncodingContext &enc) {
+      EmitOP([tex = srv->texture(), viewId = srv->viewId()](ArgumentEncodingContext &enc) {
         auto texture = enc.access(tex, viewId, DXMT_ENCODER_RESOURCE_ACESS_READ | DXMT_ENCODER_RESOURCE_ACESS_WRITE);
         if (texture->mipmapLevelCount() > 1) {
           enc.encodeBlitCommand([texture](BlitCommandContext &ctx) { ctx.encoder->generateMipmaps(texture); });
@@ -846,7 +846,7 @@ public:
     if (auto dst_bind = reinterpret_cast<D3D11ResourceCommon *>(pDstBuffer)) {
       if (auto uav = static_cast<D3D11UnorderedAccessView *>(pSrcView)) {
         SwitchToBlitEncoder(CommandBufferState::BlitEncoderActive);
-        Emit([=, dst = dst_bind->buffer(), counter = uav->counter()](ArgumentEncodingContext &enc) {
+        EmitOP([=, dst = dst_bind->buffer(), counter = uav->counter()](ArgumentEncodingContext &enc) {
           auto dst_buffer = enc.access(dst, DstAlignedByteOffset, 4, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
           auto counter_buffer = enc.access(counter, 0, 4, DXMT_ENCODER_RESOURCE_ACESS_READ);
           enc.encodeBlitCommand([=](BlitCommandContext &ctx) {
@@ -914,7 +914,7 @@ public:
         auto [ptr, staging_buffer, offset] = AllocateStagingBuffer(copy_len, 16);
         memcpy(ptr, pSrcData, copy_len);
         SwitchToBlitEncoder(CommandBufferState::UpdateBlitEncoderActive);
-        Emit([staging_buffer, offset, dst = bindable->buffer(), copy_offset, copy_len](ArgumentEncodingContext &enc) {
+        EmitOP([staging_buffer, offset, dst = bindable->buffer(), copy_offset, copy_len](ArgumentEncodingContext &enc) {
           auto dst_buffer = enc.access(dst, copy_offset, copy_len, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
           enc.encodeBlitCommand([&, dst_buffer](BlitCommandContext &ctx) {
             ctx.encoder->copyFromBuffer(staging_buffer, offset, dst_buffer, copy_offset, copy_len);
@@ -964,7 +964,7 @@ public:
     if (ControlPointCount) {
       return TessellationDraw(ControlPointCount, VertexCount, 1, StartVertexLocation, 0);
     }
-    Emit([Primitive, StartVertexLocation, VertexCount](ArgumentEncodingContext& enc) {
+    EmitOP([Primitive, StartVertexLocation, VertexCount](ArgumentEncodingContext& enc) {
       enc.bumpVisibilityResultOffset();
       enc.encodeRenderCommand([&](RenderCommandContext& ctx) {
         ctx.encoder->drawPrimitives(Primitive, StartVertexLocation, VertexCount);
@@ -988,7 +988,7 @@ public:
     auto IndexBufferOffset =
         state_.InputAssembler.IndexBufferOffset +
         StartIndexLocation * (state_.InputAssembler.IndexBufferFormat == DXGI_FORMAT_R32_UINT ? 4 : 2);
-    Emit([IndexType, IndexBufferOffset, Primitive, IndexCount, BaseVertexLocation](ArgumentEncodingContext &enc) {
+    EmitOP([IndexType, IndexBufferOffset, Primitive, IndexCount, BaseVertexLocation](ArgumentEncodingContext &enc) {
       enc.bumpVisibilityResultOffset();
       enc.encodeRenderCommand([&, index_buffer = Obj(enc.currentIndexBuffer())](RenderCommandContext &ctx) {
         assert(index_buffer);
@@ -1013,7 +1013,7 @@ public:
           ControlPointCount, VertexCountPerInstance, InstanceCount, StartVertexLocation, StartInstanceLocation
       );
     }
-    Emit([Primitive, StartVertexLocation, VertexCountPerInstance, InstanceCount,
+    EmitOP([Primitive, StartVertexLocation, VertexCountPerInstance, InstanceCount,
           StartInstanceLocation](ArgumentEncodingContext &enc) {
       enc.bumpVisibilityResultOffset();
       enc.encodeRenderCommand([&](RenderCommandContext &ctx) {
@@ -1047,7 +1047,7 @@ public:
     auto IndexBufferOffset =
         state_.InputAssembler.IndexBufferOffset +
         StartIndexLocation * (state_.InputAssembler.IndexBufferFormat == DXGI_FORMAT_R32_UINT ? 4 : 2);
-    Emit([IndexType, IndexBufferOffset, Primitive, InstanceCount, BaseVertexLocation, StartInstanceLocation,
+    EmitOP([IndexType, IndexBufferOffset, Primitive, InstanceCount, BaseVertexLocation, StartInstanceLocation,
           IndexCountPerInstance](ArgumentEncodingContext &enc) {
       enc.bumpVisibilityResultOffset();
       enc.encodeRenderCommand([&, index_buffer = Obj(enc.currentIndexBuffer())](RenderCommandContext &ctx) {
@@ -1067,7 +1067,7 @@ public:
   ) {
     assert(NumControlPoint);
 
-    Emit([=](ArgumentEncodingContext &enc) {
+    EmitOP([=](ArgumentEncodingContext &enc) {
       auto offset = enc.allocate_gpu_heap(4 * 5, 4);
       DXMT_DRAW_ARGUMENTS *draw_arugment = enc.get_gpu_heap_pointer<DXMT_DRAW_ARGUMENTS>(offset);
       draw_arugment->BaseVertex = StartVertexLocation;
@@ -1125,7 +1125,7 @@ public:
         state_.InputAssembler.IndexBufferOffset +
         StartIndexLocation * (state_.InputAssembler.IndexBufferFormat == DXGI_FORMAT_R32_UINT ? 4 : 2);
 
-    Emit([=](ArgumentEncodingContext &enc) {
+    EmitOP([=](ArgumentEncodingContext &enc) {
       auto offset = enc.allocate_gpu_heap(4 * 5, 4);
       DXMT_DRAW_ARGUMENTS *draw_arugment = enc.get_gpu_heap_pointer<DXMT_DRAW_ARGUMENTS>(offset);
       draw_arugment->BaseVertex = BaseVertexLocation;
@@ -1183,7 +1183,7 @@ public:
     if (!PreDraw<true>())
       return;
     if (ControlPointCount) {
-      Emit([](ArgumentEncodingContext &enc) {
+      EmitST([](ArgumentEncodingContext &enc) {
         enc.setCompatibilityFlag(FeatureCompatibility::UnsupportedIndirectTessellationDraw);
       });
       return;
@@ -1192,7 +1192,7 @@ public:
         state_.InputAssembler.IndexBufferFormat == DXGI_FORMAT_R32_UINT ? MTL::IndexTypeUInt32 : MTL::IndexTypeUInt16;
     auto IndexBufferOffset = state_.InputAssembler.IndexBufferOffset;
     if (auto bindable = reinterpret_cast<D3D11ResourceCommon *>(pBufferForArgs)) {
-      Emit([IndexType, IndexBufferOffset, Primitive, ArgBuffer = bindable->buffer(),
+      EmitOP([IndexType, IndexBufferOffset, Primitive, ArgBuffer = bindable->buffer(),
             AlignedByteOffsetForArgs](ArgumentEncodingContext &enc) {
         auto buffer = enc.access(ArgBuffer, AlignedByteOffsetForArgs, 20, DXMT_ENCODER_RESOURCE_ACESS_READ);
         enc.bumpVisibilityResultOffset();
@@ -1214,13 +1214,13 @@ public:
     if (!PreDraw<true>())
       return;
     if (ControlPointCount) {
-      Emit([](ArgumentEncodingContext &enc) {
+      EmitST([](ArgumentEncodingContext &enc) {
         enc.setCompatibilityFlag(FeatureCompatibility::UnsupportedIndirectTessellationDraw);
       });
       return;
     }
     if (auto bindable = reinterpret_cast<D3D11ResourceCommon *>(pBufferForArgs)) {
-      Emit([Primitive, ArgBuffer = bindable->buffer(), AlignedByteOffsetForArgs](ArgumentEncodingContext &enc) {
+      EmitOP([Primitive, ArgBuffer = bindable->buffer(), AlignedByteOffsetForArgs](ArgumentEncodingContext &enc) {
         auto buffer = enc.access(ArgBuffer, AlignedByteOffsetForArgs, 20, DXMT_ENCODER_RESOURCE_ACESS_READ);
         enc.bumpVisibilityResultOffset();
         enc.encodeRenderCommand([&, buffer](RenderCommandContext &ctx) {
@@ -1232,14 +1232,14 @@ public:
 
   void
   DrawAuto() override {
-    Emit([](ArgumentEncodingContext &enc) { enc.setCompatibilityFlag(FeatureCompatibility::UnsupportedDrawAuto); });
+    EmitST([](ArgumentEncodingContext &enc) { enc.setCompatibilityFlag(FeatureCompatibility::UnsupportedDrawAuto); });
   }
 
   void
   Dispatch(UINT ThreadGroupCountX, UINT ThreadGroupCountY, UINT ThreadGroupCountZ) override {
     if (!PreDispatch())
       return;
-    Emit([ThreadGroupCountX, ThreadGroupCountY, ThreadGroupCountZ](ArgumentEncodingContext &enc) {
+    EmitOP([ThreadGroupCountX, ThreadGroupCountY, ThreadGroupCountZ](ArgumentEncodingContext &enc) {
       enc.encodeComputeCommand([&](ComputeCommandContext &ctx) {
         ctx.encoder->dispatchThreadgroups(
             MTL::Size::Make(ThreadGroupCountX, ThreadGroupCountY, ThreadGroupCountZ), ctx.threadgroup_size
@@ -1253,7 +1253,7 @@ public:
     if (!PreDispatch())
       return;
     if (auto bindable = reinterpret_cast<D3D11ResourceCommon *>(pBufferForArgs)) {
-      Emit([AlignedByteOffsetForArgs, ArgBuffer = bindable->buffer()](ArgumentEncodingContext &enc) {
+      EmitOP([AlignedByteOffsetForArgs, ArgBuffer = bindable->buffer()](ArgumentEncodingContext &enc) {
         auto buffer = enc.access(ArgBuffer, AlignedByteOffsetForArgs, 12, DXMT_ENCODER_RESOURCE_ACESS_READ);
         enc.encodeComputeCommand([&, buffer = Obj(buffer)](ComputeCommandContext &ctx) {
           ctx.encoder->dispatchThreadgroups(buffer, AlignedByteOffsetForArgs, ctx.threadgroup_size);
@@ -1284,7 +1284,7 @@ public:
     state_.predicate = pPredicate;
     state_.predicate_value = PredicateValue;
 
-    Emit([](ArgumentEncodingContext &enc) { enc.setCompatibilityFlag(FeatureCompatibility::UnsupportedPredication); });
+    EmitST([](ArgumentEncodingContext &enc) { enc.setCompatibilityFlag(FeatureCompatibility::UnsupportedPredication); });
   }
 
   //-----------------------------------------------------------------------------
@@ -1341,12 +1341,12 @@ public:
   IASetIndexBuffer(ID3D11Buffer *pIndexBuffer, DXGI_FORMAT Format, UINT Offset) override {
     if (auto expected = reinterpret_cast<D3D11ResourceCommon *>(pIndexBuffer)) {
       state_.InputAssembler.IndexBuffer = expected;
-      Emit([buffer = state_.InputAssembler.IndexBuffer->buffer()](ArgumentEncodingContext &enc) mutable {
+      EmitST([buffer = state_.InputAssembler.IndexBuffer->buffer()](ArgumentEncodingContext &enc) mutable {
         enc.bindIndexBuffer(forward_rc(buffer));
       });
     } else {
       state_.InputAssembler.IndexBuffer = nullptr;
-      Emit([](ArgumentEncodingContext &enc) { enc.bindIndexBuffer({}); });
+      EmitST([](ArgumentEncodingContext &enc) { enc.bindIndexBuffer({}); });
     }
     state_.InputAssembler.IndexBufferFormat = Format;
     state_.InputAssembler.IndexBufferOffset = Offset;
@@ -2229,7 +2229,8 @@ public:
 
 #pragma region Internal
 
-  template <CommandWithContext<ArgumentEncodingContext> cmd> void Emit(cmd &&fn);
+  template <CommandWithContext<ArgumentEncodingContext> cmd> void EmitST(cmd &&fn);
+  template <CommandWithContext<ArgumentEncodingContext> cmd> void EmitOP(cmd &&fn);
 
   template <typename T> moveonly_list<T> AllocateCommandData(size_t n = 1);
 
@@ -2256,12 +2257,12 @@ public:
       return true;
 
     if (reflection->NumConstantBuffers && dirty_cbuffer) {
-      Emit([reflection](ArgumentEncodingContext &enc) { enc.encodeConstantBuffers<stage, Tessellation>(reflection); });
+      EmitST([reflection](ArgumentEncodingContext &enc) { enc.encodeConstantBuffers<stage, Tessellation>(reflection); });
       ShaderStage.ConstantBuffers.clear_dirty();
     }
 
     if (reflection->NumArguments && (dirty_sampler || dirty_srv || dirty_uav)) {
-      Emit([reflection](ArgumentEncodingContext &enc) { enc.encodeShaderResources<stage, Tessellation>(reflection); });
+      EmitST([reflection](ArgumentEncodingContext &enc) { enc.encodeShaderResources<stage, Tessellation>(reflection); });
       ShaderStage.Samplers.clear_dirty();
       ShaderStage.SRVs.clear_dirty();
       if (stage == PipelineStage::Pixel || stage == PipelineStage::Compute) {
@@ -2285,10 +2286,10 @@ public:
       return;
 
     if (cmdbuf_state == CommandBufferState::TessellationRenderPipelineReady) {
-      Emit([slot_mask](ArgumentEncodingContext &enc) { enc.encodeVertexBuffers<true>(slot_mask); });
+      EmitST([slot_mask](ArgumentEncodingContext &enc) { enc.encodeVertexBuffers<true>(slot_mask); });
     }
     if (cmdbuf_state == CommandBufferState::RenderPipelineReady) {
-      Emit([slot_mask](ArgumentEncodingContext &enc) { enc.encodeVertexBuffers<false>(slot_mask); });
+      EmitST([slot_mask](ArgumentEncodingContext &enc) { enc.encodeVertexBuffers<false>(slot_mask); });
     }
 
     VertexBuffers.clear_dirty_mask(slot_mask);
@@ -2394,7 +2395,7 @@ public:
               pFirstConstant[slot - StartSlot] != entry.FirstConstant) {
             ShaderStage.ConstantBuffers.set_dirty(slot);
             entry.FirstConstant = pFirstConstant[slot - StartSlot];
-            Emit([=, offset = entry.FirstConstant
+            EmitST([=, offset = entry.FirstConstant
                                 << 4](ArgumentEncodingContext &enc) mutable {
               enc.bindConstantBufferOffset<Stage>(slot, offset);
             });
@@ -2414,12 +2415,12 @@ public:
           entry.NumConstants = desc.ByteWidth >> 4;
         }
         entry.Buffer = reinterpret_cast<D3D11ResourceCommon *>(pConstantBuffer);
-        Emit([=, buffer = entry.Buffer->buffer(), offset = entry.FirstConstant << 4](ArgumentEncodingContext &enc
+        EmitST([=, buffer = entry.Buffer->buffer(), offset = entry.FirstConstant << 4](ArgumentEncodingContext &enc
              ) mutable { enc.bindConstantBuffer<Stage>(slot, offset, forward_rc(buffer)); });
       } else {
         // BIND NULL
         if (ShaderStage.ConstantBuffers.unbind(slot)) {
-          Emit([=](ArgumentEncodingContext &enc) { enc.bindConstantBuffer<Stage>(slot, 0, {}); });
+          EmitST([=](ArgumentEncodingContext &enc) { enc.bindConstantBuffer<Stage>(slot, 0, {}); });
         }
       }
     }
@@ -2466,19 +2467,19 @@ public:
           continue;
         entry.SRV = pView;
         if (auto buffer = entry.SRV->buffer()) {
-          Emit([=, buffer = std::move(buffer), viewId = pView->viewId(),
+          EmitST([=, buffer = std::move(buffer), viewId = pView->viewId(),
                 slice = pView->bufferSlice()](ArgumentEncodingContext &enc) mutable {
             enc.bindBuffer<Stage>(slot, forward_rc(buffer), viewId, slice);
           });
         } else {
-          Emit([=, texture = pView->texture(), viewId = pView->viewId()](ArgumentEncodingContext &enc) mutable {
+          EmitST([=, texture = pView->texture(), viewId = pView->viewId()](ArgumentEncodingContext &enc) mutable {
             enc.bindTexture<Stage>(slot, forward_rc(texture), viewId);
           });
         }
       } else {
         // BIND NULL
         if (ShaderStage.SRVs.unbind(slot)) {
-          Emit([=](ArgumentEncodingContext& enc) {
+          EmitST([=](ArgumentEncodingContext& enc) {
             enc.bindBuffer<Stage>(slot, {}, 0, {});
           });
         }
@@ -2515,7 +2516,7 @@ public:
           continue;
         if (auto expected = com_cast<IMTLD3D11SamplerState>(pSampler)) {
           entry.Sampler = expected.ptr();
-          Emit([=, sampler = entry.Sampler](ArgumentEncodingContext &enc) {
+          EmitST([=, sampler = entry.Sampler](ArgumentEncodingContext &enc) {
             enc.bindSampler<Stage>(Slot, sampler->GetSamplerState(), sampler->GetLODBias());
           });
         } else {
@@ -2524,7 +2525,7 @@ public:
       } else {
         // BIND NULL
         if (ShaderStage.Samplers.unbind(Slot)) {
-          Emit([=](ArgumentEncodingContext& enc) {
+          EmitST([=](ArgumentEncodingContext& enc) {
             enc.bindSampler<Stage>(Slot, nullptr, 0);
           });
         }
@@ -2549,7 +2550,7 @@ public:
 
   void
   UpdateUAVCounter(D3D11UnorderedAccessView *uav, uint32_t value) {
-    Emit([counter = uav->counter(), value](ArgumentEncodingContext &enc) {
+    EmitST([counter = uav->counter(), value](ArgumentEncodingContext &enc) {
       if (!counter.ptr())
         return;
       auto new_counter = counter->allocate(BufferAllocationFlag::GpuManaged);
@@ -2599,12 +2600,12 @@ public:
         }
         entry.View = pUAV;
         if (auto buffer = pUAV->buffer()) {
-          Emit([=, buffer = std::move(buffer), viewId = pUAV->viewId(), counter = pUAV->counter(),
+          EmitST([=, buffer = std::move(buffer), viewId = pUAV->viewId(), counter = pUAV->counter(),
                 slice = pUAV->bufferSlice()](ArgumentEncodingContext &enc) mutable {
             enc.bindOutputBuffer<Stage>(slot, forward_rc(buffer), viewId, forward_rc(counter), slice);
           });
         } else {
-          Emit([=, texture = pUAV->texture(), viewId = pUAV->viewId()](ArgumentEncodingContext &enc) mutable {
+          EmitST([=, texture = pUAV->texture(), viewId = pUAV->viewId()](ArgumentEncodingContext &enc) mutable {
             enc.bindOutputTexture<Stage>(slot, forward_rc(texture), viewId);
           });
         }
@@ -2617,7 +2618,7 @@ public:
         //               });
       } else {
         if (binding_set.unbind(slot)) {
-          Emit([=](ArgumentEncodingContext &enc) { enc.bindOutputBuffer<Stage>(slot, {}, 0, {}, {}); });
+          EmitST([=](ArgumentEncodingContext &enc) { enc.bindOutputBuffer<Stage>(slot, {}, 0, {}, {}); });
         }
       }
     }
@@ -2645,7 +2646,7 @@ public:
             VertexBuffers.set_dirty(slot);
             entry.Offset = pOffsets[slot - StartSlot];
           }
-          Emit([=, offset = entry.Offset,
+          EmitST([=, offset = entry.Offset,
                 stride = entry.Stride](ArgumentEncodingContext &enc) mutable {
             enc.bindVertexBufferOffset(slot, offset, stride);
           });
@@ -2664,13 +2665,13 @@ public:
           entry.Stride = 0;
         }
         entry.Buffer = reinterpret_cast<D3D11ResourceCommon *>(pVertexBuffer);
-          Emit([=, buffer = entry.Buffer->buffer(), offset = entry.Offset,
+          EmitST([=, buffer = entry.Buffer->buffer(), offset = entry.Offset,
                 stride = entry.Stride](ArgumentEncodingContext &enc) mutable {
             enc.bindVertexBuffer(slot, offset, stride, forward_rc(buffer));
         });
       } else {
         if (VertexBuffers.unbind(slot)) {
-          Emit([=](ArgumentEncodingContext& enc) {
+          EmitST([=](ArgumentEncodingContext& enc) {
             enc.bindVertexBuffer(slot, 0, 0, {});
           });
         }
@@ -2732,7 +2733,7 @@ public:
         // copy from device to staging
         UseCopyDestination(staging_dst);
         SwitchToBlitEncoder(CommandBufferState::ReadbackBlitEncoderActive);
-        Emit([src_ = src->buffer(), dst = std::move(staging_dst), DstX, SrcBox](ArgumentEncodingContext &enc) {
+        EmitOP([src_ = src->buffer(), dst = std::move(staging_dst), DstX, SrcBox](ArgumentEncodingContext &enc) {
           auto src = enc.access(src_, SrcBox.left, SrcBox.right - SrcBox.left, DXMT_ENCODER_RESOURCE_ACESS_READ);
           enc.encodeBlitCommand([=, &SrcBox, dst = dst->current](BlitCommandContext &ctx) {
             ctx.encoder->copyFromBuffer(src, SrcBox.left, dst, DstX, SrcBox.right - SrcBox.left);
@@ -2746,7 +2747,7 @@ public:
       if (auto staging_src = GetStagingResource(pSrcResource, SrcSubresource)) {
         UseCopySource(staging_src);
         SwitchToBlitEncoder(CommandBufferState::UpdateBlitEncoderActive);
-        Emit([dst_ = dst->buffer(), src = std::move(staging_src), DstX, SrcBox](ArgumentEncodingContext &enc) {
+        EmitOP([dst_ = dst->buffer(), src = std::move(staging_src), DstX, SrcBox](ArgumentEncodingContext &enc) {
           auto dst = enc.access(dst_, DstX, SrcBox.right - SrcBox.left, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
           enc.encodeBlitCommand([=, &SrcBox, src = src->current](BlitCommandContext &ctx) {
             ctx.encoder->copyFromBuffer(src, SrcBox.left, dst, DstX, SrcBox.right - SrcBox.left);
@@ -2755,7 +2756,7 @@ public:
       } else if (auto src = reinterpret_cast<D3D11ResourceCommon *>(pSrcResource)) {
         // on-device copy
         SwitchToBlitEncoder(CommandBufferState::BlitEncoderActive);
-        Emit([dst_ = dst->buffer(), src_ = src->buffer(), DstX,
+        EmitOP([dst_ = dst->buffer(), src_ = src->buffer(), DstX,
                                SrcBox](ArgumentEncodingContext& enc) {
           auto src = enc.access(src_, SrcBox.left, SrcBox.right - SrcBox.left, DXMT_ENCODER_RESOURCE_ACESS_READ);
           auto dst = enc.access(dst_, DstX, SrcBox.right - SrcBox.left, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
@@ -2793,7 +2794,7 @@ public:
       } else if (auto src = GetTexture(cmd.pSrc)) {
         UseCopyDestination(staging_dst);
         SwitchToBlitEncoder(CommandBufferState::ReadbackBlitEncoderActive);
-        Emit([src_ = std::move(src), dst = std::move(staging_dst),
+        EmitOP([src_ = std::move(src), dst = std::move(staging_dst),
               cmd = std::move(cmd)](ArgumentEncodingContext &enc) {
           auto src = enc.access(src_, cmd.Src.MipLevel, cmd.Src.ArraySlice, DXMT_ENCODER_RESOURCE_ACESS_READ);
           auto offset = cmd.DstOrigin.z * dst->bytesPerImage + cmd.DstOrigin.y * dst->bytesPerRow +
@@ -2814,7 +2815,7 @@ public:
         // copy from staging to default
         UseCopySource(staging_src);
         SwitchToBlitEncoder(CommandBufferState::UpdateBlitEncoderActive);
-        Emit([dst_ = std::move(dst), src =std::move(staging_src),
+        EmitOP([dst_ = std::move(dst), src =std::move(staging_src),
               cmd = std::move(cmd)](ArgumentEncodingContext &enc) {
           auto dst = enc.access(dst_, cmd.Dst.MipLevel, cmd.Dst.ArraySlice, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
           uint32_t offset;
@@ -2835,7 +2836,7 @@ public:
       } else if (auto src = GetTexture(cmd.pSrc)) {
         // on-device copy
         SwitchToBlitEncoder(CommandBufferState::BlitEncoderActive);
-        Emit([dst_ = std::move(dst), src_ = std::move(src), cmd = std::move(cmd)](ArgumentEncodingContext &enc) {
+        EmitOP([dst_ = std::move(dst), src_ = std::move(src), cmd = std::move(cmd)](ArgumentEncodingContext &enc) {
           auto src_format = src_->pixelFormat();
           auto dst_format = dst_->pixelFormat();
           auto src = enc.access(src_, cmd.Src.MipLevel, cmd.Src.ArraySlice, DXMT_ENCODER_RESOURCE_ACESS_READ);
@@ -2892,7 +2893,7 @@ public:
       } else if (auto src = GetTexture(cmd.pSrc)) {
         // on-device copy
         SwitchToBlitEncoder(CommandBufferState::BlitEncoderActive);
-        Emit([dst_ = std::move(dst), src_ = std::move(src), cmd = std::move(cmd)](ArgumentEncodingContext &enc) {
+        EmitOP([dst_ = std::move(dst), src_ = std::move(src), cmd = std::move(cmd)](ArgumentEncodingContext &enc) {
           auto src = enc.access(src_, cmd.Src.MipLevel, cmd.Src.ArraySlice, DXMT_ENCODER_RESOURCE_ACESS_READ);
           auto dst = enc.access(dst_, cmd.Dst.MipLevel, cmd.Dst.ArraySlice, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
           auto block_w = (align(cmd.SrcSize.width, 4u) >> 2);
@@ -2930,7 +2931,7 @@ public:
       } else if (auto src = GetTexture(cmd.pSrc)) {
         // on-device copy
         SwitchToBlitEncoder(CommandBufferState::BlitEncoderActive);
-        Emit([dst_ = std::move(dst), src_ = std::move(src), cmd = std::move(cmd)](ArgumentEncodingContext &enc) {
+        EmitOP([dst_ = std::move(dst), src_ = std::move(src), cmd = std::move(cmd)](ArgumentEncodingContext &enc) {
           auto src = enc.access(src_, cmd.Src.MipLevel, cmd.Src.ArraySlice, DXMT_ENCODER_RESOURCE_ACESS_READ);
           auto dst = enc.access(dst_, cmd.Dst.MipLevel, cmd.Dst.ArraySlice, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
           auto bytes_per_row = cmd.SrcSize.width * cmd.SrcFormat.BytesPerTexel;
@@ -2988,7 +2989,7 @@ public:
         }
       }
       SwitchToBlitEncoder(CommandBufferState::UpdateBlitEncoderActive);
-      Emit([staging_buffer, offset, dst = std::move(dst), cmd = std::move(cmd),
+      EmitOP([staging_buffer, offset, dst = std::move(dst), cmd = std::move(cmd),
             bytes_per_depth_slice](ArgumentEncodingContext &enc) {
         auto texture = enc.access(dst, cmd.Dst.MipLevel, cmd.Dst.ArraySlice, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
         enc.encodeBlitCommand([&, texture](BlitCommandContext &ctx) {
@@ -3034,21 +3035,21 @@ public:
       //   ctx.dsv_planar_flags = 0;
       // });
       // vro_state.endEncoder();
-      Emit([](ArgumentEncodingContext& enc) {
+      EmitST([](ArgumentEncodingContext& enc) {
         enc.endPass();
       });
       break;
     }
     case CommandBufferState::ComputeEncoderActive:
     case CommandBufferState::ComputePipelineReady:
-      Emit([](ArgumentEncodingContext& enc) {
+      EmitST([](ArgumentEncodingContext& enc) {
         enc.endPass();
       });
       break;
     case CommandBufferState::UpdateBlitEncoderActive:
     case CommandBufferState::ReadbackBlitEncoderActive:
     case CommandBufferState::BlitEncoderActive:
-      Emit([](ArgumentEncodingContext& enc) {
+      EmitST([](ArgumentEncodingContext& enc) {
         enc.endPass();
       });
       break;
@@ -3099,7 +3100,7 @@ public:
     auto clear_color = MTL::ClearColor::Make(ColorRGBA[0], ColorRGBA[1], ColorRGBA[2], ColorRGBA[3]);
     auto &props = pRenderTargetView->GetAttachmentDesc();
 
-    Emit([texture = pRenderTargetView->__texture(), view = pRenderTargetView->__viewId(),
+    EmitOP([texture = pRenderTargetView->__texture(), view = pRenderTargetView->__viewId(),
           clear_color = std::move(clear_color), array_length = props.RenderTargetArrayLength](ArgumentEncodingContext &enc) mutable {
       enc.clearColor(forward_rc(texture), view, array_length, clear_color);
     });
@@ -3112,7 +3113,7 @@ public:
     InvalidateCurrentPass();
     auto &props = pDepthStencilView->GetAttachmentDesc();
 
-    Emit([texture = pDepthStencilView->__texture(), view = pDepthStencilView->__viewId(),
+    EmitOP([texture = pDepthStencilView->__texture(), view = pDepthStencilView->__viewId(),
           renamable = pDepthStencilView->__renamable(), array_length = props.RenderTargetArrayLength,
           ClearFlags = ClearFlags & 0b11, Depth, Stencil](ArgumentEncodingContext &enc) mutable {
       if (renamable.ptr() && ClearFlags == DepthStencilPlanarFlags(texture->pixelFormat())) {
@@ -3125,7 +3126,7 @@ public:
   void
   ResolveSubresource(D3D11ResourceCommon *pSrc, UINT SrcSlice, D3D11ResourceCommon *pDst, UINT DstLevel, UINT DstSlice) {
     InvalidateCurrentPass();
-    Emit([src = pSrc->texture(), dst = pDst->texture(), SrcSlice, DstSlice, DstLevel](ArgumentEncodingContext &enc
+    EmitOP([src = pSrc->texture(), dst = pDst->texture(), SrcSlice, DstSlice, DstLevel](ArgumentEncodingContext &enc
          ) mutable { enc.resolveTexture(forward_rc(src), SrcSlice, forward_rc(dst), DstSlice, DstLevel); });
   }
 
@@ -3224,7 +3225,7 @@ public:
         uav_only = true;
       }
 
-      Emit([rtvs = std::move(rtvs), dsv = std::move(dsv_info), effective_render_target, uav_only,
+      EmitST([rtvs = std::move(rtvs), dsv = std::move(dsv_info), effective_render_target, uav_only,
             uav_only_render_target_height, uav_only_render_target_width, uav_only_sample_count,
             render_target_array](ArgumentEncodingContext &ctx) {
         auto pool = transfer(NS::AutoreleasePool::alloc()->init());
@@ -3307,7 +3308,7 @@ public:
      */
     InvalidateCurrentPass(BlitKind != CommandBufferState::BlitEncoderActive);
 
-    Emit([](ArgumentEncodingContext &enc) { enc.startBlitPass(); });
+    EmitST([](ArgumentEncodingContext &enc) { enc.startBlitPass(); });
 
     cmdbuf_state = BlitKind;
   }
@@ -3328,7 +3329,7 @@ public:
     state_.ShaderStages[PipelineStage::Compute].Samplers.set_dirty();
     state_.ShaderStages[PipelineStage::Compute].SRVs.set_dirty();
 
-    Emit([](ArgumentEncodingContext &enc) { enc.startComputePass(); });
+    EmitST([](ArgumentEncodingContext &enc) { enc.startComputePass(); });
 
     cmdbuf_state = CommandBufferState::ComputeEncoderActive;
   }
@@ -3403,12 +3404,12 @@ public:
     }
     switch (HS->reflection().Tessellator.OutputPrimitive) {
     case MTL_TESSELLATOR_OUTPUT_LINE:
-      Emit([](ArgumentEncodingContext &enc) {
+      EmitST([](ArgumentEncodingContext &enc) {
         enc.setCompatibilityFlag(FeatureCompatibility::UnsupportedTessellationOutputPrimitive);
       });
       return false;
     case MTL_TESSELLATOR_OUTPUT_POINT:
-      Emit([](ArgumentEncodingContext &enc) {
+      EmitST([](ArgumentEncodingContext &enc) {
         enc.setCompatibilityFlag(FeatureCompatibility::UnsupportedTessellationOutputPrimitive);
       });
       return false;
@@ -3420,7 +3421,7 @@ public:
     }
     auto GS = GetManagedShader<PipelineStage::Geometry>();
     if (GS && GS->reflection().GeometryShader.GSPassThrough == ~0u) {
-      Emit([](ArgumentEncodingContext &enc) {
+      EmitST([](ArgumentEncodingContext &enc) {
         enc.setCompatibilityFlag(FeatureCompatibility::UnsupportedGeometryTessellationDraw);
       });
       return false;
@@ -3437,7 +3438,7 @@ public:
 
     device->CreateTessellationPipeline(&pipelineDesc, &pipeline);
 
-    Emit([pso = std::move(pipeline)](ArgumentEncodingContext &enc) {
+    EmitST([pso = std::move(pipeline)](ArgumentEncodingContext &enc) {
       auto render_encoder = enc.currentRenderEncoder();
       render_encoder->use_tessellation = 1;
       MTL_COMPILED_TESSELLATION_PIPELINE GraphicsPipeline{};
@@ -3486,7 +3487,7 @@ public:
     auto GS = GetManagedShader<PipelineStage::Geometry>();
     if (GS) {
       if (GS->reflection().GeometryShader.GSPassThrough == ~0u) {
-        Emit([](ArgumentEncodingContext &enc) {
+        EmitST([](ArgumentEncodingContext &enc) {
           enc.setCompatibilityFlag(FeatureCompatibility::UnsupportedGeometryDraw);
         });
         return false;
@@ -3503,7 +3504,7 @@ public:
     InitializeGraphicsPipelineDesc<IndexedDraw>(pipelineDesc);
 
     device->CreateGraphicsPipeline(&pipelineDesc, &pipeline);
-    Emit([pso = std::move(pipeline)](ArgumentEncodingContext& enc) {
+    EmitST([pso = std::move(pipeline)](ArgumentEncodingContext& enc) {
       MTL_COMPILED_GRAPHICS_PIPELINE GraphicsPipeline{};
       pso->GetPipeline(&GraphicsPipeline); // may block
       if (!GraphicsPipeline.PipelineState)
@@ -3537,7 +3538,7 @@ public:
     if (dirty_state.any(DirtyState::DepthStencilState)) {
       IMTLD3D11DepthStencilState *state =
           state_.OutputMerger.DepthStencilState ? state_.OutputMerger.DepthStencilState : default_depth_stencil_state;
-      Emit([state, stencil_ref = state_.OutputMerger.StencilRef](ArgumentEncodingContext& enc) {
+      EmitST([state, stencil_ref = state_.OutputMerger.StencilRef](ArgumentEncodingContext& enc) {
         enc.encodeRenderCommand([&](RenderCommandContext& ctx) {
           ctx.encoder->setDepthStencilState(state->GetDepthStencilState(ctx.dsv_planar_flags));
           ctx.encoder->setStencilReferenceValue(stencil_ref);
@@ -3547,14 +3548,14 @@ public:
     if (dirty_state.any(DirtyState::RasterizerState)) {
       IMTLD3D11RasterizerState *state =
           state_.Rasterizer.RasterizerState ? state_.Rasterizer.RasterizerState : default_rasterizer_state;
-      Emit([state](ArgumentEncodingContext& enc) {
+      EmitST([state](ArgumentEncodingContext& enc) {
         enc.encodeRenderCommand([&](RenderCommandContext& ctx) {
           state->SetupRasterizerState(ctx.encoder);
         });
       });
     }
     if (dirty_state.any(DirtyState::BlendFactorAndStencilRef)) {
-      Emit([r = state_.OutputMerger.BlendFactor[0], g = state_.OutputMerger.BlendFactor[1],
+      EmitST([r = state_.OutputMerger.BlendFactor[0], g = state_.OutputMerger.BlendFactor[1],
             b = state_.OutputMerger.BlendFactor[2], a = state_.OutputMerger.BlendFactor[3],
             stencil_ref = state_.OutputMerger.StencilRef](ArgumentEncodingContext &enc) {
         enc.encodeRenderCommand([&](RenderCommandContext &ctx) {
@@ -3573,7 +3574,7 @@ public:
         viewports[i] = {d3dViewport.TopLeftX, d3dViewport.TopLeftY, d3dViewport.Width,
                         d3dViewport.Height,   d3dViewport.MinDepth, d3dViewport.MaxDepth};
       }
-      Emit([viewports = std::move(viewports)](ArgumentEncodingContext& enc) {
+      EmitST([viewports = std::move(viewports)](ArgumentEncodingContext& enc) {
         enc.encodeRenderCommand([&](RenderCommandContext& ctx) {
           ctx.encoder->setViewports(viewports.data(), viewports.size());
         });
@@ -3599,7 +3600,7 @@ public:
           };
         }
       }
-      Emit([scissors = std::move(scissors)](ArgumentEncodingContext& enc) {
+      EmitST([scissors = std::move(scissors)](ArgumentEncodingContext& enc) {
         enc.encodeRenderCommand([&](RenderCommandContext& ctx) {
           ctx.encoder->setScissorRects(scissors.data(), scissors.size());
         });
@@ -3637,7 +3638,7 @@ public:
     MTL_COMPUTE_PIPELINE_DESC desc{CS};
     device->CreateComputePipeline(&desc, &pipeline);
 
-    Emit([pso = std::move(pipeline), tg_size = MTL::Size::Make(
+    EmitST([pso = std::move(pipeline), tg_size = MTL::Size::Make(
                                          CS->reflection().ThreadgroupSize[0], CS->reflection().ThreadgroupSize[1],
                                          CS->reflection().ThreadgroupSize[2]
                                      )](ArgumentEncodingContext &enc) {
@@ -3678,7 +3679,7 @@ public:
     if (state_.StreamOutput.Targets.test_bound(0)) {
       auto &so_slot0 = state_.StreamOutput.Targets[0];
       if (so_slot0.Offset == 0xFFFFFFFF) {
-        Emit([slot0 = so_slot0.Buffer->buffer()](ArgumentEncodingContext &enc) {
+        EmitST([slot0 = so_slot0.Buffer->buffer()](ArgumentEncodingContext &enc) {
           auto buffer = enc.access(slot0, 0, slot0->length(), DXMT_ENCODER_RESOURCE_ACESS_WRITE);
           enc.encodeRenderCommand([buffer](RenderCommandContext &ctx) {
             ctx.encoder->setVertexBuffer(buffer, 0, 20);
@@ -3686,7 +3687,7 @@ public:
           enc.setCompatibilityFlag(FeatureCompatibility::UnsupportedStreamOutputAppending);
         });
       } else {
-        Emit([slot0 = so_slot0.Buffer->buffer(), offset = so_slot0.Offset](ArgumentEncodingContext &enc) {
+        EmitST([slot0 = so_slot0.Buffer->buffer(), offset = so_slot0.Offset](ArgumentEncodingContext &enc) {
           auto buffer = enc.access(slot0, 0, slot0->length(), DXMT_ENCODER_RESOURCE_ACESS_WRITE);
           enc.encodeRenderCommand([buffer, offset](RenderCommandContext &ctx) {
             ctx.encoder->setVertexBuffer(buffer, offset, 20);
@@ -3694,13 +3695,13 @@ public:
         });
       }
     } else {
-      Emit([](ArgumentEncodingContext &enc) {
+      EmitST([](ArgumentEncodingContext &enc) {
         enc.encodeRenderCommand([](RenderCommandContext &ctx) { ctx.encoder->setVertexBuffer(nullptr, 0, 20); });
       });
     }
     state_.StreamOutput.Targets.clear_dirty(0);
     if (state_.StreamOutput.Targets.any_dirty()) {
-      Emit([](ArgumentEncodingContext &enc) {
+      EmitST([](ArgumentEncodingContext &enc) {
         enc.setCompatibilityFlag(FeatureCompatibility::UnsupportedMultipleStreamOutput);
       });
     }
@@ -3710,23 +3711,23 @@ public:
   void RestoreEncodingContextStageState() {
       auto &ShaderStage = state_.ShaderStages[Stage];
       for (const auto &[slot, entry] : ShaderStage.ConstantBuffers) {
-        Emit([=, buffer = entry.Buffer->buffer(), offset = entry.FirstConstant << 4](ArgumentEncodingContext &enc
+        EmitST([=, buffer = entry.Buffer->buffer(), offset = entry.FirstConstant << 4](ArgumentEncodingContext &enc
              ) mutable { enc.bindConstantBuffer<Stage>(slot, offset, forward_rc(buffer)); });
       }
       for (const auto &[slot, entry] : ShaderStage.Samplers) {
-        Emit([=, sampler = entry.Sampler](ArgumentEncodingContext &enc) {
+        EmitST([=, sampler = entry.Sampler](ArgumentEncodingContext &enc) {
           enc.bindSampler<Stage>(slot, sampler->GetSamplerState(), sampler->GetLODBias());
         });
       }
       for (const auto &[slot, entry] : ShaderStage.SRVs) {
         auto pView = entry.SRV.ptr();
         if (auto buffer = pView->buffer()) {
-          Emit([=, buffer = std::move(buffer), viewId = pView->viewId(),
+          EmitST([=, buffer = std::move(buffer), viewId = pView->viewId(),
                 slice = pView->bufferSlice()](ArgumentEncodingContext &enc) mutable {
             enc.bindBuffer<Stage>(slot, forward_rc(buffer), viewId, slice);
           });
         } else {
-          Emit([=, texture = pView->texture(), viewId = pView->viewId()](ArgumentEncodingContext &enc) mutable {
+          EmitST([=, texture = pView->texture(), viewId = pView->viewId()](ArgumentEncodingContext &enc) mutable {
             enc.bindTexture<Stage>(slot, forward_rc(texture), viewId);
           });
         }
@@ -3736,14 +3737,14 @@ public:
   void
   RestoreEncodingContextState() {
     for (const auto &[slot, element] : state_.InputAssembler.VertexBuffers) {
-      Emit([=, buffer = element.Buffer->buffer(), offset = element.Offset,
+      EmitST([=, buffer = element.Buffer->buffer(), offset = element.Offset,
             stride = element.Stride](ArgumentEncodingContext &enc) mutable {
         enc.bindVertexBuffer(slot, offset, stride, forward_rc(buffer));
       });
     }
 
     if (state_.InputAssembler.IndexBuffer) {
-      Emit([buffer = state_.InputAssembler.IndexBuffer->buffer()](ArgumentEncodingContext &enc) mutable {
+      EmitST([buffer = state_.InputAssembler.IndexBuffer->buffer()](ArgumentEncodingContext &enc) mutable {
         enc.bindIndexBuffer(forward_rc(buffer));
       });
     }
@@ -3760,12 +3761,12 @@ public:
     for (const auto &[slot, entry] : state_.OutputMerger.UAVs) {
       auto pUAV = entry.View.ptr();
       if (auto buffer = pUAV->buffer()) {
-        Emit([=, buffer = std::move(buffer), viewId = pUAV->viewId(), counter = pUAV->counter(),
+        EmitST([=, buffer = std::move(buffer), viewId = pUAV->viewId(), counter = pUAV->counter(),
               slice = pUAV->bufferSlice()](ArgumentEncodingContext &enc) mutable {
           enc.bindOutputBuffer<PipelineStage::Pixel>(slot, forward_rc(buffer), viewId, forward_rc(counter), slice);
         });
       } else {
-        Emit([=, texture = pUAV->texture(), viewId = pUAV->viewId()](ArgumentEncodingContext &enc) mutable {
+        EmitST([=, texture = pUAV->texture(), viewId = pUAV->viewId()](ArgumentEncodingContext &enc) mutable {
           enc.bindOutputTexture<PipelineStage::Pixel>(slot, forward_rc(texture), viewId);
         });
       }
@@ -3773,12 +3774,12 @@ public:
     for (const auto &[slot, entry] : state_.OutputMerger.UAVs) {
       auto pUAV = entry.View.ptr();
       if (auto buffer = pUAV->buffer()) {
-        Emit([=, buffer = std::move(buffer), viewId = pUAV->viewId(), counter = pUAV->counter(),
+        EmitST([=, buffer = std::move(buffer), viewId = pUAV->viewId(), counter = pUAV->counter(),
               slice = pUAV->bufferSlice()](ArgumentEncodingContext &enc) mutable {
           enc.bindOutputBuffer<PipelineStage::Compute>(slot, forward_rc(buffer), viewId, forward_rc(counter), slice);
         });
       } else {
-        Emit([=, texture = pUAV->texture(), viewId = pUAV->viewId()](ArgumentEncodingContext &enc) mutable {
+        EmitST([=, texture = pUAV->texture(), viewId = pUAV->viewId()](ArgumentEncodingContext &enc) mutable {
           enc.bindOutputTexture<PipelineStage::Compute>(slot, forward_rc(texture), viewId);
         });
       }
@@ -3788,7 +3789,7 @@ public:
   void ResetEncodingContextState() {
     InvalidateCurrentPass(true);
     // TODO: optimize by clearing only bound resource
-    Emit([](ArgumentEncodingContext& enc) {
+    EmitST([](ArgumentEncodingContext& enc) {
       enc.clearState();
     });
   }

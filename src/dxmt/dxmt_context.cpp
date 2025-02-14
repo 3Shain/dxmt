@@ -491,7 +491,7 @@ ArgumentEncodingContext::currentFrameStatistics() {
 constexpr unsigned kEncoderOptimizerThreshold = 64;
 
 std::unique_ptr<VisibilityResultReadback>
-ArgumentEncodingContext::flushCommands(MTL::CommandBuffer *cmdbuf, uint64_t seqId) {
+ArgumentEncodingContext::flushCommands(MTL::CommandBuffer *cmdbuf, uint64_t seqId, uint64_t event_seq_id) {
   assert(!encoder_current);
 
   unsigned encoder_count = encoder_count_;
@@ -683,6 +683,8 @@ ArgumentEncodingContext::flushCommands(MTL::CommandBuffer *cmdbuf, uint64_t seqI
   encoder_head.next = nullptr;
   encoder_last = &encoder_head;
   encoder_count_ = 0;
+
+  cmdbuf->encodeSignalEvent(queue_.event, event_seq_id);
 
   return visibility_readback;
 }

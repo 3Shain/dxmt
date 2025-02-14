@@ -66,6 +66,7 @@ CommandQueue::CommitCurrentChunk() {
   auto chunk_id = ready_for_encode.load(std::memory_order_relaxed);
   auto &chunk = chunks[chunk_id % kCommandChunkCount];
   chunk.chunk_id = chunk_id;
+  chunk.chunk_event_id = GetNextEventSeqId();
   chunk.frame_ = frame_count;
   auto& statistics = CurrentFrameStatistics();
   statistics.command_buffer_count++;

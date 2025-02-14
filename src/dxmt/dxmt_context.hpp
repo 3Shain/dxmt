@@ -524,7 +524,7 @@ public:
 
   std::pair<MTL::Buffer* , size_t> allocateTempBuffer(size_t size, size_t alignment);
 
-  std::unique_ptr<VisibilityResultReadback> flushCommands(MTL::CommandBuffer *cmdbuf, uint64_t seqId);
+  std::unique_ptr<VisibilityResultReadback> flushCommands(MTL::CommandBuffer *cmdbuf, uint64_t seqId, uint64_t event_seq_id);
 
   uint64_t currentSeqId() {return seq_id_;}
 

@@ -124,15 +124,11 @@ public:
     );
     list_enc.execute(enc);
     attached_cmdbuf = cmdbuf;
-    visibility_readback = enc.flushCommands(cmdbuf, chunk_id);
+    visibility_readback = enc.flushCommands(cmdbuf, chunk_id, chunk_event_id);
   };
 
-  uint32_t
-  has_no_work_encoded_yet() {
-    return cpu_arugment_heap_offset == 0;
-  }
-
   uint64_t chunk_id;
+  uint64_t chunk_event_id;
   uint64_t frame_;
   uint64_t signal_frame_latency_fence_;
   std::unique_ptr<VisibilityResultReadback> visibility_readback;
@@ -226,15 +222,15 @@ public:
   };
 
   uint64_t
-  EncodedWorkFinishAt() {
-    auto id = ready_for_encode.load(std::memory_order_relaxed);
-    return id - chunks[id % kCommandChunkCount].has_no_work_encoded_yet();
-  };
-
-  uint64_t
   GetNextEventSeqId() {
     return current_event_seq_id++;
   };
+
+  uint64_t
+  GetCurrentEventSeqId() {
+    return current_event_seq_id;
+  };
+
 
   uint64_t
   SignaledEventSeqId() {

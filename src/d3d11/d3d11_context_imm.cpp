@@ -9,6 +9,7 @@
 namespace dxmt {
 struct ContextInternalState {
   CommandQueue &cmd_queue;
+  bool has_dirty_op_since_last_event = false;
 };
 
 
@@ -21,9 +22,18 @@ using ImmediateContextBase = MTLD3D11DeviceContextImplBase<ContextInternalState>
 template <>
 template <CommandWithContext<ArgumentEncodingContext> cmd>
 void
-ImmediateContextBase:: Emit(cmd &&fn) {
+ImmediateContextBase::EmitST(cmd &&fn) {
   CommandChunk *chk = ctx_state.cmd_queue.CurrentChunk();
   chk->emitcc(std::forward<cmd>(fn));
+}
+
+template <>
+template <CommandWithContext<ArgumentEncodingContext> cmd>
+void
+ImmediateContextBase::EmitOP(cmd &&fn) {
+  CommandChunk *chk = ctx_state.cmd_queue.CurrentChunk();
+  chk->emitcc(std::forward<cmd>(fn));
+  ctx_state.has_dirty_op_since_last_event = true;
 }
 
 template <>
@@ -111,7 +121,7 @@ public:
         }
 
         dynamic->updateImmediateName(current_seq_id, dynamic->allocate(coherent_seq_id), false);
-        Emit([allocation = dynamic->immediateName(),
+        EmitST([allocation = dynamic->immediateName(),
               buffer = Rc(dynamic->buffer)](ArgumentEncodingContext &enc) mutable {
           auto _ = buffer->rename(forward_rc(allocation));
         });
@@ -144,7 +154,7 @@ public:
         }
 
         dynamic->updateImmediateName(current_seq_id, dynamic->allocate(coherent_seq_id), false);
-        Emit([allocation = dynamic->immediateName(),
+        EmitST([allocation = dynamic->immediateName(),
               texture = Rc(dynamic->texture)](ArgumentEncodingContext &enc) mutable {
           auto _ = texture->rename(forward_rc(allocation));
         });
@@ -177,7 +187,7 @@ public:
         if (result == StagingMapResult::Renamable) {
           // when write to a buffer that is gpu-readonly
           Obj<MTL::Buffer> new_name = staging->allocate(coherent_seq_id);
-          Emit([staging, new_name](ArgumentEncodingContext &enc) mutable { staging->current = std::move(new_name); });
+          EmitST([staging, new_name](ArgumentEncodingContext &enc) mutable { staging->current = std::move(new_name); });
           // can't guarantee a full overwrite
           std::memcpy(new_name->contents(), staging->mappedMemory(), new_name->length());
           staging->updateImmediateName(current_seq_id, std::move(new_name));
@@ -241,7 +251,7 @@ public:
     case D3D11_QUERY_OCCLUSION_PREDICATE: {
       auto query = static_cast<IMTLD3DOcclusionQuery *>(pAsync);
       if (query->Begin())
-        Emit([query_ = query->__query()](ArgumentEncodingContext &enc) mutable {
+        EmitST([query_ = query->__query()](ArgumentEncodingContext &enc) mutable {
           enc.beginVisibilityResultQuery(std::move(query_));
         });
       break;
@@ -265,18 +275,25 @@ public:
     ((ID3D11Query *)pAsync)->GetDesc(&desc);
     switch (desc.Query) {
     case D3D11_QUERY_EVENT: {
-      auto event_id = cmd_queue.GetNextEventSeqId();
-      ((IMTLD3DEventQuery *)pAsync)->Issue(event_id);
-      InvalidateCurrentPass(true);
-      Emit([event_id](ArgumentEncodingContext &enc) mutable { enc.signalEvent(event_id); });
-      promote_flush = true;
+      if (ctx_state.has_dirty_op_since_last_event) {
+        auto event_id = cmd_queue.GetNextEventSeqId();
+        ((IMTLD3DEventQuery *)pAsync)->Issue(event_id);
+        InvalidateCurrentPass(true);
+        EmitOP([event_id](ArgumentEncodingContext &enc) mutable {
+          enc.signalEvent(event_id);
+        });
+        promote_flush = true;
+        ctx_state.has_dirty_op_since_last_event = false;
+      } else {
+        ((IMTLD3DEventQuery *)pAsync)->Issue(cmd_queue.GetCurrentEventSeqId());
+      }
       break;
     }
     case D3D11_QUERY_OCCLUSION:
     case D3D11_QUERY_OCCLUSION_PREDICATE: {
       auto query = static_cast<IMTLD3DOcclusionQuery *>(pAsync);
       if (query->End())
-        Emit([qeury_ = query->__query()](ArgumentEncodingContext &enc) mutable {
+        EmitST([qeury_ = query->__query()](ArgumentEncodingContext &enc) mutable {
           enc.endVisibilityResultQuery(std::move(qeury_));
         });
       promote_flush = true;
@@ -355,7 +372,7 @@ public:
 
   void
   Flush() override {
-    if (cmd_queue.CurrentChunk()->has_no_work_encoded_yet()) {
+    if (!ctx_state.has_dirty_op_since_last_event && !promote_flush) {
       return;
     }
     promote_flush = true;
@@ -405,7 +422,7 @@ public:
       used_dynamic.texture->updateImmediateName(seq_id, Rc(used_dynamic.allocation), true);
     }
 
-    Emit([cmdlist = std::move(cmdlist), query_list = std::move(query_list)](ArgumentEncodingContext &enc) {
+    EmitOP([cmdlist = std::move(cmdlist), query_list = std::move(query_list)](ArgumentEncodingContext &enc) {
       // Finished command list should clean up the encoding context
       enc.pushDeferredVisibilityQuerys(query_list.data());
       cmdlist->Execute(enc);
@@ -441,6 +458,7 @@ public:
     promote_flush = false;
     D3D11_ASSERT(cmdbuf_state == CommandBufferState::Idle);
     ctx_state.cmd_queue.CommitCurrentChunk();
+    ctx_state.has_dirty_op_since_last_event = false;
   };
 
 private:

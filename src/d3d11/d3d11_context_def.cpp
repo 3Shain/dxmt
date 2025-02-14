@@ -22,7 +22,14 @@ using DeferredContextBase = MTLD3D11DeviceContextImplBase<DeferredContextInterna
 template <>
 template <CommandWithContext<ArgumentEncodingContext> cmd>
 void
-DeferredContextBase:: Emit(cmd &&fn) {
+DeferredContextBase::EmitST(cmd &&fn) {
+  ctx_state.current_cmdlist->Emit(std::forward<cmd>(fn));
+}
+
+template <>
+template <CommandWithContext<ArgumentEncodingContext> cmd>
+void
+DeferredContextBase::EmitOP(cmd &&fn) {
   ctx_state.current_cmdlist->Emit(std::forward<cmd>(fn));
 }
 
@@ -120,7 +127,7 @@ public:
         }
         // collect allocated buffers and recycle them when the command list is released
         ctx_state.current_cmdlist->used_dynamic_buffers.push_back(used_dynamic_buffer{dynamic.ptr(), new_allocation, true});
-        Emit([allocation = new_allocation, buffer = Rc(dynamic->buffer)](ArgumentEncodingContext &enc) mutable {
+        EmitST([allocation = new_allocation, buffer = Rc(dynamic->buffer)](ArgumentEncodingContext &enc) mutable {
           auto _ = buffer->rename(forward_rc(allocation));
         });
 
@@ -169,7 +176,7 @@ public:
         }
         // collect allocated buffers and recycle them when the command list is released
         ctx_state.current_cmdlist->used_dynamic_textures.push_back({dynamic, new_allocation, false});
-        Emit([allocation = new_allocation, texture = Rc(dynamic->texture)](ArgumentEncodingContext &enc) mutable {
+        EmitST([allocation = new_allocation, texture = Rc(dynamic->texture)](ArgumentEncodingContext &enc) mutable {
           auto _ = texture->rename(forward_rc(allocation));
         });
 
@@ -222,14 +229,14 @@ public:
         // need to figure out if it's the intended behavior
         D3D11_ASSERT(0 && "unexpected branch condition hit, please file an issue.");
         // Begin() after another Begin()
-        Emit([query_id = building_query->second.second](ArgumentEncodingContext &enc) mutable {
+        EmitST([query_id = building_query->second.second](ArgumentEncodingContext &enc) mutable {
           enc.endVisibilityResultQuery(enc.currentDeferredVisibilityQuery(query_id));
         });
         ctx_state.current_cmdlist->issued_visibility_query.push_back(std::move(building_query->second));
         ctx_state.building_visibility_queries.erase(building_query);
       }
       auto query_id = ctx_state.current_cmdlist->visibility_query_count++;
-      Emit([=](ArgumentEncodingContext &enc) mutable {
+      EmitST([=](ArgumentEncodingContext &enc) mutable {
         enc.beginVisibilityResultQuery(enc.currentDeferredVisibilityQuery(query_id));
       });
       ctx_state.building_visibility_queries.insert(
@@ -269,7 +276,7 @@ public:
         return;
       }
       promote_flush = true;
-      Emit([query_id = building_query->second.second](ArgumentEncodingContext &enc) mutable {
+      EmitST([query_id = building_query->second.second](ArgumentEncodingContext &enc) mutable {
         enc.endVisibilityResultQuery(enc.currentDeferredVisibilityQuery(query_id));
       });
       ctx_state.current_cmdlist->issued_visibility_query.push_back(std::move(building_query->second));
