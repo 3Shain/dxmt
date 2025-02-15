@@ -9,6 +9,7 @@
 #include "Metal/MTLSampler.hpp"
 #include "MetalFX/MTLFXSpatialScaler.hpp"
 #include "QuartzCore/CAMetalDrawable.hpp"
+#include "QuartzCore/CAMetalLayer.hpp"
 #include "dxmt_buffer.hpp"
 #include "dxmt_command.hpp"
 #include "dxmt_command_list.hpp"
@@ -157,7 +158,7 @@ struct ResolveEncoderData : EncoderData {
 
 struct PresentData : EncoderData {
   Obj<MTL::Texture> backbuffer;
-  Obj<CA::MetalDrawable> drawable;
+  Obj<CA::MetalLayer> layer;
   double after;
 };
 
@@ -459,7 +460,7 @@ public:
     return (new (allocate_cpu_heap(sizeof(T), alignof(T))) T());
   };
 
-  void present(Rc<Texture> &texture, CA::MetalDrawable *drawable, double after);
+  void present(Rc<Texture> &texture, CA::MetalLayer *layer, double after);
 
   void upscale(Rc<Texture> &texture, Rc<Texture> &upscaled, Obj<MTLFX::SpatialScaler> &scaler);
 

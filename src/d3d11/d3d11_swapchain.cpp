@@ -512,15 +512,13 @@ public:
                      upscaled = upscaled_backbuffer_->texture(),
                      scaler = this->metalfx_scaler](ArgumentEncodingContext &ctx) mutable {
         ctx.upscale(backbuffer, upscaled, scaler);
-        auto drawable = layer_weak_->nextDrawable();
-        ctx.present(upscaled, drawable, vsync_duration);
+        ctx.present(upscaled, layer_weak_, vsync_duration);
         ReleaseSemaphore(present_semaphore_, 1, nullptr);
         this->UpdateStatistics(ctx.queue().statistics, ctx.currentFrameId());
       });
     } else {
       chunk->emitcc([this, vsync_duration, backbuffer = backbuffer_->texture()](ArgumentEncodingContext &ctx) mutable {
-        auto drawable = layer_weak_->nextDrawable();
-        ctx.present(backbuffer, drawable, vsync_duration);
+        ctx.present(backbuffer, layer_weak_, vsync_duration);
         ReleaseSemaphore(present_semaphore_, 1, nullptr);
         this->UpdateStatistics(ctx.queue().statistics, ctx.currentFrameId());
       });

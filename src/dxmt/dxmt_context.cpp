@@ -345,13 +345,13 @@ ArgumentEncodingContext::resolveTexture(
 };
 
 void
-ArgumentEncodingContext::present(Rc<Texture> &texture, CA::MetalDrawable *drawable, double after) {
+ArgumentEncodingContext::present(Rc<Texture> &texture, CA::MetalLayer *layer, double after) {
   assert(!encoder_current);
   auto encoder_info = allocate<PresentData>();
   encoder_info->type = EncoderType::Present;
   encoder_info->id = nextEncoderId();
   encoder_info->backbuffer = texture->current()->texture();
-  encoder_info->drawable = drawable;
+  encoder_info->layer = layer;
   encoder_info->after = after;
 
   encoder_info->tex_read.add(texture->current()->depkey);
@@ -586,7 +586,7 @@ ArgumentEncodingContext::flushCommands(MTL::CommandBuffer *cmdbuf, uint64_t seqI
     }
     case EncoderType::Present: {
       auto data = static_cast<PresentData *>(current);
-      auto drawable = data->drawable.ptr();
+      auto drawable = data->layer->nextDrawable();
       queue_.emulated_cmd.PresentToDrawable(cmdbuf, data->backbuffer, drawable->texture());
       if (data->after > 0)
         cmdbuf->presentDrawableAfterMinimumDuration(drawable, data->after);
