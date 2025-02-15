@@ -586,7 +586,10 @@ ArgumentEncodingContext::flushCommands(MTL::CommandBuffer *cmdbuf, uint64_t seqI
     }
     case EncoderType::Present: {
       auto data = static_cast<PresentData *>(current);
+      auto t0 = clock::now();
       auto drawable = data->layer->nextDrawable();
+      auto t1 = clock::now();
+      currentFrameStatistics().drawable_blocking_interval += (t1 - t0);
       queue_.emulated_cmd.PresentToDrawable(cmdbuf, data->backbuffer, drawable->texture());
       if (data->after > 0)
         cmdbuf->presentDrawableAfterMinimumDuration(drawable, data->after);

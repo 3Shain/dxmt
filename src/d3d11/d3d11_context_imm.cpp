@@ -358,8 +358,10 @@ public:
       ERR("Unknown query type ", desc.Query);
       return E_FAIL;
     }
-    if (hr == S_FALSE && GetDataFlags != D3D11_ASYNC_GETDATA_DONOTFLUSH)
+    if (hr == S_FALSE && GetDataFlags != D3D11_ASYNC_GETDATA_DONOTFLUSH) {
+      cmd_queue.CurrentFrameStatistics().event_stall++;
       Flush();
+    }
     return hr;
   }
 

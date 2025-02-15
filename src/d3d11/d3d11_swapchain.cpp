@@ -535,6 +535,7 @@ public:
   void UpdateStatistics(const FrameStatisticsContainer& statistics, uint64_t frame_id) {
     hud.begin();
     auto &frame = statistics.at(frame_id - 1); // show the previous one frame statistics
+    auto &average = statistics.average();
     Flags<FeatureCompatibility> flags = frame.compatibility_flags;
     char text[] = "---------------------------";
     if (flags.test(FeatureCompatibility::UnsupportedGeometryDraw)) {
@@ -568,22 +569,26 @@ public:
     }
     hud.printLine(text);
     hud.printLine(std::format(
-        "Commit: {:2} -{:4.1f} -{:4.1f}",
-        std::min(frame.command_buffer_count, 99u),
-        std::min(statistics.average().commit_interval.count() / 1000000.0,
-                 99.9),
-        std::min(statistics.max().commit_interval.count() / 1000000.0, 99.9)));
+        "Commit: {:2} -{:4.1f} -{:4.1f}", std::min(frame.command_buffer_count, 99u),
+        std::min(average.commit_interval.count() / 1000000.0, 99.9),
+        std::min(statistics.max().commit_interval.count() / 1000000.0, 99.9)
+    ));
     hud.printLine(std::format(
-        "Sync:   {:2} -{:4.1f} -{:4.1f}", std::min(frame.sync_count, 99u),
-        std::min(statistics.average().sync_interval.count() / 1000000.0, 99.9),
-        std::min(statistics.max().sync_interval.count() / 1000000.0, 99.9)));
+        "Sync:   {:2} {:4.1f}  {:2} {:4.1f} {:2}", std::min(frame.sync_count, 99u),
+        std::min(average.sync_interval.count() / 1000000.0, 99.9), std::min(statistics.max().event_stall, 99u),
+        std::min(average.present_lantency_interval.count() / 1000000.0, 99.9), frame.latency
+    ));
     hud.printLine(std::format(
-        "Render:{:3}+{:<3} Clear:{:3}+{:<2}",
-        std::min(frame.render_pass_count - frame.render_pass_optimized,
-                 999u),
+        "Encode: {:4.1f}+{:4.1f}+{:4.1f}={:4.1f}", std::min(average.encode_prepare_interval.count() / 1000000.0, 99.9),
+        std::min((average.encode_flush_interval - average.drawable_blocking_interval).count() / 1000000.0, 99.9),
+        std::min(average.drawable_blocking_interval.count() / 1000000.0, 99.9),
+        std::min((average.encode_prepare_interval + average.encode_flush_interval).count() / 1000000.0, 99.9)
+    ));
+    hud.printLine(std::format(
+        "Render:{:3}+{:<3} Clear:{:3}+{:<2}", std::min(frame.render_pass_count - frame.render_pass_optimized, 999u),
         std::min(frame.render_pass_optimized, 999u),
-        std::min(frame.clear_pass_count - frame.clear_pass_optimized, 999u),
-        std::min(frame.clear_pass_optimized, 99u)));
+        std::min(frame.clear_pass_count - frame.clear_pass_optimized, 999u), std::min(frame.clear_pass_optimized, 99u)
+    ));
     hud.end();
   }
 

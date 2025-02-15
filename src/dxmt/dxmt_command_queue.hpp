@@ -122,9 +122,15 @@ public:
       chunk_id,
       frame_
     );
+    auto& statistics = enc.currentFrameStatistics();
+    auto t0 = clock::now();
     list_enc.execute(enc);
     attached_cmdbuf = cmdbuf;
+    auto t1 = clock::now();
     visibility_readback = enc.flushCommands(cmdbuf, chunk_id, chunk_event_id);
+    auto t2 = clock::now();
+    statistics.encode_prepare_interval += (t1 - t0);
+    statistics.encode_flush_interval += (t2 - t1);
   };
 
   uint64_t chunk_id;
@@ -256,10 +262,15 @@ public:
   PresentBoundary() {
     statistics.compute(frame_count);
     frame_count++;
-    // After present N-th frame (N starts from 1), wait for (N - max_latency)-th frame to finish rendering 
-    if (likely(frame_count > max_latency_))
-      frame_latency_fence_.wait(frame_count - max_latency_);
     statistics.at(frame_count).reset();
+    // After present N-th frame (N starts from 1), wait for (N - max_latency)-th frame to finish rendering 
+    if (likely(frame_count > max_latency_)) {
+      auto t0 = clock::now();
+      frame_latency_fence_.wait(frame_count - max_latency_);
+      auto t1 = clock::now();
+      statistics.at(frame_count).present_lantency_interval += (t1 - t0);
+    }
+    statistics.at(frame_count).latency = max_latency_;
   }
 
   uint32_t GetMaxLatency() { return max_latency_; }
