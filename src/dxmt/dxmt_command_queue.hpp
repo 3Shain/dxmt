@@ -71,7 +71,7 @@ private:
   size_t size_;
 };
 
-constexpr uint32_t kCommandChunkCount = 8;
+constexpr uint32_t kCommandChunkCount = 32;
 
 class CommandQueue;
 
@@ -90,22 +90,6 @@ public:
     return ptr_add(cpu_argument_heap, aligned);
   }
 
-  std::pair<MTL::Buffer *, uint64_t>
-  inspect_gpu_heap() {
-    return {gpu_argument_heap, gpu_arugment_heap_offset};
-  }
-
-  std::pair<MTL::Buffer *, uint64_t>
-  allocate_gpu_heap(size_t size, size_t alignment) {
-    std::size_t adjustment = align_forward_adjustment((void *)gpu_arugment_heap_offset, alignment);
-    auto aligned = gpu_arugment_heap_offset + adjustment;
-    gpu_arugment_heap_offset = aligned + size;
-    if (gpu_arugment_heap_offset > kCommandChunkGPUHeapSize) {
-      ERR("gpu argument heap overflow, expect error.");
-    }
-    return {gpu_argument_heap, aligned};
-  }
-
   template <CommandWithContext<ArgumentEncodingContext> F>
   void
   emitcc(F &&func) {
@@ -115,10 +99,6 @@ public:
   void
   encode(MTL::CommandBuffer *cmdbuf, ArgumentEncodingContext &enc) {
     enc.$$setEncodingContext(
-      cpu_argument_heap,
-      cpu_arugment_heap_offset,
-      gpu_argument_heap.ptr(),
-      gpu_arugment_heap_offset,
       chunk_id,
       frame_
     );
@@ -142,9 +122,7 @@ public:
 private:
   CommandQueue *queue;
   char *cpu_argument_heap;
-  Obj<MTL::Buffer> gpu_argument_heap;
   uint64_t cpu_arugment_heap_offset;
-  uint64_t gpu_arugment_heap_offset;
   Obj<MTL::CommandBuffer> attached_cmdbuf;
   
   CommandList<ArgumentEncodingContext> list_enc;
@@ -160,7 +138,6 @@ public:
     visibility_readback = {};
     list_enc.reset();
     cpu_arugment_heap_offset = 0;
-    gpu_arugment_heap_offset = 0;
     attached_cmdbuf = nullptr;
   }
 };
@@ -198,6 +175,7 @@ private:
 
   RingBumpAllocator<true> staging_allocator;
   RingBumpAllocator<false> copy_temp_allocator;
+  RingBumpAllocator<true, kCommandChunkGPUHeapSize> command_data_allocator;
   CaptureState capture_state;
 
 public:
@@ -290,6 +268,11 @@ public:
   std::tuple<void *, MTL::Buffer *, uint64_t>
   AllocateTempBuffer(uint64_t seq, size_t size, size_t alignment) {
     return copy_temp_allocator.allocate(seq, cpu_coherent.signaledValue(), size, alignment);
+  }
+
+  std::tuple<void *, MTL::Buffer *, uint64_t>
+  AllocateCommandDataBuffer(uint64_t seq) {
+    return command_data_allocator.allocate(seq, cpu_coherent.signaledValue(), kCommandChunkGPUHeapSize, 1);
   }
 };
 

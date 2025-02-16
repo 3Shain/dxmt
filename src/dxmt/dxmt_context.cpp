@@ -19,6 +19,11 @@ ArgumentEncodingContext::ArgumentEncodingContext(CommandQueue &queue, MTL::Devic
                  MTL::ResourceHazardTrackingModeUntracked
   ));
   std::memset(dummy_cbuffer_->contents(), 0, 65536);
+  cpu_buffer_ = malloc(kCommandChunkCPUHeapSize);
+};
+
+ArgumentEncodingContext::~ArgumentEncodingContext() {
+  free(cpu_buffer_);
 };
 
 template void ArgumentEncodingContext::encodeVertexBuffers<true>(uint32_t slot_mask);
@@ -486,6 +491,16 @@ ArgumentEncodingContext::bumpVisibilityResultOffset() {
 FrameStatistics&
 ArgumentEncodingContext::currentFrameStatistics() {
   return queue_.statistics.at(frame_id_);
+}
+
+void
+ArgumentEncodingContext::$$setEncodingContext(uint64_t seq_id, uint64_t frame_id) {
+  cpu_buffer_offset_ = 0;
+  seq_id_ = seq_id;
+  frame_id_ = frame_id;
+  auto [_, gpu_buffer, offset] = queue_.AllocateCommandDataBuffer(seq_id);
+  gpu_buffer_ = gpu_buffer;
+  gpu_bufer_offset_ = offset;
 }
 
 constexpr unsigned kEncoderOptimizerThreshold = 64;

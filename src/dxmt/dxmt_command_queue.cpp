@@ -18,6 +18,10 @@ CommandQueue::CommandQueue(MTL::Device *device) :
                     MTL::ResourceStorageModeShared
     ),
     copy_temp_allocator(device, MTL::ResourceHazardTrackingModeUntracked | MTL::ResourceStorageModePrivate),
+    command_data_allocator(
+        device, MTL::ResourceHazardTrackingModeUntracked | MTL::ResourceCPUCacheModeWriteCombined |
+                    MTL::ResourceStorageModeShared
+    ),
     emulated_cmd(device),
     argument_encoding_ctx(*this, device) {
   commandQueue = transfer(device->newCommandQueue(kCommandChunkCount));
@@ -25,10 +29,6 @@ CommandQueue::CommandQueue(MTL::Device *device) :
     auto &chunk = chunks[i];
     chunk.queue = this;
     chunk.cpu_argument_heap = (char *)malloc(kCommandChunkCPUHeapSize);
-    chunk.gpu_argument_heap = transfer(device->newBuffer(
-        kCommandChunkGPUHeapSize, MTL::ResourceHazardTrackingModeUntracked | MTL::ResourceCPUCacheModeWriteCombined |
-                                      MTL::ResourceStorageModeShared
-    ));
     chunk.reset();
   };
   event = transfer(device->newSharedEvent());
@@ -56,7 +56,6 @@ CommandQueue::~CommandQueue() {
     auto &chunk = chunks[i];
     chunk.reset();
     free(chunk.cpu_argument_heap);
-    chunk.gpu_argument_heap = nullptr;
   };
   TRACE("Destructed command queue");
 }
@@ -188,6 +187,7 @@ CommandQueue::WaitForFinishThread() {
 
     staging_allocator.free_blocks(internal_seq);
     copy_temp_allocator.free_blocks(internal_seq);
+    command_data_allocator.free_blocks(internal_seq);
 
     internal_seq++;
   }

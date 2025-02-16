@@ -534,18 +534,7 @@ public:
   CommandQueue& queue() { return queue_;}
 
   void
-  $$setEncodingContext(
-      void *cpu_buffer, uint64_t cpu_buffer_offset, 
-      MTL::Buffer *gpu_buffer, uint64_t gpu_bufer_offset, 
-      uint64_t seq_id, uint64_t frame_id
-  ) {
-    cpu_buffer_ = cpu_buffer;
-    cpu_buffer_offset_ = cpu_buffer_offset;
-    gpu_buffer_ = gpu_buffer;
-    gpu_bufer_offset_ = gpu_bufer_offset;
-    seq_id_ = seq_id;
-    frame_id_ = frame_id;
-  }
+  $$setEncodingContext(uint64_t seq_id, uint64_t frame_id);
 
   void bumpVisibilityResultOffset();
   void beginVisibilityResultQuery(Rc<VisibilityResultQuery> &&query);
@@ -574,6 +563,7 @@ public:
   }
 
   ArgumentEncodingContext(CommandQueue &queue, MTL::Device *device);
+  ~ArgumentEncodingContext();
 
   uint32_t tess_num_output_control_point_element;
   uint32_t tess_num_output_patch_constant_scalar;
