@@ -749,7 +749,7 @@ CreateSwapChain(
     return E_FAIL;
   }
   layer->setDevice(pDevice->GetMTLDevice());
-  layer->setOpaque(true);
+  layer->setOpaque(false);
   layer->setDisplaySyncEnabled(false);
   layer->setFramebufferOnly(true);
   if (env::getEnvVar("DXMT_METALFX_SPATIAL_SWAPCHAIN") == "1") {
