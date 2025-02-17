@@ -182,7 +182,7 @@ public:
   EmulatedCommandContext emulated_cmd;
   ArgumentEncodingContext argument_encoding_ctx;
   Obj<MTL::SharedEvent> event;
-  std::uint64_t current_event_seq_id = 1;
+  std::uint64_t current_event_seq_id = 0;
   FrameStatisticsContainer statistics;
 
   CommandQueue(MTL::Device *device);
@@ -207,7 +207,7 @@ public:
 
   uint64_t
   GetNextEventSeqId() {
-    return current_event_seq_id++;
+    return ++current_event_seq_id;
   };
 
   uint64_t
