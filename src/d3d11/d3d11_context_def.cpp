@@ -220,6 +220,7 @@ public:
     D3D11_QUERY_DESC desc;
     ((ID3D11Query *)pAsync)->GetDesc(&desc);
     switch (desc.Query) {
+    case D3D11_QUERY_TIMESTAMP:
     case D3D11_QUERY_EVENT:
       break;
     case D3D11_QUERY_OCCLUSION:
@@ -244,7 +245,6 @@ public:
       );
       break;
     }
-    case D3D11_QUERY_TIMESTAMP:
     case D3D11_QUERY_TIMESTAMP_DISJOINT:
     case D3D11_QUERY_PIPELINE_STATISTICS: {
       // ignore
@@ -261,6 +261,7 @@ public:
     D3D11_QUERY_DESC desc;
     ((ID3D11Query *)pAsync)->GetDesc(&desc);
     switch (desc.Query) {
+    case D3D11_QUERY_TIMESTAMP:
     case D3D11_QUERY_EVENT:
       promote_flush = true;
       ctx_state.current_cmdlist->issued_event_query.push_back(static_cast<MTLD3D11EventQuery *>(pAsync));
@@ -283,7 +284,6 @@ public:
       ctx_state.building_visibility_queries.erase(building_query);
       break;
     }
-    case D3D11_QUERY_TIMESTAMP:
     case D3D11_QUERY_TIMESTAMP_DISJOINT:
     case D3D11_QUERY_PIPELINE_STATISTICS: {
       // ignore

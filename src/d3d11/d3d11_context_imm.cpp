@@ -238,6 +238,7 @@ public:
     D3D11_QUERY_DESC desc;
     ((ID3D11Query *)pAsync)->GetDesc(&desc);
     switch (desc.Query) {
+    case D3D11_QUERY_TIMESTAMP:
     case D3D11_QUERY_EVENT:
       break;
     case D3D11_QUERY_OCCLUSION:
@@ -249,7 +250,6 @@ public:
         });
       break;
     }
-    case D3D11_QUERY_TIMESTAMP:
     case D3D11_QUERY_TIMESTAMP_DISJOINT:
     case D3D11_QUERY_PIPELINE_STATISTICS: {
       // ignore
@@ -267,6 +267,7 @@ public:
     D3D11_QUERY_DESC desc;
     ((ID3D11Query *)pAsync)->GetDesc(&desc);
     switch (desc.Query) {
+    case D3D11_QUERY_TIMESTAMP:
     case D3D11_QUERY_EVENT: {
       if (ctx_state.has_dirty_op_since_last_event) {
         auto event_id = cmd_queue.GetNextEventSeqId();
@@ -292,7 +293,6 @@ public:
       promote_flush = true;
       break;
     }
-    case D3D11_QUERY_TIMESTAMP:
     case D3D11_QUERY_TIMESTAMP_DISJOINT:
     case D3D11_QUERY_PIPELINE_STATISTICS: {
       // ignore
@@ -337,10 +337,10 @@ public:
       break;
     }
     case D3D11_QUERY_TIMESTAMP: {
-      if (pData) {
-        (*static_cast<uint64_t *>(pData)) = 0;
-      }
-      return S_OK;
+      hr = static_cast<MTLD3D11EventQuery *>(pAsync)->CheckEventState(cmd_queue.SignaledEventSeqId()) ? S_OK: S_FALSE;
+      if (pData)
+        *static_cast<UINT64 *>(pData) = 0;
+      break;
     }
     case D3D11_QUERY_TIMESTAMP_DISJOINT: {
       if (pData) {
