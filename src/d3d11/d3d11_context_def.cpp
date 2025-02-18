@@ -263,7 +263,7 @@ public:
     switch (desc.Query) {
     case D3D11_QUERY_EVENT:
       promote_flush = true;
-      ctx_state.current_cmdlist->issued_event_query.push_back(static_cast<IMTLD3DEventQuery *>(pAsync));
+      ctx_state.current_cmdlist->issued_event_query.push_back(static_cast<MTLD3D11EventQuery *>(pAsync));
       break;
     case D3D11_QUERY_OCCLUSION:
     case D3D11_QUERY_OCCLUSION_PREDICATE: {

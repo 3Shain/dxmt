@@ -15,12 +15,6 @@ DEFINE_COM_INTERFACE("a301e56d-d87e-4b69-8440-bd003e285904",
   virtual dxmt::Rc<dxmt::VisibilityResultQuery> __query() = 0;
 };
 
-DEFINE_COM_INTERFACE("81fe1837-05fa-4927-811f-3699f997cb9f", IMTLD3DEventQuery)
-    : public ID3D11Query {
-  virtual HRESULT GetData(BOOL* data, uint64_t coherent_seq_id) = 0;
-  virtual void Issue(uint64_t current_seq_id) = 0;
-};
-
 namespace dxmt {
 
 template <typename Query>
@@ -38,12 +32,12 @@ public:
     *ppvObject = nullptr;
 
     if (riid == __uuidof(IUnknown) || riid == __uuidof(ID3D11DeviceChild) ||
-        riid == __uuidof(ID3D11Query) || riid == __uuidof(Query)) {
+        riid == __uuidof(ID3D11Query)) {
       *ppvObject = ref(this);
       return S_OK;
     }
 
-    if (logQueryInterfaceError(__uuidof(Query), riid)) {
+    if (logQueryInterfaceError(__uuidof(ID3D11Query), riid)) {
       Logger::warn("D3D11Query::QueryInterface: Unknown interface query");
       Logger::warn(str::format(riid));
     }
@@ -109,8 +103,36 @@ enum class QueryState {
   Signaled,
 };
 
-HRESULT CreateEventQuery(MTLD3D11Device *pDevice,
-                         const D3D11_QUERY_DESC *pDesc, ID3D11Query **ppQuery);
+struct MTLD3D11EventQuery : public ID3D11Query {
+  virtual void Issue(uint64_t current_seq_id) = 0;
+  virtual bool CheckEventState(uint64_t coherent_seq_id) = 0;
+};
+
+template <typename DataType>
+class MTLD3D11EventQueryImpl : public MTLD3DQueryBase<MTLD3D11EventQuery> {
+public:
+  MTLD3D11EventQueryImpl(MTLD3D11Device *pDevice, const D3D11_QUERY_DESC *desc)
+      : MTLD3DQueryBase<MTLD3D11EventQuery>(pDevice, desc) {}
+
+  UINT STDMETHODCALLTYPE GetDataSize() override { return sizeof(DataType); };
+
+  void Issue(uint64_t current_seq_id) override {
+    state = QueryState::Issued;
+    should_be_signaled_at = current_seq_id;
+  }
+
+  bool CheckEventState(uint64_t coherent_seq_id) override {
+    if (state == QueryState::Signaled || should_be_signaled_at <= coherent_seq_id) {
+      state = QueryState::Signaled;
+      return true;
+    }
+    return false;
+  };
+
+private:
+  QueryState state = QueryState::Signaled;
+  uint64_t should_be_signaled_at = 0;
+};
 
 HRESULT CreateOcculusionQuery(MTLD3D11Device *pDevice,
                               const D3D11_QUERY_DESC *pDesc,

@@ -4000,7 +4000,7 @@ public:
   std::vector<Rc<StagingResource>> written_staging_resources;
   uint32_t visibility_query_count = 0;
   std::vector<std::pair<Com<IMTLD3DOcclusionQuery>, uint32_t>> issued_visibility_query;
-  std::vector<Com<IMTLD3DEventQuery>> issued_event_query;
+  std::vector<Com<MTLD3D11EventQuery>> issued_event_query;
 
 private:
   UINT context_flag;

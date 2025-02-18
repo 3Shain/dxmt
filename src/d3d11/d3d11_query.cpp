@@ -3,36 +3,6 @@
 
 namespace dxmt {
 
-class EventQuery : public MTLD3DQueryBase<IMTLD3DEventQuery> {
-  using MTLD3DQueryBase<IMTLD3DEventQuery>::MTLD3DQueryBase;
-
-  QueryState state = QueryState::Signaled;
-
-  virtual UINT STDMETHODCALLTYPE
-  GetDataSize() override {
-    return sizeof(BOOL);
-  };
-
-  uint64_t should_be_signaled_at = 0;
-
-  virtual void
-  Issue(uint64_t current_seq_id) override {
-    state = QueryState::Issued;
-    should_be_signaled_at = current_seq_id;
-  };
-
-  virtual HRESULT
-  GetData(BOOL *data, uint64_t coherent_seq_id) override {
-    if (state == QueryState::Signaled || should_be_signaled_at <= coherent_seq_id) {
-      state = QueryState::Signaled;
-      *data = TRUE;
-      return S_OK;
-    }
-    *data = FALSE;
-    return S_FALSE;
-  };
-};
-
 class OcculusionQuery : public MTLD3DQueryBase<IMTLD3DOcclusionQuery> {
   using MTLD3DQueryBase<IMTLD3DOcclusionQuery>::MTLD3DQueryBase;
 
@@ -105,15 +75,6 @@ class OcculusionQuery : public MTLD3DQueryBase<IMTLD3DOcclusionQuery> {
     return query;
   }
 };
-
-HRESULT
-CreateEventQuery(MTLD3D11Device *pDevice, const D3D11_QUERY_DESC *pDesc, ID3D11Query **ppQuery) {
-  if (ppQuery) {
-    *ppQuery = ref(new EventQuery(pDevice, pDesc));
-    return S_OK;
-  }
-  return S_FALSE;
-}
 
 HRESULT
 CreateOcculusionQuery(MTLD3D11Device *pDevice, const D3D11_QUERY_DESC *pDesc, ID3D11Query **ppQuery) {

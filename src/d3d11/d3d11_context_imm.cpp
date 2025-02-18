@@ -270,7 +270,7 @@ public:
     case D3D11_QUERY_EVENT: {
       if (ctx_state.has_dirty_op_since_last_event) {
         auto event_id = cmd_queue.GetNextEventSeqId();
-        ((IMTLD3DEventQuery *)pAsync)->Issue(event_id);
+        static_cast<MTLD3D11EventQuery *>(pAsync)->Issue(event_id);
         InvalidateCurrentPass(true);
         EmitOP([event_id](ArgumentEncodingContext &enc) mutable {
           enc.signalEvent(event_id);
@@ -278,7 +278,7 @@ public:
         promote_flush = true;
         ctx_state.has_dirty_op_since_last_event = false;
       } else {
-        ((IMTLD3DEventQuery *)pAsync)->Issue(cmd_queue.GetCurrentEventSeqId());
+        static_cast<MTLD3D11EventQuery *>(pAsync)->Issue(cmd_queue.GetCurrentEventSeqId());
       }
       break;
     }
@@ -319,9 +319,9 @@ public:
     ((ID3D11Query *)pAsync)->GetDesc(&desc);
     switch (desc.Query) {
     case D3D11_QUERY_EVENT: {
-      BOOL null_data;
-      BOOL *data_ptr = pData ? (BOOL *)pData : &null_data;
-      hr = ((IMTLD3DEventQuery *)pAsync)->GetData(data_ptr, cmd_queue.SignaledEventSeqId());
+      hr = static_cast<MTLD3D11EventQuery *>(pAsync)->CheckEventState(cmd_queue.SignaledEventSeqId()) ? S_OK: S_FALSE;
+      if (pData)
+        *static_cast<BOOL *>(pData) = (hr == S_OK);
       break;
     }
     case D3D11_QUERY_OCCLUSION: {

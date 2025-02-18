@@ -437,7 +437,7 @@ public:
 
     switch (pQueryDesc->Query) {
     case D3D11_QUERY_EVENT:
-      return CreateEventQuery(this, pQueryDesc, ppQuery);
+      *ppQuery = ref(new MTLD3D11EventQueryImpl<BOOL>(this, pQueryDesc));
       return S_OK;
     case D3D11_QUERY_OCCLUSION:
     case D3D11_QUERY_OCCLUSION_PREDICATE:
