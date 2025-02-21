@@ -3,7 +3,7 @@ winemetal_src = [
   'exports.c',
   'metalcpp-impl.cpp',
   'error_handling.c',
-  'airconv_thunks.c',
+  'unix_thunks.c',
 ]
 
 if cc.has_link_argument('/entry:WineMetalEntry')

@@ -1,8 +1,8 @@
 #include "stddef.h"
 #include "airconv_public.h"
 
-#ifndef __AIRCONV_THUNKS_H
-#define __AIRCONV_THUNKS_H
+#ifndef __WINEMETAL_UNIX_THUNKS_H
+#define __WINEMETAL_UNIX_THUNKS_H
 
 enum airconv_unixcalls {
   unix_sm50_initialize = 35,
@@ -34,6 +34,13 @@ struct sm50_compile_params {
   sm50_compiled_bitcode_t *bitcode;
   sm50_error_t *error;
   int ret;
+};
+
+
+struct create_fxscaler_params {
+  void* desc;
+  void* device;
+  void* ret;
 };
 
 #define UNIX_CALL(code, params) WINE_UNIX_CALL(unix_##code, params)
