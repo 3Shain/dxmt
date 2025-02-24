@@ -193,6 +193,8 @@ namespace MTLFX
                                     "preExposure" );
             _MTLFX_PRIVATE_DEF_SEL( reset,
                                     "reset" );
+            _MTLFX_PRIVATE_DEF_SEL( setRequiresSynchronousInitialization_,
+                                    "setRequiresSynchronousInitialization:" );
             _MTLFX_PRIVATE_DEF_SEL( setAutoExposureEnabled_,
                                     "setAutoExposureEnabled:" );
             _MTLFX_PRIVATE_DEF_SEL( setColorProcessingMode_,

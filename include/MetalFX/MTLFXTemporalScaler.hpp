@@ -67,6 +67,8 @@ namespace MTLFX
         bool                                        isInputContentPropertiesEnabled() const;
         void                                        setInputContentPropertiesEnabled( bool enabled );
 
+        void                                        setRequiresSynchronousInitialization(bool requiresSynchronousInitialization);
+
         float                                       inputContentMinScale() const;
         void                                        setInputContentMinScale( float scale );
 
@@ -287,6 +289,13 @@ _MTLFX_INLINE bool MTLFX::TemporalScalerDescriptor::isAutoExposureEnabled() cons
 _MTLFX_INLINE void MTLFX::TemporalScalerDescriptor::setAutoExposureEnabled( bool enabled )
 {
     Object::sendMessage< void >( this, _MTL_PRIVATE_SEL( setAutoExposureEnabled_ ), enabled );
+}
+
+//-------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+_MTLFX_INLINE void MTLFX::TemporalScalerDescriptor::setRequiresSynchronousInitialization(bool requiresSynchronousInitialization)
+{
+    Object::sendMessage< void >( this, _MTL_PRIVATE_SEL( setRequiresSynchronousInitialization_ ), requiresSynchronousInitialization );
 }
 
 //-------------------------------------------------------------------------------------------------------------------------------------------------------------

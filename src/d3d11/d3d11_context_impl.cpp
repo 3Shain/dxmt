@@ -3857,8 +3857,25 @@ public:
   }
 };
 
+extern "C" MTLFX::TemporalScaler *
+CreateMTLFXTemporalScaler(MTLFX::TemporalScalerDescriptor *desc,
+                          MTL::Device *device);
+
 template <typename ContextInternalState>
 class MTLD3D11ContextExt : public IMTLD3D11ContextExt {
+  class CachedTemporalScaler {
+  public:
+    MTL::PixelFormat color_pixel_format;
+    MTL::PixelFormat output_pixel_format;
+    MTL::PixelFormat depth_pixel_format;
+    MTL::PixelFormat motion_vector_pixel_format;
+    bool auto_exposure;
+    uint32_t input_width;
+    uint32_t input_height;
+    uint32_t output_width;
+    uint32_t output_height;
+    Obj<MTLFX::TemporalScaler> scaler;
+  };
 public:
   MTLD3D11ContextExt(MTLD3D11DeviceContextImplBase<ContextInternalState> *context) : ctx_(context){};
 
@@ -3871,8 +3888,126 @@ public:
 
   ULONG STDMETHODCALLTYPE Release() final { return ctx_->Release(); }
 
+  MTL::PixelFormat GetCorrectMotionVectorFormat(MTL::PixelFormat format) {
+    switch (format) {
+    case MTL::PixelFormatRG16Uint:
+    case MTL::PixelFormatRG16Float:
+    case MTL::PixelFormatRG16Sint:
+    case MTL::PixelFormatRG16Snorm:
+    case MTL::PixelFormatRG16Unorm:
+      return MTL::PixelFormatRG16Float;
+    case MTL::PixelFormatRG32Uint:
+    case MTL::PixelFormatRG32Float:
+    case MTL::PixelFormatRG32Sint:
+      return MTL::PixelFormatRG32Float;
+    default:
+      break;
+    }
+    return MTL::PixelFormatInvalid;
+  }
+
   void STDMETHODCALLTYPE TemporalUpscale(const MTL_TEMPORAL_UPSCALE_D3D11_DESC *pDesc) final {
-    // TODO
+    Rc<Texture> input, output, depth, motion_vector, exposure;
+    if (!(input = static_cast<D3D11ResourceCommon *>(pDesc->Color)->texture()))
+      return;
+    if (!(output = static_cast<D3D11ResourceCommon *>(pDesc->Output)->texture()))
+      return;
+    if (!(depth = static_cast<D3D11ResourceCommon *>(pDesc->Depth)->texture()))
+      return;
+    if (!(motion_vector = static_cast<D3D11ResourceCommon *>(pDesc->MotionVector)->texture()))
+      return;
+    if (pDesc->ExposureTexture && !(exposure = static_cast<D3D11ResourceCommon *>(pDesc->ExposureTexture)->texture()))
+      return;
+
+    MTL::PixelFormat motion_vector_format = GetCorrectMotionVectorFormat(motion_vector->pixelFormat());
+    if (motion_vector_format == MTL::PixelFormatInvalid) {
+      ERR("TemporalUpscale: invalid motion vector format ", motion_vector->pixelFormat());
+      return;
+    }
+
+    if (motion_vector->width() > input->width() || motion_vector->height() > input->height()) {
+      ERR("TemporalUpscale: resolution of motion vector is larger than input resolution");
+      return;
+    }
+
+    Obj<MTLFX::TemporalScaler> scaler;
+
+    for(CachedTemporalScaler& entry: scaler_cache_) {
+      if(pDesc->AutoExposure != entry.auto_exposure) continue;
+      if(input->width() != entry.input_width) continue;
+      if(input->height() != entry.input_height) continue;
+      if(output->width() != entry.output_width) continue;
+      if(output->height() != entry.output_height) continue;
+      if(input->pixelFormat() != entry.color_pixel_format) continue;
+      if(output->pixelFormat() != entry.output_pixel_format) continue;
+      if(depth->pixelFormat() != entry.depth_pixel_format) continue;
+      if(motion_vector_format != entry.motion_vector_pixel_format) continue;
+
+      scaler = entry.scaler;
+      break;
+    }
+
+    if (!scaler) {
+      CachedTemporalScaler scaler_entry;
+      scaler_entry.color_pixel_format = input->pixelFormat();
+      scaler_entry.output_pixel_format = output->pixelFormat();
+      scaler_entry.depth_pixel_format = depth->pixelFormat();
+      scaler_entry.motion_vector_pixel_format = motion_vector_format;
+      Obj<MTLFX::TemporalScalerDescriptor> descriptor = transfer(MTLFX::TemporalScalerDescriptor::alloc()->init());
+      descriptor->setColorTextureFormat(scaler_entry.color_pixel_format);
+      descriptor->setOutputTextureFormat(scaler_entry.output_pixel_format);
+      descriptor->setDepthTextureFormat(scaler_entry.depth_pixel_format);
+      descriptor->setMotionTextureFormat(motion_vector_format);
+      scaler_entry.auto_exposure = pDesc->AutoExposure;
+      scaler_entry.input_width = input->width();
+      scaler_entry.input_height = input->height();
+      scaler_entry.output_width = output->width();
+      scaler_entry.output_height = output->height();
+      descriptor->setAutoExposureEnabled(scaler_entry.auto_exposure);
+      descriptor->setInputWidth(scaler_entry.input_width);
+      descriptor->setInputHeight(scaler_entry.input_height);
+      descriptor->setOutputWidth(scaler_entry.output_width);
+      descriptor->setOutputHeight(scaler_entry.output_height);
+      descriptor->setInputContentPropertiesEnabled(true);
+      descriptor->setInputContentMinScale(1.0f);
+      descriptor->setInputContentMaxScale(3.0f);
+      descriptor->setRequiresSynchronousInitialization(true);
+      scaler_entry.scaler = transfer<MTLFX::TemporalScaler>(CreateMTLFXTemporalScaler(descriptor, ctx_->device->GetMTLDevice()));
+      scaler = scaler_entry.scaler;
+      scaler_cache_.push_back(std::move(scaler_entry));
+      // to simplify implementation, the created scalers are never destroyed
+      // as they are not expected to be created frequently
+    }
+
+    ctx_->InvalidateCurrentPass();
+    ctx_->EmitOP([input = std::move(input), output = std::move(output),
+                  depth = std::move(depth),
+                  motion_vector = std::move(motion_vector),
+                  exposure = std::move(exposure), scaler = std::move(scaler),
+                  props =
+                      TemporalScalerProps{
+                          pDesc->InputContentWidth,
+                          pDesc->InputContentHeight,
+                          (bool)pDesc->InReset,
+                          (bool)pDesc->DepthReversed,
+                          pDesc->MotionVectorScaleX,
+                          pDesc->MotionVectorScaleY,
+                          pDesc->JitterOffsetX,
+                          pDesc->JitterOffsetY,
+                          pDesc->PreExposure,
+                      },
+                  motion_vector_format](ArgumentEncodingContext &enc) mutable {
+      auto mv_view = motion_vector->createView(
+          {.format = motion_vector_format,
+           .type = MTL::TextureType2D,
+           .usage = motion_vector->current()->texture()->usage(),
+           .firstMiplevel = 0,
+           .miplevelCount = 1,
+           .firstArraySlice = 0,
+           .arraySize = 1});
+      enc.upscaleTemporal(input, output, depth, motion_vector, mv_view,
+                          exposure, scaler, props);
+    });
   }
 
   void STDMETHODCALLTYPE BeginUAVOverlap() final {
@@ -3886,6 +4021,7 @@ public:
 private:
 
   MTLD3D11DeviceContextImplBase<ContextInternalState> *ctx_;
+  std::vector<CachedTemporalScaler> scaler_cache_;
 };
 
 struct used_dynamic_buffer {
