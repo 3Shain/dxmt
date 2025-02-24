@@ -7,7 +7,7 @@ nvapi_link_depends = []
 
 nvapi_dll = shared_library('nvapi64', nvapi_src,
   name_prefix         : '',
-  dependencies        : [ dxgi_dep, util_dep ],
+  dependencies        : [ util_dep ],
   include_directories : [ dxmt_include_path, include_directories('../../external/nvapi') ],
   install             : true,
   vs_module_defs      : 'nvapi64.def',
