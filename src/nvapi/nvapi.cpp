@@ -1,9 +1,9 @@
+#include "log/log.hpp"
+#include <string>
 #define __NVAPI_EMPTY_SAL
 #include "nvapi.h"
 #include "nvapi_interface.h"
 #undef __NVAPI_EMPTY_SAL
-#include "log/log.hpp"
-#include <string>
 
 namespace dxmt {
 Logger Logger::s_instance("nvapi.log");
