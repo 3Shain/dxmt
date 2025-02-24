@@ -41,7 +41,7 @@ namespace dxmt {
 
 
   const static ProfileList g_profiles = {{
-    { R"(\\(GenshinImpact|YuanShen|ZenlessZoneZero|StarRail)\.exe$)", {{
+    { R"(\\(GenshinImpact|YuanShen|ZenlessZoneZero)\.exe$)", {{
       { "dxgi.customDeviceDesc",   "AMD Radeon Pro 5300M" },
       { "dxgi.customVendorId",     "1002" },
       { "dxgi.customDeviceId",     "7340" },
