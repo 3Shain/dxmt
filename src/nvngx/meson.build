@@ -14,7 +14,7 @@ nvngx_dll = shared_library('nvngx', nvngx_src,
   link_depends        : [ nvngx_link_depends ],
 )
 
-if wine_builtin_dll
+# always build as a wine-builtin dll
 custom_target('postprocess_libnvngx',
   input : nvngx_dll,
   output: 'nvngx.dll.postproc',
@@ -22,4 +22,3 @@ custom_target('postprocess_libnvngx',
   depends : nvngx_dll,
   build_by_default : true
 )
-endif
