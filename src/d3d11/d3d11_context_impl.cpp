@@ -10,6 +10,7 @@ since it is for internal use only
 #include "d3d11_context.hpp"
 #include "d3d11_device_child.hpp"
 #include "d3d11_enumerable.hpp"
+#include "d3d11_interfaces.hpp"
 #include "d3d11_private.h"
 #include "d3d11_context_state.hpp"
 #include "d3d11_device.hpp"
@@ -476,7 +477,12 @@ struct DXMT_DRAW_ARGUMENTS {
   uint32_t BaseVertex;
 };
 
+template <typename ContextInternalState>
+class MTLD3D11ContextExt;
+
 template <typename ContextInternalState> class MTLD3D11DeviceContextImplBase : public MTLD3D11DeviceContextBase {
+  template<typename ContextInternalState_>
+  friend class MTLD3D11ContextExt;
 public:
   HRESULT
   QueryInterface(REFIID riid, void **ppvObject) override {
@@ -490,6 +496,11 @@ public:
         riid == __uuidof(ID3D11DeviceContext3) || riid == __uuidof(ID3D11DeviceContext4) ||
         riid == __uuidof(IMTLD3D11DeviceContext)) {
       *ppvObject = ref(this);
+      return S_OK;
+    }
+
+    if (riid == __uuidof(IMTLD3D11ContextExt)) {
+      *ppvObject = ref(&ext_);
       return S_OK;
     }
 
@@ -3824,6 +3835,7 @@ public:
 protected:
   D3D11ContextState state_;
   D3D11UserDefinedAnnotation annotation_;
+  MTLD3D11ContextExt<ContextInternalState> ext_;
 
 public:
   MTLD3D11DeviceContextImplBase(MTLD3D11Device *pDevice, ContextInternalState &ctx_state) :
@@ -3831,7 +3843,8 @@ public:
       device(pDevice),
       ctx_state(ctx_state),
       state_(),
-      annotation_(this) {
+      annotation_(this),
+      ext_(this) {
     pDevice->CreateRasterizerState2(&kDefaultRasterizerDesc, (ID3D11RasterizerState2 **)&default_rasterizer_state);
     pDevice->CreateBlendState1(&kDefaultBlendDesc, (ID3D11BlendState1 **)&default_blend_state);
     pDevice->CreateDepthStencilState(
@@ -3842,6 +3855,37 @@ public:
     default_blend_state->Release();
     default_depth_stencil_state->Release();
   }
+};
+
+template <typename ContextInternalState>
+class MTLD3D11ContextExt : public IMTLD3D11ContextExt {
+public:
+  MTLD3D11ContextExt(MTLD3D11DeviceContextImplBase<ContextInternalState> *context) : ctx_(context){};
+
+  HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid,
+                                           void **ppvObject) final {
+    return ctx_->QueryInterface(riid, ppvObject);
+  }
+
+  ULONG STDMETHODCALLTYPE AddRef() final { return ctx_->AddRef(); }
+
+  ULONG STDMETHODCALLTYPE Release() final { return ctx_->Release(); }
+
+  void STDMETHODCALLTYPE TemporalUpscale(const MTL_TEMPORAL_UPSCALE_D3D11_DESC *pDesc) final {
+    // TODO
+  }
+
+  void STDMETHODCALLTYPE BeginUAVOverlap() final {
+    // TODO
+  }
+
+  void STDMETHODCALLTYPE EndUAVOverlap() final {
+    // TODO
+  }
+
+private:
+
+  MTLD3D11DeviceContextImplBase<ContextInternalState> *ctx_;
 };
 
 struct used_dynamic_buffer {
