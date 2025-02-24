@@ -383,6 +383,35 @@ ArgumentEncodingContext::upscale(Rc<Texture> &texture, Rc<Texture> &upscaled, Ob
 }
 
 void
+ArgumentEncodingContext::upscaleTemporal(
+    Rc<Texture> &input, Rc<Texture> &output, Rc<Texture> &depth, Rc<Texture> &motion_vector, TextureViewKey mvViewId,
+    Rc<Texture> &exposure, Obj<MTLFX::TemporalScaler> &scaler, const TemporalScalerProps &props
+) {
+  assert(!encoder_current);
+  auto encoder_info = allocate<TemporalUpscaleData>();
+  encoder_info->type = EncoderType::TemporalUpscale;
+  encoder_info->id = nextEncoderId();
+  encoder_info->input = input->current()->texture();
+  encoder_info->output = output->current()->texture();
+  encoder_info->depth = depth->current()->texture();
+  encoder_info->motion_vector = motion_vector->view(mvViewId);
+  encoder_info->scaler = scaler;
+  encoder_info->props = props;
+
+  encoder_info->tex_read.add(input->current()->depkey);
+  encoder_info->tex_read.add(depth->current()->depkey);
+  encoder_info->tex_read.add(motion_vector->current()->depkey);
+  encoder_info->tex_write.add(output->current()->depkey);
+  if(exposure) {
+    encoder_info->exposure = exposure->current()->texture();
+    encoder_info->tex_read.add(exposure->current()->depkey);
+  }
+
+  encoder_current = encoder_info;
+  endPass();
+}
+
+void
 ArgumentEncodingContext::signalEvent(uint64_t value) {
   assert(!encoder_current);
   auto encoder_info = allocate<SignalEventData>();
@@ -691,6 +720,27 @@ ArgumentEncodingContext::flushCommands(MTL::CommandBuffer *cmdbuf, uint64_t seqI
       auto data = static_cast<SignalEventData *>(current);
       cmdbuf->encodeSignalEvent(data->event, data->value);
       data->~SignalEventData();
+      break;
+    }
+    case EncoderType::TemporalUpscale: {
+      auto data = static_cast<TemporalUpscaleData *>(current);
+      data->scaler->setColorTexture(data->input);
+      data->scaler->setOutputTexture(data->output);
+      data->scaler->setDepthTexture(data->depth);
+      data->scaler->setMotionTexture(data->motion_vector);
+      data->scaler->setReset(data->props.reset);
+      data->scaler->setDepthReversed(data->props.depth_reversed);
+      data->scaler->setInputContentWidth(data->props.input_content_width);
+      data->scaler->setInputContentHeight(data->props.input_content_height);
+      data->scaler->setMotionVectorScaleX(data->props.motion_vector_scale_x);
+      data->scaler->setMotionVectorScaleY(data->props.motion_vector_scale_y);
+      data->scaler->setJitterOffsetX(data->props.jitter_offset_x);
+      data->scaler->setJitterOffsetY(data->props.jitter_offset_y);
+      data->scaler->setPreExposure(data->props.pre_exposure);
+      if(data->exposure)
+        data->scaler->setExposureTexture(data->exposure);
+      data->scaler->encodeToCommandBuffer(cmdbuf);
+      data->~TemporalUpscaleData();
       break;
     }
     default:

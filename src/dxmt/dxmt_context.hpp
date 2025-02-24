@@ -8,6 +8,7 @@
 #include "Metal/MTLBuffer.hpp"
 #include "Metal/MTLSampler.hpp"
 #include "MetalFX/MTLFXSpatialScaler.hpp"
+#include "MetalFX/MTLFXTemporalScaler.hpp"
 #include "QuartzCore/CAMetalDrawable.hpp"
 #include "QuartzCore/CAMetalLayer.hpp"
 #include "dxmt_buffer.hpp"
@@ -91,6 +92,7 @@ enum class EncoderType {
   Present,
   SpatialUpscale,
   SignalEvent,
+  TemporalUpscale,
 };
 
 struct EncoderData {
@@ -171,6 +173,28 @@ struct SpatialUpscaleData : EncoderData {
 struct SignalEventData : EncoderData {
   Obj<MTL::Event> event;
   uint64_t value;
+};
+
+struct TemporalScalerProps {
+  uint32_t input_content_width;
+  uint32_t input_content_height;
+  bool reset;
+  bool depth_reversed;
+  float motion_vector_scale_x;
+  float motion_vector_scale_y;
+  float jitter_offset_x;
+  float jitter_offset_y;
+  float pre_exposure;
+};
+
+struct TemporalUpscaleData : EncoderData {
+  Obj<MTL::Texture> input;
+  Obj<MTL::Texture> output;
+  Obj<MTL::Texture> depth;
+  Obj<MTL::Texture> motion_vector;
+  Obj<MTL::Texture> exposure;
+  MTLFX::TemporalScaler* scaler;
+  TemporalScalerProps props;
 };
 
 template <bool Tessellation>
@@ -463,6 +487,11 @@ public:
   void present(Rc<Texture> &texture, CA::MetalLayer *layer, double after);
 
   void upscale(Rc<Texture> &texture, Rc<Texture> &upscaled, Obj<MTLFX::SpatialScaler> &scaler);
+
+  void upscaleTemporal(
+      Rc<Texture> &input, Rc<Texture> &output, Rc<Texture> &depth, Rc<Texture> &motion_vector, TextureViewKey mvViewId,
+      Rc<Texture> &exposure, Obj<MTLFX::TemporalScaler> &scaler, const TemporalScalerProps &props
+  );
 
   void signalEvent(uint64_t value);
 
