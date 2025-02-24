@@ -259,7 +259,10 @@ InitializeAndNormalizeViewDescriptor(
       ViewDesc.Texture3D.WSize = ArraySize - ViewDesc.Texture3D.FirstWSlice;
     if (TextureType == MTL::TextureType3D) {
 
-      if ((ViewDesc.Texture3D.WSize == ArraySize) && ViewDesc.Texture3D.FirstWSlice == 0) {
+      if (ViewDesc.Texture3D.FirstWSlice == 0) {
+        if (ViewDesc.Texture3D.WSize != ArraySize) {
+          WARN("Created a subview of 3D texture.");
+        }
         Descriptor.type = MTL::TextureType3D;
         Descriptor.format = metal_format.PixelFormat;
         Descriptor.firstMiplevel = ViewDesc.Texture3D.MipSlice;
@@ -399,7 +402,10 @@ HRESULT InitializeAndNormalizeViewDescriptor(
     if (~ViewDesc.Texture3D.WSize == 0)
       ViewDesc.Texture3D.WSize = ArraySize - ViewDesc.Texture3D.FirstWSlice;
     if (texture_type == MTL::TextureType3D) {
-      if ((ViewDesc.Texture3D.WSize == ArraySize) && (ViewDesc.Texture3D.FirstWSlice == 0)) {
+      if (ViewDesc.Texture3D.FirstWSlice == 0) {
+        if (ViewDesc.Texture3D.WSize != ArraySize) {
+          WARN("Created a subview of 3D texture.");
+        }
         Descriptor.type = MTL::TextureType3D;
         Descriptor.format = metal_format.PixelFormat;
         Descriptor.firstMiplevel = ViewDesc.Texture3D.MipSlice;
