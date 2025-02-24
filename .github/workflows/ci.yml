@@ -14,6 +14,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          submodules: true
       - name: Cache Toolchains
         id: cache-toolchains
         uses: actions/cache@v4
