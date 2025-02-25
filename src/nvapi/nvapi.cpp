@@ -108,6 +108,34 @@ NVAPI_INTERFACE NvAPI_D3D11_SetDepthBoundsTest(IUnknown *pDeviceOrContext,
   return NVAPI_NOT_SUPPORTED;
 }
 
+NVAPI_INTERFACE NvAPI_D3D11_IsNvShaderExtnOpCodeSupported(
+    __in IUnknown *pDev, __in NvU32 opCode, __out bool *pSupported) {
+  switch (opCode) {
+  default:
+    WARN("nvapi: unsupported shader extension opcode ", opCode);
+    *pSupported = false;
+    break;
+  }
+  return NVAPI_OK;
+}
+
+Com<IMTLD3D11DeviceExt> GetD3D11DeviceExt(IUnknown *pDevice) {
+  Com<IMTLD3D11DeviceExt> device_ext;
+  if (FAILED(pDevice->QueryInterface(IID_PPV_ARGS(&device_ext)))) {
+    return nullptr;
+  }
+  return device_ext;
+}
+
+NVAPI_INTERFACE NvAPI_D3D11_SetNvShaderExtnSlot(__in IUnknown *pDev,
+                                                __in NvU32 uavSlot) {
+  auto device_ext = GetD3D11DeviceExt(pDev);
+  if (!device_ext)
+    return NVAPI_INVALID_ARGUMENT;
+  device_ext->SetShaderExtensionSlot(uavSlot);
+  return NVAPI_OK;
+}
+
 extern "C" __cdecl void *nvapi_QueryInterface(NvU32 id) {
   switch (id) {
   case 0x0150e828:
@@ -131,6 +159,10 @@ extern "C" __cdecl void *nvapi_QueryInterface(NvU32 id) {
     return (void *)&NvAPI_D3D11_EndUAVOverlap;
   case 0x7aaf7a04:
     return (void *)&NvAPI_D3D11_SetDepthBoundsTest;
+  case 0x5f68da40:
+    return (void *)&NvAPI_D3D11_IsNvShaderExtnOpCodeSupported;
+  case 0x8e90bb9f:
+    return (void *)&NvAPI_D3D11_SetNvShaderExtnSlot;
   default:
     break;
   }
