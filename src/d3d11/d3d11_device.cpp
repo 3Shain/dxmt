@@ -1,6 +1,7 @@
 #include "Metal/MTLPixelFormat.hpp"
 #include "com/com_guid.hpp"
 #include "d3d11_input_layout.hpp"
+#include "d3d11_interfaces.hpp"
 #include "d3d11_pipeline.hpp"
 #include "d3d11_class_linkage.hpp"
 #include "d3d11_inspection.hpp"
@@ -57,7 +58,7 @@ const GUID kGpaUUID = {0xccffef16,
                        0x468f,
                        {0xbc, 0xe3, 0xcd, 0x95, 0x33, 0x69, 0xa3, 0x9a}};
 
-class MTLD3D11DeviceImpl final : public MTLD3D11Device {
+class MTLD3D11DeviceImpl final : public MTLD3D11Device, public IMTLD3D11DeviceExt {
 public:
   MTLD3D11DeviceImpl(MTLDXGIObject<IMTLDXGIDevice> *container,
                  IMTLDXGIAdapter *pAdapter, D3D_FEATURE_LEVEL FeatureLevel,
@@ -1055,6 +1056,10 @@ public:
     commandlist_pool_->CreateCommandList(pCommandList);
   };
 
+  virtual void STDMETHODCALLTYPE SetShaderExtensionSlot(UINT Slot) final {
+    // TODO
+  };
+
 private:
   MTLDXGIObject<IMTLDXGIDevice> *m_container;
   IMTLDXGIAdapter *adapter_;
@@ -1170,7 +1175,12 @@ public:
 
     if (riid == __uuidof(ID3D11Device) || riid == __uuidof(ID3D11Device1) ||
         riid == __uuidof(ID3D11Device2) || riid == __uuidof(ID3D11Device3)) {
-      *ppvObject = ref(&d3d11_device_);
+      *ppvObject = ref_and_cast<ID3D11Device>(&d3d11_device_);
+      return S_OK;
+    }
+
+    if (riid == __uuidof(IMTLD3D11DeviceExt)) {
+      *ppvObject = ref_and_cast<IMTLD3D11DeviceExt>(&d3d11_device_);
       return S_OK;
     }
 
