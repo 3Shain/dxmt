@@ -63,9 +63,16 @@ public:
     D3D11_ASSERT(_.ptr() == nullptr);
 
     if (pInitialData) {
-      D3D11_ASSERT(pInitialData->SysMemPitch == bytes_per_row);
-      D3D11_ASSERT(allocation->mappedMemory);
-      memcpy(allocation->mappedMemory, pInitialData->pSysMem, bytes_per_image);
+      if (pInitialData->SysMemPitch != bytes_per_row_) {
+        for (unsigned row = 0; row < texture_->height(); row++) {
+          memcpy(
+              ptr_add(allocation->mappedMemory, row * bytes_per_row_),
+              ptr_add(pInitialData->pSysMem, row * pInitialData->SysMemPitch),
+              pInitialData->SysMemPitch);
+        }
+      } else {
+        memcpy(allocation->mappedMemory, pInitialData->pSysMem, bytes_per_image);
+      }
     }
     dynamic_ = new DynamicTexture(texture_.ptr(), flags);
   }
