@@ -179,6 +179,17 @@ extern "C" HRESULT WINAPI D3D11CreateDevice(
                                        pFeatureLevel, ppImmediateContext);
 }
 
+extern "C" HRESULT __stdcall D3D11On12CreateDevice(
+    IUnknown *pDevice, UINT Flags, const D3D_FEATURE_LEVEL *pFeatureLevels,
+    UINT FeatureLevels, IUnknown *const *ppCommandQueues, UINT NumQueues,
+    UINT NodeMask, ID3D11Device **ppDevice,
+    ID3D11DeviceContext **ppImmediateContext,
+    D3D_FEATURE_LEVEL *pChosenFeatureLevel) {
+  InitReturnPtr(ppDevice);
+  InitReturnPtr(ppImmediateContext);
+  return E_NOTIMPL;
+}
+
 } // namespace dxmt
 
 BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID reserved) {  
