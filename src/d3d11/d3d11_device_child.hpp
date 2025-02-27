@@ -85,26 +85,6 @@ public:
       : MTLD3D11DeviceObject<ComObject<Base...>>(pDevice) {}
 
   virtual ~MTLD3D11DeviceChild() {};
-
-  // ULONG STDMETHODCALLTYPE AddRef() {
-  //   uint32_t refCount = this->m_refCount++;
-  //   if (unlikely(!refCount)) {
-  //     this->AddRefPrivate();
-  //     // this->GetParentInterface()->AddRef();
-  //   }
-
-  //   return refCount + 1;
-  // }
-
-  // ULONG STDMETHODCALLTYPE Release() {
-  //   uint32_t refCount = --this->m_refCount;
-  //   if (unlikely(!refCount)) {
-  //     // auto *parent = this->GetParentInterface();
-  //     this->ReleasePrivate();
-  //     // parent->Release();
-  //   }
-  //   return refCount;
-  // }
 };
 
 /**

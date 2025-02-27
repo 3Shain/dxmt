@@ -158,7 +158,7 @@ public:
       return backbuffer_->QueryInterface(riid, surface);
     } else {
       ERR("Non zero-index buffer is not supported");
-      return E_FAIL;
+      return DXGI_ERROR_UNSUPPORTED;
     }
   };
 
@@ -307,6 +307,9 @@ public:
             m_device, &backbuffer_desc_, nullptr, reinterpret_cast<ID3D11Texture2D1 **>(&backbuffer_)
         )))
       return E_FAIL;
+    // CreateDeviceTexture2D returns public reference, change to private one here
+    backbuffer_->AddRefPrivate();
+    backbuffer_->Release();
 
     if constexpr (EnableMetalFX) {
       D3D11_TEXTURE2D_DESC1 upscaled_desc_ = backbuffer_desc_;
@@ -710,7 +713,7 @@ private:
   DXGI_SWAP_CHAIN_FULLSCREEN_DESC fullscreen_desc_;
   D3D11_TEXTURE2D_DESC1 backbuffer_desc_;
   Com<IMTLD3D11DeviceContext> device_context_;
-  Com<D3D11ResourceCommon> backbuffer_;
+  Com<D3D11ResourceCommon, false> backbuffer_;
   HANDLE present_semaphore_;
   HWND hWnd;
   HMONITOR monitor_;
@@ -746,6 +749,10 @@ CreateSwapChain(
   void *native_view;
   if (FAILED(layer_factory->GetMetalLayerFromHwnd(hWnd, &layer, &native_view))) {
     ERR("CreateSwapChain: failed to create CAMetalLayer");
+    return E_FAIL;
+  }
+  if (pDesc->SwapEffect != DXGI_SWAP_EFFECT_DISCARD && pDesc->BufferCount != 1) {
+    ERR("CreateSwapChain: unsupported swap effect ", pDesc->SwapEffect , " with backbuffer size ", pDesc->BufferCount);
     return E_FAIL;
   }
   layer->setDevice(pDevice->GetMTLDevice());

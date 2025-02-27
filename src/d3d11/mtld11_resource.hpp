@@ -105,6 +105,8 @@ struct D3D11ResourceCommon : ID3D11Resource {
     /* ID3D11Texture3D1::GetDesc */
   virtual void STDMETHODCALLTYPE GetDesc1(void *pDesc) = 0;
 
+  virtual void AddRefPrivate() = 0;
+  virtual void ReleasePrivate() = 0;
   virtual HRESULT STDMETHODCALLTYPE
   CreateShaderResourceView(const D3D11_SHADER_RESOURCE_VIEW_DESC1 *pDesc, ID3D11ShaderResourceView1 **ppView) = 0;
   virtual HRESULT STDMETHODCALLTYPE
