@@ -19,6 +19,22 @@ enum class FeatureCompatibility {
     UnsupportedMultipleStreamOutput,
   };
 
+enum class ScalerType {
+  None,
+  Spatial,
+  Temporal,
+};
+
+struct ScalerInfo {
+  ScalerType type = ScalerType::None;
+  uint32_t input_width;
+  uint32_t input_height;
+  uint32_t output_width;
+  uint32_t output_height;
+  bool auto_exposure;
+  bool motion_vector_highres;
+};
+
 struct FrameStatistics {
   Flags<FeatureCompatibility> compatibility_flags;
   uint32_t command_buffer_count = 0;
@@ -37,6 +53,7 @@ struct FrameStatistics {
   clock::duration encode_flush_interval{};
   clock::duration drawable_blocking_interval{};
   clock::duration present_lantency_interval{};
+  ScalerInfo last_scaler_info{};
 
   void
   reset() {
@@ -57,6 +74,7 @@ struct FrameStatistics {
     encode_flush_interval = {};
     drawable_blocking_interval = {};
     present_lantency_interval = {};
+    last_scaler_info.type = {};
   };
 };
 

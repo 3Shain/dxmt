@@ -140,6 +140,8 @@ namespace Private
             "addLabel:after:");
         _CA_PRIVATE_DEF_SEL(updateLabel_,
             "updateLabel:value:");
+        _CA_PRIVATE_DEF_SEL(remove_,
+            "remove:");
     } // Class
 } // Private
 } // CA

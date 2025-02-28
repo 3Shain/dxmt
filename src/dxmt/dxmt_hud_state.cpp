@@ -36,6 +36,10 @@ HUDState::printLine(const char *c_str) {
 
 void
 HUDState::end() {
+  while (line_labels_.size() > current_line_) {
+    hud_->remove(line_labels_.back());
+    line_labels_.pop_back();
+  }
   pool_ = nullptr;
 }
 

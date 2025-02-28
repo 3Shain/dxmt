@@ -39,6 +39,8 @@ public:
     bool                     addLabel(NS::String* label, NS::String* after);
 
     void                     updateLabel(NS::String* label, NS::String* value);
+
+    void                     remove(NS::String* label);
 };
 } // namespace CA
 
@@ -63,5 +65,12 @@ _CA_INLINE void CA::DeveloperHUDProperties::updateLabel(NS::String* label, NS::S
 {
     return Object::sendMessage<void>(this, _CA_PRIVATE_SEL(updateLabel_),
         label, value);
+}
+
+//-------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+_CA_INLINE void CA::DeveloperHUDProperties::remove(NS::String* label)
+{
+    return Object::sendMessage<void>(this, _CA_PRIVATE_SEL(remove_), label);
 }
 
