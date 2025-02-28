@@ -514,6 +514,12 @@ public:
       chunk->emitcc([this, vsync_duration, backbuffer = backbuffer_->texture(),
                      upscaled = upscaled_backbuffer_->texture(),
                      scaler = this->metalfx_scaler](ArgumentEncodingContext &ctx) mutable {
+        auto &scaler_info = ctx.currentFrameStatistics().last_scaler_info;
+        scaler_info.type = ScalerType::Spatial;
+        scaler_info.input_width = backbuffer->width();
+        scaler_info.input_height = backbuffer->height();
+        scaler_info.output_width = upscaled->width();
+        scaler_info.output_height = upscaled->height();
         ctx.upscale(backbuffer, upscaled, scaler);
         ctx.present(upscaled, layer_weak_, vsync_duration);
         ReleaseSemaphore(present_semaphore_, 1, nullptr);
@@ -592,6 +598,27 @@ public:
         std::min(frame.render_pass_optimized, 999u),
         std::min(frame.clear_pass_count - frame.clear_pass_optimized, 999u), std::min(frame.clear_pass_optimized, 99u)
     ));
+    {
+      /* scaler info */
+      auto &info = frame.last_scaler_info;
+      if (info.type == ScalerType::Temporal) {
+        auto &info = frame.last_scaler_info;
+        hud.printLine(std::format(
+            "MetalFX: Temporal {} {}", info.auto_exposure ? "AEXP" : "", info.motion_vector_highres ? "HMV" : ""
+        ));
+        hud.printLine(std::format(
+            "Scale: {:4}x{:4}->{:4}x{:4}", info.input_width, info.input_height, info.output_width, info.output_height
+        ));
+      }
+      if (info.type == ScalerType::Spatial) {
+        hud.printLine(std::format(
+            "MetalFX: Spatial"
+        ));
+        hud.printLine(std::format(
+            "Scale: {:4}x{:4}->{:4}x{:4}", info.input_width, info.input_height, info.output_width, info.output_height
+        ));
+      }
+    }
     hud.end();
   }
 

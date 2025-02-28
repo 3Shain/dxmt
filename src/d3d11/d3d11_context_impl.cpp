@@ -4005,8 +4005,19 @@ public:
            .miplevelCount = 1,
            .firstArraySlice = 0,
            .arraySize = 1});
-      enc.upscaleTemporal(input, output, depth, motion_vector, mv_view,
-                          exposure, scaler, props);
+      auto &scaler_info = enc.currentFrameStatistics().last_scaler_info;
+      scaler_info.type = ScalerType::Temporal;
+      scaler_info.auto_exposure = exposure == nullptr;
+      scaler_info.input_width = props.input_content_width;
+      scaler_info.input_height = props.input_content_height;
+      scaler_info.output_width = output->width();
+      scaler_info.output_height = output->height();
+
+      scaler_info.motion_vector_highres = ((scaler_info.input_width < scaler_info.output_width) ||
+                                           (scaler_info.input_height < scaler_info.output_height)) &&
+                                          ((scaler_info.output_width <= motion_vector->width()) ||
+                                           (scaler_info.output_height <= motion_vector->height()));
+      enc.upscaleTemporal(input, output, depth, motion_vector, mv_view, exposure, scaler, props);
     });
   }
 
