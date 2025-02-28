@@ -751,8 +751,10 @@ CreateSwapChain(
     ERR("CreateSwapChain: failed to create CAMetalLayer");
     return E_FAIL;
   }
-  if (pDesc->SwapEffect != DXGI_SWAP_EFFECT_DISCARD && pDesc->BufferCount != 1) {
-    ERR("CreateSwapChain: unsupported swap effect ", pDesc->SwapEffect , " with backbuffer size ", pDesc->BufferCount);
+  if ((pDesc->SwapEffect != DXGI_SWAP_EFFECT_DISCARD &&
+       pDesc->SwapEffect != DXGI_SWAP_EFFECT_FLIP_DISCARD) &&
+      pDesc->BufferCount != 1) {
+    ERR("CreateSwapChain: unsupported swap effect ", pDesc->SwapEffect, " with backbuffer size ", pDesc->BufferCount);
     return E_FAIL;
   }
   layer->setDevice(pDevice->GetMTLDevice());
