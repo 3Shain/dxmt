@@ -5,6 +5,7 @@
 #define __NVAPI_EMPTY_SAL
 #include "nvapi.h"
 #include "nvapi_interface.h"
+#include "nvShaderExtnEnums.h"
 #undef __NVAPI_EMPTY_SAL
 
 namespace dxmt {
@@ -111,6 +112,16 @@ NVAPI_INTERFACE NvAPI_D3D11_SetDepthBoundsTest(IUnknown *pDeviceOrContext,
 NVAPI_INTERFACE NvAPI_D3D11_IsNvShaderExtnOpCodeSupported(
     __in IUnknown *pDev, __in NvU32 opCode, __out bool *pSupported) {
   switch (opCode) {
+  /*
+   * UnrealEngine queries it for checking if Nanite capability
+   */
+  case NV_EXTN_OP_UINT64_ATOMIC:
+  /*
+   * UnrealEngine queries it for checking if GPU support time query (NVIDIA-specific workaround)
+   */
+  case NV_EXTN_OP_SHFL:
+    *pSupported = false;
+    break;
   default:
     WARN("nvapi: unsupported shader extension opcode ", opCode);
     *pSupported = false;
@@ -134,6 +145,43 @@ NVAPI_INTERFACE NvAPI_D3D11_SetNvShaderExtnSlot(__in IUnknown *pDev,
     return NVAPI_INVALID_ARGUMENT;
   device_ext->SetShaderExtensionSlot(uavSlot);
   return NVAPI_OK;
+}
+
+NVAPI_INTERFACE
+NvAPI_DISP_GetDisplayIdByDisplayName(const char *displayName, NvU32 *displayId) {
+  /*
+   * TODO: UnrealEngine calls this for checking HDR support
+   */
+  return NVAPI_NVIDIA_DEVICE_NOT_FOUND;
+}
+
+NVAPI_INTERFACE
+NvAPI_D3D_GetObjectHandleForResource(IUnknown *pDevice, IUnknown *pResource, NVDX_ObjectHandle *pHandle) {
+  /*
+   * SLI related API, return resource pointer as fake handle, since we won't use the handle anyway
+   */
+  *pHandle = (NVDX_ObjectHandle)pResource;
+  return NVAPI_OK;
+}
+
+NVAPI_INTERFACE
+NvAPI_D3D_SetResourceHint(
+    IUnknown *pDev, NVDX_ObjectHandle obj, NVAPI_D3D_SETRESOURCEHINT_CATEGORY dwHintCategory, NvU32 dwHintName,
+    NvU32 *pdwHintValue
+) {
+  /*
+   * SLI related API, just do nothing
+   */
+  return NVAPI_OK;
+}
+
+NVAPI_INTERFACE NvAPI_EnumPhysicalGPUs(NvPhysicalGpuHandle nvGPUHandle[NVAPI_MAX_PHYSICAL_GPUS], NvU32 *pGpuCount) {
+  /*
+   * For now let's not report any GPU at all
+   * TODO: return fake handle (very unlikely we need to deal with multi-GPUs)
+   */
+  *pGpuCount = 0;
+  return NVAPI_NVIDIA_DEVICE_NOT_FOUND;
 }
 
 extern "C" __cdecl void *nvapi_QueryInterface(NvU32 id) {
@@ -163,6 +211,14 @@ extern "C" __cdecl void *nvapi_QueryInterface(NvU32 id) {
     return (void *)&NvAPI_D3D11_IsNvShaderExtnOpCodeSupported;
   case 0x8e90bb9f:
     return (void *)&NvAPI_D3D11_SetNvShaderExtnSlot;
+  case 0xae457190:
+    return (void *)&NvAPI_DISP_GetDisplayIdByDisplayName;
+  case 0xfceac864:
+    return (void *)&NvAPI_D3D_GetObjectHandleForResource;
+  case 0x6c0ed98c:
+    return (void *)&NvAPI_D3D_SetResourceHint;
+  case 0xe5ac921f:
+    return (void *)&NvAPI_EnumPhysicalGPUs;
   default:
     break;
   }
