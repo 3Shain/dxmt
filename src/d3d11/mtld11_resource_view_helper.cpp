@@ -402,6 +402,17 @@ HRESULT InitializeAndNormalizeViewDescriptor(
     if (~ViewDesc.Texture3D.WSize == 0)
       ViewDesc.Texture3D.WSize = ArraySize - ViewDesc.Texture3D.FirstWSlice;
     if (texture_type == MTL::TextureType3D) {
+      if (ViewDesc.Texture3D.WSize == 1) {
+        Descriptor.type = MTL::TextureType3D;
+        Descriptor.format = metal_format.PixelFormat;
+        Descriptor.firstMiplevel = ViewDesc.Texture3D.MipSlice;
+        Descriptor.miplevelCount = 1;
+        Descriptor.firstArraySlice = 0;
+        Descriptor.arraySize = 1;
+        AttachmentDesc.DepthPlane = ViewDesc.Texture3D.FirstWSlice;
+        GetRenderTargetSize(pTexture, Descriptor.firstMiplevel, AttachmentDesc);
+        return S_OK;
+      }
       if (ViewDesc.Texture3D.FirstWSlice == 0) {
         if (ViewDesc.Texture3D.WSize != ArraySize) {
           WARN("Created a subview of 3D texture.");
@@ -413,17 +424,6 @@ HRESULT InitializeAndNormalizeViewDescriptor(
         Descriptor.firstArraySlice = 0;
         Descriptor.arraySize = 1;
         AttachmentDesc.RenderTargetArrayLength = ArraySize;
-        GetRenderTargetSize(pTexture, Descriptor.firstMiplevel, AttachmentDesc);
-        return S_OK;
-      }
-      if (ViewDesc.Texture3D.WSize == 1) {
-        Descriptor.type = MTL::TextureType3D;
-        Descriptor.format = metal_format.PixelFormat;
-        Descriptor.firstMiplevel = ViewDesc.Texture3D.MipSlice;
-        Descriptor.miplevelCount = 1;
-        Descriptor.firstArraySlice = 0;
-        Descriptor.arraySize = 1;
-        AttachmentDesc.DepthPlane = ViewDesc.Texture3D.FirstWSlice;
         GetRenderTargetSize(pTexture, Descriptor.firstMiplevel, AttachmentDesc);
         return S_OK;
       }
