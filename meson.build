@@ -102,4 +102,7 @@ wine_builtin_dll = get_option('wine_builtin_dll')
 
 subdir('libs')
 subdir('src')
+
+if get_option('enable_tests')
 subdir('tests')
+endif
