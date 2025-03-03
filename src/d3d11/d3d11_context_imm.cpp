@@ -93,13 +93,13 @@ public:
   HRESULT
   Map(ID3D11Resource *pResource, UINT Subresource, D3D11_MAP MapType, UINT MapFlags,
       D3D11_MAPPED_SUBRESOURCE *pMappedResource) override {
+    if (unlikely(!pResource || !pMappedResource))
+      return E_INVALIDARG;
     UINT buffer_length = 0, &row_pitch = buffer_length;
     UINT bind_flag = 0, &depth_pitch = bind_flag;
     auto current_seq_id = cmd_queue.CurrentSeqId();
     auto coherent_seq_id = cmd_queue.CoherentSeqId();
     if (auto dynamic = GetDynamicBuffer(pResource, &buffer_length, &bind_flag)) {
-      if (!pMappedResource)
-        return E_INVALIDARG;
       switch (MapType) {
       case D3D11_MAP_READ:
       case D3D11_MAP_WRITE:
@@ -141,8 +141,6 @@ public:
       return S_OK;
     }
     if (auto dynamic = GetDynamicTexture(pResource, &row_pitch, &depth_pitch)) {
-      if (!pMappedResource)
-        return E_INVALIDARG;
       switch (MapType) {
       case D3D11_MAP_READ:
       case D3D11_MAP_WRITE:
@@ -226,6 +224,8 @@ public:
 
   void
   Unmap(ID3D11Resource *pResource, UINT Subresource) override {
+    if (unlikely(!pResource))
+      return;
     if (auto staging = GetStagingResource(pResource, Subresource)) {
       staging->unmap();
     };
