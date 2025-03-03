@@ -253,9 +253,17 @@ ArgumentEncodingContext::encodeShaderResources(const MTL_SHADER_REFLECTION *refl
         }
       }
       if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_UAV_COUNTER) {
-        encoded_buffer[arg.StructurePtrOffset + 2] = uav.counter->current()->gpuAddress;
-        access(uav.counter, 0, 4, DXMT_ENCODER_RESOURCE_ACESS_READ | DXMT_ENCODER_RESOURCE_ACESS_WRITE);
-        makeResident<stage, TessellationDraw>(uav.counter.ptr(), true, true);
+        if (uav.counter) {
+          encoded_buffer[arg.StructurePtrOffset + 2] = uav.counter->current()->gpuAddress;
+          access(uav.counter, 0, 4, DXMT_ENCODER_RESOURCE_ACESS_READ | DXMT_ENCODER_RESOURCE_ACESS_WRITE);
+          makeResident<stage, TessellationDraw>(uav.counter.ptr(), true, true);
+        } else {
+          /*
+           * potentially cause gpu pagefault, even providing a dummy buffer doesn't improve since the returned
+           * counter value is likely to be used as an index to another read/write operation.
+           */
+          encoded_buffer[arg.StructurePtrOffset + 2] = 0;
+        }
       }
       break;
     }
