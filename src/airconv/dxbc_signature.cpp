@@ -744,9 +744,40 @@ void handle_signature_ds(
 
   switch (Inst.m_OpCode) {
   case D3D10_SB_OPCODE_DCL_INPUT_SIV: {
-    assert(0 && "dcl_input_siv should not happen for now");
-    // because we don't support hull/domain/geometry
-    // and pixel shader has its own dcl_input_ps
+    unsigned reg = Inst.m_Operands[0].m_Index[0].m_RegIndex;
+    auto mask = Inst.m_Operands[0].m_WriteMask >> 4;
+    auto siv = Inst.m_OutputDeclSIV.Name;
+    switch (siv) {
+    case D3D11_SB_NAME_FINAL_QUAD_U_EQ_0_EDGE_TESSFACTOR:
+    case D3D11_SB_NAME_FINAL_QUAD_V_EQ_0_EDGE_TESSFACTOR:
+    case D3D11_SB_NAME_FINAL_QUAD_U_EQ_1_EDGE_TESSFACTOR:
+    case D3D11_SB_NAME_FINAL_QUAD_V_EQ_1_EDGE_TESSFACTOR:
+    case D3D11_SB_NAME_FINAL_QUAD_U_INSIDE_TESSFACTOR:
+    case D3D11_SB_NAME_FINAL_QUAD_V_INSIDE_TESSFACTOR: {
+      signature_handlers.push_back([=](SignatureContext &ctx) {
+        ctx.prologue << init_tess_factor_patch_constant(
+          reg, mask, (siv - D3D11_SB_NAME_FINAL_QUAD_U_EQ_0_EDGE_TESSFACTOR), 6
+        );
+      });
+      max_input_register = std::max(reg + 1, max_input_register);
+      break;
+    }
+    case D3D11_SB_NAME_FINAL_TRI_U_EQ_0_EDGE_TESSFACTOR:
+    case D3D11_SB_NAME_FINAL_TRI_V_EQ_0_EDGE_TESSFACTOR:
+    case D3D11_SB_NAME_FINAL_TRI_W_EQ_0_EDGE_TESSFACTOR:
+    case D3D11_SB_NAME_FINAL_TRI_INSIDE_TESSFACTOR: {
+      signature_handlers.push_back([=](SignatureContext &ctx) {
+        ctx.prologue << init_tess_factor_patch_constant(
+          reg, mask, (siv - D3D11_SB_NAME_FINAL_TRI_U_EQ_0_EDGE_TESSFACTOR), 4
+        );
+      });
+      max_input_register = std::max(reg + 1, max_input_register);
+      break;
+    }
+    default:
+      assert(0 && "unhandled dcl_input_siv in domain shader");
+    }
+
     break;
   }
   case D3D10_SB_OPCODE_DCL_INPUT_SGV: {

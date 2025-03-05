@@ -261,6 +261,8 @@ pop_output_reg(uint32_t from_reg, uint32_t mask, uint32_t to_element);
 std::function<IRValue(pvalue)>
 pop_output_reg_fix_unorm(uint32_t from_reg, uint32_t mask, uint32_t to_element);
 
+IREffect init_tess_factor_patch_constant(uint32_t to_reg, uint32_t mask, uint32_t factor_index, uint32_t factor_count);
+
 std::function<IRValue(pvalue)> pop_output_tess_factor(
   uint32_t from_reg, uint32_t mask, uint32_t to_factor_indx, uint32_t factor_num
 );

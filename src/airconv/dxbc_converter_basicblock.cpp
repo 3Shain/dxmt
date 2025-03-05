@@ -631,6 +631,35 @@ std::function<IRValue(pvalue)> pop_output_reg_fix_unorm(uint32_t from_reg, uint3
   };
 }
 
+IREffect init_tess_factor_patch_constant(uint32_t to_reg, uint32_t mask, uint32_t factor_index, uint32_t factor_count) {
+  return make_effect_bind([=](context ctx) -> IREffect {
+    auto src_ptr = ctx.builder.CreateGEP(
+      ctx.types._half, ctx.resource.tess_factor_buffer,
+      {ctx.builder.CreateAdd(ctx.builder.CreateMul(
+         ctx.resource.instanced_patch_id, ctx.builder.getInt32(factor_count)
+       ),
+       ctx.builder.getInt32(factor_index))}
+    );
+    auto src_val = ctx.builder.CreateLoad(ctx.types._half, src_ptr);
+    auto to_float = co_yield call_convert(
+      src_val, ctx.types._float,
+      air::Sign::with_sign /* intended */
+    );
+    auto array = ctx.resource.patch_constant_output.ptr_float4;
+    auto array_ty = llvm::cast<llvm::ArrayType>( // force line break
+      llvm::cast<llvm::PointerType>(array->getType())
+        ->getNonOpaquePointerElementType()
+    );
+    auto component_ptr = ctx.builder.CreateGEP(
+      array_ty, array,
+      {ctx.builder.getInt32(0), ctx.builder.getInt32(to_reg),
+       ctx.builder.getInt32(__builtin_ctz(mask))}
+    );
+    ctx.builder.CreateStore(to_float, component_ptr);
+    co_return {};
+  });
+}
+
 std::function<IRValue(pvalue)> pop_output_tess_factor(
   uint32_t from_reg, uint32_t mask, uint32_t factor_index, uint32_t factor_count
 ) {
