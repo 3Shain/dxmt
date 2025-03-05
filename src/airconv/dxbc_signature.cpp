@@ -1,5 +1,6 @@
 #include "dxbc_signature.hpp"
 #include "dxbc_converter.hpp"
+#include <format>
 
 using namespace microsoft;
 using namespace dxmt::air;
@@ -155,6 +156,16 @@ void handle_signature_vs(
           );
         }
       }
+      uint32_t assigned_index = func_signature.DefineOutput(OutputVertex{
+        .user = std::format("SV_ClipDistance{}", reg),
+        .type = msl_float4,
+      });
+      signature_handlers.push_back([=](SignatureContext &ctx) {
+        if (ctx.skip_vertex_output)
+          return;
+        ctx.epilogue >> pop_output_reg(reg, mask, assigned_index);
+      });
+      max_output_register = std::max(reg + 1, max_output_register);
       break;
     }
     case D3D10_SB_NAME_CULL_DISTANCE:
@@ -324,6 +335,14 @@ void handle_signature_ps(
     case D3D10_SB_NAME_VIEWPORT_ARRAY_INDEX:
       assert(interpolation == Interpolation::flat);
       assigned_index = func_signature.DefineInput(InputViewportArrayIndex{});
+      break;
+    case D3D10_SB_NAME_CLIP_DISTANCE:
+      assigned_index = func_signature.DefineInput(InputFragmentStageIn{
+        .user = std::format("SV_ClipDistance{}", reg),
+        .type = msl_float4,
+        .interpolation = interpolation,
+        .pull_mode = false
+      });
       break;
     default:
       assert(0 && "Unexpected/unhandled input system value");
@@ -797,6 +816,14 @@ void handle_signature_ds(
           );
         }
       }
+      uint32_t assigned_index = func_signature.DefineOutput(OutputVertex{
+        .user = std::format("SV_ClipDistance{}", reg),
+        .type = msl_float4,
+      });
+      signature_handlers.push_back([=](SignatureContext &ctx) {
+        ctx.epilogue >> pop_output_reg(reg, mask, assigned_index);
+      });
+      max_output_register = std::max(reg + 1, max_output_register);
       break;
     }
     case D3D10_SB_NAME_CULL_DISTANCE:
