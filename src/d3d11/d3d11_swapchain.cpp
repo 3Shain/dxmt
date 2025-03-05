@@ -781,8 +781,7 @@ CreateSwapChain(
   if ((pDesc->SwapEffect != DXGI_SWAP_EFFECT_DISCARD &&
        pDesc->SwapEffect != DXGI_SWAP_EFFECT_FLIP_DISCARD) &&
       pDesc->BufferCount != 1) {
-    ERR("CreateSwapChain: unsupported swap effect ", pDesc->SwapEffect, " with backbuffer size ", pDesc->BufferCount);
-    return E_FAIL;
+    WARN("CreateSwapChain: unsupported swap effect ", pDesc->SwapEffect, " with backbuffer size ", pDesc->BufferCount);
   }
   layer->setDevice(pDevice->GetMTLDevice());
   layer->setOpaque(false);
