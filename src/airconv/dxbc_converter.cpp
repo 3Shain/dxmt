@@ -1616,30 +1616,6 @@ llvm::Error convert_dxbc_vertex_for_hull_shader(
     builder.getInt32(pHullStage->input_control_point_count)
   );
 
-  if (index_buffer_idx != ~0u) {
-    auto start_index = builder.CreateExtractValue(draw_arguments, 1);
-    auto index_buffer = function->getArg(index_buffer_idx);
-    auto index_buffer_element_type =
-      index_buffer->getType()->getNonOpaquePointerElementType();
-    auto vertex_id = builder.CreateLoad(
-      index_buffer_element_type,
-      builder.CreateGEP(
-        index_buffer_element_type, index_buffer,
-        {builder.CreateAdd(start_index, control_point_index)}
-      )
-    );
-    resource_map.vertex_id = builder.CreateZExt(vertex_id, types._int);
-  } else {
-    resource_map.vertex_id = control_point_index;
-  }
-  resource_map.base_vertex_id = builder.CreateExtractValue(draw_arguments, 4);
-  resource_map.instance_id = instance_id;
-  resource_map.vertex_id_with_base =
-    builder.CreateAdd(resource_map.vertex_id, resource_map.base_vertex_id);
-  resource_map.base_instance_id = builder.CreateExtractValue(draw_arguments, 3);
-  resource_map.instance_id_with_base =
-    builder.CreateAdd(resource_map.instance_id, resource_map.base_instance_id);
-
   resource_map.input.ptr_int4 =
     builder.CreateAlloca(llvm::ArrayType::get(types._int4, max_input_register));
   resource_map.input.ptr_float4 = builder.CreateBitCast(
@@ -1692,6 +1668,30 @@ llvm::Error convert_dxbc_vertex_for_hull_shader(
     active, return_
   );
   builder.SetInsertPoint(active);
+
+  if (index_buffer_idx != ~0u) {
+    auto start_index = builder.CreateExtractValue(draw_arguments, 1);
+    auto index_buffer = function->getArg(index_buffer_idx);
+    auto index_buffer_element_type =
+      index_buffer->getType()->getNonOpaquePointerElementType();
+    auto vertex_id = builder.CreateLoad(
+      index_buffer_element_type,
+      builder.CreateGEP(
+        index_buffer_element_type, index_buffer,
+        {builder.CreateAdd(start_index, control_point_index)}
+      )
+    );
+    resource_map.vertex_id = builder.CreateZExt(vertex_id, types._int);
+  } else {
+    resource_map.vertex_id = control_point_index;
+  }
+  resource_map.base_vertex_id = builder.CreateExtractValue(draw_arguments, 4);
+  resource_map.instance_id = instance_id;
+  resource_map.vertex_id_with_base =
+    builder.CreateAdd(resource_map.vertex_id, resource_map.base_vertex_id);
+  resource_map.base_instance_id = builder.CreateExtractValue(draw_arguments, 3);
+  resource_map.instance_id_with_base =
+    builder.CreateAdd(resource_map.instance_id, resource_map.base_instance_id);
 
   if (auto err = prologue.build(ctx).takeError()) {
     return err;
