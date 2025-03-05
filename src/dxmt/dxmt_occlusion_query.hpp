@@ -103,6 +103,9 @@ public:
   end(uint64_t seqId, unsigned offset) {
     seq_id_end = seqId;
     occlusion_counter_end = offset;
+    if (seq_id_begin == seq_id_end && occlusion_counter_begin == occlusion_counter_end) {
+      seq_id_issued = seq_id_end;
+    }
   }
 
   uint64_t queryEndAt() {

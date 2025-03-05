@@ -584,8 +584,8 @@ ArgumentEncodingContext::flushCommands(MTL::CommandBuffer *cmdbuf, uint64_t seqI
             count * sizeof(uint64_t), MTL::ResourceHazardTrackingModeUntracked | MTL::ResourceStorageModeShared
         ))
     );
-    std::erase_if(pending_queries_, [=](auto &query) -> bool { return query->queryEndAt() == seqId; });
   }
+  std::erase_if(pending_queries_, [=](auto &query) -> bool { return query->queryEndAt() == seqId; });
 
   while (encoder_index) {
     auto current = encoders[encoder_count - encoder_index];
