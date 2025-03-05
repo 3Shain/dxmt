@@ -799,6 +799,18 @@ llvm::Error convert_dxbc_domain_shader(
       .arg_name = "domain_tess_factor_buffer",
       .raster_order_group = {}
     });
+  uint32_t draw_argument_idx =
+    func_signature.DefineInput(air::ArgumentBindingBuffer{
+      .buffer_size = {},
+      .location_index = 23,
+      .array_size = 0,
+      .memory_access = air::MemoryAccess::read,
+      .address_space = air::AddressSpace::constant,
+      .type =
+        air::MSLWhateverStruct{"draw_arguments", types._dxmt_draw_arguments},
+      .arg_name = "draw_arguments",
+      .raster_order_group = {}
+    });
 
   uint32_t rta_idx_out = ~0u;
   if (gs_passthrough && gs_passthrough->RenderTargetArrayIndexReg != 255) {
@@ -819,7 +831,17 @@ llvm::Error convert_dxbc_domain_shader(
 
   setup_fastmath_flag(module, builder);
 
-  resource_map.patch_id = function->getArg(patch_id_idx);
+  auto draw_arguments = builder.CreateLoad(
+    types._dxmt_draw_arguments, function->getArg(draw_argument_idx)
+  );
+
+  auto patch_count = builder.CreateUDiv(
+    builder.CreateExtractValue(draw_arguments, 0),
+    builder.getInt32(pHullStage->input_control_point_count)
+  );
+
+  resource_map.instanced_patch_id = function->getArg(patch_id_idx);
+  resource_map.patch_id = builder.CreateURem(resource_map.instanced_patch_id, patch_count);
   resource_map.control_point_buffer = function->getArg(domain_cp_buffer_idx);
   resource_map.patch_constant_buffer = function->getArg(domain_pc_buffer_idx);
   resource_map.tess_factor_buffer =
@@ -836,7 +858,7 @@ llvm::Error convert_dxbc_domain_shader(
       control_point_input_array_type_float4->getPointerTo((uint32_t
       )air::AddressSpace::device)
     ),
-    {resource_map.patch_id}
+    {resource_map.instanced_patch_id}
   );
   auto control_point_input_array_type_int4 = llvm::ArrayType::get(
     types._int4,
@@ -849,7 +871,7 @@ llvm::Error convert_dxbc_domain_shader(
       control_point_input_array_type_int4->getPointerTo((uint32_t
       )air::AddressSpace::device)
     ),
-    {resource_map.patch_id}
+    {resource_map.instanced_patch_id}
   );
   resource_map.input_element_count = pHullStage->max_output_register;
 
@@ -875,7 +897,7 @@ llvm::Error convert_dxbc_domain_shader(
       types._int, resource_map.patch_constant_buffer,
       {builder.CreateAdd(
         builder.CreateMul(
-          resource_map.patch_id,
+          resource_map.instanced_patch_id,
           builder.getInt32(pHullStage->patch_constant_scalars.size())
         ),
         builder.getInt32(x.index())

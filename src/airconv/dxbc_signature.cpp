@@ -771,14 +771,7 @@ void handle_signature_ds(
       break;
     }
     case D3D10_SB_OPERAND_TYPE_INPUT_PRIMITIVEID: {
-      auto assigned_index = func_signature.DefineInput(InputPatchID{});
-      signature_handlers.push_back([=](SignatureContext &ctx) {
-        ctx.prologue << make_effect([=](struct context ctx) {
-          auto attr = ctx.function->getArg(assigned_index);
-          ctx.resource.patch_id = attr;
-          return std::monostate{};
-        });
-      });
+      // `convert_dxbc_domain_shader()` will always define [[patch_id]] and initialize `io_binding_map.patch_id` field
       break;
     }
     case D3D10_SB_OPERAND_TYPE_INPUT:

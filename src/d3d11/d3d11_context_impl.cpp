@@ -1113,6 +1113,7 @@ public:
       enc.bumpVisibilityResultOffset();
       enc.encodeRenderCommand([=](RenderCommandContext &ctx) {
         auto &encoder = ctx.encoder;
+        encoder->setVertexBufferOffset(offset, 23);
         encoder->setVertexBuffer(cp_buffer, cp_offset, 20);
         encoder->setVertexBuffer(pc_buffer, pc_offset, 21);
         encoder->setVertexBuffer(tess_factor_buffer, tess_factor_offset, 22);
@@ -1172,6 +1173,7 @@ public:
       enc.bumpVisibilityResultOffset();
       enc.encodeRenderCommand([=](RenderCommandContext &ctx) {
         auto &encoder = ctx.encoder;
+        encoder->setVertexBufferOffset(offset, 23);
         encoder->setVertexBuffer(cp_buffer, cp_offset, 20);
         encoder->setVertexBuffer(pc_buffer, pc_offset, 21);
         encoder->setVertexBuffer(tess_factor_buffer, tess_factor_offset, 22);

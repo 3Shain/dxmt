@@ -610,6 +610,7 @@ ArgumentEncodingContext::flushCommands(MTL::CommandBuffer *cmdbuf, uint64_t seqI
         ctx.encoder->setObjectBuffer(gpu_buffer_, 0, 30);
         ctx.encoder->setMeshBuffer(gpu_buffer_, 0, 29);
         ctx.encoder->setMeshBuffer(gpu_buffer_, 0, 30);
+        ctx.encoder->setVertexBuffer(gpu_buffer_, 0, 23); // draw arguments
         data->pretess_cmds.execute(ctx);
         encoder->memoryBarrier(MTL::BarrierScopeBuffers, MTL::RenderStageMesh, MTL::RenderStageVertex);
       }
