@@ -123,10 +123,6 @@ public:
     }
     pipelineDescriptor->setRasterizationEnabled(RasterizationEnabled);
 
-    if (pBlendState) {
-      pBlendState->SetupMetalPipelineDescriptor(pipelineDescriptor, num_rtvs);
-    }
-
     pipelineDescriptor->setMaxTessellationFactor(
         hull_reflection.Tessellator.MaxFactor);
     switch ((microsoft::D3D11_SB_TESSELLATOR_PARTITIONING)
@@ -180,6 +176,10 @@ public:
         depth_stencil_format == MTL::PixelFormatDepth24Unorm_Stencil8 ||
         depth_stencil_format == MTL::PixelFormatStencil8) {
       pipelineDescriptor->setStencilAttachmentPixelFormat(depth_stencil_format);
+    }
+
+    if (pBlendState) {
+      pBlendState->SetupMetalPipelineDescriptor(pipelineDescriptor, num_rtvs);
     }
 
     pipelineDescriptor->setInputPrimitiveTopology(topology_class);

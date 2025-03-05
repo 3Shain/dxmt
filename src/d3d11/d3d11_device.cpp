@@ -1060,6 +1060,13 @@ public:
     // TODO
   };
 
+  virtual FormatCapability
+  GetMTLPixelFormatCapability(MTL::PixelFormat Format) final {
+    if (!format_inspector.textureCapabilities.contains(Format))
+      return FormatCapability(0);
+    return format_inspector.textureCapabilities.at(Format);
+  };
+
 private:
   MTLDXGIObject<IMTLDXGIDevice> *m_container;
   IMTLDXGIAdapter *adapter_;

@@ -311,7 +311,12 @@ public:
       }
       auto attachment_desc = render_pipeline_descriptor->colorAttachments()->object(rt);
       attachment_desc->setWriteMask(kColorWriteMaskMap[renderTarget.RenderTargetWriteMask]);
-      if (renderTarget.BlendEnable) {
+      auto attachment_format = attachment_desc->pixelFormat();
+      if (renderTarget.BlendEnable && attachment_format != MTL::PixelFormatInvalid) {
+        if (!any_bit_set(m_parent->GetMTLPixelFormatCapability(attachment_format) & FormatCapability::Blend)) {
+          WARN("Blending is enabled on RTV of non-blendable format ", attachment_format);
+          continue;
+        }
         attachment_desc->setAlphaBlendOperation(kBlendOpMap[renderTarget.BlendOpAlpha]);
         attachment_desc->setRgbBlendOperation(kBlendOpMap[renderTarget.BlendOp]);
         attachment_desc->setBlendingEnabled(renderTarget.BlendEnable);

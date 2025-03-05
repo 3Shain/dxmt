@@ -93,10 +93,6 @@ public:
     }
     pipelineDescriptor->setRasterizationEnabled(RasterizationEnabled);
 
-    if (pBlendState) {
-      pBlendState->SetupMetalPipelineDescriptor(pipelineDescriptor, num_rtvs);
-    }
-
     for (unsigned i = 0; i < num_rtvs; i++) {
       if (rtv_formats[i] == MTL::PixelFormatInvalid)
         continue;
@@ -112,6 +108,10 @@ public:
         depth_stencil_format == MTL::PixelFormatDepth24Unorm_Stencil8 ||
         depth_stencil_format == MTL::PixelFormatStencil8) {
       pipelineDescriptor->setStencilAttachmentPixelFormat(depth_stencil_format);
+    }
+
+    if (pBlendState) {
+      pBlendState->SetupMetalPipelineDescriptor(pipelineDescriptor, num_rtvs);
     }
 
     pipelineDescriptor->setInputPrimitiveTopology(topology_class);
