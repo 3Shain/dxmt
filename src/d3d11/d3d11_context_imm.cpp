@@ -238,6 +238,7 @@ public:
     D3D11_QUERY_DESC desc;
     ((ID3D11Query *)pAsync)->GetDesc(&desc);
     switch (desc.Query) {
+    case D3D11_QUERY_TIMESTAMP_DISJOINT:
     case D3D11_QUERY_TIMESTAMP:
     case D3D11_QUERY_EVENT:
       break;
@@ -250,7 +251,6 @@ public:
         });
       break;
     }
-    case D3D11_QUERY_TIMESTAMP_DISJOINT:
     case D3D11_QUERY_PIPELINE_STATISTICS: {
       // ignore
       break;
@@ -268,6 +268,7 @@ public:
     ((ID3D11Query *)pAsync)->GetDesc(&desc);
     switch (desc.Query) {
     case D3D11_QUERY_TIMESTAMP:
+    case D3D11_QUERY_TIMESTAMP_DISJOINT:
     case D3D11_QUERY_EVENT: {
       if (ctx_state.has_dirty_op_since_last_event) {
         auto event_id = cmd_queue.GetNextEventSeqId();
@@ -293,7 +294,6 @@ public:
       promote_flush = true;
       break;
     }
-    case D3D11_QUERY_TIMESTAMP_DISJOINT:
     case D3D11_QUERY_PIPELINE_STATISTICS: {
       // ignore
       break;
@@ -343,10 +343,11 @@ public:
       break;
     }
     case D3D11_QUERY_TIMESTAMP_DISJOINT: {
+      hr = static_cast<MTLD3D11EventQuery *>(pAsync)->CheckEventState(cmd_queue.SignaledEventSeqId()) ? S_OK: S_FALSE;
       if (pData) {
-        (*static_cast<D3D11_QUERY_DATA_TIMESTAMP_DISJOINT *>(pData)) = {1, TRUE};
+        (*static_cast<D3D11_QUERY_DATA_TIMESTAMP_DISJOINT *>(pData)) = {1'000'000'000, FALSE};
       }
-      return S_OK;
+      break;
     }
     case D3D11_QUERY_PIPELINE_STATISTICS: {
       if (pData) {

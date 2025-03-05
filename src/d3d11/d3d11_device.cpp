@@ -447,9 +447,7 @@ public:
       *ppQuery = ref(new MTLD3D11EventQueryImpl<UINT64>(this, pQueryDesc));
       return S_OK;
     case D3D11_QUERY_TIMESTAMP_DISJOINT: {
-      *ppQuery =
-          ref(new MTLD3D11DummyQuery<D3D11_QUERY_DATA_TIMESTAMP_DISJOINT>(
-              this, pQueryDesc));
+      *ppQuery = ref(new MTLD3D11EventQueryImpl<D3D11_QUERY_DATA_TIMESTAMP_DISJOINT>(this, pQueryDesc));
       return S_OK;
     }
     case D3D11_QUERY_PIPELINE_STATISTICS: {
