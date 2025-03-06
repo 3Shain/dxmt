@@ -280,6 +280,17 @@ AIRCONV_API int SM50CompileTessellationPipelineDomain(
   const char *FunctionName, SM50CompiledBitcode **ppBitcode, SM50Error **ppError
 );
 
+AIRCONV_API int SM50CompileGeometryPipelineVertex(
+  SM50Shader *pVertexShader, SM50Shader *pGeometryShader,
+  struct SM50_SHADER_COMPILATION_ARGUMENT_DATA *pVertexShaderArgs,
+  const char *FunctionName, SM50CompiledBitcode **ppBitcode, SM50Error **ppError
+);
+AIRCONV_API int SM50CompileGeometryPipelineGeometry(
+  SM50Shader *pVertexShader, SM50Shader *pGeometryShader,
+  struct SM50_SHADER_COMPILATION_ARGUMENT_DATA *pGeometryShaderArgs,
+  const char *FunctionName, SM50CompiledBitcode **ppBitcode, SM50Error **ppError
+);
+
 #ifdef __cplusplus
 };
 #endif
