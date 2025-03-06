@@ -3172,6 +3172,138 @@ int SM50CompileTessellationPipelineDomain(
   return 0;
 }
 
+int SM50CompileGeometryPipelineVertex(
+  SM50Shader *pVertexShader, SM50Shader *pGeometryShader,
+  struct SM50_SHADER_COMPILATION_ARGUMENT_DATA *pVertexShaderArgs,
+  const char *FunctionName, SM50CompiledBitcode **ppBitcode, SM50Error **ppError
+) {
+  ABRT_HANDLE_RETURN(42)
+
+  using namespace llvm;
+  using namespace dxmt;
+
+  if (ppError) {
+    *ppError = nullptr;
+  }
+  auto errorObj = new SM50ErrorInternal();
+  llvm::raw_svector_ostream errorOut(errorObj->buf);
+  if (ppBitcode == nullptr) {
+    errorOut << "ppBitcode can not be null\0";
+    *ppError = (SM50Error *)errorObj;
+    return 1;
+  }
+
+  // pArgs is ignored for now
+  LLVMContext context;
+
+  context.setOpaquePointers(false); // I suspect Metal uses LLVM 14...
+
+  auto &shader_info =
+    ((dxmt::dxbc::SM50ShaderInternal *)pVertexShader)->shader_info;
+
+  auto pModule = std::make_unique<Module>("shader.air", context);
+  initializeModule(*pModule, {.enableFastMath = false});
+
+  if (auto err = dxmt::dxbc::convert_dxbc_vertex_for_geometry_shader(
+        (dxbc::SM50ShaderInternal *)pVertexShader, FunctionName,
+        (dxbc::SM50ShaderInternal *)pGeometryShader, context, *pModule,
+        pVertexShaderArgs
+      )) {
+    llvm::handleAllErrors(std::move(err), [&](const UnsupportedFeature &u) {
+      errorOut << u.msg;
+    });
+    *ppError = (SM50Error *)errorObj;
+    return 1;
+  }
+
+  if (!shader_info.skipOptimization) {
+    runOptimizationPasses(*pModule, OptimizationLevel::O2);
+  }
+
+  // pModule->print(outs(), nullptr);
+
+  // Serialize AIR
+  auto compiled = new SM50CompiledBitcodeInternal();
+
+  raw_svector_ostream OS(compiled->vec);
+
+  metallib::MetallibWriter writer;
+
+  writer.Write(*pModule, OS);
+
+  pModule.reset();
+
+  *ppBitcode = (SM50CompiledBitcode *)compiled;
+  return 0;
+}
+
+int SM50CompileGeometryPipelineGeometry(
+  SM50Shader *pVertexShader, SM50Shader *pGeometryShader,
+  struct SM50_SHADER_COMPILATION_ARGUMENT_DATA *pGeometryShaderArgs,
+  const char *FunctionName, SM50CompiledBitcode **ppBitcode, SM50Error **ppError
+) {
+  ABRT_HANDLE_RETURN(42)
+
+  using namespace llvm;
+  using namespace dxmt;
+
+  if (ppError) {
+    *ppError = nullptr;
+  }
+  auto errorObj = new SM50ErrorInternal();
+  llvm::raw_svector_ostream errorOut(errorObj->buf);
+  if (ppBitcode == nullptr) {
+    errorOut << "ppBitcode can not be null\0";
+    *ppError = (SM50Error *)errorObj;
+    return 1;
+  }
+
+  // pArgs is ignored for now
+  LLVMContext context;
+
+  context.setOpaquePointers(false); // I suspect Metal uses LLVM 14...
+
+  auto &shader_info =
+    ((dxmt::dxbc::SM50ShaderInternal *)pGeometryShader)->shader_info;
+
+  auto pModule = std::make_unique<Module>("shader.air", context);
+  initializeModule(
+    *pModule,
+    {.enableFastMath =
+       (!shader_info.skipOptimization && shader_info.refactoringAllowed)}
+  );
+
+  if (auto err = dxmt::dxbc::convert_dxbc_geometry_shader(
+        (dxbc::SM50ShaderInternal *)pGeometryShader, FunctionName,
+        (dxbc::SM50ShaderInternal *)pVertexShader, context, *pModule,
+        pGeometryShaderArgs
+      )) {
+    llvm::handleAllErrors(std::move(err), [&](const UnsupportedFeature &u) {
+      errorOut << u.msg;
+    });
+    *ppError = (SM50Error *)errorObj;
+    return 1;
+  }
+
+  if (!shader_info.skipOptimization) {
+    runOptimizationPasses(*pModule, OptimizationLevel::O2);
+  }
+
+  // Serialize AIR
+  auto compiled = new SM50CompiledBitcodeInternal();
+
+  raw_svector_ostream OS(compiled->vec);
+
+  metallib::MetallibWriter writer;
+
+  writer.Write(*pModule, OS);
+
+  pModule.reset();
+
+  *ppBitcode = (SM50CompiledBitcode *)compiled;
+  return 0;
+}
+
 void SM50GetCompiledBitcode(
   SM50CompiledBitcode *pBitcode, MTL_SHADER_BITCODE *pData
 ) {

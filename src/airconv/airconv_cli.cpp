@@ -40,6 +40,12 @@ static cl::opt<std::string>
 static cl::opt<std::string>
   HullAfterVertex("hull-after-vertex", cl::desc("Compile vertex shader with supplied hull shader"));
 
+static cl::opt<std::string>
+  VertexBeforeGeometry("vertex-before-geometry", cl::desc("Compile geometry shader with supplied vertex shader"));
+
+static cl::opt<std::string>
+  GeometryAfterVertex("geometry-after-vertex", cl::desc("Compile vertex shader with supplied geometry shader"));
+
 static cl::opt<bool>
   EmitLLVM("S", cl::init(false), cl::desc("Write output as LLVM assembly"));
 
@@ -289,6 +295,62 @@ int main(int argc, char **argv) {
     if (auto err = dxmt::dxbc::convert_dxbc_vertex_for_hull_shader(
           (dxmt::dxbc::SM50ShaderInternal *)sm50, "shader_main",
           (dxmt::dxbc::SM50ShaderInternal *)sm50_hull, Context, M, nullptr
+        )) {
+      errs() << err << '\n';
+      return 1;
+    }
+  } else if (!VertexBeforeGeometry.getValue().empty()) {
+    ErrorOr<std::unique_ptr<MemoryBuffer>> FileOrErr =
+      MemoryBuffer::getFile(VertexBeforeGeometry, /*IsText=*/false);
+    if (std::error_code EC = FileOrErr.getError()) {
+      SMDiagnostic(
+        VertexBeforeGeometry, SourceMgr::DK_Error,
+        "Could not open input file: " + EC.message()
+      )
+        .print(argv[0], errs());
+      return 1;
+    }
+    auto MemRef = FileOrErr->get()->getMemBufferRef();
+    SM50Shader *sm50_vertex;
+    if (SM50Initialize(
+          MemRef.getBufferStart(), MemRef.getBufferSize(), &sm50_vertex, nullptr,
+          &err
+        )) {
+      errs() << SM50GetErrorMesssage(err) << '\n';
+      SM50FreeError(err);
+      return 1;
+    }
+    if (auto err = dxmt::dxbc::convert_dxbc_geometry_shader(
+          (dxmt::dxbc::SM50ShaderInternal *)sm50, "shader_main",
+          (dxmt::dxbc::SM50ShaderInternal *)sm50_vertex, Context, M, nullptr
+        )) {
+      errs() << err << '\n';
+      return 1;
+    }
+  } else if (!GeometryAfterVertex.getValue().empty()) {
+    ErrorOr<std::unique_ptr<MemoryBuffer>> FileOrErr =
+      MemoryBuffer::getFile(GeometryAfterVertex, /*IsText=*/false);
+    if (std::error_code EC = FileOrErr.getError()) {
+      SMDiagnostic(
+        GeometryAfterVertex, SourceMgr::DK_Error,
+        "Could not open input file: " + EC.message()
+      )
+        .print(argv[0], errs());
+      return 1;
+    }
+    auto MemRef = FileOrErr->get()->getMemBufferRef();
+    SM50Shader *sm50_geometry;
+    if (SM50Initialize(
+          MemRef.getBufferStart(), MemRef.getBufferSize(), &sm50_geometry, nullptr,
+          &err
+        )) {
+      errs() << SM50GetErrorMesssage(err) << '\n';
+      SM50FreeError(err);
+      return 1;
+    }
+    if (auto err = dxmt::dxbc::convert_dxbc_vertex_for_geometry_shader(
+          (dxmt::dxbc::SM50ShaderInternal *)sm50, "shader_main",
+          (dxmt::dxbc::SM50ShaderInternal *)sm50_geometry, Context, M, nullptr
         )) {
       errs() << err << '\n';
       return 1;
