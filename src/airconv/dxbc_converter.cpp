@@ -2620,6 +2620,19 @@ int SM50Initialize(
           Inst.m_HSMaxTessFactorDecl.MaxTessFactor;
         break;
       }
+      case microsoft::D3D10_SB_OPCODE_EMIT: {
+        ctx->instructions.push_back(InstEmit{});
+        break;
+      }
+      case microsoft::D3D10_SB_OPCODE_EMITTHENCUT: {
+        ctx->instructions.push_back(InstEmit{});
+        ctx->instructions.push_back(InstCut{});
+        break;
+      }
+      case microsoft::D3D10_SB_OPCODE_CUT: {
+        ctx->instructions.push_back(InstCut{});
+        break;
+      }
 #pragma endregion
       default: {
         // insert instruction into BasicBlock
