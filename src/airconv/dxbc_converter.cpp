@@ -115,7 +115,7 @@ auto get_item_in_argbuf_binding_table(uint32_t argbuf_index, uint32_t index) {
   });
 };
 
-auto setup_binding_table(
+void setup_binding_table(
   const ShaderInfo *shader_info, io_binding_map &resource_map,
   air::FunctionSignatureBuilder &func_signature, llvm::Module &module
 ) {
@@ -253,7 +253,7 @@ auto setup_binding_table(
   }
 };
 
-auto setup_immediate_constant_buffer(
+void setup_immediate_constant_buffer(
   const ShaderInfo *shader_info, io_binding_map &resource_map,
   air::AirType &types, llvm::Module &module, llvm::IRBuilder<> &builder
 ) {
@@ -290,7 +290,7 @@ auto setup_immediate_constant_buffer(
   );
 }
 
-auto setup_tgsm(
+void setup_tgsm(
   const ShaderInfo *shader_info, io_binding_map &resource_map,
   air::AirType &types, llvm::Module &module
 ) {
@@ -306,7 +306,7 @@ auto setup_tgsm(
   }
 }
 
-auto setup_temp_register(
+void setup_temp_register(
   const ShaderInfo *shader_info, io_binding_map &resource_map,
   air::AirType &types, llvm::Module &module, llvm::IRBuilder<> &builder
 ) {
@@ -371,7 +371,7 @@ auto setup_temp_register(
   }
 }
 
-auto setup_fastmath_flag(llvm::Module &module, llvm::IRBuilder<> &builder) {
+void setup_fastmath_flag(llvm::Module &module, llvm::IRBuilder<> &builder) {
   if (auto options = module.getNamedMetadata("air.compile_options")) {
     for (auto operand : options->operands()) {
       if (isa<llvm::MDTuple>(operand) &&

@@ -341,6 +341,28 @@ public:
   std::vector<ScalarInfo> clip_distance_scalars;
 };
 
+void setup_binding_table(
+  const ShaderInfo *shader_info, io_binding_map &resource_map,
+  air::FunctionSignatureBuilder &func_signature, llvm::Module &module
+);
+
+void setup_tgsm(
+  const ShaderInfo *shader_info, io_binding_map &resource_map,
+  air::AirType &types, llvm::Module &module
+);
+
+void setup_fastmath_flag(llvm::Module &module, llvm::IRBuilder<> &builder);
+
+void setup_temp_register(
+  const ShaderInfo *shader_info, io_binding_map &resource_map,
+  air::AirType &types, llvm::Module &module, llvm::IRBuilder<> &builder
+);
+
+void setup_immediate_constant_buffer(
+  const ShaderInfo *shader_info, io_binding_map &resource_map,
+  air::AirType &types, llvm::Module &module, llvm::IRBuilder<> &builder
+);
+
 llvm::Error convert_dxbc_hull_shader(
   SM50ShaderInternal *pShaderInternal, const char *name,
   SM50ShaderInternal *pVertexStage, llvm::LLVMContext &context,
