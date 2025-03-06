@@ -4015,8 +4015,8 @@ public:
       scaler_info.output_width = output->width();
       scaler_info.output_height = output->height();
 
-      scaler_info.motion_vector_highres = ((scaler_info.input_width < scaler_info.output_width) ||
-                                           (scaler_info.input_height < scaler_info.output_height)) &&
+      scaler_info.motion_vector_highres = ((input->width() < scaler_info.output_width) ||
+                                           (input->height() < scaler_info.output_height)) &&
                                           ((scaler_info.output_width <= motion_vector->width()) ||
                                            (scaler_info.output_height <= motion_vector->height()));
       enc.upscaleTemporal(input, output, depth, motion_vector, mv_view, exposure, scaler, props);
