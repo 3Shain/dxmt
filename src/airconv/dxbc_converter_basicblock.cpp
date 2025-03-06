@@ -4753,6 +4753,8 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
               }) >>= swizzle(eval_snapped.read_swizzle)
             );
           },
+          [](InstEmit) {},
+          [](InstCut) {},
         },
         inst
       );
