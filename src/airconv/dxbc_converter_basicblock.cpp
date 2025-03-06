@@ -4711,7 +4711,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                 co_return co_yield air::call_interpolate_at_centroid(
                   co_yield desc.interpolant(nullptr), desc.perspective
                 );
-              })
+              }) >>= swizzle(eval_centroid.read_swizzle)
             );
           },
           [&](InstInterpolateSample eval_sample_index) {
@@ -4723,7 +4723,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                   co_yield desc.interpolant(nullptr), desc.perspective,
                   co_yield load_src_op<false>(eval_sample_index.sample_index) >>= extract_element(0)
                 );
-              })
+              }) >>= swizzle(eval_sample_index.read_swizzle)
             );
           },
           [&](InstInterpolateOffset eval_snapped) {
@@ -4750,7 +4750,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                 co_return co_yield air::call_interpolate_at_offset(
                   co_yield desc.interpolant(nullptr), desc.perspective, offset_f
                 );
-              })
+              }) >>= swizzle(eval_snapped.read_swizzle)
             );
           },
         },

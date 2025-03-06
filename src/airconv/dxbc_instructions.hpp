@@ -696,18 +696,21 @@ struct InstAtomicImmCmpExchange {
 struct InstInterpolateCentroid {
   DstOperand dst;
   uint32_t regid;
+  Swizzle read_swizzle;
 };
 
 struct InstInterpolateSample {
   DstOperand dst;
   SrcOperand sample_index;
   uint32_t regid;
+  Swizzle read_swizzle;
 };
 
 struct InstInterpolateOffset {
   DstOperand dst;
   SrcOperand offset;
   uint32_t regid;
+  Swizzle read_swizzle;
 };
 
 using Instruction = std::variant<

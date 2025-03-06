@@ -1884,7 +1884,8 @@ Instruction readInstruction(
     shader_info.pull_mode_reg_mask |= (1 << regid);
     return InstInterpolateCentroid {
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .regid = regid
+      .regid = regid,
+      .read_swizzle = readSrcOperandSwizzle(Inst.m_Operands[1])
     };
   }
   case microsoft::D3D11_SB_OPCODE_EVAL_SAMPLE_INDEX: {
@@ -1895,7 +1896,8 @@ Instruction readInstruction(
     return InstInterpolateSample {
       .dst = readDstOperand(Inst.m_Operands[0], phase),
       .sample_index = readSrcOperand(Inst.m_Operands[2], phase),
-      .regid = regid
+      .regid = regid,
+      .read_swizzle = readSrcOperandSwizzle(Inst.m_Operands[1])
     };
   }
   case microsoft::D3D11_SB_OPCODE_EVAL_SNAPPED: {
@@ -1906,7 +1908,8 @@ Instruction readInstruction(
     return InstInterpolateOffset {
       .dst = readDstOperand(Inst.m_Operands[0], phase),
       .offset = readSrcOperand(Inst.m_Operands[2], phase),
-      .regid = regid
+      .regid = regid,
+      .read_swizzle = readSrcOperandSwizzle(Inst.m_Operands[1])
     };
   }
   case microsoft::D3D10_SB_OPCODE_EMIT:
