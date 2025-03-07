@@ -1048,6 +1048,13 @@ public:
     return S_OK;
   };
 
+  virtual HRESULT
+  CreateGeometryPipeline(MTL_GRAPHICS_PIPELINE_DESC *pDesc,
+                         IMTLCompiledGeometryPipeline **ppPipeline) override {
+    pipeline_cache_->GetGeometryPipeline(pDesc, ppPipeline);
+    return S_OK;
+  };
+
   Device &GetDXMTDevice() override { return device_; };
 
   void CreateCommandList(ID3D11CommandList** pCommandList) final {
