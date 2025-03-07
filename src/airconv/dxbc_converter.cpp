@@ -2540,6 +2540,8 @@ int SM50Initialize(
       case D3D10_SB_OPCODE_DCL_INDEX_RANGE:
         break; // ignore, and it turns out backend compiler can handle alloca
       case D3D10_SB_OPCODE_DCL_GS_INPUT_PRIMITIVE:
+        sm50_shader->gs_input_primitive = Inst.m_InputPrimitiveDecl.Primitive;
+        break;
       case D3D10_SB_OPCODE_DCL_GS_OUTPUT_PRIMITIVE_TOPOLOGY:
       case D3D10_SB_OPCODE_DCL_MAX_OUTPUT_VERTEX_COUNT:
       case D3D11_SB_OPCODE_DCL_GS_INSTANCE_COUNT:
@@ -2630,6 +2632,22 @@ int SM50Initialize(
         break;
       }
       case microsoft::D3D10_SB_OPCODE_CUT: {
+        ctx->instructions.push_back(InstCut{});
+        break;
+      }
+      case microsoft::D3D11_SB_OPCODE_EMIT_STREAM: {
+        assert(Inst.m_Operands[0].m_Value[0] == 0 && "multiple streams not supported");
+        ctx->instructions.push_back(InstEmit{});
+        break;
+      }
+      case microsoft::D3D11_SB_OPCODE_EMITTHENCUT_STREAM: {
+        assert(Inst.m_Operands[0].m_Value[0] == 0 && "multiple streams not supported");
+        ctx->instructions.push_back(InstEmit{});
+        ctx->instructions.push_back(InstCut{});
+        break;
+      }
+      case microsoft::D3D11_SB_OPCODE_CUT_STREAM: {
+        assert(Inst.m_Operands[0].m_Value[0] == 0 && "multiple streams not supported");
         ctx->instructions.push_back(InstCut{});
         break;
       }

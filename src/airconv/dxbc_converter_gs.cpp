@@ -1,14 +1,314 @@
+#include "air_operations.hpp"
+#include "air_signature.hpp"
 #include "airconv_error.hpp"
 #include "dxbc_converter.hpp"
+#include "llvm/IR/Constants.h"
+#include "llvm/Support/Alignment.h"
+#include "llvm/Support/AtomicOrdering.h"
+#include <cstdint>
+#include <utility>
 
 namespace dxmt::dxbc {
+
+using namespace microsoft;
+
+std::tuple<uint32_t, uint32_t, uint32_t>
+get_vertex_primitive_count_in_wrap(D3D10_SB_PRIMITIVE primitive, bool strip) {
+  switch (primitive) {
+  case D3D10_SB_PRIMITIVE_POINT:
+    return {32, 32, 1};
+  case D3D10_SB_PRIMITIVE_LINE:
+    if (strip)
+      return {32, 31, 2};
+    return {32, 16, 2};
+  case D3D10_SB_PRIMITIVE_TRIANGLE:
+    if (strip)
+      return {32, 30, 3};
+    return {30, 10, 3};
+  case D3D10_SB_PRIMITIVE_LINE_ADJ:
+    if (strip)
+      return {32, 29, 4};
+    return {32, 8, 4};
+  case D3D10_SB_PRIMITIVE_TRIANGLE_ADJ:
+    if (strip)
+      return {32, 14, 6};
+    return {30, 5, 6};
+  case D3D11_SB_PRIMITIVE_1_CONTROL_POINT_PATCH:
+    return {32, 32, 1};
+  case D3D11_SB_PRIMITIVE_2_CONTROL_POINT_PATCH:
+    return {32, 16, 2};
+  case D3D11_SB_PRIMITIVE_3_CONTROL_POINT_PATCH:
+    return {30, 10, 3};
+  case D3D11_SB_PRIMITIVE_4_CONTROL_POINT_PATCH:
+    return {32, 8, 4};
+  case D3D11_SB_PRIMITIVE_5_CONTROL_POINT_PATCH:
+    return {30, 6, 5};
+  case D3D11_SB_PRIMITIVE_6_CONTROL_POINT_PATCH:
+    return {30, 5, 6};
+  case D3D11_SB_PRIMITIVE_7_CONTROL_POINT_PATCH:
+    return {28, 4, 7};
+  case D3D11_SB_PRIMITIVE_8_CONTROL_POINT_PATCH:
+    return {32, 4, 8};
+  case D3D11_SB_PRIMITIVE_9_CONTROL_POINT_PATCH:
+    return {27, 3, 9};
+  case D3D11_SB_PRIMITIVE_10_CONTROL_POINT_PATCH:
+    return {30, 3, 10};
+  case D3D11_SB_PRIMITIVE_11_CONTROL_POINT_PATCH:
+    return {22, 2, 11};
+  case D3D11_SB_PRIMITIVE_12_CONTROL_POINT_PATCH:
+    return {24, 2, 12};
+  case D3D11_SB_PRIMITIVE_13_CONTROL_POINT_PATCH:
+    return {26, 2, 13};
+  case D3D11_SB_PRIMITIVE_14_CONTROL_POINT_PATCH:
+    return {28, 2, 14};
+  case D3D11_SB_PRIMITIVE_15_CONTROL_POINT_PATCH:
+    return {30, 2, 15};
+  case D3D11_SB_PRIMITIVE_16_CONTROL_POINT_PATCH:
+    return {32, 2, 16};
+  case D3D11_SB_PRIMITIVE_17_CONTROL_POINT_PATCH:
+  case D3D11_SB_PRIMITIVE_18_CONTROL_POINT_PATCH:
+  case D3D11_SB_PRIMITIVE_19_CONTROL_POINT_PATCH:
+  case D3D11_SB_PRIMITIVE_20_CONTROL_POINT_PATCH:
+  case D3D11_SB_PRIMITIVE_21_CONTROL_POINT_PATCH:
+  case D3D11_SB_PRIMITIVE_22_CONTROL_POINT_PATCH:
+  case D3D11_SB_PRIMITIVE_23_CONTROL_POINT_PATCH:
+  case D3D11_SB_PRIMITIVE_24_CONTROL_POINT_PATCH:
+  case D3D11_SB_PRIMITIVE_25_CONTROL_POINT_PATCH:
+  case D3D11_SB_PRIMITIVE_26_CONTROL_POINT_PATCH:
+  case D3D11_SB_PRIMITIVE_27_CONTROL_POINT_PATCH:
+  case D3D11_SB_PRIMITIVE_28_CONTROL_POINT_PATCH:
+  case D3D11_SB_PRIMITIVE_29_CONTROL_POINT_PATCH:
+  case D3D11_SB_PRIMITIVE_30_CONTROL_POINT_PATCH:
+  case D3D11_SB_PRIMITIVE_31_CONTROL_POINT_PATCH:
+  case D3D11_SB_PRIMITIVE_32_CONTROL_POINT_PATCH:
+    return {
+        uint32_t(primitive) - uint32_t(D3D11_SB_PRIMITIVE_1_CONTROL_POINT_PATCH) + 1, 1,
+        uint32_t(primitive) - uint32_t(D3D11_SB_PRIMITIVE_1_CONTROL_POINT_PATCH) + 1
+    };
+  default:
+    break;
+  }
+
+  return {0, 0, 0};
+}
 
 llvm::Error
 convert_dxbc_geometry_shader(
     SM50ShaderInternal *pShaderInternal, const char *name, SM50ShaderInternal *pVertexStage, llvm::LLVMContext &context,
     llvm::Module &module, SM50_SHADER_COMPILATION_ARGUMENT_DATA *pArgs
 ) {
-  return llvm::make_error<UnsupportedFeature>("geometry shader not implemented yet");
+  auto func_signature = pShaderInternal->func_signature; // copy
+  auto shader_info = &(pShaderInternal->shader_info);
+
+  /* TODO: support strip*/
+  bool is_strip = false;
+
+  uint32_t max_output_register = pShaderInternal->max_output_register;
+  SM50_SHADER_COMPILATION_ARGUMENT_DATA *arg = pArgs;
+  // uint64_t debug_id = ~0u;
+  while (arg) {
+    switch (arg->type) {
+    // case SM50_SHADER_DEBUG_IDENTITY:
+    //   debug_id = ((SM50_SHADER_DEBUG_IDENTITY_DATA *)arg)->id;
+    //   break;
+    default:
+      break;
+    }
+    arg = (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)arg->next;
+  }
+
+  IREffect prologue([](auto) { return std::monostate(); });
+  IRValue epilogue([](struct context ctx) -> pvalue { return nullptr; });
+
+  io_binding_map resource_map;
+  air::AirType types(context);
+
+  {
+    SignatureContext sig_ctx(prologue, epilogue, func_signature, resource_map);
+    for (auto &p : pShaderInternal->signature_handlers) {
+      p(sig_ctx);
+    }
+  }
+  auto& gs_output_handlers = pShaderInternal->gs_output_handlers;
+
+  setup_binding_table(shader_info, resource_map, func_signature, module);
+  setup_tgsm(shader_info, resource_map, types, module);
+
+  uint32_t payload_idx = func_signature.DefineInput(air::InputPayload{.size = 16256});
+  auto mesh_idx = func_signature.DefineInput(air::InputMesh{64, 64, 2});
+  uint32_t tg_in_grid_idx = func_signature.DefineInput(air::InputThreadgroupPositionInGrid{});
+
+  auto [function, function_metadata] = func_signature.CreateFunction(name, context, module, 0, false);
+
+  auto entry_bb = llvm::BasicBlock::Create(context, "entry", function);
+  auto active_ = llvm::BasicBlock::Create(context, "active", function);
+  auto epilogue_bb = llvm::BasicBlock::Create(context, "epilogue", function);
+  llvm::IRBuilder<> builder(entry_bb);
+  setup_fastmath_flag(module, builder);
+
+  auto [wrap_vertex_count, wrap_primitive_count, vertex_per_primitive] =
+      get_vertex_primitive_count_in_wrap(pShaderInternal->gs_input_primitive, is_strip);
+  auto thread_position_in_group = function->getArg(tg_in_grid_idx);
+  auto primitive_id_in_wrap = builder.CreateExtractElement(thread_position_in_group, (uint32_t)0);
+
+  auto const zero_const = builder.getInt32(0);
+  auto const one_const = builder.getInt32(1);
+  auto const two_const = builder.getInt32(2);
+  auto next_write_vertex = builder.CreateAlloca(types._int, nullptr, "next_write_veretx");
+  builder.CreateStore(zero_const, next_write_vertex);
+  auto vertex_offset = builder.CreateAlloca(types._int, nullptr, "vertex_offset");
+  builder.CreateStore(zero_const, vertex_offset);
+  auto primitive_count = builder.CreateAlloca(types._int, nullptr, "primitive_count");
+  builder.CreateStore(zero_const, primitive_count);
+
+  auto mesh_ptr = function->getArg(mesh_idx);
+
+  resource_map.mesh = mesh_ptr;
+  resource_map.call_emit = [&]() -> IREffect {
+    auto current_write_vertex = builder.CreateLoad(types._int, next_write_vertex);
+    auto current_vertex_offset = builder.CreateLoad(types._int, vertex_offset);
+    auto current_vertex_with_offset = builder.CreateAdd(current_vertex_offset, current_write_vertex);
+
+    auto current_primitive_count = builder.CreateLoad(types._int, primitive_count);
+    auto current_primitive_idx = builder.CreateAdd(current_primitive_count, current_write_vertex);
+
+    auto even_winding = builder.CreateZExt(
+        builder.CreateICmpEQ(zero_const, builder.CreateAnd(current_write_vertex, one_const)), types._int
+    );
+
+    GSOutputContext gs_out_ctx{current_vertex_with_offset, current_primitive_idx};
+    for (auto &h : gs_output_handlers) {
+      co_yield h(gs_out_ctx);
+    }
+
+    // FIXME: not triple if line
+    auto triple_primitive_idx = builder.CreateMul(current_primitive_idx, builder.getInt32(3));
+    co_yield air::call_set_mesh_index(
+        mesh_ptr, builder.CreateAdd(triple_primitive_idx, zero_const), current_vertex_with_offset
+    );
+    co_yield air::call_set_mesh_index(
+        mesh_ptr, builder.CreateAdd(triple_primitive_idx, one_const),
+        builder.CreateSub(builder.CreateAdd(current_vertex_with_offset, two_const), even_winding)
+    );
+    co_yield air::call_set_mesh_index(
+        mesh_ptr, builder.CreateAdd(triple_primitive_idx, two_const),
+        builder.CreateAdd(builder.CreateAdd(current_vertex_with_offset, one_const), even_winding)
+    );
+
+    builder.CreateStore(builder.CreateAdd(one_const, current_write_vertex), next_write_vertex);
+
+    co_return {};
+  };
+  resource_map.call_cut = [&]() -> IREffect {
+    auto current_write_vertex = builder.CreateLoad(types._int, next_write_vertex);
+    auto add_primitive_count = builder.CreateSelect(
+        builder.CreateICmpUGT(current_write_vertex, builder.getInt32(2 /* FIXME: line -1 , point -0*/)),
+        builder.CreateSub(current_write_vertex, builder.getInt32(2 /* FIXME: line -1 , point -0*/)), zero_const
+    );
+    builder.CreateStore(current_write_vertex, vertex_offset);
+    builder.CreateStore(zero_const, next_write_vertex);
+    builder.CreateStore(
+        builder.CreateAdd(builder.CreateLoad(types._int, primitive_count), add_primitive_count), primitive_count
+    );
+    co_return {};
+  };
+
+  auto payload = function->getArg(payload_idx);
+  auto valid_primitive_mask =
+      builder.CreateLoad(types._int, builder.CreateConstInBoundsGEP1_32(types._int, payload, 1));
+
+  builder.CreateCondBr(
+      builder.CreateICmpNE(
+          builder.CreateAnd(valid_primitive_mask, builder.CreateShl(one_const, primitive_id_in_wrap)), zero_const
+      ),
+      active_, epilogue_bb
+  );
+  builder.SetInsertPoint(active_);
+
+    auto input_ptr_int4_type = llvm::ArrayType::get(types._int4, pVertexStage->max_output_register * vertex_per_primitive);
+  resource_map.input.ptr_int4 =
+      builder.CreateAlloca(input_ptr_int4_type);
+  resource_map.input.ptr_float4 = builder.CreateBitCast(
+      resource_map.input.ptr_int4,
+      llvm::ArrayType::get(types._float4, pVertexStage->max_output_register * vertex_per_primitive)->getPointerTo()
+  );
+  resource_map.input_element_count = pVertexStage->max_output_register;
+
+  auto vertices_ptr = builder.CreateBitCast(
+      builder.CreateConstInBoundsGEP1_32(types._int, function->getArg(payload_idx), 4),
+      types._int4->getPointerTo((uint32_t)air::AddressSpace::object_data)
+  );
+
+  // TODO: initialize input registers
+  for (unsigned vid = 0; vid < vertex_per_primitive; vid++) {
+    pvalue vertex_index = nullptr;
+    if (is_strip) {
+      assert(0 && "todo");
+    } else {
+      vertex_index = builder.CreateAdd(
+          builder.CreateMul(builder.getInt32(vertex_per_primitive), primitive_id_in_wrap), builder.getInt32(vid)
+      );
+    }
+    for (unsigned reg = 0; reg < pVertexStage->max_output_register; reg++) {
+      builder.CreateStore(
+          builder.CreateLoad(
+              types._int4, builder.CreateGEP(
+                               types._int4, vertices_ptr,
+                               {builder.CreateAdd(
+                                   builder.CreateMul(vertex_index, builder.getInt32(pVertexStage->max_output_register)),
+                                   builder.getInt32(reg)
+                               )}
+                           )
+          ),
+          builder.CreateGEP(
+            input_ptr_int4_type, resource_map.input.ptr_int4,
+              {zero_const, builder.getInt32(vid * pVertexStage->max_output_register + reg)}
+          )
+      );
+    }
+  }
+
+  resource_map.output.ptr_int4 = builder.CreateAlloca(llvm::ArrayType::get(types._int4, max_output_register));
+  resource_map.output.ptr_float4 = builder.CreateBitCast(
+      resource_map.output.ptr_int4, llvm::ArrayType::get(types._float4, max_output_register)->getPointerTo()
+  );
+  resource_map.output_element_count = max_output_register;
+
+  setup_temp_register(shader_info, resource_map, types, module, builder);
+  setup_immediate_constant_buffer(shader_info, resource_map, types, module, builder);
+
+  struct context ctx {
+    .builder = builder, .llvm = context, .module = module, .function = function, .resource = resource_map,
+    .types = types, .pso_sample_mask = 0xffffffff, .shader_type = pShaderInternal->shader_type,
+  };
+
+  if (auto err = prologue.build(ctx).takeError()) {
+    return err;
+  }
+
+  auto real_entry = convert_basicblocks(pShaderInternal->entry, ctx, epilogue_bb);
+  if (auto err = real_entry.takeError()) {
+    return err;
+  }
+  builder.CreateBr(real_entry.get());
+  builder.SetInsertPoint(epilogue_bb);
+
+  if (auto err = epilogue.build(ctx).takeError()) {
+    return err;
+  }
+  if (auto err = resource_map.call_cut().build(ctx).takeError()) {
+    return err;
+  }
+  if (auto err = IRValue(air::call_set_mesh_primitive_count(mesh_ptr, builder.CreateLoad(types._int, primitive_count)))
+                     .build(ctx)
+                     .takeError()) {
+    return err;
+  }
+
+  builder.CreateRetVoid();
+  module.getOrInsertNamedMetadata("air.mesh")->addOperand(function_metadata);
+
+  return llvm::Error::success();
 }
 
 llvm::Error
@@ -16,7 +316,291 @@ convert_dxbc_vertex_for_geometry_shader(
     const SM50ShaderInternal *pShaderInternal, const char *name, const SM50ShaderInternal *pGeometryStage,
     llvm::LLVMContext &context, llvm::Module &module, SM50_SHADER_COMPILATION_ARGUMENT_DATA *pArgs
 ) {
-  return llvm::make_error<UnsupportedFeature>("geometry shader not implemented yet");
+  auto func_signature = pShaderInternal->func_signature; // copy
+  auto shader_info = &(pShaderInternal->shader_info);
+
+  /* TODO: support strip*/
+  bool is_strip = false;
+
+  uint32_t max_input_register = pShaderInternal->max_input_register;
+  uint32_t max_output_register = pShaderInternal->max_output_register;
+  SM50_SHADER_COMPILATION_ARGUMENT_DATA *arg = pArgs;
+  SM50_SHADER_IA_INPUT_LAYOUT_DATA *ia_layout = nullptr;
+  // uint64_t debug_id = ~0u;
+  while (arg) {
+    switch (arg->type) {
+    case SM50_SHADER_IA_INPUT_LAYOUT:
+      ia_layout = ((SM50_SHADER_IA_INPUT_LAYOUT_DATA *)arg);
+      break;
+    default:
+      break;
+    }
+    arg = (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)arg->next;
+  }
+
+  IREffect prologue([](auto) { return std::monostate(); });
+  IRValue epilogue([](struct context ctx) -> pvalue {
+    auto retTy = ctx.function->getReturnType();
+    if (retTy->isVoidTy()) {
+      return nullptr;
+    }
+    return llvm::UndefValue::get(retTy);
+  });
+
+  io_binding_map resource_map;
+  air::AirType types(context);
+
+  {
+    SignatureContext sig_ctx(prologue, epilogue, func_signature, resource_map);
+    sig_ctx.ia_layout = ia_layout;
+    sig_ctx.skip_vertex_output = true;
+    for (auto &p : pShaderInternal->signature_handlers) {
+      p(sig_ctx);
+    }
+  }
+
+  setup_binding_table(shader_info, resource_map, func_signature, module);
+
+  uint32_t payload_idx = func_signature.DefineInput(air::InputPayload{.size = 16256});
+  // (wrap_size, 1, 1)
+  uint32_t thread_id_idx = func_signature.DefineInput(air::InputThreadPositionInThreadgroup{});
+  // (wrap_count, instance_count, 1)
+  // wrap_count = ceil(index_count / wrap_size)
+  uint32_t tg_id_idx = func_signature.DefineInput(air::InputThreadgroupPositionInGrid{});
+  uint32_t mesh_props_idx = func_signature.DefineInput(air::InputMeshGridProperties{});
+  uint32_t draw_argument_idx = func_signature.DefineInput(air::ArgumentBindingBuffer{
+      .buffer_size = {},
+      .location_index = 21,
+      .array_size = 0,
+      .memory_access = air::MemoryAccess::read,
+      .address_space = air::AddressSpace::constant,
+      .type = air::MSLWhateverStruct{"draw_arguments", types._dxmt_draw_arguments},
+      .arg_name = "draw_arguments",
+      .raster_order_group = {}
+  });
+
+  uint32_t index_buffer_idx = ~0u;
+  if (ia_layout && ia_layout->index_buffer_format > 0) {
+    index_buffer_idx = func_signature.DefineInput(air::ArgumentBindingBuffer{
+        .buffer_size = {},
+        .location_index = 20,
+        .array_size = 0,
+        .memory_access = air::MemoryAccess::read,
+        .address_space = air::AddressSpace::device,
+        .type = ia_layout->index_buffer_format == 1 ? air::MSLRepresentableType(air::MSLUshort{})
+                                                    : air::MSLRepresentableType(air::MSLUint{}),
+        .raster_order_group = {}
+    });
+  }
+
+  auto [function, function_metadata] = func_signature.CreateFunction(name, context, module, 0, true);
+
+  auto entry_bb = llvm::BasicBlock::Create(context, "entry", function);
+  auto epilogue_bb = llvm::BasicBlock::Create(context, "epilogue", function);
+  llvm::IRBuilder<> builder(entry_bb);
+
+  setup_fastmath_flag(module, builder);
+
+  auto index_check = llvm::BasicBlock::Create(context, "index_check", function);
+  auto active = llvm::BasicBlock::Create(context, "active", function);
+  auto will_dispatch = llvm::BasicBlock::Create(context, "will_dispatch", function);
+  auto dispatch = llvm::BasicBlock::Create(context, "dispatch", function);
+  auto return_ = llvm::BasicBlock::Create(context, "return", function);
+
+  auto payload = function->getArg(payload_idx);
+  auto thread_position_in_group = function->getArg(thread_id_idx);
+  auto wrap_vertex_id = builder.CreateExtractElement(thread_position_in_group, (uint32_t)0);
+
+  auto threadgroup_position_in_grid = function->getArg(tg_id_idx);
+  auto wrap_id = builder.CreateExtractElement(threadgroup_position_in_grid, (uint32_t)0);
+  auto instance_id = builder.CreateExtractElement(threadgroup_position_in_grid, (uint32_t)1);
+
+  auto draw_arguments = builder.CreateLoad(types._dxmt_draw_arguments, function->getArg(draw_argument_idx));
+
+  auto index_count = builder.CreateExtractValue(draw_arguments, 0);
+
+  resource_map.input.ptr_int4 = builder.CreateAlloca(llvm::ArrayType::get(types._int4, max_input_register));
+  resource_map.input.ptr_float4 = builder.CreateBitCast(
+      resource_map.input.ptr_int4, llvm::ArrayType::get(types._float4, max_input_register)->getPointerTo()
+  );
+  resource_map.input_element_count = max_input_register;
+
+  auto [wrap_vertex_count, wrap_primitive_count, vertex_per_primitive] =
+      get_vertex_primitive_count_in_wrap(pGeometryStage->gs_input_primitive, is_strip);
+
+  auto payload_output_ptr = builder.CreateConstInBoundsGEP1_32(
+      types._int, payload, 4
+  );
+
+  resource_map.output.ptr_int4 = builder.CreateBitCast(
+      payload_output_ptr,
+      llvm::ArrayType::get(types._int4, max_output_register)->getPointerTo((uint32_t)air::AddressSpace::object_data)
+  );
+  resource_map.output.ptr_int4 = builder.CreateGEP(
+      resource_map.output.ptr_int4->getType()->getNonOpaquePointerElementType(), resource_map.output.ptr_int4,
+      {wrap_vertex_id}
+  );
+  resource_map.output.ptr_float4 = builder.CreateBitCast(
+      payload_output_ptr,
+      llvm::ArrayType::get(types._float4, max_output_register)->getPointerTo((uint32_t)air::AddressSpace::object_data)
+  );
+  resource_map.output.ptr_float4 = builder.CreateGEP(
+      resource_map.output.ptr_float4->getType()->getNonOpaquePointerElementType(), resource_map.output.ptr_float4,
+      {wrap_vertex_id}
+  );
+
+  resource_map.output_element_count = max_output_register;
+
+  llvm::GlobalVariable *valid_vertex_mask = new llvm::GlobalVariable(
+      module, types._int, false, llvm::GlobalValue::InternalLinkage, llvm::Constant::getNullValue(types._int),
+      "valid_vertex_mask", nullptr, llvm::GlobalValue::NotThreadLocal, (uint32_t)air::AddressSpace::threadgroup
+  );
+
+  setup_temp_register(shader_info, resource_map, types, module, builder);
+  setup_immediate_constant_buffer(shader_info, resource_map, types, module, builder);
+
+  struct context ctx {
+    .builder = builder, .llvm = context, .module = module, .function = function, .resource = resource_map,
+    .types = types, .pso_sample_mask = 0xffffffff, .shader_type = pShaderInternal->shader_type,
+  };
+
+  auto global_index_id =
+      builder.CreateAdd(builder.CreateMul(wrap_id, builder.getInt32(wrap_vertex_count)), wrap_vertex_id);
+
+  builder.CreateCondBr(
+      builder.CreateICmp(llvm::CmpInst::ICMP_ULT, global_index_id, index_count), index_check, will_dispatch
+  );
+  builder.SetInsertPoint(index_check);
+
+  if (index_buffer_idx != ~0u) {
+    auto start_index = builder.CreateExtractValue(draw_arguments, 1);
+    auto index_buffer = function->getArg(index_buffer_idx);
+    auto index_buffer_element_type = index_buffer->getType()->getNonOpaquePointerElementType();
+    auto vertex_id = builder.CreateLoad(
+        index_buffer_element_type,
+        builder.CreateGEP(index_buffer_element_type, index_buffer, {builder.CreateAdd(start_index, global_index_id)})
+    );
+    resource_map.vertex_id = builder.CreateZExt(vertex_id, types._int);
+
+    builder.CreateCondBr(
+        builder.CreateICmp(llvm::CmpInst::ICMP_NE, builder.getInt32(-1), resource_map.vertex_id), active, will_dispatch
+    );
+  } else {
+    resource_map.vertex_id = global_index_id;
+    builder.CreateBr(active);
+  }
+
+  builder.SetInsertPoint(active);
+
+  builder.CreateAtomicRMW(
+      llvm::AtomicRMWInst::BinOp::Or, valid_vertex_mask, builder.CreateShl(builder.getInt32(1), wrap_vertex_id),
+      llvm::Align(4), llvm::AtomicOrdering::Monotonic
+  );
+
+  resource_map.base_vertex_id = builder.CreateExtractValue(draw_arguments, 4);
+  resource_map.instance_id = instance_id;
+  resource_map.vertex_id_with_base = builder.CreateAdd(resource_map.vertex_id, resource_map.base_vertex_id);
+  resource_map.base_instance_id = builder.CreateExtractValue(draw_arguments, 3);
+  resource_map.instance_id_with_base = builder.CreateAdd(resource_map.instance_id, resource_map.base_instance_id);
+
+  if (auto err = prologue.build(ctx).takeError()) {
+    return err;
+  }
+
+  auto real_entry = convert_basicblocks(pShaderInternal->entry, ctx, epilogue_bb);
+  if (auto err = real_entry.takeError()) {
+    return err;
+  }
+  builder.CreateBr(real_entry.get());
+
+  builder.SetInsertPoint(epilogue_bb);
+  auto epilogue_result = epilogue.build(ctx);
+  if (auto err = epilogue_result.takeError()) {
+    return err;
+  }
+
+  builder.CreateBr(will_dispatch);
+
+  builder.SetInsertPoint(will_dispatch);
+
+  if (auto err = call_threadgroup_barrier(mem_flags::threadgroup).build(ctx).takeError()) {
+    return err;
+  }
+
+  builder.CreateCondBr(
+      builder.CreateICmp(llvm::CmpInst::ICMP_EQ, wrap_vertex_id, builder.getInt32(0)), dispatch, return_
+  );
+  builder.SetInsertPoint(dispatch);
+
+  // TODO: dispatch phase
+
+  /*
+   * calculate valid primitive mask
+   * calculate primitive indices
+   * pass instance id
+   * pass primitive_id_base
+   */
+
+  pvalue valid_primitive_mask = builder.getInt32(0);
+  auto valid_vertex_result = builder.CreateLoad(types._int, valid_vertex_mask);
+
+  auto const zero_const = builder.getInt32(0);
+  for (unsigned primitive_id = 0; primitive_id < wrap_primitive_count; primitive_id++) {
+    pvalue primitive_valid_result = builder.getInt1(1);
+    // TODO: check primitive is valid
+    if (is_strip) {
+      assert(0 && "strip unhandeld");
+    } else {
+      // primitive is valid if all vertex is valid
+      for (unsigned vid_in_prim = 0; vid_in_prim < vertex_per_primitive; vid_in_prim++) {
+        auto vertex_valid = builder.CreateICmpNE(
+            builder.CreateAnd(
+                builder.getInt32(1 << (vid_in_prim + vertex_per_primitive * primitive_id)), valid_vertex_result
+            ),
+            zero_const
+        );
+        primitive_valid_result = builder.CreateAnd(primitive_valid_result, vertex_valid);
+      }
+    }
+
+    valid_primitive_mask = builder.CreateOr(
+        valid_primitive_mask,
+        builder.CreateShl(builder.CreateZExt(primitive_valid_result, ctx.types._int), builder.getInt32(primitive_id))
+    );
+  }
+
+  builder.CreateStore(instance_id, builder.CreateConstInBoundsGEP1_32(types._int, payload, 0));
+
+  builder.CreateStore(valid_primitive_mask, builder.CreateConstInBoundsGEP1_32(types._int, payload, 1));
+
+  if (auto err = air::call_set_mesh_properties(
+                     function->getArg(mesh_props_idx),
+                     llvm::ConstantVector::get(
+                         {llvm::ConstantInt::get(ctx.llvm, llvm::APInt{32, wrap_primitive_count}),
+                          llvm::ConstantInt::get(ctx.llvm, llvm::APInt{32, 1}),
+                          llvm::ConstantInt::get(ctx.llvm, llvm::APInt{32, 1})}
+                     )
+      )
+                     .build({.llvm = context, .module = module, .builder = builder, .types = types})
+                     .takeError()) {
+    return err;
+  }
+
+  builder.CreateBr(return_);
+
+  builder.SetInsertPoint(return_);
+
+  builder.CreateRetVoid();
+
+  module.getOrInsertNamedMetadata("air.object")->addOperand(function_metadata);
+  return llvm::Error::success();
 };
 
 } // namespace dxmt::dxbc
+
+template <> struct environment_cast<::dxmt::dxbc::context, ::dxmt::air::AIRBuilderContext> {
+  ::dxmt::air::AIRBuilderContext
+  cast(const ::dxmt::dxbc::context &src) {
+    return {src.llvm, src.module, src.builder, src.types};
+  };
+};

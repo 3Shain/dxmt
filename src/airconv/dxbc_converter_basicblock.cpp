@@ -451,6 +451,27 @@ auto load_from_array_at(llvm::Value *array, pvalue index) -> IRValue {
   });
 };
 
+IRValue
+load_from_vec4_array_masked(llvm::Value *array, pvalue index, uint32_t mask) {
+  if (mask == 0b1111) {
+    return load_from_array_at(array, index);
+  }
+  return make_irvalue([=](context ctx) {
+    auto array_type = llvm::cast<llvm::PointerType>(array->getType())->getNonOpaquePointerElementType();
+    auto vec4_type = llvm::cast<llvm::ArrayType>(array_type)->getArrayElementType();
+    auto ele_type = llvm::cast<llvm::VectorType>(vec4_type)->getElementType();
+    pvalue value = llvm::ConstantAggregateZero::get(vec4_type);
+    for (unsigned i = 0; i < 4; i++) {
+      if ((mask & (1 << i)) == 0)
+        continue;
+      auto component_ptr =
+          ctx.builder.CreateGEP(array_type, array, {ctx.builder.getInt32(0), index, ctx.builder.getInt32(i)});
+      value = ctx.builder.CreateInsertElement(value, ctx.builder.CreateLoad(ele_type, component_ptr), uint64_t(i));
+    }
+    return value;
+  });
+};
+
 auto store_to_array_at(
   llvm::Value *array, pvalue index, pvalue vec4_type_matched
 ) -> IREffect {
@@ -692,6 +713,47 @@ std::function<IRValue(pvalue)> pop_output_tess_factor(
   };
 }
 
+IREffect
+pop_mesh_output_render_taget_array_index(uint32_t from_reg, uint32_t mask, pvalue primitive_id) {
+  auto ctx = co_yield get_context();
+  auto result = co_yield to_desired_type_from_int_vec4(
+      co_yield load_from_array_at(ctx.resource.output.ptr_int4, ctx.builder.getInt32(from_reg)), ctx.types._int, mask
+  );
+  co_yield air::call_set_mesh_render_target_array_index(ctx.resource.mesh, primitive_id, result);
+  co_return {};
+}
+
+IREffect
+pop_mesh_output_viewport_array_index(uint32_t from_reg, uint32_t mask, pvalue primitive_id) {
+  auto ctx = co_yield get_context();
+  auto result = co_yield to_desired_type_from_int_vec4(
+      co_yield load_from_array_at(ctx.resource.output.ptr_int4, ctx.builder.getInt32(from_reg)), ctx.types._int, mask
+  );
+  co_yield air::call_set_mesh_viewport_array_index(ctx.resource.mesh, primitive_id, result);
+  co_return {};
+}
+
+IREffect
+pop_mesh_output_position(uint32_t from_reg, uint32_t mask, pvalue vertex_id) {
+  auto ctx = co_yield get_context();
+  auto result = co_yield load_from_array_at(ctx.resource.output.ptr_float4, ctx.builder.getInt32(from_reg));
+  co_yield air::call_set_mesh_position(ctx.resource.mesh, vertex_id, result);
+  co_return {};
+}
+
+IREffect
+pop_mesh_output_vertex_data(
+    uint32_t from_reg, uint32_t mask, uint32_t idx, pvalue vertex_id, air::MSLScalerOrVectorType desired_type
+) {
+  auto ctx = co_yield get_context();
+  auto result = co_yield to_desired_type_from_int_vec4(
+      co_yield load_from_vec4_array_masked(ctx.resource.output.ptr_int4, ctx.builder.getInt32(from_reg), mask),
+      air::get_llvm_type(desired_type, ctx.llvm), mask
+  );
+  co_yield air::call_set_mesh_vertex_data(ctx.resource.mesh, idx, vertex_id, result);
+  co_return {};
+}
+
 IREffect pull_vertex_input(
   air::FunctionSignatureBuilder &func_signature, uint32_t to_reg, uint32_t mask,
   SM50_IA_INPUT_ELEMENT element_info, uint32_t slot_mask
@@ -797,12 +859,6 @@ IREffect call_discard_fragment() {
   ctx.builder.CreateCall(fn, {});
   co_return {};
 }
-
-enum class mem_flags : uint8_t {
-  device = 1,
-  threadgroup = 2,
-  texture = 4,
-};
 
 IREffect call_threadgroup_barrier(mem_flags mem_flag) {
   using namespace llvm;
@@ -4753,8 +4809,8 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
               }) >>= swizzle(eval_snapped.read_swizzle)
             );
           },
-          [](InstEmit) {},
-          [](InstCut) {},
+          [&](InstEmit) { effect << ctx.resource.call_emit(); },
+          [&](InstCut) { effect << ctx.resource.call_cut(); },
         },
         inst
       );
