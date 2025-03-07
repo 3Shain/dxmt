@@ -479,6 +479,28 @@ uint32_t FunctionSignatureBuilder::DefineOutput(const FunctionOutput &output) {
   return index;
 };
 
+uint32_t FunctionSignatureBuilder::DefineMeshVertexOutput(const MeshVertexOutput &output) {
+  uint32_t index = mesh_vertex_outputs.size();
+  for (uint32_t i = 0; i < index; i++) {
+    if (mesh_vertex_outputs[i] == output) {
+      return i;
+    }
+  }
+  mesh_vertex_outputs.push_back(output);
+  return index;
+};
+
+uint32_t FunctionSignatureBuilder::DefineMeshPrimitiveOutput(const MeshPrimitiveOutput &output) {
+  uint32_t index = mesh_primitive_outputs.size();
+  for (uint32_t i = 0; i < index; i++) {
+    if (mesh_primitive_outputs[i] == output) {
+      return i;
+    }
+  }
+  mesh_primitive_outputs.push_back(output);
+  return index;
+};
+
 auto FunctionSignatureBuilder::CreateFunction(
   std::string name, llvm::LLVMContext &context, llvm::Module &module,
   uint64_t sign_mask, bool skip_output
@@ -487,6 +509,8 @@ auto FunctionSignatureBuilder::CreateFunction(
   std::vector<llvm::Type *> type_input;
   std::vector<Metadata *> metadata_output;
   std::vector<llvm::Type *> type_output;
+  std::vector<Metadata *> metadata_mesh_vertex_output;
+  std::vector<Metadata *> metadata_mesh_primitive_output;
 
   auto get_input_attribute_type = [](
                                     InputAttributeComponentType type,
@@ -512,6 +536,78 @@ auto FunctionSignatureBuilder::CreateFunction(
       return msl_float4;
     }
   };
+
+  for (auto &item : enumerate(mesh_vertex_outputs)) {
+    auto output = item.value();
+    StreamMDHelper md;
+    std::visit(
+        patterns{
+            [&](const OutputMeshData &vertex_out) {
+              md.string("air.mesh_vertex_data")
+                  ->integer(vertex_out.index)
+                  ->string("user(" + vertex_out.user + ")")
+                  ->string("air.arg_type_name")
+                  ->string(get_name(vertex_out.type))
+                  ->string("air.arg_name")
+                  ->string(vertex_out.user);
+            },
+            [&](const OutputPosition &position) {
+              md.string("air.position")
+                  ->string("air.invariant")
+                  ->string("air.arg_type_name")
+                  ->string(get_name(position.type))
+                  ->string("air.arg_name")
+                  ->string("mtl_position");
+            },
+            [&](const OutputClipDistance clip_distance) {
+              md.string("air.clip_distance")
+                  ->string("air.clip_distance_array_size")
+                  ->integer(clip_distance.count)
+                  ->string("air.arg_type_name")
+                  ->string("float")
+                  ->string("air.arg_name")
+                  ->string("mtl_clip_distance");
+            },
+        },
+        output
+    );
+    metadata_mesh_vertex_output.push_back(md.BuildTuple(context));
+  }
+
+  for (auto &item : enumerate(mesh_primitive_outputs)) {
+    auto output = item.value();
+    StreamMDHelper md;
+    std::visit(
+        patterns{
+            [&](const OutputMeshData &primitive_out) {
+              md.string("air.mesh_primitive_data")
+                  ->integer(primitive_out.index)
+                  ->string("user(" + primitive_out.user + ")")
+                  ->string("air.arg_type_name")
+                  ->string(get_name(primitive_out.type))
+                  ->string("air.arg_name")
+                  ->string(primitive_out.user);
+            },
+            [&](const OutputRenderTargetArrayIndex) {
+              md.string("air.render_target_array_index")
+                  ->string("air.arg_type_name")
+                  ->string("uint")
+                  ->string("air.arg_name")
+                  ->string("mtl_render_target_array_index");
+            },
+            [&](const OutputViewportArrayIndex) {
+              md.string("air.viewport_array_index")
+                  ->string("air.arg_type_name")
+                  ->string("uint")
+                  ->string("air.arg_name")
+                  ->string("mtl_viewport_array_index");
+            },
+        },
+        output
+    );
+    metadata_mesh_primitive_output.push_back(md.BuildTuple(context));
+  }
+
   for (auto &item : enumerate(inputs)) {
     auto i = item.index();
     auto input = item.value();
@@ -740,10 +836,36 @@ auto FunctionSignatureBuilder::CreateFunction(
             ->string("mesh_grid_properties") // HARDCODED
             ->string("air.arg_name")
             ->string("mtl_mesh_grid_properties");
-          // will cast it anyway. TODO: get correct type from AirType
-          return msl_uint.get_llvm_type(context)->getPointerTo( //
+          return getOrCreateStructType("struct._mesh_grid_properties_t", context)->getPointerTo( //
             (uint32_t)AddressSpace::threadgroup
           );
+        },
+        [&](const InputMesh &mesh) -> llvm::Type * {
+          StreamMDHelper mesh_info;
+          mesh_info.string("air.mesh_type_info")
+            ->metadata(MDTuple::get(context, metadata_mesh_vertex_output))
+            ->metadata(MDTuple::get(context, metadata_mesh_primitive_output))
+            ->integer(mesh.vertex_count)
+            ->integer(mesh.primitive_count);
+          switch (mesh.topology) {
+          case 1:
+            mesh_info.string("air.line");
+            break;
+          case 2:
+            mesh_info.string("air.triangle");
+            break;
+          default:
+            mesh_info.string("air.point");
+            break;
+          }
+
+          metadata_field.string("air.mesh")
+            ->metadata(mesh_info.BuildTuple(context))
+            ->string("air.arg_type_name")
+            ->string("mesh<>") // HARDCODED
+            ->string("air.arg_name")
+            ->string("mtl_mesh");
+          return getOrCreateStructType("struct._mesh_t", context)->getPointerTo(7);
         },
         [](auto _) {
           assert(0 && "Unhandled input");
