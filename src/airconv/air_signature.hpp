@@ -501,6 +501,14 @@ struct OutputPosition {
   bool operator==(OutputPosition const& rhs) const { return true; }
 };
 
+struct OutputMeshData {
+  std::string user;
+  MSLScalerOrVectorType type;
+  uint32_t index;
+
+  bool operator==(OutputMeshData const& rhs) const { return user == rhs.user && index == rhs.index; }
+};
+
 struct InputFragmentStageIn {
   std::string user;
   MSLScalerOrVectorType type;
@@ -526,6 +534,12 @@ struct InputPositionInPatch {
 };
 struct InputPayload {
   uint32_t size;
+};
+
+struct InputMesh {
+  uint32_t vertex_count;
+  uint32_t primitive_count;
+  uint32_t topology;
 };
 
 struct InputMeshGridProperties {};
@@ -588,7 +602,7 @@ using FunctionInput = template_concat_t<
     /* post-tessellation */
     InputPatchID, InputPositionInPatch,
     /* object & mesh */
-    InputPayload, InputMeshGridProperties,
+    InputPayload, InputMeshGridProperties, InputMesh,
     /* kernel */
     InputThreadIndexInThreadgroup, InputThreadPositionInThreadgroup,
     InputThreadPositionInGrid, InputThreadgroupPositionInGrid,
@@ -601,6 +615,10 @@ using FunctionOutput = std::variant<
   /* fragment */
   OutputRenderTarget, OutputDepth, OutputCoverageMask>;
 
+using MeshVertexOutput = std::variant<OutputMeshData, OutputPosition, OutputClipDistance>;
+
+using MeshPrimitiveOutput = std::variant<OutputMeshData, OutputRenderTargetArrayIndex, OutputViewportArrayIndex>;
+
 class FunctionSignatureBuilder {
 public:
   /*
@@ -611,6 +629,8 @@ public:
    */
   uint32_t DefineInput(const FunctionInput &input);
   uint32_t DefineOutput(const FunctionOutput &output);
+  uint32_t DefineMeshVertexOutput(const MeshVertexOutput &output);
+  uint32_t DefineMeshPrimitiveOutput(const MeshPrimitiveOutput &output);
   void UseEarlyFragmentTests() { early_fragment_tests = true; }
   void UseMaxWorkgroupSize(uint32_t size) { max_work_group_size = size; }
   void UsePatch(PostTessellationPatch patch, uint32_t num_control_points) {
@@ -630,6 +650,8 @@ public:
 private:
   std::vector<FunctionInput> inputs;
   std::vector<FunctionOutput> outputs;
+  std::vector<MeshVertexOutput> mesh_vertex_outputs;
+  std::vector<MeshPrimitiveOutput> mesh_primitive_outputs;
   bool early_fragment_tests = false;
   uint32_t max_work_group_size = 0;
   std::optional<std::pair<PostTessellationPatch, uint32_t>> patch;

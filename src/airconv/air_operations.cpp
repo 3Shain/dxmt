@@ -2144,4 +2144,191 @@ call_interpolate_at_sample(pvalue interpolant, bool perspective, pvalue index) {
   });
 }
 
+AIRBuilderResult
+call_set_mesh_render_target_array_index(pvalue mesh, pvalue vid, pvalue render_target_array_index) {
+  return make_op([=](struct AIRBuilderContext ctx) {
+    using namespace llvm;
+    auto &context = ctx.llvm;
+    auto &module = ctx.module;
+    auto att = AttributeList::get(
+        context, {{1U, Attribute::get(context, Attribute::AttrKind::NoCapture)},
+                  {~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)},
+                  {~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)},
+                  {~0U, Attribute::get(context, Attribute::AttrKind::ArgMemOnly)}}
+    );
+    auto fn = (module.getOrInsertFunction(
+        "air.set_render_target_array_index_mesh.i32",
+        llvm::FunctionType::get(
+            llvm::Type::getVoidTy(context),
+            {ctx.types._mesh->getPointerTo(7 /* mesh */), ctx.types._int, ctx.types._int}, false
+        ),
+        att
+    ));
+    return ctx.builder.CreateCall(fn, {mesh, vid, render_target_array_index});
+  });
+}
+
+AIRBuilderResult call_set_mesh_viewport_array_index(pvalue mesh, pvalue vid, pvalue viewport_array_index) {
+  return make_op([=](struct AIRBuilderContext ctx) {
+    using namespace llvm;
+    auto &context = ctx.llvm;
+    auto &module = ctx.module;
+    auto att = AttributeList::get(
+        context, {{1U, Attribute::get(context, Attribute::AttrKind::NoCapture)},
+                  {~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)},
+                  {~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)},
+                  {~0U, Attribute::get(context, Attribute::AttrKind::ArgMemOnly)}}
+    );
+    auto fn = (module.getOrInsertFunction(
+        "air.set_viewport_array_index_mesh.i32",
+        llvm::FunctionType::get(
+            llvm::Type::getVoidTy(context),
+            {ctx.types._mesh->getPointerTo(7 /* mesh */), ctx.types._int, ctx.types._int}, false
+        ),
+        att
+    ));
+    return ctx.builder.CreateCall(fn, {mesh, vid, viewport_array_index});
+  });
+}
+
+AIRBuilderResult call_set_mesh_position(pvalue mesh, pvalue vid, pvalue position) {
+  return make_op([=](struct AIRBuilderContext ctx) {
+    using namespace llvm;
+    auto &context = ctx.llvm;
+    auto &module = ctx.module;
+    auto att = AttributeList::get(
+        context, {{1U, Attribute::get(context, Attribute::AttrKind::NoCapture)},
+                  {~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)},
+                  {~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)},
+                  {~0U, Attribute::get(context, Attribute::AttrKind::ArgMemOnly)}}
+    );
+    auto fn = (module.getOrInsertFunction(
+        "air.set_position_mesh",
+        llvm::FunctionType::get(
+            llvm::Type::getVoidTy(context),
+            {ctx.types._mesh->getPointerTo(7 /* mesh */), ctx.types._int, ctx.types._float4}, false
+        ),
+        att
+    ));
+    return ctx.builder.CreateCall(fn, {mesh, vid, position});
+  });
+}
+
+AIRBuilderResult call_set_mesh_clip_distance(pvalue mesh, uint32_t idx, pvalue vid, pvalue value) {
+  return make_op([=](struct AIRBuilderContext ctx) {
+    using namespace llvm;
+    auto &context = ctx.llvm;
+    auto &module = ctx.module;
+    auto att = AttributeList::get(
+        context, {{1U, Attribute::get(context, Attribute::AttrKind::NoCapture)},
+                  {~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)},
+                  {~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)},
+                  {~0U, Attribute::get(context, Attribute::AttrKind::ArgMemOnly)}}
+    );
+    auto fn = (module.getOrInsertFunction(
+        "air.set_clip_distance_mesh",
+        llvm::FunctionType::get(
+            llvm::Type::getVoidTy(context),
+            {ctx.types._mesh->getPointerTo(7 /* mesh */), ctx.types._int, ctx.types._int, ctx.types._float}, false
+        ),
+        att
+    ));
+    return ctx.builder.CreateCall(fn, {mesh, ctx.builder.getInt32(idx), vid, value});
+  });
+}
+
+AIRBuilderResult
+call_set_mesh_vertex_data(pvalue mesh, uint32_t idx, pvalue vid, pvalue value) {
+  return make_op([=](struct AIRBuilderContext ctx) {
+    using namespace llvm;
+    auto &context = ctx.llvm;
+    auto &module = ctx.module;
+    auto att = AttributeList::get(
+        context, {{1U, Attribute::get(context, Attribute::AttrKind::NoCapture)},
+                  {~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)},
+                  {~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)},
+                  {~0U, Attribute::get(context, Attribute::AttrKind::ArgMemOnly)}}
+    );
+    auto fn = (module.getOrInsertFunction(
+        "air.set_vertex_data_mesh" + type_overload_suffix(value->getType()),
+        llvm::FunctionType::get(
+            llvm::Type::getVoidTy(context),
+            {ctx.types._mesh->getPointerTo(7 /* mesh */), ctx.types._int, ctx.types._int, value->getType()}, false
+        ),
+        att
+    ));
+    return ctx.builder.CreateCall(fn, {mesh, ctx.builder.getInt32(idx), vid, value});
+  });
+}
+
+AIRBuilderResult
+call_set_mesh_primitive_data(pvalue mesh, uint32_t idx, pvalue pid, pvalue value) {
+  return make_op([=](struct AIRBuilderContext ctx) {
+    using namespace llvm;
+    auto &context = ctx.llvm;
+    auto &module = ctx.module;
+    auto att = AttributeList::get(
+        context, {{1U, Attribute::get(context, Attribute::AttrKind::NoCapture)},
+                  {~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)},
+                  {~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)},
+                  {~0U, Attribute::get(context, Attribute::AttrKind::ArgMemOnly)}}
+    );
+    auto fn = (module.getOrInsertFunction(
+        "air.set_primitive_data_mesh" + type_overload_suffix(value->getType()),
+        llvm::FunctionType::get(
+            llvm::Type::getVoidTy(context),
+            {ctx.types._mesh->getPointerTo(7 /* mesh */), ctx.types._int, ctx.types._int, value->getType()}, false
+        ),
+        att
+    ));
+    return ctx.builder.CreateCall(fn, {mesh, ctx.builder.getInt32(idx), pid, value});
+  });
+}
+
+AIRBuilderResult call_set_mesh_index(pvalue mesh, pvalue index, pvalue vertex) {
+  return make_op([=](struct AIRBuilderContext ctx) {
+    using namespace llvm;
+    auto &context = ctx.llvm;
+    auto &module = ctx.module;
+    auto att = AttributeList::get(
+        context, {{1U, Attribute::get(context, Attribute::AttrKind::NoCapture)},
+                  {~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)},
+                  {~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)},
+                  {~0U, Attribute::get(context, Attribute::AttrKind::ArgMemOnly)}}
+    );
+    auto fn = (module.getOrInsertFunction(
+        "air.set_index_mesh",
+        llvm::FunctionType::get(
+            llvm::Type::getVoidTy(context),
+            {ctx.types._mesh->getPointerTo(7 /* mesh */), ctx.types._int, ctx.types._byte}, false
+        ),
+        att
+    ));
+    return ctx.builder.CreateCall(fn, {mesh, index, ctx.builder.CreateZExtOrTrunc(vertex, ctx.types._byte)});
+  });
+}
+
+AIRBuilderResult call_set_mesh_primitive_count(pvalue mesh, pvalue count) {
+  return make_op([=](struct AIRBuilderContext ctx) {
+    using namespace llvm;
+    auto &context = ctx.llvm;
+    auto &module = ctx.module;
+    auto att = AttributeList::get(
+        context, {{1U, Attribute::get(context, Attribute::AttrKind::NoCapture)},
+                  {~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)},
+                  {~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)},
+                  {~0U, Attribute::get(context, Attribute::AttrKind::ArgMemOnly)}}
+    );
+    auto fn = (module.getOrInsertFunction(
+        "air.set_primitive_count_mesh",
+        llvm::FunctionType::get(
+            llvm::Type::getVoidTy(context),
+            {ctx.types._mesh->getPointerTo(7 /* mesh */), ctx.types._int}, false
+        ),
+        att
+    ));
+    return ctx.builder.CreateCall(fn, {mesh, count});
+  });
+}
+
 }; // namespace dxmt::air
