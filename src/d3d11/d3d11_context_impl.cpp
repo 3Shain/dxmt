@@ -3365,6 +3365,7 @@ public:
     // FIXME: ensure valid state: hull and domain shader none or both are bound
     Desc.HullShader = GetManagedShader<PipelineStage::Hull>();
     Desc.DomainShader = GetManagedShader<PipelineStage::Domain>();
+    Desc.GeometryShader = GetManagedShader<PipelineStage::Geometry>();
     if (state_.InputAssembler.InputLayout) {
       Desc.InputLayout = state_.InputAssembler.InputLayout->GetManagedInputLayout();
     } else {
@@ -3485,6 +3486,20 @@ public:
     return true;
   }
 
+  template <bool IndexedDraw>
+  bool
+  FinalizeGeometryRenderPipeline() {
+    Com<IMTLCompiledGeometryPipeline> pipeline;
+
+    MTL_GRAPHICS_PIPELINE_DESC pipelineDesc;
+    InitializeGraphicsPipelineDesc<IndexedDraw>(pipelineDesc);
+    device->CreateGeometryPipeline(&pipelineDesc, &pipeline);
+    EmitST([pso = std::move(pipeline)](ArgumentEncodingContext& enc) {
+      
+    });
+    return false;
+  }
+
   /**
   Assume we have all things needed to build PSO
   If the current encoder is not a render encoder, switch to it.
@@ -3500,10 +3515,7 @@ public:
     auto GS = GetManagedShader<PipelineStage::Geometry>();
     if (GS) {
       if (GS->reflection().GeometryShader.GSPassThrough == ~0u) {
-        EmitST([](ArgumentEncodingContext &enc) {
-          enc.setCompatibilityFlag(FeatureCompatibility::UnsupportedGeometryDraw);
-        });
-        return false;
+        return FinalizeGeometryRenderPipeline<IndexedDraw>();
       }
     }
 

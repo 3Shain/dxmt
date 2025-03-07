@@ -131,6 +131,26 @@ struct ShaderVariantTessellationDomain {
   }
 };
 
+struct ShaderVariantGeometryVertex {
+  using this_type = ShaderVariantGeometryVertex;
+  uint64_t input_layout_handle;
+  uint64_t geometry_shader_handle;
+  SM50_INDEX_BUFFER_FORAMT index_buffer_format;
+  bool operator==(const this_type &rhs) const {
+    return input_layout_handle == rhs.input_layout_handle &&
+           geometry_shader_handle == rhs.geometry_shader_handle &&
+           index_buffer_format == rhs.index_buffer_format;
+  }
+};
+
+struct ShaderVariantGeometry {
+  using this_type = ShaderVariantGeometry;
+  uint64_t vertex_shader_handle;
+  bool operator==(const this_type &rhs) const {
+    return vertex_shader_handle == rhs.vertex_shader_handle;
+  }
+};
+
 struct ShaderVariantDefault {
   using this_type = ShaderVariantDefault;
   bool operator==(const this_type &rhs) const { return true; }
@@ -149,7 +169,8 @@ struct ShaderVariantVertexStreamOutput {
 using ShaderVariant =
     std::variant<ShaderVariantDefault, ShaderVariantVertex, ShaderVariantPixel,
                  ShaderVariantTessellationVertex, ShaderVariantTessellationHull,
-                 ShaderVariantTessellationDomain, ShaderVariantVertexStreamOutput>;
+                 ShaderVariantTessellationDomain, ShaderVariantVertexStreamOutput,
+                 ShaderVariantGeometryVertex, ShaderVariantGeometry>;
 
 class CompiledShader : public IMTLThreadpoolWork {
 public:

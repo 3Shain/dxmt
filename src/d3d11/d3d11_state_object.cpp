@@ -333,6 +333,45 @@ public:
         desc_.AlphaToCoverageEnable);
   }
 
+  void SetupMetalPipelineDescriptor(
+    MTL::MeshRenderPipelineDescriptor *render_pipeline_descriptor, uint32_t num_rt) {
+  for (unsigned rt = 0; rt < num_rt; rt++) {
+    auto i = desc_.IndependentBlendEnable ? rt : 0;
+    auto &renderTarget = desc_.RenderTarget[i];
+    if (renderTarget.LogicOpEnable) {
+// #ifdef DXMT_NO_PRIVATE_API
+//       ERR("OutputMerger LogicOp is not supported");
+//       continue;
+// #else
+//       render_pipeline_descriptor->setLogicOperationEnabled(true);
+//       render_pipeline_descriptor->setLogicOperation(
+//           kLogicOpMap[renderTarget.LogicOp]);
+// #endif
+    }
+    auto attachment_desc = render_pipeline_descriptor->colorAttachments()->object(rt);
+    attachment_desc->setWriteMask(kColorWriteMaskMap[renderTarget.RenderTargetWriteMask]);
+    auto attachment_format = attachment_desc->pixelFormat();
+    if (renderTarget.BlendEnable && attachment_format != MTL::PixelFormatInvalid) {
+      if (!any_bit_set(m_parent->GetMTLPixelFormatCapability(attachment_format) & FormatCapability::Blend)) {
+        WARN("Blending is enabled on RTV of non-blendable format ", attachment_format);
+        continue;
+      }
+      attachment_desc->setAlphaBlendOperation(kBlendOpMap[renderTarget.BlendOpAlpha]);
+      attachment_desc->setRgbBlendOperation(kBlendOpMap[renderTarget.BlendOp]);
+      attachment_desc->setBlendingEnabled(renderTarget.BlendEnable);
+      attachment_desc->setSourceAlphaBlendFactor(kBlendAlphaFactorMap[renderTarget.SrcBlendAlpha]);
+      attachment_desc->setSourceRGBBlendFactor(
+          kBlendFactorMap[renderTarget.SrcBlend]);
+      attachment_desc->setDestinationAlphaBlendFactor(
+          kBlendAlphaFactorMap[renderTarget.DestBlendAlpha]);
+      attachment_desc->setDestinationRGBBlendFactor(
+          kBlendFactorMap[renderTarget.DestBlend]);
+    }
+  }
+  render_pipeline_descriptor->setAlphaToCoverageEnabled(
+      desc_.AlphaToCoverageEnable);
+}
+
 private:
   const D3D11_BLEND_DESC1 desc_;
   bool dual_source_blending_;

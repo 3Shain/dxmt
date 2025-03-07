@@ -18,6 +18,7 @@ DEFINE_COM_INTERFACE("14e1e5e4-3f08-4741-a8e3-597d79373266", IMTLThreadpoolWork)
 struct IMTLCompiledGraphicsPipeline;
 struct IMTLCompiledComputePipeline;
 struct IMTLCompiledTessellationPipeline;
+struct IMTLCompiledGeometryPipeline;
 
 struct MTL_GRAPHICS_PIPELINE_DESC;
 struct MTL_COMPUTE_PIPELINE_DESC;
@@ -50,6 +51,10 @@ public:
 
   virtual HRESULT CreateTessellationPipeline(MTL_GRAPHICS_PIPELINE_DESC * pDesc,
                                              IMTLCompiledTessellationPipeline *
+                                                 *ppPipeline) = 0;
+
+  virtual HRESULT CreateGeometryPipeline(MTL_GRAPHICS_PIPELINE_DESC * pDesc,
+                                             IMTLCompiledGeometryPipeline *
                                                  *ppPipeline) = 0;
 
   virtual bool IsTraced() = 0;
