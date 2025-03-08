@@ -390,6 +390,12 @@ SrcOperand readSrcOperand(
       .attribute = shader::common::InputAttribute::PrimitiveId
     };
   }
+  case D3D11_SB_OPERAND_TYPE_INPUT_GS_INSTANCE_ID: {
+    return SrcOperandAttribute{
+      ._ = readSrcOperandCommon(O),
+      .attribute = shader::common::InputAttribute::GSInstanceId
+    };
+  }
   default:
     DXASSERT_DXBC(false && "unhandled src operand");
   }

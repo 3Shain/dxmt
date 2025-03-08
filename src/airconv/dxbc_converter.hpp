@@ -366,6 +366,9 @@ public:
   microsoft::D3D10_SB_PRIMITIVE gs_input_primitive = {};
   std::vector<std::function<IREffect(GSOutputContext &)>> gs_output_handlers;
   uint32_t num_mesh_vertex_data = 0;
+  microsoft::D3D10_SB_PRIMITIVE_TOPOLOGY gs_output_topology = {};
+  uint32_t gs_max_vertex_output = 0;
+  uint32_t gs_instance_count = 1;
 };
 
 void setup_binding_table(
