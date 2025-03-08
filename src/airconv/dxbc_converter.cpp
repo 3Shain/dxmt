@@ -2896,6 +2896,7 @@ int SM50Initialize(
           inputParser, outputParser, pRefl->GeometryShader.Data
         );
       }
+      pRefl->GeometryShader.Primitive = sm50_shader->gs_input_primitive;
     }
     pRefl->NumOutputElement = sm50_shader->max_output_register;
     pRefl->NumPatchConstantOutputScalar =

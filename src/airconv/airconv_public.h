@@ -85,6 +85,7 @@ struct MTL_GEOMETRY_SHADER_REFLECTION {
     struct MTL_GEOMETRY_SHADER_PASS_THROUGH Data;
     uint32_t GSPassThrough;
   };
+  uint32_t Primitive;
 };
 
 struct MTL_SHADER_REFLECTION {
