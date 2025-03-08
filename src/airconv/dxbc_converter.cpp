@@ -2543,8 +2543,15 @@ int SM50Initialize(
         sm50_shader->gs_input_primitive = Inst.m_InputPrimitiveDecl.Primitive;
         break;
       case D3D10_SB_OPCODE_DCL_GS_OUTPUT_PRIMITIVE_TOPOLOGY:
+        sm50_shader->gs_output_topology = Inst.m_OutputTopologyDecl.Topology;
+        break;
       case D3D10_SB_OPCODE_DCL_MAX_OUTPUT_VERTEX_COUNT:
+        sm50_shader->gs_max_vertex_output = Inst.m_GSMaxOutputVertexCountDecl.MaxOutputVertexCount;
+        break;
       case D3D11_SB_OPCODE_DCL_GS_INSTANCE_COUNT:
+        assert(0 && "unhandled gs instancing");
+        sm50_shader->gs_instance_count = Inst.m_GSInstanceCountDecl.InstanceCount;
+        break;
       case D3D11_SB_OPCODE_DCL_STREAM:
       case D3D11_SB_OPCODE_DCL_INTERFACE:
       case D3D11_SB_OPCODE_DCL_FUNCTION_TABLE:
