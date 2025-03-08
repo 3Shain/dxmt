@@ -5,7 +5,9 @@
 #include "llvm/IR/Constants.h"
 #include "llvm/Support/Alignment.h"
 #include "llvm/Support/AtomicOrdering.h"
+#include "llvm/Support/Error.h"
 #include <cstdint>
+#include <format>
 #include <utility>
 
 namespace dxmt::dxbc {
@@ -100,7 +102,6 @@ convert_dxbc_geometry_shader(
   auto func_signature = pShaderInternal->func_signature; // copy
   auto shader_info = &(pShaderInternal->shader_info);
 
-  /* TODO: support strip*/
   bool is_strip = false;
 
   uint32_t max_output_register = pShaderInternal->max_output_register;
@@ -111,6 +112,9 @@ convert_dxbc_geometry_shader(
     // case SM50_SHADER_DEBUG_IDENTITY:
     //   debug_id = ((SM50_SHADER_DEBUG_IDENTITY_DATA *)arg)->id;
     //   break;
+    case SM50_SHADER_PSO_GEOMETRY_SHADER:
+      is_strip = ((SM50_SHADER_PSO_GEOMETRY_SHADER_DATA *)arg)->strip_topology;
+      break;
     default:
       break;
     }
@@ -323,16 +327,7 @@ convert_dxbc_geometry_shader(
       types._int4->getPointerTo((uint32_t)air::AddressSpace::object_data)
   );
 
-  // TODO: initialize input registers
-  for (unsigned vid = 0; vid < vertex_per_primitive; vid++) {
-    pvalue vertex_index = nullptr;
-    if (is_strip) {
-      assert(0 && "todo");
-    } else {
-      vertex_index = builder.CreateAdd(
-          builder.CreateMul(builder.getInt32(vertex_per_primitive), primitive_id_in_wrap), builder.getInt32(vid)
-      );
-    }
+  auto load_vertex = [&](pvalue vertex_index, uint32_t vid) {
     for (unsigned reg = 0; reg < pVertexStage->max_output_register; reg++) {
       builder.CreateStore(
           builder.CreateLoad(
@@ -345,10 +340,52 @@ convert_dxbc_geometry_shader(
                            )
           ),
           builder.CreateGEP(
-            input_ptr_int4_type, resource_map.input.ptr_int4,
+              input_ptr_int4_type, resource_map.input.ptr_int4,
               {zero_const, builder.getInt32(vid * pVertexStage->max_output_register + reg)}
           )
       );
+    }
+  };
+
+  if (is_strip) {
+    auto leading_vertex_index = primitive_id_in_wrap;
+    switch (pShaderInternal->gs_input_primitive) {
+    case microsoft::D3D10_SB_PRIMITIVE_TRIANGLE: {
+      /*
+      primitive 0: {0, 1, 2}
+      primitive 1: {1, 3, 2}
+      ...
+      primitive n: {n, n + 1 + (n & 1), n + 2 - (n & 1)}
+
+      I know primitive restart can be broken! just assume the 1st triangle of the thunk is at correct winding
+      */
+      auto odd_bit = builder.CreateAnd(leading_vertex_index, builder.getInt32(1));
+      load_vertex(leading_vertex_index, 0);
+      load_vertex(builder.CreateAdd(builder.CreateAdd(leading_vertex_index, builder.getInt32(1)), odd_bit), 1);
+      load_vertex(builder.CreateSub(builder.CreateAdd(leading_vertex_index, builder.getInt32(2)), odd_bit), 2);
+      printf("processed\n");
+      break;
+    }
+    case microsoft::D3D10_SB_PRIMITIVE_LINE: {
+      /*
+      primitive 0: {0, 1}
+      primitive 1: {1, 2}
+      ...
+      primitive n: {n, n+1}
+      */
+      load_vertex(leading_vertex_index, 0);
+      load_vertex(builder.CreateAdd(leading_vertex_index, builder.getInt32(1)), 1);
+      break;
+    }
+    default:
+      return llvm::make_error<UnsupportedFeature>(std::format(
+          "unhandled geometry shader input primitive strip: {}", (uint32_t)pShaderInternal->gs_input_primitive
+      ));
+    }
+  } else {
+    auto leading_vertex_index = builder.CreateMul(builder.getInt32(vertex_per_primitive), primitive_id_in_wrap);
+    for (uint32_t vid = 0; vid < vertex_per_primitive; vid++) {
+      load_vertex(builder.CreateAdd(leading_vertex_index, builder.getInt32(vid)), vid);
     }
   }
 
@@ -403,7 +440,6 @@ convert_dxbc_vertex_for_geometry_shader(
   auto func_signature = pShaderInternal->func_signature; // copy
   auto shader_info = &(pShaderInternal->shader_info);
 
-  /* TODO: support strip*/
   bool is_strip = false;
 
   uint32_t max_input_register = pShaderInternal->max_input_register;
@@ -415,6 +451,9 @@ convert_dxbc_vertex_for_geometry_shader(
     switch (arg->type) {
     case SM50_SHADER_IA_INPUT_LAYOUT:
       ia_layout = ((SM50_SHADER_IA_INPUT_LAYOUT_DATA *)arg);
+      break;    
+    case SM50_SHADER_PSO_GEOMETRY_SHADER:
+      is_strip = ((SM50_SHADER_PSO_GEOMETRY_SHADER_DATA *)arg)->strip_topology;
       break;
     default:
       break;
@@ -634,24 +673,43 @@ convert_dxbc_vertex_for_geometry_shader(
   pvalue valid_primitive_mask = builder.getInt32(0);
   auto valid_vertex_result = builder.CreateLoad(types._int, valid_vertex_mask);
 
-  auto const zero_const = builder.getInt32(0);
   for (unsigned primitive_id = 0; primitive_id < wrap_primitive_count; primitive_id++) {
     pvalue primitive_valid_result = builder.getInt1(1);
+    uint32_t primitive_vertices_mask = 0;
     // TODO: check primitive is valid
     if (is_strip) {
-      assert(0 && "strip unhandeld");
+      switch (pGeometryStage->gs_input_primitive) {
+      case microsoft::D3D10_SB_PRIMITIVE_TRIANGLE: {
+        primitive_vertices_mask = 0b111 << primitive_id;
+        break;
+      }
+      case microsoft::D3D10_SB_PRIMITIVE_LINE: {
+        primitive_vertices_mask = 0b11 << primitive_id;
+        break;
+      }
+      case microsoft::D3D10_SB_PRIMITIVE_LINE_ADJ: {
+        primitive_vertices_mask = 0b1111 << primitive_id;
+        break;
+      }
+      case microsoft::D3D10_SB_PRIMITIVE_TRIANGLE_ADJ: {
+        primitive_vertices_mask = 0b111111 << primitive_id;
+        break;
+      }
+      default:
+        return llvm::make_error<UnsupportedFeature>(std::format(
+            "unhandled geometry shader input primitive strip: {}", (uint32_t)pGeometryStage->gs_input_primitive
+        ));
+      }
     } else {
       // primitive is valid if all vertex is valid
       for (unsigned vid_in_prim = 0; vid_in_prim < vertex_per_primitive; vid_in_prim++) {
-        auto vertex_valid = builder.CreateICmpNE(
-            builder.CreateAnd(
-                builder.getInt32(1 << (vid_in_prim + vertex_per_primitive * primitive_id)), valid_vertex_result
-            ),
-            zero_const
-        );
-        primitive_valid_result = builder.CreateAnd(primitive_valid_result, vertex_valid);
+        primitive_vertices_mask |= (1 << (vid_in_prim + vertex_per_primitive * primitive_id));
       }
     }
+    primitive_valid_result = builder.CreateICmpEQ(
+        builder.CreateAnd(builder.getInt32(primitive_vertices_mask), valid_vertex_result),
+        builder.getInt32(primitive_vertices_mask)
+    );
 
     valid_primitive_mask = builder.CreateOr(
         valid_primitive_mask,
