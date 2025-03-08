@@ -467,6 +467,12 @@ convert_dxbc_vertex_for_geometry_shader(
   auto global_index_id =
       builder.CreateAdd(builder.CreateMul(wrap_id, builder.getInt32(wrap_vertex_count)), wrap_vertex_id);
 
+  // explicit initialization
+  builder.CreateAtomicRMW(
+      llvm::AtomicRMWInst::BinOp::And, valid_vertex_mask, builder.getInt32(0), llvm::Align(4),
+      llvm::AtomicOrdering::Monotonic
+  );
+
   builder.CreateCondBr(
       builder.CreateICmp(llvm::CmpInst::ICMP_ULT, global_index_id, index_count), index_check, will_dispatch
   );
