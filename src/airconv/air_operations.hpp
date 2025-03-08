@@ -143,6 +143,16 @@ AIRBuilderResult call_interpolate_at_centroid(pvalue interpolant, bool perspecti
 AIRBuilderResult call_interpolate_at_offset(pvalue interpolant, bool perspective, pvalue offset);
 AIRBuilderResult call_interpolate_at_sample(pvalue interpolant, bool perspective, pvalue index);
 
+AIRBuilderResult call_set_mesh_render_target_array_index(pvalue mesh, pvalue vid, pvalue render_target_array_index);
+AIRBuilderResult call_set_mesh_viewport_array_index(pvalue mesh, pvalue vid, pvalue viewport_array_index);
+AIRBuilderResult call_set_mesh_position(pvalue mesh, pvalue vid, pvalue position);
+AIRBuilderResult call_set_mesh_clip_distance(pvalue mesh, uint32_t idx, pvalue vid, pvalue value);
+AIRBuilderResult call_set_mesh_vertex_data(pvalue mesh, uint32_t idx, pvalue vid, pvalue value);
+AIRBuilderResult call_set_mesh_primitive_data(pvalue mesh, uint32_t idx, pvalue pid, pvalue value);
+
+AIRBuilderResult call_set_mesh_index(pvalue mesh, pvalue index, pvalue vertex);
+AIRBuilderResult call_set_mesh_primitive_count(pvalue mesh, pvalue count);
+
 enum class MTLAttributeFormat {
   Invalid = 0,
   UChar2 = 1,

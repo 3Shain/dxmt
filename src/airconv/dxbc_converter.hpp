@@ -208,6 +208,11 @@ struct io_binding_map {
   llvm::Value *base_vertex_id = nullptr;
   llvm::Value *base_instance_id = nullptr;
   llvm::Value *vertex_buffer_table = nullptr;
+
+  // geometry shader ops
+  llvm::Value *mesh = nullptr;
+  std::function<IREffect()> call_emit;
+  std::function<IREffect()> call_cut;
 };
 
 struct context {
@@ -272,6 +277,20 @@ IREffect pull_vertex_input(
   SM50_IA_INPUT_ELEMENT element_info, uint32_t slot_mask
 );
 
+IREffect pop_mesh_output_render_taget_array_index(uint32_t from_reg, uint32_t mask, pvalue primitive_id);
+IREffect pop_mesh_output_viewport_array_index(uint32_t from_reg, uint32_t mask, pvalue primitive_id);
+IREffect pop_mesh_output_position(uint32_t from_reg, uint32_t mask, pvalue vertex_id);
+IREffect
+pop_mesh_output_vertex_data(uint32_t from_reg, uint32_t mask, uint32_t idx, pvalue vertex_id, air::MSLScalerOrVectorType desired_type);
+
+enum class mem_flags : uint8_t {
+  device = 1,
+  threadgroup = 2,
+  texture = 4,
+};
+
+IREffect call_threadgroup_barrier(mem_flags mem_flag);
+
 llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
   std::shared_ptr<BasicBlock> entry, context &ctx, llvm::BasicBlock *return_bb
 );
@@ -317,6 +336,11 @@ struct SignatureContext {
         unorm_output_reg_mask(0){};
 };
 
+struct GSOutputContext {
+  llvm::Value *vertex_id;
+  llvm::Value *primitive_id;
+};
+
 class SM50ShaderInternal {
 public:
   dxmt::dxbc::ShaderInfo shader_info;
@@ -339,7 +363,35 @@ public:
   std::vector<ScalarInfo> patch_constant_scalars;
   uint32_t hull_maximum_threads_per_patch = 0;
   std::vector<ScalarInfo> clip_distance_scalars;
+  microsoft::D3D10_SB_PRIMITIVE gs_input_primitive = {};
+  std::vector<std::function<IREffect(GSOutputContext &)>> gs_output_handlers;
+  uint32_t num_mesh_vertex_data = 0;
+  microsoft::D3D10_SB_PRIMITIVE_TOPOLOGY gs_output_topology = {};
+  uint32_t gs_max_vertex_output = 0;
+  uint32_t gs_instance_count = 1;
 };
+
+void setup_binding_table(
+  const ShaderInfo *shader_info, io_binding_map &resource_map,
+  air::FunctionSignatureBuilder &func_signature, llvm::Module &module
+);
+
+void setup_tgsm(
+  const ShaderInfo *shader_info, io_binding_map &resource_map,
+  air::AirType &types, llvm::Module &module
+);
+
+void setup_fastmath_flag(llvm::Module &module, llvm::IRBuilder<> &builder);
+
+void setup_temp_register(
+  const ShaderInfo *shader_info, io_binding_map &resource_map,
+  air::AirType &types, llvm::Module &module, llvm::IRBuilder<> &builder
+);
+
+void setup_immediate_constant_buffer(
+  const ShaderInfo *shader_info, io_binding_map &resource_map,
+  air::AirType &types, llvm::Module &module, llvm::IRBuilder<> &builder
+);
 
 llvm::Error convert_dxbc_hull_shader(
   SM50ShaderInternal *pShaderInternal, const char *name,
@@ -356,6 +408,19 @@ llvm::Error convert_dxbc_domain_shader(
 llvm::Error convert_dxbc_vertex_for_hull_shader(
   const SM50ShaderInternal *pShaderInternal, const char *name,
   const SM50ShaderInternal *pHullStage,
+  llvm::LLVMContext &context, llvm::Module &module,
+  SM50_SHADER_COMPILATION_ARGUMENT_DATA *pArgs
+);
+
+llvm::Error convert_dxbc_geometry_shader(
+  SM50ShaderInternal *pShaderInternal, const char *name,
+  SM50ShaderInternal *pVertexStage, llvm::LLVMContext &context,
+  llvm::Module &module, SM50_SHADER_COMPILATION_ARGUMENT_DATA *pArgs
+);
+
+llvm::Error convert_dxbc_vertex_for_geometry_shader(
+  const SM50ShaderInternal *pShaderInternal, const char *name,
+  const SM50ShaderInternal *pGeometryStage,
   llvm::LLVMContext &context, llvm::Module &module,
   SM50_SHADER_COMPILATION_ARGUMENT_DATA *pArgs
 );

@@ -333,4 +333,81 @@ CreateVariantShader(MTLD3D11Device *pDevice, ManagedShader shader,
       pDevice, shader, std::move(proc));
 };
 
+template <>
+std::unique_ptr<CompiledShader>
+CreateVariantShader(MTLD3D11Device *pDevice, ManagedShader shader,
+                    ShaderVariantGeometryVertex variant) {
+  auto proc = [=](const char *func_name) -> SM50CompiledBitcode * {
+    SM50_SHADER_IA_INPUT_LAYOUT_DATA ia_layout;
+    ia_layout.index_buffer_format = variant.index_buffer_format;
+    if (variant.input_layout_handle) {
+      ia_layout.slot_mask =
+          ((ManagedInputLayout)variant.input_layout_handle)->input_slot_mask();
+      ia_layout.num_elements =
+          ((ManagedInputLayout)variant.input_layout_handle)
+              ->input_layout_element(
+                  (MTL_SHADER_INPUT_LAYOUT_ELEMENT_DESC **)&ia_layout.elements);
+    } else {
+      ia_layout.slot_mask = 0;
+      ia_layout.num_elements = 0;
+    }
+
+    ia_layout.type = SM50_SHADER_IA_INPUT_LAYOUT;
+    ia_layout.next = nullptr;
+
+    SM50_SHADER_PSO_GEOMETRY_SHADER_DATA geometry;
+    geometry.type = SM50_SHADER_PSO_GEOMETRY_SHADER;
+    geometry.next = &ia_layout;
+    geometry.strip_topology = variant.strip_topology;
+
+    SM50CompiledBitcode *compile_result = nullptr;
+    SM50Error *sm50_err = nullptr;
+    if (auto ret = SM50CompileGeometryPipelineVertex(
+            shader->handle(), (SM50Shader *)variant.geometry_shader_handle,
+            (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)&geometry, func_name,
+            &compile_result, &sm50_err)) {
+      if (ret == 42) {
+        ERR("Failed to compile shader due to failed assertion");
+      } else {
+        ERR("Failed to compile shader: ", SM50GetErrorMesssage(sm50_err));
+        SM50FreeError(sm50_err);
+      }
+      return nullptr;
+    }
+    return compile_result;
+  };
+  return std::make_unique<GeneralShaderCompileTask<decltype(proc)>>(
+      pDevice, shader, std::move(proc));
+}
+
+template <>
+std::unique_ptr<CompiledShader>
+CreateVariantShader(MTLD3D11Device *pDevice, ManagedShader shader,
+                    ShaderVariantGeometry variant) {
+  auto proc = [=](const char *func_name) -> SM50CompiledBitcode * {
+    SM50_SHADER_PSO_GEOMETRY_SHADER_DATA geometry;
+    geometry.type = SM50_SHADER_PSO_GEOMETRY_SHADER;
+    geometry.next = nullptr;
+    geometry.strip_topology = variant.strip_topology;
+
+    SM50CompiledBitcode *compile_result = nullptr;
+    SM50Error *sm50_err = nullptr;
+    if (auto ret = SM50CompileGeometryPipelineGeometry(
+            (SM50Shader *)variant.vertex_shader_handle, shader->handle(),
+            (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)&geometry, func_name,
+            &compile_result, &sm50_err)) {
+      if (ret == 42) {
+        ERR("Failed to compile shader due to failed assertion");
+      } else {
+        ERR("Failed to compile shader: ", SM50GetErrorMesssage(sm50_err));
+        SM50FreeError(sm50_err);
+      }
+      return nullptr;
+    }
+    return compile_result;
+  };
+  return std::make_unique<GeneralShaderCompileTask<decltype(proc)>>(
+      pDevice, shader, std::move(proc));
+}
+
 } // namespace dxmt

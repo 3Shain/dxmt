@@ -56,6 +56,9 @@ enum class InputAttribute {
 
   /* Domain */
   Domain,
+
+  /* Geometry */
+  GSInstanceId,
 };
 
 } // namespace dxmt::shader::common

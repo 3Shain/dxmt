@@ -993,6 +993,146 @@ void handle_signature_cs(
   }
 };
 
+void
+handle_signature_gs(
+    CSignatureParser &inputParser, const CSignatureParser &outputParser, D3D10ShaderBinary::CInstruction &Inst,
+    SM50ShaderInternal *sm50_shader, uint32_t phase
+) {
+  uint32_t &max_output_register = sm50_shader->max_output_register;
+  auto &func_signature = sm50_shader->func_signature;
+  auto &gs_output_handlers = sm50_shader->gs_output_handlers;
+  uint32_t &num_mesh_vertex_data = sm50_shader->num_mesh_vertex_data;
+
+  auto findOutputElement = [&](auto matcher) -> Signature {
+    const D3D11_SIGNATURE_PARAMETER *parameters;
+    outputParser.GetParameters(&parameters);
+    for (unsigned i = 0; i < outputParser.GetNumParameters(); i++) {
+      auto sig = Signature(parameters[i]);
+      if (matcher(sig)) {
+        return sig;
+      }
+    }
+    assert(0 && "try to access an undefined output");
+  };
+
+  switch (Inst.m_OpCode) {
+  case D3D10_SB_OPCODE_DCL_INPUT_SGV: {
+    // auto mask = Inst.m_Operands[0].m_WriteMask >> 4;
+    // auto MinPrecision = Inst.m_Operands[0].m_MinPrecision; // not used
+    auto sgv = Inst.m_InputDeclSGV.Name;
+    switch (sgv) {
+    default:
+      assert(0 && "Unexpected/unhandled geometry shader sgv");
+      break;
+    }
+    break;
+  }
+  case D3D10_SB_OPCODE_DCL_INPUT_SIV: {
+    D3D10_SB_NAME siv = Inst.m_InputDeclSIV.Name;
+
+    switch (siv) {
+    case D3D10_SB_NAME_POSITION:
+      break;
+    default:
+      assert(0 && "Unexpected/unhandled geometry shader siv");
+      break;
+    }
+    break;
+  }
+  case D3D10_SB_OPCODE_DCL_INPUT: {
+    D3D10_SB_OPERAND_TYPE RegType = Inst.m_Operands[0].m_Type;
+
+    switch (RegType) {
+    case microsoft::D3D10_SB_OPERAND_TYPE_INPUT: {
+      assert(Inst.m_Operands[0].m_IndexDimension == microsoft::D3D10_SB_OPERAND_INDEX_2D);
+      break;
+    }
+    case microsoft::D3D10_SB_OPERAND_TYPE_INPUT_PRIMITIVEID:
+      break;
+    default:
+      assert(0 && "unhandled geometry shader input");
+      break;
+    }
+    break;
+  }
+  case D3D10_SB_OPCODE_DCL_OUTPUT_SGV: {
+    assert(0 && "unhandled geometry shader output sgv");
+    break;
+  }
+  case D3D10_SB_OPCODE_DCL_OUTPUT_SIV: {
+    unsigned reg = Inst.m_Operands[0].m_Index[0].m_RegIndex;
+    auto mask = Inst.m_Operands[0].m_WriteMask >> 4;
+    auto siv = Inst.m_OutputDeclSIV.Name;
+    switch (siv) {
+      case D3D10_SB_NAME_CLIP_DISTANCE:
+      assert(0 && "unhandled geometry shader clip distance");
+      break;
+    case D3D10_SB_NAME_CULL_DISTANCE:
+      assert(0 && "Metal doesn't support shader output: cull distance");
+      break;
+    case D3D10_SB_NAME_POSITION: {
+      func_signature.DefineMeshVertexOutput(OutputPosition{.type = msl_float4});
+      gs_output_handlers.push_back([=](GSOutputContext& output) -> IREffect {
+        return pop_mesh_output_position(reg, mask, output.vertex_id);
+      });
+      break;
+    }
+    case D3D10_SB_NAME_RENDER_TARGET_ARRAY_INDEX: {
+      func_signature.DefineMeshPrimitiveOutput(OutputRenderTargetArrayIndex{});
+      gs_output_handlers.push_back([=](GSOutputContext& output) -> IREffect {
+        return pop_mesh_output_render_taget_array_index(reg, mask, output.primitive_id);
+      });
+      break;
+    }
+    case D3D10_SB_NAME_VIEWPORT_ARRAY_INDEX: {
+      func_signature.DefineMeshPrimitiveOutput(OutputViewportArrayIndex{});
+      gs_output_handlers.push_back([=](GSOutputContext& output) -> IREffect {
+        return pop_mesh_output_viewport_array_index(reg, mask, output.primitive_id);
+      });
+      break;
+    }
+    default:
+      assert(0 && "Unexpected/unhandled geometry shader output siv");
+      break;
+    }
+    max_output_register = std::max(reg + 1, max_output_register);
+    break;
+  }
+  case D3D10_SB_OPCODE_DCL_OUTPUT: {
+    D3D10_SB_OPERAND_TYPE RegType = Inst.m_Operands[0].m_Type;
+    switch (RegType) {
+    case D3D10_SB_OPERAND_TYPE_OUTPUT: {
+      // normal output register
+      auto reg = Inst.m_Operands[0].m_Index[0].m_RegIndex;
+      auto mask = Inst.m_Operands[0].m_WriteMask >> 4;
+      auto sig = findOutputElement([=](Signature sig) {
+        return (sig.reg() == reg) && ((sig.mask() & mask) != 0);
+      });
+      auto const mesh_vertex_data_index = num_mesh_vertex_data++;
+      auto const type = to_msl_type(sig.componentType());
+      func_signature.DefineMeshVertexOutput(OutputMeshData{
+        .user = sig.fullSemanticString(),
+        .type = type,
+        .index = mesh_vertex_data_index
+      });
+      gs_output_handlers.push_back([=](GSOutputContext& output) -> IREffect {
+        return pop_mesh_output_vertex_data(reg, mask, mesh_vertex_data_index, output.vertex_id, type);
+      });
+      max_output_register = std::max(reg + 1, max_output_register);
+      break;
+    }
+    default:
+      assert(0 && "unhandled geometry shader output");
+      break;
+    }
+    break;
+  }
+  default:
+    assert(0);
+    break;
+  }
+};
+
 void handle_signature(
   microsoft::CSignatureParser &inputParser,
   microsoft::CSignatureParser5 &outputParser,
@@ -1012,8 +1152,7 @@ void handle_signature(
   case D3D11_SB_COMPUTE_SHADER:
     return handle_signature_cs(inputParser, *outputParser.Signature(0), Inst, shader, phase);
   case D3D10_SB_GEOMETRY_SHADER:
-    // nop
-    return;
+    return handle_signature_gs(inputParser, *outputParser.Signature(0), Inst, shader, phase);
   default:
     assert(0);
     break;

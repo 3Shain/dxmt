@@ -85,6 +85,7 @@ struct MTL_GEOMETRY_SHADER_REFLECTION {
     struct MTL_GEOMETRY_SHADER_PASS_THROUGH Data;
     uint32_t GSPassThrough;
   };
+  uint32_t Primitive;
 };
 
 struct MTL_SHADER_REFLECTION {
@@ -169,6 +170,7 @@ enum SM50_SHADER_COMPILATION_ARGUMENT_TYPE {
   SM50_SHADER_PSO_PIXEL_SHADER = 3,
   SM50_SHADER_IA_INPUT_LAYOUT = 4,
   SM50_SHADER_GS_PASS_THROUGH = 5,
+  SM50_SHADER_PSO_GEOMETRY_SHADER = 6,
 };
 
 struct SM50_SHADER_COMPILATION_ARGUMENT_DATA {
@@ -248,6 +250,12 @@ struct SM50_SHADER_GS_PASS_THROUGH_DATA {
   bool RasterizationDisabled;
 };
 
+struct SM50_SHADER_PSO_GEOMETRY_SHADER_DATA {
+  void *next;
+  enum SM50_SHADER_COMPILATION_ARGUMENT_TYPE type;
+  bool strip_topology;
+};
+
 AIRCONV_API int SM50Initialize(
   const void *pBytecode, size_t BytecodeSize, SM50Shader **ppShader,
   struct MTL_SHADER_REFLECTION *pRefl, SM50Error **ppError
@@ -277,6 +285,17 @@ AIRCONV_API int SM50CompileTessellationPipelineHull(
 AIRCONV_API int SM50CompileTessellationPipelineDomain(
   SM50Shader *pHullShader, SM50Shader *pDomainShader,
   struct SM50_SHADER_COMPILATION_ARGUMENT_DATA *pDomainShaderArgs,
+  const char *FunctionName, SM50CompiledBitcode **ppBitcode, SM50Error **ppError
+);
+
+AIRCONV_API int SM50CompileGeometryPipelineVertex(
+  SM50Shader *pVertexShader, SM50Shader *pGeometryShader,
+  struct SM50_SHADER_COMPILATION_ARGUMENT_DATA *pVertexShaderArgs,
+  const char *FunctionName, SM50CompiledBitcode **ppBitcode, SM50Error **ppError
+);
+AIRCONV_API int SM50CompileGeometryPipelineGeometry(
+  SM50Shader *pVertexShader, SM50Shader *pGeometryShader,
+  struct SM50_SHADER_COMPILATION_ARGUMENT_DATA *pGeometryShaderArgs,
   const char *FunctionName, SM50CompiledBitcode **ppBitcode, SM50Error **ppError
 );
 

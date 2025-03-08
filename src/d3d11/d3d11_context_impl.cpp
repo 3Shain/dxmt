@@ -149,6 +149,19 @@ to_metal_primitive_topology(D3D11_PRIMITIVE_TOPOLOGY topo) {
   DXMT_UNREACHABLE
 }
 
+inline bool is_strip_topology(D3D11_PRIMITIVE_TOPOLOGY topo) {
+  switch (topo) {
+  case D3D_PRIMITIVE_TOPOLOGY_LINESTRIP:
+  case D3D_PRIMITIVE_TOPOLOGY_LINESTRIP_ADJ:
+  case D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP:
+  case D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP_ADJ:
+    return true;
+  default:
+    break;
+  }
+  return false;
+}
+
 struct Subresource {
   DXGI_FORMAT Format;
   uint32_t MipLevel;
@@ -3365,6 +3378,7 @@ public:
     // FIXME: ensure valid state: hull and domain shader none or both are bound
     Desc.HullShader = GetManagedShader<PipelineStage::Hull>();
     Desc.DomainShader = GetManagedShader<PipelineStage::Domain>();
+    Desc.GeometryShader = GetManagedShader<PipelineStage::Geometry>();
     if (state_.InputAssembler.InputLayout) {
       Desc.InputLayout = state_.InputAssembler.InputLayout->GetManagedInputLayout();
     } else {
@@ -3388,7 +3402,11 @@ public:
     Desc.BlendState = state_.OutputMerger.BlendState ? state_.OutputMerger.BlendState : default_blend_state;
     Desc.DepthStencilFormat =
         state_.OutputMerger.DSV ? state_.OutputMerger.DSV->GetPixelFormat() : MTL::PixelFormatInvalid;
-    Desc.TopologyClass = to_metal_primitive_topology(state_.InputAssembler.Topology);
+    if (unlikely(Desc.HullShader != nullptr)) {
+      Desc.TopologyClass = to_metal_primitive_topology(state_.InputAssembler.Topology);
+    } else {
+      Desc.TopologyClass = MTL::PrimitiveTopologyClassUnspecified;
+    }
     bool ds_enabled =
         (state_.OutputMerger.DepthStencilState ? state_.OutputMerger.DepthStencilState : default_depth_stencil_state)
             ->IsEnabled();
@@ -3396,6 +3414,11 @@ public:
     Desc.RasterizationEnabled = PS || ds_enabled;
     Desc.SampleMask = state_.OutputMerger.SampleMask;
     Desc.GSPassthrough = GS ? GS->reflection().GeometryShader.GSPassThrough : ~0u;
+    if (unlikely(Desc.GSPassthrough == ~0u && Desc.GeometryShader != nullptr)) {
+      Desc.GSStripTopology = is_strip_topology(state_.InputAssembler.Topology);
+    } else {
+      Desc.GSStripTopology = false;
+    }
     if constexpr (IndexedDraw) {
       Desc.IndexBufferFormat = state_.InputAssembler.IndexBufferFormat == DXGI_FORMAT_R32_UINT
                                    ? SM50_INDEX_BUFFER_FORMAT_UINT32
@@ -3485,6 +3508,20 @@ public:
     return true;
   }
 
+  template <bool IndexedDraw>
+  bool
+  FinalizeGeometryRenderPipeline() {
+    Com<IMTLCompiledGeometryPipeline> pipeline;
+
+    MTL_GRAPHICS_PIPELINE_DESC pipelineDesc;
+    InitializeGraphicsPipelineDesc<IndexedDraw>(pipelineDesc);
+    device->CreateGeometryPipeline(&pipelineDesc, &pipeline);
+    EmitST([pso = std::move(pipeline)](ArgumentEncodingContext& enc) {
+      
+    });
+    return false;
+  }
+
   /**
   Assume we have all things needed to build PSO
   If the current encoder is not a render encoder, switch to it.
@@ -3500,10 +3537,7 @@ public:
     auto GS = GetManagedShader<PipelineStage::Geometry>();
     if (GS) {
       if (GS->reflection().GeometryShader.GSPassThrough == ~0u) {
-        EmitST([](ArgumentEncodingContext &enc) {
-          enc.setCompatibilityFlag(FeatureCompatibility::UnsupportedGeometryDraw);
-        });
-        return false;
+        return FinalizeGeometryRenderPipeline<IndexedDraw>();
       }
     }
 

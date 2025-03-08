@@ -115,7 +115,7 @@ auto get_item_in_argbuf_binding_table(uint32_t argbuf_index, uint32_t index) {
   });
 };
 
-auto setup_binding_table(
+void setup_binding_table(
   const ShaderInfo *shader_info, io_binding_map &resource_map,
   air::FunctionSignatureBuilder &func_signature, llvm::Module &module
 ) {
@@ -253,7 +253,7 @@ auto setup_binding_table(
   }
 };
 
-auto setup_immediate_constant_buffer(
+void setup_immediate_constant_buffer(
   const ShaderInfo *shader_info, io_binding_map &resource_map,
   air::AirType &types, llvm::Module &module, llvm::IRBuilder<> &builder
 ) {
@@ -290,7 +290,7 @@ auto setup_immediate_constant_buffer(
   );
 }
 
-auto setup_tgsm(
+void setup_tgsm(
   const ShaderInfo *shader_info, io_binding_map &resource_map,
   air::AirType &types, llvm::Module &module
 ) {
@@ -306,7 +306,7 @@ auto setup_tgsm(
   }
 }
 
-auto setup_temp_register(
+void setup_temp_register(
   const ShaderInfo *shader_info, io_binding_map &resource_map,
   air::AirType &types, llvm::Module &module, llvm::IRBuilder<> &builder
 ) {
@@ -371,7 +371,7 @@ auto setup_temp_register(
   }
 }
 
-auto setup_fastmath_flag(llvm::Module &module, llvm::IRBuilder<> &builder) {
+void setup_fastmath_flag(llvm::Module &module, llvm::IRBuilder<> &builder) {
   if (auto options = module.getNamedMetadata("air.compile_options")) {
     for (auto operand : options->operands()) {
       if (isa<llvm::MDTuple>(operand) &&
@@ -2540,9 +2540,18 @@ int SM50Initialize(
       case D3D10_SB_OPCODE_DCL_INDEX_RANGE:
         break; // ignore, and it turns out backend compiler can handle alloca
       case D3D10_SB_OPCODE_DCL_GS_INPUT_PRIMITIVE:
+        sm50_shader->gs_input_primitive = Inst.m_InputPrimitiveDecl.Primitive;
+        break;
       case D3D10_SB_OPCODE_DCL_GS_OUTPUT_PRIMITIVE_TOPOLOGY:
+        sm50_shader->gs_output_topology = Inst.m_OutputTopologyDecl.Topology;
+        break;
       case D3D10_SB_OPCODE_DCL_MAX_OUTPUT_VERTEX_COUNT:
+        sm50_shader->gs_max_vertex_output = Inst.m_GSMaxOutputVertexCountDecl.MaxOutputVertexCount;
+        break;
       case D3D11_SB_OPCODE_DCL_GS_INSTANCE_COUNT:
+        assert(0 && "unhandled gs instancing");
+        sm50_shader->gs_instance_count = Inst.m_GSInstanceCountDecl.InstanceCount;
+        break;
       case D3D11_SB_OPCODE_DCL_STREAM:
       case D3D11_SB_OPCODE_DCL_INTERFACE:
       case D3D11_SB_OPCODE_DCL_FUNCTION_TABLE:
@@ -2618,6 +2627,35 @@ int SM50Initialize(
       case D3D11_SB_OPCODE_DCL_HS_MAX_TESSFACTOR: {
         sm50_shader->max_tesselation_factor =
           Inst.m_HSMaxTessFactorDecl.MaxTessFactor;
+        break;
+      }
+      case microsoft::D3D10_SB_OPCODE_EMIT: {
+        ctx->instructions.push_back(InstEmit{});
+        break;
+      }
+      case microsoft::D3D10_SB_OPCODE_EMITTHENCUT: {
+        ctx->instructions.push_back(InstEmit{});
+        ctx->instructions.push_back(InstCut{});
+        break;
+      }
+      case microsoft::D3D10_SB_OPCODE_CUT: {
+        ctx->instructions.push_back(InstCut{});
+        break;
+      }
+      case microsoft::D3D11_SB_OPCODE_EMIT_STREAM: {
+        assert(Inst.m_Operands[0].m_Value[0] == 0 && "multiple streams not supported");
+        ctx->instructions.push_back(InstEmit{});
+        break;
+      }
+      case microsoft::D3D11_SB_OPCODE_EMITTHENCUT_STREAM: {
+        assert(Inst.m_Operands[0].m_Value[0] == 0 && "multiple streams not supported");
+        ctx->instructions.push_back(InstEmit{});
+        ctx->instructions.push_back(InstCut{});
+        break;
+      }
+      case microsoft::D3D11_SB_OPCODE_CUT_STREAM: {
+        assert(Inst.m_Operands[0].m_Value[0] == 0 && "multiple streams not supported");
+        ctx->instructions.push_back(InstCut{});
         break;
       }
 #pragma endregion
@@ -2865,6 +2903,7 @@ int SM50Initialize(
           inputParser, outputParser, pRefl->GeometryShader.Data
         );
       }
+      pRefl->GeometryShader.Primitive = sm50_shader->gs_input_primitive;
     }
     pRefl->NumOutputElement = sm50_shader->max_output_register;
     pRefl->NumPatchConstantOutputScalar =
@@ -3132,6 +3171,138 @@ int SM50CompileTessellationPipelineDomain(
         (dxbc::SM50ShaderInternal *)pDomainShader, FunctionName,
         (dxbc::SM50ShaderInternal *)pHullShader, context, *pModule,
         pDomainShaderArgs
+      )) {
+    llvm::handleAllErrors(std::move(err), [&](const UnsupportedFeature &u) {
+      errorOut << u.msg;
+    });
+    *ppError = (SM50Error *)errorObj;
+    return 1;
+  }
+
+  if (!shader_info.skipOptimization) {
+    runOptimizationPasses(*pModule, OptimizationLevel::O2);
+  }
+
+  // Serialize AIR
+  auto compiled = new SM50CompiledBitcodeInternal();
+
+  raw_svector_ostream OS(compiled->vec);
+
+  metallib::MetallibWriter writer;
+
+  writer.Write(*pModule, OS);
+
+  pModule.reset();
+
+  *ppBitcode = (SM50CompiledBitcode *)compiled;
+  return 0;
+}
+
+int SM50CompileGeometryPipelineVertex(
+  SM50Shader *pVertexShader, SM50Shader *pGeometryShader,
+  struct SM50_SHADER_COMPILATION_ARGUMENT_DATA *pVertexShaderArgs,
+  const char *FunctionName, SM50CompiledBitcode **ppBitcode, SM50Error **ppError
+) {
+  ABRT_HANDLE_RETURN(42)
+
+  using namespace llvm;
+  using namespace dxmt;
+
+  if (ppError) {
+    *ppError = nullptr;
+  }
+  auto errorObj = new SM50ErrorInternal();
+  llvm::raw_svector_ostream errorOut(errorObj->buf);
+  if (ppBitcode == nullptr) {
+    errorOut << "ppBitcode can not be null\0";
+    *ppError = (SM50Error *)errorObj;
+    return 1;
+  }
+
+  // pArgs is ignored for now
+  LLVMContext context;
+
+  context.setOpaquePointers(false); // I suspect Metal uses LLVM 14...
+
+  auto &shader_info =
+    ((dxmt::dxbc::SM50ShaderInternal *)pVertexShader)->shader_info;
+
+  auto pModule = std::make_unique<Module>("shader.air", context);
+  initializeModule(*pModule, {.enableFastMath = false});
+
+  if (auto err = dxmt::dxbc::convert_dxbc_vertex_for_geometry_shader(
+        (dxbc::SM50ShaderInternal *)pVertexShader, FunctionName,
+        (dxbc::SM50ShaderInternal *)pGeometryShader, context, *pModule,
+        pVertexShaderArgs
+      )) {
+    llvm::handleAllErrors(std::move(err), [&](const UnsupportedFeature &u) {
+      errorOut << u.msg;
+    });
+    *ppError = (SM50Error *)errorObj;
+    return 1;
+  }
+
+  if (!shader_info.skipOptimization) {
+    runOptimizationPasses(*pModule, OptimizationLevel::O2);
+  }
+
+  // pModule->print(outs(), nullptr);
+
+  // Serialize AIR
+  auto compiled = new SM50CompiledBitcodeInternal();
+
+  raw_svector_ostream OS(compiled->vec);
+
+  metallib::MetallibWriter writer;
+
+  writer.Write(*pModule, OS);
+
+  pModule.reset();
+
+  *ppBitcode = (SM50CompiledBitcode *)compiled;
+  return 0;
+}
+
+int SM50CompileGeometryPipelineGeometry(
+  SM50Shader *pVertexShader, SM50Shader *pGeometryShader,
+  struct SM50_SHADER_COMPILATION_ARGUMENT_DATA *pGeometryShaderArgs,
+  const char *FunctionName, SM50CompiledBitcode **ppBitcode, SM50Error **ppError
+) {
+  ABRT_HANDLE_RETURN(42)
+
+  using namespace llvm;
+  using namespace dxmt;
+
+  if (ppError) {
+    *ppError = nullptr;
+  }
+  auto errorObj = new SM50ErrorInternal();
+  llvm::raw_svector_ostream errorOut(errorObj->buf);
+  if (ppBitcode == nullptr) {
+    errorOut << "ppBitcode can not be null\0";
+    *ppError = (SM50Error *)errorObj;
+    return 1;
+  }
+
+  // pArgs is ignored for now
+  LLVMContext context;
+
+  context.setOpaquePointers(false); // I suspect Metal uses LLVM 14...
+
+  auto &shader_info =
+    ((dxmt::dxbc::SM50ShaderInternal *)pGeometryShader)->shader_info;
+
+  auto pModule = std::make_unique<Module>("shader.air", context);
+  initializeModule(
+    *pModule,
+    {.enableFastMath =
+       (!shader_info.skipOptimization && shader_info.refactoringAllowed)}
+  );
+
+  if (auto err = dxmt::dxbc::convert_dxbc_geometry_shader(
+        (dxbc::SM50ShaderInternal *)pGeometryShader, FunctionName,
+        (dxbc::SM50ShaderInternal *)pVertexShader, context, *pModule,
+        pGeometryShaderArgs
       )) {
     llvm::handleAllErrors(std::move(err), [&](const UnsupportedFeature &u) {
       errorOut << u.msg;

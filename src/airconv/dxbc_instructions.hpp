@@ -713,6 +713,10 @@ struct InstInterpolateOffset {
   Swizzle read_swizzle;
 };
 
+struct InstEmit {};
+
+struct InstCut {};
+
 using Instruction = std::variant<
   /* Generic */
   InstMov, InstMovConditional, InstSwapConditional,                      //
@@ -729,6 +733,8 @@ using Instruction = std::variant<
   InstLoad, InstLoadUAVTyped, InstStoreUAVTyped,                         //
   InstLoadRaw, InstLoadStructured, InstStoreRaw, InstStoreStructured,    //
   InstNop,
+  /* Geometry Shader */
+  InstEmit, InstCut,
   /* Pixel Shader */
   InstPixelDiscard, InstPartialDerivative, InstCalcLOD,
   InstInterpolateCentroid, InstInterpolateSample, InstInterpolateOffset,

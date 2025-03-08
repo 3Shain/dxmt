@@ -14,6 +14,7 @@ struct MTL_GRAPHICS_PIPELINE_DESC {
   ManagedShader VertexShader;
   ManagedShader HullShader;
   ManagedShader DomainShader;
+  ManagedShader GeometryShader;
   ManagedShader PixelShader;
   IMTLD3D11BlendState *BlendState;
   ManagedInputLayout InputLayout;
@@ -24,6 +25,7 @@ struct MTL_GRAPHICS_PIPELINE_DESC {
   MTL::PrimitiveTopologyClass TopologyClass;
   bool RasterizationEnabled;
   uint8_t SampleCount;
+  bool GSStripTopology;
   SM50_INDEX_BUFFER_FORAMT IndexBufferFormat;
   uint32_t SampleMask;
   uint32_t GSPassthrough;
@@ -79,6 +81,15 @@ DEFINE_COM_INTERFACE("f5075e27-fd85-4c5a-9031-d438f859e6e9",
                            pTessellationPipeline) = 0;
 };
 
+DEFINE_COM_INTERFACE("0a86aadc-260d-40a0-afed-659408a84ffb",
+                     IMTLCompiledGeometryPipeline)
+    : public IMTLThreadpoolWork {
+  virtual void SubmitWork() = 0;
+  virtual bool IsReady() = 0;
+  virtual void GetPipeline(MTL_COMPILED_GRAPHICS_PIPELINE *
+                           pGeometryPipeline) = 0;
+};
+
 namespace std {
 template <> struct hash<MTL_GRAPHICS_PIPELINE_DESC> {
   size_t operator()(const MTL_GRAPHICS_PIPELINE_DESC &v) const noexcept {
@@ -87,12 +98,14 @@ template <> struct hash<MTL_GRAPHICS_PIPELINE_DESC> {
     state.add((size_t)v.PixelShader);
     state.add((size_t)v.HullShader);
     state.add((size_t)v.DomainShader);
+    state.add((size_t)v.GeometryShader);
     state.add((size_t)v.InputLayout);
     /* don't add blend */
     // state.add((size_t)v.BlendState);
     state.add((size_t)v.DepthStencilFormat);
     state.add((size_t)v.TopologyClass);
     state.add((size_t)v.IndexBufferFormat);
+    state.add((size_t)v.GSStripTopology);
     state.add((size_t)v.SampleMask);
     state.add((size_t)v.GSPassthrough);
     state.add((size_t)v.SampleCount);
@@ -154,11 +167,13 @@ template <> struct equal_to<MTL_GRAPHICS_PIPELINE_DESC> {
     }
     return (x.VertexShader == y.VertexShader) &&
            (x.PixelShader == y.PixelShader) && (x.HullShader == y.HullShader) &&
-           (x.DomainShader == y.DomainShader) &&
+           (x.DomainShader == y.DomainShader) && 
+           (x.GeometryShader == y.GeometryShader) &&
            (x.InputLayout == y.InputLayout) &&
            (x.DepthStencilFormat == y.DepthStencilFormat) &&
            (x.TopologyClass == y.TopologyClass) &&
            (x.RasterizationEnabled == y.RasterizationEnabled) &&
+           (x.GSStripTopology == y.GSStripTopology) &&
            (x.SampleCount == y.SampleCount) &&
            (x.IndexBufferFormat == y.IndexBufferFormat) &&
            (x.SampleMask == y.SampleMask) &&
@@ -177,6 +192,10 @@ CreateComputePipeline(MTLD3D11Device *pDevice, ManagedShader ComputeShader);
 
 Com<IMTLCompiledTessellationPipeline>
 CreateTessellationPipeline(MTLD3D11Device *pDevice,
+                           MTL_GRAPHICS_PIPELINE_DESC *pDesc);
+
+Com<IMTLCompiledGeometryPipeline>
+CreateGeometryPipeline(MTLD3D11Device *pDevice,
                            MTL_GRAPHICS_PIPELINE_DESC *pDesc);
 
 }; // namespace dxmt

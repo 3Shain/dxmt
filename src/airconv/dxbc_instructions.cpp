@@ -390,6 +390,12 @@ SrcOperand readSrcOperand(
       .attribute = shader::common::InputAttribute::PrimitiveId
     };
   }
+  case D3D11_SB_OPERAND_TYPE_INPUT_GS_INSTANCE_ID: {
+    return SrcOperandAttribute{
+      ._ = readSrcOperandCommon(O),
+      .attribute = shader::common::InputAttribute::GSInstanceId
+    };
+  }
   default:
     DXASSERT_DXBC(false && "unhandled src operand");
   }
@@ -1911,13 +1917,6 @@ Instruction readInstruction(
       .regid = regid,
       .read_swizzle = readSrcOperandSwizzle(Inst.m_Operands[1])
     };
-  }
-  case microsoft::D3D10_SB_OPCODE_EMIT:
-  case microsoft::D3D10_SB_OPCODE_EMITTHENCUT:
-  case microsoft::D3D11_SB_OPCODE_EMIT_STREAM:
-  case microsoft::D3D11_SB_OPCODE_CUT_STREAM:
-  case microsoft::D3D11_SB_OPCODE_EMITTHENCUT_STREAM: {
-    return InstNop{};
   }
   default: {
     llvm::outs() << "unhandled dxbc instruction " << Inst.OpCode() << "\n";
