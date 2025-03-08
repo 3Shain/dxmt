@@ -848,10 +848,10 @@ auto FunctionSignatureBuilder::CreateFunction(
             ->integer(mesh.vertex_count)
             ->integer(mesh.primitive_count);
           switch (mesh.topology) {
-          case 1:
+          case MeshOutputTopology::Line:
             mesh_info.string("air.line");
             break;
-          case 2:
+          case MeshOutputTopology::Triangle:
             mesh_info.string("air.triangle");
             break;
           default:
