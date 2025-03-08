@@ -30,9 +30,9 @@ public:
     VertexShader =
         pDesc->VertexShader->get_shader(ShaderVariantGeometryVertex{
             (uint64_t)pDesc->InputLayout, (uint64_t)pDesc->GeometryShader->handle(),
-            pDesc->IndexBufferFormat});
+            pDesc->IndexBufferFormat, pDesc->GSStripTopology});
     GeometryShader = pDesc->GeometryShader->get_shader(
-      ShaderVariantGeometry{(uint64_t)pDesc->VertexShader->handle()});
+      ShaderVariantGeometry{(uint64_t)pDesc->VertexShader->handle(), pDesc->GSStripTopology});
    
     if (pDesc->PixelShader) {
       PixelShader = pDesc->PixelShader->get_shader(ShaderVariantPixel{
