@@ -134,8 +134,28 @@ convert_dxbc_geometry_shader(
   setup_binding_table(shader_info, resource_map, func_signature, module);
   setup_tgsm(shader_info, resource_map, types, module);
 
+  auto gs_output_topology = pShaderInternal->gs_output_topology;
+  int32_t max_vertex_out = pShaderInternal->gs_max_vertex_output;
+  uint32_t max_primitive_out = 0;
+  air::MeshOutputTopology topology = air::MeshOutputTopology::Point;
+  switch (gs_output_topology) {
+  case microsoft::D3D10_SB_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP:
+    max_primitive_out = std::max(max_vertex_out - 2, 0);
+    topology = air::MeshOutputTopology::Triangle;
+    break;
+  case microsoft::D3D10_SB_PRIMITIVE_TOPOLOGY_LINESTRIP:
+    max_primitive_out = std::max(max_vertex_out - 1, 0);
+    topology = air::MeshOutputTopology::Line;
+    break;
+  case microsoft::D3D10_SB_PRIMITIVE_TOPOLOGY_POINTLIST:
+    max_primitive_out = max_vertex_out;
+    break;
+  default:
+    return llvm::make_error<UnsupportedFeature>("unsupported geometry shader output topology");
+  }
+
   uint32_t payload_idx = func_signature.DefineInput(air::InputPayload{.size = 16256});
-  auto mesh_idx = func_signature.DefineInput(air::InputMesh{64, 64, 2});
+  auto mesh_idx = func_signature.DefineInput(air::InputMesh{(uint32_t)max_vertex_out, max_primitive_out, topology});
   uint32_t tg_in_grid_idx = func_signature.DefineInput(air::InputThreadgroupPositionInGrid{});
 
   auto [function, function_metadata] = func_signature.CreateFunction(name, context, module, 0, false);
@@ -164,54 +184,121 @@ convert_dxbc_geometry_shader(
   auto mesh_ptr = function->getArg(mesh_idx);
 
   resource_map.mesh = mesh_ptr;
-  resource_map.call_emit = [&]() -> IREffect {
-    auto current_write_vertex = builder.CreateLoad(types._int, next_write_vertex);
-    auto current_vertex_offset = builder.CreateLoad(types._int, vertex_offset);
-    auto current_vertex_with_offset = builder.CreateAdd(current_vertex_offset, current_write_vertex);
 
-    auto current_primitive_count = builder.CreateLoad(types._int, primitive_count);
-    auto current_primitive_idx = builder.CreateAdd(current_primitive_count, current_write_vertex);
+  if (topology == air::MeshOutputTopology::Triangle) {
+    resource_map.call_emit = [&]() -> IREffect {
+      auto current_write_vertex = builder.CreateLoad(types._int, next_write_vertex);
+      auto current_vertex_offset = builder.CreateLoad(types._int, vertex_offset);
+      auto current_vertex_with_offset = builder.CreateAdd(current_vertex_offset, current_write_vertex);
 
-    auto even_winding = builder.CreateZExt(
-        builder.CreateICmpEQ(zero_const, builder.CreateAnd(current_write_vertex, one_const)), types._int
-    );
+      auto current_primitive_count = builder.CreateLoad(types._int, primitive_count);
+      auto current_primitive_idx = builder.CreateAdd(current_primitive_count, current_write_vertex);
 
-    GSOutputContext gs_out_ctx{current_vertex_with_offset, current_primitive_idx};
-    for (auto &h : gs_output_handlers) {
-      co_yield h(gs_out_ctx);
-    }
+      auto even_winding = builder.CreateZExt(
+          builder.CreateICmpEQ(zero_const, builder.CreateAnd(current_write_vertex, one_const)), types._int
+      );
 
-    // FIXME: not triple if line
-    auto triple_primitive_idx = builder.CreateMul(current_primitive_idx, builder.getInt32(3));
-    co_yield air::call_set_mesh_index(
-        mesh_ptr, builder.CreateAdd(triple_primitive_idx, zero_const), current_vertex_with_offset
-    );
-    co_yield air::call_set_mesh_index(
-        mesh_ptr, builder.CreateAdd(triple_primitive_idx, one_const),
-        builder.CreateSub(builder.CreateAdd(current_vertex_with_offset, two_const), even_winding)
-    );
-    co_yield air::call_set_mesh_index(
-        mesh_ptr, builder.CreateAdd(triple_primitive_idx, two_const),
-        builder.CreateAdd(builder.CreateAdd(current_vertex_with_offset, one_const), even_winding)
-    );
+      GSOutputContext gs_out_ctx{current_vertex_with_offset, current_primitive_idx};
+      for (auto &h : gs_output_handlers) {
+        co_yield h(gs_out_ctx);
+      }
 
-    builder.CreateStore(builder.CreateAdd(one_const, current_write_vertex), next_write_vertex);
+      auto triple_primitive_idx = builder.CreateMul(current_primitive_idx, builder.getInt32(3));
+      co_yield air::call_set_mesh_index(
+          mesh_ptr, builder.CreateAdd(triple_primitive_idx, zero_const), current_vertex_with_offset
+      );
+      co_yield air::call_set_mesh_index(
+          mesh_ptr, builder.CreateAdd(triple_primitive_idx, one_const),
+          builder.CreateSub(builder.CreateAdd(current_vertex_with_offset, two_const), even_winding)
+      );
+      co_yield air::call_set_mesh_index(
+          mesh_ptr, builder.CreateAdd(triple_primitive_idx, two_const),
+          builder.CreateAdd(builder.CreateAdd(current_vertex_with_offset, one_const), even_winding)
+      );
 
-    co_return {};
-  };
-  resource_map.call_cut = [&]() -> IREffect {
-    auto current_write_vertex = builder.CreateLoad(types._int, next_write_vertex);
-    auto add_primitive_count = builder.CreateSelect(
-        builder.CreateICmpUGT(current_write_vertex, builder.getInt32(2 /* FIXME: line -1 , point -0*/)),
-        builder.CreateSub(current_write_vertex, builder.getInt32(2 /* FIXME: line -1 , point -0*/)), zero_const
-    );
-    builder.CreateStore(current_write_vertex, vertex_offset);
-    builder.CreateStore(zero_const, next_write_vertex);
-    builder.CreateStore(
-        builder.CreateAdd(builder.CreateLoad(types._int, primitive_count), add_primitive_count), primitive_count
-    );
-    co_return {};
-  };
+      builder.CreateStore(builder.CreateAdd(one_const, current_write_vertex), next_write_vertex);
+
+      co_return {};
+    };
+    resource_map.call_cut = [&]() -> IREffect {
+      auto current_write_vertex = builder.CreateLoad(types._int, next_write_vertex);
+      builder.CreateStore(zero_const, next_write_vertex);
+
+      auto has_valid_primitive = builder.CreateICmpUGT(current_write_vertex, builder.getInt32(2));
+      auto add_primitive_count = builder.CreateSelect(
+          has_valid_primitive, builder.CreateSub(current_write_vertex, builder.getInt32(2)), zero_const
+      );
+      auto add_vertex_count = builder.CreateSelect(has_valid_primitive, current_write_vertex, zero_const);
+      builder.CreateStore(
+          builder.CreateAdd(builder.CreateLoad(types._int, vertex_offset), add_vertex_count), vertex_offset
+      );
+      builder.CreateStore(
+          builder.CreateAdd(builder.CreateLoad(types._int, primitive_count), add_primitive_count), primitive_count
+      );
+      co_return {};
+    };
+  } else if (topology == air::MeshOutputTopology::Line) {
+    resource_map.call_emit = [&]() -> IREffect {
+      auto current_write_vertex = builder.CreateLoad(types._int, next_write_vertex);
+      builder.CreateStore(builder.CreateAdd(one_const, current_write_vertex), next_write_vertex);
+
+      auto current_vertex_offset = builder.CreateLoad(types._int, vertex_offset);
+      auto current_vertex_with_offset = builder.CreateAdd(current_vertex_offset, current_write_vertex);
+
+      auto current_primitive_count = builder.CreateLoad(types._int, primitive_count);
+      auto current_primitive_idx = builder.CreateAdd(current_primitive_count, current_write_vertex);
+
+      GSOutputContext gs_out_ctx{current_vertex_with_offset, current_primitive_idx};
+      for (auto &h : gs_output_handlers) {
+        co_yield h(gs_out_ctx);
+      }
+
+      auto double_primitive_idx = builder.CreateMul(current_primitive_idx, builder.getInt32(2));
+      co_yield air::call_set_mesh_index(
+          mesh_ptr, builder.CreateAdd(double_primitive_idx, zero_const), current_vertex_with_offset
+      );
+      co_yield air::call_set_mesh_index(
+          mesh_ptr, builder.CreateAdd(double_primitive_idx, one_const),
+          builder.CreateAdd(current_vertex_with_offset, one_const)
+      );
+
+      co_return {};
+    };
+    resource_map.call_cut = [&]() -> IREffect {
+      auto current_write_vertex = builder.CreateLoad(types._int, next_write_vertex);
+      builder.CreateStore(zero_const, next_write_vertex);
+
+      auto has_valid_primitive = builder.CreateICmpUGT(current_write_vertex, builder.getInt32(1));
+      auto add_primitive_count = builder.CreateSelect(
+          has_valid_primitive, builder.CreateSub(current_write_vertex, builder.getInt32(1)), zero_const
+      );
+      auto add_vertex_count = builder.CreateSelect(has_valid_primitive, current_write_vertex, zero_const);
+      builder.CreateStore(
+          builder.CreateAdd(builder.CreateLoad(types._int, vertex_offset), add_vertex_count), vertex_offset
+      );
+      builder.CreateStore(
+          builder.CreateAdd(builder.CreateLoad(types._int, primitive_count), add_primitive_count), primitive_count
+      );
+      co_return {};
+    };
+  } else {
+    resource_map.call_emit = [&]() -> IREffect {
+      // only one accumulator to maintain, simple one ~
+      auto current_write_vertex = builder.CreateLoad(types._int, next_write_vertex);
+      builder.CreateStore(builder.CreateAdd(one_const, current_write_vertex), next_write_vertex);
+
+      GSOutputContext gs_out_ctx{current_write_vertex, current_write_vertex};
+      for (auto &h : gs_output_handlers) {
+        co_yield h(gs_out_ctx);
+      }
+      co_yield air::call_set_mesh_index(mesh_ptr, current_write_vertex, current_write_vertex);
+      co_return {};
+    };
+    resource_map.call_cut = []() -> IREffect {
+      // there is nothing to cut!
+      co_return {};
+    };
+  }
 
   auto payload = function->getArg(payload_idx);
   auto valid_primitive_mask =

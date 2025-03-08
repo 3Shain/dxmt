@@ -536,10 +536,16 @@ struct InputPayload {
   uint32_t size;
 };
 
+enum class MeshOutputTopology : uint32_t {
+  Point,
+  Line,
+  Triangle,
+};
+
 struct InputMesh {
   uint32_t vertex_count;
   uint32_t primitive_count;
-  uint32_t topology;
+  MeshOutputTopology topology;
 };
 
 struct InputMeshGridProperties {};
