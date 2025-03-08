@@ -136,26 +136,23 @@ convert_dxbc_geometry_shader(
 
   auto gs_output_topology = pShaderInternal->gs_output_topology;
   int32_t max_vertex_out = pShaderInternal->gs_max_vertex_output;
-  uint32_t max_primitive_out = 0;
   air::MeshOutputTopology topology = air::MeshOutputTopology::Point;
   switch (gs_output_topology) {
   case microsoft::D3D10_SB_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP:
-    max_primitive_out = std::max(max_vertex_out - 2, 0);
     topology = air::MeshOutputTopology::Triangle;
     break;
   case microsoft::D3D10_SB_PRIMITIVE_TOPOLOGY_LINESTRIP:
-    max_primitive_out = std::max(max_vertex_out - 1, 0);
     topology = air::MeshOutputTopology::Line;
     break;
   case microsoft::D3D10_SB_PRIMITIVE_TOPOLOGY_POINTLIST:
-    max_primitive_out = max_vertex_out;
     break;
   default:
     return llvm::make_error<UnsupportedFeature>("unsupported geometry shader output topology");
   }
 
   uint32_t payload_idx = func_signature.DefineInput(air::InputPayload{.size = 16256});
-  auto mesh_idx = func_signature.DefineInput(air::InputMesh{(uint32_t)max_vertex_out, max_primitive_out, topology});
+  // it's intended to declare a bit more max primitive count
+  auto mesh_idx = func_signature.DefineInput(air::InputMesh{(uint32_t)max_vertex_out, (uint32_t)max_vertex_out, topology});
   uint32_t tg_in_grid_idx = func_signature.DefineInput(air::InputThreadgroupPositionInGrid{});
 
   auto [function, function_metadata] = func_signature.CreateFunction(name, context, module, 0, false);
