@@ -46,6 +46,8 @@ ptr_add(const void *const p, const std::uintptr_t &amount) noexcept {
 
 enum class PipelineStage { Vertex = 0, Pixel = 1, Geometry = 2, Hull = 3, Domain = 4, Compute = 5 };
 
+enum class PipelineKind { Ordinary, Tessellation, Geometry };
+
 constexpr unsigned kStages = 6;
 constexpr unsigned kSRVBindings = 128;
 constexpr unsigned kUAVBindings = 64;
@@ -118,6 +120,7 @@ struct RenderEncoderData : EncoderData {
   uint32_t render_target_count = 0;
   bool use_visibility_result = 0;
   bool use_tessellation = 0;
+  bool use_geometry = 0;
 };
 
 struct ComputeCommandContext {
@@ -197,12 +200,12 @@ struct TemporalUpscaleData : EncoderData {
   TemporalScalerProps props;
 };
 
-template <bool Tessellation>
+template <PipelineKind kind>
 constexpr DXMT_RESOURCE_RESIDENCY
 GetResidencyMask(PipelineStage type, bool read, bool write) {
   switch (type) {
   case PipelineStage::Vertex:
-    if constexpr (Tessellation)
+    if constexpr (kind != PipelineKind::Ordinary)
       return (read ? DXMT_RESOURCE_RESIDENCY_OBJECT_READ : DXMT_RESOURCE_RESIDENCY_NULL) |
              (write ? DXMT_RESOURCE_RESIDENCY_OBJECT_WRITE : DXMT_RESOURCE_RESIDENCY_NULL);
     else
@@ -212,14 +215,12 @@ GetResidencyMask(PipelineStage type, bool read, bool write) {
     return (read ? DXMT_RESOURCE_RESIDENCY_FRAGMENT_READ : DXMT_RESOURCE_RESIDENCY_NULL) |
            (write ? DXMT_RESOURCE_RESIDENCY_FRAGMENT_WRITE : DXMT_RESOURCE_RESIDENCY_NULL);
   case PipelineStage::Hull:
+  case PipelineStage::Geometry:
     return (read ? DXMT_RESOURCE_RESIDENCY_MESH_READ : DXMT_RESOURCE_RESIDENCY_NULL) |
            (write ? DXMT_RESOURCE_RESIDENCY_MESH_WRITE : DXMT_RESOURCE_RESIDENCY_NULL);
   case PipelineStage::Domain:
     return (read ? DXMT_RESOURCE_RESIDENCY_VERTEX_READ : DXMT_RESOURCE_RESIDENCY_NULL) |
            (write ? DXMT_RESOURCE_RESIDENCY_VERTEX_WRITE : DXMT_RESOURCE_RESIDENCY_NULL);
-  case PipelineStage::Geometry:
-    assert(0 && "TODO");
-    break;
   case PipelineStage::Compute:
     return (read ? DXMT_RESOURCE_RESIDENCY_READ : DXMT_RESOURCE_RESIDENCY_NULL) |
            (write ? DXMT_RESOURCE_RESIDENCY_WRITE : DXMT_RESOURCE_RESIDENCY_NULL);
@@ -394,20 +395,20 @@ public:
     cs_uav_ = {{}};
   }
 
-  template <bool TessellationDraw> void encodeVertexBuffers(uint32_t ia_slot_mask);
-  template <PipelineStage stage, bool TessellationDraw>
+  template <PipelineKind kind> void encodeVertexBuffers(uint32_t ia_slot_mask);
+  template <PipelineStage stage, PipelineKind kind>
   void encodeConstantBuffers(const MTL_SHADER_REFLECTION *reflection);
-  template <PipelineStage stage, bool TessellationDraw>
+  template <PipelineStage stage, PipelineKind kind>
   void encodeShaderResources(const MTL_SHADER_REFLECTION *reflection);
 
-  template <PipelineStage stage, bool TessellationDraw>
+  template <PipelineStage stage, PipelineKind kind>
   constexpr void
   makeResident(MTL::Resource *resource, DXMT_RESOURCE_RESIDENCY requested) {
     if constexpr (stage == PipelineStage::Compute)
       encodeComputeCommand([resource = Obj(resource), requested](ComputeCommandContext &ctx) {
         ctx.encoder->useResource(resource, GetUsageFromResidencyMask(requested));
       });
-    else if constexpr (TessellationDraw)
+    else if constexpr (kind == PipelineKind::Tessellation)
       encodePreTessCommand([resource = Obj(resource), requested](RenderCommandContext &ctx) {
         ctx.encoder->useResource(resource, GetUsageFromResidencyMask(requested), GetStagesFromResidencyMask(requested));
       });
@@ -417,32 +418,32 @@ public:
       });
   }
 
-  template <PipelineStage stage, bool TessellationDraw>
+  template <PipelineStage stage, PipelineKind kind>
   void
   makeResident(Buffer *buffer, bool read = true, bool write = false) {
     auto allocation = buffer->current();
     uint64_t encoder_id = currentEncoder()->id;
-    DXMT_RESOURCE_RESIDENCY requested = GetResidencyMask<TessellationDraw>(stage, read, write);
+    DXMT_RESOURCE_RESIDENCY requested = GetResidencyMask<kind>(stage, read, write);
     if (CheckResourceResidency(allocation->residencyState, encoder_id, requested)) {
-      makeResident<stage, TessellationDraw>(allocation->buffer(), requested);
+      makeResident<stage, kind>(allocation->buffer(), requested);
     };
   }
-  template <PipelineStage stage, bool TessellationDraw>
+  template <PipelineStage stage, PipelineKind kind>
   void
   makeResident(Buffer *buffer, unsigned viewId, bool read = true, bool write = false) {
     uint64_t encoder_id = currentEncoder()->id;
-    DXMT_RESOURCE_RESIDENCY requested = GetResidencyMask<TessellationDraw>(stage, read, write);
+    DXMT_RESOURCE_RESIDENCY requested = GetResidencyMask<kind>(stage, read, write);
     if (CheckResourceResidency(buffer->residency(viewId), encoder_id, requested)) {
-      makeResident<stage, TessellationDraw>((MTL::Resource *)buffer->view(viewId), requested);
+      makeResident<stage, kind>((MTL::Resource *)buffer->view(viewId), requested);
     };
   }
-  template <PipelineStage stage, bool TessellationDraw>
+  template <PipelineStage stage, PipelineKind kind>
   void
   makeResident(Texture *texture, unsigned viewId, bool read = true, bool write = false) {
     uint64_t encoder_id = currentEncoder()->id;
-    DXMT_RESOURCE_RESIDENCY requested = GetResidencyMask<TessellationDraw>(stage, read, write);
+    DXMT_RESOURCE_RESIDENCY requested = GetResidencyMask<kind>(stage, read, write);
     if (CheckResourceResidency(texture->residency(viewId), encoder_id, requested)) {
-      makeResident<stage, TessellationDraw>((MTL::Resource *)texture->view(viewId), requested);
+      makeResident<stage, kind>((MTL::Resource *)texture->view(viewId), requested);
     };
   }
 

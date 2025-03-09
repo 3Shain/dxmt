@@ -162,6 +162,82 @@ inline bool is_strip_topology(D3D11_PRIMITIVE_TOPOLOGY topo) {
   return false;
 }
 
+inline std::pair<uint32_t, uint32_t>
+get_gs_vertex_primitive_count(D3D11_PRIMITIVE_TOPOLOGY primitive) {
+  switch (primitive) {
+  case D3D_PRIMITIVE_TOPOLOGY_POINTLIST:
+    return {32, 32};
+  case D3D_PRIMITIVE_TOPOLOGY_LINELIST:
+    return {32, 16};
+  case D3D_PRIMITIVE_TOPOLOGY_LINESTRIP:
+    return {32, 31};
+  case D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST:
+    return {30, 10};
+  case D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP:
+    return {32, 30};
+  case D3D_PRIMITIVE_TOPOLOGY_LINELIST_ADJ:
+    return {32, 8};
+  case D3D_PRIMITIVE_TOPOLOGY_LINESTRIP_ADJ:
+    return {32, 29};
+  case D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST_ADJ:
+    return {30, 5};
+  case D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP_ADJ:
+    return {32, 14};
+  case D3D_PRIMITIVE_TOPOLOGY_1_CONTROL_POINT_PATCHLIST:
+  return {32, 32};
+  case D3D_PRIMITIVE_TOPOLOGY_2_CONTROL_POINT_PATCHLIST:
+  return {32, 16};
+  case D3D_PRIMITIVE_TOPOLOGY_3_CONTROL_POINT_PATCHLIST:
+  return {30, 10};
+  case D3D_PRIMITIVE_TOPOLOGY_4_CONTROL_POINT_PATCHLIST:
+  return {32, 8};
+  case D3D_PRIMITIVE_TOPOLOGY_5_CONTROL_POINT_PATCHLIST:
+  return {30, 6};
+  case D3D_PRIMITIVE_TOPOLOGY_6_CONTROL_POINT_PATCHLIST:
+  return {30, 5};
+  case D3D_PRIMITIVE_TOPOLOGY_7_CONTROL_POINT_PATCHLIST:
+  return {28, 4};
+  case D3D_PRIMITIVE_TOPOLOGY_8_CONTROL_POINT_PATCHLIST:
+  return {32, 4};
+  case D3D_PRIMITIVE_TOPOLOGY_9_CONTROL_POINT_PATCHLIST:
+  return {27, 3};
+  case D3D_PRIMITIVE_TOPOLOGY_10_CONTROL_POINT_PATCHLIST:
+  return {30, 3};
+  case D3D_PRIMITIVE_TOPOLOGY_11_CONTROL_POINT_PATCHLIST:
+  return {22, 2};
+  case D3D_PRIMITIVE_TOPOLOGY_12_CONTROL_POINT_PATCHLIST:
+  return {24, 2};
+  case D3D_PRIMITIVE_TOPOLOGY_13_CONTROL_POINT_PATCHLIST:
+  return {26, 2};
+  case D3D_PRIMITIVE_TOPOLOGY_14_CONTROL_POINT_PATCHLIST:
+  return {28, 2};
+  case D3D_PRIMITIVE_TOPOLOGY_15_CONTROL_POINT_PATCHLIST:
+  return {30, 2};
+  case D3D_PRIMITIVE_TOPOLOGY_16_CONTROL_POINT_PATCHLIST:
+  return {32, 2};
+  case D3D_PRIMITIVE_TOPOLOGY_17_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_18_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_19_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_20_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_21_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_22_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_23_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_24_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_25_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_26_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_27_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_28_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_29_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_30_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_31_CONTROL_POINT_PATCHLIST:
+  case D3D_PRIMITIVE_TOPOLOGY_32_CONTROL_POINT_PATCHLIST:
+    return {uint32_t(primitive) - uint32_t(D3D_PRIMITIVE_TOPOLOGY_1_CONTROL_POINT_PATCHLIST) + 1, 1};
+  default:
+    break;
+  }
+  DXMT_UNREACHABLE
+}
+
 struct Subresource {
   DXGI_FORMAT Format;
   uint32_t MipLevel;
@@ -492,6 +568,8 @@ struct DXMT_DRAW_ARGUMENTS {
 
 template <typename ContextInternalState>
 class MTLD3D11ContextExt;
+
+enum class DrawCallStatus { Invalid, Ordinary, Tessellation, Geometry };
 
 template <typename ContextInternalState> class MTLD3D11DeviceContextImplBase : public MTLD3D11DeviceContextBase {
   template<typename ContextInternalState_>
@@ -983,8 +1061,12 @@ public:
     uint32_t ControlPointCount;
     if(!to_metal_primitive_type(state_.InputAssembler.Topology, Primitive, ControlPointCount))
       return;
-    if (!PreDraw<false>())
+    DrawCallStatus status = PreDraw<false>();
+    if (status == DrawCallStatus::Invalid)
       return;
+    if (status == DrawCallStatus::Geometry) {
+      return GeometryDraw(VertexCount, 1, StartVertexLocation, 0);
+    }
     if (ControlPointCount) {
       return TessellationDraw(ControlPointCount, VertexCount, 1, StartVertexLocation, 0);
     }
@@ -1002,8 +1084,12 @@ public:
     uint32_t ControlPointCount;
     if(!to_metal_primitive_type(state_.InputAssembler.Topology, Primitive, ControlPointCount))
       return;
-    if (!PreDraw<true>())
+    DrawCallStatus status = PreDraw<true>();
+    if (status == DrawCallStatus::Invalid)
       return;
+    if (status == DrawCallStatus::Geometry) {
+      return GeometryDrawIndexed(IndexCount, StartIndexLocation, BaseVertexLocation, 1, 0);
+    }
     if (ControlPointCount) {
       return TessellationDrawIndexed(ControlPointCount, IndexCount, StartIndexLocation, BaseVertexLocation, 1, 0);
     };
@@ -1030,8 +1116,12 @@ public:
     uint32_t ControlPointCount;
     if (!to_metal_primitive_type(state_.InputAssembler.Topology, Primitive, ControlPointCount))
       return;
-    if (!PreDraw<false>())
+    DrawCallStatus status = PreDraw<false>();
+    if (status == DrawCallStatus::Invalid)
       return;
+    if (status == DrawCallStatus::Geometry) {
+      return GeometryDraw(VertexCountPerInstance, InstanceCount, StartVertexLocation, StartInstanceLocation);
+    }
     if (ControlPointCount) {
       return TessellationDraw(
           ControlPointCount, VertexCountPerInstance, InstanceCount, StartVertexLocation, StartInstanceLocation
@@ -1057,14 +1147,19 @@ public:
     uint32_t ControlPointCount;
     if(!to_metal_primitive_type(state_.InputAssembler.Topology, Primitive, ControlPointCount))
       return;
-    if (!PreDraw<true>())
+    DrawCallStatus status = PreDraw<true>();
+    if (status == DrawCallStatus::Invalid)
       return;
+    if (status == DrawCallStatus::Geometry) {
+      return GeometryDrawIndexed(
+          IndexCountPerInstance, StartIndexLocation, BaseVertexLocation, InstanceCount, StartInstanceLocation
+      );
+    }
     if (ControlPointCount) {
       return TessellationDrawIndexed(
           ControlPointCount, IndexCountPerInstance, StartIndexLocation, BaseVertexLocation, InstanceCount,
           StartInstanceLocation
       );
-      return;
     }
     auto IndexType =
         state_.InputAssembler.IndexBufferFormat == DXGI_FORMAT_R32_UINT ? MTL::IndexTypeUInt32 : MTL::IndexTypeUInt16;
@@ -1201,13 +1296,75 @@ public:
   }
 
   void
+  GeometryDraw(
+      UINT VertexCountPerInstance, UINT InstanceCount, UINT StartVertexLocation,
+      UINT StartInstanceLocation
+  ) {
+    EmitOP([=, topo = state_.InputAssembler.Topology](ArgumentEncodingContext &enc) {
+      auto offset = enc.allocate_gpu_heap(4 * 5, 4);
+      DXMT_DRAW_ARGUMENTS *draw_arugment = enc.get_gpu_heap_pointer<DXMT_DRAW_ARGUMENTS>(offset);
+      draw_arugment->BaseVertex = StartVertexLocation;
+      draw_arugment->IndexCount = VertexCountPerInstance;
+      draw_arugment->StartIndex = 0;
+      draw_arugment->InstanceCount = InstanceCount;
+      draw_arugment->StartInstance = StartInstanceLocation;
+
+      auto [vertex_count_per_wrap, unused] = get_gs_vertex_primitive_count(topo);
+      auto wrap_count = (VertexCountPerInstance - 1) / vertex_count_per_wrap + 1;
+      enc.bumpVisibilityResultOffset();
+      enc.encodeRenderCommand([=](RenderCommandContext &ctx) {
+        auto &encoder = ctx.encoder;
+        encoder->setObjectBufferOffset(offset, 21);
+        encoder->drawMeshThreadgroups({wrap_count, InstanceCount, 1}, {vertex_count_per_wrap, 1, 1}, {1, 1, 1});
+      });
+    });
+  }
+
+  void
+  GeometryDrawIndexed(
+      UINT IndexCountPerInstance, UINT StartIndexLocation, INT BaseVertexLocation,
+      UINT InstanceCount, UINT BaseInstance
+  ) {
+    auto IndexBufferOffset =
+        state_.InputAssembler.IndexBufferOffset +
+        StartIndexLocation * (state_.InputAssembler.IndexBufferFormat == DXGI_FORMAT_R32_UINT ? 4 : 2);
+
+    EmitOP([=, topo = state_.InputAssembler.Topology](ArgumentEncodingContext &enc) {
+      auto offset = enc.allocate_gpu_heap(4 * 5, 4);
+      DXMT_DRAW_ARGUMENTS *draw_arugment = enc.get_gpu_heap_pointer<DXMT_DRAW_ARGUMENTS>(offset);
+      draw_arugment->BaseVertex = BaseVertexLocation;
+      draw_arugment->IndexCount = IndexCountPerInstance;
+      draw_arugment->StartIndex = 0;
+      draw_arugment->InstanceCount = InstanceCount;
+      draw_arugment->StartInstance = BaseInstance;
+
+      auto [vertex_count_per_wrap, unused] = get_gs_vertex_primitive_count(topo);
+      auto wrap_count = (IndexCountPerInstance - 1) / vertex_count_per_wrap + 1;
+      enc.bumpVisibilityResultOffset();
+      enc.encodeRenderCommand([=, index = Obj(enc.currentIndexBuffer())](RenderCommandContext &ctx) {
+        auto &encoder = ctx.encoder;
+        encoder->setObjectBuffer(index, IndexBufferOffset, 20);
+        encoder->setObjectBufferOffset(offset, 21);
+        encoder->drawMeshThreadgroups({wrap_count, InstanceCount, 1}, {vertex_count_per_wrap, 1, 1}, {1, 1, 1});
+      });
+    });
+  }
+
+  void
   DrawIndexedInstancedIndirect(ID3D11Buffer *pBufferForArgs, UINT AlignedByteOffsetForArgs) override {
     MTL::PrimitiveType Primitive;
     uint32_t ControlPointCount;
     if(!to_metal_primitive_type(state_.InputAssembler.Topology, Primitive, ControlPointCount))
       return;
-    if (!PreDraw<true>())
+    DrawCallStatus status = PreDraw<true>();
+    if (status == DrawCallStatus::Invalid)
       return;
+    if (status == DrawCallStatus::Geometry) {
+      EmitST([](ArgumentEncodingContext &enc) {
+        enc.setCompatibilityFlag(FeatureCompatibility::UnsupportedGeometryDraw);
+      });
+      return;
+    }
     if (ControlPointCount) {
       EmitST([](ArgumentEncodingContext &enc) {
         enc.setCompatibilityFlag(FeatureCompatibility::UnsupportedIndirectTessellationDraw);
@@ -1237,8 +1394,15 @@ public:
     uint32_t ControlPointCount;
     if(!to_metal_primitive_type(state_.InputAssembler.Topology, Primitive, ControlPointCount))
       return;
-    if (!PreDraw<true>())
+    DrawCallStatus status = PreDraw<false>();
+    if (status == DrawCallStatus::Invalid)
       return;
+    if (status == DrawCallStatus::Geometry) {
+      EmitST([](ArgumentEncodingContext &enc) {
+        enc.setCompatibilityFlag(FeatureCompatibility::UnsupportedGeometryDraw);
+      });
+      return;
+    }
     if (ControlPointCount) {
       EmitST([](ArgumentEncodingContext &enc) {
         enc.setCompatibilityFlag(FeatureCompatibility::UnsupportedIndirectTessellationDraw);
@@ -2264,12 +2428,12 @@ public:
   void UseCopyDestination(Rc<StagingResource> &);
   void UseCopySource(Rc<StagingResource> &);
 
-  template <PipelineStage stage, bool Tessellation>
-  bool
+  template <PipelineStage stage, PipelineKind kind>
+  void
   UploadShaderStageResourceBinding() {
     auto &ShaderStage = state_.ShaderStages[stage];
     if (!ShaderStage.Shader) {
-      return true;
+      return;
     }
     auto &UAVBindingSet = stage == PipelineStage::Compute ? state_.ComputeStageUAV.UAVs : state_.OutputMerger.UAVs;
 
@@ -2280,22 +2444,21 @@ public:
     bool dirty_srv = ShaderStage.SRVs.any_dirty_masked(reflection->SRVSlotMaskHi, reflection->SRVSlotMaskLo);
     bool dirty_uav = UAVBindingSet.any_dirty_masked(reflection->UAVSlotMask);
     if (!dirty_cbuffer && !dirty_sampler && !dirty_srv && !dirty_uav)
-      return true;
+      return;
 
     if (reflection->NumConstantBuffers && dirty_cbuffer) {
-      EmitST([reflection](ArgumentEncodingContext &enc) { enc.encodeConstantBuffers<stage, Tessellation>(reflection); });
+      EmitST([reflection](ArgumentEncodingContext &enc) { enc.encodeConstantBuffers<stage, kind>(reflection); });
       ShaderStage.ConstantBuffers.clear_dirty();
     }
 
     if (reflection->NumArguments && (dirty_sampler || dirty_srv || dirty_uav)) {
-      EmitST([reflection](ArgumentEncodingContext &enc) { enc.encodeShaderResources<stage, Tessellation>(reflection); });
+      EmitST([reflection](ArgumentEncodingContext &enc) { enc.encodeShaderResources<stage, kind>(reflection); });
       ShaderStage.Samplers.clear_dirty();
       ShaderStage.SRVs.clear_dirty();
       if (stage == PipelineStage::Pixel || stage == PipelineStage::Compute) {
         UAVBindingSet.clear_dirty();
       }
     }
-    return true;
   }
 
   void
@@ -2312,10 +2475,13 @@ public:
       return;
 
     if (cmdbuf_state == CommandBufferState::TessellationRenderPipelineReady) {
-      EmitST([slot_mask](ArgumentEncodingContext &enc) { enc.encodeVertexBuffers<true>(slot_mask); });
+      EmitST([slot_mask](ArgumentEncodingContext &enc) { enc.encodeVertexBuffers<PipelineKind::Tessellation>(slot_mask); });
+    }
+    if (cmdbuf_state == CommandBufferState::GeometryRenderPipelineReady) {
+      EmitST([slot_mask](ArgumentEncodingContext &enc) { enc.encodeVertexBuffers<PipelineKind::Geometry>(slot_mask); });
     }
     if (cmdbuf_state == CommandBufferState::RenderPipelineReady) {
-      EmitST([slot_mask](ArgumentEncodingContext &enc) { enc.encodeVertexBuffers<false>(slot_mask); });
+      EmitST([slot_mask](ArgumentEncodingContext &enc) { enc.encodeVertexBuffers<PipelineKind::Ordinary>(slot_mask); });
     }
 
     VertexBuffers.clear_dirty_mask(slot_mask);
@@ -2335,6 +2501,7 @@ public:
     RenderEncoderActive,
     RenderPipelineReady,
     TessellationRenderPipelineReady,
+    GeometryRenderPipelineReady,
     ComputeEncoderActive,
     ComputePipelineReady,
     BlitEncoderActive,
@@ -3054,7 +3221,8 @@ public:
       break;
     case CommandBufferState::RenderEncoderActive:
     case CommandBufferState::RenderPipelineReady:
-    case CommandBufferState::TessellationRenderPipelineReady: {
+    case CommandBufferState::TessellationRenderPipelineReady:
+    case CommandBufferState::GeometryRenderPipelineReady: {
       // EmitCommand([](CommandChunk::context &ctx) {
       //   ctx.render_encoder->endEncoding();
       //   ctx.render_encoder = nullptr;
@@ -3102,7 +3270,8 @@ public:
   void
   InvalidateRenderPipeline() {
     if (cmdbuf_state != CommandBufferState::RenderPipelineReady &&
-        cmdbuf_state != CommandBufferState::TessellationRenderPipelineReady)
+        cmdbuf_state != CommandBufferState::TessellationRenderPipelineReady&&
+        cmdbuf_state != CommandBufferState::GeometryRenderPipelineReady)
       return;
     previous_render_pipeline_state = cmdbuf_state;
     cmdbuf_state = CommandBufferState::RenderEncoderActive;
@@ -3164,6 +3333,8 @@ public:
     if (cmdbuf_state == CommandBufferState::RenderPipelineReady)
       return true;
     if (cmdbuf_state == CommandBufferState::TessellationRenderPipelineReady)
+      return true;
+    if (cmdbuf_state == CommandBufferState::GeometryRenderPipelineReady)
       return true;
     if (cmdbuf_state == CommandBufferState::RenderEncoderActive)
       return true;
@@ -3430,41 +3601,41 @@ public:
   }
 
   template <bool IndexedDraw>
-  bool
+  DrawCallStatus
   FinalizeTessellationRenderPipeline() {
     if (cmdbuf_state == CommandBufferState::TessellationRenderPipelineReady)
-      return true;
+      return DrawCallStatus::Tessellation;
     auto HS = GetManagedShader<PipelineStage::Hull>();
     if (!HS) {
-      return false;
+      return DrawCallStatus::Invalid;
     }
     switch (HS->reflection().Tessellator.OutputPrimitive) {
     case MTL_TESSELLATOR_OUTPUT_LINE:
       EmitST([](ArgumentEncodingContext &enc) {
         enc.setCompatibilityFlag(FeatureCompatibility::UnsupportedTessellationOutputPrimitive);
       });
-      return false;
+      return DrawCallStatus::Invalid;
     case MTL_TESSELLATOR_OUTPUT_POINT:
       EmitST([](ArgumentEncodingContext &enc) {
         enc.setCompatibilityFlag(FeatureCompatibility::UnsupportedTessellationOutputPrimitive);
       });
-      return false;
+      return DrawCallStatus::Invalid;
     default:
       break;
     }
     if (!state_.ShaderStages[PipelineStage::Domain].Shader) {
-      return false;
+      return DrawCallStatus::Invalid;
     }
     auto GS = GetManagedShader<PipelineStage::Geometry>();
     if (GS && GS->reflection().GeometryShader.GSPassThrough == ~0u) {
       EmitST([](ArgumentEncodingContext &enc) {
         enc.setCompatibilityFlag(FeatureCompatibility::UnsupportedGeometryTessellationDraw);
       });
-      return false;
+      return DrawCallStatus::Invalid;
     }
 
     if (!SwitchToRenderEncoder()) {
-      return false;
+      return DrawCallStatus::Invalid;
     }
 
     Com<IMTLCompiledTessellationPipeline> pipeline;
@@ -3505,21 +3676,60 @@ public:
       previous_render_pipeline_state = CommandBufferState::TessellationRenderPipelineReady;
     }
 
-    return true;
+    return DrawCallStatus::Tessellation;
   }
 
   template <bool IndexedDraw>
-  bool
+  DrawCallStatus
   FinalizeGeometryRenderPipeline() {
+    if (cmdbuf_state == CommandBufferState::GeometryRenderPipelineReady)
+      return DrawCallStatus::Geometry;
+    if (!SwitchToRenderEncoder()) {
+      return DrawCallStatus::Invalid;
+    }
+
+    switch (state_.InputAssembler.Topology) {
+    case D3D11_PRIMITIVE_TOPOLOGY_LINESTRIP_ADJ:
+    case D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP_ADJ:
+      EmitST([](ArgumentEncodingContext &enc) {
+        enc.setCompatibilityFlag(FeatureCompatibility::UnsupportedGeometryDraw);
+      });
+      return DrawCallStatus::Invalid;
+    default:
+      break;
+    }
+
     Com<IMTLCompiledGeometryPipeline> pipeline;
 
     MTL_GRAPHICS_PIPELINE_DESC pipelineDesc;
     InitializeGraphicsPipelineDesc<IndexedDraw>(pipelineDesc);
     device->CreateGeometryPipeline(&pipelineDesc, &pipeline);
     EmitST([pso = std::move(pipeline)](ArgumentEncodingContext& enc) {
-      
+      auto render_encoder = enc.currentRenderEncoder();
+      render_encoder->use_geometry = 1;
+      MTL_COMPILED_GRAPHICS_PIPELINE GraphicsPipeline{};
+      pso->GetPipeline(&GraphicsPipeline); // may block
+      if (!GraphicsPipeline.PipelineState)
+        return;
+      enc.encodeRenderCommand([pso = GraphicsPipeline.PipelineState](RenderCommandContext& ctx) {
+        ctx.encoder->setRenderPipelineState(pso);
+      });
     });
-    return false;
+
+    cmdbuf_state = CommandBufferState::GeometryRenderPipelineReady;
+
+    if (previous_render_pipeline_state != CommandBufferState::GeometryRenderPipelineReady) {
+      state_.InputAssembler.VertexBuffers.set_dirty();
+      state_.ShaderStages[PipelineStage::Vertex].ConstantBuffers.set_dirty();
+      state_.ShaderStages[PipelineStage::Vertex].SRVs.set_dirty();
+      state_.ShaderStages[PipelineStage::Vertex].Samplers.set_dirty();
+      state_.ShaderStages[PipelineStage::Domain].ConstantBuffers.set_dirty();
+      state_.ShaderStages[PipelineStage::Domain].SRVs.set_dirty();
+      state_.ShaderStages[PipelineStage::Domain].Samplers.set_dirty();
+      previous_render_pipeline_state = CommandBufferState::GeometryRenderPipelineReady;
+    }
+
+    return DrawCallStatus::Geometry;
   }
 
   /**
@@ -3527,13 +3737,13 @@ public:
   If the current encoder is not a render encoder, switch to it.
   */
   template <bool IndexedDraw>
-  bool
+  DrawCallStatus
   FinalizeCurrentRenderPipeline() {
     if (state_.ShaderStages[PipelineStage::Hull].Shader) {
       return FinalizeTessellationRenderPipeline<IndexedDraw>();
     }
     if (cmdbuf_state == CommandBufferState::RenderPipelineReady)
-      return true;
+      return DrawCallStatus::Ordinary;
     auto GS = GetManagedShader<PipelineStage::Geometry>();
     if (GS) {
       if (GS->reflection().GeometryShader.GSPassThrough == ~0u) {
@@ -3542,7 +3752,7 @@ public:
     }
 
     if (!SwitchToRenderEncoder()) {
-      return false;
+      return DrawCallStatus::Invalid;
     }
 
     Com<IMTLCompiledGraphicsPipeline> pipeline;
@@ -3571,14 +3781,15 @@ public:
       previous_render_pipeline_state = CommandBufferState::RenderPipelineReady;
     }
 
-    return true;
+    return DrawCallStatus::Ordinary;
   }
 
   template <bool IndexedDraw>
-  bool
+  DrawCallStatus
   PreDraw() {
-    if (!FinalizeCurrentRenderPipeline<IndexedDraw>()) {
-      return false;
+    DrawCallStatus status;
+    if (status = FinalizeCurrentRenderPipeline<IndexedDraw>(); status == DrawCallStatus::Invalid) {
+      return status;
     }
     UpdateVertexBuffer();
     UpdateSOTargets();
@@ -3655,13 +3866,19 @@ public:
     }
     dirty_state.clrAll();
     if (cmdbuf_state == CommandBufferState::TessellationRenderPipelineReady) {
-      return UploadShaderStageResourceBinding<PipelineStage::Vertex, true>() &&
-             UploadShaderStageResourceBinding<PipelineStage::Pixel, true>() &&
-             UploadShaderStageResourceBinding<PipelineStage::Hull, true>() &&
-             UploadShaderStageResourceBinding<PipelineStage::Domain, true>();
+      UploadShaderStageResourceBinding<PipelineStage::Vertex, PipelineKind::Tessellation>();
+      UploadShaderStageResourceBinding<PipelineStage::Pixel, PipelineKind::Tessellation>();
+      UploadShaderStageResourceBinding<PipelineStage::Hull, PipelineKind::Tessellation>();
+      UploadShaderStageResourceBinding<PipelineStage::Domain, PipelineKind::Tessellation>();
+    } else if (cmdbuf_state == CommandBufferState::GeometryRenderPipelineReady) {
+      UploadShaderStageResourceBinding<PipelineStage::Vertex, PipelineKind::Geometry>();
+      UploadShaderStageResourceBinding<PipelineStage::Pixel, PipelineKind::Geometry>();
+      UploadShaderStageResourceBinding<PipelineStage::Geometry, PipelineKind::Geometry>();
+    } else {
+      UploadShaderStageResourceBinding<PipelineStage::Vertex, PipelineKind::Ordinary>();
+      UploadShaderStageResourceBinding<PipelineStage::Pixel, PipelineKind::Ordinary>();
     }
-    return UploadShaderStageResourceBinding<PipelineStage::Vertex, false>() &&
-           UploadShaderStageResourceBinding<PipelineStage::Pixel, false>();
+    return status;
   }
 
   /**
@@ -3708,7 +3925,7 @@ public:
     if (!FinalizeCurrentComputePipeline()) {
       return false;
     }
-    UploadShaderStageResourceBinding<PipelineStage::Compute, false>();
+    UploadShaderStageResourceBinding<PipelineStage::Compute, PipelineKind::Ordinary>();
     return true;
   }
 
