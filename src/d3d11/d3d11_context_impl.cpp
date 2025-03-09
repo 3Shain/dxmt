@@ -560,11 +560,18 @@ public:
 };
 
 struct DXMT_DRAW_ARGUMENTS {
-  uint32_t IndexCount;
-  uint32_t StartIndex;
+  uint32_t VertexCount;
   uint32_t InstanceCount;
+  uint32_t StartVertex;
   uint32_t StartInstance;
+};
+
+struct DXMT_DRAW_INDEXED_ARGUMENTS {
+  uint32_t IndexCount;
+  uint32_t InstanceCount;
+  uint32_t StartIndex;
   uint32_t BaseVertex;
+  uint32_t StartInstance;
 };
 
 template <typename ContextInternalState>
@@ -1188,11 +1195,10 @@ public:
     assert(NumControlPoint);
 
     EmitOP([=](ArgumentEncodingContext &enc) {
-      auto offset = enc.allocate_gpu_heap(4 * 5, 4);
+      auto offset = enc.allocate_gpu_heap(sizeof(DXMT_DRAW_ARGUMENTS), 4);
       DXMT_DRAW_ARGUMENTS *draw_arugment = enc.get_gpu_heap_pointer<DXMT_DRAW_ARGUMENTS>(offset);
-      draw_arugment->BaseVertex = StartVertexLocation;
-      draw_arugment->IndexCount = VertexCountPerInstance;
-      draw_arugment->StartIndex = 0;
+      draw_arugment->StartVertex = StartVertexLocation;
+      draw_arugment->VertexCount = VertexCountPerInstance;
       draw_arugment->InstanceCount = InstanceCount;
       draw_arugment->StartInstance = StartInstanceLocation;
       auto PatchCountPerInstance = VertexCountPerInstance / NumControlPoint;
@@ -1242,16 +1248,14 @@ public:
       UINT InstanceCount, UINT BaseInstance
   ) {
     assert(NumControlPoint);
-    auto IndexBufferOffset =
-        state_.InputAssembler.IndexBufferOffset +
-        StartIndexLocation * (state_.InputAssembler.IndexBufferFormat == DXGI_FORMAT_R32_UINT ? 4 : 2);
+    auto IndexBufferOffset = state_.InputAssembler.IndexBufferOffset;
 
     EmitOP([=](ArgumentEncodingContext &enc) {
-      auto offset = enc.allocate_gpu_heap(4 * 5, 4);
-      DXMT_DRAW_ARGUMENTS *draw_arugment = enc.get_gpu_heap_pointer<DXMT_DRAW_ARGUMENTS>(offset);
+      auto offset = enc.allocate_gpu_heap(sizeof(DXMT_DRAW_INDEXED_ARGUMENTS), 4);
+      DXMT_DRAW_INDEXED_ARGUMENTS *draw_arugment = enc.get_gpu_heap_pointer<DXMT_DRAW_INDEXED_ARGUMENTS>(offset);
       draw_arugment->BaseVertex = BaseVertexLocation;
       draw_arugment->IndexCount = IndexCountPerInstance;
-      draw_arugment->StartIndex = 0; // already provided offset
+      draw_arugment->StartIndex = StartIndexLocation;
       draw_arugment->InstanceCount = InstanceCount;
       draw_arugment->StartInstance = BaseInstance;
       auto PatchCountPerInstance = IndexCountPerInstance / NumControlPoint;
@@ -1302,11 +1306,10 @@ public:
       UINT StartInstanceLocation
   ) {
     EmitOP([=, topo = state_.InputAssembler.Topology](ArgumentEncodingContext &enc) {
-      auto offset = enc.allocate_gpu_heap(4 * 5, 4);
+      auto offset = enc.allocate_gpu_heap(sizeof(DXMT_DRAW_ARGUMENTS), 4);
       DXMT_DRAW_ARGUMENTS *draw_arugment = enc.get_gpu_heap_pointer<DXMT_DRAW_ARGUMENTS>(offset);
-      draw_arugment->BaseVertex = StartVertexLocation;
-      draw_arugment->IndexCount = VertexCountPerInstance;
-      draw_arugment->StartIndex = 0;
+      draw_arugment->StartVertex = StartVertexLocation;
+      draw_arugment->VertexCount = VertexCountPerInstance;
       draw_arugment->InstanceCount = InstanceCount;
       draw_arugment->StartInstance = StartInstanceLocation;
 
@@ -1326,16 +1329,14 @@ public:
       UINT IndexCountPerInstance, UINT StartIndexLocation, INT BaseVertexLocation,
       UINT InstanceCount, UINT BaseInstance
   ) {
-    auto IndexBufferOffset =
-        state_.InputAssembler.IndexBufferOffset +
-        StartIndexLocation * (state_.InputAssembler.IndexBufferFormat == DXGI_FORMAT_R32_UINT ? 4 : 2);
+    auto IndexBufferOffset = state_.InputAssembler.IndexBufferOffset;
 
     EmitOP([=, topo = state_.InputAssembler.Topology](ArgumentEncodingContext &enc) {
-      auto offset = enc.allocate_gpu_heap(4 * 5, 4);
-      DXMT_DRAW_ARGUMENTS *draw_arugment = enc.get_gpu_heap_pointer<DXMT_DRAW_ARGUMENTS>(offset);
+      auto offset = enc.allocate_gpu_heap(sizeof(DXMT_DRAW_INDEXED_ARGUMENTS), 4);
+      DXMT_DRAW_INDEXED_ARGUMENTS *draw_arugment = enc.get_gpu_heap_pointer<DXMT_DRAW_INDEXED_ARGUMENTS>(offset);
       draw_arugment->BaseVertex = BaseVertexLocation;
       draw_arugment->IndexCount = IndexCountPerInstance;
-      draw_arugment->StartIndex = 0;
+      draw_arugment->StartIndex = StartIndexLocation;
       draw_arugment->InstanceCount = InstanceCount;
       draw_arugment->StartInstance = BaseInstance;
 

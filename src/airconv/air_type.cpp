@@ -63,13 +63,24 @@ AirType::AirType(LLVMContext &context) : context(context) {
   _dxmt_draw_arguments = StructType::create(
     context,
     {
-      _int, // vertex count/ index count
-      _int, // start index
+      _int, // vertex count
       _int, // instance count
-      _int, // base instance
-      _int, // base vertex (if not indexed draw)
+      _int, // start vertex
+      _int, // start instance
     },
     "dxmt_draw_arguments"
+  );
+
+  _dxmt_draw_indexed_arguments = StructType::create(
+    context,
+    {
+      _int, // index count
+      _int, // instance count
+      _int, // start index
+      _int, // base vertex
+      _int, // base instance
+    },
+    "dxmt_draw_indexed_arguments"
   );
 
   auto tyOpaque = get_or_create_struct(context, "opaque");

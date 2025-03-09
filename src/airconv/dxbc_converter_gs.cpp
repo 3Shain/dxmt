@@ -474,6 +474,8 @@ convert_dxbc_vertex_for_geometry_shader(
     arg = (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)arg->next;
   }
 
+  bool is_indexed_draw = ia_layout && ia_layout->index_buffer_format > 0;
+
   IREffect prologue([](auto) { return std::monostate(); });
   IRValue epilogue([](struct context ctx) -> pvalue {
     auto retTy = ctx.function->getReturnType();
@@ -510,13 +512,15 @@ convert_dxbc_vertex_for_geometry_shader(
       .array_size = 0,
       .memory_access = air::MemoryAccess::read,
       .address_space = air::AddressSpace::constant,
-      .type = air::MSLWhateverStruct{"draw_arguments", types._dxmt_draw_arguments},
+      .type = is_indexed_draw //
+          ? air::MSLWhateverStruct{"draw_indexed_arguments", types._dxmt_draw_indexed_arguments}
+          : air::MSLWhateverStruct{"draw_arguments", types._dxmt_draw_arguments},
       .arg_name = "draw_arguments",
       .raster_order_group = {}
   });
 
   uint32_t index_buffer_idx = ~0u;
-  if (ia_layout && ia_layout->index_buffer_format > 0) {
+  if (is_indexed_draw) {
     index_buffer_idx = func_signature.DefineInput(air::ArgumentBindingBuffer{
         .buffer_size = {},
         .location_index = 20,
@@ -551,9 +555,13 @@ convert_dxbc_vertex_for_geometry_shader(
   auto wrap_id = builder.CreateExtractElement(threadgroup_position_in_grid, (uint32_t)0);
   auto instance_id = builder.CreateExtractElement(threadgroup_position_in_grid, (uint32_t)1);
 
-  auto draw_arguments = builder.CreateLoad(types._dxmt_draw_arguments, function->getArg(draw_argument_idx));
+  auto draw_arguments = builder.CreateLoad(
+    is_indexed_draw ? types._dxmt_draw_indexed_arguments
+                    : types._dxmt_draw_arguments,
+    function->getArg(draw_argument_idx)
+  );
 
-  auto index_count = builder.CreateExtractValue(draw_arguments, 0);
+  auto vertex_count = builder.CreateExtractValue(draw_arguments, 0);
 
   resource_map.input.ptr_int4 = builder.CreateAlloca(llvm::ArrayType::get(types._int4, max_input_register));
   resource_map.input.ptr_float4 = builder.CreateBitCast(
@@ -610,12 +618,12 @@ convert_dxbc_vertex_for_geometry_shader(
   );
 
   builder.CreateCondBr(
-      builder.CreateICmp(llvm::CmpInst::ICMP_ULT, global_index_id, index_count), index_check, will_dispatch
+      builder.CreateICmp(llvm::CmpInst::ICMP_ULT, global_index_id, vertex_count), index_check, will_dispatch
   );
   builder.SetInsertPoint(index_check);
 
   if (index_buffer_idx != ~0u) {
-    auto start_index = builder.CreateExtractValue(draw_arguments, 1);
+    auto start_index = builder.CreateExtractValue(draw_arguments, 2);
     auto index_buffer = function->getArg(index_buffer_idx);
     auto index_buffer_element_type = index_buffer->getType()->getNonOpaquePointerElementType();
     auto vertex_id = builder.CreateLoad(
@@ -639,10 +647,10 @@ convert_dxbc_vertex_for_geometry_shader(
       llvm::Align(4), llvm::AtomicOrdering::Monotonic
   );
 
-  resource_map.base_vertex_id = builder.CreateExtractValue(draw_arguments, 4);
+  resource_map.base_vertex_id = builder.CreateExtractValue(draw_arguments, is_indexed_draw ? 3 : 2);
   resource_map.instance_id = instance_id;
   resource_map.vertex_id_with_base = builder.CreateAdd(resource_map.vertex_id, resource_map.base_vertex_id);
-  resource_map.base_instance_id = builder.CreateExtractValue(draw_arguments, 3);
+  resource_map.base_instance_id = builder.CreateExtractValue(draw_arguments, is_indexed_draw ? 4 : 3);
   resource_map.instance_id_with_base = builder.CreateAdd(resource_map.instance_id, resource_map.base_instance_id);
 
   if (auto err = prologue.build(ctx).takeError()) {
