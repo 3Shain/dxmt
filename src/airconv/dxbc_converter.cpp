@@ -799,18 +799,17 @@ llvm::Error convert_dxbc_domain_shader(
       .arg_name = "domain_tess_factor_buffer",
       .raster_order_group = {}
     });
-  uint32_t draw_argument_idx =
-    func_signature.DefineInput(air::ArgumentBindingBuffer{
-      .buffer_size = {},
-      .location_index = 23,
-      .array_size = 0,
-      .memory_access = air::MemoryAccess::read,
-      .address_space = air::AddressSpace::constant,
-      .type =
-        air::MSLWhateverStruct{"draw_arguments", types._dxmt_draw_arguments},
-      .arg_name = "draw_arguments",
-      .raster_order_group = {}
-    });
+  uint32_t draw_vertex_count_idx =
+  func_signature.DefineInput(air::ArgumentBindingBuffer{
+    .buffer_size = {},
+    .location_index = 23,
+    .array_size = 0,
+    .memory_access = air::MemoryAccess::read,
+    .address_space = air::AddressSpace::constant,
+    .type = air::MSLUint{},
+    .arg_name = "draw_vertex_count",
+    .raster_order_group = {}
+  });
 
   uint32_t rta_idx_out = ~0u;
   if (gs_passthrough && gs_passthrough->RenderTargetArrayIndexReg != 255) {
@@ -831,13 +830,12 @@ llvm::Error convert_dxbc_domain_shader(
 
   setup_fastmath_flag(module, builder);
 
-  auto draw_arguments = builder.CreateLoad(
-    types._dxmt_draw_arguments, function->getArg(draw_argument_idx)
+  auto vertex_count = builder.CreateLoad(
+    types._int, function->getArg(draw_vertex_count_idx)
   );
 
   auto patch_count = builder.CreateUDiv(
-    builder.CreateExtractValue(draw_arguments, 0),
-    builder.getInt32(pHullStage->input_control_point_count)
+    vertex_count, builder.getInt32(pHullStage->input_control_point_count)
   );
 
   resource_map.instanced_patch_id = function->getArg(patch_id_idx);
@@ -1525,6 +1523,8 @@ llvm::Error convert_dxbc_vertex_for_hull_shader(
     arg = (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)arg->next;
   }
 
+  bool is_indexed_draw = ia_layout && ia_layout->index_buffer_format > 0;
+
   IREffect prologue([](auto) { return std::monostate(); });
   IRValue epilogue([](struct context ctx) -> pvalue {
     auto retTy = ctx.function->getReturnType();
@@ -1567,14 +1567,15 @@ llvm::Error convert_dxbc_vertex_for_hull_shader(
       .array_size = 0,
       .memory_access = air::MemoryAccess::read,
       .address_space = air::AddressSpace::constant,
-      .type =
-        air::MSLWhateverStruct{"draw_arguments", types._dxmt_draw_arguments},
+      .type = is_indexed_draw //
+          ? air::MSLWhateverStruct{"draw_indexed_arguments", types._dxmt_draw_indexed_arguments}
+          : air::MSLWhateverStruct{"draw_arguments", types._dxmt_draw_arguments},
       .arg_name = "draw_arguments",
       .raster_order_group = {}
     });
 
   uint32_t index_buffer_idx = ~0u;
-  if (ia_layout && ia_layout->index_buffer_format > 0) {
+  if (is_indexed_draw) {
     index_buffer_idx = func_signature.DefineInput(air::ArgumentBindingBuffer{
       .buffer_size = {},
       .location_index = 20,
@@ -1630,7 +1631,9 @@ llvm::Error convert_dxbc_vertex_for_hull_shader(
   );
 
   auto draw_arguments = builder.CreateLoad(
-    types._dxmt_draw_arguments, function->getArg(draw_argument_idx)
+    is_indexed_draw ? types._dxmt_draw_indexed_arguments
+                    : types._dxmt_draw_arguments,
+    function->getArg(draw_argument_idx)
   );
 
   auto patch_count = builder.CreateUDiv(
@@ -1692,7 +1695,7 @@ llvm::Error convert_dxbc_vertex_for_hull_shader(
   builder.SetInsertPoint(active);
 
   if (index_buffer_idx != ~0u) {
-    auto start_index = builder.CreateExtractValue(draw_arguments, 1);
+    auto start_index = builder.CreateExtractValue(draw_arguments, 2);
     auto index_buffer = function->getArg(index_buffer_idx);
     auto index_buffer_element_type =
       index_buffer->getType()->getNonOpaquePointerElementType();
@@ -1707,11 +1710,11 @@ llvm::Error convert_dxbc_vertex_for_hull_shader(
   } else {
     resource_map.vertex_id = control_point_index;
   }
-  resource_map.base_vertex_id = builder.CreateExtractValue(draw_arguments, 4);
+  resource_map.base_vertex_id = builder.CreateExtractValue(draw_arguments, is_indexed_draw ? 3 : 2);
   resource_map.instance_id = instance_id;
   resource_map.vertex_id_with_base =
     builder.CreateAdd(resource_map.vertex_id, resource_map.base_vertex_id);
-  resource_map.base_instance_id = builder.CreateExtractValue(draw_arguments, 3);
+  resource_map.base_instance_id = builder.CreateExtractValue(draw_arguments, is_indexed_draw ? 4 : 3);
   resource_map.instance_id_with_base =
     builder.CreateAdd(resource_map.instance_id, resource_map.base_instance_id);
 
