@@ -305,6 +305,24 @@ convert_dxbc_geometry_shader(
   auto valid_primitive_mask =
       builder.CreateLoad(types._int, builder.CreateConstInBoundsGEP1_32(types._int, payload, 1));
 
+  auto input_ptr_int4_type =
+      llvm::ArrayType::get(types._int4, pVertexStage->max_output_register * vertex_per_primitive);
+  resource_map.input.ptr_int4 = builder.CreateAlloca(input_ptr_int4_type);
+  resource_map.input.ptr_float4 = builder.CreateBitCast(
+      resource_map.input.ptr_int4,
+      llvm::ArrayType::get(types._float4, pVertexStage->max_output_register * vertex_per_primitive)->getPointerTo()
+  );
+  resource_map.input_element_count = pVertexStage->max_output_register;
+
+  resource_map.output.ptr_int4 = builder.CreateAlloca(llvm::ArrayType::get(types._int4, max_output_register));
+  resource_map.output.ptr_float4 = builder.CreateBitCast(
+      resource_map.output.ptr_int4, llvm::ArrayType::get(types._float4, max_output_register)->getPointerTo()
+  );
+  resource_map.output_element_count = max_output_register;
+
+  setup_temp_register(shader_info, resource_map, types, module, builder);
+  setup_immediate_constant_buffer(shader_info, resource_map, types, module, builder);
+
   builder.CreateCondBr(
       builder.CreateICmpNE(
           builder.CreateAnd(valid_primitive_mask, builder.CreateShl(one_const, primitive_id_in_wrap)), zero_const
@@ -312,15 +330,6 @@ convert_dxbc_geometry_shader(
       active_, epilogue_bb
   );
   builder.SetInsertPoint(active_);
-
-    auto input_ptr_int4_type = llvm::ArrayType::get(types._int4, pVertexStage->max_output_register * vertex_per_primitive);
-  resource_map.input.ptr_int4 =
-      builder.CreateAlloca(input_ptr_int4_type);
-  resource_map.input.ptr_float4 = builder.CreateBitCast(
-      resource_map.input.ptr_int4,
-      llvm::ArrayType::get(types._float4, pVertexStage->max_output_register * vertex_per_primitive)->getPointerTo()
-  );
-  resource_map.input_element_count = pVertexStage->max_output_register;
 
   auto vertices_ptr = builder.CreateBitCast(
       builder.CreateConstInBoundsGEP1_32(types._int, function->getArg(payload_idx), 4),
@@ -388,15 +397,6 @@ convert_dxbc_geometry_shader(
       load_vertex(builder.CreateAdd(leading_vertex_index, builder.getInt32(vid)), vid);
     }
   }
-
-  resource_map.output.ptr_int4 = builder.CreateAlloca(llvm::ArrayType::get(types._int4, max_output_register));
-  resource_map.output.ptr_float4 = builder.CreateBitCast(
-      resource_map.output.ptr_int4, llvm::ArrayType::get(types._float4, max_output_register)->getPointerTo()
-  );
-  resource_map.output_element_count = max_output_register;
-
-  setup_temp_register(shader_info, resource_map, types, module, builder);
-  setup_immediate_constant_buffer(shader_info, resource_map, types, module, builder);
 
   struct context ctx {
     .builder = builder, .llvm = context, .module = module, .function = function, .resource = resource_map,
