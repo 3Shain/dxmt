@@ -26,10 +26,11 @@ ArgumentEncodingContext::~ArgumentEncodingContext() {
   free(cpu_buffer_);
 };
 
-template void ArgumentEncodingContext::encodeVertexBuffers<true>(uint32_t slot_mask);
-template void ArgumentEncodingContext::encodeVertexBuffers<false>(uint32_t slot_mask);
+template void ArgumentEncodingContext::encodeVertexBuffers<PipelineKind::Ordinary>(uint32_t slot_mask);
+template void ArgumentEncodingContext::encodeVertexBuffers<PipelineKind::Tessellation>(uint32_t slot_mask);
+template void ArgumentEncodingContext::encodeVertexBuffers<PipelineKind::Geometry>(uint32_t slot_mask);
 
-template <bool TessellationDraw>
+template <PipelineKind kind>
 void
 ArgumentEncodingContext::encodeVertexBuffers(uint32_t slot_mask) {
   struct VERTEX_BUFFER_ENTRY {
@@ -61,30 +62,38 @@ ArgumentEncodingContext::encodeVertexBuffers(uint32_t slot_mask) {
     entries[index++].length = length > state.offset ? length - state.offset : 0;
     // FIXME: did we intended to use the whole buffer?
     access(buffer, DXMT_ENCODER_RESOURCE_ACESS_READ);
-    makeResident<PipelineStage::Vertex, TessellationDraw>(buffer.ptr());
+    makeResident<PipelineStage::Vertex, kind>(buffer.ptr());
   };
-  if constexpr (TessellationDraw)
+  if constexpr (kind == PipelineKind::Tessellation)
     encodePreTessCommand([offset](RenderCommandContext &ctx) { ctx.encoder->setObjectBufferOffset(offset, 16); });
+  else if constexpr (kind == PipelineKind::Geometry)
+    encodeRenderCommand([offset](RenderCommandContext &ctx) { ctx.encoder->setObjectBufferOffset(offset, 16); });
   else
     encodeRenderCommand([offset](RenderCommandContext &ctx) { ctx.encoder->setVertexBufferOffset(offset, 16); });
 }
 
 template void
-ArgumentEncodingContext::encodeConstantBuffers<PipelineStage::Vertex, false>(const MTL_SHADER_REFLECTION *reflection);
+ArgumentEncodingContext::encodeConstantBuffers<PipelineStage::Vertex, PipelineKind::Ordinary>(const MTL_SHADER_REFLECTION *reflection);
 template void
-ArgumentEncodingContext::encodeConstantBuffers<PipelineStage::Pixel, false>(const MTL_SHADER_REFLECTION *reflection);
+ArgumentEncodingContext::encodeConstantBuffers<PipelineStage::Pixel, PipelineKind::Ordinary>(const MTL_SHADER_REFLECTION *reflection);
 template void
-ArgumentEncodingContext::encodeConstantBuffers<PipelineStage::Vertex, true>(const MTL_SHADER_REFLECTION *reflection);
+ArgumentEncodingContext::encodeConstantBuffers<PipelineStage::Vertex, PipelineKind::Tessellation>(const MTL_SHADER_REFLECTION *reflection);
 template void
-ArgumentEncodingContext::encodeConstantBuffers<PipelineStage::Pixel, true>(const MTL_SHADER_REFLECTION *reflection);
+ArgumentEncodingContext::encodeConstantBuffers<PipelineStage::Pixel, PipelineKind::Tessellation>(const MTL_SHADER_REFLECTION *reflection);
 template void
-ArgumentEncodingContext::encodeConstantBuffers<PipelineStage::Hull, true>(const MTL_SHADER_REFLECTION *reflection);
+ArgumentEncodingContext::encodeConstantBuffers<PipelineStage::Hull, PipelineKind::Tessellation>(const MTL_SHADER_REFLECTION *reflection);
 template void
-ArgumentEncodingContext::encodeConstantBuffers<PipelineStage::Domain, true>(const MTL_SHADER_REFLECTION *reflection);
+ArgumentEncodingContext::encodeConstantBuffers<PipelineStage::Domain, PipelineKind::Tessellation>(const MTL_SHADER_REFLECTION *reflection);
 template void
-ArgumentEncodingContext::encodeConstantBuffers<PipelineStage::Compute, false>(const MTL_SHADER_REFLECTION *reflection);
+ArgumentEncodingContext::encodeConstantBuffers<PipelineStage::Compute, PipelineKind::Ordinary>(const MTL_SHADER_REFLECTION *reflection);
+template void
+ArgumentEncodingContext::encodeConstantBuffers<PipelineStage::Vertex, PipelineKind::Geometry>(const MTL_SHADER_REFLECTION *reflection);
+template void
+ArgumentEncodingContext::encodeConstantBuffers<PipelineStage::Geometry, PipelineKind::Geometry>(const MTL_SHADER_REFLECTION *reflection);
+template void
+ArgumentEncodingContext::encodeConstantBuffers<PipelineStage::Pixel, PipelineKind::Geometry>(const MTL_SHADER_REFLECTION *reflection);
 
-template <PipelineStage stage, bool TessellationDraw>
+template <PipelineStage stage, PipelineKind kind>
 void
 ArgumentEncodingContext::encodeConstantBuffers(const MTL_SHADER_REFLECTION *reflection) {
   auto ConstantBufferCount = reflection->NumConstantBuffers;
@@ -99,14 +108,14 @@ ArgumentEncodingContext::encodeConstantBuffers(const MTL_SHADER_REFLECTION *refl
       auto &cbuf = cbuf_[slot];
       if (!cbuf.buffer.ptr()) {
         encoded_buffer[arg.StructurePtrOffset] = dummy_cbuffer_->gpuAddress();
-        makeResident<stage, TessellationDraw>(dummy_cbuffer_, GetResidencyMask<TessellationDraw>(stage, true, false));
+        makeResident<stage, kind>(dummy_cbuffer_, GetResidencyMask<kind>(stage, true, false));
         continue;
       }
       auto argbuf = cbuf.buffer;
       encoded_buffer[arg.StructurePtrOffset] = argbuf->current()->gpuAddress + (cbuf.offset);
       // FIXME: did we intended to use the whole buffer?
       access(argbuf, DXMT_ENCODER_RESOURCE_ACESS_READ);
-      makeResident<stage, TessellationDraw>(argbuf.ptr());
+      makeResident<stage, kind>(argbuf.ptr());
       break;
     }
     default:
@@ -120,8 +129,10 @@ ArgumentEncodingContext::encodeConstantBuffers(const MTL_SHADER_REFLECTION *refl
   } else if constexpr (stage == PipelineStage::Hull) {
     encodePreTessCommand([offset](RenderCommandContext &ctx) { ctx.encoder->setMeshBufferOffset(offset, 29); });
   } else if constexpr (stage == PipelineStage::Vertex) {
-    if constexpr (TessellationDraw)
+    if constexpr (kind == PipelineKind::Tessellation)
       encodePreTessCommand([offset](RenderCommandContext &ctx) { ctx.encoder->setObjectBufferOffset(offset, 29); });
+    else if constexpr (kind == PipelineKind::Geometry)
+      encodeRenderCommand([offset](RenderCommandContext &ctx) { ctx.encoder->setObjectBufferOffset(offset, 29); });
     else
       encodeRenderCommand([offset](RenderCommandContext &ctx) { ctx.encoder->setVertexBufferOffset(offset, 29); });
   } else {
@@ -130,6 +141,8 @@ ArgumentEncodingContext::encodeConstantBuffers(const MTL_SHADER_REFLECTION *refl
         ctx.encoder->setFragmentBufferOffset(offset, 29);
       } else if constexpr (stage == PipelineStage::Domain) {
         ctx.encoder->setVertexBufferOffset(offset, 29);
+      } else if constexpr (stage == PipelineStage::Geometry) {
+        ctx.encoder->setMeshBufferOffset(offset, 29);
       } else {
         assert(0 && "Not implemented or unreachable");
       }
@@ -138,21 +151,27 @@ ArgumentEncodingContext::encodeConstantBuffers(const MTL_SHADER_REFLECTION *refl
 };
 
 template void
-ArgumentEncodingContext::encodeShaderResources<PipelineStage::Vertex, false>(const MTL_SHADER_REFLECTION *reflection);
+ArgumentEncodingContext::encodeShaderResources<PipelineStage::Vertex, PipelineKind::Ordinary>(const MTL_SHADER_REFLECTION *reflection);
 template void
-ArgumentEncodingContext::encodeShaderResources<PipelineStage::Pixel, false>(const MTL_SHADER_REFLECTION *reflection);
+ArgumentEncodingContext::encodeShaderResources<PipelineStage::Pixel, PipelineKind::Ordinary>(const MTL_SHADER_REFLECTION *reflection);
 template void
-ArgumentEncodingContext::encodeShaderResources<PipelineStage::Vertex, true>(const MTL_SHADER_REFLECTION *reflection);
+ArgumentEncodingContext::encodeShaderResources<PipelineStage::Vertex, PipelineKind::Tessellation>(const MTL_SHADER_REFLECTION *reflection);
 template void
-ArgumentEncodingContext::encodeShaderResources<PipelineStage::Pixel, true>(const MTL_SHADER_REFLECTION *reflection);
+ArgumentEncodingContext::encodeShaderResources<PipelineStage::Pixel, PipelineKind::Tessellation>(const MTL_SHADER_REFLECTION *reflection);
 template void
-ArgumentEncodingContext::encodeShaderResources<PipelineStage::Hull, true>(const MTL_SHADER_REFLECTION *reflection);
+ArgumentEncodingContext::encodeShaderResources<PipelineStage::Hull, PipelineKind::Tessellation>(const MTL_SHADER_REFLECTION *reflection);
 template void
-ArgumentEncodingContext::encodeShaderResources<PipelineStage::Domain, true>(const MTL_SHADER_REFLECTION *reflection);
+ArgumentEncodingContext::encodeShaderResources<PipelineStage::Domain, PipelineKind::Tessellation>(const MTL_SHADER_REFLECTION *reflection);
 template void
-ArgumentEncodingContext::encodeShaderResources<PipelineStage::Compute, false>(const MTL_SHADER_REFLECTION *reflection);
+ArgumentEncodingContext::encodeShaderResources<PipelineStage::Compute, PipelineKind::Ordinary>(const MTL_SHADER_REFLECTION *reflection);
+template void
+ArgumentEncodingContext::encodeShaderResources<PipelineStage::Vertex, PipelineKind::Geometry>(const MTL_SHADER_REFLECTION *reflection);
+template void
+ArgumentEncodingContext::encodeShaderResources<PipelineStage::Geometry, PipelineKind::Geometry>(const MTL_SHADER_REFLECTION *reflection);
+template void
+ArgumentEncodingContext::encodeShaderResources<PipelineStage::Pixel, PipelineKind::Geometry>(const MTL_SHADER_REFLECTION *reflection);
 
-template <PipelineStage stage, bool TessellationDraw>
+template <PipelineStage stage, PipelineKind kind>
 void
 ArgumentEncodingContext::encodeShaderResources(const MTL_SHADER_REFLECTION *reflection) {
   auto BindingCount = reflection->NumArguments;
@@ -189,7 +208,7 @@ ArgumentEncodingContext::encodeShaderResources(const MTL_SHADER_REFLECTION *refl
           encoded_buffer[arg.StructurePtrOffset] = srv.buffer->current()->gpuAddress + srv.slice.byteOffset;
           encoded_buffer[arg.StructurePtrOffset + 1] = srv.slice.byteLength;
           access(srv.buffer, srv.slice.byteOffset, srv.slice.byteLength, DXMT_ENCODER_RESOURCE_ACESS_READ);
-          makeResident<stage, TessellationDraw>(srv.buffer.ptr());
+          makeResident<stage, kind>(srv.buffer.ptr());
         } else {
           encoded_buffer[arg.StructurePtrOffset] = 0;
           encoded_buffer[arg.StructurePtrOffset + 1] = 0;
@@ -201,14 +220,14 @@ ArgumentEncodingContext::encodeShaderResources(const MTL_SHADER_REFLECTION *refl
               access(srv.buffer, srv.viewId, DXMT_ENCODER_RESOURCE_ACESS_READ)->gpuResourceID()._impl;
           encoded_buffer[arg.StructurePtrOffset + 1] =
               ((uint64_t)srv.slice.elementCount << 32) | (uint64_t)srv.slice.firstElement;
-          makeResident<stage, TessellationDraw>(srv.buffer.ptr(), srv.viewId);
+          makeResident<stage, kind>(srv.buffer.ptr(), srv.viewId);
         } else if (srv.texture.ptr()) {
           assert(arg.Flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE_MINLOD_CLAMP);
           auto viewIdChecked = srv.texture->checkViewUseArray(srv.viewId, arg.Flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE_ARRAY);
           encoded_buffer[arg.StructurePtrOffset] =
               access(srv.texture, viewIdChecked, DXMT_ENCODER_RESOURCE_ACESS_READ)->gpuResourceID()._impl;
           encoded_buffer[arg.StructurePtrOffset + 1] = 0;
-          makeResident<stage, TessellationDraw>(srv.texture.ptr(), viewIdChecked);
+          makeResident<stage, kind>(srv.texture.ptr(), viewIdChecked);
         } else {
           encoded_buffer[arg.StructurePtrOffset] = 0;
           encoded_buffer[arg.StructurePtrOffset + 1] = 0;
@@ -229,7 +248,7 @@ ArgumentEncodingContext::encodeShaderResources(const MTL_SHADER_REFLECTION *refl
           encoded_buffer[arg.StructurePtrOffset] = uav.buffer->current()->gpuAddress + uav.slice.byteOffset;
           encoded_buffer[arg.StructurePtrOffset + 1] = uav.slice.byteLength;
           access(uav.buffer, uav.slice.byteOffset, uav.slice.byteLength, access_flags);
-          makeResident<stage, TessellationDraw>(uav.buffer.ptr(), read, write);
+          makeResident<stage, kind>(uav.buffer.ptr(), read, write);
         } else {
           encoded_buffer[arg.StructurePtrOffset] = 0;
           encoded_buffer[arg.StructurePtrOffset + 1] = 0;
@@ -240,13 +259,13 @@ ArgumentEncodingContext::encodeShaderResources(const MTL_SHADER_REFLECTION *refl
           encoded_buffer[arg.StructurePtrOffset] = access(uav.buffer, uav.viewId, access_flags)->gpuResourceID()._impl;
           encoded_buffer[arg.StructurePtrOffset + 1] =
               ((uint64_t)uav.slice.elementCount << 32) | (uint64_t)uav.slice.firstElement;
-          makeResident<stage, TessellationDraw>(uav.buffer.ptr(), uav.viewId, read, write);
+          makeResident<stage, kind>(uav.buffer.ptr(), uav.viewId, read, write);
         } else if (uav.texture.ptr()) {
           assert(arg.Flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE_MINLOD_CLAMP);
           auto viewIdChecked = uav.texture->checkViewUseArray(uav.viewId, arg.Flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE_ARRAY);
           encoded_buffer[arg.StructurePtrOffset] = access(uav.texture, viewIdChecked, access_flags)->gpuResourceID()._impl;
           encoded_buffer[arg.StructurePtrOffset + 1] = 0;
-          makeResident<stage, TessellationDraw>(uav.texture.ptr(), viewIdChecked, read, write);
+          makeResident<stage, kind>(uav.texture.ptr(), viewIdChecked, read, write);
         } else {
           encoded_buffer[arg.StructurePtrOffset] = 0;
           encoded_buffer[arg.StructurePtrOffset + 1] = 0;
@@ -256,7 +275,7 @@ ArgumentEncodingContext::encodeShaderResources(const MTL_SHADER_REFLECTION *refl
         if (uav.counter) {
           encoded_buffer[arg.StructurePtrOffset + 2] = uav.counter->current()->gpuAddress;
           access(uav.counter, 0, 4, DXMT_ENCODER_RESOURCE_ACESS_READ | DXMT_ENCODER_RESOURCE_ACESS_WRITE);
-          makeResident<stage, TessellationDraw>(uav.counter.ptr(), true, true);
+          makeResident<stage, kind>(uav.counter.ptr(), true, true);
         } else {
           /*
            * potentially cause gpu pagefault, even providing a dummy buffer doesn't improve since the returned
@@ -275,8 +294,10 @@ ArgumentEncodingContext::encodeShaderResources(const MTL_SHADER_REFLECTION *refl
   } else if constexpr (stage == PipelineStage::Hull) {
     encodePreTessCommand([offset](RenderCommandContext &ctx) { ctx.encoder->setMeshBufferOffset(offset, 30); });
   } else if constexpr (stage == PipelineStage::Vertex) {
-    if constexpr (TessellationDraw)
+    if constexpr (kind == PipelineKind::Tessellation)
       encodePreTessCommand([offset](RenderCommandContext &ctx) { ctx.encoder->setObjectBufferOffset(offset, 30); });
+    else if constexpr (kind == PipelineKind::Geometry)
+      encodeRenderCommand([offset](RenderCommandContext &ctx) { ctx.encoder->setObjectBufferOffset(offset, 30); });
     else
       encodeRenderCommand([offset](RenderCommandContext &ctx) { ctx.encoder->setVertexBufferOffset(offset, 30); });
   } else {
@@ -285,6 +306,8 @@ ArgumentEncodingContext::encodeShaderResources(const MTL_SHADER_REFLECTION *refl
         ctx.encoder->setFragmentBufferOffset(offset, 30);
       } else if constexpr (stage == PipelineStage::Domain) {
         ctx.encoder->setVertexBufferOffset(offset, 30);
+      } else if constexpr (stage == PipelineStage::Geometry) {
+        ctx.encoder->setMeshBufferOffset(offset, 30);
       } else {
         assert(0 && "Not implemented or unreachable");
       }
@@ -614,6 +637,14 @@ ArgumentEncodingContext::flushCommands(MTL::CommandBuffer *cmdbuf, uint64_t seqI
         data->pretess_cmds.execute(ctx);
         encoder->memoryBarrier(MTL::BarrierScopeBuffers, MTL::RenderStageMesh, MTL::RenderStageVertex);
       }
+      if (data->use_geometry && !data->use_tessellation) {
+        ctx.encoder->setObjectBuffer(gpu_buffer_, 0, 16);
+        ctx.encoder->setObjectBuffer(gpu_buffer_, 0, 21); // draw arguments
+        ctx.encoder->setObjectBuffer(gpu_buffer_, 0, 29);
+        ctx.encoder->setObjectBuffer(gpu_buffer_, 0, 30);
+        ctx.encoder->setMeshBuffer(gpu_buffer_, 0, 29);
+        ctx.encoder->setMeshBuffer(gpu_buffer_, 0, 30);
+      }
       data->cmds.execute(ctx);
       ctx.encoder->endEncoding();
       data->~RenderEncoderData();
@@ -867,6 +898,7 @@ ArgumentEncodingContext::checkEncoderRelation(EncoderData *former, EncoderData *
       r0->pretess_cmds.append(std::move(r1->pretess_cmds));
       r1->pretess_cmds = std::move(r0->pretess_cmds);
       r1->use_tessellation = r0->use_tessellation || r1->use_tessellation;
+      r1->use_geometry = r0->use_geometry || r1->use_geometry;
       r1->use_visibility_result = r0->use_visibility_result || r1->use_visibility_result;
 
       r1->buf_read.merge(r0->buf_read);
