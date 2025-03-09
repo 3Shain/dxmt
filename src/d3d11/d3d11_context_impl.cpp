@@ -51,8 +51,9 @@ to_metal_primitive_type(D3D11_PRIMITIVE_TOPOLOGY topo, MTL::PrimitiveType& primi
   case D3D_PRIMITIVE_TOPOLOGY_LINESTRIP_ADJ:
   case D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST_ADJ:
   case D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP_ADJ:
-    WARN("adjacency topology is not implemented.");
-    return false;
+    // geometry
+    primitive = MTL::PrimitiveTypePoint;
+    break;
   case D3D_PRIMITIVE_TOPOLOGY_1_CONTROL_POINT_PATCHLIST:
   case D3D_PRIMITIVE_TOPOLOGY_2_CONTROL_POINT_PATCHLIST:
   case D3D_PRIMITIVE_TOPOLOGY_3_CONTROL_POINT_PATCHLIST:
@@ -3689,7 +3690,6 @@ public:
     }
 
     switch (state_.InputAssembler.Topology) {
-    case D3D11_PRIMITIVE_TOPOLOGY_LINESTRIP_ADJ:
     case D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP_ADJ:
       EmitST([](ArgumentEncodingContext &enc) {
         enc.setCompatibilityFlag(FeatureCompatibility::UnsupportedGeometryDraw);

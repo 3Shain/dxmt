@@ -386,6 +386,19 @@ convert_dxbc_geometry_shader(
       load_vertex(builder.CreateAdd(leading_vertex_index, builder.getInt32(1)), 1);
       break;
     }
+    case microsoft::D3D10_SB_PRIMITIVE_LINE_ADJ: {
+      /*
+      primitive 0: {0, 1, 2, 3}
+      primitive 1: {1, 2, 3, 4}
+      ...
+      primitive n: {n, n+1, n+2, n+3}
+      */
+      load_vertex(leading_vertex_index, 0);
+      load_vertex(builder.CreateAdd(leading_vertex_index, builder.getInt32(1)), 1);
+      load_vertex(builder.CreateAdd(leading_vertex_index, builder.getInt32(2)), 2);
+      load_vertex(builder.CreateAdd(leading_vertex_index, builder.getInt32(3)), 3);
+      break;
+    }
     default:
       return llvm::make_error<UnsupportedFeature>(std::format(
           "unhandled geometry shader input primitive strip: {}", (uint32_t)pShaderInternal->gs_input_primitive
