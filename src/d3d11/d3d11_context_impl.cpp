@@ -574,6 +574,12 @@ struct DXMT_DRAW_INDEXED_ARGUMENTS {
   uint32_t StartInstance;
 };
 
+struct DXMT_DISPATCH_ARGUMENTS {
+  uint32_t X;
+  uint32_t Y;
+  uint32_t Z;
+};
+
 template <typename ContextInternalState>
 class MTLD3D11ContextExt;
 
@@ -1313,13 +1319,13 @@ public:
       draw_arugment->InstanceCount = InstanceCount;
       draw_arugment->StartInstance = StartInstanceLocation;
 
-      auto [vertex_count_per_wrap, unused] = get_gs_vertex_primitive_count(topo);
-      auto wrap_count = (VertexCountPerInstance - 1) / vertex_count_per_wrap + 1;
+      auto [vertex_per_warp, unused] = get_gs_vertex_primitive_count(topo);
+      auto warp_count = (VertexCountPerInstance - 1) / vertex_per_warp + 1;
       enc.bumpVisibilityResultOffset();
       enc.encodeRenderCommand([=](RenderCommandContext &ctx) {
         auto &encoder = ctx.encoder;
         encoder->setObjectBufferOffset(offset, 21);
-        encoder->drawMeshThreadgroups({wrap_count, InstanceCount, 1}, {vertex_count_per_wrap, 1, 1}, {1, 1, 1});
+        encoder->drawMeshThreadgroups({warp_count, InstanceCount, 1}, {vertex_per_warp, 1, 1}, {1, 1, 1});
       });
     });
   }
@@ -1340,14 +1346,14 @@ public:
       draw_arugment->InstanceCount = InstanceCount;
       draw_arugment->StartInstance = BaseInstance;
 
-      auto [vertex_count_per_wrap, unused] = get_gs_vertex_primitive_count(topo);
-      auto wrap_count = (IndexCountPerInstance - 1) / vertex_count_per_wrap + 1;
+      auto [vertex_per_warp, unused] = get_gs_vertex_primitive_count(topo);
+      auto warp_count = (IndexCountPerInstance - 1) / vertex_per_warp + 1;
       enc.bumpVisibilityResultOffset();
       enc.encodeRenderCommand([=, index = Obj(enc.currentIndexBuffer())](RenderCommandContext &ctx) {
         auto &encoder = ctx.encoder;
         encoder->setObjectBuffer(index, IndexBufferOffset, 20);
         encoder->setObjectBufferOffset(offset, 21);
-        encoder->drawMeshThreadgroups({wrap_count, InstanceCount, 1}, {vertex_count_per_wrap, 1, 1}, {1, 1, 1});
+        encoder->drawMeshThreadgroups({warp_count, InstanceCount, 1}, {vertex_per_warp, 1, 1}, {1, 1, 1});
       });
     });
   }
@@ -1362,10 +1368,7 @@ public:
     if (status == DrawCallStatus::Invalid)
       return;
     if (status == DrawCallStatus::Geometry) {
-      EmitST([](ArgumentEncodingContext &enc) {
-        enc.setCompatibilityFlag(FeatureCompatibility::UnsupportedGeometryDraw);
-      });
-      return;
+      return GeometryDrawIndexedIndirect(pBufferForArgs, AlignedByteOffsetForArgs);
     }
     if (ControlPointCount) {
       EmitST([](ArgumentEncodingContext &enc) {
@@ -1400,10 +1403,7 @@ public:
     if (status == DrawCallStatus::Invalid)
       return;
     if (status == DrawCallStatus::Geometry) {
-      EmitST([](ArgumentEncodingContext &enc) {
-        enc.setCompatibilityFlag(FeatureCompatibility::UnsupportedGeometryDraw);
-      });
-      return;
+      return GeometryDrawIndirect(pBufferForArgs, AlignedByteOffsetForArgs);
     }
     if (ControlPointCount) {
       EmitST([](ArgumentEncodingContext &enc) {
@@ -1417,6 +1417,55 @@ public:
         enc.bumpVisibilityResultOffset();
         enc.encodeRenderCommand([&, buffer](RenderCommandContext &ctx) {
           ctx.encoder->drawPrimitives(Primitive, buffer, AlignedByteOffsetForArgs);
+        });
+      });
+    }
+  }
+
+  void
+  GeometryDrawIndirect(
+    ID3D11Buffer *pBufferForArgs, UINT AlignedByteOffsetForArgs
+  ) {
+    if (auto bindable = reinterpret_cast<D3D11ResourceCommon *>(pBufferForArgs)) {
+      EmitOP([=, topo = state_.InputAssembler.Topology, ArgBuffer = bindable->buffer()](ArgumentEncodingContext &enc) {
+        auto buffer = enc.access(ArgBuffer, AlignedByteOffsetForArgs, 20, DXMT_ENCODER_RESOURCE_ACESS_READ);
+        auto dispatch_arg_offset = enc.allocate_gpu_heap(sizeof(DXMT_DISPATCH_ARGUMENTS), 4);
+  
+        auto [vertex_per_warp, unused] = get_gs_vertex_primitive_count(topo);
+  
+        enc.bumpVisibilityResultOffset();
+        enc.encodeGSDispatchArgumentsMarshal(buffer, AlignedByteOffsetForArgs, vertex_per_warp, dispatch_arg_offset);
+        enc.encodeRenderCommand([=](RenderCommandContext &ctx) {
+          auto &encoder = ctx.encoder;
+          encoder->setObjectBuffer(buffer, AlignedByteOffsetForArgs, 21);
+          encoder->drawMeshThreadgroups(ctx.current_gpu_heap, dispatch_arg_offset, {vertex_per_warp, 1, 1}, {1, 1, 1});
+          encoder->setObjectBuffer(ctx.current_gpu_heap, 0, 21);
+        });
+      });
+    }
+  }
+
+  void
+  GeometryDrawIndexedIndirect(
+    ID3D11Buffer *pBufferForArgs, UINT AlignedByteOffsetForArgs
+  ) {
+    auto IndexBufferOffset = state_.InputAssembler.IndexBufferOffset;
+
+    if (auto bindable = reinterpret_cast<D3D11ResourceCommon *>(pBufferForArgs)) {
+      EmitOP([=, topo = state_.InputAssembler.Topology, ArgBuffer = bindable->buffer()](ArgumentEncodingContext &enc) {
+        auto buffer = enc.access(ArgBuffer, AlignedByteOffsetForArgs, 20, DXMT_ENCODER_RESOURCE_ACESS_READ);
+        auto dispatch_arg_offset = enc.allocate_gpu_heap(sizeof(DXMT_DISPATCH_ARGUMENTS), 4);
+  
+        auto [vertex_per_warp, unused] = get_gs_vertex_primitive_count(topo);
+  
+        enc.bumpVisibilityResultOffset();
+        enc.encodeGSDispatchArgumentsMarshal(buffer, AlignedByteOffsetForArgs, vertex_per_warp, dispatch_arg_offset);
+        enc.encodeRenderCommand([=, index = Obj(enc.currentIndexBuffer())](RenderCommandContext &ctx) {
+          auto &encoder = ctx.encoder;
+          encoder->setObjectBuffer(index, IndexBufferOffset, 20);
+          encoder->setObjectBuffer(buffer, AlignedByteOffsetForArgs, 21);
+          encoder->drawMeshThreadgroups(ctx.current_gpu_heap, dispatch_arg_offset, {vertex_per_warp, 1, 1}, {1, 1, 1});
+          encoder->setObjectBuffer(ctx.current_gpu_heap, 0, 21);
         });
       });
     }

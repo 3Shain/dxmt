@@ -110,12 +110,21 @@ struct EncoderData {
 struct RenderCommandContext {
   MTL::RenderCommandEncoder *encoder;
   uint32_t dsv_planar_flags;
+  MTL::Buffer *current_gpu_heap;
+};
+
+struct GSDispatchArgumentsMarshal {
+  Obj<MTL::Buffer> draw_arguments;
+  uint32_t draw_arguments_offset;
+  uint32_t vertex_count_per_warp;
+  uint32_t dispatch_arguments_offset;
 };
 
 struct RenderEncoderData : EncoderData {
   Obj<MTL::RenderPassDescriptor> descriptor;
   CommandList<RenderCommandContext> cmds;
   CommandList<RenderCommandContext> pretess_cmds;
+  std::vector<GSDispatchArgumentsMarshal> gs_arg_marshal_tasks;
   uint32_t dsv_planar_flags;
   uint32_t render_target_count = 0;
   bool use_visibility_result = 0;
@@ -453,6 +462,15 @@ public:
     assert(encoder_current->type == EncoderType::Render);
     auto &cmds = static_cast<RenderEncoderData *>(encoder_current)->cmds;
     cmds.emit(std::forward<cmd>(fn), allocate_cpu_heap(cmds.calculateCommandSize<cmd>(), 16));
+  }
+
+  void
+  encodeGSDispatchArgumentsMarshal(
+      MTL::Buffer *draw_args, uint32_t draw_args_offset, uint32_t vertex_count_per_warp, uint32_t write_offset
+  ) {
+    assert(encoder_current->type == EncoderType::Render);
+    auto data = static_cast<RenderEncoderData *>(encoder_current);
+    data->gs_arg_marshal_tasks.push_back({draw_args, draw_args_offset, vertex_count_per_warp, write_offset});
   }
 
   template <CommandWithContext<RenderCommandContext> cmd>
