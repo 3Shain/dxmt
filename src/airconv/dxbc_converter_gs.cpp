@@ -15,7 +15,7 @@ namespace dxmt::dxbc {
 using namespace microsoft;
 
 std::tuple<uint32_t, uint32_t, uint32_t>
-get_vertex_primitive_count_in_wrap(D3D10_SB_PRIMITIVE primitive, bool strip) {
+get_vertex_primitive_count_in_warp(D3D10_SB_PRIMITIVE primitive, bool strip) {
   switch (primitive) {
   case D3D10_SB_PRIMITIVE_POINT:
     return {32, 32, 1};
@@ -167,10 +167,10 @@ convert_dxbc_geometry_shader(
   llvm::IRBuilder<> builder(entry_bb);
   setup_fastmath_flag(module, builder);
 
-  auto [wrap_vertex_count, wrap_primitive_count, vertex_per_primitive] =
-      get_vertex_primitive_count_in_wrap(pShaderInternal->gs_input_primitive, is_strip);
+  auto [warp_vertex_count, warp_primitive_count, vertex_per_primitive] =
+      get_vertex_primitive_count_in_warp(pShaderInternal->gs_input_primitive, is_strip);
   auto thread_position_in_group = function->getArg(tg_in_grid_idx);
-  auto primitive_id_in_wrap = builder.CreateExtractElement(thread_position_in_group, (uint32_t)0);
+  auto primitive_id_in_warp = builder.CreateExtractElement(thread_position_in_group, (uint32_t)0);
 
   auto const zero_const = builder.getInt32(0);
   auto const one_const = builder.getInt32(1);
@@ -325,7 +325,7 @@ convert_dxbc_geometry_shader(
 
   builder.CreateCondBr(
       builder.CreateICmpNE(
-          builder.CreateAnd(valid_primitive_mask, builder.CreateShl(one_const, primitive_id_in_wrap)), zero_const
+          builder.CreateAnd(valid_primitive_mask, builder.CreateShl(one_const, primitive_id_in_warp)), zero_const
       ),
       active_, epilogue_bb
   );
@@ -357,7 +357,7 @@ convert_dxbc_geometry_shader(
   };
 
   if (is_strip) {
-    auto leading_vertex_index = primitive_id_in_wrap;
+    auto leading_vertex_index = primitive_id_in_warp;
     switch (pShaderInternal->gs_input_primitive) {
     case microsoft::D3D10_SB_PRIMITIVE_TRIANGLE: {
       /*
@@ -405,7 +405,7 @@ convert_dxbc_geometry_shader(
       ));
     }
   } else {
-    auto leading_vertex_index = builder.CreateMul(builder.getInt32(vertex_per_primitive), primitive_id_in_wrap);
+    auto leading_vertex_index = builder.CreateMul(builder.getInt32(vertex_per_primitive), primitive_id_in_warp);
     for (uint32_t vid = 0; vid < vertex_per_primitive; vid++) {
       load_vertex(builder.CreateAdd(leading_vertex_index, builder.getInt32(vid)), vid);
     }
@@ -500,10 +500,10 @@ convert_dxbc_vertex_for_geometry_shader(
   setup_binding_table(shader_info, resource_map, func_signature, module);
 
   uint32_t payload_idx = func_signature.DefineInput(air::InputPayload{.size = 16256});
-  // (wrap_size, 1, 1)
+  // (warp_size, 1, 1)
   uint32_t thread_id_idx = func_signature.DefineInput(air::InputThreadPositionInThreadgroup{});
-  // (wrap_count, instance_count, 1)
-  // wrap_count = ceil(index_count / wrap_size)
+  // (warp_count, instance_count, 1)
+  // warp_count = ceil(index_count / warp_size)
   uint32_t tg_id_idx = func_signature.DefineInput(air::InputThreadgroupPositionInGrid{});
   uint32_t mesh_props_idx = func_signature.DefineInput(air::InputMeshGridProperties{});
   uint32_t draw_argument_idx = func_signature.DefineInput(air::ArgumentBindingBuffer{
@@ -549,10 +549,10 @@ convert_dxbc_vertex_for_geometry_shader(
 
   auto payload = function->getArg(payload_idx);
   auto thread_position_in_group = function->getArg(thread_id_idx);
-  auto wrap_vertex_id = builder.CreateExtractElement(thread_position_in_group, (uint32_t)0);
+  auto warp_vertex_id = builder.CreateExtractElement(thread_position_in_group, (uint32_t)0);
 
   auto threadgroup_position_in_grid = function->getArg(tg_id_idx);
-  auto wrap_id = builder.CreateExtractElement(threadgroup_position_in_grid, (uint32_t)0);
+  auto warp_id = builder.CreateExtractElement(threadgroup_position_in_grid, (uint32_t)0);
   auto instance_id = builder.CreateExtractElement(threadgroup_position_in_grid, (uint32_t)1);
 
   auto draw_arguments = builder.CreateLoad(
@@ -569,8 +569,8 @@ convert_dxbc_vertex_for_geometry_shader(
   );
   resource_map.input_element_count = max_input_register;
 
-  auto [wrap_vertex_count, wrap_primitive_count, vertex_per_primitive] =
-      get_vertex_primitive_count_in_wrap(pGeometryStage->gs_input_primitive, is_strip);
+  auto [warp_vertex_count, warp_primitive_count, vertex_per_primitive] =
+      get_vertex_primitive_count_in_warp(pGeometryStage->gs_input_primitive, is_strip);
 
   auto payload_output_ptr = builder.CreateConstInBoundsGEP1_32(
       types._int, payload, 4
@@ -582,7 +582,7 @@ convert_dxbc_vertex_for_geometry_shader(
   );
   resource_map.output.ptr_int4 = builder.CreateGEP(
       resource_map.output.ptr_int4->getType()->getNonOpaquePointerElementType(), resource_map.output.ptr_int4,
-      {wrap_vertex_id}
+      {warp_vertex_id}
   );
   resource_map.output.ptr_float4 = builder.CreateBitCast(
       payload_output_ptr,
@@ -590,7 +590,7 @@ convert_dxbc_vertex_for_geometry_shader(
   );
   resource_map.output.ptr_float4 = builder.CreateGEP(
       resource_map.output.ptr_float4->getType()->getNonOpaquePointerElementType(), resource_map.output.ptr_float4,
-      {wrap_vertex_id}
+      {warp_vertex_id}
   );
 
   resource_map.output_element_count = max_output_register;
@@ -609,7 +609,7 @@ convert_dxbc_vertex_for_geometry_shader(
   };
 
   auto global_index_id =
-      builder.CreateAdd(builder.CreateMul(wrap_id, builder.getInt32(wrap_vertex_count)), wrap_vertex_id);
+      builder.CreateAdd(builder.CreateMul(warp_id, builder.getInt32(warp_vertex_count)), warp_vertex_id);
 
   // explicit initialization
   builder.CreateAtomicRMW(
@@ -643,7 +643,7 @@ convert_dxbc_vertex_for_geometry_shader(
   builder.SetInsertPoint(active);
 
   builder.CreateAtomicRMW(
-      llvm::AtomicRMWInst::BinOp::Or, valid_vertex_mask, builder.CreateShl(builder.getInt32(1), wrap_vertex_id),
+      llvm::AtomicRMWInst::BinOp::Or, valid_vertex_mask, builder.CreateShl(builder.getInt32(1), warp_vertex_id),
       llvm::Align(4), llvm::AtomicOrdering::Monotonic
   );
 
@@ -678,7 +678,7 @@ convert_dxbc_vertex_for_geometry_shader(
   }
 
   builder.CreateCondBr(
-      builder.CreateICmp(llvm::CmpInst::ICMP_EQ, wrap_vertex_id, builder.getInt32(0)), dispatch, return_
+      builder.CreateICmp(llvm::CmpInst::ICMP_EQ, warp_vertex_id, builder.getInt32(0)), dispatch, return_
   );
   builder.SetInsertPoint(dispatch);
 
@@ -694,7 +694,7 @@ convert_dxbc_vertex_for_geometry_shader(
   pvalue valid_primitive_mask = builder.getInt32(0);
   auto valid_vertex_result = builder.CreateLoad(types._int, valid_vertex_mask);
 
-  for (unsigned primitive_id = 0; primitive_id < wrap_primitive_count; primitive_id++) {
+  for (unsigned primitive_id = 0; primitive_id < warp_primitive_count; primitive_id++) {
     pvalue primitive_valid_result = builder.getInt1(1);
     uint32_t primitive_vertices_mask = 0;
     // TODO: check primitive is valid
@@ -745,7 +745,7 @@ convert_dxbc_vertex_for_geometry_shader(
   if (auto err = air::call_set_mesh_properties(
                      function->getArg(mesh_props_idx),
                      llvm::ConstantVector::get(
-                         {llvm::ConstantInt::get(ctx.llvm, llvm::APInt{32, wrap_primitive_count}),
+                         {llvm::ConstantInt::get(ctx.llvm, llvm::APInt{32, warp_primitive_count}),
                           llvm::ConstantInt::get(ctx.llvm, llvm::APInt{32, 1}),
                           llvm::ConstantInt::get(ctx.llvm, llvm::APInt{32, 1})}
                      )
