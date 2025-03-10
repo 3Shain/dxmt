@@ -2552,7 +2552,6 @@ int SM50Initialize(
         sm50_shader->gs_max_vertex_output = Inst.m_GSMaxOutputVertexCountDecl.MaxOutputVertexCount;
         break;
       case D3D11_SB_OPCODE_DCL_GS_INSTANCE_COUNT:
-        assert(0 && "unhandled gs instancing");
         sm50_shader->gs_instance_count = Inst.m_GSInstanceCountDecl.InstanceCount;
         break;
       case D3D11_SB_OPCODE_DCL_STREAM:

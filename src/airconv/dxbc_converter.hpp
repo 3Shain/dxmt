@@ -188,6 +188,8 @@ struct io_binding_map {
 
   llvm::Value *thread_id_in_patch = nullptr;
 
+  llvm::Value *gs_instance_id = nullptr;
+
   // special registers (output)
   llvm::AllocaInst *depth_output_reg = nullptr;
   llvm::AllocaInst *stencil_ref_reg = nullptr;

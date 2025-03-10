@@ -169,8 +169,9 @@ convert_dxbc_geometry_shader(
 
   auto [warp_vertex_count, warp_primitive_count, vertex_per_primitive] =
       get_vertex_primitive_count_in_warp(pShaderInternal->gs_input_primitive, is_strip);
-  auto thread_position_in_group = function->getArg(tg_in_grid_idx);
-  auto primitive_id_in_warp = builder.CreateExtractElement(thread_position_in_group, (uint32_t)0);
+  auto tg_position_in_grid = function->getArg(tg_in_grid_idx);
+  auto primitive_id_in_warp = builder.CreateExtractElement(tg_position_in_grid, (uint32_t)0);
+  resource_map.gs_instance_id = builder.CreateExtractElement(tg_position_in_grid, (uint32_t)1);
 
   auto const zero_const = builder.getInt32(0);
   auto const one_const = builder.getInt32(1);
@@ -746,7 +747,7 @@ convert_dxbc_vertex_for_geometry_shader(
                      function->getArg(mesh_props_idx),
                      llvm::ConstantVector::get(
                          {llvm::ConstantInt::get(ctx.llvm, llvm::APInt{32, warp_primitive_count}),
-                          llvm::ConstantInt::get(ctx.llvm, llvm::APInt{32, 1}),
+                          llvm::ConstantInt::get(ctx.llvm, llvm::APInt{32, pGeometryStage->gs_instance_count}),
                           llvm::ConstantInt::get(ctx.llvm, llvm::APInt{32, 1})}
                      )
       )
