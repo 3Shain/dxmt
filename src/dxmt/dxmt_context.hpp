@@ -214,9 +214,12 @@ constexpr DXMT_RESOURCE_RESIDENCY
 GetResidencyMask(PipelineStage type, bool read, bool write) {
   switch (type) {
   case PipelineStage::Vertex:
-    if constexpr (kind != PipelineKind::Ordinary)
+    if constexpr (kind == PipelineKind::Tessellation)
       return (read ? DXMT_RESOURCE_RESIDENCY_OBJECT_READ : DXMT_RESOURCE_RESIDENCY_NULL) |
              (write ? DXMT_RESOURCE_RESIDENCY_OBJECT_WRITE : DXMT_RESOURCE_RESIDENCY_NULL);
+    else if constexpr (kind == PipelineKind::Geometry)
+      return (read ? DXMT_RESOURCE_RESIDENCY_OBJECT_GS_READ : DXMT_RESOURCE_RESIDENCY_NULL) |
+             (write ? DXMT_RESOURCE_RESIDENCY_OBJECT_GS_WRITE : DXMT_RESOURCE_RESIDENCY_NULL);
     else
       return (read ? DXMT_RESOURCE_RESIDENCY_VERTEX_READ : DXMT_RESOURCE_RESIDENCY_NULL) |
              (write ? DXMT_RESOURCE_RESIDENCY_VERTEX_WRITE : DXMT_RESOURCE_RESIDENCY_NULL);
@@ -224,9 +227,11 @@ GetResidencyMask(PipelineStage type, bool read, bool write) {
     return (read ? DXMT_RESOURCE_RESIDENCY_FRAGMENT_READ : DXMT_RESOURCE_RESIDENCY_NULL) |
            (write ? DXMT_RESOURCE_RESIDENCY_FRAGMENT_WRITE : DXMT_RESOURCE_RESIDENCY_NULL);
   case PipelineStage::Hull:
-  case PipelineStage::Geometry:
     return (read ? DXMT_RESOURCE_RESIDENCY_MESH_READ : DXMT_RESOURCE_RESIDENCY_NULL) |
            (write ? DXMT_RESOURCE_RESIDENCY_MESH_WRITE : DXMT_RESOURCE_RESIDENCY_NULL);
+  case PipelineStage::Geometry:
+    return (read ? DXMT_RESOURCE_RESIDENCY_MESH_GS_READ : DXMT_RESOURCE_RESIDENCY_NULL) |
+           (write ? DXMT_RESOURCE_RESIDENCY_MESH_GS_WRITE : DXMT_RESOURCE_RESIDENCY_NULL);
   case PipelineStage::Domain:
     return (read ? DXMT_RESOURCE_RESIDENCY_VERTEX_READ : DXMT_RESOURCE_RESIDENCY_NULL) |
            (write ? DXMT_RESOURCE_RESIDENCY_VERTEX_WRITE : DXMT_RESOURCE_RESIDENCY_NULL);
