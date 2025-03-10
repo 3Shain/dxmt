@@ -164,58 +164,58 @@ inline bool is_strip_topology(D3D11_PRIMITIVE_TOPOLOGY topo) {
 }
 
 inline std::pair<uint32_t, uint32_t>
-get_gs_vertex_primitive_count(D3D11_PRIMITIVE_TOPOLOGY primitive) {
+get_gs_vertex_count(D3D11_PRIMITIVE_TOPOLOGY primitive) {
   switch (primitive) {
   case D3D_PRIMITIVE_TOPOLOGY_POINTLIST:
     return {32, 32};
   case D3D_PRIMITIVE_TOPOLOGY_LINELIST:
-    return {32, 16};
+    return {32, 32};
   case D3D_PRIMITIVE_TOPOLOGY_LINESTRIP:
     return {32, 31};
   case D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST:
-    return {30, 10};
+    return {30, 30};
   case D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP:
     return {32, 30};
   case D3D_PRIMITIVE_TOPOLOGY_LINELIST_ADJ:
-    return {32, 8};
+    return {32, 32};
   case D3D_PRIMITIVE_TOPOLOGY_LINESTRIP_ADJ:
     return {32, 29};
   case D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST_ADJ:
-    return {30, 5};
+    return {30, 30};
   case D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP_ADJ:
-    return {32, 14};
+    return {32, 28};
   case D3D_PRIMITIVE_TOPOLOGY_1_CONTROL_POINT_PATCHLIST:
   return {32, 32};
   case D3D_PRIMITIVE_TOPOLOGY_2_CONTROL_POINT_PATCHLIST:
-  return {32, 16};
+  return {32, 32};
   case D3D_PRIMITIVE_TOPOLOGY_3_CONTROL_POINT_PATCHLIST:
-  return {30, 10};
+  return {30, 30};
   case D3D_PRIMITIVE_TOPOLOGY_4_CONTROL_POINT_PATCHLIST:
-  return {32, 8};
+  return {32, 32};
   case D3D_PRIMITIVE_TOPOLOGY_5_CONTROL_POINT_PATCHLIST:
-  return {30, 6};
+  return {30, 30};
   case D3D_PRIMITIVE_TOPOLOGY_6_CONTROL_POINT_PATCHLIST:
-  return {30, 5};
+  return {30, 30};
   case D3D_PRIMITIVE_TOPOLOGY_7_CONTROL_POINT_PATCHLIST:
-  return {28, 4};
+  return {28, 28};
   case D3D_PRIMITIVE_TOPOLOGY_8_CONTROL_POINT_PATCHLIST:
-  return {32, 4};
+  return {32, 32};
   case D3D_PRIMITIVE_TOPOLOGY_9_CONTROL_POINT_PATCHLIST:
-  return {27, 3};
+  return {27, 27};
   case D3D_PRIMITIVE_TOPOLOGY_10_CONTROL_POINT_PATCHLIST:
-  return {30, 3};
+  return {30, 30};
   case D3D_PRIMITIVE_TOPOLOGY_11_CONTROL_POINT_PATCHLIST:
-  return {22, 2};
+  return {22, 22};
   case D3D_PRIMITIVE_TOPOLOGY_12_CONTROL_POINT_PATCHLIST:
-  return {24, 2};
+  return {24, 24};
   case D3D_PRIMITIVE_TOPOLOGY_13_CONTROL_POINT_PATCHLIST:
-  return {26, 2};
+  return {26, 26};
   case D3D_PRIMITIVE_TOPOLOGY_14_CONTROL_POINT_PATCHLIST:
-  return {28, 2};
+  return {28, 28};
   case D3D_PRIMITIVE_TOPOLOGY_15_CONTROL_POINT_PATCHLIST:
-  return {30, 2};
+  return {30, 30};
   case D3D_PRIMITIVE_TOPOLOGY_16_CONTROL_POINT_PATCHLIST:
-  return {32, 2};
+  return {32, 32};
   case D3D_PRIMITIVE_TOPOLOGY_17_CONTROL_POINT_PATCHLIST:
   case D3D_PRIMITIVE_TOPOLOGY_18_CONTROL_POINT_PATCHLIST:
   case D3D_PRIMITIVE_TOPOLOGY_19_CONTROL_POINT_PATCHLIST:
@@ -232,7 +232,10 @@ get_gs_vertex_primitive_count(D3D11_PRIMITIVE_TOPOLOGY primitive) {
   case D3D_PRIMITIVE_TOPOLOGY_30_CONTROL_POINT_PATCHLIST:
   case D3D_PRIMITIVE_TOPOLOGY_31_CONTROL_POINT_PATCHLIST:
   case D3D_PRIMITIVE_TOPOLOGY_32_CONTROL_POINT_PATCHLIST:
-    return {uint32_t(primitive) - uint32_t(D3D_PRIMITIVE_TOPOLOGY_1_CONTROL_POINT_PATCHLIST) + 1, 1};
+    return {
+      uint32_t(primitive) - uint32_t(D3D_PRIMITIVE_TOPOLOGY_1_CONTROL_POINT_PATCHLIST) + 1, 
+      uint32_t(primitive) - uint32_t(D3D_PRIMITIVE_TOPOLOGY_1_CONTROL_POINT_PATCHLIST) + 1
+    };
   default:
     break;
   }
@@ -1319,8 +1322,8 @@ public:
       draw_arugment->InstanceCount = InstanceCount;
       draw_arugment->StartInstance = StartInstanceLocation;
 
-      auto [vertex_per_warp, unused] = get_gs_vertex_primitive_count(topo);
-      auto warp_count = (VertexCountPerInstance - 1) / vertex_per_warp + 1;
+      auto [vertex_per_warp, vertex_increment_per_wrap] = get_gs_vertex_count(topo);
+      auto warp_count = (VertexCountPerInstance - 1) / vertex_increment_per_wrap + 1;
       enc.bumpVisibilityResultOffset();
       enc.encodeRenderCommand([=](RenderCommandContext &ctx) {
         auto &encoder = ctx.encoder;
@@ -1346,8 +1349,8 @@ public:
       draw_arugment->InstanceCount = InstanceCount;
       draw_arugment->StartInstance = BaseInstance;
 
-      auto [vertex_per_warp, unused] = get_gs_vertex_primitive_count(topo);
-      auto warp_count = (IndexCountPerInstance - 1) / vertex_per_warp + 1;
+      auto [vertex_per_warp, vertex_increment_per_wrap] = get_gs_vertex_count(topo);
+      auto warp_count = (IndexCountPerInstance - 1) / vertex_increment_per_wrap + 1;
       enc.bumpVisibilityResultOffset();
       enc.encodeRenderCommand([=, index = Obj(enc.currentIndexBuffer())](RenderCommandContext &ctx) {
         auto &encoder = ctx.encoder;
@@ -1431,10 +1434,12 @@ public:
         auto buffer = enc.access(ArgBuffer, AlignedByteOffsetForArgs, 20, DXMT_ENCODER_RESOURCE_ACESS_READ);
         auto dispatch_arg_offset = enc.allocate_gpu_heap(sizeof(DXMT_DISPATCH_ARGUMENTS), 4);
   
-        auto [vertex_per_warp, unused] = get_gs_vertex_primitive_count(topo);
+        auto [vertex_per_warp, vertex_increment_per_wrap] = get_gs_vertex_count(topo);
   
         enc.bumpVisibilityResultOffset();
-        enc.encodeGSDispatchArgumentsMarshal(buffer, AlignedByteOffsetForArgs, vertex_per_warp, dispatch_arg_offset);
+        enc.encodeGSDispatchArgumentsMarshal(
+          buffer, AlignedByteOffsetForArgs, vertex_increment_per_wrap, dispatch_arg_offset
+        );
         enc.encodeRenderCommand([=](RenderCommandContext &ctx) {
           auto &encoder = ctx.encoder;
           encoder->setObjectBuffer(buffer, AlignedByteOffsetForArgs, 21);
@@ -1456,10 +1461,12 @@ public:
         auto buffer = enc.access(ArgBuffer, AlignedByteOffsetForArgs, 20, DXMT_ENCODER_RESOURCE_ACESS_READ);
         auto dispatch_arg_offset = enc.allocate_gpu_heap(sizeof(DXMT_DISPATCH_ARGUMENTS), 4);
   
-        auto [vertex_per_warp, unused] = get_gs_vertex_primitive_count(topo);
+        auto [vertex_per_warp, vertex_increment_per_wrap] = get_gs_vertex_count(topo);
   
         enc.bumpVisibilityResultOffset();
-        enc.encodeGSDispatchArgumentsMarshal(buffer, AlignedByteOffsetForArgs, vertex_per_warp, dispatch_arg_offset);
+        enc.encodeGSDispatchArgumentsMarshal(
+          buffer, AlignedByteOffsetForArgs, vertex_increment_per_wrap, dispatch_arg_offset
+        );
         enc.encodeRenderCommand([=, index = Obj(enc.currentIndexBuffer())](RenderCommandContext &ctx) {
           auto &encoder = ctx.encoder;
           encoder->setObjectBuffer(index, IndexBufferOffset, 20);
