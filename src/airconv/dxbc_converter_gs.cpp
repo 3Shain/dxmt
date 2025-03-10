@@ -21,19 +21,19 @@ get_vertex_primitive_count_in_warp(D3D10_SB_PRIMITIVE primitive, bool strip) {
     return {32, 32, 1};
   case D3D10_SB_PRIMITIVE_LINE:
     if (strip)
-      return {32, 31, 2};
+      return {31, 31, 2};
     return {32, 16, 2};
   case D3D10_SB_PRIMITIVE_TRIANGLE:
     if (strip)
-      return {32, 30, 3};
+      return {30, 30, 3};
     return {30, 10, 3};
   case D3D10_SB_PRIMITIVE_LINE_ADJ:
     if (strip)
-      return {32, 29, 4};
+      return {29, 29, 4};
     return {32, 8, 4};
   case D3D10_SB_PRIMITIVE_TRIANGLE_ADJ:
     if (strip)
-      return {32, 14, 6};
+      return {28, 14, 6};
     return {30, 5, 6};
   case D3D11_SB_PRIMITIVE_1_CONTROL_POINT_PATCH:
     return {32, 32, 1};
