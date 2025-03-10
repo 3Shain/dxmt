@@ -3746,16 +3746,6 @@ public:
       return DrawCallStatus::Invalid;
     }
 
-    switch (state_.InputAssembler.Topology) {
-    case D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP_ADJ:
-      EmitST([](ArgumentEncodingContext &enc) {
-        enc.setCompatibilityFlag(FeatureCompatibility::UnsupportedGeometryDraw);
-      });
-      return DrawCallStatus::Invalid;
-    default:
-      break;
-    }
-
     Com<IMTLCompiledGeometryPipeline> pipeline;
 
     MTL_GRAPHICS_PIPELINE_DESC pipelineDesc;
