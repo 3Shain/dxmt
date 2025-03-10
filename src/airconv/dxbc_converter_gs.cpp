@@ -400,6 +400,35 @@ convert_dxbc_geometry_shader(
       load_vertex(builder.CreateAdd(leading_vertex_index, builder.getInt32(3)), 3);
       break;
     }
+    case microsoft::D3D10_SB_PRIMITIVE_TRIANGLE_ADJ: {
+      /*
+      assume 16 vertices for 6 primitives:
+      primitive 0: {0, (-2), 2, 6, 4, 3}
+      primitive 1: {2, 5, 6, 8, 4, 0}
+      primitive 2: {4, 2, 6,10, 8, 7}
+      primitive 3: {6, 9,10,12, 8, 4}
+      primitive 4: {8, 6, 10,14,12,11}
+      primitive 5: {10,13,14,(16),12,8}
+      ...
+      primitive n (inter): {2n, -, 2(n + 1 + (n & 1)), -, 2(n + 2 - (n & 1)), -}
+      primitive n (outer1): {-, is_even(n) ? 2n - 2 :2n + 3 : , -, -, -, -} mod 17 (-2 mapped to 15)
+      primitive n (outer2): {-, -, -, 6 + 2n, -, -} mod 15 (16 mapped to 1)
+      primitive n (outer3): {-, -, -, -, -, is_even(n) ? 2n + 3: 2n - 2}
+      */
+      auto double_ = [&](pvalue val) { return builder.CreateMul(two_const, val);};
+      auto odd_bit = builder.CreateAnd(leading_vertex_index, one_const);
+      auto _2n = double_(leading_vertex_index);
+      load_vertex(_2n, 0);
+      load_vertex(double_(builder.CreateAdd(builder.CreateAdd(leading_vertex_index, one_const), odd_bit)), 2);
+      load_vertex(double_(builder.CreateSub(builder.CreateAdd(leading_vertex_index, two_const), odd_bit)), 4);
+      auto _2np3 = builder.CreateAdd(_2n, builder.getInt32(3));
+      auto _2nm2 = builder.CreateSub(_2n, two_const);
+      auto is_odd = builder.CreateICmpEQ(odd_bit, one_const);
+      load_vertex(builder.CreateURem(builder.CreateSelect(is_odd, _2np3, _2nm2), builder.getInt32(33)), 1);
+      load_vertex(builder.CreateURem(builder.CreateAdd(_2n, builder.getInt32(6)), builder.getInt32(31)), 3);
+      load_vertex(builder.CreateSelect(is_odd, _2nm2, _2np3), 5);
+      break;
+    }
     default:
       return llvm::make_error<UnsupportedFeature>(std::format(
           "unhandled geometry shader input primitive strip: {}", (uint32_t)pShaderInternal->gs_input_primitive
@@ -475,6 +504,7 @@ convert_dxbc_vertex_for_geometry_shader(
     arg = (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)arg->next;
   }
 
+  bool is_triadj_strip = is_strip && pGeometryStage->gs_input_primitive == D3D10_SB_PRIMITIVE_TRIANGLE_ADJ;
   bool is_indexed_draw = ia_layout && ia_layout->index_buffer_format > 0;
 
   IREffect prologue([](auto) { return std::monostate(); });
@@ -612,6 +642,29 @@ convert_dxbc_vertex_for_geometry_shader(
   auto global_index_id =
       builder.CreateAdd(builder.CreateMul(warp_id, builder.getInt32(warp_vertex_count)), warp_vertex_id);
 
+  if (is_triadj_strip) {
+    // 2nd and 32th vertex are not read but 33th and -2th (or 1st) are.
+    auto const one_const = builder.getInt32(1);
+    auto signed_max = [&](pvalue a, pvalue b) {
+      return builder.CreateSelect(builder.CreateICmpSLT(a, b), b, a);
+    };
+    auto signed_min = [&](pvalue a, pvalue b) {
+      return builder.CreateSelect(builder.CreateICmpSLT(a, b), a, b);
+    };
+
+    auto is_second_thread = builder.CreateICmpEQ(warp_vertex_id, one_const);
+    global_index_id = builder.CreateSelect(
+      is_second_thread,
+      builder.CreateAdd(global_index_id, builder.getInt32(31)), global_index_id
+    );
+    auto is_last_thread = builder.CreateICmpEQ(warp_vertex_id, builder.getInt32(31));
+    global_index_id = builder.CreateSelect(
+      is_last_thread,
+      signed_max(one_const, builder.CreateSub(global_index_id, builder.getInt32(33))),
+      signed_min(global_index_id, builder.CreateSub(vertex_count, one_const)) // may degenerate
+    );
+  }
+
   // explicit initialization
   builder.CreateAtomicRMW(
       llvm::AtomicRMWInst::BinOp::And, valid_vertex_mask, builder.getInt32(0), llvm::Align(4),
@@ -714,7 +767,14 @@ convert_dxbc_vertex_for_geometry_shader(
         break;
       }
       case microsoft::D3D10_SB_PRIMITIVE_TRIANGLE_ADJ: {
-        primitive_vertices_mask = 0b111111 << primitive_id;
+        auto odd_primitive = primitive_id & 1;
+        auto _2n = primitive_id << 1;
+        primitive_vertices_mask |= 1 << 2 * primitive_id;
+        primitive_vertices_mask |= 1 << 2 * (primitive_id + 1 + odd_primitive);
+        primitive_vertices_mask |= 1 << 2 * (primitive_id + 2 - odd_primitive);
+        primitive_vertices_mask |= 1 << ((odd_primitive ? _2n + 3 : _2n - 2) % 33);
+        primitive_vertices_mask |= 1 << ((6 + 2 * primitive_id) % 31);
+        primitive_vertices_mask |= 1 << (odd_primitive ? _2n - 2 : _2n + 3);
         break;
       }
       default:
