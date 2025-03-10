@@ -147,7 +147,7 @@ public:
   MarshalGSDispatchArguments(MTL::RenderCommandEncoder *encoder, MTL::Buffer *commands, uint32_t commands_offset) {
     encoder->setRenderPipelineState(gs_draw_arguments_marshal);
     encoder->setVertexBuffer(commands, commands_offset, 0);
-    encoder->drawPrimitives(MTL::PrimitiveTypePoint, uint32_t(0), uint32_t(1));
+    encoder->drawPrimitives(MTL::PrimitiveTypePoint, NS::UInteger(0), NS::UInteger(1));
     encoder->setVertexBuffer(nullptr, 0, 0);
   }
 
