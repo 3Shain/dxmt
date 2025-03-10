@@ -1414,6 +1414,11 @@ IRValue load_src<SrcOperandAttribute, false>(SrcOperandAttribute attr) {
     vec = co_yield extend_to_vec4(ctx.resource.patch_id);
     break;
   }
+  case shader::common::InputAttribute::GSInstanceId: {
+    assert(ctx.resource.gs_instance_id);
+    vec = co_yield extend_to_vec4(ctx.resource.gs_instance_id);
+    break;
+  }
   }
   co_return vec;
 };
@@ -1472,6 +1477,11 @@ IRValue load_src<SrcOperandAttribute, true>(SrcOperandAttribute attr) {
   case shader::common::InputAttribute::PrimitiveId: {
     assert(ctx.resource.patch_id);
     vec = co_yield extend_to_vec4(ctx.resource.patch_id) >>= bitcast_float4;
+    break;
+  }
+  case shader::common::InputAttribute::GSInstanceId: {
+    assert(ctx.resource.gs_instance_id);
+    vec = co_yield extend_to_vec4(ctx.resource.gs_instance_id) >>= bitcast_float4;
     break;
   }
   }
