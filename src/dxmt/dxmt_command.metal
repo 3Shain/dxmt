@@ -201,3 +201,32 @@ constexpr sampler s(coord::normalized);
     output = pow(output, 1.0 / 2.2);
   return output;
 }
+
+struct DXMTDispatchArguments {
+  uint x;
+  uint y;
+  uint z;
+};
+
+struct DXMTGSDispatchMarshal {
+  constant uint2& draw_arguments; // (vertex|index_count, index_count)
+  device DXMTDispatchArguments& output;
+  uint vertex_count_per_warp;
+  uint end_of_command;
+};
+
+[[vertex]] void gs_draw_arguments_marshal(
+    constant DXMTGSDispatchMarshal* tasks [[buffer(0)]]
+) {
+  uint index = 0;
+  for(;;) {
+    constant DXMTGSDispatchMarshal& task = tasks[index];
+
+    task.output.x = (task.draw_arguments.x - 1) / task.vertex_count_per_warp + 1;
+    task.output.y = task.draw_arguments.y;
+    task.output.z = 1;
+
+    if (task.end_of_command)
+      break;
+  };
+}

@@ -620,7 +620,7 @@ ArgumentEncodingContext::flushCommands(MTL::CommandBuffer *cmdbuf, uint64_t seqI
         data->descriptor->setVisibilityResultBuffer(visibility_readback->visibility_result_heap);
       }
       auto encoder = cmdbuf->renderCommandEncoder(data->descriptor.ptr());
-      RenderCommandContext ctx{encoder, data->dsv_planar_flags};
+      RenderCommandContext ctx{encoder, data->dsv_planar_flags, gpu_buffer_};
       ctx.encoder->setVertexBuffer(gpu_buffer_, 0, 16);
       ctx.encoder->setVertexBuffer(gpu_buffer_, 0, 29);
       ctx.encoder->setVertexBuffer(gpu_buffer_, 0, 30);
@@ -644,6 +644,33 @@ ArgumentEncodingContext::flushCommands(MTL::CommandBuffer *cmdbuf, uint64_t seqI
         ctx.encoder->setObjectBuffer(gpu_buffer_, 0, 30);
         ctx.encoder->setMeshBuffer(gpu_buffer_, 0, 29);
         ctx.encoder->setMeshBuffer(gpu_buffer_, 0, 30);
+      }
+      if (data->gs_arg_marshal_tasks.size()) {
+        auto task_count = data->gs_arg_marshal_tasks.size();
+        struct GS_MARSHAL_TASK {
+          uint64_t draw_args;
+          uint64_t dispatch_args_out;
+          uint32_t vertex_count_per_warp;
+          uint32_t end_of_command;
+        };
+        auto offset = allocate_gpu_heap(sizeof(GS_MARSHAL_TASK) * task_count, 8);
+        auto tasks_data = (GS_MARSHAL_TASK *)((char*)gpu_buffer_->contents() + offset);
+        for (unsigned i = 0; i<task_count; i++) {
+          auto & task = data->gs_arg_marshal_tasks[i];
+          tasks_data[i].draw_args = task.draw_arguments->gpuAddress() + task.draw_arguments_offset;
+          tasks_data[i].dispatch_args_out = gpu_buffer_->gpuAddress() + task.dispatch_arguments_offset;
+          tasks_data[i].vertex_count_per_warp = task.vertex_count_per_warp;
+          tasks_data[i].end_of_command = 0;
+          encoder->useResource(task.draw_arguments, MTL::ResourceUsageRead, MTL::RenderStageVertex);
+        }
+        tasks_data[task_count - 1].end_of_command = 1;
+        // FIXME: 
+        encoder->useResource(gpu_buffer_, MTL::ResourceUsageWrite | MTL::ResourceUsageRead, MTL::RenderStageVertex);
+        queue_.emulated_cmd.MarshalGSDispatchArguments(ctx.encoder, gpu_buffer_, offset);
+        encoder->memoryBarrier(
+            MTL::BarrierScopeBuffers, MTL::RenderStageVertex,
+            MTL::RenderStageVertex | MTL::RenderStageMesh | MTL::RenderStageObject
+        );
       }
       data->cmds.execute(ctx);
       ctx.encoder->endEncoding();
@@ -899,6 +926,12 @@ ArgumentEncodingContext::checkEncoderRelation(EncoderData *former, EncoderData *
       r1->pretess_cmds = std::move(r0->pretess_cmds);
       r1->use_tessellation = r0->use_tessellation || r1->use_tessellation;
       r1->use_geometry = r0->use_geometry || r1->use_geometry;
+      std::move(
+        r1->gs_arg_marshal_tasks.begin(),
+        r1->gs_arg_marshal_tasks.end(),
+        std::back_inserter(r0->gs_arg_marshal_tasks)
+      );
+      r1->gs_arg_marshal_tasks = std::move(r0->gs_arg_marshal_tasks);
       r1->use_visibility_result = r0->use_visibility_result || r1->use_visibility_result;
 
       r1->buf_read.merge(r0->buf_read);

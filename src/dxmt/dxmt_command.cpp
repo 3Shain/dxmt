@@ -48,6 +48,15 @@ EmulatedCommandContext::EmulatedCommandContext(MTL::Device *device) {
     present_swapchain_scale = transfer(device->newRenderPipelineState(present_pipeline, &error));
   }
 
+  auto gs_draw_arguments_marshal_vs = 
+      transfer(library->newFunction(NS::String::string("gs_draw_arguments_marshal", NS::ASCIIStringEncoding)));
+  {
+    auto gs_marshal_pipeline = MTL::RenderPipelineDescriptor::alloc()->init();
+    gs_marshal_pipeline->setVertexFunction(gs_draw_arguments_marshal_vs);
+    gs_marshal_pipeline->setRasterizationEnabled(false);
+    gs_draw_arguments_marshal = transfer(device->newRenderPipelineState(gs_marshal_pipeline, &error));
+  }
+
   dispatch_release(dispatch_data);
 }
 } // namespace dxmt

@@ -143,6 +143,14 @@ public:
     encoder->endEncoding();
   }
 
+  void
+  MarshalGSDispatchArguments(MTL::RenderCommandEncoder *encoder, MTL::Buffer *commands, uint32_t commands_offset) {
+    encoder->setRenderPipelineState(gs_draw_arguments_marshal);
+    encoder->setVertexBuffer(commands, commands_offset, 0);
+    encoder->drawPrimitives(MTL::PrimitiveTypePoint, uint32_t(0), uint32_t(1));
+    encoder->setVertexBuffer(nullptr, 0, 0);
+  }
+
 private:
   Obj<MTL::ComputePipelineState> clear_texture_1d_uint_pipeline;
   Obj<MTL::ComputePipelineState> clear_texture_1d_array_uint_pipeline;
@@ -160,6 +168,7 @@ private:
 
   Obj<MTL::RenderPipelineState> present_swapchain_blit;
   Obj<MTL::RenderPipelineState> present_swapchain_scale;
+  Obj<MTL::RenderPipelineState> gs_draw_arguments_marshal;
 };
 
 } // namespace dxmt
