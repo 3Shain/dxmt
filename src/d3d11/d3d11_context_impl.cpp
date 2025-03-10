@@ -3631,11 +3631,7 @@ public:
     Desc.BlendState = state_.OutputMerger.BlendState ? state_.OutputMerger.BlendState : default_blend_state;
     Desc.DepthStencilFormat =
         state_.OutputMerger.DSV ? state_.OutputMerger.DSV->GetPixelFormat() : MTL::PixelFormatInvalid;
-    if (unlikely(Desc.HullShader != nullptr)) {
-      Desc.TopologyClass = to_metal_primitive_topology(state_.InputAssembler.Topology);
-    } else {
-      Desc.TopologyClass = MTL::PrimitiveTopologyClassUnspecified;
-    }
+    Desc.TopologyClass = to_metal_primitive_topology(state_.InputAssembler.Topology);
     bool ds_enabled =
         (state_.OutputMerger.DepthStencilState ? state_.OutputMerger.DepthStencilState : default_depth_stencil_state)
             ->IsEnabled();
