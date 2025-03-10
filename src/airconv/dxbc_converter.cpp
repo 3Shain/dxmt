@@ -1835,6 +1835,7 @@ bool CheckGSBBIsPassThrough(dxmt::dxbc::BasicBlock *bb) {
     bool matched = std::visit(
       patterns{
         [](InstNop &) { return true; }, [](InstMov &mov) { return true; },
+        [](InstEmit &) { return true; }, [](InstCut &) { return true; },
         [](auto &) { return false; }
       },
       inst
