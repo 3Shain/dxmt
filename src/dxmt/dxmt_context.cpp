@@ -56,7 +56,7 @@ ArgumentEncodingContext::encodeVertexBuffers(uint32_t slot_mask) {
       continue;
     }
     auto current = buffer->current();
-    auto length = current->buffer()->length();
+    auto length = buffer->length();
     entries[index].buffer_handle = current->gpuAddress + state.offset;
     entries[index].stride = state.stride;
     entries[index++].length = length > state.offset ? length - state.offset : 0;

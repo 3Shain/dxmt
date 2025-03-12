@@ -116,7 +116,7 @@ Buffer::allocate(Flags<BufferAllocationFlag> flags) {
   if (flags.test(BufferAllocationFlag::GpuManaged)) {
     options |= MTL::ResourceStorageModeManaged;
   }
-  return new BufferAllocation(transfer(device_->newBuffer(length_, options)), flags);
+  return new BufferAllocation(transfer(device_->newBuffer(std::max(length_, 16ull), options)), flags);
 };
 
 Rc<BufferAllocation>
