@@ -31,3 +31,8 @@ winemetal_unix_dll = shared_library('winemetal', winemetal_unix_src,
   build_rpath         : '@loader_path/:@loader_path/../../',
   override_options    : { 'b_asneeded' : false },
 )
+
+meson.add_install_script(
+  'install.sh', get_option('strip').to_string(), unix_install_dir, 
+  install_tag: 'runtime'
+)

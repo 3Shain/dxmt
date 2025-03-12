@@ -10,8 +10,10 @@ nvngx_dll = shared_library('nvngx', nvngx_src,
   dependencies        : [ util_dep ],
   include_directories : [ dxmt_include_path ],
   install             : true,
+  install_dir         : windows_install_dir,
   link_args           : nvngx_ld_args,
   link_depends        : [ nvngx_link_depends ],
+  install_tag         : 'nvext',
 )
 
 # always build as a wine-builtin dll

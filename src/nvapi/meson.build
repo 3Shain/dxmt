@@ -10,9 +10,11 @@ nvapi_dll = shared_library('nvapi64', nvapi_src,
   dependencies        : [ util_dep ],
   include_directories : [ dxmt_include_path, include_directories('../../external/nvapi') ],
   install             : true,
+  install_dir         : windows_install_dir,
   vs_module_defs      : 'nvapi64.def',
   link_args           : nvapi_ld_args,
   link_depends        : [ nvapi_link_depends ],
+  install_tag         : 'nvext',
 )
 
 if wine_builtin_dll
