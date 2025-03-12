@@ -1,4 +1,3 @@
 [binaries]
 c = 'clang'
 cpp = 'clang++'
-llvm-config = '/usr/local/opt/llvm/bin/llvm-config'
