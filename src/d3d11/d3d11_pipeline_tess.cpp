@@ -123,8 +123,8 @@ public:
     }
     pipelineDescriptor->setRasterizationEnabled(RasterizationEnabled);
 
-    pipelineDescriptor->setMaxTessellationFactor(
-        hull_reflection.Tessellator.MaxFactor);
+    uint32_t max_tess_factor = hull_reflection.Tessellator.MaxFactor;
+    max_tess_factor = std::max(1u, std::min(64u, max_tess_factor));
     switch ((microsoft::D3D11_SB_TESSELLATOR_PARTITIONING)
                 hull_reflection.Tessellator.Partition) {
     case microsoft::D3D11_SB_TESSELLATOR_PARTITIONING_INTEGER:
@@ -134,18 +134,22 @@ public:
     case microsoft::D3D11_SB_TESSELLATOR_PARTITIONING_POW2:
       pipelineDescriptor->setTessellationPartitionMode(
           MTL::TessellationPartitionModePow2);
+      max_tess_factor = max_tess_factor & ((1u << (31 - __builtin_clz(max_tess_factor)))); // force pow2
       break;
     case microsoft::D3D11_SB_TESSELLATOR_PARTITIONING_FRACTIONAL_ODD:
       pipelineDescriptor->setTessellationPartitionMode(
           MTL::TessellationPartitionModeFractionalOdd);
+      max_tess_factor = max_tess_factor & (~1u); // force even number
       break;
     case microsoft::D3D11_SB_TESSELLATOR_PARTITIONING_FRACTIONAL_EVEN:
       pipelineDescriptor->setTessellationPartitionMode(
           MTL::TessellationPartitionModeFractionalEven);
+      max_tess_factor = max_tess_factor & (~1u); // force even number
       break;
     case microsoft::D3D11_SB_TESSELLATOR_PARTITIONING_UNDEFINED:
       break;
     }
+    pipelineDescriptor->setMaxTessellationFactor(max_tess_factor);
     switch (hull_reflection.Tessellator.OutputPrimitive) {
     default:
       D3D11_ASSERT(0 && "unexpected tessellator output primitive");
