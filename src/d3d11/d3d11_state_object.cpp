@@ -112,7 +112,7 @@ constexpr MTL::BlendFactor kBlendFactorMap[] = {
     MTL::BlendFactorZero,       // invalid,12
     MTL::BlendFactorZero,       // invalid,13
     MTL::BlendFactorBlendColor, // BLEND_FACTOR
-    MTL::BlendFactorOneMinusBlendAlpha,
+    MTL::BlendFactorOneMinusBlendColor,
     MTL::BlendFactorSource1Color,
     MTL::BlendFactorOneMinusSource1Color,
     MTL::BlendFactorSource1Alpha,
