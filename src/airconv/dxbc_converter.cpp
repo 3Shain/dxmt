@@ -25,8 +25,6 @@
 
 #include "airconv_context.hpp"
 
-#include "abrt_handle.h"
-
 #include "ftl.hpp"
 
 class SM50CompiledBitcodeInternal {
@@ -2924,14 +2922,10 @@ void SM50Destroy(SM50Shader *pShader) {
   delete (dxmt::dxbc::SM50ShaderInternal *)pShader;
 }
 
-ABRT_HANDLE_INIT
-
 int SM50Compile(
   SM50Shader *pShader, SM50_SHADER_COMPILATION_ARGUMENT_DATA *pArgs,
   const char *FunctionName, SM50CompiledBitcode **ppBitcode, SM50Error **ppError
 ) {
-  ABRT_HANDLE_RETURN(42)
-
   using namespace llvm;
   using namespace dxmt;
 
@@ -3001,8 +2995,6 @@ int SM50CompileTessellationPipelineVertex(
   struct SM50_SHADER_COMPILATION_ARGUMENT_DATA *pVertexShaderArgs,
   const char *FunctionName, SM50CompiledBitcode **ppBitcode, SM50Error **ppError
 ) {
-  ABRT_HANDLE_RETURN(42)
-
   using namespace llvm;
   using namespace dxmt;
 
@@ -3066,8 +3058,6 @@ int SM50CompileTessellationPipelineHull(
   struct SM50_SHADER_COMPILATION_ARGUMENT_DATA *pHullShaderArgs,
   const char *FunctionName, SM50CompiledBitcode **ppBitcode, SM50Error **ppError
 ) {
-  ABRT_HANDLE_RETURN(42)
-
   using namespace llvm;
   using namespace dxmt;
 
@@ -3133,8 +3123,6 @@ int SM50CompileTessellationPipelineDomain(
   struct SM50_SHADER_COMPILATION_ARGUMENT_DATA *pDomainShaderArgs,
   const char *FunctionName, SM50CompiledBitcode **ppBitcode, SM50Error **ppError
 ) {
-  ABRT_HANDLE_RETURN(42)
-
   using namespace llvm;
   using namespace dxmt;
 
@@ -3206,8 +3194,6 @@ int SM50CompileGeometryPipelineVertex(
   struct SM50_SHADER_COMPILATION_ARGUMENT_DATA *pVertexShaderArgs,
   const char *FunctionName, SM50CompiledBitcode **ppBitcode, SM50Error **ppError
 ) {
-  ABRT_HANDLE_RETURN(42)
-
   using namespace llvm;
   using namespace dxmt;
 
@@ -3271,8 +3257,6 @@ int SM50CompileGeometryPipelineGeometry(
   struct SM50_SHADER_COMPILATION_ARGUMENT_DATA *pGeometryShaderArgs,
   const char *FunctionName, SM50CompiledBitcode **ppBitcode, SM50Error **ppError
 ) {
-  ABRT_HANDLE_RETURN(42)
-
   using namespace llvm;
   using namespace dxmt;
 
