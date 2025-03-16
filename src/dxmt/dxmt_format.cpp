@@ -110,7 +110,7 @@ FormatCapabilityInspector::Inspect(MTL::Device *device) {
     )
     APPEND_CAP(
         MTL::PixelFormatRGBA32Float, FormatCapability::Write | FormatCapability::Color | FormatCapability::MSAA |
-                                         FormatCapability::Sparse | TEXTURE_BUFFER_ALL_CAP
+                                         FormatCapability::Sparse | FormatCapability::Blend | TEXTURE_BUFFER_ALL_CAP
     )
 
     // compressed : TODO
