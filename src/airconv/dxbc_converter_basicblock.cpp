@@ -22,6 +22,7 @@
 #include "llvm/IR/Type.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/raw_ostream.h"
+#include <stack>
 
 char dxmt::UnsupportedFeature::ID;
 
@@ -2196,14 +2197,50 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
   auto &builder = ctx.builder;
   auto function = ctx.function;
   std::unordered_map<BasicBlock *, llvm::BasicBlock *> visited;
-  std::function<llvm::Error(std::shared_ptr<BasicBlock>)> readBasicBlock =
-    [&](std::shared_ptr<BasicBlock> current) -> llvm::Error {
-    if (visited.contains(current.get())) {
-      return llvm::Error::success();
-    }
-    auto bb = llvm::BasicBlock::Create(context, current->debug_name, function);
-    auto [_, inserted] = visited.insert({current.get(), bb});
-    assert(inserted);
+
+  std::stack<BasicBlock *> block_to_visit;
+  block_to_visit.push(entry.get());
+
+  while (!block_to_visit.empty()) {
+    auto current = block_to_visit.top();
+    block_to_visit.pop();
+    if (visited.contains(current)) continue;
+    visited.insert({current, llvm::BasicBlock::Create(context, current->debug_name, function)});
+    std::visit(
+      patterns{
+        [](BasicBlockUndefined) {
+          return;
+        },
+        [&](BasicBlockReturn ret) {
+          return;
+        },
+        [&](BasicBlockUnconditionalBranch uncond) {
+          block_to_visit.push(uncond.target.get());
+        },
+        [&](BasicBlockConditionalBranch cond) {
+          block_to_visit.push(cond.true_branch.get());
+          block_to_visit.push(cond.false_branch.get());
+        },
+        [&](BasicBlockSwitch swc)  {
+          block_to_visit.push(swc.case_default.get());
+          for (auto &[val, case_bb] : swc.cases) {
+            block_to_visit.push(case_bb.get());
+          }
+        },
+        [&](BasicBlockInstanceBarrier instance)  {
+          block_to_visit.push(instance.active.get());
+          block_to_visit.push(instance.sync.get());
+        },
+        [&](BasicBlockHullShaderWriteOutput hull_end)  {
+          block_to_visit.push(hull_end.epilogue.get());
+        },
+      },
+      current->target
+    );
+  }
+
+  auto bb_pop = builder.GetInsertBlock();
+  for (auto &[current, bb] : visited) {
     IREffect effect([](auto) { return std::monostate(); });
     for (auto &inst : current->instructions) {
       std::visit(
@@ -4825,7 +4862,6 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
         inst
       );
     }
-    auto bb_pop = builder.GetInsertBlock();
     builder.SetInsertPoint(bb);
     if (auto err = effect.build(ctx).takeError()) {
       return err;
@@ -4838,20 +4874,11 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
               );
             },
             [&](BasicBlockUnconditionalBranch uncond) -> llvm::Error {
-              if (auto err = readBasicBlock(uncond.target)) {
-                return err;
-              }
               auto target_bb = visited[uncond.target.get()];
               builder.CreateBr(target_bb);
               return llvm::Error::success();
             },
             [&](BasicBlockConditionalBranch cond) -> llvm::Error {
-              if (auto err = readBasicBlock(cond.true_branch)) {
-                return err;
-              };
-              if (auto err = readBasicBlock(cond.false_branch)) {
-                return err;
-              };
               auto target_true_bb = visited[cond.true_branch.get()];
               auto target_false_bb = visited[cond.false_branch.get()];
               auto test =
@@ -4864,9 +4891,6 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
               return llvm::Error::success();
             },
             [&](BasicBlockSwitch swc) -> llvm::Error {
-              if (auto err = readBasicBlock(swc.case_default)) {
-                return err;
-              };
               auto value =
                 (load_src_op<false>(swc.value) >>= extract_element(0))
                   .build(ctx);
@@ -4877,9 +4901,6 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                 value.get(), visited[swc.case_default.get()], swc.cases.size()
               );
               for (auto &[val, case_bb] : swc.cases) {
-                if (auto err = readBasicBlock(case_bb)) {
-                  return err;
-                }
                 switch_inst->addCase(
                   llvm::ConstantInt::get(context, llvm::APInt(32, val)),
                   visited[case_bb.get()]
@@ -4894,12 +4915,6 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
               return llvm::Error::success();
             },
             [&](BasicBlockInstanceBarrier instance) -> llvm::Error {
-              if (auto err = readBasicBlock(instance.active)) {
-                return err;
-              }
-              if (auto err = readBasicBlock(instance.sync)) {
-                return err;
-              }
               auto target_true_bb = visited[instance.active.get()];
               auto target_false_bb = visited[instance.sync.get()];
               builder.CreateCondBr(
@@ -4913,10 +4928,6 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
               return llvm::Error::success();
             },
             [&](BasicBlockHullShaderWriteOutput hull_end) -> llvm::Error {
-              if (auto err = readBasicBlock(hull_end.epilogue)) {
-                return err;
-              }
-
               auto active = llvm::BasicBlock::Create(
                 context, "write_control_point", function
               );
@@ -4987,13 +4998,9 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
         )) {
       return err;
     };
-    builder.SetInsertPoint(bb_pop);
-    return llvm::Error::success();
   };
-  if (auto err = readBasicBlock(entry)) {
-    return std::move(err);
-  }
   assert(visited.count(entry.get()) == 1);
+  builder.SetInsertPoint(bb_pop);
   return visited[entry.get()];
 }
 
