@@ -98,6 +98,9 @@ public:
                ID3D11Buffer **ppBuffer) override {
     InitReturnPtr(ppBuffer);
 
+    if (pDesc->ByteWidth == 0 && !(pDesc->MiscFlags & D3D11_RESOURCE_MISC_TILE_POOL))
+      return E_INVALIDARG; 
+
     try {
       switch (pDesc->Usage) {
       case D3D11_USAGE_DEFAULT:
