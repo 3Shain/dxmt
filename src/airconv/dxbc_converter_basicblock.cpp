@@ -356,6 +356,7 @@ auto to_desired_type_from_int_vec4(pvalue vec4, llvm::Type *desired, uint32_t ma
             ctx.builder.CreateBitCast(vec4, ctx.types._float4),
             {masked(0), masked(1), masked(2), masked(3)}
           );
+        // FIXME: 3d/2d vector implementations are unused and probably wrong!
         if (desired == ctx.types._int3)
           return ctx.builder.CreateShuffleVector(
             vec4, {masked(0), masked(1), masked(2)}
@@ -371,10 +372,10 @@ auto to_desired_type_from_int_vec4(pvalue vec4, llvm::Type *desired, uint32_t ma
             convert(vec4, ctx.types._float4), {masked(0), masked(1)}
           );
         if (desired == ctx.types._int)
-          return ctx.builder.CreateExtractElement(vec4, (uint64_t)0);
+          return ctx.builder.CreateExtractElement(vec4, (uint64_t)__builtin_ctz(mask));
         if (desired == ctx.types._float)
           return ctx.builder.CreateExtractElement(
-            ctx.builder.CreateBitCast(vec4, ctx.types._float4), (uint64_t)0
+            ctx.builder.CreateBitCast(vec4, ctx.types._float4), (uint64_t)__builtin_ctz(mask)
           );
         assert(0 && "unhandled vec4");
       };
