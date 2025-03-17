@@ -1,0 +1,67 @@
+name: "Build and Upload Release"
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      target_tag:
+        description: "tag"
+        required: true
+
+permissions:
+  contents: "write"
+  packages: "write"
+  pull-requests: "read"
+  attestations: "write"
+  id-token: "write"
+
+jobs:
+  build:
+    runs-on: macos-14
+    env:
+      TAG_NAME: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.target_tag || github.ref_name }}
+    steps:
+        - name: Checkout
+          uses: actions/checkout@v4
+          with:
+            ref: ${{ env.TAG_NAME }}
+            submodules: true
+        - name: Cache Toolchains
+          id: cache-toolchains
+          uses: actions/cache@v4
+          with:
+            key: cache-key-${{ hashFiles('configure.sh') }}
+            restore-keys: |
+              cache-key-${{ hashFiles('configure.sh') }}
+            path: |
+              ./toolchains
+        - name: Install Development Environment
+          run: |
+           brew install ninja meson mingw-w64
+        - name: Configuration
+          if: ${{ steps.cache-toolchains.outputs.cache-hit != 'true' }}
+          run: ./configure.sh
+        - name: Save Cache
+          id: cache-save
+          if: ${{ steps.cache-toolchains.outputs.cache-hit != 'true' }}
+          uses: actions/cache/save@v4
+          with:
+            key: cache-key-${{ hashFiles('configure.sh') }}
+            path: |
+              ./toolchains
+        - name: Build
+          run: |
+            meson setup --cross-file build-win64-sys.txt --native-file build-osx.txt -Dwine_builtin_dll=true -Dnative_llvm_path=toolchains/llvm-darwin -Dwine_install_path=toolchains/wine build --buildtype release --prefix $(pwd)/${{ env.TAG_NAME }} --strip
+            meson compile -C build
+            meson install -C build --tags runtime
+            tar -czf dxmt-${{ env.TAG_NAME }}.tar.gz "${{ env.TAG_NAME }}"
+        - name: Generate artifact attestation
+          uses: actions/attest-build-provenance@v1
+          with:
+            subject-path: dxmt-${{ env.TAG_NAME }}.tar.gz
+        - name: Upload
+          uses: actions/upload-artifact@v4
+          with:
+            name: dxmt-${{ env.TAG_NAME }}.tar.gz
+            path: dxmt-${{ env.TAG_NAME }}.tar.gz
