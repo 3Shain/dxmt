@@ -2790,7 +2790,7 @@ int SM50Initialize(
       .StructurePtrOffset = srv.arg_index,
     });
     if (range_id & 64) {
-      binding_srv_hi_mask |= (1ULL << (range_id >> 6ULL));
+      binding_srv_hi_mask |= (1ULL << (range_id - 64));
     } else {
       binding_srv_lo_mask |= (1ULL << range_id);
     }
