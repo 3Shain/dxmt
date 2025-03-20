@@ -50,7 +50,7 @@ public:
   IMTLThreadpoolWork *RunThreadpoolWork() {
     auto pool = transfer(NS::AutoreleasePool::alloc()->init());
     Obj<NS::Error> err;
-    std::string func_name = "shader_main_" + std::to_string(shader_->id());
+    std::string func_name = "shader_main_" + shader_->hash().toString().substr(0, 8);
     SM50CompiledBitcode *compile_result = proc(func_name.c_str());
 
     if (!compile_result)

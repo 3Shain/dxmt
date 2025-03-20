@@ -4,26 +4,24 @@
 #include "d3d11_shader.hpp"
 #include "d3d11_pipeline.hpp"
 #include "log/log.hpp"
+#include "sha1/sha1_util.hpp"
+#include <cstring>
 #include <shared_mutex>
 
 namespace dxmt {
 
-std::atomic_uint64_t global_id = 0;
-
 class CachedSM50Shader final : public Shader {
   MTLD3D11Device *device;
   SM50Shader *shader = nullptr;
+  Sha1Hash hash_;
   MTL_SHADER_REFLECTION reflection_;
-  uint64_t id_ = ~0uLL;
-  std::unordered_map<ShaderVariant, std::unique_ptr<CompiledShader>>
-      variants;
+  std::unordered_map<ShaderVariant, std::unique_ptr<CompiledShader>> variants;
 
 public:
   CachedSM50Shader(MTLD3D11Device *device, SM50Shader *shader_transfered,
-                   MTL_SHADER_REFLECTION &reflection)
-      : device(device), shader(shader_transfered), reflection_(reflection) {
-    id_ = global_id++;
-  }
+                   const Sha1Hash &hash, MTL_SHADER_REFLECTION &reflection)
+      : device(device), shader(shader_transfered), hash_(hash),
+        reflection_(reflection) {}
 
   ~CachedSM50Shader() {
     if (shader) {
@@ -34,8 +32,7 @@ public:
 
   CachedSM50Shader(CachedSM50Shader &&moved) {
     memcpy(&reflection_, &moved.reflection_, sizeof(reflection_));
-    id_ = moved.id_;
-    moved.id_ = ~0uLL;
+    hash_ = moved.hash_;
     shader = moved.shader;
     moved.shader = nullptr;
   };
@@ -55,18 +52,18 @@ public:
     }
     return c.first->second.get();
   }
-  virtual uint64_t id() { return id_; };
+  virtual const Sha1Hash& hash() { return hash_; };
 
   virtual void dump() {
     // FIXME: bytecode is not copied
     // std::fstream dump_out;
-    // dump_out.open("shader_dump_" + std::to_string(shader->id()) + ".cso",
+    // dump_out.open("shader_dump_" + hash_.toString() + ".cso",
     //               std::ios::out | std::ios::binary);
     // if (dump_out) {
     //   dump_out.write((char *)pBytecode, BytecodeLength);
     // }
     // dump_out.close();
-    // ERR("dumped to ./shader_dump_" + std::to_string(shader->id()) + ".cso");
+    // ERR("dumped to ./shader_dump_" + hash_.toString() + ".cso");
   }
 };
 
@@ -190,7 +187,7 @@ class PipelineCache : public MTLD3D11PipelineCacheBase {
       SM50FreeError(err);
       return nullptr;
     }
-    auto shader = std::make_unique<CachedSM50Shader>(device, sm50, reflection);
+    auto shader = std::make_unique<CachedSM50Shader>(device, sm50, sha1, reflection);
     {
       std::unique_lock<std::shared_mutex> lock(mutex_shares);
       auto result = shaders_.find(sha1);

@@ -193,7 +193,7 @@ public:
   /* FIXME: exposed implementation detail */
   virtual MTL_SHADER_REFLECTION &reflection() = 0;
   virtual Com<CompiledShader> get_shader(ShaderVariant variant) = 0;
-  virtual uint64_t id() = 0;
+  virtual const Sha1Hash& hash() = 0;
   virtual void dump() = 0;
 };
 
