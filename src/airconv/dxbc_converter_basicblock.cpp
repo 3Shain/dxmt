@@ -2198,6 +2198,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
   auto &builder = ctx.builder;
   auto function = ctx.function;
   std::unordered_map<BasicBlock *, llvm::BasicBlock *> visited;
+  std::vector<std::pair<BasicBlock *, llvm::BasicBlock *>> visit_order;
 
   std::stack<BasicBlock *> block_to_visit;
   block_to_visit.push(entry.get());
@@ -2206,7 +2207,8 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
     auto current = block_to_visit.top();
     block_to_visit.pop();
     if (visited.contains(current)) continue;
-    visited.insert({current, llvm::BasicBlock::Create(context, current->debug_name, function)});
+    auto inserted = visited.insert({current, llvm::BasicBlock::Create(context, current->debug_name, function)});
+    visit_order.push_back(*inserted.first);
     std::visit(
       patterns{
         [](BasicBlockUndefined) {
@@ -2241,7 +2243,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
   }
 
   auto bb_pop = builder.GetInsertBlock();
-  for (auto &[current, bb] : visited) {
+  for (auto &[current, bb] : visit_order) {
     IREffect effect([](auto) { return std::monostate(); });
     for (auto &inst : current->instructions) {
       std::visit(
