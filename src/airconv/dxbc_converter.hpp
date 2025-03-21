@@ -13,6 +13,7 @@
 #include "airconv_public.h"
 #include "dxbc_constants.hpp"
 #include "dxbc_instructions.hpp"
+#include "dxbc_signature.hpp"
 #include "shader_common.hpp"
 
 namespace dxmt::dxbc {
@@ -347,6 +348,7 @@ class SM50ShaderInternal {
 public:
   dxmt::dxbc::ShaderInfo shader_info;
   dxmt::air::FunctionSignatureBuilder func_signature;
+  std::vector<Signature> output_signature;
   std::shared_ptr<dxmt::dxbc::BasicBlock> entry;
   std::vector<std::function<void(SignatureContext &)>> signature_handlers;
   microsoft::D3D10_SB_TOKENIZED_PROGRAM_TYPE shader_type;

@@ -416,7 +416,7 @@ llvm::Error convert_dxbc_hull_shader(
     if (retTy->isVoidTy()) {
       return nullptr;
     }
-    return llvm::UndefValue::get(retTy);
+    return llvm::ConstantAggregateZero::get(retTy);
   });
 
   io_binding_map resource_map;
@@ -740,7 +740,7 @@ llvm::Error convert_dxbc_domain_shader(
     if (retTy->isVoidTy()) {
       return nullptr;
     }
-    return llvm::UndefValue::get(retTy);
+    return llvm::ConstantAggregateZero::get(retTy);
   });
 
   io_binding_map resource_map;
@@ -751,6 +751,14 @@ llvm::Error convert_dxbc_domain_shader(
     sig_ctx.skip_vertex_output = rasterization_disabled;
     for (auto &p : pShaderInternal->signature_handlers) {
       p(sig_ctx);
+    }
+
+    for (auto& out : pShaderInternal->output_signature) {
+      if(out.isSystemValue()) continue;
+      func_signature.DefineOutput(air::OutputVertex{
+        .user = out.fullSemanticString(),
+        .type = to_msl_type(out.componentType()),
+      });
     }
   }
 
@@ -940,7 +948,7 @@ llvm::Error convert_dxbc_domain_shader(
     auto clip_distance_ty = llvm::ArrayType::get(
       types._float, pShaderInternal->clip_distance_scalars.size()
     );
-    pvalue clip_distance_array = llvm::UndefValue::get(clip_distance_ty);
+    pvalue clip_distance_array = llvm::ConstantAggregateZero::get(clip_distance_ty);
     unsigned clip_distance_idx = 0;
     for (auto &scalar : pShaderInternal->clip_distance_scalars) {
       auto src_ptr = builder.CreateGEP(
@@ -1040,7 +1048,7 @@ llvm::Error convert_dxbc_pixel_shader(
     if (retTy->isVoidTy()) {
       return nullptr;
     }
-    return llvm::UndefValue::get(retTy);
+    return llvm::ConstantAggregateZero::get(retTy);
   });
 
   io_binding_map resource_map;
@@ -1168,7 +1176,7 @@ llvm::Error convert_dxbc_compute_shader(
     if (retTy->isVoidTy()) {
       return nullptr;
     }
-    return llvm::UndefValue::get(retTy);
+    return llvm::ConstantAggregateZero::get(retTy);
   });
 
   io_binding_map resource_map;
@@ -1279,7 +1287,7 @@ llvm::Error convert_dxbc_vertex_shader(
     if (retTy->isVoidTy()) {
       return nullptr;
     }
-    return llvm::UndefValue::get(retTy);
+    return llvm::ConstantAggregateZero::get(retTy);
   });
 
   io_binding_map resource_map;
@@ -1291,6 +1299,14 @@ llvm::Error convert_dxbc_vertex_shader(
     sig_ctx.skip_vertex_output = rasterization_disabled;
     for (auto &p : pShaderInternal->signature_handlers) {
       p(sig_ctx);
+    }
+
+    for (auto& out : pShaderInternal->output_signature) {
+      if(out.isSystemValue()) continue;
+      func_signature.DefineOutput(air::OutputVertex{
+        .user = out.fullSemanticString(),
+        .type = to_msl_type(out.componentType()),
+      });
     }
   }
   if (vertex_so) {
@@ -1437,7 +1453,7 @@ llvm::Error convert_dxbc_vertex_shader(
     auto clip_distance_ty = llvm::ArrayType::get(
       types._float, pShaderInternal->clip_distance_scalars.size()
     );
-    pvalue clip_distance_array = llvm::UndefValue::get(clip_distance_ty);
+    pvalue clip_distance_array = llvm::ConstantAggregateZero::get(clip_distance_ty);
     unsigned clip_distance_idx = 0;
     for (auto &scalar : pShaderInternal->clip_distance_scalars) {
       auto src_ptr = builder.CreateGEP(
@@ -1529,7 +1545,7 @@ llvm::Error convert_dxbc_vertex_for_hull_shader(
     if (retTy->isVoidTy()) {
       return nullptr;
     }
-    return llvm::UndefValue::get(retTy);
+    return llvm::ConstantAggregateZero::get(retTy);
   });
 
   io_binding_map resource_map;
@@ -1992,6 +2008,15 @@ int SM50Initialize(
   sm50_shader->shader_type = CodeParser.ShaderType();
   auto shader_info = &(sm50_shader->shader_info);
   auto &func_signature = sm50_shader->func_signature;
+
+
+  {
+    const D3D11_SIGNATURE_PARAMETER *parameters;
+    outputParser.RastSignature()->GetParameters(&parameters);
+    for (unsigned i = 0; i < outputParser.RastSignature()->GetNumParameters(); i++) {
+      sm50_shader->output_signature.push_back(Signature(parameters[i]));
+    }
+  }
 
   uint32_t phase = ~0u;
 
@@ -3008,9 +3033,6 @@ int SM50CompileTessellationPipelineVertex(
 
   context.setOpaquePointers(false); // I suspect Metal uses LLVM 14...
 
-  auto &shader_info =
-    ((dxmt::dxbc::SM50ShaderInternal *)pVertexShader)->shader_info;
-
   auto pModule = std::make_unique<Module>("shader.air", context);
   initializeModule(*pModule, {.enableFastMath = false});
 
@@ -3192,9 +3214,6 @@ int SM50CompileGeometryPipelineVertex(
   LLVMContext context;
 
   context.setOpaquePointers(false); // I suspect Metal uses LLVM 14...
-
-  auto &shader_info =
-    ((dxmt::dxbc::SM50ShaderInternal *)pVertexShader)->shader_info;
 
   auto pModule = std::make_unique<Module>("shader.air", context);
   initializeModule(*pModule, {.enableFastMath = false});
