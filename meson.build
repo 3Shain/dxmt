@@ -100,7 +100,12 @@ dxmt_version = vcs_tag(
 
 wine_builtin_dll = get_option('wine_builtin_dll')
 
-windows_install_dir = 'x86_64-windows'
+if wine_builtin_dll
+windows_native_install_dir = 'x86_64-windows'
+else
+windows_native_install_dir = 'system32'
+endif
+windows_builtin_install_dir = 'x86_64-windows'
 unix_install_dir = 'x86_64-unix'
 
 subdir('libs')

@@ -56,6 +56,7 @@ jobs:
             meson compile -C build
             meson install -C build --tags runtime
             tar -czf dxmt-${{ env.TAG_NAME }}-builtin.tar.gz "${{ env.TAG_NAME }}"
+            rm -rf "$(pwd)/${{ env.TAG_NAME }}"
             meson setup --reconfigure build -Dwine_builtin_dll=false
             meson compile -C build
             meson install -C build --tags runtime
