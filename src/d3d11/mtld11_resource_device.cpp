@@ -120,6 +120,10 @@ private:
       return attachment_desc;
     };
 
+    UINT GetReadOnlyFlags() final {
+      return this->desc.Flags;
+    };
+
     Rc<Texture> __texture() final {
       return this->resource->underlying_texture_;
     }

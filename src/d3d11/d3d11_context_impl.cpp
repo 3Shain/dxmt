@@ -3450,6 +3450,7 @@ public:
         MTL::PixelFormat PixelFormat = MTL::PixelFormatInvalid;
         MTL::LoadAction DepthLoadAction{MTL::LoadActionLoad};
         MTL::LoadAction StencilLoadAction{MTL::LoadActionLoad};
+        unsigned ReadOnlyFlags{};
       };
       // auto &dsv = state_.OutputMerger.DSV;
       DEPTH_STENCIL_STATE dsv_info;
@@ -3461,6 +3462,7 @@ public:
         dsv_info.Texture = state_.OutputMerger.DSV->__texture();
         dsv_info.viewId = state_.OutputMerger.DSV->__viewId();
         dsv_info.PixelFormat = state_.OutputMerger.DSV->GetPixelFormat();
+        dsv_info.ReadOnlyFlags =  state_.OutputMerger.DSV->GetReadOnlyFlags();
       } else if (effective_render_target == 0) {
         if (!state_.OutputMerger.UAVs.any_bound()) {
           ERR("No rendering attachment or uav is bounded");
@@ -3505,14 +3507,14 @@ public:
             auto depthAttachment = renderPassDescriptor->depthAttachment();
             depthAttachment->setTexture(texture);
             depthAttachment->setLoadAction(dsv.DepthLoadAction);
-            depthAttachment->setStoreAction(MTL::StoreActionStore);
+            depthAttachment->setStoreAction(dsv.ReadOnlyFlags & 1 ? MTL::StoreActionDontCare :MTL::StoreActionStore);
           }
 
           if (dsv_planar_flags & 2) {
             auto stencilAttachment = renderPassDescriptor->stencilAttachment();
             stencilAttachment->setTexture(texture);
             stencilAttachment->setLoadAction(dsv.StencilLoadAction);
-            stencilAttachment->setStoreAction(MTL::StoreActionStore);
+            stencilAttachment->setStoreAction(dsv.ReadOnlyFlags & 2 ? MTL::StoreActionDontCare :MTL::StoreActionStore);
           }
         }
         if (effective_render_target == 0) {
@@ -3530,7 +3532,7 @@ public:
 
         renderPassDescriptor->setRenderTargetArrayLength(render_target_array);
 
-        ctx.startRenderPass(std::move(renderPassDescriptor), dsv_planar_flags, rtvs.size());
+        ctx.startRenderPass(std::move(renderPassDescriptor), dsv_planar_flags, dsv.ReadOnlyFlags, rtvs.size());
 
         for (auto &rtv : rtvs.span()) {
           if (rtv.PixelFormat == MTL::PixelFormatInvalid) {
@@ -3540,7 +3542,10 @@ public:
         };
 
         if (dsv.Texture.ptr()) {
-          ctx.access(dsv.Texture, dsv.viewId, DXMT_ENCODER_RESOURCE_ACESS_READ | DXMT_ENCODER_RESOURCE_ACESS_WRITE);
+          if ((dsv.ReadOnlyFlags & dsv_planar_flags) == dsv_planar_flags)
+            ctx.access(dsv.Texture, dsv.viewId, DXMT_ENCODER_RESOURCE_ACESS_READ);
+          else
+            ctx.access(dsv.Texture, dsv.viewId, DXMT_ENCODER_RESOURCE_ACESS_READ | DXMT_ENCODER_RESOURCE_ACESS_WRITE);
         }
       });
     }

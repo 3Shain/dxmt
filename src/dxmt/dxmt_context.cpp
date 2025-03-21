@@ -457,7 +457,8 @@ ArgumentEncodingContext::signalEvent(uint64_t value) {
 
 RenderEncoderData *
 ArgumentEncodingContext::startRenderPass(
-    Obj<MTL::RenderPassDescriptor> &&descriptor, uint32_t dsv_planar_flags, uint32_t render_target_count
+    Obj<MTL::RenderPassDescriptor> &&descriptor, uint8_t dsv_planar_flags, uint8_t dsv_readonly_flags,
+    uint8_t render_target_count
 ) {
   assert(!encoder_current);
   auto encoder_info = allocate<RenderEncoderData>();
@@ -465,6 +466,7 @@ ArgumentEncodingContext::startRenderPass(
   encoder_info->id = nextEncoderId();
   encoder_info->descriptor = std::move(descriptor);
   encoder_info->dsv_planar_flags = dsv_planar_flags;
+  encoder_info->dsv_readonly_flags = dsv_readonly_flags;
   encoder_info->render_target_count = render_target_count;
   encoder_current = encoder_info;
 
@@ -848,8 +850,8 @@ ArgumentEncodingContext::checkEncoderRelation(EncoderData *former, EncoderData *
           if (depth_attachment->loadAction() == MTL::LoadActionLoad) {
             depth_attachment->setClearDepth(clear->depth_stencil.first);
             depth_attachment->setLoadAction(MTL::LoadActionClear);
-            if (depth_attachment->storeAction() != MTL::StoreActionDontCare)
-              render->tex_write.merge(clear->tex_write);
+            depth_attachment->setStoreAction(MTL::StoreActionStore);
+            render->tex_write.merge(clear->tex_write);
           }
           clear->clear_dsv &= ~1;
         }
@@ -857,8 +859,8 @@ ArgumentEncodingContext::checkEncoderRelation(EncoderData *former, EncoderData *
           if (stencil_attachment->loadAction() == MTL::LoadActionLoad) {
             stencil_attachment->setClearStencil(clear->depth_stencil.second);
             stencil_attachment->setLoadAction(MTL::LoadActionClear);
-            if (stencil_attachment->storeAction() != MTL::StoreActionDontCare)
-              render->tex_write.merge(clear->tex_write);
+            stencil_attachment->setStoreAction(MTL::StoreActionStore);
+            render->tex_write.merge(clear->tex_write);
           }
           clear->clear_dsv &= ~2;
         }
@@ -917,8 +919,10 @@ ArgumentEncodingContext::checkEncoderRelation(EncoderData *former, EncoderData *
 
       r1->descriptor->depthAttachment()->setLoadAction(r0->descriptor->depthAttachment()->loadAction());
       r1->descriptor->depthAttachment()->setClearDepth(r0->descriptor->depthAttachment()->clearDepth());
+      r1->descriptor->depthAttachment()->setStoreAction(r0->descriptor->depthAttachment()->storeAction());
       r1->descriptor->stencilAttachment()->setLoadAction(r0->descriptor->stencilAttachment()->loadAction());
       r1->descriptor->stencilAttachment()->setClearStencil(r0->descriptor->stencilAttachment()->clearStencil());
+      r1->descriptor->stencilAttachment()->setStoreAction(r0->descriptor->stencilAttachment()->storeAction());
 
       r0->cmds.append(std::move(r1->cmds));
       r1->cmds = std::move(r0->cmds);
@@ -982,23 +986,35 @@ ArgumentEncodingContext::isEncoderSignatureMatched(RenderEncoderData *r0, Render
     return false;
   if (r0->dsv_planar_flags != r1->dsv_planar_flags)
     return false;
+  if (r0->dsv_readonly_flags != r1->dsv_readonly_flags)
+    return false;
   if (r0->descriptor->renderTargetArrayLength() != r1->descriptor->renderTargetArrayLength())
     return false;
   if (r0->dsv_planar_flags & 1) {
     if (r0->descriptor->depthAttachment()->texture() != r1->descriptor->depthAttachment()->texture())
       return false;
-    if (r0->descriptor->depthAttachment()->storeAction() != MTL::StoreActionStore)
-      return false;
-    if (r1->descriptor->depthAttachment()->loadAction() != MTL::LoadActionLoad)
-      return false;
+    if (r0->dsv_readonly_flags & 1) {
+      if (r1->descriptor->depthAttachment()->loadAction() == MTL::LoadActionClear)
+        return false;
+    } else {
+      if (r0->descriptor->depthAttachment()->storeAction() != MTL::StoreActionStore)
+        return false;
+      if (r1->descriptor->depthAttachment()->loadAction() != MTL::LoadActionLoad)
+        return false;
+    }
   }
   if (r0->dsv_planar_flags & 2) {
     if (r0->descriptor->stencilAttachment()->texture() != r1->descriptor->stencilAttachment()->texture())
       return false;
-    if (r0->descriptor->stencilAttachment()->storeAction() != MTL::StoreActionStore)
-      return false;
-    if (r1->descriptor->stencilAttachment()->loadAction() != MTL::LoadActionLoad)
-      return false;
+    if (r0->dsv_readonly_flags & 2) {
+      if (r1->descriptor->stencilAttachment()->loadAction() == MTL::LoadActionClear)
+        return false;
+    } else {
+      if (r0->descriptor->stencilAttachment()->storeAction() != MTL::StoreActionStore)
+        return false;
+      if (r1->descriptor->stencilAttachment()->loadAction() != MTL::LoadActionLoad)
+        return false;
+    }
   }
   for (unsigned i = 0; i < r0->render_target_count; i++) {
     auto a0 = r0->descriptor->colorAttachments()->object(i);

@@ -125,8 +125,9 @@ struct RenderEncoderData : EncoderData {
   CommandList<RenderCommandContext> cmds;
   CommandList<RenderCommandContext> pretess_cmds;
   std::vector<GSDispatchArgumentsMarshal> gs_arg_marshal_tasks;
-  uint32_t dsv_planar_flags;
-  uint32_t render_target_count = 0;
+  uint8_t dsv_planar_flags;
+  uint8_t dsv_readonly_flags;
+  uint8_t render_target_count;
   bool use_visibility_result = 0;
   bool use_tessellation = 0;
   bool use_geometry = 0;
@@ -531,8 +532,10 @@ public:
   );
   void resolveTexture(Rc<Texture> &&src, unsigned srcSlice, Rc<Texture> &&dst, unsigned dstSlice, unsigned dstLevel);
 
-  RenderEncoderData *
-  startRenderPass(Obj<MTL::RenderPassDescriptor> &&descriptor, uint32_t dsv_planar_flags, uint32_t render_target_count);
+  RenderEncoderData *startRenderPass(
+      Obj<MTL::RenderPassDescriptor> &&descriptor, uint8_t dsv_planar_flags, uint8_t dsv_readonly_flags,
+      uint8_t render_target_count
+  );
   EncoderData *startComputePass();
   EncoderData *startBlitPass();
 

@@ -451,6 +451,7 @@ InitializeAndNormalizeViewDescriptor(
     return E_FAIL;
   }
 
+  ViewDesc.Flags = ViewDesc.Flags & 3;
   Descriptor.usage = MTL::TextureUsageRenderTarget;
   AttachmentDesc.DepthPlane = 0;
   AttachmentDesc.RenderTargetArrayLength = 0;

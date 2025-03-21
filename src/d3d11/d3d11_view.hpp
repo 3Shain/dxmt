@@ -33,6 +33,7 @@ DEFINE_COM_INTERFACE("42e48164-8733-422b-8421-4c57229641f9",
   virtual dxmt::ResourceSubset GetViewRange() = 0;
   virtual MTL::PixelFormat GetPixelFormat() = 0;
   virtual MTL_RENDER_PASS_ATTACHMENT_DESC &GetAttachmentDesc() = 0;
+  virtual UINT GetReadOnlyFlags() = 0;
 
   virtual dxmt::Rc<dxmt::Texture> __texture() = 0;
   virtual dxmt::Rc<dxmt::RenamableTexturePool> __renamable() = 0;
