@@ -2969,12 +2969,6 @@ int SM50Compile(
     return 1;
   }
 
-  if (!shader_info.skipOptimization) {
-    runOptimizationPasses(*pModule, OptimizationLevel::O2);
-  }
-
-  // pModule->print(outs(), nullptr);
-
   // Serialize AIR
   auto compiled = new SM50CompiledBitcodeInternal();
 
@@ -3031,12 +3025,6 @@ int SM50CompileTessellationPipelineVertex(
     *ppError = (SM50Error *)errorObj;
     return 1;
   }
-
-  if (!shader_info.skipOptimization) {
-    runOptimizationPasses(*pModule, OptimizationLevel::O2);
-  }
-
-  // pModule->print(outs(), nullptr);
 
   // Serialize AIR
   auto compiled = new SM50CompiledBitcodeInternal();
@@ -3097,10 +3085,6 @@ int SM50CompileTessellationPipelineHull(
     });
     *ppError = (SM50Error *)errorObj;
     return 1;
-  }
-
-  if (!shader_info.skipOptimization) {
-    runOptimizationPasses(*pModule, OptimizationLevel::O2);
   }
 
   // Serialize AIR
@@ -3170,10 +3154,6 @@ int SM50CompileTessellationPipelineDomain(
     return 1;
   }
 
-  if (!shader_info.skipOptimization) {
-    runOptimizationPasses(*pModule, OptimizationLevel::O2);
-  }
-
   // Serialize AIR
   auto compiled = new SM50CompiledBitcodeInternal();
 
@@ -3230,12 +3210,6 @@ int SM50CompileGeometryPipelineVertex(
     *ppError = (SM50Error *)errorObj;
     return 1;
   }
-
-  if (!shader_info.skipOptimization) {
-    runOptimizationPasses(*pModule, OptimizationLevel::O2);
-  }
-
-  // pModule->print(outs(), nullptr);
 
   // Serialize AIR
   auto compiled = new SM50CompiledBitcodeInternal();
@@ -3296,10 +3270,6 @@ int SM50CompileGeometryPipelineGeometry(
     });
     *ppError = (SM50Error *)errorObj;
     return 1;
-  }
-
-  if (!shader_info.skipOptimization) {
-    runOptimizationPasses(*pModule, OptimizationLevel::O2);
   }
 
   // Serialize AIR
