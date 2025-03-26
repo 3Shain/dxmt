@@ -318,8 +318,26 @@ public:
     D3D11_QUERY_DESC desc;
     ((ID3D11Query *)pAsync)->GetDesc(&desc);
     switch (desc.Query) {
+    case D3D11_QUERY_EVENT:
+    case D3D11_QUERY_TIMESTAMP:
+    case D3D11_QUERY_TIMESTAMP_DISJOINT: {
+      switch (static_cast<MTLD3D11EventQuery *>(pAsync)->CheckEventState(cmd_queue.SignaledEventSeqId())) {
+      case EventState::Pending:
+        break;
+      case EventState::Stall:
+        GetDataFlags &= ~D3D11_ASYNC_GETDATA_DONOTFLUSH;
+        break;
+      case EventState::Signaled:
+        hr = S_OK;
+        break;
+      }
+      break;
+    }
+    default:
+      break;
+    }
+    switch (desc.Query) {
     case D3D11_QUERY_EVENT: {
-      hr = static_cast<MTLD3D11EventQuery *>(pAsync)->CheckEventState(cmd_queue.SignaledEventSeqId()) ? S_OK: S_FALSE;
       if (pData)
         *static_cast<BOOL *>(pData) = (hr == S_OK);
       break;
@@ -337,13 +355,11 @@ public:
       break;
     }
     case D3D11_QUERY_TIMESTAMP: {
-      hr = static_cast<MTLD3D11EventQuery *>(pAsync)->CheckEventState(cmd_queue.SignaledEventSeqId()) ? S_OK: S_FALSE;
       if (pData)
         *static_cast<UINT64 *>(pData) = 0;
       break;
     }
     case D3D11_QUERY_TIMESTAMP_DISJOINT: {
-      hr = static_cast<MTLD3D11EventQuery *>(pAsync)->CheckEventState(cmd_queue.SignaledEventSeqId()) ? S_OK: S_FALSE;
       if (pData) {
         (*static_cast<D3D11_QUERY_DATA_TIMESTAMP_DISJOINT *>(pData)) = {1'000'000'000, FALSE};
       }
@@ -359,7 +375,7 @@ public:
       ERR("Unknown query type ", desc.Query);
       return E_FAIL;
     }
-    if (hr == S_FALSE && GetDataFlags != D3D11_ASYNC_GETDATA_DONOTFLUSH) {
+    if (hr == S_FALSE && (GetDataFlags & D3D11_ASYNC_GETDATA_DONOTFLUSH) == 0) {
       cmd_queue.CurrentFrameStatistics().event_stall++;
       Flush();
     }

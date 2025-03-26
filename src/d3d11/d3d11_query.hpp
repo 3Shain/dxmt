@@ -103,9 +103,17 @@ enum class QueryState {
   Signaled,
 };
 
+enum class EventState {
+  Pending,
+  Signaled,
+  Stall,
+};
+
+constexpr size_t kEventStallThreshold = 64;
+
 struct MTLD3D11EventQuery : public ID3D11Query {
   virtual void Issue(uint64_t current_seq_id) = 0;
-  virtual bool CheckEventState(uint64_t coherent_seq_id) = 0;
+  virtual EventState CheckEventState(uint64_t coherent_seq_id) = 0;
 };
 
 template <typename DataType>
@@ -119,18 +127,28 @@ public:
   void Issue(uint64_t current_seq_id) override {
     state = QueryState::Issued;
     should_be_signaled_at = current_seq_id;
+    stall_counter = 0;
   }
 
-  bool CheckEventState(uint64_t coherent_seq_id) override {
+  EventState CheckEventState(uint64_t coherent_seq_id) override {
     if (state == QueryState::Signaled || should_be_signaled_at <= coherent_seq_id) {
       state = QueryState::Signaled;
-      return true;
+      stall_counter = 0;
+      return EventState::Signaled;
     }
-    return false;
+    if (stall_counter != ~0u) {
+      if (stall_counter < kEventStallThreshold) {
+        stall_counter++;
+        return EventState::Pending;
+      }
+      stall_counter = ~0u;
+    }
+    return EventState::Stall;
   };
 
 private:
   QueryState state = QueryState::Signaled;
+  uint32_t stall_counter = 0;
   uint64_t should_be_signaled_at = 0;
 };
 
