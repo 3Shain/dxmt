@@ -652,9 +652,10 @@ struct InstCalcLOD {
 };
 
 struct InstSync {
-  enum class Boundary { global, group } boundary;
-  bool threadGroupMemoryFence;
-  bool threadGroupExecutionFence;
+  enum class UAVBoundary { global, group, none } uav_boundary;
+  bool tgsm_memory_barrier;
+  // unfortunately in Metal we always apply an execution barrier
+  bool tgsm_execution_barrier;
 };
 
 enum class AtomicBinaryOp { And, Or, Xor, Add, IMax, IMin, UMax, UMin };

@@ -287,6 +287,7 @@ IREffect
 pop_mesh_output_vertex_data(uint32_t from_reg, uint32_t mask, uint32_t idx, pvalue vertex_id, air::MSLScalerOrVectorType desired_type);
 
 enum class mem_flags : uint8_t {
+  none = 0,
   device = 1,
   threadgroup = 2,
   texture = 4,

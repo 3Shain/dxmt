@@ -2223,9 +2223,9 @@ int SM50Initialize(
         auto control_point_end =
           std::make_shared<BasicBlock>("control_point_end");
         control_point_end->instructions.push_back(InstSync{
-          .boundary = InstSync::Boundary::group,
-          .threadGroupMemoryFence = true,
-          .threadGroupExecutionFence = true,
+          .uav_boundary = InstSync::UAVBoundary::none,
+          .tgsm_memory_barrier = true,
+          .tgsm_execution_barrier = true,
         });
 
         auto local_context =
@@ -2253,9 +2253,9 @@ int SM50Initialize(
           std::make_shared<BasicBlock>("fork_join_active");
         auto fork_join_end = std::make_shared<BasicBlock>("fork_join_end");
         fork_join_end->instructions.push_back(InstSync{
-          .boundary = InstSync::Boundary::group,
-          .threadGroupMemoryFence = true,
-          .threadGroupExecutionFence = true,
+          .uav_boundary = InstSync::UAVBoundary::none,
+          .tgsm_memory_barrier = true,
+          .tgsm_execution_barrier = true,
         });
 
         auto local_context = std::make_shared<BasicBlockInstanceBarrier>(

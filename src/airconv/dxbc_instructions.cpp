@@ -1478,11 +1478,13 @@ Instruction readInstruction(
   };
   case microsoft::D3D11_SB_OPCODE_SYNC: {
     return InstSync{
-      .boundary = Inst.m_SyncFlags.bUnorderedAccessViewMemoryGlobal
-                    ? InstSync::Boundary::global
-                    : InstSync::Boundary::group,
-      .threadGroupMemoryFence = Inst.m_SyncFlags.bThreadGroupSharedMemory,
-      .threadGroupExecutionFence = Inst.m_SyncFlags.bThreadsInGroup
+      .uav_boundary = Inst.m_SyncFlags.bUnorderedAccessViewMemoryGlobal
+                        ? InstSync::UAVBoundary::global
+                        : (Inst.m_SyncFlags.bUnorderedAccessViewMemoryGroup
+                             ? InstSync::UAVBoundary::group
+                             : InstSync::UAVBoundary::none),
+      .tgsm_memory_barrier = Inst.m_SyncFlags.bThreadGroupSharedMemory,
+      .tgsm_execution_barrier = Inst.m_SyncFlags.bThreadsInGroup
     };
   };
   case microsoft::D3D11_SB_OPCODE_ATOMIC_AND: {

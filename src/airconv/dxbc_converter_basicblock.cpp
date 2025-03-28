@@ -4066,12 +4066,9 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
             );
           },
           [&effect](InstSync sync) {
-            mem_flags mem_flag = (mem_flags)0;
-            if (sync.boundary == InstSync::Boundary::global) {
-              mem_flag |= mem_flags::device;
-            }
-            if (sync.boundary == InstSync::Boundary::group) {
-              mem_flag |= mem_flags::threadgroup;
+            mem_flags mem_flag = sync.tgsm_memory_barrier ? mem_flags::threadgroup : mem_flags::none;
+            if (sync.uav_boundary != InstSync::UAVBoundary::none) {
+              mem_flag |= mem_flags::device | mem_flags::texture;
             }
             effect << call_threadgroup_barrier(mem_flag);
           },
