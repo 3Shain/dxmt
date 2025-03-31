@@ -1,4 +1,3 @@
-#include "dxbc_signature.hpp"
 #include "dxbc_converter.hpp"
 #include <format>
 
@@ -1136,10 +1135,9 @@ handle_signature_gs(
 void handle_signature(
   microsoft::CSignatureParser &inputParser,
   microsoft::CSignatureParser5 &outputParser,
-  microsoft::D3D10ShaderBinary::CInstruction &Inst, SM50Shader *sm50_shader,
+  microsoft::D3D10ShaderBinary::CInstruction &Inst, SM50ShaderInternal *shader,
   uint32_t phase
 ) {
-  auto shader = (SM50ShaderInternal *)sm50_shader;
   switch (shader->shader_type) {
   case D3D10_SB_PIXEL_SHADER:
     return handle_signature_ps(inputParser, *outputParser.Signature(0), Inst, shader, phase);

@@ -3,7 +3,6 @@
 #include "DXBCParser/ShaderBinary.h"
 #include "DXBCParser/winerror.h"
 #include "airconv_error.hpp"
-#include "dxbc_signature.hpp"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Constants.h"
@@ -1932,7 +1931,7 @@ bool CheckGSSignatureIsPassThrough(
   return true;
 };
 
-int SM50Initialize(
+AIRCONV_API int SM50Initialize(
   const void *pBytecode, size_t BytecodeSize, SM50Shader **ppShader,
   MTL_SHADER_REFLECTION *pRefl, SM50Error **ppError
 ) {
@@ -2546,9 +2545,7 @@ int SM50Initialize(
       case D3D10_SB_OPCODE_DCL_OUTPUT_SGV:
       case D3D10_SB_OPCODE_DCL_OUTPUT_SIV:
       case D3D10_SB_OPCODE_DCL_OUTPUT: {
-        handle_signature(
-          inputParser, outputParser, Inst, (SM50Shader *)sm50_shader, phase
-        );
+        handle_signature(inputParser, outputParser, Inst, sm50_shader, phase);
         break;
       }
       case D3D10_SB_OPCODE_CUSTOMDATA: {
@@ -2943,11 +2940,11 @@ int SM50Initialize(
   return 0;
 };
 
-void SM50Destroy(SM50Shader *pShader) {
+AIRCONV_API void SM50Destroy(SM50Shader *pShader) {
   delete (dxmt::dxbc::SM50ShaderInternal *)pShader;
 }
 
-int SM50Compile(
+AIRCONV_API int SM50Compile(
   SM50Shader *pShader, SM50_SHADER_COMPILATION_ARGUMENT_DATA *pArgs,
   const char *FunctionName, SM50CompiledBitcode **ppBitcode, SM50Error **ppError
 ) {
@@ -3009,7 +3006,7 @@ int SM50Compile(
   return 0;
 }
 
-int SM50CompileTessellationPipelineVertex(
+AIRCONV_API int SM50CompileTessellationPipelineVertex(
   SM50Shader *pVertexShader, SM50Shader *pHullShader,
   struct SM50_SHADER_COMPILATION_ARGUMENT_DATA *pVertexShaderArgs,
   const char *FunctionName, SM50CompiledBitcode **ppBitcode, SM50Error **ppError
@@ -3063,7 +3060,7 @@ int SM50CompileTessellationPipelineVertex(
   return 0;
 }
 
-int SM50CompileTessellationPipelineHull(
+AIRCONV_API int SM50CompileTessellationPipelineHull(
   SM50Shader *pVertexShader, SM50Shader *pHullShader,
   struct SM50_SHADER_COMPILATION_ARGUMENT_DATA *pHullShaderArgs,
   const char *FunctionName, SM50CompiledBitcode **ppBitcode, SM50Error **ppError
@@ -3124,7 +3121,7 @@ int SM50CompileTessellationPipelineHull(
   return 0;
 }
 
-int SM50CompileTessellationPipelineDomain(
+AIRCONV_API int SM50CompileTessellationPipelineDomain(
   SM50Shader *pHullShader, SM50Shader *pDomainShader,
   struct SM50_SHADER_COMPILATION_ARGUMENT_DATA *pDomainShaderArgs,
   const char *FunctionName, SM50CompiledBitcode **ppBitcode, SM50Error **ppError
@@ -3191,7 +3188,7 @@ int SM50CompileTessellationPipelineDomain(
   return 0;
 }
 
-int SM50CompileGeometryPipelineVertex(
+AIRCONV_API int SM50CompileGeometryPipelineVertex(
   SM50Shader *pVertexShader, SM50Shader *pGeometryShader,
   struct SM50_SHADER_COMPILATION_ARGUMENT_DATA *pVertexShaderArgs,
   const char *FunctionName, SM50CompiledBitcode **ppBitcode, SM50Error **ppError
@@ -3245,7 +3242,7 @@ int SM50CompileGeometryPipelineVertex(
   return 0;
 }
 
-int SM50CompileGeometryPipelineGeometry(
+AIRCONV_API int SM50CompileGeometryPipelineGeometry(
   SM50Shader *pVertexShader, SM50Shader *pGeometryShader,
   struct SM50_SHADER_COMPILATION_ARGUMENT_DATA *pGeometryShaderArgs,
   const char *FunctionName, SM50CompiledBitcode **ppBitcode, SM50Error **ppError
@@ -3306,7 +3303,7 @@ int SM50CompileGeometryPipelineGeometry(
   return 0;
 }
 
-void SM50GetCompiledBitcode(
+AIRCONV_API void SM50GetCompiledBitcode(
   SM50CompiledBitcode *pBitcode, MTL_SHADER_BITCODE *pData
 ) {
   auto pBitcodeInternal = (SM50CompiledBitcodeInternal *)pBitcode;
@@ -3314,12 +3311,12 @@ void SM50GetCompiledBitcode(
   pData->Size = pBitcodeInternal->vec.size();
 }
 
-void SM50DestroyBitcode(SM50CompiledBitcode *pBitcode) {
+AIRCONV_API void SM50DestroyBitcode(SM50CompiledBitcode *pBitcode) {
   auto pBitcodeInternal = (SM50CompiledBitcodeInternal *)pBitcode;
   delete pBitcodeInternal;
 }
 
-const char *SM50GetErrorMesssage(SM50Error *pError) {
+AIRCONV_API const char *SM50GetErrorMesssage(SM50Error *pError) {
   auto pInternal = (SM50ErrorInternal *)pError;
   if (*pInternal->buf.end() != '\0') {
     // ensure it returns a null terminated str
@@ -3328,7 +3325,7 @@ const char *SM50GetErrorMesssage(SM50Error *pError) {
   return pInternal->buf.data();
 }
 
-void SM50FreeError(SM50Error *pError) {
+AIRCONV_API void SM50FreeError(SM50Error *pError) {
   if (pError == nullptr)
     return;
   auto pInternal = (SM50ErrorInternal *)pError;

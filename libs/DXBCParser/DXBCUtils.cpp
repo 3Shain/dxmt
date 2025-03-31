@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 
-#include "dxbcutils.h"
+#include "DXBCUtils.h"
 #include "BlobContainer.h"
 #include "winerror.h"
 #include <cassert>
