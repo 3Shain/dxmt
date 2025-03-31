@@ -86,23 +86,23 @@ public:
     return current_.ptr();
   }
 
-  constexpr MTL::TextureType textureType() {
+  MTL::TextureType textureType() {
     return descriptor_->textureType();
   }
 
-  constexpr MTL::PixelFormat pixelFormat() {
+  MTL::PixelFormat pixelFormat() {
     return descriptor_->pixelFormat();
   }
 
-  constexpr unsigned sampleCount() {
+  unsigned sampleCount() {
     return descriptor_->sampleCount();
   }
 
-  constexpr unsigned width() {
+  unsigned width() {
     return descriptor_->width();
   }
 
-  constexpr unsigned height() {
+  unsigned height() {
     return descriptor_->height();
   }
 
