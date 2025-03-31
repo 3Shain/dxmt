@@ -3836,6 +3836,10 @@ public:
   DrawCallStatus
   PreDraw() {
     DrawCallStatus status;
+    if constexpr (IndexedDraw) {
+      if (!state_.InputAssembler.IndexBuffer)
+        return DrawCallStatus::Invalid;
+    }
     if (status = FinalizeCurrentRenderPipeline<IndexedDraw>(); status == DrawCallStatus::Invalid) {
       return status;
     }
