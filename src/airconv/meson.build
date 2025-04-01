@@ -35,7 +35,7 @@ llvm_cxx_flags = [
 ]
 
 llvm_ld_flags = [
- '-L'+join_paths(meson.source_root(), 'toolchains/llvm/lib')
+ '-L'+join_paths(meson.project_source_root(), 'toolchains/llvm/lib')
 ]
 
 airconv_forward_dep = declare_dependency(
