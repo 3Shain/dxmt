@@ -43,6 +43,39 @@ struct create_fxscaler_params {
   void* ret;
 };
 
+struct get_gamma_ramp_capacity_params {
+  uint32_t display_id;
+  uint32_t capacity;
+};
+
+struct set_gamma_ramp_params {
+  uint32_t display_id;
+  uint32_t table_size;
+  float *red_table;
+  float *green_table;
+  float *blue_table;
+  int status;
+};
+
+struct get_gamma_ramp_params {
+  uint32_t display_id;
+  uint32_t capacity;
+  float *red_table;
+  float *green_table;
+  float *blue_table;
+  uint32_t *num_samples;
+  int status;
+};
+
+struct get_display_by_rect_params {
+  int x;
+  int y;
+  int width;
+  int height;
+  uint32_t *display_id;
+  int status;
+};
+
 #define UNIX_CALL(code, params) WINE_UNIX_CALL(unix_##code, params)
 
 #endif

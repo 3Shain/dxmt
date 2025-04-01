@@ -5,6 +5,7 @@
 #include "com/com_pointer.hpp"
 #include "dxgi_interfaces.h"
 #include "dxgi_object.hpp"
+#include "dxgi_monitor.hpp"
 #include "dxmt_format.hpp"
 #include "log/log.hpp"
 #include "util_string.hpp"
@@ -136,7 +137,7 @@ void FilterModesByDesc(std::vector<DXGI_MODE_DESC1> &Modes,
 class MTLDXGIOutput : public MTLDXGIObject<IDXGIOutput6> {
 public:
   MTLDXGIOutput(IMTLDXGIAdapter *adapter, HMONITOR monitor)
-      : m_adapter(adapter), m_monitor(monitor) {}
+      : m_adapter(adapter), m_monitor(monitor), m_dxgi_monitor(new MTLDXGIMonitor(this)) {}
   ~MTLDXGIOutput() {}
 
   HRESULT
@@ -154,6 +155,11 @@ public:
         riid == __uuidof(IDXGIOutput4) || riid == __uuidof(IDXGIOutput5) ||
         riid == __uuidof(IDXGIOutput6)) {
       *ppvObject = ref(this);
+      return S_OK;
+    }
+
+    if (riid == __uuidof(IMTLDXGIMonitor)) {
+      *ppvObject = ref(m_dxgi_monitor);
       return S_OK;
     }
 
@@ -274,22 +280,87 @@ public:
   STDMETHODCALLTYPE
   GetGammaControlCapabilities(
       DXGI_GAMMA_CONTROL_CAPABILITIES *gamma_caps) final {
-    ERR("Not implemented");
-    return E_NOTIMPL;
+    if (gamma_caps == nullptr)
+      return E_NOTIMPL;
+
+    MTLDXGI_GAMMA_DATA *pGammaData;
+    m_dxgi_monitor->GetAttachedGammaTable(&pGammaData);
+    if (!pGammaData) {
+      return S_OK;
+    }
+
+    gamma_caps->ScaleAndOffsetSupported = false;
+    gamma_caps->MaxConvertedValue = 1.0f;
+    gamma_caps->MinConvertedValue = 0.0f;
+    gamma_caps->NumGammaControlPoints = 0;
+    m_dxgi_monitor->GetNumGammaCurvePoints(pGammaData->display_id, &gamma_caps->NumGammaControlPoints);
+    if (gamma_caps->NumGammaControlPoints > 1) {
+      for (UINT i = 0; i < gamma_caps->NumGammaControlPoints; i++) {
+        gamma_caps->ControlPointPositions[i] = float(i) / float(gamma_caps->NumGammaControlPoints - 1);
+      }
+    }
+    return S_OK;
   }
 
   HRESULT
   STDMETHODCALLTYPE
   SetGammaControl(const DXGI_GAMMA_CONTROL *gamma_control) final {
-    ERR("Not implemented");
-    return E_NOTIMPL;
+    if (gamma_control == nullptr)
+      return E_NOTIMPL;
+
+    MTLDXGI_GAMMA_DATA *pGammaData;
+    m_dxgi_monitor->GetAttachedGammaTable(&pGammaData);
+    if (!pGammaData) {
+      return S_OK;
+    }
+
+    UINT capacity = 0;
+    m_dxgi_monitor->GetNumGammaCurvePoints(pGammaData->display_id, &capacity);
+    if (capacity == 0)
+      return E_NOTIMPL;
+
+    capacity = std::min(capacity, MTLDXGI_MAX_GAMMA_CAPACITY);
+    for (UINT i = 0; i < capacity; i++) {
+      pGammaData->gamma_curve[i].Red = gamma_control->GammaCurve[i].Red;
+      pGammaData->gamma_curve[i].Green = gamma_control->GammaCurve[i].Green;
+      pGammaData->gamma_curve[i].Blue = gamma_control->GammaCurve[i].Blue;
+    }
+    pGammaData->mum_curve_points = capacity;
+    pGammaData->gamma_curve_valid = true;
+
+    if (m_dxgi_monitor->SetGammaCurve(pGammaData->display_id, pGammaData->gamma_curve, capacity) != S_OK) {
+      return E_NOTIMPL;
+    }
+    return S_OK;
   }
 
   HRESULT
   STDMETHODCALLTYPE
   GetGammaControl(DXGI_GAMMA_CONTROL *gamma_control) final {
-    ERR("Not implemented");
-    return E_NOTIMPL;
+    if (gamma_control == nullptr)
+      return E_NOTIMPL;
+
+    MTLDXGI_GAMMA_DATA *pGammaData;
+    m_dxgi_monitor->GetAttachedGammaTable(&pGammaData);
+    if (!pGammaData) {
+      return S_OK;
+    }
+
+    gamma_control->Scale = { 0, 0, 0 };
+    gamma_control->Offset = { 0, 0, 0 };
+
+    DXGI_RGB GammaCurve[MTLDXGI_MAX_GAMMA_CAPACITY];
+    UINT numSamples;
+    if (m_dxgi_monitor->GetGammaCurve(pGammaData->display_id, GammaCurve, &numSamples) != S_OK) {
+      return E_NOTIMPL;
+    }
+
+    for (UINT i = 0; i < numSamples; i++) {
+      gamma_control->GammaCurve[i].Red = GammaCurve[i].Red;
+      gamma_control->GammaCurve[i].Green = GammaCurve[i].Green;
+      gamma_control->GammaCurve[i].Blue = GammaCurve[i].Blue;
+    }
+    return S_OK;
   }
 
   HRESULT
@@ -579,7 +650,29 @@ public:
 private:
   Com<IMTLDXGIAdapter> m_adapter = nullptr;
   HMONITOR m_monitor = nullptr;
+  MTLDXGIMonitor *m_dxgi_monitor = nullptr;
 };
+
+MTLDXGIMonitor::MTLDXGIMonitor(MTLDXGIOutput *pDXGIOutput) :
+    dxgi_output_(pDXGIOutput) {}
+
+ULONG
+STDMETHODCALLTYPE
+MTLDXGIMonitor::AddRef() {
+  return dxgi_output_->AddRef();
+}
+
+ULONG
+STDMETHODCALLTYPE
+MTLDXGIMonitor::Release() {
+  return dxgi_output_->Release();
+}
+
+HRESULT
+STDMETHODCALLTYPE
+MTLDXGIMonitor::QueryInterface(REFIID riid, void **ppvObject) {
+  return dxgi_output_->QueryInterface(riid, ppvObject);
+}
 
 Com<IDXGIOutput> CreateOutput(IMTLDXGIAdapter *pAadapter, HMONITOR monitor) {
   return Com<IDXGIOutput>::transfer(new MTLDXGIOutput(pAadapter, monitor));
