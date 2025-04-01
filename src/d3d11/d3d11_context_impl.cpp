@@ -1523,7 +1523,6 @@ public:
       *pPredicateValue = state_.predicate_value;
     }
 
-    ERR_ONCE("Stub");
   }
 
   void
@@ -1532,7 +1531,8 @@ public:
     state_.predicate = pPredicate;
     state_.predicate_value = PredicateValue;
 
-    EmitST([](ArgumentEncodingContext &enc) { enc.setCompatibilityFlag(FeatureCompatibility::UnsupportedPredication); });
+    if (pPredicate)
+      EmitST([](ArgumentEncodingContext &enc) { enc.setCompatibilityFlag(FeatureCompatibility::UnsupportedPredication); });
   }
 
   //-----------------------------------------------------------------------------
