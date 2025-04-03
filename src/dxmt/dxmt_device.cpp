@@ -1,6 +1,6 @@
 #include "dxmt_device.hpp"
-#include "Metal/MTLDevice.hpp"
 #include "dxmt_command_queue.hpp"
+#include "Metal.hpp"
 
 namespace dxmt {
 
@@ -8,19 +8,17 @@ class DeviceImpl : public Device {
 public:
   virtual MTL::Device *
   device() override {
-    return device_;
+    return (MTL::Device *)device_.handle;
   };
   virtual CommandQueue &
   queue() override {
     return cmd_queue_;
   };
 
-  DeviceImpl(const DEVICE_DESC &desc) : device_(desc.device), cmd_queue_(desc.device) {
-    device_->setShouldMaximizeConcurrentCompilation(true);
-  }
+  DeviceImpl(const DEVICE_DESC &desc) : device_(desc.device), cmd_queue_(device_) {}
 
 private:
-  Obj<MTL::Device> device_;
+  WMT::Reference<WMT::Device> device_;
   CommandQueue cmd_queue_;
 };
 

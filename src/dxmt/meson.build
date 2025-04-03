@@ -44,7 +44,7 @@ metal_lib_bin = custom_target('objectify-data',
 )
 
 dxmt_lib = static_library('dxmt', dxmt_src, metal_lib_bin, dxmt_version,
-  dependencies        : [ util_dep, airconv_forward_dep ],
+  dependencies        : [ util_dep, airconv_forward_dep, winemetal_dep ],
   include_directories : [ dxmt_include_path ],
 )
 
