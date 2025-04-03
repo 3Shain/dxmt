@@ -24,4 +24,12 @@ struct unixcall_generic_obj_uint64_ret {
   uint64_t ret;
 };
 
+struct unixcall_nsstring_getcstring {
+  obj_handle_t str;
+  uint64_t buffer_ptr;
+  uint64_t max_length;
+  enum WMTStringEncoding encoding;
+  uint32_t ret;
+};
+
 #endif
