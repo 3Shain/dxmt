@@ -5,6 +5,7 @@
 #include "log/log.hpp"
 #include "util_string.hpp"
 #include "dxmt_capture.hpp"
+#include "winemetal.h"
 #include <exception>
 namespace dxmt {
 Logger Logger::s_instance("d3d11.log");
@@ -64,7 +65,7 @@ D3D11CoreCreateDevice(IDXGIFactory *pFactory, IDXGIAdapter *pAdapter,
     Logger::info(str::format("Using feature level ", devFeatureLevel));
 
     auto device = CreateD3D11Device(
-        CreateDXMTDevice({.device = dxgi_adapter->GetMTLDevice()}),
+        CreateDXMTDevice({.device = WMT::Device((obj_handle_t)dxgi_adapter->GetMTLDevice())}),
         dxgi_adapter.ptr(), devFeatureLevel, Flags);
 
     return device->QueryInterface(IID_PPV_ARGS(ppDevice));

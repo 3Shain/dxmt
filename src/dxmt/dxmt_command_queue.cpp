@@ -1,7 +1,6 @@
 #include "dxmt_command_queue.hpp"
+#include "Metal.hpp"
 #include "Metal/MTLCaptureManager.hpp"
-#include "Metal/MTLFunctionLog.hpp"
-#include "Foundation/NSAutoreleasePool.hpp"
 #include "dxmt_statistics.hpp"
 #include "util_env.hpp"
 #include <atomic>
@@ -10,28 +9,29 @@
 
 namespace dxmt {
 
-CommandQueue::CommandQueue(MTL::Device *device) :
+CommandQueue::CommandQueue(WMT::Device device) :
     encodeThread([this]() { this->EncodingThread(); }),
     finishThread([this]() { this->WaitForFinishThread(); }),
+    device(device),
+    commandQueue(device.newCommandQueue(kCommandChunkCount)),
     staging_allocator(
-        device, MTL::ResourceOptionCPUCacheModeWriteCombined | MTL::ResourceHazardTrackingModeUntracked |
+        (MTL::Device *)device.handle, MTL::ResourceOptionCPUCacheModeWriteCombined | MTL::ResourceHazardTrackingModeUntracked |
                     MTL::ResourceStorageModeShared
     ),
-    copy_temp_allocator(device, MTL::ResourceHazardTrackingModeUntracked | MTL::ResourceStorageModePrivate),
+    copy_temp_allocator((MTL::Device *)device.handle, MTL::ResourceHazardTrackingModeUntracked | MTL::ResourceStorageModePrivate),
     command_data_allocator(
-        device, MTL::ResourceHazardTrackingModeUntracked | MTL::ResourceCPUCacheModeWriteCombined |
+      (MTL::Device *)device.handle, MTL::ResourceHazardTrackingModeUntracked | MTL::ResourceCPUCacheModeWriteCombined |
                     MTL::ResourceStorageModeShared
     ),
-    emulated_cmd(device),
-    argument_encoding_ctx(*this, device) {
-  commandQueue = transfer(device->newCommandQueue(kCommandChunkCount));
+    emulated_cmd((MTL::Device *)device.handle),
+    argument_encoding_ctx(*this, (MTL::Device *)device.handle) {
   for (unsigned i = 0; i < kCommandChunkCount; i++) {
     auto &chunk = chunks[i];
     chunk.queue = this;
     chunk.cpu_argument_heap = (char *)malloc(kCommandChunkCPUHeapSize);
     chunk.reset();
   };
-  event = transfer(device->newSharedEvent());
+  event = transfer(((MTL::Device *)device.handle)->newSharedEvent());
 
   std::string env = env::getEnvVar("DXMT_CAPTURE_FRAME");
 
@@ -87,13 +87,13 @@ CommandQueue::CommitCurrentChunk() {
 void
 CommandQueue::CommitChunkInternal(CommandChunk &chunk, uint64_t seq) {
 
-  auto pool = transfer(NS::AutoreleasePool::alloc()->init());
+  auto pool = WMT::MakeAutoreleasePool();
 
   switch (capture_state.getNextAction(chunk.frame_)) {
   case CaptureState::NextAction::StartCapture: {
     auto capture_mgr = MTL::CaptureManager::sharedCaptureManager();
     auto capture_desc = transfer(MTL::CaptureDescriptor::alloc()->init());
-    capture_desc->setCaptureObject(commandQueue->device());
+    capture_desc->setCaptureObject((MTL::Device *)device.handle);
     capture_desc->setDestination(MTL::CaptureDestinationGPUTraceDocument);
     char filename[1024];
     std::time_t now;
@@ -122,10 +122,10 @@ CommandQueue::CommitChunkInternal(CommandChunk &chunk, uint64_t seq) {
   }
   }
 
-  chunk.attached_cmdbuf = commandQueue->commandBuffer();
-  auto cmdbuf = chunk.attached_cmdbuf;
-  chunk.encode(cmdbuf, this->argument_encoding_ctx);
-  cmdbuf->commit();
+  auto cmdbuf = commandQueue.commandBuffer();
+  chunk.attached_cmdbuf = cmdbuf;
+  chunk.encode(chunk.attached_cmdbuf, this->argument_encoding_ctx);
+  cmdbuf.commit();
 
   ready_for_commit.fetch_add(1, std::memory_order_release);
   ready_for_commit.notify_one();
@@ -163,19 +163,20 @@ CommandQueue::WaitForFinishThread() {
     if (stopped.load())
       break;
     auto &chunk = chunks[internal_seq % kCommandChunkCount];
-    if (chunk.attached_cmdbuf->status() <= MTL::CommandBufferStatusScheduled) {
-      chunk.attached_cmdbuf->waitUntilCompleted();
+    if (chunk.attached_cmdbuf.status() <= WMTCommandBufferStatusScheduled) {
+      chunk.attached_cmdbuf.waitUntilCompleted();
     }
-    if (chunk.attached_cmdbuf->status() == MTL::CommandBufferStatusError) {
-      ERR("Device error at frame ", chunk.frame_,
-          ", : ", chunk.attached_cmdbuf->error()->localizedDescription()->cString(NS::ASCIIStringEncoding));
-    }
-    if (chunk.attached_cmdbuf->logs()) {
-      if (((NS::Array *)chunk.attached_cmdbuf->logs())->count()) {
-        ERR("logs at frame ", chunk.frame_);
-        ERR(chunk.attached_cmdbuf->logs()->debugDescription()->cString(NS::ASCIIStringEncoding));
-      }
-    }
+    // FIXME: make below functional
+    // if (chunk.attached_cmdbuf.status() == WMTCommandBufferStatusError) {
+    //   ERR("Device error at frame ", chunk.frame_,
+    //       ", : ", chunk.attached_cmdbuf->error()->localizedDescription()->cString(NS::ASCIIStringEncoding));
+    // }
+    // if (chunk.attached_cmdbuf->logs()) {
+    //   if (((NS::Array *)chunk.attached_cmdbuf->logs())->count()) {
+    //     ERR("logs at frame ", chunk.frame_);
+    //     ERR(chunk.attached_cmdbuf->logs()->debugDescription()->cString(NS::ASCIIStringEncoding));
+    //   }
+    // }
 
     if (chunk.signal_frame_latency_fence_ != ~0ull)
       frame_latency_fence_.signal(chunk.signal_frame_latency_fence_);

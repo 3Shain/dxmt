@@ -2,9 +2,7 @@
 
 #include "Metal/MTLArgumentEncoder.hpp"
 #include "Metal/MTLCommandBuffer.hpp"
-#include "Metal/MTLCommandQueue.hpp"
 #include "Metal/MTLEvent.hpp"
-#include "Metal/MTLDevice.hpp"
 #include "dxmt_capture.hpp"
 #include "dxmt_command.hpp"
 #include "dxmt_command_list.hpp"
@@ -21,6 +19,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <span>
+#include "Metal.hpp"
 
 namespace dxmt {
 
@@ -97,7 +96,7 @@ public:
   }
 
   void
-  encode(MTL::CommandBuffer *cmdbuf, ArgumentEncodingContext &enc) {
+  encode(WMT::CommandBuffer cmdbuf, ArgumentEncodingContext &enc) {
     enc.$$setEncodingContext(
       chunk_id,
       frame_
@@ -107,7 +106,7 @@ public:
     list_enc.execute(enc);
     attached_cmdbuf = cmdbuf;
     auto t1 = clock::now();
-    visibility_readback = enc.flushCommands(cmdbuf, chunk_id, chunk_event_id);
+    visibility_readback = enc.flushCommands((MTL::CommandBuffer *)cmdbuf.handle, chunk_id, chunk_event_id);
     auto t2 = clock::now();
     statistics.encode_prepare_interval += (t1 - t0);
     statistics.encode_flush_interval += (t2 - t1);
@@ -123,7 +122,7 @@ private:
   CommandQueue *queue;
   char *cpu_argument_heap;
   uint64_t cpu_arugment_heap_offset;
-  Obj<MTL::CommandBuffer> attached_cmdbuf;
+  WMT::Reference<WMT::CommandBuffer> attached_cmdbuf;
   
   CommandList<ArgumentEncodingContext> list_enc;
 
@@ -165,7 +164,8 @@ private:
 
   dxmt::thread encodeThread;
   dxmt::thread finishThread;
-  Obj<MTL::CommandQueue> commandQueue;
+  WMT::Device device;
+  WMT::Reference<WMT::CommandQueue> commandQueue;
 
   friend class CommandChunk;
   uint64_t
@@ -185,7 +185,7 @@ public:
   std::uint64_t current_event_seq_id = 0;
   FrameStatisticsContainer statistics;
 
-  CommandQueue(MTL::Device *device);
+  CommandQueue(WMT::Device device);
 
   ~CommandQueue();
 
