@@ -126,7 +126,8 @@ NTSTATUS CreateMTLFXTemporalScaler(struct create_fxscaler_params *params) {
   return STATUS_SUCCESS;
 };
 
-const void *__wine_unix_call_funcs[] = {
+// FIXME: 0x100 is just ... need a better way to organize all these unix calls
+const void *__wine_unix_call_funcs[0x100] = {
     &objc_lookUpClass,
     &sel_registerName,
     &objc_msgSend,
@@ -189,8 +190,12 @@ const void *__wine_unix_call_funcs[] = {
 // wow64: things become funny
 
 static struct macdrv_functions_t* macdrv_functions;
+extern const void *__winemetal_unixcalls[];
+extern const unsigned int __winemetal_unixcalls_num;
 
 static int winemetal_unix_init() {
+    // FIXME: just temporary scaffolding, oh god I hate header, I hate everything-in-one-file as well
+    memcpy(__wine_unix_call_funcs + 0x50, __winemetal_unixcalls, __winemetal_unixcalls_num << 3);
     if((macdrv_functions = dlsym(RTLD_DEFAULT, "macdrv_functions")))
     {
         __wine_unix_call_funcs[13] = macdrv_functions->macdrv_create_metal_device;

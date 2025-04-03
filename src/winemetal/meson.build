@@ -4,6 +4,7 @@ winemetal_src = [
   'metalcpp-impl.cpp',
   'error_handling.c',
   'unix_thunks.c',
+  'winemetal_thunks.c'
 ]
 
 if cc.has_link_argument('/entry:WineMetalEntry')
@@ -48,7 +49,7 @@ winemetal_dll = shared_library('winemetal', winemetal_src,
 
 winemetal_dep = declare_dependency(
   link_with           : [ winemetal_dll ],
-  include_directories : [ dxmt_include_path ],
+  include_directories : [ include_directories('.') ],
 )
 
 custom_target('postprocess_lib',
