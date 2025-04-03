@@ -6,8 +6,8 @@
 #include "wsi_monitor.hpp"
 #include "dxgi_interfaces.h"
 #include "dxgi_object.hpp"
-#include "objc_pointer.hpp"
 #include "d3d10_1.h"
+#include "Metal.hpp"
 
 namespace dxmt {
 
@@ -15,9 +15,9 @@ Com<IDXGIOutput> CreateOutput(IMTLDXGIAdapter *pAadapter, HMONITOR monitor);
 
 class MTLDXGIAdatper : public MTLDXGIObject<IMTLDXGIAdapter> {
 public:
-  MTLDXGIAdatper(MTL::Device *device, IDXGIFactory *factory, Config &config)
+  MTLDXGIAdatper(WMT::Device device, IDXGIFactory *factory, Config &config)
       : m_deivce(device), m_factory(factory), options(config) {};
-  ~MTLDXGIAdatper() { m_deivce->release(); }
+
   HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid,
                                            void **ppvObject) final {
     if (ppvObject == nullptr)
@@ -124,8 +124,7 @@ public:
           sizeof(pDesc->Description) / sizeof(pDesc->Description[0]) - 1,
           options.customDeviceDesc.c_str(), options.customDeviceDesc.size());
     } else {
-      wcscpy(pDesc->Description, (const wchar_t *)m_deivce->name()->cString(
-                                     NS::UTF16StringEncoding));
+      m_deivce.name().getCString((char *)pDesc->Description, sizeof(pDesc->Description), WMTUTF16StringEncoding);
     }
 
     if (options.customVendorId >= 0) {
@@ -145,7 +144,7 @@ public:
     /**
     FIXME: divided by 2 is not necessary
      */
-    pDesc->DedicatedVideoMemory = m_deivce->recommendedMaxWorkingSetSize() / 2;
+    pDesc->DedicatedVideoMemory = m_deivce.recommendedMaxWorkingSetSize() / 2;
     pDesc->DedicatedSystemMemory = 0;
     pDesc->SharedSystemMemory = 0;
     pDesc->AdapterLuid = LUID{1168, 1};
@@ -213,8 +212,8 @@ public:
       return E_INVALIDARG;
 
     // we don't actually care about MemorySegmentGroup
-    pVideoMemoryInfo->Budget = m_deivce->recommendedMaxWorkingSetSize();
-    pVideoMemoryInfo->CurrentUsage = m_deivce->currentAllocatedSize();
+    pVideoMemoryInfo->Budget = m_deivce.recommendedMaxWorkingSetSize();
+    pVideoMemoryInfo->CurrentUsage = m_deivce.currentAllocatedSize();
     pVideoMemoryInfo->AvailableForReservation = 0;
     pVideoMemoryInfo->CurrentReservation =
         mem_reserved_[uint32_t(MemorySegmentGroup)];
@@ -245,19 +244,19 @@ public:
     assert(0 && "TODO");
   }
 
-  MTL::Device *STDMETHODCALLTYPE GetMTLDevice() final { return m_deivce.ptr(); }
+  MTL::Device *STDMETHODCALLTYPE GetMTLDevice() final { return (MTL::Device *)m_deivce.handle; }
 
 private:
-  Obj<MTL::Device> m_deivce;
+  WMT::Reference<WMT::Device> m_deivce;
   Com<IDXGIFactory> m_factory;
   DxgiOptions options;
   uint64_t mem_reserved_[2] = {0, 0};
 };
 
-Com<IMTLDXGIAdapter> CreateAdapter(MTL::Device *pDevice,
+Com<IMTLDXGIAdapter> CreateAdapter(WMT::Device Device,
                                    IDXGIFactory2 *pFactory, Config &config) {
   return Com<IMTLDXGIAdapter>::transfer(
-      new MTLDXGIAdatper(pDevice, pFactory, config));
+      new MTLDXGIAdatper(Device, pFactory, config));
 }
 
 } // namespace dxmt

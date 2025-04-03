@@ -46,3 +46,39 @@ WMTCopyAllDevices() {
   UNIX_CALL(4, &params);
   return params.ret;
 }
+
+WINEMETAL_API uint64_t MTLDevice_recommendedMaxWorkingSetSize(obj_handle_t device) {
+  struct unixcall_generic_obj_uint64_ret params;
+  params.handle = device;
+  params.ret = 0;
+  UNIX_CALL(5, &params);
+  return params.ret;
+}
+
+WINEMETAL_API uint64_t MTLDevice_currentAllocatedSize(obj_handle_t device) {
+  struct unixcall_generic_obj_uint64_ret params;
+  params.handle = device;
+  params.ret = 0;
+  UNIX_CALL(6, &params);
+  return params.ret;
+}
+
+WINEMETAL_API obj_handle_t MTLDevice_name(obj_handle_t device) {
+  struct unixcall_generic_obj_obj_ret params;
+  params.handle = device;
+  params.ret = 0;
+  UNIX_CALL(7, &params);
+  return params.ret;
+}
+
+
+WINEMETAL_API uint32_t
+NSString_getCString(obj_handle_t str, char *buffer, uint64_t maxLength, enum WMTStringEncoding encoding) {
+  struct unixcall_nsstring_getcstring params;
+  params.str = str;
+  params.buffer_ptr = (uint64_t)(buffer);
+  params.max_length = maxLength;
+  params.encoding = encoding;
+  UNIX_CALL(8, &params);
+  return params.ret;
+}
