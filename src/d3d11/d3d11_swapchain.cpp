@@ -19,6 +19,8 @@
 #include "wsi_platform_win32.hpp"
 #include "wsi_window.hpp"
 #include "dxmt_info.hpp"
+#include "dxgi_interfaces.h"
+#include "dxgi_monitor.hpp"
 #include <cfloat>
 #include <format>
 
@@ -174,7 +176,7 @@ public:
       target->GetDesc(&desc);
 
       if (!fullscreen_desc_.Windowed && Fullscreen && monitor_ != desc.Monitor) {
-        HRESULT hr = LeaveFullscreenMode();
+        HRESULT hr = LeaveFullscreenMode(target.ptr());
         if (FAILED(hr))
           return hr;
       }
@@ -183,27 +185,28 @@ public:
     if (fullscreen_desc_.Windowed && Fullscreen)
       return EnterFullscreenMode(target.ptr());
     else if (!fullscreen_desc_.Windowed && !Fullscreen)
-      return LeaveFullscreenMode();
+      return LeaveFullscreenMode(target.ptr());
 
     return S_OK;
   };
 
   HRESULT EnterFullscreenMode(IDXGIOutput1* pTarget) {
     Com<IDXGIOutput1> output = pTarget;
+    Com<IMTLDXGIMonitor> dxgi_monitor;
 
     if (!wsi::isWindow(hWnd))
       return DXGI_ERROR_NOT_CURRENTLY_AVAILABLE;
-    
+
     if (output == nullptr) {
       if (FAILED(GetOutputFromMonitor(wsi::getWindowMonitor(hWnd), &output))) {
-       ERR("DXGI: EnterFullscreenMode: Cannot query containing output");
+        ERR("DXGI: EnterFullscreenMode: Cannot query containing output");
         return E_FAIL;
       }
     }
-    
+
     // Update swap chain description
     fullscreen_desc_.Windowed = FALSE;
-    
+
     // Move the window so that it covers the entire output
     bool modeSwitch = (desc_.Flags & DXGI_SWAP_CHAIN_FLAG_ALLOW_MODE_SWITCH) != 0u;
 
@@ -214,28 +217,59 @@ public:
       ERR("DXGI: EnterFullscreenMode: Failed to enter fullscreen mode");
       return DXGI_ERROR_NOT_CURRENTLY_AVAILABLE;
     }
-    
+
     monitor_ = desc.Monitor;
     target_  = std::move(output);
 
+    HRESULT hr = target_->QueryInterface(IID_PPV_ARGS(&dxgi_monitor));
+    if (SUCCEEDED(hr)) {
+      dxgi_monitor->AttachGammaTable(&dxgi_gamma_data);
+      dxgi_monitor->GetDisplayId(hWnd, &dxgi_gamma_data.display_id);
+      if (!dxgi_gamma_data.original_gamma_curve_valid) {
+        dxgi_monitor->GetGammaCurve(dxgi_gamma_data.display_id,
+                                    dxgi_gamma_data.original_gamma_curve,
+                                    &dxgi_gamma_data.mum_curve_points);
+        dxgi_gamma_data.original_gamma_curve_valid = true;
+      }
+      dxgi_monitor->Release();
+    }
     return S_OK;
   }
-  
-  
-  HRESULT LeaveFullscreenMode() {
+
+  HRESULT LeaveFullscreenMode(IDXGIOutput1* pTarget) {
+    Com<IDXGIOutput1> output = pTarget;
+    Com<IMTLDXGIMonitor> dxgi_monitor;
     // Restore internal state
     fullscreen_desc_.Windowed = TRUE;
     target_  = nullptr;
     monitor_ = wsi::getWindowMonitor(hWnd);
-    
+
     if (!wsi::isWindow(hWnd))
       return S_OK;
-    
+
+    if (output == nullptr) {
+      if (FAILED(GetOutputFromMonitor(wsi::getWindowMonitor(hWnd), &output))) {
+        ERR("DXGI: EnterFullscreenMode: Cannot query containing output");
+        return E_FAIL;
+      }
+    }
+
     if (!wsi::leaveFullscreenMode(hWnd, &window_state_, true)) {
-      ERR("DXGI: LeaveFullscreenMode: Failed to exit fullscreen mode");
+      ERR("DXGI: EnterFullscreenMode: Failed to exit fullscreen mode");
       return DXGI_ERROR_NOT_CURRENTLY_AVAILABLE;
     }
-    
+
+    HRESULT hr = output->QueryInterface(IID_PPV_ARGS(&dxgi_monitor));
+    if (SUCCEEDED(hr)) {
+      dxgi_monitor->AttachGammaTable(&dxgi_gamma_data);
+      if (dxgi_gamma_data.original_gamma_curve_valid) {
+        dxgi_monitor->SetGammaCurve(dxgi_gamma_data.display_id,
+                                    dxgi_gamma_data.original_gamma_curve,
+                                    dxgi_gamma_data.mum_curve_points);
+      }
+      dxgi_monitor->AttachGammaTable(nullptr);
+      dxgi_monitor->Release();
+    }
     return S_OK;
   }
 
@@ -246,7 +280,7 @@ public:
 
     if (pFullscreen != nullptr)
       *pFullscreen = !fullscreen_desc_.Windowed;
-    
+
     if (ppTarget != nullptr)
       *ppTarget = target_.ref();
 
@@ -744,6 +778,7 @@ private:
   HANDLE present_semaphore_;
   HWND hWnd;
   HMONITOR monitor_;
+  MTLDXGI_GAMMA_DATA dxgi_gamma_data{};
   Com<IDXGIOutput1> target_;
   wsi::DXMTWindowState window_state_;
   uint32_t frame_latency;

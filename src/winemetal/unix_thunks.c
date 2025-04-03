@@ -51,3 +51,57 @@ __attribute__((dllexport)) void* CreateMTLFXTemporalScaler(void * d, void * devi
   WINE_UNIX_CALL(4, &p);
   return p.ret;
 };
+
+__attribute__((dllexport)) UINT CGGetDisplayGammaRampCapacity(UINT DisplayId) {
+  struct get_gamma_ramp_capacity_params p;
+  p.display_id = DisplayId;
+  WINE_UNIX_CALL(5, &p);
+  return p.capacity;
+};
+
+__attribute__((dllexport)) int CGSetDisplayGammaRamp(UINT DisplayId,
+                                                     UINT TableSize,
+                                                     float *RedTable,
+                                                     float *GreenTable,
+                                                     float *BlueTable) {
+  struct set_gamma_ramp_params p;
+  p.display_id = DisplayId;
+  p.table_size = TableSize;
+  p.red_table = RedTable;
+  p.green_table = GreenTable;
+  p.blue_table = BlueTable;
+  WINE_UNIX_CALL(6, &p);
+  return p.status;
+};
+
+__attribute__((dllexport)) int CGGetDisplayGammaRamp(UINT DisplayId,
+                                                     UINT Capacity,
+                                                     float *RedTable,
+                                                     float *GreenTable,
+                                                     float *BlueTable,
+                                                     UINT *pNumSamples) {
+  struct get_gamma_ramp_params p;
+  p.display_id = DisplayId;
+  p.capacity = Capacity;
+  p.red_table = RedTable;
+  p.green_table = GreenTable;
+  p.blue_table = BlueTable;
+  p.num_samples = pNumSamples;
+  WINE_UNIX_CALL(7, &p);
+  return p.status;
+};
+
+__attribute__((dllexport)) int CGGetDisplayIdWithRect(int X,
+                                                      int Y,
+                                                      int Width,
+                                                      int Height,
+                                                      UINT *pDisplayId) {
+  struct get_display_by_rect_params p;
+  p.x = X;
+  p.y = Y;
+  p.width = Width;
+  p.height = Height;
+  p.display_id = pDisplayId;
+  WINE_UNIX_CALL(27, &p);
+  return p.status;
+};

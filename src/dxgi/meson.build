@@ -3,6 +3,7 @@ dxgi_res = wrc_generator.process('version.rc')
 dxgi_src = [
   'dxgi_adapter.cpp',
   'dxgi_factory.cpp',
+  'dxgi_monitor.cpp',
   'dxgi_output.cpp',
   'dxgi_options.cpp',
   'dxgi.cpp',

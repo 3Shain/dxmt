@@ -6,6 +6,7 @@
 #include "dlfcn.h"
 #include "pthread.h"
 #include "../unix_thunks.h"
+#include <CoreGraphics/CGDirectDisplay.h>
 
 typedef int NTSTATUS;
 #define STATUS_SUCCESS 0
@@ -126,15 +127,71 @@ NTSTATUS CreateMTLFXTemporalScaler(struct create_fxscaler_params *params) {
   return STATUS_SUCCESS;
 };
 
+static
+NTSTATUS
+CGGetDisplayGammaRampCapacity(struct get_gamma_ramp_capacity_params *params) {
+    params->capacity = CGDisplayGammaTableCapacity(params->display_id);
+    return STATUS_SUCCESS;
+}
+
+static
+NTSTATUS
+CGSetDisplayGammaRamp(struct set_gamma_ramp_params *params) {
+    CGError err;
+
+    err = CGSetDisplayTransferByTable(params->display_id,
+                                      params->table_size,
+                                      params->red_table,
+                                      params->green_table,
+                                      params->blue_table);
+    params->status = (err == kCGErrorSuccess) ? 0 : -1;
+    return STATUS_SUCCESS;
+}
+
+static
+NTSTATUS
+CGGetDisplayGammaRamp(struct get_gamma_ramp_params *params) {
+    CGError err;
+
+    err = CGGetDisplayTransferByTable(params->display_id,
+                                      params->capacity,
+                                      params->red_table,
+                                      params->green_table,
+                                      params->blue_table,
+                                      params->num_samples);
+    params->status = (err == kCGErrorSuccess) ? 0 : -1;
+    return STATUS_SUCCESS;
+}
+
+static
+NTSTATUS
+CGGetDisplayIdWithRect(struct get_display_by_rect_params *params) {
+    CGError err;
+    CGRect rect = CGRectMake(params->x,
+                             params->y,
+                             params->width,
+                             params->height);
+    CGDirectDisplayID displays[1];
+    uint32_t matchingDisplayCount = 0;
+
+    err = CGGetDisplaysWithRect(rect,
+                                1,
+                                displays,
+                                &matchingDisplayCount);
+    *params->display_id = displays[0];
+    params->status = (err != kCGErrorSuccess || matchingDisplayCount == 0) ? -1 : 0;
+    return STATUS_SUCCESS;
+}
+
 const void *__wine_unix_call_funcs[] = {
     &objc_lookUpClass,
     &sel_registerName,
     &objc_msgSend,
     &objc_getProtocol,
     &CreateMTLFXTemporalScaler,
-    0,
-    0,
-    0,
+    &CGGetDisplayGammaRampCapacity,
+    &CGSetDisplayGammaRamp,
+    &CGGetDisplayGammaRamp,
     &dlsym,
     &MTLCreateSystemDefaultDevice,
     &MTLCopyAllDevices,
@@ -163,7 +220,7 @@ const void *__wine_unix_call_funcs[] = {
     &dispatch_semaphore_wait,
     &printf,
     &dispatch_release,
-    0,
+    &CGGetDisplayIdWithRect,
     0,
     &malloc,
     &free,
