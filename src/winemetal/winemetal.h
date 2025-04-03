@@ -69,4 +69,25 @@ WINEMETAL_API obj_handle_t MTLDevice_name(obj_handle_t device);
 WINEMETAL_API uint32_t
 NSString_getCString(obj_handle_t str, char *buffer, uint64_t maxLength, enum WMTStringEncoding encoding);
 
+WINEMETAL_API obj_handle_t MTLDevice_newCommandQueue(obj_handle_t device, uint64_t maxCommandBufferCount);
+
+WINEMETAL_API obj_handle_t NSAutoreleasePool_alloc_init();
+
+WINEMETAL_API obj_handle_t MTLCommandQueue_commandBuffer(obj_handle_t queue);
+
+WINEMETAL_API void MTLCommandBuffer_commit(obj_handle_t cmdbuf);
+
+WINEMETAL_API void MTLCommandBuffer_waitUntilCompleted(obj_handle_t cmdbuf);
+
+enum WMTCommandBufferStatus : uint64_t {
+  WMTCommandBufferStatusNotEnqueued = 0,
+  WMTCommandBufferStatusEnqueued = 1,
+  WMTCommandBufferStatusCommitted = 2,
+  WMTCommandBufferStatusScheduled = 3,
+  WMTCommandBufferStatusCompleted = 4,
+  WMTCommandBufferStatusError = 5,
+};
+
+WINEMETAL_API enum WMTCommandBufferStatus MTLCommandBuffer_status(obj_handle_t cmdbuf);
+
 #endif

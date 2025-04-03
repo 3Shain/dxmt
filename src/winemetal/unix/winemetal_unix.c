@@ -1,3 +1,4 @@
+#import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
 #define WINEMETAL_API
 #include "../winemetal_thunks.h"
@@ -68,6 +69,48 @@ _NSString_getCString(void *obj) {
   return STATUS_SUCCESS;
 }
 
+static NTSTATUS
+_MTLDevice_newCommandQueue(void *obj) {
+  struct unixcall_generic_obj_uint64_obj_ret *params = obj;
+  params->ret = (obj_handle_t)[(id<MTLDevice>)params->handle newCommandQueueWithMaxCommandBufferCount:params->arg];
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_NSAutoreleasePool_alloc_init(void *obj) {
+  struct unixcall_generic_obj_ret *params = obj;
+  params->ret = (obj_handle_t)[[NSAutoreleasePool alloc] init];
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_MTLCommandQueue_commandBuffer(void *obj) {
+  struct unixcall_generic_obj_obj_ret *params = obj;
+  params->ret = (obj_handle_t)[(id<MTLCommandQueue>)params->handle commandBuffer];
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_MTLCommandBuffer_commit(void *obj) {
+  struct unixcall_generic_obj_noret *params = obj;
+  [(id<MTLCommandBuffer>)params->handle commit];
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_MTLCommandBuffer_waitUntilCompleted(void *obj) {
+  struct unixcall_generic_obj_noret *params = obj;
+  [(id<MTLCommandBuffer>)params->handle waitUntilCompleted];
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_MTLCommandBuffer_status(void *obj) {
+  struct unixcall_generic_obj_uint64_ret *params = obj;
+  params->ret = [(id<MTLCommandBuffer>)params->handle status];
+  return STATUS_SUCCESS;
+}
+
 const void *__winemetal_unixcalls[] = {
     &_NSObject_retain,
     &_NSObject_release,
@@ -78,6 +121,12 @@ const void *__winemetal_unixcalls[] = {
     &_MTLDevice_currentAllocatedSize,
     &_MTLDevice_name,
     &_NSString_getCString,
+    &_MTLDevice_newCommandQueue,
+    &_NSAutoreleasePool_alloc_init,
+    &_MTLCommandQueue_commandBuffer,
+    &_MTLCommandBuffer_commit,
+    &_MTLCommandBuffer_waitUntilCompleted,
+    &_MTLCommandBuffer_status,
 };
 
 const unsigned int __winemetal_unixcalls_num = sizeof(__winemetal_unixcalls) / sizeof(void *);

@@ -8,6 +8,10 @@ struct unixcall_generic_obj_ret {
   obj_handle_t ret;
 };
 
+struct unixcall_generic_obj_noret {
+  obj_handle_t handle;
+};
+
 struct unixcall_generic_obj_obj_ret {
   obj_handle_t handle;
   obj_handle_t ret;

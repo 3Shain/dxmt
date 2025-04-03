@@ -47,7 +47,8 @@ WMTCopyAllDevices() {
   return params.ret;
 }
 
-WINEMETAL_API uint64_t MTLDevice_recommendedMaxWorkingSetSize(obj_handle_t device) {
+WINEMETAL_API uint64_t
+MTLDevice_recommendedMaxWorkingSetSize(obj_handle_t device) {
   struct unixcall_generic_obj_uint64_ret params;
   params.handle = device;
   params.ret = 0;
@@ -55,7 +56,8 @@ WINEMETAL_API uint64_t MTLDevice_recommendedMaxWorkingSetSize(obj_handle_t devic
   return params.ret;
 }
 
-WINEMETAL_API uint64_t MTLDevice_currentAllocatedSize(obj_handle_t device) {
+WINEMETAL_API uint64_t
+MTLDevice_currentAllocatedSize(obj_handle_t device) {
   struct unixcall_generic_obj_uint64_ret params;
   params.handle = device;
   params.ret = 0;
@@ -63,14 +65,14 @@ WINEMETAL_API uint64_t MTLDevice_currentAllocatedSize(obj_handle_t device) {
   return params.ret;
 }
 
-WINEMETAL_API obj_handle_t MTLDevice_name(obj_handle_t device) {
+WINEMETAL_API obj_handle_t
+MTLDevice_name(obj_handle_t device) {
   struct unixcall_generic_obj_obj_ret params;
   params.handle = device;
   params.ret = 0;
   UNIX_CALL(7, &params);
   return params.ret;
 }
-
 
 WINEMETAL_API uint32_t
 NSString_getCString(obj_handle_t str, char *buffer, uint64_t maxLength, enum WMTStringEncoding encoding) {
@@ -80,5 +82,57 @@ NSString_getCString(obj_handle_t str, char *buffer, uint64_t maxLength, enum WMT
   params.max_length = maxLength;
   params.encoding = encoding;
   UNIX_CALL(8, &params);
+  return params.ret;
+}
+
+WINEMETAL_API obj_handle_t
+MTLDevice_newCommandQueue(obj_handle_t device, uint64_t maxCommandBufferCount) {
+  struct unixcall_generic_obj_uint64_obj_ret params;
+  params.handle = device;
+  params.arg = maxCommandBufferCount;
+  params.ret = 0;
+  UNIX_CALL(9, &params);
+  return params.ret;
+}
+
+WINEMETAL_API obj_handle_t
+NSAutoreleasePool_alloc_init() {
+  struct unixcall_generic_obj_ret params;
+  params.ret = 0;
+  UNIX_CALL(10, &params);
+  return params.ret;
+}
+
+WINEMETAL_API obj_handle_t
+MTLCommandQueue_commandBuffer(obj_handle_t queue) {
+  struct unixcall_generic_obj_obj_ret params;
+  params.handle = queue;
+  params.ret = 0;
+  UNIX_CALL(11, &params);
+  return params.ret;
+}
+
+WINEMETAL_API void
+MTLCommandBuffer_commit(obj_handle_t cmdbuf) {
+  struct unixcall_generic_obj_noret params;
+  params.handle = cmdbuf;
+  UNIX_CALL(12, &params);
+  return;
+}
+
+WINEMETAL_API void
+MTLCommandBuffer_waitUntilCompleted(obj_handle_t cmdbuf) {
+  struct unixcall_generic_obj_noret params;
+  params.handle = cmdbuf;
+  UNIX_CALL(13, &params);
+  return;
+}
+
+WINEMETAL_API enum WMTCommandBufferStatus
+MTLCommandBuffer_status(obj_handle_t cmdbuf) {
+  struct unixcall_generic_obj_uint64_ret params;
+  params.handle = cmdbuf;
+  params.ret = 0;
+  UNIX_CALL(14, &params);
   return params.ret;
 }
