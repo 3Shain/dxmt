@@ -1,5 +1,5 @@
 winemetal_unix_src = [
-  'unix.c',
+  'unix.c', 'winemetal_unix.c'
 ]
 
 if wine_build_path != ''
