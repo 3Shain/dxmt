@@ -787,7 +787,7 @@ ArgumentEncodingContext::flushCommands(MTL::CommandBuffer *cmdbuf, uint64_t seqI
     }
     case EncoderType::SignalEvent: {
       auto data = static_cast<SignalEventData *>(current);
-      cmdbuf->encodeSignalEvent(data->event, data->value);
+      WMT::CommandBuffer((obj_handle_t)cmdbuf).encodeSignalEvent(data->event, data->value);
       data->~SignalEventData();
       break;
     }
@@ -821,7 +821,7 @@ ArgumentEncodingContext::flushCommands(MTL::CommandBuffer *cmdbuf, uint64_t seqI
   encoder_last = &encoder_head;
   encoder_count_ = 0;
 
-  cmdbuf->encodeSignalEvent(queue_.event, event_seq_id);
+  WMT::CommandBuffer((obj_handle_t)cmdbuf).encodeSignalEvent(queue_.event, event_seq_id);
 
   return visibility_readback;
 }
