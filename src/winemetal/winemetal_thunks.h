@@ -54,4 +54,10 @@ struct unixcall_mtldevice_newsamplerstate {
   obj_handle_t ret;
 };
 
+struct unixcall_mtldevice_newdepthstencilstate {
+  obj_handle_t device;
+  struct WMTDepthStencilInfo *info;
+  obj_handle_t ret;
+};
+
 #endif

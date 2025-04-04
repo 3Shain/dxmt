@@ -209,4 +209,34 @@ STATIC_ASSERT(sizeof(WMTSamplerInfo) == 32);
 
 WINEMETAL_API obj_handle_t MTLDevice_newSamplerState(obj_handle_t device, struct WMTSamplerInfo *info);
 
+enum WMTStencilOperation: uint8_t {
+  WMTStencilOperationKeep = 0,
+  WMTStencilOperationZero = 1,
+  WMTStencilOperationReplace = 2,
+  WMTStencilOperationIncrementClamp = 3,
+  WMTStencilOperationDecrementClamp = 4,
+  WMTStencilOperationInvert = 5,
+  WMTStencilOperationIncrementWrap = 6,
+  WMTStencilOperationDecrementWrap = 7,
+};
+
+struct WMTStencilInfo {
+  bool enabled;
+  enum WMTStencilOperation depth_stencil_pass_op;
+  enum WMTStencilOperation stencil_fail_op;
+  enum WMTStencilOperation depth_fail_op;
+  enum WMTCompareFunction stencil_compare_function;
+  uint8_t write_mask;
+  uint8_t read_mask;
+};
+
+struct WMTDepthStencilInfo {
+  enum WMTCompareFunction depth_compare_function;
+  bool depth_write_enabled;
+  struct WMTStencilInfo front_stencil;
+  struct WMTStencilInfo back_stencil;
+};
+
+WINEMETAL_API obj_handle_t MTLDevice_newDepthStencilState(obj_handle_t device, struct WMTDepthStencilInfo *info);
+
 #endif

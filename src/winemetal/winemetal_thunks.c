@@ -182,3 +182,12 @@ MTLDevice_newSamplerState(obj_handle_t device, struct WMTSamplerInfo *info) {
   UNIX_CALL(19, &params);
   return params.ret;
 }
+
+WINEMETAL_API obj_handle_t
+MTLDevice_newDepthStencilState(obj_handle_t device, struct WMTDepthStencilInfo *info) {
+  struct unixcall_mtldevice_newdepthstencilstate params;
+  params.device = device;
+  params.info = info;
+  UNIX_CALL(20, &params);
+  return params.ret;
+}
