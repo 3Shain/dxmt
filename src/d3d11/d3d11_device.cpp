@@ -1013,6 +1013,10 @@ public:
     return m_container->GetMTLDevice();
   }
 
+  WMT::Device STDMETHODCALLTYPE GetWMTDevice() override {
+    return WMT::Device((obj_handle_t)m_container->GetMTLDevice());
+  }
+
   void SubmitThreadgroupWork(IMTLThreadpoolWork *pWork) override {
     scheduler_.submit(pWork);
   }
