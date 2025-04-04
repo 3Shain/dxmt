@@ -136,6 +136,10 @@ class SamplerState : public Object {
 public:
 };
 
+class DepthStencilState : public Object {
+public:
+};
+
 class CommandBuffer : public Object {
 public:
   void
@@ -202,6 +206,11 @@ public:
   Reference<SamplerState>
   newSamplerState(WMTSamplerInfo *info) {
     return Reference<SamplerState>(MTLDevice_newSamplerState(handle, info));
+  }
+
+  Reference<DepthStencilState>
+  newDepthStencilState(WMTDepthStencilInfo *info) {
+    return Reference<DepthStencilState>(MTLDevice_newDepthStencilState(handle, info));
   }
 };
 

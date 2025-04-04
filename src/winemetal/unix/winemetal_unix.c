@@ -181,6 +181,40 @@ _MTLDevice_newSamplerState(void *obj) {
   return STATUS_SUCCESS;
 }
 
+
+static NTSTATUS
+_MTLDevice_newDepthStencilState(void *obj) {
+  struct unixcall_mtldevice_newdepthstencilstate *params = obj;
+  id<MTLDevice> device = (id<MTLDevice>)params->device;
+  struct WMTDepthStencilInfo *info = params->info;
+
+  MTLDepthStencilDescriptor *desc = [[MTLDepthStencilDescriptor alloc] init];
+  desc.depthCompareFunction = (MTLCompareFunction)info->depth_compare_function;
+  desc.depthWriteEnabled = info->depth_write_enabled;
+
+  if (info->front_stencil.enabled) {
+    desc.frontFaceStencil.depthStencilPassOperation = (MTLStencilOperation)info->front_stencil.depth_stencil_pass_op;
+    desc.frontFaceStencil.depthFailureOperation = (MTLStencilOperation)info->front_stencil.depth_fail_op;
+    desc.frontFaceStencil.stencilFailureOperation = (MTLStencilOperation)info->front_stencil.stencil_fail_op;
+    desc.frontFaceStencil.stencilCompareFunction = (MTLCompareFunction)info->front_stencil.stencil_compare_function;
+    desc.frontFaceStencil.writeMask = info->front_stencil.write_mask;
+    desc.frontFaceStencil.readMask = info->front_stencil.read_mask;
+  }
+
+  if (info->back_stencil.enabled) {
+    desc.backFaceStencil.depthStencilPassOperation = (MTLStencilOperation)info->back_stencil.depth_stencil_pass_op;
+    desc.backFaceStencil.depthFailureOperation = (MTLStencilOperation)info->back_stencil.depth_fail_op;
+    desc.backFaceStencil.stencilFailureOperation = (MTLStencilOperation)info->back_stencil.stencil_fail_op;
+    desc.backFaceStencil.stencilCompareFunction = (MTLCompareFunction)info->back_stencil.stencil_compare_function;
+    desc.backFaceStencil.writeMask = info->back_stencil.write_mask;
+    desc.backFaceStencil.readMask = info->back_stencil.read_mask;
+  }
+
+  params->ret = (obj_handle_t)[device newDepthStencilStateWithDescriptor:desc];
+  [desc release];
+  return STATUS_SUCCESS;
+}
+
 const void *__winemetal_unixcalls[] = {
     &_NSObject_retain,
     &_NSObject_release,
@@ -202,6 +236,7 @@ const void *__winemetal_unixcalls[] = {
     &_MTLCommandBuffer_encodeSignalEvent,
     &_MTLDevice_newBuffer,
     &_MTLDevice_newSamplerState,
+    &_MTLDevice_newDepthStencilState,
 };
 
 const unsigned int __winemetal_unixcalls_num = sizeof(__winemetal_unixcalls) / sizeof(void *);
