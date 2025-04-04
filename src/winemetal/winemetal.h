@@ -4,9 +4,11 @@
 #ifdef __cplusplus
 #include <cstdint>
 #include <cstdbool>
+#define STATIC_ASSERT(x) static_assert(x)
 #else
 #include <stdint.h>
 #include <stdbool.h>
+#define STATIC_ASSERT(x)
 #endif
 
 #ifndef WINEMETAL_API
@@ -95,5 +97,57 @@ WINEMETAL_API obj_handle_t MTLDevice_newSharedEvent(obj_handle_t device);
 WINEMETAL_API uint64_t MTLSharedEvent_signaledValue(obj_handle_t event);
 
 WINEMETAL_API void MTLCommandBuffer_encodeSignalEvent(obj_handle_t cmdbuf, obj_handle_t event, uint64_t value);
+
+enum WMTResourceOptions : uint64_t {
+  WMTResourceCPUCacheModeDefaultCache = 0,
+  WMTResourceCPUCacheModeWriteCombined = 1,
+  WMTResourceStorageModeShared = 0,
+  WMTResourceStorageModeManaged = 16,
+  WMTResourceStorageModePrivate = 32,
+  WMTResourceStorageModeMemoryless = 48,
+  WMTResourceHazardTrackingModeDefault = 0,
+  WMTResourceHazardTrackingModeUntracked = 256,
+  WMTResourceHazardTrackingModeTracked = 512,
+  WMTResourceOptionCPUCacheModeDefault = 0,
+  WMTResourceOptionCPUCacheModeWriteCombined = 1,
+};
+
+struct WMTMemoryPointer {
+  void *ptr;
+#if defined(__i386__)
+  uint32_t high_part;
+#endif
+
+#ifdef __cplusplus
+  void
+  set(void *p) {
+#if defined(__i386__)
+    high_part = 0;
+#endif
+    ptr = p;
+  }
+
+  void *
+  get() {
+#if defined(__i386__)
+    assert(!high_part && "inaccessible 64-bit pointer");
+#endif
+    return ptr;
+  }
+#endif
+};
+
+STATIC_ASSERT(sizeof(WMTMemoryPointer) == 8);
+
+struct WMTBufferInfo {
+  uint64_t length;                 // in
+  enum WMTResourceOptions options; // in
+  struct WMTMemoryPointer memory;  // inout
+  uint64_t gpu_address;            // out
+};
+
+STATIC_ASSERT(sizeof(WMTBufferInfo) == 32);
+
+WINEMETAL_API obj_handle_t MTLDevice_newBuffer(obj_handle_t device, struct WMTBufferInfo *info);
 
 #endif

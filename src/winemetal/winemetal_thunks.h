@@ -42,4 +42,10 @@ struct unixcall_nsstring_getcstring {
   uint32_t ret;
 };
 
+struct unixcall_mtldevice_newbuffer {
+  obj_handle_t device;
+  struct WMTBufferInfo *info;
+  obj_handle_t ret;
+};
+
 #endif

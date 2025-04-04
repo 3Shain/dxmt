@@ -164,3 +164,12 @@ MTLCommandBuffer_encodeSignalEvent(obj_handle_t cmdbuf, obj_handle_t event, uint
   UNIX_CALL(17, &params);
   return;
 }
+
+WINEMETAL_API obj_handle_t
+MTLDevice_newBuffer(obj_handle_t device, struct WMTBufferInfo *info) {
+  struct unixcall_mtldevice_newbuffer params;
+  params.device = device;
+  params.info = info;
+  UNIX_CALL(18, &params);
+  return params.ret;
+}
