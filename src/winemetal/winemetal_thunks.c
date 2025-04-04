@@ -173,3 +173,12 @@ MTLDevice_newBuffer(obj_handle_t device, struct WMTBufferInfo *info) {
   UNIX_CALL(18, &params);
   return params.ret;
 }
+
+WINEMETAL_API obj_handle_t
+MTLDevice_newSamplerState(obj_handle_t device, struct WMTSamplerInfo *info) {
+  struct unixcall_mtldevice_newsamplerstate params;
+  params.device = device;
+  params.info = info;
+  UNIX_CALL(19, &params);
+  return params.ret;
+}

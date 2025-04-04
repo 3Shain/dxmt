@@ -152,6 +152,35 @@ _MTLDevice_newBuffer(void *obj) {
   return STATUS_SUCCESS;
 }
 
+static NTSTATUS
+_MTLDevice_newSamplerState(void *obj) {
+  struct unixcall_mtldevice_newsamplerstate *params = obj;
+  id<MTLDevice> device = (id<MTLDevice>)params->device;
+  struct WMTSamplerInfo *info = params->info;
+
+  MTLSamplerDescriptor *sampler_desc = [[MTLSamplerDescriptor alloc] init];
+  sampler_desc.borderColor = (MTLSamplerBorderColor)info->border_color;
+  sampler_desc.rAddressMode = (MTLSamplerAddressMode)info->r_address_mode;
+  sampler_desc.sAddressMode = (MTLSamplerAddressMode)info->s_address_mode;
+  sampler_desc.tAddressMode = (MTLSamplerAddressMode)info->t_address_mode;
+  sampler_desc.magFilter = (MTLSamplerMinMagFilter)info->mag_filter;
+  sampler_desc.minFilter = (MTLSamplerMinMagFilter)info->min_filter;
+  sampler_desc.mipFilter = (MTLSamplerMipFilter)info->mip_filter;
+  sampler_desc.compareFunction = (MTLCompareFunction)info->compare_function;
+  sampler_desc.lodMaxClamp = info->lod_max_clamp;
+  sampler_desc.lodMinClamp = info->lod_min_clamp;
+  sampler_desc.maxAnisotropy = info->max_anisotroy;
+  sampler_desc.lodAverage = info->lod_average;
+  sampler_desc.normalizedCoordinates = info->normalized_coords;
+  sampler_desc.supportArgumentBuffers = info->support_argument_buffers;
+
+  id<MTLSamplerState> sampler = [device newSamplerStateWithDescriptor:sampler_desc];
+  info->gpu_resource_id = info->support_argument_buffers ? [sampler gpuResourceID]._impl : 0;
+  params->ret = (obj_handle_t)sampler;
+  [sampler_desc release];
+  return STATUS_SUCCESS;
+}
+
 const void *__winemetal_unixcalls[] = {
     &_NSObject_retain,
     &_NSObject_release,
@@ -172,6 +201,7 @@ const void *__winemetal_unixcalls[] = {
     &_MTLSharedEvent_signaledValue,
     &_MTLCommandBuffer_encodeSignalEvent,
     &_MTLDevice_newBuffer,
+    &_MTLDevice_newSamplerState,
 };
 
 const unsigned int __winemetal_unixcalls_num = sizeof(__winemetal_unixcalls) / sizeof(void *);
