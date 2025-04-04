@@ -132,6 +132,26 @@ _MTLCommandBuffer_encodeSignalEvent(void *obj) {
   return STATUS_SUCCESS;
 }
 
+static NTSTATUS
+_MTLDevice_newBuffer(void *obj) {
+  struct unixcall_mtldevice_newbuffer *params = obj;
+  id<MTLDevice> device = (id<MTLDevice>)params->device;
+  struct WMTBufferInfo *info = params->info;
+  id<MTLBuffer> buffer;
+  if (info->memory.ptr) {
+    buffer = [device newBufferWithBytesNoCopy:info->memory.ptr
+                                       length:info->length
+                                      options:(enum MTLResourceOptions)info->options
+                                  deallocator:NULL];
+  } else {
+    buffer = [device newBufferWithLength:info->length options:(enum MTLResourceOptions)info->options];
+    info->memory.ptr = [buffer storageMode] == MTLStorageModePrivate ? NULL : [buffer contents];
+  }
+  params->ret = (obj_handle_t)buffer;
+  info->gpu_address = [buffer gpuAddress];
+  return STATUS_SUCCESS;
+}
+
 const void *__winemetal_unixcalls[] = {
     &_NSObject_retain,
     &_NSObject_release,
@@ -151,6 +171,7 @@ const void *__winemetal_unixcalls[] = {
     &_MTLDevice_newSharedEvent,
     &_MTLSharedEvent_signaledValue,
     &_MTLCommandBuffer_encodeSignalEvent,
+    &_MTLDevice_newBuffer,
 };
 
 const unsigned int __winemetal_unixcalls_num = sizeof(__winemetal_unixcalls) / sizeof(void *);

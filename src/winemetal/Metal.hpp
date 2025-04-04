@@ -124,6 +124,14 @@ public:
   }
 };
 
+class Resource : public Object {
+public:
+};
+
+class Buffer : public Resource {
+public:
+};
+
 class CommandBuffer : public Object {
 public:
   void
@@ -180,6 +188,11 @@ public:
   Reference<SharedEvent>
   newSharedEvent() {
     return Reference<SharedEvent>(MTLDevice_newSharedEvent(handle));
+  }
+
+  Reference<Buffer>
+  newBuffer(WMTBufferInfo *info) {
+    return Reference<Buffer>(MTLDevice_newBuffer(handle, info));
   }
 };
 
