@@ -111,6 +111,27 @@ _MTLCommandBuffer_status(void *obj) {
   return STATUS_SUCCESS;
 }
 
+static NTSTATUS
+_MTLDevice_newSharedEvent(void *obj) {
+  struct unixcall_generic_obj_obj_ret *params = obj;
+  params->ret = (obj_handle_t)[(id<MTLDevice>)params->handle newSharedEvent];
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_MTLSharedEvent_signaledValue(void *obj) {
+  struct unixcall_generic_obj_uint64_ret *params = obj;
+  params->ret = [(id<MTLSharedEvent>)params->handle signaledValue];
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_MTLCommandBuffer_encodeSignalEvent(void *obj) {
+  struct unixcall_generic_obj_obj_uint64_noret *params = obj;
+  [(id<MTLCommandBuffer>)params->handle encodeSignalEvent:(id<MTLSharedEvent>)params->arg0 value:params->arg1];
+  return STATUS_SUCCESS;
+}
+
 const void *__winemetal_unixcalls[] = {
     &_NSObject_retain,
     &_NSObject_release,
@@ -127,6 +148,9 @@ const void *__winemetal_unixcalls[] = {
     &_MTLCommandBuffer_commit,
     &_MTLCommandBuffer_waitUntilCompleted,
     &_MTLCommandBuffer_status,
+    &_MTLDevice_newSharedEvent,
+    &_MTLSharedEvent_signaledValue,
+    &_MTLCommandBuffer_encodeSignalEvent,
 };
 
 const unsigned int __winemetal_unixcalls_num = sizeof(__winemetal_unixcalls) / sizeof(void *);

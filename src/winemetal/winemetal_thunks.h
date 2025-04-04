@@ -28,6 +28,12 @@ struct unixcall_generic_obj_uint64_ret {
   uint64_t ret;
 };
 
+struct unixcall_generic_obj_obj_uint64_noret {
+  obj_handle_t handle;
+  obj_handle_t arg0;
+  uint64_t arg1;
+};
+
 struct unixcall_nsstring_getcstring {
   obj_handle_t str;
   uint64_t buffer_ptr;

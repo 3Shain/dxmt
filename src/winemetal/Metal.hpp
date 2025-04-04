@@ -112,6 +112,18 @@ public:
   }
 };
 
+class Event : public Object {
+public:
+};
+
+class SharedEvent : public Event {
+public:
+  uint64_t
+  signaledValue() {
+    return MTLSharedEvent_signaledValue(handle);
+  }
+};
+
 class CommandBuffer : public Object {
 public:
   void
@@ -127,6 +139,11 @@ public:
   WMTCommandBufferStatus
   status() {
     return MTLCommandBuffer_status(handle);
+  }
+
+  void
+  encodeSignalEvent(Event event, uint64_t value) {
+    return MTLCommandBuffer_encodeSignalEvent(handle, event.handle, value);
   }
 };
 
@@ -158,6 +175,11 @@ public:
   Reference<CommandQueue>
   newCommandQueue(uint64_t maxCommandBufferCount) {
     return Reference<CommandQueue>(MTLDevice_newCommandQueue(handle, maxCommandBufferCount));
+  }
+
+  Reference<SharedEvent>
+  newSharedEvent() {
+    return Reference<SharedEvent>(MTLDevice_newSharedEvent(handle));
   }
 };
 
