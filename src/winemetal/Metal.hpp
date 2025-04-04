@@ -132,6 +132,10 @@ class Buffer : public Resource {
 public:
 };
 
+class SamplerState : public Object {
+public:
+};
+
 class CommandBuffer : public Object {
 public:
   void
@@ -193,6 +197,11 @@ public:
   Reference<Buffer>
   newBuffer(WMTBufferInfo *info) {
     return Reference<Buffer>(MTLDevice_newBuffer(handle, info));
+  }
+
+  Reference<SamplerState>
+  newSamplerState(WMTSamplerInfo *info) {
+    return Reference<SamplerState>(MTLDevice_newSamplerState(handle, info));
   }
 };
 

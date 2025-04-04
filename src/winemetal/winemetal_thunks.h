@@ -48,4 +48,10 @@ struct unixcall_mtldevice_newbuffer {
   obj_handle_t ret;
 };
 
+struct unixcall_mtldevice_newsamplerstate {
+  obj_handle_t device;
+  struct WMTSamplerInfo *info;
+  obj_handle_t ret;
+};
+
 #endif

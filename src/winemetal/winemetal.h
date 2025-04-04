@@ -150,4 +150,63 @@ STATIC_ASSERT(sizeof(WMTBufferInfo) == 32);
 
 WINEMETAL_API obj_handle_t MTLDevice_newBuffer(obj_handle_t device, struct WMTBufferInfo *info);
 
+enum WMTSamplerBorderColor : uint8_t {
+  WMTSamplerBorderColorTransparentBlack = 0,
+  WMTSamplerBorderColorOpaqueBlack = 1,
+  WMTSamplerBorderColorOpaqueWhite = 2,
+};
+
+enum WMTSamplerAddressMode : uint8_t {
+  WMTSamplerAddressModeClampToEdge = 0,
+  WMTSamplerAddressModeMirrorClampToEdge = 1,
+  WMTSamplerAddressModeRepeat = 2,
+  WMTSamplerAddressModeMirrorRepeat = 3,
+  WMTSamplerAddressModeClampToZero = 4,
+  WMTSamplerAddressModeClampToBorderColor = 5,
+};
+
+enum WMTSamplerMipFilter : uint8_t {
+  WMTSamplerMipFilterNotMipmapped = 0,
+  WMTSamplerMipFilterNearest = 1,
+  WMTSamplerMipFilterLinear = 2,
+};
+
+enum WMTSamplerMinMagFilter : uint8_t {
+  WMTSamplerMinMagFilterNearest = 0,
+  WMTSamplerMinMagFilterLinear = 1,
+};
+
+enum WMTCompareFunction : uint8_t {
+  WMTCompareFunctionNever = 0,
+  WMTCompareFunctionLess = 1,
+  WMTCompareFunctionEqual = 2,
+  WMTCompareFunctionLessEqual = 3,
+  WMTCompareFunctionGreater = 4,
+  WMTCompareFunctionNotEqual = 5,
+  WMTCompareFunctionGreaterEqual = 6,
+  WMTCompareFunctionAlways = 7,
+};
+
+struct WMTSamplerInfo {
+  enum WMTSamplerMinMagFilter min_filter;
+  enum WMTSamplerMinMagFilter mag_filter;
+  enum WMTSamplerMipFilter mip_filter;
+  enum WMTSamplerAddressMode r_address_mode;
+  enum WMTSamplerAddressMode s_address_mode;
+  enum WMTSamplerAddressMode t_address_mode;
+  enum WMTSamplerBorderColor border_color;
+  enum WMTCompareFunction compare_function;
+  float lod_min_clamp;
+  float lod_max_clamp;
+  uint32_t max_anisotroy;
+  bool normalized_coords;
+  bool lod_average;
+  bool support_argument_buffers;
+  uint64_t gpu_resource_id; // out
+};
+
+STATIC_ASSERT(sizeof(WMTSamplerInfo) == 32);
+
+WINEMETAL_API obj_handle_t MTLDevice_newSamplerState(obj_handle_t device, struct WMTSamplerInfo *info);
+
 #endif
