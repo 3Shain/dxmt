@@ -15,13 +15,13 @@ CommandQueue::CommandQueue(WMT::Device device) :
     device(device),
     commandQueue(device.newCommandQueue(kCommandChunkCount)),
     staging_allocator(
-        (MTL::Device *)device.handle, MTL::ResourceOptionCPUCacheModeWriteCombined | MTL::ResourceHazardTrackingModeUntracked |
-                    MTL::ResourceStorageModeShared
+        device, WMTResourceOptionCPUCacheModeWriteCombined | WMTResourceHazardTrackingModeUntracked |
+                    WMTResourceStorageModeShared
     ),
-    copy_temp_allocator((MTL::Device *)device.handle, MTL::ResourceHazardTrackingModeUntracked | MTL::ResourceStorageModePrivate),
+    copy_temp_allocator(device, WMTResourceHazardTrackingModeUntracked | WMTResourceStorageModePrivate),
     command_data_allocator(
-      (MTL::Device *)device.handle, MTL::ResourceHazardTrackingModeUntracked | MTL::ResourceCPUCacheModeWriteCombined |
-                    MTL::ResourceStorageModeShared
+        device,
+        WMTResourceHazardTrackingModeUntracked | WMTResourceCPUCacheModeWriteCombined | WMTResourceStorageModeShared
     ),
     emulated_cmd((MTL::Device *)device.handle),
     argument_encoding_ctx(*this, (MTL::Device *)device.handle) {
