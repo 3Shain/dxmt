@@ -181,7 +181,7 @@ private:
 public:
   EmulatedCommandContext emulated_cmd;
   ArgumentEncodingContext argument_encoding_ctx;
-  Obj<MTL::SharedEvent> event;
+  WMT::Reference<WMT::SharedEvent> event;
   std::uint64_t current_event_seq_id = 0;
   FrameStatisticsContainer statistics;
 
@@ -218,7 +218,7 @@ public:
 
   uint64_t
   SignaledEventSeqId() {
-    return event->signaledValue();
+    return event.signaledValue();
   };
 
   /**

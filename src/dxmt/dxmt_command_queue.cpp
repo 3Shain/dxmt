@@ -31,7 +31,7 @@ CommandQueue::CommandQueue(WMT::Device device) :
     chunk.cpu_argument_heap = (char *)malloc(kCommandChunkCPUHeapSize);
     chunk.reset();
   };
-  event = transfer(((MTL::Device *)device.handle)->newSharedEvent());
+  event = device.newSharedEvent();
 
   std::string env = env::getEnvVar("DXMT_CAPTURE_FRAME");
 
