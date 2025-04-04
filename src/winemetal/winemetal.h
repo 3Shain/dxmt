@@ -90,4 +90,10 @@ enum WMTCommandBufferStatus : uint64_t {
 
 WINEMETAL_API enum WMTCommandBufferStatus MTLCommandBuffer_status(obj_handle_t cmdbuf);
 
+WINEMETAL_API obj_handle_t MTLDevice_newSharedEvent(obj_handle_t device);
+
+WINEMETAL_API uint64_t MTLSharedEvent_signaledValue(obj_handle_t event);
+
+WINEMETAL_API void MTLCommandBuffer_encodeSignalEvent(obj_handle_t cmdbuf, obj_handle_t event, uint64_t value);
+
 #endif

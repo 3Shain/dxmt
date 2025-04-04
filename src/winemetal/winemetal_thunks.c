@@ -136,3 +136,31 @@ MTLCommandBuffer_status(obj_handle_t cmdbuf) {
   UNIX_CALL(14, &params);
   return params.ret;
 }
+
+WINEMETAL_API obj_handle_t
+MTLDevice_newSharedEvent(obj_handle_t device) {
+  struct unixcall_generic_obj_obj_ret params;
+  params.handle = device;
+  params.ret = 0;
+  UNIX_CALL(15, &params);
+  return params.ret;
+}
+
+WINEMETAL_API uint64_t
+MTLSharedEvent_signaledValue(obj_handle_t event) {
+  struct unixcall_generic_obj_uint64_ret params;
+  params.handle = event;
+  params.ret = 0;
+  UNIX_CALL(16, &params);
+  return params.ret;
+}
+
+WINEMETAL_API void
+MTLCommandBuffer_encodeSignalEvent(obj_handle_t cmdbuf, obj_handle_t event, uint64_t value) {
+  struct unixcall_generic_obj_obj_uint64_noret params;
+  params.handle = cmdbuf;
+  params.arg0 = event;
+  params.arg1 = value;
+  UNIX_CALL(17, &params);
+  return;
+}
