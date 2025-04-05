@@ -14,7 +14,7 @@ public:
 };
 
 struct DEVICE_DESC {
-  MTL::Device *device;
+  WMT::Device device;
 };
 
 std::unique_ptr<Device> CreateDXMTDevice(const DEVICE_DESC &desc);

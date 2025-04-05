@@ -1,33 +1,33 @@
 
+#include "Metal.hpp"
 #include "Metal/MTLDepthStencil.hpp"
 #include "Metal/MTLRenderCommandEncoder.hpp"
 #include "Metal/MTLSampler.hpp"
 #include "d3d11_device.hpp"
 #include "d3d11_state_object.hpp"
 #include "log/log.hpp"
-#include "objc_pointer.hpp"
 
 namespace dxmt {
 
-constexpr MTL::CompareFunction kCompareFunctionMap[] = {
-    MTL::CompareFunction::CompareFunctionNever, // padding 0
-    MTL::CompareFunction::CompareFunctionNever, // 1 - 1
-    MTL::CompareFunction::CompareFunctionLess,
-    MTL::CompareFunction::CompareFunctionEqual,
-    MTL::CompareFunction::CompareFunctionLessEqual,
-    MTL::CompareFunction::CompareFunctionGreater,
-    MTL::CompareFunction::CompareFunctionNotEqual,
-    MTL::CompareFunction::CompareFunctionGreaterEqual,
-    MTL::CompareFunction::CompareFunctionAlways // 8 - 1
+constexpr WMTCompareFunction kCompareFunctionMap[] = {
+  WMTCompareFunctionNever, // padding 0
+  WMTCompareFunctionNever, // 1 - 1
+  WMTCompareFunctionLess,
+  WMTCompareFunctionEqual,
+  WMTCompareFunctionLessEqual,
+  WMTCompareFunctionGreater,
+  WMTCompareFunctionNotEqual,
+  WMTCompareFunctionGreaterEqual,
+  WMTCompareFunctionAlways // 8 - 1
 };
 
-constexpr MTL::SamplerAddressMode kAddressModeMap[] = {
+constexpr WMTSamplerAddressMode kAddressModeMap[] = {
     // MTL: Texture coordinates wrap to the other side of the texture,
     // effectively keeping only the fractional part of the texture coordinate.
 
     // MSDN: Tile the texture at every (u,v) integer junction. For example, for
     // u values between 0 and 3, the texture is repeated three times.
-    MTL::SamplerAddressMode::SamplerAddressModeRepeat, // 1 - 1
+    WMTSamplerAddressModeRepeat, // 1 - 1
 
     // MTL:Between -1.0 and 1.0, the texture coordinates are mirrored across the
     // axis; outside -1.0 and 1.0, the image is repeated.
@@ -36,18 +36,18 @@ constexpr MTL::SamplerAddressMode kAddressModeMap[] = {
     // between 0 and 1, for example, the texture is addressed normally; between
     // 1 and 2, the texture is flipped (mirrored); between 2 and 3, the texture
     // is normal again; and so on.
-    MTL::SamplerAddressMode::SamplerAddressModeMirrorRepeat,
+    WMTSamplerAddressModeMirrorRepeat,
     // MTL: Texture coordinates are clamped between 0.0 and 1.0, inclusive.
     // MSDN: Texture coordinates outside the range [0.0, 1.0] are set to the
     // texture color at 0.0 or 1.0, respectively.
-    MTL::SamplerAddressMode::SamplerAddressModeClampToEdge,
+    WMTSamplerAddressModeClampToEdge,
 
     // MTL: Out-of-range texture coordinates return the value specified by the
     // borderColor property.
 
     // MSDN: Texture coordinates outside the range [0.0, 1.0] are set to the
     // border color specified in D3D11_SAMPLER_DESC or HLSL code.
-    MTL::SamplerAddressMode::SamplerAddressModeClampToBorderColor,
+    WMTSamplerAddressModeClampToBorderColor,
     // MTL: Between -1.0 and 1.0, the texture coordinates are mirrored across
     // the axis; outside -1.0 and 1.0, texture coordinates are clamped.
 
@@ -55,24 +55,24 @@ constexpr MTL::SamplerAddressMode kAddressModeMap[] = {
     //  Similar to D3D11_TEXTURE_ADDRESS_MIRROR and D3D11_TEXTURE_ADDRESS_CLAMP.
     //  Takes the absolute value of the texture coordinate (thus, mirroring
     //  around 0), and then clamps to the maximum value.
-    MTL::SamplerAddressMode::SamplerAddressModeMirrorClampToEdge // 5 - 1
+    WMTSamplerAddressModeMirrorClampToEdge // 5 - 1
 };
 
-constexpr MTL::StencilOperation kStencilOperationMap[] = {
-    MTL::StencilOperationZero, // invalid
-    MTL::StencilOperationKeep,
-    MTL::StencilOperationZero,
-    MTL::StencilOperationReplace,
+constexpr WMTStencilOperation kStencilOperationMap[] = {
+    WMTStencilOperationZero, // invalid
+    WMTStencilOperationKeep,
+    WMTStencilOperationZero,
+    WMTStencilOperationReplace,
     // D3D11_STENCIL_OP_INCR_SAT: Increment the stencil value by 1, and clamp
     // the result.
-    MTL::StencilOperationIncrementClamp,
-    MTL::StencilOperationDecrementClamp,
-    MTL::StencilOperationInvert,
+    WMTStencilOperationIncrementClamp,
+    WMTStencilOperationDecrementClamp,
+    WMTStencilOperationInvert,
     // D3D11_STENCIL_OP_INCR:Increment the stencil value by 1, and wrap the
     // result if necessary.
 
-    MTL::StencilOperationIncrementWrap,
-    MTL::StencilOperationDecrementWrap,
+    WMTStencilOperationIncrementWrap,
+    WMTStencilOperationDecrementWrap,
 
 };
 
@@ -185,11 +185,11 @@ class MTLD3D11SamplerState : public ManagedDeviceChild<IMTLD3D11SamplerState> {
 
 public:
   friend class MTLD3D11DeviceContext;
-  MTLD3D11SamplerState(MTLD3D11Device *device, MTL::SamplerState *samplerState,
+  MTLD3D11SamplerState(MTLD3D11Device *device, const WMTSamplerInfo &info,
+                       WMT::Reference<WMT::SamplerState> &&samplerState,
                        const D3D11_SAMPLER_DESC &desc, float lod_bias)
       : ManagedDeviceChild<IMTLD3D11SamplerState>(device), desc_(desc),
-        metal_sampler_state_(samplerState),
-        argument_handle_(samplerState->gpuResourceID()._impl),
+        metal_sampler_state_(std::move(samplerState)), info(info),
         lod_bias(lod_bias) {}
   ~MTLD3D11SamplerState() {}
 
@@ -219,17 +219,17 @@ public:
   }
 
   virtual MTL::SamplerState *GetSamplerState() {
-    return metal_sampler_state_.ptr();
+    return (MTL::SamplerState *)metal_sampler_state_.handle;
   }
 
-  virtual uint64_t GetArgumentHandle() { return argument_handle_; }
+  virtual uint64_t GetArgumentHandle() { return info.gpu_resource_id; }
 
   virtual float GetLODBias() { return lod_bias; }
 
 private:
   const D3D11_SAMPLER_DESC desc_;
-  Obj<MTL::SamplerState> metal_sampler_state_;
-  uint64_t argument_handle_;
+  WMT::Reference<WMT::SamplerState> metal_sampler_state_;
+  WMTSamplerInfo info;
   float lod_bias;
 };
 
@@ -509,9 +509,9 @@ class MTLD3D11DepthStencilState
 public:
   friend class MTLD3D11DeviceContext;
   MTLD3D11DepthStencilState(MTLD3D11Device *device,
-                            MTL::DepthStencilState *state,
-                            MTL::DepthStencilState *stencil_disabled,
-                            MTL::DepthStencilState *depthsteancil_disabled,
+                            WMT::DepthStencilState state,
+                            WMT::DepthStencilState stencil_disabled,
+                            WMT::DepthStencilState depthsteancil_disabled,
                             const D3D11_DEPTH_STENCIL_DESC &desc)
       : ManagedDeviceChild<IMTLD3D11DepthStencilState>(device), m_desc(desc),
         state_default_(state), state_stencil_disabled_(stencil_disabled),
@@ -547,14 +547,14 @@ public:
   virtual MTL::DepthStencilState *GetDepthStencilState(uint32_t planar_flags) {
     switch (planar_flags) {
     case 0:
-      return state_depthstencil_disabled_.ptr();
+      return (MTL::DepthStencilState *)state_depthstencil_disabled_.handle;
     case 1: /* depth without stencil */
-      return state_stencil_disabled_.ptr();
+      return (MTL::DepthStencilState *)state_stencil_disabled_.handle;
     case 2: /* stencil without depth */
       ERR("stencil only dsv is not properly handled");
-      return state_default_.ptr();
+      return (MTL::DepthStencilState *)state_default_.handle;
     default:
-      return state_default_.ptr();
+      return (MTL::DepthStencilState *)state_default_.handle;
     }
   }
 
@@ -564,9 +564,9 @@ public:
 
 private:
   const D3D11_DEPTH_STENCIL_DESC m_desc;
-  Obj<MTL::DepthStencilState> state_default_;
-  Obj<MTL::DepthStencilState> state_stencil_disabled_;
-  Obj<MTL::DepthStencilState> state_depthstencil_disabled_;
+  WMT::Reference<WMT::DepthStencilState> state_default_;
+  WMT::Reference<WMT::DepthStencilState> state_stencil_disabled_;
+  WMT::Reference<WMT::DepthStencilState> state_depthstencil_disabled_;
 };
 
 template <>
@@ -588,63 +588,55 @@ HRESULT StateObjectCache<D3D11_DEPTH_STENCIL_DESC, IMTLD3D11DepthStencilState>::
     return S_OK;
   }
 
-  using SD = MTL::StencilDescriptor;
-
-  using DSD = MTL::DepthStencilDescriptor;
-  Obj<MTL::DepthStencilDescriptor> dsd = transfer(DSD::alloc()->init());
+  WMTDepthStencilInfo info;
+  info.depth_compare_function = WMTCompareFunctionAlways;
+  info.depth_write_enabled = false;
+  info.front_stencil.enabled = false;
+  info.back_stencil.enabled = false;
   if (pDesc->DepthEnable) {
-    dsd->setDepthCompareFunction(kCompareFunctionMap[pDesc->DepthFunc]);
-    dsd->setDepthWriteEnabled(pDesc->DepthWriteMask ==
-                              D3D11_DEPTH_WRITE_MASK_ALL);
-  } else {
-    dsd->setDepthCompareFunction(MTL::CompareFunctionAlways);
-    dsd->setDepthWriteEnabled(false);
-  }
+    info.depth_compare_function = kCompareFunctionMap[pDesc->DepthFunc];
+    info.depth_write_enabled = pDesc->DepthWriteMask == D3D11_DEPTH_WRITE_MASK_ALL;
+  } 
 
   if (pDesc->StencilEnable) {
+    info.front_stencil.enabled = true;
+    info.back_stencil.enabled = true;
     {
-      auto fsd = transfer(SD::alloc()->init());
-      fsd->setDepthStencilPassOperation(
-          kStencilOperationMap[pDesc->FrontFace.StencilPassOp]);
-      fsd->setStencilFailureOperation(
-          kStencilOperationMap[pDesc->FrontFace.StencilFailOp]);
-      fsd->setDepthFailureOperation(
-          kStencilOperationMap[pDesc->FrontFace.StencilDepthFailOp]);
-      fsd->setStencilCompareFunction(
-          kCompareFunctionMap[pDesc->FrontFace.StencilFunc]);
-      fsd->setWriteMask(pDesc->StencilWriteMask);
-      fsd->setReadMask(pDesc->StencilReadMask);
-      dsd->setFrontFaceStencil(fsd.ptr());
+      info.front_stencil.depth_stencil_pass_op =
+          (kStencilOperationMap[pDesc->FrontFace.StencilPassOp]);
+      info.front_stencil.stencil_fail_op =
+          (kStencilOperationMap[pDesc->FrontFace.StencilFailOp]);
+      info.front_stencil.depth_fail_op =
+          (kStencilOperationMap[pDesc->FrontFace.StencilDepthFailOp]);
+      info.front_stencil.stencil_compare_function =
+          kCompareFunctionMap[pDesc->FrontFace.StencilFunc];
+      info.front_stencil.write_mask = pDesc->StencilWriteMask;
+      info.front_stencil.read_mask = pDesc->StencilReadMask;
     }
     {
-      auto bsd = transfer(SD::alloc()->init());
-      bsd->setDepthStencilPassOperation(
-          kStencilOperationMap[pDesc->BackFace.StencilPassOp]);
-      bsd->setStencilFailureOperation(
-          kStencilOperationMap[pDesc->BackFace.StencilFailOp]);
-      bsd->setDepthFailureOperation(
-          kStencilOperationMap[pDesc->BackFace.StencilDepthFailOp]);
-      bsd->setStencilCompareFunction(
-          kCompareFunctionMap[pDesc->BackFace.StencilFunc]);
-      bsd->setWriteMask(pDesc->StencilWriteMask);
-      bsd->setReadMask(pDesc->StencilReadMask);
-      dsd->setBackFaceStencil(bsd.ptr());
+      info.back_stencil.depth_stencil_pass_op =
+          (kStencilOperationMap[pDesc->BackFace.StencilPassOp]);
+      info.back_stencil.stencil_fail_op =
+          (kStencilOperationMap[pDesc->BackFace.StencilFailOp]);
+      info.back_stencil.depth_fail_op =
+          (kStencilOperationMap[pDesc->BackFace.StencilDepthFailOp]);
+      info.back_stencil.stencil_compare_function =
+          kCompareFunctionMap[pDesc->BackFace.StencilFunc];
+      info.back_stencil.write_mask = pDesc->StencilWriteMask;
+      info.back_stencil.read_mask = pDesc->StencilReadMask;
     }
   }
 
-  auto state_default =
-      transfer(device->GetMTLDevice()->newDepthStencilState(dsd.ptr()));
+  auto state_default = device->GetWMTDevice().newDepthStencilState(&info);
 
   if (pDesc->StencilEnable) {
-    dsd->setFrontFaceStencil(nullptr);
-    dsd->setBackFaceStencil(nullptr);
-    auto stencil_effective_disabled =
-        transfer(device->GetMTLDevice()->newDepthStencilState(dsd.ptr()));
+    info.front_stencil.enabled = false;
+    info.back_stencil.enabled = false;
+    auto stencil_effective_disabled = device->GetWMTDevice().newDepthStencilState(&info);
     if (pDesc->DepthEnable) {
-      dsd->setDepthCompareFunction(MTL::CompareFunctionAlways);
-      dsd->setDepthWriteEnabled(false);
-      auto depthstencil_effective_disabled =
-          transfer(device->GetMTLDevice()->newDepthStencilState(dsd.ptr()));
+      info.depth_compare_function = WMTCompareFunctionAlways;
+      info.depth_write_enabled = false;
+      auto depthstencil_effective_disabled = device->GetWMTDevice().newDepthStencilState(&info);
       cache.emplace(*pDesc,
                     std::make_unique<MTLD3D11DepthStencilState>(
                         device, state_default, stencil_effective_disabled,
@@ -658,10 +650,9 @@ HRESULT StateObjectCache<D3D11_DEPTH_STENCIL_DESC, IMTLD3D11DepthStencilState>::
     }
   } else {
     if (pDesc->DepthEnable) {
-      dsd->setDepthCompareFunction(MTL::CompareFunctionAlways);
-      dsd->setDepthWriteEnabled(false);
-      auto depth_effective_disabled =
-          transfer(device->GetMTLDevice()->newDepthStencilState(dsd.ptr()));
+      info.depth_compare_function = WMTCompareFunctionAlways;
+      info.depth_write_enabled = false;
+      auto depth_effective_disabled = device->GetWMTDevice().newDepthStencilState(&info);
       cache.emplace(*pDesc, std::make_unique<MTLD3D11DepthStencilState>(
                                 device, state_default, state_default,
                                 depth_effective_disabled, *pDesc));
@@ -725,79 +716,73 @@ StateObjectCache<D3D11_SAMPLER_DESC, IMTLD3D11SamplerState>::CreateStateObject(
     return S_OK;
   }
 
-  auto mtl_sampler_desc = transfer(MTL::SamplerDescriptor::alloc()->init());
+  WMTSamplerInfo info;
 
+  info.lod_average = false;
+  info.mip_filter = WMTSamplerMipFilterNotMipmapped;
   // filter
   if (D3D11_DECODE_MIN_FILTER(desc.Filter)) { // LINEAR = 1
-    mtl_sampler_desc->setMinFilter(
-        MTL::SamplerMinMagFilter::SamplerMinMagFilterLinear);
+    info.min_filter = WMTSamplerMinMagFilterLinear;
   } else {
-    mtl_sampler_desc->setMinFilter(
-        MTL::SamplerMinMagFilter::SamplerMinMagFilterNearest);
+    info.min_filter = WMTSamplerMinMagFilterNearest;
   }
   if (D3D11_DECODE_MAG_FILTER(desc.Filter)) { // LINEAR = 1
-    mtl_sampler_desc->setMagFilter(
-        MTL::SamplerMinMagFilter::SamplerMinMagFilterLinear);
+    info.mag_filter = WMTSamplerMinMagFilterLinear;
   } else {
-    mtl_sampler_desc->setMagFilter(
-        MTL::SamplerMinMagFilter::SamplerMinMagFilterNearest);
+    info.mag_filter = WMTSamplerMinMagFilterNearest;
   }
   if (D3D11_DECODE_MIP_FILTER(desc.Filter)) { // LINEAR = 1
-    mtl_sampler_desc->setMipFilter(
-        MTL::SamplerMipFilter::SamplerMipFilterLinear);
+    info.mip_filter = WMTSamplerMipFilterLinear;
   } else {
-    mtl_sampler_desc->setMipFilter(
-        MTL::SamplerMipFilter::SamplerMipFilterNearest);
+    info.mip_filter = WMTSamplerMipFilterNearest;
   }
 
-  mtl_sampler_desc->setLodMinClamp(
-      desc.MinLOD); // -FLT_MAX vs 0?
+  info.lod_min_clamp = desc.MinLOD; // -FLT_MAX vs 0?
                     // https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11devicecontext-vssetsamplers
-  mtl_sampler_desc->setLodMaxClamp(desc.MaxLOD);
+  info.lod_max_clamp = desc.MaxLOD;
 
   // Anisotropy
   if (D3D11_DECODE_IS_ANISOTROPIC_FILTER(desc.Filter)) {
-    mtl_sampler_desc->setMaxAnisotropy(desc.MaxAnisotropy);
+    info.max_anisotroy = desc.MaxAnisotropy;
+  } else {
+    info.max_anisotroy = 1;
   }
 
   // address modes
   // U-S  V-T W-R
   if (desc.AddressU > 0 && desc.AddressU < 6) {
-    mtl_sampler_desc->setSAddressMode(kAddressModeMap[desc.AddressU - 1]);
+    info.s_address_mode = kAddressModeMap[desc.AddressU - 1];
   }
   if (desc.AddressV > 0 && desc.AddressV < 6) {
-    mtl_sampler_desc->setTAddressMode(kAddressModeMap[desc.AddressV - 1]);
+    info.t_address_mode = kAddressModeMap[desc.AddressV - 1];
   }
   if (desc.AddressW > 0 && desc.AddressW < 6) {
-    mtl_sampler_desc->setRAddressMode(kAddressModeMap[desc.AddressW - 1]);
+    info.r_address_mode = kAddressModeMap[desc.AddressW - 1];
   }
 
+  info.compare_function = WMTCompareFunctionNever;
   if (D3D11_DECODE_IS_COMPARISON_FILTER(desc.Filter)) {
     if (desc.ComparisonFunc < 1 || desc.ComparisonFunc > 8) {
       WARN("CreateSamplerState: invalid ComparisonFunc");
-      mtl_sampler_desc->setCompareFunction(MTL::CompareFunctionNever);
     } else {
-      mtl_sampler_desc->setCompareFunction(
-          kCompareFunctionMap[desc.ComparisonFunc]);
+      info.compare_function = kCompareFunctionMap[desc.ComparisonFunc];
     }
   }
 
   // border color
+  info.border_color = WMTSamplerBorderColorOpaqueWhite;
   if ((desc.AddressU == D3D11_TEXTURE_ADDRESS_BORDER ||
        desc.AddressV == D3D11_TEXTURE_ADDRESS_BORDER ||
        desc.AddressW == D3D11_TEXTURE_ADDRESS_BORDER)) {
     if (desc.BorderColor[0] == 0.0f && desc.BorderColor[1] == 0.0f &&
         desc.BorderColor[2] == 0.0f && desc.BorderColor[3] == 0.0f) {
-      mtl_sampler_desc->setBorderColor(
-          MTL::SamplerBorderColor::SamplerBorderColorTransparentBlack);
+      info.border_color = WMTSamplerBorderColorTransparentBlack;
     } else if (desc.BorderColor[0] == 0.0f && desc.BorderColor[1] == 0.0f &&
                desc.BorderColor[2] == 0.0f && desc.BorderColor[3] == 1.0f) {
-      mtl_sampler_desc->setBorderColor(
-          MTL::SamplerBorderColor::SamplerBorderColorOpaqueBlack);
+      info.border_color = WMTSamplerBorderColorOpaqueBlack;
     } else if (desc.BorderColor[0] == 1.0f && desc.BorderColor[1] == 1.0f &&
                desc.BorderColor[2] == 1.0f && desc.BorderColor[3] == 1.0f) {
-      mtl_sampler_desc->setBorderColor(
-          MTL::SamplerBorderColor::SamplerBorderColorOpaqueWhite);
+      info.border_color = WMTSamplerBorderColorOpaqueWhite;
     } else {
       WARN("CreateSamplerState: Unsupported border color (",
            desc.BorderColor[0], ", ", desc.BorderColor[1], ", ",
@@ -805,14 +790,14 @@ StateObjectCache<D3D11_SAMPLER_DESC, IMTLD3D11SamplerState>::CreateStateObject(
     }
   }
 
-  mtl_sampler_desc->setSupportArgumentBuffers(true);
+  info.support_argument_buffers = true;
+  info.normalized_coords = true;
 
-  auto mtl_sampler =
-      transfer(device->GetMTLDevice()->newSamplerState(mtl_sampler_desc.ptr()));
+  auto mtl_sampler = device->GetWMTDevice().newSamplerState(&info);
 
-  cache.emplace(*pSamplerDesc,
-                std::make_unique<MTLD3D11SamplerState>(
-                    device, mtl_sampler.ptr(), desc, desc.MipLODBias));
+  cache.emplace(*pSamplerDesc, std::make_unique<MTLD3D11SamplerState>(
+                                   device, info, std::move(mtl_sampler), desc,
+                                   desc.MipLODBias));
   cache.at(*pSamplerDesc)->QueryInterface(IID_PPV_ARGS(ppSamplerState));
 
   return S_OK;

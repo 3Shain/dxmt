@@ -4358,9 +4358,8 @@ public:
       ManagedDeviceChild(pDevice),
       context_flag(context_flag),
       cmdlist_pool(pPool),
-      staging_allocator(
-          pDevice->GetMTLDevice(), MTL::ResourceOptionCPUCacheModeWriteCombined |
-                                       MTL::ResourceHazardTrackingModeUntracked | MTL::ResourceStorageModeShared
+      staging_allocator(pDevice->GetWMTDevice(), WMTResourceOptionCPUCacheModeWriteCombined |
+                                       WMTResourceHazardTrackingModeUntracked | WMTResourceStorageModeShared
       ) {
     cpu_argument_heap = (char *)malloc(kCommandChunkCPUHeapSize);
   };

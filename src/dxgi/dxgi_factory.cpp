@@ -2,15 +2,15 @@
 #include "config/config.hpp"
 #include "dxgi_interfaces.h"
 #include "dxgi_object.hpp"
-#include "Metal/MTLDevice.hpp"
 #include "com/com_guid.hpp"
 #include "log/log.hpp"
 #include "util_string.hpp"
 #include "wsi_window.hpp"
+#include "Metal.hpp"
 
 namespace dxmt {
 
-Com<IMTLDXGIAdapter> CreateAdapter(MTL::Device *pDevice,
+Com<IMTLDXGIAdapter> CreateAdapter(WMT::Device Device,
                                    IDXGIFactory2 *pFactory, Config &config);
 
 class MTLDXGIFactory : public MTLDXGIObject<IDXGIFactory6> {
@@ -170,13 +170,13 @@ public:
                                           IDXGIAdapter1 **ppAdapter) final {
     InitReturnPtr(ppAdapter);
 
-    auto devices = MTL::CopyAllDevices();
+    auto devices = WMT::CopyAllDevices();
 
-    if (Adapter >= (UINT)devices->count()) {
+    if (Adapter >= (UINT)devices.count()) {
       return DXGI_ERROR_NOT_FOUND;
     }
 
-    auto device = devices->object<MTL::Device>(Adapter);
+    auto device = devices.object(Adapter);
 
     *ppAdapter = CreateAdapter(device, this, Config::getInstance());
     // devices->release(); // no you should not release it...
