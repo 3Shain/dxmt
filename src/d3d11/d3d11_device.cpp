@@ -1,4 +1,3 @@
-#include "Metal/MTLPixelFormat.hpp"
 #include "com/com_guid.hpp"
 #include "d3d11_input_layout.hpp"
 #include "d3d11_interfaces.hpp"
@@ -72,7 +71,7 @@ public:
     pipeline_cache_ = InitializePipelineCache(this);
     context_ = InitializeImmediateContext(this, device_.queue());
     is_traced_ = !!::GetModuleHandle("dxgitrace.dll");
-    format_inspector.Inspect(container->GetMTLDevice());
+    format_inspector.Inspect(GetWMTDevice());
   }
 
   ~MTLD3D11DeviceImpl() {}
@@ -507,7 +506,7 @@ public:
     }
 
     MTL_DXGI_FORMAT_DESC metal_format;
-    if (FAILED(MTLQueryDXGIFormat(GetMTLDevice(), Format, metal_format))) {
+    if (FAILED(MTLQueryDXGIFormat(GetWMTDevice(), Format, metal_format))) {
       return E_INVALIDARG;
     }
 
@@ -538,8 +537,8 @@ public:
       outFormatSupport |= D3D11_FORMAT_SUPPORT_IA_VERTEX_BUFFER;
     }
 
-    if (metal_format.PixelFormat == MTL::PixelFormatR32Uint ||
-        metal_format.PixelFormat == MTL::PixelFormatR16Uint) {
+    if (metal_format.PixelFormat == WMTPixelFormatR32Uint ||
+        metal_format.PixelFormat == WMTPixelFormatR16Uint) {
       outFormatSupport |= D3D11_FORMAT_SUPPORT_IA_INDEX_BUFFER;
     }
 
@@ -653,7 +652,7 @@ public:
       }
 
       MTL_DXGI_FORMAT_DESC metal_format;
-      if (FAILED(MTLQueryDXGIFormat(GetMTLDevice(), info->InFormat,
+      if (FAILED(MTLQueryDXGIFormat(GetWMTDevice(), info->InFormat,
                                     metal_format))) {
         return E_INVALIDARG;
       }
@@ -845,8 +844,8 @@ public:
     }
     *pNumQualityLevels = 0;
     MTL_DXGI_FORMAT_DESC desc;
-    if (FAILED(MTLQueryDXGIFormat(GetMTLDevice(), Format, desc)) ||
-        desc.PixelFormat == MTL::PixelFormatInvalid) {
+    if (FAILED(MTLQueryDXGIFormat(GetWMTDevice(), Format, desc)) ||
+        desc.PixelFormat == WMTPixelFormatInvalid) {
       return E_INVALIDARG;
     }
 
@@ -1073,7 +1072,7 @@ public:
   };
 
   virtual FormatCapability
-  GetMTLPixelFormatCapability(MTL::PixelFormat Format) final {
+  GetMTLPixelFormatCapability(WMTPixelFormat Format) final {
     if (!format_inspector.textureCapabilities.contains(Format))
       return FormatCapability(0);
     return format_inspector.textureCapabilities.at(Format);

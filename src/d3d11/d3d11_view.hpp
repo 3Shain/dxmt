@@ -1,5 +1,4 @@
 #pragma once
-#include "Metal/MTLPixelFormat.hpp"
 #include "com/com_guid.hpp"
 #include "d3d11_1.h"
 #include "dxmt_buffer.hpp"
@@ -17,7 +16,7 @@ struct MTL_RENDER_PASS_ATTACHMENT_DESC {
 DEFINE_COM_INTERFACE("f1d21087-fbde-44b3-bc2c-b69be540a0ad",
                      IMTLD3D11RenderTargetView)
     : public ID3D11RenderTargetView1 {
-  virtual MTL::PixelFormat GetPixelFormat() = 0;
+  virtual WMTPixelFormat GetPixelFormat() = 0;
   virtual ULONG64 GetUnderlyingResourceId() = 0;
   virtual dxmt::ResourceSubset GetViewRange() = 0;
   virtual MTL_RENDER_PASS_ATTACHMENT_DESC &GetAttachmentDesc() = 0;
@@ -31,7 +30,7 @@ DEFINE_COM_INTERFACE("42e48164-8733-422b-8421-4c57229641f9",
     : public ID3D11DepthStencilView {
   virtual ULONG64 GetUnderlyingResourceId() = 0;
   virtual dxmt::ResourceSubset GetViewRange() = 0;
-  virtual MTL::PixelFormat GetPixelFormat() = 0;
+  virtual WMTPixelFormat GetPixelFormat() = 0;
   virtual MTL_RENDER_PASS_ATTACHMENT_DESC &GetAttachmentDesc() = 0;
   virtual UINT GetReadOnlyFlags() = 0;
 

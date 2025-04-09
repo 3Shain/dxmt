@@ -123,11 +123,10 @@ HRESULT CreateStagingTextureInternal(MTLD3D11Device *pDevice,
                                      typename tag::COM_IMPL **ppTexture) {
   auto metal = pDevice->GetMTLDevice();
   typename tag::DESC1 finalDesc;
-  Obj<MTL::TextureDescriptor> texDesc; // unused
+  WMTTextureInfo texDesc; // unused
   // clang-format, why do you piss me off
   // is this really expected to be read by human?
-  if (FAILED(
-          CreateMTLTextureDescriptor(pDevice, pDesc, &finalDesc, &texDesc))) {
+  if (FAILED(CreateMTLTextureDescriptor(pDevice, pDesc, &finalDesc, &texDesc))) {
     return E_INVALIDARG;
   }
   std::vector<Rc<StagingResource>> subresources;

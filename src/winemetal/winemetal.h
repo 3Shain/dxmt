@@ -421,10 +421,10 @@ struct WMTTextureSwizzleChannels {
 
 struct WMTTextureInfo {
   enum WMTPixelFormat pixel_format;
-  uint16_t width;
-  uint16_t height;
-  uint16_t depth;
-  uint16_t array_length;
+  uint32_t width;
+  uint32_t height;
+  uint32_t depth;
+  uint32_t array_length;
   enum WMTTextureType type;
   uint8_t mipmap_level_count;
   uint8_t sample_count;

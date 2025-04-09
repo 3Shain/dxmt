@@ -1,7 +1,6 @@
 #pragma once
 
 #include "Metal/MTLArgumentEncoder.hpp"
-#include "Metal/MTLPixelFormat.hpp"
 #include "Metal/MTLRenderPipeline.hpp"
 #include "com/com_guid.hpp"
 #include "d3d11_device.hpp"
@@ -20,8 +19,8 @@ struct MTL_GRAPHICS_PIPELINE_DESC {
   ManagedInputLayout InputLayout;
   IMTLD3D11StreamOutputLayout *SOLayout;
   UINT NumColorAttachments;
-  MTL::PixelFormat ColorAttachmentFormats[8];
-  MTL::PixelFormat DepthStencilFormat;
+  WMTPixelFormat ColorAttachmentFormats[8];
+  WMTPixelFormat DepthStencilFormat;
   MTL::PrimitiveTopologyClass TopologyClass;
   bool RasterizationEnabled;
   uint8_t SampleCount;

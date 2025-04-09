@@ -5,15 +5,15 @@ namespace dxmt {
 
 void FixDepthStencilFormat(Texture *pTexture, MTL_DXGI_FORMAT_DESC &Desc) {
   switch (pTexture->pixelFormat()) {
-  case MTL::PixelFormatDepth16Unorm:
+  case WMTPixelFormatDepth16Unorm:
     // DXGI_FORMAT_R16_TYPELESS
     // DXGI_FORMAT_R16_UNORM
-    Desc.PixelFormat = MTL::PixelFormatDepth16Unorm;
+    Desc.PixelFormat = WMTPixelFormatDepth16Unorm;
     break;
-  case MTL::PixelFormatDepth32Float:
+  case WMTPixelFormatDepth32Float:
     // DXGI_FORMAT_R32_TYPELESS
     // DXGI_FORMAT_R32_FLOAT
-    Desc.PixelFormat = MTL::PixelFormatDepth32Float;
+    Desc.PixelFormat = WMTPixelFormatDepth32Float;
     break;
   default:
     break;
@@ -27,22 +27,22 @@ InitializeAndNormalizeViewDescriptor(
     D3D11_SHADER_RESOURCE_VIEW_DESC1 &ViewDesc, TextureViewDescriptor &Descriptor
 ) {
   MTL_DXGI_FORMAT_DESC metal_format;
-  if (FAILED(MTLQueryDXGIFormat(pDevice->GetMTLDevice(), ViewDesc.Format, metal_format))) {
+  if (FAILED(MTLQueryDXGIFormat(pDevice->GetWMTDevice(), ViewDesc.Format, metal_format))) {
     ERR("Failed to create SRV due to unsupported format ", ViewDesc.Format);
     return E_FAIL;
   }
 
-  Descriptor.usage = MTL::TextureUsageShaderRead;
+  Descriptor.usage = WMTTextureUsageShaderRead;
   FixDepthStencilFormat(pTexture, metal_format);
-  MTL::TextureType TextureType = pTexture->textureType();
+  WMTTextureType TextureType = pTexture->textureType();
   switch (ViewDesc.ViewDimension) {
   default:
     break;
   case D3D_SRV_DIMENSION_TEXTURE1D: {
     if (~ViewDesc.Texture1D.MipLevels == 0)
       ViewDesc.Texture1D.MipLevels = MiplevelCount - ViewDesc.Texture1D.MostDetailedMip;
-    if (TextureType == MTL::TextureType2D || TextureType == MTL::TextureType2DArray) {
-      Descriptor.type = MTL::TextureType2D;
+    if (TextureType == WMTTextureType2D || TextureType == WMTTextureType2DArray) {
+      Descriptor.type = WMTTextureType2D;
       Descriptor.format = metal_format.PixelFormat;
       Descriptor.firstMiplevel = ViewDesc.Texture1D.MostDetailedMip;
       Descriptor.miplevelCount = ViewDesc.Texture1D.MipLevels;
@@ -57,8 +57,8 @@ InitializeAndNormalizeViewDescriptor(
       ViewDesc.Texture1DArray.MipLevels = MiplevelCount - ViewDesc.Texture1DArray.MostDetailedMip;
     if (~ViewDesc.Texture1DArray.ArraySize == 0)
       ViewDesc.Texture1DArray.ArraySize = ArraySize - ViewDesc.Texture1DArray.FirstArraySlice;
-    if (TextureType == MTL::TextureType2D || TextureType == MTL::TextureType2DArray) {
-      Descriptor.type = MTL::TextureType2DArray;
+    if (TextureType == WMTTextureType2D || TextureType == WMTTextureType2DArray) {
+      Descriptor.type = WMTTextureType2DArray;
       Descriptor.format = metal_format.PixelFormat;
       Descriptor.firstMiplevel = ViewDesc.Texture1DArray.MostDetailedMip;
       Descriptor.miplevelCount = ViewDesc.Texture1DArray.MipLevels;
@@ -72,9 +72,9 @@ InitializeAndNormalizeViewDescriptor(
     if (~ViewDesc.Texture2D.MipLevels == 0)
       ViewDesc.Texture2D.MipLevels = MiplevelCount - ViewDesc.Texture2D.MostDetailedMip;
 
-    if (TextureType == MTL::TextureType2D || TextureType == MTL::TextureType2DArray ||
-        TextureType == MTL::TextureTypeCube || TextureType == MTL::TextureTypeCubeArray) {
-      Descriptor.type = MTL::TextureType2D;
+    if (TextureType == WMTTextureType2D || TextureType == WMTTextureType2DArray ||
+        TextureType == WMTTextureTypeCube || TextureType == WMTTextureTypeCubeArray) {
+      Descriptor.type = WMTTextureType2D;
       Descriptor.format = metal_format.PixelFormat;
       Descriptor.firstMiplevel = ViewDesc.Texture2D.MostDetailedMip;
       Descriptor.miplevelCount = ViewDesc.Texture2D.MipLevels;
@@ -89,9 +89,9 @@ InitializeAndNormalizeViewDescriptor(
       ViewDesc.Texture2DArray.MipLevels = MiplevelCount - ViewDesc.Texture2DArray.MostDetailedMip;
     if (~ViewDesc.Texture2DArray.ArraySize == 0)
       ViewDesc.Texture2DArray.ArraySize = ArraySize - ViewDesc.Texture2DArray.FirstArraySlice;
-    if (TextureType == MTL::TextureType2D || TextureType == MTL::TextureType2DArray ||
-        TextureType == MTL::TextureTypeCube || TextureType == MTL::TextureTypeCubeArray) {
-      Descriptor.type = MTL::TextureType2DArray;
+    if (TextureType == WMTTextureType2D || TextureType == WMTTextureType2DArray ||
+        TextureType == WMTTextureTypeCube || TextureType == WMTTextureTypeCubeArray) {
+      Descriptor.type = WMTTextureType2DArray;
       Descriptor.format = metal_format.PixelFormat;
       Descriptor.firstMiplevel = ViewDesc.Texture2DArray.MostDetailedMip;
       Descriptor.miplevelCount = ViewDesc.Texture2DArray.MipLevels;
@@ -102,8 +102,8 @@ InitializeAndNormalizeViewDescriptor(
     break;
   }
   case D3D_SRV_DIMENSION_TEXTURE2DMS: {
-    if (TextureType == MTL::TextureType2DMultisample) {
-      Descriptor.type = MTL::TextureType2DMultisample;
+    if (TextureType == WMTTextureType2DMultisample) {
+      Descriptor.type = WMTTextureType2DMultisample;
       Descriptor.format = metal_format.PixelFormat;
       Descriptor.firstMiplevel = 0;
       Descriptor.miplevelCount = 1;
@@ -111,9 +111,9 @@ InitializeAndNormalizeViewDescriptor(
       Descriptor.arraySize = 1;
       return S_OK;
     }
-    if (TextureType == MTL::TextureType2D) {
+    if (TextureType == WMTTextureType2D) {
       WARN("A texture2d view is created on multisampled texture");
-      Descriptor.type = MTL::TextureType2D;
+      Descriptor.type = WMTTextureType2D;
       Descriptor.format = metal_format.PixelFormat;
       Descriptor.firstMiplevel = 0;
       Descriptor.miplevelCount = 1;
@@ -132,8 +132,8 @@ InitializeAndNormalizeViewDescriptor(
   case D3D_SRV_DIMENSION_TEXTURE3D: {
     if (~ViewDesc.Texture3D.MipLevels == 0)
       ViewDesc.Texture3D.MipLevels = MiplevelCount - ViewDesc.Texture3D.MostDetailedMip;
-    if (TextureType == MTL::TextureType3D) {
-      Descriptor.type = MTL::TextureType3D;
+    if (TextureType == WMTTextureType3D) {
+      Descriptor.type = WMTTextureType3D;
       Descriptor.format = metal_format.PixelFormat;
       Descriptor.firstMiplevel = ViewDesc.Texture3D.MostDetailedMip;
       Descriptor.miplevelCount =ViewDesc.Texture3D.MipLevels;
@@ -146,8 +146,8 @@ InitializeAndNormalizeViewDescriptor(
   case D3D_SRV_DIMENSION_TEXTURECUBE: {
     if (~ViewDesc.TextureCube.MipLevels == 0)
       ViewDesc.TextureCube.MipLevels = MiplevelCount - ViewDesc.TextureCube.MostDetailedMip;
-    if (TextureType == MTL::TextureTypeCube || TextureType == MTL::TextureTypeCubeArray) {
-      Descriptor.type = MTL::TextureTypeCube;
+    if (TextureType == WMTTextureTypeCube || TextureType == WMTTextureTypeCubeArray) {
+      Descriptor.type = WMTTextureTypeCube;
       Descriptor.format = metal_format.PixelFormat;
       Descriptor.firstMiplevel = ViewDesc.TextureCube.MostDetailedMip;
       Descriptor.miplevelCount = ~ViewDesc.TextureCube.MipLevels ? ViewDesc.TextureCube.MipLevels
@@ -165,8 +165,8 @@ InitializeAndNormalizeViewDescriptor(
       ViewDesc.TextureCubeArray.MipLevels = MiplevelCount - ViewDesc.TextureCubeArray.MostDetailedMip;
     if (~ViewDesc.TextureCubeArray.NumCubes == 0)
       ViewDesc.TextureCubeArray.NumCubes = (ArraySize - ViewDesc.TextureCubeArray.First2DArrayFace) / 6;
-    if (TextureType == MTL::TextureTypeCube || TextureType == MTL::TextureTypeCubeArray) {
-      Descriptor.type = MTL::TextureTypeCubeArray;
+    if (TextureType == WMTTextureTypeCube || TextureType == WMTTextureTypeCubeArray) {
+      Descriptor.type = WMTTextureTypeCubeArray;
       Descriptor.format = metal_format.PixelFormat;
       Descriptor.firstMiplevel = ViewDesc.TextureCubeArray.MostDetailedMip;
       Descriptor.miplevelCount = ViewDesc.TextureCubeArray.MipLevels;
@@ -188,20 +188,20 @@ InitializeAndNormalizeViewDescriptor(
     D3D11_UNORDERED_ACCESS_VIEW_DESC1 &ViewDesc, TextureViewDescriptor &Descriptor
 ) {
   MTL_DXGI_FORMAT_DESC metal_format;
-  if (FAILED(MTLQueryDXGIFormat(pDevice->GetMTLDevice(), ViewDesc.Format,
+  if (FAILED(MTLQueryDXGIFormat(pDevice->GetWMTDevice(), ViewDesc.Format,
                                 metal_format))) {
     return E_FAIL;
   }
 
-  Descriptor.usage = MTL::TextureUsageShaderRead | MTL::TextureUsageShaderWrite;
+  Descriptor.usage = WMTTextureUsageShaderRead | WMTTextureUsageShaderWrite;
   FixDepthStencilFormat(pTexture, metal_format);
-  MTL::TextureType TextureType = pTexture->textureType();
+  WMTTextureType TextureType = pTexture->textureType();
   switch (ViewDesc.ViewDimension) {
   default:
     break;
   case D3D11_UAV_DIMENSION_TEXTURE1D: {
-    if (TextureType == MTL::TextureType2D || TextureType == MTL::TextureType2DArray) {
-      Descriptor.type = MTL::TextureType2D;
+    if (TextureType == WMTTextureType2D || TextureType == WMTTextureType2DArray) {
+      Descriptor.type = WMTTextureType2D;
       Descriptor.format = metal_format.PixelFormat;
       Descriptor.firstMiplevel = ViewDesc.Texture1D.MipSlice;
       Descriptor.miplevelCount = 1;
@@ -214,8 +214,8 @@ InitializeAndNormalizeViewDescriptor(
   case D3D11_UAV_DIMENSION_TEXTURE1DARRAY: {
     if (~ViewDesc.Texture1DArray.ArraySize == 0)
       ViewDesc.Texture1DArray.ArraySize = ArraySize - ViewDesc.Texture1DArray.FirstArraySlice;
-    if (TextureType == MTL::TextureType2D || TextureType == MTL::TextureType2DArray) {
-      Descriptor.type = MTL::TextureType2DArray;
+    if (TextureType == WMTTextureType2D || TextureType == WMTTextureType2DArray) {
+      Descriptor.type = WMTTextureType2DArray;
       Descriptor.format = metal_format.PixelFormat;
       Descriptor.firstMiplevel = ViewDesc.Texture1DArray.MipSlice;
       Descriptor.miplevelCount = 1;
@@ -227,9 +227,9 @@ InitializeAndNormalizeViewDescriptor(
   }
   case D3D11_UAV_DIMENSION_TEXTURE2D: {
     D3D11_ASSERT(ViewDesc.Texture2D.PlaneSlice == 0);
-    if (TextureType == MTL::TextureType2D || TextureType == MTL::TextureType2DArray ||
-        TextureType == MTL::TextureTypeCube) {
-      Descriptor.type = MTL::TextureType2D;
+    if (TextureType == WMTTextureType2D || TextureType == WMTTextureType2DArray ||
+        TextureType == WMTTextureTypeCube) {
+      Descriptor.type = WMTTextureType2D;
       Descriptor.format = metal_format.PixelFormat;
       Descriptor.firstMiplevel = ViewDesc.Texture2D.MipSlice;
       Descriptor.miplevelCount = 1;
@@ -242,9 +242,9 @@ InitializeAndNormalizeViewDescriptor(
   case D3D11_UAV_DIMENSION_TEXTURE2DARRAY: {
     if (~ViewDesc.Texture2DArray.ArraySize == 0)
       ViewDesc.Texture2DArray.ArraySize = ArraySize - ViewDesc.Texture2DArray.FirstArraySlice;
-    if (TextureType == MTL::TextureType2D || TextureType == MTL::TextureType2DArray ||
-        TextureType == MTL::TextureTypeCube || TextureType == MTL::TextureTypeCubeArray) {
-      Descriptor.type = MTL::TextureType2DArray;
+    if (TextureType == WMTTextureType2D || TextureType == WMTTextureType2DArray ||
+        TextureType == WMTTextureTypeCube || TextureType == WMTTextureTypeCubeArray) {
+      Descriptor.type = WMTTextureType2DArray;
       Descriptor.format = metal_format.PixelFormat;
       Descriptor.firstMiplevel = ViewDesc.Texture2DArray.MipSlice;
       Descriptor.miplevelCount = 1;
@@ -257,13 +257,13 @@ InitializeAndNormalizeViewDescriptor(
   case D3D11_UAV_DIMENSION_TEXTURE3D: {
     if (~ViewDesc.Texture3D.WSize == 0)
       ViewDesc.Texture3D.WSize = ArraySize - ViewDesc.Texture3D.FirstWSlice;
-    if (TextureType == MTL::TextureType3D) {
+    if (TextureType == WMTTextureType3D) {
 
       if (ViewDesc.Texture3D.FirstWSlice == 0) {
         if (ViewDesc.Texture3D.WSize != ArraySize) {
           WARN("Created a subview of 3D texture.");
         }
-        Descriptor.type = MTL::TextureType3D;
+        Descriptor.type = WMTTextureType3D;
         Descriptor.format = metal_format.PixelFormat;
         Descriptor.firstMiplevel = ViewDesc.Texture3D.MipSlice;
         Descriptor.miplevelCount = 1;
@@ -294,12 +294,12 @@ HRESULT InitializeAndNormalizeViewDescriptor(
     D3D11_RENDER_TARGET_VIEW_DESC1 &ViewDesc, MTL_RENDER_PASS_ATTACHMENT_DESC &AttachmentDesc, TextureViewDescriptor &Descriptor
 ) {
   MTL_DXGI_FORMAT_DESC metal_format;
-  if (FAILED(MTLQueryDXGIFormat(pDevice->GetMTLDevice(), ViewDesc.Format,
+  if (FAILED(MTLQueryDXGIFormat(pDevice->GetWMTDevice(), ViewDesc.Format,
                                 metal_format))) {
     return E_FAIL;
   }
 
-  Descriptor.usage = MTL::TextureUsageRenderTarget;
+  Descriptor.usage = WMTTextureUsageRenderTarget;
   AttachmentDesc.DepthPlane = 0;
   AttachmentDesc.RenderTargetArrayLength = 0;
   AttachmentDesc.SampleCount = pTexture->sampleCount();
@@ -309,8 +309,8 @@ HRESULT InitializeAndNormalizeViewDescriptor(
   default:
     break;
   case D3D11_RTV_DIMENSION_TEXTURE1D: {
-    if (texture_type == MTL::TextureType2D || texture_type == MTL::TextureType2DArray) {
-      Descriptor.type = MTL::TextureType2D;
+    if (texture_type == WMTTextureType2D || texture_type == WMTTextureType2DArray) {
+      Descriptor.type = WMTTextureType2D;
       Descriptor.format = metal_format.PixelFormat;
       Descriptor.firstMiplevel = ViewDesc.Texture1D.MipSlice;
       Descriptor.miplevelCount = 1;
@@ -324,8 +324,8 @@ HRESULT InitializeAndNormalizeViewDescriptor(
   case D3D11_RTV_DIMENSION_TEXTURE1DARRAY: {
     if (~ViewDesc.Texture1DArray.ArraySize == 0)
       ViewDesc.Texture1DArray.ArraySize = ArraySize - ViewDesc.Texture1DArray.FirstArraySlice;
-    if (texture_type == MTL::TextureType2D || texture_type == MTL::TextureType2DArray) {
-      Descriptor.type = MTL::TextureType2DArray;
+    if (texture_type == WMTTextureType2D || texture_type == WMTTextureType2DArray) {
+      Descriptor.type = WMTTextureType2DArray;
       Descriptor.format = metal_format.PixelFormat;
       Descriptor.firstMiplevel = ViewDesc.Texture1DArray.MipSlice;
       Descriptor.miplevelCount = 1;
@@ -339,9 +339,9 @@ HRESULT InitializeAndNormalizeViewDescriptor(
   }
   case D3D11_RTV_DIMENSION_TEXTURE2D: {
     D3D11_ASSERT(ViewDesc.Texture2D.PlaneSlice == 0);
-    if (texture_type == MTL::TextureType2D || texture_type == MTL::TextureType2DArray ||
-        texture_type == MTL::TextureTypeCube || texture_type == MTL::TextureTypeCubeArray) {
-      Descriptor.type = MTL::TextureType2D;
+    if (texture_type == WMTTextureType2D || texture_type == WMTTextureType2DArray ||
+        texture_type == WMTTextureTypeCube || texture_type == WMTTextureTypeCubeArray) {
+      Descriptor.type = WMTTextureType2D;
       Descriptor.format = metal_format.PixelFormat;
       Descriptor.firstMiplevel = ViewDesc.Texture2D.MipSlice;
       Descriptor.miplevelCount = 1;
@@ -355,9 +355,9 @@ HRESULT InitializeAndNormalizeViewDescriptor(
   case D3D11_RTV_DIMENSION_TEXTURE2DARRAY: {
     if (~ViewDesc.Texture2DArray.ArraySize == 0)
       ViewDesc.Texture2DArray.ArraySize = ArraySize - ViewDesc.Texture2DArray.FirstArraySlice;
-    if (texture_type == MTL::TextureType2D || texture_type == MTL::TextureType2DArray ||
-        texture_type == MTL::TextureTypeCube || texture_type == MTL::TextureTypeCubeArray) {
-      Descriptor.type = MTL::TextureType2DArray;
+    if (texture_type == WMTTextureType2D || texture_type == WMTTextureType2DArray ||
+        texture_type == WMTTextureTypeCube || texture_type == WMTTextureTypeCubeArray) {
+      Descriptor.type = WMTTextureType2DArray;
       Descriptor.format = metal_format.PixelFormat;
       Descriptor.firstMiplevel = ViewDesc.Texture2DArray.MipSlice;
       Descriptor.miplevelCount = 1;
@@ -370,8 +370,8 @@ HRESULT InitializeAndNormalizeViewDescriptor(
     break;
   }
   case D3D11_RTV_DIMENSION_TEXTURE2DMS: {
-    if (texture_type == MTL::TextureType2DMultisample) {
-      Descriptor.type = MTL::TextureType2DMultisample;
+    if (texture_type == WMTTextureType2DMultisample) {
+      Descriptor.type = WMTTextureType2DMultisample;
       Descriptor.format = metal_format.PixelFormat;
       Descriptor.firstMiplevel = 0;
       Descriptor.miplevelCount = 1;
@@ -385,8 +385,8 @@ HRESULT InitializeAndNormalizeViewDescriptor(
   case D3D11_RTV_DIMENSION_TEXTURE2DMSARRAY: {
     if (~ViewDesc.Texture2DMSArray.ArraySize == 0)
       ViewDesc.Texture2DMSArray.ArraySize = ArraySize - ViewDesc.Texture2DMSArray.FirstArraySlice;
-    if (texture_type == MTL::TextureType2DMultisample) {
-      Descriptor.type = MTL::TextureType2DMultisampleArray;
+    if (texture_type == WMTTextureType2DMultisample) {
+      Descriptor.type = WMTTextureType2DMultisampleArray;
       Descriptor.format = metal_format.PixelFormat;
       Descriptor.firstMiplevel = 0;
       Descriptor.miplevelCount = 1;
@@ -401,9 +401,9 @@ HRESULT InitializeAndNormalizeViewDescriptor(
   case D3D11_RTV_DIMENSION_TEXTURE3D: {
     if (~ViewDesc.Texture3D.WSize == 0)
       ViewDesc.Texture3D.WSize = ArraySize - ViewDesc.Texture3D.FirstWSlice;
-    if (texture_type == MTL::TextureType3D) {
+    if (texture_type == WMTTextureType3D) {
       if (ViewDesc.Texture3D.WSize == 1) {
-        Descriptor.type = MTL::TextureType3D;
+        Descriptor.type = WMTTextureType3D;
         Descriptor.format = metal_format.PixelFormat;
         Descriptor.firstMiplevel = ViewDesc.Texture3D.MipSlice;
         Descriptor.miplevelCount = 1;
@@ -417,7 +417,7 @@ HRESULT InitializeAndNormalizeViewDescriptor(
         if (ViewDesc.Texture3D.WSize != ArraySize) {
           WARN("Created a subview of 3D texture.");
         }
-        Descriptor.type = MTL::TextureType3D;
+        Descriptor.type = WMTTextureType3D;
         Descriptor.format = metal_format.PixelFormat;
         Descriptor.firstMiplevel = ViewDesc.Texture3D.MipSlice;
         Descriptor.miplevelCount = 1;
@@ -446,13 +446,13 @@ InitializeAndNormalizeViewDescriptor(
     TextureViewDescriptor &Descriptor
 ) {
   MTL_DXGI_FORMAT_DESC metal_format;
-  if (FAILED(MTLQueryDXGIFormat(pDevice->GetMTLDevice(), ViewDesc.Format, metal_format))) {
+  if (FAILED(MTLQueryDXGIFormat(pDevice->GetWMTDevice(), ViewDesc.Format, metal_format))) {
     ERR("Failed to create DSV due to unsupported format ", ViewDesc.Format);
     return E_FAIL;
   }
 
   ViewDesc.Flags = ViewDesc.Flags & 3;
-  Descriptor.usage = MTL::TextureUsageRenderTarget;
+  Descriptor.usage = WMTTextureUsageRenderTarget;
   AttachmentDesc.DepthPlane = 0;
   AttachmentDesc.RenderTargetArrayLength = 0;
   AttachmentDesc.SampleCount = pTexture->sampleCount();
@@ -462,8 +462,8 @@ InitializeAndNormalizeViewDescriptor(
   default:
     break;
   case D3D11_DSV_DIMENSION_TEXTURE1D: {
-    if (texture_type == MTL::TextureType2D || texture_type == MTL::TextureType2DArray) {
-      Descriptor.type = MTL::TextureType2D;
+    if (texture_type == WMTTextureType2D || texture_type == WMTTextureType2DArray) {
+      Descriptor.type = WMTTextureType2D;
       Descriptor.format = metal_format.PixelFormat;
       Descriptor.firstMiplevel = ViewDesc.Texture1D.MipSlice;
       Descriptor.miplevelCount = 1;
@@ -477,8 +477,8 @@ InitializeAndNormalizeViewDescriptor(
   case D3D11_DSV_DIMENSION_TEXTURE1DARRAY: {
     if (~ViewDesc.Texture1DArray.ArraySize == 0)
       ViewDesc.Texture1DArray.ArraySize = ArraySize - ViewDesc.Texture1DArray.FirstArraySlice;
-    if (texture_type == MTL::TextureType2D || texture_type == MTL::TextureType2DArray) {
-      Descriptor.type = MTL::TextureType2DArray;
+    if (texture_type == WMTTextureType2D || texture_type == WMTTextureType2DArray) {
+      Descriptor.type = WMTTextureType2DArray;
       Descriptor.format = metal_format.PixelFormat;
       Descriptor.firstMiplevel = ViewDesc.Texture1DArray.MipSlice;
       Descriptor.miplevelCount = 1;
@@ -491,9 +491,9 @@ InitializeAndNormalizeViewDescriptor(
     break;
   }
   case D3D11_DSV_DIMENSION_TEXTURE2D: {
-    if (texture_type == MTL::TextureType2D || texture_type == MTL::TextureType2DArray ||
-        texture_type == MTL::TextureTypeCube || texture_type == MTL::TextureTypeCubeArray) {
-      Descriptor.type = MTL::TextureType2D;
+    if (texture_type == WMTTextureType2D || texture_type == WMTTextureType2DArray ||
+        texture_type == WMTTextureTypeCube || texture_type == WMTTextureTypeCubeArray) {
+      Descriptor.type = WMTTextureType2D;
       Descriptor.format = metal_format.PixelFormat;
       Descriptor.firstMiplevel = ViewDesc.Texture2D.MipSlice;
       Descriptor.miplevelCount = 1;
@@ -507,9 +507,9 @@ InitializeAndNormalizeViewDescriptor(
   case D3D11_DSV_DIMENSION_TEXTURE2DARRAY: {
     if (~ViewDesc.Texture2DArray.ArraySize == 0)
       ViewDesc.Texture2DArray.ArraySize = ArraySize - ViewDesc.Texture2DArray.FirstArraySlice;
-    if (texture_type == MTL::TextureType2D || texture_type == MTL::TextureType2DArray ||
-        texture_type == MTL::TextureTypeCube || texture_type == MTL::TextureTypeCubeArray) {
-      Descriptor.type = MTL::TextureType2DArray;
+    if (texture_type == WMTTextureType2D || texture_type == WMTTextureType2DArray ||
+        texture_type == WMTTextureTypeCube || texture_type == WMTTextureTypeCubeArray) {
+      Descriptor.type = WMTTextureType2DArray;
       Descriptor.format = metal_format.PixelFormat;
       Descriptor.firstMiplevel = ViewDesc.Texture2DArray.MipSlice;
       Descriptor.miplevelCount = 1;
@@ -522,8 +522,8 @@ InitializeAndNormalizeViewDescriptor(
     break;
   }
   case D3D11_DSV_DIMENSION_TEXTURE2DMS: {
-    if (texture_type == MTL::TextureType2DMultisample) {
-      Descriptor.type = MTL::TextureType2DMultisample;
+    if (texture_type == WMTTextureType2DMultisample) {
+      Descriptor.type = WMTTextureType2DMultisample;
       Descriptor.format = metal_format.PixelFormat;
       Descriptor.firstMiplevel = 0;
       Descriptor.miplevelCount = 1;
@@ -532,9 +532,9 @@ InitializeAndNormalizeViewDescriptor(
       GetRenderTargetSize(pTexture, Descriptor.firstMiplevel, AttachmentDesc);
       return S_OK;
     }
-    if (texture_type == MTL::TextureType2D) {
+    if (texture_type == WMTTextureType2D) {
       WARN("A texture2d view is created on multisampled texture");
-      Descriptor.type = MTL::TextureType2D;
+      Descriptor.type = WMTTextureType2D;
       Descriptor.format = metal_format.PixelFormat;
       Descriptor.firstMiplevel = 0;
       Descriptor.miplevelCount = 1;

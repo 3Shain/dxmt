@@ -1,7 +1,6 @@
 #pragma once
 
-#include "Metal/MTLDevice.hpp"
-#include "Metal/MTLPixelFormat.hpp"
+#include "Metal.hpp"
 #include "Metal/MTLStageInputOutputDescriptor.hpp"
 #include <map>
 
@@ -24,23 +23,23 @@ enum class FormatCapability : int {
 
 class FormatCapabilityInspector {
 public:
-  std::map<MTL::PixelFormat, FormatCapability> textureCapabilities{};
-  void Inspect(MTL::Device *device);
+  std::map<WMTPixelFormat, FormatCapability> textureCapabilities{};
+  void Inspect(WMT::Device device);
 };
 
-MTL::PixelFormat Forget_sRGB(MTL::PixelFormat format);
-MTL::PixelFormat Recall_sRGB(MTL::PixelFormat format);
+WMTPixelFormat Forget_sRGB(WMTPixelFormat format);
+WMTPixelFormat Recall_sRGB(WMTPixelFormat format);
 
 inline bool
-Is_sRGBVariant(MTL::PixelFormat format) {
+Is_sRGBVariant(WMTPixelFormat format) {
   return Forget_sRGB(format) != format;
 }
 
-bool IsBlockCompressionFormat(MTL::PixelFormat format);
+bool IsBlockCompressionFormat(WMTPixelFormat format);
 
-size_t FormatBytesPerTexel(MTL::PixelFormat format);
+size_t FormatBytesPerTexel(WMTPixelFormat format);
 
-uint32_t DepthStencilPlanarFlags(MTL::PixelFormat format);
+uint32_t DepthStencilPlanarFlags(WMTPixelFormat format);
 
 enum MTL_DXGI_FORMAT_FLAG {
   MTL_DXGI_FORMAT_TYPELESS = 1,
@@ -52,7 +51,7 @@ enum MTL_DXGI_FORMAT_FLAG {
 };
 
 struct MTL_DXGI_FORMAT_DESC {
-  MTL::PixelFormat PixelFormat;
+  WMTPixelFormat PixelFormat;
   MTL::AttributeFormat AttributeFormat;
   union {
     uint32_t BytesPerTexel;
@@ -61,12 +60,12 @@ struct MTL_DXGI_FORMAT_DESC {
   uint32_t Flag;
 };
 
-int32_t MTLQueryDXGIFormat(MTL::Device *device, uint32_t format, MTL_DXGI_FORMAT_DESC &description);
+int32_t MTLQueryDXGIFormat(WMT::Device device, uint32_t format, MTL_DXGI_FORMAT_DESC &description);
 
-uint32_t MTLGetTexelSize(MTL::PixelFormat format);
+uint32_t MTLGetTexelSize(WMTPixelFormat format);
 
-MTL::PixelFormat MTLGetUnsignedIntegerFormat(MTL::PixelFormat format);
+WMTPixelFormat MTLGetUnsignedIntegerFormat(WMTPixelFormat format);
 
-bool IsUnorm8RenderTargetFormat(MTL::PixelFormat format);
+bool IsUnorm8RenderTargetFormat(WMTPixelFormat format);
 
 } // namespace dxmt
