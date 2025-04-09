@@ -274,8 +274,14 @@ public:
   STDMETHODCALLTYPE
   GetGammaControlCapabilities(
       DXGI_GAMMA_CONTROL_CAPABILITIES *gamma_caps) final {
-    ERR("Not implemented");
-    return E_NOTIMPL;
+    if (gamma_caps == nullptr)
+      return E_NOTIMPL;
+
+    gamma_caps->ScaleAndOffsetSupported = false;
+    gamma_caps->MaxConvertedValue = 1.0f;
+    gamma_caps->MinConvertedValue = 0.0f;
+    gamma_caps->NumGammaControlPoints = 1;
+    return S_OK;
   }
 
   HRESULT
