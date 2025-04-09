@@ -64,7 +64,7 @@ public:
 
   virtual void CreateCommandList(ID3D11CommandList** pCommandList) = 0;
 
-  virtual FormatCapability GetMTLPixelFormatCapability(MTL::PixelFormat Format) = 0;
+  virtual FormatCapability GetMTLPixelFormatCapability(WMTPixelFormat Format) = 0;
 };
 
 Com<IMTLDXGIDevice> CreateD3D11Device(std::unique_ptr<Device> &&device,

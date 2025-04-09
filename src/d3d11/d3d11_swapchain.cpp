@@ -326,8 +326,8 @@ public:
       scaler_descriptor->setInputWidth(desc_.Width);
       scaler_descriptor->setOutputHeight(layer_weak_->drawableSize().height);
       scaler_descriptor->setOutputWidth(layer_weak_->drawableSize().width);
-      scaler_descriptor->setColorTextureFormat(backbuffer_->texture()->pixelFormat());
-      scaler_descriptor->setOutputTextureFormat(upscaled_backbuffer_->texture()->pixelFormat());
+      scaler_descriptor->setColorTextureFormat((MTL::PixelFormat)backbuffer_->texture()->pixelFormat());
+      scaler_descriptor->setOutputTextureFormat((MTL::PixelFormat)upscaled_backbuffer_->texture()->pixelFormat());
       metalfx_scaler = transfer(scaler_descriptor->newSpatialScaler(m_device->GetMTLDevice()));
       D3D11_ASSERT(metalfx_scaler && "otherwise metalfx failed to initialize");
     }

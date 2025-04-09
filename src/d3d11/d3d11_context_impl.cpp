@@ -273,15 +273,15 @@ public:
       break;
     case D3D11_RESOURCE_DIMENSION_TEXTURE1D:
       reinterpret_cast<ID3D11Texture1D *>(pResource)->GetDesc(&Texture1DDesc);
-      MTLQueryDXGIFormat(pDevice->GetMTLDevice(), Texture1DDesc.Format, FormatDescription);
+      MTLQueryDXGIFormat(pDevice->GetWMTDevice(), Texture1DDesc.Format, FormatDescription);
       break;
     case D3D11_RESOURCE_DIMENSION_TEXTURE2D:
       reinterpret_cast<ID3D11Texture2D1 *>(pResource)->GetDesc1(&Texture2DDesc);
-      MTLQueryDXGIFormat(pDevice->GetMTLDevice(), Texture2DDesc.Format, FormatDescription);
+      MTLQueryDXGIFormat(pDevice->GetWMTDevice(), Texture2DDesc.Format, FormatDescription);
       break;
     case D3D11_RESOURCE_DIMENSION_TEXTURE3D:
       reinterpret_cast<ID3D11Texture3D1 *>(pResource)->GetDesc1(&Texture3DDesc);
-      MTLQueryDXGIFormat(pDevice->GetMTLDevice(), Texture3DDesc.Format, FormatDescription);
+      MTLQueryDXGIFormat(pDevice->GetWMTDevice(), Texture3DDesc.Format, FormatDescription);
       break;
     }
   };
@@ -318,9 +318,9 @@ public:
     if (Dst_.Dimension != Src_.Dimension)
       return;
 
-    if (SrcFormat.PixelFormat == MTL::PixelFormatInvalid)
+    if (SrcFormat.PixelFormat == WMTPixelFormatInvalid)
       return;
-    if (DstFormat.PixelFormat == MTL::PixelFormatInvalid)
+    if (DstFormat.PixelFormat == WMTPixelFormatInvalid)
       return;
 
     switch (Dst_.Dimension) {
@@ -461,7 +461,7 @@ public:
       DstSubresource(DstSubresource),
       DstFormat(Dst_.FormatDescription) {
 
-    if (DstFormat.PixelFormat == MTL::PixelFormatInvalid)
+    if (DstFormat.PixelFormat == WMTPixelFormatInvalid)
       return;
 
     switch (Dst_.Dimension) {
@@ -686,14 +686,14 @@ public:
             value = std::array<uint32_t, 4>({Values[0], Values[1], Values[2], Values[3]}),
             dimension = desc.ViewDimension](ArgumentEncodingContext &enc) mutable {
         auto view_format = texture->view(viewId)->pixelFormat();
-        auto uint_format = MTLGetUnsignedIntegerFormat(view_format);
+        auto uint_format = MTLGetUnsignedIntegerFormat((WMTPixelFormat)view_format);
         /* RG11B10Float is a special case */
         if (view_format == MTL::PixelFormatRG11B10Float) {
-          uint_format = MTL::PixelFormatR32Uint;
+          uint_format = WMTPixelFormatR32Uint;
           value[0] = ((value[0] & 0x7FF) << 0) | ((value[1] & 0x7FF) << 11) | ((value[2] & 0x3FF) << 22);
         }
 
-        if (uint_format == MTL::PixelFormatInvalid) {
+        if (uint_format == WMTPixelFormatInvalid) {
           WARN("ClearUnorderedAccessViewUint: unhandled format ", view_format);
           return;
         }
@@ -3425,7 +3425,7 @@ public:
         unsigned viewId;
         UINT RenderTargetIndex;
         UINT DepthPlane;
-        MTL::PixelFormat PixelFormat = MTL::PixelFormatInvalid;
+        WMTPixelFormat PixelFormat = WMTPixelFormatInvalid;
         MTL::LoadAction LoadAction{MTL::LoadActionLoad};
       };
 
@@ -3438,7 +3438,7 @@ public:
         if (rtv) {
           auto props = rtv->GetAttachmentDesc();
           rtvs[i] = {rtv->__texture(), rtv->__viewId(), i, props.DepthPlane, rtv->GetPixelFormat()};
-          D3D11_ASSERT(rtv->GetPixelFormat() != MTL::PixelFormatInvalid);
+          D3D11_ASSERT(rtv->GetPixelFormat() != WMTPixelFormatInvalid);
           effective_render_target++;
         } else {
           rtvs[i].RenderTargetIndex = i;
@@ -3447,7 +3447,7 @@ public:
       struct DEPTH_STENCIL_STATE {
         Rc<Texture> Texture{};
         unsigned viewId{};
-        MTL::PixelFormat PixelFormat = MTL::PixelFormatInvalid;
+        WMTPixelFormat PixelFormat = WMTPixelFormatInvalid;
         MTL::LoadAction DepthLoadAction{MTL::LoadActionLoad};
         MTL::LoadAction StencilLoadAction{MTL::LoadActionLoad};
         unsigned ReadOnlyFlags{};
@@ -3488,7 +3488,7 @@ public:
         auto pool = transfer(NS::AutoreleasePool::alloc()->init());
         auto renderPassDescriptor = transfer(MTL::RenderPassDescriptor::alloc()->init());
         for (auto &rtv : rtvs.span()) {
-          if (rtv.PixelFormat == MTL::PixelFormatInvalid) {
+          if (rtv.PixelFormat == WMTPixelFormatInvalid) {
             continue;
           }
           auto colorAttachment = renderPassDescriptor->colorAttachments()->object(rtv.RenderTargetIndex);
@@ -3535,7 +3535,7 @@ public:
         ctx.startRenderPass(std::move(renderPassDescriptor), dsv_planar_flags, dsv.ReadOnlyFlags, rtvs.size());
 
         for (auto &rtv : rtvs.span()) {
-          if (rtv.PixelFormat == MTL::PixelFormatInvalid) {
+          if (rtv.PixelFormat == WMTPixelFormatInvalid) {
             continue;
           }
           ctx.access(rtv.Texture, rtv.viewId, DXMT_ENCODER_RESOURCE_ACESS_READ | DXMT_ENCODER_RESOURCE_ACESS_WRITE);
@@ -3630,12 +3630,12 @@ public:
       if (rtv && i < Desc.NumColorAttachments) {
         Desc.ColorAttachmentFormats[i] = state_.OutputMerger.RTVs[i]->GetPixelFormat();
       } else {
-        Desc.ColorAttachmentFormats[i] = MTL::PixelFormatInvalid;
+        Desc.ColorAttachmentFormats[i] = WMTPixelFormatInvalid;
       }
     }
     Desc.BlendState = state_.OutputMerger.BlendState ? state_.OutputMerger.BlendState : default_blend_state;
     Desc.DepthStencilFormat =
-        state_.OutputMerger.DSV ? state_.OutputMerger.DSV->GetPixelFormat() : MTL::PixelFormatInvalid;
+        state_.OutputMerger.DSV ? state_.OutputMerger.DSV->GetPixelFormat() : WMTPixelFormatInvalid;
     Desc.TopologyClass = to_metal_primitive_topology(state_.InputAssembler.Topology);
     bool ds_enabled =
         (state_.OutputMerger.DepthStencilState ? state_.OutputMerger.DepthStencilState : default_depth_stencil_state)
@@ -4170,10 +4170,10 @@ template <typename ContextInternalState>
 class MTLD3D11ContextExt : public IMTLD3D11ContextExt {
   class CachedTemporalScaler {
   public:
-    MTL::PixelFormat color_pixel_format;
-    MTL::PixelFormat output_pixel_format;
-    MTL::PixelFormat depth_pixel_format;
-    MTL::PixelFormat motion_vector_pixel_format;
+    WMTPixelFormat color_pixel_format;
+    WMTPixelFormat output_pixel_format;
+    WMTPixelFormat depth_pixel_format;
+    WMTPixelFormat motion_vector_pixel_format;
     bool auto_exposure;
     uint32_t input_width;
     uint32_t input_height;
@@ -4193,22 +4193,22 @@ public:
 
   ULONG STDMETHODCALLTYPE Release() final { return ctx_->Release(); }
 
-  MTL::PixelFormat GetCorrectMotionVectorFormat(MTL::PixelFormat format) {
+  WMTPixelFormat GetCorrectMotionVectorFormat(WMTPixelFormat format) {
     switch (format) {
-    case MTL::PixelFormatRG16Uint:
-    case MTL::PixelFormatRG16Float:
-    case MTL::PixelFormatRG16Sint:
-    case MTL::PixelFormatRG16Snorm:
-    case MTL::PixelFormatRG16Unorm:
-      return MTL::PixelFormatRG16Float;
-    case MTL::PixelFormatRG32Uint:
-    case MTL::PixelFormatRG32Float:
-    case MTL::PixelFormatRG32Sint:
-      return MTL::PixelFormatRG32Float;
+    case WMTPixelFormatRG16Uint:
+    case WMTPixelFormatRG16Float:
+    case WMTPixelFormatRG16Sint:
+    case WMTPixelFormatRG16Snorm:
+    case WMTPixelFormatRG16Unorm:
+      return WMTPixelFormatRG16Float;
+    case WMTPixelFormatRG32Uint:
+    case WMTPixelFormatRG32Float:
+    case WMTPixelFormatRG32Sint:
+      return WMTPixelFormatRG32Float;
     default:
       break;
     }
-    return MTL::PixelFormatInvalid;
+    return WMTPixelFormatInvalid;
   }
 
   void STDMETHODCALLTYPE TemporalUpscale(const MTL_TEMPORAL_UPSCALE_D3D11_DESC *pDesc) final {
@@ -4224,8 +4224,8 @@ public:
     if (pDesc->ExposureTexture && !(exposure = static_cast<D3D11ResourceCommon *>(pDesc->ExposureTexture)->texture()))
       return;
 
-    MTL::PixelFormat motion_vector_format = GetCorrectMotionVectorFormat(motion_vector->pixelFormat());
-    if (motion_vector_format == MTL::PixelFormatInvalid) {
+    WMTPixelFormat motion_vector_format = GetCorrectMotionVectorFormat(motion_vector->pixelFormat());
+    if (motion_vector_format == WMTPixelFormatInvalid) {
       ERR("TemporalUpscale: invalid motion vector format ", motion_vector->pixelFormat());
       return;
     }
@@ -4259,10 +4259,10 @@ public:
       scaler_entry.depth_pixel_format = depth->pixelFormat();
       scaler_entry.motion_vector_pixel_format = motion_vector_format;
       Obj<MTLFX::TemporalScalerDescriptor> descriptor = transfer(MTLFX::TemporalScalerDescriptor::alloc()->init());
-      descriptor->setColorTextureFormat(scaler_entry.color_pixel_format);
-      descriptor->setOutputTextureFormat(scaler_entry.output_pixel_format);
-      descriptor->setDepthTextureFormat(scaler_entry.depth_pixel_format);
-      descriptor->setMotionTextureFormat(motion_vector_format);
+      descriptor->setColorTextureFormat((MTL::PixelFormat)scaler_entry.color_pixel_format);
+      descriptor->setOutputTextureFormat((MTL::PixelFormat)scaler_entry.output_pixel_format);
+      descriptor->setDepthTextureFormat((MTL::PixelFormat)scaler_entry.depth_pixel_format);
+      descriptor->setMotionTextureFormat((MTL::PixelFormat)motion_vector_format);
       scaler_entry.auto_exposure = pDesc->AutoExposure;
       scaler_entry.input_width = input->width();
       scaler_entry.input_height = input->height();
@@ -4304,8 +4304,8 @@ public:
                   motion_vector_format](ArgumentEncodingContext &enc) mutable {
       auto mv_view = motion_vector->createView(
           {.format = motion_vector_format,
-           .type = MTL::TextureType2D,
-           .usage = motion_vector->current()->texture()->usage(),
+           .type = WMTTextureType2D,
+           .usage = motion_vector->usage(),
            .firstMiplevel = 0,
            .miplevelCount = 1,
            .firstArraySlice = 0,

@@ -3,8 +3,6 @@
 #include "dxmt_dynamic.hpp"
 #include "dxmt_staging.hpp"
 #include "dxmt_texture.hpp"
-#include "Metal/MTLBuffer.hpp"
-#include "Metal/MTLTexture.hpp"
 #include "d3d11_device_child.hpp"
 #include "com/com_pointer.hpp"
 #include "com/com_guid.hpp"
@@ -449,7 +447,7 @@ template <typename TEXTURE_DESC>
 HRESULT CreateMTLTextureDescriptor(MTLD3D11Device *pDevice,
                                    const TEXTURE_DESC *pDesc,
                                    TEXTURE_DESC *pOutDesc,
-                                   MTL::TextureDescriptor **pMtlDescOut);
+                                   WMTTextureInfo *pMtlDescOut);
 
 template <typename VIEW_DESC>
 HRESULT InitializeAndNormalizeViewDescriptor(

@@ -1,4 +1,3 @@
-#include "Metal/MTLPixelFormat.hpp"
 #include "com/com_pointer.hpp"
 #include "d3d11_device.hpp"
 #include "dxmt_buffer.hpp"
@@ -76,7 +75,7 @@ public:
       TResourceBase<tag_buffer>(*pDesc, device) {
     buffer_ = new Buffer(
         pDesc->BindFlags & D3D11_BIND_UNORDERED_ACCESS ? pDesc->ByteWidth + 16 : pDesc->ByteWidth,
-        device->GetMTLDevice()
+        device->GetWMTDevice()
     );
     Flags<BufferAllocationFlag> flags;
     if (!m_parent->IsTraced() && pDesc->Usage == D3D11_USAGE_DYNAMIC)
@@ -144,7 +143,7 @@ public:
         finalDesc.ViewDimension != D3D11_SRV_DIMENSION_BUFFEREX) {
       return E_FAIL;
     }
-    MTL::PixelFormat view_format = MTL::PixelFormatInvalid;
+    WMTPixelFormat view_format = WMTPixelFormatInvalid;
     uint32_t offset, size, viewElementOffset, viewElementWidth;
     if (structured) {
       if (finalDesc.Format != DXGI_FORMAT_UNKNOWN) {
@@ -155,7 +154,7 @@ public:
           this->desc, desc.StructureByteStride, finalDesc.Buffer.FirstElement, finalDesc.Buffer.NumElements, offset,
           size
       );
-      view_format = MTL::PixelFormatR32Uint;
+      view_format = WMTPixelFormatR32Uint;
       viewElementOffset = finalDesc.Buffer.FirstElement * (desc.StructureByteStride >> 2);
       viewElementWidth = finalDesc.Buffer.NumElements * (desc.StructureByteStride >> 2);
     } else if (finalDesc.ViewDimension == D3D11_SRV_DIMENSION_BUFFEREX && finalDesc.BufferEx.Flags & D3D11_BUFFEREX_SRV_FLAG_RAW) {
@@ -166,12 +165,12 @@ public:
       CalculateBufferViewOffsetAndSize(
           this->desc, sizeof(uint32_t), finalDesc.Buffer.FirstElement, finalDesc.Buffer.NumElements, offset, size
       );
-      view_format = MTL::PixelFormatR32Uint;
+      view_format = WMTPixelFormatR32Uint;
       viewElementOffset = finalDesc.Buffer.FirstElement;
       viewElementWidth = finalDesc.Buffer.NumElements;
     } else {
       MTL_DXGI_FORMAT_DESC format;
-      if (FAILED(MTLQueryDXGIFormat(m_parent->GetMTLDevice(), finalDesc.Format, format))) {
+      if (FAILED(MTLQueryDXGIFormat(m_parent->GetWMTDevice(), finalDesc.Format, format))) {
         return E_FAIL;
       }
 
@@ -212,7 +211,7 @@ public:
     if (finalDesc.ViewDimension != D3D11_UAV_DIMENSION_BUFFER) {
       return E_FAIL;
     }
-    MTL::PixelFormat view_format = MTL::PixelFormatInvalid;
+    WMTPixelFormat view_format = WMTPixelFormatInvalid;
     uint32_t offset, size, viewElementOffset, viewElementWidth;
     Rc<Buffer> counter = {};
     if (structured) {
@@ -224,12 +223,12 @@ public:
           this->desc, desc.StructureByteStride, finalDesc.Buffer.FirstElement, finalDesc.Buffer.NumElements, offset,
           size
       );
-      view_format = MTL::PixelFormatR32Uint;
+      view_format = WMTPixelFormatR32Uint;
       // when structured buffer is interpreted as typed buffer for any reason
       viewElementOffset = finalDesc.Buffer.FirstElement * (desc.StructureByteStride >> 2);
       viewElementWidth = finalDesc.Buffer.NumElements * (desc.StructureByteStride >> 2);
       if (finalDesc.Buffer.Flags & (D3D11_BUFFER_UAV_FLAG_APPEND | D3D11_BUFFER_UAV_FLAG_COUNTER)) {
-        counter = new dxmt::Buffer(sizeof(uint32_t), m_parent->GetMTLDevice());
+        counter = new dxmt::Buffer(sizeof(uint32_t), m_parent->GetWMTDevice());
         counter->rename(counter->allocate(BufferAllocationFlag::GpuManaged));
       }
     } else if (finalDesc.Buffer.Flags & D3D11_BUFFER_UAV_FLAG_RAW) {
@@ -240,12 +239,12 @@ public:
       CalculateBufferViewOffsetAndSize(
           this->desc, sizeof(uint32_t), finalDesc.Buffer.FirstElement, finalDesc.Buffer.NumElements, offset, size
       );
-      view_format = MTL::PixelFormatR32Uint;
+      view_format = WMTPixelFormatR32Uint;
       viewElementOffset = finalDesc.Buffer.FirstElement;
       viewElementWidth = finalDesc.Buffer.NumElements;
     } else {
       MTL_DXGI_FORMAT_DESC format;
-      if (FAILED(MTLQueryDXGIFormat(m_parent->GetMTLDevice(), finalDesc.Format, format))) {
+      if (FAILED(MTLQueryDXGIFormat(m_parent->GetWMTDevice(), finalDesc.Format, format))) {
         return E_FAIL;
       }
 

@@ -332,7 +332,7 @@ public:
       return S_OK;
     }
     MTL_DXGI_FORMAT_DESC formatDesc;
-    if (FAILED(MTLQueryDXGIFormat(this->m_adapter->GetMTLDevice(), EnumFormat,
+    if (FAILED(MTLQueryDXGIFormat(WMT::Device((obj_handle_t)this->m_adapter->GetMTLDevice()), EnumFormat,
                                   formatDesc)) ||
         !(formatDesc.Flag & MTL_DXGI_FORMAT_BACKBUFFER)) {
       *pNumModes = 0;
