@@ -596,7 +596,7 @@ DepthStencilPlanarFlags(WMTPixelFormat format) {
 int32_t
 MTLQueryDXGIFormat(WMT::Device device, uint32_t format, MTL_DXGI_FORMAT_DESC &description) {
   description.PixelFormat = WMTPixelFormatInvalid;
-  description.AttributeFormat = MTL::AttributeFormatInvalid;
+  description.AttributeFormat = WMTAttributeFormatInvalid;
   description.BytesPerTexel = 0;
   description.Flag = 0;
 
@@ -609,19 +609,19 @@ MTLQueryDXGIFormat(WMT::Device device, uint32_t format, MTL_DXGI_FORMAT_DESC &de
   }
   case DXGI_FORMAT_R32G32B32A32_UINT: {
     description.PixelFormat = WMTPixelFormatRGBA32Uint;
-    description.AttributeFormat = MTL::AttributeFormatUInt4;
+    description.AttributeFormat = WMTAttributeFormatUInt4;
     description.BytesPerTexel = 16;
     break;
   }
   case DXGI_FORMAT_R32G32B32A32_SINT: {
     description.PixelFormat = WMTPixelFormatRGBA32Sint;
-    description.AttributeFormat = MTL::AttributeFormatInt4;
+    description.AttributeFormat = WMTAttributeFormatInt4;
     description.BytesPerTexel = 16;
     break;
   }
   case DXGI_FORMAT_R32G32B32A32_FLOAT: {
     description.PixelFormat = WMTPixelFormatRGBA32Float;
-    description.AttributeFormat = MTL::AttributeFormatFloat4;
+    description.AttributeFormat = WMTAttributeFormatFloat4;
     description.BytesPerTexel = 16;
     break;
   }
@@ -633,19 +633,19 @@ MTLQueryDXGIFormat(WMT::Device device, uint32_t format, MTL_DXGI_FORMAT_DESC &de
   }
   case DXGI_FORMAT_R32G32B32_UINT: {
     description.PixelFormat = WMTPixelFormatR32Uint;
-    description.AttributeFormat = MTL::AttributeFormatUInt3;
+    description.AttributeFormat = WMTAttributeFormatUInt3;
     description.BytesPerTexel = 12;
     break;
   }
   case DXGI_FORMAT_R32G32B32_SINT: {
     description.PixelFormat = WMTPixelFormatR32Sint;
-    description.AttributeFormat = MTL::AttributeFormatInt3;
+    description.AttributeFormat = WMTAttributeFormatInt3;
     description.BytesPerTexel = 12;
     break;
   }
   case DXGI_FORMAT_R32G32B32_FLOAT: {
     description.PixelFormat = WMTPixelFormatR32Float;
-    description.AttributeFormat = MTL::AttributeFormatFloat3;
+    description.AttributeFormat = WMTAttributeFormatFloat3;
     description.BytesPerTexel = 12;
     break;
   }
@@ -657,32 +657,32 @@ MTLQueryDXGIFormat(WMT::Device device, uint32_t format, MTL_DXGI_FORMAT_DESC &de
   }
   case DXGI_FORMAT_R16G16B16A16_FLOAT: {
     description.PixelFormat = WMTPixelFormatRGBA16Float;
-    description.AttributeFormat = MTL::AttributeFormatHalf4;
+    description.AttributeFormat = WMTAttributeFormatHalf4;
     description.BytesPerTexel = 8;
     description.Flag = MTL_DXGI_FORMAT_BACKBUFFER; // 11.1
     break;
   }
   case DXGI_FORMAT_R16G16B16A16_UNORM: {
     description.PixelFormat = WMTPixelFormatRGBA16Unorm;
-    description.AttributeFormat = MTL::AttributeFormatUShort4Normalized;
+    description.AttributeFormat = WMTAttributeFormatUShort4Normalized;
     description.BytesPerTexel = 8;
     break;
   }
   case DXGI_FORMAT_R16G16B16A16_UINT: {
     description.PixelFormat = WMTPixelFormatRGBA16Uint;
-    description.AttributeFormat = MTL::AttributeFormatUShort4;
+    description.AttributeFormat = WMTAttributeFormatUShort4;
     description.BytesPerTexel = 8;
     break;
   }
   case DXGI_FORMAT_R16G16B16A16_SNORM: {
     description.PixelFormat = WMTPixelFormatRGBA16Snorm;
-    description.AttributeFormat = MTL::AttributeFormatShort4Normalized;
+    description.AttributeFormat = WMTAttributeFormatShort4Normalized;
     description.BytesPerTexel = 8;
     break;
   }
   case DXGI_FORMAT_R16G16B16A16_SINT: {
     description.PixelFormat = WMTPixelFormatRGBA16Sint;
-    description.AttributeFormat = MTL::AttributeFormatShort4;
+    description.AttributeFormat = WMTAttributeFormatShort4;
     description.BytesPerTexel = 8;
     break;
   }
@@ -694,19 +694,19 @@ MTLQueryDXGIFormat(WMT::Device device, uint32_t format, MTL_DXGI_FORMAT_DESC &de
   }
   case DXGI_FORMAT_R32G32_FLOAT: {
     description.PixelFormat = WMTPixelFormatRG32Float;
-    description.AttributeFormat = MTL::AttributeFormatFloat2;
+    description.AttributeFormat = WMTAttributeFormatFloat2;
     description.BytesPerTexel = 8;
     break;
   }
   case DXGI_FORMAT_R32G32_UINT: {
     description.PixelFormat = WMTPixelFormatRG32Uint;
-    description.AttributeFormat = MTL::AttributeFormatUInt2;
+    description.AttributeFormat = WMTAttributeFormatUInt2;
     description.BytesPerTexel = 8;
     break;
   }
   case DXGI_FORMAT_R32G32_SINT: {
     description.PixelFormat = WMTPixelFormatRG32Sint;
-    description.AttributeFormat = MTL::AttributeFormatInt2;
+    description.AttributeFormat = WMTAttributeFormatInt2;
     description.BytesPerTexel = 8;
     break;
   }
@@ -742,7 +742,7 @@ MTLQueryDXGIFormat(WMT::Device device, uint32_t format, MTL_DXGI_FORMAT_DESC &de
   }
   case DXGI_FORMAT_R10G10B10A2_UNORM: {
     description.PixelFormat = WMTPixelFormatRGB10A2Unorm;
-    description.AttributeFormat = MTL::AttributeFormatUInt1010102Normalized;
+    description.AttributeFormat = WMTAttributeFormatUInt1010102Normalized;
     description.BytesPerTexel = 4;
     description.Flag = MTL_DXGI_FORMAT_BACKBUFFER; // 11.1
     break;
@@ -754,7 +754,7 @@ MTLQueryDXGIFormat(WMT::Device device, uint32_t format, MTL_DXGI_FORMAT_DESC &de
   }
   case DXGI_FORMAT_R11G11B10_FLOAT: {
     description.PixelFormat = WMTPixelFormatRG11B10Float;
-    description.AttributeFormat = MTL::AttributeFormatFloatRG11B10;
+    description.AttributeFormat = WMTAttributeFormatFloatRG11B10;
     description.BytesPerTexel = 4;
     break;
   }
@@ -766,7 +766,7 @@ MTLQueryDXGIFormat(WMT::Device device, uint32_t format, MTL_DXGI_FORMAT_DESC &de
   }
   case DXGI_FORMAT_R8G8B8A8_UNORM: {
     description.PixelFormat = WMTPixelFormatRGBA8Unorm;
-    description.AttributeFormat = MTL::AttributeFormatUChar4Normalized;
+    description.AttributeFormat = WMTAttributeFormatUChar4Normalized;
     description.BytesPerTexel = 4;
     description.Flag = MTL_DXGI_FORMAT_BACKBUFFER; // 11.1, swizzle from BGRA8Unorm
     // FIXME: backbuffer format not supported!
@@ -781,19 +781,19 @@ MTLQueryDXGIFormat(WMT::Device device, uint32_t format, MTL_DXGI_FORMAT_DESC &de
   }
   case DXGI_FORMAT_R8G8B8A8_UINT: {
     description.PixelFormat = WMTPixelFormatRGBA8Uint;
-    description.AttributeFormat = MTL::AttributeFormatUChar4;
+    description.AttributeFormat = WMTAttributeFormatUChar4;
     description.BytesPerTexel = 4;
     break;
   }
   case DXGI_FORMAT_R8G8B8A8_SNORM: {
     description.PixelFormat = WMTPixelFormatRGBA8Snorm;
-    description.AttributeFormat = MTL::AttributeFormatChar4Normalized;
+    description.AttributeFormat = WMTAttributeFormatChar4Normalized;
     description.BytesPerTexel = 4;
     break;
   }
   case DXGI_FORMAT_R8G8B8A8_SINT: {
     description.PixelFormat = WMTPixelFormatRGBA8Sint;
-    description.AttributeFormat = MTL::AttributeFormatChar4;
+    description.AttributeFormat = WMTAttributeFormatChar4;
     description.BytesPerTexel = 4;
     break;
   }
@@ -805,31 +805,31 @@ MTLQueryDXGIFormat(WMT::Device device, uint32_t format, MTL_DXGI_FORMAT_DESC &de
   }
   case DXGI_FORMAT_R16G16_FLOAT: {
     description.PixelFormat = WMTPixelFormatRG16Float;
-    description.AttributeFormat = MTL::AttributeFormatHalf2;
+    description.AttributeFormat = WMTAttributeFormatHalf2;
     description.BytesPerTexel = 4;
     break;
   }
   case DXGI_FORMAT_R16G16_UNORM: {
     description.PixelFormat = WMTPixelFormatRG16Unorm;
-    description.AttributeFormat = MTL::AttributeFormatUShort2Normalized;
+    description.AttributeFormat = WMTAttributeFormatUShort2Normalized;
     description.BytesPerTexel = 4;
     break;
   }
   case DXGI_FORMAT_R16G16_UINT: {
     description.PixelFormat = WMTPixelFormatRG16Uint;
-    description.AttributeFormat = MTL::AttributeFormatUShort2;
+    description.AttributeFormat = WMTAttributeFormatUShort2;
     description.BytesPerTexel = 4;
     break;
   }
   case DXGI_FORMAT_R16G16_SNORM: {
     description.PixelFormat = WMTPixelFormatRG16Snorm;
-    description.AttributeFormat = MTL::AttributeFormatShort2Normalized;
+    description.AttributeFormat = WMTAttributeFormatShort2Normalized;
     description.BytesPerTexel = 4;
     break;
   }
   case DXGI_FORMAT_R16G16_SINT: {
     description.PixelFormat = WMTPixelFormatRG16Sint;
-    description.AttributeFormat = MTL::AttributeFormatShort2;
+    description.AttributeFormat = WMTAttributeFormatShort2;
     description.BytesPerTexel = 4;
     break;
   }
@@ -846,19 +846,19 @@ MTLQueryDXGIFormat(WMT::Device device, uint32_t format, MTL_DXGI_FORMAT_DESC &de
   }
   case DXGI_FORMAT_R32_FLOAT: {
     description.PixelFormat = WMTPixelFormatR32Float;
-    description.AttributeFormat = MTL::AttributeFormatFloat;
+    description.AttributeFormat = WMTAttributeFormatFloat;
     description.BytesPerTexel = 4;
     break;
   }
   case DXGI_FORMAT_R32_UINT: {
     description.PixelFormat = WMTPixelFormatR32Uint;
-    description.AttributeFormat = MTL::AttributeFormatUInt;
+    description.AttributeFormat = WMTAttributeFormatUInt;
     description.BytesPerTexel = 4;
     break;
   }
   case DXGI_FORMAT_R32_SINT: {
     description.PixelFormat = WMTPixelFormatR32Sint;
-    description.AttributeFormat = MTL::AttributeFormatInt;
+    description.AttributeFormat = WMTAttributeFormatInt;
     description.BytesPerTexel = 4;
     break;
   }
@@ -917,25 +917,25 @@ MTLQueryDXGIFormat(WMT::Device device, uint32_t format, MTL_DXGI_FORMAT_DESC &de
   }
   case DXGI_FORMAT_R8G8_UNORM: {
     description.PixelFormat = WMTPixelFormatRG8Unorm;
-    description.AttributeFormat = MTL::AttributeFormatUChar2Normalized;
+    description.AttributeFormat = WMTAttributeFormatUChar2Normalized;
     description.BytesPerTexel = 2;
     break;
   }
   case DXGI_FORMAT_R8G8_UINT: {
     description.PixelFormat = WMTPixelFormatRG8Uint;
-    description.AttributeFormat = MTL::AttributeFormatUChar2;
+    description.AttributeFormat = WMTAttributeFormatUChar2;
     description.BytesPerTexel = 2;
     break;
   }
   case DXGI_FORMAT_R8G8_SNORM: {
     description.PixelFormat = WMTPixelFormatRG8Snorm;
-    description.AttributeFormat = MTL::AttributeFormatChar2Normalized;
+    description.AttributeFormat = WMTAttributeFormatChar2Normalized;
     description.BytesPerTexel = 2;
     break;
   }
   case DXGI_FORMAT_R8G8_SINT: {
     description.PixelFormat = WMTPixelFormatRG8Sint;
-    description.AttributeFormat = MTL::AttributeFormatChar2;
+    description.AttributeFormat = WMTAttributeFormatChar2;
     description.BytesPerTexel = 2;
     break;
   }
@@ -947,7 +947,7 @@ MTLQueryDXGIFormat(WMT::Device device, uint32_t format, MTL_DXGI_FORMAT_DESC &de
   }
   case DXGI_FORMAT_R16_FLOAT: {
     description.PixelFormat = WMTPixelFormatR16Float;
-    description.AttributeFormat = MTL::AttributeFormatHalf;
+    description.AttributeFormat = WMTAttributeFormatHalf;
     description.BytesPerTexel = 2;
     break;
   }
@@ -958,25 +958,25 @@ MTLQueryDXGIFormat(WMT::Device device, uint32_t format, MTL_DXGI_FORMAT_DESC &de
   }
   case DXGI_FORMAT_R16_UNORM: {
     description.PixelFormat = WMTPixelFormatR16Unorm;
-    description.AttributeFormat = MTL::AttributeFormatUShortNormalized;
+    description.AttributeFormat = WMTAttributeFormatUShortNormalized;
     description.BytesPerTexel = 2;
     break;
   }
   case DXGI_FORMAT_R16_UINT: {
     description.PixelFormat = WMTPixelFormatR16Uint;
-    description.AttributeFormat = MTL::AttributeFormatUShort;
+    description.AttributeFormat = WMTAttributeFormatUShort;
     description.BytesPerTexel = 2;
     break;
   }
   case DXGI_FORMAT_R16_SNORM: {
     description.PixelFormat = WMTPixelFormatR16Snorm;
-    description.AttributeFormat = MTL::AttributeFormatShortNormalized;
+    description.AttributeFormat = WMTAttributeFormatShortNormalized;
     description.BytesPerTexel = 2;
     break;
   }
   case DXGI_FORMAT_R16_SINT: {
     description.PixelFormat = WMTPixelFormatR16Sint;
-    description.AttributeFormat = MTL::AttributeFormatShort;
+    description.AttributeFormat = WMTAttributeFormatShort;
     description.BytesPerTexel = 2;
     break;
   }
@@ -988,25 +988,25 @@ MTLQueryDXGIFormat(WMT::Device device, uint32_t format, MTL_DXGI_FORMAT_DESC &de
   }
   case DXGI_FORMAT_R8_UNORM: {
     description.PixelFormat = WMTPixelFormatR8Unorm;
-    description.AttributeFormat = MTL::AttributeFormatUCharNormalized;
+    description.AttributeFormat = WMTAttributeFormatUCharNormalized;
     description.BytesPerTexel = 1;
     break;
   }
   case DXGI_FORMAT_R8_UINT: {
     description.PixelFormat = WMTPixelFormatR8Uint;
-    description.AttributeFormat = MTL::AttributeFormatUChar;
+    description.AttributeFormat = WMTAttributeFormatUChar;
     description.BytesPerTexel = 1;
     break;
   }
   case DXGI_FORMAT_R8_SNORM: {
     description.PixelFormat = WMTPixelFormatR8Snorm;
-    description.AttributeFormat = MTL::AttributeFormatCharNormalized;
+    description.AttributeFormat = WMTAttributeFormatCharNormalized;
     description.BytesPerTexel = 1;
     break;
   }
   case DXGI_FORMAT_R8_SINT: {
     description.PixelFormat = WMTPixelFormatR8Sint;
-    description.AttributeFormat = MTL::AttributeFormatChar;
+    description.AttributeFormat = WMTAttributeFormatChar;
     description.BytesPerTexel = 1;
     break;
   }
@@ -1020,7 +1020,7 @@ MTLQueryDXGIFormat(WMT::Device device, uint32_t format, MTL_DXGI_FORMAT_DESC &de
   }
   case DXGI_FORMAT_R9G9B9E5_SHAREDEXP: {
     description.PixelFormat = WMTPixelFormatRGB9E5Float;
-    description.AttributeFormat = MTL::AttributeFormatFloatRGB9E5;
+    description.AttributeFormat = WMTAttributeFormatFloatRGB9E5;
     description.BytesPerTexel = 4;
     break;
   }
@@ -1141,7 +1141,7 @@ MTLQueryDXGIFormat(WMT::Device device, uint32_t format, MTL_DXGI_FORMAT_DESC &de
   }
   case DXGI_FORMAT_B8G8R8A8_UNORM: {
     description.PixelFormat = WMTPixelFormatBGRA8Unorm;
-    description.AttributeFormat = MTL::AttributeFormatUChar4Normalized_BGRA;
+    description.AttributeFormat = WMTAttributeFormatUChar4Normalized_BGRA;
     description.BytesPerTexel = 4;
     description.Flag = MTL_DXGI_FORMAT_BACKBUFFER; // 11.1
     break;
