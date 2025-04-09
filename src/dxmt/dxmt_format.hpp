@@ -1,7 +1,6 @@
 #pragma once
 
 #include "Metal.hpp"
-#include "Metal/MTLStageInputOutputDescriptor.hpp"
 #include <map>
 
 namespace dxmt {
@@ -52,7 +51,7 @@ enum MTL_DXGI_FORMAT_FLAG {
 
 struct MTL_DXGI_FORMAT_DESC {
   WMTPixelFormat PixelFormat;
-  MTL::AttributeFormat AttributeFormat;
+  WMTAttributeFormat AttributeFormat;
   union {
     uint32_t BytesPerTexel;
     uint32_t BlockSize;
