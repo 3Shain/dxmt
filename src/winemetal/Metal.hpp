@@ -1,7 +1,7 @@
 #pragma once
 
 #include "./winemetal.h"
-#include <type_traits>
+#include <cstddef>
 
 namespace WMT {
 
@@ -28,10 +28,7 @@ public:
   }
 };
 
-template <typename T>
-concept ObjectType = std::is_base_of_v<Object, T>;
-
-template <ObjectType Class> class Reference : public Class {
+template <typename Class> class Reference : public Class {
 public:
   Reference() {
     this->handle = NULL_OBJECT_HANDLE;
@@ -91,7 +88,7 @@ public:
   }
 };
 
-template <ObjectType Class> class Array : public Object {
+template <typename Class> class Array : public Object {
 public:
   uint64_t
   count() const {
@@ -128,8 +125,26 @@ class Resource : public Object {
 public:
 };
 
+class Texture : public Resource {
+public:
+  Reference<Texture>
+  newTextureView(
+      WMTPixelFormat format, WMTTextureType texture_type, uint16_t level_start, uint16_t level_count,
+      uint16_t slice_start, uint16_t slice_count, struct WMTTextureSwizzleChannels swizzle,
+      uint64_t *out_gpu_resource_id
+  ) {
+    return Reference<Texture>(MTLTexture_newTextureView(
+        handle, format, texture_type, level_start, level_count, slice_start, slice_count, swizzle, out_gpu_resource_id
+    ));
+  }
+};
+
 class Buffer : public Resource {
 public:
+  Reference<Texture>
+  newTexture(WMTTextureInfo *info, uint64_t offset, uint64_t bytes_per_row) {
+    return Reference<Texture>(MTLBuffer_newTexture(handle, info, offset, bytes_per_row));
+  }
 };
 
 class SamplerState : public Object {
@@ -211,6 +226,16 @@ public:
   Reference<DepthStencilState>
   newDepthStencilState(WMTDepthStencilInfo *info) {
     return Reference<DepthStencilState>(MTLDevice_newDepthStencilState(handle, info));
+  }
+
+  Reference<Texture>
+  newTexture(WMTTextureInfo *info) {
+    return Reference<Texture>(MTLDevice_newTexture(handle, info));
+  }
+
+  uint64_t
+  minimumLinearTextureAlignmentForPixelFormat(WMTPixelFormat format) {
+    return MTLDevice_minimumLinearTextureAlignmentForPixelFormat(handle, format);
   }
 };
 

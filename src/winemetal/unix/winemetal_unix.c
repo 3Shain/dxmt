@@ -181,7 +181,6 @@ _MTLDevice_newSamplerState(void *obj) {
   return STATUS_SUCCESS;
 }
 
-
 static NTSTATUS
 _MTLDevice_newDepthStencilState(void *obj) {
   struct unixcall_mtldevice_newdepthstencilstate *params = obj;
@@ -215,6 +214,79 @@ _MTLDevice_newDepthStencilState(void *obj) {
   return STATUS_SUCCESS;
 }
 
+void
+fill_texture_descriptor(MTLTextureDescriptor *desc, struct WMTTextureInfo *info) {
+  desc.textureType = (MTLTextureType)info->type;
+  desc.pixelFormat = (MTLPixelFormat)info->pixel_format;
+  desc.width = info->width;
+  desc.height = info->height;
+  desc.depth = info->depth;
+  desc.arrayLength = info->array_length;
+  desc.mipmapLevelCount = info->mipmap_level_count;
+  desc.sampleCount = info->sample_count;
+  desc.usage = (MTLTextureUsage)info->usage;
+  desc.resourceOptions = (MTLResourceOptions)info->options;
+};
+
+static NTSTATUS
+_MTLDevice_newTexture(void *obj) {
+  struct unixcall_mtldevice_newtexture *params = obj;
+  id<MTLDevice> device = (id<MTLDevice>)params->device;
+  struct WMTTextureInfo *info = params->info;
+  MTLTextureDescriptor *desc = [[MTLTextureDescriptor alloc] init];
+  fill_texture_descriptor(desc, info);
+
+  id<MTLTexture> ret = [device newTextureWithDescriptor:desc];
+  params->ret = (obj_handle_t)ret;
+  info->gpu_resource_id = [ret gpuResourceID]._impl;
+
+  [desc release];
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_MTLBuffer_newTexture(void *obj) {
+  struct unixcall_mtlbuffer_newtexture *params = obj;
+  id<MTLBuffer> buffer = (id<MTLBuffer>)params->buffer;
+  struct WMTTextureInfo *info = params->info;
+  MTLTextureDescriptor *desc = [[MTLTextureDescriptor alloc] init];
+  fill_texture_descriptor(desc, info);
+
+  id<MTLTexture> ret = [buffer newTextureWithDescriptor:desc offset:params->offset bytesPerRow:params->bytes_per_row];
+  assert(ret);
+  params->ret = (obj_handle_t)ret;
+  info->gpu_resource_id = [ret gpuResourceID]._impl;
+
+  [desc release];
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_MTLTexture_newTextureView(void *obj) {
+  struct unixcall_mtltexture_newtextureview *params = obj;
+  id<MTLTexture> texture = (id<MTLTexture>)params->texture;
+
+  id<MTLTexture> ret = [texture
+      newTextureViewWithPixelFormat:(MTLPixelFormat)params->format
+                        textureType:(MTLTextureType)params->texture_type
+                             levels:NSMakeRange(params->level_start, params->level_count)
+                             slices:NSMakeRange(params->slice_start, params->slice_count)
+                            swizzle:MTLTextureSwizzleChannelsMake(
+                                        (MTLTextureSwizzle)params->swizzle.r, (MTLTextureSwizzle)params->swizzle.g,
+                                        (MTLTextureSwizzle)params->swizzle.b, (MTLTextureSwizzle)params->swizzle.a
+                                    )];
+  params->ret = (obj_handle_t)ret;
+  params->gpu_resource_id = [ret gpuResourceID]._impl;
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_MTLDevice_minimumLinearTextureAlignmentForPixelFormat(void *obj) {
+  struct unixcall_generic_obj_uint64_uint64_ret *params = obj;
+  params->ret = [(id<MTLDevice>)params->handle minimumLinearTextureAlignmentForPixelFormat:(MTLPixelFormat)params->arg];
+  return STATUS_SUCCESS;
+}
+
 const void *__winemetal_unixcalls[] = {
     &_NSObject_retain,
     &_NSObject_release,
@@ -237,6 +309,10 @@ const void *__winemetal_unixcalls[] = {
     &_MTLDevice_newBuffer,
     &_MTLDevice_newSamplerState,
     &_MTLDevice_newDepthStencilState,
+    &_MTLDevice_newTexture,
+    &_MTLBuffer_newTexture,
+    &_MTLTexture_newTextureView,
+    &_MTLDevice_minimumLinearTextureAlignmentForPixelFormat,
 };
 
 const unsigned int __winemetal_unixcalls_num = sizeof(__winemetal_unixcalls) / sizeof(void *);
