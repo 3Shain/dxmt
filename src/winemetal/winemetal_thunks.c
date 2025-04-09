@@ -191,3 +191,53 @@ MTLDevice_newDepthStencilState(obj_handle_t device, struct WMTDepthStencilInfo *
   UNIX_CALL(20, &params);
   return params.ret;
 }
+
+WINEMETAL_API obj_handle_t
+MTLDevice_newTexture(obj_handle_t device, struct WMTTextureInfo *info) {
+  struct unixcall_mtldevice_newtexture params;
+  params.device = device;
+  params.info = info;
+  UNIX_CALL(21, &params);
+  return params.ret;
+}
+
+WINEMETAL_API obj_handle_t
+MTLBuffer_newTexture(obj_handle_t buffer, struct WMTTextureInfo *info, uint64_t offset, uint64_t bytes_per_row) {
+  struct unixcall_mtlbuffer_newtexture params;
+  params.buffer = buffer;
+  params.info = info;
+  params.offset = offset;
+  params.bytes_per_row = bytes_per_row;
+  UNIX_CALL(22, &params);
+  return params.ret;
+}
+
+WINEMETAL_API obj_handle_t
+MTLTexture_newTextureView(
+    obj_handle_t texture, enum WMTPixelFormat format, enum WMTTextureType texture_type, uint16_t level_start,
+    uint16_t level_count, uint16_t slice_start, uint16_t slice_count, struct WMTTextureSwizzleChannels swizzle,
+    uint64_t *out_gpu_resource_id
+) {
+  struct unixcall_mtltexture_newtextureview params;
+  params.texture = texture;
+  params.format = format;
+  params.texture_type = texture_type;
+  params.level_start = level_start;
+  params.level_count = level_count;
+  params.slice_start = slice_start;
+  params.slice_count = slice_count;
+  params.swizzle = swizzle;
+  UNIX_CALL(23, &params);
+  *out_gpu_resource_id = params.gpu_resource_id;
+  return params.ret;
+}
+
+WINEMETAL_API uint64_t
+MTLDevice_minimumLinearTextureAlignmentForPixelFormat(obj_handle_t device, enum WMTPixelFormat format) {
+  struct unixcall_generic_obj_uint64_uint64_ret params;
+  params.handle = device;
+  params.arg = (uint64_t)format;
+  params.ret = 0;
+  UNIX_CALL(24, &params);
+  return params.ret;
+}
