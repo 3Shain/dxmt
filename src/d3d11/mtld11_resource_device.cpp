@@ -1,5 +1,3 @@
-#include "Metal/MTLPixelFormat.hpp"
-#include "Metal/MTLTexture.hpp"
 #include "com/com_pointer.hpp"
 #include "d3d11_device.hpp"
 #include "d3d11_texture.hpp"
@@ -62,12 +60,12 @@ private:
   class TextureRTV : public RTVBase {
   private:
     TextureViewKey view_key_;
-    MTL::PixelFormat view_format_;
+    WMTPixelFormat view_format_;
     MTL_RENDER_PASS_ATTACHMENT_DESC attachment_desc;
 
   public:
     TextureRTV(
-        TextureViewKey view_key, MTL::PixelFormat view_format, const tag_render_target_view<>::DESC1 *pDesc,
+        TextureViewKey view_key, WMTPixelFormat view_format, const tag_render_target_view<>::DESC1 *pDesc,
         DeviceTexture *pResource, MTLD3D11Device *pDevice, const MTL_RENDER_PASS_ATTACHMENT_DESC &mtl_rtv_desc
     ) :
         RTVBase(pDesc, pResource, pDevice),
@@ -75,7 +73,7 @@ private:
         view_format_(view_format),
         attachment_desc(mtl_rtv_desc) {}
 
-    MTL::PixelFormat
+    WMTPixelFormat
     GetPixelFormat() final {
       return view_format_;
     }
@@ -98,12 +96,12 @@ private:
   class TextureDSV : public DSVBase {
   private:
     TextureViewKey view_key_;
-    MTL::PixelFormat view_format_;
+    WMTPixelFormat view_format_;
     MTL_RENDER_PASS_ATTACHMENT_DESC attachment_desc;
 
   public:
     TextureDSV(
-        TextureViewKey view_key, MTL::PixelFormat view_format, const tag_depth_stencil_view<>::DESC1 *pDesc,
+        TextureViewKey view_key, WMTPixelFormat view_format, const tag_depth_stencil_view<>::DESC1 *pDesc,
         DeviceTexture *pResource, MTLD3D11Device *pDevice, const MTL_RENDER_PASS_ATTACHMENT_DESC &attachment_desc
     ) :
         DSVBase(pDesc, pResource, pDevice),
@@ -111,7 +109,7 @@ private:
         view_format_(view_format),
         attachment_desc(attachment_desc) {}
 
-    MTL::PixelFormat
+    WMTPixelFormat
     GetPixelFormat() final {
       return view_format_;
     }
@@ -193,7 +191,7 @@ public:
                                                     &finalDesc))) {
       return E_INVALIDARG;
     }
-        TextureViewDescriptor descriptor;
+    TextureViewDescriptor descriptor;
     uint32_t arraySize;
     if constexpr (std::is_same_v<typename tag_texture::DESC1, D3D11_TEXTURE3D_DESC1>) {
       arraySize = this->desc.Depth;
@@ -284,15 +282,13 @@ HRESULT CreateDeviceTextureInternal(MTLD3D11Device *pDevice,
                                     const typename tag::DESC1 *pDesc,
                                     const D3D11_SUBRESOURCE_DATA *pInitialData,
                                     typename tag::COM_IMPL **ppTexture) {
-  auto metal = pDevice->GetMTLDevice();
-  Obj<MTL::TextureDescriptor> textureDescriptor;
+  WMTTextureInfo info;
   typename tag::DESC1 finalDesc;
-  if (FAILED(CreateMTLTextureDescriptor(pDevice, pDesc, &finalDesc,
-                                        &textureDescriptor))) {
+  if (FAILED(CreateMTLTextureDescriptor(pDevice, pDesc, &finalDesc, &info))) {
     return E_INVALIDARG;
   }
-  bool single_subresource = textureDescriptor->mipmapLevelCount() * textureDescriptor->arrayLength() == 1;
-  auto texture = Rc<Texture>(new Texture(std::move(textureDescriptor), metal));
+  bool single_subresource = info.mipmap_level_count * info.array_length == 1;
+  auto texture = Rc<Texture>(new Texture(info, pDevice->GetWMTDevice()));
   Flags<TextureAllocationFlag> flags;
   flags.set(TextureAllocationFlag::GpuManaged);
   if (finalDesc.Usage == D3D11_USAGE_IMMUTABLE)

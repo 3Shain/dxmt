@@ -130,7 +130,7 @@ public:
 
     encoder->setFragmentTexture(backbuffer, 0);
     uint32_t extend[4] = {(uint32_t)drawable->width(), (uint32_t)drawable->height(), 0, 0};
-    if (backbuffer->pixelFormat() != Forget_sRGB(backbuffer->pixelFormat()))
+    if (backbuffer->pixelFormat() != (MTL::PixelFormat)Forget_sRGB((WMTPixelFormat)backbuffer->pixelFormat()))
       extend[2] |= DXMT_PRESENT_FLAG_SRGB;
     encoder->setFragmentBytes(extend, sizeof(extend), 0);
     if (backbuffer->width() == extend[0] && backbuffer->height() == extend[1])

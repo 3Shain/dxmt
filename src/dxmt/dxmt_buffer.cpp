@@ -1,24 +1,20 @@
 #include "dxmt_buffer.hpp"
-#include "Metal/MTLBuffer.hpp"
-#include "Metal/MTLResource.hpp"
-#include "Metal/MTLTexture.hpp"
 #include "dxmt_format.hpp"
 #include "thread.hpp"
 #include "util_likely.hpp"
+#include <cassert>
 #include <mutex>
 
 namespace dxmt {
 
 std::atomic_uint64_t global_buffer_seq = {0};
 
-BufferAllocation::BufferAllocation(Obj<MTL::Buffer> &&buffer, Flags<BufferAllocationFlag> flags) :
-    obj_(std::move(buffer)),
+BufferAllocation::BufferAllocation(WMT::Device device, const WMTBufferInfo &info, Flags<BufferAllocationFlag> flags) :
+    info_(info),
     flags_(flags) {
-  if (flags_.test(BufferAllocationFlag::GpuPrivate))
-    mappedMemory = nullptr;
-  else
-    mappedMemory = obj_->contents();
-  gpuAddress = obj_->gpuAddress();
+  obj_ = device.newBuffer(&info_);
+  gpuAddress = info_.gpu_address;
+  mappedMemory = info_.memory.get();
   depkey = EncoderDepSet::generateNewKey(global_buffer_seq.fetch_add(1));
 };
 
@@ -43,7 +39,7 @@ Buffer::view(BufferViewKey key, BufferAllocation* allocation) {
   if (unlikely(allocation->version_ != version_)) {
     prepareAllocationViews(allocation);
   }
-  return allocation->cached_view_[key]->texture.ptr();
+  return (MTL::Texture *)allocation->cached_view_[key]->texture.handle;
 };
 
 DXMT_RESOURCE_RESIDENCY_STATE &
@@ -63,26 +59,23 @@ void
 Buffer::prepareAllocationViews(BufferAllocation* allocation) {
   std::unique_lock<dxmt::mutex> lock(mutex_);
   for (unsigned version = allocation->version_; version < version_; version++) {
-    auto buffer = allocation->obj_.ptr();
-    auto length = buffer->length();
     auto format = viewDescriptors_[version].format;
     auto texel_size = MTLGetTexelSize(format);
     assert(texel_size);
-    assert(!(length & (texel_size - 1)));
-    auto desc = MTL::TextureDescriptor::alloc()->init();
-    desc->setTextureType(MTL::TextureTypeTextureBuffer);
-    desc->setWidth(length / texel_size);
-    desc->setHeight(1);
-    desc->setDepth(1);
-    desc->setArrayLength(1);
-    desc->setMipmapLevelCount(1);
-    desc->setSampleCount(1);
-    desc->setPixelFormat(format);
-    desc->setResourceOptions(buffer->resourceOptions());
+    assert(!(length_ & (texel_size - 1)));
+    WMTTextureInfo info;
+    info.type = WMTTextureTypeTextureBuffer;
+    info.width = length_ / (uint64_t)texel_size;
+    info.height = 1;
+    info.depth = 1;
+    info.array_length = 1;
+    info.mipmap_level_count = 1;
+    info.sample_count = 1;
+    info.pixel_format = format;
+    info.options = allocation->info_.options;
+    info.usage = WMTTextureUsageShaderRead; // FIXME
 
-    allocation->cached_view_.push_back(std::make_unique<BufferView>(transfer(buffer->newTexture(desc, 0, length))));
-
-    desc->release();
+    allocation->cached_view_.push_back(std::make_unique<BufferView>(allocation->obj_.newTexture(&info, 0, length_)));
   }
   allocation->version_ = version_;
 };
@@ -103,20 +96,24 @@ Buffer::createView(BufferViewDescriptor const &descriptor) {
 
 Rc<BufferAllocation>
 Buffer::allocate(Flags<BufferAllocationFlag> flags) {
-  MTL::ResourceOptions options = 0;
+  WMTResourceOptions options = WMTResourceStorageModeShared;
   if (flags.test(BufferAllocationFlag::GpuReadonly)) {
-    options |= MTL::ResourceHazardTrackingModeUntracked;
+    options |= WMTResourceHazardTrackingModeUntracked;
   }
   if (flags.test(BufferAllocationFlag::CpuWriteCombined)) {
-    options |= MTL::ResourceOptionCPUCacheModeWriteCombined;
+    options |= WMTResourceOptionCPUCacheModeWriteCombined;
   }
   if (flags.test(BufferAllocationFlag::CpuInvisible)) {
-    options |= MTL::ResourceStorageModePrivate;
+    options |= WMTResourceStorageModePrivate;
   }
   if (flags.test(BufferAllocationFlag::GpuManaged)) {
-    options |= MTL::ResourceStorageModeManaged;
+    options |= WMTResourceStorageModeManaged;
   }
-  return new BufferAllocation(transfer(device_->newBuffer(std::max(length_, 16ull), options)), flags);
+  WMTBufferInfo info;
+  info.memory.set(0);
+  info.length = length_;
+  info.options = options;
+  return new BufferAllocation(device_, info, flags);
 };
 
 Rc<BufferAllocation>

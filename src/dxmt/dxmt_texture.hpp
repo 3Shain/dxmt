@@ -1,12 +1,14 @@
 #pragma once
-#include "Metal/MTLPixelFormat.hpp"
-#include "Metal/MTLTexture.hpp"
+#include "Metal.hpp"
 #include "dxmt_deptrack.hpp"
 #include "dxmt_residency.hpp"
-#include "objc_pointer.hpp"
 #include "rc/util_rc_ptr.hpp"
 #include "thread.hpp"
 #include "util_flags.hpp"
+
+namespace MTL {
+  class Texture;
+}
 
 namespace dxmt {
 
@@ -23,9 +25,9 @@ enum class TextureAllocationFlag : uint32_t {
 typedef unsigned TextureViewKey;
 
 struct TextureViewDescriptor {
-  MTL::PixelFormat format: 32;
-  MTL::TextureType type : 32;
-  MTL::TextureUsage usage: 32;
+  WMTPixelFormat format: 32;
+  WMTTextureType type;
+  WMTTextureUsage usage;
   unsigned firstMiplevel = 0;
   unsigned miplevelCount = 1;
   unsigned firstArraySlice = 0;
@@ -33,10 +35,16 @@ struct TextureViewDescriptor {
 };
 
 struct TextureView {
-  Obj<MTL::Texture> texture;
-  DXMT_RESOURCE_RESIDENCY_STATE residency {};
+  WMT::Reference<WMT::Texture> texture;
+  uint64_t gpu_resource_id;
+  DXMT_RESOURCE_RESIDENCY_STATE residency{};
 
-  TextureView(Obj<MTL::Texture> texture):texture(std::move(texture)) {}  
+  TextureView(WMT::Reference<WMT::Texture> &&texture, uint64_t gpu_resource_id) :
+      texture(std::move(texture)),
+      gpu_resource_id(gpu_resource_id) {}
+  TextureView(const WMT::Reference<WMT::Texture> &texture, uint64_t gpu_resource_id) :
+      texture(texture),
+      gpu_resource_id(gpu_resource_id) {}
 };
 
 class TextureAllocation {
@@ -47,7 +55,7 @@ public:
   void decRef();
 
   MTL::Texture *texture() {
-    return obj_.ptr();
+    return (MTL::Texture *)obj_.handle;
   }
 
   Flags<TextureAllocationFlag>
@@ -62,12 +70,17 @@ public:
 
 private:
   TextureAllocation(
-      Obj<MTL::Buffer> &&buffer, Obj<MTL::TextureDescriptor> &&textureDescriptor, unsigned bytes_per_row,Flags<TextureAllocationFlag> flags
+      WMT::Reference<WMT::Buffer> &&buffer, void *mapped_buffer, const WMTTextureInfo &info, unsigned bytes_per_row,
+      Flags<TextureAllocationFlag> flags
   );
-  TextureAllocation(Obj<MTL::Texture> &&texture, Flags<TextureAllocationFlag> flags);
+  TextureAllocation(
+      WMT::Reference<WMT::Texture> &&texture, const WMTTextureInfo &textureDescriptor,
+      Flags<TextureAllocationFlag> flags
+  );
   ~TextureAllocation();
 
-  Obj<MTL::Texture> obj_;
+  WMT::Reference<WMT::Texture> obj_;
+  WMT::Reference<WMT::Buffer> buffer_;
   uint32_t version_ = 0;
   std::atomic<uint32_t> refcount_ = {0u};
   Flags<TextureAllocationFlag> flags_;
@@ -86,49 +99,57 @@ public:
     return current_.ptr();
   }
 
-  MTL::TextureType textureType() {
-    return descriptor_->textureType();
+  WMTTextureType
+  textureType() const {
+    return info_.type;
   }
 
-  MTL::PixelFormat pixelFormat() {
-    return descriptor_->pixelFormat();
+  WMTPixelFormat
+  pixelFormat() const {
+    return info_.pixel_format;
   }
 
-  unsigned sampleCount() {
-    return descriptor_->sampleCount();
+  WMTTextureUsage
+  usage() const {
+    return info_.usage;
   }
 
-  unsigned width() {
-    return descriptor_->width();
+  unsigned
+  sampleCount() const {
+    return info_.sample_count;
   }
 
-  unsigned height() {
-    return descriptor_->height();
+  unsigned
+  width() const {
+    return info_.width;
+  }
+
+  unsigned
+  height() const {
+    return info_.height;
   }
 
   Rc<TextureAllocation> allocate(Flags<TextureAllocationFlag> flags);
 
   MTL::Texture *view(TextureViewKey key);
-  MTL::Texture *view(TextureViewKey key, TextureAllocation* allocation);
+  MTL::Texture *view(TextureViewKey key, TextureAllocation *allocation);
 
   TextureViewKey checkViewUseArray(TextureViewKey key, bool isArray);
-  TextureViewKey checkViewUseFormat(TextureViewKey key, MTL::PixelFormat format);
+  TextureViewKey checkViewUseFormat(TextureViewKey key, WMTPixelFormat format);
 
   DXMT_RESOURCE_RESIDENCY_STATE &residency(TextureViewKey key);
-  DXMT_RESOURCE_RESIDENCY_STATE &residency(TextureViewKey key, TextureAllocation* allocation);
+  DXMT_RESOURCE_RESIDENCY_STATE &residency(TextureViewKey key, TextureAllocation *allocation);
 
   Rc<TextureAllocation> rename(Rc<TextureAllocation> &&newAllocation);
 
-  Texture(Obj<MTL::TextureDescriptor> &&descriptor, MTL::Device *device);
+  Texture(const WMTTextureInfo &info, WMT::Device device);
 
-  Texture(
-      unsigned bytes_per_image, unsigned bytes_per_row, Obj<MTL::TextureDescriptor> &&descriptor, MTL::Device *device
-  );
+  Texture(unsigned bytes_per_image, unsigned bytes_per_row, const WMTTextureInfo &info, WMT::Device device);
 
 private:
   void prepareAllocationViews(TextureAllocation* allocation);
 
-  Obj<MTL::TextureDescriptor> descriptor_;
+  WMTTextureInfo info_;
   unsigned bytes_per_image_ = 0;
   unsigned bytes_per_row_ = 0;
 
@@ -138,7 +159,7 @@ private:
 
   std::vector<TextureViewDescriptor> viewDescriptors_;
   dxmt::mutex mutex_;
-  MTL::Device *device_;
+  WMT::Device device_;
 };
 
 class RenamableTexturePool {

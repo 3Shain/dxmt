@@ -1,14 +1,15 @@
 #pragma once
 
-#include "Metal/MTLBuffer.hpp"
-#include "Metal/MTLDevice.hpp"
-#include "Metal/MTLResource.hpp"
+#include "Metal.hpp"
 #include "log/log.hpp"
 #include "thread.hpp"
 #include "util_math.hpp"
 #include <mutex>
 #include <queue>
 
+namespace MTL {
+class Buffer;
+}
 namespace dxmt {
 
 constexpr size_t kStagingBlockSize = 0x2000000; // 32MB
@@ -18,9 +19,9 @@ constexpr size_t kStagingBlockLifetime = 300;
 template <bool CpuVisible, size_t BlockSize = kStagingBlockSize> class RingBumpAllocator {
 
 public:
-  RingBumpAllocator(MTL::Device *device, MTL::ResourceOptions block_options) :
-      device(device),
-      block_options(block_options) {}
+  RingBumpAllocator(WMT::Device device, WMTResourceOptions block_options) : device(device) {
+    buffer_info.options = block_options;
+  }
 
   std::tuple<void *, MTL::Buffer *, uint64_t>
   allocate(uint64_t seq_id, uint64_t coherent_id, size_t size, size_t alignment) {
@@ -48,7 +49,6 @@ public:
       auto front = fifo.front();
       if (front.last_used_seq_id <= coherent_id && (coherent_id - front.last_used_seq_id) > kStagingBlockLifetime) {
         // can be deallocated
-        front.buffer_gpu->release();
         if constexpr (CpuVisible) {
           free(front.buffer_cpu);
         }
@@ -62,7 +62,7 @@ public:
 private:
   struct StagingBlock {
     void *buffer_cpu;
-    MTL::Buffer *buffer_gpu;
+    WMT::Reference<WMT::Buffer> buffer_gpu;
     size_t allocated_size;
     size_t total_size;
     uint64_t last_used_seq_id;
@@ -86,19 +86,23 @@ private:
     }
     if constexpr (CpuVisible) {
       auto cpu = malloc(block_size);
-      auto gpu = device->newBuffer(cpu, block_size, block_options, nullptr);
+      buffer_info.length = block_size;
+      buffer_info.memory.set(cpu);
+      auto gpu = device.newBuffer(&buffer_info);
       fifo.push(
           {.buffer_cpu = cpu,
-           .buffer_gpu = gpu,
+           .buffer_gpu = std::move(gpu),
            .allocated_size = 0,
            .total_size = block_size,
            .last_used_seq_id = seq_id}
       );
     } else {
-      auto gpu = device->newBuffer(block_size, block_options);
+      buffer_info.length = block_size;
+      buffer_info.memory.set(nullptr);
+      auto gpu = device.newBuffer(&buffer_info);
       fifo.push(
           {.buffer_cpu = nullptr,
-           .buffer_gpu = gpu,
+           .buffer_gpu = std::move(gpu),
            .allocated_size = 0,
            .total_size = block_size,
            .last_used_seq_id = seq_id}
@@ -111,13 +115,13 @@ private:
   suballocate(StagingBlock &block, size_t size, size_t alignment) {
     auto offset = align(block.allocated_size, alignment);
     block.allocated_size = offset + size;
-    return {((char *)block.buffer_cpu + offset), block.buffer_gpu, offset};
+    return {((char *)block.buffer_cpu + offset), (MTL::Buffer *)block.buffer_gpu.handle, offset};
   };
 
   std::queue<StagingBlock> fifo;
-  MTL::Device *device;
+  WMT::Device device;
   dxmt::mutex mutex;
-  MTL::ResourceOptions block_options;
+  WMTBufferInfo buffer_info;
 };
 
 } // namespace dxmt

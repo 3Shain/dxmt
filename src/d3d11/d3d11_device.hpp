@@ -33,6 +33,7 @@ public:
   virtual void ReleasePrivate() = 0;
 
   virtual MTL::Device *STDMETHODCALLTYPE GetMTLDevice() = 0;
+  virtual WMT::Device STDMETHODCALLTYPE GetWMTDevice() = 0;
   /**
   TODO: should ensure pWork is not released before executed
   or support cancellation.
@@ -63,7 +64,7 @@ public:
 
   virtual void CreateCommandList(ID3D11CommandList** pCommandList) = 0;
 
-  virtual FormatCapability GetMTLPixelFormatCapability(MTL::PixelFormat Format) = 0;
+  virtual FormatCapability GetMTLPixelFormatCapability(WMTPixelFormat Format) = 0;
 };
 
 Com<IMTLDXGIDevice> CreateD3D11Device(std::unique_ptr<Device> &&device,

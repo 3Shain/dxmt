@@ -1,6 +1,3 @@
-#include "Metal/MTLPixelFormat.hpp"
-#include "Metal/MTLBuffer.hpp"
-#include "Metal/MTLTexture.hpp"
 #include "d3d11_private.h"
 #include "com/com_pointer.hpp"
 #include "d3d11_device.hpp"
@@ -9,7 +6,6 @@
 #include "dxmt_staging.hpp"
 #include "dxmt_texture.hpp"
 #include "mtld11_resource.hpp"
-#include "objc_pointer.hpp"
 
 namespace dxmt {
 
@@ -43,13 +39,13 @@ private:
 
 public:
   DynamicTexture2D(
-      const tag_texture_2d::DESC1 *pDesc, Obj<MTL::TextureDescriptor> &&descriptor,
+      const tag_texture_2d::DESC1 *pDesc, const WMTTextureInfo &descriptor,
       const D3D11_SUBRESOURCE_DATA *pInitialData, UINT bytes_per_image, UINT bytes_per_row, MTLD3D11Device *device
   ) :
       TResourceBase<tag_texture_2d>(*pDesc, device),
       bytes_per_image_(bytes_per_image),
       bytes_per_row_(bytes_per_row) {
-    texture_ = new Texture(bytes_per_image, bytes_per_row, std::move(descriptor), device->GetMTLDevice());
+    texture_ = new Texture(bytes_per_image, bytes_per_row, descriptor, device->GetWMTDevice());
     Flags<TextureAllocationFlag> flags;
     if (!m_parent->IsTraced() && pDesc->Usage == D3D11_USAGE_DYNAMIC)
       flags.set(TextureAllocationFlag::CpuWriteCombined);
@@ -106,13 +102,13 @@ public:
       return S_FALSE;
     }
     MTL_DXGI_FORMAT_DESC format;
-    if (FAILED(MTLQueryDXGIFormat(m_parent->GetMTLDevice(), finalDesc.Format, format))) {
+    if (FAILED(MTLQueryDXGIFormat(m_parent->GetWMTDevice(), finalDesc.Format, format))) {
       return E_FAIL;
     }
 
     auto view_key = texture_->createView(
         {.format = format.PixelFormat,
-         .type = MTL::TextureType2D,
+         .type = WMTTextureType2D,
          .firstMiplevel = 0,
          .miplevelCount = 1,
          .firstArraySlice = 0,
@@ -134,16 +130,16 @@ CreateDynamicTexture2D(
     ID3D11Texture2D1 **ppTexture
 ) {
   MTL_DXGI_FORMAT_DESC format;
-  MTLQueryDXGIFormat(pDevice->GetMTLDevice(), pDesc->Format, format);
+  MTLQueryDXGIFormat(pDevice->GetWMTDevice(), pDesc->Format, format);
   if (format.Flag & MTL_DXGI_FORMAT_BC) {
     return E_FAIL;
   }
-  if (format.PixelFormat == MTL::PixelFormatInvalid) {
+  if (format.PixelFormat == WMTPixelFormatInvalid) {
     return E_FAIL;
   }
-  Obj<MTL::TextureDescriptor> textureDescriptor;
+  WMTTextureInfo info;
   D3D11_TEXTURE2D_DESC1 finalDesc;
-  if (FAILED(CreateMTLTextureDescriptor(pDevice, pDesc, &finalDesc, &textureDescriptor))) {
+  if (FAILED(CreateMTLTextureDescriptor(pDevice, pDesc, &finalDesc, &info))) {
     return E_INVALIDARG;
   }
   uint32_t bytesPerRow, bytesPerImage, bufferLen;
@@ -152,7 +148,7 @@ CreateDynamicTexture2D(
   }
 
   *ppTexture = reinterpret_cast<ID3D11Texture2D1 *>(
-      ref(new DynamicTexture2D(pDesc, std::move(textureDescriptor), pInitialData, bufferLen, bytesPerRow, pDevice))
+      ref(new DynamicTexture2D(pDesc, info, pInitialData, bufferLen, bytesPerRow, pDevice))
   );
   return S_OK;
 }

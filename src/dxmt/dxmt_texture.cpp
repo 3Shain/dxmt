@@ -1,43 +1,37 @@
 #include "dxmt_texture.hpp"
-#include "Foundation/NSRange.hpp"
-#include "Metal/MTLBuffer.hpp"
-#include "Metal/MTLPixelFormat.hpp"
-#include "Metal/MTLTexture.hpp"
-#include "Metal/MTLDevice.hpp"
 #include "dxmt_residency.hpp"
-#include "objc_pointer.hpp"
 #include <atomic>
+#include <cassert>
 
 namespace dxmt {
 
 std::atomic_uint64_t global_texture_seq = {0};
 
 TextureAllocation::TextureAllocation(
-    Obj<MTL::Buffer> &&buffer, Obj<MTL::TextureDescriptor> &&textureDescriptor, unsigned bytes_per_row,
+    WMT::Reference<WMT::Buffer> &&buffer, void *mapped_buffer, const WMTTextureInfo &info, unsigned bytes_per_row,
     Flags<TextureAllocationFlag> flags
 ) :
+    mappedMemory(mapped_buffer),
+    buffer_(std::move(buffer)),
     flags_(flags) {
-  auto owned_buffer = buffer.takeOwnership();
+  auto info_copy = info;
+  obj_ = buffer_.newTexture(&info_copy, 0, bytes_per_row);
 
-  obj_ = transfer(owned_buffer->newTexture(textureDescriptor, 0, bytes_per_row));
-
-  mappedMemory = owned_buffer->contents();
-  gpuResourceID = obj_->gpuResourceID()._impl;
+  gpuResourceID = info_copy.gpu_resource_id;
   depkey = EncoderDepSet::generateNewKey(global_texture_seq.fetch_add(1));
 };
 
-TextureAllocation::TextureAllocation(Obj<MTL::Texture> &&texture, Flags<TextureAllocationFlag> flags) :
+TextureAllocation::TextureAllocation(
+    WMT::Reference<WMT::Texture> &&texture, const WMTTextureInfo &textureDescriptor, Flags<TextureAllocationFlag> flags
+) :
     obj_(std::move(texture)),
     flags_(flags) {
   mappedMemory = nullptr;
-  gpuResourceID = obj_->gpuResourceID()._impl;
+  gpuResourceID = textureDescriptor.gpu_resource_id;
   depkey = EncoderDepSet::generateNewKey(global_texture_seq.fetch_add(1));
 };
 
-TextureAllocation::~TextureAllocation() {
-  if (obj_->buffer())
-    obj_->buffer()->release();
-};
+TextureAllocation::~TextureAllocation(){};
 
 void
 TextureAllocation::incRef() {
@@ -51,42 +45,49 @@ TextureAllocation::decRef() {
 };
 
 void
-Texture::prepareAllocationViews(TextureAllocation* allocaiton) {
+Texture::prepareAllocationViews(TextureAllocation *allocaiton) {
   std::unique_lock<dxmt::mutex> lock(mutex_);
   if (allocaiton->version_ < 1) {
-    allocaiton->cached_view_.push_back(std::make_unique<TextureView>(allocaiton->obj_.ptr()));
+    allocaiton->cached_view_.push_back(std::make_unique<TextureView>(allocaiton->obj_, allocaiton->gpuResourceID));
     allocaiton->version_ = 1;
   }
   for (unsigned version = allocaiton->version_; version < version_; version++) {
-    auto texture = allocaiton->obj_.ptr();
+    auto &texture = allocaiton->obj_;
     auto &view = viewDescriptors_[version];
 
-    if ((view.usage & MTL::TextureUsageRenderTarget) == 0) {
+    WMT::Reference<WMT::Texture> ref;
+    uint64_t gpu_resource_id;
+
+    if ((view.usage & WMTTextureUsageRenderTarget) == 0) {
       switch (view.format) {
-      case MTL::PixelFormatDepth24Unorm_Stencil8:
-      case MTL::PixelFormatDepth32Float_Stencil8:
-      case MTL::PixelFormatDepth16Unorm:
-      case MTL::PixelFormatDepth32Float:
-      case MTL::PixelFormatStencil8:
-        allocaiton->cached_view_.push_back(std::make_unique<TextureView>(transfer(texture->newTextureView(
-            view.format, view.type, {view.firstMiplevel, view.miplevelCount}, {view.firstArraySlice, view.arraySize},
-            {MTL::TextureSwizzleRed, MTL::TextureSwizzleZero, MTL::TextureSwizzleZero, MTL::TextureSwizzleOne}
-        ))));
+      case WMTPixelFormatDepth24Unorm_Stencil8:
+      case WMTPixelFormatDepth32Float_Stencil8:
+      case WMTPixelFormatDepth16Unorm:
+      case WMTPixelFormatDepth32Float:
+      case WMTPixelFormatStencil8:
+        ref = texture.newTextureView(
+            view.format, view.type, view.firstMiplevel, view.miplevelCount, view.firstArraySlice, view.arraySize,
+            {WMTTextureSwizzleRed, WMTTextureSwizzleZero, WMTTextureSwizzleZero, WMTTextureSwizzleOne}, &gpu_resource_id
+        );
+        allocaiton->cached_view_.push_back(std::make_unique<TextureView>(std::move(ref), gpu_resource_id));
         continue;
-      case MTL::PixelFormatX32_Stencil8:
-      case MTL::PixelFormatX24_Stencil8:
-        allocaiton->cached_view_.push_back(std::make_unique<TextureView>(transfer(texture->newTextureView(
-            view.format, view.type, {view.firstMiplevel, view.miplevelCount}, {view.firstArraySlice, view.arraySize},
-            {MTL::TextureSwizzleZero, MTL::TextureSwizzleRed, MTL::TextureSwizzleZero, MTL::TextureSwizzleOne}
-        ))));
+      case WMTPixelFormatX32_Stencil8:
+      case WMTPixelFormatX24_Stencil8:
+        ref = texture.newTextureView(
+            view.format, view.type, view.firstMiplevel, view.miplevelCount, view.firstArraySlice, view.arraySize,
+            {WMTTextureSwizzleZero, WMTTextureSwizzleRed, WMTTextureSwizzleZero, WMTTextureSwizzleOne}, &gpu_resource_id
+        );
+        allocaiton->cached_view_.push_back(std::make_unique<TextureView>(std::move(ref), gpu_resource_id));
         continue;
       default:
         break;
       }
     }
-    allocaiton->cached_view_.push_back(std::make_unique<TextureView>(transfer(texture->newTextureView(
-        view.format, view.type, {view.firstMiplevel, view.miplevelCount}, {view.firstArraySlice, view.arraySize}
-    ))));
+    ref = texture.newTextureView(
+        view.format, view.type, view.firstMiplevel, view.miplevelCount, view.firstArraySlice, view.arraySize,
+        {WMTTextureSwizzleRed, WMTTextureSwizzleGreen, WMTTextureSwizzleBlue, WMTTextureSwizzleAlpha}, &gpu_resource_id
+    );
+    allocaiton->cached_view_.push_back(std::make_unique<TextureView>(std::move(ref), gpu_resource_id));
   }
   allocaiton->version_ = version_;
 }
@@ -117,33 +118,33 @@ Texture::createView(TextureViewDescriptor const &descriptor) {
   return i;
 }
 
-Texture::Texture(Obj<MTL::TextureDescriptor> &&descriptor, MTL::Device *device) :
-    descriptor_(std::move(descriptor)),
+Texture::Texture(const WMTTextureInfo &descriptor, WMT::Device device) :
+    info_(descriptor),
     device_(device) {
 
-  MTL::TextureUsage default_view_usage = descriptor_->usage();
-  switch (descriptor_->pixelFormat()) {
-  case MTL::PixelFormatDepth24Unorm_Stencil8:
-  case MTL::PixelFormatDepth32Float_Stencil8:
-  case MTL::PixelFormatDepth16Unorm:
-  case MTL::PixelFormatDepth32Float:
-  case MTL::PixelFormatStencil8:
-  case MTL::PixelFormatX32_Stencil8:
-  case MTL::PixelFormatX24_Stencil8:
+  WMTTextureUsage default_view_usage = info_.usage;
+  switch (info_.pixel_format) {
+  case WMTPixelFormatDepth24Unorm_Stencil8:
+  case WMTPixelFormatDepth32Float_Stencil8:
+  case WMTPixelFormatDepth16Unorm:
+  case WMTPixelFormatDepth32Float:
+  case WMTPixelFormatStencil8:
+  case WMTPixelFormatX32_Stencil8:
+  case WMTPixelFormatX24_Stencil8:
     /**
     we need to remove read/write usage for default depth stencil view
     because the swizzle will be reconfigured to match the D3D11 spec
      */
-    default_view_usage = default_view_usage & ~(MTL::TextureUsageShaderRead | MTL::TextureUsageShaderWrite);
+    default_view_usage = default_view_usage & ~(WMTTextureUsageShaderRead | WMTTextureUsageShaderWrite);
     break;
   default:
     break;
   }
 
-  uint32_t arraySize = (uint32_t)descriptor_->arrayLength();
-  switch (descriptor_->textureType()) {
-  case MTL::TextureTypeCubeArray:
-  case MTL::TextureTypeCube:
+  uint32_t arraySize = info_.array_length;
+  switch (info_.type) {
+  case WMTTextureTypeCubeArray:
+  case WMTTextureTypeCube:
     arraySize = arraySize * 6;
     break;
   default:
@@ -151,11 +152,11 @@ Texture::Texture(Obj<MTL::TextureDescriptor> &&descriptor, MTL::Device *device) 
   }
 
   viewDescriptors_.push_back({
-      .format = descriptor_->pixelFormat(),
-      .type = descriptor_->textureType(),
+      .format = info_.pixel_format,
+      .type = info_.type,
       .usage = default_view_usage,
       .firstMiplevel = 0,
-      .miplevelCount = (uint32_t)descriptor_->mipmapLevelCount(),
+      .miplevelCount = info_.mipmap_level_count,
       .firstArraySlice = 0,
       .arraySize = arraySize,
   });
@@ -163,21 +164,21 @@ Texture::Texture(Obj<MTL::TextureDescriptor> &&descriptor, MTL::Device *device) 
 }
 
 Texture::Texture(
-    unsigned bytes_per_image, unsigned bytes_per_row, Obj<MTL::TextureDescriptor> &&descriptor, MTL::Device *device
+    unsigned bytes_per_image, unsigned bytes_per_row, const WMTTextureInfo &descriptor, WMT::Device device
 ) :
-    descriptor_(std::move(descriptor)),
+    info_(descriptor),
     bytes_per_image_(bytes_per_image),
     bytes_per_row_(bytes_per_row),
     device_(device) {
 
-  assert(descriptor_->textureType() == MTL::TextureType2D);
-  assert(descriptor_->mipmapLevelCount() == 1);
-  assert(descriptor_->arrayLength() == 1);
+  assert(info_.type == WMTTextureType2D);
+  assert(info_.mipmap_level_count == 1);
+  assert(info_.array_length == 1);
 
   viewDescriptors_.push_back({
-      .format = descriptor_->pixelFormat(),
-      .type = descriptor_->textureType(),
-      .usage = MTL::TextureUsageShaderRead | MTL::TextureUsageShaderWrite,
+      .format = info_.pixel_format,
+      .type = info_.type,
+      .usage = WMTTextureUsageShaderRead | WMTTextureUsageShaderWrite,
       .firstMiplevel = 0,
       .miplevelCount = 1,
       .firstArraySlice = 0,
@@ -188,27 +189,31 @@ Texture::Texture(
 
 Rc<TextureAllocation>
 Texture::allocate(Flags<TextureAllocationFlag> flags) {
-  MTL::ResourceOptions options = 0;
-  auto descriptor = transfer(descriptor_->copy());
+  WMTResourceOptions options = WMTResourceStorageModeShared;
+  WMTTextureInfo info = info_; // copy
   if (flags.test(TextureAllocationFlag::GpuReadonly)) {
-    options |= MTL::ResourceHazardTrackingModeUntracked;
+    options |= WMTResourceHazardTrackingModeUntracked;
   }
   if (flags.test(TextureAllocationFlag::CpuWriteCombined)) {
-    options |= MTL::ResourceOptionCPUCacheModeWriteCombined;
+    options |= WMTResourceOptionCPUCacheModeWriteCombined;
   }
   if (flags.test(TextureAllocationFlag::CpuInvisible)) {
-    options |= MTL::ResourceStorageModePrivate;
+    options |= WMTResourceStorageModePrivate;
   }
   if (flags.test(TextureAllocationFlag::GpuManaged)) {
-    options |= MTL::ResourceStorageModeManaged;
+    options |= WMTResourceStorageModeManaged;
   }
-  descriptor->setResourceOptions(options);
+  info.options = options;
   if (bytes_per_image_) {
-    auto buffer = transfer(device_->newBuffer(bytes_per_image_, options));
-    return new TextureAllocation(std::move(buffer), std::move(descriptor), bytes_per_row_, flags);
+    WMTBufferInfo buffer_info;
+    buffer_info.length = bytes_per_image_;
+    buffer_info.options = options;
+    buffer_info.memory.set(nullptr);
+    auto buffer = device_.newBuffer(&buffer_info);
+    return new TextureAllocation(std::move(buffer), buffer_info.memory.get(), info, bytes_per_row_, flags);
   }
-  auto texture = transfer(device_->newTexture(descriptor));
-  return new TextureAllocation(std::move(texture), flags);
+  auto texture = device_.newTexture(&info);
+  return new TextureAllocation(std::move(texture), info, flags);
 }
 
 
@@ -222,7 +227,7 @@ Texture::view(TextureViewKey key, TextureAllocation* allocation) {
   if (unlikely(allocation->version_ != version_)) {
     prepareAllocationViews(allocation);
   }
-  return allocation->cached_view_[key]->texture.ptr();
+  return (MTL::Texture *)allocation->cached_view_[key]->texture.handle;
 }
 
 
@@ -233,36 +238,36 @@ TextureViewKey Texture::checkViewUseArray(TextureViewKey key, bool isArray) {
     // TODO: this process can be cached
     auto new_view_desc = view;
     switch (view.type) {
-    case MTL::TextureType1D:
-      new_view_desc.type = MTL::TextureType1DArray;
+    case WMTTextureType1D:
+      new_view_desc.type = WMTTextureType1DArray;
       new_view_desc.arraySize = 1;
       break;
-    case MTL::TextureType1DArray:
-      new_view_desc.type = MTL::TextureType1D;
+    case WMTTextureType1DArray:
+      new_view_desc.type = WMTTextureType1D;
       new_view_desc.arraySize = 1;
       break;
-    case MTL::TextureType2D:
-      new_view_desc.type = MTL::TextureType2DArray;
+    case WMTTextureType2D:
+      new_view_desc.type = WMTTextureType2DArray;
       new_view_desc.arraySize = 1;
       break;
-    case MTL::TextureType2DArray:
-      new_view_desc.type = MTL::TextureType2D;
+    case WMTTextureType2DArray:
+      new_view_desc.type = WMTTextureType2D;
       new_view_desc.arraySize = 1;
       break;
-    case MTL::TextureType2DMultisample:
-      new_view_desc.type = MTL::TextureType2DMultisampleArray;
+    case WMTTextureType2DMultisample:
+      new_view_desc.type = WMTTextureType2DMultisampleArray;
       new_view_desc.arraySize = 1;
       break;
-    case MTL::TextureType2DMultisampleArray:
-      new_view_desc.type = MTL::TextureType2DMultisample;
+    case WMTTextureType2DMultisampleArray:
+      new_view_desc.type = WMTTextureType2DMultisample;
       new_view_desc.arraySize = 1;
       break;
-    case MTL::TextureTypeCube:
-      new_view_desc.type = MTL::TextureTypeCubeArray;
+    case WMTTextureTypeCube:
+      new_view_desc.type = WMTTextureTypeCubeArray;
       new_view_desc.arraySize = 6;
       break;
-    case MTL::TextureTypeCubeArray:
-      new_view_desc.type = MTL::TextureTypeCube;
+    case WMTTextureTypeCubeArray:
+      new_view_desc.type = WMTTextureTypeCube;
       new_view_desc.arraySize = 6;
       break;
     default:
@@ -273,7 +278,7 @@ TextureViewKey Texture::checkViewUseArray(TextureViewKey key, bool isArray) {
   return key;
 }
 
-TextureViewKey Texture::checkViewUseFormat(TextureViewKey key, MTL::PixelFormat format) {
+TextureViewKey Texture::checkViewUseFormat(TextureViewKey key, WMTPixelFormat format) {
   auto &view = viewDescriptors_[key];
   if (unlikely(view.format != format)) {
     auto new_view_desc = view;

@@ -1,14 +1,16 @@
 #pragma once
 
-#include "Metal/MTLDevice.hpp"
-#include "Metal/MTLPixelFormat.hpp"
-#include "Metal/MTLTexture.hpp"
+#include "Metal.hpp"
 #include "dxmt_deptrack.hpp"
 #include "dxmt_residency.hpp"
-#include "objc_pointer.hpp"
 #include "rc/util_rc_ptr.hpp"
 #include "thread.hpp"
 #include "util_flags.hpp"
+
+namespace MTL {
+  class Buffer;
+  class Texture;
+}
 
 namespace dxmt {
 
@@ -25,16 +27,16 @@ enum class BufferAllocationFlag : uint32_t {
 typedef unsigned BufferViewKey;
 
 struct BufferViewDescriptor {
-  MTL::PixelFormat format;
+  WMTPixelFormat format;
 };
 
 class Buffer;
 
 struct BufferView {
-  Obj<MTL::Texture> texture;
+  WMT::Reference<WMT::Texture> texture;
   DXMT_RESOURCE_RESIDENCY_STATE residency {};
 
-  BufferView(Obj<MTL::Texture> texture):texture(std::move(texture)) {}  
+  BufferView(WMT::Reference<WMT::Texture> &&texture):texture(std::move(texture)) {}  
 };
 
 class BufferAllocation {
@@ -46,7 +48,7 @@ public:
 
   MTL::Buffer *
   buffer() {
-    return obj_.ptr();
+    return (MTL::Buffer *)obj_.handle;
   }
 
   Flags<BufferAllocationFlag>
@@ -60,9 +62,10 @@ public:
   EncoderDepKey depkey;
 
 private:
-  BufferAllocation(Obj<MTL::Buffer> &&buffer, Flags<BufferAllocationFlag> flags);
+  BufferAllocation(WMT::Device device, const WMTBufferInfo &info, Flags<BufferAllocationFlag> flags);
 
-  Obj<MTL::Buffer> obj_;
+  WMT::Reference<WMT::Buffer> obj_;
+  WMTBufferInfo info_;
   uint32_t version_ = 0;
   std::atomic<uint32_t> refcount_ = {0u};
   Flags<BufferAllocationFlag> flags_;
@@ -85,7 +88,7 @@ public:
 
   Rc<BufferAllocation> rename(Rc<BufferAllocation> &&newAllocation);
 
-  Buffer(uint64_t length, MTL::Device *device) : length_(length), device_(device) {}
+  Buffer(uint64_t length, WMT::Device device) : length_(length), device_(device) {}
 
   MTL::Texture *view(BufferViewKey key);
   MTL::Texture *view(BufferViewKey key, BufferAllocation* allocation);
@@ -109,7 +112,7 @@ private:
 
   std::vector<BufferViewDescriptor> viewDescriptors_;
   dxmt::mutex mutex_;
-  MTL::Device *device_;
+  WMT::Device device_;
 };
 
 struct BufferSlice {

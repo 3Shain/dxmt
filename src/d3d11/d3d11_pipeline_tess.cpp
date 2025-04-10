@@ -39,7 +39,7 @@ public:
     if (pDesc->PixelShader) {
       PixelShader = pDesc->PixelShader->get_shader(ShaderVariantPixel{
           pDesc->SampleMask, pDesc->BlendState->IsDualSourceBlending(),
-          depth_stencil_format == MTL::PixelFormatInvalid,
+          depth_stencil_format == WMTPixelFormatInvalid,
           unorm_output_reg_mask});
     }
     hull_reflection = pDesc->HullShader->reflection();
@@ -166,20 +166,20 @@ public:
         MTL::TessellationFactorStepFunctionPerPatch);
 
     for (unsigned i = 0; i < num_rtvs; i++) {
-      if (rtv_formats[i] == MTL::PixelFormatInvalid)
+      if (rtv_formats[i] == WMTPixelFormatInvalid)
         continue;
       pipelineDescriptor->colorAttachments()->object(i)->setPixelFormat(
-          rtv_formats[i]);
+        (MTL::PixelFormat)rtv_formats[i]);
     }
 
-    if (depth_stencil_format != MTL::PixelFormatInvalid) {
-      pipelineDescriptor->setDepthAttachmentPixelFormat(depth_stencil_format);
+    if (depth_stencil_format != WMTPixelFormatInvalid) {
+      pipelineDescriptor->setDepthAttachmentPixelFormat((MTL::PixelFormat)depth_stencil_format);
     }
     // FIXME: don't hardcoding!
-    if (depth_stencil_format == MTL::PixelFormatDepth32Float_Stencil8 ||
-        depth_stencil_format == MTL::PixelFormatDepth24Unorm_Stencil8 ||
-        depth_stencil_format == MTL::PixelFormatStencil8) {
-      pipelineDescriptor->setStencilAttachmentPixelFormat(depth_stencil_format);
+    if (depth_stencil_format == WMTPixelFormatDepth32Float_Stencil8 ||
+        depth_stencil_format == WMTPixelFormatDepth24Unorm_Stencil8 ||
+        depth_stencil_format == WMTPixelFormatStencil8) {
+      pipelineDescriptor->setStencilAttachmentPixelFormat((MTL::PixelFormat)depth_stencil_format);
     }
 
     if (pBlendState) {
@@ -205,8 +205,8 @@ public:
 
 private:
   UINT num_rtvs;
-  MTL::PixelFormat rtv_formats[8];
-  MTL::PixelFormat depth_stencil_format;
+  WMTPixelFormat rtv_formats[8];
+  WMTPixelFormat depth_stencil_format;
   MTL::PrimitiveTopologyClass topology_class;
   MTLD3D11Device *device_;
   std::atomic_bool ready_;

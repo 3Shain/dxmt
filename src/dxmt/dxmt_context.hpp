@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Metal.hpp"
 #include "Metal/MTLBlitCommandEncoder.hpp"
 #include "Metal/MTLCommandBuffer.hpp"
 #include "Metal/MTLComputeCommandEncoder.hpp"
@@ -184,7 +185,7 @@ struct SpatialUpscaleData : EncoderData {
 };
 
 struct SignalEventData : EncoderData {
-  Obj<MTL::Event> event;
+  WMT::Reference<WMT::Event> event;
   uint64_t value;
 };
 

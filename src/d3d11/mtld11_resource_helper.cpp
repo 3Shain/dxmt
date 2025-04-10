@@ -3,7 +3,6 @@
 #include "dxmt_format.hpp"
 #include "mtld11_resource.hpp"
 #include "d3d11_1.h"
-#include "objc_pointer.hpp"
 #include "util_math.hpp"
 
 namespace dxmt {
@@ -290,15 +289,12 @@ CreateMTLTextureDescriptorInternal(
     MTLD3D11Device *pDevice, D3D11_RESOURCE_DIMENSION Dimension, UINT Width,
     UINT Height, UINT Depth, UINT ArraySize, UINT SampleCount, UINT BindFlags,
     UINT CPUAccessFlags, UINT MiscFlags, D3D11_USAGE Usage, UINT MipLevels,
-    DXGI_FORMAT Format, MTL::TextureDescriptor **ppDescOut) {
+    DXGI_FORMAT Format, WMTTextureInfo *pDescOut) {
   if (Width == 0 || Height == 0 || Depth == 0 || ArraySize == 0 || SampleCount == 0)
     return E_INVALIDARG;
 
-  auto desc = transfer(MTL::TextureDescriptor::alloc()->init());
-
   MTL_DXGI_FORMAT_DESC metal_format;
-  if (FAILED(
-          MTLQueryDXGIFormat(pDevice->GetMTLDevice(), Format, metal_format))) {
+  if (FAILED(MTLQueryDXGIFormat(pDevice->GetWMTDevice(), Format, metal_format))) {
     ERR("CreateMTLTextureDescriptorInternal: creating a texture of invalid "
         "format: ",
         Format);
@@ -309,11 +305,11 @@ CreateMTLTextureDescriptorInternal(
     switch (Format) {
     case DXGI_FORMAT_R32_TYPELESS:
     case DXGI_FORMAT_D32_FLOAT:
-      metal_format.PixelFormat = MTL::PixelFormatDepth32Float;
+      metal_format.PixelFormat = WMTPixelFormatDepth32Float;
       break;
     case DXGI_FORMAT_R16_TYPELESS:
     case DXGI_FORMAT_D16_UNORM:
-      metal_format.PixelFormat = MTL::PixelFormatDepth16Unorm;
+      metal_format.PixelFormat = WMTPixelFormatDepth16Unorm;
       break;
     case DXGI_FORMAT_D32_FLOAT_S8X24_UINT:
     case DXGI_FORMAT_D24_UNORM_S8_UINT:
@@ -329,9 +325,9 @@ CreateMTLTextureDescriptorInternal(
       break;
     }
   }
-  desc->setPixelFormat(metal_format.PixelFormat);
+  pDescOut->pixel_format = (metal_format.PixelFormat);
 
-  MTL::TextureUsage metal_usage = 0; // actually corresponding to BindFlags
+  WMTTextureUsage metal_usage = (WMTTextureUsage)0; // actually corresponding to BindFlags
 
   if (BindFlags & (D3D11_BIND_CONSTANT_BUFFER | D3D11_BIND_VERTEX_BUFFER |
                    D3D11_BIND_INDEX_BUFFER | D3D11_BIND_STREAM_OUTPUT)) {
@@ -339,47 +335,50 @@ CreateMTLTextureDescriptorInternal(
     return E_FAIL;
   } else {
     if (BindFlags & D3D11_BIND_SHADER_RESOURCE)
-      metal_usage |= MTL::TextureUsageShaderRead;
+      metal_usage |= WMTTextureUsageShaderRead;
     if (BindFlags & (D3D11_BIND_RENDER_TARGET | D3D11_BIND_DEPTH_STENCIL))
-      metal_usage |= MTL::TextureUsageRenderTarget;
+      metal_usage |= WMTTextureUsageRenderTarget;
     if (BindFlags & D3D11_BIND_UNORDERED_ACCESS)
-      metal_usage |= MTL::TextureUsageShaderRead | MTL::TextureUsageShaderWrite;
+      metal_usage |= WMTTextureUsageShaderRead | WMTTextureUsageShaderWrite;
     // decoder not supported: D3D11_BIND_DECODER, D3D11_BIND_VIDEO_ENCODER
   }
 
   if (metal_format.Flag & MTL_DXGI_FORMAT_TYPELESS) {
     // well this is necessary for passing validation layer
-    metal_usage |= MTL::TextureUsagePixelFormatView;
+    metal_usage |= WMTTextureUsagePixelFormatView;
   }
 
-  desc->setUsage(metal_usage);
+  pDescOut->usage = (metal_usage);
 
-  MTL::ResourceOptions options = 0;
+  WMTResourceOptions options = (WMTResourceOptions)0;
   switch (Usage) {
   case D3D11_USAGE_DEFAULT:
-    options |= MTL::ResourceStorageModeManaged;
+    options |= WMTResourceStorageModeManaged;
     break;
   case D3D11_USAGE_IMMUTABLE:
-    options |= MTL::ResourceStorageModeManaged | // FIXME: switch to
+    options |= WMTResourceStorageModeManaged | // FIXME: switch to
                                                  // ResourceStorageModePrivate
-               MTL::ResourceHazardTrackingModeUntracked;
+               WMTResourceHazardTrackingModeUntracked;
     break;
   case D3D11_USAGE_DYNAMIC:
     options |=
-        MTL::ResourceStorageModeShared | MTL::ResourceCPUCacheModeWriteCombined;
+        WMTResourceStorageModeShared | WMTResourceCPUCacheModeWriteCombined;
     break;
   case D3D11_USAGE_STAGING:
-    options |= MTL::ResourceStorageModeShared;
+    options |= WMTResourceStorageModeShared;
     break;
   }
 
-  desc->setResourceOptions(options);
+  pDescOut->options = (options);
 
   if (MipLevels == 0) {
-    desc->setMipmapLevelCount(32 - __builtin_clz(Width | Height));
+    pDescOut->mipmap_level_count = 32 - __builtin_clz(Width | Height);
   } else {
-    desc->setMipmapLevelCount(MipLevels);
+    pDescOut->mipmap_level_count = MipLevels;
   }
+
+  pDescOut->sample_count = 1;
+  pDescOut->array_length = 1;
 
   switch (Dimension) {
   default: {
@@ -388,10 +387,10 @@ CreateMTLTextureDescriptorInternal(
   }
   case D3D11_RESOURCE_DIMENSION_TEXTURE1D:
     if (ArraySize > 1) {
-      desc->setTextureType(MTL::TextureType2DArray);
-      desc->setArrayLength(ArraySize);
+      pDescOut->type = WMTTextureType2DArray;
+      pDescOut->array_length = (ArraySize);
     } else {
-      desc->setTextureType(MTL::TextureType2D);
+      pDescOut->type = WMTTextureType2D;
     }
     break;
   case D3D11_RESOURCE_DIMENSION_TEXTURE2D:
@@ -399,10 +398,10 @@ CreateMTLTextureDescriptorInternal(
       D3D11_ASSERT(ArraySize / 6);
       D3D11_ASSERT((ArraySize % 6) == 0);
       if ((ArraySize / 6) > 1) {
-        desc->setTextureType(MTL::TextureTypeCubeArray);
-        desc->setArrayLength(ArraySize / 6);
+        pDescOut->type = WMTTextureTypeCubeArray;
+        pDescOut->array_length = (ArraySize / 6);
       } else {
-        desc->setTextureType(MTL::TextureTypeCube);
+        pDescOut->type = WMTTextureTypeCube;
       }
     } else {
       if (SampleCount > 1) {
@@ -412,31 +411,30 @@ CreateMTLTextureDescriptorInternal(
           return E_INVALIDARG;
         }
         if (ArraySize > 1) {
-          desc->setTextureType(MTL::TextureType2DMultisampleArray);
-          desc->setArrayLength(ArraySize);
+          pDescOut->type = WMTTextureType2DMultisampleArray;
+          pDescOut->array_length = (ArraySize);
         } else {
-          desc->setTextureType(MTL::TextureType2DMultisample);
+          pDescOut->type = WMTTextureType2DMultisample;
         }
-        desc->setSampleCount(SampleCount);
+        pDescOut->sample_count = SampleCount;
       } else {
         if (ArraySize > 1) {
-          desc->setTextureType(MTL::TextureType2DArray);
-          desc->setArrayLength(ArraySize);
+          pDescOut->type = WMTTextureType2DArray;
+          pDescOut->array_length = (ArraySize);
         } else {
-          desc->setTextureType(MTL::TextureType2D);
+          pDescOut->type = WMTTextureType2D;
         }
       }
     }
     break;
   case D3D11_RESOURCE_DIMENSION_TEXTURE3D:
-    desc->setTextureType(MTL::TextureType3D);
+    pDescOut->type = WMTTextureType3D;
     break;
   }
-  desc->setWidth(Width);
-  desc->setHeight(Height);
-  desc->setDepth(Depth);
+  pDescOut->width = Width;
+  pDescOut->height = Height;
+  pDescOut->depth = Depth;
 
-  *ppDescOut = desc.takeOwnership();
   return S_OK;
 };
 
@@ -444,7 +442,7 @@ template <>
 HRESULT CreateMTLTextureDescriptor(MTLD3D11Device *pDevice,
                                    const D3D11_TEXTURE1D_DESC *pDesc,
                                    D3D11_TEXTURE1D_DESC *pOutDesc,
-                                   MTL::TextureDescriptor **pMtlDescOut) {
+                                   WMTTextureInfo *pMtlDescOut) {
   auto hr = CreateMTLTextureDescriptorInternal(
       pDevice, D3D11_RESOURCE_DIMENSION_TEXTURE1D, pDesc->Width, 1, 1,
       pDesc->ArraySize, 1, pDesc->BindFlags, pDesc->CPUAccessFlags,
@@ -452,7 +450,7 @@ HRESULT CreateMTLTextureDescriptor(MTLD3D11Device *pDevice,
       pMtlDescOut);
   if (SUCCEEDED(hr)) {
     *pOutDesc = *pDesc;
-    pOutDesc->MipLevels = (*pMtlDescOut)->mipmapLevelCount();
+    pOutDesc->MipLevels = (*pMtlDescOut).mipmap_level_count;
   }
   return hr;
 }
@@ -461,7 +459,7 @@ template <>
 HRESULT CreateMTLTextureDescriptor(MTLD3D11Device *pDevice,
                                    const D3D11_TEXTURE2D_DESC1 *pDesc,
                                    D3D11_TEXTURE2D_DESC1 *pOutDesc,
-                                   MTL::TextureDescriptor **pMtlDescOut) {
+                                   WMTTextureInfo *pMtlDescOut) {
   auto hr = CreateMTLTextureDescriptorInternal(
       pDevice, D3D11_RESOURCE_DIMENSION_TEXTURE2D, pDesc->Width, pDesc->Height,
       1, pDesc->ArraySize, pDesc->SampleDesc.Count, pDesc->BindFlags,
@@ -469,7 +467,7 @@ HRESULT CreateMTLTextureDescriptor(MTLD3D11Device *pDevice,
       pDesc->Format, pMtlDescOut);
   if (SUCCEEDED(hr)) {
     *pOutDesc = *pDesc;
-    pOutDesc->MipLevels = (*pMtlDescOut)->mipmapLevelCount();
+    pOutDesc->MipLevels = (*pMtlDescOut).mipmap_level_count;
   }
   return hr;
 }
@@ -478,7 +476,7 @@ template <>
 HRESULT CreateMTLTextureDescriptor(MTLD3D11Device *pDevice,
                                    const D3D11_TEXTURE3D_DESC1 *pDesc,
                                    D3D11_TEXTURE3D_DESC1 *pOutDesc,
-                                   MTL::TextureDescriptor **pMtlDescOut) {
+                                   WMTTextureInfo *pMtlDescOut) {
   auto hr = CreateMTLTextureDescriptorInternal(
       pDevice, D3D11_RESOURCE_DIMENSION_TEXTURE3D, pDesc->Width, pDesc->Height,
       pDesc->Depth, 1, 1, pDesc->BindFlags, pDesc->CPUAccessFlags,
@@ -486,7 +484,7 @@ HRESULT CreateMTLTextureDescriptor(MTLD3D11Device *pDevice,
       pMtlDescOut);
   if (SUCCEEDED(hr)) {
     *pOutDesc = *pDesc;
-    pOutDesc->MipLevels = (*pMtlDescOut)->mipmapLevelCount();
+    pOutDesc->MipLevels = (*pMtlDescOut).mipmap_level_count;
   }
   return hr;
 }
@@ -537,14 +535,14 @@ GetLinearTextureLayout(
     MTLD3D11Device *pDevice, const D3D11_TEXTURE1D_DESC &Desc, uint32_t level, uint32_t &BytesPerRow,
     uint32_t &BytesPerImage, uint32_t &BytesPerSlice, bool Aligned
 ) {
-  auto metal = pDevice->GetMTLDevice();
+  auto metal = pDevice->GetWMTDevice();
   MTL_DXGI_FORMAT_DESC metal_format;
 
   if (FAILED(MTLQueryDXGIFormat(metal, Desc.Format, metal_format))) {
     ERR("GetLinearTextureLayout: invalid format: ", Desc.Format);
     return E_FAIL;
   }
-  if (metal_format.PixelFormat == MTL::PixelFormatInvalid) {
+  if (metal_format.PixelFormat == WMTPixelFormatInvalid) {
     ERR("GetLinearTextureLayout: invalid format: ", Desc.Format);
     return E_FAIL;
   }
@@ -555,7 +553,7 @@ GetLinearTextureLayout(
   uint32_t w, h, d;
   GetMipmapSize(&Desc, level, &w, &h, &d);
   auto bytes_per_row_unaligned = metal_format.BytesPerTexel * w;
-  auto alignment = Aligned ? metal->minimumLinearTextureAlignmentForPixelFormat(metal_format.PixelFormat): 1;
+  auto alignment = Aligned ? metal.minimumLinearTextureAlignmentForPixelFormat(metal_format.PixelFormat): 1;
   auto aligned_bytes_per_row = align(bytes_per_row_unaligned, alignment);
   BytesPerRow = aligned_bytes_per_row;
   BytesPerImage = 0;
@@ -569,14 +567,14 @@ GetLinearTextureLayout(
     MTLD3D11Device *pDevice, const D3D11_TEXTURE2D_DESC1 &Desc, uint32_t level, uint32_t &BytesPerRow,
     uint32_t &BytesPerImage, uint32_t &BytesPerSlice, bool Aligned
 ) {
-  auto metal = pDevice->GetMTLDevice();
+  auto metal = pDevice->GetWMTDevice();
   MTL_DXGI_FORMAT_DESC metal_format;
 
   if (FAILED(MTLQueryDXGIFormat(metal, Desc.Format, metal_format))) {
     ERR("GetLinearTextureLayout: invalid format: ", Desc.Format);
     return E_FAIL;
   }
-  if (metal_format.PixelFormat == MTL::PixelFormatInvalid) {
+  if (metal_format.PixelFormat == WMTPixelFormatInvalid) {
     ERR("GetLinearTextureLayout: invalid format: ", Desc.Format);
     return E_FAIL;
   }
@@ -597,7 +595,7 @@ GetLinearTextureLayout(
     return S_OK;
   }
   auto bytes_per_row_unaligned = metal_format.BytesPerTexel * w;
-  auto alignment = Aligned ? metal->minimumLinearTextureAlignmentForPixelFormat(metal_format.PixelFormat): 1;
+  auto alignment = Aligned ? metal.minimumLinearTextureAlignmentForPixelFormat(metal_format.PixelFormat): 1;
   auto aligned_bytes_per_row = align(bytes_per_row_unaligned, alignment);
   BytesPerRow = aligned_bytes_per_row;
   BytesPerImage = aligned_bytes_per_row * h;
@@ -611,14 +609,14 @@ GetLinearTextureLayout(
     MTLD3D11Device *pDevice, const D3D11_TEXTURE3D_DESC1 &Desc, uint32_t level, uint32_t &BytesPerRow,
     uint32_t &BytesPerImage, uint32_t &BytesPerSlice, bool Aligned
 ) {
-  auto metal = pDevice->GetMTLDevice();
+  auto metal = pDevice->GetWMTDevice();
   MTL_DXGI_FORMAT_DESC metal_format;
 
   if (FAILED(MTLQueryDXGIFormat(metal, Desc.Format, metal_format))) {
     ERR("GetLinearTextureLayout: invalid format: ", Desc.Format);
     return E_FAIL;
   }
-  if (metal_format.PixelFormat == MTL::PixelFormatInvalid) {
+  if (metal_format.PixelFormat == WMTPixelFormatInvalid) {
     ERR("GetLinearTextureLayout: invalid format: ", Desc.Format);
     return E_FAIL;
   }
@@ -639,7 +637,7 @@ GetLinearTextureLayout(
     return S_OK;
   }
   auto bytes_per_row_unaligned = metal_format.BytesPerTexel * w;
-  auto alignment = Aligned ? metal->minimumLinearTextureAlignmentForPixelFormat(metal_format.PixelFormat) : 1;
+  auto alignment = Aligned ? metal.minimumLinearTextureAlignmentForPixelFormat(metal_format.PixelFormat) : 1;
   auto aligned_bytes_per_row = align(bytes_per_row_unaligned, alignment);
   BytesPerRow = aligned_bytes_per_row;
   BytesPerImage = aligned_bytes_per_row * h;
