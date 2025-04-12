@@ -1,7 +1,11 @@
 #include "d3d11_shader.hpp"
-#include "Metal/MTLLibrary.hpp"
+#include "Metal.hpp"
 #include "airconv_public.h"
 #include "d3d11_input_layout.hpp"
+
+namespace MTL {
+  class Function;
+}
 
 namespace dxmt {
 
@@ -42,14 +46,14 @@ public:
   bool GetShader(MTL_COMPILED_SHADER *pShaderData) final {
     bool ret = false;
     if ((ret = ready_.load(std::memory_order_acquire))) {
-      *pShaderData = {function_.ptr(), &hash_};
+      *pShaderData = {(MTL::Function *)function_.handle, &hash_};
     }
     return ret;
   }
 
   IMTLThreadpoolWork *RunThreadpoolWork() {
     auto pool = transfer(NS::AutoreleasePool::alloc()->init());
-    Obj<NS::Error> err;
+    WMT::Reference<WMT::Error> err;
     std::string func_name = "shader_main_" + shader_->hash().toString().substr(0, 8);
     SM50CompiledBitcode *compile_result = proc(func_name.c_str());
 
@@ -59,22 +63,15 @@ public:
     MTL_SHADER_BITCODE bitcode;
     SM50GetCompiledBitcode(compile_result, &bitcode);
     hash_.compute(bitcode.Data, bitcode.Size);
-    auto dispatch_data =
-        dispatch_data_create(bitcode.Data, bitcode.Size, nullptr, nullptr);
-    D3D11_ASSERT(dispatch_data);
-    Obj<MTL::Library> library =
-        transfer(device_->GetMTLDevice()->newLibrary(dispatch_data, &err));
+    auto library = device_->GetWMTDevice().newLibrary(bitcode.Data, bitcode.Size, err);
 
     if (err) {
-      ERR("Failed to create MTLLibrary: ",
-          err->localizedDescription()->utf8String());
+      ERR("Failed to create MTLLibrary: ", err.description().getUTF8String());
       return this;
     }
 
-    dispatch_release(dispatch_data);
     SM50DestroyBitcode(compile_result);
-    function_ = transfer(library->newFunction(
-        NS::String::string(func_name.c_str(), NS::UTF8StringEncoding)));
+    function_ = library.newFunction(func_name.c_str());
     if (function_ == nullptr) {
       ERR("Failed to create MTLFunction: ", func_name);
     }
@@ -92,7 +89,7 @@ private:
   ManagedShader shader_;
   std::atomic_bool ready_;
   Sha1Hash hash_;
-  Obj<MTL::Function> function_;
+  WMT::Reference<WMT::Function> function_;
   std::atomic<uint32_t> m_refCount = {0ul};
 };
 
