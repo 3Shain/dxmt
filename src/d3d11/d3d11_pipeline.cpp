@@ -1,4 +1,4 @@
-#include "Metal/MTLComputePipeline.hpp"
+#include "Metal.hpp"
 #include "d3d11_private.h"
 #include "d3d11_pipeline.hpp"
 #include "com/com_object.hpp"
@@ -7,6 +7,10 @@
 #include "log/log.hpp"
 #include "objc_pointer.hpp"
 #include <atomic>
+
+namespace MTL {
+  class ComputePipelineState;
+}
 
 namespace dxmt {
 
@@ -189,7 +193,7 @@ public:
 
   void GetPipeline(MTL_COMPILED_COMPUTE_PIPELINE *pPipeline) final {
     ready_.wait(false, std::memory_order_acquire);
-    *pPipeline = {state_.ptr()};
+    *pPipeline = {(MTL::ComputePipelineState *)state_.handle};
   }
 
   IMTLThreadpoolWork *RunThreadpoolWork() {
@@ -197,21 +201,16 @@ public:
 
     TRACE("Start compiling 1 PSO");
 
-    Obj<NS::Error> err;
+    WMT::Reference<WMT::Error> err;
     MTL_COMPILED_SHADER cs;
     if (!ComputeShader->GetShader(&cs)) {
       return ComputeShader.ptr();
     }
 
-    auto desc = transfer(MTL::ComputePipelineDescriptor::alloc()->init());
-    desc->setComputeFunction(cs.Function);
+    state_ = device_->GetWMTDevice().newComputePipelineState(WMT::Function((obj_handle_t)cs.Function),err);
 
-    state_ = transfer(device_->GetMTLDevice()->newComputePipelineState(
-        desc, 0, nullptr, &err));
-
-    if (state_ == nullptr) {
-      ERR("Failed to create compute PSO: ",
-          err->localizedDescription()->utf8String());
+    if (!state_) {
+      ERR("Failed to create compute PSO: ", err.description().getUTF8String());
       return this;
     }
 
@@ -231,7 +230,7 @@ private:
   MTLD3D11Device *device_;
   std::atomic_bool ready_;
   Com<CompiledShader> ComputeShader;
-  Obj<MTL::ComputePipelineState> state_;
+  WMT::Reference<WMT::ComputePipelineState> state_;
 };
 
 Com<IMTLCompiledComputePipeline>
