@@ -2,6 +2,7 @@
 
 #include "./winemetal.h"
 #include <cstddef>
+#include <string>
 
 namespace WMT {
 
@@ -25,6 +26,19 @@ public:
   void
   release() {
     NSObject_release(handle);
+  }
+
+  bool
+  operator==(std::nullptr_t) const {
+    return handle == 0;
+  }
+  bool
+  operator!=(std::nullptr_t) const {
+    return handle != 0;
+  }
+
+  operator bool() const {
+    return handle != 0;
   }
 };
 
@@ -107,6 +121,26 @@ public:
   getCString(char *buffer, uint64_t maxLength, WMTStringEncoding encoding) {
     return NSString_getCString(handle, buffer, maxLength, encoding);
   }
+
+  uint64_t
+  lengthOfBytesUsingEncoding(WMTStringEncoding encoding) {
+    return NSString_lengthOfBytesUsingEncoding(handle, encoding);
+  }
+
+  std::string
+  getUTF8String() {
+    std::string ret(size_t(lengthOfBytesUsingEncoding(WMTUTF8StringEncoding)), ' ');
+    getCString(ret.data(), ret.capacity(), WMTUTF8StringEncoding);
+    return ret;
+  }
+};
+
+class Error : public Object {
+public:
+  String
+  description() {
+    return String{NSError_description(handle)};
+  }
 };
 
 class Event : public Object {
@@ -186,6 +220,20 @@ public:
   }
 };
 
+class Function : public Object {};
+
+class Library : public Object {
+public:
+  Reference<Function>
+  newFunction(const char *name) {
+    return Reference<Function>(MTLLibrary_newFunction(handle, name));
+  }
+};
+
+class ComputePipelineState : public Object {
+public:
+};
+
 class Device : public Object {
 public:
   uint64_t
@@ -231,6 +279,20 @@ public:
   Reference<Texture>
   newTexture(WMTTextureInfo *info) {
     return Reference<Texture>(MTLDevice_newTexture(handle, info));
+  }
+
+  Reference<Library>
+  newLibrary(const void *bytecode, uint64_t bytecode_length, Error &error) {
+    struct WMTMemoryPointer mem;
+    mem.set((void *)bytecode);
+    return Reference<Library>(MTLDevice_newLibrary(handle, mem, bytecode_length, &error.handle));
+  }
+
+  Reference<ComputePipelineState>
+  newComputePipelineState(const Function &compute_function, Error &error) {
+    return Reference<ComputePipelineState>(
+        MTLDevice_newComputePipelineState(handle, compute_function.handle, &error.handle)
+    );
   }
 
   uint64_t

@@ -93,4 +93,19 @@ struct unixcall_mtltexture_newtextureview {
   uint64_t gpu_resource_id;
 };
 
+struct unixcall_mtldevice_newlibrary {
+  obj_handle_t device;
+  struct WMTMemoryPointer bytecode;
+  uint64_t bytecode_length;
+  obj_handle_t ret_error;
+  obj_handle_t ret_library;
+};
+
+struct unixcall_mtldevice_newcomputepso {
+  obj_handle_t device;
+  obj_handle_t function;
+  obj_handle_t ret_error;
+  obj_handle_t ret_pso;
+};
+
 #endif
