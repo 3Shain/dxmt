@@ -504,4 +504,17 @@ enum WMTAttributeFormat : uint32_t {
   WMTAttributeFormatFloatRGB9E5 = 55,
 };
 
+WINEMETAL_API obj_handle_t MTLDevice_newLibrary(
+    obj_handle_t device, struct WMTMemoryPointer bytecode, uint64_t bytecode_length, obj_handle_t *err_out
+);
+
+WINEMETAL_API obj_handle_t MTLLibrary_newFunction(obj_handle_t library, const char *name);
+
+WINEMETAL_API uint64_t NSString_lengthOfBytesUsingEncoding(obj_handle_t str, enum WMTStringEncoding encoding);
+
+WINEMETAL_API obj_handle_t NSError_description(obj_handle_t nserror);
+
+WINEMETAL_API obj_handle_t
+MTLDevice_newComputePipelineState(obj_handle_t device, obj_handle_t function, obj_handle_t *err_out);
+
 #endif

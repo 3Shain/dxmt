@@ -241,3 +241,60 @@ MTLDevice_minimumLinearTextureAlignmentForPixelFormat(obj_handle_t device, enum 
   UNIX_CALL(24, &params);
   return params.ret;
 }
+
+WINEMETAL_API obj_handle_t
+MTLDevice_newLibrary(
+    obj_handle_t device, struct WMTMemoryPointer bytecode, uint64_t bytecode_length, obj_handle_t *err_out
+) {
+  struct unixcall_mtldevice_newlibrary params;
+  params.device = device;
+  params.bytecode = bytecode;
+  params.bytecode_length = bytecode_length;
+  params.ret_error = 0;
+  params.ret_library = 0;
+  UNIX_CALL(25, &params);
+  if (err_out)
+    *err_out = params.ret_error;
+  return params.ret_library;
+}
+
+WINEMETAL_API obj_handle_t
+MTLLibrary_newFunction(obj_handle_t library, const char *name) {
+  struct unixcall_generic_obj_uint64_obj_ret params;
+  params.handle = library;
+  params.arg = (uint64_t)name;
+  params.ret = 0;
+  UNIX_CALL(26, &params);
+  return params.ret;
+}
+
+WINEMETAL_API uint64_t
+NSString_lengthOfBytesUsingEncoding(obj_handle_t str, enum WMTStringEncoding encoding) {
+  struct unixcall_generic_obj_uint64_uint64_ret params;
+  params.handle = str;
+  params.arg = (uint64_t)(encoding);
+  params.ret = 0;
+  UNIX_CALL(27, &params);
+  return params.ret;
+}
+
+WINEMETAL_API obj_handle_t
+NSError_description(obj_handle_t nserror) {
+  struct unixcall_generic_obj_obj_ret params;
+  params.handle = nserror;
+  UNIX_CALL(28, &params);
+  return params.ret;
+}
+
+WINEMETAL_API obj_handle_t
+MTLDevice_newComputePipelineState(obj_handle_t device, obj_handle_t function, obj_handle_t *err_out) {
+  struct unixcall_mtldevice_newcomputepso params;
+  params.device = device;
+  params.function = function;
+  params.ret_error = 0;
+  params.ret_pso = 0;
+  UNIX_CALL(29, &params);
+  if (err_out)
+    *err_out = params.ret_error;
+  return params.ret_pso;
+}

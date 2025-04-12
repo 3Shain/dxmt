@@ -287,6 +287,53 @@ _MTLDevice_minimumLinearTextureAlignmentForPixelFormat(void *obj) {
   return STATUS_SUCCESS;
 }
 
+static NTSTATUS
+_MTLDevice_newLibrary(void *obj) {
+  struct unixcall_mtldevice_newlibrary *params = obj;
+  id<MTLDevice> device = (id<MTLDevice>)params->device;
+  dispatch_data_t data = dispatch_data_create(params->bytecode.ptr, params->bytecode_length, NULL, NULL);
+  NSError *err = NULL;
+  params->ret_library = (obj_handle_t)[device newLibraryWithData:data error:&err];
+  params->ret_error = (obj_handle_t)err;
+  dispatch_release(data);
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_MTLLibrary_newFunction(void *obj) {
+  struct unixcall_generic_obj_uint64_obj_ret *params = obj;
+  id<MTLLibrary> library = (id<MTLLibrary>)params->handle;
+  NSString *name = [[NSString alloc] initWithCString:(char *)params->arg encoding:NSUTF8StringEncoding];
+  params->ret = (obj_handle_t)[library newFunctionWithName:name];
+  [name release];
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_NSString_lengthOfBytesUsingEncoding(void *obj) {
+  struct unixcall_generic_obj_uint64_uint64_ret *params = obj;
+  params->ret = (uint64_t)[(NSString *)params->handle lengthOfBytesUsingEncoding:(NSStringEncoding)params->arg];
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_NSError_description(void *obj) {
+  struct unixcall_generic_obj_obj_ret *params = obj;
+  params->ret = (obj_handle_t)[(NSError *)params->handle description];
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_MTLDevice_newComputePipelineState(void *obj) {
+  struct unixcall_mtldevice_newcomputepso *params = obj;
+  id<MTLDevice> device = (id<MTLDevice>)params->device;
+  NSError *err = NULL;
+  params->ret_pso =
+      (obj_handle_t)[device newComputePipelineStateWithFunction:(id<MTLFunction>)params->function error:&err];
+  params->ret_error = (obj_handle_t)err;
+  return STATUS_SUCCESS;
+}
+
 const void *__winemetal_unixcalls[] = {
     &_NSObject_retain,
     &_NSObject_release,
@@ -313,6 +360,11 @@ const void *__winemetal_unixcalls[] = {
     &_MTLBuffer_newTexture,
     &_MTLTexture_newTextureView,
     &_MTLDevice_minimumLinearTextureAlignmentForPixelFormat,
+    &_MTLDevice_newLibrary,
+    &_MTLLibrary_newFunction,
+    &_NSString_lengthOfBytesUsingEncoding,
+    &_NSError_description,
+    &_MTLDevice_newComputePipelineState,
 };
 
 const unsigned int __winemetal_unixcalls_num = sizeof(__winemetal_unixcalls) / sizeof(void *);
