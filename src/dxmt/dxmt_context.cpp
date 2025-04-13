@@ -1,4 +1,5 @@
 #include "dxmt_context.hpp"
+#include "Metal.hpp"
 #include "Metal/MTLRenderCommandEncoder.hpp"
 #include "Metal/MTLResource.hpp"
 #include "dxmt_command_queue.hpp"
@@ -316,17 +317,17 @@ ArgumentEncodingContext::encodeShaderResources(const MTL_SHADER_REFLECTION *refl
 }
 
 void
-ArgumentEncodingContext::clearColor(
-    Rc<Texture> &&texture, unsigned viewId, unsigned arrayLength, MTL::ClearColor color
-) {
+ArgumentEncodingContext::clearColor(Rc<Texture> &&texture, unsigned viewId, unsigned arrayLength, WMTClearColor color) {
   assert(!encoder_current);
   auto encoder_info = allocate<ClearEncoderData>();
   encoder_info->type = EncoderType::Clear;
   encoder_info->id = nextEncoderId();
   encoder_info->clear_dsv = 0;
-  encoder_info->texture = texture->view(viewId);
+  encoder_info->texture = WMT::Texture{(obj_handle_t)texture->view(viewId)};
   encoder_info->color = color;
   encoder_info->array_length = arrayLength;
+  encoder_info->width = texture->width();
+  encoder_info->height = texture->height();
 
   encoder_info->tex_write.add(texture->current()->depkey);
 
@@ -345,10 +346,12 @@ ArgumentEncodingContext::clearDepthStencil(
   auto encoder_info = allocate<ClearEncoderData>();
   encoder_info->type = EncoderType::Clear;
   encoder_info->id = nextEncoderId();
-  encoder_info->clear_dsv = flag & DepthStencilPlanarFlags(texture->pixelFormat());;
-  encoder_info->texture = texture->view(viewId);
+  encoder_info->clear_dsv = flag & DepthStencilPlanarFlags(texture->pixelFormat());
+  encoder_info->texture = WMT::Texture{(obj_handle_t)texture->view(viewId)};
   encoder_info->depth_stencil = {depth, stencil};
   encoder_info->array_length = arrayLength;
+  encoder_info->width = texture->width();
+  encoder_info->height = texture->height();
 
   encoder_info->tex_write.add(texture->current()->depkey);
 
@@ -367,8 +370,8 @@ ArgumentEncodingContext::resolveTexture(
   auto encoder_info = allocate<ResolveEncoderData>();
   encoder_info->type = EncoderType::Resolve;
   // FIXME: resolve by specific format view
-  encoder_info->src = src->current()->texture();
-  encoder_info->dst = dst->current()->texture();
+  encoder_info->src = WMT::Texture{(obj_handle_t)src->current()->texture()};
+  encoder_info->dst = WMT::Texture{(obj_handle_t)dst->current()->texture()};
   encoder_info->src_slice = srcSlice;
   encoder_info->dst_slice = dstSlice;
   encoder_info->dst_level = dstLevel;
@@ -457,14 +460,13 @@ ArgumentEncodingContext::signalEvent(uint64_t value) {
 
 RenderEncoderData *
 ArgumentEncodingContext::startRenderPass(
-    Obj<MTL::RenderPassDescriptor> &&descriptor, uint8_t dsv_planar_flags, uint8_t dsv_readonly_flags,
-    uint8_t render_target_count
+    uint8_t dsv_planar_flags, uint8_t dsv_readonly_flags, uint8_t render_target_count
 ) {
   assert(!encoder_current);
   auto encoder_info = allocate<RenderEncoderData>();
   encoder_info->type = EncoderType::Render;
   encoder_info->id = nextEncoderId();
-  encoder_info->descriptor = std::move(descriptor);
+  WMT::InitializeRenderPassInfo(encoder_info->info);
   encoder_info->dsv_planar_flags = dsv_planar_flags;
   encoder_info->dsv_readonly_flags = dsv_readonly_flags;
   encoder_info->render_target_count = render_target_count;
@@ -571,6 +573,8 @@ std::unique_ptr<VisibilityResultReadback>
 ArgumentEncodingContext::flushCommands(MTL::CommandBuffer *cmdbuf, uint64_t seqId, uint64_t event_seq_id) {
   assert(!encoder_current);
 
+  WMT::CommandBuffer cmdbuf_{(obj_handle_t)cmdbuf};
+
   unsigned encoder_count = encoder_count_;
   unsigned encoder_index = 0;
   EncoderData **encoders =
@@ -619,10 +623,10 @@ ArgumentEncodingContext::flushCommands(MTL::CommandBuffer *cmdbuf, uint64_t seqI
       auto data = static_cast<RenderEncoderData *>(current);
       if (data->use_visibility_result) {
         assert(visibility_readback);
-        data->descriptor->setVisibilityResultBuffer(visibility_readback->visibility_result_heap);
+        data->info.visibility_buffer = (obj_handle_t)visibility_readback->visibility_result_heap.ptr();
       }
-      auto encoder = cmdbuf->renderCommandEncoder(data->descriptor.ptr());
-      RenderCommandContext ctx{encoder, data->dsv_planar_flags, gpu_buffer_};
+      auto encoder = cmdbuf_.renderCommandEncoder(data->info);
+      RenderCommandContext ctx{(MTL::RenderCommandEncoder *)encoder.handle, data->dsv_planar_flags, gpu_buffer_};
       ctx.encoder->setVertexBuffer(gpu_buffer_, 0, 16);
       ctx.encoder->setVertexBuffer(gpu_buffer_, 0, 29);
       ctx.encoder->setVertexBuffer(gpu_buffer_, 0, 30);
@@ -637,7 +641,7 @@ ArgumentEncodingContext::flushCommands(MTL::CommandBuffer *cmdbuf, uint64_t seqI
         ctx.encoder->setMeshBuffer(gpu_buffer_, 0, 30);
         ctx.encoder->setVertexBuffer(gpu_buffer_, 0, 23); // draw arguments
         data->pretess_cmds.execute(ctx);
-        encoder->memoryBarrier(MTL::BarrierScopeBuffers, MTL::RenderStageMesh, MTL::RenderStageVertex);
+        ctx.encoder->memoryBarrier(MTL::BarrierScopeBuffers, MTL::RenderStageMesh, MTL::RenderStageVertex);
       }
       if (data->use_geometry && !data->use_tessellation) {
         ctx.encoder->setObjectBuffer(gpu_buffer_, 0, 16);
@@ -663,37 +667,39 @@ ArgumentEncodingContext::flushCommands(MTL::CommandBuffer *cmdbuf, uint64_t seqI
           tasks_data[i].dispatch_args_out = gpu_buffer_->gpuAddress() + task.dispatch_arguments_offset;
           tasks_data[i].vertex_count_per_warp = task.vertex_count_per_warp;
           tasks_data[i].end_of_command = 0;
-          encoder->useResource(task.draw_arguments, MTL::ResourceUsageRead, MTL::RenderStageVertex);
+          ctx.encoder->useResource(task.draw_arguments, MTL::ResourceUsageRead, MTL::RenderStageVertex);
         }
         tasks_data[task_count - 1].end_of_command = 1;
         // FIXME: 
-        encoder->useResource(gpu_buffer_, MTL::ResourceUsageWrite | MTL::ResourceUsageRead, MTL::RenderStageVertex);
+        ctx.encoder->useResource(gpu_buffer_, MTL::ResourceUsageWrite | MTL::ResourceUsageRead, MTL::RenderStageVertex);
         queue_.emulated_cmd.MarshalGSDispatchArguments(ctx.encoder, gpu_buffer_, offset);
-        encoder->memoryBarrier(
+        ctx.encoder->memoryBarrier(
             MTL::BarrierScopeBuffers, MTL::RenderStageVertex,
             MTL::RenderStageVertex | MTL::RenderStageMesh | MTL::RenderStageObject
         );
       }
       data->cmds.execute(ctx);
-      ctx.encoder->endEncoding();
+      encoder.endEncoding();
       data->~RenderEncoderData();
       break;
     }
     case EncoderType::Compute: {
       auto data = static_cast<ComputeEncoderData *>(current);
-      ComputeCommandContext ctx{cmdbuf->computeCommandEncoder(), {}, queue_.emulated_cmd};
+      auto encoder = cmdbuf_.computeCommandEncoder(false);
+      ComputeCommandContext ctx{(MTL::ComputeCommandEncoder *)encoder.handle, {}, queue_.emulated_cmd};
       ctx.encoder->setBuffer(gpu_buffer_, 0, 29);
       ctx.encoder->setBuffer(gpu_buffer_, 0, 30);
       data->cmds.execute(ctx);
-      ctx.encoder->endEncoding();
+      encoder.endEncoding();
       data->~ComputeEncoderData();
       break;
     }
     case EncoderType::Blit: {
       auto data = static_cast<BlitEncoderData *>(current);
-      BlitCommandContext ctx{cmdbuf->blitCommandEncoder()};
+      auto encoder = cmdbuf_.blitCommandEncoder();
+      BlitCommandContext ctx{(MTL::BlitCommandEncoder *)encoder.handle};
       data->cmds.execute(ctx);
-      ctx.encoder->endEncoding();
+      encoder.endEncoding();
       data->~BlitEncoderData();
       break;
     }
@@ -714,45 +720,34 @@ ArgumentEncodingContext::flushCommands(MTL::CommandBuffer *cmdbuf, uint64_t seqI
     case EncoderType::Clear: {
       auto data = static_cast<ClearEncoderData *>(current);
       {
-        auto enc_descriptor = MTL::RenderPassDescriptor::renderPassDescriptor();
-        MTL::Texture *texture = data->texture;
+        WMTRenderPassInfo info;
+        WMT::InitializeRenderPassInfo(info);
         if (data->clear_dsv) {
           if (data->clear_dsv & 1) {
-            auto attachmentz = enc_descriptor->depthAttachment();
-            attachmentz->setClearDepth(data->depth_stencil.first);
-            attachmentz->setTexture(texture);
-            attachmentz->setLoadAction(MTL::LoadActionClear);
-            attachmentz->setStoreAction(MTL::StoreActionStore);
-            attachmentz->setSlice(0);
-            attachmentz->setLevel(0);
-            attachmentz->setDepthPlane(0);
+            info.depth.clear_depth = data->depth_stencil.first;
+            info.depth.texture = data->texture;
+            info.depth.load_action = WMTLoadActionClear;
+            info.depth.store_action = WMTStoreActionStore;
           }
           if (data->clear_dsv & 2) {
-            auto attachmentz = enc_descriptor->stencilAttachment();
-            attachmentz->setClearStencil(data->depth_stencil.second);
-            attachmentz->setTexture(texture);
-            attachmentz->setLoadAction(MTL::LoadActionClear);
-            attachmentz->setStoreAction(MTL::StoreActionStore);
-            attachmentz->setSlice(0);
-            attachmentz->setLevel(0);
-            attachmentz->setDepthPlane(0);
+            info.stencil.clear_stencil = data->depth_stencil.second;
+            info.stencil.texture = data->texture;
+            info.stencil.load_action = WMTLoadActionClear;
+            info.stencil.store_action = WMTStoreActionStore;
           }
-          enc_descriptor->setRenderTargetHeight(texture->height());
-          enc_descriptor->setRenderTargetWidth(texture->width());
+          info.render_target_width = data->width;
+          info.render_target_height = data->height;
         } else {
-          auto attachmentz = enc_descriptor->colorAttachments()->object(0);
-          attachmentz->setClearColor(data->color);
-          attachmentz->setTexture(texture);
-          attachmentz->setLoadAction(MTL::LoadActionClear);
-          attachmentz->setStoreAction(MTL::StoreActionStore);
-          attachmentz->setSlice(0);
-          attachmentz->setLevel(0);
-          attachmentz->setDepthPlane(0);
+          info.colors[0].clear_color = data->color;
+          info.colors[0].texture = data->texture;
+          info.colors[0].load_action = WMTLoadActionClear;
+          info.colors[0].store_action = WMTStoreActionStore;
         }
-        enc_descriptor->setRenderTargetArrayLength(data->array_length);
-        auto enc = cmdbuf->renderCommandEncoder(enc_descriptor);
-        enc->setLabel(NS::String::string("ClearPass", NS::ASCIIStringEncoding));
-        enc->endEncoding();
+        info.render_target_array_length = data->array_length;
+        auto encoder = cmdbuf_.renderCommandEncoder(info);
+        ((MTL::RenderCommandEncoder *)encoder.handle)
+            ->setLabel(NS::String::string("ClearPass", NS::ASCIIStringEncoding));
+        encoder.endEncoding();
       }
       data->~ClearEncoderData();
       break;
@@ -760,19 +755,20 @@ ArgumentEncodingContext::flushCommands(MTL::CommandBuffer *cmdbuf, uint64_t seqI
     case EncoderType::Resolve: {
       auto data = static_cast<ResolveEncoderData *>(current);
       {
-        auto enc_descriptor = MTL::RenderPassDescriptor::renderPassDescriptor();
-        auto attachmentz = enc_descriptor->colorAttachments()->object(0);
-        attachmentz->setTexture(data->src);
-        attachmentz->setLoadAction(MTL::LoadActionLoad);
-        attachmentz->setStoreAction(MTL::StoreActionMultisampleResolve);
-        attachmentz->setSlice(data->src_slice);
-        attachmentz->setResolveTexture(data->dst);
-        attachmentz->setResolveLevel(data->dst_level);
-        attachmentz->setResolveSlice(data->dst_slice);
+        WMTRenderPassInfo info;
+        WMT::InitializeRenderPassInfo(info);
+        info.colors[0].texture = data->src;
+        info.colors[0].load_action = WMTLoadActionLoad;
+        info.colors[0].store_action = WMTStoreActionStoreAndMultisampleResolve;
+        info.colors[0].slice = data->src_slice;
+        info.colors[0].resolve_texture = data->dst;
+        info.colors[0].resolve_slice = data->dst_slice;
+        info.colors[0].resolve_level = data->dst_level;
 
-        auto enc = cmdbuf->renderCommandEncoder(enc_descriptor);
-        enc->setLabel(NS::String::string("ResolvePass", NS::ASCIIStringEncoding));
-        enc->endEncoding();
+        auto encoder = cmdbuf_.renderCommandEncoder(info);
+        ((MTL::RenderCommandEncoder *)encoder.handle)
+            ->setLabel(NS::String::string("ResolvePass", NS::ASCIIStringEncoding));
+        encoder.endEncoding();
       }
       data->~ResolveEncoderData();
       break;
@@ -787,7 +783,7 @@ ArgumentEncodingContext::flushCommands(MTL::CommandBuffer *cmdbuf, uint64_t seqI
     }
     case EncoderType::SignalEvent: {
       auto data = static_cast<SignalEventData *>(current);
-      WMT::CommandBuffer((obj_handle_t)cmdbuf).encodeSignalEvent(data->event, data->value);
+      cmdbuf_.encodeSignalEvent(data->event, data->value);
       data->~SignalEventData();
       break;
     }
@@ -821,7 +817,7 @@ ArgumentEncodingContext::flushCommands(MTL::CommandBuffer *cmdbuf, uint64_t seqI
   encoder_last = &encoder_head;
   encoder_count_ = 0;
 
-  WMT::CommandBuffer((obj_handle_t)cmdbuf).encodeSignalEvent(queue_.event, event_seq_id);
+  cmdbuf_.encodeSignalEvent(queue_.event, event_seq_id);
 
   return visibility_readback;
 }
@@ -842,24 +838,24 @@ ArgumentEncodingContext::checkEncoderRelation(EncoderData *former, EncoderData *
       auto render = reinterpret_cast<RenderEncoderData *>(latter);
       auto clear = reinterpret_cast<ClearEncoderData *>(former);
 
-      if (render->descriptor->renderTargetArrayLength() != clear->array_length)
+      if (render->info.render_target_array_length != clear->array_length)
         break;
 
       if (clear->clear_dsv) {
         if (auto depth_attachment = isClearDepthSignatureMatched(clear, render)) {
-          if (depth_attachment->loadAction() == MTL::LoadActionLoad) {
-            depth_attachment->setClearDepth(clear->depth_stencil.first);
-            depth_attachment->setLoadAction(MTL::LoadActionClear);
-            depth_attachment->setStoreAction(MTL::StoreActionStore);
+          if (depth_attachment->load_action == WMTLoadActionLoad) {
+            depth_attachment->clear_depth = clear->depth_stencil.first;
+            depth_attachment->load_action = WMTLoadActionClear;
+            depth_attachment->store_action = WMTStoreActionStore;
             render->tex_write.merge(clear->tex_write);
           }
           clear->clear_dsv &= ~1;
         }
         if (auto stencil_attachment = isClearStencilSignatureMatched(clear, render)) {
-          if (stencil_attachment->loadAction() == MTL::LoadActionLoad) {
-            stencil_attachment->setClearStencil(clear->depth_stencil.second);
-            stencil_attachment->setLoadAction(MTL::LoadActionClear);
-            stencil_attachment->setStoreAction(MTL::StoreActionStore);
+          if (stencil_attachment->load_action == WMTLoadActionLoad) {
+            stencil_attachment->clear_stencil = clear->depth_stencil.second;
+            stencil_attachment->load_action = WMTLoadActionClear;
+            stencil_attachment->store_action = WMTStoreActionStore;
             render->tex_write.merge(clear->tex_write);
           }
           clear->clear_dsv &= ~2;
@@ -873,10 +869,10 @@ ArgumentEncodingContext::checkEncoderRelation(EncoderData *former, EncoderData *
         }
       } else {
         if (auto attachment = isClearColorSignatureMatched(clear, render)) {
-          if (attachment->loadAction() == MTL::LoadActionLoad) {
-            attachment->setLoadAction(MTL::LoadActionClear);
-            attachment->setClearColor(clear->color);
-            if (attachment->storeAction() != MTL::StoreActionDontCare)
+          if (attachment->load_action == WMTLoadActionLoad) {
+            attachment->load_action = WMTLoadActionClear;
+            attachment->clear_color = clear->color;
+            if (attachment->store_action != WMTStoreActionDontCare)
               render->tex_write.merge(clear->tex_write);
           }
 
@@ -894,11 +890,11 @@ ArgumentEncodingContext::checkEncoderRelation(EncoderData *former, EncoderData *
       auto clear = reinterpret_cast<ClearEncoderData *>(latter);
 
       if (clear->clear_dsv) {
-        if (render->descriptor->depthAttachment()->texture() == clear->texture.ptr()) {
-          render->descriptor->depthAttachment()->setStoreAction(MTL::StoreActionDontCare);
+        if (render->info.depth.texture == clear->texture.handle) {
+          render->info.depth.store_action = WMTStoreActionDontCare;
         }
-        if (render->descriptor->stencilAttachment()->texture() == clear->texture.ptr()) {
-          render->descriptor->stencilAttachment()->setStoreAction(MTL::StoreActionDontCare);
+        if (render->info.stencil.texture == clear->texture.handle) {
+          render->info.stencil.store_action = WMTStoreActionDontCare;
         }
       }
     }
@@ -911,18 +907,18 @@ ArgumentEncodingContext::checkEncoderRelation(EncoderData *former, EncoderData *
 
     if (isEncoderSignatureMatched(r0, r1)) {
       for (unsigned i = 0; i < r0->render_target_count; i++) {
-        auto a0 = r0->descriptor->colorAttachments()->object(i);
-        auto a1 = r1->descriptor->colorAttachments()->object(i);
-        a1->setLoadAction(a0->loadAction());
-        a1->setClearColor(a0->clearColor());
+        auto &a0 = r0->info.colors[i];
+        auto &a1 = r1->info.colors[i];
+        a1.load_action = a0.load_action;
+        a1.clear_color = a0.clear_color;
       }
 
-      r1->descriptor->depthAttachment()->setLoadAction(r0->descriptor->depthAttachment()->loadAction());
-      r1->descriptor->depthAttachment()->setClearDepth(r0->descriptor->depthAttachment()->clearDepth());
-      r1->descriptor->depthAttachment()->setStoreAction(r0->descriptor->depthAttachment()->storeAction());
-      r1->descriptor->stencilAttachment()->setLoadAction(r0->descriptor->stencilAttachment()->loadAction());
-      r1->descriptor->stencilAttachment()->setClearStencil(r0->descriptor->stencilAttachment()->clearStencil());
-      r1->descriptor->stencilAttachment()->setStoreAction(r0->descriptor->stencilAttachment()->storeAction());
+      r1->info.depth.load_action = r0->info.depth.load_action;
+      r1->info.depth.clear_depth = r0->info.depth.clear_depth;
+      r1->info.depth.store_action = r0->info.depth.store_action;
+      r1->info.stencil.load_action = r0->info.stencil.load_action;
+      r1->info.stencil.clear_stencil = r0->info.stencil.clear_stencil;
+      r1->info.stencil.store_action = r0->info.stencil.store_action;
 
       r0->cmds.append(std::move(r1->cmds));
       r1->cmds = std::move(r0->cmds);
@@ -988,80 +984,78 @@ ArgumentEncodingContext::isEncoderSignatureMatched(RenderEncoderData *r0, Render
     return false;
   if (r0->dsv_readonly_flags != r1->dsv_readonly_flags)
     return false;
-  if (r0->descriptor->renderTargetArrayLength() != r1->descriptor->renderTargetArrayLength())
+  if (r0->info.render_target_array_length != r1->info.render_target_array_length)
     return false;
   if (r0->dsv_planar_flags & 1) {
-    if (r0->descriptor->depthAttachment()->texture() != r1->descriptor->depthAttachment()->texture())
+    if (r0->info.depth.texture != r1->info.depth.texture)
       return false;
     if (r0->dsv_readonly_flags & 1) {
-      if (r1->descriptor->depthAttachment()->loadAction() == MTL::LoadActionClear)
+      if (r1->info.depth.load_action == WMTLoadActionClear)
         return false;
     } else {
-      if (r0->descriptor->depthAttachment()->storeAction() != MTL::StoreActionStore)
+      if (r0->info.depth.store_action != WMTStoreActionStore)
         return false;
-      if (r1->descriptor->depthAttachment()->loadAction() != MTL::LoadActionLoad)
+      if (r1->info.depth.load_action != WMTLoadActionLoad)
         return false;
     }
   }
   if (r0->dsv_planar_flags & 2) {
-    if (r0->descriptor->stencilAttachment()->texture() != r1->descriptor->stencilAttachment()->texture())
+    if (r0->info.stencil.texture != r1->info.stencil.texture)
       return false;
     if (r0->dsv_readonly_flags & 2) {
-      if (r1->descriptor->stencilAttachment()->loadAction() == MTL::LoadActionClear)
+      if (r1->info.stencil.load_action == WMTLoadActionClear)
         return false;
     } else {
-      if (r0->descriptor->stencilAttachment()->storeAction() != MTL::StoreActionStore)
+      if (r0->info.stencil.store_action != WMTStoreActionStore)
         return false;
-      if (r1->descriptor->stencilAttachment()->loadAction() != MTL::LoadActionLoad)
+      if (r1->info.stencil.load_action != WMTLoadActionLoad)
         return false;
     }
   }
   for (unsigned i = 0; i < r0->render_target_count; i++) {
-    auto a0 = r0->descriptor->colorAttachments()->object(i);
-    auto a1 = r1->descriptor->colorAttachments()->object(i);
-    if (a0->texture() != a1->texture())
+    auto &a0 = r0->info.colors[i];
+    auto &a1 = r1->info.colors[i];
+    if (a0.texture != a1.texture)
       return false;
-    if (a0->depthPlane() != a1->depthPlane())
+    if (a0.depth_plane != a1.depth_plane)
       return false;
-    if (!a0->texture())
+    if (!a0.texture)
       continue;
-    if (a0->storeAction() != MTL::StoreActionStore)
+    if (a0.store_action != WMTStoreActionStore)
       return false;
-    if (a1->loadAction() != MTL::LoadActionLoad)
+    if (a1.load_action != WMTLoadActionLoad)
       return false;
   }
   return true;
 }
 
-MTL::RenderPassColorAttachmentDescriptor *
+WMTColorAttachmentInfo *
 ArgumentEncodingContext::isClearColorSignatureMatched(ClearEncoderData *clear, RenderEncoderData *render) {
   for (unsigned i = 0; i < render->render_target_count; i++) {
-    auto attachment = render->descriptor->colorAttachments()->object(i);
-    if (attachment->texture() == clear->texture.ptr()) {
-      return attachment;
+    auto &attachment = render->info.colors[i];
+    if (attachment.texture == clear->texture.handle) {
+      return &attachment;
     }
   }
   return nullptr;
 }
 
-MTL::RenderPassDepthAttachmentDescriptor *
+WMTDepthAttachmentInfo *
 ArgumentEncodingContext::isClearDepthSignatureMatched(ClearEncoderData *clear, RenderEncoderData *render) {
-  if((clear->clear_dsv & 1) == 0)
+  if ((clear->clear_dsv & 1) == 0)
     return nullptr;
-  auto depth_attachment = render->descriptor->depthAttachment();
-  if (depth_attachment->texture() != clear->texture.ptr())
+  if (render->info.depth.texture != clear->texture.handle)
     return nullptr;
-  return depth_attachment;
+  return &render->info.depth;
 }
 
-MTL::RenderPassStencilAttachmentDescriptor *
+WMTStencilAttachmentInfo *
 ArgumentEncodingContext::isClearStencilSignatureMatched(ClearEncoderData *clear, RenderEncoderData *render) {
   if ((clear->clear_dsv & 2) == 0)
     return nullptr;
-  auto stencil_attachment = render->descriptor->stencilAttachment();
-  if (stencil_attachment->texture() != clear->texture.ptr())
+  if (render->info.stencil.texture != clear->texture.handle)
     return nullptr;
-  return stencil_attachment;
+  return &render->info.stencil;
 }
 
 } // namespace dxmt
