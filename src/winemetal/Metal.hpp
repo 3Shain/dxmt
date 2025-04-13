@@ -40,6 +40,10 @@ public:
   operator bool() const {
     return handle != 0;
   }
+
+  operator obj_handle_t() const {
+    return handle;
+  }
 };
 
 template <typename Class> class Reference : public Class {
@@ -189,6 +193,26 @@ class DepthStencilState : public Object {
 public:
 };
 
+class CommandEncoder : public Object {
+public:
+  void
+  endEncoding() {
+    MTLCommandEncoder_endEncoding(handle);
+  }
+};
+
+class RenderCommandEncoder : public CommandEncoder {
+public:
+};
+
+class BlitCommandEncoder : public CommandEncoder {
+public:
+};
+
+class ComputeCommandEncoder : public CommandEncoder {
+public:
+};
+
 class CommandBuffer : public Object {
 public:
   void
@@ -209,6 +233,21 @@ public:
   void
   encodeSignalEvent(Event event, uint64_t value) {
     return MTLCommandBuffer_encodeSignalEvent(handle, event.handle, value);
+  }
+
+  RenderCommandEncoder
+  renderCommandEncoder(WMTRenderPassInfo &info) {
+    return RenderCommandEncoder{MTLCommandBuffer_renderCommandEncoder(handle, &info)};
+  }
+
+  BlitCommandEncoder
+  blitCommandEncoder() {
+    return BlitCommandEncoder{MTLCommandBuffer_blitCommandEncoder(handle)};
+  }
+
+  ComputeCommandEncoder
+  computeCommandEncoder(bool concurrent) {
+    return ComputeCommandEncoder{MTLCommandBuffer_computeCommandEncoder(handle, concurrent)};
   }
 };
 
@@ -310,5 +349,17 @@ inline Reference<Object>
 MakeAutoreleasePool() {
   return Reference<Object>(NSAutoreleasePool_alloc_init());
 }
+
+inline void
+InitializeRenderPassInfo(WMTRenderPassInfo &info) {
+  std::memset(&info, 0, sizeof(WMTRenderPassInfo));
+  for (unsigned i = 0; i < 8; i++) {
+    info.colors[i].store_action = WMTStoreActionStore;
+    info.colors[i].clear_color.a = 1.0f;
+  }
+  info.stencil.load_action = WMTLoadActionClear;
+  info.depth.load_action = WMTLoadActionClear;
+  info.depth.clear_depth = 1.0f;
+};
 
 } // namespace WMT
