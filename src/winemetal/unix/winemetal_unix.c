@@ -334,6 +334,82 @@ _MTLDevice_newComputePipelineState(void *obj) {
   return STATUS_SUCCESS;
 }
 
+static NTSTATUS
+_MTLCommandBuffer_blitCommandEncoder(void *obj) {
+  struct unixcall_generic_obj_obj_ret *params = obj;
+  params->ret = (obj_handle_t)[(id<MTLCommandBuffer>)params->handle blitCommandEncoder];
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_MTLCommandBuffer_computeCommandEncoder(void *obj) {
+  struct unixcall_generic_obj_uint64_obj_ret *params = obj;
+  params->ret = (obj_handle_t)[(id<MTLCommandBuffer>)params->handle
+      computeCommandEncoderWithDispatchType:params->arg ? MTLDispatchTypeConcurrent : MTLDispatchTypeSerial];
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_MTLCommandBuffer_renderCommandEncoder(void *obj) {
+  struct unixcall_generic_obj_uint64_obj_ret *params = obj;
+  struct WMTRenderPassInfo *info = (struct WMTRenderPassInfo *)params->arg;
+  MTLRenderPassDescriptor *descriptor = [[MTLRenderPassDescriptor alloc] init];
+  for (unsigned i = 0; i < 8; i++) {
+    descriptor.colorAttachments[i].clearColor = MTLClearColorMake(
+        info->colors[i].clear_color.r, info->colors[i].clear_color.g, info->colors[i].clear_color.b,
+        info->colors[i].clear_color.a
+    );
+    descriptor.colorAttachments[i].level = info->colors[i].level;
+    descriptor.colorAttachments[i].slice = info->colors[i].slice;
+    descriptor.colorAttachments[i].depthPlane = info->colors[i].depth_plane;
+    descriptor.colorAttachments[i].texture = (id<MTLTexture>)info->colors[i].texture;
+    descriptor.colorAttachments[i].loadAction = (MTLLoadAction)info->colors[i].load_action;
+    descriptor.colorAttachments[i].storeAction = (MTLStoreAction)info->colors[i].store_action;
+    descriptor.colorAttachments[i].resolveTexture = (id<MTLTexture>)info->colors[i].resolve_texture;
+    descriptor.colorAttachments[i].resolveLevel = info->colors[i].resolve_level;
+    descriptor.colorAttachments[i].resolveSlice = info->colors[i].resolve_slice;
+    descriptor.colorAttachments[i].resolveDepthPlane = info->colors[i].resolve_depth_plane;
+  }
+
+  if (info->depth.texture) {
+    descriptor.depthAttachment.clearDepth = info->depth.clear_depth;
+    descriptor.depthAttachment.depthPlane = info->depth.depth_plane;
+    descriptor.depthAttachment.level = info->depth.level;
+    descriptor.depthAttachment.slice = info->depth.slice;
+    descriptor.depthAttachment.texture = (id<MTLTexture>)info->depth.texture;
+    descriptor.depthAttachment.loadAction = (MTLLoadAction)info->depth.load_action;
+    descriptor.depthAttachment.storeAction = (MTLStoreAction)info->depth.store_action;
+  }
+
+  if (info->stencil.texture) {
+    descriptor.stencilAttachment.clearStencil = info->stencil.clear_stencil;
+    descriptor.stencilAttachment.depthPlane = info->stencil.depth_plane;
+    descriptor.stencilAttachment.level = info->stencil.level;
+    descriptor.stencilAttachment.slice = info->stencil.slice;
+    descriptor.stencilAttachment.texture = (id<MTLTexture>)info->stencil.texture;
+    descriptor.stencilAttachment.loadAction = (MTLLoadAction)info->stencil.load_action;
+    descriptor.stencilAttachment.storeAction = (MTLStoreAction)info->stencil.store_action;
+  }
+
+  descriptor.defaultRasterSampleCount = info->default_raster_sample_count;
+  descriptor.renderTargetArrayLength = info->render_target_array_length;
+  descriptor.renderTargetHeight = info->render_target_height;
+  descriptor.renderTargetWidth = info->render_target_width;
+  descriptor.visibilityResultBuffer = (id<MTLBuffer>)info->visibility_buffer;
+
+  params->ret = (obj_handle_t)[(id<MTLCommandBuffer>)params->handle renderCommandEncoderWithDescriptor:descriptor];
+
+  [descriptor release];
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_MTLCommandEncoder_endEncoding(void *obj) {
+  struct unixcall_generic_obj_noret *params = obj;
+  [(id<MTLCommandEncoder>)params->handle endEncoding];
+  return STATUS_SUCCESS;
+}
+
 const void *__winemetal_unixcalls[] = {
     &_NSObject_retain,
     &_NSObject_release,
@@ -365,6 +441,10 @@ const void *__winemetal_unixcalls[] = {
     &_NSString_lengthOfBytesUsingEncoding,
     &_NSError_description,
     &_MTLDevice_newComputePipelineState,
+    &_MTLCommandBuffer_blitCommandEncoder,
+    &_MTLCommandBuffer_computeCommandEncoder,
+    &_MTLCommandBuffer_renderCommandEncoder,
+    &_MTLCommandEncoder_endEncoding,
 };
 
 const unsigned int __winemetal_unixcalls_num = sizeof(__winemetal_unixcalls) / sizeof(void *);

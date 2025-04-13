@@ -517,4 +517,79 @@ WINEMETAL_API obj_handle_t NSError_description(obj_handle_t nserror);
 WINEMETAL_API obj_handle_t
 MTLDevice_newComputePipelineState(obj_handle_t device, obj_handle_t function, obj_handle_t *err_out);
 
+WINEMETAL_API obj_handle_t MTLCommandBuffer_blitCommandEncoder(obj_handle_t cmdbuf);
+
+WINEMETAL_API obj_handle_t MTLCommandBuffer_computeCommandEncoder(obj_handle_t cmdbuf, bool concurrent);
+
+enum WMTLoadAction {
+  WMTLoadActionDontCare = 0,
+  WMTLoadActionLoad = 1,
+  WMTLoadActionClear = 2,
+};
+
+enum WMTStoreAction {
+  WMTStoreActionDontCare = 0,
+  WMTStoreActionStore = 1,
+  WMTStoreActionMultisampleResolve = 2,
+  WMTStoreActionStoreAndMultisampleResolve = 3,
+  WMTStoreActionUnknown = 4,
+  WMTStoreActionCustomSampleDepthStore = 5,
+};
+
+struct WMTClearColor {
+  double r;
+  double g;
+  double b;
+  double a;
+};
+
+struct WMTColorAttachmentInfo {
+  obj_handle_t texture;
+  enum WMTLoadAction load_action;
+  enum WMTStoreAction store_action;
+  uint16_t level;
+  uint16_t slice;
+  uint32_t depth_plane;
+  struct WMTClearColor clear_color;
+  obj_handle_t resolve_texture;
+  uint16_t resolve_level;
+  uint16_t resolve_slice;
+  uint32_t resolve_depth_plane;
+};
+
+struct WMTDepthAttachmentInfo {
+  obj_handle_t texture;
+  enum WMTLoadAction load_action;
+  enum WMTStoreAction store_action;
+  uint16_t level;
+  uint16_t slice;
+  uint32_t depth_plane;
+  float clear_depth;
+};
+
+struct WMTStencilAttachmentInfo {
+  obj_handle_t texture;
+  enum WMTLoadAction load_action;
+  enum WMTStoreAction store_action;
+  uint16_t level;
+  uint16_t slice;
+  uint32_t depth_plane;
+  uint8_t clear_stencil;
+};
+
+struct WMTRenderPassInfo {
+  struct WMTColorAttachmentInfo colors[8];
+  struct WMTDepthAttachmentInfo depth;
+  struct WMTStencilAttachmentInfo stencil;
+  uint8_t default_raster_sample_count;
+  uint16_t render_target_array_length;
+  uint32_t render_target_height;
+  uint32_t render_target_width;
+  obj_handle_t visibility_buffer;
+};
+
+WINEMETAL_API obj_handle_t MTLCommandBuffer_renderCommandEncoder(obj_handle_t cmdbuf, struct WMTRenderPassInfo *info);
+
+WINEMETAL_API void MTLCommandEncoder_endEncoding(obj_handle_t encoder);
+
 #endif

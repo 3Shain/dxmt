@@ -298,3 +298,40 @@ MTLDevice_newComputePipelineState(obj_handle_t device, obj_handle_t function, ob
     *err_out = params.ret_error;
   return params.ret_pso;
 }
+
+WINEMETAL_API obj_handle_t
+MTLCommandBuffer_blitCommandEncoder(obj_handle_t cmdbuf) {
+  struct unixcall_generic_obj_obj_ret params;
+  params.handle = cmdbuf;
+  params.ret = 0;
+  UNIX_CALL(30, &params);
+  return params.ret;
+}
+
+WINEMETAL_API obj_handle_t
+MTLCommandBuffer_computeCommandEncoder(obj_handle_t cmdbuf, bool concurrent) {
+  struct unixcall_generic_obj_uint64_obj_ret params;
+  params.handle = cmdbuf;
+  params.arg = concurrent;
+  params.ret = 0;
+  UNIX_CALL(31, &params);
+  return params.ret;
+}
+
+WINEMETAL_API obj_handle_t
+MTLCommandBuffer_renderCommandEncoder(obj_handle_t cmdbuf, struct WMTRenderPassInfo *info) {
+  struct unixcall_generic_obj_uint64_obj_ret params;
+  params.handle = cmdbuf;
+  params.arg = (uint64_t)info;
+  params.ret = 0;
+  UNIX_CALL(32, &params);
+  return params.ret;
+}
+
+WINEMETAL_API void
+MTLCommandEncoder_endEncoding(obj_handle_t encoder) {
+  struct unixcall_generic_obj_noret params;
+  params.handle = encoder;
+  UNIX_CALL(33, &params);
+  return;
+}
