@@ -5,7 +5,6 @@
 #include "Metal/MTLCommandBuffer.hpp"
 #include "Metal/MTLComputeCommandEncoder.hpp"
 #include "Metal/MTLRenderCommandEncoder.hpp"
-#include "Metal/MTLRenderPass.hpp"
 #include "Metal/MTLBuffer.hpp"
 #include "Metal/MTLSampler.hpp"
 #include "MetalFX/MTLFXSpatialScaler.hpp"
@@ -122,7 +121,7 @@ struct GSDispatchArgumentsMarshal {
 };
 
 struct RenderEncoderData : EncoderData {
-  Obj<MTL::RenderPassDescriptor> descriptor;
+  WMTRenderPassInfo info;
   CommandList<RenderCommandContext> cmds;
   CommandList<RenderCommandContext> pretess_cmds;
   std::vector<GSDispatchArgumentsMarshal> gs_arg_marshal_tasks;
@@ -154,19 +153,21 @@ struct BlitEncoderData : EncoderData {
 
 struct ClearEncoderData : EncoderData {
   union {
-    MTL::ClearColor color;
+    WMTClearColor color;
     std::pair<float, uint8_t> depth_stencil;
   };
-  Obj<MTL::Texture> texture;
+  WMT::Reference<WMT::Texture> texture;
   unsigned clear_dsv;
   unsigned array_length;
+  unsigned width;
+  unsigned height;
 
   ClearEncoderData() {}
 };
 
 struct ResolveEncoderData : EncoderData {
-  Obj<MTL::Texture> src;
-  Obj<MTL::Texture> dst;
+  WMT::Reference<WMT::Texture> src;
+  WMT::Reference<WMT::Texture> dst;
   unsigned src_slice;
   unsigned dst_slice;
   unsigned dst_level;
@@ -527,16 +528,13 @@ public:
     return global_id.fetch_add(1);
   };
 
-  void clearColor(Rc<Texture> &&texture, unsigned viewId, unsigned arrayLength, MTL::ClearColor color);
+  void clearColor(Rc<Texture> &&texture, unsigned viewId, unsigned arrayLength, WMTClearColor color);
   void clearDepthStencil(
       Rc<Texture> &&texture, unsigned viewId, unsigned arrayLength, unsigned flag, float depth, uint8_t stencil
   );
   void resolveTexture(Rc<Texture> &&src, unsigned srcSlice, Rc<Texture> &&dst, unsigned dstSlice, unsigned dstLevel);
 
-  RenderEncoderData *startRenderPass(
-      Obj<MTL::RenderPassDescriptor> &&descriptor, uint8_t dsv_planar_flags, uint8_t dsv_readonly_flags,
-      uint8_t render_target_count
-  );
+  RenderEncoderData *startRenderPass(uint8_t dsv_planar_flags, uint8_t dsv_readonly_flags, uint8_t render_target_count);
   EncoderData *startComputePass();
   EncoderData *startBlitPass();
 
@@ -630,9 +628,9 @@ private:
   DXMT_ENCODER_LIST_OP checkEncoderRelation(EncoderData* former, EncoderData* latter);
   bool hasDataDependency(EncoderData* from, EncoderData* to);
   bool isEncoderSignatureMatched(RenderEncoderData* former, RenderEncoderData* latter);
-  MTL::RenderPassColorAttachmentDescriptor *isClearColorSignatureMatched(ClearEncoderData* former, RenderEncoderData* latter);
-  MTL::RenderPassDepthAttachmentDescriptor *isClearDepthSignatureMatched(ClearEncoderData* former, RenderEncoderData* latter);
-  MTL::RenderPassStencilAttachmentDescriptor *isClearStencilSignatureMatched(ClearEncoderData* former, RenderEncoderData* latter);
+  WMTColorAttachmentInfo *isClearColorSignatureMatched(ClearEncoderData* former, RenderEncoderData* latter);
+  WMTDepthAttachmentInfo *isClearDepthSignatureMatched(ClearEncoderData* former, RenderEncoderData* latter);
+  WMTStencilAttachmentInfo *isClearStencilSignatureMatched(ClearEncoderData* former, RenderEncoderData* latter);
 
   std::array<VertexBufferBinding, kVertexBufferSlots> vbuf_;
   Rc<Buffer> ibuf_;

@@ -6,6 +6,7 @@ and should be not used as a compilation unit
 since it is for internal use only
 (and I don't want to deal with several thousands line of code)
 */
+#include "Metal.hpp"
 #include "d3d11_annotation.hpp"
 #include "d3d11_context.hpp"
 #include "d3d11_device_child.hpp"
@@ -3350,7 +3351,7 @@ public:
   void
   ClearRenderTargetView(IMTLD3D11RenderTargetView *pRenderTargetView, const FLOAT ColorRGBA[4]) {
     InvalidateCurrentPass();
-    auto clear_color = MTL::ClearColor::Make(ColorRGBA[0], ColorRGBA[1], ColorRGBA[2], ColorRGBA[3]);
+    auto clear_color = WMTClearColor{ColorRGBA[0], ColorRGBA[1], ColorRGBA[2], ColorRGBA[3]};
     auto &props = pRenderTargetView->GetAttachmentDesc();
 
     EmitOP([texture = pRenderTargetView->__texture(), view = pRenderTargetView->__viewId(),
@@ -3426,7 +3427,7 @@ public:
         UINT RenderTargetIndex;
         UINT DepthPlane;
         WMTPixelFormat PixelFormat = WMTPixelFormatInvalid;
-        MTL::LoadAction LoadAction{MTL::LoadActionLoad};
+        WMTLoadAction LoadAction{WMTLoadActionLoad};
       };
 
       uint32_t effective_render_target = 0;
@@ -3448,8 +3449,8 @@ public:
         Rc<Texture> Texture{};
         unsigned viewId{};
         WMTPixelFormat PixelFormat = WMTPixelFormatInvalid;
-        MTL::LoadAction DepthLoadAction{MTL::LoadActionLoad};
-        MTL::LoadAction StencilLoadAction{MTL::LoadActionLoad};
+        WMTLoadAction DepthLoadAction{WMTLoadActionLoad};
+        WMTLoadAction StencilLoadAction{WMTLoadActionLoad};
         unsigned ReadOnlyFlags{};
       };
       // auto &dsv = state_.OutputMerger.DSV;
@@ -3485,54 +3486,52 @@ public:
       EmitST([rtvs = std::move(rtvs), dsv = std::move(dsv_info), effective_render_target, uav_only,
             uav_only_render_target_height, uav_only_render_target_width, uav_only_sample_count,
             render_target_array](ArgumentEncodingContext &ctx) {
-        auto pool = transfer(NS::AutoreleasePool::alloc()->init());
-        auto renderPassDescriptor = transfer(MTL::RenderPassDescriptor::alloc()->init());
+        auto pool = WMT::MakeAutoreleasePool();
+        uint32_t dsv_planar_flags = DepthStencilPlanarFlags(dsv.PixelFormat);
+        auto& info = ctx.startRenderPass(dsv_planar_flags, dsv.ReadOnlyFlags, rtvs.size())->info;
+
         for (auto &rtv : rtvs.span()) {
           if (rtv.PixelFormat == WMTPixelFormatInvalid) {
             continue;
           }
-          auto colorAttachment = renderPassDescriptor->colorAttachments()->object(rtv.RenderTargetIndex);
-          colorAttachment->setTexture(rtv.Texture->view(rtv.viewId));
-          colorAttachment->setDepthPlane(rtv.DepthPlane);
-          colorAttachment->setLoadAction(rtv.LoadAction);
-          colorAttachment->setStoreAction(MTL::StoreActionStore);
+          auto& colorAttachment = info.colors[rtv.RenderTargetIndex];
+          colorAttachment.texture = (obj_handle_t)rtv.Texture->view(rtv.viewId);
+          colorAttachment.depth_plane = rtv.DepthPlane;
+          colorAttachment.load_action = rtv.LoadAction;
+          colorAttachment.store_action = WMTStoreActionStore;
         };
-        uint32_t dsv_planar_flags = 0;
 
         if (dsv.Texture.ptr()) {
-          dsv_planar_flags = DepthStencilPlanarFlags(dsv.PixelFormat);
           MTL::Texture *texture = dsv.Texture->view(dsv.viewId);
           // TODO: ...should know more about store behavior (e.g. DiscardView)
           if (dsv_planar_flags & 1) {
-            auto depthAttachment = renderPassDescriptor->depthAttachment();
-            depthAttachment->setTexture(texture);
-            depthAttachment->setLoadAction(dsv.DepthLoadAction);
-            depthAttachment->setStoreAction(dsv.ReadOnlyFlags & 1 ? MTL::StoreActionDontCare :MTL::StoreActionStore);
+            auto& depthAttachment = info.depth;
+            depthAttachment.texture = (obj_handle_t)texture;
+            depthAttachment.load_action = dsv.DepthLoadAction;
+            depthAttachment.store_action = dsv.ReadOnlyFlags & 1 ? WMTStoreActionDontCare :WMTStoreActionStore;
           }
 
           if (dsv_planar_flags & 2) {
-            auto stencilAttachment = renderPassDescriptor->stencilAttachment();
-            stencilAttachment->setTexture(texture);
-            stencilAttachment->setLoadAction(dsv.StencilLoadAction);
-            stencilAttachment->setStoreAction(dsv.ReadOnlyFlags & 2 ? MTL::StoreActionDontCare :MTL::StoreActionStore);
+            auto& stencilAttachment = info.stencil;
+            stencilAttachment.texture = (obj_handle_t)texture;
+            stencilAttachment.load_action = dsv.StencilLoadAction;
+            stencilAttachment.store_action = dsv.ReadOnlyFlags & 2 ? WMTStoreActionDontCare :WMTStoreActionStore;
           }
         }
         if (effective_render_target == 0) {
           if (uav_only) {
-            renderPassDescriptor->setRenderTargetHeight(uav_only_render_target_height);
-            renderPassDescriptor->setRenderTargetWidth(uav_only_render_target_width);
-            renderPassDescriptor->setDefaultRasterSampleCount(uav_only_sample_count);
+            info.render_target_height = uav_only_render_target_height;
+            info.render_target_width = uav_only_render_target_width;
+            info.default_raster_sample_count = uav_only_sample_count;
           } else {
             D3D11_ASSERT(dsv_planar_flags);
             auto dsv_tex = dsv.Texture->view(dsv.viewId);
-            renderPassDescriptor->setRenderTargetHeight(dsv_tex->height());
-            renderPassDescriptor->setRenderTargetWidth(dsv_tex->width());
+            info.render_target_height = dsv_tex->height();
+            info.render_target_width = dsv_tex->width();
           }
         }
 
-        renderPassDescriptor->setRenderTargetArrayLength(render_target_array);
-
-        ctx.startRenderPass(std::move(renderPassDescriptor), dsv_planar_flags, dsv.ReadOnlyFlags, rtvs.size());
+        info.render_target_array_length = render_target_array;
 
         for (auto &rtv : rtvs.span()) {
           if (rtv.PixelFormat == WMTPixelFormatInvalid) {
