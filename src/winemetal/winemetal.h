@@ -838,4 +838,96 @@ struct wmtcmd_blit_generate_mipmaps {
 
 WINEMETAL_API void MTLBlitCommandEncoder_encodeCommands(obj_handle_t encoder, const struct wmtcmd_base *cmd_head);
 
+enum WMTComputeCommandType : uint16_t {
+  WMTComputeCommandNop,
+  WMTComputeCommandDispatch,
+  WMTComputeCommandDispatchIndirect,
+  WMTComputeCommandSetPSO,
+  WMTComputeCommandSetBuffer,
+  WMTComputeCommandSetBufferOffset,
+  WMTComputeCommandUseResource,
+  WMTComputeCommandSetBytes,
+  WMTComputeCommandSetTexture,
+  WMTComputeCommandDispatchThreads,
+};
+
+struct wmtcmd_compute_nop {
+  enum WMTComputeCommandType type;
+  uint16_t reserved[3];
+  struct WMTMemoryPointer next;
+};
+
+struct wmtcmd_compute_dispatch {
+  enum WMTComputeCommandType type;
+  uint16_t reserved[3];
+  struct WMTMemoryPointer next;
+  struct WMTSize size;
+};
+
+struct wmtcmd_compute_dispatch_indirect {
+  enum WMTComputeCommandType type;
+  uint16_t reserved[3];
+  struct WMTMemoryPointer next;
+  obj_handle_t indirect_args_buffer;
+  uint64_t indirect_args_offset;
+};
+
+struct wmtcmd_compute_setpso {
+  enum WMTComputeCommandType type;
+  uint16_t reserved[3];
+  struct WMTMemoryPointer next;
+  obj_handle_t pso;
+  struct WMTSize threadgroup_size;
+};
+
+struct wmtcmd_compute_setbuffer {
+  enum WMTComputeCommandType type;
+  uint16_t reserved[3];
+  struct WMTMemoryPointer next;
+  obj_handle_t buffer;
+  uint64_t offset;
+  uint8_t index;
+};
+
+struct wmtcmd_compute_setbufferoffset {
+  enum WMTComputeCommandType type;
+  uint16_t reserved[3];
+  struct WMTMemoryPointer next;
+  uint64_t offset;
+  uint8_t index;
+};
+
+enum WMTResourceUsage {
+  WMTResourceUsageRead = 1,
+  WMTResourceUsageWrite = 2,
+  WMTResourceUsageSample = 4,
+};
+
+struct wmtcmd_compute_useresource {
+  enum WMTComputeCommandType type;
+  uint16_t reserved[3];
+  struct WMTMemoryPointer next;
+  obj_handle_t resource;
+  enum WMTResourceUsage usage;
+};
+
+struct wmtcmd_compute_setbytes {
+  enum WMTComputeCommandType type;
+  uint16_t reserved[3];
+  struct WMTMemoryPointer next;
+  struct WMTMemoryPointer bytes;
+  uint64_t length;
+  uint8_t index;
+};
+
+struct wmtcmd_compute_settexture {
+  enum WMTComputeCommandType type;
+  uint16_t reserved[3];
+  struct WMTMemoryPointer next;
+  obj_handle_t texture;
+  uint8_t index;
+};
+
+WINEMETAL_API void MTLComputeCommandEncoder_encodeCommands(obj_handle_t encoder, const struct wmtcmd_base *cmd_head);
+
 #endif
