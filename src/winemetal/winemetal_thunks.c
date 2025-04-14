@@ -363,3 +363,10 @@ MTLDevice_newMeshRenderPipelineState(
     *err_out = params.ret_error;
   return params.ret_pso;
 }
+
+WINEMETAL_API void MTLBlitCommandEncoder_encodeCommands(obj_handle_t encoder, const struct wmtcmd_base *cmd_head) {
+  struct unixcall_generic_obj_cmd_noret params;
+  params.encoder = encoder;
+  params.cmd_head = cmd_head;
+  UNIX_CALL(36, &params);
+}
