@@ -592,4 +592,152 @@ WINEMETAL_API obj_handle_t MTLCommandBuffer_renderCommandEncoder(obj_handle_t cm
 
 WINEMETAL_API void MTLCommandEncoder_endEncoding(obj_handle_t encoder);
 
+enum WMTTessellationPartitionMode : uint8_t {
+  WMTTessellationPartitionModePow2 = 0,
+  WMTTessellationPartitionModeInteger = 1,
+  WMTTessellationPartitionModeFractionalOdd = 2,
+  WMTTessellationPartitionModeFractionalEven = 3,
+};
+
+enum WMTTessellationFactorStepFunction : uint8_t {
+  WMTTessellationFactorStepFunctionConstant = 0,
+  WMTTessellationFactorStepFunctionPerPatch = 1,
+  WMTTessellationFactorStepFunctionPerInstance = 2,
+  WMTTessellationFactorStepFunctionPerPatchAndPerInstance = 3,
+};
+
+enum WMTWinding : uint8_t {
+  WMTWindingClockwise = 0,
+  WMTWindingCounterClockwise = 1,
+};
+
+enum WMTBlendOperation : uint8_t {
+  WMTBlendOperationAdd = 0,
+  WMTBlendOperationSubtract = 1,
+  WMTBlendOperationReverseSubtract = 2,
+  WMTBlendOperationMin = 3,
+  WMTBlendOperationMax = 4,
+};
+
+enum WMTLogicOperation : uint8_t {
+  WMTLogicOperationClear = 0,
+  WMTLogicOperationSet = 1,
+  WMTLogicOperationCopy = 2,
+  WMTLogicOperationCopyInverted = 3,
+  WMTLogicOperationNoOp = 4,
+  WMTLogicOperationInvert = 5,
+  WMTLogicOperationAnd = 6,
+  WMTLogicOperationNand = 7,
+  WMTLogicOperationOr = 8,
+  WMTLogicOperationNor = 9,
+  WMTLogicOperationXor = 10,
+  WMTLogicOperationEquiv = 11,
+  WMTLogicOperationAndReverse = 12,
+  WMTLogicOperationAndInverted = 13,
+  WMTLogicOperationOrReverse = 14,
+  WMTLogicOperationOrInverted = 15,
+};
+
+enum WMTBlendFactor : uint8_t {
+  WMTBlendFactorZero = 0,
+  WMTBlendFactorOne = 1,
+  WMTBlendFactorSourceColor = 2,
+  WMTBlendFactorOneMinusSourceColor = 3,
+  WMTBlendFactorSourceAlpha = 4,
+  WMTBlendFactorOneMinusSourceAlpha = 5,
+  WMTBlendFactorDestinationColor = 6,
+  WMTBlendFactorOneMinusDestinationColor = 7,
+  WMTBlendFactorDestinationAlpha = 8,
+  WMTBlendFactorOneMinusDestinationAlpha = 9,
+  WMTBlendFactorSourceAlphaSaturated = 10,
+  WMTBlendFactorBlendColor = 11,
+  WMTBlendFactorOneMinusBlendColor = 12,
+  WMTBlendFactorBlendAlpha = 13,
+  WMTBlendFactorOneMinusBlendAlpha = 14,
+  WMTBlendFactorSource1Color = 15,
+  WMTBlendFactorOneMinusSource1Color = 16,
+  WMTBlendFactorSource1Alpha = 17,
+  WMTBlendFactorOneMinusSource1Alpha = 18,
+};
+
+enum WMTColorWriteMask : uint8_t {
+  WMTColorWriteMaskNone = 0,
+  WMTColorWriteMaskRed = 8,
+  WMTColorWriteMaskGreen = 4,
+  WMTColorWriteMaskBlue = 2,
+  WMTColorWriteMaskAlpha = 1,
+  WMTColorWriteMaskAll = 15,
+};
+
+struct WMTColorAttachmentBlendInfo {
+  enum WMTPixelFormat pixel_format;
+  enum WMTBlendOperation rgb_blend_operation;
+  enum WMTBlendOperation alpha_blend_operation;
+  enum WMTBlendFactor src_rgb_blend_factor;
+  enum WMTBlendFactor dst_rgb_blend_factor;
+  enum WMTBlendFactor src_alpha_blend_factor;
+  enum WMTBlendFactor dst_alpha_blend_factor;
+  uint8_t write_mask;
+  bool blending_enabled;
+};
+
+enum WMTPrimitiveTopologyClass {
+  WMTPrimitiveTopologyClassUnspecified = 0,
+  WMTPrimitiveTopologyClassPoint = 1,
+  WMTPrimitiveTopologyClassLine = 2,
+  WMTPrimitiveTopologyClassTriangle = 3,
+};
+
+struct WMTRenderPipelineBlendInfo {
+  struct WMTColorAttachmentBlendInfo colors[8];
+  bool alpha_to_coverage_enabled;
+  bool logic_operation_enabled;
+  enum WMTLogicOperation logic_operation;
+};
+
+struct WMTRenderPipelineInfo {
+  struct WMTColorAttachmentBlendInfo colors[8];
+  bool alpha_to_coverage_enabled;
+  bool logic_operation_enabled;
+  enum WMTLogicOperation logic_operation;
+  bool rasterization_enabled;
+  uint8_t raster_sample_count;
+  enum WMTPixelFormat depth_pixel_format;
+  enum WMTPixelFormat stencil_pixel_format;
+  obj_handle_t vertex_function;
+  obj_handle_t fragment_function;
+  uint32_t immutable_vertex_buffers;
+  uint32_t immutable_fragment_buffers;
+  enum WMTPrimitiveTopologyClass input_primitive_topology;
+  enum WMTTessellationPartitionMode tessellation_partition_mode;
+  uint8_t max_tessellation_factor;
+  enum WMTWinding tessellation_output_winding_order;
+  enum WMTTessellationFactorStepFunction tessellation_factor_step;
+};
+
+struct WMTMeshRenderPipelineInfo {
+  struct WMTColorAttachmentBlendInfo colors[8];
+  bool alpha_to_coverage_enabled;
+  bool logic_operation_enabled;
+  enum WMTLogicOperation logic_operation;
+  bool rasterization_enabled;
+  uint8_t raster_sample_count;
+  enum WMTPixelFormat depth_pixel_format;
+  enum WMTPixelFormat stencil_pixel_format;
+  obj_handle_t object_function;
+  obj_handle_t mesh_function;
+  obj_handle_t fragment_function;
+  uint32_t immutable_object_buffers;
+  uint32_t immutable_mesh_buffers;
+  uint32_t immutable_fragment_buffers;
+  uint16_t payload_memory_length;
+};
+
+WINEMETAL_API obj_handle_t
+MTLDevice_newRenderPipelineState(obj_handle_t device, struct WMTRenderPipelineInfo *info, obj_handle_t *err_out);
+
+WINEMETAL_API obj_handle_t MTLDevice_newMeshRenderPipelineState(
+    obj_handle_t device, struct WMTMeshRenderPipelineInfo *info, obj_handle_t *err_out
+);
+
 #endif

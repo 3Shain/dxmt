@@ -410,6 +410,153 @@ _MTLCommandEncoder_endEncoding(void *obj) {
   return STATUS_SUCCESS;
 }
 
+#ifndef DXMT_NO_PRIVATE_API
+
+typedef NS_ENUM(NSUInteger, MTLLogicOperation) {
+  MTLLogicOperationClear,
+  MTLLogicOperationSet,
+  MTLLogicOperationCopy,
+  MTLLogicOperationCopyInverted,
+  MTLLogicOperationNoop,
+  MTLLogicOperationInvert,
+  MTLLogicOperationAnd,
+  MTLLogicOperationNand,
+  MTLLogicOperationOr,
+  MTLLogicOperationNor,
+  MTLLogicOperationXor,
+  MTLLogicOperationEquivalence,
+  MTLLogicOperationAndReverse,
+  MTLLogicOperationAndInverted,
+  MTLLogicOperationOrReverse,
+  MTLLogicOperationOrInverted,
+};
+
+@interface
+MTLRenderPipelineDescriptor ()
+
+- (void)setLogicOperationEnabled:(BOOL)enable;
+- (void)setLogicOperation:(MTLLogicOperation)op;
+
+@end
+
+@interface
+MTLMeshRenderPipelineDescriptor ()
+
+- (void)setLogicOperationEnabled:(BOOL)enable;
+- (void)setLogicOperation:(MTLLogicOperation)op;
+
+@end
+
+#endif
+
+static NTSTATUS
+_MTLDevice_newRenderPipelineState(void *obj) {
+  struct unixcall_mtldevice_newrenderpso *params = obj;
+  struct WMTRenderPipelineInfo *info = (struct WMTRenderPipelineInfo *)params->info;
+  MTLRenderPipelineDescriptor *descriptor = [[MTLRenderPipelineDescriptor alloc] init];
+
+  for (unsigned i = 0; i < 8; i++) {
+    descriptor.colorAttachments[i].pixelFormat = (MTLPixelFormat)info->colors[i].pixel_format;
+    descriptor.colorAttachments[i].blendingEnabled = info->colors[i].blending_enabled;
+    descriptor.colorAttachments[i].writeMask = (MTLColorWriteMask)info->colors[i].write_mask;
+
+    descriptor.colorAttachments[i].alphaBlendOperation = (MTLBlendOperation)info->colors[i].alpha_blend_operation;
+    descriptor.colorAttachments[i].rgbBlendOperation = (MTLBlendOperation)info->colors[i].rgb_blend_operation;
+
+    descriptor.colorAttachments[i].sourceRGBBlendFactor = (MTLBlendFactor)info->colors[i].src_rgb_blend_factor;
+    descriptor.colorAttachments[i].sourceAlphaBlendFactor = (MTLBlendFactor)info->colors[i].src_alpha_blend_factor;
+    descriptor.colorAttachments[i].destinationRGBBlendFactor = (MTLBlendFactor)info->colors[i].dst_rgb_blend_factor;
+    descriptor.colorAttachments[i].destinationAlphaBlendFactor = (MTLBlendFactor)info->colors[i].dst_alpha_blend_factor;
+  }
+
+  for (unsigned i = 0; i < 31; i++) {
+    if (info->immutable_fragment_buffers & (1 << i))
+      descriptor.fragmentBuffers[i].mutability = MTLMutabilityImmutable;
+    if (info->immutable_vertex_buffers & (1 << i))
+      descriptor.vertexBuffers[i].mutability = MTLMutabilityImmutable;
+  }
+
+#ifndef DXMT_NO_PRIVATE_API
+  [descriptor setLogicOperationEnabled:info->logic_operation_enabled];
+  [descriptor setLogicOperation:(MTLLogicOperation)info->logic_operation];
+#endif
+  descriptor.depthAttachmentPixelFormat = (MTLPixelFormat)info->depth_pixel_format;
+  descriptor.stencilAttachmentPixelFormat = (MTLPixelFormat)info->stencil_pixel_format;
+  descriptor.alphaToCoverageEnabled = info->alpha_to_coverage_enabled;
+  descriptor.rasterizationEnabled = info->rasterization_enabled;
+  descriptor.rasterSampleCount = info->raster_sample_count;
+  descriptor.inputPrimitiveTopology = (MTLPrimitiveTopologyClass)info->input_primitive_topology;
+  descriptor.tessellationPartitionMode = (MTLTessellationPartitionMode)info->tessellation_partition_mode;
+  descriptor.tessellationFactorStepFunction = (MTLTessellationFactorStepFunction)info->tessellation_factor_step;
+  descriptor.tessellationOutputWindingOrder = (MTLWinding)info->tessellation_output_winding_order;
+  descriptor.maxTessellationFactor = info->max_tessellation_factor;
+
+  descriptor.vertexFunction = (id<MTLFunction>)info->vertex_function;
+  descriptor.fragmentFunction = (id<MTLFunction>)info->fragment_function;
+
+  NSError *err = NULL;
+  params->ret_pso =
+      (obj_handle_t)[(id<MTLDevice>)params->device newRenderPipelineStateWithDescriptor:descriptor error:&err];
+  params->ret_error = (obj_handle_t)err;
+  [descriptor release];
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_MTLDevice_newMeshRenderPipelineState(void *obj) {
+  struct unixcall_mtldevice_newmeshrenderpso *params = obj;
+  struct WMTMeshRenderPipelineInfo *info = (struct WMTMeshRenderPipelineInfo *)params->info;
+  MTLMeshRenderPipelineDescriptor *descriptor = [[MTLMeshRenderPipelineDescriptor alloc] init];
+
+  for (unsigned i = 0; i < 8; i++) {
+    descriptor.colorAttachments[i].pixelFormat = (MTLPixelFormat)info->colors[i].pixel_format;
+    descriptor.colorAttachments[i].blendingEnabled = info->colors[i].blending_enabled;
+    descriptor.colorAttachments[i].writeMask = (MTLColorWriteMask)info->colors[i].write_mask;
+
+    descriptor.colorAttachments[i].alphaBlendOperation = (MTLBlendOperation)info->colors[i].alpha_blend_operation;
+    descriptor.colorAttachments[i].rgbBlendOperation = (MTLBlendOperation)info->colors[i].rgb_blend_operation;
+
+    descriptor.colorAttachments[i].sourceRGBBlendFactor = (MTLBlendFactor)info->colors[i].src_rgb_blend_factor;
+    descriptor.colorAttachments[i].sourceAlphaBlendFactor = (MTLBlendFactor)info->colors[i].src_alpha_blend_factor;
+    descriptor.colorAttachments[i].destinationRGBBlendFactor = (MTLBlendFactor)info->colors[i].dst_rgb_blend_factor;
+    descriptor.colorAttachments[i].destinationAlphaBlendFactor = (MTLBlendFactor)info->colors[i].dst_alpha_blend_factor;
+  }
+
+  for (unsigned i = 0; i < 31; i++) {
+    if (info->immutable_fragment_buffers & (1 << i))
+      descriptor.fragmentBuffers[i].mutability = MTLMutabilityImmutable;
+    if (info->immutable_mesh_buffers & (1 << i))
+      descriptor.meshBuffers[i].mutability = MTLMutabilityImmutable;
+    if (info->immutable_object_buffers & (1 << i))
+      descriptor.objectBuffers[i].mutability = MTLMutabilityImmutable;
+  }
+
+#ifndef DXMT_NO_PRIVATE_API
+  [descriptor setLogicOperationEnabled:info->logic_operation_enabled];
+  [descriptor setLogicOperation:(MTLLogicOperation)info->logic_operation];
+#endif
+  descriptor.depthAttachmentPixelFormat = (MTLPixelFormat)info->depth_pixel_format;
+  descriptor.stencilAttachmentPixelFormat = (MTLPixelFormat)info->stencil_pixel_format;
+  descriptor.alphaToCoverageEnabled = info->alpha_to_coverage_enabled;
+  descriptor.rasterizationEnabled = info->rasterization_enabled;
+  descriptor.rasterSampleCount = info->raster_sample_count;
+
+  descriptor.objectFunction = (id<MTLFunction>)info->object_function;
+  descriptor.meshFunction = (id<MTLFunction>)info->mesh_function;
+  descriptor.fragmentFunction = (id<MTLFunction>)info->fragment_function;
+  descriptor.payloadMemoryLength = info->payload_memory_length;
+
+  NSError *err = NULL;
+  params->ret_pso =
+      (obj_handle_t)[(id<MTLDevice>)params->device newRenderPipelineStateWithMeshDescriptor:descriptor
+                                                                                    options:MTLPipelineOptionNone
+                                                                                 reflection:nil
+                                                                                      error:&err];
+  params->ret_error = (obj_handle_t)err;
+  [descriptor release];
+  return STATUS_SUCCESS;
+}
+
 const void *__winemetal_unixcalls[] = {
     &_NSObject_retain,
     &_NSObject_release,
@@ -445,6 +592,8 @@ const void *__winemetal_unixcalls[] = {
     &_MTLCommandBuffer_computeCommandEncoder,
     &_MTLCommandBuffer_renderCommandEncoder,
     &_MTLCommandEncoder_endEncoding,
+    &_MTLDevice_newRenderPipelineState,
+    &_MTLDevice_newMeshRenderPipelineState,
 };
 
 const unsigned int __winemetal_unixcalls_num = sizeof(__winemetal_unixcalls) / sizeof(void *);

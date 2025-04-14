@@ -335,3 +335,31 @@ MTLCommandEncoder_endEncoding(obj_handle_t encoder) {
   UNIX_CALL(33, &params);
   return;
 }
+
+WINEMETAL_API obj_handle_t
+MTLDevice_newRenderPipelineState(obj_handle_t device, struct WMTRenderPipelineInfo *info, obj_handle_t *err_out) {
+  struct unixcall_mtldevice_newrenderpso params;
+  params.device = device;
+  params.info = info;
+  params.ret_error = 0;
+  params.ret_pso = 0;
+  UNIX_CALL(34, &params);
+  if (err_out)
+    *err_out = params.ret_error;
+  return params.ret_pso;
+}
+
+WINEMETAL_API obj_handle_t
+MTLDevice_newMeshRenderPipelineState(
+    obj_handle_t device, struct WMTMeshRenderPipelineInfo *info, obj_handle_t *err_out
+) {
+  struct unixcall_mtldevice_newmeshrenderpso params;
+  params.device = device;
+  params.info = info;
+  params.ret_error = 0;
+  params.ret_pso = 0;
+  UNIX_CALL(35, &params);
+  if (err_out)
+    *err_out = params.ret_error;
+  return params.ret_pso;
+}
