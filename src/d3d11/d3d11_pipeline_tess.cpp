@@ -1,7 +1,5 @@
 #include "DXBCParser/d3d12tokenizedprogramformat.hpp"
-#include "Metal/MTLPipeline.hpp"
-#include "Metal/MTLRenderCommandEncoder.hpp"
-#include "Metal/MTLRenderPipeline.hpp"
+#include "Metal.hpp"
 #include "airconv_public.h"
 #include "d3d11_device.hpp"
 #include "d3d11_pipeline.hpp"
@@ -66,7 +64,8 @@ public:
 
   void GetPipeline(MTL_COMPILED_TESSELLATION_PIPELINE *pPipeline) final {
     ready_.wait(false, std::memory_order_acquire);
-    *pPipeline = {state_mesh_.ptr(), state_rasterization_.ptr(),
+    *pPipeline = {(MTL::RenderPipelineState *)state_mesh_.handle,
+                  (MTL::RenderPipelineState *)state_rasterization_.handle,
                   hull_reflection.NumOutputElement,
                   hull_reflection.NumPatchConstantOutputScalar,
                   hull_reflection.ThreadsPerPatch};
@@ -74,7 +73,7 @@ public:
 
   IMTLThreadpoolWork *RunThreadpoolWork() {
 
-    Obj<NS::Error> err;
+    WMT::Reference<WMT::Error> err;
     MTL_COMPILED_SHADER vs, hs, ds, ps;
 
     if (!VertexShader->GetShader(&vs)) {
@@ -90,108 +89,99 @@ public:
       return PixelShader.ptr();
     }
 
-    auto mesh_pipeline_desc =
-        transfer(MTL::MeshRenderPipelineDescriptor::alloc()->init());
+    WMTMeshRenderPipelineInfo info_mesh;
+    WMT::InitializeMeshRenderPipelineInfo(info_mesh);
 
-    mesh_pipeline_desc->setObjectFunction(vs.Function);
-    mesh_pipeline_desc->setMeshFunction(hs.Function);
-    mesh_pipeline_desc->setRasterizationEnabled(false);
-    mesh_pipeline_desc->setPayloadMemoryLength(16256);
+    info_mesh.object_function = vs.Function;
+    info_mesh.mesh_function = hs.Function;
+    info_mesh.rasterization_enabled = false;
+    info_mesh.payload_memory_length = 16256;
 
-    mesh_pipeline_desc->objectBuffers()->object(16)->setMutability(
-        MTL::MutabilityImmutable);
-    mesh_pipeline_desc->objectBuffers()->object(21)->setMutability(
-        MTL::MutabilityImmutable);
-    mesh_pipeline_desc->objectBuffers()->object(20)->setMutability(
-        MTL::MutabilityMutable);
+    info_mesh.immutable_object_buffers = (1 << 16) | (1 << 21) | (1 << 29) | (1 << 30);
+    info_mesh.immutable_mesh_buffers = (1 << 29) | (1 << 30);
 
-    state_mesh_ = transfer(device_->GetMTLDevice()->newRenderPipelineState(
-        mesh_pipeline_desc.ptr(), MTL::PipelineOptionNone, nullptr, &err));
+    state_mesh_ = device_->GetWMTDevice().newRenderPipelineState(&info_mesh, err);
 
     if (state_mesh_ == nullptr) {
-      ERR("Failed to create mesh PSO: ",
-          err->localizedDescription()->utf8String());
+      ERR("Failed to create tessellation mesh PSO: ", err.description().getUTF8String());
       return this;
     }
 
-    auto pipelineDescriptor =
-        transfer(MTL::RenderPipelineDescriptor::alloc()->init());
+    WMTRenderPipelineInfo info;
+    WMT::InitializeRenderPipelineInfo(info);
 
-    pipelineDescriptor->setVertexFunction(ds.Function);
+    info.vertex_function = ds.Function;
     if (PixelShader) {
-      pipelineDescriptor->setFragmentFunction(ps.Function);
+      info.fragment_function = ps.Function;
     }
-    pipelineDescriptor->setRasterizationEnabled(RasterizationEnabled);
+   info.rasterization_enabled = RasterizationEnabled;
 
     uint32_t max_tess_factor = hull_reflection.Tessellator.MaxFactor;
     max_tess_factor = std::max(1u, std::min(64u, max_tess_factor));
     switch ((microsoft::D3D11_SB_TESSELLATOR_PARTITIONING)
                 hull_reflection.Tessellator.Partition) {
     case microsoft::D3D11_SB_TESSELLATOR_PARTITIONING_INTEGER:
-      pipelineDescriptor->setTessellationPartitionMode(
-          MTL::TessellationPartitionModeInteger);
+      info.tessellation_partition_mode = WMTTessellationPartitionModeInteger;
       break;
     case microsoft::D3D11_SB_TESSELLATOR_PARTITIONING_POW2:
-      pipelineDescriptor->setTessellationPartitionMode(
-          MTL::TessellationPartitionModePow2);
+      info.tessellation_partition_mode = WMTTessellationPartitionModePow2;
       max_tess_factor = max_tess_factor & ((1u << (31 - __builtin_clz(max_tess_factor)))); // force pow2
       break;
     case microsoft::D3D11_SB_TESSELLATOR_PARTITIONING_FRACTIONAL_ODD:
-      pipelineDescriptor->setTessellationPartitionMode(
-          MTL::TessellationPartitionModeFractionalOdd);
+      info.tessellation_partition_mode = WMTTessellationPartitionModeFractionalOdd;
       max_tess_factor = max_tess_factor & (~1u); // force even number
       break;
     case microsoft::D3D11_SB_TESSELLATOR_PARTITIONING_FRACTIONAL_EVEN:
-      pipelineDescriptor->setTessellationPartitionMode(
-          MTL::TessellationPartitionModeFractionalEven);
+      info.tessellation_partition_mode = WMTTessellationPartitionModeFractionalEven;
       max_tess_factor = max_tess_factor & (~1u); // force even number
       break;
     case microsoft::D3D11_SB_TESSELLATOR_PARTITIONING_UNDEFINED:
       break;
     }
-    pipelineDescriptor->setMaxTessellationFactor(max_tess_factor);
+    info.max_tessellation_factor = max_tess_factor;
     switch (hull_reflection.Tessellator.OutputPrimitive) {
     default:
       D3D11_ASSERT(0 && "unexpected tessellator output primitive");
       break;
     // TODO: figure out why it's inverted
     case MTL_TESSELLATOR_OUTPUT_TRIANGLE_CW:
-      pipelineDescriptor->setTessellationOutputWindingOrder(MTL::WindingCounterClockwise);
+      info.tessellation_output_winding_order = WMTWindingCounterClockwise;
       break;
     case MTL_TESSELLATOR_TRIANGLE_CCW:
-      pipelineDescriptor->setTessellationOutputWindingOrder(MTL::WindingClockwise);
+    info.tessellation_output_winding_order = WMTWindingClockwise;
       break;
     }
-    pipelineDescriptor->setTessellationFactorStepFunction(
-        MTL::TessellationFactorStepFunctionPerPatch);
+    info.tessellation_factor_step = WMTTessellationFactorStepFunctionPerPatch;
 
     for (unsigned i = 0; i < num_rtvs; i++) {
       if (rtv_formats[i] == WMTPixelFormatInvalid)
         continue;
-      pipelineDescriptor->colorAttachments()->object(i)->setPixelFormat(
-        (MTL::PixelFormat)rtv_formats[i]);
+      info.colors[i].pixel_format = rtv_formats[i];
     }
 
     if (depth_stencil_format != WMTPixelFormatInvalid) {
-      pipelineDescriptor->setDepthAttachmentPixelFormat((MTL::PixelFormat)depth_stencil_format);
+      info.depth_pixel_format = depth_stencil_format;
     }
     // FIXME: don't hardcoding!
     if (depth_stencil_format == WMTPixelFormatDepth32Float_Stencil8 ||
         depth_stencil_format == WMTPixelFormatDepth24Unorm_Stencil8 ||
         depth_stencil_format == WMTPixelFormatStencil8) {
-      pipelineDescriptor->setStencilAttachmentPixelFormat((MTL::PixelFormat)depth_stencil_format);
+      info.stencil_pixel_format = depth_stencil_format;
     }
 
     if (pBlendState) {
-      pBlendState->SetupMetalPipelineDescriptor(pipelineDescriptor, num_rtvs);
+      pBlendState->SetupMetalPipelineDescriptor((WMTRenderPipelineBlendInfo *)&info, num_rtvs);
     }
 
-    pipelineDescriptor->setInputPrimitiveTopology(topology_class);
-    pipelineDescriptor->setSampleCount(SampleCount);
+    info.input_primitive_topology = topology_class;
+    info.raster_sample_count = SampleCount;
+    info.immutable_vertex_buffers = (1 << 20) |  (1 << 21) |  (1 << 22) | (1 << 23) |  (1 << 29) |  (1 << 30);
+    info.immutable_fragment_buffers = (1 << 29) | (1 << 30);
 
-    state_rasterization_ =
-        transfer(device_->GetMTLDevice()->newRenderPipelineState(
-            pipelineDescriptor, &err));
+    state_rasterization_ = device_->GetWMTDevice().newRenderPipelineState(&info, err);
+    if (state_rasterization_ == nullptr) {
+      ERR("Failed to create tessellation raster PSO: ", err.description().getUTF8String());
+    }
 
     return this;
   }
@@ -207,12 +197,12 @@ private:
   UINT num_rtvs;
   WMTPixelFormat rtv_formats[8];
   WMTPixelFormat depth_stencil_format;
-  MTL::PrimitiveTopologyClass topology_class;
+  WMTPrimitiveTopologyClass topology_class;
   MTLD3D11Device *device_;
   std::atomic_bool ready_;
   IMTLD3D11BlendState *pBlendState;
-  Obj<MTL::RenderPipelineState> state_mesh_;
-  Obj<MTL::RenderPipelineState> state_rasterization_;
+  WMT::Reference<WMT::RenderPipelineState> state_mesh_;
+  WMT::Reference<WMT::RenderPipelineState> state_rasterization_;
   bool RasterizationEnabled;
   UINT SampleCount;
 

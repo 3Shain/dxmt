@@ -5,11 +5,11 @@
 #include "d3d11_device.hpp"
 #include "d3d11_shader.hpp"
 #include "log/log.hpp"
-#include "objc_pointer.hpp"
 #include <atomic>
 
 namespace MTL {
   class ComputePipelineState;
+  class RenderPipelineState;
 }
 
 namespace dxmt {
@@ -70,14 +70,14 @@ public:
 
   void GetPipeline(MTL_COMPILED_GRAPHICS_PIPELINE *pPipeline) final {
     ready_.wait(false, std::memory_order_acquire);
-    *pPipeline = {state_.ptr()};
+    *pPipeline = {(MTL::RenderPipelineState *)state_.handle};
   }
 
   IMTLThreadpoolWork *RunThreadpoolWork() {
 
     TRACE("Start compiling 1 PSO");
 
-    Obj<NS::Error> err;
+    WMT::Reference<WMT::Error> err;
     MTL_COMPILED_SHADER vs, ps;
     if (!VertexShader->GetShader(&vs)) {
       return VertexShader.ptr();
@@ -86,45 +86,45 @@ public:
       return PixelShader.ptr();
     }
 
-    auto pipelineDescriptor =
-        transfer(MTL::RenderPipelineDescriptor::alloc()->init());
+    WMTRenderPipelineInfo info;
+    WMT::InitializeRenderPipelineInfo(info);
 
-    pipelineDescriptor->setVertexFunction(vs.Function);
+    info.vertex_function = vs.Function;
 
     if (PixelShader) {
-      pipelineDescriptor->setFragmentFunction(ps.Function);
+      info.fragment_function = ps.Function;
     }
-    pipelineDescriptor->setRasterizationEnabled(RasterizationEnabled);
+    info.rasterization_enabled = RasterizationEnabled;
 
     for (unsigned i = 0; i < num_rtvs; i++) {
       if (rtv_formats[i] == WMTPixelFormatInvalid)
         continue;
-      pipelineDescriptor->colorAttachments()->object(i)->setPixelFormat(
-          (MTL::PixelFormat)rtv_formats[i]);
+      info.colors[i].pixel_format = rtv_formats[i];
     }
 
     if (depth_stencil_format != WMTPixelFormatInvalid) {
-      pipelineDescriptor->setDepthAttachmentPixelFormat((MTL::PixelFormat)depth_stencil_format);
+      info.depth_pixel_format = depth_stencil_format;
     }
     // FIXME: don't hardcoding!
     if (depth_stencil_format == WMTPixelFormatDepth32Float_Stencil8 ||
         depth_stencil_format == WMTPixelFormatDepth24Unorm_Stencil8 ||
         depth_stencil_format == WMTPixelFormatStencil8) {
-      pipelineDescriptor->setStencilAttachmentPixelFormat((MTL::PixelFormat)depth_stencil_format);
+      info.stencil_pixel_format = depth_stencil_format;
     }
 
     if (pBlendState) {
-      pBlendState->SetupMetalPipelineDescriptor(pipelineDescriptor, num_rtvs);
+      pBlendState->SetupMetalPipelineDescriptor((WMTRenderPipelineBlendInfo *)&info, num_rtvs);
     }
 
-    pipelineDescriptor->setInputPrimitiveTopology(topology_class);
-    pipelineDescriptor->setRasterSampleCount(SampleCount);
+    info.input_primitive_topology = topology_class;
+    info.raster_sample_count = SampleCount;
+    info.immutable_vertex_buffers = (1 << 16) | (1 << 29) | (1 << 30);
+    info.immutable_fragment_buffers = (1 << 29) | (1 << 30);
 
-    state_ = transfer(device_->GetMTLDevice()->newRenderPipelineState(
-        pipelineDescriptor, &err));
+    state_ = device_->GetWMTDevice().newRenderPipelineState(&info, err);
 
     if (state_ == nullptr) {
-      ERR("Failed to create PSO: ", err->localizedDescription()->utf8String());
+      ERR("Failed to create PSO: ", err.description().getUTF8String());
       return this;
     }
 
@@ -144,13 +144,13 @@ private:
   UINT num_rtvs;
   WMTPixelFormat rtv_formats[8];
   WMTPixelFormat depth_stencil_format;
-  MTL::PrimitiveTopologyClass topology_class;
+  WMTPrimitiveTopologyClass topology_class;
   MTLD3D11Device *device_;
   std::atomic_bool ready_;
   Com<CompiledShader> VertexShader;
   Com<CompiledShader> PixelShader;
   IMTLD3D11BlendState *pBlendState;
-  Obj<MTL::RenderPipelineState> state_;
+  WMT::Reference<WMT::RenderPipelineState> state_;
   bool RasterizationEnabled;
   UINT SampleCount;
 };

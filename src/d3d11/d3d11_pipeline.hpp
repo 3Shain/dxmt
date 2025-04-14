@@ -21,7 +21,7 @@ struct MTL_GRAPHICS_PIPELINE_DESC {
   UINT NumColorAttachments;
   WMTPixelFormat ColorAttachmentFormats[8];
   WMTPixelFormat DepthStencilFormat;
-  MTL::PrimitiveTopologyClass TopologyClass;
+  WMTPrimitiveTopologyClass TopologyClass;
   bool RasterizationEnabled;
   uint8_t SampleCount;
   bool GSStripTopology;

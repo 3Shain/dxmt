@@ -1,4 +1,5 @@
 #include "dxmt_command.hpp"
+#include "Metal.hpp"
 
 extern "C" unsigned char dxmt_command_metallib[];
 extern "C" unsigned int dxmt_command_metallib_len;
@@ -32,22 +33,23 @@ EmulatedCommandContext::EmulatedCommandContext(WMT::Device device) {
   auto fs_present_quad = library.newFunction("fs_present_quad");
   auto fs_present_quad_scaled = library.newFunction("fs_present_quad_scaled");
   {
-    auto present_pipeline = MTL::RenderPipelineDescriptor::alloc()->init();
-    present_pipeline->setVertexFunction((MTL::Function *)vs_present_quad.handle);
-    present_pipeline->setFragmentFunction((MTL::Function *)fs_present_quad.handle);
-    auto attachment = present_pipeline->colorAttachments()->object(0);
-    attachment->setPixelFormat(MTL::PixelFormatBGRA8Unorm);
-    present_swapchain_blit = transfer(((MTL::Device *)device.handle)->newRenderPipelineState(present_pipeline, nullptr));
-    present_pipeline->setFragmentFunction((MTL::Function *)fs_present_quad_scaled.handle);
-    present_swapchain_scale = transfer(((MTL::Device *)device.handle)->newRenderPipelineState(present_pipeline, nullptr));
+    WMTRenderPipelineInfo present_pipeline;
+    WMT::InitializeRenderPipelineInfo(present_pipeline);
+    present_pipeline.vertex_function = vs_present_quad;
+    present_pipeline.fragment_function = fs_present_quad;
+    present_pipeline.colors[0].pixel_format = WMTPixelFormatBGRA8Unorm;
+    present_swapchain_blit = device.newRenderPipelineState(&present_pipeline, error);
+    present_pipeline.fragment_function = fs_present_quad_scaled;
+    present_swapchain_scale = device.newRenderPipelineState(&present_pipeline, error);
   }
 
   auto gs_draw_arguments_marshal_vs = library.newFunction("gs_draw_arguments_marshal");
   {
-    auto gs_marshal_pipeline = MTL::RenderPipelineDescriptor::alloc()->init();
-    gs_marshal_pipeline->setVertexFunction((MTL::Function *)gs_draw_arguments_marshal_vs.handle);
-    gs_marshal_pipeline->setRasterizationEnabled(false);
-    gs_draw_arguments_marshal = transfer(((MTL::Device *)device.handle)->newRenderPipelineState(gs_marshal_pipeline, nullptr));
+    WMTRenderPipelineInfo gs_marshal_pipeline;
+    WMT::InitializeRenderPipelineInfo(gs_marshal_pipeline);
+    gs_marshal_pipeline.vertex_function = gs_draw_arguments_marshal_vs;
+    gs_marshal_pipeline.rasterization_enabled = false;
+    gs_draw_arguments_marshal = device.newRenderPipelineState(&gs_marshal_pipeline, error);
   }
 }
 } // namespace dxmt

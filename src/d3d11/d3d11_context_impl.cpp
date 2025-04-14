@@ -96,21 +96,21 @@ to_metal_primitive_type(D3D11_PRIMITIVE_TOPOLOGY topo, MTL::PrimitiveType& primi
   return true;
 }
 
-inline MTL::PrimitiveTopologyClass
+inline WMTPrimitiveTopologyClass
 to_metal_primitive_topology(D3D11_PRIMITIVE_TOPOLOGY topo) {
   switch (topo) {
   case D3D_PRIMITIVE_TOPOLOGY_POINTLIST:
-    return MTL::PrimitiveTopologyClassPoint;
+    return WMTPrimitiveTopologyClassPoint;
   case D3D_PRIMITIVE_TOPOLOGY_LINELIST:
   case D3D_PRIMITIVE_TOPOLOGY_LINESTRIP:
   case D3D_PRIMITIVE_TOPOLOGY_LINELIST_ADJ:
   case D3D_PRIMITIVE_TOPOLOGY_LINESTRIP_ADJ:
-    return MTL::PrimitiveTopologyClassLine;
+    return WMTPrimitiveTopologyClassLine;
   case D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST:
   case D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP:
   case D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST_ADJ:
   case D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP_ADJ:
-    return MTL::PrimitiveTopologyClassTriangle;
+    return WMTPrimitiveTopologyClassTriangle;
   case D3D_PRIMITIVE_TOPOLOGY_1_CONTROL_POINT_PATCHLIST:
   case D3D_PRIMITIVE_TOPOLOGY_2_CONTROL_POINT_PATCHLIST:
   case D3D_PRIMITIVE_TOPOLOGY_3_CONTROL_POINT_PATCHLIST:
@@ -144,7 +144,7 @@ to_metal_primitive_topology(D3D11_PRIMITIVE_TOPOLOGY topo) {
   case D3D_PRIMITIVE_TOPOLOGY_31_CONTROL_POINT_PATCHLIST:
   case D3D_PRIMITIVE_TOPOLOGY_32_CONTROL_POINT_PATCHLIST:
     // Metal tessellation only support triangle as output primitive
-    return MTL::PrimitiveTopologyClassTriangle;
+    return WMTPrimitiveTopologyClassTriangle;
   case D3D_PRIMITIVE_TOPOLOGY_UNDEFINED:
     D3D11_ASSERT(0 && "Invalid topology");
   }
