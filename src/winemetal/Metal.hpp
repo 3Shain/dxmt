@@ -3,6 +3,7 @@
 #include "./winemetal.h"
 #include <cstddef>
 #include <string>
+#include <cstring>
 
 namespace WMT {
 
@@ -273,6 +274,10 @@ class ComputePipelineState : public Object {
 public:
 };
 
+class RenderPipelineState : public Object {
+public:
+};
+
 class Device : public Object {
 public:
   uint64_t
@@ -334,6 +339,16 @@ public:
     );
   }
 
+  Reference<RenderPipelineState>
+  newRenderPipelineState(WMTRenderPipelineInfo *info, Error &error) {
+    return Reference<RenderPipelineState>(MTLDevice_newRenderPipelineState(handle, info, &error.handle));
+  }
+
+  Reference<RenderPipelineState>
+  newRenderPipelineState(WMTMeshRenderPipelineInfo *info, Error &error) {
+    return Reference<RenderPipelineState>(MTLDevice_newMeshRenderPipelineState(handle, info, &error.handle));
+  }
+
   uint64_t
   minimumLinearTextureAlignmentForPixelFormat(WMTPixelFormat format) {
     return MTLDevice_minimumLinearTextureAlignmentForPixelFormat(handle, format);
@@ -361,5 +376,68 @@ InitializeRenderPassInfo(WMTRenderPassInfo &info) {
   info.depth.load_action = WMTLoadActionClear;
   info.depth.clear_depth = 1.0f;
 };
+
+inline void
+InitializeRenderPipelineInfo(WMTRenderPipelineInfo &info) {
+  for (unsigned i = 0; i < 8; i++) {
+    info.colors[i].pixel_format = WMTPixelFormatInvalid;
+    info.colors[i].write_mask = WMTColorWriteMaskAll;
+    info.colors[i].blending_enabled = false;
+    info.colors[i].alpha_blend_operation = WMTBlendOperationAdd;
+    info.colors[i].rgb_blend_operation = WMTBlendOperationAdd;
+    info.colors[i].dst_alpha_blend_factor = WMTBlendFactorZero;
+    info.colors[i].dst_rgb_blend_factor = WMTBlendFactorZero;
+    info.colors[i].src_alpha_blend_factor = WMTBlendFactorOne;
+    info.colors[i].src_rgb_blend_factor = WMTBlendFactorOne;
+  }
+  info.alpha_to_coverage_enabled = false;
+  info.rasterization_enabled = true;
+  info.raster_sample_count = 1;
+  info.depth_pixel_format = WMTPixelFormatInvalid;
+  info.stencil_pixel_format = WMTPixelFormatInvalid;
+  info.logic_operation_enabled = false;
+  info.logic_operation = WMTLogicOperationClear;
+
+  info.input_primitive_topology = WMTPrimitiveTopologyClassUnspecified;
+  info.max_tessellation_factor = 16.0f;
+  info.tessellation_factor_step = WMTTessellationFactorStepFunctionConstant;
+  info.tessellation_partition_mode = WMTTessellationPartitionModePow2;
+  info.tessellation_output_winding_order = WMTWindingClockwise;
+
+  info.vertex_function = NULL_OBJECT_HANDLE;
+  info.fragment_function = NULL_OBJECT_HANDLE;
+  info.immutable_vertex_buffers = 0;
+  info.immutable_fragment_buffers = 0;
+}
+
+inline void
+InitializeMeshRenderPipelineInfo(WMTMeshRenderPipelineInfo &info) {
+  for (unsigned i = 0; i < 8; i++) {
+    info.colors[i].pixel_format = WMTPixelFormatInvalid;
+    info.colors[i].write_mask = WMTColorWriteMaskAll;
+    info.colors[i].blending_enabled = false;
+    info.colors[i].alpha_blend_operation = WMTBlendOperationAdd;
+    info.colors[i].rgb_blend_operation = WMTBlendOperationAdd;
+    info.colors[i].dst_alpha_blend_factor = WMTBlendFactorZero;
+    info.colors[i].dst_rgb_blend_factor = WMTBlendFactorZero;
+    info.colors[i].src_alpha_blend_factor = WMTBlendFactorOne;
+    info.colors[i].src_rgb_blend_factor = WMTBlendFactorOne;
+  }
+  info.alpha_to_coverage_enabled = false;
+  info.rasterization_enabled = true;
+  info.raster_sample_count = 1;
+  info.depth_pixel_format = WMTPixelFormatInvalid;
+  info.stencil_pixel_format = WMTPixelFormatInvalid;
+  info.logic_operation_enabled = false;
+  info.logic_operation = WMTLogicOperationClear;
+
+  info.object_function = NULL_OBJECT_HANDLE;
+  info.mesh_function = NULL_OBJECT_HANDLE;
+  info.fragment_function = NULL_OBJECT_HANDLE;
+  info.immutable_object_buffers = 0;
+  info.immutable_mesh_buffers = 0;
+  info.immutable_fragment_buffers = 0;
+  info.payload_memory_length = 0;
+}
 
 } // namespace WMT
