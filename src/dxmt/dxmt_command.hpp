@@ -134,9 +134,9 @@ public:
       extend[2] |= DXMT_PRESENT_FLAG_SRGB;
     encoder->setFragmentBytes(extend, sizeof(extend), 0);
     if (backbuffer->width() == extend[0] && backbuffer->height() == extend[1])
-      encoder->setRenderPipelineState(present_swapchain_blit);
+      encoder->setRenderPipelineState((MTL::RenderPipelineState *)present_swapchain_blit.handle);
     else
-      encoder->setRenderPipelineState(present_swapchain_scale);
+      encoder->setRenderPipelineState((MTL::RenderPipelineState *)present_swapchain_scale.handle);
     encoder->setViewport({0, 0, (float)extend[0], (float)extend[1], 0, 1});
     encoder->drawPrimitives(MTL::PrimitiveTypeTriangle, (NS::UInteger)0u, 3u);
 
@@ -145,7 +145,7 @@ public:
 
   void
   MarshalGSDispatchArguments(MTL::RenderCommandEncoder *encoder, MTL::Buffer *commands, uint32_t commands_offset) {
-    encoder->setRenderPipelineState(gs_draw_arguments_marshal);
+    encoder->setRenderPipelineState((MTL::RenderPipelineState *)gs_draw_arguments_marshal.handle);
     encoder->setVertexBuffer(commands, commands_offset, 0);
     encoder->drawPrimitives(MTL::PrimitiveTypePoint, NS::UInteger(0), NS::UInteger(1));
     encoder->setVertexBuffer(nullptr, 0, 0);
@@ -166,9 +166,9 @@ private:
   WMT::Reference<WMT::ComputePipelineState> clear_texture_3d_float_pipeline;
   WMT::Reference<WMT::ComputePipelineState> clear_texture_buffer_float_pipeline;
 
-  Obj<MTL::RenderPipelineState> present_swapchain_blit;
-  Obj<MTL::RenderPipelineState> present_swapchain_scale;
-  Obj<MTL::RenderPipelineState> gs_draw_arguments_marshal;
+  WMT::Reference<WMT::RenderPipelineState> present_swapchain_blit;
+  WMT::Reference<WMT::RenderPipelineState> present_swapchain_scale;
+  WMT::Reference<WMT::RenderPipelineState> gs_draw_arguments_marshal;
 };
 
 } // namespace dxmt

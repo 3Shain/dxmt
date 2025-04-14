@@ -1,6 +1,4 @@
-#include "Metal/MTLPipeline.hpp"
-#include "Metal/MTLRenderCommandEncoder.hpp"
-#include "Metal/MTLRenderPipeline.hpp"
+#include "Metal.hpp"
 #include "airconv_public.h"
 #include "d3d11_device.hpp"
 #include "d3d11_pipeline.hpp"
@@ -63,12 +61,12 @@ public:
 
   void GetPipeline(MTL_COMPILED_GRAPHICS_PIPELINE *pPipeline) final {
     ready_.wait(false, std::memory_order_acquire);
-    *pPipeline = {state_mesh_.ptr()};
+    *pPipeline = {(MTL::RenderPipelineState *)state_mesh_.handle};
   }
 
   IMTLThreadpoolWork *RunThreadpoolWork() {
 
-    Obj<NS::Error> err;
+    WMT::Reference<WMT::Error> err;
     MTL_COMPILED_SHADER vs, gs, ps;
 
     if (!VertexShader->GetShader(&vs)) {
@@ -81,54 +79,48 @@ public:
       return PixelShader.ptr();
     }
 
-    auto mesh_pipeline_desc =
-        transfer(MTL::MeshRenderPipelineDescriptor::alloc()->init());
+    WMTMeshRenderPipelineInfo info;
+    WMT::InitializeMeshRenderPipelineInfo(info);
 
-    mesh_pipeline_desc->setObjectFunction(vs.Function);
-    mesh_pipeline_desc->setMeshFunction(gs.Function);
-    mesh_pipeline_desc->setPayloadMemoryLength(16256);
+    info.object_function = vs.Function;
+    info.mesh_function = gs.Function;
+    info.payload_memory_length = 16256;
 
-    mesh_pipeline_desc->objectBuffers()->object(16)->setMutability(
-        MTL::MutabilityImmutable);
-    mesh_pipeline_desc->objectBuffers()->object(21)->setMutability(
-        MTL::MutabilityImmutable);
-    mesh_pipeline_desc->objectBuffers()->object(20)->setMutability(
-        MTL::MutabilityMutable);
+    info.immutable_object_buffers = (1 << 16)  | (1 << 21) | (1 << 29) | (1 << 30);
+    info.immutable_mesh_buffers = (1 << 29) | (1 << 30);
+    info.immutable_fragment_buffers = (1 << 29) | (1 << 30);
 
     if (PixelShader) {
-      mesh_pipeline_desc->setFragmentFunction(ps.Function);
+      info.fragment_function = ps.Function;
     }
-    mesh_pipeline_desc->setRasterizationEnabled(RasterizationEnabled);
+    info.rasterization_enabled = RasterizationEnabled;
 
     for (unsigned i = 0; i < num_rtvs; i++) {
       if (rtv_formats[i] == WMTPixelFormatInvalid)
         continue;
-      mesh_pipeline_desc->colorAttachments()->object(i)->setPixelFormat(
-        (MTL::PixelFormat)rtv_formats[i]);
+      info.colors[i].pixel_format = rtv_formats[i];
     }
 
     if (depth_stencil_format != WMTPixelFormatInvalid) {
-      mesh_pipeline_desc->setDepthAttachmentPixelFormat((MTL::PixelFormat)depth_stencil_format);
+      info.depth_pixel_format = depth_stencil_format;
     }
     // FIXME: don't hardcoding!
     if (depth_stencil_format == WMTPixelFormatDepth32Float_Stencil8 ||
         depth_stencil_format == WMTPixelFormatDepth24Unorm_Stencil8 ||
         depth_stencil_format == WMTPixelFormatStencil8) {
-      mesh_pipeline_desc->setStencilAttachmentPixelFormat((MTL::PixelFormat)depth_stencil_format);
+      info.stencil_pixel_format = depth_stencil_format;
     }
 
     if (pBlendState) {
-      pBlendState->SetupMetalPipelineDescriptor(mesh_pipeline_desc, num_rtvs);
+      pBlendState->SetupMetalPipelineDescriptor((WMTRenderPipelineBlendInfo *)&info, num_rtvs);
     }
 
-    mesh_pipeline_desc->setRasterSampleCount(SampleCount);
+    info.raster_sample_count = SampleCount;
 
-    state_mesh_ = transfer(device_->GetMTLDevice()->newRenderPipelineState(
-        mesh_pipeline_desc.ptr(), MTL::PipelineOptionNone, nullptr, &err));
+    state_mesh_ = device_->GetWMTDevice().newRenderPipelineState(&info, err);
 
     if (state_mesh_ == nullptr) {
-      ERR("Failed to create mesh PSO: ",
-          err->localizedDescription()->utf8String());
+      ERR("Failed to create mesh PSO: ", err.description().getUTF8String());
       return this;
     }
     return this;
@@ -148,7 +140,7 @@ private:
   MTLD3D11Device *device_;
   std::atomic_bool ready_;
   IMTLD3D11BlendState *pBlendState;
-  Obj<MTL::RenderPipelineState> state_mesh_;
+  WMT::Reference<WMT::RenderPipelineState> state_mesh_;
   bool RasterizationEnabled;
   UINT SampleCount;
 

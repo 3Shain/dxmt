@@ -46,7 +46,7 @@ public:
   bool GetShader(MTL_COMPILED_SHADER *pShaderData) final {
     bool ret = false;
     if ((ret = ready_.load(std::memory_order_acquire))) {
-      *pShaderData = {(MTL::Function *)function_.handle, &hash_};
+      *pShaderData = {function_, &hash_};
     }
     return ret;
   }

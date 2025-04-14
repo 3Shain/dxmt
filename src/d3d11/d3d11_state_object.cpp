@@ -76,109 +76,109 @@ constexpr WMTStencilOperation kStencilOperationMap[] = {
 
 };
 
-constexpr MTL::BlendOperation kBlendOpMap[] = {
-    MTL::BlendOperationAdd, // padding 0
-    MTL::BlendOperationAdd,
-    MTL::BlendOperationSubtract,
-    MTL::BlendOperationReverseSubtract,
-    MTL::BlendOperationMin,
-    MTL::BlendOperationMax,
+constexpr WMTBlendOperation kBlendOpMap[] = {
+    WMTBlendOperationAdd, // padding 0
+    WMTBlendOperationAdd,
+    WMTBlendOperationSubtract,
+    WMTBlendOperationReverseSubtract,
+    WMTBlendOperationMin,
+    WMTBlendOperationMax,
 };
 
-constexpr MTL::LogicOperation kLogicOpMap[] = {
-    MTL::LogicOperationClear,      MTL::LogicOperationSet,
-    MTL::LogicOperationCopy,       MTL::LogicOperationCopyInverted,
-    MTL::LogicOperationNoOp,       MTL::LogicOperationInvert,
-    MTL::LogicOperationAnd,        MTL::LogicOperationNand,
-    MTL::LogicOperationOr,         MTL::LogicOperationNor,
-    MTL::LogicOperationXor,        MTL::LogicOperationEquiv,
-    MTL::LogicOperationAndReverse, MTL::LogicOperationAndInverted,
-    MTL::LogicOperationOrReverse,  MTL::LogicOperationOrInverted,
+constexpr WMTLogicOperation kLogicOpMap[] = {
+    WMTLogicOperationClear,      WMTLogicOperationSet,
+    WMTLogicOperationCopy,       WMTLogicOperationCopyInverted,
+    WMTLogicOperationNoOp,       WMTLogicOperationInvert,
+    WMTLogicOperationAnd,        WMTLogicOperationNand,
+    WMTLogicOperationOr,         WMTLogicOperationNor,
+    WMTLogicOperationXor,        WMTLogicOperationEquiv,
+    WMTLogicOperationAndReverse, WMTLogicOperationAndInverted,
+    WMTLogicOperationOrReverse,  WMTLogicOperationOrInverted,
 };
 
-constexpr MTL::BlendFactor kBlendFactorMap[] = {
-    MTL::BlendFactorZero, // padding 0
-    MTL::BlendFactorZero,
-    MTL::BlendFactorOne,
-    MTL::BlendFactorSourceColor,
-    MTL::BlendFactorOneMinusSourceColor,
-    MTL::BlendFactorSourceAlpha,
-    MTL::BlendFactorOneMinusSourceAlpha,
-    MTL::BlendFactorDestinationAlpha,
-    MTL::BlendFactorOneMinusDestinationAlpha,
-    MTL::BlendFactorDestinationColor,
-    MTL::BlendFactorOneMinusDestinationColor,
-    MTL::BlendFactorSourceAlphaSaturated,
-    MTL::BlendFactorZero,       // invalid,12
-    MTL::BlendFactorZero,       // invalid,13
-    MTL::BlendFactorBlendColor, // BLEND_FACTOR
-    MTL::BlendFactorOneMinusBlendColor,
-    MTL::BlendFactorSource1Color,
-    MTL::BlendFactorOneMinusSource1Color,
-    MTL::BlendFactorSource1Alpha,
-    MTL::BlendFactorOneMinusSource1Alpha,
+constexpr WMTBlendFactor kBlendFactorMap[] = {
+    WMTBlendFactorZero, // padding 0
+    WMTBlendFactorZero,
+    WMTBlendFactorOne,
+    WMTBlendFactorSourceColor,
+    WMTBlendFactorOneMinusSourceColor,
+    WMTBlendFactorSourceAlpha,
+    WMTBlendFactorOneMinusSourceAlpha,
+    WMTBlendFactorDestinationAlpha,
+    WMTBlendFactorOneMinusDestinationAlpha,
+    WMTBlendFactorDestinationColor,
+    WMTBlendFactorOneMinusDestinationColor,
+    WMTBlendFactorSourceAlphaSaturated,
+    WMTBlendFactorZero,       // invalid,12
+    WMTBlendFactorZero,       // invalid,13
+    WMTBlendFactorBlendColor, // BLEND_FACTOR
+    WMTBlendFactorOneMinusBlendColor,
+    WMTBlendFactorSource1Color,
+    WMTBlendFactorOneMinusSource1Color,
+    WMTBlendFactorSource1Alpha,
+    WMTBlendFactorOneMinusSource1Alpha,
 };
 
-constexpr MTL::BlendFactor kBlendAlphaFactorMap[] = {
-    MTL::BlendFactorZero, // padding 0
-    MTL::BlendFactorZero,
-    MTL::BlendFactorOne,
-    MTL::BlendFactorSourceColor,
-    MTL::BlendFactorOneMinusSourceColor,
-    MTL::BlendFactorSourceAlpha,
-    MTL::BlendFactorOneMinusSourceAlpha,
-    MTL::BlendFactorDestinationAlpha,
-    MTL::BlendFactorOneMinusDestinationAlpha,
-    MTL::BlendFactorDestinationColor,
-    MTL::BlendFactorOneMinusDestinationColor,
-    MTL::BlendFactorSourceAlphaSaturated,
-    MTL::BlendFactorZero,       // invalid,12
-    MTL::BlendFactorZero,       // invalid,13
-    MTL::BlendFactorBlendAlpha, // BLEND_FACTOR
-    MTL::BlendFactorOneMinusBlendAlpha,
-    MTL::BlendFactorSource1Color,
-    MTL::BlendFactorOneMinusSource1Color,
-    MTL::BlendFactorSource1Alpha,
-    MTL::BlendFactorOneMinusSource1Alpha,
+constexpr WMTBlendFactor kBlendAlphaFactorMap[] = {
+    WMTBlendFactorZero, // padding 0
+    WMTBlendFactorZero,
+    WMTBlendFactorOne,
+    WMTBlendFactorSourceColor,
+    WMTBlendFactorOneMinusSourceColor,
+    WMTBlendFactorSourceAlpha,
+    WMTBlendFactorOneMinusSourceAlpha,
+    WMTBlendFactorDestinationAlpha,
+    WMTBlendFactorOneMinusDestinationAlpha,
+    WMTBlendFactorDestinationColor,
+    WMTBlendFactorOneMinusDestinationColor,
+    WMTBlendFactorSourceAlphaSaturated,
+    WMTBlendFactorZero,       // invalid,12
+    WMTBlendFactorZero,       // invalid,13
+    WMTBlendFactorBlendAlpha, // BLEND_FACTOR
+    WMTBlendFactorOneMinusBlendAlpha,
+    WMTBlendFactorSource1Color,
+    WMTBlendFactorOneMinusSource1Color,
+    WMTBlendFactorSource1Alpha,
+    WMTBlendFactorOneMinusSource1Alpha,
 };
 
-constexpr MTL::ColorWriteMask kColorWriteMaskMap[] = {
+constexpr WMTColorWriteMask kColorWriteMaskMap[] = {
     // 0000
-    0,
+    WMTColorWriteMaskNone,
     // 0001
-    MTL::ColorWriteMaskRed,
+    WMTColorWriteMaskRed,
     // 0010
-    MTL::ColorWriteMaskGreen,
+    WMTColorWriteMaskGreen,
     // 0011,
-    MTL::ColorWriteMaskRed | MTL::ColorWriteMaskGreen,
+    WMTColorWriteMaskRed | WMTColorWriteMaskGreen,
     // 0100
-    MTL::ColorWriteMaskBlue,
+    WMTColorWriteMaskBlue,
     // 0101
-    MTL::ColorWriteMaskBlue | MTL::ColorWriteMaskRed,
+    WMTColorWriteMaskBlue | WMTColorWriteMaskRed,
     // 0110
-    MTL::ColorWriteMaskBlue | MTL::ColorWriteMaskGreen,
+    WMTColorWriteMaskBlue | WMTColorWriteMaskGreen,
     // 0111
-    MTL::ColorWriteMaskBlue | MTL::ColorWriteMaskRed | MTL::ColorWriteMaskGreen,
+    WMTColorWriteMaskBlue | WMTColorWriteMaskRed | WMTColorWriteMaskGreen,
 
     // 1000
-    MTL::ColorWriteMaskAlpha | 0,
+    WMTColorWriteMaskAlpha,
     // 1001
-    MTL::ColorWriteMaskAlpha | MTL::ColorWriteMaskRed,
+    WMTColorWriteMaskAlpha | WMTColorWriteMaskRed,
     // 1010
-    MTL::ColorWriteMaskAlpha | MTL::ColorWriteMaskGreen,
+    WMTColorWriteMaskAlpha | WMTColorWriteMaskGreen,
     // 1011,
-    MTL::ColorWriteMaskAlpha | MTL::ColorWriteMaskRed |
-        MTL::ColorWriteMaskGreen,
+    WMTColorWriteMaskAlpha | WMTColorWriteMaskRed |
+        WMTColorWriteMaskGreen,
     // 1100
-    MTL::ColorWriteMaskAlpha | MTL::ColorWriteMaskBlue,
+    WMTColorWriteMaskAlpha | WMTColorWriteMaskBlue,
     // 0101
-    MTL::ColorWriteMaskAlpha | MTL::ColorWriteMaskBlue | MTL::ColorWriteMaskRed,
+    WMTColorWriteMaskAlpha | WMTColorWriteMaskBlue | WMTColorWriteMaskRed,
     // 1110
-    MTL::ColorWriteMaskAlpha | MTL::ColorWriteMaskBlue |
-        MTL::ColorWriteMaskGreen,
+    WMTColorWriteMaskAlpha | WMTColorWriteMaskBlue |
+        WMTColorWriteMaskGreen,
     // 1111
-    MTL::ColorWriteMaskAlpha | MTL::ColorWriteMaskBlue |
-        MTL::ColorWriteMaskRed | MTL::ColorWriteMaskGreen,
+    WMTColorWriteMaskAlpha | WMTColorWriteMaskBlue |
+        WMTColorWriteMaskRed | WMTColorWriteMaskGreen,
 };
 
 class MTLD3D11SamplerState : public ManagedDeviceChild<IMTLD3D11SamplerState> {
@@ -294,83 +294,44 @@ public:
 
   bool IsDualSourceBlending() { return dual_source_blending_; }
 
-  void SetupMetalPipelineDescriptor(
-      MTL::RenderPipelineDescriptor *render_pipeline_descriptor, uint32_t num_rt) {
+  void SetupMetalPipelineDescriptor(WMTRenderPipelineBlendInfo *info, uint32_t num_rt) {
     for (unsigned rt = 0; rt < num_rt; rt++) {
       auto i = desc_.IndependentBlendEnable ? rt : 0;
       auto &renderTarget = desc_.RenderTarget[i];
-      if (renderTarget.LogicOpEnable) {
-#ifdef DXMT_NO_PRIVATE_API
-        ERR("OutputMerger LogicOp is not supported");
-        continue;
-#else
-        render_pipeline_descriptor->setLogicOperationEnabled(true);
-        render_pipeline_descriptor->setLogicOperation(
-            kLogicOpMap[renderTarget.LogicOp]);
-#endif
-      }
-      auto attachment_desc = render_pipeline_descriptor->colorAttachments()->object(rt);
-      attachment_desc->setWriteMask(kColorWriteMaskMap[renderTarget.RenderTargetWriteMask]);
-      auto attachment_format = (WMTPixelFormat)attachment_desc->pixelFormat();
-      if (renderTarget.BlendEnable && attachment_format != WMTPixelFormatInvalid) {
-        if (!any_bit_set(m_parent->GetMTLPixelFormatCapability(attachment_format) & FormatCapability::Blend)) {
-          WARN("Blending is enabled on RTV of non-blendable format ", attachment_format);
+      auto &attachment_desc = info->colors[rt];
+      attachment_desc.write_mask = kColorWriteMaskMap[renderTarget.RenderTargetWriteMask];
+      if (renderTarget.BlendEnable && attachment_desc.pixel_format != WMTPixelFormatInvalid) {
+        if (!any_bit_set(m_parent->GetMTLPixelFormatCapability(attachment_desc.pixel_format) & FormatCapability::Blend)) {
+          WARN("Blending is enabled on RTV of non-blendable format ", attachment_desc.pixel_format);
           continue;
         }
-        attachment_desc->setAlphaBlendOperation(kBlendOpMap[renderTarget.BlendOpAlpha]);
-        attachment_desc->setRgbBlendOperation(kBlendOpMap[renderTarget.BlendOp]);
-        attachment_desc->setBlendingEnabled(renderTarget.BlendEnable);
-        attachment_desc->setSourceAlphaBlendFactor(kBlendAlphaFactorMap[renderTarget.SrcBlendAlpha]);
-        attachment_desc->setSourceRGBBlendFactor(
-            kBlendFactorMap[renderTarget.SrcBlend]);
-        attachment_desc->setDestinationAlphaBlendFactor(
-            kBlendAlphaFactorMap[renderTarget.DestBlendAlpha]);
-        attachment_desc->setDestinationRGBBlendFactor(
-            kBlendFactorMap[renderTarget.DestBlend]);
+        attachment_desc.alpha_blend_operation = kBlendOpMap[renderTarget.BlendOpAlpha];
+        attachment_desc.rgb_blend_operation = kBlendOpMap[renderTarget.BlendOp];
+        attachment_desc.blending_enabled = renderTarget.BlendEnable;
+        attachment_desc.src_alpha_blend_factor = kBlendAlphaFactorMap[renderTarget.SrcBlendAlpha];
+        attachment_desc.src_rgb_blend_factor = kBlendFactorMap[renderTarget.SrcBlend];
+        attachment_desc.dst_alpha_blend_factor = kBlendAlphaFactorMap[renderTarget.DestBlendAlpha];
+        attachment_desc.dst_rgb_blend_factor = kBlendFactorMap[renderTarget.DestBlend];
       }
     }
-    render_pipeline_descriptor->setAlphaToCoverageEnabled(
-        desc_.AlphaToCoverageEnable);
-  }
-
-  void SetupMetalPipelineDescriptor(
-    MTL::MeshRenderPipelineDescriptor *render_pipeline_descriptor, uint32_t num_rt) {
-  for (unsigned rt = 0; rt < num_rt; rt++) {
-    auto i = desc_.IndependentBlendEnable ? rt : 0;
-    auto &renderTarget = desc_.RenderTarget[i];
-    if (renderTarget.LogicOpEnable) {
-// #ifdef DXMT_NO_PRIVATE_API
-//       ERR("OutputMerger LogicOp is not supported");
-//       continue;
-// #else
-//       render_pipeline_descriptor->setLogicOperationEnabled(true);
-//       render_pipeline_descriptor->setLogicOperation(
-//           kLogicOpMap[renderTarget.LogicOp]);
-// #endif
+    /*
+    D3D11.3 Spec:
+    Configuration of logic op is constrained in the following way:
+    (a) for logic ops to be used, IndependentBlendEnable must be set to false, so the logic op that has meaning comes
+        from the first RT blend desc and applies to all RTs.
+    (b) when logic blending all RenderTargets bound must have a UINT format (undefined rendering otherwise).
+    */
+    if (!desc_.IndependentBlendEnable && desc_.RenderTarget[0].LogicOpEnable) {
+#ifdef DXMT_NO_PRIVATE_API
+      ERR("OutputMerger LogicOp is not supported");
+      continue;
+#else
+      info->logic_operation_enabled = true;
+      info->logic_operation = kLogicOpMap[desc_.RenderTarget[0].LogicOp];
+#endif
     }
-    auto attachment_desc = render_pipeline_descriptor->colorAttachments()->object(rt);
-    attachment_desc->setWriteMask(kColorWriteMaskMap[renderTarget.RenderTargetWriteMask]);
-    auto attachment_format = (WMTPixelFormat)attachment_desc->pixelFormat();
-    if (renderTarget.BlendEnable && attachment_format != WMTPixelFormatInvalid) {
-      if (!any_bit_set(m_parent->GetMTLPixelFormatCapability(attachment_format) & FormatCapability::Blend)) {
-        WARN("Blending is enabled on RTV of non-blendable format ", attachment_format);
-        continue;
-      }
-      attachment_desc->setAlphaBlendOperation(kBlendOpMap[renderTarget.BlendOpAlpha]);
-      attachment_desc->setRgbBlendOperation(kBlendOpMap[renderTarget.BlendOp]);
-      attachment_desc->setBlendingEnabled(renderTarget.BlendEnable);
-      attachment_desc->setSourceAlphaBlendFactor(kBlendAlphaFactorMap[renderTarget.SrcBlendAlpha]);
-      attachment_desc->setSourceRGBBlendFactor(
-          kBlendFactorMap[renderTarget.SrcBlend]);
-      attachment_desc->setDestinationAlphaBlendFactor(
-          kBlendAlphaFactorMap[renderTarget.DestBlendAlpha]);
-      attachment_desc->setDestinationRGBBlendFactor(
-          kBlendFactorMap[renderTarget.DestBlend]);
-    }
+    info->alpha_to_coverage_enabled = desc_.AlphaToCoverageEnable;
   }
-  render_pipeline_descriptor->setAlphaToCoverageEnabled(
-      desc_.AlphaToCoverageEnable);
-}
 
 private:
   const D3D11_BLEND_DESC1 desc_;

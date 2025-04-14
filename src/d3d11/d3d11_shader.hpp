@@ -13,7 +13,7 @@ struct MTL_COMPILED_SHADER {
   /**
   NOTE: it's not retained by design
   */
-  MTL::Function *Function;
+  WMT::Function Function;
   dxmt::Sha1Hash *MetallibHash;
 };
 
