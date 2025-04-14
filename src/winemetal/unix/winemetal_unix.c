@@ -627,6 +627,76 @@ _MTLBlitCommandEncoder_encodeCommands(void *obj) {
   return STATUS_SUCCESS;
 }
 
+static NTSTATUS
+_MTLComputeCommandEncoder_encodeCommands(void *obj) {
+  struct unixcall_generic_obj_cmd_noret *params = obj;
+  struct wmtcmd_base *next = (struct wmtcmd_base *)params->cmd_head;
+  id<MTLComputeCommandEncoder> encoder = (id<MTLComputeCommandEncoder>)params->encoder;
+  MTLSize threadgroup_size = {0, 0, 0};
+  while (next) {
+    switch ((enum WMTComputeCommandType)next->type) {
+    default:
+      assert(!next->type && "unhandled compute command type");
+      break;
+    case WMTComputeCommandDispatch: {
+      struct wmtcmd_compute_dispatch *body = (struct wmtcmd_compute_dispatch *)next;
+      [encoder dispatchThreadgroups:MTLSizeMake(body->size.width, body->size.height, body->size.depth)
+              threadsPerThreadgroup:threadgroup_size];
+      break;
+    }
+    case WMTComputeCommandDispatchThreads: {
+      struct wmtcmd_compute_dispatch *body = (struct wmtcmd_compute_dispatch *)next;
+      [encoder dispatchThreads:MTLSizeMake(body->size.width, body->size.height, body->size.depth)
+          threadsPerThreadgroup:threadgroup_size];
+      break;
+    }
+    case WMTComputeCommandDispatchIndirect: {
+      struct wmtcmd_compute_dispatch_indirect *body = (struct wmtcmd_compute_dispatch_indirect *)next;
+      [encoder dispatchThreadgroupsWithIndirectBuffer:(id<MTLBuffer>)body->indirect_args_buffer
+                                 indirectBufferOffset:body->indirect_args_offset
+                                threadsPerThreadgroup:threadgroup_size];
+      break;
+    }
+    case WMTComputeCommandSetPSO: {
+      struct wmtcmd_compute_setpso *body = (struct wmtcmd_compute_setpso *)next;
+      [encoder setComputePipelineState:(id<MTLComputePipelineState>)body->pso];
+      threadgroup_size.width = body->threadgroup_size.width;
+      threadgroup_size.height = body->threadgroup_size.height;
+      threadgroup_size.depth = body->threadgroup_size.depth;
+      break;
+    }
+    case WMTComputeCommandSetBuffer: {
+      struct wmtcmd_compute_setbuffer *body = (struct wmtcmd_compute_setbuffer *)next;
+      [encoder setBuffer:(id<MTLBuffer>)body->buffer offset:body->offset atIndex:body->index];
+      break;
+    }
+    case WMTComputeCommandSetBufferOffset: {
+      struct wmtcmd_compute_setbufferoffset *body = (struct wmtcmd_compute_setbufferoffset *)next;
+      [encoder setBufferOffset:body->offset atIndex:body->index];
+      break;
+    }
+    case WMTComputeCommandUseResource: {
+      struct wmtcmd_compute_useresource *body = (struct wmtcmd_compute_useresource *)next;
+      [encoder useResource:(id<MTLResource>)body->resource usage:(MTLResourceUsage)body->usage];
+      break;
+    }
+    case WMTComputeCommandSetBytes: {
+      struct wmtcmd_compute_setbytes *body = (struct wmtcmd_compute_setbytes *)next;
+      [encoder setBytes:body->bytes.ptr length:body->length atIndex:body->index];
+      break;
+    }
+    case WMTComputeCommandSetTexture: {
+      struct wmtcmd_compute_settexture *body = (struct wmtcmd_compute_settexture *)next;
+      [encoder setTexture:(id<MTLTexture>)body->texture atIndex:body->index];
+      break;
+    }
+    }
+
+    next = next->next.ptr;
+  }
+  return STATUS_SUCCESS;
+}
+
 const void *__winemetal_unixcalls[] = {
     &_NSObject_retain,
     &_NSObject_release,
@@ -665,6 +735,7 @@ const void *__winemetal_unixcalls[] = {
     &_MTLDevice_newRenderPipelineState,
     &_MTLDevice_newMeshRenderPipelineState,
     &_MTLBlitCommandEncoder_encodeCommands,
+    &_MTLComputeCommandEncoder_encodeCommands,
 };
 
 const unsigned int __winemetal_unixcalls_num = sizeof(__winemetal_unixcalls) / sizeof(void *);

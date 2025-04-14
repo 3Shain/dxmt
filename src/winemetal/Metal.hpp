@@ -216,6 +216,10 @@ public:
 
 class ComputeCommandEncoder : public CommandEncoder {
 public:
+void
+encodeCommands(const wmtcmd_compute_nop *cmd_head) {
+  MTLComputeCommandEncoder_encodeCommands(handle, (const wmtcmd_base *)cmd_head);
+}
 };
 
 class CommandBuffer : public Object {
