@@ -297,9 +297,9 @@ public:
 
   Subresource Src;
   Subresource Dst;
-  MTL::Origin SrcOrigin;
-  MTL::Size SrcSize;
-  MTL::Origin DstOrigin;
+  WMTOrigin SrcOrigin;
+  WMTSize SrcSize;
+  WMTOrigin DstOrigin;
 
   MTL_DXGI_FORMAT_DESC SrcFormat;
   MTL_DXGI_FORMAT_DESC DstFormat;
@@ -449,7 +449,8 @@ public:
   ID3D11Resource *pDst;
   UINT DstSubresource;
   Subresource Dst;
-  MTL::Region DstRegion;
+  WMTOrigin DstOrigin;
+  WMTSize DstSize;
   uint32_t EffectiveBytesPerRow;
   uint32_t EffectiveRows;
 
@@ -542,21 +543,15 @@ public:
     DstBox.bottom = std::min(DstBox.bottom, Dst.Height);
     DstBox.back = std::min(DstBox.back, Dst.Depth);
 
-    DstRegion = {
-        DstBox.left,
-        DstBox.top,
-        DstBox.front,
-        DstBox.right - DstBox.left,
-        DstBox.bottom - DstBox.top,
-        DstBox.back - DstBox.front
-    };
+    DstOrigin = {DstBox.left, DstBox.top, DstBox.front};
+    DstSize = {DstBox.right - DstBox.left, DstBox.bottom - DstBox.top, DstBox.back - DstBox.front};
 
     if (DstFormat.Flag & MTL_DXGI_FORMAT_BC) {
-      EffectiveBytesPerRow = (align(DstRegion.size.width, 4u) >> 2) * DstFormat.BytesPerTexel;
-      EffectiveRows = align(DstRegion.size.height, 4u) >> 2;
+      EffectiveBytesPerRow = (align(DstSize.width, 4u) >> 2) * DstFormat.BytesPerTexel;
+      EffectiveRows = align(DstSize.height, 4u) >> 2;
     } else {
-      EffectiveBytesPerRow = DstRegion.size.width * DstFormat.BytesPerTexel;
-      EffectiveRows = DstRegion.size.height;
+      EffectiveBytesPerRow = DstSize.width * DstFormat.BytesPerTexel;
+      EffectiveRows = DstSize.height;
     }
 
     Invalid = false;
@@ -837,7 +832,9 @@ public:
       EmitOP([tex = srv->texture(), viewId = srv->viewId()](ArgumentEncodingContext &enc) {
         auto texture = enc.access(tex, viewId, DXMT_ENCODER_RESOURCE_ACESS_READ | DXMT_ENCODER_RESOURCE_ACESS_WRITE);
         if (texture->mipmapLevelCount() > 1) {
-          enc.encodeBlitCommand([texture](BlitCommandContext &ctx) { ctx.encoder->generateMipmaps(texture); });
+          auto &cmd = enc.encodeBlitCommand<wmtcmd_blit_generate_mipmaps>();
+          cmd.type = WMTBlitCommandGenerateMipmaps;
+          cmd.texture = (obj_handle_t)texture;
         }
       });
     }
@@ -969,9 +966,13 @@ public:
         EmitOP([=, dst = dst_bind->buffer(), counter = uav->counter()](ArgumentEncodingContext &enc) {
           auto dst_buffer = enc.access(dst, DstAlignedByteOffset, 4, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
           auto counter_buffer = enc.access(counter, 0, 4, DXMT_ENCODER_RESOURCE_ACESS_READ);
-          enc.encodeBlitCommand([=](BlitCommandContext &ctx) {
-            ctx.encoder->copyFromBuffer(counter_buffer, 0, dst_buffer, DstAlignedByteOffset, 4);
-          });
+          auto &cmd = enc.encodeBlitCommand<wmtcmd_blit_copy_from_buffer_to_buffer>();
+          cmd.type = WMTBlitCommandCopyFromBufferToBuffer;
+          cmd.copy_length = 4;
+          cmd.src = (obj_handle_t)counter_buffer;
+          cmd.src_offset = 0;
+          cmd.dst = (obj_handle_t)dst_buffer;
+          cmd.dst_offset = DstAlignedByteOffset;
         });
       }
     }
@@ -1036,9 +1037,13 @@ public:
         SwitchToBlitEncoder(CommandBufferState::UpdateBlitEncoderActive);
         EmitOP([staging_buffer, offset, dst = bindable->buffer(), copy_offset, copy_len](ArgumentEncodingContext &enc) {
           auto dst_buffer = enc.access(dst, copy_offset, copy_len, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
-          enc.encodeBlitCommand([&, dst_buffer](BlitCommandContext &ctx) {
-            ctx.encoder->copyFromBuffer(staging_buffer, offset, dst_buffer, copy_offset, copy_len);
-          });
+          auto &cmd = enc.encodeBlitCommand<wmtcmd_blit_copy_from_buffer_to_buffer>();
+          cmd.type = WMTBlitCommandCopyFromBufferToBuffer;
+          cmd.copy_length = copy_len;
+          cmd.src = (obj_handle_t)staging_buffer;
+          cmd.src_offset = offset;
+          cmd.dst = (obj_handle_t)dst_buffer;
+          cmd.dst_offset = copy_offset;
         });
       } else {
         UNIMPLEMENTED("UpdateSubresource1: TODO: staging?");
@@ -2987,9 +2992,13 @@ public:
         SwitchToBlitEncoder(CommandBufferState::ReadbackBlitEncoderActive);
         EmitOP([src_ = src->buffer(), dst = std::move(staging_dst), DstX, SrcBox](ArgumentEncodingContext &enc) {
           auto src = enc.access(src_, SrcBox.left, SrcBox.right - SrcBox.left, DXMT_ENCODER_RESOURCE_ACESS_READ);
-          enc.encodeBlitCommand([=, &SrcBox, dst = dst->current](BlitCommandContext &ctx) {
-            ctx.encoder->copyFromBuffer(src, SrcBox.left, dst, DstX, SrcBox.right - SrcBox.left);
-          });
+          auto &cmd = enc.encodeBlitCommand<wmtcmd_blit_copy_from_buffer_to_buffer>();
+          cmd.type = WMTBlitCommandCopyFromBufferToBuffer;
+          cmd.copy_length = SrcBox.right - SrcBox.left;
+          cmd.src = (obj_handle_t)src;
+          cmd.src_offset = SrcBox.left;
+          cmd.dst = (obj_handle_t)dst->current.ptr();
+          cmd.dst_offset = DstX;
         });
         promote_flush = true;
       } else {
@@ -3001,9 +3010,13 @@ public:
         SwitchToBlitEncoder(CommandBufferState::UpdateBlitEncoderActive);
         EmitOP([dst_ = dst->buffer(), src = std::move(staging_src), DstX, SrcBox](ArgumentEncodingContext &enc) {
           auto dst = enc.access(dst_, DstX, SrcBox.right - SrcBox.left, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
-          enc.encodeBlitCommand([=, &SrcBox, src = src->current](BlitCommandContext &ctx) {
-            ctx.encoder->copyFromBuffer(src, SrcBox.left, dst, DstX, SrcBox.right - SrcBox.left);
-          });
+          auto &cmd = enc.encodeBlitCommand<wmtcmd_blit_copy_from_buffer_to_buffer>();
+          cmd.type = WMTBlitCommandCopyFromBufferToBuffer;
+          cmd.copy_length = SrcBox.right - SrcBox.left;
+          cmd.src = (obj_handle_t)src->current.ptr();
+          cmd.src_offset = SrcBox.left;
+          cmd.dst = (obj_handle_t)dst;
+          cmd.dst_offset = DstX;
         });
       } else if (auto src = reinterpret_cast<D3D11ResourceCommon *>(pSrcResource)) {
         // on-device copy
@@ -3012,9 +3025,13 @@ public:
                                SrcBox](ArgumentEncodingContext& enc) {
           auto src = enc.access(src_, SrcBox.left, SrcBox.right - SrcBox.left, DXMT_ENCODER_RESOURCE_ACESS_READ);
           auto dst = enc.access(dst_, DstX, SrcBox.right - SrcBox.left, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
-          enc.encodeBlitCommand([&, src, dst](BlitCommandContext &ctx) {
-            ctx.encoder->copyFromBuffer(src, SrcBox.left, dst, DstX, SrcBox.right - SrcBox.left);
-          });
+          auto &cmd = enc.encodeBlitCommand<wmtcmd_blit_copy_from_buffer_to_buffer>();
+          cmd.type = WMTBlitCommandCopyFromBufferToBuffer;
+          cmd.copy_length = SrcBox.right - SrcBox.left;
+          cmd.src = (obj_handle_t)src;
+          cmd.src_offset = SrcBox.left;
+          cmd.dst = (obj_handle_t)dst;
+          cmd.dst_offset = DstX;
         });
       } else {
         UNIMPLEMENTED("todo");
@@ -3051,12 +3068,17 @@ public:
           auto src = enc.access(src_, cmd.Src.MipLevel, cmd.Src.ArraySlice, DXMT_ENCODER_RESOURCE_ACESS_READ);
           auto offset = cmd.DstOrigin.z * dst->bytesPerImage + cmd.DstOrigin.y * dst->bytesPerRow +
                         cmd.DstOrigin.x * cmd.DstFormat.BytesPerTexel;
-          enc.encodeBlitCommand([=, &cmd, dst = dst->current, bpr = dst->bytesPerRow,
-                                 bpi = dst->bytesPerImage](BlitCommandContext &ctx) {
-            ctx.encoder->copyFromTexture(
-                src, cmd.Src.ArraySlice, cmd.Src.MipLevel, cmd.SrcOrigin, cmd.SrcSize, dst, offset, bpr, bpi
-            );
-          });
+          auto &cmd_cpbuf = enc.encodeBlitCommand<wmtcmd_blit_copy_from_texture_to_buffer>();
+          cmd_cpbuf.type = WMTBlitCommandCopyFromTextureToBuffer;
+          cmd_cpbuf.src = (obj_handle_t)src;
+          cmd_cpbuf.slice = cmd.Src.ArraySlice;
+          cmd_cpbuf.level = cmd.Src.MipLevel;
+          cmd_cpbuf.origin = cmd.SrcOrigin;
+          cmd_cpbuf.size = cmd.SrcSize;
+          cmd_cpbuf.dst = (obj_handle_t)dst->current.ptr();
+          cmd_cpbuf.offset = offset;
+          cmd_cpbuf.bytes_per_row = dst->bytesPerRow;
+          cmd_cpbuf.bytes_per_image = dst->bytesPerImage;
         });
         promote_flush = true;
       } else {
@@ -3078,12 +3100,17 @@ public:
             offset = cmd.SrcOrigin.z * src->bytesPerImage + cmd.SrcOrigin.y * src->bytesPerRow +
                      cmd.SrcOrigin.x * cmd.SrcFormat.BytesPerTexel;
           }
-          enc.encodeBlitCommand([=, &cmd, src = src->current, bpr = src->bytesPerRow,
-                                 bpi = src->bytesPerImage](BlitCommandContext &ctx) {
-            ctx.encoder->copyFromBuffer(
-                src, offset, bpr, bpi, cmd.SrcSize, dst, cmd.Dst.ArraySlice, cmd.Dst.MipLevel, cmd.DstOrigin
-            );
-          });
+          auto &cmd_cptex = enc.encodeBlitCommand<wmtcmd_blit_copy_from_buffer_to_texture>();
+          cmd_cptex.type = WMTBlitCommandCopyFromBufferToTexture;
+          cmd_cptex.src = (obj_handle_t)src->current.ptr();
+          cmd_cptex.src_offset = offset;
+          cmd_cptex.bytes_per_row =  src->bytesPerRow;
+          cmd_cptex.bytes_per_image = src->bytesPerImage;
+          cmd_cptex.size = cmd.SrcSize;
+          cmd_cptex.dst = (obj_handle_t)dst;
+          cmd_cptex.slice = cmd.Dst.ArraySlice;
+          cmd_cptex.level = cmd.Dst.MipLevel;
+          cmd_cptex.origin = cmd.DstOrigin;
         });
       } else if (auto src = GetTexture(cmd.pSrc)) {
         // on-device copy
@@ -3107,24 +3134,42 @@ public:
             bytes_total = bytes_per_image * cmd.SrcSize.depth;
 
             auto [buffer, offset] = enc.allocateTempBuffer(bytes_total, 16);
-            enc.encodeBlitCommand([=, &cmd = cmd](BlitCommandContext &ctx) {
-              ctx.encoder->copyFromTexture(
-                  src, cmd.Src.ArraySlice, cmd.Src.MipLevel, cmd.SrcOrigin, cmd.SrcSize, buffer, offset, bytes_per_row,
-                  bytes_per_image
-              );
-              ctx.encoder->copyFromBuffer(
-                  buffer, offset, bytes_per_row, bytes_per_image, cmd.SrcSize, dst, cmd.Dst.ArraySlice,
-                  cmd.Dst.MipLevel, cmd.DstOrigin
-              );
-            });
+            auto &cmd_cpbuf = enc.encodeBlitCommand<wmtcmd_blit_copy_from_texture_to_buffer>();
+            cmd_cpbuf.type = WMTBlitCommandCopyFromTextureToBuffer;
+            cmd_cpbuf.src = (obj_handle_t)src;
+            cmd_cpbuf.slice = cmd.Src.ArraySlice;
+            cmd_cpbuf.level = cmd.Src.MipLevel;
+            cmd_cpbuf.origin = cmd.SrcOrigin;
+            cmd_cpbuf.size = cmd.SrcSize;
+            cmd_cpbuf.dst = (obj_handle_t)buffer;
+            cmd_cpbuf.offset = offset;
+            cmd_cpbuf.bytes_per_row = bytes_per_row;
+            cmd_cpbuf.bytes_per_image = bytes_per_image;
+  
+            auto &cmd_cptex = enc.encodeBlitCommand<wmtcmd_blit_copy_from_buffer_to_texture>();
+            cmd_cptex.type = WMTBlitCommandCopyFromBufferToTexture;
+            cmd_cptex.src = (obj_handle_t)buffer;
+            cmd_cptex.src_offset = offset;
+            cmd_cptex.bytes_per_row = bytes_per_row;
+            cmd_cptex.bytes_per_image = bytes_per_image;
+            cmd_cptex.size = cmd.SrcSize;
+            cmd_cptex.dst = (obj_handle_t)dst;
+            cmd_cptex.slice = cmd.Dst.ArraySlice;
+            cmd_cptex.level = cmd.Dst.MipLevel;
+            cmd_cptex.origin = cmd.DstOrigin;
             return;
           }
-          enc.encodeBlitCommand([=, &cmd](BlitCommandContext &ctx) {
-            ctx.encoder->copyFromTexture(
-                src, cmd.Src.ArraySlice, cmd.Src.MipLevel, cmd.SrcOrigin, cmd.SrcSize, dst, cmd.Dst.ArraySlice,
-                cmd.Dst.MipLevel, cmd.DstOrigin
-            );
-          });
+          auto &cmd_cptex = enc.encodeBlitCommand<wmtcmd_blit_copy_from_texture_to_texture>();
+          cmd_cptex.type = WMTBlitCommandCopyFromTextureToTexture;
+          cmd_cptex.src = (obj_handle_t)src;
+          cmd_cptex.src_slice = cmd.Src.ArraySlice;
+          cmd_cptex.src_level = cmd.Src.MipLevel;
+          cmd_cptex.src_origin = cmd.SrcOrigin;
+          cmd_cptex.src_size = cmd.SrcSize;
+          cmd_cptex.dst = (obj_handle_t)dst;
+          cmd_cptex.dst_slice = cmd.Dst.ArraySlice;
+          cmd_cptex.dst_level = cmd.Dst.MipLevel;
+          cmd_cptex.dst_origin = cmd.DstOrigin;
         });
       } else {
         UNREACHABLE
@@ -3153,16 +3198,29 @@ public:
           auto bytes_per_row = block_w * cmd.SrcFormat.BytesPerTexel;
           auto bytes_per_image = bytes_per_row * block_h;
           auto [buffer, offset] = enc.allocateTempBuffer(bytes_per_image * cmd.SrcSize.depth, 16);
-          enc.encodeBlitCommand([=, &cmd](BlitCommandContext &ctx) {
-            ctx.encoder->copyFromTexture(
-                src, cmd.Src.ArraySlice, cmd.Src.MipLevel, cmd.SrcOrigin, cmd.SrcSize, buffer, offset, bytes_per_row,
-                bytes_per_image
-            );
-            ctx.encoder->copyFromBuffer(
-                buffer, offset, bytes_per_row, bytes_per_image, MTL::Size::Make(block_w, block_h, cmd.SrcSize.depth),
-                dst, cmd.Dst.ArraySlice, cmd.Dst.MipLevel, cmd.DstOrigin
-            );
-          });
+          auto &cmd_cpbuf = enc.encodeBlitCommand<wmtcmd_blit_copy_from_texture_to_buffer>();
+          cmd_cpbuf.type = WMTBlitCommandCopyFromTextureToBuffer;
+          cmd_cpbuf.src = (obj_handle_t)src;
+          cmd_cpbuf.slice = cmd.Src.ArraySlice;
+          cmd_cpbuf.level = cmd.Src.MipLevel;
+          cmd_cpbuf.origin = cmd.SrcOrigin;
+          cmd_cpbuf.size = cmd.SrcSize;
+          cmd_cpbuf.dst = (obj_handle_t)buffer;
+          cmd_cpbuf.offset = offset;
+          cmd_cpbuf.bytes_per_row = bytes_per_row;
+          cmd_cpbuf.bytes_per_image = bytes_per_image;
+
+          auto &cmd_cptex = enc.encodeBlitCommand<wmtcmd_blit_copy_from_buffer_to_texture>();
+          cmd_cptex.type = WMTBlitCommandCopyFromBufferToTexture;
+          cmd_cptex.src = (obj_handle_t)buffer;
+          cmd_cptex.src_offset = offset;
+          cmd_cptex.bytes_per_row = bytes_per_row;
+          cmd_cptex.bytes_per_image = bytes_per_image;
+          cmd_cptex.size = {block_w, block_h, cmd.SrcSize.depth};
+          cmd_cptex.dst = (obj_handle_t)dst;
+          cmd_cptex.slice = cmd.Dst.ArraySlice;
+          cmd_cptex.level = cmd.Dst.MipLevel;
+          cmd_cptex.origin = cmd.DstOrigin;
         });
       } else {
         UNREACHABLE
@@ -3195,17 +3253,29 @@ public:
           auto clamped_src_height = std::min(
               cmd.SrcSize.height << 2, std::max<uint32_t>(dst->height() >> cmd.Dst.MipLevel, 1u) - cmd.DstOrigin.y
           );
-          enc.encodeBlitCommand([=, &cmd](BlitCommandContext &ctx) {
-            ctx.encoder->copyFromTexture(
-                src, cmd.Src.ArraySlice, cmd.Src.MipLevel, cmd.SrcOrigin, cmd.SrcSize, buffer, offset, bytes_per_row,
-                bytes_per_image
-            );
-            ctx.encoder->copyFromBuffer(
-                buffer, offset, bytes_per_row, bytes_per_image,
-                MTL::Size::Make(clamped_src_width, clamped_src_height, cmd.SrcSize.depth), dst, cmd.Dst.ArraySlice,
-                cmd.Dst.MipLevel, cmd.DstOrigin
-            );
-          });
+          auto &cmd_cpbuf = enc.encodeBlitCommand<wmtcmd_blit_copy_from_texture_to_buffer>();
+          cmd_cpbuf.type = WMTBlitCommandCopyFromTextureToBuffer;
+          cmd_cpbuf.src = (obj_handle_t)src;
+          cmd_cpbuf.slice = cmd.Src.ArraySlice;
+          cmd_cpbuf.level = cmd.Src.MipLevel;
+          cmd_cpbuf.origin = cmd.SrcOrigin;
+          cmd_cpbuf.size = cmd.SrcSize;
+          cmd_cpbuf.dst = (obj_handle_t)buffer;
+          cmd_cpbuf.offset = offset;
+          cmd_cpbuf.bytes_per_row = bytes_per_row;
+          cmd_cpbuf.bytes_per_image = bytes_per_image;
+
+          auto &cmd_cptex = enc.encodeBlitCommand<wmtcmd_blit_copy_from_buffer_to_texture>();
+          cmd_cptex.type = WMTBlitCommandCopyFromBufferToTexture;
+          cmd_cptex.src = (obj_handle_t)buffer;
+          cmd_cptex.src_offset = offset;
+          cmd_cptex.bytes_per_row = bytes_per_row;
+          cmd_cptex.bytes_per_image = bytes_per_image;
+          cmd_cptex.size = {clamped_src_width, clamped_src_height, cmd.SrcSize.depth};
+          cmd_cptex.dst = (obj_handle_t)dst;
+          cmd_cptex.slice = cmd.Dst.ArraySlice;
+          cmd_cptex.level = cmd.Dst.MipLevel;
+          cmd_cptex.origin = cmd.DstOrigin;
         });
       } else {
         UNREACHABLE
@@ -3224,15 +3294,15 @@ public:
 
     if (auto dst = GetTexture(cmd.pDst)) {
       auto bytes_per_depth_slice = cmd.EffectiveRows * cmd.EffectiveBytesPerRow;
-      auto [ptr, staging_buffer, offset] = AllocateStagingBuffer(bytes_per_depth_slice * cmd.DstRegion.size.depth, 16);
+      auto [ptr, staging_buffer, offset] = AllocateStagingBuffer(bytes_per_depth_slice * cmd.DstSize.depth, 16);
       if (cmd.EffectiveBytesPerRow == SrcRowPitch) {
-        for (unsigned depthSlice = 0; depthSlice < cmd.DstRegion.size.depth; depthSlice++) {
+        for (unsigned depthSlice = 0; depthSlice < cmd.DstSize.depth; depthSlice++) {
           char *dst = ((char *)ptr) + depthSlice * bytes_per_depth_slice;
           const char *src = ((const char *)pSrcData) + depthSlice * SrcDepthPitch;
           memcpy(dst, src, bytes_per_depth_slice);
         }
       } else {
-        for (unsigned depthSlice = 0; depthSlice < cmd.DstRegion.size.depth; depthSlice++) {
+        for (unsigned depthSlice = 0; depthSlice < cmd.DstSize.depth; depthSlice++) {
           for (unsigned row = 0; row < cmd.EffectiveRows; row++) {
             char *dst = ((char *)ptr) + row * cmd.EffectiveBytesPerRow + depthSlice * bytes_per_depth_slice;
             const char *src = ((const char *)pSrcData) + row * SrcRowPitch + depthSlice * SrcDepthPitch;
@@ -3244,12 +3314,17 @@ public:
       EmitOP([staging_buffer, offset, dst = std::move(dst), cmd = std::move(cmd),
             bytes_per_depth_slice](ArgumentEncodingContext &enc) {
         auto texture = enc.access(dst, cmd.Dst.MipLevel, cmd.Dst.ArraySlice, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
-        enc.encodeBlitCommand([&, texture](BlitCommandContext &ctx) {
-          ctx.encoder->copyFromBuffer(
-              staging_buffer, offset, cmd.EffectiveBytesPerRow, bytes_per_depth_slice, cmd.DstRegion.size,
-              texture, cmd.Dst.ArraySlice, cmd.Dst.MipLevel, cmd.DstRegion.origin
-          );
-        });
+        auto &cmd_cptex = enc.encodeBlitCommand<wmtcmd_blit_copy_from_buffer_to_texture>();
+        cmd_cptex.type = WMTBlitCommandCopyFromBufferToTexture;
+        cmd_cptex.src = (obj_handle_t)staging_buffer;
+        cmd_cptex.src_offset = offset;
+        cmd_cptex.bytes_per_row = cmd.EffectiveBytesPerRow;
+        cmd_cptex.bytes_per_image = bytes_per_depth_slice;
+        cmd_cptex.size = cmd.DstSize;
+        cmd_cptex.dst = (obj_handle_t)texture;
+        cmd_cptex.slice = cmd.Dst.ArraySlice;
+        cmd_cptex.level = cmd.Dst.MipLevel;
+        cmd_cptex.origin = cmd.DstOrigin;
       });
     } else if (auto staging_dst = GetStagingResource(cmd.pDst, cmd.DstSubresource)) {
       // staging: ...
