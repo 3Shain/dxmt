@@ -557,6 +557,76 @@ _MTLDevice_newMeshRenderPipelineState(void *obj) {
   return STATUS_SUCCESS;
 }
 
+static NTSTATUS
+_MTLBlitCommandEncoder_encodeCommands(void *obj) {
+  struct unixcall_generic_obj_cmd_noret *params = obj;
+  struct wmtcmd_base *next = (struct wmtcmd_base *)params->cmd_head;
+  id<MTLBlitCommandEncoder> encoder = (id<MTLBlitCommandEncoder>)params->encoder;
+  while (next) {
+    switch ((enum WMTBlitCommandType)next->type) {
+    default:
+      assert(!next->type && "unhandled blit command type");
+      break;
+    case WMTBlitCommandCopyFromBufferToBuffer: {
+      struct wmtcmd_blit_copy_from_buffer_to_buffer *body = (struct wmtcmd_blit_copy_from_buffer_to_buffer *)next;
+      [encoder copyFromBuffer:(id<MTLBuffer>)body->src
+                 sourceOffset:body->src_offset
+                     toBuffer:(id<MTLBuffer>)body->dst
+            destinationOffset:body->dst_offset
+                         size:body->copy_length];
+      break;
+    }
+    case WMTBlitCommandCopyFromBufferToTexture: {
+      struct wmtcmd_blit_copy_from_buffer_to_texture *body = (struct wmtcmd_blit_copy_from_buffer_to_texture *)next;
+      [encoder copyFromBuffer:(id<MTLBuffer>)body->src
+                 sourceOffset:body->src_offset
+            sourceBytesPerRow:body->bytes_per_row
+          sourceBytesPerImage:body->bytes_per_image
+                   sourceSize:MTLSizeMake(body->size.width, body->size.height, body->size.depth)
+                    toTexture:(id<MTLTexture>)body->dst
+             destinationSlice:body->slice
+             destinationLevel:body->level
+            destinationOrigin:MTLOriginMake(body->origin.x, body->origin.y, body->origin.z)];
+      break;
+    }
+    case WMTBlitCommandCopyFromTextureToBuffer: {
+      struct wmtcmd_blit_copy_from_texture_to_buffer *body = (struct wmtcmd_blit_copy_from_texture_to_buffer *)next;
+      [encoder copyFromTexture:(id<MTLTexture>)body->src
+                       sourceSlice:body->slice
+                       sourceLevel:body->level
+                      sourceOrigin:MTLOriginMake(body->origin.x, body->origin.y, body->origin.z)
+                        sourceSize:MTLSizeMake(body->size.width, body->size.height, body->size.depth)
+                          toBuffer:(id<MTLBuffer>)body->dst
+                 destinationOffset:body->offset
+            destinationBytesPerRow:body->bytes_per_row
+          destinationBytesPerImage:body->bytes_per_image];
+      break;
+    }
+    case WMTBlitCommandCopyFromTextureToTexture: {
+      struct wmtcmd_blit_copy_from_texture_to_texture *body = (struct wmtcmd_blit_copy_from_texture_to_texture *)next;
+      [encoder copyFromTexture:(id<MTLTexture>)body->src
+                   sourceSlice:body->src_slice
+                   sourceLevel:body->src_level
+                  sourceOrigin:MTLOriginMake(body->src_origin.x, body->src_origin.y, body->src_origin.z)
+                    sourceSize:MTLSizeMake(body->src_size.width, body->src_size.height, body->src_size.depth)
+                     toTexture:(id<MTLTexture>)body->dst
+              destinationSlice:body->dst_slice
+              destinationLevel:body->dst_level
+             destinationOrigin:MTLOriginMake(body->dst_origin.x, body->dst_origin.y, body->dst_origin.z)];
+      break;
+    }
+    case WMTBlitCommandGenerateMipmaps: {
+      struct wmtcmd_blit_generate_mipmaps *body = (struct wmtcmd_blit_generate_mipmaps *)next;
+      [encoder generateMipmapsForTexture:(id<MTLTexture>)body->texture];
+      break;
+    }
+    }
+
+    next = next->next.ptr;
+  }
+  return STATUS_SUCCESS;
+}
+
 const void *__winemetal_unixcalls[] = {
     &_NSObject_retain,
     &_NSObject_release,
@@ -594,6 +664,7 @@ const void *__winemetal_unixcalls[] = {
     &_MTLCommandEncoder_endEncoding,
     &_MTLDevice_newRenderPipelineState,
     &_MTLDevice_newMeshRenderPipelineState,
+    &_MTLBlitCommandEncoder_encodeCommands,
 };
 
 const unsigned int __winemetal_unixcalls_num = sizeof(__winemetal_unixcalls) / sizeof(void *);

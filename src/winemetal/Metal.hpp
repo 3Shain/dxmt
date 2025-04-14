@@ -208,6 +208,10 @@ public:
 
 class BlitCommandEncoder : public CommandEncoder {
 public:
+  void
+  encodeCommands(const wmtcmd_blit_nop *cmd_head) {
+    MTLBlitCommandEncoder_encodeCommands(handle, (const wmtcmd_base *)cmd_head);
+  }
 };
 
 class ComputeCommandEncoder : public CommandEncoder {

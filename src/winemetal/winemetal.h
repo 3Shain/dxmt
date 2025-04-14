@@ -740,4 +740,102 @@ WINEMETAL_API obj_handle_t MTLDevice_newMeshRenderPipelineState(
     obj_handle_t device, struct WMTMeshRenderPipelineInfo *info, obj_handle_t *err_out
 );
 
+struct WMTSize {
+  uint64_t width;
+  uint64_t height;
+  uint64_t depth;
+};
+
+struct WMTOrigin {
+  uint64_t x;
+  uint64_t y;
+  uint64_t z;
+};
+
+enum WMTBlitCommandType : uint16_t {
+  WMTBlitCommandNop,
+  WMTBlitCommandCopyFromBufferToBuffer,
+  WMTBlitCommandCopyFromBufferToTexture,
+  WMTBlitCommandCopyFromTextureToBuffer,
+  WMTBlitCommandCopyFromTextureToTexture,
+  WMTBlitCommandGenerateMipmaps,
+};
+
+struct wmtcmd_base {
+  uint16_t type;
+  uint16_t reserved[3];
+  struct WMTMemoryPointer next;
+};
+
+struct wmtcmd_blit_nop {
+  enum WMTBlitCommandType type;
+  uint16_t reserved[3];
+  struct WMTMemoryPointer next;
+};
+
+struct wmtcmd_blit_copy_from_buffer_to_buffer {
+  enum WMTBlitCommandType type;
+  uint16_t reserved[3];
+  struct WMTMemoryPointer next;
+  obj_handle_t src;
+  uint64_t src_offset;
+  obj_handle_t dst;
+  uint64_t dst_offset;
+  uint64_t copy_length;
+};
+
+struct wmtcmd_blit_copy_from_buffer_to_texture {
+  enum WMTBlitCommandType type;
+  uint16_t reserved[3];
+  struct WMTMemoryPointer next;
+  obj_handle_t src;
+  uint64_t src_offset;
+  uint32_t bytes_per_row;
+  uint32_t bytes_per_image;
+  struct WMTSize size;
+  obj_handle_t dst;
+  uint32_t slice;
+  uint32_t level;
+  struct WMTOrigin origin;
+};
+
+struct wmtcmd_blit_copy_from_texture_to_texture {
+  enum WMTBlitCommandType type;
+  uint16_t reserved[3];
+  struct WMTMemoryPointer next;
+  obj_handle_t src;
+  uint32_t src_slice;
+  uint32_t src_level;
+  struct WMTOrigin src_origin;
+  struct WMTSize src_size;
+  obj_handle_t dst;
+  uint32_t dst_slice;
+  uint32_t dst_level;
+  struct WMTOrigin dst_origin;
+};
+
+struct wmtcmd_blit_copy_from_texture_to_buffer {
+  enum WMTBlitCommandType type;
+  uint16_t reserved[3];
+  struct WMTMemoryPointer next;
+  obj_handle_t src;
+  uint32_t slice;
+  uint32_t level;
+  struct WMTOrigin origin;
+  struct WMTSize size;
+  obj_handle_t dst;
+  uint64_t offset;
+  uint32_t bytes_per_row;
+  uint32_t bytes_per_image;
+};
+
+struct wmtcmd_blit_generate_mipmaps {
+  enum WMTBlitCommandType type;
+  uint16_t reserved[3];
+  struct WMTMemoryPointer next;
+  obj_handle_t texture;
+};
+
+WINEMETAL_API void MTLBlitCommandEncoder_encodeCommands(obj_handle_t encoder, const struct wmtcmd_base *cmd_head);
+
 #endif
