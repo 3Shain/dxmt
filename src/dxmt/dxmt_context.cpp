@@ -498,6 +498,9 @@ ArgumentEncodingContext::startBlitPass() {
   auto encoder_info = allocate<BlitEncoderData>();
   encoder_info->type = EncoderType::Blit;
   encoder_info->id = nextEncoderId();
+  encoder_info->cmd_head.type = WMTBlitCommandNop;
+  encoder_info->cmd_head.next.set(0);
+  encoder_info->cmd_tail = (wmtcmd_base *)&encoder_info->cmd_head;
   encoder_current = encoder_info;
 
   currentFrameStatistics().blit_pass_count++;
@@ -697,8 +700,7 @@ ArgumentEncodingContext::flushCommands(MTL::CommandBuffer *cmdbuf, uint64_t seqI
     case EncoderType::Blit: {
       auto data = static_cast<BlitEncoderData *>(current);
       auto encoder = cmdbuf_.blitCommandEncoder();
-      BlitCommandContext ctx{(MTL::BlitCommandEncoder *)encoder.handle};
-      data->cmds.execute(ctx);
+      encoder.encodeCommands(&data->cmd_head);
       encoder.endEncoding();
       data->~BlitEncoderData();
       break;

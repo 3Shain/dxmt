@@ -1,7 +1,6 @@
 #pragma once
 
 #include "Metal.hpp"
-#include "Metal/MTLBlitCommandEncoder.hpp"
 #include "Metal/MTLCommandBuffer.hpp"
 #include "Metal/MTLComputeCommandEncoder.hpp"
 #include "Metal/MTLRenderCommandEncoder.hpp"
@@ -143,12 +142,9 @@ struct ComputeEncoderData : EncoderData {
   CommandList<ComputeCommandContext> cmds;
 };
 
-struct BlitCommandContext {
-  MTL::BlitCommandEncoder *encoder;
-};
-
 struct BlitEncoderData : EncoderData {
-  CommandList<BlitCommandContext> cmds;
+  wmtcmd_blit_nop cmd_head;
+  wmtcmd_base *cmd_tail;
 };
 
 struct ClearEncoderData : EncoderData {
@@ -497,12 +493,16 @@ public:
     cmds.emit(std::forward<cmd>(fn), allocate_cpu_heap(cmds.calculateCommandSize<cmd>(), 16));
   }
 
-  template <CommandWithContext<BlitCommandContext> cmd>
-  void
-  encodeBlitCommand(cmd &&fn) {
+  template <typename cmd_struct>
+  cmd_struct &
+  encodeBlitCommand() {
     assert(encoder_current->type == EncoderType::Blit);
-    auto &cmds = static_cast<BlitEncoderData *>(encoder_current)->cmds;
-    cmds.emit(std::forward<cmd>(fn), allocate_cpu_heap(cmds.calculateCommandSize<cmd>(), 16));
+    auto encoder = static_cast<BlitEncoderData *>(encoder_current);
+    auto storage = (cmd_struct *)allocate_cpu_heap(sizeof(cmd_struct), 16);
+    encoder->cmd_tail->next.set(storage);
+    encoder->cmd_tail = (wmtcmd_base *)storage;
+    storage->next.set(nullptr);
+    return *storage;
   }
 
   template <typename T>
