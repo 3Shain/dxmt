@@ -126,7 +126,10 @@ ArgumentEncodingContext::encodeConstantBuffers(const MTL_SHADER_REFLECTION *refl
 
   /* kConstantBufferTableBinding = 29 */
   if constexpr (stage == PipelineStage::Compute) {
-    encodeComputeCommand([offset](ComputeCommandContext &ctx) { ctx.encoder->setBufferOffset(offset, 29); });
+    auto &cmd = encodeComputeCommand<wmtcmd_compute_setbufferoffset>();
+    cmd.type = WMTComputeCommandSetBufferOffset;
+    cmd.offset = offset;
+    cmd.index = 29;
   } else if constexpr (stage == PipelineStage::Hull) {
     encodePreTessCommand([offset](RenderCommandContext &ctx) { ctx.encoder->setMeshBufferOffset(offset, 29); });
   } else if constexpr (stage == PipelineStage::Vertex) {
@@ -291,7 +294,10 @@ ArgumentEncodingContext::encodeShaderResources(const MTL_SHADER_REFLECTION *refl
   }
 
   if constexpr (stage == PipelineStage::Compute) {
-    encodeComputeCommand([offset](ComputeCommandContext &ctx) { ctx.encoder->setBufferOffset(offset, 30); });
+    auto &cmd = encodeComputeCommand<wmtcmd_compute_setbufferoffset>();
+    cmd.type = WMTComputeCommandSetBufferOffset;
+    cmd.offset = offset;
+    cmd.index = 30;
   } else if constexpr (stage == PipelineStage::Hull) {
     encodePreTessCommand([offset](RenderCommandContext &ctx) { ctx.encoder->setMeshBufferOffset(offset, 30); });
   } else if constexpr (stage == PipelineStage::Vertex) {
@@ -485,6 +491,9 @@ ArgumentEncodingContext::startComputePass() {
   auto encoder_info = allocate<ComputeEncoderData>();
   encoder_info->type = EncoderType::Compute;
   encoder_info->id = nextEncoderId();
+  encoder_info->cmd_head.type = WMTComputeCommandNop;
+  encoder_info->cmd_head.next.set(0);
+  encoder_info->cmd_tail = (wmtcmd_base *)&encoder_info->cmd_head;
   encoder_current = encoder_info;
 
   currentFrameStatistics().compute_pass_count++;
@@ -689,10 +698,16 @@ ArgumentEncodingContext::flushCommands(MTL::CommandBuffer *cmdbuf, uint64_t seqI
     case EncoderType::Compute: {
       auto data = static_cast<ComputeEncoderData *>(current);
       auto encoder = cmdbuf_.computeCommandEncoder(false);
-      ComputeCommandContext ctx{(MTL::ComputeCommandEncoder *)encoder.handle, {}, queue_.emulated_cmd};
-      ctx.encoder->setBuffer(gpu_buffer_, 0, 29);
-      ctx.encoder->setBuffer(gpu_buffer_, 0, 30);
-      data->cmds.execute(ctx);
+      struct wmtcmd_compute_setbuffer setcmd;
+      setcmd.type = WMTComputeCommandSetBuffer;
+      setcmd.next.set(nullptr);
+      setcmd.buffer = (obj_handle_t)gpu_buffer_;
+      setcmd.offset = 0;
+      setcmd.index = 29;
+      encoder.encodeCommands((const wmtcmd_compute_nop *)&setcmd);
+      setcmd.index = 30;
+      encoder.encodeCommands((const wmtcmd_compute_nop *)&setcmd);
+      encoder.encodeCommands(&data->cmd_head);
       encoder.endEncoding();
       data->~ComputeEncoderData();
       break;

@@ -11,7 +11,6 @@
 #include "QuartzCore/CAMetalDrawable.hpp"
 #include "QuartzCore/CAMetalLayer.hpp"
 #include "dxmt_buffer.hpp"
-#include "dxmt_command.hpp"
 #include "dxmt_command_list.hpp"
 #include "dxmt_deptrack.hpp"
 #include "dxmt_occlusion_query.hpp"
@@ -132,14 +131,9 @@ struct RenderEncoderData : EncoderData {
   bool use_geometry = 0;
 };
 
-struct ComputeCommandContext {
-  MTL::ComputeCommandEncoder *encoder;
-  MTL::Size threadgroup_size;
-  EmulatedCommandContext& cmd;
-};
-
 struct ComputeEncoderData : EncoderData {
-  CommandList<ComputeCommandContext> cmds;
+  wmtcmd_compute_nop cmd_head;
+  wmtcmd_base *cmd_tail;
 };
 
 struct BlitEncoderData : EncoderData {
@@ -417,10 +411,12 @@ public:
   template <PipelineStage stage, PipelineKind kind>
   constexpr void
   makeResident(MTL::Resource *resource, DXMT_RESOURCE_RESIDENCY requested) {
-    if constexpr (stage == PipelineStage::Compute)
-      encodeComputeCommand([resource = Obj(resource), requested](ComputeCommandContext &ctx) {
-        ctx.encoder->useResource(resource, GetUsageFromResidencyMask(requested));
-      });
+    if constexpr (stage == PipelineStage::Compute) {
+      auto &cmd = encodeComputeCommand<wmtcmd_compute_useresource>();
+      cmd.type = WMTComputeCommandUseResource;
+      cmd.resource = (obj_handle_t)resource;
+      cmd.usage = (WMTResourceUsage)GetUsageFromResidencyMask(requested);
+    }
     else if constexpr (kind == PipelineKind::Tessellation)
       encodePreTessCommand([resource = Obj(resource), requested](RenderCommandContext &ctx) {
         ctx.encoder->useResource(resource, GetUsageFromResidencyMask(requested), GetStagesFromResidencyMask(requested));
@@ -485,12 +481,16 @@ public:
     cmds.emit(std::forward<cmd>(fn), allocate_cpu_heap(cmds.calculateCommandSize<cmd>(), 16));
   }
 
-  template <CommandWithContext<ComputeCommandContext> cmd>
-  void
-  encodeComputeCommand(cmd &&fn) {
+  template <typename cmd_struct>
+  cmd_struct &
+  encodeComputeCommand() {
     assert(encoder_current->type == EncoderType::Compute);
-    auto &cmds = static_cast<ComputeEncoderData *>(encoder_current)->cmds;
-    cmds.emit(std::forward<cmd>(fn), allocate_cpu_heap(cmds.calculateCommandSize<cmd>(), 16));
+    auto encoder = static_cast<ComputeEncoderData *>(encoder_current);
+    auto storage = (cmd_struct *)allocate_cpu_heap(sizeof(cmd_struct), 16);
+    encoder->cmd_tail->next.set(storage);
+    encoder->cmd_tail = (wmtcmd_base *)storage;
+    storage->next.set(nullptr);
+    return *storage;
   }
 
   template <typename cmd_struct>

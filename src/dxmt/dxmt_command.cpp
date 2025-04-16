@@ -9,7 +9,7 @@ extern "C" unsigned int dxmt_command_metallib_len;
   name##_pipeline = device.newComputePipelineState(name##_function, error);
 
 namespace dxmt {
-EmulatedCommandContext::EmulatedCommandContext(WMT::Device device) {
+EmulatedCommandContext::EmulatedCommandContext(WMT::Device device, ArgumentEncodingContext &ctx): ctx(ctx) {
   auto pool = WMT::MakeAutoreleasePool();
 
   WMT::Reference<WMT::Error> error;

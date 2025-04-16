@@ -79,7 +79,6 @@ public:
   }
 
   CommandList& operator=(CommandList&& move) {
-    assert(!empty.next);
     this->reset();
     empty.next = move.empty.next;
     list_end = move.list_end;

@@ -658,22 +658,15 @@ public:
             is_raw = desc.Buffer.Flags & D3D11_BUFFER_UAV_FLAG_RAW,
             format = desc.Format](ArgumentEncodingContext &enc) {
         if (is_raw) {
-          enc.encodeComputeCommand([&, buffer = enc.access(
-                                           buffer, slice.byteOffset, slice.byteLength, DXMT_ENCODER_RESOURCE_ACESS_WRITE
-                                       )](ComputeCommandContext &ctx) {
-            ctx.cmd.ClearBufferUint(ctx.encoder, buffer, slice.byteOffset, slice.byteLength >> 2, value);
-          });
+          auto buffer_handle = enc.access(buffer, slice.byteOffset, slice.byteLength, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
+          enc.queue().emulated_cmd.ClearBufferUint(buffer_handle, slice.byteOffset, slice.byteLength >> 2, value);
         } else {
           if (format == DXGI_FORMAT_UNKNOWN) {
-            enc.encodeComputeCommand(
-                [&, buffer = enc.access(buffer, slice.byteOffset, slice.byteLength, DXMT_ENCODER_RESOURCE_ACESS_WRITE)](
-                    ComputeCommandContext &ctx
-                ) { ctx.cmd.ClearBufferUint(ctx.encoder, buffer, slice.byteOffset, slice.byteLength >> 2, value); }
-            );
+            auto buffer_handle = enc.access(buffer, slice.byteOffset, slice.byteLength, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
+            enc.queue().emulated_cmd.ClearBufferUint(buffer_handle, slice.byteOffset, slice.byteLength >> 2, value);
           } else {
-            enc.encodeComputeCommand([&, texture = enc.access(buffer, viewId, DXMT_ENCODER_RESOURCE_ACESS_WRITE)](
-                                         ComputeCommandContext &ctx
-                                     ) { ctx.cmd.ClearTextureBufferUint(ctx.encoder, texture, value); });
+            auto texture_handle = enc.access(buffer, viewId, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
+            enc.queue().emulated_cmd.ClearTextureBufferUint(texture_handle, value);
           }
         }
       });
@@ -694,25 +687,22 @@ public:
           return;
         }
         auto viewChecked = texture->checkViewUseFormat(viewId, uint_format);
-        enc.encodeComputeCommand(
-            [&, dimension, texture = enc.access(texture, viewChecked, DXMT_ENCODER_RESOURCE_ACESS_WRITE)](auto &ctx) {
-              switch (dimension) {
-              default:
-                break;
-              case D3D11_UAV_DIMENSION_TEXTURE1D:
-              case D3D11_UAV_DIMENSION_TEXTURE2D:
-                ctx.cmd.ClearTexture2DUint(ctx.encoder, texture, value);
-                break;
-              case D3D11_UAV_DIMENSION_TEXTURE1DARRAY:
-              case D3D11_UAV_DIMENSION_TEXTURE2DARRAY:
-                ctx.cmd.ClearTexture2DArrayUint(ctx.encoder, texture, value);
-                break;
-              case D3D11_UAV_DIMENSION_TEXTURE3D:
-                ctx.cmd.ClearTexture3DUint(ctx.encoder, texture, value);
-                break;
-              }
-            }
-        );
+        auto texture_handle = enc.access(texture, viewChecked, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
+        switch (dimension) {
+        default:
+          break;
+        case D3D11_UAV_DIMENSION_TEXTURE1D:
+        case D3D11_UAV_DIMENSION_TEXTURE2D:
+          enc.queue().emulated_cmd.ClearTexture2DUint(texture_handle, value);
+          break;
+        case D3D11_UAV_DIMENSION_TEXTURE1DARRAY:
+        case D3D11_UAV_DIMENSION_TEXTURE2DARRAY:
+          enc.queue().emulated_cmd.ClearTexture2DArrayUint(texture_handle, value);
+          break;
+        case D3D11_UAV_DIMENSION_TEXTURE3D:
+          enc.queue().emulated_cmd.ClearTexture3DUint(texture_handle, value);
+          break;
+        }
       });
     InvalidateCurrentPass();
   }
@@ -734,28 +724,22 @@ public:
             is_raw = desc.Buffer.Flags & D3D11_BUFFER_UAV_FLAG_RAW,
             format = desc.Format](ArgumentEncodingContext &enc) {
         if (is_raw) {
-          enc.encodeComputeCommand([&, buffer = enc.access(
-                                           buffer, slice.byteOffset, slice.byteLength, DXMT_ENCODER_RESOURCE_ACESS_WRITE
-                                       )](ComputeCommandContext &ctx) {
-            ctx.cmd.ClearBufferFloat(ctx.encoder, buffer, slice.byteOffset, slice.byteLength >> 2, value);
-          });
+          auto buffer_handle = enc.access(buffer, slice.byteOffset, slice.byteLength, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
+          enc.queue().emulated_cmd.ClearBufferFloat(buffer_handle, slice.byteOffset, slice.byteLength >> 2, value);
         } else {
           if (format == DXGI_FORMAT_UNKNOWN) {
-            enc.encodeComputeCommand(
-                [&, buffer = enc.access(buffer, slice.byteOffset, slice.byteLength, DXMT_ENCODER_RESOURCE_ACESS_WRITE)](
-                    ComputeCommandContext &ctx
-                ) { ctx.cmd.ClearBufferFloat(ctx.encoder, buffer, slice.byteOffset, slice.byteLength >> 2, value); }
-            );
+            auto buffer_handle = enc.access(buffer, slice.byteOffset, slice.byteLength, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
+            enc.queue().emulated_cmd.ClearBufferFloat(buffer_handle, slice.byteOffset, slice.byteLength >> 2, value);
           } else {
-            enc.encodeComputeCommand([&, texture = enc.access(buffer, viewId, DXMT_ENCODER_RESOURCE_ACESS_WRITE)](
-                                         ComputeCommandContext &ctx
-                                     ) { ctx.cmd.ClearTextureBufferFloat(ctx.encoder, texture, value); });
+            auto texture_handle = enc.access(buffer, viewId, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
+            enc.queue().emulated_cmd.ClearTextureBufferFloat(texture_handle, value);
           }
         }
       });
     else
       EmitOP([=, texture = pUAV->texture(), viewId = pUAV->viewId(), dimension = desc.ViewDimension,
             value = std::array<float, 4>({Values[0], Values[1], Values[2], Values[3]})](ArgumentEncodingContext &enc) {
+        auto texture_handle = enc.access(texture, viewId, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
         switch (dimension) {
         default:
           break;
@@ -766,22 +750,13 @@ public:
           UNIMPLEMENTED("tex1darr clear");
           break;
         case D3D11_UAV_DIMENSION_TEXTURE2D:
-          enc.encodeComputeCommand([&, texture =
-                                           enc.access(texture, viewId, DXMT_ENCODER_RESOURCE_ACESS_WRITE)](auto &ctx) {
-            ctx.cmd.ClearTexture2DFloat(ctx.encoder, texture, value);
-          });
+          enc.queue().emulated_cmd.ClearTexture2DFloat(texture_handle, value);
           break;
         case D3D11_UAV_DIMENSION_TEXTURE2DARRAY:
-          enc.encodeComputeCommand([&, texture =
-                                           enc.access(texture, viewId, DXMT_ENCODER_RESOURCE_ACESS_WRITE)](auto &ctx) {
-            ctx.cmd.ClearTexture2DArrayFloat(ctx.encoder, texture, value);
-          });
+          enc.queue().emulated_cmd.ClearTexture2DArrayFloat(texture_handle, value);
           break;
         case D3D11_UAV_DIMENSION_TEXTURE3D:
-          enc.encodeComputeCommand([&, texture =
-                                           enc.access(texture, viewId, DXMT_ENCODER_RESOURCE_ACESS_WRITE)](auto &ctx) {
-            ctx.cmd.ClearTexture3DFloat(ctx.encoder, texture, value);
-          });
+          enc.queue().emulated_cmd.ClearTexture3DFloat(texture_handle, value);
           break;
         }
       });
@@ -1494,11 +1469,9 @@ public:
     if (!PreDispatch())
       return;
     EmitOP([ThreadGroupCountX, ThreadGroupCountY, ThreadGroupCountZ](ArgumentEncodingContext &enc) {
-      enc.encodeComputeCommand([&](ComputeCommandContext &ctx) {
-        ctx.encoder->dispatchThreadgroups(
-            MTL::Size::Make(ThreadGroupCountX, ThreadGroupCountY, ThreadGroupCountZ), ctx.threadgroup_size
-        );
-      });
+      auto &cmd = enc.encodeComputeCommand<wmtcmd_compute_dispatch>();
+      cmd.type = WMTComputeCommandDispatch;
+      cmd.size = {ThreadGroupCountX, ThreadGroupCountY, ThreadGroupCountZ};
     });
   }
 
@@ -1509,9 +1482,10 @@ public:
     if (auto bindable = reinterpret_cast<D3D11ResourceCommon *>(pBufferForArgs)) {
       EmitOP([AlignedByteOffsetForArgs, ArgBuffer = bindable->buffer()](ArgumentEncodingContext &enc) {
         auto buffer = enc.access(ArgBuffer, AlignedByteOffsetForArgs, 12, DXMT_ENCODER_RESOURCE_ACESS_READ);
-        enc.encodeComputeCommand([&, buffer = Obj(buffer)](ComputeCommandContext &ctx) {
-          ctx.encoder->dispatchThreadgroups(buffer, AlignedByteOffsetForArgs, ctx.threadgroup_size);
-        });
+        auto &cmd = enc.encodeComputeCommand<wmtcmd_compute_dispatch_indirect>();
+        cmd.type = WMTComputeCommandDispatchIndirect;
+        cmd.indirect_args_buffer = (obj_handle_t)buffer;
+        cmd.indirect_args_offset = AlignedByteOffsetForArgs;
       });
     }
   }
@@ -4028,18 +4002,19 @@ public:
     MTL_COMPUTE_PIPELINE_DESC desc{CS};
     device->CreateComputePipeline(&desc, &pipeline);
 
-    EmitST([pso = std::move(pipeline), tg_size = MTL::Size::Make(
-                                         CS->reflection().ThreadgroupSize[0], CS->reflection().ThreadgroupSize[1],
-                                         CS->reflection().ThreadgroupSize[2]
-                                     )](ArgumentEncodingContext &enc) {
+    EmitST([pso = std::move(pipeline),
+            tg_size = WMTSize{CS->reflection().ThreadgroupSize[0],
+                              CS->reflection().ThreadgroupSize[1],
+                              CS->reflection().ThreadgroupSize[2]}](
+               ArgumentEncodingContext &enc) {
       MTL_COMPILED_COMPUTE_PIPELINE ComputePipeline;
       pso->GetPipeline(&ComputePipeline); // may block
       if (!ComputePipeline.PipelineState)
         return;
-      enc.encodeComputeCommand([&, pso = ComputePipeline.PipelineState](ComputeCommandContext &ctx) {
-        ctx.encoder->setComputePipelineState(pso);
-        ctx.threadgroup_size = tg_size;
-      });
+      auto &cmd = enc.encodeComputeCommand<wmtcmd_compute_setpso>();
+      cmd.type = WMTComputeCommandSetPSO;
+      cmd.pso = (obj_handle_t)ComputePipeline.PipelineState;
+      cmd.threadgroup_size = tg_size;
     });
 
     cmdbuf_state = CommandBufferState::ComputePipelineReady;
