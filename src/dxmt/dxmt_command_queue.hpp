@@ -1,8 +1,6 @@
 #pragma once
 
-#include "Metal/MTLArgumentEncoder.hpp"
-#include "Metal/MTLCommandBuffer.hpp"
-#include "Metal/MTLEvent.hpp"
+#include "Metal.hpp"
 #include "dxmt_capture.hpp"
 #include "dxmt_command.hpp"
 #include "dxmt_command_list.hpp"
@@ -11,7 +9,6 @@
 #include "dxmt_ring_bump_allocator.hpp"
 #include "dxmt_statistics.hpp"
 #include "log/log.hpp"
-#include "objc_pointer.hpp"
 #include "thread.hpp"
 #include "util_cpu_fence.hpp"
 #include <atomic>
@@ -19,7 +16,6 @@
 #include <cstdint>
 #include <cstdlib>
 #include <span>
-#include "Metal.hpp"
 
 namespace dxmt {
 
@@ -179,8 +175,8 @@ private:
   CaptureState capture_state;
 
 public:
-  EmulatedCommandContext emulated_cmd;
   ArgumentEncodingContext argument_encoding_ctx;
+  EmulatedCommandContext emulated_cmd;
   WMT::Reference<WMT::SharedEvent> event;
   std::uint64_t current_event_seq_id = 0;
   FrameStatisticsContainer statistics;
