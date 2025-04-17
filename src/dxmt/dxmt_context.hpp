@@ -2,10 +2,7 @@
 
 #include "Metal.hpp"
 #include "Metal/MTLCommandBuffer.hpp"
-#include "Metal/MTLComputeCommandEncoder.hpp"
-#include "Metal/MTLRenderCommandEncoder.hpp"
 #include "Metal/MTLBuffer.hpp"
-#include "Metal/MTLSampler.hpp"
 #include "MetalFX/MTLFXSpatialScaler.hpp"
 #include "MetalFX/MTLFXTemporalScaler.hpp"
 #include "QuartzCore/CAMetalDrawable.hpp"
@@ -62,7 +59,8 @@ struct ConstantBufferBinding {
 };
 
 struct SamplerBinding {
-  Obj<MTL::SamplerState> sampler;
+  WMT::Reference<WMT::SamplerState> sampler;
+  uint32_t sampler_id;
   float bias;
 };
 
@@ -104,14 +102,9 @@ struct EncoderData {
   EncoderDepSet tex_write;
 };
 
-struct RenderCommandContext {
-  MTL::RenderCommandEncoder *encoder;
-  uint32_t dsv_planar_flags;
-  MTL::Buffer *current_gpu_heap;
-};
-
 struct GSDispatchArgumentsMarshal {
-  Obj<MTL::Buffer> draw_arguments;
+  WMT::Reference<WMT::Buffer> draw_arguments;
+  uint64_t draw_arguments_resource_id;
   uint32_t draw_arguments_offset;
   uint32_t vertex_count_per_warp;
   uint32_t dispatch_arguments_offset;
@@ -165,14 +158,14 @@ struct ResolveEncoderData : EncoderData {
 };
 
 struct PresentData : EncoderData {
-  Obj<MTL::Texture> backbuffer;
+  WMT::Reference<WMT::Texture> backbuffer;
   Obj<CA::MetalLayer> layer;
   double after;
 };
 
 struct SpatialUpscaleData : EncoderData {
-  Obj<MTL::Texture> backbuffer;
-  Obj<MTL::Texture> upscaled;
+  WMT::Reference<WMT::Texture> backbuffer;
+  WMT::Reference<WMT::Texture> upscaled;
   Obj<MTLFX::SpatialScaler> scaler;
 };
 
@@ -194,11 +187,11 @@ struct TemporalScalerProps {
 };
 
 struct TemporalUpscaleData : EncoderData {
-  Obj<MTL::Texture> input;
-  Obj<MTL::Texture> output;
-  Obj<MTL::Texture> depth;
-  Obj<MTL::Texture> motion_vector;
-  Obj<MTL::Texture> exposure;
+  WMT::Reference<WMT::Texture> input;
+  WMT::Reference<WMT::Texture> output;
+  WMT::Reference<WMT::Texture> depth;
+  WMT::Reference<WMT::Texture> motion_vector;
+  WMT::Reference<WMT::Texture> exposure;
   MTLFX::TemporalScaler* scaler;
   TemporalScalerProps props;
 };
@@ -270,42 +263,42 @@ class ArgumentEncodingContext {
   }
 
 public:
-  MTL::Buffer *
+  WMT::Buffer
   access(Rc<Buffer> const &buffer, unsigned offset, unsigned length, DXMT_ENCODER_RESOURCE_ACESS flags) {
     auto allocation = buffer->current();
     trackBuffer(allocation, flags);
     return allocation->buffer();
   }
 
-  MTL::Texture *
+  BufferView const &
   access(Rc<Buffer> const &buffer, unsigned viewId, DXMT_ENCODER_RESOURCE_ACESS flags) {
     auto allocation = buffer->current();
     trackBuffer(allocation, flags);
-    return buffer->view(viewId);
+    return buffer->view_(viewId);
   }
 
-  MTL::Buffer *
+  WMT::Buffer
   access(Rc<Buffer> const &buffer, DXMT_ENCODER_RESOURCE_ACESS flags) {
     auto allocation = buffer->current();
     trackBuffer(allocation, flags);
     return allocation->buffer();
   }
 
-  MTL::Texture *
+  WMT::Texture
   access(Rc<Texture> const &texture, unsigned level, unsigned slice, DXMT_ENCODER_RESOURCE_ACESS flags) {
     auto allocation = texture->current();
     trackTexture(allocation, flags);
     return allocation->texture();
   }
 
-  MTL::Texture *
+  TextureView const &
   access(Rc<Texture> const &texture, unsigned viewId, DXMT_ENCODER_RESOURCE_ACESS flags) {
     auto allocation = texture->current();
     trackTexture(allocation, flags);
-    return texture->view(viewId);
+    return texture->view_(viewId);
   }
 
-  MTL::Texture *
+  WMT::Texture
   access(Rc<Texture> const &texture, DXMT_ENCODER_RESOURCE_ACESS flags) {
     auto allocation = texture->current();
     trackTexture(allocation, flags);
@@ -331,10 +324,11 @@ public:
 
   template <PipelineStage stage>
   void
-  bindSampler(unsigned slot, MTL::SamplerState *sampler, float bias) {
+  bindSampler(unsigned slot, WMT::SamplerState sampler, uint64_t sampler_id, float bias) {
     unsigned idx = slot + 16 * unsigned(stage);
     auto &entry = sampler_[idx];
     entry.sampler = sampler;
+    entry.sampler_id = sampler_id;
     entry.bias = bias;
   }
 
@@ -387,7 +381,7 @@ public:
     ibuf_ = std::move(buffer);
   }
 
-  MTL::Buffer *
+  WMT::Buffer
   currentIndexBuffer() {
     // because of indirect draw, we can't predicate the accessed buffer range
     return access(ibuf_, 0, ibuf_->length(), DXMT_ENCODER_RESOURCE_ACESS_READ);
@@ -410,23 +404,23 @@ public:
   void encodeShaderResources(const MTL_SHADER_REFLECTION *reflection);
 
   template <PipelineStage stage, PipelineKind kind>
-  constexpr void
-  makeResident(MTL::Resource *resource, DXMT_RESOURCE_RESIDENCY requested) {
+  void
+  makeResident(WMT::Resource resource, DXMT_RESOURCE_RESIDENCY requested) {
     if constexpr (stage == PipelineStage::Compute) {
       auto &cmd = encodeComputeCommand<wmtcmd_compute_useresource>();
       cmd.type = WMTComputeCommandUseResource;
-      cmd.resource = (obj_handle_t)resource;
+      cmd.resource = resource;
       cmd.usage = GetUsageFromResidencyMask(requested);
     } else if constexpr (kind == PipelineKind::Tessellation) {
       auto &cmd = encodePreTessRenderCommand<wmtcmd_render_useresource>();
       cmd.type = WMTRenderCommandUseResource;
-      cmd.resource = (obj_handle_t)resource;
+      cmd.resource = resource;
       cmd.usage = GetUsageFromResidencyMask(requested);
       cmd.stages = GetStagesFromResidencyMask(requested);
     } else {
       auto &cmd = encodeRenderCommand<wmtcmd_render_useresource>();
       cmd.type = WMTRenderCommandUseResource;
-      cmd.resource = (obj_handle_t)resource;
+      cmd.resource = resource;
       cmd.usage = GetUsageFromResidencyMask(requested);
       cmd.stages = GetStagesFromResidencyMask(requested);
     }
@@ -448,7 +442,7 @@ public:
     uint64_t encoder_id = currentEncoder()->id;
     DXMT_RESOURCE_RESIDENCY requested = GetResidencyMask<kind>(stage, read, write);
     if (CheckResourceResidency(buffer->residency(viewId), encoder_id, requested)) {
-      makeResident<stage, kind>((MTL::Resource *)buffer->view(viewId), requested);
+      makeResident<stage, kind>(buffer->view(viewId), requested);
     };
   }
   template <PipelineStage stage, PipelineKind kind>
@@ -457,7 +451,7 @@ public:
     uint64_t encoder_id = currentEncoder()->id;
     DXMT_RESOURCE_RESIDENCY requested = GetResidencyMask<kind>(stage, read, write);
     if (CheckResourceResidency(texture->residency(viewId), encoder_id, requested)) {
-      makeResident<stage, kind>((MTL::Resource *)texture->view(viewId), requested);
+      makeResident<stage, kind>(texture->view(viewId), requested);
     };
   }
 
@@ -475,11 +469,11 @@ public:
 
   void
   encodeGSDispatchArgumentsMarshal(
-      MTL::Buffer *draw_args, uint32_t draw_args_offset, uint32_t vertex_count_per_warp, uint32_t write_offset
+      WMT::Buffer draw_args, uint64_t draw_args_resource_id, uint32_t draw_args_offset, uint32_t vertex_count_per_warp, uint32_t write_offset
   ) {
     assert(encoder_current->type == EncoderType::Render);
     auto data = static_cast<RenderEncoderData *>(encoder_current);
-    data->gs_arg_marshal_tasks.push_back({draw_args, draw_args_offset, vertex_count_per_warp, write_offset});
+    data->gs_arg_marshal_tasks.push_back({draw_args, draw_args_resource_id, draw_args_offset, vertex_count_per_warp, write_offset});
   }
 
   template <typename cmd_struct>
@@ -634,7 +628,7 @@ public:
     currentFrameStatistics().compatibility_flags.set(flag);
   }
 
-  ArgumentEncodingContext(CommandQueue &queue, MTL::Device *device);
+  ArgumentEncodingContext(CommandQueue &queue, WMT::Device device);
   ~ArgumentEncodingContext();
 
   uint32_t tess_num_output_control_point_element;
@@ -659,8 +653,10 @@ private:
   std::array<UnorderedAccessViewBinding, kUAVBindings> om_uav_;
   std::array<UnorderedAccessViewBinding, kUAVBindings> cs_uav_;
 
-  Obj<MTL::SamplerState> dummy_sampler_;
-  Obj<MTL::Buffer> dummy_cbuffer_;
+  WMT::Reference<WMT::SamplerState> dummy_sampler_;
+  WMTSamplerInfo dummy_sampler_info_;
+  WMT::Reference<WMT::Buffer> dummy_cbuffer_;
+  WMTBufferInfo dummy_cbuffer_info_;
 
   EncoderData encoder_head = {EncoderType::Null, nullptr};
   EncoderData *encoder_last = &encoder_head;

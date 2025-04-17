@@ -6,10 +6,6 @@
 #include "thread.hpp"
 #include "util_flags.hpp"
 
-namespace MTL {
-  class Texture;
-}
-
 namespace dxmt {
 
 enum class TextureAllocationFlag : uint32_t {
@@ -54,8 +50,8 @@ public:
   void incRef();
   void decRef();
 
-  MTL::Texture *texture() {
-    return (MTL::Texture *)obj_.handle;
+  WMT::Texture texture() {
+    return obj_;
   }
 
   Flags<TextureAllocationFlag>
@@ -131,8 +127,11 @@ public:
 
   Rc<TextureAllocation> allocate(Flags<TextureAllocationFlag> flags);
 
-  MTL::Texture *view(TextureViewKey key);
-  MTL::Texture *view(TextureViewKey key, TextureAllocation *allocation);
+  WMT::Texture view(TextureViewKey key);
+  WMT::Texture view(TextureViewKey key, TextureAllocation *allocation);
+
+  TextureView const &view_(TextureViewKey key);
+  TextureView const &view_(TextureViewKey key, TextureAllocation *allocation);
 
   TextureViewKey checkViewUseArray(TextureViewKey key, bool isArray);
   TextureViewKey checkViewUseFormat(TextureViewKey key, WMTPixelFormat format);

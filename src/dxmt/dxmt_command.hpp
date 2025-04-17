@@ -3,7 +3,6 @@
 #include "Foundation/NSTypes.hpp"
 #include "Metal.hpp"
 #include "Metal/MTLCommandBuffer.hpp"
-#include "Metal/MTLComputeCommandEncoder.hpp"
 #include "Metal/MTLDevice.hpp"
 #include "Metal/MTLRenderCommandEncoder.hpp"
 #include "Metal/MTLRenderPass.hpp"
@@ -36,19 +35,19 @@ public:
   };
 
   void
-  setComputeBuffer(MTL::Buffer *buffer, uint64_t offset, uint8_t index) {
+  setComputeBuffer(WMT::Buffer buffer, uint64_t offset, uint8_t index) {
     auto &cmd = ctx.encodeComputeCommand<wmtcmd_compute_setbuffer>();
     cmd.type = WMTComputeCommandSetBuffer;
-    cmd.buffer = (obj_handle_t)buffer;
+    cmd.buffer = buffer;
     cmd.offset = offset;
     cmd.index = index;
   }
 
   void
-  setComputeTexture(MTL::Texture *texture, uint8_t index) {
+  setComputeTexture(WMT::Texture texture, uint8_t index) {
     auto &cmd = ctx.encodeComputeCommand<wmtcmd_compute_settexture>();
     cmd.type = WMTComputeCommandSetTexture;
-    cmd.texture = (obj_handle_t)texture;
+    cmd.texture = texture;
     cmd.index = index;
   }
 
@@ -65,7 +64,7 @@ public:
 
   void
   ClearBufferUint(
-      MTL::Buffer *buffer, uint64_t byte_offset, uint64_t elements_uint, const std::array<uint32_t, 4> &value
+      WMT::Buffer buffer, uint64_t byte_offset, uint64_t elements_uint, const std::array<uint32_t, 4> &value
   ) {
     setComputePipelineState(clear_buffer_uint_pipeline, {32, 1, 1});
     setComputeBuffer(buffer, byte_offset, 0);
@@ -75,16 +74,16 @@ public:
   }
 
   void
-  ClearTextureBufferUint(MTL::Texture *texture, const std::array<uint32_t, 4> &value) {
+  ClearTextureBufferUint(WMT::Texture texture, const std::array<uint32_t, 4> &value) {
     setComputePipelineState(clear_texture_buffer_uint_pipeline, {32, 1, 1});
     setComputeTexture(texture, 0);
     setComputeBytes(value.data(), 16, 1);
-    dispatchThreads({texture->width(), 1, 1});
+    dispatchThreads({texture.width(), 1, 1});
   }
 
   void
   ClearBufferFloat(
-      MTL::Buffer *buffer, uint64_t byte_offset, uint64_t elements_uint, const std::array<float, 4> &value
+      WMT::Buffer buffer, uint64_t byte_offset, uint64_t elements_uint, const std::array<float, 4> &value
   ) {
     // just reinterpret float as uint
     setComputePipelineState(clear_buffer_uint_pipeline, {32, 1, 1});
@@ -95,76 +94,76 @@ public:
   }
 
   void
-  ClearTextureBufferFloat(MTL::Texture *texture, const std::array<float, 4> &value) {
+  ClearTextureBufferFloat(WMT::Texture texture, const std::array<float, 4> &value) {
     setComputePipelineState(clear_texture_buffer_float_pipeline, {32, 1, 1});
     setComputeTexture(texture, 0);
     setComputeBytes(value.data(), 16, 1);
-    dispatchThreads({texture->width(), 1, 1});
+    dispatchThreads({texture.width(), 1, 1});
   }
 
   void
-  ClearTexture2DUint(MTL::Texture *texture, const std::array<uint32_t, 4> &value) {
+  ClearTexture2DUint(WMT::Texture texture, const std::array<uint32_t, 4> &value) {
     setComputePipelineState(clear_texture_2d_uint_pipeline, {8, 4, 1});
     setComputeTexture(texture, 0);
     setComputeBytes(value.data(), 16, 1);
-    dispatchThreads({texture->width(), texture->height(), 1});
+    dispatchThreads({texture.width(), texture.height(), 1});
   }
 
   void
-  ClearTexture2DFloat(MTL::Texture *texture, const std::array<float, 4> &value) {
+  ClearTexture2DFloat(WMT::Texture texture, const std::array<float, 4> &value) {
     setComputePipelineState(clear_texture_2d_float_pipeline, {8, 4, 1});
     setComputeTexture(texture, 0);
     setComputeBytes(value.data(), 16, 1);
-    dispatchThreads({texture->width(), texture->height()});
+    dispatchThreads({texture.width(), texture.height()});
   }
 
   void
-  ClearTexture2DArrayUint(MTL::Texture *texture, const std::array<uint32_t, 4> &value) {
+  ClearTexture2DArrayUint(WMT::Texture texture, const std::array<uint32_t, 4> &value) {
     setComputePipelineState(clear_texture_2d_array_uint_pipeline, {8, 4, 1});
     setComputeTexture(texture, 0);
     setComputeBytes(value.data(), 16, 1);
-    dispatchThreads({texture->width(), texture->height(), texture->arrayLength()});
+    dispatchThreads({texture.width(), texture.height(), texture.arrayLength()});
   }
 
   void
-  ClearTexture2DArrayFloat(MTL::Texture *texture, const std::array<float, 4> &value) {
+  ClearTexture2DArrayFloat(WMT::Texture texture, const std::array<float, 4> &value) {
     setComputePipelineState(clear_texture_2d_array_float_pipeline, {8, 4, 1});
     setComputeTexture(texture, 0);
     setComputeBytes(value.data(), 16, 1);
-    dispatchThreads({texture->width(), texture->height(), texture->arrayLength()});
+    dispatchThreads({texture.width(), texture.height(), texture.arrayLength()});
   }
 
   void
-  ClearTexture3DFloat(MTL::Texture *texture, const std::array<float, 4> &value) {
+  ClearTexture3DFloat(WMT::Texture texture, const std::array<float, 4> &value) {
     setComputePipelineState(clear_texture_3d_float_pipeline, {8, 4, 1});
     setComputeTexture(texture, 0);
     setComputeBytes(value.data(), 16, 1);
-    dispatchThreads({texture->width(), texture->height(), texture->depth()});
+    dispatchThreads({texture.width(), texture.height(), texture.depth()});
   }
 
   void
-  ClearTexture3DUint(MTL::Texture *texture, const std::array<uint32_t, 4> &value) {
+  ClearTexture3DUint(WMT::Texture texture, const std::array<uint32_t, 4> &value) {
     setComputePipelineState(clear_texture_3d_uint_pipeline, {8, 4, 1});
     setComputeTexture(texture, 0);
     setComputeBytes(value.data(), 16, 1);
-    dispatchThreads({texture->width(), texture->height(), texture->depth()});
+    dispatchThreads({texture.width(), texture.height(), texture.depth()});
   }
 
   void
-  PresentToDrawable(MTL::CommandBuffer *cmdbuf, MTL::Texture *backbuffer, MTL::Texture *drawable) {
+  PresentToDrawable(MTL::CommandBuffer *cmdbuf, WMT::Texture backbuffer, WMT::Texture drawable) {
     auto descriptor = transfer(MTL::RenderPassDescriptor::alloc()->init());
     auto attachment = descriptor->colorAttachments()->object(0);
     attachment->setLoadAction(MTL::LoadActionDontCare);
     attachment->setStoreAction(MTL::StoreActionStore);
-    attachment->setTexture(drawable);
+    attachment->setTexture((MTL::Texture *)drawable.handle);
     auto encoder = cmdbuf->renderCommandEncoder(descriptor);
 
-    encoder->setFragmentTexture(backbuffer, 0);
-    uint32_t extend[4] = {(uint32_t)drawable->width(), (uint32_t)drawable->height(), 0, 0};
-    if (backbuffer->pixelFormat() != (MTL::PixelFormat)Forget_sRGB((WMTPixelFormat)backbuffer->pixelFormat()))
+    encoder->setFragmentTexture((MTL::Texture *)backbuffer.handle, 0);
+    uint32_t extend[4] = {(uint32_t)drawable.width(), (uint32_t)drawable.height(), 0, 0};
+    if (backbuffer.pixelFormat() != Forget_sRGB(backbuffer.pixelFormat()))
       extend[2] |= DXMT_PRESENT_FLAG_SRGB;
     encoder->setFragmentBytes(extend, sizeof(extend), 0);
-    if (backbuffer->width() == extend[0] && backbuffer->height() == extend[1])
+    if (backbuffer.width() == extend[0] && backbuffer.height() == extend[1])
       encoder->setRenderPipelineState((MTL::RenderPipelineState *)present_swapchain_blit.handle);
     else
       encoder->setRenderPipelineState((MTL::RenderPipelineState *)present_swapchain_scale.handle);

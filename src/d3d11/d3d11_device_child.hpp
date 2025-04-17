@@ -3,7 +3,7 @@
 #include "d3d11_device.hpp"
 #include "com/com_object.hpp"
 #include "com/com_private_data.hpp"
-#include "objc_pointer.hpp"
+#include "d3d11_private.h"
 
 namespace dxmt {
 

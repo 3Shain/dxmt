@@ -127,4 +127,15 @@ struct unixcall_generic_obj_cmd_noret {
   const struct wmtcmd_base *cmd_head;
 };
 
+struct unixcall_mtltexture_replaceregion {
+  obj_handle_t texture;
+  struct WMTOrigin origin;
+  struct WMTSize size;
+  uint64_t level;
+  uint64_t slice;
+  struct WMTMemoryPointer data;
+  uint64_t bytes_per_row;
+  uint64_t bytes_per_image;
+};
+
 #endif

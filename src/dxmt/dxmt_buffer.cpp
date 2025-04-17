@@ -29,17 +29,27 @@ BufferAllocation::decRef() {
     delete this;
 };
 
-MTL::Texture *
+WMT::Texture
 Buffer::view(BufferViewKey key) {
   return view(key, current_.ptr());
 };
 
-MTL::Texture *
-Buffer::view(BufferViewKey key, BufferAllocation* allocation) {
+WMT::Texture
+Buffer::view(BufferViewKey key, BufferAllocation *allocation) {
+  return view_(key, allocation).texture;
+};
+
+BufferView const &
+Buffer::view_(BufferViewKey key) {
+  return view_(key, current_.ptr());
+};
+
+BufferView const &
+Buffer::view_(BufferViewKey key, BufferAllocation *allocation) {
   if (unlikely(allocation->version_ != version_)) {
     prepareAllocationViews(allocation);
   }
-  return (MTL::Texture *)allocation->cached_view_[key]->texture.handle;
+  return *allocation->cached_view_[key];
 };
 
 DXMT_RESOURCE_RESIDENCY_STATE &
@@ -56,7 +66,7 @@ Buffer::residency(BufferViewKey key, BufferAllocation *allocation) {
 }
 
 void
-Buffer::prepareAllocationViews(BufferAllocation* allocation) {
+Buffer::prepareAllocationViews(BufferAllocation *allocation) {
   std::unique_lock<dxmt::mutex> lock(mutex_);
   for (unsigned version = allocation->version_; version < version_; version++) {
     auto format = viewDescriptors_[version].format;
@@ -75,7 +85,9 @@ Buffer::prepareAllocationViews(BufferAllocation* allocation) {
     info.options = allocation->info_.options;
     info.usage = WMTTextureUsageShaderRead; // FIXME
 
-    allocation->cached_view_.push_back(std::make_unique<BufferView>(allocation->obj_.newTexture(&info, 0, length_)));
+    auto view = allocation->obj_.newTexture(&info, 0, length_);
+
+    allocation->cached_view_.push_back(std::make_unique<BufferView>(std::move(view), info.gpu_resource_id));
   }
   allocation->version_ = version_;
 };
@@ -123,11 +135,13 @@ Buffer::rename(Rc<BufferAllocation> &&newAllocation) {
   return old;
 }
 
-void Buffer::incRef(){
+void
+Buffer::incRef() {
   refcount_.fetch_add(1u, std::memory_order_acquire);
 };
 
-void Buffer::decRef(){
+void
+Buffer::decRef() {
   if (refcount_.fetch_sub(1u, std::memory_order_release) == 1u)
     delete this;
 };

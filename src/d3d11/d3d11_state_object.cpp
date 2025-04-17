@@ -220,8 +220,8 @@ public:
     *pDesc = desc_;
   }
 
-  virtual MTL::SamplerState *GetSamplerState() {
-    return (MTL::SamplerState *)metal_sampler_state_.handle;
+  virtual WMT::SamplerState GetSamplerState() {
+    return metal_sampler_state_;
   }
 
   virtual uint64_t GetArgumentHandle() { return info.gpu_resource_id; }
@@ -495,17 +495,17 @@ public:
     *pDesc = m_desc;
   }
 
-  virtual MTL::DepthStencilState *GetDepthStencilState(uint32_t planar_flags) {
+  virtual WMT::DepthStencilState GetDepthStencilState(uint32_t planar_flags) {
     switch (planar_flags) {
     case 0:
-      return (MTL::DepthStencilState *)state_depthstencil_disabled_.handle;
+      return state_depthstencil_disabled_;
     case 1: /* depth without stencil */
-      return (MTL::DepthStencilState *)state_stencil_disabled_.handle;
+      return state_stencil_disabled_;
     case 2: /* stencil without depth */
       ERR("stencil only dsv is not properly handled");
-      return (MTL::DepthStencilState *)state_default_.handle;
+      return state_default_;
     default:
-      return (MTL::DepthStencilState *)state_default_.handle;
+      return state_default_;
     }
   }
 

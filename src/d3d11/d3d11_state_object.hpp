@@ -10,7 +10,7 @@
 DEFINE_COM_INTERFACE("77f0bbd5-2be7-4e9e-ad61-70684ff19e01",
                      IMTLD3D11SamplerState)
     : public ID3D11SamplerState {
-  virtual MTL::SamplerState *GetSamplerState() = 0;
+  virtual WMT::SamplerState GetSamplerState() = 0;
   virtual uint64_t GetArgumentHandle() = 0;
   virtual float GetLODBias() = 0;
 };
@@ -26,8 +26,7 @@ DEFINE_COM_INTERFACE("03629ed8-bcdd-4582-8997-3817209a34f4",
 DEFINE_COM_INTERFACE("b01aaffa-b4d3-478a-91be-6195f215aaba",
                      IMTLD3D11DepthStencilState)
     : public ID3D11DepthStencilState {
-  virtual MTL::DepthStencilState *GetDepthStencilState(
-      uint32_t planar_flags) = 0;
+  virtual WMT::DepthStencilState GetDepthStencilState(uint32_t planar_flags) = 0;
   virtual bool IsEnabled() = 0;
 };
 
