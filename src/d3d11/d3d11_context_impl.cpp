@@ -30,30 +30,30 @@ namespace dxmt {
 template<typename Object> Rc<Object> forward_rc(Rc<Object>& obj);
 
 inline bool
-to_metal_primitive_type(D3D11_PRIMITIVE_TOPOLOGY topo, MTL::PrimitiveType& primitive, uint32_t& control_point_num) {
+to_metal_primitive_type(D3D11_PRIMITIVE_TOPOLOGY topo, WMTPrimitiveType& primitive, uint32_t& control_point_num) {
   control_point_num = 0;
   switch (topo) {
   case D3D_PRIMITIVE_TOPOLOGY_POINTLIST:
-    primitive = MTL::PrimitiveTypePoint;
+    primitive = WMTPrimitiveTypePoint;
     break;
   case D3D_PRIMITIVE_TOPOLOGY_LINELIST:
-    primitive = MTL::PrimitiveTypeLine;
+    primitive = WMTPrimitiveTypeLine;
     break;
   case D3D_PRIMITIVE_TOPOLOGY_LINESTRIP:
-    primitive = MTL::PrimitiveTypeLineStrip;
+    primitive = WMTPrimitiveTypeLineStrip;
     break;
   case D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST:
-    primitive = MTL::PrimitiveTypeTriangle;
+    primitive = WMTPrimitiveTypeTriangle;
     break;
   case D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP:
-    primitive = MTL::PrimitiveTypeTriangleStrip;
+    primitive = WMTPrimitiveTypeTriangleStrip;
     break;
   case D3D_PRIMITIVE_TOPOLOGY_LINELIST_ADJ:
   case D3D_PRIMITIVE_TOPOLOGY_LINESTRIP_ADJ:
   case D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST_ADJ:
   case D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP_ADJ:
     // geometry
-    primitive = MTL::PrimitiveTypePoint;
+    primitive = WMTPrimitiveTypePoint;
     break;
   case D3D_PRIMITIVE_TOPOLOGY_1_CONTROL_POINT_PATCHLIST:
   case D3D_PRIMITIVE_TOPOLOGY_2_CONTROL_POINT_PATCHLIST:
@@ -87,7 +87,7 @@ to_metal_primitive_type(D3D11_PRIMITIVE_TOPOLOGY topo, MTL::PrimitiveType& primi
   case D3D_PRIMITIVE_TOPOLOGY_30_CONTROL_POINT_PATCHLIST:
   case D3D_PRIMITIVE_TOPOLOGY_31_CONTROL_POINT_PATCHLIST:
   case D3D_PRIMITIVE_TOPOLOGY_32_CONTROL_POINT_PATCHLIST:
-    primitive = MTL::PrimitiveTypePoint;
+    primitive = WMTPrimitiveTypePoint;
     control_point_num = topo - 32;
     break;
   default:
@@ -1055,7 +1055,7 @@ public:
 
   void
   Draw(UINT VertexCount, UINT StartVertexLocation) override {
-    MTL::PrimitiveType Primitive;
+    WMTPrimitiveType Primitive;
     uint32_t ControlPointCount;
     if(!to_metal_primitive_type(state_.InputAssembler.Topology, Primitive, ControlPointCount))
       return;
@@ -1070,15 +1070,21 @@ public:
     }
     EmitOP([Primitive, StartVertexLocation, VertexCount](ArgumentEncodingContext& enc) {
       enc.bumpVisibilityResultOffset();
-      enc.encodeRenderCommand([&](RenderCommandContext& ctx) {
-        ctx.encoder->drawPrimitives(Primitive, StartVertexLocation, VertexCount);
-      });
+      auto &cmd = enc.encodeRenderCommand<wmtcmd_render_draw>();
+      cmd.type = WMTRenderCommandDraw;
+      cmd.primitive_type = Primitive;
+      cmd.vertex_start = StartVertexLocation;
+      cmd.vertex_count = VertexCount;
+      cmd.base_instance = 0;
+      cmd.instance_count = 1;
     });
   }
 
   void
   DrawIndexed(UINT IndexCount, UINT StartIndexLocation, INT BaseVertexLocation) override {
-    MTL::PrimitiveType Primitive;
+    if (!IndexCount)
+      return;
+    WMTPrimitiveType Primitive;
     uint32_t ControlPointCount;
     if(!to_metal_primitive_type(state_.InputAssembler.Topology, Primitive, ControlPointCount))
       return;
@@ -1092,25 +1098,29 @@ public:
       return TessellationDrawIndexed(ControlPointCount, IndexCount, StartIndexLocation, BaseVertexLocation, 1, 0);
     };
     auto IndexType =
-        state_.InputAssembler.IndexBufferFormat == DXGI_FORMAT_R32_UINT ? MTL::IndexTypeUInt32 : MTL::IndexTypeUInt16;
+        state_.InputAssembler.IndexBufferFormat == DXGI_FORMAT_R32_UINT ? WMTIndexTypeUInt32 : WMTIndexTypeUInt16;
     auto IndexBufferOffset =
         state_.InputAssembler.IndexBufferOffset +
         StartIndexLocation * (state_.InputAssembler.IndexBufferFormat == DXGI_FORMAT_R32_UINT ? 4 : 2);
     EmitOP([IndexType, IndexBufferOffset, Primitive, IndexCount, BaseVertexLocation](ArgumentEncodingContext &enc) {
       enc.bumpVisibilityResultOffset();
-      enc.encodeRenderCommand([&, index_buffer = Obj(enc.currentIndexBuffer())](RenderCommandContext &ctx) {
-        assert(index_buffer);
-        ctx.encoder->drawIndexedPrimitives(
-            Primitive, IndexCount, IndexType, index_buffer, IndexBufferOffset, 1, BaseVertexLocation, 0
-        );
-      });
+      auto &cmd = enc.encodeRenderCommand<wmtcmd_render_draw_indexed>();
+      cmd.type = WMTRenderCommandDrawIndexed;
+      cmd.primitive_type = Primitive;
+      cmd.index_count = IndexCount;
+      cmd.index_type = IndexType;
+      cmd.index_buffer = (obj_handle_t)enc.currentIndexBuffer();
+      cmd.index_buffer_offset = IndexBufferOffset;
+      cmd.base_vertex = BaseVertexLocation;
+      cmd.base_instance = 0;
+      cmd.instance_count = 1;
     });
   }
 
   void
   DrawInstanced(UINT VertexCountPerInstance, UINT InstanceCount, UINT StartVertexLocation, UINT StartInstanceLocation)
       override {
-    MTL::PrimitiveType Primitive;
+    WMTPrimitiveType Primitive;
     uint32_t ControlPointCount;
     if (!to_metal_primitive_type(state_.InputAssembler.Topology, Primitive, ControlPointCount))
       return;
@@ -1128,11 +1138,13 @@ public:
     EmitOP([Primitive, StartVertexLocation, VertexCountPerInstance, InstanceCount,
           StartInstanceLocation](ArgumentEncodingContext &enc) {
       enc.bumpVisibilityResultOffset();
-      enc.encodeRenderCommand([&](RenderCommandContext &ctx) {
-        ctx.encoder->drawPrimitives(
-            Primitive, StartVertexLocation, VertexCountPerInstance, InstanceCount, StartInstanceLocation
-        );
-      });
+      auto &cmd = enc.encodeRenderCommand<wmtcmd_render_draw>();
+      cmd.type = WMTRenderCommandDraw;
+      cmd.primitive_type = Primitive;
+      cmd.vertex_start = StartVertexLocation;
+      cmd.vertex_count = VertexCountPerInstance;
+      cmd.base_instance = InstanceCount;
+      cmd.instance_count = StartInstanceLocation;
     });
   }
 
@@ -1141,7 +1153,9 @@ public:
       UINT IndexCountPerInstance, UINT InstanceCount, UINT StartIndexLocation, INT BaseVertexLocation,
       UINT StartInstanceLocation
   ) override {
-    MTL::PrimitiveType Primitive;
+    if (!IndexCountPerInstance)
+      return;
+    WMTPrimitiveType Primitive;
     uint32_t ControlPointCount;
     if(!to_metal_primitive_type(state_.InputAssembler.Topology, Primitive, ControlPointCount))
       return;
@@ -1160,20 +1174,23 @@ public:
       );
     }
     auto IndexType =
-        state_.InputAssembler.IndexBufferFormat == DXGI_FORMAT_R32_UINT ? MTL::IndexTypeUInt32 : MTL::IndexTypeUInt16;
+        state_.InputAssembler.IndexBufferFormat == DXGI_FORMAT_R32_UINT ? WMTIndexTypeUInt32 : WMTIndexTypeUInt16;
     auto IndexBufferOffset =
         state_.InputAssembler.IndexBufferOffset +
         StartIndexLocation * (state_.InputAssembler.IndexBufferFormat == DXGI_FORMAT_R32_UINT ? 4 : 2);
     EmitOP([IndexType, IndexBufferOffset, Primitive, InstanceCount, BaseVertexLocation, StartInstanceLocation,
           IndexCountPerInstance](ArgumentEncodingContext &enc) {
       enc.bumpVisibilityResultOffset();
-      enc.encodeRenderCommand([&, index_buffer = Obj(enc.currentIndexBuffer())](RenderCommandContext &ctx) {
-        assert(index_buffer);
-        ctx.encoder->drawIndexedPrimitives(
-            Primitive, IndexCountPerInstance, IndexType, index_buffer, IndexBufferOffset, InstanceCount,
-            BaseVertexLocation, StartInstanceLocation
-        );
-      });
+      auto &cmd = enc.encodeRenderCommand<wmtcmd_render_draw_indexed>();
+      cmd.type = WMTRenderCommandDrawIndexed;
+      cmd.primitive_type = Primitive;
+      cmd.index_count = IndexCountPerInstance;
+      cmd.index_type = IndexType;
+      cmd.index_buffer = (obj_handle_t)enc.currentIndexBuffer();
+      cmd.index_buffer_offset = IndexBufferOffset;
+      cmd.base_vertex = BaseVertexLocation;
+      cmd.base_instance = StartInstanceLocation;
+      cmd.instance_count = InstanceCount;
     });
   }
 
@@ -1204,31 +1221,33 @@ public:
       auto [tess_factor_buffer, tess_factor_offset] =
           enc.allocateTempBuffer(6 * 2 * PatchCountPerInstance * InstanceCount, 4);
 
-      enc.encodePreTessCommand([=](RenderCommandContext &ctx) {
-        auto &encoder = ctx.encoder;
-        encoder->setObjectBufferOffset(offset, 21);
-        encoder->setMeshBuffer(cp_buffer, cp_offset, 20);
-        encoder->setMeshBuffer(pc_buffer, pc_offset, 21);
-        encoder->setMeshBuffer(tess_factor_buffer, tess_factor_offset, 22);
-        encoder->drawMeshThreadgroups(
-            MTL::Size(PatchPerMeshInstance, InstanceCount, 1), MTL::Size(ThreadsPerPatch, PatchPerGroup, 1),
-            MTL::Size(ThreadsPerPatch, PatchPerGroup, 1)
-        );
-      });
+      auto &cmd_mesh = enc.encodePreTessRenderCommand<wmtcmd_render_dxmt_tess_mesh_dispatch>();
+      cmd_mesh.type = WMTRenderCommandDXMTTessellationMeshDispatch;
+      cmd_mesh.draw_arguments_offset = offset;
+      cmd_mesh.control_point_buffer = (obj_handle_t)cp_buffer;
+      cmd_mesh.control_point_buffer_offset = cp_offset;
+      cmd_mesh.patch_constant_buffer = (obj_handle_t)pc_buffer;
+      cmd_mesh.patch_constant_buffer_offset = pc_offset;
+      cmd_mesh.tessellation_factor_buffer = (obj_handle_t)tess_factor_buffer;
+      cmd_mesh.tessellation_factor_buffer_offset = tess_factor_offset;
+      cmd_mesh.patch_per_mesh_instance = PatchPerMeshInstance;
+      cmd_mesh.instance_count = InstanceCount;
+      cmd_mesh.threads_per_patch = ThreadsPerPatch;
+      cmd_mesh.patch_per_group = PatchPerGroup;
+
       enc.bumpVisibilityResultOffset();
-      enc.encodeRenderCommand([=](RenderCommandContext &ctx) {
-        auto &encoder = ctx.encoder;
-        encoder->setVertexBufferOffset(offset, 23);
-        encoder->setVertexBuffer(cp_buffer, cp_offset, 20);
-        encoder->setVertexBuffer(pc_buffer, pc_offset, 21);
-        encoder->setVertexBuffer(tess_factor_buffer, tess_factor_offset, 22);
-        encoder->setTessellationFactorBuffer(tess_factor_buffer, tess_factor_offset, 0);
-        encoder->drawPatches(
-            0, 0,
-            PatchCountPerInstance * InstanceCount, //
-            nullptr, 0, 1, 0
-        );
-      });
+
+      auto &cmd_draw = enc.encodeRenderCommand<wmtcmd_render_dxmt_tess_draw>();
+      cmd_draw.type = WMTRenderCommandDXMTTessellationDraw;
+      cmd_draw.draw_arguments_offset = offset;
+      cmd_draw.control_point_buffer = (obj_handle_t)cp_buffer;
+      cmd_draw.control_point_buffer_offset = cp_offset;
+      cmd_draw.patch_constant_buffer = (obj_handle_t)pc_buffer;
+      cmd_draw.patch_constant_buffer_offset = pc_offset;
+      cmd_draw.tessellation_factor_buffer = (obj_handle_t)tess_factor_buffer;
+      cmd_draw.tessellation_factor_buffer_offset = tess_factor_offset;
+      cmd_draw.patch_count_per_instance = PatchCountPerInstance;
+      cmd_draw.instance_count = InstanceCount;
     });
   }
 
@@ -1260,33 +1279,36 @@ public:
       );
       auto [tess_factor_buffer, tess_factor_offset] =
           enc.allocateTempBuffer(6 * 2 * PatchCountPerInstance * InstanceCount, 4);
-      enc.encodePreTessCommand([=, index = Obj(enc.currentIndexBuffer())](RenderCommandContext &ctx) {
-        auto &encoder = ctx.encoder;
-        encoder->setObjectBuffer(index, IndexBufferOffset, 20);
-        encoder->setObjectBufferOffset(offset, 21);
-        encoder->setMeshBuffer(cp_buffer, cp_offset, 20);
-        encoder->setMeshBuffer(pc_buffer, pc_offset, 21);
-        encoder->setMeshBuffer(tess_factor_buffer, tess_factor_offset, 22);
-        encoder->drawMeshThreadgroups(
-          MTL::Size(PatchPerMeshInstance, InstanceCount, 1),
-          MTL::Size(ThreadsPerPatch, PatchPerGroup, 1),
-          MTL::Size(ThreadsPerPatch, PatchPerGroup, 1)
-        );
-      });
+
+      auto &cmd_mesh = enc.encodePreTessRenderCommand<wmtcmd_render_dxmt_tess_mesh_dispatch_indexed>();
+      cmd_mesh.type = WMTRenderCommandDXMTTessellationMeshDispatchIndexed;
+      cmd_mesh.index_buffer = (obj_handle_t)enc.currentIndexBuffer();
+      cmd_mesh.index_buffer_offset = IndexBufferOffset;
+      cmd_mesh.draw_arguments_offset = offset;
+      cmd_mesh.control_point_buffer = (obj_handle_t)cp_buffer;
+      cmd_mesh.control_point_buffer_offset = cp_offset;
+      cmd_mesh.patch_constant_buffer = (obj_handle_t)pc_buffer;
+      cmd_mesh.patch_constant_buffer_offset = pc_offset;
+      cmd_mesh.tessellation_factor_buffer = (obj_handle_t)tess_factor_buffer;
+      cmd_mesh.tessellation_factor_buffer_offset = tess_factor_offset;
+      cmd_mesh.patch_per_mesh_instance = PatchPerMeshInstance;
+      cmd_mesh.instance_count = InstanceCount;
+      cmd_mesh.threads_per_patch = ThreadsPerPatch;
+      cmd_mesh.patch_per_group = PatchPerGroup;
+
       enc.bumpVisibilityResultOffset();
-      enc.encodeRenderCommand([=](RenderCommandContext &ctx) {
-        auto &encoder = ctx.encoder;
-        encoder->setVertexBufferOffset(offset, 23);
-        encoder->setVertexBuffer(cp_buffer, cp_offset, 20);
-        encoder->setVertexBuffer(pc_buffer, pc_offset, 21);
-        encoder->setVertexBuffer(tess_factor_buffer, tess_factor_offset, 22);
-        encoder->setTessellationFactorBuffer(tess_factor_buffer, tess_factor_offset, 0 /* TODO: */);
-        encoder->drawPatches(
-            0, 0,
-            PatchCountPerInstance * InstanceCount, //
-            nullptr, 0, 1, 0
-        );
-      });
+
+      auto &cmd_draw = enc.encodeRenderCommand<wmtcmd_render_dxmt_tess_draw>();
+      cmd_draw.type = WMTRenderCommandDXMTTessellationDraw;
+      cmd_draw.draw_arguments_offset = offset;
+      cmd_draw.control_point_buffer = (obj_handle_t)cp_buffer;
+      cmd_draw.control_point_buffer_offset = cp_offset;
+      cmd_draw.patch_constant_buffer = (obj_handle_t)pc_buffer;
+      cmd_draw.patch_constant_buffer_offset = pc_offset;
+      cmd_draw.tessellation_factor_buffer = (obj_handle_t)tess_factor_buffer;
+      cmd_draw.tessellation_factor_buffer_offset = tess_factor_offset;
+      cmd_draw.patch_count_per_instance = PatchCountPerInstance;
+      cmd_draw.instance_count = InstanceCount;
     });
   }
 
@@ -1306,11 +1328,12 @@ public:
       auto [vertex_per_warp, vertex_increment_per_wrap] = get_gs_vertex_count(topo);
       auto warp_count = (VertexCountPerInstance - 1) / vertex_increment_per_wrap + 1;
       enc.bumpVisibilityResultOffset();
-      enc.encodeRenderCommand([=](RenderCommandContext &ctx) {
-        auto &encoder = ctx.encoder;
-        encoder->setObjectBufferOffset(offset, 21);
-        encoder->drawMeshThreadgroups({warp_count, InstanceCount, 1}, {vertex_per_warp, 1, 1}, {1, 1, 1});
-      });
+      auto &cmd = enc.encodeRenderCommand<wmtcmd_render_dxmt_geometry_draw>();
+      cmd.type = WMTRenderCommandDXMTGeometryDraw;
+      cmd.draw_arguments_offset = offset;
+      cmd.instance_count = InstanceCount;
+      cmd.warp_count = warp_count;
+      cmd.vertex_per_warp = vertex_per_warp;
     });
   }
 
@@ -1333,18 +1356,20 @@ public:
       auto [vertex_per_warp, vertex_increment_per_wrap] = get_gs_vertex_count(topo);
       auto warp_count = (IndexCountPerInstance - 1) / vertex_increment_per_wrap + 1;
       enc.bumpVisibilityResultOffset();
-      enc.encodeRenderCommand([=, index = Obj(enc.currentIndexBuffer())](RenderCommandContext &ctx) {
-        auto &encoder = ctx.encoder;
-        encoder->setObjectBuffer(index, IndexBufferOffset, 20);
-        encoder->setObjectBufferOffset(offset, 21);
-        encoder->drawMeshThreadgroups({warp_count, InstanceCount, 1}, {vertex_per_warp, 1, 1}, {1, 1, 1});
-      });
+      auto &cmd = enc.encodeRenderCommand<wmtcmd_render_dxmt_geometry_draw_indexed>();
+      cmd.type = WMTRenderCommandDXMTGeometryDrawIndexed;
+      cmd.draw_arguments_offset = offset;
+      cmd.instance_count = InstanceCount;
+      cmd.warp_count = warp_count;
+      cmd.vertex_per_warp = vertex_per_warp;
+      cmd.index_buffer = (obj_handle_t)enc.currentIndexBuffer();
+      cmd.index_buffer_offset = IndexBufferOffset;
     });
   }
 
   void
   DrawIndexedInstancedIndirect(ID3D11Buffer *pBufferForArgs, UINT AlignedByteOffsetForArgs) override {
-    MTL::PrimitiveType Primitive;
+    WMTPrimitiveType Primitive;
     uint32_t ControlPointCount;
     if(!to_metal_primitive_type(state_.InputAssembler.Topology, Primitive, ControlPointCount))
       return;
@@ -1361,25 +1386,28 @@ public:
       return;
     }
     auto IndexType =
-        state_.InputAssembler.IndexBufferFormat == DXGI_FORMAT_R32_UINT ? MTL::IndexTypeUInt32 : MTL::IndexTypeUInt16;
+        state_.InputAssembler.IndexBufferFormat == DXGI_FORMAT_R32_UINT ? WMTIndexTypeUInt32 : WMTIndexTypeUInt16;
     auto IndexBufferOffset = state_.InputAssembler.IndexBufferOffset;
     if (auto bindable = reinterpret_cast<D3D11ResourceCommon *>(pBufferForArgs)) {
       EmitOP([IndexType, IndexBufferOffset, Primitive, ArgBuffer = bindable->buffer(),
             AlignedByteOffsetForArgs](ArgumentEncodingContext &enc) {
         auto buffer = enc.access(ArgBuffer, AlignedByteOffsetForArgs, 20, DXMT_ENCODER_RESOURCE_ACESS_READ);
         enc.bumpVisibilityResultOffset();
-        enc.encodeRenderCommand([&, buffer, index_buffer = Obj(enc.currentIndexBuffer())](RenderCommandContext &ctx) {
-          ctx.encoder->drawIndexedPrimitives(
-              Primitive, IndexType, index_buffer, IndexBufferOffset, buffer, AlignedByteOffsetForArgs
-          );
-        });
+        auto &cmd = enc.encodeRenderCommand<wmtcmd_render_draw_indexed_indirect>();
+        cmd.type = WMTRenderCommandDrawIndexedIndirect;
+        cmd.primitive_type = Primitive;
+        cmd.index_type = IndexType;
+        cmd.indirect_args_buffer = (obj_handle_t)buffer;
+        cmd.indirect_args_offset = AlignedByteOffsetForArgs;
+        cmd.index_buffer = (obj_handle_t)enc.currentIndexBuffer();
+        cmd.index_buffer_offset = IndexBufferOffset;
       });
     }
   }
 
   void
   DrawInstancedIndirect(ID3D11Buffer *pBufferForArgs, UINT AlignedByteOffsetForArgs) override {
-    MTL::PrimitiveType Primitive;
+    WMTPrimitiveType Primitive;
     uint32_t ControlPointCount;
     if(!to_metal_primitive_type(state_.InputAssembler.Topology, Primitive, ControlPointCount))
       return;
@@ -1399,9 +1427,11 @@ public:
       EmitOP([Primitive, ArgBuffer = bindable->buffer(), AlignedByteOffsetForArgs](ArgumentEncodingContext &enc) {
         auto buffer = enc.access(ArgBuffer, AlignedByteOffsetForArgs, 20, DXMT_ENCODER_RESOURCE_ACESS_READ);
         enc.bumpVisibilityResultOffset();
-        enc.encodeRenderCommand([&, buffer](RenderCommandContext &ctx) {
-          ctx.encoder->drawPrimitives(Primitive, buffer, AlignedByteOffsetForArgs);
-        });
+        auto &cmd = enc.encodeRenderCommand<wmtcmd_render_draw_indirect>();
+        cmd.type = WMTRenderCommandDrawIndirect;
+        cmd.primitive_type = Primitive;
+        cmd.indirect_args_buffer = (obj_handle_t)buffer;
+        cmd.indirect_args_offset = AlignedByteOffsetForArgs;
       });
     }
   }
@@ -1421,12 +1451,13 @@ public:
         enc.encodeGSDispatchArgumentsMarshal(
           buffer, AlignedByteOffsetForArgs, vertex_increment_per_wrap, dispatch_arg_offset
         );
-        enc.encodeRenderCommand([=](RenderCommandContext &ctx) {
-          auto &encoder = ctx.encoder;
-          encoder->setObjectBuffer(buffer, AlignedByteOffsetForArgs, 21);
-          encoder->drawMeshThreadgroups(ctx.current_gpu_heap, dispatch_arg_offset, {vertex_per_warp, 1, 1}, {1, 1, 1});
-          encoder->setObjectBuffer(ctx.current_gpu_heap, 0, 21);
-        });
+        auto &cmd = enc.encodeRenderCommand<wmtcmd_render_dxmt_geometry_draw_indirect>();
+        cmd.type = WMTRenderCommandDXMTGeometryDrawIndirect;
+        cmd.dispatch_args_buffer = enc.gpu_buffer_FIXME();
+        cmd.dispatch_args_offset = dispatch_arg_offset;
+        cmd.vertex_per_warp = vertex_per_warp;
+        cmd.indirect_args_buffer = (obj_handle_t)buffer;
+        cmd.indirect_args_offset = AlignedByteOffsetForArgs;
       });
     }
   }
@@ -1448,13 +1479,15 @@ public:
         enc.encodeGSDispatchArgumentsMarshal(
           buffer, AlignedByteOffsetForArgs, vertex_increment_per_wrap, dispatch_arg_offset
         );
-        enc.encodeRenderCommand([=, index = Obj(enc.currentIndexBuffer())](RenderCommandContext &ctx) {
-          auto &encoder = ctx.encoder;
-          encoder->setObjectBuffer(index, IndexBufferOffset, 20);
-          encoder->setObjectBuffer(buffer, AlignedByteOffsetForArgs, 21);
-          encoder->drawMeshThreadgroups(ctx.current_gpu_heap, dispatch_arg_offset, {vertex_per_warp, 1, 1}, {1, 1, 1});
-          encoder->setObjectBuffer(ctx.current_gpu_heap, 0, 21);
-        });
+        auto &cmd = enc.encodeRenderCommand<wmtcmd_render_dxmt_geometry_draw_indexed_indirect>();
+        cmd.type = WMTRenderCommandDXMTGeometryDrawIndexedIndirect;
+        cmd.dispatch_args_buffer = enc.gpu_buffer_FIXME();
+        cmd.dispatch_args_offset = dispatch_arg_offset;
+        cmd.vertex_per_warp = vertex_per_warp;
+        cmd.indirect_args_buffer = (obj_handle_t)buffer;
+        cmd.indirect_args_offset = AlignedByteOffsetForArgs;
+        cmd.index_buffer = (obj_handle_t)enc.currentIndexBuffer();
+        cmd.index_buffer_offset = IndexBufferOffset;
       });
     }
   }
@@ -3762,12 +3795,12 @@ public:
       enc.tess_threads_per_patch = GraphicsPipeline.ThreadsPerPatch;
       if (!(GraphicsPipeline.MeshPipelineState && GraphicsPipeline.RasterizationPipelineState))
         return;
-      enc.encodePreTessCommand([pso = GraphicsPipeline.MeshPipelineState](RenderCommandContext &ctx) {
-        ctx.encoder->setRenderPipelineState(pso);
-      });
-      enc.encodeRenderCommand([pso = GraphicsPipeline.RasterizationPipelineState](RenderCommandContext &ctx) {
-        ctx.encoder->setRenderPipelineState(pso);
-      });
+      auto &cmd_pretess = enc.encodePreTessRenderCommand<wmtcmd_render_setpso>();
+      cmd_pretess.type = WMTRenderCommandSetPSO;
+      cmd_pretess.pso = (obj_handle_t)GraphicsPipeline.MeshPipelineState;
+      auto &cmd = enc.encodeRenderCommand<wmtcmd_render_setpso>();
+      cmd.type = WMTRenderCommandSetPSO;
+      cmd.pso = (obj_handle_t)GraphicsPipeline.RasterizationPipelineState;
     });
 
     cmdbuf_state = CommandBufferState::TessellationRenderPipelineReady;
@@ -3807,9 +3840,9 @@ public:
       pso->GetPipeline(&GraphicsPipeline); // may block
       if (!GraphicsPipeline.PipelineState)
         return;
-      enc.encodeRenderCommand([pso = GraphicsPipeline.PipelineState](RenderCommandContext& ctx) {
-        ctx.encoder->setRenderPipelineState(pso);
-      });
+      auto &cmd = enc.encodeRenderCommand<wmtcmd_render_setpso>();
+      cmd.type = WMTRenderCommandSetPSO;
+      cmd.pso = (obj_handle_t)GraphicsPipeline.PipelineState;
     });
 
     cmdbuf_state = CommandBufferState::GeometryRenderPipelineReady;
@@ -3862,9 +3895,9 @@ public:
       pso->GetPipeline(&GraphicsPipeline); // may block
       if (!GraphicsPipeline.PipelineState)
         return;
-      enc.encodeRenderCommand([pso = GraphicsPipeline.PipelineState](RenderCommandContext& ctx) {
-        ctx.encoder->setRenderPipelineState(pso);
-      });
+      auto &cmd = enc.encodeRenderCommand<wmtcmd_render_setpso>();
+      cmd.type = WMTRenderCommandSetPSO;
+      cmd.pso = (obj_handle_t)GraphicsPipeline.PipelineState;
     });
 
     cmdbuf_state = CommandBufferState::RenderPipelineReady;
@@ -3897,29 +3930,33 @@ public:
       IMTLD3D11DepthStencilState *state =
           state_.OutputMerger.DepthStencilState ? state_.OutputMerger.DepthStencilState : default_depth_stencil_state;
       EmitST([state, stencil_ref = state_.OutputMerger.StencilRef](ArgumentEncodingContext& enc) {
-        enc.encodeRenderCommand([&](RenderCommandContext& ctx) {
-          ctx.encoder->setDepthStencilState(state->GetDepthStencilState(ctx.dsv_planar_flags));
-          ctx.encoder->setStencilReferenceValue(stencil_ref);
-        });
+        auto encoder = enc.currentRenderEncoder();
+        auto &cmd = enc.encodeRenderCommand<wmtcmd_render_setdsso>();
+        cmd.type = WMTRenderCommandSetDSSO;
+        cmd.dsso = (obj_handle_t)state->GetDepthStencilState(encoder->dsv_planar_flags);
+        cmd.stencil_ref = stencil_ref;
       });
     }
     if (dirty_state.any(DirtyState::RasterizerState)) {
       IMTLD3D11RasterizerState *state =
           state_.Rasterizer.RasterizerState ? state_.Rasterizer.RasterizerState : default_rasterizer_state;
       EmitST([state](ArgumentEncodingContext& enc) {
-        enc.encodeRenderCommand([&](RenderCommandContext& ctx) {
-          state->SetupRasterizerState(ctx.encoder);
-        });
+        auto &cmd = enc.encodeRenderCommand<wmtcmd_render_setrasterizerstate>();
+        cmd.type = WMTRenderCommandSetRasterizerState;
+        state->SetupRasterizerState(cmd);
       });
     }
     if (dirty_state.any(DirtyState::BlendFactorAndStencilRef)) {
       EmitST([r = state_.OutputMerger.BlendFactor[0], g = state_.OutputMerger.BlendFactor[1],
             b = state_.OutputMerger.BlendFactor[2], a = state_.OutputMerger.BlendFactor[3],
             stencil_ref = state_.OutputMerger.StencilRef](ArgumentEncodingContext &enc) {
-        enc.encodeRenderCommand([&](RenderCommandContext &ctx) {
-          ctx.encoder->setBlendColor(r, g, b, a);
-          ctx.encoder->setStencilReferenceValue(stencil_ref);
-        });
+        auto &cmd = enc.encodeRenderCommand<wmtcmd_render_setblendcolor>();
+        cmd.type = WMTRenderCommandSetBlendFactorAndStencilRef;
+        cmd.red = r;
+        cmd.green = g;
+        cmd.blue = b;
+        cmd.alpha = a;
+        cmd.stencil_ref = stencil_ref;
       });
     }
     IMTLD3D11RasterizerState *current_rs =
@@ -3933,9 +3970,10 @@ public:
                         d3dViewport.Height,   d3dViewport.MinDepth, d3dViewport.MaxDepth};
       }
       EmitST([viewports = std::move(viewports)](ArgumentEncodingContext& enc) {
-        enc.encodeRenderCommand([&](RenderCommandContext& ctx) {
-          ctx.encoder->setViewports(viewports.data(), viewports.size());
-        });
+        auto &cmd = enc.encodeRenderCommand<wmtcmd_render_setviewports>();
+        cmd.type = WMTRenderCommandSetViewports;
+        cmd.viewports.set(viewports.data());
+        cmd.viewport_count = viewports.size();
       });
     }
     if (dirty_state.any(DirtyState::Scissors)) {
@@ -3959,9 +3997,10 @@ public:
         }
       }
       EmitST([scissors = std::move(scissors)](ArgumentEncodingContext& enc) {
-        enc.encodeRenderCommand([&](RenderCommandContext& ctx) {
-          ctx.encoder->setScissorRects(scissors.data(), scissors.size());
-        });
+        auto &cmd = enc.encodeRenderCommand<wmtcmd_render_setscissorrects>();
+        cmd.type = WMTRenderCommandSetScissorRects;
+        cmd.scissor_rects.set(scissors.data());
+        cmd.rect_count = scissors.size();
       });
     }
     dirty_state.clrAll();
@@ -4046,22 +4085,30 @@ public:
       if (so_slot0.Offset == 0xFFFFFFFF) {
         EmitST([slot0 = so_slot0.Buffer->buffer()](ArgumentEncodingContext &enc) {
           auto buffer = enc.access(slot0, 0, slot0->length(), DXMT_ENCODER_RESOURCE_ACESS_WRITE);
-          enc.encodeRenderCommand([buffer](RenderCommandContext &ctx) {
-            ctx.encoder->setVertexBuffer(buffer, 0, 20);
-          });
+          auto &cmd = enc.encodeRenderCommand<wmtcmd_render_setbuffer>();
+          cmd.type = WMTRenderCommandSetVertexBuffer;
+          cmd.buffer = (obj_handle_t)buffer;
+          cmd.offset = 0;
+          cmd.index = 20;
           enc.setCompatibilityFlag(FeatureCompatibility::UnsupportedStreamOutputAppending);
         });
       } else {
         EmitST([slot0 = so_slot0.Buffer->buffer(), offset = so_slot0.Offset](ArgumentEncodingContext &enc) {
           auto buffer = enc.access(slot0, 0, slot0->length(), DXMT_ENCODER_RESOURCE_ACESS_WRITE);
-          enc.encodeRenderCommand([buffer, offset](RenderCommandContext &ctx) {
-            ctx.encoder->setVertexBuffer(buffer, offset, 20);
-          });
+          auto &cmd = enc.encodeRenderCommand<wmtcmd_render_setbuffer>();
+          cmd.type = WMTRenderCommandSetVertexBuffer;
+          cmd.buffer = (obj_handle_t)buffer;
+          cmd.offset = offset;
+          cmd.index = 20;
         });
       }
     } else {
       EmitST([](ArgumentEncodingContext &enc) {
-        enc.encodeRenderCommand([](RenderCommandContext &ctx) { ctx.encoder->setVertexBuffer(nullptr, 0, 20); });
+        auto &cmd = enc.encodeRenderCommand<wmtcmd_render_setbuffer>();
+        cmd.type = WMTRenderCommandSetVertexBuffer;
+        cmd.buffer = (obj_handle_t)nullptr;
+        cmd.offset = 0;
+        cmd.index = 20;
       });
     }
     state_.StreamOutput.Targets.clear_dirty(0);

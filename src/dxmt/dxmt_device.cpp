@@ -6,9 +6,9 @@ namespace dxmt {
 
 class DeviceImpl : public Device {
 public:
-  virtual MTL::Device *
+  virtual WMT::Device
   device() override {
-    return (MTL::Device *)device_.handle;
+    return device_;
   };
   virtual CommandQueue &
   queue() override {

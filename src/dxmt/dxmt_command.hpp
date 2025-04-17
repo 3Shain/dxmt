@@ -175,11 +175,11 @@ public:
   }
 
   void
-  MarshalGSDispatchArguments(MTL::RenderCommandEncoder *encoder, MTL::Buffer *commands, uint32_t commands_offset) {
-    encoder->setRenderPipelineState((MTL::RenderPipelineState *)gs_draw_arguments_marshal.handle);
-    encoder->setVertexBuffer(commands, commands_offset, 0);
-    encoder->drawPrimitives(MTL::PrimitiveTypePoint, NS::UInteger(0), NS::UInteger(1));
-    encoder->setVertexBuffer(nullptr, 0, 0);
+  MarshalGSDispatchArguments(WMT::RenderCommandEncoder encoder, WMT::Buffer commands, uint32_t commands_offset) {
+    encoder.setRenderPipelineState(gs_draw_arguments_marshal);
+    encoder.setVertexBuffer(commands, commands_offset, 0);
+    encoder.drawPrimitives(WMTPrimitiveTypePoint, 0, 1);
+    encoder.setVertexBuffer({nullptr}, 0, 0);
   }
 
 private:

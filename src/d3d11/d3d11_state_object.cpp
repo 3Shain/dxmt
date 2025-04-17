@@ -1,11 +1,13 @@
 
 #include "Metal.hpp"
-#include "Metal/MTLDepthStencil.hpp"
-#include "Metal/MTLRenderCommandEncoder.hpp"
-#include "Metal/MTLSampler.hpp"
 #include "d3d11_device.hpp"
 #include "d3d11_state_object.hpp"
 #include "log/log.hpp"
+
+namespace MTL {
+  class DepthStencilState;
+  class SamplerState;
+};
 
 namespace dxmt {
 
@@ -404,42 +406,30 @@ public:
     *pDesc = m_desc;
   }
 
-  void SetupRasterizerState(MTL::RenderCommandEncoder *encoder) {
+  void SetupRasterizerState(wmtcmd_render_setrasterizerstate& cmd) {
 
-    if (m_desc.FillMode == D3D11_FILL_SOLID) {
-      encoder->setTriangleFillMode(MTL::TriangleFillMode::TriangleFillModeFill);
-    } else {
-      encoder->setTriangleFillMode(
-          MTL::TriangleFillMode::TriangleFillModeLines);
-    }
+    cmd.fill_mode = m_desc.FillMode == D3D11_FILL_SOLID ? WMTTriangleFillModeFill : WMTTriangleFillModeLines;
 
     switch (m_desc.CullMode) {
     case D3D11_CULL_BACK:
-      encoder->setCullMode(MTL::CullModeBack);
+      cmd.cull_mode = WMTCullModeBack;
       break;
     case D3D11_CULL_FRONT:
-      encoder->setCullMode(MTL::CullModeFront);
+      cmd.cull_mode = WMTCullModeFront;
       break;
     case D3D11_CULL_NONE:
-      encoder->setCullMode(MTL::CullModeNone);
+      cmd.cull_mode = WMTCullModeNone;
       break;
     }
 
     // https://github.com/gpuweb/gpuweb/issues/2100#issuecomment-924536243
-    if (m_desc.DepthClipEnable) {
-      encoder->setDepthClipMode(MTL::DepthClipMode::DepthClipModeClip);
-    } else {
-      encoder->setDepthClipMode(MTL::DepthClipMode::DepthClipModeClamp);
-    }
+    cmd.depth_clip_mode = m_desc.DepthClipEnable ? WMTDepthClipModeClip : WMTDepthClipModeClamp;
 
-    encoder->setDepthBias(m_desc.DepthBias, m_desc.SlopeScaledDepthBias,
-                          m_desc.DepthBiasClamp);
+    cmd.depth_bias = m_desc.DepthBias;
+    cmd.scole_scale = m_desc.SlopeScaledDepthBias;
+    cmd.depth_bias_clamp = m_desc.DepthBiasClamp;
 
-    if (m_desc.FrontCounterClockwise) {
-      encoder->setFrontFacingWinding(MTL::Winding::WindingCounterClockwise);
-    } else {
-      encoder->setFrontFacingWinding(MTL::Winding::WindingClockwise);
-    }
+    cmd.winding = m_desc.FrontCounterClockwise ? WMTWindingCounterClockwise: WMTWindingClockwise;
 
     if (m_desc.AntialiasedLineEnable) {
       // nop , we don't support this

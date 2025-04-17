@@ -1,6 +1,5 @@
 #pragma once
-#include "Metal/MTLCommandEncoder.hpp"
-#include "Metal/MTLRenderCommandEncoder.hpp"
+#include "winemetal.h"
 #include <cstdint>
 #include "ftl.hpp"
 
@@ -54,28 +53,28 @@ CheckResourceResidency(DXMT_RESOURCE_RESIDENCY_STATE &state, uint64_t encoder_id
   return false;
 };
 
-constexpr MTL::ResourceUsage
+constexpr WMTResourceUsage
 GetUsageFromResidencyMask(DXMT_RESOURCE_RESIDENCY mask) {
-  return ((mask & DXMT_RESOURCE_RESIDENCY_READ) ? MTL::ResourceUsageRead : MTL::ResourceUsage(0)) |
-         ((mask & DXMT_RESOURCE_RESIDENCY_WRITE) ? MTL::ResourceUsageWrite : MTL::ResourceUsage(0));
+  return ((mask & DXMT_RESOURCE_RESIDENCY_READ) ? WMTResourceUsageRead : WMTResourceUsage(0)) |
+         ((mask & DXMT_RESOURCE_RESIDENCY_WRITE) ? WMTResourceUsageWrite : WMTResourceUsage(0));
 }
 
-constexpr MTL::RenderStages
+constexpr WMTRenderStages
 GetStagesFromResidencyMask(DXMT_RESOURCE_RESIDENCY mask) {
   return ((mask & (DXMT_RESOURCE_RESIDENCY_FRAGMENT_READ | DXMT_RESOURCE_RESIDENCY_FRAGMENT_WRITE))
-              ? MTL::RenderStageFragment
-              : MTL::RenderStages(0)) |
+              ? WMTRenderStageFragment
+              : WMTRenderStages(0)) |
          ((mask & (DXMT_RESOURCE_RESIDENCY_VERTEX_READ | DXMT_RESOURCE_RESIDENCY_VERTEX_WRITE))
-              ? MTL::RenderStageVertex
-              : MTL::RenderStages(0)) |
+              ? WMTRenderStageVertex
+              : WMTRenderStages(0)) |
          ((mask & (DXMT_RESOURCE_RESIDENCY_OBJECT_READ | DXMT_RESOURCE_RESIDENCY_OBJECT_WRITE |
                    DXMT_RESOURCE_RESIDENCY_OBJECT_GS_READ | DXMT_RESOURCE_RESIDENCY_OBJECT_GS_WRITE))
-              ? MTL::RenderStageObject
-              : MTL::RenderStages(0)) |
+              ? WMTRenderStageObject
+              : WMTRenderStages(0)) |
          ((mask & (DXMT_RESOURCE_RESIDENCY_MESH_READ | DXMT_RESOURCE_RESIDENCY_MESH_WRITE |
                    DXMT_RESOURCE_RESIDENCY_MESH_GS_READ | DXMT_RESOURCE_RESIDENCY_MESH_GS_WRITE))
-              ? MTL::RenderStageMesh
-              : MTL::RenderStages(0));
+              ? WMTRenderStageMesh
+              : WMTRenderStages(0));
 }
 
 } // namespace dxmt

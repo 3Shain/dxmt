@@ -1,5 +1,4 @@
 #pragma once
-#include "Metal/MTLDevice.hpp"
 #include "dxmt_command_queue.hpp"
 #include <memory>
 
@@ -9,7 +8,7 @@ class Device {
 public:
   virtual ~Device() {}
 
-  virtual MTL::Device* device() = 0;
+  virtual WMT::Device device() = 0;
   virtual CommandQueue& queue() = 0;
 };
 
