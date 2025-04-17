@@ -18,7 +18,7 @@ DEFINE_COM_INTERFACE("77f0bbd5-2be7-4e9e-ad61-70684ff19e01",
 DEFINE_COM_INTERFACE("03629ed8-bcdd-4582-8997-3817209a34f4",
                      IMTLD3D11RasterizerState)
     : public ID3D11RasterizerState2 {
-  virtual void SetupRasterizerState(MTL::RenderCommandEncoder * encoder) = 0;
+  virtual void SetupRasterizerState(wmtcmd_render_setrasterizerstate& cmd) = 0;
   virtual bool IsScissorEnabled() = 0;
   virtual uint32_t UAVOnlySampleCount() = 0;
 };

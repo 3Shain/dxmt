@@ -11,7 +11,6 @@
 #include "QuartzCore/CAMetalDrawable.hpp"
 #include "QuartzCore/CAMetalLayer.hpp"
 #include "dxmt_buffer.hpp"
-#include "dxmt_command_list.hpp"
 #include "dxmt_deptrack.hpp"
 #include "dxmt_occlusion_query.hpp"
 #include "dxmt_residency.hpp"
@@ -120,9 +119,11 @@ struct GSDispatchArgumentsMarshal {
 
 struct RenderEncoderData : EncoderData {
   WMTRenderPassInfo info;
-  CommandList<RenderCommandContext> cmds;
-  CommandList<RenderCommandContext> pretess_cmds;
   std::vector<GSDispatchArgumentsMarshal> gs_arg_marshal_tasks;
+  wmtcmd_render_nop cmd_head;
+  wmtcmd_base *cmd_tail;
+  wmtcmd_render_nop pretess_cmd_head;
+  wmtcmd_base *pretess_cmd_tail;
   uint8_t dsv_planar_flags;
   uint8_t dsv_readonly_flags;
   uint8_t render_target_count;
@@ -415,16 +416,20 @@ public:
       auto &cmd = encodeComputeCommand<wmtcmd_compute_useresource>();
       cmd.type = WMTComputeCommandUseResource;
       cmd.resource = (obj_handle_t)resource;
-      cmd.usage = (WMTResourceUsage)GetUsageFromResidencyMask(requested);
+      cmd.usage = GetUsageFromResidencyMask(requested);
+    } else if constexpr (kind == PipelineKind::Tessellation) {
+      auto &cmd = encodePreTessRenderCommand<wmtcmd_render_useresource>();
+      cmd.type = WMTRenderCommandUseResource;
+      cmd.resource = (obj_handle_t)resource;
+      cmd.usage = GetUsageFromResidencyMask(requested);
+      cmd.stages = GetStagesFromResidencyMask(requested);
+    } else {
+      auto &cmd = encodeRenderCommand<wmtcmd_render_useresource>();
+      cmd.type = WMTRenderCommandUseResource;
+      cmd.resource = (obj_handle_t)resource;
+      cmd.usage = GetUsageFromResidencyMask(requested);
+      cmd.stages = GetStagesFromResidencyMask(requested);
     }
-    else if constexpr (kind == PipelineKind::Tessellation)
-      encodePreTessCommand([resource = Obj(resource), requested](RenderCommandContext &ctx) {
-        ctx.encoder->useResource(resource, GetUsageFromResidencyMask(requested), GetStagesFromResidencyMask(requested));
-      });
-    else
-      encodeRenderCommand([resource = Obj(resource), requested](RenderCommandContext &ctx) {
-        ctx.encoder->useResource(resource, GetUsageFromResidencyMask(requested), GetStagesFromResidencyMask(requested));
-      });
   }
 
   template <PipelineStage stage, PipelineKind kind>
@@ -456,12 +461,16 @@ public:
     };
   }
 
-  template <CommandWithContext<RenderCommandContext> cmd>
-  void
-  encodeRenderCommand(cmd &&fn) {
+  template <typename cmd_struct>
+  cmd_struct &
+  encodeRenderCommand() {
     assert(encoder_current->type == EncoderType::Render);
-    auto &cmds = static_cast<RenderEncoderData *>(encoder_current)->cmds;
-    cmds.emit(std::forward<cmd>(fn), allocate_cpu_heap(cmds.calculateCommandSize<cmd>(), 16));
+    auto encoder = static_cast<RenderEncoderData *>(encoder_current);
+    auto storage = (cmd_struct *)allocate_cpu_heap(sizeof(cmd_struct), 16);
+    encoder->cmd_tail->next.set(storage);
+    encoder->cmd_tail = (wmtcmd_base *)storage;
+    storage->next.set(nullptr);
+    return *storage;
   }
 
   void
@@ -473,12 +482,16 @@ public:
     data->gs_arg_marshal_tasks.push_back({draw_args, draw_args_offset, vertex_count_per_warp, write_offset});
   }
 
-  template <CommandWithContext<RenderCommandContext> cmd>
-  void
-  encodePreTessCommand(cmd &&fn) {
+  template <typename cmd_struct>
+  cmd_struct &
+  encodePreTessRenderCommand() {
     assert(encoder_current->type == EncoderType::Render);
-    auto &cmds = static_cast<RenderEncoderData *>(encoder_current)->pretess_cmds;
-    cmds.emit(std::forward<cmd>(fn), allocate_cpu_heap(cmds.calculateCommandSize<cmd>(), 16));
+    auto encoder = static_cast<RenderEncoderData *>(encoder_current);
+    auto storage = (cmd_struct *)allocate_cpu_heap(sizeof(cmd_struct), 16);
+    encoder->pretess_cmd_tail->next.set(storage);
+    encoder->pretess_cmd_tail = (wmtcmd_base *)storage;
+    storage->next.set(nullptr);
+    return *storage;
   }
 
   template <typename cmd_struct>
@@ -572,6 +585,10 @@ public:
       ERR("gpu argument heap overflow, expect error.");
     }
     return aligned;
+  }
+
+  obj_handle_t gpu_buffer_FIXME() {
+    return (obj_handle_t)gpu_buffer_;
   }
 
   template<typename T> T* get_gpu_heap_pointer(size_t offset) {
