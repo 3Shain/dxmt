@@ -3,8 +3,6 @@
 #include "com/com_guid.hpp"
 #include "com/com_pointer.hpp"
 #include "d3d11_3.h"
-#include "Metal/MTLDevice.hpp"
-#include "d3d11_private.h"
 #include "dxgi_interfaces.h"
 #include "dxmt_device.hpp"
 

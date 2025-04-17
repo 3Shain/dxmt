@@ -387,3 +387,78 @@ MTLRenderCommandEncoder_encodeCommands(obj_handle_t encoder, const struct wmtcmd
   params.cmd_head = cmd_head;
   UNIX_CALL(38, &params);
 }
+
+WINEMETAL_API enum WMTPixelFormat
+MTLTexture_pixelFormat(obj_handle_t texture) {
+  struct unixcall_generic_obj_uint64_ret params;
+  params.handle = texture;
+  params.ret = 0;
+  UNIX_CALL(39, &params);
+  return (enum WMTPixelFormat)params.ret;
+}
+
+WINEMETAL_API uint64_t
+MTLTexture_width(obj_handle_t texture) {
+  struct unixcall_generic_obj_uint64_ret params;
+  params.handle = texture;
+  params.ret = 0;
+  UNIX_CALL(40, &params);
+  return params.ret;
+}
+WINEMETAL_API uint64_t
+MTLTexture_height(obj_handle_t texture) {
+  struct unixcall_generic_obj_uint64_ret params;
+  params.handle = texture;
+  params.ret = 0;
+  UNIX_CALL(41, &params);
+  return params.ret;
+}
+WINEMETAL_API uint64_t
+MTLTexture_depth(obj_handle_t texture) {
+  struct unixcall_generic_obj_uint64_ret params;
+  params.handle = texture;
+  params.ret = 0;
+  UNIX_CALL(42, &params);
+  return params.ret;
+}
+WINEMETAL_API uint64_t
+MTLTexture_arrayLength(obj_handle_t texture) {
+  struct unixcall_generic_obj_uint64_ret params;
+  params.handle = texture;
+  params.ret = 0;
+  UNIX_CALL(43, &params);
+  return params.ret;
+}
+WINEMETAL_API uint64_t
+MTLTexture_mipmapLevelCount(obj_handle_t texture) {
+  struct unixcall_generic_obj_uint64_ret params;
+  params.handle = texture;
+  params.ret = 0;
+  UNIX_CALL(44, &params);
+  return params.ret;
+}
+WINEMETAL_API void
+MTLTexture_replaceRegion(
+    obj_handle_t texture, struct WMTOrigin origin, struct WMTSize size, uint64_t level, uint64_t slice,
+    struct WMTMemoryPointer data, uint64_t bytes_per_row, uint64_t bytes_per_image
+) {
+  struct unixcall_mtltexture_replaceregion params;
+  params.texture = texture;
+  params.origin = origin;
+  params.size = size;
+  params.level = level;
+  params.slice = slice;
+  params.data = data;
+  params.bytes_per_row = bytes_per_row;
+  params.bytes_per_image = bytes_per_image;
+  UNIX_CALL(45, &params);
+}
+
+WINEMETAL_API void
+MTLBuffer_didModifyRange(obj_handle_t buffer, uint64_t start, uint64_t length) {
+  struct unixcall_generic_obj_uint64_uint64_ret params;
+  params.handle = buffer;
+  params.arg = start;
+  params.ret = length;
+  UNIX_CALL(46, &params);
+}

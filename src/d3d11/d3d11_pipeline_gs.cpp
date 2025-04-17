@@ -61,7 +61,7 @@ public:
 
   void GetPipeline(MTL_COMPILED_GRAPHICS_PIPELINE *pPipeline) final {
     ready_.wait(false, std::memory_order_acquire);
-    *pPipeline = {(MTL::RenderPipelineState *)state_mesh_.handle};
+    *pPipeline = {state_mesh_};
   }
 
   IMTLThreadpoolWork *RunThreadpoolWork() {

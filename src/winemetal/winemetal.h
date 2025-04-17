@@ -1146,12 +1146,28 @@ struct wmtcmd_render_memory_barrier {
   enum WMTRenderStages stages_after;
 };
 
+struct WMTViewport {
+  double originX;
+  double originY;
+  double width;
+  double height;
+  double znear;
+  double zfar;
+};
+
 struct wmtcmd_render_setviewports {
   enum WMTRenderCommandType type;
   uint16_t reserved[3];
   struct WMTMemoryPointer next;
   struct WMTMemoryPointer viewports;
   uint8_t viewport_count;
+};
+
+struct WMTScissorRect {
+  uint64_t x;
+  uint64_t y;
+  uint64_t width;
+  uint64_t height;
 };
 
 struct wmtcmd_render_setscissorrects {
@@ -1279,5 +1295,18 @@ struct wmtcmd_render_dxmt_geometry_draw_indexed_indirect {
 };
 
 WINEMETAL_API void MTLRenderCommandEncoder_encodeCommands(obj_handle_t encoder, const struct wmtcmd_base *cmd_head);
+
+WINEMETAL_API enum WMTPixelFormat MTLTexture_pixelFormat(obj_handle_t texture);
+WINEMETAL_API uint64_t MTLTexture_width(obj_handle_t texture);
+WINEMETAL_API uint64_t MTLTexture_height(obj_handle_t texture);
+WINEMETAL_API uint64_t MTLTexture_depth(obj_handle_t texture);
+WINEMETAL_API uint64_t MTLTexture_arrayLength(obj_handle_t texture);
+WINEMETAL_API uint64_t MTLTexture_mipmapLevelCount(obj_handle_t texture);
+WINEMETAL_API void MTLTexture_replaceRegion(
+    obj_handle_t texture, struct WMTOrigin origin, struct WMTSize size, uint64_t level, uint64_t slice,
+    struct WMTMemoryPointer data, uint64_t bytes_per_row, uint64_t bytes_per_image
+);
+
+WINEMETAL_API void MTLBuffer_didModifyRange(obj_handle_t buffer, uint64_t start, uint64_t length);
 
 #endif

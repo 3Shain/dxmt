@@ -217,17 +217,27 @@ Texture::allocate(Flags<TextureAllocationFlag> flags) {
 }
 
 
-MTL::Texture *
+WMT::Texture
 Texture::view(TextureViewKey key) {
   return view(key, current_.ptr());
 }
 
-MTL::Texture *
+WMT::Texture
 Texture::view(TextureViewKey key, TextureAllocation* allocation) {
+  return view_(key, allocation).texture;
+}
+
+TextureView const &
+Texture::view_(TextureViewKey key) {
+  return view_(key, current_.ptr());
+}
+
+TextureView const &
+Texture::view_(TextureViewKey key, TextureAllocation* allocation) {
   if (unlikely(allocation->version_ != version_)) {
     prepareAllocationViews(allocation);
   }
-  return (MTL::Texture *)allocation->cached_view_[key]->texture.handle;
+  return *allocation->cached_view_[key];
 }
 
 

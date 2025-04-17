@@ -70,7 +70,7 @@ public:
 
   void GetPipeline(MTL_COMPILED_GRAPHICS_PIPELINE *pPipeline) final {
     ready_.wait(false, std::memory_order_acquire);
-    *pPipeline = {(MTL::RenderPipelineState *)state_.handle};
+    *pPipeline = {state_};
   }
 
   IMTLThreadpoolWork *RunThreadpoolWork() {
@@ -193,7 +193,7 @@ public:
 
   void GetPipeline(MTL_COMPILED_COMPUTE_PIPELINE *pPipeline) final {
     ready_.wait(false, std::memory_order_acquire);
-    *pPipeline = {(MTL::ComputePipelineState *)state_.handle};
+    *pPipeline = {state_};
   }
 
   IMTLThreadpoolWork *RunThreadpoolWork() {
@@ -207,7 +207,7 @@ public:
       return ComputeShader.ptr();
     }
 
-    state_ = device_->GetWMTDevice().newComputePipelineState(WMT::Function((obj_handle_t)cs.Function),err);
+    state_ = device_->GetWMTDevice().newComputePipelineState(cs.Function, err);
 
     if (!state_) {
       ERR("Failed to create compute PSO: ", err.description().getUTF8String());

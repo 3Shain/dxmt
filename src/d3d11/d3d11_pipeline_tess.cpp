@@ -64,8 +64,8 @@ public:
 
   void GetPipeline(MTL_COMPILED_TESSELLATION_PIPELINE *pPipeline) final {
     ready_.wait(false, std::memory_order_acquire);
-    *pPipeline = {(MTL::RenderPipelineState *)state_mesh_.handle,
-                  (MTL::RenderPipelineState *)state_rasterization_.handle,
+    *pPipeline = {state_mesh_,
+                  state_rasterization_,
                   hull_reflection.NumOutputElement,
                   hull_reflection.NumPatchConstantOutputScalar,
                   hull_reflection.ThreadsPerPatch};

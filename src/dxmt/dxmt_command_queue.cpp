@@ -23,7 +23,7 @@ CommandQueue::CommandQueue(WMT::Device device) :
         device,
         WMTResourceHazardTrackingModeUntracked | WMTResourceCPUCacheModeWriteCombined | WMTResourceStorageModeShared
     ),
-    argument_encoding_ctx(*this, (MTL::Device *)device.handle),
+    argument_encoding_ctx(*this, device),
     emulated_cmd(device, argument_encoding_ctx) {
   for (unsigned i = 0; i < kCommandChunkCount; i++) {
     auto &chunk = chunks[i];

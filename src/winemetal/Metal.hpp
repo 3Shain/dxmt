@@ -189,6 +189,46 @@ public:
         handle, format, texture_type, level_start, level_count, slice_start, slice_count, swizzle, out_gpu_resource_id
     ));
   }
+
+  WMTPixelFormat
+  pixelFormat() {
+    return MTLTexture_pixelFormat(handle);
+  }
+
+  uint64_t
+  width() {
+    return MTLTexture_width(handle);
+  }
+
+  uint64_t
+  height() {
+    return MTLTexture_height(handle);
+  }
+
+  uint64_t
+  depth() {
+    return MTLTexture_depth(handle);
+  }
+
+  uint64_t
+  arrayLength() {
+    return MTLTexture_arrayLength(handle);
+  }
+
+  uint64_t
+  mipmapLevelCount() {
+    return MTLTexture_mipmapLevelCount(handle);
+  }
+
+  void
+  replaceRegion(
+      WMTOrigin origin, WMTSize size, uint64_t level, uint64_t slice, const void *pixelBytes, uint64_t bytesPerRow,
+      uint64_t bytesPerImage
+  ) {
+    WMTMemoryPointer data;
+    data.set((void *)pixelBytes);
+    return MTLTexture_replaceRegion(handle, origin, size, level, slice, data, bytesPerRow, bytesPerImage);
+  }
 };
 
 class Buffer : public Resource {
@@ -202,6 +242,11 @@ public:
   Reference<Texture>
   newTexture(WMTTextureInfo *info, uint64_t offset, uint64_t bytes_per_row) {
     return Reference<Texture>(MTLBuffer_newTexture(handle, info, offset, bytes_per_row));
+  }
+
+  void
+  didModifyRange(uint64_t start, uint64_t length) {
+    MTLBuffer_didModifyRange(handle, start, length);
   }
 };
 

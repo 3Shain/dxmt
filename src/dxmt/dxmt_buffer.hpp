@@ -7,11 +7,6 @@
 #include "thread.hpp"
 #include "util_flags.hpp"
 
-namespace MTL {
-  class Buffer;
-  class Texture;
-}
-
 namespace dxmt {
 
 enum class BufferAllocationFlag : uint32_t {
@@ -34,9 +29,12 @@ class Buffer;
 
 struct BufferView {
   WMT::Reference<WMT::Texture> texture;
-  DXMT_RESOURCE_RESIDENCY_STATE residency {};
+  uint64_t gpu_resource_id;
+  DXMT_RESOURCE_RESIDENCY_STATE residency{};
 
-  BufferView(WMT::Reference<WMT::Texture> &&texture):texture(std::move(texture)) {}  
+  BufferView(WMT::Reference<WMT::Texture> &&texture, uint64_t gpu_resource_id) :
+      texture(std::move(texture)),
+      gpu_resource_id(gpu_resource_id) {}
 };
 
 class BufferAllocation {
@@ -46,9 +44,9 @@ public:
   void incRef();
   void decRef();
 
-  MTL::Buffer *
+  WMT::Buffer
   buffer() {
-    return (MTL::Buffer *)obj_.handle;
+    return obj_;
   }
 
   Flags<BufferAllocationFlag>
@@ -56,7 +54,7 @@ public:
     return flags_;
   }
 
-  void* mappedMemory;
+  void *mappedMemory;
   uint64_t gpuAddress;
   DXMT_RESOURCE_RESIDENCY_STATE residencyState;
   EncoderDepKey depkey;
@@ -90,8 +88,11 @@ public:
 
   Buffer(uint64_t length, WMT::Device device) : length_(length), device_(device) {}
 
-  MTL::Texture *view(BufferViewKey key);
-  MTL::Texture *view(BufferViewKey key, BufferAllocation* allocation);
+  WMT::Texture view(BufferViewKey key);
+  WMT::Texture view(BufferViewKey key, BufferAllocation *allocation);
+
+  BufferView const &view_(BufferViewKey key); 
+  BufferView const &view_(BufferViewKey key, BufferAllocation *allocation);
 
   DXMT_RESOURCE_RESIDENCY_STATE &residency(BufferViewKey key);
   DXMT_RESOURCE_RESIDENCY_STATE &residency(BufferViewKey key, BufferAllocation *allocation);
@@ -102,7 +103,7 @@ public:
   };
 
 private:
-  void prepareAllocationViews(BufferAllocation* allocation);
+  void prepareAllocationViews(BufferAllocation *allocation);
 
   uint64_t length_;
 

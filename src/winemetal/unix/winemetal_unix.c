@@ -980,6 +980,70 @@ _MTLRenderCommandEncoder_encodeCommands(void *obj) {
   return STATUS_SUCCESS;
 }
 
+static NTSTATUS
+_MTLTexture_pixelFormat(void *obj) {
+  struct unixcall_generic_obj_uint64_ret *params = obj;
+  params->ret = [(id<MTLTexture>)params->handle pixelFormat];
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_MTLTexture_width(void *obj) {
+  struct unixcall_generic_obj_uint64_ret *params = obj;
+  params->ret = [(id<MTLTexture>)params->handle width];
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_MTLTexture_height(void *obj) {
+  struct unixcall_generic_obj_uint64_ret *params = obj;
+  params->ret = [(id<MTLTexture>)params->handle height];
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_MTLTexture_depth(void *obj) {
+  struct unixcall_generic_obj_uint64_ret *params = obj;
+  params->ret = [(id<MTLTexture>)params->handle depth];
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_MTLTexture_arrayLength(void *obj) {
+  struct unixcall_generic_obj_uint64_ret *params = obj;
+  params->ret = [(id<MTLTexture>)params->handle arrayLength];
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_MTLTexture_mipmapLevelCount(void *obj) {
+  struct unixcall_generic_obj_uint64_ret *params = obj;
+  params->ret = [(id<MTLTexture>)params->handle mipmapLevelCount];
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_MTLTexture_replaceRegion(void *obj) {
+  struct unixcall_mtltexture_replaceregion *params = obj;
+  [(id<MTLTexture>)params->texture replaceRegion:MTLRegionMake3D(
+                                                     params->origin.x, params->origin.y, params->origin.z,
+                                                     params->size.width, params->size.height, params->size.depth
+                                                 )
+                                     mipmapLevel:params->level
+                                           slice:params->slice
+                                       withBytes:params->data.ptr
+                                     bytesPerRow:params->bytes_per_row
+                                   bytesPerImage:params->bytes_per_image];
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_MTLBuffer_didModifyRange(void *obj) {
+  struct unixcall_generic_obj_uint64_uint64_ret *params = obj;
+  [(id<MTLBuffer>)params->handle didModifyRange:NSMakeRange(params->arg, params->ret)];
+  return STATUS_SUCCESS;
+}
+
 const void *__winemetal_unixcalls[] = {
     &_NSObject_retain,
     &_NSObject_release,
@@ -1020,6 +1084,14 @@ const void *__winemetal_unixcalls[] = {
     &_MTLBlitCommandEncoder_encodeCommands,
     &_MTLComputeCommandEncoder_encodeCommands,
     &_MTLRenderCommandEncoder_encodeCommands,
+    &_MTLTexture_pixelFormat,
+    &_MTLTexture_width,
+    &_MTLTexture_height,
+    &_MTLTexture_depth,
+    &_MTLTexture_arrayLength,
+    &_MTLTexture_mipmapLevelCount,
+    &_MTLTexture_replaceRegion,
+    &_MTLBuffer_didModifyRange,
 };
 
 const unsigned int __winemetal_unixcalls_num = sizeof(__winemetal_unixcalls) / sizeof(void *);

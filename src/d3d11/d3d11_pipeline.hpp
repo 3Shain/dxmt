@@ -1,7 +1,6 @@
 #pragma once
 
-#include "Metal/MTLArgumentEncoder.hpp"
-#include "Metal/MTLRenderPipeline.hpp"
+#include "Metal.hpp"
 #include "com/com_guid.hpp"
 #include "d3d11_device.hpp"
 #include "d3d11_input_layout.hpp"
@@ -35,16 +34,16 @@ struct MTL_COMPUTE_PIPELINE_DESC {
 };
 
 struct MTL_COMPILED_GRAPHICS_PIPELINE {
-  MTL::RenderPipelineState *PipelineState = nullptr;
+  WMT::RenderPipelineState PipelineState;
 };
 
 struct MTL_COMPILED_COMPUTE_PIPELINE {
-  MTL::ComputePipelineState *PipelineState;
+  WMT::ComputePipelineState PipelineState;
 };
 
 struct MTL_COMPILED_TESSELLATION_PIPELINE {
-  MTL::RenderPipelineState *MeshPipelineState;
-  MTL::RenderPipelineState *RasterizationPipelineState;
+  WMT::RenderPipelineState MeshPipelineState;
+  WMT::RenderPipelineState RasterizationPipelineState;
   uint32_t NumControlPointOutputElement;
   uint32_t NumPatchConstantOutputScalar;
   uint32_t ThreadsPerPatch;

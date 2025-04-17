@@ -665,7 +665,7 @@ public:
             auto buffer_handle = enc.access(buffer, slice.byteOffset, slice.byteLength, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
             enc.queue().emulated_cmd.ClearBufferUint(buffer_handle, slice.byteOffset, slice.byteLength >> 2, value);
           } else {
-            auto texture_handle = enc.access(buffer, viewId, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
+            WMT::Texture texture_handle = enc.access(buffer, viewId, DXMT_ENCODER_RESOURCE_ACESS_WRITE).texture;
             enc.queue().emulated_cmd.ClearTextureBufferUint(texture_handle, value);
           }
         }
@@ -674,10 +674,10 @@ public:
       EmitOP([=, texture = pUAV->texture(), viewId = pUAV->viewId(),
             value = std::array<uint32_t, 4>({Values[0], Values[1], Values[2], Values[3]}),
             dimension = desc.ViewDimension](ArgumentEncodingContext &enc) mutable {
-        auto view_format = texture->view(viewId)->pixelFormat();
+        auto view_format = texture->view(viewId).pixelFormat();
         auto uint_format = MTLGetUnsignedIntegerFormat((WMTPixelFormat)view_format);
         /* RG11B10Float is a special case */
-        if (view_format == MTL::PixelFormatRG11B10Float) {
+        if (view_format == WMTPixelFormatRG11B10Float) {
           uint_format = WMTPixelFormatR32Uint;
           value[0] = ((value[0] & 0x7FF) << 0) | ((value[1] & 0x7FF) << 11) | ((value[2] & 0x3FF) << 22);
         }
@@ -687,7 +687,7 @@ public:
           return;
         }
         auto viewChecked = texture->checkViewUseFormat(viewId, uint_format);
-        auto texture_handle = enc.access(texture, viewChecked, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
+        WMT::Texture texture_handle = enc.access(texture, viewChecked, DXMT_ENCODER_RESOURCE_ACESS_WRITE).texture;
         switch (dimension) {
         default:
           break;
@@ -731,7 +731,7 @@ public:
             auto buffer_handle = enc.access(buffer, slice.byteOffset, slice.byteLength, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
             enc.queue().emulated_cmd.ClearBufferFloat(buffer_handle, slice.byteOffset, slice.byteLength >> 2, value);
           } else {
-            auto texture_handle = enc.access(buffer, viewId, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
+            WMT::Texture texture_handle = enc.access(buffer, viewId, DXMT_ENCODER_RESOURCE_ACESS_WRITE).texture;
             enc.queue().emulated_cmd.ClearTextureBufferFloat(texture_handle, value);
           }
         }
@@ -739,7 +739,7 @@ public:
     else
       EmitOP([=, texture = pUAV->texture(), viewId = pUAV->viewId(), dimension = desc.ViewDimension,
             value = std::array<float, 4>({Values[0], Values[1], Values[2], Values[3]})](ArgumentEncodingContext &enc) {
-        auto texture_handle = enc.access(texture, viewId, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
+        WMT::Texture texture_handle = enc.access(texture, viewId, DXMT_ENCODER_RESOURCE_ACESS_WRITE).texture;
         switch (dimension) {
         default:
           break;
@@ -805,11 +805,11 @@ public:
       }
       SwitchToBlitEncoder(CommandBufferState::BlitEncoderActive);
       EmitOP([tex = srv->texture(), viewId = srv->viewId()](ArgumentEncodingContext &enc) {
-        auto texture = enc.access(tex, viewId, DXMT_ENCODER_RESOURCE_ACESS_READ | DXMT_ENCODER_RESOURCE_ACESS_WRITE);
-        if (texture->mipmapLevelCount() > 1) {
+        WMT::Texture texture = enc.access(tex, viewId, DXMT_ENCODER_RESOURCE_ACESS_READ | DXMT_ENCODER_RESOURCE_ACESS_WRITE).texture;
+        if (texture.mipmapLevelCount() > 1) {
           auto &cmd = enc.encodeBlitCommand<wmtcmd_blit_generate_mipmaps>();
           cmd.type = WMTBlitCommandGenerateMipmaps;
-          cmd.texture = (obj_handle_t)texture;
+          cmd.texture = texture;
         }
       });
     }
@@ -944,9 +944,9 @@ public:
           auto &cmd = enc.encodeBlitCommand<wmtcmd_blit_copy_from_buffer_to_buffer>();
           cmd.type = WMTBlitCommandCopyFromBufferToBuffer;
           cmd.copy_length = 4;
-          cmd.src = (obj_handle_t)counter_buffer;
+          cmd.src = counter_buffer;
           cmd.src_offset = 0;
-          cmd.dst = (obj_handle_t)dst_buffer;
+          cmd.dst = dst_buffer;
           cmd.dst_offset = DstAlignedByteOffset;
         });
       }
@@ -1017,7 +1017,7 @@ public:
           cmd.copy_length = copy_len;
           cmd.src = (obj_handle_t)staging_buffer;
           cmd.src_offset = offset;
-          cmd.dst = (obj_handle_t)dst_buffer;
+          cmd.dst = dst_buffer;
           cmd.dst_offset = copy_offset;
         });
       } else {
@@ -1109,7 +1109,7 @@ public:
       cmd.primitive_type = Primitive;
       cmd.index_count = IndexCount;
       cmd.index_type = IndexType;
-      cmd.index_buffer = (obj_handle_t)enc.currentIndexBuffer();
+      cmd.index_buffer = enc.currentIndexBuffer();
       cmd.index_buffer_offset = IndexBufferOffset;
       cmd.base_vertex = BaseVertexLocation;
       cmd.base_instance = 0;
@@ -1186,7 +1186,7 @@ public:
       cmd.primitive_type = Primitive;
       cmd.index_count = IndexCountPerInstance;
       cmd.index_type = IndexType;
-      cmd.index_buffer = (obj_handle_t)enc.currentIndexBuffer();
+      cmd.index_buffer = enc.currentIndexBuffer();
       cmd.index_buffer_offset = IndexBufferOffset;
       cmd.base_vertex = BaseVertexLocation;
       cmd.base_instance = StartInstanceLocation;
@@ -1282,7 +1282,7 @@ public:
 
       auto &cmd_mesh = enc.encodePreTessRenderCommand<wmtcmd_render_dxmt_tess_mesh_dispatch_indexed>();
       cmd_mesh.type = WMTRenderCommandDXMTTessellationMeshDispatchIndexed;
-      cmd_mesh.index_buffer = (obj_handle_t)enc.currentIndexBuffer();
+      cmd_mesh.index_buffer = enc.currentIndexBuffer();
       cmd_mesh.index_buffer_offset = IndexBufferOffset;
       cmd_mesh.draw_arguments_offset = offset;
       cmd_mesh.control_point_buffer = (obj_handle_t)cp_buffer;
@@ -1362,7 +1362,7 @@ public:
       cmd.instance_count = InstanceCount;
       cmd.warp_count = warp_count;
       cmd.vertex_per_warp = vertex_per_warp;
-      cmd.index_buffer = (obj_handle_t)enc.currentIndexBuffer();
+      cmd.index_buffer = enc.currentIndexBuffer();
       cmd.index_buffer_offset = IndexBufferOffset;
     });
   }
@@ -1397,9 +1397,9 @@ public:
         cmd.type = WMTRenderCommandDrawIndexedIndirect;
         cmd.primitive_type = Primitive;
         cmd.index_type = IndexType;
-        cmd.indirect_args_buffer = (obj_handle_t)buffer;
+        cmd.indirect_args_buffer = buffer;
         cmd.indirect_args_offset = AlignedByteOffsetForArgs;
-        cmd.index_buffer = (obj_handle_t)enc.currentIndexBuffer();
+        cmd.index_buffer = enc.currentIndexBuffer();
         cmd.index_buffer_offset = IndexBufferOffset;
       });
     }
@@ -1430,7 +1430,7 @@ public:
         auto &cmd = enc.encodeRenderCommand<wmtcmd_render_draw_indirect>();
         cmd.type = WMTRenderCommandDrawIndirect;
         cmd.primitive_type = Primitive;
-        cmd.indirect_args_buffer = (obj_handle_t)buffer;
+        cmd.indirect_args_buffer = buffer;
         cmd.indirect_args_offset = AlignedByteOffsetForArgs;
       });
     }
@@ -1449,14 +1449,14 @@ public:
   
         enc.bumpVisibilityResultOffset();
         enc.encodeGSDispatchArgumentsMarshal(
-          buffer, AlignedByteOffsetForArgs, vertex_increment_per_wrap, dispatch_arg_offset
+          buffer, ArgBuffer->current()->gpuAddress, AlignedByteOffsetForArgs, vertex_increment_per_wrap, dispatch_arg_offset
         );
         auto &cmd = enc.encodeRenderCommand<wmtcmd_render_dxmt_geometry_draw_indirect>();
         cmd.type = WMTRenderCommandDXMTGeometryDrawIndirect;
         cmd.dispatch_args_buffer = enc.gpu_buffer_FIXME();
         cmd.dispatch_args_offset = dispatch_arg_offset;
         cmd.vertex_per_warp = vertex_per_warp;
-        cmd.indirect_args_buffer = (obj_handle_t)buffer;
+        cmd.indirect_args_buffer = buffer;
         cmd.indirect_args_offset = AlignedByteOffsetForArgs;
       });
     }
@@ -1477,16 +1477,16 @@ public:
   
         enc.bumpVisibilityResultOffset();
         enc.encodeGSDispatchArgumentsMarshal(
-          buffer, AlignedByteOffsetForArgs, vertex_increment_per_wrap, dispatch_arg_offset
+          buffer, ArgBuffer->current()->gpuAddress, AlignedByteOffsetForArgs, vertex_increment_per_wrap, dispatch_arg_offset
         );
         auto &cmd = enc.encodeRenderCommand<wmtcmd_render_dxmt_geometry_draw_indexed_indirect>();
         cmd.type = WMTRenderCommandDXMTGeometryDrawIndexedIndirect;
         cmd.dispatch_args_buffer = enc.gpu_buffer_FIXME();
         cmd.dispatch_args_offset = dispatch_arg_offset;
         cmd.vertex_per_warp = vertex_per_warp;
-        cmd.indirect_args_buffer = (obj_handle_t)buffer;
+        cmd.indirect_args_buffer = buffer;
         cmd.indirect_args_offset = AlignedByteOffsetForArgs;
-        cmd.index_buffer = (obj_handle_t)enc.currentIndexBuffer();
+        cmd.index_buffer = enc.currentIndexBuffer();
         cmd.index_buffer_offset = IndexBufferOffset;
       });
     }
@@ -1517,7 +1517,7 @@ public:
         auto buffer = enc.access(ArgBuffer, AlignedByteOffsetForArgs, 12, DXMT_ENCODER_RESOURCE_ACESS_READ);
         auto &cmd = enc.encodeComputeCommand<wmtcmd_compute_dispatch_indirect>();
         cmd.type = WMTComputeCommandDispatchIndirect;
-        cmd.indirect_args_buffer = (obj_handle_t)buffer;
+        cmd.indirect_args_buffer = buffer;
         cmd.indirect_args_offset = AlignedByteOffsetForArgs;
       });
     }
@@ -2781,7 +2781,7 @@ public:
         if (auto expected = com_cast<IMTLD3D11SamplerState>(pSampler)) {
           entry.Sampler = expected.ptr();
           EmitST([=, sampler = entry.Sampler](ArgumentEncodingContext &enc) {
-            enc.bindSampler<Stage>(Slot, sampler->GetSamplerState(), sampler->GetLODBias());
+            enc.bindSampler<Stage>(Slot, sampler->GetSamplerState(), sampler->GetArgumentHandle(), sampler->GetLODBias());
           });
         } else {
           D3D11_ASSERT(0 && "wtf");
@@ -2790,7 +2790,7 @@ public:
         // BIND NULL
         if (ShaderStage.Samplers.unbind(Slot)) {
           EmitST([=](ArgumentEncodingContext& enc) {
-            enc.bindSampler<Stage>(Slot, nullptr, 0);
+            enc.bindSampler<Stage>(Slot, WMT::SamplerState {}, 0, 0);
           });
         }
       }
@@ -2819,7 +2819,7 @@ public:
         return;
       auto new_counter = counter->allocate(BufferAllocationFlag::GpuManaged);
       *reinterpret_cast<uint32_t *>(new_counter->mappedMemory) = value;
-      new_counter->buffer()->didModifyRange({0, 4});
+      new_counter->buffer().didModifyRange(0, 4);
       auto old = counter->rename(std::move(new_counter));
       // TODO: reused discarded buffer
     });
@@ -3002,7 +3002,7 @@ public:
           auto &cmd = enc.encodeBlitCommand<wmtcmd_blit_copy_from_buffer_to_buffer>();
           cmd.type = WMTBlitCommandCopyFromBufferToBuffer;
           cmd.copy_length = SrcBox.right - SrcBox.left;
-          cmd.src = (obj_handle_t)src;
+          cmd.src = src;
           cmd.src_offset = SrcBox.left;
           cmd.dst = (obj_handle_t)dst->current.ptr();
           cmd.dst_offset = DstX;
@@ -3022,7 +3022,7 @@ public:
           cmd.copy_length = SrcBox.right - SrcBox.left;
           cmd.src = (obj_handle_t)src->current.ptr();
           cmd.src_offset = SrcBox.left;
-          cmd.dst = (obj_handle_t)dst;
+          cmd.dst = dst;
           cmd.dst_offset = DstX;
         });
       } else if (auto src = reinterpret_cast<D3D11ResourceCommon *>(pSrcResource)) {
@@ -3035,9 +3035,9 @@ public:
           auto &cmd = enc.encodeBlitCommand<wmtcmd_blit_copy_from_buffer_to_buffer>();
           cmd.type = WMTBlitCommandCopyFromBufferToBuffer;
           cmd.copy_length = SrcBox.right - SrcBox.left;
-          cmd.src = (obj_handle_t)src;
+          cmd.src = src;
           cmd.src_offset = SrcBox.left;
-          cmd.dst = (obj_handle_t)dst;
+          cmd.dst = dst;
           cmd.dst_offset = DstX;
         });
       } else {
@@ -3077,7 +3077,7 @@ public:
                         cmd.DstOrigin.x * cmd.DstFormat.BytesPerTexel;
           auto &cmd_cpbuf = enc.encodeBlitCommand<wmtcmd_blit_copy_from_texture_to_buffer>();
           cmd_cpbuf.type = WMTBlitCommandCopyFromTextureToBuffer;
-          cmd_cpbuf.src = (obj_handle_t)src;
+          cmd_cpbuf.src = src;
           cmd_cpbuf.slice = cmd.Src.ArraySlice;
           cmd_cpbuf.level = cmd.Src.MipLevel;
           cmd_cpbuf.origin = cmd.SrcOrigin;
@@ -3114,7 +3114,7 @@ public:
           cmd_cptex.bytes_per_row =  src->bytesPerRow;
           cmd_cptex.bytes_per_image = src->bytesPerImage;
           cmd_cptex.size = cmd.SrcSize;
-          cmd_cptex.dst = (obj_handle_t)dst;
+          cmd_cptex.dst = dst;
           cmd_cptex.slice = cmd.Dst.ArraySlice;
           cmd_cptex.level = cmd.Dst.MipLevel;
           cmd_cptex.origin = cmd.DstOrigin;
@@ -3143,7 +3143,7 @@ public:
             auto [buffer, offset] = enc.allocateTempBuffer(bytes_total, 16);
             auto &cmd_cpbuf = enc.encodeBlitCommand<wmtcmd_blit_copy_from_texture_to_buffer>();
             cmd_cpbuf.type = WMTBlitCommandCopyFromTextureToBuffer;
-            cmd_cpbuf.src = (obj_handle_t)src;
+            cmd_cpbuf.src = src;
             cmd_cpbuf.slice = cmd.Src.ArraySlice;
             cmd_cpbuf.level = cmd.Src.MipLevel;
             cmd_cpbuf.origin = cmd.SrcOrigin;
@@ -3160,7 +3160,7 @@ public:
             cmd_cptex.bytes_per_row = bytes_per_row;
             cmd_cptex.bytes_per_image = bytes_per_image;
             cmd_cptex.size = cmd.SrcSize;
-            cmd_cptex.dst = (obj_handle_t)dst;
+            cmd_cptex.dst = dst;
             cmd_cptex.slice = cmd.Dst.ArraySlice;
             cmd_cptex.level = cmd.Dst.MipLevel;
             cmd_cptex.origin = cmd.DstOrigin;
@@ -3168,12 +3168,12 @@ public:
           }
           auto &cmd_cptex = enc.encodeBlitCommand<wmtcmd_blit_copy_from_texture_to_texture>();
           cmd_cptex.type = WMTBlitCommandCopyFromTextureToTexture;
-          cmd_cptex.src = (obj_handle_t)src;
+          cmd_cptex.src = src;
           cmd_cptex.src_slice = cmd.Src.ArraySlice;
           cmd_cptex.src_level = cmd.Src.MipLevel;
           cmd_cptex.src_origin = cmd.SrcOrigin;
           cmd_cptex.src_size = cmd.SrcSize;
-          cmd_cptex.dst = (obj_handle_t)dst;
+          cmd_cptex.dst = dst;
           cmd_cptex.dst_slice = cmd.Dst.ArraySlice;
           cmd_cptex.dst_level = cmd.Dst.MipLevel;
           cmd_cptex.dst_origin = cmd.DstOrigin;
@@ -3207,7 +3207,7 @@ public:
           auto [buffer, offset] = enc.allocateTempBuffer(bytes_per_image * cmd.SrcSize.depth, 16);
           auto &cmd_cpbuf = enc.encodeBlitCommand<wmtcmd_blit_copy_from_texture_to_buffer>();
           cmd_cpbuf.type = WMTBlitCommandCopyFromTextureToBuffer;
-          cmd_cpbuf.src = (obj_handle_t)src;
+          cmd_cpbuf.src = src;
           cmd_cpbuf.slice = cmd.Src.ArraySlice;
           cmd_cpbuf.level = cmd.Src.MipLevel;
           cmd_cpbuf.origin = cmd.SrcOrigin;
@@ -3224,7 +3224,7 @@ public:
           cmd_cptex.bytes_per_row = bytes_per_row;
           cmd_cptex.bytes_per_image = bytes_per_image;
           cmd_cptex.size = {block_w, block_h, cmd.SrcSize.depth};
-          cmd_cptex.dst = (obj_handle_t)dst;
+          cmd_cptex.dst = dst;
           cmd_cptex.slice = cmd.Dst.ArraySlice;
           cmd_cptex.level = cmd.Dst.MipLevel;
           cmd_cptex.origin = cmd.DstOrigin;
@@ -3255,14 +3255,14 @@ public:
           auto bytes_per_image = cmd.SrcSize.height * bytes_per_row;
           auto [buffer, offset] = enc.allocateTempBuffer(bytes_per_image * cmd.SrcSize.depth, 16);
           auto clamped_src_width = std::min(
-              cmd.SrcSize.width << 2, std::max<uint32_t>(dst->width() >> cmd.Dst.MipLevel, 1u) - cmd.DstOrigin.x
+              cmd.SrcSize.width << 2, std::max<uint32_t>(dst.width() >> cmd.Dst.MipLevel, 1u) - cmd.DstOrigin.x
           );
           auto clamped_src_height = std::min(
-              cmd.SrcSize.height << 2, std::max<uint32_t>(dst->height() >> cmd.Dst.MipLevel, 1u) - cmd.DstOrigin.y
+              cmd.SrcSize.height << 2, std::max<uint32_t>(dst.height() >> cmd.Dst.MipLevel, 1u) - cmd.DstOrigin.y
           );
           auto &cmd_cpbuf = enc.encodeBlitCommand<wmtcmd_blit_copy_from_texture_to_buffer>();
           cmd_cpbuf.type = WMTBlitCommandCopyFromTextureToBuffer;
-          cmd_cpbuf.src = (obj_handle_t)src;
+          cmd_cpbuf.src = src;
           cmd_cpbuf.slice = cmd.Src.ArraySlice;
           cmd_cpbuf.level = cmd.Src.MipLevel;
           cmd_cpbuf.origin = cmd.SrcOrigin;
@@ -3279,7 +3279,7 @@ public:
           cmd_cptex.bytes_per_row = bytes_per_row;
           cmd_cptex.bytes_per_image = bytes_per_image;
           cmd_cptex.size = {clamped_src_width, clamped_src_height, cmd.SrcSize.depth};
-          cmd_cptex.dst = (obj_handle_t)dst;
+          cmd_cptex.dst = dst;
           cmd_cptex.slice = cmd.Dst.ArraySlice;
           cmd_cptex.level = cmd.Dst.MipLevel;
           cmd_cptex.origin = cmd.DstOrigin;
@@ -3328,7 +3328,7 @@ public:
         cmd_cptex.bytes_per_row = cmd.EffectiveBytesPerRow;
         cmd_cptex.bytes_per_image = bytes_per_depth_slice;
         cmd_cptex.size = cmd.DstSize;
-        cmd_cptex.dst = (obj_handle_t)texture;
+        cmd_cptex.dst = texture;
         cmd_cptex.slice = cmd.Dst.ArraySlice;
         cmd_cptex.level = cmd.Dst.MipLevel;
         cmd_cptex.origin = cmd.DstOrigin;
@@ -3577,25 +3577,25 @@ public:
             continue;
           }
           auto& colorAttachment = info.colors[rtv.RenderTargetIndex];
-          colorAttachment.texture = (obj_handle_t)rtv.Texture->view(rtv.viewId);
+          colorAttachment.texture = rtv.Texture->view(rtv.viewId);
           colorAttachment.depth_plane = rtv.DepthPlane;
           colorAttachment.load_action = rtv.LoadAction;
           colorAttachment.store_action = WMTStoreActionStore;
         };
 
         if (dsv.Texture.ptr()) {
-          MTL::Texture *texture = dsv.Texture->view(dsv.viewId);
+          WMT::Texture texture = dsv.Texture->view(dsv.viewId);
           // TODO: ...should know more about store behavior (e.g. DiscardView)
           if (dsv_planar_flags & 1) {
             auto& depthAttachment = info.depth;
-            depthAttachment.texture = (obj_handle_t)texture;
+            depthAttachment.texture = texture;
             depthAttachment.load_action = dsv.DepthLoadAction;
             depthAttachment.store_action = dsv.ReadOnlyFlags & 1 ? WMTStoreActionDontCare :WMTStoreActionStore;
           }
 
           if (dsv_planar_flags & 2) {
             auto& stencilAttachment = info.stencil;
-            stencilAttachment.texture = (obj_handle_t)texture;
+            stencilAttachment.texture = texture;
             stencilAttachment.load_action = dsv.StencilLoadAction;
             stencilAttachment.store_action = dsv.ReadOnlyFlags & 2 ? WMTStoreActionDontCare :WMTStoreActionStore;
           }
@@ -3608,8 +3608,8 @@ public:
           } else {
             D3D11_ASSERT(dsv_planar_flags);
             auto dsv_tex = dsv.Texture->view(dsv.viewId);
-            info.render_target_height = dsv_tex->height();
-            info.render_target_width = dsv_tex->width();
+            info.render_target_height = dsv_tex.height();
+            info.render_target_width = dsv_tex.width();
           }
         }
 
@@ -3797,10 +3797,10 @@ public:
         return;
       auto &cmd_pretess = enc.encodePreTessRenderCommand<wmtcmd_render_setpso>();
       cmd_pretess.type = WMTRenderCommandSetPSO;
-      cmd_pretess.pso = (obj_handle_t)GraphicsPipeline.MeshPipelineState;
+      cmd_pretess.pso = GraphicsPipeline.MeshPipelineState;
       auto &cmd = enc.encodeRenderCommand<wmtcmd_render_setpso>();
       cmd.type = WMTRenderCommandSetPSO;
-      cmd.pso = (obj_handle_t)GraphicsPipeline.RasterizationPipelineState;
+      cmd.pso = GraphicsPipeline.RasterizationPipelineState;
     });
 
     cmdbuf_state = CommandBufferState::TessellationRenderPipelineReady;
@@ -3842,7 +3842,7 @@ public:
         return;
       auto &cmd = enc.encodeRenderCommand<wmtcmd_render_setpso>();
       cmd.type = WMTRenderCommandSetPSO;
-      cmd.pso = (obj_handle_t)GraphicsPipeline.PipelineState;
+      cmd.pso = GraphicsPipeline.PipelineState;
     });
 
     cmdbuf_state = CommandBufferState::GeometryRenderPipelineReady;
@@ -3897,7 +3897,7 @@ public:
         return;
       auto &cmd = enc.encodeRenderCommand<wmtcmd_render_setpso>();
       cmd.type = WMTRenderCommandSetPSO;
-      cmd.pso = (obj_handle_t)GraphicsPipeline.PipelineState;
+      cmd.pso = GraphicsPipeline.PipelineState;
     });
 
     cmdbuf_state = CommandBufferState::RenderPipelineReady;
@@ -3933,7 +3933,7 @@ public:
         auto encoder = enc.currentRenderEncoder();
         auto &cmd = enc.encodeRenderCommand<wmtcmd_render_setdsso>();
         cmd.type = WMTRenderCommandSetDSSO;
-        cmd.dsso = (obj_handle_t)state->GetDepthStencilState(encoder->dsv_planar_flags);
+        cmd.dsso = state->GetDepthStencilState(encoder->dsv_planar_flags);
         cmd.stencil_ref = stencil_ref;
       });
     }
@@ -3963,7 +3963,7 @@ public:
         state_.Rasterizer.RasterizerState ? state_.Rasterizer.RasterizerState : default_rasterizer_state;
     bool allow_scissor = current_rs->IsScissorEnabled();
     if (dirty_state.any(DirtyState::Viewport)) {
-      auto viewports = AllocateCommandData<MTL::Viewport>(state_.Rasterizer.NumViewports);
+      auto viewports = AllocateCommandData<WMTViewport>(state_.Rasterizer.NumViewports);
       for (unsigned i = 0; i < state_.Rasterizer.NumViewports; i++) {
         auto &d3dViewport = state_.Rasterizer.viewports[i];
         viewports[i] = {d3dViewport.TopLeftX, d3dViewport.TopLeftY, d3dViewport.Width,
@@ -3977,7 +3977,7 @@ public:
       });
     }
     if (dirty_state.any(DirtyState::Scissors)) {
-      auto scissors = AllocateCommandData<MTL::ScissorRect>(state_.Rasterizer.NumViewports);
+      auto scissors = AllocateCommandData<WMTScissorRect>(state_.Rasterizer.NumViewports);
       for (unsigned i = 0; i < state_.Rasterizer.NumViewports; i++) {
         if (allow_scissor) {
           if (i < state_.Rasterizer.NumScissorRects) {
@@ -4052,7 +4052,7 @@ public:
         return;
       auto &cmd = enc.encodeComputeCommand<wmtcmd_compute_setpso>();
       cmd.type = WMTComputeCommandSetPSO;
-      cmd.pso = (obj_handle_t)ComputePipeline.PipelineState;
+      cmd.pso = ComputePipeline.PipelineState;
       cmd.threadgroup_size = tg_size;
     });
 
@@ -4087,7 +4087,7 @@ public:
           auto buffer = enc.access(slot0, 0, slot0->length(), DXMT_ENCODER_RESOURCE_ACESS_WRITE);
           auto &cmd = enc.encodeRenderCommand<wmtcmd_render_setbuffer>();
           cmd.type = WMTRenderCommandSetVertexBuffer;
-          cmd.buffer = (obj_handle_t)buffer;
+          cmd.buffer = buffer;
           cmd.offset = 0;
           cmd.index = 20;
           enc.setCompatibilityFlag(FeatureCompatibility::UnsupportedStreamOutputAppending);
@@ -4097,7 +4097,7 @@ public:
           auto buffer = enc.access(slot0, 0, slot0->length(), DXMT_ENCODER_RESOURCE_ACESS_WRITE);
           auto &cmd = enc.encodeRenderCommand<wmtcmd_render_setbuffer>();
           cmd.type = WMTRenderCommandSetVertexBuffer;
-          cmd.buffer = (obj_handle_t)buffer;
+          cmd.buffer = buffer;
           cmd.offset = offset;
           cmd.index = 20;
         });
@@ -4106,7 +4106,7 @@ public:
       EmitST([](ArgumentEncodingContext &enc) {
         auto &cmd = enc.encodeRenderCommand<wmtcmd_render_setbuffer>();
         cmd.type = WMTRenderCommandSetVertexBuffer;
-        cmd.buffer = (obj_handle_t)nullptr;
+        cmd.buffer = NULL_OBJECT_HANDLE;
         cmd.offset = 0;
         cmd.index = 20;
       });
@@ -4128,7 +4128,7 @@ public:
       }
       for (const auto &[slot, entry] : ShaderStage.Samplers) {
         EmitST([=, sampler = entry.Sampler](ArgumentEncodingContext &enc) {
-          enc.bindSampler<Stage>(slot, sampler->GetSamplerState(), sampler->GetLODBias());
+          enc.bindSampler<Stage>(slot, sampler->GetSamplerState(), sampler->GetArgumentHandle(), sampler->GetLODBias());
         });
       }
       for (const auto &[slot, entry] : ShaderStage.SRVs) {

@@ -7,18 +7,32 @@
 #include "Metal/MTLCommandBuffer.hpp"
 #include "dxmt_occlusion_query.hpp"
 #include <cstdint>
+#include <cfloat>
 
 namespace dxmt {
 
-ArgumentEncodingContext::ArgumentEncodingContext(CommandQueue &queue, MTL::Device *device) : queue_(queue) {
-  Obj<MTL::SamplerDescriptor> descriptor = transfer(MTL::SamplerDescriptor::alloc()->init());
-  descriptor->setSupportArgumentBuffers(true);
-  dummy_sampler_ = transfer(device->newSamplerState(descriptor));
-  dummy_cbuffer_ = transfer(device->newBuffer(
-      65536, MTL::ResourceOptionCPUCacheModeWriteCombined | MTL::ResourceStorageModeShared |
-                 MTL::ResourceHazardTrackingModeUntracked
-  ));
-  std::memset(dummy_cbuffer_->contents(), 0, 65536);
+ArgumentEncodingContext::ArgumentEncodingContext(CommandQueue &queue, WMT::Device device) : queue_(queue) {
+  dummy_sampler_info_.support_argument_buffers = true;
+  dummy_sampler_info_.border_color = WMTSamplerBorderColorTransparentBlack;
+  dummy_sampler_info_.compare_function = WMTCompareFunctionNever;
+  dummy_sampler_info_.normalized_coords = true;
+  dummy_sampler_info_.r_address_mode = WMTSamplerAddressModeClampToEdge;
+  dummy_sampler_info_.s_address_mode = WMTSamplerAddressModeClampToEdge;
+  dummy_sampler_info_.t_address_mode = WMTSamplerAddressModeClampToEdge;
+  dummy_sampler_info_.min_filter = WMTSamplerMinMagFilterNearest;
+  dummy_sampler_info_.mag_filter = WMTSamplerMinMagFilterNearest;
+  dummy_sampler_info_.mip_filter = WMTSamplerMipFilterNotMipmapped;
+  dummy_sampler_info_.lod_min_clamp = 0.0f;
+  dummy_sampler_info_.lod_max_clamp = FLT_MAX;
+  dummy_sampler_info_.max_anisotroy = 1;
+  dummy_sampler_info_.lod_average = false;
+  dummy_sampler_ = device.newSamplerState(&dummy_sampler_info_);
+  dummy_cbuffer_info_.length = 65536;
+  dummy_cbuffer_info_.memory.set(0);
+  dummy_cbuffer_info_.options = WMTResourceOptionCPUCacheModeWriteCombined | WMTResourceStorageModeShared |
+                                WMTResourceHazardTrackingModeUntracked;
+  dummy_cbuffer_ = device.newBuffer(&dummy_cbuffer_info_);
+  std::memset(dummy_cbuffer_info_.memory.get(), 0, 65536);
   cpu_buffer_ = malloc(kCommandChunkCPUHeapSize);
 };
 
@@ -116,7 +130,7 @@ ArgumentEncodingContext::encodeConstantBuffers(const MTL_SHADER_REFLECTION *refl
     case SM50BindingType::ConstantBuffer: {
       auto &cbuf = cbuf_[slot];
       if (!cbuf.buffer.ptr()) {
-        encoded_buffer[arg.StructurePtrOffset] = dummy_cbuffer_->gpuAddress();
+        encoded_buffer[arg.StructurePtrOffset] = dummy_cbuffer_info_.gpu_address;
         makeResident<stage, kind>(dummy_cbuffer_, GetResidencyMask<kind>(stage, true, false));
         continue;
       }
@@ -208,11 +222,11 @@ ArgumentEncodingContext::encodeShaderResources(const MTL_SHADER_REFLECTION *refl
     case SM50BindingType::Sampler: {
       auto slot = 16 * unsigned(stage) + arg.SM50BindingSlot;
       if (!sampler_[slot].sampler) {
-        encoded_buffer[arg.StructurePtrOffset] = dummy_sampler_->gpuResourceID()._impl;
+        encoded_buffer[arg.StructurePtrOffset] = dummy_sampler_info_.gpu_resource_id;
         encoded_buffer[arg.StructurePtrOffset + 1] = (uint64_t)std::bit_cast<uint32_t>(0.0f);
         break;
       }
-      encoded_buffer[arg.StructurePtrOffset] = sampler_[slot].sampler->gpuResourceID()._impl;
+      encoded_buffer[arg.StructurePtrOffset] = sampler_[slot].sampler_id;
       encoded_buffer[arg.StructurePtrOffset + 1] = (uint64_t)std::bit_cast<uint32_t>(sampler_[slot].bias);
       break;
     }
@@ -234,7 +248,7 @@ ArgumentEncodingContext::encodeShaderResources(const MTL_SHADER_REFLECTION *refl
         if (srv.buffer.ptr()) {
           assert(arg.Flags & MTL_SM50_SHADER_ARGUMENT_TBUFFER_OFFSET);
           encoded_buffer[arg.StructurePtrOffset] =
-              access(srv.buffer, srv.viewId, DXMT_ENCODER_RESOURCE_ACESS_READ)->gpuResourceID()._impl;
+              access(srv.buffer, srv.viewId, DXMT_ENCODER_RESOURCE_ACESS_READ).gpu_resource_id;
           encoded_buffer[arg.StructurePtrOffset + 1] =
               ((uint64_t)srv.slice.elementCount << 32) | (uint64_t)srv.slice.firstElement;
           makeResident<stage, kind>(srv.buffer.ptr(), srv.viewId);
@@ -242,7 +256,7 @@ ArgumentEncodingContext::encodeShaderResources(const MTL_SHADER_REFLECTION *refl
           assert(arg.Flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE_MINLOD_CLAMP);
           auto viewIdChecked = srv.texture->checkViewUseArray(srv.viewId, arg.Flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE_ARRAY);
           encoded_buffer[arg.StructurePtrOffset] =
-              access(srv.texture, viewIdChecked, DXMT_ENCODER_RESOURCE_ACESS_READ)->gpuResourceID()._impl;
+              access(srv.texture, viewIdChecked, DXMT_ENCODER_RESOURCE_ACESS_READ).gpu_resource_id;
           encoded_buffer[arg.StructurePtrOffset + 1] = 0;
           makeResident<stage, kind>(srv.texture.ptr(), viewIdChecked);
         } else {
@@ -273,14 +287,14 @@ ArgumentEncodingContext::encodeShaderResources(const MTL_SHADER_REFLECTION *refl
       } else if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE) {
         if (uav.buffer.ptr()) {
           assert(arg.Flags & MTL_SM50_SHADER_ARGUMENT_TBUFFER_OFFSET);
-          encoded_buffer[arg.StructurePtrOffset] = access(uav.buffer, uav.viewId, access_flags)->gpuResourceID()._impl;
+          encoded_buffer[arg.StructurePtrOffset] = access(uav.buffer, uav.viewId, access_flags).gpu_resource_id;
           encoded_buffer[arg.StructurePtrOffset + 1] =
               ((uint64_t)uav.slice.elementCount << 32) | (uint64_t)uav.slice.firstElement;
           makeResident<stage, kind>(uav.buffer.ptr(), uav.viewId, read, write);
         } else if (uav.texture.ptr()) {
           assert(arg.Flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE_MINLOD_CLAMP);
           auto viewIdChecked = uav.texture->checkViewUseArray(uav.viewId, arg.Flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE_ARRAY);
-          encoded_buffer[arg.StructurePtrOffset] = access(uav.texture, viewIdChecked, access_flags)->gpuResourceID()._impl;
+          encoded_buffer[arg.StructurePtrOffset] = access(uav.texture, viewIdChecked, access_flags).gpu_resource_id;
           encoded_buffer[arg.StructurePtrOffset + 1] = 0;
           makeResident<stage, kind>(uav.texture.ptr(), viewIdChecked, read, write);
         } else {
@@ -347,7 +361,7 @@ ArgumentEncodingContext::clearColor(Rc<Texture> &&texture, unsigned viewId, unsi
   encoder_info->type = EncoderType::Clear;
   encoder_info->id = nextEncoderId();
   encoder_info->clear_dsv = 0;
-  encoder_info->texture = WMT::Texture{(obj_handle_t)texture->view(viewId)};
+  encoder_info->texture = texture->view(viewId);
   encoder_info->color = color;
   encoder_info->array_length = arrayLength;
   encoder_info->width = texture->width();
@@ -371,7 +385,7 @@ ArgumentEncodingContext::clearDepthStencil(
   encoder_info->type = EncoderType::Clear;
   encoder_info->id = nextEncoderId();
   encoder_info->clear_dsv = flag & DepthStencilPlanarFlags(texture->pixelFormat());
-  encoder_info->texture = WMT::Texture{(obj_handle_t)texture->view(viewId)};
+  encoder_info->texture = texture->view(viewId);
   encoder_info->depth_stencil = {depth, stencil};
   encoder_info->array_length = arrayLength;
   encoder_info->width = texture->width();
@@ -394,8 +408,8 @@ ArgumentEncodingContext::resolveTexture(
   auto encoder_info = allocate<ResolveEncoderData>();
   encoder_info->type = EncoderType::Resolve;
   // FIXME: resolve by specific format view
-  encoder_info->src = WMT::Texture{(obj_handle_t)src->current()->texture()};
-  encoder_info->dst = WMT::Texture{(obj_handle_t)dst->current()->texture()};
+  encoder_info->src = src->current()->texture();
+  encoder_info->dst = dst->current()->texture();
   encoder_info->src_slice = srcSlice;
   encoder_info->dst_slice = dstSlice;
   encoder_info->dst_level = dstLevel;
@@ -665,7 +679,6 @@ ArgumentEncodingContext::flushCommands(MTL::CommandBuffer *cmdbuf, uint64_t seqI
         data->info.visibility_buffer = (obj_handle_t)visibility_readback->visibility_result_heap.ptr();
       }
       auto encoder = cmdbuf_.renderCommandEncoder(data->info);
-      // RenderCommandContext ctx{(MTL::RenderCommandEncoder *)encoder.handle, data->dsv_planar_flags, gpu_buffer_};
       encoder.setVertexBuffer(gpu_buffer_, 0, 16);
       encoder.setVertexBuffer(gpu_buffer_, 0, 29);
       encoder.setVertexBuffer(gpu_buffer_, 0, 30);
@@ -702,11 +715,11 @@ ArgumentEncodingContext::flushCommands(MTL::CommandBuffer *cmdbuf, uint64_t seqI
         auto tasks_data = (GS_MARSHAL_TASK *)((char*)gpu_buffer_->contents() + offset);
         for (unsigned i = 0; i<task_count; i++) {
           auto & task = data->gs_arg_marshal_tasks[i];
-          tasks_data[i].draw_args = task.draw_arguments->gpuAddress() + task.draw_arguments_offset;
+          tasks_data[i].draw_args = task.draw_arguments_resource_id + task.draw_arguments_offset;
           tasks_data[i].dispatch_args_out = gpu_buffer_->gpuAddress() + task.dispatch_arguments_offset;
           tasks_data[i].vertex_count_per_warp = task.vertex_count_per_warp;
           tasks_data[i].end_of_command = 0;
-          encoder.useResource(task.draw_arguments.ptr(), WMTResourceUsageRead, WMTRenderStageVertex);
+          encoder.useResource(task.draw_arguments, WMTResourceUsageRead, WMTRenderStageVertex);
         }
         tasks_data[task_count - 1].end_of_command = 1;
         // FIXME: 
@@ -753,7 +766,7 @@ ArgumentEncodingContext::flushCommands(MTL::CommandBuffer *cmdbuf, uint64_t seqI
       auto drawable = data->layer->nextDrawable();
       auto t1 = clock::now();
       currentFrameStatistics().drawable_blocking_interval += (t1 - t0);
-      queue_.emulated_cmd.PresentToDrawable(cmdbuf, data->backbuffer, drawable->texture());
+      queue_.emulated_cmd.PresentToDrawable(cmdbuf, data->backbuffer, (obj_handle_t)drawable->texture());
       if (data->after > 0)
         cmdbuf->presentDrawableAfterMinimumDuration(drawable, data->after);
       else
@@ -819,8 +832,8 @@ ArgumentEncodingContext::flushCommands(MTL::CommandBuffer *cmdbuf, uint64_t seqI
     }
     case EncoderType::SpatialUpscale: {
       auto data = static_cast<SpatialUpscaleData *>(current);
-      data->scaler->setColorTexture(data->backbuffer);
-      data->scaler->setOutputTexture(data->upscaled);
+      data->scaler->setColorTexture((MTL::Texture *)data->backbuffer.handle);
+      data->scaler->setOutputTexture((MTL::Texture *)data->upscaled.handle);
       data->scaler->encodeToCommandBuffer(cmdbuf);
       data->~SpatialUpscaleData();
       break;
@@ -833,10 +846,10 @@ ArgumentEncodingContext::flushCommands(MTL::CommandBuffer *cmdbuf, uint64_t seqI
     }
     case EncoderType::TemporalUpscale: {
       auto data = static_cast<TemporalUpscaleData *>(current);
-      data->scaler->setColorTexture(data->input);
-      data->scaler->setOutputTexture(data->output);
-      data->scaler->setDepthTexture(data->depth);
-      data->scaler->setMotionTexture(data->motion_vector);
+      data->scaler->setColorTexture((MTL::Texture *)data->input.handle);
+      data->scaler->setOutputTexture((MTL::Texture *)data->output.handle);
+      data->scaler->setDepthTexture((MTL::Texture *)data->depth.handle);
+      data->scaler->setMotionTexture((MTL::Texture *)data->motion_vector.handle);
       data->scaler->setReset(data->props.reset);
       data->scaler->setDepthReversed(data->props.depth_reversed);
       data->scaler->setInputContentWidth(data->props.input_content_width);
@@ -847,7 +860,7 @@ ArgumentEncodingContext::flushCommands(MTL::CommandBuffer *cmdbuf, uint64_t seqI
       data->scaler->setJitterOffsetY(data->props.jitter_offset_y);
       data->scaler->setPreExposure(data->props.pre_exposure);
       if(data->exposure)
-        data->scaler->setExposureTexture(data->exposure);
+        data->scaler->setExposureTexture((MTL::Texture *)data->exposure.handle);
       data->scaler->encodeToCommandBuffer(cmdbuf);
       data->~TemporalUpscaleData();
       break;
