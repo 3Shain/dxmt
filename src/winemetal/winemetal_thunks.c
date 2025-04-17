@@ -379,3 +379,11 @@ MTLComputeCommandEncoder_encodeCommands(obj_handle_t encoder, const struct wmtcm
   params.cmd_head = cmd_head;
   UNIX_CALL(37, &params);
 }
+
+WINEMETAL_API void
+MTLRenderCommandEncoder_encodeCommands(obj_handle_t encoder, const struct wmtcmd_base *cmd_head) {
+  struct unixcall_generic_obj_cmd_noret params;
+  params.encoder = encoder;
+  params.cmd_head = cmd_head;
+  UNIX_CALL(38, &params);
+}

@@ -5,6 +5,11 @@
 #include <string>
 #include <cstring>
 
+namespace MTL {
+// FIXME: remove me after porting is done
+class Buffer;
+}; // namespace MTL
+
 namespace WMT {
 
 class Object {
@@ -162,10 +167,18 @@ public:
 
 class Resource : public Object {
 public:
+  using Object::Object;
+
+  Resource(MTL::Buffer *ptr) {
+    handle = (obj_handle_t)ptr;
+  }
 };
 
 class Texture : public Resource {
 public:
+  // FIXME: remove me
+  using Resource::Resource;
+
   Reference<Texture>
   newTextureView(
       WMTPixelFormat format, WMTTextureType texture_type, uint16_t level_start, uint16_t level_count,
@@ -180,6 +193,12 @@ public:
 
 class Buffer : public Resource {
 public:
+  // FIXME: remove me
+  using Resource::Resource;
+  Buffer(MTL::Buffer *ptr) {
+    handle = (obj_handle_t)ptr;
+  }
+
   Reference<Texture>
   newTexture(WMTTextureInfo *info, uint64_t offset, uint64_t bytes_per_row) {
     return Reference<Texture>(MTLBuffer_newTexture(handle, info, offset, bytes_per_row));
@@ -202,8 +221,108 @@ public:
   }
 };
 
+class ComputePipelineState : public Object {
+public:
+};
+
+class RenderPipelineState : public Object {
+public:
+};
+
 class RenderCommandEncoder : public CommandEncoder {
 public:
+  void
+  encodeCommands(const wmtcmd_render_nop *cmd_head) {
+    MTLRenderCommandEncoder_encodeCommands(handle, (const wmtcmd_base *)cmd_head);
+  }
+
+  void
+  setVertexBuffer(Buffer buffer, uint64_t offset, uint8_t index) {
+    struct wmtcmd_render_setbuffer cmd;
+    cmd.type = WMTRenderCommandSetVertexBuffer;
+    cmd.next.set(nullptr);
+    cmd.buffer = buffer;
+    cmd.offset = offset;
+    cmd.index = index;
+    MTLRenderCommandEncoder_encodeCommands(handle, (const wmtcmd_base *)&cmd);
+  }
+
+  void
+  setFragmentBuffer(Buffer buffer, uint64_t offset, uint8_t index) {
+    struct wmtcmd_render_setbuffer cmd;
+    cmd.type = WMTRenderCommandSetFragmentBuffer;
+    cmd.next.set(nullptr);
+    cmd.buffer = buffer;
+    cmd.offset = offset;
+    cmd.index = index;
+    MTLRenderCommandEncoder_encodeCommands(handle, (const wmtcmd_base *)&cmd);
+  }
+
+  void
+  setMeshBuffer(Buffer buffer, uint64_t offset, uint8_t index) {
+    struct wmtcmd_render_setbuffer cmd;
+    cmd.type = WMTRenderCommandSetMeshBuffer;
+    cmd.next.set(nullptr);
+    cmd.buffer = buffer;
+    cmd.offset = offset;
+    cmd.index = index;
+    MTLRenderCommandEncoder_encodeCommands(handle, (const wmtcmd_base *)&cmd);
+  }
+
+  void
+  setObjectBuffer(Buffer buffer, uint64_t offset, uint8_t index) {
+    struct wmtcmd_render_setbuffer cmd;
+    cmd.type = WMTRenderCommandSetObjectBuffer;
+    cmd.next.set(nullptr);
+    cmd.buffer = buffer;
+    cmd.offset = offset;
+    cmd.index = index;
+    MTLRenderCommandEncoder_encodeCommands(handle, (const wmtcmd_base *)&cmd);
+  }
+
+  void
+  memoryBarrier(WMTBarrierScope scope, WMTRenderStages stages_after, WMTRenderStages stages_before) {
+    struct wmtcmd_render_memory_barrier cmd;
+    cmd.type = WMTRenderCommandMemoryBarrier;
+    cmd.next.set(nullptr);
+    cmd.scope = scope;
+    cmd.stages_before = stages_before;
+    cmd.stages_after = stages_after;
+    MTLRenderCommandEncoder_encodeCommands(handle, (const wmtcmd_base *)&cmd);
+  }
+
+  void
+  useResource(Resource resource, WMTResourceUsage usage, WMTRenderStages stages) {
+    struct wmtcmd_render_useresource cmd;
+    cmd.type = WMTRenderCommandUseResource;
+    cmd.next.set(nullptr);
+    cmd.resource = resource;
+    cmd.usage = usage;
+    cmd.stages = stages;
+    MTLRenderCommandEncoder_encodeCommands(handle, (const wmtcmd_base *)&cmd);
+  };
+
+  void
+  setRenderPipelineState(RenderPipelineState pso) {
+    struct wmtcmd_render_setpso cmd;
+    cmd.type = WMTRenderCommandSetPSO;
+    cmd.next.set(nullptr);
+    cmd.pso = pso;
+    MTLRenderCommandEncoder_encodeCommands(handle, (const wmtcmd_base *)&cmd);
+  }
+
+  void
+  drawPrimitives(WMTPrimitiveType primitive_type, uint32_t vertex_start, uint32_t vertex_count) {
+    struct wmtcmd_render_draw cmd;
+    cmd.type = WMTRenderCommandDraw;
+    cmd.next.set(nullptr);
+    cmd.primitive_type = primitive_type;
+    cmd.vertex_start = vertex_start;
+    cmd.vertex_count = vertex_count;
+    cmd.base_instance = 0;
+    cmd.instance_count = 1;
+    MTLRenderCommandEncoder_encodeCommands(handle, (const wmtcmd_base *)&cmd);
+  }
 };
 
 class BlitCommandEncoder : public CommandEncoder {
@@ -216,10 +335,10 @@ public:
 
 class ComputeCommandEncoder : public CommandEncoder {
 public:
-void
-encodeCommands(const wmtcmd_compute_nop *cmd_head) {
-  MTLComputeCommandEncoder_encodeCommands(handle, (const wmtcmd_base *)cmd_head);
-}
+  void
+  encodeCommands(const wmtcmd_compute_nop *cmd_head) {
+    MTLComputeCommandEncoder_encodeCommands(handle, (const wmtcmd_base *)cmd_head);
+  }
 };
 
 class CommandBuffer : public Object {
@@ -276,14 +395,6 @@ public:
   newFunction(const char *name) {
     return Reference<Function>(MTLLibrary_newFunction(handle, name));
   }
-};
-
-class ComputePipelineState : public Object {
-public:
-};
-
-class RenderPipelineState : public Object {
-public:
 };
 
 class Device : public Object {
