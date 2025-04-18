@@ -177,8 +177,10 @@ public:
   MarshalGSDispatchArguments(WMT::RenderCommandEncoder encoder, WMT::Buffer commands, uint32_t commands_offset) {
     encoder.setRenderPipelineState(gs_draw_arguments_marshal);
     encoder.setVertexBuffer(commands, commands_offset, 0);
+    encoder.setVertexBuffer(commands, 0, 1);
     encoder.drawPrimitives(WMTPrimitiveTypePoint, 0, 1);
     encoder.setVertexBuffer({nullptr}, 0, 0);
+    encoder.setVertexBuffer({nullptr}, 0, 1);
   }
 
 private:

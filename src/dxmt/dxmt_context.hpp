@@ -2,7 +2,6 @@
 
 #include "Metal.hpp"
 #include "Metal/MTLCommandBuffer.hpp"
-#include "Metal/MTLBuffer.hpp"
 #include "MetalFX/MTLFXSpatialScaler.hpp"
 #include "MetalFX/MTLFXTemporalScaler.hpp"
 #include "QuartzCore/CAMetalDrawable.hpp"
@@ -586,10 +585,10 @@ public:
   }
 
   template<typename T> T* get_gpu_heap_pointer(size_t offset) {
-    return reinterpret_cast<T*>((char*)gpu_buffer_->contents() + offset);
+    return reinterpret_cast<T*>((char*)gpu_buffer_contents_ + offset);
   }
 
-  std::pair<MTL::Buffer* , size_t> allocateTempBuffer(size_t size, size_t alignment);
+  std::pair<WMT::Buffer , size_t> allocateTempBuffer(size_t size, size_t alignment);
 
   std::unique_ptr<VisibilityResultReadback> flushCommands(MTL::CommandBuffer *cmdbuf, uint64_t seqId, uint64_t event_seq_id);
 
@@ -665,7 +664,8 @@ private:
 
   void *cpu_buffer_;
   uint64_t cpu_buffer_offset_;
-  MTL::Buffer *gpu_buffer_;
+  WMT::Buffer gpu_buffer_;
+  void *gpu_buffer_contents_;
   uint64_t gpu_bufer_offset_;
   uint64_t seq_id_;
   uint64_t frame_id_;

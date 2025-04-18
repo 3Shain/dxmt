@@ -7,9 +7,6 @@
 #include <mutex>
 #include <queue>
 
-namespace MTL {
-class Buffer;
-}
 namespace dxmt {
 
 constexpr size_t kStagingBlockSize = 0x2000000; // 32MB
@@ -23,7 +20,7 @@ public:
     buffer_info.options = block_options;
   }
 
-  std::tuple<void *, MTL::Buffer *, uint64_t>
+  std::tuple<void *, WMT::Buffer, uint64_t>
   allocate(uint64_t seq_id, uint64_t coherent_id, size_t size, size_t alignment) {
     std::lock_guard<dxmt::mutex> lock(mutex);
     while (!fifo.empty()) {
@@ -111,11 +108,11 @@ private:
     return fifo.back();
   };
 
-  std::tuple<void *, MTL::Buffer *, uint64_t>
+  std::tuple<void *, WMT::Buffer, uint64_t>
   suballocate(StagingBlock &block, size_t size, size_t alignment) {
     auto offset = align(block.allocated_size, alignment);
     block.allocated_size = offset + size;
-    return {((char *)block.buffer_cpu + offset), (MTL::Buffer *)block.buffer_gpu.handle, offset};
+    return {((char *)block.buffer_cpu + offset), block.buffer_gpu, offset};
   };
 
   std::queue<StagingBlock> fifo;

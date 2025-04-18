@@ -1,10 +1,6 @@
 #include "dxmt_context.hpp"
 #include "Metal.hpp"
-#include "Metal/MTLRenderCommandEncoder.hpp"
-#include "Metal/MTLResource.hpp"
 #include "dxmt_command_queue.hpp"
-#include "Metal/MTLBuffer.hpp"
-#include "Metal/MTLCommandBuffer.hpp"
 #include "dxmt_occlusion_query.hpp"
 #include <cstdint>
 #include <cfloat>
@@ -56,7 +52,7 @@ ArgumentEncodingContext::encodeVertexBuffers(uint32_t slot_mask) {
   uint32_t num_slots = __builtin_popcount(slot_mask);
 
   uint64_t offset = allocate_gpu_heap(16 * num_slots, 16);
-  VERTEX_BUFFER_ENTRY *entries = (VERTEX_BUFFER_ENTRY *)(((char *)gpu_buffer_->contents()) + offset);
+  VERTEX_BUFFER_ENTRY *entries = (VERTEX_BUFFER_ENTRY *)(((char *)gpu_buffer_contents_) + offset);
 
   for (unsigned slot = 0, index = 0; slot < max_slot; slot++) {
     if (!(slot_mask & (1 << slot)))
@@ -121,7 +117,7 @@ void
 ArgumentEncodingContext::encodeConstantBuffers(const MTL_SHADER_REFLECTION *reflection) {
   auto ConstantBufferCount = reflection->NumConstantBuffers;
   uint64_t offset = allocate_gpu_heap(ConstantBufferCount << 3, 16);
-  uint64_t *encoded_buffer = reinterpret_cast<uint64_t *>((char *)gpu_buffer_->contents() + offset);
+  uint64_t *encoded_buffer = reinterpret_cast<uint64_t *>((char *)gpu_buffer_contents_ + offset);
 
   for (unsigned i = 0; i < reflection->NumConstantBuffers; i++) {
     auto &arg = reflection->ConstantBuffers[i];
@@ -209,7 +205,7 @@ ArgumentEncodingContext::encodeShaderResources(const MTL_SHADER_REFLECTION *refl
   auto ArgumentTableQwords = reflection->ArgumentTableQwords;
 
   auto offset = allocate_gpu_heap(ArgumentTableQwords * 8, 16);
-  uint64_t *encoded_buffer = reinterpret_cast<uint64_t *>((char *)gpu_buffer_->contents() + offset);
+  uint64_t *encoded_buffer = reinterpret_cast<uint64_t *>((char *)gpu_buffer_contents_ + offset);
 
   auto &UAVBindingSet = stage == PipelineStage::Compute ? cs_uav_ : om_uav_;
 
@@ -568,7 +564,7 @@ ArgumentEncodingContext::endPass() {
   encoder_count_++;
 }
 
-std::pair<MTL::Buffer *, size_t>
+std::pair<WMT::Buffer, size_t>
 ArgumentEncodingContext::allocateTempBuffer(size_t size, size_t alignment) {
   auto [_, buffer, offset] = queue_.AllocateTempBuffer(seq_id_, size, alignment);
   return {buffer, offset};
@@ -615,8 +611,9 @@ ArgumentEncodingContext::$$setEncodingContext(uint64_t seq_id, uint64_t frame_id
   cpu_buffer_offset_ = 0;
   seq_id_ = seq_id;
   frame_id_ = frame_id;
-  auto [_, gpu_buffer, offset] = queue_.AllocateCommandDataBuffer(seq_id);
+  auto [gpu_buffer_contents, gpu_buffer, offset] = queue_.AllocateCommandDataBuffer(seq_id);
   gpu_buffer_ = gpu_buffer;
+  gpu_buffer_contents_ = gpu_buffer_contents;
   gpu_bufer_offset_ = offset;
 }
 
@@ -712,18 +709,16 @@ ArgumentEncodingContext::flushCommands(MTL::CommandBuffer *cmdbuf, uint64_t seqI
           uint32_t end_of_command;
         };
         auto offset = allocate_gpu_heap(sizeof(GS_MARSHAL_TASK) * task_count, 8);
-        auto tasks_data = (GS_MARSHAL_TASK *)((char*)gpu_buffer_->contents() + offset);
+        auto tasks_data = (GS_MARSHAL_TASK *)((char*)gpu_buffer_contents_ + offset);
         for (unsigned i = 0; i<task_count; i++) {
           auto & task = data->gs_arg_marshal_tasks[i];
           tasks_data[i].draw_args = task.draw_arguments_resource_id + task.draw_arguments_offset;
-          tasks_data[i].dispatch_args_out = gpu_buffer_->gpuAddress() + task.dispatch_arguments_offset;
+          tasks_data[i].dispatch_args_out = task.dispatch_arguments_offset;
           tasks_data[i].vertex_count_per_warp = task.vertex_count_per_warp;
           tasks_data[i].end_of_command = 0;
           encoder.useResource(task.draw_arguments, WMTResourceUsageRead, WMTRenderStageVertex);
         }
         tasks_data[task_count - 1].end_of_command = 1;
-        // FIXME: 
-        encoder.useResource(gpu_buffer_, WMTResourceUsageWrite | WMTResourceUsageRead, WMTRenderStageVertex);
         queue_.emulated_cmd.MarshalGSDispatchArguments(encoder, gpu_buffer_, offset);
         encoder.memoryBarrier(
             WMTBarrierScopeBuffers, WMTRenderStageVertex,
