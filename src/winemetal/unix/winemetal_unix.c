@@ -756,6 +756,16 @@ _MTLRenderCommandEncoder_encodeCommands(void *obj) {
       [encoder setObjectBufferOffset:body->offset atIndex:body->index];
       break;
     }
+    case WMTRenderCommandSetFragmentBytes: {
+      struct wmtcmd_render_setbytes *body = (struct wmtcmd_render_setbytes *)next;
+      [encoder setFragmentBytes:body->bytes.ptr length:body->length atIndex:body->index];
+      break;
+    }
+    case WMTRenderCommandSetFragmentTexture: {
+      struct wmtcmd_render_settexture *body = (struct wmtcmd_render_settexture *)next;
+      [encoder setFragmentTexture:(id<MTLTexture>)body->texture atIndex:body->index];
+      break;
+    }
     case WMTRenderCommandSetRasterizerState: {
       struct wmtcmd_render_setrasterizerstate *body = (struct wmtcmd_render_setrasterizerstate *)next;
       [encoder setTriangleFillMode:(MTLTriangleFillMode)body->fill_mode];
@@ -1044,6 +1054,21 @@ _MTLBuffer_didModifyRange(void *obj) {
   return STATUS_SUCCESS;
 }
 
+static NTSTATUS
+_MTLCommandBuffer_presentDrawable(void *obj) {
+  struct unixcall_generic_obj_obj_noret *params = obj;
+  [(id<MTLCommandBuffer>)params->handle presentDrawable:(id<MTLDrawable>)params->arg];
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_MTLCommandBuffer_presentDrawableAfterMinimumDuration(void *obj) {
+  struct unixcall_generic_obj_obj_double_noret *params = obj;
+  [(id<MTLCommandBuffer>)params->handle presentDrawable:(id<MTLDrawable>)params->arg0
+                                   afterMinimumDuration:params->arg1];
+  return STATUS_SUCCESS;
+}
+
 const void *__winemetal_unixcalls[] = {
     &_NSObject_retain,
     &_NSObject_release,
@@ -1092,6 +1117,8 @@ const void *__winemetal_unixcalls[] = {
     &_MTLTexture_mipmapLevelCount,
     &_MTLTexture_replaceRegion,
     &_MTLBuffer_didModifyRange,
+    &_MTLCommandBuffer_presentDrawable,
+    &_MTLCommandBuffer_presentDrawableAfterMinimumDuration,
 };
 
 const unsigned int __winemetal_unixcalls_num = sizeof(__winemetal_unixcalls) / sizeof(void *);

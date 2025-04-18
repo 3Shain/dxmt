@@ -1,15 +1,8 @@
 #pragma once
 
-#include "Foundation/NSTypes.hpp"
 #include "Metal.hpp"
-#include "Metal/MTLCommandBuffer.hpp"
-#include "Metal/MTLDevice.hpp"
-#include "Metal/MTLRenderCommandEncoder.hpp"
-#include "Metal/MTLRenderPass.hpp"
-#include "Metal/MTLRenderPipeline.hpp"
 #include "dxmt_context.hpp"
 #include "dxmt_format.hpp"
-#include "objc_pointer.hpp"
 
 namespace dxmt {
 
@@ -150,27 +143,27 @@ public:
   }
 
   void
-  PresentToDrawable(MTL::CommandBuffer *cmdbuf, WMT::Texture backbuffer, WMT::Texture drawable) {
-    auto descriptor = transfer(MTL::RenderPassDescriptor::alloc()->init());
-    auto attachment = descriptor->colorAttachments()->object(0);
-    attachment->setLoadAction(MTL::LoadActionDontCare);
-    attachment->setStoreAction(MTL::StoreActionStore);
-    attachment->setTexture((MTL::Texture *)drawable.handle);
-    auto encoder = cmdbuf->renderCommandEncoder(descriptor);
+  PresentToDrawable(WMT::CommandBuffer cmdbuf, WMT::Texture backbuffer, WMT::Texture drawable) {
+    WMTRenderPassInfo info;
+    WMT::InitializeRenderPassInfo(info);
+    info.colors[0].load_action = WMTLoadActionDontCare;
+    info.colors[0].store_action = WMTStoreActionStore;
+    info.colors[0].texture = drawable;
+    auto encoder = cmdbuf.renderCommandEncoder(info);
 
-    encoder->setFragmentTexture((MTL::Texture *)backbuffer.handle, 0);
+    encoder.setFragmentTexture(backbuffer, 0);
     uint32_t extend[4] = {(uint32_t)drawable.width(), (uint32_t)drawable.height(), 0, 0};
     if (backbuffer.pixelFormat() != Forget_sRGB(backbuffer.pixelFormat()))
       extend[2] |= DXMT_PRESENT_FLAG_SRGB;
-    encoder->setFragmentBytes(extend, sizeof(extend), 0);
+    encoder.setFragmentBytes(extend, sizeof(extend), 0);
     if (backbuffer.width() == extend[0] && backbuffer.height() == extend[1])
-      encoder->setRenderPipelineState((MTL::RenderPipelineState *)present_swapchain_blit.handle);
+      encoder.setRenderPipelineState(present_swapchain_blit);
     else
-      encoder->setRenderPipelineState((MTL::RenderPipelineState *)present_swapchain_scale.handle);
-    encoder->setViewport({0, 0, (float)extend[0], (float)extend[1], 0, 1});
-    encoder->drawPrimitives(MTL::PrimitiveTypeTriangle, (NS::UInteger)0u, 3u);
+      encoder.setRenderPipelineState(present_swapchain_scale);
+    encoder.setViewport({0, 0, (double)extend[0], (double)extend[1], 0, 1});
+    encoder.drawPrimitives(WMTPrimitiveTypeTriangle, 0, 3);
 
-    encoder->endEncoding();
+    encoder.endEncoding();
   }
 
   void

@@ -138,4 +138,15 @@ struct unixcall_mtltexture_replaceregion {
   uint64_t bytes_per_image;
 };
 
+struct unixcall_generic_obj_obj_noret {
+  obj_handle_t handle;
+  obj_handle_t arg;
+};
+
+struct unixcall_generic_obj_obj_double_noret {
+  obj_handle_t handle;
+  obj_handle_t arg0;
+  double arg1;
+};
+
 #endif

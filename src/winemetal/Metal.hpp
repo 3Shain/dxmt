@@ -368,6 +368,37 @@ public:
     cmd.instance_count = 1;
     MTLRenderCommandEncoder_encodeCommands(handle, (const wmtcmd_base *)&cmd);
   }
+
+  void
+  setFragmentTexture(Texture texture, uint8_t index) {
+    struct wmtcmd_render_settexture cmd;
+    cmd.type = WMTRenderCommandSetFragmentTexture;
+    cmd.next.set(nullptr);
+    cmd.texture = texture;
+    cmd.index = index;
+    MTLRenderCommandEncoder_encodeCommands(handle, (const wmtcmd_base *)&cmd);
+  };
+
+  void
+  setFragmentBytes(const void *buf, uint64_t length, uint8_t index) {
+    struct wmtcmd_render_setbytes cmd;
+    cmd.type = WMTRenderCommandSetFragmentBytes;
+    cmd.next.set(nullptr);
+    cmd.bytes.set((void *)buf);
+    cmd.length = length;
+    cmd.index = index;
+    MTLRenderCommandEncoder_encodeCommands(handle, (const wmtcmd_base *)&cmd);
+  }
+
+  void
+  setViewport(WMTViewport viewport) {
+    struct wmtcmd_render_setviewports cmd;
+    cmd.type = WMTRenderCommandSetViewports;
+    cmd.next.set(nullptr);
+    cmd.viewports.set(&viewport);
+    cmd.viewport_count = 1;
+    MTLRenderCommandEncoder_encodeCommands(handle, (const wmtcmd_base *)&cmd);
+  };
 };
 
 class BlitCommandEncoder : public CommandEncoder {
@@ -384,6 +415,10 @@ public:
   encodeCommands(const wmtcmd_compute_nop *cmd_head) {
     MTLComputeCommandEncoder_encodeCommands(handle, (const wmtcmd_base *)cmd_head);
   }
+};
+
+class MetalDrawable : public Object {
+public:
 };
 
 class CommandBuffer : public Object {
@@ -421,6 +456,16 @@ public:
   ComputeCommandEncoder
   computeCommandEncoder(bool concurrent) {
     return ComputeCommandEncoder{MTLCommandBuffer_computeCommandEncoder(handle, concurrent)};
+  }
+
+  void
+  presentDrawable(MetalDrawable drawable) {
+    MTLCommandBuffer_presentDrawable(handle, drawable);
+  }
+
+  void
+  presentDrawableAfterMinimumDuration(MetalDrawable drawable, double after) {
+    MTLCommandBuffer_presentDrawableAfterMinimumDuration(handle, drawable, after);
   }
 };
 

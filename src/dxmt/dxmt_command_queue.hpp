@@ -102,7 +102,7 @@ public:
     list_enc.execute(enc);
     attached_cmdbuf = cmdbuf;
     auto t1 = clock::now();
-    visibility_readback = enc.flushCommands((MTL::CommandBuffer *)cmdbuf.handle, chunk_id, chunk_event_id);
+    visibility_readback = enc.flushCommands(cmdbuf, chunk_id, chunk_event_id);
     auto t2 = clock::now();
     statistics.encode_prepare_interval += (t1 - t0);
     statistics.encode_flush_interval += (t2 - t1);

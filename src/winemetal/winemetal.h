@@ -941,6 +941,8 @@ enum WMTRenderCommandType : uint16_t {
   WMTRenderCommandSetMeshBufferOffset,
   WMTRenderCommandSetObjectBuffer,
   WMTRenderCommandSetObjectBufferOffset,
+  WMTRenderCommandSetFragmentTexture,
+  WMTRenderCommandSetFragmentBytes,
   WMTRenderCommandSetRasterizerState,
   WMTRenderCommandSetViewports,
   WMTRenderCommandSetScissorRects,
@@ -993,6 +995,23 @@ struct wmtcmd_render_setbuffer {
   struct WMTMemoryPointer next;
   obj_handle_t buffer;
   uint64_t offset;
+  uint8_t index;
+};
+
+struct wmtcmd_render_setbytes {
+  enum WMTRenderCommandType type;
+  uint16_t reserved[3];
+  struct WMTMemoryPointer next;
+  struct WMTMemoryPointer bytes;
+  uint64_t length;
+  uint8_t index;
+};
+
+struct wmtcmd_render_settexture {
+  enum WMTRenderCommandType type;
+  uint16_t reserved[3];
+  struct WMTMemoryPointer next;
+  obj_handle_t texture;
   uint8_t index;
 };
 
@@ -1308,5 +1327,10 @@ WINEMETAL_API void MTLTexture_replaceRegion(
 );
 
 WINEMETAL_API void MTLBuffer_didModifyRange(obj_handle_t buffer, uint64_t start, uint64_t length);
+
+WINEMETAL_API void MTLCommandBuffer_presentDrawable(obj_handle_t cmdbuf, obj_handle_t drawable);
+
+WINEMETAL_API void
+MTLCommandBuffer_presentDrawableAfterMinimumDuration(obj_handle_t cmdbuf, obj_handle_t drawable, double after);
 
 #endif
