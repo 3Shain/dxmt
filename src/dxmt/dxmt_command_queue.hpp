@@ -256,17 +256,17 @@ public:
     cpu_coherent.wait(seq);
   };
 
-  std::tuple<void *, MTL::Buffer *, uint64_t>
+  std::tuple<void *, WMT::Buffer, uint64_t>
   AllocateStagingBuffer(size_t size, size_t alignment) {
     return staging_allocator.allocate(ready_for_encode, cpu_coherent.signaledValue(), size, alignment);
   }
 
-  std::tuple<void *, MTL::Buffer *, uint64_t>
+  std::tuple<void *, WMT::Buffer, uint64_t>
   AllocateTempBuffer(uint64_t seq, size_t size, size_t alignment) {
     return copy_temp_allocator.allocate(seq, cpu_coherent.signaledValue(), size, alignment);
   }
 
-  std::tuple<void *, MTL::Buffer *, uint64_t>
+  std::tuple<void *, WMT::Buffer, uint64_t>
   AllocateCommandDataBuffer(uint64_t seq) {
     return command_data_allocator.allocate(seq, cpu_coherent.signaledValue(), kCommandChunkGPUHeapSize, 1);
   }

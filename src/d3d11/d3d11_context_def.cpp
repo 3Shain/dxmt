@@ -41,7 +41,7 @@ DeferredContextBase::AllocateCommandData(size_t n) {
 }
 
 template <>
-std::tuple<void *, MTL::Buffer *, uint64_t>
+std::tuple<void *, WMT::Buffer, uint64_t>
 DeferredContextBase::AllocateStagingBuffer(size_t size, size_t alignment) {
   return ctx_state.current_cmdlist->AllocateStagingBuffer(size, alignment);
 }

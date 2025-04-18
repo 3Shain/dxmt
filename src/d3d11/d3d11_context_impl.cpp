@@ -1015,7 +1015,7 @@ public:
           auto &cmd = enc.encodeBlitCommand<wmtcmd_blit_copy_from_buffer_to_buffer>();
           cmd.type = WMTBlitCommandCopyFromBufferToBuffer;
           cmd.copy_length = copy_len;
-          cmd.src = (obj_handle_t)staging_buffer;
+          cmd.src = staging_buffer;
           cmd.src_offset = offset;
           cmd.dst = dst_buffer;
           cmd.dst_offset = copy_offset;
@@ -1224,11 +1224,11 @@ public:
       auto &cmd_mesh = enc.encodePreTessRenderCommand<wmtcmd_render_dxmt_tess_mesh_dispatch>();
       cmd_mesh.type = WMTRenderCommandDXMTTessellationMeshDispatch;
       cmd_mesh.draw_arguments_offset = offset;
-      cmd_mesh.control_point_buffer = (obj_handle_t)cp_buffer;
+      cmd_mesh.control_point_buffer = cp_buffer;
       cmd_mesh.control_point_buffer_offset = cp_offset;
-      cmd_mesh.patch_constant_buffer = (obj_handle_t)pc_buffer;
+      cmd_mesh.patch_constant_buffer = pc_buffer;
       cmd_mesh.patch_constant_buffer_offset = pc_offset;
-      cmd_mesh.tessellation_factor_buffer = (obj_handle_t)tess_factor_buffer;
+      cmd_mesh.tessellation_factor_buffer = tess_factor_buffer;
       cmd_mesh.tessellation_factor_buffer_offset = tess_factor_offset;
       cmd_mesh.patch_per_mesh_instance = PatchPerMeshInstance;
       cmd_mesh.instance_count = InstanceCount;
@@ -1240,11 +1240,11 @@ public:
       auto &cmd_draw = enc.encodeRenderCommand<wmtcmd_render_dxmt_tess_draw>();
       cmd_draw.type = WMTRenderCommandDXMTTessellationDraw;
       cmd_draw.draw_arguments_offset = offset;
-      cmd_draw.control_point_buffer = (obj_handle_t)cp_buffer;
+      cmd_draw.control_point_buffer = cp_buffer;
       cmd_draw.control_point_buffer_offset = cp_offset;
-      cmd_draw.patch_constant_buffer = (obj_handle_t)pc_buffer;
+      cmd_draw.patch_constant_buffer = pc_buffer;
       cmd_draw.patch_constant_buffer_offset = pc_offset;
-      cmd_draw.tessellation_factor_buffer = (obj_handle_t)tess_factor_buffer;
+      cmd_draw.tessellation_factor_buffer = tess_factor_buffer;
       cmd_draw.tessellation_factor_buffer_offset = tess_factor_offset;
       cmd_draw.patch_count_per_instance = PatchCountPerInstance;
       cmd_draw.instance_count = InstanceCount;
@@ -1285,11 +1285,11 @@ public:
       cmd_mesh.index_buffer = enc.currentIndexBuffer();
       cmd_mesh.index_buffer_offset = IndexBufferOffset;
       cmd_mesh.draw_arguments_offset = offset;
-      cmd_mesh.control_point_buffer = (obj_handle_t)cp_buffer;
+      cmd_mesh.control_point_buffer = cp_buffer;
       cmd_mesh.control_point_buffer_offset = cp_offset;
-      cmd_mesh.patch_constant_buffer = (obj_handle_t)pc_buffer;
+      cmd_mesh.patch_constant_buffer = pc_buffer;
       cmd_mesh.patch_constant_buffer_offset = pc_offset;
-      cmd_mesh.tessellation_factor_buffer = (obj_handle_t)tess_factor_buffer;
+      cmd_mesh.tessellation_factor_buffer = tess_factor_buffer;
       cmd_mesh.tessellation_factor_buffer_offset = tess_factor_offset;
       cmd_mesh.patch_per_mesh_instance = PatchPerMeshInstance;
       cmd_mesh.instance_count = InstanceCount;
@@ -1301,11 +1301,11 @@ public:
       auto &cmd_draw = enc.encodeRenderCommand<wmtcmd_render_dxmt_tess_draw>();
       cmd_draw.type = WMTRenderCommandDXMTTessellationDraw;
       cmd_draw.draw_arguments_offset = offset;
-      cmd_draw.control_point_buffer = (obj_handle_t)cp_buffer;
+      cmd_draw.control_point_buffer = cp_buffer;
       cmd_draw.control_point_buffer_offset = cp_offset;
-      cmd_draw.patch_constant_buffer = (obj_handle_t)pc_buffer;
+      cmd_draw.patch_constant_buffer = pc_buffer;
       cmd_draw.patch_constant_buffer_offset = pc_offset;
-      cmd_draw.tessellation_factor_buffer = (obj_handle_t)tess_factor_buffer;
+      cmd_draw.tessellation_factor_buffer = tess_factor_buffer;
       cmd_draw.tessellation_factor_buffer_offset = tess_factor_offset;
       cmd_draw.patch_count_per_instance = PatchCountPerInstance;
       cmd_draw.instance_count = InstanceCount;
@@ -2495,7 +2495,7 @@ public:
 
   template <typename T> moveonly_list<T> AllocateCommandData(size_t n = 1);
 
-  std::tuple<void *, MTL::Buffer *, uint64_t> AllocateStagingBuffer(size_t size, size_t alignment);
+  std::tuple<void *, WMT::Buffer, uint64_t> AllocateStagingBuffer(size_t size, size_t alignment);
   void UseCopyDestination(Rc<StagingResource> &);
   void UseCopySource(Rc<StagingResource> &);
 
@@ -3148,14 +3148,14 @@ public:
             cmd_cpbuf.level = cmd.Src.MipLevel;
             cmd_cpbuf.origin = cmd.SrcOrigin;
             cmd_cpbuf.size = cmd.SrcSize;
-            cmd_cpbuf.dst = (obj_handle_t)buffer;
+            cmd_cpbuf.dst = buffer;
             cmd_cpbuf.offset = offset;
             cmd_cpbuf.bytes_per_row = bytes_per_row;
             cmd_cpbuf.bytes_per_image = bytes_per_image;
   
             auto &cmd_cptex = enc.encodeBlitCommand<wmtcmd_blit_copy_from_buffer_to_texture>();
             cmd_cptex.type = WMTBlitCommandCopyFromBufferToTexture;
-            cmd_cptex.src = (obj_handle_t)buffer;
+            cmd_cptex.src = buffer;
             cmd_cptex.src_offset = offset;
             cmd_cptex.bytes_per_row = bytes_per_row;
             cmd_cptex.bytes_per_image = bytes_per_image;
@@ -3212,14 +3212,14 @@ public:
           cmd_cpbuf.level = cmd.Src.MipLevel;
           cmd_cpbuf.origin = cmd.SrcOrigin;
           cmd_cpbuf.size = cmd.SrcSize;
-          cmd_cpbuf.dst = (obj_handle_t)buffer;
+          cmd_cpbuf.dst = buffer;
           cmd_cpbuf.offset = offset;
           cmd_cpbuf.bytes_per_row = bytes_per_row;
           cmd_cpbuf.bytes_per_image = bytes_per_image;
 
           auto &cmd_cptex = enc.encodeBlitCommand<wmtcmd_blit_copy_from_buffer_to_texture>();
           cmd_cptex.type = WMTBlitCommandCopyFromBufferToTexture;
-          cmd_cptex.src = (obj_handle_t)buffer;
+          cmd_cptex.src = buffer;
           cmd_cptex.src_offset = offset;
           cmd_cptex.bytes_per_row = bytes_per_row;
           cmd_cptex.bytes_per_image = bytes_per_image;
@@ -3267,14 +3267,14 @@ public:
           cmd_cpbuf.level = cmd.Src.MipLevel;
           cmd_cpbuf.origin = cmd.SrcOrigin;
           cmd_cpbuf.size = cmd.SrcSize;
-          cmd_cpbuf.dst = (obj_handle_t)buffer;
+          cmd_cpbuf.dst = buffer;
           cmd_cpbuf.offset = offset;
           cmd_cpbuf.bytes_per_row = bytes_per_row;
           cmd_cpbuf.bytes_per_image = bytes_per_image;
 
           auto &cmd_cptex = enc.encodeBlitCommand<wmtcmd_blit_copy_from_buffer_to_texture>();
           cmd_cptex.type = WMTBlitCommandCopyFromBufferToTexture;
-          cmd_cptex.src = (obj_handle_t)buffer;
+          cmd_cptex.src = buffer;
           cmd_cptex.src_offset = offset;
           cmd_cptex.bytes_per_row = bytes_per_row;
           cmd_cptex.bytes_per_image = bytes_per_image;
@@ -3323,7 +3323,7 @@ public:
         auto texture = enc.access(dst, cmd.Dst.MipLevel, cmd.Dst.ArraySlice, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
         auto &cmd_cptex = enc.encodeBlitCommand<wmtcmd_blit_copy_from_buffer_to_texture>();
         cmd_cptex.type = WMTBlitCommandCopyFromBufferToTexture;
-        cmd_cptex.src = (obj_handle_t)staging_buffer;
+        cmd_cptex.src = staging_buffer;
         cmd_cptex.src_offset = offset;
         cmd_cptex.bytes_per_row = cmd.EffectiveBytesPerRow;
         cmd_cptex.bytes_per_image = bytes_per_depth_slice;
@@ -4545,7 +4545,7 @@ public:
     return moveonly_list<T>((T *)allocate_cpu_heap(sizeof(T) * n, alignof(T)), n);
   }
 
-  std::tuple<void *, MTL::Buffer *, uint64_t>
+  std::tuple<void *, WMT::Buffer, uint64_t>
   AllocateStagingBuffer(size_t size, size_t alignment) {
     return staging_allocator.allocate(1, 0, size, alignment);
   }
