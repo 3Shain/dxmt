@@ -1069,6 +1069,34 @@ _MTLCommandBuffer_presentDrawableAfterMinimumDuration(void *obj) {
   return STATUS_SUCCESS;
 }
 
+static NTSTATUS
+_MTLDevice_supportsFamily(void *obj) {
+  struct unixcall_generic_obj_uint64_uint64_ret *params = obj;
+  params->ret = [(id<MTLDevice>)params->handle supportsFamily:(MTLGPUFamily)params->arg];
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_MTLDevice_supportsBCTextureCompression(void *obj) {
+  struct unixcall_generic_obj_uint64_ret *params = obj;
+  params->ret = [(id<MTLDevice>)params->handle supportsBCTextureCompression];
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_MTLDevice_supportsTextureSampleCount(void *obj) {
+  struct unixcall_generic_obj_uint64_uint64_ret *params = obj;
+  params->ret = [(id<MTLDevice>)params->handle supportsTextureSampleCount:params->arg];
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_MTLDevice_hasUnifiedMemory(void *obj) {
+  struct unixcall_generic_obj_uint64_ret *params = obj;
+  params->ret = [(id<MTLDevice>)params->handle hasUnifiedMemory];
+  return STATUS_SUCCESS;
+}
+
 const void *__winemetal_unixcalls[] = {
     &_NSObject_retain,
     &_NSObject_release,
@@ -1119,6 +1147,10 @@ const void *__winemetal_unixcalls[] = {
     &_MTLBuffer_didModifyRange,
     &_MTLCommandBuffer_presentDrawable,
     &_MTLCommandBuffer_presentDrawableAfterMinimumDuration,
+    &_MTLDevice_supportsFamily,
+    &_MTLDevice_supportsBCTextureCompression,
+    &_MTLDevice_supportsTextureSampleCount,
+    &_MTLDevice_hasUnifiedMemory,
 };
 
 const unsigned int __winemetal_unixcalls_num = sizeof(__winemetal_unixcalls) / sizeof(void *);

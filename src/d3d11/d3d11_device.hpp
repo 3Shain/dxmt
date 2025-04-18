@@ -30,7 +30,7 @@ public:
   virtual void AddRefPrivate() = 0;
   virtual void ReleasePrivate() = 0;
 
-  virtual MTL::Device *STDMETHODCALLTYPE GetMTLDevice() = 0;
+  virtual WMT::Device STDMETHODCALLTYPE GetMTLDevice() = 0;
   virtual WMT::Device STDMETHODCALLTYPE GetWMTDevice() = 0;
   /**
   TODO: should ensure pWork is not released before executed

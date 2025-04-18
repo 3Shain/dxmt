@@ -185,16 +185,16 @@ public:
           return E_FAIL;
         if (result == StagingMapResult::Renamable) {
           // when write to a buffer that is gpu-readonly
-          Obj<MTL::Buffer> new_name = staging->allocate(coherent_seq_id);
-          EmitST([staging, new_name](ArgumentEncodingContext &enc) mutable { staging->current = std::move(new_name); });
+          auto next_name = staging->allocate(coherent_seq_id);
           // can't guarantee a full overwrite
-          std::memcpy(new_name->contents(), staging->mappedMemory(), new_name->length());
-          staging->updateImmediateName(current_seq_id, std::move(new_name));
+          std::memcpy(staging->mappedMemory(next_name), staging->mappedImmediateMemory(), staging->length);
+          staging->updateImmediateName(current_seq_id, next_name);
+          EmitST([staging, next_name](ArgumentEncodingContext &enc) mutable { staging->encoding_name = next_name; });
           result = StagingMapResult::Mappable;
         }
         if (result == StagingMapResult::Mappable) {
           TRACE("staging map ready");
-          pMappedResource->pData = staging->mappedMemory();
+          pMappedResource->pData = staging->mappedImmediateMemory();
           pMappedResource->RowPitch = staging->bytesPerRow;
           pMappedResource->DepthPitch = staging->bytesPerImage;
           return S_OK;

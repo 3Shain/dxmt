@@ -3,10 +3,6 @@
 #include "airconv_public.h"
 #include "d3d11_input_layout.hpp"
 
-namespace MTL {
-  class Function;
-}
-
 namespace dxmt {
 
 template <typename Proc>

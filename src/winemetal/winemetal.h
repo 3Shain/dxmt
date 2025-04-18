@@ -1333,4 +1333,32 @@ WINEMETAL_API void MTLCommandBuffer_presentDrawable(obj_handle_t cmdbuf, obj_han
 WINEMETAL_API void
 MTLCommandBuffer_presentDrawableAfterMinimumDuration(obj_handle_t cmdbuf, obj_handle_t drawable, double after);
 
+enum WMTGPUFamily {
+  WMTGPUFamilyApple1 = 1001,
+  WMTGPUFamilyApple2 = 1002,
+  WMTGPUFamilyApple3 = 1003,
+  WMTGPUFamilyApple4 = 1004,
+  WMTGPUFamilyApple5 = 1005,
+  WMTGPUFamilyApple6 = 1006,
+  WMTGPUFamilyApple7 = 1007,
+  WMTGPUFamilyApple8 = 1008,
+  WMTGPUFamilyApple9 = 1009,
+  WMTGPUFamilyMac1 = 2001,
+  WMTGPUFamilyMac2 = 2002,
+  WMTGPUFamilyCommon1 = 3001,
+  WMTGPUFamilyCommon2 = 3002,
+  WMTGPUFamilyCommon3 = 3003,
+  WMTGPUFamilyMacCatalyst1 = 4001,
+  WMTGPUFamilyMacCatalyst2 = 4002,
+  WMTGPUFamilyMetal3 = 5001,
+};
+
+WINEMETAL_API bool MTLDevice_supportsFamily(obj_handle_t device, enum WMTGPUFamily gpu_family);
+
+WINEMETAL_API bool MTLDevice_supportsBCTextureCompression(obj_handle_t device);
+
+WINEMETAL_API bool MTLDevice_supportsTextureSampleCount(obj_handle_t device, uint8_t sample_count);
+
+WINEMETAL_API bool MTLDevice_hasUnifiedMemory(obj_handle_t device);
+
 #endif

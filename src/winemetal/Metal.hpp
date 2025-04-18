@@ -562,6 +562,26 @@ public:
   minimumLinearTextureAlignmentForPixelFormat(WMTPixelFormat format) {
     return MTLDevice_minimumLinearTextureAlignmentForPixelFormat(handle, format);
   }
+
+  bool
+  supportsFamily(WMTGPUFamily gpu_family) {
+    return MTLDevice_supportsFamily(handle, gpu_family);
+  }
+
+  bool
+  supportsBCTextureCompression() {
+    return MTLDevice_supportsBCTextureCompression(handle);
+  }
+
+  bool
+  supportsTextureSampleCount(uint8_t sample_count) {
+    return MTLDevice_supportsTextureSampleCount(handle, sample_count);
+  }
+
+  bool
+  hasUnifiedMemory() {
+    return MTLDevice_hasUnifiedMemory(handle);
+  }
 };
 
 inline Reference<Array<Device>>

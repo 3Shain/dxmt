@@ -4,11 +4,11 @@
 
 namespace dxmt {
 
-MTLD3D11Inspection::MTLD3D11Inspection(MTL::Device *pDevice)
+MTLD3D11Inspection::MTLD3D11Inspection(WMT::Device pDevice)
     : m_device(pDevice) {
 
   // FIXME: Apple Silicon definitely TBDR
-  m_architectureInfo.TileBasedDeferredRenderer = pDevice->hasUnifiedMemory();
+  m_architectureInfo.TileBasedDeferredRenderer = pDevice.hasUnifiedMemory();
 
   m_threading.DriverConcurrentCreates = TRUE; // I guess
   m_threading.DriverCommandLists = TRUE;      //  should be?

@@ -7,11 +7,6 @@
 #include "log/log.hpp"
 #include <atomic>
 
-namespace MTL {
-  class ComputePipelineState;
-  class RenderPipelineState;
-}
-
 namespace dxmt {
 
 class MTLCompiledGraphicsPipeline

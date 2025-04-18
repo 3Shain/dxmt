@@ -244,7 +244,7 @@ public:
     assert(0 && "TODO");
   }
 
-  MTL::Device *STDMETHODCALLTYPE GetMTLDevice() final { return (MTL::Device *)m_deivce.handle; }
+  WMT::Device STDMETHODCALLTYPE GetMTLDevice() final { return m_deivce; }
 
 private:
   WMT::Reference<WMT::Device> m_deivce;

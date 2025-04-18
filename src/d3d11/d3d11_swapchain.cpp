@@ -328,7 +328,7 @@ public:
       scaler_descriptor->setOutputWidth(layer_weak_->drawableSize().width);
       scaler_descriptor->setColorTextureFormat((MTL::PixelFormat)backbuffer_->texture()->pixelFormat());
       scaler_descriptor->setOutputTextureFormat((MTL::PixelFormat)upscaled_backbuffer_->texture()->pixelFormat());
-      metalfx_scaler = transfer(scaler_descriptor->newSpatialScaler(m_device->GetMTLDevice()));
+      metalfx_scaler = transfer(scaler_descriptor->newSpatialScaler((MTL::Device *)m_device->GetMTLDevice().handle));
       D3D11_ASSERT(metalfx_scaler && "otherwise metalfx failed to initialize");
     }
 
@@ -783,12 +783,12 @@ CreateSwapChain(
       pDesc->BufferCount != 1) {
     WARN("CreateSwapChain: unsupported swap effect ", pDesc->SwapEffect, " with backbuffer size ", pDesc->BufferCount);
   }
-  layer->setDevice(pDevice->GetMTLDevice());
+  layer->setDevice((MTL::Device *)pDevice->GetMTLDevice().handle);
   layer->setOpaque(false);
   layer->setDisplaySyncEnabled(false);
   layer->setFramebufferOnly(true);
   if (env::getEnvVar("DXMT_METALFX_SPATIAL_SWAPCHAIN") == "1") {
-    if (MTLFX::SpatialScalerDescriptor::supportsDevice(pDevice->GetMTLDevice())) {
+    if (MTLFX::SpatialScalerDescriptor::supportsDevice((MTL::Device *)pDevice->GetMTLDevice().handle)) {
       *ppSwapChain = new MTLD3D11SwapChain<true>(
           pFactory, pDevice, layer_factory.ptr(), layer, hWnd, native_view, pDesc, pFullscreenDesc
       );
