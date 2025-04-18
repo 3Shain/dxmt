@@ -405,7 +405,7 @@ CreateMTLTextureDescriptorInternal(
       }
     } else {
       if (SampleCount > 1) {
-        if (!pDevice->GetMTLDevice()->supportsTextureSampleCount(SampleCount)) {
+        if (!pDevice->GetMTLDevice().supportsTextureSampleCount(SampleCount)) {
           ERR("CreateMTLTextureDescriptorInternal: sample count ", SampleCount,
               " is not supported.");
           return E_INVALIDARG;

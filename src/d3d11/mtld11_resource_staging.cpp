@@ -3,8 +3,6 @@
 #include "dxmt_dynamic.hpp"
 #include "dxmt_staging.hpp"
 #include "mtld11_resource.hpp"
-#include "objc_pointer.hpp"
-
 namespace dxmt {
 
 #pragma region StagingBuffer
@@ -55,14 +53,11 @@ CreateStagingBuffer(MTLD3D11Device *pDevice, const D3D11_BUFFER_DESC *pDesc,
                     ID3D11Buffer **ppBuffer) {
   auto metal = pDevice->GetMTLDevice();
   auto byte_width = pDesc->ByteWidth;
-  auto buffer =
-      transfer(metal->newBuffer(byte_width, MTL::ResourceStorageModeShared));
+  auto buffer = new StagingResource(metal, byte_width, WMTResourceStorageModeShared, byte_width, byte_width);
   if (pInitialData) {
-    memcpy(buffer->contents(), pInitialData->pSysMem, byte_width);
+    memcpy(buffer->mappedImmediateMemory(), pInitialData->pSysMem, byte_width);
   }
-  *ppBuffer = reinterpret_cast<ID3D11Buffer *>(ref(new StagingBuffer(
-      pDesc, pDevice,
-      new StagingResource(std::move(buffer), byte_width, byte_width))));
+  *ppBuffer = reinterpret_cast<ID3D11Buffer *>(ref(new StagingBuffer(pDesc, pDevice, buffer)));
   return S_OK;
 }
 
@@ -138,14 +133,12 @@ HRESULT CreateStagingTextureInternal(MTLD3D11Device *pDevice,
       return E_FAIL;
     }
     D3D11_ASSERT(subresources.size() == sub.SubresourceId);
-    auto buffer =
-        transfer(metal->newBuffer(buf_len, MTL::ResourceStorageModeShared));
+    auto buffer = new StagingResource(metal, buf_len, WMTResourceStorageModeShared, bpr, bpi);
     if (pInitialData) {
       // FIXME: SysMemPitch and SysMemSlicePitch should be respected!
-      memcpy(buffer->contents(), pInitialData[sub.SubresourceId].pSysMem,
-             buf_len);
+      memcpy(buffer->mappedImmediateMemory(), pInitialData[sub.SubresourceId].pSysMem, buf_len);
     }
-    subresources.push_back(new StagingResource(std::move(buffer), bpr, bpi));
+    subresources.push_back(buffer);
   }
 
   *ppTexture = reinterpret_cast<typename tag::COM_IMPL *>(ref(

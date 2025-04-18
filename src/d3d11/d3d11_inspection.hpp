@@ -1,20 +1,19 @@
 #pragma once
 
 #include "d3d11_1.h"
-#include "Metal/MTLDevice.hpp"
-#include "objc_pointer.hpp"
+#include "Metal.hpp"
 
 namespace dxmt {
 
 class MTLD3D11Inspection {
 public:
-  MTLD3D11Inspection(MTL::Device *pDevice);
+  MTLD3D11Inspection(WMT::Device pDevice);
 
   HRESULT GetFeatureData(D3D11_FEATURE Feature, UINT FeatureDataSize,
                          void *pFeatureData) const;
 
 private:
-  Obj<MTL::Device> m_device;
+  WMT::Device m_device;
 
   D3D11_FEATURE_DATA_THREADING m_threading = {};
   D3D11_FEATURE_DATA_DOUBLES m_doubles = {};

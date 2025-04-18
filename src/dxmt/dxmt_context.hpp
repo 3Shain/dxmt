@@ -581,7 +581,7 @@ public:
   }
 
   obj_handle_t gpu_buffer_FIXME() {
-    return (obj_handle_t)gpu_buffer_;
+    return gpu_buffer_;
   }
 
   template<typename T> T* get_gpu_heap_pointer(size_t offset) {

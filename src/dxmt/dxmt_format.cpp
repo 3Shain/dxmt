@@ -34,7 +34,7 @@ constexpr FormatCapability APPLE_INT_FORMAT_CAP_32 =
 
 void
 FormatCapabilityInspector::Inspect(WMT::Device device) {
-  if (((MTL::Device *)device.handle)->supportsFamily(MTL::GPUFamilyApple7)) {
+  if (device.supportsFamily(WMTGPUFamilyApple7)) {
     // Apple 7: M1
     APPEND_CAP(WMTPixelFormatA8Unorm, ALL_CAP | TEXTURE_BUFFER_ALL_CAP)
     APPEND_CAP(WMTPixelFormatR8Unorm, ALL_CAP | TEXTURE_BUFFER_ALL_CAP)
@@ -112,8 +112,8 @@ FormatCapabilityInspector::Inspect(WMT::Device device) {
                                          FormatCapability::Sparse | FormatCapability::Blend | TEXTURE_BUFFER_ALL_CAP
     )
 
-    // compressed : TODO
-    if (((MTL::Device *)device.handle)->supportsBCTextureCompression()) {
+    // compressed
+    if (device.supportsBCTextureCompression()) {
       // BC
       APPEND_CAP(WMTPixelFormatBC1_RGBA, FormatCapability::Filter | FormatCapability::Sparse)
       APPEND_CAP(WMTPixelFormatBC1_RGBA_sRGB, FormatCapability::Filter | FormatCapability::Sparse)
@@ -159,7 +159,7 @@ FormatCapabilityInspector::Inspect(WMT::Device device) {
     APPEND_CAP(WMTPixelFormatBGR10_XR, ALL_CAP)
     APPEND_CAP(WMTPixelFormatBGR10_XR_sRGB, ALL_CAP)
 
-    if (!((MTL::Device *)device.handle)->supportsFamily(MTL::GPUFamilyApple8)) {
+    if (!device.supportsFamily(WMTGPUFamilyApple8)) {
       return;
     }
     // Apple 8: M2
@@ -170,7 +170,7 @@ FormatCapabilityInspector::Inspect(WMT::Device device) {
     APPEND_CAP(WMTPixelFormatDepth16Unorm, FormatCapability::Sparse)
     APPEND_CAP(WMTPixelFormatStencil8, FormatCapability::Sparse)
 
-    if (!((MTL::Device *)device.handle)->supportsFamily(MTL::GPUFamilyApple9)) {
+    if (!device.supportsFamily(WMTGPUFamilyApple9)) {
       return;
     }
     // Apple 9: M3+
@@ -178,7 +178,7 @@ FormatCapabilityInspector::Inspect(WMT::Device device) {
     APPEND_CAP(WMTPixelFormatR32Float, ALL_CAP)
     APPEND_CAP(WMTPixelFormatRG32Float, ALL_CAP)
     APPEND_CAP(WMTPixelFormatRGBA32Float, ALL_CAP)
-  } else if (((MTL::Device *)device.handle)->supportsFamily(MTL::GPUFamilyMac2)) {
+  } else if (device.supportsFamily(WMTGPUFamilyMac2)) {
 
     APPEND_CAP(WMTPixelFormatA8Unorm, ALL_CAP | TEXTURE_BUFFER_ALL_CAP)
     APPEND_CAP(WMTPixelFormatR8Unorm, ALL_CAP | TEXTURE_BUFFER_ALL_CAP)

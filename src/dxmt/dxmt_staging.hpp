@@ -1,6 +1,5 @@
 #pragma once
-#include "Metal/MTLBuffer.hpp"
-#include "objc_pointer.hpp"
+#include "Metal.hpp"
 #include "thread.hpp"
 #include <cstdint>
 #include <atomic>
@@ -25,20 +24,25 @@ public:
   StagingMapResult tryMap(uint64_t coherent_seq_id, bool read, bool write);
   void unmap();
 
-  Obj<MTL::Buffer> allocate(uint64_t coherent_seq_id);
-  void updateImmediateName(uint64_t current_seq_id, Obj<MTL::Buffer> &&allocation);
-
-  Obj<MTL::Buffer>
-  immediateName() {
-    return name_;
-  };
+  uint64_t allocate(uint64_t coherent_seq_id);
+  void updateImmediateName(uint64_t current_seq_id, uint64_t allocation);
 
   void *
-  mappedMemory() {
-    return name_->contents();
+  mappedImmediateMemory() {
+    return buffer_pool[immediate_name_].info.memory.get();
   }
 
-  Obj<MTL::Buffer> current;
+  void *
+  mappedMemory(uint64_t id) {
+    return buffer_pool[id].info.memory.get();
+  }
+
+  uint64_t encoding_name;
+
+  WMT::Buffer currentBuffer() {
+    return buffer_pool[encoding_name].allocation;
+  };
+
   /**
   readonly
    */
@@ -47,16 +51,25 @@ public:
   readonly
    */
   uint32_t bytesPerImage;
+  /**
+  readonly
+   */
+  uint64_t length;
 
-  StagingResource(Obj<MTL::Buffer> &&buffer, uint32_t bytes_per_row, uint32_t bytes_per_image);
+  StagingResource(WMT::Device device, uint64_t length, WMTResourceOptions options, uint32_t bytes_per_row, uint32_t bytes_per_image);
 
 private:
+  struct StagingBuffer {
+    WMTBufferInfo info;
+    WMT::Reference<WMT::Buffer> allocation;
+  };
   struct QueueEntry {
-    Obj<MTL::Buffer> allocation;
+    uint64_t id;
     uint64_t will_free_at;
   };
 
-  Obj<MTL::Buffer> name_;
+  uint64_t immediate_name_;
+  std::vector<StagingBuffer> buffer_pool;
   std::atomic<uint32_t> refcount_ = {0u};
   std::queue<QueueEntry> fifo;
   dxmt::mutex mutex_;
@@ -65,6 +78,8 @@ private:
   uint64_t cpu_coherent_after_finished_seq_id = 0;
   // prevent write to staging before
   uint64_t gpu_occupied_until_finished_seq_id = 0;
+  WMT::Device device_;
+  WMTResourceOptions options_;
 };
 
 } // namespace dxmt

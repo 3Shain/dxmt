@@ -857,7 +857,7 @@ public:
     // seems some pixel format doesn't support MSAA
     // https://developer.apple.com/metal/Metal-Feature-Set-Tables.pdf
 
-    if (GetMTLDevice()->supportsTextureSampleCount(SampleCount)) {
+    if (GetMTLDevice().supportsTextureSampleCount(SampleCount)) {
       *pNumQualityLevels = 1; // always 1: in metal there is no concept of
                               // Quality Level (so is it in vulkan iirc)
     }
@@ -1008,12 +1008,12 @@ public:
                       ID3D11Resource *src_resource, UINT src_subresource,
                       const D3D11_BOX *src_box) override{IMPLEMENT_ME}
 
-  MTL::Device *STDMETHODCALLTYPE GetMTLDevice() override {
+  WMT::Device STDMETHODCALLTYPE GetMTLDevice() override {
     return m_container->GetMTLDevice();
   }
 
   WMT::Device STDMETHODCALLTYPE GetWMTDevice() override {
-    return WMT::Device((obj_handle_t)m_container->GetMTLDevice());
+    return m_container->GetMTLDevice();
   }
 
   void SubmitThreadgroupWork(IMTLThreadpoolWork *pWork) override {
@@ -1287,7 +1287,7 @@ public:
 
   void STDMETHODCALLTYPE Trim() override { WARN("DXGIDevice3::Trim: no-op"); };
 
-  MTL::Device *STDMETHODCALLTYPE GetMTLDevice() override {
+  WMT::Device STDMETHODCALLTYPE GetMTLDevice() override {
     return adapter_->GetMTLDevice();
   }
 
@@ -1311,7 +1311,7 @@ public:
     auto data = get_win_data(hWnd);
 
     auto metalView = macdrv_view_create_metal_view(
-        data->client_cocoa_view, (macdrv_metal_device)GetMTLDevice());
+        data->client_cocoa_view, (macdrv_metal_device)GetMTLDevice().handle);
 
     if (metalView == nullptr)
       return E_FAIL;

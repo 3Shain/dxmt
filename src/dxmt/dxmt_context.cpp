@@ -733,7 +733,7 @@ ArgumentEncodingContext::flushCommands(WMT::CommandBuffer cmdbuf_, uint64_t seqI
       struct wmtcmd_compute_setbuffer setcmd;
       setcmd.type = WMTComputeCommandSetBuffer;
       setcmd.next.set(nullptr);
-      setcmd.buffer = (obj_handle_t)gpu_buffer_;
+      setcmd.buffer = gpu_buffer_;
       setcmd.offset = 0;
       setcmd.index = 29;
       encoder.encodeCommands((const wmtcmd_compute_nop *)&setcmd);

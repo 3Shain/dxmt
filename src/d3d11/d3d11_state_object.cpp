@@ -4,11 +4,6 @@
 #include "d3d11_state_object.hpp"
 #include "log/log.hpp"
 
-namespace MTL {
-  class DepthStencilState;
-  class SamplerState;
-};
-
 namespace dxmt {
 
 constexpr WMTCompareFunction kCompareFunctionMap[] = {

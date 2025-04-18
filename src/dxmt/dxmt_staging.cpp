@@ -1,13 +1,19 @@
 #include "dxmt_staging.hpp"
-#include "Metal/MTLDevice.hpp"
+#include <cassert>
 
 namespace dxmt {
 
-StagingResource::StagingResource(Obj<MTL::Buffer> &&buffer, uint32_t bytes_per_row, uint32_t bytes_per_image) :
-    current(std::move(buffer)),
+StagingResource::StagingResource(
+  WMT::Device device, uint64_t length, WMTResourceOptions options, uint32_t bytes_per_row, uint32_t bytes_per_image
+) :
     bytesPerRow(bytes_per_row),
     bytesPerImage(bytes_per_image),
-    name_(current) {}
+    length(length),
+    device_(device),
+    options_(options) {
+  encoding_name = allocate(0);
+  immediate_name_ = encoding_name;
+}
 
 void
 StagingResource::incRef() {
@@ -53,10 +59,10 @@ StagingResource::unmap() {
   mapped = false;
 }
 
-Obj<MTL::Buffer>
+uint64_t
 StagingResource::allocate(uint64_t coherent_seq_id) {
   std::lock_guard<dxmt::mutex> lock(mutex_);
-  Obj<MTL::Buffer> ret;
+  uint64_t ret = ~0ull;
   for (;;) {
     if (fifo.empty()) {
       break;
@@ -65,20 +71,27 @@ StagingResource::allocate(uint64_t coherent_seq_id) {
     if (entry.will_free_at > coherent_seq_id) {
       break;
     }
-    ret = std::move(entry.allocation);
+    ret = entry.id;
     fifo.pop();
     break;
   }
-  if (!ret.ptr())
-    ret = transfer(name_->device()->newBuffer(name_->length(), name_->resourceOptions()));
+  if (ret == ~0ull) {
+    buffer_pool.push_back({});
+    StagingBuffer& last = buffer_pool.back();
+    last.info.memory.set(nullptr);
+    last.info.options = options_;
+    last.info.length = length;
+    last.allocation = device_.newBuffer(&last.info);
+    ret = buffer_pool.size() - 1;
+  }
   return ret;
 }
 
 void
-StagingResource::updateImmediateName(uint64_t current_seq_id, Obj<MTL::Buffer> &&allocation) {
+StagingResource::updateImmediateName(uint64_t current_seq_id, uint64_t allocation) {
   std::lock_guard<dxmt::mutex> lock(mutex_);
-  fifo.push(QueueEntry{.allocation = std::move(name_), .will_free_at = current_seq_id});
-  name_ = std::move(allocation);
+  fifo.push(QueueEntry{.id = allocation, .will_free_at = current_seq_id});
+  immediate_name_ = allocation;
   cpu_coherent_after_finished_seq_id = 0;
   gpu_occupied_until_finished_seq_id = 0;
 }

@@ -3004,7 +3004,7 @@ public:
           cmd.copy_length = SrcBox.right - SrcBox.left;
           cmd.src = src;
           cmd.src_offset = SrcBox.left;
-          cmd.dst = (obj_handle_t)dst->current.ptr();
+          cmd.dst = dst->currentBuffer();
           cmd.dst_offset = DstX;
         });
         promote_flush = true;
@@ -3020,7 +3020,7 @@ public:
           auto &cmd = enc.encodeBlitCommand<wmtcmd_blit_copy_from_buffer_to_buffer>();
           cmd.type = WMTBlitCommandCopyFromBufferToBuffer;
           cmd.copy_length = SrcBox.right - SrcBox.left;
-          cmd.src = (obj_handle_t)src->current.ptr();
+          cmd.src = src->currentBuffer();
           cmd.src_offset = SrcBox.left;
           cmd.dst = dst;
           cmd.dst_offset = DstX;
@@ -3082,7 +3082,7 @@ public:
           cmd_cpbuf.level = cmd.Src.MipLevel;
           cmd_cpbuf.origin = cmd.SrcOrigin;
           cmd_cpbuf.size = cmd.SrcSize;
-          cmd_cpbuf.dst = (obj_handle_t)dst->current.ptr();
+          cmd_cpbuf.dst = dst->currentBuffer();
           cmd_cpbuf.offset = offset;
           cmd_cpbuf.bytes_per_row = dst->bytesPerRow;
           cmd_cpbuf.bytes_per_image = dst->bytesPerImage;
@@ -3109,7 +3109,7 @@ public:
           }
           auto &cmd_cptex = enc.encodeBlitCommand<wmtcmd_blit_copy_from_buffer_to_texture>();
           cmd_cptex.type = WMTBlitCommandCopyFromBufferToTexture;
-          cmd_cptex.src = (obj_handle_t)src->current.ptr();
+          cmd_cptex.src = src->currentBuffer();
           cmd_cptex.src_offset = offset;
           cmd_cptex.bytes_per_row =  src->bytesPerRow;
           cmd_cptex.bytes_per_image = src->bytesPerImage;
@@ -4373,7 +4373,7 @@ public:
       descriptor->setInputContentMinScale(1.0f);
       descriptor->setInputContentMaxScale(3.0f);
       descriptor->setRequiresSynchronousInitialization(true);
-      scaler_entry.scaler = transfer<MTLFX::TemporalScaler>(CreateMTLFXTemporalScaler(descriptor, ctx_->device->GetMTLDevice()));
+      scaler_entry.scaler = transfer<MTLFX::TemporalScaler>(CreateMTLFXTemporalScaler(descriptor, (MTL::Device *)ctx_->device->GetMTLDevice().handle));
       scaler = scaler_entry.scaler;
       scaler_cache_.push_back(std::move(scaler_entry));
       // to simplify implementation, the created scalers are never destroyed
