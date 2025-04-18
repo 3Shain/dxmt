@@ -7,7 +7,9 @@
 
 namespace dxmt {
 
-ArgumentEncodingContext::ArgumentEncodingContext(CommandQueue &queue, WMT::Device device) : queue_(queue) {
+ArgumentEncodingContext::ArgumentEncodingContext(CommandQueue &queue, WMT::Device device) :
+    device_(device),
+    queue_(queue) {
   dummy_sampler_info_.support_argument_buffers = true;
   dummy_sampler_info_.border_color = WMTSamplerBorderColorTransparentBlack;
   dummy_sampler_info_.compare_function = WMTCompareFunctionNever;
@@ -620,10 +622,8 @@ ArgumentEncodingContext::$$setEncodingContext(uint64_t seq_id, uint64_t frame_id
 constexpr unsigned kEncoderOptimizerThreshold = 64;
 
 std::unique_ptr<VisibilityResultReadback>
-ArgumentEncodingContext::flushCommands(MTL::CommandBuffer *cmdbuf, uint64_t seqId, uint64_t event_seq_id) {
+ArgumentEncodingContext::flushCommands(WMT::CommandBuffer cmdbuf_, uint64_t seqId, uint64_t event_seq_id) {
   assert(!encoder_current);
-
-  WMT::CommandBuffer cmdbuf_{(obj_handle_t)cmdbuf};
 
   unsigned encoder_count = encoder_count_;
   unsigned encoder_index = 0;
@@ -658,10 +658,7 @@ ArgumentEncodingContext::flushCommands(MTL::CommandBuffer *cmdbuf, uint64_t seqI
 
   if (auto count = vro_state_.reset()) {
     visibility_readback = std::make_unique<VisibilityResultReadback>(
-        seqId, count, pending_queries_,
-        transfer(cmdbuf->device()->newBuffer(
-            count * sizeof(uint64_t), MTL::ResourceHazardTrackingModeUntracked | MTL::ResourceStorageModeShared
-        ))
+        device_, seqId, count, pending_queries_
     );
   }
   std::erase_if(pending_queries_, [=](auto &query) -> bool { return query->queryEndAt() == seqId; });
@@ -673,7 +670,7 @@ ArgumentEncodingContext::flushCommands(MTL::CommandBuffer *cmdbuf, uint64_t seqI
       auto data = static_cast<RenderEncoderData *>(current);
       if (data->use_visibility_result) {
         assert(visibility_readback);
-        data->info.visibility_buffer = (obj_handle_t)visibility_readback->visibility_result_heap.ptr();
+        data->info.visibility_buffer = visibility_readback->visibility_result_heap;
       }
       auto encoder = cmdbuf_.renderCommandEncoder(data->info);
       encoder.setVertexBuffer(gpu_buffer_, 0, 16);
@@ -761,11 +758,11 @@ ArgumentEncodingContext::flushCommands(MTL::CommandBuffer *cmdbuf, uint64_t seqI
       auto drawable = data->layer->nextDrawable();
       auto t1 = clock::now();
       currentFrameStatistics().drawable_blocking_interval += (t1 - t0);
-      queue_.emulated_cmd.PresentToDrawable(cmdbuf, data->backbuffer, (obj_handle_t)drawable->texture());
+      queue_.emulated_cmd.PresentToDrawable(cmdbuf_, data->backbuffer, (obj_handle_t)drawable->texture());
       if (data->after > 0)
-        cmdbuf->presentDrawableAfterMinimumDuration(drawable, data->after);
+        cmdbuf_.presentDrawableAfterMinimumDuration(WMT::MetalDrawable{(obj_handle_t)drawable}, data->after);
       else
-        cmdbuf->presentDrawable(drawable);
+        cmdbuf_.presentDrawable(WMT::MetalDrawable{(obj_handle_t)drawable});
       data->~PresentData();
       break;
     }
@@ -829,7 +826,7 @@ ArgumentEncodingContext::flushCommands(MTL::CommandBuffer *cmdbuf, uint64_t seqI
       auto data = static_cast<SpatialUpscaleData *>(current);
       data->scaler->setColorTexture((MTL::Texture *)data->backbuffer.handle);
       data->scaler->setOutputTexture((MTL::Texture *)data->upscaled.handle);
-      data->scaler->encodeToCommandBuffer(cmdbuf);
+      data->scaler->encodeToCommandBuffer((MTL::CommandBuffer *)cmdbuf_.handle);
       data->~SpatialUpscaleData();
       break;
     }
@@ -856,7 +853,7 @@ ArgumentEncodingContext::flushCommands(MTL::CommandBuffer *cmdbuf, uint64_t seqI
       data->scaler->setPreExposure(data->props.pre_exposure);
       if(data->exposure)
         data->scaler->setExposureTexture((MTL::Texture *)data->exposure.handle);
-      data->scaler->encodeToCommandBuffer(cmdbuf);
+      data->scaler->encodeToCommandBuffer((MTL::CommandBuffer *)cmdbuf_.handle);
       data->~TemporalUpscaleData();
       break;
     }

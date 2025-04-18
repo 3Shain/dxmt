@@ -462,3 +462,20 @@ MTLBuffer_didModifyRange(obj_handle_t buffer, uint64_t start, uint64_t length) {
   params.ret = length;
   UNIX_CALL(46, &params);
 }
+
+WINEMETAL_API void
+MTLCommandBuffer_presentDrawable(obj_handle_t cmdbuf, obj_handle_t drawable) {
+  struct unixcall_generic_obj_obj_noret params;
+  params.handle = cmdbuf;
+  params.arg = drawable;
+  UNIX_CALL(47, &params);
+};
+
+WINEMETAL_API void
+MTLCommandBuffer_presentDrawableAfterMinimumDuration(obj_handle_t cmdbuf, obj_handle_t drawable, double after) {
+  struct unixcall_generic_obj_obj_double_noret params;
+  params.handle = cmdbuf;
+  params.arg0 = drawable;
+  params.arg1 = after;
+  UNIX_CALL(48, &params);
+};

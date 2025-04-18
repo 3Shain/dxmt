@@ -1,7 +1,6 @@
 #pragma once
 
-#include "Metal/MTLBuffer.hpp"
-#include "objc_pointer.hpp"
+#include "Metal.hpp"
 #include "rc/util_rc_ptr.hpp"
 #include <atomic>
 #include <cassert>
@@ -158,16 +157,19 @@ private:
 class VisibilityResultReadback {
 public:
   VisibilityResultReadback(
-      uint64_t seq_id, uint64_t num_results, std::vector<Rc<VisibilityResultQuery>> &queries,
-      Obj<MTL::Buffer> &&visibility_result_heap
+      WMT::Device device, uint64_t seq_id, uint64_t num_results, std::vector<Rc<VisibilityResultQuery>> &queries
   ) :
       seq_id(seq_id),
       num_results(num_results),
-      queries(queries),
-      visibility_result_heap(std::move(visibility_result_heap)) {}
+      queries(queries) {
+        visibility_result_heap_info.options = WMTResourceHazardTrackingModeUntracked;
+        visibility_result_heap_info.memory.set(nullptr);
+        visibility_result_heap_info.length = num_results * sizeof(uint64_t);
+        visibility_result_heap = device.newBuffer(&visibility_result_heap_info);
+      }
   ~VisibilityResultReadback() {
     for (auto query : queries) {
-      query->issue(seq_id, (uint64_t *)visibility_result_heap->contents(), num_results);
+      query->issue(seq_id, (uint64_t *)visibility_result_heap_info.memory.get(), num_results);
     }
   }
 
@@ -177,7 +179,8 @@ public:
   uint64_t seq_id;
   uint64_t num_results;
   std::vector<Rc<VisibilityResultQuery>> queries;
-  Obj<MTL::Buffer> visibility_result_heap;
+  WMTBufferInfo visibility_result_heap_info;
+  WMT::Reference<WMT::Buffer> visibility_result_heap;
 };
 
 } // namespace dxmt

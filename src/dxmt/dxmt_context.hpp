@@ -1,7 +1,6 @@
 #pragma once
 
 #include "Metal.hpp"
-#include "Metal/MTLCommandBuffer.hpp"
 #include "MetalFX/MTLFXSpatialScaler.hpp"
 #include "MetalFX/MTLFXTemporalScaler.hpp"
 #include "QuartzCore/CAMetalDrawable.hpp"
@@ -13,6 +12,7 @@
 #include "dxmt_statistics.hpp"
 #include "dxmt_texture.hpp"
 #include "log/log.hpp"
+#include "objc_pointer.hpp"
 #include "rc/util_rc_ptr.hpp"
 #include "airconv_public.h"
 #include <cassert>
@@ -590,7 +590,7 @@ public:
 
   std::pair<WMT::Buffer , size_t> allocateTempBuffer(size_t size, size_t alignment);
 
-  std::unique_ptr<VisibilityResultReadback> flushCommands(MTL::CommandBuffer *cmdbuf, uint64_t seqId, uint64_t event_seq_id);
+  std::unique_ptr<VisibilityResultReadback> flushCommands(WMT::CommandBuffer cmdbuf, uint64_t seqId, uint64_t event_seq_id);
 
   uint64_t currentSeqId() {return seq_id_;}
 
@@ -677,6 +677,7 @@ private:
 
   std::vector<Rc<VisibilityResultQuery> *> deferred_visibility_query_stack_;
 
+  WMT::Device device_;
   CommandQueue& queue_;
 };
 
