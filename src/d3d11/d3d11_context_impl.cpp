@@ -1143,8 +1143,8 @@ public:
       cmd.primitive_type = Primitive;
       cmd.vertex_start = StartVertexLocation;
       cmd.vertex_count = VertexCountPerInstance;
-      cmd.base_instance = InstanceCount;
-      cmd.instance_count = StartInstanceLocation;
+      cmd.instance_count = InstanceCount;
+      cmd.base_instance = StartInstanceLocation;
     });
   }
 
