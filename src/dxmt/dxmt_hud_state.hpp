@@ -1,7 +1,7 @@
 #pragma once
 
-#include "Foundation/NSAutoreleasePool.hpp"
 #include "Foundation/NSString.hpp"
+#include "Metal.hpp"
 #include "QuartzCore/CADeveloperHUDProperties.hpp"
 #include "objc_pointer.hpp"
 #include <string>
@@ -29,7 +29,7 @@ public:
 private:
   CA::DeveloperHUDProperties *hud_;
   std::vector<Obj<NS::String>> line_labels_;
-  Obj<NS::AutoreleasePool> pool_;
+  WMT::Reference<WMT::Object> pool_;
   unsigned current_line_;
 };
 

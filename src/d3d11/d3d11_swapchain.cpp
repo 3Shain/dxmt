@@ -321,14 +321,14 @@ public:
           )))
         return E_FAIL;
 
-      auto scaler_descriptor = transfer(MTLFX::SpatialScalerDescriptor::alloc()->init());
-      scaler_descriptor->setInputHeight(desc_.Height);
-      scaler_descriptor->setInputWidth(desc_.Width);
-      scaler_descriptor->setOutputHeight(layer_weak_->drawableSize().height);
-      scaler_descriptor->setOutputWidth(layer_weak_->drawableSize().width);
-      scaler_descriptor->setColorTextureFormat((MTL::PixelFormat)backbuffer_->texture()->pixelFormat());
-      scaler_descriptor->setOutputTextureFormat((MTL::PixelFormat)upscaled_backbuffer_->texture()->pixelFormat());
-      metalfx_scaler = transfer(scaler_descriptor->newSpatialScaler((MTL::Device *)m_device->GetMTLDevice().handle));
+      WMTFXSpatialScalerInfo info;
+      info.input_height = desc_.Height;
+      info.input_width = desc_.Width;
+      info.output_height = layer_weak_->drawableSize().height;
+      info.output_width = layer_weak_->drawableSize().width;
+      info.color_format = backbuffer_->texture()->pixelFormat();
+      info.output_format =upscaled_backbuffer_->texture()->pixelFormat();
+      metalfx_scaler = m_device->GetMTLDevice().newSpatialScaler(&info);
       D3D11_ASSERT(metalfx_scaler && "otherwise metalfx failed to initialize");
     }
 
@@ -751,7 +751,7 @@ private:
   int preferred_max_frame_rate = 0;
   HUDState hud;
 
-  std::conditional<EnableMetalFX, Obj<MTLFX::SpatialScaler>, std::monostate>::type metalfx_scaler;
+  std::conditional<EnableMetalFX, WMT::Reference<WMT::FXSpatialScaler>, std::monostate>::type metalfx_scaler;
   std::conditional<EnableMetalFX, Com<D3D11ResourceCommon>, std::monostate>::type upscaled_backbuffer_;
   float scale_factor = 1.0;
 };

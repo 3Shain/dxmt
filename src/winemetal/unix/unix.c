@@ -62,77 +62,13 @@ static NTSTATUS thunk_SM50Compile(void *args)
     return STATUS_SUCCESS;
 }
 
-
-#include <signal.h>
-
-void temp_handler(int signum) {
-    printf("received signal %d in temp_handler(), and it may cause problem!\n", signum);
-}
-
-static const int SIGNALS[] = {SIGHUP,
-                              SIGINT,
-                              SIGTERM,
-                              SIGUSR2,
-                              SIGILL,
-                              SIGTRAP,
-                              SIGABRT,
-                              SIGFPE,
-                              SIGBUS,
-                              SIGSEGV,
-                              SIGQUIT
-#ifdef SIGSYS
-                              ,
-                              SIGSYS
-#endif
-#ifdef SIGXCPU
-                              ,
-                              SIGXCPU
-#endif
-#ifdef SIGXFSZ
-                              ,
-                              SIGXFSZ
-#endif
-#ifdef SIGEMT
-                              ,
-                              SIGEMT
-#endif
-                              ,
-                              SIGUSR1
-#ifdef SIGINFO
-                              ,
-                              SIGINFO
-#endif
-};
-
-NTSTATUS CreateMTLFXTemporalScaler(struct create_fxscaler_params *params) {
-
-  struct sigaction old_action[sizeof(SIGNALS) / sizeof(int)], new_action;
-  new_action.sa_handler = temp_handler;
-  sigemptyset(&new_action.sa_mask);
-  new_action.sa_flags = 0;
-
-  MTLFXTemporalScalerDescriptor *desc = params->desc;
-  id<MTLDevice> device = params->device;
-
-  /* 
-  HACK: newTemporalScalerWithDevice calls sigaction() which can break wine,
-  so we save current handlers and restore them when the method returns.
-  */
-  for (unsigned int i = 0; i < sizeof(SIGNALS) / sizeof(int); i++)
-    sigaction(SIGNALS[i], &new_action, &old_action[i]);
-  params->ret = [desc newTemporalScalerWithDevice:device];
-  for (unsigned int i = 0; i < sizeof(SIGNALS) / sizeof(int); i++)
-    sigaction(SIGNALS[i], &old_action[i], NULL);
-  return STATUS_SUCCESS;
-};
-
 // FIXME: 0x100 is just ... need a better way to organize all these unix calls
 const void *__wine_unix_call_funcs[0x100] = {
     &objc_lookUpClass,
     &sel_registerName,
     &objc_msgSend,
     &objc_getProtocol,
-    &CreateMTLFXTemporalScaler,
+    0,
     0,
     0,
     0,

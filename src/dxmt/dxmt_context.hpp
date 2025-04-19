@@ -1,8 +1,6 @@
 #pragma once
 
 #include "Metal.hpp"
-#include "MetalFX/MTLFXSpatialScaler.hpp"
-#include "MetalFX/MTLFXTemporalScaler.hpp"
 #include "QuartzCore/CAMetalDrawable.hpp"
 #include "QuartzCore/CAMetalLayer.hpp"
 #include "dxmt_buffer.hpp"
@@ -165,24 +163,12 @@ struct PresentData : EncoderData {
 struct SpatialUpscaleData : EncoderData {
   WMT::Reference<WMT::Texture> backbuffer;
   WMT::Reference<WMT::Texture> upscaled;
-  Obj<MTLFX::SpatialScaler> scaler;
+  WMT::Reference<WMT::FXSpatialScaler> scaler;
 };
 
 struct SignalEventData : EncoderData {
   WMT::Reference<WMT::Event> event;
   uint64_t value;
-};
-
-struct TemporalScalerProps {
-  uint32_t input_content_width;
-  uint32_t input_content_height;
-  bool reset;
-  bool depth_reversed;
-  float motion_vector_scale_x;
-  float motion_vector_scale_y;
-  float jitter_offset_x;
-  float jitter_offset_y;
-  float pre_exposure;
 };
 
 struct TemporalUpscaleData : EncoderData {
@@ -191,8 +177,8 @@ struct TemporalUpscaleData : EncoderData {
   WMT::Reference<WMT::Texture> depth;
   WMT::Reference<WMT::Texture> motion_vector;
   WMT::Reference<WMT::Texture> exposure;
-  MTLFX::TemporalScaler* scaler;
-  TemporalScalerProps props;
+  WMT::FXTemporalScaler scaler;
+  WMTFXTemporalScalerProps props;
 };
 
 template <PipelineKind kind>
@@ -519,11 +505,11 @@ public:
 
   void present(Rc<Texture> &texture, CA::MetalLayer *layer, double after);
 
-  void upscale(Rc<Texture> &texture, Rc<Texture> &upscaled, Obj<MTLFX::SpatialScaler> &scaler);
+  void upscale(Rc<Texture> &texture, Rc<Texture> &upscaled, WMT::Reference<WMT::FXSpatialScaler> &scaler);
 
   void upscaleTemporal(
       Rc<Texture> &input, Rc<Texture> &output, Rc<Texture> &depth, Rc<Texture> &motion_vector, TextureViewKey mvViewId,
-      Rc<Texture> &exposure, Obj<MTLFX::TemporalScaler> &scaler, const TemporalScalerProps &props
+      Rc<Texture> &exposure, WMT::Reference<WMT::FXTemporalScaler> &scaler, const WMTFXTemporalScalerProps &props
   );
 
   void signalEvent(uint64_t value);
