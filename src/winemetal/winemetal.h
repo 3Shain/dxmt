@@ -1361,4 +1361,70 @@ WINEMETAL_API bool MTLDevice_supportsTextureSampleCount(obj_handle_t device, uin
 
 WINEMETAL_API bool MTLDevice_hasUnifiedMemory(obj_handle_t device);
 
+enum WMTCaptureDestination : uint8_t {
+  WMTCaptureDestinationDeveloperTools = 1,
+  WMTCaptureDestinationGPUTraceDocument = 2,
+};
+
+struct WMTCaptureInfo {
+  obj_handle_t capture_object;
+  const char *output_url;
+  enum WMTCaptureDestination destination;
+};
+
+WINEMETAL_API obj_handle_t MTLCaptureManager_sharedCaptureManager();
+
+WINEMETAL_API bool MTLCaptureManager_startCapture(obj_handle_t mgr, struct WMTCaptureInfo *info);
+
+WINEMETAL_API void MTLCaptureManager_stopCapture(obj_handle_t mgr);
+
+struct WMTFXTemporalScalerInfo {
+  enum WMTPixelFormat color_format;
+  enum WMTPixelFormat output_format;
+  enum WMTPixelFormat depth_format;
+  enum WMTPixelFormat motion_format;
+  uint32_t input_width;
+  uint32_t input_height;
+  uint32_t output_width;
+  uint32_t output_height;
+  float input_content_min_scale;
+  float input_content_max_scale;
+  bool auto_exposure;
+  bool input_content_properties_enabled;
+  bool requires_synchronous_initialization;
+};
+
+struct WMTFXSpatialScalerInfo {
+  enum WMTPixelFormat color_format;
+  enum WMTPixelFormat output_format;
+  uint32_t input_width;
+  uint32_t input_height;
+  uint32_t output_width;
+  uint32_t output_height;
+};
+
+WINEMETAL_API obj_handle_t MTLDevice_newTemporalScaler(obj_handle_t device, struct WMTFXTemporalScalerInfo *info);
+
+WINEMETAL_API obj_handle_t MTLDevice_newSpatialScaler(obj_handle_t device, struct WMTFXSpatialScalerInfo *info);
+
+struct WMTFXTemporalScalerProps {
+  uint32_t input_content_width;
+  uint32_t input_content_height;
+  bool reset;
+  bool depth_reversed;
+  float motion_vector_scale_x;
+  float motion_vector_scale_y;
+  float jitter_offset_x;
+  float jitter_offset_y;
+  float pre_exposure;
+};
+
+WINEMETAL_API void MTLCommandBuffer_encodeTemporalScale(
+    obj_handle_t cmdbuf, obj_handle_t scaler, obj_handle_t color, obj_handle_t output, obj_handle_t depth,
+    obj_handle_t motion, obj_handle_t exposure, struct WMTFXTemporalScalerProps *props
+);
+
+WINEMETAL_API void
+MTLCommandBuffer_encodeSpatialScale(obj_handle_t cmdbuf, obj_handle_t scaler, obj_handle_t color, obj_handle_t output);
+
 #endif

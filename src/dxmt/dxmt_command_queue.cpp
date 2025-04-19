@@ -91,27 +91,24 @@ CommandQueue::CommitChunkInternal(CommandChunk &chunk, uint64_t seq) {
 
   switch (capture_state.getNextAction(chunk.frame_)) {
   case CaptureState::NextAction::StartCapture: {
-    auto capture_mgr = MTL::CaptureManager::sharedCaptureManager();
-    auto capture_desc = transfer(MTL::CaptureDescriptor::alloc()->init());
-    capture_desc->setCaptureObject((MTL::Device *)device.handle);
-    capture_desc->setDestination(MTL::CaptureDestinationGPUTraceDocument);
+    WMTCaptureInfo info;
+    auto capture_mgr = WMT::CaptureManager::sharedCaptureManager();
+    info.capture_object = device;
+    info.destination = (WMTCaptureDestinationGPUTraceDocument);
     char filename[1024];
     std::time_t now;
     std::time(&now);
     std::strftime(filename, 1024, "-capture-%H-%M-%S_%m-%d-%y.gputrace", std::localtime(&now));
     auto fileUrl = env::getUnixPath(env::getExeBaseName() + filename);
     WARN("A new capture will be saved to ", fileUrl);
-    NS::URL *pURL = NS::URL::alloc()->initFileURLWithPath(NS::String::string(fileUrl.c_str(), NS::UTF8StringEncoding));
+    info.output_url = fileUrl.c_str();
 
-    NS::Error *pError = nullptr;
-    capture_desc->setOutputURL(pURL);
-
-    capture_mgr->startCapture(capture_desc.ptr(), &pError);
+    capture_mgr.startCapture(info);
     break;
   }
   case CaptureState::NextAction::StopCapture: {
-    auto capture_mgr = MTL::CaptureManager::sharedCaptureManager();
-    capture_mgr->stopCapture();
+    auto capture_mgr = WMT::CaptureManager::sharedCaptureManager();
+    capture_mgr.stopCapture();
     break;
   }
   case CaptureState::NextAction::Nothing: {

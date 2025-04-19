@@ -4258,10 +4258,6 @@ public:
   }
 };
 
-extern "C" MTLFX::TemporalScaler *
-CreateMTLFXTemporalScaler(MTLFX::TemporalScalerDescriptor *desc,
-                          MTL::Device *device);
-
 template <typename ContextInternalState>
 class MTLD3D11ContextExt : public IMTLD3D11ContextExt {
   class CachedTemporalScaler {
@@ -4275,7 +4271,7 @@ class MTLD3D11ContextExt : public IMTLD3D11ContextExt {
     uint32_t input_height;
     uint32_t output_width;
     uint32_t output_height;
-    Obj<MTLFX::TemporalScaler> scaler;
+    WMT::Reference<WMT::FXTemporalScaler> scaler;
   };
 public:
   MTLD3D11ContextExt(MTLD3D11DeviceContextImplBase<ContextInternalState> *context) : ctx_(context){};
@@ -4331,7 +4327,7 @@ public:
       return;
     }
 
-    Obj<MTLFX::TemporalScaler> scaler;
+    WMT::Reference<WMT::FXTemporalScaler> scaler;
 
     for(CachedTemporalScaler& entry: scaler_cache_) {
       if(pDesc->AutoExposure != entry.auto_exposure) continue;
@@ -4354,26 +4350,26 @@ public:
       scaler_entry.output_pixel_format = output->pixelFormat();
       scaler_entry.depth_pixel_format = depth->pixelFormat();
       scaler_entry.motion_vector_pixel_format = motion_vector_format;
-      Obj<MTLFX::TemporalScalerDescriptor> descriptor = transfer(MTLFX::TemporalScalerDescriptor::alloc()->init());
-      descriptor->setColorTextureFormat((MTL::PixelFormat)scaler_entry.color_pixel_format);
-      descriptor->setOutputTextureFormat((MTL::PixelFormat)scaler_entry.output_pixel_format);
-      descriptor->setDepthTextureFormat((MTL::PixelFormat)scaler_entry.depth_pixel_format);
-      descriptor->setMotionTextureFormat((MTL::PixelFormat)motion_vector_format);
+      WMTFXTemporalScalerInfo info;
+      info.color_format = scaler_entry.color_pixel_format;
+      info.output_format = scaler_entry.output_pixel_format;
+      info.depth_format = scaler_entry.depth_pixel_format;
+      info.motion_format = motion_vector_format;
       scaler_entry.auto_exposure = pDesc->AutoExposure;
       scaler_entry.input_width = input->width();
       scaler_entry.input_height = input->height();
       scaler_entry.output_width = output->width();
       scaler_entry.output_height = output->height();
-      descriptor->setAutoExposureEnabled(scaler_entry.auto_exposure);
-      descriptor->setInputWidth(scaler_entry.input_width);
-      descriptor->setInputHeight(scaler_entry.input_height);
-      descriptor->setOutputWidth(scaler_entry.output_width);
-      descriptor->setOutputHeight(scaler_entry.output_height);
-      descriptor->setInputContentPropertiesEnabled(true);
-      descriptor->setInputContentMinScale(1.0f);
-      descriptor->setInputContentMaxScale(3.0f);
-      descriptor->setRequiresSynchronousInitialization(true);
-      scaler_entry.scaler = transfer<MTLFX::TemporalScaler>(CreateMTLFXTemporalScaler(descriptor, (MTL::Device *)ctx_->device->GetMTLDevice().handle));
+      info.auto_exposure = scaler_entry.auto_exposure;
+      info.input_width = scaler_entry.input_width;
+      info.input_height = scaler_entry.input_height;
+      info.output_width = scaler_entry.output_width;
+      info.output_height = scaler_entry.output_height;
+      info.input_content_properties_enabled = true;
+      info.input_content_min_scale = 1.0f;
+      info.input_content_max_scale =  3.0f;
+      info.requires_synchronous_initialization = true;
+      scaler_entry.scaler = ctx_->device->GetMTLDevice().newTemporalScaler(&info);
       scaler = scaler_entry.scaler;
       scaler_cache_.push_back(std::move(scaler_entry));
       // to simplify implementation, the created scalers are never destroyed
@@ -4386,7 +4382,7 @@ public:
                   motion_vector = std::move(motion_vector),
                   exposure = std::move(exposure), scaler = std::move(scaler),
                   props =
-                      TemporalScalerProps{
+                      WMTFXTemporalScalerProps{
                           pDesc->InputContentWidth,
                           pDesc->InputContentHeight,
                           (bool)pDesc->InReset,

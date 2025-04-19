@@ -172,8 +172,8 @@ public:
     encoder.setVertexBuffer(commands, commands_offset, 0);
     encoder.setVertexBuffer(commands, 0, 1);
     encoder.drawPrimitives(WMTPrimitiveTypePoint, 0, 1);
-    encoder.setVertexBuffer({nullptr}, 0, 0);
-    encoder.setVertexBuffer({nullptr}, 0, 1);
+    encoder.setVertexBuffer({}, 0, 0);
+    encoder.setVertexBuffer({}, 0, 1);
   }
 
 private:

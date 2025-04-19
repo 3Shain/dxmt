@@ -436,7 +436,7 @@ ArgumentEncodingContext::present(Rc<Texture> &texture, CA::MetalLayer *layer, do
 }
 
 void
-ArgumentEncodingContext::upscale(Rc<Texture> &texture, Rc<Texture> &upscaled, Obj<MTLFX::SpatialScaler> &scaler) {
+ArgumentEncodingContext::upscale(Rc<Texture> &texture, Rc<Texture> &upscaled, WMT::Reference<WMT::FXSpatialScaler> &scaler) {
   assert(!encoder_current);
   auto encoder_info = allocate<SpatialUpscaleData>();
   encoder_info->type = EncoderType::SpatialUpscale;
@@ -455,7 +455,7 @@ ArgumentEncodingContext::upscale(Rc<Texture> &texture, Rc<Texture> &upscaled, Ob
 void
 ArgumentEncodingContext::upscaleTemporal(
     Rc<Texture> &input, Rc<Texture> &output, Rc<Texture> &depth, Rc<Texture> &motion_vector, TextureViewKey mvViewId,
-    Rc<Texture> &exposure, Obj<MTLFX::TemporalScaler> &scaler, const TemporalScalerProps &props
+    Rc<Texture> &exposure, WMT::Reference<WMT::FXTemporalScaler> &scaler, const WMTFXTemporalScalerProps &props
 ) {
   assert(!encoder_current);
   auto encoder_info = allocate<TemporalUpscaleData>();
@@ -475,6 +475,8 @@ ArgumentEncodingContext::upscaleTemporal(
   if(exposure) {
     encoder_info->exposure = exposure->current()->texture();
     encoder_info->tex_read.add(exposure->current()->depkey);
+  } else {
+    encoder_info->exposure = nullptr;
   }
 
   encoder_current = encoder_info;
@@ -758,7 +760,7 @@ ArgumentEncodingContext::flushCommands(WMT::CommandBuffer cmdbuf_, uint64_t seqI
       auto drawable = data->layer->nextDrawable();
       auto t1 = clock::now();
       currentFrameStatistics().drawable_blocking_interval += (t1 - t0);
-      queue_.emulated_cmd.PresentToDrawable(cmdbuf_, data->backbuffer, (obj_handle_t)drawable->texture());
+      queue_.emulated_cmd.PresentToDrawable(cmdbuf_, data->backbuffer, {(obj_handle_t)drawable->texture()});
       if (data->after > 0)
         cmdbuf_.presentDrawableAfterMinimumDuration(WMT::MetalDrawable{(obj_handle_t)drawable}, data->after);
       else
@@ -794,8 +796,8 @@ ArgumentEncodingContext::flushCommands(WMT::CommandBuffer cmdbuf_, uint64_t seqI
         }
         info.render_target_array_length = data->array_length;
         auto encoder = cmdbuf_.renderCommandEncoder(info);
-        ((MTL::RenderCommandEncoder *)encoder.handle)
-            ->setLabel(NS::String::string("ClearPass", NS::ASCIIStringEncoding));
+        // ((MTL::RenderCommandEncoder *)encoder.handle)
+        //     ->setLabel(NS::String::string("ClearPass", NS::ASCIIStringEncoding));
         encoder.endEncoding();
       }
       data->~ClearEncoderData();
@@ -815,8 +817,8 @@ ArgumentEncodingContext::flushCommands(WMT::CommandBuffer cmdbuf_, uint64_t seqI
         info.colors[0].resolve_level = data->dst_level;
 
         auto encoder = cmdbuf_.renderCommandEncoder(info);
-        ((MTL::RenderCommandEncoder *)encoder.handle)
-            ->setLabel(NS::String::string("ResolvePass", NS::ASCIIStringEncoding));
+        // ((MTL::RenderCommandEncoder *)encoder.handle)
+        //     ->setLabel(NS::String::string("ResolvePass", NS::ASCIIStringEncoding));
         encoder.endEncoding();
       }
       data->~ResolveEncoderData();
@@ -824,9 +826,7 @@ ArgumentEncodingContext::flushCommands(WMT::CommandBuffer cmdbuf_, uint64_t seqI
     }
     case EncoderType::SpatialUpscale: {
       auto data = static_cast<SpatialUpscaleData *>(current);
-      data->scaler->setColorTexture((MTL::Texture *)data->backbuffer.handle);
-      data->scaler->setOutputTexture((MTL::Texture *)data->upscaled.handle);
-      data->scaler->encodeToCommandBuffer((MTL::CommandBuffer *)cmdbuf_.handle);
+      cmdbuf_.encodeSpatialScale(data->scaler, data->backbuffer, data->upscaled);
       data->~SpatialUpscaleData();
       break;
     }
@@ -838,22 +838,7 @@ ArgumentEncodingContext::flushCommands(WMT::CommandBuffer cmdbuf_, uint64_t seqI
     }
     case EncoderType::TemporalUpscale: {
       auto data = static_cast<TemporalUpscaleData *>(current);
-      data->scaler->setColorTexture((MTL::Texture *)data->input.handle);
-      data->scaler->setOutputTexture((MTL::Texture *)data->output.handle);
-      data->scaler->setDepthTexture((MTL::Texture *)data->depth.handle);
-      data->scaler->setMotionTexture((MTL::Texture *)data->motion_vector.handle);
-      data->scaler->setReset(data->props.reset);
-      data->scaler->setDepthReversed(data->props.depth_reversed);
-      data->scaler->setInputContentWidth(data->props.input_content_width);
-      data->scaler->setInputContentHeight(data->props.input_content_height);
-      data->scaler->setMotionVectorScaleX(data->props.motion_vector_scale_x);
-      data->scaler->setMotionVectorScaleY(data->props.motion_vector_scale_y);
-      data->scaler->setJitterOffsetX(data->props.jitter_offset_x);
-      data->scaler->setJitterOffsetY(data->props.jitter_offset_y);
-      data->scaler->setPreExposure(data->props.pre_exposure);
-      if(data->exposure)
-        data->scaler->setExposureTexture((MTL::Texture *)data->exposure.handle);
-      data->scaler->encodeToCommandBuffer((MTL::CommandBuffer *)cmdbuf_.handle);
+      cmdbuf_.encodeTemporalScale(data->scaler, data->input, data->output, data->depth, data->motion_vector, data->exposure, &data->props);
       data->~TemporalUpscaleData();
       break;
     }

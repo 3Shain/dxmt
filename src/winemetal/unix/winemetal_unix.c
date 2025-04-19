@@ -1,5 +1,6 @@
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
+#import <MetalFX/MetalFX.h>
 #define WINEMETAL_API
 #include "../winemetal_thunks.h"
 
@@ -1097,6 +1098,166 @@ _MTLDevice_hasUnifiedMemory(void *obj) {
   return STATUS_SUCCESS;
 }
 
+static NTSTATUS
+_MTLCaptureManager_sharedCaptureManager(void *obj) {
+  struct unixcall_generic_obj_ret *params = obj;
+  params->ret = (obj_handle_t)[MTLCaptureManager sharedCaptureManager];
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_MTLCaptureManager_startCapture(void *obj) {
+  struct unixcall_mtlcapturemanager_startcapture *params = obj;
+  MTLCaptureDescriptor *desc = [[MTLCaptureDescriptor alloc] init];
+  struct WMTCaptureInfo *info = params->info.ptr;
+  desc.destination = (MTLCaptureDestination)info->destination;
+  desc.captureObject = (id)info->capture_object;
+  NSString *path_str = [[NSString alloc] initWithCString:info->output_url encoding:NSUTF8StringEncoding];
+  NSURL *url = [[NSURL alloc] initFileURLWithPath:path_str];
+  desc.outputURL = url;
+  [(MTLCaptureManager *)params->capture_manager startCaptureWithDescriptor:desc error:nil];
+  [url release];
+  [path_str release];
+  [desc release];
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_MTLCaptureManager_stopCapture(void *obj) {
+  struct unixcall_generic_obj_noret *params = obj;
+  [(MTLCaptureManager *)params->handle stopCapture];
+  return STATUS_SUCCESS;
+}
+
+#include <signal.h>
+
+void
+temp_handler(int signum) {
+  printf("received signal %d in temp_handler(), and it may cause problem!\n", signum);
+}
+
+static const int SIGNALS[] = {
+    SIGHUP,
+    SIGINT,
+    SIGTERM,
+    SIGUSR2,
+    SIGILL,
+    SIGTRAP,
+    SIGABRT,
+    SIGFPE,
+    SIGBUS,
+    SIGSEGV,
+    SIGQUIT
+#ifdef SIGSYS
+    ,
+    SIGSYS
+#endif
+#ifdef SIGXCPU
+    ,
+    SIGXCPU
+#endif
+#ifdef SIGXFSZ
+    ,
+    SIGXFSZ
+#endif
+#ifdef SIGEMT
+    ,
+    SIGEMT
+#endif
+    ,
+    SIGUSR1
+#ifdef SIGINFO
+    ,
+    SIGINFO
+#endif
+};
+
+static NTSTATUS
+_MTLDevice_newTemporalScaler(void *obj) {
+  struct unixcall_mtldevice_newfxtemporalscaler *params = obj;
+  MTLFXTemporalScalerDescriptor *desc = [[MTLFXTemporalScalerDescriptor alloc] init];
+  struct WMTFXTemporalScalerInfo *info = params->info;
+  desc.colorTextureFormat = (MTLPixelFormat)info->color_format;
+  desc.outputTextureFormat = (MTLPixelFormat)info->output_format;
+  desc.depthTextureFormat = (MTLPixelFormat)info->depth_format;
+  desc.motionTextureFormat = (MTLPixelFormat)info->motion_format;
+  desc.inputWidth = info->input_width;
+  desc.inputHeight = info->input_height;
+  desc.outputWidth = info->output_width;
+  desc.outputHeight = info->output_height;
+  desc.inputContentMaxScale = info->input_content_max_scale;
+  desc.inputContentMinScale = info->input_content_min_scale;
+  desc.inputContentPropertiesEnabled = info->input_content_properties_enabled;
+  desc.requiresSynchronousInitialization = info->requires_synchronous_initialization;
+  desc.autoExposureEnabled = info->auto_exposure;
+
+  struct sigaction old_action[sizeof(SIGNALS) / sizeof(int)], new_action;
+  new_action.sa_handler = temp_handler;
+  sigemptyset(&new_action.sa_mask);
+  new_action.sa_flags = 0;
+
+  for (unsigned int i = 0; i < sizeof(SIGNALS) / sizeof(int); i++)
+    sigaction(SIGNALS[i], &new_action, &old_action[i]);
+
+  params->ret = (obj_handle_t)[desc newTemporalScalerWithDevice:(id<MTLDevice>)params->device];
+
+  for (unsigned int i = 0; i < sizeof(SIGNALS) / sizeof(int); i++)
+    sigaction(SIGNALS[i], &old_action[i], NULL);
+
+  [desc release];
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_MTLDevice_newSpatialScaler(void *obj) {
+  struct unixcall_mtldevice_newfxspatialscaler *params = obj;
+  MTLFXSpatialScalerDescriptor *desc = [[MTLFXSpatialScalerDescriptor alloc] init];
+  struct WMTFXSpatialScalerInfo *info = params->info;
+  desc.colorTextureFormat = (MTLPixelFormat)info->color_format;
+  desc.outputTextureFormat = (MTLPixelFormat)info->output_format;
+  desc.inputWidth = info->input_width;
+  desc.inputHeight = info->input_height;
+  desc.outputWidth = info->output_width;
+  desc.outputHeight = info->output_height;
+  params->ret = (obj_handle_t)[desc newSpatialScalerWithDevice:(id<MTLDevice>)params->device];
+  [desc release];
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_MTLCommandBuffer_encodeTemporalScale(void *obj) {
+  struct unixcall_mtlcommandbuffer_temporal_scale *params = obj;
+  id<MTLCommandBuffer> cmdbuf = (id<MTLCommandBuffer>)params->cmdbuf;
+  id<MTLFXTemporalScaler> scaler = (id<MTLFXTemporalScaler>)params->scaler;
+  scaler.colorTexture = (id<MTLTexture>)params->color;
+  scaler.outputTexture = (id<MTLTexture>)params->output;
+  scaler.depthTexture = (id<MTLTexture>)params->depth;
+  scaler.motionTexture = (id<MTLTexture>)params->motion;
+  scaler.exposureTexture = (id<MTLTexture>)params->exposure;
+  scaler.inputContentWidth = params->props->input_content_width;
+  scaler.inputContentHeight = params->props->input_content_height;
+  scaler.reset = params->props->reset;
+  scaler.depthReversed = params->props->depth_reversed;
+  scaler.motionVectorScaleX = params->props->motion_vector_scale_x;
+  scaler.motionVectorScaleY = params->props->motion_vector_scale_y;
+  scaler.jitterOffsetX = params->props->jitter_offset_x;
+  scaler.jitterOffsetY = params->props->jitter_offset_y;
+  scaler.preExposure = params->props->pre_exposure;
+  [scaler encodeToCommandBuffer:cmdbuf];
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_MTLCommandBuffer_encodeSpatialScale(void *obj) {
+  struct unixcall_mtlcommandbuffer_spatial_scale *params = obj;
+  id<MTLCommandBuffer> cmdbuf = (id<MTLCommandBuffer>)params->cmdbuf;
+  id<MTLFXSpatialScaler> scaler = (id<MTLFXSpatialScaler>)params->scaler;
+  scaler.colorTexture = (id<MTLTexture>)params->color;
+  scaler.outputTexture = (id<MTLTexture>)params->output;
+  [scaler encodeToCommandBuffer:cmdbuf];
+  return STATUS_SUCCESS;
+}
+
 const void *__winemetal_unixcalls[] = {
     &_NSObject_retain,
     &_NSObject_release,
@@ -1151,6 +1312,13 @@ const void *__winemetal_unixcalls[] = {
     &_MTLDevice_supportsBCTextureCompression,
     &_MTLDevice_supportsTextureSampleCount,
     &_MTLDevice_hasUnifiedMemory,
+    &_MTLCaptureManager_sharedCaptureManager,
+    &_MTLCaptureManager_startCapture,
+    &_MTLCaptureManager_stopCapture,
+    &_MTLDevice_newTemporalScaler,
+    &_MTLDevice_newSpatialScaler,
+    &_MTLCommandBuffer_encodeTemporalScale,
+    &_MTLCommandBuffer_encodeSpatialScale
 };
 
 const unsigned int __winemetal_unixcalls_num = sizeof(__winemetal_unixcalls) / sizeof(void *);

@@ -517,3 +517,72 @@ MTLDevice_hasUnifiedMemory(obj_handle_t device) {
   UNIX_CALL(52, &params);
   return params.ret;
 };
+
+WINEMETAL_API obj_handle_t
+MTLCaptureManager_sharedCaptureManager() {
+  struct unixcall_generic_obj_ret params;
+  params.ret = NULL_OBJECT_HANDLE;
+  UNIX_CALL(53, &params);
+  return params.ret;
+}
+
+WINEMETAL_API bool
+MTLCaptureManager_startCapture(obj_handle_t mgr, struct WMTCaptureInfo *info) {
+  struct unixcall_mtlcapturemanager_startcapture params;
+  params.capture_manager = mgr;
+  params.info.ptr = info;
+  UNIX_CALL(54, &params);
+  return params.ret;
+}
+
+WINEMETAL_API void
+MTLCaptureManager_stopCapture(obj_handle_t mgr) {
+  struct unixcall_generic_obj_noret params;
+  params.handle = NULL_OBJECT_HANDLE;
+  UNIX_CALL(55, &params);
+}
+
+WINEMETAL_API obj_handle_t
+MTLDevice_newTemporalScaler(obj_handle_t device, struct WMTFXTemporalScalerInfo *info) {
+  struct unixcall_mtldevice_newfxtemporalscaler params;
+  params.device = device;
+  params.info = info;
+  UNIX_CALL(56, &params);
+  return params.ret;
+}
+
+WINEMETAL_API obj_handle_t
+MTLDevice_newSpatialScaler(obj_handle_t device, struct WMTFXSpatialScalerInfo *info) {
+  struct unixcall_mtldevice_newfxspatialscaler params;
+  params.device = device;
+  params.info = info;
+  UNIX_CALL(57, &params);
+  return params.ret;
+}
+
+WINEMETAL_API void
+MTLCommandBuffer_encodeTemporalScale(
+    obj_handle_t cmdbuf, obj_handle_t scaler, obj_handle_t color, obj_handle_t output, obj_handle_t depth,
+    obj_handle_t motion, obj_handle_t exposure, struct WMTFXTemporalScalerProps *props
+) {
+  struct unixcall_mtlcommandbuffer_temporal_scale params;
+  params.cmdbuf = cmdbuf;
+  params.scaler = scaler;
+  params.color = color;
+  params.output = output;
+  params.depth = depth;
+  params.motion = motion;
+  params.exposure = exposure;
+  params.props = props;
+  UNIX_CALL(58, &params);
+}
+
+WINEMETAL_API void
+MTLCommandBuffer_encodeSpatialScale(obj_handle_t cmdbuf, obj_handle_t scaler, obj_handle_t color, obj_handle_t output) {
+  struct unixcall_mtlcommandbuffer_spatial_scale params;
+  params.cmdbuf = cmdbuf;
+  params.scaler = scaler;
+  params.color = color;
+  params.output = output;
+  UNIX_CALL(59, &params);
+}

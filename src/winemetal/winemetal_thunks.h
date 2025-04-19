@@ -149,4 +149,40 @@ struct unixcall_generic_obj_obj_double_noret {
   double arg1;
 };
 
+struct unixcall_mtlcapturemanager_startcapture {
+  obj_handle_t capture_manager;
+  struct WMTMemoryPointer info;
+  bool ret;
+};
+
+struct unixcall_mtldevice_newfxtemporalscaler {
+  obj_handle_t device;
+  struct WMTFXTemporalScalerInfo *info;
+  obj_handle_t ret;
+};
+
+struct unixcall_mtldevice_newfxspatialscaler {
+  obj_handle_t device;
+  struct WMTFXSpatialScalerInfo *info;
+  obj_handle_t ret;
+};
+
+struct unixcall_mtlcommandbuffer_temporal_scale {
+  obj_handle_t cmdbuf;
+  obj_handle_t scaler;
+  obj_handle_t color;
+  obj_handle_t output;
+  obj_handle_t depth;
+  obj_handle_t motion;
+  obj_handle_t exposure;
+  struct WMTFXTemporalScalerProps *props;
+};
+
+struct unixcall_mtlcommandbuffer_spatial_scale {
+  obj_handle_t cmdbuf;
+  obj_handle_t scaler;
+  obj_handle_t color;
+  obj_handle_t output;
+};
+
 #endif

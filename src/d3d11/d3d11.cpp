@@ -5,8 +5,8 @@
 #include "log/log.hpp"
 #include "util_string.hpp"
 #include "dxmt_capture.hpp"
-#include "winemetal.h"
 #include <exception>
+
 namespace dxmt {
 Logger Logger::s_instance("d3d11.log");
 

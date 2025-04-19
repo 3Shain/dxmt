@@ -1,5 +1,4 @@
 #include "dxmt_hud_state.hpp"
-#include "Foundation/NSAutoreleasePool.hpp"
 #include "Foundation/NSString.hpp"
 #include "objc_pointer.hpp"
 #include <string>
@@ -8,7 +7,7 @@ namespace dxmt {
 
 void
 HUDState::initialize(const std::string &heading) {
-  auto pool = transfer(NS::AutoreleasePool::alloc()->init());
+  auto pool = WMT::MakeAutoreleasePool();
   auto str_dxmt_version = NS::String::alloc()->init("com.github.3shain.dxmt-version", NS::ASCIIStringEncoding);
   hud_->addLabel(str_dxmt_version, NS::String::string("com.apple.hud-graph.default", NS::ASCIIStringEncoding));
   hud_->updateLabel(str_dxmt_version, NS::String::string(heading.c_str(), NS::UTF8StringEncoding));
@@ -17,7 +16,7 @@ HUDState::initialize(const std::string &heading) {
 
 void
 HUDState::begin() {
-  pool_ = transfer(NS::AutoreleasePool::alloc()->init());
+  pool_ = WMT::MakeAutoreleasePool();
   current_line_ = 1;
 }
 

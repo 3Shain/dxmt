@@ -42,12 +42,3 @@ AIRCONV_API int SM50Compile(SM50Shader *pShader,
     return -1;
   return params.ret;
 }
-
-__attribute__((dllexport)) void* CreateMTLFXTemporalScaler(void * d, void * device) {
-  struct create_fxscaler_params p;
-  p.desc = d;
-  p.device = device;
-  p.ret = NULL;
-  WINE_UNIX_CALL(4, &p);
-  return p.ret;
-};

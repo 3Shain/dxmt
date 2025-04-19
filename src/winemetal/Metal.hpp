@@ -5,11 +5,6 @@
 #include <string>
 #include <cstring>
 
-namespace MTL {
-// FIXME: remove me after porting is done
-class Buffer;
-}; // namespace MTL
-
 namespace WMT {
 
 class Object {
@@ -167,18 +162,10 @@ public:
 
 class Resource : public Object {
 public:
-  using Object::Object;
-
-  Resource(MTL::Buffer *ptr) {
-    handle = (obj_handle_t)ptr;
-  }
 };
 
 class Texture : public Resource {
 public:
-  // FIXME: remove me
-  using Resource::Resource;
-
   Reference<Texture>
   newTextureView(
       WMTPixelFormat format, WMTTextureType texture_type, uint16_t level_start, uint16_t level_count,
@@ -233,12 +220,6 @@ public:
 
 class Buffer : public Resource {
 public:
-  // FIXME: remove me
-  using Resource::Resource;
-  Buffer(MTL::Buffer *ptr) {
-    handle = (obj_handle_t)ptr;
-  }
-
   Reference<Texture>
   newTexture(WMTTextureInfo *info, uint64_t offset, uint64_t bytes_per_row) {
     return Reference<Texture>(MTLBuffer_newTexture(handle, info, offset, bytes_per_row));
@@ -421,6 +402,14 @@ class MetalDrawable : public Object {
 public:
 };
 
+class FXTemporalScaler : public Object {
+public:
+};
+
+class FXSpatialScaler : public Object {
+public:
+};
+
 class CommandBuffer : public Object {
 public:
   void
@@ -466,6 +455,19 @@ public:
   void
   presentDrawableAfterMinimumDuration(MetalDrawable drawable, double after) {
     MTLCommandBuffer_presentDrawableAfterMinimumDuration(handle, drawable, after);
+  }
+
+  void
+  encodeSpatialScale(FXSpatialScaler scaler, Texture color, Texture output) {
+    MTLCommandBuffer_encodeSpatialScale(handle, scaler, color, output);
+  }
+
+  void
+  encodeTemporalScale(
+      FXTemporalScaler scaler, Texture color, Texture output, Texture depth, Texture motion, Texture exposure,
+      WMTFXTemporalScalerProps *props
+  ) {
+    MTLCommandBuffer_encodeTemporalScale(handle, scaler, color, output, depth, motion, exposure, props);
   }
 };
 
@@ -582,12 +584,42 @@ public:
   hasUnifiedMemory() {
     return MTLDevice_hasUnifiedMemory(handle);
   }
+
+  Reference<FXTemporalScaler>
+  newTemporalScaler(WMTFXTemporalScalerInfo *info) {
+    return Reference<FXTemporalScaler>(MTLDevice_newTemporalScaler(handle, info));
+  }
+
+  Reference<FXSpatialScaler>
+  newSpatialScaler(WMTFXSpatialScalerInfo *info) {
+    return Reference<FXSpatialScaler>(MTLDevice_newSpatialScaler(handle, info));
+  }
 };
 
 inline Reference<Array<Device>>
 CopyAllDevices() {
   return Reference<Array<Device>>(WMTCopyAllDevices());
 }
+
+class CaptureManager : Object {
+public:
+  static CaptureManager
+  sharedCaptureManager() {
+    CaptureManager ret = {};
+    ret.handle = MTLCaptureManager_sharedCaptureManager();
+    return ret;
+  };
+
+  bool
+  startCapture(WMTCaptureInfo &info) {
+    return MTLCaptureManager_startCapture(handle, &info);
+  };
+
+  void
+  stopCapture() {
+    MTLCaptureManager_stopCapture(handle);
+  };
+};
 
 inline Reference<Object>
 MakeAutoreleasePool() {
