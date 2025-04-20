@@ -122,6 +122,11 @@ public:
 
 class String : public Object {
 public:
+  static String
+  string(const char *data, WMTStringEncoding encoding) {
+    return String{NSString_string(data, encoding)};
+  }
+
   bool
   getCString(char *buffer, uint64_t maxLength, WMTStringEncoding encoding) {
     return NSString_getCString(handle, buffer, maxLength, encoding);
@@ -400,6 +405,18 @@ public:
 
 class MetalDrawable : public Object {
 public:
+  Texture
+  texture() {
+    return Texture{MetalDrawable_texture(handle)};
+  };
+};
+
+class MetalLayer : public Object {
+public:
+  MetalDrawable
+  nextDrawable() {
+    return MetalDrawable{MetalLayer_nextDrawable(handle)};
+  };
 };
 
 class FXTemporalScaler : public Object {
@@ -601,13 +618,11 @@ CopyAllDevices() {
   return Reference<Array<Device>>(WMTCopyAllDevices());
 }
 
-class CaptureManager : Object {
+class CaptureManager : public Object {
 public:
   static CaptureManager
   sharedCaptureManager() {
-    CaptureManager ret = {};
-    ret.handle = MTLCaptureManager_sharedCaptureManager();
-    return ret;
+    return CaptureManager{MTLCaptureManager_sharedCaptureManager()};
   };
 
   bool
@@ -621,9 +636,37 @@ public:
   };
 };
 
+class DeveloperHUDProperties : public Object {
+public:
+  static DeveloperHUDProperties
+  instance() {
+    return DeveloperHUDProperties{DeveloperHUDProperties_instance()};
+  };
+
+  bool
+  addLabel(String label, String after) {
+    return DeveloperHUDProperties_addLabel(handle, label, after);
+  }
+
+  void
+  updateLabel(String label, String value) {
+    DeveloperHUDProperties_updateLabel(handle, label, value);
+  }
+
+  void
+  remove(String label) {
+    DeveloperHUDProperties_remove(handle, label);
+  }
+};
+
 inline Reference<Object>
 MakeAutoreleasePool() {
   return Reference<Object>(NSAutoreleasePool_alloc_init());
+}
+
+inline Reference<String>
+MakeString(const char *data, WMTStringEncoding encoding) {
+  return Reference<String>(NSString_alloc_init(data, encoding));
 }
 
 inline void

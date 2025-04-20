@@ -1,8 +1,6 @@
 #pragma once
 
 #include "Metal.hpp"
-#include "QuartzCore/CAMetalDrawable.hpp"
-#include "QuartzCore/CAMetalLayer.hpp"
 #include "dxmt_buffer.hpp"
 #include "dxmt_deptrack.hpp"
 #include "dxmt_occlusion_query.hpp"
@@ -10,7 +8,6 @@
 #include "dxmt_statistics.hpp"
 #include "dxmt_texture.hpp"
 #include "log/log.hpp"
-#include "objc_pointer.hpp"
 #include "rc/util_rc_ptr.hpp"
 #include "airconv_public.h"
 #include <cassert>
@@ -156,7 +153,7 @@ struct ResolveEncoderData : EncoderData {
 
 struct PresentData : EncoderData {
   WMT::Reference<WMT::Texture> backbuffer;
-  Obj<CA::MetalLayer> layer;
+  WMT::Reference<WMT::MetalLayer> layer;
   double after;
 };
 
@@ -503,7 +500,7 @@ public:
     return (new (allocate_cpu_heap(sizeof(T), alignof(T))) T());
   };
 
-  void present(Rc<Texture> &texture, CA::MetalLayer *layer, double after);
+  void present(Rc<Texture> &texture, WMT::MetalLayer layer, double after);
 
   void upscale(Rc<Texture> &texture, Rc<Texture> &upscaled, WMT::Reference<WMT::FXSpatialScaler> &scaler);
 

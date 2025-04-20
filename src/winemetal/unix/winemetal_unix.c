@@ -1,6 +1,8 @@
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
 #import <MetalFX/MetalFX.h>
+#import <QuartzCore/QuartzCore.h>
+#include "objc/objc-runtime.h"
 #define WINEMETAL_API
 #include "../winemetal_thunks.h"
 
@@ -1258,6 +1260,67 @@ _MTLCommandBuffer_encodeSpatialScale(void *obj) {
   return STATUS_SUCCESS;
 }
 
+static NTSTATUS
+_NSString_string(void *obj) {
+  struct unixcall_nsstring_string *params = obj;
+  NSString *str = [NSString stringWithCString:params->buffer_ptr.ptr encoding:(NSStringEncoding)params->encoding];
+  params->ret = (obj_handle_t)str;
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_NSString_alloc_init(void *obj) {
+  struct unixcall_nsstring_string *params = obj;
+  NSString *str = [[NSString alloc] initWithCString:params->buffer_ptr.ptr encoding:(NSStringEncoding)params->encoding];
+  params->ret = (obj_handle_t)str;
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_DeveloperHUDProperties_instance(void *obj) {
+  struct unixcall_generic_obj_ret *params = obj;
+  params->ret =
+      (obj_handle_t)((id(*)(id, SEL))objc_msgSend)(objc_lookUpClass("_CADeveloperHUDProperties"), @selector(instance));
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_DeveloperHUDProperties_addLabel(void *obj) {
+  struct unixcall_generic_obj_obj_obj_uint64_ret *params = obj;
+  params->ret = ((bool (*)(id, SEL, id, id)
+  )objc_msgSend)((id)params->handle, @selector(addLabel:after:), (id)params->arg0, (id)params->arg1);
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_DeveloperHUDProperties_updateLabel(void *obj) {
+  struct unixcall_generic_obj_obj_obj_noret *params = obj;
+  ((void (*)(id, SEL, id, id)
+  )objc_msgSend)((id)params->handle, @selector(updateLabel:value:), (id)params->arg0, (id)params->arg1);
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_DeveloperHUDProperties_remove(void *obj) {
+  struct unixcall_generic_obj_obj_noret *params = obj;
+  ((void (*)(id, SEL, id))objc_msgSend)((id)params->handle, @selector(remove:), (id)params->arg);
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_MetalDrawable_texture(void *obj) {
+  struct unixcall_generic_obj_obj_ret *params = obj;
+  params->ret = (obj_handle_t)[(id<CAMetalDrawable>)params->handle texture];
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_MetalLayer_nextDrawable(void *obj) {
+  struct unixcall_generic_obj_obj_ret *params = obj;
+  params->ret = (obj_handle_t)[(CAMetalLayer *)params->handle nextDrawable];
+  return STATUS_SUCCESS;
+}
+
 const void *__winemetal_unixcalls[] = {
     &_NSObject_retain,
     &_NSObject_release,
@@ -1318,7 +1381,15 @@ const void *__winemetal_unixcalls[] = {
     &_MTLDevice_newTemporalScaler,
     &_MTLDevice_newSpatialScaler,
     &_MTLCommandBuffer_encodeTemporalScale,
-    &_MTLCommandBuffer_encodeSpatialScale
+    &_MTLCommandBuffer_encodeSpatialScale,
+    &_NSString_string,
+    &_NSString_alloc_init,
+    &_DeveloperHUDProperties_instance,
+    &_DeveloperHUDProperties_addLabel,
+    &_DeveloperHUDProperties_updateLabel,
+    &_DeveloperHUDProperties_remove,
+    &_MetalDrawable_texture,
+    &_MetalLayer_nextDrawable,
 };
 
 const unsigned int __winemetal_unixcalls_num = sizeof(__winemetal_unixcalls) / sizeof(void *);
