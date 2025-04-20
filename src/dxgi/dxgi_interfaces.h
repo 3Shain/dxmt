@@ -16,7 +16,4 @@ DEFINE_COM_INTERFACE("6bfa1657-9cb1-471a-a4fb-7cacf8a81207", IMTLDXGIDevice)
       IDXGIFactory1 * pFactory, HWND hWnd, const DXGI_SWAP_CHAIN_DESC1 *pDesc,
       const DXGI_SWAP_CHAIN_FULLSCREEN_DESC *pFullscreenDesc,
       IDXGISwapChain1 **ppSwapChain) = 0;
-  virtual HRESULT STDMETHODCALLTYPE GetMetalLayerFromHwnd(
-      HWND hWnd, WMT::MetalLayer *pMetalLayer, void **ppNativeView) = 0;
-  virtual HRESULT ReleaseMetalLayer(HWND hWnd, void *ppNativeView) = 0;
 };

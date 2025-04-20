@@ -5,7 +5,7 @@
 #define __WINEMETAL_UNIX_THUNKS_H
 
 enum airconv_unixcalls {
-  unix_sm50_initialize = 35,
+  unix_sm50_initialize = 74,
   unix_sm50_destroy,
   unix_sm50_compile,
 };

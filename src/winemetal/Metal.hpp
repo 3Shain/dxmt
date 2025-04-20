@@ -689,6 +689,16 @@ MakeString(const char *data, WMTStringEncoding encoding) {
   return Reference<String>(NSString_alloc_init(data, encoding));
 }
 
+inline Object
+CreateMetalViewFromHWND(intptr_t hwnd, Device device, MetalLayer &layer) {
+  return {::CreateMetalViewFromHWND(hwnd, device.handle, &layer.handle)};
+}
+
+inline void
+ReleaseMetalView(Object view) {
+  return ::ReleaseMetalView(view.handle);
+}
+
 inline void
 InitializeRenderPassInfo(WMTRenderPassInfo &info) {
   std::memset(&info, 0, sizeof(WMTRenderPassInfo));

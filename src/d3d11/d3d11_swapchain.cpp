@@ -33,21 +33,26 @@ class MTLD3D11SwapChain final : public MTLDXGISubObject<IDXGISwapChain4, MTLD3D1
 public:
   MTLD3D11SwapChain(
       IDXGIFactory1 *pFactory, MTLD3D11Device *pDevice, IMTLDXGIDevice *pLayerFactoryWeakref,
-      WMT::MetalLayer layer, HWND hWnd, void *hNativeView, const DXGI_SWAP_CHAIN_DESC1 *pDesc,
+       HWND hWnd, const DXGI_SWAP_CHAIN_DESC1 *pDesc,
       const DXGI_SWAP_CHAIN_FULLSCREEN_DESC *pFullscreenDesc
   ) :
       MTLDXGISubObject(pDevice),
       factory_(pFactory),
       layer_factory_weak_(pLayerFactoryWeakref),
-      native_view_(hNativeView),
-      layer_weak_(layer),
       presentation_count_(0),
       desc_(*pDesc),
       hWnd(hWnd),
       monitor_(wsi::getWindowMonitor(hWnd)),
       hud(WMT::DeveloperHUDProperties::instance()) {
 
-    layer.getProps(layer_props);
+    native_view_ = WMT::CreateMetalViewFromHWND((intptr_t)hWnd, pDevice->GetMTLDevice(), layer_weak_);
+
+    if (!native_view_) {
+      ERR("Failed to create metal view, it seems like your Wine has no exported symbols needed by DXMT.");
+      abort();
+    }
+
+    layer_weak_.getProps(layer_props);
 
     layer_props.device = pDevice->GetMTLDevice();
     layer_props.opaque = false;
@@ -117,7 +122,8 @@ public:
 
   ~MTLD3D11SwapChain() {
     device_context_->WaitUntilGPUIdle();
-    layer_factory_weak_->ReleaseMetalLayer(hWnd, native_view_);
+    WMT::ReleaseMetalView(native_view_);
+    native_view_ = {};
     CloseHandle(present_semaphore_);
   };
 
@@ -742,7 +748,7 @@ public:
 private:
   Com<IDXGIFactory1> factory_;
   IMTLDXGIDevice *layer_factory_weak_;
-  void *native_view_;
+  WMT::Object native_view_;
   WMT::MetalLayer layer_weak_;
   ULONG presentation_count_;
   DXGI_SWAP_CHAIN_DESC1 desc_;
@@ -782,12 +788,6 @@ CreateSwapChain(
     ERR("CreateSwapChain: failed to get IMTLDXGIDevice");
     return E_FAIL;
   }
-  WMT::MetalLayer layer;
-  void *native_view;
-  if (FAILED(layer_factory->GetMetalLayerFromHwnd(hWnd, &layer, &native_view))) {
-    ERR("CreateSwapChain: failed to create CAMetalLayer");
-    return E_FAIL;
-  }
   if ((pDesc->SwapEffect != DXGI_SWAP_EFFECT_DISCARD &&
        pDesc->SwapEffect != DXGI_SWAP_EFFECT_FLIP_DISCARD) &&
       pDesc->BufferCount != 1) {
@@ -796,7 +796,7 @@ CreateSwapChain(
   if (env::getEnvVar("DXMT_METALFX_SPATIAL_SWAPCHAIN") == "1") {
     if (pDevice->GetMTLDevice().supportsFXSpatialScaler()) {
       *ppSwapChain = new MTLD3D11SwapChain<true>(
-          pFactory, pDevice, layer_factory.ptr(), layer, hWnd, native_view, pDesc, pFullscreenDesc
+          pFactory, pDevice, layer_factory.ptr(), hWnd, pDesc, pFullscreenDesc
       );
       return S_OK;
     } else {
@@ -804,7 +804,7 @@ CreateSwapChain(
     }
   }
   *ppSwapChain = new MTLD3D11SwapChain<false>(
-      pFactory, pDevice, layer_factory.ptr(), layer, hWnd, native_view, pDesc, pFullscreenDesc
+      pFactory, pDevice, layer_factory.ptr(), hWnd, pDesc, pFullscreenDesc
   );
   return S_OK;
 };

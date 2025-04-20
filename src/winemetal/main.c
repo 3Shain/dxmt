@@ -16,14 +16,9 @@ extern BOOL WINAPI DllMainCRTStartup(HANDLE hDllHandle, DWORD dwReason,
 extern void initialize_veh();
 extern void cleanup_veh();
 
-extern __attribute__((sysv_abi)) BOOL winemetal_unix_init();
-
 BOOL WINAPI WineMetalEntry(HANDLE hDllHandle, DWORD dwReason, LPVOID lpreserved) {
   if (dwReason == DLL_PROCESS_ATTACH) {
     if (__wine_init_unix_call()) {
-      return FALSE;
-    }
-    if (winemetal_unix_init()) {
       return FALSE;
     }
     initialize_veh();

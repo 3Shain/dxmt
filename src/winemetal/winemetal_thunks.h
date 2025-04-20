@@ -209,4 +209,11 @@ struct unixcall_nsstring_string {
   obj_handle_t ret;
 };
 
+struct unixcall_create_metal_view_from_hwnd {
+  uint64_t hwnd;
+  obj_handle_t device;
+  obj_handle_t ret_view;
+  obj_handle_t ret_layer;
+};
+
 #endif
