@@ -660,3 +660,37 @@ MetalLayer_nextDrawable(obj_handle_t layer) {
   UNIX_CALL(67, &params);
   return params.ret;
 }
+
+WINEMETAL_API bool
+MTLDevice_supportsFXSpatialScaler(obj_handle_t device) {
+  struct unixcall_generic_obj_uint64_ret params;
+  params.handle = device;
+  params.ret = 0;
+  UNIX_CALL(68, &params);
+  return params.ret;
+};
+
+WINEMETAL_API bool
+MTLDevice_supportsFXTemporalScaler(obj_handle_t device) {
+  struct unixcall_generic_obj_uint64_ret params;
+  params.handle = device;
+  params.ret = 0;
+  UNIX_CALL(69, &params);
+  return params.ret;
+};
+
+WINEMETAL_API void
+MetalLayer_setProps(obj_handle_t layer, const struct WMTLayerProps *props) {
+  struct unixcall_generic_obj_ptr_noret params;
+  params.handle = layer;
+  WMT_MEMPTR_SET(params.arg, props);
+  UNIX_CALL(70, &params);
+}
+
+WINEMETAL_API void
+MetalLayer_getProps(obj_handle_t layer, struct WMTLayerProps *props) {
+  struct unixcall_generic_obj_ptr_noret params;
+  params.handle = layer;
+  WMT_MEMPTR_SET(params.arg, props);
+  UNIX_CALL(71, &params);
+}

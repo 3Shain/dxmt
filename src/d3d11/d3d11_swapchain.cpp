@@ -1,5 +1,4 @@
 #include "d3d11_swapchain.hpp"
-#include "MetalFX/MTLFXSpatialScaler.hpp"
 #include "com/com_guid.hpp"
 #include "config/config.hpp"
 #include "d3d11_private.h"
@@ -47,6 +46,13 @@ public:
       hWnd(hWnd),
       monitor_(wsi::getWindowMonitor(hWnd)),
       hud(WMT::DeveloperHUDProperties::instance()) {
+
+    layer.getProps(layer_props);
+
+    layer_props.device = pDevice->GetMTLDevice();
+    layer_props.opaque = false;
+    layer_props.display_sync_enabled = false;
+    layer_props.framebuffer_only = true;
 
     Com<ID3D11DeviceContext1> context;
     m_device->GetImmediateContext1(&context);
@@ -98,13 +104,15 @@ public:
 
     if constexpr (EnableMetalFX) {
       scale_factor = std::max(Config::getInstance().getOption<float>("d3d11.metalSpatialUpscaleFactor", 2), 1.0f);
-      ((CA::MetalLayer*)layer_weak_.handle)->setContentsScale(((CA::MetalLayer*)layer_weak_.handle)->contentsScale() * scale_factor);
+      layer_props.contents_scale = layer_props.contents_scale * scale_factor;
     }
 
     // FIXME: check HRESULT!
     ResizeBuffers(0, desc_.Width, desc_.Height, DXGI_FORMAT_UNKNOWN, desc_.Flags);
     if (!fullscreen_desc_.Windowed)
       EnterFullscreenMode(nullptr);
+
+    layer_weak_.setProps(layer_props);
   };
 
   ~MTLD3D11SwapChain() {
@@ -323,8 +331,8 @@ public:
       WMTFXSpatialScalerInfo info;
       info.input_height = desc_.Height;
       info.input_width = desc_.Width;
-      info.output_height = ((CA::MetalLayer*)layer_weak_.handle)->drawableSize().height;
-      info.output_width = ((CA::MetalLayer*)layer_weak_.handle)->drawableSize().width;
+      info.output_height = layer_props.drawable_height;
+      info.output_width = layer_props.drawable_width;
       info.color_format = backbuffer_->texture()->pixelFormat();
       info.output_format =upscaled_backbuffer_->texture()->pixelFormat();
       metalfx_scaler = m_device->GetMTLDevice().newSpatialScaler(&info);
@@ -381,7 +389,9 @@ public:
 
   void
   ApplyResize() {
-    ((CA::MetalLayer*)layer_weak_.handle)->setDrawableSize({(double)(desc_.Width * scale_factor), (double)(desc_.Height * scale_factor)});
+    layer_props.drawable_width = (double)(desc_.Width * scale_factor),
+    layer_props.drawable_height =  (double)(desc_.Height * scale_factor);
+    layer_weak_.setProps(layer_props);
   };
   
   HRESULT GetOutputFromMonitor(
@@ -748,6 +758,7 @@ private:
   uint32_t frame_latency;
   double init_refresh_rate_ = DBL_MAX;
   int preferred_max_frame_rate = 0;
+  WMTLayerProps layer_props;
   HUDState hud;
 
   std::conditional<EnableMetalFX, WMT::Reference<WMT::FXSpatialScaler>, std::monostate>::type metalfx_scaler;
@@ -771,7 +782,7 @@ CreateSwapChain(
     ERR("CreateSwapChain: failed to get IMTLDXGIDevice");
     return E_FAIL;
   }
-  CA::MetalLayer *layer;
+  WMT::MetalLayer layer;
   void *native_view;
   if (FAILED(layer_factory->GetMetalLayerFromHwnd(hWnd, &layer, &native_view))) {
     ERR("CreateSwapChain: failed to create CAMetalLayer");
@@ -782,14 +793,10 @@ CreateSwapChain(
       pDesc->BufferCount != 1) {
     WARN("CreateSwapChain: unsupported swap effect ", pDesc->SwapEffect, " with backbuffer size ", pDesc->BufferCount);
   }
-  layer->setDevice((MTL::Device *)pDevice->GetMTLDevice().handle);
-  layer->setOpaque(false);
-  layer->setDisplaySyncEnabled(false);
-  layer->setFramebufferOnly(true);
   if (env::getEnvVar("DXMT_METALFX_SPATIAL_SWAPCHAIN") == "1") {
-    if (MTLFX::SpatialScalerDescriptor::supportsDevice((MTL::Device *)pDevice->GetMTLDevice().handle)) {
+    if (pDevice->GetMTLDevice().supportsFXSpatialScaler()) {
       *ppSwapChain = new MTLD3D11SwapChain<true>(
-          pFactory, pDevice, layer_factory.ptr(), {(obj_handle_t)layer}, hWnd, native_view, pDesc, pFullscreenDesc
+          pFactory, pDevice, layer_factory.ptr(), layer, hWnd, native_view, pDesc, pFullscreenDesc
       );
       return S_OK;
     } else {
@@ -797,7 +804,7 @@ CreateSwapChain(
     }
   }
   *ppSwapChain = new MTLD3D11SwapChain<false>(
-      pFactory, pDevice, layer_factory.ptr(), {(obj_handle_t)layer}, hWnd, native_view, pDesc, pFullscreenDesc
+      pFactory, pDevice, layer_factory.ptr(), layer, hWnd, native_view, pDesc, pFullscreenDesc
   );
   return S_OK;
 };

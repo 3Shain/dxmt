@@ -1301,11 +1301,11 @@ public:
   }
 
   HRESULT STDMETHODCALLTYPE GetMetalLayerFromHwnd(
-      HWND hWnd, CA::MetalLayer **ppMetalLayer, void **ppNativeView) override {
-    if (ppMetalLayer == nullptr || ppNativeView == nullptr)
+      HWND hWnd, WMT::MetalLayer *pMetalLayer, void **ppNativeView) override {
+    if (pMetalLayer == nullptr || ppNativeView == nullptr)
       return E_POINTER;
 
-    *ppMetalLayer = nullptr;
+    *pMetalLayer = {};
     *ppNativeView = nullptr;
 
     auto data = get_win_data(hWnd);
@@ -1318,14 +1318,14 @@ public:
 
     *ppNativeView = metalView;
 
-    auto layer = (CA::MetalLayer *)macdrv_view_get_metal_layer(metalView);
+    auto layer = WMT::MetalLayer{(obj_handle_t)macdrv_view_get_metal_layer(metalView)};
 
-    TRACE("CAMetaLayer got with ref count ", layer->retainCount());
+    // TRACE("CAMetaLayer got with ref count ", layer->retainCount());
 
     if (layer == nullptr)
       return E_FAIL;
 
-    *ppMetalLayer = layer;
+    *pMetalLayer = layer;
 
     release_win_data(data);
 

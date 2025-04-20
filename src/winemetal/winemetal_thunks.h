@@ -28,6 +28,11 @@ struct unixcall_generic_obj_uint64_ret {
   uint64_t ret;
 };
 
+struct unixcall_generic_obj_ptr_noret {
+  obj_handle_t handle;
+  struct WMTMemoryPointer arg;
+};
+
 struct unixcall_generic_obj_obj_uint64_noret {
   obj_handle_t handle;
   obj_handle_t arg0;

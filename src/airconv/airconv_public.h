@@ -131,14 +131,8 @@ typedef struct __SM50Error SM50Error;
 #define AIRCONV_API __attribute__((sysv_abi))
 #endif
 
-#if __METALCPP__
-#include "Metal/MTLArgumentEncoder.hpp"
-typedef ::MTL::ArgumentEncoder *ArgumentEncoder_t;
-typedef ::MTL::Device *Device_t;
-#else
 typedef struct __MTLArgumentEncoder *ArgumentEncoder_t;
 typedef struct __MTLDevice *Device_t;
-#endif
 
 #ifdef __cplusplus
 

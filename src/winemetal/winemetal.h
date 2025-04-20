@@ -1451,4 +1451,22 @@ WINEMETAL_API obj_handle_t MetalDrawable_texture(obj_handle_t drawable);
 
 WINEMETAL_API obj_handle_t MetalLayer_nextDrawable(obj_handle_t layer);
 
+WINEMETAL_API bool MTLDevice_supportsFXSpatialScaler(obj_handle_t device);
+
+WINEMETAL_API bool MTLDevice_supportsFXTemporalScaler(obj_handle_t device);
+
+struct WMTLayerProps {
+  obj_handle_t device;
+  double contents_scale;
+  double drawable_width;
+  double drawable_height;
+  bool opaque;
+  bool display_sync_enabled;
+  bool framebuffer_only;
+};
+
+WINEMETAL_API void MetalLayer_setProps(obj_handle_t layer, const struct WMTLayerProps *props);
+
+WINEMETAL_API void MetalLayer_getProps(obj_handle_t layer, struct WMTLayerProps *props);
+
 #endif
