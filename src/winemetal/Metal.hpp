@@ -417,6 +417,16 @@ public:
   nextDrawable() {
     return MetalDrawable{MetalLayer_nextDrawable(handle)};
   };
+
+  void
+  setProps(const WMTLayerProps &props) {
+    MetalLayer_setProps(handle, &props);
+  };
+
+  void
+  getProps(WMTLayerProps &props) {
+    MetalLayer_getProps(handle, &props);
+  };
 };
 
 class FXTemporalScaler : public Object {
@@ -610,6 +620,16 @@ public:
   Reference<FXSpatialScaler>
   newSpatialScaler(WMTFXSpatialScalerInfo *info) {
     return Reference<FXSpatialScaler>(MTLDevice_newSpatialScaler(handle, info));
+  }
+
+  bool
+  supportsFXSpatialScaler() {
+    return MTLDevice_supportsFXSpatialScaler(handle);
+  }
+
+  bool
+  supportsFXTemporalScaler() {
+    return MTLDevice_supportsFXTemporalScaler(handle);
   }
 };
 

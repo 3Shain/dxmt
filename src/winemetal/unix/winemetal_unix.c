@@ -1190,7 +1190,9 @@ _MTLDevice_newTemporalScaler(void *obj) {
   desc.inputContentMaxScale = info->input_content_max_scale;
   desc.inputContentMinScale = info->input_content_min_scale;
   desc.inputContentPropertiesEnabled = info->input_content_properties_enabled;
-  desc.requiresSynchronousInitialization = info->requires_synchronous_initialization;
+  if (@available(macOS 15, *)) {
+    desc.requiresSynchronousInitialization = info->requires_synchronous_initialization;
+  }
   desc.autoExposureEnabled = info->auto_exposure;
 
   struct sigaction old_action[sizeof(SIGNALS) / sizeof(int)], new_action;
@@ -1321,6 +1323,49 @@ _MetalLayer_nextDrawable(void *obj) {
   return STATUS_SUCCESS;
 }
 
+static NTSTATUS
+_MTLDevice_supportsFXSpatialScaler(void *obj) {
+  struct unixcall_generic_obj_uint64_ret *params = obj;
+  params->ret = [MTLFXSpatialScalerDescriptor supportsDevice:(id<MTLDevice>)params->handle];
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_MTLDevice_supportsFXTemporalScaler(void *obj) {
+  struct unixcall_generic_obj_uint64_ret *params = obj;
+  params->ret = [MTLFXTemporalScalerDescriptor supportsDevice:(id<MTLDevice>)params->handle];
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_MetalLayer_setProps(void *obj) {
+  struct unixcall_generic_obj_ptr_noret *params = obj;
+  CAMetalLayer *layer = (CAMetalLayer *)params->handle;
+  struct WMTLayerProps *props = params->arg.ptr;
+  layer.device = (id<MTLDevice>)props->device;
+  layer.opaque = props->opaque;
+  layer.framebufferOnly = props->framebuffer_only;
+  layer.contentsScale = props->contents_scale;
+  layer.displaySyncEnabled = props->display_sync_enabled;
+  layer.drawableSize = CGSizeMake(props->drawable_width, props->drawable_height);
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_MetalLayer_getProps(void *obj) {
+  struct unixcall_generic_obj_ptr_noret *params = obj;
+  CAMetalLayer *layer = (CAMetalLayer *)params->handle;
+  struct WMTLayerProps *props = params->arg.ptr;
+  props->device = (obj_handle_t)layer.device;
+  props->opaque = layer.opaque;
+  props->framebuffer_only = layer.framebufferOnly;
+  props->contents_scale = layer.contentsScale;
+  props->display_sync_enabled = layer.displaySyncEnabled;
+  props->drawable_height = layer.drawableSize.height;
+  props->drawable_width = layer.drawableSize.width;
+  return STATUS_SUCCESS;
+}
+
 const void *__winemetal_unixcalls[] = {
     &_NSObject_retain,
     &_NSObject_release,
@@ -1390,6 +1435,10 @@ const void *__winemetal_unixcalls[] = {
     &_DeveloperHUDProperties_remove,
     &_MetalDrawable_texture,
     &_MetalLayer_nextDrawable,
+    &_MTLDevice_supportsFXSpatialScaler,
+    &_MTLDevice_supportsFXTemporalScaler,
+    &_MetalLayer_setProps,
+    &_MetalLayer_getProps,
 };
 
 const unsigned int __winemetal_unixcalls_num = sizeof(__winemetal_unixcalls) / sizeof(void *);

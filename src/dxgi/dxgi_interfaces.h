@@ -2,7 +2,6 @@
 
 #include <dxgi1_6.h>
 #include "Metal.hpp"
-#include "QuartzCore/CAMetalLayer.hpp"
 #include "com/com_guid.hpp"
 
 DEFINE_COM_INTERFACE("acdf3ef1-b33a-4cb6-97bd-1c1974827e6d", IMTLDXGIAdapter)
@@ -18,6 +17,6 @@ DEFINE_COM_INTERFACE("6bfa1657-9cb1-471a-a4fb-7cacf8a81207", IMTLDXGIDevice)
       const DXGI_SWAP_CHAIN_FULLSCREEN_DESC *pFullscreenDesc,
       IDXGISwapChain1 **ppSwapChain) = 0;
   virtual HRESULT STDMETHODCALLTYPE GetMetalLayerFromHwnd(
-      HWND hWnd, CA::MetalLayer * *ppMetalLayer, void **ppNativeView) = 0;
+      HWND hWnd, WMT::MetalLayer *pMetalLayer, void **ppNativeView) = 0;
   virtual HRESULT ReleaseMetalLayer(HWND hWnd, void *ppNativeView) = 0;
 };
