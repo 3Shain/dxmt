@@ -1,4 +1,3 @@
-#include "Metal/MTLDevice.hpp"
 #include "ftl.hpp"
 #include "dxmt_format.hpp"
 #include "util_error.hpp"

@@ -1,7 +1,6 @@
 winemetal_src = [
   'main.c',
   'exports.c',
-  'metalcpp-impl.cpp',
   'error_handling.c',
   'unix_thunks.c',
   'winemetal_thunks.c'
