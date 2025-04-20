@@ -6,7 +6,7 @@
 
 #define UNIX_CALL(code, params)                                                                                        \
   {                                                                                                                    \
-    NTSTATUS status = WINE_UNIX_CALL(0x50 + code, params);                                                             \
+    NTSTATUS status = WINE_UNIX_CALL(code, params);                                                             \
     assert(!status && "unix call failed");                                                                             \
   }
 
@@ -693,4 +693,23 @@ MetalLayer_getProps(obj_handle_t layer, struct WMTLayerProps *props) {
   params.handle = layer;
   WMT_MEMPTR_SET(params.arg, props);
   UNIX_CALL(71, &params);
+}
+
+WINEMETAL_API obj_handle_t
+CreateMetalViewFromHWND(intptr_t hwnd, obj_handle_t device, obj_handle_t *layer) {
+  struct unixcall_create_metal_view_from_hwnd params;
+  params.hwnd = (uint64_t)hwnd;
+  params.device = device;
+  params.ret_layer = NULL_OBJECT_HANDLE;
+  params.ret_view = NULL_OBJECT_HANDLE;
+  UNIX_CALL(72, &params);
+  *layer = params.ret_layer;
+  return params.ret_view;
+}
+
+WINEMETAL_API void
+ReleaseMetalView(obj_handle_t view) {
+  struct unixcall_generic_obj_noret params;
+  params.handle = view;
+  UNIX_CALL(73, &params);
 }

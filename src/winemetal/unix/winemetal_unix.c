@@ -1,10 +1,12 @@
 #import <Foundation/Foundation.h>
+#include <dlfcn.h>
 #import <Metal/Metal.h>
 #import <MetalFX/MetalFX.h>
 #import <QuartzCore/QuartzCore.h>
 #include "objc/objc-runtime.h"
 #define WINEMETAL_API
 #include "../winemetal_thunks.h"
+#include "../unix_thunks.h"
 
 typedef int NTSTATUS;
 #define STATUS_SUCCESS 0
@@ -1366,7 +1368,96 @@ _MetalLayer_getProps(void *obj) {
   return STATUS_SUCCESS;
 }
 
-const void *__winemetal_unixcalls[] = {
+typedef struct macdrv_opaque_metal_device *macdrv_metal_device;
+typedef struct macdrv_opaque_metal_view *macdrv_metal_view;
+typedef struct macdrv_opaque_metal_layer *macdrv_metal_layer;
+typedef struct macdrv_opaque_view *macdrv_view;
+typedef struct macdrv_opaque_window *macdrv_window;
+typedef struct macdrv_opaque_window_data *macdrv_window_data;
+typedef struct opaque_window_surface *window_surface;
+typedef struct opaque_HWND *HWND;
+struct macdrv_win_data {
+  HWND hwnd; /* hwnd that this private data belongs to */
+  macdrv_window cocoa_window;
+  macdrv_view cocoa_view;
+  macdrv_view client_cocoa_view;
+};
+
+struct macdrv_functions_t {
+  void (*macdrv_init_display_devices)(BOOL);
+  struct macdrv_win_data *(*get_win_data)(HWND hwnd);
+  void (*release_win_data)(struct macdrv_win_data *data);
+  macdrv_window (*macdrv_get_cocoa_window)(HWND hwnd, BOOL require_on_screen);
+  macdrv_metal_device (*macdrv_create_metal_device)(void);
+  void (*macdrv_release_metal_device)(macdrv_metal_device d);
+  macdrv_metal_view (*macdrv_view_create_metal_view)(macdrv_view v, macdrv_metal_device d);
+  macdrv_metal_layer (*macdrv_view_get_metal_layer)(macdrv_metal_view v);
+  void (*macdrv_view_release_metal_view)(macdrv_metal_view v);
+  void (*on_main_thread)(dispatch_block_t b);
+};
+
+static NTSTATUS
+_CreateMetalViewFromHWND(void *obj) {
+  struct unixcall_create_metal_view_from_hwnd *params = obj;
+
+  struct macdrv_functions_t *macdrv_functions;
+  if ((macdrv_functions = dlsym(RTLD_DEFAULT, "macdrv_functions"))) {
+    struct macdrv_win_data *win_data = macdrv_functions->get_win_data((HWND)params->hwnd);
+    macdrv_metal_view view = macdrv_functions->macdrv_view_create_metal_view(
+        win_data->client_cocoa_view, (macdrv_metal_device)params->device
+    );
+    params->ret_view = (obj_handle_t)view;
+    if (view) {
+      params->ret_layer = (obj_handle_t)macdrv_functions->macdrv_view_get_metal_layer(view);
+    }
+    macdrv_functions->release_win_data(win_data);
+  }
+
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_ReleaseMetalView(void *obj) {
+  struct unixcall_generic_obj_noret *params = obj;
+
+  struct macdrv_functions_t *macdrv_functions;
+  if ((macdrv_functions = dlsym(RTLD_DEFAULT, "macdrv_functions"))) {
+    macdrv_functions->macdrv_view_release_metal_view((macdrv_metal_view)params->handle);
+  }
+
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+thunk_SM50Initialize(void *args) {
+  struct sm50_initialize_params *params = args;
+
+  params->ret =
+      SM50Initialize(params->bytecode, params->bytecode_size, params->shader, params->reflection, params->error);
+
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+thunk_SM50Destroy(void *args) {
+  struct sm50_destroy_params *params = args;
+
+  SM50Destroy(params->shader);
+
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+thunk_SM50Compile(void *args) {
+  struct sm50_compile_params *params = args;
+
+  params->ret =
+      SM50Compile((SM50Shader *)params->shader, params->args, params->func_name, params->bitcode, params->error);
+
+  return STATUS_SUCCESS;
+}
+
+const void *__wine_unix_call_funcs[] = {
     &_NSObject_retain,
     &_NSObject_release,
     &_NSArray_object,
@@ -1439,6 +1530,18 @@ const void *__winemetal_unixcalls[] = {
     &_MTLDevice_supportsFXTemporalScaler,
     &_MetalLayer_setProps,
     &_MetalLayer_getProps,
+    &_CreateMetalViewFromHWND,
+    &_ReleaseMetalView,
+    &thunk_SM50Initialize,
+    &thunk_SM50Destroy,
+    &thunk_SM50Compile,
+    &SM50GetCompiledBitcode,
+    &SM50DestroyBitcode,
+    &SM50GetErrorMesssage,
+    &SM50FreeError,
+    &SM50CompileGeometryPipelineVertex,
+    &SM50CompileGeometryPipelineGeometry,
+    &SM50CompileTessellationPipelineVertex,
+    &SM50CompileTessellationPipelineHull,
+    &SM50CompileTessellationPipelineDomain,
 };
-
-const unsigned int __winemetal_unixcalls_num = sizeof(__winemetal_unixcalls) / sizeof(void *);

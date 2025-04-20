@@ -22,7 +22,6 @@
 #include "mtld11_resource.hpp"
 #include "thread.hpp"
 #include "util_env.hpp"
-#include "winemacdrv.h"
 #include "dxgi_object.hpp"
 #include <mutex>
 #include <thread>
@@ -1298,45 +1297,6 @@ public:
 
     return dxmt::CreateSwapChain(pFactory, &d3d11_device_, hWnd, pDesc, pFullscreenDesc,
                                  ppSwapChain);
-  }
-
-  HRESULT STDMETHODCALLTYPE GetMetalLayerFromHwnd(
-      HWND hWnd, WMT::MetalLayer *pMetalLayer, void **ppNativeView) override {
-    if (pMetalLayer == nullptr || ppNativeView == nullptr)
-      return E_POINTER;
-
-    *pMetalLayer = {};
-    *ppNativeView = nullptr;
-
-    auto data = get_win_data(hWnd);
-
-    auto metalView = macdrv_view_create_metal_view(
-        data->client_cocoa_view, (macdrv_metal_device)GetMTLDevice().handle);
-
-    if (metalView == nullptr)
-      return E_FAIL;
-
-    *ppNativeView = metalView;
-
-    auto layer = WMT::MetalLayer{(obj_handle_t)macdrv_view_get_metal_layer(metalView)};
-
-    // TRACE("CAMetaLayer got with ref count ", layer->retainCount());
-
-    if (layer == nullptr)
-      return E_FAIL;
-
-    *pMetalLayer = layer;
-
-    release_win_data(data);
-
-    return S_OK;
-  }
-
-  HRESULT STDMETHODCALLTYPE ReleaseMetalLayer(HWND hWnd,
-                                              void *pNativeView) override {
-    macdrv_view_release_metal_view((macdrv_metal_view)pNativeView);
-
-    return S_OK;
   }
 
 private:
