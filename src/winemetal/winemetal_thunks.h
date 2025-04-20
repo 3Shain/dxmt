@@ -143,6 +143,19 @@ struct unixcall_generic_obj_obj_noret {
   obj_handle_t arg;
 };
 
+struct unixcall_generic_obj_obj_obj_noret {
+  obj_handle_t handle;
+  obj_handle_t arg0;
+  obj_handle_t arg1;
+};
+
+struct unixcall_generic_obj_obj_obj_uint64_ret {
+  obj_handle_t handle;
+  obj_handle_t arg0;
+  obj_handle_t arg1;
+  uint64_t ret;
+};
+
 struct unixcall_generic_obj_obj_double_noret {
   obj_handle_t handle;
   obj_handle_t arg0;
@@ -183,6 +196,12 @@ struct unixcall_mtlcommandbuffer_spatial_scale {
   obj_handle_t scaler;
   obj_handle_t color;
   obj_handle_t output;
+};
+
+struct unixcall_nsstring_string {
+  struct WMTMemoryPointer buffer_ptr;
+  enum WMTStringEncoding encoding;
+  obj_handle_t ret;
 };
 
 #endif

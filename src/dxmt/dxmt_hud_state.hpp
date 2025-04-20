@@ -1,9 +1,6 @@
 #pragma once
 
-#include "Foundation/NSString.hpp"
 #include "Metal.hpp"
-#include "QuartzCore/CADeveloperHUDProperties.hpp"
-#include "objc_pointer.hpp"
 #include <string>
 #include <vector>
 
@@ -24,11 +21,11 @@ public:
 
   void end();
 
-  HUDState(CA::DeveloperHUDProperties *hud) : hud_(hud){};
+  HUDState(WMT::DeveloperHUDProperties hud) : hud_(hud){};
 
 private:
-  CA::DeveloperHUDProperties *hud_;
-  std::vector<Obj<NS::String>> line_labels_;
+  WMT::DeveloperHUDProperties hud_;
+  std::vector<WMT::Reference<WMT::String>> line_labels_;
   WMT::Reference<WMT::Object> pool_;
   unsigned current_line_;
 };

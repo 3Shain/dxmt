@@ -1,6 +1,5 @@
 #include "d3d11_swapchain.hpp"
 #include "MetalFX/MTLFXSpatialScaler.hpp"
-#include "QuartzCore/CADeveloperHUDProperties.hpp"
 #include "com/com_guid.hpp"
 #include "config/config.hpp"
 #include "d3d11_private.h"
@@ -35,19 +34,19 @@ class MTLD3D11SwapChain final : public MTLDXGISubObject<IDXGISwapChain4, MTLD3D1
 public:
   MTLD3D11SwapChain(
       IDXGIFactory1 *pFactory, MTLD3D11Device *pDevice, IMTLDXGIDevice *pLayerFactoryWeakref,
-      CA::MetalLayer *pLayerWeakref, HWND hWnd, void *hNativeView, const DXGI_SWAP_CHAIN_DESC1 *pDesc,
+      WMT::MetalLayer layer, HWND hWnd, void *hNativeView, const DXGI_SWAP_CHAIN_DESC1 *pDesc,
       const DXGI_SWAP_CHAIN_FULLSCREEN_DESC *pFullscreenDesc
   ) :
       MTLDXGISubObject(pDevice),
       factory_(pFactory),
       layer_factory_weak_(pLayerFactoryWeakref),
       native_view_(hNativeView),
-      layer_weak_(pLayerWeakref),
+      layer_weak_(layer),
       presentation_count_(0),
       desc_(*pDesc),
       hWnd(hWnd),
       monitor_(wsi::getWindowMonitor(hWnd)),
-      hud(CA::DeveloperHUDProperties::instance()) {
+      hud(WMT::DeveloperHUDProperties::instance()) {
 
     Com<ID3D11DeviceContext1> context;
     m_device->GetImmediateContext1(&context);
@@ -99,7 +98,7 @@ public:
 
     if constexpr (EnableMetalFX) {
       scale_factor = std::max(Config::getInstance().getOption<float>("d3d11.metalSpatialUpscaleFactor", 2), 1.0f);
-      layer_weak_->setContentsScale(layer_weak_->contentsScale() * scale_factor);
+      ((CA::MetalLayer*)layer_weak_.handle)->setContentsScale(((CA::MetalLayer*)layer_weak_.handle)->contentsScale() * scale_factor);
     }
 
     // FIXME: check HRESULT!
@@ -324,8 +323,8 @@ public:
       WMTFXSpatialScalerInfo info;
       info.input_height = desc_.Height;
       info.input_width = desc_.Width;
-      info.output_height = layer_weak_->drawableSize().height;
-      info.output_width = layer_weak_->drawableSize().width;
+      info.output_height = ((CA::MetalLayer*)layer_weak_.handle)->drawableSize().height;
+      info.output_width = ((CA::MetalLayer*)layer_weak_.handle)->drawableSize().width;
       info.color_format = backbuffer_->texture()->pixelFormat();
       info.output_format =upscaled_backbuffer_->texture()->pixelFormat();
       metalfx_scaler = m_device->GetMTLDevice().newSpatialScaler(&info);
@@ -382,7 +381,7 @@ public:
 
   void
   ApplyResize() {
-    layer_weak_->setDrawableSize({(double)(desc_.Width * scale_factor), (double)(desc_.Height * scale_factor)});
+    ((CA::MetalLayer*)layer_weak_.handle)->setDrawableSize({(double)(desc_.Width * scale_factor), (double)(desc_.Height * scale_factor)});
   };
   
   HRESULT GetOutputFromMonitor(
@@ -734,7 +733,7 @@ private:
   Com<IDXGIFactory1> factory_;
   IMTLDXGIDevice *layer_factory_weak_;
   void *native_view_;
-  CA::MetalLayer *layer_weak_;
+  WMT::MetalLayer layer_weak_;
   ULONG presentation_count_;
   DXGI_SWAP_CHAIN_DESC1 desc_;
   DXGI_SWAP_CHAIN_FULLSCREEN_DESC fullscreen_desc_;
@@ -790,7 +789,7 @@ CreateSwapChain(
   if (env::getEnvVar("DXMT_METALFX_SPATIAL_SWAPCHAIN") == "1") {
     if (MTLFX::SpatialScalerDescriptor::supportsDevice((MTL::Device *)pDevice->GetMTLDevice().handle)) {
       *ppSwapChain = new MTLD3D11SwapChain<true>(
-          pFactory, pDevice, layer_factory.ptr(), layer, hWnd, native_view, pDesc, pFullscreenDesc
+          pFactory, pDevice, layer_factory.ptr(), {(obj_handle_t)layer}, hWnd, native_view, pDesc, pFullscreenDesc
       );
       return S_OK;
     } else {
@@ -798,7 +797,7 @@ CreateSwapChain(
     }
   }
   *ppSwapChain = new MTLD3D11SwapChain<false>(
-      pFactory, pDevice, layer_factory.ptr(), layer, hWnd, native_view, pDesc, pFullscreenDesc
+      pFactory, pDevice, layer_factory.ptr(), {(obj_handle_t)layer}, hWnd, native_view, pDesc, pFullscreenDesc
   );
   return S_OK;
 };

@@ -586,3 +586,77 @@ MTLCommandBuffer_encodeSpatialScale(obj_handle_t cmdbuf, obj_handle_t scaler, ob
   params.output = output;
   UNIX_CALL(59, &params);
 }
+
+WINEMETAL_API obj_handle_t
+NSString_string(const char *data, enum WMTStringEncoding encoding) {
+  struct unixcall_nsstring_string params;
+  WMT_MEMPTR_SET(params.buffer_ptr, data);
+  params.encoding = encoding;
+  params.ret = NULL_OBJECT_HANDLE;
+  UNIX_CALL(60, &params);
+  return params.ret;
+}
+
+WINEMETAL_API obj_handle_t
+NSString_alloc_init(const char *data, enum WMTStringEncoding encoding) {
+  struct unixcall_nsstring_string params;
+  WMT_MEMPTR_SET(params.buffer_ptr, data);
+  params.encoding = encoding;
+  params.ret = NULL_OBJECT_HANDLE;
+  UNIX_CALL(61, &params);
+  return params.ret;
+}
+
+WINEMETAL_API obj_handle_t
+DeveloperHUDProperties_instance() {
+  struct unixcall_generic_obj_ret params;
+  params.ret = NULL_OBJECT_HANDLE;
+  UNIX_CALL(62, &params);
+  return params.ret;
+}
+
+WINEMETAL_API bool
+DeveloperHUDProperties_addLabel(obj_handle_t obj, obj_handle_t label, obj_handle_t after) {
+  struct unixcall_generic_obj_obj_obj_uint64_ret params;
+  params.handle = obj;
+  params.arg0 = label;
+  params.arg1 = after;
+  params.ret = 0;
+  UNIX_CALL(63, &params);
+  return params.ret;
+}
+
+WINEMETAL_API void
+DeveloperHUDProperties_updateLabel(obj_handle_t obj, obj_handle_t label, obj_handle_t value) {
+  struct unixcall_generic_obj_obj_obj_noret params;
+  params.handle = obj;
+  params.arg0 = label;
+  params.arg1 = value;
+  UNIX_CALL(64, &params);
+}
+
+WINEMETAL_API void
+DeveloperHUDProperties_remove(obj_handle_t obj, obj_handle_t label) {
+  struct unixcall_generic_obj_obj_noret params;
+  params.handle = obj;
+  params.arg = label;
+  UNIX_CALL(65, &params);
+}
+
+WINEMETAL_API obj_handle_t
+MetalDrawable_texture(obj_handle_t drawable) {
+  struct unixcall_generic_obj_obj_ret params;
+  params.handle = drawable;
+  params.ret = NULL_OBJECT_HANDLE;
+  UNIX_CALL(66, &params);
+  return params.ret;
+}
+
+WINEMETAL_API obj_handle_t
+MetalLayer_nextDrawable(obj_handle_t layer) {
+  struct unixcall_generic_obj_obj_ret params;
+  params.handle = layer;
+  params.ret = NULL_OBJECT_HANDLE;
+  UNIX_CALL(67, &params);
+  return params.ret;
+}

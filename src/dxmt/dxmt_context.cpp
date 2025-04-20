@@ -420,7 +420,7 @@ ArgumentEncodingContext::resolveTexture(
 };
 
 void
-ArgumentEncodingContext::present(Rc<Texture> &texture, CA::MetalLayer *layer, double after) {
+ArgumentEncodingContext::present(Rc<Texture> &texture, WMT::MetalLayer layer, double after) {
   assert(!encoder_current);
   auto encoder_info = allocate<PresentData>();
   encoder_info->type = EncoderType::Present;
@@ -757,14 +757,14 @@ ArgumentEncodingContext::flushCommands(WMT::CommandBuffer cmdbuf_, uint64_t seqI
     case EncoderType::Present: {
       auto data = static_cast<PresentData *>(current);
       auto t0 = clock::now();
-      auto drawable = data->layer->nextDrawable();
+      auto drawable = data->layer.nextDrawable();
       auto t1 = clock::now();
       currentFrameStatistics().drawable_blocking_interval += (t1 - t0);
-      queue_.emulated_cmd.PresentToDrawable(cmdbuf_, data->backbuffer, {(obj_handle_t)drawable->texture()});
+      queue_.emulated_cmd.PresentToDrawable(cmdbuf_, data->backbuffer, drawable.texture());
       if (data->after > 0)
-        cmdbuf_.presentDrawableAfterMinimumDuration(WMT::MetalDrawable{(obj_handle_t)drawable}, data->after);
+        cmdbuf_.presentDrawableAfterMinimumDuration(drawable, data->after);
       else
-        cmdbuf_.presentDrawable(WMT::MetalDrawable{(obj_handle_t)drawable});
+        cmdbuf_.presentDrawable(drawable);
       data->~PresentData();
       break;
     }
