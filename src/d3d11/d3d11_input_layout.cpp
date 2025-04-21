@@ -50,7 +50,7 @@ HRESULT ExtractMTLInputLayoutElements(
     auto &attribute = pInputLayout[attribute_count++];
 
     MTL_DXGI_FORMAT_DESC metal_format;
-    if (FAILED(MTLQueryDXGIFormat(device->GetWMTDevice(), pDesc->Format,
+    if (FAILED(MTLQueryDXGIFormat(device->GetMTLDevice(), pDesc->Format,
                                   metal_format))) {
       ERR("CreateInputLayout: Unsupported vertex format ", desc.Format);
       return E_FAIL;

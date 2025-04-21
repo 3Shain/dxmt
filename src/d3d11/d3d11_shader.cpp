@@ -59,7 +59,7 @@ public:
     MTL_SHADER_BITCODE bitcode;
     SM50GetCompiledBitcode(compile_result, &bitcode);
     hash_.compute(bitcode.Data, bitcode.Size);
-    auto library = device_->GetWMTDevice().newLibrary(bitcode.Data, bitcode.Size, err);
+    auto library = device_->GetMTLDevice().newLibrary(bitcode.Data, bitcode.Size, err);
 
     if (err) {
       ERR("Failed to create MTLLibrary: ", err.description().getUTF8String());

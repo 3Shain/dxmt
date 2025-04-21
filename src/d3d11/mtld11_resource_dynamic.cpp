@@ -45,7 +45,7 @@ public:
       TResourceBase<tag_texture_2d>(*pDesc, device),
       bytes_per_image_(bytes_per_image),
       bytes_per_row_(bytes_per_row) {
-    texture_ = new Texture(bytes_per_image, bytes_per_row, descriptor, device->GetWMTDevice());
+    texture_ = new Texture(bytes_per_image, bytes_per_row, descriptor, device->GetMTLDevice());
     Flags<TextureAllocationFlag> flags;
     if (!m_parent->IsTraced() && pDesc->Usage == D3D11_USAGE_DYNAMIC)
       flags.set(TextureAllocationFlag::CpuWriteCombined);
@@ -102,7 +102,7 @@ public:
       return S_FALSE;
     }
     MTL_DXGI_FORMAT_DESC format;
-    if (FAILED(MTLQueryDXGIFormat(m_parent->GetWMTDevice(), finalDesc.Format, format))) {
+    if (FAILED(MTLQueryDXGIFormat(m_parent->GetMTLDevice(), finalDesc.Format, format))) {
       return E_FAIL;
     }
 
@@ -130,7 +130,7 @@ CreateDynamicTexture2D(
     ID3D11Texture2D1 **ppTexture
 ) {
   MTL_DXGI_FORMAT_DESC format;
-  MTLQueryDXGIFormat(pDevice->GetWMTDevice(), pDesc->Format, format);
+  MTLQueryDXGIFormat(pDevice->GetMTLDevice(), pDesc->Format, format);
   if (format.Flag & MTL_DXGI_FORMAT_BC) {
     return E_FAIL;
   }

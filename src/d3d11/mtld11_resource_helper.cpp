@@ -294,7 +294,7 @@ CreateMTLTextureDescriptorInternal(
     return E_INVALIDARG;
 
   MTL_DXGI_FORMAT_DESC metal_format;
-  if (FAILED(MTLQueryDXGIFormat(pDevice->GetWMTDevice(), Format, metal_format))) {
+  if (FAILED(MTLQueryDXGIFormat(pDevice->GetMTLDevice(), Format, metal_format))) {
     ERR("CreateMTLTextureDescriptorInternal: creating a texture of invalid "
         "format: ",
         Format);
@@ -535,7 +535,7 @@ GetLinearTextureLayout(
     MTLD3D11Device *pDevice, const D3D11_TEXTURE1D_DESC &Desc, uint32_t level, uint32_t &BytesPerRow,
     uint32_t &BytesPerImage, uint32_t &BytesPerSlice, bool Aligned
 ) {
-  auto metal = pDevice->GetWMTDevice();
+  auto metal = pDevice->GetMTLDevice();
   MTL_DXGI_FORMAT_DESC metal_format;
 
   if (FAILED(MTLQueryDXGIFormat(metal, Desc.Format, metal_format))) {
@@ -567,7 +567,7 @@ GetLinearTextureLayout(
     MTLD3D11Device *pDevice, const D3D11_TEXTURE2D_DESC1 &Desc, uint32_t level, uint32_t &BytesPerRow,
     uint32_t &BytesPerImage, uint32_t &BytesPerSlice, bool Aligned
 ) {
-  auto metal = pDevice->GetWMTDevice();
+  auto metal = pDevice->GetMTLDevice();
   MTL_DXGI_FORMAT_DESC metal_format;
 
   if (FAILED(MTLQueryDXGIFormat(metal, Desc.Format, metal_format))) {
@@ -609,7 +609,7 @@ GetLinearTextureLayout(
     MTLD3D11Device *pDevice, const D3D11_TEXTURE3D_DESC1 &Desc, uint32_t level, uint32_t &BytesPerRow,
     uint32_t &BytesPerImage, uint32_t &BytesPerSlice, bool Aligned
 ) {
-  auto metal = pDevice->GetWMTDevice();
+  auto metal = pDevice->GetMTLDevice();
   MTL_DXGI_FORMAT_DESC metal_format;
 
   if (FAILED(MTLQueryDXGIFormat(metal, Desc.Format, metal_format))) {

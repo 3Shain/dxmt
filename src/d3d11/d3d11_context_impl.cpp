@@ -274,15 +274,15 @@ public:
       break;
     case D3D11_RESOURCE_DIMENSION_TEXTURE1D:
       reinterpret_cast<ID3D11Texture1D *>(pResource)->GetDesc(&Texture1DDesc);
-      MTLQueryDXGIFormat(pDevice->GetWMTDevice(), Texture1DDesc.Format, FormatDescription);
+      MTLQueryDXGIFormat(pDevice->GetMTLDevice(), Texture1DDesc.Format, FormatDescription);
       break;
     case D3D11_RESOURCE_DIMENSION_TEXTURE2D:
       reinterpret_cast<ID3D11Texture2D1 *>(pResource)->GetDesc1(&Texture2DDesc);
-      MTLQueryDXGIFormat(pDevice->GetWMTDevice(), Texture2DDesc.Format, FormatDescription);
+      MTLQueryDXGIFormat(pDevice->GetMTLDevice(), Texture2DDesc.Format, FormatDescription);
       break;
     case D3D11_RESOURCE_DIMENSION_TEXTURE3D:
       reinterpret_cast<ID3D11Texture3D1 *>(pResource)->GetDesc1(&Texture3DDesc);
-      MTLQueryDXGIFormat(pDevice->GetWMTDevice(), Texture3DDesc.Format, FormatDescription);
+      MTLQueryDXGIFormat(pDevice->GetMTLDevice(), Texture3DDesc.Format, FormatDescription);
       break;
     }
   };
@@ -4450,7 +4450,7 @@ public:
       ManagedDeviceChild(pDevice),
       context_flag(context_flag),
       cmdlist_pool(pPool),
-      staging_allocator(pDevice->GetWMTDevice(), WMTResourceOptionCPUCacheModeWriteCombined |
+      staging_allocator(pDevice->GetMTLDevice(), WMTResourceOptionCPUCacheModeWriteCombined |
                                        WMTResourceHazardTrackingModeUntracked | WMTResourceStorageModeShared
       ) {
     cpu_argument_heap = (char *)malloc(kCommandChunkCPUHeapSize);
