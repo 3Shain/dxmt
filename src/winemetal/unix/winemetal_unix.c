@@ -1457,6 +1457,97 @@ thunk_SM50Compile(void *args) {
   return STATUS_SUCCESS;
 }
 
+static NTSTATUS
+thunk_SM50GetCompiledBitcode(void *args) {
+  struct sm50_get_compiled_bitcode_params *params = args;
+
+  SM50GetCompiledBitcode(params->bitcode, params->data_out);
+
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+thunk_SM50DestroyBitcode(void *args) {
+  struct sm50_destroy_bitcode_params *params = args;
+
+  SM50DestroyBitcode(params->bitcode);
+
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+thunk_SM50GetErrorMesssage(void *args) {
+  struct sm50_get_error_message_params *params = args;
+
+  params->ret_message = (char *)SM50GetErrorMesssage(params->error);
+
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+thunk_SM50FreeError(void *args) {
+  struct sm50_free_error_params *params = args;
+
+  SM50FreeError(params->error);
+
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+thunk_SM50CompileTessellationPipelineVertex(void *args) {
+  struct sm50_compile_tessellation_pipeline_vertex_params *params = args;
+
+  params->ret = SM50CompileTessellationPipelineVertex(
+      params->vertex, params->hull, params->vertex_args, params->func_name, params->bitcode, params->error
+  );
+
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+thunk_SM50CompileTessellationPipelineHull(void *args) {
+  struct sm50_compile_tessellation_pipeline_hull_params *params = args;
+
+  params->ret = SM50CompileTessellationPipelineHull(
+      params->vertex, params->hull, params->hull_args, params->func_name, params->bitcode, params->error
+  );
+
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+thunk_SM50CompileTessellationPipelineDomain(void *args) {
+  struct sm50_compile_tessellation_pipeline_domain_params *params = args;
+
+  params->ret = SM50CompileTessellationPipelineDomain(
+      params->hull, params->domain, params->domain_args, params->func_name, params->bitcode, params->error
+  );
+
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+thunk_SM50CompileGeometryPipelineVertex(void *args) {
+  struct sm50_compile_geometry_pipeline_vertex_params *params = args;
+
+  params->ret = SM50CompileGeometryPipelineVertex(
+      params->vertex, params->geometry, params->vertex_args, params->func_name, params->bitcode, params->error
+  );
+
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+thunk_SM50CompileGeometryPipelineGeometry(void *args) {
+  struct sm50_compile_geometry_pipeline_geometry_params *params = args;
+
+  params->ret = SM50CompileGeometryPipelineGeometry(
+      params->vertex, params->geometry, params->geometry_args, params->func_name, params->bitcode, params->error
+  );
+
+  return STATUS_SUCCESS;
+}
+
 const void *__wine_unix_call_funcs[] = {
     &_NSObject_retain,
     &_NSObject_release,
@@ -1535,13 +1626,13 @@ const void *__wine_unix_call_funcs[] = {
     &thunk_SM50Initialize,
     &thunk_SM50Destroy,
     &thunk_SM50Compile,
-    &SM50GetCompiledBitcode,
-    &SM50DestroyBitcode,
-    &SM50GetErrorMesssage,
-    &SM50FreeError,
-    &SM50CompileGeometryPipelineVertex,
-    &SM50CompileGeometryPipelineGeometry,
-    &SM50CompileTessellationPipelineVertex,
-    &SM50CompileTessellationPipelineHull,
-    &SM50CompileTessellationPipelineDomain,
+    &thunk_SM50GetCompiledBitcode,
+    &thunk_SM50DestroyBitcode,
+    &thunk_SM50GetErrorMesssage,
+    &thunk_SM50FreeError,
+    &thunk_SM50CompileGeometryPipelineVertex,
+    &thunk_SM50CompileGeometryPipelineGeometry,
+    &thunk_SM50CompileTessellationPipelineVertex,
+    &thunk_SM50CompileTessellationPipelineHull,
+    &thunk_SM50CompileTessellationPipelineDomain,
 };
