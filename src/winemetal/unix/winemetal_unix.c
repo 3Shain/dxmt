@@ -1400,17 +1400,34 @@ static NTSTATUS
 _CreateMetalViewFromHWND(void *obj) {
   struct unixcall_create_metal_view_from_hwnd *params = obj;
 
+  struct macdrv_win_data *(*pfn_get_win_data)(HWND hwnd) = NULL;
+  void (*pfn_release_win_data)(struct macdrv_win_data *data) = NULL;
+  macdrv_metal_view (*pfn_macdrv_view_create_metal_view)(macdrv_view v, macdrv_metal_device d) = NULL;
+  macdrv_metal_layer (*pfn_macdrv_view_get_metal_layer)(macdrv_metal_view v) = NULL;
+
   struct macdrv_functions_t *macdrv_functions;
   if ((macdrv_functions = dlsym(RTLD_DEFAULT, "macdrv_functions"))) {
-    struct macdrv_win_data *win_data = macdrv_functions->get_win_data((HWND)params->hwnd);
-    macdrv_metal_view view = macdrv_functions->macdrv_view_create_metal_view(
-        win_data->client_cocoa_view, (macdrv_metal_device)params->device
-    );
+    pfn_get_win_data = macdrv_functions->get_win_data;
+    pfn_release_win_data = macdrv_functions->release_win_data;
+    pfn_macdrv_view_create_metal_view = macdrv_functions->macdrv_view_create_metal_view;
+    pfn_macdrv_view_get_metal_layer = macdrv_functions->macdrv_view_get_metal_layer;
+  } else {
+    pfn_get_win_data = dlsym(RTLD_DEFAULT, "get_win_data");
+    pfn_release_win_data = dlsym(RTLD_DEFAULT, "release_win_data");
+    pfn_macdrv_view_create_metal_view = dlsym(RTLD_DEFAULT, "macdrv_view_create_metal_view");
+    pfn_macdrv_view_get_metal_layer = dlsym(RTLD_DEFAULT, "macdrv_view_get_metal_layer");
+  }
+
+  if (pfn_get_win_data && pfn_release_win_data && pfn_macdrv_view_create_metal_view &&
+      pfn_macdrv_view_get_metal_layer) {
+    struct macdrv_win_data *win_data = pfn_get_win_data((HWND)params->hwnd);
+    macdrv_metal_view view =
+        pfn_macdrv_view_create_metal_view(win_data->client_cocoa_view, (macdrv_metal_device)params->device);
     params->ret_view = (obj_handle_t)view;
     if (view) {
-      params->ret_layer = (obj_handle_t)macdrv_functions->macdrv_view_get_metal_layer(view);
+      params->ret_layer = (obj_handle_t)pfn_macdrv_view_get_metal_layer(view);
     }
-    macdrv_functions->release_win_data(win_data);
+    pfn_release_win_data(win_data);
   }
 
   return STATUS_SUCCESS;
@@ -1420,10 +1437,17 @@ static NTSTATUS
 _ReleaseMetalView(void *obj) {
   struct unixcall_generic_obj_noret *params = obj;
 
+  void (*pfn_macdrv_view_release_metal_view)(macdrv_metal_view v) = NULL;
+
   struct macdrv_functions_t *macdrv_functions;
   if ((macdrv_functions = dlsym(RTLD_DEFAULT, "macdrv_functions"))) {
-    macdrv_functions->macdrv_view_release_metal_view((macdrv_metal_view)params->handle);
+    pfn_macdrv_view_release_metal_view = macdrv_functions->macdrv_view_release_metal_view;
+  } else {
+    pfn_macdrv_view_release_metal_view = dlsym(RTLD_DEFAULT, "macdrv_view_release_metal_view");
   }
+
+  if (pfn_macdrv_view_release_metal_view)
+    pfn_macdrv_view_release_metal_view((macdrv_metal_view)params->handle);
 
   return STATUS_SUCCESS;
 }
