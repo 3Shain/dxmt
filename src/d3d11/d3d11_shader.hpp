@@ -5,7 +5,6 @@
 #include "d3d11_device.hpp"
 #include "d3d11_device_child.hpp"
 #include "d3d11_input_layout.hpp"
-#include "objc-wrapper/dispatch.h"
 #include "sha1/sha1_util.hpp"
 #include "log/log.hpp"
 
