@@ -85,7 +85,7 @@ private:
       auto cpu = malloc(block_size);
       buffer_info.length = block_size;
       buffer_info.memory.set(cpu);
-      auto gpu = device.newBuffer(&buffer_info);
+      auto gpu = device.newBuffer(buffer_info);
       fifo.push(
           {.buffer_cpu = cpu,
            .buffer_gpu = std::move(gpu),
@@ -96,7 +96,7 @@ private:
     } else {
       buffer_info.length = block_size;
       buffer_info.memory.set(nullptr);
-      auto gpu = device.newBuffer(&buffer_info);
+      auto gpu = device.newBuffer(buffer_info);
       fifo.push(
           {.buffer_cpu = nullptr,
            .buffer_gpu = std::move(gpu),

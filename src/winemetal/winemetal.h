@@ -245,7 +245,7 @@ struct WMTDepthStencilInfo {
   struct WMTStencilInfo back_stencil;
 };
 
-WINEMETAL_API obj_handle_t MTLDevice_newDepthStencilState(obj_handle_t device, struct WMTDepthStencilInfo *info);
+WINEMETAL_API obj_handle_t MTLDevice_newDepthStencilState(obj_handle_t device, const struct WMTDepthStencilInfo *info);
 
 enum WMTPixelFormat : uint32_t {
   WMTPixelFormatInvalid = 0,
@@ -742,10 +742,10 @@ struct WMTMeshRenderPipelineInfo {
 };
 
 WINEMETAL_API obj_handle_t
-MTLDevice_newRenderPipelineState(obj_handle_t device, struct WMTRenderPipelineInfo *info, obj_handle_t *err_out);
+MTLDevice_newRenderPipelineState(obj_handle_t device, const struct WMTRenderPipelineInfo *info, obj_handle_t *err_out);
 
 WINEMETAL_API obj_handle_t MTLDevice_newMeshRenderPipelineState(
-    obj_handle_t device, struct WMTMeshRenderPipelineInfo *info, obj_handle_t *err_out
+    obj_handle_t device, const struct WMTMeshRenderPipelineInfo *info, obj_handle_t *err_out
 );
 
 struct WMTSize {
@@ -1411,9 +1411,9 @@ struct WMTFXSpatialScalerInfo {
   uint32_t output_height;
 };
 
-WINEMETAL_API obj_handle_t MTLDevice_newTemporalScaler(obj_handle_t device, struct WMTFXTemporalScalerInfo *info);
+WINEMETAL_API obj_handle_t MTLDevice_newTemporalScaler(obj_handle_t device, const struct WMTFXTemporalScalerInfo *info);
 
-WINEMETAL_API obj_handle_t MTLDevice_newSpatialScaler(obj_handle_t device, struct WMTFXSpatialScalerInfo *info);
+WINEMETAL_API obj_handle_t MTLDevice_newSpatialScaler(obj_handle_t device, const struct WMTFXSpatialScalerInfo *info);
 
 struct WMTFXTemporalScalerProps {
   uint32_t input_content_width;
@@ -1429,7 +1429,7 @@ struct WMTFXTemporalScalerProps {
 
 WINEMETAL_API void MTLCommandBuffer_encodeTemporalScale(
     obj_handle_t cmdbuf, obj_handle_t scaler, obj_handle_t color, obj_handle_t output, obj_handle_t depth,
-    obj_handle_t motion, obj_handle_t exposure, struct WMTFXTemporalScalerProps *props
+    obj_handle_t motion, obj_handle_t exposure, const struct WMTFXTemporalScalerProps *props
 );
 
 WINEMETAL_API void

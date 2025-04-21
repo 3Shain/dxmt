@@ -6,7 +6,7 @@
 
 #define UNIX_CALL(code, params)                                                                                        \
   {                                                                                                                    \
-    NTSTATUS status = WINE_UNIX_CALL(code, params);                                                             \
+    NTSTATUS status = WINE_UNIX_CALL(code, params);                                                                    \
     assert(!status && "unix call failed");                                                                             \
   }
 
@@ -184,7 +184,7 @@ MTLDevice_newSamplerState(obj_handle_t device, struct WMTSamplerInfo *info) {
 }
 
 WINEMETAL_API obj_handle_t
-MTLDevice_newDepthStencilState(obj_handle_t device, struct WMTDepthStencilInfo *info) {
+MTLDevice_newDepthStencilState(obj_handle_t device, const struct WMTDepthStencilInfo *info) {
   struct unixcall_mtldevice_newdepthstencilstate params;
   params.device = device;
   params.info = info;
@@ -337,7 +337,7 @@ MTLCommandEncoder_endEncoding(obj_handle_t encoder) {
 }
 
 WINEMETAL_API obj_handle_t
-MTLDevice_newRenderPipelineState(obj_handle_t device, struct WMTRenderPipelineInfo *info, obj_handle_t *err_out) {
+MTLDevice_newRenderPipelineState(obj_handle_t device, const struct WMTRenderPipelineInfo *info, obj_handle_t *err_out) {
   struct unixcall_mtldevice_newrenderpso params;
   params.device = device;
   params.info = info;
@@ -351,7 +351,7 @@ MTLDevice_newRenderPipelineState(obj_handle_t device, struct WMTRenderPipelineIn
 
 WINEMETAL_API obj_handle_t
 MTLDevice_newMeshRenderPipelineState(
-    obj_handle_t device, struct WMTMeshRenderPipelineInfo *info, obj_handle_t *err_out
+    obj_handle_t device, const struct WMTMeshRenderPipelineInfo *info, obj_handle_t *err_out
 ) {
   struct unixcall_mtldevice_newmeshrenderpso params;
   params.device = device;
@@ -543,7 +543,7 @@ MTLCaptureManager_stopCapture(obj_handle_t mgr) {
 }
 
 WINEMETAL_API obj_handle_t
-MTLDevice_newTemporalScaler(obj_handle_t device, struct WMTFXTemporalScalerInfo *info) {
+MTLDevice_newTemporalScaler(obj_handle_t device, const struct WMTFXTemporalScalerInfo *info) {
   struct unixcall_mtldevice_newfxtemporalscaler params;
   params.device = device;
   params.info = info;
@@ -552,7 +552,7 @@ MTLDevice_newTemporalScaler(obj_handle_t device, struct WMTFXTemporalScalerInfo 
 }
 
 WINEMETAL_API obj_handle_t
-MTLDevice_newSpatialScaler(obj_handle_t device, struct WMTFXSpatialScalerInfo *info) {
+MTLDevice_newSpatialScaler(obj_handle_t device, const struct WMTFXSpatialScalerInfo *info) {
   struct unixcall_mtldevice_newfxspatialscaler params;
   params.device = device;
   params.info = info;
@@ -563,7 +563,7 @@ MTLDevice_newSpatialScaler(obj_handle_t device, struct WMTFXSpatialScalerInfo *i
 WINEMETAL_API void
 MTLCommandBuffer_encodeTemporalScale(
     obj_handle_t cmdbuf, obj_handle_t scaler, obj_handle_t color, obj_handle_t output, obj_handle_t depth,
-    obj_handle_t motion, obj_handle_t exposure, struct WMTFXTemporalScalerProps *props
+    obj_handle_t motion, obj_handle_t exposure, const struct WMTFXTemporalScalerProps *props
 ) {
   struct unixcall_mtlcommandbuffer_temporal_scale params;
   params.cmdbuf = cmdbuf;

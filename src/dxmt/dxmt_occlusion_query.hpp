@@ -165,7 +165,7 @@ public:
         visibility_result_heap_info.options = WMTResourceHazardTrackingModeUntracked;
         visibility_result_heap_info.memory.set(nullptr);
         visibility_result_heap_info.length = num_results * sizeof(uint64_t);
-        visibility_result_heap = device.newBuffer(&visibility_result_heap_info);
+        visibility_result_heap = device.newBuffer(visibility_result_heap_info);
       }
   ~VisibilityResultReadback() {
     for (auto query : queries) {

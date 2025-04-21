@@ -341,7 +341,7 @@ public:
       info.output_width = layer_props.drawable_width;
       info.color_format = backbuffer_->texture()->pixelFormat();
       info.output_format =upscaled_backbuffer_->texture()->pixelFormat();
-      metalfx_scaler = m_device->GetMTLDevice().newSpatialScaler(&info);
+      metalfx_scaler = m_device->GetMTLDevice().newSpatialScaler(info);
       D3D11_ASSERT(metalfx_scaler && "otherwise metalfx failed to initialize");
     }
 

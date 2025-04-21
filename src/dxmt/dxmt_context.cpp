@@ -24,12 +24,12 @@ ArgumentEncodingContext::ArgumentEncodingContext(CommandQueue &queue, WMT::Devic
   dummy_sampler_info_.lod_max_clamp = FLT_MAX;
   dummy_sampler_info_.max_anisotroy = 1;
   dummy_sampler_info_.lod_average = false;
-  dummy_sampler_ = device.newSamplerState(&dummy_sampler_info_);
+  dummy_sampler_ = device.newSamplerState(dummy_sampler_info_);
   dummy_cbuffer_info_.length = 65536;
   dummy_cbuffer_info_.memory.set(0);
   dummy_cbuffer_info_.options = WMTResourceOptionCPUCacheModeWriteCombined | WMTResourceStorageModeShared |
                                 WMTResourceHazardTrackingModeUntracked;
-  dummy_cbuffer_ = device.newBuffer(&dummy_cbuffer_info_);
+  dummy_cbuffer_ = device.newBuffer(dummy_cbuffer_info_);
   std::memset(dummy_cbuffer_info_.memory.get(), 0, 65536);
   cpu_buffer_ = malloc(kCommandChunkCPUHeapSize);
 };
@@ -838,7 +838,7 @@ ArgumentEncodingContext::flushCommands(WMT::CommandBuffer cmdbuf_, uint64_t seqI
     }
     case EncoderType::TemporalUpscale: {
       auto data = static_cast<TemporalUpscaleData *>(current);
-      cmdbuf_.encodeTemporalScale(data->scaler, data->input, data->output, data->depth, data->motion_vector, data->exposure, &data->props);
+      cmdbuf_.encodeTemporalScale(data->scaler, data->input, data->output, data->depth, data->motion_vector, data->exposure, data->props);
       data->~TemporalUpscaleData();
       break;
     }

@@ -4369,7 +4369,7 @@ public:
       info.input_content_min_scale = 1.0f;
       info.input_content_max_scale =  3.0f;
       info.requires_synchronous_initialization = true;
-      scaler_entry.scaler = ctx_->device->GetMTLDevice().newTemporalScaler(&info);
+      scaler_entry.scaler = ctx_->device->GetMTLDevice().newTemporalScaler(info);
       scaler = scaler_entry.scaler;
       scaler_cache_.push_back(std::move(scaler_entry));
       // to simplify implementation, the created scalers are never destroyed

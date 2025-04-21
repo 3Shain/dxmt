@@ -67,7 +67,7 @@ struct unixcall_mtldevice_newsamplerstate {
 
 struct unixcall_mtldevice_newdepthstencilstate {
   obj_handle_t device;
-  struct WMTDepthStencilInfo *info;
+  const struct WMTDepthStencilInfo *info;
   obj_handle_t ret;
 };
 
@@ -115,14 +115,14 @@ struct unixcall_mtldevice_newcomputepso {
 
 struct unixcall_mtldevice_newrenderpso {
   obj_handle_t device;
-  struct WMTRenderPipelineInfo *info;
+  const struct WMTRenderPipelineInfo *info;
   obj_handle_t ret_error;
   obj_handle_t ret_pso;
 };
 
 struct unixcall_mtldevice_newmeshrenderpso {
   obj_handle_t device;
-  struct WMTMeshRenderPipelineInfo *info;
+  const struct WMTMeshRenderPipelineInfo *info;
   obj_handle_t ret_error;
   obj_handle_t ret_pso;
 };
@@ -175,13 +175,13 @@ struct unixcall_mtlcapturemanager_startcapture {
 
 struct unixcall_mtldevice_newfxtemporalscaler {
   obj_handle_t device;
-  struct WMTFXTemporalScalerInfo *info;
+  const struct WMTFXTemporalScalerInfo *info;
   obj_handle_t ret;
 };
 
 struct unixcall_mtldevice_newfxspatialscaler {
   obj_handle_t device;
-  struct WMTFXSpatialScalerInfo *info;
+  const struct WMTFXSpatialScalerInfo *info;
   obj_handle_t ret;
 };
 
@@ -193,7 +193,7 @@ struct unixcall_mtlcommandbuffer_temporal_scale {
   obj_handle_t depth;
   obj_handle_t motion;
   obj_handle_t exposure;
-  struct WMTFXTemporalScalerProps *props;
+  const struct WMTFXTemporalScalerProps *props;
 };
 
 struct unixcall_mtlcommandbuffer_spatial_scale {

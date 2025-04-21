@@ -12,7 +12,7 @@ std::atomic_uint64_t global_buffer_seq = {0};
 BufferAllocation::BufferAllocation(WMT::Device device, const WMTBufferInfo &info, Flags<BufferAllocationFlag> flags) :
     info_(info),
     flags_(flags) {
-  obj_ = device.newBuffer(&info_);
+  obj_ = device.newBuffer(info_);
   gpuAddress = info_.gpu_address;
   mappedMemory = info_.memory.get();
   depkey = EncoderDepSet::generateNewKey(global_buffer_seq.fetch_add(1));
@@ -85,7 +85,7 @@ Buffer::prepareAllocationViews(BufferAllocation *allocation) {
     info.options = allocation->info_.options;
     info.usage = WMTTextureUsageShaderRead; // FIXME
 
-    auto view = allocation->obj_.newTexture(&info, 0, length_);
+    auto view = allocation->obj_.newTexture(info, 0, length_);
 
     allocation->cached_view_.push_back(std::make_unique<BufferView>(std::move(view), info.gpu_resource_id));
   }
