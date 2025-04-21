@@ -116,7 +116,7 @@ public:
     info.immutable_vertex_buffers = (1 << 16) | (1 << 29) | (1 << 30);
     info.immutable_fragment_buffers = (1 << 29) | (1 << 30);
 
-    state_ = device_->GetWMTDevice().newRenderPipelineState(&info, err);
+    state_ = device_->GetWMTDevice().newRenderPipelineState(info, err);
 
     if (state_ == nullptr) {
       ERR("Failed to create PSO: ", err.description().getUTF8String());

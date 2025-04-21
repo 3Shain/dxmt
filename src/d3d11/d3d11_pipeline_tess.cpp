@@ -100,7 +100,7 @@ public:
     info_mesh.immutable_object_buffers = (1 << 16) | (1 << 21) | (1 << 29) | (1 << 30);
     info_mesh.immutable_mesh_buffers = (1 << 29) | (1 << 30);
 
-    state_mesh_ = device_->GetWMTDevice().newRenderPipelineState(&info_mesh, err);
+    state_mesh_ = device_->GetWMTDevice().newRenderPipelineState(info_mesh, err);
 
     if (state_mesh_ == nullptr) {
       ERR("Failed to create tessellation mesh PSO: ", err.description().getUTF8String());
@@ -178,7 +178,7 @@ public:
     info.immutable_vertex_buffers = (1 << 20) |  (1 << 21) |  (1 << 22) | (1 << 23) |  (1 << 29) |  (1 << 30);
     info.immutable_fragment_buffers = (1 << 29) | (1 << 30);
 
-    state_rasterization_ = device_->GetWMTDevice().newRenderPipelineState(&info, err);
+    state_rasterization_ = device_->GetWMTDevice().newRenderPipelineState(info, err);
     if (state_rasterization_ == nullptr) {
       ERR("Failed to create tessellation raster PSO: ", err.description().getUTF8String());
     }

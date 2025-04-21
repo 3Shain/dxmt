@@ -573,16 +573,16 @@ HRESULT StateObjectCache<D3D11_DEPTH_STENCIL_DESC, IMTLD3D11DepthStencilState>::
     }
   }
 
-  auto state_default = device->GetWMTDevice().newDepthStencilState(&info);
+  auto state_default = device->GetWMTDevice().newDepthStencilState(info);
 
   if (pDesc->StencilEnable) {
     info.front_stencil.enabled = false;
     info.back_stencil.enabled = false;
-    auto stencil_effective_disabled = device->GetWMTDevice().newDepthStencilState(&info);
+    auto stencil_effective_disabled = device->GetWMTDevice().newDepthStencilState(info);
     if (pDesc->DepthEnable) {
       info.depth_compare_function = WMTCompareFunctionAlways;
       info.depth_write_enabled = false;
-      auto depthstencil_effective_disabled = device->GetWMTDevice().newDepthStencilState(&info);
+      auto depthstencil_effective_disabled = device->GetWMTDevice().newDepthStencilState(info);
       cache.emplace(*pDesc,
                     std::make_unique<MTLD3D11DepthStencilState>(
                         device, state_default, stencil_effective_disabled,
@@ -598,7 +598,7 @@ HRESULT StateObjectCache<D3D11_DEPTH_STENCIL_DESC, IMTLD3D11DepthStencilState>::
     if (pDesc->DepthEnable) {
       info.depth_compare_function = WMTCompareFunctionAlways;
       info.depth_write_enabled = false;
-      auto depth_effective_disabled = device->GetWMTDevice().newDepthStencilState(&info);
+      auto depth_effective_disabled = device->GetWMTDevice().newDepthStencilState(info);
       cache.emplace(*pDesc, std::make_unique<MTLD3D11DepthStencilState>(
                                 device, state_default, state_default,
                                 depth_effective_disabled, *pDesc));
@@ -739,7 +739,7 @@ StateObjectCache<D3D11_SAMPLER_DESC, IMTLD3D11SamplerState>::CreateStateObject(
   info.support_argument_buffers = true;
   info.normalized_coords = true;
 
-  auto mtl_sampler = device->GetWMTDevice().newSamplerState(&info);
+  auto mtl_sampler = device->GetWMTDevice().newSamplerState(info);
 
   cache.emplace(*pSamplerDesc, std::make_unique<MTLD3D11SamplerState>(
                                    device, info, std::move(mtl_sampler), desc,

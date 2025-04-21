@@ -175,10 +175,10 @@ public:
   newTextureView(
       WMTPixelFormat format, WMTTextureType texture_type, uint16_t level_start, uint16_t level_count,
       uint16_t slice_start, uint16_t slice_count, struct WMTTextureSwizzleChannels swizzle,
-      uint64_t *out_gpu_resource_id
+      uint64_t &out_gpu_resource_id
   ) {
     return Reference<Texture>(MTLTexture_newTextureView(
-        handle, format, texture_type, level_start, level_count, slice_start, slice_count, swizzle, out_gpu_resource_id
+        handle, format, texture_type, level_start, level_count, slice_start, slice_count, swizzle, &out_gpu_resource_id
     ));
   }
 
@@ -226,8 +226,8 @@ public:
 class Buffer : public Resource {
 public:
   Reference<Texture>
-  newTexture(WMTTextureInfo *info, uint64_t offset, uint64_t bytes_per_row) {
-    return Reference<Texture>(MTLBuffer_newTexture(handle, info, offset, bytes_per_row));
+  newTexture(WMTTextureInfo &info, uint64_t offset, uint64_t bytes_per_row) {
+    return Reference<Texture>(MTLBuffer_newTexture(handle, &info, offset, bytes_per_row));
   }
 
   void
@@ -492,9 +492,9 @@ public:
   void
   encodeTemporalScale(
       FXTemporalScaler scaler, Texture color, Texture output, Texture depth, Texture motion, Texture exposure,
-      WMTFXTemporalScalerProps *props
+      const WMTFXTemporalScalerProps &props
   ) {
-    MTLCommandBuffer_encodeTemporalScale(handle, scaler, color, output, depth, motion, exposure, props);
+    MTLCommandBuffer_encodeTemporalScale(handle, scaler, color, output, depth, motion, exposure, &props);
   }
 };
 
@@ -544,23 +544,23 @@ public:
   }
 
   Reference<Buffer>
-  newBuffer(WMTBufferInfo *info) {
-    return Reference<Buffer>(MTLDevice_newBuffer(handle, info));
+  newBuffer(WMTBufferInfo &info) {
+    return Reference<Buffer>(MTLDevice_newBuffer(handle, &info));
   }
 
   Reference<SamplerState>
-  newSamplerState(WMTSamplerInfo *info) {
-    return Reference<SamplerState>(MTLDevice_newSamplerState(handle, info));
+  newSamplerState(WMTSamplerInfo &info) {
+    return Reference<SamplerState>(MTLDevice_newSamplerState(handle, &info));
   }
 
   Reference<DepthStencilState>
-  newDepthStencilState(WMTDepthStencilInfo *info) {
-    return Reference<DepthStencilState>(MTLDevice_newDepthStencilState(handle, info));
+  newDepthStencilState(const WMTDepthStencilInfo &info) {
+    return Reference<DepthStencilState>(MTLDevice_newDepthStencilState(handle, &info));
   }
 
   Reference<Texture>
-  newTexture(WMTTextureInfo *info) {
-    return Reference<Texture>(MTLDevice_newTexture(handle, info));
+  newTexture(WMTTextureInfo &info) {
+    return Reference<Texture>(MTLDevice_newTexture(handle, &info));
   }
 
   Reference<Library>
@@ -578,13 +578,13 @@ public:
   }
 
   Reference<RenderPipelineState>
-  newRenderPipelineState(WMTRenderPipelineInfo *info, Error &error) {
-    return Reference<RenderPipelineState>(MTLDevice_newRenderPipelineState(handle, info, &error.handle));
+  newRenderPipelineState(const WMTRenderPipelineInfo &info, Error &error) {
+    return Reference<RenderPipelineState>(MTLDevice_newRenderPipelineState(handle, &info, &error.handle));
   }
 
   Reference<RenderPipelineState>
-  newRenderPipelineState(WMTMeshRenderPipelineInfo *info, Error &error) {
-    return Reference<RenderPipelineState>(MTLDevice_newMeshRenderPipelineState(handle, info, &error.handle));
+  newRenderPipelineState(const WMTMeshRenderPipelineInfo &info, Error &error) {
+    return Reference<RenderPipelineState>(MTLDevice_newMeshRenderPipelineState(handle, &info, &error.handle));
   }
 
   uint64_t
@@ -613,13 +613,13 @@ public:
   }
 
   Reference<FXTemporalScaler>
-  newTemporalScaler(WMTFXTemporalScalerInfo *info) {
-    return Reference<FXTemporalScaler>(MTLDevice_newTemporalScaler(handle, info));
+  newTemporalScaler(const WMTFXTemporalScalerInfo &info) {
+    return Reference<FXTemporalScaler>(MTLDevice_newTemporalScaler(handle, &info));
   }
 
   Reference<FXSpatialScaler>
-  newSpatialScaler(WMTFXSpatialScalerInfo *info) {
-    return Reference<FXSpatialScaler>(MTLDevice_newSpatialScaler(handle, info));
+  newSpatialScaler(const WMTFXSpatialScalerInfo &info) {
+    return Reference<FXSpatialScaler>(MTLDevice_newSpatialScaler(handle, &info));
   }
 
   bool

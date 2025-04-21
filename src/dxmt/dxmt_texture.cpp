@@ -15,7 +15,7 @@ TextureAllocation::TextureAllocation(
     buffer_(std::move(buffer)),
     flags_(flags) {
   auto info_copy = info;
-  obj_ = buffer_.newTexture(&info_copy, 0, bytes_per_row);
+  obj_ = buffer_.newTexture(info_copy, 0, bytes_per_row);
 
   gpuResourceID = info_copy.gpu_resource_id;
   depkey = EncoderDepSet::generateNewKey(global_texture_seq.fetch_add(1));
@@ -67,7 +67,7 @@ Texture::prepareAllocationViews(TextureAllocation *allocaiton) {
       case WMTPixelFormatStencil8:
         ref = texture.newTextureView(
             view.format, view.type, view.firstMiplevel, view.miplevelCount, view.firstArraySlice, view.arraySize,
-            {WMTTextureSwizzleRed, WMTTextureSwizzleZero, WMTTextureSwizzleZero, WMTTextureSwizzleOne}, &gpu_resource_id
+            {WMTTextureSwizzleRed, WMTTextureSwizzleZero, WMTTextureSwizzleZero, WMTTextureSwizzleOne}, gpu_resource_id
         );
         allocaiton->cached_view_.push_back(std::make_unique<TextureView>(std::move(ref), gpu_resource_id));
         continue;
@@ -75,7 +75,7 @@ Texture::prepareAllocationViews(TextureAllocation *allocaiton) {
       case WMTPixelFormatX24_Stencil8:
         ref = texture.newTextureView(
             view.format, view.type, view.firstMiplevel, view.miplevelCount, view.firstArraySlice, view.arraySize,
-            {WMTTextureSwizzleZero, WMTTextureSwizzleRed, WMTTextureSwizzleZero, WMTTextureSwizzleOne}, &gpu_resource_id
+            {WMTTextureSwizzleZero, WMTTextureSwizzleRed, WMTTextureSwizzleZero, WMTTextureSwizzleOne}, gpu_resource_id
         );
         allocaiton->cached_view_.push_back(std::make_unique<TextureView>(std::move(ref), gpu_resource_id));
         continue;
@@ -85,7 +85,7 @@ Texture::prepareAllocationViews(TextureAllocation *allocaiton) {
     }
     ref = texture.newTextureView(
         view.format, view.type, view.firstMiplevel, view.miplevelCount, view.firstArraySlice, view.arraySize,
-        {WMTTextureSwizzleRed, WMTTextureSwizzleGreen, WMTTextureSwizzleBlue, WMTTextureSwizzleAlpha}, &gpu_resource_id
+        {WMTTextureSwizzleRed, WMTTextureSwizzleGreen, WMTTextureSwizzleBlue, WMTTextureSwizzleAlpha}, gpu_resource_id
     );
     allocaiton->cached_view_.push_back(std::make_unique<TextureView>(std::move(ref), gpu_resource_id));
   }
@@ -209,10 +209,10 @@ Texture::allocate(Flags<TextureAllocationFlag> flags) {
     buffer_info.length = bytes_per_image_;
     buffer_info.options = options;
     buffer_info.memory.set(nullptr);
-    auto buffer = device_.newBuffer(&buffer_info);
+    auto buffer = device_.newBuffer(buffer_info);
     return new TextureAllocation(std::move(buffer), buffer_info.memory.get(), info, bytes_per_row_, flags);
   }
-  auto texture = device_.newTexture(&info);
+  auto texture = device_.newTexture(info);
   return new TextureAllocation(std::move(texture), info, flags);
 }
 

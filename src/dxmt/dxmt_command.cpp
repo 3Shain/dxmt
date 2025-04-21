@@ -38,9 +38,9 @@ EmulatedCommandContext::EmulatedCommandContext(WMT::Device device, ArgumentEncod
     present_pipeline.vertex_function = vs_present_quad;
     present_pipeline.fragment_function = fs_present_quad;
     present_pipeline.colors[0].pixel_format = WMTPixelFormatBGRA8Unorm;
-    present_swapchain_blit = device.newRenderPipelineState(&present_pipeline, error);
+    present_swapchain_blit = device.newRenderPipelineState(present_pipeline, error);
     present_pipeline.fragment_function = fs_present_quad_scaled;
-    present_swapchain_scale = device.newRenderPipelineState(&present_pipeline, error);
+    present_swapchain_scale = device.newRenderPipelineState(present_pipeline, error);
   }
 
   auto gs_draw_arguments_marshal_vs = library.newFunction("gs_draw_arguments_marshal");
@@ -49,7 +49,7 @@ EmulatedCommandContext::EmulatedCommandContext(WMT::Device device, ArgumentEncod
     WMT::InitializeRenderPipelineInfo(gs_marshal_pipeline);
     gs_marshal_pipeline.vertex_function = gs_draw_arguments_marshal_vs;
     gs_marshal_pipeline.rasterization_enabled = false;
-    gs_draw_arguments_marshal = device.newRenderPipelineState(&gs_marshal_pipeline, error);
+    gs_draw_arguments_marshal = device.newRenderPipelineState(gs_marshal_pipeline, error);
   }
 }
 } // namespace dxmt
