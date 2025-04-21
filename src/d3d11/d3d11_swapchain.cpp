@@ -783,6 +783,13 @@ CreateSwapChain(
     return DXGI_ERROR_INVALID_CALL;
   InitReturnPtr(ppSwapChain);
 
+  DWORD window_process_id;
+  GetWindowThreadProcessId(hWnd, &window_process_id);
+  if (GetProcessId(GetCurrentProcess()) != window_process_id) {
+    ERR("CreateSwapChain: cross-process swapchain not supported yet");
+    return E_FAIL;
+  }
+
   Com<IMTLDXGIDevice> layer_factory;
   if (FAILED(pDevice->QueryInterface(IID_PPV_ARGS(&layer_factory)))) {
     ERR("CreateSwapChain: failed to get IMTLDXGIDevice");
