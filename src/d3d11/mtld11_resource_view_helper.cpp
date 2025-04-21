@@ -27,7 +27,7 @@ InitializeAndNormalizeViewDescriptor(
     D3D11_SHADER_RESOURCE_VIEW_DESC1 &ViewDesc, TextureViewDescriptor &Descriptor
 ) {
   MTL_DXGI_FORMAT_DESC metal_format;
-  if (FAILED(MTLQueryDXGIFormat(pDevice->GetWMTDevice(), ViewDesc.Format, metal_format))) {
+  if (FAILED(MTLQueryDXGIFormat(pDevice->GetMTLDevice(), ViewDesc.Format, metal_format))) {
     ERR("Failed to create SRV due to unsupported format ", ViewDesc.Format);
     return E_FAIL;
   }
@@ -188,7 +188,7 @@ InitializeAndNormalizeViewDescriptor(
     D3D11_UNORDERED_ACCESS_VIEW_DESC1 &ViewDesc, TextureViewDescriptor &Descriptor
 ) {
   MTL_DXGI_FORMAT_DESC metal_format;
-  if (FAILED(MTLQueryDXGIFormat(pDevice->GetWMTDevice(), ViewDesc.Format,
+  if (FAILED(MTLQueryDXGIFormat(pDevice->GetMTLDevice(), ViewDesc.Format,
                                 metal_format))) {
     return E_FAIL;
   }
@@ -294,7 +294,7 @@ HRESULT InitializeAndNormalizeViewDescriptor(
     D3D11_RENDER_TARGET_VIEW_DESC1 &ViewDesc, MTL_RENDER_PASS_ATTACHMENT_DESC &AttachmentDesc, TextureViewDescriptor &Descriptor
 ) {
   MTL_DXGI_FORMAT_DESC metal_format;
-  if (FAILED(MTLQueryDXGIFormat(pDevice->GetWMTDevice(), ViewDesc.Format,
+  if (FAILED(MTLQueryDXGIFormat(pDevice->GetMTLDevice(), ViewDesc.Format,
                                 metal_format))) {
     return E_FAIL;
   }
@@ -446,7 +446,7 @@ InitializeAndNormalizeViewDescriptor(
     TextureViewDescriptor &Descriptor
 ) {
   MTL_DXGI_FORMAT_DESC metal_format;
-  if (FAILED(MTLQueryDXGIFormat(pDevice->GetWMTDevice(), ViewDesc.Format, metal_format))) {
+  if (FAILED(MTLQueryDXGIFormat(pDevice->GetMTLDevice(), ViewDesc.Format, metal_format))) {
     ERR("Failed to create DSV due to unsupported format ", ViewDesc.Format);
     return E_FAIL;
   }

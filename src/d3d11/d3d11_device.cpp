@@ -70,7 +70,7 @@ public:
     pipeline_cache_ = InitializePipelineCache(this);
     context_ = InitializeImmediateContext(this, device_.queue());
     is_traced_ = !!::GetModuleHandle("dxgitrace.dll");
-    format_inspector.Inspect(GetWMTDevice());
+    format_inspector.Inspect(GetMTLDevice());
   }
 
   ~MTLD3D11DeviceImpl() {}
@@ -505,7 +505,7 @@ public:
     }
 
     MTL_DXGI_FORMAT_DESC metal_format;
-    if (FAILED(MTLQueryDXGIFormat(GetWMTDevice(), Format, metal_format))) {
+    if (FAILED(MTLQueryDXGIFormat(GetMTLDevice(), Format, metal_format))) {
       return E_INVALIDARG;
     }
 
@@ -651,7 +651,7 @@ public:
       }
 
       MTL_DXGI_FORMAT_DESC metal_format;
-      if (FAILED(MTLQueryDXGIFormat(GetWMTDevice(), info->InFormat,
+      if (FAILED(MTLQueryDXGIFormat(GetMTLDevice(), info->InFormat,
                                     metal_format))) {
         return E_INVALIDARG;
       }
@@ -843,7 +843,7 @@ public:
     }
     *pNumQualityLevels = 0;
     MTL_DXGI_FORMAT_DESC desc;
-    if (FAILED(MTLQueryDXGIFormat(GetWMTDevice(), Format, desc)) ||
+    if (FAILED(MTLQueryDXGIFormat(GetMTLDevice(), Format, desc)) ||
         desc.PixelFormat == WMTPixelFormatInvalid) {
       return E_INVALIDARG;
     }
@@ -1008,10 +1008,6 @@ public:
                       const D3D11_BOX *src_box) override{IMPLEMENT_ME}
 
   WMT::Device STDMETHODCALLTYPE GetMTLDevice() override {
-    return m_container->GetMTLDevice();
-  }
-
-  WMT::Device STDMETHODCALLTYPE GetWMTDevice() override {
     return m_container->GetMTLDevice();
   }
 

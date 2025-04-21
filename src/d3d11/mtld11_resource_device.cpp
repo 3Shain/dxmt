@@ -288,7 +288,7 @@ HRESULT CreateDeviceTextureInternal(MTLD3D11Device *pDevice,
     return E_INVALIDARG;
   }
   bool single_subresource = info.mipmap_level_count * info.array_length == 1;
-  auto texture = Rc<Texture>(new Texture(info, pDevice->GetWMTDevice()));
+  auto texture = Rc<Texture>(new Texture(info, pDevice->GetMTLDevice()));
   Flags<TextureAllocationFlag> flags;
   flags.set(TextureAllocationFlag::GpuManaged);
   if (finalDesc.Usage == D3D11_USAGE_IMMUTABLE)
