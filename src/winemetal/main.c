@@ -13,20 +13,9 @@ BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID reserved) {
 extern BOOL WINAPI DllMainCRTStartup(HANDLE hDllHandle, DWORD dwReason,
                                        LPVOID lpreserved);
 
-extern void initialize_veh();
-extern void cleanup_veh();
-
 BOOL WINAPI WineMetalEntry(HANDLE hDllHandle, DWORD dwReason, LPVOID lpreserved) {
-  if (dwReason == DLL_PROCESS_ATTACH) {
-    if (__wine_init_unix_call()) {
-      return FALSE;
-    }
-    initialize_veh();
-  }
-  if(dwReason == DLL_PROCESS_DETACH) {
-    cleanup_veh();
-  }
-
+  if (dwReason == DLL_PROCESS_ATTACH && __wine_init_unix_call())
+    return FALSE;
   // Then call the actual CRT startup
   return DllMainCRTStartup(hDllHandle, dwReason, lpreserved);
 }
