@@ -369,7 +369,7 @@ CreateMTLTextureDescriptorInternal(
     break;
   }
 
-  pDescOut->options = (options);
+  pDescOut->options = options;
 
   if (MipLevels == 0) {
     pDescOut->mipmap_level_count = 32 - __builtin_clz(Width | Height);
@@ -388,7 +388,7 @@ CreateMTLTextureDescriptorInternal(
   case D3D11_RESOURCE_DIMENSION_TEXTURE1D:
     if (ArraySize > 1) {
       pDescOut->type = WMTTextureType2DArray;
-      pDescOut->array_length = (ArraySize);
+      pDescOut->array_length = ArraySize;
     } else {
       pDescOut->type = WMTTextureType2D;
     }
@@ -399,7 +399,7 @@ CreateMTLTextureDescriptorInternal(
       D3D11_ASSERT((ArraySize % 6) == 0);
       if ((ArraySize / 6) > 1) {
         pDescOut->type = WMTTextureTypeCubeArray;
-        pDescOut->array_length = (ArraySize / 6);
+        pDescOut->array_length = ArraySize / 6;
       } else {
         pDescOut->type = WMTTextureTypeCube;
       }
@@ -412,7 +412,7 @@ CreateMTLTextureDescriptorInternal(
         }
         if (ArraySize > 1) {
           pDescOut->type = WMTTextureType2DMultisampleArray;
-          pDescOut->array_length = (ArraySize);
+          pDescOut->array_length = ArraySize;
         } else {
           pDescOut->type = WMTTextureType2DMultisample;
         }
@@ -420,7 +420,7 @@ CreateMTLTextureDescriptorInternal(
       } else {
         if (ArraySize > 1) {
           pDescOut->type = WMTTextureType2DArray;
-          pDescOut->array_length = (ArraySize);
+          pDescOut->array_length = ArraySize;
         } else {
           pDescOut->type = WMTTextureType2D;
         }
