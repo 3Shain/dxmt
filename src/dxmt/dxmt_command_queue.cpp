@@ -93,7 +93,7 @@ CommandQueue::CommitChunkInternal(CommandChunk &chunk, uint64_t seq) {
     WMTCaptureInfo info;
     auto capture_mgr = WMT::CaptureManager::sharedCaptureManager();
     info.capture_object = device;
-    info.destination = (WMTCaptureDestinationGPUTraceDocument);
+    info.destination = WMTCaptureDestinationGPUTraceDocument;
     char filename[1024];
     std::time_t now;
     std::time(&now);
