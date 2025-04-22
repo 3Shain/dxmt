@@ -8,8 +8,8 @@ void
 HUDState::initialize(const std::string &heading) {
   using namespace WMT;
   auto pool = MakeAutoreleasePool();
-  auto str_dxmt_version = MakeString("com.github.3shain.dxmt-version", WMTASCIIStringEncoding);
-  hud_.addLabel(str_dxmt_version, String::string("com.apple.hud-graph.default", WMTASCIIStringEncoding));
+  auto str_dxmt_version = MakeString("com.github.3shain.dxmt-version", WMTUTF8StringEncoding);
+  hud_.addLabel(str_dxmt_version, String::string("com.apple.hud-graph.default", WMTUTF8StringEncoding));
   hud_.updateLabel(str_dxmt_version, String::string(heading.c_str(), WMTUTF8StringEncoding));
   line_labels_.push_back(std::move(str_dxmt_version));
 }
@@ -26,11 +26,11 @@ HUDState::printLine(const char *c_str) {
   while (current_line_ >= line_labels_.size()) {
     String prev = line_labels_.back();
     line_labels_.push_back(MakeString(
-        ("com.github.3shain.dxmt-line" + std::to_string(line_labels_.size())).c_str(), WMTASCIIStringEncoding
+        ("com.github.3shain.dxmt-line" + std::to_string(line_labels_.size())).c_str(), WMTUTF8StringEncoding
     ));
     hud_.addLabel(line_labels_.back(), prev);
   }
-  hud_.updateLabel(line_labels_[current_line_], String::string(c_str, WMTASCIIStringEncoding));
+  hud_.updateLabel(line_labels_[current_line_], String::string(c_str, WMTUTF8StringEncoding));
   current_line_++;
 }
 
