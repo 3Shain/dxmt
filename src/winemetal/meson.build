@@ -1,6 +1,5 @@
 winemetal_src = [
   'main.c',
-  'error_handling.c',
   'unix_thunks.c',
   'winemetal_thunks.c'
 ]
