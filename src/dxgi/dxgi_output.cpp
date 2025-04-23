@@ -510,7 +510,9 @@ public:
     return DXGI_ERROR_UNSUPPORTED;
   }
 
-  HRESULT CheckOverlaySupport(DXGI_FORMAT enum_format,
+  HRESULT
+  STDMETHODCALLTYPE
+  CheckOverlaySupport(DXGI_FORMAT enum_format,
                               IUnknown *concerned_device,
                               UINT *flags) override {
     if (flags) {
@@ -519,9 +521,9 @@ public:
     return S_OK;
   }
 
-  WINBOOL SupportsOverlays() override { return FALSE; }
+  WINBOOL STDMETHODCALLTYPE SupportsOverlays() override { return FALSE; }
 
-  HRESULT CheckOverlayColorSpaceSupport(DXGI_FORMAT format,
+  HRESULT STDMETHODCALLTYPE CheckOverlayColorSpaceSupport(DXGI_FORMAT format,
                                         DXGI_COLOR_SPACE_TYPE colour_space,
                                         IUnknown *device,
                                         UINT *flags) override {
@@ -531,7 +533,7 @@ public:
     return S_OK;
   }
 
-  HRESULT GetDesc1(DXGI_OUTPUT_DESC1 *pDesc) override {
+  HRESULT STDMETHODCALLTYPE GetDesc1(DXGI_OUTPUT_DESC1 *pDesc) override {
     if (pDesc == nullptr)
       return DXGI_ERROR_INVALID_CALL;
 
@@ -561,7 +563,9 @@ public:
     return S_OK;
   }
 
-  HRESULT CheckHardwareCompositionSupport(UINT *flags) override {
+  HRESULT
+  STDMETHODCALLTYPE
+  CheckHardwareCompositionSupport(UINT *flags) override {
     if (flags) {
       *flags = 0;
     }
@@ -569,6 +573,7 @@ public:
   }
 
   HRESULT
+  STDMETHODCALLTYPE
   DuplicateOutput1(IUnknown *pDevice, UINT flags, UINT format_count,
                    const DXGI_FORMAT *formats,
                    IDXGIOutputDuplication **ppOutputDuplication) override {

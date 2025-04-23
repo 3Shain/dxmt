@@ -40,7 +40,7 @@ public:
 
   ~TShaderBase() {}
 
-  HRESULT QueryInterface(REFIID riid, void **ppvObject) {
+  HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void **ppvObject) {
     if (ppvObject == nullptr)
       return E_POINTER;
 

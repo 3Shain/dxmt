@@ -712,7 +712,7 @@ public:
     return DXGI_ERROR_INVALID_CALL;
   };
 
-  HRESULT CheckColorSpaceSupport(DXGI_COLOR_SPACE_TYPE ColorSpace,
+  HRESULT STDMETHODCALLTYPE CheckColorSpaceSupport(DXGI_COLOR_SPACE_TYPE ColorSpace,
                                  UINT *pColorSpaceSupport) override {
     WARN("DXGISwapChain3::CheckColorSpaceSupport: stub");
     if (pColorSpaceSupport) {
@@ -721,12 +721,12 @@ public:
     return S_OK;
   };
 
-  UINT GetCurrentBackBufferIndex() override {
+  UINT STDMETHODCALLTYPE GetCurrentBackBufferIndex() override {
     // should always 0?
     return 0;
   }
 
-  HRESULT ResizeBuffers1(UINT BufferCount, UINT Width, UINT Height,
+  HRESULT STDMETHODCALLTYPE ResizeBuffers1(UINT BufferCount, UINT Width, UINT Height,
                          DXGI_FORMAT Format, UINT SwapChainFlags,
                          const UINT *pCreationNodeMask,
                          IUnknown *const *ppPresentQueue) override {
@@ -734,12 +734,12 @@ public:
     return ResizeBuffers(BufferCount, Width, Height, Format, SwapChainFlags);
   }
 
-  HRESULT SetColorSpace1(DXGI_COLOR_SPACE_TYPE ColorSpace) override {
+  HRESULT STDMETHODCALLTYPE SetColorSpace1(DXGI_COLOR_SPACE_TYPE ColorSpace) override {
     WARN("DXGISwapChain3::SetColorSpace1: stub");
     return S_OK;
   }
 
-  HRESULT SetHDRMetaData(DXGI_HDR_METADATA_TYPE Type, UINT Size,
+  HRESULT STDMETHODCALLTYPE SetHDRMetaData(DXGI_HDR_METADATA_TYPE Type, UINT Size,
                          void *pMetaData) override {
     WARN("DXGISwapChain4::SetHDRMetaData: stub");
     return DXGI_ERROR_UNSUPPORTED;

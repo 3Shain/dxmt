@@ -162,7 +162,7 @@ public:
     return ResolveBase<n + 1, Args...>(riid, ppvObject);
   };
 
-  HRESULT QueryInterface(REFIID riid, void **ppvObject) {
+  HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void **ppvObject) {
     if (ppvObject == nullptr)
       return E_POINTER;
 
@@ -195,19 +195,19 @@ public:
     return E_NOINTERFACE;
   }
 
-  void GetDesc(void *pDesc) final {
+  void STDMETHODCALLTYPE GetDesc(void *pDesc) final {
     ::dxmt::DowngradeResourceDescription(desc, (typename tag::DESC *)pDesc);
   }
 
-  void GetDesc1(void *pDesc) /* override / final */ { *(typename tag::DESC1 *)pDesc = desc; }
+  void STDMETHODCALLTYPE GetDesc1(void *pDesc) /* override / final */ { *(typename tag::DESC1 *)pDesc = desc; }
 
-  void GetType(D3D11_RESOURCE_DIMENSION *pResourceDimension) final {
+  void STDMETHODCALLTYPE GetType(D3D11_RESOURCE_DIMENSION *pResourceDimension) final {
     *pResourceDimension = tag::dimension;
   }
 
-  void SetEvictionPriority(UINT EvictionPriority) final {}
+  void STDMETHODCALLTYPE SetEvictionPriority(UINT EvictionPriority) final {}
 
-  UINT GetEvictionPriority() final { return DXGI_RESOURCE_PRIORITY_NORMAL; }
+  UINT STDMETHODCALLTYPE GetEvictionPriority() final { return DXGI_RESOURCE_PRIORITY_NORMAL; }
 
   virtual HRESULT GetDeviceInterface(REFIID riid, void **ppDevice) {
     Com<ID3D11Device> device;
@@ -323,7 +323,7 @@ public:
     return ResolveBase<n + 1, Args...>(riid, ppvObject);
   };
 
-  HRESULT QueryInterface(REFIID riid, void **ppvObject) {
+  HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void **ppvObject) {
     if (ppvObject == nullptr)
       return E_POINTER;
 
@@ -348,13 +348,13 @@ public:
     return E_NOINTERFACE;
   }
 
-  void GetDesc(tag::DESC *pDesc) final {
+  void STDMETHODCALLTYPE GetDesc(tag::DESC *pDesc) final {
     DowngradeViewDescription(desc, pDesc);
   }
 
-  void GetDesc1(tag::DESC1 *pDesc) /* override / final */ { *pDesc = desc; }
+  void STDMETHODCALLTYPE GetDesc1(tag::DESC1 *pDesc) /* override / final */ { *pDesc = desc; }
 
-  void GetResource(tag::RESOURCE **ppResource) final {
+  void STDMETHODCALLTYPE GetResource(tag::RESOURCE **ppResource) final {
     resource->QueryInterface(IID_PPV_ARGS(ppResource));
   }
 

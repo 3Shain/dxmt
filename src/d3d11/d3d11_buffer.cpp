@@ -99,6 +99,7 @@ public:
   }
 
   HRESULT
+  STDMETHODCALLTYPE
   QueryInterface(REFIID riid, void **ppvObject) override {
     if (ppvObject == nullptr)
       return E_POINTER;
@@ -134,6 +135,7 @@ public:
   };
 
   HRESULT
+  STDMETHODCALLTYPE
   CreateShaderResourceView(const D3D11_SHADER_RESOURCE_VIEW_DESC1 *pDesc, ID3D11ShaderResourceView1 **ppView) override {
     D3D11_SHADER_RESOURCE_VIEW_DESC1 finalDesc;
     if (FAILED(ExtractEntireResourceViewDescription(&this->desc, pDesc, &finalDesc))) {
@@ -202,6 +204,7 @@ public:
   };
 
   HRESULT
+  STDMETHODCALLTYPE
   CreateUnorderedAccessView(const D3D11_UNORDERED_ACCESS_VIEW_DESC1 *pDesc, ID3D11UnorderedAccessView1 **ppView)
       override {
     D3D11_UNORDERED_ACCESS_VIEW_DESC1 finalDesc;

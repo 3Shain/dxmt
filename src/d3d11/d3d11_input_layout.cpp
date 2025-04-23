@@ -139,9 +139,9 @@ private:
   public:
     NullGeometryShader(IUnknown *container) : container(container) {};
 
-    ULONG AddRef() override { return container->AddRef(); }
-    ULONG Release() override { return container->Release(); }
-    HRESULT QueryInterface(REFIID riid, void **ppvObject) override {
+    ULONG STDMETHODCALLTYPE AddRef() override { return container->AddRef(); }
+    ULONG STDMETHODCALLTYPE Release() override { return container->Release(); }
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void **ppvObject) override {
       return container->QueryInterface(riid, ppvObject);
     }
 

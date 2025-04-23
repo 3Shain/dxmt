@@ -155,7 +155,7 @@ public:
   Rc<DynamicBuffer> dynamicBuffer(UINT*, UINT*) final { return {}; }
   Rc<DynamicTexture> dynamicTexture(UINT*, UINT*) final { return {}; };
 
-  HRESULT CreateRenderTargetView(const D3D11_RENDER_TARGET_VIEW_DESC1 *pDesc,
+  HRESULT STDMETHODCALLTYPE CreateRenderTargetView(const D3D11_RENDER_TARGET_VIEW_DESC1 *pDesc,
                                  ID3D11RenderTargetView1 **ppView) override {
     D3D11_RENDER_TARGET_VIEW_DESC1 finalDesc;
     if (FAILED(ExtractEntireResourceViewDescription(&this->desc, pDesc,
@@ -184,7 +184,7 @@ public:
     return S_OK;
   };
 
-  HRESULT CreateDepthStencilView(const D3D11_DEPTH_STENCIL_VIEW_DESC *pDesc,
+  HRESULT STDMETHODCALLTYPE CreateDepthStencilView(const D3D11_DEPTH_STENCIL_VIEW_DESC *pDesc,
                                  ID3D11DepthStencilView **ppView) override {
     D3D11_DEPTH_STENCIL_VIEW_DESC finalDesc;
     if (FAILED(ExtractEntireResourceViewDescription(&this->desc, pDesc,
@@ -214,6 +214,7 @@ public:
   };
 
   HRESULT
+  STDMETHODCALLTYPE
   CreateShaderResourceView(const D3D11_SHADER_RESOURCE_VIEW_DESC1 *pDesc,
                            ID3D11ShaderResourceView1 **ppView) override {
     D3D11_SHADER_RESOURCE_VIEW_DESC1 finalDesc;
@@ -244,6 +245,7 @@ public:
   };
 
   HRESULT
+  STDMETHODCALLTYPE
   CreateUnorderedAccessView(const D3D11_UNORDERED_ACCESS_VIEW_DESC1 *pDesc,
                             ID3D11UnorderedAccessView1 **ppView) override {
     D3D11_UNORDERED_ACCESS_VIEW_DESC1 finalDesc;
