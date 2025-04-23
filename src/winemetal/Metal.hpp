@@ -250,6 +250,11 @@ public:
   endEncoding() {
     MTLCommandEncoder_endEncoding(handle);
   }
+
+  void
+  setLabel(String label) {
+    MTLCommandEncoder_setLabel(handle, label);
+  }
 };
 
 class ComputePipelineState : public Object {
@@ -630,6 +635,11 @@ public:
   bool
   supportsFXTemporalScaler() {
     return MTLDevice_supportsFXTemporalScaler(handle);
+  }
+
+  void
+  setShouldMaximizeConcurrentCompilation(bool value) {
+    MTLDevice_setShouldMaximizeConcurrentCompilation(handle, value);
   }
 };
 
