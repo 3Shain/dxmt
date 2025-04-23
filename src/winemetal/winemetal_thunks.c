@@ -169,7 +169,7 @@ WINEMETAL_API obj_handle_t
 MTLDevice_newBuffer(obj_handle_t device, struct WMTBufferInfo *info) {
   struct unixcall_mtldevice_newbuffer params;
   params.device = device;
-  params.info = info;
+  WMT_MEMPTR_SET(params.info, info);
   UNIX_CALL(18, &params);
   return params.ret;
 }
@@ -178,7 +178,7 @@ WINEMETAL_API obj_handle_t
 MTLDevice_newSamplerState(obj_handle_t device, struct WMTSamplerInfo *info) {
   struct unixcall_mtldevice_newsamplerstate params;
   params.device = device;
-  params.info = info;
+  WMT_MEMPTR_SET(params.info, info);
   UNIX_CALL(19, &params);
   return params.ret;
 }
@@ -187,7 +187,7 @@ WINEMETAL_API obj_handle_t
 MTLDevice_newDepthStencilState(obj_handle_t device, const struct WMTDepthStencilInfo *info) {
   struct unixcall_mtldevice_newdepthstencilstate params;
   params.device = device;
-  params.info = info;
+  WMT_MEMPTR_SET(params.info, info);
   UNIX_CALL(20, &params);
   return params.ret;
 }
@@ -196,7 +196,7 @@ WINEMETAL_API obj_handle_t
 MTLDevice_newTexture(obj_handle_t device, struct WMTTextureInfo *info) {
   struct unixcall_mtldevice_newtexture params;
   params.device = device;
-  params.info = info;
+  WMT_MEMPTR_SET(params.info, info);
   UNIX_CALL(21, &params);
   return params.ret;
 }
@@ -205,7 +205,7 @@ WINEMETAL_API obj_handle_t
 MTLBuffer_newTexture(obj_handle_t buffer, struct WMTTextureInfo *info, uint64_t offset, uint64_t bytes_per_row) {
   struct unixcall_mtlbuffer_newtexture params;
   params.buffer = buffer;
-  params.info = info;
+  WMT_MEMPTR_SET(params.info, info);
   params.offset = offset;
   params.bytes_per_row = bytes_per_row;
   UNIX_CALL(22, &params);
@@ -340,7 +340,7 @@ WINEMETAL_API obj_handle_t
 MTLDevice_newRenderPipelineState(obj_handle_t device, const struct WMTRenderPipelineInfo *info, obj_handle_t *err_out) {
   struct unixcall_mtldevice_newrenderpso params;
   params.device = device;
-  params.info = info;
+  WMT_MEMPTR_SET(params.info, info);
   params.ret_error = 0;
   params.ret_pso = 0;
   UNIX_CALL(34, &params);
@@ -355,7 +355,7 @@ MTLDevice_newMeshRenderPipelineState(
 ) {
   struct unixcall_mtldevice_newmeshrenderpso params;
   params.device = device;
-  params.info = info;
+  WMT_MEMPTR_SET(params.info, info);
   params.ret_error = 0;
   params.ret_pso = 0;
   UNIX_CALL(35, &params);
@@ -368,7 +368,7 @@ WINEMETAL_API void
 MTLBlitCommandEncoder_encodeCommands(obj_handle_t encoder, const struct wmtcmd_base *cmd_head) {
   struct unixcall_generic_obj_cmd_noret params;
   params.encoder = encoder;
-  params.cmd_head = cmd_head;
+  WMT_MEMPTR_SET(params.cmd_head, cmd_head);
   UNIX_CALL(36, &params);
 }
 
@@ -376,7 +376,7 @@ WINEMETAL_API void
 MTLComputeCommandEncoder_encodeCommands(obj_handle_t encoder, const struct wmtcmd_base *cmd_head) {
   struct unixcall_generic_obj_cmd_noret params;
   params.encoder = encoder;
-  params.cmd_head = cmd_head;
+  WMT_MEMPTR_SET(params.cmd_head, cmd_head);
   UNIX_CALL(37, &params);
 }
 
@@ -384,7 +384,7 @@ WINEMETAL_API void
 MTLRenderCommandEncoder_encodeCommands(obj_handle_t encoder, const struct wmtcmd_base *cmd_head) {
   struct unixcall_generic_obj_cmd_noret params;
   params.encoder = encoder;
-  params.cmd_head = cmd_head;
+  WMT_MEMPTR_SET(params.cmd_head, cmd_head);
   UNIX_CALL(38, &params);
 }
 
@@ -546,7 +546,7 @@ WINEMETAL_API obj_handle_t
 MTLDevice_newTemporalScaler(obj_handle_t device, const struct WMTFXTemporalScalerInfo *info) {
   struct unixcall_mtldevice_newfxtemporalscaler params;
   params.device = device;
-  params.info = info;
+  WMT_MEMPTR_SET(params.info, info);
   UNIX_CALL(56, &params);
   return params.ret;
 }
@@ -555,7 +555,7 @@ WINEMETAL_API obj_handle_t
 MTLDevice_newSpatialScaler(obj_handle_t device, const struct WMTFXSpatialScalerInfo *info) {
   struct unixcall_mtldevice_newfxspatialscaler params;
   params.device = device;
-  params.info = info;
+  WMT_MEMPTR_SET(params.info, info);
   UNIX_CALL(57, &params);
   return params.ret;
 }
@@ -573,7 +573,7 @@ MTLCommandBuffer_encodeTemporalScale(
   params.depth = depth;
   params.motion = motion;
   params.exposure = exposure;
-  params.props = props;
+  WMT_MEMPTR_SET(params.props, props);
   UNIX_CALL(58, &params);
 }
 
@@ -681,7 +681,7 @@ MTLDevice_supportsFXTemporalScaler(obj_handle_t device) {
 
 WINEMETAL_API void
 MetalLayer_setProps(obj_handle_t layer, const struct WMTLayerProps *props) {
-  struct unixcall_generic_obj_ptr_noret params;
+  struct unixcall_generic_obj_constptr_noret params;
   params.handle = layer;
   WMT_MEMPTR_SET(params.arg, props);
   UNIX_CALL(70, &params);
