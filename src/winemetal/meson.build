@@ -18,17 +18,17 @@ if wine_build_path != ''
   if not wine_build_path.startswith('/')
     wine_build_path = join_paths(meson.project_source_root(), wine_build_path)
   endif
-  lib_winecrt0 = cc.find_library('winecrt0', dirs : [ join_paths(wine_build_path, 'dlls/winecrt0/x86_64-windows') ])
-  lib_ntdll = cc.find_library('ntdll', dirs : [ join_paths(wine_build_path, 'dlls/ntdll/x86_64-windows') ])
-  lib_dbghelp = cc.find_library('dbghelp', dirs : [ join_paths(wine_build_path, 'dlls/dbghelp/x86_64-windows') ])
+  lib_winecrt0 = cc.find_library('winecrt0', dirs : [ join_paths(wine_build_path, 'dlls/winecrt0', windows_builtin_install_dir) ])
+  lib_ntdll = cc.find_library('ntdll', dirs : [ join_paths(wine_build_path, 'dlls/ntdll', windows_builtin_install_dir) ])
+  lib_dbghelp = cc.find_library('dbghelp', dirs : [ join_paths(wine_build_path, 'dlls/dbghelp', windows_builtin_install_dir) ])
   winebuild = join_paths(wine_build_path, 'tools/winebuild/winebuild')
 elif wine_install_path != ''
   if not wine_install_path.startswith('/')
     wine_install_path = join_paths(meson.project_source_root(), wine_install_path)
   endif
-  lib_winecrt0 = cc.find_library('winecrt0', dirs : [ join_paths(wine_install_path,'lib/wine/x86_64-windows') ])
-  lib_ntdll = cc.find_library('ntdll', dirs : [ join_paths(wine_install_path, 'lib/wine/x86_64-windows') ])
-  lib_dbghelp = cc.find_library('dbghelp', dirs : [ join_paths(wine_install_path, 'lib/wine/x86_64-windows') ])
+  lib_winecrt0 = cc.find_library('winecrt0', dirs : [ join_paths(wine_install_path,'lib/wine', windows_builtin_install_dir) ])
+  lib_ntdll = cc.find_library('ntdll', dirs : [ join_paths(wine_install_path, 'lib/wine', windows_builtin_install_dir) ])
+  lib_dbghelp = cc.find_library('dbghelp', dirs : [ join_paths(wine_install_path, 'lib/wine', windows_builtin_install_dir) ])
   winebuild = join_paths(wine_install_path, 'bin/winebuild')
 else
   error('One of the options -Dwine_build_path or -Dwine_install_path is required')
@@ -57,4 +57,6 @@ custom_target('postprocess_lib',
   build_by_default : true
 )
 
-subdir('unix')
+if cpu_family == 'x86_64'
+  subdir('unix')
+endif

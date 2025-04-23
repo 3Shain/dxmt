@@ -11,6 +11,8 @@ cc = meson.get_compiler('c')
 clang = meson.get_compiler('c', native: true)
 clangpp = meson.get_compiler('cpp', native: true)
 
+cpu_family = target_machine.cpu_family()
+
 dxmt_include_dirs = [
   './include',
   './libs'
@@ -100,12 +102,24 @@ dxmt_version = vcs_tag(
 
 wine_builtin_dll = get_option('wine_builtin_dll')
 
-if wine_builtin_dll
-windows_native_install_dir = 'x86_64-windows'
+if cpu_family == 'x86'
+  if wine_builtin_dll
+    windows_native_install_dir = 'i386-windows'
+  else
+    windows_native_install_dir = 'syswow64'
+  endif
+  windows_builtin_install_dir = 'i386-windows'
+elif cpu_family == 'x86_64'
+  if wine_builtin_dll
+    windows_native_install_dir = 'x86_64-windows'
+  else
+    windows_native_install_dir = 'system32'
+  endif
+  windows_builtin_install_dir = 'x86_64-windows'
 else
-windows_native_install_dir = 'system32'
+  error('invalid cpu family')
 endif
-windows_builtin_install_dir = 'x86_64-windows'
+
 unix_install_dir = 'x86_64-unix'
 
 subdir('libs')

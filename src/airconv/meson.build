@@ -72,4 +72,6 @@ executable('airconv', airconv_src + airconv_cli_src,
 
 endif
 
-subdir('darwin')
+if cpu_family == 'x86_64'
+  subdir('darwin')
+endif
