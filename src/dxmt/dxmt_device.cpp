@@ -15,7 +15,9 @@ public:
     return cmd_queue_;
   };
 
-  DeviceImpl(const DEVICE_DESC &desc) : device_(desc.device), cmd_queue_(device_) {}
+  DeviceImpl(const DEVICE_DESC &desc) : device_(desc.device), cmd_queue_(device_) {
+    device_.setShouldMaximizeConcurrentCompilation(true);
+  }
 
 private:
   WMT::Reference<WMT::Device> device_;

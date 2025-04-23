@@ -1572,6 +1572,20 @@ thunk_SM50CompileGeometryPipelineGeometry(void *args) {
   return STATUS_SUCCESS;
 }
 
+static NTSTATUS
+_MTLCommandEncoder_setLabel(void *args) {
+  struct unixcall_generic_obj_obj_noret *params = args;
+  [(id<MTLCommandEncoder>)params->handle setLabel:(NSString *)params->arg];
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_MTLDevice_setShouldMaximizeConcurrentCompilation(void *args) {
+  struct unixcall_generic_obj_uint64_noret *params = args;
+  [(id<MTLDevice>)params->handle setShouldMaximizeConcurrentCompilation:(BOOL)params->arg];
+  return STATUS_SUCCESS;
+}
+
 const void *__wine_unix_call_funcs[] = {
     &_NSObject_retain,
     &_NSObject_release,
@@ -1659,4 +1673,6 @@ const void *__wine_unix_call_funcs[] = {
     &thunk_SM50CompileTessellationPipelineVertex,
     &thunk_SM50CompileTessellationPipelineHull,
     &thunk_SM50CompileTessellationPipelineDomain,
+    &_MTLCommandEncoder_setLabel,
+    &_MTLDevice_setShouldMaximizeConcurrentCompilation,
 };

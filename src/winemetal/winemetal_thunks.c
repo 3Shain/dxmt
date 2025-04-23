@@ -713,3 +713,17 @@ ReleaseMetalView(obj_handle_t view) {
   params.handle = view;
   UNIX_CALL(73, &params);
 }
+
+WINEMETAL_API void MTLCommandEncoder_setLabel(obj_handle_t encoder, obj_handle_t label) {
+  struct unixcall_generic_obj_obj_noret params;
+  params.handle = encoder;
+  params.arg = label;
+  UNIX_CALL(86, &params);
+}
+
+WINEMETAL_API void MTLDevice_setShouldMaximizeConcurrentCompilation(obj_handle_t device, bool value) {
+  struct unixcall_generic_obj_uint64_noret params;
+  params.handle = device;
+  params.arg = value;
+  UNIX_CALL(87, &params);
+}

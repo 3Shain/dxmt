@@ -624,7 +624,7 @@ ArgumentEncodingContext::$$setEncodingContext(uint64_t seq_id, uint64_t frame_id
 constexpr unsigned kEncoderOptimizerThreshold = 64;
 
 std::unique_ptr<VisibilityResultReadback>
-ArgumentEncodingContext::flushCommands(WMT::CommandBuffer cmdbuf_, uint64_t seqId, uint64_t event_seq_id) {
+ArgumentEncodingContext::flushCommands(WMT::CommandBuffer cmdbuf, uint64_t seqId, uint64_t event_seq_id) {
   assert(!encoder_current);
 
   unsigned encoder_count = encoder_count_;
@@ -674,7 +674,7 @@ ArgumentEncodingContext::flushCommands(WMT::CommandBuffer cmdbuf_, uint64_t seqI
         assert(visibility_readback);
         data->info.visibility_buffer = visibility_readback->visibility_result_heap;
       }
-      auto encoder = cmdbuf_.renderCommandEncoder(data->info);
+      auto encoder = cmdbuf.renderCommandEncoder(data->info);
       encoder.setVertexBuffer(gpu_buffer_, 0, 16);
       encoder.setVertexBuffer(gpu_buffer_, 0, 29);
       encoder.setVertexBuffer(gpu_buffer_, 0, 30);
@@ -731,7 +731,7 @@ ArgumentEncodingContext::flushCommands(WMT::CommandBuffer cmdbuf_, uint64_t seqI
     }
     case EncoderType::Compute: {
       auto data = static_cast<ComputeEncoderData *>(current);
-      auto encoder = cmdbuf_.computeCommandEncoder(false);
+      auto encoder = cmdbuf.computeCommandEncoder(false);
       struct wmtcmd_compute_setbuffer setcmd;
       setcmd.type = WMTComputeCommandSetBuffer;
       setcmd.next.set(nullptr);
@@ -748,7 +748,7 @@ ArgumentEncodingContext::flushCommands(WMT::CommandBuffer cmdbuf_, uint64_t seqI
     }
     case EncoderType::Blit: {
       auto data = static_cast<BlitEncoderData *>(current);
-      auto encoder = cmdbuf_.blitCommandEncoder();
+      auto encoder = cmdbuf.blitCommandEncoder();
       encoder.encodeCommands(&data->cmd_head);
       encoder.endEncoding();
       data->~BlitEncoderData();
@@ -760,11 +760,11 @@ ArgumentEncodingContext::flushCommands(WMT::CommandBuffer cmdbuf_, uint64_t seqI
       auto drawable = data->layer.nextDrawable();
       auto t1 = clock::now();
       currentFrameStatistics().drawable_blocking_interval += (t1 - t0);
-      queue_.emulated_cmd.PresentToDrawable(cmdbuf_, data->backbuffer, drawable.texture());
+      queue_.emulated_cmd.PresentToDrawable(cmdbuf, data->backbuffer, drawable.texture());
       if (data->after > 0)
-        cmdbuf_.presentDrawableAfterMinimumDuration(drawable, data->after);
+        cmdbuf.presentDrawableAfterMinimumDuration(drawable, data->after);
       else
-        cmdbuf_.presentDrawable(drawable);
+        cmdbuf.presentDrawable(drawable);
       data->~PresentData();
       break;
     }
@@ -795,9 +795,8 @@ ArgumentEncodingContext::flushCommands(WMT::CommandBuffer cmdbuf_, uint64_t seqI
           info.colors[0].store_action = WMTStoreActionStore;
         }
         info.render_target_array_length = data->array_length;
-        auto encoder = cmdbuf_.renderCommandEncoder(info);
-        // ((MTL::RenderCommandEncoder *)encoder.handle)
-        //     ->setLabel(NS::String::string("ClearPass", NS::ASCIIStringEncoding));
+        auto encoder = cmdbuf.renderCommandEncoder(info);
+        encoder.setLabel(WMT::String::string("ClearPass", WMTUTF8StringEncoding));
         encoder.endEncoding();
       }
       data->~ClearEncoderData();
@@ -816,9 +815,8 @@ ArgumentEncodingContext::flushCommands(WMT::CommandBuffer cmdbuf_, uint64_t seqI
         info.colors[0].resolve_slice = data->dst_slice;
         info.colors[0].resolve_level = data->dst_level;
 
-        auto encoder = cmdbuf_.renderCommandEncoder(info);
-        // ((MTL::RenderCommandEncoder *)encoder.handle)
-        //     ->setLabel(NS::String::string("ResolvePass", NS::ASCIIStringEncoding));
+        auto encoder = cmdbuf.renderCommandEncoder(info);
+        encoder.setLabel(WMT::String::string("ResolvePass", WMTUTF8StringEncoding));
         encoder.endEncoding();
       }
       data->~ResolveEncoderData();
@@ -826,19 +824,19 @@ ArgumentEncodingContext::flushCommands(WMT::CommandBuffer cmdbuf_, uint64_t seqI
     }
     case EncoderType::SpatialUpscale: {
       auto data = static_cast<SpatialUpscaleData *>(current);
-      cmdbuf_.encodeSpatialScale(data->scaler, data->backbuffer, data->upscaled);
+      cmdbuf.encodeSpatialScale(data->scaler, data->backbuffer, data->upscaled);
       data->~SpatialUpscaleData();
       break;
     }
     case EncoderType::SignalEvent: {
       auto data = static_cast<SignalEventData *>(current);
-      cmdbuf_.encodeSignalEvent(data->event, data->value);
+      cmdbuf.encodeSignalEvent(data->event, data->value);
       data->~SignalEventData();
       break;
     }
     case EncoderType::TemporalUpscale: {
       auto data = static_cast<TemporalUpscaleData *>(current);
-      cmdbuf_.encodeTemporalScale(data->scaler, data->input, data->output, data->depth, data->motion_vector, data->exposure, data->props);
+      cmdbuf.encodeTemporalScale(data->scaler, data->input, data->output, data->depth, data->motion_vector, data->exposure, data->props);
       data->~TemporalUpscaleData();
       break;
     }
@@ -851,7 +849,7 @@ ArgumentEncodingContext::flushCommands(WMT::CommandBuffer cmdbuf_, uint64_t seqI
   encoder_last = &encoder_head;
   encoder_count_ = 0;
 
-  cmdbuf_.encodeSignalEvent(queue_.event, event_seq_id);
+  cmdbuf.encodeSignalEvent(queue_.event, event_seq_id);
 
   return visibility_readback;
 }
