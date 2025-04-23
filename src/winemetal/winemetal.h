@@ -4,6 +4,7 @@
 #ifdef __cplusplus
 #include <cstdint>
 #include <cstdbool>
+#include <cassert>
 #define STATIC_ASSERT(x) static_assert(x)
 #else
 #include <stdint.h>
@@ -137,15 +138,41 @@ struct WMTMemoryPointer {
 #endif
 };
 
+struct WMTConstMemoryPointer {
+  const void *ptr;
+#if defined(__i386__)
+  uint32_t high_part;
+#endif
+
+#ifdef __cplusplus
+  void
+  set(const void *p) {
+#if defined(__i386__)
+    high_part = 0;
+#endif
+    ptr = p;
+  }
+
+  const void *
+  get() {
+#if defined(__i386__)
+    assert(!high_part && "inaccessible 64-bit pointer");
+#endif
+    return ptr;
+  }
+#endif
+};
+
 #if defined(__i386__)
 #define WMT_MEMPTR_SET(obj, value)                                                                                     \
   obj.high_part = 0;                                                                                                   \
-  obj.ptr = p
+  obj.ptr = value
 #else
-#define WMT_MEMPTR_SET(obj, value) obj.ptr = (void *)value
+#define WMT_MEMPTR_SET(obj, value) obj.ptr = value
 #endif
 
 STATIC_ASSERT(sizeof(WMTMemoryPointer) == 8);
+STATIC_ASSERT(sizeof(WMTConstMemoryPointer) == 8);
 
 struct WMTBufferInfo {
   uint64_t length;                 // in

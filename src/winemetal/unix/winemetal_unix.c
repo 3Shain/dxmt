@@ -141,7 +141,7 @@ static NTSTATUS
 _MTLDevice_newBuffer(void *obj) {
   struct unixcall_mtldevice_newbuffer *params = obj;
   id<MTLDevice> device = (id<MTLDevice>)params->device;
-  struct WMTBufferInfo *info = params->info;
+  struct WMTBufferInfo *info = params->info.ptr;
   id<MTLBuffer> buffer;
   if (info->memory.ptr) {
     buffer = [device newBufferWithBytesNoCopy:info->memory.ptr
@@ -161,7 +161,7 @@ static NTSTATUS
 _MTLDevice_newSamplerState(void *obj) {
   struct unixcall_mtldevice_newsamplerstate *params = obj;
   id<MTLDevice> device = (id<MTLDevice>)params->device;
-  struct WMTSamplerInfo *info = params->info;
+  struct WMTSamplerInfo *info = params->info.ptr;
 
   MTLSamplerDescriptor *sampler_desc = [[MTLSamplerDescriptor alloc] init];
   sampler_desc.borderColor = (MTLSamplerBorderColor)info->border_color;
@@ -190,7 +190,7 @@ static NTSTATUS
 _MTLDevice_newDepthStencilState(void *obj) {
   struct unixcall_mtldevice_newdepthstencilstate *params = obj;
   id<MTLDevice> device = (id<MTLDevice>)params->device;
-  const struct WMTDepthStencilInfo *info = params->info;
+  const struct WMTDepthStencilInfo *info = params->info.ptr;
 
   MTLDepthStencilDescriptor *desc = [[MTLDepthStencilDescriptor alloc] init];
   desc.depthCompareFunction = (MTLCompareFunction)info->depth_compare_function;
@@ -237,7 +237,7 @@ static NTSTATUS
 _MTLDevice_newTexture(void *obj) {
   struct unixcall_mtldevice_newtexture *params = obj;
   id<MTLDevice> device = (id<MTLDevice>)params->device;
-  struct WMTTextureInfo *info = params->info;
+  struct WMTTextureInfo *info = params->info.ptr;
   MTLTextureDescriptor *desc = [[MTLTextureDescriptor alloc] init];
   fill_texture_descriptor(desc, info);
 
@@ -253,7 +253,7 @@ static NTSTATUS
 _MTLBuffer_newTexture(void *obj) {
   struct unixcall_mtlbuffer_newtexture *params = obj;
   id<MTLBuffer> buffer = (id<MTLBuffer>)params->buffer;
-  struct WMTTextureInfo *info = params->info;
+  struct WMTTextureInfo *info = params->info.ptr;
   MTLTextureDescriptor *desc = [[MTLTextureDescriptor alloc] init];
   fill_texture_descriptor(desc, info);
 
@@ -457,7 +457,7 @@ MTLMeshRenderPipelineDescriptor ()
 static NTSTATUS
 _MTLDevice_newRenderPipelineState(void *obj) {
   struct unixcall_mtldevice_newrenderpso *params = obj;
-  struct WMTRenderPipelineInfo *info = (struct WMTRenderPipelineInfo *)params->info;
+  const struct WMTRenderPipelineInfo *info = params->info.ptr;
   MTLRenderPipelineDescriptor *descriptor = [[MTLRenderPipelineDescriptor alloc] init];
 
   for (unsigned i = 0; i < 8; i++) {
@@ -510,7 +510,7 @@ _MTLDevice_newRenderPipelineState(void *obj) {
 static NTSTATUS
 _MTLDevice_newMeshRenderPipelineState(void *obj) {
   struct unixcall_mtldevice_newmeshrenderpso *params = obj;
-  struct WMTMeshRenderPipelineInfo *info = (struct WMTMeshRenderPipelineInfo *)params->info;
+  const struct WMTMeshRenderPipelineInfo *info = params->info.ptr;
   MTLMeshRenderPipelineDescriptor *descriptor = [[MTLMeshRenderPipelineDescriptor alloc] init];
 
   for (unsigned i = 0; i < 8; i++) {
@@ -565,7 +565,7 @@ _MTLDevice_newMeshRenderPipelineState(void *obj) {
 static NTSTATUS
 _MTLBlitCommandEncoder_encodeCommands(void *obj) {
   struct unixcall_generic_obj_cmd_noret *params = obj;
-  const struct wmtcmd_base *next = (struct wmtcmd_base *)params->cmd_head;
+  const struct wmtcmd_base *next = params->cmd_head.ptr;
   id<MTLBlitCommandEncoder> encoder = (id<MTLBlitCommandEncoder>)params->encoder;
   while (next) {
     switch ((enum WMTBlitCommandType)next->type) {
@@ -635,7 +635,7 @@ _MTLBlitCommandEncoder_encodeCommands(void *obj) {
 static NTSTATUS
 _MTLComputeCommandEncoder_encodeCommands(void *obj) {
   struct unixcall_generic_obj_cmd_noret *params = obj;
-  const struct wmtcmd_base *next = (struct wmtcmd_base *)params->cmd_head;
+  const struct wmtcmd_base *next = params->cmd_head.ptr;
   id<MTLComputeCommandEncoder> encoder = (id<MTLComputeCommandEncoder>)params->encoder;
   MTLSize threadgroup_size = {0, 0, 0};
   while (next) {
@@ -705,7 +705,7 @@ _MTLComputeCommandEncoder_encodeCommands(void *obj) {
 static NTSTATUS
 _MTLRenderCommandEncoder_encodeCommands(void *obj) {
   struct unixcall_generic_obj_cmd_noret *params = obj;
-  const struct wmtcmd_base *next = (struct wmtcmd_base *)params->cmd_head;
+  const struct wmtcmd_base *next = params->cmd_head.ptr;
   id<MTLRenderCommandEncoder> encoder = (id<MTLRenderCommandEncoder>)params->encoder;
   while (next) {
     switch ((enum WMTRenderCommandType)next->type) {
@@ -1180,7 +1180,7 @@ static NTSTATUS
 _MTLDevice_newTemporalScaler(void *obj) {
   struct unixcall_mtldevice_newfxtemporalscaler *params = obj;
   MTLFXTemporalScalerDescriptor *desc = [[MTLFXTemporalScalerDescriptor alloc] init];
-  const struct WMTFXTemporalScalerInfo *info = params->info;
+  const struct WMTFXTemporalScalerInfo *info = params->info.ptr;
   desc.colorTextureFormat = (MTLPixelFormat)info->color_format;
   desc.outputTextureFormat = (MTLPixelFormat)info->output_format;
   desc.depthTextureFormat = (MTLPixelFormat)info->depth_format;
@@ -1218,7 +1218,7 @@ static NTSTATUS
 _MTLDevice_newSpatialScaler(void *obj) {
   struct unixcall_mtldevice_newfxspatialscaler *params = obj;
   MTLFXSpatialScalerDescriptor *desc = [[MTLFXSpatialScalerDescriptor alloc] init];
-  const struct WMTFXSpatialScalerInfo *info = params->info;
+  const struct WMTFXSpatialScalerInfo *info = params->info.ptr;
   desc.colorTextureFormat = (MTLPixelFormat)info->color_format;
   desc.outputTextureFormat = (MTLPixelFormat)info->output_format;
   desc.inputWidth = info->input_width;
@@ -1240,15 +1240,16 @@ _MTLCommandBuffer_encodeTemporalScale(void *obj) {
   scaler.depthTexture = (id<MTLTexture>)params->depth;
   scaler.motionTexture = (id<MTLTexture>)params->motion;
   scaler.exposureTexture = (id<MTLTexture>)params->exposure;
-  scaler.inputContentWidth = params->props->input_content_width;
-  scaler.inputContentHeight = params->props->input_content_height;
-  scaler.reset = params->props->reset;
-  scaler.depthReversed = params->props->depth_reversed;
-  scaler.motionVectorScaleX = params->props->motion_vector_scale_x;
-  scaler.motionVectorScaleY = params->props->motion_vector_scale_y;
-  scaler.jitterOffsetX = params->props->jitter_offset_x;
-  scaler.jitterOffsetY = params->props->jitter_offset_y;
-  scaler.preExposure = params->props->pre_exposure;
+  const struct WMTFXTemporalScalerProps *props = params->props.ptr;
+  scaler.inputContentWidth = props->input_content_width;
+  scaler.inputContentHeight = props->input_content_height;
+  scaler.reset = props->reset;
+  scaler.depthReversed = props->depth_reversed;
+  scaler.motionVectorScaleX = props->motion_vector_scale_x;
+  scaler.motionVectorScaleY = props->motion_vector_scale_y;
+  scaler.jitterOffsetX = props->jitter_offset_x;
+  scaler.jitterOffsetY = props->jitter_offset_y;
+  scaler.preExposure = props->pre_exposure;
   [scaler encodeToCommandBuffer:cmdbuf];
   return STATUS_SUCCESS;
 }
@@ -1341,7 +1342,7 @@ _MTLDevice_supportsFXTemporalScaler(void *obj) {
 
 static NTSTATUS
 _MetalLayer_setProps(void *obj) {
-  struct unixcall_generic_obj_ptr_noret *params = obj;
+  struct unixcall_generic_obj_constptr_noret *params = obj;
   CAMetalLayer *layer = (CAMetalLayer *)params->handle;
   const struct WMTLayerProps *props = params->arg.ptr;
   layer.device = (id<MTLDevice>)props->device;

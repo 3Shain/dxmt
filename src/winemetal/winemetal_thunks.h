@@ -4,6 +4,8 @@
 
 #include "winemetal.h"
 
+#pragma pack(push, 8)
+
 struct unixcall_generic_obj_ret {
   obj_handle_t ret;
 };
@@ -38,6 +40,11 @@ struct unixcall_generic_obj_ptr_noret {
   struct WMTMemoryPointer arg;
 };
 
+struct unixcall_generic_obj_constptr_noret {
+  obj_handle_t handle;
+  struct WMTConstMemoryPointer arg;
+};
+
 struct unixcall_generic_obj_obj_uint64_noret {
   obj_handle_t handle;
   obj_handle_t arg0;
@@ -60,31 +67,31 @@ struct unixcall_nsstring_getcstring {
 
 struct unixcall_mtldevice_newbuffer {
   obj_handle_t device;
-  struct WMTBufferInfo *info;
+  struct WMTMemoryPointer info;
   obj_handle_t ret;
 };
 
 struct unixcall_mtldevice_newsamplerstate {
   obj_handle_t device;
-  struct WMTSamplerInfo *info;
+  struct WMTMemoryPointer info;
   obj_handle_t ret;
 };
 
 struct unixcall_mtldevice_newdepthstencilstate {
   obj_handle_t device;
-  const struct WMTDepthStencilInfo *info;
+  struct WMTConstMemoryPointer info;
   obj_handle_t ret;
 };
 
 struct unixcall_mtldevice_newtexture {
   obj_handle_t device;
-  struct WMTTextureInfo *info;
+  struct WMTMemoryPointer info;
   obj_handle_t ret;
 };
 
 struct unixcall_mtlbuffer_newtexture {
   obj_handle_t buffer;
-  struct WMTTextureInfo *info;
+  struct WMTMemoryPointer info;
   uint64_t offset;
   uint64_t bytes_per_row;
   obj_handle_t ret;
@@ -120,21 +127,21 @@ struct unixcall_mtldevice_newcomputepso {
 
 struct unixcall_mtldevice_newrenderpso {
   obj_handle_t device;
-  const struct WMTRenderPipelineInfo *info;
+  struct WMTConstMemoryPointer info;
   obj_handle_t ret_error;
   obj_handle_t ret_pso;
 };
 
 struct unixcall_mtldevice_newmeshrenderpso {
   obj_handle_t device;
-  const struct WMTMeshRenderPipelineInfo *info;
+  struct WMTConstMemoryPointer info;
   obj_handle_t ret_error;
   obj_handle_t ret_pso;
 };
 
 struct unixcall_generic_obj_cmd_noret {
   obj_handle_t encoder;
-  const struct wmtcmd_base *cmd_head;
+  struct WMTConstMemoryPointer cmd_head;
 };
 
 struct unixcall_mtltexture_replaceregion {
@@ -180,13 +187,13 @@ struct unixcall_mtlcapturemanager_startcapture {
 
 struct unixcall_mtldevice_newfxtemporalscaler {
   obj_handle_t device;
-  const struct WMTFXTemporalScalerInfo *info;
+  struct WMTConstMemoryPointer info;
   obj_handle_t ret;
 };
 
 struct unixcall_mtldevice_newfxspatialscaler {
   obj_handle_t device;
-  const struct WMTFXSpatialScalerInfo *info;
+  struct WMTConstMemoryPointer info;
   obj_handle_t ret;
 };
 
@@ -198,7 +205,7 @@ struct unixcall_mtlcommandbuffer_temporal_scale {
   obj_handle_t depth;
   obj_handle_t motion;
   obj_handle_t exposure;
-  const struct WMTFXTemporalScalerProps *props;
+  struct WMTConstMemoryPointer props;
 };
 
 struct unixcall_mtlcommandbuffer_spatial_scale {
@@ -209,7 +216,7 @@ struct unixcall_mtlcommandbuffer_spatial_scale {
 };
 
 struct unixcall_nsstring_string {
-  struct WMTMemoryPointer buffer_ptr;
+  struct WMTConstMemoryPointer buffer_ptr;
   enum WMTStringEncoding encoding;
   obj_handle_t ret;
 };
@@ -220,5 +227,7 @@ struct unixcall_create_metal_view_from_hwnd {
   obj_handle_t ret_view;
   obj_handle_t ret_layer;
 };
+
+#pragma pack(pop)
 
 #endif
