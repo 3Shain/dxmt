@@ -87,6 +87,7 @@ public:
   }
 
   HRESULT
+  STDMETHODCALLTYPE
   Map(ID3D11Resource *pResource, UINT Subresource, D3D11_MAP MapType, UINT MapFlags,
       D3D11_MAPPED_SUBRESOURCE *pMappedResource) override {
     UINT buffer_length = 0, &row_pitch = buffer_length;
@@ -203,6 +204,7 @@ public:
   }
 
   void
+  STDMETHODCALLTYPE
   Unmap(ID3D11Resource *pResource, UINT Subresource) override {
     UINT buffer_length = 0, &row_pitch = buffer_length;
     UINT bind_flag = 0, &depth_pitch = bind_flag;
@@ -216,6 +218,7 @@ public:
   }
 
   void
+  STDMETHODCALLTYPE
   Begin(ID3D11Asynchronous *pAsync) override {
     D3D11_QUERY_DESC desc;
     ((ID3D11Query *)pAsync)->GetDesc(&desc);
@@ -257,6 +260,7 @@ public:
   }
 
   void
+  STDMETHODCALLTYPE
   End(ID3D11Asynchronous *pAsync) override {
     D3D11_QUERY_DESC desc;
     ((ID3D11Query *)pAsync)->GetDesc(&desc);
@@ -296,19 +300,24 @@ public:
   }
 
   HRESULT
+  STDMETHODCALLTYPE
   GetData(ID3D11Asynchronous *pAsync, void *pData, UINT DataSize, UINT GetDataFlags) override {
     return E_FAIL;
   }
 
   void
+  STDMETHODCALLTYPE
   Flush() override {
     // nop
   }
 
   void
+  STDMETHODCALLTYPE
   ExecuteCommandList(ID3D11CommandList *pCommandList, BOOL RestoreContextState) override{IMPLEMENT_ME}
 
-  HRESULT FinishCommandList(BOOL RestoreDeferredContextState, ID3D11CommandList **ppCommandList) override {
+  HRESULT 
+  STDMETHODCALLTYPE
+  FinishCommandList(BOOL RestoreDeferredContextState, ID3D11CommandList **ppCommandList) override {
     ResetEncodingContextState();
 
     ctx_state.current_cmdlist->promote_flush = promote_flush;
@@ -335,7 +344,9 @@ public:
     return S_OK;
   }
 
-  D3D11_DEVICE_CONTEXT_TYPE GetType() override {
+  D3D11_DEVICE_CONTEXT_TYPE 
+  STDMETHODCALLTYPE
+  GetType() override {
     return D3D11_DEVICE_CONTEXT_DEFERRED;
   }
 

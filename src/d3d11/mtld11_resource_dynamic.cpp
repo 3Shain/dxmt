@@ -85,6 +85,7 @@ public:
   };
 
   HRESULT
+  STDMETHODCALLTYPE
   CreateShaderResourceView(const D3D11_SHADER_RESOURCE_VIEW_DESC1 *pDesc, ID3D11ShaderResourceView1 **ppView) override {
     D3D11_SHADER_RESOURCE_VIEW_DESC1 finalDesc;
     if (FAILED(ExtractEntireResourceViewDescription(&this->desc, pDesc, &finalDesc))) {

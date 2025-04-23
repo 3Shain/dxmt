@@ -92,6 +92,7 @@ public:
   }
 
   HRESULT
+  STDMETHODCALLTYPE
   Map(ID3D11Resource *pResource, UINT Subresource, D3D11_MAP MapType, UINT MapFlags,
       D3D11_MAPPED_SUBRESOURCE *pMappedResource) override {
     if (unlikely(!pResource || !pMappedResource))
@@ -224,6 +225,7 @@ public:
   }
 
   void
+  STDMETHODCALLTYPE
   Unmap(ID3D11Resource *pResource, UINT Subresource) override {
     if (unlikely(!pResource))
       return;
@@ -233,6 +235,7 @@ public:
   }
 
   void
+  STDMETHODCALLTYPE
   Begin(ID3D11Asynchronous *pAsync) override {
     // in theory pAsync could be any of them: { Query, Predicate, Counter }.
     // However `Predicate` and `Counter` are not supported at all
@@ -264,6 +267,7 @@ public:
 
   // See Begin()
   void
+  STDMETHODCALLTYPE
   End(ID3D11Asynchronous *pAsync) override {
     D3D11_QUERY_DESC desc;
     ((ID3D11Query *)pAsync)->GetDesc(&desc);
@@ -306,6 +310,7 @@ public:
   }
 
   HRESULT
+  STDMETHODCALLTYPE
   GetData(ID3D11Asynchronous *pAsync, void *pData, UINT DataSize, UINT GetDataFlags) override {
     if (!pAsync || (DataSize && !pData))
       return E_INVALIDARG;
@@ -384,6 +389,7 @@ public:
   }
 
   void
+  STDMETHODCALLTYPE
   Flush() override {
     if (!ctx_state.has_dirty_op_since_last_event && !promote_flush) {
       return;
@@ -397,6 +403,7 @@ public:
   }
 
   void
+  STDMETHODCALLTYPE
   ExecuteCommandList(ID3D11CommandList *pCommandList, BOOL RestoreContextState) override {
     ResetEncodingContextState();
 
@@ -449,11 +456,13 @@ public:
   }
 
   HRESULT
+  STDMETHODCALLTYPE
   FinishCommandList(BOOL RestoreDeferredContextState, ID3D11CommandList **ppCommandList) override {
     return DXGI_ERROR_INVALID_CALL;
   }
 
   D3D11_DEVICE_CONTEXT_TYPE
+  STDMETHODCALLTYPE
   GetType() override {
     return D3D11_DEVICE_CONTEXT_IMMEDIATE;
   }
