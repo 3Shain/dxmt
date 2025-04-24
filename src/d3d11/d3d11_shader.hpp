@@ -13,7 +13,6 @@ struct MTL_COMPILED_SHADER {
   NOTE: it's not retained by design
   */
   WMT::Function Function;
-  dxmt::Sha1Hash *MetallibHash;
 };
 
 namespace dxmt {
