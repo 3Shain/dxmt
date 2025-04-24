@@ -1245,7 +1245,6 @@ llvm::Error convert_dxbc_vertex_shader(
 
   uint32_t max_input_register = pShaderInternal->max_input_register;
   uint32_t max_output_register = pShaderInternal->max_output_register;
-  uint64_t sign_mask = 0;
   SM50_SHADER_COMPILATION_ARGUMENT_DATA *arg = pArgs;
   SM50_SHADER_EMULATE_VERTEX_STREAM_OUTPUT_DATA *vertex_so = nullptr;
   SM50_SHADER_IA_INPUT_LAYOUT_DATA *ia_layout = nullptr;
@@ -1254,10 +1253,6 @@ llvm::Error convert_dxbc_vertex_shader(
   // uint64_t debug_id = ~0u;
   while (arg) {
     switch (arg->type) {
-    case SM50_SHADER_COMPILATION_INPUT_SIGN_MASK:
-      sign_mask =
-        ((SM50_SHADER_COMPILATION_INPUT_SIGN_MASK_DATA *)arg)->sign_mask;
-      break;
     case SM50_SHADER_EMULATE_VERTEX_STREAM_OUTPUT:
       if (shader_type != microsoft::D3D10_SB_VERTEX_SHADER)
         break;
@@ -1383,7 +1378,7 @@ llvm::Error convert_dxbc_vertex_shader(
   }
 
   auto [function, function_metadata] = func_signature.CreateFunction(
-    name, context, module, sign_mask,
+    name, context, module, 0,
     rasterization_disabled
   );
 
