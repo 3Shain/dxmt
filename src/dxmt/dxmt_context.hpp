@@ -381,9 +381,9 @@ public:
 
   template <PipelineKind kind> void encodeVertexBuffers(uint32_t ia_slot_mask);
   template <PipelineStage stage, PipelineKind kind>
-  void encodeConstantBuffers(const MTL_SHADER_REFLECTION *reflection);
+  void encodeConstantBuffers(const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT * constant_buffers);
   template <PipelineStage stage, PipelineKind kind>
-  void encodeShaderResources(const MTL_SHADER_REFLECTION *reflection);
+  void encodeShaderResources(const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT * arguments);
 
   template <PipelineStage stage, PipelineKind kind>
   void

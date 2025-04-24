@@ -17,6 +17,7 @@ enum airconv_unixcalls {
   unix_sm50_compile_tessellation_vertex,
   unix_sm50_compile_tessellation_hull,
   unix_sm50_compile_tessellation_domain,
+  unix_sm50_get_arguments_info = 88,
 };
 
 struct sm50_initialize_params {
@@ -107,6 +108,12 @@ struct sm50_compile_tessellation_pipeline_domain_params {
   sm50_bitcode_t *bitcode;
   sm50_error_t *error;
   int ret;
+};
+
+struct sm50_get_arguments_info_params {
+  sm50_shader_t shader;
+  struct MTL_SM50_SHADER_ARGUMENT* constant_buffers;
+  struct MTL_SM50_SHADER_ARGUMENT* arguments;
 };
 
 #define UNIX_CALL(code, params) WINE_UNIX_CALL(unix_##code, params)

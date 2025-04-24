@@ -15,17 +15,29 @@ class CachedSM50Shader final : public Shader {
   sm50_shader_t shader = {};
   Sha1Hash hash_;
   MTL_SHADER_REFLECTION reflection_;
+  MTL_SM50_SHADER_ARGUMENT* arguments_info_buffer;
   std::unordered_map<ShaderVariant, std::unique_ptr<CompiledShader>> variants;
 
 public:
   CachedSM50Shader(MTLD3D11Device *device, sm50_shader_t shader_transfered,
                    const Sha1Hash &hash, MTL_SHADER_REFLECTION &reflection)
       : device(device), shader(shader_transfered), hash_(hash),
-        reflection_(reflection) {}
+        reflection_(reflection) {
+    if (reflection_.NumConstantBuffers + reflection_.NumArguments) {
+      arguments_info_buffer = (MTL_SM50_SHADER_ARGUMENT *)malloc(
+          sizeof(MTL_SM50_SHADER_ARGUMENT) *
+          (reflection_.NumConstantBuffers + reflection_.NumArguments));
+      SM50GetArgumentsInfo(shader, arguments_info_buffer, arguments_info_buffer + reflection_.NumConstantBuffers);
+    } else {
+      arguments_info_buffer = nullptr;
+    }
+  }
 
   ~CachedSM50Shader() {
     if (shader) {
       SM50Destroy(shader);
+      if (arguments_info_buffer)
+        free(arguments_info_buffer);
       shader = nullptr;
     }
   };
@@ -40,6 +52,12 @@ public:
 
   virtual sm50_shader_t handle() { return shader; };
   virtual MTL_SHADER_REFLECTION &reflection() { return reflection_; }
+  virtual MTL_SM50_SHADER_ARGUMENT *constant_buffers_info() {
+    return arguments_info_buffer;
+  };
+  virtual MTL_SM50_SHADER_ARGUMENT *arguments_info() {
+    return arguments_info_buffer + reflection_.NumConstantBuffers;
+  };
   virtual Com<CompiledShader> get_shader(ShaderVariant variant) {
     auto c = variants.insert({variant, nullptr});
     if (c.second) {

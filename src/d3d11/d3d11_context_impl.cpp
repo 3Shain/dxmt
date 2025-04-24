@@ -2629,7 +2629,8 @@ public:
     }
     auto &UAVBindingSet = stage == PipelineStage::Compute ? state_.ComputeStageUAV.UAVs : state_.OutputMerger.UAVs;
 
-    const MTL_SHADER_REFLECTION *reflection = &ShaderStage.Shader->GetManagedShader()->reflection();
+    auto managed_shader = ShaderStage.Shader->GetManagedShader();
+    const MTL_SHADER_REFLECTION *reflection = &managed_shader->reflection();
 
     bool dirty_cbuffer = ShaderStage.ConstantBuffers.any_dirty_masked(reflection->ConstantBufferSlotMask);
     bool dirty_sampler = ShaderStage.Samplers.any_dirty_masked(reflection->SamplerSlotMask);
@@ -2639,12 +2640,18 @@ public:
       return;
 
     if (reflection->NumConstantBuffers && dirty_cbuffer) {
-      EmitST([reflection](ArgumentEncodingContext &enc) { enc.encodeConstantBuffers<stage, kind>(reflection); });
+      EmitST([reflection, cb = managed_shader->constant_buffers_info()](
+                 ArgumentEncodingContext &enc) {
+        enc.encodeConstantBuffers<stage, kind>(reflection, cb);
+      });
       ShaderStage.ConstantBuffers.clear_dirty();
     }
 
     if (reflection->NumArguments && (dirty_sampler || dirty_srv || dirty_uav)) {
-      EmitST([reflection](ArgumentEncodingContext &enc) { enc.encodeShaderResources<stage, kind>(reflection); });
+      EmitST([reflection, arg = managed_shader->arguments_info()](
+                 ArgumentEncodingContext &enc) {
+        enc.encodeShaderResources<stage, kind>(reflection, arg);
+      });
       ShaderStage.Samplers.clear_dirty();
       ShaderStage.SRVs.clear_dirty();
       if (stage == PipelineStage::Pixel || stage == PipelineStage::Compute) {

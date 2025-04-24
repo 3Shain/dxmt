@@ -94,35 +94,35 @@ ArgumentEncodingContext::encodeVertexBuffers(uint32_t slot_mask) {
 }
 
 template void
-ArgumentEncodingContext::encodeConstantBuffers<PipelineStage::Vertex, PipelineKind::Ordinary>(const MTL_SHADER_REFLECTION *reflection);
+ArgumentEncodingContext::encodeConstantBuffers<PipelineStage::Vertex, PipelineKind::Ordinary>(const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT * constant_buffers);
 template void
-ArgumentEncodingContext::encodeConstantBuffers<PipelineStage::Pixel, PipelineKind::Ordinary>(const MTL_SHADER_REFLECTION *reflection);
+ArgumentEncodingContext::encodeConstantBuffers<PipelineStage::Pixel, PipelineKind::Ordinary>(const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT * constant_buffers);
 template void
-ArgumentEncodingContext::encodeConstantBuffers<PipelineStage::Vertex, PipelineKind::Tessellation>(const MTL_SHADER_REFLECTION *reflection);
+ArgumentEncodingContext::encodeConstantBuffers<PipelineStage::Vertex, PipelineKind::Tessellation>(const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT * constant_buffers);
 template void
-ArgumentEncodingContext::encodeConstantBuffers<PipelineStage::Pixel, PipelineKind::Tessellation>(const MTL_SHADER_REFLECTION *reflection);
+ArgumentEncodingContext::encodeConstantBuffers<PipelineStage::Pixel, PipelineKind::Tessellation>(const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT * constant_buffers);
 template void
-ArgumentEncodingContext::encodeConstantBuffers<PipelineStage::Hull, PipelineKind::Tessellation>(const MTL_SHADER_REFLECTION *reflection);
+ArgumentEncodingContext::encodeConstantBuffers<PipelineStage::Hull, PipelineKind::Tessellation>(const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT * constant_buffers);
 template void
-ArgumentEncodingContext::encodeConstantBuffers<PipelineStage::Domain, PipelineKind::Tessellation>(const MTL_SHADER_REFLECTION *reflection);
+ArgumentEncodingContext::encodeConstantBuffers<PipelineStage::Domain, PipelineKind::Tessellation>(const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT * constant_buffers);
 template void
-ArgumentEncodingContext::encodeConstantBuffers<PipelineStage::Compute, PipelineKind::Ordinary>(const MTL_SHADER_REFLECTION *reflection);
+ArgumentEncodingContext::encodeConstantBuffers<PipelineStage::Compute, PipelineKind::Ordinary>(const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT * constant_buffers);
 template void
-ArgumentEncodingContext::encodeConstantBuffers<PipelineStage::Vertex, PipelineKind::Geometry>(const MTL_SHADER_REFLECTION *reflection);
+ArgumentEncodingContext::encodeConstantBuffers<PipelineStage::Vertex, PipelineKind::Geometry>(const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT * constant_buffers);
 template void
-ArgumentEncodingContext::encodeConstantBuffers<PipelineStage::Geometry, PipelineKind::Geometry>(const MTL_SHADER_REFLECTION *reflection);
+ArgumentEncodingContext::encodeConstantBuffers<PipelineStage::Geometry, PipelineKind::Geometry>(const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT * constant_buffers);
 template void
-ArgumentEncodingContext::encodeConstantBuffers<PipelineStage::Pixel, PipelineKind::Geometry>(const MTL_SHADER_REFLECTION *reflection);
+ArgumentEncodingContext::encodeConstantBuffers<PipelineStage::Pixel, PipelineKind::Geometry>(const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT * constant_buffers);
 
 template <PipelineStage stage, PipelineKind kind>
 void
-ArgumentEncodingContext::encodeConstantBuffers(const MTL_SHADER_REFLECTION *reflection) {
+ArgumentEncodingContext::encodeConstantBuffers(const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT * constant_buffers) {
   auto ConstantBufferCount = reflection->NumConstantBuffers;
   uint64_t offset = allocate_gpu_heap(ConstantBufferCount << 3, 16);
   uint64_t *encoded_buffer = reinterpret_cast<uint64_t *>((char *)gpu_buffer_contents_ + offset);
 
   for (unsigned i = 0; i < reflection->NumConstantBuffers; i++) {
-    auto &arg = reflection->ConstantBuffers[i];
+    auto &arg = constant_buffers[i];
     auto slot = 14 * unsigned(stage) + arg.SM50BindingSlot;
     switch (arg.Type) {
     case SM50BindingType::ConstantBuffer: {
@@ -180,29 +180,29 @@ ArgumentEncodingContext::encodeConstantBuffers(const MTL_SHADER_REFLECTION *refl
 };
 
 template void
-ArgumentEncodingContext::encodeShaderResources<PipelineStage::Vertex, PipelineKind::Ordinary>(const MTL_SHADER_REFLECTION *reflection);
+ArgumentEncodingContext::encodeShaderResources<PipelineStage::Vertex, PipelineKind::Ordinary>(const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT * arguments);
 template void
-ArgumentEncodingContext::encodeShaderResources<PipelineStage::Pixel, PipelineKind::Ordinary>(const MTL_SHADER_REFLECTION *reflection);
+ArgumentEncodingContext::encodeShaderResources<PipelineStage::Pixel, PipelineKind::Ordinary>(const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT * arguments);
 template void
-ArgumentEncodingContext::encodeShaderResources<PipelineStage::Vertex, PipelineKind::Tessellation>(const MTL_SHADER_REFLECTION *reflection);
+ArgumentEncodingContext::encodeShaderResources<PipelineStage::Vertex, PipelineKind::Tessellation>(const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT * arguments);
 template void
-ArgumentEncodingContext::encodeShaderResources<PipelineStage::Pixel, PipelineKind::Tessellation>(const MTL_SHADER_REFLECTION *reflection);
+ArgumentEncodingContext::encodeShaderResources<PipelineStage::Pixel, PipelineKind::Tessellation>(const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT * arguments);
 template void
-ArgumentEncodingContext::encodeShaderResources<PipelineStage::Hull, PipelineKind::Tessellation>(const MTL_SHADER_REFLECTION *reflection);
+ArgumentEncodingContext::encodeShaderResources<PipelineStage::Hull, PipelineKind::Tessellation>(const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT * arguments);
 template void
-ArgumentEncodingContext::encodeShaderResources<PipelineStage::Domain, PipelineKind::Tessellation>(const MTL_SHADER_REFLECTION *reflection);
+ArgumentEncodingContext::encodeShaderResources<PipelineStage::Domain, PipelineKind::Tessellation>(const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT * arguments);
 template void
-ArgumentEncodingContext::encodeShaderResources<PipelineStage::Compute, PipelineKind::Ordinary>(const MTL_SHADER_REFLECTION *reflection);
+ArgumentEncodingContext::encodeShaderResources<PipelineStage::Compute, PipelineKind::Ordinary>(const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT * arguments);
 template void
-ArgumentEncodingContext::encodeShaderResources<PipelineStage::Vertex, PipelineKind::Geometry>(const MTL_SHADER_REFLECTION *reflection);
+ArgumentEncodingContext::encodeShaderResources<PipelineStage::Vertex, PipelineKind::Geometry>(const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT * arguments);
 template void
-ArgumentEncodingContext::encodeShaderResources<PipelineStage::Geometry, PipelineKind::Geometry>(const MTL_SHADER_REFLECTION *reflection);
+ArgumentEncodingContext::encodeShaderResources<PipelineStage::Geometry, PipelineKind::Geometry>(const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT * arguments);
 template void
-ArgumentEncodingContext::encodeShaderResources<PipelineStage::Pixel, PipelineKind::Geometry>(const MTL_SHADER_REFLECTION *reflection);
+ArgumentEncodingContext::encodeShaderResources<PipelineStage::Pixel, PipelineKind::Geometry>(const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT * arguments);
 
 template <PipelineStage stage, PipelineKind kind>
 void
-ArgumentEncodingContext::encodeShaderResources(const MTL_SHADER_REFLECTION *reflection) {
+ArgumentEncodingContext::encodeShaderResources(const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT * arguments) {
   auto BindingCount = reflection->NumArguments;
   auto ArgumentTableQwords = reflection->ArgumentTableQwords;
 
@@ -212,7 +212,7 @@ ArgumentEncodingContext::encodeShaderResources(const MTL_SHADER_REFLECTION *refl
   auto &UAVBindingSet = stage == PipelineStage::Compute ? cs_uav_ : om_uav_;
 
   for (unsigned i = 0; i < BindingCount; i++) {
-    auto &arg = reflection->Arguments[i];
+    auto &arg = arguments[i];
     switch (arg.Type) {
     case SM50BindingType::ConstantBuffer: {
       DXMT_UNREACHABLE

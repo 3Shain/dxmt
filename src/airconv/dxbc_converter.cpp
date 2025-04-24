@@ -2900,9 +2900,7 @@ AIRCONV_API int SM50Initialize(
     pRefl->SRVSlotMaskLo = binding_srv_lo_mask;
     pRefl->UAVSlotMask = binding_uav_mask;
     pRefl->NumConstantBuffers = sm50_shader->args_reflection_cbuffer.size();
-    pRefl->ConstantBuffers = sm50_shader->args_reflection_cbuffer.data();
     pRefl->NumArguments = sm50_shader->args_reflection.size();
-    pRefl->Arguments = sm50_shader->args_reflection.data();
     if (sm50_shader->shader_type == microsoft::D3D11_SB_COMPUTE_SHADER) {
       pRefl->ThreadgroupSize[0] = sm50_shader->threadgroup_size[0];
       pRefl->ThreadgroupSize[1] = sm50_shader->threadgroup_size[1];
@@ -2939,6 +2937,25 @@ AIRCONV_API int SM50Initialize(
   *ppShader = sm50_shader;
   return 0;
 };
+
+AIRCONV_API void SM50GetArgumentsInfo(
+  sm50_shader_t pShader, struct MTL_SM50_SHADER_ARGUMENT *pConstantBuffers,
+  struct MTL_SM50_SHADER_ARGUMENT *pArguments
+) {
+  auto sm50_shader = (dxmt::dxbc::SM50ShaderInternal *)pShader;
+  if (pConstantBuffers && sm50_shader->args_reflection_cbuffer.size())
+    memcpy(
+      pConstantBuffers, sm50_shader->args_reflection_cbuffer.data(),
+      sm50_shader->args_reflection_cbuffer.size() *
+        sizeof(struct MTL_SM50_SHADER_ARGUMENT)
+    );
+  if (pArguments && sm50_shader->args_reflection.size())
+    memcpy(
+      pArguments, sm50_shader->args_reflection.data(),
+      sm50_shader->args_reflection.size() *
+        sizeof(struct MTL_SM50_SHADER_ARGUMENT)
+    );
+}
 
 AIRCONV_API void SM50Destroy(sm50_shader_t pShader) {
   delete (dxmt::dxbc::SM50ShaderInternal *)pShader;
