@@ -42,7 +42,7 @@ public:
   bool GetShader(MTL_COMPILED_SHADER *pShaderData) final {
     bool ret = false;
     if ((ret = ready_.load(std::memory_order_acquire))) {
-      *pShaderData = {function_, &hash_};
+      *pShaderData = {function_};
     }
     return ret;
   }
@@ -58,7 +58,6 @@ public:
 
     MTL_SHADER_BITCODE bitcode;
     SM50GetCompiledBitcode(compile_result, &bitcode);
-    hash_.compute(bitcode.Data, bitcode.Size);
     auto library = device_->GetMTLDevice().newLibrary(bitcode.Data, bitcode.Size, err);
 
     if (err) {
@@ -84,7 +83,6 @@ private:
   MTLD3D11Device *device_;
   ManagedShader shader_;
   std::atomic_bool ready_;
-  Sha1Hash hash_;
   WMT::Reference<WMT::Function> function_;
   std::atomic<uint32_t> m_refCount = {0ul};
 };
