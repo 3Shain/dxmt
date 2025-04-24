@@ -27,7 +27,7 @@ enum class LogLevel : uint32_t {
   None = 5,
 };
 
-using PFN_wineLogOutput = int(STDMETHODCALLTYPE *)(const char *);
+using PFN_wineLogOutput = int(__cdecl *)(const char *);
 
 /**
  * \brief Logger
