@@ -19,10 +19,6 @@ enum airconv_unixcalls {
   unix_sm50_compile_tessellation_domain,
 };
 
-typedef SM50Shader *sm50_shader_t;
-typedef SM50Error *sm50_error_t;
-typedef SM50CompiledBitcode *sm50_compiled_bitcode_t;
-
 struct sm50_initialize_params {
   const void *bytecode;
   size_t bytecode_size;
@@ -40,18 +36,18 @@ struct sm50_compile_params {
   sm50_shader_t shader;
   void *args;
   const char *func_name;
-  sm50_compiled_bitcode_t *bitcode;
+  sm50_bitcode_t *bitcode;
   sm50_error_t *error;
   int ret;
 };
 
 struct sm50_get_compiled_bitcode_params {
-  sm50_compiled_bitcode_t bitcode;
+  sm50_bitcode_t bitcode;
   struct MTL_SHADER_BITCODE *data_out;
 };
 
 struct sm50_destroy_bitcode_params {
-  sm50_compiled_bitcode_t bitcode;
+  sm50_bitcode_t bitcode;
 };
 
 struct sm50_get_error_message_params {
@@ -68,7 +64,7 @@ struct sm50_compile_geometry_pipeline_vertex_params {
   sm50_shader_t geometry;
   void *vertex_args;
   const char *func_name;
-  sm50_compiled_bitcode_t *bitcode;
+  sm50_bitcode_t *bitcode;
   sm50_error_t *error;
   int ret;
 };
@@ -78,7 +74,7 @@ struct sm50_compile_geometry_pipeline_geometry_params {
   sm50_shader_t geometry;
   void *geometry_args;
   const char *func_name;
-  sm50_compiled_bitcode_t *bitcode;
+  sm50_bitcode_t *bitcode;
   sm50_error_t *error;
   int ret;
 };
@@ -88,7 +84,7 @@ struct sm50_compile_tessellation_pipeline_vertex_params {
   sm50_shader_t hull;
   void *vertex_args;
   const char *func_name;
-  sm50_compiled_bitcode_t *bitcode;
+  sm50_bitcode_t *bitcode;
   sm50_error_t *error;
   int ret;
 };
@@ -98,7 +94,7 @@ struct sm50_compile_tessellation_pipeline_hull_params {
   sm50_shader_t hull;
   void *hull_args;
   const char *func_name;
-  sm50_compiled_bitcode_t *bitcode;
+  sm50_bitcode_t *bitcode;
   sm50_error_t *error;
   int ret;
 };
@@ -108,7 +104,7 @@ struct sm50_compile_tessellation_pipeline_domain_params {
   sm50_shader_t domain;
   void *domain_args;
   const char *func_name;
-  sm50_compiled_bitcode_t *bitcode;
+  sm50_bitcode_t *bitcode;
   sm50_error_t *error;
   int ret;
 };

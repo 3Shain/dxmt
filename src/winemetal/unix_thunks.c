@@ -4,8 +4,8 @@
 
 AIRCONV_API int
 SM50Initialize(
-    const void *pBytecode, size_t BytecodeSize, SM50Shader **ppShader, struct MTL_SHADER_REFLECTION *pRefl,
-    SM50Error **ppError
+    const void *pBytecode, size_t BytecodeSize, sm50_shader_t *ppShader, struct MTL_SHADER_REFLECTION *pRefl,
+    sm50_error_t *ppError
 ) {
   struct sm50_initialize_params params;
   params.bytecode = pBytecode;
@@ -21,7 +21,7 @@ SM50Initialize(
 }
 
 AIRCONV_API void
-SM50Destroy(SM50Shader *pShader) {
+SM50Destroy(sm50_shader_t pShader) {
   struct sm50_destroy_params params;
   params.shader = pShader;
   UNIX_CALL(sm50_destroy, &params);
@@ -29,8 +29,8 @@ SM50Destroy(SM50Shader *pShader) {
 
 AIRCONV_API int
 SM50Compile(
-    SM50Shader *pShader, struct SM50_SHADER_COMPILATION_ARGUMENT_DATA *pArgs, const char *FunctionName,
-    SM50CompiledBitcode **ppBitcode, SM50Error **ppError
+    sm50_shader_t pShader, struct SM50_SHADER_COMPILATION_ARGUMENT_DATA *pArgs, const char *FunctionName,
+    sm50_bitcode_t *ppBitcode, sm50_error_t *ppError
 ) {
   struct sm50_compile_params params;
   params.shader = (sm50_shader_t)pShader;
@@ -46,22 +46,22 @@ SM50Compile(
 }
 
 AIRCONV_API void
-SM50GetCompiledBitcode(SM50CompiledBitcode *pBitcode, struct MTL_SHADER_BITCODE *pData) {
+SM50GetCompiledBitcode(sm50_bitcode_t pBitcode, struct MTL_SHADER_BITCODE *pData) {
   struct sm50_get_compiled_bitcode_params params;
-  params.bitcode = (sm50_compiled_bitcode_t)pBitcode;
+  params.bitcode = pBitcode;
   params.data_out = pData;
   UNIX_CALL(sm50_get_compiled_bitcode, &params);
 }
 
 AIRCONV_API void
-SM50DestroyBitcode(SM50CompiledBitcode *pBitcode) {
+SM50DestroyBitcode(sm50_bitcode_t pBitcode) {
   struct sm50_destroy_bitcode_params params;
-  params.bitcode = (sm50_compiled_bitcode_t)pBitcode;
+  params.bitcode = pBitcode;
   UNIX_CALL(sm50_destroy_bitcode, &params);
 }
 
 AIRCONV_API const char *
-SM50GetErrorMesssage(SM50Error *pError) {
+SM50GetErrorMesssage(sm50_error_t pError) {
   struct sm50_get_error_message_params params;
   params.error = pError;
   NTSTATUS status;
@@ -72,7 +72,7 @@ SM50GetErrorMesssage(SM50Error *pError) {
 }
 
 AIRCONV_API void
-SM50FreeError(SM50Error *pError) {
+SM50FreeError(sm50_error_t pError) {
   struct sm50_free_error_params params;
   params.error = pError;
   UNIX_CALL(sm50_free_error, &params);
@@ -80,8 +80,9 @@ SM50FreeError(SM50Error *pError) {
 
 AIRCONV_API int
 SM50CompileTessellationPipelineVertex(
-    SM50Shader *pVertexShader, SM50Shader *pHullShader, struct SM50_SHADER_COMPILATION_ARGUMENT_DATA *pVertexShaderArgs,
-    const char *FunctionName, SM50CompiledBitcode **ppBitcode, SM50Error **ppError
+    sm50_shader_t pVertexShader, sm50_shader_t pHullShader,
+    struct SM50_SHADER_COMPILATION_ARGUMENT_DATA *pVertexShaderArgs, const char *FunctionName,
+    sm50_bitcode_t *ppBitcode, sm50_error_t *ppError
 ) {
   struct sm50_compile_tessellation_pipeline_vertex_params params;
   params.vertex = pVertexShader;
@@ -99,8 +100,9 @@ SM50CompileTessellationPipelineVertex(
 
 AIRCONV_API int
 SM50CompileTessellationPipelineHull(
-    SM50Shader *pVertexShader, SM50Shader *pHullShader, struct SM50_SHADER_COMPILATION_ARGUMENT_DATA *pHullShaderArgs,
-    const char *FunctionName, SM50CompiledBitcode **ppBitcode, SM50Error **ppError
+    sm50_shader_t pVertexShader, sm50_shader_t pHullShader,
+    struct SM50_SHADER_COMPILATION_ARGUMENT_DATA *pHullShaderArgs, const char *FunctionName, sm50_bitcode_t *ppBitcode,
+    sm50_error_t *ppError
 ) {
   struct sm50_compile_tessellation_pipeline_hull_params params;
   params.vertex = pVertexShader;
@@ -118,8 +120,9 @@ SM50CompileTessellationPipelineHull(
 
 AIRCONV_API int
 SM50CompileTessellationPipelineDomain(
-    SM50Shader *pHullShader, SM50Shader *pDomainShader, struct SM50_SHADER_COMPILATION_ARGUMENT_DATA *pDomainShaderArgs,
-    const char *FunctionName, SM50CompiledBitcode **ppBitcode, SM50Error **ppError
+    sm50_shader_t pHullShader, sm50_shader_t pDomainShader,
+    struct SM50_SHADER_COMPILATION_ARGUMENT_DATA *pDomainShaderArgs, const char *FunctionName,
+    sm50_bitcode_t *ppBitcode, sm50_error_t *ppError
 ) {
   struct sm50_compile_tessellation_pipeline_domain_params params;
   params.domain = pDomainShader;
@@ -137,9 +140,9 @@ SM50CompileTessellationPipelineDomain(
 
 AIRCONV_API int
 SM50CompileGeometryPipelineVertex(
-    SM50Shader *pVertexShader, SM50Shader *pGeometryShader,
+    sm50_shader_t pVertexShader, sm50_shader_t pGeometryShader,
     struct SM50_SHADER_COMPILATION_ARGUMENT_DATA *pVertexShaderArgs, const char *FunctionName,
-    SM50CompiledBitcode **ppBitcode, SM50Error **ppError
+    sm50_bitcode_t *ppBitcode, sm50_error_t *ppError
 ) {
   struct sm50_compile_geometry_pipeline_vertex_params params;
   params.vertex = pVertexShader;
@@ -157,9 +160,9 @@ SM50CompileGeometryPipelineVertex(
 
 AIRCONV_API int
 SM50CompileGeometryPipelineGeometry(
-    SM50Shader *pVertexShader, SM50Shader *pGeometryShader,
+    sm50_shader_t pVertexShader, sm50_shader_t pGeometryShader,
     struct SM50_SHADER_COMPILATION_ARGUMENT_DATA *pGeometryShaderArgs, const char *FunctionName,
-    SM50CompiledBitcode **ppBitcode, SM50Error **ppError
+    sm50_bitcode_t *ppBitcode, sm50_error_t *ppError
 ) {
   struct sm50_compile_geometry_pipeline_geometry_params params;
   params.vertex = pVertexShader;

@@ -188,7 +188,7 @@ class Shader {
 public:
   virtual ~Shader() {};
   /* FIXME: exposed implementation detail */
-  virtual SM50Shader *handle() = 0;
+  virtual sm50_shader_t handle() = 0;
   /* FIXME: exposed implementation detail */
   virtual MTL_SHADER_REFLECTION &reflection() = 0;
   virtual Com<CompiledShader> get_shader(ShaderVariant variant) = 0;

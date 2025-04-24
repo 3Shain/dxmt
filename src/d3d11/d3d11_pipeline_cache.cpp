@@ -12,13 +12,13 @@ namespace dxmt {
 
 class CachedSM50Shader final : public Shader {
   MTLD3D11Device *device;
-  SM50Shader *shader = nullptr;
+  sm50_shader_t shader = {};
   Sha1Hash hash_;
   MTL_SHADER_REFLECTION reflection_;
   std::unordered_map<ShaderVariant, std::unique_ptr<CompiledShader>> variants;
 
 public:
-  CachedSM50Shader(MTLD3D11Device *device, SM50Shader *shader_transfered,
+  CachedSM50Shader(MTLD3D11Device *device, sm50_shader_t shader_transfered,
                    const Sha1Hash &hash, MTL_SHADER_REFLECTION &reflection)
       : device(device), shader(shader_transfered), hash_(hash),
         reflection_(reflection) {}
@@ -38,7 +38,7 @@ public:
   };
   CachedSM50Shader(const CachedSM50Shader &copy) = delete;
 
-  virtual SM50Shader *handle() { return shader; };
+  virtual sm50_shader_t handle() { return shader; };
   virtual MTL_SHADER_REFLECTION &reflection() { return reflection_; }
   virtual Com<CompiledShader> get_shader(ShaderVariant variant) {
     auto c = variants.insert({variant, nullptr});
@@ -179,8 +179,8 @@ class PipelineCache : public MTLD3D11PipelineCacheBase {
         return shaders_.at(sha1).get();
       }
     }
-    SM50Error *err;
-    SM50Shader *sm50;
+    sm50_error_t err;
+    sm50_shader_t sm50;
     MTL_SHADER_REFLECTION reflection;
     if (SM50Initialize(pBytecode, BytecodeLength, &sm50, &reflection, &err)) {
       ERR("Failed to initialize shader: ", SM50GetErrorMesssage(err));

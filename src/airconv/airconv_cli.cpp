@@ -115,7 +115,7 @@ struct LLVMDisDiagnosticHandler : public DiagnosticHandler {
 
 namespace dxmt::dxbc {
 llvm::Error convertDXBC(
-  SM50Shader *pShader, const char *name, llvm::LLVMContext &context,
+  sm50_shader_t pShader, const char *name, llvm::LLVMContext &context,
   llvm::Module &module, SM50_SHADER_COMPILATION_ARGUMENT_DATA *pArgs
 );
 }
@@ -205,8 +205,8 @@ int main(int argc, char **argv) {
   Module M("default", Context);
   dxmt::initializeModule(M, {.enableFastMath = FastMath});
 
-  SM50Shader *sm50;
-  SM50Error *err;
+  sm50_shader_t sm50;
+  sm50_error_t err;
   if (SM50Initialize(
         MemRef.getBufferStart(), MemRef.getBufferSize(), &sm50, nullptr, &err
       )) {
@@ -227,7 +227,7 @@ int main(int argc, char **argv) {
       return 1;
     }
     auto MemRef = FileOrErr->get()->getMemBufferRef();
-    SM50Shader *sm50_hull;
+    sm50_shader_t sm50_hull;
     if (SM50Initialize(
           MemRef.getBufferStart(), MemRef.getBufferSize(), &sm50_hull, nullptr,
           &err
@@ -255,7 +255,7 @@ int main(int argc, char **argv) {
       return 1;
     }
     auto MemRef = FileOrErr->get()->getMemBufferRef();
-    SM50Shader *sm50_vertex;
+    sm50_shader_t sm50_vertex;
     if (SM50Initialize(
           MemRef.getBufferStart(), MemRef.getBufferSize(), &sm50_vertex, nullptr,
           &err
@@ -283,7 +283,7 @@ int main(int argc, char **argv) {
       return 1;
     }
     auto MemRef = FileOrErr->get()->getMemBufferRef();
-    SM50Shader *sm50_hull;
+    sm50_shader_t sm50_hull;
     if (SM50Initialize(
           MemRef.getBufferStart(), MemRef.getBufferSize(), &sm50_hull, nullptr,
           &err
@@ -311,7 +311,7 @@ int main(int argc, char **argv) {
       return 1;
     }
     auto MemRef = FileOrErr->get()->getMemBufferRef();
-    SM50Shader *sm50_vertex;
+    sm50_shader_t sm50_vertex;
     if (SM50Initialize(
           MemRef.getBufferStart(), MemRef.getBufferSize(), &sm50_vertex, nullptr,
           &err
@@ -339,7 +339,7 @@ int main(int argc, char **argv) {
       return 1;
     }
     auto MemRef = FileOrErr->get()->getMemBufferRef();
-    SM50Shader *sm50_geometry;
+    sm50_shader_t sm50_geometry;
     if (SM50Initialize(
           MemRef.getBufferStart(), MemRef.getBufferSize(), &sm50_geometry, nullptr,
           &err
