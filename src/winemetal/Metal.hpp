@@ -52,34 +52,35 @@ public:
   Reference() {
     this->handle = NULL_OBJECT_HANDLE;
   }
-  Reference(obj_handle_t retained) {
-    this->handle = retained;
+  Reference(const Reference &copy) {
+    this->handle = copy.handle;
+    this->retain();
+  }
+  Reference(Reference &&move) {
+    this->handle = move.handle;
+    move.handle = NULL_OBJECT_HANDLE;
   }
   Reference(Class non_retained) {
     this->handle = non_retained.handle;
     this->retain();
   }
-  Reference(const Reference &copy) {
-    this->handle = copy.handle;
-    this->retain();
-  }
-
-  Reference(Reference &&move) {
-    if (this->handle != NULL_OBJECT_HANDLE)
-      this->release();
-    this->handle = move.handle;
-    move.handle = NULL_OBJECT_HANDLE;
+  Reference(obj_handle_t retained) {
+    this->handle = retained;
   }
 
   Reference &
-  operator=(Class non_retained) {
-    this->handle = non_retained.handle;
+  operator=(const Reference &copy) {
+    if (this->handle != NULL_OBJECT_HANDLE)
+      this->release();
+    this->handle = copy.handle;
     this->retain();
     return *this;
   }
   Reference &
-  operator=(const Reference &copy) {
-    this->handle = copy.handle;
+  operator=(Class non_retained) {
+    if (this->handle != NULL_OBJECT_HANDLE)
+      this->release();
+    this->handle = non_retained.handle;
     this->retain();
     return *this;
   }
