@@ -1477,7 +1477,7 @@ thunk_SM50Compile(void *args) {
   struct sm50_compile_params *params = args;
 
   params->ret =
-      SM50Compile((SM50Shader *)params->shader, params->args, params->func_name, params->bitcode, params->error);
+      SM50Compile(params->shader, params->args, params->func_name, params->bitcode, params->error);
 
   return STATUS_SUCCESS;
 }

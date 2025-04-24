@@ -1807,7 +1807,7 @@ llvm::Error convert_dxbc_vertex_for_hull_shader(
 };
 
 llvm::Error convertDXBC(
-  SM50Shader *pShader, const char *name, llvm::LLVMContext &context,
+  sm50_shader_t pShader, const char *name, llvm::LLVMContext &context,
   llvm::Module &module, SM50_SHADER_COMPILATION_ARGUMENT_DATA *pArgs
 ) {
   using namespace microsoft;
@@ -1932,8 +1932,8 @@ bool CheckGSSignatureIsPassThrough(
 };
 
 AIRCONV_API int SM50Initialize(
-  const void *pBytecode, size_t BytecodeSize, SM50Shader **ppShader,
-  MTL_SHADER_REFLECTION *pRefl, SM50Error **ppError
+  const void *pBytecode, size_t BytecodeSize, sm50_shader_t *ppShader,
+  MTL_SHADER_REFLECTION *pRefl, sm50_error_t *ppError
 ) {
   using namespace microsoft;
   using namespace dxmt::dxbc;
@@ -1947,14 +1947,14 @@ AIRCONV_API int SM50Initialize(
 
   if (ppShader == nullptr) {
     errorOut << "ppShader can not be null\0";
-    *ppError = (SM50Error *)errorObj;
+    *ppError = (sm50_error_t)errorObj;
     return 1;
   }
 
   CDXBCParser DXBCParser;
   if (DXBCParser.ReadDXBC(pBytecode, BytecodeSize) != S_OK) {
     errorOut << "Invalid DXBC bytecode\0";
-    *ppError = (SM50Error *)errorObj;
+    *ppError = (sm50_error_t)errorObj;
     return 1;
   }
 
@@ -1964,7 +1964,7 @@ AIRCONV_API int SM50Initialize(
   }
   if (codeBlobIdx == DXBC_BLOB_NOT_FOUND) {
     errorOut << "Invalid DXBC bytecode: shader blob not found\0";
-    *ppError = (SM50Error *)errorObj;
+    *ppError = (sm50_error_t)errorObj;
     return 1;
   }
   const void *codeBlob = DXBCParser.GetBlob(codeBlobIdx);
@@ -1975,13 +1975,13 @@ AIRCONV_API int SM50Initialize(
   CSignatureParser inputParser;
   if (DXBCGetInputSignature(pBytecode, &inputParser) != S_OK) {
     errorOut << "Invalid DXBC bytecode: input signature not found\0";
-    *ppError = (SM50Error *)errorObj;
+    *ppError = (sm50_error_t)errorObj;
     return 1;
   }
   CSignatureParser5 outputParser;
   if (DXBCGetOutputSignature(pBytecode, &outputParser) != S_OK) {
     errorOut << "Invalid DXBC bytecode: output signature not found\0";
-    *ppError = (SM50Error *)errorObj;
+    *ppError = (sm50_error_t)errorObj;
     return 1;
   }
 
@@ -2936,17 +2936,17 @@ AIRCONV_API int SM50Initialize(
     pRefl->ArgumentTableQwords = binding_table.Size();
   }
 
-  *ppShader = (SM50Shader *)sm50_shader;
+  *ppShader = sm50_shader;
   return 0;
 };
 
-AIRCONV_API void SM50Destroy(SM50Shader *pShader) {
+AIRCONV_API void SM50Destroy(sm50_shader_t pShader) {
   delete (dxmt::dxbc::SM50ShaderInternal *)pShader;
 }
 
 AIRCONV_API int SM50Compile(
-  SM50Shader *pShader, SM50_SHADER_COMPILATION_ARGUMENT_DATA *pArgs,
-  const char *FunctionName, SM50CompiledBitcode **ppBitcode, SM50Error **ppError
+  sm50_shader_t pShader, SM50_SHADER_COMPILATION_ARGUMENT_DATA *pArgs,
+  const char *FunctionName, sm50_bitcode_t *ppBitcode, sm50_error_t *ppError
 ) {
   using namespace llvm;
   using namespace dxmt;
@@ -2958,7 +2958,7 @@ AIRCONV_API int SM50Compile(
   llvm::raw_svector_ostream errorOut(errorObj->buf);
   if (ppBitcode == nullptr) {
     errorOut << "ppBitcode can not be null\0";
-    *ppError = (SM50Error *)errorObj;
+    *ppError = (sm50_error_t)errorObj;
     return 1;
   }
 
@@ -2987,7 +2987,7 @@ AIRCONV_API int SM50Compile(
     llvm::handleAllErrors(std::move(err), [&](const UnsupportedFeature &u) {
       errorOut << u.msg;
     });
-    *ppError = (SM50Error *)errorObj;
+    *ppError = (sm50_error_t)errorObj;
     return 1;
   }
 
@@ -3002,14 +3002,14 @@ AIRCONV_API int SM50Compile(
 
   pModule.reset();
 
-  *ppBitcode = (SM50CompiledBitcode *)compiled;
+  *ppBitcode = (sm50_bitcode_t)compiled;
   return 0;
 }
 
 AIRCONV_API int SM50CompileTessellationPipelineVertex(
-  SM50Shader *pVertexShader, SM50Shader *pHullShader,
+  sm50_shader_t pVertexShader, sm50_shader_t pHullShader,
   struct SM50_SHADER_COMPILATION_ARGUMENT_DATA *pVertexShaderArgs,
-  const char *FunctionName, SM50CompiledBitcode **ppBitcode, SM50Error **ppError
+  const char *FunctionName, sm50_bitcode_t *ppBitcode, sm50_error_t *ppError
 ) {
   using namespace llvm;
   using namespace dxmt;
@@ -3021,7 +3021,7 @@ AIRCONV_API int SM50CompileTessellationPipelineVertex(
   llvm::raw_svector_ostream errorOut(errorObj->buf);
   if (ppBitcode == nullptr) {
     errorOut << "ppBitcode can not be null\0";
-    *ppError = (SM50Error *)errorObj;
+    *ppError = (sm50_error_t)errorObj;
     return 1;
   }
 
@@ -3041,7 +3041,7 @@ AIRCONV_API int SM50CompileTessellationPipelineVertex(
     llvm::handleAllErrors(std::move(err), [&](const UnsupportedFeature &u) {
       errorOut << u.msg;
     });
-    *ppError = (SM50Error *)errorObj;
+    *ppError = (sm50_error_t)errorObj;
     return 1;
   }
 
@@ -3056,14 +3056,14 @@ AIRCONV_API int SM50CompileTessellationPipelineVertex(
 
   pModule.reset();
 
-  *ppBitcode = (SM50CompiledBitcode *)compiled;
+  *ppBitcode = (sm50_bitcode_t)compiled;
   return 0;
 }
 
 AIRCONV_API int SM50CompileTessellationPipelineHull(
-  SM50Shader *pVertexShader, SM50Shader *pHullShader,
+  sm50_shader_t pVertexShader, sm50_shader_t pHullShader,
   struct SM50_SHADER_COMPILATION_ARGUMENT_DATA *pHullShaderArgs,
-  const char *FunctionName, SM50CompiledBitcode **ppBitcode, SM50Error **ppError
+  const char *FunctionName, sm50_bitcode_t *ppBitcode, sm50_error_t *ppError
 ) {
   using namespace llvm;
   using namespace dxmt;
@@ -3075,7 +3075,7 @@ AIRCONV_API int SM50CompileTessellationPipelineHull(
   llvm::raw_svector_ostream errorOut(errorObj->buf);
   if (ppBitcode == nullptr) {
     errorOut << "ppBitcode can not be null\0";
-    *ppError = (SM50Error *)errorObj;
+    *ppError = (sm50_error_t)errorObj;
     return 1;
   }
 
@@ -3102,7 +3102,7 @@ AIRCONV_API int SM50CompileTessellationPipelineHull(
     llvm::handleAllErrors(std::move(err), [&](const UnsupportedFeature &u) {
       errorOut << u.msg;
     });
-    *ppError = (SM50Error *)errorObj;
+    *ppError = (sm50_error_t)errorObj;
     return 1;
   }
 
@@ -3117,14 +3117,14 @@ AIRCONV_API int SM50CompileTessellationPipelineHull(
 
   pModule.reset();
 
-  *ppBitcode = (SM50CompiledBitcode *)compiled;
+  *ppBitcode = (sm50_bitcode_t)compiled;
   return 0;
 }
 
 AIRCONV_API int SM50CompileTessellationPipelineDomain(
-  SM50Shader *pHullShader, SM50Shader *pDomainShader,
+  sm50_shader_t pHullShader, sm50_shader_t pDomainShader,
   struct SM50_SHADER_COMPILATION_ARGUMENT_DATA *pDomainShaderArgs,
-  const char *FunctionName, SM50CompiledBitcode **ppBitcode, SM50Error **ppError
+  const char *FunctionName, sm50_bitcode_t *ppBitcode, sm50_error_t *ppError
 ) {
   using namespace llvm;
   using namespace dxmt;
@@ -3136,7 +3136,7 @@ AIRCONV_API int SM50CompileTessellationPipelineDomain(
   llvm::raw_svector_ostream errorOut(errorObj->buf);
   if (ppBitcode == nullptr) {
     errorOut << "ppBitcode can not be null\0";
-    *ppError = (SM50Error *)errorObj;
+    *ppError = (sm50_error_t)errorObj;
     return 1;
   }
 
@@ -3169,7 +3169,7 @@ AIRCONV_API int SM50CompileTessellationPipelineDomain(
     llvm::handleAllErrors(std::move(err), [&](const UnsupportedFeature &u) {
       errorOut << u.msg;
     });
-    *ppError = (SM50Error *)errorObj;
+    *ppError = (sm50_error_t)errorObj;
     return 1;
   }
 
@@ -3184,14 +3184,14 @@ AIRCONV_API int SM50CompileTessellationPipelineDomain(
 
   pModule.reset();
 
-  *ppBitcode = (SM50CompiledBitcode *)compiled;
+  *ppBitcode = (sm50_bitcode_t)compiled;
   return 0;
 }
 
 AIRCONV_API int SM50CompileGeometryPipelineVertex(
-  SM50Shader *pVertexShader, SM50Shader *pGeometryShader,
+  sm50_shader_t pVertexShader, sm50_shader_t pGeometryShader,
   struct SM50_SHADER_COMPILATION_ARGUMENT_DATA *pVertexShaderArgs,
-  const char *FunctionName, SM50CompiledBitcode **ppBitcode, SM50Error **ppError
+  const char *FunctionName, sm50_bitcode_t *ppBitcode, sm50_error_t *ppError
 ) {
   using namespace llvm;
   using namespace dxmt;
@@ -3203,7 +3203,7 @@ AIRCONV_API int SM50CompileGeometryPipelineVertex(
   llvm::raw_svector_ostream errorOut(errorObj->buf);
   if (ppBitcode == nullptr) {
     errorOut << "ppBitcode can not be null\0";
-    *ppError = (SM50Error *)errorObj;
+    *ppError = (sm50_error_t)errorObj;
     return 1;
   }
 
@@ -3223,7 +3223,7 @@ AIRCONV_API int SM50CompileGeometryPipelineVertex(
     llvm::handleAllErrors(std::move(err), [&](const UnsupportedFeature &u) {
       errorOut << u.msg;
     });
-    *ppError = (SM50Error *)errorObj;
+    *ppError = (sm50_error_t)errorObj;
     return 1;
   }
 
@@ -3238,14 +3238,14 @@ AIRCONV_API int SM50CompileGeometryPipelineVertex(
 
   pModule.reset();
 
-  *ppBitcode = (SM50CompiledBitcode *)compiled;
+  *ppBitcode = (sm50_bitcode_t)compiled;
   return 0;
 }
 
 AIRCONV_API int SM50CompileGeometryPipelineGeometry(
-  SM50Shader *pVertexShader, SM50Shader *pGeometryShader,
+  sm50_shader_t pVertexShader, sm50_shader_t pGeometryShader,
   struct SM50_SHADER_COMPILATION_ARGUMENT_DATA *pGeometryShaderArgs,
-  const char *FunctionName, SM50CompiledBitcode **ppBitcode, SM50Error **ppError
+  const char *FunctionName, sm50_bitcode_t *ppBitcode, sm50_error_t *ppError
 ) {
   using namespace llvm;
   using namespace dxmt;
@@ -3257,7 +3257,7 @@ AIRCONV_API int SM50CompileGeometryPipelineGeometry(
   llvm::raw_svector_ostream errorOut(errorObj->buf);
   if (ppBitcode == nullptr) {
     errorOut << "ppBitcode can not be null\0";
-    *ppError = (SM50Error *)errorObj;
+    *ppError = (sm50_error_t)errorObj;
     return 1;
   }
 
@@ -3284,7 +3284,7 @@ AIRCONV_API int SM50CompileGeometryPipelineGeometry(
     llvm::handleAllErrors(std::move(err), [&](const UnsupportedFeature &u) {
       errorOut << u.msg;
     });
-    *ppError = (SM50Error *)errorObj;
+    *ppError = (sm50_error_t)errorObj;
     return 1;
   }
 
@@ -3299,24 +3299,24 @@ AIRCONV_API int SM50CompileGeometryPipelineGeometry(
 
   pModule.reset();
 
-  *ppBitcode = (SM50CompiledBitcode *)compiled;
+  *ppBitcode = (sm50_bitcode_t)compiled;
   return 0;
 }
 
 AIRCONV_API void SM50GetCompiledBitcode(
-  SM50CompiledBitcode *pBitcode, MTL_SHADER_BITCODE *pData
+  sm50_bitcode_t pBitcode, MTL_SHADER_BITCODE *pData
 ) {
   auto pBitcodeInternal = (SM50CompiledBitcodeInternal *)pBitcode;
   pData->Data = pBitcodeInternal->vec.data();
   pData->Size = pBitcodeInternal->vec.size();
 }
 
-AIRCONV_API void SM50DestroyBitcode(SM50CompiledBitcode *pBitcode) {
+AIRCONV_API void SM50DestroyBitcode(sm50_bitcode_t pBitcode) {
   auto pBitcodeInternal = (SM50CompiledBitcodeInternal *)pBitcode;
   delete pBitcodeInternal;
 }
 
-AIRCONV_API const char *SM50GetErrorMesssage(SM50Error *pError) {
+AIRCONV_API const char *SM50GetErrorMesssage(sm50_error_t pError) {
   auto pInternal = (SM50ErrorInternal *)pError;
   if (*pInternal->buf.end() != '\0') {
     // ensure it returns a null terminated str
@@ -3325,7 +3325,7 @@ AIRCONV_API const char *SM50GetErrorMesssage(SM50Error *pError) {
   return pInternal->buf.data();
 }
 
-AIRCONV_API void SM50FreeError(SM50Error *pError) {
+AIRCONV_API void SM50FreeError(sm50_error_t pError) {
   if (pError == nullptr)
     return;
   auto pInternal = (SM50ErrorInternal *)pError;
