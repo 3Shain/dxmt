@@ -93,8 +93,6 @@ struct MTL_SHADER_REFLECTION {
   uint32_t ArgumentBufferBindIndex;
   uint32_t NumConstantBuffers;
   uint32_t NumArguments;
-  struct MTL_SM50_SHADER_ARGUMENT *ConstantBuffers;
-  struct MTL_SM50_SHADER_ARGUMENT *Arguments;
   union {
     uint32_t ThreadgroupSize[3];
     struct MTL_TESSELLATOR_REFLECTION Tessellator;
@@ -322,6 +320,11 @@ AIRCONV_API int SM50CompileGeometryPipelineGeometry(
   sm50_shader_t pVertexShader, sm50_shader_t pGeometryShader,
   struct SM50_SHADER_COMPILATION_ARGUMENT_DATA *pGeometryShaderArgs,
   const char *FunctionName, sm50_bitcode_t *ppBitcode, sm50_error_t *ppError
+);
+
+AIRCONV_API void SM50GetArgumentsInfo(
+  sm50_shader_t pShader, struct MTL_SM50_SHADER_ARGUMENT *pConstantBuffers,
+  struct MTL_SM50_SHADER_ARGUMENT *pArguments
 );
 
 #ifdef __cplusplus

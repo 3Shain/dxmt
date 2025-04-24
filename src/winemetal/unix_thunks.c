@@ -177,3 +177,14 @@ SM50CompileGeometryPipelineGeometry(
     return -1;
   return params.ret;
 }
+
+AIRCONV_API void SM50GetArgumentsInfo(
+  sm50_shader_t pShader, struct MTL_SM50_SHADER_ARGUMENT *pConstantBuffers,
+  struct MTL_SM50_SHADER_ARGUMENT *pArguments
+) {
+  struct sm50_get_arguments_info_params params;
+  params.shader = pShader;
+  params.constant_buffers = pConstantBuffers;
+  params.arguments = pArguments;
+  UNIX_CALL(sm50_get_arguments_info, &params);
+};

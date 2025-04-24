@@ -1476,8 +1476,7 @@ static NTSTATUS
 thunk_SM50Compile(void *args) {
   struct sm50_compile_params *params = args;
 
-  params->ret =
-      SM50Compile(params->shader, params->args, params->func_name, params->bitcode, params->error);
+  params->ret = SM50Compile(params->shader, params->args, params->func_name, params->bitcode, params->error);
 
   return STATUS_SUCCESS;
 }
@@ -1587,6 +1586,13 @@ _MTLDevice_setShouldMaximizeConcurrentCompilation(void *args) {
   return STATUS_SUCCESS;
 }
 
+static NTSTATUS
+thunk_SM50GetArgumentsInfo(void *args) {
+  struct sm50_get_arguments_info_params *params = args;
+  SM50GetArgumentsInfo(params->shader, params->constant_buffers, params->arguments);
+  return STATUS_SUCCESS;
+}
+
 const void *__wine_unix_call_funcs[] = {
     &_NSObject_retain,
     &_NSObject_release,
@@ -1676,4 +1682,5 @@ const void *__wine_unix_call_funcs[] = {
     &thunk_SM50CompileTessellationPipelineDomain,
     &_MTLCommandEncoder_setLabel,
     &_MTLDevice_setShouldMaximizeConcurrentCompilation,
+    &thunk_SM50GetArgumentsInfo,
 };
