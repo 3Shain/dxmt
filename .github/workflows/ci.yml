@@ -85,3 +85,14 @@ jobs:
         with:
           name: artifacts-release-gcc
           path: artifacts-release-gcc.tar.gz
+      - name: Build WoW64 (gcc-release)
+        run: |
+            meson setup --cross-file build-win32-sys.txt --native-file build-osx.txt -Dwine_builtin_dll=true -Dnative_llvm_path=toolchains/llvm-darwin -Dwine_install_path=toolchains/wine build-release-wow64-gcc --buildtype release
+            meson compile -C build-release-wow64-gcc
+      - name: Tar WoW64 (gcc-release)
+        run: tar -zcf artifacts-release-wow64-gcc.tar.gz build-release-wow64-gcc/src
+      - name: Upload WoW64 (gcc-releases)
+        uses: actions/upload-artifact@v4
+        with:
+          name: artifacts-release-wow64-gcc
+          path: artifacts-release-wow64-gcc.tar.gz
