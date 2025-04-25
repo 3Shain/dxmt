@@ -4,11 +4,7 @@ winemetal_src = [
   'winemetal_thunks.c'
 ]
 
-if cc.has_link_argument('/entry:WineMetalEntry')
-  winemetal_ld_args      = ['-Wl,/entry:WineMetalEntry']
-else
-  winemetal_ld_args      = ['-Wl,-eWineMetalEntry']
-endif
+winemetal_ld_args = []
 
 winemetal_link_depends = []
 

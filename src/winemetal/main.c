@@ -7,15 +7,8 @@ BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID reserved) {
     return TRUE;
 
   DisableThreadLibraryCalls(instance);
-  return TRUE;
+  return !__wine_init_unix_call();
 }
 
 extern BOOL WINAPI DllMainCRTStartup(HANDLE hDllHandle, DWORD dwReason,
                                        LPVOID lpreserved);
-
-BOOL WINAPI WineMetalEntry(HANDLE hDllHandle, DWORD dwReason, LPVOID lpreserved) {
-  if (dwReason == DLL_PROCESS_ATTACH && __wine_init_unix_call())
-    return FALSE;
-  // Then call the actual CRT startup
-  return DllMainCRTStartup(hDllHandle, dwReason, lpreserved);
-}
