@@ -530,7 +530,7 @@ WINEMETAL_API bool
 MTLCaptureManager_startCapture(obj_handle_t mgr, struct WMTCaptureInfo *info) {
   struct unixcall_mtlcapturemanager_startcapture params;
   params.capture_manager = mgr;
-  params.info.ptr = info;
+  WMT_MEMPTR_SET(params.info, info);
   UNIX_CALL(54, &params);
   return params.ret;
 }
@@ -538,7 +538,7 @@ MTLCaptureManager_startCapture(obj_handle_t mgr, struct WMTCaptureInfo *info) {
 WINEMETAL_API void
 MTLCaptureManager_stopCapture(obj_handle_t mgr) {
   struct unixcall_generic_obj_noret params;
-  params.handle = NULL_OBJECT_HANDLE;
+  params.handle = mgr;
   UNIX_CALL(55, &params);
 }
 

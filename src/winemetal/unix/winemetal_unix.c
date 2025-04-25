@@ -1116,7 +1116,7 @@ _MTLCaptureManager_startCapture(void *obj) {
   const struct WMTCaptureInfo *info = params->info.ptr;
   desc.destination = (MTLCaptureDestination)info->destination;
   desc.captureObject = (id)info->capture_object;
-  NSString *path_str = [[NSString alloc] initWithCString:info->output_url encoding:NSUTF8StringEncoding];
+  NSString *path_str = [[NSString alloc] initWithCString:info->output_url.ptr encoding:NSUTF8StringEncoding];
   NSURL *url = [[NSURL alloc] initFileURLWithPath:path_str];
   desc.outputURL = url;
   [(MTLCaptureManager *)params->capture_manager startCaptureWithDescriptor:desc error:nil];
