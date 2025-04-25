@@ -12,11 +12,22 @@ std::atomic_uint64_t global_buffer_seq = {0};
 BufferAllocation::BufferAllocation(WMT::Device device, const WMTBufferInfo &info, Flags<BufferAllocationFlag> flags) :
     info_(info),
     flags_(flags) {
+#ifdef __i386__
+  placed_buffer = _aligned_malloc(info_.length, DXMT_PAGE_SIZE);
+  assert(((int)placed_buffer & 4095) == 0);
+  info_.memory.set(placed_buffer);
+#endif
   obj_ = device.newBuffer(info_);
   gpuAddress = info_.gpu_address;
   mappedMemory = info_.memory.get();
   depkey = EncoderDepSet::generateNewKey(global_buffer_seq.fetch_add(1));
 };
+
+BufferAllocation::~BufferAllocation() {
+#ifdef __i386__
+  _aligned_free(placed_buffer);
+#endif
+}
 
 void
 BufferAllocation::incRef() {

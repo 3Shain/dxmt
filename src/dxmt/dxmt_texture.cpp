@@ -31,7 +31,11 @@ TextureAllocation::TextureAllocation(
   depkey = EncoderDepSet::generateNewKey(global_texture_seq.fetch_add(1));
 };
 
-TextureAllocation::~TextureAllocation(){};
+TextureAllocation::~TextureAllocation(){
+#ifdef __i386__
+  _aligned_free(mappedMemory);
+#endif
+};
 
 void
 TextureAllocation::incRef() {
@@ -209,6 +213,9 @@ Texture::allocate(Flags<TextureAllocationFlag> flags) {
     buffer_info.length = bytes_per_image_;
     buffer_info.options = options;
     buffer_info.memory.set(nullptr);
+#ifdef __i386__
+    buffer_info.memory.set(_aligned_malloc(bytes_per_image_, DXMT_PAGE_SIZE));
+#endif
     auto buffer = device_.newBuffer(buffer_info);
     return new TextureAllocation(std::move(buffer), buffer_info.memory.get(), info, bytes_per_row_, flags);
   }

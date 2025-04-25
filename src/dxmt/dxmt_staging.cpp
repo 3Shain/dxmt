@@ -81,6 +81,9 @@ StagingResource::allocate(uint64_t coherent_seq_id) {
     last.info.memory.set(nullptr);
     last.info.options = options_;
     last.info.length = length;
+#ifdef __i386__
+    last.info.memory.set(_aligned_malloc(length, DXMT_PAGE_SIZE));
+#endif
     last.allocation = device_.newBuffer(last.info);
     ret = buffer_pool.size() - 1;
   }
