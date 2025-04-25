@@ -115,7 +115,7 @@ struct MTL_SHADER_BITCODE {
   // add additional metadata here
 };
 
-#ifdef __LP64__
+#if defined(__LP64__) || defined(_WIN64)
 typedef void *sm50_ptr64_t;
 #else
 typedef struct sm50_ptr64_t {
