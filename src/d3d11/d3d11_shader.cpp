@@ -56,9 +56,9 @@ public:
     if (!compile_result)
       return this;
 
-    MTL_SHADER_BITCODE bitcode;
-    SM50GetCompiledBitcode(compile_result, &bitcode);
-    auto library = device_->GetMTLDevice().newLibrary(bitcode.Data, bitcode.Size, err);
+    struct {uint64_t Data; uint64_t Size;} bitcode;
+    SM50GetCompiledBitcode(compile_result, (MTL_SHADER_BITCODE*)&bitcode);
+    auto library = device_->GetMTLDevice().newLibraryFromNativeBuffer(bitcode.Data, bitcode.Size, err);
 
     if (err) {
       ERR("Failed to create MTLLibrary: ", err.description().getUTF8String());
