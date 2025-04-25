@@ -79,15 +79,6 @@ wrc_generator = generator(wrc,
   arguments : [ '-i', '@INPUT@', '-o', '@OUTPUT@' ],
 )
 
-add_project_arguments(cpp.get_supported_arguments(compiler_args), language: 'cpp')
-add_project_arguments(clangpp.get_supported_arguments(native_compiler_args), language: 'cpp', native: true)
-add_project_arguments(cc.get_supported_arguments(compiler_args), language: 'c')
-add_project_link_arguments(cpp.get_supported_link_arguments(link_args), language: 'cpp')
-add_project_link_arguments(cc.get_supported_link_arguments(link_args), language: 'c')
-add_project_arguments(['-arch', 'x86_64'], language: 'c',  native: true)
-add_project_arguments(['-arch', 'x86_64'], language: 'cpp',  native: true)
-add_project_link_arguments(['-arch', 'x86_64'], language: 'cpp',  native: true)
-
 dxmt_debug = get_option('dxmt_debug')
 
 if dxmt_debug
@@ -105,6 +96,15 @@ dxmt_version = vcs_tag(
 wine_builtin_dll = get_option('wine_builtin_dll')
 
 if cpu_family == 'x86'
+  # Enable stdcall fixup on 32-bit
+  link_args += [
+    '-Wl,--enable-stdcall-fixup',
+    '-Wl,--kill-at',
+  ]
+  # Fix stack alignment issues with mingw on 32-bit
+  compiler_args += [
+    '-mpreferred-stack-boundary=2'
+  ]
   if wine_builtin_dll
     windows_native_install_dir = 'i386-windows'
   else
@@ -123,6 +123,15 @@ else
 endif
 
 unix_install_dir = 'x86_64-unix'
+
+add_project_arguments(cpp.get_supported_arguments(compiler_args), language: 'cpp')
+add_project_arguments(clangpp.get_supported_arguments(native_compiler_args), language: 'cpp', native: true)
+add_project_arguments(cc.get_supported_arguments(compiler_args), language: 'c')
+add_project_link_arguments(cpp.get_supported_link_arguments(link_args), language: 'cpp')
+add_project_link_arguments(cc.get_supported_link_arguments(link_args), language: 'c')
+add_project_arguments(['-arch', 'x86_64'], language: 'c',  native: true)
+add_project_arguments(['-arch', 'x86_64'], language: 'cpp',  native: true)
+add_project_link_arguments(['-arch', 'x86_64'], language: 'cpp',  native: true)
 
 subdir('libs')
 subdir('src')

@@ -15,7 +15,7 @@ if wine_build_path != ''
     wine_build_path = join_paths(meson.project_source_root(), wine_build_path)
   endif
   lib_winecrt0 = cc.find_library('winecrt0', dirs : [ join_paths(wine_build_path, 'dlls/winecrt0', windows_builtin_install_dir) ])
-  lib_ntdll = cc.find_library('ntdll', dirs : [ join_paths(wine_build_path, 'dlls/ntdll', windows_builtin_install_dir) ])
+  lib_ntdll = cc.find_library('ntdll', dirs : [ join_paths(wine_build_path, 'dlls/ntdll', windows_builtin_install_dir)], static: true)
   lib_dbghelp = cc.find_library('dbghelp', dirs : [ join_paths(wine_build_path, 'dlls/dbghelp', windows_builtin_install_dir) ])
   winebuild = join_paths(wine_build_path, 'tools/winebuild/winebuild')
 elif wine_install_path != ''
@@ -23,7 +23,7 @@ elif wine_install_path != ''
     wine_install_path = join_paths(meson.project_source_root(), wine_install_path)
   endif
   lib_winecrt0 = cc.find_library('winecrt0', dirs : [ join_paths(wine_install_path,'lib/wine', windows_builtin_install_dir) ])
-  lib_ntdll = cc.find_library('ntdll', dirs : [ join_paths(wine_install_path, 'lib/wine', windows_builtin_install_dir) ])
+  lib_ntdll = cc.find_library('ntdll', dirs : [ join_paths(wine_install_path, 'lib/wine', windows_builtin_install_dir)], static: true)
   lib_dbghelp = cc.find_library('dbghelp', dirs : [ join_paths(wine_install_path, 'lib/wine', windows_builtin_install_dir) ])
   winebuild = join_paths(wine_install_path, 'bin/winebuild')
 else
