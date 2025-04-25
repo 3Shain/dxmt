@@ -100,7 +100,7 @@ CommandQueue::CommitChunkInternal(CommandChunk &chunk, uint64_t seq) {
     std::strftime(filename, 1024, "-capture-%H-%M-%S_%m-%d-%y.gputrace", std::localtime(&now));
     auto fileUrl = env::getUnixPath(env::getExeBaseName() + filename);
     WARN("A new capture will be saved to ", fileUrl);
-    info.output_url = fileUrl.c_str();
+    info.output_url.set(fileUrl.c_str());
 
     capture_mgr.startCapture(info);
     break;

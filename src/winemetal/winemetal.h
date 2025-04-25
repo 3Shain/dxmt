@@ -1403,7 +1403,7 @@ enum WMTCaptureDestination : uint8_t {
 
 struct WMTCaptureInfo {
   obj_handle_t capture_object;
-  const char *output_url;
+  struct WMTConstMemoryPointer output_url;
   enum WMTCaptureDestination destination;
 };
 
