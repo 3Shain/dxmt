@@ -62,6 +62,12 @@ private:
   struct StagingBuffer {
     WMTBufferInfo info;
     WMT::Reference<WMT::Buffer> allocation;
+
+    ~StagingBuffer() {
+#ifdef __i386__
+    _aligned_free(info.memory.get());
+#endif
+    }
   };
   struct QueueEntry {
     uint64_t id;

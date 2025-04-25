@@ -638,6 +638,7 @@ private:
   WMT::Reference<WMT::SamplerState> dummy_sampler_;
   WMTSamplerInfo dummy_sampler_info_;
   WMT::Reference<WMT::Buffer> dummy_cbuffer_;
+  void *dummy_cbuffer_host_;
   WMTBufferInfo dummy_cbuffer_info_;
 
   EncoderData encoder_head = {EncoderType::Null, nullptr};

@@ -61,6 +61,7 @@ public:
 
 private:
   BufferAllocation(WMT::Device device, const WMTBufferInfo &info, Flags<BufferAllocationFlag> flags);
+  ~BufferAllocation();
 
   WMT::Reference<WMT::Buffer> obj_;
   WMTBufferInfo info_;
@@ -68,6 +69,10 @@ private:
   std::atomic<uint32_t> refcount_ = {0u};
   Flags<BufferAllocationFlag> flags_;
   std::vector<std::unique_ptr<BufferView>> cached_view_;
+
+#ifdef __i386__
+  void * placed_buffer;
+#endif
 };
 
 class Buffer {
