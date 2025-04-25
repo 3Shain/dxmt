@@ -576,6 +576,13 @@ public:
     return Reference<Library>(MTLDevice_newLibrary(handle, mem, bytecode_length, &error.handle));
   }
 
+  Reference<Library>
+  newLibraryFromNativeBuffer(uint64_t bytecode, uint64_t bytecode_length, Error &error) {
+    struct WMTMemoryPointer mem;
+    memcpy(&mem, &bytecode, 8);
+    return Reference<Library>(MTLDevice_newLibrary(handle, mem, bytecode_length, &error.handle));
+  }
+
   Reference<ComputePipelineState>
   newComputePipelineState(const Function &compute_function, Error &error) {
     return Reference<ComputePipelineState>(

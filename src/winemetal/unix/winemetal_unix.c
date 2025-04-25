@@ -1593,6 +1593,300 @@ thunk_SM50GetArgumentsInfo(void *args) {
   return STATUS_SUCCESS;
 }
 
+inline void *
+UInt32ToPtr(uint32_t v) {
+  return (void *)(uint64_t)v;
+}
+
+static NTSTATUS
+thunk32_SM50Initialize(void *args) {
+  struct sm50_initialize_params32 *params = args;
+
+  params->ret = SM50Initialize(
+      UInt32ToPtr(params->bytecode), params->bytecode_size, UInt32ToPtr(params->shader),
+      UInt32ToPtr(params->reflection), UInt32ToPtr(params->error)
+  );
+
+  return STATUS_SUCCESS;
+}
+
+struct SM50_SHADER_EMULATE_VERTEX_STREAM_OUTPUT_DATA32 {
+  uint32_t next;
+  enum SM50_SHADER_COMPILATION_ARGUMENT_TYPE type;
+  uint32_t num_output_slots;
+  uint32_t num_elements;
+  uint32_t strides[4];
+  uint32_t elements;
+};
+
+struct SM50_SHADER_DEBUG_IDENTITY_DATA32 {
+  uint32_t next;
+  enum SM50_SHADER_COMPILATION_ARGUMENT_TYPE type;
+  uint64_t id;
+};
+
+struct SM50_SHADER_COMPILATION_ARGUMENT_DATA32 {
+  uint32_t next;
+  enum SM50_SHADER_COMPILATION_ARGUMENT_TYPE type;
+};
+
+struct SM50_SHADER_IA_INPUT_LAYOUT_DATA32 {
+  uint32_t next;
+  enum SM50_SHADER_COMPILATION_ARGUMENT_TYPE type;
+  enum SM50_INDEX_BUFFER_FORAMT index_buffer_format;
+  uint32_t slot_mask;
+  uint32_t num_elements;
+  uint32_t elements;
+};
+
+struct SM50_SHADER_PSO_PIXEL_SHADER_DATA32 {
+  uint32_t next;
+  enum SM50_SHADER_COMPILATION_ARGUMENT_TYPE type;
+  uint32_t sample_mask;
+  bool dual_source_blending;
+  bool disable_depth_output;
+  uint32_t unorm_output_reg_mask;
+};
+
+struct SM50_SHADER_GS_PASS_THROUGH_DATA32 {
+  uint32_t next;
+  enum SM50_SHADER_COMPILATION_ARGUMENT_TYPE type;
+  union {
+    struct MTL_GEOMETRY_SHADER_PASS_THROUGH Data;
+    uint32_t DataEncoded;
+  };
+  bool RasterizationDisabled;
+};
+
+struct SM50_SHADER_PSO_GEOMETRY_SHADER_DATA32 {
+  uint32_t next;
+  enum SM50_SHADER_COMPILATION_ARGUMENT_TYPE type;
+  bool strip_topology;
+};
+
+void
+sm50_compilation_argument32_convert(
+    struct SM50_SHADER_COMPILATION_ARGUMENT_DATA *first_arg, struct SM50_SHADER_COMPILATION_ARGUMENT_DATA32 *args32
+) {
+  struct SM50_SHADER_COMPILATION_ARGUMENT_DATA *last_arg = first_arg;
+
+  first_arg->type = SM50_SHADER_ARGUMENT_TYPE_MAX;
+  first_arg->next = NULL;
+
+  while (args32) {
+    switch (args32->type) {
+    case SM50_SHADER_EMULATE_VERTEX_STREAM_OUTPUT: {
+      struct SM50_SHADER_EMULATE_VERTEX_STREAM_OUTPUT_DATA32 *src = (void *)args32;
+      struct SM50_SHADER_EMULATE_VERTEX_STREAM_OUTPUT_DATA *data =
+          malloc(sizeof(struct SM50_SHADER_EMULATE_VERTEX_STREAM_OUTPUT_DATA));
+      last_arg->next = data;
+      last_arg = (void *)data;
+      last_arg->next = NULL;
+      data->type = src->type;
+      data->num_output_slots = src->num_output_slots;
+      data->num_elements = src->num_elements;
+      data->strides[0] = src->strides[0];
+      data->strides[1] = src->strides[1];
+      data->strides[2] = src->strides[2];
+      data->strides[3] = src->strides[3];
+      data->elements = UInt32ToPtr(src->elements);
+      break;
+    }
+    case SM50_SHADER_DEBUG_IDENTITY: {
+      struct SM50_SHADER_DEBUG_IDENTITY_DATA32 *src = (void *)args32;
+      struct SM50_SHADER_DEBUG_IDENTITY_DATA *data = malloc(sizeof(struct SM50_SHADER_DEBUG_IDENTITY_DATA));
+      last_arg->next = data;
+      last_arg = (void *)data;
+      last_arg->next = NULL;
+      data->type = src->type;
+      data->id = src->id;
+      break;
+    }
+    case SM50_SHADER_PSO_PIXEL_SHADER: {
+      struct SM50_SHADER_PSO_PIXEL_SHADER_DATA32 *src = (void *)args32;
+      struct SM50_SHADER_PSO_PIXEL_SHADER_DATA *data = malloc(sizeof(struct SM50_SHADER_PSO_PIXEL_SHADER_DATA));
+      last_arg->next = data;
+      last_arg = (void *)data;
+      last_arg->next = NULL;
+      data->type = src->type;
+      data->unorm_output_reg_mask = src->unorm_output_reg_mask;
+      data->disable_depth_output = src->disable_depth_output;
+      data->sample_mask = src->sample_mask;
+      data->dual_source_blending = src->dual_source_blending;
+      break;
+    }
+    case SM50_SHADER_IA_INPUT_LAYOUT: {
+      struct SM50_SHADER_IA_INPUT_LAYOUT_DATA32 *src = (void *)args32;
+      struct SM50_SHADER_IA_INPUT_LAYOUT_DATA *data = malloc(sizeof(struct SM50_SHADER_IA_INPUT_LAYOUT_DATA));
+      last_arg->next = data;
+      last_arg = (void *)data;
+      last_arg->next = NULL;
+      data->type = src->type;
+      data->slot_mask = src->slot_mask;
+      data->index_buffer_format = src->index_buffer_format;
+      data->num_elements = src->num_elements;
+      data->elements = UInt32ToPtr(src->elements);
+      break;
+    }
+    case SM50_SHADER_GS_PASS_THROUGH: {
+      struct SM50_SHADER_GS_PASS_THROUGH_DATA32 *src = (void *)args32;
+      struct SM50_SHADER_GS_PASS_THROUGH_DATA *data = malloc(sizeof(struct SM50_SHADER_GS_PASS_THROUGH_DATA));
+      last_arg->next = data;
+      last_arg = (void *)data;
+      last_arg->next = NULL;
+      data->type = src->type;
+      data->Data = src->Data;
+      data->RasterizationDisabled = src->RasterizationDisabled;
+      break;
+    }
+    case SM50_SHADER_PSO_GEOMETRY_SHADER: {
+      struct SM50_SHADER_PSO_GEOMETRY_SHADER_DATA32 *src = (void *)args32;
+      struct SM50_SHADER_PSO_GEOMETRY_SHADER_DATA *data = malloc(sizeof(struct SM50_SHADER_PSO_GEOMETRY_SHADER_DATA));
+      last_arg->next = data;
+      last_arg = (void *)data;
+      last_arg->next = NULL;
+      data->type = src->type;
+      data->strip_topology = src->strip_topology;
+      break;
+    }
+    case SM50_SHADER_ARGUMENT_TYPE_MAX:
+      break;
+    }
+    args32 = UInt32ToPtr(args32->next);
+  }
+}
+
+void
+sm50_compilation_argument32_free(struct SM50_SHADER_COMPILATION_ARGUMENT_DATA *first_arg) {
+  struct SM50_SHADER_COMPILATION_ARGUMENT_DATA *arg = first_arg->next;
+
+  while (arg) {
+    struct SM50_SHADER_COMPILATION_ARGUMENT_DATA *next = arg->next;
+    free(arg);
+    arg = next;
+  }
+}
+
+static NTSTATUS
+thunk32_SM50Compile(void *args) {
+  struct sm50_compile_params32 *params = args;
+  struct SM50_SHADER_COMPILATION_ARGUMENT_DATA first_arg;
+  struct SM50_SHADER_COMPILATION_ARGUMENT_DATA32 *args32 = UInt32ToPtr(params->args);
+  sm50_compilation_argument32_convert(&first_arg, args32);
+
+  params->ret = SM50Compile(
+      params->shader, &first_arg, UInt32ToPtr(params->func_name), UInt32ToPtr(params->bitcode),
+      UInt32ToPtr(params->error)
+  );
+
+  sm50_compilation_argument32_free(&first_arg);
+
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+thunk32_SM50GetCompiledBitcode(void *args) {
+  struct sm50_get_compiled_bitcode_params32 *params = args;
+
+  SM50GetCompiledBitcode(params->bitcode, UInt32ToPtr(params->data_out));
+
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+thunk32_SM50CompileTessellationPipelineVertex(void *args) {
+  struct sm50_compile_tessellation_pipeline_vertex_params32 *params = args;
+  struct SM50_SHADER_COMPILATION_ARGUMENT_DATA first_arg;
+  struct SM50_SHADER_COMPILATION_ARGUMENT_DATA32 *args32 = UInt32ToPtr(params->vertex_args);
+  sm50_compilation_argument32_convert(&first_arg, args32);
+
+  params->ret = SM50CompileTessellationPipelineVertex(
+      params->vertex, params->hull, &first_arg, UInt32ToPtr(params->func_name), UInt32ToPtr(params->bitcode),
+      UInt32ToPtr(params->error)
+  );
+
+  sm50_compilation_argument32_free(&first_arg);
+
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+thunk32_SM50CompileTessellationPipelineHull(void *args) {
+  struct sm50_compile_tessellation_pipeline_hull_params32 *params = args;
+  struct SM50_SHADER_COMPILATION_ARGUMENT_DATA first_arg;
+  struct SM50_SHADER_COMPILATION_ARGUMENT_DATA32 *args32 = UInt32ToPtr(params->hull_args);
+  sm50_compilation_argument32_convert(&first_arg, args32);
+
+  params->ret = SM50CompileTessellationPipelineHull(
+      params->vertex, params->hull, &first_arg, UInt32ToPtr(params->func_name), UInt32ToPtr(params->bitcode),
+      UInt32ToPtr(params->error)
+  );
+
+  sm50_compilation_argument32_free(&first_arg);
+
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+thunk32_SM50CompileTessellationPipelineDomain(void *args) {
+  struct sm50_compile_tessellation_pipeline_domain_params32 *params = args;
+  struct SM50_SHADER_COMPILATION_ARGUMENT_DATA first_arg;
+  struct SM50_SHADER_COMPILATION_ARGUMENT_DATA32 *args32 = UInt32ToPtr(params->domain_args);
+  sm50_compilation_argument32_convert(&first_arg, args32);
+
+  params->ret = SM50CompileTessellationPipelineDomain(
+      params->hull, params->domain, &first_arg, UInt32ToPtr(params->func_name), UInt32ToPtr(params->bitcode),
+      UInt32ToPtr(params->error)
+  );
+
+  sm50_compilation_argument32_free(&first_arg);
+
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+thunk32_SM50CompileGeometryPipelineVertex(void *args) {
+  struct sm50_compile_geometry_pipeline_vertex_params32 *params = args;
+  struct SM50_SHADER_COMPILATION_ARGUMENT_DATA first_arg;
+  struct SM50_SHADER_COMPILATION_ARGUMENT_DATA32 *args32 = UInt32ToPtr(params->vertex_args);
+  sm50_compilation_argument32_convert(&first_arg, args32);
+
+  params->ret = SM50CompileGeometryPipelineVertex(
+      params->vertex, params->geometry, &first_arg, UInt32ToPtr(params->func_name), UInt32ToPtr(params->bitcode),
+      UInt32ToPtr(params->error)
+  );
+
+  sm50_compilation_argument32_free(&first_arg);
+
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+thunk32_SM50CompileGeometryPipelineGeometry(void *args) {
+  struct sm50_compile_geometry_pipeline_geometry_params32 *params = args;
+  struct SM50_SHADER_COMPILATION_ARGUMENT_DATA first_arg;
+  struct SM50_SHADER_COMPILATION_ARGUMENT_DATA32 *args32 = UInt32ToPtr(params->geometry_args);
+  sm50_compilation_argument32_convert(&first_arg, args32);
+
+  params->ret = SM50CompileGeometryPipelineGeometry(
+      params->vertex, params->geometry, &first_arg, UInt32ToPtr(params->func_name), UInt32ToPtr(params->bitcode),
+      UInt32ToPtr(params->error)
+  );
+
+  sm50_compilation_argument32_free(&first_arg);
+
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+thunk32_SM50GetArgumentsInfo(void *args) {
+  struct sm50_get_arguments_info_params32 *params = args;
+
+  SM50GetArgumentsInfo(params->shader, UInt32ToPtr(params->constant_buffers), UInt32ToPtr(params->arguments));
+
+  return STATUS_SUCCESS;
+}
+
 const void *__wine_unix_call_funcs[] = {
     &_NSObject_retain,
     &_NSObject_release,
@@ -1683,4 +1977,96 @@ const void *__wine_unix_call_funcs[] = {
     &_MTLCommandEncoder_setLabel,
     &_MTLDevice_setShouldMaximizeConcurrentCompilation,
     &thunk_SM50GetArgumentsInfo,
+};
+
+const void *__wine_unix_call_wow64_funcs[] = {
+    &_NSObject_retain,
+    &_NSObject_release,
+    &_NSArray_object,
+    &_NSArray_count,
+    &_MTLCopyAllDevices,
+    &_MTLDevice_recommendedMaxWorkingSetSize,
+    &_MTLDevice_currentAllocatedSize,
+    &_MTLDevice_name,
+    &_NSString_getCString,
+    &_MTLDevice_newCommandQueue,
+    &_NSAutoreleasePool_alloc_init,
+    &_MTLCommandQueue_commandBuffer,
+    &_MTLCommandBuffer_commit,
+    &_MTLCommandBuffer_waitUntilCompleted,
+    &_MTLCommandBuffer_status,
+    &_MTLDevice_newSharedEvent,
+    &_MTLSharedEvent_signaledValue,
+    &_MTLCommandBuffer_encodeSignalEvent,
+    &_MTLDevice_newBuffer,
+    &_MTLDevice_newSamplerState,
+    &_MTLDevice_newDepthStencilState,
+    &_MTLDevice_newTexture,
+    &_MTLBuffer_newTexture,
+    &_MTLTexture_newTextureView,
+    &_MTLDevice_minimumLinearTextureAlignmentForPixelFormat,
+    &_MTLDevice_newLibrary,
+    &_MTLLibrary_newFunction,
+    &_NSString_lengthOfBytesUsingEncoding,
+    &_NSError_description,
+    &_MTLDevice_newComputePipelineState,
+    &_MTLCommandBuffer_blitCommandEncoder,
+    &_MTLCommandBuffer_computeCommandEncoder,
+    &_MTLCommandBuffer_renderCommandEncoder,
+    &_MTLCommandEncoder_endEncoding,
+    &_MTLDevice_newRenderPipelineState,
+    &_MTLDevice_newMeshRenderPipelineState,
+    &_MTLBlitCommandEncoder_encodeCommands,
+    &_MTLComputeCommandEncoder_encodeCommands,
+    &_MTLRenderCommandEncoder_encodeCommands,
+    &_MTLTexture_pixelFormat,
+    &_MTLTexture_width,
+    &_MTLTexture_height,
+    &_MTLTexture_depth,
+    &_MTLTexture_arrayLength,
+    &_MTLTexture_mipmapLevelCount,
+    &_MTLTexture_replaceRegion,
+    &_MTLBuffer_didModifyRange,
+    &_MTLCommandBuffer_presentDrawable,
+    &_MTLCommandBuffer_presentDrawableAfterMinimumDuration,
+    &_MTLDevice_supportsFamily,
+    &_MTLDevice_supportsBCTextureCompression,
+    &_MTLDevice_supportsTextureSampleCount,
+    &_MTLDevice_hasUnifiedMemory,
+    &_MTLCaptureManager_sharedCaptureManager,
+    &_MTLCaptureManager_startCapture,
+    &_MTLCaptureManager_stopCapture,
+    &_MTLDevice_newTemporalScaler,
+    &_MTLDevice_newSpatialScaler,
+    &_MTLCommandBuffer_encodeTemporalScale,
+    &_MTLCommandBuffer_encodeSpatialScale,
+    &_NSString_string,
+    &_NSString_alloc_init,
+    &_DeveloperHUDProperties_instance,
+    &_DeveloperHUDProperties_addLabel,
+    &_DeveloperHUDProperties_updateLabel,
+    &_DeveloperHUDProperties_remove,
+    &_MetalDrawable_texture,
+    &_MetalLayer_nextDrawable,
+    &_MTLDevice_supportsFXSpatialScaler,
+    &_MTLDevice_supportsFXTemporalScaler,
+    &_MetalLayer_setProps,
+    &_MetalLayer_getProps,
+    &_CreateMetalViewFromHWND,
+    &_ReleaseMetalView,
+    &thunk32_SM50Initialize,
+    &thunk_SM50Destroy,
+    &thunk32_SM50Compile,
+    &thunk32_SM50GetCompiledBitcode,
+    &thunk_SM50DestroyBitcode,
+    &thunk_SM50GetErrorMesssage,
+    &thunk_SM50FreeError,
+    &thunk32_SM50CompileGeometryPipelineVertex,
+    &thunk32_SM50CompileGeometryPipelineGeometry,
+    &thunk32_SM50CompileTessellationPipelineVertex,
+    &thunk32_SM50CompileTessellationPipelineHull,
+    &thunk32_SM50CompileTessellationPipelineDomain,
+    &_MTLCommandEncoder_setLabel,
+    &_MTLDevice_setShouldMaximizeConcurrentCompilation,
+    &thunk32_SM50GetArgumentsInfo,
 };
