@@ -63,6 +63,17 @@ jobs:
         with:
           name: artifacts-release
           path: artifacts-release.tar.gz
+      - name: Build WoW64 (release)
+        run: |
+          meson setup --cross-file build-win32.txt --native-file build-osx.txt -Dwine_builtin_dll=true -Dnative_llvm_path=toolchains/llvm-darwin -Dwine_install_path=toolchains/wine build-release-wow64 --buildtype release
+          meson compile -C build-release-wow64
+      - name: Tar WoW64 (release)
+        run: tar -zcf artifacts-release-wow64.tar.gz build-release-wow64/src
+      - name: Upload WoW64 (releases)
+        uses: actions/upload-artifact@v4
+        with:
+          name: artifacts-release-wow64
+          path: artifacts-release-wow64.tar.gz
       - name: Build (gcc-release)
         run: |
           meson setup --cross-file build-win64-sys.txt --native-file build-osx.txt -Dwine_builtin_dll=true -Denable_nvapi=true -Denable_nvngx=true -Dnative_llvm_path=toolchains/llvm-darwin -Dwine_install_path=toolchains/wine build-release-gcc --buildtype release
