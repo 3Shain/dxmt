@@ -90,7 +90,7 @@ StagingResource::allocate(uint64_t coherent_seq_id) {
 void
 StagingResource::updateImmediateName(uint64_t current_seq_id, uint64_t allocation) {
   std::lock_guard<dxmt::mutex> lock(mutex_);
-  fifo.push(QueueEntry{.id = allocation, .will_free_at = current_seq_id});
+  fifo.push(QueueEntry{.id = immediate_name_, .will_free_at = current_seq_id});
   immediate_name_ = allocation;
   cpu_coherent_after_finished_seq_id = 0;
   gpu_occupied_until_finished_seq_id = 0;
