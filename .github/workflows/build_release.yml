@@ -57,11 +57,17 @@ jobs:
             meson setup --cross-file build-win64-sys.txt --native-file build-osx.txt -Dwine_builtin_dll=true -Dnative_llvm_path=toolchains/llvm-darwin -Dwine_install_path=toolchains/wine build --buildtype release --prefix $(pwd)/${{ env.TAG_NAME }} --strip
             meson compile -C build
             meson install -C build --tags runtime
+            meson setup --cross-file build-win32-sys.txt --native-file build-osx.txt -Dwine_builtin_dll=true -Dnative_llvm_path=toolchains/llvm-darwin -Dwine_install_path=toolchains/wine build32 --buildtype release --prefix $(pwd)/${{ env.TAG_NAME }} --strip
+            meson compile -C build32
+            meson install -C build32 --tags runtime
             tar -czf dxmt-${{ env.TAG_NAME }}-builtin.tar.gz "${{ env.TAG_NAME }}"
             rm -rf "$(pwd)/${{ env.TAG_NAME }}"
             meson setup --reconfigure build -Dwine_builtin_dll=false
             meson compile -C build
             meson install -C build --tags runtime
+            meson setup --reconfigure build32 -Dwine_builtin_dll=false
+            meson compile -C build32
+            meson install -C build32 --tags runtime
             tar -czf dxmt-${{ env.TAG_NAME }}-native.tar.gz "${{ env.TAG_NAME }}"
         - name: Generate artifact attestation
           uses: actions/attest-build-provenance@v1
