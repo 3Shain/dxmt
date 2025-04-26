@@ -95,6 +95,8 @@ public:
       ERR("Only 2d texture SRV can be created on dynamic texture");
       return E_FAIL;
     }
+    if (~finalDesc.Texture2D.MipLevels == 0)
+      finalDesc.Texture2D.MipLevels = this->desc.MipLevels - finalDesc.Texture2D.MostDetailedMip;
     if (finalDesc.Texture2D.MostDetailedMip != 0 || finalDesc.Texture2D.MipLevels != 1) {
       ERR("2d texture SRV must be non-mipmapped on dynamic texture");
       return E_FAIL;
