@@ -3328,13 +3328,12 @@ AIRCONV_API void SM50DestroyBitcode(sm50_bitcode_t pBitcode) {
   delete pBitcodeInternal;
 }
 
-AIRCONV_API const char *SM50GetErrorMesssage(sm50_error_t pError) {
+AIRCONV_API size_t SM50GetErrorMessage(sm50_error_t pError, char *pBuffer, size_t BufferSize) {
   auto pInternal = (SM50ErrorInternal *)pError;
-  if (*pInternal->buf.end() != '\0') {
-    // ensure it returns a null terminated str
-    pInternal->buf.push_back('\0');
-  }
-  return pInternal->buf.data();
+  auto str_len = std::min(pInternal->buf.size(), BufferSize - 1);
+  memcpy(pBuffer, pInternal->buf.data(), str_len);
+  pBuffer[str_len] = '\0';
+  return str_len;
 }
 
 AIRCONV_API void SM50FreeError(sm50_error_t pError) {

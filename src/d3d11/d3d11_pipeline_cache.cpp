@@ -201,7 +201,7 @@ class PipelineCache : public MTLD3D11PipelineCacheBase {
     sm50_shader_t sm50;
     MTL_SHADER_REFLECTION reflection;
     if (SM50Initialize(pBytecode, BytecodeLength, &sm50, &reflection, &err)) {
-      ERR("Failed to initialize shader: ", SM50GetErrorMesssage(err));
+      ERR("Failed to initialize shader: ", SM50GetErrorMessageString(err));
       SM50FreeError(err);
       return nullptr;
     }

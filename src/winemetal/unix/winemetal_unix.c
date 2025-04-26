@@ -1500,10 +1500,10 @@ thunk_SM50DestroyBitcode(void *args) {
 }
 
 static NTSTATUS
-thunk_SM50GetErrorMesssage(void *args) {
+thunk_SM50GetErrorMessage(void *args) {
   struct sm50_get_error_message_params *params = args;
 
-  params->ret_message = (char *)SM50GetErrorMesssage(params->error);
+  params->ret_size = SM50GetErrorMessage(params->error, params->buffer, params->buffer_size);
 
   return STATUS_SUCCESS;
 }
@@ -1794,6 +1794,15 @@ thunk32_SM50GetCompiledBitcode(void *args) {
 }
 
 static NTSTATUS
+thunk32_SM50GetErrorMessage(void *args) {
+  struct sm50_get_error_message_params32 *params = args;
+
+  params->ret_size = SM50GetErrorMessage(params->error, UInt32ToPtr(params->buffer), params->buffer_size);
+
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
 thunk32_SM50CompileTessellationPipelineVertex(void *args) {
   struct sm50_compile_tessellation_pipeline_vertex_params32 *params = args;
   struct SM50_SHADER_COMPILATION_ARGUMENT_DATA first_arg;
@@ -1967,7 +1976,7 @@ const void *__wine_unix_call_funcs[] = {
     &thunk_SM50Compile,
     &thunk_SM50GetCompiledBitcode,
     &thunk_SM50DestroyBitcode,
-    &thunk_SM50GetErrorMesssage,
+    &thunk_SM50GetErrorMessage,
     &thunk_SM50FreeError,
     &thunk_SM50CompileGeometryPipelineVertex,
     &thunk_SM50CompileGeometryPipelineGeometry,
@@ -2059,7 +2068,7 @@ const void *__wine_unix_call_wow64_funcs[] = {
     &thunk32_SM50Compile,
     &thunk32_SM50GetCompiledBitcode,
     &thunk_SM50DestroyBitcode,
-    &thunk_SM50GetErrorMesssage,
+    &thunk32_SM50GetErrorMessage,
     &thunk_SM50FreeError,
     &thunk32_SM50CompileGeometryPipelineVertex,
     &thunk32_SM50CompileGeometryPipelineGeometry,
