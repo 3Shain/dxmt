@@ -4,11 +4,15 @@
 #include "wineunixlib.h"
 #include "assert.h"
 
+#ifdef NDEBUG
+#define UNIX_CALL(code, params) WINE_UNIX_CALL(code, params)
+#else
 #define UNIX_CALL(code, params)                                                                                        \
   {                                                                                                                    \
     NTSTATUS status = WINE_UNIX_CALL(code, params);                                                                    \
     assert(!status && "unix call failed");                                                                             \
   }
+#endif
 
 WINEMETAL_API void
 NSObject_retain(obj_handle_t obj) {
