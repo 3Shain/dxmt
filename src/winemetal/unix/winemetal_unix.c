@@ -258,7 +258,6 @@ _MTLBuffer_newTexture(void *obj) {
   fill_texture_descriptor(desc, info);
 
   id<MTLTexture> ret = [buffer newTextureWithDescriptor:desc offset:params->offset bytesPerRow:params->bytes_per_row];
-  assert(ret);
   params->ret = (obj_handle_t)ret;
   info->gpu_resource_id = [ret gpuResourceID]._impl;
 
