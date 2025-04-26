@@ -117,12 +117,8 @@ CreateVariantShader(MTLD3D11Device *pDevice, ManagedShader shader,
             shader->handle(),
             (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)&data_gs_passthrough,
             func_name, &compile_result, &sm50_err)) {
-      if (ret == 42) {
-        ERR("Failed to compile shader due to failed assertion");
-      } else {
-        ERR("Failed to compile shader: ", SM50GetErrorMesssage(sm50_err));
-        SM50FreeError(sm50_err);
-      }
+      ERR("Failed to compile shader: ", SM50GetErrorMessageString(sm50_err));
+      SM50FreeError(sm50_err);
       return nullptr;
     }
     return compile_result;
@@ -149,12 +145,8 @@ CreateVariantShader(MTLD3D11Device *pDevice, ManagedShader shader,
     if (auto ret = SM50Compile(shader->handle(),
                                (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)&data,
                                func_name, &compile_result, &sm50_err)) {
-      if (ret == 42) {
-        ERR("Failed to compile shader due to failed assertion");
-      } else {
-        ERR("Failed to compile shader: ", SM50GetErrorMesssage(sm50_err));
-        SM50FreeError(sm50_err);
-      }
+      ERR("Failed to compile shader: ", SM50GetErrorMessageString(sm50_err));
+      SM50FreeError(sm50_err);
       return nullptr;
     }
     return compile_result;
@@ -172,12 +164,8 @@ CreateVariantShader(MTLD3D11Device *pDevice, ManagedShader shader,
     sm50_error_t sm50_err = nullptr;
     if (auto ret = SM50Compile(shader->handle(), nullptr, func_name,
                                &compile_result, &sm50_err)) {
-      if (ret == 42) {
-        ERR("Failed to compile shader due to failed assertion");
-      } else {
-        ERR("Failed to compile shader: ", SM50GetErrorMesssage(sm50_err));
-        SM50FreeError(sm50_err);
-      }
+      ERR("Failed to compile shader: ", SM50GetErrorMessageString(sm50_err));
+      SM50FreeError(sm50_err);
       return nullptr;
     }
     return compile_result;
@@ -208,12 +196,8 @@ CreateVariantShader(MTLD3D11Device *pDevice, ManagedShader shader,
             shader->handle(), (sm50_shader_t)variant.hull_shader_handle,
             (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)&ia_layout, func_name,
             &compile_result, &sm50_err)) {
-      if (ret == 42) {
-        ERR("Failed to compile shader due to failed assertion");
-      } else {
-        ERR("Failed to compile shader: ", SM50GetErrorMesssage(sm50_err));
-        SM50FreeError(sm50_err);
-      }
+      ERR("Failed to compile shader: ", SM50GetErrorMessageString(sm50_err));
+      SM50FreeError(sm50_err);
       return nullptr;
     }
     return compile_result;
@@ -232,12 +216,8 @@ CreateVariantShader(MTLD3D11Device *pDevice, ManagedShader shader,
     if (auto ret = SM50CompileTessellationPipelineHull(
             (sm50_shader_t)variant.vertex_shader_handle, shader->handle(),
             nullptr, func_name, &compile_result, &sm50_err)) {
-      if (ret == 42) {
-        ERR("Failed to compile shader due to failed assertion");
-      } else {
-        ERR("Failed to compile shader: ", SM50GetErrorMesssage(sm50_err));
-        SM50FreeError(sm50_err);
-      }
+      ERR("Failed to compile shader: ", SM50GetErrorMessageString(sm50_err));
+      SM50FreeError(sm50_err);
       return nullptr;
     }
     return compile_result;
@@ -262,12 +242,8 @@ CreateVariantShader(MTLD3D11Device *pDevice, ManagedShader shader,
             (sm50_shader_t)variant.hull_shader_handle, shader->handle(),
             (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)&gs_passthrough, func_name,
             &compile_result, &sm50_err)) {
-      if (ret == 42) {
-        ERR("Failed to compile shader due to failed assertion");
-      } else {
-        ERR("Failed to compile shader: ", SM50GetErrorMesssage(sm50_err));
-        SM50FreeError(sm50_err);
-      }
+      ERR("Failed to compile shader: ", SM50GetErrorMessageString(sm50_err));
+      SM50FreeError(sm50_err);
       return nullptr;
     }
     return compile_result;
@@ -310,12 +286,8 @@ CreateVariantShader(MTLD3D11Device *pDevice, ManagedShader shader,
     if (auto ret = SM50Compile(
             shader->handle(), (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)&data_so,
             func_name, &compile_result, &sm50_err)) {
-      if (ret == 42) {
-        ERR("Failed to compile shader due to failed assertion");
-      } else {
-        ERR("Failed to compile shader: ", SM50GetErrorMesssage(sm50_err));
-        SM50FreeError(sm50_err);
-      }
+      ERR("Failed to compile shader: ", SM50GetErrorMessageString(sm50_err));
+      SM50FreeError(sm50_err);
       return nullptr;
     }
     return compile_result;
@@ -357,12 +329,8 @@ CreateVariantShader(MTLD3D11Device *pDevice, ManagedShader shader,
             shader->handle(), (sm50_shader_t)variant.geometry_shader_handle,
             (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)&geometry, func_name,
             &compile_result, &sm50_err)) {
-      if (ret == 42) {
-        ERR("Failed to compile shader due to failed assertion");
-      } else {
-        ERR("Failed to compile shader: ", SM50GetErrorMesssage(sm50_err));
-        SM50FreeError(sm50_err);
-      }
+      ERR("Failed to compile shader: ", SM50GetErrorMessageString(sm50_err));
+      SM50FreeError(sm50_err);
       return nullptr;
     }
     return compile_result;
@@ -387,12 +355,8 @@ CreateVariantShader(MTLD3D11Device *pDevice, ManagedShader shader,
             (sm50_shader_t)variant.vertex_shader_handle, shader->handle(),
             (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)&geometry, func_name,
             &compile_result, &sm50_err)) {
-      if (ret == 42) {
-        ERR("Failed to compile shader due to failed assertion");
-      } else {
-        ERR("Failed to compile shader: ", SM50GetErrorMesssage(sm50_err));
-        SM50FreeError(sm50_err);
-      }
+      ERR("Failed to compile shader: ", SM50GetErrorMessageString(sm50_err));
+      SM50FreeError(sm50_err);
       return nullptr;
     }
     return compile_result;

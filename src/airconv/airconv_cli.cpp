@@ -210,7 +210,7 @@ int main(int argc, char **argv) {
   if (SM50Initialize(
         MemRef.getBufferStart(), MemRef.getBufferSize(), &sm50, nullptr, &err
       )) {
-    errs() << SM50GetErrorMesssage(err) << '\n';
+    errs() << SM50GetErrorMessageString(err) << '\n';
     SM50FreeError(err);
     return 1;
   }
@@ -232,7 +232,7 @@ int main(int argc, char **argv) {
           MemRef.getBufferStart(), MemRef.getBufferSize(), &sm50_hull, nullptr,
           &err
         )) {
-      errs() << SM50GetErrorMesssage(err) << '\n';
+      errs() << SM50GetErrorMessageString(err) << '\n';
       SM50FreeError(err);
       return 1;
     }
@@ -260,7 +260,7 @@ int main(int argc, char **argv) {
           MemRef.getBufferStart(), MemRef.getBufferSize(), &sm50_vertex, nullptr,
           &err
         )) {
-      errs() << SM50GetErrorMesssage(err) << '\n';
+      errs() << SM50GetErrorMessageString(err) << '\n';
       SM50FreeError(err);
       return 1;
     }
@@ -288,7 +288,7 @@ int main(int argc, char **argv) {
           MemRef.getBufferStart(), MemRef.getBufferSize(), &sm50_hull, nullptr,
           &err
         )) {
-      errs() << SM50GetErrorMesssage(err) << '\n';
+      errs() << SM50GetErrorMessageString(err) << '\n';
       SM50FreeError(err);
       return 1;
     }
@@ -316,7 +316,7 @@ int main(int argc, char **argv) {
           MemRef.getBufferStart(), MemRef.getBufferSize(), &sm50_vertex, nullptr,
           &err
         )) {
-      errs() << SM50GetErrorMesssage(err) << '\n';
+      errs() << SM50GetErrorMessageString(err) << '\n';
       SM50FreeError(err);
       return 1;
     }
@@ -344,7 +344,7 @@ int main(int argc, char **argv) {
           MemRef.getBufferStart(), MemRef.getBufferSize(), &sm50_geometry, nullptr,
           &err
         )) {
-      errs() << SM50GetErrorMesssage(err) << '\n';
+      errs() << SM50GetErrorMessageString(err) << '\n';
       SM50FreeError(err);
       return 1;
     }

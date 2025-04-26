@@ -60,15 +60,15 @@ SM50DestroyBitcode(sm50_bitcode_t pBitcode) {
   UNIX_CALL(sm50_destroy_bitcode, &params);
 }
 
-AIRCONV_API const char *
-SM50GetErrorMesssage(sm50_error_t pError) {
+AIRCONV_API size_t
+SM50GetErrorMessage(sm50_error_t pError, char *pBuffer, size_t BufferSize) {
   struct sm50_get_error_message_params params;
   params.error = pError;
-  NTSTATUS status;
-  status = UNIX_CALL(sm50_get_error_message, &params);
-  if (status)
-    return "";
-  return params.ret_message;
+  params.buffer = pBuffer;
+  params.buffer_size = BufferSize;
+  params.ret_size = 0;
+  UNIX_CALL(sm50_get_error_message, &params);
+  return params.ret_size;
 }
 
 AIRCONV_API void

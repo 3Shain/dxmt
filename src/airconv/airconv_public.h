@@ -6,6 +6,7 @@
 #define __AIRCONV_H
 
 #ifdef __cplusplus
+#include <string>
 enum class ShaderType {
   Vertex,
   /* Metal: fragment function */
@@ -286,7 +287,7 @@ AIRCONV_API void SM50GetCompiledBitcode(
   sm50_bitcode_t pBitcode, struct MTL_SHADER_BITCODE *pData
 );
 AIRCONV_API void SM50DestroyBitcode(sm50_bitcode_t pBitcode);
-AIRCONV_API const char *SM50GetErrorMesssage(sm50_error_t pError);
+AIRCONV_API size_t SM50GetErrorMessage(sm50_error_t pError, char *pBuffer, size_t BufferSize);
 AIRCONV_API void SM50FreeError(sm50_error_t pError);
 
 AIRCONV_API int SM50CompileTessellationPipelineVertex(
@@ -323,6 +324,15 @@ AIRCONV_API void SM50GetArgumentsInfo(
 
 #ifdef __cplusplus
 };
+
+inline std::string SM50GetErrorMessageString(sm50_error_t pError) {
+  std::string str;
+  str.resize(256);
+  auto size = SM50GetErrorMessage(pError, str.data(), str.size());
+  str.resize(size);
+  return str;
+};
+
 #endif
 
 #endif

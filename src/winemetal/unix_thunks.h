@@ -53,7 +53,9 @@ struct sm50_destroy_bitcode_params {
 
 struct sm50_get_error_message_params {
   sm50_error_t error;
-  char *ret_message;
+  char *buffer;
+  size_t buffer_size;
+  size_t ret_size;
 };
 
 struct sm50_free_error_params {
@@ -151,11 +153,14 @@ struct sm50_get_compiled_bitcode_params32 {
 
 COMPATIBLE_STRUCT32(sm50_get_compiled_bitcode_params, 16)
 
-// FIXME: broken!
 struct sm50_get_error_message_params32 {
   sm50_error_t error;
-  char *ret_message;
+  uint32_t buffer;
+  uint32_t buffer_size;
+  uint32_t ret_size;
 };
+
+COMPATIBLE_STRUCT32(sm50_get_error_message_params, 24)
 
 struct sm50_compile_geometry_pipeline_vertex_params32 {
   sm50_shader_t vertex;
