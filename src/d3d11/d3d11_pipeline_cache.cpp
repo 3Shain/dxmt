@@ -12,7 +12,7 @@ namespace dxmt {
 
 class CachedSM50Shader final : public Shader {
   MTLD3D11Device *device;
-  sm50_shader_t shader = {};
+  sm50_shader_t shader = nullptr;
   Sha1Hash hash_;
   MTL_SHADER_REFLECTION reflection_;
   MTL_SM50_SHADER_ARGUMENT* arguments_info_buffer;

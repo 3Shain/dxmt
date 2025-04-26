@@ -14,7 +14,6 @@ BufferAllocation::BufferAllocation(WMT::Device device, const WMTBufferInfo &info
     flags_(flags) {
 #ifdef __i386__
   placed_buffer = _aligned_malloc(info_.length, DXMT_PAGE_SIZE);
-  assert(((int)placed_buffer & 4095) == 0);
   info_.memory.set(placed_buffer);
 #endif
   obj_ = device.newBuffer(info_);
