@@ -146,9 +146,6 @@ struct ClearEncoderData : EncoderData {
 struct ResolveEncoderData : EncoderData {
   WMT::Reference<WMT::Texture> src;
   WMT::Reference<WMT::Texture> dst;
-  unsigned src_slice;
-  unsigned dst_slice;
-  unsigned dst_level;
 };
 
 struct PresentData : EncoderData {
@@ -521,7 +518,7 @@ public:
   void clearDepthStencil(
       Rc<Texture> &&texture, unsigned viewId, unsigned arrayLength, unsigned flag, float depth, uint8_t stencil
   );
-  void resolveTexture(Rc<Texture> &&src, unsigned srcSlice, Rc<Texture> &&dst, unsigned dstSlice, unsigned dstLevel);
+  void resolveTexture(Rc<Texture> &&src, TextureViewKey src_view, Rc<Texture> &&dst, TextureViewKey dst_view);
 
   RenderEncoderData *startRenderPass(uint8_t dsv_planar_flags, uint8_t dsv_readonly_flags, uint8_t render_target_count);
   EncoderData *startComputePass();

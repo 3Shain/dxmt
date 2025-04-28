@@ -402,17 +402,13 @@ ArgumentEncodingContext::clearDepthStencil(
 
 void
 ArgumentEncodingContext::resolveTexture(
-    Rc<Texture> &&src, unsigned srcSlice, Rc<Texture> &&dst, unsigned dstSlice, unsigned dstLevel
+    Rc<Texture> &&src, TextureViewKey src_view, Rc<Texture> &&dst, TextureViewKey dst_view
 ) {
   assert(!encoder_current);
   auto encoder_info = allocate<ResolveEncoderData>();
   encoder_info->type = EncoderType::Resolve;
-  // FIXME: resolve by specific format view
-  encoder_info->src = src->current()->texture();
-  encoder_info->dst = dst->current()->texture();
-  encoder_info->src_slice = srcSlice;
-  encoder_info->dst_slice = dstSlice;
-  encoder_info->dst_level = dstLevel;
+  encoder_info->src = src->view(src_view);
+  encoder_info->dst = dst->view(dst_view);
 
   encoder_info->tex_read.add(src->current()->depkey);
   encoder_info->tex_write.add(dst->current()->depkey);
@@ -812,10 +808,7 @@ ArgumentEncodingContext::flushCommands(WMT::CommandBuffer cmdbuf, uint64_t seqId
         info.colors[0].texture = data->src;
         info.colors[0].load_action = WMTLoadActionLoad;
         info.colors[0].store_action = WMTStoreActionStoreAndMultisampleResolve;
-        info.colors[0].slice = data->src_slice;
         info.colors[0].resolve_texture = data->dst;
-        info.colors[0].resolve_slice = data->dst_slice;
-        info.colors[0].resolve_level = data->dst_level;
 
         auto encoder = cmdbuf.renderCommandEncoder(info);
         encoder.setLabel(WMT::String::string("ResolvePass", WMTUTF8StringEncoding));

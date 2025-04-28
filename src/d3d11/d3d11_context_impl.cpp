@@ -858,10 +858,36 @@ public:
       ERR("ResolveSubresource: Size doesn't match");
       return;
     }
-    ResolveSubresource(
-        static_cast<D3D11ResourceCommon *>(pSrcResource), SrcSubresource,
-        static_cast<D3D11ResourceCommon *>(pDstResource), dst_level, dst_slice
-    );
+    MTL_DXGI_FORMAT_DESC format_desc;
+    if (FAILED(MTLQueryDXGIFormat(device->GetMTLDevice(), Format, format_desc))) {
+      ERR("ResolveSubresource: invalid format ", Format);
+      return;
+    }
+    InvalidateCurrentPass();
+    EmitOP([src = static_cast<D3D11ResourceCommon *>(pSrcResource)->texture(),
+            dst = static_cast<D3D11ResourceCommon *>(pDstResource)->texture(),
+            SrcSubresource, dst_level, dst_slice,
+            format = format_desc.PixelFormat](ArgumentEncodingContext &enc) mutable {
+      TextureViewDescriptor src_desc;
+      src_desc.format = format;
+      src_desc.usage = WMTTextureUsageRenderTarget;
+      src_desc.type = src->textureType();
+      src_desc.arraySize = 1;
+      src_desc.firstArraySlice = SrcSubresource;
+      src_desc.miplevelCount = 1;
+      src_desc.firstMiplevel = 0;
+
+      TextureViewDescriptor dst_desc;
+      dst_desc.format = format;
+      dst_desc.usage = WMTTextureUsageRenderTarget;
+      dst_desc.type = WMTTextureType2D;
+      dst_desc.arraySize = 1;
+      dst_desc.firstArraySlice = dst_slice;
+      dst_desc.miplevelCount = 1;
+      dst_desc.firstMiplevel = dst_level;
+
+      enc.resolveTexture(forward_rc(src),  src->createView(src_desc), forward_rc(dst), dst->createView(dst_desc));
+    });
   }
 
   void
@@ -3585,13 +3611,6 @@ public:
       }
       enc.clearDepthStencil(forward_rc(texture), view, array_length, ClearFlags, Depth, Stencil);
     });
-  }
-
-  void
-  ResolveSubresource(D3D11ResourceCommon *pSrc, UINT SrcSlice, D3D11ResourceCommon *pDst, UINT DstLevel, UINT DstSlice) {
-    InvalidateCurrentPass();
-    EmitOP([src = pSrc->texture(), dst = pDst->texture(), SrcSlice, DstSlice, DstLevel](ArgumentEncodingContext &enc
-         ) mutable { enc.resolveTexture(forward_rc(src), SrcSlice, forward_rc(dst), DstSlice, DstLevel); });
   }
 
   /**
