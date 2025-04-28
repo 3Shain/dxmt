@@ -1,4 +1,4 @@
-project('dxmt', ['c', 'cpp'], version : 'v0.1', meson_version: '>=1.4.0', default_options : [ 
+project('dxmt', ['c', 'cpp'], version : 'v0.1', meson_version: '>=1.3.0', default_options : [ 
   'cpp_std=c++20', 
   'warning_level=2', 
   'build.cpp_std=c++20',

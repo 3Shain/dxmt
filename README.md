@@ -39,7 +39,7 @@ The following environment variables can be used for **debugging** purposes.
 ## Build
 
 ### Requirements:
-- Meson 1.4+ (for project build system)
+- Meson 1.3+ (for project build system)
 - CMake 3.27+ (for LLVM dependencies)
 - Xcode 15+
 
