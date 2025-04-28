@@ -132,6 +132,19 @@ HRESULT ExtractEntireResourceViewDescription<D3D11_TEXTURE2D_DESC1,
       pViewDescOut->Texture2D.MostDetailedMip = 0;
       pViewDescOut->Texture2D.MipLevels = pResourceDesc->MipLevels;
       pViewDescOut->Texture2D.PlaneSlice = 0;
+    } else if (pResourceDesc->MiscFlags & D3D11_RESOURCE_MISC_TEXTURECUBE) {
+      auto texture_cube_array_length = pResourceDesc->ArraySize / 6;
+      if (texture_cube_array_length > 1) {
+        pViewDescOut->ViewDimension = D3D11_SRV_DIMENSION_TEXTURECUBEARRAY;
+        pViewDescOut->TextureCubeArray.MostDetailedMip = 0;
+        pViewDescOut->TextureCubeArray.MipLevels = pResourceDesc->MipLevels;
+        pViewDescOut->TextureCubeArray.First2DArrayFace = 0;
+        pViewDescOut->TextureCubeArray.NumCubes = texture_cube_array_length;
+      } else {
+        pViewDescOut->ViewDimension = D3D11_SRV_DIMENSION_TEXTURECUBE;
+        pViewDescOut->TextureCube.MostDetailedMip = 0;
+        pViewDescOut->TextureCube.MipLevels = pResourceDesc->MipLevels;
+      }
     } else {
       pViewDescOut->ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2DARRAY;
       pViewDescOut->Texture2DArray.MostDetailedMip = 0;
