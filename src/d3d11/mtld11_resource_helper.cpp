@@ -338,7 +338,7 @@ CreateMTLTextureDescriptorInternal(
       break;
     }
   }
-  pDescOut->pixel_format = (metal_format.PixelFormat);
+  pDescOut->pixel_format = metal_format.PixelFormat;
 
   WMTTextureUsage metal_usage = (WMTTextureUsage)0; // actually corresponding to BindFlags
 
@@ -351,8 +351,15 @@ CreateMTLTextureDescriptorInternal(
       metal_usage |= WMTTextureUsageShaderRead;
     if (BindFlags & (D3D11_BIND_RENDER_TARGET | D3D11_BIND_DEPTH_STENCIL))
       metal_usage |= WMTTextureUsageRenderTarget;
-    if (BindFlags & D3D11_BIND_UNORDERED_ACCESS)
+    if (BindFlags & D3D11_BIND_UNORDERED_ACCESS) {
       metal_usage |= WMTTextureUsageShaderRead | WMTTextureUsageShaderWrite;
+      // NOTE: R32/RG32_TYPELESS format should be mapped to uint pixel format
+      if (metal_format.PixelFormat == WMTPixelFormatR32Uint ||
+          metal_format.PixelFormat == WMTPixelFormatR32Sint ||
+          metal_format.PixelFormat == WMTPixelFormatRG32Uint) {
+        metal_usage |= WMTTextureUsageShaderAtomic;
+      }
+    }
     // decoder not supported: D3D11_BIND_DECODER, D3D11_BIND_VIDEO_ENCODER
   }
 
@@ -361,7 +368,7 @@ CreateMTLTextureDescriptorInternal(
     metal_usage |= WMTTextureUsagePixelFormatView;
   }
 
-  pDescOut->usage = (metal_usage);
+  pDescOut->usage = metal_usage;
 
   WMTResourceOptions options = (WMTResourceOptions)0;
   switch (Usage) {
