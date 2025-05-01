@@ -3,7 +3,6 @@
 
 #ifdef __cplusplus
 #include <cstdint>
-#include <cstdbool>
 #include <cassert>
 #define STATIC_ASSERT(x) static_assert(x)
 #else

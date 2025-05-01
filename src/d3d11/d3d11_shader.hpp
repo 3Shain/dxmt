@@ -7,6 +7,7 @@
 #include "d3d11_input_layout.hpp"
 #include "sha1/sha1_util.hpp"
 #include "log/log.hpp"
+#include <variant>
 
 struct MTL_COMPILED_SHADER {
   /**
