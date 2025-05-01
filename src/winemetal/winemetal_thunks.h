@@ -228,6 +228,14 @@ struct unixcall_create_metal_view_from_hwnd {
   obj_handle_t ret_layer;
 };
 
+struct unixcall_enumerate {
+  obj_handle_t enumeratable;
+  uint64_t start;
+  uint64_t buffer_size;
+  struct WMTMemoryPointer buffer;
+  uint64_t ret_read;
+};
+
 #pragma pack(pop)
 
 #endif

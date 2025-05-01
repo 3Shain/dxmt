@@ -163,13 +163,11 @@ CommandQueue::WaitForFinishThread() {
     if (chunk.attached_cmdbuf.status() == WMTCommandBufferStatusError) {
       ERR("Device error at frame ", chunk.frame_, ": ", chunk.attached_cmdbuf.error().description().getUTF8String());
     }
-    // FIXME: make below functional
-    // if (chunk.attached_cmdbuf->logs()) {
-    //   if (((NS::Array *)chunk.attached_cmdbuf->logs())->count()) {
-    //     ERR("logs at frame ", chunk.frame_);
-    //     ERR(chunk.attached_cmdbuf->logs()->debugDescription()->cString(NS::ASCIIStringEncoding));
-    //   }
-    // }
+    if (auto logs = chunk.attached_cmdbuf.logs()) {
+      for (auto &log : logs.elements()) {
+        ERR("Frame ", chunk.frame_, ": ", log.description().getUTF8String());
+      }
+    }
 
     if (chunk.signal_frame_latency_fence_ != ~0ull)
       frame_latency_fence_.signal(chunk.signal_frame_latency_fence_);

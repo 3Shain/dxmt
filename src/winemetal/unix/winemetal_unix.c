@@ -321,9 +321,9 @@ _NSString_lengthOfBytesUsingEncoding(void *obj) {
 }
 
 static NTSTATUS
-_NSError_description(void *obj) {
+_NSObject_description(void *obj) {
   struct unixcall_generic_obj_obj_ret *params = obj;
-  params->ret = (obj_handle_t)[(NSError *)params->handle description];
+  params->ret = (obj_handle_t)[(NSObject *)params->handle description];
   return STATUS_SUCCESS;
 }
 
@@ -1902,6 +1902,34 @@ _MTLCommandBuffer_error(void *obj) {
   return STATUS_SUCCESS;
 }
 
+static NTSTATUS
+_MTLCommandBuffer_logs(void *obj) {
+  struct unixcall_generic_obj_obj_ret *params = obj;
+  params->ret = (obj_handle_t)[(id<MTLCommandBuffer>)params->handle logs];
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_MTLLogContainer_enumerate(void *obj) {
+  struct unixcall_enumerate *params = obj;
+  uint64_t count = 0;
+  uint64_t read = 0;
+  id *buffer = params->buffer.ptr;
+  for (id _ in (id<MTLLogContainer>)params->enumeratable) {
+    if (count >= params->start) {
+      if (count < params->start + params->buffer_size) {
+        buffer[count - params->start] = _;
+        read++;
+      } else {
+        break;
+      }
+    }
+    count++;
+  }
+  params->ret_read = read;
+  return STATUS_SUCCESS;
+}
+
 const void *__wine_unix_call_funcs[] = {
     &_NSObject_retain,
     &_NSObject_release,
@@ -1931,7 +1959,7 @@ const void *__wine_unix_call_funcs[] = {
     &_MTLDevice_newLibrary,
     &_MTLLibrary_newFunction,
     &_NSString_lengthOfBytesUsingEncoding,
-    &_NSError_description,
+    &_NSObject_description,
     &_MTLDevice_newComputePipelineState,
     &_MTLCommandBuffer_blitCommandEncoder,
     &_MTLCommandBuffer_computeCommandEncoder,
@@ -1993,6 +2021,8 @@ const void *__wine_unix_call_funcs[] = {
     &_MTLDevice_setShouldMaximizeConcurrentCompilation,
     &thunk_SM50GetArgumentsInfo,
     &_MTLCommandBuffer_error,
+    &_MTLCommandBuffer_logs,
+    &_MTLLogContainer_enumerate,
 };
 
 const void *__wine_unix_call_wow64_funcs[] = {
@@ -2024,7 +2054,7 @@ const void *__wine_unix_call_wow64_funcs[] = {
     &_MTLDevice_newLibrary,
     &_MTLLibrary_newFunction,
     &_NSString_lengthOfBytesUsingEncoding,
-    &_NSError_description,
+    &_NSObject_description,
     &_MTLDevice_newComputePipelineState,
     &_MTLCommandBuffer_blitCommandEncoder,
     &_MTLCommandBuffer_computeCommandEncoder,
@@ -2086,4 +2116,6 @@ const void *__wine_unix_call_wow64_funcs[] = {
     &_MTLDevice_setShouldMaximizeConcurrentCompilation,
     &thunk32_SM50GetArgumentsInfo,
     &_MTLCommandBuffer_error,
+    &_MTLCommandBuffer_logs,
+    &_MTLLogContainer_enumerate,
 };

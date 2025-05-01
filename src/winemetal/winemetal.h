@@ -547,7 +547,7 @@ WINEMETAL_API obj_handle_t MTLLibrary_newFunction(obj_handle_t library, const ch
 
 WINEMETAL_API uint64_t NSString_lengthOfBytesUsingEncoding(obj_handle_t str, enum WMTStringEncoding encoding);
 
-WINEMETAL_API obj_handle_t NSError_description(obj_handle_t nserror);
+WINEMETAL_API obj_handle_t NSObject_description(obj_handle_t nserror);
 
 WINEMETAL_API obj_handle_t
 MTLDevice_newComputePipelineState(obj_handle_t device, obj_handle_t function, obj_handle_t *err_out);
@@ -1505,5 +1505,10 @@ WINEMETAL_API void MTLCommandEncoder_setLabel(obj_handle_t encoder, obj_handle_t
 WINEMETAL_API void MTLDevice_setShouldMaximizeConcurrentCompilation(obj_handle_t device, bool value);
 
 WINEMETAL_API obj_handle_t MTLCommandBuffer_error(obj_handle_t cmdbuf);
+
+WINEMETAL_API obj_handle_t MTLCommandBuffer_logs(obj_handle_t cmdbuf);
+
+WINEMETAL_API uint64_t
+MTLLogContainer_enumerate(obj_handle_t logs, uint64_t start, uint64_t buffer_size, obj_handle_t *buffer);
 
 #endif

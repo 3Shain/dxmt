@@ -4,8 +4,11 @@
 #include <cstddef>
 #include <string>
 #include <cstring>
+#include <vector>
 
 namespace WMT {
+
+class String;
 
 class Object {
 public:
@@ -28,6 +31,9 @@ public:
   release() {
     NSObject_release(handle);
   }
+
+  String
+  description();
 
   bool
   operator==(std::nullptr_t) const {
@@ -146,12 +152,13 @@ public:
   }
 };
 
+inline String
+Object::description() {
+  return String{NSObject_description(handle)};
+}
+
 class Error : public Object {
 public:
-  String
-  description() {
-    return String{NSError_description(handle)};
-  }
 };
 
 class Event : public Object {
@@ -443,6 +450,23 @@ class FXSpatialScaler : public Object {
 public:
 };
 
+class LogContainer : public Object {
+public:
+  std::vector<Object>
+  elements() {
+    std::vector<Object> ret;
+    uint64_t read = 0;
+    uint64_t start;
+    do {
+      start = ret.size();
+      ret.resize(start + 4);
+      read = MTLLogContainer_enumerate(handle, start, 4, (obj_handle_t *)ret.data() + start);
+    } while (read == 4);
+    ret.resize(start + read);
+    return ret;
+  };
+};
+
 class CommandBuffer : public Object {
 public:
   void
@@ -463,6 +487,11 @@ public:
   Error
   error() {
     return Error{MTLCommandBuffer_error(handle)};
+  }
+
+  LogContainer
+  logs() {
+    return LogContainer{MTLCommandBuffer_logs(handle)};
   }
 
   void

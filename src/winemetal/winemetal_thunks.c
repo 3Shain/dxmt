@@ -283,7 +283,7 @@ NSString_lengthOfBytesUsingEncoding(obj_handle_t str, enum WMTStringEncoding enc
 }
 
 WINEMETAL_API obj_handle_t
-NSError_description(obj_handle_t nserror) {
+NSObject_description(obj_handle_t nserror) {
   struct unixcall_generic_obj_obj_ret params;
   params.handle = nserror;
   UNIX_CALL(28, &params);
@@ -741,4 +741,25 @@ MTLCommandBuffer_error(obj_handle_t cmdbuf) {
   params.ret = NULL_OBJECT_HANDLE;
   UNIX_CALL(89, &params);
   return params.ret;
+}
+
+WINEMETAL_API obj_handle_t
+MTLCommandBuffer_logs(obj_handle_t cmdbuf) {
+  struct unixcall_generic_obj_obj_ret params;
+  params.handle = cmdbuf;
+  params.ret = NULL_OBJECT_HANDLE;
+  UNIX_CALL(90, &params);
+  return params.ret;
+}
+
+WINEMETAL_API uint64_t
+MTLLogContainer_enumerate(obj_handle_t logs, uint64_t start, uint64_t buffer_size, obj_handle_t *buffer) {
+  struct unixcall_enumerate params;
+  params.enumeratable = logs;
+  params.start = start;
+  params.buffer_size = buffer_size;
+  WMT_MEMPTR_SET(params.buffer, buffer);
+  params.ret_read = 0;
+  UNIX_CALL(91, &params);
+  return params.ret_read;
 }
