@@ -3642,6 +3642,7 @@ public:
     state_.ShaderStages[PipelineStage::Domain].Samplers.set_dirty();
     state_.ShaderStages[PipelineStage::Domain].SRVs.set_dirty();
     state_.InputAssembler.VertexBuffers.set_dirty();
+    state_.OutputMerger.UAVs.set_dirty();
     dirty_state.set(
         DirtyState::BlendFactorAndStencilRef, DirtyState::RasterizerState, DirtyState::DepthStencilState,
         DirtyState::Viewport, DirtyState::Scissors
@@ -3816,6 +3817,7 @@ public:
     state_.ShaderStages[PipelineStage::Compute].ConstantBuffers.set_dirty();
     state_.ShaderStages[PipelineStage::Compute].Samplers.set_dirty();
     state_.ShaderStages[PipelineStage::Compute].SRVs.set_dirty();
+    state_.ComputeStageUAV.UAVs.set_dirty();
 
     EmitST([](ArgumentEncodingContext &enc) { enc.startComputePass(); });
 
