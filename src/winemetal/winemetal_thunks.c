@@ -718,16 +718,27 @@ ReleaseMetalView(obj_handle_t view) {
   UNIX_CALL(73, &params);
 }
 
-WINEMETAL_API void MTLCommandEncoder_setLabel(obj_handle_t encoder, obj_handle_t label) {
+WINEMETAL_API void
+MTLCommandEncoder_setLabel(obj_handle_t encoder, obj_handle_t label) {
   struct unixcall_generic_obj_obj_noret params;
   params.handle = encoder;
   params.arg = label;
   UNIX_CALL(86, &params);
 }
 
-WINEMETAL_API void MTLDevice_setShouldMaximizeConcurrentCompilation(obj_handle_t device, bool value) {
+WINEMETAL_API void
+MTLDevice_setShouldMaximizeConcurrentCompilation(obj_handle_t device, bool value) {
   struct unixcall_generic_obj_uint64_noret params;
   params.handle = device;
   params.arg = value;
   UNIX_CALL(87, &params);
+}
+
+WINEMETAL_API obj_handle_t
+MTLCommandBuffer_error(obj_handle_t cmdbuf) {
+  struct unixcall_generic_obj_obj_ret params;
+  params.handle = cmdbuf;
+  params.ret = NULL_OBJECT_HANDLE;
+  UNIX_CALL(89, &params);
+  return params.ret;
 }

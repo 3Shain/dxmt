@@ -460,6 +460,11 @@ public:
     return MTLCommandBuffer_status(handle);
   }
 
+  Error
+  error() {
+    return Error{MTLCommandBuffer_error(handle)};
+  }
+
   void
   encodeSignalEvent(Event event, uint64_t value) {
     return MTLCommandBuffer_encodeSignalEvent(handle, event.handle, value);

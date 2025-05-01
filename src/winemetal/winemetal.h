@@ -1504,4 +1504,6 @@ WINEMETAL_API void MTLCommandEncoder_setLabel(obj_handle_t encoder, obj_handle_t
 
 WINEMETAL_API void MTLDevice_setShouldMaximizeConcurrentCompilation(obj_handle_t device, bool value);
 
+WINEMETAL_API obj_handle_t MTLCommandBuffer_error(obj_handle_t cmdbuf);
+
 #endif

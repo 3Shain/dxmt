@@ -160,11 +160,10 @@ CommandQueue::WaitForFinishThread() {
     if (chunk.attached_cmdbuf.status() <= WMTCommandBufferStatusScheduled) {
       chunk.attached_cmdbuf.waitUntilCompleted();
     }
+    if (chunk.attached_cmdbuf.status() == WMTCommandBufferStatusError) {
+      ERR("Device error at frame ", chunk.frame_, ": ", chunk.attached_cmdbuf.error().description().getUTF8String());
+    }
     // FIXME: make below functional
-    // if (chunk.attached_cmdbuf.status() == WMTCommandBufferStatusError) {
-    //   ERR("Device error at frame ", chunk.frame_,
-    //       ", : ", chunk.attached_cmdbuf->error()->localizedDescription()->cString(NS::ASCIIStringEncoding));
-    // }
     // if (chunk.attached_cmdbuf->logs()) {
     //   if (((NS::Array *)chunk.attached_cmdbuf->logs())->count()) {
     //     ERR("logs at frame ", chunk.frame_);

@@ -1895,6 +1895,13 @@ thunk32_SM50GetArgumentsInfo(void *args) {
   return STATUS_SUCCESS;
 }
 
+static NTSTATUS
+_MTLCommandBuffer_error(void *obj) {
+  struct unixcall_generic_obj_obj_ret *params = obj;
+  params->ret = (obj_handle_t)[(id<MTLCommandBuffer>)params->handle error];
+  return STATUS_SUCCESS;
+}
+
 const void *__wine_unix_call_funcs[] = {
     &_NSObject_retain,
     &_NSObject_release,
@@ -1985,6 +1992,7 @@ const void *__wine_unix_call_funcs[] = {
     &_MTLCommandEncoder_setLabel,
     &_MTLDevice_setShouldMaximizeConcurrentCompilation,
     &thunk_SM50GetArgumentsInfo,
+    &_MTLCommandBuffer_error,
 };
 
 const void *__wine_unix_call_wow64_funcs[] = {
@@ -2077,4 +2085,5 @@ const void *__wine_unix_call_wow64_funcs[] = {
     &_MTLCommandEncoder_setLabel,
     &_MTLDevice_setShouldMaximizeConcurrentCompilation,
     &thunk32_SM50GetArgumentsInfo,
+    &_MTLCommandBuffer_error,
 };
