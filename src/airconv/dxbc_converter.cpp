@@ -393,6 +393,11 @@ llvm::Error convert_dxbc_hull_shader(
   auto func_signature = pShaderInternal->func_signature; // copy
   auto shader_info = &(pShaderInternal->shader_info);
 
+  uint32_t vertex_max_output_register = 0;
+  for (auto &out : pVertexStage->output_signature) {
+    vertex_max_output_register =
+      std::max(vertex_max_output_register, out.reg() + 1);
+  }
   uint32_t max_output_register = pShaderInternal->max_output_register;
   uint32_t max_patch_constant_output_register =
     pShaderInternal->max_patch_constant_output_register;
@@ -489,7 +494,7 @@ llvm::Error convert_dxbc_hull_shader(
     types._int, function->getArg(payload_idx), 4
   );
   auto input_ptr_int4_type = llvm::ArrayType::get(
-    types._int4, pVertexStage->max_output_register *
+    types._int4, vertex_max_output_register *
                    pShaderInternal->input_control_point_count
   );
   resource_map.input.ptr_int4 = builder.CreateBitCast(
@@ -500,7 +505,7 @@ llvm::Error convert_dxbc_hull_shader(
     input_ptr_int4_type, resource_map.input.ptr_int4, {patch_offset_in_group}
   );
   auto input_ptr_float4_type = llvm::ArrayType::get(
-    types._float4, pVertexStage->max_output_register *
+    types._float4, vertex_max_output_register *
                      pShaderInternal->input_control_point_count
   );
   resource_map.input.ptr_float4 = builder.CreateBitCast(
@@ -511,7 +516,7 @@ llvm::Error convert_dxbc_hull_shader(
     input_ptr_float4_type, resource_map.input.ptr_float4,
     {patch_offset_in_group}
   );
-  resource_map.input_element_count = pVertexStage->max_output_register;
+  resource_map.input_element_count = vertex_max_output_register;
 
   resource_map.instance_id = builder.CreateLoad(
     types._int, builder.CreateConstInBoundsGEP1_32(
@@ -601,6 +606,12 @@ llvm::Error convert_dxbc_hull_shader(
     resource_map.output_element_count = max_output_register;
   } else {
     /* since no control point phase */
+    if (vertex_max_output_register != max_output_register) {
+      return llvm::make_error<UnsupportedFeature>(
+        "Hull shader has control point phase pass-through, but vertex shader "
+        "output signature doesn't match hull shader input signature."
+      );
+    }
     resource_map.output.ptr_float4 = resource_map.input.ptr_float4;
     resource_map.output.ptr_int4 = resource_map.input.ptr_int4;
     resource_map.output_element_count = resource_map.input_element_count;
@@ -1513,7 +1524,10 @@ llvm::Error convert_dxbc_vertex_for_hull_shader(
   auto shader_info = &(pShaderInternal->shader_info);
 
   uint32_t max_input_register = pShaderInternal->max_input_register;
-  uint32_t max_output_register = pShaderInternal->max_output_register;
+  uint32_t max_output_register = 0;
+  for (auto& out : pShaderInternal->output_signature) {
+    max_output_register = std::max(max_output_register, out.reg() + 1);
+  }
   SM50_SHADER_COMPILATION_ARGUMENT_DATA *arg = pArgs;
   SM50_SHADER_IA_INPUT_LAYOUT_DATA *ia_layout = nullptr;
   // uint64_t debug_id = ~0u;
@@ -2881,7 +2895,16 @@ AIRCONV_API int SM50Initialize(
 
   if (sm50_shader->shader_type == microsoft::D3D11_SB_HULL_SHADER &&
       !sm50_shader->shader_info.no_control_point_phase_passthrough) {
-    sm50_shader->max_output_register = inputParser.GetNumParameters();
+    assert(sm50_shader->max_output_register == 0);
+    uint32_t num_input_params = inputParser.GetNumParameters();
+    D3D11_SIGNATURE_PARAMETER const * params;
+    inputParser.GetParameters(&params);
+    for (unsigned i = 0; i < num_input_params; i++) {
+      sm50_shader->max_output_register = std::max(
+        sm50_shader->max_output_register,
+        params[i].Register + 1
+      );
+    }
   }
 
   if (pRefl) {

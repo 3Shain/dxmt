@@ -356,25 +356,25 @@ public:
         system_value_(parameter.SystemValue),
         component_type_((RegisterComponentType)parameter.ComponentType) {}
 
-  std::string_view semanticName() { return semantic_name_; }
+  std::string_view semanticName() const { return semantic_name_; }
 
-  uint32_t semanticIndex() { return semantic_index_; }
+  uint32_t semanticIndex() const { return semantic_index_; }
 
-  std::string fullSemanticString() {
+  std::string fullSemanticString() const {
     return semantic_name_ + std::to_string(semantic_index_);
   }
 
-  uint32_t stream() { return stream_; }
+  uint32_t stream() const { return stream_; }
 
-  uint32_t mask() { return mask_; }
+  uint32_t mask() const { return mask_; }
 
-  uint32_t reg() { return register_; }
+  uint32_t reg() const { return register_; }
 
-  bool isSystemValue() {
+  bool isSystemValue() const {
     return system_value_ != microsoft::D3D10_SB_NAME_UNDEFINED;
   }
 
-  RegisterComponentType componentType() {
+  RegisterComponentType componentType() const {
     return (RegisterComponentType)component_type_;
   }
 
