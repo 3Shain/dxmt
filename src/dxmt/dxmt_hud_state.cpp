@@ -16,12 +16,18 @@ HUDState::initialize(const std::string &heading) {
 
 void
 HUDState::begin() {
+#ifndef DXMT_DEBUG
+  return;
+#endif
   pool_ = WMT::MakeAutoreleasePool();
   current_line_ = 1;
 }
 
 void
 HUDState::printLine(const char *c_str) {
+#ifndef DXMT_DEBUG
+  return;
+#endif
   using namespace WMT;
   while (current_line_ >= line_labels_.size()) {
     String prev = line_labels_.back();
@@ -36,6 +42,9 @@ HUDState::printLine(const char *c_str) {
 
 void
 HUDState::end() {
+#ifndef DXMT_DEBUG
+  return;
+#endif
   while (line_labels_.size() > current_line_) {
     hud_.remove(line_labels_.back());
     line_labels_.pop_back();
