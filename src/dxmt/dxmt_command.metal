@@ -210,20 +210,19 @@ struct DXMTDispatchArguments {
 
 struct DXMTGSDispatchMarshal {
   constant uint2& draw_arguments; // (vertex|index_count, index_count)
-  ulong output_offset;
+  device DXMTDispatchArguments& dispatch_arguments_out;
   uint vertex_count_per_warp;
   uint end_of_command;
 };
 
 [[vertex]] void gs_draw_arguments_marshal(
-    constant DXMTGSDispatchMarshal* tasks [[buffer(0)]],
-    device char* output_buffer [[buffer(1)]]
+    constant DXMTGSDispatchMarshal* tasks [[buffer(0)]]
 ) {
   uint index = 0;
   for(;;) {
     constant DXMTGSDispatchMarshal& task = tasks[index];
 
-    device DXMTDispatchArguments& output = *(device DXMTDispatchArguments *)(output_buffer + task.output_offset);
+    device DXMTDispatchArguments& output = task.dispatch_arguments_out;
 
     output.x = (task.draw_arguments.x - 1) / task.vertex_count_per_warp + 1;
     output.y = task.draw_arguments.y;

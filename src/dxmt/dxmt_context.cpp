@@ -572,6 +572,11 @@ ArgumentEncodingContext::allocateTempBuffer(size_t size, size_t alignment) {
   return {buffer, offset};
 };
 
+AllocatedRingBufferSlice
+ArgumentEncodingContext::allocateTempBuffer1(size_t size, size_t alignment) {
+  return queue_.AllocateTempBuffer1(seq_id_, size, alignment);
+};
+
 void
 ArgumentEncodingContext::beginVisibilityResultQuery(Rc<VisibilityResultQuery> &&query) {
   query->begin(seq_id_, vro_state_.getNextReadOffset());
@@ -709,11 +714,12 @@ ArgumentEncodingContext::flushCommands(WMT::CommandBuffer cmdbuf, uint64_t seqId
         auto tasks_data = (GS_MARSHAL_TASK *)((char*)gpu_buffer_contents_ + offset);
         for (unsigned i = 0; i<task_count; i++) {
           auto & task = data->gs_arg_marshal_tasks[i];
-          tasks_data[i].draw_args = task.draw_arguments_resource_id + task.draw_arguments_offset;
-          tasks_data[i].dispatch_args_out = task.dispatch_arguments_offset;
+          tasks_data[i].draw_args = task.draw_arguments_va;
+          tasks_data[i].dispatch_args_out = task.dispatch_arguments_va;
           tasks_data[i].vertex_count_per_warp = task.vertex_count_per_warp;
           tasks_data[i].end_of_command = 0;
           encoder.useResource(task.draw_arguments, WMTResourceUsageRead, WMTRenderStageVertex);
+          encoder.useResource(task.dispatch_arguments_buffer, WMTResourceUsageWrite, WMTRenderStageVertex);
         }
         tasks_data[task_count - 1].end_of_command = 1;
         queue_.emulated_cmd.MarshalGSDispatchArguments(encoder, gpu_buffer_, offset);

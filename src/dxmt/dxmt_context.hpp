@@ -5,6 +5,7 @@
 #include "dxmt_deptrack.hpp"
 #include "dxmt_occlusion_query.hpp"
 #include "dxmt_residency.hpp"
+#include "dxmt_ring_bump_allocator.hpp"
 #include "dxmt_statistics.hpp"
 #include "dxmt_texture.hpp"
 #include "log/log.hpp"
@@ -98,10 +99,10 @@ struct EncoderData {
 
 struct GSDispatchArgumentsMarshal {
   WMT::Reference<WMT::Buffer> draw_arguments;
-  uint64_t draw_arguments_resource_id;
-  uint32_t draw_arguments_offset;
+  uint64_t draw_arguments_va;
+  WMT::Buffer dispatch_arguments_buffer;
+  uint64_t dispatch_arguments_va;
   uint32_t vertex_count_per_warp;
-  uint32_t dispatch_arguments_offset;
 };
 
 struct RenderEncoderData : EncoderData {
@@ -448,11 +449,15 @@ public:
 
   void
   encodeGSDispatchArgumentsMarshal(
-      WMT::Buffer draw_args, uint64_t draw_args_resource_id, uint32_t draw_args_offset, uint32_t vertex_count_per_warp, uint32_t write_offset
+      WMT::Buffer draw_args, uint64_t draw_args_resource_id, uint32_t draw_args_offset, uint32_t vertex_count_per_warp,
+      WMT::Buffer dispatch_args, uint64_t dispatch_args_resource_id, uint32_t write_offset
   ) {
     assert(encoder_current->type == EncoderType::Render);
     auto data = static_cast<RenderEncoderData *>(encoder_current);
-    data->gs_arg_marshal_tasks.push_back({draw_args, draw_args_resource_id, draw_args_offset, vertex_count_per_warp, write_offset});
+    data->gs_arg_marshal_tasks.push_back(
+        {draw_args, draw_args_resource_id + draw_args_offset, dispatch_args, dispatch_args_resource_id + write_offset,
+         vertex_count_per_warp}
+    );
   }
 
   template <typename cmd_struct>
@@ -560,15 +565,13 @@ public:
     return aligned;
   }
 
-  obj_handle_t gpu_buffer_FIXME() {
-    return gpu_buffer_;
-  }
-
   template<typename T> T* get_gpu_heap_pointer(size_t offset) {
     return reinterpret_cast<T*>((char*)gpu_buffer_contents_ + offset);
   }
 
   std::pair<WMT::Buffer , size_t> allocateTempBuffer(size_t size, size_t alignment);
+  
+  AllocatedRingBufferSlice allocateTempBuffer1(size_t size, size_t alignment);
 
   std::unique_ptr<VisibilityResultReadback> flushCommands(WMT::CommandBuffer cmdbuf, uint64_t seqId, uint64_t event_seq_id);
 

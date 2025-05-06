@@ -1492,18 +1492,19 @@ public:
     if (auto bindable = reinterpret_cast<D3D11ResourceCommon *>(pBufferForArgs)) {
       EmitOP([=, topo = state_.InputAssembler.Topology, ArgBuffer = bindable->buffer()](ArgumentEncodingContext &enc) {
         auto buffer = enc.access(ArgBuffer, AlignedByteOffsetForArgs, 20, DXMT_ENCODER_RESOURCE_ACESS_READ);
-        auto dispatch_arg_offset = enc.allocate_gpu_heap(sizeof(DXMT_DISPATCH_ARGUMENTS), 4);
+        auto dispatch_arg = enc.allocateTempBuffer1(sizeof(DXMT_DISPATCH_ARGUMENTS), 4);
   
         auto [vertex_per_warp, vertex_increment_per_wrap] = get_gs_vertex_count(topo);
   
         enc.bumpVisibilityResultOffset();
         enc.encodeGSDispatchArgumentsMarshal(
-          buffer, ArgBuffer->current()->gpuAddress, AlignedByteOffsetForArgs, vertex_increment_per_wrap, dispatch_arg_offset
+          buffer, ArgBuffer->current()->gpuAddress, AlignedByteOffsetForArgs, vertex_increment_per_wrap,
+          dispatch_arg.gpu_buffer, dispatch_arg.gpu_address, dispatch_arg.offset
         );
         auto &cmd = enc.encodeRenderCommand<wmtcmd_render_dxmt_geometry_draw_indirect>();
         cmd.type = WMTRenderCommandDXMTGeometryDrawIndirect;
-        cmd.dispatch_args_buffer = enc.gpu_buffer_FIXME();
-        cmd.dispatch_args_offset = dispatch_arg_offset;
+        cmd.dispatch_args_buffer = dispatch_arg.gpu_buffer;
+        cmd.dispatch_args_offset = dispatch_arg.offset;
         cmd.vertex_per_warp = vertex_per_warp;
         cmd.indirect_args_buffer = buffer;
         cmd.indirect_args_offset = AlignedByteOffsetForArgs;
@@ -1520,18 +1521,19 @@ public:
     if (auto bindable = reinterpret_cast<D3D11ResourceCommon *>(pBufferForArgs)) {
       EmitOP([=, topo = state_.InputAssembler.Topology, ArgBuffer = bindable->buffer()](ArgumentEncodingContext &enc) {
         auto buffer = enc.access(ArgBuffer, AlignedByteOffsetForArgs, 20, DXMT_ENCODER_RESOURCE_ACESS_READ);
-        auto dispatch_arg_offset = enc.allocate_gpu_heap(sizeof(DXMT_DISPATCH_ARGUMENTS), 4);
+        auto dispatch_arg = enc.allocateTempBuffer1(sizeof(DXMT_DISPATCH_ARGUMENTS), 4);
   
         auto [vertex_per_warp, vertex_increment_per_wrap] = get_gs_vertex_count(topo);
   
         enc.bumpVisibilityResultOffset();
         enc.encodeGSDispatchArgumentsMarshal(
-          buffer, ArgBuffer->current()->gpuAddress, AlignedByteOffsetForArgs, vertex_increment_per_wrap, dispatch_arg_offset
+          buffer, ArgBuffer->current()->gpuAddress, AlignedByteOffsetForArgs, vertex_increment_per_wrap,
+          dispatch_arg.gpu_buffer, dispatch_arg.gpu_address, dispatch_arg.offset
         );
         auto &cmd = enc.encodeRenderCommand<wmtcmd_render_dxmt_geometry_draw_indexed_indirect>();
         cmd.type = WMTRenderCommandDXMTGeometryDrawIndexedIndirect;
-        cmd.dispatch_args_buffer = enc.gpu_buffer_FIXME();
-        cmd.dispatch_args_offset = dispatch_arg_offset;
+        cmd.dispatch_args_buffer = dispatch_arg.gpu_buffer;
+        cmd.dispatch_args_offset = dispatch_arg.offset;
         cmd.vertex_per_warp = vertex_per_warp;
         cmd.indirect_args_buffer = buffer;
         cmd.indirect_args_offset = AlignedByteOffsetForArgs;
