@@ -752,14 +752,10 @@ public:
         default:
           break;
         case D3D11_UAV_DIMENSION_TEXTURE1D:
-          UNIMPLEMENTED("tex1d clear");
-          break;
-        case D3D11_UAV_DIMENSION_TEXTURE1DARRAY:
-          UNIMPLEMENTED("tex1darr clear");
-          break;
         case D3D11_UAV_DIMENSION_TEXTURE2D:
           enc.queue().emulated_cmd.ClearTexture2DFloat(texture_handle, value);
           break;
+        case D3D11_UAV_DIMENSION_TEXTURE1DARRAY:
         case D3D11_UAV_DIMENSION_TEXTURE2DARRAY:
           enc.queue().emulated_cmd.ClearTexture2DArrayFloat(texture_handle, value);
           break;
