@@ -107,7 +107,7 @@ public:
     setComputePipelineState(clear_texture_2d_float_pipeline, {8, 4, 1});
     setComputeTexture(texture, 0);
     setComputeBytes(value.data(), 16, 1);
-    dispatchThreads({texture.width(), texture.height()});
+    dispatchThreads({texture.width(), texture.height(), 1});
   }
 
   void
