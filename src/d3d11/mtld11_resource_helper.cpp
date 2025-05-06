@@ -576,7 +576,7 @@ GetLinearTextureLayout(
   auto alignment = Aligned ? metal.minimumLinearTextureAlignmentForPixelFormat(metal_format.PixelFormat): 1;
   auto aligned_bytes_per_row = align(bytes_per_row_unaligned, alignment);
   BytesPerRow = aligned_bytes_per_row;
-  BytesPerImage = 0;
+  BytesPerImage = aligned_bytes_per_row;
   BytesPerSlice = aligned_bytes_per_row;
   return S_OK;
 };
