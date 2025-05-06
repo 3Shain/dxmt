@@ -1247,10 +1247,9 @@ public:
       UINT StartInstanceLocation
   ) {
     assert(NumControlPoint);
-
+    auto draw_arguments_offset = PreAllocateArgumentBuffer(sizeof(DXMT_DRAW_ARGUMENTS), 4);
     EmitOP([=](ArgumentEncodingContext &enc) {
-      auto offset = enc.allocate_gpu_heap(sizeof(DXMT_DRAW_ARGUMENTS), 4);
-      DXMT_DRAW_ARGUMENTS *draw_arugment = enc.get_gpu_heap_pointer<DXMT_DRAW_ARGUMENTS>(offset);
+      DXMT_DRAW_ARGUMENTS *draw_arugment = enc.getMappedArgumentBuffer<DXMT_DRAW_ARGUMENTS>(draw_arguments_offset);
       draw_arugment->StartVertex = StartVertexLocation;
       draw_arugment->VertexCount = VertexCountPerInstance;
       draw_arugment->InstanceCount = InstanceCount;
@@ -1270,7 +1269,7 @@ public:
 
       auto &cmd_mesh = enc.encodePreTessRenderCommand<wmtcmd_render_dxmt_tess_mesh_dispatch>();
       cmd_mesh.type = WMTRenderCommandDXMTTessellationMeshDispatch;
-      cmd_mesh.draw_arguments_offset = offset;
+      cmd_mesh.draw_arguments_offset = enc.getFinalArgumentBufferOffset(draw_arguments_offset);
       cmd_mesh.control_point_buffer = cp_buffer;
       cmd_mesh.control_point_buffer_offset = cp_offset;
       cmd_mesh.patch_constant_buffer = pc_buffer;
@@ -1286,7 +1285,7 @@ public:
 
       auto &cmd_draw = enc.encodeRenderCommand<wmtcmd_render_dxmt_tess_draw>();
       cmd_draw.type = WMTRenderCommandDXMTTessellationDraw;
-      cmd_draw.draw_arguments_offset = offset;
+      cmd_draw.draw_arguments_offset = enc.getFinalArgumentBufferOffset(draw_arguments_offset);
       cmd_draw.control_point_buffer = cp_buffer;
       cmd_draw.control_point_buffer_offset = cp_offset;
       cmd_draw.patch_constant_buffer = pc_buffer;
@@ -1305,10 +1304,9 @@ public:
   ) {
     assert(NumControlPoint);
     auto IndexBufferOffset = state_.InputAssembler.IndexBufferOffset;
-
+    auto draw_arguments_offset = PreAllocateArgumentBuffer(sizeof(DXMT_DRAW_INDEXED_ARGUMENTS), 4);
     EmitOP([=](ArgumentEncodingContext &enc) {
-      auto offset = enc.allocate_gpu_heap(sizeof(DXMT_DRAW_INDEXED_ARGUMENTS), 4);
-      DXMT_DRAW_INDEXED_ARGUMENTS *draw_arugment = enc.get_gpu_heap_pointer<DXMT_DRAW_INDEXED_ARGUMENTS>(offset);
+      DXMT_DRAW_INDEXED_ARGUMENTS *draw_arugment = enc.getMappedArgumentBuffer<DXMT_DRAW_INDEXED_ARGUMENTS>(draw_arguments_offset);
       draw_arugment->BaseVertex = BaseVertexLocation;
       draw_arugment->IndexCount = IndexCountPerInstance;
       draw_arugment->StartIndex = StartIndexLocation;
@@ -1331,7 +1329,7 @@ public:
       cmd_mesh.type = WMTRenderCommandDXMTTessellationMeshDispatchIndexed;
       cmd_mesh.index_buffer = enc.currentIndexBuffer();
       cmd_mesh.index_buffer_offset = IndexBufferOffset;
-      cmd_mesh.draw_arguments_offset = offset;
+      cmd_mesh.draw_arguments_offset = enc.getFinalArgumentBufferOffset(draw_arguments_offset);
       cmd_mesh.control_point_buffer = cp_buffer;
       cmd_mesh.control_point_buffer_offset = cp_offset;
       cmd_mesh.patch_constant_buffer = pc_buffer;
@@ -1347,7 +1345,7 @@ public:
 
       auto &cmd_draw = enc.encodeRenderCommand<wmtcmd_render_dxmt_tess_draw>();
       cmd_draw.type = WMTRenderCommandDXMTTessellationDraw;
-      cmd_draw.draw_arguments_offset = offset;
+      cmd_draw.draw_arguments_offset = enc.getFinalArgumentBufferOffset(draw_arguments_offset);
       cmd_draw.control_point_buffer = cp_buffer;
       cmd_draw.control_point_buffer_offset = cp_offset;
       cmd_draw.patch_constant_buffer = pc_buffer;
@@ -1364,9 +1362,9 @@ public:
       UINT VertexCountPerInstance, UINT InstanceCount, UINT StartVertexLocation,
       UINT StartInstanceLocation
   ) {
+    auto draw_arguments_offset = PreAllocateArgumentBuffer(sizeof(DXMT_DRAW_ARGUMENTS), 4);
     EmitOP([=, topo = state_.InputAssembler.Topology](ArgumentEncodingContext &enc) {
-      auto offset = enc.allocate_gpu_heap(sizeof(DXMT_DRAW_ARGUMENTS), 4);
-      DXMT_DRAW_ARGUMENTS *draw_arugment = enc.get_gpu_heap_pointer<DXMT_DRAW_ARGUMENTS>(offset);
+      DXMT_DRAW_ARGUMENTS *draw_arugment = enc.getMappedArgumentBuffer<DXMT_DRAW_ARGUMENTS>(draw_arguments_offset);
       draw_arugment->StartVertex = StartVertexLocation;
       draw_arugment->VertexCount = VertexCountPerInstance;
       draw_arugment->InstanceCount = InstanceCount;
@@ -1377,7 +1375,7 @@ public:
       enc.bumpVisibilityResultOffset();
       auto &cmd = enc.encodeRenderCommand<wmtcmd_render_dxmt_geometry_draw>();
       cmd.type = WMTRenderCommandDXMTGeometryDraw;
-      cmd.draw_arguments_offset = offset;
+      cmd.draw_arguments_offset = enc.getFinalArgumentBufferOffset(draw_arguments_offset);
       cmd.instance_count = InstanceCount;
       cmd.warp_count = warp_count;
       cmd.vertex_per_warp = vertex_per_warp;
@@ -1390,10 +1388,9 @@ public:
       UINT InstanceCount, UINT BaseInstance
   ) {
     auto IndexBufferOffset = state_.InputAssembler.IndexBufferOffset;
-
+    auto draw_arguments_offset = PreAllocateArgumentBuffer(sizeof(DXMT_DRAW_INDEXED_ARGUMENTS), 4);
     EmitOP([=, topo = state_.InputAssembler.Topology](ArgumentEncodingContext &enc) {
-      auto offset = enc.allocate_gpu_heap(sizeof(DXMT_DRAW_INDEXED_ARGUMENTS), 4);
-      DXMT_DRAW_INDEXED_ARGUMENTS *draw_arugment = enc.get_gpu_heap_pointer<DXMT_DRAW_INDEXED_ARGUMENTS>(offset);
+      DXMT_DRAW_INDEXED_ARGUMENTS *draw_arugment = enc.getMappedArgumentBuffer<DXMT_DRAW_INDEXED_ARGUMENTS>(draw_arguments_offset);
       draw_arugment->BaseVertex = BaseVertexLocation;
       draw_arugment->IndexCount = IndexCountPerInstance;
       draw_arugment->StartIndex = StartIndexLocation;
@@ -1405,7 +1402,7 @@ public:
       enc.bumpVisibilityResultOffset();
       auto &cmd = enc.encodeRenderCommand<wmtcmd_render_dxmt_geometry_draw_indexed>();
       cmd.type = WMTRenderCommandDXMTGeometryDrawIndexed;
-      cmd.draw_arguments_offset = offset;
+      cmd.draw_arguments_offset = enc.getFinalArgumentBufferOffset(draw_arguments_offset);
       cmd.instance_count = InstanceCount;
       cmd.warp_count = warp_count;
       cmd.vertex_per_warp = vertex_per_warp;
@@ -2656,6 +2653,16 @@ public:
   void UseCopyDestination(Rc<StagingResource> &);
   void UseCopySource(Rc<StagingResource> &);
 
+  uint64_t *allocated_encoder_argbuf_size_ = nullptr;
+
+  uint64_t PreAllocateArgumentBuffer(size_t size, size_t alignment) {
+    assert(allocated_encoder_argbuf_size_ && "otherwise invalid call");
+    std::size_t adjustment = align_forward_adjustment((void *)*allocated_encoder_argbuf_size_, alignment);
+    auto aligned = *allocated_encoder_argbuf_size_ + adjustment;
+    *allocated_encoder_argbuf_size_ = aligned + size;
+    return aligned;
+  }
+
   template <PipelineStage stage, PipelineKind kind>
   void
   UploadShaderStageResourceBinding() {
@@ -2676,17 +2683,19 @@ public:
       return;
 
     if (reflection->NumConstantBuffers && dirty_cbuffer) {
-      EmitST([reflection, cb = managed_shader->constant_buffers_info()](
-                 ArgumentEncodingContext &enc) {
-        enc.encodeConstantBuffers<stage, kind>(reflection, cb);
+      auto ConstantBufferCount = reflection->NumConstantBuffers;
+      auto offset = PreAllocateArgumentBuffer(ConstantBufferCount << 3, 16);
+      EmitST([=, cb = managed_shader->constant_buffers_info()](ArgumentEncodingContext &enc) {
+        enc.encodeConstantBuffers<stage, kind>(reflection, cb, offset);
       });
       ShaderStage.ConstantBuffers.clear_dirty();
     }
 
     if (reflection->NumArguments && (dirty_sampler || dirty_srv || dirty_uav)) {
-      EmitST([reflection, arg = managed_shader->arguments_info()](
-                 ArgumentEncodingContext &enc) {
-        enc.encodeShaderResources<stage, kind>(reflection, arg);
+      auto ArgumentTableQwords = reflection->ArgumentTableQwords;
+      auto offset = PreAllocateArgumentBuffer(ArgumentTableQwords << 3, 16);
+      EmitST([=, arg = managed_shader->arguments_info()](ArgumentEncodingContext &enc) {
+        enc.encodeShaderResources<stage, kind>(reflection, arg, offset);
       });
       ShaderStage.Samplers.clear_dirty();
       ShaderStage.SRVs.clear_dirty();
@@ -2709,14 +2718,17 @@ public:
     if (!VertexBuffers.any_dirty_masked((uint64_t)slot_mask))
       return;
 
+    uint32_t num_slots = __builtin_popcount(slot_mask);
+    auto offset = PreAllocateArgumentBuffer(16 * num_slots, 16);
+
     if (cmdbuf_state == CommandBufferState::TessellationRenderPipelineReady) {
-      EmitST([slot_mask](ArgumentEncodingContext &enc) { enc.encodeVertexBuffers<PipelineKind::Tessellation>(slot_mask); });
+      EmitST([=](ArgumentEncodingContext &enc) { enc.encodeVertexBuffers<PipelineKind::Tessellation>(slot_mask, offset); });
     }
     if (cmdbuf_state == CommandBufferState::GeometryRenderPipelineReady) {
-      EmitST([slot_mask](ArgumentEncodingContext &enc) { enc.encodeVertexBuffers<PipelineKind::Geometry>(slot_mask); });
+      EmitST([=](ArgumentEncodingContext &enc) { enc.encodeVertexBuffers<PipelineKind::Geometry>(slot_mask, offset); });
     }
     if (cmdbuf_state == CommandBufferState::RenderPipelineReady) {
-      EmitST([slot_mask](ArgumentEncodingContext &enc) { enc.encodeVertexBuffers<PipelineKind::Ordinary>(slot_mask); });
+      EmitST([=](ArgumentEncodingContext &enc) { enc.encodeVertexBuffers<PipelineKind::Ordinary>(slot_mask, offset); });
     }
 
     VertexBuffers.clear_dirty_mask(slot_mask);
@@ -3537,6 +3549,7 @@ public:
       EmitST([](ArgumentEncodingContext& enc) {
         enc.endPass();
       });
+      allocated_encoder_argbuf_size_ = nullptr;
       break;
     }
     case CommandBufferState::ComputeEncoderActive:
@@ -3544,6 +3557,7 @@ public:
       EmitST([](ArgumentEncodingContext& enc) {
         enc.endPass();
       });
+      allocated_encoder_argbuf_size_ = nullptr;
       break;
     case CommandBufferState::UpdateBlitEncoderActive:
     case CommandBufferState::ReadbackBlitEncoderActive:
@@ -3723,12 +3737,15 @@ public:
         uav_only = true;
       }
 
+      auto allocated_encoder_argbuf_size = std::make_unique<uint64_t>(0);
+      allocated_encoder_argbuf_size_ = allocated_encoder_argbuf_size.get();
+
       EmitST([rtvs = std::move(rtvs), dsv = std::move(dsv_info), effective_render_target, uav_only,
             uav_only_render_target_height, uav_only_render_target_width, uav_only_sample_count,
-            render_target_array](ArgumentEncodingContext &ctx) {
+            render_target_array, encoder_argbuf_size = std::move(allocated_encoder_argbuf_size)](ArgumentEncodingContext &ctx) {
         auto pool = WMT::MakeAutoreleasePool();
         uint32_t dsv_planar_flags = DepthStencilPlanarFlags(dsv.PixelFormat);
-        auto& info = ctx.startRenderPass(dsv_planar_flags, dsv.ReadOnlyFlags, rtvs.size())->info;
+        auto& info = ctx.startRenderPass(dsv_planar_flags, dsv.ReadOnlyFlags, rtvs.size(), *encoder_argbuf_size.get())->info;
 
         for (auto &rtv : rtvs.span()) {
           if (rtv.PixelFormat == WMTPixelFormatInvalid) {
@@ -3829,7 +3846,13 @@ public:
     state_.ShaderStages[PipelineStage::Compute].SRVs.set_dirty();
     state_.ComputeStageUAV.UAVs.set_dirty();
 
-    EmitST([](ArgumentEncodingContext &enc) { enc.startComputePass(); });
+    auto allocated_encoder_argbuf_size = std::make_unique<uint64_t>(0);
+    allocated_encoder_argbuf_size_ = allocated_encoder_argbuf_size.get();
+
+    EmitST([encoder_argbuf_size = std::move(allocated_encoder_argbuf_size)](
+               ArgumentEncodingContext &enc) {
+      enc.startComputePass(*encoder_argbuf_size.get());
+    });
 
     cmdbuf_state = CommandBufferState::ComputeEncoderActive;
   }

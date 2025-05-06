@@ -43,6 +43,14 @@ public:
   operator!=(std::nullptr_t) const {
     return handle != 0;
   }
+  bool
+  operator==(Object obj) const {
+    return handle == obj.handle;
+  }
+  bool
+  operator!=(Object obj) const {
+    return handle != obj.handle;
+  }
 
   operator bool() const {
     return handle != 0;

@@ -171,7 +171,7 @@ private:
 
   RingBumpAllocator<true> staging_allocator;
   RingBumpAllocator<false> copy_temp_allocator;
-  RingBumpAllocator<true, kCommandChunkGPUHeapSize> command_data_allocator;
+  RingBumpAllocator<true, kCommandChunkGPUHeapSize> argbuf_allocator;
   CaptureState capture_state;
 
 public:
@@ -272,8 +272,8 @@ public:
   }
 
   std::tuple<void *, WMT::Buffer, uint64_t>
-  AllocateCommandDataBuffer(uint64_t seq) {
-    return command_data_allocator.allocate(seq, cpu_coherent.signaledValue(), kCommandChunkGPUHeapSize, 1);
+  AllocateArgumentBuffer(uint64_t seq, size_t size) {
+    return argbuf_allocator.allocate(seq, cpu_coherent.signaledValue(), size, 64);
   }
 };
 

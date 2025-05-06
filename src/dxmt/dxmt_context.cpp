@@ -40,23 +40,21 @@ ArgumentEncodingContext::~ArgumentEncodingContext() {
   _aligned_free(dummy_cbuffer_host_);
 };
 
-template void ArgumentEncodingContext::encodeVertexBuffers<PipelineKind::Ordinary>(uint32_t slot_mask);
-template void ArgumentEncodingContext::encodeVertexBuffers<PipelineKind::Tessellation>(uint32_t slot_mask);
-template void ArgumentEncodingContext::encodeVertexBuffers<PipelineKind::Geometry>(uint32_t slot_mask);
+template void ArgumentEncodingContext::encodeVertexBuffers<PipelineKind::Ordinary>(uint32_t slot_mask, uint64_t argument_buffer_offset);
+template void ArgumentEncodingContext::encodeVertexBuffers<PipelineKind::Tessellation>(uint32_t slot_mask, uint64_t argument_buffer_offset);
+template void ArgumentEncodingContext::encodeVertexBuffers<PipelineKind::Geometry>(uint32_t slot_mask, uint64_t argument_buffer_offset);
 
 template <PipelineKind kind>
 void
-ArgumentEncodingContext::encodeVertexBuffers(uint32_t slot_mask) {
+ArgumentEncodingContext::encodeVertexBuffers(uint32_t slot_mask, uint64_t offset) {
   struct VERTEX_BUFFER_ENTRY {
     uint64_t buffer_handle;
     uint32_t stride;
     uint32_t length;
   };
   uint32_t max_slot = 32 - __builtin_clz(slot_mask);
-  uint32_t num_slots = __builtin_popcount(slot_mask);
 
-  uint64_t offset = allocate_gpu_heap(16 * num_slots, 16);
-  VERTEX_BUFFER_ENTRY *entries = (VERTEX_BUFFER_ENTRY *)(((char *)gpu_buffer_contents_) + offset);
+  VERTEX_BUFFER_ENTRY *entries = getMappedArgumentBuffer<VERTEX_BUFFER_ENTRY>(offset);
 
   for (unsigned slot = 0, index = 0; slot < max_slot; slot++) {
     if (!(slot_mask & (1 << slot)))
@@ -80,13 +78,13 @@ ArgumentEncodingContext::encodeVertexBuffers(uint32_t slot_mask) {
   };
   if constexpr (kind == PipelineKind::Tessellation) {
     auto &cmd = encodePreTessRenderCommand<wmtcmd_render_setbufferoffset>();
-    cmd.offset = offset;
+    cmd.offset = getFinalArgumentBufferOffset(offset);
     cmd.index = 16;
     cmd.type = WMTRenderCommandSetObjectBufferOffset;
   }
   else {
     auto &cmd = encodeRenderCommand<wmtcmd_render_setbufferoffset>();
-    cmd.offset = offset;
+    cmd.offset = getFinalArgumentBufferOffset(offset);
     cmd.index = 16;
     if constexpr (kind == PipelineKind::Geometry)
       cmd.type = WMTRenderCommandSetObjectBufferOffset;
@@ -95,33 +93,51 @@ ArgumentEncodingContext::encodeVertexBuffers(uint32_t slot_mask) {
   }
 }
 
-template void
-ArgumentEncodingContext::encodeConstantBuffers<PipelineStage::Vertex, PipelineKind::Ordinary>(const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT * constant_buffers);
-template void
-ArgumentEncodingContext::encodeConstantBuffers<PipelineStage::Pixel, PipelineKind::Ordinary>(const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT * constant_buffers);
-template void
-ArgumentEncodingContext::encodeConstantBuffers<PipelineStage::Vertex, PipelineKind::Tessellation>(const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT * constant_buffers);
-template void
-ArgumentEncodingContext::encodeConstantBuffers<PipelineStage::Pixel, PipelineKind::Tessellation>(const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT * constant_buffers);
-template void
-ArgumentEncodingContext::encodeConstantBuffers<PipelineStage::Hull, PipelineKind::Tessellation>(const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT * constant_buffers);
-template void
-ArgumentEncodingContext::encodeConstantBuffers<PipelineStage::Domain, PipelineKind::Tessellation>(const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT * constant_buffers);
-template void
-ArgumentEncodingContext::encodeConstantBuffers<PipelineStage::Compute, PipelineKind::Ordinary>(const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT * constant_buffers);
-template void
-ArgumentEncodingContext::encodeConstantBuffers<PipelineStage::Vertex, PipelineKind::Geometry>(const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT * constant_buffers);
-template void
-ArgumentEncodingContext::encodeConstantBuffers<PipelineStage::Geometry, PipelineKind::Geometry>(const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT * constant_buffers);
-template void
-ArgumentEncodingContext::encodeConstantBuffers<PipelineStage::Pixel, PipelineKind::Geometry>(const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT * constant_buffers);
+template void ArgumentEncodingContext::encodeConstantBuffers<PipelineStage::Vertex, PipelineKind::Ordinary>(
+    const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT *constant_buffers,
+    uint64_t argument_buffer_offset
+);
+template void ArgumentEncodingContext::encodeConstantBuffers<PipelineStage::Pixel, PipelineKind::Ordinary>(
+    const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT *constant_buffers,
+    uint64_t argument_buffer_offset
+);
+template void ArgumentEncodingContext::encodeConstantBuffers<PipelineStage::Vertex, PipelineKind::Tessellation>(
+    const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT *constant_buffers,
+    uint64_t argument_buffer_offset
+);
+template void ArgumentEncodingContext::encodeConstantBuffers<PipelineStage::Pixel, PipelineKind::Tessellation>(
+    const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT *constant_buffers,
+    uint64_t argument_buffer_offset
+);
+template void ArgumentEncodingContext::encodeConstantBuffers<PipelineStage::Hull, PipelineKind::Tessellation>(
+    const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT *constant_buffers,
+    uint64_t argument_buffer_offset
+);
+template void ArgumentEncodingContext::encodeConstantBuffers<PipelineStage::Domain, PipelineKind::Tessellation>(
+    const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT *constant_buffers,
+    uint64_t argument_buffer_offset
+);
+template void ArgumentEncodingContext::encodeConstantBuffers<PipelineStage::Compute, PipelineKind::Ordinary>(
+    const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT *constant_buffers,
+    uint64_t argument_buffer_offset
+);
+template void ArgumentEncodingContext::encodeConstantBuffers<PipelineStage::Vertex, PipelineKind::Geometry>(
+    const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT *constant_buffers,
+    uint64_t argument_buffer_offset
+);
+template void ArgumentEncodingContext::encodeConstantBuffers<PipelineStage::Geometry, PipelineKind::Geometry>(
+    const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT *constant_buffers,
+    uint64_t argument_buffer_offset
+);
+template void ArgumentEncodingContext::encodeConstantBuffers<PipelineStage::Pixel, PipelineKind::Geometry>(
+    const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT *constant_buffers,
+    uint64_t argument_buffer_offset
+);
 
 template <PipelineStage stage, PipelineKind kind>
 void
-ArgumentEncodingContext::encodeConstantBuffers(const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT * constant_buffers) {
-  auto ConstantBufferCount = reflection->NumConstantBuffers;
-  uint64_t offset = allocate_gpu_heap(ConstantBufferCount << 3, 16);
-  uint64_t *encoded_buffer = reinterpret_cast<uint64_t *>((char *)gpu_buffer_contents_ + offset);
+ArgumentEncodingContext::encodeConstantBuffers(const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT * constant_buffers, uint64_t offset) {
+  uint64_t *encoded_buffer = getMappedArgumentBuffer<uint64_t, stage == PipelineStage::Compute>(offset);
 
   for (unsigned i = 0; i < reflection->NumConstantBuffers; i++) {
     auto &arg = constant_buffers[i];
@@ -150,11 +166,11 @@ ArgumentEncodingContext::encodeConstantBuffers(const MTL_SHADER_REFLECTION *refl
   if constexpr (stage == PipelineStage::Compute) {
     auto &cmd = encodeComputeCommand<wmtcmd_compute_setbufferoffset>();
     cmd.type = WMTComputeCommandSetBufferOffset;
-    cmd.offset = offset;
+    cmd.offset = getFinalArgumentBufferOffset<true>(offset);
     cmd.index = 29;
   } else if constexpr (kind == PipelineKind::Tessellation && (stage == PipelineStage::Hull || stage == PipelineStage::Vertex)) {
     auto &cmd = encodePreTessRenderCommand<wmtcmd_render_setbufferoffset>();
-    cmd.offset = offset;
+    cmd.offset = getFinalArgumentBufferOffset(offset);
     cmd.index = 29;
     if constexpr (stage == PipelineStage::Vertex)
       cmd.type = WMTRenderCommandSetObjectBufferOffset;
@@ -162,7 +178,7 @@ ArgumentEncodingContext::encodeConstantBuffers(const MTL_SHADER_REFLECTION *refl
       cmd.type = WMTRenderCommandSetMeshBufferOffset;
   } else {
     auto &cmd = encodeRenderCommand<wmtcmd_render_setbufferoffset>();
-    cmd.offset = offset;
+    cmd.offset = getFinalArgumentBufferOffset(offset);
     cmd.index = 29;
     if constexpr (stage == PipelineStage::Vertex) {
       if constexpr (kind == PipelineKind::Geometry)
@@ -181,35 +197,44 @@ ArgumentEncodingContext::encodeConstantBuffers(const MTL_SHADER_REFLECTION *refl
   }
 };
 
-template void
-ArgumentEncodingContext::encodeShaderResources<PipelineStage::Vertex, PipelineKind::Ordinary>(const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT * arguments);
-template void
-ArgumentEncodingContext::encodeShaderResources<PipelineStage::Pixel, PipelineKind::Ordinary>(const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT * arguments);
-template void
-ArgumentEncodingContext::encodeShaderResources<PipelineStage::Vertex, PipelineKind::Tessellation>(const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT * arguments);
-template void
-ArgumentEncodingContext::encodeShaderResources<PipelineStage::Pixel, PipelineKind::Tessellation>(const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT * arguments);
-template void
-ArgumentEncodingContext::encodeShaderResources<PipelineStage::Hull, PipelineKind::Tessellation>(const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT * arguments);
-template void
-ArgumentEncodingContext::encodeShaderResources<PipelineStage::Domain, PipelineKind::Tessellation>(const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT * arguments);
-template void
-ArgumentEncodingContext::encodeShaderResources<PipelineStage::Compute, PipelineKind::Ordinary>(const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT * arguments);
-template void
-ArgumentEncodingContext::encodeShaderResources<PipelineStage::Vertex, PipelineKind::Geometry>(const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT * arguments);
-template void
-ArgumentEncodingContext::encodeShaderResources<PipelineStage::Geometry, PipelineKind::Geometry>(const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT * arguments);
-template void
-ArgumentEncodingContext::encodeShaderResources<PipelineStage::Pixel, PipelineKind::Geometry>(const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT * arguments);
+template void ArgumentEncodingContext::encodeShaderResources<PipelineStage::Vertex, PipelineKind::Ordinary>(
+    const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT *arguments, uint64_t argument_buffer_offset
+);
+template void ArgumentEncodingContext::encodeShaderResources<PipelineStage::Pixel, PipelineKind::Ordinary>(
+    const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT *arguments, uint64_t argument_buffer_offset
+);
+template void ArgumentEncodingContext::encodeShaderResources<PipelineStage::Vertex, PipelineKind::Tessellation>(
+    const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT *arguments, uint64_t argument_buffer_offset
+);
+template void ArgumentEncodingContext::encodeShaderResources<PipelineStage::Pixel, PipelineKind::Tessellation>(
+    const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT *arguments, uint64_t argument_buffer_offset
+);
+template void ArgumentEncodingContext::encodeShaderResources<PipelineStage::Hull, PipelineKind::Tessellation>(
+    const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT *arguments, uint64_t argument_buffer_offset
+);
+template void ArgumentEncodingContext::encodeShaderResources<PipelineStage::Domain, PipelineKind::Tessellation>(
+    const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT *arguments, uint64_t argument_buffer_offset
+);
+template void ArgumentEncodingContext::encodeShaderResources<PipelineStage::Compute, PipelineKind::Ordinary>(
+    const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT *arguments, uint64_t argument_buffer_offset
+);
+template void ArgumentEncodingContext::encodeShaderResources<PipelineStage::Vertex, PipelineKind::Geometry>(
+    const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT *arguments, uint64_t argument_buffer_offset
+);
+template void ArgumentEncodingContext::encodeShaderResources<PipelineStage::Geometry, PipelineKind::Geometry>(
+    const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT *arguments, uint64_t argument_buffer_offset
+);
+template void ArgumentEncodingContext::encodeShaderResources<PipelineStage::Pixel, PipelineKind::Geometry>(
+    const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT *arguments, uint64_t argument_buffer_offset
+);
 
 template <PipelineStage stage, PipelineKind kind>
 void
-ArgumentEncodingContext::encodeShaderResources(const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT * arguments) {
+ArgumentEncodingContext::encodeShaderResources(
+    const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT *arguments, uint64_t offset
+) {
   auto BindingCount = reflection->NumArguments;
-  auto ArgumentTableQwords = reflection->ArgumentTableQwords;
-
-  auto offset = allocate_gpu_heap(ArgumentTableQwords * 8, 16);
-  uint64_t *encoded_buffer = reinterpret_cast<uint64_t *>((char *)gpu_buffer_contents_ + offset);
+  uint64_t *encoded_buffer = getMappedArgumentBuffer<uint64_t, stage == PipelineStage::Compute>(offset);
 
   auto &UAVBindingSet = stage == PipelineStage::Compute ? cs_uav_ : om_uav_;
 
@@ -323,11 +348,11 @@ ArgumentEncodingContext::encodeShaderResources(const MTL_SHADER_REFLECTION *refl
   if constexpr (stage == PipelineStage::Compute) {
     auto &cmd = encodeComputeCommand<wmtcmd_compute_setbufferoffset>();
     cmd.type = WMTComputeCommandSetBufferOffset;
-    cmd.offset = offset;
+    cmd.offset = getFinalArgumentBufferOffset<true>(offset);
     cmd.index = 30;
   } else if constexpr (kind == PipelineKind::Tessellation && (stage == PipelineStage::Hull || stage == PipelineStage::Vertex)) {
     auto &cmd = encodePreTessRenderCommand<wmtcmd_render_setbufferoffset>();
-    cmd.offset = offset;
+    cmd.offset = getFinalArgumentBufferOffset(offset);
     cmd.index = 30;
     if constexpr (stage == PipelineStage::Vertex)
       cmd.type = WMTRenderCommandSetObjectBufferOffset;
@@ -335,7 +360,7 @@ ArgumentEncodingContext::encodeShaderResources(const MTL_SHADER_REFLECTION *refl
       cmd.type = WMTRenderCommandSetMeshBufferOffset;
   } else {
     auto &cmd = encodeRenderCommand<wmtcmd_render_setbufferoffset>();
-    cmd.offset = offset;
+    cmd.offset = getFinalArgumentBufferOffset(offset);
     cmd.index = 30;
     if constexpr (stage == PipelineStage::Vertex) {
       if constexpr (kind == PipelineKind::Geometry)
@@ -496,7 +521,7 @@ ArgumentEncodingContext::signalEvent(uint64_t value) {
 
 RenderEncoderData *
 ArgumentEncodingContext::startRenderPass(
-    uint8_t dsv_planar_flags, uint8_t dsv_readonly_flags, uint8_t render_target_count
+    uint8_t dsv_planar_flags, uint8_t dsv_readonly_flags, uint8_t render_target_count, uint64_t encoder_argbuf_size
 ) {
   assert(!encoder_current);
   auto encoder_info = allocate<RenderEncoderData>();
@@ -512,6 +537,10 @@ ArgumentEncodingContext::startRenderPass(
   encoder_info->dsv_planar_flags = dsv_planar_flags;
   encoder_info->dsv_readonly_flags = dsv_readonly_flags;
   encoder_info->render_target_count = render_target_count;
+  auto [gpu_buffer_contents, gpu_buffer_, offset] = queue_.AllocateArgumentBuffer(seq_id_, encoder_argbuf_size);
+  encoder_info->allocated_argbuf = gpu_buffer_;
+  encoder_info->allocated_argbuf_offset = offset;
+  encoder_info->allocated_argbuf_mapping = gpu_buffer_contents;
   encoder_current = encoder_info;
 
   currentFrameStatistics().render_pass_count++;
@@ -522,7 +551,7 @@ ArgumentEncodingContext::startRenderPass(
 }
 
 EncoderData *
-ArgumentEncodingContext::startComputePass() {
+ArgumentEncodingContext::startComputePass(uint64_t encoder_argbuf_size) {
   assert(!encoder_current);
   auto encoder_info = allocate<ComputeEncoderData>();
   encoder_info->type = EncoderType::Compute;
@@ -530,6 +559,10 @@ ArgumentEncodingContext::startComputePass() {
   encoder_info->cmd_head.type = WMTComputeCommandNop;
   encoder_info->cmd_head.next.set(0);
   encoder_info->cmd_tail = (wmtcmd_base *)&encoder_info->cmd_head;
+  auto [gpu_buffer_contents, gpu_buffer_, offset] = queue_.AllocateArgumentBuffer(seq_id_, encoder_argbuf_size);
+  encoder_info->allocated_argbuf = gpu_buffer_;
+  encoder_info->allocated_argbuf_offset = offset;
+  encoder_info->allocated_argbuf_mapping = gpu_buffer_contents;
   encoder_current = encoder_info;
 
   currentFrameStatistics().compute_pass_count++;
@@ -618,10 +651,6 @@ ArgumentEncodingContext::$$setEncodingContext(uint64_t seq_id, uint64_t frame_id
   cpu_buffer_offset_ = 0;
   seq_id_ = seq_id;
   frame_id_ = frame_id;
-  auto [gpu_buffer_contents, gpu_buffer, offset] = queue_.AllocateCommandDataBuffer(seq_id);
-  gpu_buffer_ = gpu_buffer;
-  gpu_buffer_contents_ = gpu_buffer_contents;
-  gpu_bufer_offset_ = offset;
 }
 
 constexpr unsigned kEncoderOptimizerThreshold = 64;
@@ -677,6 +706,7 @@ ArgumentEncodingContext::flushCommands(WMT::CommandBuffer cmdbuf, uint64_t seqId
         assert(visibility_readback);
         data->info.visibility_buffer = visibility_readback->visibility_result_heap;
       }
+      auto gpu_buffer_ = data->allocated_argbuf;
       auto encoder = cmdbuf.renderCommandEncoder(data->info);
       encoder.setVertexBuffer(gpu_buffer_, 0, 16);
       encoder.setVertexBuffer(gpu_buffer_, 0, 29);
@@ -710,8 +740,9 @@ ArgumentEncodingContext::flushCommands(WMT::CommandBuffer cmdbuf, uint64_t seqId
           uint32_t vertex_count_per_warp;
           uint32_t end_of_command;
         };
-        auto offset = allocate_gpu_heap(sizeof(GS_MARSHAL_TASK) * task_count, 8);
-        auto tasks_data = (GS_MARSHAL_TASK *)((char*)gpu_buffer_contents_ + offset);
+        auto [mapped_task_data, task_data_buffer, task_data_buffer_offset] =
+            queue_.AllocateArgumentBuffer(seq_id_, sizeof(GS_MARSHAL_TASK) * task_count);
+        auto tasks_data = (GS_MARSHAL_TASK *)mapped_task_data;
         for (unsigned i = 0; i<task_count; i++) {
           auto & task = data->gs_arg_marshal_tasks[i];
           tasks_data[i].draw_args = task.draw_arguments_va;
@@ -722,7 +753,7 @@ ArgumentEncodingContext::flushCommands(WMT::CommandBuffer cmdbuf, uint64_t seqId
           encoder.useResource(task.dispatch_arguments_buffer, WMTResourceUsageWrite, WMTRenderStageVertex);
         }
         tasks_data[task_count - 1].end_of_command = 1;
-        queue_.emulated_cmd.MarshalGSDispatchArguments(encoder, gpu_buffer_, offset);
+        queue_.emulated_cmd.MarshalGSDispatchArguments(encoder, task_data_buffer, task_data_buffer_offset);
         encoder.memoryBarrier(
             WMTBarrierScopeBuffers, WMTRenderStageVertex,
             WMTRenderStageVertex | WMTRenderStageMesh | WMTRenderStageObject
@@ -739,7 +770,7 @@ ArgumentEncodingContext::flushCommands(WMT::CommandBuffer cmdbuf, uint64_t seqId
       struct wmtcmd_compute_setbuffer setcmd;
       setcmd.type = WMTComputeCommandSetBuffer;
       setcmd.next.set(nullptr);
-      setcmd.buffer = gpu_buffer_;
+      setcmd.buffer = data->allocated_argbuf;
       setcmd.offset = 0;
       setcmd.index = 29;
       encoder.encodeCommands((const wmtcmd_compute_nop *)&setcmd);
@@ -1026,6 +1057,13 @@ ArgumentEncodingContext::isEncoderSignatureMatched(RenderEncoderData *r0, Render
   if (r0->dsv_readonly_flags != r1->dsv_readonly_flags)
     return false;
   if (r0->info.render_target_array_length != r1->info.render_target_array_length)
+    return false;
+  /**
+  In case two encoder has different argument buffer
+  It can be further optimized by inserting extra setBuffer() calls
+  but let's just simplify it, as it's a rather rare case.
+  */
+  if (r0->allocated_argbuf != r1->allocated_argbuf)
     return false;
   if (r0->dsv_planar_flags & 1) {
     if (r0->info.depth.texture != r1->info.depth.texture)

@@ -112,6 +112,9 @@ struct RenderEncoderData : EncoderData {
   wmtcmd_base *cmd_tail;
   wmtcmd_render_nop pretess_cmd_head;
   wmtcmd_base *pretess_cmd_tail;
+  WMT::Buffer allocated_argbuf;
+  uint64_t allocated_argbuf_offset;
+  void *allocated_argbuf_mapping;
   uint8_t dsv_planar_flags;
   uint8_t dsv_readonly_flags;
   uint8_t render_target_count;
@@ -123,6 +126,9 @@ struct RenderEncoderData : EncoderData {
 struct ComputeEncoderData : EncoderData {
   wmtcmd_compute_nop cmd_head;
   wmtcmd_base *cmd_tail;
+  WMT::Buffer allocated_argbuf;
+  uint64_t allocated_argbuf_offset;
+  void *allocated_argbuf_mapping;
 };
 
 struct BlitEncoderData : EncoderData {
@@ -377,11 +383,17 @@ public:
     cs_uav_ = {{}};
   }
 
-  template <PipelineKind kind> void encodeVertexBuffers(uint32_t ia_slot_mask);
+  template <PipelineKind kind> void encodeVertexBuffers(uint32_t ia_slot_mask, uint64_t argument_buffer_offset);
   template <PipelineStage stage, PipelineKind kind>
-  void encodeConstantBuffers(const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT * constant_buffers);
+  void encodeConstantBuffers(
+      const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT *constant_buffers,
+      uint64_t argument_buffer_offset
+  );
   template <PipelineStage stage, PipelineKind kind>
-  void encodeShaderResources(const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT * arguments);
+  void encodeShaderResources(
+      const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT *arguments,
+      uint64_t argument_buffer_offset
+  );
 
   template <PipelineStage stage, PipelineKind kind>
   void
@@ -525,8 +537,10 @@ public:
   );
   void resolveTexture(Rc<Texture> &&src, TextureViewKey src_view, Rc<Texture> &&dst, TextureViewKey dst_view);
 
-  RenderEncoderData *startRenderPass(uint8_t dsv_planar_flags, uint8_t dsv_readonly_flags, uint8_t render_target_count);
-  EncoderData *startComputePass();
+  RenderEncoderData *startRenderPass(
+      uint8_t dsv_planar_flags, uint8_t dsv_readonly_flags, uint8_t render_target_count, uint64_t argument_buffer_size
+  );
+  EncoderData *startComputePass(uint64_t argument_buffer_size);
   EncoderData *startBlitPass();
 
   void endPass();
@@ -554,19 +568,24 @@ public:
     return ptr_add(cpu_buffer_, aligned);
   }
 
-  uint64_t
-  allocate_gpu_heap(size_t size, size_t alignment) {
-    std::size_t adjustment = align_forward_adjustment((void *)gpu_bufer_offset_, alignment);
-    auto aligned = gpu_bufer_offset_ + adjustment;
-    gpu_bufer_offset_ = aligned + size;
-    if (gpu_bufer_offset_ > kCommandChunkGPUHeapSize) {
-      ERR("gpu argument heap overflow, expect error.");
-    }
-    return aligned;
+  template <typename T, bool ComputeCommandEncoder = false>
+  T *
+  getMappedArgumentBuffer(size_t offset) {
+    if constexpr (ComputeCommandEncoder)
+      return reinterpret_cast<T *>(
+          (char *)reinterpret_cast<ComputeEncoderData *>(encoder_current)->allocated_argbuf_mapping + offset
+      );
+    return reinterpret_cast<T *>(
+        (char *)reinterpret_cast<RenderEncoderData *>(encoder_current)->allocated_argbuf_mapping + offset
+    );
   }
 
-  template<typename T> T* get_gpu_heap_pointer(size_t offset) {
-    return reinterpret_cast<T*>((char*)gpu_buffer_contents_ + offset);
+  template <bool ComputeCommandEncoder = false>
+  uint64_t
+  getFinalArgumentBufferOffset(size_t offset) {
+    if constexpr (ComputeCommandEncoder)
+      return reinterpret_cast<ComputeEncoderData *>(encoder_current)->allocated_argbuf_offset + offset;
+    return reinterpret_cast<RenderEncoderData *>(encoder_current)->allocated_argbuf_offset + offset;
   }
 
   std::pair<WMT::Buffer , size_t> allocateTempBuffer(size_t size, size_t alignment);
@@ -648,9 +667,6 @@ private:
 
   void *cpu_buffer_;
   uint64_t cpu_buffer_offset_;
-  WMT::Buffer gpu_buffer_;
-  void *gpu_buffer_contents_;
-  uint64_t gpu_bufer_offset_;
   uint64_t seq_id_;
   uint64_t frame_id_;
 
