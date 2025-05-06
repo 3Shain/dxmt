@@ -135,8 +135,7 @@ public:
       case D3D11_USAGE_IMMUTABLE:
         return CreateDeviceTexture1D(this, pDesc, pInitialData, ppTexture1D);
       case D3D11_USAGE_DYNAMIC:
-        ERR("dynamic texture 1d not supported yet");
-        return E_NOTIMPL;
+        return CreateDynamicTexture1D(this, pDesc, pInitialData, ppTexture1D);
       case D3D11_USAGE_STAGING:
         if (pDesc->BindFlags != 0) {
           return E_INVALIDARG;
