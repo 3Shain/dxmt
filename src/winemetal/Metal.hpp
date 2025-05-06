@@ -146,9 +146,10 @@ public:
 
   std::string
   getUTF8String() {
-    std::string ret(size_t(lengthOfBytesUsingEncoding(WMTUTF8StringEncoding)), ' ');
-    getCString(ret.data(), ret.capacity(), WMTUTF8StringEncoding);
-    return ret;
+    auto len = lengthOfBytesUsingEncoding(WMTUTF8StringEncoding);
+    char str[len + 1];
+    getCString(str, len + 1, WMTUTF8StringEncoding);
+    return str;
   }
 };
 
