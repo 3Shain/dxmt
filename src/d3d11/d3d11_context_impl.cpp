@@ -2500,13 +2500,19 @@ public:
   void
   STDMETHODCALLTYPE
   RSGetViewports(UINT *pNumViewports, D3D11_VIEWPORT *pViewports) override {
-    if (pNumViewports) {
-      *pNumViewports = state_.Rasterizer.NumViewports;
-    }
+    uint32_t num_viewports_available = state_.Rasterizer.NumViewports;
+    uint32_t num_viewports_requested = *pNumViewports;
+
     if (pViewports) {
-      for (auto i = 0u; i < state_.Rasterizer.NumViewports; i++) {
-        pViewports[i] = state_.Rasterizer.viewports[i];
-      }
+      for (unsigned i = 0; i < num_viewports_requested; i++) {
+        if (i < num_viewports_available)
+          pViewports[i] = state_.Rasterizer.viewports[i];
+        else
+          pViewports[i] = {0, 0, 0, 0, 0, 0};
+      };
+      *pNumViewports = std::min(num_viewports_available, num_viewports_requested);
+    } else {
+      *pNumViewports = num_viewports_available;
     }
   }
 
@@ -2535,13 +2541,19 @@ public:
   void
   STDMETHODCALLTYPE
   RSGetScissorRects(UINT *pNumRects, D3D11_RECT *pRects) override {
-    if (pNumRects) {
-      *pNumRects = state_.Rasterizer.NumScissorRects;
-    }
+    uint32_t num_rects_available = state_.Rasterizer.NumScissorRects;
+    uint32_t num_rects_requested = *pNumRects;
+
     if (pRects) {
-      for (auto i = 0u; i < state_.Rasterizer.NumScissorRects; i++) {
-        pRects[i] = state_.Rasterizer.scissor_rects[i];
-      }
+      for (unsigned i = 0; i < num_rects_requested; i++) {
+        if (i < num_rects_available)
+          pRects[i] = state_.Rasterizer.scissor_rects[i];
+        else
+          pRects[i] = {0, 0, 0, 0};
+      };
+      *pNumRects = std::min(num_rects_available, num_rects_requested);
+    } else {
+      *pNumRects = num_rects_available;
     }
   }
 #pragma endregion
