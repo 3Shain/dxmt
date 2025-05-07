@@ -424,11 +424,28 @@ auto cmp_integer(llvm::CmpInst::Predicate cmp, pvalue a, pvalue b) {
   });
 };
 
+bool is_constant_zero(pvalue v) {
+  if (llvm::isa<llvm::Constant>(v)) {
+    return llvm::cast<llvm::Constant>(v)->isZeroValue();
+  }
+  return false;
+}
+
 /* it should return sign extended uint4 (all bits 0 or all bits 1) */
 auto cmp_float(llvm::CmpInst::Predicate cmp, pvalue a, pvalue b) {
   return make_irvalue([=](context ctx) {
+    bool should_comparison_be_precise = is_constant_zero(a) || is_constant_zero(b);
+    pvalue comparison_result;
+    if (should_comparison_be_precise) {
+      bool previous_fastmath_state = ctx.builder.getFastMathFlags().isFast();
+      ctx.builder.getFastMathFlags().setFast(false);
+      comparison_result = ctx.builder.CreateFCmp(cmp, a, b);
+      ctx.builder.getFastMathFlags().setFast(previous_fastmath_state);
+    } else {
+      comparison_result = ctx.builder.CreateFCmp(cmp, a, b);
+    }
     return ctx.builder.CreateSExt(
-      ctx.builder.CreateFCmp(cmp, a, b),
+      comparison_result,
       isa<llvm::FixedVectorType>(a->getType())
         ? llvm::FixedVectorType::get(
             ctx.types._int,
