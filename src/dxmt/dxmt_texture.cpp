@@ -38,17 +38,6 @@ TextureAllocation::~TextureAllocation(){
 };
 
 void
-TextureAllocation::incRef() {
-  refcount_.fetch_add(1u, std::memory_order_acquire);
-};
-
-void
-TextureAllocation::decRef() {
-  if (refcount_.fetch_sub(1u, std::memory_order_release) == 1u)
-    delete this;
-};
-
-void
 Texture::prepareAllocationViews(TextureAllocation *allocaiton) {
   std::unique_lock<dxmt::mutex> lock(mutex_);
   if (allocaiton->version_ < 1) {

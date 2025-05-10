@@ -28,17 +28,6 @@ BufferAllocation::~BufferAllocation() {
 #endif
 }
 
-void
-BufferAllocation::incRef() {
-  refcount_.fetch_add(1u, std::memory_order_acquire);
-};
-
-void
-BufferAllocation::decRef() {
-  if (refcount_.fetch_sub(1u, std::memory_order_release) == 1u)
-    delete this;
-};
-
 WMT::Texture
 Buffer::view(BufferViewKey key) {
   return view(key, current_.ptr());

@@ -12,6 +12,7 @@ dxmt_src = [
   'dxmt_dynamic.cpp',
   'dxmt_staging.cpp',
   'dxmt_hud_state.cpp',
+  'dxmt_allocation.cpp',
 ]
 
 air = custom_target('metal_air',

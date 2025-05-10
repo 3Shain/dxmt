@@ -2,6 +2,7 @@
 #include "Metal.hpp"
 #include "dxmt_deptrack.hpp"
 #include "dxmt_residency.hpp"
+#include "dxmt_allocation.hpp"
 #include "rc/util_rc_ptr.hpp"
 #include "thread.hpp"
 #include "util_flags.hpp"
@@ -43,12 +44,10 @@ struct TextureView {
       gpu_resource_id(gpu_resource_id) {}
 };
 
-class TextureAllocation {
+class TextureAllocation : public Allocation {
   friend class Texture;
 
 public:
-  void incRef();
-  void decRef();
 
   WMT::Texture texture() {
     return obj_;
@@ -78,7 +77,6 @@ private:
   WMT::Reference<WMT::Texture> obj_;
   WMT::Reference<WMT::Buffer> buffer_;
   uint32_t version_ = 0;
-  std::atomic<uint32_t> refcount_ = {0u};
   Flags<TextureAllocationFlag> flags_;
   std::vector<std::unique_ptr<TextureView>> cached_view_;
 };

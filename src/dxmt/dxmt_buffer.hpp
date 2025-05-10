@@ -3,6 +3,7 @@
 #include "Metal.hpp"
 #include "dxmt_deptrack.hpp"
 #include "dxmt_residency.hpp"
+#include "dxmt_allocation.hpp"
 #include "rc/util_rc_ptr.hpp"
 #include "thread.hpp"
 #include "util_flags.hpp"
@@ -37,12 +38,10 @@ struct BufferView {
       gpu_resource_id(gpu_resource_id) {}
 };
 
-class BufferAllocation {
+class BufferAllocation : public Allocation {
   friend class Buffer;
 
 public:
-  void incRef();
-  void decRef();
 
   WMT::Buffer
   buffer() {
@@ -66,7 +65,6 @@ private:
   WMT::Reference<WMT::Buffer> obj_;
   WMTBufferInfo info_;
   uint32_t version_ = 0;
-  std::atomic<uint32_t> refcount_ = {0u};
   Flags<BufferAllocationFlag> flags_;
   std::vector<std::unique_ptr<BufferView>> cached_view_;
 
