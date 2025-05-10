@@ -42,7 +42,7 @@ AIRBuilderResult call_integer_unary_op(std::string op, pvalue a);
 AIRBuilderResult call_float_unary_op(std::string op, pvalue a);
 AIRBuilderResult
 call_integer_binop(std::string op, pvalue a, pvalue b, bool is_signed = false);
-AIRBuilderResult call_float_binop(std::string op, pvalue a, pvalue b);
+AIRBuilderResult call_float_binop(std::string op, pvalue a, pvalue b, bool force_precise = false);
 
 AIRBuilderResult call_dot_product(uint32_t dimension, pvalue a, pvalue b);
 AIRBuilderResult call_float_mad(pvalue a, pvalue b, pvalue c);

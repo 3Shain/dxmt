@@ -3802,13 +3802,13 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
             }
             case FloatBinaryOp::Min: {
               fn = [=](pvalue a, pvalue b) {
-                return air::call_float_binop("fmin", a, b);
+                return air::call_float_binop("fmin", a, b, llvm::isa<llvm::Constant>(a) || llvm::isa<llvm::Constant>(b));
               };
               break;
             }
             case FloatBinaryOp::Max: {
               fn = [=](pvalue a, pvalue b) {
-                return air::call_float_binop("fmax", a, b);
+                return air::call_float_binop("fmax", a, b, llvm::isa<llvm::Constant>(a) || llvm::isa<llvm::Constant>(b));
               };
               break;
             }

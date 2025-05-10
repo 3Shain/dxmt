@@ -42,8 +42,8 @@ type_overload_suffix(llvm::Type *type, Sign sign = Sign::inapplicable) {
   assert(0 && "unexpected or unhandled type");
 };
 
-std::string fastmath_variant(AIRBuilderContext &ctx, std::string name) {
-  if (ctx.builder.getFastMathFlags().isFast()) {
+std::string fastmath_variant(AIRBuilderContext &ctx, std::string name, bool force_precise = false) {
+  if (ctx.builder.getFastMathFlags().isFast() && !force_precise) {
     return "fast_" + name;
   } else {
     return name;
@@ -141,7 +141,7 @@ call_integer_binop(std::string op, pvalue a, pvalue b, bool is_signed) {
   });
 };
 
-AIRBuilderResult call_float_binop(std::string op, pvalue a, pvalue b) {
+AIRBuilderResult call_float_binop(std::string op, pvalue a, pvalue b, bool force_precise) {
   return make_op([=](AIRBuilderContext ctx) {
     using namespace llvm;
     auto &context = ctx.llvm;
@@ -156,7 +156,7 @@ AIRBuilderResult call_float_binop(std::string op, pvalue a, pvalue b) {
     );
     auto operand_type = a->getType();
     auto fn = (module.getOrInsertFunction(
-      "air." + fastmath_variant(ctx, op) + type_overload_suffix(operand_type),
+      "air." + fastmath_variant(ctx, op, force_precise) + type_overload_suffix(operand_type),
       llvm::FunctionType::get(
         operand_type, {operand_type, operand_type}, false
       ),
