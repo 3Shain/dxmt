@@ -373,7 +373,6 @@ convert_dxbc_geometry_shader(
       load_vertex(leading_vertex_index, 0);
       load_vertex(builder.CreateAdd(builder.CreateAdd(leading_vertex_index, builder.getInt32(1)), odd_bit), 1);
       load_vertex(builder.CreateSub(builder.CreateAdd(leading_vertex_index, builder.getInt32(2)), odd_bit), 2);
-      printf("processed\n");
       break;
     }
     case microsoft::D3D10_SB_PRIMITIVE_LINE: {
