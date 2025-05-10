@@ -72,11 +72,25 @@ public:
     if (!VertexShader->GetShader(&vs)) {
       return VertexShader.ptr();
     }
+    if (!vs.Function) {
+      ERR("Failed to create mesh PSO: Invalid vertex shader.");
+      return this;
+    }
     if (!GeometryShader->GetShader(&gs)) {
       return GeometryShader.ptr();
     }
-    if (PixelShader && !PixelShader->GetShader(&ps)) {
-      return PixelShader.ptr();
+    if (!gs.Function) {
+      ERR("Failed to create mesh PSO: Invalid geometry shader.");
+      return this;
+    }
+    if (PixelShader) {
+      if (!PixelShader->GetShader(&ps)) {
+        return PixelShader.ptr();
+      }
+      if (!ps.Function) {
+        ERR("Failed to create mesh PSO: Invalid pixel shader.");
+        return this;
+      }
     }
 
     WMTMeshRenderPipelineInfo info;
