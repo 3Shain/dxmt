@@ -32,7 +32,7 @@ ArgumentEncodingContext::ArgumentEncodingContext(CommandQueue &queue, WMT::Devic
                                 WMTResourceHazardTrackingModeUntracked;
   dummy_cbuffer_ = device.newBuffer(dummy_cbuffer_info_);
   std::memset(dummy_cbuffer_info_.memory.get(), 0, 65536);
-  cpu_buffer_ = malloc(kCommandChunkCPUHeapSize);
+  cpu_buffer_ = malloc(kEncodingContextCPUHeapSize);
 };
 
 ArgumentEncodingContext::~ArgumentEncodingContext() {

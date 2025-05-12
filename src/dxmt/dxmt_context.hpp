@@ -5,7 +5,6 @@
 #include "dxmt_deptrack.hpp"
 #include "dxmt_occlusion_query.hpp"
 #include "dxmt_residency.hpp"
-#include "dxmt_ring_bump_allocator.hpp"
 #include "dxmt_statistics.hpp"
 #include "dxmt_texture.hpp"
 #include "log/log.hpp"
@@ -18,8 +17,9 @@
 
 namespace dxmt {
 
-constexpr size_t kCommandChunkCPUHeapSize = 0x1000000;
+constexpr size_t kCommandChunkCPUHeapSize = 0x400000;
 constexpr size_t kCommandChunkGPUHeapSize = 0x400000;
+constexpr size_t kEncodingContextCPUHeapSize = 0x1000000;
 
 inline std::size_t
 align_forward_adjustment(const void *const ptr, const std::size_t &alignment) noexcept {
@@ -568,7 +568,7 @@ public:
     std::size_t adjustment = align_forward_adjustment((void *)cpu_buffer_offset_, alignment);
     auto aligned = cpu_buffer_offset_ + adjustment;
     cpu_buffer_offset_ = aligned + size;
-    if (cpu_buffer_offset_ >= kCommandChunkCPUHeapSize) {
+    if (cpu_buffer_offset_ >= kEncodingContextCPUHeapSize) {
       ERR(cpu_buffer_offset_, " - cpu argument heap overflow, expect error.");
     }
     return ptr_add(cpu_buffer_, aligned);
