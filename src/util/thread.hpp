@@ -323,4 +323,10 @@ inline bool isInModuleDetachment() { return false; }
 } // namespace this_thread
 #endif
 
+struct null_mutex {
+  void lock() {}
+  void unlock() noexcept {}
+  bool try_lock() { return true; }
+};
+
 } // namespace dxmt
