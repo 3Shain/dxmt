@@ -20,6 +20,7 @@ since it is for internal use only
 #include "dxmt_buffer.hpp"
 #include "dxmt_context.hpp"
 #include "dxmt_format.hpp"
+#include "dxmt_ring_bump_allocator.hpp"
 #include "dxmt_staging.hpp"
 #include "mtld11_resource.hpp"
 #include "util_flags.hpp"
@@ -4632,16 +4633,13 @@ public:
       ManagedDeviceChild(pDevice),
       context_flag(context_flag),
       cmdlist_pool(pPool),
-      staging_allocator(pDevice->GetMTLDevice(), WMTResourceOptionCPUCacheModeWriteCombined |
+      staging_allocator({pDevice->GetMTLDevice(), WMTResourceOptionCPUCacheModeWriteCombined |
                                        WMTResourceHazardTrackingModeUntracked | WMTResourceStorageModeShared
-      ) {
-    cpu_argument_heap = (char *)malloc(kCommandChunkCPUHeapSize);
-  };
+      }),
+      cpu_command_allocator({}) {};
 
   ~MTLD3D11CommandList() {
     Reset();
-    staging_allocator.free_blocks(~0uLL);
-    free(cpu_argument_heap);
   }
 
   ULONG
@@ -4688,9 +4686,9 @@ public:
     issued_visibility_query.clear();
     issued_event_query.clear();
     list.reset();
-    staging_allocator.free_blocks(++local_coherence);
+    staging_allocator.free_blocks(~0uLL);
+    cpu_command_allocator.free_blocks(~0uLL);
 
-    cpu_arugment_heap_offset = 0;
     promote_flush = false;
   };
 
@@ -4729,18 +4727,14 @@ public:
 
   std::tuple<void *, WMT::Buffer, uint64_t>
   AllocateStagingBuffer(size_t size, size_t alignment) {
-    return staging_allocator.allocate(1, 0, size, alignment);
+    auto [block, offset] = staging_allocator.allocate(1, 0, size, alignment);
+    return {ptr_add(block.mapped_address, offset), block.buffer, offset};
   }
 
   void *
   allocate_cpu_heap(size_t size, size_t alignment) {
-    std::size_t adjustment = align_forward_adjustment((void *)cpu_arugment_heap_offset, alignment);
-    auto aligned = cpu_arugment_heap_offset + adjustment;
-    cpu_arugment_heap_offset = aligned + size;
-    if (cpu_arugment_heap_offset >= kCommandChunkCPUHeapSize) {
-      ERR(cpu_arugment_heap_offset, " - cpu argument heap overflow, expect error.");
-    }
-    return ptr_add(cpu_argument_heap, aligned);
+    auto [block, offset] = cpu_command_allocator.allocate(1, 0, size, alignment);
+    return ptr_add(block.ptr, offset);
   }
 
   template <typename T>
@@ -4779,12 +4773,10 @@ private:
   UINT context_flag;
   MTLD3D11CommandListPoolBase *cmdlist_pool;
 
-  uint64_t cpu_arugment_heap_offset = 0;
-  char *cpu_argument_heap;
-
   CommandList<ArgumentEncodingContext> list;
 
-  RingBumpAllocator<true, kStagingBlockSizeForDeferredContext> staging_allocator;
+  RingBumpState<StagingBufferBlockAllocator, kStagingBlockSizeForDeferredContext> staging_allocator;
+  RingBumpState<HostBufferBlockAllocator, kStagingBlockSizeForDeferredContext, dxmt::null_mutex> cpu_command_allocator; 
 
   uint64_t local_coherence = 0;
 };
