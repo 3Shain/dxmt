@@ -601,11 +601,10 @@ ArgumentEncodingContext::endPass() {
 
 std::pair<WMT::Buffer, size_t>
 ArgumentEncodingContext::allocateTempBuffer(size_t size, size_t alignment) {
-  auto [_, buffer, offset] = queue_.AllocateTempBuffer(seq_id_, size, alignment);
-  return {buffer, offset};
+  return queue_.AllocateTempBuffer(seq_id_, size, alignment);
 };
 
-AllocatedRingBufferSlice
+AllocatedTempBufferSlice
 ArgumentEncodingContext::allocateTempBuffer1(size_t size, size_t alignment) {
   return queue_.AllocateTempBuffer1(seq_id_, size, alignment);
 };

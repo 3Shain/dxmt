@@ -227,6 +227,12 @@ enum DXMT_ENCODER_RESOURCE_ACESS {
   DXMT_ENCODER_RESOURCE_ACESS_WRITE = 1 << 1,
 };
 
+struct AllocatedTempBufferSlice {
+  WMT::Buffer gpu_buffer;
+  uint64_t offset;
+  uint64_t gpu_address;
+};
+
 class ArgumentEncodingContext {
   void
   trackBuffer(BufferAllocation *allocation, DXMT_ENCODER_RESOURCE_ACESS flags) {
@@ -590,7 +596,7 @@ public:
 
   std::pair<WMT::Buffer , size_t> allocateTempBuffer(size_t size, size_t alignment);
   
-  AllocatedRingBufferSlice allocateTempBuffer1(size_t size, size_t alignment);
+  AllocatedTempBufferSlice allocateTempBuffer1(size_t size, size_t alignment);
 
   std::unique_ptr<VisibilityResultReadback> flushCommands(WMT::CommandBuffer cmdbuf, uint64_t seqId, uint64_t event_seq_id);
 

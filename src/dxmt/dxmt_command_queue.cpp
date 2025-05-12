@@ -8,26 +8,31 @@
 
 namespace dxmt {
 
+void *
+CommandChunk::allocate_cpu_heap(size_t size, size_t alignment) {
+  return queue->AllocateCommandData(size, alignment);
+}
+
 CommandQueue::CommandQueue(WMT::Device device) :
     encodeThread([this]() { this->EncodingThread(); }),
     finishThread([this]() { this->WaitForFinishThread(); }),
     device(device),
     commandQueue(device.newCommandQueue(kCommandChunkCount)),
-    staging_allocator(
+    staging_allocator({
         device, WMTResourceOptionCPUCacheModeWriteCombined | WMTResourceHazardTrackingModeUntracked |
                     WMTResourceStorageModeShared
-    ),
-    copy_temp_allocator(device, WMTResourceHazardTrackingModeUntracked | WMTResourceStorageModePrivate),
-    argbuf_allocator(
+    }),
+    copy_temp_allocator({device, WMTResourceHazardTrackingModeUntracked | WMTResourceStorageModePrivate}),
+    argbuf_allocator({
         device,
         WMTResourceHazardTrackingModeUntracked | WMTResourceCPUCacheModeWriteCombined | WMTResourceStorageModeShared
-    ),
+    }),
+    cpu_command_allocator({}),
     argument_encoding_ctx(*this, device),
     emulated_cmd(device, argument_encoding_ctx) {
   for (unsigned i = 0; i < kCommandChunkCount; i++) {
     auto &chunk = chunks[i];
     chunk.queue = this;
-    chunk.cpu_argument_heap = (char *)malloc(kCommandChunkCPUHeapSize);
     chunk.reset();
   };
   event = device.newSharedEvent();
@@ -54,7 +59,6 @@ CommandQueue::~CommandQueue() {
   for (unsigned i = 0; i < kCommandChunkCount; i++) {
     auto &chunk = chunks[i];
     chunk.reset();
-    free(chunk.cpu_argument_heap);
   };
   TRACE("Destructed command queue");
 }
@@ -81,6 +85,8 @@ CommandQueue::CommitCurrentChunk() {
 #else
   CommitChunkInternal(chunk, ready_for_encode.fetch_add(1, std::memory_order_relaxed));
 #endif
+
+  cpu_command_allocator.free_blocks(cpu_coherent.signaledValue());
 }
 
 void

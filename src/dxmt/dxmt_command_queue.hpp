@@ -75,15 +75,7 @@ public:
   CommandChunk(const CommandChunk &) = delete; // delete copy constructor
 
   void *
-  allocate_cpu_heap(size_t size, size_t alignment) {
-    std::size_t adjustment = align_forward_adjustment((void *)cpu_arugment_heap_offset, alignment);
-    auto aligned = cpu_arugment_heap_offset + adjustment;
-    cpu_arugment_heap_offset = aligned + size;
-    if (cpu_arugment_heap_offset >= kCommandChunkCPUHeapSize) {
-      ERR(cpu_arugment_heap_offset, " - cpu argument heap overflow, expect error.");
-    }
-    return ptr_add(cpu_argument_heap, aligned);
-  }
+  allocate_cpu_heap(size_t size, size_t alignment);
 
   template <CommandWithContext<ArgumentEncodingContext> F>
   void
@@ -116,8 +108,6 @@ public:
 
 private:
   CommandQueue *queue;
-  char *cpu_argument_heap;
-  uint64_t cpu_arugment_heap_offset;
   WMT::Reference<WMT::CommandBuffer> attached_cmdbuf;
   
   CommandList<ArgumentEncodingContext> list_enc;
@@ -132,7 +122,6 @@ public:
     signal_frame_latency_fence_ = ~0ull;
     visibility_readback = {};
     list_enc.reset();
-    cpu_arugment_heap_offset = 0;
     attached_cmdbuf = nullptr;
   }
 };
@@ -169,9 +158,10 @@ private:
     return encoder_seq++;
   }
 
-  RingBumpAllocator<true> staging_allocator;
-  RingBumpAllocator<false> copy_temp_allocator;
-  RingBumpAllocator<true, kCommandChunkGPUHeapSize> argbuf_allocator;
+  RingBumpState<StagingBufferBlockAllocator> staging_allocator;
+  RingBumpState<GpuPrivateBufferBlockAllocator> copy_temp_allocator;
+  RingBumpState<StagingBufferBlockAllocator, kCommandChunkGPUHeapSize> argbuf_allocator;
+  RingBumpState<HostBufferBlockAllocator, kCommandChunkCPUHeapSize, dxmt::null_mutex> cpu_command_allocator;
   CaptureState capture_state;
 
 public:
@@ -258,22 +248,33 @@ public:
 
   std::tuple<void *, WMT::Buffer, uint64_t>
   AllocateStagingBuffer(size_t size, size_t alignment) {
-    return staging_allocator.allocate(ready_for_encode, cpu_coherent.signaledValue(), size, alignment);
+    auto [block, offset] = staging_allocator.allocate(ready_for_encode, cpu_coherent.signaledValue(), size, alignment);
+    return {ptr_add(block.mapped_address, offset), block.buffer, offset};
   }
 
-  std::tuple<void *, WMT::Buffer, uint64_t>
+  std::tuple<WMT::Buffer, uint64_t>
   AllocateTempBuffer(uint64_t seq, size_t size, size_t alignment) {
-    return copy_temp_allocator.allocate(seq, cpu_coherent.signaledValue(), size, alignment);
+    auto [block, offset] = copy_temp_allocator.allocate(seq, cpu_coherent.signaledValue(), size, alignment);
+    return {block.buffer, offset};
   }
 
-  AllocatedRingBufferSlice
+  AllocatedTempBufferSlice
   AllocateTempBuffer1(uint64_t seq, size_t size, size_t alignment) {
-    return copy_temp_allocator.allocate1(seq, cpu_coherent.signaledValue(), size, alignment);
+    auto [block, offset] = copy_temp_allocator.allocate(seq, cpu_coherent.signaledValue(), size, alignment);
+    return {block.buffer, offset, block.gpu_address};
   }
 
   std::tuple<void *, WMT::Buffer, uint64_t>
   AllocateArgumentBuffer(uint64_t seq, size_t size) {
-    return argbuf_allocator.allocate(seq, cpu_coherent.signaledValue(), size, 64);
+    auto [block, offset] = argbuf_allocator.allocate(seq, cpu_coherent.signaledValue(), size, 64);
+    return {ptr_add(block.mapped_address, offset), block.buffer, offset};
+  }
+
+  void *
+  AllocateCommandData(size_t size, size_t alignment) {
+    auto [block, offset] =
+        cpu_command_allocator.allocate(ready_for_encode, cpu_coherent.signaledValue(), size, alignment);
+    return ptr_add(block.ptr, offset);
   }
 };
 
