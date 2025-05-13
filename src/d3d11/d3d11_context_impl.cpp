@@ -3769,14 +3769,14 @@ public:
             auto& depthAttachment = info.depth;
             depthAttachment.texture = texture;
             depthAttachment.load_action = dsv.DepthLoadAction;
-            depthAttachment.store_action = dsv.ReadOnlyFlags & 1 ? WMTStoreActionDontCare :WMTStoreActionStore;
+            depthAttachment.store_action = WMTStoreActionStore;
           }
 
           if (dsv_planar_flags & 2) {
             auto& stencilAttachment = info.stencil;
             stencilAttachment.texture = texture;
             stencilAttachment.load_action = dsv.StencilLoadAction;
-            stencilAttachment.store_action = dsv.ReadOnlyFlags & 2 ? WMTStoreActionDontCare :WMTStoreActionStore;
+            stencilAttachment.store_action = WMTStoreActionStore;
           }
         }
         if (effective_render_target == 0) {
