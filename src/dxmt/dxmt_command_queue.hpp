@@ -256,7 +256,7 @@ public:
     return {ptr_add(block.mapped_address, offset), block.buffer, offset};
   }
 
-  std::tuple<WMT::Buffer, uint64_t>
+  std::pair<WMT::Buffer, uint64_t>
   AllocateTempBuffer(uint64_t seq, size_t size, size_t alignment) {
     auto [block, offset] = copy_temp_allocator.allocate(seq, cpu_coherent.signaledValue(), size, alignment);
     return {block.buffer, offset};
