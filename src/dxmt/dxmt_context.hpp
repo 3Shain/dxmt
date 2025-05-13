@@ -236,6 +236,7 @@ struct AllocatedTempBufferSlice {
 class ArgumentEncodingContext {
   void
   trackBuffer(BufferAllocation *allocation, DXMT_ENCODER_RESOURCE_ACESS flags) {
+    retainAllocation(allocation);
     if (allocation->flags().test(BufferAllocationFlag::GpuReadonly))
       return;
     if (flags & DXMT_ENCODER_RESOURCE_ACESS_READ)
@@ -246,6 +247,7 @@ class ArgumentEncodingContext {
 
   void
   trackTexture(TextureAllocation *allocation, DXMT_ENCODER_RESOURCE_ACESS flags) {
+    retainAllocation(allocation);
     if (allocation->flags().test(TextureAllocationFlag::GpuReadonly))
       return;
     if (flags & DXMT_ENCODER_RESOURCE_ACESS_READ)
@@ -266,7 +268,7 @@ public:
   access(Rc<Buffer> const &buffer, unsigned viewId, DXMT_ENCODER_RESOURCE_ACESS flags) {
     auto allocation = buffer->current();
     trackBuffer(allocation, flags);
-    return buffer->view_(viewId);
+    return buffer->view_(viewId, allocation);
   }
 
   WMT::Buffer
@@ -287,7 +289,7 @@ public:
   access(Rc<Texture> const &texture, unsigned viewId, DXMT_ENCODER_RESOURCE_ACESS flags) {
     auto allocation = texture->current();
     trackTexture(allocation, flags);
-    return texture->view_(viewId);
+    return texture->view_(viewId, allocation);
   }
 
   WMT::Texture
@@ -401,6 +403,8 @@ public:
       uint64_t argument_buffer_offset
   );
 
+  void retainAllocation(Allocation* allocation);
+
   template <PipelineStage stage, PipelineKind kind>
   void
   makeResident(WMT::Resource resource, DXMT_RESOURCE_RESIDENCY requested) {
@@ -437,19 +441,21 @@ public:
   template <PipelineStage stage, PipelineKind kind>
   void
   makeResident(Buffer *buffer, unsigned viewId, bool read = true, bool write = false) {
+    auto allocation = buffer->current();
     uint64_t encoder_id = currentEncoder()->id;
     DXMT_RESOURCE_RESIDENCY requested = GetResidencyMask<kind>(stage, read, write);
-    if (CheckResourceResidency(buffer->residency(viewId), encoder_id, requested)) {
-      makeResident<stage, kind>(buffer->view(viewId), requested);
+    if (CheckResourceResidency(buffer->residency(viewId, allocation), encoder_id, requested)) {
+      makeResident<stage, kind>(buffer->view(viewId, allocation), requested);
     };
   }
   template <PipelineStage stage, PipelineKind kind>
   void
   makeResident(Texture *texture, unsigned viewId, bool read = true, bool write = false) {
+    auto allocation = texture->current();
     uint64_t encoder_id = currentEncoder()->id;
     DXMT_RESOURCE_RESIDENCY requested = GetResidencyMask<kind>(stage, read, write);
-    if (CheckResourceResidency(texture->residency(viewId), encoder_id, requested)) {
-      makeResident<stage, kind>(texture->view(viewId), requested);
+    if (CheckResourceResidency(texture->residency(viewId, allocation), encoder_id, requested)) {
+      makeResident<stage, kind>(texture->view(viewId, allocation), requested);
     };
   }
 

@@ -28,6 +28,7 @@ CommandQueue::CommandQueue(WMT::Device device) :
         WMTResourceHazardTrackingModeUntracked | WMTResourceCPUCacheModeWriteCombined | WMTResourceStorageModeShared
     }),
     cpu_command_allocator({}),
+    reftracker_storage_allocator({}),
     argument_encoding_ctx(*this, device),
     emulated_cmd(device, argument_encoding_ctx) {
   for (unsigned i = 0; i < kCommandChunkCount; i++) {
@@ -192,4 +193,15 @@ CommandQueue::WaitForFinishThread() {
   TRACE("finishing thread gracefully terminates");
   return 0;
 }
+
+void CommandQueue::Retain(uint64_t seq, Allocation* allocaiton) {
+  auto &chunk = chunks[seq % kCommandChunkCount];
+  auto &tracker = chunk.ref_tracker;
+  constexpr size_t block_size = decltype(reftracker_storage_allocator)::block_size;
+  while (unlikely(!tracker.track(allocaiton))) {
+    auto [temp_buffer, _] = reftracker_storage_allocator.allocate(seq, cpu_coherent.signaledValue(), block_size, 1);
+    tracker.addStorage(temp_buffer.ptr, block_size);
+  }
+};
+
 } // namespace dxmt

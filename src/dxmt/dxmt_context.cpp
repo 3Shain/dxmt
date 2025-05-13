@@ -380,6 +380,13 @@ ArgumentEncodingContext::encodeShaderResources(
 }
 
 void
+ArgumentEncodingContext::retainAllocation(Allocation* allocation) {
+  if (allocation->checkRetained(seq_id_))
+    return;
+  queue_.Retain(seq_id_, allocation);
+}
+
+void
 ArgumentEncodingContext::clearColor(Rc<Texture> &&texture, unsigned viewId, unsigned arrayLength, WMTClearColor color) {
   assert(!encoder_current);
   auto encoder_info = allocate<ClearEncoderData>();

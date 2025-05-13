@@ -16,6 +16,9 @@ constexpr size_t kStagingBlockLifetime = 300;
 template <typename Allocator, size_t BlockSize = kStagingBlockSize, class mutex = dxmt::mutex> class RingBumpState {
 
 public:
+
+  static constexpr size_t block_size = BlockSize;
+
   RingBumpState(Allocator &&allocator) : allocator_(std::move(allocator)) {}
 
   std::pair<typename Allocator::Block &, uint64_t>

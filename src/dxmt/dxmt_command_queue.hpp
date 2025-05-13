@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Metal.hpp"
+#include "dxmt_allocation.hpp"
 #include "dxmt_capture.hpp"
 #include "dxmt_command.hpp"
 #include "dxmt_command_list.hpp"
@@ -111,6 +112,7 @@ private:
   WMT::Reference<WMT::CommandBuffer> attached_cmdbuf;
   
   CommandList<ArgumentEncodingContext> list_enc;
+  AllocationRefTracking ref_tracker;
 
   friend class CommandQueue;
 
@@ -122,6 +124,7 @@ public:
     signal_frame_latency_fence_ = ~0ull;
     visibility_readback = {};
     list_enc.reset();
+    ref_tracker.clear();
     attached_cmdbuf = nullptr;
   }
 };
@@ -162,6 +165,7 @@ private:
   RingBumpState<GpuPrivateBufferBlockAllocator> copy_temp_allocator;
   RingBumpState<StagingBufferBlockAllocator, kCommandChunkGPUHeapSize> argbuf_allocator;
   RingBumpState<HostBufferBlockAllocator, kCommandChunkCPUHeapSize, dxmt::null_mutex> cpu_command_allocator;
+  RingBumpState<HostBufferBlockAllocator, 0x1000 /* 4kB */> reftracker_storage_allocator;
   CaptureState capture_state;
 
 public:
@@ -276,6 +280,8 @@ public:
         cpu_command_allocator.allocate(ready_for_encode, cpu_coherent.signaledValue(), size, alignment);
     return ptr_add(block.ptr, offset);
   }
+
+  void Retain(uint64_t seq, Allocation *allocation);
 };
 
 } // namespace dxmt
