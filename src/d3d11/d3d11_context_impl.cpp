@@ -883,7 +883,10 @@ public:
       dst_desc.miplevelCount = 1;
       dst_desc.firstMiplevel = dst_level;
 
-      enc.resolveTexture(forward_rc(src),  src->createView(src_desc), forward_rc(dst), dst->createView(dst_desc));
+      auto src_view = src->createView(src_desc);
+      auto dst_view = dst->createView(dst_desc);
+
+      enc.resolveTexture(forward_rc(src), src_view , forward_rc(dst), dst_view);
     });
   }
 

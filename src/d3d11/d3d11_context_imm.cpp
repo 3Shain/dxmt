@@ -14,8 +14,7 @@ struct ContextInternalState {
 
 
 template<typename Object> Rc<Object> forward_rc(Rc<Object>& obj) {
-  // return std::move(obj);
-  return obj; // FIXME: we copy the reference here to ensure resource is valid when calling `useResource`
+  return std::move(obj);
 }
 
 using ImmediateContextBase = MTLD3D11DeviceContextImplBase<ContextInternalState>;

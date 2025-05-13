@@ -393,15 +393,13 @@ ArgumentEncodingContext::clearColor(Rc<Texture> &&texture, unsigned viewId, unsi
   encoder_info->type = EncoderType::Clear;
   encoder_info->id = nextEncoderId();
   encoder_info->clear_dsv = 0;
-  encoder_info->texture = texture->view(viewId);
   encoder_info->color = color;
   encoder_info->array_length = arrayLength;
   encoder_info->width = texture->width();
   encoder_info->height = texture->height();
-
-  encoder_info->tex_write.add(texture->current()->depkey);
-
   encoder_current = encoder_info;
+
+  encoder_info->texture = access(texture, viewId, DXMT_ENCODER_RESOURCE_ACESS_WRITE).texture;
 
   currentFrameStatistics().clear_pass_count++;
 
@@ -417,15 +415,13 @@ ArgumentEncodingContext::clearDepthStencil(
   encoder_info->type = EncoderType::Clear;
   encoder_info->id = nextEncoderId();
   encoder_info->clear_dsv = flag & DepthStencilPlanarFlags(texture->pixelFormat());
-  encoder_info->texture = texture->view(viewId);
   encoder_info->depth_stencil = {depth, stencil};
   encoder_info->array_length = arrayLength;
   encoder_info->width = texture->width();
   encoder_info->height = texture->height();
-
-  encoder_info->tex_write.add(texture->current()->depkey);
-
   encoder_current = encoder_info;
+
+  encoder_info->texture = access(texture, viewId, DXMT_ENCODER_RESOURCE_ACESS_WRITE).texture;
 
   currentFrameStatistics().clear_pass_count++;
   
@@ -439,13 +435,11 @@ ArgumentEncodingContext::resolveTexture(
   assert(!encoder_current);
   auto encoder_info = allocate<ResolveEncoderData>();
   encoder_info->type = EncoderType::Resolve;
-  encoder_info->src = src->view(src_view);
-  encoder_info->dst = dst->view(dst_view);
-
-  encoder_info->tex_read.add(src->current()->depkey);
-  encoder_info->tex_write.add(dst->current()->depkey);
-
   encoder_current = encoder_info;
+
+  encoder_info->src = access(src, src_view, DXMT_ENCODER_RESOURCE_ACESS_READ).texture;
+  encoder_info->dst = access(dst, dst_view, DXMT_ENCODER_RESOURCE_ACESS_WRITE).texture;
+
   endPass();
 };
 
