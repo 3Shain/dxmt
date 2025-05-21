@@ -8,7 +8,7 @@ dxgi_src = [
   'dxgi.cpp',
 ]
 
-dxgi_ld_args      = []
+dxgi_ld_args      = ['-L' + windows_native_install_dir] # a nice trick to force relink
 dxgi_link_depends = []
 
 dxgi_dll = shared_library('dxgi', dxgi_src, dxgi_res,

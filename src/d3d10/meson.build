@@ -4,7 +4,7 @@ d3d10core_src = [
   'd3d10core.cpp',
 ]
 
-d3d10_ld_args      = []
+d3d10_ld_args      = ['-L' + windows_native_install_dir] # a nice trick to force relink
 d3d10_link_depends = []
 
 d3d10core_dll = shared_library('d3d10core', d3d10core_src, d3d10core_res,

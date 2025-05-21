@@ -2,7 +2,7 @@ nvapi_src = [
   'nvapi.cpp',
 ]
 
-nvapi_ld_args      = []
+nvapi_ld_args      = ['-L' + windows_native_install_dir] # a nice trick to force relink
 nvapi_link_depends = []
 
 nvapi_dll = shared_library('nvapi64', nvapi_src,
