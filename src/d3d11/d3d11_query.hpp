@@ -3,6 +3,7 @@
 #include "d3d11_device_child.hpp"
 #include "dxmt_occlusion_query.hpp"
 #include "log/log.hpp"
+#include "../d3d10/d3d10_query.hpp"
 
 DEFINE_COM_INTERFACE("a301e56d-d87e-4b69-8440-bd003e285904",
                      IMTLD3DOcclusionQuery)
@@ -21,8 +22,9 @@ template <typename Query>
 class MTLD3DQueryBase : public MTLD3D11DeviceChild<Query> {
 public:
   MTLD3DQueryBase(MTLD3D11Device *pDevice, const D3D11_QUERY_DESC *desc)
-      : MTLD3D11DeviceChild<Query>(pDevice), desc_(*desc) {}
-  ~MTLD3DQueryBase() {};
+      : MTLD3D11DeviceChild<Query>(pDevice), desc_(*desc),
+        d3d10_(this, pDevice->GetImmediateContextPrivate()) {}
+  ~MTLD3DQueryBase(){};
 
   HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid,
                                            void **ppvObject) final {
@@ -34,6 +36,11 @@ public:
     if (riid == __uuidof(IUnknown) || riid == __uuidof(ID3D11DeviceChild) ||
         riid == __uuidof(ID3D11Query)) {
       *ppvObject = ref(this);
+      return S_OK;
+    }
+
+    if (riid == __uuidof(ID3D10DeviceChild) || riid == __uuidof(ID3D10Query)) {
+      *ppvObject = ref(&d3d10_);
       return S_OK;
     }
 
@@ -53,6 +60,7 @@ public:
 
 protected:
   D3D11_QUERY_DESC desc_;
+  MTLD3D10Query d3d10_;
 };
 
 template <typename DataType>
