@@ -28,15 +28,22 @@ DEFINE_COM_INTERFACE("e95ba1c7-e43f-49c3-a907-4ac669c9fb42", IMTLD3D11Shader)
 
 namespace dxmt {
 
-template <typename Interface>
+class NullD3D10Shader {
+public:
+  NullD3D10Shader(IUnknown *discard) {}
+};
+
+template <typename Interface, typename D3D10Interface = NullD3D10Shader>
 class TShaderBase : public MTLD3D11DeviceChild<Interface, IMTLD3D11Shader> {
 private:
   ManagedShader shader;
+  D3D10Interface d3d10;
 
 public:
   TShaderBase(MTLD3D11Device *device, ManagedShader shader)
       : MTLD3D11DeviceChild<Interface, IMTLD3D11Shader>(device),
-        shader(shader) {}
+        shader(shader),
+        d3d10(static_cast<Interface *>(this)) {}
 
   ~TShaderBase() {}
 
@@ -46,10 +53,17 @@ public:
 
     *ppvObject = nullptr;
 
-    if (riid == __uuidof(IUnknown) || riid == __uuidof(ID3D11DeviceChild) ||
-        riid == __uuidof(ID3D11View) || riid == __uuidof(Interface)) {
+    if (riid == __uuidof(IUnknown) || riid == __uuidof(ID3D11DeviceChild) || riid == __uuidof(Interface)) {
       *ppvObject = ref_and_cast<Interface>(this);
       return S_OK;
+    }
+
+    if constexpr (!std::is_same<D3D10Interface, NullD3D10Shader>::value) {
+      if (riid == __uuidof(ID3D10DeviceChild)
+          || riid == __uuidof(typename D3D10Interface::ImplementedInterface)) {
+        *ppvObject = ref_and_cast<D3D10Interface>(&d3d10);
+        return S_OK;
+      }
     }
 
     if (riid == __uuidof(IMTLD3D11Shader)) {
