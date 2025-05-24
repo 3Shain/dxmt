@@ -14,6 +14,7 @@
 #include "d3d11_swapchain.hpp"
 #include "d3d11_state_object.hpp"
 #include "dxgi_interfaces.h"
+#include "../d3d10/d3d10_device.hpp"
 #include "dxmt_command_queue.hpp"
 #include "dxmt_device.hpp"
 #include "dxmt_format.hpp"
@@ -23,6 +24,7 @@
 #include "thread.hpp"
 #include "util_env.hpp"
 #include "dxgi_object.hpp"
+#include <memory>
 #include <mutex>
 #include <thread>
 #include <unordered_map>
@@ -57,6 +59,7 @@ const GUID kGpaUUID = {0xccffef16,
                        {0xbc, 0xe3, 0xcd, 0x95, 0x33, 0x69, 0xa3, 0x9a}};
 
 class MTLD3D11DeviceImpl final : public MTLD3D11Device, public IMTLD3D11DeviceExt {
+friend class MTLD3D11DXGIDevice;
 public:
   MTLD3D11DeviceImpl(MTLDXGIObject<IMTLDXGIDevice> *container,
                  IMTLDXGIAdapter *pAdapter, D3D_FEATURE_LEVEL FeatureLevel,
@@ -69,6 +72,7 @@ public:
     commandlist_pool_ = InitializeCommandListPool(this);
     pipeline_cache_ = InitializePipelineCache(this);
     context_ = InitializeImmediateContext(this, device_.queue());
+    d3d10_ = std::make_unique<MTLD3D10Device>(this, context_.get());
     is_traced_ = !!::GetModuleHandle("dxgitrace.dll");
     format_inspector.Inspect(GetMTLDevice());
   }
@@ -721,7 +725,7 @@ public:
     return m_FeatureLevel;
   }
 
-  UINT STDMETHODCALLTYPE GetCreationFlags() override { return m_FeatureFlags; }
+  UINT STDMETHODCALLTYPE GetCreationFlags() override { return m_FeatureFlags & 0x7fffffff; }
 
   HRESULT STDMETHODCALLTYPE GetDeviceRemovedReason() override {
     // unless we are deal with eGPU, this method should awalys return S_OK?
@@ -1072,6 +1076,14 @@ public:
     return format_inspector.textureCapabilities.at(Format);
   };
 
+  virtual IMTLD3D11DeviceContext *GetImmediateContextPrivate() final {
+    return context_.get();
+  };
+
+  virtual unsigned int GetDirectXVersion() final {
+    return m_FeatureFlags & 0x80000000 ? 10 : 11;
+  };
+
 private:
   MTLDXGIObject<IMTLDXGIDevice> *m_container;
   IMTLDXGIAdapter *adapter_;
@@ -1099,6 +1111,7 @@ private:
   Device& device_;
   /** ensure destructor called first */
   std::unique_ptr<MTLD3D11DeviceContextBase> context_;
+  std::unique_ptr<MTLD3D10Device> d3d10_;
 };
 
 class MTLD3D11Multithread : public ID3D11Multithread {
@@ -1188,6 +1201,11 @@ public:
     if (riid == __uuidof(ID3D11Device) || riid == __uuidof(ID3D11Device1) ||
         riid == __uuidof(ID3D11Device2) || riid == __uuidof(ID3D11Device3)) {
       *ppvObject = ref_and_cast<ID3D11Device>(&d3d11_device_);
+      return S_OK;
+    }
+
+    if (riid == __uuidof(ID3D10Device) || riid == __uuidof(ID3D10Device1)) {
+      *ppvObject = ref_and_cast<ID3D10Device>(d3d11_device_.d3d10_.get());
       return S_OK;
     }
 
