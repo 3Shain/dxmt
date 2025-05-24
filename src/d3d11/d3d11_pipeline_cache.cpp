@@ -5,6 +5,8 @@
 #include "d3d11_pipeline.hpp"
 #include "log/log.hpp"
 #include "sha1/sha1_util.hpp"
+#include "../d3d10/d3d10_shader.hpp"
+#include "../d3d10/d3d10_input_layout.hpp"
 #include <cstring>
 #include <shared_mutex>
 
@@ -110,7 +112,7 @@ class MTLD3D11InputLayout final
 public:
   MTLD3D11InputLayout(MTLD3D11Device *device, ManagedInputLayout input_layout)
       : MTLD3D11DeviceChild<IMTLD3D11InputLayout>(device),
-        input_layout(input_layout) {}
+        input_layout(input_layout), d3d10(this) {}
 
   ~MTLD3D11InputLayout() {}
 
@@ -128,6 +130,12 @@ public:
       return S_OK;
     }
 
+    if (riid == __uuidof(ID3D10DeviceChild) ||
+        riid == __uuidof(ID3D10InputLayout)) {
+      *ppvObject = ref(&d3d10);
+      return S_OK;
+    }
+
     if (logQueryInterfaceError(__uuidof(ID3D11InputLayout), riid)) {
       WARN("D3D311InputLayout: Unknown interface query ", str::format(riid));
     }
@@ -139,6 +147,7 @@ public:
 
 private:
   ManagedInputLayout input_layout;
+  MTLD3D10InputLayout d3d10;
 };
 
 class PipelineCache : public MTLD3D11PipelineCacheBase {
@@ -224,7 +233,7 @@ class PipelineCache : public MTLD3D11PipelineCacheBase {
       return E_FAIL;
     }
     *ppShader =
-        ref(new TShaderBase<ID3D11VertexShader>(device, managed_shader));
+        ref(new TShaderBase<ID3D11VertexShader, MTLD3D10VertexShader>(device, managed_shader));
     return S_OK;
   }
 
@@ -234,7 +243,7 @@ class PipelineCache : public MTLD3D11PipelineCacheBase {
     if (!managed_shader) {
       return E_FAIL;
     }
-    *ppShader = ref(new TShaderBase<ID3D11PixelShader>(device, managed_shader));
+    *ppShader = ref(new TShaderBase<ID3D11PixelShader, MTLD3D10PixelShader>(device, managed_shader));
     return S_OK;
   }
 
@@ -268,7 +277,7 @@ class PipelineCache : public MTLD3D11PipelineCacheBase {
       return E_FAIL;
     }
     *ppShader =
-        ref(new TShaderBase<ID3D11GeometryShader>(device, managed_shader));
+        ref(new TShaderBase<ID3D11GeometryShader, MTLD3D10GeometryShader>(device, managed_shader));
     return S_OK;
   }
 
