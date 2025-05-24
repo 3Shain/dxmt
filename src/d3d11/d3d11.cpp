@@ -61,6 +61,9 @@ D3D11CoreCreateDevice(IDXGIFactory *pFactory, IDXGIAdapter *pAdapter,
     return E_INVALIDARG;
   }
 
+  if (!(Flags & D3D11_1_CREATE_DEVICE_CONTEXT_STATE_SINGLETHREADED))
+    WARN("Device is created without SINGLETHREADED flag, this may cause a problem.");
+
   try {
     Logger::info(str::format("Using feature level ", devFeatureLevel));
 

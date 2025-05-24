@@ -27,10 +27,19 @@ d3d11_src = [
   'd3d11_context_def.cpp',
 ]
 
+d3d10_src = [
+  '../d3d10/d3d10_buffer.cpp',
+  '../d3d10/d3d10_device.cpp',
+  '../d3d10/d3d10_state_object.cpp',
+  '../d3d10/d3d10_texture.cpp',
+  '../d3d10/d3d10_util.cpp',
+  '../d3d10/d3d10_view.cpp',
+]
+
 d3d11_ld_args      = ['-L' + windows_native_install_dir] # a nice trick to force relink
 d3d11_link_depends = []
 
-d3d11_dll = shared_library('d3d11', d3d11_src, d3d11_res,
+d3d11_dll = shared_library('d3d11', d3d11_src, d3d10_src, d3d11_res,
   name_prefix         : '',
   dependencies        : [ 
     dxgi_dep, 

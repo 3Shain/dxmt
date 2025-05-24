@@ -9,7 +9,7 @@ d3d10_link_depends = []
 
 d3d10core_dll = shared_library('d3d10core', d3d10core_src, d3d10core_res,
   name_prefix         : '',
-  dependencies        : [ dxgi_dep, util_dep ],
+  dependencies        : [ d3d11_dep, dxgi_dep, util_dep ],
   include_directories : [ dxmt_include_path ],
   install             : true,
   install_dir         : windows_native_install_dir,

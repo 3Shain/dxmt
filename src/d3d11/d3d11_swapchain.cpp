@@ -41,6 +41,7 @@ public:
       layer_factory_weak_(pLayerFactoryWeakref),
       presentation_count_(0),
       desc_(*pDesc),
+      device_context_(pDevice->GetImmediateContextPrivate()),
       hWnd(hWnd),
       monitor_(wsi::getWindowMonitor(hWnd)),
       hud(WMT::DeveloperHUDProperties::instance()) {
@@ -58,10 +59,6 @@ public:
     layer_props.opaque = false;
     layer_props.display_sync_enabled = false;
     layer_props.framebuffer_only = true;
-
-    Com<ID3D11DeviceContext1> context;
-    m_device->GetImmediateContext1(&context);
-    context->QueryInterface(IID_PPV_ARGS(&device_context_));
 
     frame_latency = kSwapchainLatency;
     present_semaphore_ = CreateSemaphore(nullptr, frame_latency,
@@ -87,7 +84,7 @@ public:
                            (double)current_mode.refreshRate.denominator;
     }
 
-    hud.initialize(GetVersionDescriptionText(11, m_device->GetFeatureLevel()));
+    hud.initialize(GetVersionDescriptionText(m_device->GetDirectXVersion(), m_device->GetFeatureLevel()));
 
     backbuffer_desc_ = D3D11_TEXTURE2D_DESC1 {
       .Width = desc_.Width,
@@ -754,7 +751,7 @@ private:
   DXGI_SWAP_CHAIN_DESC1 desc_;
   DXGI_SWAP_CHAIN_FULLSCREEN_DESC fullscreen_desc_;
   D3D11_TEXTURE2D_DESC1 backbuffer_desc_;
-  Com<IMTLD3D11DeviceContext> device_context_;
+  IMTLD3D11DeviceContext* device_context_;
   Com<D3D11ResourceCommon, false> backbuffer_;
   HANDLE present_semaphore_;
   HWND hWnd;

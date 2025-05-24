@@ -3,6 +3,7 @@
 #include "d3d11_device.hpp"
 #include "d3d11_state_object.hpp"
 #include "log/log.hpp"
+#include "../d3d10/d3d10_state_object.hpp"
 
 namespace dxmt {
 
@@ -186,7 +187,7 @@ public:
                        WMT::Reference<WMT::SamplerState> &&samplerState,
                        const D3D11_SAMPLER_DESC &desc, float lod_bias)
       : ManagedDeviceChild<IMTLD3D11SamplerState>(device), desc_(desc),
-        metal_sampler_state_(std::move(samplerState)), info(info),
+        metal_sampler_state_(std::move(samplerState)), d3d10_(this), info(info),
         lod_bias(lod_bias) {}
   ~MTLD3D11SamplerState() {}
 
@@ -201,6 +202,12 @@ public:
         riid == __uuidof(ID3D11SamplerState) ||
         riid == __uuidof(IMTLD3D11SamplerState)) {
       *ppvObject = ref(this);
+      return S_OK;
+    }
+
+    if (riid == __uuidof(ID3D10DeviceChild) ||
+        riid == __uuidof(ID3D10SamplerState)) {
+      *ppvObject = ref(&d3d10_);
       return S_OK;
     }
 
@@ -226,6 +233,7 @@ public:
 private:
   const D3D11_SAMPLER_DESC desc_;
   WMT::Reference<WMT::SamplerState> metal_sampler_state_;
+  MTLD3D10SamplerState d3d10_;
   WMTSamplerInfo info;
   float lod_bias;
 };
@@ -237,7 +245,7 @@ class MTLD3D11BlendState : public ManagedDeviceChild<IMTLD3D11BlendState> {
 public:
   friend class MTLD3D11DeviceContext;
   MTLD3D11BlendState(MTLD3D11Device *device, const D3D11_BLEND_DESC1 &desc)
-      : ManagedDeviceChild<IMTLD3D11BlendState>(device), desc_(desc) {
+      : ManagedDeviceChild<IMTLD3D11BlendState>(device), desc_(desc), d3d10_(this) {
     dual_source_blending_ =
         (desc_.RenderTarget[0].SrcBlend >= D3D11_BLEND_SRC1_COLOR ||
          desc_.RenderTarget[0].SrcBlendAlpha >= D3D11_BLEND_SRC1_COLOR ||
@@ -258,6 +266,13 @@ public:
         riid == __uuidof(ID3D11BlendState1) ||
         riid == __uuidof(IMTLD3D11BlendState)) {
       *ppvObject = ref(this);
+      return S_OK;
+    }
+
+    if (riid == __uuidof(ID3D10DeviceChild) ||
+        riid == __uuidof(ID3D10BlendState) ||
+        riid == __uuidof(ID3D10BlendState1)) {
+      *ppvObject = ref(&d3d10_);
       return S_OK;
     }
 
@@ -333,6 +348,7 @@ public:
 private:
   const D3D11_BLEND_DESC1 desc_;
   bool dual_source_blending_;
+  MTLD3D10BlendState d3d10_;
 };
 
 // RasterizerState
@@ -344,7 +360,7 @@ public:
   friend class MTLD3D11DeviceContext;
   MTLD3D11RasterizerState(MTLD3D11Device *device,
                           const D3D11_RASTERIZER_DESC2 *desc)
-      : ManagedDeviceChild<IMTLD3D11RasterizerState>(device), m_desc(*desc) {}
+      : ManagedDeviceChild<IMTLD3D11RasterizerState>(device), desc_(*desc), d3d10_(this) {}
   ~MTLD3D11RasterizerState() {};
 
   HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid,
@@ -363,6 +379,12 @@ public:
       return S_OK;
     }
 
+    if (riid == __uuidof(ID3D10DeviceChild) ||
+        riid == __uuidof(ID3D10RasterizerState)) {
+      *ppvObject = ref(&d3d10_);
+      return S_OK;
+    }
+
     if (logQueryInterfaceError(__uuidof(IMTLD3D11RasterizerState), riid)) {
       WARN("D3D11RasterizerState: Unknown interface query ", str::format(riid));
     }
@@ -371,41 +393,41 @@ public:
   }
 
   void STDMETHODCALLTYPE GetDesc(D3D11_RASTERIZER_DESC *pDesc) final {
-    pDesc->FillMode = m_desc.FillMode;
-    pDesc->CullMode = m_desc.CullMode;
-    pDesc->FrontCounterClockwise = m_desc.FrontCounterClockwise;
-    pDesc->DepthBias = m_desc.DepthBias;
-    pDesc->DepthBiasClamp = m_desc.DepthBiasClamp;
-    pDesc->SlopeScaledDepthBias = m_desc.SlopeScaledDepthBias;
-    pDesc->DepthClipEnable = m_desc.DepthClipEnable;
-    pDesc->ScissorEnable = m_desc.ScissorEnable;
-    pDesc->MultisampleEnable = m_desc.MultisampleEnable;
-    pDesc->AntialiasedLineEnable = m_desc.AntialiasedLineEnable;
+    pDesc->FillMode = desc_.FillMode;
+    pDesc->CullMode = desc_.CullMode;
+    pDesc->FrontCounterClockwise = desc_.FrontCounterClockwise;
+    pDesc->DepthBias = desc_.DepthBias;
+    pDesc->DepthBiasClamp = desc_.DepthBiasClamp;
+    pDesc->SlopeScaledDepthBias = desc_.SlopeScaledDepthBias;
+    pDesc->DepthClipEnable = desc_.DepthClipEnable;
+    pDesc->ScissorEnable = desc_.ScissorEnable;
+    pDesc->MultisampleEnable = desc_.MultisampleEnable;
+    pDesc->AntialiasedLineEnable = desc_.AntialiasedLineEnable;
   }
 
   void STDMETHODCALLTYPE GetDesc1(D3D11_RASTERIZER_DESC1 *pDesc) final {
-    pDesc->FillMode = m_desc.FillMode;
-    pDesc->CullMode = m_desc.CullMode;
-    pDesc->FrontCounterClockwise = m_desc.FrontCounterClockwise;
-    pDesc->DepthBias = m_desc.DepthBias;
-    pDesc->DepthBiasClamp = m_desc.DepthBiasClamp;
-    pDesc->SlopeScaledDepthBias = m_desc.SlopeScaledDepthBias;
-    pDesc->DepthClipEnable = m_desc.DepthClipEnable;
-    pDesc->ScissorEnable = m_desc.ScissorEnable;
-    pDesc->MultisampleEnable = m_desc.MultisampleEnable;
-    pDesc->AntialiasedLineEnable = m_desc.AntialiasedLineEnable;
-    pDesc->ForcedSampleCount = m_desc.ForcedSampleCount;
+    pDesc->FillMode = desc_.FillMode;
+    pDesc->CullMode = desc_.CullMode;
+    pDesc->FrontCounterClockwise = desc_.FrontCounterClockwise;
+    pDesc->DepthBias = desc_.DepthBias;
+    pDesc->DepthBiasClamp = desc_.DepthBiasClamp;
+    pDesc->SlopeScaledDepthBias = desc_.SlopeScaledDepthBias;
+    pDesc->DepthClipEnable = desc_.DepthClipEnable;
+    pDesc->ScissorEnable = desc_.ScissorEnable;
+    pDesc->MultisampleEnable = desc_.MultisampleEnable;
+    pDesc->AntialiasedLineEnable = desc_.AntialiasedLineEnable;
+    pDesc->ForcedSampleCount = desc_.ForcedSampleCount;
   }
 
   void STDMETHODCALLTYPE GetDesc2(D3D11_RASTERIZER_DESC2 *pDesc) final {
-    *pDesc = m_desc;
+    *pDesc = desc_;
   }
 
   void SetupRasterizerState(wmtcmd_render_setrasterizerstate& cmd) {
 
-    cmd.fill_mode = m_desc.FillMode == D3D11_FILL_SOLID ? WMTTriangleFillModeFill : WMTTriangleFillModeLines;
+    cmd.fill_mode = desc_.FillMode == D3D11_FILL_SOLID ? WMTTriangleFillModeFill : WMTTriangleFillModeLines;
 
-    switch (m_desc.CullMode) {
+    switch (desc_.CullMode) {
     case D3D11_CULL_BACK:
       cmd.cull_mode = WMTCullModeBack;
       break;
@@ -418,33 +440,34 @@ public:
     }
 
     // https://github.com/gpuweb/gpuweb/issues/2100#issuecomment-924536243
-    cmd.depth_clip_mode = m_desc.DepthClipEnable ? WMTDepthClipModeClip : WMTDepthClipModeClamp;
+    cmd.depth_clip_mode = desc_.DepthClipEnable ? WMTDepthClipModeClip : WMTDepthClipModeClamp;
 
-    cmd.depth_bias = m_desc.DepthBias;
-    cmd.scole_scale = m_desc.SlopeScaledDepthBias;
-    cmd.depth_bias_clamp = m_desc.DepthBiasClamp;
+    cmd.depth_bias = desc_.DepthBias;
+    cmd.scole_scale = desc_.SlopeScaledDepthBias;
+    cmd.depth_bias_clamp = desc_.DepthBiasClamp;
 
-    cmd.winding = m_desc.FrontCounterClockwise ? WMTWindingCounterClockwise: WMTWindingClockwise;
+    cmd.winding = desc_.FrontCounterClockwise ? WMTWindingCounterClockwise: WMTWindingClockwise;
 
-    if (m_desc.AntialiasedLineEnable) {
+    if (desc_.AntialiasedLineEnable) {
       // nop , we don't support this
     }
 
-    if (m_desc.MultisampleEnable) {
+    if (desc_.MultisampleEnable) {
       // used in combination with AntialiasedLineEnable, not supported yet.
     }
 
-    // m_desc.ScissorEnable : handled outside
+    // desc_.ScissorEnable : handled outside
 
-    // m_desc.ForcedSampleCount : handled outside
+    // desc_.ForcedSampleCount : handled outside
   }
 
-  bool IsScissorEnabled() { return m_desc.ScissorEnable; }
+  bool IsScissorEnabled() { return desc_.ScissorEnable; }
 
-  uint32_t UAVOnlySampleCount() { return std::max(1u, m_desc.ForcedSampleCount); }
+  uint32_t UAVOnlySampleCount() { return std::max(1u, desc_.ForcedSampleCount); }
 
 private:
-  const D3D11_RASTERIZER_DESC2 m_desc;
+  const D3D11_RASTERIZER_DESC2 desc_;
+  MTLD3D10RasterizerState d3d10_;
 };
 
 // DepthStencilState
@@ -459,7 +482,7 @@ public:
                             WMT::DepthStencilState stencil_disabled,
                             WMT::DepthStencilState depthsteancil_disabled,
                             const D3D11_DEPTH_STENCIL_DESC &desc)
-      : ManagedDeviceChild<IMTLD3D11DepthStencilState>(device), m_desc(desc),
+      : ManagedDeviceChild<IMTLD3D11DepthStencilState>(device), desc_(desc), d3d10_(this),
         state_default_(state), state_stencil_disabled_(stencil_disabled),
         state_depthstencil_disabled_(depthsteancil_disabled) {}
   ~MTLD3D11DepthStencilState() {};
@@ -478,6 +501,12 @@ public:
       return S_OK;
     }
 
+    if (riid == __uuidof(ID3D10DeviceChild) ||
+        riid == __uuidof(ID3D10DepthStencilState)) {
+      *ppvObject = ref(&d3d10_);
+      return S_OK;
+    }
+
     if (logQueryInterfaceError(__uuidof(IMTLD3D11DepthStencilState), riid)) {
       WARN("D3D11DepthStencilState: Unknown interface query ",
            str::format(riid));
@@ -487,7 +516,7 @@ public:
   }
 
   void STDMETHODCALLTYPE GetDesc(D3D11_DEPTH_STENCIL_DESC *pDesc) final {
-    *pDesc = m_desc;
+    *pDesc = desc_;
   }
 
   virtual WMT::DepthStencilState GetDepthStencilState(uint32_t planar_flags) {
@@ -505,11 +534,12 @@ public:
   }
 
   virtual bool IsEnabled() {
-    return m_desc.DepthEnable || m_desc.StencilEnable;
+    return desc_.DepthEnable || desc_.StencilEnable;
   }
 
 private:
-  const D3D11_DEPTH_STENCIL_DESC m_desc;
+  const D3D11_DEPTH_STENCIL_DESC desc_;
+  MTLD3D10DepthStencilState d3d10_;
   WMT::Reference<WMT::DepthStencilState> state_default_;
   WMT::Reference<WMT::DepthStencilState> state_stencil_disabled_;
   WMT::Reference<WMT::DepthStencilState> state_depthstencil_disabled_;
