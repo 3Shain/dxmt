@@ -995,8 +995,8 @@ typedef enum D3D10_SB_OPERAND_INDEX_REPRESENTATION
                                                      //   (HI32:LO32) followed
                                                      //   by extra operand
 } D3D10_SB_OPERAND_INDEX_REPRESENTATION;
-#define D3D10_SB_OPERAND_INDEX_REPRESENTATION_SHIFT(Dim) (22+3*((Dim)&3))
-#define D3D10_SB_OPERAND_INDEX_REPRESENTATION_MASK(Dim) (0x3<<D3D10_SB_OPERAND_INDEX_REPRESENTATION_SHIFT(Dim))
+#define D3D10_SB_OPERAND_INDEX_REPRESENTATION_SHIFT(Dim) (22+3*((Dim)&7))
+#define D3D10_SB_OPERAND_INDEX_REPRESENTATION_MASK(Dim) (0x7<<D3D10_SB_OPERAND_INDEX_REPRESENTATION_SHIFT(Dim))
 
 // DECODER MACRO: Determine from OperandToken0 what representation
 // an operand index is provided as (D3D10_SB_OPERAND_INDEX_REPRESENTATION enum),
