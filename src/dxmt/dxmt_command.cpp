@@ -36,11 +36,26 @@ EmulatedCommandContext::EmulatedCommandContext(WMT::Device device, ArgumentEncod
     WMTRenderPipelineInfo present_pipeline;
     WMT::InitializeRenderPipelineInfo(present_pipeline);
     present_pipeline.vertex_function = vs_present_quad;
+
     present_pipeline.fragment_function = fs_present_quad;
     present_pipeline.colors[0].pixel_format = WMTPixelFormatBGRA8Unorm;
     present_swapchain_blit = device.newRenderPipelineState(present_pipeline, error);
+    present_pipeline.colors[0].pixel_format = WMTPixelFormatRGBA8Unorm;
+    present_swapchain_blit_rgba8 = device.newRenderPipelineState(present_pipeline, error);
+    present_pipeline.colors[0].pixel_format = WMTPixelFormatRGBA16Float;
+    present_swapchain_blit_rgba16 = device.newRenderPipelineState(present_pipeline, error);
+    present_pipeline.colors[0].pixel_format = WMTPixelFormatRGB10A2Unorm;
+    present_swapchain_blit_rgb10a2 = device.newRenderPipelineState(present_pipeline, error);
+
     present_pipeline.fragment_function = fs_present_quad_scaled;
+    present_pipeline.colors[0].pixel_format = WMTPixelFormatBGRA8Unorm;
     present_swapchain_scale = device.newRenderPipelineState(present_pipeline, error);
+    present_pipeline.colors[0].pixel_format = WMTPixelFormatRGBA8Unorm;
+    present_swapchain_scale_rgba8 = device.newRenderPipelineState(present_pipeline, error);
+    present_pipeline.colors[0].pixel_format = WMTPixelFormatRGBA16Float;
+    present_swapchain_scale_rgba16 = device.newRenderPipelineState(present_pipeline, error);
+    present_pipeline.colors[0].pixel_format = WMTPixelFormatRGB10A2Unorm;
+    present_swapchain_scale_rgb10a2 = device.newRenderPipelineState(present_pipeline, error);
   }
 
   auto gs_draw_arguments_marshal_vs = library.newFunction("gs_draw_arguments_marshal");
