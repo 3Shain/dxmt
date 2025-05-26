@@ -46,6 +46,21 @@ WMTPixelFormat ConvertSwapChainFormat(DXGI_FORMAT format) {
   }
 }
 
+WMTColorSpace ConvertColorSpace(DXGI_COLOR_SPACE_TYPE color_space) {
+  switch (color_space) {
+  case DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709:
+    return WMTColorSpaceSRGB;
+  case DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709:
+    return WMTColorSpaceSRGBLinear;
+  case DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020:
+    return WMTColorSpaceHDR10;
+  case DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P2020:
+    return WMTColorSpaceBT2020;
+  default:
+    return WMTColorSpaceInvalid;
+  }
+}
+
 template <bool EnableMetalFX>
 class MTLD3D11SwapChain final : public MTLDXGISubObject<IDXGISwapChain4, MTLD3D11Device> {
 public:
@@ -132,6 +147,7 @@ public:
     ResizeBuffers(0, desc_.Width, desc_.Height, DXGI_FORMAT_UNKNOWN, desc_.Flags);
     if (!fullscreen_desc_.Windowed)
       EnterFullscreenMode(nullptr);
+    layer_weak_.setColorSpace(WMTColorSpaceSRGB); // set a default colorspace
   };
 
   ~MTLD3D11SwapChain() {
@@ -735,12 +751,13 @@ public:
     return DXGI_ERROR_INVALID_CALL;
   };
 
-  HRESULT STDMETHODCALLTYPE CheckColorSpaceSupport(DXGI_COLOR_SPACE_TYPE ColorSpace,
-                                 UINT *pColorSpaceSupport) override {
-    WARN("DXGISwapChain3::CheckColorSpaceSupport: stub");
-    if (pColorSpaceSupport) {
-      *pColorSpaceSupport = 0;
-    }
+  HRESULT STDMETHODCALLTYPE CheckColorSpaceSupport(
+      DXGI_COLOR_SPACE_TYPE ColorSpace, UINT *pColorSpaceSupport) override {
+    if (!pColorSpaceSupport)
+      return E_INVALIDARG;
+    *pColorSpaceSupport = CGColorSpace_checkColorSpaceSupported(ConvertColorSpace(ColorSpace))
+            ? DXGI_SWAP_CHAIN_COLOR_SPACE_SUPPORT_FLAG_PRESENT
+            : 0;
     return S_OK;
   };
 
@@ -757,8 +774,10 @@ public:
     return ResizeBuffers(BufferCount, Width, Height, Format, SwapChainFlags);
   }
 
-  HRESULT STDMETHODCALLTYPE SetColorSpace1(DXGI_COLOR_SPACE_TYPE ColorSpace) override {
-    WARN("DXGISwapChain3::SetColorSpace1: stub");
+  HRESULT STDMETHODCALLTYPE
+  SetColorSpace1(DXGI_COLOR_SPACE_TYPE ColorSpace) override {
+    if (!layer_weak_.setColorSpace(ConvertColorSpace(ColorSpace)))
+      return E_INVALIDARG;
     return S_OK;
   }
 
