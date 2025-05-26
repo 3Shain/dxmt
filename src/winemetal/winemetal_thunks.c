@@ -782,3 +782,27 @@ MetalLayer_setColorSpace(obj_handle_t layer, enum WMTColorSpace colorpsace) {
   UNIX_CALL(93, &params);
   return params.ret;
 }
+
+WINEMETAL_API uint32_t
+WMTGetPrimaryDisplayId() {
+  struct unixcall_generic_obj_ret params;
+  params.ret = 0;
+  UNIX_CALL(94, &params);
+  return params.ret;
+}
+
+WINEMETAL_API uint32_t
+WMTGetSecondaryDisplayId() {
+  struct unixcall_generic_obj_ret params;
+  params.ret = 0;
+  UNIX_CALL(95, &params);
+  return params.ret;
+}
+
+WINEMETAL_API void
+WMTGetDisplayDescription(uint32_t display_id, struct WMTDisplayDescription *desc) {
+  struct unixcall_generic_obj_ptr_noret params;
+  params.handle = display_id;
+  WMT_MEMPTR_SET(params.arg, desc);
+  UNIX_CALL(96, &params);
+}

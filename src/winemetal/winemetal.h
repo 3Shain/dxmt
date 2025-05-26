@@ -1523,4 +1523,20 @@ WINEMETAL_API bool CGColorSpace_checkColorSpaceSupported(enum WMTColorSpace colo
 
 WINEMETAL_API bool MetalLayer_setColorSpace(obj_handle_t layer, enum WMTColorSpace colorpsace);
 
+WINEMETAL_API uint32_t WMTGetPrimaryDisplayId();
+
+WINEMETAL_API uint32_t WMTGetSecondaryDisplayId();
+
+struct WMTDisplayDescription {
+  float red_primaries[2];
+  float blue_primaries[2];
+  float green_primaries[2];
+  float white_points[2];
+  float maximum_edr_color_component_value;
+  float maximum_potential_edr_color_component_value;
+  float maximum_reference_edr_color_component_value;
+};
+
+WINEMETAL_API void WMTGetDisplayDescription(uint32_t display_id, struct WMTDisplayDescription *desc);
+
 #endif
