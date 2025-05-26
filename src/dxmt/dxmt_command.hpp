@@ -153,13 +153,41 @@ public:
 
     encoder.setFragmentTexture(backbuffer, 0);
     uint32_t extend[4] = {(uint32_t)drawable.width(), (uint32_t)drawable.height(), 0, 0};
-    if (backbuffer.pixelFormat() != Forget_sRGB(backbuffer.pixelFormat()))
+    auto backbuffer_format = backbuffer.pixelFormat();
+    if (backbuffer_format != Forget_sRGB(backbuffer_format))
       extend[2] |= DXMT_PRESENT_FLAG_SRGB;
     encoder.setFragmentBytes(extend, sizeof(extend), 0);
-    if (backbuffer.width() == extend[0] && backbuffer.height() == extend[1])
-      encoder.setRenderPipelineState(present_swapchain_blit);
-    else
-      encoder.setRenderPipelineState(present_swapchain_scale);
+    if (backbuffer.width() == extend[0] && backbuffer.height() == extend[1]) {
+      switch (backbuffer_format) {
+      case WMTPixelFormatRGBA8Unorm:
+        encoder.setRenderPipelineState(present_swapchain_blit_rgba8);
+        break;
+      case WMTPixelFormatRGB10A2Unorm:
+        encoder.setRenderPipelineState(present_swapchain_blit_rgb10a2);
+        break;
+      case WMTPixelFormatRGBA16Float:
+        encoder.setRenderPipelineState(present_swapchain_blit_rgba16);
+        break;
+      default:
+        encoder.setRenderPipelineState(present_swapchain_blit);
+        break;
+      }
+    } else {
+      switch (backbuffer_format) {
+      case WMTPixelFormatRGBA8Unorm:
+        encoder.setRenderPipelineState(present_swapchain_scale_rgba8);
+        break;
+      case WMTPixelFormatRGB10A2Unorm:
+        encoder.setRenderPipelineState(present_swapchain_scale_rgb10a2);
+        break;
+      case WMTPixelFormatRGBA16Float:
+        encoder.setRenderPipelineState(present_swapchain_scale_rgba16);
+        break;
+      default:
+        encoder.setRenderPipelineState(present_swapchain_scale);
+        break;
+      }
+    }
     encoder.setViewport({0, 0, (double)extend[0], (double)extend[1], 0, 1});
     encoder.drawPrimitives(WMTPrimitiveTypeTriangle, 0, 3);
 
@@ -193,6 +221,12 @@ private:
 
   WMT::Reference<WMT::RenderPipelineState> present_swapchain_blit;
   WMT::Reference<WMT::RenderPipelineState> present_swapchain_scale;
+  WMT::Reference<WMT::RenderPipelineState> present_swapchain_blit_rgba8;
+  WMT::Reference<WMT::RenderPipelineState> present_swapchain_scale_rgba8;
+  WMT::Reference<WMT::RenderPipelineState> present_swapchain_blit_rgba16;
+  WMT::Reference<WMT::RenderPipelineState> present_swapchain_scale_rgba16;
+  WMT::Reference<WMT::RenderPipelineState> present_swapchain_blit_rgb10a2;
+  WMT::Reference<WMT::RenderPipelineState> present_swapchain_scale_rgb10a2;
   WMT::Reference<WMT::RenderPipelineState> gs_draw_arguments_marshal;
 };
 
