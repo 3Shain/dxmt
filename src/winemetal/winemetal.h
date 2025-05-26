@@ -1511,4 +1511,16 @@ WINEMETAL_API obj_handle_t MTLCommandBuffer_logs(obj_handle_t cmdbuf);
 WINEMETAL_API uint64_t
 MTLLogContainer_enumerate(obj_handle_t logs, uint64_t start, uint64_t buffer_size, obj_handle_t *buffer);
 
+enum WMTColorSpace {
+  WMTColorSpaceSRGB = 0b000,
+  WMTColorSpaceSRGBLinear = 0b001,
+  WMTColorSpaceBT2020 = 0b010,
+  WMTColorSpaceHDR10 = 0b100,
+  WMTColorSpaceInvalid = 0xFFFFFFFF,
+};
+
+WINEMETAL_API bool CGColorSpace_checkColorSpaceSupported(enum WMTColorSpace colorspace);
+
+WINEMETAL_API bool MetalLayer_setColorSpace(obj_handle_t layer, enum WMTColorSpace colorpsace);
+
 #endif

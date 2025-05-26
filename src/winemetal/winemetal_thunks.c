@@ -763,3 +763,22 @@ MTLLogContainer_enumerate(obj_handle_t logs, uint64_t start, uint64_t buffer_siz
   UNIX_CALL(91, &params);
   return params.ret_read;
 }
+
+WINEMETAL_API bool
+CGColorSpace_checkColorSpaceSupported(enum WMTColorSpace colorspace) {
+  struct unixcall_generic_obj_uint64_ret params;
+  params.handle = colorspace;
+  params.ret = 0;
+  UNIX_CALL(92, &params);
+  return params.ret;
+}
+
+WINEMETAL_API bool
+MetalLayer_setColorSpace(obj_handle_t layer, enum WMTColorSpace colorpsace) {
+  struct unixcall_generic_obj_uint64_uint64_ret params;
+  params.handle = layer;
+  params.arg = colorpsace;
+  params.ret = 0;
+  UNIX_CALL(93, &params);
+  return params.ret;
+}

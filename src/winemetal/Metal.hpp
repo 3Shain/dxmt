@@ -449,6 +449,11 @@ public:
   getProps(WMTLayerProps &props) {
     MetalLayer_getProps(handle, &props);
   };
+
+  bool
+  setColorSpace(WMTColorSpace colorspace) {
+    return MetalLayer_setColorSpace(handle, colorspace);
+  };
 };
 
 class FXTemporalScaler : public Object {
