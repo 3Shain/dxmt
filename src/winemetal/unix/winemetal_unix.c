@@ -1,6 +1,6 @@
-#include <CoreGraphics/CoreGraphics.h>
-#import <Foundation/Foundation.h>
 #include <dlfcn.h>
+#import <Cocoa/Cocoa.h>
+#import <ColorSync/ColorSync.h>
 #import <Metal/Metal.h>
 #import <MetalFX/MetalFX.h>
 #import <QuartzCore/QuartzCore.h>
@@ -1983,6 +1983,116 @@ _MetalLayer_setColorSpace(void *obj) {
   return STATUS_SUCCESS;
 }
 
+static NTSTATUS
+_WMTGetPrimaryDisplayId(void *obj) {
+  struct unixcall_generic_obj_ret *params = obj;
+  params->ret = CGMainDisplayID();
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_WMTGetSecondaryDisplayId(void *obj) {
+  struct unixcall_generic_obj_ret *params = obj;
+  params->ret = kCGNullDirectDisplay;
+
+  uint32_t count = 0;
+  CGGetOnlineDisplayList(0, NULL, &count);
+
+  if (count == 0)
+    return STATUS_SUCCESS;
+
+  CGDirectDisplayID main_display = CGMainDisplayID();
+  CGDirectDisplayID displays[count];
+  CGGetOnlineDisplayList(count, displays, &count);
+
+  for (uint32_t i = 0; i < count; i++) {
+    CGDirectDisplayID id = displays[i];
+    if (id == main_display)
+      continue;
+    if (CGDisplayMirrorsDisplay(id) != kCGNullDirectDisplay)
+      continue;
+    params->ret = id;
+    break;
+  }
+
+  return STATUS_SUCCESS;
+}
+
+typedef struct icc_XYZ_t {
+  uint32_t sig;      // 0x205a5958
+  uint32_t reserved; // 0
+  int32_t x;
+  int32_t y;
+  int32_t z;
+} icc_XYZ_t;
+
+bool
+GetChromaticity_xy(ColorSyncProfileRef profile, CFStringRef tag, float *out_x, float *out_y) {
+  CFDataRef tag_data = ColorSyncProfileCopyTag(profile, tag);
+  if (!tag_data)
+    return false;
+  if (CFDataGetLength(tag_data) != sizeof(icc_XYZ_t))
+    return false;
+  icc_XYZ_t *data = (icc_XYZ_t *)CFDataGetBytePtr(tag_data);
+  if (data->sig != 0x205a5958)
+    return false;
+  double X = (int32_t)__builtin_bswap32(data->x) / 65536.0;
+  double Y = (int32_t)__builtin_bswap32(data->y) / 65536.0;
+  double Z = (int32_t)__builtin_bswap32(data->z) / 65536.0;
+  *out_x = X / (X + Y + Z);
+  *out_y = Y / (X + Y + Z);
+  return true;
+}
+
+bool
+GetDisplayColorGamut(ColorSyncProfileRef profile, struct WMTDisplayDescription *desc_out) {
+  return GetChromaticity_xy(
+             profile, kColorSyncSigMediaWhitePointTag, &desc_out->white_points[0], &desc_out->white_points[1]
+         ) &&
+         GetChromaticity_xy(
+             profile, kColorSyncSigRedColorantTag, &desc_out->red_primaries[0], &desc_out->red_primaries[1]
+         ) &&
+         GetChromaticity_xy(
+             profile, kColorSyncSigGreenColorantTag, &desc_out->green_primaries[0], &desc_out->green_primaries[1]
+         ) &&
+         GetChromaticity_xy(
+             profile, kColorSyncSigBlueColorantTag, &desc_out->blue_primaries[0], &desc_out->blue_primaries[1]
+         );
+}
+
+NSScreen *
+GetNSScreenForDisplayID(CGDirectDisplayID display_id) {
+  for (NSScreen *screen in [NSScreen screens]) {
+    CGDirectDisplayID id = [[[screen deviceDescription] objectForKey:@"NSScreenNumber"] unsignedIntValue];
+    if (id == display_id) {
+      return screen;
+    }
+  }
+  return nil;
+}
+
+static NTSTATUS
+_WMTGetDisplayDescription(void *obj) {
+  struct unixcall_generic_obj_ptr_noret *params = obj;
+  CGDirectDisplayID display_id = params->handle;
+  struct WMTDisplayDescription *desc_out = params->arg.ptr;
+  ColorSyncProfileRef profile = ColorSyncProfileCreateWithDisplayID(display_id);
+  if (!profile || !GetDisplayColorGamut(profile, desc_out))
+    GetDisplayColorGamut(ColorSyncProfileCreateWithName(kColorSyncGenericRGBProfile), desc_out);
+  NSScreen *screen = GetNSScreenForDisplayID(display_id);
+  if (screen) {
+    desc_out->maximum_edr_color_component_value = [screen maximumExtendedDynamicRangeColorComponentValue];
+    desc_out->maximum_reference_edr_color_component_value =
+        [screen maximumReferenceExtendedDynamicRangeColorComponentValue];
+    desc_out->maximum_potential_edr_color_component_value =
+        [screen maximumPotentialExtendedDynamicRangeColorComponentValue];
+  } else {
+    desc_out->maximum_edr_color_component_value = 1.0;
+    desc_out->maximum_reference_edr_color_component_value = 0.0;
+    desc_out->maximum_potential_edr_color_component_value = 1.0;
+  }
+  return STATUS_SUCCESS;
+}
 
 const void *__wine_unix_call_funcs[] = {
     &_NSObject_retain,
@@ -2079,6 +2189,9 @@ const void *__wine_unix_call_funcs[] = {
     &_MTLLogContainer_enumerate,
     &_CGColorSpace_checkColorSpaceSupported,
     &_MetalLayer_setColorSpace,
+    &_WMTGetPrimaryDisplayId,
+    &_WMTGetSecondaryDisplayId,
+    &_WMTGetDisplayDescription,
 };
 
 const void *__wine_unix_call_wow64_funcs[] = {
@@ -2176,4 +2289,7 @@ const void *__wine_unix_call_wow64_funcs[] = {
     &_MTLLogContainer_enumerate,
     &_CGColorSpace_checkColorSpaceSupported,
     &_MetalLayer_setColorSpace,
+    &_WMTGetPrimaryDisplayId,
+    &_WMTGetSecondaryDisplayId,
+    &_WMTGetDisplayDescription,
 };
