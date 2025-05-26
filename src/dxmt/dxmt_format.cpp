@@ -1148,7 +1148,6 @@ MTLQueryDXGIFormat(WMT::Device device, uint32_t format, MTL_DXGI_FORMAT_DESC &de
   case DXGI_FORMAT_B8G8R8X8_UNORM: {
     description.PixelFormat = WMTPixelFormatBGRA8Unorm;
     description.BytesPerTexel = 4;
-    description.Flag = MTL_DXGI_FORMAT_BACKBUFFER;
     break;
   }
   case DXGI_FORMAT_R10G10B10_XR_BIAS_A2_UNORM:
@@ -1174,7 +1173,6 @@ MTLQueryDXGIFormat(WMT::Device device, uint32_t format, MTL_DXGI_FORMAT_DESC &de
   case DXGI_FORMAT_B8G8R8X8_UNORM_SRGB: {
     description.PixelFormat = WMTPixelFormatBGRA8Unorm_sRGB;
     description.BytesPerTexel = 4;
-    description.Flag = MTL_DXGI_FORMAT_BACKBUFFER;
     break;
   }
   case DXGI_FORMAT_BC6H_TYPELESS: {
