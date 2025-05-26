@@ -27,6 +27,24 @@ constexpr size_t kSwapchainLatency = 3;
 
 namespace dxmt {
 
+WMTPixelFormat ConvertSwapChainFormat(DXGI_FORMAT format) {
+  switch (format) {
+  case DXGI_FORMAT_B8G8R8A8_UNORM_SRGB:
+  case DXGI_FORMAT_B8G8R8A8_UNORM:
+    /* we do gamma correction in our own blit pass */
+    return WMTPixelFormatBGRA8Unorm;
+  case DXGI_FORMAT_R8G8B8A8_UNORM_SRGB:
+  case DXGI_FORMAT_R8G8B8A8_UNORM:
+    /* per document this is not supported*/
+    return WMTPixelFormatRGBA8Unorm;
+  case DXGI_FORMAT_R10G10B10A2_UNORM:
+    return WMTPixelFormatRGB10A2Unorm;
+  case DXGI_FORMAT_R16G16B16A16_FLOAT:
+    return WMTPixelFormatRGBA16Float;
+  default:
+    return WMTPixelFormatInvalid;
+  }
+}
 
 template <bool EnableMetalFX>
 class MTLD3D11SwapChain final : public MTLDXGISubObject<IDXGISwapChain4, MTLD3D11Device> {
@@ -55,9 +73,10 @@ public:
     layer_weak_.getProps(layer_props);
 
     layer_props.device = pDevice->GetMTLDevice();
-    layer_props.opaque = false;
+    layer_props.opaque = true;
     layer_props.display_sync_enabled = false;
-    layer_props.framebuffer_only = true;
+    layer_props.framebuffer_only = false; // how strangely setting it true results in worse performance
+    layer_props.pixel_format = ConvertSwapChainFormat(desc_.Format);
 
     Com<ID3D11DeviceContext1> context;
     m_device->GetImmediateContext1(&context);
@@ -116,8 +135,6 @@ public:
     ResizeBuffers(0, desc_.Width, desc_.Height, DXGI_FORMAT_UNKNOWN, desc_.Flags);
     if (!fullscreen_desc_.Windowed)
       EnterFullscreenMode(nullptr);
-
-    layer_weak_.setProps(layer_props);
   };
 
   ~MTLD3D11SwapChain() {
@@ -300,7 +317,8 @@ public:
       desc_.Height = Height;
     }
     if (Format != DXGI_FORMAT_UNKNOWN) {
-      desc_.Format = Format;
+      if (ConvertSwapChainFormat(Format) != WMTPixelFormatInvalid)
+        desc_.Format = Format;
     }
 
     backbuffer_ = nullptr;
@@ -310,8 +328,9 @@ public:
     } else {
       backbuffer_desc_.Width = desc_.Width;
       backbuffer_desc_.Height = desc_.Height;
-      ApplyResize();
     }
+
+    ApplyLayerProps();
 
     backbuffer_desc_.Format = desc_.Format;
 
@@ -394,9 +413,10 @@ public:
   };
 
   void
-  ApplyResize() {
+  ApplyLayerProps() {
     layer_props.drawable_width = (double)(desc_.Width * scale_factor),
     layer_props.drawable_height =  (double)(desc_.Height * scale_factor);
+    layer_props.pixel_format = ConvertSwapChainFormat(desc_.Format);
     layer_weak_.setProps(layer_props);
   };
   
