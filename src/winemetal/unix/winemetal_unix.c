@@ -1350,6 +1350,7 @@ _MetalLayer_setProps(void *obj) {
   layer.contentsScale = props->contents_scale;
   layer.displaySyncEnabled = props->display_sync_enabled;
   layer.drawableSize = CGSizeMake(props->drawable_width, props->drawable_height);
+  layer.pixelFormat = (MTLPixelFormat)props->pixel_format;
   return STATUS_SUCCESS;
 }
 
@@ -1365,6 +1366,7 @@ _MetalLayer_getProps(void *obj) {
   props->display_sync_enabled = layer.displaySyncEnabled;
   props->drawable_height = layer.drawableSize.height;
   props->drawable_width = layer.drawableSize.width;
+  props->pixel_format = layer.pixelFormat;
   return STATUS_SUCCESS;
 }
 
