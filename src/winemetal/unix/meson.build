@@ -16,6 +16,7 @@ winemetal_unix_ld_args = [
   winemac_so,
   '-weak_framework', 'CoreFoundation', '-weak_framework', 'Metal',
   '-framework', 'MetalFX', '-weak_framework', 'Foundation',
+  '-weak_framework', 'CoreGraphics', '-weak_framework', 'QuartzCore',
 ]
 winemetal_unix_link_depends = []
 

@@ -1,3 +1,4 @@
+#include <CoreGraphics/CoreGraphics.h>
 #import <Foundation/Foundation.h>
 #include <dlfcn.h>
 #import <Metal/Metal.h>
@@ -1932,6 +1933,57 @@ _MTLLogContainer_enumerate(void *obj) {
   return STATUS_SUCCESS;
 }
 
+CFStringRef
+GetColorSpaceName(enum WMTColorSpace colorspace) {
+  switch (colorspace) {
+  case WMTColorSpaceSRGB:
+    return kCGColorSpaceSRGB;
+  case WMTColorSpaceSRGBLinear:
+    return kCGColorSpaceExtendedLinearSRGB;
+  case WMTColorSpaceBT2020:
+    return kCGColorSpaceITUR_2020_sRGBGamma;
+  case WMTColorSpaceHDR10:
+    return kCGColorSpaceITUR_2100_PQ;
+  default:
+    return nil;
+  }
+}
+
+static NTSTATUS
+_CGColorSpace_checkColorSpaceSupported(void *obj) {
+  struct unixcall_generic_obj_uint64_ret *params = obj;
+  params->ret = false;
+  CFStringRef name = GetColorSpaceName((enum WMTColorSpace)params->handle);
+  if (!name)
+    return STATUS_SUCCESS;
+  CGColorSpaceRef ref = CGColorSpaceCreateWithName(name);
+  if (!ref)
+    return STATUS_SUCCESS;
+  CGColorSpaceRelease(ref);
+  params->ret = true;
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_MetalLayer_setColorSpace(void *obj) {
+  struct unixcall_generic_obj_uint64_uint64_ret *params = obj;
+  CAMetalLayer *layer = (CAMetalLayer *)params->handle;
+  enum WMTColorSpace colorspace = params->arg;
+  CFStringRef name = GetColorSpaceName(colorspace);
+  params->ret = false;
+  if (!name)
+    return STATUS_SUCCESS;
+  CGColorSpaceRef ref = CGColorSpaceCreateWithName(name);
+  if (!ref)
+    return STATUS_SUCCESS;
+  layer.colorspace = ref;
+  layer.wantsExtendedDynamicRangeContent = colorspace & 0b100 /* HDR */;
+  CGColorSpaceRelease(ref);
+  params->ret = true;
+  return STATUS_SUCCESS;
+}
+
+
 const void *__wine_unix_call_funcs[] = {
     &_NSObject_retain,
     &_NSObject_release,
@@ -2025,6 +2077,8 @@ const void *__wine_unix_call_funcs[] = {
     &_MTLCommandBuffer_error,
     &_MTLCommandBuffer_logs,
     &_MTLLogContainer_enumerate,
+    &_CGColorSpace_checkColorSpaceSupported,
+    &_MetalLayer_setColorSpace,
 };
 
 const void *__wine_unix_call_wow64_funcs[] = {
@@ -2120,4 +2174,6 @@ const void *__wine_unix_call_wow64_funcs[] = {
     &_MTLCommandBuffer_error,
     &_MTLCommandBuffer_logs,
     &_MTLLogContainer_enumerate,
+    &_CGColorSpace_checkColorSpaceSupported,
+    &_MetalLayer_setColorSpace,
 };
