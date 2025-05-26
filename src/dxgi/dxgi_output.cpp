@@ -136,7 +136,13 @@ void FilterModesByDesc(std::vector<DXGI_MODE_DESC1> &Modes,
 class MTLDXGIOutput : public MTLDXGIObject<IDXGIOutput6> {
 public:
   MTLDXGIOutput(IMTLDXGIAdapter *adapter, HMONITOR monitor)
-      : m_adapter(adapter), m_monitor(monitor) {}
+      : adapter_(adapter), monitor_(monitor) {
+    WMTGetDisplayDescription(monitor_ == wsi::getDefaultMonitor()
+                                 ? WMTGetPrimaryDisplayId()
+                                 : WMTGetSecondaryDisplayId(),
+                             &native_desc_);
+  }
+
   ~MTLDXGIOutput() {}
 
   HRESULT
@@ -167,7 +173,7 @@ public:
   HRESULT
   STDMETHODCALLTYPE
   GetParent(REFIID riid, void **ppParent) final {
-    return m_adapter->QueryInterface(riid, ppParent);
+    return adapter_->QueryInterface(riid, ppParent);
   }
 
   HRESULT
@@ -176,19 +182,19 @@ public:
     if (pDesc == nullptr)
       return DXGI_ERROR_INVALID_CALL;
 
-    if (!wsi::getDesktopCoordinates(m_monitor, &pDesc->DesktopCoordinates)) {
+    if (!wsi::getDesktopCoordinates(monitor_, &pDesc->DesktopCoordinates)) {
       ERR("Failed to query monitor coords");
       return E_FAIL;
     }
 
-    if (!wsi::getDisplayName(m_monitor, pDesc->DeviceName)) {
+    if (!wsi::getDisplayName(monitor_, pDesc->DeviceName)) {
       ERR("Failed to query monitor name");
       return E_FAIL;
     }
 
     pDesc->AttachedToDesktop = 1;
     pDesc->Rotation = DXGI_MODE_ROTATION_UNSPECIFIED;
-    pDesc->Monitor = m_monitor;
+    pDesc->Monitor = monitor_;
     return S_OK;
   }
 
@@ -332,7 +338,7 @@ public:
       return S_OK;
     }
     MTL_DXGI_FORMAT_DESC formatDesc;
-    if (FAILED(MTLQueryDXGIFormat(this->m_adapter->GetMTLDevice(), EnumFormat, formatDesc))
+    if (FAILED(MTLQueryDXGIFormat(this->adapter_->GetMTLDevice(), EnumFormat, formatDesc))
       || !(formatDesc.Flag & MTL_DXGI_FORMAT_BACKBUFFER)) {
       *pNumModes = 0;
       return S_OK;
@@ -347,7 +353,7 @@ public:
 
     std::vector<DXGI_MODE_DESC1> modeList;
 
-    while (wsi::getDisplayMode(m_monitor, srcModeId++, &devMode)) {
+    while (wsi::getDisplayMode(monitor_, srcModeId++, &devMode)) {
       // Only enumerate interlaced modes if requested.
       if (devMode.interlaced && !(Flags & DXGI_ENUM_MODES_INTERLACED))
         continue;
@@ -415,7 +421,7 @@ public:
       return DXGI_ERROR_INVALID_CALL;
 
     wsi::WsiMode activeWsiMode = {};
-    wsi::getCurrentDisplayMode(m_monitor, &activeWsiMode);
+    wsi::getCurrentDisplayMode(monitor_, &activeWsiMode);
 
     DXGI_MODE_DESC1 activeMode = ConvertDisplayMode(activeWsiMode);
 
@@ -537,29 +543,30 @@ public:
     if (pDesc == nullptr)
       return DXGI_ERROR_INVALID_CALL;
 
-    if (!wsi::getDesktopCoordinates(m_monitor, &pDesc->DesktopCoordinates)) {
+    if (!wsi::getDesktopCoordinates(monitor_, &pDesc->DesktopCoordinates)) {
       ERR("Failed to query monitor coords");
       return E_FAIL;
     }
 
-    if (!wsi::getDisplayName(m_monitor, pDesc->DeviceName)) {
+    if (!wsi::getDisplayName(monitor_, pDesc->DeviceName)) {
       ERR("Failed to query monitor name");
       return E_FAIL;
     }
 
     pDesc->AttachedToDesktop = 1;
     pDesc->Rotation = DXGI_MODE_ROTATION_UNSPECIFIED;
-    pDesc->Monitor = m_monitor;
-    pDesc->BitsPerColor = 8; // FIXME:
-    pDesc->ColorSpace = DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709;
-    FLOAT s[2] = {0.0f, 1.0f};
-    memcpy(pDesc->RedPrimary, s, 8);
-    memcpy(pDesc->GreenPrimary, s, 8);
-    memcpy(pDesc->BluePrimary, s, 8);
-    memcpy(pDesc->WhitePoint, s, 8);
+    pDesc->Monitor = monitor_;
+    pDesc->BitsPerColor = native_desc_.maximum_potential_edr_color_component_value > 1 ? 10: 8;
+    pDesc->ColorSpace = native_desc_.maximum_potential_edr_color_component_value > 1
+            ? DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020
+            : DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709;
+    memcpy(pDesc->RedPrimary, native_desc_.red_primaries, 8);
+    memcpy(pDesc->GreenPrimary, native_desc_.green_primaries, 8);
+    memcpy(pDesc->BluePrimary, native_desc_.blue_primaries, 8);
+    memcpy(pDesc->WhitePoint, native_desc_.white_points, 8);
     pDesc->MinLuminance = 0.0f;
-    pDesc->MaxLuminance = 1.0f;
-    pDesc->MaxFullFrameLuminance = 0;
+    pDesc->MaxLuminance = native_desc_.maximum_potential_edr_color_component_value * 100.0f;
+    pDesc->MaxFullFrameLuminance = pDesc->MaxLuminance;
     return S_OK;
   }
 
@@ -587,8 +594,9 @@ public:
   }
 
 private:
-  Com<IMTLDXGIAdapter> m_adapter = nullptr;
-  HMONITOR m_monitor = nullptr;
+  Com<IMTLDXGIAdapter> adapter_ = nullptr;
+  HMONITOR monitor_ = nullptr;
+  WMTDisplayDescription native_desc_;
 };
 
 Com<IDXGIOutput> CreateOutput(IMTLDXGIAdapter *pAadapter, HMONITOR monitor) {
