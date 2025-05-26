@@ -1489,6 +1489,7 @@ struct WMTLayerProps {
   bool opaque;
   bool display_sync_enabled;
   bool framebuffer_only;
+  enum WMTPixelFormat pixel_format;
 };
 
 WINEMETAL_API void MetalLayer_setProps(obj_handle_t layer, const struct WMTLayerProps *props);
