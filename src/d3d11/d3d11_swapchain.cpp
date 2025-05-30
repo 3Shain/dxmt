@@ -578,13 +578,13 @@ public:
         scaler_info.output_width = upscaled->width();
         scaler_info.output_height = upscaled->height();
         ctx.upscale(backbuffer, upscaled, scaler);
-        ctx.present(upscaled, layer_weak_, vsync_duration);
+        ctx.present(upscaled, layer_weak_, vsync_duration, layer_in_hdr_);
         ReleaseSemaphore(present_semaphore_, 1, nullptr);
         this->UpdateStatistics(ctx.queue().statistics, ctx.currentFrameId());
       });
     } else {
       chunk->emitcc([this, vsync_duration, backbuffer = backbuffer_->texture()](ArgumentEncodingContext &ctx) mutable {
-        ctx.present(backbuffer, layer_weak_, vsync_duration);
+        ctx.present(backbuffer, layer_weak_, vsync_duration, layer_in_hdr_);
         ReleaseSemaphore(present_semaphore_, 1, nullptr);
         this->UpdateStatistics(ctx.queue().statistics, ctx.currentFrameId());
       });

@@ -173,19 +173,42 @@ struct present_data {
 }
 
 enum DXMT_PRESENT_FLAG {
-  DXMT_PRESENT_FLAG_SRGB = 1 << 0
+  DXMT_PRESENT_FLAG_SRGB = 1 << 0,
+  DXMT_PRESENT_FLAG_HDR_PQ = 1 << 1,
 };
+
+constant constexpr float PQ_M1 = 0.1593017578125;
+constant constexpr float PQ_M2 = 78.84375;
+constant constexpr float PQ_C1 = 0.8359375;
+constant constexpr float PQ_C2 = 18.8515625;
+constant constexpr float PQ_C3 = 18.6875;
+
+float3 linear_to_pq(float3 linear) {
+  return pow((PQ_C1 + PQ_C2 * pow(abs(linear), PQ_M1)) / (1.0f + PQ_C3 * pow(abs(linear), PQ_M1)), PQ_M2);
+}
+
+float3 pq_to_linear(float3 norm) {
+  return pow(abs(max(pow(norm, 1.0 / PQ_M2) -PQ_C1, 0.0f) / (PQ_C2 - PQ_C3 * pow(abs(norm), 1.0f / PQ_M2))), 1.0f / PQ_M1 );
+}
 
 [[fragment]] float4 fs_present_quad(
     present_data input [[stage_in]],
     texture2d<float, access::read> source [[texture(0)]],
-    /* (width, height, flag, reserved) */
+    /* (width, height, flag, edr_scale) */
     constant uint4& meta [[buffer(0)]]
 ) {
   float4 output = source.read(uint2(input.uv * (float2)meta.xy));
-  if (meta.z & DXMT_PRESENT_FLAG_SRGB)
-    output = pow(output, 1.0 / 2.2);
-  return output;
+  float3 output_rgb = output.xyz;
+  uint flag = meta.z;
+  float edr_scale = as_type<float>(meta.w);
+  if (flag & DXMT_PRESENT_FLAG_SRGB)
+    output_rgb = pow(output_rgb, 1.0 / 2.2);
+  if (flag & DXMT_PRESENT_FLAG_HDR_PQ)
+    output_rgb = pq_to_linear(output_rgb);
+  output_rgb *= edr_scale;
+  if (flag & DXMT_PRESENT_FLAG_HDR_PQ)
+    output_rgb = linear_to_pq(output_rgb);
+  return float4(output_rgb, output.w);
 }
 
 constexpr sampler s(coord::normalized);
@@ -193,13 +216,21 @@ constexpr sampler s(coord::normalized);
 [[fragment]] float4 fs_present_quad_scaled(
     present_data input [[stage_in]],
     texture2d<float, access::sample> source [[texture(0)]],
-    /* (width, height, flag, reserved) */
+    /* (width, height, flag, edr_scale) */
     constant uint4& meta [[buffer(0)]]
 ) {
   float4 output = source.sample(s, input.uv);
-  if (meta.z & DXMT_PRESENT_FLAG_SRGB)
-    output = pow(output, 1.0 / 2.2);
-  return output;
+  float3 output_rgb = output.xyz;
+  uint flag = meta.z;
+  float edr_scale = as_type<float>(meta.w);
+  if (flag & DXMT_PRESENT_FLAG_SRGB)
+    output_rgb = pow(output_rgb, 1.0 / 2.2);
+  if (flag & DXMT_PRESENT_FLAG_HDR_PQ)
+    output_rgb = pq_to_linear(output_rgb);
+  output_rgb *= edr_scale;
+  if (flag & DXMT_PRESENT_FLAG_HDR_PQ)
+    output_rgb = linear_to_pq(output_rgb);
+  return float4(output_rgb, output.w);
 }
 
 struct DXMTDispatchArguments {
