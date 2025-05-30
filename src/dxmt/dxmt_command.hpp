@@ -6,7 +6,10 @@
 
 namespace dxmt {
 
-enum DXMT_PRESENT_FLAG { DXMT_PRESENT_FLAG_SRGB = 1 << 0 };
+enum DXMT_PRESENT_FLAG {
+  DXMT_PRESENT_FLAG_SRGB = 1 << 0,
+  DXMT_PRESENT_FLAG_HDR_PQ = 1 << 1,
+};
 
 class EmulatedCommandContext {
 public:
@@ -143,7 +146,7 @@ public:
   }
 
   void
-  PresentToDrawable(WMT::CommandBuffer cmdbuf, WMT::Texture backbuffer, WMT::Texture drawable) {
+  PresentToDrawable(WMT::CommandBuffer cmdbuf, WMT::Texture backbuffer, WMT::Texture drawable, float edr_scale) {
     WMTRenderPassInfo info;
     WMT::InitializeRenderPassInfo(info);
     info.colors[0].load_action = WMTLoadActionDontCare;
@@ -156,6 +159,9 @@ public:
     auto backbuffer_format = backbuffer.pixelFormat();
     if (backbuffer_format != Forget_sRGB(backbuffer_format))
       extend[2] |= DXMT_PRESENT_FLAG_SRGB;
+    extend[3] = std::bit_cast<uint32_t>(edr_scale);
+    if (edr_scale != 1.0f && backbuffer_format == WMTPixelFormatRGB10A2Unorm)
+      extend[2] |= DXMT_PRESENT_FLAG_HDR_PQ;
     encoder.setFragmentBytes(extend, sizeof(extend), 0);
     if (backbuffer.width() == extend[0] && backbuffer.height() == extend[1]) {
       switch (backbuffer_format) {
