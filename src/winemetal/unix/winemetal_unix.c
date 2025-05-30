@@ -12,6 +12,15 @@
 typedef int NTSTATUS;
 #define STATUS_SUCCESS 0
 
+void
+execute_on_main(dispatch_block_t block) {
+  if ([NSThread isMainThread]) {
+    block();
+  } else {
+    dispatch_sync(dispatch_get_main_queue(), block);
+  }
+}
+
 static NTSTATUS
 _NSObject_retain(NSObject **obj) {
   [*obj retain];
@@ -1345,13 +1354,15 @@ _MetalLayer_setProps(void *obj) {
   struct unixcall_generic_obj_constptr_noret *params = obj;
   CAMetalLayer *layer = (CAMetalLayer *)params->handle;
   const struct WMTLayerProps *props = params->arg.ptr;
-  layer.device = (id<MTLDevice>)props->device;
-  layer.opaque = props->opaque;
-  layer.framebufferOnly = props->framebuffer_only;
-  layer.contentsScale = props->contents_scale;
-  layer.displaySyncEnabled = props->display_sync_enabled;
-  layer.drawableSize = CGSizeMake(props->drawable_width, props->drawable_height);
-  layer.pixelFormat = (MTLPixelFormat)props->pixel_format;
+  execute_on_main(^{
+    layer.device = (id<MTLDevice>)props->device;
+    layer.opaque = props->opaque;
+    layer.framebufferOnly = props->framebuffer_only;
+    layer.contentsScale = props->contents_scale;
+    layer.displaySyncEnabled = props->display_sync_enabled;
+    layer.drawableSize = CGSizeMake(props->drawable_width, props->drawable_height);
+    layer.pixelFormat = (MTLPixelFormat)props->pixel_format;
+  });
   return STATUS_SUCCESS;
 }
 
@@ -1977,9 +1988,11 @@ _MetalLayer_setColorSpace(void *obj) {
   CGColorSpaceRef ref = CGColorSpaceCreateWithName(name);
   if (!ref)
     return STATUS_SUCCESS;
-  layer.colorspace = ref;
-  layer.wantsExtendedDynamicRangeContent = colorspace & 0b100 /* HDR */;
-  CGColorSpaceRelease(ref);
+  execute_on_main(^{
+    layer.colorspace = ref;
+    layer.wantsExtendedDynamicRangeContent = colorspace & 0b100 /* HDR */;
+    CGColorSpaceRelease(ref);
+  });
   params->ret = true;
   return STATUS_SUCCESS;
 }
