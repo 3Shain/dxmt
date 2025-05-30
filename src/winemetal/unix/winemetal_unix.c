@@ -2095,6 +2095,35 @@ _WMTGetDisplayDescription(void *obj) {
   return STATUS_SUCCESS;
 }
 
+static NTSTATUS
+_MetalLayer_getEDRValue(void *obj) {
+  struct unixcall_generic_obj_ptr_noret *params = obj;
+  CAMetalLayer *layer = (CAMetalLayer *)params->handle;
+  struct WMTEDRValue *value = params->arg.ptr;
+  value->maximum_edr_color_component_value = 1.0;
+  value->maximum_potential_edr_color_component_value = 1.0;
+
+  if (!layer.wantsExtendedDynamicRangeContent)
+    return STATUS_SUCCESS;
+
+  if (![layer.delegate isKindOfClass:NSView.class])
+    return STATUS_SUCCESS;
+
+  NSView *view = (NSView *)layer.delegate;
+  if (!view.window)
+    return STATUS_SUCCESS;
+
+  if (!view.window.screen)
+    return STATUS_SUCCESS;
+
+  NSScreen *screen = view.window.screen;
+
+  value->maximum_edr_color_component_value = screen.maximumExtendedDynamicRangeColorComponentValue;
+  value->maximum_potential_edr_color_component_value = screen.maximumPotentialExtendedDynamicRangeColorComponentValue;
+
+  return STATUS_SUCCESS;
+}
+
 const void *__wine_unix_call_funcs[] = {
     &_NSObject_retain,
     &_NSObject_release,
@@ -2193,6 +2222,7 @@ const void *__wine_unix_call_funcs[] = {
     &_WMTGetPrimaryDisplayId,
     &_WMTGetSecondaryDisplayId,
     &_WMTGetDisplayDescription,
+    &_MetalLayer_getEDRValue,
 };
 
 const void *__wine_unix_call_wow64_funcs[] = {
@@ -2293,4 +2323,5 @@ const void *__wine_unix_call_wow64_funcs[] = {
     &_WMTGetPrimaryDisplayId,
     &_WMTGetSecondaryDisplayId,
     &_WMTGetDisplayDescription,
+    &_MetalLayer_getEDRValue,
 };
