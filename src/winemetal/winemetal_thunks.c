@@ -806,3 +806,10 @@ WMTGetDisplayDescription(uint32_t display_id, struct WMTDisplayDescription *desc
   WMT_MEMPTR_SET(params.arg, desc);
   UNIX_CALL(96, &params);
 }
+
+WINEMETAL_API void MetalLayer_getEDRValue(obj_handle_t layer, struct WMTEDRValue *value) {
+  struct unixcall_generic_obj_constptr_noret params;
+  params.handle = layer;
+  WMT_MEMPTR_SET(params.arg, value);
+  UNIX_CALL(97, &params);
+}

@@ -1541,4 +1541,11 @@ struct WMTDisplayDescription {
 
 WINEMETAL_API void WMTGetDisplayDescription(uint32_t display_id, struct WMTDisplayDescription *desc);
 
+struct WMTEDRValue {
+  float maximum_edr_color_component_value;
+  float maximum_potential_edr_color_component_value;
+};
+
+WINEMETAL_API void MetalLayer_getEDRValue(obj_handle_t layer, struct WMTEDRValue *value);
+
 #endif
