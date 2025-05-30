@@ -1515,7 +1515,9 @@ enum WMTColorSpace {
   WMTColorSpaceSRGB = 0b000,
   WMTColorSpaceSRGBLinear = 0b001,
   WMTColorSpaceBT2020 = 0b010,
-  WMTColorSpaceHDR10 = 0b100,
+  WMTColorSpaceHDR_PQ = 0b100,
+  WMTColorSpaceHDR10 = WMTColorSpaceHDR_PQ,
+  WMTColorSpaceHDR_scRGB = 0b101,
   WMTColorSpaceInvalid = 0xFFFFFFFF,
 };
 
