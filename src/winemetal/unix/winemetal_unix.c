@@ -1939,10 +1939,11 @@ GetColorSpaceName(enum WMTColorSpace colorspace) {
   case WMTColorSpaceSRGB:
     return kCGColorSpaceSRGB;
   case WMTColorSpaceSRGBLinear:
+  case WMTColorSpaceHDR_scRGB:
     return kCGColorSpaceExtendedLinearSRGB;
   case WMTColorSpaceBT2020:
     return kCGColorSpaceITUR_2020_sRGBGamma;
-  case WMTColorSpaceHDR10:
+  case WMTColorSpaceHDR_PQ:
     return kCGColorSpaceITUR_2100_PQ;
   default:
     return nil;
