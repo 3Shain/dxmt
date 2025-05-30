@@ -46,14 +46,14 @@ WMTPixelFormat ConvertSwapChainFormat(DXGI_FORMAT format) {
   }
 }
 
-WMTColorSpace ConvertColorSpace(DXGI_COLOR_SPACE_TYPE color_space) {
+WMTColorSpace ConvertColorSpace(DXGI_COLOR_SPACE_TYPE color_space, bool hdr) {
   switch (color_space) {
   case DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709:
     return WMTColorSpaceSRGB;
   case DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709:
-    return WMTColorSpaceSRGBLinear;
+    return hdr ? WMTColorSpaceHDR_scRGB : WMTColorSpaceSRGBLinear;
   case DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020:
-    return WMTColorSpaceHDR10;
+    return WMTColorSpaceHDR_PQ;
   case DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P2020:
     return WMTColorSpaceBT2020;
   default:
@@ -147,7 +147,6 @@ public:
     ResizeBuffers(0, desc_.Width, desc_.Height, DXGI_FORMAT_UNKNOWN, desc_.Flags);
     if (!fullscreen_desc_.Windowed)
       EnterFullscreenMode(nullptr);
-    layer_weak_.setColorSpace(WMTColorSpaceSRGB); // set a default colorspace
   };
 
   ~MTLD3D11SwapChain() {
@@ -431,6 +430,13 @@ public:
     layer_props.drawable_height =  (double)(desc_.Height * scale_factor);
     layer_props.pixel_format = ConvertSwapChainFormat(desc_.Format);
     layer_weak_.setProps(layer_props);
+    auto target_color_space =
+        ConvertColorSpace(desc_.Format == DXGI_FORMAT_R16G16B16A16_FLOAT
+                              ? DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709
+                              : colorspace_,
+                          LayerSupportEDR());
+    layer_weak_.setColorSpace(target_color_space);
+    layer_in_hdr_ = target_color_space & 0b100 /* HDR */;
   };
   
   HRESULT GetOutputFromMonitor(
@@ -755,7 +761,7 @@ public:
       DXGI_COLOR_SPACE_TYPE ColorSpace, UINT *pColorSpaceSupport) override {
     if (!pColorSpaceSupport)
       return E_INVALIDARG;
-    *pColorSpaceSupport = CGColorSpace_checkColorSpaceSupported(ConvertColorSpace(ColorSpace))
+    *pColorSpaceSupport = CGColorSpace_checkColorSpaceSupported(ConvertColorSpace(ColorSpace, false))
             ? DXGI_SWAP_CHAIN_COLOR_SPACE_SUPPORT_FLAG_PRESENT
             : 0;
     return S_OK;
@@ -776,8 +782,11 @@ public:
 
   HRESULT STDMETHODCALLTYPE
   SetColorSpace1(DXGI_COLOR_SPACE_TYPE ColorSpace) override {
-    if (!layer_weak_.setColorSpace(ConvertColorSpace(ColorSpace)))
+    auto target_color_space = ConvertColorSpace(ColorSpace, LayerSupportEDR());
+    if (!layer_weak_.setColorSpace(target_color_space))
       return E_INVALIDARG;
+    colorspace_ = ColorSpace;
+    layer_in_hdr_ = target_color_space & 0b100 /* HDR */;
     return S_OK;
   }
 
@@ -788,6 +797,12 @@ public:
   }
 
 private:
+  bool LayerSupportEDR() {
+    WMTEDRValue edr_value;
+    MetalLayer_getEDRValue(layer_weak_, &edr_value);
+    return edr_value.maximum_potential_edr_color_component_value != 1.0f;
+  };
+
   Com<IDXGIFactory1> factory_;
   IMTLDXGIDevice *layer_factory_weak_;
   WMT::Object native_view_;
@@ -804,6 +819,8 @@ private:
   Com<IDXGIOutput1> target_;
   wsi::DXMTWindowState window_state_;
   uint32_t frame_latency;
+  DXGI_COLOR_SPACE_TYPE colorspace_ = DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709;
+  bool layer_in_hdr_ = false;
   double init_refresh_rate_ = DBL_MAX;
   int preferred_max_frame_rate = 0;
   WMTLayerProps layer_props;
