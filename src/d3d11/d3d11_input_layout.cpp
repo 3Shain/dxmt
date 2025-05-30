@@ -17,6 +17,7 @@ HRESULT ExtractMTLInputLayoutElements(
 
   using namespace microsoft;
   uint16_t append_offset[32] = {0};
+  uint32_t register_mask = 0;
 
   CSignatureParser parser;
   HRESULT hr =
@@ -28,30 +29,21 @@ HRESULT ExtractMTLInputLayoutElements(
   auto num_parameters = parser.GetParameters(&pParamters);
 
   UINT attribute_count = 0;
-  for (UINT i = 0; i < num_parameters; i++) {
-    auto &inputSig = pParamters[i];
-    if (inputSig.SystemValue != D3D10_SB_NAME_UNDEFINED) {
-      continue; // ignore SIV & SGV
-    }
-    auto pDesc = std::find_if(
-        pInputElementDescs, pInputElementDescs + NumElements,
-        [&](const D3D11_INPUT_ELEMENT_DESC &Ele) {
-          return Ele.SemanticIndex == inputSig.SemanticIndex &&
-                 strcasecmp(Ele.SemanticName, inputSig.SemanticName) == 0;
+  for (UINT j = 0; j < NumElements; j++) {
+    auto &desc = pInputElementDescs[j];
+    auto pSig = std::find_if(
+        pParamters, pParamters + num_parameters,
+        [&](const D3D11_SIGNATURE_PARAMETER &inputSig) {
+          return desc.SemanticIndex == inputSig.SemanticIndex &&
+                 strcasecmp(desc.SemanticName, inputSig.SemanticName) == 0;
         });
-    if (pDesc == pInputElementDescs + NumElements) {
-      // Unmatched shader input signature
-      WARN("CreateInputLayout: Vertex shader expects ", inputSig.SemanticName,
-          "_", inputSig.SemanticIndex, " but it's not in input layout element descriptors");
-      return E_INVALIDARG;
-    }
-    auto &desc = *pDesc;
-    D3D11_ASSERT(attribute_count < NumElements);
+    if (pSig == pParamters + num_parameters)
+      continue; // shader has no such input register, so skip it
+    auto &inputSig = *pSig;
     auto &attribute = pInputLayout[attribute_count++];
 
     MTL_DXGI_FORMAT_DESC metal_format;
-    if (FAILED(MTLQueryDXGIFormat(device->GetMTLDevice(), pDesc->Format,
-                                  metal_format))) {
+    if (FAILED(MTLQueryDXGIFormat(device->GetMTLDevice(), desc.Format, metal_format))) {
       ERR("CreateInputLayout: Unsupported vertex format ", desc.Format);
       return E_FAIL;
     }
@@ -79,6 +71,17 @@ HRESULT ExtractMTLInputLayoutElements(
         desc.InputSlotClass == D3D11_INPUT_PER_INSTANCE_DATA
             ? desc.InstanceDataStepRate
             : 1;
+    register_mask |= (1 << inputSig.Register);
+  }
+  for (UINT i = 0; i < num_parameters; i++) {
+    auto &inputSig = pParamters[i];
+    if (inputSig.SystemValue != D3D10_SB_NAME_UNDEFINED) 
+      continue; // ignore SIV & SGV
+    if (!(register_mask & (1 << inputSig.Register))) {
+      WARN("CreateInputLayout: Vertex shader expects ", inputSig.SemanticName,
+           "_", inputSig.SemanticIndex, " but it's not in input layout element descriptors");
+      return E_INVALIDARG;
+    }
   }
   *pNumElementsOut = attribute_count;
 
