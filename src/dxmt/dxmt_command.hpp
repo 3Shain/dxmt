@@ -159,6 +159,8 @@ public:
     auto backbuffer_format = backbuffer.pixelFormat();
     if (backbuffer_format != Forget_sRGB(backbuffer_format))
       extend[2] |= DXMT_PRESENT_FLAG_SRGB;
+    if (backbuffer_format == WMTPixelFormatRGBA16Float)
+      edr_scale *= 0.8;
     extend[3] = std::bit_cast<uint32_t>(edr_scale);
     if (edr_scale != 1.0f && backbuffer_format == WMTPixelFormatRGB10A2Unorm)
       extend[2] |= DXMT_PRESENT_FLAG_HDR_PQ;
