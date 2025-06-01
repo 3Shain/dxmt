@@ -2116,9 +2116,6 @@ _MetalLayer_getEDRValue(void *obj) {
   value->maximum_edr_color_component_value = 1.0;
   value->maximum_potential_edr_color_component_value = 1.0;
 
-  if (!layer.wantsExtendedDynamicRangeContent)
-    return STATUS_SUCCESS;
-
   if (![layer.delegate isKindOfClass:NSView.class])
     return STATUS_SUCCESS;
 
@@ -2131,7 +2128,8 @@ _MetalLayer_getEDRValue(void *obj) {
 
   NSScreen *screen = view.window.screen;
 
-  value->maximum_edr_color_component_value = screen.maximumExtendedDynamicRangeColorComponentValue;
+  value->maximum_edr_color_component_value =
+      layer.wantsExtendedDynamicRangeContent ? screen.maximumExtendedDynamicRangeColorComponentValue : 1.0;
   value->maximum_potential_edr_color_component_value = screen.maximumPotentialExtendedDynamicRangeColorComponentValue;
 
   return STATUS_SUCCESS;
