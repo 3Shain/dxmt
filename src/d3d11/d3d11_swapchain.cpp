@@ -439,7 +439,7 @@ public:
                               : colorspace_,
                           LayerSupportEDR());
     layer_weak_.setColorSpace(target_color_space);
-    layer_in_hdr_ = target_color_space & 0b100 /* HDR */;
+    layer_in_hdr_ = WMT_COLORSPACE_IS_HDR(target_color_space);
   };
   
   HRESULT GetOutputFromMonitor(
@@ -783,7 +783,7 @@ public:
     if (!layer_weak_.setColorSpace(target_color_space))
       return E_INVALIDARG;
     colorspace_ = ColorSpace;
-    layer_in_hdr_ = target_color_space & 0b100 /* HDR */;
+    layer_in_hdr_ = WMT_COLORSPACE_IS_HDR(target_color_space);
     return S_OK;
   }
 
