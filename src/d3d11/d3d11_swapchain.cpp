@@ -17,6 +17,7 @@
 #include "wsi_platform_win32.hpp"
 #include "wsi_window.hpp"
 #include "dxmt_info.hpp"
+#include "dxmt_presenter.hpp"
 #include <cfloat>
 #include <format>
 
@@ -85,13 +86,13 @@ public:
       abort();
     }
 
-    layer_weak_.getProps(layer_props);
+    if constexpr (EnableMetalFX) {
+      scale_factor = std::max(Config::getInstance().getOption<float>("d3d11.metalSpatialUpscaleFactor", 2), 1.0f);
+    }
 
-    layer_props.device = pDevice->GetMTLDevice();
-    layer_props.opaque = true;
-    layer_props.display_sync_enabled = false;
-    layer_props.framebuffer_only = false; // how strangely setting it true results in worse performance
-    layer_props.pixel_format = ConvertSwapChainFormat(desc_.Format);
+    presenter = Rc(new Presenter(pDevice->GetMTLDevice(), layer_weak_,
+                                 pDevice->GetDXMTDevice().queue().cmd_library,
+                                 scale_factor));
 
     Com<ID3D11DeviceContext1> context;
     m_device->GetImmediateContext1(&context);
@@ -140,11 +141,6 @@ public:
     backbuffer_desc_.BindFlags |= D3D11_BIND_SHADER_RESOURCE;
     if (desc_.BufferUsage & DXGI_USAGE_UNORDERED_ACCESS)
       backbuffer_desc_.BindFlags |= D3D11_BIND_UNORDERED_ACCESS;
-
-    if constexpr (EnableMetalFX) {
-      scale_factor = std::max(Config::getInstance().getOption<float>("d3d11.metalSpatialUpscaleFactor", 2), 1.0f);
-      layer_props.contents_scale = layer_props.contents_scale * scale_factor;
-    }
 
     // FIXME: check HRESULT!
     ResizeBuffers(0, desc_.Width, desc_.Height, DXGI_FORMAT_UNKNOWN, desc_.Flags);
@@ -371,8 +367,8 @@ public:
       WMTFXSpatialScalerInfo info;
       info.input_height = desc_.Height;
       info.input_width = desc_.Width;
-      info.output_height = layer_props.drawable_height;
-      info.output_width = layer_props.drawable_width;
+      info.output_height = desc_.Height * scale_factor;
+      info.output_width = desc_.Width * scale_factor;
       info.color_format = backbuffer_->texture()->pixelFormat();
       info.output_format =upscaled_backbuffer_->texture()->pixelFormat();
       metalfx_scaler = m_device->GetMTLDevice().newSpatialScaler(info);
@@ -427,21 +423,18 @@ public:
     return S_OK;
   };
 
-  void
-  ApplyLayerProps() {
-    layer_props.drawable_width = (double)(desc_.Width * scale_factor),
-    layer_props.drawable_height =  (double)(desc_.Height * scale_factor);
-    layer_props.pixel_format = ConvertSwapChainFormat(desc_.Format);
-    layer_weak_.setProps(layer_props);
+  void ApplyLayerProps() {
     auto target_color_space =
         ConvertColorSpace(desc_.Format == DXGI_FORMAT_R16G16B16A16_FLOAT
                               ? DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709
                               : colorspace_,
                           LayerSupportEDR());
-    layer_weak_.setColorSpace(target_color_space);
-    layer_in_hdr_ = WMT_COLORSPACE_IS_HDR(target_color_space);
+    if (presenter->changeLayerProperties(
+        ConvertSwapChainFormat(desc_.Format), target_color_space,
+        desc_.Width * scale_factor, desc_.Height * scale_factor))
+      device_context_->WaitUntilGPUIdle();
   };
-  
+
   HRESULT GetOutputFromMonitor(
           HMONITOR                  Monitor,
           IDXGIOutput1**            ppOutput) {
@@ -578,13 +571,13 @@ public:
         scaler_info.output_width = upscaled->width();
         scaler_info.output_height = upscaled->height();
         ctx.upscale(backbuffer, upscaled, scaler);
-        ctx.present(upscaled, layer_weak_, vsync_duration, layer_in_hdr_);
+        ctx.present(upscaled, presenter, vsync_duration);
         ReleaseSemaphore(present_semaphore_, 1, nullptr);
         this->UpdateStatistics(ctx.queue().statistics, ctx.currentFrameId());
       });
     } else {
       chunk->emitcc([this, vsync_duration, backbuffer = backbuffer_->texture()](ArgumentEncodingContext &ctx) mutable {
-        ctx.present(backbuffer, layer_weak_, vsync_duration, layer_in_hdr_);
+        ctx.present(backbuffer, presenter, vsync_duration);
         ReleaseSemaphore(present_semaphore_, 1, nullptr);
         this->UpdateStatistics(ctx.queue().statistics, ctx.currentFrameId());
       });
@@ -780,10 +773,9 @@ public:
   HRESULT STDMETHODCALLTYPE
   SetColorSpace1(DXGI_COLOR_SPACE_TYPE ColorSpace) override {
     auto target_color_space = ConvertColorSpace(ColorSpace, LayerSupportEDR());
-    if (!layer_weak_.setColorSpace(target_color_space))
-      return E_INVALIDARG;
+    if (presenter->changeLayerColorSpace(target_color_space))
+      device_context_->WaitUntilGPUIdle();
     colorspace_ = ColorSpace;
-    layer_in_hdr_ = WMT_COLORSPACE_IS_HDR(target_color_space);
     return S_OK;
   }
 
@@ -817,11 +809,10 @@ private:
   wsi::DXMTWindowState window_state_;
   uint32_t frame_latency;
   DXGI_COLOR_SPACE_TYPE colorspace_ = DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709;
-  bool layer_in_hdr_ = false;
   double init_refresh_rate_ = DBL_MAX;
   int preferred_max_frame_rate = 0;
-  WMTLayerProps layer_props;
   HUDState hud;
+  Rc<Presenter> presenter;
 
   std::conditional<EnableMetalFX, WMT::Reference<WMT::FXSpatialScaler>, std::monostate>::type metalfx_scaler;
   std::conditional<EnableMetalFX, Com<D3D11ResourceCommon>, std::monostate>::type upscaled_backbuffer_;

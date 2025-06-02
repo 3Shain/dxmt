@@ -155,11 +155,12 @@ struct ResolveEncoderData : EncoderData {
   WMT::Reference<WMT::Texture> dst;
 };
 
+class Presenter;
+
 struct PresentData : EncoderData {
   WMT::Reference<WMT::Texture> backbuffer;
-  WMT::Reference<WMT::MetalLayer> layer;
+  Rc<Presenter> presenter;
   double after;
-  bool hdr;
 };
 
 struct SpatialUpscaleData : EncoderData {
@@ -527,7 +528,7 @@ public:
     return (new (allocate_cpu_heap(sizeof(T), alignof(T))) T());
   };
 
-  void present(Rc<Texture> &texture, WMT::MetalLayer layer, double after, bool hdr);
+  void present(Rc<Texture> &texture, Rc<Presenter> &presenter, double after);
 
   void upscale(Rc<Texture> &texture, Rc<Texture> &upscaled, WMT::Reference<WMT::FXSpatialScaler> &scaler);
 

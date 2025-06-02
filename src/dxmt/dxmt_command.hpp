@@ -2,7 +2,6 @@
 
 #include "Metal.hpp"
 #include "dxmt_context.hpp"
-#include "dxmt_format.hpp"
 
 namespace dxmt {
 
@@ -11,9 +10,22 @@ enum DXMT_PRESENT_FLAG {
   DXMT_PRESENT_FLAG_HDR_PQ = 1 << 1,
 };
 
+class InternalCommandLibrary {
+public:
+  InternalCommandLibrary(WMT::Device device);
+
+  WMT::Library
+  getLibrary() {
+    return library_;
+  }
+
+private:
+  WMT::Reference<WMT::Library> library_;
+};
+
 class EmulatedCommandContext {
 public:
-  EmulatedCommandContext(WMT::Device device, ArgumentEncodingContext &ctx);
+  EmulatedCommandContext(WMT::Device device, InternalCommandLibrary &lib, ArgumentEncodingContext &ctx);
 
   void
   setComputePipelineState(WMT::ComputePipelineState state, const WMTSize &threadgroup_size) {
@@ -146,63 +158,6 @@ public:
   }
 
   void
-  PresentToDrawable(WMT::CommandBuffer cmdbuf, WMT::Texture backbuffer, WMT::Texture drawable, float edr_scale) {
-    WMTRenderPassInfo info;
-    WMT::InitializeRenderPassInfo(info);
-    info.colors[0].load_action = WMTLoadActionDontCare;
-    info.colors[0].store_action = WMTStoreActionStore;
-    info.colors[0].texture = drawable;
-    auto encoder = cmdbuf.renderCommandEncoder(info);
-
-    encoder.setFragmentTexture(backbuffer, 0);
-    uint32_t extend[4] = {(uint32_t)drawable.width(), (uint32_t)drawable.height(), 0, 0};
-    auto backbuffer_format = backbuffer.pixelFormat();
-    if (backbuffer_format != Forget_sRGB(backbuffer_format))
-      extend[2] |= DXMT_PRESENT_FLAG_SRGB;
-    if (backbuffer_format == WMTPixelFormatRGBA16Float)
-      edr_scale *= 0.8;
-    extend[3] = std::bit_cast<uint32_t>(edr_scale);
-    if (edr_scale != 1.0f && backbuffer_format == WMTPixelFormatRGB10A2Unorm)
-      extend[2] |= DXMT_PRESENT_FLAG_HDR_PQ;
-    encoder.setFragmentBytes(extend, sizeof(extend), 0);
-    if (backbuffer.width() == extend[0] && backbuffer.height() == extend[1]) {
-      switch (backbuffer_format) {
-      case WMTPixelFormatRGBA8Unorm:
-        encoder.setRenderPipelineState(present_swapchain_blit_rgba8);
-        break;
-      case WMTPixelFormatRGB10A2Unorm:
-        encoder.setRenderPipelineState(present_swapchain_blit_rgb10a2);
-        break;
-      case WMTPixelFormatRGBA16Float:
-        encoder.setRenderPipelineState(present_swapchain_blit_rgba16);
-        break;
-      default:
-        encoder.setRenderPipelineState(present_swapchain_blit);
-        break;
-      }
-    } else {
-      switch (backbuffer_format) {
-      case WMTPixelFormatRGBA8Unorm:
-        encoder.setRenderPipelineState(present_swapchain_scale_rgba8);
-        break;
-      case WMTPixelFormatRGB10A2Unorm:
-        encoder.setRenderPipelineState(present_swapchain_scale_rgb10a2);
-        break;
-      case WMTPixelFormatRGBA16Float:
-        encoder.setRenderPipelineState(present_swapchain_scale_rgba16);
-        break;
-      default:
-        encoder.setRenderPipelineState(present_swapchain_scale);
-        break;
-      }
-    }
-    encoder.setViewport({0, 0, (double)extend[0], (double)extend[1], 0, 1});
-    encoder.drawPrimitives(WMTPrimitiveTypeTriangle, 0, 3);
-
-    encoder.endEncoding();
-  }
-
-  void
   MarshalGSDispatchArguments(WMT::RenderCommandEncoder encoder, WMT::Buffer commands, uint32_t commands_offset) {
     encoder.setRenderPipelineState(gs_draw_arguments_marshal);
     encoder.setVertexBuffer(commands, commands_offset, 0);
@@ -227,14 +182,6 @@ private:
   WMT::Reference<WMT::ComputePipelineState> clear_texture_3d_float_pipeline;
   WMT::Reference<WMT::ComputePipelineState> clear_texture_buffer_float_pipeline;
 
-  WMT::Reference<WMT::RenderPipelineState> present_swapchain_blit;
-  WMT::Reference<WMT::RenderPipelineState> present_swapchain_scale;
-  WMT::Reference<WMT::RenderPipelineState> present_swapchain_blit_rgba8;
-  WMT::Reference<WMT::RenderPipelineState> present_swapchain_scale_rgba8;
-  WMT::Reference<WMT::RenderPipelineState> present_swapchain_blit_rgba16;
-  WMT::Reference<WMT::RenderPipelineState> present_swapchain_scale_rgba16;
-  WMT::Reference<WMT::RenderPipelineState> present_swapchain_blit_rgb10a2;
-  WMT::Reference<WMT::RenderPipelineState> present_swapchain_scale_rgb10a2;
   WMT::Reference<WMT::RenderPipelineState> gs_draw_arguments_marshal;
 };
 

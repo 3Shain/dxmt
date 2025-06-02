@@ -9,11 +9,23 @@ extern "C" unsigned int dxmt_command_metallib_len;
   name##_pipeline = device.newComputePipelineState(name##_function, error);
 
 namespace dxmt {
-EmulatedCommandContext::EmulatedCommandContext(WMT::Device device, ArgumentEncodingContext &ctx): ctx(ctx) {
+
+InternalCommandLibrary::InternalCommandLibrary(WMT::Device device) {
+  WMT::Reference<WMT::Error> error;
+  library_ = device.newLibrary(dxmt_command_metallib, dxmt_command_metallib_len, error);
+
+  if (error) {
+    ERR("Failed to create internal command library: ", error.description().getUTF8String());
+    abort();
+  }
+};
+
+EmulatedCommandContext::EmulatedCommandContext(WMT::Device device, InternalCommandLibrary &lib, ArgumentEncodingContext &ctx): ctx(ctx) {
   auto pool = WMT::MakeAutoreleasePool();
 
+  auto library = lib.getLibrary();
+
   WMT::Reference<WMT::Error> error;
-  auto library = device.newLibrary(dxmt_command_metallib, dxmt_command_metallib_len, error);
 
   CREATE_PIPELINE(clear_texture_1d_uint);
   CREATE_PIPELINE(clear_texture_1d_array_uint);
@@ -29,34 +41,6 @@ EmulatedCommandContext::EmulatedCommandContext(WMT::Device device, ArgumentEncod
   CREATE_PIPELINE(clear_texture_3d_float);
   CREATE_PIPELINE(clear_texture_buffer_float);
 
-  auto vs_present_quad = library.newFunction("vs_present_quad");
-  auto fs_present_quad = library.newFunction("fs_present_quad");
-  auto fs_present_quad_scaled = library.newFunction("fs_present_quad_scaled");
-  {
-    WMTRenderPipelineInfo present_pipeline;
-    WMT::InitializeRenderPipelineInfo(present_pipeline);
-    present_pipeline.vertex_function = vs_present_quad;
-
-    present_pipeline.fragment_function = fs_present_quad;
-    present_pipeline.colors[0].pixel_format = WMTPixelFormatBGRA8Unorm;
-    present_swapchain_blit = device.newRenderPipelineState(present_pipeline, error);
-    present_pipeline.colors[0].pixel_format = WMTPixelFormatRGBA8Unorm;
-    present_swapchain_blit_rgba8 = device.newRenderPipelineState(present_pipeline, error);
-    present_pipeline.colors[0].pixel_format = WMTPixelFormatRGBA16Float;
-    present_swapchain_blit_rgba16 = device.newRenderPipelineState(present_pipeline, error);
-    present_pipeline.colors[0].pixel_format = WMTPixelFormatRGB10A2Unorm;
-    present_swapchain_blit_rgb10a2 = device.newRenderPipelineState(present_pipeline, error);
-
-    present_pipeline.fragment_function = fs_present_quad_scaled;
-    present_pipeline.colors[0].pixel_format = WMTPixelFormatBGRA8Unorm;
-    present_swapchain_scale = device.newRenderPipelineState(present_pipeline, error);
-    present_pipeline.colors[0].pixel_format = WMTPixelFormatRGBA8Unorm;
-    present_swapchain_scale_rgba8 = device.newRenderPipelineState(present_pipeline, error);
-    present_pipeline.colors[0].pixel_format = WMTPixelFormatRGBA16Float;
-    present_swapchain_scale_rgba16 = device.newRenderPipelineState(present_pipeline, error);
-    present_pipeline.colors[0].pixel_format = WMTPixelFormatRGB10A2Unorm;
-    present_swapchain_scale_rgb10a2 = device.newRenderPipelineState(present_pipeline, error);
-  }
 
   auto gs_draw_arguments_marshal_vs = library.newFunction("gs_draw_arguments_marshal");
   {
