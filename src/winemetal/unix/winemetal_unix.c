@@ -2135,6 +2135,24 @@ _MetalLayer_getEDRValue(void *obj) {
   return STATUS_SUCCESS;
 }
 
+static NTSTATUS
+_MTLLibrary_newFunctionWithConstants(void *obj) {
+  struct unixcall_mtllibrary_newfunction_with_constants *params = obj;
+  id<MTLLibrary> library = (id<MTLLibrary>)params->library;
+  NSString *name = [[NSString alloc] initWithCString:(char *)params->name.ptr encoding:NSUTF8StringEncoding];
+  struct WMTFunctionConstant *constants = (struct WMTFunctionConstant *)params->constants.ptr;
+  NSError *err = NULL;
+  MTLFunctionConstantValues *values = [[MTLFunctionConstantValues alloc] init];
+  for (uint64_t i = 0; i < params->num_constants; i++)
+    [values setConstantValue:constants[i].data.ptr type:(MTLDataType)constants[i].type atIndex:constants[i].index];
+
+  params->ret = (obj_handle_t)[library newFunctionWithName:name constantValues:values error:&err];
+  params->ret_error = (obj_handle_t)err;
+  [name release];
+  [values release];
+  return STATUS_SUCCESS;
+}
+
 const void *__wine_unix_call_funcs[] = {
     &_NSObject_retain,
     &_NSObject_release,
@@ -2234,6 +2252,7 @@ const void *__wine_unix_call_funcs[] = {
     &_WMTGetSecondaryDisplayId,
     &_WMTGetDisplayDescription,
     &_MetalLayer_getEDRValue,
+    &_MTLLibrary_newFunctionWithConstants,
 };
 
 const void *__wine_unix_call_wow64_funcs[] = {
@@ -2335,4 +2354,5 @@ const void *__wine_unix_call_wow64_funcs[] = {
     &_WMTGetSecondaryDisplayId,
     &_WMTGetDisplayDescription,
     &_MetalLayer_getEDRValue,
+    &_MTLLibrary_newFunctionWithConstants,
 };

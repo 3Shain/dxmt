@@ -807,9 +807,26 @@ WMTGetDisplayDescription(uint32_t display_id, struct WMTDisplayDescription *desc
   UNIX_CALL(96, &params);
 }
 
-WINEMETAL_API void MetalLayer_getEDRValue(obj_handle_t layer, struct WMTEDRValue *value) {
+WINEMETAL_API void
+MetalLayer_getEDRValue(obj_handle_t layer, struct WMTEDRValue *value) {
   struct unixcall_generic_obj_constptr_noret params;
   params.handle = layer;
   WMT_MEMPTR_SET(params.arg, value);
   UNIX_CALL(97, &params);
+}
+
+WINEMETAL_API obj_handle_t
+MTLLibrary_newFunctionWithConstants(
+    obj_handle_t library, const char *name, const struct WMTFunctionConstant *constants, uint32_t num_constants,
+    obj_handle_t *err_out
+) {
+  struct unixcall_mtllibrary_newfunction_with_constants params;
+  params.library = library;
+  WMT_MEMPTR_SET(params.name, name);
+  WMT_MEMPTR_SET(params.constants, constants);
+  params.num_constants = num_constants;
+  UNIX_CALL(98, &params);
+  if (err_out)
+    *err_out = params.ret_error;
+  return params.ret;
 }
