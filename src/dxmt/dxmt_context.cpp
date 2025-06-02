@@ -1,7 +1,9 @@
 #include "dxmt_context.hpp"
 #include "Metal.hpp"
 #include "dxmt_command_queue.hpp"
+#include "dxmt_format.hpp"
 #include "dxmt_occlusion_query.hpp"
+#include "dxmt_presenter.hpp"
 #include <cstdint>
 #include <cfloat>
 
@@ -444,15 +446,14 @@ ArgumentEncodingContext::resolveTexture(
 };
 
 void
-ArgumentEncodingContext::present(Rc<Texture> &texture, WMT::MetalLayer layer, double after, bool hdr) {
+ArgumentEncodingContext::present(Rc<Texture> &texture, Rc<Presenter> &presenter, double after) {
   assert(!encoder_current);
   auto encoder_info = allocate<PresentData>();
   encoder_info->type = EncoderType::Present;
   encoder_info->id = nextEncoderId();
   encoder_info->backbuffer = texture->current()->texture();
-  encoder_info->layer = layer;
+  encoder_info->presenter = presenter;
   encoder_info->after = after;
-  encoder_info->hdr = hdr;
 
   encoder_info->tex_read.add(texture->current()->depkey);
 
@@ -793,16 +794,9 @@ ArgumentEncodingContext::flushCommands(WMT::CommandBuffer cmdbuf, uint64_t seqId
     case EncoderType::Present: {
       auto data = static_cast<PresentData *>(current);
       auto t0 = clock::now();
-      auto drawable = data->layer.nextDrawable();
-      float edr_scale = 1.0f;
-      if (data->hdr) {
-        WMTEDRValue edr_value;
-        MetalLayer_getEDRValue(data->layer, &edr_value);
-        edr_scale = edr_value.maximum_edr_color_component_value / edr_value.maximum_potential_edr_color_component_value;
-      }
+      auto drawable = data->presenter->encodeCommands(cmdbuf, data->backbuffer);
       auto t1 = clock::now();
       currentFrameStatistics().drawable_blocking_interval += (t1 - t0);
-      queue_.emulated_cmd.PresentToDrawable(cmdbuf, data->backbuffer, drawable.texture(), edr_scale);
       if (data->after > 0)
         cmdbuf.presentDrawableAfterMinimumDuration(drawable, data->after);
       else
