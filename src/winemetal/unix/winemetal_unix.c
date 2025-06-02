@@ -1990,7 +1990,7 @@ _MetalLayer_setColorSpace(void *obj) {
     return STATUS_SUCCESS;
   execute_on_main(^{
     layer.colorspace = ref;
-    layer.wantsExtendedDynamicRangeContent = colorspace & 0b100 /* HDR */;
+    layer.wantsExtendedDynamicRangeContent = WMT_COLORSPACE_IS_HDR(colorspace);
     CGColorSpaceRelease(ref);
   });
   params->ret = true;

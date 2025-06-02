@@ -1521,6 +1521,10 @@ enum WMTColorSpace {
   WMTColorSpaceInvalid = 0xFFFFFFFF,
 };
 
+#if !defined(WMT_COLORSPACE_IS_HDR)
+#define WMT_COLORSPACE_IS_HDR(x) x & 0b100
+#endif
+
 WINEMETAL_API bool CGColorSpace_checkColorSpaceSupported(enum WMTColorSpace colorspace);
 
 WINEMETAL_API bool MetalLayer_setColorSpace(obj_handle_t layer, enum WMTColorSpace colorpsace);
