@@ -236,6 +236,15 @@ struct unixcall_enumerate {
   uint64_t ret_read;
 };
 
+struct unixcall_mtllibrary_newfunction_with_constants {
+  obj_handle_t library;
+  struct WMTConstMemoryPointer name;
+  struct WMTConstMemoryPointer constants;
+  uint64_t num_constants;
+  obj_handle_t ret;
+  obj_handle_t ret_error;
+};
+
 #pragma pack(pop)
 
 #endif

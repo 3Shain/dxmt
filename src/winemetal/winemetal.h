@@ -1552,4 +1552,92 @@ struct WMTEDRValue {
 
 WINEMETAL_API void MetalLayer_getEDRValue(obj_handle_t layer, struct WMTEDRValue *value);
 
+enum WMTDataType : uint16_t {
+  WMTDataTypeNone = 0,
+
+  WMTDataTypeStruct = 1,
+  WMTDataTypeArray = 2,
+
+  WMTDataTypeFloat = 3,
+  WMTDataTypeFloat2 = 4,
+  WMTDataTypeFloat3 = 5,
+  WMTDataTypeFloat4 = 6,
+
+  WMTDataTypeFloat2x2 = 7,
+  WMTDataTypeFloat2x3 = 8,
+  WMTDataTypeFloat2x4 = 9,
+
+  WMTDataTypeFloat3x2 = 10,
+  WMTDataTypeFloat3x3 = 11,
+  WMTDataTypeFloat3x4 = 12,
+
+  WMTDataTypeFloat4x2 = 13,
+  WMTDataTypeFloat4x3 = 14,
+  WMTDataTypeFloat4x4 = 15,
+
+  WMTDataTypeHalf = 16,
+  WMTDataTypeHalf2 = 17,
+  WMTDataTypeHalf3 = 18,
+  WMTDataTypeHalf4 = 19,
+
+  WMTDataTypeHalf2x2 = 20,
+  WMTDataTypeHalf2x3 = 21,
+  WMTDataTypeHalf2x4 = 22,
+
+  WMTDataTypeHalf3x2 = 23,
+  WMTDataTypeHalf3x3 = 24,
+  WMTDataTypeHalf3x4 = 25,
+
+  WMTDataTypeHalf4x2 = 26,
+  WMTDataTypeHalf4x3 = 27,
+  WMTDataTypeHalf4x4 = 28,
+
+  WMTDataTypeInt = 29,
+  WMTDataTypeInt2 = 30,
+  WMTDataTypeInt3 = 31,
+  WMTDataTypeInt4 = 32,
+
+  WMTDataTypeUInt = 33,
+  WMTDataTypeUInt2 = 34,
+  WMTDataTypeUInt3 = 35,
+  WMTDataTypeUInt4 = 36,
+
+  WMTDataTypeShort = 37,
+  WMTDataTypeShort2 = 38,
+  WMTDataTypeShort3 = 39,
+  WMTDataTypeShort4 = 40,
+
+  WMTDataTypeUShort = 41,
+  WMTDataTypeUShort2 = 42,
+  WMTDataTypeUShort3 = 43,
+  WMTDataTypeUShort4 = 44,
+
+  WMTDataTypeChar = 45,
+  WMTDataTypeChar2 = 46,
+  WMTDataTypeChar3 = 47,
+  WMTDataTypeChar4 = 48,
+
+  WMTDataTypeUChar = 49,
+  WMTDataTypeUChar2 = 50,
+  WMTDataTypeUChar3 = 51,
+  WMTDataTypeUChar4 = 52,
+
+  WMTDataTypeBool = 53,
+  WMTDataTypeBool2 = 54,
+  WMTDataTypeBool3 = 55,
+  WMTDataTypeBool4 = 56,
+};
+
+struct WMTFunctionConstant {
+  struct WMTConstMemoryPointer data;
+  enum WMTDataType type;
+  uint16_t index;
+  uint32_t reserved;
+};
+
+WINEMETAL_API obj_handle_t MTLLibrary_newFunctionWithConstants(
+    obj_handle_t library, const char *name, const struct WMTFunctionConstant *constants, uint32_t num_constants,
+    obj_handle_t *err_out
+);
+
 #endif

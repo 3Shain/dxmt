@@ -32,8 +32,7 @@ public:
     NSObject_release(handle);
   }
 
-  String
-  description();
+  String description();
 
   bool
   operator==(std::nullptr_t) const {
@@ -567,6 +566,15 @@ public:
   Reference<Function>
   newFunction(const char *name) {
     return Reference<Function>(MTLLibrary_newFunction(handle, name));
+  }
+
+  Reference<Function>
+  newFunctionWithConstants(
+      const char *name, const WMTFunctionConstant *constants, uint32_t num_constants, Error &error
+  ) {
+    return Reference<Function>(
+        MTLLibrary_newFunctionWithConstants(handle, name, constants, num_constants, &error.handle)
+    );
   }
 };
 
