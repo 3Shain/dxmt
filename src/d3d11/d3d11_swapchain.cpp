@@ -31,10 +31,12 @@ namespace dxmt {
 WMTPixelFormat ConvertSwapChainFormat(DXGI_FORMAT format) {
   switch (format) {
   case DXGI_FORMAT_B8G8R8A8_UNORM_SRGB:
+    return WMTPixelFormatBGRA8Unorm_sRGB;
   case DXGI_FORMAT_B8G8R8A8_UNORM:
-    /* we do gamma correction in our own blit pass */
     return WMTPixelFormatBGRA8Unorm;
   case DXGI_FORMAT_R8G8B8A8_UNORM_SRGB:
+    /* per document this is not supported*/
+    return WMTPixelFormatRGBA8Unorm_sRGB;
   case DXGI_FORMAT_R8G8B8A8_UNORM:
     /* per document this is not supported*/
     return WMTPixelFormatRGBA8Unorm;

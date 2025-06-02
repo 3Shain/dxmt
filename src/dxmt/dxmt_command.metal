@@ -191,44 +191,35 @@ float3 pq_to_linear(float3 norm) {
   return pow(abs(max(pow(norm, 1.0 / PQ_M2) -PQ_C1, 0.0f) / (PQ_C2 - PQ_C3 * pow(abs(norm), 1.0f / PQ_M2))), 1.0f / PQ_M1 );
 }
 
-[[fragment]] float4 fs_present_quad(
-    present_data input [[stage_in]],
-    texture2d<float, access::read> source [[texture(0)]],
-    /* (width, height, flag, edr_scale) */
-    constant uint4& meta [[buffer(0)]]
-) {
-  float4 output = source.read(uint2(input.uv * (float2)meta.xy));
-  float3 output_rgb = output.xyz;
-  uint flag = meta.z;
-  float edr_scale = as_type<float>(meta.w);
-  if (flag & DXMT_PRESENT_FLAG_SRGB)
-    output_rgb = pow(output_rgb, 1.0 / 2.2);
-  if (flag & DXMT_PRESENT_FLAG_HDR_PQ)
-    output_rgb = pq_to_linear(output_rgb);
-  output_rgb *= edr_scale;
-  if (flag & DXMT_PRESENT_FLAG_HDR_PQ)
-    output_rgb = linear_to_pq(output_rgb);
-  return float4(output_rgb, output.w);
-}
+constexpr constant uint kPresentFCIndex_BackbufferSizeMatched = 0x100;
+constexpr constant uint kPresentFCIndex_BackbufferIsSRGB = 0x103;
+constexpr constant uint kPresentFCIndex_HDRPQ = 0x101;
+constexpr constant uint kPresentFCIndex_WithHDRMetadata = 0x102;
+
+constant bool present_backbuffer_size_matched [[function_constant(kPresentFCIndex_BackbufferSizeMatched)]];
+constant bool present_backbuffer_is_srgb [[function_constant(kPresentFCIndex_BackbufferIsSRGB)]];
+constant bool present_hdr_pq [[function_constant(kPresentFCIndex_HDRPQ)]];
+constant bool present_with_hdr_metadata [[function_constant(kPresentFCIndex_WithHDRMetadata)]];
 
 constexpr sampler s(coord::normalized);
 
-[[fragment]] float4 fs_present_quad_scaled(
+[[fragment]] float4 fs_present_quad(
     present_data input [[stage_in]],
     texture2d<float, access::sample> source [[texture(0)]],
-    /* (width, height, flag, edr_scale) */
+    /* (width, height, unused, edr_scale) */
     constant uint4& meta [[buffer(0)]]
 ) {
-  float4 output = source.sample(s, input.uv);
+  float4 output = present_backbuffer_size_matched
+      ? source.read(uint2(input.uv * (float2)meta.xy))
+      : source.sample(s, input.uv);
   float3 output_rgb = output.xyz;
-  uint flag = meta.z;
   float edr_scale = as_type<float>(meta.w);
-  if (flag & DXMT_PRESENT_FLAG_SRGB)
+  if (present_backbuffer_is_srgb)
     output_rgb = pow(output_rgb, 1.0 / 2.2);
-  if (flag & DXMT_PRESENT_FLAG_HDR_PQ)
+  if (present_hdr_pq)
     output_rgb = pq_to_linear(output_rgb);
   output_rgb *= edr_scale;
-  if (flag & DXMT_PRESENT_FLAG_HDR_PQ)
+  if (present_hdr_pq)
     output_rgb = linear_to_pq(output_rgb);
   return float4(output_rgb, output.w);
 }

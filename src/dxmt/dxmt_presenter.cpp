@@ -22,8 +22,9 @@ Presenter::Presenter(WMT::Device device, WMT::MetalLayer layer, InternalCommandL
 bool
 Presenter::changeLayerProperties(WMTPixelFormat format, WMTColorSpace colorspace, unsigned width, unsigned height) {
   bool should_invalidated = colorspace_ != colorspace;
-  should_invalidated |= layer_props_.pixel_format != format;
-  layer_props_.pixel_format = format;
+  should_invalidated |= source_format_ != format;
+  source_format_ = format;
+  layer_props_.pixel_format = Forget_sRGB(format);
   layer_props_.drawable_height = height;
   layer_props_.drawable_width = width;
   layer_.setProps(layer_props_);
@@ -68,14 +69,9 @@ Presenter::encodeCommands(WMT::CommandBuffer cmdbuf, WMT::Texture backbuffer) {
   encoder.setFragmentTexture(backbuffer, 0);
 
   uint32_t extend[4] = {(uint32_t)layer_props_.drawable_width, (uint32_t)layer_props_.drawable_height, 0, 0};
-  auto backbuffer_format = backbuffer.pixelFormat();
-  if (backbuffer_format != Forget_sRGB(backbuffer_format))
-    extend[2] |= DXMT_PRESENT_FLAG_SRGB;
-  if (backbuffer_format == WMTPixelFormatRGBA16Float)
+  if (colorspace_ == WMTColorSpaceHDR_scRGB)
     edr_scale *= 0.8;
   extend[3] = std::bit_cast<uint32_t>(edr_scale);
-  if (WMT_COLORSPACE_IS_HDR(colorspace_) && backbuffer_format == WMTPixelFormatRGB10A2Unorm)
-    extend[2] |= DXMT_PRESENT_FLAG_HDR_PQ;
   encoder.setFragmentBytes(extend, sizeof(extend), 0);
   if (backbuffer.width() == extend[0] && backbuffer.height() == extend[1]) {
     encoder.setRenderPipelineState(present_blit_);
@@ -90,16 +86,39 @@ Presenter::encodeCommands(WMT::CommandBuffer cmdbuf, WMT::Texture backbuffer) {
   return drawable;
 }
 
+constexpr uint32_t kPresentFCIndex_BackbufferSizeMatched = 0x100;
+constexpr uint32_t kPresentFCIndex_HDRPQ = 0x101;
+constexpr uint32_t kPresentFCIndex_WithHDRMetadata = 0x102;
+constexpr uint32_t kPresentFCIndex_BackbufferIsSRGB = 0x103;
+
 void
 Presenter::buildRenderPipelineState() {
   auto pool = WMT::MakeAutoreleasePool();
 
   auto library = lib_.getLibrary();
 
+  uint32_t true_data = true, false_data = false;
+  WMTFunctionConstant constants[4];
+  constants[0].data.set(&true_data);
+  constants[0].type = WMTDataTypeBool;
+  constants[0].index = kPresentFCIndex_BackbufferSizeMatched;
+  constants[1].data.set(colorspace_ == WMTColorSpaceHDR_PQ ? &true_data: &false_data);
+  constants[1].type = WMTDataTypeBool;
+  constants[1].index = kPresentFCIndex_HDRPQ;
+  constants[2].data.set(&false_data);
+  constants[2].type = WMTDataTypeBool;
+  constants[2].index = kPresentFCIndex_WithHDRMetadata;
+  constants[3].data.set(Is_sRGBVariant(source_format_) ? &true_data: &false_data);
+  constants[3].type = WMTDataTypeBool;
+  constants[3].index = kPresentFCIndex_BackbufferIsSRGB;
+
   WMT::Reference<WMT::Error> error;
   auto vs_present_quad = library.newFunction("vs_present_quad");
-  auto fs_present_quad = library.newFunction("fs_present_quad");
-  auto fs_present_quad_scaled = library.newFunction("fs_present_quad_scaled");
+  auto fs_present_quad = library.newFunctionWithConstants("fs_present_quad", constants, std::size(constants), error);
+
+  constants[0].data.set(&false_data);
+  auto fs_present_quad_scaled =
+      library.newFunctionWithConstants("fs_present_quad", constants, std::size(constants), error);
   {
     WMTRenderPipelineInfo present_pipeline;
     WMT::InitializeRenderPipelineInfo(present_pipeline);

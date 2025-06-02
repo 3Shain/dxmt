@@ -23,7 +23,8 @@ private:
   WMT::MetalLayer layer_;
   InternalCommandLibrary &lib_;
   WMTLayerProps layer_props_;
-  WMTColorSpace colorspace_;
+  WMTColorSpace colorspace_ = WMTColorSpaceSRGB;
+  WMTPixelFormat source_format_ = WMTPixelFormatInvalid;
   WMT::Reference<WMT::RenderPipelineState> present_blit_;
   WMT::Reference<WMT::RenderPipelineState> present_scale_;
   std::atomic_flag pso_valid = 0;
