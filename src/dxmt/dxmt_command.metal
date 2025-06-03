@@ -183,12 +183,43 @@ constant constexpr float PQ_C1 = 0.8359375;
 constant constexpr float PQ_C2 = 18.8515625;
 constant constexpr float PQ_C3 = 18.6875;
 
-float3 linear_to_pq(float3 linear) {
+float linear_to_pq(float linear) {
+  linear = linear / 10000;
   return pow((PQ_C1 + PQ_C2 * pow(abs(linear), PQ_M1)) / (1.0f + PQ_C3 * pow(abs(linear), PQ_M1)), PQ_M2);
 }
 
+float3 linear_to_pq(float3 linear) {
+  linear = linear / 10000;
+  return pow((PQ_C1 + PQ_C2 * pow(abs(linear), PQ_M1)) / (1.0f + PQ_C3 * pow(abs(linear), PQ_M1)), PQ_M2);
+}
+
+float pq_to_linear(float norm) {
+  return 10000 * pow(abs(max(pow(norm, 1.0 / PQ_M2) -PQ_C1, 0.0f) / (PQ_C2 - PQ_C3 * pow(abs(norm), 1.0f / PQ_M2))), 1.0f / PQ_M1 );
+}
+
 float3 pq_to_linear(float3 norm) {
-  return pow(abs(max(pow(norm, 1.0 / PQ_M2) -PQ_C1, 0.0f) / (PQ_C2 - PQ_C3 * pow(abs(norm), 1.0f / PQ_M2))), 1.0f / PQ_M1 );
+  return 10000 * pow(abs(max(pow(norm, 1.0 / PQ_M2) -PQ_C1, 0.0f) / (PQ_C2 - PQ_C3 * pow(abs(norm), 1.0f / PQ_M2))), 1.0f / PQ_M1 );
+}
+
+// See BT.2408 Annex 5
+float EETF(float E, float Lw, float Lb, float Lmax, float Lmin) {
+  float pq_Lb = linear_to_pq(Lb);
+  float pqdiff_LwLb = linear_to_pq(Lw) - pq_Lb;
+  float min_lum = (linear_to_pq(Lmin) - pq_Lb) / pqdiff_LwLb;
+  float max_lum = (linear_to_pq(Lmax) - pq_Lb) / pqdiff_LwLb;
+  E = (E - pq_Lb) / pqdiff_LwLb;
+  float KS = 1.5 * max_lum - 0.5;
+  float b = min_lum;
+  if (E >= KS) {
+    float T = (E - KS) /  (1 - KS);
+    float T_2 = T * T;
+    float T_3 = T_2 * T;
+    E = (2 * T_3 - 3 * T_2 + 1) * KS 
+        + (T_3 - 2 * T_2 + T) * (1 - KS)
+        + (- 2 * T_3 + 3 * T_2) * max_lum;
+  }
+  E = E + b * pow(1 - E, 4);
+  return E * pqdiff_LwLb + pq_Lb;
 }
 
 constexpr constant uint kPresentFCIndex_BackbufferSizeMatched = 0x100;
@@ -203,24 +234,47 @@ constant bool present_with_hdr_metadata [[function_constant(kPresentFCIndex_With
 
 constexpr sampler s(coord::normalized);
 
+struct DXMTPresentMetadata {
+  float edr_scale;
+  float max_content_luminance;
+  float max_display_luminance;
+};
+
 [[fragment]] float4 fs_present_quad(
     present_data input [[stage_in]],
     texture2d<float, access::sample> source [[texture(0)]],
-    /* (width, height, unused, edr_scale) */
-    constant uint4& meta [[buffer(0)]]
+    constant DXMTPresentMetadata& meta [[buffer(0)]]
 ) {
   float4 output = present_backbuffer_size_matched
-      ? source.read(uint2(input.uv * (float2)meta.xy))
+      ? source.read(uint2(input.position.xy))
       : source.sample(s, input.uv);
   float3 output_rgb = output.xyz;
-  float edr_scale = as_type<float>(meta.w);
+  float edr_scale = meta.edr_scale;
   if (present_backbuffer_is_srgb)
     output_rgb = pow(output_rgb, 1.0 / 2.2);
   if (present_hdr_pq)
     output_rgb = pq_to_linear(output_rgb);
+  else if (present_with_hdr_metadata)
+    output_rgb = output_rgb * 80; // to nits
+  if (present_with_hdr_metadata) {
+    // tone mapping: BT.2408 EETF + maxRGB
+    float max_content_luminance = meta.max_content_luminance;
+    float min_content_luminance = 1; // in case of divison by 0
+    float max_display_luminance = meta.max_display_luminance;
+    float min_display_luminance = 0;
+    float3 clamped = clamp(output_rgb, float3(min_content_luminance), float3(max_content_luminance));
+    float3 clamped_pq = linear_to_pq(clamped);
+    float maxRGB = max3(clamped_pq.x, clamped_pq.y, clamped_pq.z);
+    float maxRGB2 = EETF(
+      maxRGB, max_content_luminance, min_content_luminance, max_display_luminance, min_display_luminance
+    );
+    output_rgb = pq_to_linear(maxRGB2) / pq_to_linear(maxRGB) * clamped;
+  }
   output_rgb *= edr_scale;
   if (present_hdr_pq)
     output_rgb = linear_to_pq(output_rgb);
+  else if (present_with_hdr_metadata)
+    output_rgb = output_rgb / 80;
   return float4(output_rgb, output.w);
 }
 
