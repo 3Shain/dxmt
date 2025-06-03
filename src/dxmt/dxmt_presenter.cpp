@@ -45,6 +45,12 @@ Presenter::changeLayerColorSpace(WMTColorSpace colorspace) {
   return should_invalidated;
 }
 
+struct DXMTPresentMetadata {
+  float edr_scale;
+  float max_content_luminance;
+  float max_display_luminance;
+};
+
 WMT::MetalDrawable
 Presenter::encodeCommands(WMT::CommandBuffer cmdbuf, WMT::Texture backbuffer) {
 
@@ -68,17 +74,20 @@ Presenter::encodeCommands(WMT::CommandBuffer cmdbuf, WMT::Texture backbuffer) {
   auto encoder = cmdbuf.renderCommandEncoder(info);
   encoder.setFragmentTexture(backbuffer, 0);
 
-  uint32_t extend[4] = {(uint32_t)layer_props_.drawable_width, (uint32_t)layer_props_.drawable_height, 0, 0};
+  double width = layer_props_.drawable_width;
+  double height = layer_props_.drawable_height;
+  struct DXMTPresentMetadata metadata;
+
   if (colorspace_ == WMTColorSpaceHDR_scRGB)
     edr_scale *= 0.8;
-  extend[3] = std::bit_cast<uint32_t>(edr_scale);
-  encoder.setFragmentBytes(extend, sizeof(extend), 0);
-  if (backbuffer.width() == extend[0] && backbuffer.height() == extend[1]) {
+  metadata.edr_scale = edr_scale;
+  encoder.setFragmentBytes(&metadata, sizeof(metadata), 0);
+  if (backbuffer.width() == (uint64_t)width && backbuffer.height() == (uint64_t)height) {
     encoder.setRenderPipelineState(present_blit_);
   } else {
     encoder.setRenderPipelineState(present_scale_);
   }
-  encoder.setViewport({0, 0, (double)extend[0], (double)extend[1], 0, 1});
+  encoder.setViewport({0, 0, width, height, 0, 1});
   encoder.drawPrimitives(WMTPrimitiveTypeTriangle, 0, 3);
 
   encoder.endEncoding();
