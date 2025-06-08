@@ -30,6 +30,10 @@ D3D10CoreCreateDevice(
   if (FAILED(hr))
     return hr;
 
+  Com<ID3D10Multithread> multithread;
+  d3d11_device->QueryInterface(IID_PPV_ARGS(&multithread));
+  multithread->SetMultithreadProtected(!(Flags & D3D10_CREATE_DEVICE_SINGLETHREADED));
+
   return d3d11_device->QueryInterface(IID_PPV_ARGS(ppDevice));
 }
 
