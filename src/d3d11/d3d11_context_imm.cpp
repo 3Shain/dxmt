@@ -8,6 +8,7 @@
 
 namespace dxmt {
 struct ContextInternalState {
+  using device_mutex_t = d3d11_device_mutex;
   CommandQueue &cmd_queue;
   bool has_dirty_op_since_last_event = false;
 };
@@ -65,11 +66,29 @@ ImmediateContextBase::UseCopySource(Rc<StagingResource> &staging) {
 class MTLD3D11ImmediateContext : public ImmediateContextBase {
 public:
   MTLD3D11ImmediateContext(MTLD3D11Device *pDevice, CommandQueue &cmd_queue) :
-      ImmediateContextBase(pDevice, ctx_state),
+      ImmediateContextBase(pDevice, ctx_state, pDevice->mutex),
       cmd_queue(cmd_queue),
-      ctx_state({cmd_queue}) {
+      ctx_state({cmd_queue}),
+      d3dmt_(this, mutex) {
         ignore_map_flag_no_wait_ = Config::getInstance().getOption<bool>("d3d11.ignoreMapFlagNoWait", false);
       }
+
+  HRESULT
+  STDMETHODCALLTYPE
+  QueryInterface(REFIID riid, void **ppvObject) override {
+    if (ppvObject == nullptr)
+      return E_POINTER;
+
+    *ppvObject = nullptr;
+
+    if (riid == __uuidof(ID3D11Multithread)
+        && !(m_parent->GetCreationFlags() & D3D11_CREATE_DEVICE_SINGLETHREADED)) {
+      *ppvObject = ref(&d3dmt_);
+      return S_OK;
+    }
+
+    return ImmediateContextBase::QueryInterface(riid, ppvObject);
+  }
 
   ULONG STDMETHODCALLTYPE
   AddRef() override {
@@ -487,6 +506,7 @@ private:
   CommandQueue &cmd_queue;
   ContextInternalState ctx_state;
   std::atomic<uint32_t> refcount = 0;
+  D3D11Multithread d3dmt_;
   bool ignore_map_flag_no_wait_;
 };
 

@@ -3,6 +3,7 @@
 #include "com/com_guid.hpp"
 #include "com/com_pointer.hpp"
 #include "d3d11_3.h"
+#include "d3d11_multithread.hpp"
 #include "dxgi_interfaces.h"
 #include "dxmt_device.hpp"
 
@@ -73,6 +74,8 @@ public:
   virtual IMTLD3D11DeviceContext *GetImmediateContextPrivate() = 0;
 
   virtual unsigned int GetDirectXVersion() = 0;
+
+  d3d11_device_mutex mutex;
 };
 
 Com<IMTLDXGIDevice> CreateD3D11Device(std::unique_ptr<Device> &&device,
