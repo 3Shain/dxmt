@@ -4401,6 +4401,7 @@ protected:
   CommandBufferState cmdbuf_state = CommandBufferState::Idle;
   CommandBufferState previous_render_pipeline_state = CommandBufferState::Idle;
   ContextInternalState &ctx_state;
+  ContextInternalState::device_mutex_t &mutex;
 
   IMTLD3D11RasterizerState *default_rasterizer_state;
   IMTLD3D11DepthStencilState *default_depth_stencil_state;
@@ -4425,10 +4426,11 @@ protected:
   MTLD3D11ContextExt<ContextInternalState> ext_;
 
 public:
-  MTLD3D11DeviceContextImplBase(MTLD3D11Device *pDevice, ContextInternalState &ctx_state) :
+  MTLD3D11DeviceContextImplBase(MTLD3D11Device *pDevice, ContextInternalState &ctx_state, ContextInternalState::device_mutex_t &mutex) :
       MTLD3D11DeviceChild(pDevice),
       device(pDevice),
       ctx_state(ctx_state),
+      mutex(mutex),
       state_(),
       annotation_(this),
       ext_(this) {

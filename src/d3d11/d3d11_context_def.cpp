@@ -6,6 +6,7 @@
 namespace dxmt {
 
 struct DeferredContextInternalState {
+  using device_mutex_t = null_mutex;
   CommandQueue &cmd_queue;
   Com<MTLD3D11CommandList> current_cmdlist;
   std::unordered_map<DynamicBuffer *, std::pair<BufferAllocation *, uint32_t>> current_dynamic_buffer_allocations;
@@ -59,7 +60,7 @@ void DeferredContextBase::UseCopySource(Rc<StagingResource> &staging) {
 class MTLD3D11DeferredContext : public DeferredContextBase {
 public:
   MTLD3D11DeferredContext(MTLD3D11Device *pDevice, UINT ContextFlags) :
-      DeferredContextBase(pDevice, ctx_state),
+      DeferredContextBase(pDevice, ctx_state, mutex),
       ctx_state({pDevice->GetDXMTDevice().queue(), {}}),
       context_flag(ContextFlags) {
     device->CreateCommandList((ID3D11CommandList **)&ctx_state.current_cmdlist);
@@ -364,6 +365,7 @@ public:
 
 private:
   DeferredContextInternalState ctx_state;
+  null_mutex mutex;
   std::atomic<uint32_t> refcount = 0;
   UINT context_flag;
 };
