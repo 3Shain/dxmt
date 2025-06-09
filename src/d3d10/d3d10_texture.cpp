@@ -5,7 +5,7 @@ namespace dxmt {
 HRESULT STDMETHODCALLTYPE
 MTLD3D10Texture1D::Map(UINT Subresource, D3D10_MAP MapType, UINT MapFlags, void **ppData) {
   D3D11_MAPPED_SUBRESOURCE subresource{};
-  HRESULT hr = d3d11_context->Map(d3d11, 0, D3D11_MAP(MapType), MapFlags, &subresource);
+  HRESULT hr = d3d11_context->Map(d3d11, Subresource, D3D11_MAP(MapType), MapFlags, &subresource);
   if (hr == S_OK)
     *ppData = subresource.pData;
   return hr;
@@ -13,7 +13,7 @@ MTLD3D10Texture1D::Map(UINT Subresource, D3D10_MAP MapType, UINT MapFlags, void 
 
 void STDMETHODCALLTYPE
 MTLD3D10Texture1D::Unmap(UINT Subresource) {
-  d3d11_context->Unmap(d3d11, 0);
+  d3d11_context->Unmap(d3d11, Subresource);
 }
 
 void STDMETHODCALLTYPE
