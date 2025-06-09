@@ -1,21 +1,40 @@
 #include "d3d11_multithread.hpp"
+#include "thread.hpp"
+#include "util_likely.hpp"
+#include <atomic>
 
 namespace dxmt {
 
 void d3d11_device_mutex::lock() {
   if (!protected_)
     return;
-  internal_mutex_.lock();
+  uint32_t tid = dxmt::this_thread::get_id();
+  uint32_t expected = 0;
+  while(!owner_.compare_exchange_weak(expected, tid, std::memory_order_acquire)) {
+    if (unlikely(expected == tid))
+      break;
+    // better to spin here
+    while(owner_.load(std::memory_order_relaxed))
+      _mm_pause();
+    expected = 0;
+  }
+  counter_++;
 }
 void d3d11_device_mutex::unlock() noexcept {
   if (!protected_)
     return;
-  internal_mutex_.unlock();
+  counter_--;
+  if (likely(counter_ == 0))
+    owner_.store(0, std::memory_order_release);
 }
 
 bool d3d11_device_mutex::set_protected(bool Protected) {
   bool ret = protected_;
   protected_ = Protected;
+  if (ret && !Protected) {
+    counter_ = 0;
+    owner_.store(0, std::memory_order_release);
+  }
   return ret;
 }
 bool d3d11_device_mutex::get_protected() { return protected_; }

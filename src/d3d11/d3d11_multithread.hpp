@@ -1,6 +1,6 @@
 #pragma once
 #include "d3d11_4.h"
-#include "thread.hpp"
+#include <atomic>
 
 namespace dxmt {
 
@@ -15,8 +15,8 @@ public:
 
 private:
   bool protected_ = false;
-  // not the fastest one
-  dxmt::recursive_mutex internal_mutex_;
+  std::atomic_uint32_t owner_ = 0;
+  uint32_t counter_ = 0;
 };
 
 class D3D11Multithread : public ID3D11Multithread {
