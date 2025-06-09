@@ -508,8 +508,6 @@ public:
   STDMETHODCALLTYPE
   Present1(UINT SyncInterval, UINT PresentFlags,
            const DXGI_PRESENT_PARAMETERS *pPresentParameters) final {
-    std::lock_guard<d3d11_device_mutex> lock(m_device->mutex);
-
     HRESULT hr = S_OK;
     if (desc_.Width == 0 || desc_.Height == 0)
       hr = DXGI_STATUS_OCCLUDED;
@@ -521,6 +519,9 @@ public:
                      (preferred_max_frame_rate ? preferred_max_frame_rate
                                                : init_refresh_rate_),
                  preferred_max_frame_rate ? 1.0 / preferred_max_frame_rate : 0);
+
+    std::unique_lock<d3d11_device_mutex> lock(m_device->mutex);
+
     device_context_->PrepareFlush();
     auto &cmd_queue = m_device->GetDXMTDevice().queue();
     auto chunk = cmd_queue.CurrentChunk();
@@ -548,6 +549,9 @@ public:
     }
     chunk->signal_frame_latency_fence_ = cmd_queue.CurrentFrameSeq();
     device_context_->Commit();
+
+    lock.unlock(); // since PresentBoundary() will and should only stall current thread
+
     cmd_queue.PresentBoundary();
 
     presentation_count_ += 1;
