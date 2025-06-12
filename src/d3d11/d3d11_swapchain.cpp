@@ -784,9 +784,20 @@ public:
     return S_OK;
   }
 
-  HRESULT STDMETHODCALLTYPE SetHDRMetaData(DXGI_HDR_METADATA_TYPE Type, UINT Size,
-                         void *pMetaData) override {
-    WARN("DXGISwapChain4::SetHDRMetaData: stub");
+  HRESULT STDMETHODCALLTYPE SetHDRMetaData(DXGI_HDR_METADATA_TYPE Type,
+                                           UINT Size,
+                                           void *pMetaData) override {
+                                            return S_OK;
+    if (Type == DXGI_HDR_METADATA_TYPE_NONE) {
+      presenter->changeHDRMetadata(nullptr);
+      return S_OK;
+    }
+    if (Type == DXGI_HDR_METADATA_TYPE_HDR10) {
+      if (Size != sizeof(WMTHDRMetadata))
+        return E_INVALIDARG;
+      presenter->changeHDRMetadata(reinterpret_cast<const WMTHDRMetadata *>(pMetaData));
+      return S_OK;
+    }
     return DXGI_ERROR_UNSUPPORTED;
   }
 
@@ -794,7 +805,7 @@ private:
   bool LayerSupportEDR() {
     WMTEDRValue edr_value;
     MetalLayer_getEDRValue(layer_weak_, &edr_value);
-    return edr_value.maximum_potential_edr_color_component_value != 1.0f;
+    return edr_value.maximum_potential_edr_color_component_value > 1.0f;
   };
 
   Com<IDXGIFactory1> factory_;
