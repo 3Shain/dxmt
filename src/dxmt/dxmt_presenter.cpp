@@ -83,11 +83,12 @@ Presenter::encodeCommands(WMT::CommandBuffer cmdbuf, WMT::Texture backbuffer) {
   checkDisplaySetting();
 
   auto final_colorspace = display_setting_version_ > 0 ? display_colorspace_ : colorspace_;
+  auto is_hdr = WMT_COLORSPACE_IS_HDR(final_colorspace);
   auto hdr_metadata = display_setting_version_ > 0 ? &display_hdr_metadata_
                       : has_hdr_metadata_          ? &hdr_metadata_
                                                    : nullptr;
   if (unlikely(!pso_valid.test_and_set())) {
-    buildRenderPipelineState(final_colorspace == WMTColorSpaceHDR_PQ, hdr_metadata != nullptr);
+    buildRenderPipelineState(final_colorspace == WMTColorSpaceHDR_PQ, is_hdr && hdr_metadata != nullptr);
     layer_.setColorSpace(final_colorspace);
   }
 
@@ -98,7 +99,7 @@ Presenter::encodeCommands(WMT::CommandBuffer cmdbuf, WMT::Texture backbuffer) {
   metadata.max_content_luminance = 10000;
   metadata.max_display_luminance = display_edr_value_.maximum_potential_edr_color_component_value * 100;
 
-  if (WMT_COLORSPACE_IS_HDR(final_colorspace)) {
+  if (is_hdr) {
     edr_scale = display_edr_value_.maximum_edr_color_component_value /
                 display_edr_value_.maximum_potential_edr_color_component_value;
 
