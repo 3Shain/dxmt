@@ -29,7 +29,6 @@ Presenter::changeLayerProperties(WMTPixelFormat format, WMTColorSpace colorspace
   layer_props_.drawable_width = width;
   layer_.setProps(layer_props_);
   colorspace_ = colorspace;
-  layer_.setColorSpace(colorspace);
   if (should_invalidated)
     pso_valid.clear();
   return should_invalidated;
@@ -39,7 +38,6 @@ bool
 Presenter::changeLayerColorSpace(WMTColorSpace colorspace) {
   bool should_invalidated = colorspace_ != colorspace;
   colorspace_ = colorspace;
-  layer_.setColorSpace(colorspace);
   if (should_invalidated)
     pso_valid.clear();
   return should_invalidated;
@@ -51,19 +49,65 @@ struct DXMTPresentMetadata {
   float max_display_luminance;
 };
 
+void
+Presenter::checkDisplaySetting() {
+  uint64_t display_setting_version = 0;
+
+  WMTQueryDisplaySettingForLayer(
+      layer_.handle, &display_setting_version, &display_colorspace_, &display_hdr_metadata_, &display_edr_value_
+  );
+
+  if (display_setting_version != display_setting_version_) {
+    display_setting_version_ = display_setting_version;
+    pso_valid.clear();
+  }
+};
+
+void
+Presenter::changeHDRMetadata(const WMTHDRMetadata *metadata) {
+  if (metadata) {
+    has_hdr_metadata_ = true;
+    hdr_metadata_ = *metadata;
+    pso_valid.clear();
+  } else {
+    if (has_hdr_metadata_) {
+      has_hdr_metadata_ = false;
+      pso_valid.clear();
+    }
+  }
+}
+
 WMT::MetalDrawable
 Presenter::encodeCommands(WMT::CommandBuffer cmdbuf, WMT::Texture backbuffer) {
 
-  if (unlikely(!pso_valid.test_and_set()))
-    buildRenderPipelineState();
+  checkDisplaySetting();
+
+  auto final_colorspace = display_setting_version_ > 0 ? display_colorspace_ : colorspace_;
+  auto hdr_metadata = display_setting_version_ > 0 ? &display_hdr_metadata_
+                      : has_hdr_metadata_          ? &hdr_metadata_
+                                                   : nullptr;
+  if (unlikely(!pso_valid.test_and_set())) {
+    buildRenderPipelineState(final_colorspace == WMTColorSpaceHDR_PQ, hdr_metadata != nullptr);
+    layer_.setColorSpace(final_colorspace);
+  }
 
   auto drawable = layer_.nextDrawable();
 
   float edr_scale = 1.0f;
-  if (WMT_COLORSPACE_IS_HDR(colorspace_)) {
-    WMTEDRValue edr_value;
-    MetalLayer_getEDRValue(layer_, &edr_value);
-    edr_scale = edr_value.maximum_edr_color_component_value / edr_value.maximum_potential_edr_color_component_value;
+  struct DXMTPresentMetadata metadata;
+  metadata.max_content_luminance = 10000;
+  metadata.max_display_luminance = display_edr_value_.maximum_potential_edr_color_component_value * 100;
+
+  if (WMT_COLORSPACE_IS_HDR(final_colorspace)) {
+    edr_scale = display_edr_value_.maximum_edr_color_component_value /
+                display_edr_value_.maximum_potential_edr_color_component_value;
+
+    if (hdr_metadata) {
+      metadata.max_content_luminance = std::max<uint32_t>(
+          {(uint32_t)metadata.max_display_luminance, hdr_metadata->max_content_light_level,
+           hdr_metadata->max_mastering_luminance, hdr_metadata->max_frame_average_light_level}
+      );
+    }
   }
 
   WMTRenderPassInfo info;
@@ -76,9 +120,8 @@ Presenter::encodeCommands(WMT::CommandBuffer cmdbuf, WMT::Texture backbuffer) {
 
   double width = layer_props_.drawable_width;
   double height = layer_props_.drawable_height;
-  struct DXMTPresentMetadata metadata;
 
-  if (colorspace_ == WMTColorSpaceHDR_scRGB)
+  if (final_colorspace == WMTColorSpaceHDR_scRGB)
     edr_scale *= 0.8;
   metadata.edr_scale = edr_scale;
   encoder.setFragmentBytes(&metadata, sizeof(metadata), 0);
@@ -101,7 +144,7 @@ constexpr uint32_t kPresentFCIndex_WithHDRMetadata = 0x102;
 constexpr uint32_t kPresentFCIndex_BackbufferIsSRGB = 0x103;
 
 void
-Presenter::buildRenderPipelineState() {
+Presenter::buildRenderPipelineState(bool is_pq, bool with_hdr_metadata) {
   auto pool = WMT::MakeAutoreleasePool();
 
   auto library = lib_.getLibrary();
@@ -111,13 +154,13 @@ Presenter::buildRenderPipelineState() {
   constants[0].data.set(&true_data);
   constants[0].type = WMTDataTypeBool;
   constants[0].index = kPresentFCIndex_BackbufferSizeMatched;
-  constants[1].data.set(colorspace_ == WMTColorSpaceHDR_PQ ? &true_data: &false_data);
+  constants[1].data.set(is_pq ? &true_data : &false_data);
   constants[1].type = WMTDataTypeBool;
   constants[1].index = kPresentFCIndex_HDRPQ;
-  constants[2].data.set(&false_data);
+  constants[2].data.set(with_hdr_metadata ? &true_data : &false_data);
   constants[2].type = WMTDataTypeBool;
   constants[2].index = kPresentFCIndex_WithHDRMetadata;
-  constants[3].data.set(Is_sRGBVariant(source_format_) ? &true_data: &false_data);
+  constants[3].data.set(Is_sRGBVariant(source_format_) ? &true_data : &false_data);
   constants[3].type = WMTDataTypeBool;
   constants[3].index = kPresentFCIndex_BackbufferIsSRGB;
 
