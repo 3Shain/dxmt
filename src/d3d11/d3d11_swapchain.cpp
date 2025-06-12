@@ -73,6 +73,7 @@ public:
       layer_factory_weak_(pLayerFactoryWeakref),
       presentation_count_(0),
       desc_(*pDesc),
+      device_context_(pDevice->GetImmediateContextPrivate()),
       hWnd(hWnd),
       monitor_(wsi::getWindowMonitor(hWnd)),
       hud(WMT::DeveloperHUDProperties::instance()) {
@@ -91,10 +92,6 @@ public:
     presenter = Rc(new Presenter(pDevice->GetMTLDevice(), layer_weak_,
                                  pDevice->GetDXMTDevice().queue().cmd_library,
                                  scale_factor));
-
-    Com<ID3D11DeviceContext1> context;
-    m_device->GetImmediateContext1(&context);
-    context->QueryInterface(IID_PPV_ARGS(&device_context_));
 
     frame_latency = kSwapchainLatency;
     present_semaphore_ = CreateSemaphore(nullptr, frame_latency,
@@ -120,7 +117,7 @@ public:
                            (double)current_mode.refreshRate.denominator;
     }
 
-    hud.initialize(GetVersionDescriptionText(11, m_device->GetFeatureLevel()));
+    hud.initialize(GetVersionDescriptionText(m_device->GetDirectXVersion(), m_device->GetFeatureLevel()));
 
     backbuffer_desc_ = D3D11_TEXTURE2D_DESC1 {
       .Width = desc_.Width,
@@ -555,6 +552,9 @@ public:
                      (preferred_max_frame_rate ? preferred_max_frame_rate
                                                : init_refresh_rate_),
                  preferred_max_frame_rate ? 1.0 / preferred_max_frame_rate : 0);
+
+    std::unique_lock<d3d11_device_mutex> lock(m_device->mutex);
+
     device_context_->PrepareFlush();
     auto &cmd_queue = m_device->GetDXMTDevice().queue();
     auto chunk = cmd_queue.CurrentChunk();
@@ -582,6 +582,9 @@ public:
     }
     chunk->signal_frame_latency_fence_ = cmd_queue.CurrentFrameSeq();
     device_context_->Commit();
+
+    lock.unlock(); // since PresentBoundary() will and should only stall current thread
+
     cmd_queue.PresentBoundary();
 
     presentation_count_ += 1;
@@ -809,7 +812,7 @@ private:
   DXGI_SWAP_CHAIN_DESC1 desc_;
   DXGI_SWAP_CHAIN_FULLSCREEN_DESC fullscreen_desc_;
   D3D11_TEXTURE2D_DESC1 backbuffer_desc_;
-  Com<IMTLD3D11DeviceContext> device_context_;
+  IMTLD3D11DeviceContext* device_context_;
   Com<D3D11ResourceCommon, false> backbuffer_;
   HANDLE present_semaphore_;
   HWND hWnd;

@@ -10,6 +10,9 @@
 #include "dxgi_resource.hpp"
 #include "dxmt_resource_binding.hpp"
 #include "log/log.hpp"
+#include "../d3d10/d3d10_buffer.hpp"
+#include "../d3d10/d3d10_texture.hpp"
+#include "../d3d10/d3d10_view.hpp"
 #include <memory>
 #include <type_traits>
 
@@ -60,6 +63,8 @@ struct tag_buffer {
   using COM_IMPL = ID3D11Buffer;
   using DESC = D3D11_BUFFER_DESC;
   using DESC1 = D3D11_BUFFER_DESC;
+  using D3D10 = ID3D10Buffer;
+  using D3D10_IMPL = MTLD3D10Buffer;
   static constexpr std::string_view debug_name = "buffer";
 };
 
@@ -70,6 +75,8 @@ struct tag_texture_1d {
   using COM_IMPL = ID3D11Texture1D;
   using DESC = D3D11_TEXTURE1D_DESC;
   using DESC1 = D3D11_TEXTURE1D_DESC;
+  using D3D10 = ID3D10Texture1D;
+  using D3D10_IMPL = MTLD3D10Texture1D;
   static constexpr std::string_view debug_name = "tex1d";
 };
 
@@ -80,6 +87,8 @@ struct tag_texture_2d {
   using COM_IMPL = ID3D11Texture2D1;
   using DESC = D3D11_TEXTURE2D_DESC;
   using DESC1 = D3D11_TEXTURE2D_DESC1;
+  using D3D10 = ID3D10Texture2D;
+  using D3D10_IMPL = MTLD3D10Texture2D;
   static constexpr std::string_view debug_name = "tex2d";
 };
 
@@ -90,6 +99,8 @@ struct tag_texture_3d {
   using COM_IMPL = ID3D11Texture3D1;
   using DESC = D3D11_TEXTURE3D_DESC;
   using DESC1 = D3D11_TEXTURE3D_DESC1;
+  using D3D10 = ID3D10Texture3D;
+  using D3D10_IMPL = MTLD3D10Texture3D;
   static constexpr std::string_view debug_name = "tex3d";
 };
 
@@ -147,7 +158,8 @@ public:
       : MTLD3D11DeviceChild<D3D11ResourceCommon, Base...>(
             device),
         desc(desc),
-        dxgi_resource(new MTLDXGIResource<TResourceBase<tag, Base...>>(this)) {}
+        dxgi_resource(new MTLDXGIResource<TResourceBase<tag, Base...>>(this)),
+        d3d10(reinterpret_cast<tag::COM *>(this), device->GetImmediateContextPrivate()) {}
 
   template <std::size_t n> HRESULT ResolveBase(REFIID riid, void **ppvObject) {
     return E_NOINTERFACE;
@@ -178,6 +190,13 @@ public:
         riid == __uuidof(typename tag::COM) ||
         riid == __uuidof(typename tag::COM_IMPL)) {
       *ppvObject = ref_and_cast<D3D11ResourceCommon>(this);
+      return S_OK;
+    }
+
+    if (riid == __uuidof(ID3D10DeviceChild) ||
+        riid == __uuidof(ID3D10Resource) ||
+        riid == __uuidof(typename tag::D3D10)) {
+      *ppvObject = ref_and_cast<typename tag::D3D10>(&d3d10);
       return S_OK;
     }
 
@@ -247,6 +266,7 @@ public:
 protected:
   tag::DESC1 desc;
   std::unique_ptr<IDXGIResource1> dxgi_resource;
+  tag::D3D10_IMPL d3d10;
 };
 
 template <typename RESOURCE_IMPL_ = ID3D11Resource,
@@ -259,6 +279,9 @@ struct tag_render_target_view {
   using RESOURCE_IMPL = RESOURCE_IMPL_;
   using DESC = D3D11_RENDER_TARGET_VIEW_DESC;
   using DESC1 = D3D11_RENDER_TARGET_VIEW_DESC1;
+  using D3D10 = ID3D10RenderTargetView;
+  using D3D10_1 = ID3D10RenderTargetView;
+  using D3D10_IMPL = MTLD3D10RenderTargetView;
 };
 
 template <typename RESOURCE_IMPL_ = ID3D11Resource,
@@ -271,6 +294,9 @@ struct tag_depth_stencil_view {
   using RESOURCE_IMPL = RESOURCE_IMPL_;
   using DESC = D3D11_DEPTH_STENCIL_VIEW_DESC;
   using DESC1 = D3D11_DEPTH_STENCIL_VIEW_DESC;
+  using D3D10 = ID3D10DepthStencilView;
+  using D3D10_1 = ID3D10DepthStencilView;
+  using D3D10_IMPL = MTLD3D10DepthStencilView;
 };
 
 template <typename RESOURCE_IMPL_ = ID3D11Resource,
@@ -283,6 +309,14 @@ struct tag_shader_resource_view {
   using RESOURCE_IMPL = RESOURCE_IMPL_;
   using DESC = D3D11_SHADER_RESOURCE_VIEW_DESC;
   using DESC1 = D3D11_SHADER_RESOURCE_VIEW_DESC1;
+  using D3D10 = ID3D10ShaderResourceView;
+  using D3D10_1 = ID3D10ShaderResourceView1;
+  using D3D10_IMPL = MTLD3D10ShaderResourceView;
+};
+
+class ImaginaryD3D10UnorderedAccessView {
+public:
+  ImaginaryD3D10UnorderedAccessView(IUnknown *d3d11) {}
 };
 
 template <typename RESOURCE_IMPL_ = ID3D11Resource,
@@ -295,6 +329,9 @@ struct tag_unordered_access_view {
   using RESOURCE_IMPL = RESOURCE_IMPL_;
   using DESC = D3D11_UNORDERED_ACCESS_VIEW_DESC;
   using DESC1 = D3D11_UNORDERED_ACCESS_VIEW_DESC1;
+  using D3D10 = IUnknown;
+  using D3D10_1 = IUnknown;
+  using D3D10_IMPL = ImaginaryD3D10UnorderedAccessView;
 };
 
 template <typename tag, typename... Base>
@@ -304,7 +341,7 @@ public:
   TResourceViewBase(const tag::DESC1 *pDesc, tag::RESOURCE_IMPL *pResource,
                     MTLD3D11Device *device)
       : MTLD3D11DeviceChild<typename tag::COM_IMPL, Base...>(device),
-        resource(pResource) {
+        d3d10(static_cast<typename tag::COM_IMPL *>(this)), resource(pResource) {
     if (pDesc) {
       desc = *pDesc;
     }
@@ -341,6 +378,15 @@ public:
       return S_OK;
     }
 
+    if constexpr (!std::is_same<typename tag::D3D10_IMPL, ImaginaryD3D10UnorderedAccessView>::value) {
+      if (riid == __uuidof(ID3D10DeviceChild) || riid == __uuidof(ID3D10View) ||
+          riid == __uuidof(typename tag::D3D10) ||
+          riid == __uuidof(typename tag::D3D10_1)) {
+        *ppvObject = ref_and_cast<typename tag::D3D10_IMPL>(&d3d10);
+        return S_OK;
+      }
+    }
+
     if (logQueryInterfaceError(__uuidof(typename tag::COM), riid)) {
       WARN("D3D11View: Unknown interface query ", str::format(riid));
     }
@@ -364,6 +410,7 @@ public:
 
 protected:
   tag::DESC1 desc;
+  tag::D3D10_IMPL d3d10;
   /**
   strong ref to resource
   */

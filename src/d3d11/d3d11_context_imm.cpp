@@ -8,6 +8,7 @@
 
 namespace dxmt {
 struct ContextInternalState {
+  using device_mutex_t = d3d11_device_mutex;
   CommandQueue &cmd_queue;
   bool has_dirty_op_since_last_event = false;
 };
@@ -65,11 +66,29 @@ ImmediateContextBase::UseCopySource(Rc<StagingResource> &staging) {
 class MTLD3D11ImmediateContext : public ImmediateContextBase {
 public:
   MTLD3D11ImmediateContext(MTLD3D11Device *pDevice, CommandQueue &cmd_queue) :
-      ImmediateContextBase(pDevice, ctx_state),
+      ImmediateContextBase(pDevice, ctx_state, pDevice->mutex),
       cmd_queue(cmd_queue),
-      ctx_state({cmd_queue}) {
+      ctx_state({cmd_queue}),
+      d3dmt_(this, mutex) {
         ignore_map_flag_no_wait_ = Config::getInstance().getOption<bool>("d3d11.ignoreMapFlagNoWait", false);
       }
+
+  HRESULT
+  STDMETHODCALLTYPE
+  QueryInterface(REFIID riid, void **ppvObject) override {
+    if (ppvObject == nullptr)
+      return E_POINTER;
+
+    *ppvObject = nullptr;
+
+    if (riid == __uuidof(ID3D11Multithread)
+        && !(m_parent->GetCreationFlags() & D3D11_CREATE_DEVICE_SINGLETHREADED)) {
+      *ppvObject = ref(&d3dmt_);
+      return S_OK;
+    }
+
+    return ImmediateContextBase::QueryInterface(riid, ppvObject);
+  }
 
   ULONG STDMETHODCALLTYPE
   AddRef() override {
@@ -94,6 +113,8 @@ public:
   STDMETHODCALLTYPE
   Map(ID3D11Resource *pResource, UINT Subresource, D3D11_MAP MapType, UINT MapFlags,
       D3D11_MAPPED_SUBRESOURCE *pMappedResource) override {
+    std::lock_guard<d3d11_device_mutex> lock(mutex);
+
     if (unlikely(!pResource || !pMappedResource))
       return E_INVALIDARG;
     UINT buffer_length = 0, &row_pitch = buffer_length;
@@ -226,6 +247,8 @@ public:
   void
   STDMETHODCALLTYPE
   Unmap(ID3D11Resource *pResource, UINT Subresource) override {
+    std::lock_guard<d3d11_device_mutex> lock(mutex);
+
     if (unlikely(!pResource))
       return;
     if (auto staging = GetStagingResource(pResource, Subresource)) {
@@ -236,6 +259,8 @@ public:
   void
   STDMETHODCALLTYPE
   Begin(ID3D11Asynchronous *pAsync) override {
+    std::lock_guard<d3d11_device_mutex> lock(mutex);
+
     // in theory pAsync could be any of them: { Query, Predicate, Counter }.
     // However `Predicate` and `Counter` are not supported at all
     D3D11_QUERY_DESC desc;
@@ -268,6 +293,8 @@ public:
   void
   STDMETHODCALLTYPE
   End(ID3D11Asynchronous *pAsync) override {
+    std::lock_guard<d3d11_device_mutex> lock(mutex);
+
     D3D11_QUERY_DESC desc;
     ((ID3D11Query *)pAsync)->GetDesc(&desc);
     switch (desc.Query) {
@@ -390,6 +417,8 @@ public:
   void
   STDMETHODCALLTYPE
   Flush() override {
+    std::lock_guard<d3d11_device_mutex> lock(mutex);
+
     if (!ctx_state.has_dirty_op_since_last_event && !promote_flush) {
       return;
     }
@@ -404,6 +433,8 @@ public:
   void
   STDMETHODCALLTYPE
   ExecuteCommandList(ID3D11CommandList *pCommandList, BOOL RestoreContextState) override {
+    std::lock_guard<d3d11_device_mutex> lock(mutex);
+
     ResetEncodingContextState();
 
     Com<MTLD3D11CommandList> cmdlist = static_cast<MTLD3D11CommandList *>(pCommandList);
@@ -457,6 +488,8 @@ public:
   HRESULT
   STDMETHODCALLTYPE
   FinishCommandList(BOOL RestoreDeferredContextState, ID3D11CommandList **ppCommandList) override {
+    std::lock_guard<d3d11_device_mutex> lock(mutex);
+
     return DXGI_ERROR_INVALID_CALL;
   }
 
@@ -487,6 +520,7 @@ private:
   CommandQueue &cmd_queue;
   ContextInternalState ctx_state;
   std::atomic<uint32_t> refcount = 0;
+  D3D11Multithread d3dmt_;
   bool ignore_map_flag_no_wait_;
 };
 

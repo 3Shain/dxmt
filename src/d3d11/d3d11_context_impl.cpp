@@ -588,6 +588,8 @@ enum class DrawCallStatus { Invalid, Ordinary, Tessellation, Geometry };
 template <typename ContextInternalState> class MTLD3D11DeviceContextImplBase : public MTLD3D11DeviceContextBase {
   template<typename ContextInternalState_>
   friend class MTLD3D11ContextExt;
+
+  using mutex_t = ContextInternalState::device_mutex_t;
 public:
   HRESULT
   STDMETHODCALLTYPE
@@ -643,12 +645,16 @@ public:
   void
   STDMETHODCALLTYPE
   ClearRenderTargetView(ID3D11RenderTargetView *pRenderTargetView, const FLOAT ColorRGBA[4]) override {
+    std::lock_guard<mutex_t> lock(mutex);
+
     ClearRenderTargetView(static_cast<IMTLD3D11RenderTargetView *>(pRenderTargetView), ColorRGBA);
   }
 
   void
   STDMETHODCALLTYPE
   ClearUnorderedAccessViewUint(ID3D11UnorderedAccessView *pUnorderedAccessView, const UINT Values[4]) override {
+    std::lock_guard<mutex_t> lock(mutex);
+
     ClearUnorderedAccessViewUint(static_cast<D3D11UnorderedAccessView *>(pUnorderedAccessView), Values);
   }
 
@@ -717,6 +723,8 @@ public:
   void
   STDMETHODCALLTYPE
   ClearUnorderedAccessViewFloat(ID3D11UnorderedAccessView *pUnorderedAccessView, const FLOAT Values[4]) override {
+    std::lock_guard<mutex_t> lock(mutex);
+
     ClearUnorderedAccessViewFloat(static_cast<D3D11UnorderedAccessView *>(pUnorderedAccessView), Values);
   }
 
@@ -772,12 +780,16 @@ public:
   STDMETHODCALLTYPE
   ClearDepthStencilView(ID3D11DepthStencilView *pDepthStencilView, UINT ClearFlags, FLOAT Depth, UINT8 Stencil)
       override {
+    std::lock_guard<mutex_t> lock(mutex);
+
     ClearDepthStencilView(static_cast<IMTLD3D11DepthStencilView*>(pDepthStencilView), ClearFlags, Depth, Stencil);
   }
 
   void
   STDMETHODCALLTYPE
   ClearView(ID3D11View *pView, const FLOAT Color[4], const D3D11_RECT *pRect, UINT NumRects) override {
+    std::lock_guard<mutex_t> lock(mutex);
+
     if (NumRects && !pRect)
       return;
 
@@ -805,6 +817,8 @@ public:
   void
   STDMETHODCALLTYPE
   GenerateMips(ID3D11ShaderResourceView *pShaderResourceView) override {
+    std::lock_guard<mutex_t> lock(mutex);
+
     if (auto srv = static_cast<D3D11ShaderResourceView *>(pShaderResourceView)) {
       D3D11_SHADER_RESOURCE_VIEW_DESC desc;
       pShaderResourceView->GetDesc(&desc);
@@ -829,6 +843,8 @@ public:
       ID3D11Resource *pDstResource, UINT DstSubresource, ID3D11Resource *pSrcResource, UINT SrcSubresource,
       DXGI_FORMAT Format
   ) override {
+    std::lock_guard<mutex_t> lock(mutex);
+
     D3D11_RESOURCE_DIMENSION dimension;
     pDstResource->GetType(&dimension);
     if (dimension != D3D11_RESOURCE_DIMENSION_TEXTURE2D)
@@ -893,6 +909,8 @@ public:
   void
   STDMETHODCALLTYPE
   CopyResource(ID3D11Resource *pDstResource, ID3D11Resource *pSrcResource) override {
+    std::lock_guard<mutex_t> lock(mutex);
+
     BlitObject Dst(device, pDstResource);
     BlitObject Src(device, pSrcResource);
 
@@ -947,6 +965,8 @@ public:
       ID3D11Resource *pDstResource, UINT DstSubresource, UINT DstX, UINT DstY, UINT DstZ, ID3D11Resource *pSrcResource,
       UINT SrcSubresource, const D3D11_BOX *pSrcBox, UINT CopyFlags
   ) override {
+    std::lock_guard<mutex_t> lock(mutex);
+
     if (!pDstResource)
       return;
     if (!pSrcResource)
@@ -977,6 +997,8 @@ public:
   STDMETHODCALLTYPE
   CopyStructureCount(ID3D11Buffer *pDstBuffer, UINT DstAlignedByteOffset, ID3D11UnorderedAccessView *pSrcView)
       override {
+    std::lock_guard<mutex_t> lock(mutex);
+
     if (auto dst_bind = reinterpret_cast<D3D11ResourceCommon *>(pDstBuffer)) {
       if (auto uav = static_cast<D3D11UnorderedAccessView *>(pSrcView)) {
         SwitchToBlitEncoder(CommandBufferState::BlitEncoderActive);
@@ -1010,6 +1032,8 @@ public:
       ID3D11Resource *pDstResource, UINT DstSubresource, const D3D11_BOX *pDstBox, const void *pSrcData,
       UINT SrcRowPitch, UINT SrcDepthPitch, UINT CopyFlags
   ) override {
+    std::lock_guard<mutex_t> lock(mutex);
+
     if (!pDstResource)
       return;
 
@@ -1103,6 +1127,8 @@ public:
   void
   STDMETHODCALLTYPE
   Draw(UINT VertexCount, UINT StartVertexLocation) override {
+    std::lock_guard<mutex_t> lock(mutex);
+
     WMTPrimitiveType Primitive;
     uint32_t ControlPointCount;
     if(!to_metal_primitive_type(state_.InputAssembler.Topology, Primitive, ControlPointCount))
@@ -1131,6 +1157,8 @@ public:
   void
   STDMETHODCALLTYPE
   DrawIndexed(UINT IndexCount, UINT StartIndexLocation, INT BaseVertexLocation) override {
+    std::lock_guard<mutex_t> lock(mutex);
+
     if (!IndexCount)
       return;
     WMTPrimitiveType Primitive;
@@ -1170,6 +1198,8 @@ public:
   STDMETHODCALLTYPE
   DrawInstanced(UINT VertexCountPerInstance, UINT InstanceCount, UINT StartVertexLocation, UINT StartInstanceLocation)
       override {
+    std::lock_guard<mutex_t> lock(mutex);
+
     WMTPrimitiveType Primitive;
     uint32_t ControlPointCount;
     if (!to_metal_primitive_type(state_.InputAssembler.Topology, Primitive, ControlPointCount))
@@ -1204,6 +1234,8 @@ public:
       UINT IndexCountPerInstance, UINT InstanceCount, UINT StartIndexLocation, INT BaseVertexLocation,
       UINT StartInstanceLocation
   ) override {
+    std::lock_guard<mutex_t> lock(mutex);
+
     if (!IndexCountPerInstance)
       return;
     WMTPrimitiveType Primitive;
@@ -1418,6 +1450,8 @@ public:
   void
   STDMETHODCALLTYPE
   DrawIndexedInstancedIndirect(ID3D11Buffer *pBufferForArgs, UINT AlignedByteOffsetForArgs) override {
+    std::lock_guard<mutex_t> lock(mutex);
+
     WMTPrimitiveType Primitive;
     uint32_t ControlPointCount;
     if(!to_metal_primitive_type(state_.InputAssembler.Topology, Primitive, ControlPointCount))
@@ -1457,6 +1491,8 @@ public:
   void
   STDMETHODCALLTYPE
   DrawInstancedIndirect(ID3D11Buffer *pBufferForArgs, UINT AlignedByteOffsetForArgs) override {
+    std::lock_guard<mutex_t> lock(mutex);
+
     WMTPrimitiveType Primitive;
     uint32_t ControlPointCount;
     if(!to_metal_primitive_type(state_.InputAssembler.Topology, Primitive, ControlPointCount))
@@ -1547,12 +1583,16 @@ public:
   void
   STDMETHODCALLTYPE
   DrawAuto() override {
+    std::lock_guard<mutex_t> lock(mutex);
+
     EmitST([](ArgumentEncodingContext &enc) { enc.setCompatibilityFlag(FeatureCompatibility::UnsupportedDrawAuto); });
   }
 
   void
   STDMETHODCALLTYPE
   Dispatch(UINT ThreadGroupCountX, UINT ThreadGroupCountY, UINT ThreadGroupCountZ) override {
+    std::lock_guard<mutex_t> lock(mutex);
+
     if (!PreDispatch())
       return;
     EmitOP([ThreadGroupCountX, ThreadGroupCountY, ThreadGroupCountZ](ArgumentEncodingContext &enc) {
@@ -1565,6 +1605,8 @@ public:
   void
   STDMETHODCALLTYPE
   DispatchIndirect(ID3D11Buffer *pBufferForArgs, UINT AlignedByteOffsetForArgs) override {
+    std::lock_guard<mutex_t> lock(mutex);
+
     if (!PreDispatch())
       return;
     if (auto bindable = reinterpret_cast<D3D11ResourceCommon *>(pBufferForArgs)) {
@@ -1584,6 +1626,8 @@ public:
   void
   STDMETHODCALLTYPE
   GetPredication(ID3D11Predicate **ppPredicate, BOOL *pPredicateValue) override {
+    std::lock_guard<mutex_t> lock(mutex);
+
 
     if (ppPredicate) {
       *ppPredicate = state_.predicate.ref();
@@ -1597,6 +1641,8 @@ public:
   void
   STDMETHODCALLTYPE
   SetPredication(ID3D11Predicate *pPredicate, BOOL PredicateValue) override {
+    std::lock_guard<mutex_t> lock(mutex);
+
 
     state_.predicate = pPredicate;
     state_.predicate_value = PredicateValue;
@@ -1618,6 +1664,8 @@ public:
   void
   STDMETHODCALLTYPE
   ClearState() override {
+    std::lock_guard<mutex_t> lock(mutex);
+
     ResetEncodingContextState();
     ResetD3D11ContextState();
   }
@@ -1627,6 +1675,8 @@ public:
   void
   STDMETHODCALLTYPE
   IASetInputLayout(ID3D11InputLayout *pInputLayout) override {
+    std::lock_guard<mutex_t> lock(mutex);
+
     if (auto expected = com_cast<IMTLD3D11InputLayout>(pInputLayout)) {
       state_.InputAssembler.InputLayout = std::move(expected);
     } else {
@@ -1637,6 +1687,8 @@ public:
   void
   STDMETHODCALLTYPE
   IAGetInputLayout(ID3D11InputLayout **ppInputLayout) override {
+    std::lock_guard<mutex_t> lock(mutex);
+
     if (ppInputLayout) {
       if (state_.InputAssembler.InputLayout) {
         state_.InputAssembler.InputLayout->QueryInterface(IID_PPV_ARGS(ppInputLayout));
@@ -1651,6 +1703,8 @@ public:
   IASetVertexBuffers(
       UINT StartSlot, UINT NumBuffers, ID3D11Buffer *const *ppVertexBuffers, const UINT *pStrides, const UINT *pOffsets
   ) override {
+    std::lock_guard<mutex_t> lock(mutex);
+
     SetVertexBuffers(StartSlot, NumBuffers, ppVertexBuffers, pStrides, pOffsets);
   }
 
@@ -1658,12 +1712,16 @@ public:
   STDMETHODCALLTYPE
   IAGetVertexBuffers(UINT StartSlot, UINT NumBuffers, ID3D11Buffer **ppVertexBuffers, UINT *pStrides, UINT *pOffsets)
       override {
+    std::lock_guard<mutex_t> lock(mutex);
+
     GetVertexBuffers(StartSlot, NumBuffers, ppVertexBuffers, pStrides, pOffsets);
   }
 
   void
   STDMETHODCALLTYPE
   IASetIndexBuffer(ID3D11Buffer *pIndexBuffer, DXGI_FORMAT Format, UINT Offset) override {
+    std::lock_guard<mutex_t> lock(mutex);
+
     if (auto expected = reinterpret_cast<D3D11ResourceCommon *>(pIndexBuffer)) {
       state_.InputAssembler.IndexBuffer = expected;
       EmitST([buffer = state_.InputAssembler.IndexBuffer->buffer()](ArgumentEncodingContext &enc) mutable {
@@ -1679,6 +1737,8 @@ public:
   void
   STDMETHODCALLTYPE
   IAGetIndexBuffer(ID3D11Buffer **pIndexBuffer, DXGI_FORMAT *Format, UINT *Offset) override {
+    std::lock_guard<mutex_t> lock(mutex);
+
     if (pIndexBuffer) {
       if (state_.InputAssembler.IndexBuffer) {
         state_.InputAssembler.IndexBuffer->QueryInterface(IID_PPV_ARGS(pIndexBuffer));
@@ -1694,11 +1754,15 @@ public:
   void
   STDMETHODCALLTYPE
   IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY Topology) override {
+    std::lock_guard<mutex_t> lock(mutex);
+
     state_.InputAssembler.Topology = Topology;
   }
   void
   STDMETHODCALLTYPE
   IAGetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY *pTopology) override {
+    std::lock_guard<mutex_t> lock(mutex);
+
     if (pTopology) {
       *pTopology = state_.InputAssembler.Topology;
     }
@@ -1920,6 +1984,8 @@ public:
   void
   STDMETHODCALLTYPE
   SOSetTargets(UINT NumBuffers, ID3D11Buffer *const *ppSOTargets, const UINT *pOffsets) override {
+    std::lock_guard<mutex_t> lock(mutex);
+
     if (NumBuffers == 0) {
       NumBuffers = 4; // see msdn description of SOSetTargets
     }
@@ -1947,6 +2013,8 @@ public:
   void
   STDMETHODCALLTYPE
   SOGetTargets(UINT NumBuffers, ID3D11Buffer **ppSOTargets) override {
+    std::lock_guard<mutex_t> lock(mutex);
+
     if (!ppSOTargets)
       return;
     for (unsigned i = 0; i < std::min(4u, NumBuffers); i++) {
@@ -2123,12 +2191,16 @@ public:
       UINT StartSlot, UINT NumUAVs, ID3D11UnorderedAccessView *const *ppUnorderedAccessViews,
       const UINT *pUAVInitialCounts
   ) override {
+    std::lock_guard<mutex_t> lock(mutex);
+
     SetUnorderedAccessView<PipelineStage::Compute>(StartSlot, NumUAVs, ppUnorderedAccessViews, pUAVInitialCounts);
   }
 
   void
   STDMETHODCALLTYPE
   CSGetUnorderedAccessViews(UINT StartSlot, UINT NumUAVs, ID3D11UnorderedAccessView **ppUnorderedAccessViews) override {
+    std::lock_guard<mutex_t> lock(mutex);
+
     for (auto i = 0u; i < NumUAVs; i++) {
       if (state_.ComputeStageUAV.UAVs.test_bound(StartSlot + i)) {
         state_.ComputeStageUAV.UAVs[StartSlot + i].View->QueryInterface(
@@ -2272,6 +2344,8 @@ public:
       UINT UAVStartSlot, UINT NumUAVs, ID3D11UnorderedAccessView *const *ppUnorderedAccessViews,
       const UINT *pUAVInitialCounts
   ) override {
+    std::lock_guard<mutex_t> lock(mutex);
+
 
     bool should_invalidate_pass = false;
 
@@ -2326,6 +2400,8 @@ public:
       UINT NumRTVs, ID3D11RenderTargetView **ppRenderTargetViews, ID3D11DepthStencilView **ppDepthStencilView,
       UINT UAVStartSlot, UINT NumUAVs, ID3D11UnorderedAccessView **ppUnorderedAccessViews
   ) override {
+    std::lock_guard<mutex_t> lock(mutex);
+
     if (ppRenderTargetViews) {
       for (unsigned i = 0; i < NumRTVs; i++) {
         if (i < state_.OutputMerger.NumRTVs && state_.OutputMerger.RTVs[i]) {
@@ -2356,6 +2432,8 @@ public:
   void
   STDMETHODCALLTYPE
   OMSetBlendState(ID3D11BlendState *pBlendState, const FLOAT BlendFactor[4], UINT SampleMask) override {
+    std::lock_guard<mutex_t> lock(mutex);
+
     bool should_invalidate_pipeline = false;
     if (auto expected = com_cast<IMTLD3D11BlendState>(pBlendState)) {
       if (expected.ptr() != state_.OutputMerger.BlendState) {
@@ -2388,6 +2466,8 @@ public:
   void
   STDMETHODCALLTYPE
   OMGetBlendState(ID3D11BlendState **ppBlendState, FLOAT BlendFactor[4], UINT *pSampleMask) override {
+    std::lock_guard<mutex_t> lock(mutex);
+
     if (ppBlendState) {
       if (state_.OutputMerger.BlendState) {
         state_.OutputMerger.BlendState->QueryInterface(IID_PPV_ARGS(ppBlendState));
@@ -2406,6 +2486,8 @@ public:
   void
   STDMETHODCALLTYPE
   OMSetDepthStencilState(ID3D11DepthStencilState *pDepthStencilState, UINT StencilRef) override {
+    std::lock_guard<mutex_t> lock(mutex);
+
     if (auto expected = com_cast<IMTLD3D11DepthStencilState>(pDepthStencilState)) {
       state_.OutputMerger.DepthStencilState = expected.ptr();
     } else {
@@ -2418,6 +2500,8 @@ public:
   void
   STDMETHODCALLTYPE
   OMGetDepthStencilState(ID3D11DepthStencilState **ppDepthStencilState, UINT *pStencilRef) override {
+    std::lock_guard<mutex_t> lock(mutex);
+
     if (ppDepthStencilState) {
       if (state_.OutputMerger.DepthStencilState) {
         state_.OutputMerger.DepthStencilState->QueryInterface(IID_PPV_ARGS(ppDepthStencilState));
@@ -2437,6 +2521,8 @@ public:
   void
   STDMETHODCALLTYPE
   RSSetState(ID3D11RasterizerState *pRasterizerState) override {
+    std::lock_guard<mutex_t> lock(mutex);
+
     if (pRasterizerState) {
       if (auto expected = com_cast<IMTLD3D11RasterizerState>(pRasterizerState)) {
         auto current_rs =
@@ -2466,6 +2552,8 @@ public:
   void
   STDMETHODCALLTYPE
   RSGetState(ID3D11RasterizerState **ppRasterizerState) override {
+    std::lock_guard<mutex_t> lock(mutex);
+
     if (ppRasterizerState) {
       if (state_.Rasterizer.RasterizerState) {
         state_.Rasterizer.RasterizerState->QueryInterface(IID_PPV_ARGS(ppRasterizerState));
@@ -2478,6 +2566,8 @@ public:
   void
   STDMETHODCALLTYPE
   RSSetViewports(UINT NumViewports, const D3D11_VIEWPORT *pViewports) override {
+    std::lock_guard<mutex_t> lock(mutex);
+
     if (NumViewports > 16)
       return;
     if (state_.Rasterizer.NumViewports == NumViewports &&
@@ -2499,6 +2589,8 @@ public:
   void
   STDMETHODCALLTYPE
   RSGetViewports(UINT *pNumViewports, D3D11_VIEWPORT *pViewports) override {
+    std::lock_guard<mutex_t> lock(mutex);
+
     uint32_t num_viewports_available = state_.Rasterizer.NumViewports;
     uint32_t num_viewports_requested = *pNumViewports;
 
@@ -2518,6 +2610,8 @@ public:
   void
   STDMETHODCALLTYPE
   RSSetScissorRects(UINT NumRects, const D3D11_RECT *pRects) override {
+    std::lock_guard<mutex_t> lock(mutex);
+
     if (NumRects > 16)
       return;
     if (state_.Rasterizer.NumScissorRects == NumRects &&
@@ -2540,6 +2634,8 @@ public:
   void
   STDMETHODCALLTYPE
   RSGetScissorRects(UINT *pNumRects, D3D11_RECT *pRects) override {
+    std::lock_guard<mutex_t> lock(mutex);
+
     uint32_t num_rects_available = state_.Rasterizer.NumScissorRects;
     uint32_t num_rects_requested = *pNumRects;
 
@@ -2765,6 +2861,8 @@ public:
   template <PipelineStage stage, typename IShader>
   void
   SetShader(IShader *pShader, ID3D11ClassInstance *const *ppClassInstances, UINT NumClassInstances) {
+    std::lock_guard<mutex_t> lock(mutex);
+
     auto &ShaderStage = state_.ShaderStages[stage];
 
     if (pShader) {
@@ -2804,6 +2902,8 @@ public:
   template <PipelineStage Type, typename IShader>
   void
   GetShader(IShader **ppShader, ID3D11ClassInstance **ppClassInstances, UINT *pNumClassInstances) {
+    std::lock_guard<mutex_t> lock(mutex);
+
     auto &ShaderStage = state_.ShaderStages[Type];
 
     if (ppShader) {
@@ -2827,6 +2927,8 @@ public:
       UINT StartSlot, UINT NumBuffers, ID3D11Buffer *const *ppConstantBuffers, const UINT *pFirstConstant,
       const UINT *pNumConstants
   ) {
+    std::lock_guard<mutex_t> lock(mutex);
+
     auto &ShaderStage = state_.ShaderStages[Stage];
 
     for (unsigned slot = StartSlot; slot < StartSlot + NumBuffers; slot++) {
@@ -2875,6 +2977,8 @@ public:
   GetConstantBuffer(
       UINT StartSlot, UINT NumBuffers, ID3D11Buffer **ppConstantBuffers, UINT *pFirstConstant, UINT *pNumConstants
   ) {
+    std::lock_guard<mutex_t> lock(mutex);
+
     auto &ShaderStage = state_.ShaderStages[Stage];
 
     for (auto i = 0u; i < NumBuffers; i++) {
@@ -2900,6 +3004,8 @@ public:
   template <PipelineStage Stage>
   void
   SetShaderResource(UINT StartSlot, UINT NumViews, ID3D11ShaderResourceView *const *ppShaderResourceViews) {
+    std::lock_guard<mutex_t> lock(mutex);
+
 
     auto &ShaderStage = state_.ShaderStages[Stage];
     for (unsigned slot = StartSlot; slot < StartSlot + NumViews; slot++) {
@@ -2934,6 +3040,8 @@ public:
   template <PipelineStage Stage>
   void
   GetShaderResource(UINT StartSlot, UINT NumViews, ID3D11ShaderResourceView **ppShaderResourceViews) {
+    std::lock_guard<mutex_t> lock(mutex);
+
     auto &ShaderStage = state_.ShaderStages[Stage];
 
     if (!ppShaderResourceViews)
@@ -2950,6 +3058,8 @@ public:
   template <PipelineStage Stage>
   void
   SetSamplers(UINT StartSlot, UINT NumSamplers, ID3D11SamplerState *const *ppSamplers) {
+    std::lock_guard<mutex_t> lock(mutex);
+
     auto &ShaderStage = state_.ShaderStages[Stage];
     for (unsigned Slot = StartSlot; Slot < StartSlot + NumSamplers; Slot++) {
       auto pSampler = ppSamplers[Slot - StartSlot];
@@ -2980,6 +3090,8 @@ public:
   template <PipelineStage Stage>
   void
   GetSamplers(UINT StartSlot, UINT NumSamplers, ID3D11SamplerState **ppSamplers) {
+    std::lock_guard<mutex_t> lock(mutex);
+
     auto &ShaderStage = state_.ShaderStages[Stage];
     if (ppSamplers) {
       for (unsigned Slot = StartSlot; Slot < StartSlot + NumSamplers; Slot++) {
@@ -3075,6 +3187,8 @@ public:
   SetVertexBuffers(
       UINT StartSlot, UINT NumBuffers, ID3D11Buffer *const *ppVertexBuffers, const UINT *pStrides, const UINT *pOffsets
   ) {
+    std::lock_guard<mutex_t> lock(mutex);
+
     auto &VertexBuffers = state_.InputAssembler.VertexBuffers;
     for (unsigned slot = StartSlot; slot < StartSlot + NumBuffers; slot++) {
       auto pVertexBuffer = ppVertexBuffers[slot - StartSlot];
@@ -3125,6 +3239,8 @@ public:
 
   void
   GetVertexBuffers(UINT StartSlot, UINT NumBuffers, ID3D11Buffer **ppVertexBuffers, UINT *pStrides, UINT *pOffsets) {
+    std::lock_guard<mutex_t> lock(mutex);
+
     auto &VertexBuffers = state_.InputAssembler.VertexBuffers;
     for (unsigned i = 0; i < NumBuffers; i++) {
       if (!VertexBuffers.test_bound(i + StartSlot)) {
@@ -3478,6 +3594,8 @@ public:
   ) {
     if (cmd.Invalid)
       return;
+
+    std::lock_guard<mutex_t> lock(mutex);
 
     if (auto dst = GetTexture(cmd.pDst)) {
       auto bytes_per_depth_slice = cmd.EffectiveRows * cmd.EffectiveBytesPerRow;
@@ -4401,6 +4519,7 @@ protected:
   CommandBufferState cmdbuf_state = CommandBufferState::Idle;
   CommandBufferState previous_render_pipeline_state = CommandBufferState::Idle;
   ContextInternalState &ctx_state;
+  ContextInternalState::device_mutex_t &mutex;
 
   IMTLD3D11RasterizerState *default_rasterizer_state;
   IMTLD3D11DepthStencilState *default_depth_stencil_state;
@@ -4425,10 +4544,11 @@ protected:
   MTLD3D11ContextExt<ContextInternalState> ext_;
 
 public:
-  MTLD3D11DeviceContextImplBase(MTLD3D11Device *pDevice, ContextInternalState &ctx_state) :
+  MTLD3D11DeviceContextImplBase(MTLD3D11Device *pDevice, ContextInternalState &ctx_state, ContextInternalState::device_mutex_t &mutex) :
       MTLD3D11DeviceChild(pDevice),
       device(pDevice),
       ctx_state(ctx_state),
+      mutex(mutex),
       state_(),
       annotation_(this),
       ext_(this) {

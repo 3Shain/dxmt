@@ -1,6 +1,7 @@
 #include "com/com_guid.hpp"
 #include "d3d11_input_layout.hpp"
 #include "d3d11_interfaces.hpp"
+#include "d3d11_multithread.hpp"
 #include "d3d11_pipeline.hpp"
 #include "d3d11_class_linkage.hpp"
 #include "d3d11_inspection.hpp"
@@ -14,6 +15,7 @@
 #include "d3d11_swapchain.hpp"
 #include "d3d11_state_object.hpp"
 #include "dxgi_interfaces.h"
+#include "../d3d10/d3d10_device.hpp"
 #include "dxmt_command_queue.hpp"
 #include "dxmt_device.hpp"
 #include "dxmt_format.hpp"
@@ -21,8 +23,8 @@
 #include "ftl.hpp"
 #include "mtld11_resource.hpp"
 #include "thread.hpp"
-#include "util_env.hpp"
 #include "dxgi_object.hpp"
+#include <memory>
 #include <mutex>
 #include <thread>
 #include <unordered_map>
@@ -57,6 +59,7 @@ const GUID kGpaUUID = {0xccffef16,
                        {0xbc, 0xe3, 0xcd, 0x95, 0x33, 0x69, 0xa3, 0x9a}};
 
 class MTLD3D11DeviceImpl final : public MTLD3D11Device, public IMTLD3D11DeviceExt {
+friend class MTLD3D11DXGIDevice;
 public:
   MTLD3D11DeviceImpl(MTLDXGIObject<IMTLDXGIDevice> *container,
                  IMTLDXGIAdapter *pAdapter, D3D_FEATURE_LEVEL FeatureLevel,
@@ -65,10 +68,11 @@ public:
         m_FeatureLevel(FeatureLevel), m_FeatureFlags(FeatureFlags),
         m_features(container->GetMTLDevice()), sampler_states(this),
         rasterizer_states(this), depthstencil_states(this),
-        device_(device) {
+        device_(device), d3dmt_(static_cast<ID3D11Device *>(this), mutex) {
     commandlist_pool_ = InitializeCommandListPool(this);
     pipeline_cache_ = InitializePipelineCache(this);
     context_ = InitializeImmediateContext(this, device_.queue());
+    d3d10_ = std::make_unique<MTLD3D10Device>(this, context_.get());
     is_traced_ = !!::GetModuleHandle("dxgitrace.dll");
     format_inspector.Inspect(GetMTLDevice());
   }
@@ -721,7 +725,7 @@ public:
     return m_FeatureLevel;
   }
 
-  UINT STDMETHODCALLTYPE GetCreationFlags() override { return m_FeatureFlags; }
+  UINT STDMETHODCALLTYPE GetCreationFlags() override { return m_FeatureFlags & 0x7fffffff; }
 
   HRESULT STDMETHODCALLTYPE GetDeviceRemovedReason() override {
     // unless we are deal with eGPU, this method should awalys return S_OK?
@@ -1072,6 +1076,14 @@ public:
     return format_inspector.textureCapabilities.at(Format);
   };
 
+  virtual IMTLD3D11DeviceContext *GetImmediateContextPrivate() final {
+    return context_.get();
+  };
+
+  virtual unsigned int GetDirectXVersion() final {
+    return m_FeatureFlags & 0x80000000 ? 10 : 11;
+  };
+
 private:
   MTLDXGIObject<IMTLDXGIDevice> *m_container;
   IMTLDXGIAdapter *adapter_;
@@ -1099,43 +1111,8 @@ private:
   Device& device_;
   /** ensure destructor called first */
   std::unique_ptr<MTLD3D11DeviceContextBase> context_;
-};
-
-class MTLD3D11Multithread : public ID3D11Multithread {
-public:
-  MTLD3D11Multithread(MTLDXGIObject<IMTLDXGIDevice> *container)
-      : m_container(container) { };
-
-  HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid,
-                                           void **ppvObject) override {
-    return m_container->QueryInterface(riid, ppvObject);
-  }
-
-  ULONG STDMETHODCALLTYPE AddRef() override { return m_container->AddRef(); }
-
-  ULONG STDMETHODCALLTYPE Release() override { return m_container->Release(); }
-
-  void STDMETHODCALLTYPE Enter() override {
-
-  };
-
-  void STDMETHODCALLTYPE Leave() override {
-
-  };
-
-  WINBOOL STDMETHODCALLTYPE SetMultithreadProtected(WINBOOL enable) override {
-    bool current_state = protected_;
-    protected_ = enable;
-    return current_state;
-  };
-
-  WINBOOL STDMETHODCALLTYPE GetMultithreadProtected() override {
-    return protected_;
-  };
-
-private:
-  MTLDXGIObject<IMTLDXGIDevice> *m_container;
-  bool protected_ = false;
+  std::unique_ptr<MTLD3D10Device> d3d10_;
+  D3D11Multithread d3dmt_;
 };
 
 /**
@@ -1153,8 +1130,7 @@ public:
       : adapter_(adapter), device(std::move(device)),
         cmd_queue_(this->device->queue()),
         d3d11_device_(this, adapter, feature_level, feature_flags,
-                      *this->device.get()), mt_(this) {
-    expose_mt_layer_ = (env::getEnvVar("DXMT_UNSUPPORTED_MTLAYER") == "1");
+                      *this->device.get()) {
   }
 
   ~MTLD3D11DXGIDevice() override {}
@@ -1191,13 +1167,19 @@ public:
       return S_OK;
     }
 
+    if (riid == __uuidof(ID3D10Device) || riid == __uuidof(ID3D10Device1)) {
+      *ppvObject = ref_and_cast<ID3D10Device>(d3d11_device_.d3d10_.get());
+      return S_OK;
+    }
+
     if (riid == __uuidof(IMTLD3D11DeviceExt)) {
       *ppvObject = ref_and_cast<IMTLD3D11DeviceExt>(&d3d11_device_);
       return S_OK;
     }
 
-    if (riid == __uuidof(ID3D11Multithread) && expose_mt_layer_) {
-      *ppvObject = ref(&mt_);
+    if (riid == __uuidof(ID3D11Multithread)
+        && !(d3d11_device_.GetCreationFlags() & D3D11_CREATE_DEVICE_SINGLETHREADED)) {
+      *ppvObject = ref_and_cast<ID3D11Multithread>(&d3d11_device_.d3dmt_);
       return S_OK;
     }
 
@@ -1299,8 +1281,6 @@ private:
   std::unique_ptr<Device> device;
   CommandQueue &cmd_queue_;
   MTLD3D11DeviceImpl d3d11_device_;
-  MTLD3D11Multithread mt_;
-  bool expose_mt_layer_ = false;
 };
 
 Com<IMTLDXGIDevice> CreateD3D11Device(std::unique_ptr<Device> &&device,
