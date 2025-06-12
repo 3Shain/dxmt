@@ -240,6 +240,10 @@ struct DXMTPresentMetadata {
   float max_display_luminance;
 };
 
+float3 to_srgb(float3 linear) {
+  return select(1.055 * pow(linear, 1.0 / 2.4) - 0.055, linear * 12.92, linear < 0.0031308); 
+}
+
 [[fragment]] float4 fs_present_quad(
     present_data input [[stage_in]],
     texture2d<float, access::sample> source [[texture(0)]],
@@ -251,7 +255,7 @@ struct DXMTPresentMetadata {
   float3 output_rgb = output.xyz;
   float edr_scale = meta.edr_scale;
   if (present_backbuffer_is_srgb)
-    output_rgb = pow(output_rgb, 1.0 / 2.2);
+    output_rgb = to_srgb(output_rgb);
   if (present_hdr_pq)
     output_rgb = pq_to_linear(output_rgb);
   else if (present_with_hdr_metadata)
