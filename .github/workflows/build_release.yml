@@ -54,9 +54,9 @@ jobs:
           run: sudo xcode-select -s /Applications/Xcode_16.1.app
         - name: Build
           run: |
-            meson setup --cross-file build-win64-sys.txt --native-file build-osx.txt -Dwine_builtin_dll=true -Dnative_llvm_path=toolchains/llvm-darwin -Dwine_install_path=toolchains/wine build --buildtype release --prefix $(pwd)/${{ env.TAG_NAME }} --strip
+            meson setup --cross-file build-win64-sys.txt --native-file build-osx.txt -Dwine_builtin_dll=true -Dnative_llvm_path=toolchains/llvm-darwin -Dwine_install_path=toolchains/wine -Denable_nvapi=true -Denable_nvngx=true build --buildtype release --prefix $(pwd)/${{ env.TAG_NAME }} --strip
             meson compile -C build
-            meson install -C build --tags runtime
+            meson install -C build --tags runtime,nvext
             meson setup --cross-file build-win32-sys.txt --native-file build-osx.txt -Dwine_builtin_dll=true -Dnative_llvm_path=toolchains/llvm-darwin -Dwine_install_path=toolchains/wine build32 --buildtype release --prefix $(pwd)/${{ env.TAG_NAME }} --strip
             meson compile -C build32
             meson install -C build32 --tags runtime
@@ -64,7 +64,7 @@ jobs:
             rm -rf "$(pwd)/${{ env.TAG_NAME }}"
             meson configure build -Dwine_builtin_dll=false
             meson compile -C build
-            meson install -C build --tags runtime
+            meson install -C build --tags runtime,nvext
             meson configure build32 -Dwine_builtin_dll=false
             meson compile -C build32
             meson install -C build32 --tags runtime
