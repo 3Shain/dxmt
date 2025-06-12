@@ -5,11 +5,6 @@
 
 namespace dxmt {
 
-enum DXMT_PRESENT_FLAG {
-  DXMT_PRESENT_FLAG_SRGB = 1 << 0,
-  DXMT_PRESENT_FLAG_HDR_PQ = 1 << 1,
-};
-
 class InternalCommandLibrary {
 public:
   InternalCommandLibrary(WMT::Device device);

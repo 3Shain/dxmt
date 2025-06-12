@@ -172,11 +172,6 @@ struct present_data {
   return output;
 }
 
-enum DXMT_PRESENT_FLAG {
-  DXMT_PRESENT_FLAG_SRGB = 1 << 0,
-  DXMT_PRESENT_FLAG_HDR_PQ = 1 << 1,
-};
-
 constant constexpr float PQ_M1 = 0.1593017578125;
 constant constexpr float PQ_M2 = 78.84375;
 constant constexpr float PQ_C1 = 0.8359375;
