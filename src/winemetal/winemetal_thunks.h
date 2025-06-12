@@ -245,6 +245,27 @@ struct unixcall_mtllibrary_newfunction_with_constants {
   obj_handle_t ret_error;
 };
 
+struct unixcall_query_display_setting {
+  uint64_t display_id;
+  enum WMTColorSpace colorspace;
+  struct WMTMemoryPointer hdr_metadata;
+  bool ret;
+};
+
+struct unixcall_update_display_setting {
+  uint64_t display_id;
+  enum WMTColorSpace colorspace;
+  struct WMTConstMemoryPointer hdr_metadata;
+};
+
+struct unixcall_query_display_setting_for_layer {
+  obj_handle_t layer;
+  uint64_t version;
+  enum WMTColorSpace colorspace;
+  struct WMTMemoryPointer hdr_metadata;
+  struct WMTEDRValue edr_value;
+};
+
 #pragma pack(pop)
 
 #endif

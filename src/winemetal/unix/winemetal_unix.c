@@ -2108,6 +2108,14 @@ _WMTGetDisplayDescription(void *obj) {
   return STATUS_SUCCESS;
 }
 
+struct DisplaySetting {
+  uint64_t version;
+  enum WMTColorSpace colorspace;
+  struct WMTHDRMetadata hdr_metadata;
+};
+
+struct DisplaySetting g_display_settings[2] = {{0, 0, {}}, {0, 0, {}}};
+
 static NTSTATUS
 _MetalLayer_getEDRValue(void *obj) {
   struct unixcall_generic_obj_ptr_noret *params = obj;
@@ -2150,6 +2158,69 @@ _MTLLibrary_newFunctionWithConstants(void *obj) {
   params->ret_error = (obj_handle_t)err;
   [name release];
   [values release];
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_WMTQueryDisplaySetting(void *obj) {
+  struct unixcall_query_display_setting *params = obj;
+  CGDirectDisplayID display_id = params->display_id;
+  struct WMTHDRMetadata *value = params->hdr_metadata.ptr;
+  params->ret = false;
+  struct DisplaySetting *setting = &g_display_settings[display_id == CGMainDisplayID()];
+  if (setting->version) {
+    *value = setting->hdr_metadata;
+    params->colorspace = setting->colorspace;
+    params->ret = true;
+  }
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_WMTUpdateDisplaySetting(void *obj) {
+  struct unixcall_update_display_setting *params = obj;
+  CGDirectDisplayID display_id = params->display_id;
+  const struct WMTHDRMetadata *value = params->hdr_metadata.ptr;
+  struct DisplaySetting *setting = &g_display_settings[display_id == CGMainDisplayID()];
+  if (value) {
+    setting->hdr_metadata = *value;
+    setting->colorspace = params->colorspace;
+    setting->version++;
+  } else {
+    setting->version = 0;
+  }
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_WMTQueryDisplaySettingForLayer(void *obj) {
+  struct unixcall_query_display_setting_for_layer *params = obj;
+  CAMetalLayer *layer = (CAMetalLayer *)params->layer;
+  struct WMTHDRMetadata *hdr_metadata_out = params->hdr_metadata.ptr;
+
+  params->version = 0;
+  if (![layer.delegate isKindOfClass:NSView.class])
+    return STATUS_SUCCESS;
+
+  NSView *view = (NSView *)layer.delegate;
+  if (!view.window)
+    return STATUS_SUCCESS;
+
+  if (!view.window.screen)
+    return STATUS_SUCCESS;
+
+  NSScreen *screen = view.window.screen;
+  CGDirectDisplayID id = [[[screen deviceDescription] objectForKey:@"NSScreenNumber"] unsignedIntValue];
+
+  struct DisplaySetting *setting = &g_display_settings[id == CGMainDisplayID()];
+  *hdr_metadata_out = setting->hdr_metadata;
+  params->version = setting->version;
+  params->colorspace = setting->colorspace;
+  params->edr_value.maximum_edr_color_component_value =
+      layer.wantsExtendedDynamicRangeContent ? screen.maximumExtendedDynamicRangeColorComponentValue : 1.0;
+  params->edr_value.maximum_potential_edr_color_component_value =
+      screen.maximumPotentialExtendedDynamicRangeColorComponentValue;
+
   return STATUS_SUCCESS;
 }
 
@@ -2253,6 +2324,9 @@ const void *__wine_unix_call_funcs[] = {
     &_WMTGetDisplayDescription,
     &_MetalLayer_getEDRValue,
     &_MTLLibrary_newFunctionWithConstants,
+    &_WMTQueryDisplaySetting,
+    &_WMTUpdateDisplaySetting,
+    &_WMTQueryDisplaySettingForLayer,
 };
 
 const void *__wine_unix_call_wow64_funcs[] = {
@@ -2355,4 +2429,7 @@ const void *__wine_unix_call_wow64_funcs[] = {
     &_WMTGetDisplayDescription,
     &_MetalLayer_getEDRValue,
     &_MTLLibrary_newFunctionWithConstants,
+    &_WMTQueryDisplaySetting,
+    &_WMTUpdateDisplaySetting,
+    &_WMTQueryDisplaySettingForLayer,
 };

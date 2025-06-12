@@ -1640,4 +1640,26 @@ WINEMETAL_API obj_handle_t MTLLibrary_newFunctionWithConstants(
     obj_handle_t *err_out
 );
 
+struct WMTHDRMetadata {
+  uint16_t red_primary[2];
+  uint16_t green_primary[2];
+  uint16_t blue_primary[2];
+  uint16_t white_point[2];
+  uint32_t max_mastering_luminance;
+  uint32_t min_mastering_luminance;
+  uint16_t max_content_light_level;
+  uint16_t max_frame_average_light_level;
+};
+
+WINEMETAL_API bool
+WMTQueryDisplaySetting(uint32_t display_id, enum WMTColorSpace *colorspace, struct WMTHDRMetadata *metadata);
+
+WINEMETAL_API void
+WMTUpdateDisplaySetting(uint32_t display_id, enum WMTColorSpace colorspace, const struct WMTHDRMetadata *metadata);
+
+WINEMETAL_API void WMTQueryDisplaySettingForLayer(
+    obj_handle_t layer, uint64_t *version, enum WMTColorSpace *colorspace, struct WMTHDRMetadata *metadata,
+    struct WMTEDRValue *edr_value
+);
+
 #endif

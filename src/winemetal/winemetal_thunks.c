@@ -830,3 +830,36 @@ MTLLibrary_newFunctionWithConstants(
     *err_out = params.ret_error;
   return params.ret;
 }
+
+WINEMETAL_API bool
+WMTQueryDisplaySetting(uint32_t display_id, enum WMTColorSpace *colorspace, struct WMTHDRMetadata *metadata) {
+  struct unixcall_query_display_setting params;
+  params.display_id = display_id;
+  WMT_MEMPTR_SET(params.hdr_metadata, metadata);
+  UNIX_CALL(99, &params);
+  *colorspace = params.colorspace;
+  return params.ret;
+}
+
+WINEMETAL_API void
+WMTUpdateDisplaySetting(uint32_t display_id, enum WMTColorSpace colorspace, const struct WMTHDRMetadata *metadata) {
+  struct unixcall_update_display_setting params;
+  params.display_id = display_id;
+  params.colorspace = colorspace;
+  WMT_MEMPTR_SET(params.hdr_metadata, metadata);
+  UNIX_CALL(100, &params);
+}
+
+WINEMETAL_API void
+WMTQueryDisplaySettingForLayer(
+    obj_handle_t layer, uint64_t *version, enum WMTColorSpace *colorspace, struct WMTHDRMetadata *metadata,
+    struct WMTEDRValue *edr_value
+) {
+  struct unixcall_query_display_setting_for_layer params;
+  params.layer = layer;
+  WMT_MEMPTR_SET(params.hdr_metadata, metadata);
+  UNIX_CALL(101, &params);
+  *version = params.version;
+  *colorspace = params.colorspace;
+  *edr_value = params.edr_value;
+}
