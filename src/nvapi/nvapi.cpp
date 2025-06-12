@@ -1,6 +1,10 @@
 #include "../d3d11/d3d11_interfaces.hpp"
 #include "com/com_pointer.hpp"
 #include "log/log.hpp"
+#include "nvapi_lite_common.h"
+#include "util_string.hpp"
+#include "winemetal.h"
+#include "wsi_monitor.hpp"
 #include <string>
 #define __NVAPI_EMPTY_SAL
 #include "nvapi.h"
@@ -149,10 +153,42 @@ NVAPI_INTERFACE NvAPI_D3D11_SetNvShaderExtnSlot(__in IUnknown *pDev,
 
 NVAPI_INTERFACE
 NvAPI_DISP_GetDisplayIdByDisplayName(const char *displayName, NvU32 *displayId) {
-  /*
-   * TODO: UnrealEngine calls this for checking HDR support
-   */
-  return NVAPI_NVIDIA_DEVICE_NOT_FOUND;
+  struct MonitorEnumInfo {
+    std::string name;
+    HMONITOR handle;
+    bool is_primary;
+  };
+
+  MonitorEnumInfo info;
+  info.name = displayName;
+  info.handle = nullptr;
+  ::EnumDisplayMonitors(
+      nullptr, nullptr,
+      [](HMONITOR hmon, HDC hdc, LPRECT rect, LPARAM lp) -> BOOL {
+        auto data = reinterpret_cast<MonitorEnumInfo *>(lp);
+
+        ::MONITORINFOEXW monitor_info;
+        monitor_info.cbSize = sizeof(monitor_info);
+
+        if (!::GetMonitorInfoW(hmon, reinterpret_cast<MONITORINFO *>(&monitor_info)))
+          return TRUE;
+
+        if (data->name != str::fromws(monitor_info.szDevice))
+          return TRUE;
+
+        data->handle = hmon;
+        data->is_primary = monitor_info.dwFlags & MONITORINFOF_PRIMARY;
+        return FALSE;
+      },
+      reinterpret_cast<LPARAM>(&info)
+  );
+
+  if (!info.handle)
+    return NVAPI_NVIDIA_DEVICE_NOT_FOUND;
+
+  *displayId = info.is_primary ? WMTGetPrimaryDisplayId() : WMTGetSecondaryDisplayId();
+
+  return NVAPI_OK;
 }
 
 NVAPI_INTERFACE
@@ -177,11 +213,194 @@ NvAPI_D3D_SetResourceHint(
 
 NVAPI_INTERFACE NvAPI_EnumPhysicalGPUs(NvPhysicalGpuHandle nvGPUHandle[NVAPI_MAX_PHYSICAL_GPUS], NvU32 *pGpuCount) {
   /*
-   * For now let's not report any GPU at all
-   * TODO: return fake handle (very unlikely we need to deal with multi-GPUs)
+   * reasonable to report one fake gpu handle
    */
-  *pGpuCount = 0;
-  return NVAPI_NVIDIA_DEVICE_NOT_FOUND;
+  *pGpuCount = 1;
+  nvGPUHandle[0] = (NvPhysicalGpuHandle)0xdeadbeef;
+  return NVAPI_OK;
+}
+
+NVAPI_INTERFACE
+NvAPI_Disp_GetHdrCapabilities(NvU32 displayId, NV_HDR_CAPABILITIES *pHdrCapabilities) {
+  WMTDisplayDescription desc;
+  WMTGetDisplayDescription(displayId, &desc);
+
+  switch (pHdrCapabilities->version) {
+  case NV_HDR_CAPABILITIES_VER1: {
+    *reinterpret_cast<NV_HDR_CAPABILITIES_V1 *>(pHdrCapabilities) = {};
+    pHdrCapabilities->version = NV_HDR_CAPABILITIES_VER1;
+    break;
+  }
+  case NV_HDR_CAPABILITIES_VER2: {
+    *reinterpret_cast<NV_HDR_CAPABILITIES_V2 *>(pHdrCapabilities) = {};
+    pHdrCapabilities->version = NV_HDR_CAPABILITIES_VER2;
+    break;
+  }
+  case NV_HDR_CAPABILITIES_VER3: {
+    *pHdrCapabilities = {};
+    pHdrCapabilities->version = NV_HDR_CAPABILITIES_VER3;
+    break;
+  }
+  default:
+    return NVAPI_INCOMPATIBLE_STRUCT_VERSION;
+  }
+
+  auto cap_out = reinterpret_cast<NV_HDR_CAPABILITIES_V1 *>(pHdrCapabilities);
+
+  cap_out->isST2084EotfSupported = desc.maximum_potential_edr_color_component_value > 1.0;
+
+  cap_out->display_data.displayPrimary_x0 = desc.red_primaries[0] * 50000;
+  cap_out->display_data.displayPrimary_y0 = desc.red_primaries[1] * 50000;
+  cap_out->display_data.displayPrimary_x1 = desc.green_primaries[0] * 50000;
+  cap_out->display_data.displayPrimary_y1 = desc.green_primaries[1] * 50000;
+  cap_out->display_data.displayPrimary_x2 = desc.blue_primaries[0] * 50000;
+  cap_out->display_data.displayPrimary_y2 = desc.blue_primaries[1] * 50000;
+  cap_out->display_data.displayWhitePoint_x = desc.white_points[0] * 50000;
+  cap_out->display_data.displayWhitePoint_y = desc.white_points[1] * 50000;
+  cap_out->display_data.desired_content_max_luminance = desc.maximum_potential_edr_color_component_value * 100;
+  cap_out->display_data.desired_content_min_luminance = 1;
+  cap_out->display_data.desired_content_max_frame_average_luminance =
+      cap_out->display_data.desired_content_max_luminance;
+
+  return NVAPI_OK;
+}
+
+NVAPI_INTERFACE
+NvAPI_Disp_HdrColorControl(NvU32 displayId, NV_HDR_COLOR_DATA *pHdrColorData) {
+  switch (pHdrColorData->version) {
+  case NV_HDR_COLOR_DATA_VER1:
+  case NV_HDR_COLOR_DATA_VER2:
+    break;
+  default:
+    return NVAPI_INCOMPATIBLE_STRUCT_VERSION;
+  }
+
+  WMTHDRMetadata metadata;
+  WMTColorSpace colorspace = WMTColorSpaceSRGB;
+
+  if (pHdrColorData->cmd == NV_HDR_CMD_GET) {
+    if (WMTQueryDisplaySetting(displayId, &colorspace, &metadata)) {
+      pHdrColorData->hdrMode = colorspace == WMTColorSpaceHDR_scRGB ? NV_HDR_MODE_UHDA
+                               : colorspace == WMTColorSpaceHDR_PQ  ? NV_HDR_MODE_UHDA_PASSTHROUGH
+                                                                    : NV_HDR_MODE_OFF;
+      pHdrColorData->mastering_display_data.displayPrimary_x0 = metadata.red_primary[0];
+      pHdrColorData->mastering_display_data.displayPrimary_y0 = metadata.red_primary[1];
+      pHdrColorData->mastering_display_data.displayPrimary_x1 = metadata.green_primary[0];
+      pHdrColorData->mastering_display_data.displayPrimary_y1 = metadata.green_primary[1];
+      pHdrColorData->mastering_display_data.displayPrimary_x2 = metadata.blue_primary[0];
+      pHdrColorData->mastering_display_data.displayPrimary_y2 = metadata.blue_primary[1];
+      pHdrColorData->mastering_display_data.displayWhitePoint_x = metadata.white_point[0];
+      pHdrColorData->mastering_display_data.displayWhitePoint_y = metadata.white_point[1];
+      pHdrColorData->mastering_display_data.max_display_mastering_luminance = metadata.max_mastering_luminance;
+      pHdrColorData->mastering_display_data.min_display_mastering_luminance = metadata.min_mastering_luminance;
+      pHdrColorData->mastering_display_data.max_content_light_level = metadata.max_content_light_level;
+      pHdrColorData->mastering_display_data.max_frame_average_light_level = metadata.max_frame_average_light_level;
+    } else {
+      WMTDisplayDescription desc;
+      WMTGetDisplayDescription(displayId, &desc);
+      pHdrColorData->hdrMode = NV_HDR_MODE_OFF;
+      pHdrColorData->mastering_display_data.displayPrimary_x0 = desc.red_primaries[0] * 50000;
+      pHdrColorData->mastering_display_data.displayPrimary_y0 = desc.red_primaries[1] * 50000;
+      pHdrColorData->mastering_display_data.displayPrimary_x1 = desc.green_primaries[0] * 50000;
+      pHdrColorData->mastering_display_data.displayPrimary_y1 = desc.green_primaries[1] * 50000;
+      pHdrColorData->mastering_display_data.displayPrimary_x2 = desc.blue_primaries[0] * 50000;
+      pHdrColorData->mastering_display_data.displayPrimary_y2 = desc.blue_primaries[1] * 50000;
+      pHdrColorData->mastering_display_data.displayWhitePoint_x = desc.white_points[0] * 50000;
+      pHdrColorData->mastering_display_data.displayWhitePoint_y = desc.white_points[1] * 50000;
+      pHdrColorData->mastering_display_data.max_display_mastering_luminance =
+          desc.maximum_potential_edr_color_component_value * 100;
+      pHdrColorData->mastering_display_data.min_display_mastering_luminance = 1;
+      pHdrColorData->mastering_display_data.max_content_light_level =
+          desc.maximum_potential_edr_color_component_value * 100;
+      pHdrColorData->mastering_display_data.max_frame_average_light_level =
+          desc.maximum_potential_edr_color_component_value * 100;
+    }
+  } else {
+    if (pHdrColorData->hdrMode != NV_HDR_MODE_OFF) {
+      metadata.red_primary[0] = pHdrColorData->mastering_display_data.displayPrimary_x0;
+      metadata.red_primary[1] = pHdrColorData->mastering_display_data.displayPrimary_y0;
+      metadata.green_primary[0] = pHdrColorData->mastering_display_data.displayPrimary_x1;
+      metadata.green_primary[1] = pHdrColorData->mastering_display_data.displayPrimary_y1;
+      metadata.blue_primary[0] = pHdrColorData->mastering_display_data.displayPrimary_x2;
+      metadata.blue_primary[1] = pHdrColorData->mastering_display_data.displayPrimary_y2;
+      metadata.white_point[0] = pHdrColorData->mastering_display_data.displayWhitePoint_x;
+      metadata.white_point[1] = pHdrColorData->mastering_display_data.displayWhitePoint_y;
+      metadata.max_mastering_luminance = pHdrColorData->mastering_display_data.max_display_mastering_luminance;
+      metadata.min_mastering_luminance = pHdrColorData->mastering_display_data.min_display_mastering_luminance;
+      metadata.max_content_light_level = pHdrColorData->mastering_display_data.max_content_light_level;
+      metadata.max_frame_average_light_level = pHdrColorData->mastering_display_data.max_frame_average_light_level;
+      colorspace = pHdrColorData->hdrMode == NV_HDR_MODE_UHDA ? WMTColorSpaceHDR_scRGB : WMTColorSpaceHDR_PQ;
+      WMTUpdateDisplaySetting(displayId, colorspace, &metadata);
+    } else {
+      WMTUpdateDisplaySetting(displayId, WMTColorSpaceSRGB, nullptr);
+    }
+  }
+
+  if (pHdrColorData->version == NV_HDR_COLOR_DATA_VER2) {
+    auto pHDRColorDataV2 = reinterpret_cast<NV_HDR_COLOR_DATA_V2 *>(pHdrColorData);
+    if (pHDRColorDataV2->cmd == NV_HDR_CMD_GET) {
+      pHDRColorDataV2->hdrColorFormat = NV_COLOR_FORMAT_RGB;
+      pHDRColorDataV2->hdrDynamicRange = NV_DYNAMIC_RANGE_VESA;
+      pHDRColorDataV2->hdrBpc = NV_BPC_10;
+    }
+  }
+
+  return NVAPI_OK;
+}
+
+NVAPI_INTERFACE
+NvAPI_EnumNvidiaDisplayHandle(NvU32 thisEnum, NvDisplayHandle *pNvDispHandle) {
+
+  if (!pNvDispHandle)
+    return NVAPI_INVALID_ARGUMENT;
+
+  HMONITOR monitor = wsi::enumMonitors(thisEnum);
+
+  if (!monitor)
+    return NVAPI_END_ENUMERATION;
+  *pNvDispHandle = (NvDisplayHandle)monitor;
+  return NVAPI_OK;
+}
+
+NVAPI_INTERFACE
+NvAPI_GPU_GetConnectedDisplayIds(
+    NvPhysicalGpuHandle hPhysicalGpu, NV_GPU_DISPLAYIDS *pDisplayIds, NvU32 *pDisplayIdCount, NvU32 flags
+) {
+  if (pDisplayIdCount == nullptr)
+    return NVAPI_INVALID_ARGUMENT;
+
+  auto primary_display_id = WMTGetPrimaryDisplayId();
+  auto nonprimary_display_id = WMTGetSecondaryDisplayId();
+
+  unsigned count = primary_display_id != 0 ? nonprimary_display_id != 0 ? 2 : 1 : 0;
+  if (pDisplayIds == nullptr) {
+    *pDisplayIdCount = count;
+    return NVAPI_OK;
+  }
+
+  if (*pDisplayIdCount < count) {
+    *pDisplayIdCount = count;
+    return NVAPI_INSUFFICIENT_BUFFER;
+  }
+
+  for (unsigned i = 0; i < count; i++) {
+    auto version = pDisplayIds[i].version;
+    switch (version) {
+    case NV_GPU_DISPLAYIDS_VER1:
+    case NV_GPU_DISPLAYIDS_VER2:
+      break;
+    default:
+      return NVAPI_INCOMPATIBLE_STRUCT_VERSION;
+    }
+    pDisplayIds[i] = {};
+    pDisplayIds[i].version = version;
+    pDisplayIds[i].displayId = i ? nonprimary_display_id : primary_display_id;
+    pDisplayIds[i].connectorType = NV_MONITOR_CONN_TYPE_UNKNOWN;
+    pDisplayIds[i].isActive = true;
+    pDisplayIds[i].isConnected = true;
+    pDisplayIds[i].isPhysicallyConnected = true;
+  }
+  return NVAPI_OK;
 }
 
 extern "C" __cdecl void *nvapi_QueryInterface(NvU32 id) {
@@ -219,6 +438,14 @@ extern "C" __cdecl void *nvapi_QueryInterface(NvU32 id) {
     return (void *)&NvAPI_D3D_SetResourceHint;
   case 0xe5ac921f:
     return (void *)&NvAPI_EnumPhysicalGPUs;
+  case 0x351da224:
+    return (void *)&NvAPI_Disp_HdrColorControl;
+  case 0x84f2a8df:
+    return (void *)&NvAPI_Disp_GetHdrCapabilities;
+  case 0x9abdd40d:
+    return (void *)&NvAPI_EnumNvidiaDisplayHandle;
+  case 0x0078dba2:
+    return (void *)&NvAPI_GPU_GetConnectedDisplayIds;
   default:
     break;
   }
