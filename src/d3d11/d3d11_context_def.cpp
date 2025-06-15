@@ -363,6 +363,16 @@ public:
       // nop
   };
 
+  HRESULT STDMETHODCALLTYPE
+  Signal(ID3D11Fence *pFence, UINT64 Value) override {
+    return DXGI_ERROR_INVALID_CALL;
+  }
+
+  HRESULT STDMETHODCALLTYPE
+  Wait(ID3D11Fence *pFence, UINT64 Value) override {
+    return DXGI_ERROR_INVALID_CALL;
+  }
+
 private:
   DeferredContextInternalState ctx_state;
   null_mutex mutex;

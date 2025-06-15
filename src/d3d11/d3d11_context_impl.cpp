@@ -2730,16 +2730,6 @@ public:
     WARN("GetHardwareProtectionState: stub");
   }
 
-  virtual HRESULT STDMETHODCALLTYPE
-  Signal(ID3D11Fence *fence, UINT64 value) override {
-    IMPLEMENT_ME
-  }
-
-  virtual HRESULT STDMETHODCALLTYPE
-  Wait(ID3D11Fence *fence, UINT64 value) override {
-    IMPLEMENT_ME
-  }
-
 #pragma endregion
 
 #pragma region Internal

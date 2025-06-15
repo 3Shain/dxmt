@@ -1,4 +1,5 @@
 #include "config/config.hpp"
+#include "d3d11_fence.hpp"
 #include "d3d11_private.h"
 #include "d3d11_query.hpp"
 #include "dxmt_command_queue.hpp"
@@ -514,6 +515,29 @@ public:
     ctx_state.cmd_queue.CommitCurrentChunk();
     ctx_state.has_dirty_op_since_last_event = false;
   };
+
+  HRESULT STDMETHODCALLTYPE Signal(ID3D11Fence *pFence, UINT64 Value) override {
+    auto fence = static_cast<MTLD3D11Fence *>(pFence);
+
+    InvalidateCurrentPass();
+    EmitOP([event = fence->event, Value](ArgumentEncodingContext &enc) mutable {
+      enc.signalEvent(std::move(event), Value);
+    });
+    Flush();
+
+    return S_OK;
+  }
+
+  HRESULT STDMETHODCALLTYPE Wait(ID3D11Fence *pFence, UINT64 Value) override {
+    auto fence = static_cast<MTLD3D11Fence *>(pFence);
+
+    Flush();
+    EmitOP([event = fence->event, Value](ArgumentEncodingContext &enc) mutable {
+      enc.waitEvent(std::move(event), Value);
+    });
+
+    return S_OK;
+  }
 
 private:
   std::vector<Com<IMTLD3DOcclusionQuery>> pending_occlusion_queries;

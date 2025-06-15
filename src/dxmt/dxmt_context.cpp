@@ -522,6 +522,32 @@ ArgumentEncodingContext::signalEvent(uint64_t value) {
   endPass();
 }
 
+void
+ArgumentEncodingContext::signalEvent(WMT::Reference<WMT::Event> &&event, uint64_t value) {
+  assert(!encoder_current);
+  auto encoder_info = allocate<SignalEventData>();
+  encoder_info->type = EncoderType::SignalEvent;
+  encoder_info->id = nextEncoderId();
+  encoder_info->event = std::move(event);
+  encoder_info->value = value;
+
+  encoder_current = encoder_info;
+  endPass();
+}
+
+void
+ArgumentEncodingContext::waitEvent(WMT::Reference<WMT::Event> &&event, uint64_t value) {
+  assert(!encoder_current);
+  auto encoder_info = allocate<WaitForEventData>();
+  encoder_info->type = EncoderType::WaitForEvent;
+  encoder_info->id = nextEncoderId();
+  encoder_info->event = std::move(event);
+  encoder_info->value = value;
+
+  encoder_current = encoder_info;
+  endPass();
+}
+
 RenderEncoderData *
 ArgumentEncodingContext::startRenderPass(
     uint8_t dsv_planar_flags, uint8_t dsv_readonly_flags, uint8_t render_target_count, uint64_t encoder_argbuf_size
@@ -867,6 +893,12 @@ ArgumentEncodingContext::flushCommands(WMT::CommandBuffer cmdbuf, uint64_t seqId
       data->~SignalEventData();
       break;
     }
+    case EncoderType::WaitForEvent: {
+      auto data = static_cast<WaitForEventData *>(current);
+      cmdbuf.encodeWaitForEvent(data->event, data->value);
+      data->~WaitForEventData();
+      break;
+    }
     case EncoderType::TemporalUpscale: {
       auto data = static_cast<TemporalUpscaleData *>(current);
       cmdbuf.encodeTemporalScale(data->scaler, data->input, data->output, data->depth, data->motion_vector, data->exposure, data->props);
@@ -896,6 +928,10 @@ ArgumentEncodingContext::checkEncoderRelation(EncoderData *former, EncoderData *
   if (former->type == EncoderType::SignalEvent)
     return DXMT_ENCODER_LIST_OP_SYNCHRONIZE;
   if (latter->type == EncoderType::SignalEvent)
+    return DXMT_ENCODER_LIST_OP_SYNCHRONIZE;
+  if (former->type == EncoderType::WaitForEvent)
+    return DXMT_ENCODER_LIST_OP_SYNCHRONIZE;
+  if (latter->type == EncoderType::WaitForEvent)
     return DXMT_ENCODER_LIST_OP_SYNCHRONIZE;
 
   while (former->type != latter->type) {

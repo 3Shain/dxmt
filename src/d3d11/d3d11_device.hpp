@@ -33,7 +33,7 @@ DEFINE_COM_INTERFACE("3a3f085a-d0fe-4324-b0ae-fe04de18571c",
 
 namespace dxmt {
 
-class MTLD3D11Device : public ID3D11Device3 {
+class MTLD3D11Device : public ID3D11Device5 {
 public:
 
   virtual void AddRefPrivate() = 0;

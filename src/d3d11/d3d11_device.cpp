@@ -1,4 +1,5 @@
 #include "com/com_guid.hpp"
+#include "d3d11_fence.hpp"
 #include "d3d11_input_layout.hpp"
 #include "d3d11_interfaces.hpp"
 #include "d3d11_multithread.hpp"
@@ -1084,6 +1085,27 @@ public:
     return m_FeatureFlags & 0x80000000 ? 10 : 11;
   };
 
+  virtual HRESULT STDMETHODCALLTYPE RegisterDeviceRemovedEvent(HANDLE Event,
+                                                               DWORD *pCookie) final {
+    // no device to remove
+    return S_OK;
+  };
+
+  virtual void STDMETHODCALLTYPE UnregisterDeviceRemoved(DWORD Cookie) final {
+    // just do nothing
+  };
+
+  virtual HRESULT STDMETHODCALLTYPE OpenSharedFence(HANDLE Handle, REFIID riid,
+                                                    void **ppFence) final {
+    return E_NOTIMPL;
+  };
+
+  virtual HRESULT STDMETHODCALLTYPE CreateFence(UINT64 InitialValue,
+                                                D3D11_FENCE_FLAG Flags,
+                                                REFIID riid, void **ppFence) final {
+    return dxmt::CreateFence(this, InitialValue, Flags, riid, ppFence);
+  };
+
 private:
   MTLDXGIObject<IMTLDXGIDevice> *m_container;
   IMTLDXGIAdapter *adapter_;
@@ -1162,7 +1184,8 @@ public:
     }
 
     if (riid == __uuidof(ID3D11Device) || riid == __uuidof(ID3D11Device1) ||
-        riid == __uuidof(ID3D11Device2) || riid == __uuidof(ID3D11Device3)) {
+        riid == __uuidof(ID3D11Device2) || riid == __uuidof(ID3D11Device3) ||
+        riid == __uuidof(ID3D11Device4) || riid == __uuidof(ID3D11Device5)) {
       *ppvObject = ref_and_cast<ID3D11Device>(&d3d11_device_);
       return S_OK;
     }

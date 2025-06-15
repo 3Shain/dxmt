@@ -85,6 +85,7 @@ enum class EncoderType {
   SpatialUpscale,
   SignalEvent,
   TemporalUpscale,
+  WaitForEvent,
 };
 
 struct EncoderData {
@@ -170,6 +171,11 @@ struct SpatialUpscaleData : EncoderData {
 };
 
 struct SignalEventData : EncoderData {
+  WMT::Reference<WMT::Event> event;
+  uint64_t value;
+};
+
+struct WaitForEventData : EncoderData {
   WMT::Reference<WMT::Event> event;
   uint64_t value;
 };
@@ -538,6 +544,8 @@ public:
   );
 
   void signalEvent(uint64_t value);
+  void signalEvent(WMT::Reference<WMT::Event> &&event, uint64_t value);
+  void waitEvent(WMT::Reference<WMT::Event> &&event, uint64_t value);
 
   uint64_t
   nextEncoderId() {
