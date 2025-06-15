@@ -403,6 +403,14 @@ NvAPI_GPU_GetConnectedDisplayIds(
   return NVAPI_OK;
 }
 
+NVAPI_INTERFACE
+NvAPI_DISP_GetGDIPrimaryDisplayId(NvU32 *displayId) {
+  if (!displayId)
+    return NVAPI_INVALID_ARGUMENT;
+  *displayId = WMTGetPrimaryDisplayId();
+  return NVAPI_OK;
+}
+
 extern "C" __cdecl void *nvapi_QueryInterface(NvU32 id) {
   switch (id) {
   case 0x0150e828:
@@ -446,6 +454,8 @@ extern "C" __cdecl void *nvapi_QueryInterface(NvU32 id) {
     return (void *)&NvAPI_EnumNvidiaDisplayHandle;
   case 0x0078dba2:
     return (void *)&NvAPI_GPU_GetConnectedDisplayIds;
+  case 0x1e9d8a31:
+    return (void *)&NvAPI_DISP_GetGDIPrimaryDisplayId;
   default:
     break;
   }
