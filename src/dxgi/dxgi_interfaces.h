@@ -17,3 +17,14 @@ DEFINE_COM_INTERFACE("6bfa1657-9cb1-471a-a4fb-7cacf8a81207", IMTLDXGIDevice)
       const DXGI_SWAP_CHAIN_FULLSCREEN_DESC *pFullscreenDesc,
       IDXGISwapChain1 **ppSwapChain) = 0;
 };
+
+static constexpr IID DXMT_NVEXT_GUID = dxmt::guid::make_guid("ba0af616-4a43-4259-815c-db3b89829905");
+
+namespace dxmt {
+enum class VendorExtension {
+  None,
+  Nvidia,
+};
+
+extern VendorExtension g_extension_enabled;
+} // namespace dxmt

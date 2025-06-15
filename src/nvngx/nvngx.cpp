@@ -4,6 +4,7 @@
 #include "nvngx_feature.hpp"
 #include "nvngx_parameter.hpp"
 #include "../d3d11/d3d11_interfaces.hpp"
+#include "../dxgi/dxgi_interfaces.h"
 #include <cmath>
 
 namespace dxmt {
@@ -316,6 +317,20 @@ NVSDK_NGX_D3D11_GetFeatureRequirements(
   WARN("NVSDK_NGX_D3D11_GetFeatureRequirements: unsupported feature ", discovery_info->FeatureID);
   requirement->FeatureSupported = NVNGX_FEATURE_SUPPORT_RESULT_UNSUPPORTED;
   return NVNGX_RESULT_FAIL;
+}
+
+extern "C" BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason,
+                               LPVOID reserved) {
+  if (reason != DLL_PROCESS_ATTACH)
+    return TRUE;
+
+  DisableThreadLibraryCalls(instance);
+
+  if (FAILED(DXGIGetDebugInterface1(0, DXMT_NVEXT_GUID, nullptr))) {
+    return FALSE;
+  }
+
+  return TRUE;
 }
 
 }; // namespace dxmt

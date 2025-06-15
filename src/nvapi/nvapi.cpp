@@ -1,4 +1,5 @@
 #include "../d3d11/d3d11_interfaces.hpp"
+#include "../dxgi/dxgi_interfaces.h"
 #include "com/com_pointer.hpp"
 #include "log/log.hpp"
 #include "nvapi_lite_common.h"
@@ -15,9 +16,24 @@
 namespace dxmt {
 Logger Logger::s_instance("nvapi.log");
 
-NVAPI_INTERFACE NvAPI_Initialize() { return NVAPI_OK; };
+static std::atomic_uint32_t s_initialization_count = 0;
 
-NVAPI_INTERFACE NvAPI_Unload() { return NVAPI_OK; };
+NVAPI_INTERFACE
+NvAPI_Initialize() {
+  if (FAILED(DXGIGetDebugInterface1(0, DXMT_NVEXT_GUID, nullptr))) {
+    return NVAPI_NVIDIA_DEVICE_NOT_FOUND;
+  }
+  s_initialization_count++;
+  return NVAPI_OK;
+};
+
+NVAPI_INTERFACE
+NvAPI_Unload() {
+  if (!s_initialization_count)
+    return NVAPI_API_NOT_INITIALIZED;
+  s_initialization_count--;
+  return NVAPI_OK;
+};
 
 NVAPI_INTERFACE
 NvAPI_SYS_GetDriverAndBranchVersion(NvU32 *pDriverVersion,

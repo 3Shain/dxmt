@@ -131,6 +131,9 @@ public:
       pDesc->VendorId = options.customVendorId;
     } else {
       pDesc->VendorId = 0x106B;
+      if (g_extension_enabled == VendorExtension::Nvidia) {
+        pDesc->VendorId = 0x10DE;
+      }
     }
 
     if (options.customDeviceId >= 0) {
