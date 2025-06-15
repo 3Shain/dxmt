@@ -179,6 +179,11 @@ public:
   signaledValue() {
     return MTLSharedEvent_signaledValue(handle);
   }
+
+  void
+  signalValue(uint64_t value) {
+    MTLSharedEvent_signalValue(handle, value);
+  }
 };
 
 class Resource : public Object {
@@ -510,6 +515,11 @@ public:
   void
   encodeSignalEvent(Event event, uint64_t value) {
     return MTLCommandBuffer_encodeSignalEvent(handle, event.handle, value);
+  }
+
+  void
+  encodeWaitForEvent(Event event, uint64_t value) {
+    return MTLCommandBuffer_encodeWaitForEvent(handle, event.handle, value);
   }
 
   RenderCommandEncoder

@@ -1662,4 +1662,10 @@ WINEMETAL_API void WMTQueryDisplaySettingForLayer(
     struct WMTEDRValue *edr_value
 );
 
+WINEMETAL_API void MTLCommandBuffer_encodeWaitForEvent(obj_handle_t cmdbuf, obj_handle_t event, uint64_t value);
+
+WINEMETAL_API void MTLSharedEvent_signalValue(obj_handle_t event, uint64_t value);
+
+WINEMETAL_API void MTLSharedEvent_setWin32EventAtValue(obj_handle_t event, void *nt_event_handle, uint64_t at_value);
+
 #endif

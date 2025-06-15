@@ -863,3 +863,30 @@ WMTQueryDisplaySettingForLayer(
   *colorspace = params.colorspace;
   *edr_value = params.edr_value;
 }
+
+WINEMETAL_API void
+MTLCommandBuffer_encodeWaitForEvent(obj_handle_t cmdbuf, obj_handle_t event, uint64_t value) {
+  struct unixcall_generic_obj_obj_uint64_noret params;
+  params.handle = cmdbuf;
+  params.arg0 = event;
+  params.arg1 = value;
+  UNIX_CALL(102, &params);
+  return;
+}
+
+WINEMETAL_API void
+MTLSharedEvent_signalValue(obj_handle_t event, uint64_t value) {
+  struct unixcall_generic_obj_uint64_noret params;
+  params.handle = event;
+  params.arg = value;
+  UNIX_CALL(103, &params);
+}
+
+WINEMETAL_API void
+MTLSharedEvent_setWin32EventAtValue(obj_handle_t event, void *nt_event_handle, uint64_t at_value) {
+  struct unixcall_generic_obj_obj_uint64_noret params;
+  params.handle = event;
+  params.arg0 = (obj_handle_t)nt_event_handle;
+  params.arg1 = at_value;
+  UNIX_CALL(104, &params);
+}

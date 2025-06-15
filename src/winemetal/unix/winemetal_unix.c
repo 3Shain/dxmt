@@ -2224,6 +2224,40 @@ _WMTQueryDisplaySettingForLayer(void *obj) {
   return STATUS_SUCCESS;
 }
 
+static NTSTATUS
+_MTLCommandBuffer_encodeWaitForEvent(void *obj) {
+  struct unixcall_generic_obj_obj_uint64_noret *params = obj;
+  [(id<MTLCommandBuffer>)params->handle encodeWaitForEvent:(id<MTLSharedEvent>)params->arg0 value:params->arg1];
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_MTLSharedEvent_signalValue(void *obj) {
+  struct unixcall_generic_obj_uint64_noret *params = obj;
+  [(id<MTLSharedEvent>)params->handle setSignaledValue:params->arg];
+  return STATUS_SUCCESS;
+}
+
+extern NTSTATUS NtSetEvent(void *handle, void *prev_state);
+
+static NTSTATUS
+_MTLSharedEvent_setWin32EventAtValue(void *obj) {
+  static MTLSharedEventListener *shared_listener = nil;
+  static dispatch_once_t pred;
+  dispatch_once(&pred, ^{
+    shared_listener = [[MTLSharedEventListener alloc] init];
+  });
+
+  struct unixcall_generic_obj_obj_uint64_noret *params = obj;
+  void *nt_event_handle = (void *)params->arg0;
+  [(id<MTLSharedEvent>)params->handle notifyListener:shared_listener
+                                             atValue:params->arg1
+                                               block:^(id<MTLSharedEvent> _e, uint64_t _v) {
+                                                 NtSetEvent(nt_event_handle, NULL);
+                                               }];
+  return STATUS_SUCCESS;
+}
+
 const void *__wine_unix_call_funcs[] = {
     &_NSObject_retain,
     &_NSObject_release,
@@ -2327,6 +2361,9 @@ const void *__wine_unix_call_funcs[] = {
     &_WMTQueryDisplaySetting,
     &_WMTUpdateDisplaySetting,
     &_WMTQueryDisplaySettingForLayer,
+    &_MTLCommandBuffer_encodeWaitForEvent,
+    &_MTLSharedEvent_signalValue,
+    &_MTLSharedEvent_setWin32EventAtValue,
 };
 
 const void *__wine_unix_call_wow64_funcs[] = {
@@ -2432,4 +2469,7 @@ const void *__wine_unix_call_wow64_funcs[] = {
     &_WMTQueryDisplaySetting,
     &_WMTUpdateDisplaySetting,
     &_WMTQueryDisplaySettingForLayer,
+    &_MTLCommandBuffer_encodeWaitForEvent,
+    &_MTLSharedEvent_signalValue,
+    &_MTLSharedEvent_setWin32EventAtValue,
 };
