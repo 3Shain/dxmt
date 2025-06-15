@@ -2026,6 +2026,25 @@ public:
     }
   }
 
+  void SOGetTargetsWithOffsets(UINT NumBuffers, REFIID riid, void **ppSOTargets,
+                               UINT *pOffsets) override {
+    std::lock_guard<mutex_t> lock(mutex);
+
+    for (unsigned i = 0; i < std::min(4u, NumBuffers); i++) {
+      if (state_.StreamOutput.Targets.test_bound(i)) {
+        if (ppSOTargets)
+          state_.StreamOutput.Targets[i].Buffer->QueryInterface(riid, &ppSOTargets[i]);
+        if (pOffsets)
+          pOffsets[i] = state_.StreamOutput.Targets[i].Offset;
+      } else {
+        if (ppSOTargets)
+          ppSOTargets[i] = nullptr;
+        if (pOffsets)
+          pOffsets[i] = 0;
+      }
+    }
+  }
+
 #pragma endregion
 
 #pragma region HullShader

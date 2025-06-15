@@ -666,7 +666,9 @@ MTLD3D10Device::OMGetDepthStencilState(ID3D10DepthStencilState **ppDepthStencilS
 
 void STDMETHODCALLTYPE
 MTLD3D10Device::SOGetTargets(UINT NumBuffers, ID3D10Buffer **ppSOTargets, UINT *pOffsets) {
-  UNIMPLEMENTED("SOGetTargets");
+  d3d11_context_->SOGetTargetsWithOffsets(
+      NumBuffers, __uuidof(ID3D10Buffer), reinterpret_cast<void **>(ppSOTargets), pOffsets
+  );
 }
 
 void STDMETHODCALLTYPE
