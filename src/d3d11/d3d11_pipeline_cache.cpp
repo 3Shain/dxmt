@@ -72,19 +72,25 @@ public:
     }
     return c.first->second.get();
   }
-  virtual const Sha1Hash& hash() { return hash_; };
+  virtual const Sha1Hash &hash() { return hash_; };
+
+#ifdef DXMT_DEBUG
+  void *bytecode;
+  size_t bytecode_length;
 
   virtual void dump() {
-    // FIXME: bytecode is not copied
-    // std::fstream dump_out;
-    // dump_out.open("shader_dump_" + hash_.toString() + ".cso",
-    //               std::ios::out | std::ios::binary);
-    // if (dump_out) {
-    //   dump_out.write((char *)pBytecode, BytecodeLength);
-    // }
-    // dump_out.close();
-    // ERR("dumped to ./shader_dump_" + hash_.toString() + ".cso");
+    std::fstream dump_out;
+    dump_out.open("shader_dump_" + hash_.toString() + ".cso",
+                  std::ios::out | std::ios::binary);
+    if (dump_out) {
+      dump_out.write((char *)bytecode, bytecode_length);
+    }
+    dump_out.close();
+    WARN("shader dumped to ./shader_dump_" + hash_.toString() + ".cso");
   }
+#else
+  virtual void dump() {}
+#endif
 };
 
 class CachedInputLayout final : public InputLayout {
@@ -221,6 +227,11 @@ class PipelineCache : public MTLD3D11PipelineCacheBase {
       if (result != shaders_.end()) {
         return shaders_.at(sha1).get();
       }
+#ifdef DXMT_DEBUG
+      shader->bytecode = malloc(BytecodeLength);
+      shader->bytecode_length = BytecodeLength;
+      memcpy(shader->bytecode, pBytecode, BytecodeLength);
+#endif
       return shaders_.emplace(sha1, std::move(shader)).first->second.get();
     }
   }

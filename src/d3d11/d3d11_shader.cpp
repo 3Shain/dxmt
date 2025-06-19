@@ -62,6 +62,7 @@ public:
 
     if (err) {
       ERR("Failed to create MTLLibrary: ", err.description().getUTF8String());
+      shader_->dump();
       return this;
     }
 
@@ -69,6 +70,7 @@ public:
     function_ = library.newFunction(func_name.c_str());
     if (function_ == nullptr) {
       ERR("Failed to create MTLFunction: ", func_name);
+      shader_->dump();
     }
 
     return this;
