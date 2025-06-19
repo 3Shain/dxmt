@@ -74,6 +74,9 @@ private:
   );
   ~TextureAllocation();
 
+  TextureAllocation(const TextureAllocation &) = delete;
+  TextureAllocation(TextureAllocation &&) = delete;
+
   WMT::Reference<WMT::Texture> obj_;
   WMT::Reference<WMT::Buffer> buffer_;
   uint32_t version_ = 0;

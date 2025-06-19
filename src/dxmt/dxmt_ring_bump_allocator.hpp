@@ -102,6 +102,7 @@ public:
 
     Block() = default;
 
+    Block(const Block &) = delete;
     Block(Block &&move) {
       buffer = std::move(move.buffer);
       gpu_address = move.gpu_address;
@@ -136,6 +137,7 @@ public:
 
     Block() = default;
 
+    Block(const Block &) = delete;
     Block(Block &&move) {
       ptr = move.ptr;
       move.ptr = nullptr;

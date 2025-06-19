@@ -65,9 +65,20 @@ private:
 
     ~StagingBuffer() {
 #ifdef __i386__
-    _aligned_free(info.memory.get());
+      if (info.memory.get()) {
+        _aligned_free(info.memory.get());
+        info.memory.set(nullptr);
+      }
 #endif
     }
+
+    StagingBuffer() = default;
+    StagingBuffer(const StagingBuffer &) = delete;
+    StagingBuffer(StagingBuffer &&move) {
+      info = move.info;
+      move.info.memory.set(nullptr);
+      allocation = std::move(move.allocation);
+    };
   };
   struct QueueEntry {
     uint64_t id;

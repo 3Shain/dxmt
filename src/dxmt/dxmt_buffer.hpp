@@ -62,6 +62,9 @@ private:
   BufferAllocation(WMT::Device device, const WMTBufferInfo &info, Flags<BufferAllocationFlag> flags);
   ~BufferAllocation();
 
+  BufferAllocation(const BufferAllocation &) = delete;
+  BufferAllocation(BufferAllocation &&) = delete;
+
   WMT::Reference<WMT::Buffer> obj_;
   WMTBufferInfo info_;
   uint32_t version_ = 0;

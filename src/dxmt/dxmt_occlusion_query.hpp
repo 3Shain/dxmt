@@ -180,7 +180,7 @@ public:
   }
 
   VisibilityResultReadback(const VisibilityResultReadback &) = delete;
-  VisibilityResultReadback(VisibilityResultReadback &&) = default;
+  VisibilityResultReadback(VisibilityResultReadback &&) = delete;
 
   uint64_t seq_id;
   uint64_t num_results;

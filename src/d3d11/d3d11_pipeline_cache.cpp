@@ -44,12 +44,7 @@ public:
     }
   };
 
-  CachedSM50Shader(CachedSM50Shader &&moved) {
-    memcpy(&reflection_, &moved.reflection_, sizeof(reflection_));
-    hash_ = moved.hash_;
-    shader = moved.shader;
-    moved.shader = nullptr;
-  };
+  CachedSM50Shader(CachedSM50Shader &&moved) = delete;
   CachedSM50Shader(const CachedSM50Shader &copy) = delete;
 
   virtual sm50_shader_t handle() { return shader; };

@@ -25,6 +25,7 @@ BufferAllocation::BufferAllocation(WMT::Device device, const WMTBufferInfo &info
 BufferAllocation::~BufferAllocation() {
 #ifdef __i386__
   _aligned_free(placed_buffer);
+  placed_buffer = nullptr;
 #endif
 }
 
