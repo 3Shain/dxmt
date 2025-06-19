@@ -1511,14 +1511,14 @@ WINEMETAL_API obj_handle_t MTLCommandBuffer_logs(obj_handle_t cmdbuf);
 WINEMETAL_API uint64_t
 MTLLogContainer_enumerate(obj_handle_t logs, uint64_t start, uint64_t buffer_size, obj_handle_t *buffer);
 
-enum WMTColorSpace {
+enum WMTColorSpace : uint64_t {
   WMTColorSpaceSRGB = 0b000,
   WMTColorSpaceSRGBLinear = 0b001,
   WMTColorSpaceBT2020 = 0b010,
   WMTColorSpaceHDR_PQ = 0b100,
   WMTColorSpaceHDR10 = WMTColorSpaceHDR_PQ,
   WMTColorSpaceHDR_scRGB = 0b101,
-  WMTColorSpaceInvalid = 0xFFFFFFFF,
+  WMTColorSpaceInvalid = 0xFFFFFFFFFFFFFFFF,
 };
 
 #if !defined(WMT_COLORSPACE_IS_HDR)
