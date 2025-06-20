@@ -56,7 +56,6 @@ public:
   void *mappedMemory;
   uint64_t gpuAddress;
   DXMT_RESOURCE_RESIDENCY_STATE residencyState;
-  EncoderDepKey depkey;
 
 private:
   BufferAllocation(WMT::Device device, const WMTBufferInfo &info, Flags<BufferAllocationFlag> flags);

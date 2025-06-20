@@ -18,7 +18,6 @@ TextureAllocation::TextureAllocation(
   obj_ = buffer_.newTexture(info_copy, 0, bytes_per_row);
 
   gpuResourceID = info_copy.gpu_resource_id;
-  depkey = EncoderDepSet::generateNewKey(global_texture_seq.fetch_add(1));
 };
 
 TextureAllocation::TextureAllocation(
@@ -28,7 +27,6 @@ TextureAllocation::TextureAllocation(
     flags_(flags) {
   mappedMemory = nullptr;
   gpuResourceID = textureDescriptor.gpu_resource_id;
-  depkey = EncoderDepSet::generateNewKey(global_texture_seq.fetch_add(1));
 };
 
 TextureAllocation::~TextureAllocation(){

@@ -92,10 +92,6 @@ struct EncoderData {
   EncoderType type;
   EncoderData *next = nullptr;
   uint64_t id;
-  EncoderDepSet buf_read;
-  EncoderDepSet buf_write;
-  EncoderDepSet tex_read;
-  EncoderDepSet tex_write;
 };
 
 struct GSDispatchArgumentsMarshal {
@@ -247,10 +243,7 @@ class ArgumentEncodingContext {
     retainAllocation(allocation);
     if (allocation->flags().test(BufferAllocationFlag::GpuReadonly))
       return;
-    if (flags & DXMT_ENCODER_RESOURCE_ACESS_READ)
-      encoder_current->buf_read.add(allocation->depkey);
-    if (flags & DXMT_ENCODER_RESOURCE_ACESS_WRITE)
-      encoder_current->buf_write.add(allocation->depkey);
+    // TODO: CHECK FENCE
   }
 
   void
@@ -258,10 +251,7 @@ class ArgumentEncodingContext {
     retainAllocation(allocation);
     if (allocation->flags().test(TextureAllocationFlag::GpuReadonly))
       return;
-    if (flags & DXMT_ENCODER_RESOURCE_ACESS_READ)
-      encoder_current->tex_read.add(allocation->depkey);
-    if (flags & DXMT_ENCODER_RESOURCE_ACESS_WRITE)
-      encoder_current->tex_write.add(allocation->depkey);
+    // TODO: CHECK FENCE
   }
 
 public:
