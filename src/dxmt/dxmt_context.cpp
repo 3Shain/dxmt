@@ -457,9 +457,8 @@ ArgumentEncodingContext::present(Rc<Texture> &texture, Rc<Presenter> &presenter,
   encoder_info->after = after;
   encoder_info->metadata = metadata;
 
-  encoder_info->tex_read.add(texture->current()->depkey);
-
   encoder_current = encoder_info;
+  access(texture, DXMT_ENCODER_RESOURCE_ACESS_READ);
   endPass();
 }
 
@@ -473,10 +472,9 @@ ArgumentEncodingContext::upscale(Rc<Texture> &texture, Rc<Texture> &upscaled, WM
   encoder_info->upscaled = upscaled->current()->texture();
   encoder_info->scaler = scaler;
 
-  encoder_info->tex_read.add(texture->current()->depkey);
-  encoder_info->tex_write.add(upscaled->current()->depkey);
-
   encoder_current = encoder_info;
+  access(texture, DXMT_ENCODER_RESOURCE_ACESS_READ);
+  access(upscaled, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
   endPass();
 }
 
@@ -496,18 +494,20 @@ ArgumentEncodingContext::upscaleTemporal(
   encoder_info->scaler = scaler;
   encoder_info->props = props;
 
-  encoder_info->tex_read.add(input->current()->depkey);
-  encoder_info->tex_read.add(depth->current()->depkey);
-  encoder_info->tex_read.add(motion_vector->current()->depkey);
-  encoder_info->tex_write.add(output->current()->depkey);
-  if(exposure) {
+  if (exposure) {
     encoder_info->exposure = exposure->current()->texture();
-    encoder_info->tex_read.add(exposure->current()->depkey);
   } else {
     encoder_info->exposure = nullptr;
   }
 
   encoder_current = encoder_info;
+  access(input, DXMT_ENCODER_RESOURCE_ACESS_READ);
+  access(depth, DXMT_ENCODER_RESOURCE_ACESS_READ);
+  access(motion_vector, DXMT_ENCODER_RESOURCE_ACESS_READ);
+  access(output, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
+  if (exposure) {
+    access(exposure, DXMT_ENCODER_RESOURCE_ACESS_READ);
+  }
   endPass();
 }
 
@@ -967,7 +967,8 @@ ArgumentEncodingContext::checkEncoderRelation(EncoderData *former, EncoderData *
             depth_attachment->clear_depth = clear->depth_stencil.first;
             depth_attachment->load_action = WMTLoadActionClear;
             depth_attachment->store_action = WMTStoreActionStore;
-            render->tex_write.merge(clear->tex_write);
+            // render->tex_write.merge(clear->tex_write);
+            // TODO: MERGE/ALIAS FENCE
           }
           clear->clear_dsv &= ~1;
         }
@@ -976,7 +977,8 @@ ArgumentEncodingContext::checkEncoderRelation(EncoderData *former, EncoderData *
             stencil_attachment->clear_stencil = clear->depth_stencil.second;
             stencil_attachment->load_action = WMTLoadActionClear;
             stencil_attachment->store_action = WMTStoreActionStore;
-            render->tex_write.merge(clear->tex_write);
+            // render->tex_write.merge(clear->tex_write);
+            // TODO: MERGE/ALIAS FENCE
           }
           clear->clear_dsv &= ~2;
         }
@@ -992,8 +994,10 @@ ArgumentEncodingContext::checkEncoderRelation(EncoderData *former, EncoderData *
           if (attachment->load_action == WMTLoadActionLoad) {
             attachment->load_action = WMTLoadActionClear;
             attachment->clear_color = clear->color;
-            if (attachment->store_action != WMTStoreActionDontCare)
-              render->tex_write.merge(clear->tex_write);
+            if (attachment->store_action != WMTStoreActionDontCare) {
+              // render->tex_write.merge(clear->tex_write);
+              // TODO: MERGE/ALIAS FENCE
+            }
           }
 
           currentFrameStatistics().clear_pass_optimized++;
@@ -1062,10 +1066,11 @@ ArgumentEncodingContext::checkEncoderRelation(EncoderData *former, EncoderData *
       r1->ts_arg_marshal_tasks = std::move(r0->ts_arg_marshal_tasks);
       r1->use_visibility_result = r0->use_visibility_result || r1->use_visibility_result;
 
-      r1->buf_read.merge(r0->buf_read);
-      r1->buf_write.merge(r0->buf_write);
-      r1->tex_read.merge(r0->tex_read);
-      r1->tex_write.merge(r0->tex_write);
+      // r1->buf_read.merge(r0->buf_read);
+      // r1->buf_write.merge(r0->buf_write);
+      // r1->tex_read.merge(r0->tex_read);
+      // r1->tex_write.merge(r0->tex_write);
+      // TODO: MERGE/ALIAS FENCE
 
       currentFrameStatistics().render_pass_optimized++;
       r0->~RenderEncoderData();
@@ -1085,22 +1090,8 @@ ArgumentEncodingContext::hasDataDependency(EncoderData *latter, EncoderData *for
     // FIXME: prove it's safe to return false
     return false;
   }
-  // read-after-write
-  if (!former->buf_write.isDisjointWith(latter->buf_read))
-    return true;
-  if (!former->tex_write.isDisjointWith(latter->tex_read))
-    return true;
-  // write-after-write
-  if (!former->buf_write.isDisjointWith(latter->buf_write))
-    return true;
-  if (!former->tex_write.isDisjointWith(latter->tex_write))
-    return true;
-  // write-after-read
-  if (!former->buf_read.isDisjointWith(latter->buf_write))
-    return true;
-  if (!former->tex_read.isDisjointWith(latter->tex_write))
-    return true;
-  return false;
+  // TODO: COMPARE FENCE
+  return true;
 }
 
 bool
