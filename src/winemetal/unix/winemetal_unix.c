@@ -634,6 +634,16 @@ _MTLBlitCommandEncoder_encodeCommands(void *obj) {
       [encoder generateMipmapsForTexture:(id<MTLTexture>)body->texture];
       break;
     }
+    case WMTBlitCommandUpdateFence: {
+      struct wmtcmd_blit_fence_op *body = (struct wmtcmd_blit_fence_op *)next;
+      [encoder updateFence:(id<MTLFence>)body->fence];
+      break;
+    }
+    case WMTBlitCommandWaitForFence: {
+      struct wmtcmd_blit_fence_op *body = (struct wmtcmd_blit_fence_op *)next;
+      [encoder waitForFence:(id<MTLFence>)body->fence];
+      break;
+    }
     }
 
     next = next->next.ptr;
@@ -702,6 +712,16 @@ _MTLComputeCommandEncoder_encodeCommands(void *obj) {
     case WMTComputeCommandSetTexture: {
       struct wmtcmd_compute_settexture *body = (struct wmtcmd_compute_settexture *)next;
       [encoder setTexture:(id<MTLTexture>)body->texture atIndex:body->index];
+      break;
+    }
+    case WMTComputeCommandUpdateFence: {
+      struct wmtcmd_compute_fence_op *body = (struct wmtcmd_compute_fence_op *)next;
+      [encoder updateFence:(id<MTLFence>)body->fence];
+      break;
+    }
+    case WMTComputeCommandWaitForFence: {
+      struct wmtcmd_compute_fence_op *body = (struct wmtcmd_compute_fence_op *)next;
+      [encoder waitForFence:(id<MTLFence>)body->fence];
       break;
     }
     }
@@ -996,6 +1016,16 @@ _MTLRenderCommandEncoder_encodeCommands(void *obj) {
                           threadsPerObjectThreadgroup:MTLSizeMake(body->vertex_per_warp, 1, 1)
                             threadsPerMeshThreadgroup:MTLSizeMake(1, 1, 1)];
       [encoder setObjectBuffer:(id<MTLBuffer>)body->dispatch_args_buffer offset:0 atIndex:21];
+      break;
+    }
+    case WMTRenderCommandUpdateFence: {
+      struct wmtcmd_render_fence_op *body = (struct wmtcmd_render_fence_op *)next;
+      [encoder updateFence:(id<MTLFence>)body->fence afterStages:(MTLRenderStages)body->stages];
+      break;
+    }
+    case WMTRenderCommandWaitForFence: {
+      struct wmtcmd_render_fence_op *body = (struct wmtcmd_render_fence_op *)next;
+      [encoder waitForFence:(id<MTLFence>)body->fence beforeStages:(MTLRenderStages)body->stages];
       break;
     }
     }
@@ -2258,6 +2288,13 @@ _MTLSharedEvent_setWin32EventAtValue(void *obj) {
   return STATUS_SUCCESS;
 }
 
+static NTSTATUS
+_MTLDevice_newFence(void *obj) {
+  struct unixcall_generic_obj_obj_ret *params = obj;
+  params->ret = (obj_handle_t)[(id<MTLDevice>)params->handle newFence];
+  return STATUS_SUCCESS;
+}
+
 const void *__wine_unix_call_funcs[] = {
     &_NSObject_retain,
     &_NSObject_release,
@@ -2364,6 +2401,7 @@ const void *__wine_unix_call_funcs[] = {
     &_MTLCommandBuffer_encodeWaitForEvent,
     &_MTLSharedEvent_signalValue,
     &_MTLSharedEvent_setWin32EventAtValue,
+    &_MTLDevice_newFence,
 };
 
 const void *__wine_unix_call_wow64_funcs[] = {
@@ -2472,4 +2510,5 @@ const void *__wine_unix_call_wow64_funcs[] = {
     &_MTLCommandBuffer_encodeWaitForEvent,
     &_MTLSharedEvent_signalValue,
     &_MTLSharedEvent_setWin32EventAtValue,
+    &_MTLDevice_newFence,
 };

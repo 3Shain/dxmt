@@ -897,3 +897,12 @@ MTLSharedEvent_setWin32EventAtValue(obj_handle_t event, void *nt_event_handle, u
   params.arg1 = at_value;
   UNIX_CALL(104, &params);
 }
+
+WINEMETAL_API obj_handle_t
+MTLDevice_newFence(obj_handle_t device) {
+  struct unixcall_generic_obj_obj_ret params;
+  params.handle = device;
+  params.ret = 0;
+  UNIX_CALL(105, &params);
+  return params.ret;
+}
