@@ -793,6 +793,8 @@ enum WMTBlitCommandType : uint16_t {
   WMTBlitCommandCopyFromTextureToBuffer,
   WMTBlitCommandCopyFromTextureToTexture,
   WMTBlitCommandGenerateMipmaps,
+  WMTBlitCommandWaitForFence,
+  WMTBlitCommandUpdateFence,
 };
 
 struct wmtcmd_base {
@@ -870,6 +872,13 @@ struct wmtcmd_blit_generate_mipmaps {
   obj_handle_t texture;
 };
 
+struct wmtcmd_blit_fence_op {
+  enum WMTBlitCommandType type;
+  uint16_t reserved[3];
+  struct WMTMemoryPointer next;
+  obj_handle_t fence;
+};
+
 WINEMETAL_API void MTLBlitCommandEncoder_encodeCommands(obj_handle_t encoder, const struct wmtcmd_base *cmd_head);
 
 enum WMTComputeCommandType : uint16_t {
@@ -883,6 +892,8 @@ enum WMTComputeCommandType : uint16_t {
   WMTComputeCommandSetBytes,
   WMTComputeCommandSetTexture,
   WMTComputeCommandDispatchThreads,
+  WMTComputeCommandWaitForFence,
+  WMTComputeCommandUpdateFence,
 };
 
 struct wmtcmd_compute_nop {
@@ -962,6 +973,13 @@ struct wmtcmd_compute_settexture {
   uint8_t index;
 };
 
+struct wmtcmd_compute_fence_op {
+  enum WMTComputeCommandType type;
+  uint16_t reserved[3];
+  struct WMTMemoryPointer next;
+  obj_handle_t fence;
+};
+
 WINEMETAL_API void MTLComputeCommandEncoder_encodeCommands(obj_handle_t encoder, const struct wmtcmd_base *cmd_head);
 
 enum WMTRenderCommandType : uint16_t {
@@ -998,6 +1016,8 @@ enum WMTRenderCommandType : uint16_t {
   WMTRenderCommandDXMTGeometryDrawIndexed,
   WMTRenderCommandDXMTGeometryDrawIndirect,
   WMTRenderCommandDXMTGeometryDrawIndexedIndirect,
+  WMTRenderCommandWaitForFence,
+  WMTRenderCommandUpdateFence,
 };
 
 struct wmtcmd_render_nop {
@@ -1347,6 +1367,14 @@ struct wmtcmd_render_dxmt_geometry_draw_indexed_indirect {
   uint32_t vertex_per_warp;
 };
 
+struct wmtcmd_render_fence_op {
+  enum WMTRenderCommandType type;
+  uint16_t reserved[3];
+  struct WMTMemoryPointer next;
+  obj_handle_t fence;
+  enum WMTRenderStages stages;
+};
+
 WINEMETAL_API void MTLRenderCommandEncoder_encodeCommands(obj_handle_t encoder, const struct wmtcmd_base *cmd_head);
 
 WINEMETAL_API enum WMTPixelFormat MTLTexture_pixelFormat(obj_handle_t texture);
@@ -1667,5 +1695,7 @@ WINEMETAL_API void MTLCommandBuffer_encodeWaitForEvent(obj_handle_t cmdbuf, obj_
 WINEMETAL_API void MTLSharedEvent_signalValue(obj_handle_t event, uint64_t value);
 
 WINEMETAL_API void MTLSharedEvent_setWin32EventAtValue(obj_handle_t event, void *nt_event_handle, uint64_t at_value);
+
+WINEMETAL_API obj_handle_t MTLDevice_newFence(obj_handle_t device);
 
 #endif
