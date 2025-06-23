@@ -731,6 +731,11 @@ public:
     return Reference<Fence>(MTLDevice_newFence(handle));
   }
 
+  Reference<Event>
+  newEvent() {
+    return Reference<Event>(MTLDevice_newEvent(handle));
+  }
+
   uint64_t
   minimumLinearTextureAlignmentForPixelFormat(WMTPixelFormat format) {
     return MTLDevice_minimumLinearTextureAlignmentForPixelFormat(handle, format);
