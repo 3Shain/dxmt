@@ -93,6 +93,7 @@ struct EncoderData {
   EncoderType type;
   EncoderData *next = nullptr;
   uint64_t id;
+  FenceSet fence_wait;
 };
 
 struct GSDispatchArgumentsMarshal {
@@ -152,6 +153,11 @@ struct ClearEncoderData : EncoderData {
   unsigned array_length;
   unsigned width;
   unsigned height;
+  /**
+  If we know encoder only depends on one resource, we can get
+  the fence directly, no need to iterate the whole set.
+  */
+  FenceId fence_wait_one;
 
   ClearEncoderData() {}
 };
@@ -159,6 +165,7 @@ struct ClearEncoderData : EncoderData {
 struct ResolveEncoderData : EncoderData {
   WMT::Reference<WMT::Texture> src;
   WMT::Reference<WMT::Texture> dst;
+  FenceId fence_wait_one;
 };
 
 class Presenter;
@@ -168,6 +175,7 @@ struct PresentData : EncoderData {
   Rc<Presenter> presenter;
   double after;
   DXMTPresentMetadata metadata;
+  FenceId fence_wait_one;
 };
 
 struct SpatialUpscaleData : EncoderData {
@@ -236,11 +244,6 @@ enum DXMT_ENCODER_LIST_OP {
 
 class CommandQueue;
 
-enum DXMT_ENCODER_RESOURCE_ACESS {
-  DXMT_ENCODER_RESOURCE_ACESS_READ = 1 <<0,
-  DXMT_ENCODER_RESOURCE_ACESS_WRITE = 1 << 1,
-};
-
 struct AllocatedTempBufferSlice {
   WMT::Buffer gpu_buffer;
   uint64_t offset;
@@ -248,20 +251,34 @@ struct AllocatedTempBufferSlice {
 };
 
 class ArgumentEncodingContext {
-  void
+  FenceId
   trackBuffer(BufferAllocation *allocation, DXMT_ENCODER_RESOURCE_ACESS flags) {
     retainAllocation(allocation);
     if (allocation->flags().test(BufferAllocationFlag::GpuReadonly))
-      return;
-    // TODO: CHECK FENCE
+      return kNotAFenceId;
+    auto fence_id = allocation->fenceTracker.access(
+         currentEncoderId(), !(flags & DXMT_ENCODER_RESOURCE_ACESS_WRITE)
+    );
+    if (FenceIsValid(fence_id)) {
+      fence_id = fence_alias_map_.get(fence_id);
+      currentEncoder()->fence_wait.add(fence_id);
+    }
+    return fence_id;
   }
 
-  void
+  FenceId
   trackTexture(TextureAllocation *allocation, DXMT_ENCODER_RESOURCE_ACESS flags) {
     retainAllocation(allocation);
     if (allocation->flags().test(TextureAllocationFlag::GpuReadonly))
-      return;
-    // TODO: CHECK FENCE
+      return kNotAFenceId;
+    auto fence_id = allocation->fenceTracker.access(
+         currentEncoderId(), !(flags & DXMT_ENCODER_RESOURCE_ACESS_WRITE)
+    );
+    if (FenceIsValid(fence_id)) {
+      fence_id = fence_alias_map_.get(fence_id);
+      currentEncoder()->fence_wait.add(fence_id);
+    }
+    return fence_id;
   }
 
 public:
@@ -544,8 +561,7 @@ public:
 
   uint64_t
   nextEncoderId() {
-    static std::atomic_uint64_t global_id = 0;
-    return global_id.fetch_add(1);
+    return encoder_id_++;
   };
 
   void clearColor(Rc<Texture> &&texture, unsigned viewId, unsigned arrayLength, WMTClearColor color);
@@ -566,6 +582,12 @@ public:
   currentEncoder() {
     assert(encoder_current);
     return encoder_current;
+  }
+
+  constexpr uint64_t
+  currentEncoderId() {
+    assert(encoder_current);
+    return encoder_current->id;
   }
 
   constexpr RenderEncoderData *
@@ -685,6 +707,11 @@ private:
   EncoderData *encoder_last = &encoder_head;
   EncoderData *encoder_current = nullptr;
   unsigned encoder_count_ = 0;
+  
+  uint64_t encoder_id_ = 0;
+  FenceAliasMap fence_alias_map_;
+  std::array<WMT::Reference<WMT::Fence>, kFenceCount> fence_pool_;
+  WMT::Reference<WMT::Event> fence_contention_guard_;
 
   void *cpu_buffer_;
   uint64_t cpu_buffer_offset_;

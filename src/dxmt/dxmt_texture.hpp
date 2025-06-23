@@ -61,6 +61,7 @@ public:
   void *mappedMemory;
   uint64_t gpuResourceID;
   DXMT_RESOURCE_RESIDENCY_STATE residencyState;
+  GenericAccessTracker fenceTracker;
 
 private:
   TextureAllocation(
