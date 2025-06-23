@@ -2297,6 +2297,13 @@ _MTLDevice_newFence(void *obj) {
   return STATUS_SUCCESS;
 }
 
+static NTSTATUS
+_MTLDevice_newEvent(void *obj) {
+  struct unixcall_generic_obj_obj_ret *params = obj;
+  params->ret = (obj_handle_t)[(id<MTLDevice>)params->handle newEvent];
+  return STATUS_SUCCESS;
+}
+
 const void *__wine_unix_call_funcs[] = {
     &_NSObject_retain,
     &_NSObject_release,
@@ -2404,6 +2411,7 @@ const void *__wine_unix_call_funcs[] = {
     &_MTLSharedEvent_signalValue,
     &_MTLSharedEvent_setWin32EventAtValue,
     &_MTLDevice_newFence,
+    &_MTLDevice_newEvent,
 };
 
 const void *__wine_unix_call_wow64_funcs[] = {
@@ -2513,4 +2521,5 @@ const void *__wine_unix_call_wow64_funcs[] = {
     &_MTLSharedEvent_signalValue,
     &_MTLSharedEvent_setWin32EventAtValue,
     &_MTLDevice_newFence,
+    &_MTLDevice_newEvent,
 };

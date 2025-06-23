@@ -1699,4 +1699,6 @@ WINEMETAL_API void MTLSharedEvent_setWin32EventAtValue(obj_handle_t event, void 
 
 WINEMETAL_API obj_handle_t MTLDevice_newFence(obj_handle_t device);
 
+WINEMETAL_API obj_handle_t MTLDevice_newEvent(obj_handle_t device);
+
 #endif
