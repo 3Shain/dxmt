@@ -1279,6 +1279,7 @@ _MTLCommandBuffer_encodeTemporalScale(void *obj) {
   scaler.depthTexture = (id<MTLTexture>)params->depth;
   scaler.motionTexture = (id<MTLTexture>)params->motion;
   scaler.exposureTexture = (id<MTLTexture>)params->exposure;
+  scaler.fence = (id<MTLFence>)params->fence;
   const struct WMTFXTemporalScalerProps *props = params->props.ptr;
   scaler.inputContentWidth = props->input_content_width;
   scaler.inputContentHeight = props->input_content_height;
@@ -1300,6 +1301,7 @@ _MTLCommandBuffer_encodeSpatialScale(void *obj) {
   id<MTLFXSpatialScaler> scaler = (id<MTLFXSpatialScaler>)params->scaler;
   scaler.colorTexture = (id<MTLTexture>)params->color;
   scaler.outputTexture = (id<MTLTexture>)params->output;
+  scaler.fence = (id<MTLFence>)params->fence;
   [scaler encodeToCommandBuffer:cmdbuf];
   return STATUS_SUCCESS;
 }

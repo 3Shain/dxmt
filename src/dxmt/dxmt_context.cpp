@@ -883,7 +883,7 @@ ArgumentEncodingContext::flushCommands(WMT::CommandBuffer cmdbuf, uint64_t seqId
     }
     case EncoderType::SpatialUpscale: {
       auto data = static_cast<SpatialUpscaleData *>(current);
-      cmdbuf.encodeSpatialScale(data->scaler, data->backbuffer, data->upscaled);
+      cmdbuf.encodeSpatialScale(data->scaler, data->backbuffer, data->upscaled, {});
       data->~SpatialUpscaleData();
       break;
     }
@@ -901,7 +901,7 @@ ArgumentEncodingContext::flushCommands(WMT::CommandBuffer cmdbuf, uint64_t seqId
     }
     case EncoderType::TemporalUpscale: {
       auto data = static_cast<TemporalUpscaleData *>(current);
-      cmdbuf.encodeTemporalScale(data->scaler, data->input, data->output, data->depth, data->motion_vector, data->exposure, data->props);
+      cmdbuf.encodeTemporalScale(data->scaler, data->input, data->output, data->depth, data->motion_vector, data->exposure, {}, data->props);
       data->~TemporalUpscaleData();
       break;
     }
