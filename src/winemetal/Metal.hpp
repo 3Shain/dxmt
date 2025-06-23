@@ -608,16 +608,16 @@ public:
   }
 
   void
-  encodeSpatialScale(FXSpatialScaler scaler, Texture color, Texture output) {
-    MTLCommandBuffer_encodeSpatialScale(handle, scaler, color, output);
+  encodeSpatialScale(FXSpatialScaler scaler, Texture color, Texture output, Fence fence) {
+    MTLCommandBuffer_encodeSpatialScale(handle, scaler, color, output, fence);
   }
 
   void
   encodeTemporalScale(
       FXTemporalScaler scaler, Texture color, Texture output, Texture depth, Texture motion, Texture exposure,
-      const WMTFXTemporalScalerProps &props
+      Fence fence, const WMTFXTemporalScalerProps &props
   ) {
-    MTLCommandBuffer_encodeTemporalScale(handle, scaler, color, output, depth, motion, exposure, &props);
+    MTLCommandBuffer_encodeTemporalScale(handle, scaler, color, output, depth, motion, exposure, fence, &props);
   }
 };
 

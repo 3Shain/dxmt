@@ -1483,11 +1483,12 @@ struct WMTFXTemporalScalerProps {
 
 WINEMETAL_API void MTLCommandBuffer_encodeTemporalScale(
     obj_handle_t cmdbuf, obj_handle_t scaler, obj_handle_t color, obj_handle_t output, obj_handle_t depth,
-    obj_handle_t motion, obj_handle_t exposure, const struct WMTFXTemporalScalerProps *props
+    obj_handle_t motion, obj_handle_t exposure, obj_handle_t fence, const struct WMTFXTemporalScalerProps *props
 );
 
-WINEMETAL_API void
-MTLCommandBuffer_encodeSpatialScale(obj_handle_t cmdbuf, obj_handle_t scaler, obj_handle_t color, obj_handle_t output);
+WINEMETAL_API void MTLCommandBuffer_encodeSpatialScale(
+    obj_handle_t cmdbuf, obj_handle_t scaler, obj_handle_t color, obj_handle_t output, obj_handle_t fence
+);
 
 WINEMETAL_API obj_handle_t NSString_string(const char *data, enum WMTStringEncoding encoding);
 

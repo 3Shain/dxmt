@@ -572,7 +572,7 @@ MTLDevice_newSpatialScaler(obj_handle_t device, const struct WMTFXSpatialScalerI
 WINEMETAL_API void
 MTLCommandBuffer_encodeTemporalScale(
     obj_handle_t cmdbuf, obj_handle_t scaler, obj_handle_t color, obj_handle_t output, obj_handle_t depth,
-    obj_handle_t motion, obj_handle_t exposure, const struct WMTFXTemporalScalerProps *props
+    obj_handle_t motion, obj_handle_t exposure, obj_handle_t fence, const struct WMTFXTemporalScalerProps *props
 ) {
   struct unixcall_mtlcommandbuffer_temporal_scale params;
   params.cmdbuf = cmdbuf;
@@ -582,17 +582,21 @@ MTLCommandBuffer_encodeTemporalScale(
   params.depth = depth;
   params.motion = motion;
   params.exposure = exposure;
+  params.fence = fence;
   WMT_MEMPTR_SET(params.props, props);
   UNIX_CALL(58, &params);
 }
 
 WINEMETAL_API void
-MTLCommandBuffer_encodeSpatialScale(obj_handle_t cmdbuf, obj_handle_t scaler, obj_handle_t color, obj_handle_t output) {
+MTLCommandBuffer_encodeSpatialScale(
+    obj_handle_t cmdbuf, obj_handle_t scaler, obj_handle_t color, obj_handle_t output, obj_handle_t fence
+) {
   struct unixcall_mtlcommandbuffer_spatial_scale params;
   params.cmdbuf = cmdbuf;
   params.scaler = scaler;
   params.color = color;
   params.output = output;
+  params.fence = fence;
   UNIX_CALL(59, &params);
 }
 
