@@ -748,7 +748,8 @@ ArgumentEncodingContext::flushCommands(WMT::CommandBuffer cmdbuf, uint64_t seqId
   }
   std::erase_if(pending_queries_, [=](auto &query) -> bool { return query->queryEndAt() == seqId; });
 
-  cmdbuf.encodeWaitForEvent(fence_contention_guard_, encoder_id_ > kMaximumFencingDistance ? encoder_id_ - kMaximumFencingDistance : 0);
+  if (likely(encoder_head.id > kMaximumFencingDistance))
+    cmdbuf.encodeWaitForEvent(fence_contention_guard_, encoder_head.id - kMaximumFencingDistance);
 
   while (encoder_index) {
     auto current = encoders[encoder_count - encoder_index];
@@ -972,6 +973,7 @@ ArgumentEncodingContext::flushCommands(WMT::CommandBuffer cmdbuf, uint64_t seqId
     encoder_index--;
   }
   encoder_head.next = nullptr;
+  encoder_head.id = encoder_id_;
   encoder_last = &encoder_head;
   encoder_count_ = 0;
 

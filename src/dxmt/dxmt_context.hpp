@@ -694,7 +694,7 @@ private:
   void *dummy_cbuffer_host_;
   WMTBufferInfo dummy_cbuffer_info_;
 
-  EncoderData encoder_head = {EncoderType::Null, nullptr};
+  EncoderData encoder_head = {EncoderType::Null, nullptr, 0};
   EncoderData *encoder_last = &encoder_head;
   EncoderData *encoder_current = nullptr;
   unsigned encoder_count_ = 0;
