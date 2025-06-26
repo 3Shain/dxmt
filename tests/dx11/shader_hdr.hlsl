@@ -3,7 +3,7 @@ struct VS_Output {
     float2 uv : TEXCOORD;
 };
 
-VS_Output vs_main(uint id : SV_VertexID) : SV_POSITION
+VS_Output vs_main(uint id : SV_VertexID)
 {
     VS_Output output;
     float2 uv = float2((id << 1) & 2, id & 2);
