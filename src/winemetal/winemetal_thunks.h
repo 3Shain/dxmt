@@ -205,6 +205,7 @@ struct unixcall_mtlcommandbuffer_temporal_scale {
   obj_handle_t depth;
   obj_handle_t motion;
   obj_handle_t exposure;
+  obj_handle_t fence;
   struct WMTConstMemoryPointer props;
 };
 
@@ -213,6 +214,7 @@ struct unixcall_mtlcommandbuffer_spatial_scale {
   obj_handle_t scaler;
   obj_handle_t color;
   obj_handle_t output;
+  obj_handle_t fence;
 };
 
 struct unixcall_nsstring_string {

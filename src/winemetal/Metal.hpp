@@ -186,6 +186,10 @@ public:
   }
 };
 
+class Fence : public Object {
+public:
+};
+
 class Resource : public Object {
 public:
 };
@@ -411,6 +415,26 @@ public:
     cmd.viewport_count = 1;
     MTLRenderCommandEncoder_encodeCommands(handle, (const wmtcmd_base *)&cmd);
   };
+
+  void
+  waitForFence(Fence fence, WMTRenderStages before) {
+    struct wmtcmd_render_fence_op cmd;
+    cmd.type = WMTRenderCommandWaitForFence;
+    cmd.next.set(nullptr);
+    cmd.fence = fence.handle;
+    cmd.stages = before;
+    MTLRenderCommandEncoder_encodeCommands(handle, (const wmtcmd_base *)&cmd);
+  }
+
+  void
+  updateFence(Fence fence, WMTRenderStages after) {
+    struct wmtcmd_render_fence_op cmd;
+    cmd.type = WMTRenderCommandUpdateFence;
+    cmd.next.set(nullptr);
+    cmd.fence = fence.handle;
+    cmd.stages = after;
+    MTLRenderCommandEncoder_encodeCommands(handle, (const wmtcmd_base *)&cmd);
+  }
 };
 
 class BlitCommandEncoder : public CommandEncoder {
@@ -419,6 +443,24 @@ public:
   encodeCommands(const wmtcmd_blit_nop *cmd_head) {
     MTLBlitCommandEncoder_encodeCommands(handle, (const wmtcmd_base *)cmd_head);
   }
+
+  void
+  waitForFence(Fence fence) {
+    struct wmtcmd_blit_fence_op cmd;
+    cmd.type = WMTBlitCommandWaitForFence;
+    cmd.next.set(nullptr);
+    cmd.fence = fence.handle;
+    MTLBlitCommandEncoder_encodeCommands(handle, (const wmtcmd_base *)&cmd);
+  }
+
+  void
+  updateFence(Fence fence) {
+    struct wmtcmd_blit_fence_op cmd;
+    cmd.type = WMTBlitCommandUpdateFence;
+    cmd.next.set(nullptr);
+    cmd.fence = fence.handle;
+    MTLBlitCommandEncoder_encodeCommands(handle, (const wmtcmd_base *)&cmd);
+  }
 };
 
 class ComputeCommandEncoder : public CommandEncoder {
@@ -426,6 +468,24 @@ public:
   void
   encodeCommands(const wmtcmd_compute_nop *cmd_head) {
     MTLComputeCommandEncoder_encodeCommands(handle, (const wmtcmd_base *)cmd_head);
+  }
+
+  void
+  waitForFence(Fence fence) {
+    struct wmtcmd_compute_fence_op cmd;
+    cmd.type = WMTComputeCommandWaitForFence;
+    cmd.next.set(nullptr);
+    cmd.fence = fence.handle;
+    MTLComputeCommandEncoder_encodeCommands(handle, (const wmtcmd_base *)&cmd);
+  }
+
+  void
+  updateFence(Fence fence) {
+    struct wmtcmd_compute_fence_op cmd;
+    cmd.type = WMTComputeCommandUpdateFence;
+    cmd.next.set(nullptr);
+    cmd.fence = fence.handle;
+    MTLComputeCommandEncoder_encodeCommands(handle, (const wmtcmd_base *)&cmd);
   }
 };
 
@@ -548,16 +608,16 @@ public:
   }
 
   void
-  encodeSpatialScale(FXSpatialScaler scaler, Texture color, Texture output) {
-    MTLCommandBuffer_encodeSpatialScale(handle, scaler, color, output);
+  encodeSpatialScale(FXSpatialScaler scaler, Texture color, Texture output, Fence fence) {
+    MTLCommandBuffer_encodeSpatialScale(handle, scaler, color, output, fence);
   }
 
   void
   encodeTemporalScale(
       FXTemporalScaler scaler, Texture color, Texture output, Texture depth, Texture motion, Texture exposure,
-      const WMTFXTemporalScalerProps &props
+      Fence fence, const WMTFXTemporalScalerProps &props
   ) {
-    MTLCommandBuffer_encodeTemporalScale(handle, scaler, color, output, depth, motion, exposure, &props);
+    MTLCommandBuffer_encodeTemporalScale(handle, scaler, color, output, depth, motion, exposure, fence, &props);
   }
 };
 
@@ -664,6 +724,16 @@ public:
   Reference<RenderPipelineState>
   newRenderPipelineState(const WMTMeshRenderPipelineInfo &info, Error &error) {
     return Reference<RenderPipelineState>(MTLDevice_newMeshRenderPipelineState(handle, &info, &error.handle));
+  }
+
+  Reference<Fence>
+  newFence() {
+    return Reference<Fence>(MTLDevice_newFence(handle));
+  }
+
+  Reference<Event>
+  newEvent() {
+    return Reference<Event>(MTLDevice_newEvent(handle));
   }
 
   uint64_t
