@@ -153,11 +153,6 @@ struct ClearEncoderData : EncoderData {
   unsigned array_length;
   unsigned width;
   unsigned height;
-  /**
-  If we know encoder only depends on one resource, we can get
-  the fence directly, no need to iterate the whole set.
-  */
-  FenceId fence_wait_one;
 
   ClearEncoderData() {}
 };
