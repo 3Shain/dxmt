@@ -251,11 +251,13 @@ class ArgumentEncodingContext {
     retainAllocation(allocation);
     if (allocation->flags().test(BufferAllocationFlag::GpuReadonly))
       return kNotAFenceId;
-    auto fence_id = allocation->fenceTracker.access(
-         currentEncoderId(), !(flags & DXMT_ENCODER_RESOURCE_ACESS_WRITE)
-    );
+    if (flags & DXMT_ENCODER_RESOURCE_ACESS_WRITE) {
+      auto fence_set = allocation->fenceTracker.write(currentEncoderId());
+      currentEncoder()->fence_wait.merge(fence_set);
+      return kNotAFenceId;
+    }
+    auto fence_id = allocation->fenceTracker.read(currentEncoderId());
     if (FenceIsValid(fence_id)) {
-      fence_id = fence_alias_map_.get(fence_id);
       currentEncoder()->fence_wait.add(fence_id);
     }
     return fence_id;
@@ -266,11 +268,13 @@ class ArgumentEncodingContext {
     retainAllocation(allocation);
     if (allocation->flags().test(TextureAllocationFlag::GpuReadonly))
       return kNotAFenceId;
-    auto fence_id = allocation->fenceTracker.access(
-         currentEncoderId(), !(flags & DXMT_ENCODER_RESOURCE_ACESS_WRITE)
-    );
+    if (flags & DXMT_ENCODER_RESOURCE_ACESS_WRITE) {
+      auto fence_set = allocation->fenceTracker.write(currentEncoderId());
+      currentEncoder()->fence_wait.merge(fence_set);
+      return kNotAFenceId;
+    }
+    auto fence_id = allocation->fenceTracker.read(currentEncoderId());
     if (FenceIsValid(fence_id)) {
-      fence_id = fence_alias_map_.get(fence_id);
       currentEncoder()->fence_wait.add(fence_id);
     }
     return fence_id;

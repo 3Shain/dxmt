@@ -13,6 +13,8 @@ enum DXMT_ENCODER_RESOURCE_ACESS {
 
 using FenceId = uint16_t;
 
+using EncoderId = uint64_t;
+
 constexpr unsigned kLog2FenceCount = 12;
 
 static_assert(kLog2FenceCount < 16, "FenceId is uint16_t");
@@ -35,14 +37,41 @@ FenceIsValid(FenceId id) {
   return (id & kInvalidFenceMask) == 0;
 };
 
+class FenceSet;
+
+constexpr unsigned kLog2SharedAccessHistorySize = 5;
+
+constexpr unsigned kSharedAccessHistorySize = 1 << kLog2SharedAccessHistorySize;
+
+constexpr unsigned kSharedAccessHistoryIndexMask = kSharedAccessHistorySize - 1;
+
+class SharedAccessHistory {
+
+public:
+  EncoderId add(EncoderId encoder_id);
+
+  FenceSet reset(EncoderId current_encoder_id);
+
+  EncoderId
+  latest() const {
+    return storage_[(count_ - 1) & kSharedAccessHistoryIndexMask];
+  }
+
+private:
+  std::array<EncoderId, kSharedAccessHistorySize> storage_{};
+  uint64_t count_ = 1;
+};
+
 class GenericAccessTracker {
 
 public:
-  FenceId access(uint64_t current_encoder_id, bool read_only);
+  FenceId read(EncoderId current_encoder_id);
+
+  FenceSet write(EncoderId current_encoder_id);
 
 private:
-  uint64_t any_write_should_wait_for_;
-  uint64_t any_read_should_wait_for_;
+  SharedAccessHistory any_write_should_wait_for_{};
+  EncoderId any_read_should_wait_for_{};
 };
 
 class FenceAliasMap {
