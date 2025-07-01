@@ -121,6 +121,8 @@ struct RenderEncoderData : EncoderData {
   wmtcmd_base *cmd_tail;
   WMT::Buffer allocated_argbuf;
   uint64_t allocated_argbuf_offset;
+  uint64_t encoder_id_vertex;
+  FenceSet fence_wait_vertex;
   void *allocated_argbuf_mapping;
   uint8_t dsv_planar_flags;
   uint8_t dsv_readonly_flags;
@@ -246,11 +248,24 @@ struct AllocatedTempBufferSlice {
 };
 
 class ArgumentEncodingContext {
+  template<bool AtVertexStage>
   FenceId
   trackBuffer(BufferAllocation *allocation, DXMT_ENCODER_RESOURCE_ACESS flags) {
     retainAllocation(allocation);
     if (allocation->flags().test(BufferAllocationFlag::GpuReadonly))
       return kNotAFenceId;
+    if constexpr (AtVertexStage) {
+      if (flags & DXMT_ENCODER_RESOURCE_ACESS_WRITE) {
+        auto fence_set = allocation->fenceTracker.write(currentRenderEncoder()->encoder_id_vertex);
+        currentRenderEncoder()->fence_wait_vertex.merge(fence_set);
+        return kNotAFenceId;
+      }
+      auto fence_id = allocation->fenceTracker.read(currentRenderEncoder()->encoder_id_vertex);
+      if (FenceIsValid(fence_id)) {
+        currentRenderEncoder()->fence_wait_vertex.add(fence_id);
+      }
+      return fence_id;
+    }
     if (flags & DXMT_ENCODER_RESOURCE_ACESS_WRITE) {
       auto fence_set = allocation->fenceTracker.write(currentEncoderId());
       currentEncoder()->fence_wait.merge(fence_set);
@@ -263,11 +278,24 @@ class ArgumentEncodingContext {
     return fence_id;
   }
 
+  template<bool AtVertexStage = false>
   FenceId
   trackTexture(TextureAllocation *allocation, DXMT_ENCODER_RESOURCE_ACESS flags) {
     retainAllocation(allocation);
     if (allocation->flags().test(TextureAllocationFlag::GpuReadonly))
       return kNotAFenceId;
+    if constexpr (AtVertexStage) {
+      if (flags & DXMT_ENCODER_RESOURCE_ACESS_WRITE) {
+        auto fence_set = allocation->fenceTracker.write(currentRenderEncoder()->encoder_id_vertex);
+        currentRenderEncoder()->fence_wait_vertex.merge(fence_set);
+        return kNotAFenceId;
+      }
+      auto fence_id = allocation->fenceTracker.read(currentRenderEncoder()->encoder_id_vertex);
+      if (FenceIsValid(fence_id)) {
+        currentRenderEncoder()->fence_wait_vertex.add(fence_id);
+      }
+      return fence_id;
+    }
     if (flags & DXMT_ENCODER_RESOURCE_ACESS_WRITE) {
       auto fence_set = allocation->fenceTracker.write(currentEncoderId());
       currentEncoder()->fence_wait.merge(fence_set);
@@ -281,46 +309,52 @@ class ArgumentEncodingContext {
   }
 
 public:
+  template<bool AtVertexStage = false>
   std::pair<BufferAllocation *, uint64_t>
   access(Rc<Buffer> const &buffer, unsigned offset, unsigned length, DXMT_ENCODER_RESOURCE_ACESS flags) {
     auto allocation = buffer->current();
-    trackBuffer(allocation, flags);
+    trackBuffer<AtVertexStage>(allocation, flags);
     return {allocation, allocation->currentSuballocationOffset()};
   }
 
+  template<bool AtVertexStage = false>
   std::pair<BufferView const &, uint32_t>
   access(Rc<Buffer> const &buffer, unsigned viewId, DXMT_ENCODER_RESOURCE_ACESS flags) {
     auto allocation = buffer->current();
-    trackBuffer(allocation, flags);
+    trackBuffer<AtVertexStage>(allocation, flags);
     auto &view = buffer->view_(viewId, allocation);
     return {view, allocation->currentSuballocationOffset(view.suballocation_texel)};
   }
 
+  template<bool AtVertexStage = false>
   std::pair<BufferAllocation *, uint64_t>
   access(Rc<Buffer> const &buffer, DXMT_ENCODER_RESOURCE_ACESS flags) {
     auto allocation = buffer->current();
-    trackBuffer(allocation, flags);
+    trackBuffer<AtVertexStage>(allocation, flags);
     return {allocation, allocation->currentSuballocationOffset()};
   }
 
+  template<bool AtVertexStage = false>
   WMT::Texture
   access(Rc<Texture> const &texture, unsigned level, unsigned slice, DXMT_ENCODER_RESOURCE_ACESS flags) {
     auto allocation = texture->current();
-    trackTexture(allocation, flags);
+    trackTexture<AtVertexStage>(allocation, flags);
     return allocation->texture();
   }
 
+  template<bool AtVertexStage = false>
   TextureView const &
   access(Rc<Texture> const &texture, unsigned viewId, DXMT_ENCODER_RESOURCE_ACESS flags) {
     auto allocation = texture->current();
-    trackTexture(allocation, flags);
+    trackTexture<AtVertexStage>(allocation, flags);
     return texture->view_(viewId, allocation);
   }
 
+  template<bool AtVertexStage = false>
   WMT::Texture
   access(Rc<Texture> const &texture, DXMT_ENCODER_RESOURCE_ACESS flags) {
     auto allocation = texture->current();
-    trackTexture(allocation, flags);
+    trackTexture<AtVertexStage>(allocation, flags);
     return allocation->texture();
   }
 
@@ -401,7 +435,7 @@ public:
   std::pair<WMT::Buffer, uint64_t>
   currentIndexBuffer() {
     // because of indirect draw, we can't predicate the accessed buffer range
-    auto [ibuf_alloc, offset] = access(ibuf_, 0, ibuf_->length(), DXMT_ENCODER_RESOURCE_ACESS_READ);
+    auto [ibuf_alloc, offset] = access<true>(ibuf_, 0, ibuf_->length(), DXMT_ENCODER_RESOURCE_ACESS_READ);
     return {ibuf_alloc->buffer(), offset};
   };
 
@@ -591,7 +625,7 @@ public:
 
   constexpr RenderEncoderData *
   currentRenderEncoder() {
-    assert(encoder_current->type == EncoderType::Render);
+    assert(encoder_current && encoder_current->type == EncoderType::Render);
     return static_cast<RenderEncoderData *>(encoder_current);
   }
 

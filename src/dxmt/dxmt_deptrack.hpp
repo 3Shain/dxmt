@@ -121,6 +121,19 @@ public:
     }
   }
 
+  template <typename VisitorPrior, typename Visitor>
+  void
+  forEach(const FenceSet &prior, const FenceAliasMap &alias_map, VisitorPrior &&visitor_prior, Visitor &&visitor) {
+    // TODO: more efficient iteration
+    for (unsigned i = 0; i < kFenceCount; i++) {
+      if (prior.set_.test(i)) {
+        visitor_prior(alias_map.get(i));
+      } else if (set_.test(i)) {
+        visitor(alias_map.get(i));
+      }
+    }
+  }
+
 private:
   std::bitset<kFenceCount> set_{};
 };

@@ -29,13 +29,13 @@ FenceSet
 GenericAccessTracker::write(EncoderId current_encoder_id) {
   auto latest_access = any_write_should_wait_for_.latest();
   assert(latest_access <= current_encoder_id);
-    any_read_should_wait_for_ = current_encoder_id;
-  if (latest_access == current_encoder_id) {
-    // FIXME: otherwise a interpass write-after-read barrier is required
-    // WARN("potential WaR/WaW hazard");
-    return {};
+  any_read_should_wait_for_ = current_encoder_id;
+  if (latest_access < current_encoder_id) {
+    return any_write_should_wait_for_.reset(current_encoder_id);
   }
-  return any_write_should_wait_for_.reset(current_encoder_id);
+  // FIXME: otherwise a interpass write-after-read barrier is required
+  // WARN("potential WaR/WaW hazard");
+  return {};
 }
 
 EncoderId
