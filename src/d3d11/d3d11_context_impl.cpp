@@ -679,7 +679,7 @@ public:
             enc.queue().emulated_cmd.ClearBufferUint(buffer_handle, slice.byteOffset, slice.byteLength >> 2, value);
           } else {
             WMT::Texture texture_handle = enc.access(buffer, viewId, DXMT_ENCODER_RESOURCE_ACESS_WRITE).texture;
-            enc.queue().emulated_cmd.ClearTextureBufferUint(texture_handle, value);
+            enc.queue().emulated_cmd.ClearTextureBufferUint(texture_handle, slice.firstElement, slice.elementCount, value);
           }
         }
       });
@@ -749,7 +749,7 @@ public:
             enc.queue().emulated_cmd.ClearBufferFloat(buffer_handle, slice.byteOffset, slice.byteLength >> 2, value);
           } else {
             WMT::Texture texture_handle = enc.access(buffer, viewId, DXMT_ENCODER_RESOURCE_ACESS_WRITE).texture;
-            enc.queue().emulated_cmd.ClearTextureBufferFloat(texture_handle, value);
+            enc.queue().emulated_cmd.ClearTextureBufferFloat(texture_handle, slice.firstElement, slice.elementCount, value);
           }
         }
       });
