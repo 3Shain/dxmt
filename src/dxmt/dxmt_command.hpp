@@ -77,11 +77,16 @@ public:
   }
 
   void
-  ClearTextureBufferUint(WMT::Texture texture, const std::array<uint32_t, 4> &value) {
+  ClearTextureBufferUint(WMT::Texture texture, uint32_t offset, uint32_t size, const std::array<uint32_t, 4> &value) {
     setComputePipelineState(clear_texture_buffer_uint_pipeline, {32, 1, 1});
     setComputeTexture(texture, 0);
-    setComputeBytes(value.data(), 16, 1);
-    dispatchThreads({texture.width(), 1, 1});
+    struct CLEAR_UINT_DATA {
+      const std::array<uint32_t, 4> value;
+      uint32_t offset;
+      uint32_t size;
+    } data {value, offset, size};
+    setComputeBytes(&data, sizeof(data), 1);
+    dispatchThreads({size, 1, 1});
   }
 
   void
@@ -97,11 +102,16 @@ public:
   }
 
   void
-  ClearTextureBufferFloat(WMT::Texture texture, const std::array<float, 4> &value) {
+  ClearTextureBufferFloat(WMT::Texture texture, uint32_t offset, uint32_t size, const std::array<float, 4> &value) {
     setComputePipelineState(clear_texture_buffer_float_pipeline, {32, 1, 1});
+    struct CLEAR_FLOAT_DATA {
+      const std::array<float, 4> value;
+      uint32_t offset;
+      uint32_t size;
+    } data {value, offset, size};
     setComputeTexture(texture, 0);
-    setComputeBytes(value.data(), 16, 1);
-    dispatchThreads({texture.width(), 1, 1});
+    setComputeBytes(&data, sizeof(data), 1);
+    dispatchThreads({size, 1, 1});
   }
 
   void

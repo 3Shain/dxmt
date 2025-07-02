@@ -65,14 +65,21 @@ using namespace metal;
   }
 }
 
+struct DXMTClearTextureBufferUInt {
+  uint4 value;
+  uint offset;
+  uint size;
+};
+
 [[kernel]] void clear_texture_buffer_uint(
     texture_buffer<uint, access::read_write> tex [[texture(0)]],
-    constant uint4& value [[buffer(1)]],
+    constant DXMTClearTextureBufferUInt& args [[buffer(1)]],
     uint pos [[thread_position_in_grid]]
 ) {
   uint width = tex.get_width();
-  if(width > pos) {
-    tex.write(value, pos);
+  uint offset = pos + args.offset;
+  if (args.size > pos && width > offset) {
+    tex.write(args.value, offset);
   }
 }
 
@@ -148,14 +155,21 @@ using namespace metal;
   }
 }
 
+struct DXMTClearTextureBufferFloat {
+  float4 value;
+  uint offset;
+  uint size;
+};
+
 [[kernel]] void clear_texture_buffer_float(
     texture_buffer<float, access::read_write> tex [[texture(0)]],
-    constant float4& value [[buffer(1)]],
+    constant DXMTClearTextureBufferFloat& args [[buffer(1)]],
     ushort pos [[thread_position_in_grid]]
 ) {
   uint width = tex.get_width();
-  if(width > pos) {
-    tex.write(value, pos);
+  uint offset = pos + args.offset;
+  if (args.size > pos && width > offset) {
+    tex.write(args.value, offset);
   }
 }
 
