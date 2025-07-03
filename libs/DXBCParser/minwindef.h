@@ -75,7 +75,11 @@ typedef CONST CHAR *PCNZCH;
 
 #ifndef _BASETSD_H_
 
+#ifdef DXMT_NATIVE
+typedef signed char INT8, *PINT8;
+#else
 typedef char INT8, *PINT8;
+#endif
 typedef short INT16, *PINT16;
 typedef int INT32, *PINT32;
 typedef long long INT64;
