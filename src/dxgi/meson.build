@@ -1,4 +1,9 @@
-dxgi_res = wrc_generator.process('version.rc')
+if get_option('dxmt_native')
+  dxgi_res = []
+  windows_native_install_dir = ''
+else
+  dxgi_res = wrc_generator.process('version.rc')
+endif
 
 dxgi_src = [
   'dxgi_adapter.cpp',
