@@ -24,6 +24,11 @@ DEFINE_COM_INTERFACE("b56c6a99-80cf-4c7f-a756-9e9ceb38730f",
   virtual ManagedInputLayout GetManagedInputLayout() = 0;
 };
 
+#ifdef DXMT_NATIVE
+DEFINE_GUID(IID_IMTLD3D11InputLayout, 0xb56c6a99, 0x80cf, 0x4c7f, 0xa7, 0x56, 0x9e, 0x9c, 0xeb, 0x38, 0x73, 0x0f);
+__CRT_UUID_DECL(IMTLD3D11InputLayout, 0xb56c6a99, 0x80cf, 0x4c7f, 0xa7, 0x56, 0x9e, 0x9c, 0xeb, 0x38, 0x73, 0x0f);
+#endif
+
 struct MTL_SHADER_STREAM_OUTPUT_ELEMENT_DESC {
   uint32_t Register;
   uint32_t Component;
@@ -38,6 +43,11 @@ DEFINE_COM_INTERFACE("fd58f76b-7c22-4605-b43c-28048c8b4a64",
       MTL_SHADER_STREAM_OUTPUT_ELEMENT_DESC * *ppElements,
       uint32_t Strides[4]) = 0;
 };
+
+#ifdef DXMT_NATIVE
+DEFINE_GUID(IID_IMTLD3D11StreamOutputLayout, 0xfd58f76b, 0x7c22, 0x4605, 0xb4, 0x3c, 0x28, 0x04, 0x8c, 0x8b, 0x4a, 0x64);
+__CRT_UUID_DECL(IMTLD3D11StreamOutputLayout, 0xfd58f76b, 0x7c22, 0x4605, 0xb4, 0x3c, 0x28, 0x04, 0x8c, 0x8b, 0x4a, 0x64);
+#endif
 
 namespace dxmt {
 

@@ -61,6 +61,11 @@ DEFINE_COM_INTERFACE("7ee15804-8604-41fc-ad0c-4ecf97e2e6fe",
                            pGraphicsPipeline) = 0;
 };
 
+#ifdef DXMT_NATIVE
+DEFINE_GUID(IID_IMTLCompiledGraphicsPipeline, 0x7ee15804, 0x8604, 0x41fc, 0xad, 0x0c, 0x4e, 0xcf, 0x97, 0xe2, 0xe6, 0xfe);
+__CRT_UUID_DECL(IMTLCompiledGraphicsPipeline, 0x7ee15804, 0x8604, 0x41fc, 0xad, 0x0c, 0x4e, 0xcf, 0x97, 0xe2, 0xe6, 0xfe);
+#endif
+
 DEFINE_COM_INTERFACE("3b26b8d3-56ca-4d0f-9f63-ca8d305ff07e",
                      IMTLCompiledComputePipeline)
     : public IMTLThreadpoolWork {
@@ -69,6 +74,11 @@ DEFINE_COM_INTERFACE("3b26b8d3-56ca-4d0f-9f63-ca8d305ff07e",
   virtual void GetPipeline(MTL_COMPILED_COMPUTE_PIPELINE *
                            pComputePipeline) = 0;
 };
+
+#ifdef DXMT_NATIVE
+DEFINE_GUID(IID_IMTLCompiledComputePipeline, 0x3b26b8d3, 0x56ca, 0x4d0f, 0x9f, 0x63, 0xca, 0x8d, 0x30, 0x5f, 0xf0, 0x7e);
+__CRT_UUID_DECL(IMTLCompiledComputePipeline, 0x3b26b8d3, 0x56ca, 0x4d0f, 0x9f, 0x63, 0xca, 0x8d, 0x30, 0x5f, 0xf0, 0x7e);
+#endif
 
 DEFINE_COM_INTERFACE("f5075e27-fd85-4c5a-9031-d438f859e6e9",
                      IMTLCompiledTessellationPipeline)
@@ -79,6 +89,11 @@ DEFINE_COM_INTERFACE("f5075e27-fd85-4c5a-9031-d438f859e6e9",
                            pTessellationPipeline) = 0;
 };
 
+#ifdef DXMT_NATIVE
+DEFINE_GUID(IID_IMTLCompiledTessellationPipeline, 0xf5075e27, 0xfd85, 0x4c5a, 0x90, 0x31, 0xd4, 0x38, 0xf8, 0x59, 0xe6, 0xe9);
+__CRT_UUID_DECL(IMTLCompiledTessellationPipeline, 0xf5075e27, 0xfd85, 0x4c5a, 0x90, 0x31, 0xd4, 0x38, 0xf8, 0x59, 0xe6, 0xe9);
+#endif
+
 DEFINE_COM_INTERFACE("0a86aadc-260d-40a0-afed-659408a84ffb",
                      IMTLCompiledGeometryPipeline)
     : public IMTLThreadpoolWork {
@@ -87,6 +102,11 @@ DEFINE_COM_INTERFACE("0a86aadc-260d-40a0-afed-659408a84ffb",
   virtual void GetPipeline(MTL_COMPILED_GRAPHICS_PIPELINE *
                            pGeometryPipeline) = 0;
 };
+
+#ifdef DXMT_NATIVE
+DEFINE_GUID(IID_IMTLCompiledGeometryPipeline, 0x0a86aadc, 0x260d, 0x40a0, 0xaf, 0xed, 0x65, 0x94, 0x08, 0xa8, 0x4f, 0xfb);
+__CRT_UUID_DECL(IMTLCompiledGeometryPipeline, 0x0a86aadc, 0x260d, 0x40a0, 0xaf, 0xed, 0x65, 0x94, 0x08, 0xa8, 0x4f, 0xfb);
+#endif
 
 namespace std {
 template <> struct hash<MTL_GRAPHICS_PIPELINE_DESC> {

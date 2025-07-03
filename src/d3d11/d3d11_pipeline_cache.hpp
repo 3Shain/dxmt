@@ -44,6 +44,11 @@ DEFINE_COM_INTERFACE("1a59c71f-f6bc-4aa1-b97e-35732f75a4eb",
                                        *ppPipeline) = 0;
 };
 
+#ifdef DXMT_NATIVE
+DEFINE_GUID(IID_IMTLD3D11PipeineCache, 0x1a59c71f, 0xf6bc, 0x4aa1, 0xb9, 0x7e, 0x35, 0x73, 0x2f, 0x75, 0xa4, 0xeb);
+__CRT_UUID_DECL(IMTLD3D11PipeineCache, 0x1a59c71f, 0xf6bc, 0x4aa1, 0xb9, 0x7e, 0x35, 0x73, 0x2f, 0x75, 0xa4, 0xeb);
+#endif
+
 namespace dxmt {
 
 using MTLD3D11PipelineCacheBase = ManagedDeviceChild<IMTLD3D11PipeineCache>;

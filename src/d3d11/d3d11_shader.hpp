@@ -26,6 +26,11 @@ DEFINE_COM_INTERFACE("e95ba1c7-e43f-49c3-a907-4ac669c9fb42", IMTLD3D11Shader)
   virtual ManagedShader GetManagedShader() = 0;
 };
 
+#ifdef DXMT_NATIVE
+DEFINE_GUID(IID_IMTLD3D11Shader, 0xe95ba1c7, 0xe43f, 0x49c3, 0xa9, 0x07, 0x4a, 0xc6, 0x69, 0xc9, 0xfb, 0x42);
+__CRT_UUID_DECL(IMTLD3D11Shader, 0xe95ba1c7, 0xe43f, 0x49c3, 0xa9, 0x07, 0x4a, 0xc6, 0x69, 0xc9, 0xfb, 0x42);
+#endif
+
 namespace dxmt {
 
 class NullD3D10Shader {

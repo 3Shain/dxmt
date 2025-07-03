@@ -74,7 +74,11 @@ public:
     pipeline_cache_ = InitializePipelineCache(this);
     context_ = InitializeImmediateContext(this, device_.queue());
     d3d10_ = std::make_unique<MTLD3D10Device>(this, context_.get());
+#ifdef DXMT_NATIVE
+    is_traced_ = false;
+#else
     is_traced_ = !!::GetModuleHandle("dxgitrace.dll");
+#endif
     format_inspector.Inspect(GetMTLDevice());
   }
 
@@ -1161,7 +1165,9 @@ public:
     // FIXME: doesn't reliably work
     auto t = std::thread([this]() {
       delete this;
-      ExitThread(0); 
+#ifndef DXMT_NATIVE
+      ExitThread(0);
+#endif
     });
     t.detach();
     return true;

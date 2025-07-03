@@ -15,6 +15,12 @@ DEFINE_COM_INTERFACE("77f0bbd5-2be7-4e9e-ad61-70684ff19e01",
   virtual float GetLODBias() = 0;
 };
 
+#ifdef DXMT_NATIVE
+DEFINE_GUID(IID_IMTLD3D11SamplerState, 0x77f0bbd5, 0x2be7, 0x4e9e, 0xad, 0x61, 0x70, 0x68, 0x4f, 0xf1, 0x9e, 0x01);
+__CRT_UUID_DECL(IMTLD3D11SamplerState, 0x77f0bbd5, 0x2be7, 0x4e9e, 0xad, 0x61, 0x70, 0x68, 0x4f, 0xf1, 0x9e, 0x01);
+#endif
+
+
 DEFINE_COM_INTERFACE("03629ed8-bcdd-4582-8997-3817209a34f4",
                      IMTLD3D11RasterizerState)
     : public ID3D11RasterizerState2 {
@@ -23,6 +29,12 @@ DEFINE_COM_INTERFACE("03629ed8-bcdd-4582-8997-3817209a34f4",
   virtual uint32_t UAVOnlySampleCount() = 0;
 };
 
+#ifdef DXMT_NATIVE
+DEFINE_GUID(IID_IMTLD3D11RasterizerState, 0x03629ed8, 0xbcdd, 0x4582, 0x89, 0x97, 0x38, 0x17, 0x20, 0x9a, 0x34, 0xf4);
+__CRT_UUID_DECL(IMTLD3D11RasterizerState, 0x03629ed8, 0xbcdd, 0x4582, 0x89, 0x97, 0x38, 0x17, 0x20, 0x9a, 0x34, 0xf4);
+#endif
+
+
 DEFINE_COM_INTERFACE("b01aaffa-b4d3-478a-91be-6195f215aaba",
                      IMTLD3D11DepthStencilState)
     : public ID3D11DepthStencilState {
@@ -30,12 +42,24 @@ DEFINE_COM_INTERFACE("b01aaffa-b4d3-478a-91be-6195f215aaba",
   virtual bool IsEnabled() = 0;
 };
 
+#ifdef DXMT_NATIVE
+DEFINE_GUID(IID_IMTLD3D11DepthStencilState, 0xb01aaffa, 0xb4d3, 0x478a, 0x91, 0xbe, 0x61, 0x95, 0xf2, 0x15, 0xaa, 0xba);
+__CRT_UUID_DECL(IMTLD3D11DepthStencilState, 0xb01aaffa, 0xb4d3, 0x478a, 0x91, 0xbe, 0x61, 0x95, 0xf2, 0x15, 0xaa, 0xba);
+#endif
+
+
 DEFINE_COM_INTERFACE("279a1d66-2fc1-460c-a0a7-a7a5f2b7a48f",
                      IMTLD3D11BlendState)
     : public ID3D11BlendState1 {
   virtual bool IsDualSourceBlending() = 0;
   virtual void SetupMetalPipelineDescriptor(WMTRenderPipelineBlendInfo* blend_info, uint32_t num_rt) = 0;
 };
+
+#ifdef DXMT_NATIVE
+DEFINE_GUID(IID_IMTLD3D11BlendState, 0x279a1d66, 0x2fc1, 0x460c, 0xa0, 0xa7, 0xa7, 0xa5, 0xf2, 0xb7, 0xa4, 0x8f);
+__CRT_UUID_DECL(IMTLD3D11BlendState, 0x279a1d66, 0x2fc1, 0x460c, 0xa0, 0xa7, 0xa7, 0xa5, 0xf2, 0xb7, 0xa4, 0x8f);
+#endif
+
 
 namespace std {
 template <> struct hash<D3D11_SAMPLER_DESC> {

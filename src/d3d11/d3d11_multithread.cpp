@@ -15,7 +15,11 @@ void d3d11_device_mutex::lock() {
       break;
     // better to spin here
     while(owner_.load(std::memory_order_relaxed))
+#ifdef DXMT_NATIVE
+      ; //FIXME
+#else
       _mm_pause();
+#endif
     expected = 0;
   }
   counter_++;
