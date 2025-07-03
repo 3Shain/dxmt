@@ -3,7 +3,11 @@
 #include <ostream>
 #include "dxgi.h"
 #include "d3d11.h"
+#ifdef DXMT_NATIVE
+#include "nativemetal.h"
+#else
 #include "winemetal.h"
+#endif
 
 std::ostream &operator<<(std::ostream &os, WMTPixelFormat e);
 
