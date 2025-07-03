@@ -14,6 +14,11 @@
   }
 #endif
 
+inline uint64_t
+PtrToUInt64(const void * v) {
+  return (uint64_t)(uintptr_t)v;
+}
+
 WINEMETAL_API void
 NSObject_retain(obj_handle_t obj) {
   UNIX_CALL(0, &obj);
@@ -82,7 +87,7 @@ WINEMETAL_API uint32_t
 NSString_getCString(obj_handle_t str, char *buffer, uint64_t maxLength, enum WMTStringEncoding encoding) {
   struct unixcall_nsstring_getcstring params;
   params.str = str;
-  params.buffer_ptr = (uint64_t)(buffer);
+  params.buffer_ptr = PtrToUInt64(buffer);
   params.max_length = maxLength;
   params.encoding = encoding;
   UNIX_CALL(8, &params);
@@ -266,7 +271,7 @@ WINEMETAL_API obj_handle_t
 MTLLibrary_newFunction(obj_handle_t library, const char *name) {
   struct unixcall_generic_obj_uint64_obj_ret params;
   params.handle = library;
-  params.arg = (uint64_t)name;
+  params.arg = PtrToUInt64(name);
   params.ret = 0;
   UNIX_CALL(26, &params);
   return params.ret;
@@ -326,7 +331,7 @@ WINEMETAL_API obj_handle_t
 MTLCommandBuffer_renderCommandEncoder(obj_handle_t cmdbuf, struct WMTRenderPassInfo *info) {
   struct unixcall_generic_obj_uint64_obj_ret params;
   params.handle = cmdbuf;
-  params.arg = (uint64_t)info;
+  params.arg = PtrToUInt64(info);
   params.ret = 0;
   UNIX_CALL(32, &params);
   return params.ret;
@@ -702,7 +707,7 @@ MetalLayer_getProps(obj_handle_t layer, struct WMTLayerProps *props) {
 WINEMETAL_API obj_handle_t
 CreateMetalViewFromHWND(intptr_t hwnd, obj_handle_t device, obj_handle_t *layer) {
   struct unixcall_create_metal_view_from_hwnd params;
-  params.hwnd = (uint64_t)hwnd;
+  params.hwnd = (uint64_t)(uintptr_t)hwnd;
   params.device = device;
   params.ret_layer = NULL_OBJECT_HANDLE;
   params.ret_view = NULL_OBJECT_HANDLE;
@@ -825,6 +830,8 @@ MTLLibrary_newFunctionWithConstants(
   WMT_MEMPTR_SET(params.name, name);
   WMT_MEMPTR_SET(params.constants, constants);
   params.num_constants = num_constants;
+  params.ret = 0;
+  params.ret_error = 0;
   UNIX_CALL(98, &params);
   if (err_out)
     *err_out = params.ret_error;
@@ -886,7 +893,7 @@ WINEMETAL_API void
 MTLSharedEvent_setWin32EventAtValue(obj_handle_t event, void *nt_event_handle, uint64_t at_value) {
   struct unixcall_generic_obj_obj_uint64_noret params;
   params.handle = event;
-  params.arg0 = (obj_handle_t)nt_event_handle;
+  params.arg0 = (obj_handle_t)PtrToUInt64(nt_event_handle);
   params.arg1 = at_value;
   UNIX_CALL(104, &params);
 }
