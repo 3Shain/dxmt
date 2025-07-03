@@ -92,6 +92,10 @@ template <size_t N> constexpr GUID make_guid(const char (&str)[N]) {
 }
 } // namespace dxmt::guid
 
+#ifdef DXMT_NATIVE
+#define DEFINE_COM_INTERFACE(guid_str, type)                                   \
+  struct type
+#else
 #define DEFINE_COM_INTERFACE(guid_str, type)                                   \
   struct type;                                                                 \
   extern "C++" {                                                               \
@@ -106,3 +110,4 @@ template <size_t N> constexpr GUID make_guid(const char (&str)[N]) {
   }                                                                            \
   }                                                                            \
   struct type
+#endif
