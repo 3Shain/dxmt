@@ -265,25 +265,26 @@ class ArgumentEncodingContext {
   }
 
 public:
-  WMT::Buffer
+  std::pair<BufferAllocation *, uint64_t>
   access(Rc<Buffer> const &buffer, unsigned offset, unsigned length, DXMT_ENCODER_RESOURCE_ACESS flags) {
     auto allocation = buffer->current();
     trackBuffer(allocation, flags);
-    return allocation->buffer();
+    return {allocation, allocation->currentSuballocationOffset()};
   }
 
-  BufferView const &
+  std::pair<BufferView const &, uint32_t>
   access(Rc<Buffer> const &buffer, unsigned viewId, DXMT_ENCODER_RESOURCE_ACESS flags) {
     auto allocation = buffer->current();
     trackBuffer(allocation, flags);
-    return buffer->view_(viewId, allocation);
+    auto &view = buffer->view_(viewId, allocation);
+    return {view, allocation->currentSuballocationOffset(view.suballocation_texel)};
   }
 
-  WMT::Buffer
+  std::pair<BufferAllocation *, uint64_t>
   access(Rc<Buffer> const &buffer, DXMT_ENCODER_RESOURCE_ACESS flags) {
     auto allocation = buffer->current();
     trackBuffer(allocation, flags);
-    return allocation->buffer();
+    return {allocation, allocation->currentSuballocationOffset()};
   }
 
   WMT::Texture
@@ -383,10 +384,11 @@ public:
     ibuf_ = std::move(buffer);
   }
 
-  WMT::Buffer
+  std::pair<WMT::Buffer, uint64_t>
   currentIndexBuffer() {
     // because of indirect draw, we can't predicate the accessed buffer range
-    return access(ibuf_, 0, ibuf_->length(), DXMT_ENCODER_RESOURCE_ACESS_READ);
+    auto [ibuf_alloc, offset] = access(ibuf_, 0, ibuf_->length(), DXMT_ENCODER_RESOURCE_ACESS_READ);
+    return {ibuf_alloc->buffer(), offset};
   };
 
   void clearState() {

@@ -11,8 +11,9 @@ public:
   void decRef();
 
   Rc<BufferAllocation> allocate(uint64_t coherent_seq_id);
-  void updateImmediateName(uint64_t current_seq_id, Rc<BufferAllocation> &&allocation, bool owned_by_command_list);
+  void updateImmediateName(uint64_t current_seq_id, Rc<BufferAllocation> &&allocation, uint32_t suballocation, bool owned_by_command_list);
   void recycle(uint64_t current_seq_id, Rc<BufferAllocation> &&allocation);
+  uint32_t nextSuballocation();
 
   Rc<BufferAllocation>
   immediateName() {
@@ -20,8 +21,8 @@ public:
   };
 
   void *
-  mappedMemory() {
-    return name_->mappedMemory;
+  immediateMappedMemory() {
+    return name_->mappedMemory(name_suballocation_);
   }
 
   DynamicBuffer(Buffer *buffer, Flags<BufferAllocationFlag> flags);
@@ -42,6 +43,7 @@ private:
   std::queue<QueueEntry> fifo;
   dxmt::mutex mutex_;
   Rc<BufferAllocation> name_;
+  uint32_t name_suballocation_ = 0;
   bool owned_by_command_list_ = false;
 };
 

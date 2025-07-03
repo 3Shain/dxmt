@@ -31,11 +31,13 @@ class Buffer;
 struct BufferView {
   WMT::Reference<WMT::Texture> texture;
   uint64_t gpu_resource_id;
+  uint64_t suballocation_texel;
   DXMT_RESOURCE_RESIDENCY_STATE residency{};
 
-  BufferView(WMT::Reference<WMT::Texture> &&texture, uint64_t gpu_resource_id) :
+  BufferView(WMT::Reference<WMT::Texture> &&texture, uint64_t gpu_resource_id, uint64_t suballocation_texel) :
       texture(std::move(texture)),
-      gpu_resource_id(gpu_resource_id) {}
+      gpu_resource_id(gpu_resource_id),
+      suballocation_texel(suballocation_texel) {}
 };
 
 class BufferAllocation : public Allocation {
@@ -53,8 +55,38 @@ public:
     return flags_;
   }
 
-  void *mappedMemory;
-  uint64_t gpuAddress;
+  void *
+  mappedMemory(uint32_t sub) const noexcept {
+    return reinterpret_cast<void *>(
+        reinterpret_cast<std::uintptr_t>(mappedMemory_) + sub * suballocation_size_aligned_
+    );
+  }
+
+  uint64_t
+  gpuAddress() const noexcept {
+    return gpuAddress_;
+  }
+
+  void
+  useSuballocation(uint32_t suballocation) noexcept {
+    current_suballocation_ = suballocation;
+  };
+
+  bool
+  hasSuballocatoin(uint32_t suballocation) const noexcept {
+    return suballocation < suballocation_count_;
+  }
+
+  uint64_t
+  currentSuballocationOffset() const noexcept {
+    return current_suballocation_ * suballocation_size_aligned_;
+  }
+
+  uint64_t
+  currentSuballocationOffset(uint64_t stride) const noexcept {
+    return current_suballocation_ * stride;
+  }
+
   DXMT_RESOURCE_RESIDENCY_STATE residencyState;
   EncoderDepKey depkey;
 
@@ -70,6 +102,11 @@ private:
   uint32_t version_ = 0;
   Flags<BufferAllocationFlag> flags_;
   std::vector<std::unique_ptr<BufferView>> cached_view_;
+  void *mappedMemory_;
+  uint64_t gpuAddress_;
+  uint32_t current_suballocation_ = 0;
+  uint32_t suballocation_size_aligned_;
+  uint32_t suballocation_count_ = 1;
 
 #ifdef __i386__
   void * placed_buffer;
