@@ -85,6 +85,8 @@ public:
       flags.set(BufferAllocationFlag::GpuReadonly);
     if (pDesc->Usage != D3D11_USAGE_DYNAMIC)
       flags.set(BufferAllocationFlag::GpuManaged);
+    else
+      flags.set(BufferAllocationFlag::SuballocateFromOnePage);
     auto allocation = buffer_->allocate(flags);
     if (pInitialData) {
       memcpy(allocation->mappedMemory(0), pInitialData->pSysMem, pDesc->ByteWidth);
