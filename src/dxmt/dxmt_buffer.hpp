@@ -18,6 +18,8 @@ enum class BufferAllocationFlag : uint32_t {
   CpuWriteCombined = 2,
   OwnedByCommandList = 3,
   GpuManaged = 4,
+  /* will allocate at least one page of memory and try to suballocate from that */
+  SuballocateFromOnePage = 5,
 };
 
 typedef unsigned BufferViewKey;
@@ -57,9 +59,7 @@ public:
 
   void *
   mappedMemory(uint32_t sub) const noexcept {
-    return reinterpret_cast<void *>(
-        reinterpret_cast<std::uintptr_t>(mappedMemory_) + sub * suballocation_size_aligned_
-    );
+    return reinterpret_cast<void *>(reinterpret_cast<std::uintptr_t>(mappedMemory_) + sub * suballocation_size_);
   }
 
   uint64_t
@@ -79,7 +79,7 @@ public:
 
   uint64_t
   currentSuballocationOffset() const noexcept {
-    return current_suballocation_ * suballocation_size_aligned_;
+    return current_suballocation_ * suballocation_size_;
   }
 
   uint64_t
@@ -105,7 +105,7 @@ private:
   void *mappedMemory_;
   uint64_t gpuAddress_;
   uint32_t current_suballocation_ = 0;
-  uint32_t suballocation_size_aligned_;
+  uint32_t suballocation_size_;
   uint32_t suballocation_count_ = 1;
 
 #ifdef __i386__

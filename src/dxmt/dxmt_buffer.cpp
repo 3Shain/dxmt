@@ -13,9 +13,10 @@ std::atomic_uint64_t global_buffer_seq = {0};
 BufferAllocation::BufferAllocation(WMT::Device device, const WMTBufferInfo &info, Flags<BufferAllocationFlag> flags) :
     info_(info),
     flags_(flags) {
-  suballocation_size_aligned_ = align(info_.length, 16);
-  if (suballocation_size_aligned_ <=  DXMT_PAGE_SIZE / 2) {
-    suballocation_count_ = DXMT_PAGE_SIZE / suballocation_size_aligned_;
+  suballocation_size_ = info_.length;
+  if (flags_.test(BufferAllocationFlag::SuballocateFromOnePage) && suballocation_size_ <= DXMT_PAGE_SIZE) {
+    suballocation_size_ = align(info_.length, 16);
+    suballocation_count_ = DXMT_PAGE_SIZE / suballocation_size_;
     info_.length = DXMT_PAGE_SIZE;
   }
 #ifdef __i386__
@@ -78,8 +79,8 @@ Buffer::prepareAllocationViews(BufferAllocation *allocation) {
     auto format = viewDescriptors_[version].format;
     auto texel_size = MTLGetTexelSize(format);
     assert(texel_size);
-    assert(!(allocation->suballocation_size_aligned_ & (texel_size - 1)));
-    auto total_length = allocation->suballocation_size_aligned_ * allocation->suballocation_count_;
+    assert(!(allocation->suballocation_size_ & (texel_size - 1)));
+    auto total_length = allocation->suballocation_size_ * allocation->suballocation_count_;
     WMTTextureInfo info;
     info.type = WMTTextureTypeTextureBuffer;
     info.width = total_length / (uint64_t)texel_size;
@@ -95,7 +96,7 @@ Buffer::prepareAllocationViews(BufferAllocation *allocation) {
     auto view = allocation->obj_.newTexture(info, 0, total_length);
 
     allocation->cached_view_.push_back(std::make_unique<BufferView>(
-        std::move(view), info.gpu_resource_id, allocation->suballocation_size_aligned_ / texel_size
+        std::move(view), info.gpu_resource_id, allocation->suballocation_size_ / texel_size
     ));
   }
   allocation->version_ = version_;
