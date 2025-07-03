@@ -143,19 +143,25 @@ public:
           }
         }
 
-        dynamic->updateImmediateName(current_seq_id, dynamic->allocate(coherent_seq_id), false);
-        EmitST([allocation = dynamic->immediateName(),
-              buffer = Rc(dynamic->buffer)](ArgumentEncodingContext &enc) mutable {
-          auto _ = buffer->rename(forward_rc(allocation));
-        });
+        if (auto next_sub = dynamic->nextSuballocation()) {
+          EmitST([allocation = dynamic->immediateName(), next_sub](ArgumentEncodingContext &enc) mutable {
+            allocation->useSuballocation(next_sub);
+          });
+        } else {
+          dynamic->updateImmediateName(current_seq_id, dynamic->allocate(coherent_seq_id), 0, false);
+          EmitST([allocation = dynamic->immediateName(), buffer = Rc(dynamic->buffer)](ArgumentEncodingContext &enc) mutable {
+            allocation->useSuballocation(0);
+            auto _ = buffer->rename(forward_rc(allocation));
+          });
+        }
 
-        pMappedResource->pData = dynamic->mappedMemory();
+        pMappedResource->pData = dynamic->immediateMappedMemory();
         pMappedResource->RowPitch = buffer_length;
         pMappedResource->DepthPitch = buffer_length;
         break;
       }
       case D3D11_MAP_WRITE_NO_OVERWRITE: {
-        pMappedResource->pData = dynamic->mappedMemory();
+        pMappedResource->pData = dynamic->immediateMappedMemory();
         pMappedResource->RowPitch = buffer_length;
         pMappedResource->DepthPitch = buffer_length;
         break;
@@ -464,7 +470,7 @@ public:
     for (const auto &used_dynamic : cmdlist->used_dynamic_buffers) {
       if (!used_dynamic.latest)
         continue;
-      used_dynamic.buffer->updateImmediateName(seq_id, Rc(used_dynamic.allocation), true);
+      used_dynamic.buffer->updateImmediateName(seq_id, Rc(used_dynamic.allocation), used_dynamic.suballocation, true);
     }
 
     for (const auto &used_dynamic : cmdlist->used_dynamic_textures) {

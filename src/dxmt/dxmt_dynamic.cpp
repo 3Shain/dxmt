@@ -40,11 +40,12 @@ DynamicBuffer::allocate(uint64_t coherent_seq_id) {
 }
 
 void
-DynamicBuffer::updateImmediateName(uint64_t current_seq_id, Rc<BufferAllocation> &&allocation, bool owned_by_command_list) {
+DynamicBuffer::updateImmediateName(uint64_t current_seq_id, Rc<BufferAllocation> &&allocation, uint32_t suballocation, bool owned_by_command_list) {
   std::lock_guard<dxmt::mutex> lock(mutex_);
   if (!owned_by_command_list_)
     fifo.push(QueueEntry{.allocation = std::move(name_), .will_free_at = current_seq_id});
   name_ = std::move(allocation);
+  name_suballocation_ = suballocation;
   owned_by_command_list_ = owned_by_command_list;
 }
 
@@ -59,6 +60,14 @@ DynamicBuffer::recycle(uint64_t current_seq_id, Rc<BufferAllocation> &&allocatio
     }
   }
   fifo.push(QueueEntry{.allocation = std::move(allocation), .will_free_at = current_seq_id});
+}
+
+uint32_t
+DynamicBuffer::nextSuballocation() {
+  if (name_->hasSuballocatoin(name_suballocation_ + 1)) {
+    return ++name_suballocation_;
+  }
+  return 0;
 }
 
 DynamicTexture::DynamicTexture(Texture *texture, Flags<TextureAllocationFlag> flags) :

@@ -671,15 +671,15 @@ public:
             is_raw = desc.Buffer.Flags & D3D11_BUFFER_UAV_FLAG_RAW,
             format = desc.Format](ArgumentEncodingContext &enc) {
         if (is_raw) {
-          auto buffer_handle = enc.access(buffer, slice.byteOffset, slice.byteLength, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
-          enc.queue().emulated_cmd.ClearBufferUint(buffer_handle, slice.byteOffset, slice.byteLength >> 2, value);
+          auto [buffer_alloc, offset] = enc.access(buffer, slice.byteOffset, slice.byteLength, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
+          enc.queue().emulated_cmd.ClearBufferUint(buffer_alloc->buffer(), slice.byteOffset + offset, slice.byteLength >> 2, value);
         } else {
           if (format == DXGI_FORMAT_UNKNOWN) {
-            auto buffer_handle = enc.access(buffer, slice.byteOffset, slice.byteLength, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
-            enc.queue().emulated_cmd.ClearBufferUint(buffer_handle, slice.byteOffset, slice.byteLength >> 2, value);
+            auto [buffer_alloc, offset] = enc.access(buffer, slice.byteOffset, slice.byteLength, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
+            enc.queue().emulated_cmd.ClearBufferUint(buffer_alloc->buffer(), slice.byteOffset + offset, slice.byteLength >> 2, value);
           } else {
-            WMT::Texture texture_handle = enc.access(buffer, viewId, DXMT_ENCODER_RESOURCE_ACESS_WRITE).texture;
-            enc.queue().emulated_cmd.ClearTextureBufferUint(texture_handle, slice.firstElement, slice.elementCount, value);
+            auto [view, element_offset] = enc.access(buffer, viewId, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
+            enc.queue().emulated_cmd.ClearTextureBufferUint(view.texture, slice.firstElement + element_offset, slice.elementCount, value);
           }
         }
       });
@@ -741,15 +741,15 @@ public:
             is_raw = desc.Buffer.Flags & D3D11_BUFFER_UAV_FLAG_RAW,
             format = desc.Format](ArgumentEncodingContext &enc) {
         if (is_raw) {
-          auto buffer_handle = enc.access(buffer, slice.byteOffset, slice.byteLength, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
-          enc.queue().emulated_cmd.ClearBufferFloat(buffer_handle, slice.byteOffset, slice.byteLength >> 2, value);
+          auto [buffer_alloc, offset] = enc.access(buffer, slice.byteOffset, slice.byteLength, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
+          enc.queue().emulated_cmd.ClearBufferFloat(buffer_alloc->buffer(), slice.byteOffset + offset, slice.byteLength >> 2, value);
         } else {
           if (format == DXGI_FORMAT_UNKNOWN) {
-            auto buffer_handle = enc.access(buffer, slice.byteOffset, slice.byteLength, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
-            enc.queue().emulated_cmd.ClearBufferFloat(buffer_handle, slice.byteOffset, slice.byteLength >> 2, value);
+            auto [buffer_alloc, offset] = enc.access(buffer, slice.byteOffset, slice.byteLength, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
+            enc.queue().emulated_cmd.ClearBufferFloat(buffer_alloc->buffer(), slice.byteOffset + offset, slice.byteLength >> 2, value);
           } else {
-            WMT::Texture texture_handle = enc.access(buffer, viewId, DXMT_ENCODER_RESOURCE_ACESS_WRITE).texture;
-            enc.queue().emulated_cmd.ClearTextureBufferFloat(texture_handle, slice.firstElement, slice.elementCount, value);
+            auto [view, element_offset] = enc.access(buffer, viewId, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
+            enc.queue().emulated_cmd.ClearTextureBufferFloat(view.texture, slice.firstElement + element_offset, slice.elementCount, value);
           }
         }
       });
@@ -1003,15 +1003,15 @@ public:
       if (auto uav = static_cast<D3D11UnorderedAccessView *>(pSrcView)) {
         SwitchToBlitEncoder(CommandBufferState::BlitEncoderActive);
         EmitOP([=, dst = dst_bind->buffer(), counter = uav->counter()](ArgumentEncodingContext &enc) {
-          auto dst_buffer = enc.access(dst, DstAlignedByteOffset, 4, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
-          auto counter_buffer = enc.access(counter, 0, 4, DXMT_ENCODER_RESOURCE_ACESS_READ);
+          auto [dst_buffer, dst_offset] = enc.access(dst, DstAlignedByteOffset, 4, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
+          auto [counter_buffer, counter_offset] = enc.access(counter, 0, 4, DXMT_ENCODER_RESOURCE_ACESS_READ);
           auto &cmd = enc.encodeBlitCommand<wmtcmd_blit_copy_from_buffer_to_buffer>();
           cmd.type = WMTBlitCommandCopyFromBufferToBuffer;
           cmd.copy_length = 4;
-          cmd.src = counter_buffer;
-          cmd.src_offset = 0;
-          cmd.dst = dst_buffer;
-          cmd.dst_offset = DstAlignedByteOffset;
+          cmd.src = counter_buffer->buffer();
+          cmd.src_offset = counter_offset;
+          cmd.dst = dst_buffer->buffer();
+          cmd.dst_offset = DstAlignedByteOffset + dst_offset;
         });
       }
     }
@@ -1079,14 +1079,14 @@ public:
         memcpy(ptr, pSrcData, copy_len);
         SwitchToBlitEncoder(CommandBufferState::UpdateBlitEncoderActive);
         EmitOP([staging_buffer, offset, dst = bindable->buffer(), copy_offset, copy_len](ArgumentEncodingContext &enc) {
-          auto dst_buffer = enc.access(dst, copy_offset, copy_len, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
+          auto [dst_buffer, dst_offset] = enc.access(dst, copy_offset, copy_len, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
           auto &cmd = enc.encodeBlitCommand<wmtcmd_blit_copy_from_buffer_to_buffer>();
           cmd.type = WMTBlitCommandCopyFromBufferToBuffer;
           cmd.copy_length = copy_len;
           cmd.src = staging_buffer;
           cmd.src_offset = offset;
-          cmd.dst = dst_buffer;
-          cmd.dst_offset = copy_offset;
+          cmd.dst = dst_buffer->buffer();
+          cmd.dst_offset = copy_offset + dst_offset;
         });
       } else {
         UNIMPLEMENTED("UpdateSubresource1: TODO: staging?");
@@ -1181,13 +1181,14 @@ public:
         StartIndexLocation * (state_.InputAssembler.IndexBufferFormat == DXGI_FORMAT_R32_UINT ? 4 : 2);
     EmitOP([IndexType, IndexBufferOffset, Primitive, IndexCount, BaseVertexLocation](ArgumentEncodingContext &enc) {
       enc.bumpVisibilityResultOffset();
+      auto [index_buffer, index_sub_offset] = enc.currentIndexBuffer();
       auto &cmd = enc.encodeRenderCommand<wmtcmd_render_draw_indexed>();
       cmd.type = WMTRenderCommandDrawIndexed;
       cmd.primitive_type = Primitive;
       cmd.index_count = IndexCount;
       cmd.index_type = IndexType;
-      cmd.index_buffer = enc.currentIndexBuffer();
-      cmd.index_buffer_offset = IndexBufferOffset;
+      cmd.index_buffer = index_buffer;
+      cmd.index_buffer_offset = IndexBufferOffset + index_sub_offset;
       cmd.base_vertex = BaseVertexLocation;
       cmd.base_instance = 0;
       cmd.instance_count = 1;
@@ -1264,13 +1265,14 @@ public:
     EmitOP([IndexType, IndexBufferOffset, Primitive, InstanceCount, BaseVertexLocation, StartInstanceLocation,
           IndexCountPerInstance](ArgumentEncodingContext &enc) {
       enc.bumpVisibilityResultOffset();
+      auto [index_buffer, index_sub_offset] = enc.currentIndexBuffer();
       auto &cmd = enc.encodeRenderCommand<wmtcmd_render_draw_indexed>();
       cmd.type = WMTRenderCommandDrawIndexed;
       cmd.primitive_type = Primitive;
       cmd.index_count = IndexCountPerInstance;
       cmd.index_type = IndexType;
-      cmd.index_buffer = enc.currentIndexBuffer();
-      cmd.index_buffer_offset = IndexBufferOffset;
+      cmd.index_buffer = index_buffer;
+      cmd.index_buffer_offset = IndexBufferOffset + index_sub_offset;
       cmd.base_vertex = BaseVertexLocation;
       cmd.base_instance = StartInstanceLocation;
       cmd.instance_count = InstanceCount;
@@ -1363,8 +1365,9 @@ public:
 
       auto &cmd_mesh = enc.encodePreTessRenderCommand<wmtcmd_render_dxmt_tess_mesh_dispatch_indexed>();
       cmd_mesh.type = WMTRenderCommandDXMTTessellationMeshDispatchIndexed;
-      cmd_mesh.index_buffer = enc.currentIndexBuffer();
-      cmd_mesh.index_buffer_offset = IndexBufferOffset;
+      auto [index_buffer, index_sub_offset] = enc.currentIndexBuffer();
+      cmd_mesh.index_buffer = index_buffer;
+      cmd_mesh.index_buffer_offset = IndexBufferOffset + index_sub_offset;
       cmd_mesh.draw_arguments_offset = enc.getFinalArgumentBufferOffset(draw_arguments_offset);
       cmd_mesh.control_point_buffer = cp_buffer;
       cmd_mesh.control_point_buffer_offset = cp_offset;
@@ -1433,6 +1436,7 @@ public:
       draw_arugment->InstanceCount = InstanceCount;
       draw_arugment->StartInstance = BaseInstance;
 
+      auto [index_buffer, index_sub_offset] = enc.currentIndexBuffer();
       auto [vertex_per_warp, vertex_increment_per_wrap] = get_gs_vertex_count(topo);
       auto warp_count = (IndexCountPerInstance - 1) / vertex_increment_per_wrap + 1;
       enc.bumpVisibilityResultOffset();
@@ -1442,8 +1446,8 @@ public:
       cmd.instance_count = InstanceCount;
       cmd.warp_count = warp_count;
       cmd.vertex_per_warp = vertex_per_warp;
-      cmd.index_buffer = enc.currentIndexBuffer();
-      cmd.index_buffer_offset = IndexBufferOffset;
+      cmd.index_buffer = index_buffer;
+      cmd.index_buffer_offset = IndexBufferOffset + index_sub_offset;
     });
   }
 
@@ -1474,16 +1478,17 @@ public:
     if (auto bindable = reinterpret_cast<D3D11ResourceCommon *>(pBufferForArgs)) {
       EmitOP([IndexType, IndexBufferOffset, Primitive, ArgBuffer = bindable->buffer(),
             AlignedByteOffsetForArgs](ArgumentEncodingContext &enc) {
-        auto buffer = enc.access(ArgBuffer, AlignedByteOffsetForArgs, 20, DXMT_ENCODER_RESOURCE_ACESS_READ);
+        auto [buffer, buffer_offset] = enc.access(ArgBuffer, AlignedByteOffsetForArgs, 20, DXMT_ENCODER_RESOURCE_ACESS_READ);
         enc.bumpVisibilityResultOffset();
+        auto [index_buffer, index_sub_offset] = enc.currentIndexBuffer();
         auto &cmd = enc.encodeRenderCommand<wmtcmd_render_draw_indexed_indirect>();
         cmd.type = WMTRenderCommandDrawIndexedIndirect;
         cmd.primitive_type = Primitive;
         cmd.index_type = IndexType;
-        cmd.indirect_args_buffer = buffer;
-        cmd.indirect_args_offset = AlignedByteOffsetForArgs;
-        cmd.index_buffer = enc.currentIndexBuffer();
-        cmd.index_buffer_offset = IndexBufferOffset;
+        cmd.indirect_args_buffer = buffer->buffer();
+        cmd.indirect_args_offset = AlignedByteOffsetForArgs + buffer_offset;
+        cmd.index_buffer = index_buffer;
+        cmd.index_buffer_offset = IndexBufferOffset + index_sub_offset;
       });
     }
   }
@@ -1511,13 +1516,13 @@ public:
     }
     if (auto bindable = reinterpret_cast<D3D11ResourceCommon *>(pBufferForArgs)) {
       EmitOP([Primitive, ArgBuffer = bindable->buffer(), AlignedByteOffsetForArgs](ArgumentEncodingContext &enc) {
-        auto buffer = enc.access(ArgBuffer, AlignedByteOffsetForArgs, 20, DXMT_ENCODER_RESOURCE_ACESS_READ);
+        auto [buffer, buffer_offset] = enc.access(ArgBuffer, AlignedByteOffsetForArgs, 20, DXMT_ENCODER_RESOURCE_ACESS_READ);
         enc.bumpVisibilityResultOffset();
         auto &cmd = enc.encodeRenderCommand<wmtcmd_render_draw_indirect>();
         cmd.type = WMTRenderCommandDrawIndirect;
         cmd.primitive_type = Primitive;
-        cmd.indirect_args_buffer = buffer;
-        cmd.indirect_args_offset = AlignedByteOffsetForArgs;
+        cmd.indirect_args_buffer = buffer->buffer();;
+        cmd.indirect_args_offset = AlignedByteOffsetForArgs + buffer_offset;
       });
     }
   }
@@ -1528,14 +1533,14 @@ public:
   ) {
     if (auto bindable = reinterpret_cast<D3D11ResourceCommon *>(pBufferForArgs)) {
       EmitOP([=, topo = state_.InputAssembler.Topology, ArgBuffer = bindable->buffer()](ArgumentEncodingContext &enc) {
-        auto buffer = enc.access(ArgBuffer, AlignedByteOffsetForArgs, 20, DXMT_ENCODER_RESOURCE_ACESS_READ);
+        auto [buffer, buffer_offset] = enc.access(ArgBuffer, AlignedByteOffsetForArgs, 20, DXMT_ENCODER_RESOURCE_ACESS_READ);
         auto dispatch_arg = enc.allocateTempBuffer1(sizeof(DXMT_DISPATCH_ARGUMENTS), 4);
   
         auto [vertex_per_warp, vertex_increment_per_wrap] = get_gs_vertex_count(topo);
   
         enc.bumpVisibilityResultOffset();
         enc.encodeGSDispatchArgumentsMarshal(
-          buffer, ArgBuffer->current()->gpuAddress, AlignedByteOffsetForArgs, vertex_increment_per_wrap,
+          buffer->buffer(), buffer->gpuAddress() + buffer_offset, AlignedByteOffsetForArgs, vertex_increment_per_wrap,
           dispatch_arg.gpu_buffer, dispatch_arg.gpu_address, dispatch_arg.offset
         );
         auto &cmd = enc.encodeRenderCommand<wmtcmd_render_dxmt_geometry_draw_indirect>();
@@ -1543,8 +1548,8 @@ public:
         cmd.dispatch_args_buffer = dispatch_arg.gpu_buffer;
         cmd.dispatch_args_offset = dispatch_arg.offset;
         cmd.vertex_per_warp = vertex_per_warp;
-        cmd.indirect_args_buffer = buffer;
-        cmd.indirect_args_offset = AlignedByteOffsetForArgs;
+        cmd.indirect_args_buffer = buffer->buffer();
+        cmd.indirect_args_offset = buffer_offset + AlignedByteOffsetForArgs;
       });
     }
   }
@@ -1557,14 +1562,15 @@ public:
 
     if (auto bindable = reinterpret_cast<D3D11ResourceCommon *>(pBufferForArgs)) {
       EmitOP([=, topo = state_.InputAssembler.Topology, ArgBuffer = bindable->buffer()](ArgumentEncodingContext &enc) {
-        auto buffer = enc.access(ArgBuffer, AlignedByteOffsetForArgs, 20, DXMT_ENCODER_RESOURCE_ACESS_READ);
+        auto [buffer, buffer_offset] = enc.access(ArgBuffer, AlignedByteOffsetForArgs, 20, DXMT_ENCODER_RESOURCE_ACESS_READ);
         auto dispatch_arg = enc.allocateTempBuffer1(sizeof(DXMT_DISPATCH_ARGUMENTS), 4);
   
         auto [vertex_per_warp, vertex_increment_per_wrap] = get_gs_vertex_count(topo);
+        auto [index_buffer, index_sub_offset] = enc.currentIndexBuffer();
   
         enc.bumpVisibilityResultOffset();
         enc.encodeGSDispatchArgumentsMarshal(
-          buffer, ArgBuffer->current()->gpuAddress, AlignedByteOffsetForArgs, vertex_increment_per_wrap,
+          buffer->buffer(), buffer->gpuAddress() + buffer_offset, AlignedByteOffsetForArgs, vertex_increment_per_wrap,
           dispatch_arg.gpu_buffer, dispatch_arg.gpu_address, dispatch_arg.offset
         );
         auto &cmd = enc.encodeRenderCommand<wmtcmd_render_dxmt_geometry_draw_indexed_indirect>();
@@ -1572,10 +1578,10 @@ public:
         cmd.dispatch_args_buffer = dispatch_arg.gpu_buffer;
         cmd.dispatch_args_offset = dispatch_arg.offset;
         cmd.vertex_per_warp = vertex_per_warp;
-        cmd.indirect_args_buffer = buffer;
-        cmd.indirect_args_offset = AlignedByteOffsetForArgs;
-        cmd.index_buffer = enc.currentIndexBuffer();
-        cmd.index_buffer_offset = IndexBufferOffset;
+        cmd.indirect_args_buffer = buffer->buffer();
+        cmd.indirect_args_offset = AlignedByteOffsetForArgs + buffer_offset;
+        cmd.index_buffer = index_buffer;
+        cmd.index_buffer_offset = IndexBufferOffset + index_sub_offset;
       });
     }
   }
@@ -1611,11 +1617,11 @@ public:
       return;
     if (auto bindable = reinterpret_cast<D3D11ResourceCommon *>(pBufferForArgs)) {
       EmitOP([AlignedByteOffsetForArgs, ArgBuffer = bindable->buffer()](ArgumentEncodingContext &enc) {
-        auto buffer = enc.access(ArgBuffer, AlignedByteOffsetForArgs, 12, DXMT_ENCODER_RESOURCE_ACESS_READ);
+        auto [buffer, buffer_offset] = enc.access(ArgBuffer, AlignedByteOffsetForArgs, 12, DXMT_ENCODER_RESOURCE_ACESS_READ);
         auto &cmd = enc.encodeComputeCommand<wmtcmd_compute_dispatch_indirect>();
         cmd.type = WMTComputeCommandDispatchIndirect;
-        cmd.indirect_args_buffer = buffer;
-        cmd.indirect_args_offset = AlignedByteOffsetForArgs;
+        cmd.indirect_args_buffer = buffer->buffer();;
+        cmd.indirect_args_offset = AlignedByteOffsetForArgs + buffer_offset;
       });
     }
   }
@@ -3119,7 +3125,7 @@ public:
       if (!counter.ptr())
         return;
       auto new_counter = counter->allocate(BufferAllocationFlag::GpuManaged);
-      *reinterpret_cast<uint32_t *>(new_counter->mappedMemory) = value;
+      *reinterpret_cast<uint32_t *>(new_counter->mappedMemory(0 /* TODO: suballocate uav counter */)) = value;
       new_counter->buffer().didModifyRange(0, 4);
       auto old = counter->rename(std::move(new_counter));
       // TODO: reused discarded buffer
@@ -3303,12 +3309,12 @@ public:
         UseCopyDestination(staging_dst);
         SwitchToBlitEncoder(CommandBufferState::ReadbackBlitEncoderActive);
         EmitOP([src_ = src->buffer(), dst = std::move(staging_dst), DstX, SrcBox](ArgumentEncodingContext &enc) {
-          auto src = enc.access(src_, SrcBox.left, SrcBox.right - SrcBox.left, DXMT_ENCODER_RESOURCE_ACESS_READ);
+          auto [src, src_offset] = enc.access(src_, SrcBox.left, SrcBox.right - SrcBox.left, DXMT_ENCODER_RESOURCE_ACESS_READ);
           auto &cmd = enc.encodeBlitCommand<wmtcmd_blit_copy_from_buffer_to_buffer>();
           cmd.type = WMTBlitCommandCopyFromBufferToBuffer;
           cmd.copy_length = SrcBox.right - SrcBox.left;
-          cmd.src = src;
-          cmd.src_offset = SrcBox.left;
+          cmd.src = src->buffer();;
+          cmd.src_offset = SrcBox.left + src_offset;
           cmd.dst = dst->currentBuffer();
           cmd.dst_offset = DstX;
         });
@@ -3321,29 +3327,29 @@ public:
         UseCopySource(staging_src);
         SwitchToBlitEncoder(CommandBufferState::UpdateBlitEncoderActive);
         EmitOP([dst_ = dst->buffer(), src = std::move(staging_src), DstX, SrcBox](ArgumentEncodingContext &enc) {
-          auto dst = enc.access(dst_, DstX, SrcBox.right - SrcBox.left, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
+          auto [dst, dst_offset] = enc.access(dst_, DstX, SrcBox.right - SrcBox.left, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
           auto &cmd = enc.encodeBlitCommand<wmtcmd_blit_copy_from_buffer_to_buffer>();
           cmd.type = WMTBlitCommandCopyFromBufferToBuffer;
           cmd.copy_length = SrcBox.right - SrcBox.left;
           cmd.src = src->currentBuffer();
           cmd.src_offset = SrcBox.left;
-          cmd.dst = dst;
-          cmd.dst_offset = DstX;
+          cmd.dst = dst->buffer();;
+          cmd.dst_offset = DstX + dst_offset;
         });
       } else if (auto src = reinterpret_cast<D3D11ResourceCommon *>(pSrcResource)) {
         // on-device copy
         SwitchToBlitEncoder(CommandBufferState::BlitEncoderActive);
         EmitOP([dst_ = dst->buffer(), src_ = src->buffer(), DstX,
                                SrcBox](ArgumentEncodingContext& enc) {
-          auto src = enc.access(src_, SrcBox.left, SrcBox.right - SrcBox.left, DXMT_ENCODER_RESOURCE_ACESS_READ);
-          auto dst = enc.access(dst_, DstX, SrcBox.right - SrcBox.left, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
+          auto [src, src_offset] = enc.access(src_, SrcBox.left, SrcBox.right - SrcBox.left, DXMT_ENCODER_RESOURCE_ACESS_READ);
+          auto [dst, dst_offset] = enc.access(dst_, DstX, SrcBox.right - SrcBox.left, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
           auto &cmd = enc.encodeBlitCommand<wmtcmd_blit_copy_from_buffer_to_buffer>();
           cmd.type = WMTBlitCommandCopyFromBufferToBuffer;
           cmd.copy_length = SrcBox.right - SrcBox.left;
-          cmd.src = src;
-          cmd.src_offset = SrcBox.left;
-          cmd.dst = dst;
-          cmd.dst_offset = DstX;
+          cmd.src = src->buffer();;
+          cmd.src_offset = SrcBox.left + src_offset;
+          cmd.dst = dst->buffer();;
+          cmd.dst_offset = DstX + dst_offset;
         });
       } else {
         UNIMPLEMENTED("todo");
@@ -4397,21 +4403,21 @@ public:
       auto &so_slot0 = state_.StreamOutput.Targets[0];
       if (so_slot0.Offset == 0xFFFFFFFF) {
         EmitST([slot0 = so_slot0.Buffer->buffer()](ArgumentEncodingContext &enc) {
-          auto buffer = enc.access(slot0, 0, slot0->length(), DXMT_ENCODER_RESOURCE_ACESS_WRITE);
+          auto [buffer, buffer_offset] = enc.access(slot0, 0, slot0->length(), DXMT_ENCODER_RESOURCE_ACESS_WRITE);
           auto &cmd = enc.encodeRenderCommand<wmtcmd_render_setbuffer>();
           cmd.type = WMTRenderCommandSetVertexBuffer;
-          cmd.buffer = buffer;
-          cmd.offset = 0;
+          cmd.buffer = buffer->buffer();;
+          cmd.offset = buffer_offset;
           cmd.index = 20;
           enc.setCompatibilityFlag(FeatureCompatibility::UnsupportedStreamOutputAppending);
         });
       } else {
         EmitST([slot0 = so_slot0.Buffer->buffer(), offset = so_slot0.Offset](ArgumentEncodingContext &enc) {
-          auto buffer = enc.access(slot0, 0, slot0->length(), DXMT_ENCODER_RESOURCE_ACESS_WRITE);
+          auto [buffer, buffer_offset] = enc.access(slot0, 0, slot0->length(), DXMT_ENCODER_RESOURCE_ACESS_WRITE);
           auto &cmd = enc.encodeRenderCommand<wmtcmd_render_setbuffer>();
           cmd.type = WMTRenderCommandSetVertexBuffer;
-          cmd.buffer = buffer;
-          cmd.offset = offset;
+          cmd.buffer = buffer->buffer();;
+          cmd.offset = offset + buffer_offset;
           cmd.index = 20;
         });
       }
@@ -4750,6 +4756,7 @@ private:
 struct used_dynamic_buffer {
   Rc<DynamicBuffer> buffer;
   Rc<BufferAllocation> allocation;
+  uint32_t suballocation;
   bool latest;
 };
 

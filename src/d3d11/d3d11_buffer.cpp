@@ -87,7 +87,7 @@ public:
       flags.set(BufferAllocationFlag::GpuManaged);
     auto allocation = buffer_->allocate(flags);
     if (pInitialData) {
-      memcpy(allocation->mappedMemory, pInitialData->pSysMem, pDesc->ByteWidth);
+      memcpy(allocation->mappedMemory(0), pInitialData->pSysMem, pDesc->ByteWidth);
     }
     auto _ = buffer_->rename(std::move(allocation));
     D3D11_ASSERT(_.ptr() == nullptr);

@@ -69,13 +69,12 @@ ArgumentEncodingContext::encodeVertexBuffers(uint32_t slot_mask, uint64_t offset
       entries[index++].length = 0;
       continue;
     }
-    auto current = buffer->current();
     auto length = buffer->length();
-    entries[index].buffer_handle = current->gpuAddress + state.offset;
+    auto [buffer_alloc, buffer_offset] = access(buffer, DXMT_ENCODER_RESOURCE_ACESS_READ);
+    entries[index].buffer_handle = buffer_alloc->gpuAddress() + buffer_offset + state.offset;
     entries[index].stride = state.stride;
     entries[index++].length = length > state.offset ? length - state.offset : 0;
     // FIXME: did we intended to use the whole buffer?
-    access(buffer, DXMT_ENCODER_RESOURCE_ACESS_READ);
     makeResident<PipelineStage::Vertex, kind>(buffer.ptr());
   };
   if constexpr (kind == PipelineKind::Tessellation) {
@@ -153,9 +152,9 @@ ArgumentEncodingContext::encodeConstantBuffers(const MTL_SHADER_REFLECTION *refl
         continue;
       }
       auto argbuf = cbuf.buffer;
-      encoded_buffer[arg.StructurePtrOffset] = argbuf->current()->gpuAddress + (cbuf.offset);
       // FIXME: did we intended to use the whole buffer?
-      access(argbuf, DXMT_ENCODER_RESOURCE_ACESS_READ);
+      auto [argbuf_alloc, argbuf_offset] = access(argbuf, DXMT_ENCODER_RESOURCE_ACESS_READ);
+      encoded_buffer[arg.StructurePtrOffset] = argbuf_alloc->gpuAddress() + argbuf_offset + cbuf.offset;
       makeResident<stage, kind>(argbuf.ptr());
       break;
     }
@@ -263,9 +262,9 @@ ArgumentEncodingContext::encodeShaderResources(
 
       if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_BUFFER) {
         if (srv.buffer.ptr()) {
-          encoded_buffer[arg.StructurePtrOffset] = srv.buffer->current()->gpuAddress + srv.slice.byteOffset;
+          auto [srv_alloc, offset] = access(srv.buffer, srv.slice.byteOffset, srv.slice.byteLength, DXMT_ENCODER_RESOURCE_ACESS_READ);
+          encoded_buffer[arg.StructurePtrOffset] = srv_alloc->gpuAddress() + offset + srv.slice.byteOffset;
           encoded_buffer[arg.StructurePtrOffset + 1] = srv.slice.byteLength;
-          access(srv.buffer, srv.slice.byteOffset, srv.slice.byteLength, DXMT_ENCODER_RESOURCE_ACESS_READ);
           makeResident<stage, kind>(srv.buffer.ptr());
         } else {
           encoded_buffer[arg.StructurePtrOffset] = 0;
@@ -274,10 +273,10 @@ ArgumentEncodingContext::encodeShaderResources(
       } else if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE) {
         if (srv.buffer.ptr()) {
           assert(arg.Flags & MTL_SM50_SHADER_ARGUMENT_TBUFFER_OFFSET);
-          encoded_buffer[arg.StructurePtrOffset] =
-              access(srv.buffer, srv.viewId, DXMT_ENCODER_RESOURCE_ACESS_READ).gpu_resource_id;
+          auto [view, offset] = access(srv.buffer, srv.viewId, DXMT_ENCODER_RESOURCE_ACESS_READ);
+          encoded_buffer[arg.StructurePtrOffset] = view.gpu_resource_id;
           encoded_buffer[arg.StructurePtrOffset + 1] =
-              ((uint64_t)srv.slice.elementCount << 32) | (uint64_t)srv.slice.firstElement;
+              ((uint64_t)srv.slice.elementCount << 32) | (uint64_t)(srv.slice.firstElement + offset);
           makeResident<stage, kind>(srv.buffer.ptr(), srv.viewId);
         } else if (srv.texture.ptr()) {
           assert(arg.Flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE_MINLOD_CLAMP);
@@ -303,9 +302,9 @@ ArgumentEncodingContext::encodeShaderResources(
 
       if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_BUFFER) {
         if (uav.buffer.ptr()) {
-          encoded_buffer[arg.StructurePtrOffset] = uav.buffer->current()->gpuAddress + uav.slice.byteOffset;
+          auto [uav_alloc, offset] = access(uav.buffer, uav.slice.byteOffset, uav.slice.byteLength, access_flags);
+          encoded_buffer[arg.StructurePtrOffset] = uav_alloc->gpuAddress() + offset + uav.slice.byteOffset;
           encoded_buffer[arg.StructurePtrOffset + 1] = uav.slice.byteLength;
-          access(uav.buffer, uav.slice.byteOffset, uav.slice.byteLength, access_flags);
           makeResident<stage, kind>(uav.buffer.ptr(), read, write);
         } else {
           encoded_buffer[arg.StructurePtrOffset] = 0;
@@ -314,9 +313,10 @@ ArgumentEncodingContext::encodeShaderResources(
       } else if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE) {
         if (uav.buffer.ptr()) {
           assert(arg.Flags & MTL_SM50_SHADER_ARGUMENT_TBUFFER_OFFSET);
-          encoded_buffer[arg.StructurePtrOffset] = access(uav.buffer, uav.viewId, access_flags).gpu_resource_id;
+          auto [view, offset] = access(uav.buffer, uav.viewId, DXMT_ENCODER_RESOURCE_ACESS_READ);
+          encoded_buffer[arg.StructurePtrOffset] = view.gpu_resource_id;
           encoded_buffer[arg.StructurePtrOffset + 1] =
-              ((uint64_t)uav.slice.elementCount << 32) | (uint64_t)uav.slice.firstElement;
+              ((uint64_t)uav.slice.elementCount << 32) | (uint64_t)(uav.slice.firstElement + offset);
           makeResident<stage, kind>(uav.buffer.ptr(), uav.viewId, read, write);
         } else if (uav.texture.ptr()) {
           assert(arg.Flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE_MINLOD_CLAMP);
@@ -331,8 +331,8 @@ ArgumentEncodingContext::encodeShaderResources(
       }
       if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_UAV_COUNTER) {
         if (uav.counter) {
-          encoded_buffer[arg.StructurePtrOffset + 2] = uav.counter->current()->gpuAddress;
-          access(uav.counter, 0, 4, DXMT_ENCODER_RESOURCE_ACESS_READ | DXMT_ENCODER_RESOURCE_ACESS_WRITE);
+          auto [counter_alloc, offset] = access(uav.counter, 0, 4, DXMT_ENCODER_RESOURCE_ACESS_READ | DXMT_ENCODER_RESOURCE_ACESS_WRITE);
+          encoded_buffer[arg.StructurePtrOffset + 2] = counter_alloc->gpuAddress() + offset;
           makeResident<stage, kind>(uav.counter.ptr(), true, true);
         } else {
           /*

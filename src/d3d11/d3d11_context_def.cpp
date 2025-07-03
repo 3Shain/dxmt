@@ -1,15 +1,22 @@
 #include "d3d11_device.hpp"
 #include "d3d11_private.h"
 #include "d3d11_context_impl.cpp"
+#include "dxmt_buffer.hpp"
 #include "dxmt_command_queue.hpp"
 
 namespace dxmt {
+
+struct DynamicBufferAllocation {
+  BufferAllocation * allocation;
+  uint32_t allocation_id;
+  uint32_t suballocation;
+};
 
 struct DeferredContextInternalState {
   using device_mutex_t = null_mutex;
   CommandQueue &cmd_queue;
   Com<MTLD3D11CommandList> current_cmdlist;
-  std::unordered_map<DynamicBuffer *, std::pair<BufferAllocation *, uint32_t>> current_dynamic_buffer_allocations;
+  std::unordered_map<DynamicBuffer *, DynamicBufferAllocation> current_dynamic_buffer_allocations;
   std::unordered_map<DynamicTexture *, std::pair<TextureAllocation *, uint32_t>> current_dynamic_texture_allocations;
   std::unordered_map<void *, std::pair<Com<IMTLD3DOcclusionQuery>, uint32_t>> building_visibility_queries;
 };
@@ -115,25 +122,43 @@ public:
             stage.SRVs.set_dirty();
           }
         }
+        auto ret = ctx_state.current_dynamic_buffer_allocations.find(dynamic.ptr());
+        if (ret != ctx_state.current_dynamic_buffer_allocations.end()) {
+          auto &allocation_state = ret->second;
+          auto allocation = allocation_state.allocation;
+          auto allocation_id = allocation_state.allocation_id;
+          auto &suballocation = allocation_state.suballocation;
+          if (allocation->hasSuballocatoin(suballocation + 1)) {
+            suballocation += 1;
+            ctx_state.current_cmdlist->used_dynamic_buffers[allocation_id].suballocation = suballocation;
+            EmitST([allocation, sub = suballocation](ArgumentEncodingContext &enc) mutable {
+              allocation->useSuballocation(sub);
+            });
+            pMappedResource->pData = allocation->mappedMemory(suballocation);
+            pMappedResource->RowPitch = buffer_length;
+            pMappedResource->DepthPitch = buffer_length;
+            break;
+          }
+        }
         Rc<BufferAllocation> new_allocation = dynamic->allocate(ctx_state.cmd_queue.CoherentSeqId());
         uint32_t id = ctx_state.current_cmdlist->used_dynamic_buffers.size();
         // track the current allocation in case of a following NO_OVERWRITE map
-        auto ret = ctx_state.current_dynamic_buffer_allocations.find(dynamic.ptr());
         if (ret == ctx_state.current_dynamic_buffer_allocations.end()) {
           ctx_state.current_dynamic_buffer_allocations.insert(
-              ret, {dynamic.ptr(), {new_allocation.ptr(), id}});
+              ret, {dynamic.ptr(), {new_allocation.ptr(), id, 0}});
         } else {
-          auto previous_allocation_id = ret->second.second;
+          auto previous_allocation_id = ret->second.allocation_id;
           ctx_state.current_cmdlist->used_dynamic_buffers[previous_allocation_id].latest = false;
-          ret->second = {new_allocation.ptr(), id};
+          ret->second = {new_allocation.ptr(), id, 0};
         }
         // collect allocated buffers and recycle them when the command list is released
-        ctx_state.current_cmdlist->used_dynamic_buffers.push_back(used_dynamic_buffer{dynamic.ptr(), new_allocation, true});
+        ctx_state.current_cmdlist->used_dynamic_buffers.push_back(used_dynamic_buffer{dynamic.ptr(), new_allocation, 0, true});
         EmitST([allocation = new_allocation, buffer = Rc(dynamic->buffer)](ArgumentEncodingContext &enc) mutable {
+          allocation->useSuballocation(0);
           auto _ = buffer->rename(forward_rc(allocation));
         });
 
-        pMappedResource->pData = new_allocation->mappedMemory;
+        pMappedResource->pData = new_allocation->mappedMemory(0);
         pMappedResource->RowPitch = buffer_length;
         pMappedResource->DepthPitch = buffer_length;
         break;
@@ -144,7 +169,8 @@ public:
           ERR("DeferredContext: Invalid NO_OVERWRITE map on deferred context occurs without any prior DISCARD map.");
           return E_INVALIDARG;
         }
-        pMappedResource->pData = ret->second.first->mappedMemory;
+        auto &allocation_state = ret->second;
+        pMappedResource->pData = allocation_state.allocation->mappedMemory(allocation_state.suballocation);
         pMappedResource->RowPitch = buffer_length;
         pMappedResource->DepthPitch = buffer_length;
         break;

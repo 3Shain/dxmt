@@ -2,6 +2,7 @@
 #include "dxmt_format.hpp"
 #include "thread.hpp"
 #include "util_likely.hpp"
+#include "util_math.hpp"
 #include <cassert>
 #include <mutex>
 
@@ -12,13 +13,18 @@ std::atomic_uint64_t global_buffer_seq = {0};
 BufferAllocation::BufferAllocation(WMT::Device device, const WMTBufferInfo &info, Flags<BufferAllocationFlag> flags) :
     info_(info),
     flags_(flags) {
+  suballocation_size_aligned_ = align(info_.length, 16);
+  if (suballocation_size_aligned_ <=  DXMT_PAGE_SIZE / 2) {
+    suballocation_count_ = DXMT_PAGE_SIZE / suballocation_size_aligned_;
+    info_.length = DXMT_PAGE_SIZE;
+  }
 #ifdef __i386__
   placed_buffer = _aligned_malloc(info_.length, DXMT_PAGE_SIZE);
   info_.memory.set(placed_buffer);
 #endif
   obj_ = device.newBuffer(info_);
-  gpuAddress = info_.gpu_address;
-  mappedMemory = info_.memory.get();
+  gpuAddress_ = info_.gpu_address;
+  mappedMemory_ = info_.memory.get();
   depkey = EncoderDepSet::generateNewKey(global_buffer_seq.fetch_add(1));
 };
 
@@ -72,10 +78,11 @@ Buffer::prepareAllocationViews(BufferAllocation *allocation) {
     auto format = viewDescriptors_[version].format;
     auto texel_size = MTLGetTexelSize(format);
     assert(texel_size);
-    assert(!(length_ & (texel_size - 1)));
+    assert(!(allocation->suballocation_size_aligned_ & (texel_size - 1)));
+    auto total_length = allocation->suballocation_size_aligned_ * allocation->suballocation_count_;
     WMTTextureInfo info;
     info.type = WMTTextureTypeTextureBuffer;
-    info.width = length_ / (uint64_t)texel_size;
+    info.width = total_length / (uint64_t)texel_size;
     info.height = 1;
     info.depth = 1;
     info.array_length = 1;
@@ -85,9 +92,11 @@ Buffer::prepareAllocationViews(BufferAllocation *allocation) {
     info.options = allocation->info_.options;
     info.usage = WMTTextureUsageShaderRead; // FIXME
 
-    auto view = allocation->obj_.newTexture(info, 0, length_);
+    auto view = allocation->obj_.newTexture(info, 0, total_length);
 
-    allocation->cached_view_.push_back(std::make_unique<BufferView>(std::move(view), info.gpu_resource_id));
+    allocation->cached_view_.push_back(std::make_unique<BufferView>(
+        std::move(view), info.gpu_resource_id, allocation->suballocation_size_aligned_ / texel_size
+    ));
   }
   allocation->version_ = version_;
 };
