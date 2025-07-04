@@ -15,6 +15,11 @@ DEFINE_COM_INTERFACE("14e1e5e4-3f08-4741-a8e3-597d79373266", IMTLThreadpoolWork)
   virtual void SetIsDone(bool state) = 0;
 };
 
+#ifdef DXMT_NATIVE
+DEFINE_GUID(IID_IMTLThreadpoolWork, 0x14e1e5e4, 0x3f08, 0x4741, 0xa8, 0xe3, 0x59, 0x7d, 0x79, 0x37, 0x32, 0x66);
+__CRT_UUID_DECL(IMTLThreadpoolWork, 0x14e1e5e4, 0x3f08, 0x4741, 0xa8, 0xe3, 0x59, 0x7d, 0x79, 0x37, 0x32, 0x66);
+#endif
+
 struct IMTLCompiledGraphicsPipeline;
 struct IMTLCompiledComputePipeline;
 struct IMTLCompiledTessellationPipeline;
@@ -31,6 +36,11 @@ DEFINE_COM_INTERFACE("3a3f085a-d0fe-4324-b0ae-fe04de18571c",
   virtual void Commit() = 0;
   virtual void SOGetTargetsWithOffsets(UINT NumBuffers, REFIID riid, void ** ppSOTargets, UINT *pOffsets) = 0;
 };
+
+#ifdef DXMT_NATIVE
+DEFINE_GUID(IID_IMTLD3D11DeviceContext, 0x3a3f085a, 0xd0fe, 0x4324, 0xb0, 0xae, 0xfe, 0x04, 0xde, 0x18, 0x57, 0x1c);
+__CRT_UUID_DECL(IMTLD3D11DeviceContext, 0x3a3f085a, 0xd0fe, 0x4324, 0xb0, 0xae, 0xfe, 0x04, 0xde, 0x18, 0x57, 0x1c);
+#endif
 
 namespace dxmt {
 

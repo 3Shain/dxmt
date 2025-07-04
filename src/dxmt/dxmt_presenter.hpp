@@ -2,7 +2,11 @@
 #include "Metal.hpp"
 #include "dxmt_command.hpp"
 #include "rc/util_rc.hpp"
+#ifdef DXMT_NATIVE
+#include "nativemetal.h"
+#else
 #include "winemetal.h"
+#endif
 #include <atomic>
 
 namespace dxmt {

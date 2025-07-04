@@ -193,6 +193,7 @@ extern "C" HRESULT __stdcall D3D11On12CreateDevice(
 
 } // namespace dxmt
 
+#ifndef DXMT_NATIVE
 BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID reserved) {  
   if (reason == DLL_PROCESS_DETACH) {
     dxmt::uninitialize_io_hook();
@@ -204,6 +205,7 @@ BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID reserved) {
   DisableThreadLibraryCalls(instance);
   return TRUE;
 }
+#endif
 
 extern "C" void _massert(const char *_Message, const char *_File,
                          unsigned _Line) {

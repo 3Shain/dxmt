@@ -27,7 +27,11 @@ ArgumentEncodingContext::ArgumentEncodingContext(CommandQueue &queue, WMT::Devic
   dummy_sampler_info_.max_anisotroy = 1;
   dummy_sampler_info_.lod_average = false;
   dummy_sampler_ = device.newSamplerState(dummy_sampler_info_);
+#ifdef DXMT_NATIVE
+  dummy_cbuffer_host_ = aligned_alloc(65536, DXMT_PAGE_SIZE);
+#else
   dummy_cbuffer_host_ = _aligned_malloc(65536, DXMT_PAGE_SIZE);
+#endif
   dummy_cbuffer_info_.length = 65536;
   dummy_cbuffer_info_.memory.set(dummy_cbuffer_host_);
   dummy_cbuffer_info_.options = WMTResourceOptionCPUCacheModeWriteCombined | WMTResourceStorageModeShared |
@@ -39,7 +43,11 @@ ArgumentEncodingContext::ArgumentEncodingContext(CommandQueue &queue, WMT::Devic
 
 ArgumentEncodingContext::~ArgumentEncodingContext() {
   free(cpu_buffer_);
+#ifdef DXMT_NATIVE
+  free(dummy_cbuffer_host_);
+#else
   _aligned_free(dummy_cbuffer_host_);
+#endif
 };
 
 template void ArgumentEncodingContext::encodeVertexBuffers<PipelineKind::Ordinary>(uint32_t slot_mask, uint64_t argument_buffer_offset);

@@ -1,5 +1,9 @@
 #pragma once
+#ifdef DXMT_NATIVE
+#include "nativemetal.h"
+#else
 #include "winemetal.h"
+#endif
 #include <cstdint>
 #include "ftl.hpp"
 

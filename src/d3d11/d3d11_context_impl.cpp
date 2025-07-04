@@ -26,6 +26,10 @@ since it is for internal use only
 #include "util_flags.hpp"
 #include "util_math.hpp"
 
+#ifdef DXMT_NATIVE
+#define ARRAYSIZE(arr) (sizeof(arr)/sizeof(arr[0]))
+#endif
+
 namespace dxmt {
 
 template<typename Object> Rc<Object> forward_rc(Rc<Object>& obj);

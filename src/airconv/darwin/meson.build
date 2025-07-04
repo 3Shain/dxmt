@@ -35,6 +35,10 @@ airconv_dep_darwin = declare_dependency(
   link_args           : [ llvm_ld_flags_darwin, llvm_deps ] # meh
 )
 
+if get_option('dxmt_native')
+  airconv_forward_dep = airconv_dep_darwin
+endif
+
 executable('airconv', airconv_src + airconv_cli_src,
   include_directories : [ dxmt_include_path, llvm_include_path_darwin ],
   cpp_args            : [ llvm_cxx_flags  ],

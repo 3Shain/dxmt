@@ -38,9 +38,11 @@ llvm_ld_flags = [
  '-L'+join_paths(meson.project_source_root(), 'toolchains/llvm/lib')
 ]
 
+if not get_option('dxmt_native')
 airconv_forward_dep = declare_dependency(
   include_directories : [ dxmt_include_path, include_directories('.') ],
 )
+endif
 
 build_airconv_for_windows = get_option('build_airconv_for_windows')
 
@@ -72,6 +74,6 @@ executable('airconv', airconv_src + airconv_cli_src,
 
 endif
 
-if cpu_family == 'x86_64'
+if cpu_family == 'x86_64' or get_option('dxmt_native')
   subdir('darwin')
 endif

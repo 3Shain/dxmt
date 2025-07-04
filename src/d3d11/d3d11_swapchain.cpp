@@ -93,9 +93,11 @@ public:
                                  pDevice->GetDXMTDevice().queue().cmd_library,
                                  scale_factor));
 
+#ifndef DXMT_NATIVE
     frame_latency = kSwapchainLatency;
     present_semaphore_ = CreateSemaphore(nullptr, frame_latency,
                                          DXGI_MAX_SWAP_CHAIN_BUFFERS, nullptr);
+#endif
 
     if (desc_.Width == 0 || desc_.Height == 0) {
       wsi::getWindowSize(hWnd, &desc_.Width, &desc_.Height);
@@ -147,7 +149,9 @@ public:
     device_context_->WaitUntilGPUIdle();
     WMT::ReleaseMetalView(native_view_);
     native_view_ = {};
+#ifndef DXMT_NATIVE
     CloseHandle(present_semaphore_);
+#endif
   };
 
   HRESULT
@@ -407,12 +411,14 @@ public:
       */
       wsi::updateFullscreenWindow(monitor_, hWnd, false);
 
+#ifndef DXMT_NATIVE
       /* 
       FIXME: this is not elegant because the size of window is not changed!
       However some games only invoke ResizeBuffers() on WM_SIZE, which should be actually
       sent by changing display mode?
        */
       SendMessage(hWnd, WM_SIZE, 0, MAKELONG(newDisplayMode.Width, newDisplayMode.Height));
+#endif
     }
 
     return S_OK;
@@ -570,13 +576,17 @@ public:
         scaler_info.output_height = upscaled->height();
         ctx.upscale(backbuffer, upscaled, scaler);
         ctx.present(upscaled, presenter, vsync_duration);
+#ifndef DXMT_NATIVE
         ReleaseSemaphore(present_semaphore_, 1, nullptr);
+#endif
         this->UpdateStatistics(ctx.queue().statistics, ctx.currentFrameId());
       });
     } else {
       chunk->emitcc([this, vsync_duration, backbuffer = backbuffer_->texture()](ArgumentEncodingContext &ctx) mutable {
         ctx.present(backbuffer, presenter, vsync_duration);
+#ifndef DXMT_NATIVE
         ReleaseSemaphore(present_semaphore_, 1, nullptr);
+#endif
         this->UpdateStatistics(ctx.queue().statistics, ctx.currentFrameId());
       });
     }
@@ -710,8 +720,10 @@ public:
       return E_INVALIDARG;
     }
     if (max_latency > frame_latency) {
+#ifndef DXMT_NATIVE
       ReleaseSemaphore(present_semaphore_, max_latency - frame_latency,
                        nullptr);
+#endif
     }
     frame_latency = max_latency;
     WARN("SetMaximumFrameLatency: stub: ", max_latency);
@@ -728,12 +740,14 @@ public:
 
   HANDLE STDMETHODCALLTYPE GetFrameLatencyWaitableObject() override {
     HANDLE result = nullptr;
+#ifndef DXMT_NATIVE
     HANDLE processHandle = GetCurrentProcess();
 
     if (!DuplicateHandle(processHandle, present_semaphore_, processHandle,
                          &result, 0, FALSE, DUPLICATE_SAME_ACCESS)) {
       return nullptr;
     }
+#endif
 
     return result;
   };
@@ -842,12 +856,14 @@ CreateSwapChain(
     return DXGI_ERROR_INVALID_CALL;
   InitReturnPtr(ppSwapChain);
 
+#ifndef DXMT_NATIVE
   DWORD window_process_id;
   GetWindowThreadProcessId(hWnd, &window_process_id);
   if (GetProcessId(GetCurrentProcess()) != window_process_id) {
     ERR("CreateSwapChain: cross-process swapchain not supported yet");
     return E_FAIL;
   }
+#endif
 
   Com<IMTLDXGIDevice> layer_factory;
   if (FAILED(pDevice->QueryInterface(IID_PPV_ARGS(&layer_factory)))) {

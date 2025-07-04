@@ -2,7 +2,6 @@
 #include "Metal.hpp"
 #include "dxmt_format.hpp"
 #include "util_likely.hpp"
-#include "winemetal.h"
 #include "dxmt_presenter.hpp"
 
 namespace dxmt {
