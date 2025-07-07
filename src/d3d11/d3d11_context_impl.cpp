@@ -672,14 +672,14 @@ public:
             format = desc.Format](ArgumentEncodingContext &enc) {
         if (is_raw) {
           auto [buffer_alloc, offset] = enc.access(buffer, slice.byteOffset, slice.byteLength, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
-          enc.queue().emulated_cmd.ClearBufferUint(buffer_alloc->buffer(), slice.byteOffset + offset, slice.byteLength >> 2, value);
+          enc.emulated_cmd.ClearBufferUint(buffer_alloc->buffer(), slice.byteOffset + offset, slice.byteLength >> 2, value);
         } else {
           if (format == DXGI_FORMAT_UNKNOWN) {
             auto [buffer_alloc, offset] = enc.access(buffer, slice.byteOffset, slice.byteLength, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
-            enc.queue().emulated_cmd.ClearBufferUint(buffer_alloc->buffer(), slice.byteOffset + offset, slice.byteLength >> 2, value);
+            enc.emulated_cmd.ClearBufferUint(buffer_alloc->buffer(), slice.byteOffset + offset, slice.byteLength >> 2, value);
           } else {
             auto [view, element_offset] = enc.access(buffer, viewId, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
-            enc.queue().emulated_cmd.ClearTextureBufferUint(view.texture, slice.firstElement + element_offset, slice.elementCount, value);
+            enc.emulated_cmd.ClearTextureBufferUint(view.texture, slice.firstElement + element_offset, slice.elementCount, value);
           }
         }
       });
@@ -706,14 +706,14 @@ public:
           break;
         case D3D11_UAV_DIMENSION_TEXTURE1D:
         case D3D11_UAV_DIMENSION_TEXTURE2D:
-          enc.queue().emulated_cmd.ClearTexture2DUint(texture_handle, value);
+          enc.emulated_cmd.ClearTexture2DUint(texture_handle, value);
           break;
         case D3D11_UAV_DIMENSION_TEXTURE1DARRAY:
         case D3D11_UAV_DIMENSION_TEXTURE2DARRAY:
-          enc.queue().emulated_cmd.ClearTexture2DArrayUint(texture_handle, value);
+          enc.emulated_cmd.ClearTexture2DArrayUint(texture_handle, value);
           break;
         case D3D11_UAV_DIMENSION_TEXTURE3D:
-          enc.queue().emulated_cmd.ClearTexture3DUint(texture_handle, value);
+          enc.emulated_cmd.ClearTexture3DUint(texture_handle, value);
           break;
         }
       });
@@ -742,14 +742,14 @@ public:
             format = desc.Format](ArgumentEncodingContext &enc) {
         if (is_raw) {
           auto [buffer_alloc, offset] = enc.access(buffer, slice.byteOffset, slice.byteLength, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
-          enc.queue().emulated_cmd.ClearBufferFloat(buffer_alloc->buffer(), slice.byteOffset + offset, slice.byteLength >> 2, value);
+          enc.emulated_cmd.ClearBufferFloat(buffer_alloc->buffer(), slice.byteOffset + offset, slice.byteLength >> 2, value);
         } else {
           if (format == DXGI_FORMAT_UNKNOWN) {
             auto [buffer_alloc, offset] = enc.access(buffer, slice.byteOffset, slice.byteLength, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
-            enc.queue().emulated_cmd.ClearBufferFloat(buffer_alloc->buffer(), slice.byteOffset + offset, slice.byteLength >> 2, value);
+            enc.emulated_cmd.ClearBufferFloat(buffer_alloc->buffer(), slice.byteOffset + offset, slice.byteLength >> 2, value);
           } else {
             auto [view, element_offset] = enc.access(buffer, viewId, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
-            enc.queue().emulated_cmd.ClearTextureBufferFloat(view.texture, slice.firstElement + element_offset, slice.elementCount, value);
+            enc.emulated_cmd.ClearTextureBufferFloat(view.texture, slice.firstElement + element_offset, slice.elementCount, value);
           }
         }
       });
@@ -762,14 +762,14 @@ public:
           break;
         case D3D11_UAV_DIMENSION_TEXTURE1D:
         case D3D11_UAV_DIMENSION_TEXTURE2D:
-          enc.queue().emulated_cmd.ClearTexture2DFloat(texture_handle, value);
+          enc.emulated_cmd.ClearTexture2DFloat(texture_handle, value);
           break;
         case D3D11_UAV_DIMENSION_TEXTURE1DARRAY:
         case D3D11_UAV_DIMENSION_TEXTURE2DARRAY:
-          enc.queue().emulated_cmd.ClearTexture2DArrayFloat(texture_handle, value);
+          enc.emulated_cmd.ClearTexture2DArrayFloat(texture_handle, value);
           break;
         case D3D11_UAV_DIMENSION_TEXTURE3D:
-          enc.queue().emulated_cmd.ClearTexture3DFloat(texture_handle, value);
+          enc.emulated_cmd.ClearTexture3DFloat(texture_handle, value);
           break;
         }
       });

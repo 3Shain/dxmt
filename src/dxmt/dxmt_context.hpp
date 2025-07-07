@@ -2,6 +2,7 @@
 
 #include "Metal.hpp"
 #include "dxmt_buffer.hpp"
+#include "dxmt_command.hpp"
 #include "dxmt_deptrack.hpp"
 #include "dxmt_occlusion_query.hpp"
 #include "dxmt_residency.hpp"
@@ -653,12 +654,14 @@ public:
     currentFrameStatistics().compatibility_flags.set(flag);
   }
 
-  ArgumentEncodingContext(CommandQueue &queue, WMT::Device device);
+  ArgumentEncodingContext(CommandQueue &queue, WMT::Device device, InternalCommandLibrary &lib);
   ~ArgumentEncodingContext();
 
   uint32_t tess_num_output_control_point_element;
   uint32_t tess_num_output_patch_constant_scalar;
   uint32_t tess_threads_per_patch;
+
+  EmulatedCommandContext emulated_cmd;
 
 private:
   DXMT_ENCODER_LIST_OP checkEncoderRelation(EncoderData* former, EncoderData* latter);

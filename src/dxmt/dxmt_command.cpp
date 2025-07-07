@@ -1,5 +1,5 @@
 #include "dxmt_command.hpp"
-#include "Metal.hpp"
+#include "dxmt_context.hpp"
 
 extern "C" unsigned char dxmt_command_metallib[];
 extern "C" unsigned int dxmt_command_metallib_len;
@@ -51,4 +51,47 @@ EmulatedCommandContext::EmulatedCommandContext(WMT::Device device, InternalComma
     gs_draw_arguments_marshal = device.newRenderPipelineState(gs_marshal_pipeline, error);
   }
 }
+
+void
+EmulatedCommandContext::setComputePipelineState(WMT::ComputePipelineState state, const WMTSize &threadgroup_size) {
+  auto &cmd = ctx.encodeComputeCommand<wmtcmd_compute_setpso>();
+  cmd.type = WMTComputeCommandSetPSO;
+  cmd.pso = state;
+  cmd.threadgroup_size = threadgroup_size;
+}
+
+void EmulatedCommandContext::dispatchThreads(const WMTSize &grid_size) {
+  auto &cmd = ctx.encodeComputeCommand<wmtcmd_compute_dispatch>();
+  cmd.type = WMTComputeCommandDispatchThreads;
+  cmd.size = grid_size;
+}
+
+void
+EmulatedCommandContext::setComputeBuffer(WMT::Buffer buffer, uint64_t offset, uint8_t index) {
+  auto &cmd = ctx.encodeComputeCommand<wmtcmd_compute_setbuffer>();
+  cmd.type = WMTComputeCommandSetBuffer;
+  cmd.buffer = buffer;
+  cmd.offset = offset;
+  cmd.index = index;
+}
+
+void
+EmulatedCommandContext::setComputeTexture(WMT::Texture texture, uint8_t index) {
+  auto &cmd = ctx.encodeComputeCommand<wmtcmd_compute_settexture>();
+  cmd.type = WMTComputeCommandSetTexture;
+  cmd.texture = texture;
+  cmd.index = index;
+}
+
+void
+EmulatedCommandContext::setComputeBytes(const void *buf, uint64_t length, uint8_t index) {
+  auto &cmd = ctx.encodeComputeCommand<wmtcmd_compute_setbytes>();
+  cmd.type = WMTComputeCommandSetBytes;
+  void *temp = ctx.allocate_cpu_heap(length, 8);
+  memcpy(temp, buf, length);
+  cmd.bytes.set(temp);
+  cmd.length = length;
+  cmd.index = index;
+}
+
 } // namespace dxmt

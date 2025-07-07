@@ -169,9 +169,8 @@ private:
   CaptureState capture_state;
 
 public:
-  ArgumentEncodingContext argument_encoding_ctx;
   InternalCommandLibrary cmd_library;
-  EmulatedCommandContext emulated_cmd;
+  ArgumentEncodingContext argument_encoding_ctx;
   WMT::Reference<WMT::SharedEvent> event;
   std::uint64_t current_event_seq_id = 0;
   FrameStatisticsContainer statistics;

@@ -9,7 +9,8 @@
 
 namespace dxmt {
 
-ArgumentEncodingContext::ArgumentEncodingContext(CommandQueue &queue, WMT::Device device) :
+ArgumentEncodingContext::ArgumentEncodingContext(CommandQueue &queue, WMT::Device device, InternalCommandLibrary &lib) :
+    emulated_cmd(device, lib, *this),
     device_(device),
     queue_(queue) {
   dummy_sampler_info_.support_argument_buffers = true;
@@ -781,7 +782,7 @@ ArgumentEncodingContext::flushCommands(WMT::CommandBuffer cmdbuf, uint64_t seqId
           encoder.useResource(task.dispatch_arguments_buffer, WMTResourceUsageWrite, WMTRenderStageVertex);
         }
         tasks_data[task_count - 1].end_of_command = 1;
-        queue_.emulated_cmd.MarshalGSDispatchArguments(encoder, task_data_buffer, task_data_buffer_offset);
+        emulated_cmd.MarshalGSDispatchArguments(encoder, task_data_buffer, task_data_buffer_offset);
         encoder.memoryBarrier(
             WMTBarrierScopeBuffers, WMTRenderStageVertex,
             WMTRenderStageVertex | WMTRenderStageMesh | WMTRenderStageObject
