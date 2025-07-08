@@ -1028,6 +1028,24 @@ _MTLRenderCommandEncoder_encodeCommands(void *obj) {
       [encoder waitForFence:(id<MTLFence>)body->fence beforeStages:(MTLRenderStages)body->stages];
       break;
     }
+    case WMTRenderCommandSetViewport: {
+      struct wmtcmd_render_setviewport *body = (struct wmtcmd_render_setviewport *)next;
+      union {
+        struct WMTViewport src;
+        MTLViewport dst;
+      } u = {.src = body->viewport};
+      [encoder setViewport:u.dst];
+      break;
+    }
+    case WMTRenderCommandSetScissorRect: {
+      struct wmtcmd_render_setscissorrect *body = (struct wmtcmd_render_setscissorrect *)next;
+      union {
+        struct WMTScissorRect src;
+        MTLScissorRect dst;
+      } u = {.src = body->scissor_rect};
+      [encoder setScissorRect:u.dst];
+      break;
+    }
     }
     next = next->next.ptr;
   }

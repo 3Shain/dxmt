@@ -1018,6 +1018,8 @@ enum WMTRenderCommandType : uint16_t {
   WMTRenderCommandDXMTGeometryDrawIndexedIndirect,
   WMTRenderCommandWaitForFence,
   WMTRenderCommandUpdateFence,
+  WMTRenderCommandSetViewport,
+  WMTRenderCommandSetScissorRect,
 };
 
 struct wmtcmd_render_nop {
@@ -1236,6 +1238,13 @@ struct wmtcmd_render_setviewports {
   uint8_t viewport_count;
 };
 
+struct wmtcmd_render_setviewport {
+  enum WMTRenderCommandType type;
+  uint16_t reserved[3];
+  struct WMTMemoryPointer next;
+  struct WMTViewport viewport;
+};
+
 struct WMTScissorRect {
   uint64_t x;
   uint64_t y;
@@ -1249,6 +1258,13 @@ struct wmtcmd_render_setscissorrects {
   struct WMTMemoryPointer next;
   struct WMTMemoryPointer scissor_rects;
   uint8_t rect_count;
+};
+
+struct wmtcmd_render_setscissorrect {
+  enum WMTRenderCommandType type;
+  uint16_t reserved[3];
+  struct WMTMemoryPointer next;
+  struct WMTScissorRect scissor_rect;
 };
 
 struct wmtcmd_render_setdsso {
