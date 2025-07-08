@@ -67,4 +67,6 @@ WMTPixelFormat MTLGetUnsignedIntegerFormat(WMTPixelFormat format);
 
 bool IsUnorm8RenderTargetFormat(WMTPixelFormat format);
 
+bool IsIntegerFormat(WMTPixelFormat format);
+
 } // namespace dxmt
