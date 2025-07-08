@@ -173,6 +173,50 @@ struct DXMTClearTextureBufferFloat {
   }
 }
 
+struct clear_data {
+  float4 position [[position]];
+  uint array_index [[render_target_array_index]];
+};
+
+[[vertex]] clear_data vs_clear_rt(
+  ushort id [[vertex_id]],
+  ushort instance_id [[instance_id]]
+) {
+  clear_data output;
+  float2 uv = float2((id << 1) & 2, id & 2);
+  output.position = float4(uv * float2(2, -2) + float2(-1, 1), 0, 1);
+  output.array_index = instance_id;
+  return output;
+}
+
+[[fragment]] float4 fs_clear_rt_float(
+  constant float4& clear_value [[buffer(0)]]
+) {
+  return clear_value;
+}
+
+[[fragment]] uint4 fs_clear_rt_uint(
+  constant float4& clear_value [[buffer(0)]]
+) {
+  return (uint4)clear_value;
+}
+
+[[fragment]] int4 fs_clear_rt_sint(
+  constant float4& clear_value [[buffer(0)]]
+) {
+  return (int4)clear_value;
+}
+
+struct depth_out {
+  float depth [[depth(any)]];
+};
+
+[[fragment]] depth_out fs_clear_rt_depth (
+  constant float4& clear_value [[buffer(0)]]
+) {
+  return {clear_value.x};
+}
+
 struct present_data {
   float4 position [[position]];
   float2 uv [[user(coord)]];

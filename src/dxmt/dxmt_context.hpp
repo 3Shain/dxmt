@@ -662,6 +662,7 @@ public:
   uint32_t tess_threads_per_patch;
 
   EmulatedCommandContext emulated_cmd;
+  ClearRenderTargetContext clear_rt_cmd;
 
 private:
   DXMT_ENCODER_LIST_OP checkEncoderRelation(EncoderData* former, EncoderData* latter);

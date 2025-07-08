@@ -1,7 +1,10 @@
 #pragma once
 
 #include "Metal.hpp"
+#include "dxmt_texture.hpp"
+#include "rc/util_rc_ptr.hpp"
 #include <array>
+#include <unordered_map>
 
 namespace dxmt {
 
@@ -157,6 +160,29 @@ private:
   WMT::Reference<WMT::ComputePipelineState> clear_texture_buffer_float_pipeline;
 
   WMT::Reference<WMT::RenderPipelineState> gs_draw_arguments_marshal;
+};
+
+class ClearRenderTargetContext {
+public:
+  ClearRenderTargetContext(WMT::Device device, InternalCommandLibrary &lib, ArgumentEncodingContext &ctx);
+
+  void begin(Rc<Texture> texture, TextureViewKey view);
+
+  void clear(uint32_t offset_x, uint32_t offset_y, uint32_t width, uint32_t height, const std::array<float, 4>& color);
+
+  void end();
+
+private:
+  ArgumentEncodingContext &ctx_;
+  WMT::Device device_;
+  WMT::Reference<WMT::Function> vs_clear_;
+  WMT::Reference<WMT::Function> fs_clear_float_;
+  WMT::Reference<WMT::Function> fs_clear_uint_;
+  WMT::Reference<WMT::Function> fs_clear_sint_;
+  WMT::Reference<WMT::Function> fs_clear_depth_;
+  std::unordered_map<WMTPixelFormat, WMT::Reference<WMT::RenderPipelineState>> pso_cache_;
+  Rc<Texture> clearing_texture_;
+  TextureViewKey clearing_texture_view_;
 };
 
 } // namespace dxmt
