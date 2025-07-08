@@ -1,0 +1,3 @@
+LIBRARY d3d12.dll
+EXPORTS
+    D3D12CreateDevice @101

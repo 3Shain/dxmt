@@ -1,0 +1,21 @@
+
+BasedOnStyle: InheritParentConfig
+DisableFormat: false
+
+AlignConsecutiveBitFields: true
+ColumnLimit: 120
+BreakStringLiterals: false
+AllowShortFunctionsOnASingleLine: Empty
+AlwaysBreakAfterReturnType: AllDefinitions
+
+ContinuationIndentWidth: 4
+IndentWidth: 2
+UseTab: Never
+
+AlignAfterOpenBracket: BlockIndent
+
+
+PackConstructorInitializers: CurrentLine
+BreakConstructorInitializers: AfterColon
+
+AlignOperands: Align
