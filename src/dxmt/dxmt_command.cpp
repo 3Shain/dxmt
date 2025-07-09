@@ -107,6 +107,14 @@ ClearRenderTargetContext::ClearRenderTargetContext(
   fs_clear_float_ = library.newFunction("fs_clear_rt_float");
   fs_clear_sint_ = library.newFunction("fs_clear_rt_sint");
   fs_clear_uint_ = library.newFunction("fs_clear_rt_uint");
+
+  WMTDepthStencilInfo ds_info;
+  ds_info.front_stencil.enabled = false;
+  ds_info.back_stencil.enabled = false;
+  ds_info.depth_compare_function = WMTCompareFunctionAlways;
+  ds_info.depth_write_enabled = true;
+
+  depth_write_state_ = device.newDepthStencilState(ds_info);
 }
 
 void
@@ -116,6 +124,10 @@ ClearRenderTargetContext::begin(Rc<Texture> texture, TextureViewKey view) {
   WMT::Reference<WMT::Error> err;
 
   auto format = texture->pixelFormat(view);
+  auto dsv_flag = DepthStencilPlanarFlags(format);
+
+  if (dsv_flag & ~1u)
+    return; // stencil clear is not supported
 
   // enforce array render target for now
   view = texture->checkViewUseArray(view, true);
@@ -125,7 +137,7 @@ ClearRenderTargetContext::begin(Rc<Texture> texture, TextureViewKey view) {
     WMT::InitializeRenderPipelineInfo(pipeline_info);
     pipeline_info.raster_sample_count = texture->sampleCount();
     pipeline_info.vertex_function = vs_clear_;
-    if (DepthStencilPlanarFlags(format)) {
+    if (dsv_flag) {
       pipeline_info.fragment_function = fs_clear_depth_;
       pipeline_info.depth_pixel_format = format;
     } else if (IsIntegerFormat(format)) {
@@ -156,9 +168,9 @@ ClearRenderTargetContext::begin(Rc<Texture> texture, TextureViewKey view) {
   auto width = texture->width(view);
   auto height = texture->height(view);
   auto array_length = texture->arrayLength(view);
-  auto &pass_info = ctx_.startRenderPass(0 /* TODO: depth texture */, 0, 1, 0)->info;
+  auto &pass_info = ctx_.startRenderPass(dsv_flag, 0, 1, 0)->info;
 
-  if (DepthStencilPlanarFlags(format)) {
+  if (dsv_flag) {
     auto &depth = pass_info.depth;
     depth.texture = ctx_.access(texture, view, DXMT_ENCODER_RESOURCE_ACESS_WRITE).texture;
     depth.depth_plane = 0;
@@ -185,7 +197,10 @@ ClearRenderTargetContext::begin(Rc<Texture> texture, TextureViewKey view) {
   setvp.type = WMTRenderCommandSetViewport;
   setvp.viewport = {0.0, 0.0, (double)width, (double)height, 0.0, 1.0};
 
-  // TODO: set DepthStencilState, if it is a depth texture
+  auto &setdsso = ctx_.encodeRenderCommand<wmtcmd_render_setdsso>();
+  setdsso.type = WMTRenderCommandSetDSSO;
+  setdsso.dsso = dsv_flag ? depth_write_state_.handle : obj_handle_t{};
+  setdsso.stencil_ref = 0;
 
   clearing_texture_ = std::move(texture);
   clearing_texture_view_ = view;

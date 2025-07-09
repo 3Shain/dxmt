@@ -180,6 +180,7 @@ private:
   WMT::Reference<WMT::Function> fs_clear_uint_;
   WMT::Reference<WMT::Function> fs_clear_sint_;
   WMT::Reference<WMT::Function> fs_clear_depth_;
+  WMT::Reference<WMT::DepthStencilState> depth_write_state_;
   std::unordered_map<WMTPixelFormat, WMT::Reference<WMT::RenderPipelineState>> pso_cache_;
   Rc<Texture> clearing_texture_;
   TextureViewKey clearing_texture_view_;
