@@ -676,14 +676,14 @@ public:
             format = desc.Format](ArgumentEncodingContext &enc) {
         if (is_raw) {
           auto [buffer_alloc, offset] = enc.access(buffer, slice.byteOffset, slice.byteLength, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
-          enc.queue().emulated_cmd.ClearBufferUint(buffer_alloc->buffer(), slice.byteOffset + offset, slice.byteLength >> 2, value);
+          enc.emulated_cmd.ClearBufferUint(buffer_alloc->buffer(), slice.byteOffset + offset, slice.byteLength >> 2, value);
         } else {
           if (format == DXGI_FORMAT_UNKNOWN) {
             auto [buffer_alloc, offset] = enc.access(buffer, slice.byteOffset, slice.byteLength, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
-            enc.queue().emulated_cmd.ClearBufferUint(buffer_alloc->buffer(), slice.byteOffset + offset, slice.byteLength >> 2, value);
+            enc.emulated_cmd.ClearBufferUint(buffer_alloc->buffer(), slice.byteOffset + offset, slice.byteLength >> 2, value);
           } else {
             auto [view, element_offset] = enc.access(buffer, viewId, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
-            enc.queue().emulated_cmd.ClearTextureBufferUint(view.texture, slice.firstElement + element_offset, slice.elementCount, value);
+            enc.emulated_cmd.ClearTextureBufferUint(view.texture, slice.firstElement + element_offset, slice.elementCount, value);
           }
         }
       });
@@ -710,14 +710,14 @@ public:
           break;
         case D3D11_UAV_DIMENSION_TEXTURE1D:
         case D3D11_UAV_DIMENSION_TEXTURE2D:
-          enc.queue().emulated_cmd.ClearTexture2DUint(texture_handle, value);
+          enc.emulated_cmd.ClearTexture2DUint(texture_handle, value);
           break;
         case D3D11_UAV_DIMENSION_TEXTURE1DARRAY:
         case D3D11_UAV_DIMENSION_TEXTURE2DARRAY:
-          enc.queue().emulated_cmd.ClearTexture2DArrayUint(texture_handle, value);
+          enc.emulated_cmd.ClearTexture2DArrayUint(texture_handle, value);
           break;
         case D3D11_UAV_DIMENSION_TEXTURE3D:
-          enc.queue().emulated_cmd.ClearTexture3DUint(texture_handle, value);
+          enc.emulated_cmd.ClearTexture3DUint(texture_handle, value);
           break;
         }
       });
@@ -746,14 +746,14 @@ public:
             format = desc.Format](ArgumentEncodingContext &enc) {
         if (is_raw) {
           auto [buffer_alloc, offset] = enc.access(buffer, slice.byteOffset, slice.byteLength, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
-          enc.queue().emulated_cmd.ClearBufferFloat(buffer_alloc->buffer(), slice.byteOffset + offset, slice.byteLength >> 2, value);
+          enc.emulated_cmd.ClearBufferFloat(buffer_alloc->buffer(), slice.byteOffset + offset, slice.byteLength >> 2, value);
         } else {
           if (format == DXGI_FORMAT_UNKNOWN) {
             auto [buffer_alloc, offset] = enc.access(buffer, slice.byteOffset, slice.byteLength, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
-            enc.queue().emulated_cmd.ClearBufferFloat(buffer_alloc->buffer(), slice.byteOffset + offset, slice.byteLength >> 2, value);
+            enc.emulated_cmd.ClearBufferFloat(buffer_alloc->buffer(), slice.byteOffset + offset, slice.byteLength >> 2, value);
           } else {
             auto [view, element_offset] = enc.access(buffer, viewId, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
-            enc.queue().emulated_cmd.ClearTextureBufferFloat(view.texture, slice.firstElement + element_offset, slice.elementCount, value);
+            enc.emulated_cmd.ClearTextureBufferFloat(view.texture, slice.firstElement + element_offset, slice.elementCount, value);
           }
         }
       });
@@ -766,14 +766,14 @@ public:
           break;
         case D3D11_UAV_DIMENSION_TEXTURE1D:
         case D3D11_UAV_DIMENSION_TEXTURE2D:
-          enc.queue().emulated_cmd.ClearTexture2DFloat(texture_handle, value);
+          enc.emulated_cmd.ClearTexture2DFloat(texture_handle, value);
           break;
         case D3D11_UAV_DIMENSION_TEXTURE1DARRAY:
         case D3D11_UAV_DIMENSION_TEXTURE2DARRAY:
-          enc.queue().emulated_cmd.ClearTexture2DArrayFloat(texture_handle, value);
+          enc.emulated_cmd.ClearTexture2DArrayFloat(texture_handle, value);
           break;
         case D3D11_UAV_DIMENSION_TEXTURE3D:
-          enc.queue().emulated_cmd.ClearTexture3DFloat(texture_handle, value);
+          enc.emulated_cmd.ClearTexture3DFloat(texture_handle, value);
           break;
         }
       });
@@ -796,26 +796,61 @@ public:
 
     if (NumRects && !pRect)
       return;
+    if (!pView)
+      return;
+
+    auto color = std::array<float, 4>({Color[0], Color[1], Color[2], Color[3]});
 
     while (auto expected = com_cast<ID3D11RenderTargetView>(pView)) {
       auto rtv = static_cast<IMTLD3D11RenderTargetView *>(expected.ptr());
-      if (NumRects > 1)
-        break;
-      if (NumRects) {
-        if (pRect[0].top != 0 || pRect[0].left != 0) {
-          break;
+      // d3d11 spec: ClearView doesn’t support 3D textures.
+      if (rtv->__texture()->textureType(rtv->__viewId()) == WMTTextureType3D)
+        return;
+      // check if rtv is fully cleared (which can be potentially optimized as a LoadActionClear)
+      while (NumRects <= 1) {
+        if (pRect) {
+          if (pRect[0].top != 0 || pRect[0].left != 0)
+            break;
+          if (pRect[0].bottom < 0 || pRect[0].right < 0)
+            break;
+          if (uint32_t(pRect[0].right) != rtv->GetAttachmentDesc().Width)
+            break;
+          if (uint32_t(pRect[0].bottom) != rtv->GetAttachmentDesc().Height)
+            break;
         }
-        uint32_t rect_width = pRect[0].right - pRect[0].left;
-        uint32_t rect_height = pRect[0].bottom - pRect[0].top;
-        if (rect_width != rtv->GetAttachmentDesc().Width)
-          break;
-        if (rect_height != rtv->GetAttachmentDesc().Height)
-          break;
+        return ClearRenderTargetView(rtv, Color);
       }
-      return ClearRenderTargetView(rtv, Color);
+      InvalidateCurrentPass(true);
+      EmitST([texture = rtv->__texture(), view = rtv->__viewId()](ArgumentEncodingContext &enc) {
+        enc.clear_rt_cmd.begin(texture, view);
+      });
+      for (unsigned i = 0; i < NumRects; i++) {
+        auto rect = pRect[i];
+        uint32_t rect_offset_x = std::max(rect.left, 0l);
+        uint32_t rect_offset_y = std::max(rect.top, 0l);
+        int32_t rect_width = rect.right - rect_offset_x;
+        int32_t rect_height = rect.bottom - rect_offset_y;
+        if (rect_height <= 0 || rect_width <= 0)
+          continue;
+        EmitOP([=](ArgumentEncodingContext &enc) {
+          enc.clear_rt_cmd.clear(rect_offset_x, rect_offset_y, rect_width, rect_height, color);
+        });
+      }
+      EmitST([](ArgumentEncodingContext &enc) { 
+        enc.clear_rt_cmd.end();
+      });
+      return;
     }
 
-    IMPLEMENT_ME
+    while (auto expected = com_cast<ID3D11DepthStencilView>(pView)) {
+      UNIMPLEMENTED("ClearView - DSV")
+      return;
+    }
+
+    if (auto expected = com_cast<ID3D11UnorderedAccessView>(pView)) {
+      UNIMPLEMENTED("ClearView - UAV")
+      return;
+    }
   }
 
   void

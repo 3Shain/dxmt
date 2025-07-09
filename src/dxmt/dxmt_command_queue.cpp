@@ -29,9 +29,8 @@ CommandQueue::CommandQueue(WMT::Device device) :
     }),
     cpu_command_allocator({}),
     reftracker_storage_allocator({}),
-    argument_encoding_ctx(*this, device),
     cmd_library(device),
-    emulated_cmd(device, cmd_library, argument_encoding_ctx) {
+    argument_encoding_ctx(*this, device, cmd_library) {
   for (unsigned i = 0; i < kCommandChunkCount; i++) {
     auto &chunk = chunks[i];
     chunk.queue = this;

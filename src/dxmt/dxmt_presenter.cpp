@@ -1,8 +1,10 @@
 
+#include <algorithm>
 #include "Metal.hpp"
 #include "dxmt_format.hpp"
-#include "util_likely.hpp"
 #include "dxmt_presenter.hpp"
+#include "util_likely.hpp"
+
 
 namespace dxmt {
 
@@ -77,7 +79,7 @@ Presenter::changeHDRMetadata(const WMTHDRMetadata *metadata) {
 }
 
 WMT::MetalDrawable
-Presenter::encodeCommands(WMT::CommandBuffer cmdbuf, WMT::Texture backbuffer) {
+Presenter::encodeCommands(WMT::CommandBuffer cmdbuf, WMT::Fence fence, WMT::Texture backbuffer) {
 
   checkDisplaySetting();
 
@@ -116,6 +118,8 @@ Presenter::encodeCommands(WMT::CommandBuffer cmdbuf, WMT::Texture backbuffer) {
   info.colors[0].store_action = WMTStoreActionStore;
   info.colors[0].texture = drawable.texture();
   auto encoder = cmdbuf.renderCommandEncoder(info);
+  if (fence)
+    encoder.waitForFence(fence, WMTRenderStageFragment);
   encoder.setFragmentTexture(backbuffer, 0);
 
   double width = layer_props_.drawable_width;

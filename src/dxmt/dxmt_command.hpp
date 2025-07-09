@@ -1,9 +1,14 @@
 #pragma once
 
 #include "Metal.hpp"
-#include "dxmt_context.hpp"
+#include "dxmt_texture.hpp"
+#include "rc/util_rc_ptr.hpp"
+#include <array>
+#include <unordered_map>
 
 namespace dxmt {
+
+class ArgumentEncodingContext;
 
 class InternalCommandLibrary {
 public:
@@ -21,49 +26,6 @@ private:
 class EmulatedCommandContext {
 public:
   EmulatedCommandContext(WMT::Device device, InternalCommandLibrary &lib, ArgumentEncodingContext &ctx);
-
-  void
-  setComputePipelineState(WMT::ComputePipelineState state, const WMTSize &threadgroup_size) {
-    auto &cmd = ctx.encodeComputeCommand<wmtcmd_compute_setpso>();
-    cmd.type = WMTComputeCommandSetPSO;
-    cmd.pso = state;
-    cmd.threadgroup_size = threadgroup_size;
-  };
-
-  void
-  dispatchThreads(const WMTSize &grid_size) {
-    auto &cmd = ctx.encodeComputeCommand<wmtcmd_compute_dispatch>();
-    cmd.type = WMTComputeCommandDispatchThreads;
-    cmd.size = grid_size;
-  };
-
-  void
-  setComputeBuffer(WMT::Buffer buffer, uint64_t offset, uint8_t index) {
-    auto &cmd = ctx.encodeComputeCommand<wmtcmd_compute_setbuffer>();
-    cmd.type = WMTComputeCommandSetBuffer;
-    cmd.buffer = buffer;
-    cmd.offset = offset;
-    cmd.index = index;
-  }
-
-  void
-  setComputeTexture(WMT::Texture texture, uint8_t index) {
-    auto &cmd = ctx.encodeComputeCommand<wmtcmd_compute_settexture>();
-    cmd.type = WMTComputeCommandSetTexture;
-    cmd.texture = texture;
-    cmd.index = index;
-  }
-
-  void
-  setComputeBytes(const void *buf, uint64_t length, uint8_t index) {
-    auto &cmd = ctx.encodeComputeCommand<wmtcmd_compute_setbytes>();
-    cmd.type = WMTComputeCommandSetBytes;
-    void * temp = ctx.allocate_cpu_heap(length, 8);
-    memcpy(temp, buf, length);
-    cmd.bytes.set(temp);
-    cmd.length = length;
-    cmd.index = index;
-  }
 
   void
   ClearBufferUint(
@@ -172,6 +134,16 @@ public:
   }
 
 private:
+  void setComputePipelineState(WMT::ComputePipelineState state, const WMTSize &threadgroup_size);
+
+  void dispatchThreads(const WMTSize &grid_size);
+
+  void setComputeBuffer(WMT::Buffer buffer, uint64_t offset, uint8_t index);
+
+  void setComputeTexture(WMT::Texture texture, uint8_t index);
+
+  void setComputeBytes(const void *buf, uint64_t length, uint8_t index);
+
   ArgumentEncodingContext &ctx;
   WMT::Reference<WMT::ComputePipelineState> clear_texture_1d_uint_pipeline;
   WMT::Reference<WMT::ComputePipelineState> clear_texture_1d_array_uint_pipeline;
@@ -188,6 +160,29 @@ private:
   WMT::Reference<WMT::ComputePipelineState> clear_texture_buffer_float_pipeline;
 
   WMT::Reference<WMT::RenderPipelineState> gs_draw_arguments_marshal;
+};
+
+class ClearRenderTargetContext {
+public:
+  ClearRenderTargetContext(WMT::Device device, InternalCommandLibrary &lib, ArgumentEncodingContext &ctx);
+
+  void begin(Rc<Texture> texture, TextureViewKey view);
+
+  void clear(uint32_t offset_x, uint32_t offset_y, uint32_t width, uint32_t height, const std::array<float, 4>& color);
+
+  void end();
+
+private:
+  ArgumentEncodingContext &ctx_;
+  WMT::Device device_;
+  WMT::Reference<WMT::Function> vs_clear_;
+  WMT::Reference<WMT::Function> fs_clear_float_;
+  WMT::Reference<WMT::Function> fs_clear_uint_;
+  WMT::Reference<WMT::Function> fs_clear_sint_;
+  WMT::Reference<WMT::Function> fs_clear_depth_;
+  std::unordered_map<WMTPixelFormat, WMT::Reference<WMT::RenderPipelineState>> pso_cache_;
+  Rc<Texture> clearing_texture_;
+  TextureViewKey clearing_texture_view_;
 };
 
 } // namespace dxmt

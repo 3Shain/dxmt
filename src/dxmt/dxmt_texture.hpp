@@ -106,6 +106,16 @@ public:
     return info_.pixel_format;
   }
 
+  WMTTextureType
+  textureType(TextureViewKey view) const {
+    return viewDescriptors_.data()[view].type;
+  }
+
+  WMTPixelFormat
+  pixelFormat(TextureViewKey view) const {
+    return viewDescriptors_[view].format;
+  }
+
   WMTTextureUsage
   usage() const {
     return info_.usage;
@@ -124,6 +134,26 @@ public:
   unsigned
   height() const {
     return info_.height;
+  }
+
+  unsigned
+  width(TextureViewKey view) const {
+    return std::max(info_.width >> viewDescriptors_[view].firstMiplevel, 1u);
+  }
+
+  unsigned
+  height(TextureViewKey view) const {
+    return std::max(info_.height >> viewDescriptors_[view].firstMiplevel, 1u);
+  }
+
+  unsigned
+  arrayLength() const {
+    return info_.array_length;
+  }
+
+  unsigned
+  arrayLength(TextureViewKey view) const {
+    return viewDescriptors_[view].arraySize;
   }
 
   Rc<TextureAllocation> allocate(Flags<TextureAllocationFlag> flags);

@@ -1581,4 +1581,34 @@ IsUnorm8RenderTargetFormat(WMTPixelFormat format) {
   return false;
 }
 
+bool
+IsIntegerFormat(WMTPixelFormat format) {
+  switch (format) {
+  case WMTPixelFormatR8Uint:
+  case WMTPixelFormatR8Sint:
+  case WMTPixelFormatR16Uint:
+  case WMTPixelFormatR16Sint:
+  case WMTPixelFormatRG8Uint:
+  case WMTPixelFormatRG8Sint:
+  case WMTPixelFormatR32Uint:
+  case WMTPixelFormatR32Sint:
+  case WMTPixelFormatRG16Uint:
+  case WMTPixelFormatRG16Sint:
+  case WMTPixelFormatRGBA8Uint:
+  case WMTPixelFormatRGBA8Sint:
+  case WMTPixelFormatRGB10A2Uint:
+  case WMTPixelFormatRG32Uint:
+  case WMTPixelFormatRG32Sint:
+  case WMTPixelFormatRGBA16Uint:
+  case WMTPixelFormatRGBA16Sint:
+  case WMTPixelFormatRGBA32Uint:
+  case WMTPixelFormatRGBA32Sint:
+  case WMTPixelFormatStencil8:
+    return true;
+  default:
+    break;
+  }
+  return false;
+}
+
 } // namespace dxmt

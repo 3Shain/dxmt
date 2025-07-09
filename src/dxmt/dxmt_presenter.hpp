@@ -22,7 +22,7 @@ public:
 
   void changeHDRMetadata(const WMTHDRMetadata *metadata);
 
-  WMT::MetalDrawable encodeCommands(WMT::CommandBuffer cmdbuf, WMT::Texture backbuffer);
+  WMT::MetalDrawable encodeCommands(WMT::CommandBuffer cmdbuf, WMT::Fence fence, WMT::Texture backbuffer);
 
 private:
   void buildRenderPipelineState(bool is_pq, bool with_hdr_metadata);

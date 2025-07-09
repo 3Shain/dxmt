@@ -793,6 +793,8 @@ enum WMTBlitCommandType : uint16_t {
   WMTBlitCommandCopyFromTextureToBuffer,
   WMTBlitCommandCopyFromTextureToTexture,
   WMTBlitCommandGenerateMipmaps,
+  WMTBlitCommandWaitForFence,
+  WMTBlitCommandUpdateFence,
 };
 
 struct wmtcmd_base {
@@ -870,6 +872,13 @@ struct wmtcmd_blit_generate_mipmaps {
   obj_handle_t texture;
 };
 
+struct wmtcmd_blit_fence_op {
+  enum WMTBlitCommandType type;
+  uint16_t reserved[3];
+  struct WMTMemoryPointer next;
+  obj_handle_t fence;
+};
+
 WINEMETAL_API void MTLBlitCommandEncoder_encodeCommands(obj_handle_t encoder, const struct wmtcmd_base *cmd_head);
 
 enum WMTComputeCommandType : uint16_t {
@@ -883,6 +892,8 @@ enum WMTComputeCommandType : uint16_t {
   WMTComputeCommandSetBytes,
   WMTComputeCommandSetTexture,
   WMTComputeCommandDispatchThreads,
+  WMTComputeCommandWaitForFence,
+  WMTComputeCommandUpdateFence,
 };
 
 struct wmtcmd_compute_nop {
@@ -962,6 +973,13 @@ struct wmtcmd_compute_settexture {
   uint8_t index;
 };
 
+struct wmtcmd_compute_fence_op {
+  enum WMTComputeCommandType type;
+  uint16_t reserved[3];
+  struct WMTMemoryPointer next;
+  obj_handle_t fence;
+};
+
 WINEMETAL_API void MTLComputeCommandEncoder_encodeCommands(obj_handle_t encoder, const struct wmtcmd_base *cmd_head);
 
 enum WMTRenderCommandType : uint16_t {
@@ -998,6 +1016,10 @@ enum WMTRenderCommandType : uint16_t {
   WMTRenderCommandDXMTGeometryDrawIndexed,
   WMTRenderCommandDXMTGeometryDrawIndirect,
   WMTRenderCommandDXMTGeometryDrawIndexedIndirect,
+  WMTRenderCommandWaitForFence,
+  WMTRenderCommandUpdateFence,
+  WMTRenderCommandSetViewport,
+  WMTRenderCommandSetScissorRect,
 };
 
 struct wmtcmd_render_nop {
@@ -1216,6 +1238,13 @@ struct wmtcmd_render_setviewports {
   uint8_t viewport_count;
 };
 
+struct wmtcmd_render_setviewport {
+  enum WMTRenderCommandType type;
+  uint16_t reserved[3];
+  struct WMTMemoryPointer next;
+  struct WMTViewport viewport;
+};
+
 struct WMTScissorRect {
   uint64_t x;
   uint64_t y;
@@ -1229,6 +1258,13 @@ struct wmtcmd_render_setscissorrects {
   struct WMTMemoryPointer next;
   struct WMTMemoryPointer scissor_rects;
   uint8_t rect_count;
+};
+
+struct wmtcmd_render_setscissorrect {
+  enum WMTRenderCommandType type;
+  uint16_t reserved[3];
+  struct WMTMemoryPointer next;
+  struct WMTScissorRect scissor_rect;
 };
 
 struct wmtcmd_render_setdsso {
@@ -1347,6 +1383,14 @@ struct wmtcmd_render_dxmt_geometry_draw_indexed_indirect {
   uint32_t vertex_per_warp;
 };
 
+struct wmtcmd_render_fence_op {
+  enum WMTRenderCommandType type;
+  uint16_t reserved[3];
+  struct WMTMemoryPointer next;
+  obj_handle_t fence;
+  enum WMTRenderStages stages;
+};
+
 WINEMETAL_API void MTLRenderCommandEncoder_encodeCommands(obj_handle_t encoder, const struct wmtcmd_base *cmd_head);
 
 WINEMETAL_API enum WMTPixelFormat MTLTexture_pixelFormat(obj_handle_t texture);
@@ -1455,11 +1499,12 @@ struct WMTFXTemporalScalerProps {
 
 WINEMETAL_API void MTLCommandBuffer_encodeTemporalScale(
     obj_handle_t cmdbuf, obj_handle_t scaler, obj_handle_t color, obj_handle_t output, obj_handle_t depth,
-    obj_handle_t motion, obj_handle_t exposure, const struct WMTFXTemporalScalerProps *props
+    obj_handle_t motion, obj_handle_t exposure, obj_handle_t fence, const struct WMTFXTemporalScalerProps *props
 );
 
-WINEMETAL_API void
-MTLCommandBuffer_encodeSpatialScale(obj_handle_t cmdbuf, obj_handle_t scaler, obj_handle_t color, obj_handle_t output);
+WINEMETAL_API void MTLCommandBuffer_encodeSpatialScale(
+    obj_handle_t cmdbuf, obj_handle_t scaler, obj_handle_t color, obj_handle_t output, obj_handle_t fence
+);
 
 WINEMETAL_API obj_handle_t NSString_string(const char *data, enum WMTStringEncoding encoding);
 
@@ -1667,5 +1712,9 @@ WINEMETAL_API void MTLCommandBuffer_encodeWaitForEvent(obj_handle_t cmdbuf, obj_
 WINEMETAL_API void MTLSharedEvent_signalValue(obj_handle_t event, uint64_t value);
 
 WINEMETAL_API void MTLSharedEvent_setWin32EventAtValue(obj_handle_t event, void *nt_event_handle, uint64_t at_value);
+
+WINEMETAL_API obj_handle_t MTLDevice_newFence(obj_handle_t device);
+
+WINEMETAL_API obj_handle_t MTLDevice_newEvent(obj_handle_t device);
 
 #endif
