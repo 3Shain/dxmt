@@ -1,4 +1,8 @@
-d3d10core_res = wrc_generator.process('version.rc')
+if get_option('dxmt_native')
+  d3d10core_res = []
+else
+  d3d10core_res = wrc_generator.process('version.rc')
+endif
 
 d3d10core_src = [
   'd3d10core.cpp',
