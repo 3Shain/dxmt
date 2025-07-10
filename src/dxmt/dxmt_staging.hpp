@@ -1,6 +1,7 @@
 #pragma once
 #include "Metal.hpp"
 #include "thread.hpp"
+#include "wsi_platform.hpp"
 #include <cstdint>
 #include <atomic>
 #include <queue>
@@ -66,7 +67,7 @@ private:
     ~StagingBuffer() {
 #ifdef __i386__
       if (info.memory.get()) {
-        _aligned_free(info.memory.get());
+        wsi::aligned_free(info.memory.get());
         info.memory.set(nullptr);
       }
 #endif

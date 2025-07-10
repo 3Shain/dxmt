@@ -2,6 +2,7 @@
 
 #include "Metal.hpp"
 #include "rc/util_rc_ptr.hpp"
+#include "wsi_platform.hpp"
 #include <atomic>
 #include <cassert>
 #include <cstdint>
@@ -165,7 +166,7 @@ public:
         visibility_result_heap_info.options = WMTResourceHazardTrackingModeUntracked;
         visibility_result_heap_info.memory.set(nullptr);
 #ifdef __i386__
-        visibility_result_heap_info.memory.set(_aligned_malloc(num_results * sizeof(uint64_t), DXMT_PAGE_SIZE));
+        visibility_result_heap_info.memory.set(wsi::aligned_malloc(num_results * sizeof(uint64_t), DXMT_PAGE_SIZE));
 #endif
         visibility_result_heap_info.length = num_results * sizeof(uint64_t);
         visibility_result_heap = device.newBuffer(visibility_result_heap_info);
@@ -175,7 +176,7 @@ public:
       query->issue(seq_id, (uint64_t *)visibility_result_heap_info.memory.get(), num_results);
     }
 #ifdef __i386__
-    _aligned_free(visibility_result_heap_info.memory.get());
+    wsi::aligned_free(visibility_result_heap_info.memory.get());
 #endif
   }
 

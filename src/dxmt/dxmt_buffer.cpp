@@ -3,6 +3,7 @@
 #include "thread.hpp"
 #include "util_likely.hpp"
 #include "util_math.hpp"
+#include "wsi_platform.hpp"
 #include <cassert>
 #include <mutex>
 
@@ -20,7 +21,7 @@ BufferAllocation::BufferAllocation(WMT::Device device, const WMTBufferInfo &info
     info_.length = DXMT_PAGE_SIZE;
   }
 #ifdef __i386__
-  placed_buffer = _aligned_malloc(info_.length, DXMT_PAGE_SIZE);
+  placed_buffer = wsi::aligned_malloc(info_.length, DXMT_PAGE_SIZE);
   info_.memory.set(placed_buffer);
 #endif
   obj_ = device.newBuffer(info_);
@@ -31,7 +32,7 @@ BufferAllocation::BufferAllocation(WMT::Device device, const WMTBufferInfo &info
 
 BufferAllocation::~BufferAllocation() {
 #ifdef __i386__
-  _aligned_free(placed_buffer);
+  wsi::aligned_free(placed_buffer);
   placed_buffer = nullptr;
 #endif
 }
