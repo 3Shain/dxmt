@@ -6,8 +6,10 @@
 namespace dxmt {
 Logger Logger::s_instance("dxgi.log");
 
-std::once_flag nvext_init;
 VendorExtension g_extension_enabled = VendorExtension::None;
+
+#ifndef DXMT_NATIVE
+std::once_flag nvext_init;
 
 static void InitializeVendorExtensionNV() {
 #ifdef __i386__
@@ -58,13 +60,17 @@ extern "C" BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason,
   return TRUE;
 }
 
+#endif
+
 extern "C" HRESULT __stdcall DXGIGetDebugInterface1(UINT Flags, REFIID riid,
                                                     void **ppDebug) {
+#ifndef DXMT_NATIVE
   // it's a DXMT implementation detail
   if (riid == DXMT_NVEXT_GUID) {
     std::call_once(nvext_init, InitializeVendorExtensionNV);
     return g_extension_enabled == VendorExtension::Nvidia ? S_OK : E_NOINTERFACE;
   }
+#endif
 
   return E_NOINTERFACE;
 }

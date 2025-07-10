@@ -1,4 +1,8 @@
-d3d11_res = wrc_generator.process('version.rc')
+if get_option('dxmt_native')
+  d3d11_res = []
+else
+  d3d11_res = wrc_generator.process('version.rc')
+endif
 
 d3d11_src = [
   'd3d11_class_linkage.cpp',

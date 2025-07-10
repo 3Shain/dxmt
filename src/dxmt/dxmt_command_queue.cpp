@@ -2,6 +2,7 @@
 #include "Metal.hpp"
 #include "dxmt_statistics.hpp"
 #include "util_env.hpp"
+#include "util_win32_compat.h"
 #include <atomic>
 
 #define ASYNC_ENCODING 1

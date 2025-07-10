@@ -1661,6 +1661,8 @@ UInt32ToPtr(uint32_t v) {
   return (void *)(uint64_t)v;
 }
 
+#ifndef DXMT_NATIVE
+
 static NTSTATUS
 thunk32_SM50Initialize(void *args) {
   struct sm50_initialize_params32 *params = args;
@@ -1958,6 +1960,7 @@ thunk32_SM50GetArgumentsInfo(void *args) {
 
   return STATUS_SUCCESS;
 }
+#endif /* DXMT_NATIVE */
 
 static NTSTATUS
 _MTLCommandBuffer_error(void *obj) {
@@ -2288,7 +2291,9 @@ _MTLSharedEvent_signalValue(void *obj) {
   return STATUS_SUCCESS;
 }
 
+#ifndef DXMT_NATIVE
 extern NTSTATUS NtSetEvent(void *handle, void *prev_state);
+#endif
 
 static NTSTATUS
 _MTLSharedEvent_setWin32EventAtValue(void *obj) {
@@ -2299,11 +2304,17 @@ _MTLSharedEvent_setWin32EventAtValue(void *obj) {
   });
 
   struct unixcall_generic_obj_obj_uint64_noret *params = obj;
+#ifndef DXMT_NATIVE
   void *nt_event_handle = (void *)params->arg0;
+#endif
   [(id<MTLSharedEvent>)params->handle notifyListener:shared_listener
                                              atValue:params->arg1
                                                block:^(id<MTLSharedEvent> _e, uint64_t _v) {
+#ifndef DXMT_NATIVE
                                                  NtSetEvent(nt_event_handle, NULL);
+#else
+                                                 /** @todo */
+#endif
                                                }];
   return STATUS_SUCCESS;
 }
@@ -2432,6 +2443,7 @@ const void *__wine_unix_call_funcs[] = {
     &_MTLDevice_newEvent,
 };
 
+#ifndef DXMT_NATIVE
 const void *__wine_unix_call_wow64_funcs[] = {
     &_NSObject_retain,
     &_NSObject_release,
@@ -2541,3 +2553,4 @@ const void *__wine_unix_call_wow64_funcs[] = {
     &_MTLDevice_newFence,
     &_MTLDevice_newEvent,
 };
+#endif

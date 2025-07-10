@@ -25,6 +25,7 @@ since it is for internal use only
 #include "mtld11_resource.hpp"
 #include "util_flags.hpp"
 #include "util_math.hpp"
+#include "util_win32_compat.h"
 
 namespace dxmt {
 
@@ -822,8 +823,8 @@ public:
       });
       for (unsigned i = 0; i < NumRects; i++) {
         auto rect = pRect[i];
-        uint32_t rect_offset_x = std::max(rect.left, 0l);
-        uint32_t rect_offset_y = std::max(rect.top, 0l);
+        uint32_t rect_offset_x = std::max(rect.left, (LONG)0);
+        uint32_t rect_offset_y = std::max(rect.top, (LONG)0);
         int32_t rect_width = rect.right - rect_offset_x;
         int32_t rect_height = rect.bottom - rect_offset_y;
         if (rect_height <= 0 || rect_width <= 0)
@@ -863,8 +864,8 @@ public:
       });
       for (unsigned i = 0; i < NumRects; i++) {
         auto rect = pRect[i];
-        uint32_t rect_offset_x = std::max(rect.left, 0l);
-        uint32_t rect_offset_y = std::max(rect.top, 0l);
+        uint32_t rect_offset_x = std::max(rect.left, (LONG)0);
+        uint32_t rect_offset_y = std::max(rect.top, (LONG)0);
         int32_t rect_width = rect.right - rect_offset_x;
         int32_t rect_height = rect.bottom - rect_offset_y;
         if (rect_height <= 0 || rect_width <= 0)

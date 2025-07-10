@@ -13,7 +13,7 @@ DXBCParser_dep = declare_dependency(
   include_directories : [ dxmt_include_path ],
 )
 
-if cpu_family == 'x86_64'
+if cpu_family == 'x86_64' or get_option('dxmt_native')
 
 DXBCParser_native_lib = static_library('DXBCParserNative', DXBCParser_src,
   include_directories : [ ],

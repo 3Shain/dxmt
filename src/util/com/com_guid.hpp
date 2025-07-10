@@ -92,6 +92,26 @@ template <size_t N> constexpr GUID make_guid(const char (&str)[N]) {
 }
 } // namespace dxmt::guid
 
+#ifdef DXMT_NATIVE
+
+#ifdef __cplusplus
+# define DXMT_DEFINE_GUID(iid, guid_str) \
+  constexpr GUID iid = dxmt::guid::make_guid(guid_str);
+
+# define DXMT_DECLARE_UUIDOF_HELPER(type, guid_str) \
+  extern "C++" { template <> constexpr GUID __uuidof_helper<type>() { return dxmt::guid::make_guid(guid_str); } } \
+  extern "C++" { template <> constexpr GUID __uuidof_helper<type*>() { return __uuidof_helper<type>(); } } \
+  extern "C++" { template <> constexpr GUID __uuidof_helper<const type*>() { return __uuidof_helper<type>(); } } \
+  extern "C++" { template <> constexpr GUID __uuidof_helper<type&>() { return __uuidof_helper<type>(); } } \
+  extern "C++" { template <> constexpr GUID __uuidof_helper<const type&>() { return __uuidof_helper<type>(); } }
+#endif
+
+#define DEFINE_COM_INTERFACE(guid_str, type)  \
+  struct type;                                \
+  DXMT_DEFINE_GUID(IID_ ## type, guid_str);   \
+  DXMT_DECLARE_UUIDOF_HELPER(type, guid_str); \
+  struct type
+#else
 #define DEFINE_COM_INTERFACE(guid_str, type)                                   \
   struct type;                                                                 \
   extern "C++" {                                                               \
@@ -106,3 +126,4 @@ template <size_t N> constexpr GUID make_guid(const char (&str)[N]) {
   }                                                                            \
   }                                                                            \
   struct type
+#endif
