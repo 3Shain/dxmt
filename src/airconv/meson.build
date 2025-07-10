@@ -72,6 +72,6 @@ executable('airconv', airconv_src + airconv_cli_src,
 
 endif
 
-if cpu_family == 'x86_64'
+if cpu_family == 'x86_64' or get_option('dxmt_native')
   subdir('darwin')
 endif
