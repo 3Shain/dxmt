@@ -1,5 +1,6 @@
 #include "d3d11_multithread.hpp"
 #include "thread.hpp"
+#include "util_bit.hpp"
 #include "util_likely.hpp"
 #include <atomic>
 
@@ -14,8 +15,15 @@ void d3d11_device_mutex::lock() {
     if (unlikely(expected == tid))
       break;
     // better to spin here
-    while(owner_.load(std::memory_order_relaxed))
+    while (owner_.load(std::memory_order_relaxed)) {
+#if defined(DXMT_ARCH_X86)
       _mm_pause();
+#elif defined(DXMT_ARCH_ARM64)
+      __asm__ __volatile__("yield");
+#else
+// do nothing
+#endif
+    }
     expected = 0;
   }
   counter_++;
