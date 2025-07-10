@@ -1,10 +1,14 @@
+#ifndef DXMT_NATIVE
 /**
  * ntdll private definitions
  */
 #include "winternl.h"
+#endif
 
 #ifndef __WINE_WINE_UNIXLIB_H
 #define __WINE_WINE_UNIXLIB_H
+
+#ifndef DXMT_NATIVE
 
 typedef UINT64 unixlib_handle_t;
 
@@ -313,5 +317,19 @@ extern NTSTATUS WINAPI __wine_init_unix_call(void);
   __wine_unix_call_dispatcher(__wine_unixlib_handle, (code), (args))
 
 #endif /* WINE_UNIX_LIB */
+
+#else /* !DXMT_NATIVE */
+
+typedef int NTSTATUS;
+#define NTSTATUS_SUCCESS 0
+
+typedef NTSTATUS (*THUNKCALLBACK)(void *obj);
+
+extern const THUNKCALLBACK __wine_unix_call_funcs[];
+
+#define WINE_UNIX_CALL(code, args)                                             \
+  __wine_unix_call_funcs[code]((args))
+
+#endif /* !DXMT_NATIVE */
 
 #endif /* __WINE_WINE_UNIXLIB_H */

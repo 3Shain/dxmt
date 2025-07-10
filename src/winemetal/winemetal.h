@@ -11,12 +11,22 @@
 #define STATIC_ASSERT(x)
 #endif
 
-#ifndef WINEMETAL_API
-#ifdef __cplusplus
-#define WINEMETAL_API extern "C" __declspec(dllimport)
+#ifndef DXMT_NATIVE
+# ifndef WINEMETAL_API
+#  ifdef __cplusplus
+#   define WINEMETAL_API extern "C" __declspec(dllimport)
+#  else
+#   define WINEMETAL_API __declspec(dllimport)
+#  endif
+# endif
 #else
-#define WINEMETAL_API __declspec(dllimport)
-#endif
+# ifndef WINEMETAL_API
+#  ifdef __cplusplus
+#   define WINEMETAL_API extern "C"
+#  else
+#   define WINEMETAL_API
+#  endif
+# endif
 #endif
 
 typedef uint64_t obj_handle_t;
