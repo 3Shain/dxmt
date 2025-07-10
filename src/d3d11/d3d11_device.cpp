@@ -30,6 +30,7 @@
 #include <thread>
 #include <unordered_map>
 #include "d3d11_4.h"
+#include "util_win32_compat.h"
 
 namespace dxmt {
 
