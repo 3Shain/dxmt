@@ -13,6 +13,7 @@
 #include "d3d11_device.hpp"
 #include "util_env.hpp"
 #include "util_string.hpp"
+#include "util_win32_compat.h"
 #include "wsi_monitor.hpp"
 #include "wsi_platform_win32.hpp"
 #include "wsi_window.hpp"
