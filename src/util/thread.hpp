@@ -14,6 +14,9 @@
 #include <condition_variable>
 #include <functional>
 #include <mutex>
+#ifdef DXMT_NATIVE
+#include <thread>
+#endif
 #include <unknwn.h>
 
 #include "util_error.hpp"
@@ -303,7 +306,11 @@ public:
       policy = SCHED_OTHER;
       break;
     case ThreadPriority::Lowest:
+#ifdef DXMT_NATIVE
+      policy = SCHED_FIFO; /* No SCHED_IDLE on macOS */
+#else
       policy = SCHED_IDLE;
+#endif
       break;
     }
     ::pthread_setschedparam(this->native_handle(), policy, &param);
