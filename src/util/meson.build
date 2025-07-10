@@ -24,6 +24,7 @@ util_src = files([
 
   'wsi_monitor_win32.cpp',
   'wsi_window_win32.cpp',
+  'wsi_platform_win32.cpp',
 ])
 
 util_lib = static_library('util', util_src,
