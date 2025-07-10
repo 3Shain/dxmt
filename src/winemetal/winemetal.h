@@ -11,11 +11,17 @@
 #define STATIC_ASSERT(x)
 #endif
 
+#ifndef DXMT_NATIVE
+#define WINEMETAL_IMPORT __declspec(dllimport)
+#else
+#define WINEMETAL_IMPORT
+#endif
+
 #ifndef WINEMETAL_API
 #ifdef __cplusplus
-#define WINEMETAL_API extern "C" __declspec(dllimport)
+#define WINEMETAL_API extern "C" WINEMETAL_IMPORT
 #else
-#define WINEMETAL_API __declspec(dllimport)
+#define WINEMETAL_API WINEMETAL_IMPORT
 #endif
 #endif
 

@@ -1,7 +1,11 @@
+#ifndef DXMT_NATIVE
 #define WINEMETAL_API __declspec(dllexport)
+#else
+#define WINEMETAL_API
+#endif
 
 #include "winemetal_thunks.h"
-#include "wineunixlib.h"
+#include <wineunixlib.h>
 #include "assert.h"
 
 #ifdef NDEBUG
@@ -14,10 +18,7 @@
   }
 #endif
 
-inline uint64_t
-PtrToUInt64(const void * v) {
-  return (uint64_t)(uintptr_t)v;
-}
+#define PtrToUInt64(v) ((uint64_t)(uintptr_t)(v))
 
 WINEMETAL_API void
 NSObject_retain(obj_handle_t obj) {

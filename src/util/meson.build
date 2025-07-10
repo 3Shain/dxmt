@@ -21,11 +21,21 @@ util_src = files([
 
   'sha1/sha1.c',
   'sha1/sha1_util.cpp',
-
-  'wsi_monitor_win32.cpp',
-  'wsi_window_win32.cpp',
-  'wsi_platform_win32.cpp',
 ])
+
+if dxmt_native
+  util_src += files([
+    'wsi_monitor_headless.cpp',
+    'wsi_window_headless.cpp',
+    'wsi_platform_darwin.cpp',
+  ])
+else
+  util_src += files([
+    'wsi_monitor_win32.cpp',
+    'wsi_window_win32.cpp',
+    'wsi_platform_win32.cpp',
+  ])
+endif
 
 util_lib = static_library('util', util_src,
   include_directories : [ dxmt_include_path ],

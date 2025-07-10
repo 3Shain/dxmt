@@ -12,6 +12,7 @@
 #include <array>
 #include <cstdlib>
 #include <numeric>
+#include <filesystem>
 
 #ifdef __linux__
 #include <unistd.h>
@@ -89,6 +90,8 @@ std::string getExePath() {
   size_t count = readlink("/proc/self/exe", exePath.data(), exePath.size());
 
   return std::string(exePath.begin(), exePath.begin() + count);
+#else
+  return std::string(""); //TODO
 #endif
 }
 
@@ -111,7 +114,7 @@ void setThreadName(const std::string &name) {
 #else
   std::array<char, 16> posixName = {};
   dxmt::str::strlcpy(posixName.data(), name.c_str(), 16);
-  ::pthread_setname_np(pthread_self(), posixName.data());
+  ::pthread_setname_np(posixName.data());
 #endif
 }
 

@@ -1,6 +1,12 @@
 subdir('util')
 subdir('airconv')
+
+if dxmt_native
+subdir('nativemetal')
+else
 subdir('winemetal')
+endif
+
 subdir('dxmt')
 subdir('dxgi')
 subdir('d3d11')
