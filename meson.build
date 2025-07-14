@@ -42,7 +42,7 @@ compiler_args = [
   '-fblocks',
 ]
 
-if not dxmt_native
+if cpu_family == 'x86_64'
   compiler_args += [
     '-msse',
     '-msse2',
