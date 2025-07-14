@@ -36,7 +36,7 @@ if test -n "$NATIVE_BUILD"; then
     -DCMAKE_BUILD_TYPE=Release \
     -DLLVM_TARGETS_TO_BUILD="" \
     -DLLVM_BUILD_TOOLS=Off \
-    -DBUG_REPORT_URL="https://github.com/AlexanderEichner/dxmt" \
+    -DBUG_REPORT_URL="https://github.com/3Shain/dxmt" \
     -DPACKAGE_VENDOR="DXMT" \
     -DLLVM_VERSION_PRINTER_SHOW_HOST_TARGET_INFO=Off \
     -G Ninja
