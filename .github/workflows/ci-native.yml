@@ -1,0 +1,54 @@
+name: CI Build (Native)
+
+on:
+  push:
+    branches:
+    - main
+  pull_request:
+    branches:
+    - main
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+      - name: Cache Toolchains
+        id: cache-toolchains
+        uses: actions/cache@v4
+        with:
+          key: cache-key-native-${{ hashFiles('configure.sh') }}
+          restore-keys: |
+            cache-key-native-${{ hashFiles('configure.sh') }}
+          path: |
+            ./toolchains
+      - name: Install Development Environment
+        run: |
+         brew install ninja meson
+      - name: Configuration
+        if: ${{ steps.cache-toolchains.outputs.cache-hit != 'true' }}
+        run: ./configure.sh --native
+      - name: Save Cache
+        id: cache-save
+        if: ${{ steps.cache-toolchains.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v4
+        with:
+          key: cache-key-native-${{ hashFiles('configure.sh') }}
+          path: |
+            ./toolchains
+      - name: Select Xcode Version
+        run: sudo xcode-select -s /Applications/Xcode_16.1.app
+      - name: Build (release)
+        run: |
+          meson setup --native-file build-osx.txt -Ddxmt_native=true -Dnative_llvm_path=toolchains/llvm-darwin build --buildtype release
+          meson compile -C build
+      - name: Tar (release)
+        run: tar -zcf artifacts-release.tar.gz build/src
+      - name: Upload (releases)
+        uses: actions/upload-artifact@v4
+        with:
+          name: artifacts-release
+          path: artifacts-release.tar.gz
