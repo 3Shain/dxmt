@@ -141,7 +141,7 @@ public:
       case D3D11_USAGE_IMMUTABLE:
         return CreateDeviceTexture1D(this, pDesc, pInitialData, ppTexture1D);
       case D3D11_USAGE_DYNAMIC:
-        return CreateDynamicTexture1D(this, pDesc, pInitialData, ppTexture1D);
+        return CreateDynamicLinearTexture1D(this, pDesc, pInitialData, ppTexture1D);
       case D3D11_USAGE_STAGING:
         if (pDesc->BindFlags != 0) {
           return E_INVALIDARG;
@@ -886,7 +886,7 @@ public:
       case D3D11_USAGE_IMMUTABLE:
         return CreateDeviceTexture2D(this, pDesc, pInitialData, ppTexture2D);
       case D3D11_USAGE_DYNAMIC:
-        return CreateDynamicTexture2D(this, pDesc, pInitialData, ppTexture2D);
+        return CreateDynamicLinearTexture2D(this, pDesc, pInitialData, ppTexture2D);
       case D3D11_USAGE_STAGING:
         if (pDesc->BindFlags != 0) {
           return E_INVALIDARG;

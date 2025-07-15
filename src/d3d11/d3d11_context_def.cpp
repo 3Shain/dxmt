@@ -17,7 +17,7 @@ struct DeferredContextInternalState {
   CommandQueue &cmd_queue;
   Com<MTLD3D11CommandList> current_cmdlist;
   std::unordered_map<DynamicBuffer *, DynamicBufferAllocation> current_dynamic_buffer_allocations;
-  std::unordered_map<DynamicTexture *, std::pair<TextureAllocation *, uint32_t>> current_dynamic_texture_allocations;
+  std::unordered_map<DynamicLinearTexture *, std::pair<TextureAllocation *, uint32_t>> current_dynamic_texture_allocations;
   std::unordered_map<void *, std::pair<Com<IMTLD3DOcclusionQuery>, uint32_t>> building_visibility_queries;
 };
 
@@ -178,7 +178,7 @@ public:
       }
       return S_OK;
     }
-    if (auto dynamic = GetDynamicTexture(pResource, &row_pitch, &depth_pitch)) {
+    if (auto dynamic = GetDynamicLinearTexture(pResource, &row_pitch, &depth_pitch)) {
       if (!pMappedResource)
         return E_INVALIDARG;
       switch (MapType) {
@@ -191,7 +191,7 @@ public:
             stage.SRVs.set_dirty();
         }
         Rc<TextureAllocation> new_allocation = dynamic->allocate(ctx_state.cmd_queue.CoherentSeqId());
-        uint32_t id = ctx_state.current_cmdlist->used_dynamic_textures.size();
+        uint32_t id = ctx_state.current_cmdlist->used_dynamic_lineartextures.size();
         // track the current allocation in case of a following NO_OVERWRITE map
         auto ret = ctx_state.current_dynamic_texture_allocations.find(dynamic.ptr());
         if (ret == ctx_state.current_dynamic_texture_allocations.end()) {
@@ -199,11 +199,11 @@ public:
               ret, {dynamic.ptr(), {new_allocation.ptr(), id}});
         } else {
           auto previous_allocation_id = ret->second.second;
-          ctx_state.current_cmdlist->used_dynamic_textures[previous_allocation_id].latest = false;
+          ctx_state.current_cmdlist->used_dynamic_lineartextures[previous_allocation_id].latest = false;
           ret->second = {new_allocation.ptr(), id};
         }
         // collect allocated buffers and recycle them when the command list is released
-        ctx_state.current_cmdlist->used_dynamic_textures.push_back({dynamic, new_allocation, false});
+        ctx_state.current_cmdlist->used_dynamic_lineartextures.push_back({dynamic, new_allocation, false});
         EmitST([allocation = new_allocation, texture = Rc(dynamic->texture)](ArgumentEncodingContext &enc) mutable {
           auto _ = texture->rename(forward_rc(allocation));
         });
@@ -238,7 +238,7 @@ public:
     if (auto dynamic = GetDynamicBuffer(pResource, &buffer_length, &bind_flag)) {
       return;
     }
-    if (auto dynamic = GetDynamicTexture(pResource, &row_pitch, &depth_pitch)) {
+    if (auto dynamic = GetDynamicLinearTexture(pResource, &row_pitch, &depth_pitch)) {
       return;
     }
     IMPLEMENT_ME;

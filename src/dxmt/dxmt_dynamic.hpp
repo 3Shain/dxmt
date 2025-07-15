@@ -47,7 +47,7 @@ private:
   bool owned_by_command_list_ = false;
 };
 
-class DynamicTexture {
+class DynamicLinearTexture {
 public:
   void incRef();
   void decRef();
@@ -66,7 +66,7 @@ public:
     return name_->mappedMemory;
   }
 
-  DynamicTexture(Texture *buffer, Flags<TextureAllocationFlag> flags);
+  DynamicLinearTexture(Texture *buffer, Flags<TextureAllocationFlag> flags);
 
   struct QueueEntry {
     Rc<TextureAllocation> allocation;

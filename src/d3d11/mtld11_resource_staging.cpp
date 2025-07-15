@@ -41,8 +41,8 @@ public:
   dynamicBuffer(UINT*, UINT*) final {
     return {};
   };
-  Rc<DynamicTexture>
-  dynamicTexture(UINT *, UINT *) final {
+  Rc<DynamicLinearTexture>
+  dynamicLinearTexture(UINT *, UINT *) final {
     return {};
   };
 };
@@ -103,8 +103,8 @@ public:
   dynamicBuffer(UINT *, UINT *) final {
     return {};
   };
-  Rc<DynamicTexture>
-  dynamicTexture(UINT *, UINT *) final {
+  Rc<DynamicLinearTexture>
+  dynamicLinearTexture(UINT *, UINT *) final {
     return {};
   };
 };

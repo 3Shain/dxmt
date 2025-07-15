@@ -70,24 +70,24 @@ DynamicBuffer::nextSuballocation() {
   return 0;
 }
 
-DynamicTexture::DynamicTexture(Texture *texture, Flags<TextureAllocationFlag> flags) :
+DynamicLinearTexture::DynamicLinearTexture(Texture *texture, Flags<TextureAllocationFlag> flags) :
     texture(texture),
     flags_(flags),
     name_(texture->current()) {}
 
 void
-DynamicTexture::incRef() {
+DynamicLinearTexture::incRef() {
   refcount_.fetch_add(1u, std::memory_order_acquire);
 };
 
 void
-DynamicTexture::decRef() {
+DynamicLinearTexture::decRef() {
   if (refcount_.fetch_sub(1u, std::memory_order_release) == 1u)
     delete this;
 };
 
 Rc<TextureAllocation>
-DynamicTexture::allocate(uint64_t coherent_seq_id) {
+DynamicLinearTexture::allocate(uint64_t coherent_seq_id) {
   std::lock_guard<dxmt::mutex> lock(mutex_);
   Rc<TextureAllocation> ret;
   for (;;) {
@@ -108,7 +108,7 @@ DynamicTexture::allocate(uint64_t coherent_seq_id) {
 }
 
 void
-DynamicTexture::updateImmediateName(uint64_t current_seq_id, Rc<TextureAllocation> &&allocation, bool owned_by_command_list) {
+DynamicLinearTexture::updateImmediateName(uint64_t current_seq_id, Rc<TextureAllocation> &&allocation, bool owned_by_command_list) {
   std::lock_guard<dxmt::mutex> lock(mutex_);
   if (!owned_by_command_list_)
     fifo.push(QueueEntry{.allocation = std::move(name_), .will_free_at = current_seq_id});
@@ -117,7 +117,7 @@ DynamicTexture::updateImmediateName(uint64_t current_seq_id, Rc<TextureAllocatio
 }
 
 void
-DynamicTexture::recycle(uint64_t current_seq_id, Rc<TextureAllocation> &&allocation) {
+DynamicLinearTexture::recycle(uint64_t current_seq_id, Rc<TextureAllocation> &&allocation) {
   std::lock_guard<dxmt::mutex> lock(mutex_);
   if (owned_by_command_list_) {
     if (name_.ptr() == allocation.ptr()) {

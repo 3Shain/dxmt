@@ -4832,8 +4832,8 @@ struct used_dynamic_buffer {
   bool latest;
 };
 
-struct used_dynamic_texture {
-  Rc<DynamicTexture> texture;
+struct used_dynamic_lineartexture {
+  Rc<DynamicLinearTexture> texture;
   Rc<TextureAllocation> allocation;
   bool latest;
 };
@@ -4886,10 +4886,10 @@ public:
       buffer.buffer->recycle(current_seq_id, std::move(buffer.allocation));
       used_dynamic_buffers.pop_back();
     }
-    while (!used_dynamic_textures.empty()) {
-      auto &texture = used_dynamic_textures.back();
+    while (!used_dynamic_lineartextures.empty()) {
+      auto &texture = used_dynamic_lineartextures.back();
       texture.texture->recycle(current_seq_id, std::move(texture.allocation));
-      used_dynamic_textures.pop_back();
+      used_dynamic_lineartextures.pop_back();
     }
     read_staging_resources.clear();
     written_staging_resources.clear();
@@ -4973,7 +4973,7 @@ public:
   bool promote_flush = false;
 
   std::vector<used_dynamic_buffer> used_dynamic_buffers;
-  std::vector<used_dynamic_texture> used_dynamic_textures;
+  std::vector<used_dynamic_lineartexture> used_dynamic_lineartextures;
   std::vector<Rc<StagingResource>> read_staging_resources;
   std::vector<Rc<StagingResource>> written_staging_resources;
   uint32_t visibility_query_count = 0;
