@@ -107,6 +107,12 @@ endif
 if dxmt_native
 add_project_arguments('-DDXMT_NATIVE=1', language: 'cpp')
 add_project_arguments('-DDXMT_NATIVE=1', language: 'c')
+
+if get_option('dxmt_wsi_sdl2') == true
+  add_project_arguments('-DDXMT_WSI_SDL2=1', language: 'cpp')
+  add_project_arguments('-DDXMT_WSI_SDL2=1', language: 'c')
+endif
+
 endif
 
 add_project_arguments('-DDXMT_PAGE_SIZE=4096', language: 'cpp')

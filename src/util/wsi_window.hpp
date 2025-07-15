@@ -14,6 +14,7 @@
 
 #include "wsi_monitor.hpp"
 #include "wsi_platform_win32.hpp"
+#include "../winemetal/Metal.hpp"
 
 namespace dxmt::wsi {
 
@@ -102,5 +103,15 @@ bool isWindow(HWND hWindow);
  * (D3D9 behaviour)
  */
 void updateFullscreenWindow(HMONITOR hMonitor, HWND hWindow, bool forceTopmost);
+
+/**
+ * \brief Create a Metal view from a window handle
+ *
+ * \param [in] hwnd The HWND to create the view from
+ * \param [in] device The MTLDevice to use
+ * \param [out] layer The MetalLayer to fill in
+ * \returns A WMT::Object representing the created view
+ */
+WMT::Object createMetalViewFromHWND(intptr_t hwnd, WMT::Device device, WMT::MetalLayer &layer);
 
 } // namespace dxmt::wsi

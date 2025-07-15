@@ -57,4 +57,9 @@ void updateFullscreenWindow(HMONITOR hMonitor, HWND hWindow,
                             bool forceTopmost) {
 }
 
+
+WMT::Object createMetalViewFromHWND(intptr_t hwnd, WMT::Device device, WMT::MetalLayer &layer) {
+  return WMT::Object();
+}
+
 } // namespace dxmt::wsi

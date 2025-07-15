@@ -79,12 +79,21 @@ public:
       monitor_(wsi::getWindowMonitor(hWnd)),
       hud(WMT::DeveloperHUDProperties::instance()) {
 
+#if defined(DXMT_NATIVE)
+    native_view_ = wsi::createMetalViewFromHWND((intptr_t)hWnd, pDevice->GetMTLDevice(), layer_weak_);
+
+    if (!native_view_) {
+      ERR("Failed to create metal view, it seems like the used wsi implementation can't create metal view from window handle.");
+      abort();
+    }
+#else
     native_view_ = WMT::CreateMetalViewFromHWND((intptr_t)hWnd, pDevice->GetMTLDevice(), layer_weak_);
 
     if (!native_view_) {
       ERR("Failed to create metal view, it seems like your Wine has no exported symbols needed by DXMT.");
       abort();
     }
+#endif
 
     if constexpr (EnableMetalFX) {
       scale_factor = std::max(Config::getInstance().getOption<float>("d3d11.metalSpatialUpscaleFactor", 2), 1.0f);
