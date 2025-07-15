@@ -42,7 +42,7 @@ compiler_args = [
   '-fblocks',
 ]
 
-if cpu_family == 'x86_64'
+if cpu_family == 'x86'
   compiler_args += [
     '-msse',
     '-msse2',
