@@ -130,16 +130,16 @@ struct D3D11ResourceCommon : ID3D11Resource {
   virtual Rc<Texture> texture() = 0;
   virtual Rc<StagingResource> staging(UINT Subresource) = 0;
   virtual Rc<DynamicBuffer> dynamicBuffer(UINT *pBufferLength, UINT *pBindFlags) = 0;
-  virtual Rc<DynamicTexture> dynamicTexture(UINT *pBytesPerRow, UINT *pBytesPerImage) = 0;
+  virtual Rc<DynamicLinearTexture> dynamicLinearTexture(UINT *pBytesPerRow, UINT *pBytesPerImage) = 0;
 };
 
 inline Rc<DynamicBuffer>
 GetDynamicBuffer(ID3D11Resource *pResource, UINT *pBufferLength, UINT *pBindFlags) {
   return static_cast<D3D11ResourceCommon *>(pResource)->dynamicBuffer(pBufferLength, pBindFlags);
 }
-inline Rc<DynamicTexture>
-GetDynamicTexture(ID3D11Resource *pResource, UINT *pBytesPerRow, UINT *pBytesPerImage) {
-  return static_cast<D3D11ResourceCommon *>(pResource)->dynamicTexture(pBytesPerRow, pBytesPerImage);
+inline Rc<DynamicLinearTexture>
+GetDynamicLinearTexture(ID3D11Resource *pResource, UINT *pBytesPerRow, UINT *pBytesPerImage) {
+  return static_cast<D3D11ResourceCommon *>(pResource)->dynamicLinearTexture(pBytesPerRow, pBytesPerImage);
 }
 inline Rc<StagingResource>
 GetStagingResource(ID3D11Resource *pResource, UINT Subresource) {
@@ -462,12 +462,12 @@ CreateBuffer(MTLD3D11Device *pDevice, const D3D11_BUFFER_DESC *pDesc,
                     const D3D11_SUBRESOURCE_DATA *pInitialData,
                     ID3D11Buffer **ppBuffer);
 
-HRESULT CreateDynamicTexture1D(MTLD3D11Device *pDevice,
+HRESULT CreateDynamicLinearTexture1D(MTLD3D11Device *pDevice,
                                const D3D11_TEXTURE1D_DESC *pDesc,
                                const D3D11_SUBRESOURCE_DATA *pInitialData,
                                ID3D11Texture1D **ppTexture);
 
-HRESULT CreateDynamicTexture2D(MTLD3D11Device *pDevice,
+HRESULT CreateDynamicLinearTexture2D(MTLD3D11Device *pDevice,
                                const D3D11_TEXTURE2D_DESC1 *pDesc,
                                const D3D11_SUBRESOURCE_DATA *pInitialData,
                                ID3D11Texture2D1 **ppTexture);

@@ -169,7 +169,7 @@ public:
       }
       return S_OK;
     }
-    if (auto dynamic = GetDynamicTexture(pResource, &row_pitch, &depth_pitch)) {
+    if (auto dynamic = GetDynamicLinearTexture(pResource, &row_pitch, &depth_pitch)) {
       switch (MapType) {
       case D3D11_MAP_READ:
       case D3D11_MAP_WRITE:
@@ -473,7 +473,7 @@ public:
       used_dynamic.buffer->updateImmediateName(seq_id, Rc(used_dynamic.allocation), used_dynamic.suballocation, true);
     }
 
-    for (const auto &used_dynamic : cmdlist->used_dynamic_textures) {
+    for (const auto &used_dynamic : cmdlist->used_dynamic_lineartextures) {
       if (!used_dynamic.latest)
         continue;
       used_dynamic.texture->updateImmediateName(seq_id, Rc(used_dynamic.allocation), true);

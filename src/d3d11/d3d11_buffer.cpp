@@ -131,8 +131,8 @@ public:
     *pBindFlags = desc.BindFlags;
     return dynamic_;
   }
-  Rc<DynamicTexture>
-  dynamicTexture(UINT *, UINT *) final {
+  Rc<DynamicLinearTexture>
+  dynamicLinearTexture(UINT *, UINT *) final {
     return {};
   };
 
