@@ -71,3 +71,4 @@ As an alternative for the default wine based build DXMT can be built natively on
 meson setup --native-file build-osx.txt -Ddxmt_native=true -Dnative_llvm_path=toolchains/llvm-darwin build
 meson compile -C build
 ```
+You also need to specify a specific WSI backend to use, otherwise the library falls back to the headless WSI implementation. You can do so by appending the `-Ddxmt_wsi_sdl2=true` flag on running meson setup.
