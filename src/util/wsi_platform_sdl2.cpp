@@ -47,22 +47,13 @@ SDL2Initializer::SDL2Initializer() {
   }
 
   // if there's *still* no sdl, the app might've statically linked against sdl, so we can try dlsym with RTLD_DEFAULT
-  if(!libsdl) {
-    #define SDL_PROC(ret, name, params) \
-      name = reinterpret_cast<pfn_##name>(dlsym(RTLD_DEFAULT, #name)); \
-      if (!name) { \
-        Logger::err(str::format("SDL2 WSI: Failed to dlsym RTLD_DEFAULT function named ", #name)); \
-      }
-    #include "wsi_platform_sdl2_funcs.h"
-  } else {
-    #define SDL_PROC(ret, name, params) \
-      name = reinterpret_cast<pfn_##name>(dlsym(libsdl, #name)); \
-      if (!name) { \
-        Logger::err(str::format("SDL2 WSI: Failed to dlsym from module function named ", #name)); \
-      }
-    #include "wsi_platform_sdl2_funcs.h"
-  }
-  
+  #define SDL_PROC(ret, name, params) \
+    name = reinterpret_cast<pfn_##name>(dlsym((libsdl == nullptr ? RTLD_DEFAULT : libsdl), #name)); \
+    if (!name) { \
+      Logger::err(str::format("SDL2 WSI: Failed to get function named ", #name)); \
+    }
+  #include "wsi_platform_sdl2_funcs.h"
+
 }
 
 }
