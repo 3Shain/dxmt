@@ -1,7 +1,7 @@
 #include "d3d11_device.hpp"
 #include "d3d11_private.h"
 #include "dxmt_format.hpp"
-#include "mtld11_resource.hpp"
+#include "d3d11_resource.hpp"
 #include "d3d11_1.h"
 #include "util_math.hpp"
 

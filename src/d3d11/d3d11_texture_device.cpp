@@ -5,7 +5,7 @@
 #include "dxmt_dynamic.hpp"
 #include "dxmt_staging.hpp"
 #include "dxmt_texture.hpp"
-#include "mtld11_resource.hpp"
+#include "d3d11_resource.hpp"
 
 namespace dxmt {
 

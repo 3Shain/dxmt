@@ -22,7 +22,7 @@ since it is for internal use only
 #include "dxmt_format.hpp"
 #include "dxmt_ring_bump_allocator.hpp"
 #include "dxmt_staging.hpp"
-#include "mtld11_resource.hpp"
+#include "d3d11_resource.hpp"
 #include "util_flags.hpp"
 #include "util_math.hpp"
 #include "util_win32_compat.h"
