@@ -8,7 +8,7 @@
 #include "d3d11_view.hpp"
 #include "dxmt_binding_set.hpp"
 #include "log/log.hpp"
-#include "mtld11_resource.hpp"
+#include "d3d11_resource.hpp"
 #include "util_string.hpp"
 
 namespace dxmt {

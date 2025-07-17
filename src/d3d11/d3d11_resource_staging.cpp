@@ -2,7 +2,7 @@
 #include "d3d11_enumerable.hpp"
 #include "dxmt_dynamic.hpp"
 #include "dxmt_staging.hpp"
-#include "mtld11_resource.hpp"
+#include "d3d11_resource.hpp"
 namespace dxmt {
 
 #pragma region StagingBuffer

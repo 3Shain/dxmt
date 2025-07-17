@@ -1,5 +1,5 @@
 #include "d3d11_texture.hpp"
-#include "mtld11_resource.hpp"
+#include "d3d11_resource.hpp"
 
 namespace dxmt {
 

@@ -3,7 +3,7 @@
 #include "dxmt_buffer.hpp"
 #include "dxmt_dynamic.hpp"
 #include "dxmt_format.hpp"
-#include "mtld11_resource.hpp"
+#include "d3d11_resource.hpp"
 
 namespace dxmt {
 

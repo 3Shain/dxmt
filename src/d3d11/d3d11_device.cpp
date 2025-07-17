@@ -22,7 +22,7 @@
 #include "dxmt_format.hpp"
 #include "dxmt_tasks.hpp"
 #include "ftl.hpp"
-#include "mtld11_resource.hpp"
+#include "d3d11_resource.hpp"
 #include "thread.hpp"
 #include "dxgi_object.hpp"
 #include <memory>
