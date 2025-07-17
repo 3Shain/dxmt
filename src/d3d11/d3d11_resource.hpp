@@ -471,6 +471,21 @@ HRESULT CreateDynamicLinearTexture2D(MTLD3D11Device *pDevice,
                                const D3D11_TEXTURE2D_DESC1 *pDesc,
                                const D3D11_SUBRESOURCE_DATA *pInitialData,
                                ID3D11Texture2D1 **ppTexture);
+
+HRESULT CreateDynamicTexture1D(MTLD3D11Device *pDevice,
+                              const D3D11_TEXTURE1D_DESC *pDesc,
+                              const D3D11_SUBRESOURCE_DATA *pInitialData,
+                              ID3D11Texture1D **ppTexture);
+
+HRESULT CreateDynamicTexture2D(MTLD3D11Device *pDevice,
+                              const D3D11_TEXTURE2D_DESC1 *pDesc,
+                              const D3D11_SUBRESOURCE_DATA *pInitialData,
+                              ID3D11Texture2D1 **ppTexture);
+
+HRESULT CreateDynamicTexture3D(MTLD3D11Device *pDevice,
+                              const D3D11_TEXTURE3D_DESC1 *pDesc,
+                              const D3D11_SUBRESOURCE_DATA *pInitialData,
+                              ID3D11Texture3D1 **ppTexture);
 #pragma endregion
 
 #pragma region Helper
