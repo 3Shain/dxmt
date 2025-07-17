@@ -175,6 +175,12 @@ CreateDynamicLinearTexture2D(
     MTLD3D11Device *pDevice, const D3D11_TEXTURE2D_DESC1 *pDesc, const D3D11_SUBRESOURCE_DATA *pInitialData,
     ID3D11Texture2D1 **ppTexture
 ) {
+  if (pDesc->SampleDesc.Count > 1)
+    return E_FAIL;
+  if (pDesc->MiscFlags & D3D11_RESOURCE_MISC_TEXTURECUBE)
+    return E_FAIL;
+  if (pDesc->ArraySize > 1)
+    return E_FAIL;
   MTL_DXGI_FORMAT_DESC format;
   MTLQueryDXGIFormat(pDevice->GetMTLDevice(), pDesc->Format, format);
   if (format.Flag & MTL_DXGI_FORMAT_BC) {
@@ -188,6 +194,8 @@ CreateDynamicLinearTexture2D(
   if (FAILED(CreateMTLTextureDescriptor(pDevice, pDesc, &finalDesc, &info))) {
     return E_INVALIDARG;
   }
+  if (info.mipmap_level_count > 1)
+    return E_FAIL;
   uint32_t bytesPerRow, bytesPerImage, bufferLen;
   if (FAILED(GetLinearTextureLayout(pDevice, finalDesc, 0, bytesPerRow, bytesPerImage, bufferLen))) {
     return E_FAIL;
@@ -204,6 +212,8 @@ CreateDynamicLinearTexture1D(
     MTLD3D11Device *pDevice, const D3D11_TEXTURE1D_DESC *pDesc, const D3D11_SUBRESOURCE_DATA *pInitialData,
     ID3D11Texture1D **ppTexture
 ) {
+  if (pDesc->ArraySize > 1)
+    return E_FAIL;
   MTL_DXGI_FORMAT_DESC format;
   MTLQueryDXGIFormat(pDevice->GetMTLDevice(), pDesc->Format, format);
   if (format.Flag & MTL_DXGI_FORMAT_BC) {
@@ -217,6 +227,8 @@ CreateDynamicLinearTexture1D(
   if (FAILED(CreateMTLTextureDescriptor(pDevice, pDesc, &finalDesc, &info))) {
     return E_INVALIDARG;
   }
+  if (info.mipmap_level_count > 1)
+    return E_FAIL;
   uint32_t bytesPerRow, bytesPerImage, bufferLen;
   if (FAILED(GetLinearTextureLayout(pDevice, finalDesc, 0, bytesPerRow, bytesPerImage, bufferLen))) {
     return E_FAIL;
