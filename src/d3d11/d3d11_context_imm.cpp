@@ -110,6 +110,24 @@ public:
     return refCount;
   }
 
+  void *
+  MapDynamicBuffer(Rc<DynamicBuffer> &dynamic, uint64_t current_seq_id, uint64_t coherent_seq_id) {
+    if (auto next_sub = dynamic->nextSuballocation()) {
+      EmitST([allocation = dynamic->immediateName(), next_sub](ArgumentEncodingContext &enc) mutable {
+        allocation->useSuballocation(next_sub);
+      });
+    } else {
+      dynamic->updateImmediateName(current_seq_id, dynamic->allocate(coherent_seq_id), 0, false);
+      EmitST([allocation = dynamic->immediateName(),
+              buffer = Rc(dynamic->buffer)](ArgumentEncodingContext &enc) mutable {
+        allocation->useSuballocation(0);
+        auto _ = buffer->rename(forward_rc(allocation));
+      });
+    }
+
+    return dynamic->immediateMappedMemory();
+  }
+
   HRESULT
   STDMETHODCALLTYPE
   Map(ID3D11Resource *pResource, UINT Subresource, D3D11_MAP MapType, UINT MapFlags,
@@ -143,19 +161,7 @@ public:
           }
         }
 
-        if (auto next_sub = dynamic->nextSuballocation()) {
-          EmitST([allocation = dynamic->immediateName(), next_sub](ArgumentEncodingContext &enc) mutable {
-            allocation->useSuballocation(next_sub);
-          });
-        } else {
-          dynamic->updateImmediateName(current_seq_id, dynamic->allocate(coherent_seq_id), 0, false);
-          EmitST([allocation = dynamic->immediateName(), buffer = Rc(dynamic->buffer)](ArgumentEncodingContext &enc) mutable {
-            allocation->useSuballocation(0);
-            auto _ = buffer->rename(forward_rc(allocation));
-          });
-        }
-
-        pMappedResource->pData = dynamic->immediateMappedMemory();
+        pMappedResource->pData = MapDynamicBuffer(dynamic, current_seq_id, coherent_seq_id);
         pMappedResource->RowPitch = buffer_length;
         pMappedResource->DepthPitch = buffer_length;
         break;
@@ -164,6 +170,26 @@ public:
         pMappedResource->pData = dynamic->immediateMappedMemory();
         pMappedResource->RowPitch = buffer_length;
         pMappedResource->DepthPitch = buffer_length;
+        break;
+      }
+      }
+      return S_OK;
+    }
+    if (auto dynamic = GetDynamicTexture(pResource, Subresource, &row_pitch, &depth_pitch)) {
+      switch (MapType) {
+      case D3D11_MAP_READ:
+      case D3D11_MAP_WRITE:
+      case D3D11_MAP_READ_WRITE:
+      case D3D11_MAP_WRITE_NO_OVERWRITE:
+        return E_INVALIDARG;
+      case D3D11_MAP_WRITE_DISCARD: {
+        for (auto &stage : state_.ShaderStages) {
+          stage.SRVs.set_dirty();
+        }
+
+        pMappedResource->pData = MapDynamicBuffer(dynamic, current_seq_id, coherent_seq_id);
+        pMappedResource->RowPitch = row_pitch;
+        pMappedResource->DepthPitch = depth_pitch;
         break;
       }
       }
@@ -258,9 +284,16 @@ public:
 
     if (unlikely(!pResource))
       return;
+    UINT row_pitch = 0;
+    UINT depth_pitch = 0;
     if (auto staging = GetStagingResource(pResource, Subresource)) {
       staging->unmap();
     };
+    if (auto dynamic = GetDynamicTexture(pResource, Subresource, &row_pitch, &depth_pitch)) {
+      BlitObject texture(device, pResource);
+      UpdateTexture(TextureUpdateCommand(texture, Subresource, nullptr),
+                    dynamic->buffer, row_pitch, depth_pitch);
+    }
   }
 
   void

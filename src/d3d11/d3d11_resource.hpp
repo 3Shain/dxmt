@@ -131,6 +131,7 @@ struct D3D11ResourceCommon : ID3D11Resource {
   virtual Rc<StagingResource> staging(UINT Subresource) = 0;
   virtual Rc<DynamicBuffer> dynamicBuffer(UINT *pBufferLength, UINT *pBindFlags) = 0;
   virtual Rc<DynamicLinearTexture> dynamicLinearTexture(UINT *pBytesPerRow, UINT *pBytesPerImage) = 0;
+  virtual Rc<DynamicBuffer> dynamicTexture(UINT Subresource, UINT *pBytesPerRow, UINT *pBytesPerImage) = 0;
 };
 
 inline Rc<DynamicBuffer>
@@ -140,6 +141,10 @@ GetDynamicBuffer(ID3D11Resource *pResource, UINT *pBufferLength, UINT *pBindFlag
 inline Rc<DynamicLinearTexture>
 GetDynamicLinearTexture(ID3D11Resource *pResource, UINT *pBytesPerRow, UINT *pBytesPerImage) {
   return static_cast<D3D11ResourceCommon *>(pResource)->dynamicLinearTexture(pBytesPerRow, pBytesPerImage);
+}
+inline Rc<DynamicBuffer>
+GetDynamicTexture(ID3D11Resource *pResource, UINT Subresource, UINT *pBufferLength, UINT *pBindFlags) {
+  return static_cast<D3D11ResourceCommon *>(pResource)->dynamicTexture(Subresource, pBufferLength, pBindFlags);
 }
 inline Rc<StagingResource>
 GetStagingResource(ID3D11Resource *pResource, UINT Subresource) {

@@ -1,19 +1,29 @@
 #include "com/com_pointer.hpp"
 #include "d3d11_device.hpp"
 #include "d3d11_texture.hpp"
+#include "dxmt_buffer.hpp"
 #include "dxmt_dynamic.hpp"
 #include "dxmt_staging.hpp"
 #include "dxmt_texture.hpp"
 #include "d3d11_resource.hpp"
+#include "d3d11_enumerable.hpp"
 
 namespace dxmt {
 
 #pragma region DynamicTexture
 
+struct Subresource {
+  Rc<Buffer> buffer;
+  Rc<DynamicBuffer> dynamic;
+  uint32_t bytes_per_row;
+  uint32_t bytes_per_depth;
+};
+
 template <typename tag_texture>
 class DynamicTexture : public TResourceBase<tag_texture, IMTLMinLODClampable> {
 private:
   Rc<Texture> underlying_texture_;
+  std::vector<Subresource> subresources_;
   float min_lod = 0.0;
 
   using SRVBase =
@@ -35,9 +45,10 @@ private:
   };
 
 public:
-  DynamicTexture(const tag_texture::DESC1 *pDesc, Rc<Texture> &&u_texture, MTLD3D11Device *pDevice) :
+  DynamicTexture(const tag_texture::DESC1 *pDesc, Rc<Texture> &&u_texture, MTLD3D11Device *pDevice, std::vector<Subresource> && subresources) :
       TResourceBase<tag_texture, IMTLMinLODClampable>(*pDesc, pDevice),
-      underlying_texture_(std::move(u_texture)) {}
+      underlying_texture_(std::move(u_texture)),
+      subresources_(std::move(subresources)) {}
 
   Rc<Buffer> buffer() final { return {}; };
   Rc<Texture> texture() final { return this->underlying_texture_; };
@@ -45,6 +56,16 @@ public:
   Rc<StagingResource> staging(UINT) final { return nullptr; }
   Rc<DynamicBuffer> dynamicBuffer(UINT*, UINT*) final { return {}; }
   Rc<DynamicLinearTexture> dynamicLinearTexture(UINT*, UINT*) final { return {}; };
+  Rc<DynamicBuffer> dynamicTexture(UINT subresource, UINT *bytes_per_row,
+                                   UINT *bytes_per_depth) final {
+    if (subresource < subresources_.size()) {
+      auto &sub = subresources_[subresource];
+      *bytes_per_row = sub.bytes_per_row;
+      *bytes_per_depth = sub.bytes_per_depth;
+      return sub.dynamic;
+    }
+    return {};
+  };
 
   HRESULT
   STDMETHODCALLTYPE
@@ -92,22 +113,43 @@ HRESULT CreateDynamicTextureInternal(MTLD3D11Device *pDevice,
   if (FAILED(CreateMTLTextureDescriptor(pDevice, pDesc, &finalDesc, &info))) {
     return E_INVALIDARG;
   }
+
+  std::vector<Subresource> subresources;
+  for (auto &sub : EnumerateSubresources(finalDesc)) {
+    uint32_t bpr, bpi, buf_len;
+    if (FAILED(GetLinearTextureLayout(pDevice, finalDesc, sub.MipLevel, bpr, bpi, buf_len))) {
+      return E_FAIL;
+    }
+    Flags<BufferAllocationFlag> buffer_flags;
+    buffer_flags.set(BufferAllocationFlag::CpuWriteCombined, BufferAllocationFlag::SuballocateFromOnePage);
+    Subresource subresource;
+    subresource.buffer = new Buffer(buf_len, pDevice->GetMTLDevice());
+    subresource.buffer->rename(subresource.buffer->allocate(buffer_flags));
+    subresource.dynamic = new DynamicBuffer(subresource.buffer.ptr(), buffer_flags);
+    subresource.bytes_per_row = bpr;
+    subresource.bytes_per_depth = bpi;
+
+    D3D11_ASSERT(subresources.size() == sub.SubresourceId);
+    if (pInitialData) {
+      // FIXME: should buffer be initialized? in theory they won't be read anyway
+    }
+    subresources.push_back(std::move(subresource));
+  }
+
   auto texture = Rc<Texture>(new Texture(info, pDevice->GetMTLDevice()));
   Flags<TextureAllocationFlag> flags;
   flags.set(TextureAllocationFlag::GpuManaged);
-  if (finalDesc.Usage == D3D11_USAGE_IMMUTABLE)
-    flags.set(TextureAllocationFlag::GpuReadonly);
   if (pInitialData) {
     auto default_allocation = texture->allocate(flags);
     InitializeTextureData(pDevice, default_allocation->texture(), finalDesc, pInitialData);
     texture->rename(std::move(default_allocation));
     *ppTexture =
         reinterpret_cast<typename tag::COM_IMPL *>(
-          ref(new DynamicTexture<tag>(&finalDesc, std::move(texture), pDevice)));
+          ref(new DynamicTexture<tag>(&finalDesc, std::move(texture), pDevice, std::move(subresources))));
   } else {
     texture->rename(texture->allocate(flags));
     *ppTexture = reinterpret_cast<typename tag::COM_IMPL *>(
-      ref(new DynamicTexture<tag>(&finalDesc, std::move(texture), pDevice)));
+      ref(new DynamicTexture<tag>(&finalDesc, std::move(texture), pDevice, std::move(subresources))));
   }
   return S_OK;
 }

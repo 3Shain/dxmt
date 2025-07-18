@@ -84,6 +84,7 @@ TDynamicLinearTexture(
     *pBytesPerImage = bytes_per_image_;
     return dynamic_; 
   };
+  Rc<DynamicBuffer> dynamicTexture(UINT , UINT *, UINT *) final { return {}; };
 
   HRESULT
   STDMETHODCALLTYPE
