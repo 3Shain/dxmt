@@ -112,6 +112,10 @@ ClearRenderTargetContext::ClearRenderTargetContext(
   ds_info.front_stencil.enabled = false;
   ds_info.back_stencil.enabled = false;
   ds_info.depth_compare_function = WMTCompareFunctionAlways;
+  ds_info.depth_write_enabled = false;
+
+  depth_readonly_state_ = device.newDepthStencilState(ds_info);
+
   ds_info.depth_write_enabled = true;
 
   depth_write_state_ = device.newDepthStencilState(ds_info);
@@ -199,7 +203,7 @@ ClearRenderTargetContext::begin(Rc<Texture> texture, TextureViewKey view) {
 
   auto &setdsso = ctx_.encodeRenderCommand<wmtcmd_render_setdsso>();
   setdsso.type = WMTRenderCommandSetDSSO;
-  setdsso.dsso = dsv_flag ? depth_write_state_.handle : obj_handle_t{};
+  setdsso.dsso = dsv_flag ? depth_write_state_.handle : depth_readonly_state_.handle;
   setdsso.stencil_ref = 0;
 
   clearing_texture_ = std::move(texture);
