@@ -3726,6 +3726,36 @@ public:
     }
   }
 
+  void
+  UpdateTexture(
+      TextureUpdateCommand &&cmd, Rc<Buffer> &&src, UINT SrcRowPitch, UINT SrcDepthPitch
+  ) {
+    if (cmd.Invalid)
+      return;
+
+    std::lock_guard<mutex_t> lock(mutex);
+
+    if (auto dst = GetTexture(cmd.pDst)) {
+
+      SwitchToBlitEncoder(CommandBufferState::UpdateBlitEncoderActive);
+      EmitOP([=, src = std::move(src), dst = std::move(dst), cmd = std::move(cmd)](ArgumentEncodingContext &enc) {
+        auto [src_buffer, src_offset] = enc.access(src, DXMT_ENCODER_RESOURCE_ACESS_READ);
+        auto texture = enc.access(dst, cmd.Dst.MipLevel, cmd.Dst.ArraySlice, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
+        auto &cmd_cptex = enc.encodeBlitCommand<wmtcmd_blit_copy_from_buffer_to_texture>();
+        cmd_cptex.type = WMTBlitCommandCopyFromBufferToTexture;
+        cmd_cptex.src = src_buffer->buffer();
+        cmd_cptex.src_offset = src_offset;
+        cmd_cptex.bytes_per_row = SrcRowPitch;
+        cmd_cptex.bytes_per_image = SrcDepthPitch;
+        cmd_cptex.size = cmd.DstSize;
+        cmd_cptex.dst = texture;
+        cmd_cptex.slice = cmd.Dst.ArraySlice;
+        cmd_cptex.level = cmd.Dst.MipLevel;
+        cmd_cptex.origin = cmd.DstOrigin;
+      });
+    }
+  }
+
 #pragma endregion
 
 #pragma region CommandEncoder Maintain State

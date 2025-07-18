@@ -45,6 +45,10 @@ public:
   dynamicLinearTexture(UINT *, UINT *) final {
     return {};
   };
+  Rc<DynamicBuffer>
+  dynamicTexture(UINT , UINT *, UINT *) final {
+    return {};
+  };
 };
 
 HRESULT
@@ -105,6 +109,10 @@ public:
   };
   Rc<DynamicLinearTexture>
   dynamicLinearTexture(UINT *, UINT *) final {
+    return {};
+  };
+  Rc<DynamicBuffer>
+  dynamicTexture(UINT , UINT *, UINT *) final {
     return {};
   };
 };

@@ -154,6 +154,7 @@ public:
   Rc<StagingResource> staging(UINT) final { return nullptr; }
   Rc<DynamicBuffer> dynamicBuffer(UINT*, UINT*) final { return {}; }
   Rc<DynamicLinearTexture> dynamicLinearTexture(UINT*, UINT*) final { return {}; };
+  Rc<DynamicBuffer> dynamicTexture(UINT , UINT *, UINT *) final { return {}; };
 
   HRESULT STDMETHODCALLTYPE CreateRenderTargetView(const D3D11_RENDER_TARGET_VIEW_DESC1 *pDesc,
                                  ID3D11RenderTargetView1 **ppView) override {
