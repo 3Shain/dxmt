@@ -36,8 +36,6 @@ Is_sRGBVariant(WMTPixelFormat format) {
 
 bool IsBlockCompressionFormat(WMTPixelFormat format);
 
-size_t FormatBytesPerTexel(WMTPixelFormat format);
-
 uint32_t DepthStencilPlanarFlags(WMTPixelFormat format);
 
 enum MTL_DXGI_FORMAT_FLAG {

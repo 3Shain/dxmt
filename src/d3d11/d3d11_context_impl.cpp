@@ -465,7 +465,7 @@ public:
       DstSubresource(DstSubresource),
       DstFormat(Dst_.FormatDescription) {
 
-    if (DstFormat.PixelFormat == WMTPixelFormatInvalid)
+    if (DstFormat.PixelFormat == WMTPixelFormatInvalid || DstFormat.BytesPerTexel == 0)
       return;
 
     switch (Dst_.Dimension) {

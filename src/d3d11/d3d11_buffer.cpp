@@ -181,6 +181,10 @@ public:
       if (FAILED(MTLQueryDXGIFormat(m_parent->GetMTLDevice(), finalDesc.Format, format))) {
         return E_FAIL;
       }
+      if (!format.BytesPerTexel) {
+        ERR("D3D11Buffer::CreateShaderResourceView: not an ordinary or packed format: ", finalDesc.Format);
+        return E_FAIL;
+      }
 
       view_format = format.PixelFormat;
       offset = finalDesc.Buffer.FirstElement * format.BytesPerTexel;
@@ -254,6 +258,10 @@ public:
     } else {
       MTL_DXGI_FORMAT_DESC format;
       if (FAILED(MTLQueryDXGIFormat(m_parent->GetMTLDevice(), finalDesc.Format, format))) {
+        return E_FAIL;
+      }
+      if (!format.BytesPerTexel) {
+        ERR("D3D11Buffer::CreateUnorderedAccessView: not an ordinary or packed format: ", finalDesc.Format);
         return E_FAIL;
       }
 
