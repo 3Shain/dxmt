@@ -4406,23 +4406,23 @@ public:
       });
     }
     if (dirty_state.any(DirtyState::Scissors)) {
+      auto render_target_width = state_.OutputMerger.RenderTargetWidth;
+      auto render_target_height = state_.OutputMerger.RenderTargetHeight;
       auto scissors = AllocateCommandData<WMTScissorRect>(state_.Rasterizer.NumViewports);
       for (unsigned i = 0; i < state_.Rasterizer.NumViewports; i++) {
         if (allow_scissor) {
           if (i < state_.Rasterizer.NumScissorRects) {
-            auto &d3dRect = state_.Rasterizer.scissor_rects[i];
-            scissors[i] = {
-                (UINT)d3dRect.left, (UINT)d3dRect.top, (UINT)d3dRect.right - d3dRect.left,
-                (UINT)d3dRect.bottom - d3dRect.top
-            };
+            auto &d3d_rect = state_.Rasterizer.scissor_rects[i];
+            LONG left = std::clamp(d3d_rect.left, (LONG)0, (LONG)render_target_width);
+            LONG top = std::clamp(d3d_rect.top, (LONG)0, (LONG)render_target_height);
+            LONG right = std::clamp(d3d_rect.right, left, (LONG)render_target_width);
+            LONG bottom = std::clamp(d3d_rect.bottom, top, (LONG)render_target_height);
+            scissors[i] = {uint32_t(left), uint32_t(top), uint32_t(right - left), uint32_t(bottom - top)};
           } else {
             scissors[i] = {0, 0, 0, 0};
           }
         } else {
-          auto &d3dViewport = state_.Rasterizer.viewports[i];
-          scissors[i] = {
-              (UINT)d3dViewport.TopLeftX, (UINT)d3dViewport.TopLeftY, (UINT)d3dViewport.Width, (UINT)d3dViewport.Height
-          };
+          scissors[i] = {0, 0, render_target_width, render_target_height};
         }
       }
       EmitST([scissors = std::move(scissors)](ArgumentEncodingContext& enc) {
