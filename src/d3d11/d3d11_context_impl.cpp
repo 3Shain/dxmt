@@ -899,7 +899,12 @@ public:
       }
       SwitchToBlitEncoder(CommandBufferState::BlitEncoderActive);
       EmitOP([tex = srv->texture(), viewId = srv->viewId()](ArgumentEncodingContext &enc) {
-        WMT::Texture texture = enc.access(tex, viewId, DXMT_ENCODER_RESOURCE_ACESS_READ | DXMT_ENCODER_RESOURCE_ACESS_WRITE).texture;
+        // workaround: mipmap generation of a8unorm is borked, so use a r8unorm view
+        auto fixedViewId = viewId;
+        if (tex->pixelFormat(viewId) == WMTPixelFormatA8Unorm) {
+          fixedViewId = tex->checkViewUseFormat(viewId, WMTPixelFormatR8Unorm);
+        }
+        WMT::Texture texture = enc.access(tex, fixedViewId, DXMT_ENCODER_RESOURCE_ACESS_READ | DXMT_ENCODER_RESOURCE_ACESS_WRITE).texture;
         if (texture.mipmapLevelCount() > 1) {
           auto &cmd = enc.encodeBlitCommand<wmtcmd_blit_generate_mipmaps>();
           cmd.type = WMTBlitCommandGenerateMipmaps;
