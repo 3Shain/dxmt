@@ -123,6 +123,8 @@ struct D3D11OutputMergerStageState {
   // state derived from valid RTV/DSV
   UINT SampleCount = 1;
   UINT ArrayLength = 0;
+  UINT RenderTargetWidth = 0;
+  UINT RenderTargetHeight = 0;
 };
 
 struct STREAM_OUTPUT_BUFFER_B {

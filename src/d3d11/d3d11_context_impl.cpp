@@ -2399,42 +2399,50 @@ public:
 
     // FIXME: static_cast? but I don't really want a com_cast
     auto dsv = static_cast<IMTLD3D11DepthStencilView *>(pDepthStencilView);
-    UINT render_target_array_length = 0;
+    UINT render_target_array_length = 0, sample_count = 1, width = 0, height = 0;
 
     if (dsv) {
       ref = &dsv->GetAttachmentDesc();
       render_target_array_length = ref->RenderTargetArrayLength;
+      sample_count = ref->SampleCount;
+      width = ref->Width;
+      height = ref->Height;
     }
 
     for (unsigned i = 0; i < NumRTVs; i++) {
       auto rtv = static_cast<IMTLD3D11RenderTargetView *>(ppRenderTargetViews[i]);
       if (rtv) {
-        // TODO: render target type and size should be checked as well
+        // TODO: render target type should be checked as well
         if (ref) {
           auto &props = rtv->GetAttachmentDesc();
-          if (props.SampleCount != ref->SampleCount)
+          if (props.SampleCount != sample_count)
             return false;
-          if (props.RenderTargetArrayLength != ref->RenderTargetArrayLength) {
+          if (props.RenderTargetArrayLength != render_target_array_length) {
             // array length can be different only if either is 0 or 1
-            if (std::max(props.RenderTargetArrayLength, ref->RenderTargetArrayLength) != 1)
+            if (std::max(props.RenderTargetArrayLength, render_target_array_length) != 1)
               return false;
           }
+          // TODO: check all RTVs have the same size
+          if (width < props.Width || height < props.Height)
+            return false;
           // render_target_array_length will be 1 only if all render targets are array
           render_target_array_length = std::min(render_target_array_length, props.RenderTargetArrayLength);
+          width = std::min(width, props.Width);
+          height = std::min(height, props.Height);
         } else {
           ref = &rtv->GetAttachmentDesc();
           render_target_array_length = ref->RenderTargetArrayLength;
+          sample_count = ref->SampleCount;
+          width = ref->Width;
+          height = ref->Height;
         }
       }
     }
 
-    if (ref) {
-      state_.OutputMerger.SampleCount = ref->SampleCount;
-      state_.OutputMerger.ArrayLength = render_target_array_length;
-    } else {
-      state_.OutputMerger.SampleCount = 1;
-      state_.OutputMerger.ArrayLength = 0;
-    }
+    state_.OutputMerger.SampleCount = sample_count;
+    state_.OutputMerger.ArrayLength = render_target_array_length;
+    state_.OutputMerger.RenderTargetWidth = width;
+    state_.OutputMerger.RenderTargetHeight = height;
 
     return true;
   };
@@ -3953,8 +3961,8 @@ public:
       };
       // auto &dsv = state_.OutputMerger.DSV;
       DEPTH_STENCIL_STATE dsv_info;
-      uint32_t uav_only_render_target_width = 0;
-      uint32_t uav_only_render_target_height = 0;
+      uint32_t render_target_width = state_.OutputMerger.RenderTargetWidth;
+      uint32_t render_target_height = state_.OutputMerger.RenderTargetHeight;
       bool uav_only = false;
       uint32_t uav_only_sample_count = 0;
       if (state_.OutputMerger.DSV) {
@@ -3971,10 +3979,10 @@ public:
         IMTLD3D11RasterizerState *state =
             state_.Rasterizer.RasterizerState ? state_.Rasterizer.RasterizerState : default_rasterizer_state;
         auto &viewport = state_.Rasterizer.viewports[0];
-        uav_only_render_target_width = viewport.Width;
-        uav_only_render_target_height = viewport.Height;
+        render_target_width = viewport.Width;
+        render_target_height = viewport.Height;
         uav_only_sample_count = state->UAVOnlySampleCount();
-        if (!(uav_only_render_target_width && uav_only_render_target_height)) {
+        if (!(render_target_width && render_target_height)) {
           ERR("uav only rendering is enabled but viewport is empty");
           return false;
         }
@@ -3985,7 +3993,7 @@ public:
       allocated_encoder_argbuf_size_ = allocated_encoder_argbuf_size.get();
 
       EmitST([rtvs = std::move(rtvs), dsv = std::move(dsv_info), effective_render_target, uav_only,
-            uav_only_render_target_height, uav_only_render_target_width, uav_only_sample_count,
+            render_target_height, render_target_width, uav_only_sample_count,
             render_target_array, encoder_argbuf_size = std::move(allocated_encoder_argbuf_size)](ArgumentEncodingContext &ctx) {
         auto pool = WMT::MakeAutoreleasePool();
         uint32_t dsv_planar_flags = DepthStencilPlanarFlags(dsv.PixelFormat);
@@ -4021,17 +4029,12 @@ public:
         }
         if (effective_render_target == 0) {
           if (uav_only) {
-            info.render_target_height = uav_only_render_target_height;
-            info.render_target_width = uav_only_render_target_width;
             info.default_raster_sample_count = uav_only_sample_count;
-          } else {
-            D3D11_ASSERT(dsv_planar_flags);
-            auto dsv_tex = dsv.Texture->view(dsv.viewId);
-            info.render_target_height = dsv_tex.height();
-            info.render_target_width = dsv_tex.width();
           }
         }
 
+        info.render_target_height = render_target_height;
+        info.render_target_width = render_target_width;
         info.render_target_array_length = render_target_array;
 
         for (auto &rtv : rtvs.span()) {
