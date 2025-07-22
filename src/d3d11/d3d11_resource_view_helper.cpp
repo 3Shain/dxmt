@@ -543,7 +543,8 @@ InitializeAndNormalizeViewDescriptor(
       GetRenderTargetSize(pTexture, Descriptor.firstMiplevel, AttachmentDesc);
       return S_OK;
     }
-    if (texture_type == WMTTextureType2D) {
+    if (texture_type == WMTTextureType2D || texture_type == WMTTextureType2DArray ||
+        texture_type == WMTTextureTypeCube) {
       WARN("A multisample DSV is created on 2d/array/cube texture");
       Descriptor.type = WMTTextureType2D;
       Descriptor.format = metal_format.PixelFormat;
