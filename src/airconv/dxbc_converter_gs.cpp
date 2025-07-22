@@ -683,7 +683,16 @@ convert_dxbc_vertex_for_geometry_shader(
         index_buffer_element_type,
         builder.CreateGEP(index_buffer_element_type, index_buffer, {builder.CreateAdd(start_index, global_index_id)})
     );
-    resource_map.vertex_id = builder.CreateZExt(vertex_id, types._int);
+    // so 0xFFFF is mapped to 0xFFFFFFFF, other values are zero-extended
+    resource_map.vertex_id = builder.CreateSub(
+      builder.CreateZExt(
+        builder.CreateAdd(
+          vertex_id, llvm::ConstantInt::get(index_buffer_element_type, 1)
+        ),
+        types._int
+      ),
+      llvm::ConstantInt::get(types._int, 1)
+    );
 
     builder.CreateCondBr(
         builder.CreateICmp(llvm::CmpInst::ICMP_NE, builder.getInt32(-1), resource_map.vertex_id), active, will_dispatch
