@@ -3917,6 +3917,9 @@ public:
     state_.ShaderStages[PipelineStage::Domain].ConstantBuffers.set_dirty();
     state_.ShaderStages[PipelineStage::Domain].Samplers.set_dirty();
     state_.ShaderStages[PipelineStage::Domain].SRVs.set_dirty();
+    state_.ShaderStages[PipelineStage::Geometry].ConstantBuffers.set_dirty();
+    state_.ShaderStages[PipelineStage::Geometry].Samplers.set_dirty();
+    state_.ShaderStages[PipelineStage::Geometry].SRVs.set_dirty();
     state_.InputAssembler.VertexBuffers.set_dirty();
     state_.OutputMerger.UAVs.set_dirty();
     dirty_state.set(
