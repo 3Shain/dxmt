@@ -616,7 +616,10 @@ GetLinearTextureLayout(
     return S_OK;
   }
   auto bytes_per_row_unaligned = metal_format.BytesPerTexel * w;
-  auto alignment = Aligned ? metal.minimumLinearTextureAlignmentForPixelFormat(metal_format.PixelFormat): 1;
+  auto alignment = 1;
+  if (Aligned && !(metal_format.Flag & MTL_DXGI_FORMAT_EMULATED_LINEAR_DEPTH_STENCIL)) {
+    alignment = metal.minimumLinearTextureAlignmentForPixelFormat(metal_format.PixelFormat);
+  }
   auto aligned_bytes_per_row = align(bytes_per_row_unaligned, alignment);
   BytesPerRow = aligned_bytes_per_row;
   BytesPerImage = aligned_bytes_per_row * h;

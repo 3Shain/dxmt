@@ -187,6 +187,10 @@ CreateDynamicLinearTexture2D(
   if (format.Flag & MTL_DXGI_FORMAT_BC) {
     return E_FAIL;
   }
+  if (format.Flag & MTL_DXGI_FORMAT_EMULATED_LINEAR_DEPTH_STENCIL) {
+    ERR("CreateDynamicLinearTexture: depth-stencil resource cannot be dynamic");
+    return E_FAIL;
+  }
   if (format.PixelFormat == WMTPixelFormatInvalid) {
     return E_FAIL;
   }
@@ -218,6 +222,10 @@ CreateDynamicLinearTexture1D(
   MTL_DXGI_FORMAT_DESC format;
   MTLQueryDXGIFormat(pDevice->GetMTLDevice(), pDesc->Format, format);
   if (format.Flag & MTL_DXGI_FORMAT_BC) {
+    return E_FAIL;
+  }
+  if (format.Flag & MTL_DXGI_FORMAT_EMULATED_LINEAR_DEPTH_STENCIL) {
+    ERR("CreateDynamicLinearTexture: depth-stencil resource cannot be dynamic");
     return E_FAIL;
   }
   if (format.PixelFormat == WMTPixelFormatInvalid) {
