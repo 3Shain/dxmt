@@ -663,6 +663,7 @@ public:
 
   EmulatedCommandContext emulated_cmd;
   ClearRenderTargetContext clear_rt_cmd;
+  DepthStencilBlitContext blit_depth_stencil_cmd;
 
 private:
   DXMT_ENCODER_LIST_OP checkEncoderRelation(EncoderData* former, EncoderData* latter);
