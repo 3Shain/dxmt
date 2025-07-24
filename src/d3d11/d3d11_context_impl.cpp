@@ -3393,15 +3393,16 @@ public:
         // copy from device to staging
         UseCopyDestination(staging_dst);
         SwitchToBlitEncoder(CommandBufferState::ReadbackBlitEncoderActive);
-        EmitOP([src_ = src->buffer(), dst = std::move(staging_dst), DstX, SrcBox](ArgumentEncodingContext &enc) {
+        EmitOP([src_ = src->buffer(), dst_ = std::move(staging_dst), DstX, SrcBox](ArgumentEncodingContext &enc) {
           auto [src, src_offset] = enc.access(src_, SrcBox.left, SrcBox.right - SrcBox.left, DXMT_ENCODER_RESOURCE_ACESS_READ);
+          auto [dst, dst_offset] = enc.access(dst_->buffer(), DstX, SrcBox.right - SrcBox.left, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
           auto &cmd = enc.encodeBlitCommand<wmtcmd_blit_copy_from_buffer_to_buffer>();
           cmd.type = WMTBlitCommandCopyFromBufferToBuffer;
           cmd.copy_length = SrcBox.right - SrcBox.left;
           cmd.src = src->buffer();;
           cmd.src_offset = SrcBox.left + src_offset;
-          cmd.dst = dst->currentBuffer();
-          cmd.dst_offset = DstX;
+          cmd.dst = dst->buffer();
+          cmd.dst_offset = DstX + dst_offset;
         });
         promote_flush = true;
       } else {
@@ -3411,13 +3412,14 @@ public:
       if (auto staging_src = GetStagingResource(pSrcResource, SrcSubresource)) {
         UseCopySource(staging_src);
         SwitchToBlitEncoder(CommandBufferState::UpdateBlitEncoderActive);
-        EmitOP([dst_ = dst->buffer(), src = std::move(staging_src), DstX, SrcBox](ArgumentEncodingContext &enc) {
+        EmitOP([dst_ = dst->buffer(), src_ = std::move(staging_src), DstX, SrcBox](ArgumentEncodingContext &enc) {
+          auto [src, src_offset] = enc.access(src_->buffer(), SrcBox.left, SrcBox.right - SrcBox.left, DXMT_ENCODER_RESOURCE_ACESS_READ);
           auto [dst, dst_offset] = enc.access(dst_, DstX, SrcBox.right - SrcBox.left, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
           auto &cmd = enc.encodeBlitCommand<wmtcmd_blit_copy_from_buffer_to_buffer>();
           cmd.type = WMTBlitCommandCopyFromBufferToBuffer;
           cmd.copy_length = SrcBox.right - SrcBox.left;
-          cmd.src = src->currentBuffer();
-          cmd.src_offset = SrcBox.left;
+          cmd.src = src->buffer();
+          cmd.src_offset = SrcBox.left + src_offset;
           cmd.dst = dst->buffer();;
           cmd.dst_offset = DstX + dst_offset;
         });
@@ -3466,10 +3468,11 @@ public:
       } else if (auto src = GetTexture(cmd.pSrc)) {
         UseCopyDestination(staging_dst);
         SwitchToBlitEncoder(CommandBufferState::ReadbackBlitEncoderActive);
-        EmitOP([src_ = std::move(src), dst = std::move(staging_dst),
+        EmitOP([src_ = std::move(src), dst_ = std::move(staging_dst),
               cmd = std::move(cmd)](ArgumentEncodingContext &enc) {
           auto src = enc.access(src_, cmd.Src.MipLevel, cmd.Src.ArraySlice, DXMT_ENCODER_RESOURCE_ACESS_READ);
-          auto offset = cmd.DstOrigin.z * dst->bytesPerImage + cmd.DstOrigin.y * dst->bytesPerRow +
+          auto [dst, dst_offset] = enc.access(dst_->buffer(), 0, dst_->length, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
+          auto offset = cmd.DstOrigin.z * dst_->bytesPerImage + cmd.DstOrigin.y * dst_->bytesPerRow +
                         cmd.DstOrigin.x * cmd.DstFormat.BytesPerTexel;
           auto &cmd_cpbuf = enc.encodeBlitCommand<wmtcmd_blit_copy_from_texture_to_buffer>();
           cmd_cpbuf.type = WMTBlitCommandCopyFromTextureToBuffer;
@@ -3478,10 +3481,10 @@ public:
           cmd_cpbuf.level = cmd.Src.MipLevel;
           cmd_cpbuf.origin = cmd.SrcOrigin;
           cmd_cpbuf.size = cmd.SrcSize;
-          cmd_cpbuf.dst = dst->currentBuffer();
-          cmd_cpbuf.offset = offset;
-          cmd_cpbuf.bytes_per_row = dst->bytesPerRow;
-          cmd_cpbuf.bytes_per_image = dst->bytesPerImage;
+          cmd_cpbuf.dst = dst->buffer();
+          cmd_cpbuf.offset = offset + dst_offset;
+          cmd_cpbuf.bytes_per_row = dst_->bytesPerRow;
+          cmd_cpbuf.bytes_per_image = dst_->bytesPerImage;
         });
         promote_flush = true;
       } else {
@@ -3492,23 +3495,24 @@ public:
         // copy from staging to default
         UseCopySource(staging_src);
         SwitchToBlitEncoder(CommandBufferState::UpdateBlitEncoderActive);
-        EmitOP([dst_ = std::move(dst), src =std::move(staging_src),
+        EmitOP([dst_ = std::move(dst), src_ =std::move(staging_src),
               cmd = std::move(cmd)](ArgumentEncodingContext &enc) {
+          auto [src, src_offset] = enc.access(src_->buffer(), 0, src_->length, DXMT_ENCODER_RESOURCE_ACESS_READ);
           auto dst = enc.access(dst_, cmd.Dst.MipLevel, cmd.Dst.ArraySlice, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
           uint32_t offset;
           if (cmd.SrcFormat.Flag & MTL_DXGI_FORMAT_BC) {
-            offset = cmd.SrcOrigin.z * src->bytesPerImage + (cmd.SrcOrigin.y >> 2) * src->bytesPerRow +
+            offset = cmd.SrcOrigin.z * src_->bytesPerImage + (cmd.SrcOrigin.y >> 2) * src_->bytesPerRow +
                      (cmd.SrcOrigin.x >> 2) * cmd.SrcFormat.BytesPerTexel;
           } else {
-            offset = cmd.SrcOrigin.z * src->bytesPerImage + cmd.SrcOrigin.y * src->bytesPerRow +
+            offset = cmd.SrcOrigin.z * src_->bytesPerImage + cmd.SrcOrigin.y * src_->bytesPerRow +
                      cmd.SrcOrigin.x * cmd.SrcFormat.BytesPerTexel;
           }
           auto &cmd_cptex = enc.encodeBlitCommand<wmtcmd_blit_copy_from_buffer_to_texture>();
           cmd_cptex.type = WMTBlitCommandCopyFromBufferToTexture;
-          cmd_cptex.src = src->currentBuffer();
-          cmd_cptex.src_offset = offset;
-          cmd_cptex.bytes_per_row =  src->bytesPerRow;
-          cmd_cptex.bytes_per_image = src->bytesPerImage;
+          cmd_cptex.src = src->buffer();
+          cmd_cptex.src_offset = offset + src_offset;
+          cmd_cptex.bytes_per_row =  src_->bytesPerRow;
+          cmd_cptex.bytes_per_image = src_->bytesPerImage;
           cmd_cptex.size = cmd.SrcSize;
           cmd_cptex.dst = dst;
           cmd_cptex.slice = cmd.Dst.ArraySlice;

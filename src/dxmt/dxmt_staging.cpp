@@ -11,8 +11,9 @@ StagingResource::StagingResource(
     length(length),
     device_(device),
     options_(options) {
-  encoding_name = allocate(0);
-  immediate_name_ = encoding_name;
+  buffer_ = new Buffer(length, device);
+  immediate_name_ = allocate(0);
+  buffer_->rename(allocation(0));
 }
 
 void
@@ -76,15 +77,8 @@ StagingResource::allocate(uint64_t coherent_seq_id) {
     break;
   }
   if (ret == ~0ull) {
-    buffer_pool.push_back({});
-    StagingBuffer& last = buffer_pool.back();
-    last.info.memory.set(nullptr);
-    last.info.options = options_;
-    last.info.length = length;
-#ifdef __i386__
-    last.info.memory.set(wsi::aligned_malloc(length, DXMT_PAGE_SIZE));
-#endif
-    last.allocation = device_.newBuffer(last.info);
+    Flags<BufferAllocationFlag> flags_none;
+    buffer_pool.push_back(buffer_->allocate(flags_none));
     ret = buffer_pool.size() - 1;
   }
   return ret;

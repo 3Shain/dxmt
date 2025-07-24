@@ -243,7 +243,9 @@ public:
           // can't guarantee a full overwrite
           std::memcpy(staging->mappedMemory(next_name), staging->mappedImmediateMemory(), staging->length);
           staging->updateImmediateName(current_seq_id, next_name);
-          EmitST([staging, next_name](ArgumentEncodingContext &enc) mutable { staging->encoding_name = next_name; });
+          EmitST([staging, next_name](ArgumentEncodingContext &enc) mutable { 
+            auto _ = staging->buffer()->rename(staging->allocation(next_name));
+          });
           result = StagingMapResult::Mappable;
         }
         if (result == StagingMapResult::Mappable) {
