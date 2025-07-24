@@ -305,6 +305,10 @@ convert_dxbc_geometry_shader(
   auto payload = function->getArg(payload_idx);
   auto valid_primitive_mask =
       builder.CreateLoad(types._int, builder.CreateConstInBoundsGEP1_32(types._int, payload, 1));
+  auto warp_id =
+      builder.CreateLoad(types._int, builder.CreateConstInBoundsGEP1_32(types._int, payload, 2));
+
+  resource_map.patch_id = builder.CreateAdd(builder.CreateMul(warp_id, builder.getInt32(warp_primitive_count)), primitive_id_in_warp);
 
   auto input_ptr_int4_type =
       llvm::ArrayType::get(types._int4, pVertexStage->max_output_register * vertex_per_primitive);
@@ -810,6 +814,8 @@ convert_dxbc_vertex_for_geometry_shader(
   builder.CreateStore(instance_id, builder.CreateConstInBoundsGEP1_32(types._int, payload, 0));
 
   builder.CreateStore(valid_primitive_mask, builder.CreateConstInBoundsGEP1_32(types._int, payload, 1));
+
+  builder.CreateStore(warp_id, builder.CreateConstInBoundsGEP1_32(types._int, payload, 2));
 
   if (auto err = air::call_set_mesh_properties(
                      function->getArg(mesh_props_idx),
