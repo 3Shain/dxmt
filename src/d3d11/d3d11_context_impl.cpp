@@ -3479,7 +3479,36 @@ public:
   CopyTextureBitcast(TextureCopyCommand &&cmd) {
     if (auto staging_dst = GetStagingResource(cmd.pDst, cmd.DstSubresource)) {
       if (auto staging_src = GetStagingResource(cmd.pSrc, cmd.SrcSubresource)) {
-        UNIMPLEMENTED("copy between staging");
+        SwitchToBlitEncoder(CommandBufferState::BlitEncoderActive);
+        UseCopyDestination(staging_dst);
+        UseCopySource(staging_src);
+        EmitOP([dst_ = std::move(staging_dst), src_ = std::move(staging_src),
+                cmd = std::move(cmd)](ArgumentEncodingContext &enc) {
+          auto [src, src_sub_offset] = enc.access(src_->buffer(), 0, src_->length, DXMT_ENCODER_RESOURCE_ACESS_READ);
+          auto [dst, dst_sub_offset] = enc.access(dst_->buffer(), 0, dst_->length, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
+          if (cmd.SrcFormat.Flag & MTL_DXGI_FORMAT_BC) {
+            ERR("copy between staging BC texture");
+            return;
+          }
+          for (unsigned offset_z = 0; offset_z < cmd.SrcSize.depth; offset_z++) {
+            for (unsigned offset_y = 0; offset_y < cmd.SrcSize.height; offset_y++) {
+              auto src_offset = (cmd.SrcOrigin.z + offset_z) * src_->bytesPerImage +
+                                (cmd.SrcOrigin.y + offset_y) * src_->bytesPerRow +
+                                cmd.SrcOrigin.x * cmd.SrcFormat.BytesPerTexel;
+              auto dst_offset = (cmd.DstOrigin.z + offset_z) * dst_->bytesPerImage +
+                                (cmd.DstOrigin.y + offset_y) * dst_->bytesPerRow +
+                                cmd.DstOrigin.x * cmd.DstFormat.BytesPerTexel;
+              auto &cmdcp = enc.encodeBlitCommand<wmtcmd_blit_copy_from_buffer_to_buffer>();
+              cmdcp.type = WMTBlitCommandCopyFromBufferToBuffer;
+              cmdcp.copy_length = cmd.SrcSize.width * cmd.DstFormat.BytesPerTexel;
+              cmdcp.src = src->buffer();
+              cmdcp.src_offset = src_sub_offset + src_offset;
+              cmdcp.dst = dst->buffer();
+              cmdcp.dst_offset = dst_sub_offset + dst_offset;
+            }
+          }
+        });
+        promote_flush = true;
       } else if (auto src = GetTexture(cmd.pSrc)) {
         SwitchToBlitEncoder(CommandBufferState::ReadbackBlitEncoderActive);
         UseCopyDestination(staging_dst);
