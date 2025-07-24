@@ -3391,8 +3391,8 @@ public:
         UNIMPLEMENTED("copy buffer between staging");
       } else if (auto src = reinterpret_cast<D3D11ResourceCommon *>(pSrcResource)) {
         // copy from device to staging
-        UseCopyDestination(staging_dst);
         SwitchToBlitEncoder(CommandBufferState::ReadbackBlitEncoderActive);
+        UseCopyDestination(staging_dst);
         EmitOP([src_ = src->buffer(), dst_ = std::move(staging_dst), DstX, SrcBox](ArgumentEncodingContext &enc) {
           auto [src, src_offset] = enc.access(src_, SrcBox.left, SrcBox.right - SrcBox.left, DXMT_ENCODER_RESOURCE_ACESS_READ);
           auto [dst, dst_offset] = enc.access(dst_->buffer(), DstX, SrcBox.right - SrcBox.left, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
@@ -3410,8 +3410,8 @@ public:
       }
     } else if (auto dst = reinterpret_cast<D3D11ResourceCommon *>(pDstResource)) {
       if (auto staging_src = GetStagingResource(pSrcResource, SrcSubresource)) {
-        UseCopySource(staging_src);
         SwitchToBlitEncoder(CommandBufferState::UpdateBlitEncoderActive);
+        UseCopySource(staging_src);
         EmitOP([dst_ = dst->buffer(), src_ = std::move(staging_src), DstX, SrcBox](ArgumentEncodingContext &enc) {
           auto [src, src_offset] = enc.access(src_->buffer(), SrcBox.left, SrcBox.right - SrcBox.left, DXMT_ENCODER_RESOURCE_ACESS_READ);
           auto [dst, dst_offset] = enc.access(dst_, DstX, SrcBox.right - SrcBox.left, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
@@ -3466,8 +3466,8 @@ public:
       if (auto staging_src = GetStagingResource(cmd.pSrc, cmd.SrcSubresource)) {
         UNIMPLEMENTED("copy between staging");
       } else if (auto src = GetTexture(cmd.pSrc)) {
-        UseCopyDestination(staging_dst);
         SwitchToBlitEncoder(CommandBufferState::ReadbackBlitEncoderActive);
+        UseCopyDestination(staging_dst);
         EmitOP([src_ = std::move(src), dst_ = std::move(staging_dst),
               cmd = std::move(cmd)](ArgumentEncodingContext &enc) {
           auto src = enc.access(src_, cmd.Src.MipLevel, cmd.Src.ArraySlice, DXMT_ENCODER_RESOURCE_ACESS_READ);
@@ -3493,8 +3493,8 @@ public:
     } else if (auto dst = GetTexture(cmd.pDst)) {
       if (auto staging_src = GetStagingResource(cmd.pSrc, cmd.SrcSubresource)) {
         // copy from staging to default
-        UseCopySource(staging_src);
         SwitchToBlitEncoder(CommandBufferState::UpdateBlitEncoderActive);
+        UseCopySource(staging_src);
         EmitOP([dst_ = std::move(dst), src_ =std::move(staging_src),
               cmd = std::move(cmd)](ArgumentEncodingContext &enc) {
           auto [src, src_offset] = enc.access(src_->buffer(), 0, src_->length, DXMT_ENCODER_RESOURCE_ACESS_READ);
