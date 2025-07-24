@@ -290,7 +290,8 @@ HRESULT CreateDeviceTextureInternal(MTLD3D11Device *pDevice,
   if (FAILED(CreateMTLTextureDescriptor(pDevice, pDesc, &finalDesc, &info))) {
     return E_INVALIDARG;
   }
-  bool single_subresource = info.mipmap_level_count * info.array_length == 1;
+  bool single_subresource = info.mipmap_level_count == 1 && info.array_length == 1 &&
+                            !(finalDesc.MiscFlags & D3D11_RESOURCE_MISC_TEXTURECUBE);
   auto texture = Rc<Texture>(new Texture(info, pDevice->GetMTLDevice()));
   Flags<TextureAllocationFlag> flags;
   flags.set(TextureAllocationFlag::GpuManaged);

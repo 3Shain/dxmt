@@ -146,6 +146,9 @@ public:
     return std::max(info_.height >> viewDescriptors_[view].firstMiplevel, 1u);
   }
 
+  /**
+  \warning for cube texture, arrayLength() returns 1, while arrayLength(0) returns 6"
+  */
   unsigned
   arrayLength() const {
     return info_.array_length;
