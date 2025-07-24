@@ -3388,7 +3388,22 @@ public:
       return;
     if (auto staging_dst = GetStagingResource(pDstResource, DstSubresource)) {
       if (auto staging_src = GetStagingResource(pSrcResource, SrcSubresource)) {
-        UNIMPLEMENTED("copy buffer between staging");
+        SwitchToBlitEncoder(CommandBufferState::BlitEncoderActive);
+        UseCopyDestination(staging_dst);
+        UseCopySource(staging_src);
+        EmitOP([dst_ = std::move(staging_dst), src_ = std::move(staging_src), DstX,
+                SrcX = SrcBox.left, Size = SrcBox.right - SrcBox.left](ArgumentEncodingContext& enc) {
+          auto [src, src_offset] = enc.access(src_->buffer(), SrcX, Size, DXMT_ENCODER_RESOURCE_ACESS_READ);
+          auto [dst, dst_offset] = enc.access(dst_->buffer(), DstX, Size, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
+          auto &cmd = enc.encodeBlitCommand<wmtcmd_blit_copy_from_buffer_to_buffer>();
+          cmd.type = WMTBlitCommandCopyFromBufferToBuffer;
+          cmd.copy_length = Size;
+          cmd.src = src->buffer();
+          cmd.src_offset = SrcX + src_offset;
+          cmd.dst = dst->buffer();
+          cmd.dst_offset = DstX + dst_offset;
+        });
+        promote_flush = true;
       } else if (auto src = reinterpret_cast<D3D11ResourceCommon *>(pSrcResource)) {
         // copy from device to staging
         SwitchToBlitEncoder(CommandBufferState::ReadbackBlitEncoderActive);
