@@ -104,13 +104,13 @@ AirType::AirType(LLVMContext &context) : context(context) {
   _texture_buffer =
     get_or_create_struct(context, "struct._texture_buffer_1d_t");
 
-  _texture2d = get_or_create_struct(context, "struct._depth_2d_t");
-  _texture2d_array = get_or_create_struct(context, "struct._depth_2d_array_t");
-  _texture2d_ms = get_or_create_struct(context, "struct._depth_2d_ms_t");
-  _texture2d_ms_array =
+  _depth2d = get_or_create_struct(context, "struct._depth_2d_t");
+  _depth2d_array = get_or_create_struct(context, "struct._depth_2d_array_t");
+  _depth2d_ms = get_or_create_struct(context, "struct._depth_2d_ms_t");
+  _depth2d_ms_array =
     get_or_create_struct(context, "struct._depth_2d_ms_array_t");
-  _texture_cube = get_or_create_struct(context, "struct._depth_cube_t");
-  _texture_cube_array =
+  _depth_cube = get_or_create_struct(context, "struct._depth_cube_t");
+  _depth_cube_array =
     get_or_create_struct(context, "struct._depth_cube_array_t");
 
   _sampler = get_or_create_struct(context, "struct._sampler_t");
