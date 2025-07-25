@@ -176,7 +176,7 @@ convert_dxbc_geometry_shader(
   auto const zero_const = builder.getInt32(0);
   auto const one_const = builder.getInt32(1);
   auto const two_const = builder.getInt32(2);
-  auto next_write_vertex = builder.CreateAlloca(types._int, nullptr, "next_write_veretx");
+  auto next_write_vertex = builder.CreateAlloca(types._int, nullptr, "next_write_vertex");
   builder.CreateStore(zero_const, next_write_vertex);
   auto vertex_offset = builder.CreateAlloca(types._int, nullptr, "vertex_offset");
   builder.CreateStore(zero_const, vertex_offset);
