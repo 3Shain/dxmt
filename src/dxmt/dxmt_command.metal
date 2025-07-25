@@ -411,3 +411,40 @@ struct linear_texture_desc {
   result.stencil = data >> 24;
   return result;
 }
+
+[[kernel]] void cs_copy_to_buffer_d32s8(
+  texture2d<float, access::read> tex_depth [[texture(0)]],
+  texture2d<uint, access::read> tex_stencil [[texture(1)]],
+  device char* buffer [[buffer(0)]],
+  constant linear_texture_desc& desc [[buffer(1)]],
+  ushort2 pos [[thread_position_in_grid]]
+) {
+  uint width = tex_depth.get_width();
+  uint height = tex_depth.get_height();
+  uint buffer_offset = pos.x * sizeof(packed_d32s8x24) 
+                        + pos.y * desc.bytes_per_row;
+  if (width > pos.x && height > pos.y) {
+    auto dst = reinterpret_cast<device packed_d32s8x24 *>(buffer + buffer_offset);
+    dst->depth = tex_depth.read(pos).x;
+    dst->stencil = tex_stencil.read(pos).y;
+  }
+}
+
+[[kernel]] void cs_copy_to_buffer_d24s8(
+  texture2d<float, access::read> tex_depth [[texture(0)]],
+  texture2d<uint, access::read> tex_stencil [[texture(1)]],
+  device char* buffer [[buffer(0)]],
+  constant linear_texture_desc& desc [[buffer(1)]],
+  ushort2 pos [[thread_position_in_grid]]
+) {
+  uint width = tex_depth.get_width();
+  uint height = tex_depth.get_height();
+  uint buffer_offset = pos.x * sizeof(uint) 
+                        + pos.y * desc.bytes_per_row;
+  if (width > pos.x && height > pos.y) {
+    auto dst = reinterpret_cast<device uint *>(buffer + buffer_offset);
+    float depth = tex_depth.read(pos).x;
+    uint stencil = tex_stencil.read(pos).y;
+    *dst = (uint(0xffffff * clamp(depth, 0.0, 1.0)) & 0xffffff) | (stencil << 24);
+  }
+}

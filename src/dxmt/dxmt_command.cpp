@@ -258,6 +258,8 @@ DepthStencilBlitContext::DepthStencilBlitContext(
   auto vs_copy = library.newFunction("vs_present_quad");
   auto fs_copy_d24s8 = library.newFunction("fs_copy_from_buffer_d24s8");
   auto fs_copy_d32s8 = library.newFunction("fs_copy_from_buffer_d32s8");
+  auto cs_copy_d24s8 = library.newFunction("cs_copy_to_buffer_d24s8");
+  auto cs_copy_d32s8 = library.newFunction("cs_copy_to_buffer_d32s8");
 
   WMTRenderPipelineInfo pipeline_info;
   WMT::InitializeRenderPipelineInfo(pipeline_info);
@@ -285,6 +287,9 @@ DepthStencilBlitContext::DepthStencilBlitContext(
   ds_info.depth_write_enabled = true;
 
   depth_stencil_state_ = device.newDepthStencilState(ds_info);
+
+  pso_copy_to_buffer_d24s8_ = device_.newComputePipelineState(cs_copy_d24s8, err);
+  pso_copy_to_buffer_d32s8_ = device_.newComputePipelineState(cs_copy_d32s8, err);
 }
 
 struct linear_texture_desc {
@@ -379,6 +384,82 @@ DepthStencilBlitContext::copyFromBuffer(
   draw.vertex_count = 3;
   draw.base_instance = 0;
   draw.instance_count = 1;
+
+  ctx_.endPass();
+}
+
+void
+DepthStencilBlitContext::copyFromTexture(
+    const Rc<Texture> &depth_stencil, uint32_t level, uint32_t slice, const Rc<Buffer> &dst, uint64_t dst_offset,
+    uint64_t dst_length, uint32_t bytes_per_row, uint32_t bytes_per_image, bool to_d24s8
+) {
+  TextureViewDescriptor view_desc;
+  switch (depth_stencil->textureType()) {
+  case WMTTextureType2D:
+  case WMTTextureType2DArray:
+  case WMTTextureTypeCube:
+  case WMTTextureTypeCubeArray:
+    view_desc.type = WMTTextureType2D;
+    break;
+  /*
+  - 1d is already mapped to 2d
+  - staging texture cannot be multisampled
+  */
+  default:
+    return;
+  }
+  view_desc.format = depth_stencil->pixelFormat();
+  view_desc.usage = WMTTextureUsageShaderRead;
+  view_desc.firstMiplevel = level;
+  view_desc.miplevelCount = 1;
+  view_desc.firstArraySlice = slice;
+  view_desc.arraySize = 1;
+  auto depth_view = depth_stencil->createView(view_desc);
+
+  view_desc.format = depth_stencil->pixelFormat() == WMTPixelFormatDepth24Unorm_Stencil8 ? WMTPixelFormatX24_Stencil8
+                                                                                         : WMTPixelFormatX32_Stencil8;
+  auto stencil_view = depth_stencil->createView(view_desc);
+
+  ctx_.startComputePass(0);
+  auto tex_depth = ctx_.access(depth_stencil, depth_view, DXMT_ENCODER_RESOURCE_ACESS_READ).texture;
+  auto tex_stencil = ctx_.access(depth_stencil, stencil_view, DXMT_ENCODER_RESOURCE_ACESS_READ).texture;
+  auto [dst_, dst_sub_offset] = ctx_.access(dst, dst_offset, dst_length, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
+
+  auto &setpso = ctx_.encodeComputeCommand<wmtcmd_compute_setpso>();
+  setpso.type = WMTComputeCommandSetPSO;
+  setpso.pso = to_d24s8 ? pso_copy_to_buffer_d24s8_ : pso_copy_to_buffer_d32s8_;
+  setpso.threadgroup_size = {8, 4, 1};
+
+  auto &setdepth = ctx_.encodeComputeCommand<wmtcmd_compute_settexture>();
+  setdepth.type = WMTComputeCommandSetTexture;
+  setdepth.texture = tex_depth;
+  setdepth.index = 0;
+
+  auto &setstencil = ctx_.encodeComputeCommand<wmtcmd_compute_settexture>();
+  setstencil.type = WMTComputeCommandSetTexture;
+  setstencil.texture = tex_stencil;
+  setstencil.index = 1;
+
+  auto &setbuf = ctx_.encodeComputeCommand<wmtcmd_compute_setbuffer>();
+  setbuf.type = WMTComputeCommandSetBuffer;
+  setbuf.buffer = dst_->buffer();
+  setbuf.index = 0;
+  setbuf.offset = dst_offset + dst_sub_offset;
+
+  linear_texture_desc desc{bytes_per_row, bytes_per_image};
+  auto &setdesc = ctx_.encodeComputeCommand<wmtcmd_compute_setbytes>();
+  setdesc.type = WMTComputeCommandSetBytes;
+  void *temp = ctx_.allocate_cpu_heap(sizeof(desc), 16);
+  memcpy(temp, &desc, sizeof(desc));
+  setdesc.bytes.set(temp);
+  setdesc.length = sizeof(desc);
+  setdesc.index = 1;
+
+  auto width = depth_stencil->width(depth_view);
+  auto height = depth_stencil->height(depth_view);
+  auto &dispatch = ctx_.encodeComputeCommand<wmtcmd_compute_dispatch>();
+  dispatch.type = WMTComputeCommandDispatchThreads;
+  dispatch.size = {width, height, 1};
 
   ctx_.endPass();
 }

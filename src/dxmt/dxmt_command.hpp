@@ -198,12 +198,19 @@ public:
       const Rc<Texture> &depth_stencil, uint32_t level, uint32_t slice, bool from_d24s8
   );
 
+  void copyFromTexture(
+      const Rc<Texture> &depth_stencil, uint32_t level, uint32_t slice, const Rc<Buffer> &dst, uint64_t dst_offset,
+      uint64_t dst_length, uint32_t bytes_per_row, uint32_t bytes_per_image, bool to_d24s8
+  );
+
 private:
   ArgumentEncodingContext &ctx_;
   WMT::Device device_;
   WMT::Reference<WMT::DepthStencilState> depth_stencil_state_;
   WMT::Reference<WMT::RenderPipelineState> pso_copy_d24s8_;
   WMT::Reference<WMT::RenderPipelineState> pso_copy_d32s8_;
+  WMT::Reference<WMT::ComputePipelineState> pso_copy_to_buffer_d24s8_;
+  WMT::Reference<WMT::ComputePipelineState> pso_copy_to_buffer_d32s8_;
 };
 
 } // namespace dxmt

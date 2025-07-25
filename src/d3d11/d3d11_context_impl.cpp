@@ -3511,7 +3511,17 @@ public:
         promote_flush = true;
       } else if (auto src = GetTexture(cmd.pSrc)) {
         if (cmd.DstFormat.Flag & MTL_DXGI_FORMAT_EMULATED_LINEAR_DEPTH_STENCIL) {
-          UNIMPLEMENTED("depth stencil readback");
+          InvalidateCurrentPass(true);
+          UseCopyDestination(staging_dst);
+          EmitOP([src_ = std::move(src), dst_ = std::move(staging_dst),
+                  cmd = std::move(cmd)](ArgumentEncodingContext &enc) {
+            enc.blit_depth_stencil_cmd.copyFromTexture(
+                src_, cmd.Src.MipLevel, cmd.Src.ArraySlice, dst_->buffer(), 0, dst_->length, dst_->bytesPerRow,
+                dst_->bytesPerImage, cmd.DstFormat.Flag & MTL_DXGI_FORMAT_EMULATED_D24
+            );
+          });
+          promote_flush = true;
+          return;
         }
         SwitchToBlitEncoder(CommandBufferState::ReadbackBlitEncoderActive);
         UseCopyDestination(staging_dst);
