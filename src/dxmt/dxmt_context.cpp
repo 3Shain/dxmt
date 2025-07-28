@@ -256,13 +256,14 @@ ArgumentEncodingContext::encodeShaderResources(
     }
     case SM50BindingType::Sampler: {
       auto slot = 16 * unsigned(stage) + arg.SM50BindingSlot;
-      if (!sampler_[slot].sampler) {
+      auto &sampler = sampler_[slot].sampler;
+      if (!sampler) {
         encoded_buffer[arg.StructurePtrOffset] = dummy_sampler_info_.gpu_resource_id;
         encoded_buffer[arg.StructurePtrOffset + 1] = (uint64_t)std::bit_cast<uint32_t>(0.0f);
         break;
       }
-      encoded_buffer[arg.StructurePtrOffset] = sampler_[slot].sampler_id;
-      encoded_buffer[arg.StructurePtrOffset + 1] = (uint64_t)std::bit_cast<uint32_t>(sampler_[slot].bias);
+      encoded_buffer[arg.StructurePtrOffset] = sampler->sampler_state_handle;
+      encoded_buffer[arg.StructurePtrOffset + 1] = (uint64_t)std::bit_cast<uint32_t>(sampler->lod_bias);
       break;
     }
     case SM50BindingType::SRV: {

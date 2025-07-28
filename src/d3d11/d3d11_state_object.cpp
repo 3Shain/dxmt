@@ -221,13 +221,7 @@ public:
     *pDesc = desc_;
   }
 
-  virtual WMT::SamplerState GetSamplerState() {
-    return sampler_->sampler_state;
-  }
-
-  virtual uint64_t GetArgumentHandle() { return sampler_->sampler_state_handle; }
-
-  virtual float GetLODBias() { return sampler_->lod_bias; }
+  virtual Rc<Sampler> sampler() { return sampler_; }
 
 private:
   Rc<Sampler> sampler_;

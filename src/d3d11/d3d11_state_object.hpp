@@ -6,6 +6,7 @@
 #include "d3d11_device_child.hpp"
 #include "thread.hpp"
 #include "util_hash.hpp"
+#include "dxmt_sampler.hpp"
 
 DEFINE_COM_INTERFACE("03629ed8-bcdd-4582-8997-3817209a34f4",
                      IMTLD3D11RasterizerState)
@@ -152,11 +153,7 @@ namespace dxmt {
 
 class D3D11SamplerState : public ID3D11SamplerState {
 public:
-  virtual WMT::SamplerState GetSamplerState() = 0;
-
-  virtual uint64_t GetArgumentHandle() = 0;
-
-  virtual float GetLODBias() = 0;
+  virtual Rc<Sampler> sampler() = 0;
 };
 
 template <typename DESC, typename Object> class StateObjectCache {
