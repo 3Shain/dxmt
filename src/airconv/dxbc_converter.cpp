@@ -164,6 +164,10 @@ void setup_binding_table(
         // ignore index in SM 5.0
         return get_item_in_argbuf_binding_table(binding_table_index, index);
       },
+      [=, index = sampler.arg_cube_index](pvalue) {
+        // ignore index in SM 5.0
+        return get_item_in_argbuf_binding_table(binding_table_index, index);
+      },
       [=, index = sampler.arg_metadata_index](pvalue) {
         // ignore index in SM 5.0
         return get_item_in_argbuf_binding_table(binding_table_index, index);
@@ -2346,7 +2350,10 @@ AIRCONV_API int SM50Initialize(
              .lower_bound = LB,
              .size = RangeSize,
              .space = Inst.m_SamplerDecl.Space},
-          .arg_index = 0, // set it later
+          // set them later,
+          .arg_index = 0, 
+          .arg_cube_index = 0,
+          .arg_metadata_index = 0,
         };
         // FIXME: SamplerMode ignored?
         break;
@@ -2757,8 +2764,10 @@ AIRCONV_API int SM50Initialize(
     auto attr_index = GetArgumentIndex(SM50BindingType::Sampler, range_id);
     sampler.arg_index =
       binding_table.DefineSampler("s" + std::to_string(range_id), attr_index);
+    sampler.arg_cube_index =
+      binding_table.DefineSampler("cube_s" + std::to_string(range_id), attr_index + 1);
     sampler.arg_metadata_index = binding_table.DefineInteger64(
-      "meta_s" + std::to_string(range_id), attr_index + 1
+      "meta_s" + std::to_string(range_id), attr_index + 2
     );
     sm50_shader->args_reflection.push_back({
       .Type = SM50BindingType::Sampler,

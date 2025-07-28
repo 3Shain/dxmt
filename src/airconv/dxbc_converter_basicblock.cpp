@@ -2217,6 +2217,18 @@ auto calc_uint_ptr_index(uint32_t zero, uint32_t unused, SrcOperand byte_offset)
   );
 };
 
+bool texture_is_cube(const air::MSLTexture &res) {
+  switch (res.resource_kind) {
+    case air::TextureKind::texture_cube:
+    case air::TextureKind::depth_cube:
+    case air::TextureKind::texture_cube_array:
+    case air::TextureKind::depth_cube_array:
+      return true;
+    default:
+      return false;
+  }
+}
+
 llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
   std::shared_ptr<BasicBlock> entry, context &ctx, llvm::BasicBlock *return_bb
 ) {
@@ -2351,10 +2363,10 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                  );
                  auto &[res, res_handle_fn, res_metadata] =
                    ctx.resource.srv_range_map[sample.src_resource.range_id];
-                 auto &[sampler_handle_fn, sampler_metadata] =
+                 auto &[sampler_handle_fn, sampler_cube_fn, sampler_metadata] =
                    ctx.resource.sampler_range_map[sample.src_sampler.range_id];
                  auto res_h = co_yield res_handle_fn(nullptr);
-                 auto sampler_h = co_yield sampler_handle_fn(nullptr);
+                 auto sampler_h = texture_is_cube(res) ? co_yield sampler_cube_fn(nullptr): co_yield sampler_handle_fn(nullptr);
                  auto res_min_lod_clamp = co_yield metadata_get_min_lod_clamp(
                    co_yield res_metadata(nullptr)
                  );
@@ -2457,10 +2469,10 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                  auto &[res, res_handle_fn, res_metadata] =
                    ctx.resource.srv_range_map[sample.src_resource.range_id];
                  // Sampler states MIPLODBIAS and MAX/MINMIPLEVEL are honored.
-                 auto &[sampler_handle_fn, sampler_metadata] =
+                 auto &[sampler_handle_fn, sampler_cube_fn, sampler_metadata] =
                    ctx.resource.sampler_range_map[sample.src_sampler.range_id];
                  auto res_h = co_yield res_handle_fn(nullptr);
-                 auto sampler_h = co_yield sampler_handle_fn(nullptr);
+                 auto sampler_h = texture_is_cube(res) ? co_yield sampler_cube_fn(nullptr): co_yield sampler_handle_fn(nullptr);
                  auto coord = co_yield load_src_op<true>(sample.src_address);
                  auto sampler_bias = co_yield metadata_get_sampler_bias(
                    co_yield sampler_metadata(nullptr)
@@ -2567,10 +2579,10 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                  );
                  auto& [res, res_handle_fn, res_metadata] =
                    ctx.resource.srv_range_map[sample.src_resource.range_id];
-                 auto& [sampler_handle_fn, sampler_metadata] =
+                 auto& [sampler_handle_fn, sampler_cube_fn, sampler_metadata] =
                    ctx.resource.sampler_range_map[sample.src_sampler.range_id];
                  auto res_h = co_yield res_handle_fn(nullptr);
-                 auto sampler_h = co_yield sampler_handle_fn(nullptr);
+                 auto sampler_h = texture_is_cube(res) ? co_yield sampler_cube_fn(nullptr): co_yield sampler_handle_fn(nullptr);
                  auto coord = co_yield load_src_op<true>(sample.src_address);
                  
                  auto sampler_bias = co_yield metadata_get_sampler_bias(
@@ -2682,10 +2694,10 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                  auto &[res, res_handle_fn, res_metadata] =
                    ctx.resource.srv_range_map[sample.src_resource.range_id];
                  // sampler bias ignored
-                 auto &[sampler_handle_fn, _] =
+                 auto &[sampler_handle_fn, sampler_cube_fn, _] =
                    ctx.resource.sampler_range_map[sample.src_sampler.range_id];
                  auto res_h = co_yield res_handle_fn(nullptr);
-                 auto sampler_h = co_yield sampler_handle_fn(nullptr);
+                 auto sampler_h = texture_is_cube(res) ? co_yield sampler_cube_fn(nullptr): co_yield sampler_handle_fn(nullptr);
                  auto coord = co_yield load_src_op<true>(sample.src_address);
                  auto dpdx =
                    co_yield load_src_op<true>(sample.src_x_derivative);
@@ -2776,10 +2788,10 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                  );
                  auto &[res, res_handle_fn, res_metadata] =
                    ctx.resource.srv_range_map[sample.src_resource.range_id];
-                 auto &[sampler_handle_fn, sampler_metadata] =
+                 auto &[sampler_handle_fn, sampler_cube_fn, sampler_metadata] =
                    ctx.resource.sampler_range_map[sample.src_sampler.range_id];
                  auto res_h = co_yield res_handle_fn(nullptr);
-                 auto sampler_h = co_yield sampler_handle_fn(nullptr);
+                 auto sampler_h = texture_is_cube(res) ? co_yield sampler_cube_fn(nullptr): co_yield sampler_handle_fn(nullptr);
                  auto coord = co_yield load_src_op<true>(sample.src_address);
                  auto reference =
                    co_yield load_src_op<true>(sample.src_reference);
@@ -2857,10 +2869,10 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
               auto &[res, res_handle_fn, res_metadata] =
                 ctx.resource.srv_range_map[sample.src_resource.range_id];
               // sampler bias ignored
-              auto &[sampler_handle_fn, _] =
+              auto &[sampler_handle_fn, sampler_cube_fn, _] =
                 ctx.resource.sampler_range_map[sample.src_sampler.range_id];
               auto res_h = co_yield res_handle_fn(nullptr);
-              auto sampler_h = co_yield sampler_handle_fn(nullptr);
+              auto sampler_h = texture_is_cube(res) ? co_yield sampler_cube_fn(nullptr): co_yield sampler_handle_fn(nullptr);
               auto coord = co_yield load_src_op<true>(sample.src_address);
               auto offset = co_yield load_src_op<false>(sample.offset);
               auto component =
@@ -2931,10 +2943,10 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                  auto &[res, res_handle_fn, res_metadata] =
                    ctx.resource.srv_range_map[sample.src_resource.range_id];
                  // sampler bias ignored
-                 auto &[sampler_handle_fn, sampler_metadata] =
+                 auto &[sampler_handle_fn, sampler_cube_fn, sampler_metadata] =
                    ctx.resource.sampler_range_map[sample.src_sampler.range_id];
                  auto res_h = co_yield res_handle_fn(nullptr);
-                 auto sampler_h = co_yield sampler_handle_fn(nullptr);
+                 auto sampler_h = texture_is_cube(res) ? co_yield sampler_cube_fn(nullptr): co_yield sampler_handle_fn(nullptr);
                  auto coord = co_yield load_src_op<true>(sample.src_address);
                  auto offset = co_yield load_src_op<false>(sample.offset);
                  auto reference =
@@ -4131,10 +4143,10 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                 auto &[res, res_handle_fn, _] =
                   ctx.resource.srv_range_map[calc.src_resource.range_id];
                 // FIXME: sampelr bias is not respected
-                auto &[sampler_handle_fn, __] =
+                auto &[sampler_handle_fn, sampler_cube_fn, __] =
                   ctx.resource.sampler_range_map[calc.src_sampler.range_id];
                 auto res_h = co_yield res_handle_fn(nullptr);
-                auto sampler_h = co_yield sampler_handle_fn(nullptr);
+               auto sampler_h = texture_is_cube(res) ? co_yield sampler_cube_fn(nullptr): co_yield sampler_handle_fn(nullptr);
                 auto coord = co_yield load_src_op<true>(calc.src_address);
                 pvalue clamped_float = nullptr, unclamped_float = nullptr;
                 switch (res.resource_kind_logical) {
