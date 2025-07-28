@@ -48,7 +48,7 @@ template <> struct redunant_binding_trait<CONSTANT_BUFFER_B> {
 
 struct SAMPLER_B {
   IUnknown *RawPointer = 0;
-  IMTLD3D11SamplerState* Sampler;
+  D3D11SamplerState* Sampler;
 };
 
 typedef BindingSet<SAMPLER_B, 16> SamplerBindingSet;

@@ -3168,8 +3168,8 @@ public:
         auto &entry = ShaderStage.Samplers.bind(Slot, {pSampler}, replaced);
         if (!replaced)
           continue;
-        if (auto expected = com_cast<IMTLD3D11SamplerState>(pSampler)) {
-          entry.Sampler = expected.ptr();
+        if (auto expected = static_cast<D3D11SamplerState *>(pSampler)) {
+          entry.Sampler = expected;
           EmitST([=, sampler = entry.Sampler](ArgumentEncodingContext &enc) {
             enc.bindSampler<Stage>(Slot, sampler->GetSamplerState(), sampler->GetArgumentHandle(), sampler->GetLODBias());
           });

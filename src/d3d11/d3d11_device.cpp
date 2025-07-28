@@ -436,7 +436,7 @@ public:
   CreateSamplerState(const D3D11_SAMPLER_DESC *pSamplerDesc,
                      ID3D11SamplerState **ppSamplerState) override {
     return sampler_states.CreateStateObject(
-        pSamplerDesc, (IMTLD3D11SamplerState **)ppSamplerState);
+        pSamplerDesc, (D3D11SamplerState **)ppSamplerState);
   }
 
   HRESULT STDMETHODCALLTYPE CreateQuery(const D3D11_QUERY_DESC *pQueryDesc,
@@ -1130,7 +1130,7 @@ private:
       pipelines_cs_;
   dxmt::mutex mutex_cs_;
 
-  StateObjectCache<D3D11_SAMPLER_DESC, IMTLD3D11SamplerState> sampler_states;
+  StateObjectCache<D3D11_SAMPLER_DESC, D3D11SamplerState> sampler_states;
   StateObjectCache<D3D11_RASTERIZER_DESC2, IMTLD3D11RasterizerState>
       rasterizer_states;
   StateObjectCache<D3D11_DEPTH_STENCIL_DESC, IMTLD3D11DepthStencilState>

@@ -179,14 +179,14 @@ constexpr WMTColorWriteMask kColorWriteMaskMap[] = {
         WMTColorWriteMaskRed | WMTColorWriteMaskGreen,
 };
 
-class MTLD3D11SamplerState : public ManagedDeviceChild<IMTLD3D11SamplerState> {
+class MTLD3D11SamplerState : public ManagedDeviceChild<D3D11SamplerState> {
 
 public:
   friend class MTLD3D11DeviceContext;
   MTLD3D11SamplerState(MTLD3D11Device *device, const WMTSamplerInfo &info,
                        WMT::Reference<WMT::SamplerState> &&samplerState,
                        const D3D11_SAMPLER_DESC &desc, float lod_bias)
-      : ManagedDeviceChild<IMTLD3D11SamplerState>(device), desc_(desc),
+      : ManagedDeviceChild<D3D11SamplerState>(device), desc_(desc),
         metal_sampler_state_(std::move(samplerState)), d3d10_(this), info(info),
         lod_bias(lod_bias) {}
   ~MTLD3D11SamplerState() {}
@@ -199,8 +199,7 @@ public:
     *ppvObject = nullptr;
 
     if (riid == __uuidof(IUnknown) || riid == __uuidof(ID3D11DeviceChild) ||
-        riid == __uuidof(ID3D11SamplerState) ||
-        riid == __uuidof(IMTLD3D11SamplerState)) {
+        riid == __uuidof(ID3D11SamplerState)) {
       *ppvObject = ref(this);
       return S_OK;
     }
@@ -211,7 +210,7 @@ public:
       return S_OK;
     }
 
-    if (logQueryInterfaceError(__uuidof(IMTLD3D11SamplerState), riid)) {
+    if (logQueryInterfaceError(__uuidof(ID3D11SamplerState), riid)) {
       WARN("D3D11SamplerState: Unknown interface query ", str::format(riid));
     }
 
@@ -670,9 +669,9 @@ HRESULT StateObjectCache<D3D11_RASTERIZER_DESC2, IMTLD3D11RasterizerState>::
 
 template <>
 HRESULT
-StateObjectCache<D3D11_SAMPLER_DESC, IMTLD3D11SamplerState>::CreateStateObject(
+StateObjectCache<D3D11_SAMPLER_DESC, D3D11SamplerState>::CreateStateObject(
     const D3D11_SAMPLER_DESC *pSamplerDesc,
-    IMTLD3D11SamplerState **ppSamplerState) {
+    D3D11SamplerState **ppSamplerState) {
   std::lock_guard<dxmt::mutex> lock(mutex_cache);
 
   InitReturnPtr(ppSamplerState);
@@ -688,7 +687,7 @@ StateObjectCache<D3D11_SAMPLER_DESC, IMTLD3D11SamplerState>::CreateStateObject(
     return S_FALSE;
 
   if (cache.contains(*pSamplerDesc)) {
-    cache.at(*pSamplerDesc)->QueryInterface(IID_PPV_ARGS(ppSamplerState));
+    cache.at(*pSamplerDesc)->QueryInterface(__uuidof(ID3D11SamplerState), (void **)ppSamplerState);
     return S_OK;
   }
 
@@ -774,7 +773,7 @@ StateObjectCache<D3D11_SAMPLER_DESC, IMTLD3D11SamplerState>::CreateStateObject(
   cache.emplace(*pSamplerDesc, std::make_unique<MTLD3D11SamplerState>(
                                    device, info, std::move(mtl_sampler), desc,
                                    desc.MipLODBias));
-  cache.at(*pSamplerDesc)->QueryInterface(IID_PPV_ARGS(ppSamplerState));
+  cache.at(*pSamplerDesc)->QueryInterface(__uuidof(ID3D11SamplerState), (void **)ppSamplerState);
 
   return S_OK;
 };
