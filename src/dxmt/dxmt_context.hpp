@@ -6,6 +6,7 @@
 #include "dxmt_deptrack.hpp"
 #include "dxmt_occlusion_query.hpp"
 #include "dxmt_residency.hpp"
+#include "dxmt_sampler.hpp"
 #include "dxmt_statistics.hpp"
 #include "dxmt_texture.hpp"
 #include "log/log.hpp"
@@ -55,9 +56,7 @@ struct ConstantBufferBinding {
 };
 
 struct SamplerBinding {
-  WMT::Reference<WMT::SamplerState> sampler;
-  uint32_t sampler_id;
-  float bias;
+  Rc<Sampler> sampler;
 };
 
 struct ResourceViewBinding {
@@ -328,12 +327,10 @@ public:
 
   template <PipelineStage stage>
   void
-  bindSampler(unsigned slot, WMT::SamplerState sampler, uint64_t sampler_id, float bias) {
+  bindSampler(unsigned slot, Rc<Sampler> sampler) {
     unsigned idx = slot + 16 * unsigned(stage);
     auto &entry = sampler_[idx];
     entry.sampler = sampler;
-    entry.sampler_id = sampler_id;
-    entry.bias = bias;
   }
 
   template <PipelineStage stage>
@@ -663,6 +660,7 @@ public:
 
   EmulatedCommandContext emulated_cmd;
   ClearRenderTargetContext clear_rt_cmd;
+  DepthStencilBlitContext blit_depth_stencil_cmd;
 
 private:
   DXMT_ENCODER_LIST_OP checkEncoderRelation(EncoderData* former, EncoderData* latter);

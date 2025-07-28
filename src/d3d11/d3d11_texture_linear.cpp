@@ -5,27 +5,27 @@
 #include "dxmt_format.hpp"
 #include "dxmt_staging.hpp"
 #include "dxmt_texture.hpp"
-#include "mtld11_resource.hpp"
+#include "d3d11_resource.hpp"
 
 namespace dxmt {
 
-#pragma region DynamicTexture
+#pragma region DynamicLinearTexture
 
 template <typename tag_texture>
-class TDynamicTexture : public TResourceBase<tag_texture> {
+class TDynamicLinearTexture : public TResourceBase<tag_texture> {
 private:
   Rc<Texture> texture_;
-  Rc<DynamicTexture> dynamic_;
+  Rc<DynamicLinearTexture> dynamic_;
   size_t bytes_per_image_;
   size_t bytes_per_row_;
 
-  using SRVBase = TResourceViewBase<tag_shader_resource_view<TDynamicTexture>>;
+  using SRVBase = TResourceViewBase<tag_shader_resource_view<TDynamicLinearTexture>>;
 
   class SRV : public SRVBase {
     TextureViewKey view_key;
 
   public:
-    SRV(const tag_shader_resource_view<>::DESC1 *pDesc, TDynamicTexture *pResource, MTLD3D11Device *pDevice,
+    SRV(const tag_shader_resource_view<>::DESC1 *pDesc, TDynamicLinearTexture *pResource, MTLD3D11Device *pDevice,
         TextureViewKey view_key) :
         SRVBase(pDesc, pResource, pDevice),
         view_key(view_key) {}
@@ -39,7 +39,7 @@ private:
   };
 
 public:
-TDynamicTexture(
+TDynamicLinearTexture(
       const tag_texture::DESC1 *pDesc, const WMTTextureInfo &descriptor,
       const D3D11_SUBRESOURCE_DATA *pInitialData, UINT bytes_per_image, UINT bytes_per_row, MTLD3D11Device *device
   ) :
@@ -71,7 +71,7 @@ TDynamicTexture(
         memcpy(allocation->mappedMemory, pInitialData->pSysMem, bytes_per_image);
       }
     }
-    dynamic_ = new DynamicTexture(texture_.ptr(), flags);
+    dynamic_ = new DynamicLinearTexture(texture_.ptr(), flags);
   }
 
   Rc<Buffer> buffer() final { return {}; };
@@ -79,11 +79,12 @@ TDynamicTexture(
   BufferSlice bufferSlice() final { return {};}
   Rc<StagingResource> staging(UINT) final { return nullptr; }
   Rc<DynamicBuffer> dynamicBuffer(UINT*, UINT*) final { return {}; };
-  Rc<DynamicTexture> dynamicTexture(UINT* pBytesPerRow, UINT* pBytesPerImage) final {
+  Rc<DynamicLinearTexture> dynamicLinearTexture(UINT* pBytesPerRow, UINT* pBytesPerImage) final {
     *pBytesPerRow = bytes_per_row_;
     *pBytesPerImage = bytes_per_image_;
     return dynamic_; 
   };
+  Rc<DynamicBuffer> dynamicTexture(UINT , UINT *, UINT *) final { return {}; };
 
   HRESULT
   STDMETHODCALLTYPE
@@ -91,7 +92,7 @@ TDynamicTexture(
 };
 
 template<>
-HRESULT STDMETHODCALLTYPE TDynamicTexture<tag_texture_2d>::CreateShaderResourceView(const D3D11_SHADER_RESOURCE_VIEW_DESC1 *pDesc, ID3D11ShaderResourceView1 **ppView){
+HRESULT STDMETHODCALLTYPE TDynamicLinearTexture<tag_texture_2d>::CreateShaderResourceView(const D3D11_SHADER_RESOURCE_VIEW_DESC1 *pDesc, ID3D11ShaderResourceView1 **ppView){
   D3D11_SHADER_RESOURCE_VIEW_DESC1 finalDesc;
   if (FAILED(ExtractEntireResourceViewDescription(&this->desc, pDesc, &finalDesc))) {
     return E_INVALIDARG;
@@ -130,7 +131,7 @@ HRESULT STDMETHODCALLTYPE TDynamicTexture<tag_texture_2d>::CreateShaderResourceV
 };
 
 template<>
-HRESULT STDMETHODCALLTYPE TDynamicTexture<tag_texture_1d>::CreateShaderResourceView(const D3D11_SHADER_RESOURCE_VIEW_DESC1 *pDesc, ID3D11ShaderResourceView1 **ppView){
+HRESULT STDMETHODCALLTYPE TDynamicLinearTexture<tag_texture_1d>::CreateShaderResourceView(const D3D11_SHADER_RESOURCE_VIEW_DESC1 *pDesc, ID3D11ShaderResourceView1 **ppView){
   D3D11_SHADER_RESOURCE_VIEW_DESC1 finalDesc;
   if (FAILED(ExtractEntireResourceViewDescription(&this->desc, pDesc, &finalDesc))) {
     return E_INVALIDARG;
@@ -171,13 +172,23 @@ HRESULT STDMETHODCALLTYPE TDynamicTexture<tag_texture_1d>::CreateShaderResourceV
 #pragma endregion
 
 HRESULT
-CreateDynamicTexture2D(
+CreateDynamicLinearTexture2D(
     MTLD3D11Device *pDevice, const D3D11_TEXTURE2D_DESC1 *pDesc, const D3D11_SUBRESOURCE_DATA *pInitialData,
     ID3D11Texture2D1 **ppTexture
 ) {
+  if (pDesc->SampleDesc.Count > 1)
+    return E_FAIL;
+  if (pDesc->MiscFlags & D3D11_RESOURCE_MISC_TEXTURECUBE)
+    return E_FAIL;
+  if (pDesc->ArraySize > 1)
+    return E_FAIL;
   MTL_DXGI_FORMAT_DESC format;
   MTLQueryDXGIFormat(pDevice->GetMTLDevice(), pDesc->Format, format);
   if (format.Flag & MTL_DXGI_FORMAT_BC) {
+    return E_FAIL;
+  }
+  if (format.Flag & MTL_DXGI_FORMAT_EMULATED_LINEAR_DEPTH_STENCIL) {
+    ERR("CreateDynamicLinearTexture: depth-stencil resource cannot be dynamic");
     return E_FAIL;
   }
   if (format.PixelFormat == WMTPixelFormatInvalid) {
@@ -188,25 +199,33 @@ CreateDynamicTexture2D(
   if (FAILED(CreateMTLTextureDescriptor(pDevice, pDesc, &finalDesc, &info))) {
     return E_INVALIDARG;
   }
+  if (info.mipmap_level_count > 1)
+    return E_FAIL;
   uint32_t bytesPerRow, bytesPerImage, bufferLen;
   if (FAILED(GetLinearTextureLayout(pDevice, finalDesc, 0, bytesPerRow, bytesPerImage, bufferLen))) {
     return E_FAIL;
   }
 
   *ppTexture = reinterpret_cast<ID3D11Texture2D1 *>(
-      ref(new TDynamicTexture<tag_texture_2d>(pDesc, info, pInitialData, bufferLen, bytesPerRow, pDevice))
+      ref(new TDynamicLinearTexture<tag_texture_2d>(pDesc, info, pInitialData, bufferLen, bytesPerRow, pDevice))
   );
   return S_OK;
 }
 
 HRESULT
-CreateDynamicTexture1D(
+CreateDynamicLinearTexture1D(
     MTLD3D11Device *pDevice, const D3D11_TEXTURE1D_DESC *pDesc, const D3D11_SUBRESOURCE_DATA *pInitialData,
     ID3D11Texture1D **ppTexture
 ) {
+  if (pDesc->ArraySize > 1)
+    return E_FAIL;
   MTL_DXGI_FORMAT_DESC format;
   MTLQueryDXGIFormat(pDevice->GetMTLDevice(), pDesc->Format, format);
   if (format.Flag & MTL_DXGI_FORMAT_BC) {
+    return E_FAIL;
+  }
+  if (format.Flag & MTL_DXGI_FORMAT_EMULATED_LINEAR_DEPTH_STENCIL) {
+    ERR("CreateDynamicLinearTexture: depth-stencil resource cannot be dynamic");
     return E_FAIL;
   }
   if (format.PixelFormat == WMTPixelFormatInvalid) {
@@ -217,13 +236,15 @@ CreateDynamicTexture1D(
   if (FAILED(CreateMTLTextureDescriptor(pDevice, pDesc, &finalDesc, &info))) {
     return E_INVALIDARG;
   }
+  if (info.mipmap_level_count > 1)
+    return E_FAIL;
   uint32_t bytesPerRow, bytesPerImage, bufferLen;
   if (FAILED(GetLinearTextureLayout(pDevice, finalDesc, 0, bytesPerRow, bytesPerImage, bufferLen))) {
     return E_FAIL;
   }
 
   *ppTexture = reinterpret_cast<ID3D11Texture1D *>(
-      ref(new TDynamicTexture<tag_texture_1d>(pDesc, info, pInitialData, bufferLen, bytesPerRow, pDevice))
+      ref(new TDynamicLinearTexture<tag_texture_1d>(pDesc, info, pInitialData, bufferLen, bytesPerRow, pDevice))
   );
   return S_OK;
 }

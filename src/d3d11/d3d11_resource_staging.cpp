@@ -2,7 +2,7 @@
 #include "d3d11_enumerable.hpp"
 #include "dxmt_dynamic.hpp"
 #include "dxmt_staging.hpp"
-#include "mtld11_resource.hpp"
+#include "d3d11_resource.hpp"
 namespace dxmt {
 
 #pragma region StagingBuffer
@@ -41,8 +41,12 @@ public:
   dynamicBuffer(UINT*, UINT*) final {
     return {};
   };
-  Rc<DynamicTexture>
-  dynamicTexture(UINT *, UINT *) final {
+  Rc<DynamicLinearTexture>
+  dynamicLinearTexture(UINT *, UINT *) final {
+    return {};
+  };
+  Rc<DynamicBuffer>
+  dynamicTexture(UINT , UINT *, UINT *) final {
     return {};
   };
 };
@@ -103,8 +107,12 @@ public:
   dynamicBuffer(UINT *, UINT *) final {
     return {};
   };
-  Rc<DynamicTexture>
-  dynamicTexture(UINT *, UINT *) final {
+  Rc<DynamicLinearTexture>
+  dynamicLinearTexture(UINT *, UINT *) final {
+    return {};
+  };
+  Rc<DynamicBuffer>
+  dynamicTexture(UINT , UINT *, UINT *) final {
     return {};
   };
 };

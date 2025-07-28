@@ -6,14 +6,7 @@
 #include "d3d11_device_child.hpp"
 #include "thread.hpp"
 #include "util_hash.hpp"
-
-DEFINE_COM_INTERFACE("77f0bbd5-2be7-4e9e-ad61-70684ff19e01",
-                     IMTLD3D11SamplerState)
-    : public ID3D11SamplerState {
-  virtual WMT::SamplerState GetSamplerState() = 0;
-  virtual uint64_t GetArgumentHandle() = 0;
-  virtual float GetLODBias() = 0;
-};
+#include "dxmt_sampler.hpp"
 
 DEFINE_COM_INTERFACE("03629ed8-bcdd-4582-8997-3817209a34f4",
                      IMTLD3D11RasterizerState)
@@ -157,6 +150,11 @@ template <> struct equal_to<D3D11_DEPTH_STENCIL_DESC> {
 } // namespace std
 
 namespace dxmt {
+
+class D3D11SamplerState : public ID3D11SamplerState {
+public:
+  virtual Rc<Sampler> sampler() = 0;
+};
 
 template <typename DESC, typename Object> class StateObjectCache {
 public:

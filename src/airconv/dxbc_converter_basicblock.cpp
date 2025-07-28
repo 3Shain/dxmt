@@ -909,12 +909,6 @@ IREffect call_threadgroup_barrier(mem_flags mem_flag) {
   co_return {};
 }
 
-auto implicit_float_to_int(pvalue num) -> IRValue {
-  auto &types = (co_yield get_context()).types;
-  auto rounded = co_yield air::call_float_unary_op("rint", num);
-  co_return co_yield call_convert(rounded, types._int, air::Sign::with_sign);
-};
-
 auto extend_to_int2(pvalue value) -> IRValue {
   return make_irvalue([=](context ctx) {
     return ctx.builder.CreateInsertElement(llvm::ConstantAggregateZero::get(ctx.types._int2), value, uint64_t(0));
@@ -1965,6 +1959,21 @@ auto metadata_get_raw_buffer_length(pvalue metadata) -> IRValue {
   return metadata_get_texture_buffer_offset(metadata);
 };
 
+auto metadata_get_texture_array_length(pvalue metadata) -> IRValue {
+  // unintentional but they have the same representation
+  return metadata_get_texture_buffer_length(metadata);
+};
+
+auto convert_array_index(pvalue float_num, pvalue array_length) -> IRValue {
+  auto ctx = co_yield get_context();
+  auto &types = ctx.types;
+  auto rounded = co_yield air::call_float_unary_op("rint", float_num);
+  auto integer = co_yield call_convert(rounded, types._int, air::Sign::with_sign);
+  auto positive_integer = co_yield air::call_integer_binop("max", integer, ctx.builder.getInt32(0), true);
+  auto max_index = ctx.builder.CreateSub(array_length, ctx.builder.getInt32(1));
+  co_return co_yield air::call_integer_binop("min", positive_integer, max_index, true);
+};
+
 /**
 it might be a constant, device or threadgroup buffer of `uint*`
 */
@@ -2208,6 +2217,18 @@ auto calc_uint_ptr_index(uint32_t zero, uint32_t unused, SrcOperand byte_offset)
   );
 };
 
+bool texture_is_cube(const air::MSLTexture &res) {
+  switch (res.resource_kind) {
+    case air::TextureKind::texture_cube:
+    case air::TextureKind::depth_cube:
+    case air::TextureKind::texture_cube_array:
+    case air::TextureKind::depth_cube_array:
+      return true;
+    default:
+      return false;
+  }
+}
+
 llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
   std::shared_ptr<BasicBlock> entry, context &ctx, llvm::BasicBlock *return_bb
 ) {
@@ -2342,10 +2363,10 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                  );
                  auto &[res, res_handle_fn, res_metadata] =
                    ctx.resource.srv_range_map[sample.src_resource.range_id];
-                 auto &[sampler_handle_fn, sampler_metadata] =
+                 auto &[sampler_handle_fn, sampler_cube_fn, sampler_metadata] =
                    ctx.resource.sampler_range_map[sample.src_sampler.range_id];
                  auto res_h = co_yield res_handle_fn(nullptr);
-                 auto sampler_h = co_yield sampler_handle_fn(nullptr);
+                 auto sampler_h = texture_is_cube(res) ? co_yield sampler_cube_fn(nullptr): co_yield sampler_handle_fn(nullptr);
                  auto res_min_lod_clamp = co_yield metadata_get_min_lod_clamp(
                    co_yield res_metadata(nullptr)
                  );
@@ -2361,10 +2382,12 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                    );
                  }
                  case air::TextureKind::texture_1d_array: {
+                   auto array_length = co_yield metadata_get_texture_array_length(
+                    co_yield res_metadata(nullptr));
                    co_return co_yield call_sample(
                      res, res_h, sampler_h,
                      co_yield extract_element(0)(coord) >>= extend_to_float2,      // .r
-                     co_yield extract_element(1)(coord) >>= implicit_float_to_int, // .g
+                     co_yield convert_array_index(co_yield extract_element(1)(coord), array_length),
                      co_yield extract_element(0)(offset_const) >>= extend_to_int2  // 1d offset
                    );
                  }
@@ -2380,11 +2403,12 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                  }
                  case air::TextureKind::depth_2d_array:
                  case air::TextureKind::texture_2d_array: {
+                   auto array_length = co_yield metadata_get_texture_array_length(
+                    co_yield res_metadata(nullptr));
                    co_return co_yield call_sample(
                      res, res_h, sampler_h,
                      co_yield truncate_vec(2)(coord), // .rg
-                     co_yield extract_element(2)(coord) >>=
-                     implicit_float_to_int,                 // .b
+                     co_yield convert_array_index(co_yield extract_element(2)(coord), array_length),
                      co_yield truncate_vec(2)(offset_const), // 2d offset
                      sampler_bias, res_min_lod_clamp
                    );
@@ -2408,11 +2432,12 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                  }
                  case air::TextureKind::depth_cube_array:
                  case air::TextureKind::texture_cube_array: {
+                   auto array_length = co_yield metadata_get_texture_array_length(
+                    co_yield res_metadata(nullptr));
                    co_return co_yield call_sample(
                      res, res_h, sampler_h,
                      co_yield truncate_vec(3)(coord), // .rgb
-                     co_yield extract_element(3)(coord) >>=
-                     implicit_float_to_int // .a
+                     co_yield convert_array_index(co_yield extract_element(3)(coord), array_length)
                    );
                  } break;
                  default: {
@@ -2441,13 +2466,13 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                       llvm::APInt{32, (uint64_t)sample.offsets[2], true}
                     )}
                  );
-                 auto &[res, res_handle_fn, _] =
+                 auto &[res, res_handle_fn, res_metadata] =
                    ctx.resource.srv_range_map[sample.src_resource.range_id];
                  // Sampler states MIPLODBIAS and MAX/MINMIPLEVEL are honored.
-                 auto &[sampler_handle_fn, sampler_metadata] =
+                 auto &[sampler_handle_fn, sampler_cube_fn, sampler_metadata] =
                    ctx.resource.sampler_range_map[sample.src_sampler.range_id];
                  auto res_h = co_yield res_handle_fn(nullptr);
-                 auto sampler_h = co_yield sampler_handle_fn(nullptr);
+                 auto sampler_h = texture_is_cube(res) ? co_yield sampler_cube_fn(nullptr): co_yield sampler_handle_fn(nullptr);
                  auto coord = co_yield load_src_op<true>(sample.src_address);
                  auto sampler_bias = co_yield metadata_get_sampler_bias(
                    co_yield sampler_metadata(nullptr)
@@ -2465,10 +2490,12 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                    );
                  }
                  case air::TextureKind::texture_1d_array: {
+                   auto array_length = co_yield metadata_get_texture_array_length(
+                    co_yield res_metadata(nullptr));
                    co_return co_yield call_sample(
                      res, res_h, sampler_h,
                      co_yield extract_element(0)(coord) >>= extend_to_float2,      // .r
-                     co_yield extract_element(1)(coord) >>= implicit_float_to_int, // .g
+                     co_yield convert_array_index(co_yield extract_element(1)(coord), array_length),
                      co_yield extract_element(0)(offset_const) >>= extend_to_int2, // 1d offset
                      nullptr, nullptr, LOD
                    );
@@ -2485,11 +2512,12 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                  }
                  case air::TextureKind::depth_2d_array:
                  case air::TextureKind::texture_2d_array: {
+                   auto array_length = co_yield metadata_get_texture_array_length(
+                    co_yield res_metadata(nullptr));
                    co_return co_yield call_sample(
                      res, res_h, sampler_h,
                      co_yield truncate_vec(2)(coord), // .rg
-                     co_yield extract_element(2)(coord) >>=
-                     implicit_float_to_int,                  // .b
+                     co_yield convert_array_index(co_yield extract_element(2)(coord), array_length),
                      co_yield truncate_vec(2)(offset_const), // 2d offset
                      nullptr, nullptr, LOD
                    );
@@ -2514,11 +2542,12 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                  }
                  case air::TextureKind::depth_cube_array:
                  case air::TextureKind::texture_cube_array: {
+                   auto array_length = co_yield metadata_get_texture_array_length(
+                    co_yield res_metadata(nullptr));
                    co_return co_yield call_sample(
                      res, res_h, sampler_h,
                      co_yield truncate_vec(3)(coord), // .rgb
-                     co_yield extract_element(3)(coord) >>=
-                     implicit_float_to_int, // .a
+                     co_yield convert_array_index(co_yield extract_element(3)(coord), array_length),
                      nullptr, nullptr, nullptr, LOD
                    );
                  } break;
@@ -2550,10 +2579,10 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                  );
                  auto& [res, res_handle_fn, res_metadata] =
                    ctx.resource.srv_range_map[sample.src_resource.range_id];
-                 auto& [sampler_handle_fn, sampler_metadata] =
+                 auto& [sampler_handle_fn, sampler_cube_fn, sampler_metadata] =
                    ctx.resource.sampler_range_map[sample.src_sampler.range_id];
                  auto res_h = co_yield res_handle_fn(nullptr);
-                 auto sampler_h = co_yield sampler_handle_fn(nullptr);
+                 auto sampler_h = texture_is_cube(res) ? co_yield sampler_cube_fn(nullptr): co_yield sampler_handle_fn(nullptr);
                  auto coord = co_yield load_src_op<true>(sample.src_address);
                  
                  auto sampler_bias = co_yield metadata_get_sampler_bias(
@@ -2575,10 +2604,12 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                    );
                  }
                  case air::TextureKind::texture_1d_array: {
+                   auto array_length = co_yield metadata_get_texture_array_length(
+                    co_yield res_metadata(nullptr));
                    co_return co_yield call_sample(
                      res, res_h, sampler_h,
                      co_yield extract_element(0)(coord) >>= extend_to_float2,      // .r
-                     co_yield extract_element(1)(coord) >>= implicit_float_to_int, // .g
+                     co_yield convert_array_index(co_yield extract_element(1)(coord), array_length),
                      co_yield extract_element(0)(offset_const) >>= extend_to_int2, // 1d offset
                      bias, res_min_lod_clamp
                    );
@@ -2595,11 +2626,12 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                  }
                  case air::TextureKind::depth_2d_array:
                  case air::TextureKind::texture_2d_array: {
+                   auto array_length = co_yield metadata_get_texture_array_length(
+                    co_yield res_metadata(nullptr));
                    co_return co_yield call_sample(
                      res, res_h, sampler_h,
                      co_yield truncate_vec(2)(coord), // .rg
-                     co_yield extract_element(2)(coord) >>=
-                     implicit_float_to_int,                  // .b
+                     co_yield convert_array_index(co_yield extract_element(2)(coord), array_length),
                      co_yield truncate_vec(2)(offset_const), // 2d offset
                      bias, res_min_lod_clamp
                    );
@@ -2623,11 +2655,12 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                  }
                  case air::TextureKind::depth_cube_array:
                  case air::TextureKind::texture_cube_array: {
+                   auto array_length = co_yield metadata_get_texture_array_length(
+                    co_yield res_metadata(nullptr));
                    co_return co_yield call_sample(
                      res, res_h, sampler_h,
                      co_yield truncate_vec(3)(coord), // .rgb
-                     co_yield extract_element(3)(coord) >>=
-                     implicit_float_to_int, // .a
+                     co_yield convert_array_index(co_yield extract_element(3)(coord), array_length),
                      nullptr, bias, res_min_lod_clamp
                    );
                  } break;
@@ -2658,14 +2691,13 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                     )}
                  );
 
-                 // min_lod_clamp ignored
-                 auto &[res, res_handle_fn, __] =
+                 auto &[res, res_handle_fn, res_metadata] =
                    ctx.resource.srv_range_map[sample.src_resource.range_id];
                  // sampler bias ignored
-                 auto &[sampler_handle_fn, _] =
+                 auto &[sampler_handle_fn, sampler_cube_fn, _] =
                    ctx.resource.sampler_range_map[sample.src_sampler.range_id];
                  auto res_h = co_yield res_handle_fn(nullptr);
-                 auto sampler_h = co_yield sampler_handle_fn(nullptr);
+                 auto sampler_h = texture_is_cube(res) ? co_yield sampler_cube_fn(nullptr): co_yield sampler_handle_fn(nullptr);
                  auto coord = co_yield load_src_op<true>(sample.src_address);
                  auto dpdx =
                    co_yield load_src_op<true>(sample.src_x_derivative);
@@ -2685,11 +2717,12 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                  }
                  case air::TextureKind::depth_2d_array:
                  case air::TextureKind::texture_2d_array: {
+                   auto array_length = co_yield metadata_get_texture_array_length(
+                    co_yield res_metadata(nullptr));
                    co_return co_yield call_sample_grad(
                      res, res_h, sampler_h,
                      co_yield truncate_vec(2)(coord), // .rg
-                     co_yield extract_element(2)(coord) >>=
-                     implicit_float_to_int, // array_index
+                     co_yield convert_array_index(co_yield extract_element(2)(coord), array_length),
                      co_yield truncate_vec(2)(dpdx),
                      co_yield truncate_vec(2)(dpdy), nullptr,
                      co_yield truncate_vec(2)(offset_const) // 2d offset
@@ -2717,11 +2750,12 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                  }
                  case air::TextureKind::depth_cube_array:
                  case air::TextureKind::texture_cube_array: {
+                   auto array_length = co_yield metadata_get_texture_array_length(
+                    co_yield res_metadata(nullptr));
                    co_return co_yield call_sample_grad(
                      res, res_h, sampler_h,
                      co_yield truncate_vec(2)(coord), // .rgb
-                     co_yield extract_element(3)(coord) >>=
-                     implicit_float_to_int, // array_index
+                     co_yield convert_array_index(co_yield extract_element(3)(coord), array_length),
                      co_yield truncate_vec(3)(dpdx),
                      co_yield truncate_vec(3)(dpdy), nullptr, nullptr
                    );
@@ -2754,10 +2788,10 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                  );
                  auto &[res, res_handle_fn, res_metadata] =
                    ctx.resource.srv_range_map[sample.src_resource.range_id];
-                 auto &[sampler_handle_fn, sampler_metadata] =
+                 auto &[sampler_handle_fn, sampler_cube_fn, sampler_metadata] =
                    ctx.resource.sampler_range_map[sample.src_sampler.range_id];
                  auto res_h = co_yield res_handle_fn(nullptr);
-                 auto sampler_h = co_yield sampler_handle_fn(nullptr);
+                 auto sampler_h = texture_is_cube(res) ? co_yield sampler_cube_fn(nullptr): co_yield sampler_handle_fn(nullptr);
                  auto coord = co_yield load_src_op<true>(sample.src_address);
                  auto reference =
                    co_yield load_src_op<true>(sample.src_reference);
@@ -2782,11 +2816,12 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                    );
                  }
                  case air::TextureKind::depth_2d_array: {
+                   auto array_length = co_yield metadata_get_texture_array_length(
+                    co_yield res_metadata(nullptr));
                    co_return co_yield call_sample_compare(
                      res, res_h, sampler_h,
                      co_yield truncate_vec(2)(coord), // .rg
-                     co_yield extract_element(2)(coord) >>=
-                     implicit_float_to_int,                  // array_index
+                     co_yield convert_array_index(co_yield extract_element(2)(coord), array_length),
                      co_yield extract_element(0)(reference), // reference
                      co_yield truncate_vec(2)(offset_const), // 2d offset
                      sampler_bias, res_min_lod_clamp,
@@ -2808,11 +2843,12 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                    );
                  }
                  case air::TextureKind::depth_cube_array: {
+                   auto array_length = co_yield metadata_get_texture_array_length(
+                    co_yield res_metadata(nullptr));
                    co_return co_yield call_sample_compare(
                      res, res_h, sampler_h,
                      co_yield truncate_vec(3)(coord), // .rgb
-                     co_yield extract_element(3)(coord) >>=
-                     implicit_float_to_int,                  // array_index
+                     co_yield convert_array_index(co_yield extract_element(3)(coord), array_length),
                      co_yield extract_element(0)(reference), // reference
                      nullptr, sampler_bias, res_min_lod_clamp,
                      sample.level_zero
@@ -2830,14 +2866,13 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
           },
           [&effect](InstGather sample) {
             effect << make_effect_bind([=](struct context ctx) -> IREffect {
-              // min_lod_clamp ignored
-              auto &[res, res_handle_fn, __] =
+              auto &[res, res_handle_fn, res_metadata] =
                 ctx.resource.srv_range_map[sample.src_resource.range_id];
               // sampler bias ignored
-              auto &[sampler_handle_fn, _] =
+              auto &[sampler_handle_fn, sampler_cube_fn, _] =
                 ctx.resource.sampler_range_map[sample.src_sampler.range_id];
               auto res_h = co_yield res_handle_fn(nullptr);
-              auto sampler_h = co_yield sampler_handle_fn(nullptr);
+              auto sampler_h = texture_is_cube(res) ? co_yield sampler_cube_fn(nullptr): co_yield sampler_handle_fn(nullptr);
               auto coord = co_yield load_src_op<true>(sample.src_address);
               auto offset = co_yield load_src_op<false>(sample.offset);
               auto component =
@@ -2854,10 +2889,11 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
               }
               case air::TextureKind::depth_2d_array:
               case air::TextureKind::texture_2d_array: {
+                auto array_length = co_yield metadata_get_texture_array_length(
+                    co_yield res_metadata(nullptr));
                 ret = co_yield call_gather(
                   res, res_h, sampler_h, co_yield truncate_vec(2)(coord),
-                  co_yield extract_element(2)(coord) >>=
-                  implicit_float_to_int, // .b
+                  co_yield convert_array_index(co_yield extract_element(2)(coord), array_length),
                   co_yield truncate_vec(2)(offset), component
                 );
                 break;
@@ -2872,10 +2908,11 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
               }
               case air::TextureKind::depth_cube_array:
               case air::TextureKind::texture_cube_array: {
+                auto array_length = co_yield metadata_get_texture_array_length(
+                  co_yield res_metadata(nullptr));
                 ret = co_yield call_gather(
                   res, res_h, sampler_h, co_yield truncate_vec(3)(coord),
-                  co_yield extract_element(3)(coord) >>=
-                  implicit_float_to_int, // .b
+                  co_yield convert_array_index(co_yield extract_element(3)(coord), array_length),
                   nullptr, component
                 );
                 break;
@@ -2903,14 +2940,13 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
             effect << store_dst_op<true>(
               sample.dst,
               (make_irvalue_bind([=](struct context ctx) -> IRValue {
-                 // min_lod_clamp ignored
-                 auto &[res, res_handle_fn, __] =
+                 auto &[res, res_handle_fn, res_metadata] =
                    ctx.resource.srv_range_map[sample.src_resource.range_id];
                  // sampler bias ignored
-                 auto &[sampler_handle_fn, sampler_metadata] =
+                 auto &[sampler_handle_fn, sampler_cube_fn, sampler_metadata] =
                    ctx.resource.sampler_range_map[sample.src_sampler.range_id];
                  auto res_h = co_yield res_handle_fn(nullptr);
-                 auto sampler_h = co_yield sampler_handle_fn(nullptr);
+                 auto sampler_h = texture_is_cube(res) ? co_yield sampler_cube_fn(nullptr): co_yield sampler_handle_fn(nullptr);
                  auto coord = co_yield load_src_op<true>(sample.src_address);
                  auto offset = co_yield load_src_op<false>(sample.offset);
                  auto reference =
@@ -2924,10 +2960,11 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                    );
                  }
                  case air::TextureKind::depth_2d_array: {
+                   auto array_length = co_yield metadata_get_texture_array_length(
+                    co_yield res_metadata(nullptr));
                    co_return co_yield call_gather_compare(
                      res, res_h, sampler_h, co_yield truncate_vec(2)(coord),
-                     co_yield extract_element(2)(coord) >>=
-                     implicit_float_to_int, // .b
+                     co_yield convert_array_index(co_yield extract_element(2)(coord), array_length),
                      co_yield extract_element(0)(reference),
                      co_yield truncate_vec(2)(offset)
                    );
@@ -2939,10 +2976,11 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                    );
                  }
                  case air::TextureKind::depth_cube_array: {
+                   auto array_length = co_yield metadata_get_texture_array_length(
+                    co_yield res_metadata(nullptr));
                    co_return co_yield call_gather_compare(
                      res, res_h, sampler_h, co_yield truncate_vec(3)(coord),
-                     co_yield extract_element(3)(coord) >>=
-                     implicit_float_to_int, // .a
+                     co_yield convert_array_index(co_yield extract_element(3)(coord), array_length),
                      co_yield extract_element(0)(reference), nullptr
                    );
                  } break;
@@ -4105,10 +4143,10 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                 auto &[res, res_handle_fn, _] =
                   ctx.resource.srv_range_map[calc.src_resource.range_id];
                 // FIXME: sampelr bias is not respected
-                auto &[sampler_handle_fn, __] =
+                auto &[sampler_handle_fn, sampler_cube_fn, __] =
                   ctx.resource.sampler_range_map[calc.src_sampler.range_id];
                 auto res_h = co_yield res_handle_fn(nullptr);
-                auto sampler_h = co_yield sampler_handle_fn(nullptr);
+               auto sampler_h = texture_is_cube(res) ? co_yield sampler_cube_fn(nullptr): co_yield sampler_handle_fn(nullptr);
                 auto coord = co_yield load_src_op<true>(calc.src_address);
                 pvalue clamped_float = nullptr, unclamped_float = nullptr;
                 switch (res.resource_kind_logical) {

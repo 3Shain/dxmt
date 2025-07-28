@@ -3,7 +3,7 @@
 #include "dxmt_buffer.hpp"
 #include "dxmt_dynamic.hpp"
 #include "dxmt_format.hpp"
-#include "mtld11_resource.hpp"
+#include "d3d11_resource.hpp"
 
 namespace dxmt {
 
@@ -131,8 +131,12 @@ public:
     *pBindFlags = desc.BindFlags;
     return dynamic_;
   }
-  Rc<DynamicTexture>
-  dynamicTexture(UINT *, UINT *) final {
+  Rc<DynamicLinearTexture>
+  dynamicLinearTexture(UINT *, UINT *) final {
+    return {};
+  };
+  Rc<DynamicBuffer>
+  dynamicTexture(UINT , UINT *, UINT *) final {
     return {};
   };
 
@@ -175,6 +179,10 @@ public:
     } else {
       MTL_DXGI_FORMAT_DESC format;
       if (FAILED(MTLQueryDXGIFormat(m_parent->GetMTLDevice(), finalDesc.Format, format))) {
+        return E_FAIL;
+      }
+      if (!format.BytesPerTexel) {
+        ERR("D3D11Buffer::CreateShaderResourceView: not an ordinary or packed format: ", finalDesc.Format);
         return E_FAIL;
       }
 
@@ -250,6 +258,10 @@ public:
     } else {
       MTL_DXGI_FORMAT_DESC format;
       if (FAILED(MTLQueryDXGIFormat(m_parent->GetMTLDevice(), finalDesc.Format, format))) {
+        return E_FAIL;
+      }
+      if (!format.BytesPerTexel) {
+        ERR("D3D11Buffer::CreateUnorderedAccessView: not an ordinary or packed format: ", finalDesc.Format);
         return E_FAIL;
       }
 

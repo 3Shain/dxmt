@@ -61,6 +61,7 @@ struct ConstantBufferInfo {
 struct SamplerInfo {
   ResourceRange range;
   uint32_t arg_index;
+  uint32_t arg_cube_index;
   uint32_t arg_metadata_index;
 };
 
@@ -134,6 +135,7 @@ struct phase_temp {
 
 struct sampler_descriptor {
   IndexedIRValue handle;
+  IndexedIRValue handle_cube;
   IndexedIRValue bias;
 };
 

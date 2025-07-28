@@ -9,7 +9,7 @@
 #include "dxmt_hud_state.hpp"
 #include "dxmt_statistics.hpp"
 #include "log/log.hpp"
-#include "mtld11_resource.hpp"
+#include "d3d11_resource.hpp"
 #include "d3d11_device.hpp"
 #include "util_env.hpp"
 #include "util_string.hpp"

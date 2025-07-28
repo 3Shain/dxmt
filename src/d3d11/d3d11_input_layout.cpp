@@ -44,12 +44,16 @@ HRESULT ExtractMTLInputLayoutElements(
 
     MTL_DXGI_FORMAT_DESC metal_format;
     if (FAILED(MTLQueryDXGIFormat(device->GetMTLDevice(), desc.Format, metal_format))) {
-      ERR("CreateInputLayout: Unsupported vertex format ", desc.Format);
+      ERR("CreateInputLayout: Unsupported vertex format: ", desc.Format);
       return E_FAIL;
     }
 
     if (!metal_format.AttributeFormat) {
-      ERR("CreateInputLayout: Unsupported vertex format ", desc.Format);
+      ERR("CreateInputLayout: Unsupported vertex format: ", desc.Format);
+      return E_INVALIDARG;
+    }
+    if (!metal_format.BytesPerTexel) {
+      ERR("CreateInputLayout: not an ordinary or packed format: ", desc.Format);
       return E_INVALIDARG;
     }
     attribute.Format = metal_format.AttributeFormat;

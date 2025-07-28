@@ -36,8 +36,6 @@ Is_sRGBVariant(WMTPixelFormat format) {
 
 bool IsBlockCompressionFormat(WMTPixelFormat format);
 
-size_t FormatBytesPerTexel(WMTPixelFormat format);
-
 uint32_t DepthStencilPlanarFlags(WMTPixelFormat format);
 
 enum MTL_DXGI_FORMAT_FLAG {
@@ -47,6 +45,7 @@ enum MTL_DXGI_FORMAT_FLAG {
   MTL_DXGI_FORMAT_DEPTH_PLANER = 16,
   MTL_DXGI_FORMAT_STENCIL_PLANER = 32,
   MTL_DXGI_FORMAT_EMULATED_D24 = 256,
+  MTL_DXGI_FORMAT_EMULATED_LINEAR_DEPTH_STENCIL = 512,
 };
 
 struct MTL_DXGI_FORMAT_DESC {

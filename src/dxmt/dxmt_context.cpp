@@ -13,6 +13,7 @@ namespace dxmt {
 ArgumentEncodingContext::ArgumentEncodingContext(CommandQueue &queue, WMT::Device device, InternalCommandLibrary &lib) :
     emulated_cmd(device, lib, *this),
     clear_rt_cmd(device, lib, *this),
+    blit_depth_stencil_cmd(device, lib, *this),
     device_(device),
     queue_(queue) {
   dummy_sampler_info_.support_argument_buffers = true;
@@ -232,6 +233,11 @@ template void ArgumentEncodingContext::encodeShaderResources<PipelineStage::Pixe
     const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT *arguments, uint64_t argument_buffer_offset
 );
 
+inline uint64_t
+TextureMetadata(uint32_t array_length, float min_lod) {
+  return ((uint64_t)array_length << 32) | (uint64_t)std::bit_cast<uint32_t>(min_lod);
+}
+
 template <PipelineStage stage, PipelineKind kind>
 void
 ArgumentEncodingContext::encodeShaderResources(
@@ -250,13 +256,16 @@ ArgumentEncodingContext::encodeShaderResources(
     }
     case SM50BindingType::Sampler: {
       auto slot = 16 * unsigned(stage) + arg.SM50BindingSlot;
-      if (!sampler_[slot].sampler) {
+      auto &sampler = sampler_[slot].sampler;
+      if (!sampler) {
         encoded_buffer[arg.StructurePtrOffset] = dummy_sampler_info_.gpu_resource_id;
-        encoded_buffer[arg.StructurePtrOffset + 1] = (uint64_t)std::bit_cast<uint32_t>(0.0f);
+        encoded_buffer[arg.StructurePtrOffset + 1] = dummy_sampler_info_.gpu_resource_id;
+        encoded_buffer[arg.StructurePtrOffset + 2] = (uint64_t)std::bit_cast<uint32_t>(0.0f);
         break;
       }
-      encoded_buffer[arg.StructurePtrOffset] = sampler_[slot].sampler_id;
-      encoded_buffer[arg.StructurePtrOffset + 1] = (uint64_t)std::bit_cast<uint32_t>(sampler_[slot].bias);
+      encoded_buffer[arg.StructurePtrOffset] = sampler->sampler_state_handle;
+      encoded_buffer[arg.StructurePtrOffset + 1] = sampler->sampler_state_cube_handle;
+      encoded_buffer[arg.StructurePtrOffset + 2] = (uint64_t)std::bit_cast<uint32_t>(sampler->lod_bias);
       break;
     }
     case SM50BindingType::SRV: {
@@ -286,7 +295,7 @@ ArgumentEncodingContext::encodeShaderResources(
           auto viewIdChecked = srv.texture->checkViewUseArray(srv.viewId, arg.Flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE_ARRAY);
           encoded_buffer[arg.StructurePtrOffset] =
               access(srv.texture, viewIdChecked, DXMT_ENCODER_RESOURCE_ACESS_READ).gpu_resource_id;
-          encoded_buffer[arg.StructurePtrOffset + 1] = 0;
+          encoded_buffer[arg.StructurePtrOffset + 1] = TextureMetadata(srv.texture->arrayLength(viewIdChecked), 0);
           makeResident<stage, kind>(srv.texture.ptr(), viewIdChecked);
         } else {
           encoded_buffer[arg.StructurePtrOffset] = 0;
@@ -325,7 +334,7 @@ ArgumentEncodingContext::encodeShaderResources(
           assert(arg.Flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE_MINLOD_CLAMP);
           auto viewIdChecked = uav.texture->checkViewUseArray(uav.viewId, arg.Flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE_ARRAY);
           encoded_buffer[arg.StructurePtrOffset] = access(uav.texture, viewIdChecked, access_flags).gpu_resource_id;
-          encoded_buffer[arg.StructurePtrOffset + 1] = 0;
+          encoded_buffer[arg.StructurePtrOffset + 1] = TextureMetadata(uav.texture->arrayLength(viewIdChecked), 0);
           makeResident<stage, kind>(uav.texture.ptr(), viewIdChecked, read, write);
         } else {
           encoded_buffer[arg.StructurePtrOffset] = 0;

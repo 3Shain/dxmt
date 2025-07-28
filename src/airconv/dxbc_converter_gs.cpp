@@ -176,7 +176,7 @@ convert_dxbc_geometry_shader(
   auto const zero_const = builder.getInt32(0);
   auto const one_const = builder.getInt32(1);
   auto const two_const = builder.getInt32(2);
-  auto next_write_vertex = builder.CreateAlloca(types._int, nullptr, "next_write_veretx");
+  auto next_write_vertex = builder.CreateAlloca(types._int, nullptr, "next_write_vertex");
   builder.CreateStore(zero_const, next_write_vertex);
   auto vertex_offset = builder.CreateAlloca(types._int, nullptr, "vertex_offset");
   builder.CreateStore(zero_const, vertex_offset);
@@ -305,6 +305,10 @@ convert_dxbc_geometry_shader(
   auto payload = function->getArg(payload_idx);
   auto valid_primitive_mask =
       builder.CreateLoad(types._int, builder.CreateConstInBoundsGEP1_32(types._int, payload, 1));
+  auto warp_id =
+      builder.CreateLoad(types._int, builder.CreateConstInBoundsGEP1_32(types._int, payload, 2));
+
+  resource_map.patch_id = builder.CreateAdd(builder.CreateMul(warp_id, builder.getInt32(warp_primitive_count)), primitive_id_in_warp);
 
   auto input_ptr_int4_type =
       llvm::ArrayType::get(types._int4, pVertexStage->max_output_register * vertex_per_primitive);
@@ -683,7 +687,16 @@ convert_dxbc_vertex_for_geometry_shader(
         index_buffer_element_type,
         builder.CreateGEP(index_buffer_element_type, index_buffer, {builder.CreateAdd(start_index, global_index_id)})
     );
-    resource_map.vertex_id = builder.CreateZExt(vertex_id, types._int);
+    // so 0xFFFF is mapped to 0xFFFFFFFF, other values are zero-extended
+    resource_map.vertex_id = builder.CreateSub(
+      builder.CreateZExt(
+        builder.CreateAdd(
+          vertex_id, llvm::ConstantInt::get(index_buffer_element_type, 1)
+        ),
+        types._int
+      ),
+      llvm::ConstantInt::get(types._int, 1)
+    );
 
     builder.CreateCondBr(
         builder.CreateICmp(llvm::CmpInst::ICMP_NE, builder.getInt32(-1), resource_map.vertex_id), active, will_dispatch
@@ -801,6 +814,8 @@ convert_dxbc_vertex_for_geometry_shader(
   builder.CreateStore(instance_id, builder.CreateConstInBoundsGEP1_32(types._int, payload, 0));
 
   builder.CreateStore(valid_primitive_mask, builder.CreateConstInBoundsGEP1_32(types._int, payload, 1));
+
+  builder.CreateStore(warp_id, builder.CreateConstInBoundsGEP1_32(types._int, payload, 2));
 
   if (auto err = air::call_set_mesh_properties(
                      function->getArg(mesh_props_idx),

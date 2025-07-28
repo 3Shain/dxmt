@@ -1,7 +1,7 @@
 #pragma once
 #include "Metal.hpp"
+#include "dxmt_buffer.hpp"
 #include "thread.hpp"
-#include "wsi_platform.hpp"
 #include <cstdint>
 #include <atomic>
 #include <queue>
@@ -30,18 +30,22 @@ public:
 
   void *
   mappedImmediateMemory() {
-    return buffer_pool[immediate_name_].info.memory.get();
+    return buffer_pool[immediate_name_]->mappedMemory(0);
   }
 
   void *
   mappedMemory(uint64_t id) {
-    return buffer_pool[id].info.memory.get();
+    return buffer_pool[id]->mappedMemory(0);
   }
 
-  uint64_t encoding_name;
+  Rc<Buffer> &
+  buffer() {
+    return buffer_;
+  };
 
-  WMT::Buffer currentBuffer() {
-    return buffer_pool[encoding_name].allocation;
+  Rc<BufferAllocation>
+  allocation(uint64_t id) {
+    return buffer_pool[id];
   };
 
   /**
@@ -60,34 +64,14 @@ public:
   StagingResource(WMT::Device device, uint64_t length, WMTResourceOptions options, uint32_t bytes_per_row, uint32_t bytes_per_image);
 
 private:
-  struct StagingBuffer {
-    WMTBufferInfo info;
-    WMT::Reference<WMT::Buffer> allocation;
-
-    ~StagingBuffer() {
-#ifdef __i386__
-      if (info.memory.get()) {
-        wsi::aligned_free(info.memory.get());
-        info.memory.set(nullptr);
-      }
-#endif
-    }
-
-    StagingBuffer() = default;
-    StagingBuffer(const StagingBuffer &) = delete;
-    StagingBuffer(StagingBuffer &&move) {
-      info = move.info;
-      move.info.memory.set(nullptr);
-      allocation = std::move(move.allocation);
-    };
-  };
   struct QueueEntry {
     uint64_t id;
     uint64_t will_free_at;
   };
 
+  Rc<Buffer> buffer_;
   uint64_t immediate_name_;
-  std::vector<StagingBuffer> buffer_pool;
+  std::vector<Rc<BufferAllocation>> buffer_pool;
   std::atomic<uint32_t> refcount_ = {0u};
   std::queue<QueueEntry> fifo;
   dxmt::mutex mutex_;

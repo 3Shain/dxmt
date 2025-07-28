@@ -82,8 +82,7 @@ public:
 
     *ppvObject = nullptr;
 
-    if (riid == __uuidof(ID3D11Multithread)
-        && !(m_parent->GetCreationFlags() & D3D11_CREATE_DEVICE_SINGLETHREADED)) {
+    if (riid == __uuidof(ID3D11Multithread)) {
       *ppvObject = ref(&d3dmt_);
       return S_OK;
     }
@@ -108,6 +107,24 @@ public:
       this->m_parent->Release();
 
     return refCount;
+  }
+
+  void *
+  MapDynamicBuffer(Rc<DynamicBuffer> &dynamic, uint64_t current_seq_id, uint64_t coherent_seq_id) {
+    if (auto next_sub = dynamic->nextSuballocation()) {
+      EmitST([allocation = dynamic->immediateName(), next_sub](ArgumentEncodingContext &enc) mutable {
+        allocation->useSuballocation(next_sub);
+      });
+    } else {
+      dynamic->updateImmediateName(current_seq_id, dynamic->allocate(coherent_seq_id), 0, false);
+      EmitST([allocation = dynamic->immediateName(),
+              buffer = Rc(dynamic->buffer)](ArgumentEncodingContext &enc) mutable {
+        allocation->useSuballocation(0);
+        auto _ = buffer->rename(forward_rc(allocation));
+      });
+    }
+
+    return dynamic->immediateMappedMemory();
   }
 
   HRESULT
@@ -143,19 +160,7 @@ public:
           }
         }
 
-        if (auto next_sub = dynamic->nextSuballocation()) {
-          EmitST([allocation = dynamic->immediateName(), next_sub](ArgumentEncodingContext &enc) mutable {
-            allocation->useSuballocation(next_sub);
-          });
-        } else {
-          dynamic->updateImmediateName(current_seq_id, dynamic->allocate(coherent_seq_id), 0, false);
-          EmitST([allocation = dynamic->immediateName(), buffer = Rc(dynamic->buffer)](ArgumentEncodingContext &enc) mutable {
-            allocation->useSuballocation(0);
-            auto _ = buffer->rename(forward_rc(allocation));
-          });
-        }
-
-        pMappedResource->pData = dynamic->immediateMappedMemory();
+        pMappedResource->pData = MapDynamicBuffer(dynamic, current_seq_id, coherent_seq_id);
         pMappedResource->RowPitch = buffer_length;
         pMappedResource->DepthPitch = buffer_length;
         break;
@@ -169,7 +174,27 @@ public:
       }
       return S_OK;
     }
-    if (auto dynamic = GetDynamicTexture(pResource, &row_pitch, &depth_pitch)) {
+    if (auto dynamic = GetDynamicTexture(pResource, Subresource, &row_pitch, &depth_pitch)) {
+      switch (MapType) {
+      case D3D11_MAP_READ:
+      case D3D11_MAP_WRITE:
+      case D3D11_MAP_READ_WRITE:
+      case D3D11_MAP_WRITE_NO_OVERWRITE:
+        return E_INVALIDARG;
+      case D3D11_MAP_WRITE_DISCARD: {
+        for (auto &stage : state_.ShaderStages) {
+          stage.SRVs.set_dirty();
+        }
+
+        pMappedResource->pData = MapDynamicBuffer(dynamic, current_seq_id, coherent_seq_id);
+        pMappedResource->RowPitch = row_pitch;
+        pMappedResource->DepthPitch = depth_pitch;
+        break;
+      }
+      }
+      return S_OK;
+    }
+    if (auto dynamic = GetDynamicLinearTexture(pResource, &row_pitch, &depth_pitch)) {
       switch (MapType) {
       case D3D11_MAP_READ:
       case D3D11_MAP_WRITE:
@@ -217,7 +242,9 @@ public:
           // can't guarantee a full overwrite
           std::memcpy(staging->mappedMemory(next_name), staging->mappedImmediateMemory(), staging->length);
           staging->updateImmediateName(current_seq_id, next_name);
-          EmitST([staging, next_name](ArgumentEncodingContext &enc) mutable { staging->encoding_name = next_name; });
+          EmitST([staging, next_name](ArgumentEncodingContext &enc) mutable { 
+            auto _ = staging->buffer()->rename(staging->allocation(next_name));
+          });
           result = StagingMapResult::Mappable;
         }
         if (result == StagingMapResult::Mappable) {
@@ -258,9 +285,16 @@ public:
 
     if (unlikely(!pResource))
       return;
+    UINT row_pitch = 0;
+    UINT depth_pitch = 0;
     if (auto staging = GetStagingResource(pResource, Subresource)) {
       staging->unmap();
     };
+    if (auto dynamic = GetDynamicTexture(pResource, Subresource, &row_pitch, &depth_pitch)) {
+      BlitObject texture(device, pResource);
+      UpdateTexture(TextureUpdateCommand(texture, Subresource, nullptr),
+                    dynamic->buffer, row_pitch, depth_pitch);
+    }
   }
 
   void
@@ -473,7 +507,7 @@ public:
       used_dynamic.buffer->updateImmediateName(seq_id, Rc(used_dynamic.allocation), used_dynamic.suballocation, true);
     }
 
-    for (const auto &used_dynamic : cmdlist->used_dynamic_textures) {
+    for (const auto &used_dynamic : cmdlist->used_dynamic_lineartextures) {
       if (!used_dynamic.latest)
         continue;
       used_dynamic.texture->updateImmediateName(seq_id, Rc(used_dynamic.allocation), true);

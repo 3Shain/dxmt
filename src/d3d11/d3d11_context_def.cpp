@@ -3,6 +3,7 @@
 #include "d3d11_context_impl.cpp"
 #include "dxmt_buffer.hpp"
 #include "dxmt_command_queue.hpp"
+#include "dxmt_dynamic.hpp"
 
 namespace dxmt {
 
@@ -17,7 +18,7 @@ struct DeferredContextInternalState {
   CommandQueue &cmd_queue;
   Com<MTLD3D11CommandList> current_cmdlist;
   std::unordered_map<DynamicBuffer *, DynamicBufferAllocation> current_dynamic_buffer_allocations;
-  std::unordered_map<DynamicTexture *, std::pair<TextureAllocation *, uint32_t>> current_dynamic_texture_allocations;
+  std::unordered_map<DynamicLinearTexture *, std::pair<TextureAllocation *, uint32_t>> current_dynamic_texture_allocations;
   std::unordered_map<void *, std::pair<Com<IMTLD3DOcclusionQuery>, uint32_t>> building_visibility_queries;
 };
 
@@ -94,6 +95,44 @@ public:
     return refCount;
   }
 
+  void *
+  MapDynamicBuffer(Rc<DynamicBuffer> &dynamic) {
+    auto ret = ctx_state.current_dynamic_buffer_allocations.find(dynamic.ptr());
+    if (ret != ctx_state.current_dynamic_buffer_allocations.end()) {
+      auto &allocation_state = ret->second;
+      auto allocation = allocation_state.allocation;
+      auto allocation_id = allocation_state.allocation_id;
+      auto &suballocation = allocation_state.suballocation;
+      if (allocation->hasSuballocatoin(suballocation + 1)) {
+        suballocation += 1;
+        ctx_state.current_cmdlist->used_dynamic_buffers[allocation_id].suballocation = suballocation;
+        EmitST([allocation, sub = suballocation](ArgumentEncodingContext &enc) mutable {
+          allocation->useSuballocation(sub);
+        });
+        return allocation->mappedMemory(suballocation);
+      }
+    }
+    Rc<BufferAllocation> new_allocation = dynamic->allocate(ctx_state.cmd_queue.CoherentSeqId());
+    uint32_t id = ctx_state.current_cmdlist->used_dynamic_buffers.size();
+    // track the current allocation in case of a following NO_OVERWRITE map
+    if (ret == ctx_state.current_dynamic_buffer_allocations.end()) {
+      ctx_state.current_dynamic_buffer_allocations.insert(ret, {dynamic.ptr(), {new_allocation.ptr(), id, 0}});
+    } else {
+      auto previous_allocation_id = ret->second.allocation_id;
+      ctx_state.current_cmdlist->used_dynamic_buffers[previous_allocation_id].latest = false;
+      ret->second = {new_allocation.ptr(), id, 0};
+    }
+    // collect allocated buffers and recycle them when the command list is released
+    ctx_state.current_cmdlist->used_dynamic_buffers.push_back(
+        used_dynamic_buffer{dynamic.ptr(), new_allocation, 0, true}
+    );
+    EmitST([allocation = new_allocation, buffer = Rc(dynamic->buffer)](ArgumentEncodingContext &enc) mutable {
+      allocation->useSuballocation(0);
+      auto _ = buffer->rename(forward_rc(allocation));
+    });
+    return new_allocation->mappedMemory(0);
+  }
+
   HRESULT
   STDMETHODCALLTYPE
   Map(ID3D11Resource *pResource, UINT Subresource, D3D11_MAP MapType, UINT MapFlags,
@@ -122,43 +161,8 @@ public:
             stage.SRVs.set_dirty();
           }
         }
-        auto ret = ctx_state.current_dynamic_buffer_allocations.find(dynamic.ptr());
-        if (ret != ctx_state.current_dynamic_buffer_allocations.end()) {
-          auto &allocation_state = ret->second;
-          auto allocation = allocation_state.allocation;
-          auto allocation_id = allocation_state.allocation_id;
-          auto &suballocation = allocation_state.suballocation;
-          if (allocation->hasSuballocatoin(suballocation + 1)) {
-            suballocation += 1;
-            ctx_state.current_cmdlist->used_dynamic_buffers[allocation_id].suballocation = suballocation;
-            EmitST([allocation, sub = suballocation](ArgumentEncodingContext &enc) mutable {
-              allocation->useSuballocation(sub);
-            });
-            pMappedResource->pData = allocation->mappedMemory(suballocation);
-            pMappedResource->RowPitch = buffer_length;
-            pMappedResource->DepthPitch = buffer_length;
-            break;
-          }
-        }
-        Rc<BufferAllocation> new_allocation = dynamic->allocate(ctx_state.cmd_queue.CoherentSeqId());
-        uint32_t id = ctx_state.current_cmdlist->used_dynamic_buffers.size();
-        // track the current allocation in case of a following NO_OVERWRITE map
-        if (ret == ctx_state.current_dynamic_buffer_allocations.end()) {
-          ctx_state.current_dynamic_buffer_allocations.insert(
-              ret, {dynamic.ptr(), {new_allocation.ptr(), id, 0}});
-        } else {
-          auto previous_allocation_id = ret->second.allocation_id;
-          ctx_state.current_cmdlist->used_dynamic_buffers[previous_allocation_id].latest = false;
-          ret->second = {new_allocation.ptr(), id, 0};
-        }
-        // collect allocated buffers and recycle them when the command list is released
-        ctx_state.current_cmdlist->used_dynamic_buffers.push_back(used_dynamic_buffer{dynamic.ptr(), new_allocation, 0, true});
-        EmitST([allocation = new_allocation, buffer = Rc(dynamic->buffer)](ArgumentEncodingContext &enc) mutable {
-          allocation->useSuballocation(0);
-          auto _ = buffer->rename(forward_rc(allocation));
-        });
 
-        pMappedResource->pData = new_allocation->mappedMemory(0);
+        pMappedResource->pData = MapDynamicBuffer(dynamic);
         pMappedResource->RowPitch = buffer_length;
         pMappedResource->DepthPitch = buffer_length;
         break;
@@ -178,7 +182,7 @@ public:
       }
       return S_OK;
     }
-    if (auto dynamic = GetDynamicTexture(pResource, &row_pitch, &depth_pitch)) {
+    if (auto dynamic = GetDynamicLinearTexture(pResource, &row_pitch, &depth_pitch)) {
       if (!pMappedResource)
         return E_INVALIDARG;
       switch (MapType) {
@@ -191,7 +195,7 @@ public:
             stage.SRVs.set_dirty();
         }
         Rc<TextureAllocation> new_allocation = dynamic->allocate(ctx_state.cmd_queue.CoherentSeqId());
-        uint32_t id = ctx_state.current_cmdlist->used_dynamic_textures.size();
+        uint32_t id = ctx_state.current_cmdlist->used_dynamic_lineartextures.size();
         // track the current allocation in case of a following NO_OVERWRITE map
         auto ret = ctx_state.current_dynamic_texture_allocations.find(dynamic.ptr());
         if (ret == ctx_state.current_dynamic_texture_allocations.end()) {
@@ -199,11 +203,11 @@ public:
               ret, {dynamic.ptr(), {new_allocation.ptr(), id}});
         } else {
           auto previous_allocation_id = ret->second.second;
-          ctx_state.current_cmdlist->used_dynamic_textures[previous_allocation_id].latest = false;
+          ctx_state.current_cmdlist->used_dynamic_lineartextures[previous_allocation_id].latest = false;
           ret->second = {new_allocation.ptr(), id};
         }
         // collect allocated buffers and recycle them when the command list is released
-        ctx_state.current_cmdlist->used_dynamic_textures.push_back({dynamic, new_allocation, false});
+        ctx_state.current_cmdlist->used_dynamic_lineartextures.push_back({dynamic, new_allocation, false});
         EmitST([allocation = new_allocation, texture = Rc(dynamic->texture)](ArgumentEncodingContext &enc) mutable {
           auto _ = texture->rename(forward_rc(allocation));
         });
@@ -227,6 +231,27 @@ public:
       }
       return S_OK;
     }
+    if (auto dynamic = GetDynamicTexture(pResource, Subresource, &row_pitch, &depth_pitch)) {
+      if (!pMappedResource)
+        return E_INVALIDARG;
+      switch (MapType) {
+      case D3D11_MAP_READ:
+      case D3D11_MAP_WRITE:
+      case D3D11_MAP_READ_WRITE:
+      case D3D11_MAP_WRITE_NO_OVERWRITE:
+        return E_INVALIDARG;
+      case D3D11_MAP_WRITE_DISCARD: {
+        for (auto &stage : state_.ShaderStages) {
+            stage.SRVs.set_dirty();
+        }
+        pMappedResource->pData = MapDynamicBuffer(dynamic);
+        pMappedResource->RowPitch = row_pitch;
+        pMappedResource->DepthPitch = depth_pitch;
+        break;
+      }
+      }
+      return S_OK;
+    }
     return E_FAIL;
   }
 
@@ -235,13 +260,11 @@ public:
   Unmap(ID3D11Resource *pResource, UINT Subresource) override {
     UINT buffer_length = 0, &row_pitch = buffer_length;
     UINT bind_flag = 0, &depth_pitch = bind_flag;
-    if (auto dynamic = GetDynamicBuffer(pResource, &buffer_length, &bind_flag)) {
-      return;
+    if (auto dynamic = GetDynamicTexture(pResource, Subresource, &row_pitch, &depth_pitch)) {
+      BlitObject texture(device, pResource);
+      UpdateTexture(TextureUpdateCommand(texture, Subresource, nullptr),
+                    dynamic->buffer, row_pitch, depth_pitch);
     }
-    if (auto dynamic = GetDynamicTexture(pResource, &row_pitch, &depth_pitch)) {
-      return;
-    }
-    IMPLEMENT_ME;
   }
 
   void

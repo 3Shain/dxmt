@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Metal.hpp"
+#include "dxmt_buffer.hpp"
 #include "dxmt_texture.hpp"
 #include "rc/util_rc_ptr.hpp"
 #include <array>
@@ -181,9 +182,35 @@ private:
   WMT::Reference<WMT::Function> fs_clear_sint_;
   WMT::Reference<WMT::Function> fs_clear_depth_;
   WMT::Reference<WMT::DepthStencilState> depth_write_state_;
+  WMT::Reference<WMT::DepthStencilState> depth_readonly_state_;
   std::unordered_map<WMTPixelFormat, WMT::Reference<WMT::RenderPipelineState>> pso_cache_;
   Rc<Texture> clearing_texture_;
   TextureViewKey clearing_texture_view_;
+};
+
+class DepthStencilBlitContext {
+
+public:
+  DepthStencilBlitContext(WMT::Device device, InternalCommandLibrary &lib, ArgumentEncodingContext &ctx);
+
+  void copyFromBuffer(
+      const Rc<Buffer> &src, uint64_t src_offset, uint64_t src_length, uint32_t bytes_per_row, uint32_t bytes_per_image,
+      const Rc<Texture> &depth_stencil, uint32_t level, uint32_t slice, bool from_d24s8
+  );
+
+  void copyFromTexture(
+      const Rc<Texture> &depth_stencil, uint32_t level, uint32_t slice, const Rc<Buffer> &dst, uint64_t dst_offset,
+      uint64_t dst_length, uint32_t bytes_per_row, uint32_t bytes_per_image, bool to_d24s8
+  );
+
+private:
+  ArgumentEncodingContext &ctx_;
+  WMT::Device device_;
+  WMT::Reference<WMT::DepthStencilState> depth_stencil_state_;
+  WMT::Reference<WMT::RenderPipelineState> pso_copy_d24s8_;
+  WMT::Reference<WMT::RenderPipelineState> pso_copy_d32s8_;
+  WMT::Reference<WMT::ComputePipelineState> pso_copy_to_buffer_d24s8_;
+  WMT::Reference<WMT::ComputePipelineState> pso_copy_to_buffer_d32s8_;
 };
 
 } // namespace dxmt

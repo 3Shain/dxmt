@@ -22,7 +22,7 @@
 #include "dxmt_format.hpp"
 #include "dxmt_tasks.hpp"
 #include "ftl.hpp"
-#include "mtld11_resource.hpp"
+#include "d3d11_resource.hpp"
 #include "thread.hpp"
 #include "dxgi_object.hpp"
 #include <memory>
@@ -140,8 +140,12 @@ public:
       case D3D11_USAGE_DEFAULT:
       case D3D11_USAGE_IMMUTABLE:
         return CreateDeviceTexture1D(this, pDesc, pInitialData, ppTexture1D);
-      case D3D11_USAGE_DYNAMIC:
+      case D3D11_USAGE_DYNAMIC: {
+        HRESULT hr = CreateDynamicLinearTexture1D(this, pDesc, pInitialData, ppTexture1D);
+        if (SUCCEEDED(hr))
+          return hr;
         return CreateDynamicTexture1D(this, pDesc, pInitialData, ppTexture1D);
+      }
       case D3D11_USAGE_STAGING:
         if (pDesc->BindFlags != 0) {
           return E_INVALIDARG;
@@ -432,7 +436,7 @@ public:
   CreateSamplerState(const D3D11_SAMPLER_DESC *pSamplerDesc,
                      ID3D11SamplerState **ppSamplerState) override {
     return sampler_states.CreateStateObject(
-        pSamplerDesc, (IMTLD3D11SamplerState **)ppSamplerState);
+        pSamplerDesc, (D3D11SamplerState **)ppSamplerState);
   }
 
   HRESULT STDMETHODCALLTYPE CreateQuery(const D3D11_QUERY_DESC *pQueryDesc,
@@ -885,8 +889,12 @@ public:
       case D3D11_USAGE_DEFAULT:
       case D3D11_USAGE_IMMUTABLE:
         return CreateDeviceTexture2D(this, pDesc, pInitialData, ppTexture2D);
-      case D3D11_USAGE_DYNAMIC:
+      case D3D11_USAGE_DYNAMIC: {
+        HRESULT hr = CreateDynamicLinearTexture2D(this, pDesc, pInitialData, ppTexture2D);
+        if (SUCCEEDED(hr))
+          return hr;
         return CreateDynamicTexture2D(this, pDesc, pInitialData, ppTexture2D);
+      }
       case D3D11_USAGE_STAGING:
         if (pDesc->BindFlags != 0) {
           return E_INVALIDARG;
@@ -918,8 +926,7 @@ public:
       case D3D11_USAGE_IMMUTABLE:
         return CreateDeviceTexture3D(this, pDesc, pInitialData, ppTexture3D);
       case D3D11_USAGE_DYNAMIC:
-        ERR("dynamic texture 3d not supported yet");
-        return E_NOTIMPL;
+        return CreateDynamicTexture3D(this, pDesc, pInitialData, ppTexture3D);
       case D3D11_USAGE_STAGING:
         if (pDesc->BindFlags != 0) {
           return E_INVALIDARG;
@@ -1123,7 +1130,7 @@ private:
       pipelines_cs_;
   dxmt::mutex mutex_cs_;
 
-  StateObjectCache<D3D11_SAMPLER_DESC, IMTLD3D11SamplerState> sampler_states;
+  StateObjectCache<D3D11_SAMPLER_DESC, D3D11SamplerState> sampler_states;
   StateObjectCache<D3D11_RASTERIZER_DESC2, IMTLD3D11RasterizerState>
       rasterizer_states;
   StateObjectCache<D3D11_DEPTH_STENCIL_DESC, IMTLD3D11DepthStencilState>
@@ -1201,8 +1208,7 @@ public:
       return S_OK;
     }
 
-    if (riid == __uuidof(ID3D11Multithread)
-        && !(d3d11_device_.GetCreationFlags() & D3D11_CREATE_DEVICE_SINGLETHREADED)) {
+    if (riid == __uuidof(ID3D11Multithread)) {
       *ppvObject = ref_and_cast<ID3D11Multithread>(&d3d11_device_.d3dmt_);
       return S_OK;
     }

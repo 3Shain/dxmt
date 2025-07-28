@@ -1,5 +1,5 @@
 #include "dxmt_format.hpp"
-#include "mtld11_resource.hpp"
+#include "d3d11_resource.hpp"
 
 namespace dxmt {
 
@@ -112,7 +112,7 @@ InitializeAndNormalizeViewDescriptor(
       return S_OK;
     }
     if (TextureType == WMTTextureType2D) {
-      WARN("A texture2d view is created on multisampled texture");
+      WARN("A multisample SRV is created on 2d/array/cube texture");
       Descriptor.type = WMTTextureType2D;
       Descriptor.format = metal_format.PixelFormat;
       Descriptor.firstMiplevel = 0;
@@ -380,6 +380,17 @@ HRESULT InitializeAndNormalizeViewDescriptor(
       GetRenderTargetSize(pTexture, Descriptor.firstMiplevel, AttachmentDesc);
       return S_OK;
     }
+    if (texture_type == WMTTextureType2D) {
+      WARN("A multisample RTV is created on 2d/array/cube texture");
+      Descriptor.type = WMTTextureType2D;
+      Descriptor.format = metal_format.PixelFormat;
+      Descriptor.firstMiplevel = 0;
+      Descriptor.miplevelCount = 1;
+      Descriptor.firstArraySlice = 0;
+      Descriptor.arraySize = 1;
+      GetRenderTargetSize(pTexture, Descriptor.firstMiplevel, AttachmentDesc);
+      return S_OK;
+    }
     break;
   }
   case D3D11_RTV_DIMENSION_TEXTURE2DMSARRAY: {
@@ -532,8 +543,9 @@ InitializeAndNormalizeViewDescriptor(
       GetRenderTargetSize(pTexture, Descriptor.firstMiplevel, AttachmentDesc);
       return S_OK;
     }
-    if (texture_type == WMTTextureType2D) {
-      WARN("A texture2d view is created on multisampled texture");
+    if (texture_type == WMTTextureType2D || texture_type == WMTTextureType2DArray ||
+        texture_type == WMTTextureTypeCube) {
+      WARN("A multisample DSV is created on 2d/array/cube texture");
       Descriptor.type = WMTTextureType2D;
       Descriptor.format = metal_format.PixelFormat;
       Descriptor.firstMiplevel = 0;
