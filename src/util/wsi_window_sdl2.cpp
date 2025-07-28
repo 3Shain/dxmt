@@ -141,7 +141,7 @@ WMT::Object createMetalViewFromHWND(intptr_t hwnd, WMT::Device device, WMT::Meta
 
     void* metalLayer = SDL2Initializer::get().SDL_Metal_GetLayer(sdlView);
     if (!metalLayer) {
-        Logger::err(str::format("SDL2 WSI: createMetalViewFromHWND: SDL_Metal_GetLayer failed with error: " + std::string(SDL2Initializer::get().SDL_GetError())));
+        Logger::err(str::format("SDL2 WSI: createMetalViewFromHWND: SDL_Metal_GetLayer failed with error: ", SDL2Initializer::get().SDL_GetError()));
         return WMT::Object();
     }
 
