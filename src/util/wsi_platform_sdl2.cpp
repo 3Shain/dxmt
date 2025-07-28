@@ -28,31 +28,18 @@ SDL2Initializer::SDL2Initializer() {
     }
   }
 
-  // if there's no sdl, try to force load it
-  if (!libsdl) {
-    constexpr const char* possible_sdl2_paths[] = {
-      "libSDL2.dylib",
-      "libSDL2-2.0.dylib",
-      "libSDL2-2.0.0.dylib",
-      "/Library/Frameworks/SDL2.framework/SDL2"
-    };
-  
-    for(const auto& iter : possible_sdl2_paths) {
-      libsdl = dlopen(iter, RTLD_NOW | RTLD_LOCAL);
-      if (libsdl) {
-        Logger::trace(str::format("SDL2 WSI: Found SDL2 by dlopen: ", iter));
-        break;
-      }
-    }
-  }
-
-  // if there's *still* no sdl, the app might've statically linked against sdl, so we can try dlsym with RTLD_DEFAULT
+  // if there's no sdl, the app might've statically linked against sdl, so we can try dlsym with RTLD_DEFAULT
   #define SDL_PROC(ret, name, params) \
     name = reinterpret_cast<pfn_##name>(dlsym((libsdl == nullptr ? RTLD_DEFAULT : libsdl), #name)); \
     if (!name) { \
       Logger::err(str::format("SDL2 WSI: Failed to get function named ", #name)); \
     }
   #include "wsi_platform_sdl2_funcs.h"
+
+  if (!SDL_GetClosestDisplayMode) {
+    ERR("SDL2 WSI: failed to get SDL function pointers.");
+    abort();
+  }
 
 }
 
