@@ -82,8 +82,7 @@ public:
 
     *ppvObject = nullptr;
 
-    if (riid == __uuidof(ID3D11Multithread)
-        && !(m_parent->GetCreationFlags() & D3D11_CREATE_DEVICE_SINGLETHREADED)) {
+    if (riid == __uuidof(ID3D11Multithread)) {
       *ppvObject = ref(&d3dmt_);
       return S_OK;
     }

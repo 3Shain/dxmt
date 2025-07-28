@@ -1208,8 +1208,7 @@ public:
       return S_OK;
     }
 
-    if (riid == __uuidof(ID3D11Multithread)
-        && !(d3d11_device_.GetCreationFlags() & D3D11_CREATE_DEVICE_SINGLETHREADED)) {
+    if (riid == __uuidof(ID3D11Multithread)) {
       *ppvObject = ref_and_cast<ID3D11Multithread>(&d3d11_device_.d3dmt_);
       return S_OK;
     }
