@@ -278,11 +278,17 @@ DepthStencilBlitContext::DepthStencilBlitContext(
   ds_info.front_stencil.enabled = true;
   ds_info.front_stencil.stencil_compare_function = WMTCompareFunctionAlways;
   ds_info.front_stencil.depth_stencil_pass_op = WMTStencilOperationReplace;
+  ds_info.front_stencil.depth_fail_op = WMTStencilOperationReplace;
+  ds_info.front_stencil.stencil_fail_op = WMTStencilOperationReplace;
   ds_info.front_stencil.write_mask = 0xFF;
+  ds_info.front_stencil.read_mask = 0;
   ds_info.back_stencil.enabled = true;
   ds_info.back_stencil.stencil_compare_function = WMTCompareFunctionAlways;
   ds_info.back_stencil.depth_stencil_pass_op = WMTStencilOperationReplace;
+  ds_info.back_stencil.depth_fail_op = WMTStencilOperationReplace;
+  ds_info.back_stencil.stencil_fail_op = WMTStencilOperationReplace;
   ds_info.back_stencil.write_mask = 0xFF;
+  ds_info.back_stencil.read_mask = 0;
   ds_info.depth_compare_function = WMTCompareFunctionAlways;
   ds_info.depth_write_enabled = true;
 
