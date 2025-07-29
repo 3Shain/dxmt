@@ -106,8 +106,8 @@ struct D3D11InputAssemblerStageState {
 };
 
 struct D3D11OutputMergerStageState {
-  Com<IMTLD3D11RenderTargetView> RTVs[D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT];
-  Com<IMTLD3D11DepthStencilView> DSV;
+  Com<D3D11RenderTargetView> RTVs[D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT];
+  Com<D3D11DepthStencilView> DSV;
   UINT NumRTVs;
 
   UAVBindingSet UAVs;

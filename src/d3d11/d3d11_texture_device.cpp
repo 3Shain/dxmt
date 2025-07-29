@@ -74,19 +74,19 @@ private:
         attachment_desc(mtl_rtv_desc) {}
 
     WMTPixelFormat
-    GetPixelFormat() final {
+    pixelFormat() final {
       return view_format_;
     }
 
-    MTL_RENDER_PASS_ATTACHMENT_DESC &GetAttachmentDesc() final {
+    MTL_RENDER_PASS_ATTACHMENT_DESC &description() final {
       return attachment_desc;
     };
 
-    Rc<Texture> __texture() final {
+    Rc<Texture> texture() final {
       return this->resource->underlying_texture_;
     }
 
-    unsigned __viewId() final {
+    unsigned viewId() final {
       return view_key_;
     }
   };
@@ -110,27 +110,27 @@ private:
         attachment_desc(attachment_desc) {}
 
     WMTPixelFormat
-    GetPixelFormat() final {
+    pixelFormat() final {
       return view_format_;
     }
 
-    MTL_RENDER_PASS_ATTACHMENT_DESC &GetAttachmentDesc() final {
+    MTL_RENDER_PASS_ATTACHMENT_DESC &description() final {
       return attachment_desc;
     };
 
-    UINT GetReadOnlyFlags() final {
+    UINT readonlyFlags() final {
       return this->desc.Flags;
     };
 
-    Rc<Texture> __texture() final {
+    Rc<Texture> texture() final {
       return this->resource->underlying_texture_;
     }
 
-    unsigned __viewId() final {
+    unsigned viewId() final {
       return view_key_;
     }
 
-    dxmt::Rc<dxmt::RenamableTexturePool> __renamable() final {
+    dxmt::Rc<dxmt::RenamableTexturePool> renamable() final {
       return this->resource->renamable_;
     }
   };

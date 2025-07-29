@@ -275,7 +275,7 @@ protected:
 };
 
 template <typename RESOURCE_IMPL_ = ID3D11Resource,
-          typename COM_IMPL_ = IMTLD3D11RenderTargetView>
+          typename COM_IMPL_ = D3D11RenderTargetView>
 struct tag_render_target_view {
   using COM = ID3D11RenderTargetView;
   using COM1 = ID3D11RenderTargetView1;
@@ -290,7 +290,7 @@ struct tag_render_target_view {
 };
 
 template <typename RESOURCE_IMPL_ = ID3D11Resource,
-          typename COM_IMPL_ = IMTLD3D11DepthStencilView>
+          typename COM_IMPL_ = D3D11DepthStencilView>
 struct tag_depth_stencil_view {
   using COM = ID3D11DepthStencilView;
   using COM1 = ID3D11DepthStencilView;
