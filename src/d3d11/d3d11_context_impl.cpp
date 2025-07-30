@@ -881,7 +881,39 @@ public:
     }
 
     if (auto expected = com_cast<ID3D11UnorderedAccessView>(pView)) {
-      UNIMPLEMENTED("ClearView - UAV")
+      InvalidateCurrentPass(true);
+      auto uav = static_cast<D3D11UnorderedAccessView *>(expected.ptr());
+      D3D11_UNORDERED_ACCESS_VIEW_DESC1 desc;
+      uav->GetDesc1(&desc);
+      if (desc.ViewDimension != D3D11_UAV_DIMENSION_BUFFER) {
+        EmitST([=, texture = uav->texture(),
+                view = uav->viewId()](ArgumentEncodingContext &enc) {
+          enc.clear_res_cmd.begin(color, texture, view);
+        });
+      } else if (desc.Buffer.Flags & D3D11_BUFFER_UAV_FLAG_RAW) {
+        EmitST([=, buffer = uav->buffer(),
+                view = uav->viewId()](ArgumentEncodingContext &enc) {
+          enc.clear_res_cmd.begin(color, buffer, view);
+        });
+      } else {
+        EmitST([=, buffer = uav->buffer()](ArgumentEncodingContext &enc) {
+          /* FIXME: raw buffer always considered unsigned integer? */
+          enc.clear_res_cmd.begin(color, buffer, true);
+        });
+      }
+      for (unsigned i = 0; i < NumRects; i++) {
+        auto rect = pRect[i];
+        uint32_t rect_offset_x = std::max(rect.left, (LONG)0);
+        uint32_t rect_offset_y = std::max(rect.top, (LONG)0);
+        int32_t rect_width = rect.right - rect_offset_x;
+        int32_t rect_height = rect.bottom - rect_offset_y;
+        if (rect_height <= 0 || rect_width <= 0)
+          continue;
+        EmitOP([=](ArgumentEncodingContext &enc) {
+          enc.clear_res_cmd.clear(rect_offset_x, rect_offset_y, rect_width, rect_height);
+        });
+      }
+      EmitST([](ArgumentEncodingContext &enc) { enc.clear_res_cmd.end(); });
       return;
     }
   }
