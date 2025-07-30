@@ -213,4 +213,45 @@ private:
   WMT::Reference<WMT::ComputePipelineState> pso_copy_to_buffer_d32s8_;
 };
 
+class ClearResourceKernelContext {
+public:
+  ClearResourceKernelContext(WMT::Device device, InternalCommandLibrary &lib, ArgumentEncodingContext &ctx);
+
+  void begin(const std::array<float, 4> &color, Rc<Texture> texture, TextureViewKey view);
+  void begin(const std::array<float, 4> &color, Rc<Buffer> buffer, BufferViewKey view);
+  void begin(const std::array<float, 4> &color, Rc<Buffer> buffer, bool raw_buffer_is_integer);
+
+  void clear(uint32_t offset_x, uint32_t offset_y, uint32_t width, uint32_t height);
+
+  void end();
+
+private:
+  void setClearColor(const std::array<float, 4> &color, bool is_integer);
+
+  ArgumentEncodingContext &ctx_;
+  WMT::Device device_;
+  WMT::Reference<WMT::Function> cs_clear_buffer_uint_;
+  WMT::Reference<WMT::Function> cs_clear_buffer_float_;
+  WMT::Reference<WMT::Function> cs_clear_tbuffer_uint_;
+  WMT::Reference<WMT::Function> cs_clear_tbuffer_float_;
+  WMT::Reference<WMT::Function> cs_clear_texture2d_uint_;
+  WMT::Reference<WMT::Function> cs_clear_texture2d_float_;
+  WMT::Reference<WMT::Function> cs_clear_texture2d_array_uint_;
+  WMT::Reference<WMT::Function> cs_clear_texture2d_array_float_;
+  Rc<Texture> clearing_texture_;
+  Rc<Buffer> clearing_buffer_;
+  TextureViewKey clearing_view_ = 0; // type compatible with BufferViewKey
+  uint32_t dispatch_depth_ = 1;
+
+  struct DXMTClearMetadata {
+    union {
+      float color_f32[4];
+      uint32_t color_u32[4];
+    };
+    uint32_t offset[2];
+    uint32_t size[2];
+  };
+  DXMTClearMetadata meta_temp_;
+};
+
 } // namespace dxmt

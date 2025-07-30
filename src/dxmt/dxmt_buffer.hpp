@@ -145,6 +145,10 @@ public:
     return length_;
   };
 
+  WMTPixelFormat pixelFormat(BufferViewKey view) const {
+    return viewDescriptors_[view].format;
+  }
+
 private:
   void prepareAllocationViews(BufferAllocation *allocation);
 
