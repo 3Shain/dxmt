@@ -358,6 +358,11 @@ public:
         system_value_(parameter.SystemValue),
         component_type_((RegisterComponentType)parameter.ComponentType) {}
 
+  Signature()
+      : semantic_name_("INVALID"), semantic_index_(0), stream_(0), mask_(0),
+        register_(0), system_value_(microsoft::D3D10_SB_NAME_UNDEFINED),
+        component_type_(RegisterComponentType::Unknown) {}
+
   std::string_view semanticName() const { return semantic_name_; }
 
   uint32_t semanticIndex() const { return semantic_index_; }
