@@ -546,6 +546,14 @@ Instruction readInstruction(
   const microsoft::D3D10ShaderBinary::CInstruction &Inst,
   ShaderInfo &shader_info, uint32_t phase
 ) {
+  // HACK: ENB will access temp register out of range
+  for (unsigned i = 0; i < Inst.NumOperands(); i++) {
+    auto &O = Inst.Operand(i);
+    if (O.OperandType() == microsoft::D3D10_SB_OPERAND_TYPE_TEMP) {
+      shader_info.tempRegisterCount =
+        std::max(shader_info.tempRegisterCount, O.RegIndex(0) + 1);
+    }
+  }
   using namespace microsoft;
   switch (Inst.m_OpCode) {
   case microsoft::D3D10_SB_OPCODE_MOV: {
