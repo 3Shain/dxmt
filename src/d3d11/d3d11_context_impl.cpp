@@ -4513,8 +4513,12 @@ public:
       });
     }
     if (dirty_state.any(DirtyState::Scissors)) {
-      auto render_target_width = state_.OutputMerger.RenderTargetWidth;
-      auto render_target_height = state_.OutputMerger.RenderTargetHeight;
+      auto render_target_width = state_.OutputMerger.RenderTargetWidth == 0
+                                     ? (UINT)state_.Rasterizer.viewports[0].Width
+                                     : state_.OutputMerger.RenderTargetWidth;
+      auto render_target_height = state_.OutputMerger.RenderTargetHeight == 0
+                                      ? (UINT)state_.Rasterizer.viewports[0].Height
+                                      : state_.OutputMerger.RenderTargetHeight;
       auto scissors = AllocateCommandData<WMTScissorRect>(state_.Rasterizer.NumViewports);
       for (unsigned i = 0; i < state_.Rasterizer.NumViewports; i++) {
         if (allow_scissor) {
