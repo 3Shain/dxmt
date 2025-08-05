@@ -546,6 +546,14 @@ Instruction readInstruction(
   const microsoft::D3D10ShaderBinary::CInstruction &Inst,
   ShaderInfo &shader_info, uint32_t phase
 ) {
+  // HACK: ENB will access temp register out of range
+  for (unsigned i = 0; i < Inst.NumOperands(); i++) {
+    auto &O = Inst.Operand(i);
+    if (O.OperandType() == microsoft::D3D10_SB_OPERAND_TYPE_TEMP) {
+      shader_info.tempRegisterCount =
+        std::max(shader_info.tempRegisterCount, O.RegIndex(0) + 1);
+    }
+  }
   using namespace microsoft;
   switch (Inst.m_OpCode) {
   case microsoft::D3D10_SB_OPCODE_MOV: {
@@ -711,9 +719,11 @@ Instruction readInstruction(
         .uint_result = return_uint
       };
     } else {
+      auto src = readSrcOperandResource(Inst.m_Operands[1], phase);
+      shader_info.srvMap[src.range_id].read = true;
       return InstSampleInfo{
         .dst = readDstOperand(Inst.m_Operands[0], phase),
-        .src = readSrcOperandResource(Inst.m_Operands[1], phase),
+        .src = src,
         .uint_result = return_uint
       };
     };
@@ -727,18 +737,33 @@ Instruction readInstruction(
         .src_sample_index = readSrcOperand(Inst.m_Operands[2], phase)
       };
     } else {
+      auto src = readSrcOperandResource(Inst.m_Operands[1], phase);
+      shader_info.srvMap[src.range_id].read = true;
       return InstSamplePos{
         .dst = readDstOperand(Inst.m_Operands[0], phase),
-        .src = readSrcOperandResource(Inst.m_Operands[1], phase),
+        .src = src,
         .src_sample_index = readSrcOperand(Inst.m_Operands[2], phase)
       };
     };
   };
   case microsoft::D3D11_SB_OPCODE_BUFINFO: {
-    return InstBufferInfo{
+    auto inst = InstBufferInfo{
       .dst = readDstOperand(Inst.m_Operands[0], phase),
       .src = readSrcResourceOrUAV(Inst.m_Operands[1], phase),
     };
+    std::visit(
+      patterns{
+        [&](const SrcOperandResource &res) {
+          shader_info.srvMap[res.range_id].read = true;
+        },
+        [&](const SrcOperandUAV &uav) {
+          shader_info.uavMap[uav.range_id].read = true;
+        },
+        [](auto) {}
+      },
+      inst.src
+    );
+    return inst;
   };
   case microsoft::D3D10_SB_OPCODE_RESINFO: {
     InstResourceInfo::M modifier =
@@ -749,12 +774,25 @@ Instruction readInstruction(
          D3D10_SB_RESINFO_INSTRUCTION_RETURN_RCPFLOAT)
         ? InstResourceInfo::M::rcp
         : InstResourceInfo::M::none;
-    return InstResourceInfo{
+    auto inst = InstResourceInfo{
       .dst = readDstOperand(Inst.m_Operands[0], phase),
       .src_mip_level = readSrcOperand(Inst.m_Operands[1], phase),
       .src_resource = readSrcResourceOrUAV(Inst.m_Operands[2], phase),
       .modifier = modifier
     };
+    std::visit(
+      patterns{
+        [&](const SrcOperandResource &res) {
+          shader_info.srvMap[res.range_id].read = true;
+        },
+        [&](const SrcOperandUAV &uav) {
+          shader_info.uavMap[uav.range_id].read = true;
+        },
+        [](auto) {}
+      },
+      inst.src_resource
+    );
+    return inst;
   };
   case microsoft::D3D10_SB_OPCODE_LD: {
     auto inst = InstLoad{

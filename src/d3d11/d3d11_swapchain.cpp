@@ -569,9 +569,11 @@ public:
     auto &cmd_queue = m_device->GetDXMTDevice().queue();
     auto chunk = cmd_queue.CurrentChunk();
     if constexpr (EnableMetalFX) {
-      chunk->emitcc([this, vsync_duration, backbuffer = backbuffer_->texture(),
-                     upscaled = upscaled_backbuffer_->texture(),
-                     scaler = this->metalfx_scaler](ArgumentEncodingContext &ctx) mutable {
+      chunk->emitcc([
+        this, vsync_duration, backbuffer = backbuffer_->texture(),
+        upscaled = upscaled_backbuffer_->texture(),
+        scaler = this->metalfx_scaler, state = presenter->synchronizeLayerProperties()
+      ](ArgumentEncodingContext &ctx) mutable {
         auto &scaler_info = ctx.currentFrameStatistics().last_scaler_info;
         scaler_info.type = ScalerType::Spatial;
         scaler_info.input_width = backbuffer->width();
@@ -579,13 +581,16 @@ public:
         scaler_info.output_width = upscaled->width();
         scaler_info.output_height = upscaled->height();
         ctx.upscale(backbuffer, upscaled, scaler);
-        ctx.present(upscaled, presenter, vsync_duration);
+        ctx.present(upscaled, presenter, vsync_duration, state.metadata);
         ReleaseSemaphore(present_semaphore_, 1, nullptr);
         this->UpdateStatistics(ctx.queue().statistics, ctx.currentFrameId());
       });
     } else {
-      chunk->emitcc([this, vsync_duration, backbuffer = backbuffer_->texture()](ArgumentEncodingContext &ctx) mutable {
-        ctx.present(backbuffer, presenter, vsync_duration);
+      chunk->emitcc([
+        this, vsync_duration, state = presenter->synchronizeLayerProperties(), 
+        backbuffer = backbuffer_->texture()
+      ](ArgumentEncodingContext &ctx) mutable {
+        ctx.present(backbuffer, presenter, vsync_duration, state.metadata);
         ReleaseSemaphore(present_semaphore_, 1, nullptr);
         this->UpdateStatistics(ctx.queue().statistics, ctx.currentFrameId());
       });

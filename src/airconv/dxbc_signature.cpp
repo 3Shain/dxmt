@@ -49,8 +49,7 @@ void handle_signature_vs(
         return sig;
       }
     }
-    assert(inputParser.GetNumParameters());
-    assert(0 && "try to access an undefined input");
+    return Signature();
   };
   auto findOutputElement = [&](auto matcher) -> Signature {
     const D3D11_SIGNATURE_PARAMETER *parameters;
@@ -61,7 +60,7 @@ void handle_signature_vs(
         return sig;
       }
     }
-    assert(0 && "try to access an undefined output");
+    return Signature();
   };
 
   switch (Inst.m_OpCode) {
@@ -112,6 +111,8 @@ void handle_signature_vs(
       auto sig = findInputElement([=](Signature &sig) {
         return (sig.reg() == reg) && ((sig.mask() & mask) != 0);
       });
+      max_input_register = std::max(reg + 1, max_input_register);
+      if (sig.mask() == 0) break;
       signature_handlers.push_back(
         [=, type = (InputAttributeComponentType)sig.componentType(),
          name = sig.fullSemanticString()](SignatureContext &ctx) {
@@ -133,7 +134,6 @@ void handle_signature_vs(
           }
         }
       );
-      max_input_register = std::max(reg + 1, max_input_register);
       break;
     }
     default:
@@ -217,6 +217,8 @@ void handle_signature_vs(
       auto sig = findOutputElement([=](Signature sig) {
         return (sig.reg() == reg) && ((sig.mask() & mask) != 0);
       });
+      max_output_register = std::max(reg + 1, max_output_register);
+      if (sig.mask() == 0) break;
       uint32_t assigned_index = func_signature.DefineOutput(OutputVertex{
         .user = sig.fullSemanticString(),
         .type = to_msl_type(sig.componentType()),
@@ -226,7 +228,6 @@ void handle_signature_vs(
           return;
         ctx.epilogue >> pop_output_reg(reg, mask, assigned_index);
       });
-      max_output_register = std::max(reg + 1, max_output_register);
       break;
     }
     default:
@@ -260,8 +261,7 @@ void handle_signature_ps(
         return sig;
       }
     }
-    assert(inputParser.GetNumParameters());
-    assert(0 && "try to access an undefined input");
+    return Signature();
   };
   auto findOutputElement = [&](auto matcher) -> Signature {
     const D3D11_SIGNATURE_PARAMETER *parameters;
@@ -272,7 +272,7 @@ void handle_signature_ps(
         return sig;
       }
     }
-    assert(0 && "try to access an undefined output");
+    return Signature();
   };
 
   switch (Inst.m_OpCode) {
@@ -392,6 +392,8 @@ void handle_signature_ps(
     auto sig = findInputElement([=](Signature sig) {
       return (sig.reg() == reg) && ((sig.mask() & mask) != 0);
     });
+    max_input_register = std::max(reg + 1, max_input_register);
+    if (sig.mask() == 0) break;
     signature_handlers.push_back([=, type = sig.componentType(), name = sig.fullSemanticString()]
     (SignatureContext &ctx) {
       bool pull_mode = bool(ctx.pull_mode_reg_mask & (1 << reg)) && interpolation != air::Interpolation::flat;
@@ -424,7 +426,6 @@ void handle_signature_ps(
         ctx.prologue << init_input_reg(assigned_index, reg, mask);
       }
     });
-    max_input_register = std::max(reg + 1, max_input_register);
     break;
   }
   case D3D10_SB_OPCODE_DCL_OUTPUT_SGV: {
@@ -535,6 +536,8 @@ void handle_signature_ps(
       auto sig = findOutputElement([=](Signature sig) {
         return (sig.reg() == reg) && ((sig.mask() & mask) != 0);
       });
+      max_output_register = std::max(reg + 1, max_output_register);
+      if (sig.mask() == 0) break;
       auto type = sig.componentType();
       signature_handlers.push_back([=](SignatureContext &ctx) {
         uint32_t assigned_index;
@@ -558,7 +561,6 @@ void handle_signature_ps(
         else
           ctx.epilogue >> pop_output_reg(reg, mask, assigned_index);
       });
-      max_output_register = std::max(reg + 1, max_output_register);
       break;
     }
     default:
@@ -738,7 +740,7 @@ void handle_signature_ds(
         return sig;
       }
     }
-    assert(0 && "try to access an undefined output");
+    return Signature();
   };
 
   switch (Inst.m_OpCode) {
@@ -893,6 +895,8 @@ void handle_signature_ds(
       auto sig = findOutputElement([=](Signature sig) {
         return (sig.reg() == reg) && ((sig.mask() & mask) != 0);
       });
+      max_output_register = std::max(reg + 1, max_output_register);
+      if (sig.mask() == 0) break;
       uint32_t assigned_index = func_signature.DefineOutput(OutputVertex{
         .user = sig.fullSemanticString(),
         .type = to_msl_type(sig.componentType()),
@@ -900,7 +904,6 @@ void handle_signature_ds(
       signature_handlers.push_back([=](SignatureContext &ctx) {
         ctx.epilogue >> pop_output_reg(reg, mask, assigned_index);
       });
-      max_output_register = std::max(reg + 1, max_output_register);
       break;
     }
     default:
@@ -1011,7 +1014,7 @@ handle_signature_gs(
         return sig;
       }
     }
-    assert(0 && "try to access an undefined output");
+    return Signature();
   };
 
   switch (Inst.m_OpCode) {
@@ -1107,6 +1110,8 @@ handle_signature_gs(
       auto sig = findOutputElement([=](Signature sig) {
         return (sig.reg() == reg) && ((sig.mask() & mask) != 0);
       });
+      max_output_register = std::max(reg + 1, max_output_register);
+      if (sig.mask() == 0) break;
       auto const mesh_vertex_data_index = num_mesh_vertex_data++;
       auto const type = to_msl_type(sig.componentType());
       func_signature.DefineMeshVertexOutput(OutputMeshData{
@@ -1117,7 +1122,6 @@ handle_signature_gs(
       gs_output_handlers.push_back([=](GSOutputContext& output) -> IREffect {
         return pop_mesh_output_vertex_data(reg, mask, mesh_vertex_data_index, output.vertex_id, type);
       });
-      max_output_register = std::max(reg + 1, max_output_register);
       break;
     }
     default:

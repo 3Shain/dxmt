@@ -648,7 +648,7 @@ public:
   ClearRenderTargetView(ID3D11RenderTargetView *pRenderTargetView, const FLOAT ColorRGBA[4]) override {
     std::lock_guard<mutex_t> lock(mutex);
 
-    ClearRenderTargetView(static_cast<IMTLD3D11RenderTargetView *>(pRenderTargetView), ColorRGBA);
+    ClearRenderTargetView(static_cast<D3D11RenderTargetView *>(pRenderTargetView), ColorRGBA);
   }
 
   void
@@ -783,7 +783,7 @@ public:
       override {
     std::lock_guard<mutex_t> lock(mutex);
 
-    ClearDepthStencilView(static_cast<IMTLD3D11DepthStencilView*>(pDepthStencilView), ClearFlags, Depth, Stencil);
+    ClearDepthStencilView(static_cast<D3D11DepthStencilView*>(pDepthStencilView), ClearFlags, Depth, Stencil);
   }
 
   void
@@ -799,9 +799,9 @@ public:
     auto color = std::array<float, 4>({Color[0], Color[1], Color[2], Color[3]});
 
     while (auto expected = com_cast<ID3D11RenderTargetView>(pView)) {
-      auto rtv = static_cast<IMTLD3D11RenderTargetView *>(expected.ptr());
+      auto rtv = static_cast<D3D11RenderTargetView *>(expected.ptr());
       // d3d11 spec: ClearView doesn’t support 3D textures.
-      if (rtv->__texture()->textureType(rtv->__viewId()) == WMTTextureType3D)
+      if (rtv->texture()->textureType(rtv->viewId()) == WMTTextureType3D)
         return;
       // check if rtv is fully cleared (which can be potentially optimized as a LoadActionClear)
       while (NumRects <= 1) {
@@ -810,15 +810,15 @@ public:
             break;
           if (pRect[0].bottom < 0 || pRect[0].right < 0)
             break;
-          if (uint32_t(pRect[0].right) != rtv->GetAttachmentDesc().Width)
+          if (uint32_t(pRect[0].right) != rtv->description().Width)
             break;
-          if (uint32_t(pRect[0].bottom) != rtv->GetAttachmentDesc().Height)
+          if (uint32_t(pRect[0].bottom) != rtv->description().Height)
             break;
         }
         return ClearRenderTargetView(rtv, Color);
       }
       InvalidateCurrentPass(true);
-      EmitST([texture = rtv->__texture(), view = rtv->__viewId()](ArgumentEncodingContext &enc) {
+      EmitST([texture = rtv->texture(), view = rtv->viewId()](ArgumentEncodingContext &enc) {
         enc.clear_rt_cmd.begin(texture, view);
       });
       for (unsigned i = 0; i < NumRects; i++) {
@@ -840,9 +840,9 @@ public:
     }
 
     while (auto expected = com_cast<ID3D11DepthStencilView>(pView)) {
-      auto dsv = static_cast<IMTLD3D11DepthStencilView *>(expected.ptr());
+      auto dsv = static_cast<D3D11DepthStencilView *>(expected.ptr());
       // d3d11 spec: ClearView doesn’t support 3D textures.
-      if (dsv->__texture()->textureType(dsv->__viewId()) == WMTTextureType3D)
+      if (dsv->texture()->textureType(dsv->viewId()) == WMTTextureType3D)
         return;
       // check if rtv is fully cleared (which can be potentially optimized as a LoadActionClear)
       while (NumRects <= 1) {
@@ -851,15 +851,15 @@ public:
             break;
           if (pRect[0].bottom < 0 || pRect[0].right < 0)
             break;
-          if (uint32_t(pRect[0].right) != dsv->GetAttachmentDesc().Width)
+          if (uint32_t(pRect[0].right) != dsv->description().Width)
             break;
-          if (uint32_t(pRect[0].bottom) != dsv->GetAttachmentDesc().Height)
+          if (uint32_t(pRect[0].bottom) != dsv->description().Height)
             break;
         }
         return ClearDepthStencilView(dsv, D3D11_CLEAR_DEPTH, color[0], 0);
       }
       InvalidateCurrentPass(true);
-      EmitST([texture = dsv->__texture(), view = dsv->__viewId()](ArgumentEncodingContext &enc) {
+      EmitST([texture = dsv->texture(), view = dsv->viewId()](ArgumentEncodingContext &enc) {
         enc.clear_rt_cmd.begin(texture, view);
       });
       for (unsigned i = 0; i < NumRects; i++) {
@@ -881,7 +881,39 @@ public:
     }
 
     if (auto expected = com_cast<ID3D11UnorderedAccessView>(pView)) {
-      UNIMPLEMENTED("ClearView - UAV")
+      InvalidateCurrentPass(true);
+      auto uav = static_cast<D3D11UnorderedAccessView *>(expected.ptr());
+      D3D11_UNORDERED_ACCESS_VIEW_DESC1 desc;
+      uav->GetDesc1(&desc);
+      if (desc.ViewDimension != D3D11_UAV_DIMENSION_BUFFER) {
+        EmitST([=, texture = uav->texture(),
+                view = uav->viewId()](ArgumentEncodingContext &enc) {
+          enc.clear_res_cmd.begin(color, texture, view);
+        });
+      } else if (desc.Buffer.Flags & D3D11_BUFFER_UAV_FLAG_RAW) {
+        EmitST([=, buffer = uav->buffer(),
+                view = uav->viewId()](ArgumentEncodingContext &enc) {
+          enc.clear_res_cmd.begin(color, buffer, view);
+        });
+      } else {
+        EmitST([=, buffer = uav->buffer()](ArgumentEncodingContext &enc) {
+          /* FIXME: raw buffer always considered unsigned integer? */
+          enc.clear_res_cmd.begin(color, buffer, true);
+        });
+      }
+      for (unsigned i = 0; i < NumRects; i++) {
+        auto rect = pRect[i];
+        uint32_t rect_offset_x = std::max(rect.left, (LONG)0);
+        uint32_t rect_offset_y = std::max(rect.top, (LONG)0);
+        int32_t rect_width = rect.right - rect_offset_x;
+        int32_t rect_height = rect.bottom - rect_offset_y;
+        if (rect_height <= 0 || rect_width <= 0)
+          continue;
+        EmitOP([=](ArgumentEncodingContext &enc) {
+          enc.clear_res_cmd.clear(rect_offset_x, rect_offset_y, rect_width, rect_height);
+        });
+      }
+      EmitST([](ArgumentEncodingContext &enc) { enc.clear_res_cmd.end(); });
       return;
     }
   }
@@ -2397,12 +2429,11 @@ public:
   ) {
     MTL_RENDER_PASS_ATTACHMENT_DESC *ref = nullptr;
 
-    // FIXME: static_cast? but I don't really want a com_cast
-    auto dsv = static_cast<IMTLD3D11DepthStencilView *>(pDepthStencilView);
+    auto dsv = static_cast<D3D11DepthStencilView *>(pDepthStencilView);
     UINT render_target_array_length = 0, sample_count = 1, width = 0, height = 0;
 
     if (dsv) {
-      ref = &dsv->GetAttachmentDesc();
+      ref = &dsv->description();
       render_target_array_length = ref->RenderTargetArrayLength;
       sample_count = ref->SampleCount;
       width = ref->Width;
@@ -2410,11 +2441,11 @@ public:
     }
 
     for (unsigned i = 0; i < NumRTVs; i++) {
-      auto rtv = static_cast<IMTLD3D11RenderTargetView *>(ppRenderTargetViews[i]);
+      auto rtv = static_cast<D3D11RenderTargetView *>(ppRenderTargetViews[i]);
       if (rtv) {
         // TODO: render target type should be checked as well
         if (ref) {
-          auto &props = rtv->GetAttachmentDesc();
+          auto &props = rtv->description();
           if (props.SampleCount != sample_count)
             return false;
           if (props.RenderTargetArrayLength != render_target_array_length) {
@@ -2430,7 +2461,7 @@ public:
           width = std::min(width, props.Width);
           height = std::min(height, props.Height);
         } else {
-          ref = &rtv->GetAttachmentDesc();
+          ref = &rtv->description();
           render_target_array_length = ref->RenderTargetArrayLength;
           sample_count = ref->SampleCount;
           width = ref->Width;
@@ -2468,7 +2499,7 @@ public:
       constexpr unsigned RTVSlotCount = D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT;
       for (unsigned rtv_index = 0; rtv_index < RTVSlotCount; rtv_index++) {
         if (rtv_index < NumRTVs && ppRenderTargetViews[rtv_index]) {
-          auto rtv = static_cast<IMTLD3D11RenderTargetView *>(ppRenderTargetViews[rtv_index]);
+          auto rtv = static_cast<D3D11RenderTargetView *>(ppRenderTargetViews[rtv_index]);
           if (BoundRTVs[rtv_index].ptr() == rtv)
             continue;
           BoundRTVs[rtv_index] = rtv;
@@ -2482,7 +2513,7 @@ public:
       }
       state_.OutputMerger.NumRTVs = NumRTVs;
 
-      if (auto dsv = static_cast<IMTLD3D11DepthStencilView *>(pDepthStencilView)) {
+      if (auto dsv = static_cast<D3D11DepthStencilView *>(pDepthStencilView)) {
         if (state_.OutputMerger.DSV.ptr() != dsv) {
           state_.OutputMerger.DSV = dsv;
           should_invalidate_pass = true;
@@ -3934,26 +3965,26 @@ public:
   }
 
   void
-  ClearRenderTargetView(IMTLD3D11RenderTargetView *pRenderTargetView, const FLOAT ColorRGBA[4]) {
+  ClearRenderTargetView(D3D11RenderTargetView *pRenderTargetView, const FLOAT ColorRGBA[4]) {
     InvalidateCurrentPass();
     auto clear_color = WMTClearColor{ColorRGBA[0], ColorRGBA[1], ColorRGBA[2], ColorRGBA[3]};
-    auto &props = pRenderTargetView->GetAttachmentDesc();
+    auto &props = pRenderTargetView->description();
 
-    EmitOP([texture = pRenderTargetView->__texture(), view = pRenderTargetView->__viewId(),
+    EmitOP([texture = pRenderTargetView->texture(), view = pRenderTargetView->viewId(),
           clear_color = std::move(clear_color), array_length = props.RenderTargetArrayLength](ArgumentEncodingContext &enc) mutable {
       enc.clearColor(forward_rc(texture), view, array_length, clear_color);
     });
   }
 
   void
-  ClearDepthStencilView(IMTLD3D11DepthStencilView *pDepthStencilView, UINT ClearFlags, FLOAT Depth, UINT8 Stencil) {
+  ClearDepthStencilView(D3D11DepthStencilView *pDepthStencilView, UINT ClearFlags, FLOAT Depth, UINT8 Stencil) {
     if (ClearFlags == 0)
       return;
     InvalidateCurrentPass();
-    auto &props = pDepthStencilView->GetAttachmentDesc();
+    auto &props = pDepthStencilView->description();
 
-    EmitOP([texture = pDepthStencilView->__texture(), view = pDepthStencilView->__viewId(),
-          renamable = pDepthStencilView->__renamable(), array_length = props.RenderTargetArrayLength,
+    EmitOP([texture = pDepthStencilView->texture(), view = pDepthStencilView->viewId(),
+          renamable = pDepthStencilView->renamable(), array_length = props.RenderTargetArrayLength,
           ClearFlags = ClearFlags & 0b11, Depth, Stencil](ArgumentEncodingContext &enc) mutable {
       if (renamable.ptr() && ClearFlags == DepthStencilPlanarFlags(texture->pixelFormat())) {
         texture->rename(renamable->getNext(enc.currentSeqId()));
@@ -4019,9 +4050,9 @@ public:
       for (unsigned i = 0; i < state_.OutputMerger.NumRTVs; i++) {
         auto &rtv = state_.OutputMerger.RTVs[i];
         if (rtv) {
-          auto props = rtv->GetAttachmentDesc();
-          rtvs[i] = {rtv->__texture(), rtv->__viewId(), i, props.DepthPlane, rtv->GetPixelFormat()};
-          D3D11_ASSERT(rtv->GetPixelFormat() != WMTPixelFormatInvalid);
+          auto props = rtv->description();
+          rtvs[i] = {rtv->texture(), rtv->viewId(), i, props.DepthPlane, rtv->pixelFormat()};
+          D3D11_ASSERT(rtv->pixelFormat() != WMTPixelFormatInvalid);
           effective_render_target++;
         } else {
           rtvs[i].RenderTargetIndex = i;
@@ -4042,10 +4073,10 @@ public:
       bool uav_only = false;
       uint32_t uav_only_sample_count = 0;
       if (state_.OutputMerger.DSV) {
-        dsv_info.Texture = state_.OutputMerger.DSV->__texture();
-        dsv_info.viewId = state_.OutputMerger.DSV->__viewId();
-        dsv_info.PixelFormat = state_.OutputMerger.DSV->GetPixelFormat();
-        dsv_info.ReadOnlyFlags =  state_.OutputMerger.DSV->GetReadOnlyFlags();
+        dsv_info.Texture = state_.OutputMerger.DSV->texture();
+        dsv_info.viewId = state_.OutputMerger.DSV->viewId();
+        dsv_info.PixelFormat = state_.OutputMerger.DSV->pixelFormat();
+        dsv_info.ReadOnlyFlags =  state_.OutputMerger.DSV->readonlyFlags();
       } else if (effective_render_target == 0) {
         if (!state_.OutputMerger.UAVs.any_bound()) {
           ERR("No rendering attachment or uav is bounded");
@@ -4214,14 +4245,14 @@ public:
     for (unsigned i = 0; i < ARRAYSIZE(state_.OutputMerger.RTVs); i++) {
       auto &rtv = state_.OutputMerger.RTVs[i];
       if (rtv && i < Desc.NumColorAttachments) {
-        Desc.ColorAttachmentFormats[i] = state_.OutputMerger.RTVs[i]->GetPixelFormat();
+        Desc.ColorAttachmentFormats[i] = state_.OutputMerger.RTVs[i]->pixelFormat();
       } else {
         Desc.ColorAttachmentFormats[i] = WMTPixelFormatInvalid;
       }
     }
     Desc.BlendState = state_.OutputMerger.BlendState ? state_.OutputMerger.BlendState : default_blend_state;
     Desc.DepthStencilFormat =
-        state_.OutputMerger.DSV ? state_.OutputMerger.DSV->GetPixelFormat() : WMTPixelFormatInvalid;
+        state_.OutputMerger.DSV ? state_.OutputMerger.DSV->pixelFormat() : WMTPixelFormatInvalid;
     Desc.TopologyClass = to_metal_primitive_topology(state_.InputAssembler.Topology);
     bool ds_enabled =
         (state_.OutputMerger.DepthStencilState ? state_.OutputMerger.DepthStencilState : default_depth_stencil_state)
@@ -4482,8 +4513,12 @@ public:
       });
     }
     if (dirty_state.any(DirtyState::Scissors)) {
-      auto render_target_width = state_.OutputMerger.RenderTargetWidth;
-      auto render_target_height = state_.OutputMerger.RenderTargetHeight;
+      auto render_target_width = state_.OutputMerger.RenderTargetWidth == 0
+                                     ? (UINT)state_.Rasterizer.viewports[0].Width
+                                     : state_.OutputMerger.RenderTargetWidth;
+      auto render_target_height = state_.OutputMerger.RenderTargetHeight == 0
+                                      ? (UINT)state_.Rasterizer.viewports[0].Height
+                                      : state_.OutputMerger.RenderTargetHeight;
       auto scissors = AllocateCommandData<WMTScissorRect>(state_.Rasterizer.NumViewports);
       for (unsigned i = 0; i < state_.Rasterizer.NumViewports; i++) {
         if (allow_scissor) {

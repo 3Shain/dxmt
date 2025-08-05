@@ -278,11 +278,17 @@ DepthStencilBlitContext::DepthStencilBlitContext(
   ds_info.front_stencil.enabled = true;
   ds_info.front_stencil.stencil_compare_function = WMTCompareFunctionAlways;
   ds_info.front_stencil.depth_stencil_pass_op = WMTStencilOperationReplace;
+  ds_info.front_stencil.depth_fail_op = WMTStencilOperationReplace;
+  ds_info.front_stencil.stencil_fail_op = WMTStencilOperationReplace;
   ds_info.front_stencil.write_mask = 0xFF;
+  ds_info.front_stencil.read_mask = 0;
   ds_info.back_stencil.enabled = true;
   ds_info.back_stencil.stencil_compare_function = WMTCompareFunctionAlways;
   ds_info.back_stencil.depth_stencil_pass_op = WMTStencilOperationReplace;
+  ds_info.back_stencil.depth_fail_op = WMTStencilOperationReplace;
+  ds_info.back_stencil.stencil_fail_op = WMTStencilOperationReplace;
   ds_info.back_stencil.write_mask = 0xFF;
+  ds_info.back_stencil.read_mask = 0;
   ds_info.depth_compare_function = WMTCompareFunctionAlways;
   ds_info.depth_write_enabled = true;
 
@@ -463,5 +469,162 @@ DepthStencilBlitContext::copyFromTexture(
 
   ctx_.endPass();
 }
+
+ClearResourceKernelContext::ClearResourceKernelContext(
+    WMT::Device device, InternalCommandLibrary &lib, ArgumentEncodingContext &ctx
+) :
+    ctx_(ctx),
+    device_(device) {
+  auto library = lib.getLibrary();
+  cs_clear_buffer_uint_ = library.newFunction("cs_clear_buffer_uint");
+  cs_clear_buffer_float_ = library.newFunction("cs_clear_buffer_float");
+  cs_clear_tbuffer_uint_ = library.newFunction("cs_clear_tbuffer_uint");
+  cs_clear_tbuffer_float_ = library.newFunction("cs_clear_tbuffer_float");
+  cs_clear_texture2d_uint_ = library.newFunction("cs_clear_texture2d_uint");
+  cs_clear_texture2d_float_ = library.newFunction("cs_clear_texture2d_float");
+  cs_clear_texture2d_array_uint_ = library.newFunction("cs_clear_texture2d_array_uint");
+  cs_clear_texture2d_array_float_ = library.newFunction("cs_clear_texture2d_array_float");
+}
+
+void
+ClearResourceKernelContext::setClearColor(const std::array<float, 4> &color, bool is_integer) {
+  if (is_integer) {
+    meta_temp_.color_f32[0] = uint32_t(std::max(color[0], 0.0f));
+    meta_temp_.color_f32[1] = uint32_t(std::max(color[1], 0.0f));
+    meta_temp_.color_f32[2] = uint32_t(std::max(color[2], 0.0f));
+    meta_temp_.color_f32[3] = uint32_t(std::max(color[3], 0.0f));
+  } else {
+    meta_temp_.color_f32[0] = color[0];
+    meta_temp_.color_f32[1] = color[1];
+    meta_temp_.color_f32[2] = color[2];
+    meta_temp_.color_f32[3] = color[3];
+  }
+};
+
+void
+ClearResourceKernelContext::begin(const std::array<float, 4> &color, Rc<Texture> texture, TextureViewKey view) {
+
+  clearing_texture_ = texture;
+  clearing_view_ = 0;
+  ctx_.startComputePass(0);
+
+  bool is_integer = IsIntegerFormat(texture->pixelFormat(view));
+
+  setClearColor(color, is_integer);
+
+  bool is_array = false;
+  switch (texture->textureType(view)) {
+  case WMTTextureType1DArray:
+  case WMTTextureType2DArray:
+    is_array = true;
+    dispatch_depth_ = texture->arrayLength(view);
+    break;
+  case WMTTextureTypeCube:
+  case WMTTextureTypeCubeArray:
+  case WMTTextureType3D:
+  case WMTTextureType2DMultisample:
+  case WMTTextureType2DMultisampleArray:
+    // not a valid clear target
+    return;
+  default:
+    break;
+  }
+
+  auto &setpso = ctx_.encodeComputeCommand<wmtcmd_compute_setpso>();
+  setpso.type = WMTComputeCommandSetPSO;
+  setpso.pso = is_integer ? (is_array ? cs_clear_texture2d_array_uint_ : cs_clear_texture2d_uint_)
+                          : (is_array ? cs_clear_texture2d_array_float_ : cs_clear_texture2d_float_);
+  setpso.threadgroup_size = {32, 1, 1};
+}
+
+void
+ClearResourceKernelContext::begin(const std::array<float, 4> &color, Rc<Buffer> buffer, BufferViewKey view) {
+
+  clearing_buffer_ = buffer;
+  clearing_view_ = view;
+  ctx_.startComputePass(0);
+
+  bool is_integer = IsIntegerFormat(buffer->pixelFormat(view));
+
+  setClearColor(color, is_integer);
+
+  auto &setpso = ctx_.encodeComputeCommand<wmtcmd_compute_setpso>();
+  setpso.type = WMTComputeCommandSetPSO;
+  setpso.pso = is_integer ? cs_clear_tbuffer_uint_ : cs_clear_tbuffer_float_;
+  setpso.threadgroup_size = {32, 1, 1};
+}
+
+void
+ClearResourceKernelContext::begin(const std::array<float, 4> &color, Rc<Buffer> buffer, bool raw_buffer_is_integer) {
+
+  clearing_buffer_ = buffer;
+  clearing_view_ = 0;
+  ctx_.startComputePass(0);
+
+  setClearColor(color, raw_buffer_is_integer);
+
+  auto &setpso = ctx_.encodeComputeCommand<wmtcmd_compute_setpso>();
+  setpso.type = WMTComputeCommandSetPSO;
+  setpso.pso = raw_buffer_is_integer ? cs_clear_buffer_uint_ : cs_clear_buffer_float_;
+  setpso.threadgroup_size = {32, 1, 1};
+}
+
+void
+ClearResourceKernelContext::clear(uint32_t offset_x, uint32_t offset_y, uint32_t width, uint32_t height) {
+  meta_temp_.offset[0] = offset_x;
+  meta_temp_.offset[1] = offset_y;
+  meta_temp_.size[0] = width;
+  meta_temp_.size[1] = height;
+
+  if (clearing_texture_) {
+    auto dst_ = ctx_.access(clearing_texture_, clearing_view_, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
+    auto &settex = ctx_.encodeComputeCommand<wmtcmd_compute_settexture>();
+    settex.type = WMTComputeCommandSetTexture;
+    settex.texture = dst_.texture;
+    settex.index = 0;
+  } else if (clearing_buffer_) {
+    if (clearing_view_) {
+      auto [dst_, dst_sub_offset] = ctx_.access(clearing_buffer_, clearing_view_, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
+      auto &settexbuf = ctx_.encodeComputeCommand<wmtcmd_compute_settexture>();
+      settexbuf.type = WMTComputeCommandSetTexture;
+      settexbuf.texture = dst_.texture;
+      settexbuf.index = 0;
+      meta_temp_.offset[0] += dst_sub_offset;
+    } else {
+      auto [dst_, dst_sub_offset] = ctx_.access(clearing_buffer_, offset_x, width, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
+      auto &setbuf = ctx_.encodeComputeCommand<wmtcmd_compute_setbuffer>();
+      setbuf.type = WMTComputeCommandSetBuffer;
+      setbuf.buffer = dst_->buffer();
+      setbuf.index = 0;
+      setbuf.offset = 0;
+      meta_temp_.offset[0] += dst_sub_offset;
+    }
+  } else {
+    return;
+  }
+
+  auto &setmeta = ctx_.encodeComputeCommand<wmtcmd_compute_setbytes>();
+  setmeta.type = WMTComputeCommandSetBytes;
+  void *temp = ctx_.allocate_cpu_heap(sizeof(meta_temp_), 16);
+  memcpy(temp, &meta_temp_, sizeof(meta_temp_));
+  setmeta.bytes.set(temp);
+  setmeta.length = sizeof(meta_temp_);
+  setmeta.index = 1;
+
+  auto &dispatch = ctx_.encodeComputeCommand<wmtcmd_compute_dispatch>();
+  dispatch.type = WMTComputeCommandDispatchThreads;
+  dispatch.size = {width, height, dispatch_depth_};
+}
+
+void
+ClearResourceKernelContext::end() {
+  if (!clearing_texture_ && !clearing_buffer_)
+    return;
+  ctx_.endPass();
+  clearing_texture_ = nullptr;
+  clearing_buffer_ = nullptr;
+  clearing_view_ = 0;
+  dispatch_depth_ = 1;
+};
 
 } // namespace dxmt

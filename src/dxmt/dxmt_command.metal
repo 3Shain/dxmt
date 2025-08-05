@@ -448,3 +448,79 @@ struct linear_texture_desc {
     *dst = (uint(0xffffff * clamp(depth, 0.0, 1.0)) & 0xffffff) | (stencil << 24);
   }
 }
+
+struct DXMTClearFloatMetadata {
+  float4 value;
+  uint2 offset;
+  uint2 size;
+};
+
+struct DXMTClearUintMetadata {
+  uint4 value;
+  uint2 offset;
+  uint2 size;
+};
+
+[[kernel]] void cs_clear_texture2d_float(
+    texture2d<float, access::write> tex [[texture(0)]],
+    constant DXMTClearFloatMetadata& meta [[buffer(1)]],
+    uint2 pos [[thread_position_in_grid]]
+) {
+  tex.write(meta.value, meta.offset + pos);
+}
+
+[[kernel]] void cs_clear_texture2d_array_float(
+    texture2d_array<float, access::write> tex [[texture(0)]],
+    constant DXMTClearFloatMetadata& meta [[buffer(1)]],
+    uint3 pos [[thread_position_in_grid]]
+) {
+  tex.write(meta.value, meta.offset + pos.xy, pos.z);
+}
+
+[[kernel]] void cs_clear_texture2d_uint(
+    texture2d<uint, access::write> tex [[texture(0)]],
+    constant DXMTClearUintMetadata& meta [[buffer(1)]],
+    uint2 pos [[thread_position_in_grid]]
+) {
+  tex.write(meta.value, meta.offset + pos);
+}
+
+[[kernel]] void cs_clear_texture2d_array_uint(
+    texture2d_array<uint, access::write> tex [[texture(0)]],
+    constant DXMTClearUintMetadata& meta [[buffer(1)]],
+    uint3 pos [[thread_position_in_grid]]
+) {
+  tex.write(meta.value, meta.offset + pos.xy, pos.z);
+}
+
+[[kernel]] void cs_clear_texture_buffer_float(
+    texture_buffer<float, access::write> tex [[texture(0)]],
+    constant DXMTClearFloatMetadata& meta [[buffer(1)]],
+    uint pos [[thread_position_in_grid]]
+) {
+  tex.write(meta.value, meta.offset.x + pos);
+}
+
+[[kernel]] void cs_clear_texture_buffer_uint(
+    texture_buffer<uint, access::write> tex [[texture(0)]],
+    constant DXMTClearUintMetadata& meta [[buffer(1)]],
+    uint pos [[thread_position_in_grid]]
+) {
+  tex.write(meta.value, meta.offset.x + pos);
+}
+
+[[kernel]] void cs_clear_buffer_float(
+    device float* buffer [[buffer(0)]],
+    constant DXMTClearFloatMetadata& meta [[buffer(1)]],
+    uint pos [[thread_position_in_grid]]
+) {
+  buffer[meta.offset.x + pos] = meta.value.x;
+}
+
+[[kernel]] void cs_clear_buffer_uint(
+    device uint* buffer [[buffer(0)]],
+    constant DXMTClearUintMetadata& meta [[buffer(1)]],
+    uint pos [[thread_position_in_grid]]
+) {
+  buffer[meta.offset.x + pos] = meta.value.x;
+}
