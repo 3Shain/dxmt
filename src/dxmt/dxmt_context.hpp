@@ -5,6 +5,7 @@
 #include "dxmt_command.hpp"
 #include "dxmt_deptrack.hpp"
 #include "dxmt_occlusion_query.hpp"
+#include "dxmt_presenter.hpp"
 #include "dxmt_residency.hpp"
 #include "dxmt_sampler.hpp"
 #include "dxmt_statistics.hpp"
@@ -162,6 +163,7 @@ struct PresentData : EncoderData {
   WMT::Reference<WMT::Texture> backbuffer;
   Rc<Presenter> presenter;
   double after;
+  DXMTPresentMetadata metadata;
 };
 
 struct SpatialUpscaleData : EncoderData {
@@ -534,7 +536,7 @@ public:
     return (new (allocate_cpu_heap(sizeof(T), alignof(T))) T());
   };
 
-  void present(Rc<Texture> &texture, Rc<Presenter> &presenter, double after);
+  void present(Rc<Texture> &texture, Rc<Presenter> &presenter, double after, DXMTPresentMetadata metadata);
 
   void upscale(Rc<Texture> &texture, Rc<Texture> &upscaled, WMT::Reference<WMT::FXSpatialScaler> &scaler);
 

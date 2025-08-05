@@ -28,10 +28,11 @@ Presenter::changeLayerProperties(WMTPixelFormat format, WMTColorSpace colorspace
   layer_props_.pixel_format = Forget_sRGB(format);
   layer_props_.drawable_height = height;
   layer_props_.drawable_width = width;
-  layer_.setProps(layer_props_);
   colorspace_ = colorspace;
   if (should_invalidated)
-    pso_valid.clear();
+    pso_valid.clear(); // defer changes
+  else
+    layer_.setProps(layer_props_);
   return should_invalidated;
 }
 
@@ -43,26 +44,6 @@ Presenter::changeLayerColorSpace(WMTColorSpace colorspace) {
     pso_valid.clear();
   return should_invalidated;
 }
-
-struct DXMTPresentMetadata {
-  float edr_scale;
-  float max_content_luminance;
-  float max_display_luminance;
-};
-
-void
-Presenter::checkDisplaySetting() {
-  uint64_t display_setting_version = 0;
-
-  WMTQueryDisplaySettingForLayer(
-      layer_.handle, &display_setting_version, &display_colorspace_, &display_hdr_metadata_, &display_edr_value_
-  );
-
-  if (display_setting_version != display_setting_version_) {
-    display_setting_version_ = display_setting_version;
-    pso_valid.clear();
-  }
-};
 
 void
 Presenter::changeHDRMetadata(const WMTHDRMetadata *metadata) {
@@ -78,10 +59,18 @@ Presenter::changeHDRMetadata(const WMTHDRMetadata *metadata) {
   }
 }
 
-WMT::MetalDrawable
-Presenter::encodeCommands(WMT::CommandBuffer cmdbuf, WMT::Fence fence, WMT::Texture backbuffer) {
+Presenter::PresentState
+Presenter::synchronizeLayerProperties() {
+  uint64_t display_setting_version = 0;
 
-  checkDisplaySetting();
+  WMTQueryDisplaySettingForLayer(
+      layer_.handle, &display_setting_version, &display_colorspace_, &display_hdr_metadata_, &display_edr_value_
+  );
+
+  if (display_setting_version != display_setting_version_) {
+    display_setting_version_ = display_setting_version;
+    pso_valid.clear();
+  }
 
   auto final_colorspace = display_setting_version_ > 0 ? display_colorspace_ : colorspace_;
   auto is_hdr = WMT_COLORSPACE_IS_HDR(final_colorspace);
@@ -89,19 +78,20 @@ Presenter::encodeCommands(WMT::CommandBuffer cmdbuf, WMT::Fence fence, WMT::Text
                       : has_hdr_metadata_          ? &hdr_metadata_
                                                    : nullptr;
   if (unlikely(!pso_valid.test_and_set())) {
+    frame_presented_.wait(frame_requested_);
     buildRenderPipelineState(final_colorspace == WMTColorSpaceHDR_PQ, is_hdr && hdr_metadata != nullptr);
+    layer_.setProps(layer_props_);
     layer_.setColorSpace(final_colorspace);
   }
 
-  auto drawable = layer_.nextDrawable();
+  DXMTPresentMetadata metadata;
 
-  float edr_scale = 1.0f;
-  struct DXMTPresentMetadata metadata;
+  metadata.edr_scale = 1.0;
   metadata.max_content_luminance = 10000;
   metadata.max_display_luminance = display_edr_value_.maximum_potential_edr_color_component_value * 100;
 
   if (is_hdr) {
-    edr_scale = display_edr_value_.maximum_edr_color_component_value /
+    metadata.edr_scale = display_edr_value_.maximum_edr_color_component_value /
                 display_edr_value_.maximum_potential_edr_color_component_value;
 
     if (hdr_metadata) {
@@ -111,6 +101,18 @@ Presenter::encodeCommands(WMT::CommandBuffer cmdbuf, WMT::Fence fence, WMT::Text
       );
     }
   }
+
+  if (final_colorspace == WMTColorSpaceHDR_scRGB)
+    metadata.edr_scale *= 0.8;
+
+  return {metadata, ++frame_requested_, this};
+}
+
+WMT::MetalDrawable
+Presenter::encodeCommands(
+    WMT::CommandBuffer cmdbuf, WMT::Fence fence, WMT::Texture backbuffer, DXMTPresentMetadata metadata
+) {
+  auto drawable = layer_.nextDrawable();
 
   WMTRenderPassInfo info;
   WMT::InitializeRenderPassInfo(info);
@@ -125,9 +127,6 @@ Presenter::encodeCommands(WMT::CommandBuffer cmdbuf, WMT::Fence fence, WMT::Text
   double width = layer_props_.drawable_width;
   double height = layer_props_.drawable_height;
 
-  if (final_colorspace == WMTColorSpaceHDR_scRGB)
-    edr_scale *= 0.8;
-  metadata.edr_scale = edr_scale;
   encoder.setFragmentBytes(&metadata, sizeof(metadata), 0);
   if (backbuffer.width() == (uint64_t)width && backbuffer.height() == (uint64_t)height) {
     encoder.setRenderPipelineState(present_blit_);

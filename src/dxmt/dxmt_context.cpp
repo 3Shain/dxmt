@@ -459,7 +459,7 @@ ArgumentEncodingContext::resolveTexture(
 };
 
 void
-ArgumentEncodingContext::present(Rc<Texture> &texture, Rc<Presenter> &presenter, double after) {
+ArgumentEncodingContext::present(Rc<Texture> &texture, Rc<Presenter> &presenter, double after, DXMTPresentMetadata metadata) {
   assert(!encoder_current);
   auto encoder_info = allocate<PresentData>();
   encoder_info->type = EncoderType::Present;
@@ -467,6 +467,7 @@ ArgumentEncodingContext::present(Rc<Texture> &texture, Rc<Presenter> &presenter,
   encoder_info->backbuffer = texture->current()->texture();
   encoder_info->presenter = presenter;
   encoder_info->after = after;
+  encoder_info->metadata = metadata;
 
   encoder_info->tex_read.add(texture->current()->depkey);
 
@@ -833,7 +834,7 @@ ArgumentEncodingContext::flushCommands(WMT::CommandBuffer cmdbuf, uint64_t seqId
     case EncoderType::Present: {
       auto data = static_cast<PresentData *>(current);
       auto t0 = clock::now();
-      auto drawable = data->presenter->encodeCommands(cmdbuf, {}, data->backbuffer);
+      auto drawable = data->presenter->encodeCommands(cmdbuf, {}, data->backbuffer, data->metadata);
       auto t1 = clock::now();
       currentFrameStatistics().drawable_blocking_interval += (t1 - t0);
       if (data->after > 0)
