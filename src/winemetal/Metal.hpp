@@ -154,9 +154,9 @@ public:
   std::string
   getUTF8String() {
     auto len = lengthOfBytesUsingEncoding(WMTUTF8StringEncoding);
-    char str[len + 1];
-    getCString(str, len + 1, WMTUTF8StringEncoding);
-    return str;
+    std::vector<char> str(len + 1);
+    getCString(str.data(), len + 1, WMTUTF8StringEncoding);
+    return std::string(str.data());
   }
 };
 
