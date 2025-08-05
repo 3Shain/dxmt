@@ -17,11 +17,7 @@ execute_on_main(dispatch_block_t block) {
   if ([NSThread isMainThread]) {
     block();
   } else {
-#if defined(DXMT_NATIVE) // workaround for native builds - we sometimes deadlock on presenting first frame when dispatch_sync
-    dispatch_async(dispatch_get_main_queue(), block);
-#else
     dispatch_sync(dispatch_get_main_queue(), block);
-#endif
   }
 }
 
