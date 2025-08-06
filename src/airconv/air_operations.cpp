@@ -1359,36 +1359,6 @@ AIRBuilderResult call_texture_atomic_compare_exchange(
   co_return ctx.builder.CreateExtractElement(expected, uint64_t(0));
 }
 
-AIRBuilderResult
-call_convert(pvalue src, llvm::Type *dst_scaler_type, Sign sign) {
-  using namespace llvm;
-  auto ctx = co_yield get_context();
-  auto &context = ctx.llvm;
-  auto &module = ctx.module;
-  auto att = AttributeList::get(
-    context, {{~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)},
-              {~0U, Attribute::get(context, Attribute::AttrKind::ReadNone)},
-              {~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)}}
-  );
-  auto src_type = src->getType();
-  llvm::Type *dst_type = nullptr;
-  if (isa<llvm::FixedVectorType>(src_type)) {
-    dst_type = llvm::FixedVectorType::get(
-      dst_scaler_type, cast<llvm::FixedVectorType>(src_type)->getNumElements()
-    );
-  } else {
-    dst_type = dst_scaler_type;
-  }
-  auto dst_suffix = type_overload_suffix(dst_type, sign);
-  auto src_suffix = type_overload_suffix(src_type, sign);
-
-  auto fn = (module.getOrInsertFunction(
-    "air.convert" + dst_suffix + src_suffix,
-    llvm::FunctionType::get(dst_type, {src_type}, false), att
-  ));
-  co_return ctx.builder.CreateCall(fn, {src});
-};
-
 AIRBuilderResult call_atomic_fetch_explicit(
   pvalue pointer, pvalue operand, std::string op, bool is_signed, bool device
 ) {
@@ -1817,7 +1787,7 @@ AIRBuilderResult pull_vec4_from_addr_checked(
     value = co_yield load_from_device_buffer(
       types._half, base_addr, byte_offset, 0, 2
     );
-    value = co_yield call_convert(value, types._float, Sign::with_sign);
+    value = ctx.air.CreateConvertToFloat(value);
     value = builder.CreateInsertElement(
       llvm::PoisonValue::get(types._float4), value, (int)0
     );
@@ -1829,7 +1799,7 @@ AIRBuilderResult pull_vec4_from_addr_checked(
     value = co_yield load_from_device_buffer(
       types._half2, base_addr, byte_offset, 0, 2
     );
-    value = co_yield call_convert(value, types._float, Sign::with_sign);
+    value = ctx.air.CreateConvertToFloat(value);
     value = builder.CreateShuffleVector(value, {0, 1, -1, -1});
     value = builder.CreateInsertElement(value, co_yield get_float(0), (int)2);
     value = builder.CreateInsertElement(value, co_yield get_float(1), (int)3);
@@ -1838,7 +1808,7 @@ AIRBuilderResult pull_vec4_from_addr_checked(
     value = co_yield load_from_device_buffer(
       types._half4, base_addr, byte_offset, 0, 2
     );
-    value = co_yield call_convert(value, types._float, Sign::with_sign);
+    value = ctx.air.CreateConvertToFloat(value);
     break;
   case MTLAttributeFormat::Float:
     value = co_yield load_from_device_buffer(

@@ -834,6 +834,6 @@ convert_dxbc_vertex_for_geometry_shader(
 template <> struct environment_cast<::dxmt::dxbc::context, ::dxmt::air::AIRBuilderContext> {
   ::dxmt::air::AIRBuilderContext
   cast(const ::dxmt::dxbc::context &src) {
-    return {src.llvm, src.module, src.builder, src.types};
+    return {src.llvm, src.module, src.builder, src.types, src.air};
   };
 };
