@@ -246,6 +246,11 @@ public:
 
   CallInst *CreateSetMeshVertexData(Value *Vertex, Value *DataIndex, Value *DataValue);
 
+  CallInst *
+  CreateSetMeshVertexData(Value *Vertex, uint32_t DataIndex, Value *DataValue) {
+    return CreateSetMeshVertexData(Vertex, getInt(DataIndex), DataValue);
+  }
+
   CallInst *CreateSetMeshPrimitiveData(Value *Primitive, Value *DataIndex, Value *DataValue);
 
   CallInst *CreateSetMeshIndex(Value *Index, Value *Vertex);
@@ -288,9 +293,7 @@ public:
     return builder.getInt1(Value);
   };
 
-protected:
   IRBuilderBase &builder;
-  raw_ostream &debug;
 
   Module *
   getModule() const {
@@ -414,6 +417,9 @@ protected:
     }
     return nullptr;
   };
+
+protected:
+  raw_ostream &debug;
 
   std::pair<Value *, Value *> CreateSampleCommon(
       const Texture &Texture, Value *Handle, Value *Sampler, Value *Coord, Value *ArrayIndex,

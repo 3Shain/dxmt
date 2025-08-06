@@ -611,24 +611,24 @@ IREffect init_input_reg_with_interpolation(
     pvalue interpolated_val = nullptr;
     switch(interpolation) {
     case air::Interpolation::center_perspective:
-      interpolated_val = co_yield air::call_interpolate_at_center(interpolant, true);
+      interpolated_val = ctx.air.CreateInterpolateAtCenter(interpolant, true);
       break;
     case air::Interpolation::center_no_perspective:
-      interpolated_val = co_yield air::call_interpolate_at_center(interpolant, false);
+      interpolated_val = ctx.air.CreateInterpolateAtCenter(interpolant, false);
       break;
     case air::Interpolation::centroid_perspective:
-      interpolated_val = co_yield air::call_interpolate_at_centroid(interpolant, true);
+      interpolated_val = ctx.air.CreateInterpolateAtCentroid(interpolant, true);
       break;
     case air::Interpolation::centroid_no_perspective:
-      interpolated_val = co_yield air::call_interpolate_at_centroid(interpolant, false);
+      interpolated_val = ctx.air.CreateInterpolateAtCentroid(interpolant, false);
       break;
     case air::Interpolation::sample_perspective:
       assert(~sampleidx_at);
-      interpolated_val = co_yield air::call_interpolate_at_sample(interpolant, true, ctx.function->getArg(sampleidx_at));
+      interpolated_val = ctx.air.CreateInterpolateAtSample(interpolant, ctx.function->getArg(sampleidx_at), true);
       break;
     case air::Interpolation::sample_no_perspective:
       assert(~sampleidx_at);
-      interpolated_val = co_yield air::call_interpolate_at_sample(interpolant, false, ctx.function->getArg(sampleidx_at));
+      interpolated_val = ctx.air.CreateInterpolateAtSample(interpolant, ctx.function->getArg(sampleidx_at), false);
       break;
     case air::Interpolation::flat:
       assert(0 && "unhandled interpolant mode");
@@ -738,7 +738,7 @@ pop_mesh_output_render_taget_array_index(uint32_t from_reg, uint32_t mask, pvalu
   auto result = co_yield to_desired_type_from_int_vec4(
       co_yield load_from_array_at(ctx.resource.output.ptr_int4, ctx.builder.getInt32(from_reg)), ctx.types._int, mask
   );
-  co_yield air::call_set_mesh_render_target_array_index(ctx.resource.mesh, primitive_id, result);
+  ctx.air.CreateSetMeshRenderTargetArrayIndex(primitive_id, result);
   co_return {};
 }
 
@@ -748,7 +748,7 @@ pop_mesh_output_viewport_array_index(uint32_t from_reg, uint32_t mask, pvalue pr
   auto result = co_yield to_desired_type_from_int_vec4(
       co_yield load_from_array_at(ctx.resource.output.ptr_int4, ctx.builder.getInt32(from_reg)), ctx.types._int, mask
   );
-  co_yield air::call_set_mesh_viewport_array_index(ctx.resource.mesh, primitive_id, result);
+  ctx.air.CreateSetMeshViewportArrayIndex(primitive_id, result);
   co_return {};
 }
 
@@ -756,7 +756,7 @@ IREffect
 pop_mesh_output_position(uint32_t from_reg, uint32_t mask, pvalue vertex_id) {
   auto ctx = co_yield get_context();
   auto result = co_yield load_from_array_at(ctx.resource.output.ptr_float4, ctx.builder.getInt32(from_reg));
-  co_yield air::call_set_mesh_position(ctx.resource.mesh, vertex_id, result);
+  ctx.air.CreateSetMeshPosition(vertex_id, result);
   co_return {};
 }
 
@@ -769,7 +769,7 @@ pop_mesh_output_vertex_data(
       co_yield load_from_vec4_array_masked(ctx.resource.output.ptr_int4, ctx.builder.getInt32(from_reg), mask),
       air::get_llvm_type(desired_type, ctx.llvm), mask
   );
-  co_yield air::call_set_mesh_vertex_data(ctx.resource.mesh, idx, vertex_id, result);
+  ctx.air.CreateSetMeshVertexData(vertex_id, idx, result);
   co_return {};
 }
 
@@ -860,53 +860,6 @@ auto saturate(bool sat) {
       return air::pure(floaty);
     }
   };
-}
-
-IREffect call_discard_fragment() {
-  using namespace llvm;
-  auto ctx = co_yield get_context();
-  auto &context = ctx.llvm;
-  auto &module = ctx.module;
-  auto att = AttributeList::get(
-    context, {{~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)},
-              {~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)}}
-  );
-  auto fn = (module.getOrInsertFunction(
-    "air.discard_fragment",
-    llvm::FunctionType::get(Type::getVoidTy(context), {}, false), att
-  ));
-  ctx.builder.CreateCall(fn, {});
-  co_return {};
-}
-
-IREffect call_threadgroup_barrier(mem_flags mem_flag) {
-  using namespace llvm;
-  auto ctx = co_yield get_context();
-  auto &context = ctx.llvm;
-  auto &types = ctx.types;
-  auto &module = ctx.module;
-  auto att = AttributeList::get(
-    context, {{~0U, Attribute::get(context, Attribute::AttrKind::Convergent)},
-              {~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)},
-              {~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)}}
-  );
-
-  auto fn = (module.getOrInsertFunction(
-    "air.wg.barrier",
-    llvm::FunctionType::get(
-      Type::getVoidTy(context),
-      {
-        types._int, // mem_flag
-        types._int, // scope, should be always 1?
-      },
-      false
-    ),
-    att
-  ));
-  ctx.builder.CreateCall(
-    fn, {co_yield get_int((uint8_t)mem_flag), co_yield get_int(1)}
-  );
-  co_return {};
 }
 
 auto extend_to_int2(pvalue value) -> IRValue {
@@ -4130,18 +4083,27 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
             );
           },
           [&effect](InstSync sync) {
-            mem_flags mem_flag = sync.tgsm_memory_barrier ? mem_flags::threadgroup : mem_flags::none;
+            using namespace llvm::air;
+            MemFlags mem_flag = sync.tgsm_memory_barrier ? MemFlags::Threadgroup : MemFlags::None;
             if (sync.uav_boundary != InstSync::UAVBoundary::none) {
-              mem_flag |= mem_flags::device | mem_flags::texture;
+              mem_flag |= MemFlags::Device | MemFlags::Texture;
             }
-            effect << call_threadgroup_barrier(mem_flag);
+            effect << make_effect([=](struct context ctx) {
+              ctx.air.CreateBarrier(mem_flag);
+              return std::monostate();
+            });
           },
-          [&effect](InstPixelDiscard) { effect << call_discard_fragment(); },
+          [&effect](InstPixelDiscard) {
+            effect << make_effect([=](struct context ctx) {
+              ctx.air.CreateDiscard();
+              return std::monostate();
+            });
+          },
           [&effect](InstPartialDerivative df) {
             effect << store_dst_op<true>(
               df.dst, make_irvalue_bind([=](struct context ctx) -> IRValue {
                         auto fvec4 = co_yield load_src_op<true>(df.src);
-                        co_return co_yield air::call_derivative(fvec4, df.ddy);
+                        co_return ctx.air.CreateDerivative(fvec4, df.ddy);
                       }) >>= saturate(df._.saturate)
             );
           },
@@ -4845,7 +4807,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                 );
                 swiz = sample_info.src->read_swizzle;
               } else {
-                sample_count = co_yield call_get_num_samples();
+                sample_count = ctx.air.CreateGetNumSamples();
               }
 
               if (sample_info.uint_result) {
@@ -4875,7 +4837,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
               eval_centroid.dst,
               make_irvalue_bind([=](struct context ctx) -> IRValue {
                 auto desc = ctx.resource.interpolant_map.at(eval_centroid.regid);
-                co_return co_yield air::call_interpolate_at_centroid(
+                co_return ctx.air.CreateInterpolateAtCentroid(
                   co_yield desc.interpolant(nullptr), desc.perspective
                 );
               }) >>= swizzle(eval_centroid.read_swizzle)
@@ -4886,9 +4848,10 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
               eval_sample_index.dst,
               make_irvalue_bind([=](struct context ctx) -> IRValue {
                 auto desc = ctx.resource.interpolant_map.at(eval_sample_index.regid);
-                co_return co_yield air::call_interpolate_at_sample(
-                  co_yield desc.interpolant(nullptr), desc.perspective,
-                  co_yield load_src_op<false>(eval_sample_index.sample_index) >>= extract_element(0)
+                co_return ctx.air.CreateInterpolateAtSample(
+                  co_yield desc.interpolant(nullptr),
+                  co_yield load_src_op<false>(eval_sample_index.sample_index) >>= extract_element(0),
+                  desc.perspective
                 );
               }) >>= swizzle(eval_sample_index.read_swizzle)
             );
@@ -4914,8 +4877,8 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                   ),
                   co_yield get_float2(1.0f / 16.0f, 1.0f / 16.0f)
                 );
-                co_return co_yield air::call_interpolate_at_offset(
-                  co_yield desc.interpolant(nullptr), desc.perspective, offset_f
+                co_return ctx.air.CreateInterpolateAtOffset(
+                  co_yield desc.interpolant(nullptr), offset_f, desc.perspective
                 );
               }) >>= swizzle(eval_snapped.read_swizzle)
             );
@@ -5046,11 +5009,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
               }
               builder.CreateBr(sync);
               builder.SetInsertPoint(sync);
-              if (auto err = call_threadgroup_barrier(mem_flags::threadgroup)
-                               .build(ctx)
-                               .takeError()) {
-                return err;
-              }
+              ctx.air.CreateBarrier(llvm::air::MemFlags::Threadgroup);
 
               auto target_bb = visited[hull_end.epilogue.get()];
               builder.CreateBr(target_bb);
