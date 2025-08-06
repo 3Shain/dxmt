@@ -20,6 +20,7 @@
 #include <vector>
 
 #include "metallib_writer.hpp"
+#include "nt/air_builder.hpp"
 #include "shader_common.hpp"
 
 #include "airconv_context.hpp"
@@ -484,6 +485,8 @@ llvm::Error convert_dxbc_hull_shader(
   auto entry_bb = llvm::BasicBlock::Create(context, "entry", function);
   auto epilogue_bb = llvm::BasicBlock::Create(context, "epilogue", function);
   llvm::IRBuilder<> builder(entry_bb);
+  llvm::raw_null_ostream nulldbg{};
+  llvm::air::AIRBuilder air(builder, nulldbg);
 
   setup_fastmath_flag(module, builder);
 
@@ -650,7 +653,7 @@ llvm::Error convert_dxbc_hull_shader(
   );
 
   struct context ctx {
-    .builder = builder, .llvm = context, .module = module, .function = function,
+    .builder = builder, .air = air, .llvm = context, .module = module, .function = function,
     .resource = resource_map, .types = types, .pso_sample_mask = 0xffffffff,
     .shader_type = pShaderInternal->shader_type,
   };
@@ -847,6 +850,8 @@ llvm::Error convert_dxbc_domain_shader(
   auto entry_bb = llvm::BasicBlock::Create(context, "entry", function);
   auto epilogue_bb = llvm::BasicBlock::Create(context, "epilogue", function);
   llvm::IRBuilder<> builder(entry_bb);
+  llvm::raw_null_ostream nulldbg{};
+  llvm::air::AIRBuilder air(builder, nulldbg);
 
   setup_fastmath_flag(module, builder);
 
@@ -936,7 +941,7 @@ llvm::Error convert_dxbc_domain_shader(
   );
 
   struct context ctx {
-    .builder = builder, .llvm = context, .module = module, .function = function,
+    .builder = builder, .air = air, .llvm = context, .module = module, .function = function,
     .resource = resource_map, .types = types, .pso_sample_mask = 0xffffffff,
     .shader_type = pShaderInternal->shader_type,
   };
@@ -1102,6 +1107,8 @@ llvm::Error convert_dxbc_pixel_shader(
   auto entry_bb = llvm::BasicBlock::Create(context, "entry", function);
   auto epilogue_bb = llvm::BasicBlock::Create(context, "epilogue", function);
   llvm::IRBuilder<> builder(entry_bb);
+  llvm::raw_null_ostream nulldbg{};
+  llvm::air::AIRBuilder air(builder, nulldbg);
 
   setup_fastmath_flag(module, builder);
 
@@ -1127,7 +1134,7 @@ llvm::Error convert_dxbc_pixel_shader(
   );
 
   struct context ctx {
-    .builder = builder, .llvm = context, .module = module, .function = function,
+    .builder = builder, .air = air, .llvm = context, .module = module, .function = function,
     .resource = resource_map, .types = types,
     .pso_sample_mask = pso_sample_mask,
     .shader_type = pShaderInternal->shader_type,
@@ -1212,6 +1219,8 @@ llvm::Error convert_dxbc_compute_shader(
   auto entry_bb = llvm::BasicBlock::Create(context, "entry", function);
   auto epilogue_bb = llvm::BasicBlock::Create(context, "epilogue", function);
   llvm::IRBuilder<> builder(entry_bb);
+  llvm::raw_null_ostream nulldbg{};
+  llvm::air::AIRBuilder air(builder, nulldbg);
 
   setup_fastmath_flag(module, builder);
   setup_temp_register(shader_info, resource_map, types, module, builder);
@@ -1220,7 +1229,7 @@ llvm::Error convert_dxbc_compute_shader(
   );
 
   struct context ctx {
-    .builder = builder, .llvm = context, .module = module, .function = function,
+    .builder = builder, .air = air, .llvm = context, .module = module, .function = function,
     .resource = resource_map, .types = types, .pso_sample_mask = 0xffffffff,
     .shader_type = pShaderInternal->shader_type,
   };
@@ -1400,6 +1409,8 @@ llvm::Error convert_dxbc_vertex_shader(
   auto entry_bb = llvm::BasicBlock::Create(context, "entry", function);
   auto epilogue_bb = llvm::BasicBlock::Create(context, "epilogue", function);
   llvm::IRBuilder<> builder(entry_bb);
+  llvm::raw_null_ostream nulldbg{};
+  llvm::air::AIRBuilder air(builder, nulldbg);
 
   setup_fastmath_flag(module, builder);
 
@@ -1436,7 +1447,7 @@ llvm::Error convert_dxbc_vertex_shader(
   );
 
   struct context ctx {
-    .builder = builder, .llvm = context, .module = module, .function = function,
+    .builder = builder, .air = air, .llvm = context, .module = module, .function = function,
     .resource = resource_map, .types = types, .pso_sample_mask = 0xffffffff,
     .shader_type = pShaderInternal->shader_type,
   };
@@ -1621,6 +1632,8 @@ llvm::Error convert_dxbc_vertex_for_hull_shader(
   auto entry_bb = llvm::BasicBlock::Create(context, "entry", function);
   auto epilogue_bb = llvm::BasicBlock::Create(context, "epilogue", function);
   llvm::IRBuilder<> builder(entry_bb);
+  llvm::raw_null_ostream nulldbg{};
+  llvm::air::AIRBuilder air(builder, nulldbg);
 
   setup_fastmath_flag(module, builder);
 
@@ -1703,7 +1716,7 @@ llvm::Error convert_dxbc_vertex_for_hull_shader(
   );
 
   struct context ctx {
-    .builder = builder, .llvm = context, .module = module, .function = function,
+    .builder = builder, .air = air, .llvm = context, .module = module, .function = function,
     .resource = resource_map, .types = types, .pso_sample_mask = 0xffffffff,
     .shader_type = pShaderInternal->shader_type,
   };
@@ -1791,23 +1804,7 @@ llvm::Error convert_dxbc_vertex_for_hull_shader(
                  )
   );
 
-  if (auto err =
-        air::call_set_mesh_properties(
-          ctx.builder.CreateBitCast(
-            function->getArg(mesh_props_idx),
-            types._mesh_grid_properties->getPointerTo(3)
-          ),
-          llvm::ConstantVector::getIntegerValue(types._int3, llvm::APInt{32, 1})
-        )
-          .build(
-            {.llvm = context,
-             .module = module,
-             .builder = builder,
-             .types = types}
-          )
-          .takeError()) {
-    return err;
-  }
+  air.CreateSetMeshProperties(air.getInt3(1, 1, 1));
 
   builder.CreateBr(return_);
 

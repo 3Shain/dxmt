@@ -277,6 +277,11 @@ public:
   CallInst *
   CreateSetMeshVertexData(Value *Vertex, Value *DataIndex, Value *DataValue);
 
+  CallInst *
+  CreateSetMeshVertexData(Value *Vertex, uint32_t DataIndex, Value *DataValue) {
+    return CreateSetMeshVertexData(Vertex, getInt(DataIndex), DataValue);
+  }
+
   CallInst *CreateSetMeshPrimitiveData(
     Value *Primitive, Value *DataIndex, Value *DataValue
   );
@@ -316,9 +321,7 @@ public:
 
   ConstantInt *getBool(bool Value) { return builder.getInt1(Value); };
 
-protected:
   IRBuilderBase &builder;
-  raw_ostream &debug;
 
   Module *getModule() const {
     assert(builder.GetInsertBlock()->getParent() && "");
@@ -327,13 +330,6 @@ protected:
   }
 
   LLVMContext &getContext() const { return builder.getContext(); };
-
-  Type *getOrCreateStructType(const StringRef &Name) {
-    StructType *Ty = StructType::getTypeByName(getContext(), Name);
-    if (Ty)
-      return Ty;
-    return StructType::create(getContext(), Name);
-  }
 
   Type *getIntTy() { return Type::getInt32Ty(getContext()); };
   Type *getFloatTy() { return Type::getFloatTy(getContext()); };
@@ -414,6 +410,16 @@ protected:
     }
     return nullptr;
   };
+
+protected:
+  raw_ostream &debug;
+
+  Type *getOrCreateStructType(const StringRef &Name) {
+    StructType *Ty = StructType::getTypeByName(getContext(), Name);
+    if (Ty)
+      return Ty;
+    return StructType::create(getContext(), Name);
+  }
 
   std::pair<Value *, Value *> CreateSampleCommon(
     const Texture &Texture, Value *Handle, Value *Sampler, Value *Coord,
