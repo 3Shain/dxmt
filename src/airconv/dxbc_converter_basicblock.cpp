@@ -2283,8 +2283,8 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
   auto bb_pop = builder.GetInsertBlock();
   for (auto &[current, bb] : visit_order) {
     IREffect effect([](auto) { return std::monostate(); });
-    for (auto &inst : current->instructions) {
-      std::visit(
+    {
+      current->instructions.for_each(
         patterns{
           [&effect](InstMov mov) {
             auto mask = get_dst_mask(mov.dst);
@@ -4913,8 +4913,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
           },
           [&](InstEmit) { effect << ctx.resource.call_emit(); },
           [&](InstCut) { effect << ctx.resource.call_cut(); },
-        },
-        inst
+        }
       );
     }
     builder.SetInsertPoint(bb);

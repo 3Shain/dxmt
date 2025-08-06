@@ -1857,19 +1857,12 @@ llvm::Error convertDXBC(
 
 bool CheckGSBBIsPassThrough(dxmt::dxbc::BasicBlock *bb) {
   using namespace dxmt::dxbc;
-  for (auto &inst : bb->instructions) {
-    bool matched = std::visit(
-      patterns{
-        [](InstNop &) { return true; }, [](InstMov &mov) { return true; },
-        [](InstEmit &) { return true; }, [](InstCut &) { return true; },
-        [](auto &) { return false; }
-      },
-      inst
-    );
-    if (matched)
-      continue;
-    return matched;
-  }
+  if (bb->instructions.any(patterns{
+        [](InstNop &) { return false; }, [](InstMov &mov) { return false; },
+        [](InstEmit &) { return false; }, [](InstCut &) { return false; },
+        [](auto &) { return true; }
+      }))
+    return false;
 
   return std::visit(
     patterns{

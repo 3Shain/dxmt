@@ -5,6 +5,7 @@
 #include <map>
 #include <string_view>
 #include <variant>
+#include "packed_variant_list.hpp"
 
 #define DXASSERT_DXBC(x) assert(x);
 
@@ -718,7 +719,7 @@ struct InstEmit {};
 
 struct InstCut {};
 
-using Instruction = std::variant<
+using InstructionList = PackedVariantList<
   /* Generic */
   InstMov, InstMovConditional, InstSwapConditional,                      //
   InstDotProduct, InstSinCos,                                            //
@@ -743,6 +744,8 @@ using Instruction = std::variant<
   InstSync, InstAtomicBinOp,                       //
   InstAtomicImmCmpExchange, InstAtomicImmExchange, //
   InstAtomicImmIncrement, InstAtomicImmDecrement>;
+
+using Instruction = InstructionList::variant;
 
 #pragma region basicblock
 
@@ -791,7 +794,7 @@ using BasicBlockTarget = std::variant<
 
 class BasicBlock {
 public:
-  std::vector<Instruction> instructions;
+  InstructionList instructions;
   BasicBlockTarget target;
   std::string debug_name;
 
