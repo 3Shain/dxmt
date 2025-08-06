@@ -2,10 +2,12 @@
 #include "air_signature.hpp"
 #include "airconv_error.hpp"
 #include "dxbc_converter.hpp"
+#include "nt/air_builder.hpp"
 #include "llvm/IR/Constants.h"
 #include "llvm/Support/Alignment.h"
 #include "llvm/Support/AtomicOrdering.h"
 #include "llvm/Support/Error.h"
+#include "llvm/Support/raw_ostream.h"
 #include <cstdint>
 #include <format>
 #include <utility>
@@ -165,6 +167,8 @@ convert_dxbc_geometry_shader(
   auto active_ = llvm::BasicBlock::Create(context, "active", function);
   auto epilogue_bb = llvm::BasicBlock::Create(context, "epilogue", function);
   llvm::IRBuilder<> builder(entry_bb);
+  llvm::raw_null_ostream nulldbg{};
+  llvm::air::AIRBuilder air(builder, nulldbg);
   setup_fastmath_flag(module, builder);
 
   auto [warp_vertex_count, warp_primitive_count, vertex_per_primitive] =
@@ -206,15 +210,15 @@ convert_dxbc_geometry_shader(
       }
 
       auto triple_primitive_idx = builder.CreateMul(current_primitive_idx, builder.getInt32(3));
-      co_yield air::call_set_mesh_index(
-          mesh_ptr, builder.CreateAdd(triple_primitive_idx, zero_const), current_vertex_with_offset
+      air.CreateSetMeshIndex(
+          builder.CreateAdd(triple_primitive_idx, zero_const), current_vertex_with_offset
       );
-      co_yield air::call_set_mesh_index(
-          mesh_ptr, builder.CreateAdd(triple_primitive_idx, one_const),
+      air.CreateSetMeshIndex(
+          builder.CreateAdd(triple_primitive_idx, one_const),
           builder.CreateSub(builder.CreateAdd(current_vertex_with_offset, two_const), even_winding)
       );
-      co_yield air::call_set_mesh_index(
-          mesh_ptr, builder.CreateAdd(triple_primitive_idx, two_const),
+      air.CreateSetMeshIndex(
+          builder.CreateAdd(triple_primitive_idx, two_const),
           builder.CreateAdd(builder.CreateAdd(current_vertex_with_offset, one_const), even_winding)
       );
 
@@ -256,11 +260,11 @@ convert_dxbc_geometry_shader(
       }
 
       auto double_primitive_idx = builder.CreateMul(current_primitive_idx, builder.getInt32(2));
-      co_yield air::call_set_mesh_index(
-          mesh_ptr, builder.CreateAdd(double_primitive_idx, zero_const), current_vertex_with_offset
+      air.CreateSetMeshIndex(
+          builder.CreateAdd(double_primitive_idx, zero_const), current_vertex_with_offset
       );
-      co_yield air::call_set_mesh_index(
-          mesh_ptr, builder.CreateAdd(double_primitive_idx, one_const),
+      air.CreateSetMeshIndex(
+          builder.CreateAdd(double_primitive_idx, one_const),
           builder.CreateAdd(current_vertex_with_offset, one_const)
       );
 
@@ -293,7 +297,7 @@ convert_dxbc_geometry_shader(
       for (auto &h : gs_output_handlers) {
         co_yield h(gs_out_ctx);
       }
-      co_yield air::call_set_mesh_index(mesh_ptr, current_write_vertex, current_write_vertex);
+      air.CreateSetMeshIndex(current_write_vertex, current_write_vertex);
       co_return {};
     };
     resource_map.call_cut = []() -> IREffect {
@@ -445,7 +449,7 @@ convert_dxbc_geometry_shader(
   }
 
   struct context ctx {
-    .builder = builder, .llvm = context, .module = module, .function = function, .resource = resource_map,
+    .builder = builder, .air = air, .llvm = context, .module = module, .function = function, .resource = resource_map,
     .types = types, .pso_sample_mask = 0xffffffff, .shader_type = pShaderInternal->shader_type,
   };
 
@@ -466,11 +470,7 @@ convert_dxbc_geometry_shader(
   if (auto err = resource_map.call_cut().build(ctx).takeError()) {
     return err;
   }
-  if (auto err = IRValue(air::call_set_mesh_primitive_count(mesh_ptr, builder.CreateLoad(types._int, primitive_count)))
-                     .build(ctx)
-                     .takeError()) {
-    return err;
-  }
+  air.CreateSetMeshPrimitiveCount(builder.CreateLoad(types._int, primitive_count));
 
   builder.CreateRetVoid();
   module.getOrInsertNamedMetadata("air.mesh")->addOperand(function_metadata);
@@ -539,7 +539,7 @@ convert_dxbc_vertex_for_geometry_shader(
   // (warp_count, instance_count, 1)
   // warp_count = ceil(index_count / warp_size)
   uint32_t tg_id_idx = func_signature.DefineInput(air::InputThreadgroupPositionInGrid{});
-  uint32_t mesh_props_idx = func_signature.DefineInput(air::InputMeshGridProperties{});
+  func_signature.DefineInput(air::InputMeshGridProperties{});
   uint32_t draw_argument_idx = func_signature.DefineInput(air::ArgumentBindingBuffer{
       .buffer_size = {},
       .location_index = 21,
@@ -572,6 +572,8 @@ convert_dxbc_vertex_for_geometry_shader(
   auto entry_bb = llvm::BasicBlock::Create(context, "entry", function);
   auto epilogue_bb = llvm::BasicBlock::Create(context, "epilogue", function);
   llvm::IRBuilder<> builder(entry_bb);
+  llvm::raw_null_ostream nulldbg{};
+  llvm::air::AIRBuilder air(builder, nulldbg);
 
   setup_fastmath_flag(module, builder);
 
@@ -638,7 +640,7 @@ convert_dxbc_vertex_for_geometry_shader(
   setup_immediate_constant_buffer(shader_info, resource_map, types, module, builder);
 
   struct context ctx {
-    .builder = builder, .llvm = context, .module = module, .function = function, .resource = resource_map,
+    .builder = builder, .air = air, .llvm = context, .module = module, .function = function, .resource = resource_map,
     .types = types, .pso_sample_mask = 0xffffffff, .shader_type = pShaderInternal->shader_type,
   };
 
@@ -739,9 +741,7 @@ convert_dxbc_vertex_for_geometry_shader(
 
   builder.SetInsertPoint(will_dispatch);
 
-  if (auto err = call_threadgroup_barrier(mem_flags::threadgroup).build(ctx).takeError()) {
-    return err;
-  }
+  air.CreateBarrier(llvm::air::MemFlags::Threadgroup);
 
   builder.CreateCondBr(
       builder.CreateICmp(llvm::CmpInst::ICMP_EQ, warp_vertex_id, builder.getInt32(0)), dispatch, return_
@@ -817,18 +817,7 @@ convert_dxbc_vertex_for_geometry_shader(
 
   builder.CreateStore(warp_id, builder.CreateConstInBoundsGEP1_32(types._int, payload, 2));
 
-  if (auto err = air::call_set_mesh_properties(
-                     function->getArg(mesh_props_idx),
-                     llvm::ConstantVector::get(
-                         {llvm::ConstantInt::get(ctx.llvm, llvm::APInt{32, warp_primitive_count}),
-                          llvm::ConstantInt::get(ctx.llvm, llvm::APInt{32, pGeometryStage->gs_instance_count}),
-                          llvm::ConstantInt::get(ctx.llvm, llvm::APInt{32, 1})}
-                     )
-      )
-                     .build({.llvm = context, .module = module, .builder = builder, .types = types})
-                     .takeError()) {
-    return err;
-  }
+  air.CreateSetMeshProperties(air.getInt3(warp_primitive_count, pGeometryStage->gs_instance_count, 1));
 
   builder.CreateBr(return_);
 
