@@ -3,6 +3,7 @@
 #include "air_signature.hpp"
 #include "air_type.hpp"
 #include "monad.hpp"
+#include "nt/air_builder.hpp"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
@@ -23,6 +24,7 @@ struct AIRBuilderContext {
   llvm::Module &module;
   llvm::IRBuilder<> &builder;
   AirType &types;
+  llvm::air::AIRBuilder& air;
 };
 
 template <typename S> AIRBuilderResult make_op(S &&fs) {
@@ -112,10 +114,6 @@ AIRBuilderResult call_texture_atomic_compare_exchange(
   air::MSLTexture texture_type, pvalue handle, pvalue address,
   pvalue array_index, pvalue compared, pvalue operand
 );
-
-// TODO: not good, expose too much detail
-AIRBuilderResult
-call_convert(pvalue src, llvm::Type *dst_scaler_type, air::Sign sign);
 
 AIRBuilderResult call_atomic_fetch_explicit(
   pvalue pointer, pvalue operand, std::string op, bool is_signed = false,

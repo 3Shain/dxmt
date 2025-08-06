@@ -5,6 +5,7 @@
 #include "airconv_public.h"
 #include "dxbc_converter.hpp"
 #include "ftl.hpp"
+#include "nt/air_builder.hpp"
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/ArrayRef.h"
@@ -681,10 +682,7 @@ IREffect init_tess_factor_patch_constant(uint32_t to_reg, uint32_t mask, uint32_
        ctx.builder.getInt32(factor_index))}
     );
     auto src_val = ctx.builder.CreateLoad(ctx.types._half, src_ptr);
-    auto to_float = co_yield call_convert(
-      src_val, ctx.types._float,
-      air::Sign::with_sign /* intended */
-    );
+    auto to_float = ctx.air.CreateConvertToFloat(src_val);
     auto array = ctx.resource.patch_constant_output.ptr_float4;
     auto array_ty = llvm::cast<llvm::ArrayType>( // force line break
       llvm::cast<llvm::PointerType>(array->getType())
@@ -715,10 +713,7 @@ std::function<IRValue(pvalue)> pop_output_tess_factor(
       {ctx.builder.getInt32(0), ctx.builder.getInt32(from_reg),
        ctx.builder.getInt32(__builtin_ctz(mask))}
     );
-    auto to_half = co_yield call_convert(
-      ctx.builder.CreateLoad(ctx.types._float, component_ptr), ctx.types._half,
-      air::Sign::with_sign /* intended */
-    );
+    auto to_half = ctx.air.CreateConvertToHalf(ctx.builder.CreateLoad(ctx.types._float, component_ptr));
     auto dst_ptr = ctx.builder.CreateGEP(
       ctx.types._half, ctx.resource.tess_factor_buffer,
       {ctx.builder.CreateAdd(ctx.builder.CreateMul(
@@ -1919,9 +1914,8 @@ auto metadata_get_texture_array_length(pvalue metadata) -> IRValue {
 
 auto convert_array_index(pvalue float_num, pvalue array_length) -> IRValue {
   auto ctx = co_yield get_context();
-  auto &types = ctx.types;
   auto rounded = co_yield air::call_float_unary_op("rint", float_num);
-  auto integer = co_yield call_convert(rounded, types._int, air::Sign::with_sign);
+  auto integer = ctx.air.CreateConvertToSigned(rounded);
   auto positive_integer = co_yield air::call_integer_binop("max", integer, ctx.builder.getInt32(0), true);
   auto max_index = ctx.builder.CreateSub(array_length, ctx.builder.getInt32(1));
   co_return co_yield air::call_integer_binop("min", positive_integer, max_index, true);
@@ -3857,9 +3851,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                   auto half4 = ctx.builder.CreateBitCast(
                     ctx.builder.CreateTrunc(src, src_type), dst_type
                   );
-                  co_return co_yield call_convert(
-                    half4, ctx.types._float, air::Sign::with_sign /* intended */
-                  );
+                  co_return ctx.air.CreateConvertToFloat(half4);
                 })
               );
               break;
@@ -3870,9 +3862,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                 make_irvalue_bind([=](struct context ctx) -> IRValue {
                   // FIXME: neg modifier might be wrong?!
                   auto src = co_yield load_src_op<true>(convert.src, mask);
-                  auto half_src = co_yield call_convert(
-                    src, ctx.types._half, air::Sign::with_sign /* intended */
-                  );
+                  auto half_src = ctx.air.CreateConvertToHalf(src);
                   auto src_type = get_splat_type(
                     llvm::IntegerType::getInt16Ty(ctx.llvm), mask
                   );
@@ -3889,9 +3879,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                 convert.dst,
                 make_irvalue_bind([=](struct context ctx) -> IRValue {
                   auto src = co_yield load_src_op<true>(convert.src, mask);
-                  co_return co_yield call_convert(
-                    src, ctx.types._int, air::Sign::with_sign
-                  );
+                  co_return ctx.air.CreateConvertToSigned(src);
                 })
               );
               break;
@@ -3901,9 +3889,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                 convert.dst,
                 make_irvalue_bind([=](struct context ctx) -> IRValue {
                   auto src = co_yield load_src_op<false>(convert.src, mask);
-                  co_return co_yield call_convert(
-                    src, ctx.types._float, air::Sign::with_sign
-                  );
+                  co_return ctx.air.CreateConvertToFloat(src);
                 })
               );
               break;
@@ -3913,9 +3899,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                 convert.dst,
                 make_irvalue_bind([=](struct context ctx) -> IRValue {
                   auto src = co_yield load_src_op<true>(convert.src, mask);
-                  co_return co_yield call_convert(
-                    src, ctx.types._int, air::Sign::no_sign
-                  );
+                  co_return ctx.air.CreateConvertToUnsigned(src);
                 })
               );
               break;
@@ -3925,9 +3909,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                 convert.dst,
                 make_irvalue_bind([=](struct context ctx) -> IRValue {
                   auto src = co_yield load_src_op<false>(convert.src, mask);
-                  co_return co_yield call_convert(
-                    src, ctx.types._float, air::Sign::no_sign
-                  );
+                  co_return ctx.air.CreateConvertToFloat(src, llvm::air::Signedness::Unsigned);
                 })
               );
               break;
@@ -4740,21 +4722,14 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                          ? ctx.builder.CreateBitCast(
                              mip_count, ctx.types._float
                            )
-                         : co_yield call_convert(
-                             mip_count, ctx.types._float, air::Sign::no_sign
-                           ),
+                         : ctx.air.CreateConvertToFloat(mip_count),
                        3
                      );
                      switch (resinfo.modifier) {
                      case InstResourceInfo::M::none: {
-                       auto to_float_cast = [&](pvalue v) -> IRValue {
-                         co_return (co_yield call_convert(
-                           v, ctx.types._float, air::Sign::no_sign
-                         ));
-                       };
-                       x = co_yield to_float_cast(x ? x : zero);
-                       y = co_yield to_float_cast(y ? y : zero);
-                       z = co_yield to_float_cast(z ? z : zero);
+                       x = ctx.air.CreateConvertToFloat(x ? x : zero);
+                       y = ctx.air.CreateConvertToFloat(y ? y : zero);
+                       z = ctx.air.CreateConvertToFloat(z ? z : zero);
                        break;
                      }
                      case InstResourceInfo::M::uint: {
@@ -4770,17 +4745,12 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                        break;
                      }
                      case InstResourceInfo::M::rcp: {
-                       auto to_rcp_cast = [&](pvalue v) -> IRValue {
-                         co_return (ctx.builder.CreateFDiv(
-                           co_yield get_float(1.0f),
-                           co_yield call_convert(
-                             v, ctx.types._float, air::Sign::no_sign
-                           )
-                         ));
-                       };
-                       x = co_yield to_rcp_cast(x ? x : zero);
-                       y = co_yield to_rcp_cast(y ? y : zero);
-                       z = co_yield to_rcp_cast(z ? z : zero);
+                       x = ctx.air.CreateConvertToFloat(x ? x : zero);
+                       y = ctx.air.CreateConvertToFloat(y ? y : zero);
+                       z = ctx.air.CreateConvertToFloat(z ? z : zero);
+                       x = ctx.builder.CreateFDiv(ctx.air.getFloat(1.0f), x);
+                       y = ctx.builder.CreateFDiv(ctx.air.getFloat(1.0f), y);
+                       z = ctx.builder.CreateFDiv(ctx.air.getFloat(1.0f), z);
                        break;
                      }
                      }
@@ -4818,7 +4788,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
               } else {
                 pvalue vec_ret = ctx.builder.CreateInsertElement(
                   llvm::ConstantAggregateZero::get(ctx.types._float4),
-                  co_yield call_convert(sample_count, ctx.types._float, air::Sign::no_sign),
+                  ctx.air.CreateConvertToFloat(sample_count),
                   (uint64_t)0
                 );
                 co_return co_yield store_dst_op<true>(sample_info.dst, swizzle(swiz)(vec_ret));
@@ -4872,9 +4842,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                   co_yield get_int2(0b1111, 0b1111)
                 );
                 auto offset_f = ctx.builder.CreateFMul(
-                  co_yield call_convert(
-                    truncated, ctx.types._float, air::Sign::no_sign
-                  ),
+                  ctx.air.CreateConvertToFloat(truncated),
                   co_yield get_float2(1.0f / 16.0f, 1.0f / 16.0f)
                 );
                 co_return ctx.air.CreateInterpolateAtOffset(
@@ -5031,6 +4999,6 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
 template <>
 struct environment_cast<::dxmt::dxbc::context, ::dxmt::air::AIRBuilderContext> {
   ::dxmt::air::AIRBuilderContext cast(const ::dxmt::dxbc::context &src) {
-    return {src.llvm, src.module, src.builder, src.types};
+    return {src.llvm, src.module, src.builder, src.types, src.air};
   };
 };

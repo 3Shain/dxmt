@@ -215,8 +215,8 @@ public:
 
   /* Miscs */
 
-  Value *CreateConvertToFloat(Value *Val);
-  Value *CreateConvertToHalf(Value *Val);
+  Value *CreateConvertToFloat(Value *Val, Signedness SrcSign = Signedness::Signed);
+  Value *CreateConvertToHalf(Value *Val, Signedness SrcSign = Signedness::Signed);
   Value *CreateConvertToSigned(Value *Val);
   Value *CreateConvertToUnsigned(Value *Val);
 
