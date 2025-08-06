@@ -1173,7 +1173,7 @@ AIRBuilder::CreateCountZero(Value *Val, bool TrailingZero) {
 }
 
 Value *
-AIRBuilder::CreateConvertToFloat(Value *Val) {
+AIRBuilder::CreateConvertToFloat(Value *Val, Signedness SrcSign) {
   auto &Context = getContext();
   auto Attrs = AttributeList::get(
       Context, {{~0U, Attribute::get(Context, Attribute::AttrKind::ReadNone)},
@@ -1186,7 +1186,7 @@ AIRBuilder::CreateConvertToFloat(Value *Val) {
 
   std::string FnName = "air.convert";
   FnName += getTypeOverloadSuffix(TyDst, Signedness::Signed);
-  FnName += getTypeOverloadSuffix(TySrc, Signedness::Signed);
+  FnName += getTypeOverloadSuffix(TySrc, SrcSign);
 
   auto Fn = getModule()->getOrInsertFunction(FnName, FunctionType::get(TyDst, {TySrc}, false), Attrs);
 
@@ -1194,7 +1194,7 @@ AIRBuilder::CreateConvertToFloat(Value *Val) {
 }
 
 Value *
-AIRBuilder::CreateConvertToHalf(Value *Val) {
+AIRBuilder::CreateConvertToHalf(Value *Val, Signedness SrcSign) {
   auto &Context = getContext();
   auto Attrs = AttributeList::get(
       Context, {{~0U, Attribute::get(Context, Attribute::AttrKind::ReadNone)},
@@ -1207,7 +1207,7 @@ AIRBuilder::CreateConvertToHalf(Value *Val) {
 
   std::string FnName = "air.convert";
   FnName += getTypeOverloadSuffix(TyDst, Signedness::Signed);
-  FnName += getTypeOverloadSuffix(TySrc, Signedness::Signed);
+  FnName += getTypeOverloadSuffix(TySrc, SrcSign);
 
   auto Fn = getModule()->getOrInsertFunction(FnName, FunctionType::get(TyDst, {TySrc}, false), Attrs);
 
