@@ -1656,7 +1656,7 @@ thunk_SM50GetArgumentsInfo(void *args) {
   return STATUS_SUCCESS;
 }
 
-inline void *
+static inline void *
 UInt32ToPtr(uint32_t v) {
   return (void *)(uint64_t)v;
 }
