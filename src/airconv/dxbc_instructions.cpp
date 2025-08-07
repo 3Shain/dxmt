@@ -581,16 +581,22 @@ Instruction readInstruction(
       .src1 = readSrcOperand(Inst.m_Operands[4], phase),
     };
   };
+  case microsoft::D3DWDDM1_3_SB_OPCODE_SAMPLE_CLAMP_FEEDBACK:
   case microsoft::D3D10_SB_OPCODE_SAMPLE: {
+    bool sparse = Inst.m_OpCode == microsoft::D3DWDDM1_3_SB_OPCODE_SAMPLE_CLAMP_FEEDBACK;
     auto inst = InstSample{
       .dst = readDstOperand(Inst.m_Operands[0], phase),
-      .src_address = readSrcOperand(Inst.m_Operands[1], phase),
-      .src_resource = readSrcOperandResource(Inst.m_Operands[2], phase),
-      .src_sampler = readSrcOperandSampler(Inst.m_Operands[3], phase),
+      .src_address = readSrcOperand(Inst.m_Operands[1 + sparse], phase),
+      .src_resource = readSrcOperandResource(Inst.m_Operands[2 + sparse], phase),
+      .src_sampler = readSrcOperandSampler(Inst.m_Operands[3 + sparse], phase),
       .offsets =
         {Inst.m_TexelOffset[0], Inst.m_TexelOffset[1], Inst.m_TexelOffset[2]},
-      .min_lod_clamp = {},
-      .feedback = {},
+      .min_lod_clamp = (sparse && Inst.m_Operands[4 + sparse].OperandType() !=
+                                    microsoft::D3D10_SB_OPERAND_TYPE_NULL)
+                         ? readSrcOperand(Inst.m_Operands[4 + sparse], phase)
+                         : std::optional<SrcOperand>(),
+      .feedback = sparse ? readDstOperand(Inst.m_Operands[sparse], phase)
+                         : std::optional<DstOperand>(),
     };
     shader_info.srvMap[inst.src_resource.range_id].sampled = true;
     return inst;

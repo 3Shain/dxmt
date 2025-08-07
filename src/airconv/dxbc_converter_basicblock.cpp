@@ -2370,6 +2370,15 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                  auto res_min_lod_clamp = co_yield metadata_get_min_lod_clamp(
                    co_yield res_metadata(nullptr)
                  );
+                 if (sample.min_lod_clamp) {
+                   res_min_lod_clamp = co_yield air::call_float_binop(
+                     "fmax", res_min_lod_clamp,
+                     co_yield (
+                       load_src_op<true>(sample.min_lod_clamp.value()) >>=
+                       extract_element(0)
+                     )
+                   );
+                 }
                  auto sampler_bias = co_yield metadata_get_sampler_bias(
                    co_yield sampler_metadata(nullptr)
                  );
