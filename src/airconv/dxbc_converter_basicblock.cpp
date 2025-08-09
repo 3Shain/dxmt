@@ -4715,13 +4715,15 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                        );
                        break;
                      }
-                     pvalue vec_ret = llvm::PoisonValue::get(ctx.types._float4);
+                     pvalue vec_ret = llvm::PoisonValue::get(
+                       resinfo.modifier == InstResourceInfo::M::uint
+                         ? ctx.types._int4
+                         : ctx.types._float4
+                     );
                      vec_ret = ctx.builder.CreateInsertElement(
                        vec_ret,
                        resinfo.modifier == InstResourceInfo::M::uint
-                         ? ctx.builder.CreateBitCast(
-                             mip_count, ctx.types._float
-                           )
+                         ? mip_count
                          : ctx.air.CreateConvertToFloat(mip_count),
                        3
                      );
@@ -4733,15 +4735,9 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                        break;
                      }
                      case InstResourceInfo::M::uint: {
-                       x = ctx.builder.CreateBitCast(
-                         x ? x : zero, ctx.types._float
-                       );
-                       y = ctx.builder.CreateBitCast(
-                         y ? y : zero, ctx.types._float
-                       );
-                       z = ctx.builder.CreateBitCast(
-                         z ? z : zero, ctx.types._float
-                       );
+                       x = x ? x : zero;
+                       y = y ? y : zero;
+                       z = z ? z : zero;
                        break;
                      }
                      case InstResourceInfo::M::rcp: {
@@ -4759,9 +4755,15 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                        ctx.builder.CreateInsertElement(vec_ret, x, (uint64_t)0);
                      vec_ret = ctx.builder.CreateInsertElement(vec_ret, y, 1);
                      vec_ret = ctx.builder.CreateInsertElement(vec_ret, z, 2);
-                     co_return co_yield store_dst_op<true>(
-                       resinfo.dst, swizzle(swiz)(vec_ret)
-                     );
+                     if (resinfo.modifier == InstResourceInfo::M::uint) {
+                       co_return co_yield store_dst_op<false>(
+                         resinfo.dst, swizzle(swiz)(vec_ret)
+                      );
+                     } else {
+                       co_return co_yield store_dst_op<true>(
+                         resinfo.dst, swizzle(swiz)(vec_ret)
+                       );
+                     }
                    });
                  });
           },
