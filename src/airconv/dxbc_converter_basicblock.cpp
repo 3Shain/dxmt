@@ -869,29 +869,11 @@ auto extend_to_float2(pvalue value) -> IRValue {
   });
 };
 
-SrcOperandModifier get_modifier(SrcOperand src) {
+SrcOperandCommon get_modifier(SrcOperand src) {
   return std::visit(
     patterns{
-      [](SrcOperandImmediate32) {
-        return SrcOperandModifier{
-          .swizzle = swizzle_identity, .abs = false, .neg = false
-        };
-      },
-      [](SrcOperandAttribute src) { return src._; },
-      [](SrcOperandConstantBuffer src) { return src._; },
-      [](SrcOperandImmediateConstantBuffer src) { return src._; },
-      [](SrcOperandInput src) { return src._; },
-      [](SrcOperandTemp src) { return src._; },
-      [](SrcOperandIndexableTemp src) { return src._; },
-      [](SrcOperandIndexableInput src) { return src._; },
-      [](SrcOperandInputICP src) { return src._; },
-      [](SrcOperandInputOCP src) { return src._; },
-      [](SrcOperandInputPC src) { return src._; },
-      [](auto s) {
-        llvm::outs() << "get_modifier: unhandled src operand type "
-                     << decltype(s)::debug_name << "\n";
-        assert(0 && "get_modifier: unhandled src operand type");
-        return SrcOperandModifier{};
+      [](auto src) {
+        return src._;;
       }
     },
     src
@@ -951,7 +933,7 @@ IRValue get_valid_components(pvalue ret, uint32_t mask) {
 }
 
 IRValue apply_float_src_operand_modifier(
-  SrcOperandModifier c, llvm::Value *fvec4, uint32_t mask
+  SrcOperandCommon c, llvm::Value *fvec4, uint32_t mask
 ) {
   auto ctx = co_yield get_context();
   assert(fvec4->getType() == ctx.types._float4);
@@ -974,7 +956,7 @@ IRValue apply_float_src_operand_modifier(
 };
 
 IRValue apply_integer_src_operand_modifier(
-  SrcOperandModifier c, llvm::Value *ivec4, uint32_t mask
+  SrcOperandCommon c, llvm::Value *ivec4, uint32_t mask
 ) {
   auto ctx = co_yield get_context();
   assert(ivec4->getType() == ctx.types._int4);

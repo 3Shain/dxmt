@@ -59,7 +59,7 @@ using OperandIndex =
 
 #pragma region source operand
 
-struct SrcOperandModifier {
+struct SrcOperandCommon {
   Swizzle swizzle;
   bool abs;
   bool neg;
@@ -67,6 +67,7 @@ struct SrcOperandModifier {
 
 struct SrcOperandImmediate32 {
   static constexpr std::string_view debug_name = "immediate_32";
+  SrcOperandCommon _;
   union {
     int32_t ivalue[4];
     uint32_t uvalue[4];
@@ -76,14 +77,14 @@ struct SrcOperandImmediate32 {
 
 struct SrcOperandTemp {
   static constexpr std::string_view debug_name = "temp";
-  SrcOperandModifier _;
+  SrcOperandCommon _;
   uint32_t regid;
   uint32_t phase;
 };
 
 struct SrcOperandIndexableTemp {
   static constexpr std::string_view debug_name = "indexable_temp";
-  SrcOperandModifier _;
+  SrcOperandCommon _;
   uint32_t regfile;
   OperandIndex regindex;
   uint32_t phase;
@@ -91,39 +92,39 @@ struct SrcOperandIndexableTemp {
 
 struct SrcOperandInput {
   static constexpr std::string_view debug_name = "input";
-  SrcOperandModifier _;
+  SrcOperandCommon _;
   uint32_t regid;
 };
 
 struct SrcOperandInputOCP {
   static constexpr std::string_view debug_name = "input_vocp";
-  SrcOperandModifier _;
+  SrcOperandCommon _;
   OperandIndex cpid;
   uint32_t regid;
 };
 
 struct SrcOperandInputICP {
   static constexpr std::string_view debug_name = "input_vicp";
-  SrcOperandModifier _;
+  SrcOperandCommon _;
   OperandIndex cpid;
   uint32_t regid;
 };
 
 struct SrcOperandInputPC {
   static constexpr std::string_view debug_name = "input_vpc";
-  SrcOperandModifier _;
+  SrcOperandCommon _;
   OperandIndex regindex;
 };
 
 struct SrcOperandIndexableInput {
   static constexpr std::string_view debug_name = "indexable_input";
-  SrcOperandModifier _;
+  SrcOperandCommon _;
   OperandIndex regindex;
 };
 
 struct SrcOperandConstantBuffer {
   static constexpr std::string_view debug_name = "constant_buffer";
-  SrcOperandModifier _;
+  SrcOperandCommon _;
   uint32_t rangeid;
   OperandIndex rangeindex;
   OperandIndex regindex;
@@ -131,13 +132,13 @@ struct SrcOperandConstantBuffer {
 
 struct SrcOperandImmediateConstantBuffer {
   static constexpr std::string_view debug_name = "immediate_constant_buffer";
-  SrcOperandModifier _;
+  SrcOperandCommon _;
   OperandIndex regindex;
 };
 
 struct SrcOperandAttribute {
   static constexpr std::string_view debug_name = "attribute";
-  SrcOperandModifier _;
+  SrcOperandCommon _;
   shader::common::InputAttribute attribute;
 };
 
