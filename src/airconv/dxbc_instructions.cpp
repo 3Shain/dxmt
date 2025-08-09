@@ -190,8 +190,8 @@ auto readSrcOperandSwizzle(const microsoft::D3D10ShaderBinary::COperandBase &O
 }
 
 auto readSrcOperandCommon(const microsoft::D3D10ShaderBinary::COperandBase &O
-) -> SrcOperandModifier {
-  return SrcOperandModifier{
+) -> SrcOperandCommon {
+  return SrcOperandCommon{
     .swizzle = readSrcOperandSwizzle(O),
     .abs = (O.m_Modifier & microsoft::D3D10_SB_OPERAND_MODIFIER_ABS) != 0,
     .neg = (O.m_Modifier & microsoft::D3D10_SB_OPERAND_MODIFIER_NEG) != 0,
@@ -209,6 +209,7 @@ SrcOperand readSrcOperand(
 
     if (O.m_NumComponents == D3D10_SB_OPERAND_4_COMPONENT) {
       return SrcOperandImmediate32{
+        ._ = {swizzle_identity, false, false},
         .uvalue =
           {
             O.m_Value[0],
@@ -219,6 +220,7 @@ SrcOperand readSrcOperand(
       };
     } else {
       return SrcOperandImmediate32{
+        ._ = {swizzle_identity, false, false},
         .uvalue =
           {
             O.m_Value[0],
@@ -666,6 +668,7 @@ Instruction readInstruction(
       .src_sampler = readSrcOperandSampler(Inst.m_Operands[3], phase),
       .offset =
         SrcOperandImmediate32{
+          ._ = {swizzle_identity, false, false},
           .ivalue = {Inst.m_TexelOffset[0], Inst.m_TexelOffset[1], 0, 0}
         },
       .feedback = {},
@@ -682,6 +685,7 @@ Instruction readInstruction(
       .src_reference = readSrcOperand(Inst.m_Operands[4], phase),
       .offset =
         SrcOperandImmediate32{
+          ._ = {swizzle_identity, false, false},
           .ivalue = {Inst.m_TexelOffset[0], Inst.m_TexelOffset[1], 0, 0}
         },
       .feedback = {},
