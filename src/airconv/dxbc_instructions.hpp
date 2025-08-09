@@ -57,12 +57,19 @@ using OperandIndex =
   std::variant<uint32_t, IndexByIndexableTempComponent, IndexByTempComponent>;
 #pragma endregion
 
+enum class OperandDataType {
+  Float,
+  Integer,
+  Half16X16,
+};
+
 #pragma region source operand
 
 struct SrcOperandCommon {
   Swizzle swizzle;
   bool abs;
   bool neg;
+  OperandDataType read_type;
 };
 
 struct SrcOperandImmediate32 {
@@ -148,6 +155,7 @@ struct SrcOperandAttribute {
 
 struct DstOperandCommon {
   uint32_t mask;
+  OperandDataType write_type;
 };
 
 struct DstOperandNull {
@@ -806,7 +814,7 @@ public:
 #pragma endregion
 
 SrcOperand readSrcOperand(
-  const microsoft::D3D10ShaderBinary::COperandBase &O, uint32_t phase
+  const microsoft::D3D10ShaderBinary::COperandBase &O, uint32_t phase, OperandDataType read_type
 );
 BasicBlockCondition readCondition(
   const microsoft::D3D10ShaderBinary::CInstruction &Inst, uint32_t OpIdx,
