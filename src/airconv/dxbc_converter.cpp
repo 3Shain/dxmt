@@ -2129,7 +2129,7 @@ AIRCONV_API int SM50Initialize(
         auto after_endswitch = std::make_shared<BasicBlock>("endswitch");
         // scope start: switch
         auto local_switch_context = std::make_shared<BasicBlockSwitch>();
-        local_switch_context->value = readSrcOperand(Inst.Operand(0), phase);
+        local_switch_context->value = readSrcOperand(Inst.Operand(0), phase, OperandDataType::Integer);
         // ensure the existence of default case
         local_switch_context->case_default = after_endswitch;
         auto empty_body = std::make_shared<BasicBlock>("switch_empty"
