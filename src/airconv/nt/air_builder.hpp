@@ -267,6 +267,11 @@ public:
   // Value *getFloat3(float Value1, float Value2, float Value3);
   // Value *getFloat4(float Value1, float Value2, float Value3, float Value4);
 
+  ConstantFP *
+  getHalf(uint16_t Value) {
+    return ConstantFP::get(getContext(), APFloat{APFloat::IEEEhalf(), APInt{16, Value}});
+  }
+
   ConstantInt *
   getInt(uint32_t Value) {
     return builder.getInt32(Value);

@@ -32,6 +32,22 @@ struct Swizzle {
     return r == o.r && g == o.g && b == o.b && a == o.a;
   };
 
+  int32_t
+  operator[](uint8_t e) {
+    switch (e) {
+    case 0:
+      return r;
+    case 1:
+      return g;
+    case 2:
+      return b;
+    case 3:
+      return a;
+    default:
+      return -1;
+    }
+  }
+
   operator std::array<int, 4>() const { return std::array<int, 4>{x, y, z, w}; }
 };
 
