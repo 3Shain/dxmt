@@ -1501,4 +1501,119 @@ AIRBuilder::CreateSetMeshPrimitiveCount(Value *Count) {
   return builder.CreateCall(Fn, {getMeshHandle(), Count});
 }
 
+Value *
+AIRBuilder::CreateFPUnOp(FPUnOp Op, Value *Operand) {
+  static char const *FnNames[] = {
+      "saturate", "log2", "exp2", "sqrt", "rsqrt", "fract", "rint", "floor", "ceil", "trunc", "cos", "sin",
+  };
+
+  if (uint32_t(Op) >= std::size(FnNames)) {
+    debug << "invalid operation: unknown fp unary operation.\n";
+    return nullptr; // TODO
+  }
+
+  auto &Context = getContext();
+  auto Attrs = AttributeList::get(
+      Context, {{~0U, Attribute::get(Context, Attribute::AttrKind::NoUnwind)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::WillReturn)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::ReadNone)}}
+  );
+  auto OperandType = Operand->getType();
+
+  std::string FnName = "air.";
+  if (builder.getFastMathFlags().isFast())
+    FnName += "fast_";
+  FnName += FnNames[Op];
+  FnName += getTypeOverloadSuffix(OperandType);
+  auto Fn = getModule()->getOrInsertFunction(FnName, llvm::FunctionType::get(OperandType, {OperandType}, false), Attrs);
+  return builder.CreateCall(Fn, {Operand});
+}
+
+Value *
+AIRBuilder::CreateFPBinOp(FPBinOp Op, Value *LHS, Value *RHS) {
+  static char const *FnNames[] = {
+      "fmax",
+      "fmin",
+  };
+
+  if (uint32_t(Op) >= std::size(FnNames)) {
+    debug << "invalid operation: unknown fp binary operation.\n";
+    return nullptr; // TODO
+  }
+
+  auto &Context = getContext();
+  auto Attrs = AttributeList::get(
+      Context, {{~0U, Attribute::get(Context, Attribute::AttrKind::NoUnwind)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::WillReturn)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::ReadNone)}}
+  );
+  auto OperandType = LHS->getType();
+
+  std::string FnName = "air.";
+  if (builder.getFastMathFlags().isFast())
+    FnName += "fast_";
+  FnName += FnNames[Op];
+  FnName += getTypeOverloadSuffix(OperandType);
+  auto Fn = getModule()->getOrInsertFunction(
+      FnName, llvm::FunctionType::get(OperandType, {OperandType, OperandType}, false), Attrs
+  );
+  return builder.CreateCall(Fn, {LHS, RHS});
+}
+
+Value *
+AIRBuilder::CreateIntUnOp(IntUnOp Op, Value *Operand) {
+  static char const *FnNames[] = {
+      "reverse_bits",
+      "popcount",
+  };
+
+  if (uint32_t(Op) >= std::size(FnNames)) {
+    debug << "invalid operation: unknown integer unary operation.\n";
+    return nullptr; // TODO
+  }
+
+  auto &Context = getContext();
+  auto Attrs = AttributeList::get(
+      Context, {{~0U, Attribute::get(Context, Attribute::AttrKind::NoUnwind)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::WillReturn)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::ReadNone)}}
+  );
+  auto OperandType = Operand->getType();
+
+  std::string FnName = "air.";
+  FnName += FnNames[Op];
+  FnName += getTypeOverloadSuffix(OperandType);
+  auto Fn = getModule()->getOrInsertFunction(FnName, llvm::FunctionType::get(OperandType, {OperandType}, false), Attrs);
+  return builder.CreateCall(Fn, {Operand});
+}
+
+Value *
+AIRBuilder::CreateIntBinOp(IntBinOp Op, Value *LHS, Value *RHS, bool Signed) {
+  static char const *FnNames[] = {
+      "max",
+      "min",
+  };
+
+  if (uint32_t(Op) >= std::size(FnNames)) {
+    debug << "invalid operation: unknown integer binary operation.\n";
+    return nullptr; // TODO
+  }
+
+  auto &Context = getContext();
+  auto Attrs = AttributeList::get(
+      Context, {{~0U, Attribute::get(Context, Attribute::AttrKind::NoUnwind)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::WillReturn)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::ReadNone)}}
+  );
+  auto OperandType = LHS->getType();
+
+  std::string FnName = "air.";
+  FnName += FnNames[Op];
+  FnName += getTypeOverloadSuffix(OperandType, Signed ? Signedness::Signed : Signedness::Unsigned);
+  auto Fn = getModule()->getOrInsertFunction(
+      FnName, llvm::FunctionType::get(OperandType, {OperandType, OperandType}, false), Attrs
+  );
+  return builder.CreateCall(Fn, {LHS, RHS});
+}
+
 } // namespace llvm::air

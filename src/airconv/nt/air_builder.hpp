@@ -257,6 +257,45 @@ public:
 
   CallInst *CreateSetMeshPrimitiveCount(Value *Count);
 
+  enum FPUnOp {
+    saturate,
+    log2,
+    exp2,
+    sqrt,
+    rsqrt,
+    fract,
+    rint,
+    floor,
+    ceil,
+    trunc,
+    cos,
+    sin,
+  };
+
+  Value *CreateFPUnOp(FPUnOp Op, Value *Operand);
+
+  enum FPBinOp {
+    fmax,
+    fmin,
+  };
+
+  Value *CreateFPBinOp(FPBinOp Op, Value *LHS, Value *RHS);
+
+  enum IntUnOp {
+    reverse_bits,
+    popcount,
+  };
+
+  Value *CreateIntUnOp(IntUnOp Op, Value *Operand);
+
+  enum IntBinOp {
+    max,
+    min,
+    mul_hi,
+  };
+
+  Value *CreateIntBinOp(IntBinOp Op, Value *LHS, Value *RHS, bool Signed = false);
+
   /* Useful Helpers */
 
   ConstantFP *
