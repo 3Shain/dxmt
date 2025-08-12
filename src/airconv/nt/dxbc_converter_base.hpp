@@ -83,14 +83,28 @@ public:
   void StoreOperandHull(const DstOperandIndexableOutput &DstOp, llvm::Value *Value);
 
   void
-  StoreOperand(const DstOperand &DstOp, llvm::Value *Value) {
-    std::visit([Value, this](auto &DstOp) { this->StoreOperand(DstOp, Value); }, DstOp);
+  StoreOperand(const DstOperand &DstOp, llvm::Value *Value, bool Saturate = false) {
+    std::visit(
+        [=, this](auto &DstOp) {
+          auto Value_ = Value;
+          if (DstOp._.write_type == OperandDataType::Float && Saturate)
+            Value_ = air.CreateFPUnOp(llvm::air::AIRBuilder::saturate, Value);
+          this->StoreOperand(DstOp, Value_);
+        },
+        DstOp
+    );
   }
 
   void
-  StoreOperandVec4(const DstOperand &DstOp, llvm::Value *ValueVec4) {
+  StoreOperandVec4(const DstOperand &DstOp, llvm::Value *ValueVec4, bool Saturate = false) {
     std::visit(
-        [ValueVec4, this](auto &DstOp) { this->StoreOperand(DstOp, this->MaskSwizzle(ValueVec4, DstOp._.mask)); }, DstOp
+        [=, this](auto &DstOp) {
+          auto Value_ = ValueVec4;
+          if (DstOp._.write_type == OperandDataType::Float && Saturate)
+            Value_ = air.CreateFPUnOp(llvm::air::AIRBuilder::saturate, ValueVec4);
+          this->StoreOperand(DstOp, this->MaskSwizzle(Value_, DstOp._.mask));
+        },
+        DstOp
     );
   }
 
