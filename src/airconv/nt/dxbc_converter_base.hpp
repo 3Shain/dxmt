@@ -34,30 +34,30 @@ public:
   /* Load Operands */
 
   llvm::Value *
-  LoadOperandIndex(uint32_t &SrcOpIndex) {
+  LoadOperandIndex(const uint32_t &SrcOpIndex) {
     return ir.getInt32(SrcOpIndex);
   }
-  llvm::Value *LoadOperandIndex(IndexByIndexableTempComponent &SrcOpIndex);
-  llvm::Value *LoadOperandIndex(IndexByTempComponent &SrcOpIndex);
+  llvm::Value *LoadOperandIndex(const IndexByIndexableTempComponent &SrcOpIndex);
+  llvm::Value *LoadOperandIndex(const IndexByTempComponent &SrcOpIndex);
 
   llvm::Value *
-  LoadOperandIndex(OperandIndex &SrcOpIndex) {
+  LoadOperandIndex(const OperandIndex &SrcOpIndex) {
     return std::visit([this](auto &SrcOpIndex) { return this->LoadOperandIndex(SrcOpIndex); }, SrcOpIndex);
   }
-  llvm::Value *LoadOperand(SrcOperandConstantBuffer &SrcOp, mask_t Mask);
-  llvm::Value *LoadOperand(SrcOperandImmediateConstantBuffer &SrcOp, mask_t Mask);
-  llvm::Value *LoadOperand(SrcOperandImmediate32 &SrcOp, mask_t Mask);
-  llvm::Value *LoadOperand(SrcOperandInput &SrcOp, mask_t Mask);
-  llvm::Value *LoadOperand(SrcOperandIndexableInput &SrcOp, mask_t Mask);
-  llvm::Value *LoadOperand(SrcOperandTemp &SrcOp, mask_t Mask);
-  llvm::Value *LoadOperand(SrcOperandAttribute &SrcOp, mask_t Mask);
-  llvm::Value *LoadOperand(SrcOperandIndexableTemp &SrcOp, mask_t Mask);
-  llvm::Value *LoadOperand(SrcOperandInputICP &SrcOp, mask_t Mask);
-  llvm::Value *LoadOperand(SrcOperandInputPC &SrcOp, mask_t Mask);
-  llvm::Value *LoadOperand(SrcOperandInputOCP &SrcOp, mask_t Mask);
+  llvm::Value *LoadOperand(const SrcOperandConstantBuffer &SrcOp, mask_t Mask);
+  llvm::Value *LoadOperand(const SrcOperandImmediateConstantBuffer &SrcOp, mask_t Mask);
+  llvm::Value *LoadOperand(const SrcOperandImmediate32 &SrcOp, mask_t Mask);
+  llvm::Value *LoadOperand(const SrcOperandInput &SrcOp, mask_t Mask);
+  llvm::Value *LoadOperand(const SrcOperandIndexableInput &SrcOp, mask_t Mask);
+  llvm::Value *LoadOperand(const SrcOperandTemp &SrcOp, mask_t Mask);
+  llvm::Value *LoadOperand(const SrcOperandAttribute &SrcOp, mask_t Mask);
+  llvm::Value *LoadOperand(const SrcOperandIndexableTemp &SrcOp, mask_t Mask);
+  llvm::Value *LoadOperand(const SrcOperandInputICP &SrcOp, mask_t Mask);
+  llvm::Value *LoadOperand(const SrcOperandInputPC &SrcOp, mask_t Mask);
+  llvm::Value *LoadOperand(const SrcOperandInputOCP &SrcOp, mask_t Mask);
 
   llvm::Value *
-  LoadOperand(SrcOperand &SrcOp, mask_t Mask) {
+  LoadOperand(const SrcOperand &SrcOp, mask_t Mask) {
     return std::visit([Mask, this](auto &SrcOp) { return this->LoadOperand(SrcOp, Mask); }, SrcOp);
   }
 
@@ -66,29 +66,29 @@ public:
   /* Store Operands */
 
   void
-  StoreOperand(DstOperandNull &DstOp, llvm::Value *Value) {
+  StoreOperand(const DstOperandNull &DstOp, llvm::Value *Value) {
     // NOP
   }
   void
-  StoreOperand(DstOperandSideEffect &DstOp, llvm::Value *Value) {
+  StoreOperand(const DstOperandSideEffect &DstOp, llvm::Value *Value) {
     // NOP
   }
-  void StoreOperand(DstOperandOutput &DstOp, llvm::Value *Value);
-  void StoreOperand(DstOperandOutputCoverageMask &DstOp, llvm::Value *Value);
-  void StoreOperand(DstOperandOutputDepth &DstOp, llvm::Value *Value);
-  void StoreOperand(DstOperandIndexableOutput &DstOp, llvm::Value *Value);
-  void StoreOperand(DstOperandTemp &DstOp, llvm::Value *Value);
-  void StoreOperand(DstOperandIndexableTemp &DstOp, llvm::Value *Value);
-  void StoreOperandHull(DstOperandOutput &DstOp, llvm::Value *Value);
-  void StoreOperandHull(DstOperandIndexableOutput &DstOp, llvm::Value *Value);
+  void StoreOperand(const DstOperandOutput &DstOp, llvm::Value *Value);
+  void StoreOperand(const DstOperandOutputCoverageMask &DstOp, llvm::Value *Value);
+  void StoreOperand(const DstOperandOutputDepth &DstOp, llvm::Value *Value);
+  void StoreOperand(const DstOperandIndexableOutput &DstOp, llvm::Value *Value);
+  void StoreOperand(const DstOperandTemp &DstOp, llvm::Value *Value);
+  void StoreOperand(const DstOperandIndexableTemp &DstOp, llvm::Value *Value);
+  void StoreOperandHull(const DstOperandOutput &DstOp, llvm::Value *Value);
+  void StoreOperandHull(const DstOperandIndexableOutput &DstOp, llvm::Value *Value);
 
   void
-  StoreOperand(DstOperand &DstOp, llvm::Value *Value) {
+  StoreOperand(const DstOperand &DstOp, llvm::Value *Value) {
     std::visit([Value, this](auto &DstOp) { this->StoreOperand(DstOp, Value); }, DstOp);
   }
 
   void
-  StoreOperandVec4(DstOperand &DstOp, llvm::Value *ValueVec4) {
+  StoreOperandVec4(const DstOperand &DstOp, llvm::Value *ValueVec4) {
     std::visit(
         [ValueVec4, this](auto &DstOp) { this->StoreOperand(DstOp, this->MaskSwizzle(ValueVec4, DstOp._.mask)); }, DstOp
     );

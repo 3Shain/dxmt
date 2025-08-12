@@ -16,7 +16,7 @@ GetArrayType(llvm::Value *Array) {
 }
 
 llvm::Value *
-Converter::LoadOperandIndex(IndexByTempComponent &SrcOpIndex) {
+Converter::LoadOperandIndex(const IndexByTempComponent &SrcOpIndex) {
   auto Comp = SrcOpIndex.component;
   SrcOperandTemp RelReg{
       ._ = {{Comp, Comp, Comp, Comp}, false, false, OperandDataType::Integer},
@@ -28,7 +28,7 @@ Converter::LoadOperandIndex(IndexByTempComponent &SrcOpIndex) {
 }
 
 llvm::Value *
-Converter::LoadOperandIndex(IndexByIndexableTempComponent &SrcOpIndex) {
+Converter::LoadOperandIndex(const IndexByIndexableTempComponent &SrcOpIndex) {
   auto Comp = SrcOpIndex.component;
   SrcOperandIndexableTemp RelReg{
       ._ = {{Comp, Comp, Comp, Comp}, false, false, OperandDataType::Integer},
@@ -41,7 +41,7 @@ Converter::LoadOperandIndex(IndexByIndexableTempComponent &SrcOpIndex) {
 }
 
 llvm::Value *
-Converter::LoadOperand(SrcOperandConstantBuffer &SrcOp, mask_t Mask) {
+Converter::LoadOperand(const SrcOperandConstantBuffer &SrcOp, mask_t Mask) {
 
   auto RangeId = SrcOp.rangeid;
 
@@ -65,7 +65,7 @@ Converter::LoadOperand(SrcOperandConstantBuffer &SrcOp, mask_t Mask) {
 }
 
 llvm::Value *
-Converter::LoadOperand(SrcOperandImmediateConstantBuffer &SrcOp, mask_t Mask) {
+Converter::LoadOperand(const SrcOperandImmediateConstantBuffer &SrcOp, mask_t Mask) {
   auto Handle = res.icb;
   auto TyHandle = GetArrayType(Handle);
 
@@ -83,7 +83,7 @@ Converter::LoadOperand(SrcOperandImmediateConstantBuffer &SrcOp, mask_t Mask) {
 }
 
 llvm::Value *
-Converter::LoadOperand(SrcOperandImmediate32 &SrcOp, mask_t Mask) {
+Converter::LoadOperand(const SrcOperandImmediate32 &SrcOp, mask_t Mask) {
   llvm::SmallVector<llvm::Constant *> Constants;
   switch (SrcOp._.read_type) {
   case OperandDataType::Float:
@@ -151,7 +151,7 @@ Converter::LoadOperand(SrcOperandImmediate32 &SrcOp, mask_t Mask) {
 }
 
 llvm::Value *
-Converter::LoadOperand(SrcOperandInput &SrcOp, mask_t Mask) {
+Converter::LoadOperand(const SrcOperandInput &SrcOp, mask_t Mask) {
 
   auto Handle = res.input.ptr_int4;
   auto TyHandle = GetArrayType(Handle);
@@ -170,7 +170,7 @@ Converter::LoadOperand(SrcOperandInput &SrcOp, mask_t Mask) {
 }
 
 llvm::Value *
-Converter::LoadOperand(SrcOperandTemp &SrcOp, mask_t Mask) {
+Converter::LoadOperand(const SrcOperandTemp &SrcOp, mask_t Mask) {
 
   auto Handle = res.temp.ptr_int4;
 
@@ -193,7 +193,7 @@ Converter::LoadOperand(SrcOperandTemp &SrcOp, mask_t Mask) {
 }
 
 llvm::Value *
-Converter::LoadOperand(SrcOperandAttribute &SrcOp, mask_t Mask) {
+Converter::LoadOperand(const SrcOperandAttribute &SrcOp, mask_t Mask) {
   using shader::common::InputAttribute;
   llvm::Value *Ret = llvm::PoisonValue::get(air.getIntTy(4));
   switch (SrcOp.attribute) {
@@ -247,7 +247,7 @@ Converter::LoadOperand(SrcOperandAttribute &SrcOp, mask_t Mask) {
 }
 
 llvm::Value *
-Converter::LoadOperand(SrcOperandIndexableTemp &SrcOp, mask_t Mask) {
+Converter::LoadOperand(const SrcOperandIndexableTemp &SrcOp, mask_t Mask) {
 
   indexable_register_file regfile;
 
@@ -280,7 +280,7 @@ Converter::LoadOperand(SrcOperandIndexableTemp &SrcOp, mask_t Mask) {
 }
 
 llvm::Value *
-Converter::LoadOperand(SrcOperandIndexableInput &SrcOp, mask_t Mask) {
+Converter::LoadOperand(const SrcOperandIndexableInput &SrcOp, mask_t Mask) {
 
   auto Handle = res.input.ptr_int4;
   auto TyHandle = GetArrayType(Handle);
@@ -299,7 +299,7 @@ Converter::LoadOperand(SrcOperandIndexableInput &SrcOp, mask_t Mask) {
 }
 
 llvm::Value *
-Converter::LoadOperand(SrcOperandInputICP &SrcOp, mask_t Mask) {
+Converter::LoadOperand(const SrcOperandInputICP &SrcOp, mask_t Mask) {
   /* applies to both hull and domain shader, in this case input is a "2d" array */
   auto Handle = res.input.ptr_int4;
   auto TyHandle = GetArrayType(Handle);
@@ -323,7 +323,7 @@ Converter::LoadOperand(SrcOperandInputICP &SrcOp, mask_t Mask) {
 }
 
 llvm::Value *
-Converter::LoadOperand(SrcOperandInputPC &SrcOp, mask_t Mask) {
+Converter::LoadOperand(const SrcOperandInputPC &SrcOp, mask_t Mask) {
 
   auto Handle = res.patch_constant_output.ptr_int4;
   auto TyHandle = GetArrayType(Handle);
@@ -342,7 +342,7 @@ Converter::LoadOperand(SrcOperandInputPC &SrcOp, mask_t Mask) {
 }
 
 llvm::Value *
-Converter::LoadOperand(SrcOperandInputOCP &SrcOp, mask_t Mask) {
+Converter::LoadOperand(const SrcOperandInputOCP &SrcOp, mask_t Mask) {
   /* applies to both hull and domain shader, in this case input is a "2d" array */
   auto Handle = res.output.ptr_int4;
   auto TyHandle = GetArrayType(Handle);
@@ -391,7 +391,7 @@ Converter::ApplySrcModifier(SrcOperandCommon C, llvm::Value *Value, mask_t Mask)
 }
 
 void
-Converter::StoreOperand(DstOperandOutput &DstOp, llvm::Value *Value) {
+Converter::StoreOperand(const DstOperandOutput &DstOp, llvm::Value *Value) {
   if (ctx.shader_type == microsoft::D3D11_SB_HULL_SHADER && DstOp.phase == ~0u)
     return StoreOperandHull(DstOp, Value);
 
@@ -415,7 +415,7 @@ Converter::StoreOperand(DstOperandOutput &DstOp, llvm::Value *Value) {
 }
 
 void
-Converter::StoreOperandHull(DstOperandOutput &DstOp, llvm::Value *Value) {
+Converter::StoreOperandHull(const DstOperandOutput &DstOp, llvm::Value *Value) {
   auto ValueInt = ZExtAndBitcastToInt32(Value);
 
   auto Handle = res.output.ptr_int4;
@@ -436,21 +436,21 @@ Converter::StoreOperandHull(DstOperandOutput &DstOp, llvm::Value *Value) {
 }
 
 void
-Converter::StoreOperand(DstOperandOutputCoverageMask &DstOp, llvm::Value *Value) {
+Converter::StoreOperand(const DstOperandOutputCoverageMask &DstOp, llvm::Value *Value) {
   auto ValueInt = ZExtAndBitcastToInt32(Value);
   auto Ptr = ir.CreateConstGEP1_32(ir.getInt32Ty(), res.coverage_mask_reg, 0);
   ir.CreateStore(ExtractElement(ValueInt, 0), Ptr);
 }
 
 void
-Converter::StoreOperand(DstOperandOutputDepth &DstOp, llvm::Value *Value) {
+Converter::StoreOperand(const DstOperandOutputDepth &DstOp, llvm::Value *Value) {
   auto ValueFloat = ZExtAndBitcastToFloat(Value);
   auto Ptr = ir.CreateConstGEP1_32(ir.getFloatTy(), res.depth_output_reg, 0);
   ir.CreateStore(ExtractElement(ValueFloat, 0), Ptr);
 }
 
 void
-Converter::StoreOperand(DstOperandIndexableOutput &DstOp, llvm::Value *Value) {
+Converter::StoreOperand(const DstOperandIndexableOutput &DstOp, llvm::Value *Value) {
   auto ValueInt = ZExtAndBitcastToInt32(Value);
 
   auto Handle = res.output.ptr_int4;
@@ -472,7 +472,7 @@ Converter::StoreOperand(DstOperandIndexableOutput &DstOp, llvm::Value *Value) {
 }
 
 void
-Converter::StoreOperandHull(DstOperandIndexableOutput &DstOp, llvm::Value *Value) {
+Converter::StoreOperandHull(const DstOperandIndexableOutput &DstOp, llvm::Value *Value) {
   if (ctx.shader_type == microsoft::D3D11_SB_HULL_SHADER && DstOp.phase == ~0u)
     return StoreOperandHull(DstOp, Value);
 
@@ -496,7 +496,7 @@ Converter::StoreOperandHull(DstOperandIndexableOutput &DstOp, llvm::Value *Value
 }
 
 void
-Converter::StoreOperand(DstOperandTemp &DstOp, llvm::Value *Value) {
+Converter::StoreOperand(const DstOperandTemp &DstOp, llvm::Value *Value) {
   auto ValueInt = ZExtAndBitcastToInt32(Value);
 
   auto Handle = res.temp.ptr_int4;
@@ -518,7 +518,7 @@ Converter::StoreOperand(DstOperandTemp &DstOp, llvm::Value *Value) {
 }
 
 void
-Converter::StoreOperand(DstOperandIndexableTemp &DstOp, llvm::Value *Value) {
+Converter::StoreOperand(const DstOperandIndexableTemp &DstOp, llvm::Value *Value) {
   auto ValueInt = ZExtAndBitcastToInt32(Value);
 
   indexable_register_file regfile;
