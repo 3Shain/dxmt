@@ -7,6 +7,7 @@
 #include "adt.hpp"
 #include "air_builder.hpp"
 #include "tl/generator.hpp"
+#include "ftl.hpp"
 
 namespace dxmt::dxbc {
 
@@ -108,11 +109,61 @@ public:
     );
   }
 
+  /* Instructions */
+
+  void
+  operator()(const InstNop &) {
+    // just do nothing
+  }
+
+  void
+  operator()(const InstPixelDiscard &) {
+    air.CreateDiscard();
+  }
+
+  void
+  operator()(const InstSync &sync) {
+    using namespace llvm::air;
+    MemFlags mem_flag = sync.tgsm_memory_barrier ? MemFlags::Threadgroup : MemFlags::None;
+    if (sync.uav_boundary != InstSync::UAVBoundary::none) {
+      mem_flag |= MemFlags::Device | MemFlags::Texture;
+    }
+    air.CreateBarrier(mem_flag);
+  }
+
+  void operator()(const InstMov &);
+  void operator()(const InstMovConditional &);
+  void operator()(const InstSwapConditional &);
+  void operator()(const InstDotProduct &);
+  void operator()(const InstFloatUnaryOp &);
+  void operator()(const InstFloatBinaryOp &);
+  void operator()(const InstIntegerUnaryOp &);
+  void operator()(const InstIntegerBinaryOp &);
+  void operator()(const InstPartialDerivative &);
+
   /* Utils */
 
   bool
   IsNull(const DstOperand &DstOp) {
     return std::visit(patterns{[](DstOperandNull &) { return true; }, [](auto &) { return false; }}, DstOp);
+  }
+
+  mask_t
+  GetMask(const DstOperand &DstOp) {
+    return std::visit(
+        patterns{
+            [](DstOperandNull) { return (uint32_t)0b1111; },
+            [](DstOperandSideEffect) { return (uint32_t)0b1111; },
+            [](auto dst) { return dst._.mask; },
+        },
+        DstOp
+    );
+  }
+
+  llvm::Value *
+  MaxIfInMask(uint64_t Mask, llvm::Value *Value) {
+    llvm::Value *Max = llvm::ConstantInt::getAllOnesValue(Value->getType());
+    return ir.CreateSelect(ir.CreateIsNull(ir.CreateAnd(Value, Mask)), Value, Max);
   }
 
   int32_t
