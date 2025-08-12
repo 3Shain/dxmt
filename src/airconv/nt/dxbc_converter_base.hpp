@@ -96,10 +96,10 @@ public:
 
   /* Utils */
 
-  // bool
-  // IsNull(DstOperand &DstOp) {
-  //   return std::visit(patterns{[](DstOperandNull &) { return true; }, [](auto &) { return false; }}, DstOp);
-  // }
+  bool
+  IsNull(const DstOperand &DstOp) {
+    return std::visit(patterns{[](DstOperandNull &) { return true; }, [](auto &) { return false; }}, DstOp);
+  }
 
   int32_t
   ComponentFromScalarMask(mask_t Mask, Swizzle Swizzle) {

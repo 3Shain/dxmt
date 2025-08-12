@@ -956,6 +956,8 @@ IREffect store_dst_op(DstOperand dst, IRValue &&value) {
   return make_effect_bind(
     [=, value = std::move(value)](auto ctx) mutable -> IREffect {
       dxbc::Converter dxbc(ctx.air, ctx, ctx.resource);
+      if (dxbc.IsNull(dst))
+        co_return {};
       dxbc.StoreOperandVec4(dst, co_yield std::move(value));
       co_return {};
     }
@@ -967,6 +969,8 @@ IREffect store_dst_op_masked(DstOperand dst, IRValue &&value) {
   return make_effect_bind(
     [=, value = std::move(value)](auto ctx) mutable -> IREffect {
       dxbc::Converter dxbc(ctx.air, ctx, ctx.resource);
+      if (dxbc.IsNull(dst))
+        co_return {};
       dxbc.StoreOperand(dst, co_yield std::move(value));
       co_return {};
     }
