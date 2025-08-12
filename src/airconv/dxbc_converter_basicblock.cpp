@@ -1026,12 +1026,13 @@ auto metadata_get_texture_array_length(pvalue metadata) -> IRValue {
 };
 
 auto convert_array_index(pvalue float_num, pvalue array_length) -> IRValue {
+  using namespace llvm::air;
   auto ctx = co_yield get_context();
-  auto rounded = co_yield air::call_float_unary_op("rint", float_num);
+  auto rounded = ctx.air.CreateFPUnOp(AIRBuilder::rint, float_num);
   auto integer = ctx.air.CreateConvertToSigned(rounded);
-  auto positive_integer = co_yield air::call_integer_binop("max", integer, ctx.builder.getInt32(0), true);
+  auto positive_integer = ctx.air.CreateIntBinOp(AIRBuilder::max, integer, ctx.builder.getInt32(0), true);
   auto max_index = ctx.builder.CreateSub(array_length, ctx.builder.getInt32(1));
-  co_return co_yield air::call_integer_binop("min", positive_integer, max_index, true);
+  co_return ctx.air.CreateIntBinOp(AIRBuilder::min, positive_integer, max_index, true);
 };
 
 /**
@@ -1377,8 +1378,8 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                    co_yield res_metadata(nullptr)
                  );
                  if (sample.min_lod_clamp) {
-                   res_min_lod_clamp = co_yield air::call_float_binop(
-                     "fmax", res_min_lod_clamp,
+                   res_min_lod_clamp = ctx.air.CreateFPBinOp(
+                     llvm::air::AIRBuilder::fmax, res_min_lod_clamp,
                      co_yield (
                        load_src_op<true>(sample.min_lod_clamp.value()) >>=
                        extract_element(0)

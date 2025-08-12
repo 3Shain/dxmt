@@ -40,15 +40,11 @@ enum class TextureInfoType {
   num_samples
 };
 
-AIRBuilderResult call_integer_unary_op(std::string op, pvalue a);
 AIRBuilderResult call_float_unary_op(std::string op, pvalue a);
 AIRBuilderResult
 call_integer_binop(std::string op, pvalue a, pvalue b, bool is_signed = false);
-AIRBuilderResult call_float_binop(std::string op, pvalue a, pvalue b, bool force_precise = false);
 
-AIRBuilderResult call_dot_product(uint32_t dimension, pvalue a, pvalue b);
 AIRBuilderResult call_float_mad(pvalue a, pvalue b, pvalue c);
-AIRBuilderResult call_count_zero(bool trail, pvalue a);
 
 AIRBuilderResult call_sample(
   MSLTexture texture_type, pvalue handle, pvalue sampler, pvalue coord,
