@@ -1,5 +1,6 @@
 #include "dxbc_converter_base.hpp"
 #include "../dxbc_converter.hpp"
+#include "air_builder.hpp"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/Instructions.h"
@@ -671,4 +672,225 @@ Converter::MaskSwizzle(llvm::Value *Value, mask_t Mask, Swizzle Swizzle) {
   }
   return Value;
 }
+
+void
+Converter::operator()(const InstMov &mov) {
+  mask_t Mask = GetMask(mov.dst);
+  auto Value = LoadOperand(mov.src, Mask);
+  StoreOperand(mov.dst, Value, mov._.saturate);
+}
+
+void
+Converter::operator()(const InstMovConditional &movc) {
+  mask_t Mask = GetMask(movc.dst);
+  auto Src0 = LoadOperand(movc.src0, Mask);
+  auto Src1 = LoadOperand(movc.src1, Mask);
+  auto Cond = LoadOperand(movc.src_cond, Mask);
+  auto CondZero = llvm::Constant::getNullValue(Cond->getType());
+  auto Result = ir.CreateSelect(ir.CreateICmpNE(Cond, CondZero), Src0, Src1);
+  StoreOperand(movc.dst, Result, movc._.saturate);
+}
+void
+Converter::operator()(const InstSwapConditional &swapc) {
+  mask_t Mask0 = GetMask(swapc.dst0);
+  mask_t Mask1 = GetMask(swapc.dst1);
+  auto Src0_0 = LoadOperand(swapc.src0, Mask0);
+  auto Src1_0 = LoadOperand(swapc.src1, Mask0);
+  auto Cond_0 = LoadOperand(swapc.src_cond, Mask0);
+  auto CondZero_0 = llvm::Constant::getNullValue(Cond_0->getType());
+
+  auto Src0_1 = LoadOperand(swapc.src0, Mask1);
+  auto Src1_1 = LoadOperand(swapc.src1, Mask1);
+  auto Cond_1 = LoadOperand(swapc.src_cond, Mask1);
+  auto CondZero_1 = llvm::Constant::getNullValue(Cond_1->getType());
+
+  auto Result0 = ir.CreateSelect(ir.CreateICmpNE(Cond_0, CondZero_0), Src1_0, Src0_0);
+  auto Result1 = ir.CreateSelect(ir.CreateICmpNE(Cond_1, CondZero_1), Src0_1, Src1_1);
+  StoreOperand(swapc.dst0, Result0);
+  StoreOperand(swapc.dst1, Result1);
+}
+
+void
+Converter::operator()(const InstDotProduct &dot) {
+  static mask_t DimensionMask[] = {kMaskVecXY, kMaskVecXYZ, kMaskAll};
+  if (dot.dimension < 2 || dot.dimension > 4) {
+    return;
+  }
+  mask_t Mask = DimensionMask[dot.dimension - 2];
+  auto LHS = LoadOperand(dot.src0, Mask);
+  auto RHS = LoadOperand(dot.src1, Mask);
+  auto Result = air.CreateDotProduct(LHS, RHS);
+  StoreOperand(dot.dst, Result, dot._.saturate);
+}
+
+void
+Converter::operator()(const InstFloatUnaryOp &unary) {
+  using namespace llvm::air;
+
+  mask_t Mask = GetMask(unary.dst);
+  auto Value = LoadOperand(unary.src, Mask);
+
+  switch (unary.op) {
+  case FloatUnaryOp::Log2:
+    Value = air.CreateFPUnOp(AIRBuilder::log2, Value);
+    break;
+  case FloatUnaryOp::Exp2:
+    Value = air.CreateFPUnOp(AIRBuilder::exp2, Value);
+    break;
+  case FloatUnaryOp::Rcp:
+    Value = ir.CreateFDiv(llvm::ConstantFP::get(Value->getType(), 1.0), Value);
+    break;
+  case FloatUnaryOp::Rsq:
+    Value = air.CreateFPUnOp(AIRBuilder::rsqrt, Value);
+    break;
+  case FloatUnaryOp::Sqrt:
+    Value = air.CreateFPUnOp(AIRBuilder::sqrt, Value);
+    break;
+  case FloatUnaryOp::Fraction:
+    Value = air.CreateFPUnOp(AIRBuilder::fract, Value);
+    break;
+  case FloatUnaryOp::RoundNearestEven:
+    Value = air.CreateFPUnOp(AIRBuilder::rint, Value);
+    break;
+  case FloatUnaryOp::RoundNegativeInf:
+    Value = air.CreateFPUnOp(AIRBuilder::floor, Value);
+    break;
+  case FloatUnaryOp::RoundPositiveInf:
+    Value = air.CreateFPUnOp(AIRBuilder::ceil, Value);
+    break;
+  case FloatUnaryOp::RoundZero:
+    Value = air.CreateFPUnOp(AIRBuilder::trunc, Value);
+    break;
+  }
+
+  StoreOperand(unary.dst, Value, unary._.saturate);
+}
+
+void
+Converter::operator()(const InstFloatBinaryOp &bin) {
+  using namespace llvm::air;
+
+  mask_t Mask = GetMask(bin.dst);
+  auto LHS = LoadOperand(bin.src0, Mask);
+  auto RHS = LoadOperand(bin.src1, Mask);
+
+  llvm::Value *Result = llvm::PoisonValue::get(LHS->getType());
+
+  switch (bin.op) {
+  case FloatBinaryOp::Add:
+    Result = ir.CreateFAdd(LHS, RHS);
+    break;
+  case FloatBinaryOp::Mul:
+    Result = ir.CreateFMul(LHS, RHS);
+    break;
+  case FloatBinaryOp::Div:
+    Result = ir.CreateFDiv(LHS, RHS);
+    break;
+  case FloatBinaryOp::Min:
+    Result = air.CreateFPBinOp(AIRBuilder::fmin, LHS, RHS);
+    break;
+  case FloatBinaryOp::Max:
+    Result = air.CreateFPBinOp(AIRBuilder::fmax, LHS, RHS);
+    break;
+  }
+
+  StoreOperand(bin.dst, Result, bin._.saturate);
+}
+
+void
+Converter::operator()(const InstIntegerUnaryOp &unary) {
+  using namespace llvm::air;
+
+  mask_t Mask = GetMask(unary.dst);
+  auto Value = LoadOperand(unary.src, Mask);
+
+  switch (unary.op) {
+  case IntegerUnaryOp::Neg:
+    Value = ir.CreateNeg(Value);
+    break;
+  case IntegerUnaryOp::Not:
+    Value = ir.CreateNot(Value);
+    break;
+  case IntegerUnaryOp::ReverseBits:
+    Value = air.CreateIntUnOp(AIRBuilder::reverse_bits, Value);
+    break;
+  case IntegerUnaryOp::CountBits:
+    Value = air.CreateIntUnOp(AIRBuilder::popcount, Value);
+    break;
+  case IntegerUnaryOp::FirstHiBitSigned:
+    Value = ir.CreateSelect(
+        ir.CreateIsNotNeg(Value), air.CreateCountZero(Value, false), air.CreateCountZero(ir.CreateNot(Value), true)
+    );
+    Value = MaxIfInMask(~((uint32_t)0x1f), Value);
+    break;
+  case IntegerUnaryOp::FirstHiBit:
+    Value = air.CreateCountZero(Value, false);
+    Value = MaxIfInMask(~((uint32_t)0x1f), Value);
+    break;
+  case IntegerUnaryOp::FirstLowBit:
+    Value = air.CreateCountZero(Value, true);
+    Value = MaxIfInMask(~((uint32_t)0x1f), Value);
+    break;
+  }
+
+  StoreOperand(unary.dst, Value);
+}
+
+void
+Converter::operator()(const InstIntegerBinaryOp &bin) {
+  using namespace llvm::air;
+
+  mask_t Mask = GetMask(bin.dst);
+  auto LHS = LoadOperand(bin.src0, Mask);
+  auto RHS = LoadOperand(bin.src1, Mask);
+
+  llvm::Value *Result = llvm::PoisonValue::get(LHS->getType());
+
+  switch (bin.op) {
+  case IntegerBinaryOp::UMin:
+    Result = air.CreateIntBinOp(AIRBuilder::min, LHS, RHS);
+    break;
+  case IntegerBinaryOp::UMax:
+    Result = air.CreateIntBinOp(AIRBuilder::max, LHS, RHS);
+    break;
+  case IntegerBinaryOp::IMin:
+    Result = air.CreateIntBinOp(AIRBuilder::min, LHS, RHS, true);
+    break;
+  case IntegerBinaryOp::IMax:
+    Result = air.CreateIntBinOp(AIRBuilder::max, LHS, RHS, true);
+    break;
+  case IntegerBinaryOp::IShl:
+    Result = ir.CreateShl(LHS, ir.CreateAnd(RHS, 0x1f));
+    break;
+  case IntegerBinaryOp::IShr:
+    Result = ir.CreateAShr(LHS, ir.CreateAnd(RHS, 0x1f));
+    break;
+  case IntegerBinaryOp::UShr:
+    Result = ir.CreateLShr(LHS, ir.CreateAnd(RHS, 0x1f));
+    break;
+  case IntegerBinaryOp::Xor:
+    Result = ir.CreateXor(LHS, RHS);
+    break;
+  case IntegerBinaryOp::Or:
+    Result = ir.CreateOr(LHS, RHS);
+    break;
+  case IntegerBinaryOp::And:
+    Result = ir.CreateAnd(LHS, RHS);
+    break;
+  case IntegerBinaryOp::Add:
+    Result = ir.CreateAdd(LHS, RHS);
+    break;
+  }
+
+  StoreOperand(bin.dst, Result);
+}
+
+void
+Converter::operator()(const InstPartialDerivative &deriv) {
+  mask_t Mask = GetMask(deriv.dst);
+  auto SrcValue = LoadOperand(deriv.src, Mask);
+  auto Result = air.CreateDerivative(SrcValue, deriv.ddy);
+  StoreOperand(deriv.dst, Result, deriv._.saturate);
+}
+
 } // namespace dxmt::dxbc

@@ -66,26 +66,6 @@ AIRBuilderResult get_float(float value) {
   });
 };
 
-AIRBuilderResult call_integer_unary_op(std::string op, pvalue a) {
-  return make_op([=](struct AIRBuilderContext ctx) {
-    using namespace llvm;
-    auto &context = ctx.llvm;
-    auto &module = ctx.module;
-    assert(a->getType()->getScalarType()->isIntegerTy());
-    auto att = AttributeList::get(
-      context, {{~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)},
-                {~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)},
-                {~0U, Attribute::get(context, Attribute::AttrKind::ReadNone)}}
-    );
-    auto operand_type = a->getType();
-    auto fn = (module.getOrInsertFunction(
-      "air." + op + type_overload_suffix(operand_type, Sign::inapplicable),
-      llvm::FunctionType::get(operand_type, {operand_type}, false), att
-    ));
-    return ctx.builder.CreateCall(fn, {a});
-  });
-};
-
 AIRBuilderResult call_float_unary_op(std::string op, pvalue a) {
   return make_op([=](AIRBuilderContext ctx) {
     using namespace llvm;
@@ -141,56 +121,6 @@ call_integer_binop(std::string op, pvalue a, pvalue b, bool is_signed) {
   });
 };
 
-AIRBuilderResult call_float_binop(std::string op, pvalue a, pvalue b, bool force_precise) {
-  return make_op([=](AIRBuilderContext ctx) {
-    using namespace llvm;
-    auto &context = ctx.llvm;
-    auto &module = ctx.module;
-    assert(a->getType()->getScalarType()->isFloatTy());
-    assert(b->getType()->getScalarType()->isFloatTy());
-    assert(a->getType() == b->getType());
-    auto att = AttributeList::get(
-      context, {{~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)},
-                {~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)},
-                {~0U, Attribute::get(context, Attribute::AttrKind::ReadNone)}}
-    );
-    auto operand_type = a->getType();
-    auto fn = (module.getOrInsertFunction(
-      "air." + fastmath_variant(ctx, op, force_precise) + type_overload_suffix(operand_type),
-      llvm::FunctionType::get(
-        operand_type, {operand_type, operand_type}, false
-      ),
-      att
-    ));
-    return ctx.builder.CreateCall(fn, {a, b});
-  });
-};
-
-AIRBuilderResult call_dot_product(uint32_t dimension, pvalue a, pvalue b) {
-  return make_op([=](AIRBuilderContext ctx) {
-    using namespace llvm;
-    auto &context = ctx.llvm;
-    auto &module = ctx.module;
-    auto &types = ctx.types;
-    auto att = AttributeList::get(
-      context, {{~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)},
-                {~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)},
-                {~0U, Attribute::get(context, Attribute::AttrKind::ReadNone)}}
-    );
-    auto operand_type = dimension == 4   ? types._float4
-                        : dimension == 3 ? types._float3
-                                         : types._float2;
-    auto fn = (module.getOrInsertFunction(
-      "air.dot" + type_overload_suffix(operand_type),
-      llvm::FunctionType::get(
-        types._float, {operand_type, operand_type}, false
-      ),
-      att
-    ));
-    return ctx.builder.CreateCall(fn, {a, b});
-  });
-};
-
 AIRBuilderResult call_float_mad(pvalue a, pvalue b, pvalue c) {
   return make_op([=](AIRBuilderContext ctx) -> pvalue {
     using namespace llvm;
@@ -215,56 +145,6 @@ AIRBuilderResult call_float_mad(pvalue a, pvalue b, pvalue c) {
       att
     ));
     return ctx.builder.CreateCall(fn, {a, b, c});
-  });
-};
-
-AIRBuilderResult call_count_zero(bool trail, pvalue a) {
-  return make_op([=](AIRBuilderContext ctx) {
-    using namespace llvm;
-    auto &context = ctx.llvm;
-    auto &module = ctx.module;
-    assert(a->getType()->getScalarType()->isIntegerTy());
-    auto att = AttributeList::get(
-      context, {{~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)},
-                {~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)},
-                {~0U, Attribute::get(context, Attribute::AttrKind::ReadNone)}}
-    );
-    auto operand_type = a->getType();
-    auto fn = (module.getOrInsertFunction(
-      "air." + (trail ? std::string("ctz") : std::string("clz")) +
-        type_overload_suffix(operand_type, Sign::inapplicable),
-      llvm::FunctionType::get(
-        operand_type, {operand_type, ctx.types._bool}, false
-      ),
-      att
-    ));
-    auto ret = ctx.builder.CreateCall(fn, {a, ctx.builder.getInt1(false)});
-    if (isa<VectorType>(operand_type)) {
-      auto vec_type = cast<VectorType>(operand_type);
-      assert(isa<IntegerType>(vec_type->getElementType()));
-      auto comp_type = cast<IntegerType>(vec_type->getElementType());
-      auto comp_num = vec_type->getElementCount();
-      return ctx.builder.CreateSelect(
-        ctx.builder.CreateICmpEQ(
-          ret, ctx.builder.CreateVectorSplat(
-                 comp_num, ctx.builder.getIntN(
-                             comp_type->getBitWidth(), comp_type->getBitWidth()
-                           )
-               )
-        ),
-        llvm::ConstantInt::getAllOnesValue(vec_type), ret
-      );
-    } else {
-      assert(isa<IntegerType>(operand_type));
-      auto int_type = cast<IntegerType>(operand_type);
-      return ctx.builder.CreateSelect(
-        ctx.builder.CreateICmpEQ(
-          ret,
-          ctx.builder.getIntN(int_type->getBitWidth(), int_type->getBitWidth())
-        ),
-        llvm::ConstantInt::getAllOnesValue(int_type), ret
-      );
-    }
   });
 };
 

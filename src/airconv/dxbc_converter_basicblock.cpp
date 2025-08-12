@@ -1026,12 +1026,13 @@ auto metadata_get_texture_array_length(pvalue metadata) -> IRValue {
 };
 
 auto convert_array_index(pvalue float_num, pvalue array_length) -> IRValue {
+  using namespace llvm::air;
   auto ctx = co_yield get_context();
-  auto rounded = co_yield air::call_float_unary_op("rint", float_num);
+  auto rounded = ctx.air.CreateFPUnOp(AIRBuilder::rint, float_num);
   auto integer = ctx.air.CreateConvertToSigned(rounded);
-  auto positive_integer = co_yield air::call_integer_binop("max", integer, ctx.builder.getInt32(0), true);
+  auto positive_integer = ctx.air.CreateIntBinOp(AIRBuilder::max, integer, ctx.builder.getInt32(0), true);
   auto max_index = ctx.builder.CreateSub(array_length, ctx.builder.getInt32(1));
-  co_return co_yield air::call_integer_binop("min", positive_integer, max_index, true);
+  co_return ctx.air.CreateIntBinOp(AIRBuilder::min, positive_integer, max_index, true);
 };
 
 /**
@@ -1346,60 +1347,6 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
     {
       current->instructions.for_each(
         patterns{
-          [&effect](InstMov mov) {
-            auto mask = get_dst_mask(mov.dst);
-            effect << store_dst_op_masked<true>(
-              mov.dst,
-              load_src_op<true>(mov.src, mask) >>= saturate(mov._.saturate)
-            );
-          },
-          [&effect](InstMovConditional movc) {
-            auto mask = get_dst_mask(movc.dst);
-            effect << store_dst_op_masked<true>(
-              movc.dst,
-              make_irvalue_bind([=](struct context ctx) -> IRValue {
-                auto src0 = co_yield load_src_op<true>(movc.src0, mask);
-                auto src1 = co_yield load_src_op<true>(movc.src1, mask);
-                auto cond = co_yield load_src_op<false>(movc.src_cond, mask);
-                co_return ctx.builder.CreateSelect(
-                  ctx.builder.CreateICmpNE(
-                    cond, llvm::Constant::getNullValue(cond->getType())
-                  ),
-                  src0, src1
-                );
-              }) >>= saturate(movc._.saturate)
-            );
-          },
-          [&effect](InstSwapConditional swapc) {
-            effect << make_effect_bind([=](struct context ctx) -> IREffect {
-              auto src0 = co_yield load_src_op<true>(swapc.src0);
-              auto src1 = co_yield load_src_op<true>(swapc.src1);
-              auto cond = co_yield load_src_op<false>(swapc.src_cond);
-              auto mask_dst0 = get_dst_mask(swapc.dst0);
-              co_yield store_dst_op_masked<true>(
-                swapc.dst0, air::pure(ctx.builder.CreateSelect(
-                              ctx.builder.CreateICmpNE(
-                                co_yield get_valid_components(cond, mask_dst0),
-                                co_yield get_splat_constant(0, mask_dst0)
-                              ),
-                              co_yield get_valid_components(src1, mask_dst0),
-                              co_yield get_valid_components(src0, mask_dst0)
-                            ))
-              );
-              auto mask_dst1 = get_dst_mask(swapc.dst1);
-              co_yield store_dst_op_masked<true>(
-                swapc.dst1, air::pure(ctx.builder.CreateSelect(
-                              ctx.builder.CreateICmpNE(
-                                co_yield get_valid_components(cond, mask_dst1),
-                                co_yield get_splat_constant(0, mask_dst1)
-                              ),
-                              co_yield get_valid_components(src0, mask_dst1),
-                              co_yield get_valid_components(src1, mask_dst1)
-                            ))
-              );
-              co_return {};
-            });
-          },
           [&effect](InstSample sample) {
             effect << store_dst_op<true>(
               sample.dst,
@@ -1431,8 +1378,8 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                    co_yield res_metadata(nullptr)
                  );
                  if (sample.min_lod_clamp) {
-                   res_min_lod_clamp = co_yield air::call_float_binop(
-                     "fmax", res_min_lod_clamp,
+                   res_min_lod_clamp = ctx.air.CreateFPBinOp(
+                     llvm::air::AIRBuilder::fmax, res_min_lod_clamp,
                      co_yield (
                        load_src_op<true>(sample.min_lod_clamp.value()) >>=
                        extract_element(0)
@@ -2553,151 +2500,6 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
               )
             );
           },
-          [&effect](InstIntegerUnaryOp unary) {
-            std::function<IRValue(pvalue)> fn;
-            switch (unary.op) {
-            case IntegerUnaryOp::Neg:
-              fn = [=](pvalue a) {
-                return make_irvalue([=](struct context ctx) {
-                  return ctx.builder.CreateNeg(a);
-                });
-              };
-              break;
-            case IntegerUnaryOp::Not:
-              fn = [=](pvalue a) {
-                return make_irvalue([=](struct context ctx) {
-                  return ctx.builder.CreateNot(a);
-                });
-              };
-              break;
-            case IntegerUnaryOp::ReverseBits:
-              fn = [=](pvalue a) {
-                // metal shader spec doesn't make it clear
-                // if this is component-wise...
-                return air::call_integer_unary_op("reverse_bits", a);
-              };
-              break;
-            case IntegerUnaryOp::CountBits:
-              fn = [=](pvalue a) {
-                // metal shader spec doesn't make it clear
-                // if this is component-wise...
-                return air::call_integer_unary_op("popcount", a);
-              };
-              break;
-            case IntegerUnaryOp::FirstHiBitSigned:
-              fn = [=](pvalue a) {
-                return make_irvalue_bind([=](struct context ctx) -> IRValue {
-                  co_return ctx.builder.CreateSelect(
-                    ctx.builder.CreateICmpSGE(
-                      a, llvm::ConstantInt::get(a->getType(), 0)
-                    ),
-                    co_yield air::call_count_zero(false, a),
-                    co_yield air::call_count_zero(
-                      false, ctx.builder.CreateNot(a)
-                    )
-                  );
-                });
-              };
-              break;
-            case IntegerUnaryOp::FirstHiBit:
-              fn = [=](pvalue a) { return air::call_count_zero(false, a); };
-              break;
-            case IntegerUnaryOp::FirstLowBit:
-              fn = [=](pvalue a) { return air::call_count_zero(true, a); };
-              break;
-            }
-            auto mask = get_dst_mask(unary.dst);
-            effect << store_dst_op_masked<false>(
-              unary.dst, load_src_op<false>(unary.src, mask) >>= fn
-            );
-          },
-          [&effect](InstIntegerBinaryOp bin) {
-            std::function<IRValue(pvalue, pvalue)> fn;
-            switch (bin.op) {
-            case IntegerBinaryOp::IShl:
-              fn = [=](pvalue a, pvalue b) {
-                return make_irvalue([=](struct context ctx) {
-                  return ctx.builder.CreateShl(
-                    a, ctx.builder.CreateAnd(b, 0x1f)
-                  );
-                });
-              };
-              break;
-            case IntegerBinaryOp::IShr:
-              fn = [=](pvalue a, pvalue b) {
-                return make_irvalue([=](struct context ctx) {
-                  return ctx.builder.CreateAShr(
-                    a, ctx.builder.CreateAnd(b, 0x1f)
-                  );
-                });
-              };
-              break;
-            case IntegerBinaryOp::UShr:
-              fn = [=](pvalue a, pvalue b) {
-                return make_irvalue([=](struct context ctx) {
-                  return ctx.builder.CreateLShr(
-                    a, ctx.builder.CreateAnd(b, 0x1f)
-                  );
-                });
-              };
-              break;
-            case IntegerBinaryOp::Xor:
-              fn = [=](pvalue a, pvalue b) {
-                return make_irvalue([=](struct context ctx) {
-                  return ctx.builder.CreateXor(a, b);
-                });
-              };
-              break;
-            case IntegerBinaryOp::And:
-              fn = [=](pvalue a, pvalue b) {
-                return make_irvalue([=](struct context ctx) {
-                  return ctx.builder.CreateAnd(a, b);
-                });
-              };
-              break;
-            case IntegerBinaryOp::Or:
-              fn = [=](pvalue a, pvalue b) {
-                return make_irvalue([=](struct context ctx) {
-                  return ctx.builder.CreateOr(a, b);
-                });
-              };
-              break;
-            case IntegerBinaryOp::Add:
-              fn = [=](pvalue a, pvalue b) {
-                return make_irvalue([=](struct context ctx) {
-                  return ctx.builder.CreateAdd(a, b);
-                });
-              };
-              break;
-            case IntegerBinaryOp::UMin:
-              fn = [=](pvalue a, pvalue b) {
-                return air::call_integer_binop("min", a, b, false);
-              };
-              break;
-            case IntegerBinaryOp::UMax:
-              fn = [=](pvalue a, pvalue b) {
-                return air::call_integer_binop("max", a, b, false);
-              };
-              break;
-            case IntegerBinaryOp::IMin:
-              fn = [=](pvalue a, pvalue b) {
-                return air::call_integer_binop("min", a, b, true);
-              };
-              break;
-            case IntegerBinaryOp::IMax:
-              fn = [=](pvalue a, pvalue b) {
-                return air::call_integer_binop("max", a, b, true);
-              };
-              break;
-            }
-            auto mask = get_dst_mask(bin.dst);
-            effect << store_dst_op_masked<false>(
-              bin.dst, lift(
-                         load_src_op<false>(bin.src0, mask),
-                         load_src_op<false>(bin.src1, mask), fn
-                       )
-            );
-          },
           [&effect](InstFloatCompare fcmp) {
             llvm::CmpInst::Predicate pred;
             switch (fcmp.cmp) {
@@ -2722,47 +2524,6 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                           [=](auto a, auto b) { return cmp_float(pred, a, b); }
                         )
             );
-          },
-          [&effect](InstDotProduct dp) {
-            switch (dp.dimension) {
-            case 4:
-              effect << lift(
-                load_src_op<true>(dp.src0), load_src_op<true>(dp.src1),
-                [=](auto a, auto b) {
-                  return store_dst_op<true>(
-                    dp.dst, air::call_dot_product(4, a, b) >>=
-                            air::saturate(dp._.saturate)
-                  );
-                }
-              );
-              break;
-            case 3:
-              effect << lift(
-                load_src_op<true>(dp.src0) >>= truncate_vec(3),
-                load_src_op<true>(dp.src1) >>= truncate_vec(3),
-                [=](auto a, auto b) {
-                  return store_dst_op<true>(
-                    dp.dst, air::call_dot_product(3, a, b) >>=
-                            air::saturate(dp._.saturate)
-                  );
-                }
-              );
-              break;
-            case 2:
-              effect << lift(
-                load_src_op<true>(dp.src0) >>= truncate_vec(2),
-                load_src_op<true>(dp.src1) >>= truncate_vec(2),
-                [=](auto a, auto b) {
-                  return store_dst_op<true>(
-                    dp.dst, air::call_dot_product(2, a, b) >>=
-                            air::saturate(dp._.saturate)
-                  );
-                }
-              );
-              break;
-            default:
-              assert(0 && "wrong dot product dimension");
-            }
           },
           [&effect](InstFloatMAD mad) {
             auto mask = get_dst_mask(mad.dst);
@@ -2793,139 +2554,6 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                   })
                 );
               }
-            );
-          },
-          [&effect](InstFloatUnaryOp unary) {
-            std::function<IRValue(pvalue)> fn;
-            switch (unary.op) {
-            case FloatUnaryOp::Log2: {
-              fn = [=](pvalue a) {
-                return air::call_float_unary_op("log2", a);
-              };
-              break;
-            }
-            case FloatUnaryOp::Exp2: {
-              fn = [=](pvalue a) {
-                return air::call_float_unary_op("exp2", a);
-              };
-              break;
-            }
-            case FloatUnaryOp::Rcp: {
-              fn = [=](pvalue a) {
-                return make_irvalue([=](struct context ctx) {
-                  if (!llvm::isa<llvm::FixedVectorType>(a->getType())) {
-                    // it's a scalar
-                    return ctx.builder.CreateFDiv(
-                      llvm::ConstantFP::get(ctx.llvm, llvm::APFloat{1.0f}), a
-                    );
-                  }
-                  return ctx.builder.CreateFDiv(
-                    ctx.builder.CreateVectorSplat(
-                      cast<llvm::FixedVectorType>(a->getType())
-                        ->getNumElements(),
-                      llvm::ConstantFP::get(ctx.llvm, llvm::APFloat{1.0f})
-                    ),
-                    a
-                  );
-                });
-              };
-              break;
-            }
-            case FloatUnaryOp::Rsq: {
-              fn = [=](pvalue a) {
-                return air::call_float_unary_op("rsqrt", a);
-              };
-              break;
-            }
-            case FloatUnaryOp::Sqrt: {
-              fn = [=](pvalue a) {
-                return air::call_float_unary_op("sqrt", a);
-              };
-              break;
-            }
-            case FloatUnaryOp::Fraction: {
-              fn = [=](pvalue a) {
-                return air::call_float_unary_op("fract", a);
-              };
-              break;
-            }
-            case FloatUnaryOp::RoundNearestEven: {
-              fn = [=](pvalue a) {
-                return air::call_float_unary_op("rint", a);
-              };
-              break;
-            }
-            case FloatUnaryOp::RoundNegativeInf: {
-              fn = [=](pvalue a) {
-                return air::call_float_unary_op("floor", a);
-              };
-              break;
-            }
-            case FloatUnaryOp::RoundPositiveInf: {
-              fn = [=](pvalue a) {
-                return air::call_float_unary_op("ceil", a);
-              };
-              break;
-            }
-            case FloatUnaryOp::RoundZero: {
-              fn = [=](pvalue a) {
-                return air::call_float_unary_op("trunc", a);
-              };
-              break;
-            } break;
-            }
-            auto mask = get_dst_mask(unary.dst);
-            effect << store_dst_op_masked<true>(
-              unary.dst, (load_src_op<true>(unary.src, mask) >>= fn) >>=
-                         saturate(unary._.saturate)
-            );
-          },
-          [&effect](InstFloatBinaryOp bin) {
-            std::function<IRValue(pvalue, pvalue)> fn;
-            switch (bin.op) {
-            case FloatBinaryOp::Add: {
-              fn = [=](pvalue a, pvalue b) {
-                return make_irvalue([=](struct context ctx) {
-                  return ctx.builder.CreateFAdd(a, b);
-                });
-              };
-              break;
-            }
-            case FloatBinaryOp::Mul: {
-              fn = [=](pvalue a, pvalue b) {
-                return make_irvalue([=](struct context ctx) {
-                  return ctx.builder.CreateFMul(a, b);
-                });
-              };
-              break;
-            }
-            case FloatBinaryOp::Div: {
-              fn = [=](pvalue a, pvalue b) {
-                return make_irvalue([=](struct context ctx) {
-                  return ctx.builder.CreateFDiv(a, b);
-                });
-              };
-              break;
-            }
-            case FloatBinaryOp::Min: {
-              fn = [=](pvalue a, pvalue b) {
-                return air::call_float_binop("fmin", a, b, llvm::isa<llvm::Constant>(a) || llvm::isa<llvm::Constant>(b));
-              };
-              break;
-            }
-            case FloatBinaryOp::Max: {
-              fn = [=](pvalue a, pvalue b) {
-                return air::call_float_binop("fmax", a, b, llvm::isa<llvm::Constant>(a) || llvm::isa<llvm::Constant>(b));
-              };
-              break;
-            }
-            }
-            auto mask = get_dst_mask(bin.dst);
-            effect << store_dst_op_masked<true>(
-              bin.dst, lift(
-                         load_src_op<true>(bin.src0, mask),
-                         load_src_op<true>(bin.src1, mask), fn
-                       ) >>= saturate(bin._.saturate)
             );
           },
           [&effect](InstSinCos sincos) {
@@ -3177,31 +2805,6 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
               })
             );
           },
-          [&effect](InstSync sync) {
-            using namespace llvm::air;
-            MemFlags mem_flag = sync.tgsm_memory_barrier ? MemFlags::Threadgroup : MemFlags::None;
-            if (sync.uav_boundary != InstSync::UAVBoundary::none) {
-              mem_flag |= MemFlags::Device | MemFlags::Texture;
-            }
-            effect << make_effect([=](struct context ctx) {
-              ctx.air.CreateBarrier(mem_flag);
-              return std::monostate();
-            });
-          },
-          [&effect](InstPixelDiscard) {
-            effect << make_effect([=](struct context ctx) {
-              ctx.air.CreateDiscard();
-              return std::monostate();
-            });
-          },
-          [&effect](InstPartialDerivative df) {
-            effect << store_dst_op<true>(
-              df.dst, make_irvalue_bind([=](struct context ctx) -> IRValue {
-                        auto fvec4 = co_yield load_src_op<true>(df.src);
-                        co_return ctx.air.CreateDerivative(fvec4, df.ddy);
-                      }) >>= saturate(df._.saturate)
-            );
-          },
           [&effect](InstCalcLOD calc) {
             effect << store_dst_op<true>(
               calc.dst,
@@ -3267,7 +2870,6 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
               }) >>= swizzle(calc.src_resource.read_swizzle)
             );
           },
-          [](InstNop) {}, // nop
           [](InstMaskedSumOfAbsDiff) { assert(0 && "unhandled msad"); },
 
           [&effect](InstAtomicBinOp bin) {
@@ -3968,8 +3570,14 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
           },
           [&](InstEmit) { effect << ctx.resource.call_emit(); },
           [&](InstCut) { effect << ctx.resource.call_cut(); },
-        }
-      );
+          [&](auto Op) {
+            effect << make_effect([=](struct context ctx) { 
+              dxbc::Converter dxbc(ctx.air, ctx, ctx.resource);
+              dxbc(Op);
+              return std::monostate{};
+            });
+          }
+      });
     }
     builder.SetInsertPoint(bb);
     if (auto err = effect.build(ctx).takeError()) {
