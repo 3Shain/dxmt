@@ -390,6 +390,154 @@ Converter::ApplySrcModifier(SrcOperandCommon C, llvm::Value *Value, mask_t Mask)
   return Value;
 }
 
+void
+Converter::StoreOperand(DstOperandOutput &DstOp, llvm::Value *Value) {
+  if (ctx.shader_type == microsoft::D3D11_SB_HULL_SHADER && DstOp.phase == ~0u)
+    return StoreOperandHull(DstOp, Value);
+
+  auto ValueInt = ZExtAndBitcastToInt32(Value);
+
+  auto Handle = res.output.ptr_int4;
+  if (DstOp.phase != ~0u) {
+    Handle = res.patch_constant_output.ptr_int4;
+  }
+  auto TyHandle = GetArrayType(Handle);
+
+  if ((DstOp._.mask & kMaskAll) == kMaskAll) {
+    auto Ptr = ir.CreateInBoundsGEP(TyHandle, Handle, {ir.getInt32(0), ir.getInt32(DstOp.regid)});
+    ir.CreateStore(VectorSplat(4, ValueInt), Ptr);
+    return;
+  }
+  for (auto [DstComp, SrcComp] : EnumerateComponents(DstOp._.mask)) {
+    auto Ptr = ir.CreateInBoundsGEP(TyHandle, Handle, {ir.getInt32(0), ir.getInt32(DstOp.regid), ir.getInt32(DstComp)});
+    ir.CreateStore(ExtractElement(ValueInt, SrcComp), Ptr);
+  }
+}
+
+void
+Converter::StoreOperandHull(DstOperandOutput &DstOp, llvm::Value *Value) {
+  auto ValueInt = ZExtAndBitcastToInt32(Value);
+
+  auto Handle = res.output.ptr_int4;
+  auto TyHandle = GetArrayType(Handle);
+  auto Index = ir.CreateAdd(
+      ir.CreateMul(res.thread_id_in_patch, ir.getInt32(res.output_element_count)), ir.getInt32(DstOp.regid)
+  );
+
+  if ((DstOp._.mask & kMaskAll) == kMaskAll) {
+    auto Ptr = ir.CreateInBoundsGEP(TyHandle, Handle, {ir.getInt32(0), Index});
+    ir.CreateStore(VectorSplat(4, ValueInt), Ptr);
+    return;
+  }
+  for (auto [DstComp, SrcComp] : EnumerateComponents(DstOp._.mask)) {
+    auto Ptr = ir.CreateInBoundsGEP(TyHandle, Handle, {ir.getInt32(0), Index, ir.getInt32(DstComp)});
+    ir.CreateStore(ExtractElement(ValueInt, SrcComp), Ptr);
+  }
+}
+
+void
+Converter::StoreOperand(DstOperandOutputCoverageMask &DstOp, llvm::Value *Value) {
+  auto ValueInt = ZExtAndBitcastToInt32(Value);
+  auto Ptr = ir.CreateConstGEP1_32(ir.getInt32Ty(), res.coverage_mask_reg, 0);
+  ir.CreateStore(ExtractElement(ValueInt, 0), Ptr);
+}
+
+void
+Converter::StoreOperand(DstOperandOutputDepth &DstOp, llvm::Value *Value) {
+  auto ValueFloat = ZExtAndBitcastToFloat(Value);
+  auto Ptr = ir.CreateConstGEP1_32(ir.getFloatTy(), res.depth_output_reg, 0);
+  ir.CreateStore(ExtractElement(ValueFloat, 0), Ptr);
+}
+
+void
+Converter::StoreOperand(DstOperandIndexableOutput &DstOp, llvm::Value *Value) {
+  auto ValueInt = ZExtAndBitcastToInt32(Value);
+
+  auto Handle = res.output.ptr_int4;
+  if (DstOp.phase != ~0u) {
+    Handle = res.patch_constant_output.ptr_int4;
+  }
+  auto TyHandle = GetArrayType(Handle);
+  auto Index = LoadOperandIndex(DstOp.regindex);
+
+  if ((DstOp._.mask & kMaskAll) == kMaskAll) {
+    auto Ptr = ir.CreateInBoundsGEP(TyHandle, Handle, {ir.getInt32(0), Index});
+    ir.CreateStore(VectorSplat(4, ValueInt), Ptr);
+    return;
+  }
+  for (auto [DstComp, SrcComp] : EnumerateComponents(DstOp._.mask)) {
+    auto Ptr = ir.CreateInBoundsGEP(TyHandle, Handle, {ir.getInt32(0), Index, ir.getInt32(DstComp)});
+    ir.CreateStore(ExtractElement(ValueInt, SrcComp), Ptr);
+  }
+}
+
+void
+Converter::StoreOperandHull(DstOperandIndexableOutput &DstOp, llvm::Value *Value) {
+  if (ctx.shader_type == microsoft::D3D11_SB_HULL_SHADER && DstOp.phase == ~0u)
+    return StoreOperandHull(DstOp, Value);
+
+  auto ValueInt = ZExtAndBitcastToInt32(Value);
+
+  auto Handle = res.output.ptr_int4;
+  auto TyHandle = GetArrayType(Handle);
+  auto Index = ir.CreateAdd(
+      ir.CreateMul(res.thread_id_in_patch, ir.getInt32(res.output_element_count)), LoadOperandIndex(DstOp.regindex)
+  );
+
+  if ((DstOp._.mask & kMaskAll) == kMaskAll) {
+    auto Ptr = ir.CreateInBoundsGEP(TyHandle, Handle, {ir.getInt32(0), Index});
+    ir.CreateStore(VectorSplat(4, ValueInt), Ptr);
+    return;
+  }
+  for (auto [DstComp, SrcComp] : EnumerateComponents(DstOp._.mask)) {
+    auto Ptr = ir.CreateInBoundsGEP(TyHandle, Handle, {ir.getInt32(0), Index, ir.getInt32(DstComp)});
+    ir.CreateStore(ExtractElement(ValueInt, SrcComp), Ptr);
+  }
+}
+
+void
+Converter::StoreOperand(DstOperandTemp &DstOp, llvm::Value *Value) {
+  auto ValueInt = ZExtAndBitcastToInt32(Value);
+
+  auto Handle = res.temp.ptr_int4;
+
+  if (DstOp.phase != ~0u) {
+    Handle = res.phases[DstOp.phase].temp.ptr_int4;
+  }
+  auto TyHandle = GetArrayType(Handle);
+
+  if ((DstOp._.mask & kMaskAll) == kMaskAll) {
+    auto Ptr = ir.CreateInBoundsGEP(TyHandle, Handle, {ir.getInt32(0), ir.getInt32(DstOp.regid)});
+    ir.CreateStore(VectorSplat(4, ValueInt), Ptr);
+    return;
+  }
+  for (auto [DstComp, SrcComp] : EnumerateComponents(DstOp._.mask)) {
+    auto Ptr = ir.CreateInBoundsGEP(TyHandle, Handle, {ir.getInt32(0), ir.getInt32(DstOp.regid), ir.getInt32(DstComp)});
+    ir.CreateStore(ExtractElement(ValueInt, SrcComp), Ptr);
+  }
+}
+
+void
+Converter::StoreOperand(DstOperandIndexableTemp &DstOp, llvm::Value *Value) {
+  auto ValueInt = ZExtAndBitcastToInt32(Value);
+
+  indexable_register_file regfile;
+  if (DstOp.phase != ~0u) {
+    regfile = res.phases[DstOp.phase].indexable_temp_map[DstOp.regfile];
+  } else {
+    regfile = res.indexable_temp_map[DstOp.regfile];
+  }
+
+  auto Handle = regfile.ptr_int_vec;
+  auto TyHandle = GetArrayType(Handle);
+  auto Index = LoadOperandIndex(DstOp.regindex);
+
+  for (auto [DstComp, SrcComp] : EnumerateComponents(DstOp._.mask)) {
+    auto Ptr = ir.CreateInBoundsGEP(TyHandle, Handle, {ir.getInt32(0), Index, ir.getInt32(DstComp)});
+    ir.CreateStore(ExtractElement(ValueInt, SrcComp), Ptr);
+  }
+}
+
 llvm::Value *
 Converter::BitcastToFloat(llvm::Value *Value) {
   auto Ty = Value->getType();
@@ -433,6 +581,30 @@ Converter::TruncAndBitcastToHalf(llvm::Value *Value) {
     Value = ir.CreateBitCast(Value, ir.getInt32Ty());
   }
   return ir.CreateBitCast(ir.CreateTrunc(Value, ir.getInt16Ty()), air.getHalfTy());
+}
+
+llvm::Value *
+Converter::ZExtAndBitcastToInt32(llvm::Value *Value) {
+  auto Ty = Value->getType();
+  if (Ty->getScalarType()->isHalfTy()) {
+    if (auto TyVec = llvm::dyn_cast<llvm::FixedVectorType>(Ty)) {
+      auto ElementCount = TyVec->getNumElements();
+      auto TyShortVec = llvm::FixedVectorType::get(ir.getInt16Ty(), ElementCount);
+      return ir.CreateZExt(ir.CreateBitCast(Value, TyShortVec), air.getIntTy(ElementCount));
+    }
+    return ir.CreateZExt(ir.CreateBitCast(Value, ir.getInt16Ty()), ir.getInt32Ty());
+  }
+  return BitcastToInt32(Value);
+}
+
+llvm::Value *
+Converter::ZExtAndBitcastToFloat(llvm::Value *Value) {
+  auto Ty = Value->getType();
+  if (Ty->getScalarType()->isHalfTy()) {
+    // doesn't make much sense but just in case
+    Value = ZExtAndBitcastToInt32(Value);
+  }
+  return BitcastToFloat(Value);
 }
 
 llvm::Value *
