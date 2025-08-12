@@ -673,6 +673,7 @@ MTLQueryDXGIFormat(WMT::Device device, uint32_t format, MTL_DXGI_FORMAT_DESC &de
   }
   case DXGI_FORMAT_D32_FLOAT: {
     description.PixelFormat = WMTPixelFormatDepth32Float;
+    description.Flag = MTL_DXGI_FORMAT_DEPTH_PLANER;
     description.BytesPerTexel = 4;
     break;
   }
@@ -784,6 +785,7 @@ MTLQueryDXGIFormat(WMT::Device device, uint32_t format, MTL_DXGI_FORMAT_DESC &de
   }
   case DXGI_FORMAT_D16_UNORM: {
     description.PixelFormat = WMTPixelFormatDepth16Unorm;
+    description.Flag = MTL_DXGI_FORMAT_DEPTH_PLANER;
     description.BytesPerTexel = 2;
     break;
   }
