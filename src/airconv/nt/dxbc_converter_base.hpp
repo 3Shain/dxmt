@@ -141,6 +141,18 @@ public:
   void operator()(const InstIntegerBinaryOp &);
   void operator()(const InstPartialDerivative &);
 
+  void operator()(const InstConvert &);
+
+  void operator()(const InstFloatCompare &);
+  void operator()(const InstFloatMAD &);
+  void operator()(const InstSinCos &);
+  void operator()(const InstIntegerCompare &);
+  void operator()(const InstIntegerMAD &);
+  void operator()(const InstIntegerBinaryOpWithTwoDst &);
+
+  void operator()(const InstExtractBits &);
+  void operator()(const InstBitFiledInsert &);
+
   /* Utils */
 
   bool
@@ -218,6 +230,24 @@ public:
       co_yield std::pair{__builtin_ctz(Mask), Index++};
       Mask &= Mask - 1; // clear lowest set bit
     }
+  }
+
+  llvm::Value *
+  ExtractFromCombinedMask(llvm::Value *Value, mask_t CombinedMask, mask_t Mask) {
+    if (Mask == CombinedMask)
+      return Value;
+
+    llvm::SmallVector<int, 4> Idx;
+    unsigned SrcIdx = 0;
+    for (unsigned Bit = 0; Bit < 4; ++Bit) {
+      if (CombinedMask & (1 << Bit)) {
+        if (Mask & (1 << Bit))
+          Idx.push_back(SrcIdx);
+        SrcIdx++;
+      }
+    }
+
+    return ir.CreateShuffleVector(Value, Idx);
   }
 
 private:

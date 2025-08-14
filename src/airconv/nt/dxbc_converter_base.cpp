@@ -569,7 +569,6 @@ Converter::TruncAndBitcastToHalf(llvm::Value *Value) {
   if (Ty->getScalarType()->isHalfTy()) {
     return Value;
   }
-  llvm_unreachable("untested path and likely never used, remove this if it has been ever reached");
   if (auto TyVec = llvm::dyn_cast<llvm::FixedVectorType>(Ty)) {
     auto ElementCount = TyVec->getNumElements();
     auto TyShortVec = llvm::FixedVectorType::get(ir.getInt16Ty(), ElementCount);
@@ -694,18 +693,21 @@ void
 Converter::operator()(const InstSwapConditional &swapc) {
   mask_t Mask0 = GetMask(swapc.dst0);
   mask_t Mask1 = GetMask(swapc.dst1);
-  auto Src0_0 = LoadOperand(swapc.src0, Mask0);
-  auto Src1_0 = LoadOperand(swapc.src1, Mask0);
-  auto Cond_0 = LoadOperand(swapc.src_cond, Mask0);
-  auto CondZero_0 = llvm::Constant::getNullValue(Cond_0->getType());
+  mask_t MaskCombined = Mask0 | Mask1;
 
-  auto Src0_1 = LoadOperand(swapc.src0, Mask1);
-  auto Src1_1 = LoadOperand(swapc.src1, Mask1);
-  auto Cond_1 = LoadOperand(swapc.src_cond, Mask1);
-  auto CondZero_1 = llvm::Constant::getNullValue(Cond_1->getType());
+  auto Src0 = LoadOperand(swapc.src0, MaskCombined);
+  auto Src1 = LoadOperand(swapc.src1, MaskCombined);
+  auto Cond = LoadOperand(swapc.src_cond, MaskCombined);
 
-  auto Result0 = ir.CreateSelect(ir.CreateICmpNE(Cond_0, CondZero_0), Src1_0, Src0_0);
-  auto Result1 = ir.CreateSelect(ir.CreateICmpNE(Cond_1, CondZero_1), Src0_1, Src1_1);
+  auto Result0 = ir.CreateSelect(
+      ir.CreateIsNotNull(ExtractFromCombinedMask(Cond, MaskCombined, Mask0)),
+      ExtractFromCombinedMask(Src1, MaskCombined, Mask0), ExtractFromCombinedMask(Src0, MaskCombined, Mask0)
+  );
+  auto Result1 = ir.CreateSelect(
+      ir.CreateIsNotNull(ExtractFromCombinedMask(Cond, MaskCombined, Mask1)),
+      ExtractFromCombinedMask(Src0, MaskCombined, Mask1), ExtractFromCombinedMask(Src1, MaskCombined, Mask1)
+  );
+
   StoreOperand(swapc.dst0, Result0);
   StoreOperand(swapc.dst1, Result1);
 }
@@ -891,6 +893,252 @@ Converter::operator()(const InstPartialDerivative &deriv) {
   auto SrcValue = LoadOperand(deriv.src, Mask);
   auto Result = air.CreateDerivative(SrcValue, deriv.ddy);
   StoreOperand(deriv.dst, Result, deriv._.saturate);
+}
+
+void
+Converter::operator()(const InstConvert &convert) {
+  using namespace llvm::air;
+
+  mask_t Mask = GetMask(convert.dst);
+  auto Value = LoadOperand(convert.src, Mask);
+
+  switch (convert.op) {
+  case ConversionOp::HalfToFloat:
+    Value = air.CreateConvertToFloat(Value);
+    break;
+  case ConversionOp::FloatToHalf:
+    Value = air.CreateConvertToHalf(Value);
+    break;
+  case ConversionOp::FloatToSigned:
+    Value = air.CreateConvertToSigned(Value);
+    break;
+  case ConversionOp::SignedToFloat:
+    Value = air.CreateConvertToFloat(Value);
+    break;
+  case ConversionOp::FloatToUnsigned:
+    Value = air.CreateConvertToUnsigned(Value);
+    break;
+  case ConversionOp::UnsignedToFloat:
+    Value = air.CreateConvertToFloat(Value, Signedness::Unsigned);
+    break;
+  }
+
+  StoreOperand(convert.dst, Value);
+}
+
+void
+Converter::operator()(const InstFloatCompare &cmp) {
+  mask_t Mask = GetMask(cmp.dst);
+  auto LHS = LoadOperand(cmp.src0, Mask);
+  auto RHS = LoadOperand(cmp.src1, Mask);
+
+  llvm::CmpInst::Predicate Pred = {};
+
+  switch (cmp.cmp) {
+  case FloatComparison::Equal:
+    Pred = llvm::CmpInst::FCMP_OEQ;
+    break;
+  case FloatComparison::NotEqual:
+    Pred = llvm::CmpInst::FCMP_UNE;
+    break;
+  case FloatComparison::GreaterEqual:
+    Pred = llvm::CmpInst::FCMP_OGE;
+    break;
+  case FloatComparison::LessThan:
+    Pred = llvm::CmpInst::FCMP_OLT;
+    break;
+  }
+
+  auto Result = ir.CreateFCmp(Pred, LHS, RHS);
+
+  StoreOperand(cmp.dst, ir.CreateSExt(Result, Result->getType()->getWithNewBitWidth(32)));
+}
+
+void
+Converter::operator()(const InstFloatMAD &mad) {
+  mask_t Mask = GetMask(mad.dst);
+  auto A = LoadOperand(mad.src0, Mask);
+  auto B = LoadOperand(mad.src1, Mask);
+  auto C = LoadOperand(mad.src2, Mask);
+
+  auto Result = !ir.getFastMathFlags().isFast() ? ir.CreateFAdd(ir.CreateFMul(A, B), C) : air.CreateFMA(A, B, C);
+
+  StoreOperand(mad.dst, Result, mad._.saturate);
+}
+
+void
+Converter::operator()(const InstSinCos &sincos) {
+  using namespace llvm::air;
+
+  mask_t MaskCos = GetMask(sincos.dst_cos);
+  mask_t MaskSin = GetMask(sincos.dst_sin);
+  mask_t MaskCombined = MaskCos | MaskSin;
+
+  auto Src = LoadOperand(sincos.src, MaskCombined);
+
+  auto SrcCos = ExtractFromCombinedMask(Src, MaskCombined, MaskCos);
+  auto SrcSin = ExtractFromCombinedMask(Src, MaskCombined, MaskSin);
+
+  if (!IsNull(sincos.dst_cos))
+    StoreOperand(sincos.dst_cos, air.CreateFPUnOp(AIRBuilder::cos, SrcCos), sincos._.saturate);
+  if (!IsNull(sincos.dst_sin))
+    StoreOperand(sincos.dst_sin, air.CreateFPUnOp(AIRBuilder::sin, SrcSin), sincos._.saturate);
+}
+
+void
+Converter::operator()(const InstIntegerCompare &cmp) {
+  mask_t Mask = GetMask(cmp.dst);
+  auto LHS = LoadOperand(cmp.src0, Mask);
+  auto RHS = LoadOperand(cmp.src1, Mask);
+
+  llvm::CmpInst::Predicate Pred = llvm::CmpInst::ICMP_EQ;
+
+  switch (cmp.cmp) {
+  case IntegerComparison::Equal:
+    Pred = llvm::CmpInst::ICMP_EQ;
+    break;
+  case IntegerComparison::NotEqual:
+    Pred = llvm::CmpInst::ICMP_NE;
+    break;
+  case IntegerComparison::SignedLessThan:
+    Pred = llvm::CmpInst::ICMP_SLT;
+    break;
+  case IntegerComparison::SignedGreaterEqual:
+    Pred = llvm::CmpInst::ICMP_SGE;
+    break;
+  case IntegerComparison::UnsignedLessThan:
+    Pred = llvm::CmpInst::ICMP_ULT;
+    break;
+  case IntegerComparison::UnsignedGreaterEqual:
+    Pred = llvm::CmpInst::ICMP_UGE;
+    break;
+  }
+
+  auto Result = ir.CreateICmp(Pred, LHS, RHS);
+
+  StoreOperand(cmp.dst, ir.CreateSExt(Result, Result->getType()->getWithNewBitWidth(32)));
+}
+
+void
+Converter::operator()(const InstIntegerMAD &mad) {
+  mask_t Mask = GetMask(mad.dst);
+  auto A = LoadOperand(mad.src0, Mask);
+  auto B = LoadOperand(mad.src1, Mask);
+  auto C = LoadOperand(mad.src2, Mask);
+
+  auto Result = ir.CreateAdd(ir.CreateMul(A, B), C);
+
+  StoreOperand(mad.dst, Result);
+}
+
+void
+Converter::operator()(const InstIntegerBinaryOpWithTwoDst &bin) {
+  using namespace llvm;
+  using namespace llvm::air;
+
+  mask_t MaskHi = GetMask(bin.dst_hi);
+  mask_t MaskLo = GetMask(bin.dst_low);
+  mask_t MaskCombined = MaskHi | MaskLo;
+
+  auto Src0 = LoadOperand(bin.src0, MaskCombined);
+  auto Src1 = LoadOperand(bin.src1, MaskCombined);
+
+  auto Src0Hi = ExtractFromCombinedMask(Src0, MaskCombined, MaskHi);
+  auto Src0Lo = ExtractFromCombinedMask(Src0, MaskCombined, MaskLo);
+  auto Src1Hi = ExtractFromCombinedMask(Src1, MaskCombined, MaskHi);
+  auto Src1Lo = ExtractFromCombinedMask(Src1, MaskCombined, MaskLo);
+
+  switch (bin.op) {
+  case IntegerBinaryOpWithTwoDst::IMul:
+  case IntegerBinaryOpWithTwoDst::UMul: {
+    bool Signed = bin.op == IntegerBinaryOpWithTwoDst::IMul;
+    if (!IsNull(bin.dst_hi))
+      StoreOperand(bin.dst_hi, air.CreateIntBinOp(AIRBuilder::mul_hi, Src0Hi, Src1Hi, Signed));
+    if (!IsNull(bin.dst_low))
+      StoreOperand(bin.dst_low, ir.CreateMul(Src0Lo, Src1Lo));
+    break;
+  }
+  case IntegerBinaryOpWithTwoDst::UDiv:
+    if (!IsNull(bin.dst_hi))
+      StoreOperand(bin.dst_hi, ir.CreateUDiv(Src0Hi, Src1Hi));
+    if (!IsNull(bin.dst_low))
+      StoreOperand(bin.dst_low, ir.CreateURem(Src0Lo, Src1Lo));
+    break;
+  case IntegerBinaryOpWithTwoDst::UAddCarry: {
+    if (!IsNull(bin.dst_hi))
+      StoreOperand(bin.dst_hi, ir.CreateAdd(Src0Hi, Src1Hi));
+    if (!IsNull(bin.dst_low)) {
+      auto ResultTuple = ir.CreateBinaryIntrinsic(Intrinsic::uadd_with_overflow, Src0Lo, Src1Lo);
+      StoreOperand(
+          bin.dst_low, ir.CreateZExt(
+                           ir.CreateExtractValue(ResultTuple, 1),
+                           ResultTuple->getType()->getStructElementType(1)->getWithNewBitWidth(32)
+                       )
+      );
+    }
+    break;
+  }
+  case IntegerBinaryOpWithTwoDst::USubBorrow:
+    if (!IsNull(bin.dst_hi))
+      StoreOperand(bin.dst_hi, ir.CreateSub(Src0Hi, Src1Hi));
+    if (!IsNull(bin.dst_low)) {
+      auto ResultTuple = ir.CreateBinaryIntrinsic(Intrinsic::usub_with_overflow, Src0Lo, Src1Lo);
+      StoreOperand(
+          bin.dst_low, ir.CreateZExt(
+                           ir.CreateExtractValue(ResultTuple, 1),
+                           ResultTuple->getType()->getStructElementType(1)->getWithNewBitWidth(32)
+                       )
+      );
+    }
+    break;
+  }
+}
+
+void
+Converter::operator()(const InstExtractBits &extract) {
+  mask_t Mask = GetMask(extract.dst);
+  auto Src0 = LoadOperand(extract.src0, Mask);
+  auto Src1 = LoadOperand(extract.src1, Mask);
+  auto Src2 = LoadOperand(extract.src2, Mask);
+
+  auto Width = ir.CreateAnd(Src0, 0x1F);
+  auto Offset = ir.CreateAnd(Src1, 0X1F);
+  auto WidthAddOffset = ir.CreateAdd(Width, Offset);
+  auto Constant_32 = llvm::ConstantInt::get(Width->getType(), 32);
+  auto ClampedSrc2 = ir.CreateShl(Src2, ir.CreateSub(Constant_32, WidthAddOffset));
+
+  llvm::Value *NeedClamp, *NoClamp, *Clamped;
+
+  if (extract.is_signed) {
+    NeedClamp = ir.CreateICmpSLT(WidthAddOffset, Constant_32);
+    NoClamp = ir.CreateAShr(Src2, Offset);
+    Clamped = ir.CreateAShr(ClampedSrc2, ir.CreateSub(Constant_32, Width));
+  } else {
+    NeedClamp = ir.CreateICmpULT(WidthAddOffset, Constant_32);
+    NoClamp = ir.CreateLShr(Src2, Offset);
+    Clamped = ir.CreateLShr(ClampedSrc2, ir.CreateSub(Constant_32, Width));
+  }
+  auto Result = ir.CreateSelect(
+      ir.CreateIsNull(Width), llvm::ConstantInt::get(Width->getType(), 0), ir.CreateSelect(NeedClamp, Clamped, NoClamp)
+  );
+  StoreOperand(extract.dst, Result);
+}
+void
+Converter::operator()(const InstBitFiledInsert &bfi) {
+  mask_t Mask = GetMask(bfi.dst);
+  auto Src0 = LoadOperand(bfi.src0, Mask);
+  auto Src1 = LoadOperand(bfi.src1, Mask);
+  auto Src2 = LoadOperand(bfi.src2, Mask);
+  auto Src3 = LoadOperand(bfi.src3, Mask);
+
+  auto Width = ir.CreateAnd(Src0, 0x1F);
+  auto Offset = ir.CreateAnd(Src1, 0X1F);
+  auto Constant_1 = llvm::ConstantInt::get(Width->getType(), 1);
+  auto Bitmask = ir.CreateShl(ir.CreateSub(ir.CreateShl(Constant_1, Width), Constant_1), Offset);
+
+  auto Result =
+      ir.CreateOr(ir.CreateAnd(ir.CreateShl(Src2, Offset), Bitmask), ir.CreateAnd(Src3, ir.CreateNot(Bitmask)));
+  StoreOperand(bfi.dst, Result);
 }
 
 } // namespace dxmt::dxbc
