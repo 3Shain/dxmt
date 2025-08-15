@@ -315,8 +315,8 @@ AIRBuilder::getTextureRWPositionType(const Texture &Texture) {
 
 std::pair<Value *, Value *>
 AIRBuilder::CreateSampleCommon(
-    const Texture &Texture, Value *Handle, Value *Sampler, Value *Coord, Value *ArrayIndex,
-    const std::array<int32_t, 3> &Offset, bool ArgsControlBit, Value *Args1, Value *Args2
+    const Texture &Texture, Value *Handle, Value *Sampler, Value *Coord, Value *ArrayIndex, Value *Offset,
+    bool ArgsControlBit, Value *Args1, Value *Args2
 ) {
   assert(Texture.kind < Texture::num_resource_kind);
   auto &TexInfo = TextureInfo[Texture.kind];
@@ -365,7 +365,7 @@ AIRBuilder::CreateSampleCommon(
     Tys.push_back(getBoolTy());
     Ops.push_back(getBool(false));
     Tys.push_back(getIntTy());
-    Ops.push_back(getInt(Offset[0])); // seems to be ignored?
+    Ops.push_back(Offset);
     break;
   case Texture::texture2d:
   case Texture::texture2d_array:
@@ -374,13 +374,13 @@ AIRBuilder::CreateSampleCommon(
     Tys.push_back(getBoolTy());
     Ops.push_back(getBool(true));
     Tys.push_back(getIntTy(2));
-    Ops.push_back(getInt2(Offset[0], Offset[1]));
+    Ops.push_back(Offset);
     break;
   case Texture::texture3d:
     Tys.push_back(getBoolTy());
     Ops.push_back(getBool(true));
     Tys.push_back(getIntTy(3));
-    Ops.push_back(getInt3(Offset[0], Offset[1], Offset[2]));
+    Ops.push_back(Offset);
     break;
   default:
     break;
@@ -413,7 +413,7 @@ AIRBuilder::CreateSampleCommon(
 std::pair<Value *, Value *>
 AIRBuilder::CreateSampleCmpCommon(
     const Texture &Texture, Value *Handle, Value *Sampler, Value *Coord, Value *ArrayIndex, Value *Reference,
-    const std::array<int32_t, 3> &Offset, bool ArgsControlBit, Value *Args1, Value *Args2
+    Value *Offset, bool ArgsControlBit, Value *Args1, Value *Args2
 ) {
   assert(Texture.kind < Texture::num_resource_kind);
   auto &TexInfo = TextureInfo[Texture.kind];
@@ -468,7 +468,7 @@ AIRBuilder::CreateSampleCmpCommon(
     Tys.push_back(getBoolTy());
     Ops.push_back(getBool(true));
     Tys.push_back(getIntTy(2));
-    Ops.push_back(getInt2(Offset[0], Offset[1]));
+    Ops.push_back(Offset);
     break;
   default:
     break;
@@ -501,7 +501,7 @@ AIRBuilder::CreateSampleCmpCommon(
 std::pair<Value *, Value *>
 AIRBuilder::CreateSampleGrad(
     const Texture &Texture, Value *Handle, Value *Sampler, Value *Coord, Value *ArrayIndex, Value *DerivX,
-    Value *DerivY, Value *MinLOD, const std::array<int32_t, 3> &Offset
+    Value *DerivY, Value *MinLOD, const int32_t Offset[3]
 ) {
   assert(Texture.kind < Texture::num_resource_kind);
   auto &TexInfo = TextureInfo[Texture.kind];
@@ -725,8 +725,8 @@ AIRBuilder::CreateWrite(
 
 std::pair<Value *, Value *>
 AIRBuilder::CreateGather(
-    const Texture &Texture, Value *Handle, Value *Sampler, Value *Coord, Value *ArrayIndex,
-    const std::array<int32_t, 3> &Offset, Value *Component
+    const Texture &Texture, Value *Handle, Value *Sampler, Value *Coord, Value *ArrayIndex, Value *Offset,
+    Value *Component
 ) {
   assert(Texture.kind < Texture::num_resource_kind);
   auto &TexInfo = TextureInfo[Texture.kind];
@@ -776,7 +776,7 @@ AIRBuilder::CreateGather(
     Tys.push_back(getBoolTy());
     Ops.push_back(getBool(true));
     Tys.push_back(getIntTy(2));
-    Ops.push_back(getInt2(Offset[0], Offset[1]));
+    Ops.push_back(Offset);
     break;
   default: // cube doesn't support offset, and others don't support gather
     break;
@@ -807,7 +807,7 @@ AIRBuilder::CreateGather(
 std::pair<Value *, Value *>
 AIRBuilder::CreateGatherCompare(
     const Texture &Texture, Value *Handle, Value *Sampler, Value *Coord, Value *ArrayIndex, Value *Reference,
-    const std::array<int32_t, 3> &Offset
+    Value *Offset
 ) {
   assert(Texture.kind < Texture::num_resource_kind);
   auto &TexInfo = TextureInfo[Texture.kind];
@@ -861,7 +861,7 @@ AIRBuilder::CreateGatherCompare(
     Tys.push_back(getBoolTy());
     Ops.push_back(getBool(true));
     Tys.push_back(getIntTy(2));
-    Ops.push_back(getInt2(Offset[0], Offset[1]));
+    Ops.push_back(Offset);
     break;
   default: // cube doesn't support offset, and others don't support gather_c
     break;
