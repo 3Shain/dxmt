@@ -87,40 +87,39 @@ public:
 
   std::pair<Value *, Value *>
   CreateSample(
-      const Texture &Texture, Value *Handle, Value *Sampler, Value *Coord, Value *ArrayIndex,
-      const std::array<int32_t, 3> &Offset
+      const Texture &Texture, Value *Handle, Value *Sampler, Value *Coord, Value *ArrayIndex, const int32_t Offset[3]
   ) {
     return CreateSampleCommon(Texture, Handle, Sampler, Coord, ArrayIndex, Offset, false, getFloat(0), getFloat(0));
   }
 
   std::pair<Value *, Value *>
   CreateSample(
-      const Texture &Texture, Value *Handle, Value *Sampler, Value *Coord, Value *ArrayIndex,
-      const std::array<int32_t, 3> &Offset, sample_level Level
+      const Texture &Texture, Value *Handle, Value *Sampler, Value *Coord, Value *ArrayIndex, const int32_t Offset[3],
+      sample_level Level
   ) {
     return CreateSampleCommon(Texture, Handle, Sampler, Coord, ArrayIndex, Offset, true, Level.lod, getFloat(0));
   }
 
   std::pair<Value *, Value *>
   CreateSample(
-      const Texture &Texture, Value *Handle, Value *Sampler, Value *Coord, Value *ArrayIndex,
-      const std::array<int32_t, 3> &Offset, sample_bias Bias
+      const Texture &Texture, Value *Handle, Value *Sampler, Value *Coord, Value *ArrayIndex, const int32_t Offset[3],
+      sample_bias Bias
   ) {
     return CreateSampleCommon(Texture, Handle, Sampler, Coord, ArrayIndex, Offset, false, Bias.bias, getFloat(0));
   }
 
   std::pair<Value *, Value *>
   CreateSample(
-      const Texture &Texture, Value *Handle, Value *Sampler, Value *Coord, Value *ArrayIndex,
-      const std::array<int32_t, 3> &Offset, sample_bias Bias, sample_min_lod_clamp MinLOD
+      const Texture &Texture, Value *Handle, Value *Sampler, Value *Coord, Value *ArrayIndex, const int32_t Offset[3],
+      sample_bias Bias, sample_min_lod_clamp MinLOD
   ) {
     return CreateSampleCommon(Texture, Handle, Sampler, Coord, ArrayIndex, Offset, false, Bias.bias, MinLOD.lod);
   }
 
   std::pair<Value *, Value *>
   CreateSample(
-      const Texture &Texture, Value *Handle, Value *Sampler, Value *Coord, Value *ArrayIndex,
-      const std::array<int32_t, 3> &Offset, sample_min_lod_clamp MinLOD
+      const Texture &Texture, Value *Handle, Value *Sampler, Value *Coord, Value *ArrayIndex, const int32_t Offset[3],
+      sample_min_lod_clamp MinLOD
   ) {
     return CreateSampleCommon(Texture, Handle, Sampler, Coord, ArrayIndex, Offset, false, getFloat(0), MinLOD.lod);
   }
@@ -128,7 +127,7 @@ public:
   std::pair<Value *, Value *>
   CreateSampleCmp(
       const Texture &Texture, Value *Handle, Value *Sampler, Value *Coord, Value *ArrayIndex, Value *Reference,
-      const std::array<int32_t, 3> &Offset, sample_bias Bias, sample_min_lod_clamp MinLOD
+      const int32_t Offset[3], sample_bias Bias, sample_min_lod_clamp MinLOD
   ) {
     return CreateSampleCmpCommon(
         Texture, Handle, Sampler, Coord, ArrayIndex, Reference, Offset, false, Bias.bias, MinLOD.lod
@@ -138,7 +137,7 @@ public:
   std::pair<Value *, Value *>
   CreateSampleCmp(
       const Texture &Texture, Value *Handle, Value *Sampler, Value *Coord, Value *ArrayIndex, Value *Reference,
-      const std::array<int32_t, 3> &Offset, sample_level Level
+      const int32_t Offset[3], sample_level Level
   ) {
     return CreateSampleCmpCommon(
         Texture, Handle, Sampler, Coord, ArrayIndex, Reference, Offset, true, Level.lod, getFloat(0)
@@ -148,14 +147,14 @@ public:
   std::pair<Value *, Value *>
   CreateSampleGrad(
       const Texture &Texture, Value *Handle, Value *Sampler, Value *Coord, Value *ArrayIndex, Value *DerivX,
-      Value *DerivY, const std::array<int32_t, 3> &Offset
+      Value *DerivY, const int32_t Offset[3]
   ) {
     return CreateSampleGrad(Texture, Handle, Sampler, Coord, ArrayIndex, DerivX, DerivY, getFloat(0), Offset);
   }
 
   std::pair<Value *, Value *> CreateSampleGrad(
       const Texture &Texture, Value *Handle, Value *Sampler, Value *Coord, Value *ArrayIndex, Value *DerivX,
-      Value *DerivY, Value *MinLOD, const std::array<int32_t, 3> &Offset
+      Value *DerivY, Value *MinLOD, const int32_t Offset[3]
   );
 
   Value *CreateAtomicRMW(
@@ -176,14 +175,30 @@ public:
       const Texture &Texture, Value *Handle, Value *Pos, Value *CmpVec4, Value *NewVec4, Value *ArrayIndex = nullptr
   );
 
+  std::pair<Value *, Value *>
+  CreateGather(
+      const Texture &Texture, Value *Handle, Value *Sampler, Value *Coord, Value *ArrayIndex, const int32_t Offset[3],
+      Value *Component
+  ) {
+    return CreateGather(Texture, Handle, Sampler, Coord, ArrayIndex, GetOffset(Texture, Offset), Component);
+  }
+
   std::pair<Value *, Value *> CreateGather(
-      const Texture &Texture, Value *Handle, Value *Sampler, Value *Coord, Value *ArrayIndex,
-      const std::array<int32_t, 3> &Offset, Value *Component
+      const Texture &Texture, Value *Handle, Value *Sampler, Value *Coord, Value *ArrayIndex, Value *Offset,
+      Value *Component
   );
+
+  std::pair<Value *, Value *>
+  CreateGatherCompare(
+      const Texture &Texture, Value *Handle, Value *Sampler, Value *Coord, Value *ArrayIndex, Value *Reference,
+      const int32_t Offset[3]
+  ) {
+    return CreateGatherCompare(Texture, Handle, Sampler, Coord, ArrayIndex, Reference, GetOffset(Texture, Offset));
+  }
 
   std::pair<Value *, Value *> CreateGatherCompare(
       const Texture &Texture, Value *Handle, Value *Sampler, Value *Coord, Value *ArrayIndex, Value *Reference,
-      const std::array<int32_t, 3> &Offset
+      Value *Offset
   );
 
   Value *CreateTextureQuery(const Texture &Texture, Value *Handle, Texture::Query Query, Value *Level);
@@ -465,14 +480,53 @@ public:
 protected:
   raw_ostream &debug;
 
+  Value *
+  GetOffset(const Texture &Texture, const int32_t ImmOffset[3]) {
+    switch (Texture.kind) {
+    case Texture::texture1d:
+    case Texture::texture1d_array:
+      return getInt(ImmOffset[0]);
+    case Texture::texture2d:
+    case Texture::texture2d_array:
+    case Texture::depth2d:
+    case Texture::depth2d_array:
+      return getInt2(ImmOffset[0], ImmOffset[1]);
+    case Texture::texture3d:
+      return getInt3(ImmOffset[0], ImmOffset[1], ImmOffset[2]);
+    default:
+      break;
+    }
+    return nullptr;
+  }
+
+  std::pair<Value *, Value *>
+  CreateSampleCommon(
+      const Texture &Texture, Value *Handle, Value *Sampler, Value *Coord, Value *ArrayIndex, const int32_t Offset[3],
+      bool ArgsControlBit, Value *Args1, Value *Args2
+  ) {
+    return CreateSampleCommon(
+        Texture, Handle, Sampler, Coord, ArrayIndex, GetOffset(Texture, Offset), ArgsControlBit, Args1, Args2
+    );
+  }
+
   std::pair<Value *, Value *> CreateSampleCommon(
-      const Texture &Texture, Value *Handle, Value *Sampler, Value *Coord, Value *ArrayIndex,
-      const std::array<int32_t, 3> &Offset, bool ArgsControlBit, Value *Args1, Value *Args2
+      const Texture &Texture, Value *Handle, Value *Sampler, Value *Coord, Value *ArrayIndex, Value *Offset,
+      bool ArgsControlBit, Value *Args1, Value *Args2
   );
+
+  std::pair<Value *, Value *>
+  CreateSampleCmpCommon(
+      const Texture &Texture, Value *Handle, Value *Sampler, Value *Coord, Value *ArrayIndex, Value *Reference,
+      const int32_t Offset[3], bool ArgsControlBit, Value *Args1, Value *Args2
+  ) {
+    return CreateSampleCmpCommon(
+        Texture, Handle, Sampler, Coord, ArrayIndex, Reference, GetOffset(Texture, Offset), ArgsControlBit, Args1, Args2
+    );
+  }
 
   std::pair<Value *, Value *> CreateSampleCmpCommon(
       const Texture &Texture, Value *Handle, Value *Sampler, Value *Coord, Value *ArrayIndex, Value *Reference,
-      const std::array<int32_t, 3> &Offset, bool ArgsControlBit, Value *Args1, Value *Args2
+      Value *Offset, bool ArgsControlBit, Value *Args1, Value *Args2
   );
 
   std::string getTypeOverloadSuffix(Type *Ty, Signedness Sign = Signedness::DontCare);
