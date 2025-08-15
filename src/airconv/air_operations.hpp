@@ -3,6 +3,7 @@
 #include "air_signature.hpp"
 #include "air_type.hpp"
 #include "monad.hpp"
+#include "nt/air_builder.hpp"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
@@ -23,6 +24,7 @@ struct AIRBuilderContext {
   llvm::Module &module;
   llvm::IRBuilder<> &builder;
   AirType &types;
+  llvm::air::AIRBuilder& air;
 };
 
 template <typename S> AIRBuilderResult make_op(S &&fs) {
@@ -38,15 +40,11 @@ enum class TextureInfoType {
   num_samples
 };
 
-AIRBuilderResult call_integer_unary_op(std::string op, pvalue a);
 AIRBuilderResult call_float_unary_op(std::string op, pvalue a);
 AIRBuilderResult
 call_integer_binop(std::string op, pvalue a, pvalue b, bool is_signed = false);
-AIRBuilderResult call_float_binop(std::string op, pvalue a, pvalue b, bool force_precise = false);
 
-AIRBuilderResult call_dot_product(uint32_t dimension, pvalue a, pvalue b);
 AIRBuilderResult call_float_mad(pvalue a, pvalue b, pvalue c);
-AIRBuilderResult call_count_zero(bool trail, pvalue a);
 
 AIRBuilderResult call_sample(
   MSLTexture texture_type, pvalue handle, pvalue sampler, pvalue coord,
@@ -98,8 +96,6 @@ AIRBuilderResult call_get_texture_info(
   air::MSLTexture texture_type, pvalue handle, TextureInfoType type, pvalue lod
 );
 
-AIRBuilderResult call_get_num_samples();
-
 AIRBuilderResult call_texture_atomic_fetch_explicit(
   air::MSLTexture texture_type, pvalue handle, std::string op, bool is_signed,
   pvalue address, pvalue array_index, pvalue vec4
@@ -115,10 +111,6 @@ AIRBuilderResult call_texture_atomic_compare_exchange(
   pvalue array_index, pvalue compared, pvalue operand
 );
 
-// TODO: not good, expose too much detail
-AIRBuilderResult
-call_convert(pvalue src, llvm::Type *dst_scaler_type, air::Sign sign);
-
 AIRBuilderResult call_atomic_fetch_explicit(
   pvalue pointer, pvalue operand, std::string op, bool is_signed = false,
   bool device = false
@@ -132,26 +124,6 @@ AIRBuilderResult call_atomic_cmp_exchange(
   pvalue pointer, pvalue compared, pvalue operand, pvalue tmp_mem,
   bool device = false
 );
-
-AIRBuilderResult call_derivative(pvalue fvec4, bool dfdy);
-
-AIRBuilderResult
-call_set_mesh_properties(pvalue mesh_grid_props, pvalue grid_size);
-
-AIRBuilderResult call_interpolate_at_center(pvalue interpolant, bool perspective);
-AIRBuilderResult call_interpolate_at_centroid(pvalue interpolant, bool perspective);
-AIRBuilderResult call_interpolate_at_offset(pvalue interpolant, bool perspective, pvalue offset);
-AIRBuilderResult call_interpolate_at_sample(pvalue interpolant, bool perspective, pvalue index);
-
-AIRBuilderResult call_set_mesh_render_target_array_index(pvalue mesh, pvalue vid, pvalue render_target_array_index);
-AIRBuilderResult call_set_mesh_viewport_array_index(pvalue mesh, pvalue vid, pvalue viewport_array_index);
-AIRBuilderResult call_set_mesh_position(pvalue mesh, pvalue vid, pvalue position);
-AIRBuilderResult call_set_mesh_clip_distance(pvalue mesh, uint32_t idx, pvalue vid, pvalue value);
-AIRBuilderResult call_set_mesh_vertex_data(pvalue mesh, uint32_t idx, pvalue vid, pvalue value);
-AIRBuilderResult call_set_mesh_primitive_data(pvalue mesh, uint32_t idx, pvalue pid, pvalue value);
-
-AIRBuilderResult call_set_mesh_index(pvalue mesh, pvalue index, pvalue vertex);
-AIRBuilderResult call_set_mesh_primitive_count(pvalue mesh, pvalue count);
 
 enum class MTLAttributeFormat {
   Invalid = 0,

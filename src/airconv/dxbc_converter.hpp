@@ -13,6 +13,7 @@
 #include "air_signature.hpp"
 #include "dxbc_constants.hpp"
 #include "dxbc_instructions.hpp"
+#include "nt/air_builder.hpp"
 #include "shader_common.hpp"
 
 #include "airconv_public.h"
@@ -223,6 +224,7 @@ struct io_binding_map {
 
 struct context {
   llvm::IRBuilder<> &builder;
+  llvm::air::AIRBuilder &air;
   llvm::LLVMContext &llvm;
   llvm::Module &module;
   llvm::Function *function;
@@ -288,15 +290,6 @@ IREffect pop_mesh_output_viewport_array_index(uint32_t from_reg, uint32_t mask, 
 IREffect pop_mesh_output_position(uint32_t from_reg, uint32_t mask, pvalue vertex_id);
 IREffect
 pop_mesh_output_vertex_data(uint32_t from_reg, uint32_t mask, uint32_t idx, pvalue vertex_id, air::MSLScalerOrVectorType desired_type);
-
-enum class mem_flags : uint8_t {
-  none = 0,
-  device = 1,
-  threadgroup = 2,
-  texture = 4,
-};
-
-IREffect call_threadgroup_barrier(mem_flags mem_flag);
 
 llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
   std::shared_ptr<BasicBlock> entry, context &ctx, llvm::BasicBlock *return_bb

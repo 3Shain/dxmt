@@ -66,26 +66,6 @@ AIRBuilderResult get_float(float value) {
   });
 };
 
-AIRBuilderResult call_integer_unary_op(std::string op, pvalue a) {
-  return make_op([=](struct AIRBuilderContext ctx) {
-    using namespace llvm;
-    auto &context = ctx.llvm;
-    auto &module = ctx.module;
-    assert(a->getType()->getScalarType()->isIntegerTy());
-    auto att = AttributeList::get(
-      context, {{~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)},
-                {~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)},
-                {~0U, Attribute::get(context, Attribute::AttrKind::ReadNone)}}
-    );
-    auto operand_type = a->getType();
-    auto fn = (module.getOrInsertFunction(
-      "air." + op + type_overload_suffix(operand_type, Sign::inapplicable),
-      llvm::FunctionType::get(operand_type, {operand_type}, false), att
-    ));
-    return ctx.builder.CreateCall(fn, {a});
-  });
-};
-
 AIRBuilderResult call_float_unary_op(std::string op, pvalue a) {
   return make_op([=](AIRBuilderContext ctx) {
     using namespace llvm;
@@ -141,56 +121,6 @@ call_integer_binop(std::string op, pvalue a, pvalue b, bool is_signed) {
   });
 };
 
-AIRBuilderResult call_float_binop(std::string op, pvalue a, pvalue b, bool force_precise) {
-  return make_op([=](AIRBuilderContext ctx) {
-    using namespace llvm;
-    auto &context = ctx.llvm;
-    auto &module = ctx.module;
-    assert(a->getType()->getScalarType()->isFloatTy());
-    assert(b->getType()->getScalarType()->isFloatTy());
-    assert(a->getType() == b->getType());
-    auto att = AttributeList::get(
-      context, {{~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)},
-                {~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)},
-                {~0U, Attribute::get(context, Attribute::AttrKind::ReadNone)}}
-    );
-    auto operand_type = a->getType();
-    auto fn = (module.getOrInsertFunction(
-      "air." + fastmath_variant(ctx, op, force_precise) + type_overload_suffix(operand_type),
-      llvm::FunctionType::get(
-        operand_type, {operand_type, operand_type}, false
-      ),
-      att
-    ));
-    return ctx.builder.CreateCall(fn, {a, b});
-  });
-};
-
-AIRBuilderResult call_dot_product(uint32_t dimension, pvalue a, pvalue b) {
-  return make_op([=](AIRBuilderContext ctx) {
-    using namespace llvm;
-    auto &context = ctx.llvm;
-    auto &module = ctx.module;
-    auto &types = ctx.types;
-    auto att = AttributeList::get(
-      context, {{~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)},
-                {~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)},
-                {~0U, Attribute::get(context, Attribute::AttrKind::ReadNone)}}
-    );
-    auto operand_type = dimension == 4   ? types._float4
-                        : dimension == 3 ? types._float3
-                                         : types._float2;
-    auto fn = (module.getOrInsertFunction(
-      "air.dot" + type_overload_suffix(operand_type),
-      llvm::FunctionType::get(
-        types._float, {operand_type, operand_type}, false
-      ),
-      att
-    ));
-    return ctx.builder.CreateCall(fn, {a, b});
-  });
-};
-
 AIRBuilderResult call_float_mad(pvalue a, pvalue b, pvalue c) {
   return make_op([=](AIRBuilderContext ctx) -> pvalue {
     using namespace llvm;
@@ -215,56 +145,6 @@ AIRBuilderResult call_float_mad(pvalue a, pvalue b, pvalue c) {
       att
     ));
     return ctx.builder.CreateCall(fn, {a, b, c});
-  });
-};
-
-AIRBuilderResult call_count_zero(bool trail, pvalue a) {
-  return make_op([=](AIRBuilderContext ctx) {
-    using namespace llvm;
-    auto &context = ctx.llvm;
-    auto &module = ctx.module;
-    assert(a->getType()->getScalarType()->isIntegerTy());
-    auto att = AttributeList::get(
-      context, {{~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)},
-                {~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)},
-                {~0U, Attribute::get(context, Attribute::AttrKind::ReadNone)}}
-    );
-    auto operand_type = a->getType();
-    auto fn = (module.getOrInsertFunction(
-      "air." + (trail ? std::string("ctz") : std::string("clz")) +
-        type_overload_suffix(operand_type, Sign::inapplicable),
-      llvm::FunctionType::get(
-        operand_type, {operand_type, ctx.types._bool}, false
-      ),
-      att
-    ));
-    auto ret = ctx.builder.CreateCall(fn, {a, ctx.builder.getInt1(false)});
-    if (isa<VectorType>(operand_type)) {
-      auto vec_type = cast<VectorType>(operand_type);
-      assert(isa<IntegerType>(vec_type->getElementType()));
-      auto comp_type = cast<IntegerType>(vec_type->getElementType());
-      auto comp_num = vec_type->getElementCount();
-      return ctx.builder.CreateSelect(
-        ctx.builder.CreateICmpEQ(
-          ret, ctx.builder.CreateVectorSplat(
-                 comp_num, ctx.builder.getIntN(
-                             comp_type->getBitWidth(), comp_type->getBitWidth()
-                           )
-               )
-        ),
-        llvm::ConstantInt::getAllOnesValue(vec_type), ret
-      );
-    } else {
-      assert(isa<IntegerType>(operand_type));
-      auto int_type = cast<IntegerType>(operand_type);
-      return ctx.builder.CreateSelect(
-        ctx.builder.CreateICmpEQ(
-          ret,
-          ctx.builder.getIntN(int_type->getBitWidth(), int_type->getBitWidth())
-        ),
-        llvm::ConstantInt::getAllOnesValue(int_type), ret
-      );
-    }
   });
 };
 
@@ -1169,28 +1049,6 @@ AIRBuilderResult call_get_texture_info(
   co_return ctx.builder.CreateCall(fn, args_value);
 }
 
-AIRBuilderResult call_get_num_samples() {
-  auto ctx = co_yield get_context();
-  using namespace llvm;
-  auto &context = ctx.llvm;
-  auto &module = ctx.module;
-  auto &types = ctx.types;
-  auto att = AttributeList::get(
-    context,
-    {
-      {~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)},
-      {~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)},
-      {~0U, Attribute::get(context, Attribute::AttrKind::ReadNone)},
-    }
-  );
-
-  auto fn = module.getOrInsertFunction(
-    "air.get_num_samples.i32",
-    llvm::FunctionType::get(types._int, {types._int}, false), att
-  );
-  co_return ctx.builder.CreateCall(fn, ctx.builder.getInt32(0));
-}
-
 /* are we assume that vec4 can only be integer? */
 AIRBuilderResult call_texture_atomic_fetch_explicit(
   air::MSLTexture texture_type, pvalue handle, std::string op, bool is_signed,
@@ -1381,36 +1239,6 @@ AIRBuilderResult call_texture_atomic_compare_exchange(
   co_return ctx.builder.CreateExtractElement(expected, uint64_t(0));
 }
 
-AIRBuilderResult
-call_convert(pvalue src, llvm::Type *dst_scaler_type, Sign sign) {
-  using namespace llvm;
-  auto ctx = co_yield get_context();
-  auto &context = ctx.llvm;
-  auto &module = ctx.module;
-  auto att = AttributeList::get(
-    context, {{~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)},
-              {~0U, Attribute::get(context, Attribute::AttrKind::ReadNone)},
-              {~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)}}
-  );
-  auto src_type = src->getType();
-  llvm::Type *dst_type = nullptr;
-  if (isa<llvm::FixedVectorType>(src_type)) {
-    dst_type = llvm::FixedVectorType::get(
-      dst_scaler_type, cast<llvm::FixedVectorType>(src_type)->getNumElements()
-    );
-  } else {
-    dst_type = dst_scaler_type;
-  }
-  auto dst_suffix = type_overload_suffix(dst_type, sign);
-  auto src_suffix = type_overload_suffix(src_type, sign);
-
-  auto fn = (module.getOrInsertFunction(
-    "air.convert" + dst_suffix + src_suffix,
-    llvm::FunctionType::get(dst_type, {src_type}, false), att
-  ));
-  co_return ctx.builder.CreateCall(fn, {src});
-};
-
 AIRBuilderResult call_atomic_fetch_explicit(
   pvalue pointer, pvalue operand, std::string op, bool is_signed, bool device
 ) {
@@ -1532,23 +1360,6 @@ AIRBuilderResult call_atomic_cmp_exchange(
   auto expected = ctx.builder.CreateLoad(types._int, ptr);
   // this should be always the original value at ptr
   co_return expected;
-}
-
-AIRBuilderResult call_derivative(pvalue fvec4, bool dfdy) {
-  using namespace llvm;
-  auto ctx = co_yield get_context();
-  auto &context = ctx.llvm;
-  auto &module = ctx.module;
-  auto &types = ctx.types;
-  auto att = AttributeList::get(
-    context, {{~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)},
-              {~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)}}
-  );
-  auto fn = (module.getOrInsertFunction(
-    "air." + std::string(dfdy ? "dfdy" : "dfdx") + ".v4f32",
-    llvm::FunctionType::get(types._float4, {types._float4}, false), att
-  ));
-  co_return ctx.builder.CreateCall(fn, {fvec4});
 }
 
 AIRBuilderResult call_unpack_impl(
@@ -1856,7 +1667,7 @@ AIRBuilderResult pull_vec4_from_addr_checked(
     value = co_yield load_from_device_buffer(
       types._half, base_addr, byte_offset, 0, 2
     );
-    value = co_yield call_convert(value, types._float, Sign::with_sign);
+    value = ctx.air.CreateConvertToFloat(value);
     value = builder.CreateInsertElement(
       llvm::PoisonValue::get(types._float4), value, (int)0
     );
@@ -1868,7 +1679,7 @@ AIRBuilderResult pull_vec4_from_addr_checked(
     value = co_yield load_from_device_buffer(
       types._half2, base_addr, byte_offset, 0, 2
     );
-    value = co_yield call_convert(value, types._float, Sign::with_sign);
+    value = ctx.air.CreateConvertToFloat(value);
     value = builder.CreateShuffleVector(value, {0, 1, -1, -1});
     value = builder.CreateInsertElement(value, co_yield get_float(0), (int)2);
     value = builder.CreateInsertElement(value, co_yield get_float(1), (int)3);
@@ -1877,7 +1688,7 @@ AIRBuilderResult pull_vec4_from_addr_checked(
     value = co_yield load_from_device_buffer(
       types._half4, base_addr, byte_offset, 0, 2
     );
-    value = co_yield call_convert(value, types._float, Sign::with_sign);
+    value = ctx.air.CreateConvertToFloat(value);
     break;
   case MTLAttributeFormat::Float:
     value = co_yield load_from_device_buffer(
@@ -2011,324 +1822,5 @@ AIRBuilderResult pull_vec4_from_addr(
     return phi;
   });
 };
-
-AIRBuilderResult
-call_set_mesh_properties(pvalue mesh_grid_props, pvalue grid_size) {
-  return make_op([=](struct AIRBuilderContext ctx) {
-    using namespace llvm;
-    auto &context = ctx.llvm;
-    auto &module = ctx.module;
-    auto att = AttributeList::get(
-      context,
-      {{1U, Attribute::get(context, Attribute::AttrKind::NoCapture)},
-       {~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)},
-       {~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)},
-       {~0U, Attribute::get(context, Attribute::AttrKind::ArgMemOnly)},
-       {~0U, Attribute::get(context, Attribute::AttrKind::MustProgress)}}
-    );
-    auto fn = (module.getOrInsertFunction(
-      "air.set_threadgroups_per_grid_mesh_properties",
-      llvm::FunctionType::get(
-        llvm::Type::getVoidTy(context),
-        {ctx.types._mesh_grid_properties->getPointerTo(3), ctx.types._int3}, false
-      ),
-      att
-    ));
-    return ctx.builder.CreateCall(fn, {mesh_grid_props, grid_size});
-  });
-};
-
-AIRBuilderResult
-call_interpolate_at_center(pvalue interpolant, bool perspective) {
-  return make_op([=](struct AIRBuilderContext ctx) {
-    using namespace llvm;
-    auto &context = ctx.llvm;
-    auto &module = ctx.module;
-    auto att = AttributeList::get(
-      context, {{1U, Attribute::get(context, Attribute::AttrKind::NoCapture)},
-                {1U, Attribute::get(context, Attribute::AttrKind::ReadOnly)},
-                {~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)},
-                {~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)},
-                {~0U, Attribute::get(context, Attribute::AttrKind::ArgMemOnly)},
-                {~0U, Attribute::get(context, Attribute::AttrKind::ReadOnly)}}
-    );
-    auto fn = (module.getOrInsertFunction(
-      perspective ? "air.interpolate_center_perspective.v4f32"
-                  : "air.interpolate_center_no_perspective.v4f32",
-      llvm::FunctionType::get(
-        ctx.types._float4, {ctx.types._interpolant->getPointerTo(1)}, false
-      ),
-      att
-    ));
-    return ctx.builder.CreateCall(fn, {interpolant});
-  });
-}
-
-AIRBuilderResult
-call_interpolate_at_centroid(pvalue interpolant, bool perspective) {
-  return make_op([=](struct AIRBuilderContext ctx) {
-    using namespace llvm;
-    auto &context = ctx.llvm;
-    auto &module = ctx.module;
-    auto att = AttributeList::get(
-      context, {{1U, Attribute::get(context, Attribute::AttrKind::NoCapture)},
-                {1U, Attribute::get(context, Attribute::AttrKind::ReadOnly)},
-                {~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)},
-                {~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)},
-                {~0U, Attribute::get(context, Attribute::AttrKind::ArgMemOnly)},
-                {~0U, Attribute::get(context, Attribute::AttrKind::ReadOnly)}}
-    );
-    auto fn = (module.getOrInsertFunction(
-      perspective ? "air.interpolate_centroid_perspective.v4f32"
-                  : "air.interpolate_centroid_no_perspective.v4f32",
-      llvm::FunctionType::get(
-        ctx.types._float4, {ctx.types._interpolant->getPointerTo(1)}, false
-      ),
-      att
-    ));
-    return ctx.builder.CreateCall(fn, {interpolant});
-  });
-}
-
-AIRBuilderResult call_interpolate_at_offset(
-  pvalue interpolant, bool perspective, pvalue offset
-) {
-  return make_op([=](struct AIRBuilderContext ctx) {
-    using namespace llvm;
-    auto &context = ctx.llvm;
-    auto &module = ctx.module;
-    auto att = AttributeList::get(
-      context, {{1U, Attribute::get(context, Attribute::AttrKind::NoCapture)},
-                {1U, Attribute::get(context, Attribute::AttrKind::ReadOnly)},
-                {~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)},
-                {~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)},
-                {~0U, Attribute::get(context, Attribute::AttrKind::ArgMemOnly)},
-                {~0U, Attribute::get(context, Attribute::AttrKind::ReadOnly)}}
-    );
-    auto fn = (module.getOrInsertFunction(
-      perspective ? "air.interpolate_offset_perspective.v4f32"
-                  : "air.interpolate_offset_no_perspective.v4f32",
-      llvm::FunctionType::get(
-        ctx.types._float4,
-        {ctx.types._interpolant->getPointerTo(1), ctx.types._float2}, false
-      ),
-      att
-    ));
-    return ctx.builder.CreateCall(fn, {interpolant, offset});
-  });
-}
-
-AIRBuilderResult
-call_interpolate_at_sample(pvalue interpolant, bool perspective, pvalue index) {
-  return make_op([=](struct AIRBuilderContext ctx) {
-    using namespace llvm;
-    auto &context = ctx.llvm;
-    auto &module = ctx.module;
-    auto att = AttributeList::get(
-      context, {{1U, Attribute::get(context, Attribute::AttrKind::NoCapture)},
-                {1U, Attribute::get(context, Attribute::AttrKind::ReadOnly)},
-                {~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)},
-                {~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)},
-                {~0U, Attribute::get(context, Attribute::AttrKind::ArgMemOnly)}}
-    );
-    auto fn = (module.getOrInsertFunction(
-      perspective ? "air.interpolate_sample_perspective.v4f32"
-                  : "air.interpolate_sample_no_perspective.v4f32",
-      llvm::FunctionType::get(
-        ctx.types._float4,
-        {ctx.types._interpolant->getPointerTo(1), ctx.types._int}, false
-      ),
-      att
-    ));
-    return ctx.builder.CreateCall(fn, {interpolant, index});
-  });
-}
-
-AIRBuilderResult
-call_set_mesh_render_target_array_index(pvalue mesh, pvalue vid, pvalue render_target_array_index) {
-  return make_op([=](struct AIRBuilderContext ctx) {
-    using namespace llvm;
-    auto &context = ctx.llvm;
-    auto &module = ctx.module;
-    auto att = AttributeList::get(
-        context, {{1U, Attribute::get(context, Attribute::AttrKind::NoCapture)},
-                  {~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)},
-                  {~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)},
-                  {~0U, Attribute::get(context, Attribute::AttrKind::ArgMemOnly)}}
-    );
-    auto fn = (module.getOrInsertFunction(
-        "air.set_render_target_array_index_mesh.i32",
-        llvm::FunctionType::get(
-            llvm::Type::getVoidTy(context),
-            {ctx.types._mesh->getPointerTo(7 /* mesh */), ctx.types._int, ctx.types._int}, false
-        ),
-        att
-    ));
-    return ctx.builder.CreateCall(fn, {mesh, vid, render_target_array_index});
-  });
-}
-
-AIRBuilderResult call_set_mesh_viewport_array_index(pvalue mesh, pvalue vid, pvalue viewport_array_index) {
-  return make_op([=](struct AIRBuilderContext ctx) {
-    using namespace llvm;
-    auto &context = ctx.llvm;
-    auto &module = ctx.module;
-    auto att = AttributeList::get(
-        context, {{1U, Attribute::get(context, Attribute::AttrKind::NoCapture)},
-                  {~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)},
-                  {~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)},
-                  {~0U, Attribute::get(context, Attribute::AttrKind::ArgMemOnly)}}
-    );
-    auto fn = (module.getOrInsertFunction(
-        "air.set_viewport_array_index_mesh.i32",
-        llvm::FunctionType::get(
-            llvm::Type::getVoidTy(context),
-            {ctx.types._mesh->getPointerTo(7 /* mesh */), ctx.types._int, ctx.types._int}, false
-        ),
-        att
-    ));
-    return ctx.builder.CreateCall(fn, {mesh, vid, viewport_array_index});
-  });
-}
-
-AIRBuilderResult call_set_mesh_position(pvalue mesh, pvalue vid, pvalue position) {
-  return make_op([=](struct AIRBuilderContext ctx) {
-    using namespace llvm;
-    auto &context = ctx.llvm;
-    auto &module = ctx.module;
-    auto att = AttributeList::get(
-        context, {{1U, Attribute::get(context, Attribute::AttrKind::NoCapture)},
-                  {~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)},
-                  {~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)},
-                  {~0U, Attribute::get(context, Attribute::AttrKind::ArgMemOnly)}}
-    );
-    auto fn = (module.getOrInsertFunction(
-        "air.set_position_mesh",
-        llvm::FunctionType::get(
-            llvm::Type::getVoidTy(context),
-            {ctx.types._mesh->getPointerTo(7 /* mesh */), ctx.types._int, ctx.types._float4}, false
-        ),
-        att
-    ));
-    return ctx.builder.CreateCall(fn, {mesh, vid, position});
-  });
-}
-
-AIRBuilderResult call_set_mesh_clip_distance(pvalue mesh, uint32_t idx, pvalue vid, pvalue value) {
-  return make_op([=](struct AIRBuilderContext ctx) {
-    using namespace llvm;
-    auto &context = ctx.llvm;
-    auto &module = ctx.module;
-    auto att = AttributeList::get(
-        context, {{1U, Attribute::get(context, Attribute::AttrKind::NoCapture)},
-                  {~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)},
-                  {~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)},
-                  {~0U, Attribute::get(context, Attribute::AttrKind::ArgMemOnly)}}
-    );
-    auto fn = (module.getOrInsertFunction(
-        "air.set_clip_distance_mesh",
-        llvm::FunctionType::get(
-            llvm::Type::getVoidTy(context),
-            {ctx.types._mesh->getPointerTo(7 /* mesh */), ctx.types._int, ctx.types._int, ctx.types._float}, false
-        ),
-        att
-    ));
-    return ctx.builder.CreateCall(fn, {mesh, ctx.builder.getInt32(idx), vid, value});
-  });
-}
-
-AIRBuilderResult
-call_set_mesh_vertex_data(pvalue mesh, uint32_t idx, pvalue vid, pvalue value) {
-  return make_op([=](struct AIRBuilderContext ctx) {
-    using namespace llvm;
-    auto &context = ctx.llvm;
-    auto &module = ctx.module;
-    auto att = AttributeList::get(
-        context, {{1U, Attribute::get(context, Attribute::AttrKind::NoCapture)},
-                  {~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)},
-                  {~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)},
-                  {~0U, Attribute::get(context, Attribute::AttrKind::ArgMemOnly)}}
-    );
-    auto fn = (module.getOrInsertFunction(
-        "air.set_vertex_data_mesh" + type_overload_suffix(value->getType()),
-        llvm::FunctionType::get(
-            llvm::Type::getVoidTy(context),
-            {ctx.types._mesh->getPointerTo(7 /* mesh */), ctx.types._int, ctx.types._int, value->getType()}, false
-        ),
-        att
-    ));
-    return ctx.builder.CreateCall(fn, {mesh, ctx.builder.getInt32(idx), vid, value});
-  });
-}
-
-AIRBuilderResult
-call_set_mesh_primitive_data(pvalue mesh, uint32_t idx, pvalue pid, pvalue value) {
-  return make_op([=](struct AIRBuilderContext ctx) {
-    using namespace llvm;
-    auto &context = ctx.llvm;
-    auto &module = ctx.module;
-    auto att = AttributeList::get(
-        context, {{1U, Attribute::get(context, Attribute::AttrKind::NoCapture)},
-                  {~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)},
-                  {~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)},
-                  {~0U, Attribute::get(context, Attribute::AttrKind::ArgMemOnly)}}
-    );
-    auto fn = (module.getOrInsertFunction(
-        "air.set_primitive_data_mesh" + type_overload_suffix(value->getType()),
-        llvm::FunctionType::get(
-            llvm::Type::getVoidTy(context),
-            {ctx.types._mesh->getPointerTo(7 /* mesh */), ctx.types._int, ctx.types._int, value->getType()}, false
-        ),
-        att
-    ));
-    return ctx.builder.CreateCall(fn, {mesh, ctx.builder.getInt32(idx), pid, value});
-  });
-}
-
-AIRBuilderResult call_set_mesh_index(pvalue mesh, pvalue index, pvalue vertex) {
-  return make_op([=](struct AIRBuilderContext ctx) {
-    using namespace llvm;
-    auto &context = ctx.llvm;
-    auto &module = ctx.module;
-    auto att = AttributeList::get(
-        context, {{1U, Attribute::get(context, Attribute::AttrKind::NoCapture)},
-                  {~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)},
-                  {~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)},
-                  {~0U, Attribute::get(context, Attribute::AttrKind::ArgMemOnly)}}
-    );
-    auto fn = (module.getOrInsertFunction(
-        "air.set_index_mesh",
-        llvm::FunctionType::get(
-            llvm::Type::getVoidTy(context),
-            {ctx.types._mesh->getPointerTo(7 /* mesh */), ctx.types._int, ctx.types._byte}, false
-        ),
-        att
-    ));
-    return ctx.builder.CreateCall(fn, {mesh, index, ctx.builder.CreateZExtOrTrunc(vertex, ctx.types._byte)});
-  });
-}
-
-AIRBuilderResult call_set_mesh_primitive_count(pvalue mesh, pvalue count) {
-  return make_op([=](struct AIRBuilderContext ctx) {
-    using namespace llvm;
-    auto &context = ctx.llvm;
-    auto &module = ctx.module;
-    auto att = AttributeList::get(
-        context, {{1U, Attribute::get(context, Attribute::AttrKind::NoCapture)},
-                  {~0U, Attribute::get(context, Attribute::AttrKind::NoUnwind)},
-                  {~0U, Attribute::get(context, Attribute::AttrKind::WillReturn)},
-                  {~0U, Attribute::get(context, Attribute::AttrKind::ArgMemOnly)}}
-    );
-    auto fn = (module.getOrInsertFunction(
-        "air.set_primitive_count_mesh",
-        llvm::FunctionType::get(
-            llvm::Type::getVoidTy(context),
-            {ctx.types._mesh->getPointerTo(7 /* mesh */), ctx.types._int}, false
-        ),
-        att
-    ));
-    return ctx.builder.CreateCall(fn, {mesh, count});
-  });
-}
 
 }; // namespace dxmt::air

@@ -8,7 +8,9 @@ airconv_src = files([
  'dxbc_converter_basicblock.cpp',
  'dxbc_instructions.cpp',
  'dxbc_signature.cpp',
- 'metallib_writer.cpp'
+ 'metallib_writer.cpp',
+ 'nt/air_builder.cpp',
+ 'nt/dxbc_converter_base.cpp',
 ])
 
 airconv_cli_src = files(['airconv_cli.cpp'])
