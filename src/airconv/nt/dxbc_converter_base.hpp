@@ -24,6 +24,14 @@ constexpr mask_t kMaskVecXYZ = 0b111;
 struct io_binding_map;
 struct context;
 
+struct TextureResourceHandle {
+  llvm::air::Texture Texture;
+  llvm::air::Texture::ResourceKind Logical;
+  llvm::Value *Handle;
+  llvm::Value *Metadata;
+  Swizzle Swizzle;
+};
+
 class Converter {
 public:
   Converter(llvm::air::AIRBuilder &air, context &ctx_legacy, io_binding_map &res_legacy) :
@@ -63,6 +71,10 @@ public:
   }
 
   llvm::Value *ApplySrcModifier(SrcOperandCommon C, llvm::Value *Value, mask_t Mask);
+
+  llvm::Optional<TextureResourceHandle> LoadTexture(const SrcOperandResource &SrcOp);
+  llvm::Optional<TextureResourceHandle> LoadTexture(const SrcOperandUAV &SrcOp);
+  llvm::Optional<TextureResourceHandle> LoadTexture(const AtomicDstOperandUAV &DstOp);
 
   /* Store Operands */
 
@@ -152,6 +164,10 @@ public:
 
   void operator()(const InstExtractBits &);
   void operator()(const InstBitFiledInsert &);
+
+  void operator()(const InstLoad &);
+  void operator()(const InstLoadUAVTyped &);
+  void operator()(const InstStoreUAVTyped &);
 
   /* Utils */
 
@@ -248,6 +264,11 @@ public:
     }
 
     return ir.CreateShuffleVector(Value, Idx);
+  }
+
+  llvm::Value *
+  DecodeTextureBufferOffset(llvm::Value *Metadata) {
+    return ir.CreateTrunc(Metadata, air.getIntTy());
   }
 
 private:

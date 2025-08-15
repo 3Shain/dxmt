@@ -391,6 +391,130 @@ Converter::ApplySrcModifier(SrcOperandCommon C, llvm::Value *Value, mask_t Mask)
   return Value;
 }
 
+// TODO: duplicated enum
+static llvm::air::Texture::ResourceKind
+__map_resource_kind(air::TextureKind k) {
+  using namespace llvm::air;
+  switch (k) {
+  case air::TextureKind::texture_1d:
+    return Texture::texture1d;
+  case air::TextureKind::texture_1d_array:
+    return Texture::texture1d_array;
+  case air::TextureKind::texture_2d:
+    return Texture::texture2d;
+  case air::TextureKind::texture_2d_array:
+    return Texture::texture2d_array;
+  case air::TextureKind::texture_2d_ms:
+    return Texture::texture2d_ms;
+  case air::TextureKind::texture_2d_ms_array:
+    return Texture::texture2d_ms_array;
+  case air::TextureKind::texture_3d:
+    return Texture::texture3d;
+  case air::TextureKind::texture_cube:
+    return Texture::texturecube;
+  case air::TextureKind::texture_cube_array:
+    return Texture::texturecube_array;
+  case air::TextureKind::texture_buffer:
+    return Texture::texture_buffer;
+  case air::TextureKind::depth_2d:
+    return Texture::depth2d;
+  case air::TextureKind::depth_2d_array:
+    return Texture::depth2d_array;
+  case air::TextureKind::depth_2d_ms:
+    return Texture::depth_2d_ms;
+  case air::TextureKind::depth_2d_ms_array:
+    return Texture::depth_2d_ms_array;
+  case air::TextureKind::depth_cube:
+    return Texture::depthcube;
+  case air::TextureKind::depth_cube_array:
+    return Texture::depthcube_array;
+  }
+}
+
+llvm::Optional<TextureResourceHandle>
+Converter::LoadTexture(const SrcOperandResource &SrcOp) {
+  using namespace llvm::air;
+
+  auto &[res, res_handle_fn, md_fn] = ctx.resource.srv_range_map[SrcOp.range_id];
+  auto res_handle = res_handle_fn(nullptr).build(ctx);
+  if (res_handle.takeError())
+    return {};
+  auto md = md_fn(nullptr).build(ctx);
+  if (md.takeError())
+    return {};
+
+  Texture texture;
+  texture.kind = __map_resource_kind(res.resource_kind);
+  texture.memory_access = (Texture::MemoryAccess)res.memory_access;
+  texture.sample_type = std::visit(
+      patterns{
+          [](air::MSLInt) { return Texture::sample_int; }, [](air::MSLUint) { return Texture::sample_uint; },
+          [](auto) { return Texture::sample_float; }
+      },
+      res.component_type
+  );
+
+  return llvm::Optional<TextureResourceHandle>(
+      {texture, __map_resource_kind(res.resource_kind_logical), res_handle.get(), md.get(), SrcOp.read_swizzle}
+  );
+}
+
+llvm::Optional<TextureResourceHandle>
+Converter::LoadTexture(const SrcOperandUAV &SrcOp) {
+  using namespace llvm::air;
+
+  auto &[res, res_handle_fn, md_fn] = ctx.resource.uav_range_map[SrcOp.range_id];
+  auto res_handle = res_handle_fn(nullptr).build(ctx);
+  if (res_handle.takeError())
+    return {};
+  auto md = md_fn(nullptr).build(ctx);
+  if (md.takeError())
+    return {};
+
+  Texture texture;
+  texture.kind = __map_resource_kind(res.resource_kind);
+  texture.memory_access = (Texture::MemoryAccess)res.memory_access;
+  texture.sample_type = std::visit(
+      patterns{
+          [](air::MSLInt) { return Texture::sample_int; }, [](air::MSLUint) { return Texture::sample_uint; },
+          [](auto) { return Texture::sample_float; }
+      },
+      res.component_type
+  );
+
+  return llvm::Optional<TextureResourceHandle>(
+      {texture, __map_resource_kind(res.resource_kind_logical), res_handle.get(), md.get(), SrcOp.read_swizzle}
+  );
+}
+
+llvm::Optional<TextureResourceHandle>
+Converter::LoadTexture(const AtomicDstOperandUAV &DstOp) {
+  using namespace llvm::air;
+
+  auto &[res, res_handle_fn, md_fn] = ctx.resource.uav_range_map[DstOp.range_id];
+  auto res_handle = res_handle_fn(nullptr).build(ctx);
+  if (res_handle.takeError())
+    return {};
+  auto md = md_fn(nullptr).build(ctx);
+  if (md.takeError())
+    return {};
+
+  Texture texture;
+  texture.kind = __map_resource_kind(res.resource_kind);
+  texture.memory_access = (Texture::MemoryAccess)res.memory_access;
+  texture.sample_type = std::visit(
+      patterns{
+          [](air::MSLInt) { return Texture::sample_int; }, [](air::MSLUint) { return Texture::sample_uint; },
+          [](auto) { return Texture::sample_float; }
+      },
+      res.component_type
+  );
+
+  return llvm::Optional<TextureResourceHandle>(
+      {texture, __map_resource_kind(res.resource_kind_logical), res_handle.get(), md.get(), swizzle_identity}
+  );
+}
+
 void
 Converter::StoreOperand(const DstOperandOutput &DstOp, llvm::Value *Value) {
   if (ctx.shader_type == microsoft::D3D11_SB_HULL_SHADER && DstOp.phase == ~0u)
@@ -1139,6 +1263,165 @@ Converter::operator()(const InstBitFiledInsert &bfi) {
   auto Result =
       ir.CreateOr(ir.CreateAnd(ir.CreateShl(Src2, Offset), Bitmask), ir.CreateAnd(Src3, ir.CreateNot(Bitmask)));
   StoreOperand(bfi.dst, Result);
+}
+
+void
+Converter::operator()(const InstLoad &load) {
+  using namespace llvm::air;
+
+  auto Tex = LoadTexture(load.src_resource);
+  if (!Tex)
+    return;
+  llvm::Value *Address = nullptr;
+  llvm::Value *ArrayIndex = nullptr;
+  llvm::Value *SampleIndex = nullptr;
+  llvm::Constant *Offset = nullptr;
+
+  switch (Tex->Logical) {
+  case Texture::texture_buffer:
+    Address = LoadOperand(load.src_address, kMaskComponentX);
+    Address = ir.CreateAdd(Address, DecodeTextureBufferOffset(Tex->Metadata));
+    Offset = air.getInt(load.offsets[0]);
+    break;
+  case Texture::texture1d:
+    Address = LoadOperand(load.src_address, kMaskComponentX);
+    Address = ir.CreateInsertElement(llvm::ConstantInt::getNullValue(air.getIntTy(2)), Address, 0ull);
+    Offset = air.getInt2(load.offsets[0], 0);
+    break;
+  case Texture::texture1d_array:
+    Address = LoadOperand(load.src_address, kMaskComponentX);
+    Address = ir.CreateInsertElement(llvm::ConstantInt::getNullValue(air.getIntTy(2)), Address, 0ull);
+    ArrayIndex = LoadOperand(load.src_address, kMaskComponentY);
+    Offset = air.getInt2(load.offsets[0], 0);
+    break;
+  case Texture::texture2d:
+  case Texture::depth2d:
+    Address = LoadOperand(load.src_address, kMaskVecXY);
+    Offset = air.getInt2(load.offsets[0], load.offsets[1]);
+    break;
+  case Texture::texture2d_array:
+  case Texture::depth2d_array:
+    Address = LoadOperand(load.src_address, kMaskVecXY);
+    ArrayIndex = LoadOperand(load.src_address, kMaskComponentZ);
+    Offset = air.getInt2(load.offsets[0], load.offsets[1]);
+    break;
+  case Texture::texture3d:
+    Address = LoadOperand(load.src_address, kMaskVecXYZ);
+    Offset = air.getInt3(load.offsets[0], load.offsets[1], load.offsets[2]);
+    break;
+  case Texture::texture2d_ms:
+  case Texture::depth_2d_ms:
+    Address = LoadOperand(load.src_address, kMaskVecXY);
+    SampleIndex = LoadOperand(load.src_sample_index.value(), kMaskComponentX);
+    Offset = air.getInt2(load.offsets[0], load.offsets[1]);
+    break;
+  case Texture::texture2d_ms_array:
+  case Texture::depth_2d_ms_array:
+    Address = LoadOperand(load.src_address, kMaskVecXY);
+    ArrayIndex = LoadOperand(load.src_address, kMaskComponentZ);
+    SampleIndex = LoadOperand(load.src_sample_index.value(), kMaskComponentX);
+    Offset = air.getInt2(load.offsets[0], load.offsets[1]);
+    break;
+  default: // invalid type
+    return;
+  }
+
+  if (!Offset->isNullValue())
+    Address = ir.CreateAdd(Address, Offset);
+
+  llvm::Value *LOD = LoadOperand(load.src_address, kMaskComponentW);
+
+  auto [Value, Residency] = air.CreateRead(Tex->Texture, Tex->Handle, Address, ArrayIndex, SampleIndex, LOD);
+
+  StoreOperand(load.dst, MaskSwizzle(Value, GetMask(load.dst), Tex->Swizzle));
+}
+void
+Converter::operator()(const InstLoadUAVTyped &load) {
+  using namespace llvm::air;
+
+  auto Tex = LoadTexture(load.src_uav);
+  if (!Tex)
+    return;
+  llvm::Value *Address = nullptr;
+  llvm::Value *ArrayIndex = nullptr;
+  llvm::Value *SampleIndex = nullptr;
+
+  switch (Tex->Logical) {
+  case Texture::texture_buffer:
+    Address = LoadOperand(load.src_address, kMaskComponentX);
+    Address = ir.CreateAdd(Address, DecodeTextureBufferOffset(Tex->Metadata));
+    break;
+  case Texture::texture1d:
+    Address = LoadOperand(load.src_address, kMaskComponentX);
+    Address = ir.CreateInsertElement(llvm::ConstantInt::getNullValue(air.getIntTy(2)), Address, 0ull);
+    break;
+  case Texture::texture1d_array:
+    Address = LoadOperand(load.src_address, kMaskComponentX);
+    Address = ir.CreateInsertElement(llvm::ConstantInt::getNullValue(air.getIntTy(2)), Address, 0ull);
+    ArrayIndex = LoadOperand(load.src_address, kMaskComponentY);
+    break;
+  case Texture::texture2d:
+  case Texture::depth2d:
+    Address = LoadOperand(load.src_address, kMaskVecXY);
+    break;
+  case Texture::texture2d_array:
+  case Texture::depth2d_array:
+    Address = LoadOperand(load.src_address, kMaskVecXY);
+    ArrayIndex = LoadOperand(load.src_address, kMaskComponentZ);
+    break;
+  case Texture::texture3d:
+    Address = LoadOperand(load.src_address, kMaskVecXYZ);
+    break;
+  default: // invalid type
+    return;
+  }
+
+  auto [Value, Residency] = air.CreateRead(Tex->Texture, Tex->Handle, Address, ArrayIndex, SampleIndex, air.getInt(0));
+
+  StoreOperand(load.dst, MaskSwizzle(Value, GetMask(load.dst), Tex->Swizzle));
+}
+
+void
+Converter::operator()(const InstStoreUAVTyped &store) {
+  using namespace llvm::air;
+
+  auto Tex = LoadTexture(store.dst);
+  if (!Tex.hasValue())
+    return;
+  llvm::Value *Address = nullptr;
+  llvm::Value *ArrayIndex = nullptr;
+
+  switch (Tex->Logical) {
+  case Texture::texture_buffer:
+    Address = LoadOperand(store.src_address, kMaskComponentX);
+    Address = ir.CreateAdd(Address, DecodeTextureBufferOffset(Tex->Metadata));
+    break;
+  case Texture::texture1d:
+    Address = LoadOperand(store.src_address, kMaskComponentX);
+    Address = ir.CreateInsertElement(llvm::ConstantInt::getNullValue(air.getIntTy(2)), Address, 0ull);
+    break;
+  case Texture::texture1d_array:
+    Address = LoadOperand(store.src_address, kMaskComponentX);
+    Address = ir.CreateInsertElement(llvm::ConstantInt::getNullValue(air.getIntTy(2)), Address, 0ull);
+    ArrayIndex = LoadOperand(store.src_address, kMaskComponentY);
+    break;
+  case Texture::texture2d:
+    Address = LoadOperand(store.src_address, kMaskVecXY);
+    break;
+  case Texture::texture2d_array:
+    Address = LoadOperand(store.src_address, kMaskVecXY);
+    ArrayIndex = LoadOperand(store.src_address, kMaskComponentZ);
+    break;
+  case Texture::texture3d:
+    Address = LoadOperand(store.src_address, kMaskVecXYZ);
+    break;
+  default: // invalid type
+    return;
+  }
+
+  auto Value = LoadOperand(store.src, kMaskAll);
+
+  air.CreateWrite(Tex->Texture, Tex->Handle, Address, ArrayIndex, nullptr, ir.getInt32(0), Value);
 }
 
 } // namespace dxmt::dxbc
