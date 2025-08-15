@@ -613,65 +613,96 @@ Instruction readInstruction(
     shader_info.srvMap[inst.src_resource.range_id].sampled = true;
     return inst;
   };
+  case microsoft::D3DWDDM1_3_SB_OPCODE_SAMPLE_B_CLAMP_FEEDBACK:
   case microsoft::D3D10_SB_OPCODE_SAMPLE_B: {
+    bool sparse = Inst.m_OpCode == microsoft::D3DWDDM1_3_SB_OPCODE_SAMPLE_B_CLAMP_FEEDBACK;
     auto inst = InstSampleBias{
       .dst = readDstOperand(Inst.m_Operands[0], phase, OperandDataType::Float),
-      .src_address = readSrcOperand(Inst.m_Operands[1], phase, OperandDataType::Float),
-      .src_resource = readSrcOperandResource(Inst.m_Operands[2], phase),
-      .src_sampler = readSrcOperandSampler(Inst.m_Operands[3], phase),
-      .src_bias = readSrcOperand(Inst.m_Operands[4], phase, OperandDataType::Float),
+      .src_address = readSrcOperand(Inst.m_Operands[1 + sparse], phase, OperandDataType::Float),
+      .src_resource = readSrcOperandResource(Inst.m_Operands[2 + sparse], phase),
+      .src_sampler = readSrcOperandSampler(Inst.m_Operands[3 + sparse], phase),
+      .src_bias = readSrcOperand(Inst.m_Operands[4 + sparse], phase, OperandDataType::Float),
       .offsets =
         {Inst.m_TexelOffset[0], Inst.m_TexelOffset[1], Inst.m_TexelOffset[2]},
+      .min_lod_clamp = (sparse && Inst.m_Operands[5 + sparse].OperandType() !=
+                                    microsoft::D3D10_SB_OPERAND_TYPE_NULL)
+                         ? readSrcOperand(Inst.m_Operands[5 + sparse], phase, OperandDataType::Float)
+                         : std::optional<SrcOperand>(),
+      .feedback = sparse ? readDstOperand(Inst.m_Operands[sparse], phase, OperandDataType::Integer)
+                         : std::optional<DstOperand>(),
     };
     shader_info.srvMap[inst.src_resource.range_id].sampled = true;
     return inst;
   };
+  case microsoft::D3DWDDM1_3_SB_OPCODE_SAMPLE_D_CLAMP_FEEDBACK:
   case microsoft::D3D10_SB_OPCODE_SAMPLE_D: {
+    bool sparse = Inst.m_OpCode == microsoft::D3DWDDM1_3_SB_OPCODE_SAMPLE_D_CLAMP_FEEDBACK;
     auto inst = InstSampleDerivative{
       .dst = readDstOperand(Inst.m_Operands[0], phase, OperandDataType::Float),
-      .src_address = readSrcOperand(Inst.m_Operands[1], phase, OperandDataType::Float),
-      .src_resource = readSrcOperandResource(Inst.m_Operands[2], phase),
-      .src_sampler = readSrcOperandSampler(Inst.m_Operands[3], phase),
-      .src_x_derivative = readSrcOperand(Inst.m_Operands[4], phase, OperandDataType::Float),
-      .src_y_derivative = readSrcOperand(Inst.m_Operands[5], phase, OperandDataType::Float),
+      .src_address = readSrcOperand(Inst.m_Operands[1 + sparse], phase, OperandDataType::Float),
+      .src_resource = readSrcOperandResource(Inst.m_Operands[2 + sparse], phase),
+      .src_sampler = readSrcOperandSampler(Inst.m_Operands[3 + sparse], phase),
+      .src_x_derivative = readSrcOperand(Inst.m_Operands[4 + sparse], phase, OperandDataType::Float),
+      .src_y_derivative = readSrcOperand(Inst.m_Operands[5 + sparse], phase, OperandDataType::Float),
       .offsets =
         {Inst.m_TexelOffset[0], Inst.m_TexelOffset[1], Inst.m_TexelOffset[2]},
+      .min_lod_clamp = (sparse && Inst.m_Operands[6 + sparse].OperandType() !=
+                                    microsoft::D3D10_SB_OPERAND_TYPE_NULL)
+                         ? readSrcOperand(Inst.m_Operands[6 + sparse], phase, OperandDataType::Float)
+                         : std::optional<SrcOperand>(),
+      .feedback = sparse ? readDstOperand(Inst.m_Operands[sparse], phase, OperandDataType::Integer)
+                         : std::optional<DstOperand>(),
     };
     shader_info.srvMap[inst.src_resource.range_id].sampled = true;
     return inst;
   };
-  case microsoft::D3D10_SB_OPCODE_SAMPLE_L: {
+  case microsoft::D3D10_SB_OPCODE_SAMPLE_L:
+  case microsoft::D3DWDDM1_3_SB_OPCODE_SAMPLE_L_FEEDBACK: {
+    bool sparse = Inst.m_OpCode == microsoft::D3DWDDM1_3_SB_OPCODE_SAMPLE_L_FEEDBACK;
     auto inst = InstSampleLOD{
       .dst = readDstOperand(Inst.m_Operands[0], phase, OperandDataType::Float),
-      .src_address = readSrcOperand(Inst.m_Operands[1], phase, OperandDataType::Float),
-      .src_resource = readSrcOperandResource(Inst.m_Operands[2], phase),
-      .src_sampler = readSrcOperandSampler(Inst.m_Operands[3], phase),
-      .src_lod = readSrcOperand(Inst.m_Operands[4], phase, OperandDataType::Float),
+      .src_address = readSrcOperand(Inst.m_Operands[1 + sparse], phase, OperandDataType::Float),
+      .src_resource = readSrcOperandResource(Inst.m_Operands[2 + sparse], phase),
+      .src_sampler = readSrcOperandSampler(Inst.m_Operands[3 + sparse], phase),
+      .src_lod = readSrcOperand(Inst.m_Operands[4 + sparse], phase, OperandDataType::Float),
       .offsets =
         {Inst.m_TexelOffset[0], Inst.m_TexelOffset[1], Inst.m_TexelOffset[2]},
+      .feedback = sparse ? readDstOperand(Inst.m_Operands[sparse], phase, OperandDataType::Integer)
+                         : std::optional<DstOperand>(),
     };
     shader_info.srvMap[inst.src_resource.range_id].sampled = true;
     return inst;
   };
   case microsoft::D3D10_SB_OPCODE_SAMPLE_C_LZ:
-  case microsoft::D3D10_SB_OPCODE_SAMPLE_C: {
+  case microsoft::D3D10_SB_OPCODE_SAMPLE_C:
+  case microsoft::D3DWDDM1_3_SB_OPCODE_SAMPLE_C_CLAMP_FEEDBACK:
+  case microsoft::D3DWDDM1_3_SB_OPCODE_SAMPLE_C_LZ_FEEDBACK: {
+    bool sparse = Inst.m_OpCode == microsoft::D3DWDDM1_3_SB_OPCODE_SAMPLE_C_CLAMP_FEEDBACK ||
+                  Inst.m_OpCode == microsoft::D3DWDDM1_3_SB_OPCODE_SAMPLE_C_LZ_FEEDBACK;
+    bool sparse_clamp = Inst.m_OpCode == microsoft::D3DWDDM1_3_SB_OPCODE_SAMPLE_C_CLAMP_FEEDBACK;
+    bool level_zero = Inst.m_OpCode == microsoft::D3D10_SB_OPCODE_SAMPLE_C_LZ ||
+                      Inst.m_OpCode == microsoft::D3DWDDM1_3_SB_OPCODE_SAMPLE_C_LZ_FEEDBACK;
     auto inst = InstSampleCompare{
-      .dst = readDstOperand(Inst.m_Operands[0], phase, OperandDataType::Float),
-      .src_address = readSrcOperand(Inst.m_Operands[1], phase, OperandDataType::Float),
-      .src_resource = readSrcOperandResource(Inst.m_Operands[2], phase),
-      .src_sampler = readSrcOperandSampler(Inst.m_Operands[3], phase),
-      .src_reference = readSrcOperand(Inst.m_Operands[4], phase, OperandDataType::Float),
-      .offsets =
-        {Inst.m_TexelOffset[0], Inst.m_TexelOffset[1], Inst.m_TexelOffset[2]},
-      .min_lod_clamp = {},
-      .feedback = {},
-      .level_zero = Inst.m_OpCode == microsoft::D3D10_SB_OPCODE_SAMPLE_C_LZ,
+        .dst = readDstOperand(Inst.m_Operands[0], phase, OperandDataType::Float),
+        .src_address = readSrcOperand(Inst.m_Operands[1 + sparse], phase, OperandDataType::Float),
+        .src_resource = readSrcOperandResource(Inst.m_Operands[2 + sparse], phase),
+        .src_sampler = readSrcOperandSampler(Inst.m_Operands[3 + sparse], phase),
+        .src_reference = readSrcOperand(Inst.m_Operands[4 + sparse], phase, OperandDataType::Float),
+        .offsets = {Inst.m_TexelOffset[0], Inst.m_TexelOffset[1], Inst.m_TexelOffset[2]},
+        .min_lod_clamp = (sparse_clamp && Inst.m_Operands[5 + sparse].OperandType() != microsoft::D3D10_SB_OPERAND_TYPE_NULL)
+                             ? readSrcOperand(Inst.m_Operands[5 + sparse], phase, OperandDataType::Float)
+                             : std::optional<SrcOperand>(),
+        .feedback = sparse ? readDstOperand(Inst.m_Operands[sparse], phase, OperandDataType::Integer)
+                           : std::optional<DstOperand>(),
+        .level_zero = level_zero,
     };
     shader_info.srvMap[inst.src_resource.range_id].compared = true;
     return inst;
   };
-  case microsoft::D3D10_1_SB_OPCODE_GATHER4: {
-    auto src_resource = readSrcOperandResource(Inst.m_Operands[2], phase);
+  case microsoft::D3D10_1_SB_OPCODE_GATHER4:
+  case microsoft::D3DWDDM1_3_SB_OPCODE_GATHER4_FEEDBACK: {
+    bool sparse = Inst.m_OpCode == microsoft::D3DWDDM1_3_SB_OPCODE_GATHER4_FEEDBACK;
+    auto src_resource = readSrcOperandResource(Inst.m_Operands[2 + sparse], phase);
     auto sample_type = shader_info.srvMap[src_resource.range_id].scaler_type;
     auto inst = InstGather{
       .dst = readDstOperand(
@@ -682,38 +713,44 @@ Instruction readInstruction(
           ? OperandDataType::Integer
           : OperandDataType::Float
       ),
-      .src_address = readSrcOperand(Inst.m_Operands[1], phase, OperandDataType::Float),
+      .src_address = readSrcOperand(Inst.m_Operands[1 + sparse], phase, OperandDataType::Float),
       .src_resource = src_resource,
-      .src_sampler = readSrcOperandSampler(Inst.m_Operands[3], phase),
+      .src_sampler = readSrcOperandSampler(Inst.m_Operands[3 + sparse], phase),
       .offset =
         SrcOperandImmediate32{
           ._ = {swizzle_identity, false, false, OperandDataType::Integer},
           .ivalue = {Inst.m_TexelOffset[0], Inst.m_TexelOffset[1], 0, 0},
         },
-      .feedback = {},
+      .feedback = sparse ? readDstOperand(Inst.m_Operands[sparse], phase, OperandDataType::Integer)
+                         : std::optional<DstOperand>(),
     };
     shader_info.srvMap[src_resource.range_id].sampled = true;
     return inst;
   };
-  case microsoft::D3D11_SB_OPCODE_GATHER4_C: {
+  case microsoft::D3D11_SB_OPCODE_GATHER4_C:
+  case microsoft::D3DWDDM1_3_SB_OPCODE_GATHER4_C_FEEDBACK: {
+    bool sparse = Inst.m_OpCode == microsoft::D3DWDDM1_3_SB_OPCODE_GATHER4_C_FEEDBACK;
     auto inst = InstGatherCompare{
       .dst = readDstOperand(Inst.m_Operands[0], phase, OperandDataType::Float),
-      .src_address = readSrcOperand(Inst.m_Operands[1], phase, OperandDataType::Float),
-      .src_resource = readSrcOperandResource(Inst.m_Operands[2], phase),
-      .src_sampler = readSrcOperandSampler(Inst.m_Operands[3], phase),
-      .src_reference = readSrcOperand(Inst.m_Operands[4], phase, OperandDataType::Float),
+      .src_address = readSrcOperand(Inst.m_Operands[1 + sparse], phase, OperandDataType::Float),
+      .src_resource = readSrcOperandResource(Inst.m_Operands[2 + sparse], phase),
+      .src_sampler = readSrcOperandSampler(Inst.m_Operands[3 + sparse], phase),
+      .src_reference = readSrcOperand(Inst.m_Operands[4 + sparse], phase, OperandDataType::Float),
       .offset =
         SrcOperandImmediate32{
           ._ = {swizzle_identity, false, false, OperandDataType::Integer},
           .ivalue = {Inst.m_TexelOffset[0], Inst.m_TexelOffset[1], 0, 0},
         },
-      .feedback = {},
+      .feedback = sparse ? readDstOperand(Inst.m_Operands[sparse], phase, OperandDataType::Integer)
+                         : std::optional<DstOperand>(),
     };
     shader_info.srvMap[inst.src_resource.range_id].compared = true;
     return inst;
   };
-  case microsoft::D3D11_SB_OPCODE_GATHER4_PO: {
-    auto src_resource = readSrcOperandResource(Inst.m_Operands[3], phase);
+  case microsoft::D3D11_SB_OPCODE_GATHER4_PO:
+  case microsoft::D3DWDDM1_3_SB_OPCODE_GATHER4_PO_FEEDBACK: {
+    bool sparse = Inst.m_OpCode == microsoft::D3DWDDM1_3_SB_OPCODE_GATHER4_PO_FEEDBACK;
+    auto src_resource = readSrcOperandResource(Inst.m_Operands[3 + sparse], phase);
     auto sample_type = shader_info.srvMap[src_resource.range_id].scaler_type;
     auto inst = InstGather{
       .dst = readDstOperand(
@@ -724,24 +761,28 @@ Instruction readInstruction(
           ? OperandDataType::Integer
           : OperandDataType::Float
       ),
-      .src_address = readSrcOperand(Inst.m_Operands[1], phase, OperandDataType::Float),
+      .src_address = readSrcOperand(Inst.m_Operands[1 + sparse], phase, OperandDataType::Float),
       .src_resource = src_resource,
-      .src_sampler = readSrcOperandSampler(Inst.m_Operands[4], phase),
-      .offset = readSrcOperand(Inst.m_Operands[2], phase, OperandDataType::Integer),
-      .feedback = {},
+      .src_sampler = readSrcOperandSampler(Inst.m_Operands[4 + sparse], phase),
+      .offset = readSrcOperand(Inst.m_Operands[2 + sparse], phase, OperandDataType::Integer),
+      .feedback = sparse ? readDstOperand(Inst.m_Operands[sparse], phase, OperandDataType::Integer)
+                         : std::optional<DstOperand>(),
     };
     shader_info.srvMap[src_resource.range_id].sampled = true;
     return inst;
   };
-  case microsoft::D3D11_SB_OPCODE_GATHER4_PO_C: {
+  case microsoft::D3D11_SB_OPCODE_GATHER4_PO_C:
+  case microsoft::D3DWDDM1_3_SB_OPCODE_GATHER4_PO_C_FEEDBACK: {
+    bool sparse = Inst.m_OpCode == microsoft::D3DWDDM1_3_SB_OPCODE_GATHER4_PO_C_FEEDBACK;
     auto inst = InstGatherCompare{
       .dst = readDstOperand(Inst.m_Operands[0], phase, OperandDataType::Float),
-      .src_address = readSrcOperand(Inst.m_Operands[1], phase, OperandDataType::Float),
-      .src_resource = readSrcOperandResource(Inst.m_Operands[3], phase),
-      .src_sampler = readSrcOperandSampler(Inst.m_Operands[4], phase),
-      .src_reference = readSrcOperand(Inst.m_Operands[5], phase, OperandDataType::Float),
-      .offset = readSrcOperand(Inst.m_Operands[2], phase, OperandDataType::Integer),
-      .feedback = {},
+      .src_address = readSrcOperand(Inst.m_Operands[1 + sparse], phase, OperandDataType::Float),
+      .src_resource = readSrcOperandResource(Inst.m_Operands[3 + sparse], phase),
+      .src_sampler = readSrcOperandSampler(Inst.m_Operands[4 + sparse], phase),
+      .src_reference = readSrcOperand(Inst.m_Operands[5 + sparse], phase, OperandDataType::Float),
+      .offset = readSrcOperand(Inst.m_Operands[2 + sparse], phase, OperandDataType::Integer),
+      .feedback = sparse ? readDstOperand(Inst.m_Operands[sparse], phase, OperandDataType::Integer)
+                         : std::optional<DstOperand>(),
     };
     shader_info.srvMap[inst.src_resource.range_id].compared = true;
     return inst;
