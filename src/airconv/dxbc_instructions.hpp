@@ -353,6 +353,8 @@ struct InstSampleBias {
   SrcOperandSampler src_sampler;
   SrcOperand src_bias;
   int32_t offsets[3];
+  std::optional<SrcOperand> min_lod_clamp;
+  std::optional<DstOperand> feedback;
 };
 
 struct InstSampleDerivative {
@@ -363,6 +365,8 @@ struct InstSampleDerivative {
   SrcOperand src_x_derivative;
   SrcOperand src_y_derivative;
   int32_t offsets[3];
+  std::optional<SrcOperand> min_lod_clamp;
+  std::optional<DstOperand> feedback;
 };
 
 struct InstSampleLOD {
@@ -372,6 +376,7 @@ struct InstSampleLOD {
   SrcOperandSampler src_sampler;
   SrcOperand src_lod;
   int32_t offsets[3];
+  std::optional<DstOperand> feedback;
 };
 
 struct InstGather {
