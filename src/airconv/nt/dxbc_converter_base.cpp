@@ -515,6 +515,26 @@ Converter::LoadTexture(const AtomicDstOperandUAV &DstOp) {
   );
 }
 
+llvm::Optional<SamplerHandle>
+Converter::LoadSampler(const SrcOperandSampler &SrcOp) {
+  using namespace llvm::air;
+
+  auto &[sampler_handle_fn, sampler_cube_fn, sampler_metadata] = ctx.resource.sampler_range_map[SrcOp.range_id];
+  auto smp = sampler_handle_fn(nullptr).build(ctx);
+  if (smp.takeError())
+    return {};
+  auto smpcube = sampler_cube_fn(nullptr).build(ctx);
+  if (smpcube.takeError())
+    return {};
+  auto md = sampler_metadata(nullptr).build(ctx);
+  if (md.takeError())
+    return {};
+
+  auto Bias = ir.CreateBitCast(ir.CreateTrunc(md.get(), ctx.types._int), ctx.types._float);
+
+  return llvm::Optional<SamplerHandle>({smp.get(), smpcube.get(), Bias});
+}
+
 void
 Converter::StoreOperand(const DstOperandOutput &DstOp, llvm::Value *Value) {
   if (ctx.shader_type == microsoft::D3D11_SB_HULL_SHADER && DstOp.phase == ~0u)
@@ -1422,6 +1442,648 @@ Converter::operator()(const InstStoreUAVTyped &store) {
   auto Value = LoadOperand(store.src, kMaskAll);
 
   air.CreateWrite(Tex->Texture, Tex->Handle, Address, ArrayIndex, nullptr, ir.getInt32(0), Value);
+}
+
+llvm::Value *
+Converter::ClampArrayIndex(llvm::Value *ShaderValue, llvm::Value *Metadata) {
+  using namespace llvm::air;
+  auto rounded = air.CreateFPUnOp(AIRBuilder::rint, ShaderValue);
+  auto integer = air.CreateConvertToSigned(rounded);
+  auto positive_integer = air.CreateIntBinOp(AIRBuilder::max, integer, ir.getInt32(0), true);
+  auto max_index = ir.CreateSub(DecodeTextureArrayLength(Metadata), ir.getInt32(1));
+  return air.CreateIntBinOp(AIRBuilder::min, positive_integer, max_index, true);
+}
+
+void
+Converter::operator()(const InstSample &sample) {
+  using namespace llvm::air;
+
+  auto Tex = LoadTexture(sample.src_resource);
+  if (!Tex)
+    return;
+
+  auto Sampler = LoadSampler(sample.src_sampler);
+  if (!Sampler)
+    return;
+
+  auto SamplerHandle = Sampler->Handle;
+
+  auto MinLODClamp = DecodeTextureMinLODClamp(Tex->Metadata);
+  if (sample.min_lod_clamp) {
+    auto ShaderClamp = LoadOperand(sample.min_lod_clamp.value(), kMaskComponentX);
+    MinLODClamp = air.CreateFPBinOp(AIRBuilder::fmax, MinLODClamp, ShaderClamp);
+  }
+
+  llvm::Value *Coord = nullptr;
+  llvm::Value *ArrayIndex = nullptr;
+
+  switch (Tex->Logical) {
+  case Texture::texture1d:
+    Coord = LoadOperand(sample.src_address, kMaskComponentX);
+    Coord = ir.CreateInsertElement(llvm::ConstantFP::getNullValue(air.getFloatTy(2)), Coord, 0ull);
+    break;
+  case Texture::texture1d_array:
+    Coord = LoadOperand(sample.src_address, kMaskComponentX);
+    Coord = ir.CreateInsertElement(llvm::ConstantFP::getNullValue(air.getFloatTy(2)), Coord, 0ull);
+    ArrayIndex = LoadOperand(sample.src_address, kMaskComponentY);
+    ArrayIndex = ClampArrayIndex(ArrayIndex, Tex->Metadata);
+    break;
+  case Texture::depth2d:
+  case Texture::texture2d:
+    Coord = LoadOperand(sample.src_address, kMaskVecXY);
+    break;
+  case Texture::depth2d_array:
+  case Texture::texture2d_array:
+    Coord = LoadOperand(sample.src_address, kMaskVecXY);
+    ArrayIndex = LoadOperand(sample.src_address, kMaskComponentZ);
+    ArrayIndex = ClampArrayIndex(ArrayIndex, Tex->Metadata);
+    break;
+  case Texture::texture3d:
+    Coord = LoadOperand(sample.src_address, kMaskVecXYZ);
+    break;
+  case Texture::texturecube:
+  case Texture::depthcube:
+    Coord = LoadOperand(sample.src_address, kMaskVecXYZ);
+    SamplerHandle = Sampler->HandleCube;
+    break;
+  case Texture::texturecube_array:
+  case Texture::depthcube_array:
+    Coord = LoadOperand(sample.src_address, kMaskVecXYZ);
+    ArrayIndex = LoadOperand(sample.src_address, kMaskComponentW);
+    ArrayIndex = ClampArrayIndex(ArrayIndex, Tex->Metadata);
+    SamplerHandle = Sampler->HandleCube;
+    break;
+  default:
+    return;
+  }
+
+  auto [Value, Residency] = air.CreateSample(
+      Tex->Texture, Tex->Handle, SamplerHandle, Coord, ArrayIndex, sample.offsets, sample_bias{Sampler->Bias},
+      sample_min_lod_clamp{MinLODClamp}
+  );
+
+  StoreOperand(sample.dst, MaskSwizzle(Value, GetMask(sample.dst), Tex->Swizzle));
+}
+
+void
+Converter::operator()(const InstSampleLOD &sample) {
+  using namespace llvm::air;
+
+  auto Tex = LoadTexture(sample.src_resource);
+  if (!Tex)
+    return;
+
+  auto Sampler = LoadSampler(sample.src_sampler);
+  if (!Sampler)
+    return;
+
+  auto SamplerHandle = Sampler->Handle;
+
+  llvm::Value *Coord = nullptr;
+  llvm::Value *ArrayIndex = nullptr;
+
+  switch (Tex->Logical) {
+  case Texture::texture1d:
+    Coord = LoadOperand(sample.src_address, kMaskComponentX);
+    Coord = ir.CreateInsertElement(llvm::ConstantFP::getNullValue(air.getFloatTy(2)), Coord, 0ull);
+    break;
+  case Texture::texture1d_array:
+    Coord = LoadOperand(sample.src_address, kMaskComponentX);
+    Coord = ir.CreateInsertElement(llvm::ConstantFP::getNullValue(air.getFloatTy(2)), Coord, 0ull);
+    ArrayIndex = LoadOperand(sample.src_address, kMaskComponentY);
+    ArrayIndex = ClampArrayIndex(ArrayIndex, Tex->Metadata);
+    break;
+  case Texture::depth2d:
+  case Texture::texture2d:
+    Coord = LoadOperand(sample.src_address, kMaskVecXY);
+    break;
+  case Texture::depth2d_array:
+  case Texture::texture2d_array:
+    Coord = LoadOperand(sample.src_address, kMaskVecXY);
+    ArrayIndex = LoadOperand(sample.src_address, kMaskComponentZ);
+    ArrayIndex = ClampArrayIndex(ArrayIndex, Tex->Metadata);
+    break;
+  case Texture::texture3d:
+    Coord = LoadOperand(sample.src_address, kMaskVecXYZ);
+    break;
+  case Texture::texturecube:
+  case Texture::depthcube:
+    Coord = LoadOperand(sample.src_address, kMaskVecXYZ);
+    SamplerHandle = Sampler->HandleCube;
+    break;
+  case Texture::texturecube_array:
+  case Texture::depthcube_array:
+    Coord = LoadOperand(sample.src_address, kMaskVecXYZ);
+    ArrayIndex = LoadOperand(sample.src_address, kMaskComponentW);
+    ArrayIndex = ClampArrayIndex(ArrayIndex, Tex->Metadata);
+    SamplerHandle = Sampler->HandleCube;
+    break;
+  default:
+    return;
+  }
+
+  llvm::Value *LOD = LoadOperand(sample.src_lod, kMaskComponentX);
+
+  auto [Value, Residency] =
+      air.CreateSample(Tex->Texture, Tex->Handle, SamplerHandle, Coord, ArrayIndex, sample.offsets, sample_level{LOD});
+
+  StoreOperand(sample.dst, MaskSwizzle(Value, GetMask(sample.dst), Tex->Swizzle));
+}
+
+void
+Converter::operator()(const InstSampleBias &sample) {
+  using namespace llvm::air;
+
+  auto Tex = LoadTexture(sample.src_resource);
+  if (!Tex)
+    return;
+
+  auto Sampler = LoadSampler(sample.src_sampler);
+  if (!Sampler)
+    return;
+
+  auto SamplerHandle = Sampler->Handle;
+
+  auto MinLODClamp = DecodeTextureMinLODClamp(Tex->Metadata);
+  if (sample.min_lod_clamp) {
+    auto ShaderClamp = LoadOperand(sample.min_lod_clamp.value(), kMaskComponentX);
+    MinLODClamp = air.CreateFPBinOp(AIRBuilder::fmax, MinLODClamp, ShaderClamp);
+  }
+
+  llvm::Value *Coord = nullptr;
+  llvm::Value *ArrayIndex = nullptr;
+
+  switch (Tex->Logical) {
+  case Texture::texture1d:
+    Coord = LoadOperand(sample.src_address, kMaskComponentX);
+    Coord = ir.CreateInsertElement(llvm::ConstantFP::getNullValue(air.getFloatTy(2)), Coord, 0ull);
+    break;
+  case Texture::texture1d_array:
+    Coord = LoadOperand(sample.src_address, kMaskComponentX);
+    Coord = ir.CreateInsertElement(llvm::ConstantFP::getNullValue(air.getFloatTy(2)), Coord, 0ull);
+    ArrayIndex = LoadOperand(sample.src_address, kMaskComponentY);
+    ArrayIndex = ClampArrayIndex(ArrayIndex, Tex->Metadata);
+    break;
+  case Texture::depth2d:
+  case Texture::texture2d:
+    Coord = LoadOperand(sample.src_address, kMaskVecXY);
+    break;
+  case Texture::depth2d_array:
+  case Texture::texture2d_array:
+    Coord = LoadOperand(sample.src_address, kMaskVecXY);
+    ArrayIndex = LoadOperand(sample.src_address, kMaskComponentZ);
+    ArrayIndex = ClampArrayIndex(ArrayIndex, Tex->Metadata);
+    break;
+  case Texture::texture3d:
+    Coord = LoadOperand(sample.src_address, kMaskVecXYZ);
+    break;
+  case Texture::texturecube:
+  case Texture::depthcube:
+    Coord = LoadOperand(sample.src_address, kMaskVecXYZ);
+    SamplerHandle = Sampler->HandleCube;
+    break;
+  case Texture::texturecube_array:
+  case Texture::depthcube_array:
+    Coord = LoadOperand(sample.src_address, kMaskVecXYZ);
+    ArrayIndex = LoadOperand(sample.src_address, kMaskComponentW);
+    ArrayIndex = ClampArrayIndex(ArrayIndex, Tex->Metadata);
+    SamplerHandle = Sampler->HandleCube;
+    break;
+  default:
+    return;
+  }
+
+  auto Bias = ir.CreateFAdd(Sampler->Bias, LoadOperand(sample.src_bias, kMaskComponentX));
+
+  auto [Value, Residency] = air.CreateSample(
+      Tex->Texture, Tex->Handle, SamplerHandle, Coord, ArrayIndex, sample.offsets, sample_bias{Bias},
+      sample_min_lod_clamp{MinLODClamp}
+  );
+
+  StoreOperand(sample.dst, MaskSwizzle(Value, GetMask(sample.dst), Tex->Swizzle));
+}
+
+void
+Converter::operator()(const InstSampleDerivative &sample) {
+  using namespace llvm::air;
+
+  auto Tex = LoadTexture(sample.src_resource);
+  if (!Tex)
+    return;
+
+  auto Sampler = LoadSampler(sample.src_sampler);
+  if (!Sampler)
+    return;
+
+  auto SamplerHandle = Sampler->Handle;
+
+  auto MinLODClamp = DecodeTextureMinLODClamp(Tex->Metadata);
+  if (sample.min_lod_clamp) {
+    auto ShaderClamp = LoadOperand(sample.min_lod_clamp.value(), kMaskComponentX);
+    MinLODClamp = air.CreateFPBinOp(AIRBuilder::fmax, MinLODClamp, ShaderClamp);
+  }
+
+  llvm::Value *Coord = nullptr;
+  llvm::Value *ArrayIndex = nullptr;
+  llvm::Value *DDX = nullptr;
+  llvm::Value *DDY = nullptr;
+
+  switch (Tex->Logical) {
+  case Texture::texture1d:
+    Coord = LoadOperand(sample.src_address, kMaskComponentX);
+    Coord = ir.CreateInsertElement(llvm::ConstantFP::getNullValue(air.getFloatTy(2)), Coord, 0ull);
+    DDX = LoadOperand(sample.src_x_derivative, kMaskComponentX);
+    DDX = ir.CreateInsertElement(llvm::ConstantFP::getNullValue(air.getFloatTy(2)), DDX, 0ull);
+    DDY = LoadOperand(sample.src_y_derivative, kMaskComponentX);
+    DDY = ir.CreateInsertElement(llvm::ConstantFP::getNullValue(air.getFloatTy(2)), DDY, 0ull);
+    break;
+  case Texture::texture1d_array:
+    Coord = LoadOperand(sample.src_address, kMaskComponentX);
+    Coord = ir.CreateInsertElement(llvm::ConstantFP::getNullValue(air.getFloatTy(2)), Coord, 0ull);
+    DDX = LoadOperand(sample.src_x_derivative, kMaskComponentX);
+    DDX = ir.CreateInsertElement(llvm::ConstantFP::getNullValue(air.getFloatTy(2)), DDX, 0ull);
+    DDY = LoadOperand(sample.src_y_derivative, kMaskComponentX);
+    DDY = ir.CreateInsertElement(llvm::ConstantFP::getNullValue(air.getFloatTy(2)), DDY, 0ull);
+    ArrayIndex = LoadOperand(sample.src_address, kMaskComponentY);
+    ArrayIndex = ClampArrayIndex(ArrayIndex, Tex->Metadata);
+    break;
+  case Texture::depth2d:
+  case Texture::texture2d:
+    Coord = LoadOperand(sample.src_address, kMaskVecXY);
+    DDX = LoadOperand(sample.src_x_derivative, kMaskVecXY);
+    DDY = LoadOperand(sample.src_y_derivative, kMaskVecXY);
+    break;
+  case Texture::depth2d_array:
+  case Texture::texture2d_array:
+    Coord = LoadOperand(sample.src_address, kMaskVecXY);
+    DDX = LoadOperand(sample.src_x_derivative, kMaskVecXY);
+    DDY = LoadOperand(sample.src_y_derivative, kMaskVecXY);
+    ArrayIndex = LoadOperand(sample.src_address, kMaskComponentZ);
+    ArrayIndex = ClampArrayIndex(ArrayIndex, Tex->Metadata);
+    break;
+  case Texture::texture3d:
+    Coord = LoadOperand(sample.src_address, kMaskVecXYZ);
+    DDX = LoadOperand(sample.src_x_derivative, kMaskVecXYZ);
+    DDY = LoadOperand(sample.src_y_derivative, kMaskVecXYZ);
+    break;
+  case Texture::texturecube:
+  case Texture::depthcube:
+    Coord = LoadOperand(sample.src_address, kMaskVecXYZ);
+    DDX = LoadOperand(sample.src_x_derivative, kMaskVecXYZ);
+    DDY = LoadOperand(sample.src_y_derivative, kMaskVecXYZ);
+    SamplerHandle = Sampler->HandleCube;
+    break;
+  case Texture::texturecube_array:
+  case Texture::depthcube_array:
+    Coord = LoadOperand(sample.src_address, kMaskVecXYZ);
+    DDX = LoadOperand(sample.src_x_derivative, kMaskVecXYZ);
+    DDY = LoadOperand(sample.src_y_derivative, kMaskVecXYZ);
+    ArrayIndex = LoadOperand(sample.src_address, kMaskComponentW);
+    ArrayIndex = ClampArrayIndex(ArrayIndex, Tex->Metadata);
+    SamplerHandle = Sampler->HandleCube;
+    break;
+  default:
+    return;
+  }
+
+  auto [Value, Residency] = air.CreateSampleGrad(
+      Tex->Texture, Tex->Handle, SamplerHandle, Coord, ArrayIndex, DDX, DDY, MinLODClamp, sample.offsets
+  );
+
+  StoreOperand(sample.dst, MaskSwizzle(Value, GetMask(sample.dst), Tex->Swizzle));
+}
+
+void
+Converter::operator()(const InstSampleCompare &sample) {
+  using namespace llvm::air;
+
+  auto Tex = LoadTexture(sample.src_resource);
+  if (!Tex)
+    return;
+
+  auto Sampler = LoadSampler(sample.src_sampler);
+  if (!Sampler)
+    return;
+
+  auto SamplerHandle = Sampler->Handle;
+
+  auto MinLODClamp = DecodeTextureMinLODClamp(Tex->Metadata);
+  if (sample.min_lod_clamp) {
+    auto ShaderClamp = LoadOperand(sample.min_lod_clamp.value(), kMaskComponentX);
+    MinLODClamp = air.CreateFPBinOp(AIRBuilder::fmax, MinLODClamp, ShaderClamp);
+  }
+
+  auto Reference = LoadOperand(sample.src_reference, kMaskComponentX);
+
+  llvm::Value *Coord = nullptr;
+  llvm::Value *ArrayIndex = nullptr;
+
+  switch (Tex->Logical) {
+  case Texture::depth2d:
+    Coord = LoadOperand(sample.src_address, kMaskVecXY);
+    break;
+  case Texture::depth2d_array:
+    Coord = LoadOperand(sample.src_address, kMaskVecXY);
+    ArrayIndex = LoadOperand(sample.src_address, kMaskComponentZ);
+    ArrayIndex = ClampArrayIndex(ArrayIndex, Tex->Metadata);
+    break;
+  case Texture::texture3d:
+    Coord = LoadOperand(sample.src_address, kMaskVecXYZ);
+    break;
+  case Texture::depthcube:
+    Coord = LoadOperand(sample.src_address, kMaskVecXYZ);
+    SamplerHandle = Sampler->HandleCube;
+    break;
+  case Texture::depthcube_array:
+    Coord = LoadOperand(sample.src_address, kMaskVecXYZ);
+    ArrayIndex = LoadOperand(sample.src_address, kMaskComponentW);
+    ArrayIndex = ClampArrayIndex(ArrayIndex, Tex->Metadata);
+    SamplerHandle = Sampler->HandleCube;
+    break;
+  default:
+    return;
+  }
+
+  auto [Value, Residency] = //
+      sample.level_zero     //
+          ? air.CreateSampleCmp(
+                Tex->Texture, Tex->Handle, SamplerHandle, Coord, ArrayIndex, Reference, sample.offsets,
+                sample_level{air.getFloat(0)}
+            )
+          : air.CreateSampleCmp(
+                Tex->Texture, Tex->Handle, SamplerHandle, Coord, ArrayIndex, Reference, sample.offsets,
+                sample_bias{Sampler->Bias}, sample_min_lod_clamp{MinLODClamp}
+            );
+
+  StoreOperand(sample.dst, MaskSwizzle(Value, GetMask(sample.dst), Tex->Swizzle));
+}
+
+void
+Converter::operator()(const InstGather &sample) {
+  using namespace llvm::air;
+
+  auto Tex = LoadTexture(sample.src_resource);
+  if (!Tex)
+    return;
+
+  auto Sampler = LoadSampler(sample.src_sampler);
+  if (!Sampler)
+    return;
+
+  auto SamplerHandle = Sampler->Handle;
+
+  auto Component = ir.getInt32(sample.src_sampler.gather_channel);
+
+  llvm::Value *Coord = nullptr;
+  llvm::Value *ArrayIndex = nullptr;
+  llvm::Value *Offset = nullptr;
+
+  switch (Tex->Logical) {
+  case Texture::depth2d:
+  case Texture::texture2d:
+    Coord = LoadOperand(sample.src_address, kMaskVecXY);
+    Offset = LoadOperand(sample.offset, kMaskVecXY);
+    break;
+  case Texture::depth2d_array:
+  case Texture::texture2d_array:
+    Coord = LoadOperand(sample.src_address, kMaskVecXY);
+    ArrayIndex = LoadOperand(sample.src_address, kMaskComponentZ);
+    ArrayIndex = ClampArrayIndex(ArrayIndex, Tex->Metadata);
+    Offset = LoadOperand(sample.offset, kMaskVecXY);
+    break;
+  case Texture::texturecube:
+  case Texture::depthcube:
+    Coord = LoadOperand(sample.src_address, kMaskVecXYZ);
+    SamplerHandle = Sampler->HandleCube;
+    Offset = LoadOperand(sample.offset, kMaskVecXYZ);
+    break;
+  case Texture::texturecube_array:
+  case Texture::depthcube_array:
+    Coord = LoadOperand(sample.src_address, kMaskVecXYZ);
+    ArrayIndex = LoadOperand(sample.src_address, kMaskComponentW);
+    ArrayIndex = ClampArrayIndex(ArrayIndex, Tex->Metadata);
+    SamplerHandle = Sampler->HandleCube;
+    Offset = LoadOperand(sample.offset, kMaskVecXYZ);
+    break;
+  default:
+    return;
+  }
+
+  auto [Value, Residency] =
+      air.CreateGather(Tex->Texture, Tex->Handle, SamplerHandle, Coord, ArrayIndex, Offset, Component);
+
+  StoreOperand(sample.dst, MaskSwizzle(Value, GetMask(sample.dst), Tex->Swizzle));
+}
+
+void
+Converter::operator()(const InstGatherCompare &sample) {
+  using namespace llvm::air;
+
+  auto Tex = LoadTexture(sample.src_resource);
+  if (!Tex)
+    return;
+
+  auto Sampler = LoadSampler(sample.src_sampler);
+  if (!Sampler)
+    return;
+
+  auto SamplerHandle = Sampler->Handle;
+
+  auto Reference = LoadOperand(sample.src_reference, kMaskComponentX);
+
+  llvm::Value *Coord = nullptr;
+  llvm::Value *ArrayIndex = nullptr;
+  llvm::Value *Offset = nullptr;
+
+  switch (Tex->Logical) {
+  case Texture::depth2d:
+    Coord = LoadOperand(sample.src_address, kMaskVecXY);
+    Offset = LoadOperand(sample.offset, kMaskVecXY);
+    break;
+  case Texture::depth2d_array:
+    Coord = LoadOperand(sample.src_address, kMaskVecXY);
+    ArrayIndex = LoadOperand(sample.src_address, kMaskComponentZ);
+    ArrayIndex = ClampArrayIndex(ArrayIndex, Tex->Metadata);
+    Offset = LoadOperand(sample.offset, kMaskVecXY);
+    break;
+  case Texture::depthcube:
+    Coord = LoadOperand(sample.src_address, kMaskVecXYZ);
+    SamplerHandle = Sampler->HandleCube;
+    Offset = LoadOperand(sample.offset, kMaskVecXYZ);
+    break;
+  case Texture::depthcube_array:
+    Coord = LoadOperand(sample.src_address, kMaskVecXYZ);
+    ArrayIndex = LoadOperand(sample.src_address, kMaskComponentW);
+    ArrayIndex = ClampArrayIndex(ArrayIndex, Tex->Metadata);
+    SamplerHandle = Sampler->HandleCube;
+    Offset = LoadOperand(sample.offset, kMaskVecXYZ);
+    break;
+  default:
+    return;
+  }
+
+  auto [Value, Residency] =
+      air.CreateGatherCompare(Tex->Texture, Tex->Handle, SamplerHandle, Coord, ArrayIndex, Reference, Offset);
+
+  StoreOperand(sample.dst, MaskSwizzle(Value, GetMask(sample.dst), Tex->Swizzle));
+}
+
+void
+Converter::operator()(const InstCalcLOD &lod) {
+  using namespace llvm::air;
+
+  auto Tex = LoadTexture(lod.src_resource);
+  if (!Tex)
+    return;
+
+  auto Sampler = LoadSampler(lod.src_sampler);
+  if (!Sampler)
+    return;
+
+  auto SamplerHandle = Sampler->Handle;
+
+  auto MinLODClamp = DecodeTextureMinLODClamp(Tex->Metadata);
+
+  llvm::Value *Coord = nullptr;
+
+  switch (Tex->Logical) {
+  case Texture::texture1d:
+  case Texture::texture1d_array:
+    Coord = LoadOperand(lod.src_address, kMaskComponentX);
+    Coord = ir.CreateInsertElement(llvm::ConstantFP::getNullValue(air.getFloatTy(2)), Coord, 0ull);
+    break;
+  case Texture::depth2d:
+  case Texture::texture2d:
+  case Texture::depth2d_array:
+  case Texture::texture2d_array:
+    Coord = LoadOperand(lod.src_address, kMaskVecXY);
+    break;
+  case Texture::texture3d:
+    Coord = LoadOperand(lod.src_address, kMaskVecXYZ);
+    break;
+  case Texture::texturecube:
+  case Texture::depthcube:
+  case Texture::texturecube_array:
+  case Texture::depthcube_array:
+    Coord = LoadOperand(lod.src_address, kMaskVecXYZ);
+    SamplerHandle = Sampler->HandleCube;
+    break;
+  default:
+    return;
+  }
+
+  auto [Clamped, Unclamped] = air.CreateCalculateLOD(Tex->Texture, Tex->Handle, SamplerHandle, Coord);
+
+  Clamped = air.CreateFPBinOp(AIRBuilder::fmax, MinLODClamp, Clamped);
+
+  StoreOperand(
+      lod.dst,
+      MaskSwizzle(
+          ir.CreateInsertElement(
+              ir.CreateInsertElement(llvm::ConstantAggregateZero::get(air.getFloatTy(4)), Clamped, (uint64_t)0),
+              Unclamped, 1
+          ),
+          GetMask(lod.dst), Tex->Swizzle
+      )
+  );
+}
+
+void
+Converter::operator()(const InstResourceInfo &resinfo) {
+  using namespace llvm::air;
+
+  auto Tex = LoadTexture(resinfo.src_resource);
+  if (!Tex)
+    return;
+
+  llvm::Value *Level = LoadOperand(resinfo.src_mip_level, kMaskComponentX);
+
+  llvm::Value *X = ir.getInt32(0);
+  llvm::Value *Y = ir.getInt32(0);
+  llvm::Value *Z = ir.getInt32(0);
+
+  switch (Tex->Logical) {
+  case Texture::texture1d:
+    X = air.CreateTextureQuery(Tex->Texture, Tex->Handle, Texture::width, Level);
+    break;
+  case Texture::texture1d_array:
+    X = air.CreateTextureQuery(Tex->Texture, Tex->Handle, Texture::width, Level);
+    Y = air.CreateTextureQuery(Tex->Texture, Tex->Handle, Texture::array_length, ir.getInt32(0));
+    break;
+  case Texture::depth2d:
+  case Texture::texture2d:
+  case Texture::texturecube:
+  case Texture::depthcube:
+  case Texture::depth_2d_ms:
+  case Texture::texture2d_ms:
+    X = air.CreateTextureQuery(Tex->Texture, Tex->Handle, Texture::width, Level);
+    Y = air.CreateTextureQuery(Tex->Texture, Tex->Handle, Texture::height, Level);
+    break;
+  case Texture::depth2d_array:
+  case Texture::texture2d_array:
+  case Texture::texturecube_array:
+  case Texture::depthcube_array:
+  case Texture::depth_2d_ms_array:
+  case Texture::texture2d_ms_array:
+    X = air.CreateTextureQuery(Tex->Texture, Tex->Handle, Texture::width, Level);
+    Y = air.CreateTextureQuery(Tex->Texture, Tex->Handle, Texture::height, Level);
+    Z = air.CreateTextureQuery(Tex->Texture, Tex->Handle, Texture::array_length, ir.getInt32(0));
+    break;
+  case Texture::texture3d:
+    X = air.CreateTextureQuery(Tex->Texture, Tex->Handle, Texture::width, Level);
+    Y = air.CreateTextureQuery(Tex->Texture, Tex->Handle, Texture::height, Level);
+    Z = air.CreateTextureQuery(Tex->Texture, Tex->Handle, Texture::depth, Level);
+    break;
+  default:
+    return;
+  }
+
+  llvm::Value *MipCount = ir.getInt32(1);
+
+  switch (Tex->Logical) {
+  case llvm::air::Texture::texture_buffer:
+  case llvm::air::Texture::texture2d_ms:
+  case llvm::air::Texture::texture2d_ms_array:
+  case llvm::air::Texture::depth_2d_ms:
+  case llvm::air::Texture::depth_2d_ms_array:
+  case llvm::air::Texture::num_resource_kind:
+    break;
+  default:
+    MipCount = air.CreateTextureQuery(Tex->Texture, Tex->Handle, Texture::num_mip_levels, ir.getInt32(0));
+    break;
+  }
+
+  switch (resinfo.modifier) {
+  case InstResourceInfo::M::none: {
+    X = air.CreateConvertToFloat(X);
+    Y = air.CreateConvertToFloat(Y);
+    Z = air.CreateConvertToFloat(Z);
+    MipCount = air.CreateConvertToFloat(MipCount);
+    break;
+  }
+  case InstResourceInfo::M::rcp: {
+    X = air.CreateConvertToFloat(X);
+    Y = air.CreateConvertToFloat(Y);
+    Z = air.CreateConvertToFloat(Z);
+    X = ir.CreateFDiv(air.getFloat(1.0f), X);
+    Y = ir.CreateFDiv(air.getFloat(1.0f), Y);
+    Z = ir.CreateFDiv(air.getFloat(1.0f), Z);
+    MipCount = air.CreateConvertToFloat(MipCount);
+    break;
+  }
+  case InstResourceInfo::M::uint:
+    break;
+  }
+
+  llvm::Value *Value = llvm::ConstantAggregateZero::get(
+      resinfo.modifier == InstResourceInfo::M::uint ? air.getIntTy(4) : air.getFloatTy(4)
+  );
+  Value = ir.CreateInsertElement(Value, X, (uint64_t)0);
+  Value = ir.CreateInsertElement(Value, Y, 1);
+  Value = ir.CreateInsertElement(Value, Z, 2);
+  Value = ir.CreateInsertElement(Value, MipCount, 3);
+
+  StoreOperand(resinfo.dst, MaskSwizzle(Value, GetMask(resinfo.dst), Tex->Swizzle));
 }
 
 } // namespace dxmt::dxbc

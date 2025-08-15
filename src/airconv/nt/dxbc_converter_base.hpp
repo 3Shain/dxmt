@@ -1,5 +1,5 @@
 #pragma once
-
+#include "llvm/ADT/Optional.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Value.h"
 
@@ -30,6 +30,12 @@ struct TextureResourceHandle {
   llvm::Value *Handle;
   llvm::Value *Metadata;
   Swizzle Swizzle;
+};
+
+struct SamplerHandle {
+  llvm::Value *Handle;
+  llvm::Value *HandleCube;
+  llvm::Value *Bias;
 };
 
 class Converter {
@@ -75,6 +81,12 @@ public:
   llvm::Optional<TextureResourceHandle> LoadTexture(const SrcOperandResource &SrcOp);
   llvm::Optional<TextureResourceHandle> LoadTexture(const SrcOperandUAV &SrcOp);
   llvm::Optional<TextureResourceHandle> LoadTexture(const AtomicDstOperandUAV &DstOp);
+  llvm::Optional<TextureResourceHandle>
+  LoadTexture(const std::variant<SrcOperandResource, SrcOperandUAV> &SrcOp) {
+    return std::visit([this](auto &SrcOp) { return this->LoadTexture(SrcOp); }, SrcOp);
+  }
+
+  llvm::Optional<SamplerHandle> LoadSampler(const SrcOperandSampler &SrcOp);
 
   /* Store Operands */
 
@@ -168,6 +180,16 @@ public:
   void operator()(const InstLoad &);
   void operator()(const InstLoadUAVTyped &);
   void operator()(const InstStoreUAVTyped &);
+
+  void operator()(const InstSample &);
+  void operator()(const InstSampleLOD &);
+  void operator()(const InstSampleBias &);
+  void operator()(const InstSampleDerivative &);
+  void operator()(const InstSampleCompare &);
+  void operator()(const InstGather &);
+  void operator()(const InstGatherCompare &);
+  void operator()(const InstCalcLOD &);
+  void operator()(const InstResourceInfo &);
 
   /* Utils */
 
@@ -270,6 +292,18 @@ public:
   DecodeTextureBufferOffset(llvm::Value *Metadata) {
     return ir.CreateTrunc(Metadata, air.getIntTy());
   }
+
+  llvm::Value *
+  DecodeTextureMinLODClamp(llvm::Value *Metadata) {
+    return ir.CreateBitCast(ir.CreateTrunc(Metadata, air.getIntTy()), air.getFloatTy());
+  }
+
+  llvm::Value *
+  DecodeTextureArrayLength(llvm::Value *Metadata) {
+    return ir.CreateTrunc(ir.CreateLShr(Metadata, 32uLL), air.getIntTy());
+  }
+
+  llvm::Value *ClampArrayIndex(llvm::Value *ShaderValue, llvm::Value *Metadata);
 
 private:
   llvm::air::AIRBuilder &air;
