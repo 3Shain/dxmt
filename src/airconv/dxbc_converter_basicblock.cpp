@@ -55,14 +55,6 @@ ReaderIO<context, context> get_context() {
   return ReaderIO<context, context>([](struct context ctx) { return ctx; });
 };
 
-auto bitcast_float4(pvalue vec4) {
-  return make_irvalue([=](context s) {
-    if (vec4->getType() == s.types._float4)
-      return vec4;
-    return s.builder.CreateBitCast(vec4, s.types._float4);
-  });
-}
-
 auto bitcast_int4(pvalue vec4) {
   return make_irvalue([=](context s) {
     if (vec4->getType() == s.types._int4)
@@ -160,86 +152,8 @@ auto get_int3(uint32_t value0, uint32_t value1, uint32_t value2) -> IRValue {
   });
 };
 
-auto get_splat_constant(uint32_t value, uint32_t mask) -> IRValue {
-  assert(mask);
-  return make_irvalue([=](context ctx) -> pvalue {
-    switch (mask) {
-    case 0b1:
-    case 0b10:
-    case 0b100:
-    case 0b1000: {
-      return llvm::ConstantInt::get(ctx.llvm, llvm::APInt{32, value, true});
-    }
-    case 0b11:
-    case 0b110:
-    case 0b101:
-    case 0b1100:
-    case 0b1010:
-    case 0b1001: {
-      return llvm::ConstantVector::get(
-        {llvm::ConstantInt::get(ctx.llvm, llvm::APInt{32, value, true}),
-         llvm::ConstantInt::get(ctx.llvm, llvm::APInt{32, value, true})}
-      );
-    }
-    case 0b111:
-    case 0b1101:
-    case 0b1011:
-    case 0b1110: {
-      return llvm::ConstantVector::get(
-        {llvm::ConstantInt::get(ctx.llvm, llvm::APInt{32, value, true}),
-         llvm::ConstantInt::get(ctx.llvm, llvm::APInt{32, value, true}),
-         llvm::ConstantInt::get(ctx.llvm, llvm::APInt{32, value, true})}
-      );
-    }
-    default: {
-      return llvm::ConstantVector::get(
-        {llvm::ConstantInt::get(ctx.llvm, llvm::APInt{32, value, true}),
-         llvm::ConstantInt::get(ctx.llvm, llvm::APInt{32, value, true}),
-         llvm::ConstantInt::get(ctx.llvm, llvm::APInt{32, value, true}),
-         llvm::ConstantInt::get(ctx.llvm, llvm::APInt{32, value, true})}
-      );
-    }
-    }
-  });
-};
-
-auto get_splat_type(llvm::Type *scalar, uint32_t mask) -> llvm::Type * {
-  assert(mask);
-  switch (mask) {
-  case 0b1:
-  case 0b10:
-  case 0b100:
-  case 0b1000: {
-    return scalar;
-  }
-  case 0b11:
-  case 0b110:
-  case 0b101:
-  case 0b1100:
-  case 0b1010:
-  case 0b1001: {
-    return llvm::FixedVectorType::get(scalar, 2);
-  }
-  case 0b111:
-  case 0b1101:
-  case 0b1011:
-  case 0b1110: {
-    return llvm::FixedVectorType::get(scalar, 3);
-  }
-  default: {
-    return llvm::FixedVectorType::get(scalar, 4);
-  }
-  }
-};
-
 auto get_int(uint32_t value) -> IRValue {
   return make_irvalue([=](context ctx) { return ctx.builder.getInt32(value); });
-};
-
-auto get_float(float value) -> IRValue {
-  return make_irvalue([=](context ctx) {
-    return llvm::ConstantFP::get(ctx.llvm, llvm::APFloat{value});
-  });
 };
 
 auto get_float4_splat(float value) -> IRValue {
@@ -283,14 +197,6 @@ auto extract_element(uint32_t index) {
         return data_vec->getAggregateElement(index);
       };
       return ctx.builder.CreateExtractElement(vec, index);
-    });
-  };
-}
-
-auto extract_value(uint32_t index) {
-  return [=](pvalue aggregate) {
-    return make_irvalue([=](context ctx) {
-      return ctx.builder.CreateExtractValue(aggregate, {index});
     });
   };
 }
@@ -385,78 +291,12 @@ auto to_desired_type_from_int_vec4(pvalue vec4, llvm::Type *desired, uint32_t ma
   });
 };
 
-auto get_function_arg(uint32_t arg_index) {
-  return make_irvalue([=](context ctx) {
-    return ctx.function->getArg(arg_index);
-  });
-};
-
-auto get_shuffle_mask(uint32_t writeMask) {
-  // original value: 0 1 2 3
-  // new value: 4 5 6 7
-  // if writeMask at specific component is not set, use original value
-  std::array<int, 4> mask = {0, 1, 2, 3}; // identity selection
-  if (writeMask & 1) {
-    mask[0] = 4;
-  }
-  if (writeMask & 2) {
-    mask[1] = 5;
-  }
-  if (writeMask & 4) {
-    mask[2] = 6;
-  }
-  if (writeMask & 8) {
-    mask[3] = 7;
-  }
-  return mask;
-}
-
-/* it should return sign extended uint4 (all bits 0 or all bits 1) */
-auto cmp_integer(llvm::CmpInst::Predicate cmp, pvalue a, pvalue b) {
-  return make_irvalue([=](context ctx) {
-    return ctx.builder.CreateSExt(
-      ctx.builder.CreateICmp(cmp, a, b),
-      isa<llvm::FixedVectorType>(a->getType())
-        ? llvm::FixedVectorType::get(
-            ctx.types._int,
-            cast<llvm::FixedVectorType>(a->getType())->getNumElements()
-          )
-        : ctx.types._int
-    );
-  });
-};
-
 bool is_constant_zero(pvalue v) {
   if (llvm::isa<llvm::Constant>(v)) {
     return llvm::cast<llvm::Constant>(v)->isZeroValue();
   }
   return false;
 }
-
-/* it should return sign extended uint4 (all bits 0 or all bits 1) */
-auto cmp_float(llvm::CmpInst::Predicate cmp, pvalue a, pvalue b) {
-  return make_irvalue([=](context ctx) {
-    bool should_comparison_be_precise = is_constant_zero(a) || is_constant_zero(b);
-    pvalue comparison_result;
-    if (should_comparison_be_precise) {
-      bool previous_fastmath_state = ctx.builder.getFastMathFlags().isFast();
-      ctx.builder.getFastMathFlags().setFast(false);
-      comparison_result = ctx.builder.CreateFCmp(cmp, a, b);
-      ctx.builder.getFastMathFlags().setFast(previous_fastmath_state);
-    } else {
-      comparison_result = ctx.builder.CreateFCmp(cmp, a, b);
-    }
-    return ctx.builder.CreateSExt(
-      comparison_result,
-      isa<llvm::FixedVectorType>(a->getType())
-        ? llvm::FixedVectorType::get(
-            ctx.types._int,
-            cast<llvm::FixedVectorType>(a->getType())->getNumElements()
-          )
-        : ctx.types._int
-    );
-  });
-};
 
 auto load_from_array_at(llvm::Value *array, pvalue index) -> IRValue {
   return make_irvalue([=](context ctx) {
@@ -848,100 +688,10 @@ IREffect pull_vertex_input(
   });
 };
 
-auto saturate(bool sat) {
-  return [sat](pvalue floaty) -> IRValue {
-    if (sat) {
-      return air::call_float_unary_op("saturate", floaty);
-    } else {
-      return air::pure(floaty);
-    }
-  };
-}
-
 auto extend_to_int2(pvalue value) -> IRValue {
   return make_irvalue([=](context ctx) {
     return ctx.builder.CreateInsertElement(llvm::ConstantAggregateZero::get(ctx.types._int2), value, uint64_t(0));
   });
-};
-
-auto extend_to_float2(pvalue value) -> IRValue {
-  return make_irvalue([=](context ctx) {
-    return ctx.builder.CreateInsertElement(llvm::ConstantAggregateZero::get(ctx.types._float2), value, uint64_t(0));
-  });
-};
-
-IRValue get_valid_components(pvalue ret, uint32_t mask) {
-  auto ctx = co_yield get_context();
-  switch (mask) {
-  case 0b1:
-    ret = co_yield extract_element(0)(ret);
-    break;
-  case 0b10:
-    ret = co_yield extract_element(1)(ret);
-    break;
-  case 0b100:
-    ret = co_yield extract_element(2)(ret);
-    break;
-  case 0b1000:
-    ret = co_yield extract_element(3)(ret);
-    break;
-  case 0b1100:
-    ret = ctx.builder.CreateShuffleVector(ret, {2, 3});
-    break;
-  case 0b0110:
-    ret = ctx.builder.CreateShuffleVector(ret, {1, 2});
-    break;
-  case 0b0011:
-    ret = ctx.builder.CreateShuffleVector(ret, {0, 1});
-    break;
-  case 0b1010:
-    ret = ctx.builder.CreateShuffleVector(ret, {1, 3});
-    break;
-  case 0b0101:
-    ret = ctx.builder.CreateShuffleVector(ret, {0, 2});
-    break;
-  case 0b1001:
-    ret = ctx.builder.CreateShuffleVector(ret, {0, 3});
-    break;
-  case 0b1101:
-    ret = ctx.builder.CreateShuffleVector(ret, {0, 2, 3});
-    break;
-  case 0b1011:
-    ret = ctx.builder.CreateShuffleVector(ret, {0, 1, 3});
-    break;
-  case 0b1110:
-    ret = ctx.builder.CreateShuffleVector(ret, {1, 2, 3});
-    break;
-  case 0b0111:
-    ret = ctx.builder.CreateShuffleVector(ret, {0, 1, 2});
-    break;
-  case 0b1111:
-  default:
-    break;
-  }
-  co_return ret;
-}
-
-uint32_t get_dst_mask(DstOperand dst) {
-  return std::visit(
-    patterns{
-      [](DstOperandNull) { return (uint32_t)0b1111; },
-      [](DstOperandSideEffect) { return (uint32_t)0b1111; },
-      [](DstOperandOutput dst) { return dst._.mask; },
-      [](DstOperandTemp dst) { return dst._.mask; },
-      [](DstOperandIndexableTemp dst) { return dst._.mask; },
-      [](DstOperandOutputDepth) { return (uint32_t)1; },
-      [](DstOperandOutputCoverageMask) { return (uint32_t)1; },
-      [](DstOperandIndexableOutput dst) { return dst._.mask; },
-      [](auto s) {
-        llvm::outs() << "get_dst_mask: unhandled dst operand type "
-                     << decltype(s)::debug_name << "\n";
-        assert(0 && "get_dst_mask: unhandled dst operand type");
-        return (uint32_t)0;
-      }
-    },
-    dst
-  );
 };
 
 template <bool ReadFloat>
@@ -989,18 +739,6 @@ auto load_condition(SrcOperand src, bool non_zero_test) {
       }
     });
   };
-};
-
-auto metadata_get_sampler_bias(pvalue metadata) -> IRValue {
-  auto ctx = co_yield get_context();
-  co_return ctx.builder.CreateBitCast(
-    ctx.builder.CreateTrunc(metadata, ctx.types._int), ctx.types._float
-  );
-};
-
-auto metadata_get_min_lod_clamp(pvalue metadata) -> IRValue {
-  // unintentional but they have the same representation
-  return metadata_get_sampler_bias(metadata);
 };
 
 auto metadata_get_texture_buffer_offset(pvalue metadata) -> IRValue {
@@ -1277,18 +1015,6 @@ auto calc_uint_ptr_index(uint32_t zero, uint32_t unused, SrcOperand byte_offset)
     co_yield load_src_op<false>(byte_offset) >>= extract_element(0), 2
   );
 };
-
-bool texture_is_cube(const air::MSLTexture &res) {
-  switch (res.resource_kind) {
-    case air::TextureKind::texture_cube:
-    case air::TextureKind::depth_cube:
-    case air::TextureKind::texture_cube_array:
-    case air::TextureKind::depth_cube_array:
-      return true;
-    default:
-      return false;
-  }
-}
 
 llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
   std::shared_ptr<BasicBlock> entry, context &ctx, llvm::BasicBlock *return_bb
