@@ -266,6 +266,10 @@ public:
   void operator()(const InstInterpolateSample &);
   void operator()(const InstInterpolateOffset &);
 
+  void operator()(const InstMaskedSumOfAbsDiff &);
+  void operator()(const InstEmit &);
+  void operator()(const InstCut &);
+
   /* Utils */
 
   bool

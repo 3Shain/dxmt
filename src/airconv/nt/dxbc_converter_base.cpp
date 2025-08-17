@@ -2589,4 +2589,22 @@ Converter::operator()(const InstInterpolateOffset &eval) {
   StoreOperand(eval.dst, MaskSwizzle(Value, GetMask(eval.dst), eval.read_swizzle));
 }
 
+void
+Converter::operator()(const InstMaskedSumOfAbsDiff &) {
+  // TODO: implement
+  assert(0 && "implement me");
+}
+void
+Converter::operator()(const InstEmit &) {
+  if (res.call_emit().build(ctx).takeError()) {
+    // TODO
+  }
+}
+void
+Converter::operator()(const InstCut &) {
+  if (res.call_cut().build(ctx).takeError()) {
+    // TODO
+  }
+}
+
 } // namespace dxmt::dxbc

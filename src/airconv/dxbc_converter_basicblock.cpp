@@ -1069,27 +1069,11 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
 
   auto bb_pop = builder.GetInsertBlock();
   for (auto &[current, bb] : visit_order) {
-    IREffect effect([](auto) { return std::monostate(); });
-    {
-      current->instructions.for_each(
-        patterns{
-          [](InstMaskedSumOfAbsDiff) { assert(0 && "unhandled msad"); },
-
-          [&](InstEmit) { effect << ctx.resource.call_emit(); },
-          [&](InstCut) { effect << ctx.resource.call_cut(); },
-          [&](auto Op) {
-            effect << make_effect([=](struct context ctx) { 
-              dxbc::Converter dxbc(ctx.air, ctx, ctx.resource);
-              dxbc(Op);
-              return std::monostate{};
-            });
-          }
-      });
-    }
     builder.SetInsertPoint(bb);
-    if (auto err = effect.build(ctx).takeError()) {
-      return err;
-    }
+
+    dxbc::Converter dxbc(ctx.air, ctx, ctx.resource);
+    current->instructions.for_each(dxbc);
+
     if (auto err = std::visit(
           patterns{
             [](BasicBlockUndefined) -> llvm::Error {
