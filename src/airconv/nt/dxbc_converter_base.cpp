@@ -2180,6 +2180,59 @@ Converter::operator()(const InstResourceInfo &resinfo) {
 }
 
 void
+Converter::operator()(const InstSampleInfo &sample) {
+  using namespace llvm::air;
+
+  llvm::Optional<TextureResourceHandle> Tex =
+      sample.src ? LoadTexture(sample.src.value()) : llvm::Optional<TextureResourceHandle>{};
+
+  llvm::Value *SampleCount = nullptr;
+
+  if (!Tex) {
+    if (sample.src.has_value()) {
+      SampleCount = ir.getInt32(0);
+    } else {
+      SampleCount = air.CreateGetNumSamples();
+    }
+  } else {
+    SampleCount = air.CreateTextureQuery(Tex->Texture, Tex->Handle, Texture::num_samples, ir.getInt32(0));
+  }
+
+  if (!sample.uint_result) {
+    SampleCount = air.CreateConvertToFloat(SampleCount);
+  }
+
+  llvm::Value *ValueVec4 = llvm::ConstantAggregateZero::get(sample.uint_result ? air.getIntTy(4) : air.getFloatTy(4));
+  ValueVec4 = ir.CreateInsertElement(ValueVec4, SampleCount, (uint64_t)0);
+
+  StoreOperand(sample.dst, MaskSwizzle(ValueVec4, GetMask(sample.dst), sample.read_swizzle));
+}
+
+void
+Converter::operator()(const InstSamplePos &sample) {
+  // FIXME: stub
+  StoreOperand(sample.dst, llvm::ConstantAggregateZero::get(air.getFloatTy(4)));
+}
+
+void
+Converter::operator()(const InstBufferInfo &bufinfo) {
+  auto Buf = LoadBuffer(bufinfo.src);
+
+  llvm::Value *Value = ir.getInt32(0);
+
+  if (Buf && Buf->Metadata) {
+    Value = DecodeRawBufferByteLength(Buf->Metadata);
+    if (Buf->StructureStride) {
+      Value = ir.CreateUDiv(Value, ir.getInt32(Buf->StructureStride));
+    }
+  } else if (auto Tex = LoadTexture(bufinfo.src); Tex) {
+    Value = DecodeTextureBufferElement(Tex->Metadata);
+  }
+
+  StoreOperand(bufinfo.dst, Value);
+}
+
+void
 Converter::operator()(const InstLoadRaw &load) {
   using namespace llvm::air;
 

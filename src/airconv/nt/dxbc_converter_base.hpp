@@ -241,6 +241,10 @@ public:
   void operator()(const InstCalcLOD &);
   void operator()(const InstResourceInfo &);
 
+  void operator()(const InstSampleInfo &);
+  void operator()(const InstSamplePos &);
+  void operator()(const InstBufferInfo &);
+
   void operator()(const InstLoadRaw &);
   void operator()(const InstStoreRaw &);
   void operator()(const InstLoadStructured &);
@@ -383,6 +387,16 @@ public:
 
   llvm::Value *
   DecodeTextureArrayLength(llvm::Value *Metadata) {
+    return ir.CreateTrunc(ir.CreateLShr(Metadata, 32uLL), air.getIntTy());
+  }
+
+  llvm::Value *
+  DecodeRawBufferByteLength(llvm::Value *Metadata) {
+    return ir.CreateTrunc(Metadata, air.getIntTy());
+  }
+
+  llvm::Value *
+  DecodeTextureBufferElement(llvm::Value *Metadata) {
     return ir.CreateTrunc(ir.CreateLShr(Metadata, 32uLL), air.getIntTy());
   }
 

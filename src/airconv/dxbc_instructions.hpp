@@ -404,6 +404,7 @@ struct InstSampleInfo {
   DstOperand dst;
   std::optional<SrcOperandResource> src; // if null, get rasterizer info
   bool uint_result;
+  Swizzle read_swizzle;
 };
 
 struct InstSamplePos {

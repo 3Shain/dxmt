@@ -798,7 +798,8 @@ Instruction readInstruction(
           return_uint ? OperandDataType::Integer : OperandDataType::Float
         ),
         .src = {},
-        .uint_result = return_uint
+        .uint_result = return_uint,
+        .read_swizzle = readSrcOperandSwizzle(Inst.m_Operands[1]),
       };
     } else {
       auto src = readSrcOperandResource(Inst.m_Operands[1], phase);
@@ -809,7 +810,8 @@ Instruction readInstruction(
           return_uint ? OperandDataType::Integer : OperandDataType::Float
         ),
         .src = src,
-        .uint_result = return_uint
+        .uint_result = return_uint,
+        .read_swizzle = readSrcOperandSwizzle(Inst.m_Operands[1]),
       };
     };
   };
