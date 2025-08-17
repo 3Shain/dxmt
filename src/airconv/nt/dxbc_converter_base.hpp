@@ -46,6 +46,10 @@ struct AtomicBufferResourceHandle {
   mask_t Mask;
 };
 
+struct UAVCounterHandle {
+  llvm::Value *Pointer;
+};
+
 struct SamplerHandle {
   llvm::Value *Handle;
   llvm::Value *HandleCube;
@@ -99,6 +103,16 @@ public:
   LoadTexture(const std::variant<SrcOperandResource, SrcOperandUAV> &SrcOp) {
     return std::visit([this](auto &SrcOp) { return this->LoadTexture(SrcOp); }, SrcOp);
   }
+  llvm::Optional<TextureResourceHandle>
+  LoadTexture(const std::variant<AtomicDstOperandUAV, AtomicOperandTGSM> &SrcOp) {
+    return std::visit(
+        patterns{
+            [](AtomicOperandTGSM &) { return llvm::Optional<TextureResourceHandle>(); },
+            [this](auto &DstOp) { return this->LoadTexture(DstOp); }
+        },
+        SrcOp
+    );
+  }
 
   llvm::Optional<SamplerHandle> LoadSampler(const SrcOperandSampler &SrcOp);
 
@@ -119,6 +133,10 @@ public:
   LoadBuffer(const std::variant<AtomicDstOperandUAV, AtomicOperandTGSM> &SrcOp) {
     return std::visit([this](auto &DstOp) { return this->LoadBuffer(DstOp); }, SrcOp);
   }
+
+  llvm::Optional<UAVCounterHandle> LoadCounter(const AtomicDstOperandUAV &SrcOp);
+
+  llvm::Value *LoadAtomicOpAddress(const AtomicBufferResourceHandle &Handle, const SrcOperand &Address);
 
   /* Store Operands */
 
@@ -227,6 +245,11 @@ public:
   void operator()(const InstStoreRaw &);
   void operator()(const InstLoadStructured &);
   void operator()(const InstStoreStructured &);
+
+  void operator()(const InstAtomicBinOp &);
+  void operator()(const InstAtomicImmCmpExchange &);
+  void operator()(const InstAtomicImmIncrement &);
+  void operator()(const InstAtomicImmDecrement &);
 
   /* Utils */
 

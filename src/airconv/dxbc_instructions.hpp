@@ -680,7 +680,7 @@ struct InstSync {
   bool tgsm_execution_barrier;
 };
 
-enum class AtomicBinaryOp { And, Or, Xor, Add, IMax, IMin, UMax, UMin };
+enum class AtomicBinaryOp { And, Or, Xor, Add, IMax, IMin, UMax, UMin, Xchg };
 
 struct InstAtomicBinOp {
   AtomicBinaryOp op;
@@ -698,13 +698,6 @@ struct InstAtomicImmIncrement {
 struct InstAtomicImmDecrement {
   DstOperand dst; // store single component, new value
   AtomicDstOperandUAV uav;
-};
-
-struct InstAtomicImmExchange {
-  DstOperand dst; // store single component, original value
-  std::variant<AtomicDstOperandUAV, AtomicOperandTGSM> dst_resource;
-  SrcOperand dst_address;
-  SrcOperand src; // select one component
 };
 
 struct InstAtomicImmCmpExchange {
@@ -763,7 +756,7 @@ using InstructionList = PackedVariantList<
   InstInterpolateCentroid, InstInterpolateSample, InstInterpolateOffset,
   /* Atomics */
   InstSync, InstAtomicBinOp,                       //
-  InstAtomicImmCmpExchange, InstAtomicImmExchange, //
+  InstAtomicImmCmpExchange, //
   InstAtomicImmIncrement, InstAtomicImmDecrement>;
 
 using Instruction = InstructionList::variant;

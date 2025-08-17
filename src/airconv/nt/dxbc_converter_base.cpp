@@ -6,6 +6,7 @@
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Intrinsics.h"
 #include "llvm/IR/Value.h"
+#include "llvm/Support/AtomicOrdering.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/ErrorHandling.h"
 
@@ -591,6 +592,20 @@ Converter::LoadBuffer(const AtomicOperandTGSM &DstOp) {
   IntPtr = ir.CreatePointerCast(IntPtr, ir.getInt32Ty()->getPointerTo(tgsm_h->getAddressSpace()));
 
   return llvm::Optional<AtomicBufferResourceHandle>({IntPtr, nullptr, stride, DstOp.mask});
+}
+
+llvm::Optional<UAVCounterHandle>
+Converter::LoadCounter(const AtomicDstOperandUAV &SrcOp) {
+  using namespace llvm::air;
+
+  if (!res.uav_counter_range_map.contains(SrcOp.range_id))
+    return {};
+
+  auto handle = res.uav_counter_range_map[SrcOp.range_id](nullptr).build(ctx);
+  if (handle.takeError())
+    return {};
+
+  return llvm::Optional<UAVCounterHandle>({handle.get()});
 }
 
 llvm::Optional<SamplerHandle>
@@ -2280,6 +2295,197 @@ Converter::operator()(const InstStoreStructured &store) {
     auto Ptr = ir.CreateGEP(ir.getInt32Ty(), Buf->Pointer, {ir.CreateAdd(Index, ir.getInt32(DstComp))});
     ir.CreateStore(ExtractElement(Value, DstComp), Ptr, Volatile);
   }
+}
+
+llvm::Value *
+Converter::LoadAtomicOpAddress(const AtomicBufferResourceHandle &Handle, const SrcOperand &Address) {
+  if (Handle.StructureStride > 0) {
+    auto Address2D = LoadOperand(Address, kMaskVecXY);
+    return ir.CreateLShr(
+        ir.CreateAdd(
+            ir.CreateMul(ir.getInt32(Handle.StructureStride), ExtractElement(Address2D, 0)),
+            ExtractElement(Address2D, 1)
+        ),
+        2
+    );
+  }
+  auto Address1D = LoadOperand(Address, kMaskComponentX);
+  return ir.CreateLShr(Address1D, 2);
+}
+
+void
+Converter::operator()(const InstAtomicBinOp &atomic) {
+  using namespace llvm;
+  using namespace llvm::air;
+
+  AtomicRMWInst::BinOp Op;
+
+  switch (atomic.op) {
+  case AtomicBinaryOp::And:
+    Op = AtomicRMWInst::And;
+    break;
+  case AtomicBinaryOp::Or:
+    Op = AtomicRMWInst::Or;
+    break;
+  case AtomicBinaryOp::Xor:
+    Op = AtomicRMWInst::Xor;
+    break;
+  case AtomicBinaryOp::Add:
+    Op = AtomicRMWInst::Add;
+    break;
+  case AtomicBinaryOp::IMax:
+    Op = AtomicRMWInst::Max;
+    break;
+  case AtomicBinaryOp::IMin:
+    Op = AtomicRMWInst::Min;
+    break;
+  case AtomicBinaryOp::UMax:
+    Op = AtomicRMWInst::UMax;
+    break;
+  case AtomicBinaryOp::UMin:
+    Op = AtomicRMWInst::UMin;
+    break;
+  case AtomicBinaryOp::Xchg:
+    Op = AtomicRMWInst::Xchg;
+    break;
+  }
+
+  auto Buf = LoadBuffer(atomic.dst);
+
+  if (Buf) {
+    auto IntPtrOffset = LoadAtomicOpAddress(Buf.getValue(), atomic.dst_address);
+    auto Ptr = ir.CreateGEP(ir.getInt32Ty(), Buf->Pointer, {IntPtrOffset});
+    auto Value = ir.CreateAtomicRMW(
+        Op, Ptr, LoadOperand(atomic.src, kMaskComponentX), Align(alignof(uint32_t)), AtomicOrdering::Monotonic
+    );
+    StoreOperand(atomic.dst_original, Value);
+    return;
+  }
+
+  auto Tex = LoadTexture(atomic.dst);
+
+  if (Tex) {
+    llvm::Value *Address = nullptr;
+    llvm::Value *ArrayIndex = nullptr;
+
+    switch (Tex->Logical) {
+    case Texture::texture_buffer:
+      Address = LoadOperand(atomic.dst_address, kMaskComponentX);
+      Address = ir.CreateAdd(Address, DecodeTextureBufferOffset(Tex->Metadata));
+      break;
+    case Texture::texture1d:
+      Address = LoadOperand(atomic.dst_address, kMaskComponentX);
+      Address = ir.CreateInsertElement(llvm::ConstantInt::getNullValue(air.getIntTy(2)), Address, 0ull);
+      break;
+    case Texture::texture1d_array:
+      Address = LoadOperand(atomic.dst_address, kMaskComponentX);
+      Address = ir.CreateInsertElement(llvm::ConstantInt::getNullValue(air.getIntTy(2)), Address, 0ull);
+      ArrayIndex = LoadOperand(atomic.dst_address, kMaskComponentY);
+      break;
+    case Texture::texture2d:
+      Address = LoadOperand(atomic.dst_address, kMaskVecXY);
+      break;
+    case Texture::texture2d_array:
+      Address = LoadOperand(atomic.dst_address, kMaskVecXY);
+      ArrayIndex = LoadOperand(atomic.dst_address, kMaskComponentZ);
+      break;
+    case Texture::texture3d:
+      Address = LoadOperand(atomic.dst_address, kMaskVecXYZ);
+      break;
+    default:
+      return;
+    }
+    auto Value =
+        air.CreateAtomicRMW(Tex->Texture, Tex->Handle, Op, Address, LoadOperand(atomic.src, kMaskAll), ArrayIndex);
+    StoreOperand(atomic.dst_original, Value);
+    return;
+  }
+}
+
+void
+Converter::operator()(const InstAtomicImmCmpExchange &atomic) {
+  using namespace llvm;
+  using namespace llvm::air;
+
+  auto Buf = LoadBuffer(atomic.dst_resource);
+
+  if (Buf) {
+    auto IntPtrOffset = LoadAtomicOpAddress(Buf.getValue(), atomic.dst_address);
+    auto Ptr = ir.CreateGEP(ir.getInt32Ty(), Buf->Pointer, {IntPtrOffset});
+    auto Value = ir.CreateAtomicCmpXchg(
+        Ptr, LoadOperand(atomic.src0, kMaskComponentX), LoadOperand(atomic.src1, kMaskComponentX), {},
+        AtomicOrdering::Monotonic, AtomicOrdering::Monotonic
+    );
+    StoreOperand(atomic.dst, ir.CreateExtractValue(Value, 0));
+    return;
+  }
+
+  auto Tex = LoadTexture(atomic.dst_resource);
+
+  if (Tex) {
+    llvm::Value *Address = nullptr;
+    llvm::Value *ArrayIndex = nullptr;
+
+    switch (Tex->Logical) {
+    case Texture::texture_buffer:
+      Address = LoadOperand(atomic.dst_address, kMaskComponentX);
+      Address = ir.CreateAdd(Address, DecodeTextureBufferOffset(Tex->Metadata));
+      break;
+    case Texture::texture1d:
+      Address = LoadOperand(atomic.dst_address, kMaskComponentX);
+      Address = ir.CreateInsertElement(llvm::ConstantInt::getNullValue(air.getIntTy(2)), Address, 0ull);
+      break;
+    case Texture::texture1d_array:
+      Address = LoadOperand(atomic.dst_address, kMaskComponentX);
+      Address = ir.CreateInsertElement(llvm::ConstantInt::getNullValue(air.getIntTy(2)), Address, 0ull);
+      ArrayIndex = LoadOperand(atomic.dst_address, kMaskComponentY);
+      break;
+    case Texture::texture2d:
+      Address = LoadOperand(atomic.dst_address, kMaskVecXY);
+      break;
+    case Texture::texture2d_array:
+      Address = LoadOperand(atomic.dst_address, kMaskVecXY);
+      ArrayIndex = LoadOperand(atomic.dst_address, kMaskComponentZ);
+      break;
+    case Texture::texture3d:
+      Address = LoadOperand(atomic.dst_address, kMaskVecXYZ);
+      break;
+    default:
+      return;
+    }
+    auto [Value, Flag_DISCARDED] = air.CreateAtomicCmpXchg(
+        Tex->Texture, Tex->Handle, Address, LoadOperand(atomic.src0, kMaskAll), LoadOperand(atomic.src1, kMaskAll),
+        ArrayIndex
+    );
+    StoreOperand(atomic.dst, Value);
+    return;
+  }
+}
+
+void
+Converter::operator()(const InstAtomicImmIncrement &atomic) {
+  using namespace llvm;
+  using namespace llvm::air;
+
+  auto Ctr = LoadCounter(atomic.uav);
+  if (!Ctr)
+    return;
+
+  auto Value = ir.CreateAtomicRMW(AtomicRMWInst::Add, Ctr->Pointer, ir.getInt32(1), {}, AtomicOrdering::Monotonic);
+  StoreOperand(atomic.dst, Value);
+}
+void
+Converter::operator()(const InstAtomicImmDecrement &atomic) {
+  using namespace llvm;
+  using namespace llvm::air;
+
+  auto Ctr = LoadCounter(atomic.uav);
+  if (!Ctr)
+    return;
+
+  auto Value = ir.CreateAtomicRMW(AtomicRMWInst::Sub, Ctr->Pointer, ir.getInt32(1), {}, AtomicOrdering::Monotonic);
+  // imm_atomic_consume returns new value
+  StoreOperand(atomic.dst, ir.CreateSub(Value, ir.getInt32(1)));
 }
 
 } // namespace dxmt::dxbc

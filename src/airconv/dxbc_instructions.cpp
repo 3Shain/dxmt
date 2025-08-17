@@ -1850,11 +1850,12 @@ Instruction readInstruction(
     return inst;
   };
   case microsoft::D3D11_SB_OPCODE_IMM_ATOMIC_EXCH: {
-    auto inst = InstAtomicImmExchange{
-      .dst = readDstOperand(Inst.m_Operands[0], phase, OperandDataType::Integer),
-      .dst_resource = readAtomicDst(Inst.m_Operands[1], phase),
+    auto inst = InstAtomicBinOp{
+      .op = AtomicBinaryOp::Xchg,
+      .dst = readAtomicDst(Inst.m_Operands[1], phase),
       .dst_address = readSrcOperand(Inst.m_Operands[2], phase, OperandDataType::Integer),
       .src = readSrcOperand(Inst.m_Operands[3], phase, OperandDataType::Integer),
+      .dst_original = readDstOperand(Inst.m_Operands[0], phase, OperandDataType::Integer),
     };
     std::visit(
       patterns{
@@ -1864,7 +1865,7 @@ Instruction readInstruction(
         },
         [](auto) {}
       },
-      inst.dst_resource
+      inst.dst
     );
     return inst;
   };
