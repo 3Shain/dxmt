@@ -317,7 +317,10 @@ public:
   getFloat(float Value) {
     return ConstantFP::get(getContext(), APFloat{Value});
   }
-  // Value *getFloat2(float Value1, float Value2);
+  Constant *
+  getFloat2(float Value1, float Value2) {
+    return cast<Constant>(ConstantVector::get({getFloat(Value1), getFloat(Value2)}));
+  }
   // Value *getFloat3(float Value1, float Value2, float Value3);
   // Value *getFloat4(float Value1, float Value2, float Value3, float Value4);
 

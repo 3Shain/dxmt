@@ -2541,4 +2541,52 @@ Converter::operator()(const InstAtomicImmDecrement &atomic) {
   StoreOperand(atomic.dst, ir.CreateSub(Value, ir.getInt32(1)));
 }
 
+llvm::Optional<InterpolantHandle>
+Converter::LoadInterpolant(uint32_t Index) {
+  if (!res.interpolant_map.contains(Index))
+    return {};
+
+  auto interpolant = res.interpolant_map[Index];
+  auto h = interpolant.interpolant(nullptr).build(ctx);
+  if (h.takeError())
+    return {};
+
+  return llvm::Optional<InterpolantHandle>({h.get(), interpolant.perspective});
+}
+
+void
+Converter::operator()(const InstInterpolateCentroid &eval) {
+  auto Itp = LoadInterpolant(eval.regid);
+  if (!Itp)
+    return;
+
+  auto Value = air.CreateInterpolateAtCentroid(Itp->Handle, Itp->Perspective);
+  StoreOperand(eval.dst, MaskSwizzle(Value, GetMask(eval.dst), eval.read_swizzle));
+}
+
+void
+Converter::operator()(const InstInterpolateSample &eval) {
+  auto Itp = LoadInterpolant(eval.regid);
+  if (!Itp)
+    return;
+
+  auto Value =
+      air.CreateInterpolateAtSample(Itp->Handle, LoadOperand(eval.sample_index, kMaskComponentX), Itp->Perspective);
+  StoreOperand(eval.dst, MaskSwizzle(Value, GetMask(eval.dst), eval.read_swizzle));
+}
+
+void
+Converter::operator()(const InstInterpolateOffset &eval) {
+  auto Itp = LoadInterpolant(eval.regid);
+  if (!Itp)
+    return;
+
+  auto Offset = LoadOperand(eval.offset, kMaskVecXY);
+  // truncated = (offset.xy + 8) & 0b1111
+  auto Truncated = ir.CreateAnd(ir.CreateAdd(Offset, air.getInt2(8, 8)), air.getInt2(0b1111, 0b1111));
+  auto OffsetFloat = ir.CreateFMul(air.CreateConvertToFloat(Truncated), air.getFloat2(1.0f / 16.0f, 1.0f / 16.0f));
+  auto Value = air.CreateInterpolateAtOffset(Itp->Handle, OffsetFloat, Itp->Perspective);
+  StoreOperand(eval.dst, MaskSwizzle(Value, GetMask(eval.dst), eval.read_swizzle));
+}
+
 } // namespace dxmt::dxbc

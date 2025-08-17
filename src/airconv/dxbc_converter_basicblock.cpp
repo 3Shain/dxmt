@@ -1075,56 +1075,6 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
         patterns{
           [](InstMaskedSumOfAbsDiff) { assert(0 && "unhandled msad"); },
 
-          [&](InstInterpolateCentroid eval_centroid) {
-            assert(0 && "unhandled eval_centroid"); // remove this line if it's verified to work
-            effect << store_dst_op<true>(
-              eval_centroid.dst,
-              make_irvalue_bind([=](struct context ctx) -> IRValue {
-                auto desc = ctx.resource.interpolant_map.at(eval_centroid.regid);
-                co_return ctx.air.CreateInterpolateAtCentroid(
-                  co_yield desc.interpolant(nullptr), desc.perspective
-                );
-              }) >>= swizzle(eval_centroid.read_swizzle)
-            );
-          },
-          [&](InstInterpolateSample eval_sample_index) {
-            effect << store_dst_op<true>(
-              eval_sample_index.dst,
-              make_irvalue_bind([=](struct context ctx) -> IRValue {
-                auto desc = ctx.resource.interpolant_map.at(eval_sample_index.regid);
-                co_return ctx.air.CreateInterpolateAtSample(
-                  co_yield desc.interpolant(nullptr),
-                  co_yield load_src_op<false>(eval_sample_index.sample_index) >>= extract_element(0),
-                  desc.perspective
-                );
-              }) >>= swizzle(eval_sample_index.read_swizzle)
-            );
-          },
-          [&](InstInterpolateOffset eval_snapped) {
-            assert(0 && "unhandled eval_snapped"); // remove this line if it's verified to work
-            effect << store_dst_op<true>(
-              eval_snapped.dst,
-              make_irvalue_bind([=](struct context ctx) -> IRValue {
-                auto desc = ctx.resource.interpolant_map.at(eval_snapped.regid);
-                auto offset = co_yield load_src_op<false>(eval_snapped.offset);
-                // truncated = (offset.xy + 8) & 0b1111
-                auto truncated = ctx.builder.CreateAnd(
-                  ctx.builder.CreateAdd(
-                    ctx.builder.CreateShuffleVector(offset, {0, 1}),
-                    co_yield get_int2(8, 8)
-                  ),
-                  co_yield get_int2(0b1111, 0b1111)
-                );
-                auto offset_f = ctx.builder.CreateFMul(
-                  ctx.air.CreateConvertToFloat(truncated),
-                  co_yield get_float2(1.0f / 16.0f, 1.0f / 16.0f)
-                );
-                co_return ctx.air.CreateInterpolateAtOffset(
-                  co_yield desc.interpolant(nullptr), offset_f, desc.perspective
-                );
-              }) >>= swizzle(eval_snapped.read_swizzle)
-            );
-          },
           [&](InstEmit) { effect << ctx.resource.call_emit(); },
           [&](InstCut) { effect << ctx.resource.call_cut(); },
           [&](auto Op) {

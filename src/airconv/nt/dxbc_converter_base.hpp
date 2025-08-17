@@ -56,6 +56,11 @@ struct SamplerHandle {
   llvm::Value *Bias;
 };
 
+struct InterpolantHandle {
+  llvm::Value *Handle;
+  bool Perspective;
+};
+
 class Converter {
 public:
   Converter(llvm::air::AIRBuilder &air, context &ctx_legacy, io_binding_map &res_legacy) :
@@ -137,6 +142,8 @@ public:
   llvm::Optional<UAVCounterHandle> LoadCounter(const AtomicDstOperandUAV &SrcOp);
 
   llvm::Value *LoadAtomicOpAddress(const AtomicBufferResourceHandle &Handle, const SrcOperand &Address);
+
+  llvm::Optional<InterpolantHandle> LoadInterpolant(uint32_t Index);
 
   /* Store Operands */
 
@@ -254,6 +261,10 @@ public:
   void operator()(const InstAtomicImmCmpExchange &);
   void operator()(const InstAtomicImmIncrement &);
   void operator()(const InstAtomicImmDecrement &);
+
+  void operator()(const InstInterpolateCentroid &);
+  void operator()(const InstInterpolateSample &);
+  void operator()(const InstInterpolateOffset &);
 
   /* Utils */
 
