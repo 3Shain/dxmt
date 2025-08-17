@@ -31,100 +31,6 @@ template <typename S> AIRBuilderResult make_op(S &&fs) {
   return AIRBuilderResult(std::forward<S>(fs));
 }
 
-enum class TextureInfoType {
-  width,
-  height,
-  depth,
-  array_length,
-  num_mip_levels,
-  num_samples
-};
-
-AIRBuilderResult call_float_unary_op(std::string op, pvalue a);
-AIRBuilderResult
-call_integer_binop(std::string op, pvalue a, pvalue b, bool is_signed = false);
-
-AIRBuilderResult call_float_mad(pvalue a, pvalue b, pvalue c);
-
-AIRBuilderResult call_sample(
-  MSLTexture texture_type, pvalue handle, pvalue sampler, pvalue coord,
-  pvalue array_index, pvalue offset = nullptr, pvalue bias = nullptr,
-  pvalue min_lod_clamp = nullptr, pvalue lod_level = nullptr
-);
-
-AIRBuilderResult call_sample_grad(
-  MSLTexture texture_type, pvalue handle, pvalue sampler_handle, pvalue coord,
-  pvalue array_index, pvalue dpdx, pvalue dpdy, pvalue minlod = nullptr,
-  pvalue offset = nullptr
-);
-
-AIRBuilderResult call_sample_compare(
-  MSLTexture texture_type, pvalue handle, pvalue sampler_handle, pvalue coord,
-  pvalue array_index, pvalue reference = nullptr, pvalue offset = nullptr,
-  pvalue bias = nullptr, pvalue min_lod_clamp = nullptr,
-  pvalue lod_level = nullptr
-);
-
-AIRBuilderResult call_gather(
-  MSLTexture texture_type, pvalue handle, pvalue sampler_handle, pvalue coord,
-  pvalue array_index, pvalue offset = nullptr, pvalue component = nullptr
-);
-
-AIRBuilderResult call_gather_compare(
-  MSLTexture texture_type, pvalue handle, pvalue sampler_handle, pvalue coord,
-  pvalue array_index, pvalue reference = nullptr, pvalue offset = nullptr
-);
-
-AIRBuilderResult call_read(
-  MSLTexture texture_type, pvalue handle, pvalue address,
-  pvalue offset = nullptr, pvalue cube_face = nullptr,
-  pvalue array_index = nullptr, pvalue sample_index = nullptr,
-  pvalue lod = nullptr
-);
-
-AIRBuilderResult call_write(
-  MSLTexture texture_type, pvalue handle, pvalue address, pvalue cube_face,
-  pvalue array_index, pvalue vec4, pvalue lod = nullptr
-);
-
-AIRBuilderResult call_calc_lod(
-  MSLTexture texture_type, pvalue handle, pvalue sampler, pvalue coord,
-  bool is_unclamped
-);
-
-AIRBuilderResult call_get_texture_info(
-  air::MSLTexture texture_type, pvalue handle, TextureInfoType type, pvalue lod
-);
-
-AIRBuilderResult call_texture_atomic_fetch_explicit(
-  air::MSLTexture texture_type, pvalue handle, std::string op, bool is_signed,
-  pvalue address, pvalue array_index, pvalue vec4
-);
-
-AIRBuilderResult call_texture_atomic_exchange(
-  air::MSLTexture texture_type, pvalue handle, pvalue address,
-  pvalue array_index, pvalue vec4
-);
-
-AIRBuilderResult call_texture_atomic_compare_exchange(
-  air::MSLTexture texture_type, pvalue handle, pvalue address,
-  pvalue array_index, pvalue compared, pvalue operand
-);
-
-AIRBuilderResult call_atomic_fetch_explicit(
-  pvalue pointer, pvalue operand, std::string op, bool is_signed = false,
-  bool device = false
-);
-
-AIRBuilderResult call_atomic_exchange_explicit(
-  pvalue pointer, pvalue operand, bool device = false
-);
-
-AIRBuilderResult call_atomic_cmp_exchange(
-  pvalue pointer, pvalue compared, pvalue operand, pvalue tmp_mem,
-  bool device = false
-);
-
 enum class MTLAttributeFormat {
   Invalid = 0,
   UChar2 = 1,
@@ -186,17 +92,4 @@ AIRBuilderResult pull_vec4_from_addr(
   MTLAttributeFormat format, pvalue base_addr, pvalue byte_offset
 );
 
-inline auto pure(pvalue value) {
-  return make_op([=](auto) { return value; });
-}
-
-inline auto saturate(bool sat) {
-  return [sat](pvalue floaty) -> AIRBuilderResult {
-    if (sat) {
-      return call_float_unary_op("saturate", floaty);
-    } else {
-      return pure(floaty);
-    }
-  };
-}
 }; // namespace dxmt::air
