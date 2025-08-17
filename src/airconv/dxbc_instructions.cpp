@@ -966,6 +966,7 @@ Instruction readInstruction(
       .dst = readDstOperand(Inst.m_Operands[0], phase, OperandDataType::Integer),
       .src_byte_offset = readSrcOperand(Inst.m_Operands[1], phase, OperandDataType::Integer),
       .src = readTypelessSrc(Inst.m_Operands[2], phase),
+      .opt_flag_offset_is_vec4_aligned = false,
     };
     std::visit(
       patterns{
@@ -1013,6 +1014,7 @@ Instruction readInstruction(
       .src_address = readSrcOperand(Inst.m_Operands[1], phase, OperandDataType::Integer),
       .src_byte_offset = readSrcOperand(Inst.m_Operands[2], phase, OperandDataType::Integer),
       .src = readTypelessSrc(Inst.m_Operands[3], phase),
+      .opt_flag_offset_is_vec4_aligned = false,
     };
     std::visit(
       patterns{
@@ -1029,7 +1031,7 @@ Instruction readInstruction(
     std::visit(
       patterns{
         [&](const SrcOperandImmediate32 &imm) {
-          inst.opt_flag_offset_is_vec4_aligned = (imm.uvalue[0] & 0xF) == 0;
+          inst.opt_flag_offset_is_vec4_aligned = ((imm.uvalue[0] & 0xF) == 0);
         },
         [](auto) {}
       },
