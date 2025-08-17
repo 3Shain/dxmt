@@ -279,15 +279,6 @@ struct AtomicDstOperandUAV {
   uint32_t mask;
 };
 
-/**
-It's a UAV implemented as metal buffer
-*/
-struct AtomicDstOperandUAVBuffer {
-  uint32_t range_id;
-  OperandIndex index;
-  uint32_t mask;
-};
-
 struct AtomicOperandTGSM {
   uint32_t id;
   uint32_t mask;

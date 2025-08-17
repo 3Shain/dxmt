@@ -515,11 +515,89 @@ Converter::LoadTexture(const AtomicDstOperandUAV &DstOp) {
   );
 }
 
+llvm::Optional<BufferResourceHandle>
+Converter::LoadBuffer(const SrcOperandResource &SrcOp) {
+  using namespace llvm::air;
+
+  if (!res.srv_buf_range_map.contains(SrcOp.range_id))
+    return {};
+
+  auto &[stride, res_handle_fn, md_fn] = res.srv_buf_range_map[SrcOp.range_id];
+  auto res_handle = res_handle_fn(nullptr).build(ctx);
+  if (res_handle.takeError())
+    return {};
+
+  auto md = md_fn(nullptr).build(ctx);
+  if (md.takeError())
+    return {};
+
+  return llvm::Optional<BufferResourceHandle>({res_handle.get(), md.get(), stride, SrcOp.read_swizzle});
+}
+
+llvm::Optional<BufferResourceHandle>
+Converter::LoadBuffer(const SrcOperandUAV &SrcOp) {
+  using namespace llvm::air;
+
+  if (!res.uav_buf_range_map.contains(SrcOp.range_id))
+    return {};
+
+  auto &[stride, res_handle_fn, md_fn] = res.uav_buf_range_map[SrcOp.range_id];
+  auto res_handle = res_handle_fn(nullptr).build(ctx);
+  if (res_handle.takeError())
+    return {};
+
+  auto md = md_fn(nullptr).build(ctx);
+  if (md.takeError())
+    return {};
+
+  return llvm::Optional<BufferResourceHandle>({res_handle.get(), md.get(), stride, SrcOp.read_swizzle});
+}
+
+llvm::Optional<AtomicBufferResourceHandle>
+Converter::LoadBuffer(const AtomicDstOperandUAV &DstOp) {
+  using namespace llvm::air;
+
+  if (!res.uav_buf_range_map.contains(DstOp.range_id))
+    return {};
+
+  auto &[stride, res_handle_fn, md_fn] = res.uav_buf_range_map[DstOp.range_id];
+  auto res_handle = res_handle_fn(nullptr).build(ctx);
+  if (res_handle.takeError())
+    return {};
+
+  auto md = md_fn(nullptr).build(ctx);
+  if (md.takeError())
+    return {};
+
+  return llvm::Optional<AtomicBufferResourceHandle>({res_handle.get(), md.get(), stride, DstOp.mask});
+}
+
+llvm::Optional<BufferResourceHandle>
+Converter::LoadBuffer(const SrcOperandTGSM &SrcOp) {
+  auto [stride, tgsm_h] = res.tgsm_map[SrcOp.id];
+
+  llvm::Value *IntPtr = llvm::ConstantExpr::getInBoundsGetElementPtr(tgsm_h->getValueType(), tgsm_h, ir.getInt32(0));
+
+  IntPtr = ir.CreatePointerCast(IntPtr, ir.getInt32Ty()->getPointerTo(tgsm_h->getAddressSpace()));
+
+  return llvm::Optional<BufferResourceHandle>({IntPtr, nullptr, stride, SrcOp.read_swizzle});
+}
+llvm::Optional<AtomicBufferResourceHandle>
+Converter::LoadBuffer(const AtomicOperandTGSM &DstOp) {
+  auto [stride, tgsm_h] = res.tgsm_map[DstOp.id];
+
+  llvm::Value *IntPtr = llvm::ConstantExpr::getInBoundsGetElementPtr(tgsm_h->getValueType(), tgsm_h, ir.getInt32(0));
+
+  IntPtr = ir.CreatePointerCast(IntPtr, ir.getInt32Ty()->getPointerTo(tgsm_h->getAddressSpace()));
+
+  return llvm::Optional<AtomicBufferResourceHandle>({IntPtr, nullptr, stride, DstOp.mask});
+}
+
 llvm::Optional<SamplerHandle>
 Converter::LoadSampler(const SrcOperandSampler &SrcOp) {
   using namespace llvm::air;
 
-  auto &[sampler_handle_fn, sampler_cube_fn, sampler_metadata] = ctx.resource.sampler_range_map[SrcOp.range_id];
+  auto &[sampler_handle_fn, sampler_cube_fn, sampler_metadata] = res.sampler_range_map[SrcOp.range_id];
   auto smp = sampler_handle_fn(nullptr).build(ctx);
   if (smp.takeError())
     return {};
@@ -2084,6 +2162,124 @@ Converter::operator()(const InstResourceInfo &resinfo) {
   Value = ir.CreateInsertElement(Value, MipCount, 3);
 
   StoreOperand(resinfo.dst, MaskSwizzle(Value, GetMask(resinfo.dst), Tex->Swizzle));
+}
+
+void
+Converter::operator()(const InstLoadRaw &load) {
+  using namespace llvm::air;
+
+  auto Buf = LoadBuffer(load.src);
+  if (!Buf)
+    return;
+
+  mask_t Mask = GetMask(load.dst);
+  bool Volatile = cast<llvm::PointerType>(Buf->Pointer->getType())->getAddressSpace() == 3;
+
+  auto Index = ir.CreateLShr(LoadOperand(load.src_byte_offset, kMaskComponentX), 2);
+
+  if (auto Comp = ComponentFromScalarMask(Mask, Buf->Swizzle); Comp >= 0) {
+    auto Ptr = ir.CreateGEP(ir.getInt32Ty(), Buf->Pointer, {ir.CreateAdd(Index, ir.getInt32(Comp))});
+    auto ValueInt = ir.CreateLoad(ir.getInt32Ty(), Ptr, Volatile);
+    return StoreOperand(load.dst, MaskSwizzle(ValueInt, Mask));
+  }
+
+  llvm::Value *ValueVec = llvm::PoisonValue::get(air.getIntTy(4));
+  for (auto [DstComp, _] : EnumerateComponents(MemoryAccessMask(Mask, Buf->Swizzle))) {
+    auto Ptr = ir.CreateGEP(ir.getInt32Ty(), Buf->Pointer, {ir.CreateAdd(Index, ir.getInt32(DstComp))});
+    auto ValueInt = ir.CreateLoad(ir.getInt32Ty(), Ptr, Volatile);
+    ValueVec = ir.CreateInsertElement(ValueVec, ValueInt, DstComp);
+  }
+  StoreOperand(load.dst, MaskSwizzle(ValueVec, Mask, Buf->Swizzle));
+}
+
+void
+Converter::operator()(const InstLoadStructured &load) {
+  using namespace llvm::air;
+
+  auto Buf = LoadBuffer(load.src);
+  if (!Buf)
+    return;
+
+  mask_t Mask = GetMask(load.dst);
+  bool Volatile = cast<llvm::PointerType>(Buf->Pointer->getType())->getAddressSpace() == 3;
+
+  auto IndexStruct =
+      ir.CreateMul(ir.getInt32(Buf->StructureStride >> 2), LoadOperand(load.src_address, kMaskComponentX));
+  auto Index = ir.CreateAdd(IndexStruct, ir.CreateLShr(LoadOperand(load.src_byte_offset, kMaskComponentX), 2));
+
+  if (auto Comp = ComponentFromScalarMask(Mask, Buf->Swizzle); Comp >= 0) {
+    auto Ptr = ir.CreateGEP(ir.getInt32Ty(), Buf->Pointer, {ir.CreateAdd(Index, ir.getInt32(Comp))});
+    auto ValueInt = ir.CreateLoad(ir.getInt32Ty(), Ptr, Volatile);
+    return StoreOperand(load.dst, MaskSwizzle(ValueInt, Mask));
+  }
+
+  llvm::Value *ValueVec = llvm::PoisonValue::get(air.getIntTy(4));
+  for (auto [DstComp, _] : EnumerateComponents(MemoryAccessMask(Mask, Buf->Swizzle))) {
+    auto Ptr = ir.CreateGEP(ir.getInt32Ty(), Buf->Pointer, {ir.CreateAdd(Index, ir.getInt32(DstComp))});
+    auto ValueInt = ir.CreateLoad(ir.getInt32Ty(), Ptr, Volatile);
+    ValueVec = ir.CreateInsertElement(ValueVec, ValueInt, DstComp);
+  }
+  StoreOperand(load.dst, MaskSwizzle(ValueVec, Mask, Buf->Swizzle));
+}
+
+void
+Converter::operator()(const InstStoreRaw &store) {
+  using namespace llvm::air;
+
+  auto Buf = LoadBuffer(store.dst);
+  if (!Buf)
+    return;
+  switch (Buf->Mask) {
+  case 0b1:
+  case 0b11:
+  case 0b111:
+  case 0b1111:
+    break;
+  default:
+    return;
+  }
+
+  bool Volatile = cast<llvm::PointerType>(Buf->Pointer->getType())->getAddressSpace() == 3;
+
+  auto Index = ir.CreateLShr(LoadOperand(store.dst_byte_offset, kMaskComponentX), 2);
+
+  auto Value = LoadOperand(store.src, Buf->Mask);
+
+  for (auto [DstComp, _] : EnumerateComponents(Buf->Mask)) {
+    auto Ptr = ir.CreateGEP(ir.getInt32Ty(), Buf->Pointer, {ir.CreateAdd(Index, ir.getInt32(DstComp))});
+    ir.CreateStore(ExtractElement(Value, DstComp), Ptr, Volatile);
+  }
+}
+
+void
+Converter::operator()(const InstStoreStructured &store) {
+  using namespace llvm::air;
+
+  auto Buf = LoadBuffer(store.dst);
+  if (!Buf)
+    return;
+  switch (Buf->Mask) {
+  case 0b1:
+  case 0b11:
+  case 0b111:
+  case 0b1111:
+    break;
+  default:
+    return;
+  }
+
+  bool Volatile = cast<llvm::PointerType>(Buf->Pointer->getType())->getAddressSpace() == 3;
+
+  auto IndexStruct =
+      ir.CreateMul(ir.getInt32(Buf->StructureStride >> 2), LoadOperand(store.dst_address, kMaskComponentX));
+  auto Index = ir.CreateAdd(IndexStruct, ir.CreateLShr(LoadOperand(store.dst_byte_offset, kMaskComponentX), 2));
+
+  auto Value = LoadOperand(store.src, Buf->Mask);
+
+  for (auto [DstComp, _] : EnumerateComponents(Buf->Mask)) {
+    auto Ptr = ir.CreateGEP(ir.getInt32Ty(), Buf->Pointer, {ir.CreateAdd(Index, ir.getInt32(DstComp))});
+    ir.CreateStore(ExtractElement(Value, DstComp), Ptr, Volatile);
+  }
 }
 
 } // namespace dxmt::dxbc

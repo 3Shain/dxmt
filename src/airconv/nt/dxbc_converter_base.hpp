@@ -32,6 +32,20 @@ struct TextureResourceHandle {
   Swizzle Swizzle;
 };
 
+struct BufferResourceHandle {
+  llvm::Value *Pointer;
+  llvm::Value *Metadata;    // can be null
+  uint32_t StructureStride; // 0 if not structured
+  Swizzle Swizzle;
+};
+
+struct AtomicBufferResourceHandle {
+  llvm::Value *Pointer;
+  llvm::Value *ByteLength;  // can be null
+  uint32_t StructureStride; // 0 if not structured
+  mask_t Mask;
+};
+
 struct SamplerHandle {
   llvm::Value *Handle;
   llvm::Value *HandleCube;
@@ -87,6 +101,24 @@ public:
   }
 
   llvm::Optional<SamplerHandle> LoadSampler(const SrcOperandSampler &SrcOp);
+
+  llvm::Optional<BufferResourceHandle> LoadBuffer(const SrcOperandResource &SrcOp);
+  llvm::Optional<BufferResourceHandle> LoadBuffer(const SrcOperandUAV &SrcOp);
+  llvm::Optional<AtomicBufferResourceHandle> LoadBuffer(const AtomicDstOperandUAV &DstOp);
+  llvm::Optional<BufferResourceHandle> LoadBuffer(const SrcOperandTGSM &SrcOp);
+  llvm::Optional<AtomicBufferResourceHandle> LoadBuffer(const AtomicOperandTGSM &DstOp);
+  llvm::Optional<BufferResourceHandle>
+  LoadBuffer(const std::variant<SrcOperandResource, SrcOperandUAV> &SrcOp) {
+    return std::visit([this](auto &SrcOp) { return this->LoadBuffer(SrcOp); }, SrcOp);
+  }
+  llvm::Optional<BufferResourceHandle>
+  LoadBuffer(const std::variant<SrcOperandResource, SrcOperandUAV, SrcOperandTGSM> &SrcOp) {
+    return std::visit([this](auto &SrcOp) { return this->LoadBuffer(SrcOp); }, SrcOp);
+  }
+  llvm::Optional<AtomicBufferResourceHandle>
+  LoadBuffer(const std::variant<AtomicDstOperandUAV, AtomicOperandTGSM> &SrcOp) {
+    return std::visit([this](auto &DstOp) { return this->LoadBuffer(DstOp); }, SrcOp);
+  }
 
   /* Store Operands */
 
@@ -191,6 +223,11 @@ public:
   void operator()(const InstCalcLOD &);
   void operator()(const InstResourceInfo &);
 
+  void operator()(const InstLoadRaw &);
+  void operator()(const InstStoreRaw &);
+  void operator()(const InstLoadStructured &);
+  void operator()(const InstStoreStructured &);
+
   /* Utils */
 
   bool
@@ -227,8 +264,20 @@ public:
       return Swizzle[2];
     case 0b1000:
       return Swizzle[3];
-    default:
+    default: {
+      // e.g. mov r1.xyzw v1.xxxx
+      mask_t AccessMask = MemoryAccessMask(Mask, Swizzle);
+      switch (AccessMask) {
+      case 0b1:
+      case 0b10:
+      case 0b100:
+      case 0b1000:
+        return __builtin_ctz(AccessMask);
+      default:
+        break;
+      }
       break;
+    }
     }
     return -1;
   }
@@ -286,6 +335,17 @@ public:
     }
 
     return ir.CreateShuffleVector(Value, Idx);
+  }
+
+  mask_t
+  MemoryAccessMask(mask_t Mask, Swizzle Swizzle) {
+    mask_t Ret = 0;
+    for (unsigned Bit = 0; Bit < 4; ++Bit) {
+      if (Mask & (1 << Bit)) {
+        Ret |= (1 << Swizzle[Bit]);
+      }
+    }
+    return Ret;
   }
 
   llvm::Value *
