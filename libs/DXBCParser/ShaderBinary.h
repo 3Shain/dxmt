@@ -6,6 +6,7 @@
 
 #include "d3d12tokenizedprogramformat.hpp"
 #include <cassert>
+#include <cstdlib>
 #include <cstring>
 #include "minwindef.h"
 
