@@ -39,7 +39,23 @@ public:
     depthcube_array,
     depth_2d_ms,
     depth_2d_ms_array,
-    num_resource_kind,
+    // woops, some mistakes made before
+    texture_1d = texture1d,
+    texture_1d_array = texture1d_array,
+    texture_2d = texture2d,
+    texture_2d_array = texture2d_array,
+    texture_3d = texture3d,
+    texture_cube = texturecube,
+    texture_cube_array = texturecube_array,
+    texture_2d_ms = texture2d_ms,
+    texture_2d_ms_array = texture2d_ms_array,
+    depth_2d = depth2d,
+    depth_2d_array = depth2d_array,
+    depth_cube = depthcube,
+    depth_cube_array = depthcube_array,
+    depth2d_ms = depth_2d_ms,
+    depth2d_ms_array = depth_2d_ms_array,
+    last_resource_kind = depth2d_ms_array,
   };
 
   enum SampleType {

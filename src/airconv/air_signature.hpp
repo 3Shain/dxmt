@@ -12,6 +12,7 @@
 #include <string>
 #include <unordered_set>
 #include <variant>
+#include "nt/air_builder.hpp"
 
 namespace dxmt::air {
 
@@ -64,25 +65,7 @@ enum class AddressSpace : uint32_t {
 
 enum class Sign { inapplicable, with_sign, no_sign };
 
-// I use kind to not confuse with type which often refers to component type
-enum class TextureKind {
-  texture_1d,
-  texture_1d_array,
-  texture_2d,
-  texture_2d_array,
-  texture_2d_ms,
-  texture_2d_ms_array,
-  texture_3d,
-  texture_cube,
-  texture_cube_array,
-  texture_buffer, // 10
-  depth_2d,
-  depth_2d_array,
-  depth_2d_ms,
-  depth_2d_ms_array,
-  depth_cube,
-  depth_cube_array // 16
-};
+using TextureKind = llvm::air::Texture::ResourceKind;
 
 inline TextureKind lowering_texture_1d_to_2d(TextureKind kind) {
   switch (kind) {

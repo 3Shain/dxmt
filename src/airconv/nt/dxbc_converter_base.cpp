@@ -392,46 +392,6 @@ Converter::ApplySrcModifier(SrcOperandCommon C, llvm::Value *Value, mask_t Mask)
   return Value;
 }
 
-// TODO: duplicated enum
-static llvm::air::Texture::ResourceKind
-__map_resource_kind(air::TextureKind k) {
-  using namespace llvm::air;
-  switch (k) {
-  case air::TextureKind::texture_1d:
-    return Texture::texture1d;
-  case air::TextureKind::texture_1d_array:
-    return Texture::texture1d_array;
-  case air::TextureKind::texture_2d:
-    return Texture::texture2d;
-  case air::TextureKind::texture_2d_array:
-    return Texture::texture2d_array;
-  case air::TextureKind::texture_2d_ms:
-    return Texture::texture2d_ms;
-  case air::TextureKind::texture_2d_ms_array:
-    return Texture::texture2d_ms_array;
-  case air::TextureKind::texture_3d:
-    return Texture::texture3d;
-  case air::TextureKind::texture_cube:
-    return Texture::texturecube;
-  case air::TextureKind::texture_cube_array:
-    return Texture::texturecube_array;
-  case air::TextureKind::texture_buffer:
-    return Texture::texture_buffer;
-  case air::TextureKind::depth_2d:
-    return Texture::depth2d;
-  case air::TextureKind::depth_2d_array:
-    return Texture::depth2d_array;
-  case air::TextureKind::depth_2d_ms:
-    return Texture::depth_2d_ms;
-  case air::TextureKind::depth_2d_ms_array:
-    return Texture::depth_2d_ms_array;
-  case air::TextureKind::depth_cube:
-    return Texture::depthcube;
-  case air::TextureKind::depth_cube_array:
-    return Texture::depthcube_array;
-  }
-}
-
 llvm::Optional<TextureResourceHandle>
 Converter::LoadTexture(const SrcOperandResource &SrcOp) {
   using namespace llvm::air;
@@ -445,7 +405,7 @@ Converter::LoadTexture(const SrcOperandResource &SrcOp) {
     return {};
 
   Texture texture;
-  texture.kind = __map_resource_kind(res.resource_kind);
+  texture.kind = res.resource_kind;
   texture.memory_access = (Texture::MemoryAccess)res.memory_access;
   texture.sample_type = std::visit(
       patterns{
@@ -456,7 +416,7 @@ Converter::LoadTexture(const SrcOperandResource &SrcOp) {
   );
 
   return llvm::Optional<TextureResourceHandle>(
-      {texture, __map_resource_kind(res.resource_kind_logical), res_handle.get(), md.get(), SrcOp.read_swizzle}
+      {texture, res.resource_kind_logical, res_handle.get(), md.get(), SrcOp.read_swizzle}
   );
 }
 
@@ -473,7 +433,7 @@ Converter::LoadTexture(const SrcOperandUAV &SrcOp) {
     return {};
 
   Texture texture;
-  texture.kind = __map_resource_kind(res.resource_kind);
+  texture.kind = res.resource_kind;
   texture.memory_access = (Texture::MemoryAccess)res.memory_access;
   texture.sample_type = std::visit(
       patterns{
@@ -484,7 +444,7 @@ Converter::LoadTexture(const SrcOperandUAV &SrcOp) {
   );
 
   return llvm::Optional<TextureResourceHandle>(
-      {texture, __map_resource_kind(res.resource_kind_logical), res_handle.get(), md.get(), SrcOp.read_swizzle}
+      {texture, res.resource_kind_logical, res_handle.get(), md.get(), SrcOp.read_swizzle}
   );
 }
 
@@ -501,7 +461,7 @@ Converter::LoadTexture(const AtomicDstOperandUAV &DstOp) {
     return {};
 
   Texture texture;
-  texture.kind = __map_resource_kind(res.resource_kind);
+  texture.kind = res.resource_kind;
   texture.memory_access = (Texture::MemoryAccess)res.memory_access;
   texture.sample_type = std::visit(
       patterns{
@@ -512,7 +472,7 @@ Converter::LoadTexture(const AtomicDstOperandUAV &DstOp) {
   );
 
   return llvm::Optional<TextureResourceHandle>(
-      {texture, __map_resource_kind(res.resource_kind_logical), res_handle.get(), md.get(), swizzle_identity}
+      {texture, res.resource_kind_logical, res_handle.get(), md.get(), swizzle_identity}
   );
 }
 
@@ -2139,7 +2099,6 @@ Converter::operator()(const InstResourceInfo &resinfo) {
   case llvm::air::Texture::texture2d_ms_array:
   case llvm::air::Texture::depth_2d_ms:
   case llvm::air::Texture::depth_2d_ms_array:
-  case llvm::air::Texture::num_resource_kind:
     break;
   default:
     MipCount = air.CreateTextureQuery(Tex->Texture, Tex->Handle, Texture::num_mip_levels, ir.getInt32(0));

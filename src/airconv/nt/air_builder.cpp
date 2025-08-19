@@ -93,7 +93,7 @@ Value *
 AIRBuilder::CreateAtomicRMW(
     const Texture &Texture, Value *Handle, AtomicRMWInst::BinOp Op, Value *Pos, Value *ValVec4, Value *ArrayIndex
 ) {
-  assert(Texture.kind < Texture::num_resource_kind);
+  assert(Texture.kind <= Texture::last_resource_kind);
   auto &TexInfo = TextureInfo[Texture.kind];
 
   if (Texture.sample_type != Texture::sample_int && Texture.sample_type != Texture::sample_uint) {
@@ -196,7 +196,7 @@ std::pair<Value *, Value *>
 AIRBuilder::CreateAtomicCmpXchg(
     const Texture &Texture, Value *Handle, Value *Pos, Value *CmpVec4, Value *NewVec4, Value *ArrayIndex
 ) {
-  assert(Texture.kind < Texture::num_resource_kind);
+  assert(Texture.kind <= Texture::last_resource_kind);
   auto &TexInfo = TextureInfo[Texture.kind];
 
   if (Texture.sample_type != Texture::sample_int && Texture.sample_type != Texture::sample_uint) {
@@ -266,14 +266,14 @@ AIRBuilder::CreateAtomicCmpXchg(
 
 Type *
 AIRBuilder::getTextureHandleType(const Texture &Texture) {
-  assert(Texture.kind < Texture::num_resource_kind);
+  assert(Texture.kind <= Texture::last_resource_kind);
   return getOrCreateStructType(std::format("struct._{}_t", TextureInfo[Texture.kind].air_symbol_suffix))
       ->getPointerTo(1);
 };
 
 Type *
 AIRBuilder::getTexelType(const Texture &Texture) {
-  assert(Texture.kind < Texture::num_resource_kind);
+  assert(Texture.kind <= Texture::last_resource_kind);
   auto &info = TextureInfo[Texture.kind];
   if (info.is_depth)
     return getFloatTy(); // depth texture must return a single float
@@ -288,7 +288,7 @@ AIRBuilder::getTexelType(const Texture &Texture) {
 
 Type *
 AIRBuilder::getTexelGatherType(const Texture &Texture) {
-  assert(Texture.kind < Texture::num_resource_kind);
+  assert(Texture.kind <= Texture::last_resource_kind);
   auto &info = TextureInfo[Texture.kind];
   if (info.is_depth)
     return getFloatTy(4); // depth texture gather must return float4
@@ -297,14 +297,14 @@ AIRBuilder::getTexelGatherType(const Texture &Texture) {
 
 Type *
 AIRBuilder::getTextureSampleCoordType(const Texture &Texture) {
-  assert(Texture.kind < Texture::num_resource_kind);
+  assert(Texture.kind <= Texture::last_resource_kind);
   auto &info = TextureInfo[Texture.kind];
   return getFloatTy(info.coord_dimension);
 }
 
 Type *
 AIRBuilder::getTextureRWPositionType(const Texture &Texture) {
-  assert(Texture.kind < Texture::num_resource_kind);
+  assert(Texture.kind <= Texture::last_resource_kind);
   auto &info = TextureInfo[Texture.kind];
   if (info.is_cube) {
     return getIntTy(2);
@@ -317,7 +317,7 @@ AIRBuilder::CreateSampleCommon(
     const Texture &Texture, Value *Handle, Value *Sampler, Value *Coord, Value *ArrayIndex, Value *Offset,
     bool ArgsControlBit, Value *Args1, Value *Args2
 ) {
-  assert(Texture.kind < Texture::num_resource_kind);
+  assert(Texture.kind <= Texture::last_resource_kind);
   auto &TexInfo = TextureInfo[Texture.kind];
 
   auto &Context = getContext();
@@ -414,7 +414,7 @@ AIRBuilder::CreateSampleCmpCommon(
     const Texture &Texture, Value *Handle, Value *Sampler, Value *Coord, Value *ArrayIndex, Value *Reference,
     Value *Offset, bool ArgsControlBit, Value *Args1, Value *Args2
 ) {
-  assert(Texture.kind < Texture::num_resource_kind);
+  assert(Texture.kind <= Texture::last_resource_kind);
   auto &TexInfo = TextureInfo[Texture.kind];
 
   if (!TexInfo.is_depth) {
@@ -502,7 +502,7 @@ AIRBuilder::CreateSampleGrad(
     const Texture &Texture, Value *Handle, Value *Sampler, Value *Coord, Value *ArrayIndex, Value *DerivX,
     Value *DerivY, Value *MinLOD, const int32_t Offset[3]
 ) {
-  assert(Texture.kind < Texture::num_resource_kind);
+  assert(Texture.kind <= Texture::last_resource_kind);
   auto &TexInfo = TextureInfo[Texture.kind];
 
   auto &Context = getContext();
@@ -599,7 +599,7 @@ std::pair<Value *, Value *>
 AIRBuilder::CreateRead(
     const Texture &Texture, Value *Handle, Value *Pos, Value *ArrayIndex, Value *SampleIndexOrCubeFace, Value *Level
 ) {
-  assert(Texture.kind < Texture::num_resource_kind);
+  assert(Texture.kind <= Texture::last_resource_kind);
   auto &TexInfo = TextureInfo[Texture.kind];
 
   auto &Context = getContext();
@@ -669,7 +669,7 @@ CallInst *
 AIRBuilder::CreateWrite(
     const Texture &Texture, Value *Handle, Value *Pos, Value *ArrayIndex, Value *CubeFace, Value *Level, Value *ValVec4
 ) {
-  assert(Texture.kind < Texture::num_resource_kind);
+  assert(Texture.kind <= Texture::last_resource_kind);
   auto &TexInfo = TextureInfo[Texture.kind];
 
   auto &Context = getContext();
@@ -727,7 +727,7 @@ AIRBuilder::CreateGather(
     const Texture &Texture, Value *Handle, Value *Sampler, Value *Coord, Value *ArrayIndex, Value *Offset,
     Value *Component
 ) {
-  assert(Texture.kind < Texture::num_resource_kind);
+  assert(Texture.kind <= Texture::last_resource_kind);
   auto &TexInfo = TextureInfo[Texture.kind];
 
   auto &Context = getContext();
@@ -808,7 +808,7 @@ AIRBuilder::CreateGatherCompare(
     const Texture &Texture, Value *Handle, Value *Sampler, Value *Coord, Value *ArrayIndex, Value *Reference,
     Value *Offset
 ) {
-  assert(Texture.kind < Texture::num_resource_kind);
+  assert(Texture.kind <= Texture::last_resource_kind);
   auto &TexInfo = TextureInfo[Texture.kind];
 
   if (!TexInfo.is_depth) {
@@ -885,7 +885,7 @@ AIRBuilder::CreateGatherCompare(
 
 Value *
 AIRBuilder::CreateTextureQuery(const Texture &Texture, Value *Handle, Texture::Query Query, Value *Level) {
-  assert(Texture.kind < Texture::num_resource_kind);
+  assert(Texture.kind <= Texture::last_resource_kind);
   auto &TexInfo = TextureInfo[Texture.kind];
 
   static const char *QUERYS[] = {
@@ -936,7 +936,7 @@ AIRBuilder::CreateTextureQuery(const Texture &Texture, Value *Handle, Texture::Q
 
 std::pair<Value *, Value *>
 AIRBuilder::CreateCalculateLOD(const Texture &Texture, Value *Handle, Value *Sampler, Value *Coord) {
-  assert(Texture.kind < Texture::num_resource_kind);
+  assert(Texture.kind <= Texture::last_resource_kind);
   auto &TexInfo = TextureInfo[Texture.kind];
 
   auto &Context = getContext();
