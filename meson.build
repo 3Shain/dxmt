@@ -2,7 +2,6 @@ project('dxmt', ['c', 'cpp'], version : 'v0.1', meson_version: '>=1.3.0', defaul
   'cpp_std=c++20', 
   'warning_level=2', 
   'build.cpp_std=c++20',
-  'build.warning_level=2',
   'b_ndebug=if-release',
 ])
 
