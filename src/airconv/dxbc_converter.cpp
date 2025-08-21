@@ -3025,6 +3025,8 @@ AIRCONV_API int SM50Compile(
     return 1;
   }
 
+  linkShader(*pModule);
+
   // Serialize AIR
   auto compiled = new SM50CompiledBitcodeInternal();
 
@@ -3078,6 +3080,8 @@ AIRCONV_API int SM50CompileTessellationPipelineVertex(
     *ppError = (sm50_error_t)errorObj;
     return 1;
   }
+
+  linkShader(*pModule);
 
   // Serialize AIR
   auto compiled = new SM50CompiledBitcodeInternal();
@@ -3139,6 +3143,8 @@ AIRCONV_API int SM50CompileTessellationPipelineHull(
     *ppError = (sm50_error_t)errorObj;
     return 1;
   }
+
+  linkShader(*pModule);
 
   // Serialize AIR
   auto compiled = new SM50CompiledBitcodeInternal();
@@ -3207,6 +3213,8 @@ AIRCONV_API int SM50CompileTessellationPipelineDomain(
     return 1;
   }
 
+  linkShader(*pModule);
+
   // Serialize AIR
   auto compiled = new SM50CompiledBitcodeInternal();
 
@@ -3260,6 +3268,8 @@ AIRCONV_API int SM50CompileGeometryPipelineVertex(
     *ppError = (sm50_error_t)errorObj;
     return 1;
   }
+
+  linkShader(*pModule);
 
   // Serialize AIR
   auto compiled = new SM50CompiledBitcodeInternal();
@@ -3321,6 +3331,8 @@ AIRCONV_API int SM50CompileGeometryPipelineGeometry(
     *ppError = (sm50_error_t)errorObj;
     return 1;
   }
+
+  linkShader(*pModule);
 
   // Serialize AIR
   auto compiled = new SM50CompiledBitcodeInternal();

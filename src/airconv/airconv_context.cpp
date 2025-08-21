@@ -9,10 +9,15 @@
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/Support/VersionTuple.h"
 #include "llvm/Transforms/Scalar/Scalarizer.h"
+#include "llvm/Bitcode/BitcodeReader.h"
+#include "llvm/Linker/Linker.h"
 
 #include "airconv_context.hpp"
 
 using namespace llvm;
+
+extern unsigned char air_shader[];
+extern unsigned int air_shader_len;
 
 namespace dxmt {
 
@@ -26,37 +31,8 @@ void initializeModule(llvm::Module &M, const ModuleOptions &opts) {
     "v128:128:128-v192:256:256-v256:256:256-v512:512:512-v1024:1024:1024-n8:"
     "16:32"
   );
-  M.setSDKVersion(VersionTuple(14, 0));
-  M.addModuleFlag(Module::ModFlagBehavior::Error, "wchar_size", 4);
-  M.addModuleFlag(Module::ModFlagBehavior::Max, "frame-pointer", 2);
-  M.addModuleFlag(Module::ModFlagBehavior::Max, "air.max_device_buffers", 31);
-  M.addModuleFlag(Module::ModFlagBehavior::Max, "air.max_constant_buffers", 31);
-  M.addModuleFlag(
-    Module::ModFlagBehavior::Max, "air.max_threadgroup_buffers", 31
-  );
-  M.addModuleFlag(Module::ModFlagBehavior::Max, "air.max_textures", 128);
-  M.addModuleFlag(
-    Module::ModFlagBehavior::Max, "air.max_read_write_textures", 8
-  );
-  M.addModuleFlag(Module::ModFlagBehavior::Max, "air.max_samplers", 16);
 
-  auto createUnsignedInteger = [&](uint32_t s) {
-    return ConstantAsMetadata::get(
-      ConstantInt::get(context, APInt{32, s, false})
-    );
-  };
   auto createString = [&](auto s) { return MDString::get(context, s); };
-
-  auto airVersion = M.getOrInsertNamedMetadata("air.version");
-  airVersion->addOperand(MDTuple::get(
-    context, {createUnsignedInteger(2), createUnsignedInteger(6),
-              createUnsignedInteger(0)}
-  ));
-  auto airLangVersion = M.getOrInsertNamedMetadata("air.language_version");
-  airLangVersion->addOperand(MDTuple::get(
-    context, {createString("Metal"), createUnsignedInteger(3),
-              createUnsignedInteger(0), createUnsignedInteger(0)}
-  ));
 
   auto airCompileOptions = M.getOrInsertNamedMetadata("air.compile_options");
   airCompileOptions->addOperand(
@@ -117,5 +93,23 @@ void runOptimizationPasses(llvm::Module &M, llvm::OptimizationLevel opt) {
   // Optimize the IR!
   MPM.run(M, MAM);
 }
+
+void linkShader(llvm::Module &M) {
+  auto buffer = MemoryBuffer::getMemBufferCopy(StringRef((const char *)air_shader, air_shader_len));
+  Expected<std::unique_ptr<Module>> modOrErr = parseBitcodeFile(buffer->getMemBufferRef(), M.getContext());
+
+  if (!modOrErr) {
+    // not expected to see this unless something really bad happened in compile time
+    errs() << "Failed to parse air bitcode\n";
+    return;
+  }
+
+  if (auto md = modOrErr->get()->getNamedMetadata("air.compile_options")) {
+    // avoid conflict
+    modOrErr->get()->eraseNamedMetadata(md);
+  }
+
+  llvm::Linker::linkModules(M, std::move(modOrErr.get()), Linker::LinkOnlyNeeded);
+};
 
 } // namespace dxmt

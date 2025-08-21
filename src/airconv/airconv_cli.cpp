@@ -373,6 +373,8 @@ int main(int argc, char **argv) {
     dxmt::runOptimizationPasses(M, OptimizationLevel::O2);
   }
 
+  dxmt::linkShader(M);
+
   std::error_code EC;
   std::unique_ptr<ToolOutputFile> Out(new ToolOutputFile(
     OutputFilename, EC,

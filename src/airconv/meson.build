@@ -44,6 +44,25 @@ airconv_forward_dep = declare_dependency(
   include_directories : [ dxmt_include_path, include_directories('.') ],
 )
 
+airshader_bc = custom_target(
+  'airshader-bc',
+  input : 'nt/air_shader.metal',
+  output : 'air_shader.air',
+  command : [
+    find_program('xcrun'), '-sdk', 'macosx', 'metal',
+    '-o', '@OUTPUT@', '-c', '@INPUT@', '-std=metal3.1', '--target=air64-apple-macos14.0',
+  ]
+)
+
+airshader_embeded = custom_target(
+  'airshader-embedded',
+  input : airshader_bc,
+  output : 'air_shader.c',
+  command : ['xxd', '-n', 'air_shader', '-i', '@INPUT@', '@OUTPUT@']
+)
+
+airconv_src += airshader_embeded
+
 build_airconv_for_windows = get_option('build_airconv_for_windows')
 
 if build_airconv_for_windows
