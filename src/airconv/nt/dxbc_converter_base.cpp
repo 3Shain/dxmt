@@ -2169,8 +2169,30 @@ Converter::operator()(const InstSampleInfo &sample) {
 
 void
 Converter::operator()(const InstSamplePos &sample) {
-  // FIXME: stub
-  StoreOperand(sample.dst, llvm::ConstantAggregateZero::get(air.getFloatTy(4)));
+  using namespace llvm::air;
+
+  llvm::Optional<TextureResourceHandle> Tex =
+      sample.src ? LoadTexture(sample.src.value()) : llvm::Optional<TextureResourceHandle>{};
+
+  llvm::Value *SampleCount = nullptr;
+
+  if (!Tex) {
+    if (sample.src.has_value()) {
+      SampleCount = ir.getInt32(0);
+    } else {
+      SampleCount = air.CreateGetNumSamples();
+    }
+  } else {
+    SampleCount = air.CreateTextureQuery(Tex->Texture, Tex->Handle, Texture::num_samples, ir.getInt32(0));
+  }
+
+  llvm::Value *Index = LoadOperand(sample.src_sample_index, kMaskComponentX);
+
+  llvm::Value *ValueVec4 = llvm::ConstantAggregateZero::get(air.getFloatTy(2));
+  llvm::Value *Pos = GetSamplePos(SampleCount, Index);
+  ValueVec4 = ir.CreateShuffleVector(Pos, ValueVec4, {0, 1, 2, 3});
+
+  StoreOperand(sample.dst, MaskSwizzle(ValueVec4, GetMask(sample.dst), sample.read_swizzle));
 }
 
 void
@@ -2564,6 +2586,24 @@ Converter::operator()(const InstCut &) {
   if (res.call_cut().build(ctx).takeError()) {
     // TODO
   }
+}
+
+llvm::Value *
+Converter::GetSamplePos(llvm::Value *SampleCount, llvm::Value *Index) {
+  using namespace llvm;
+
+  auto &Context = air.getContext();
+  auto Attrs = AttributeList::get(
+      Context, {{~0U, Attribute::get(Context, Attribute::AttrKind::NoUnwind)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::WillReturn)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::ReadNone)}}
+  );
+
+  std::string FnName = "dxmt.sample_pos.i32";
+  auto Fn = air.getModule()->getOrInsertFunction(
+      FnName, llvm::FunctionType::get(air.getFloatTy(2), {air.getIntTy(), air.getIntTy()}, false), Attrs
+  );
+  return ir.CreateCall(Fn, {SampleCount, Index});
 }
 
 } // namespace dxmt::dxbc

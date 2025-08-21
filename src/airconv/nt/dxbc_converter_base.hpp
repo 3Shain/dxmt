@@ -417,6 +417,8 @@ public:
 
   llvm::Value *ClampArrayIndex(llvm::Value *ShaderValue, llvm::Value *Metadata);
 
+  llvm::Value *GetSamplePos(llvm::Value *SampleCount, llvm::Value *Index);
+
 private:
   llvm::air::AIRBuilder &air;
   llvm::IRBuilderBase &ir;

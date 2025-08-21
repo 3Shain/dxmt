@@ -411,6 +411,7 @@ struct InstSamplePos {
   DstOperand dst;
   std::optional<SrcOperandResource> src; // if null, get rasterizer info
   SrcOperand src_sample_index;
+  Swizzle read_swizzle;
 };
 
 struct InstLoad {

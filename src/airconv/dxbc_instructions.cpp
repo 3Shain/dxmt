@@ -821,7 +821,8 @@ Instruction readInstruction(
       return InstSamplePos{
         .dst = readDstOperand(Inst.m_Operands[0], phase, OperandDataType::Float),
         .src = {},
-        .src_sample_index = readSrcOperand(Inst.m_Operands[2], phase, OperandDataType::Integer)
+        .src_sample_index = readSrcOperand(Inst.m_Operands[2], phase, OperandDataType::Integer),
+        .read_swizzle = readSrcOperandSwizzle(Inst.m_Operands[1]),
       };
     } else {
       auto src = readSrcOperandResource(Inst.m_Operands[1], phase);
@@ -829,7 +830,8 @@ Instruction readInstruction(
       return InstSamplePos{
         .dst = readDstOperand(Inst.m_Operands[0], phase, OperandDataType::Float),
         .src = src,
-        .src_sample_index = readSrcOperand(Inst.m_Operands[2], phase, OperandDataType::Integer)
+        .src_sample_index = readSrcOperand(Inst.m_Operands[2], phase, OperandDataType::Integer),
+        .read_swizzle = readSrcOperandSwizzle(Inst.m_Operands[1]),
       };
     };
   };
