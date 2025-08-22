@@ -2571,10 +2571,40 @@ Converter::operator()(const InstInterpolateOffset &eval) {
 }
 
 void
-Converter::operator()(const InstMaskedSumOfAbsDiff &) {
-  // TODO: implement
-  assert(0 && "implement me");
+Converter::operator()(const InstMaskedSumOfAbsDiff &msad) {
+  using namespace llvm;
+
+  mask_t Mask = GetMask(msad.dst);
+  auto Ref = LoadOperand(msad.src0, Mask);
+  auto Src = LoadOperand(msad.src1, Mask);
+  auto Accum = LoadOperand(msad.src2, Mask);
+
+  auto &Context = air.getContext();
+  auto Attrs = AttributeList::get(
+      Context, {{~0U, Attribute::get(Context, Attribute::AttrKind::ReadNone)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::NoUnwind)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::WillReturn)}}
+  );
+
+  SmallVector<Value *> Ops;
+  SmallVector<Type *> Tys;
+
+  Tys.push_back(Ref->getType());
+  Ops.push_back(Ref);
+  Tys.push_back(Src->getType());
+  Ops.push_back(Src);
+  Tys.push_back(Accum->getType());
+  Ops.push_back(Accum);
+
+  std::string FnName = "dxmt.msad";
+  FnName += air.getTypeOverloadSuffix(Ref->getType());
+
+  auto Fn = air.getModule()->getOrInsertFunction(FnName, FunctionType::get(Accum->getType(), Tys, false), Attrs);
+  auto Result = ir.CreateCall(Fn, Ops);
+
+  StoreOperand(msad.dst, Result);
 }
+
 void
 Converter::operator()(const InstEmit &) {
   if (res.call_emit().build(ctx).takeError()) {

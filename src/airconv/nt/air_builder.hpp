@@ -496,6 +496,8 @@ public:
     return nullptr;
   };
 
+  std::string getTypeOverloadSuffix(Type *Ty, Signedness Sign = Signedness::DontCare);
+
 protected:
   raw_ostream &debug;
 
@@ -547,8 +549,6 @@ protected:
       const Texture &Texture, Value *Handle, Value *Sampler, Value *Coord, Value *ArrayIndex, Value *Reference,
       Value *Offset, bool ArgsControlBit, Value *Args1, Value *Args2
   );
-
-  std::string getTypeOverloadSuffix(Type *Ty, Signedness Sign = Signedness::DontCare);
 
   Signedness
   getTexelSign(const Texture &Texture) {
