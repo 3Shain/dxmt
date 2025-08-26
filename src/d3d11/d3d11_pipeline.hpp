@@ -41,14 +41,6 @@ struct MTL_COMPILED_COMPUTE_PIPELINE {
   WMT::ComputePipelineState PipelineState;
 };
 
-struct MTL_COMPILED_TESSELLATION_PIPELINE {
-  WMT::RenderPipelineState MeshPipelineState;
-  WMT::RenderPipelineState RasterizationPipelineState;
-  uint32_t NumControlPointOutputElement;
-  uint32_t NumPatchConstantOutputScalar;
-  uint32_t ThreadsPerPatch;
-};
-
 struct MTL_COMPILED_TESSELLATION_MESH_PIPELINE {
   WMT::RenderPipelineState PipelineState;
   uint32_t NumControlPointOutputElement;
@@ -75,15 +67,6 @@ DEFINE_COM_INTERFACE("3b26b8d3-56ca-4d0f-9f63-ca8d305ff07e",
   virtual bool IsReady() = 0;
   virtual void GetPipeline(MTL_COMPILED_COMPUTE_PIPELINE *
                            pComputePipeline) = 0;
-};
-
-DEFINE_COM_INTERFACE("f5075e27-fd85-4c5a-9031-d438f859e6e9",
-                     IMTLCompiledTessellationPipeline)
-    : public IMTLThreadpoolWork {
-  virtual void SubmitWork() = 0;
-  virtual bool IsReady() = 0;
-  virtual void GetPipeline(MTL_COMPILED_TESSELLATION_PIPELINE *
-                           pTessellationPipeline) = 0;
 };
 
 DEFINE_COM_INTERFACE("0a86aadc-260d-40a0-afed-659408a84ffb",
@@ -203,10 +186,6 @@ Com<IMTLCompiledGraphicsPipeline> CreateGraphicsPipeline(
 
 Com<IMTLCompiledComputePipeline>
 CreateComputePipeline(MTLD3D11Device *pDevice, ManagedShader ComputeShader);
-
-Com<IMTLCompiledTessellationPipeline>
-CreateTessellationPipeline(MTLD3D11Device *pDevice,
-                           MTL_GRAPHICS_PIPELINE_DESC *pDesc);
 
 Com<IMTLCompiledGeometryPipeline>
 CreateGeometryPipeline(MTLD3D11Device *pDevice,
