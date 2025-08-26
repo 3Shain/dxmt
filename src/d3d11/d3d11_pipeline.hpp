@@ -49,6 +49,13 @@ struct MTL_COMPILED_TESSELLATION_PIPELINE {
   uint32_t ThreadsPerPatch;
 };
 
+struct MTL_COMPILED_TESSELLATION_MESH_PIPELINE {
+  WMT::RenderPipelineState PipelineState;
+  uint32_t NumControlPointOutputElement;
+  uint32_t NumPatchConstantOutputScalar;
+  uint32_t ThreadsPerPatch;
+};
+
 DEFINE_COM_INTERFACE("7ee15804-8604-41fc-ad0c-4ecf97e2e6fe",
                      IMTLCompiledGraphicsPipeline)
     : public IMTLThreadpoolWork {
@@ -86,6 +93,15 @@ DEFINE_COM_INTERFACE("0a86aadc-260d-40a0-afed-659408a84ffb",
   virtual bool IsReady() = 0;
   virtual void GetPipeline(MTL_COMPILED_GRAPHICS_PIPELINE *
                            pGeometryPipeline) = 0;
+};
+
+DEFINE_COM_INTERFACE("0777c3d9-e4a9-4ff1-9ecc-09b32d0def50",
+                     IMTLCompiledTessellationMeshPipeline)
+    : public IMTLThreadpoolWork {
+  virtual void SubmitWork() = 0;
+  virtual bool IsReady() = 0;
+  virtual void GetPipeline(MTL_COMPILED_TESSELLATION_MESH_PIPELINE *
+                           pTessellationPipeline) = 0;
 };
 
 namespace std {

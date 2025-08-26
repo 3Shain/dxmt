@@ -1068,6 +1068,14 @@ public:
     return S_OK;
   };
 
+  HRESULT
+  CreateTessellationMeshPipeline(MTL_GRAPHICS_PIPELINE_DESC *pDesc,
+                         IMTLCompiledTessellationMeshPipeline **ppPipeline) override {
+    // TESS TODO
+
+    return E_FAIL;
+  };
+
   Device &GetDXMTDevice() override { return device_; };
 
   void CreateCommandList(ID3D11CommandList** pCommandList) final {
