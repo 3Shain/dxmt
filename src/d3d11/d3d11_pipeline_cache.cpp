@@ -169,11 +169,6 @@ class PipelineCache : public MTLD3D11PipelineCacheBase {
   dxmt::mutex mutex_;
 
   std::unordered_map<MTL_GRAPHICS_PIPELINE_DESC,
-                     Com<IMTLCompiledTessellationPipeline>>
-      pipelines_ts_;
-  dxmt::mutex mutex_ts_;
-
-  std::unordered_map<MTL_GRAPHICS_PIPELINE_DESC,
                      Com<IMTLCompiledGeometryPipeline>>
       pipelines_gs_;
   dxmt::mutex mutex_gs_;
@@ -372,28 +367,10 @@ class PipelineCache : public MTLD3D11PipelineCacheBase {
     *ppPipeline = std::move(temp);                          // move
   }
 
-  void GetTessellationPipeline(
-      MTL_GRAPHICS_PIPELINE_DESC *pDesc,
-      IMTLCompiledTessellationPipeline **ppPipeline) override {
-    std::lock_guard<dxmt::mutex> lock(mutex_ts_);
-
-    auto iter = pipelines_ts_.find(*pDesc);
-    if (iter != pipelines_ts_.end()) {
-      *ppPipeline = iter->second.ref();
-      return;
-    }
-    auto temp = dxmt::CreateTessellationPipeline(device, pDesc);
-    if (!pipelines_ts_.insert({*pDesc, temp}).second) // copy
-    {
-      D3D11_ASSERT(0 && "duplicated tessellation pipeline");
-    }
-    *ppPipeline = std::move(temp);
-  }
-
   void GetGeometryPipeline(
       MTL_GRAPHICS_PIPELINE_DESC *pDesc,
       IMTLCompiledGeometryPipeline **ppPipeline) override {
-    std::lock_guard<dxmt::mutex> lock(mutex_ts_);
+    std::lock_guard<dxmt::mutex> lock(mutex_gs_);
 
     auto iter = pipelines_gs_.find(*pDesc);
     if (iter != pipelines_gs_.end()) {
