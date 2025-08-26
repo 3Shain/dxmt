@@ -19,6 +19,7 @@ struct IMTLCompiledGraphicsPipeline;
 struct IMTLCompiledComputePipeline;
 struct IMTLCompiledTessellationPipeline;
 struct IMTLCompiledGeometryPipeline;
+struct IMTLCompiledTessellationMeshPipeline;
 
 struct MTL_GRAPHICS_PIPELINE_DESC;
 struct MTL_COMPUTE_PIPELINE_DESC;
@@ -63,6 +64,10 @@ public:
 
   virtual HRESULT CreateGeometryPipeline(MTL_GRAPHICS_PIPELINE_DESC * pDesc,
                                              IMTLCompiledGeometryPipeline *
+                                                 *ppPipeline) = 0;
+
+  virtual HRESULT CreateTessellationMeshPipeline(MTL_GRAPHICS_PIPELINE_DESC * pDesc,
+                                             IMTLCompiledTessellationMeshPipeline *
                                                  *ppPipeline) = 0;
 
   virtual bool IsTraced() = 0;

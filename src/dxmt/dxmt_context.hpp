@@ -112,8 +112,6 @@ struct RenderEncoderData : EncoderData {
   std::vector<GSDispatchArgumentsMarshal> gs_arg_marshal_tasks;
   wmtcmd_render_nop cmd_head;
   wmtcmd_base *cmd_tail;
-  wmtcmd_render_nop pretess_cmd_head;
-  wmtcmd_base *pretess_cmd_tail;
   WMT::Buffer allocated_argbuf;
   uint64_t allocated_argbuf_offset;
   void *allocated_argbuf_mapping;
@@ -210,14 +208,14 @@ GetResidencyMask(PipelineStage type, bool read, bool write) {
     return (read ? DXMT_RESOURCE_RESIDENCY_FRAGMENT_READ : DXMT_RESOURCE_RESIDENCY_NULL) |
            (write ? DXMT_RESOURCE_RESIDENCY_FRAGMENT_WRITE : DXMT_RESOURCE_RESIDENCY_NULL);
   case PipelineStage::Hull:
-    return (read ? DXMT_RESOURCE_RESIDENCY_MESH_READ : DXMT_RESOURCE_RESIDENCY_NULL) |
-           (write ? DXMT_RESOURCE_RESIDENCY_MESH_WRITE : DXMT_RESOURCE_RESIDENCY_NULL);
+    return (read ? DXMT_RESOURCE_RESIDENCY_OBJECT_READ : DXMT_RESOURCE_RESIDENCY_NULL) |
+           (write ? DXMT_RESOURCE_RESIDENCY_OBJECT_WRITE : DXMT_RESOURCE_RESIDENCY_NULL);
   case PipelineStage::Geometry:
     return (read ? DXMT_RESOURCE_RESIDENCY_MESH_GS_READ : DXMT_RESOURCE_RESIDENCY_NULL) |
            (write ? DXMT_RESOURCE_RESIDENCY_MESH_GS_WRITE : DXMT_RESOURCE_RESIDENCY_NULL);
   case PipelineStage::Domain:
-    return (read ? DXMT_RESOURCE_RESIDENCY_VERTEX_READ : DXMT_RESOURCE_RESIDENCY_NULL) |
-           (write ? DXMT_RESOURCE_RESIDENCY_VERTEX_WRITE : DXMT_RESOURCE_RESIDENCY_NULL);
+    return (read ? DXMT_RESOURCE_RESIDENCY_MESH_READ : DXMT_RESOURCE_RESIDENCY_NULL) |
+           (write ? DXMT_RESOURCE_RESIDENCY_MESH_WRITE : DXMT_RESOURCE_RESIDENCY_NULL);
   case PipelineStage::Compute:
     return (read ? DXMT_RESOURCE_RESIDENCY_READ : DXMT_RESOURCE_RESIDENCY_NULL) |
            (write ? DXMT_RESOURCE_RESIDENCY_WRITE : DXMT_RESOURCE_RESIDENCY_NULL);
@@ -423,12 +421,6 @@ public:
       cmd.type = WMTComputeCommandUseResource;
       cmd.resource = resource;
       cmd.usage = GetUsageFromResidencyMask(requested);
-    } else if constexpr (kind == PipelineKind::Tessellation) {
-      auto &cmd = encodePreTessRenderCommand<wmtcmd_render_useresource>();
-      cmd.type = WMTRenderCommandUseResource;
-      cmd.resource = resource;
-      cmd.usage = GetUsageFromResidencyMask(requested);
-      cmd.stages = GetStagesFromResidencyMask(requested);
     } else {
       auto &cmd = encodeRenderCommand<wmtcmd_render_useresource>();
       cmd.type = WMTRenderCommandUseResource;
@@ -492,18 +484,6 @@ public:
         {draw_args, draw_args_resource_id + draw_args_offset, dispatch_args, dispatch_args_resource_id + write_offset,
          vertex_count_per_warp}
     );
-  }
-
-  template <typename cmd_struct>
-  cmd_struct &
-  encodePreTessRenderCommand() {
-    assert(encoder_current->type == EncoderType::Render);
-    auto encoder = static_cast<RenderEncoderData *>(encoder_current);
-    auto storage = (cmd_struct *)allocate_cpu_heap(sizeof(cmd_struct), 16);
-    encoder->pretess_cmd_tail->next.set(storage);
-    encoder->pretess_cmd_tail = (wmtcmd_base *)storage;
-    storage->next.set(nullptr);
-    return *storage;
   }
 
   template <typename cmd_struct>
