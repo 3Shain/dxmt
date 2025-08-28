@@ -320,61 +320,6 @@ std::function<IRValue(pvalue)> pop_output_reg_fix_unorm(uint32_t from_reg, uint3
   };
 }
 
-IREffect init_tess_factor_patch_constant(uint32_t to_reg, uint32_t mask, uint32_t factor_index, uint32_t factor_count) {
-  return make_effect_bind([=](context ctx) -> IREffect {
-    auto src_ptr = ctx.builder.CreateGEP(
-      ctx.types._half, ctx.resource.tess_factor_buffer,
-      {ctx.builder.CreateAdd(ctx.builder.CreateMul(
-         ctx.resource.instanced_patch_id, ctx.builder.getInt32(factor_count)
-       ),
-       ctx.builder.getInt32(factor_index))}
-    );
-    auto src_val = ctx.builder.CreateLoad(ctx.types._half, src_ptr);
-    auto to_float = ctx.air.CreateConvertToFloat(src_val);
-    auto array = ctx.resource.patch_constant_output.ptr_float4;
-    auto array_ty = llvm::cast<llvm::ArrayType>( // force line break
-      llvm::cast<llvm::PointerType>(array->getType())
-        ->getNonOpaquePointerElementType()
-    );
-    auto component_ptr = ctx.builder.CreateGEP(
-      array_ty, array,
-      {ctx.builder.getInt32(0), ctx.builder.getInt32(to_reg),
-       ctx.builder.getInt32(__builtin_ctz(mask))}
-    );
-    ctx.builder.CreateStore(to_float, component_ptr);
-    co_return {};
-  });
-}
-
-std::function<IRValue(pvalue)> pop_output_tess_factor(
-  uint32_t from_reg, uint32_t mask, uint32_t factor_index, uint32_t factor_count
-) {
-  return [=](pvalue ret) -> IRValue {
-    auto ctx = co_yield get_context();
-    auto array = ctx.resource.patch_constant_output.ptr_float4;
-    auto array_ty = llvm::cast<llvm::ArrayType>( // force line break
-      llvm::cast<llvm::PointerType>(array->getType())
-        ->getNonOpaquePointerElementType()
-    );
-    auto component_ptr = ctx.builder.CreateGEP(
-      array_ty, array,
-      {ctx.builder.getInt32(0), ctx.builder.getInt32(from_reg),
-       ctx.builder.getInt32(__builtin_ctz(mask))}
-    );
-    auto to_half = ctx.air.CreateConvertToHalf(ctx.builder.CreateLoad(ctx.types._float, component_ptr));
-    auto dst_ptr = ctx.builder.CreateGEP(
-      ctx.types._half, ctx.resource.tess_factor_buffer,
-      {ctx.builder.CreateAdd(ctx.builder.CreateMul(
-         ctx.resource.instanced_patch_id, ctx.builder.getInt32(factor_count)
-       ),
-       ctx.builder.getInt32(factor_index))}
-    );
-    ctx.builder.CreateStore(to_half, dst_ptr);
-
-    co_return nullptr;
-  };
-}
-
 IREffect
 pop_mesh_output_render_taget_array_index(uint32_t from_reg, uint32_t mask, pvalue primitive_id) {
   auto ctx = co_yield get_context();
@@ -640,43 +585,13 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
                 active, sync
               );
               builder.SetInsertPoint(active);
-              auto dst_ptr = builder.CreateGEP(
-                ctx.types._int4, ctx.resource.control_point_buffer,
-                {builder.CreateMul(
-                  ctx.resource.instanced_patch_id, builder.getInt32(
-                                           ctx.resource.output_element_count *
-                                           hull_end.instance_count
-                                         )
-                )}
-              );
-              for (unsigned i = 0; i < ctx.resource.output_element_count; i++) {
-                auto dst_ptr_offset = builder.CreateGEP(
-                  ctx.types._int4, dst_ptr,
-                  {builder.CreateAdd(
-                    builder.CreateMul(
-                      ctx.resource.thread_id_in_patch,
-                      builder.getInt32(ctx.resource.output_element_count)
-                    ),
-                    builder.getInt32(i)
-                  )}
-                );
-                auto src_ptr_offset = builder.CreateGEP(
-                  llvm::ArrayType::get(ctx.types._int4, ctx.resource.output_element_count * hull_end.instance_count),
-                  ctx.resource.output.ptr_int4,
-                  {builder.getInt32(0),
-                   builder.CreateAdd(
-                     builder.CreateMul(
-                       ctx.resource.thread_id_in_patch,
-                       builder.getInt32(ctx.resource.output_element_count)
-                     ),
-                     builder.getInt32(i)
-                   )}
-                );
-                builder.CreateStore(
-                  builder.CreateLoad(ctx.types._int4, src_ptr_offset),
-                  dst_ptr_offset
-                );
-              }
+
+              builder.CreateStore(
+                builder.CreateLoad(
+                  ctx.resource.hull_cp_passthrough_type,
+                  ctx.resource.hull_cp_passthrough_src
+              ), ctx.resource.hull_cp_passthrough_dst);
+
               builder.CreateBr(sync);
               builder.SetInsertPoint(sync);
               ctx.air.CreateBarrier(llvm::air::MemFlags::Threadgroup);

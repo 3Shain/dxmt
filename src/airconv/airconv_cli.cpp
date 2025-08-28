@@ -236,7 +236,7 @@ int main(int argc, char **argv) {
       SM50FreeError(err);
       return 1;
     }
-    if (auto err = dxmt::dxbc::convert_dxbc_domain_shader(
+    if (auto err = dxmt::dxbc::convert_dxbc_tesselator_domain_shader(
           (dxmt::dxbc::SM50ShaderInternal *)sm50, "shader_main",
           (dxmt::dxbc::SM50ShaderInternal *)sm50_hull, Context, M, nullptr
         )) {
@@ -264,9 +264,9 @@ int main(int argc, char **argv) {
       SM50FreeError(err);
       return 1;
     }
-    if (auto err = dxmt::dxbc::convert_dxbc_hull_shader(
-          (dxmt::dxbc::SM50ShaderInternal *)sm50, "shader_main",
-          (dxmt::dxbc::SM50ShaderInternal *)sm50_vertex, Context, M, nullptr
+    if (auto err = dxmt::dxbc::convert_dxbc_vertex_hull_shader(
+          (dxmt::dxbc::SM50ShaderInternal *)sm50_vertex, (dxmt::dxbc::SM50ShaderInternal *)sm50,
+          "shader_main", Context, M, nullptr
         )) {
       errs() << err << '\n';
       return 1;
@@ -292,9 +292,9 @@ int main(int argc, char **argv) {
       SM50FreeError(err);
       return 1;
     }
-    if (auto err = dxmt::dxbc::convert_dxbc_vertex_for_hull_shader(
-          (dxmt::dxbc::SM50ShaderInternal *)sm50, "shader_main",
-          (dxmt::dxbc::SM50ShaderInternal *)sm50_hull, Context, M, nullptr
+    if (auto err = dxmt::dxbc::convert_dxbc_vertex_hull_shader(
+          (dxmt::dxbc::SM50ShaderInternal *)sm50, (dxmt::dxbc::SM50ShaderInternal *)sm50_hull,
+          "shader_main", Context, M, nullptr
         )) {
       errs() << err << '\n';
       return 1;

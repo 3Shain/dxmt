@@ -305,21 +305,19 @@ Converter::LoadOperand(const SrcOperandInputICP &SrcOp, mask_t Mask) {
   /* applies to both hull and domain shader, in this case input is a "2d" array */
   auto Handle = res.input.ptr_int4;
   auto TyHandle = GetArrayType(Handle);
-  auto InputElementCount = res.input_element_count;
 
-  auto Offset = ir.CreateAdd(
-      ir.CreateMul(LoadOperandIndex(SrcOp.cpid), ir.getInt32(InputElementCount)), ir.getInt32(SrcOp.regid)
-  );
+  auto CPId = LoadOperandIndex(SrcOp.cpid);
+  auto RegId = ir.getInt32(SrcOp.regid);
 
   if (auto Comp = ComponentFromScalarMask(Mask, SrcOp._.swizzle); Comp >= 0) {
     auto TyInt = air.getIntTy();
-    auto Ptr = ir.CreateGEP(TyHandle, Handle, {ir.getInt32(0), Offset, ir.getInt32(Comp)});
+    auto Ptr = ir.CreateGEP(TyHandle, Handle, {ir.getInt32(0), CPId, RegId, ir.getInt32(Comp)});
     auto ValueInt = ir.CreateLoad(TyInt, Ptr);
     return ApplySrcModifier(SrcOp._, ValueInt, Mask);
   }
 
   auto TyIntVec4 = air.getIntTy(4);
-  auto Ptr = ir.CreateGEP(TyHandle, Handle, {ir.getInt32(0), Offset});
+  auto Ptr = ir.CreateGEP(TyHandle, Handle, {ir.getInt32(0), CPId, RegId});
   auto ValueIntVec4 = ir.CreateLoad(TyIntVec4, Ptr);
   return ApplySrcModifier(SrcOp._, ValueIntVec4, Mask);
 }
@@ -348,21 +346,19 @@ Converter::LoadOperand(const SrcOperandInputOCP &SrcOp, mask_t Mask) {
   /* applies to both hull and domain shader, in this case input is a "2d" array */
   auto Handle = res.output.ptr_int4;
   auto TyHandle = GetArrayType(Handle);
-  auto OutputElementCount = res.output_element_count;
 
-  auto Offset = ir.CreateAdd(
-      ir.CreateMul(LoadOperandIndex(SrcOp.cpid), ir.getInt32(OutputElementCount)), ir.getInt32(SrcOp.regid)
-  );
+  auto CPId = LoadOperandIndex(SrcOp.cpid);
+  auto RegId = ir.getInt32(SrcOp.regid);
 
   if (auto Comp = ComponentFromScalarMask(Mask, SrcOp._.swizzle); Comp >= 0) {
     auto TyInt = air.getIntTy();
-    auto Ptr = ir.CreateGEP(TyHandle, Handle, {ir.getInt32(0), Offset, ir.getInt32(Comp)});
+    auto Ptr = ir.CreateGEP(TyHandle, Handle, {ir.getInt32(0), CPId, RegId, ir.getInt32(Comp)});
     auto ValueInt = ir.CreateLoad(TyInt, Ptr);
     return ApplySrcModifier(SrcOp._, ValueInt, Mask);
   }
 
   auto TyIntVec4 = air.getIntTy(4);
-  auto Ptr = ir.CreateGEP(TyHandle, Handle, {ir.getInt32(0), Offset});
+  auto Ptr = ir.CreateGEP(TyHandle, Handle, {ir.getInt32(0), CPId, RegId});
   auto ValueIntVec4 = ir.CreateLoad(TyIntVec4, Ptr);
   return ApplySrcModifier(SrcOp._, ValueIntVec4, Mask);
 }
@@ -618,17 +614,17 @@ Converter::StoreOperandHull(const DstOperandOutput &DstOp, llvm::Value *Value) {
 
   auto Handle = res.output.ptr_int4;
   auto TyHandle = GetArrayType(Handle);
-  auto Index = ir.CreateAdd(
-      ir.CreateMul(res.thread_id_in_patch, ir.getInt32(res.output_element_count)), ir.getInt32(DstOp.regid)
-  );
+
+  auto CPId = res.thread_id_in_patch;
+  auto RegId = ir.getInt32(DstOp.regid);
 
   if ((DstOp._.mask & kMaskAll) == kMaskAll) {
-    auto Ptr = ir.CreateInBoundsGEP(TyHandle, Handle, {ir.getInt32(0), Index});
+    auto Ptr = ir.CreateInBoundsGEP(TyHandle, Handle, {ir.getInt32(0), CPId, RegId});
     ir.CreateStore(VectorSplat(4, ValueInt), Ptr);
     return;
   }
   for (auto [DstComp, SrcComp] : EnumerateComponents(DstOp._.mask)) {
-    auto Ptr = ir.CreateInBoundsGEP(TyHandle, Handle, {ir.getInt32(0), Index, ir.getInt32(DstComp)});
+    auto Ptr = ir.CreateInBoundsGEP(TyHandle, Handle, {ir.getInt32(0), CPId, RegId, ir.getInt32(DstComp)});
     ir.CreateStore(ExtractElement(ValueInt, SrcComp), Ptr);
   }
 }
@@ -649,6 +645,9 @@ Converter::StoreOperand(const DstOperandOutputDepth &DstOp, llvm::Value *Value) 
 
 void
 Converter::StoreOperand(const DstOperandIndexableOutput &DstOp, llvm::Value *Value) {
+  if (ctx.shader_type == microsoft::D3D11_SB_HULL_SHADER && DstOp.phase == ~0u)
+    return StoreOperandHull(DstOp, Value);
+
   auto ValueInt = ZExtAndBitcastToInt32(Value);
 
   auto Handle = res.output.ptr_int4;
@@ -671,9 +670,6 @@ Converter::StoreOperand(const DstOperandIndexableOutput &DstOp, llvm::Value *Val
 
 void
 Converter::StoreOperandHull(const DstOperandIndexableOutput &DstOp, llvm::Value *Value) {
-  if (ctx.shader_type == microsoft::D3D11_SB_HULL_SHADER && DstOp.phase == ~0u)
-    return StoreOperandHull(DstOp, Value);
-
   auto ValueInt = ZExtAndBitcastToInt32(Value);
 
   auto Handle = res.output.ptr_int4;
@@ -2634,6 +2630,210 @@ Converter::GetSamplePos(llvm::Value *SampleCount, llvm::Value *Index) {
       FnName, llvm::FunctionType::get(air.getFloatTy(2), {air.getIntTy(), air.getIntTy()}, false), Attrs
   );
   return ir.CreateCall(Fn, {SampleCount, Index});
+}
+void
+Converter::HullGenerateTrapezoidForTriangle(
+    llvm::Value *PatchIndex, llvm::Value *CountPtr, llvm::Value *DataPtr, TessellatorPartitioning Partitioning,
+    llvm::Value *TessFactorIn, llvm::Value *TessFactorOut0, llvm::Value *TessFactorOut1, llvm::Value *TessFactorOut2
+) {
+  using namespace llvm;
+
+  auto &Context = air.getContext();
+  auto Attrs = AttributeList::get(
+      Context, {{3U, Attribute::get(Context, Attribute::AttrKind::WriteOnly)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::NoUnwind)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::WillReturn)}}
+  );
+
+  SmallVector<Value *> Ops;
+  SmallVector<Type *> Tys;
+
+  Tys.push_back(PatchIndex->getType());
+  Ops.push_back(PatchIndex);
+  Tys.push_back(CountPtr->getType());
+  Ops.push_back(CountPtr);
+  Tys.push_back(DataPtr->getType());
+  Ops.push_back(DataPtr);
+  Tys.push_back(TessFactorIn->getType());
+  Ops.push_back(TessFactorIn);
+  Tys.push_back(TessFactorOut0->getType());
+  Ops.push_back(TessFactorOut0);
+  Tys.push_back(TessFactorOut1->getType());
+  Ops.push_back(TessFactorOut1);
+  Tys.push_back(TessFactorOut2->getType());
+  Ops.push_back(TessFactorOut2);
+
+  std::string FnName = "dxmt.generate_trapezoid.triangle";
+  switch (Partitioning) {
+  case TessellatorPartitioning::integer:
+    FnName += ".integer";
+    break;
+  case TessellatorPartitioning::pow2:
+    FnName += ".pow2";
+    break;
+  case TessellatorPartitioning::fractional_odd:
+    FnName += ".odd";
+    break;
+  case TessellatorPartitioning::fractional_even:
+    FnName += ".even";
+    break;
+  }
+  auto Fn = air.getModule()->getOrInsertFunction(FnName, llvm::FunctionType::get(air.getVoidTy(), Tys, false), Attrs);
+  ir.CreateCall(Fn, Ops);
+}
+
+void
+Converter::HullGenerateTrapezoidForQuad(
+    llvm::Value *PatchIndex, llvm::Value *CountPtr, llvm::Value *DataPtr, TessellatorPartitioning Partitioning,
+    llvm::Value *TessFactorIn0, llvm::Value *TessFactorIn1, llvm::Value *TessFactorOut0, llvm::Value *TessFactorOut1,
+    llvm::Value *TessFactorOut2, llvm::Value *TessFactorOut3
+) {
+  using namespace llvm;
+
+  auto &Context = air.getContext();
+  auto Attrs = AttributeList::get(
+      Context, {{3U, Attribute::get(Context, Attribute::AttrKind::WriteOnly)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::NoUnwind)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::WillReturn)}}
+  );
+
+  SmallVector<Value *> Ops;
+  SmallVector<Type *> Tys;
+
+  Tys.push_back(PatchIndex->getType());
+  Ops.push_back(PatchIndex);
+  Tys.push_back(CountPtr->getType());
+  Ops.push_back(CountPtr);
+  Tys.push_back(DataPtr->getType());
+  Ops.push_back(DataPtr);
+  Tys.push_back(TessFactorIn0->getType());
+  Ops.push_back(TessFactorIn0);
+  Tys.push_back(TessFactorIn1->getType());
+  Ops.push_back(TessFactorIn1);
+  Tys.push_back(TessFactorOut0->getType());
+  Ops.push_back(TessFactorOut0);
+  Tys.push_back(TessFactorOut1->getType());
+  Ops.push_back(TessFactorOut1);
+  Tys.push_back(TessFactorOut2->getType());
+  Ops.push_back(TessFactorOut2);
+  Tys.push_back(TessFactorOut3->getType());
+  Ops.push_back(TessFactorOut3);
+
+  std::string FnName = "dxmt.generate_trapezoid.quad";
+  switch (Partitioning) {
+  case TessellatorPartitioning::integer:
+    FnName += ".integer";
+    break;
+  case TessellatorPartitioning::pow2:
+    FnName += ".pow2";
+    break;
+  case TessellatorPartitioning::fractional_odd:
+    FnName += ".odd";
+    break;
+  case TessellatorPartitioning::fractional_even:
+    FnName += ".even";
+    break;
+  }
+  auto Fn = air.getModule()->getOrInsertFunction(FnName, llvm::FunctionType::get(air.getVoidTy(), Tys, false), Attrs);
+  ir.CreateCall(Fn, Ops);
+}
+
+std::tuple<llvm::Value *, llvm::Value *, llvm::Value *>
+Converter::DomainGetLocation(
+    llvm::Value *TrapezoidIndex, llvm::Value *ThreadIndex, llvm::Value *DataPtr, TessellatorPartitioning Partitioning
+) {
+  using namespace llvm;
+
+  auto &Context = air.getContext();
+  auto Attrs = AttributeList::get(
+      Context, {{3U, Attribute::get(Context, Attribute::AttrKind::ReadOnly)},
+                {3U, Attribute::get(Context, Attribute::AttrKind::NoCapture)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::NoUnwind)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::WillReturn)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::ReadOnly)}}
+  );
+
+  SmallVector<Value *> Ops;
+  SmallVector<Type *> Tys;
+
+  Tys.push_back(TrapezoidIndex->getType());
+  Ops.push_back(TrapezoidIndex);
+  Tys.push_back(ThreadIndex->getType());
+  Ops.push_back(ThreadIndex);
+  Tys.push_back(DataPtr->getType());
+  Ops.push_back(DataPtr);
+
+  std::string FnName = "dxmt.get_domain_location";
+  switch (Partitioning) {
+  case TessellatorPartitioning::integer:
+    FnName += ".integer";
+    break;
+  case TessellatorPartitioning::pow2:
+    FnName += ".pow2";
+    break;
+  case TessellatorPartitioning::fractional_odd:
+    FnName += ".odd";
+    break;
+  case TessellatorPartitioning::fractional_even:
+    FnName += ".even";
+    break;
+  }
+  auto Fn = air.getModule()->getOrInsertFunction(
+      FnName,
+      llvm::FunctionType::get(
+          llvm::StructType::create(Context, {air.getFloatTy(2), air.getIntTy(), air.getByteTy()}, ""), Tys, false
+      ),
+      Attrs
+  );
+  auto Return = ir.CreateCall(Fn, Ops);
+  return {
+      ir.CreateExtractValue(Return, 0ull), ir.CreateExtractValue(Return, 1),
+      ir.CreateIsNotNull(ir.CreateExtractValue(Return, 2))
+  };
+}
+
+void
+Converter::DomainGeneratePrimitives(
+    llvm::Value *TrapezoidIndex, llvm::Value *DataPtr, TessellatorOutputPrimitive Primitive
+) {
+  using namespace llvm;
+
+  auto &Context = air.getContext();
+  auto Attrs = AttributeList::get(
+      Context, {{2U, Attribute::get(Context, Attribute::AttrKind::ReadOnly)},
+                {2U, Attribute::get(Context, Attribute::AttrKind::NoCapture)},
+                {3U, Attribute::get(Context, Attribute::AttrKind::NoCapture)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::NoUnwind)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::WillReturn)}}
+  );
+
+  SmallVector<Value *> Ops;
+  SmallVector<Type *> Tys;
+
+  Tys.push_back(TrapezoidIndex->getType());
+  Ops.push_back(TrapezoidIndex);
+  Tys.push_back(DataPtr->getType());
+  Ops.push_back(DataPtr);
+  Tys.push_back(air.getMeshHandleType());
+  Ops.push_back(air.getMeshHandle());
+
+  std::string FnName = "dxmt.domain_generate_primitives";
+  switch (Primitive) {
+  case TessellatorOutputPrimitive::point:
+    FnName += ".point";
+    break;
+  case TessellatorOutputPrimitive::line:
+    FnName += ".line";
+    break;
+  case TessellatorOutputPrimitive::triangle:
+    FnName += ".triangle";
+    break;
+  case TessellatorOutputPrimitive::triangle_ccw:
+    FnName += ".triangle_ccw";
+    break;
+  }
+  auto Fn = air.getModule()->getOrInsertFunction(FnName, llvm::FunctionType::get(air.getVoidTy(), Tys, false), Attrs);
+  ir.CreateCall(Fn, Ops);
 }
 
 } // namespace dxmt::dxbc

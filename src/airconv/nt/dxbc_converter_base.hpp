@@ -61,6 +61,20 @@ struct InterpolantHandle {
   bool Perspective;
 };
 
+enum class TessellatorPartitioning {
+  integer,
+  pow2,
+  fractional_odd,
+  fractional_even,
+};
+
+enum class TessellatorOutputPrimitive {
+  point,
+  line,
+  triangle,
+  triangle_ccw,
+};
+
 class Converter {
 public:
   Converter(llvm::air::AIRBuilder &air, context &ctx_legacy, io_binding_map &res_legacy) :
@@ -418,6 +432,24 @@ public:
   llvm::Value *ClampArrayIndex(llvm::Value *ShaderValue, llvm::Value *Metadata);
 
   llvm::Value *GetSamplePos(llvm::Value *SampleCount, llvm::Value *Index);
+
+  void HullGenerateTrapezoidForTriangle(
+      llvm::Value *PatchIndex, llvm::Value *CountPtr, llvm::Value *DataPtr, TessellatorPartitioning Partitioning,
+      llvm::Value *TessFactorIn, llvm::Value *TessFactorOut0, llvm::Value *TessFactorOut1, llvm::Value *TessFactorOut2
+  );
+
+  void HullGenerateTrapezoidForQuad(
+      llvm::Value *PatchIndex, llvm::Value *CountPtr, llvm::Value *DataPtr, TessellatorPartitioning Partitioning,
+      llvm::Value *TessFactorIn0, llvm::Value *TessFactorIn1, llvm::Value *TessFactorOut0, llvm::Value *TessFactorOut1,
+      llvm::Value *TessFactorOut2, llvm::Value *TessFactorOut3
+  );
+
+  std::tuple<llvm::Value *, llvm::Value *, llvm::Value *> DomainGetLocation(
+      llvm::Value *TrapezoidIndex, llvm::Value *ThreadIndex, llvm::Value *DataPtr, TessellatorPartitioning Partitioning
+  );
+
+  void
+  DomainGeneratePrimitives(llvm::Value *TrapezoidIndex, llvm::Value *DataPtr, TessellatorOutputPrimitive Primitive);
 
 private:
   llvm::air::AIRBuilder &air;

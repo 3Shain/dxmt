@@ -314,12 +314,14 @@ convert_dxbc_geometry_shader(
 
   resource_map.patch_id = builder.CreateAdd(builder.CreateMul(warp_id, builder.getInt32(warp_primitive_count)), primitive_id_in_warp);
 
-  auto input_ptr_int4_type =
-      llvm::ArrayType::get(types._int4, pVertexStage->max_output_register * vertex_per_primitive);
+  auto input_per_vertex_type = llvm::ArrayType::get(types._int4, pVertexStage->max_output_register);
+  auto input_per_vertex_type_float = llvm::ArrayType::get(types._float4, pVertexStage->max_output_register);
+
+  auto input_ptr_int4_type = llvm::ArrayType::get(input_per_vertex_type,  vertex_per_primitive);
   resource_map.input.ptr_int4 = builder.CreateAlloca(input_ptr_int4_type);
   resource_map.input.ptr_float4 = builder.CreateBitCast(
       resource_map.input.ptr_int4,
-      llvm::ArrayType::get(types._float4, pVertexStage->max_output_register * vertex_per_primitive)->getPointerTo()
+      llvm::ArrayType::get(input_per_vertex_type_float, vertex_per_primitive)->getPointerTo()
   );
   resource_map.input_element_count = pVertexStage->max_output_register;
 
@@ -359,7 +361,7 @@ convert_dxbc_geometry_shader(
           ),
           builder.CreateGEP(
               input_ptr_int4_type, resource_map.input.ptr_int4,
-              {zero_const, builder.getInt32(vid * pVertexStage->max_output_register + reg)}
+              {zero_const, builder.getInt32(vid), builder.getInt32(reg)}
           )
       );
     }
