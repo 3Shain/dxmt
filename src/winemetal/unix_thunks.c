@@ -79,26 +79,6 @@ SM50FreeError(sm50_error_t pError) {
 }
 
 AIRCONV_API int
-SM50CompileTessellationPipelineVertex(
-    sm50_shader_t pVertexShader, sm50_shader_t pHullShader,
-    struct SM50_SHADER_COMPILATION_ARGUMENT_DATA *pVertexShaderArgs, const char *FunctionName,
-    sm50_bitcode_t *ppBitcode, sm50_error_t *ppError
-) {
-  struct sm50_compile_tessellation_pipeline_vertex_params params;
-  params.vertex = pVertexShader;
-  params.hull = pHullShader;
-  params.vertex_args = pVertexShaderArgs;
-  params.func_name = FunctionName;
-  params.bitcode = ppBitcode;
-  params.error = ppError;
-  NTSTATUS status;
-  status = UNIX_CALL(sm50_compile_tessellation_vertex, &params);
-  if (status)
-    return -1;
-  return params.ret;
-}
-
-AIRCONV_API int
 SM50CompileTessellationPipelineHull(
     sm50_shader_t pVertexShader, sm50_shader_t pHullShader,
     struct SM50_SHADER_COMPILATION_ARGUMENT_DATA *pHullShaderArgs, const char *FunctionName, sm50_bitcode_t *ppBitcode,
