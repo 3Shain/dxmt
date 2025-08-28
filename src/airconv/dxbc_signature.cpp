@@ -646,30 +646,43 @@ void handle_signature_hs(
     case D3D11_SB_NAME_FINAL_QUAD_V_EQ_1_EDGE_TESSFACTOR:
     case D3D11_SB_NAME_FINAL_QUAD_U_INSIDE_TESSFACTOR:
     case D3D11_SB_NAME_FINAL_QUAD_V_INSIDE_TESSFACTOR: {
-      signature_handlers.push_back([=](SignatureContext &ctx) {
-        ctx.epilogue >>
-          pop_output_tess_factor(
-            reg, mask, (siv - D3D11_SB_NAME_FINAL_QUAD_U_EQ_0_EDGE_TESSFACTOR),
-            6
+      for (unsigned i = 0; i < 4; i++) {
+        if (mask & (1 << i)) {
+          sm50_shader->patch_constant_scalars.push_back(
+              {.component = (uint8_t)(i),
+               .reg = (uint8_t)reg,
+               .tess_factor_index = (int8_t)(siv - D3D11_SB_NAME_FINAL_QUAD_U_EQ_0_EDGE_TESSFACTOR)}
           );
-      });
+        }
+      }
       break;
     }
     case D3D11_SB_NAME_FINAL_TRI_U_EQ_0_EDGE_TESSFACTOR:
     case D3D11_SB_NAME_FINAL_TRI_V_EQ_0_EDGE_TESSFACTOR:
     case D3D11_SB_NAME_FINAL_TRI_W_EQ_0_EDGE_TESSFACTOR:
     case D3D11_SB_NAME_FINAL_TRI_INSIDE_TESSFACTOR: {
-      signature_handlers.push_back([=](SignatureContext &ctx) {
-        ctx.epilogue >>
-          pop_output_tess_factor(
-            reg, mask, (siv - D3D11_SB_NAME_FINAL_TRI_U_EQ_0_EDGE_TESSFACTOR), 4
+      for (unsigned i = 0; i < 4; i++) {
+        if (mask & (1 << i)) {
+          sm50_shader->patch_constant_scalars.push_back(
+              {.component = (uint8_t)(i),
+               .reg = (uint8_t)reg,
+               .tess_factor_index = (int8_t)(siv - D3D11_SB_NAME_FINAL_TRI_U_EQ_0_EDGE_TESSFACTOR)}
           );
-      });
+        }
+      }
       break;
     }
     case D3D11_SB_NAME_FINAL_LINE_DENSITY_TESSFACTOR:
     case D3D11_SB_NAME_FINAL_LINE_DETAIL_TESSFACTOR: {
-      // TODO: isoline tessellation
+      for (unsigned i = 0; i < 4; i++) {
+        if (mask & (1 << i)) {
+          sm50_shader->patch_constant_scalars.push_back(
+              {.component = (uint8_t)(i),
+               .reg = (uint8_t)reg,
+               .tess_factor_index = (int8_t)(siv - D3D11_SB_NAME_FINAL_LINE_DETAIL_TESSFACTOR)}
+          );
+        }
+      }
       break;
     }
     default:
@@ -698,7 +711,7 @@ void handle_signature_hs(
         for (unsigned i = 0; i < 4; i++) {
           if (mask & (1 << i)) {
             sm50_shader->patch_constant_scalars.push_back(
-              {.component = (uint8_t)(i), .reg = (uint8_t)reg}
+              {.component = (uint8_t)(i), .reg = (uint8_t)reg, .tess_factor_index = -1}
             );
           }
         }
@@ -730,6 +743,8 @@ void handle_signature_ds(
   uint32_t &max_output_register = sm50_shader->max_output_register;
   auto &signature_handlers = sm50_shader->signature_handlers;
   auto &func_signature = sm50_shader->func_signature;
+  auto &mesh_output_handlers = sm50_shader->mesh_output_handlers;
+  uint32_t &num_mesh_vertex_data = sm50_shader->num_mesh_vertex_data;
 
   auto findOutputElement = [&](auto matcher) -> Signature {
     const D3D11_SIGNATURE_PARAMETER *parameters;
@@ -754,24 +769,13 @@ void handle_signature_ds(
     case D3D11_SB_NAME_FINAL_QUAD_U_EQ_1_EDGE_TESSFACTOR:
     case D3D11_SB_NAME_FINAL_QUAD_V_EQ_1_EDGE_TESSFACTOR:
     case D3D11_SB_NAME_FINAL_QUAD_U_INSIDE_TESSFACTOR:
-    case D3D11_SB_NAME_FINAL_QUAD_V_INSIDE_TESSFACTOR: {
-      signature_handlers.push_back([=](SignatureContext &ctx) {
-        ctx.prologue << init_tess_factor_patch_constant(
-          reg, mask, (siv - D3D11_SB_NAME_FINAL_QUAD_U_EQ_0_EDGE_TESSFACTOR), 6
-        );
-      });
-      max_input_register = std::max(reg + 1, max_input_register);
-      break;
-    }
+    case D3D11_SB_NAME_FINAL_QUAD_V_INSIDE_TESSFACTOR:
     case D3D11_SB_NAME_FINAL_TRI_U_EQ_0_EDGE_TESSFACTOR:
     case D3D11_SB_NAME_FINAL_TRI_V_EQ_0_EDGE_TESSFACTOR:
     case D3D11_SB_NAME_FINAL_TRI_W_EQ_0_EDGE_TESSFACTOR:
-    case D3D11_SB_NAME_FINAL_TRI_INSIDE_TESSFACTOR: {
-      signature_handlers.push_back([=](SignatureContext &ctx) {
-        ctx.prologue << init_tess_factor_patch_constant(
-          reg, mask, (siv - D3D11_SB_NAME_FINAL_TRI_U_EQ_0_EDGE_TESSFACTOR), 4
-        );
-      });
+    case D3D11_SB_NAME_FINAL_TRI_INSIDE_TESSFACTOR:
+    case D3D11_SB_NAME_FINAL_LINE_DENSITY_TESSFACTOR:
+    case D3D11_SB_NAME_FINAL_LINE_DETAIL_TESSFACTOR: {
       max_input_register = std::max(reg + 1, max_input_register);
       break;
     }
@@ -790,6 +794,7 @@ void handle_signature_ds(
 
     switch (RegType) {
     case D3D11_SB_OPERAND_TYPE_INPUT_DOMAIN_POINT: {
+      // should be defined in convert_dxbc_tessellator_domain_shader()
       break;
     }
     case D3D10_SB_OPERAND_TYPE_INPUT_PRIMITIVEID: {
@@ -824,20 +829,22 @@ void handle_signature_ds(
     auto siv = Inst.m_OutputDeclSIV.Name;
     switch (siv) {
     case D3D10_SB_NAME_CLIP_DISTANCE: {
-      for (unsigned i = 0; i < 4; i++) {
-        if (mask & (1 << i)) {
-          sm50_shader->clip_distance_scalars.push_back(
-            {.component = (uint8_t)(i), .reg = (uint8_t)reg}
-          );
-        }
-      }
-      uint32_t assigned_index = func_signature.DefineOutput(OutputVertex{
-        .user = std::format("SV_ClipDistance{}", reg),
-        .type = msl_float4,
-      });
-      signature_handlers.push_back([=](SignatureContext &ctx) {
-        ctx.epilogue >> pop_output_reg(reg, mask, assigned_index);
-      });
+      // TESS TODO
+
+      // for (unsigned i = 0; i < 4; i++) {
+      //   if (mask & (1 << i)) {
+      //     sm50_shader->clip_distance_scalars.push_back(
+      //       {.component = (uint8_t)(i), .reg = (uint8_t)reg}
+      //     );
+      //   }
+      // }
+      // uint32_t assigned_index = func_signature.DefineOutput(OutputVertex{
+      //   .user = std::format("SV_ClipDistance{}", reg),
+      //   .type = msl_float4,
+      // });
+      // signature_handlers.push_back([=](SignatureContext &ctx) {
+      //   ctx.epilogue >> pop_output_reg(reg, mask, assigned_index);
+      // });
       max_output_register = std::max(reg + 1, max_output_register);
       break;
     }
@@ -845,26 +852,23 @@ void handle_signature_ds(
       assert(0 && "Metal doesn't support shader output: cull distance");
       break;
     case D3D10_SB_NAME_POSITION: {
-      auto assigned_index =
-        func_signature.DefineOutput(OutputPosition{.type = msl_float4});
-      signature_handlers.push_back([=](SignatureContext &ctx) {
-        ctx.epilogue >> pop_output_reg(reg, mask, assigned_index);
+      func_signature.DefineMeshVertexOutput(OutputPosition{.type = msl_float4});
+      mesh_output_handlers.push_back([=](MeshOutputContext& output) -> IREffect {
+        return pop_mesh_output_position(reg, mask, output.vertex_id);
       });
       break;
     }
     case D3D10_SB_NAME_RENDER_TARGET_ARRAY_INDEX: {
-      auto assigned_index =
-        func_signature.DefineOutput(OutputRenderTargetArrayIndex{});
-      signature_handlers.push_back([=](SignatureContext &ctx) {
-        ctx.epilogue >> pop_output_reg(reg, mask, assigned_index);
+      func_signature.DefineMeshPrimitiveOutput(OutputRenderTargetArrayIndex{});
+      mesh_output_handlers.push_back([=](MeshOutputContext& output) -> IREffect {
+        return pop_mesh_output_render_taget_array_index(reg, mask, output.primitive_id);
       });
       break;
     }
     case D3D10_SB_NAME_VIEWPORT_ARRAY_INDEX: {
-      auto assigned_index =
-        func_signature.DefineOutput(OutputViewportArrayIndex{});
-      signature_handlers.push_back([=](SignatureContext &ctx) {
-        ctx.epilogue >> pop_output_reg(reg, mask, assigned_index);
+      func_signature.DefineMeshPrimitiveOutput(OutputViewportArrayIndex{});
+      mesh_output_handlers.push_back([=](MeshOutputContext& output) -> IREffect {
+        return pop_mesh_output_viewport_array_index(reg, mask, output.primitive_id);
       });
       break;
     }
@@ -887,12 +891,15 @@ void handle_signature_ds(
       });
       max_output_register = std::max(reg + 1, max_output_register);
       if (sig.mask() == 0) break;
-      uint32_t assigned_index = func_signature.DefineOutput(OutputVertex{
+      auto const mesh_vertex_data_index = num_mesh_vertex_data++;
+      auto const type = to_msl_type(sig.componentType());
+      func_signature.DefineMeshVertexOutput(OutputMeshData{
         .user = sig.fullSemanticString(),
-        .type = to_msl_type(sig.componentType()),
+        .type = type,
+        .index = mesh_vertex_data_index
       });
-      signature_handlers.push_back([=](SignatureContext &ctx) {
-        ctx.epilogue >> pop_output_reg(reg, mask, assigned_index);
+      mesh_output_handlers.push_back([=](MeshOutputContext& output) -> IREffect {
+        return pop_mesh_output_vertex_data(reg, mask, mesh_vertex_data_index, output.vertex_id, type);
       });
       break;
     }

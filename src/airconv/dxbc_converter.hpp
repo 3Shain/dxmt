@@ -189,7 +189,6 @@ struct io_binding_map {
 
   llvm::Value *domain = nullptr;
   llvm::Value *patch_id = nullptr;
-  llvm::Value *instanced_patch_id = nullptr;
 
   llvm::Value *thread_id_in_patch = nullptr;
 
@@ -203,8 +202,9 @@ struct io_binding_map {
   llvm::AllocaInst *cmp_exch_temp = nullptr;
 
   // special buffers for tessellation
-  llvm::Value *control_point_buffer;  // int4*
-  llvm::Value *patch_constant_buffer; // int*
+  llvm::Type *hull_cp_passthrough_type = nullptr;
+  llvm::Value *hull_cp_passthrough_src = nullptr;
+  llvm::Value *hull_cp_passthrough_dst = nullptr;
   llvm::Value *tess_factor_buffer;    // half*
 
   // temp for fast look-up
@@ -274,12 +274,6 @@ pop_output_reg(uint32_t from_reg, uint32_t mask, uint32_t to_element);
 std::function<IRValue(pvalue)>
 pop_output_reg_fix_unorm(uint32_t from_reg, uint32_t mask, uint32_t to_element);
 
-IREffect init_tess_factor_patch_constant(uint32_t to_reg, uint32_t mask, uint32_t factor_index, uint32_t factor_count);
-
-std::function<IRValue(pvalue)> pop_output_tess_factor(
-  uint32_t from_reg, uint32_t mask, uint32_t to_factor_indx, uint32_t factor_num
-);
-
 IREffect pull_vertex_input(
   air::FunctionSignatureBuilder &func_signature, uint32_t to_reg, uint32_t mask,
   SM50_IA_INPUT_ELEMENT element_info, uint32_t slot_mask
@@ -314,6 +308,12 @@ constexpr air::MSLScalerOrVectorType to_msl_type(RegisterComponentType type) {
 struct ScalarInfo {
   uint8_t component : 2;
   uint8_t reg : 6;
+};
+
+struct PatchConstantScalarInfo {
+  uint8_t component : 2;
+  uint8_t reg : 6;
+  int8_t tess_factor_index;
 };
 
 struct SignatureContext {
@@ -405,10 +405,11 @@ public:
   uint32_t threadgroup_size[3] = {0};
   uint32_t input_control_point_count = ~0u;
   uint32_t output_control_point_count = ~0u;
-  uint32_t tessellation_partition = 0;
+  microsoft::D3D11_SB_TESSELLATOR_PARTITIONING tessellation_partition = {};
   float max_tesselation_factor = 64.0f;
   microsoft::D3D11_SB_TESSELLATOR_OUTPUT_PRIMITIVE tessellator_output_primitive = {};
-  std::vector<ScalarInfo> patch_constant_scalars;
+  microsoft::D3D11_SB_TESSELLATOR_DOMAIN tessellation_domain = {};
+  std::vector<PatchConstantScalarInfo> patch_constant_scalars;
   uint32_t hull_maximum_threads_per_patch = 0;
   std::vector<ScalarInfo> clip_distance_scalars;
   microsoft::D3D10_SB_PRIMITIVE gs_input_primitive = {};
@@ -426,9 +427,16 @@ void handle_signature(
   uint32_t phase
 );
 
+uint32_t next_pow2(uint32_t x);
+
+constexpr uint32_t kConstantBufferBindIndex = 29;
+constexpr uint32_t kArgumentBufferBindIndex = 30;
+
 void setup_binding_table(
   const ShaderInfo *shader_info, io_binding_map &resource_map,
-  air::FunctionSignatureBuilder &func_signature, llvm::Module &module
+  air::FunctionSignatureBuilder &func_signature, llvm::Module &module,
+  uint32_t argbuffer_constant_slot = kConstantBufferBindIndex, 
+  uint32_t argbuffer_slot = kArgumentBufferBindIndex
 );
 
 void setup_tgsm(
@@ -448,25 +456,6 @@ void setup_immediate_constant_buffer(
   air::AirType &types, llvm::Module &module, llvm::IRBuilder<> &builder
 );
 
-llvm::Error convert_dxbc_hull_shader(
-  SM50ShaderInternal *pShaderInternal, const char *name,
-  SM50ShaderInternal *pVertexStage, llvm::LLVMContext &context,
-  llvm::Module &module, SM50_SHADER_COMPILATION_ARGUMENT_DATA *pArgs
-);
-
-llvm::Error convert_dxbc_domain_shader(
-  SM50ShaderInternal *pShaderInternal, const char *name,
-  SM50ShaderInternal *pHullStage, llvm::LLVMContext &context,
-  llvm::Module &module, SM50_SHADER_COMPILATION_ARGUMENT_DATA *pArgs
-);
-
-llvm::Error convert_dxbc_vertex_for_hull_shader(
-  const SM50ShaderInternal *pShaderInternal, const char *name,
-  const SM50ShaderInternal *pHullStage,
-  llvm::LLVMContext &context, llvm::Module &module,
-  SM50_SHADER_COMPILATION_ARGUMENT_DATA *pArgs
-);
-
 llvm::Error convert_dxbc_geometry_shader(
   SM50ShaderInternal *pShaderInternal, const char *name,
   SM50ShaderInternal *pVertexStage, llvm::LLVMContext &context,
@@ -479,4 +468,15 @@ llvm::Error convert_dxbc_vertex_for_geometry_shader(
   llvm::LLVMContext &context, llvm::Module &module,
   SM50_SHADER_COMPILATION_ARGUMENT_DATA *pArgs
 );
+
+llvm::Error convert_dxbc_vertex_hull_shader(
+    SM50ShaderInternal *pVertexStage, SM50ShaderInternal *pHullStage, const char *name, llvm::LLVMContext &context,
+    llvm::Module &module, SM50_SHADER_COMPILATION_ARGUMENT_DATA *pArgs
+);
+
+llvm::Error convert_dxbc_tesselator_domain_shader(
+    SM50ShaderInternal *pShaderInternal, const char *name, SM50ShaderInternal *pHullStage, llvm::LLVMContext &context,
+    llvm::Module &module, SM50_SHADER_COMPILATION_ARGUMENT_DATA *pArgs
+);
+
 } // namespace dxmt::dxbc

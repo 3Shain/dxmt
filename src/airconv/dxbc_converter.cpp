@@ -115,7 +115,8 @@ auto get_item_in_argbuf_binding_table(uint32_t argbuf_index, uint32_t index) {
 
 void setup_binding_table(
   const ShaderInfo *shader_info, io_binding_map &resource_map,
-  air::FunctionSignatureBuilder &func_signature, llvm::Module &module
+  air::FunctionSignatureBuilder &func_signature, llvm::Module &module,
+  uint32_t argbuffer_constant_slot, uint32_t argbuffer_slot
 ) {
   uint32_t binding_table_index = ~0u;
   uint32_t cbuf_table_index = ~0u;
@@ -123,30 +124,36 @@ void setup_binding_table(
     auto [type, metadata] = shader_info->binding_table.Build(
       module.getContext(), module.getDataLayout()
     );
+    std::string arg_name = "binding_table";
+    if (argbuffer_slot != kArgumentBufferBindIndex)
+      arg_name += std::to_string(argbuffer_slot);
     binding_table_index =
       func_signature.DefineInput(air::ArgumentBindingIndirectBuffer{
-        .location_index = 30, // kArgumentBufferBindIndex
+        .location_index = argbuffer_slot, // kArgumentBufferBindIndex
         .array_size = 1,
         .memory_access = air::MemoryAccess::read,
         .address_space = air::AddressSpace::constant,
         .struct_type = type,
         .struct_type_info = metadata,
-        .arg_name = "binding_table",
+        .arg_name = arg_name,
       });
   }
   if (!shader_info->binding_table_cbuffer.Empty()) {
     auto [type, metadata] = shader_info->binding_table_cbuffer.Build(
       module.getContext(), module.getDataLayout()
     );
+    std::string arg_name = "cbuffer_table";
+    if (argbuffer_constant_slot != kConstantBufferBindIndex)
+      arg_name += std::to_string(argbuffer_constant_slot);
     cbuf_table_index =
       func_signature.DefineInput(air::ArgumentBindingIndirectBuffer{
-        .location_index = 29, // kConstantBufferBindIndex
+        .location_index = argbuffer_constant_slot, // kConstantBufferBindIndex
         .array_size = 1,
         .memory_access = air::MemoryAccess::read,
         .address_space = air::AddressSpace::constant,
         .struct_type = type,
         .struct_type_info = metadata,
-        .arg_name = "cbuffer_table",
+        .arg_name = arg_name,
       });
   }
 
@@ -387,22 +394,6 @@ void setup_fastmath_flag(llvm::Module &module, llvm::IRBuilder<> &builder) {
     }
   }
 }
-
-llvm::Error convert_dxbc_hull_shader(
-  SM50ShaderInternal *pShaderInternal, const char *name,
-  SM50ShaderInternal *pVertexStage, llvm::LLVMContext &context,
-  llvm::Module &module, SM50_SHADER_COMPILATION_ARGUMENT_DATA *pArgs
-) {
-  return llvm::make_error<UnsupportedFeature>("TESS TODO");
-}
-
-llvm::Error convert_dxbc_domain_shader(
-  SM50ShaderInternal *pShaderInternal, const char *name,
-  SM50ShaderInternal *pHullStage, llvm::LLVMContext &context,
-  llvm::Module &module, SM50_SHADER_COMPILATION_ARGUMENT_DATA *pArgs
-) {
-  return llvm::make_error<UnsupportedFeature>("TESS TODO");
-};
 
 llvm::Error convert_dxbc_pixel_shader(
   SM50ShaderInternal *pShaderInternal, const char *name,
@@ -909,14 +900,6 @@ llvm::Error convert_dxbc_vertex_shader(
   return llvm::Error::success();
 };
 
-llvm::Error convert_dxbc_vertex_for_hull_shader(
-  const SM50ShaderInternal *pShaderInternal, const char *name,
-  const SM50ShaderInternal *pHullStage, llvm::LLVMContext &context,
-  llvm::Module &module, SM50_SHADER_COMPILATION_ARGUMENT_DATA *pArgs
-) {
-  return llvm::make_error<UnsupportedFeature>("TESS TODO");
-};
-
 llvm::Error convertDXBC(
   sm50_shader_t pShader, const char *name, llvm::LLVMContext &context,
   llvm::Module &module, SM50_SHADER_COMPILATION_ARGUMENT_DATA *pArgs
@@ -944,6 +927,9 @@ llvm::Error convertDXBC(
       "Hull and domain shader cannot be independently converted."
     );
   case microsoft::D3D10_SB_GEOMETRY_SHADER:
+    return llvm::make_error<UnsupportedFeature>(
+      "Geometry shader cannot be independently converted."
+    );
   case microsoft::D3D12_SB_MESH_SHADER:
   case microsoft::D3D12_SB_AMPLIFICATION_SHADER:
   case microsoft::D3D11_SB_RESERVED0:
@@ -1696,19 +1682,8 @@ AIRCONV_API int SM50Initialize(
         break;
       }
       case D3D11_SB_OPCODE_DCL_TESS_OUTPUT_PRIMITIVE: {
-        switch (Inst.m_TessellatorOutputPrimitiveDecl.TessellatorOutputPrimitive
-        ) {
-        case microsoft::D3D11_SB_TESSELLATOR_OUTPUT_TRIANGLE_CW:
-        case microsoft::D3D11_SB_TESSELLATOR_OUTPUT_TRIANGLE_CCW:
-        case microsoft::D3D11_SB_TESSELLATOR_OUTPUT_POINT:
-        case microsoft::D3D11_SB_TESSELLATOR_OUTPUT_LINE:
-          sm50_shader->tessellator_output_primitive =
+        sm50_shader->tessellator_output_primitive =
             Inst.m_TessellatorOutputPrimitiveDecl.TessellatorOutputPrimitive;
-          break;
-        default:
-          assert(0 && "unexpected tessellator output primitive");
-          break;
-        }
         break;
       }
       case D3D11_SB_OPCODE_DCL_INPUT_CONTROL_POINT_COUNT: {
@@ -1730,18 +1705,8 @@ AIRCONV_API int SM50Initialize(
         break;
       }
       case D3D11_SB_OPCODE_DCL_TESS_DOMAIN: {
-        if (sm50_shader->shader_type != D3D11_SB_DOMAIN_SHADER) {
-          break;
-        }
-        assert(sm50_shader->input_control_point_count != ~0u);
-        switch (Inst.m_TessellatorDomainDecl.TessellatorDomain) {
-        case microsoft::D3D11_SB_TESSELLATOR_DOMAIN_UNDEFINED:
-        case microsoft::D3D11_SB_TESSELLATOR_DOMAIN_ISOLINE:
-        case microsoft::D3D11_SB_TESSELLATOR_DOMAIN_TRI:
-        case microsoft::D3D11_SB_TESSELLATOR_DOMAIN_QUAD:
-          // TESS TODO
-          break;
-        }
+        sm50_shader->tessellation_domain =
+          Inst.m_TessellatorDomainDecl.TessellatorDomain;
         break;
       }
       case D3D11_SB_OPCODE_DCL_HS_MAX_TESSFACTOR: {
@@ -2021,6 +1986,9 @@ AIRCONV_API int SM50Initialize(
         .OutputPrimitive = (MTL_TESSELLATOR_OUTPUT_PRIMITIVE
         )sm50_shader->tessellator_output_primitive,
       };
+
+      pRefl->ThreadsPerPatch =
+        next_pow2(sm50_shader->hull_maximum_threads_per_patch);
     }
     if (sm50_shader->shader_type == microsoft::D3D10_SB_GEOMETRY_SHADER) {
       if (binding_cbuffer_mask || binding_sampler_mask || binding_uav_mask ||
@@ -2035,10 +2003,6 @@ AIRCONV_API int SM50Initialize(
       pRefl->GeometryShader.Primitive = sm50_shader->gs_input_primitive;
     }
     pRefl->NumOutputElement = sm50_shader->max_output_register;
-    pRefl->NumPatchConstantOutputScalar =
-      sm50_shader->patch_constant_scalars.size();
-    pRefl->ThreadsPerPatch =
-      next_pow2(sm50_shader->hull_maximum_threads_per_patch);
     pRefl->ArgumentTableQwords = binding_table.Size();
   }
 
@@ -2167,10 +2131,9 @@ AIRCONV_API int SM50CompileTessellationPipelineHull(
        (!shader_info.skipOptimization && shader_info.refactoringAllowed)}
   );
 
-  if (auto err = dxmt::dxbc::convert_dxbc_hull_shader(
-        (dxbc::SM50ShaderInternal *)pHullShader, FunctionName,
-        (dxbc::SM50ShaderInternal *)pVertexShader, context, *pModule,
-        pHullShaderArgs
+  if (auto err = dxmt::dxbc::convert_dxbc_vertex_hull_shader(
+        (dxbc::SM50ShaderInternal *)pVertexShader, (dxbc::SM50ShaderInternal *)pHullShader, 
+        FunctionName, context, *pModule, pHullShaderArgs
       )) {
     llvm::handleAllErrors(std::move(err), [&](const UnsupportedFeature &u) {
       errorOut << u.msg;
@@ -2236,7 +2199,7 @@ AIRCONV_API int SM50CompileTessellationPipelineDomain(
         shader_type != microsoft::D3D10_SB_VERTEX_SHADER)}
   );
 
-  if (auto err = dxmt::dxbc::convert_dxbc_domain_shader(
+  if (auto err = dxmt::dxbc::convert_dxbc_tesselator_domain_shader(
         (dxbc::SM50ShaderInternal *)pDomainShader, FunctionName,
         (dxbc::SM50ShaderInternal *)pHullShader, context, *pModule,
         pDomainShaderArgs

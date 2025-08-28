@@ -93,6 +93,7 @@ enum class MemFlags {
   Device = 1,
   Threadgroup = 2,
   Texture = 4,
+  ObjectData = 4,
 };
 
 class AIRBuilder {
