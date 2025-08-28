@@ -992,7 +992,7 @@ handle_signature_gs(
 ) {
   uint32_t &max_output_register = sm50_shader->max_output_register;
   auto &func_signature = sm50_shader->func_signature;
-  auto &gs_output_handlers = sm50_shader->gs_output_handlers;
+  auto &mesh_output_handlers = sm50_shader->mesh_output_handlers;
   uint32_t &num_mesh_vertex_data = sm50_shader->num_mesh_vertex_data;
 
   auto findOutputElement = [&](auto matcher) -> Signature {
@@ -1064,21 +1064,21 @@ handle_signature_gs(
       break;
     case D3D10_SB_NAME_POSITION: {
       func_signature.DefineMeshVertexOutput(OutputPosition{.type = msl_float4});
-      gs_output_handlers.push_back([=](GSOutputContext& output) -> IREffect {
+      mesh_output_handlers.push_back([=](MeshOutputContext& output) -> IREffect {
         return pop_mesh_output_position(reg, mask, output.vertex_id);
       });
       break;
     }
     case D3D10_SB_NAME_RENDER_TARGET_ARRAY_INDEX: {
       func_signature.DefineMeshPrimitiveOutput(OutputRenderTargetArrayIndex{});
-      gs_output_handlers.push_back([=](GSOutputContext& output) -> IREffect {
+      mesh_output_handlers.push_back([=](MeshOutputContext& output) -> IREffect {
         return pop_mesh_output_render_taget_array_index(reg, mask, output.primitive_id);
       });
       break;
     }
     case D3D10_SB_NAME_VIEWPORT_ARRAY_INDEX: {
       func_signature.DefineMeshPrimitiveOutput(OutputViewportArrayIndex{});
-      gs_output_handlers.push_back([=](GSOutputContext& output) -> IREffect {
+      mesh_output_handlers.push_back([=](MeshOutputContext& output) -> IREffect {
         return pop_mesh_output_viewport_array_index(reg, mask, output.primitive_id);
       });
       break;
@@ -1109,7 +1109,7 @@ handle_signature_gs(
         .type = type,
         .index = mesh_vertex_data_index
       });
-      gs_output_handlers.push_back([=](GSOutputContext& output) -> IREffect {
+      mesh_output_handlers.push_back([=](MeshOutputContext& output) -> IREffect {
         return pop_mesh_output_vertex_data(reg, mask, mesh_vertex_data_index, output.vertex_id, type);
       });
       break;

@@ -336,7 +336,7 @@ struct SignatureContext {
         unorm_output_reg_mask(0){};
 };
 
-struct GSOutputContext {
+struct MeshOutputContext {
   llvm::Value *vertex_id;
   llvm::Value *primitive_id;
 };
@@ -412,7 +412,7 @@ public:
   uint32_t hull_maximum_threads_per_patch = 0;
   std::vector<ScalarInfo> clip_distance_scalars;
   microsoft::D3D10_SB_PRIMITIVE gs_input_primitive = {};
-  std::vector<std::function<IREffect(GSOutputContext &)>> gs_output_handlers;
+  std::vector<std::function<IREffect(MeshOutputContext &)>> mesh_output_handlers;
   uint32_t num_mesh_vertex_data = 0;
   microsoft::D3D10_SB_PRIMITIVE_TOPOLOGY gs_output_topology = {};
   uint32_t gs_max_vertex_output = 0;
