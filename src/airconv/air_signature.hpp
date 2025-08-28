@@ -89,8 +89,6 @@ enum class Interpolation {
   flat
 };
 
-enum class PostTessellationPatch { triangle, quad };
-
 struct MSLFloat {
   std::string get_name() const { return "float"; };
 
@@ -511,10 +509,6 @@ struct InputFrontFacing {};
 struct InputInputCoverage {};
 struct InputSampleIndex {};
 
-struct InputPatchID {};
-struct InputPositionInPatch {
-  PostTessellationPatch patch;
-};
 struct InputPayload {
   uint32_t size;
 };
@@ -588,8 +582,6 @@ using FunctionInput = template_concat_t<
     InputPrimitiveID, InputViewportArrayIndex, InputRenderTargetArrayIndex,
     InputFrontFacing, InputPosition, InputSampleIndex, //
     InputFragmentStageIn, InputInputCoverage,
-    /* post-tessellation */
-    InputPatchID, InputPositionInPatch,
     /* object & mesh */
     InputPayload, InputMeshGridProperties, InputMesh,
     /* kernel */
@@ -622,14 +614,6 @@ public:
   uint32_t DefineMeshPrimitiveOutput(const MeshPrimitiveOutput &output);
   void UseEarlyFragmentTests() { early_fragment_tests = true; }
   void UseMaxWorkgroupSize(uint32_t size) { max_work_group_size = size; }
-  void UsePatch(PostTessellationPatch patch, uint32_t num_control_points) {
-    this->patch = std::make_pair(patch, num_control_points);
-  }
-
-  PostTessellationPatch GetPatchType() {
-    assert(patch.has_value() && "not a domain shader/unsupported isoline tessellation");
-    return patch->first;
-  };
 
   auto CreateFunction(
     std::string name, llvm::LLVMContext &context, llvm::Module &module,
@@ -643,7 +627,6 @@ private:
   std::vector<MeshPrimitiveOutput> mesh_primitive_outputs;
   bool early_fragment_tests = false;
   uint32_t max_work_group_size = 0;
-  std::optional<std::pair<PostTessellationPatch, uint32_t>> patch;
 };
 
 inline TextureKind to_air_resource_type(

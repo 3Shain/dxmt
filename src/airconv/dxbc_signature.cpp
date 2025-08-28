@@ -790,16 +790,6 @@ void handle_signature_ds(
 
     switch (RegType) {
     case D3D11_SB_OPERAND_TYPE_INPUT_DOMAIN_POINT: {
-      signature_handlers.push_back([=](SignatureContext &ctx) {
-        auto assigned_index = ctx.func_signature.DefineInput(
-          InputPositionInPatch{.patch = ctx.func_signature.GetPatchType()}
-        );
-        ctx.prologue << make_effect([=](struct context ctx) {
-          auto attr = ctx.function->getArg(assigned_index);
-          ctx.resource.domain = attr;
-          return std::monostate{};
-        });
-      });
       break;
     }
     case D3D10_SB_OPERAND_TYPE_INPUT_PRIMITIVEID: {
