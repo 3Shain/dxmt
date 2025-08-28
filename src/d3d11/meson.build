@@ -21,6 +21,7 @@ d3d11_src = [
   'dxmt_resource_binding.cpp',
   'd3d11_pipeline.cpp',
   'd3d11_pipeline_gs.cpp',
+  'd3d11_pipeline_ts.cpp',
   'd3d11_enumerable.cpp',
   'd3d11_pipeline_cache.cpp',
   'd3d11_context_imm.cpp',

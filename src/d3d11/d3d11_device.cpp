@@ -1063,9 +1063,8 @@ public:
   HRESULT
   CreateTessellationMeshPipeline(MTL_GRAPHICS_PIPELINE_DESC *pDesc,
                          IMTLCompiledTessellationMeshPipeline **ppPipeline) override {
-    // TESS TODO
-
-    return E_FAIL;
+    pipeline_cache_->GetTessellationPipeline(pDesc, ppPipeline);
+    return S_OK;
   };
 
   Device &GetDXMTDevice() override { return device_; };

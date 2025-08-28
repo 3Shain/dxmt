@@ -173,6 +173,11 @@ class PipelineCache : public MTLD3D11PipelineCacheBase {
       pipelines_gs_;
   dxmt::mutex mutex_gs_;
 
+  std::unordered_map<MTL_GRAPHICS_PIPELINE_DESC,
+                     Com<IMTLCompiledTessellationMeshPipeline>>
+      pipelines_ts_;
+  dxmt::mutex mutex_ts_;
+
   std::unordered_map<Sha1Hash, std::unique_ptr<CachedSM50Shader>> shaders_;
   std::shared_mutex mutex_shares;
 
@@ -381,6 +386,24 @@ class PipelineCache : public MTLD3D11PipelineCacheBase {
     if (!pipelines_gs_.insert({*pDesc, temp}).second) // copy
     {
       D3D11_ASSERT(0 && "duplicated geometry pipeline");
+    }
+    *ppPipeline = std::move(temp);
+  }
+
+  void GetTessellationPipeline(MTL_GRAPHICS_PIPELINE_DESC * pDesc,
+                                   IMTLCompiledTessellationMeshPipeline *
+                                       *ppPipeline) override {
+    std::lock_guard<dxmt::mutex> lock(mutex_ts_);
+
+    auto iter = pipelines_ts_.find(*pDesc);
+    if (iter != pipelines_ts_.end()) {
+      *ppPipeline = iter->second.ref();
+      return;
+    }
+    auto temp = dxmt::CreateTessellationMeshPipeline(device, pDesc);
+    if (!pipelines_ts_.insert({*pDesc, temp}).second) // copy
+    {
+      D3D11_ASSERT(0 && "duplicated tessellation pipeline");
     }
     *ppPipeline = std::move(temp);
   }
