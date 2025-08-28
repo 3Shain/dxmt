@@ -958,6 +958,23 @@ _MTLRenderCommandEncoder_encodeCommands(void *obj) {
       [encoder setObjectBuffer:(id<MTLBuffer>)body->dispatch_args_buffer offset:0 atIndex:21];
       break;
     }
+    case WMTRenderCommandDXMTTessellationMeshDraw: {
+      struct wmtcmd_render_dxmt_tessellation_mesh_draw *body = (struct wmtcmd_render_dxmt_tessellation_mesh_draw *)next;
+      [encoder setObjectBufferOffset:body->draw_arguments_offset atIndex:21];
+      [encoder drawMeshThreadgroups:MTLSizeMake(body->patch_per_mesh_instance, body->instance_count, 1)
+          threadsPerObjectThreadgroup:MTLSizeMake(body->threads_per_patch, body->patch_per_group, 1)
+            threadsPerMeshThreadgroup:MTLSizeMake(128, 1, 1)];
+      break;
+    }
+    case WMTRenderCommandDXMTTessellationMeshDrawIndexed: {
+      struct wmtcmd_render_dxmt_tessellation_mesh_draw_indexed *body = (struct wmtcmd_render_dxmt_tessellation_mesh_draw_indexed *)next;
+      [encoder setObjectBuffer:(id<MTLBuffer>)body->index_buffer offset:body->index_buffer_offset atIndex:20];
+      [encoder setObjectBufferOffset:body->draw_arguments_offset atIndex:21];
+      [encoder drawMeshThreadgroups:MTLSizeMake(body->patch_per_mesh_instance, body->instance_count, 1)
+          threadsPerObjectThreadgroup:MTLSizeMake(body->threads_per_patch, body->patch_per_group, 1)
+            threadsPerMeshThreadgroup:MTLSizeMake(128, 1, 1)];
+      break;
+    }
     case WMTRenderCommandUpdateFence: {
       struct wmtcmd_render_fence_op *body = (struct wmtcmd_render_fence_op *)next;
       [encoder updateFence:(id<MTLFence>)body->fence afterStages:(MTLRenderStages)body->stages];

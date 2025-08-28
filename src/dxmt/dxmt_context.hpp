@@ -637,7 +637,6 @@ public:
   ~ArgumentEncodingContext();
 
   uint32_t tess_num_output_control_point_element;
-  uint32_t tess_num_output_patch_constant_scalar;
   uint32_t tess_threads_per_patch;
 
   EmulatedCommandContext emulated_cmd;

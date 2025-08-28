@@ -179,13 +179,25 @@ CreateVariantShader(MTLD3D11Device *pDevice, ManagedShader shader,
 template <>
 std::unique_ptr<CompiledShader>
 CreateVariantShader(MTLD3D11Device *pDevice, ManagedShader shader,
-                    ShaderVariantTessellationHull variant) {
+                    ShaderVariantTessellationVertexHull variant) {
   auto proc = [=](const char *func_name) -> sm50_bitcode_t  {
+    SM50_SHADER_IA_INPUT_LAYOUT_DATA ia_layout;
+    ia_layout.index_buffer_format = variant.index_buffer_format;
+    ia_layout.slot_mask =
+        ((ManagedInputLayout)variant.input_layout_handle)->input_slot_mask();
+    ia_layout.num_elements =
+        ((ManagedInputLayout)variant.input_layout_handle)
+            ->input_layout_element(
+                (MTL_SHADER_INPUT_LAYOUT_ELEMENT_DESC **)&ia_layout.elements);
+    ia_layout.type = SM50_SHADER_IA_INPUT_LAYOUT;
+    ia_layout.next = nullptr;
+
     sm50_bitcode_t compile_result = nullptr;
     sm50_error_t sm50_err = nullptr;
     if (auto ret = SM50CompileTessellationPipelineHull(
-            (sm50_shader_t)variant.vertex_shader_handle, shader->handle(),
-            nullptr, func_name, &compile_result, &sm50_err)) {
+            (sm50_shader_t)variant.vertex_shader_handle, shader->handle(), 
+            (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)&ia_layout, func_name,
+            &compile_result, &sm50_err)) {
       ERR("Failed to compile shader: ", SM50GetErrorMessageString(sm50_err));
       SM50FreeError(sm50_err);
       return nullptr;

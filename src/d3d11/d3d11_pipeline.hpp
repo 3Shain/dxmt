@@ -44,7 +44,6 @@ struct MTL_COMPILED_COMPUTE_PIPELINE {
 struct MTL_COMPILED_TESSELLATION_MESH_PIPELINE {
   WMT::RenderPipelineState PipelineState;
   uint32_t NumControlPointOutputElement;
-  uint32_t NumPatchConstantOutputScalar;
   uint32_t ThreadsPerPatch;
 };
 
@@ -189,6 +188,10 @@ CreateComputePipeline(MTLD3D11Device *pDevice, ManagedShader ComputeShader);
 
 Com<IMTLCompiledGeometryPipeline>
 CreateGeometryPipeline(MTLD3D11Device *pDevice,
+                           MTL_GRAPHICS_PIPELINE_DESC *pDesc);
+
+Com<IMTLCompiledTessellationMeshPipeline>
+CreateTessellationMeshPipeline(MTLD3D11Device *pDevice,
                            MTL_GRAPHICS_PIPELINE_DESC *pDesc);
 
 }; // namespace dxmt

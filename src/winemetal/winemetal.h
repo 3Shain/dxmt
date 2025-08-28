@@ -1026,6 +1026,8 @@ enum WMTRenderCommandType : uint16_t {
   WMTRenderCommandUpdateFence,
   WMTRenderCommandSetViewport,
   WMTRenderCommandSetScissorRect,
+  WMTRenderCommandDXMTTessellationMeshDraw,
+  WMTRenderCommandDXMTTessellationMeshDrawIndexed,
 };
 
 struct wmtcmd_render_nop {
@@ -1344,6 +1346,30 @@ struct wmtcmd_render_fence_op {
   struct WMTMemoryPointer next;
   obj_handle_t fence;
   enum WMTRenderStages stages;
+};
+
+struct wmtcmd_render_dxmt_tessellation_mesh_draw {
+  enum WMTRenderCommandType type;
+  uint16_t reserved[3];
+  struct WMTMemoryPointer next;
+  uint64_t draw_arguments_offset;
+  uint32_t instance_count;
+  uint32_t threads_per_patch;
+  uint32_t patch_per_group;
+  uint32_t patch_per_mesh_instance;
+};
+
+struct wmtcmd_render_dxmt_tessellation_mesh_draw_indexed {
+  enum WMTRenderCommandType type;
+  uint16_t reserved[3];
+  struct WMTMemoryPointer next;
+  uint64_t draw_arguments_offset;
+  obj_handle_t index_buffer;
+  uint64_t index_buffer_offset;
+  uint32_t instance_count;
+  uint32_t threads_per_patch;
+  uint32_t patch_per_group;
+  uint32_t patch_per_mesh_instance;
 };
 
 WINEMETAL_API void MTLRenderCommandEncoder_encodeCommands(obj_handle_t encoder, const struct wmtcmd_base *cmd_head);
