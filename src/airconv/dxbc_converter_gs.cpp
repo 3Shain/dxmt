@@ -135,7 +135,7 @@ convert_dxbc_geometry_shader(
       p(sig_ctx);
     }
   }
-  auto& gs_output_handlers = pShaderInternal->gs_output_handlers;
+  auto& gs_output_handlers = pShaderInternal->mesh_output_handlers;
 
   setup_binding_table(shader_info, resource_map, func_signature, module);
   setup_tgsm(shader_info, resource_map, types, module);
@@ -204,7 +204,7 @@ convert_dxbc_geometry_shader(
           builder.CreateICmpEQ(zero_const, builder.CreateAnd(current_write_vertex, one_const)), types._int
       );
 
-      GSOutputContext gs_out_ctx{current_vertex_with_offset, current_primitive_idx};
+      MeshOutputContext gs_out_ctx{current_vertex_with_offset, current_primitive_idx};
       for (auto &h : gs_output_handlers) {
         co_yield h(gs_out_ctx);
       }
@@ -254,7 +254,7 @@ convert_dxbc_geometry_shader(
       auto current_primitive_count = builder.CreateLoad(types._int, primitive_count);
       auto current_primitive_idx = builder.CreateAdd(current_primitive_count, current_write_vertex);
 
-      GSOutputContext gs_out_ctx{current_vertex_with_offset, current_primitive_idx};
+      MeshOutputContext gs_out_ctx{current_vertex_with_offset, current_primitive_idx};
       for (auto &h : gs_output_handlers) {
         co_yield h(gs_out_ctx);
       }
@@ -293,7 +293,7 @@ convert_dxbc_geometry_shader(
       auto current_write_vertex = builder.CreateLoad(types._int, next_write_vertex);
       builder.CreateStore(builder.CreateAdd(one_const, current_write_vertex), next_write_vertex);
 
-      GSOutputContext gs_out_ctx{current_write_vertex, current_write_vertex};
+      MeshOutputContext gs_out_ctx{current_write_vertex, current_write_vertex};
       for (auto &h : gs_output_handlers) {
         co_yield h(gs_out_ctx);
       }
