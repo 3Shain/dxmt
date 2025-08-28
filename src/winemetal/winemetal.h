@@ -1015,9 +1015,9 @@ enum WMTRenderCommandType : uint16_t {
   WMTRenderCommandDrawMeshThreadgroups,
   WMTRenderCommandDrawMeshThreadgroupsIndirect,
   WMTRenderCommandMemoryBarrier,
-  WMTRenderCommandDXMTTessellationMeshDispatch,
-  WMTRenderCommandDXMTTessellationMeshDispatchIndexed,
-  WMTRenderCommandDXMTTessellationDraw,
+  Unused0,
+  Unused1,
+  Unused2,
   WMTRenderCommandDXMTGeometryDraw,
   WMTRenderCommandDXMTGeometryDrawIndexed,
   WMTRenderCommandDXMTGeometryDrawIndirect,
@@ -1290,57 +1290,6 @@ struct wmtcmd_render_setblendcolor {
   float blue;
   float alpha;
   uint8_t stencil_ref;
-};
-
-struct wmtcmd_render_dxmt_tess_mesh_dispatch {
-  enum WMTRenderCommandType type;
-  uint16_t reserved[3];
-  struct WMTMemoryPointer next;
-  uint64_t draw_arguments_offset;
-  obj_handle_t control_point_buffer;
-  uint64_t control_point_buffer_offset;
-  obj_handle_t patch_constant_buffer;
-  uint64_t patch_constant_buffer_offset;
-  obj_handle_t tessellation_factor_buffer;
-  uint64_t tessellation_factor_buffer_offset;
-  uint32_t patch_per_mesh_instance;
-  uint32_t instance_count;
-  uint32_t threads_per_patch;
-  uint32_t patch_per_group;
-};
-
-struct wmtcmd_render_dxmt_tess_draw {
-  enum WMTRenderCommandType type;
-  uint16_t reserved[3];
-  struct WMTMemoryPointer next;
-  uint64_t draw_arguments_offset;
-  obj_handle_t control_point_buffer;
-  uint64_t control_point_buffer_offset;
-  obj_handle_t patch_constant_buffer;
-  uint64_t patch_constant_buffer_offset;
-  obj_handle_t tessellation_factor_buffer;
-  uint64_t tessellation_factor_buffer_offset;
-  uint32_t patch_count_per_instance;
-  uint32_t instance_count;
-};
-
-struct wmtcmd_render_dxmt_tess_mesh_dispatch_indexed {
-  enum WMTRenderCommandType type;
-  uint16_t reserved[3];
-  struct WMTMemoryPointer next;
-  uint64_t draw_arguments_offset;
-  obj_handle_t index_buffer;
-  uint64_t index_buffer_offset;
-  obj_handle_t control_point_buffer;
-  uint64_t control_point_buffer_offset;
-  obj_handle_t patch_constant_buffer;
-  uint64_t patch_constant_buffer_offset;
-  obj_handle_t tessellation_factor_buffer;
-  uint64_t tessellation_factor_buffer_offset;
-  uint32_t patch_per_mesh_instance;
-  uint32_t instance_count;
-  uint32_t threads_per_patch;
-  uint32_t patch_per_group;
 };
 
 struct wmtcmd_render_dxmt_geometry_draw {

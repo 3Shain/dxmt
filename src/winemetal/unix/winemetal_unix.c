@@ -919,66 +919,6 @@ _MTLRenderCommandEncoder_encodeCommands(void *obj) {
                          beforeStages:(MTLRenderStages)body->stages_before];
       break;
     }
-    case WMTRenderCommandDXMTTessellationDraw: {
-      struct wmtcmd_render_dxmt_tess_draw *body = (struct wmtcmd_render_dxmt_tess_draw *)next;
-      [encoder setVertexBufferOffset:body->draw_arguments_offset atIndex:23];
-      [encoder setVertexBuffer:(id<MTLBuffer>)body->control_point_buffer
-                        offset:body->control_point_buffer_offset
-                       atIndex:20];
-      [encoder setVertexBuffer:(id<MTLBuffer>)body->patch_constant_buffer
-                        offset:body->patch_constant_buffer_offset
-                       atIndex:21];
-      [encoder setVertexBuffer:(id<MTLBuffer>)body->tessellation_factor_buffer
-                        offset:body->tessellation_factor_buffer_offset
-                       atIndex:22];
-      [encoder setTessellationFactorBuffer:(id<MTLBuffer>)body->tessellation_factor_buffer
-                                    offset:body->tessellation_factor_buffer_offset
-                            instanceStride:0];
-      [encoder drawPatches:0
-                      patchStart:0
-                      patchCount:body->patch_count_per_instance * body->instance_count
-                patchIndexBuffer:nil
-          patchIndexBufferOffset:0
-                   instanceCount:1
-                    baseInstance:0];
-      break;
-    }
-    case WMTRenderCommandDXMTTessellationMeshDispatchIndexed: {
-      struct wmtcmd_render_dxmt_tess_mesh_dispatch_indexed *body =
-          (struct wmtcmd_render_dxmt_tess_mesh_dispatch_indexed *)next;
-      [encoder setObjectBuffer:(id<MTLBuffer>)body->index_buffer offset:body->index_buffer_offset atIndex:20];
-      [encoder setObjectBufferOffset:body->draw_arguments_offset atIndex:21];
-      [encoder setMeshBuffer:(id<MTLBuffer>)body->control_point_buffer
-                      offset:body->control_point_buffer_offset
-                     atIndex:20];
-      [encoder setMeshBuffer:(id<MTLBuffer>)body->patch_constant_buffer
-                      offset:body->patch_constant_buffer_offset
-                     atIndex:21];
-      [encoder setMeshBuffer:(id<MTLBuffer>)body->tessellation_factor_buffer
-                      offset:body->tessellation_factor_buffer_offset
-                     atIndex:22];
-      [encoder drawMeshThreadgroups:MTLSizeMake(body->patch_per_mesh_instance, body->instance_count, 1)
-          threadsPerObjectThreadgroup:MTLSizeMake(body->threads_per_patch, body->patch_per_group, 1)
-            threadsPerMeshThreadgroup:MTLSizeMake(body->threads_per_patch, body->patch_per_group, 1)];
-      break;
-    }
-    case WMTRenderCommandDXMTTessellationMeshDispatch: {
-      struct wmtcmd_render_dxmt_tess_mesh_dispatch *body = (struct wmtcmd_render_dxmt_tess_mesh_dispatch *)next;
-      [encoder setObjectBufferOffset:body->draw_arguments_offset atIndex:21];
-      [encoder setMeshBuffer:(id<MTLBuffer>)body->control_point_buffer
-                      offset:body->control_point_buffer_offset
-                     atIndex:20];
-      [encoder setMeshBuffer:(id<MTLBuffer>)body->patch_constant_buffer
-                      offset:body->patch_constant_buffer_offset
-                     atIndex:21];
-      [encoder setMeshBuffer:(id<MTLBuffer>)body->tessellation_factor_buffer
-                      offset:body->tessellation_factor_buffer_offset
-                     atIndex:22];
-      [encoder drawMeshThreadgroups:MTLSizeMake(body->patch_per_mesh_instance, body->instance_count, 1)
-          threadsPerObjectThreadgroup:MTLSizeMake(body->threads_per_patch, body->patch_per_group, 1)
-            threadsPerMeshThreadgroup:MTLSizeMake(body->threads_per_patch, body->patch_per_group, 1)];
-      break;
-    }
     case WMTRenderCommandDXMTGeometryDraw: {
       struct wmtcmd_render_dxmt_geometry_draw *body = (struct wmtcmd_render_dxmt_geometry_draw *)next;
       [encoder setObjectBufferOffset:body->draw_arguments_offset atIndex:21];
@@ -1581,17 +1521,6 @@ thunk_SM50FreeError(void *args) {
 }
 
 static NTSTATUS
-thunk_SM50CompileTessellationPipelineVertex(void *args) {
-  struct sm50_compile_tessellation_pipeline_vertex_params *params = args;
-
-  params->ret = SM50CompileTessellationPipelineVertex(
-      params->vertex, params->hull, params->vertex_args, params->func_name, params->bitcode, params->error
-  );
-
-  return STATUS_SUCCESS;
-}
-
-static NTSTATUS
 thunk_SM50CompileTessellationPipelineHull(void *args) {
   struct sm50_compile_tessellation_pipeline_hull_params *params = args;
 
@@ -1863,23 +1792,6 @@ thunk32_SM50GetErrorMessage(void *args) {
   struct sm50_get_error_message_params32 *params = args;
 
   params->ret_size = SM50GetErrorMessage(params->error, UInt32ToPtr(params->buffer), params->buffer_size);
-
-  return STATUS_SUCCESS;
-}
-
-static NTSTATUS
-thunk32_SM50CompileTessellationPipelineVertex(void *args) {
-  struct sm50_compile_tessellation_pipeline_vertex_params32 *params = args;
-  struct SM50_SHADER_COMPILATION_ARGUMENT_DATA first_arg;
-  struct SM50_SHADER_COMPILATION_ARGUMENT_DATA32 *args32 = UInt32ToPtr(params->vertex_args);
-  sm50_compilation_argument32_convert(&first_arg, args32);
-
-  params->ret = SM50CompileTessellationPipelineVertex(
-      params->vertex, params->hull, &first_arg, UInt32ToPtr(params->func_name), UInt32ToPtr(params->bitcode),
-      UInt32ToPtr(params->error)
-  );
-
-  sm50_compilation_argument32_free(&first_arg);
 
   return STATUS_SUCCESS;
 }
@@ -2417,7 +2329,7 @@ const void *__wine_unix_call_funcs[] = {
     &thunk_SM50FreeError,
     &thunk_SM50CompileGeometryPipelineVertex,
     &thunk_SM50CompileGeometryPipelineGeometry,
-    &thunk_SM50CompileTessellationPipelineVertex,
+    NULL,
     &thunk_SM50CompileTessellationPipelineHull,
     &thunk_SM50CompileTessellationPipelineDomain,
     &_MTLCommandEncoder_setLabel,
@@ -2528,7 +2440,7 @@ const void *__wine_unix_call_wow64_funcs[] = {
     &thunk_SM50FreeError,
     &thunk32_SM50CompileGeometryPipelineVertex,
     &thunk32_SM50CompileGeometryPipelineGeometry,
-    &thunk32_SM50CompileTessellationPipelineVertex,
+    NULL,
     &thunk32_SM50CompileTessellationPipelineHull,
     &thunk32_SM50CompileTessellationPipelineDomain,
     &_MTLCommandEncoder_setLabel,
