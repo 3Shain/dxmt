@@ -791,31 +791,6 @@ auto FunctionSignatureBuilder::CreateFunction(
             ->string("mtl_sample_mask");
           return msl_uint.get_llvm_type(context);
         },
-        [&](const InputPatchID &) {
-          metadata_field.string("air.patch_id")
-            ->string("air.arg_type_name")
-            ->string("uint") // HARDCODED
-            ->string("air.arg_name")
-            ->string("mtl_patch_id");
-          return msl_uint.get_llvm_type(context);
-        },
-        [&](const InputPositionInPatch &pip) {
-          if (pip.patch == PostTessellationPatch::triangle) {
-            metadata_field.string("air.position_in_patch")
-              ->string("air.arg_type_name")
-              ->string("float3") // HARDCODED
-              ->string("air.arg_name")
-              ->string("mtl_position_in_patch");
-            return msl_float3.get_llvm_type(context);
-          } else {
-            metadata_field.string("air.position_in_patch")
-              ->string("air.arg_type_name")
-              ->string("float2") // HARDCODED
-              ->string("air.arg_name")
-              ->string("mtl_position_in_patch");
-            return msl_float2.get_llvm_type(context);
-          }
-        },
         [&](const InputPayload &payload) -> llvm::Type * {
           metadata_field.string("air.payload")
             ->string("air.arg_type_size")
@@ -1012,23 +987,6 @@ auto FunctionSignatureBuilder::CreateFunction(
              context, "max-work-group-size", std::to_string(max_work_group_size)
            )
     );
-  }
-  if (patch.has_value()) {
-    auto [patch_type, num_control_point] = patch.value();
-    // don't use num_control_point here, as we pull input directly from buffer
-    auto tuple = MDTuple::get(
-      context,
-      {MDString::get(context, "air.patch"),
-       MDString::get(
-         context,
-         patch_type == PostTessellationPatch::triangle ? "triangle" : "quad"
-       ),
-       MDString::get(context, "air.patch_control_point"),
-       ConstantAsMetadata::get(
-         ConstantInt::get(context, APInt{32, 0})
-       )}
-    );
-    function_def_tuple.push_back(tuple);
   }
   return std::make_pair(function, MDTuple::get(context, function_def_tuple));
 };
