@@ -975,6 +975,29 @@ _MTLRenderCommandEncoder_encodeCommands(void *obj) {
             threadsPerMeshThreadgroup:MTLSizeMake(128, 1, 1)];
       break;
     }
+
+    case WMTRenderCommandDXMTTessellationMeshDrawIndirect: {
+      struct wmtcmd_render_dxmt_tessellation_mesh_draw_indirect *body = (struct wmtcmd_render_dxmt_tessellation_mesh_draw_indirect *)next;
+      [encoder setObjectBuffer:(id<MTLBuffer>)body->indirect_args_buffer offset:body->indirect_args_offset atIndex:21];
+      [encoder drawMeshThreadgroupsWithIndirectBuffer:(id<MTLBuffer>)body->dispatch_args_buffer
+                                 indirectBufferOffset:body->dispatch_args_offset
+                          threadsPerObjectThreadgroup:MTLSizeMake(body->threads_per_patch, body->patch_per_group, 1)
+                            threadsPerMeshThreadgroup:MTLSizeMake(128, 1, 1)];
+      [encoder setObjectBuffer:(id<MTLBuffer>)body->dispatch_args_buffer offset:0 atIndex:21];
+      break;
+    }
+    case WMTRenderCommandDXMTTessellationMeshDrawIndexedIndirect: {
+      struct wmtcmd_render_dxmt_tessellation_mesh_draw_indexed_indirect *body =
+          (struct wmtcmd_render_dxmt_tessellation_mesh_draw_indexed_indirect *)next;
+      [encoder setObjectBuffer:(id<MTLBuffer>)body->index_buffer offset:body->index_buffer_offset atIndex:20];
+      [encoder setObjectBuffer:(id<MTLBuffer>)body->indirect_args_buffer offset:body->indirect_args_offset atIndex:21];
+      [encoder drawMeshThreadgroupsWithIndirectBuffer:(id<MTLBuffer>)body->dispatch_args_buffer
+                                 indirectBufferOffset:body->dispatch_args_offset
+                          threadsPerObjectThreadgroup:MTLSizeMake(body->threads_per_patch, body->patch_per_group, 1)
+                            threadsPerMeshThreadgroup:MTLSizeMake(128, 1, 1)];
+      [encoder setObjectBuffer:(id<MTLBuffer>)body->dispatch_args_buffer offset:0 atIndex:21];
+      break;
+    }
     case WMTRenderCommandUpdateFence: {
       struct wmtcmd_render_fence_op *body = (struct wmtcmd_render_fence_op *)next;
       [encoder updateFence:(id<MTLFence>)body->fence afterStages:(MTLRenderStages)body->stages];

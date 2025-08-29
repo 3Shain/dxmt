@@ -341,6 +341,33 @@ struct DXMTDispatchArguments {
   uint z;
 };
 
+struct DXMTTSDispatchMarshal {
+  constant uint2& draw_arguments; // (vertex|index_count, index_count)
+  device DXMTDispatchArguments& dispatch_arguments_out;
+  ushort control_point_count;
+  ushort patch_per_group;
+  uint end_of_command;
+};
+
+[[vertex]] void ts_draw_arguments_marshal(
+    constant DXMTTSDispatchMarshal* tasks [[buffer(0)]]
+) {
+  uint index = 0;
+  for(;;) {
+    constant DXMTTSDispatchMarshal& task = tasks[index];
+
+    device DXMTDispatchArguments& output = task.dispatch_arguments_out;
+
+    uint patch_count_per_instance = task.draw_arguments.x / (uint)task.control_point_count;
+    output.x = (patch_count_per_instance - 1) / task.patch_per_group + 1;
+    output.y = task.draw_arguments.y;
+    output.z = 1;
+
+    if (task.end_of_command)
+      break;
+  };
+}
+
 struct DXMTGSDispatchMarshal {
   constant uint2& draw_arguments; // (vertex|index_count, index_count)
   device DXMTDispatchArguments& dispatch_arguments_out;

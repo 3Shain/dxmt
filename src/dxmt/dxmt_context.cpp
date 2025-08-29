@@ -774,6 +774,33 @@ ArgumentEncodingContext::flushCommands(WMT::CommandBuffer cmdbuf, uint64_t seqId
         }
         tasks_data[task_count - 1].end_of_command = 1;
         emulated_cmd.MarshalGSDispatchArguments(encoder, task_data_buffer, task_data_buffer_offset);
+      }
+      if (data->ts_arg_marshal_tasks.size()) {
+        auto task_count = data->ts_arg_marshal_tasks.size();
+        struct TS_MARSHAL_TASK {
+          uint64_t draw_args;
+          uint64_t dispatch_args_out;
+          uint16_t control_point_count;
+          uint16_t patch_per_group;
+          uint32_t end_of_command;
+        };
+        auto [mapped_task_data, task_data_buffer, task_data_buffer_offset] =
+            queue_.AllocateArgumentBuffer(seq_id_, sizeof(TS_MARSHAL_TASK) * task_count);
+        auto tasks_data = (TS_MARSHAL_TASK *)mapped_task_data;
+        for (unsigned i = 0; i<task_count; i++) {
+          auto & task = data->ts_arg_marshal_tasks[i];
+          tasks_data[i].draw_args = task.draw_arguments_va;
+          tasks_data[i].dispatch_args_out = task.dispatch_arguments_va;
+          tasks_data[i].control_point_count = task.control_point_count;
+          tasks_data[i].patch_per_group = task.patch_per_group;
+          tasks_data[i].end_of_command = 0;
+          encoder.useResource(task.draw_arguments, WMTResourceUsageRead, WMTRenderStageVertex);
+          encoder.useResource(task.dispatch_arguments_buffer, WMTResourceUsageWrite, WMTRenderStageVertex);
+        }
+        tasks_data[task_count - 1].end_of_command = 1;
+        emulated_cmd.MarshalTSDispatchArguments(encoder, task_data_buffer, task_data_buffer_offset);
+      }
+      if (data->gs_arg_marshal_tasks.size() > 0 || data->ts_arg_marshal_tasks.size() > 0) {
         encoder.memoryBarrier(
             WMTBarrierScopeBuffers, WMTRenderStageVertex,
             WMTRenderStageVertex | WMTRenderStageMesh | WMTRenderStageObject
@@ -1026,7 +1053,13 @@ ArgumentEncodingContext::checkEncoderRelation(EncoderData *former, EncoderData *
         r1->gs_arg_marshal_tasks.end(),
         std::back_inserter(r0->gs_arg_marshal_tasks)
       );
+      std::move(
+        r1->ts_arg_marshal_tasks.begin(),
+        r1->ts_arg_marshal_tasks.end(),
+        std::back_inserter(r0->ts_arg_marshal_tasks)
+      );
       r1->gs_arg_marshal_tasks = std::move(r0->gs_arg_marshal_tasks);
+      r1->ts_arg_marshal_tasks = std::move(r0->ts_arg_marshal_tasks);
       r1->use_visibility_result = r0->use_visibility_result || r1->use_visibility_result;
 
       r1->buf_read.merge(r0->buf_read);

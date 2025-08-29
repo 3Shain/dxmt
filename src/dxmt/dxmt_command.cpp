@@ -52,6 +52,15 @@ EmulatedCommandContext::EmulatedCommandContext(WMT::Device device, InternalComma
     gs_marshal_pipeline.rasterization_enabled = false;
     gs_draw_arguments_marshal = device.newRenderPipelineState(gs_marshal_pipeline, error);
   }
+
+  auto ts_draw_arguments_marshal_vs = library.newFunction("ts_draw_arguments_marshal");
+  {
+    WMTRenderPipelineInfo ts_marshal_pipeline;
+    WMT::InitializeRenderPipelineInfo(ts_marshal_pipeline);
+    ts_marshal_pipeline.vertex_function = ts_draw_arguments_marshal_vs;
+    ts_marshal_pipeline.rasterization_enabled = false;
+    ts_draw_arguments_marshal = device.newRenderPipelineState(ts_marshal_pipeline, error);
+  }
 }
 
 void
