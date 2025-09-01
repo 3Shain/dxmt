@@ -444,6 +444,8 @@ public:
       llvm::Value *TessFactorOut2, llvm::Value *TessFactorOut3
   );
 
+  llvm::Value *DomainGetPatchIndex(llvm::Value *TrapezoidIndex, llvm::Value *DataPtr);
+
   std::tuple<llvm::Value *, llvm::Value *, llvm::Value *> DomainGetLocation(
       llvm::Value *TrapezoidIndex, llvm::Value *ThreadIndex, llvm::Value *DataPtr, TessellatorPartitioning Partitioning
   );

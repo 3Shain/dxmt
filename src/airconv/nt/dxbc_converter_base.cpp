@@ -2738,6 +2738,32 @@ Converter::HullGenerateTrapezoidForQuad(
   ir.CreateCall(Fn, Ops);
 }
 
+llvm::Value *
+Converter::DomainGetPatchIndex(llvm::Value *TrapezoidIndex, llvm::Value *DataPtr) {
+  using namespace llvm;
+
+  auto &Context = air.getContext();
+  auto Attrs = AttributeList::get(
+      Context, {{2U, Attribute::get(Context, Attribute::AttrKind::ReadOnly)},
+                {2U, Attribute::get(Context, Attribute::AttrKind::NoCapture)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::NoUnwind)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::WillReturn)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::ReadOnly)}}
+  );
+
+  SmallVector<Value *> Ops;
+  SmallVector<Type *> Tys;
+
+  Tys.push_back(TrapezoidIndex->getType());
+  Ops.push_back(TrapezoidIndex);
+  Tys.push_back(DataPtr->getType());
+  Ops.push_back(DataPtr);
+
+  std::string FnName = "dxmt.get_domain_patch_index";
+  auto Fn = air.getModule()->getOrInsertFunction(FnName, llvm::FunctionType::get(air.getIntTy(), Tys, false), Attrs);
+  return ir.CreateCall(Fn, Ops);
+}
+
 std::tuple<llvm::Value *, llvm::Value *, llvm::Value *>
 Converter::DomainGetLocation(
     llvm::Value *TrapezoidIndex, llvm::Value *ThreadIndex, llvm::Value *DataPtr, TessellatorPartitioning Partitioning
@@ -2781,13 +2807,13 @@ Converter::DomainGetLocation(
   auto Fn = air.getModule()->getOrInsertFunction(
       FnName,
       llvm::FunctionType::get(
-          llvm::StructType::create(Context, {air.getFloatTy(2), air.getIntTy(), air.getByteTy()}, ""), Tys, false
+          llvm::StructType::create(Context, {air.getFloatTy(2), air.getByteTy(), air.getByteTy()}, ""), Tys, false
       ),
       Attrs
   );
   auto Return = ir.CreateCall(Fn, Ops);
   return {
-      ir.CreateExtractValue(Return, 0ull), ir.CreateExtractValue(Return, 1),
+      ir.CreateExtractValue(Return, 0ull), ir.CreateIsNotNull(ir.CreateExtractValue(Return, 1)),
       ir.CreateIsNotNull(ir.CreateExtractValue(Return, 2))
   };
 }

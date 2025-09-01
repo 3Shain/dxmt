@@ -210,7 +210,7 @@ convert_dxbc_vertex_hull_shader(
 
   auto payload_struct_type = llvm::StructType::create(
       context,
-      {hs_output_per_group_type, hs_pcout_per_group_scaler_type,
+      {hs_output_per_group_type, hs_pcout_per_group_scaler_type, types._int,
        llvm::ArrayType::get(types._int, max_trapezoid_count * patch_per_group * size_trapezoid_info / 4)},
       "payload"
   );
@@ -259,6 +259,7 @@ convert_dxbc_vertex_hull_shader(
   // these values are initialized by vertex stage and accessed by hull stage
   llvm::Value *instance_id = nullptr;
   llvm::Value *batched_patch_start = nullptr;
+  llvm::Value *patch_id = nullptr;
   llvm::Value *patch_count = nullptr;
 
   setup_temp_register(&vertex_shader_info, resource_map_vs, types, module, builder);
@@ -304,7 +305,7 @@ convert_dxbc_vertex_hull_shader(
         builder.CreateExtractElement(threadgroup_position_in_grid, (uint32_t)0),
         builder.getInt32(32 / threads_per_patch)
     );
-    auto patch_id = builder.CreateAdd(batched_patch_start, patch_offset_in_group);
+    patch_id = builder.CreateAdd(batched_patch_start, patch_offset_in_group);
     instance_id = builder.CreateExtractElement(threadgroup_position_in_grid, (uint32_t)1);
     auto control_point_index = builder.CreateAdd(
         builder.CreateMul(patch_id, builder.getInt32(pHullStage->input_control_point_count)), control_point_id_in_patch
@@ -426,7 +427,7 @@ convert_dxbc_vertex_hull_shader(
 
     resource_map.instance_id = instance_id;
 
-    resource_map.patch_id = builder.CreateAdd(batched_patch_start, patch_offset_in_group);
+    resource_map.patch_id = patch_id;
 
     resource_map.thread_id_in_patch = builder.CreateSelect(
         builder.CreateICmp(llvm::CmpInst::ICMP_ULT, resource_map.patch_id, patch_count), control_point_id_in_patch,
@@ -596,7 +597,7 @@ convert_dxbc_vertex_hull_shader(
       dxbc.HullGenerateTrapezoidForQuad(
           patch_offset_in_group, trapezoid_count,
           builder.CreateGEP(
-              payload_struct_type, payload, {builder.getInt32(0), builder.getInt32(2), builder.getInt32(0)}
+              payload_struct_type, payload, {builder.getInt32(0), builder.getInt32(3), builder.getInt32(0)}
           ),
           get_partitioning(pHullStage), tess_factors[4], tess_factors[5], tess_factors[0], tess_factors[1],
           tess_factors[2], tess_factors[3]
@@ -606,7 +607,7 @@ convert_dxbc_vertex_hull_shader(
       dxbc.HullGenerateTrapezoidForTriangle(
           patch_offset_in_group, trapezoid_count,
           builder.CreateGEP(
-              payload_struct_type, payload, {builder.getInt32(0), builder.getInt32(2), builder.getInt32(0)}
+              payload_struct_type, payload, {builder.getInt32(0), builder.getInt32(3), builder.getInt32(0)}
           ),
           get_partitioning(pHullStage), tess_factors[3], tess_factors[0], tess_factors[1], tess_factors[2]
       );
@@ -626,6 +627,11 @@ convert_dxbc_vertex_hull_shader(
     );
 
     air.CreateSetMeshProperties(meshgroup_to_dispatch);
+
+    builder.CreateStore(
+        batched_patch_start,
+        builder.CreateGEP(payload_struct_type, payload, {builder.getInt32(0), builder.getInt32(2)})
+    );
 
     builder.CreateBr(real_return);
     builder.SetInsertPoint(real_return);
@@ -724,7 +730,7 @@ convert_dxbc_tesselator_domain_shader(
   constexpr uint32_t size_trapezoid_info = sizeof(Trapezoid);
   auto payload_struct_type = llvm::StructType::create(
       context,
-      {hs_output_per_group_type, hs_pcout_per_group_scaler_type,
+      {hs_output_per_group_type, hs_pcout_per_group_scaler_type, types._int,
        llvm::ArrayType::get(types._int, max_trapezoid_count * patch_per_group * size_trapezoid_info / 4)},
       "payload"
   );
@@ -739,7 +745,10 @@ convert_dxbc_tesselator_domain_shader(
   auto [function, function_metadata] = func_signature.CreateFunction(name, context, module, 0, rasterization_disabled);
 
   auto entry_bb = llvm::BasicBlock::Create(context, "entry", function);
-  auto epilogue_bb = llvm::BasicBlock::Create(context, "epilogue", function);
+  auto vertex_start = llvm::BasicBlock::Create(context, "vertex_start", function);
+  auto vertex_emit = llvm::BasicBlock::Create(context, "vertex_emit", function);
+  auto vertex_end = llvm::BasicBlock::Create(context, "vertex_end", function);
+  auto generate_primitive_pre = llvm::BasicBlock::Create(context, "generate_primitive_pre", function);
   auto generate_primitive = llvm::BasicBlock::Create(context, "generate_primitive", function);
   auto real_return = llvm::BasicBlock::Create(context, "real_return", function);
   llvm::IRBuilder<> builder(entry_bb);
@@ -757,7 +766,7 @@ convert_dxbc_tesselator_domain_shader(
 
   auto data = builder.CreateGEP(
       payload_struct_type, payload,
-      {builder.getInt32(0), builder.getInt32(2) /* field: control points*/, builder.getInt32(0)}
+      {builder.getInt32(0), builder.getInt32(3), builder.getInt32(0)}
   );
 
   struct context ctx{
@@ -773,8 +782,13 @@ convert_dxbc_tesselator_domain_shader(
   };
   dxbc::Converter dxbc(ctx.air, ctx, ctx.resource);
 
-  auto [location, patch_index, active] =
-      dxbc.DomainGetLocation(trapezoid_index, thread_index, data, get_partitioning(pHullStage));
+  auto batched_patch_start = builder.CreateLoad(
+      types._int, builder.CreateGEP(payload_struct_type, payload, {builder.getInt32(0), builder.getInt32(2)})
+  );
+
+  auto patch_index = dxbc.DomainGetPatchIndex(trapezoid_index, data);
+
+  resource_map.patch_id = builder.CreateAdd(batched_patch_start, patch_index);
 
   resource_map.input.ptr_int4 = builder.CreateGEP(
       payload_struct_type, payload,
@@ -819,6 +833,19 @@ convert_dxbc_tesselator_domain_shader(
     builder.CreateStore(builder.CreateLoad(types._int, src_ptr), dst_ptr);
   }
 
+  builder.CreateBr(vertex_start);
+
+  builder.SetInsertPoint(vertex_start);
+
+  auto phi_thread_index_base = builder.CreatePHI(types._int, 2);
+  phi_thread_index_base->addIncoming(air.getInt(0), entry_bb);
+
+  auto actual_thread_index = builder.CreateAdd(phi_thread_index_base, thread_index);
+
+  auto [location, active, iterate] = dxbc.DomainGetLocation(
+      trapezoid_index, actual_thread_index, data, get_partitioning(pHullStage)
+  );
+
   // It accidentally works on quad as well
   {
     llvm::Value *domain_bary = llvm::UndefValue::get(air.getFloatTy(3));
@@ -831,16 +858,16 @@ convert_dxbc_tesselator_domain_shader(
     resource_map.domain = domain_bary;
   }
 
-  auto real_entry = convert_basicblocks(pShaderInternal->entry, ctx, epilogue_bb);
+  auto real_entry = convert_basicblocks(pShaderInternal->entry, ctx, vertex_emit);
   if (auto err = real_entry.takeError()) {
     return err;
   }
-  builder.CreateCondBr(active, real_entry.get(), real_return);
+  builder.CreateCondBr(active, real_entry.get(), vertex_end);
 
-  builder.SetInsertPoint(epilogue_bb);
+  builder.SetInsertPoint(vertex_emit);
 
-  auto vertex_id = thread_index;
-  auto primitive_id = thread_index; // 
+  auto vertex_id = actual_thread_index;
+  auto primitive_id = actual_thread_index; // 
   MeshOutputContext gs_out_ctx{vertex_id, primitive_id};
   for (auto &h : ds_output_handlers) {
     if (auto err = h(gs_out_ctx).build(ctx).takeError()) {
@@ -865,6 +892,13 @@ convert_dxbc_tesselator_domain_shader(
     air.CreateSetMeshViewportArrayIndex(primitive_id, builder.CreateLoad(types._int, src_ptr));
   }
 
+  builder.CreateBr(vertex_end);
+
+  builder.SetInsertPoint(vertex_end);
+  phi_thread_index_base->addIncoming(builder.CreateAdd(phi_thread_index_base, air.getInt(32)), vertex_end);
+  builder.CreateCondBr(iterate, vertex_start, generate_primitive_pre);
+
+  builder.SetInsertPoint(generate_primitive_pre);
   builder.CreateCondBr(
       builder.CreateICmp(llvm::CmpInst::ICMP_EQ, thread_index, builder.getInt32(0)), generate_primitive, real_return
   );
