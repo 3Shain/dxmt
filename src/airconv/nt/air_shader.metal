@@ -488,8 +488,8 @@ gen_trapezoid_quad_even(
 
 struct domain_location {
   float2 uv;
-  int primitive_id;
   bool active;
+  bool iterate;
 };
 
 template <partitioning partition>
@@ -509,10 +509,19 @@ get_domain_point(object_data Trapezoid &trapezoid, ushort tid, short real_inner_
   return mix(left, right, ratio);
 }
 
+int get_domain_patch_index(int trapezoid_index, object_data int *data) asm("dxmt.get_domain_patch_index");
+
+int get_domain_patch_index(int trapezoid_index, object_data int *data) {
+  object_data Trapezoid &trapezoid = ((object_data Trapezoid *)data)[trapezoid_index];
+  return trapezoid.patch_index;  
+}
+
 template <partitioning partition>
 domain_location
 get_domain_location_impl(int trapezoid_index, int thread_index, object_data int *data) {
-  domain_location ret{float2(0), 0, false};
+  simdgroup_barrier(mem_flags::mem_none);
+
+  domain_location ret{float2(0), false, false};
   object_data Trapezoid &trapezoid = ((object_data Trapezoid *)data)[trapezoid_index];
 
   int max_in = trapezoid.inner_factor_i;
@@ -522,8 +531,10 @@ get_domain_location_impl(int trapezoid_index, int thread_index, object_data int 
   if (thread_index < count) {
     ret.active = true;
     ret.uv = (float2)get_domain_point<partition>(trapezoid, thread_index, max_in, max_out);
-    ret.primitive_id = trapezoid.patch_index;
   }
+
+  simdgroup_barrier(mem_flags::mem_none);
+  ret.iterate = simd_all(ret.active);
 
   return ret;
 };

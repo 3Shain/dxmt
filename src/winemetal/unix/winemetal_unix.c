@@ -963,7 +963,7 @@ _MTLRenderCommandEncoder_encodeCommands(void *obj) {
       [encoder setObjectBufferOffset:body->draw_arguments_offset atIndex:21];
       [encoder drawMeshThreadgroups:MTLSizeMake(body->patch_per_mesh_instance, body->instance_count, 1)
           threadsPerObjectThreadgroup:MTLSizeMake(body->threads_per_patch, body->patch_per_group, 1)
-            threadsPerMeshThreadgroup:MTLSizeMake(128, 1, 1)];
+            threadsPerMeshThreadgroup:MTLSizeMake(32, 1, 1)];
       break;
     }
     case WMTRenderCommandDXMTTessellationMeshDrawIndexed: {
@@ -972,7 +972,7 @@ _MTLRenderCommandEncoder_encodeCommands(void *obj) {
       [encoder setObjectBufferOffset:body->draw_arguments_offset atIndex:21];
       [encoder drawMeshThreadgroups:MTLSizeMake(body->patch_per_mesh_instance, body->instance_count, 1)
           threadsPerObjectThreadgroup:MTLSizeMake(body->threads_per_patch, body->patch_per_group, 1)
-            threadsPerMeshThreadgroup:MTLSizeMake(128, 1, 1)];
+            threadsPerMeshThreadgroup:MTLSizeMake(32, 1, 1)];
       break;
     }
 
@@ -982,7 +982,7 @@ _MTLRenderCommandEncoder_encodeCommands(void *obj) {
       [encoder drawMeshThreadgroupsWithIndirectBuffer:(id<MTLBuffer>)body->dispatch_args_buffer
                                  indirectBufferOffset:body->dispatch_args_offset
                           threadsPerObjectThreadgroup:MTLSizeMake(body->threads_per_patch, body->patch_per_group, 1)
-                            threadsPerMeshThreadgroup:MTLSizeMake(128, 1, 1)];
+                            threadsPerMeshThreadgroup:MTLSizeMake(32, 1, 1)];
       [encoder setObjectBuffer:(id<MTLBuffer>)body->dispatch_args_buffer offset:0 atIndex:21];
       break;
     }
@@ -994,7 +994,7 @@ _MTLRenderCommandEncoder_encodeCommands(void *obj) {
       [encoder drawMeshThreadgroupsWithIndirectBuffer:(id<MTLBuffer>)body->dispatch_args_buffer
                                  indirectBufferOffset:body->dispatch_args_offset
                           threadsPerObjectThreadgroup:MTLSizeMake(body->threads_per_patch, body->patch_per_group, 1)
-                            threadsPerMeshThreadgroup:MTLSizeMake(128, 1, 1)];
+                            threadsPerMeshThreadgroup:MTLSizeMake(32, 1, 1)];
       [encoder setObjectBuffer:(id<MTLBuffer>)body->dispatch_args_buffer offset:0 atIndex:21];
       break;
     }
