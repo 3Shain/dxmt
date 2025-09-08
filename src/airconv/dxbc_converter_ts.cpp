@@ -111,6 +111,22 @@ get_max_potential_trapezoid_count(SM50ShaderInternal *pHullStage) {
   }
 }
 
+size_t
+estimate_payload_size(SM50ShaderInternal *pHullStage, uint32_t patch_per_group) {
+  auto max_hs_output_register = pHullStage->max_output_register;
+  auto cp_size_per_point = sizeof(uint32_t) * 4 * max_hs_output_register;
+  auto cp_size_per_patch = cp_size_per_point * pHullStage->output_control_point_count;
+  auto cp_size_per_group = cp_size_per_patch * patch_per_group;
+  auto pc_size_per_patch = sizeof(uint32_t) * pHullStage->patch_constant_scalars.size();
+  auto pc_size_per_group = pc_size_per_patch * patch_per_group;
+
+  uint32_t max_trapezoid_count = get_max_potential_trapezoid_count(pHullStage);
+  constexpr uint32_t size_trapezoid_info = sizeof(Trapezoid);
+
+  return cp_size_per_group + pc_size_per_group + sizeof(uint32_t) +
+         max_trapezoid_count * patch_per_group * size_trapezoid_info;
+};
+
 llvm::Error
 convert_dxbc_vertex_hull_shader(
     SM50ShaderInternal *pVertexStage, SM50ShaderInternal *pHullStage, const char *name, llvm::LLVMContext &context,

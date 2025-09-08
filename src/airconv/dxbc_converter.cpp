@@ -1987,8 +1987,24 @@ AIRCONV_API int SM50Initialize(
         )sm50_shader->tessellator_output_primitive,
       };
 
-      pRefl->ThreadsPerPatch =
-        next_pow2(sm50_shader->hull_maximum_threads_per_patch);
+      auto threads_per_patch = next_pow2(sm50_shader->hull_maximum_threads_per_patch);
+      auto patch_per_group = 32 / threads_per_patch;
+
+      while (estimate_payload_size(sm50_shader, patch_per_group) > 16384) {
+        if (patch_per_group == 1) {
+          if (sm50_shader->max_tesselation_factor > 1.0f) {
+            sm50_shader->max_tesselation_factor = std::max(sm50_shader->max_tesselation_factor - 2, 1.0f);
+          } else {
+            errorOut << "Payload size of tessellation pipeline is too large.";
+            *ppError = (sm50_error_t)errorObj;
+            return 1;
+          }
+        } else {
+          patch_per_group = patch_per_group >> 1;
+        }
+      }
+      sm50_shader->hull_maximum_threads_per_patch = 32 / patch_per_group;
+      pRefl->ThreadsPerPatch = sm50_shader->hull_maximum_threads_per_patch;
     }
     if (sm50_shader->shader_type == microsoft::D3D10_SB_GEOMETRY_SHADER) {
       if (binding_cbuffer_mask || binding_sampler_mask || binding_uav_mask ||
