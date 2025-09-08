@@ -289,6 +289,8 @@ public:
 
   CallInst *CreateSetMeshPrimitiveCount(Value *Count);
 
+  CallInst *CreateSetMeshPointSize(Value *Vertex, Value *Size);
+
   enum FPUnOp {
     saturate,
     log2,

@@ -568,6 +568,13 @@ auto FunctionSignatureBuilder::CreateFunction(
                   ->string("air.arg_name")
                   ->string("mtl_clip_distance");
             },
+            [&](const OutputPointSize) {
+              md.string("air.point_size")
+                  ->string("air.arg_type_name")
+                  ->string("float")
+                  ->string("air.arg_name")
+                  ->string("mtl_point_size");
+            },
         },
         output
     );

@@ -571,6 +571,10 @@ struct OutputViewportArrayIndex {
   bool operator==(OutputViewportArrayIndex const& rhs) const { return true; }
 };
 
+struct OutputPointSize {
+  bool operator==(OutputPointSize const& rhs) const { return true; }
+};
+
 using FunctionInput = template_concat_t<
   FunctionArguments,
   std::variant<
@@ -596,7 +600,7 @@ using FunctionOutput = std::variant<
   /* fragment */
   OutputRenderTarget, OutputDepth, OutputCoverageMask>;
 
-using MeshVertexOutput = std::variant<OutputMeshData, OutputPosition, OutputClipDistance>;
+using MeshVertexOutput = std::variant<OutputMeshData, OutputPosition, OutputClipDistance, OutputPointSize>;
 
 using MeshPrimitiveOutput = std::variant<OutputMeshData, OutputRenderTargetArrayIndex, OutputViewportArrayIndex>;
 

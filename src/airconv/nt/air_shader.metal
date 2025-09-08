@@ -644,3 +644,27 @@ generatePrimitiveTriangleCCW(int trapezoid_index, object_data int *data, MeshTri
 
   mesh.set_primitive_count(index_count / 3);
 }
+
+void generatePrimitivePoint(int trapezoid_index, object_data int *data, MeshTri mesh) asm(
+    "dxmt.domain_generate_primitives.point"
+);
+
+void
+generatePrimitivePoint(int trapezoid_index, object_data int *data, MeshTri mesh) {
+  object_data Trapezoid &trapezoid = ((object_data Trapezoid *)data)[trapezoid_index];
+
+  short max_in = trapezoid.inner_factor_i;
+  short max_out = trapezoid.outer_factor_i;
+  short baseOuter = max_in + 1;
+
+  short index_count = 0;
+
+  for (short i = 0; i < max_in + 1; i++) {
+    mesh.set_index(index_count++, i);
+  }
+  for (short i = 0; i < max_out + 1; i++) {
+    mesh.set_index(index_count++, i + baseOuter);
+  }
+
+  mesh.set_primitive_count(index_count);
+}

@@ -736,9 +736,34 @@ convert_dxbc_tesselator_domain_shader(
 
   uint32_t payload_idx = func_signature.DefineInput(air::InputPayload{.size = payload_struct_size});
 
-  func_signature.DefineInput(air::InputMesh{
-      (uint32_t)max_edge_point * 2, (uint32_t)max_edge_point * 2 - 2, air::MeshOutputTopology::Triangle /* TESS TODO */
-  });
+  bool point_rasterization = false;
+
+  switch (pHullStage->tessellator_output_primitive) {
+  case microsoft::D3D11_SB_TESSELLATOR_OUTPUT_POINT: {
+    func_signature.DefineInput(
+        air::InputMesh{(uint32_t)max_edge_point * 2, (uint32_t)max_edge_point * 2, air::MeshOutputTopology::Point}
+    );
+    point_rasterization = true; // TESS TODO: not necessary... if combined with GS/SO
+    break;
+  }
+  case microsoft::D3D11_SB_TESSELLATOR_OUTPUT_LINE: {
+    // TESS TODO
+    func_signature.DefineInput(
+        air::InputMesh{(uint32_t)max_edge_point, (uint32_t)max_edge_point - 1, air::MeshOutputTopology::Line}
+    );
+    break;
+  }
+  default: {
+    func_signature.DefineInput(air::InputMesh{
+        (uint32_t)max_edge_point * 2, (uint32_t)max_edge_point * 2 - 2, air::MeshOutputTopology::Triangle
+    });
+    break;
+  }
+  }
+
+  if (point_rasterization) {
+    func_signature.DefineMeshVertexOutput(air::OutputPointSize {});
+  }
 
   if (pShaderInternal->clip_distance_scalars.size() > 0) {
     func_signature.DefineMeshVertexOutput(
@@ -906,6 +931,10 @@ convert_dxbc_tesselator_domain_shader(
          builder.getInt32(gs_passthrough->ViewportArrayIndexComponent)}
     );
     air.CreateSetMeshViewportArrayIndex(primitive_id, builder.CreateLoad(types._int, src_ptr));
+  }
+
+  if (point_rasterization) {
+    air.CreateSetMeshPointSize(vertex_id, air.getFloat(1.0));
   }
 
   builder.CreateBr(vertex_end);
