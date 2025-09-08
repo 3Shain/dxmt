@@ -829,22 +829,13 @@ void handle_signature_ds(
     auto siv = Inst.m_OutputDeclSIV.Name;
     switch (siv) {
     case D3D10_SB_NAME_CLIP_DISTANCE: {
-      // TESS TODO
-
-      // for (unsigned i = 0; i < 4; i++) {
-      //   if (mask & (1 << i)) {
-      //     sm50_shader->clip_distance_scalars.push_back(
-      //       {.component = (uint8_t)(i), .reg = (uint8_t)reg}
-      //     );
-      //   }
-      // }
-      // uint32_t assigned_index = func_signature.DefineOutput(OutputVertex{
-      //   .user = std::format("SV_ClipDistance{}", reg),
-      //   .type = msl_float4,
-      // });
-      // signature_handlers.push_back([=](SignatureContext &ctx) {
-      //   ctx.epilogue >> pop_output_reg(reg, mask, assigned_index);
-      // });
+      for (unsigned i = 0; i < 4; i++) {
+        if (mask & (1 << i)) {
+          sm50_shader->clip_distance_scalars.push_back(
+            {.component = (uint8_t)(i), .reg = (uint8_t)reg}
+          );
+        }
+      }
       max_output_register = std::max(reg + 1, max_output_register);
       break;
     }
@@ -1063,9 +1054,15 @@ handle_signature_gs(
     auto mask = Inst.m_Operands[0].m_WriteMask >> 4;
     auto siv = Inst.m_OutputDeclSIV.Name;
     switch (siv) {
-      case D3D10_SB_NAME_CLIP_DISTANCE:
-      assert(0 && "unhandled geometry shader clip distance");
+    case D3D10_SB_NAME_CLIP_DISTANCE: {
+      for (unsigned i = 0; i < 4; i++) {
+        if (mask & (1 << i)) {
+          sm50_shader->clip_distance_scalars.push_back({.component = (uint8_t)(i), .reg = (uint8_t)reg});
+        }
+      }
+      max_output_register = std::max(reg + 1, max_output_register);
       break;
+    }
     case D3D10_SB_NAME_CULL_DISTANCE:
       assert(0 && "Metal doesn't support shader output: cull distance");
       break;

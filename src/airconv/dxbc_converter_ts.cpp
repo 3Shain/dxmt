@@ -692,8 +692,6 @@ convert_dxbc_tesselator_domain_shader(
 
   // TESS TODO: 17e30e0855effcaa4da9a05c018a3ba7189d7653 changes
 
-  // TESS TODO: clip distance
-
   auto &ds_output_handlers = pShaderInternal->mesh_output_handlers;
 
   setup_binding_table(shader_info, resource_map, func_signature, module);
@@ -741,6 +739,12 @@ convert_dxbc_tesselator_domain_shader(
   func_signature.DefineInput(air::InputMesh{
       (uint32_t)max_edge_point * 2, (uint32_t)max_edge_point * 2 - 2, air::MeshOutputTopology::Triangle /* TESS TODO */
   });
+
+  if (pShaderInternal->clip_distance_scalars.size() > 0) {
+    func_signature.DefineMeshVertexOutput(
+        air::OutputClipDistance{.count = pShaderInternal->clip_distance_scalars.size()}
+    );
+  }
 
   auto [function, function_metadata] = func_signature.CreateFunction(name, context, module, 0, rasterization_disabled);
 
@@ -873,6 +877,18 @@ convert_dxbc_tesselator_domain_shader(
     if (auto err = h(gs_out_ctx).build(ctx).takeError()) {
       return err;
     }
+  }
+
+  for (auto x : llvm::enumerate(pShaderInternal->clip_distance_scalars)) {
+    if (x.value().reg >= max_output_register)
+      continue;
+    auto src_ptr = builder.CreateGEP(
+        llvm::ArrayType::get(types._float4, max_output_register), resource_map.output.ptr_float4,
+        {builder.getInt32(0), builder.getInt32(x.value().reg), builder.getInt32(x.value().component)}
+    );
+    air.CreateSetMeshClipDistance(
+        vertex_id, builder.getInt32(x.index()), builder.CreateLoad(types._float, src_ptr)
+    );
   }
 
   if (rta_idx_out != ~0u) {

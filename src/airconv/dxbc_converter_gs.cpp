@@ -161,6 +161,12 @@ convert_dxbc_geometry_shader(
   auto mesh_idx = func_signature.DefineInput(air::InputMesh{(uint32_t)max_vertex_out, (uint32_t)max_vertex_out, topology});
   uint32_t tg_in_grid_idx = func_signature.DefineInput(air::InputThreadgroupPositionInGrid{});
 
+  if (pShaderInternal->clip_distance_scalars.size() > 0) {
+    func_signature.DefineMeshVertexOutput(
+        air::OutputClipDistance{.count = pShaderInternal->clip_distance_scalars.size()}
+    );
+  }
+
   auto [function, function_metadata] = func_signature.CreateFunction(name, context, module, 0, false);
 
   auto entry_bb = llvm::BasicBlock::Create(context, "entry", function);
@@ -191,6 +197,18 @@ convert_dxbc_geometry_shader(
 
   resource_map.mesh = mesh_ptr;
 
+  auto emit_clip_distances = [&](llvm::Value *vertex) {
+    for (auto x : llvm::enumerate(pShaderInternal->clip_distance_scalars)) {
+      if (x.value().reg >= max_output_register)
+        continue;
+      auto src_ptr = builder.CreateGEP(
+          llvm::ArrayType::get(types._float4, max_output_register), resource_map.output.ptr_float4,
+          {builder.getInt32(0), builder.getInt32(x.value().reg), builder.getInt32(x.value().component)}
+      );
+      air.CreateSetMeshClipDistance(vertex, builder.getInt32(x.index()), builder.CreateLoad(types._float, src_ptr));
+    }
+  };
+
   if (topology == air::MeshOutputTopology::Triangle) {
     resource_map.call_emit = [&]() -> IREffect {
       auto current_write_vertex = builder.CreateLoad(types._int, next_write_vertex);
@@ -208,6 +226,7 @@ convert_dxbc_geometry_shader(
       for (auto &h : gs_output_handlers) {
         co_yield h(gs_out_ctx);
       }
+      emit_clip_distances(current_vertex_with_offset);
 
       auto triple_primitive_idx = builder.CreateMul(current_primitive_idx, builder.getInt32(3));
       air.CreateSetMeshIndex(
@@ -258,6 +277,7 @@ convert_dxbc_geometry_shader(
       for (auto &h : gs_output_handlers) {
         co_yield h(gs_out_ctx);
       }
+      emit_clip_distances(current_vertex_with_offset);
 
       auto double_primitive_idx = builder.CreateMul(current_primitive_idx, builder.getInt32(2));
       air.CreateSetMeshIndex(
@@ -297,6 +317,7 @@ convert_dxbc_geometry_shader(
       for (auto &h : gs_output_handlers) {
         co_yield h(gs_out_ctx);
       }
+      emit_clip_distances(current_write_vertex);
       air.CreateSetMeshIndex(current_write_vertex, current_write_vertex);
       co_return {};
     };
