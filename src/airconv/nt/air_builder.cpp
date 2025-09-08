@@ -1501,6 +1501,26 @@ AIRBuilder::CreateSetMeshPrimitiveCount(Value *Count) {
   return builder.CreateCall(Fn, {getMeshHandle(), Count});
 }
 
+CallInst *
+AIRBuilder::CreateSetMeshPointSize(Value *Vertex, Value *Size) {
+  auto &Context = getContext();
+  auto Attrs = AttributeList::get(
+      Context, {{1U, Attribute::get(Context, Attribute::AttrKind::NoCapture)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::NoUnwind)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::WillReturn)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::ArgMemOnly)}}
+  );
+
+  std::string FnName = "air.set_point_size_mesh";
+
+  auto Fn = getModule()->getOrInsertFunction(
+      FnName,
+      FunctionType::get(getVoidTy(), {getMeshHandleType(), getIntTy(), getFloatTy()}, false), Attrs
+  );
+
+  return builder.CreateCall(Fn, {getMeshHandle(), Vertex, Size});
+}
+
 Value *
 AIRBuilder::CreateFPUnOp(FPUnOp Op, Value *Operand) {
   static char const *FnNames[] = {
