@@ -4,8 +4,11 @@
 #include "d3d11_pipeline.hpp"
 #include "d3d11_shader.hpp"
 #include "log/log.hpp"
+#include "thread.hpp"
 
 namespace dxmt {
+
+static dxmt::mutex ts_global_mutex;
 
 class MTLCompiledTessellationPipeline
     : public ComObject<IMTLCompiledTessellationMeshPipeline> {
@@ -137,8 +140,11 @@ public:
 
     info.raster_sample_count = SampleCount;
 
-    state_rasterization_ =
-        device_->GetMTLDevice().newRenderPipelineState(info, err);
+    {
+      std::lock_guard<dxmt::mutex> lock(ts_global_mutex);
+      state_rasterization_ =
+          device_->GetMTLDevice().newRenderPipelineState(info, err);
+    }
     if (state_rasterization_ == nullptr) {
       ERR("Failed to create tessellation raster PSO: ",
           err.description().getUTF8String());
