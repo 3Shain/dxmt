@@ -156,8 +156,25 @@ GetTexture(ID3D11Resource *pResource) {
   return static_cast<D3D11ResourceCommon *>(pResource)->texture();
 }
 
+class ISharable {
+public:
+  virtual HRESULT GetSharedHandle(HANDLE *pSharedHandle) = 0;
+  virtual HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void **ppvObject) = 0;
+  virtual ~ISharable() {}
+};
+
+struct D3D11SharedResource {
+  ISharable *d3d11_resource;
+  HANDLE process;
+
+  // FIXME: For a complete implementation of shared resources, consider adding:
+  // MTLD3D11Device *d3d11_device;
+  // obj_handle_t metal_resource;
+  // obj_handle_t metal_device;
+};
+
 template <typename tag, typename... Base>
-class TResourceBase : public MTLD3D11DeviceChild<D3D11ResourceCommon, Base...> {
+class TResourceBase : public MTLD3D11DeviceChild<D3D11ResourceCommon, Base...>, public ISharable {
 public:
   TResourceBase(const tag::DESC1 &desc, MTLD3D11Device *device)
       : MTLD3D11DeviceChild<D3D11ResourceCommon, Base...>(
@@ -238,6 +255,49 @@ public:
     this->GetDevice(&device);
     return device->QueryInterface(riid, ppDevice);
   };
+
+  HRESULT GetSharedHandle(HANDLE *pSharedHandle) override {
+    // FIXME: Shared resource functionality (`GetSharedHandle` and `OpenSharedResource`)
+    // is currently limited to resources shared within a single process and without
+    // synchronization (i.e., created without the `D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX` flag).
+
+    if (pSharedHandle == nullptr || (desc.MiscFlags & D3D11_RESOURCE_MISC_SHARED_NTHANDLE))
+      return E_INVALIDARG;
+
+    if (desc.MiscFlags & D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX) {
+      ERR("GetSharedHandle: Resource sharing with KEYEDMUTEX is not yet supported");
+      return E_NOTIMPL;
+    }
+
+    // Create a file mapping object backed by the system paging file to enable sharing.
+    // NOTE: While cross-process sharing is not yet implemented, we create a valid
+    //       handle here. This prevents the application from immediately crashing with a
+    //       segfault if it tries to read the handle in `OpenSharedResource`,
+    //       allowing for a more graceful failure.
+    HANDLE mapFile = CreateFileMapping(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE,
+                                       0, sizeof(D3D11SharedResource), NULL);
+
+    if (!mapFile) {
+      ERR("GetSharedHandle: CreateFileMapping failed: ", GetLastError());
+      return E_FAIL;
+    }
+
+    D3D11SharedResource *handleData = (D3D11SharedResource*)MapViewOfFile(
+      mapFile, FILE_MAP_ALL_ACCESS, 0, 0, sizeof(D3D11SharedResource));
+
+    if (!handleData) {
+      ERR("GetSharedHandle: MapViewOfFile failed: ", GetLastError());
+      CloseHandle(mapFile);
+      return E_FAIL;
+    }
+
+    handleData->d3d11_resource = static_cast<ISharable *>(this);
+    handleData->process = GetCurrentProcess();
+
+    UnmapViewOfFile(handleData);
+    *pSharedHandle = mapFile;
+    return S_OK;
+  }
 
   virtual HRESULT GetDXGIUsage(DXGI_USAGE *pUsage) {
     if (!pUsage) {
