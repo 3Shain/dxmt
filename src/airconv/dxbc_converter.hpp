@@ -286,7 +286,7 @@ IREffect
 pop_mesh_output_vertex_data(uint32_t from_reg, uint32_t mask, uint32_t idx, pvalue vertex_id, air::MSLScalerOrVectorType desired_type);
 
 llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
-  std::shared_ptr<BasicBlock> entry, context &ctx, llvm::BasicBlock *return_bb
+  BasicBlock *entry, context &ctx, llvm::BasicBlock *return_bb
 );
 
 constexpr air::MSLScalerOrVectorType to_msl_type(RegisterComponentType type) {
@@ -393,7 +393,7 @@ public:
   dxmt::dxbc::ShaderInfo shader_info;
   dxmt::air::FunctionSignatureBuilder func_signature;
   std::vector<Signature> output_signature;
-  std::shared_ptr<dxmt::dxbc::BasicBlock> entry;
+  std::vector<std::unique_ptr<BasicBlock>> bbs;
   std::vector<std::function<void(SignatureContext &)>> signature_handlers;
   microsoft::D3D10_SB_TOKENIZED_PROGRAM_TYPE shader_type;
   /* for domain shader, it refers to patch constant input count */
@@ -418,6 +418,10 @@ public:
   microsoft::D3D10_SB_PRIMITIVE_TOPOLOGY gs_output_topology = {};
   uint32_t gs_max_vertex_output = 0;
   uint32_t gs_instance_count = 1;
+
+  BasicBlock *entry() const {
+    return bbs.front().get();
+  }
 };
 
 void handle_signature(
@@ -425,6 +429,11 @@ void handle_signature(
   microsoft::CSignatureParser5 &outputParser,
   microsoft::D3D10ShaderBinary::CInstruction &Inst, SM50ShaderInternal *sm50_shader,
   uint32_t phase
+);
+
+std::vector<std::unique_ptr<BasicBlock>> read_control_flow(
+    microsoft::D3D10ShaderBinary::CShaderCodeParser &Parser, SM50ShaderInternal *sm50_shader,
+    microsoft::CSignatureParser &inputParser, microsoft::CSignatureParser5 &outputParser
 );
 
 uint32_t next_pow2(uint32_t x);

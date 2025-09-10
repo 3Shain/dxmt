@@ -480,7 +480,7 @@ convert_dxbc_geometry_shader(
     return err;
   }
 
-  auto real_entry = convert_basicblocks(pShaderInternal->entry, ctx, epilogue_bb);
+  auto real_entry = convert_basicblocks(pShaderInternal->entry(), ctx, epilogue_bb);
   if (auto err = real_entry.takeError()) {
     return err;
   }
@@ -748,7 +748,7 @@ convert_dxbc_vertex_for_geometry_shader(
     return err;
   }
 
-  auto real_entry = convert_basicblocks(pShaderInternal->entry, ctx, epilogue_bb);
+  auto real_entry = convert_basicblocks(pShaderInternal->entry(), ctx, epilogue_bb);
   if (auto err = real_entry.takeError()) {
     return err;
   }

@@ -400,7 +400,7 @@ convert_dxbc_vertex_hull_shader(
     if (auto err = prologue.build(ctx).takeError()) {
       return err;
     }
-    auto real_entry = convert_basicblocks(pVertexStage->entry, ctx, epilogue_bb);
+    auto real_entry = convert_basicblocks(pVertexStage->entry(), ctx, epilogue_bb);
     if (auto err = real_entry.takeError()) {
       return err;
     }
@@ -542,7 +542,7 @@ convert_dxbc_vertex_hull_shader(
     if (auto err = prologue.build(ctx).takeError()) {
       return err;
     }
-    auto real_entry = convert_basicblocks(pHullStage->entry, ctx, epilogue_bb);
+    auto real_entry = convert_basicblocks(pHullStage->entry(), ctx, epilogue_bb);
     if (auto err = real_entry.takeError()) {
       return err;
     }
@@ -903,7 +903,7 @@ convert_dxbc_tesselator_domain_shader(
     resource_map.domain = domain_bary;
   }
 
-  auto real_entry = convert_basicblocks(pShaderInternal->entry, ctx, vertex_emit);
+  auto real_entry = convert_basicblocks(pShaderInternal->entry(), ctx, vertex_emit);
   if (auto err = real_entry.takeError()) {
     return err;
   }

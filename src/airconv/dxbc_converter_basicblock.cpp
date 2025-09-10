@@ -454,7 +454,7 @@ load_condition(SrcOperand src, bool non_zero_test) {
 };
 
 llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
-  std::shared_ptr<BasicBlock> entry, context &ctx, llvm::BasicBlock *return_bb
+  BasicBlock *entry, context &ctx, llvm::BasicBlock *return_bb
 ) {
   auto &context = ctx.llvm;
   auto &builder = ctx.builder;
@@ -463,7 +463,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
   std::vector<std::pair<BasicBlock *, llvm::BasicBlock *>> visit_order;
 
   std::stack<BasicBlock *> block_to_visit;
-  block_to_visit.push(entry.get());
+  block_to_visit.push(entry);
 
   while (!block_to_visit.empty()) {
     auto current = block_to_visit.top();
@@ -480,24 +480,24 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
           return;
         },
         [&](BasicBlockUnconditionalBranch uncond) {
-          block_to_visit.push(uncond.target.get());
+          block_to_visit.push(uncond.target);
         },
         [&](BasicBlockConditionalBranch cond) {
-          block_to_visit.push(cond.true_branch.get());
-          block_to_visit.push(cond.false_branch.get());
+          block_to_visit.push(cond.true_branch);
+          block_to_visit.push(cond.false_branch);
         },
         [&](BasicBlockSwitch swc)  {
-          block_to_visit.push(swc.case_default.get());
+          block_to_visit.push(swc.case_default);
           for (auto &[val, case_bb] : swc.cases) {
-            block_to_visit.push(case_bb.get());
+            block_to_visit.push(case_bb);
           }
         },
         [&](BasicBlockInstanceBarrier instance)  {
-          block_to_visit.push(instance.active.get());
-          block_to_visit.push(instance.sync.get());
+          block_to_visit.push(instance.active);
+          block_to_visit.push(instance.sync);
         },
         [&](BasicBlockHullShaderWriteOutput hull_end)  {
-          block_to_visit.push(hull_end.epilogue.get());
+          block_to_visit.push(hull_end.epilogue);
         },
       },
       current->target
@@ -519,13 +519,13 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
               );
             },
             [&](BasicBlockUnconditionalBranch uncond) -> llvm::Error {
-              auto target_bb = visited[uncond.target.get()];
+              auto target_bb = visited[uncond.target];
               builder.CreateBr(target_bb);
               return llvm::Error::success();
             },
             [&](BasicBlockConditionalBranch cond) -> llvm::Error {
-              auto target_true_bb = visited[cond.true_branch.get()];
-              auto target_false_bb = visited[cond.false_branch.get()];
+              auto target_true_bb = visited[cond.true_branch];
+              auto target_false_bb = visited[cond.false_branch];
               auto test =
                 load_condition(cond.cond.operand, cond.cond.test_nonzero)
                   .build(ctx);
@@ -539,12 +539,12 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
               dxbc::Converter dxbc(ctx.air, ctx, ctx.resource);
               auto value = dxbc.LoadOperand(swc.value, kMaskComponentX);
               auto switch_inst = builder.CreateSwitch(
-                value, visited[swc.case_default.get()], swc.cases.size()
+                value, visited[swc.case_default], swc.cases.size()
               );
               for (auto &[val, case_bb] : swc.cases) {
                 switch_inst->addCase(
                   llvm::ConstantInt::get(context, llvm::APInt(32, val)),
-                  visited[case_bb.get()]
+                  visited[case_bb]
                 );
               }
               return llvm::Error::success();
@@ -556,8 +556,8 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
               return llvm::Error::success();
             },
             [&](BasicBlockInstanceBarrier instance) -> llvm::Error {
-              auto target_true_bb = visited[instance.active.get()];
-              auto target_false_bb = visited[instance.sync.get()];
+              auto target_true_bb = visited[instance.active];
+              auto target_false_bb = visited[instance.sync];
               builder.CreateCondBr(
                 ctx.builder.CreateICmp(
                   llvm::CmpInst::ICMP_ULT,
@@ -596,7 +596,7 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
               builder.SetInsertPoint(sync);
               ctx.air.CreateBarrier(llvm::air::MemFlags::Threadgroup);
 
-              auto target_bb = visited[hull_end.epilogue.get()];
+              auto target_bb = visited[hull_end.epilogue];
               builder.CreateBr(target_bb);
               return llvm::Error::success();
             },
@@ -606,9 +606,9 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
       return err;
     };
   };
-  assert(visited.count(entry.get()) == 1);
+  assert(visited.count(entry) == 1);
   builder.SetInsertPoint(bb_pop);
-  return visited[entry.get()];
+  return visited[entry];
 }
 
 } // namespace dxmt::dxbc
