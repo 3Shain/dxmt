@@ -803,10 +803,15 @@ struct BasicBlockInstanceBarrier {
   BasicBlock *sync;
 };
 
+struct BasicBlockCall {
+  uint32_t func_id;
+  BasicBlock *return_point;
+};
+
 using BasicBlockTarget = std::variant<
   BasicBlockConditionalBranch, BasicBlockUnconditionalBranch, BasicBlockSwitch,
   BasicBlockReturn, BasicBlockInstanceBarrier, BasicBlockHullShaderWriteOutput,
-  BasicBlockUndefined>;
+  BasicBlockCall, BasicBlockUndefined>;
 
 class BasicBlock {
 public:

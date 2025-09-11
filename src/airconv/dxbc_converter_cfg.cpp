@@ -70,6 +70,8 @@ read_control_flow(
 
   std::vector<std::unique_ptr<BasicBlock>> all_bb;
 
+  std::map<uint32_t, BasicBlock *> func_entries;
+
   BasicBlock bb_void("voidbb");
 
   auto fresh_bb = [&](const char *name) -> BasicBlock * {
@@ -84,6 +86,9 @@ read_control_flow(
   std::stack<BasicBlock *> bb_break_target;
   std::stack<BasicBlockSwitch *> switch_ctx;
   std::stack<BasicBlockInstanceBarrier *> instance_ctx;
+
+  BasicBlock *func_return_point = nullptr;
+  std::vector<std::pair<BasicBlock *, BasicBlockCall *>> call_targets;
 
   bb_current = fresh_bb("entrybb");
 
@@ -206,20 +211,29 @@ read_control_flow(
     }
 
     case D3D10_SB_OPCODE_RET: {
-      auto ret_target = instance_ctx.empty() ? bb_return : instance_ctx.top()->sync;
+      auto ret_target = func_return_point      ? func_return_point
+                        : instance_ctx.empty() ? bb_return
+                                               : instance_ctx.top()->sync;
       bb_current->target = BasicBlockUnconditionalBranch{ret_target};
       if (bb_break_target.empty() && bb_endif.empty()) {
         // top-level return
         bb_current = ret_target;
-        if (!instance_ctx.empty())
+        if (func_return_point) {
+          bb_current = bb_return;
+          func_return_point = nullptr;
+        } else if (!instance_ctx.empty()) {
+          // in hull shader, RET is effective for current phase only and we intend to continue execution
           instance_ctx.pop();
+        }
       } else {
         bb_current = &bb_void;
       }
       break;
     }
     case D3D10_SB_OPCODE_RETC: {
-      auto ret_target = instance_ctx.empty() ? bb_return : instance_ctx.top()->sync;
+      auto ret_target = func_return_point      ? func_return_point
+                        : instance_ctx.empty() ? bb_return
+                                               : instance_ctx.top()->sync;
       auto after_retc = fresh_bb("after_retc");
       bb_current->target = BasicBlockConditionalBranch{readCondition(Inst, 0, phase), ret_target, after_retc};
       bb_current = after_retc;
@@ -278,6 +292,35 @@ read_control_flow(
           std::max(sm50_shader->hull_maximum_threads_per_patch, Inst.m_HSForkPhaseInstanceCountDecl.InstanceCount);
       break;
     }
+    case D3D10_SB_OPCODE_LABEL: {
+      auto func_body = fresh_bb("func_body");
+      auto func_end = fresh_bb("func_end");
+      func_end->target = BasicBlockReturn{};
+      auto func_id = Inst.m_Operands[0].m_Index[0].m_RegIndex;
+      func_entries[func_id] = func_body;
+      func_return_point = func_end;
+      bb_current = func_body;
+      break;
+    }
+    case D3D10_SB_OPCODE_CALL: {
+      auto after_call = fresh_bb("after_call");
+      auto func_id = Inst.m_Operands[0].m_Index[0].m_RegIndex;
+      bb_current->target = BasicBlockCall{func_id, after_call};
+      call_targets.push_back({bb_current, &std::get<BasicBlockCall>(bb_current->target)});
+      bb_current = after_call;
+      break;
+    }
+    case D3D10_SB_OPCODE_CALLC: {
+      auto if_true = fresh_bb("if_true");
+      auto after_callc = fresh_bb("after_callc");
+      bb_current->target = BasicBlockConditionalBranch{readCondition(Inst, 0, phase), if_true, after_callc};
+      call_targets.push_back({bb_current, &std::get<BasicBlockCall>(bb_current->target)});
+      auto func_id = Inst.m_Operands[1].m_Index[0].m_RegIndex;
+      if_true->target = BasicBlockCall{func_id, after_callc};
+      bb_current = after_callc;
+      break;
+    }
+
     case D3D10_SB_OPCODE_DCL_CONSTANT_BUFFER: {
       unsigned RangeID = Inst.m_Operands[0].m_Index[0].m_RegIndex;
       unsigned CBufferSize = Inst.m_ConstantBufferDecl.Size;
@@ -545,7 +588,6 @@ read_control_flow(
     case D3D11_SB_OPCODE_DCL_INTERFACE:
     case D3D11_SB_OPCODE_DCL_FUNCTION_TABLE:
     case D3D11_SB_OPCODE_DCL_FUNCTION_BODY:
-    case D3D10_SB_OPCODE_LABEL:
     case D3D11_SB_OPCODE_HS_DECLS:
       // ignore atm
       break;
@@ -624,6 +666,82 @@ read_control_flow(
       bb_current->target = BasicBlockUnconditionalBranch{bb_return};
     }
     bb_current = bb_return;
+  }
+
+  for (int stack_depth = 32; stack_depth > 0; stack_depth--) {
+    if (call_targets.empty())
+      break;
+
+    std::vector<std::pair<BasicBlock *, BasicBlockCall *>> new_call_targets;
+
+    for (auto [bb, call] : call_targets) {
+      std::unordered_map<BasicBlock *, BasicBlock *> visited;
+      std::stack<BasicBlock *> block_to_redirect;
+
+      auto clone = [&](BasicBlock *target) -> BasicBlock * {
+        if (visited.contains(target))
+          return visited.at(target);
+        auto cloned = fresh_bb(target->debug_name.c_str());
+        cloned->instructions = target->instructions; // copy instructions
+        visited.insert({target, cloned});
+        block_to_redirect.push(target);
+        return cloned;
+      };
+
+      bb->target = BasicBlockUnconditionalBranch{clone(func_entries.at(call->func_id))};
+
+      while (!block_to_redirect.empty()) {
+        auto current = block_to_redirect.top();
+        block_to_redirect.pop();
+        auto cloned = visited[current];
+        cloned->target = std::visit(
+            patterns{
+                [](BasicBlockUndefined) -> BasicBlockTarget { return BasicBlockUndefined{}; },
+                [&](BasicBlockReturn ret) -> BasicBlockTarget {
+                  return BasicBlockUnconditionalBranch{call->return_point};
+                },
+                [&](BasicBlockUnconditionalBranch uncond) -> BasicBlockTarget {
+                  return BasicBlockUnconditionalBranch{clone(uncond.target)};
+                },
+                [&](BasicBlockConditionalBranch cond) -> BasicBlockTarget {
+                  return BasicBlockConditionalBranch{cond.cond, clone(cond.true_branch), clone(cond.false_branch)};
+                },
+                [&](BasicBlockSwitch swc) -> BasicBlockTarget {
+                  BasicBlockSwitch new_swc;
+                  new_swc.value = swc.value;
+                  new_swc.case_default = clone(swc.case_default);
+                  for (auto [val, case_] : swc.cases) {
+                    new_swc.cases.insert({val, clone(case_)});
+                  }
+                  return new_swc;
+                },
+                [&](BasicBlockInstanceBarrier instance) -> BasicBlockTarget {
+                  return BasicBlockInstanceBarrier{
+                      instance.instance_count, clone(instance.active), clone(instance.sync)
+                  };
+                },
+                [&](BasicBlockHullShaderWriteOutput hull_end) -> BasicBlockTarget {
+                  return BasicBlockHullShaderWriteOutput{hull_end.instance_count, clone(hull_end.epilogue)};
+                },
+                [&](BasicBlockCall call) -> BasicBlockTarget {
+                  if (stack_depth == 1)
+                    return BasicBlockUnconditionalBranch{clone(call.return_point)};
+                  return BasicBlockCall{call.func_id, clone(call.return_point)};
+                },
+            },
+            current->target
+        );
+        std::visit(
+            patterns{
+                [&](BasicBlockCall &call) { new_call_targets.push_back({cloned, &call}); },
+                [](auto) {},
+            },
+            cloned->target
+        );
+      }
+    }
+
+    call_targets = new_call_targets;
   }
 
   return all_bb;

@@ -499,6 +499,9 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
         [&](BasicBlockHullShaderWriteOutput hull_end)  {
           block_to_visit.push(hull_end.epilogue);
         },
+        [&](BasicBlockCall call) {
+          block_to_visit.push(call.return_point);
+        },
       },
       current->target
     );
@@ -599,6 +602,11 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
               auto target_bb = visited[hull_end.epilogue];
               builder.CreateBr(target_bb);
               return llvm::Error::success();
+            },
+            [](BasicBlockCall) -> llvm::Error {
+              return llvm::make_error<UnsupportedFeature>(
+                "call terminator must be lowered"
+              );
             },
           },
           current->target
