@@ -1071,6 +1071,30 @@ AIRBuilder::CreateBarrier(MemFlags Flags) {
   return builder.CreateCall(Fn, Ops);
 }
 
+CallInst *
+AIRBuilder::CreateAtomicFence(MemFlags Flags, ThreadScope Scope, bool Relaxed) {
+  auto &Context = getContext();
+  auto Attrs = AttributeList::get(
+      Context, {{~0U, Attribute::get(Context, Attribute::AttrKind::MustProgress)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::NoUnwind)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::WillReturn)}}
+  );
+
+  SmallVector<Value *> Ops;
+  SmallVector<Type *> Tys;
+
+  Tys.push_back(getIntTy());
+  Ops.push_back(getInt(uint32_t(Flags)));
+  Tys.push_back(getIntTy());
+  Ops.push_back(getInt(Relaxed ? 0 : 5));
+  Tys.push_back(getIntTy());
+  Ops.push_back(getInt(uint32_t(Scope)));
+
+  auto Fn = getModule()->getOrInsertFunction("air.atomic.fence", FunctionType::get(getVoidTy(), Tys, false), Attrs);
+
+  return builder.CreateCall(Fn, Ops);
+}
+
 Value *
 AIRBuilder::CreateFMA(Value *X, Value *Y, Value *Z) {
   if (!X->getType()->getScalarType()->isFloatingPointTy()) {

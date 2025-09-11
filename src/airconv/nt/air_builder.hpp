@@ -96,6 +96,13 @@ enum class MemFlags {
   ObjectData = 4,
 };
 
+enum class ThreadScope {
+  Thread = 0,
+  Threadgroup = 1,
+  Device = 2,
+  Simdgroup = 4,
+};
+
 class AIRBuilder {
 public:
   AIRBuilder(IRBuilderBase &ir_builder, raw_ostream &debug) : builder(ir_builder), debug(debug) {}
@@ -236,6 +243,8 @@ public:
   /* Compute Shader */
 
   CallInst *CreateBarrier(MemFlags Flags);
+
+  CallInst *CreateAtomicFence(MemFlags Flags, ThreadScope Scope, bool Relaxed = false);
 
   /* Math */
 

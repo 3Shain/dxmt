@@ -223,7 +223,11 @@ public:
     if (sync.uav_boundary != InstSync::UAVBoundary::none) {
       mem_flag |= MemFlags::Device | MemFlags::Texture;
     }
-    air.CreateBarrier(mem_flag);
+    if (sync.tgsm_execution_barrier) {
+      air.CreateBarrier(mem_flag);
+    } else {
+      air.CreateAtomicFence(mem_flag, sync.uav_boundary != InstSync::UAVBoundary::none ? ThreadScope::Device: ThreadScope::Threadgroup);
+    }
   }
 
   void operator()(const InstMov &);
