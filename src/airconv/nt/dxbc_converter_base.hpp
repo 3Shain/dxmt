@@ -37,6 +37,7 @@ struct BufferResourceHandle {
   llvm::Value *Metadata;    // can be null
   uint32_t StructureStride; // 0 if not structured
   Swizzle Swizzle;
+  bool GlobalCoherent;
 };
 
 struct AtomicBufferResourceHandle {
@@ -44,6 +45,7 @@ struct AtomicBufferResourceHandle {
   llvm::Value *ByteLength;  // can be null
   uint32_t StructureStride; // 0 if not structured
   mask_t Mask;
+  bool GlobalCoherent;
 };
 
 struct UAVCounterHandle {

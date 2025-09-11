@@ -58,6 +58,11 @@ TextureOperationInfo TextureInfo[] = {
 std::string
 AIRBuilder::getTypeOverloadSuffix(Type *Ty, Signedness Sign) {
   std::string Ret = ".";
+  uint32_t PointerAddrSpace = ~0u;
+  if (auto TyPtr = dyn_cast<PointerType>(Ty)) {
+    PointerAddrSpace = TyPtr->getAddressSpace();
+    Ty = TyPtr->getNonOpaquePointerElementType();
+  }
   Type *TyScaler = Ty->getScalarType();
   uint32_t VectorSize = 0;
   if (isa<FixedVectorType>(Ty)) {
@@ -66,12 +71,16 @@ AIRBuilder::getTypeOverloadSuffix(Type *Ty, Signedness Sign) {
   if (TyScaler->isFloatTy()) {
     if (Sign != Signedness::DontCare)
       Ret += "f.";
+    if (PointerAddrSpace != ~0u)
+      Ret += std::format("p{}", PointerAddrSpace);
     if (VectorSize)
       Ret += std::format("v{}", VectorSize);
     Ret += "f32";
   } else if (TyScaler->isHalfTy()) {
     if (Sign != Signedness::DontCare)
       Ret += "f.";
+    if (PointerAddrSpace != ~0u)
+      Ret += std::format("p{}", PointerAddrSpace);
     if (VectorSize)
       Ret += std::format("v{}", VectorSize);
     Ret += "f16";
@@ -80,6 +89,8 @@ AIRBuilder::getTypeOverloadSuffix(Type *Ty, Signedness Sign) {
       Ret += "s.";
     else if (Sign == Signedness::Unsigned)
       Ret += "u.";
+    if (PointerAddrSpace != ~0u)
+      Ret += std::format("p{}", PointerAddrSpace);
     if (VectorSize)
       Ret += std::format("v{}", VectorSize);
     Ret += std::format("i{}", cast<IntegerType>(TyScaler)->getBitWidth());
@@ -1277,6 +1288,56 @@ AIRBuilder::CreateConvertToUnsigned(Value *Val) {
   auto Fn = getModule()->getOrInsertFunction(FnName, FunctionType::get(TyDst, {TySrc}, false), Attrs);
 
   return builder.CreateCall(Fn, {Val});
+}
+
+CallInst *
+AIRBuilder::CreateDeviceCoherentLoad(Type *Ty, Value *Ptr) {
+  auto &Context = getContext();
+  auto Attrs = AttributeList::get(
+      Context, {{1U, Attribute::get(Context, Attribute::AttrKind::NoCapture)},
+                {1U, Attribute::get(Context, Attribute::AttrKind::ReadOnly)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::ArgMemOnly)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::ReadOnly)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::NoFree)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::NoSync)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::NoUnwind)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::WillReturn)}}
+  );
+
+  Type *TyPtr = Ptr->getType();
+
+  std::string FnName = "air.load.device_coherent";
+  FnName += getTypeOverloadSuffix(Ty, Signedness::DontCare);
+  FnName += getTypeOverloadSuffix(TyPtr, Signedness::DontCare);
+
+  auto Fn = getModule()->getOrInsertFunction(FnName, FunctionType::get(Ty, {TyPtr}, false), Attrs);
+
+  return builder.CreateCall(Fn, {Ptr});
+}
+
+CallInst *
+AIRBuilder::CreateDeviceCoherentStore(Value *Val, Value *Ptr) {
+  auto &Context = getContext();
+  auto Attrs = AttributeList::get(
+      Context, {{2U, Attribute::get(Context, Attribute::AttrKind::NoCapture)},
+                {2U, Attribute::get(Context, Attribute::AttrKind::WriteOnly)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::ArgMemOnly)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::NoFree)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::NoSync)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::NoUnwind)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::WillReturn)}}
+  );
+
+  Type *Ty = Val->getType();
+  Type *TyPtr = Ptr->getType();
+
+  std::string FnName = "air.store.device_coherent";
+  FnName += getTypeOverloadSuffix(Ty, Signedness::DontCare);
+  FnName += getTypeOverloadSuffix(TyPtr, Signedness::DontCare);
+
+  auto Fn = getModule()->getOrInsertFunction(FnName, FunctionType::get(getVoidTy(), {Ty, TyPtr}, false), Attrs);
+
+  return builder.CreateCall(Fn, {Val, Ptr});
 }
 
 Value *

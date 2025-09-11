@@ -479,7 +479,7 @@ Converter::LoadBuffer(const SrcOperandResource &SrcOp) {
   if (!res.srv_buf_range_map.contains(SrcOp.range_id))
     return {};
 
-  auto &[stride, res_handle_fn, md_fn] = res.srv_buf_range_map[SrcOp.range_id];
+  auto &[stride, res_handle_fn, md_fn, global_coherent] = res.srv_buf_range_map[SrcOp.range_id];
   auto res_handle = res_handle_fn(nullptr).build(ctx);
   if (res_handle.takeError())
     return {};
@@ -488,7 +488,7 @@ Converter::LoadBuffer(const SrcOperandResource &SrcOp) {
   if (md.takeError())
     return {};
 
-  return llvm::Optional<BufferResourceHandle>({res_handle.get(), md.get(), stride, SrcOp.read_swizzle});
+  return llvm::Optional<BufferResourceHandle>({res_handle.get(), md.get(), stride, SrcOp.read_swizzle, global_coherent});
 }
 
 llvm::Optional<BufferResourceHandle>
@@ -498,7 +498,7 @@ Converter::LoadBuffer(const SrcOperandUAV &SrcOp) {
   if (!res.uav_buf_range_map.contains(SrcOp.range_id))
     return {};
 
-  auto &[stride, res_handle_fn, md_fn] = res.uav_buf_range_map[SrcOp.range_id];
+  auto &[stride, res_handle_fn, md_fn, global_coherent] = res.uav_buf_range_map[SrcOp.range_id];
   auto res_handle = res_handle_fn(nullptr).build(ctx);
   if (res_handle.takeError())
     return {};
@@ -507,7 +507,7 @@ Converter::LoadBuffer(const SrcOperandUAV &SrcOp) {
   if (md.takeError())
     return {};
 
-  return llvm::Optional<BufferResourceHandle>({res_handle.get(), md.get(), stride, SrcOp.read_swizzle});
+  return llvm::Optional<BufferResourceHandle>({res_handle.get(), md.get(), stride, SrcOp.read_swizzle, global_coherent});
 }
 
 llvm::Optional<AtomicBufferResourceHandle>
@@ -517,7 +517,7 @@ Converter::LoadBuffer(const AtomicDstOperandUAV &DstOp) {
   if (!res.uav_buf_range_map.contains(DstOp.range_id))
     return {};
 
-  auto &[stride, res_handle_fn, md_fn] = res.uav_buf_range_map[DstOp.range_id];
+  auto &[stride, res_handle_fn, md_fn, global_coherent] = res.uav_buf_range_map[DstOp.range_id];
   auto res_handle = res_handle_fn(nullptr).build(ctx);
   if (res_handle.takeError())
     return {};
@@ -526,7 +526,7 @@ Converter::LoadBuffer(const AtomicDstOperandUAV &DstOp) {
   if (md.takeError())
     return {};
 
-  return llvm::Optional<AtomicBufferResourceHandle>({res_handle.get(), md.get(), stride, DstOp.mask});
+  return llvm::Optional<AtomicBufferResourceHandle>({res_handle.get(), md.get(), stride, DstOp.mask, global_coherent});
 }
 
 llvm::Optional<BufferResourceHandle>
@@ -537,7 +537,7 @@ Converter::LoadBuffer(const SrcOperandTGSM &SrcOp) {
 
   IntPtr = ir.CreatePointerCast(IntPtr, ir.getInt32Ty()->getPointerTo(tgsm_h->getAddressSpace()));
 
-  return llvm::Optional<BufferResourceHandle>({IntPtr, nullptr, stride, SrcOp.read_swizzle});
+  return llvm::Optional<BufferResourceHandle>({IntPtr, nullptr, stride, SrcOp.read_swizzle, false});
 }
 llvm::Optional<AtomicBufferResourceHandle>
 Converter::LoadBuffer(const AtomicOperandTGSM &DstOp) {
@@ -547,7 +547,7 @@ Converter::LoadBuffer(const AtomicOperandTGSM &DstOp) {
 
   IntPtr = ir.CreatePointerCast(IntPtr, ir.getInt32Ty()->getPointerTo(tgsm_h->getAddressSpace()));
 
-  return llvm::Optional<AtomicBufferResourceHandle>({IntPtr, nullptr, stride, DstOp.mask});
+  return llvm::Optional<AtomicBufferResourceHandle>({IntPtr, nullptr, stride, DstOp.mask, false});
 }
 
 llvm::Optional<UAVCounterHandle>
@@ -2224,14 +2224,16 @@ Converter::operator()(const InstLoadRaw &load) {
 
   if (auto Comp = ComponentFromScalarMask(Mask, Buf->Swizzle); Comp >= 0) {
     auto Ptr = ir.CreateGEP(ir.getInt32Ty(), Buf->Pointer, {ir.CreateAdd(Index, ir.getInt32(Comp))});
-    auto ValueInt = ir.CreateLoad(ir.getInt32Ty(), Ptr, Volatile);
+    auto ValueInt = Buf->GlobalCoherent ? (llvm::Value *)air.CreateDeviceCoherentLoad(ir.getInt32Ty(), Ptr)
+                                        : (llvm::Value *)ir.CreateLoad(ir.getInt32Ty(), Ptr, Volatile);
     return StoreOperand(load.dst, MaskSwizzle(ValueInt, Mask));
   }
 
   llvm::Value *ValueVec = llvm::PoisonValue::get(air.getIntTy(4));
   for (auto [DstComp, _] : EnumerateComponents(MemoryAccessMask(Mask, Buf->Swizzle))) {
     auto Ptr = ir.CreateGEP(ir.getInt32Ty(), Buf->Pointer, {ir.CreateAdd(Index, ir.getInt32(DstComp))});
-    auto ValueInt = ir.CreateLoad(ir.getInt32Ty(), Ptr, Volatile);
+    auto ValueInt = Buf->GlobalCoherent ? (llvm::Value *)air.CreateDeviceCoherentLoad(ir.getInt32Ty(), Ptr)
+                                        : (llvm::Value *)ir.CreateLoad(ir.getInt32Ty(), Ptr, Volatile);
     ValueVec = ir.CreateInsertElement(ValueVec, ValueInt, DstComp);
   }
   StoreOperand(load.dst, MaskSwizzle(ValueVec, Mask, Buf->Swizzle));
@@ -2254,14 +2256,16 @@ Converter::operator()(const InstLoadStructured &load) {
 
   if (auto Comp = ComponentFromScalarMask(Mask, Buf->Swizzle); Comp >= 0) {
     auto Ptr = ir.CreateGEP(ir.getInt32Ty(), Buf->Pointer, {ir.CreateAdd(Index, ir.getInt32(Comp))});
-    auto ValueInt = ir.CreateLoad(ir.getInt32Ty(), Ptr, Volatile);
+    auto ValueInt = Buf->GlobalCoherent ? (llvm::Value *)air.CreateDeviceCoherentLoad(ir.getInt32Ty(), Ptr)
+                                        : (llvm::Value *)ir.CreateLoad(ir.getInt32Ty(), Ptr, Volatile);
     return StoreOperand(load.dst, MaskSwizzle(ValueInt, Mask));
   }
 
   llvm::Value *ValueVec = llvm::PoisonValue::get(air.getIntTy(4));
   for (auto [DstComp, _] : EnumerateComponents(MemoryAccessMask(Mask, Buf->Swizzle))) {
     auto Ptr = ir.CreateGEP(ir.getInt32Ty(), Buf->Pointer, {ir.CreateAdd(Index, ir.getInt32(DstComp))});
-    auto ValueInt = ir.CreateLoad(ir.getInt32Ty(), Ptr, Volatile);
+    auto ValueInt = Buf->GlobalCoherent ? (llvm::Value *)air.CreateDeviceCoherentLoad(ir.getInt32Ty(), Ptr)
+                                        : (llvm::Value *)ir.CreateLoad(ir.getInt32Ty(), Ptr, Volatile);
     ValueVec = ir.CreateInsertElement(ValueVec, ValueInt, DstComp);
   }
   StoreOperand(load.dst, MaskSwizzle(ValueVec, Mask, Buf->Swizzle));
@@ -2292,7 +2296,10 @@ Converter::operator()(const InstStoreRaw &store) {
 
   for (auto [DstComp, _] : EnumerateComponents(Buf->Mask)) {
     auto Ptr = ir.CreateGEP(ir.getInt32Ty(), Buf->Pointer, {ir.CreateAdd(Index, ir.getInt32(DstComp))});
-    ir.CreateStore(ExtractElement(Value, DstComp), Ptr, Volatile);
+    if (Buf->GlobalCoherent)
+      air.CreateDeviceCoherentStore(ExtractElement(Value, DstComp), Ptr);
+    else
+      ir.CreateStore(ExtractElement(Value, DstComp), Ptr, Volatile);
   }
 }
 
@@ -2323,7 +2330,10 @@ Converter::operator()(const InstStoreStructured &store) {
 
   for (auto [DstComp, _] : EnumerateComponents(Buf->Mask)) {
     auto Ptr = ir.CreateGEP(ir.getInt32Ty(), Buf->Pointer, {ir.CreateAdd(Index, ir.getInt32(DstComp))});
-    ir.CreateStore(ExtractElement(Value, DstComp), Ptr, Volatile);
+    if (Buf->GlobalCoherent)
+      air.CreateDeviceCoherentStore(ExtractElement(Value, DstComp), Ptr);
+    else
+      ir.CreateStore(ExtractElement(Value, DstComp), Ptr, Volatile);
   }
 }
 

@@ -261,6 +261,9 @@ public:
   Value *CreateConvertToSigned(Value *Val);
   Value *CreateConvertToUnsigned(Value *Val);
 
+  CallInst *CreateDeviceCoherentLoad(Type *Ty, Value *Ptr);
+  CallInst *CreateDeviceCoherentStore(Value *Val, Value *Ptr);
+
   /* Pull-based Interpolation */
 
   Value *CreateInterpolateAtCenter(Value *Interpoant, bool Perspective);

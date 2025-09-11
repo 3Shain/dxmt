@@ -213,7 +213,8 @@ void setup_binding_table(
         },
         [=, index = srv.arg_metadata_index](pvalue) {
           return get_item_in_argbuf_binding_table(binding_table_index, index);
-        }
+        },
+        false
       };
     }
   }
@@ -248,7 +249,8 @@ void setup_binding_table(
         },
         [=, index = uav.arg_metadata_index](pvalue) {
           return get_item_in_argbuf_binding_table(binding_table_index, index);
-        }
+        },
+        uav.global_coherent
       };
       if (uav.with_counter) {
         auto argbuf_index_counterptr = uav.arg_counter_index;

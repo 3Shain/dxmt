@@ -150,6 +150,7 @@ struct buffer_descriptor {
   uint32_t structure_stride;
   IndexedIRValue resource_id;
   IndexedIRValue metadata;
+  bool global_coherent;
 };
 
 struct interpolant_descriptor {
