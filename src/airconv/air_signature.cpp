@@ -995,6 +995,15 @@ auto FunctionSignatureBuilder::CreateFunction(
            )
     );
   }
+  if (max_mesh_work_group_size > 0) {
+    auto tuple = MDTuple::get(
+      context, {MDString::get(context, "air.max_mesh_work_groups"),
+                ConstantAsMetadata::get(
+                  ConstantInt::get(context, APInt{32, max_mesh_work_group_size})
+                )}
+    );
+    function_def_tuple.push_back(tuple);
+  }
   return std::make_pair(function, MDTuple::get(context, function_def_tuple));
 };
 

@@ -618,6 +618,7 @@ public:
   uint32_t DefineMeshPrimitiveOutput(const MeshPrimitiveOutput &output);
   void UseEarlyFragmentTests() { early_fragment_tests = true; }
   void UseMaxWorkgroupSize(uint32_t size) { max_work_group_size = size; }
+  void UseMaxMeshWorkgroupSize(uint32_t size) { max_mesh_work_group_size = size; }
 
   auto CreateFunction(
     std::string name, llvm::LLVMContext &context, llvm::Module &module,
@@ -631,6 +632,7 @@ private:
   std::vector<MeshPrimitiveOutput> mesh_primitive_outputs;
   bool early_fragment_tests = false;
   uint32_t max_work_group_size = 0;
+  uint32_t max_mesh_work_group_size = 0;
 };
 
 inline TextureKind to_air_resource_type(

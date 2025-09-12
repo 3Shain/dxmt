@@ -222,6 +222,9 @@ convert_dxbc_vertex_hull_shader(
   auto hs_pcout_per_group_scaler_type = llvm::ArrayType::get(hs_pcout_per_patch_scaler_type, patch_per_group);
 
   uint32_t max_trapezoid_count = get_max_potential_trapezoid_count(pHullStage);
+
+  func_signature.UseMaxMeshWorkgroupSize(max_trapezoid_count);
+
   constexpr uint32_t size_trapezoid_info = sizeof(Trapezoid);
 
   auto payload_struct_type = llvm::StructType::create(
