@@ -13,6 +13,7 @@
 #include "../d3d10/d3d10_buffer.hpp"
 #include "../d3d10/d3d10_texture.hpp"
 #include "../d3d10/d3d10_view.hpp"
+#include "util_win32_compat.h"
 #include <memory>
 #include <type_traits>
 
