@@ -2642,7 +2642,7 @@ Converter::GetSamplePos(llvm::Value *SampleCount, llvm::Value *Index) {
   return ir.CreateCall(Fn, {SampleCount, Index});
 }
 void
-Converter::HullGenerateTrapezoidForTriangle(
+Converter::HullGenerateWorkloadForTriangle(
     llvm::Value *PatchIndex, llvm::Value *CountPtr, llvm::Value *DataPtr, TessellatorPartitioning Partitioning,
     llvm::Value *TessFactorIn, llvm::Value *TessFactorOut0, llvm::Value *TessFactorOut1, llvm::Value *TessFactorOut2
 ) {
@@ -2673,7 +2673,7 @@ Converter::HullGenerateTrapezoidForTriangle(
   Tys.push_back(TessFactorOut2->getType());
   Ops.push_back(TessFactorOut2);
 
-  std::string FnName = "dxmt.generate_trapezoid.triangle";
+  std::string FnName = "dxmt.generate_workload.triangle";
   switch (Partitioning) {
   case TessellatorPartitioning::integer:
     FnName += ".integer";
@@ -2693,7 +2693,7 @@ Converter::HullGenerateTrapezoidForTriangle(
 }
 
 void
-Converter::HullGenerateTrapezoidForQuad(
+Converter::HullGenerateWorkloadForQuad(
     llvm::Value *PatchIndex, llvm::Value *CountPtr, llvm::Value *DataPtr, TessellatorPartitioning Partitioning,
     llvm::Value *TessFactorIn0, llvm::Value *TessFactorIn1, llvm::Value *TessFactorOut0, llvm::Value *TessFactorOut1,
     llvm::Value *TessFactorOut2, llvm::Value *TessFactorOut3
@@ -2729,7 +2729,7 @@ Converter::HullGenerateTrapezoidForQuad(
   Tys.push_back(TessFactorOut3->getType());
   Ops.push_back(TessFactorOut3);
 
-  std::string FnName = "dxmt.generate_trapezoid.quad";
+  std::string FnName = "dxmt.generate_workload.quad";
   switch (Partitioning) {
   case TessellatorPartitioning::integer:
     FnName += ".integer";
@@ -2749,7 +2749,7 @@ Converter::HullGenerateTrapezoidForQuad(
 }
 
 llvm::Value *
-Converter::DomainGetPatchIndex(llvm::Value *TrapezoidIndex, llvm::Value *DataPtr) {
+Converter::DomainGetPatchIndex(llvm::Value *WorkloadIndex, llvm::Value *DataPtr) {
   using namespace llvm;
 
   auto &Context = air.getContext();
@@ -2764,8 +2764,8 @@ Converter::DomainGetPatchIndex(llvm::Value *TrapezoidIndex, llvm::Value *DataPtr
   SmallVector<Value *> Ops;
   SmallVector<Type *> Tys;
 
-  Tys.push_back(TrapezoidIndex->getType());
-  Ops.push_back(TrapezoidIndex);
+  Tys.push_back(WorkloadIndex->getType());
+  Ops.push_back(WorkloadIndex);
   Tys.push_back(DataPtr->getType());
   Ops.push_back(DataPtr);
 
@@ -2776,7 +2776,7 @@ Converter::DomainGetPatchIndex(llvm::Value *TrapezoidIndex, llvm::Value *DataPtr
 
 std::tuple<llvm::Value *, llvm::Value *, llvm::Value *>
 Converter::DomainGetLocation(
-    llvm::Value *TrapezoidIndex, llvm::Value *ThreadIndex, llvm::Value *DataPtr, TessellatorPartitioning Partitioning
+    llvm::Value *WorkloadIndex, llvm::Value *ThreadIndex, llvm::Value *DataPtr, TessellatorPartitioning Partitioning
 ) {
   using namespace llvm;
 
@@ -2792,8 +2792,8 @@ Converter::DomainGetLocation(
   SmallVector<Value *> Ops;
   SmallVector<Type *> Tys;
 
-  Tys.push_back(TrapezoidIndex->getType());
-  Ops.push_back(TrapezoidIndex);
+  Tys.push_back(WorkloadIndex->getType());
+  Ops.push_back(WorkloadIndex);
   Tys.push_back(ThreadIndex->getType());
   Ops.push_back(ThreadIndex);
   Tys.push_back(DataPtr->getType());
@@ -2830,7 +2830,7 @@ Converter::DomainGetLocation(
 
 void
 Converter::DomainGeneratePrimitives(
-    llvm::Value *TrapezoidIndex, llvm::Value *DataPtr, TessellatorOutputPrimitive Primitive
+    llvm::Value *WorkloadIndex, llvm::Value *DataPtr, TessellatorOutputPrimitive Primitive
 ) {
   using namespace llvm;
 
@@ -2846,8 +2846,8 @@ Converter::DomainGeneratePrimitives(
   SmallVector<Value *> Ops;
   SmallVector<Type *> Tys;
 
-  Tys.push_back(TrapezoidIndex->getType());
-  Ops.push_back(TrapezoidIndex);
+  Tys.push_back(WorkloadIndex->getType());
+  Ops.push_back(WorkloadIndex);
   Tys.push_back(DataPtr->getType());
   Ops.push_back(DataPtr);
   Tys.push_back(air.getMeshHandleType());

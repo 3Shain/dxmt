@@ -11,7 +11,7 @@
 
 namespace dxmt::dxbc {
 
-struct Trapezoid {
+struct TessMeshWorkload {
   short inner0[2];
   short inner1[2];
   short outer0[2];
@@ -20,6 +20,16 @@ struct Trapezoid {
   short outer_factor;
   char inner_factor_i;
   char outer_factor_i;
+  bool has_complement;
+  bool padding;
+  short inner2[2];
+  short inner3[2];
+  short outer2[2];
+  short outer3[2];
+  short inner_factor_23;
+  short outer_factor_23;
+  char inner_factor_23_i;
+  char outer_factor_23_i;
   short patch_index;
 };
 
@@ -96,7 +106,7 @@ get_integer_factor(float factor, SM50ShaderInternal *pHullStage) {
 }
 
 uint32_t
-get_max_potential_trapezoid_count(SM50ShaderInternal *pHullStage) {
+get_max_potential_workload_count(SM50ShaderInternal *pHullStage) {
   uint32_t max_tess_factor = get_integer_factor(pHullStage->max_tesselation_factor, pHullStage);
 
   switch (pHullStage->tessellation_domain) {
@@ -104,9 +114,9 @@ get_max_potential_trapezoid_count(SM50ShaderInternal *pHullStage) {
   case microsoft::D3D11_SB_TESSELLATOR_DOMAIN_ISOLINE:
     return 0;
   case microsoft::D3D11_SB_TESSELLATOR_DOMAIN_TRI:
-    return (max_tess_factor / 2) * 3 + (max_tess_factor & 1);
+    return std::ceil((max_tess_factor - 1) / 4.0) * 3 + (max_tess_factor & 1);
   case microsoft::D3D11_SB_TESSELLATOR_DOMAIN_QUAD:
-    return (max_tess_factor / 2) * 4 + (max_tess_factor & 1);
+    return std::ceil((max_tess_factor - 1) / 4.0) * 4 + (max_tess_factor & 1);
     ;
   }
 }
@@ -120,11 +130,11 @@ estimate_payload_size(SM50ShaderInternal *pHullStage, uint32_t patch_per_group) 
   auto pc_size_per_patch = sizeof(uint32_t) * pHullStage->patch_constant_scalars.size();
   auto pc_size_per_group = pc_size_per_patch * patch_per_group;
 
-  uint32_t max_trapezoid_count = get_max_potential_trapezoid_count(pHullStage);
-  constexpr uint32_t size_trapezoid_info = sizeof(Trapezoid);
+  uint32_t max_workload_count = get_max_potential_workload_count(pHullStage);
+  constexpr uint32_t size_workload_info = sizeof(TessMeshWorkload);
 
   return cp_size_per_group + pc_size_per_group + sizeof(uint32_t) +
-         max_trapezoid_count * patch_per_group * size_trapezoid_info;
+         max_workload_count * patch_per_group * size_workload_info;
 };
 
 llvm::Error
@@ -221,16 +231,16 @@ convert_dxbc_vertex_hull_shader(
   auto hs_pcout_per_patch_scaler_type = llvm::ArrayType::get(types._int, pHullStage->patch_constant_scalars.size());
   auto hs_pcout_per_group_scaler_type = llvm::ArrayType::get(hs_pcout_per_patch_scaler_type, patch_per_group);
 
-  uint32_t max_trapezoid_count = get_max_potential_trapezoid_count(pHullStage);
+  uint32_t max_workload_count = get_max_potential_workload_count(pHullStage);
 
-  func_signature.UseMaxMeshWorkgroupSize(max_trapezoid_count);
+  func_signature.UseMaxMeshWorkgroupSize(max_workload_count);
 
-  constexpr uint32_t size_trapezoid_info = sizeof(Trapezoid);
+  constexpr uint32_t size_workload_info = sizeof(TessMeshWorkload);
 
   auto payload_struct_type = llvm::StructType::create(
       context,
       {hs_output_per_group_type, hs_pcout_per_group_scaler_type, types._int,
-       llvm::ArrayType::get(types._int, max_trapezoid_count * patch_per_group * size_trapezoid_info / 4)},
+       llvm::ArrayType::get(types._int, max_workload_count * patch_per_group * size_workload_info / 4)},
       "payload"
   );
   uint32_t payload_struct_size = module.getDataLayout().getTypeAllocSize(payload_struct_type);
@@ -572,7 +582,7 @@ convert_dxbc_vertex_hull_shader(
     std::array<llvm::Value *, 6> tess_factors;
     tess_factors.fill(air.getFloat(0));
 
-    auto max_tess_factor_value = air.getFloat(std::clamp<float>(pHullStage->max_tesselation_factor, 1.0, 64.0));
+    auto max_tess_factor_value = air.getFloat(get_integer_factor(pHullStage->max_tesselation_factor, pHullStage));
 
     for (unsigned i = 0; i < pHullStage->patch_constant_scalars.size(); i++) {
       auto pc_scalar = pHullStage->patch_constant_scalars[i];
@@ -597,15 +607,15 @@ convert_dxbc_vertex_hull_shader(
       }
     };
 
-    llvm::GlobalVariable *trapezoid_count = new llvm::GlobalVariable(
+    llvm::GlobalVariable *workload_count = new llvm::GlobalVariable(
         module, types._int, false, llvm::GlobalValue::InternalLinkage, llvm::UndefValue::get(types._int),
-        "trapezoid_count", nullptr, llvm::GlobalValue::NotThreadLocal, (uint32_t)air::AddressSpace::threadgroup
+        "workload_count", nullptr, llvm::GlobalValue::NotThreadLocal, (uint32_t)air::AddressSpace::threadgroup
     );
-    trapezoid_count->setAlignment(llvm::Align(4));
+    workload_count->setAlignment(llvm::Align(4));
 
     // clear value
     builder.CreateAtomicRMW(
-        llvm::AtomicRMWInst::And, trapezoid_count, builder.getInt32(0), {}, llvm::AtomicOrdering::Monotonic
+        llvm::AtomicRMWInst::And, workload_count, builder.getInt32(0), {}, llvm::AtomicOrdering::Monotonic
     );
 
     switch (pHullStage->tessellation_domain) {
@@ -613,8 +623,8 @@ convert_dxbc_vertex_hull_shader(
       // TESS TODO
       break;
     case microsoft::D3D11_SB_TESSELLATOR_DOMAIN_QUAD:
-      dxbc.HullGenerateTrapezoidForQuad(
-          patch_offset_in_group, trapezoid_count,
+      dxbc.HullGenerateWorkloadForQuad(
+          patch_offset_in_group, workload_count,
           builder.CreateGEP(
               payload_struct_type, payload, {builder.getInt32(0), builder.getInt32(3), builder.getInt32(0)}
           ),
@@ -623,8 +633,8 @@ convert_dxbc_vertex_hull_shader(
       );
       break;
     default: {
-      dxbc.HullGenerateTrapezoidForTriangle(
-          patch_offset_in_group, trapezoid_count,
+      dxbc.HullGenerateWorkloadForTriangle(
+          patch_offset_in_group, workload_count,
           builder.CreateGEP(
               payload_struct_type, payload, {builder.getInt32(0), builder.getInt32(3), builder.getInt32(0)}
           ),
@@ -642,7 +652,7 @@ convert_dxbc_vertex_hull_shader(
 
     llvm::Value *meshgroup_to_dispatch = air.getInt3(1, 1, 1);
     meshgroup_to_dispatch = builder.CreateInsertElement(
-        meshgroup_to_dispatch, builder.CreateLoad(types._int, trapezoid_count), (uint64_t)0
+        meshgroup_to_dispatch, builder.CreateLoad(types._int, workload_count), (uint64_t)0
     );
 
     air.CreateSetMeshProperties(meshgroup_to_dispatch);
@@ -743,12 +753,12 @@ convert_dxbc_tesselator_domain_shader(
 
   // n segments has n + 1 points
   uint32_t max_edge_point = get_integer_factor(pHullStage->max_tesselation_factor, pHullStage) + 1;
-  uint32_t max_trapezoid_count = get_max_potential_trapezoid_count(pHullStage);
-  constexpr uint32_t size_trapezoid_info = sizeof(Trapezoid);
+  uint32_t max_workload_count = get_max_potential_workload_count(pHullStage);
+  constexpr uint32_t size_workload_info = sizeof(TessMeshWorkload);
   auto payload_struct_type = llvm::StructType::create(
       context,
       {hs_output_per_group_type, hs_pcout_per_group_scaler_type, types._int,
-       llvm::ArrayType::get(types._int, max_trapezoid_count * patch_per_group * size_trapezoid_info / 4)},
+       llvm::ArrayType::get(types._int, max_workload_count * patch_per_group * size_workload_info / 4)},
       "payload"
   );
   uint32_t payload_struct_size = module.getDataLayout().getTypeAllocSize(payload_struct_type);
@@ -774,7 +784,9 @@ convert_dxbc_tesselator_domain_shader(
   }
   default: {
     func_signature.DefineInput(air::InputMesh{
-        (uint32_t)max_edge_point * 2, (uint32_t)max_edge_point * 2 - 2, air::MeshOutputTopology::Triangle
+        (uint32_t)(max_edge_point + 2 - (max_edge_point & 1)) * 2 + 1,
+        (uint32_t)(max_edge_point + 2 - (max_edge_point & 1)) * 2 + 1,
+        air::MeshOutputTopology::Triangle
     });
     break;
   }
@@ -807,7 +819,7 @@ convert_dxbc_tesselator_domain_shader(
   setup_temp_register(shader_info, resource_map, types, module, builder);
   setup_immediate_constant_buffer(shader_info, resource_map, types, module, builder);
 
-  auto trapezoid_index = builder.CreateExtractElement(function->getArg(tg_id_idx), 0ull);
+  auto workload_index = builder.CreateExtractElement(function->getArg(tg_id_idx), 0ull);
   auto thread_index = builder.CreateExtractElement(function->getArg(thread_id_idx), 0ull);
 
   auto payload = builder.CreateBitCast(function->getArg(payload_idx), payload_struct_type->getPointerTo(6));
@@ -834,7 +846,7 @@ convert_dxbc_tesselator_domain_shader(
       types._int, builder.CreateGEP(payload_struct_type, payload, {builder.getInt32(0), builder.getInt32(2)})
   );
 
-  auto patch_index = dxbc.DomainGetPatchIndex(trapezoid_index, data);
+  auto patch_index = dxbc.DomainGetPatchIndex(workload_index, data);
 
   resource_map.patch_id = builder.CreateAdd(batched_patch_start, patch_index);
 
@@ -891,7 +903,7 @@ convert_dxbc_tesselator_domain_shader(
   auto actual_thread_index = builder.CreateAdd(phi_thread_index_base, thread_index);
 
   auto [location, active, iterate] = dxbc.DomainGetLocation(
-      trapezoid_index, actual_thread_index, data, get_partitioning(pHullStage)
+      workload_index, actual_thread_index, data, get_partitioning(pHullStage)
   );
 
   // It accidentally works on quad as well
@@ -968,7 +980,7 @@ convert_dxbc_tesselator_domain_shader(
   );
   builder.SetInsertPoint(generate_primitive);
 
-  dxbc.DomainGeneratePrimitives(trapezoid_index, data, get_output_primitive(pHullStage));
+  dxbc.DomainGeneratePrimitives(workload_index, data, get_output_primitive(pHullStage));
 
   builder.CreateBr(real_return);
   builder.SetInsertPoint(real_return);

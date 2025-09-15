@@ -439,25 +439,25 @@ public:
 
   llvm::Value *GetSamplePos(llvm::Value *SampleCount, llvm::Value *Index);
 
-  void HullGenerateTrapezoidForTriangle(
+  void HullGenerateWorkloadForTriangle(
       llvm::Value *PatchIndex, llvm::Value *CountPtr, llvm::Value *DataPtr, TessellatorPartitioning Partitioning,
       llvm::Value *TessFactorIn, llvm::Value *TessFactorOut0, llvm::Value *TessFactorOut1, llvm::Value *TessFactorOut2
   );
 
-  void HullGenerateTrapezoidForQuad(
+  void HullGenerateWorkloadForQuad(
       llvm::Value *PatchIndex, llvm::Value *CountPtr, llvm::Value *DataPtr, TessellatorPartitioning Partitioning,
       llvm::Value *TessFactorIn0, llvm::Value *TessFactorIn1, llvm::Value *TessFactorOut0, llvm::Value *TessFactorOut1,
       llvm::Value *TessFactorOut2, llvm::Value *TessFactorOut3
   );
 
-  llvm::Value *DomainGetPatchIndex(llvm::Value *TrapezoidIndex, llvm::Value *DataPtr);
+  llvm::Value *DomainGetPatchIndex(llvm::Value *WorkloadIndex, llvm::Value *DataPtr);
 
   std::tuple<llvm::Value *, llvm::Value *, llvm::Value *> DomainGetLocation(
-      llvm::Value *TrapezoidIndex, llvm::Value *ThreadIndex, llvm::Value *DataPtr, TessellatorPartitioning Partitioning
+      llvm::Value *WorkloadIndex, llvm::Value *ThreadIndex, llvm::Value *DataPtr, TessellatorPartitioning Partitioning
   );
 
   void
-  DomainGeneratePrimitives(llvm::Value *TrapezoidIndex, llvm::Value *DataPtr, TessellatorOutputPrimitive Primitive);
+  DomainGeneratePrimitives(llvm::Value *WorkloadIndex, llvm::Value *DataPtr, TessellatorOutputPrimitive Primitive);
 
 private:
   llvm::air::AIRBuilder &air;
