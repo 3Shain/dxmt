@@ -1,5 +1,7 @@
 #pragma once
 #include "llvm/ADT/Optional.h"
+#include "llvm/IR/Constants.h"
+#include "llvm/IR/FMF.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Value.h"
 
@@ -462,6 +464,33 @@ public:
   llvm::Value * CreateGEPInt32WithBoundCheck(BufferResourceHandle &Buffer, llvm::Value* Index);
 
   llvm::Value * CreateGEPInt32WithBoundCheck(AtomicBufferResourceHandle &Buffer, llvm::Value* Index);
+
+  class ForcePreciseMath {
+  public:
+    llvm::FastMathFlags Previous;
+    llvm::IRBuilderBase &Builder;
+    ForcePreciseMath(llvm::IRBuilderBase &Builder, bool ForcePrecise) : Builder(Builder) {
+      Previous = Builder.getFastMathFlags();
+      if (ForcePrecise) {
+        Builder.setFastMathFlags(llvm::FastMathFlags());
+      }
+    }
+    ~ForcePreciseMath() {
+      Builder.setFastMathFlags(Previous);
+    }
+    ForcePreciseMath(ForcePreciseMath &&) = delete;
+    ForcePreciseMath(const ForcePreciseMath &) = delete;
+  };
+
+  bool
+  IsConstantZero(llvm::Value *Value) const {
+    return llvm::isa<llvm::Constant>(Value) && llvm::cast<llvm::Constant>(Value)->isZeroValue();
+  }
+
+  bool
+  IsInifinity(llvm::Value *Value) const {
+    return llvm::isa<llvm::ConstantFP>(Value) && llvm::cast<llvm::ConstantFP>(Value)->isInfinity();
+  }
 
 private:
   llvm::air::AIRBuilder &air;

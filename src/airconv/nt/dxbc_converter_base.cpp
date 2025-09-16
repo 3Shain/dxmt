@@ -975,18 +975,24 @@ Converter::operator()(const InstFloatBinaryOp &bin) {
   case FloatBinaryOp::Add:
     Result = ir.CreateFAdd(LHS, RHS);
     break;
-  case FloatBinaryOp::Mul:
+  case FloatBinaryOp::Mul: {
+    ForcePreciseMath precise(ir, IsInifinity(LHS) || IsInifinity(RHS));
     Result = ir.CreateFMul(LHS, RHS);
     break;
+  }
   case FloatBinaryOp::Div:
     Result = ir.CreateFDiv(LHS, RHS);
     break;
-  case FloatBinaryOp::Min:
+  case FloatBinaryOp::Min: {
+    ForcePreciseMath precise(ir, llvm::isa<llvm::Constant>(LHS) || llvm::isa<llvm::Constant>(RHS));
     Result = air.CreateFPBinOp(AIRBuilder::fmin, LHS, RHS);
     break;
-  case FloatBinaryOp::Max:
+  }
+  case FloatBinaryOp::Max: {
+    ForcePreciseMath precise(ir, llvm::isa<llvm::Constant>(LHS) || llvm::isa<llvm::Constant>(RHS));
     Result = air.CreateFPBinOp(AIRBuilder::fmax, LHS, RHS);
     break;
+  }
   }
 
   StoreOperand(bin.dst, Result, bin._.saturate);
@@ -1142,7 +1148,11 @@ Converter::operator()(const InstFloatCompare &cmp) {
     break;
   }
 
-  auto Result = ir.CreateFCmp(Pred, LHS, RHS);
+  llvm::Value * Result;
+  {
+    ForcePreciseMath precise(ir, IsConstantZero(LHS) || IsConstantZero(RHS));
+    Result = ir.CreateFCmp(Pred, LHS, RHS);
+  }
 
   StoreOperand(cmp.dst, ir.CreateSExt(Result, Result->getType()->getWithNewBitWidth(32)));
 }
