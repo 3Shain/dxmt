@@ -2223,7 +2223,7 @@ Converter::operator()(const InstLoadRaw &load) {
   auto Index = ir.CreateLShr(LoadOperand(load.src_byte_offset, kMaskComponentX), 2);
 
   if (auto Comp = ComponentFromScalarMask(Mask, Buf->Swizzle); Comp >= 0) {
-    auto Ptr = ir.CreateGEP(ir.getInt32Ty(), Buf->Pointer, {ir.CreateAdd(Index, ir.getInt32(Comp))});
+    auto Ptr = CreateGEPInt32WithBoundCheck(Buf.value(), ir.CreateAdd(Index, ir.getInt32(Comp)));
     auto ValueInt = Buf->GlobalCoherent ? (llvm::Value *)air.CreateDeviceCoherentLoad(ir.getInt32Ty(), Ptr)
                                         : (llvm::Value *)ir.CreateLoad(ir.getInt32Ty(), Ptr, Volatile);
     return StoreOperand(load.dst, MaskSwizzle(ValueInt, Mask));
@@ -2231,7 +2231,7 @@ Converter::operator()(const InstLoadRaw &load) {
 
   llvm::Value *ValueVec = llvm::PoisonValue::get(air.getIntTy(4));
   for (auto [DstComp, _] : EnumerateComponents(MemoryAccessMask(Mask, Buf->Swizzle))) {
-    auto Ptr = ir.CreateGEP(ir.getInt32Ty(), Buf->Pointer, {ir.CreateAdd(Index, ir.getInt32(DstComp))});
+    auto Ptr = CreateGEPInt32WithBoundCheck(Buf.value(), ir.CreateAdd(Index, ir.getInt32(DstComp)));
     auto ValueInt = Buf->GlobalCoherent ? (llvm::Value *)air.CreateDeviceCoherentLoad(ir.getInt32Ty(), Ptr)
                                         : (llvm::Value *)ir.CreateLoad(ir.getInt32Ty(), Ptr, Volatile);
     ValueVec = ir.CreateInsertElement(ValueVec, ValueInt, DstComp);
@@ -2255,7 +2255,7 @@ Converter::operator()(const InstLoadStructured &load) {
   auto Index = ir.CreateAdd(IndexStruct, ir.CreateLShr(LoadOperand(load.src_byte_offset, kMaskComponentX), 2));
 
   if (auto Comp = ComponentFromScalarMask(Mask, Buf->Swizzle); Comp >= 0) {
-    auto Ptr = ir.CreateGEP(ir.getInt32Ty(), Buf->Pointer, {ir.CreateAdd(Index, ir.getInt32(Comp))});
+    auto Ptr = CreateGEPInt32WithBoundCheck(Buf.value(), ir.CreateAdd(Index, ir.getInt32(Comp)));
     auto ValueInt = Buf->GlobalCoherent ? (llvm::Value *)air.CreateDeviceCoherentLoad(ir.getInt32Ty(), Ptr)
                                         : (llvm::Value *)ir.CreateLoad(ir.getInt32Ty(), Ptr, Volatile);
     return StoreOperand(load.dst, MaskSwizzle(ValueInt, Mask));
@@ -2263,7 +2263,7 @@ Converter::operator()(const InstLoadStructured &load) {
 
   llvm::Value *ValueVec = llvm::PoisonValue::get(air.getIntTy(4));
   for (auto [DstComp, _] : EnumerateComponents(MemoryAccessMask(Mask, Buf->Swizzle))) {
-    auto Ptr = ir.CreateGEP(ir.getInt32Ty(), Buf->Pointer, {ir.CreateAdd(Index, ir.getInt32(DstComp))});
+    auto Ptr = CreateGEPInt32WithBoundCheck(Buf.value(), ir.CreateAdd(Index, ir.getInt32(DstComp)));
     auto ValueInt = Buf->GlobalCoherent ? (llvm::Value *)air.CreateDeviceCoherentLoad(ir.getInt32Ty(), Ptr)
                                         : (llvm::Value *)ir.CreateLoad(ir.getInt32Ty(), Ptr, Volatile);
     ValueVec = ir.CreateInsertElement(ValueVec, ValueInt, DstComp);
@@ -2295,7 +2295,7 @@ Converter::operator()(const InstStoreRaw &store) {
   auto Value = LoadOperand(store.src, Buf->Mask);
 
   for (auto [DstComp, _] : EnumerateComponents(Buf->Mask)) {
-    auto Ptr = ir.CreateGEP(ir.getInt32Ty(), Buf->Pointer, {ir.CreateAdd(Index, ir.getInt32(DstComp))});
+    auto Ptr = CreateGEPInt32WithBoundCheck(Buf.value(), ir.CreateAdd(Index, ir.getInt32(DstComp)));
     if (Buf->GlobalCoherent)
       air.CreateDeviceCoherentStore(ExtractElement(Value, DstComp), Ptr);
     else
@@ -2329,7 +2329,7 @@ Converter::operator()(const InstStoreStructured &store) {
   auto Value = LoadOperand(store.src, Buf->Mask);
 
   for (auto [DstComp, _] : EnumerateComponents(Buf->Mask)) {
-    auto Ptr = ir.CreateGEP(ir.getInt32Ty(), Buf->Pointer, {ir.CreateAdd(Index, ir.getInt32(DstComp))});
+    auto Ptr = CreateGEPInt32WithBoundCheck(Buf.value(), ir.CreateAdd(Index, ir.getInt32(DstComp)));
     if (Buf->GlobalCoherent)
       air.CreateDeviceCoherentStore(ExtractElement(Value, DstComp), Ptr);
     else
@@ -2870,6 +2870,31 @@ Converter::DomainGeneratePrimitives(
   }
   auto Fn = air.getModule()->getOrInsertFunction(FnName, llvm::FunctionType::get(air.getVoidTy(), Tys, false), Attrs);
   ir.CreateCall(Fn, Ops);
+}
+
+llvm::Value *
+Converter::CreateGEPInt32WithBoundCheck(BufferResourceHandle &Buffer, llvm::Value *Index) {
+  auto Addr = ir.CreateGEP(ir.getInt32Ty(), Buffer.Pointer, {Index});
+  if (!Buffer.Metadata) {
+    return Addr;
+  }
+  auto ByteLength = DecodeRawBufferByteLength(Buffer.Metadata);
+  return ir.CreateSelect(
+      ir.CreateICmpULT(Index, ir.CreateLShr(ByteLength, 2)), Addr, llvm::Constant::getNullValue(Addr->getType())
+  );
+}
+
+llvm::Value *
+Converter::CreateGEPInt32WithBoundCheck(AtomicBufferResourceHandle &Buffer, llvm::Value *Index) {
+  auto Addr = ir.CreateGEP(ir.getInt32Ty(), Buffer.Pointer, {Index});
+  if (!Buffer.Metadata) {
+    return Addr;
+  }
+  auto ByteLength = DecodeRawBufferByteLength(Buffer.Metadata);
+
+  return ir.CreateSelect(
+      ir.CreateICmpULT(Index, ir.CreateLShr(ByteLength, 2)), Addr, llvm::Constant::getNullValue(Addr->getType())
+  );
 }
 
 } // namespace dxmt::dxbc

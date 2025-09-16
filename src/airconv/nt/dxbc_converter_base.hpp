@@ -42,7 +42,7 @@ struct BufferResourceHandle {
 
 struct AtomicBufferResourceHandle {
   llvm::Value *Pointer;
-  llvm::Value *ByteLength;  // can be null
+  llvm::Value *Metadata;  // can be null
   uint32_t StructureStride; // 0 if not structured
   mask_t Mask;
   bool GlobalCoherent;
@@ -458,6 +458,10 @@ public:
 
   void
   DomainGeneratePrimitives(llvm::Value *WorkloadIndex, llvm::Value *DataPtr, TessellatorOutputPrimitive Primitive);
+
+  llvm::Value * CreateGEPInt32WithBoundCheck(BufferResourceHandle &Buffer, llvm::Value* Index);
+
+  llvm::Value * CreateGEPInt32WithBoundCheck(AtomicBufferResourceHandle &Buffer, llvm::Value* Index);
 
 private:
   llvm::air::AIRBuilder &air;
