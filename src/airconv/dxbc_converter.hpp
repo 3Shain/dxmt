@@ -345,12 +345,18 @@ struct MeshOutputContext {
 class Signature {
 
 public:
-  Signature(const microsoft::D3D11_SIGNATURE_PARAMETER &parameter)
-      : semantic_name_(parameter.SemanticName),
-        semantic_index_(parameter.SemanticIndex), stream_(parameter.Stream),
-        mask_(parameter.Mask), register_(parameter.Register),
-        system_value_(parameter.SystemValue),
-        component_type_((RegisterComponentType)parameter.ComponentType) {}
+  Signature(const microsoft::D3D11_SIGNATURE_PARAMETER &parameter) :
+      semantic_name_(parameter.SemanticName),
+      semantic_index_(parameter.SemanticIndex),
+      stream_(parameter.Stream),
+      mask_(parameter.Mask),
+      register_(parameter.Register),
+      system_value_(parameter.SystemValue),
+      component_type_((RegisterComponentType)parameter.ComponentType) {
+    std::transform(semantic_name_.begin(), semantic_name_.end(), semantic_name_.begin(), [](auto c) {
+      return std::tolower(c);
+    });
+  }
 
   Signature()
       : semantic_name_("INVALID"), semantic_index_(0), stream_(0), mask_(0),
