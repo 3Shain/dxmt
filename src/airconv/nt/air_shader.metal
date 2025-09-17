@@ -726,29 +726,41 @@ void generatePrimitiveTriangle(int workload_index, object_data int *data, MeshTr
 );
 
 void
+generate_triangle_for_edges(MeshTri mesh, short base_inner, short base_outer, short inner, short outer, short provoke_offset, short ccw_xor) {
+  for (short i = 0; i <= inner; i++) {
+    half frac_left = half(i) / half(inner + 1);
+    half frac_right = half(i + 1) / half(inner + 1);
+    short left = frac_left <= 0.5 ? floor(frac_left * half(outer)) : ceil(frac_left * half(outer));
+    short right = frac_right <= 0.5 ? floor(frac_right * half(outer)) : ceil(frac_right * half(outer));
+    short count = right - left;
+    if (count) {
+      for (short j = 0; j < count; j++) {
+        short primitive_index = base_outer + left + j - provoke_offset - 1;
+        mesh.set_index(primitive_index * 3, base_outer + left + j);
+        mesh.set_index(primitive_index * 3 + (1 ^ ccw_xor), base_outer + left + j + 1);
+        mesh.set_index(primitive_index * 3 + (2 ^ ccw_xor), base_inner + i);
+      }
+    }
+    if (i == inner) break;
+    short primitive_index = base_inner + i - provoke_offset;
+    mesh.set_index(primitive_index * 3, base_inner + i);
+    mesh.set_index(primitive_index * 3 + (1 ^ ccw_xor), base_outer + right);
+    mesh.set_index(primitive_index * 3 + (2 ^ ccw_xor), base_inner + i + 1);
+  }
+}
+
+void
 generatePrimitiveTriangle(int workload_index, object_data int *data, MeshTri mesh) {
   object_data TessMeshWorkload &workload = ((object_data TessMeshWorkload *)data)[workload_index];
 
-  short index_count = 0;
+  short primitive_count = 0;
   {
     short max_in = workload.inner_factor_i;
     short max_out = workload.outer_factor_i;
     short base_outer = max_in + 1;
-    short steps = max(max_in, max_out);
 
-    for (short i = 0; i < steps; i++) {
-      char outer_i0 = min(i, max_out) + base_outer;
-      char outer_i1 = min(short(i + 1), max_out) + base_outer;
-      char inner_i0 = min(i, max_in);
-      char inner_i1 = min(short(i + 1), max_in);
-
-      mesh.set_index(index_count++, outer_i0);
-      mesh.set_index(index_count++, outer_i1);
-      mesh.set_index(index_count++, inner_i0);
-      mesh.set_index(index_count++, outer_i1);
-      mesh.set_index(index_count++, inner_i1);
-      mesh.set_index(index_count++, inner_i0);
-    }
+    primitive_count += max_in + max_out;
+    generate_triangle_for_edges(mesh, 0, base_outer, max_in, max_out, 0, 0);
   }
 
   if (workload.has_complement) {
@@ -756,24 +768,12 @@ generatePrimitiveTriangle(int workload_index, object_data int *data, MeshTri mes
     short max_out = workload.outer_factor_c_i;
     short base_inner = 2 + workload.inner_factor_i + workload.outer_factor_i;
     short base_outer = base_inner + max_in + 1;
-    short steps = max(max_in, max_out);
 
-    for (short i = 0; i < steps; i++) {
-      char outer_i0 = min(i, max_out) + base_outer;
-      char outer_i1 = min(short(i + 1), max_out) + base_outer;
-      char inner_i0 = min(i, max_in) + base_inner;
-      char inner_i1 = min(short(i + 1), max_in) + base_inner;
-
-      mesh.set_index(index_count++, outer_i0);
-      mesh.set_index(index_count++, outer_i1);
-      mesh.set_index(index_count++, inner_i0);
-      mesh.set_index(index_count++, outer_i1);
-      mesh.set_index(index_count++, inner_i1);
-      mesh.set_index(index_count++, inner_i0);
-    }
+    primitive_count += max_in + max_out;
+    generate_triangle_for_edges(mesh, base_inner, base_outer, max_in, max_out, 2, 0);
   }
 
-  mesh.set_primitive_count(index_count / 3);
+  mesh.set_primitive_count(primitive_count);
 }
 
 void generatePrimitiveTriangleCCW(int workload_index, object_data int *data, MeshTri mesh) asm(
@@ -784,26 +784,14 @@ void
 generatePrimitiveTriangleCCW(int workload_index, object_data int *data, MeshTri mesh) {
   object_data TessMeshWorkload &workload = ((object_data TessMeshWorkload *)data)[workload_index];
 
-  short index_count = 0;
+  short primitive_count = 0;
   {
     short max_in = workload.inner_factor_i;
     short max_out = workload.outer_factor_i;
     short base_outer = max_in + 1;
-    short steps = max(max_in, max_out);
 
-    for (short i = 0; i < steps; i++) {
-      char outer_i0 = min(i, max_out) + base_outer;
-      char outer_i1 = min(short(i + 1), max_out) + base_outer;
-      char inner_i0 = min(i, max_in);
-      char inner_i1 = min(short(i + 1), max_in);
-
-      mesh.set_index(index_count++, outer_i0);
-      mesh.set_index(index_count++, inner_i0);
-      mesh.set_index(index_count++, outer_i1);
-      mesh.set_index(index_count++, outer_i1);
-      mesh.set_index(index_count++, inner_i0);
-      mesh.set_index(index_count++, inner_i1);
-    }
+    primitive_count += max_in + max_out;
+    generate_triangle_for_edges(mesh, 0, base_outer, max_in, max_out, 0, 3);
   }
 
   if (workload.has_complement) {
@@ -811,24 +799,12 @@ generatePrimitiveTriangleCCW(int workload_index, object_data int *data, MeshTri 
     short max_out = workload.outer_factor_c_i;
     short base_inner = 2 + workload.inner_factor_i + workload.outer_factor_i;
     short base_outer = base_inner + max_in + 1;
-    short steps = max(max_in, max_out);
 
-    for (short i = 0; i < steps; i++) {
-      char outer_i0 = min(i, max_out) + base_outer;
-      char outer_i1 = min(short(i + 1), max_out) + base_outer;
-      char inner_i0 = min(i, max_in) + base_inner;
-      char inner_i1 = min(short(i + 1), max_in) + base_inner;
-
-      mesh.set_index(index_count++, outer_i0);
-      mesh.set_index(index_count++, inner_i0);
-      mesh.set_index(index_count++, outer_i1);
-      mesh.set_index(index_count++, outer_i1);
-      mesh.set_index(index_count++, inner_i0);
-      mesh.set_index(index_count++, inner_i1);
-    }
+    primitive_count += max_in + max_out;
+    generate_triangle_for_edges(mesh, base_inner, base_outer, max_in, max_out, 2, 3);
   }
 
-  mesh.set_primitive_count(index_count / 3);
+  mesh.set_primitive_count(primitive_count);
 }
 
 void generatePrimitivePoint(int workload_index, object_data int *data, MeshTri mesh) asm(
