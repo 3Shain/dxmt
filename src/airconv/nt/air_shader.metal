@@ -467,14 +467,14 @@ gen_workload_quad_impl(
     if (r + 1 == u) {
       emit_tess_mesh_workload<partition>(
           workloads, out_count,
-          _01i, _11i, _01x, _11x, half(in0f - 2.0h * (r + 1)), half(r == 0 ? out3f : (in0f - 2.0h * (r))),
-          _11i, _10i, _11x, _10x, half(in1f - 2.0h * (r + 1)), half(r == 0 ? out2f : (in1f - 2.0h * (r))),
+          _11i, _01i, _11x, _01x, half(in0f - 2.0h * (r + 1)), half(r == 0 ? out3f : (in0f - 2.0h * (r))),
+          _10i, _11i, _10x, _11x, half(in1f - 2.0h * (r + 1)), half(r == 0 ? out2f : (in1f - 2.0h * (r))),
           patch_index, true
       );
       emit_tess_mesh_workload<partition>(
           workloads, out_count,
-          _10i, _00i, _10x, _00x, half(in0f - 2.0h * (r + 1)), half(r == 0 ? out1f : (in0f - 2.0h * (r))),
-          _00i, _01i, _00x, _01x, half(in1f - 2.0h * (r + 1)), half(r == 0 ? out0f : (in1f - 2.0h * (r))),
+          _00i, _10i, _00x, _10x, half(in0f - 2.0h * (r + 1)), half(r == 0 ? out1f : (in0f - 2.0h * (r))),
+          _01i, _00i, _01x, _00x, half(in1f - 2.0h * (r + 1)), half(r == 0 ? out0f : (in1f - 2.0h * (r))),
          patch_index, true
       );
       break;
@@ -496,27 +496,27 @@ gen_workload_quad_impl(
   
     emit_tess_mesh_workload<partition>(
         workloads, out_count,
-        _01i, _11i, _01x, _11x, half(in0f - 2.0h * (r + 1)), half(r == 0 ? out3f : (in0f - 2.0h * (r))),
-        _01i_c, _11i_c, _01x_c, _11x_c, half(in0f - 2.0h * u), half(in0f - 2.0h * (u - 1)),
+        _11i, _01i, _11x, _01x, half(in0f - 2.0h * (r + 1)), half(r == 0 ? out3f : (in0f - 2.0h * (r))),
+        _11i_c, _01i_c, _11x_c, _01x_c, half(in0f - 2.0h * u), half(in0f - 2.0h * (u - 1)),
         patch_index, u - 1 < rings
     );
     emit_tess_mesh_workload<partition>(
         workloads, out_count,
-        _11i, _10i, _11x, _10x, half(in1f - 2.0h * (r + 1)), half(r == 0 ? out2f : (in1f - 2.0h * (r))),
-        _11i_c, _10i_c, _11x_c, _10x_c, half(in1f - 2.0h * u), half(in1f - 2.0h * (u - 1)),
+        _10i, _11i, _10x, _11x, half(in1f - 2.0h * (r + 1)), half(r == 0 ? out2f : (in1f - 2.0h * (r))),
+        _10i_c, _11i_c, _10x_c, _11x_c, half(in1f - 2.0h * u), half(in1f - 2.0h * (u - 1)),
         patch_index, u - 1 < rings
     );
 
     emit_tess_mesh_workload<partition>(
         workloads, out_count,
-        _10i, _00i, _10x, _00x, half(in0f - 2.0h * (r + 1)), half(r == 0 ? out1f : (in0f - 2.0h * (r))),
-        _10i_c, _00i_c, _10x_c, _00x_c, half(in0f - 2.0h * u), half(in0f - 2.0h * (u - 1)),
+        _00i, _10i, _00x, _10x, half(in0f - 2.0h * (r + 1)), half(r == 0 ? out1f : (in0f - 2.0h * (r))),
+        _00i_c, _10i_c, _00x_c, _10x_c, half(in0f - 2.0h * u), half(in0f - 2.0h * (u - 1)),
         patch_index, u - 1 < rings
     );
     emit_tess_mesh_workload<partition>(
         workloads, out_count,
-        _00i, _01i, _00x, _01x, half(in1f - 2.0h * (r + 1)), half(r == 0 ? out0f : (in1f - 2.0h * (r))),
-        _00i_c, _01i_c, _00x_c, _01x_c, half(in1f - 2.0h * u), half(in1f - 2.0h * (u - 1)),
+        _01i, _00i, _01x, _00x, half(in1f - 2.0h * (r + 1)), half(r == 0 ? out0f : (in1f - 2.0h * (r))),
+        _01i_c, _00i_c, _01x_c,_00x_c,  half(in1f - 2.0h * u), half(in1f - 2.0h * (u - 1)),
         patch_index, u - 1 < rings
     );
   }
@@ -532,13 +532,13 @@ gen_workload_quad_impl(
 
     if (in0 > in1) {
       emit_tess_mesh_workload<partition>(
-          workloads, out_count, _11x, _01x, _10x, _00x, half(in0f - 2.0h * rings), half(in0f - 2.0h * rings),
+          workloads, out_count, _01x,_11x, _00x,  _10x, half(in0f - 2.0h * rings), half(in0f - 2.0h * rings),
           0, 0, 0, 0, 0, 0,
           patch_index, false
       );
     } else {
       emit_tess_mesh_workload<partition>(
-          workloads, out_count, _10x, _11x, _00x, _01x, half(in1f - 2.0h * rings), half(in1f - 2.0h * rings),
+          workloads, out_count, _11x, _10x, _01x, _00x, half(in1f - 2.0h * rings), half(in1f - 2.0h * rings),
           0, 0, 0, 0, 0, 0,
           patch_index, false
       );
