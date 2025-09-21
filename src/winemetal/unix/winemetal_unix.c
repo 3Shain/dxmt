@@ -1230,9 +1230,9 @@ _MTLDevice_newTemporalScaler(void *obj) {
   desc.inputContentMinScale = info->input_content_min_scale;
   desc.inputContentPropertiesEnabled = info->input_content_properties_enabled;
   #if __MAC_OS_X_VERSION_MAX_ALLOWED >= 150000
-    if (@available(macOS 15, *)) {
-        desc.requiresSynchronousInitialization = info->requires_synchronous_initialization;
-    }
+  if (@available(macOS 15, *)) {
+    desc.requiresSynchronousInitialization = info->requires_synchronous_initialization;
+  }
   #endif
   desc.autoExposureEnabled = info->auto_exposure;
 
