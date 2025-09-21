@@ -91,7 +91,13 @@ public:
   ~PackedVariantList() { std::free(data); }
 
   PackedVariantList(const PackedVariantList &) = delete;
-  PackedVariantList &operator=(const PackedVariantList &) = delete;
+  PackedVariantList &operator=(const PackedVariantList &copy) {
+    data = static_cast<std::byte *>(std::malloc(copy.capacity));
+    capacity = copy.capacity;
+    size = copy.size;
+    std::memcpy(data, copy.data, size);
+    return *this;
+  };
 
   template <typename T> void push_back(const T &value) {
     static_assert((std::is_same_v<T, Types> || ...), "invalid type");

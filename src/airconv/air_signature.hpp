@@ -12,6 +12,7 @@
 #include <string>
 #include <unordered_set>
 #include <variant>
+#include "nt/air_builder.hpp"
 
 namespace dxmt::air {
 
@@ -64,25 +65,7 @@ enum class AddressSpace : uint32_t {
 
 enum class Sign { inapplicable, with_sign, no_sign };
 
-// I use kind to not confuse with type which often refers to component type
-enum class TextureKind {
-  texture_1d,
-  texture_1d_array,
-  texture_2d,
-  texture_2d_array,
-  texture_2d_ms,
-  texture_2d_ms_array,
-  texture_3d,
-  texture_cube,
-  texture_cube_array,
-  texture_buffer, // 10
-  depth_2d,
-  depth_2d_array,
-  depth_2d_ms,
-  depth_2d_ms_array,
-  depth_cube,
-  depth_cube_array // 16
-};
+using TextureKind = llvm::air::Texture::ResourceKind;
 
 inline TextureKind lowering_texture_1d_to_2d(TextureKind kind) {
   switch (kind) {
@@ -105,8 +88,6 @@ enum class Interpolation {
   sample_no_perspective,
   flat
 };
-
-enum class PostTessellationPatch { triangle, quad };
 
 struct MSLFloat {
   std::string get_name() const { return "float"; };
@@ -528,10 +509,6 @@ struct InputFrontFacing {};
 struct InputInputCoverage {};
 struct InputSampleIndex {};
 
-struct InputPatchID {};
-struct InputPositionInPatch {
-  PostTessellationPatch patch;
-};
 struct InputPayload {
   uint32_t size;
 };
@@ -594,6 +571,10 @@ struct OutputViewportArrayIndex {
   bool operator==(OutputViewportArrayIndex const& rhs) const { return true; }
 };
 
+struct OutputPointSize {
+  bool operator==(OutputPointSize const& rhs) const { return true; }
+};
+
 using FunctionInput = template_concat_t<
   FunctionArguments,
   std::variant<
@@ -605,8 +586,6 @@ using FunctionInput = template_concat_t<
     InputPrimitiveID, InputViewportArrayIndex, InputRenderTargetArrayIndex,
     InputFrontFacing, InputPosition, InputSampleIndex, //
     InputFragmentStageIn, InputInputCoverage,
-    /* post-tessellation */
-    InputPatchID, InputPositionInPatch,
     /* object & mesh */
     InputPayload, InputMeshGridProperties, InputMesh,
     /* kernel */
@@ -621,7 +600,7 @@ using FunctionOutput = std::variant<
   /* fragment */
   OutputRenderTarget, OutputDepth, OutputCoverageMask>;
 
-using MeshVertexOutput = std::variant<OutputMeshData, OutputPosition, OutputClipDistance>;
+using MeshVertexOutput = std::variant<OutputMeshData, OutputPosition, OutputClipDistance, OutputPointSize>;
 
 using MeshPrimitiveOutput = std::variant<OutputMeshData, OutputRenderTargetArrayIndex, OutputViewportArrayIndex>;
 
@@ -639,14 +618,7 @@ public:
   uint32_t DefineMeshPrimitiveOutput(const MeshPrimitiveOutput &output);
   void UseEarlyFragmentTests() { early_fragment_tests = true; }
   void UseMaxWorkgroupSize(uint32_t size) { max_work_group_size = size; }
-  void UsePatch(PostTessellationPatch patch, uint32_t num_control_points) {
-    this->patch = std::make_pair(patch, num_control_points);
-  }
-
-  PostTessellationPatch GetPatchType() {
-    assert(patch.has_value() && "not a domain shader/unsupported isoline tessellation");
-    return patch->first;
-  };
+  void UseMaxMeshWorkgroupSize(uint32_t size) { max_mesh_work_group_size = size; }
 
   auto CreateFunction(
     std::string name, llvm::LLVMContext &context, llvm::Module &module,
@@ -660,7 +632,7 @@ private:
   std::vector<MeshPrimitiveOutput> mesh_primitive_outputs;
   bool early_fragment_tests = false;
   uint32_t max_work_group_size = 0;
-  std::optional<std::pair<PostTessellationPatch, uint32_t>> patch;
+  uint32_t max_mesh_work_group_size = 0;
 };
 
 inline TextureKind to_air_resource_type(

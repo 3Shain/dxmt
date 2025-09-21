@@ -112,23 +112,15 @@ struct ShaderVariantPixel {
   }
 };
 
-struct ShaderVariantTessellationVertex {
-  using this_type = ShaderVariantTessellationVertex;
+struct ShaderVariantTessellationVertexHull {
+  using this_type = ShaderVariantTessellationVertexHull;
   uint64_t input_layout_handle;
-  uint64_t hull_shader_handle;
+  uint64_t vertex_shader_handle;
   SM50_INDEX_BUFFER_FORAMT index_buffer_format;
   bool operator==(const this_type &rhs) const {
     return input_layout_handle == rhs.input_layout_handle &&
-           hull_shader_handle == rhs.hull_shader_handle &&
+           vertex_shader_handle == rhs.vertex_shader_handle &&
            index_buffer_format == rhs.index_buffer_format;
-  }
-};
-
-struct ShaderVariantTessellationHull {
-  using this_type = ShaderVariantTessellationHull;
-  uint64_t vertex_shader_handle;
-  bool operator==(const this_type &rhs) const {
-    return vertex_shader_handle == rhs.vertex_shader_handle;
   }
 };
 
@@ -185,7 +177,7 @@ struct ShaderVariantVertexStreamOutput {
 
 using ShaderVariant =
     std::variant<ShaderVariantDefault, ShaderVariantVertex, ShaderVariantPixel,
-                 ShaderVariantTessellationVertex, ShaderVariantTessellationHull,
+                 ShaderVariantTessellationVertexHull,
                  ShaderVariantTessellationDomain, ShaderVariantVertexStreamOutput,
                  ShaderVariantGeometryVertex, ShaderVariantGeometry>;
 

@@ -73,10 +73,7 @@ private:
 public:
   D3D11Buffer(const tag_buffer::DESC1 *pDesc, const D3D11_SUBRESOURCE_DATA *pInitialData, MTLD3D11Device *device) :
       TResourceBase<tag_buffer>(*pDesc, device) {
-    buffer_ = new Buffer(
-        pDesc->BindFlags & D3D11_BIND_UNORDERED_ACCESS ? pDesc->ByteWidth + 16 : pDesc->ByteWidth,
-        device->GetMTLDevice()
-    );
+    buffer_ = new Buffer(pDesc->ByteWidth, device->GetMTLDevice());
     Flags<BufferAllocationFlag> flags;
     if (!m_parent->IsTraced() && pDesc->Usage == D3D11_USAGE_DYNAMIC)
       flags.set(BufferAllocationFlag::CpuWriteCombined);

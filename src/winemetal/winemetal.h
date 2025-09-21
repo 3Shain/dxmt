@@ -1015,9 +1015,9 @@ enum WMTRenderCommandType : uint16_t {
   WMTRenderCommandDrawMeshThreadgroups,
   WMTRenderCommandDrawMeshThreadgroupsIndirect,
   WMTRenderCommandMemoryBarrier,
-  WMTRenderCommandDXMTTessellationMeshDispatch,
-  WMTRenderCommandDXMTTessellationMeshDispatchIndexed,
-  WMTRenderCommandDXMTTessellationDraw,
+  Unused0,
+  Unused1,
+  Unused2,
   WMTRenderCommandDXMTGeometryDraw,
   WMTRenderCommandDXMTGeometryDrawIndexed,
   WMTRenderCommandDXMTGeometryDrawIndirect,
@@ -1026,6 +1026,10 @@ enum WMTRenderCommandType : uint16_t {
   WMTRenderCommandUpdateFence,
   WMTRenderCommandSetViewport,
   WMTRenderCommandSetScissorRect,
+  WMTRenderCommandDXMTTessellationMeshDraw,
+  WMTRenderCommandDXMTTessellationMeshDrawIndexed,
+  WMTRenderCommandDXMTTessellationMeshDrawIndirect,
+  WMTRenderCommandDXMTTessellationMeshDrawIndexedIndirect,
 };
 
 struct wmtcmd_render_nop {
@@ -1292,57 +1296,6 @@ struct wmtcmd_render_setblendcolor {
   uint8_t stencil_ref;
 };
 
-struct wmtcmd_render_dxmt_tess_mesh_dispatch {
-  enum WMTRenderCommandType type;
-  uint16_t reserved[3];
-  struct WMTMemoryPointer next;
-  uint64_t draw_arguments_offset;
-  obj_handle_t control_point_buffer;
-  uint64_t control_point_buffer_offset;
-  obj_handle_t patch_constant_buffer;
-  uint64_t patch_constant_buffer_offset;
-  obj_handle_t tessellation_factor_buffer;
-  uint64_t tessellation_factor_buffer_offset;
-  uint32_t patch_per_mesh_instance;
-  uint32_t instance_count;
-  uint32_t threads_per_patch;
-  uint32_t patch_per_group;
-};
-
-struct wmtcmd_render_dxmt_tess_draw {
-  enum WMTRenderCommandType type;
-  uint16_t reserved[3];
-  struct WMTMemoryPointer next;
-  uint64_t draw_arguments_offset;
-  obj_handle_t control_point_buffer;
-  uint64_t control_point_buffer_offset;
-  obj_handle_t patch_constant_buffer;
-  uint64_t patch_constant_buffer_offset;
-  obj_handle_t tessellation_factor_buffer;
-  uint64_t tessellation_factor_buffer_offset;
-  uint32_t patch_count_per_instance;
-  uint32_t instance_count;
-};
-
-struct wmtcmd_render_dxmt_tess_mesh_dispatch_indexed {
-  enum WMTRenderCommandType type;
-  uint16_t reserved[3];
-  struct WMTMemoryPointer next;
-  uint64_t draw_arguments_offset;
-  obj_handle_t index_buffer;
-  uint64_t index_buffer_offset;
-  obj_handle_t control_point_buffer;
-  uint64_t control_point_buffer_offset;
-  obj_handle_t patch_constant_buffer;
-  uint64_t patch_constant_buffer_offset;
-  obj_handle_t tessellation_factor_buffer;
-  uint64_t tessellation_factor_buffer_offset;
-  uint32_t patch_per_mesh_instance;
-  uint32_t instance_count;
-  uint32_t threads_per_patch;
-  uint32_t patch_per_group;
-};
-
 struct wmtcmd_render_dxmt_geometry_draw {
   enum WMTRenderCommandType type;
   uint16_t reserved[3];
@@ -1395,6 +1348,56 @@ struct wmtcmd_render_fence_op {
   struct WMTMemoryPointer next;
   obj_handle_t fence;
   enum WMTRenderStages stages;
+};
+
+struct wmtcmd_render_dxmt_tessellation_mesh_draw {
+  enum WMTRenderCommandType type;
+  uint16_t reserved[3];
+  struct WMTMemoryPointer next;
+  uint64_t draw_arguments_offset;
+  uint32_t instance_count;
+  uint32_t threads_per_patch;
+  uint32_t patch_per_group;
+  uint32_t patch_per_mesh_instance;
+};
+
+struct wmtcmd_render_dxmt_tessellation_mesh_draw_indexed {
+  enum WMTRenderCommandType type;
+  uint16_t reserved[3];
+  struct WMTMemoryPointer next;
+  uint64_t draw_arguments_offset;
+  obj_handle_t index_buffer;
+  uint64_t index_buffer_offset;
+  uint32_t instance_count;
+  uint32_t threads_per_patch;
+  uint32_t patch_per_group;
+  uint32_t patch_per_mesh_instance;
+};
+
+struct wmtcmd_render_dxmt_tessellation_mesh_draw_indirect {
+  enum WMTRenderCommandType type;
+  uint16_t reserved[3];
+  struct WMTMemoryPointer next;
+  obj_handle_t indirect_args_buffer;
+  uint64_t indirect_args_offset;
+  obj_handle_t dispatch_args_buffer;
+  uint64_t dispatch_args_offset;
+  uint32_t threads_per_patch;
+  uint32_t patch_per_group;
+};
+
+struct wmtcmd_render_dxmt_tessellation_mesh_draw_indexed_indirect {
+  enum WMTRenderCommandType type;
+  uint16_t reserved[3];
+  struct WMTMemoryPointer next;
+  obj_handle_t indirect_args_buffer;
+  uint64_t indirect_args_offset;
+  obj_handle_t dispatch_args_buffer;
+  uint64_t dispatch_args_offset;
+  obj_handle_t index_buffer;
+  uint64_t index_buffer_offset;
+  uint32_t threads_per_patch;
+  uint32_t patch_per_group;
 };
 
 WINEMETAL_API void MTLRenderCommandEncoder_encodeCommands(obj_handle_t encoder, const struct wmtcmd_base *cmd_head);

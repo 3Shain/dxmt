@@ -136,7 +136,7 @@ HRESULT STDMETHODCALLTYPE TDynamicLinearTexture<tag_texture_1d>::CreateShaderRes
   if (FAILED(ExtractEntireResourceViewDescription(&this->desc, pDesc, &finalDesc))) {
     return E_INVALIDARG;
   }
-  if (finalDesc.ViewDimension != D3D10_SRV_DIMENSION_TEXTURE2D) {
+  if (finalDesc.ViewDimension != D3D10_SRV_DIMENSION_TEXTURE1D) {
     ERR("Only 1d texture SRV can be created on dynamic texture");
     return E_FAIL;
   }

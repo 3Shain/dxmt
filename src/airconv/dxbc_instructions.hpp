@@ -32,6 +32,22 @@ struct Swizzle {
     return r == o.r && g == o.g && b == o.b && a == o.a;
   };
 
+  int32_t
+  operator[](uint8_t e) {
+    switch (e) {
+    case 0:
+      return r;
+    case 1:
+      return g;
+    case 2:
+      return b;
+    case 3:
+      return a;
+    default:
+      return -1;
+    }
+  }
+
   operator std::array<int, 4>() const { return std::array<int, 4>{x, y, z, w}; }
 };
 
@@ -57,16 +73,24 @@ using OperandIndex =
   std::variant<uint32_t, IndexByIndexableTempComponent, IndexByTempComponent>;
 #pragma endregion
 
+enum class OperandDataType {
+  Float,
+  Integer,
+  Half16X16,
+};
+
 #pragma region source operand
 
-struct SrcOperandModifier {
+struct SrcOperandCommon {
   Swizzle swizzle;
   bool abs;
   bool neg;
+  OperandDataType read_type;
 };
 
 struct SrcOperandImmediate32 {
   static constexpr std::string_view debug_name = "immediate_32";
+  SrcOperandCommon _;
   union {
     int32_t ivalue[4];
     uint32_t uvalue[4];
@@ -76,14 +100,14 @@ struct SrcOperandImmediate32 {
 
 struct SrcOperandTemp {
   static constexpr std::string_view debug_name = "temp";
-  SrcOperandModifier _;
+  SrcOperandCommon _;
   uint32_t regid;
   uint32_t phase;
 };
 
 struct SrcOperandIndexableTemp {
   static constexpr std::string_view debug_name = "indexable_temp";
-  SrcOperandModifier _;
+  SrcOperandCommon _;
   uint32_t regfile;
   OperandIndex regindex;
   uint32_t phase;
@@ -91,39 +115,39 @@ struct SrcOperandIndexableTemp {
 
 struct SrcOperandInput {
   static constexpr std::string_view debug_name = "input";
-  SrcOperandModifier _;
+  SrcOperandCommon _;
   uint32_t regid;
 };
 
 struct SrcOperandInputOCP {
   static constexpr std::string_view debug_name = "input_vocp";
-  SrcOperandModifier _;
+  SrcOperandCommon _;
   OperandIndex cpid;
   uint32_t regid;
 };
 
 struct SrcOperandInputICP {
   static constexpr std::string_view debug_name = "input_vicp";
-  SrcOperandModifier _;
+  SrcOperandCommon _;
   OperandIndex cpid;
   uint32_t regid;
 };
 
 struct SrcOperandInputPC {
   static constexpr std::string_view debug_name = "input_vpc";
-  SrcOperandModifier _;
+  SrcOperandCommon _;
   OperandIndex regindex;
 };
 
 struct SrcOperandIndexableInput {
   static constexpr std::string_view debug_name = "indexable_input";
-  SrcOperandModifier _;
+  SrcOperandCommon _;
   OperandIndex regindex;
 };
 
 struct SrcOperandConstantBuffer {
   static constexpr std::string_view debug_name = "constant_buffer";
-  SrcOperandModifier _;
+  SrcOperandCommon _;
   uint32_t rangeid;
   OperandIndex rangeindex;
   OperandIndex regindex;
@@ -131,13 +155,13 @@ struct SrcOperandConstantBuffer {
 
 struct SrcOperandImmediateConstantBuffer {
   static constexpr std::string_view debug_name = "immediate_constant_buffer";
-  SrcOperandModifier _;
+  SrcOperandCommon _;
   OperandIndex regindex;
 };
 
 struct SrcOperandAttribute {
   static constexpr std::string_view debug_name = "attribute";
-  SrcOperandModifier _;
+  SrcOperandCommon _;
   shader::common::InputAttribute attribute;
 };
 
@@ -147,6 +171,7 @@ struct SrcOperandAttribute {
 
 struct DstOperandCommon {
   uint32_t mask;
+  OperandDataType write_type;
 };
 
 struct DstOperandNull {
@@ -254,15 +279,6 @@ struct AtomicDstOperandUAV {
   uint32_t mask;
 };
 
-/**
-It's a UAV implemented as metal buffer
-*/
-struct AtomicDstOperandUAVBuffer {
-  uint32_t range_id;
-  OperandIndex index;
-  uint32_t mask;
-};
-
 struct AtomicOperandTGSM {
   uint32_t id;
   uint32_t mask;
@@ -328,6 +344,8 @@ struct InstSampleBias {
   SrcOperandSampler src_sampler;
   SrcOperand src_bias;
   int32_t offsets[3];
+  std::optional<SrcOperand> min_lod_clamp;
+  std::optional<DstOperand> feedback;
 };
 
 struct InstSampleDerivative {
@@ -338,6 +356,8 @@ struct InstSampleDerivative {
   SrcOperand src_x_derivative;
   SrcOperand src_y_derivative;
   int32_t offsets[3];
+  std::optional<SrcOperand> min_lod_clamp;
+  std::optional<DstOperand> feedback;
 };
 
 struct InstSampleLOD {
@@ -347,6 +367,7 @@ struct InstSampleLOD {
   SrcOperandSampler src_sampler;
   SrcOperand src_lod;
   int32_t offsets[3];
+  std::optional<DstOperand> feedback;
 };
 
 struct InstGather {
@@ -383,12 +404,14 @@ struct InstSampleInfo {
   DstOperand dst;
   std::optional<SrcOperandResource> src; // if null, get rasterizer info
   bool uint_result;
+  Swizzle read_swizzle;
 };
 
 struct InstSamplePos {
   DstOperand dst;
   std::optional<SrcOperandResource> src; // if null, get rasterizer info
   SrcOperand src_sample_index;
+  Swizzle read_swizzle;
 };
 
 struct InstLoad {
@@ -659,7 +682,7 @@ struct InstSync {
   bool tgsm_execution_barrier;
 };
 
-enum class AtomicBinaryOp { And, Or, Xor, Add, IMax, IMin, UMax, UMin };
+enum class AtomicBinaryOp { And, Or, Xor, Add, IMax, IMin, UMax, UMin, Xchg };
 
 struct InstAtomicBinOp {
   AtomicBinaryOp op;
@@ -677,13 +700,6 @@ struct InstAtomicImmIncrement {
 struct InstAtomicImmDecrement {
   DstOperand dst; // store single component, new value
   AtomicDstOperandUAV uav;
-};
-
-struct InstAtomicImmExchange {
-  DstOperand dst; // store single component, original value
-  std::variant<AtomicDstOperandUAV, AtomicOperandTGSM> dst_resource;
-  SrcOperand dst_address;
-  SrcOperand src; // select one component
 };
 
 struct InstAtomicImmCmpExchange {
@@ -742,7 +758,7 @@ using InstructionList = PackedVariantList<
   InstInterpolateCentroid, InstInterpolateSample, InstInterpolateOffset,
   /* Atomics */
   InstSync, InstAtomicBinOp,                       //
-  InstAtomicImmCmpExchange, InstAtomicImmExchange, //
+  InstAtomicImmCmpExchange, //
   InstAtomicImmIncrement, InstAtomicImmDecrement>;
 
 using Instruction = InstructionList::variant;
@@ -758,23 +774,23 @@ struct BasicBlockCondition {
 
 struct BasicBlockConditionalBranch {
   BasicBlockCondition cond;
-  std::shared_ptr<BasicBlock> true_branch;
-  std::shared_ptr<BasicBlock> false_branch;
+  BasicBlock *true_branch;
+  BasicBlock *false_branch;
 };
 
 struct BasicBlockUnconditionalBranch {
-  std::shared_ptr<BasicBlock> target;
+  BasicBlock *target;
 };
 
 struct BasicBlockHullShaderWriteOutput {
   uint32_t instance_count;
-  std::shared_ptr<BasicBlock> epilogue;
+  BasicBlock *epilogue;
 };
 
 struct BasicBlockSwitch {
   SrcOperand value;
-  std::map<uint32_t, std::shared_ptr<BasicBlock>> cases;
-  std::shared_ptr<BasicBlock> case_default;
+  std::map<uint32_t, BasicBlock *> cases;
+  BasicBlock *case_default;
 };
 
 struct BasicBlockReturn {};
@@ -783,14 +799,19 @@ struct BasicBlockUndefined {};
 
 struct BasicBlockInstanceBarrier {
   uint32_t instance_count;
-  std::shared_ptr<BasicBlock> active;
-  std::shared_ptr<BasicBlock> sync;
+  BasicBlock *active;
+  BasicBlock *sync;
+};
+
+struct BasicBlockCall {
+  uint32_t func_id;
+  BasicBlock *return_point;
 };
 
 using BasicBlockTarget = std::variant<
   BasicBlockConditionalBranch, BasicBlockUnconditionalBranch, BasicBlockSwitch,
   BasicBlockReturn, BasicBlockInstanceBarrier, BasicBlockHullShaderWriteOutput,
-  BasicBlockUndefined>;
+  BasicBlockCall, BasicBlockUndefined>;
 
 class BasicBlock {
 public:
@@ -805,7 +826,7 @@ public:
 #pragma endregion
 
 SrcOperand readSrcOperand(
-  const microsoft::D3D10ShaderBinary::COperandBase &O, uint32_t phase
+  const microsoft::D3D10ShaderBinary::COperandBase &O, uint32_t phase, OperandDataType read_type
 );
 BasicBlockCondition readCondition(
   const microsoft::D3D10ShaderBinary::CInstruction &Inst, uint32_t OpIdx,

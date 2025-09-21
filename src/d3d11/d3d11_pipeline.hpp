@@ -41,11 +41,9 @@ struct MTL_COMPILED_COMPUTE_PIPELINE {
   WMT::ComputePipelineState PipelineState;
 };
 
-struct MTL_COMPILED_TESSELLATION_PIPELINE {
-  WMT::RenderPipelineState MeshPipelineState;
-  WMT::RenderPipelineState RasterizationPipelineState;
+struct MTL_COMPILED_TESSELLATION_MESH_PIPELINE {
+  WMT::RenderPipelineState PipelineState;
   uint32_t NumControlPointOutputElement;
-  uint32_t NumPatchConstantOutputScalar;
   uint32_t ThreadsPerPatch;
 };
 
@@ -70,15 +68,6 @@ DEFINE_COM_INTERFACE("3b26b8d3-56ca-4d0f-9f63-ca8d305ff07e",
                            pComputePipeline) = 0;
 };
 
-DEFINE_COM_INTERFACE("f5075e27-fd85-4c5a-9031-d438f859e6e9",
-                     IMTLCompiledTessellationPipeline)
-    : public IMTLThreadpoolWork {
-  virtual void SubmitWork() = 0;
-  virtual bool IsReady() = 0;
-  virtual void GetPipeline(MTL_COMPILED_TESSELLATION_PIPELINE *
-                           pTessellationPipeline) = 0;
-};
-
 DEFINE_COM_INTERFACE("0a86aadc-260d-40a0-afed-659408a84ffb",
                      IMTLCompiledGeometryPipeline)
     : public IMTLThreadpoolWork {
@@ -86,6 +75,15 @@ DEFINE_COM_INTERFACE("0a86aadc-260d-40a0-afed-659408a84ffb",
   virtual bool IsReady() = 0;
   virtual void GetPipeline(MTL_COMPILED_GRAPHICS_PIPELINE *
                            pGeometryPipeline) = 0;
+};
+
+DEFINE_COM_INTERFACE("0777c3d9-e4a9-4ff1-9ecc-09b32d0def50",
+                     IMTLCompiledTessellationMeshPipeline)
+    : public IMTLThreadpoolWork {
+  virtual void SubmitWork() = 0;
+  virtual bool IsReady() = 0;
+  virtual void GetPipeline(MTL_COMPILED_TESSELLATION_MESH_PIPELINE *
+                           pTessellationPipeline) = 0;
 };
 
 namespace std {
@@ -188,12 +186,12 @@ Com<IMTLCompiledGraphicsPipeline> CreateGraphicsPipeline(
 Com<IMTLCompiledComputePipeline>
 CreateComputePipeline(MTLD3D11Device *pDevice, ManagedShader ComputeShader);
 
-Com<IMTLCompiledTessellationPipeline>
-CreateTessellationPipeline(MTLD3D11Device *pDevice,
-                           MTL_GRAPHICS_PIPELINE_DESC *pDesc);
-
 Com<IMTLCompiledGeometryPipeline>
 CreateGeometryPipeline(MTLD3D11Device *pDevice,
+                           MTL_GRAPHICS_PIPELINE_DESC *pDesc);
+
+Com<IMTLCompiledTessellationMeshPipeline>
+CreateTessellationMeshPipeline(MTLD3D11Device *pDevice,
                            MTL_GRAPHICS_PIPELINE_DESC *pDesc);
 
 }; // namespace dxmt

@@ -179,7 +179,7 @@ CreateVariantShader(MTLD3D11Device *pDevice, ManagedShader shader,
 template <>
 std::unique_ptr<CompiledShader>
 CreateVariantShader(MTLD3D11Device *pDevice, ManagedShader shader,
-                    ShaderVariantTessellationVertex variant) {
+                    ShaderVariantTessellationVertexHull variant) {
   auto proc = [=](const char *func_name) -> sm50_bitcode_t  {
     SM50_SHADER_IA_INPUT_LAYOUT_DATA ia_layout;
     ia_layout.index_buffer_format = variant.index_buffer_format;
@@ -194,30 +194,10 @@ CreateVariantShader(MTLD3D11Device *pDevice, ManagedShader shader,
 
     sm50_bitcode_t compile_result = nullptr;
     sm50_error_t sm50_err = nullptr;
-    if (auto ret = SM50CompileTessellationPipelineVertex(
-            shader->handle(), (sm50_shader_t)variant.hull_shader_handle,
+    if (auto ret = SM50CompileTessellationPipelineHull(
+            (sm50_shader_t)variant.vertex_shader_handle, shader->handle(), 
             (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)&ia_layout, func_name,
             &compile_result, &sm50_err)) {
-      ERR("Failed to compile shader: ", SM50GetErrorMessageString(sm50_err));
-      SM50FreeError(sm50_err);
-      return nullptr;
-    }
-    return compile_result;
-  };
-  return std::make_unique<GeneralShaderCompileTask<decltype(proc)>>(
-      pDevice, shader, std::move(proc));
-}
-
-template <>
-std::unique_ptr<CompiledShader>
-CreateVariantShader(MTLD3D11Device *pDevice, ManagedShader shader,
-                    ShaderVariantTessellationHull variant) {
-  auto proc = [=](const char *func_name) -> sm50_bitcode_t  {
-    sm50_bitcode_t compile_result = nullptr;
-    sm50_error_t sm50_err = nullptr;
-    if (auto ret = SM50CompileTessellationPipelineHull(
-            (sm50_shader_t)variant.vertex_shader_handle, shader->handle(),
-            nullptr, func_name, &compile_result, &sm50_err)) {
       ERR("Failed to compile shader: ", SM50GetErrorMessageString(sm50_err));
       SM50FreeError(sm50_err);
       return nullptr;

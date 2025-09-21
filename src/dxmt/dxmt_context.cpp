@@ -82,17 +82,11 @@ ArgumentEncodingContext::encodeVertexBuffers(uint32_t slot_mask, uint64_t offset
     // FIXME: did we intended to use the whole buffer?
     makeResident<PipelineStage::Vertex, kind>(buffer.ptr());
   };
-  if constexpr (kind == PipelineKind::Tessellation) {
-    auto &cmd = encodePreTessRenderCommand<wmtcmd_render_setbufferoffset>();
-    cmd.offset = getFinalArgumentBufferOffset(offset);
-    cmd.index = 16;
-    cmd.type = WMTRenderCommandSetObjectBufferOffset;
-  }
-  else {
+  {
     auto &cmd = encodeRenderCommand<wmtcmd_render_setbufferoffset>();
     cmd.offset = getFinalArgumentBufferOffset(offset);
     cmd.index = 16;
-    if constexpr (kind == PipelineKind::Geometry)
+    if constexpr (kind == PipelineKind::Geometry || kind == PipelineKind::Tessellation)
       cmd.type = WMTRenderCommandSetObjectBufferOffset;
     else
       cmd.type = WMTRenderCommandSetVertexBufferOffset;
@@ -174,14 +168,6 @@ ArgumentEncodingContext::encodeConstantBuffers(const MTL_SHADER_REFLECTION *refl
     cmd.type = WMTComputeCommandSetBufferOffset;
     cmd.offset = getFinalArgumentBufferOffset<true>(offset);
     cmd.index = 29;
-  } else if constexpr (kind == PipelineKind::Tessellation && (stage == PipelineStage::Hull || stage == PipelineStage::Vertex)) {
-    auto &cmd = encodePreTessRenderCommand<wmtcmd_render_setbufferoffset>();
-    cmd.offset = getFinalArgumentBufferOffset(offset);
-    cmd.index = 29;
-    if constexpr (stage == PipelineStage::Vertex)
-      cmd.type = WMTRenderCommandSetObjectBufferOffset;
-    else
-      cmd.type = WMTRenderCommandSetMeshBufferOffset;
   } else {
     auto &cmd = encodeRenderCommand<wmtcmd_render_setbufferoffset>();
     cmd.offset = getFinalArgumentBufferOffset(offset);
@@ -189,12 +175,17 @@ ArgumentEncodingContext::encodeConstantBuffers(const MTL_SHADER_REFLECTION *refl
     if constexpr (stage == PipelineStage::Vertex) {
       if constexpr (kind == PipelineKind::Geometry)
         cmd.type = WMTRenderCommandSetObjectBufferOffset;
-      else
+      else if constexpr (kind == PipelineKind::Tessellation) {
+        cmd.type = WMTRenderCommandSetObjectBufferOffset;
+        cmd.index = 27;
+      } else
         cmd.type = WMTRenderCommandSetVertexBufferOffset;
     } else if constexpr (stage == PipelineStage::Pixel) {
       cmd.type = WMTRenderCommandSetFragmentBufferOffset;
+    } else if constexpr (stage == PipelineStage::Hull) {
+      cmd.type = WMTRenderCommandSetObjectBufferOffset;
     } else if constexpr (stage == PipelineStage::Domain) {
-      cmd.type = WMTRenderCommandSetVertexBufferOffset;
+      cmd.type = WMTRenderCommandSetMeshBufferOffset;
     } else if constexpr (stage == PipelineStage::Geometry) {
       cmd.type = WMTRenderCommandSetMeshBufferOffset;
     } else {
@@ -365,14 +356,6 @@ ArgumentEncodingContext::encodeShaderResources(
     cmd.type = WMTComputeCommandSetBufferOffset;
     cmd.offset = getFinalArgumentBufferOffset<true>(offset);
     cmd.index = 30;
-  } else if constexpr (kind == PipelineKind::Tessellation && (stage == PipelineStage::Hull || stage == PipelineStage::Vertex)) {
-    auto &cmd = encodePreTessRenderCommand<wmtcmd_render_setbufferoffset>();
-    cmd.offset = getFinalArgumentBufferOffset(offset);
-    cmd.index = 30;
-    if constexpr (stage == PipelineStage::Vertex)
-      cmd.type = WMTRenderCommandSetObjectBufferOffset;
-    else
-      cmd.type = WMTRenderCommandSetMeshBufferOffset;
   } else {
     auto &cmd = encodeRenderCommand<wmtcmd_render_setbufferoffset>();
     cmd.offset = getFinalArgumentBufferOffset(offset);
@@ -380,12 +363,17 @@ ArgumentEncodingContext::encodeShaderResources(
     if constexpr (stage == PipelineStage::Vertex) {
       if constexpr (kind == PipelineKind::Geometry)
         cmd.type = WMTRenderCommandSetObjectBufferOffset;
-      else
+      else if constexpr (kind == PipelineKind::Tessellation) {
+        cmd.type = WMTRenderCommandSetObjectBufferOffset;
+        cmd.index = 28;
+      } else
         cmd.type = WMTRenderCommandSetVertexBufferOffset;
     } else if constexpr (stage == PipelineStage::Pixel) {
       cmd.type = WMTRenderCommandSetFragmentBufferOffset;
+    } else if constexpr (stage == PipelineStage::Hull) {
+      cmd.type = WMTRenderCommandSetObjectBufferOffset;
     } else if constexpr (stage == PipelineStage::Domain) {
-      cmd.type = WMTRenderCommandSetVertexBufferOffset;
+      cmd.type = WMTRenderCommandSetMeshBufferOffset;
     } else if constexpr (stage == PipelineStage::Geometry) {
       cmd.type = WMTRenderCommandSetMeshBufferOffset;
     } else {
@@ -574,9 +562,6 @@ ArgumentEncodingContext::startRenderPass(
   encoder_info->cmd_head.type = WMTRenderCommandNop;
   encoder_info->cmd_head.next.set(0);
   encoder_info->cmd_tail = (wmtcmd_base *)&encoder_info->cmd_head;
-  encoder_info->pretess_cmd_head.type = WMTRenderCommandNop;
-  encoder_info->pretess_cmd_head.next.set(0);
-  encoder_info->pretess_cmd_tail = (wmtcmd_base *)&encoder_info->pretess_cmd_head;
   encoder_info->dsv_planar_flags = dsv_planar_flags;
   encoder_info->dsv_readonly_flags = dsv_readonly_flags;
   encoder_info->render_target_count = render_target_count;
@@ -755,20 +740,13 @@ ArgumentEncodingContext::flushCommands(WMT::CommandBuffer cmdbuf, uint64_t seqId
       encoder.setVertexBuffer(gpu_buffer_, 0, 30);
       encoder.setFragmentBuffer(gpu_buffer_, 0, 29);
       encoder.setFragmentBuffer(gpu_buffer_, 0, 30);
-      if (data->use_tessellation) {
+      if (data->use_geometry || data->use_tessellation) {
         encoder.setObjectBuffer(gpu_buffer_, 0, 16);
         encoder.setObjectBuffer(gpu_buffer_, 0, 21); // draw arguments
-        encoder.setObjectBuffer(gpu_buffer_, 0, 29);
-        encoder.setObjectBuffer(gpu_buffer_, 0, 30);
-        encoder.setMeshBuffer(gpu_buffer_, 0, 29);
-        encoder.setMeshBuffer(gpu_buffer_, 0, 30);
-        encoder.setVertexBuffer(gpu_buffer_, 0, 23); // draw arguments
-        encoder.encodeCommands(&data->pretess_cmd_head);
-        encoder.memoryBarrier(WMTBarrierScopeBuffers, WMTRenderStageMesh, WMTRenderStageVertex);
-      }
-      if (data->use_geometry && !data->use_tessellation) {
-        encoder.setObjectBuffer(gpu_buffer_, 0, 16);
-        encoder.setObjectBuffer(gpu_buffer_, 0, 21); // draw arguments
+        if (data->use_tessellation) {
+          encoder.setObjectBuffer(gpu_buffer_, 0, 27);
+          encoder.setObjectBuffer(gpu_buffer_, 0, 28);
+        }
         encoder.setObjectBuffer(gpu_buffer_, 0, 29);
         encoder.setObjectBuffer(gpu_buffer_, 0, 30);
         encoder.setMeshBuffer(gpu_buffer_, 0, 29);
@@ -796,6 +774,33 @@ ArgumentEncodingContext::flushCommands(WMT::CommandBuffer cmdbuf, uint64_t seqId
         }
         tasks_data[task_count - 1].end_of_command = 1;
         emulated_cmd.MarshalGSDispatchArguments(encoder, task_data_buffer, task_data_buffer_offset);
+      }
+      if (data->ts_arg_marshal_tasks.size()) {
+        auto task_count = data->ts_arg_marshal_tasks.size();
+        struct TS_MARSHAL_TASK {
+          uint64_t draw_args;
+          uint64_t dispatch_args_out;
+          uint16_t control_point_count;
+          uint16_t patch_per_group;
+          uint32_t end_of_command;
+        };
+        auto [mapped_task_data, task_data_buffer, task_data_buffer_offset] =
+            queue_.AllocateArgumentBuffer(seq_id_, sizeof(TS_MARSHAL_TASK) * task_count);
+        auto tasks_data = (TS_MARSHAL_TASK *)mapped_task_data;
+        for (unsigned i = 0; i<task_count; i++) {
+          auto & task = data->ts_arg_marshal_tasks[i];
+          tasks_data[i].draw_args = task.draw_arguments_va;
+          tasks_data[i].dispatch_args_out = task.dispatch_arguments_va;
+          tasks_data[i].control_point_count = task.control_point_count;
+          tasks_data[i].patch_per_group = task.patch_per_group;
+          tasks_data[i].end_of_command = 0;
+          encoder.useResource(task.draw_arguments, WMTResourceUsageRead, WMTRenderStageVertex);
+          encoder.useResource(task.dispatch_arguments_buffer, WMTResourceUsageWrite, WMTRenderStageVertex);
+        }
+        tasks_data[task_count - 1].end_of_command = 1;
+        emulated_cmd.MarshalTSDispatchArguments(encoder, task_data_buffer, task_data_buffer_offset);
+      }
+      if (data->gs_arg_marshal_tasks.size() > 0 || data->ts_arg_marshal_tasks.size() > 0) {
         encoder.memoryBarrier(
             WMTBarrierScopeBuffers, WMTRenderStageVertex,
             WMTRenderStageVertex | WMTRenderStageMesh | WMTRenderStageObject
@@ -1041,12 +1046,6 @@ ArgumentEncodingContext::checkEncoderRelation(EncoderData *former, EncoderData *
         r0->cmd_head.next.set(nullptr);
         r0->cmd_tail = (wmtcmd_base *)&r0->cmd_head;
       }
-      if ((void *)r0->pretess_cmd_tail != &r0->pretess_cmd_head) {
-        r0->pretess_cmd_tail->next.set(r1->pretess_cmd_head.next.get());
-        r1->pretess_cmd_head.next.set(r0->pretess_cmd_head.next.get());
-        r0->pretess_cmd_head.next.set(nullptr);
-        r0->pretess_cmd_tail = (wmtcmd_base *)&r0->pretess_cmd_head;
-      }
       r1->use_tessellation = r0->use_tessellation || r1->use_tessellation;
       r1->use_geometry = r0->use_geometry || r1->use_geometry;
       std::move(
@@ -1054,7 +1053,13 @@ ArgumentEncodingContext::checkEncoderRelation(EncoderData *former, EncoderData *
         r1->gs_arg_marshal_tasks.end(),
         std::back_inserter(r0->gs_arg_marshal_tasks)
       );
+      std::move(
+        r1->ts_arg_marshal_tasks.begin(),
+        r1->ts_arg_marshal_tasks.end(),
+        std::back_inserter(r0->ts_arg_marshal_tasks)
+      );
       r1->gs_arg_marshal_tasks = std::move(r0->gs_arg_marshal_tasks);
+      r1->ts_arg_marshal_tasks = std::move(r0->ts_arg_marshal_tasks);
       r1->use_visibility_result = r0->use_visibility_result || r1->use_visibility_result;
 
       r1->buf_read.merge(r0->buf_read);

@@ -105,7 +105,6 @@ struct MTL_SHADER_REFLECTION {
   uint64_t SRVSlotMaskHi;
   uint64_t SRVSlotMaskLo;
   uint32_t NumOutputElement;
-  uint32_t NumPatchConstantOutputScalar;
   uint32_t ThreadsPerPatch;
   uint32_t ArgumentTableQwords;
 };
@@ -290,11 +289,6 @@ AIRCONV_API void SM50DestroyBitcode(sm50_bitcode_t pBitcode);
 AIRCONV_API size_t SM50GetErrorMessage(sm50_error_t pError, char *pBuffer, size_t BufferSize);
 AIRCONV_API void SM50FreeError(sm50_error_t pError);
 
-AIRCONV_API int SM50CompileTessellationPipelineVertex(
-  sm50_shader_t pVertexShader, sm50_shader_t pHullShader,
-  struct SM50_SHADER_COMPILATION_ARGUMENT_DATA *pVertexShaderArgs,
-  const char *FunctionName, sm50_bitcode_t *ppBitcode, sm50_error_t *ppError
-);
 AIRCONV_API int SM50CompileTessellationPipelineHull(
   sm50_shader_t pVertexShader, sm50_shader_t pHullShader,
   struct SM50_SHADER_COMPILATION_ARGUMENT_DATA *pHullShaderArgs,

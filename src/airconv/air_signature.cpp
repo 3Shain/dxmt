@@ -568,6 +568,13 @@ auto FunctionSignatureBuilder::CreateFunction(
                   ->string("air.arg_name")
                   ->string("mtl_clip_distance");
             },
+            [&](const OutputPointSize) {
+              md.string("air.point_size")
+                  ->string("air.arg_type_name")
+                  ->string("float")
+                  ->string("air.arg_name")
+                  ->string("mtl_point_size");
+            },
         },
         output
     );
@@ -791,31 +798,6 @@ auto FunctionSignatureBuilder::CreateFunction(
             ->string("mtl_sample_mask");
           return msl_uint.get_llvm_type(context);
         },
-        [&](const InputPatchID &) {
-          metadata_field.string("air.patch_id")
-            ->string("air.arg_type_name")
-            ->string("uint") // HARDCODED
-            ->string("air.arg_name")
-            ->string("mtl_patch_id");
-          return msl_uint.get_llvm_type(context);
-        },
-        [&](const InputPositionInPatch &pip) {
-          if (pip.patch == PostTessellationPatch::triangle) {
-            metadata_field.string("air.position_in_patch")
-              ->string("air.arg_type_name")
-              ->string("float3") // HARDCODED
-              ->string("air.arg_name")
-              ->string("mtl_position_in_patch");
-            return msl_float3.get_llvm_type(context);
-          } else {
-            metadata_field.string("air.position_in_patch")
-              ->string("air.arg_type_name")
-              ->string("float2") // HARDCODED
-              ->string("air.arg_name")
-              ->string("mtl_position_in_patch");
-            return msl_float2.get_llvm_type(context);
-          }
-        },
         [&](const InputPayload &payload) -> llvm::Type * {
           metadata_field.string("air.payload")
             ->string("air.arg_type_size")
@@ -1013,20 +995,12 @@ auto FunctionSignatureBuilder::CreateFunction(
            )
     );
   }
-  if (patch.has_value()) {
-    auto [patch_type, num_control_point] = patch.value();
-    // don't use num_control_point here, as we pull input directly from buffer
+  if (max_mesh_work_group_size > 0) {
     auto tuple = MDTuple::get(
-      context,
-      {MDString::get(context, "air.patch"),
-       MDString::get(
-         context,
-         patch_type == PostTessellationPatch::triangle ? "triangle" : "quad"
-       ),
-       MDString::get(context, "air.patch_control_point"),
-       ConstantAsMetadata::get(
-         ConstantInt::get(context, APInt{32, 0})
-       )}
+      context, {MDString::get(context, "air.max_mesh_work_groups"),
+                ConstantAsMetadata::get(
+                  ConstantInt::get(context, APInt{32, max_mesh_work_group_size})
+                )}
     );
     function_def_tuple.push_back(tuple);
   }

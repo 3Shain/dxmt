@@ -1248,7 +1248,7 @@ public:
     if (status == DrawCallStatus::Geometry) {
       return GeometryDraw(VertexCount, 1, StartVertexLocation, 0);
     }
-    if (ControlPointCount) {
+    if (status == DrawCallStatus::Tessellation) {
       return TessellationDraw(ControlPointCount, VertexCount, 1, StartVertexLocation, 0);
     }
     EmitOP([Primitive, StartVertexLocation, VertexCount](ArgumentEncodingContext& enc) {
@@ -1280,7 +1280,7 @@ public:
     if (status == DrawCallStatus::Geometry) {
       return GeometryDrawIndexed(IndexCount, StartIndexLocation, BaseVertexLocation, 1, 0);
     }
-    if (ControlPointCount) {
+    if (status == DrawCallStatus::Tessellation) {
       return TessellationDrawIndexed(ControlPointCount, IndexCount, StartIndexLocation, BaseVertexLocation, 1, 0);
     };
     auto IndexType =
@@ -1320,7 +1320,7 @@ public:
     if (status == DrawCallStatus::Geometry) {
       return GeometryDraw(VertexCountPerInstance, InstanceCount, StartVertexLocation, StartInstanceLocation);
     }
-    if (ControlPointCount) {
+    if (status == DrawCallStatus::Tessellation) {
       return TessellationDraw(
           ControlPointCount, VertexCountPerInstance, InstanceCount, StartVertexLocation, StartInstanceLocation
       );
@@ -1360,7 +1360,7 @@ public:
           IndexCountPerInstance, StartIndexLocation, BaseVertexLocation, InstanceCount, StartInstanceLocation
       );
     }
-    if (ControlPointCount) {
+    if (status == DrawCallStatus::Tessellation) {
       return TessellationDrawIndexed(
           ControlPointCount, IndexCountPerInstance, StartIndexLocation, BaseVertexLocation, InstanceCount,
           StartInstanceLocation
@@ -1393,54 +1393,27 @@ public:
       UINT NumControlPoint, UINT VertexCountPerInstance, UINT InstanceCount, UINT StartVertexLocation,
       UINT StartInstanceLocation
   ) {
-    assert(NumControlPoint);
     auto draw_arguments_offset = PreAllocateArgumentBuffer(sizeof(DXMT_DRAW_ARGUMENTS), 4);
-    EmitOP([=](ArgumentEncodingContext &enc) {
+    EmitOP([=, topo = state_.InputAssembler.Topology](ArgumentEncodingContext &enc) {
       DXMT_DRAW_ARGUMENTS *draw_arugment = enc.getMappedArgumentBuffer<DXMT_DRAW_ARGUMENTS>(draw_arguments_offset);
       draw_arugment->StartVertex = StartVertexLocation;
       draw_arugment->VertexCount = VertexCountPerInstance;
       draw_arugment->InstanceCount = InstanceCount;
       draw_arugment->StartInstance = StartInstanceLocation;
+
       auto PatchCountPerInstance = VertexCountPerInstance / NumControlPoint;
       auto PatchPerGroup = 32 / enc.tess_threads_per_patch;
       auto ThreadsPerPatch = enc.tess_threads_per_patch;
-      auto PatchPerMeshInstance = (PatchCountPerInstance - 1) / PatchPerGroup + 1;
-      auto [cp_buffer, cp_offset] = enc.allocateTempBuffer(
-          enc.tess_num_output_control_point_element * 16 * VertexCountPerInstance * InstanceCount, 16
-      );
-      auto [pc_buffer, pc_offset] = enc.allocateTempBuffer(
-          enc.tess_num_output_patch_constant_scalar * 4 * PatchCountPerInstance * InstanceCount, 4
-      );
-      auto [tess_factor_buffer, tess_factor_offset] =
-          enc.allocateTempBuffer(6 * 2 * PatchCountPerInstance * InstanceCount, 4);
-
-      auto &cmd_mesh = enc.encodePreTessRenderCommand<wmtcmd_render_dxmt_tess_mesh_dispatch>();
-      cmd_mesh.type = WMTRenderCommandDXMTTessellationMeshDispatch;
-      cmd_mesh.draw_arguments_offset = enc.getFinalArgumentBufferOffset(draw_arguments_offset);
-      cmd_mesh.control_point_buffer = cp_buffer;
-      cmd_mesh.control_point_buffer_offset = cp_offset;
-      cmd_mesh.patch_constant_buffer = pc_buffer;
-      cmd_mesh.patch_constant_buffer_offset = pc_offset;
-      cmd_mesh.tessellation_factor_buffer = tess_factor_buffer;
-      cmd_mesh.tessellation_factor_buffer_offset = tess_factor_offset;
-      cmd_mesh.patch_per_mesh_instance = PatchPerMeshInstance;
-      cmd_mesh.instance_count = InstanceCount;
-      cmd_mesh.threads_per_patch = ThreadsPerPatch;
-      cmd_mesh.patch_per_group = PatchPerGroup;
+      auto PatchPerObjectInstance = (PatchCountPerInstance - 1) / PatchPerGroup + 1;
 
       enc.bumpVisibilityResultOffset();
-
-      auto &cmd_draw = enc.encodeRenderCommand<wmtcmd_render_dxmt_tess_draw>();
-      cmd_draw.type = WMTRenderCommandDXMTTessellationDraw;
-      cmd_draw.draw_arguments_offset = enc.getFinalArgumentBufferOffset(draw_arguments_offset);
-      cmd_draw.control_point_buffer = cp_buffer;
-      cmd_draw.control_point_buffer_offset = cp_offset;
-      cmd_draw.patch_constant_buffer = pc_buffer;
-      cmd_draw.patch_constant_buffer_offset = pc_offset;
-      cmd_draw.tessellation_factor_buffer = tess_factor_buffer;
-      cmd_draw.tessellation_factor_buffer_offset = tess_factor_offset;
-      cmd_draw.patch_count_per_instance = PatchCountPerInstance;
-      cmd_draw.instance_count = InstanceCount;
+      auto &cmd = enc.encodeRenderCommand<wmtcmd_render_dxmt_tessellation_mesh_draw>();
+      cmd.type = WMTRenderCommandDXMTTessellationMeshDraw;
+      cmd.draw_arguments_offset = enc.getFinalArgumentBufferOffset(draw_arguments_offset);
+      cmd.instance_count = InstanceCount;
+      cmd.threads_per_patch = ThreadsPerPatch;
+      cmd.patch_per_group = PatchPerGroup;
+      cmd.patch_per_mesh_instance = PatchPerObjectInstance;
     });
   }
 
@@ -1449,59 +1422,32 @@ public:
       UINT NumControlPoint, UINT IndexCountPerInstance, UINT StartIndexLocation, INT BaseVertexLocation,
       UINT InstanceCount, UINT BaseInstance
   ) {
-    assert(NumControlPoint);
     auto IndexBufferOffset = state_.InputAssembler.IndexBufferOffset;
     auto draw_arguments_offset = PreAllocateArgumentBuffer(sizeof(DXMT_DRAW_INDEXED_ARGUMENTS), 4);
-    EmitOP([=](ArgumentEncodingContext &enc) {
+    EmitOP([=, topo = state_.InputAssembler.Topology](ArgumentEncodingContext &enc) {
       DXMT_DRAW_INDEXED_ARGUMENTS *draw_arugment = enc.getMappedArgumentBuffer<DXMT_DRAW_INDEXED_ARGUMENTS>(draw_arguments_offset);
       draw_arugment->BaseVertex = BaseVertexLocation;
       draw_arugment->IndexCount = IndexCountPerInstance;
       draw_arugment->StartIndex = StartIndexLocation;
       draw_arugment->InstanceCount = InstanceCount;
       draw_arugment->StartInstance = BaseInstance;
+
       auto PatchCountPerInstance = IndexCountPerInstance / NumControlPoint;
       auto PatchPerGroup = 32 / enc.tess_threads_per_patch;
       auto ThreadsPerPatch = enc.tess_threads_per_patch;
-      auto PatchPerMeshInstance = (PatchCountPerInstance - 1) / PatchPerGroup + 1;
-      auto [cp_buffer, cp_offset] = enc.allocateTempBuffer(
-          enc.tess_num_output_control_point_element * 16 * IndexCountPerInstance * InstanceCount, 16
-      );
-      auto [pc_buffer, pc_offset] = enc.allocateTempBuffer(
-          enc.tess_num_output_patch_constant_scalar * 4 * PatchCountPerInstance * InstanceCount, 4
-      );
-      auto [tess_factor_buffer, tess_factor_offset] =
-          enc.allocateTempBuffer(6 * 2 * PatchCountPerInstance * InstanceCount, 4);
-
-      auto &cmd_mesh = enc.encodePreTessRenderCommand<wmtcmd_render_dxmt_tess_mesh_dispatch_indexed>();
-      cmd_mesh.type = WMTRenderCommandDXMTTessellationMeshDispatchIndexed;
+      auto PatchPerObjectInstance = (PatchCountPerInstance - 1) / PatchPerGroup + 1;
+  
       auto [index_buffer, index_sub_offset] = enc.currentIndexBuffer();
-      cmd_mesh.index_buffer = index_buffer;
-      cmd_mesh.index_buffer_offset = IndexBufferOffset + index_sub_offset;
-      cmd_mesh.draw_arguments_offset = enc.getFinalArgumentBufferOffset(draw_arguments_offset);
-      cmd_mesh.control_point_buffer = cp_buffer;
-      cmd_mesh.control_point_buffer_offset = cp_offset;
-      cmd_mesh.patch_constant_buffer = pc_buffer;
-      cmd_mesh.patch_constant_buffer_offset = pc_offset;
-      cmd_mesh.tessellation_factor_buffer = tess_factor_buffer;
-      cmd_mesh.tessellation_factor_buffer_offset = tess_factor_offset;
-      cmd_mesh.patch_per_mesh_instance = PatchPerMeshInstance;
-      cmd_mesh.instance_count = InstanceCount;
-      cmd_mesh.threads_per_patch = ThreadsPerPatch;
-      cmd_mesh.patch_per_group = PatchPerGroup;
-
       enc.bumpVisibilityResultOffset();
-
-      auto &cmd_draw = enc.encodeRenderCommand<wmtcmd_render_dxmt_tess_draw>();
-      cmd_draw.type = WMTRenderCommandDXMTTessellationDraw;
-      cmd_draw.draw_arguments_offset = enc.getFinalArgumentBufferOffset(draw_arguments_offset);
-      cmd_draw.control_point_buffer = cp_buffer;
-      cmd_draw.control_point_buffer_offset = cp_offset;
-      cmd_draw.patch_constant_buffer = pc_buffer;
-      cmd_draw.patch_constant_buffer_offset = pc_offset;
-      cmd_draw.tessellation_factor_buffer = tess_factor_buffer;
-      cmd_draw.tessellation_factor_buffer_offset = tess_factor_offset;
-      cmd_draw.patch_count_per_instance = PatchCountPerInstance;
-      cmd_draw.instance_count = InstanceCount;
+      auto &cmd = enc.encodeRenderCommand<wmtcmd_render_dxmt_tessellation_mesh_draw_indexed>();
+      cmd.type = WMTRenderCommandDXMTTessellationMeshDrawIndexed;
+      cmd.draw_arguments_offset = enc.getFinalArgumentBufferOffset(draw_arguments_offset);
+      cmd.instance_count = InstanceCount;
+      cmd.threads_per_patch = ThreadsPerPatch;
+      cmd.patch_per_group = PatchPerGroup;
+      cmd.patch_per_mesh_instance = PatchPerObjectInstance;
+      cmd.index_buffer = index_buffer;
+      cmd.index_buffer_offset = IndexBufferOffset + index_sub_offset;
     });
   }
 
@@ -1575,11 +1521,8 @@ public:
     if (status == DrawCallStatus::Geometry) {
       return GeometryDrawIndexedIndirect(pBufferForArgs, AlignedByteOffsetForArgs);
     }
-    if (ControlPointCount) {
-      EmitST([](ArgumentEncodingContext &enc) {
-        enc.setCompatibilityFlag(FeatureCompatibility::UnsupportedIndirectTessellationDraw);
-      });
-      return;
+    if (status == DrawCallStatus::Tessellation) {
+      return TessellationDrawIndexedIndirect(ControlPointCount ,pBufferForArgs, AlignedByteOffsetForArgs);
     }
     auto IndexType =
         state_.InputAssembler.IndexBufferFormat == DXGI_FORMAT_R32_UINT ? WMTIndexTypeUInt32 : WMTIndexTypeUInt16;
@@ -1617,11 +1560,8 @@ public:
     if (status == DrawCallStatus::Geometry) {
       return GeometryDrawIndirect(pBufferForArgs, AlignedByteOffsetForArgs);
     }
-    if (ControlPointCount) {
-      EmitST([](ArgumentEncodingContext &enc) {
-        enc.setCompatibilityFlag(FeatureCompatibility::UnsupportedIndirectTessellationDraw);
-      });
-      return;
+    if (status == DrawCallStatus::Tessellation) {
+      return TessellationDrawIndirect(ControlPointCount, pBufferForArgs, AlignedByteOffsetForArgs);
     }
     if (auto bindable = reinterpret_cast<D3D11ResourceCommon *>(pBufferForArgs)) {
       EmitOP([Primitive, ArgBuffer = bindable->buffer(), AlignedByteOffsetForArgs](ArgumentEncodingContext &enc) {
@@ -1687,6 +1627,71 @@ public:
         cmd.dispatch_args_buffer = dispatch_arg.gpu_buffer;
         cmd.dispatch_args_offset = dispatch_arg.offset;
         cmd.vertex_per_warp = vertex_per_warp;
+        cmd.indirect_args_buffer = buffer->buffer();
+        cmd.indirect_args_offset = AlignedByteOffsetForArgs + buffer_offset;
+        cmd.index_buffer = index_buffer;
+        cmd.index_buffer_offset = IndexBufferOffset + index_sub_offset;
+      });
+    }
+  }
+
+  void
+  TessellationDrawIndirect(
+    UINT NumControlPoint, ID3D11Buffer *pBufferForArgs, UINT AlignedByteOffsetForArgs
+  ) {
+    if (auto bindable = reinterpret_cast<D3D11ResourceCommon *>(pBufferForArgs)) {
+      EmitOP([=, topo = state_.InputAssembler.Topology, ArgBuffer = bindable->buffer()](ArgumentEncodingContext &enc) {
+        auto [buffer, buffer_offset] = enc.access(ArgBuffer, AlignedByteOffsetForArgs, 20, DXMT_ENCODER_RESOURCE_ACESS_READ);
+        auto dispatch_arg = enc.allocateTempBuffer1(sizeof(DXMT_DISPATCH_ARGUMENTS), 4);
+  
+        auto PatchPerGroup = 32 / enc.tess_threads_per_patch;
+        auto ThreadsPerPatch = enc.tess_threads_per_patch;
+  
+        enc.bumpVisibilityResultOffset();
+        enc.encodeTSDispatchArgumentsMarshal(
+            buffer->buffer(), buffer->gpuAddress() + buffer_offset,
+            AlignedByteOffsetForArgs, NumControlPoint, PatchPerGroup,
+            dispatch_arg.gpu_buffer, dispatch_arg.gpu_address,
+            dispatch_arg.offset);
+        auto &cmd = enc.encodeRenderCommand<wmtcmd_render_dxmt_tessellation_mesh_draw_indirect>();
+        cmd.type = WMTRenderCommandDXMTTessellationMeshDrawIndirect;
+        cmd.dispatch_args_buffer = dispatch_arg.gpu_buffer;
+        cmd.dispatch_args_offset = dispatch_arg.offset;
+        cmd.patch_per_group = PatchPerGroup;
+        cmd.threads_per_patch = ThreadsPerPatch;
+        cmd.indirect_args_buffer = buffer->buffer();
+        cmd.indirect_args_offset = buffer_offset + AlignedByteOffsetForArgs;
+      });
+    }
+  }
+
+  void
+  TessellationDrawIndexedIndirect(
+    UINT NumControlPoint, ID3D11Buffer *pBufferForArgs, UINT AlignedByteOffsetForArgs
+  ) {
+    auto IndexBufferOffset = state_.InputAssembler.IndexBufferOffset;
+
+    if (auto bindable = reinterpret_cast<D3D11ResourceCommon *>(pBufferForArgs)) {
+      EmitOP([=, topo = state_.InputAssembler.Topology, ArgBuffer = bindable->buffer()](ArgumentEncodingContext &enc) {
+        auto [buffer, buffer_offset] = enc.access(ArgBuffer, AlignedByteOffsetForArgs, 20, DXMT_ENCODER_RESOURCE_ACESS_READ);
+        auto dispatch_arg = enc.allocateTempBuffer1(sizeof(DXMT_DISPATCH_ARGUMENTS), 4);
+  
+        auto PatchPerGroup = 32 / enc.tess_threads_per_patch;
+        auto ThreadsPerPatch = enc.tess_threads_per_patch;
+        auto [index_buffer, index_sub_offset] = enc.currentIndexBuffer();
+  
+        enc.bumpVisibilityResultOffset();
+        enc.encodeTSDispatchArgumentsMarshal(
+            buffer->buffer(), buffer->gpuAddress() + buffer_offset,
+            AlignedByteOffsetForArgs, NumControlPoint, PatchPerGroup,
+            dispatch_arg.gpu_buffer, dispatch_arg.gpu_address,
+            dispatch_arg.offset);
+        auto &cmd = enc.encodeRenderCommand<wmtcmd_render_dxmt_tessellation_mesh_draw_indexed_indirect>();
+        cmd.type = WMTRenderCommandDXMTTessellationMeshDrawIndexedIndirect;
+        cmd.dispatch_args_buffer = dispatch_arg.gpu_buffer;
+        cmd.dispatch_args_offset = dispatch_arg.offset;
+        cmd.patch_per_group = PatchPerGroup;
+        cmd.threads_per_patch = ThreadsPerPatch;
         cmd.indirect_args_buffer = buffer->buffer();
         cmd.indirect_args_offset = AlignedByteOffsetForArgs + buffer_offset;
         cmd.index_buffer = index_buffer;
@@ -4314,29 +4319,27 @@ public:
       return DrawCallStatus::Invalid;
     }
 
-    Com<IMTLCompiledTessellationPipeline> pipeline;
+    Com<IMTLCompiledTessellationMeshPipeline> pipeline;
 
     MTL_GRAPHICS_PIPELINE_DESC pipelineDesc;
     InitializeGraphicsPipelineDesc<IndexedDraw>(pipelineDesc);
 
-    device->CreateTessellationPipeline(&pipelineDesc, &pipeline);
+    if (FAILED(device->CreateTessellationMeshPipeline(&pipelineDesc, &pipeline))) {
+      return DrawCallStatus::Invalid;
+    }
 
     EmitST([pso = std::move(pipeline)](ArgumentEncodingContext &enc) {
       auto render_encoder = enc.currentRenderEncoder();
       render_encoder->use_tessellation = 1;
-      MTL_COMPILED_TESSELLATION_PIPELINE GraphicsPipeline{};
+      MTL_COMPILED_TESSELLATION_MESH_PIPELINE GraphicsPipeline{};
       pso->GetPipeline(&GraphicsPipeline); // may block
       enc.tess_num_output_control_point_element = GraphicsPipeline.NumControlPointOutputElement;
-      enc.tess_num_output_patch_constant_scalar = GraphicsPipeline.NumPatchConstantOutputScalar;
       enc.tess_threads_per_patch = GraphicsPipeline.ThreadsPerPatch;
-      if (!(GraphicsPipeline.MeshPipelineState && GraphicsPipeline.RasterizationPipelineState))
+      if (!GraphicsPipeline.PipelineState)
         return;
-      auto &cmd_pretess = enc.encodePreTessRenderCommand<wmtcmd_render_setpso>();
-      cmd_pretess.type = WMTRenderCommandSetPSO;
-      cmd_pretess.pso = GraphicsPipeline.MeshPipelineState;
       auto &cmd = enc.encodeRenderCommand<wmtcmd_render_setpso>();
       cmd.type = WMTRenderCommandSetPSO;
-      cmd.pso = GraphicsPipeline.RasterizationPipelineState;
+      cmd.pso = GraphicsPipeline.PipelineState;
     });
 
     cmdbuf_state = CommandBufferState::TessellationRenderPipelineReady;
@@ -4346,6 +4349,9 @@ public:
       state_.ShaderStages[PipelineStage::Vertex].ConstantBuffers.set_dirty();
       state_.ShaderStages[PipelineStage::Vertex].SRVs.set_dirty();
       state_.ShaderStages[PipelineStage::Vertex].Samplers.set_dirty();
+      state_.ShaderStages[PipelineStage::Hull].ConstantBuffers.set_dirty();
+      state_.ShaderStages[PipelineStage::Hull].SRVs.set_dirty();
+      state_.ShaderStages[PipelineStage::Hull].Samplers.set_dirty();
       state_.ShaderStages[PipelineStage::Domain].ConstantBuffers.set_dirty();
       state_.ShaderStages[PipelineStage::Domain].SRVs.set_dirty();
       state_.ShaderStages[PipelineStage::Domain].Samplers.set_dirty();
@@ -4388,9 +4394,9 @@ public:
       state_.ShaderStages[PipelineStage::Vertex].ConstantBuffers.set_dirty();
       state_.ShaderStages[PipelineStage::Vertex].SRVs.set_dirty();
       state_.ShaderStages[PipelineStage::Vertex].Samplers.set_dirty();
-      state_.ShaderStages[PipelineStage::Domain].ConstantBuffers.set_dirty();
-      state_.ShaderStages[PipelineStage::Domain].SRVs.set_dirty();
-      state_.ShaderStages[PipelineStage::Domain].Samplers.set_dirty();
+      state_.ShaderStages[PipelineStage::Geometry].ConstantBuffers.set_dirty();
+      state_.ShaderStages[PipelineStage::Geometry].SRVs.set_dirty();
+      state_.ShaderStages[PipelineStage::Geometry].Samplers.set_dirty();
       previous_render_pipeline_state = CommandBufferState::GeometryRenderPipelineReady;
     }
 

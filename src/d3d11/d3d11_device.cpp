@@ -1053,18 +1053,17 @@ public:
     return S_OK;
   };
 
-  HRESULT
-  CreateTessellationPipeline(
-      MTL_GRAPHICS_PIPELINE_DESC *pDesc,
-      IMTLCompiledTessellationPipeline **ppPipeline) override {
-    pipeline_cache_->GetTessellationPipeline(pDesc, ppPipeline);
-    return S_OK;
-  };
-
   virtual HRESULT
   CreateGeometryPipeline(MTL_GRAPHICS_PIPELINE_DESC *pDesc,
                          IMTLCompiledGeometryPipeline **ppPipeline) override {
     pipeline_cache_->GetGeometryPipeline(pDesc, ppPipeline);
+    return S_OK;
+  };
+
+  HRESULT
+  CreateTessellationMeshPipeline(MTL_GRAPHICS_PIPELINE_DESC *pDesc,
+                         IMTLCompiledTessellationMeshPipeline **ppPipeline) override {
+    pipeline_cache_->GetTessellationPipeline(pDesc, ppPipeline);
     return S_OK;
   };
 
