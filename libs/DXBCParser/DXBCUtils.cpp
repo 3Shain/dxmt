@@ -3,7 +3,6 @@
 
 #include "DXBCUtils.h"
 #include "BlobContainer.h"
-#include "winerror.h"
 #include <cassert>
 #include <cstdlib>
 #include <cstring>

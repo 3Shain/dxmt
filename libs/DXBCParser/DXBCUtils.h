@@ -2,8 +2,7 @@
 // Licensed under the MIT License.
 #pragma once
 #include "d3d12tokenizedprogramformat.hpp"
-#include "mind3dcommon.h"
-#include "minwindef.h"
+#include "d3d11.h"
 #include <cstddef>
 
 namespace microsoft {

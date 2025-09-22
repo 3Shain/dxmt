@@ -8,7 +8,7 @@
 #include <cassert>
 #include <cstdlib>
 #include <cstring>
-#include "minwindef.h"
+#include "d3dcommon.h"
 
 typedef UINT CShaderToken;
 

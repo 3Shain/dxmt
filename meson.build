@@ -19,11 +19,13 @@ dxmt_include_dirs = [
   './libs'
 ]
 
+dxmt_native_include_dirs = [
+  './include/native/windows',
+  './include/native/directx',
+]
+
 if dxmt_native
-  dxmt_include_dirs += [
-    './include/native/windows',
-    './include/native/directx'
-  ]
+  dxmt_include_dirs += dxmt_native_include_dirs
 endif
 
 compiler_args = [
@@ -84,6 +86,7 @@ if get_option('debug')
 endif
 
 dxmt_include_path = include_directories(dxmt_include_dirs)
+dxmt_native_include_path = include_directories(dxmt_native_include_dirs)
 
 if not dxmt_native
   res_ext = '.o'
