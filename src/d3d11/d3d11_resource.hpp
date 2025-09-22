@@ -125,6 +125,7 @@ struct D3D11ResourceCommon : ID3D11Resource {
   CreateRenderTargetView(const D3D11_RENDER_TARGET_VIEW_DESC1 *pDesc, ID3D11RenderTargetView1 **ppView) = 0;
   virtual HRESULT STDMETHODCALLTYPE
   CreateDepthStencilView(const D3D11_DEPTH_STENCIL_VIEW_DESC *pDesc, ID3D11DepthStencilView **ppView) = 0;
+  virtual HRESULT GetSharedHandle(HANDLE *pSharedHandle) = 0;
 
   virtual Rc<Buffer> buffer() = 0;
   virtual BufferSlice bufferSlice() = 0;
@@ -157,15 +158,8 @@ GetTexture(ID3D11Resource *pResource) {
   return static_cast<D3D11ResourceCommon *>(pResource)->texture();
 }
 
-class ISharable {
-public:
-  virtual HRESULT GetSharedHandle(HANDLE *pSharedHandle) = 0;
-  virtual HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void **ppvObject) = 0;
-  virtual ~ISharable() {}
-};
-
 struct D3D11SharedResource {
-  ISharable *d3d11_resource;
+  D3D11ResourceCommon *d3d11_resource;
   HANDLE process;
 
   // FIXME: For a complete implementation of shared resources, consider adding:
@@ -175,7 +169,7 @@ struct D3D11SharedResource {
 };
 
 template <typename tag, typename... Base>
-class TResourceBase : public MTLD3D11DeviceChild<D3D11ResourceCommon, Base...>, public ISharable {
+class TResourceBase : public MTLD3D11DeviceChild<D3D11ResourceCommon, Base...> {
 public:
   TResourceBase(const tag::DESC1 &desc, MTLD3D11Device *device)
       : MTLD3D11DeviceChild<D3D11ResourceCommon, Base...>(
@@ -292,7 +286,7 @@ public:
       return E_FAIL;
     }
 
-    handleData->d3d11_resource = static_cast<ISharable *>(this);
+    handleData->d3d11_resource = static_cast<D3D11ResourceCommon *>(this);
     handleData->process = GetCurrentProcess();
 
     UnmapViewOfFile(handleData);
