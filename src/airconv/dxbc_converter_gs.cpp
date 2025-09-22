@@ -138,7 +138,6 @@ convert_dxbc_geometry_shader(
   auto& gs_output_handlers = pShaderInternal->mesh_output_handlers;
 
   setup_binding_table(shader_info, resource_map, func_signature, module);
-  setup_tgsm(shader_info, resource_map, types, module);
 
   auto gs_output_topology = pShaderInternal->gs_output_topology;
   int32_t max_vertex_out = pShaderInternal->gs_max_vertex_output;

@@ -473,7 +473,6 @@ llvm::Error convert_dxbc_pixel_shader(
   }
 
   setup_binding_table(shader_info, resource_map, func_signature, module);
-  setup_tgsm(shader_info, resource_map, types, module);
 
   auto [function, function_metadata] =
     func_signature.CreateFunction(name, context, module, 0, false);
@@ -761,7 +760,6 @@ llvm::Error convert_dxbc_vertex_shader(
   };
 
   setup_binding_table(shader_info, resource_map, func_signature, module);
-  setup_tgsm(shader_info, resource_map, types, module);
 
   uint32_t rta_idx_out = ~0u;
   if (gs_passthrough && gs_passthrough->RenderTargetArrayIndexReg != 255) {

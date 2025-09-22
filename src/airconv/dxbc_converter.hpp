@@ -458,11 +458,6 @@ void setup_binding_table(
   uint32_t argbuffer_slot = kArgumentBufferBindIndex
 );
 
-void setup_tgsm(
-  const ShaderInfo *shader_info, io_binding_map &resource_map,
-  air::AirType &types, llvm::Module &module
-);
-
 void setup_fastmath_flag(llvm::Module &module, llvm::IRBuilder<> &builder);
 
 void setup_temp_register(
