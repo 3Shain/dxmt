@@ -159,7 +159,7 @@ GetTexture(ID3D11Resource *pResource) {
 }
 
 struct D3D11SharedResource {
-  D3D11ResourceCommon *d3d11_resource;
+  Com<D3D11ResourceCommon> d3d11_resource;
   HANDLE process;
 
   // FIXME: For a complete implementation of shared resources, consider adding:
@@ -286,7 +286,7 @@ public:
       return E_FAIL;
     }
 
-    handleData->d3d11_resource = static_cast<D3D11ResourceCommon *>(this);
+    handleData->d3d11_resource = Com(static_cast<D3D11ResourceCommon *>(this));
     handleData->process = GetCurrentProcess();
 
     UnmapViewOfFile(handleData);

@@ -504,7 +504,7 @@ public:
     auto pResource = (D3D11SharedResource*)MapViewOfFile(
       hResource, FILE_MAP_ALL_ACCESS, 0, 0, sizeof(D3D11SharedResource));
 
-    D3D11SharedResource resource = *pResource;
+    D3D11SharedResource resource = std::move(*pResource);
     UnmapViewOfFile(pResource);
     CloseHandle(hResource);
 
