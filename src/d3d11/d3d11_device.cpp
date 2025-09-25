@@ -506,7 +506,6 @@ public:
 
     D3D11SharedResource resource = *pResource;
     UnmapViewOfFile(pResource);
-    CloseHandle(hResource);
 
     if (resource.process != GetCurrentProcess()) {
       ERR("OpenSharedResource: Sharing resources across processes is not yet supported");

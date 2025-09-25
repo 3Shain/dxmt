@@ -176,7 +176,14 @@ public:
             device),
         desc(desc),
         dxgi_resource(new MTLDXGIResource<TResourceBase<tag, Base...>>(this)),
-        d3d10(reinterpret_cast<tag::COM *>(this), device->GetImmediateContextPrivate()) {}
+        d3d10(reinterpret_cast<tag::COM *>(this), device->GetImmediateContextPrivate()),
+        shared_handle(nullptr) {}
+
+  ~TResourceBase() {
+    if (shared_handle) {
+      CloseHandle(shared_handle);
+    }
+  }
 
   template <std::size_t n> HRESULT ResolveBase(REFIID riid, void **ppvObject) {
     return E_NOINTERFACE;
@@ -256,6 +263,12 @@ public:
     // is currently limited to resources shared within a single process and without
     // synchronization (i.e., created without the `D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX` flag).
 
+    if (shared_handle) {
+      // We already have a shared handle. Let's reuse it.
+      *pSharedHandle = shared_handle;
+      return S_OK;
+    }
+
     if (pSharedHandle == nullptr || (desc.MiscFlags & D3D11_RESOURCE_MISC_SHARED_NTHANDLE))
       return E_INVALIDARG;
 
@@ -290,6 +303,14 @@ public:
     handleData->process = GetCurrentProcess();
 
     UnmapViewOfFile(handleData);
+
+    // We will reuse this shared handle for later `GetSharedHandle` calls,
+    // and close it when this resource is destroyed.
+    // NOTE: According to the MSDN documentation, the handle returned by `GetSharedHandle`
+    //       is not an NT handle, so it does not support `CloseHandle`, `DuplicateHandle`,
+    //       and so on. Since the user cannot close this handle themselves,
+    //       it is our responsibility to close it properly at the appropriate time.
+    shared_handle = mapFile;
     *pSharedHandle = mapFile;
     return S_OK;
   }
@@ -327,6 +348,7 @@ protected:
   tag::DESC1 desc;
   std::unique_ptr<IDXGIResource1> dxgi_resource;
   tag::D3D10_IMPL d3d10;
+  HANDLE shared_handle;
 };
 
 template <typename RESOURCE_IMPL_ = ID3D11Resource,
