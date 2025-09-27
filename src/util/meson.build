@@ -23,12 +23,29 @@ util_src = files([
   'sha1/sha1_util.cpp',
 ])
 
+wsi_deps = []
+
 if dxmt_native
   util_src += files([
-    'wsi_monitor_headless.cpp',
-    'wsi_window_headless.cpp',
     'wsi_platform_darwin.cpp',
   ])
+
+  # sdl2 wsi
+  lib_sdl2 = dependency('SDL2', required: false)
+  if lib_sdl2.found() and get_option('dxmt_wsi_sdl2') == true
+    util_src += files([
+      'wsi_monitor_sdl2.cpp',
+      'wsi_window_sdl2.cpp',
+      'wsi_platform_sdl2.cpp',
+    ])
+
+    wsi_deps += [ lib_sdl2.partial_dependency(compile_args: true, includes: true)]
+  else # headless
+    util_src += files([
+      'wsi_monitor_headless.cpp',
+      'wsi_window_headless.cpp',
+    ])
+  endif
 else
   util_src += files([
     'wsi_monitor_win32.cpp',
@@ -38,6 +55,7 @@ else
 endif
 
 util_lib = static_library('util', util_src,
+  dependencies: wsi_deps,
   include_directories : [ dxmt_include_path ],
 )
 
