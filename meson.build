@@ -2,7 +2,6 @@ project('dxmt', ['c', 'cpp'], version : 'v0.1', meson_version: '>=1.3.0', defaul
   'cpp_std=c++20', 
   'warning_level=2', 
   'build.cpp_std=c++20',
-  'build.warning_level=2',
   'b_ndebug=if-release',
 ])
 
@@ -20,11 +19,13 @@ dxmt_include_dirs = [
   './libs'
 ]
 
+dxmt_native_include_dirs = [
+  './include/native/windows',
+  './include/native/directx',
+]
+
 if dxmt_native
-  dxmt_include_dirs += [
-    './include/native/windows',
-    './include/native/directx'
-  ]
+  dxmt_include_dirs += dxmt_native_include_dirs
 endif
 
 compiler_args = [
@@ -85,6 +86,7 @@ if get_option('debug')
 endif
 
 dxmt_include_path = include_directories(dxmt_include_dirs)
+dxmt_native_include_path = include_directories(dxmt_native_include_dirs)
 
 if not dxmt_native
   res_ext = '.o'

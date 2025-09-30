@@ -498,7 +498,27 @@ public:
 
   HRESULT STDMETHODCALLTYPE
       OpenSharedResource(HANDLE hResource, REFIID ReturnedInterface,
-                         void **ppResource) override{IMPLEMENT_ME}
+                         void **ppResource) override{
+    // FIXME: The shared resource functionality is not fully implemented.
+    //        (See comments in GetSharedHandle)
+    auto pResource = (D3D11SharedResource*)MapViewOfFile(
+      hResource, FILE_MAP_ALL_ACCESS, 0, 0, sizeof(D3D11SharedResource));
+
+    D3D11SharedResource resource = *pResource;
+    UnmapViewOfFile(pResource);
+
+    if (resource.process != GetCurrentProcess()) {
+      ERR("OpenSharedResource: Sharing resources across processes is not yet supported");
+      return E_FAIL;
+    }
+
+    if (resource.d3d11_resource->QueryInterface(ReturnedInterface, ppResource) != S_OK) {
+      ERR("OpenSharedResource: Failed to query the interface");
+      return E_FAIL;
+    }
+
+    return S_OK;
+  }
 
   HRESULT STDMETHODCALLTYPE
       CheckFormatSupport(DXGI_FORMAT Format, UINT *pFormatSupport) override {
@@ -1053,18 +1073,17 @@ public:
     return S_OK;
   };
 
-  HRESULT
-  CreateTessellationPipeline(
-      MTL_GRAPHICS_PIPELINE_DESC *pDesc,
-      IMTLCompiledTessellationPipeline **ppPipeline) override {
-    pipeline_cache_->GetTessellationPipeline(pDesc, ppPipeline);
-    return S_OK;
-  };
-
   virtual HRESULT
   CreateGeometryPipeline(MTL_GRAPHICS_PIPELINE_DESC *pDesc,
                          IMTLCompiledGeometryPipeline **ppPipeline) override {
     pipeline_cache_->GetGeometryPipeline(pDesc, ppPipeline);
+    return S_OK;
+  };
+
+  HRESULT
+  CreateTessellationMeshPipeline(MTL_GRAPHICS_PIPELINE_DESC *pDesc,
+                         IMTLCompiledTessellationMeshPipeline **ppPipeline) override {
+    pipeline_cache_->GetTessellationPipeline(pDesc, ppPipeline);
     return S_OK;
   };
 

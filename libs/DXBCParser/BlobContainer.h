@@ -2,7 +2,7 @@
 // Licensed under the MIT License.
 #pragma once 
 #include <stddef.h>
-#include "minwindef.h"
+#include "d3dcommon.h"
 
 #define DXBC_MAJOR_VERSION 1
 #define DXBC_MINOR_VERSION 0

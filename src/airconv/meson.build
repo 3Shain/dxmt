@@ -5,10 +5,14 @@ airconv_src = files([
  'air_operations.cpp',
  'dxbc_converter.cpp',
  'dxbc_converter_gs.cpp',
+ 'dxbc_converter_ts.cpp',
  'dxbc_converter_basicblock.cpp',
+ 'dxbc_converter_cfg.cpp',
  'dxbc_instructions.cpp',
  'dxbc_signature.cpp',
- 'metallib_writer.cpp'
+ 'metallib_writer.cpp',
+ 'nt/air_builder.cpp',
+ 'nt/dxbc_converter_base.cpp',
 ])
 
 airconv_cli_src = files(['airconv_cli.cpp'])
@@ -41,6 +45,25 @@ llvm_ld_flags = [
 airconv_forward_dep = declare_dependency(
   include_directories : [ dxmt_include_path, include_directories('.') ],
 )
+
+airshader_bc = custom_target(
+  'airshader-bc',
+  input : 'nt/air_shader.metal',
+  output : 'air_shader.air',
+  command : [
+    find_program('xcrun'), '-sdk', 'macosx', 'metal',
+    '-o', '@OUTPUT@', '-c', '@INPUT@', '-std=metal3.1', '--target=air64-apple-macos14.0',
+  ]
+)
+
+airshader_embeded = custom_target(
+  'airshader-embedded',
+  input : airshader_bc,
+  output : 'air_shader.c',
+  command : ['xxd', '-n', 'air_shader', '-i', '@INPUT@', '@OUTPUT@']
+)
+
+airconv_src += airshader_embeded
 
 build_airconv_for_windows = get_option('build_airconv_for_windows')
 

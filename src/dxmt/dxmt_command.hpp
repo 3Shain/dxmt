@@ -134,6 +134,15 @@ public:
     encoder.setVertexBuffer({}, 0, 1);
   }
 
+  void
+  MarshalTSDispatchArguments(WMT::RenderCommandEncoder encoder, WMT::Buffer commands, uint32_t commands_offset) {
+    encoder.setRenderPipelineState(ts_draw_arguments_marshal);
+    encoder.setVertexBuffer(commands, commands_offset, 0);
+    encoder.drawPrimitives(WMTPrimitiveTypePoint, 0, 1);
+    encoder.setVertexBuffer({}, 0, 0);
+    encoder.setVertexBuffer({}, 0, 1);
+  }
+
 private:
   void setComputePipelineState(WMT::ComputePipelineState state, const WMTSize &threadgroup_size);
 
@@ -161,6 +170,7 @@ private:
   WMT::Reference<WMT::ComputePipelineState> clear_texture_buffer_float_pipeline;
 
   WMT::Reference<WMT::RenderPipelineState> gs_draw_arguments_marshal;
+  WMT::Reference<WMT::RenderPipelineState> ts_draw_arguments_marshal;
 };
 
 class ClearRenderTargetContext {

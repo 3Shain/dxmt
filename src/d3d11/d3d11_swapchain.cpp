@@ -11,6 +11,7 @@
 #include "log/log.hpp"
 #include "d3d11_resource.hpp"
 #include "d3d11_device.hpp"
+#include "util_cpu_fence.hpp"
 #include "util_env.hpp"
 #include "util_string.hpp"
 #include "util_win32_compat.h"
@@ -23,9 +24,10 @@
 #include <format>
 
 /**
-Metal support at most 3 swapchain
+Ref: https://learn.microsoft.com/en-us/windows/win32/api/dxgi1_3/nf-dxgi1_3-idxgiswapchain2-setmaximumframelatency
+This value is 1 by default.
 */
-constexpr size_t kSwapchainLatency = 3;
+constexpr size_t kSwapchainLatency = 1;
 
 namespace dxmt {
 
@@ -106,6 +108,11 @@ public:
     frame_latency = kSwapchainLatency;
     present_semaphore_ = CreateSemaphore(nullptr, frame_latency,
                                          DXGI_MAX_SWAP_CHAIN_BUFFERS, nullptr);
+
+    // without this flag, there is still a DXGIDevice level of frame latency control
+    if (desc_.Flags & DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT) {
+      frame_latency_fence_ = std::make_unique<CpuFence>();
+    }
 
     if (desc_.Width == 0 || desc_.Height == 0) {
       wsi::getWindowSize(hWnd, &desc_.Width, &desc_.Height);
@@ -547,6 +554,38 @@ public:
     return E_NOTIMPL;
   };
 
+  class SyncFrameState {
+    uint64_t frame_id_ = 0;
+    CpuFence *frame_latency_fence_ = nullptr;
+
+  public:
+    SyncFrameState() {}
+    SyncFrameState(uint64_t frame_id, CpuFence *frame_latency_fence)
+        : frame_id_(frame_id), frame_latency_fence_(frame_latency_fence) {}
+
+    SyncFrameState(const SyncFrameState &) = delete;
+    SyncFrameState(SyncFrameState &&move) {
+      frame_id_ = move.frame_id_;
+      frame_latency_fence_ = move.frame_latency_fence_;
+      move.frame_latency_fence_ = nullptr;
+    };
+    ~SyncFrameState() {
+      if (frame_latency_fence_) {
+        frame_latency_fence_->signal(frame_id_);
+        frame_latency_fence_ = nullptr;
+      }
+    }
+  };
+
+  SyncFrameState SyncFrame(uint64_t current_frame_id) {
+    if (frame_latency_fence_) {
+      if (current_frame_id > frame_latency)
+        frame_latency_fence_->wait(current_frame_id - frame_latency);
+      return SyncFrameState(current_frame_id, frame_latency_fence_.get());
+    }
+    return SyncFrameState();
+  };
+
   HRESULT
   STDMETHODCALLTYPE
   Present1(UINT SyncInterval, UINT PresentFlags,
@@ -568,9 +607,11 @@ public:
     device_context_->PrepareFlush();
     auto &cmd_queue = m_device->GetDXMTDevice().queue();
     auto chunk = cmd_queue.CurrentChunk();
+    chunk->signal_frame_latency_fence_ = cmd_queue.CurrentFrameSeq();
     if constexpr (EnableMetalFX) {
       chunk->emitcc([
         this, vsync_duration, backbuffer = backbuffer_->texture(),
+        sync_state = SyncFrame(chunk->signal_frame_latency_fence_),
         upscaled = upscaled_backbuffer_->texture(),
         scaler = this->metalfx_scaler, state = presenter->synchronizeLayerProperties()
       ](ArgumentEncodingContext &ctx) mutable {
@@ -587,7 +628,8 @@ public:
       });
     } else {
       chunk->emitcc([
-        this, vsync_duration, state = presenter->synchronizeLayerProperties(), 
+        this, vsync_duration, state = presenter->synchronizeLayerProperties(),
+        sync_state = SyncFrame(chunk->signal_frame_latency_fence_),
         backbuffer = backbuffer_->texture()
       ](ArgumentEncodingContext &ctx) mutable {
         ctx.present(backbuffer, presenter, vsync_duration, state.metadata);
@@ -595,7 +637,6 @@ public:
         this->UpdateStatistics(ctx.queue().statistics, ctx.currentFrameId());
       });
     }
-    chunk->signal_frame_latency_fence_ = cmd_queue.CurrentFrameSeq();
     device_context_->Commit();
 
     lock.unlock(); // since PresentBoundary() will and should only stall current thread
@@ -729,7 +770,6 @@ public:
                        nullptr);
     }
     frame_latency = max_latency;
-    WARN("SetMaximumFrameLatency: stub: ", max_latency);
 
     return S_OK;
   };
@@ -742,6 +782,10 @@ public:
   };
 
   HANDLE STDMETHODCALLTYPE GetFrameLatencyWaitableObject() override {
+    if (!(desc_.Flags & DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT)) {
+      return nullptr;
+    }
+
     HANDLE result = nullptr;
     HANDLE processHandle = GetCurrentProcess();
 
@@ -830,6 +874,7 @@ private:
   IMTLD3D11DeviceContext* device_context_;
   Com<D3D11ResourceCommon, false> backbuffer_;
   HANDLE present_semaphore_;
+  std::unique_ptr<CpuFence> frame_latency_fence_;
   HWND hWnd;
   HMONITOR monitor_;
   Com<IDXGIOutput1> target_;

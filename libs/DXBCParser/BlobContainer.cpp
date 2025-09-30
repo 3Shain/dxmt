@@ -1,8 +1,6 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT License.
 #include "DXBCUtils.h"
-#include "minwindef.h"
-#include "winerror.h"
 #include "BlobContainer.h"
 
 namespace microsoft {

@@ -2,7 +2,6 @@
 // Licensed under the MIT License.
 
 #include "ShaderBinary.h"
-#include "winerror.h"
 #include <algorithm>
 
 using std::max;

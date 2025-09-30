@@ -92,7 +92,15 @@ Buffer::prepareAllocationViews(BufferAllocation *allocation) {
     info.sample_count = 1;
     info.pixel_format = format;
     info.options = allocation->info_.options;
-    info.usage = WMTTextureUsageShaderRead; // FIXME
+    info.usage = WMTTextureUsageShaderRead;
+    if (!allocation->flags().test(BufferAllocationFlag::GpuReadonly) &&
+        allocation->flags().test(BufferAllocationFlag::GpuManaged)) {
+      info.usage |= WMTTextureUsageShaderWrite;
+      if (format == WMTPixelFormatR32Uint || format == WMTPixelFormatR32Sint ||
+          (format == WMTPixelFormatRG32Uint && device_.supportsFamily(WMTGPUFamilyApple8))) {
+        info.usage |= WMTTextureUsageShaderAtomic;
+      }
+    }
 
     auto view = allocation->obj_.newTexture(info, 0, total_length);
 

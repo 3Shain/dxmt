@@ -52,8 +52,7 @@ MTLD3D11Inspection::MTLD3D11Inspection(WMT::Device pDevice)
   // In metal we don't support double
   m_d3d11Options.ExtendedDoublesShaderInstructions = FALSE;
   m_d3d11Options.ExtendedResourceSharing = TRUE; // wtf
-  // FIXME: check it
-  m_d3d11Options.SAD4ShaderInstructions = FALSE;
+  m_d3d11Options.SAD4ShaderInstructions = TRUE;
   m_d3d11Options.FlagsForUpdateAndCopySeenByDriver = TRUE; // wtf
 #ifdef DXMT_NO_PRIVATE_API
   m_d3d11Options.OutputMergerLogicOp = FALSE;
