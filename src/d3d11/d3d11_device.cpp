@@ -79,8 +79,6 @@ public:
     format_inspector.Inspect(GetMTLDevice());
   }
 
-  ~MTLD3D11DeviceImpl() {}
-
   HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid,
                                            void **ppvObject) override {
     return m_container->QueryInterface(riid, ppvObject);
@@ -89,10 +87,6 @@ public:
   ULONG STDMETHODCALLTYPE AddRef() override { return m_container->AddRef(); }
 
   ULONG STDMETHODCALLTYPE Release() override { return m_container->Release(); }
-
-  void AddRefPrivate() override { return m_container->AddRefPrivate(); }
-
-  void ReleasePrivate() override { return m_container->ReleasePrivate(); }
 
   bool IsTraced() override { return is_traced_; }
 
@@ -1145,10 +1139,6 @@ private:
 
   bool is_traced_;
 
-  std::unordered_map<ManagedShader, Com<IMTLCompiledComputePipeline>>
-      pipelines_cs_;
-  dxmt::mutex mutex_cs_;
-
   StateObjectCache<D3D11_SAMPLER_DESC, D3D11SamplerState> sampler_states;
   StateObjectCache<D3D11_RASTERIZER_DESC2, IMTLD3D11RasterizerState>
       rasterizer_states;
@@ -1157,6 +1147,10 @@ private:
 
   std::unique_ptr<MTLD3D11CommandListPoolBase> commandlist_pool_;
   std::unique_ptr<MTLD3D11PipelineCacheBase> pipeline_cache_;
+  std::unordered_map<ManagedShader, Com<IMTLCompiledComputePipeline>>
+      pipelines_cs_;
+  dxmt::mutex mutex_cs_;
+
   Device& device_;
   /** ensure destructor called first */
   std::unique_ptr<MTLD3D11DeviceContextBase> context_;
@@ -1180,18 +1174,6 @@ public:
         cmd_queue_(this->device->queue()),
         d3d11_device_(this, adapter, feature_level, feature_flags,
                       *this->device.get()) {
-  }
-
-  ~MTLD3D11DXGIDevice() override {}
-
-  bool FinalRelase() override {
-    // FIXME: doesn't reliably work
-    auto t = std::thread([this]() {
-      delete this;
-      ExitThread(0); 
-    });
-    t.detach();
-    return true;
   }
 
   HRESULT

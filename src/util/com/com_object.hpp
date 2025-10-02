@@ -98,20 +98,9 @@ public:
     uint32_t refPrivate = --m_refPrivate;
     if (unlikely(!refPrivate)) {
       m_refPrivate += 0x80000000;
-      if(!FinalRelase())
-        delete this;
+      delete this;
     }
   }
-
-  /**
-   * In certain case we would like to defer destruction,
-   * in case it's too late to do anything intersting
-   * in destructor
-   *
-   * \return true to override default behavior that
-   * will `delete this` immediately.
-   */
-  virtual bool FinalRelase() { return false; }
 
 protected:
   std::atomic<uint32_t> m_refCount = {1ul};

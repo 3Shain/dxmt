@@ -163,6 +163,9 @@ class PipelineCache : public MTLD3D11PipelineCacheBase {
       so_layouts;
   dxmt::mutex mutex_so_;
 
+  std::unordered_map<Sha1Hash, std::unique_ptr<CachedSM50Shader>> shaders_;
+  std::shared_mutex mutex_shares;
+
   std::unordered_map<MTL_GRAPHICS_PIPELINE_DESC,
                      Com<IMTLCompiledGraphicsPipeline>>
       pipelines_;
@@ -177,9 +180,6 @@ class PipelineCache : public MTLD3D11PipelineCacheBase {
                      Com<IMTLCompiledTessellationMeshPipeline>>
       pipelines_ts_;
   dxmt::mutex mutex_ts_;
-
-  std::unordered_map<Sha1Hash, std::unique_ptr<CachedSM50Shader>> shaders_;
-  std::shared_mutex mutex_shares;
 
   HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid,
                                            void **ppvObject) final {

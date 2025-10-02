@@ -36,14 +36,10 @@ public:
   }
 
   void STDMETHODCALLTYPE GetDevice(ID3D11Device **ppDevice) final {
-    *ppDevice = ref(GetParentInterface());
+    *ppDevice = ref(m_parent);
   }
 
 protected:
-  ID3D11Device *GetParentInterface() const {
-    return reinterpret_cast<ID3D11Device *>(m_parent);
-  }
-
   MTLD3D11Device *const m_parent;
 
 private:
@@ -105,23 +101,38 @@ public:
 
   ULONG STDMETHODCALLTYPE AddRef() {
     uint32_t refCount = this->m_refCount++;
-    if (unlikely(!refCount))
+    if (unlikely(!refCount)) {
+      this->AddRefPrivate();
       this->m_parent->AddRef();
-
+    }
     return refCount + 1;
   }
 
   ULONG STDMETHODCALLTYPE Release() {
+    D3D11_ASSERT(m_refCount > 0u && "try to release a 0 reference object");
     uint32_t refCount = --this->m_refCount;
-    D3D11_ASSERT(refCount != ~0u && "try to release a 0 reference object");
-    if (unlikely(!refCount))
+    if (unlikely(!refCount)) {
       this->m_parent->Release();
-
+      this->ReleasePrivate();
+    }
     return refCount;
   }
 
+  virtual void Recycle() {}
+
+  void AddRefPrivate() { ++m_refPrivate; }
+
+  void ReleasePrivate() {
+    D3D11_ASSERT(m_refPrivate > 0u && "try to release a 0 reference object");
+    uint32_t refPrivate = --m_refPrivate;
+    if (unlikely(!refPrivate)) {
+      this->Recycle();
+    }
+  }
+
 protected:
-  std::atomic<uint32_t> m_refCount = {0u};
+  std::atomic<uint32_t> m_refCount = {0ul};
+  std::atomic<uint32_t> m_refPrivate = {0ul};
 };
 
 } // namespace dxmt

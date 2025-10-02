@@ -5008,28 +5008,9 @@ public:
     Reset();
   }
 
-  ULONG
-  STDMETHODCALLTYPE
-  AddRef() override {
-    uint32_t refCount = this->m_refCount++;
-    if (unlikely(!refCount))
-      this->m_parent->AddRef();
-
-    return refCount + 1;
-  }
-
-  ULONG
-  STDMETHODCALLTYPE
-  Release() override {
-    uint32_t refCount = --this->m_refCount;
-    D3D11_ASSERT(refCount != ~0u && "try to release a 0 reference object");
-    if (unlikely(!refCount)) {
-      this->m_parent->Release();
-      Reset();
-      cmdlist_pool->RecycleCommandList(this);
-    }
-
-    return refCount;
+  void Recycle() final {
+    Reset();
+    cmdlist_pool->RecycleCommandList(this);
   }
 
   void

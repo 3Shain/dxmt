@@ -37,9 +37,6 @@ namespace dxmt {
 class MTLD3D11Device : public ID3D11Device5 {
 public:
 
-  virtual void AddRefPrivate() = 0;
-  virtual void ReleasePrivate() = 0;
-
   virtual WMT::Device STDMETHODCALLTYPE GetMTLDevice() = 0;
   /**
   TODO: should ensure pWork is not released before executed

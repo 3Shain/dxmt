@@ -58,8 +58,10 @@ template <typename Task> task_scheduler<Task>::~task_scheduler() {
   destroyed.store(true);
   worker_cond_.notify_all();
 
-  for (auto &worker : workers_)
-    worker.join();
+  for (auto &worker : workers_) {
+    if (worker.joinable())
+      worker.join();
+  }
 
   workers_.clear();
 }
