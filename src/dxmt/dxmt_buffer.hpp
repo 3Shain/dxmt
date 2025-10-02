@@ -88,7 +88,7 @@ public:
   }
 
   DXMT_RESOURCE_RESIDENCY_STATE residencyState;
-  EncoderDepKey depkey;
+  GenericAccessTracker fenceTracker;
 
 private:
   BufferAllocation(WMT::Device device, const WMTBufferInfo &info, Flags<BufferAllocationFlag> flags);
