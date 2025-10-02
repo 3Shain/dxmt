@@ -317,7 +317,7 @@ ArgumentEncodingContext::encodeShaderResources(
       } else if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE) {
         if (uav.buffer.ptr()) {
           assert(arg.Flags & MTL_SM50_SHADER_ARGUMENT_TBUFFER_OFFSET);
-          auto [view, offset] = access(uav.buffer, uav.viewId, DXMT_ENCODER_RESOURCE_ACESS_READ);
+          auto [view, offset] = access(uav.buffer, uav.viewId, access_flags);
           encoded_buffer[arg.StructurePtrOffset] = view.gpu_resource_id;
           encoded_buffer[arg.StructurePtrOffset + 1] =
               ((uint64_t)uav.slice.elementCount << 32) | (uint64_t)(uav.slice.firstElement + offset);
