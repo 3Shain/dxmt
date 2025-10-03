@@ -80,13 +80,17 @@ public:
     // if (pDesc->Usage != D3D11_USAGE_DEFAULT)
     if (pDesc->Usage == D3D11_USAGE_IMMUTABLE)
       flags.set(BufferAllocationFlag::GpuReadonly);
-    if (pDesc->Usage != D3D11_USAGE_DYNAMIC)
+    if (pDesc->Usage != D3D11_USAGE_DYNAMIC) {
       flags.set(BufferAllocationFlag::GpuManaged);
-    else
+    } else {
       flags.set(BufferAllocationFlag::SuballocateFromOnePage);
+#ifdef __i386__
+      flags.set(BufferAllocationFlag::CpuPlaced);
+#endif
+    }
     auto allocation = buffer_->allocate(flags);
     if (pInitialData) {
-      memcpy(allocation->mappedMemory(0), pInitialData->pSysMem, pDesc->ByteWidth);
+      allocation->updateContents(0, pInitialData->pSysMem, pDesc->ByteWidth);
     }
     auto _ = buffer_->rename(std::move(allocation));
     D3D11_ASSERT(_.ptr() == nullptr);

@@ -20,21 +20,21 @@ BufferAllocation::BufferAllocation(WMT::Device device, const WMTBufferInfo &info
     suballocation_count_ = DXMT_PAGE_SIZE / suballocation_size_;
     info_.length = DXMT_PAGE_SIZE;
   }
-#ifdef __i386__
-  placed_buffer = wsi::aligned_malloc(info_.length, DXMT_PAGE_SIZE);
-  info_.memory.set(placed_buffer);
-#endif
+  if (flags_.test(BufferAllocationFlag::CpuPlaced)) {
+    placed_buffer = wsi::aligned_malloc(info_.length, DXMT_PAGE_SIZE);
+    info_.memory.set(placed_buffer);
+  }
   obj_ = device.newBuffer(info_);
   gpuAddress_ = info_.gpu_address;
-  mappedMemory_ = info_.memory.get();
+  mappedMemory_ = info_.memory.get_accessible_or_null();
   depkey = EncoderDepSet::generateNewKey(global_buffer_seq.fetch_add(1));
 };
 
 BufferAllocation::~BufferAllocation() {
-#ifdef __i386__
-  wsi::aligned_free(placed_buffer);
-  placed_buffer = nullptr;
-#endif
+  if (placed_buffer) {
+    wsi::aligned_free(placed_buffer);
+    placed_buffer = nullptr;
+  }
 }
 
 WMT::Texture

@@ -64,6 +64,12 @@ ImmediateContextBase::UseCopySource(Rc<StagingResource> &staging) {
   staging->useCopySource(ctx_state.cmd_queue.CurrentSeqId());
 }
 
+template <>
+std::pair<BufferAllocation *, uint32_t>
+ImmediateContextBase::GetDynamicBufferAllocation(Rc<DynamicBuffer> &dynamic) {
+  return {dynamic->immediateName().ptr(), dynamic->immediateSuballocation()};
+}
+
 class MTLD3D11ImmediateContext : public ImmediateContextBase {
 public:
   MTLD3D11ImmediateContext(MTLD3D11Device *pDevice, CommandQueue &cmd_queue) :

@@ -1164,15 +1164,17 @@ public:
       UINT unused_bind_flag = 0;
       if (auto dynamic = GetDynamicBuffer(pDstResource, &buffer_len, &unused_bind_flag)) {
         D3D11_MAPPED_SUBRESOURCE mapped;
-        if ((copy_len == buffer_len && copy_offset == 0) || (CopyFlags & D3D11_COPY_DISCARD)) {
+        if ((CopyFlags & D3D11_COPY_DISCARD) || (copy_len == buffer_len && copy_offset == 0)) {
           Map(pDstResource, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
-          std::memcpy(reinterpret_cast<char *>(mapped.pData) + copy_offset, pSrcData, copy_len);
+          auto [allocation, sub] = GetDynamicBufferAllocation(dynamic);
+          allocation->updateContents(copy_offset, pSrcData, copy_len, sub);
           Unmap(pDstResource, 0);
           return;
         }
         if (CopyFlags & D3D11_COPY_NO_OVERWRITE) {
           Map(pDstResource, 0, D3D11_MAP_WRITE_NO_OVERWRITE, 0, &mapped);
-          std::memcpy(reinterpret_cast<char *>(mapped.pData) + copy_offset, pSrcData, copy_len);
+          auto [allocation, sub] = GetDynamicBufferAllocation(dynamic);
+          allocation->updateContents(copy_offset, pSrcData, copy_len, sub);
           Unmap(pDstResource, 0);
           return;
         }
@@ -2889,6 +2891,9 @@ public:
   void UseCopyDestination(Rc<StagingResource> &);
   void UseCopySource(Rc<StagingResource> &);
 
+  std::pair<BufferAllocation *, uint32_t>
+  GetDynamicBufferAllocation(Rc<DynamicBuffer> &dynamic);
+
   uint64_t *allocated_encoder_argbuf_size_ = nullptr;
 
   uint64_t PreAllocateArgumentBuffer(size_t size, size_t alignment) {
@@ -3245,8 +3250,10 @@ public:
     EmitST([counter = uav->counter(), value](ArgumentEncodingContext &enc) {
       if (!counter.ptr())
         return;
+      /* TODO: suballocate uav counter */
       auto new_counter = counter->allocate(BufferAllocationFlag::GpuManaged);
-      *reinterpret_cast<uint32_t *>(new_counter->mappedMemory(0 /* TODO: suballocate uav counter */)) = value;
+      int _zero = 0;
+      new_counter->updateContents(0, &_zero, 4);
       new_counter->buffer().didModifyRange(0, 4);
       auto old = counter->rename(std::move(new_counter));
       // TODO: reused discarded buffer
