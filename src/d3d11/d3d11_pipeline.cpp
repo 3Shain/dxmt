@@ -165,6 +165,11 @@ public:
   MTLCompiledComputePipeline(MTLD3D11Device *pDevice, ManagedShader shader)
       : ComObject<IMTLCompiledComputePipeline>(), device_(pDevice) {
     ComputeShader = shader->get_shader(ShaderVariantDefault{});
+    uint32_t total_tgsize = shader->reflection().ThreadgroupSize[0] *
+                            shader->reflection().ThreadgroupSize[1] *
+                            shader->reflection().ThreadgroupSize[2];
+    // FIXME: might be different on AMD GPU, if it's ever supported
+    tgsize_is_multiple_of_sgwidth = (total_tgsize % 32) == 0;
   }
 
   void SubmitWork() final { device_->SubmitThreadgroupWork(this); }
@@ -202,7 +207,7 @@ public:
       return ComputeShader.ptr();
     }
 
-    state_ = device_->GetMTLDevice().newComputePipelineState(cs.Function, err);
+    state_ = device_->GetMTLDevice().newComputePipelineState(cs.Function, tgsize_is_multiple_of_sgwidth, err);
 
     if (!state_) {
       ERR("Failed to create compute PSO: ", err.description().getUTF8String());
@@ -226,6 +231,7 @@ private:
   std::atomic_bool ready_;
   Com<CompiledShader> ComputeShader;
   WMT::Reference<WMT::ComputePipelineState> state_;
+  bool tgsize_is_multiple_of_sgwidth;
 };
 
 Com<IMTLCompiledComputePipeline>

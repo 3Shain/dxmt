@@ -139,6 +139,11 @@ public:
     }
 
     info.raster_sample_count = SampleCount;
+    // so far it's a fixed constant
+    info.mesh_tgsize_is_multiple_of_sgwidth = true;
+    // total threads is 32
+    // FIXME: might be different on AMD GPU, if it's ever supported
+    info.object_tgsize_is_multiple_of_sgwidth = true;
 
     {
       std::lock_guard<dxmt::mutex> lock(ts_global_mutex);
