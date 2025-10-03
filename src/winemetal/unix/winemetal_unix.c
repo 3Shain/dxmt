@@ -559,6 +559,9 @@ _MTLDevice_newMeshRenderPipelineState(void *obj) {
   descriptor.meshFunction = (id<MTLFunction>)info->mesh_function;
   descriptor.fragmentFunction = (id<MTLFunction>)info->fragment_function;
   descriptor.payloadMemoryLength = info->payload_memory_length;
+  
+  descriptor.meshThreadgroupSizeIsMultipleOfThreadExecutionWidth = info->mesh_tgsize_is_multiple_of_sgwidth;
+  descriptor.objectThreadgroupSizeIsMultipleOfThreadExecutionWidth = info->object_tgsize_is_multiple_of_sgwidth;
 
   NSError *err = NULL;
   params->ret_pso =

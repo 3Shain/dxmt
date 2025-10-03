@@ -933,6 +933,8 @@ InitializeMeshRenderPipelineInfo(WMTMeshRenderPipelineInfo &info) {
   info.immutable_mesh_buffers = 0;
   info.immutable_fragment_buffers = 0;
   info.payload_memory_length = 0;
+  info.mesh_tgsize_is_multiple_of_sgwidth = 0;
+  info.object_tgsize_is_multiple_of_sgwidth = 0;
 }
 
 } // namespace WMT

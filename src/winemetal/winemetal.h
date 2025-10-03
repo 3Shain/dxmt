@@ -780,6 +780,8 @@ struct WMTMeshRenderPipelineInfo {
   uint32_t immutable_mesh_buffers;
   uint32_t immutable_fragment_buffers;
   uint16_t payload_memory_length;
+  bool mesh_tgsize_is_multiple_of_sgwidth;
+  bool object_tgsize_is_multiple_of_sgwidth;
 };
 
 WINEMETAL_API obj_handle_t
