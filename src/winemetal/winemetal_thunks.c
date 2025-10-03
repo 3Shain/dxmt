@@ -920,3 +920,13 @@ MTLDevice_newEvent(obj_handle_t device) {
   UNIX_CALL(106, &params);
   return params.ret;
 }
+
+WINEMETAL_API void
+MTLBuffer_updateContents(obj_handle_t buffer, uint64_t offset, struct WMTConstMemoryPointer data, uint64_t length) {
+  struct unixcall_mtlbuffer_updatecontents params;
+  params.buffer = buffer;
+  params.offset = offset;
+  params.data = data;
+  params.length = length;
+  UNIX_CALL(107, &params);
+}

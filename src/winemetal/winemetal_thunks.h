@@ -268,6 +268,13 @@ struct unixcall_query_display_setting_for_layer {
   struct WMTEDRValue edr_value;
 };
 
+struct unixcall_mtlbuffer_updatecontents {
+  obj_handle_t buffer;
+  uint64_t offset;
+  struct WMTConstMemoryPointer data;
+  uint64_t length;
+};
+
 #pragma pack(pop)
 
 #endif

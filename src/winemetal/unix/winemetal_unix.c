@@ -2287,6 +2287,13 @@ _MTLDevice_newEvent(void *obj) {
   return STATUS_SUCCESS;
 }
 
+static NTSTATUS
+_MTLBuffer_updateContents(void *obj) {
+  struct unixcall_mtlbuffer_updatecontents *params = obj;
+  memcpy((void *)((char *)[(id<MTLBuffer>)params->buffer contents] + params->offset), params->data.ptr, params->length);
+  return STATUS_SUCCESS;
+}
+
 const void *__wine_unix_call_funcs[] = {
     &_NSObject_retain,
     &_NSObject_release,
@@ -2395,6 +2402,7 @@ const void *__wine_unix_call_funcs[] = {
     &_MTLSharedEvent_setWin32EventAtValue,
     &_MTLDevice_newFence,
     &_MTLDevice_newEvent,
+    &_MTLBuffer_updateContents,
 };
 
 #ifndef DXMT_NATIVE
@@ -2506,5 +2514,6 @@ const void *__wine_unix_call_wow64_funcs[] = {
     &_MTLSharedEvent_setWin32EventAtValue,
     &_MTLDevice_newFence,
     &_MTLDevice_newEvent,
+    &_MTLBuffer_updateContents,
 };
 #endif

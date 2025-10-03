@@ -140,6 +140,15 @@ struct WMTMemoryPointer {
 #endif
     return ptr;
   }
+
+  void *
+  get_accessible_or_null() {
+#if defined(__i386__)
+    if (high_part)
+      return nullptr;
+#endif
+    return ptr;
+  }
 #endif
 };
 
@@ -1725,5 +1734,8 @@ WINEMETAL_API void MTLSharedEvent_setWin32EventAtValue(obj_handle_t event, void 
 WINEMETAL_API obj_handle_t MTLDevice_newFence(obj_handle_t device);
 
 WINEMETAL_API obj_handle_t MTLDevice_newEvent(obj_handle_t device);
+
+WINEMETAL_API void
+MTLBuffer_updateContents(obj_handle_t buffer, uint64_t offset, struct WMTConstMemoryPointer data, uint64_t length);
 
 #endif

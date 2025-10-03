@@ -259,6 +259,13 @@ public:
   didModifyRange(uint64_t start, uint64_t length) {
     MTLBuffer_didModifyRange(handle, start, length);
   }
+
+  void
+  updateContents(uint64_t offset, const void *data, uint64_t length) {
+    WMTConstMemoryPointer ptr;
+    ptr.set(data);
+    MTLBuffer_updateContents(handle, offset, ptr, length);
+  }
 };
 
 class SamplerState : public Object {
