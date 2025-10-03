@@ -123,6 +123,7 @@ struct unixcall_mtldevice_newcomputepso {
   obj_handle_t function;
   obj_handle_t ret_error;
   obj_handle_t ret_pso;
+  bool tgsize_is_multiple_of_sgwidth;
 };
 
 struct unixcall_mtldevice_newrenderpso {

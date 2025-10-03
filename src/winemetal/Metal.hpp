@@ -719,7 +719,14 @@ public:
   Reference<ComputePipelineState>
   newComputePipelineState(const Function &compute_function, Error &error) {
     return Reference<ComputePipelineState>(
-        MTLDevice_newComputePipelineState(handle, compute_function.handle, &error.handle)
+        MTLDevice_newComputePipelineState(handle, compute_function.handle, false, &error.handle)
+    );
+  }
+
+  Reference<ComputePipelineState>
+  newComputePipelineState(const Function &compute_function, bool tgsize_is_multiple_of_sgwidth, Error &error) {
+    return Reference<ComputePipelineState>(
+        MTLDevice_newComputePipelineState(handle, compute_function.handle, tgsize_is_multiple_of_sgwidth, &error.handle)
     );
   }
 

@@ -341,10 +341,14 @@ static NTSTATUS
 _MTLDevice_newComputePipelineState(void *obj) {
   struct unixcall_mtldevice_newcomputepso *params = obj;
   id<MTLDevice> device = (id<MTLDevice>)params->device;
+  MTLComputePipelineDescriptor *descriptor = [[MTLComputePipelineDescriptor alloc] init];
   NSError *err = NULL;
-  params->ret_pso =
-      (obj_handle_t)[device newComputePipelineStateWithFunction:(id<MTLFunction>)params->function error:&err];
+  descriptor.computeFunction = (id<MTLFunction>)params->function;
+  descriptor.threadGroupSizeIsMultipleOfThreadExecutionWidth = params->tgsize_is_multiple_of_sgwidth;
+  params->ret_pso = (obj_handle_t
+  )[device newComputePipelineStateWithDescriptor:descriptor options:MTLPipelineOptionNone reflection:nil error:&err];
   params->ret_error = (obj_handle_t)err;
+  [descriptor release];
   return STATUS_SUCCESS;
 }
 
