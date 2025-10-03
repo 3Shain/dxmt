@@ -181,22 +181,6 @@ class PipelineCache : public MTLD3D11PipelineCacheBase {
       pipelines_ts_;
   dxmt::mutex mutex_ts_;
 
-  HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid,
-                                           void **ppvObject) final {
-    if (ppvObject == nullptr)
-      return E_POINTER;
-
-    *ppvObject = nullptr;
-
-    if (riid == __uuidof(IUnknown) || riid == __uuidof(ID3D11DeviceChild) ||
-        riid == __uuidof(IMTLD3D11PipeineCache)) {
-      *ppvObject = ref(this);
-      return S_OK;
-    }
-
-    return E_NOINTERFACE;
-  }
-
   CachedSM50Shader *CreateShader(const void *pBytecode,
                                  uint32_t BytecodeLength) {
     auto sha1 = Sha1Hash::compute(pBytecode, BytecodeLength);
@@ -410,10 +394,7 @@ class PipelineCache : public MTLD3D11PipelineCacheBase {
 
 public:
   PipelineCache(MTLD3D11Device *pDevice)
-      : MTLD3D11PipelineCacheBase(pDevice), device(pDevice),
-        blend_states(pDevice), so_layouts(pDevice) {
-
-        };
+      : device(pDevice), blend_states(pDevice), so_layouts(pDevice) {};
 };
 
 std::unique_ptr<MTLD3D11PipelineCacheBase>
