@@ -102,8 +102,8 @@ public:
   ULONG STDMETHODCALLTYPE AddRef() {
     uint32_t refCount = this->m_refCount++;
     if (unlikely(!refCount)) {
-      this->AddRefPrivate();
       this->m_parent->AddRef();
+      this->AddRefPrivate();
     }
     return refCount + 1;
   }
@@ -112,8 +112,8 @@ public:
     D3D11_ASSERT(m_refCount > 0u && "try to release a 0 reference object");
     uint32_t refCount = --this->m_refCount;
     if (unlikely(!refCount)) {
-      this->m_parent->Release();
       this->ReleasePrivate();
+      this->m_parent->Release();
     }
     return refCount;
   }
