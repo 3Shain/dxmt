@@ -107,20 +107,9 @@ convert_dxbc_geometry_shader(
   bool is_strip = false;
 
   uint32_t max_output_register = pShaderInternal->max_output_register;
-  SM50_SHADER_COMPILATION_ARGUMENT_DATA *arg = pArgs;
-  // uint64_t debug_id = ~0u;
-  while (arg) {
-    switch (arg->type) {
-    // case SM50_SHADER_DEBUG_IDENTITY:
-    //   debug_id = ((SM50_SHADER_DEBUG_IDENTITY_DATA *)arg)->id;
-    //   break;
-    case SM50_SHADER_PSO_GEOMETRY_SHADER:
-      is_strip = ((SM50_SHADER_PSO_GEOMETRY_SHADER_DATA *)arg)->strip_topology;
-      break;
-    default:
-      break;
-    }
-    arg = (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)arg->next;
+  SM50_SHADER_PSO_GEOMETRY_SHADER_DATA *pso_data = nullptr;
+  if (args_get_data<SM50_SHADER_PSO_GEOMETRY_SHADER, SM50_SHADER_PSO_GEOMETRY_SHADER_DATA>(pArgs, &pso_data)) {
+    is_strip = pso_data->strip_topology;
   }
 
   IREffect prologue([](auto) { return std::monostate(); });
@@ -512,21 +501,11 @@ convert_dxbc_vertex_for_geometry_shader(
 
   uint32_t max_input_register = pShaderInternal->max_input_register;
   uint32_t max_output_register = pShaderInternal->max_output_register;
-  SM50_SHADER_COMPILATION_ARGUMENT_DATA *arg = pArgs;
   SM50_SHADER_IA_INPUT_LAYOUT_DATA *ia_layout = nullptr;
-  // uint64_t debug_id = ~0u;
-  while (arg) {
-    switch (arg->type) {
-    case SM50_SHADER_IA_INPUT_LAYOUT:
-      ia_layout = ((SM50_SHADER_IA_INPUT_LAYOUT_DATA *)arg);
-      break;    
-    case SM50_SHADER_PSO_GEOMETRY_SHADER:
-      is_strip = ((SM50_SHADER_PSO_GEOMETRY_SHADER_DATA *)arg)->strip_topology;
-      break;
-    default:
-      break;
-    }
-    arg = (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)arg->next;
+  SM50_SHADER_PSO_GEOMETRY_SHADER_DATA *pso_data = nullptr;
+  args_get_data<SM50_SHADER_IA_INPUT_LAYOUT, SM50_SHADER_IA_INPUT_LAYOUT_DATA>(pArgs, &ia_layout);
+  if (args_get_data<SM50_SHADER_PSO_GEOMETRY_SHADER, SM50_SHADER_PSO_GEOMETRY_SHADER_DATA>(pArgs, &pso_data)) {
+    is_strip = pso_data->strip_topology;
   }
 
   bool is_triadj_strip = is_strip && pGeometryStage->gs_input_primitive == D3D10_SB_PRIMITIVE_TRIANGLE_ADJ;

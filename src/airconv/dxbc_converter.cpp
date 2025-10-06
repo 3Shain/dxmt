@@ -412,26 +412,12 @@ llvm::Error convert_dxbc_pixel_shader(
   bool pso_dual_source_blending = false;
   bool pso_disable_depth_output = false;
   uint32_t pso_unorm_output_reg_mask = 0;
-  SM50_SHADER_COMPILATION_ARGUMENT_DATA *arg = pArgs;
-  // uint64_t debug_id = ~0u;
-  while (arg) {
-    switch (arg->type) {
-    case SM50_SHADER_DEBUG_IDENTITY:
-      // debug_id = ((SM50_SHADER_DEBUG_IDENTITY_DATA *)arg)->id;
-      break;
-    case SM50_SHADER_PSO_PIXEL_SHADER:
-      pso_sample_mask = ((SM50_SHADER_PSO_PIXEL_SHADER_DATA *)arg)->sample_mask;
-      pso_dual_source_blending =
-        ((SM50_SHADER_PSO_PIXEL_SHADER_DATA *)arg)->dual_source_blending;
-      pso_disable_depth_output =
-        ((SM50_SHADER_PSO_PIXEL_SHADER_DATA *)arg)->disable_depth_output;
-      pso_unorm_output_reg_mask =
-        ((SM50_SHADER_PSO_PIXEL_SHADER_DATA *)arg)->unorm_output_reg_mask;
-      break;
-    default:
-      break;
-    }
-    arg = (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)arg->next;
+  SM50_SHADER_PSO_PIXEL_SHADER_DATA *pso_data = nullptr;
+  if (args_get_data<SM50_SHADER_PSO_PIXEL_SHADER, SM50_SHADER_PSO_PIXEL_SHADER_DATA>(pArgs, &pso_data)) {
+    pso_dual_source_blending = pso_data->dual_source_blending;
+    pso_disable_depth_output = pso_data->disable_depth_output;
+    pso_unorm_output_reg_mask = pso_data->unorm_output_reg_mask;
+    pso_sample_mask = pso_data->sample_mask;
   }
 
   IREffect prologue([](auto) { return std::monostate(); });
@@ -549,19 +535,6 @@ llvm::Error convert_dxbc_compute_shader(
   auto func_signature = pShaderInternal->func_signature; // copy
   auto shader_info = &(pShaderInternal->shader_info);
 
-  SM50_SHADER_COMPILATION_ARGUMENT_DATA *arg = pArgs;
-  // uint64_t debug_id = ~0u;
-  while (arg) {
-    switch (arg->type) {
-    case SM50_SHADER_DEBUG_IDENTITY:
-      // debug_id = ((SM50_SHADER_DEBUG_IDENTITY_DATA *)arg)->id;
-      break;
-    default:
-      break;
-    }
-    arg = (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)arg->next;
-  }
-
   IREffect prologue([](auto) { return std::monostate(); });
   IRValue epilogue([](struct context ctx) -> pvalue {
     auto retTy = ctx.function->getReturnType();
@@ -635,39 +608,20 @@ llvm::Error convert_dxbc_vertex_shader(
 
   auto func_signature = pShaderInternal->func_signature; // copy
   auto shader_info = &(pShaderInternal->shader_info);
-  auto shader_type = pShaderInternal->shader_type;
 
   uint32_t max_input_register = pShaderInternal->max_input_register;
   uint32_t max_output_register = pShaderInternal->max_output_register;
-  SM50_SHADER_COMPILATION_ARGUMENT_DATA *arg = pArgs;
   SM50_SHADER_EMULATE_VERTEX_STREAM_OUTPUT_DATA *vertex_so = nullptr;
+  args_get_data<SM50_SHADER_EMULATE_VERTEX_STREAM_OUTPUT, SM50_SHADER_EMULATE_VERTEX_STREAM_OUTPUT_DATA>(
+      pArgs, &vertex_so
+  );
   SM50_SHADER_IA_INPUT_LAYOUT_DATA *ia_layout = nullptr;
-  MTL_GEOMETRY_SHADER_PASS_THROUGH *gs_passthrough = nullptr;
-  bool rasterization_disabled = false;
-  // uint64_t debug_id = ~0u;
-  while (arg) {
-    switch (arg->type) {
-    case SM50_SHADER_EMULATE_VERTEX_STREAM_OUTPUT:
-      if (shader_type != microsoft::D3D10_SB_VERTEX_SHADER)
-        break;
-      vertex_so = (SM50_SHADER_EMULATE_VERTEX_STREAM_OUTPUT_DATA *)arg;
-      break;
-    case SM50_SHADER_DEBUG_IDENTITY:
-      // debug_id = ((SM50_SHADER_DEBUG_IDENTITY_DATA *)arg)->id;
-      break;
-    case SM50_SHADER_IA_INPUT_LAYOUT:
-      ia_layout = ((SM50_SHADER_IA_INPUT_LAYOUT_DATA *)arg);
-      break;
-    case SM50_SHADER_GS_PASS_THROUGH:
-      gs_passthrough = &((SM50_SHADER_GS_PASS_THROUGH_DATA *)arg)->Data;
-      rasterization_disabled = ((SM50_SHADER_GS_PASS_THROUGH_DATA *)arg)->RasterizationDisabled;
-      break;
-    default:
-      break;
-    }
-    arg = (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)arg->next;
-  }
-  rasterization_disabled = rasterization_disabled || (vertex_so != nullptr);
+  args_get_data<SM50_SHADER_IA_INPUT_LAYOUT, SM50_SHADER_IA_INPUT_LAYOUT_DATA>(pArgs, &ia_layout);
+  SM50_SHADER_GS_PASS_THROUGH_DATA *gs_passthrough = nullptr;
+  bool rasterization_disabled =
+      (args_get_data<SM50_SHADER_GS_PASS_THROUGH, SM50_SHADER_GS_PASS_THROUGH_DATA>(pArgs, &gs_passthrough) &&
+       gs_passthrough->RasterizationDisabled) ||
+      (vertex_so != nullptr);
 
   IREffect prologue([](auto) { return std::monostate(); });
   IRValue epilogue([](struct context ctx) -> pvalue {
@@ -761,12 +715,12 @@ llvm::Error convert_dxbc_vertex_shader(
   setup_binding_table(shader_info, resource_map, func_signature, module);
 
   uint32_t rta_idx_out = ~0u;
-  if (gs_passthrough && gs_passthrough->RenderTargetArrayIndexReg != 255) {
+  if (gs_passthrough && gs_passthrough->Data.RenderTargetArrayIndexReg != 255) {
     rta_idx_out =
       func_signature.DefineOutput(air::OutputRenderTargetArrayIndex{});
   }
   uint32_t va_idx_out = ~0u;
-  if (gs_passthrough && gs_passthrough->ViewportArrayIndexReg != 255) {
+  if (gs_passthrough && gs_passthrough->Data.ViewportArrayIndexReg != 255) {
     va_idx_out = func_signature.DefineOutput(air::OutputViewportArrayIndex{});
   }
 
@@ -869,8 +823,8 @@ llvm::Error convert_dxbc_vertex_shader(
         ),
         resource_map.output.ptr_int4,
         {builder.getInt32(0),
-         builder.getInt32(gs_passthrough->RenderTargetArrayIndexReg),
-         builder.getInt32(gs_passthrough->RenderTargetArrayIndexComponent)}
+         builder.getInt32(gs_passthrough->Data.RenderTargetArrayIndexReg),
+         builder.getInt32(gs_passthrough->Data.RenderTargetArrayIndexComponent)}
       );
       value = builder.CreateInsertValue(
         value, builder.CreateLoad(types._int, src_ptr), {rta_idx_out}
@@ -882,8 +836,8 @@ llvm::Error convert_dxbc_vertex_shader(
         ),
         resource_map.output.ptr_int4,
         {builder.getInt32(0),
-         builder.getInt32(gs_passthrough->ViewportArrayIndexReg),
-         builder.getInt32(gs_passthrough->ViewportArrayIndexComponent)}
+         builder.getInt32(gs_passthrough->Data.ViewportArrayIndexReg),
+         builder.getInt32(gs_passthrough->Data.ViewportArrayIndexComponent)}
       );
       value = builder.CreateInsertValue(
         value, builder.CreateLoad(types._int, src_ptr), {va_idx_out}

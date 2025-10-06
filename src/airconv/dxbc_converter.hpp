@@ -493,4 +493,22 @@ llvm::Error convert_dxbc_tesselator_domain_shader(
     llvm::Module &module, SM50_SHADER_COMPILATION_ARGUMENT_DATA *pArgs
 );
 
+template <SM50_SHADER_COMPILATION_ARGUMENT_TYPE data_e, typename data_t>
+bool
+args_get_data(const struct SM50_SHADER_COMPILATION_ARGUMENT_DATA *data, data_t **out) {
+  const SM50_SHADER_COMPILATION_ARGUMENT_DATA *arg = data;
+  while (arg) {
+    switch (arg->type) {
+    case data_e:
+      *out = (data_t *)arg;
+      return true;
+    default:
+      break;
+    }
+    arg = (const SM50_SHADER_COMPILATION_ARGUMENT_DATA *)arg->next;
+  }
+  *out = NULL;
+  return false;
+}
+
 } // namespace dxmt::dxbc
