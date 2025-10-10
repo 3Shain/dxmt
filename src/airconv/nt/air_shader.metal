@@ -175,7 +175,7 @@ template <>
 half
 regularize_factor<partitioning::pow2>(half factor) {
   // For pow2 partitioning, TessFactor range is [1,2,4,8,16,32,64].
-  uint clamped = clamp(factor, 1.0h, 64.0h);
+  uint clamped = clamp(ceil(factor), 1.0h, 64.0h);
   return clamped == 1 ? 1 : 1 << (32 - clz(clamped - 1));
 }
 
@@ -436,6 +436,17 @@ gen_workload_quad_impl(
   half out1f = regularize_factor<partition>(out1);
   half out2f = regularize_factor<partition>(out2);
   half out3f = regularize_factor<partition>(out3);
+
+  // workaround: outside edges exist if any of outside factors is greater than 1
+  if (partition != partitioning::fractional_even) {
+    if (out0f > 1.0h || out1f > 1.0h || out2f > 1.0h || out3f > 1.0h) {
+      if (in0f == 1.0h)
+        in0f = regularize_factor<partition>(1.001h); // 1.00097656, FIXME: eventually use fixed point number
+      if (in1f == 1.0h)
+        in1f = regularize_factor<partition>(1.001h);
+    }
+  }
+
   char in0i = get_int_factor<partition>(in0f);
   char in1i = get_int_factor<partition>(in1f);
 
