@@ -117,10 +117,12 @@ struct ShaderVariantTessellationVertexHull {
   uint64_t input_layout_handle;
   uint64_t vertex_shader_handle;
   SM50_INDEX_BUFFER_FORAMT index_buffer_format;
+  uint32_t max_potential_tess_factor;
   bool operator==(const this_type &rhs) const {
     return input_layout_handle == rhs.input_layout_handle &&
            vertex_shader_handle == rhs.vertex_shader_handle &&
-           index_buffer_format == rhs.index_buffer_format;
+           index_buffer_format == rhs.index_buffer_format &&
+           max_potential_tess_factor == rhs.max_potential_tess_factor;
   }
 };
 
@@ -128,10 +130,12 @@ struct ShaderVariantTessellationDomain {
   using this_type = ShaderVariantTessellationDomain;
   uint64_t hull_shader_handle;
   uint32_t gs_passthrough;
+  uint32_t max_potential_tess_factor;
   bool rasterization_disabled;
   bool operator==(const this_type &rhs) const {
     return hull_shader_handle == rhs.hull_shader_handle &&
            gs_passthrough == rhs.gs_passthrough &&
+           max_potential_tess_factor == rhs.max_potential_tess_factor &&
            rasterization_disabled == rhs.rasterization_disabled;
   }
 };

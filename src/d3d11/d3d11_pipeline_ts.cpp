@@ -29,21 +29,35 @@ public:
                                 << i);
     }
 
+    hull_reflection = pDesc->HullShader->reflection();
+    auto &domain_reflection = pDesc->DomainShader->reflection();
+    uint32_t max_potential_factor = domain_reflection.PostTessellator.MaxPotentialTessFactor;
+
+    if (!device_->GetMTLDevice().supportsFamily(WMTGPUFamilyApple9)) {
+      // indeed this value might be too conservative
+      max_potential_factor = 8;
+    }
+    if ((float)max_potential_factor < hull_reflection.Tessellator.MaxFactor) {
+      WARN("maxtessfactor(", hull_reflection.Tessellator.MaxFactor,
+           ") is too large for a mesh pipeline. Clamping to ",
+           max_potential_factor);
+    }
+
     VertexHullShader =
         pDesc->HullShader->get_shader(ShaderVariantTessellationVertexHull{
             (uint64_t)pDesc->InputLayout,
-            (uint64_t)pDesc->VertexShader->handle(), pDesc->IndexBufferFormat});
+            (uint64_t)pDesc->VertexShader->handle(), pDesc->IndexBufferFormat,
+            max_potential_factor});
     DomainShader =
         pDesc->DomainShader->get_shader(ShaderVariantTessellationDomain{
             (uint64_t)pDesc->HullShader->handle(), pDesc->GSPassthrough,
-            !pDesc->RasterizationEnabled});
+            max_potential_factor, !pDesc->RasterizationEnabled});
     if (pDesc->PixelShader) {
       PixelShader = pDesc->PixelShader->get_shader(ShaderVariantPixel{
           pDesc->SampleMask, pDesc->BlendState->IsDualSourceBlending(),
           depth_stencil_format == WMTPixelFormatInvalid,
           unorm_output_reg_mask});
     }
-    hull_reflection = pDesc->HullShader->reflection();
   }
 
   void SubmitWork() { device_->SubmitThreadgroupWork(this); }

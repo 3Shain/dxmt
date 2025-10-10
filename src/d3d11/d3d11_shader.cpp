@@ -182,6 +182,7 @@ CreateVariantShader(MTLD3D11Device *pDevice, ManagedShader shader,
                     ShaderVariantTessellationVertexHull variant) {
   auto proc = [=](const char *func_name) -> sm50_bitcode_t  {
     SM50_SHADER_IA_INPUT_LAYOUT_DATA ia_layout;
+    SM50_SHADER_PSO_TESSELLATOR_DATA pso_tess;
     ia_layout.index_buffer_format = variant.index_buffer_format;
     ia_layout.slot_mask =
         ((ManagedInputLayout)variant.input_layout_handle)->input_slot_mask();
@@ -190,7 +191,10 @@ CreateVariantShader(MTLD3D11Device *pDevice, ManagedShader shader,
             ->input_layout_element(
                 (MTL_SHADER_INPUT_LAYOUT_ELEMENT_DESC **)&ia_layout.elements);
     ia_layout.type = SM50_SHADER_IA_INPUT_LAYOUT;
-    ia_layout.next = nullptr;
+    ia_layout.next = &pso_tess;
+    pso_tess.type = SM50_SHADER_PSO_TESSELLATOR;
+    pso_tess.next = nullptr;
+    pso_tess.max_potential_tess_factor = variant.max_potential_tess_factor;
 
     sm50_bitcode_t compile_result = nullptr;
     sm50_error_t sm50_err = nullptr;
@@ -214,9 +218,13 @@ CreateVariantShader(MTLD3D11Device *pDevice, ManagedShader shader,
                     ShaderVariantTessellationDomain variant) {
   auto proc = [=](const char *func_name) -> sm50_bitcode_t  {
     SM50_SHADER_GS_PASS_THROUGH_DATA gs_passthrough;
+    SM50_SHADER_PSO_TESSELLATOR_DATA pso_tess;
     gs_passthrough.DataEncoded = variant.gs_passthrough;
     gs_passthrough.RasterizationDisabled = variant.rasterization_disabled;
-    gs_passthrough.next = nullptr;
+    gs_passthrough.next = &pso_tess;
+    pso_tess.type = SM50_SHADER_PSO_TESSELLATOR;
+    pso_tess.next = nullptr;
+    pso_tess.max_potential_tess_factor = variant.max_potential_tess_factor;
 
     sm50_bitcode_t compile_result = nullptr;
     sm50_error_t sm50_err = nullptr;
