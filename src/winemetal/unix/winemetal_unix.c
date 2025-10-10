@@ -1707,6 +1707,12 @@ struct SM50_SHADER_PSO_GEOMETRY_SHADER_DATA32 {
   bool strip_topology;
 };
 
+struct SM50_SHADER_PSO_TESSELLATOR_DATA32 {
+  uint32_t next;
+  enum SM50_SHADER_COMPILATION_ARGUMENT_TYPE type;
+  uint32_t max_potential_tess_factor;
+};
+
 void
 sm50_compilation_argument32_convert(
     struct SM50_SHADER_COMPILATION_ARGUMENT_DATA *first_arg, struct SM50_SHADER_COMPILATION_ARGUMENT_DATA32 *args32
@@ -1790,6 +1796,16 @@ sm50_compilation_argument32_convert(
       last_arg->next = NULL;
       data->type = src->type;
       data->strip_topology = src->strip_topology;
+      break;
+    }
+    case SM50_SHADER_PSO_TESSELLATOR: {
+      struct SM50_SHADER_PSO_TESSELLATOR_DATA32 *src = (void *)args32;
+      struct SM50_SHADER_PSO_TESSELLATOR_DATA *data = malloc(sizeof(struct SM50_SHADER_PSO_TESSELLATOR_DATA));
+      last_arg->next = data;
+      last_arg = (void *)data;
+      last_arg->next = NULL;
+      data->type = src->type;
+      data->max_potential_tess_factor = src->max_potential_tess_factor;
       break;
     }
     case SM50_SHADER_ARGUMENT_TYPE_MAX:

@@ -89,6 +89,10 @@ struct MTL_GEOMETRY_SHADER_REFLECTION {
   uint32_t Primitive;
 };
 
+struct MTL_POST_TESSELLATOR_REFLECTION {
+  uint32_t MaxPotentialTessFactor;
+};
+
 struct MTL_SHADER_REFLECTION {
   uint32_t ConstanttBufferTableBindIndex;
   uint32_t ArgumentBufferBindIndex;
@@ -98,6 +102,7 @@ struct MTL_SHADER_REFLECTION {
     uint32_t ThreadgroupSize[3];
     struct MTL_TESSELLATOR_REFLECTION Tessellator;
     struct MTL_GEOMETRY_SHADER_REFLECTION GeometryShader;
+    struct MTL_POST_TESSELLATOR_REFLECTION PostTessellator;
   };
   uint16_t ConstantBufferSlotMask;
   uint16_t SamplerSlotMask;
@@ -193,6 +198,7 @@ enum SM50_SHADER_COMPILATION_ARGUMENT_TYPE {
   SM50_SHADER_IA_INPUT_LAYOUT = 4,
   SM50_SHADER_GS_PASS_THROUGH = 5,
   SM50_SHADER_PSO_GEOMETRY_SHADER = 6,
+  SM50_SHADER_PSO_TESSELLATOR = 7,
   SM50_SHADER_ARGUMENT_TYPE_MAX = 0xffffffff,
 };
 
@@ -271,6 +277,12 @@ struct SM50_SHADER_PSO_GEOMETRY_SHADER_DATA {
   void *next;
   enum SM50_SHADER_COMPILATION_ARGUMENT_TYPE type;
   bool strip_topology;
+};
+
+struct SM50_SHADER_PSO_TESSELLATOR_DATA {
+  void *next;
+  enum SM50_SHADER_COMPILATION_ARGUMENT_TYPE type;
+  uint32_t max_potential_tess_factor;
 };
 
 AIRCONV_API int SM50Initialize(

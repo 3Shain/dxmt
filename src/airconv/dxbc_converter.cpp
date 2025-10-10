@@ -1267,6 +1267,18 @@ AIRCONV_API int SM50Initialize(
         )sm50_shader->tessellator_output_primitive,
       };
     }
+    if (sm50_shader->shader_type == microsoft::D3D11_SB_DOMAIN_SHADER) {
+      uint32_t max_potential_tess_factor = 1;
+
+      for (int tess_factor = 1; tess_factor <= 64; tess_factor++) {
+        auto x = estimate_mesh_size(sm50_shader, tess_factor);
+        if (x > 32768)
+          break;
+        max_potential_tess_factor = tess_factor;
+      }
+
+      pRefl->PostTessellator = {.MaxPotentialTessFactor = max_potential_tess_factor};
+    }
     if (sm50_shader->shader_type == microsoft::D3D10_SB_GEOMETRY_SHADER) {
       if (binding_cbuffer_mask || binding_sampler_mask || binding_uav_mask ||
           binding_srv_hi_mask || binding_srv_lo_mask ||

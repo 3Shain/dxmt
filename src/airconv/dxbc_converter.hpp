@@ -445,8 +445,9 @@ std::vector<std::unique_ptr<BasicBlock>> read_control_flow(
 
 uint32_t next_pow2(uint32_t x);
 
-size_t
-estimate_payload_size(SM50ShaderInternal *pHullStage, float factor, uint32_t patch_per_group);
+size_t estimate_payload_size(SM50ShaderInternal *pHullStage, float factor, uint32_t patch_per_group);
+
+size_t estimate_mesh_size(SM50ShaderInternal *pDomainStage, uint32_t max_potential_factor_int);
 
 constexpr uint32_t kConstantBufferBindIndex = 29;
 constexpr uint32_t kArgumentBufferBindIndex = 30;

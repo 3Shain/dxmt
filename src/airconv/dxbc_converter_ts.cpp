@@ -106,8 +106,7 @@ get_integer_factor(float factor, SM50ShaderInternal *pHullStage) {
 }
 
 uint32_t
-get_max_potential_workload_count(float factor, SM50ShaderInternal *pHullStage) {
-  uint32_t max_tess_factor = get_integer_factor(factor, pHullStage);
+get_max_potential_workload_count(uint32_t max_tess_factor, SM50ShaderInternal *pHullStage) {
 
   switch (pHullStage->tessellation_domain) {
   case microsoft::D3D11_SB_TESSELLATOR_DOMAIN_UNDEFINED:
@@ -130,12 +129,50 @@ estimate_payload_size(SM50ShaderInternal *pHullStage, float factor, uint32_t pat
   auto pc_size_per_patch = sizeof(uint32_t) * pHullStage->patch_constant_scalars.size();
   auto pc_size_per_group = pc_size_per_patch * patch_per_group;
 
-  uint32_t max_workload_count = get_max_potential_workload_count(factor, pHullStage);
+  auto factor_int = get_integer_factor(factor, pHullStage);
+  uint32_t max_workload_count = get_max_potential_workload_count(factor_int, pHullStage);
   constexpr uint32_t size_workload_info = sizeof(TessMeshWorkload);
 
   return cp_size_per_group + pc_size_per_group + sizeof(uint32_t) +
          max_workload_count * patch_per_group * size_workload_info;
 };
+
+size_t estimate_mesh_size(SM50ShaderInternal *pDomainStage, uint32_t max_potential_factor_int) {
+  /*
+  to calculate mesh size:
+  max_vertex_count * size_per_vertex
+  = calc_max_vertex_count(tess_factor) * ds_output_register_count * sizeof(vec4)
+
+  NOTE: it assumes 1.all output registers are vec4 2.primitive count <= vertex count
+  */
+  size_t size_per_vertex = pDomainStage->max_output_register * 16;
+  size_t max_edge_point = max_potential_factor_int + 1;
+  return ((max_edge_point + 2 - (max_edge_point & 1)) * 2 + 1) * size_per_vertex;
+}
+
+std::pair<float, uint32_t>
+get_final_maxtessfactor(SM50ShaderInternal *pHullStage, SM50_SHADER_COMPILATION_ARGUMENT_DATA *pArgs) {
+  /*
+  the factor recevied by domain (mesh) shader will be strictly less or equal to returned value
+  so we can reserve enough spaces for output mesh
+  */
+  float maxtessfactor = pHullStage->max_tesselation_factor;
+  uint32_t maxtessfactor_int = get_integer_factor(maxtessfactor, pHullStage);
+  SM50_SHADER_PSO_TESSELLATOR_DATA *pso_tess = nullptr;
+  if (args_get_data<SM50_SHADER_PSO_TESSELLATOR, SM50_SHADER_PSO_TESSELLATOR_DATA>(pArgs, &pso_tess) &&
+      maxtessfactor_int > pso_tess->max_potential_tess_factor) {
+    maxtessfactor = pso_tess->max_potential_tess_factor;
+    do {
+      maxtessfactor_int = get_integer_factor(maxtessfactor, pHullStage);
+      if (maxtessfactor_int <= pso_tess->max_potential_tess_factor)
+        return {maxtessfactor, maxtessfactor_int};
+      maxtessfactor = maxtessfactor - 1.0f;
+    } while (maxtessfactor > 1.0f);
+    auto mininal_factor = get_integer_factor(1.0f, pHullStage);
+    return {mininal_factor, mininal_factor};
+  }
+  return {maxtessfactor, maxtessfactor_int};
+}
 
 llvm::Error
 convert_dxbc_vertex_hull_shader(
@@ -160,6 +197,8 @@ convert_dxbc_vertex_hull_shader(
   }
   uint32_t max_hs_output_register = pHullStage->max_output_register;
   uint32_t max_patch_constant_output_register = pHullStage->max_patch_constant_output_register;
+
+  auto [final_maxtessfactor, factor_int] = get_final_maxtessfactor(pHullStage, pArgs);
 
   SM50_SHADER_IA_INPUT_LAYOUT_DATA *ia_layout = nullptr;
   args_get_data<SM50_SHADER_IA_INPUT_LAYOUT, SM50_SHADER_IA_INPUT_LAYOUT_DATA>(pArgs, &ia_layout);
@@ -217,8 +256,7 @@ convert_dxbc_vertex_hull_shader(
   auto hs_pcout_per_patch_scaler_type = llvm::ArrayType::get(types._int, pHullStage->patch_constant_scalars.size());
   auto hs_pcout_per_group_scaler_type = llvm::ArrayType::get(hs_pcout_per_patch_scaler_type, patch_per_group);
 
-  float final_tessfactor = pHullStage->max_tesselation_factor; // TODO: final clamp
-  uint32_t max_workload_count = get_max_potential_workload_count(final_tessfactor, pHullStage);
+  uint32_t max_workload_count = get_max_potential_workload_count(factor_int, pHullStage);
 
   func_signature.UseMaxMeshWorkgroupSize(max_workload_count);
 
@@ -569,7 +607,7 @@ convert_dxbc_vertex_hull_shader(
     std::array<llvm::Value *, 6> tess_factors;
     tess_factors.fill(air.getFloat(0));
 
-    auto max_tess_factor_value = air.getFloat(get_integer_factor(final_tessfactor, pHullStage));
+    auto max_tess_factor_value = air.getFloat(final_maxtessfactor);
 
     for (unsigned i = 0; i < pHullStage->patch_constant_scalars.size(); i++) {
       auto pc_scalar = pHullStage->patch_constant_scalars[i];
@@ -677,6 +715,8 @@ convert_dxbc_tesselator_domain_shader(
       (args_get_data<SM50_SHADER_GS_PASS_THROUGH, SM50_SHADER_GS_PASS_THROUGH_DATA>(pArgs, &gs_passthrough) &&
        gs_passthrough->RasterizationDisabled);
 
+  auto [final_maxtessfactor, factor_int] = get_final_maxtessfactor(pHullStage, pArgs);
+
   IREffect prologue([](auto) { return std::monostate(); });
   IRValue epilogue([](struct context ctx) -> pvalue {
     return nullptr; // a mesh shader...
@@ -724,11 +764,9 @@ convert_dxbc_tesselator_domain_shader(
   auto hs_pcout_per_patch_scaler_type = llvm::ArrayType::get(types._int, pHullStage->patch_constant_scalars.size());
   auto hs_pcout_per_group_scaler_type = llvm::ArrayType::get(hs_pcout_per_patch_scaler_type, patch_per_group);
 
-  float final_tessfactor = pHullStage->max_tesselation_factor; // TODO: final clamp
-
   // n segments has n + 1 points
-  uint32_t max_edge_point = get_integer_factor(final_tessfactor, pHullStage) + 1;
-  uint32_t max_workload_count = get_max_potential_workload_count(final_tessfactor, pHullStage);
+  uint32_t max_edge_point = factor_int + 1;
+  uint32_t max_workload_count = get_max_potential_workload_count(factor_int, pHullStage);
   constexpr uint32_t size_workload_info = sizeof(TessMeshWorkload);
   auto payload_struct_type = llvm::StructType::create(
       context,
