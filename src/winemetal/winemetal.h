@@ -1334,6 +1334,7 @@ struct wmtcmd_render_dxmt_geometry_draw_indirect {
   enum WMTRenderCommandType type;
   uint16_t reserved[3];
   struct WMTMemoryPointer next;
+  obj_handle_t imm_draw_arguments;
   obj_handle_t indirect_args_buffer;
   uint64_t indirect_args_offset;
   obj_handle_t dispatch_args_buffer;
@@ -1347,6 +1348,7 @@ struct wmtcmd_render_dxmt_geometry_draw_indexed_indirect {
   struct WMTMemoryPointer next;
   obj_handle_t index_buffer;
   uint64_t index_buffer_offset;
+  obj_handle_t imm_draw_arguments;
   obj_handle_t indirect_args_buffer;
   uint64_t indirect_args_offset;
   obj_handle_t dispatch_args_buffer;
@@ -1390,6 +1392,7 @@ struct wmtcmd_render_dxmt_tessellation_mesh_draw_indirect {
   enum WMTRenderCommandType type;
   uint16_t reserved[3];
   struct WMTMemoryPointer next;
+  obj_handle_t imm_draw_arguments;
   obj_handle_t indirect_args_buffer;
   uint64_t indirect_args_offset;
   obj_handle_t dispatch_args_buffer;
@@ -1402,6 +1405,7 @@ struct wmtcmd_render_dxmt_tessellation_mesh_draw_indexed_indirect {
   enum WMTRenderCommandType type;
   uint16_t reserved[3];
   struct WMTMemoryPointer next;
+  obj_handle_t imm_draw_arguments;
   obj_handle_t indirect_args_buffer;
   uint64_t indirect_args_offset;
   obj_handle_t dispatch_args_buffer;

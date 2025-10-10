@@ -950,7 +950,7 @@ _MTLRenderCommandEncoder_encodeCommands(void *obj) {
                                  indirectBufferOffset:body->dispatch_args_offset
                           threadsPerObjectThreadgroup:MTLSizeMake(body->vertex_per_warp, 1, 1)
                             threadsPerMeshThreadgroup:MTLSizeMake(1, 1, 1)];
-      [encoder setObjectBuffer:(id<MTLBuffer>)body->dispatch_args_buffer offset:0 atIndex:21];
+      [encoder setObjectBuffer:(id<MTLBuffer>)body->imm_draw_arguments offset:0 atIndex:21];
       break;
     }
     case WMTRenderCommandDXMTGeometryDrawIndexedIndirect: {
@@ -962,7 +962,7 @@ _MTLRenderCommandEncoder_encodeCommands(void *obj) {
                                  indirectBufferOffset:body->dispatch_args_offset
                           threadsPerObjectThreadgroup:MTLSizeMake(body->vertex_per_warp, 1, 1)
                             threadsPerMeshThreadgroup:MTLSizeMake(1, 1, 1)];
-      [encoder setObjectBuffer:(id<MTLBuffer>)body->dispatch_args_buffer offset:0 atIndex:21];
+      [encoder setObjectBuffer:(id<MTLBuffer>)body->imm_draw_arguments offset:0 atIndex:21];
       break;
     }
     case WMTRenderCommandDXMTTessellationMeshDraw: {
@@ -990,7 +990,7 @@ _MTLRenderCommandEncoder_encodeCommands(void *obj) {
                                  indirectBufferOffset:body->dispatch_args_offset
                           threadsPerObjectThreadgroup:MTLSizeMake(body->threads_per_patch, body->patch_per_group, 1)
                             threadsPerMeshThreadgroup:MTLSizeMake(32, 1, 1)];
-      [encoder setObjectBuffer:(id<MTLBuffer>)body->dispatch_args_buffer offset:0 atIndex:21];
+      [encoder setObjectBuffer:(id<MTLBuffer>)body->imm_draw_arguments offset:0 atIndex:21];
       break;
     }
     case WMTRenderCommandDXMTTessellationMeshDrawIndexedIndirect: {
@@ -1002,7 +1002,7 @@ _MTLRenderCommandEncoder_encodeCommands(void *obj) {
                                  indirectBufferOffset:body->dispatch_args_offset
                           threadsPerObjectThreadgroup:MTLSizeMake(body->threads_per_patch, body->patch_per_group, 1)
                             threadsPerMeshThreadgroup:MTLSizeMake(32, 1, 1)];
-      [encoder setObjectBuffer:(id<MTLBuffer>)body->dispatch_args_buffer offset:0 atIndex:21];
+      [encoder setObjectBuffer:(id<MTLBuffer>)body->imm_draw_arguments offset:0 atIndex:21];
       break;
     }
     case WMTRenderCommandUpdateFence: {

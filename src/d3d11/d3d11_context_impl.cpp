@@ -1601,6 +1601,7 @@ public:
         cmd.vertex_per_warp = vertex_per_warp;
         cmd.indirect_args_buffer = buffer->buffer();
         cmd.indirect_args_offset = buffer_offset + AlignedByteOffsetForArgs;
+        cmd.imm_draw_arguments = enc.getFinalArgumentBuffer();
       });
     }
   }
@@ -1633,6 +1634,7 @@ public:
         cmd.indirect_args_offset = AlignedByteOffsetForArgs + buffer_offset;
         cmd.index_buffer = index_buffer;
         cmd.index_buffer_offset = IndexBufferOffset + index_sub_offset;
+        cmd.imm_draw_arguments = enc.getFinalArgumentBuffer();
       });
     }
   }
@@ -1663,6 +1665,7 @@ public:
         cmd.threads_per_patch = ThreadsPerPatch;
         cmd.indirect_args_buffer = buffer->buffer();
         cmd.indirect_args_offset = buffer_offset + AlignedByteOffsetForArgs;
+        cmd.imm_draw_arguments = enc.getFinalArgumentBuffer();
       });
     }
   }
@@ -1698,6 +1701,7 @@ public:
         cmd.indirect_args_offset = AlignedByteOffsetForArgs + buffer_offset;
         cmd.index_buffer = index_buffer;
         cmd.index_buffer_offset = IndexBufferOffset + index_sub_offset;
+        cmd.imm_draw_arguments = enc.getFinalArgumentBuffer();
       });
     }
   }

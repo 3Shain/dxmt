@@ -615,6 +615,14 @@ public:
     return reinterpret_cast<RenderEncoderData *>(encoder_current)->allocated_argbuf_offset + offset;
   }
 
+  template <bool ComputeCommandEncoder = false>
+  WMT::Buffer
+  getFinalArgumentBuffer() {
+    if constexpr (ComputeCommandEncoder)
+      return reinterpret_cast<ComputeEncoderData *>(encoder_current)->allocated_argbuf;
+    return reinterpret_cast<RenderEncoderData *>(encoder_current)->allocated_argbuf;
+  }
+
   std::pair<WMT::Buffer , size_t> allocateTempBuffer(size_t size, size_t alignment);
   
   AllocatedTempBufferSlice allocateTempBuffer1(size_t size, size_t alignment);
