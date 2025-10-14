@@ -293,7 +293,7 @@ gen_workload_triangle_impl(
       emit_tess_mesh_workload<partition>(
         workloads, out_count,
         _001i, _100i, _001x, _100x, half(in0f - 2.0h * (r + 1)), half(r == 0 ? out1f : (in0f - 2.0h * (r))), 
-        _100i, _010i, _100x, _010x, half(in0f - 2.0h * (r + 1)), half(r == 0 ? out1f : (in0f - 2.0h * (r))), 
+        _100i, _010i, _100x, _010x, half(in0f - 2.0h * (r + 1)), half(r == 0 ? out2f : (in0f - 2.0h * (r))), 
         patch_index, true
       );
       if (in0 & 1) {
@@ -304,14 +304,14 @@ gen_workload_triangle_impl(
 
         emit_tess_mesh_workload<partition>(
           workloads, out_count,
-          _010i, _001i, _010x, _001x, half(in0f - 2.0h * (r + 1)), half(r == 0 ? out1f : (in0f - 2.0h * (r))), 
+          _010i, _001i, _010x, _001x, half(in0f - 2.0h * (r + 1)), half(r == 0 ? out0f : (in0f - 2.0h * (r))), 
           _010xp.xy, _010xp.xy, _001xp.xy, _100xp.xy, 0.0h, 1.0h,
           patch_index, true
         );
       } else {
         emit_tess_mesh_workload<partition>(
           workloads, out_count,
-          _010i, _001i, _010x, _001x, half(in0f - 2.0h * (r + 1)), half(r == 0 ? out1f : (in0f - 2.0h * (r))), 
+          _010i, _001i, _010x, _001x, half(in0f - 2.0h * (r + 1)), half(r == 0 ? out0f : (in0f - 2.0h * (r))), 
           _C, _C, _C, _C, 0, 0,
           patch_index, false
         );
