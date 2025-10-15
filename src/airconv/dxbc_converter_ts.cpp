@@ -16,8 +16,8 @@ struct TessMeshWorkload {
   short inner1[2];
   short outer0[2];
   short outer1[2];
-  short inner_factor;
-  short outer_factor;
+  int inner_factor;
+  int outer_factor;
   char inner_factor_i;
   char outer_factor_i;
   bool has_complement;
@@ -26,8 +26,8 @@ struct TessMeshWorkload {
   short inner3[2];
   short outer2[2];
   short outer3[2];
-  short inner_factor_23;
-  short outer_factor_23;
+  int inner_factor_23;
+  int outer_factor_23;
   char inner_factor_23_i;
   char outer_factor_23_i;
   short patch_index;
