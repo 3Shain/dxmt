@@ -32,6 +32,7 @@ DxgiOptions::DxgiOptions(const Config &config) {
       parsePciId(config.getOption<std::string>("dxgi.customDeviceId"));
   this->customDeviceDesc =
       config.getOption<std::string>("dxgi.customDeviceDesc", "");
+  this->forceSDR = config.getOption<bool>("dxgi.forceSDR", false);
 }
 
 } // namespace dxmt

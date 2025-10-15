@@ -19,6 +19,7 @@ struct DxgiOptions {
   int32_t customVendorId;
   int32_t customDeviceId;
   std::string customDeviceDesc;
+  bool forceSDR;
 };
 
 } // namespace dxmt

@@ -5,6 +5,7 @@
 #include "com/com_pointer.hpp"
 #include "dxgi_interfaces.h"
 #include "dxgi_object.hpp"
+#include "dxgi_options.hpp"
 #include "dxmt_format.hpp"
 #include "log/log.hpp"
 #include "util_string.hpp"
@@ -135,8 +136,8 @@ void FilterModesByDesc(std::vector<DXGI_MODE_DESC1> &Modes,
 
 class MTLDXGIOutput : public MTLDXGIObject<IDXGIOutput6> {
 public:
-  MTLDXGIOutput(IMTLDXGIAdapter *adapter, HMONITOR monitor)
-      : adapter_(adapter), monitor_(monitor) {
+  MTLDXGIOutput(IMTLDXGIAdapter *adapter, HMONITOR monitor, DxgiOptions &options)
+      : adapter_(adapter), monitor_(monitor), options_(options) {
     WMTGetDisplayDescription(monitor_ == wsi::getDefaultMonitor()
                                  ? WMTGetPrimaryDisplayId()
                                  : WMTGetSecondaryDisplayId(),
@@ -556,10 +557,17 @@ public:
     pDesc->AttachedToDesktop = 1;
     pDesc->Rotation = DXGI_MODE_ROTATION_UNSPECIFIED;
     pDesc->Monitor = monitor_;
-    pDesc->BitsPerColor = native_desc_.maximum_potential_edr_color_component_value > 1 ? 10: 8;
-    pDesc->ColorSpace = native_desc_.maximum_potential_edr_color_component_value > 1
-            ? DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020
-            : DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709;
+    if (options_.forceSDR) {
+      pDesc->BitsPerColor = 8;
+      pDesc->ColorSpace = DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709;
+    } else {
+      pDesc->BitsPerColor =
+          native_desc_.maximum_potential_edr_color_component_value > 1 ? 10 : 8;
+      pDesc->ColorSpace =
+          native_desc_.maximum_potential_edr_color_component_value > 1
+              ? DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020
+              : DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709;
+    }
     memcpy(pDesc->RedPrimary, native_desc_.red_primaries, 8);
     memcpy(pDesc->GreenPrimary, native_desc_.green_primaries, 8);
     memcpy(pDesc->BluePrimary, native_desc_.blue_primaries, 8);
@@ -597,10 +605,11 @@ private:
   Com<IMTLDXGIAdapter> adapter_ = nullptr;
   HMONITOR monitor_ = nullptr;
   WMTDisplayDescription native_desc_;
+  DxgiOptions &options_;
 };
 
-Com<IDXGIOutput> CreateOutput(IMTLDXGIAdapter *pAadapter, HMONITOR monitor) {
-  return Com<IDXGIOutput>::transfer(new MTLDXGIOutput(pAadapter, monitor));
+Com<IDXGIOutput> CreateOutput(IMTLDXGIAdapter *pAadapter, HMONITOR monitor, DxgiOptions &options) {
+  return Com<IDXGIOutput>::transfer(new MTLDXGIOutput(pAadapter, monitor, options));
 };
 
 } // namespace dxmt

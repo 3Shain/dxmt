@@ -11,7 +11,7 @@
 
 namespace dxmt {
 
-Com<IDXGIOutput> CreateOutput(IMTLDXGIAdapter *pAadapter, HMONITOR monitor);
+Com<IDXGIOutput> CreateOutput(IMTLDXGIAdapter *pAadapter, HMONITOR monitor, DxgiOptions &options);
 
 class MTLDXGIAdatper : public MTLDXGIObject<IMTLDXGIAdapter> {
 public:
@@ -169,7 +169,7 @@ public:
     if (monitor == nullptr)
       return DXGI_ERROR_NOT_FOUND;
 
-    *ppOutput = CreateOutput(this, monitor);
+    *ppOutput = CreateOutput(this, monitor, options);
     return S_OK;
   }
   HRESULT STDMETHODCALLTYPE
