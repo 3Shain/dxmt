@@ -1376,6 +1376,14 @@ AIRCONV_API int SM50Compile(
 
   linkShader(*pModule);
 
+  // Workaround of the crazy planet generation shaders in _Elite Dangerous_
+  {
+    auto sm50_shader = ((dxmt::dxbc::SM50ShaderInternal *)pShader);
+    if (shader_type == microsoft::D3D11_SB_COMPUTE_SHADER && sm50_shader->bbs.size() > 500) {
+      runOptimizationPasses(*pModule, OptimizationLevel::O2);
+    }
+  }
+
   // Serialize AIR
   auto compiled = new SM50CompiledBitcodeInternal();
 
