@@ -1240,6 +1240,11 @@ AIRCONV_API int SM50Initialize(
     }
     if (sm50_shader->shader_type == microsoft::D3D11_SB_HULL_SHADER) {
       auto threads_per_patch = next_pow2(sm50_shader->hull_maximum_threads_per_patch);
+      if (threads_per_patch > 32) {
+        errorOut << "Threadgroup size of tessellation pipeline is too large.";
+        *ppError = (sm50_error_t)errorObj;
+        return 1;
+      }
       auto patch_per_group = 32 / threads_per_patch;
       float max_tesselation_factor = sm50_shader->max_tesselation_factor;
 
