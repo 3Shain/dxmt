@@ -155,6 +155,9 @@ private:
   WMT::Device device;
   WMT::Reference<WMT::CommandQueue> commandQueue;
 
+  obj_handle_t shared_event_listener;
+  dxmt::thread event_listener_thread;
+
   friend class CommandChunk;
   uint64_t
   GetNextEncoderId() {
@@ -210,6 +213,10 @@ public:
   SignaledEventSeqId() {
     return event.signaledValue();
   };
+
+  obj_handle_t GetSharedEventListener() {
+    return shared_event_listener;
+  }
 
   /**
   This is not thread-safe!

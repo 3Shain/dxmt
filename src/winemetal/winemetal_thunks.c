@@ -898,11 +898,14 @@ MTLSharedEvent_signalValue(obj_handle_t event, uint64_t value) {
 }
 
 WINEMETAL_API void
-MTLSharedEvent_setWin32EventAtValue(obj_handle_t event, void *nt_event_handle, uint64_t at_value) {
-  struct unixcall_generic_obj_obj_uint64_noret params;
-  params.handle = event;
-  params.arg0 = (obj_handle_t)PtrToUInt64(nt_event_handle);
-  params.arg1 = at_value;
+MTLSharedEvent_setWin32EventAtValue(
+    obj_handle_t event, obj_handle_t shared_event_listener, void *nt_event_handle, uint64_t at_value
+) {
+  struct unixcall_mtlsharedevent_setevent params;
+  params.shared_event = event;
+  params.shared_event_listener = shared_event_listener;
+  params.event_handle = (obj_handle_t)PtrToUInt64(nt_event_handle);
+  params.value = at_value;
   UNIX_CALL(104, &params);
 }
 
@@ -932,4 +935,25 @@ MTLBuffer_updateContents(obj_handle_t buffer, uint64_t offset, struct WMTConstMe
   params.data = data;
   params.length = length;
   UNIX_CALL(107, &params);
+}
+
+WINEMETAL_API obj_handle_t
+SharedEventListener_create() {
+  struct unixcall_generic_obj_ret params;
+  UNIX_CALL(108, &params);
+  return params.ret;
+}
+
+WINEMETAL_API void
+SharedEventListener_start(obj_handle_t event_queue) {
+  struct unixcall_generic_obj_noret params;
+  params.handle = event_queue;
+  UNIX_CALL(109, &params);
+}
+
+WINEMETAL_API void
+SharedEventListener_destroy(obj_handle_t event_queue) {
+  struct unixcall_generic_obj_noret params;
+  params.handle = event_queue;
+  UNIX_CALL(110, &params);
 }

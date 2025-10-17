@@ -276,6 +276,13 @@ struct unixcall_mtlbuffer_updatecontents {
   uint64_t length;
 };
 
+struct unixcall_mtlsharedevent_setevent {
+  obj_handle_t shared_event;
+  obj_handle_t event_handle;
+  obj_handle_t shared_event_listener;
+  uint64_t value;
+};
+
 #pragma pack(pop)
 
 #endif

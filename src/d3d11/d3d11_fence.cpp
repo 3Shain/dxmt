@@ -42,7 +42,8 @@ public:
 
   HRESULT STDMETHODCALLTYPE SetEventOnCompletion(UINT64 Value,
                                                  HANDLE Event) final {
-    MTLSharedEvent_setWin32EventAtValue(event.handle, Event, Value);
+    auto shared_event_listener = this->m_parent->GetDXMTDevice().queue().GetSharedEventListener();
+    MTLSharedEvent_setWin32EventAtValue(event.handle, shared_event_listener, Event, Value);
     return S_OK;
   };
 };

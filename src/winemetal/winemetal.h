@@ -1736,7 +1736,9 @@ WINEMETAL_API void MTLCommandBuffer_encodeWaitForEvent(obj_handle_t cmdbuf, obj_
 
 WINEMETAL_API void MTLSharedEvent_signalValue(obj_handle_t event, uint64_t value);
 
-WINEMETAL_API void MTLSharedEvent_setWin32EventAtValue(obj_handle_t event, void *nt_event_handle, uint64_t at_value);
+WINEMETAL_API void MTLSharedEvent_setWin32EventAtValue(
+    obj_handle_t event, obj_handle_t shared_event_listener, void *nt_event_handle, uint64_t at_value
+);
 
 WINEMETAL_API obj_handle_t MTLDevice_newFence(obj_handle_t device);
 
@@ -1744,5 +1746,11 @@ WINEMETAL_API obj_handle_t MTLDevice_newEvent(obj_handle_t device);
 
 WINEMETAL_API void
 MTLBuffer_updateContents(obj_handle_t buffer, uint64_t offset, struct WMTConstMemoryPointer data, uint64_t length);
+
+WINEMETAL_API obj_handle_t SharedEventListener_create();
+
+WINEMETAL_API void SharedEventListener_start(obj_handle_t shared_event_listener);
+
+WINEMETAL_API void SharedEventListener_destroy(obj_handle_t shared_event_listener);
 
 #endif

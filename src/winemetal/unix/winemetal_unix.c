@@ -1,6 +1,8 @@
+#include <stdatomic.h>
 #include <dlfcn.h>
 #import <Cocoa/Cocoa.h>
 #import <ColorSync/ColorSync.h>
+#import <CoreFoundation/CFRunLoop.h>
 #import <Metal/Metal.h>
 #import <MetalFX/MetalFX.h>
 #import <QuartzCore/QuartzCore.h>
@@ -2269,31 +2271,102 @@ _MTLSharedEvent_signalValue(void *obj) {
 }
 
 #ifndef DXMT_NATIVE
+
+typedef struct {
+  _Atomic(CFRunLoopRef) runloop_ref;
+  MTLSharedEventListener *shared_listener;
+} *shared_event_listener_t;
+
 extern NTSTATUS NtSetEvent(void *handle, void *prev_state);
 
 static NTSTATUS
 _MTLSharedEvent_setWin32EventAtValue(void *obj) {
-  static MTLSharedEventListener *shared_listener = nil;
-  static dispatch_once_t pred;
-  dispatch_once(&pred, ^{
-    shared_listener = [[MTLSharedEventListener alloc] init];
-  });
-
-  struct unixcall_generic_obj_obj_uint64_noret *params = obj;
-  void *nt_event_handle = (void *)params->arg0;
-  [(id<MTLSharedEvent>)params->handle notifyListener:shared_listener
-                                             atValue:params->arg1
-                                               block:^(id<MTLSharedEvent> _e, uint64_t _v) {
-                                                 NtSetEvent(nt_event_handle, NULL);
-                                               }];
+  struct unixcall_mtlsharedevent_setevent *params = obj;
+  void *nt_event_handle = (shared_event_listener_t)params->event_handle;
+  shared_event_listener_t q = (shared_event_listener_t)params->shared_event_listener;
+  [(id<MTLSharedEvent>)params->shared_event
+      notifyListener:q->shared_listener
+             atValue:params->value
+               block:^(id<MTLSharedEvent> _e, uint64_t _v) {
+                 // NOTE: must ensure no more notification comes after listener been destroyed.
+                 while (!atomic_load_explicit(&q->runloop_ref, memory_order_acquire)) {
+#if defined(__x86_64__)
+                   _mm_pause();
+#elif defined(__aarch64__)
+          __asm__ __volatile__("yield");
+#endif
+                 }
+                 CFRunLoopPerformBlock(q->runloop_ref, kCFRunLoopCommonModes, ^{
+                   NtSetEvent(nt_event_handle, NULL);
+                 });
+                 CFRunLoopWakeUp(q->runloop_ref);
+               }];
   return STATUS_SUCCESS;
 }
+
+static NTSTATUS
+_SharedEventListener_start(void *obj) {
+  struct unixcall_generic_obj_noret *params = obj;
+  shared_event_listener_t q = (shared_event_listener_t)params->handle;
+  CFRunLoopRef uninited = NULL;
+  if (q && atomic_compare_exchange_strong(&q->runloop_ref, &uninited, CFRunLoopGetCurrent())) {
+    /* Add a dummy source so the runloop stays running */
+    CFRunLoopSourceContext source_context = {0};
+    CFRunLoopSourceRef source = CFRunLoopSourceCreate(NULL, 0, &source_context);
+    CFRunLoopAddSource(q->runloop_ref, source, kCFRunLoopCommonModes);
+    CFRunLoopRun();
+  }
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_SharedEventListener_create(void *obj) {
+  struct unixcall_generic_obj_ret *params = obj;
+  shared_event_listener_t q = malloc(sizeof(*q));
+  if (q) {
+    q->runloop_ref = NULL;
+    q->shared_listener = [[MTLSharedEventListener alloc] init];
+  }
+  params->ret = (obj_handle_t)q;
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_SharedEventListener_destroy(void *obj) {
+  struct unixcall_generic_obj_noret *params = obj;
+  shared_event_listener_t q = (shared_event_listener_t)params->handle;
+  if (q && q->runloop_ref) {
+    CFRunLoopStop(q->runloop_ref);
+    q->runloop_ref = NULL;
+    [q->shared_listener release];
+    q->shared_listener = nil;
+    free(q);
+  }
+  return STATUS_SUCCESS;
+}
+
 #else
 static NTSTATUS
 _MTLSharedEvent_setWin32EventAtValue(void *obj) {
   // nop
   return STATUS_SUCCESS;
 }
+
+static NTSTATUS
+_SharedEventListener_start(void *obj) {
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_SharedEventListener_create(void *obj) {
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_SharedEventListener_destroy(void *obj) {
+  return STATUS_SUCCESS;
+}
+
 #endif
 
 static NTSTATUS
@@ -2426,6 +2499,9 @@ const void *__wine_unix_call_funcs[] = {
     &_MTLDevice_newFence,
     &_MTLDevice_newEvent,
     &_MTLBuffer_updateContents,
+    &_SharedEventListener_create,
+    &_SharedEventListener_start,
+    &_SharedEventListener_destroy,
 };
 
 #ifndef DXMT_NATIVE
@@ -2538,5 +2614,8 @@ const void *__wine_unix_call_wow64_funcs[] = {
     &_MTLDevice_newFence,
     &_MTLDevice_newEvent,
     &_MTLBuffer_updateContents,
+    &_SharedEventListener_create,
+    &_SharedEventListener_start,
+    &_SharedEventListener_destroy,
 };
 #endif

@@ -19,6 +19,8 @@ CommandQueue::CommandQueue(WMT::Device device) :
     finishThread([this]() { this->WaitForFinishThread(); }),
     device(device),
     commandQueue(device.newCommandQueue(kCommandChunkCount)),
+    shared_event_listener(SharedEventListener_create()),
+    event_listener_thread([this]() { SharedEventListener_start(this->shared_event_listener); }),
     staging_allocator({
         device, WMTResourceOptionCPUCacheModeWriteCombined | WMTResourceHazardTrackingModeUntracked |
                     WMTResourceStorageModeShared
@@ -56,12 +58,14 @@ CommandQueue::~CommandQueue() {
   ready_for_encode.notify_one();
   ready_for_commit++;
   ready_for_commit.notify_one();
+  SharedEventListener_destroy(shared_event_listener);
   encodeThread.join();
   finishThread.join();
   for (unsigned i = 0; i < kCommandChunkCount; i++) {
     auto &chunk = chunks[i];
     chunk.reset();
   };
+  event_listener_thread.join();
   TRACE("Destructed command queue");
 }
 
