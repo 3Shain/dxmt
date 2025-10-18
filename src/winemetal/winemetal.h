@@ -1753,4 +1753,11 @@ WINEMETAL_API void SharedEventListener_start(obj_handle_t shared_event_listener)
 
 WINEMETAL_API void SharedEventListener_destroy(obj_handle_t shared_event_listener);
 
+WINEMETAL_API void WMTGetOSVersion(uint64_t *major, uint64_t *minor, uint64_t *patch);
+
+enum WMTMetalVersion : uint32_t {
+  WMTMetal310 = 310,
+  WMTMetal320 = 320,
+};
+
 #endif

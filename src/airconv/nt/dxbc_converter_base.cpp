@@ -488,7 +488,9 @@ Converter::LoadBuffer(const SrcOperandResource &SrcOp) {
   if (md.takeError())
     return {};
 
-  return llvm::Optional<BufferResourceHandle>({res_handle.get(), md.get(), stride, SrcOp.read_swizzle, global_coherent});
+  return llvm::Optional<BufferResourceHandle>(
+      {res_handle.get(), md.get(), stride, SrcOp.read_swizzle, global_coherent && SupportsMemoryCoherency()}
+  );
 }
 
 llvm::Optional<BufferResourceHandle>
@@ -507,7 +509,9 @@ Converter::LoadBuffer(const SrcOperandUAV &SrcOp) {
   if (md.takeError())
     return {};
 
-  return llvm::Optional<BufferResourceHandle>({res_handle.get(), md.get(), stride, SrcOp.read_swizzle, global_coherent});
+  return llvm::Optional<BufferResourceHandle>(
+      {res_handle.get(), md.get(), stride, SrcOp.read_swizzle, global_coherent && SupportsMemoryCoherency()}
+  );
 }
 
 llvm::Optional<AtomicBufferResourceHandle>
@@ -526,7 +530,9 @@ Converter::LoadBuffer(const AtomicDstOperandUAV &DstOp) {
   if (md.takeError())
     return {};
 
-  return llvm::Optional<AtomicBufferResourceHandle>({res_handle.get(), md.get(), stride, DstOp.mask, global_coherent});
+  return llvm::Optional<AtomicBufferResourceHandle>(
+      {res_handle.get(), md.get(), stride, DstOp.mask, global_coherent && SupportsMemoryCoherency()}
+  );
 }
 
 llvm::Optional<BufferResourceHandle>
@@ -2905,6 +2911,16 @@ Converter::CreateGEPInt32WithBoundCheck(AtomicBufferResourceHandle &Buffer, llvm
   return ir.CreateSelect(
       ir.CreateICmpULT(Index, ir.CreateLShr(ByteLength, 2)), Addr, llvm::Constant::getNullValue(Addr->getType())
   );
+}
+
+bool
+Converter::SupportsMemoryCoherency() const {
+  return ctx.metal_version >= SM50_SHADER_METAL_320;
+}
+
+bool
+Converter::SupportsNonExecutionBarrier() const {
+  return ctx.metal_version >= SM50_SHADER_METAL_320;
 }
 
 } // namespace dxmt::dxbc
