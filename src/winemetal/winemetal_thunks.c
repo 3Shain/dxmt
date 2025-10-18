@@ -957,3 +957,15 @@ SharedEventListener_destroy(obj_handle_t event_queue) {
   params.handle = event_queue;
   UNIX_CALL(110, &params);
 }
+
+WINEMETAL_API void
+WMTGetOSVersion(uint64_t *major, uint64_t *minor, uint64_t *patch) {
+  struct unixcall_get_os_version params;
+  UNIX_CALL(111, &params);
+  if (major)
+    *major = params.ret_major;
+  if (minor)
+    *minor = params.ret_minor;
+  if (patch)
+    *patch = params.ret_patch;
+}
