@@ -229,7 +229,7 @@ public:
     }
     if (sync.tgsm_execution_barrier) {
       air.CreateBarrier(mem_flag);
-    } else {
+    } else if (SupportsNonExecutionBarrier()) {
       air.CreateAtomicFence(mem_flag, sync.uav_boundary != InstSync::UAVBoundary::none ? ThreadScope::Device: ThreadScope::Threadgroup);
     }
   }
@@ -491,6 +491,9 @@ public:
   IsInifinity(llvm::Value *Value) const {
     return llvm::isa<llvm::ConstantFP>(Value) && llvm::cast<llvm::ConstantFP>(Value)->isInfinity();
   }
+
+  bool SupportsMemoryCoherency() const;
+  bool SupportsNonExecutionBarrier() const;
 
 private:
   llvm::air::AIRBuilder &air;
