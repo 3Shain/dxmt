@@ -11,7 +11,11 @@ public:
   GeneralShaderCompileTask(MTLD3D11Device *pDevice, ManagedShader shader,
                            Proc &&proc)
       : CompiledShader(), proc(std::forward<Proc>(proc)), device_(pDevice),
-        shader_(shader) {}
+        shader_(shader) {
+    sm50_common.type = SM50_SHADER_COMMON;
+    sm50_common.metal_version = (SM50_SHADER_METAL_VERSION)pDevice->GetDXMTDevice().metalVersion();
+    sm50_common.next = nullptr;
+  }
 
   ~GeneralShaderCompileTask() {}
 
@@ -51,7 +55,7 @@ public:
     auto pool = WMT::MakeAutoreleasePool();
     WMT::Reference<WMT::Error> err;
     std::string func_name = "shader_main_" + shader_->hash().toString().substr(0, 8);
-    sm50_bitcode_t compile_result = proc(func_name.c_str());
+    sm50_bitcode_t compile_result = proc(func_name.c_str(), &sm50_common);
 
     if (!compile_result)
       return this;
@@ -81,6 +85,7 @@ public:
   void SetIsDone(bool state) { ready_.store(state); }
 
 private:
+  SM50_SHADER_COMMON_DATA sm50_common;
   Proc proc;
   MTLD3D11Device *device_;
   ManagedShader shader_;
@@ -94,17 +99,17 @@ std::unique_ptr<CompiledShader>
 CreateVariantShader(MTLD3D11Device *pDevice, ManagedShader shader,
                     ShaderVariantVertex variant) {
 
-  auto proc = [=](const char *func_name) -> sm50_bitcode_t  {
+  auto proc = [=](const char *func_name, SM50_SHADER_COMMON_DATA *common) -> sm50_bitcode_t  {
     SM50_SHADER_IA_INPUT_LAYOUT_DATA data_ia_layout;
     SM50_SHADER_GS_PASS_THROUGH_DATA data_gs_passthrough;
     data_gs_passthrough.type = SM50_SHADER_GS_PASS_THROUGH;
     data_gs_passthrough.DataEncoded = variant.gs_passthrough;
     data_gs_passthrough.RasterizationDisabled = variant.rasterization_disabled;
-    data_gs_passthrough.next = nullptr;
+    data_gs_passthrough.next = common;
     if (variant.input_layout_handle) {
       data_gs_passthrough.next = &data_ia_layout;
       data_ia_layout.type = SM50_SHADER_IA_INPUT_LAYOUT;
-      data_ia_layout.next = nullptr;
+      data_ia_layout.next = common;
       data_ia_layout.slot_mask =
           ((ManagedInputLayout)variant.input_layout_handle)->input_slot_mask();
       data_ia_layout.num_elements =
@@ -133,10 +138,10 @@ template <>
 std::unique_ptr<CompiledShader>
 CreateVariantShader(MTLD3D11Device *pDevice, ManagedShader shader,
                     ShaderVariantPixel variant) {
-  auto proc = [=](const char *func_name) -> sm50_bitcode_t  {
+  auto proc = [=](const char *func_name, SM50_SHADER_COMMON_DATA *common) -> sm50_bitcode_t  {
     SM50_SHADER_PSO_PIXEL_SHADER_DATA data;
     data.type = SM50_SHADER_PSO_PIXEL_SHADER;
-    data.next = nullptr;
+    data.next = common;
     data.sample_mask = variant.sample_mask;
     data.dual_source_blending = variant.dual_source_blending;
     data.disable_depth_output = variant.disable_depth_output;
@@ -161,10 +166,10 @@ template <>
 std::unique_ptr<CompiledShader>
 CreateVariantShader(MTLD3D11Device *pDevice, ManagedShader shader,
                     ShaderVariantDefault) {
-  auto proc = [=](const char *func_name) -> sm50_bitcode_t  {
+  auto proc = [=](const char *func_name, SM50_SHADER_COMMON_DATA *common) -> sm50_bitcode_t  {
     sm50_bitcode_t compile_result = nullptr;
     sm50_error_t sm50_err = nullptr;
-    if (auto ret = SM50Compile(shader->handle(), nullptr, func_name,
+    if (auto ret = SM50Compile(shader->handle(), (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)common, func_name,
                                &compile_result, &sm50_err)) {
       ERR("Failed to compile shader: ", SM50GetErrorMessageString(sm50_err));
       SM50FreeError(sm50_err);
@@ -180,7 +185,7 @@ template <>
 std::unique_ptr<CompiledShader>
 CreateVariantShader(MTLD3D11Device *pDevice, ManagedShader shader,
                     ShaderVariantTessellationVertexHull variant) {
-  auto proc = [=](const char *func_name) -> sm50_bitcode_t  {
+  auto proc = [=](const char *func_name, SM50_SHADER_COMMON_DATA *common) -> sm50_bitcode_t  {
     SM50_SHADER_IA_INPUT_LAYOUT_DATA ia_layout;
     SM50_SHADER_PSO_TESSELLATOR_DATA pso_tess;
     ia_layout.index_buffer_format = variant.index_buffer_format;
@@ -193,7 +198,7 @@ CreateVariantShader(MTLD3D11Device *pDevice, ManagedShader shader,
     ia_layout.type = SM50_SHADER_IA_INPUT_LAYOUT;
     ia_layout.next = &pso_tess;
     pso_tess.type = SM50_SHADER_PSO_TESSELLATOR;
-    pso_tess.next = nullptr;
+    pso_tess.next = common;
     pso_tess.max_potential_tess_factor = variant.max_potential_tess_factor;
 
     sm50_bitcode_t compile_result = nullptr;
@@ -216,14 +221,14 @@ template <>
 std::unique_ptr<CompiledShader>
 CreateVariantShader(MTLD3D11Device *pDevice, ManagedShader shader,
                     ShaderVariantTessellationDomain variant) {
-  auto proc = [=](const char *func_name) -> sm50_bitcode_t  {
+  auto proc = [=](const char *func_name, SM50_SHADER_COMMON_DATA *common) -> sm50_bitcode_t  {
     SM50_SHADER_GS_PASS_THROUGH_DATA gs_passthrough;
     SM50_SHADER_PSO_TESSELLATOR_DATA pso_tess;
     gs_passthrough.DataEncoded = variant.gs_passthrough;
     gs_passthrough.RasterizationDisabled = variant.rasterization_disabled;
     gs_passthrough.next = &pso_tess;
     pso_tess.type = SM50_SHADER_PSO_TESSELLATOR;
-    pso_tess.next = nullptr;
+    pso_tess.next = common;
     pso_tess.max_potential_tess_factor = variant.max_potential_tess_factor;
 
     sm50_bitcode_t compile_result = nullptr;
@@ -247,11 +252,11 @@ std::unique_ptr<CompiledShader>
 CreateVariantShader(MTLD3D11Device *pDevice, ManagedShader shader,
                     ShaderVariantVertexStreamOutput variant) {
 
-  auto proc = [=](const char *func_name) -> sm50_bitcode_t  {
+  auto proc = [=](const char *func_name, SM50_SHADER_COMMON_DATA *common) -> sm50_bitcode_t  {
     SM50_SHADER_EMULATE_VERTEX_STREAM_OUTPUT_DATA data_so;
     SM50_SHADER_IA_INPUT_LAYOUT_DATA data_vertex_pulling;
     data_so.type = SM50_SHADER_EMULATE_VERTEX_STREAM_OUTPUT;
-    data_so.next = nullptr;
+    data_so.next = common;
     data_so.num_output_slots = 0;
     data_so.num_elements =
         ((IMTLD3D11StreamOutputLayout *)variant.stream_output_layout_handle)
@@ -262,7 +267,7 @@ CreateVariantShader(MTLD3D11Device *pDevice, ManagedShader shader,
     if (variant.input_layout_handle) {
       data_so.next = &data_vertex_pulling;
       data_vertex_pulling.type = SM50_SHADER_IA_INPUT_LAYOUT;
-      data_vertex_pulling.next = nullptr;
+      data_vertex_pulling.next = common;
       data_vertex_pulling.slot_mask =
           ((ManagedInputLayout)variant.input_layout_handle)->input_slot_mask();
       data_vertex_pulling.num_elements =
@@ -290,7 +295,7 @@ template <>
 std::unique_ptr<CompiledShader>
 CreateVariantShader(MTLD3D11Device *pDevice, ManagedShader shader,
                     ShaderVariantGeometryVertex variant) {
-  auto proc = [=](const char *func_name) -> sm50_bitcode_t  {
+  auto proc = [=](const char *func_name, SM50_SHADER_COMMON_DATA *common) -> sm50_bitcode_t  {
     SM50_SHADER_IA_INPUT_LAYOUT_DATA ia_layout;
     ia_layout.index_buffer_format = variant.index_buffer_format;
     if (variant.input_layout_handle) {
@@ -306,7 +311,7 @@ CreateVariantShader(MTLD3D11Device *pDevice, ManagedShader shader,
     }
 
     ia_layout.type = SM50_SHADER_IA_INPUT_LAYOUT;
-    ia_layout.next = nullptr;
+    ia_layout.next = common;
 
     SM50_SHADER_PSO_GEOMETRY_SHADER_DATA geometry;
     geometry.type = SM50_SHADER_PSO_GEOMETRY_SHADER;
@@ -333,10 +338,10 @@ template <>
 std::unique_ptr<CompiledShader>
 CreateVariantShader(MTLD3D11Device *pDevice, ManagedShader shader,
                     ShaderVariantGeometry variant) {
-  auto proc = [=](const char *func_name) -> sm50_bitcode_t  {
+  auto proc = [=](const char *func_name, SM50_SHADER_COMMON_DATA *common) -> sm50_bitcode_t  {
     SM50_SHADER_PSO_GEOMETRY_SHADER_DATA geometry;
     geometry.type = SM50_SHADER_PSO_GEOMETRY_SHADER;
-    geometry.next = nullptr;
+    geometry.next = common;
     geometry.strip_topology = variant.strip_topology;
 
     sm50_bitcode_t compile_result = nullptr;
