@@ -1664,10 +1664,10 @@ struct SM50_SHADER_EMULATE_VERTEX_STREAM_OUTPUT_DATA32 {
   uint32_t elements;
 };
 
-struct SM50_SHADER_DEBUG_IDENTITY_DATA32 {
+struct SM50_SHADER_COMMON_DATA32 {
   uint32_t next;
   enum SM50_SHADER_COMPILATION_ARGUMENT_TYPE type;
-  uint64_t id;
+  enum SM50_SHADER_METAL_VERSION metal_version;
 };
 
 struct SM50_SHADER_COMPILATION_ARGUMENT_DATA32 {
@@ -1743,14 +1743,14 @@ sm50_compilation_argument32_convert(
       data->elements = UInt32ToPtr(src->elements);
       break;
     }
-    case SM50_SHADER_DEBUG_IDENTITY: {
-      struct SM50_SHADER_DEBUG_IDENTITY_DATA32 *src = (void *)args32;
-      struct SM50_SHADER_DEBUG_IDENTITY_DATA *data = malloc(sizeof(struct SM50_SHADER_DEBUG_IDENTITY_DATA));
+    case SM50_SHADER_COMMON: {
+      struct SM50_SHADER_COMMON_DATA32 *src = (void *)args32;
+      struct SM50_SHADER_COMMON_DATA *data = malloc(sizeof(struct SM50_SHADER_COMMON_DATA));
       last_arg->next = data;
       last_arg = (void *)data;
       last_arg->next = NULL;
       data->type = src->type;
-      data->id = src->id;
+      data->metal_version = src->metal_version;
       break;
     }
     case SM50_SHADER_PSO_PIXEL_SHADER: {
