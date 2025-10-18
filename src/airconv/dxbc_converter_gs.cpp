@@ -111,6 +111,11 @@ convert_dxbc_geometry_shader(
   if (args_get_data<SM50_SHADER_PSO_GEOMETRY_SHADER, SM50_SHADER_PSO_GEOMETRY_SHADER_DATA>(pArgs, &pso_data)) {
     is_strip = pso_data->strip_topology;
   }
+  SM50_SHADER_METAL_VERSION metal_version = SM50_SHADER_METAL_310;
+  SM50_SHADER_COMMON_DATA *sm50_common = nullptr;
+  if (args_get_data<SM50_SHADER_COMMON, SM50_SHADER_COMMON_DATA>(pArgs, &sm50_common)) {
+    metal_version = sm50_common->metal_version;
+  }
 
   IREffect prologue([](auto) { return std::monostate(); });
   IRValue epilogue([](struct context ctx) -> pvalue { return nullptr; });
@@ -461,7 +466,7 @@ convert_dxbc_geometry_shader(
 
   struct context ctx {
     .builder = builder, .air = air, .llvm = context, .module = module, .function = function, .resource = resource_map,
-    .types = types, .pso_sample_mask = 0xffffffff, .shader_type = pShaderInternal->shader_type,
+    .types = types, .pso_sample_mask = 0xffffffff, .shader_type = pShaderInternal->shader_type, .metal_version = metal_version,
   };
 
   if (auto err = prologue.build(ctx).takeError()) {
@@ -506,6 +511,11 @@ convert_dxbc_vertex_for_geometry_shader(
   args_get_data<SM50_SHADER_IA_INPUT_LAYOUT, SM50_SHADER_IA_INPUT_LAYOUT_DATA>(pArgs, &ia_layout);
   if (args_get_data<SM50_SHADER_PSO_GEOMETRY_SHADER, SM50_SHADER_PSO_GEOMETRY_SHADER_DATA>(pArgs, &pso_data)) {
     is_strip = pso_data->strip_topology;
+  }
+  SM50_SHADER_METAL_VERSION metal_version = SM50_SHADER_METAL_310;
+  SM50_SHADER_COMMON_DATA *sm50_common = nullptr;
+  if (args_get_data<SM50_SHADER_COMMON, SM50_SHADER_COMMON_DATA>(pArgs, &sm50_common)) {
+    metal_version = sm50_common->metal_version;
   }
 
   bool is_triadj_strip = is_strip && pGeometryStage->gs_input_primitive == D3D10_SB_PRIMITIVE_TRIANGLE_ADJ;
@@ -642,7 +652,7 @@ convert_dxbc_vertex_for_geometry_shader(
 
   struct context ctx {
     .builder = builder, .air = air, .llvm = context, .module = module, .function = function, .resource = resource_map,
-    .types = types, .pso_sample_mask = 0xffffffff, .shader_type = pShaderInternal->shader_type,
+    .types = types, .pso_sample_mask = 0xffffffff, .shader_type = pShaderInternal->shader_type, .metal_version = metal_version,
   };
 
   auto global_index_id =

@@ -200,6 +200,11 @@ convert_dxbc_vertex_hull_shader(
 
   auto [final_maxtessfactor, factor_int] = get_final_maxtessfactor(pHullStage, pArgs);
 
+  SM50_SHADER_METAL_VERSION metal_version = SM50_SHADER_METAL_310;
+  SM50_SHADER_COMMON_DATA *sm50_common = nullptr;
+  if (args_get_data<SM50_SHADER_COMMON, SM50_SHADER_COMMON_DATA>(pArgs, &sm50_common)) {
+    metal_version = sm50_common->metal_version;
+  }
   SM50_SHADER_IA_INPUT_LAYOUT_DATA *ia_layout = nullptr;
   args_get_data<SM50_SHADER_IA_INPUT_LAYOUT, SM50_SHADER_IA_INPUT_LAYOUT_DATA>(pArgs, &ia_layout);
 
@@ -390,7 +395,7 @@ convert_dxbc_vertex_hull_shader(
 
     resource_map.output_element_count = max_output_register;
 
-    struct context ctx{
+    struct context ctx {
         .builder = builder,
         .air = air,
         .llvm = context,
@@ -400,6 +405,7 @@ convert_dxbc_vertex_hull_shader(
         .types = types,
         .pso_sample_mask = 0xffffffff,
         .shader_type = pVertexStage->shader_type,
+        .metal_version = metal_version,
     };
 
     builder.CreateCondBr(
@@ -564,7 +570,7 @@ convert_dxbc_vertex_hull_shader(
       );
     }
 
-    struct context ctx{
+    struct context ctx {
         .builder = builder,
         .air = air,
         .llvm = context,
@@ -574,6 +580,7 @@ convert_dxbc_vertex_hull_shader(
         .types = types,
         .pso_sample_mask = 0xffffffff,
         .shader_type = pHullStage->shader_type,
+        .metal_version = metal_version,
     };
     dxbc::Converter dxbc(ctx.air, ctx, ctx.resource);
 
@@ -714,6 +721,11 @@ convert_dxbc_tesselator_domain_shader(
   bool rasterization_disabled =
       (args_get_data<SM50_SHADER_GS_PASS_THROUGH, SM50_SHADER_GS_PASS_THROUGH_DATA>(pArgs, &gs_passthrough) &&
        gs_passthrough->RasterizationDisabled);
+  SM50_SHADER_METAL_VERSION metal_version = SM50_SHADER_METAL_310;
+  SM50_SHADER_COMMON_DATA *sm50_common = nullptr;
+  if (args_get_data<SM50_SHADER_COMMON, SM50_SHADER_COMMON_DATA>(pArgs, &sm50_common)) {
+    metal_version = sm50_common->metal_version;
+  }
 
   auto [final_maxtessfactor, factor_int] = get_final_maxtessfactor(pHullStage, pArgs);
 
@@ -842,7 +854,7 @@ convert_dxbc_tesselator_domain_shader(
       {builder.getInt32(0), builder.getInt32(3), builder.getInt32(0)}
   );
 
-  struct context ctx{
+  struct context ctx {
       .builder = builder,
       .air = air,
       .llvm = context,
@@ -852,6 +864,7 @@ convert_dxbc_tesselator_domain_shader(
       .types = types,
       .pso_sample_mask = 0xffffffff,
       .shader_type = pShaderInternal->shader_type,
+      .metal_version = metal_version,
   };
   dxbc::Converter dxbc(ctx.air, ctx, ctx.resource);
 

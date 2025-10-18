@@ -419,6 +419,11 @@ llvm::Error convert_dxbc_pixel_shader(
     pso_unorm_output_reg_mask = pso_data->unorm_output_reg_mask;
     pso_sample_mask = pso_data->sample_mask;
   }
+  SM50_SHADER_METAL_VERSION metal_version = SM50_SHADER_METAL_310;
+  SM50_SHADER_COMMON_DATA *sm50_common = nullptr;
+  if (args_get_data<SM50_SHADER_COMMON, SM50_SHADER_COMMON_DATA>(pArgs, &sm50_common)) {
+    metal_version = sm50_common->metal_version;
+  }
 
   IREffect prologue([](auto) { return std::monostate(); });
   IRValue epilogue([](struct context ctx) -> pvalue {
@@ -496,6 +501,7 @@ llvm::Error convert_dxbc_pixel_shader(
     .resource = resource_map, .types = types,
     .pso_sample_mask = pso_sample_mask,
     .shader_type = pShaderInternal->shader_type,
+    .metal_version = metal_version,
   };
 
   if (auto err = prologue.build(ctx).takeError()) {
@@ -534,6 +540,12 @@ llvm::Error convert_dxbc_compute_shader(
 
   auto func_signature = pShaderInternal->func_signature; // copy
   auto shader_info = &(pShaderInternal->shader_info);
+
+  SM50_SHADER_METAL_VERSION metal_version = SM50_SHADER_METAL_310;
+  SM50_SHADER_COMMON_DATA *sm50_common = nullptr;
+  if (args_get_data<SM50_SHADER_COMMON, SM50_SHADER_COMMON_DATA>(pArgs, &sm50_common)) {
+    metal_version = sm50_common->metal_version;
+  }
 
   IREffect prologue([](auto) { return std::monostate(); });
   IRValue epilogue([](struct context ctx) -> pvalue {
@@ -576,6 +588,7 @@ llvm::Error convert_dxbc_compute_shader(
     .builder = builder, .air = air, .llvm = context, .module = module, .function = function,
     .resource = resource_map, .types = types, .pso_sample_mask = 0xffffffff,
     .shader_type = pShaderInternal->shader_type,
+    .metal_version = metal_version,
   };
 
   if (auto err = prologue.build(ctx).takeError()) {
@@ -622,6 +635,11 @@ llvm::Error convert_dxbc_vertex_shader(
       (args_get_data<SM50_SHADER_GS_PASS_THROUGH, SM50_SHADER_GS_PASS_THROUGH_DATA>(pArgs, &gs_passthrough) &&
        gs_passthrough->RasterizationDisabled) ||
       (vertex_so != nullptr);
+  SM50_SHADER_METAL_VERSION metal_version = SM50_SHADER_METAL_310;
+  SM50_SHADER_COMMON_DATA *sm50_common = nullptr;
+  if (args_get_data<SM50_SHADER_COMMON, SM50_SHADER_COMMON_DATA>(pArgs, &sm50_common)) {
+    metal_version = sm50_common->metal_version;
+  }
 
   IREffect prologue([](auto) { return std::monostate(); });
   IRValue epilogue([](struct context ctx) -> pvalue {
@@ -773,6 +791,7 @@ llvm::Error convert_dxbc_vertex_shader(
     .builder = builder, .air = air, .llvm = context, .module = module, .function = function,
     .resource = resource_map, .types = types, .pso_sample_mask = 0xffffffff,
     .shader_type = pShaderInternal->shader_type,
+    .metal_version = metal_version,
   };
 
   if (auto err = prologue.build(ctx).takeError()) {
