@@ -2390,6 +2390,16 @@ _MTLBuffer_updateContents(void *obj) {
   return STATUS_SUCCESS;
 }
 
+static NTSTATUS
+_WMTGetOSVersion(void *obj) {
+  struct unixcall_get_os_version *params = obj;
+  NSOperatingSystemVersion version = [NSProcessInfo processInfo].operatingSystemVersion;
+  params->ret_major = version.majorVersion;
+  params->ret_minor = version.minorVersion;
+  params->ret_patch = version.patchVersion;
+  return STATUS_SUCCESS;
+}
+
 const void *__wine_unix_call_funcs[] = {
     &_NSObject_retain,
     &_NSObject_release,
@@ -2502,6 +2512,7 @@ const void *__wine_unix_call_funcs[] = {
     &_SharedEventListener_create,
     &_SharedEventListener_start,
     &_SharedEventListener_destroy,
+    &_WMTGetOSVersion,
 };
 
 #ifndef DXMT_NATIVE
@@ -2617,5 +2628,6 @@ const void *__wine_unix_call_wow64_funcs[] = {
     &_SharedEventListener_create,
     &_SharedEventListener_start,
     &_SharedEventListener_destroy,
+    &_WMTGetOSVersion,
 };
 #endif

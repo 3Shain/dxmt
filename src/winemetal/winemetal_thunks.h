@@ -283,6 +283,12 @@ struct unixcall_mtlsharedevent_setevent {
   uint64_t value;
 };
 
+struct unixcall_get_os_version {
+  uint64_t ret_major;
+  uint64_t ret_minor;
+  uint64_t ret_patch;
+};
+
 #pragma pack(pop)
 
 #endif
