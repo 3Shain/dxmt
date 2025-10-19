@@ -104,9 +104,17 @@ void linkShader(llvm::Module &M) {
     return;
   }
 
-  if (auto md = modOrErr->get()->getNamedMetadata("air.compile_options")) {
-    // avoid conflict
-    modOrErr->get()->eraseNamedMetadata(md);
+  auto mod = modOrErr->get();
+
+  // avoid conflict
+  if (auto md = mod->getNamedMetadata("air.compile_options")) {
+    mod->eraseNamedMetadata(md);
+  }
+  if (auto md = mod->getNamedMetadata("air.version")) {
+    mod->eraseNamedMetadata(md);
+  }
+  if (auto md = mod->getNamedMetadata("air.language_version")) {
+    mod->eraseNamedMetadata(md);
   }
 
   llvm::Linker::linkModules(M, std::move(modOrErr.get()), Linker::LinkOnlyNeeded);

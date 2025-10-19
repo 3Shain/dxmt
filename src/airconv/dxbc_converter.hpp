@@ -462,6 +462,8 @@ void setup_binding_table(
 
 void setup_fastmath_flag(llvm::Module &module, llvm::IRBuilder<> &builder);
 
+void setup_metal_version(llvm::Module &module, SM50_SHADER_METAL_VERSION metal_verison);
+
 void setup_temp_register(
   const ShaderInfo *shader_info, io_binding_map &resource_map,
   air::AirType &types, llvm::Module &module, llvm::IRBuilder<> &builder
