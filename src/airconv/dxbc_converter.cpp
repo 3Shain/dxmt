@@ -396,6 +396,40 @@ void setup_fastmath_flag(llvm::Module &module, llvm::IRBuilder<> &builder) {
   }
 }
 
+
+void setup_metal_version(llvm::Module &module, SM50_SHADER_METAL_VERSION metal_verison) {
+  using namespace llvm;
+  auto &context = module.getContext();
+  auto createUnsignedInteger = [&](uint32_t s) {
+    return ConstantAsMetadata::get(ConstantInt::get(context, APInt{32, s, false}));
+  };
+  auto createString = [&](auto s) { return MDString::get(context, s); };
+
+  auto airVersion = module.getOrInsertNamedMetadata("air.version");
+  auto airLangVersion = module.getOrInsertNamedMetadata("air.language_version");
+  switch (metal_verison) {
+  case SM50_SHADER_METAL_320: {
+    airVersion->addOperand(
+        MDTuple::get(context, {createUnsignedInteger(2), createUnsignedInteger(7), createUnsignedInteger(0)})
+    );
+    airLangVersion->addOperand(MDTuple::get(
+        context, {createString("Metal"), createUnsignedInteger(3), createUnsignedInteger(2), createUnsignedInteger(0)}
+    ));
+    module.setTargetTriple("air64-apple-macosx15.0.0");
+    break;
+  }
+  default: {
+    airVersion->addOperand(
+        MDTuple::get(context, {createUnsignedInteger(2), createUnsignedInteger(6), createUnsignedInteger(0)})
+    );
+    airLangVersion->addOperand(MDTuple::get(
+        context, {createString("Metal"), createUnsignedInteger(3), createUnsignedInteger(1), createUnsignedInteger(0)}
+    ));
+    break;
+  }
+  }
+}
+
 llvm::Error convert_dxbc_pixel_shader(
   SM50ShaderInternal *pShaderInternal, const char *name,
   llvm::LLVMContext &context, llvm::Module &module,
@@ -473,6 +507,7 @@ llvm::Error convert_dxbc_pixel_shader(
   llvm::raw_null_ostream nulldbg{};
   llvm::air::AIRBuilder air(builder, nulldbg);
 
+  setup_metal_version(module, metal_version);
   setup_fastmath_flag(module, builder);
 
   resource_map.input.ptr_int4 =
@@ -578,6 +613,7 @@ llvm::Error convert_dxbc_compute_shader(
   llvm::raw_null_ostream nulldbg{};
   llvm::air::AIRBuilder air(builder, nulldbg);
 
+  setup_metal_version(module, metal_version);
   setup_fastmath_flag(module, builder);
   setup_temp_register(shader_info, resource_map, types, module, builder);
   setup_immediate_constant_buffer(
@@ -753,6 +789,7 @@ llvm::Error convert_dxbc_vertex_shader(
   llvm::raw_null_ostream nulldbg{};
   llvm::air::AIRBuilder air(builder, nulldbg);
 
+  setup_metal_version(module, metal_version);
   setup_fastmath_flag(module, builder);
 
   resource_map.vertex_id_with_base = function->getArg(vertex_idx);

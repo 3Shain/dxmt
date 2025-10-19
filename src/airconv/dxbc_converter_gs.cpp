@@ -168,6 +168,7 @@ convert_dxbc_geometry_shader(
   llvm::IRBuilder<> builder(entry_bb);
   llvm::raw_null_ostream nulldbg{};
   llvm::air::AIRBuilder air(builder, nulldbg);
+  setup_metal_version(module, metal_version);
   setup_fastmath_flag(module, builder);
 
   auto [warp_vertex_count, warp_primitive_count, vertex_per_primitive] =
@@ -586,6 +587,7 @@ convert_dxbc_vertex_for_geometry_shader(
   llvm::raw_null_ostream nulldbg{};
   llvm::air::AIRBuilder air(builder, nulldbg);
 
+  setup_metal_version(module, metal_version);
   setup_fastmath_flag(module, builder);
 
   auto index_check = llvm::BasicBlock::Create(context, "index_check", function);
