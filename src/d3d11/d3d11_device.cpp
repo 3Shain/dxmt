@@ -12,7 +12,6 @@
 #include "d3d11_pipeline_cache.hpp"
 #include "d3d11_private.h"
 #include "d3d11_query.hpp"
-#include "d3d11_shader.hpp"
 #include "d3d11_swapchain.hpp"
 #include "d3d11_state_object.hpp"
 #include "dxgi_interfaces.h"
@@ -23,12 +22,8 @@
 #include "dxmt_tasks.hpp"
 #include "ftl.hpp"
 #include "d3d11_resource.hpp"
-#include "thread.hpp"
 #include "dxgi_object.hpp"
 #include <memory>
-#include <mutex>
-#include <thread>
-#include <unordered_map>
 #include "d3d11_4.h"
 #include "util_win32_compat.h"
 
@@ -1056,19 +1051,7 @@ public:
   HRESULT
   CreateComputePipeline(MTL_COMPUTE_PIPELINE_DESC *pDesc,
                         IMTLCompiledComputePipeline **ppPipeline) override {
-    std::lock_guard<dxmt::mutex> lock(mutex_cs_);
-
-    auto iter = pipelines_cs_.find(pDesc->ComputeShader);
-    if (iter != pipelines_cs_.end()) {
-      *ppPipeline = iter->second.ref();
-      return S_OK;
-    }
-    auto temp = dxmt::CreateComputePipeline(this, pDesc->ComputeShader);
-    if (!pipelines_cs_.insert({pDesc->ComputeShader, temp}).second) // copy
-    {
-      D3D11_ASSERT(0 && "duplicated compute pipeline");
-    }
-    *ppPipeline = std::move(temp); // move
+    pipeline_cache_->GetComputePipeline(pDesc, ppPipeline);
     return S_OK;
   };
 
@@ -1152,9 +1135,6 @@ private:
 
   std::unique_ptr<MTLD3D11CommandListPoolBase> commandlist_pool_;
   std::unique_ptr<MTLD3D11PipelineCacheBase> pipeline_cache_;
-  std::unordered_map<ManagedShader, Com<IMTLCompiledComputePipeline>>
-      pipelines_cs_;
-  dxmt::mutex mutex_cs_;
 
   Device& device_;
   /** ensure destructor called first */

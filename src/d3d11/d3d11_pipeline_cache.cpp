@@ -181,6 +181,10 @@ class PipelineCache : public MTLD3D11PipelineCacheBase {
       pipelines_ts_;
   dxmt::mutex mutex_ts_;
 
+  std::unordered_map<ManagedShader, Com<IMTLCompiledComputePipeline>>
+      pipelines_cs_;
+  dxmt::mutex mutex_cs_;
+
   CachedSM50Shader *CreateShader(const void *pBytecode,
                                  uint32_t BytecodeLength) {
     auto sha1 = Sha1Hash::compute(pBytecode, BytecodeLength);
@@ -388,6 +392,23 @@ class PipelineCache : public MTLD3D11PipelineCacheBase {
     if (!pipelines_ts_.insert({*pDesc, temp}).second) // copy
     {
       D3D11_ASSERT(0 && "duplicated tessellation pipeline");
+    }
+    *ppPipeline = std::move(temp);
+  }
+
+  void GetComputePipeline(MTL_COMPUTE_PIPELINE_DESC *pDesc,
+                                  IMTLCompiledComputePipeline **ppPipeline) override {
+   std::lock_guard<dxmt::mutex> lock(mutex_cs_);
+
+    auto iter = pipelines_cs_.find(pDesc->ComputeShader);
+    if (iter != pipelines_cs_.end()) {
+      *ppPipeline = iter->second.ref();
+      return;
+    }
+    auto temp = dxmt::CreateComputePipeline(device, pDesc->ComputeShader);
+    if (!pipelines_cs_.insert({pDesc->ComputeShader, temp}).second) // copy
+    {
+      D3D11_ASSERT(0 && "duplicated compute pipeline");
     }
     *ppPipeline = std::move(temp);
   }
