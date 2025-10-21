@@ -968,3 +968,26 @@ WMTGetOSVersion(uint64_t *major, uint64_t *minor, uint64_t *patch) {
   if (patch)
     *patch = params.ret_patch;
 }
+
+WINEMETAL_API obj_handle_t
+MTLDevice_newBinaryArchive(obj_handle_t device, const char *url, obj_handle_t *err_out) {
+  struct unixcall_mtldevice_newbinaryarchive params;
+  params.device = device;
+  WMT_MEMPTR_SET(params.url, url);
+  params.ret_archive = 0;
+  params.ret_error = 0;
+  UNIX_CALL(112, &params);
+  if (err_out)
+    *err_out = params.ret_error;
+  return params.ret_archive;
+}
+
+WINEMETAL_API void
+MTLBinaryArchive_serialize(obj_handle_t archive, const char *url, obj_handle_t *err_out) {
+  struct unixcall_mtlbinaryarchive_serialize params;
+  params.archive = archive;
+  WMT_MEMPTR_SET(params.url, url);
+  UNIX_CALL(113, &params);
+  if (err_out)
+    *err_out = params.ret_error;
+}
