@@ -343,10 +343,15 @@ static NTSTATUS
 _MTLDevice_newComputePipelineState(void *obj) {
   struct unixcall_mtldevice_newcomputepso *params = obj;
   id<MTLDevice> device = (id<MTLDevice>)params->device;
+  const struct WMTComputePipelineInfo *info = params->info.ptr;
   MTLComputePipelineDescriptor *descriptor = [[MTLComputePipelineDescriptor alloc] init];
   NSError *err = NULL;
-  descriptor.computeFunction = (id<MTLFunction>)params->function;
-  descriptor.threadGroupSizeIsMultipleOfThreadExecutionWidth = params->tgsize_is_multiple_of_sgwidth;
+  descriptor.computeFunction = (id<MTLFunction>)info->compute_function;
+  descriptor.threadGroupSizeIsMultipleOfThreadExecutionWidth = info->tgsize_is_multiple_of_sgwidth;
+  for (unsigned i = 0; i < 31; i++) {
+    if (info->immutable_buffers & (1 << i))
+      descriptor.buffers[i].mutability = MTLMutabilityImmutable;
+  }
   params->ret_pso = (obj_handle_t
   )[device newComputePipelineStateWithDescriptor:descriptor options:MTLPipelineOptionNone reflection:nil error:&err];
   params->ret_error = (obj_handle_t)err;
