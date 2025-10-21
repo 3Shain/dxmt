@@ -718,16 +718,20 @@ public:
 
   Reference<ComputePipelineState>
   newComputePipelineState(const Function &compute_function, Error &error) {
-    return Reference<ComputePipelineState>(
-        MTLDevice_newComputePipelineState(handle, compute_function.handle, false, &error.handle)
-    );
+    WMTComputePipelineInfo info;
+    info.compute_function = compute_function;
+    info.tgsize_is_multiple_of_sgwidth = false;
+    info.immutable_buffers = 0;
+    return Reference<ComputePipelineState>(MTLDevice_newComputePipelineState(handle, &info, &error.handle));
   }
 
   Reference<ComputePipelineState>
   newComputePipelineState(const Function &compute_function, bool tgsize_is_multiple_of_sgwidth, Error &error) {
-    return Reference<ComputePipelineState>(
-        MTLDevice_newComputePipelineState(handle, compute_function.handle, tgsize_is_multiple_of_sgwidth, &error.handle)
-    );
+    WMTComputePipelineInfo info;
+    info.compute_function = compute_function;
+    info.tgsize_is_multiple_of_sgwidth = tgsize_is_multiple_of_sgwidth;
+    info.immutable_buffers = 0;
+    return Reference<ComputePipelineState>(MTLDevice_newComputePipelineState(handle, &info, &error.handle));
   }
 
   Reference<RenderPipelineState>

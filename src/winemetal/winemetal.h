@@ -563,8 +563,15 @@ WINEMETAL_API uint64_t NSString_lengthOfBytesUsingEncoding(obj_handle_t str, enu
 
 WINEMETAL_API obj_handle_t NSObject_description(obj_handle_t nserror);
 
+struct WMTComputePipelineInfo {
+  obj_handle_t compute_function;
+  uint32_t immutable_buffers;
+  bool tgsize_is_multiple_of_sgwidth;
+  uint8_t padding[3];
+};
+
 WINEMETAL_API obj_handle_t MTLDevice_newComputePipelineState(
-    obj_handle_t device, obj_handle_t function, bool tgsize_is_multiple_of_sgwidth, obj_handle_t *err_out
+    obj_handle_t device, const struct WMTComputePipelineInfo *info, obj_handle_t *err_out
 );
 
 WINEMETAL_API obj_handle_t MTLCommandBuffer_blitCommandEncoder(obj_handle_t cmdbuf);

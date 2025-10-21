@@ -298,14 +298,13 @@ NSObject_description(obj_handle_t nserror) {
 
 WINEMETAL_API obj_handle_t
 MTLDevice_newComputePipelineState(
-    obj_handle_t device, obj_handle_t function, bool tgsize_is_multiple_of_sgwidth, obj_handle_t *err_out
+    obj_handle_t device, const struct WMTComputePipelineInfo *info, obj_handle_t *err_out
 ) {
   struct unixcall_mtldevice_newcomputepso params;
   params.device = device;
-  params.function = function;
+  WMT_MEMPTR_SET(params.info, info);
   params.ret_error = 0;
   params.ret_pso = 0;
-  params.tgsize_is_multiple_of_sgwidth = tgsize_is_multiple_of_sgwidth;
   UNIX_CALL(29, &params);
   if (err_out)
     *err_out = params.ret_error;
