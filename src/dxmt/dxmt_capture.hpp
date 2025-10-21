@@ -12,20 +12,20 @@ public:
   };
   NextAction getNextAction(uint64_t frame);
   void scheduleNextFrameCapture(uint64_t next = 0);
-  static bool shouldCaptureNextFrame();
+  bool shouldCaptureNextFrame();
+
+  CaptureState();
 
 private:
   enum class State {
+    Freezed,
     Idle,
     WillCapture,
     Capturing,
   };
-  State state = State::Idle;
+  State state = State::Freezed;
   uint64_t next_capture_frame = 0;
+  bool capture_key_pressed_ = false;
 };
-
-void initialize_io_hook();
-
-void uninitialize_io_hook();
 
 } // namespace dxmt

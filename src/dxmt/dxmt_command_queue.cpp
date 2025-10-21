@@ -109,8 +109,8 @@ CommandQueue::CommitChunkInternal(CommandChunk &chunk, uint64_t seq) {
     char filename[1024];
     std::time_t now;
     std::time(&now);
-    std::strftime(filename, 1024, "-capture-%H-%M-%S_%m-%d-%y.gputrace", std::localtime(&now));
-    auto fileUrl = env::getUnixPath(env::getExeBaseName() + filename);
+    std::strftime(filename, 1024, "_%H'%M'%S_%m-%d-%y.gputrace", std::localtime(&now));
+    auto fileUrl = env::getUnixPath(env::getExeBaseName() + "_F." + std::to_string(chunk.frame_) + filename);
     WARN("A new capture will be saved to ", fileUrl);
     info.output_url.set(fileUrl.c_str());
 
@@ -123,7 +123,7 @@ CommandQueue::CommitChunkInternal(CommandChunk &chunk, uint64_t seq) {
     break;
   }
   case CaptureState::NextAction::Nothing: {
-    if (CaptureState::shouldCaptureNextFrame()) {
+    if (capture_state.shouldCaptureNextFrame()) {
       capture_state.scheduleNextFrameCapture(chunk.frame_ + 1);
     }
     break;

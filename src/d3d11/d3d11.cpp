@@ -196,13 +196,9 @@ extern "C" HRESULT __stdcall D3D11On12CreateDevice(
 #ifndef DXMT_NATIVE
 
 BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID reserved) {  
-  if (reason == DLL_PROCESS_DETACH) {
-    dxmt::uninitialize_io_hook();
-  }
   if (reason != DLL_PROCESS_ATTACH)
     return TRUE;
 
-  dxmt::initialize_io_hook();
   DisableThreadLibraryCalls(instance);
   return TRUE;
 }
