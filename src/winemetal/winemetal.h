@@ -565,9 +565,12 @@ WINEMETAL_API obj_handle_t NSObject_description(obj_handle_t nserror);
 
 struct WMTComputePipelineInfo {
   obj_handle_t compute_function;
-  uint32_t immutable_buffers;
+  struct WMTConstMemoryPointer binary_archives_for_lookup;
+  uint8_t num_binary_archives_for_lookup;
+  bool fail_on_binary_archive_miss;
+  uint8_t padding;
   bool tgsize_is_multiple_of_sgwidth;
-  uint8_t padding[3];
+  uint32_t immutable_buffers;
 };
 
 WINEMETAL_API obj_handle_t MTLDevice_newComputePipelineState(
@@ -770,6 +773,10 @@ struct WMTRenderPipelineInfo {
   uint8_t max_tessellation_factor;
   enum WMTWinding tessellation_output_winding_order;
   enum WMTTessellationFactorStepFunction tessellation_factor_step;
+  struct WMTConstMemoryPointer binary_archives_for_lookup;
+  uint8_t num_binary_archives_for_lookup;
+  bool fail_on_binary_archive_miss;
+  uint8_t padding[6];
 };
 
 struct WMTMeshRenderPipelineInfo {
@@ -790,6 +797,10 @@ struct WMTMeshRenderPipelineInfo {
   uint16_t payload_memory_length;
   bool mesh_tgsize_is_multiple_of_sgwidth;
   bool object_tgsize_is_multiple_of_sgwidth;
+  struct WMTConstMemoryPointer binary_archives_for_lookup;
+  uint8_t num_binary_archives_for_lookup;
+  bool fail_on_binary_archive_miss;
+  uint8_t padding[6];
 };
 
 WINEMETAL_API obj_handle_t
@@ -1766,5 +1777,9 @@ enum WMTMetalVersion : uint32_t {
   WMTMetal310 = 310,
   WMTMetal320 = 320,
 };
+
+WINEMETAL_API obj_handle_t MTLDevice_newBinaryArchive(obj_handle_t device, const char *url, obj_handle_t *err_out);
+
+WINEMETAL_API void MTLBinaryArchive_serialize(obj_handle_t archive, const char *url, obj_handle_t *err_out);
 
 #endif

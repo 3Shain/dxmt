@@ -288,6 +288,19 @@ struct unixcall_get_os_version {
   uint64_t ret_patch;
 };
 
+struct unixcall_mtldevice_newbinaryarchive {
+  obj_handle_t device;
+  struct WMTConstMemoryPointer url;
+  obj_handle_t ret_archive;
+  obj_handle_t ret_error;
+};
+
+struct unixcall_mtlbinaryarchive_serialize {
+  obj_handle_t archive;
+  struct WMTConstMemoryPointer url;
+  obj_handle_t ret_error;
+};
+
 #pragma pack(pop)
 
 #endif
