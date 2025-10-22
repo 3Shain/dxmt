@@ -360,6 +360,10 @@ _MTLDevice_newComputePipelineState(void *obj) {
   params->ret_pso =
       (obj_handle_t)[device newComputePipelineStateWithDescriptor:descriptor options:options reflection:nil error:&err];
   params->ret_error = (obj_handle_t)err;
+  if (!err && info->binary_archive_for_serialization) {
+    [(id<MTLBinaryArchive>)info->binary_archive_for_serialization addComputePipelineFunctionsWithDescriptor:descriptor
+                                                                                                      error:&err];
+  }
   [descriptor release];
   return STATUS_SUCCESS;
 }
@@ -535,6 +539,10 @@ _MTLDevice_newRenderPipelineState(void *obj) {
                                                                                            reflection:nil
                                                                                                 error:&err];
   params->ret_error = (obj_handle_t)err;
+  if (!err && info->binary_archive_for_serialization) {
+    [(id<MTLBinaryArchive>)info->binary_archive_for_serialization addRenderPipelineFunctionsWithDescriptor:descriptor
+                                                                                                     error:&err];
+  }
   [descriptor release];
   return STATUS_SUCCESS;
 }
@@ -601,6 +609,15 @@ _MTLDevice_newMeshRenderPipelineState(void *obj) {
                                                                                                reflection:nil
                                                                                                     error:&err];
   params->ret_error = (obj_handle_t)err;
+#if __MAC_OS_X_VERSION_MAX_ALLOWED >= 150000
+  if (@available(macOS 15, *)) {
+    if (!err && info->binary_archive_for_serialization) {
+      [(id<MTLBinaryArchive>)info->binary_archive_for_serialization
+          addMeshRenderPipelineFunctionsWithDescriptor:descriptor
+                                                 error:&err];
+    }
+  }
+#endif
   [descriptor release];
   return STATUS_SUCCESS;
 }
