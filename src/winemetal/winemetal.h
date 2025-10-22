@@ -566,6 +566,7 @@ WINEMETAL_API obj_handle_t NSObject_description(obj_handle_t nserror);
 struct WMTComputePipelineInfo {
   obj_handle_t compute_function;
   struct WMTConstMemoryPointer binary_archives_for_lookup;
+  obj_handle_t binary_archive_for_serialization;
   uint8_t num_binary_archives_for_lookup;
   bool fail_on_binary_archive_miss;
   uint8_t padding;
@@ -773,6 +774,7 @@ struct WMTRenderPipelineInfo {
   uint8_t max_tessellation_factor;
   enum WMTWinding tessellation_output_winding_order;
   enum WMTTessellationFactorStepFunction tessellation_factor_step;
+  obj_handle_t binary_archive_for_serialization;
   struct WMTConstMemoryPointer binary_archives_for_lookup;
   uint8_t num_binary_archives_for_lookup;
   bool fail_on_binary_archive_miss;
@@ -797,6 +799,7 @@ struct WMTMeshRenderPipelineInfo {
   uint16_t payload_memory_length;
   bool mesh_tgsize_is_multiple_of_sgwidth;
   bool object_tgsize_is_multiple_of_sgwidth;
+  obj_handle_t binary_archive_for_serialization;
   struct WMTConstMemoryPointer binary_archives_for_lookup;
   uint8_t num_binary_archives_for_lookup;
   bool fail_on_binary_archive_miss;
