@@ -30,10 +30,10 @@ public:
     if (pDesc->SOLayout) {
       VertexShader =
           pDesc->VertexShader->get_shader(ShaderVariantVertexStreamOutput{
-              (uint64_t)pDesc->InputLayout, (uint64_t)pDesc->SOLayout});
+              pDesc->InputLayout, (uint64_t)pDesc->SOLayout});
     } else {
       VertexShader = pDesc->VertexShader->get_shader(ShaderVariantVertex{
-          (uint64_t)pDesc->InputLayout, pDesc->GSPassthrough, !pDesc->RasterizationEnabled});
+          pDesc->InputLayout, pDesc->GSPassthrough, !pDesc->RasterizationEnabled});
     }
 
     if (pDesc->PixelShader) {

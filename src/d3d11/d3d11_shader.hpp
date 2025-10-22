@@ -88,7 +88,7 @@ public:
 
 struct ShaderVariantVertex {
   using this_type = ShaderVariantVertex;
-  uint64_t input_layout_handle;
+  ManagedInputLayout input_layout_handle;
   uint32_t gs_passthrough;
   bool rasterization_disabled;
   bool operator==(const this_type &rhs) const {
@@ -114,8 +114,8 @@ struct ShaderVariantPixel {
 
 struct ShaderVariantTessellationVertexHull {
   using this_type = ShaderVariantTessellationVertexHull;
-  uint64_t input_layout_handle;
-  uint64_t vertex_shader_handle;
+  ManagedInputLayout input_layout_handle;
+  ManagedShader vertex_shader_handle;
   SM50_INDEX_BUFFER_FORAMT index_buffer_format;
   uint32_t max_potential_tess_factor;
   bool operator==(const this_type &rhs) const {
@@ -128,7 +128,7 @@ struct ShaderVariantTessellationVertexHull {
 
 struct ShaderVariantTessellationDomain {
   using this_type = ShaderVariantTessellationDomain;
-  uint64_t hull_shader_handle;
+  ManagedShader hull_shader_handle;
   uint32_t gs_passthrough;
   uint32_t max_potential_tess_factor;
   bool rasterization_disabled;
@@ -142,8 +142,8 @@ struct ShaderVariantTessellationDomain {
 
 struct ShaderVariantGeometryVertex {
   using this_type = ShaderVariantGeometryVertex;
-  uint64_t input_layout_handle;
-  uint64_t geometry_shader_handle;
+  ManagedInputLayout input_layout_handle;
+  ManagedShader geometry_shader_handle;
   SM50_INDEX_BUFFER_FORAMT index_buffer_format;
   bool strip_topology;
   bool operator==(const this_type &rhs) const {
@@ -156,7 +156,7 @@ struct ShaderVariantGeometryVertex {
 
 struct ShaderVariantGeometry {
   using this_type = ShaderVariantGeometry;
-  uint64_t vertex_shader_handle;
+  ManagedShader vertex_shader_handle;
   bool strip_topology;
   bool operator==(const this_type &rhs) const {
     return vertex_shader_handle == rhs.vertex_shader_handle &&
@@ -171,7 +171,7 @@ struct ShaderVariantDefault {
 
 struct ShaderVariantVertexStreamOutput {
   using this_type = ShaderVariantVertexStreamOutput;
-  uint64_t input_layout_handle;
+  ManagedInputLayout input_layout_handle;
   uint64_t stream_output_layout_handle;
   bool operator==(const this_type &rhs) const {
     return input_layout_handle == rhs.input_layout_handle &&
