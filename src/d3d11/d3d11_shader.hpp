@@ -204,7 +204,7 @@ public:
   virtual MTL_SM50_SHADER_ARGUMENT *constant_buffers_info() = 0;
   virtual MTL_SM50_SHADER_ARGUMENT *arguments_info() = 0;
   virtual Com<CompiledShader> get_shader(ShaderVariant variant) = 0;
-  virtual const Sha1Hash& hash() = 0;
+  virtual const Sha1Digest& sha1() = 0;
   virtual void dump() = 0;
 };
 

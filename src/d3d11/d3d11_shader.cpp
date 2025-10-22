@@ -54,7 +54,7 @@ public:
   IMTLThreadpoolWork *RunThreadpoolWork() {
     auto pool = WMT::MakeAutoreleasePool();
     WMT::Reference<WMT::Error> err;
-    std::string func_name = "shader_main_" + shader_->hash().toString().substr(0, 8);
+    std::string func_name = "shader_main_" + shader_->sha1().string().substr(0, 8);
     sm50_bitcode_t compile_result = proc(func_name.c_str(), &sm50_common);
 
     if (!compile_result)
