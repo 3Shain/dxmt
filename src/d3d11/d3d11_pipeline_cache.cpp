@@ -94,7 +94,15 @@ public:
   CachedInputLayout(
       std::vector<MTL_SHADER_INPUT_LAYOUT_ELEMENT_DESC> &&attributes,
       uint32_t input_slot_mask)
-      : attributes_(attributes), input_slot_mask_(input_slot_mask) {}
+      : attributes_(attributes), input_slot_mask_(input_slot_mask) {
+    Sha1HashState h;
+    h.update(input_slot_mask);
+    h.update(attributes_.size());
+    for (auto &el : attributes_) {
+      h.update(el);
+    }
+    sha1_ = h.final();
+  }
 
   virtual uint32_t input_slot_mask() final { return input_slot_mask_; }
 
@@ -104,7 +112,10 @@ public:
     return attributes_.size();
   }
 
+  virtual Sha1Digest &sha1() final { return sha1_; }
+
   std::vector<MTL_SHADER_INPUT_LAYOUT_ELEMENT_DESC> attributes_;
+  Sha1Digest sha1_;
   uint32_t input_slot_mask_;
 };
 
