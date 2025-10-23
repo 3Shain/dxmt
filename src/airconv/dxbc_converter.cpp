@@ -1352,6 +1352,9 @@ AIRCONV_API int SM50Initialize(
       }
       pRefl->GeometryShader.Primitive = sm50_shader->gs_input_primitive;
     }
+    if (sm50_shader->shader_type == microsoft::D3D10_SB_PIXEL_SHADER) {
+      pRefl->PSValidRenderTargets = sm50_shader->pso_valid_output_reg_mask;
+    }
     pRefl->NumOutputElement = sm50_shader->max_output_register;
     pRefl->ArgumentTableQwords = binding_table.Size();
   }

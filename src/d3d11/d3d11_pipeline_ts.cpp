@@ -45,18 +45,21 @@ public:
 
     VertexHullShader =
         pDesc->HullShader->get_shader(ShaderVariantTessellationVertexHull{
-            (uint64_t)pDesc->InputLayout,
-            (uint64_t)pDesc->VertexShader->handle(), pDesc->IndexBufferFormat,
+            pDesc->InputLayout,
+            pDesc->VertexShader, pDesc->IndexBufferFormat,
             max_potential_factor});
     DomainShader =
         pDesc->DomainShader->get_shader(ShaderVariantTessellationDomain{
-            (uint64_t)pDesc->HullShader->handle(), pDesc->GSPassthrough,
+            pDesc->HullShader, pDesc->GSPassthrough,
             max_potential_factor, !pDesc->RasterizationEnabled});
     if (pDesc->PixelShader) {
       PixelShader = pDesc->PixelShader->get_shader(ShaderVariantPixel{
           pDesc->SampleMask, pDesc->BlendState->IsDualSourceBlending(),
           depth_stencil_format == WMTPixelFormatInvalid,
           unorm_output_reg_mask});
+      ps_valid_render_targets = pDesc->PixelShader->reflection().PSValidRenderTargets;
+    } else {
+      ps_valid_render_targets = 0;
     }
   }
 
@@ -149,7 +152,7 @@ public:
 
     if (pBlendState) {
       pBlendState->SetupMetalPipelineDescriptor(
-          (WMTRenderPipelineBlendInfo *)&info, num_rtvs);
+          (WMTRenderPipelineBlendInfo *)&info, num_rtvs, ps_valid_render_targets);
     }
 
     info.raster_sample_count = SampleCount;
@@ -181,6 +184,7 @@ public:
 
 private:
   UINT num_rtvs;
+  UINT ps_valid_render_targets;
   WMTPixelFormat rtv_formats[8];
   WMTPixelFormat depth_stencil_format;
   MTLD3D11Device *device_;
