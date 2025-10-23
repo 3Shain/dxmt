@@ -37,6 +37,9 @@ public:
           pDesc->SampleMask, pDesc->BlendState->IsDualSourceBlending(),
           depth_stencil_format == WMTPixelFormatInvalid,
           unorm_output_reg_mask});
+      ps_valid_render_targets = pDesc->PixelShader->reflection().PSValidRenderTargets;
+    } else {
+      ps_valid_render_targets = 0;
     }
   }
 
@@ -126,7 +129,7 @@ public:
     }
 
     if (pBlendState) {
-      pBlendState->SetupMetalPipelineDescriptor((WMTRenderPipelineBlendInfo *)&info, num_rtvs);
+      pBlendState->SetupMetalPipelineDescriptor((WMTRenderPipelineBlendInfo *)&info, num_rtvs, ps_valid_render_targets);
     }
 
     info.raster_sample_count = SampleCount;
@@ -149,6 +152,7 @@ public:
 
 private:
   UINT num_rtvs;
+  UINT ps_valid_render_targets;
   WMTPixelFormat rtv_formats[8];
   WMTPixelFormat depth_stencil_format;
   MTLD3D11Device *device_;
