@@ -407,6 +407,7 @@ public:
   /* for domain shader, it refers to patch constant input count */
   uint32_t max_input_register = 0;
   uint32_t max_output_register = 0;
+  uint32_t pso_valid_output_reg_mask = 0;
   uint32_t max_patch_constant_output_register = 0;
   std::vector<MTL_SM50_SHADER_ARGUMENT> args_reflection_cbuffer;
   std::vector<MTL_SM50_SHADER_ARGUMENT> args_reflection;
