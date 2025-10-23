@@ -298,8 +298,10 @@ public:
 
   bool IsDualSourceBlending() { return dual_source_blending_; }
 
-  void SetupMetalPipelineDescriptor(WMTRenderPipelineBlendInfo *info, uint32_t num_rt) {
+  void SetupMetalPipelineDescriptor(WMTRenderPipelineBlendInfo *info, uint32_t num_rt, uint32_t valid_rt) {
     for (unsigned rt = 0; rt < num_rt; rt++) {
+      if (!(valid_rt & (1 << rt)))
+        continue;
       auto i = desc_.IndependentBlendEnable ? rt : 0;
       auto &renderTarget = desc_.RenderTarget[i];
       auto &attachment_desc = info->colors[rt];
