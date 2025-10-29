@@ -14,10 +14,9 @@
 
 #include "airconv_context.hpp"
 
-using namespace llvm;
+#include "air_shader.h"
 
-extern unsigned char air_shader[];
-extern unsigned int air_shader_len;
+using namespace llvm;
 
 namespace dxmt {
 
