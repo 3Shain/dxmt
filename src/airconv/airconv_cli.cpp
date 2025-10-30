@@ -373,7 +373,9 @@ int main(int argc, char **argv) {
     dxmt::runOptimizationPasses(M, OptimizationLevel::O2);
   }
 
-  dxmt::linkShader(M);
+  dxmt::linkMSAD(M);
+  dxmt::linkSamplePos(M);
+  dxmt::linkTessellation(M);
 
   std::error_code EC;
   std::unique_ptr<ToolOutputFile> Out(new ToolOutputFile(

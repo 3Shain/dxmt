@@ -47,7 +47,9 @@ airconv_forward_dep = declare_dependency(
 )
 
 airconv_shaders = [
-  'nt/air_shader.metal'
+  'shaders/air_msad.metal',
+  'shaders/air_samplepos.metal',
+  'shaders/air_tessellation.metal',
 ]
 
 airconv_shaders_ir = metalir_generator.process(

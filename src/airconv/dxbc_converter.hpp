@@ -99,6 +99,8 @@ public:
   bool use_cmp_exch = false;
   bool no_control_point_phase_passthrough = false;
   bool output_control_point_read = false;
+  bool use_msad = false;
+  bool use_samplepos = false;
   std::vector<PhaseInfo> phases;
   uint32_t pull_mode_reg_mask = 0;
 };

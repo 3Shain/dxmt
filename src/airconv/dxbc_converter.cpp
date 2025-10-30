@@ -1433,7 +1433,10 @@ AIRCONV_API int SM50Compile(
     return 1;
   }
 
-  linkShader(*pModule);
+  if (shader_info.use_msad)
+    linkMSAD(*pModule);
+  if (shader_info.use_samplepos)
+    linkSamplePos(*pModule);
 
   // Workaround of the crazy planet generation shaders in _Elite Dangerous_
   {
@@ -1503,7 +1506,11 @@ AIRCONV_API int SM50CompileTessellationPipelineHull(
     return 1;
   }
 
-  linkShader(*pModule);
+  if (shader_info.use_msad)
+    linkMSAD(*pModule);
+  if (shader_info.use_samplepos)
+    linkSamplePos(*pModule);
+  linkTessellation(*pModule);
 
   // Serialize AIR
   auto compiled = new SM50CompiledBitcodeInternal();
@@ -1572,7 +1579,11 @@ AIRCONV_API int SM50CompileTessellationPipelineDomain(
     return 1;
   }
 
-  linkShader(*pModule);
+  if (shader_info.use_msad)
+    linkMSAD(*pModule);
+  if (shader_info.use_samplepos)
+    linkSamplePos(*pModule);
+  linkTessellation(*pModule);
 
   // Serialize AIR
   auto compiled = new SM50CompiledBitcodeInternal();
@@ -1613,6 +1624,8 @@ AIRCONV_API int SM50CompileGeometryPipelineVertex(
 
   context.setOpaquePointers(false); // I suspect Metal uses LLVM 14...
 
+  auto &shader_info = ((dxmt::dxbc::SM50ShaderInternal *)pGeometryShader)->shader_info;
+
   auto pModule = std::make_unique<Module>("shader.air", context);
   initializeModule(*pModule, {.enableFastMath = false});
 
@@ -1628,7 +1641,10 @@ AIRCONV_API int SM50CompileGeometryPipelineVertex(
     return 1;
   }
 
-  linkShader(*pModule);
+  if (shader_info.use_msad)
+    linkMSAD(*pModule);
+  if (shader_info.use_samplepos)
+    linkSamplePos(*pModule);
 
   // Serialize AIR
   auto compiled = new SM50CompiledBitcodeInternal();
@@ -1691,7 +1707,10 @@ AIRCONV_API int SM50CompileGeometryPipelineGeometry(
     return 1;
   }
 
-  linkShader(*pModule);
+  if (shader_info.use_msad)
+    linkMSAD(*pModule);
+  if (shader_info.use_samplepos)
+    linkSamplePos(*pModule);
 
   // Serialize AIR
   auto compiled = new SM50CompiledBitcodeInternal();

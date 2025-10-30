@@ -14,7 +14,9 @@
 
 #include "airconv_context.hpp"
 
-#include "air_shader.h"
+#include "air_msad.h"
+#include "air_samplepos.h"
+#include "air_tessellation.h"
 
 using namespace llvm;
 
@@ -30,6 +32,19 @@ void initializeModule(llvm::Module &M, const ModuleOptions &opts) {
     "v128:128:128-v192:256:256-v256:256:256-v512:512:512-v1024:1024:1024-n8:"
     "16:32"
   );
+  M.setSDKVersion(VersionTuple(15, 0));
+  M.addModuleFlag(Module::ModFlagBehavior::Error, "wchar_size", 4);
+  M.addModuleFlag(Module::ModFlagBehavior::Max, "frame-pointer", 2);
+  M.addModuleFlag(Module::ModFlagBehavior::Max, "air.max_device_buffers", 31);
+  M.addModuleFlag(Module::ModFlagBehavior::Max, "air.max_constant_buffers", 31);
+  M.addModuleFlag(
+    Module::ModFlagBehavior::Max, "air.max_threadgroup_buffers", 31
+  );
+  M.addModuleFlag(Module::ModFlagBehavior::Max, "air.max_textures", 128);
+  M.addModuleFlag(
+    Module::ModFlagBehavior::Max, "air.max_read_write_textures", 8
+  );
+  M.addModuleFlag(Module::ModFlagBehavior::Max, "air.max_samplers", 16);
 
   auto createString = [&](auto s) { return MDString::get(context, s); };
 
@@ -93,8 +108,16 @@ void runOptimizationPasses(llvm::Module &M, llvm::OptimizationLevel opt) {
   MPM.run(M, MAM);
 }
 
-void linkShader(llvm::Module &M) {
-  auto buffer = MemoryBuffer::getMemBufferCopy(StringRef((const char *)air_shader, air_shader_len));
+void
+removeNamedMetadata(llvm::Module &M, StringRef Name) {
+  if (auto MD = M.getNamedMetadata(Name)) {
+    M.eraseNamedMetadata(MD);
+  }
+}
+
+template<size_t N>
+void linkShader(llvm::Module &M, const unsigned char (&bitcode)[N]) {
+  auto buffer = MemoryBuffer::getMemBufferCopy(StringRef((const char *)bitcode, N));
   Expected<std::unique_ptr<Module>> modOrErr = parseBitcodeFile(buffer->getMemBufferRef(), M.getContext());
 
   if (!modOrErr) {
@@ -103,20 +126,31 @@ void linkShader(llvm::Module &M) {
     return;
   }
 
-  auto mod = modOrErr->get();
+  auto module = std::move(modOrErr.get());
 
-  // avoid conflict
-  if (auto md = mod->getNamedMetadata("air.compile_options")) {
-    mod->eraseNamedMetadata(md);
-  }
-  if (auto md = mod->getNamedMetadata("air.version")) {
-    mod->eraseNamedMetadata(md);
-  }
-  if (auto md = mod->getNamedMetadata("air.language_version")) {
-    mod->eraseNamedMetadata(md);
-  }
+  removeNamedMetadata(*module, "air.compile_options");
+  removeNamedMetadata(*module, "air.version");
+  removeNamedMetadata(*module, "air.language_version");
+  removeNamedMetadata(*module, "air.source_file_name");
+  removeNamedMetadata(*module, "llvm.ident");
+  removeNamedMetadata(*module, "llvm.module.flags");
 
-  llvm::Linker::linkModules(M, std::move(modOrErr.get()), Linker::LinkOnlyNeeded);
+  llvm::Linker::linkModules(M, std::move(module), Linker::LinkOnlyNeeded);
 };
+
+void
+linkMSAD(llvm::Module &M) {
+  linkShader(M, air_msad);
+}
+
+void
+linkSamplePos(llvm::Module &M) {
+  linkShader(M, air_samplepos);
+}
+
+void
+linkTessellation(llvm::Module &M) {
+  linkShader(M, air_tessellation);
+}
 
 } // namespace dxmt
