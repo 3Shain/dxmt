@@ -211,7 +211,14 @@ public:
       return ComputeShader.ptr();
     }
 
-    state_ = device_->GetMTLDevice().newComputePipelineState(cs.Function, tgsize_is_multiple_of_sgwidth, err);
+    WMTComputePipelineInfo info;
+    WMT::InitializeComputePipelineInfo(info);
+
+    info.compute_function = cs.Function;
+    info.tgsize_is_multiple_of_sgwidth = tgsize_is_multiple_of_sgwidth;
+    info.immutable_buffers = (1 << 29) | (1 << 30);
+
+    state_ = device_->GetMTLDevice().newComputePipelineState(info, err);
 
     if (!state_) {
       ERR("Failed to create compute PSO: ", err.description().getUTF8String());
