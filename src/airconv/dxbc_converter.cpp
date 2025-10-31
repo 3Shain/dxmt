@@ -1438,13 +1438,7 @@ AIRCONV_API int SM50Compile(
   if (shader_info.use_samplepos)
     linkSamplePos(*pModule);
 
-  // Workaround of the crazy planet generation shaders in _Elite Dangerous_
-  {
-    auto sm50_shader = ((dxmt::dxbc::SM50ShaderInternal *)pShader);
-    if (shader_type == microsoft::D3D11_SB_COMPUTE_SHADER && sm50_shader->bbs.size() > 500) {
-      runOptimizationPasses(*pModule, OptimizationLevel::O2);
-    }
-  }
+  runOptimizationPasses(*pModule);
 
   // Serialize AIR
   auto compiled = new SM50CompiledBitcodeInternal();
@@ -1511,6 +1505,8 @@ AIRCONV_API int SM50CompileTessellationPipelineHull(
   if (shader_info.use_samplepos)
     linkSamplePos(*pModule);
   linkTessellation(*pModule);
+
+  runOptimizationPasses(*pModule);
 
   // Serialize AIR
   auto compiled = new SM50CompiledBitcodeInternal();
@@ -1584,6 +1580,8 @@ AIRCONV_API int SM50CompileTessellationPipelineDomain(
   if (shader_info.use_samplepos)
     linkSamplePos(*pModule);
   linkTessellation(*pModule);
+  
+  runOptimizationPasses(*pModule);
 
   // Serialize AIR
   auto compiled = new SM50CompiledBitcodeInternal();
@@ -1645,6 +1643,8 @@ AIRCONV_API int SM50CompileGeometryPipelineVertex(
     linkMSAD(*pModule);
   if (shader_info.use_samplepos)
     linkSamplePos(*pModule);
+
+  runOptimizationPasses(*pModule);
 
   // Serialize AIR
   auto compiled = new SM50CompiledBitcodeInternal();
@@ -1711,6 +1711,8 @@ AIRCONV_API int SM50CompileGeometryPipelineGeometry(
     linkMSAD(*pModule);
   if (shader_info.use_samplepos)
     linkSamplePos(*pModule);
+  
+  runOptimizationPasses(*pModule);
 
   // Serialize AIR
   auto compiled = new SM50CompiledBitcodeInternal();

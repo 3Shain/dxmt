@@ -5,12 +5,24 @@
 #include "llvm/IR/Metadata.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Verifier.h"
-#include "llvm/Passes/OptimizationLevel.h"
 #include "llvm/Passes/PassBuilder.h"
 #include "llvm/Support/VersionTuple.h"
-#include "llvm/Transforms/Scalar/Scalarizer.h"
 #include "llvm/Bitcode/BitcodeReader.h"
 #include "llvm/Linker/Linker.h"
+#include "llvm/Passes/StandardInstrumentations.h"
+#include "llvm/Transforms/Scalar/LowerExpectIntrinsic.h"
+#include "llvm/Transforms/Scalar/SimplifyCFG.h"
+#include "llvm/Transforms/Scalar/SROA.h"
+#include "llvm/Transforms/Scalar/EarlyCSE.h"
+#include "llvm/Transforms/IPO/AlwaysInliner.h"
+#include "llvm/Transforms/InstCombine/InstCombine.h"
+#include "llvm/Transforms/IPO/DeadArgumentElimination.h"
+#include "llvm/Transforms/IPO/GlobalOpt.h"
+#include "llvm/Transforms/IPO/SCCP.h"
+#include "llvm/Transforms/IPO/Annotation2Metadata.h"
+#include "llvm/Transforms/IPO/ForceFunctionAttrs.h"
+#include "llvm/Transforms/IPO/InferFunctionAttrs.h"
+#include "llvm/Transforms/Utils/Mem2Reg.h"
 
 #include "airconv_context.hpp"
 
@@ -64,16 +76,21 @@ void initializeModule(llvm::Module &M, const ModuleOptions &opts) {
 
 static std::atomic_flag llvm_overwrite = false;
 
-void runOptimizationPasses(llvm::Module &M, llvm::OptimizationLevel opt) {
+void
+runOptimizationPasses(llvm::Module &M) {
 
   if (!llvm_overwrite.test_and_set()) {
     auto Map = cl::getRegisteredOptions();
     auto InfiniteLoopThreshold = Map["instcombine-infinite-loop-threshold"];
     if (InfiniteLoopThreshold) {
-      reinterpret_cast<cl::opt<unsigned> *>(InfiniteLoopThreshold)
-        ->setValue(1000);
+      reinterpret_cast<cl::opt<unsigned> *>(InfiniteLoopThreshold)->setValue(1000);
     }
   }
+
+  // Following optimization passes are picked from default LLVM pipelines
+  // An unoptimized shader can make PSO compilation take a very long time
+  // But a full optimization pipeline is also too heavy
+  // So we choose some passes that really matter to run
 
   // Create the analysis managers.
   // These must be declared in this order so that they are destroyed in the
@@ -87,7 +104,8 @@ void runOptimizationPasses(llvm::Module &M, llvm::OptimizationLevel opt) {
   // Take a look at the PassBuilder constructor parameters for more
   // customization, e.g. specifying a TargetMachine or various debugging
   // options.
-  PassBuilder PB;
+  llvm::PassInstrumentationCallbacks PIC;
+  PassBuilder PB(nullptr, PipelineTuningOptions(), {}, &PIC);
 
   // Register all the basic analyses with the managers.
   PB.registerModuleAnalyses(MAM);
@@ -96,13 +114,50 @@ void runOptimizationPasses(llvm::Module &M, llvm::OptimizationLevel opt) {
   PB.registerLoopAnalyses(LAM);
   PB.crossRegisterProxies(LAM, FAM, CGAM, MAM);
 
-  ModulePassManager MPM = PB.buildPerModuleDefaultPipeline(opt);
+  // llvm::StandardInstrumentations SI(true);
+  // SI.registerCallbacks(PIC, &FAM);
 
-  FunctionPassManager FPM;
-  FPM.addPass(ScalarizerPass());
+  ModulePassManager MPM;
 
-  MPM.addPass(createModuleToFunctionPassAdaptor(std::move(FPM)));
-  MPM.addPass(VerifierPass());
+  // Convert @llvm.global.annotations to !annotation metadata.
+  MPM.addPass(Annotation2MetadataPass());
+
+  // Force any function attributes we want the rest of the pipeline to observe.
+  MPM.addPass(ForceFunctionAttrsPass());
+  // Do basic inference of function attributes from known properties of system
+  // libraries and other oracles.
+  MPM.addPass(InferFunctionAttrsPass());
+
+  {
+    // Create an early function pass manager to cleanup the output of the
+    // frontend.
+    FunctionPassManager EarlyFPM;
+    // Lower llvm.expect to metadata before attempting transforms.
+    // Compare/branch metadata may alter the behavior of passes like SimplifyCFG.
+    EarlyFPM.addPass(LowerExpectIntrinsicPass());
+    EarlyFPM.addPass(SimplifyCFGPass());
+    EarlyFPM.addPass(SROAPass());
+    EarlyFPM.addPass(EarlyCSEPass());
+    MPM.addPass(createModuleToFunctionPassAdaptor(std::move(EarlyFPM), true /* ? */));
+  }
+
+  MPM.addPass(AlwaysInlinerPass());
+  MPM.addPass(IPSCCPPass());
+  MPM.addPass(GlobalOptPass());
+  MPM.addPass(createModuleToFunctionPassAdaptor(PromotePass()));
+  MPM.addPass(DeadArgumentEliminationPass());
+
+  {
+    // Create a small function pass pipeline to cleanup after all the global
+    // optimizations.
+    FunctionPassManager GlobalCleanupPM;
+    GlobalCleanupPM.addPass(InstCombinePass());
+
+    GlobalCleanupPM.addPass(SimplifyCFGPass(SimplifyCFGOptions().convertSwitchRangeToICmp(true)));
+    MPM.addPass(createModuleToFunctionPassAdaptor(std::move(GlobalCleanupPM), true /* ? */));
+  }
+
+  // MPM.addPass(VerifierPass());
 
   // Optimize the IR!
   MPM.run(M, MAM);
