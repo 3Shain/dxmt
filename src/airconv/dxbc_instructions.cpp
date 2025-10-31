@@ -816,6 +816,7 @@ Instruction readInstruction(
     };
   };
   case microsoft::D3D10_1_SB_OPCODE_SAMPLE_POS: {
+    shader_info.use_samplepos = true;
     if (Inst.m_Operands[1].m_Type ==
         microsoft::D3D10_SB_OPERAND_TYPE_RASTERIZER) {
       return InstSamplePos{
@@ -1241,6 +1242,7 @@ Instruction readInstruction(
     };
   };
   case microsoft::D3D11_1_SB_OPCODE_MSAD: {
+    shader_info.use_msad = true;
     return InstMaskedSumOfAbsDiff{
       .dst = readDstOperand(Inst.m_Operands[0], phase, OperandDataType::Integer),
       .src0 = readSrcOperand(Inst.m_Operands[1], phase, OperandDataType::Integer),

@@ -99,6 +99,8 @@ public:
   bool use_cmp_exch = false;
   bool no_control_point_phase_passthrough = false;
   bool output_control_point_read = false;
+  bool use_msad = false;
+  bool use_samplepos = false;
   std::vector<PhaseInfo> phases;
   uint32_t pull_mode_reg_mask = 0;
 };
@@ -407,6 +409,7 @@ public:
   /* for domain shader, it refers to patch constant input count */
   uint32_t max_input_register = 0;
   uint32_t max_output_register = 0;
+  uint32_t pso_valid_output_reg_mask = 0;
   uint32_t max_patch_constant_output_register = 0;
   std::vector<MTL_SM50_SHADER_ARGUMENT> args_reflection_cbuffer;
   std::vector<MTL_SM50_SHADER_ARGUMENT> args_reflection;

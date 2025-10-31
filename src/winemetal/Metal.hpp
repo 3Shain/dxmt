@@ -655,6 +655,14 @@ public:
   }
 };
 
+class BinaryArchive : public Object {
+public:
+  void
+  serialize(const char *url, Error &error) {
+    MTLBinaryArchive_serialize(handle, url, &error.handle);
+  }
+};
+
 class Device : public Object {
 public:
   uint64_t
@@ -718,21 +726,38 @@ public:
 
   Reference<ComputePipelineState>
   newComputePipelineState(const Function &compute_function, Error &error) {
-    return Reference<ComputePipelineState>(
-        MTLDevice_newComputePipelineState(handle, compute_function.handle, false, &error.handle)
-    );
+    WMTComputePipelineInfo info;
+    info.compute_function = compute_function;
+    info.tgsize_is_multiple_of_sgwidth = false;
+    info.immutable_buffers = 0;
+    info.binary_archive_for_serialization = NULL_OBJECT_HANDLE;
+    info.binary_archives_for_lookup.set(nullptr);
+    info.num_binary_archives_for_lookup = 0;
+    info.fail_on_binary_archive_miss = false;
+    return Reference<ComputePipelineState>(MTLDevice_newComputePipelineState(handle, &info, &error.handle));
   }
 
   Reference<ComputePipelineState>
   newComputePipelineState(const Function &compute_function, bool tgsize_is_multiple_of_sgwidth, Error &error) {
-    return Reference<ComputePipelineState>(
-        MTLDevice_newComputePipelineState(handle, compute_function.handle, tgsize_is_multiple_of_sgwidth, &error.handle)
-    );
+    WMTComputePipelineInfo info;
+    info.compute_function = compute_function;
+    info.tgsize_is_multiple_of_sgwidth = tgsize_is_multiple_of_sgwidth;
+    info.immutable_buffers = 0;
+    info.binary_archive_for_serialization = NULL_OBJECT_HANDLE;
+    info.binary_archives_for_lookup.set(nullptr);
+    info.num_binary_archives_for_lookup = 0;
+    info.fail_on_binary_archive_miss = false;
+    return Reference<ComputePipelineState>(MTLDevice_newComputePipelineState(handle, &info, &error.handle));
   }
 
   Reference<RenderPipelineState>
   newRenderPipelineState(const WMTRenderPipelineInfo &info, Error &error) {
     return Reference<RenderPipelineState>(MTLDevice_newRenderPipelineState(handle, &info, &error.handle));
+  }
+
+  Reference<ComputePipelineState>
+  newComputePipelineState(const WMTComputePipelineInfo &info, Error &error) {
+    return Reference<ComputePipelineState>(MTLDevice_newComputePipelineState(handle, &info, &error.handle));
   }
 
   Reference<RenderPipelineState>
@@ -783,6 +808,11 @@ public:
   Reference<FXSpatialScaler>
   newSpatialScaler(const WMTFXSpatialScalerInfo &info) {
     return Reference<FXSpatialScaler>(MTLDevice_newSpatialScaler(handle, &info));
+  }
+
+  Reference<BinaryArchive>
+  newBinaryArchive(const char *url, Error &error) {
+    return Reference<BinaryArchive>(MTLDevice_newBinaryArchive(handle, url, &error.handle));
   }
 
   bool
@@ -910,6 +940,21 @@ InitializeRenderPipelineInfo(WMTRenderPipelineInfo &info) {
   info.fragment_function = NULL_OBJECT_HANDLE;
   info.immutable_vertex_buffers = 0;
   info.immutable_fragment_buffers = 0;
+  info.binary_archive_for_serialization = NULL_OBJECT_HANDLE;
+  info.binary_archives_for_lookup.set(nullptr);
+  info.num_binary_archives_for_lookup = 0;
+  info.fail_on_binary_archive_miss = false;
+}
+
+inline void
+InitializeComputePipelineInfo(WMTComputePipelineInfo &info) {
+  info.compute_function = NULL_OBJECT_HANDLE;
+  info.binary_archive_for_serialization = NULL_OBJECT_HANDLE;
+  info.binary_archives_for_lookup.set(nullptr);
+  info.num_binary_archives_for_lookup = 0;
+  info.fail_on_binary_archive_miss = false;
+  info.tgsize_is_multiple_of_sgwidth = false;
+  info.immutable_buffers = 0;
 }
 
 inline void
@@ -942,6 +987,10 @@ InitializeMeshRenderPipelineInfo(WMTMeshRenderPipelineInfo &info) {
   info.payload_memory_length = 0;
   info.mesh_tgsize_is_multiple_of_sgwidth = 0;
   info.object_tgsize_is_multiple_of_sgwidth = 0;
+  info.binary_archive_for_serialization = NULL_OBJECT_HANDLE;
+  info.binary_archives_for_lookup.set(nullptr);
+  info.num_binary_archives_for_lookup = 0;
+  info.fail_on_binary_archive_miss = false;
 }
 
 } // namespace WMT

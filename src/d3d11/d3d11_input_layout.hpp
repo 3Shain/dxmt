@@ -2,6 +2,7 @@
 
 #include "com/com_guid.hpp"
 #include "d3d11_device.hpp"
+#include "sha1/sha1_util.hpp"
 #include "util_hash.hpp"
 
 struct MTL_SHADER_INPUT_LAYOUT_ELEMENT_DESC {
@@ -46,6 +47,7 @@ public:
   virtual uint32_t input_slot_mask() = 0;
   virtual uint32_t
   input_layout_element(MTL_SHADER_INPUT_LAYOUT_ELEMENT_DESC **ppElements) = 0;
+  virtual Sha1Digest &sha1() = 0;
 };
 
 HRESULT ExtractMTLInputLayoutElements(

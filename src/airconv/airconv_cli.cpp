@@ -365,15 +365,15 @@ int main(int argc, char **argv) {
 
   SM50Destroy(sm50);
 
-  if (OptLevelO1) {
-    dxmt::runOptimizationPasses(M, OptimizationLevel::O1);
-  } else if (OptLevelO0) {
+  if (OptLevelO0) {
     // do nothing
   } else {
-    dxmt::runOptimizationPasses(M, OptimizationLevel::O2);
+    dxmt::runOptimizationPasses(M);
   }
 
-  dxmt::linkShader(M);
+  dxmt::linkMSAD(M);
+  dxmt::linkSamplePos(M);
+  dxmt::linkTessellation(M);
 
   std::error_code EC;
   std::unique_ptr<ToolOutputFile> Out(new ToolOutputFile(

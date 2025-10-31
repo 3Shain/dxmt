@@ -15,15 +15,15 @@ namespace dxmt {
 class CachedSM50Shader final : public Shader {
   MTLD3D11Device *device;
   sm50_shader_t shader = nullptr;
-  Sha1Hash hash_;
+  Sha1Digest sha1_;
   MTL_SHADER_REFLECTION reflection_;
   MTL_SM50_SHADER_ARGUMENT* arguments_info_buffer;
   std::unordered_map<ShaderVariant, std::unique_ptr<CompiledShader>> variants;
 
 public:
   CachedSM50Shader(MTLD3D11Device *device, sm50_shader_t shader_transfered,
-                   const Sha1Hash &hash, MTL_SHADER_REFLECTION &reflection)
-      : device(device), shader(shader_transfered), hash_(hash),
+                   const Sha1Digest &hash, MTL_SHADER_REFLECTION &reflection)
+      : device(device), shader(shader_transfered), sha1_(hash),
         reflection_(reflection) {
     if (reflection_.NumConstantBuffers + reflection_.NumArguments) {
       arguments_info_buffer = (MTL_SM50_SHADER_ARGUMENT *)malloc(
@@ -67,7 +67,7 @@ public:
     }
     return c.first->second.get();
   }
-  virtual const Sha1Hash &hash() { return hash_; };
+  virtual const Sha1Digest &sha1() { return sha1_; };
 
 #ifdef DXMT_DEBUG
   void *bytecode;
@@ -75,13 +75,13 @@ public:
 
   virtual void dump() {
     std::fstream dump_out;
-    dump_out.open("shader_dump_" + hash_.toString() + ".cso",
+    dump_out.open("shader_dump_" + sha1_.string() + ".cso",
                   std::ios::out | std::ios::binary);
     if (dump_out) {
       dump_out.write((char *)bytecode, bytecode_length);
     }
     dump_out.close();
-    WARN("shader dumped to ./shader_dump_" + hash_.toString() + ".cso");
+    WARN("shader dumped to ./shader_dump_" + sha1_.string() + ".cso");
   }
 #else
   virtual void dump() {}
@@ -94,7 +94,15 @@ public:
   CachedInputLayout(
       std::vector<MTL_SHADER_INPUT_LAYOUT_ELEMENT_DESC> &&attributes,
       uint32_t input_slot_mask)
-      : attributes_(attributes), input_slot_mask_(input_slot_mask) {}
+      : attributes_(attributes), input_slot_mask_(input_slot_mask) {
+    Sha1HashState h;
+    h.update(input_slot_mask);
+    h.update(attributes_.size());
+    for (auto &el : attributes_) {
+      h.update(el);
+    }
+    sha1_ = h.final();
+  }
 
   virtual uint32_t input_slot_mask() final { return input_slot_mask_; }
 
@@ -104,7 +112,10 @@ public:
     return attributes_.size();
   }
 
+  virtual Sha1Digest &sha1() final { return sha1_; }
+
   std::vector<MTL_SHADER_INPUT_LAYOUT_ELEMENT_DESC> attributes_;
+  Sha1Digest sha1_;
   uint32_t input_slot_mask_;
 };
 
@@ -163,7 +174,7 @@ class PipelineCache : public MTLD3D11PipelineCacheBase {
       so_layouts;
   dxmt::mutex mutex_so_;
 
-  std::unordered_map<Sha1Hash, std::unique_ptr<CachedSM50Shader>> shaders_;
+  std::unordered_map<Sha1Digest, std::unique_ptr<CachedSM50Shader>> shaders_;
   std::shared_mutex mutex_shares;
 
   std::unordered_map<MTL_GRAPHICS_PIPELINE_DESC,
@@ -181,9 +192,13 @@ class PipelineCache : public MTLD3D11PipelineCacheBase {
       pipelines_ts_;
   dxmt::mutex mutex_ts_;
 
+  std::unordered_map<ManagedShader, Com<IMTLCompiledComputePipeline>>
+      pipelines_cs_;
+  dxmt::mutex mutex_cs_;
+
   CachedSM50Shader *CreateShader(const void *pBytecode,
                                  uint32_t BytecodeLength) {
-    auto sha1 = Sha1Hash::compute(pBytecode, BytecodeLength);
+    auto sha1 = Sha1HashState::compute(pBytecode, BytecodeLength);
     {
       std::shared_lock<std::shared_mutex> lock(mutex_shares);
       auto result = shaders_.find(sha1);
@@ -388,6 +403,23 @@ class PipelineCache : public MTLD3D11PipelineCacheBase {
     if (!pipelines_ts_.insert({*pDesc, temp}).second) // copy
     {
       D3D11_ASSERT(0 && "duplicated tessellation pipeline");
+    }
+    *ppPipeline = std::move(temp);
+  }
+
+  void GetComputePipeline(MTL_COMPUTE_PIPELINE_DESC *pDesc,
+                                  IMTLCompiledComputePipeline **ppPipeline) override {
+   std::lock_guard<dxmt::mutex> lock(mutex_cs_);
+
+    auto iter = pipelines_cs_.find(pDesc->ComputeShader);
+    if (iter != pipelines_cs_.end()) {
+      *ppPipeline = iter->second.ref();
+      return;
+    }
+    auto temp = dxmt::CreateComputePipeline(device, pDesc->ComputeShader);
+    if (!pipelines_cs_.insert({pDesc->ComputeShader, temp}).second) // copy
+    {
+      D3D11_ASSERT(0 && "duplicated compute pipeline");
     }
     *ppPipeline = std::move(temp);
   }

@@ -298,14 +298,13 @@ NSObject_description(obj_handle_t nserror) {
 
 WINEMETAL_API obj_handle_t
 MTLDevice_newComputePipelineState(
-    obj_handle_t device, obj_handle_t function, bool tgsize_is_multiple_of_sgwidth, obj_handle_t *err_out
+    obj_handle_t device, const struct WMTComputePipelineInfo *info, obj_handle_t *err_out
 ) {
   struct unixcall_mtldevice_newcomputepso params;
   params.device = device;
-  params.function = function;
+  WMT_MEMPTR_SET(params.info, info);
   params.ret_error = 0;
   params.ret_pso = 0;
-  params.tgsize_is_multiple_of_sgwidth = tgsize_is_multiple_of_sgwidth;
   UNIX_CALL(29, &params);
   if (err_out)
     *err_out = params.ret_error;
@@ -968,4 +967,27 @@ WMTGetOSVersion(uint64_t *major, uint64_t *minor, uint64_t *patch) {
     *minor = params.ret_minor;
   if (patch)
     *patch = params.ret_patch;
+}
+
+WINEMETAL_API obj_handle_t
+MTLDevice_newBinaryArchive(obj_handle_t device, const char *url, obj_handle_t *err_out) {
+  struct unixcall_mtldevice_newbinaryarchive params;
+  params.device = device;
+  WMT_MEMPTR_SET(params.url, url);
+  params.ret_archive = 0;
+  params.ret_error = 0;
+  UNIX_CALL(112, &params);
+  if (err_out)
+    *err_out = params.ret_error;
+  return params.ret_archive;
+}
+
+WINEMETAL_API void
+MTLBinaryArchive_serialize(obj_handle_t archive, const char *url, obj_handle_t *err_out) {
+  struct unixcall_mtlbinaryarchive_serialize params;
+  params.archive = archive;
+  WMT_MEMPTR_SET(params.url, url);
+  UNIX_CALL(113, &params);
+  if (err_out)
+    *err_out = params.ret_error;
 }

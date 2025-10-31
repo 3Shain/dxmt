@@ -103,6 +103,7 @@ struct MTL_SHADER_REFLECTION {
     struct MTL_TESSELLATOR_REFLECTION Tessellator;
     struct MTL_GEOMETRY_SHADER_REFLECTION GeometryShader;
     struct MTL_POST_TESSELLATOR_REFLECTION PostTessellator;
+    uint32_t PSValidRenderTargets;
   };
   uint16_t ConstantBufferSlotMask;
   uint16_t SamplerSlotMask;

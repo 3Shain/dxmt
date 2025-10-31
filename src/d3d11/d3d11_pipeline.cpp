@@ -30,10 +30,10 @@ public:
     if (pDesc->SOLayout) {
       VertexShader =
           pDesc->VertexShader->get_shader(ShaderVariantVertexStreamOutput{
-              (uint64_t)pDesc->InputLayout, (uint64_t)pDesc->SOLayout});
+              pDesc->InputLayout, (uint64_t)pDesc->SOLayout});
     } else {
       VertexShader = pDesc->VertexShader->get_shader(ShaderVariantVertex{
-          (uint64_t)pDesc->InputLayout, pDesc->GSPassthrough, !pDesc->RasterizationEnabled});
+          pDesc->InputLayout, pDesc->GSPassthrough, !pDesc->RasterizationEnabled});
     }
 
     if (pDesc->PixelShader) {
@@ -41,6 +41,9 @@ public:
           pDesc->SampleMask, pDesc->BlendState->IsDualSourceBlending(),
           depth_stencil_format == WMTPixelFormatInvalid,
           unorm_output_reg_mask});
+      ps_valid_render_targets = pDesc->PixelShader->reflection().PSValidRenderTargets;
+    } else {
+      ps_valid_render_targets = 0;
     }
   }
 
@@ -108,7 +111,7 @@ public:
     }
 
     if (pBlendState) {
-      pBlendState->SetupMetalPipelineDescriptor((WMTRenderPipelineBlendInfo *)&info, num_rtvs);
+      pBlendState->SetupMetalPipelineDescriptor((WMTRenderPipelineBlendInfo *)&info, num_rtvs, ps_valid_render_targets);
     }
 
     info.input_primitive_topology = topology_class;
@@ -137,6 +140,7 @@ public:
 
 private:
   UINT num_rtvs;
+  UINT ps_valid_render_targets;
   WMTPixelFormat rtv_formats[8];
   WMTPixelFormat depth_stencil_format;
   WMTPrimitiveTopologyClass topology_class;
@@ -207,7 +211,14 @@ public:
       return ComputeShader.ptr();
     }
 
-    state_ = device_->GetMTLDevice().newComputePipelineState(cs.Function, tgsize_is_multiple_of_sgwidth, err);
+    WMTComputePipelineInfo info;
+    WMT::InitializeComputePipelineInfo(info);
+
+    info.compute_function = cs.Function;
+    info.tgsize_is_multiple_of_sgwidth = tgsize_is_multiple_of_sgwidth;
+    info.immutable_buffers = (1 << 29) | (1 << 30);
+
+    state_ = device_->GetMTLDevice().newComputePipelineState(info, err);
 
     if (!state_) {
       ERR("Failed to create compute PSO: ", err.description().getUTF8String());

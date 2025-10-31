@@ -100,6 +100,25 @@ else
   wrc_generator = generator(wrc, output : [ '@BASENAME@_ignored.h' ], arguments : [ '@OUTPUT@' ] )
 endif
 
+xcrun = find_program('xcrun')
+
+metalir_generator = generator(xcrun,
+  output    : [ '@BASENAME@.air'],
+  arguments : [ '-sdk', 'macosx', 'metal', '-o', '@OUTPUT@', '-c', '@INPUT@', '@EXTRA_ARGS@'],
+)
+
+metallib_generator = generator(xcrun,
+  output    : [ '@BASENAME@.metallib'],
+  arguments : [ '-sdk', 'macosx', 'metallib', '-o', '@OUTPUT@', '@INPUT@'],
+)
+
+xxd = find_program('xxd')
+
+hexdump_generator = generator(xxd,
+  output    : [ '@BASENAME@.h'],
+  arguments : [ '-n', '@BASENAME@', '-i', '@INPUT@', '@OUTPUT@'],
+)
+
 dxmt_debug = get_option('dxmt_debug')
 
 if dxmt_debug

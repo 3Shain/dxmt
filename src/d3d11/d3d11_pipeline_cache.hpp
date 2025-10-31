@@ -40,6 +40,8 @@ public:
   virtual void GetTessellationPipeline(MTL_GRAPHICS_PIPELINE_DESC * pDesc,
                                    IMTLCompiledTessellationMeshPipeline *
                                        *ppPipeline) = 0;
+  virtual void GetComputePipeline(MTL_COMPUTE_PIPELINE_DESC *pDesc,
+                                  IMTLCompiledComputePipeline **ppPipeline) = 0;
 };
 
 namespace dxmt {

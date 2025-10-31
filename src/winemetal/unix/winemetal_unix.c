@@ -343,13 +343,27 @@ static NTSTATUS
 _MTLDevice_newComputePipelineState(void *obj) {
   struct unixcall_mtldevice_newcomputepso *params = obj;
   id<MTLDevice> device = (id<MTLDevice>)params->device;
+  const struct WMTComputePipelineInfo *info = params->info.ptr;
   MTLComputePipelineDescriptor *descriptor = [[MTLComputePipelineDescriptor alloc] init];
   NSError *err = NULL;
-  descriptor.computeFunction = (id<MTLFunction>)params->function;
-  descriptor.threadGroupSizeIsMultipleOfThreadExecutionWidth = params->tgsize_is_multiple_of_sgwidth;
-  params->ret_pso = (obj_handle_t
-  )[device newComputePipelineStateWithDescriptor:descriptor options:MTLPipelineOptionNone reflection:nil error:&err];
+  descriptor.computeFunction = (id<MTLFunction>)info->compute_function;
+  descriptor.threadGroupSizeIsMultipleOfThreadExecutionWidth = info->tgsize_is_multiple_of_sgwidth;
+  for (unsigned i = 0; i < 31; i++) {
+    if (info->immutable_buffers & (1 << i))
+      descriptor.buffers[i].mutability = MTLMutabilityImmutable;
+  }
+  if (info->num_binary_archives_for_lookup && info->binary_archives_for_lookup.ptr)
+    descriptor.binaryArchives = [NSArray arrayWithObjects:(id<MTLBinaryArchive> *)info->binary_archives_for_lookup.ptr
+                                                    count:info->num_binary_archives_for_lookup];
+  MTLPipelineOption options =
+      info->fail_on_binary_archive_miss ? MTLPipelineOptionFailOnBinaryArchiveMiss : MTLPipelineOptionNone;
+  params->ret_pso =
+      (obj_handle_t)[device newComputePipelineStateWithDescriptor:descriptor options:options reflection:nil error:&err];
   params->ret_error = (obj_handle_t)err;
+  if (!err && info->binary_archive_for_serialization) {
+    [(id<MTLBinaryArchive>)info->binary_archive_for_serialization addComputePipelineFunctionsWithDescriptor:descriptor
+                                                                                                      error:&err];
+  }
   [descriptor release];
   return STATUS_SUCCESS;
 }
@@ -514,10 +528,21 @@ _MTLDevice_newRenderPipelineState(void *obj) {
   descriptor.vertexFunction = (id<MTLFunction>)info->vertex_function;
   descriptor.fragmentFunction = (id<MTLFunction>)info->fragment_function;
 
+  if (info->num_binary_archives_for_lookup && info->binary_archives_for_lookup.ptr)
+    descriptor.binaryArchives = [NSArray arrayWithObjects:(id<MTLBinaryArchive> *)info->binary_archives_for_lookup.ptr
+                                                    count:info->num_binary_archives_for_lookup];
   NSError *err = NULL;
-  params->ret_pso =
-      (obj_handle_t)[(id<MTLDevice>)params->device newRenderPipelineStateWithDescriptor:descriptor error:&err];
+  MTLPipelineOption options =
+      info->fail_on_binary_archive_miss ? MTLPipelineOptionFailOnBinaryArchiveMiss : MTLPipelineOptionNone;
+  params->ret_pso = (obj_handle_t)[(id<MTLDevice>)params->device newRenderPipelineStateWithDescriptor:descriptor
+                                                                                              options:options
+                                                                                           reflection:nil
+                                                                                                error:&err];
   params->ret_error = (obj_handle_t)err;
+  if (!err && info->binary_archive_for_serialization) {
+    [(id<MTLBinaryArchive>)info->binary_archive_for_serialization addRenderPipelineFunctionsWithDescriptor:descriptor
+                                                                                                     error:&err];
+  }
   [descriptor release];
   return STATUS_SUCCESS;
 }
@@ -565,17 +590,34 @@ _MTLDevice_newMeshRenderPipelineState(void *obj) {
   descriptor.meshFunction = (id<MTLFunction>)info->mesh_function;
   descriptor.fragmentFunction = (id<MTLFunction>)info->fragment_function;
   descriptor.payloadMemoryLength = info->payload_memory_length;
-  
+
   descriptor.meshThreadgroupSizeIsMultipleOfThreadExecutionWidth = info->mesh_tgsize_is_multiple_of_sgwidth;
   descriptor.objectThreadgroupSizeIsMultipleOfThreadExecutionWidth = info->object_tgsize_is_multiple_of_sgwidth;
 
+  MTLPipelineOption options = MTLPipelineOptionNone;
+#if __MAC_OS_X_VERSION_MAX_ALLOWED >= 150000
+  if (@available(macOS 15, *)) {
+    if (info->num_binary_archives_for_lookup && info->binary_archives_for_lookup.ptr)
+      descriptor.binaryArchives = [NSArray arrayWithObjects:(id<MTLBinaryArchive> *)info->binary_archives_for_lookup.ptr
+                                                      count:info->num_binary_archives_for_lookup];
+    options = info->fail_on_binary_archive_miss ? MTLPipelineOptionFailOnBinaryArchiveMiss : MTLPipelineOptionNone;
+  }
+#endif
   NSError *err = NULL;
-  params->ret_pso =
-      (obj_handle_t)[(id<MTLDevice>)params->device newRenderPipelineStateWithMeshDescriptor:descriptor
-                                                                                    options:MTLPipelineOptionNone
-                                                                                 reflection:nil
-                                                                                      error:&err];
+  params->ret_pso = (obj_handle_t)[(id<MTLDevice>)params->device newRenderPipelineStateWithMeshDescriptor:descriptor
+                                                                                                  options:options
+                                                                                               reflection:nil
+                                                                                                    error:&err];
   params->ret_error = (obj_handle_t)err;
+#if __MAC_OS_X_VERSION_MAX_ALLOWED >= 150000
+  if (@available(macOS 15, *)) {
+    if (!err && info->binary_archive_for_serialization) {
+      [(id<MTLBinaryArchive>)info->binary_archive_for_serialization
+          addMeshRenderPipelineFunctionsWithDescriptor:descriptor
+                                                 error:&err];
+    }
+  }
+#endif
   [descriptor release];
   return STATUS_SUCCESS;
 }
@@ -2400,6 +2442,41 @@ _WMTGetOSVersion(void *obj) {
   return STATUS_SUCCESS;
 }
 
+static NTSTATUS
+_MTLDevice_newBinaryArchive(void *obj) {
+  struct unixcall_mtldevice_newbinaryarchive *params = obj;
+  NSString *path_str = NULL;
+  NSURL *url = NULL;
+  MTLBinaryArchiveDescriptor *desc = [[MTLBinaryArchiveDescriptor alloc] init];
+  if (params->url.ptr != NULL) {
+    path_str = [[NSString alloc] initWithCString:params->url.ptr encoding:NSUTF8StringEncoding];
+    url = [[NSURL alloc] initFileURLWithPath:path_str];
+    desc.url = url;
+  }
+  NSError *err = NULL;
+  params->ret_archive = (obj_handle_t)[(id<MTLDevice>)params->device newBinaryArchiveWithDescriptor:desc error:&err];
+  params->ret_error = (obj_handle_t)err;
+  [desc release];
+  if (url)
+    [url release];
+  if (path_str)
+    [path_str release];
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_MTLBinaryArchive_serialize(void *obj) {
+  struct unixcall_mtlbinaryarchive_serialize *params = obj;
+  NSString *path_str = [[NSString alloc] initWithCString:params->url.ptr encoding:NSUTF8StringEncoding];
+  NSURL *url = [[NSURL alloc] initFileURLWithPath:path_str];
+  NSError *err = NULL;
+  [(id<MTLBinaryArchive>)params->archive serializeToURL:url error:&err];
+  params->ret_error = (obj_handle_t)err;
+  [url release];
+  [path_str release];
+  return STATUS_SUCCESS;
+}
+
 const void *__wine_unix_call_funcs[] = {
     &_NSObject_retain,
     &_NSObject_release,
@@ -2513,6 +2590,8 @@ const void *__wine_unix_call_funcs[] = {
     &_SharedEventListener_start,
     &_SharedEventListener_destroy,
     &_WMTGetOSVersion,
+    &_MTLDevice_newBinaryArchive,
+    &_MTLBinaryArchive_serialize,
 };
 
 #ifndef DXMT_NATIVE
@@ -2629,5 +2708,7 @@ const void *__wine_unix_call_wow64_funcs[] = {
     &_SharedEventListener_start,
     &_SharedEventListener_destroy,
     &_WMTGetOSVersion,
+    &_MTLDevice_newBinaryArchive,
+    &_MTLBinaryArchive_serialize,
 };
 #endif

@@ -3,8 +3,7 @@
 #include "dxmt_context.hpp"
 #include "dxmt_format.hpp"
 
-extern "C" unsigned char dxmt_command_metallib[];
-extern "C" unsigned int dxmt_command_metallib_len;
+#include "dxmt_command.h"
 
 #define CREATE_PIPELINE(name)                                                                                          \
   auto name##_function = library.newFunction(#name);           \
@@ -14,7 +13,7 @@ namespace dxmt {
 
 InternalCommandLibrary::InternalCommandLibrary(WMT::Device device) {
   WMT::Reference<WMT::Error> error;
-  library_ = device.newLibrary(dxmt_command_metallib, dxmt_command_metallib_len, error);
+  library_ = device.newLibrary(dxmt_command, dxmt_command_len, error);
 
   if (error) {
     ERR("Failed to create internal command library: ", error.description().getUTF8String());
