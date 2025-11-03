@@ -4095,7 +4095,7 @@ public:
         dsv_info.ReadOnlyFlags =  state_.OutputMerger.DSV->readonlyFlags();
       } else if (effective_render_target == 0) {
         if (!state_.OutputMerger.UAVs.any_bound()) {
-          ERR("No rendering attachment or uav is bounded");
+          DEBUG("No rendering attachment or uav is bounded");
           return false;
         }
         D3D11_ASSERT(state_.Rasterizer.NumViewports);

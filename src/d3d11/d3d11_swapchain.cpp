@@ -489,7 +489,7 @@ public:
   HRESULT
   STDMETHODCALLTYPE
   GetFrameStatistics(DXGI_FRAME_STATISTICS *stats) final {
-    WARN("DXGISwapChain::GetFrameStatistics: stub");
+    DEBUG("DXGISwapChain::GetFrameStatistics: stub");
     stats->PresentCount = presentation_count_;
     stats->SyncRefreshCount = presentation_count_;
     stats->PresentRefreshCount = presentation_count_;
