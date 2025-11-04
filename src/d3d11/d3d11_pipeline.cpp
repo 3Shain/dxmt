@@ -47,8 +47,6 @@ public:
     }
   }
 
-  void SubmitWork() { device_->SubmitThreadgroupWork(this); }
-
   HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void **ppvObject) {
     if (ppvObject == nullptr)
       return E_POINTER;
@@ -159,7 +157,6 @@ CreateGraphicsPipeline(MTLD3D11Device *pDevice,
                        MTL_GRAPHICS_PIPELINE_DESC *pDesc) {
   Com<IMTLCompiledGraphicsPipeline> pipeline =
       new MTLCompiledGraphicsPipeline(pDevice, pDesc);
-  pipeline->SubmitWork();
   return pipeline;
 }
 
@@ -175,8 +172,6 @@ public:
     // FIXME: might be different on AMD GPU, if it's ever supported
     tgsize_is_multiple_of_sgwidth = (total_tgsize % 32) == 0;
   }
-
-  void SubmitWork() final { device_->SubmitThreadgroupWork(this); }
 
   HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void **ppvObject) {
     if (ppvObject == nullptr)
@@ -249,7 +244,6 @@ Com<IMTLCompiledComputePipeline>
 CreateComputePipeline(MTLD3D11Device *pDevice, ManagedShader ComputeShader) {
   Com<IMTLCompiledComputePipeline> pipeline =
       new MTLCompiledComputePipeline(pDevice, ComputeShader);
-  pipeline->SubmitWork();
   return pipeline;
 }
 

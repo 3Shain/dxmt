@@ -38,13 +38,6 @@ class MTLD3D11Device : public ID3D11Device5 {
 public:
 
   virtual WMT::Device STDMETHODCALLTYPE GetMTLDevice() = 0;
-  /**
-  TODO: should ensure pWork is not released before executed
-  or support cancellation.
-  In theory a work can be submitted multiple time,
-  if that makes sense (usually not)
-  */
-  virtual void SubmitThreadgroupWork(IMTLThreadpoolWork * pWork) = 0;
 
   virtual HRESULT CreateGraphicsPipeline(MTL_GRAPHICS_PIPELINE_DESC * pDesc,
                                          IMTLCompiledGraphicsPipeline *

@@ -50,7 +50,6 @@ struct MTL_COMPILED_TESSELLATION_MESH_PIPELINE {
 DEFINE_COM_INTERFACE("7ee15804-8604-41fc-ad0c-4ecf97e2e6fe",
                      IMTLCompiledGraphicsPipeline)
     : public IMTLThreadpoolWork {
-  virtual void SubmitWork() = 0;
   virtual bool IsReady() = 0;
   /**
   NOTE: the current thread is blocked if it's not ready
@@ -62,7 +61,6 @@ DEFINE_COM_INTERFACE("7ee15804-8604-41fc-ad0c-4ecf97e2e6fe",
 DEFINE_COM_INTERFACE("3b26b8d3-56ca-4d0f-9f63-ca8d305ff07e",
                      IMTLCompiledComputePipeline)
     : public IMTLThreadpoolWork {
-  virtual void SubmitWork() = 0;
   virtual bool IsReady() = 0;
   virtual void GetPipeline(MTL_COMPILED_COMPUTE_PIPELINE *
                            pComputePipeline) = 0;
@@ -71,7 +69,6 @@ DEFINE_COM_INTERFACE("3b26b8d3-56ca-4d0f-9f63-ca8d305ff07e",
 DEFINE_COM_INTERFACE("0a86aadc-260d-40a0-afed-659408a84ffb",
                      IMTLCompiledGeometryPipeline)
     : public IMTLThreadpoolWork {
-  virtual void SubmitWork() = 0;
   virtual bool IsReady() = 0;
   virtual void GetPipeline(MTL_COMPILED_GRAPHICS_PIPELINE *
                            pGeometryPipeline) = 0;
@@ -80,7 +77,6 @@ DEFINE_COM_INTERFACE("0a86aadc-260d-40a0-afed-659408a84ffb",
 DEFINE_COM_INTERFACE("0777c3d9-e4a9-4ff1-9ecc-09b32d0def50",
                      IMTLCompiledTessellationMeshPipeline)
     : public IMTLThreadpoolWork {
-  virtual void SubmitWork() = 0;
   virtual bool IsReady() = 0;
   virtual void GetPipeline(MTL_COMPILED_TESSELLATION_MESH_PIPELINE *
                            pTessellationPipeline) = 0;
