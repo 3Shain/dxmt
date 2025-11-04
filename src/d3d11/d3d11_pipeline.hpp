@@ -1,7 +1,6 @@
 #pragma once
 
 #include "Metal.hpp"
-#include "com/com_guid.hpp"
 #include "d3d11_device.hpp"
 #include "d3d11_input_layout.hpp"
 #include "d3d11_shader.hpp"
@@ -45,41 +44,6 @@ struct MTL_COMPILED_TESSELLATION_MESH_PIPELINE {
   WMT::RenderPipelineState PipelineState;
   uint32_t NumControlPointOutputElement;
   uint32_t ThreadsPerPatch;
-};
-
-DEFINE_COM_INTERFACE("7ee15804-8604-41fc-ad0c-4ecf97e2e6fe",
-                     IMTLCompiledGraphicsPipeline)
-    : public IMTLThreadpoolWork {
-  virtual bool IsReady() = 0;
-  /**
-  NOTE: the current thread is blocked if it's not ready
-   */
-  virtual void GetPipeline(MTL_COMPILED_GRAPHICS_PIPELINE *
-                           pGraphicsPipeline) = 0;
-};
-
-DEFINE_COM_INTERFACE("3b26b8d3-56ca-4d0f-9f63-ca8d305ff07e",
-                     IMTLCompiledComputePipeline)
-    : public IMTLThreadpoolWork {
-  virtual bool IsReady() = 0;
-  virtual void GetPipeline(MTL_COMPILED_COMPUTE_PIPELINE *
-                           pComputePipeline) = 0;
-};
-
-DEFINE_COM_INTERFACE("0a86aadc-260d-40a0-afed-659408a84ffb",
-                     IMTLCompiledGeometryPipeline)
-    : public IMTLThreadpoolWork {
-  virtual bool IsReady() = 0;
-  virtual void GetPipeline(MTL_COMPILED_GRAPHICS_PIPELINE *
-                           pGeometryPipeline) = 0;
-};
-
-DEFINE_COM_INTERFACE("0777c3d9-e4a9-4ff1-9ecc-09b32d0def50",
-                     IMTLCompiledTessellationMeshPipeline)
-    : public IMTLThreadpoolWork {
-  virtual bool IsReady() = 0;
-  virtual void GetPipeline(MTL_COMPILED_TESSELLATION_MESH_PIPELINE *
-                           pTessellationPipeline) = 0;
 };
 
 namespace std {
@@ -176,18 +140,38 @@ template <> struct equal_to<MTL_GRAPHICS_PIPELINE_DESC> {
 
 namespace dxmt {
 
-Com<IMTLCompiledGraphicsPipeline> CreateGraphicsPipeline(
-    MTLD3D11Device *pDevice, MTL_GRAPHICS_PIPELINE_DESC* pDesc);
+class MTLCompiledGraphicsPipeline : public ThreadpoolWork {
+public:
+  /**
+  NOTE: the current thread is blocked if it's not ready
+   */
+  virtual void GetPipeline(MTL_COMPILED_GRAPHICS_PIPELINE *pGraphicsPipeline) = 0;
+};
 
-Com<IMTLCompiledComputePipeline>
-CreateComputePipeline(MTLD3D11Device *pDevice, ManagedShader ComputeShader);
+class MTLCompiledComputePipeline : public ThreadpoolWork {
+public:
+  virtual void GetPipeline(MTL_COMPILED_COMPUTE_PIPELINE *pComputePipeline) = 0;
+};
 
-Com<IMTLCompiledGeometryPipeline>
-CreateGeometryPipeline(MTLD3D11Device *pDevice,
-                           MTL_GRAPHICS_PIPELINE_DESC *pDesc);
+class MTLCompiledGeometryPipeline : public ThreadpoolWork {
+public:
+  virtual void GetPipeline(MTL_COMPILED_GRAPHICS_PIPELINE *pGeometryPipeline) = 0;
+};
 
-Com<IMTLCompiledTessellationMeshPipeline>
-CreateTessellationMeshPipeline(MTLD3D11Device *pDevice,
-                           MTL_GRAPHICS_PIPELINE_DESC *pDesc);
+class MTLCompiledTessellationMeshPipeline : public ThreadpoolWork {
+public:
+  virtual void GetPipeline(MTL_COMPILED_TESSELLATION_MESH_PIPELINE *pTessellationPipeline) = 0;
+};
+
+std::unique_ptr<MTLCompiledGraphicsPipeline>
+CreateGraphicsPipeline(MTLD3D11Device *pDevice, MTL_GRAPHICS_PIPELINE_DESC *pDesc);
+
+std::unique_ptr<MTLCompiledComputePipeline> CreateComputePipeline(MTLD3D11Device *pDevice, ManagedShader ComputeShader);
+
+std::unique_ptr<MTLCompiledGeometryPipeline>
+CreateGeometryPipeline(MTLD3D11Device *pDevice, MTL_GRAPHICS_PIPELINE_DESC *pDesc);
+
+std::unique_ptr<MTLCompiledTessellationMeshPipeline>
+CreateTessellationMeshPipeline(MTLD3D11Device *pDevice, MTL_GRAPHICS_PIPELINE_DESC *pDesc);
 
 }; // namespace dxmt

@@ -185,7 +185,15 @@ using ShaderVariant =
                  ShaderVariantTessellationDomain, ShaderVariantVertexStreamOutput,
                  ShaderVariantGeometryVertex, ShaderVariantGeometry>;
 
-class CompiledShader : public IMTLThreadpoolWork {
+class ThreadpoolWork {
+public:
+  virtual ~ThreadpoolWork() {}
+  virtual ThreadpoolWork *RunThreadpoolWork() = 0;
+  virtual bool GetIsDone() = 0;
+  virtual void SetIsDone(bool state) = 0;
+};
+
+class CompiledShader : public ThreadpoolWork {
 public:
   virtual ~CompiledShader() {};
   /**
@@ -203,7 +211,7 @@ public:
   virtual MTL_SHADER_REFLECTION &reflection() = 0;
   virtual MTL_SM50_SHADER_ARGUMENT *constant_buffers_info() = 0;
   virtual MTL_SM50_SHADER_ARGUMENT *arguments_info() = 0;
-  virtual Com<CompiledShader> get_shader(ShaderVariant variant) = 0;
+  virtual CompiledShader *get_shader(ShaderVariant variant) = 0;
   virtual const Sha1Digest& sha1() = 0;
   virtual void dump() = 0;
 };

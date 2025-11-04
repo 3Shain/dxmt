@@ -4330,7 +4330,7 @@ public:
       return DrawCallStatus::Invalid;
     }
 
-    Com<IMTLCompiledTessellationMeshPipeline> pipeline;
+    MTLCompiledTessellationMeshPipeline *pipeline;
 
     MTL_GRAPHICS_PIPELINE_DESC pipelineDesc;
     InitializeGraphicsPipelineDesc<IndexedDraw>(pipelineDesc);
@@ -4381,7 +4381,7 @@ public:
       return DrawCallStatus::Invalid;
     }
 
-    Com<IMTLCompiledGeometryPipeline> pipeline;
+    MTLCompiledGeometryPipeline *pipeline;
 
     MTL_GRAPHICS_PIPELINE_DESC pipelineDesc;
     InitializeGraphicsPipelineDesc<IndexedDraw>(pipelineDesc);
@@ -4437,7 +4437,7 @@ public:
       return DrawCallStatus::Invalid;
     }
 
-    Com<IMTLCompiledGraphicsPipeline> pipeline;
+    MTLCompiledGraphicsPipeline *pipeline;
 
     MTL_GRAPHICS_PIPELINE_DESC pipelineDesc;
     InitializeGraphicsPipelineDesc<IndexedDraw>(pipelineDesc);
@@ -4594,7 +4594,7 @@ public:
       ERR("Shader not found?");
       return false;
     }
-    Com<IMTLCompiledComputePipeline> pipeline;
+    MTLCompiledComputePipeline *pipeline;
     MTL_COMPUTE_PIPELINE_DESC desc{CS};
     device->CreateComputePipeline(&desc, &pipeline);
 

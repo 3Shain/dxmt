@@ -20,30 +20,6 @@ public:
 
   ~GeneralShaderCompileTask() {}
 
-  ULONG STDMETHODCALLTYPE AddRef() {
-    uint32_t refCount = m_refCount++;
-    return refCount + 1;
-  }
-
-  ULONG STDMETHODCALLTYPE Release() {
-    uint32_t refCount = --m_refCount;
-    return refCount;
-  }
-
-  HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void **ppvObject) {
-    if (ppvObject == nullptr)
-      return E_POINTER;
-
-    *ppvObject = nullptr;
-
-    if (riid == __uuidof(IUnknown) || riid == __uuidof(IMTLThreadpoolWork)) {
-      *ppvObject = ref(this);
-      return S_OK;
-    }
-
-    return E_NOINTERFACE;
-  }
-
   bool GetShader(MTL_COMPILED_SHADER *pShaderData) final {
     bool ret = false;
     if ((ret = ready_.load(std::memory_order_acquire))) {
@@ -52,7 +28,7 @@ public:
     return ret;
   }
 
-  IMTLThreadpoolWork *RunThreadpoolWork() {
+  ThreadpoolWork *RunThreadpoolWork() {
     auto pool = WMT::MakeAutoreleasePool();
     WMT::Reference<WMT::Error> err;
     sm50_bitcode_t compile_result = proc(func_name.c_str(), &sm50_common);
@@ -92,7 +68,6 @@ private:
   ManagedShader shader_;
   std::atomic_bool ready_;
   WMT::Reference<WMT::Function> function_;
-  std::atomic<uint32_t> m_refCount = {0ul};
 };
 
 template <>
