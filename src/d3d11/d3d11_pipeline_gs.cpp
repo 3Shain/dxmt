@@ -43,8 +43,6 @@ public:
     }
   }
 
-  void SubmitWork() { device_->SubmitThreadgroupWork(this); }
-
   HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void **ppvObject) {
     if (ppvObject == nullptr)
       return E_POINTER;
@@ -172,7 +170,6 @@ CreateGeometryPipeline(MTLD3D11Device *pDevice,
                        MTL_GRAPHICS_PIPELINE_DESC *pDesc) {
   Com<IMTLCompiledGeometryPipeline> pipeline =
       new MTLCompiledGeometryPipeline(pDevice, pDesc);
-  pipeline->SubmitWork();
   return pipeline;
 }
 

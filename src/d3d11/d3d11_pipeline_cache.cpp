@@ -3,6 +3,7 @@
 #include "d3d11_device.hpp"
 #include "d3d11_shader.hpp"
 #include "d3d11_pipeline.hpp"
+#include "dxmt_tasks.hpp"
 #include "log/log.hpp"
 #include "sha1/sha1_util.hpp"
 #include "../d3d10/d3d10_shader.hpp"
@@ -11,113 +12,6 @@
 #include <shared_mutex>
 
 namespace dxmt {
-
-class CachedSM50Shader final : public Shader {
-  MTLD3D11Device *device;
-  sm50_shader_t shader = nullptr;
-  Sha1Digest sha1_;
-  MTL_SHADER_REFLECTION reflection_;
-  MTL_SM50_SHADER_ARGUMENT* arguments_info_buffer;
-  std::unordered_map<ShaderVariant, std::unique_ptr<CompiledShader>> variants;
-
-public:
-  CachedSM50Shader(MTLD3D11Device *device, sm50_shader_t shader_transfered,
-                   const Sha1Digest &hash, MTL_SHADER_REFLECTION &reflection)
-      : device(device), shader(shader_transfered), sha1_(hash),
-        reflection_(reflection) {
-    if (reflection_.NumConstantBuffers + reflection_.NumArguments) {
-      arguments_info_buffer = (MTL_SM50_SHADER_ARGUMENT *)malloc(
-          sizeof(MTL_SM50_SHADER_ARGUMENT) *
-          (reflection_.NumConstantBuffers + reflection_.NumArguments));
-      SM50GetArgumentsInfo(shader, arguments_info_buffer, arguments_info_buffer + reflection_.NumConstantBuffers);
-    } else {
-      arguments_info_buffer = nullptr;
-    }
-  }
-
-  ~CachedSM50Shader() {
-    if (shader) {
-      SM50Destroy(shader);
-      if (arguments_info_buffer)
-        free(arguments_info_buffer);
-      shader = nullptr;
-    }
-  };
-
-  CachedSM50Shader(CachedSM50Shader &&moved) = delete;
-  CachedSM50Shader(const CachedSM50Shader &copy) = delete;
-
-  virtual sm50_shader_t handle() { return shader; };
-  virtual MTL_SHADER_REFLECTION &reflection() { return reflection_; }
-  virtual MTL_SM50_SHADER_ARGUMENT *constant_buffers_info() {
-    return arguments_info_buffer;
-  };
-  virtual MTL_SM50_SHADER_ARGUMENT *arguments_info() {
-    return arguments_info_buffer + reflection_.NumConstantBuffers;
-  };
-  virtual Com<CompiledShader> get_shader(ShaderVariant variant) {
-    auto c = variants.insert({variant, nullptr});
-    if (c.second) {
-      c.first->second = std::visit(
-          [=, this](auto var) {
-            return CreateVariantShader(device, this, var);
-          },
-          variant);
-      device->SubmitThreadgroupWork(c.first->second.get());
-    }
-    return c.first->second.get();
-  }
-  virtual const Sha1Digest &sha1() { return sha1_; };
-
-#ifdef DXMT_DEBUG
-  void *bytecode;
-  size_t bytecode_length;
-
-  virtual void dump() {
-    std::fstream dump_out;
-    dump_out.open("shader_dump_" + sha1_.string() + ".cso",
-                  std::ios::out | std::ios::binary);
-    if (dump_out) {
-      dump_out.write((char *)bytecode, bytecode_length);
-    }
-    dump_out.close();
-    WARN("shader dumped to ./shader_dump_" + sha1_.string() + ".cso");
-  }
-#else
-  virtual void dump() {}
-#endif
-};
-
-class CachedInputLayout final : public InputLayout {
-private:
-public:
-  CachedInputLayout(
-      std::vector<MTL_SHADER_INPUT_LAYOUT_ELEMENT_DESC> &&attributes,
-      uint32_t input_slot_mask)
-      : attributes_(attributes), input_slot_mask_(input_slot_mask) {
-    Sha1HashState h;
-    h.update(input_slot_mask);
-    h.update(attributes_.size());
-    for (auto &el : attributes_) {
-      h.update(el);
-    }
-    sha1_ = h.final();
-  }
-
-  virtual uint32_t input_slot_mask() final { return input_slot_mask_; }
-
-  virtual uint32_t input_layout_element(
-      MTL_SHADER_INPUT_LAYOUT_ELEMENT_DESC **ppElements) final {
-    *ppElements = attributes_.data();
-    return attributes_.size();
-  }
-
-  virtual Sha1Digest &sha1() final { return sha1_; }
-
-  std::vector<MTL_SHADER_INPUT_LAYOUT_ELEMENT_DESC> attributes_;
-  Sha1Digest sha1_;
-  uint32_t input_slot_mask_;
-};
 
 class MTLD3D11InputLayout final
     : public MTLD3D11DeviceChild<IMTLD3D11InputLayout> {
@@ -162,7 +56,126 @@ private:
   MTLD3D10InputLayout d3d10;
 };
 
+template <> struct task_trait<IMTLThreadpoolWork *> {
+  IMTLThreadpoolWork *run_task(IMTLThreadpoolWork *task) {
+    return task->RunThreadpoolWork();
+  }
+  bool get_done(IMTLThreadpoolWork *task) { return task->GetIsDone(); }
+  void set_done(IMTLThreadpoolWork *task) { task->SetIsDone(true); }
+};
+
 class PipelineCache : public MTLD3D11PipelineCacheBase {
+
+  class CachedSM50Shader final : public Shader {
+    PipelineCache *cache;
+    sm50_shader_t shader = nullptr;
+    Sha1Digest sha1_;
+    MTL_SHADER_REFLECTION reflection_;
+    MTL_SM50_SHADER_ARGUMENT *arguments_info_buffer;
+    std::unordered_map<ShaderVariant, std::unique_ptr<CompiledShader>> variants;
+
+  public:
+    CachedSM50Shader(PipelineCache *cache, sm50_shader_t shader_transfered,
+                     const Sha1Digest &hash, MTL_SHADER_REFLECTION &reflection)
+        : cache(cache), shader(shader_transfered), sha1_(hash),
+          reflection_(reflection) {
+      if (reflection_.NumConstantBuffers + reflection_.NumArguments) {
+        arguments_info_buffer = (MTL_SM50_SHADER_ARGUMENT *)malloc(
+            sizeof(MTL_SM50_SHADER_ARGUMENT) *
+            (reflection_.NumConstantBuffers + reflection_.NumArguments));
+        SM50GetArgumentsInfo(shader, arguments_info_buffer,
+                             arguments_info_buffer +
+                                 reflection_.NumConstantBuffers);
+      } else {
+        arguments_info_buffer = nullptr;
+      }
+    }
+
+    ~CachedSM50Shader() {
+      if (shader) {
+        SM50Destroy(shader);
+        if (arguments_info_buffer)
+          free(arguments_info_buffer);
+        shader = nullptr;
+      }
+    };
+
+    CachedSM50Shader(CachedSM50Shader &&moved) = delete;
+    CachedSM50Shader(const CachedSM50Shader &copy) = delete;
+
+    virtual sm50_shader_t handle() { return shader; };
+    virtual MTL_SHADER_REFLECTION &reflection() { return reflection_; }
+    virtual MTL_SM50_SHADER_ARGUMENT *constant_buffers_info() {
+      return arguments_info_buffer;
+    };
+    virtual MTL_SM50_SHADER_ARGUMENT *arguments_info() {
+      return arguments_info_buffer + reflection_.NumConstantBuffers;
+    };
+    virtual Com<CompiledShader> get_shader(ShaderVariant variant) {
+      auto c = variants.insert({variant, nullptr});
+      if (c.second) {
+        c.first->second = std::visit(
+            [=, this](auto var) {
+              return CreateVariantShader(cache->device, this, var);
+            },
+            variant);
+        cache->scheduler_.submit(c.first->second.get());
+      }
+      return c.first->second.get();
+    }
+    virtual const Sha1Digest &sha1() { return sha1_; };
+
+#ifdef DXMT_DEBUG
+    void *bytecode;
+    size_t bytecode_length;
+
+    virtual void dump() {
+      std::fstream dump_out;
+      dump_out.open("shader_dump_" + sha1_.string() + ".cso",
+                    std::ios::out | std::ios::binary);
+      if (dump_out) {
+        dump_out.write((char *)bytecode, bytecode_length);
+      }
+      dump_out.close();
+      WARN("shader dumped to ./shader_dump_" + sha1_.string() + ".cso");
+    }
+#else
+    virtual void dump() {}
+#endif
+  };
+
+  class CachedInputLayout final : public InputLayout {
+  private:
+  public:
+    CachedInputLayout(
+        std::vector<MTL_SHADER_INPUT_LAYOUT_ELEMENT_DESC> &&attributes,
+        uint32_t input_slot_mask)
+        : attributes_(attributes), input_slot_mask_(input_slot_mask) {
+      Sha1HashState h;
+      h.update(input_slot_mask);
+      h.update(attributes_.size());
+      for (auto &el : attributes_) {
+        h.update(el);
+      }
+      sha1_ = h.final();
+    }
+
+    virtual uint32_t input_slot_mask() final { return input_slot_mask_; }
+
+    virtual uint32_t input_layout_element(
+        MTL_SHADER_INPUT_LAYOUT_ELEMENT_DESC **ppElements) final {
+      *ppElements = attributes_.data();
+      return attributes_.size();
+    }
+
+    virtual Sha1Digest &sha1() final { return sha1_; }
+
+    std::vector<MTL_SHADER_INPUT_LAYOUT_ELEMENT_DESC> attributes_;
+    Sha1Digest sha1_;
+    uint32_t input_slot_mask_;
+  };
+
+  task_scheduler<IMTLThreadpoolWork*> scheduler_;
 
   MTLD3D11Device *device;
   StateObjectCache<D3D11_BLEND_DESC1, IMTLD3D11BlendState> blend_states;
@@ -214,7 +227,7 @@ class PipelineCache : public MTLD3D11PipelineCacheBase {
       SM50FreeError(err);
       return nullptr;
     }
-    auto shader = std::make_unique<CachedSM50Shader>(device, sm50, sha1, reflection);
+    auto shader = std::make_unique<CachedSM50Shader>(this, sm50, sha1, reflection);
     {
       std::unique_lock<std::shared_mutex> lock(mutex_shares);
       auto result = shaders_.find(sha1);
@@ -367,6 +380,8 @@ class PipelineCache : public MTLD3D11PipelineCacheBase {
     if (!pipelines_.insert({*pDesc, temp}).second) // copy
     {
       D3D11_ASSERT(0 && "duplicated graphics pipeline");
+    } else {
+      scheduler_.submit(temp.ptr());
     }
     *ppPipeline = std::move(temp);                          // move
   }
@@ -385,6 +400,8 @@ class PipelineCache : public MTLD3D11PipelineCacheBase {
     if (!pipelines_gs_.insert({*pDesc, temp}).second) // copy
     {
       D3D11_ASSERT(0 && "duplicated geometry pipeline");
+    } else {
+      scheduler_.submit(temp.ptr());
     }
     *ppPipeline = std::move(temp);
   }
@@ -403,6 +420,8 @@ class PipelineCache : public MTLD3D11PipelineCacheBase {
     if (!pipelines_ts_.insert({*pDesc, temp}).second) // copy
     {
       D3D11_ASSERT(0 && "duplicated tessellation pipeline");
+    } else {
+      scheduler_.submit(temp.ptr());
     }
     *ppPipeline = std::move(temp);
   }
@@ -420,6 +439,8 @@ class PipelineCache : public MTLD3D11PipelineCacheBase {
     if (!pipelines_cs_.insert({pDesc->ComputeShader, temp}).second) // copy
     {
       D3D11_ASSERT(0 && "duplicated compute pipeline");
+    } else {
+      scheduler_.submit(temp.ptr());
     }
     *ppPipeline = std::move(temp);
   }

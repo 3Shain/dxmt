@@ -63,8 +63,6 @@ public:
     }
   }
 
-  void SubmitWork() { device_->SubmitThreadgroupWork(this); }
-
   HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void **ppvObject) {
     if (ppvObject == nullptr)
       return E_POINTER;
@@ -206,7 +204,6 @@ CreateTessellationMeshPipeline(MTLD3D11Device *pDevice,
                                MTL_GRAPHICS_PIPELINE_DESC *pDesc) {
   Com<IMTLCompiledTessellationMeshPipeline> pipeline =
       new MTLCompiledTessellationPipeline(pDevice, pDesc);
-  pipeline->SubmitWork();
   return pipeline;
 }
 

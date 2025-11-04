@@ -19,7 +19,6 @@
 #include "dxmt_command_queue.hpp"
 #include "dxmt_device.hpp"
 #include "dxmt_format.hpp"
-#include "dxmt_tasks.hpp"
 #include "ftl.hpp"
 #include "d3d11_resource.hpp"
 #include "dxgi_object.hpp"
@@ -28,19 +27,6 @@
 #include "util_win32_compat.h"
 
 namespace dxmt {
-
-template<>
-struct task_trait<IMTLThreadpoolWork*> {
-  IMTLThreadpoolWork* run_task(IMTLThreadpoolWork* task) {
-    return task->RunThreadpoolWork();
-  }
-  bool get_done(IMTLThreadpoolWork* task) {
-    return task->GetIsDone();
-  }
-  void set_done(IMTLThreadpoolWork* task) {
-    task->SetIsDone(true);
-  }
-};
 
 const GUID kRenderdocUUID = {0xa7aa6116,
                              0x9c8d,
@@ -1037,10 +1023,6 @@ public:
     return m_container->GetMTLDevice();
   }
 
-  void SubmitThreadgroupWork(IMTLThreadpoolWork *pWork) override {
-    scheduler_.submit(pWork);
-  }
-
   HRESULT
   CreateGraphicsPipeline(MTL_GRAPHICS_PIPELINE_DESC *pDesc,
                          IMTLCompiledGraphicsPipeline **ppPipeline) override {
@@ -1122,8 +1104,6 @@ private:
   UINT m_FeatureFlags;
   MTLD3D11Inspection m_features;
   FormatCapabilityInspector format_inspector;
-
-  task_scheduler<IMTLThreadpoolWork*> scheduler_;
 
   bool is_traced_;
 
