@@ -1025,28 +1025,28 @@ public:
 
   HRESULT
   CreateGraphicsPipeline(MTL_GRAPHICS_PIPELINE_DESC *pDesc,
-                         IMTLCompiledGraphicsPipeline **ppPipeline) override {
+                         MTLCompiledGraphicsPipeline **ppPipeline) override {
     pipeline_cache_->GetGraphicsPipeline(pDesc, ppPipeline);
     return S_OK;
   };
 
   HRESULT
   CreateComputePipeline(MTL_COMPUTE_PIPELINE_DESC *pDesc,
-                        IMTLCompiledComputePipeline **ppPipeline) override {
+                        MTLCompiledComputePipeline **ppPipeline) override {
     pipeline_cache_->GetComputePipeline(pDesc, ppPipeline);
     return S_OK;
   };
 
   virtual HRESULT
   CreateGeometryPipeline(MTL_GRAPHICS_PIPELINE_DESC *pDesc,
-                         IMTLCompiledGeometryPipeline **ppPipeline) override {
+                         MTLCompiledGeometryPipeline **ppPipeline) override {
     pipeline_cache_->GetGeometryPipeline(pDesc, ppPipeline);
     return S_OK;
   };
 
   HRESULT
   CreateTessellationMeshPipeline(MTL_GRAPHICS_PIPELINE_DESC *pDesc,
-                         IMTLCompiledTessellationMeshPipeline **ppPipeline) override {
+                         MTLCompiledTessellationMeshPipeline **ppPipeline) override {
     pipeline_cache_->GetTessellationPipeline(pDesc, ppPipeline);
     return S_OK;
   };

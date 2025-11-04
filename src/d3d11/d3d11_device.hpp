@@ -8,18 +8,6 @@
 #include "dxmt_device.hpp"
 #include "dxmt_format.hpp"
 
-DEFINE_COM_INTERFACE("14e1e5e4-3f08-4741-a8e3-597d79373266", IMTLThreadpoolWork)
-    : public IUnknown {
-  virtual IMTLThreadpoolWork* RunThreadpoolWork() = 0;
-  virtual bool GetIsDone() = 0;
-  virtual void SetIsDone(bool state) = 0;
-};
-
-struct IMTLCompiledGraphicsPipeline;
-struct IMTLCompiledComputePipeline;
-struct IMTLCompiledGeometryPipeline;
-struct IMTLCompiledTessellationMeshPipeline;
-
 struct MTL_GRAPHICS_PIPELINE_DESC;
 struct MTL_COMPUTE_PIPELINE_DESC;
 
@@ -34,25 +22,30 @@ DEFINE_COM_INTERFACE("3a3f085a-d0fe-4324-b0ae-fe04de18571c",
 
 namespace dxmt {
 
+class MTLCompiledGraphicsPipeline;
+class MTLCompiledComputePipeline;
+class MTLCompiledGeometryPipeline;
+class MTLCompiledTessellationMeshPipeline;
+
 class MTLD3D11Device : public ID3D11Device5 {
 public:
 
   virtual WMT::Device STDMETHODCALLTYPE GetMTLDevice() = 0;
 
   virtual HRESULT CreateGraphicsPipeline(MTL_GRAPHICS_PIPELINE_DESC * pDesc,
-                                         IMTLCompiledGraphicsPipeline *
+                                         MTLCompiledGraphicsPipeline *
                                              *ppPipeline) = 0;
 
   virtual HRESULT CreateComputePipeline(MTL_COMPUTE_PIPELINE_DESC * pDesc,
-                                        IMTLCompiledComputePipeline *
+                                        MTLCompiledComputePipeline *
                                             *ppPipeline) = 0;
 
   virtual HRESULT CreateGeometryPipeline(MTL_GRAPHICS_PIPELINE_DESC * pDesc,
-                                             IMTLCompiledGeometryPipeline *
+                                             MTLCompiledGeometryPipeline *
                                                  *ppPipeline) = 0;
 
   virtual HRESULT CreateTessellationMeshPipeline(MTL_GRAPHICS_PIPELINE_DESC * pDesc,
-                                             IMTLCompiledTessellationMeshPipeline *
+                                             MTLCompiledTessellationMeshPipeline *
                                                  *ppPipeline) = 0;
 
   virtual bool IsTraced() = 0;

@@ -10,13 +10,11 @@ namespace dxmt {
 
 static dxmt::mutex ts_global_mutex;
 
-class MTLCompiledTessellationPipeline
-    : public ComObject<IMTLCompiledTessellationMeshPipeline> {
+class MTLCompiledTessellationPipelineImpl: public MTLCompiledTessellationMeshPipeline {
 public:
-  MTLCompiledTessellationPipeline(MTLD3D11Device *pDevice,
+  MTLCompiledTessellationPipelineImpl(MTLD3D11Device *pDevice,
                                   const MTL_GRAPHICS_PIPELINE_DESC *pDesc)
-      : ComObject<IMTLCompiledTessellationMeshPipeline>(),
-        num_rtvs(pDesc->NumColorAttachments),
+      : num_rtvs(pDesc->NumColorAttachments),
         depth_stencil_format(pDesc->DepthStencilFormat), device_(pDevice),
         pBlendState(pDesc->BlendState),
         RasterizationEnabled(pDesc->RasterizationEnabled),
@@ -59,26 +57,10 @@ public:
           unorm_output_reg_mask});
       ps_valid_render_targets = pDesc->PixelShader->reflection().PSValidRenderTargets;
     } else {
+      PixelShader = nullptr;
       ps_valid_render_targets = 0;
     }
   }
-
-  HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void **ppvObject) {
-    if (ppvObject == nullptr)
-      return E_POINTER;
-
-    *ppvObject = nullptr;
-
-    if (riid == __uuidof(IUnknown) || riid == __uuidof(IMTLThreadpoolWork) ||
-        riid == __uuidof(IMTLCompiledGraphicsPipeline)) {
-      *ppvObject = ref(this);
-      return S_OK;
-    }
-
-    return E_NOINTERFACE;
-  }
-
-  bool IsReady() final { return ready_.load(std::memory_order_relaxed); }
 
   void GetPipeline(MTL_COMPILED_TESSELLATION_MESH_PIPELINE *pPipeline) final {
     ready_.wait(false, std::memory_order_acquire);
@@ -86,20 +68,20 @@ public:
                   hull_reflection.ThreadsPerPatch};
   }
 
-  IMTLThreadpoolWork *RunThreadpoolWork() {
+  ThreadpoolWork *RunThreadpoolWork() {
 
     WMT::Reference<WMT::Error> err;
     MTL_COMPILED_SHADER vhs, ds, ps;
 
     if (!VertexHullShader->GetShader(&vhs)) {
-      return VertexHullShader.ptr();
+      return VertexHullShader;
     }
     if (!vhs.Function) {
       ERR("Failed to create tess-mesh PSO: Invalid vertex-hull shader.");
       return this;
     }
     if (!DomainShader->GetShader(&ds)) {
-      return DomainShader.ptr();
+      return DomainShader;
     }
     if (!ds.Function) {
       ERR("Failed to create tess-mesh PSO: Invalid domain shader.");
@@ -107,7 +89,7 @@ public:
     }
     if (PixelShader) {
       if (!PixelShader->GetShader(&ps)) {
-        return PixelShader.ptr();
+        return PixelShader;
       }
       if (!ps.Function) {
         ERR("Failed to create mesh PSO: Invalid pixel shader.");
@@ -194,17 +176,15 @@ private:
 
   MTL_SHADER_REFLECTION hull_reflection;
 
-  Com<CompiledShader> VertexHullShader;
-  Com<CompiledShader> PixelShader;
-  Com<CompiledShader> DomainShader;
+  CompiledShader *VertexHullShader;
+  CompiledShader *PixelShader;
+  CompiledShader *DomainShader;
 };
 
-Com<IMTLCompiledTessellationMeshPipeline>
+std::unique_ptr<MTLCompiledTessellationMeshPipeline>
 CreateTessellationMeshPipeline(MTLD3D11Device *pDevice,
                                MTL_GRAPHICS_PIPELINE_DESC *pDesc) {
-  Com<IMTLCompiledTessellationMeshPipeline> pipeline =
-      new MTLCompiledTessellationPipeline(pDevice, pDesc);
-  return pipeline;
+  return std::make_unique<MTLCompiledTessellationPipelineImpl>(pDevice, pDesc);
 }
 
 } // namespace dxmt

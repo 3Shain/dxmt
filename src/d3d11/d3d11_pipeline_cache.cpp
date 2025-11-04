@@ -56,12 +56,12 @@ private:
   MTLD3D10InputLayout d3d10;
 };
 
-template <> struct task_trait<IMTLThreadpoolWork *> {
-  IMTLThreadpoolWork *run_task(IMTLThreadpoolWork *task) {
+template <> struct task_trait<ThreadpoolWork *> {
+  ThreadpoolWork *run_task(ThreadpoolWork *task) {
     return task->RunThreadpoolWork();
   }
-  bool get_done(IMTLThreadpoolWork *task) { return task->GetIsDone(); }
-  void set_done(IMTLThreadpoolWork *task) { task->SetIsDone(true); }
+  bool get_done(ThreadpoolWork *task) { return task->GetIsDone(); }
+  void set_done(ThreadpoolWork *task) { task->SetIsDone(true); }
 };
 
 class PipelineCache : public MTLD3D11PipelineCacheBase {
@@ -111,7 +111,7 @@ class PipelineCache : public MTLD3D11PipelineCacheBase {
     virtual MTL_SM50_SHADER_ARGUMENT *arguments_info() {
       return arguments_info_buffer + reflection_.NumConstantBuffers;
     };
-    virtual Com<CompiledShader> get_shader(ShaderVariant variant) {
+    virtual CompiledShader *get_shader(ShaderVariant variant) {
       auto c = variants.insert({variant, nullptr});
       if (c.second) {
         c.first->second = std::visit(
@@ -175,7 +175,7 @@ class PipelineCache : public MTLD3D11PipelineCacheBase {
     uint32_t input_slot_mask_;
   };
 
-  task_scheduler<IMTLThreadpoolWork*> scheduler_;
+  task_scheduler<ThreadpoolWork *> scheduler_;
 
   MTLD3D11Device *device;
   StateObjectCache<D3D11_BLEND_DESC1, IMTLD3D11BlendState> blend_states;
@@ -190,23 +190,16 @@ class PipelineCache : public MTLD3D11PipelineCacheBase {
   std::unordered_map<Sha1Digest, std::unique_ptr<CachedSM50Shader>> shaders_;
   std::shared_mutex mutex_shares;
 
-  std::unordered_map<MTL_GRAPHICS_PIPELINE_DESC,
-                     Com<IMTLCompiledGraphicsPipeline>>
-      pipelines_;
+  std::unordered_map<MTL_GRAPHICS_PIPELINE_DESC, std::unique_ptr<MTLCompiledGraphicsPipeline>> pipelines_;
   dxmt::mutex mutex_;
 
-  std::unordered_map<MTL_GRAPHICS_PIPELINE_DESC,
-                     Com<IMTLCompiledGeometryPipeline>>
-      pipelines_gs_;
+  std::unordered_map<MTL_GRAPHICS_PIPELINE_DESC, std::unique_ptr<MTLCompiledGeometryPipeline>> pipelines_gs_;
   dxmt::mutex mutex_gs_;
 
-  std::unordered_map<MTL_GRAPHICS_PIPELINE_DESC,
-                     Com<IMTLCompiledTessellationMeshPipeline>>
-      pipelines_ts_;
+  std::unordered_map<MTL_GRAPHICS_PIPELINE_DESC, std::unique_ptr<MTLCompiledTessellationMeshPipeline>> pipelines_ts_;
   dxmt::mutex mutex_ts_;
 
-  std::unordered_map<ManagedShader, Com<IMTLCompiledComputePipeline>>
-      pipelines_cs_;
+  std::unordered_map<ManagedShader, std::unique_ptr<MTLCompiledComputePipeline>> pipelines_cs_;
   dxmt::mutex mutex_cs_;
 
   CachedSM50Shader *CreateShader(const void *pBytecode,
@@ -368,81 +361,73 @@ class PipelineCache : public MTLD3D11PipelineCacheBase {
   }
 
   void GetGraphicsPipeline(MTL_GRAPHICS_PIPELINE_DESC *pDesc,
-                           IMTLCompiledGraphicsPipeline **ppPipeline) override {
+                           MTLCompiledGraphicsPipeline **ppPipeline) override {
     std::lock_guard<dxmt::mutex> lock(mutex_);
 
-    auto iter = pipelines_.find(*pDesc);
-    if (iter != pipelines_.end()) {
-      *ppPipeline = iter->second.ref();
+    if (auto iter = pipelines_.find(*pDesc); iter != pipelines_.end()) {
+      *ppPipeline = iter->second.get();
       return;
     }
-    auto temp = dxmt::CreateGraphicsPipeline(device, pDesc);
-    if (!pipelines_.insert({*pDesc, temp}).second) // copy
-    {
+    auto [iter, inserted] = pipelines_.insert({*pDesc, CreateGraphicsPipeline(device, pDesc)});
+    if (!inserted) {
       D3D11_ASSERT(0 && "duplicated graphics pipeline");
     } else {
-      scheduler_.submit(temp.ptr());
+      scheduler_.submit(iter->second.get());
     }
-    *ppPipeline = std::move(temp);                          // move
+    *ppPipeline = iter->second.get();
   }
 
   void GetGeometryPipeline(
       MTL_GRAPHICS_PIPELINE_DESC *pDesc,
-      IMTLCompiledGeometryPipeline **ppPipeline) override {
+      MTLCompiledGeometryPipeline **ppPipeline) override {
     std::lock_guard<dxmt::mutex> lock(mutex_gs_);
 
-    auto iter = pipelines_gs_.find(*pDesc);
-    if (iter != pipelines_gs_.end()) {
-      *ppPipeline = iter->second.ref();
+    if (auto iter = pipelines_gs_.find(*pDesc); iter != pipelines_gs_.end()) {
+      *ppPipeline = iter->second.get();
       return;
     }
-    auto temp = dxmt::CreateGeometryPipeline(device, pDesc);
-    if (!pipelines_gs_.insert({*pDesc, temp}).second) // copy
-    {
+    auto [iter, inserted] = pipelines_gs_.insert({*pDesc, CreateGeometryPipeline(device, pDesc)});
+    if (!inserted) {
       D3D11_ASSERT(0 && "duplicated geometry pipeline");
     } else {
-      scheduler_.submit(temp.ptr());
+      scheduler_.submit(iter->second.get());
     }
-    *ppPipeline = std::move(temp);
+    *ppPipeline = iter->second.get();
   }
 
   void GetTessellationPipeline(MTL_GRAPHICS_PIPELINE_DESC * pDesc,
-                                   IMTLCompiledTessellationMeshPipeline *
+                                   MTLCompiledTessellationMeshPipeline *
                                        *ppPipeline) override {
     std::lock_guard<dxmt::mutex> lock(mutex_ts_);
 
-    auto iter = pipelines_ts_.find(*pDesc);
-    if (iter != pipelines_ts_.end()) {
-      *ppPipeline = iter->second.ref();
+    if (auto iter = pipelines_ts_.find(*pDesc); iter != pipelines_ts_.end()) {
+      *ppPipeline = iter->second.get();
       return;
     }
-    auto temp = dxmt::CreateTessellationMeshPipeline(device, pDesc);
-    if (!pipelines_ts_.insert({*pDesc, temp}).second) // copy
-    {
+    auto [iter, inserted] = pipelines_ts_.insert({*pDesc, CreateTessellationMeshPipeline(device, pDesc)});
+    if (!inserted) {
       D3D11_ASSERT(0 && "duplicated tessellation pipeline");
     } else {
-      scheduler_.submit(temp.ptr());
+      scheduler_.submit(iter->second.get());
     }
-    *ppPipeline = std::move(temp);
+    *ppPipeline = iter->second.get();
   }
 
   void GetComputePipeline(MTL_COMPUTE_PIPELINE_DESC *pDesc,
-                                  IMTLCompiledComputePipeline **ppPipeline) override {
+                                  MTLCompiledComputePipeline **ppPipeline) override {
    std::lock_guard<dxmt::mutex> lock(mutex_cs_);
 
-    auto iter = pipelines_cs_.find(pDesc->ComputeShader);
-    if (iter != pipelines_cs_.end()) {
-      *ppPipeline = iter->second.ref();
+    if (auto iter = pipelines_cs_.find(pDesc->ComputeShader); iter != pipelines_cs_.end()) {
+      *ppPipeline = iter->second.get();
       return;
     }
-    auto temp = dxmt::CreateComputePipeline(device, pDesc->ComputeShader);
-    if (!pipelines_cs_.insert({pDesc->ComputeShader, temp}).second) // copy
-    {
+    auto [iter, inserted] = pipelines_cs_.insert({pDesc->ComputeShader, CreateComputePipeline(device, pDesc->ComputeShader)});
+    if (!inserted) {
       D3D11_ASSERT(0 && "duplicated compute pipeline");
     } else {
-      scheduler_.submit(temp.ptr());
+      scheduler_.submit(iter->second.get());
     }
-    *ppPipeline = std::move(temp);
+    *ppPipeline = iter->second.get();
   }
 
 public:
