@@ -44,7 +44,7 @@ struct sm50_compile_params {
 
 struct sm50_get_compiled_bitcode_params {
   sm50_bitcode_t bitcode;
-  struct MTL_SHADER_BITCODE *data_out;
+  struct SM50_COMPILED_BITCODE *data_out;
 };
 
 struct sm50_destroy_bitcode_params {

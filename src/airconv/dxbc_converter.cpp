@@ -1730,7 +1730,7 @@ AIRCONV_API int SM50CompileGeometryPipelineGeometry(
 }
 
 AIRCONV_API void SM50GetCompiledBitcode(
-  sm50_bitcode_t pBitcode, MTL_SHADER_BITCODE *pData
+  sm50_bitcode_t pBitcode, SM50_COMPILED_BITCODE *pData
 ) {
   auto pBitcodeInternal = (SM50CompiledBitcodeInternal *)pBitcode;
   pData->Data = pBitcodeInternal->vec.data();
