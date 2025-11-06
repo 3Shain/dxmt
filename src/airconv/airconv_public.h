@@ -115,12 +115,6 @@ struct MTL_SHADER_REFLECTION {
   uint32_t ArgumentTableQwords;
 };
 
-struct MTL_SHADER_BITCODE {
-  char *Data;
-  size_t Size;
-  // add additional metadata here
-};
-
 #if defined(__LP64__) || defined(_WIN64)
 typedef void *sm50_ptr64_t;
 #else
@@ -138,10 +132,6 @@ typedef struct sm50_ptr64_t {
 
   sm50_ptr64_t(uint64_t v) {
     impl = v;
-  }
-
-  operator void * () const {
-    return (void*)impl;
   }
 
   operator uint64_t () const {
@@ -166,8 +156,10 @@ typedef sm50_ptr64_t sm50_error_t;
 #define AIRCONV_API __attribute__((sysv_abi))
 #endif
 
-typedef struct __MTLArgumentEncoder *ArgumentEncoder_t;
-typedef struct __MTLDevice *Device_t;
+struct SM50_COMPILED_BITCODE {
+  sm50_ptr64_t Data;
+  uint64_t Size;
+};
 
 #ifdef __cplusplus
 
@@ -302,7 +294,7 @@ AIRCONV_API int SM50Compile(
   const char *FunctionName, sm50_bitcode_t *ppBitcode, sm50_error_t *ppError
 );
 AIRCONV_API void SM50GetCompiledBitcode(
-  sm50_bitcode_t pBitcode, struct MTL_SHADER_BITCODE *pData
+  sm50_bitcode_t pBitcode, struct SM50_COMPILED_BITCODE *pData
 );
 AIRCONV_API void SM50DestroyBitcode(sm50_bitcode_t pBitcode);
 AIRCONV_API size_t SM50GetErrorMessage(sm50_error_t pError, char *pBuffer, size_t BufferSize);
