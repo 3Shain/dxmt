@@ -1,8 +1,8 @@
 #include "stddef.h"
 #include "airconv_public.h"
 
-#ifndef __WINEMETAL_UNIX_THUNKS_H
-#define __WINEMETAL_UNIX_THUNKS_H
+#ifndef __WINEMETAL_AIRCONV_THUNKS_H
+#define __WINEMETAL_AIRCONV_THUNKS_H
 
 enum airconv_unixcalls {
   unix_sm50_initialize = 74,

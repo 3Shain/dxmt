@@ -1,6 +1,6 @@
 #define WIN_EXPORT
 #include "wineunixlib.h"
-#include "unix_thunks.h"
+#include "airconv_thunks.h"
 
 AIRCONV_API int
 SM50Initialize(
