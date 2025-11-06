@@ -4,6 +4,7 @@
 #include "d3d11_shader.hpp"
 #include "d3d11_state_object.hpp"
 #include "dxmt_format.hpp"
+#include "sha1/sha1_util.hpp"
 #include "util_math.hpp"
 #include "log/log.hpp"
 
@@ -98,7 +99,15 @@ public:
   MTLD3D11StreamOutputLayout(MTLD3D11Device *device,
                              const MTL_STREAM_OUTPUT_DESC &desc)
       : ManagedDeviceChild<IMTLD3D11StreamOutputLayout>(device), desc_(desc),
-        null_gs(this) {}
+        null_gs(this) {
+    Sha1HashState h;
+    h.update(desc.Strides);
+    h.update(desc.Elements.size());
+    for (auto &el : desc.Elements) {
+        h.update(el);
+    }
+    sha1_ = h.final();
+  }
 
   ~MTLD3D11StreamOutputLayout() {}
 
@@ -137,8 +146,13 @@ public:
     return desc_.Elements.size();
   }
 
+  Sha1Digest &Digest() override {
+    return sha1_;
+  };
+
 private:
   MTL_STREAM_OUTPUT_DESC desc_;
+  Sha1Digest sha1_;
 
   class NullGeometryShader : public IMTLD3D11Shader {
     IUnknown *container;
