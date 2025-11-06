@@ -2482,6 +2482,15 @@ _DispatchData_alloc_init(void *obj) {
   return STATUS_SUCCESS;
 }
 
+/*
+ * Definition from cache.c
+ */
+
+NTSTATUS _CacheReader_alloc_init(void *obj);
+NTSTATUS _CacheReader_get(void *obj);
+NTSTATUS _CacheWriter_alloc_init(void *obj);
+NTSTATUS _CacheWriter_set(void *obj);
+
 const void *__wine_unix_call_funcs[] = {
     &_NSObject_retain,
     &_NSObject_release,
@@ -2598,6 +2607,10 @@ const void *__wine_unix_call_funcs[] = {
     &_MTLDevice_newBinaryArchive,
     &_MTLBinaryArchive_serialize,
     &_DispatchData_alloc_init,
+    &_CacheReader_alloc_init,
+    &_CacheReader_get,
+    &_CacheWriter_alloc_init,
+    &_CacheWriter_set,
 };
 
 #ifndef DXMT_NATIVE
@@ -2717,5 +2730,9 @@ const void *__wine_unix_call_wow64_funcs[] = {
     &_MTLDevice_newBinaryArchive,
     &_MTLBinaryArchive_serialize,
     &_DispatchData_alloc_init,
+    &_CacheReader_alloc_init,
+    &_CacheReader_get,
+    &_CacheWriter_alloc_init,
+    &_CacheWriter_set,
 };
 #endif

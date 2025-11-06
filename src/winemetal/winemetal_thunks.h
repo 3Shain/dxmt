@@ -300,6 +300,26 @@ struct unixcall_mtlbinaryarchive_serialize {
   obj_handle_t ret_error;
 };
 
+struct unixcall_cache_alloc_init {
+  struct WMTConstMemoryPointer path;
+  uint64_t version;
+  obj_handle_t ret_cache;
+};
+
+struct unixcall_cache_get {
+  obj_handle_t cache;
+  struct WMTConstMemoryPointer key;
+  uint64_t key_length;
+  obj_handle_t ret_data;
+};
+
+struct unixcall_cache_set {
+  obj_handle_t cache;
+  struct WMTConstMemoryPointer key;
+  uint64_t key_length;
+  obj_handle_t value_data;
+};
+
 #pragma pack(pop)
 
 #endif

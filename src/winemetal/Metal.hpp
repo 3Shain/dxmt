@@ -888,6 +888,44 @@ public:
   }
 };
 
+class CacheReader : public Object {
+public:
+  static Reference<CacheReader>
+  alloc_init(const char *path, uint64_t version) {
+    return Reference<CacheReader>(CacheReader_alloc_init(path, version));
+  };
+
+  Reference<DispatchData>
+  get(const void *key, uint64_t length) {
+    return Reference<DispatchData>(CacheReader_get(handle, key, length));
+  };
+
+  template <typename K>
+  Reference<DispatchData>
+  get(const K &key) {
+    return Reference<DispatchData>(CacheReader_get(handle, reinterpret_cast<const void *>(&key), sizeof(key)));
+  };
+};
+
+class CacheWriter : public Object {
+public:
+  static Reference<CacheWriter>
+  alloc_init(const char *path, uint64_t version) {
+    return Reference<CacheWriter>(CacheWriter_alloc_init(path, version));
+  };
+
+  void
+  set(const void *key, uint64_t key_length, DispatchData value) {
+    CacheWriter_set(handle, key, key_length, value);
+  };
+
+  template <typename K>
+  void
+  set(const K &key, DispatchData value) {
+    set(reinterpret_cast<const void *>(&key), sizeof(key), value);
+  };
+};
+
 inline Reference<Object>
 MakeAutoreleasePool() {
   return Reference<Object>(NSAutoreleasePool_alloc_init());

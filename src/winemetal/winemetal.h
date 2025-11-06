@@ -1785,4 +1785,12 @@ WINEMETAL_API void MTLBinaryArchive_serialize(obj_handle_t archive, const char *
 
 WINEMETAL_API obj_handle_t DispatchData_alloc_init(uint64_t native_ptr, uint64_t length);
 
+WINEMETAL_API obj_handle_t CacheReader_alloc_init(const char *path, uint64_t version);
+
+WINEMETAL_API obj_handle_t CacheReader_get(obj_handle_t reader, const void *key, uint64_t length);
+
+WINEMETAL_API obj_handle_t CacheWriter_alloc_init(const char *path, uint64_t version);
+
+WINEMETAL_API void CacheWriter_set(obj_handle_t writer, const void *key, uint64_t key_length, obj_handle_t value);
+
 #endif
