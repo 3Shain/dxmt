@@ -9,7 +9,7 @@
 #include "objc/objc-runtime.h"
 #define WINEMETAL_API
 #include "../winemetal_thunks.h"
-#include "../unix_thunks.h"
+#include "../airconv_thunks.h"
 
 typedef int NTSTATUS;
 #define STATUS_SUCCESS 0
