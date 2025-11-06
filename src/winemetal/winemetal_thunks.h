@@ -112,8 +112,7 @@ struct unixcall_mtltexture_newtextureview {
 
 struct unixcall_mtldevice_newlibrary {
   obj_handle_t device;
-  struct WMTMemoryPointer bytecode;
-  uint64_t bytecode_length;
+  obj_handle_t data;
   obj_handle_t ret_error;
   obj_handle_t ret_library;
 };
