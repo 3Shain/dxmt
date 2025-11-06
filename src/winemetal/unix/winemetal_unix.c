@@ -307,11 +307,9 @@ static NTSTATUS
 _MTLDevice_newLibrary(void *obj) {
   struct unixcall_mtldevice_newlibrary *params = obj;
   id<MTLDevice> device = (id<MTLDevice>)params->device;
-  dispatch_data_t data = dispatch_data_create(params->bytecode.ptr, params->bytecode_length, NULL, NULL);
   NSError *err = NULL;
-  params->ret_library = (obj_handle_t)[device newLibraryWithData:data error:&err];
+  params->ret_library = (obj_handle_t)[device newLibraryWithData:(dispatch_data_t)params->data error:&err];
   params->ret_error = (obj_handle_t)err;
-  dispatch_release(data);
   return STATUS_SUCCESS;
 }
 
@@ -2477,6 +2475,13 @@ _MTLBinaryArchive_serialize(void *obj) {
   return STATUS_SUCCESS;
 }
 
+static NTSTATUS
+_DispatchData_alloc_init(void *obj) {
+  struct unixcall_generic_obj_uint64_obj_ret *params = obj;
+  params->ret = (obj_handle_t)dispatch_data_create((void *)params->handle, params->arg, NULL, NULL);
+  return STATUS_SUCCESS;
+}
+
 const void *__wine_unix_call_funcs[] = {
     &_NSObject_retain,
     &_NSObject_release,
@@ -2592,6 +2597,7 @@ const void *__wine_unix_call_funcs[] = {
     &_WMTGetOSVersion,
     &_MTLDevice_newBinaryArchive,
     &_MTLBinaryArchive_serialize,
+    &_DispatchData_alloc_init,
 };
 
 #ifndef DXMT_NATIVE
@@ -2710,5 +2716,6 @@ const void *__wine_unix_call_wow64_funcs[] = {
     &_WMTGetOSVersion,
     &_MTLDevice_newBinaryArchive,
     &_MTLBinaryArchive_serialize,
+    &_DispatchData_alloc_init,
 };
 #endif

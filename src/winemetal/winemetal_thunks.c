@@ -254,12 +254,11 @@ MTLDevice_minimumLinearTextureAlignmentForPixelFormat(obj_handle_t device, enum 
 
 WINEMETAL_API obj_handle_t
 MTLDevice_newLibrary(
-    obj_handle_t device, struct WMTMemoryPointer bytecode, uint64_t bytecode_length, obj_handle_t *err_out
+    obj_handle_t device, obj_handle_t data, obj_handle_t *err_out
 ) {
   struct unixcall_mtldevice_newlibrary params;
   params.device = device;
-  params.bytecode = bytecode;
-  params.bytecode_length = bytecode_length;
+  params.data = data;
   params.ret_error = 0;
   params.ret_library = 0;
   UNIX_CALL(25, &params);
@@ -990,4 +989,13 @@ MTLBinaryArchive_serialize(obj_handle_t archive, const char *url, obj_handle_t *
   UNIX_CALL(113, &params);
   if (err_out)
     *err_out = params.ret_error;
+}
+
+WINEMETAL_API obj_handle_t
+DispatchData_alloc_init(uint64_t native_ptr, uint64_t length) {
+  struct unixcall_generic_obj_uint64_obj_ret params;
+  params.handle = native_ptr;
+  params.arg = length;
+  UNIX_CALL(114, &params);
+  return params.ret;
 }

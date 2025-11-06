@@ -169,6 +169,10 @@ class Error : public Object {
 public:
 };
 
+class DispatchData : public Object {
+public:
+};
+
 class Event : public Object {
 public:
 };
@@ -712,16 +716,23 @@ public:
 
   Reference<Library>
   newLibrary(const void *bytecode, uint64_t bytecode_length, Error &error) {
-    struct WMTMemoryPointer mem;
-    mem.set((void *)bytecode);
-    return Reference<Library>(MTLDevice_newLibrary(handle, mem, bytecode_length, &error.handle));
+    auto data = DispatchData_alloc_init((uint64_t)bytecode, bytecode_length);
+    auto ret = Reference<Library>(MTLDevice_newLibrary(handle, data, &error.handle));
+    NSObject_release(data);
+    return ret;
   }
 
   Reference<Library>
   newLibraryFromNativeBuffer(uint64_t bytecode, uint64_t bytecode_length, Error &error) {
-    struct WMTMemoryPointer mem;
-    memcpy(&mem, &bytecode, 8);
-    return Reference<Library>(MTLDevice_newLibrary(handle, mem, bytecode_length, &error.handle));
+    auto data = DispatchData_alloc_init(bytecode, bytecode_length);
+    auto ret = Reference<Library>(MTLDevice_newLibrary(handle, data, &error.handle));
+    NSObject_release(data);
+    return ret;
+  }
+
+  Reference<Library>
+  newLibrary(DispatchData data, Error &error) {
+    return Reference<Library>(MTLDevice_newLibrary(handle, data, &error.handle));
   }
 
   Reference<ComputePipelineState>
@@ -885,6 +896,16 @@ MakeAutoreleasePool() {
 inline Reference<String>
 MakeString(const char *data, WMTStringEncoding encoding) {
   return Reference<String>(NSString_alloc_init(data, encoding));
+}
+
+inline Reference<DispatchData>
+MakeDispatchData(uint64_t native_ptr, uint64_t length) {
+  return Reference<DispatchData>(DispatchData_alloc_init(native_ptr, length));
+}
+
+inline Reference<DispatchData>
+MakeDispatchData(void *native_ptr, uint64_t length) {
+  return Reference<DispatchData>(DispatchData_alloc_init((uint64_t)native_ptr, length));
 }
 
 inline Object
