@@ -999,3 +999,43 @@ DispatchData_alloc_init(uint64_t native_ptr, uint64_t length) {
   UNIX_CALL(114, &params);
   return params.ret;
 }
+
+WINEMETAL_API obj_handle_t
+CacheReader_alloc_init(const char *path, uint64_t version) {
+  struct unixcall_cache_alloc_init params;
+  WMT_MEMPTR_SET(params.path, path);
+  params.version = version;
+  UNIX_CALL(115, &params);
+  return params.ret_cache;
+}
+
+WINEMETAL_API obj_handle_t
+CacheReader_get(obj_handle_t reader, const void *key, uint64_t length) {
+  struct unixcall_cache_get params;
+  params.cache = reader;
+  WMT_MEMPTR_SET(params.key, key);
+  params.key_length = length;
+  UNIX_CALL(116, &params);
+  return params.ret_data;
+}
+
+WINEMETAL_API obj_handle_t
+CacheWriter_alloc_init(const char *path, uint64_t version) {
+  struct unixcall_cache_alloc_init params;
+  WMT_MEMPTR_SET(params.path, path);
+  params.version = version;
+  UNIX_CALL(117, &params);
+  return params.ret_cache;
+}
+
+WINEMETAL_API void
+CacheWriter_set(
+    obj_handle_t writer, const void *key, uint64_t key_length, obj_handle_t value
+) {
+  struct unixcall_cache_set params;
+  params.cache = writer;
+  WMT_MEMPTR_SET(params.key, key);
+  params.key_length = key_length;
+  params.value_data = value;
+  UNIX_CALL(118, &params);
+}
