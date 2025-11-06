@@ -38,6 +38,7 @@ DEFINE_COM_INTERFACE("fd58f76b-7c22-4605-b43c-28048c8b4a64",
   virtual uint32_t STDMETHODCALLTYPE GetStreamOutputElements(
       MTL_SHADER_STREAM_OUTPUT_ELEMENT_DESC * *ppElements,
       uint32_t Strides[4]) = 0;
+  virtual dxmt::Sha1Digest &Digest() = 0;
 };
 
 namespace dxmt {

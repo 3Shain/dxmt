@@ -8,6 +8,7 @@
 #include "sha1/sha1_util.hpp"
 #include "../d3d10/d3d10_shader.hpp"
 #include "../d3d10/d3d10_input_layout.hpp"
+#include "util_env.hpp"
 #include <cstring>
 #include <shared_mutex>
 
@@ -142,6 +143,19 @@ class PipelineCache : public MTLD3D11PipelineCacheBase {
 #else
     virtual void dump() {}
 #endif
+
+    virtual WMT::Reference<WMT::DispatchData> find_cached_variant(Sha1Digest &variant_digest) final {
+      if (!cache->scache_reader_)
+        return {};
+      std::lock_guard<dxmt::mutex> lock(cache->scache_reader_mutex_);
+      return cache->scache_reader_.get(std::make_pair(sha1_, variant_digest));
+    };
+    virtual void update_cached_variant(Sha1Digest &variant_digest, WMT::DispatchData data) final {
+      if (!cache->scache_reader_)
+        return;
+      std::lock_guard<dxmt::mutex> lock(cache->scache_reader_mutex_);
+      cache->scache_writer_.set(std::make_pair(sha1_, variant_digest), data);
+    }
   };
 
   class CachedInputLayout final : public InputLayout {
@@ -174,6 +188,12 @@ class PipelineCache : public MTLD3D11PipelineCacheBase {
     Sha1Digest sha1_;
     uint32_t input_slot_mask_;
   };
+
+  WMT::Reference<WMT::CacheWriter> scache_writer_;
+  dxmt::mutex scache_writer_mutex_;
+
+  WMT::Reference<WMT::CacheReader> scache_reader_;
+  dxmt::mutex scache_reader_mutex_;
 
   task_scheduler<ThreadpoolWork *> scheduler_;
 
@@ -431,8 +451,13 @@ class PipelineCache : public MTLD3D11PipelineCacheBase {
   }
 
 public:
-  PipelineCache(MTLD3D11Device *pDevice)
-      : device(pDevice), blend_states(pDevice), so_layouts(pDevice) {};
+  PipelineCache(MTLD3D11Device *pDevice) : device(pDevice), blend_states(pDevice), so_layouts(pDevice) {
+    auto cache_path = str::format(
+        "dxmt/", env::getExeName(), "/shaders_", (unsigned int)pDevice->GetDXMTDevice().metalVersion(), ".db"
+    );
+    scache_writer_ = WMT::CacheWriter::alloc_init(cache_path.c_str(), kDXMTShaderCacheVersion);
+    scache_reader_ = WMT::CacheReader::alloc_init(cache_path.c_str(), kDXMTShaderCacheVersion);
+  };
 };
 
 std::unique_ptr<MTLD3D11PipelineCacheBase>

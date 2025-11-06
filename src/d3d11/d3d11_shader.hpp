@@ -214,6 +214,9 @@ public:
   virtual CompiledShader *get_shader(ShaderVariant variant) = 0;
   virtual const Sha1Digest& sha1() = 0;
   virtual void dump() = 0;
+
+  virtual WMT::Reference<WMT::DispatchData> find_cached_variant(Sha1Digest &key) = 0;
+  virtual void update_cached_variant(Sha1Digest &key, WMT::DispatchData data) = 0;
 };
 
 template <typename Variant>
