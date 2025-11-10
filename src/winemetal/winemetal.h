@@ -1793,4 +1793,6 @@ WINEMETAL_API obj_handle_t CacheWriter_alloc_init(const char *path, uint64_t ver
 
 WINEMETAL_API void CacheWriter_set(obj_handle_t writer, const void *key, uint64_t key_length, obj_handle_t value);
 
+WINEMETAL_API bool WMTSetMetalShaderCachePath(const char *path);
+
 #endif

@@ -320,6 +320,11 @@ struct unixcall_cache_set {
   obj_handle_t value_data;
 };
 
+struct unixcall_setmetalcachepath {
+  struct WMTConstMemoryPointer path;
+  uint64_t ret_success;
+};
+
 #pragma pack(pop)
 
 #endif

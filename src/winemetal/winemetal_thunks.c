@@ -1039,3 +1039,12 @@ CacheWriter_set(
   params.value_data = value;
   UNIX_CALL(118, &params);
 }
+
+WINEMETAL_API bool
+WMTSetMetalShaderCachePath(const char *path) {
+  struct unixcall_setmetalcachepath params;
+  WMT_MEMPTR_SET(params.path, path);
+  params.ret_success = 0;
+  UNIX_CALL(119, &params);
+  return params.ret_success;
+}

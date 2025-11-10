@@ -2490,6 +2490,7 @@ NTSTATUS _CacheReader_alloc_init(void *obj);
 NTSTATUS _CacheReader_get(void *obj);
 NTSTATUS _CacheWriter_alloc_init(void *obj);
 NTSTATUS _CacheWriter_set(void *obj);
+NTSTATUS _WMTSetMetalShaderCachePath(void *obj);
 
 const void *__wine_unix_call_funcs[] = {
     &_NSObject_retain,
@@ -2611,6 +2612,7 @@ const void *__wine_unix_call_funcs[] = {
     &_CacheReader_get,
     &_CacheWriter_alloc_init,
     &_CacheWriter_set,
+    &_WMTSetMetalShaderCachePath,
 };
 
 #ifndef DXMT_NATIVE
@@ -2734,5 +2736,6 @@ const void *__wine_unix_call_wow64_funcs[] = {
     &_CacheReader_get,
     &_CacheWriter_alloc_init,
     &_CacheWriter_set,
+    &_WMTSetMetalShaderCachePath,
 };
 #endif
