@@ -551,3 +551,20 @@ struct DXMTClearUintMetadata {
 ) {
   buffer[meta.offset.x + pos] = meta.value.x;
 }
+
+[[kernel]] void cs_downscale_dilated_mv(
+  uint2 pos [[thread_position_in_grid]],
+  constant float2& mv_scale [[buffer(0)]],
+  texture2d<float, access::read> dilated [[texture(0)]],
+  texture2d<float, access::write> downscaled [[texture(1)]]
+) {
+  float2 source_size = float2(dilated.get_width(), dilated.get_height());
+  float2 viewport_size = float2(downscaled.get_width(), downscaled.get_height());
+  float2 scale = viewport_size / source_size;
+  float2 sample_uv = (float2(pos) + 0.5) / viewport_size;
+  uint2 sample_pos = uint2(sample_uv * source_size);
+  float2 hi_mv = dilated.read(sample_pos).xy;
+  float2 hi_mv_pixel = hi_mv * mv_scale;
+  float2 lo_mv_pixel = hi_mv_pixel * scale;
+  downscaled.write(lo_mv_pixel.xyxy, pos); 
+}

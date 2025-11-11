@@ -264,4 +264,19 @@ private:
   DXMTClearMetadata meta_temp_;
 };
 
+class MTLFXMVScaleContext {
+public:
+  MTLFXMVScaleContext(WMT::Device device, InternalCommandLibrary &lib, ArgumentEncodingContext &ctx);
+
+  void dispatch(
+      const Rc<Texture> &dilated, TextureViewKey view_dilated, const Rc<Texture> &downscaled,
+      TextureViewKey view_downscaled, float mv_scale_x, float mv_scale_y
+  );
+
+private:
+  ArgumentEncodingContext &ctx_;
+  WMT::Device device_;
+  WMT::Reference<WMT::ComputePipelineState> pso_downscale_dilated_mv_;
+};
+
 } // namespace dxmt

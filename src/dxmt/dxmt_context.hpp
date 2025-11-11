@@ -686,6 +686,7 @@ public:
   ClearRenderTargetContext clear_rt_cmd;
   DepthStencilBlitContext blit_depth_stencil_cmd;
   ClearResourceKernelContext clear_res_cmd;
+  MTLFXMVScaleContext mv_scale_cmd;
 
 private:
   DXMT_ENCODER_LIST_OP checkEncoderRelation(EncoderData* former, EncoderData* latter);

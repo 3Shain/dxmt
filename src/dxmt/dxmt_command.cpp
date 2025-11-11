@@ -635,4 +635,65 @@ ClearResourceKernelContext::end() {
   dispatch_depth_ = 1;
 };
 
+MTLFXMVScaleContext::MTLFXMVScaleContext(
+    WMT::Device device, InternalCommandLibrary &lib, ArgumentEncodingContext &ctx
+) :
+    ctx_(ctx),
+    device_(device) {
+  WMT::Reference<WMT::Error> err;
+
+  auto library = lib.getLibrary();
+
+  auto cs_ = library.newFunction("cs_downscale_dilated_mv");
+
+  pso_downscale_dilated_mv_ = device_.newComputePipelineState(cs_, err);
+}
+
+struct downscale_dilated_mv_desc {
+  float scale_x;
+  float scale_y;
+};
+
+void
+MTLFXMVScaleContext::dispatch(
+    const Rc<Texture> &dilated, TextureViewKey view_dilated, const Rc<Texture> &downscaled,
+    TextureViewKey view_downscaled, float mv_scale_x, float mv_scale_y
+) {
+  ctx_.startComputePass(0);
+  auto tex_dilated = ctx_.access(dilated, view_dilated, DXMT_ENCODER_RESOURCE_ACESS_READ).texture;
+  auto tex_downscaled = ctx_.access(downscaled, view_downscaled, DXMT_ENCODER_RESOURCE_ACESS_WRITE).texture;
+
+  auto &setpso = ctx_.encodeComputeCommand<wmtcmd_compute_setpso>();
+  setpso.type = WMTComputeCommandSetPSO;
+  setpso.pso = pso_downscale_dilated_mv_;
+  setpso.threadgroup_size = {8, 4, 1};
+
+  auto &setdepth = ctx_.encodeComputeCommand<wmtcmd_compute_settexture>();
+  setdepth.type = WMTComputeCommandSetTexture;
+  setdepth.texture = tex_dilated;
+  setdepth.index = 0;
+
+  auto &setstencil = ctx_.encodeComputeCommand<wmtcmd_compute_settexture>();
+  setstencil.type = WMTComputeCommandSetTexture;
+  setstencil.texture = tex_downscaled;
+  setstencil.index = 1;
+
+  downscale_dilated_mv_desc desc{mv_scale_x, mv_scale_y};
+  auto &setdesc = ctx_.encodeComputeCommand<wmtcmd_compute_setbytes>();
+  setdesc.type = WMTComputeCommandSetBytes;
+  void *temp = ctx_.allocate_cpu_heap(sizeof(desc), 16);
+  memcpy(temp, &desc, sizeof(desc));
+  setdesc.bytes.set(temp);
+  setdesc.length = sizeof(desc);
+  setdesc.index = 0;
+
+  auto width = downscaled->width(view_downscaled);
+  auto height = downscaled->height(view_downscaled);
+  auto &dispatch = ctx_.encodeComputeCommand<wmtcmd_compute_dispatch>();
+  dispatch.type = WMTComputeCommandDispatchThreads;
+  dispatch.size = {width, height, 1};
+
+  ctx_.endPass();
+}
+
 } // namespace dxmt

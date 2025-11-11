@@ -15,6 +15,7 @@ ArgumentEncodingContext::ArgumentEncodingContext(CommandQueue &queue, WMT::Devic
     clear_rt_cmd(device, lib, *this),
     blit_depth_stencil_cmd(device, lib, *this),
     clear_res_cmd(device, lib, *this),
+    mv_scale_cmd(device, lib, *this),
     device_(device),
     queue_(queue) {
   dummy_sampler_info_.support_argument_buffers = true;
