@@ -118,6 +118,7 @@ NVSDK_NGX_D3D11_EvaluateFeature(
     desc.ExposureTexture = exposure;
     desc.DepthReversed = bool(dlss->flag & NVNGX_DLSS_FLAG_DEPTH_INVERTED);
     desc.AutoExposure = bool(dlss->flag & NVNGX_DLSS_FLAG_AUTO_EXPOSURE);
+    desc.MotionVectorInDisplayRes = !bool(dlss->flag & NVNGX_DLSS_FLAG_MV_LOWRES);
 
     if (NVNGX_FAILED(parameters->Get(NVNGX_Parameter_Jitter_Offset_X, &desc.JitterOffsetX)))
       desc.JitterOffsetX = 0;
@@ -129,9 +130,9 @@ NVSDK_NGX_D3D11_EvaluateFeature(
     desc.InReset = reset;
 
     if (NVNGX_FAILED(parameters->Get(NVNGX_Parameter_MV_Scale_X, &desc.MotionVectorScaleX)))
-      desc.MotionVectorScaleX = 0;
+      desc.MotionVectorScaleX = 1.0;
     if (NVNGX_FAILED(parameters->Get(NVNGX_Parameter_MV_Scale_Y, &desc.MotionVectorScaleY)))
-      desc.MotionVectorScaleY = 0;
+      desc.MotionVectorScaleY = 1.0;
     if (NVNGX_FAILED(parameters->Get(NVNGX_Parameter_DLSS_Pre_Exposure, &desc.PreExposure)))
       desc.PreExposure = 0;
 

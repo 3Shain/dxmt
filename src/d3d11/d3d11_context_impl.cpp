@@ -23,6 +23,7 @@ since it is for internal use only
 #include "dxmt_ring_bump_allocator.hpp"
 #include "dxmt_staging.hpp"
 #include "d3d11_resource.hpp"
+#include "dxmt_texture.hpp"
 #include "util_flags.hpp"
 #include "util_math.hpp"
 #include "util_win32_compat.h"
@@ -4831,6 +4832,7 @@ class MTLD3D11ContextExt : public IMTLD3D11ContextExt {
     uint32_t output_width;
     uint32_t output_height;
     WMT::Reference<WMT::FXTemporalScaler> scaler;
+    Rc<Texture> mv_downscaled;
   };
 public:
   MTLD3D11ContextExt(MTLD3D11DeviceContextImplBase<ContextInternalState> *context) : ctx_(context){};
@@ -4881,12 +4883,8 @@ public:
       return;
     }
 
-    if (motion_vector->width() > input->width() || motion_vector->height() > input->height()) {
-      ERR("TemporalUpscale: resolution of motion vector is larger than input resolution");
-      return;
-    }
-
     WMT::Reference<WMT::FXTemporalScaler> scaler;
+    Rc<Texture> mv_downscaled;
 
     for(CachedTemporalScaler& entry: scaler_cache_) {
       if(pDesc->AutoExposure != entry.auto_exposure) continue;
@@ -4900,6 +4898,7 @@ public:
       if(motion_vector_format != entry.motion_vector_pixel_format) continue;
 
       scaler = entry.scaler;
+      mv_downscaled = entry.mv_downscaled;
       break;
     }
 
@@ -4929,6 +4928,24 @@ public:
       info.input_content_max_scale =  3.0f;
       info.requires_synchronous_initialization = true;
       scaler_entry.scaler = ctx_->device->GetMTLDevice().newTemporalScaler(info);
+      if (pDesc->MotionVectorInDisplayRes) {
+        WMTTextureInfo tex_info;
+        tex_info.width = scaler_entry.input_width;
+        tex_info.height = scaler_entry.input_height;
+        tex_info.depth = 1;
+        tex_info.array_length = 1;
+        tex_info.mipmap_level_count = 1;
+        tex_info.pixel_format = WMTPixelFormatRG32Float;
+        tex_info.sample_count = 1;
+        tex_info.type = WMTTextureType2D;
+        tex_info.usage = WMTTextureUsageShaderRead | WMTTextureUsageShaderWrite;
+        tex_info.options = WMTResourceStorageModePrivate;
+        scaler_entry.mv_downscaled = new Texture(tex_info, this->ctx_->device->GetMTLDevice());
+        mv_downscaled = scaler_entry.mv_downscaled;
+        Flags<TextureAllocationFlag> flags;
+        flags.set(TextureAllocationFlag::GpuPrivate);
+        mv_downscaled->rename(mv_downscaled->allocate(flags));
+      }
       scaler = scaler_entry.scaler;
       scaler_cache_.push_back(std::move(scaler_entry));
       // to simplify implementation, the created scalers are never destroyed
@@ -4952,7 +4969,8 @@ public:
                           pDesc->JitterOffsetY,
                           pDesc->PreExposure,
                       },
-                  motion_vector_format](ArgumentEncodingContext &enc) mutable {
+                  motion_vector_format, mv_downscaled = std::move(mv_downscaled)
+                ](ArgumentEncodingContext &enc) mutable {
       auto mv_view = motion_vector->createView(
           {.format = motion_vector_format,
            .type = WMTTextureType2D,
@@ -4969,11 +4987,19 @@ public:
       scaler_info.output_width = output->width();
       scaler_info.output_height = output->height();
 
-      scaler_info.motion_vector_highres = ((input->width() < scaler_info.output_width) ||
-                                           (input->height() < scaler_info.output_height)) &&
-                                          ((scaler_info.output_width <= motion_vector->width()) ||
-                                           (scaler_info.output_height <= motion_vector->height()));
-      enc.upscaleTemporal(input, output, depth, motion_vector, mv_view, exposure, scaler, props);
+      scaler_info.motion_vector_highres = mv_downscaled != nullptr;
+
+      if (scaler_info.motion_vector_highres) {
+        enc.mv_scale_cmd.dispatch(
+            motion_vector, mv_view, mv_downscaled, 0, props.motion_vector_scale_x, props.motion_vector_scale_y
+        );
+        WMTFXTemporalScalerProps new_props = props;
+        new_props.motion_vector_scale_x = 1.0;
+        new_props.motion_vector_scale_y = 1.0;
+        enc.upscaleTemporal(input, output, depth, mv_downscaled, 0, exposure, scaler, new_props);
+      } else {
+        enc.upscaleTemporal(input, output, depth, motion_vector, mv_view, exposure, scaler, props);
+      }
     });
   }
 

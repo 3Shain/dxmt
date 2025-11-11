@@ -8,6 +8,7 @@ struct MTL_TEMPORAL_UPSCALE_D3D11_DESC {
   BOOL AutoExposure;
   BOOL InReset;
   BOOL DepthReversed;
+  BOOL MotionVectorInDisplayRes;
   ID3D11Resource *Color;
   ID3D11Resource *Depth;
   ID3D11Resource *MotionVector;
