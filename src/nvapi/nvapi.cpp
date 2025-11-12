@@ -427,6 +427,80 @@ NvAPI_DISP_GetGDIPrimaryDisplayId(NvU32 *displayId) {
   return NVAPI_OK;
 }
 
+NVAPI_INTERFACE
+NvAPI_D3D_GetSleepStatus(IUnknown *pDev, NV_GET_SLEEP_STATUS_PARAMS *pGetSleepStatusParams) {
+  if (!pDev || !pGetSleepStatusParams)
+    return NVAPI_INVALID_ARGUMENT;
+
+  switch (pGetSleepStatusParams->version) {
+  case NV_GET_SLEEP_STATUS_PARAMS_VER1:
+    pGetSleepStatusParams->bLowLatencyMode = false;
+    pGetSleepStatusParams->bFsVrr = false;
+    pGetSleepStatusParams->bCplVsyncOn = false;
+    pGetSleepStatusParams->sleepIntervalUs = 0;
+    pGetSleepStatusParams->bUseGameSleep = false;
+    break;
+  default:
+    return NVAPI_INCOMPATIBLE_STRUCT_VERSION;
+  }
+
+  return NVAPI_OK;
+}
+
+NVAPI_INTERFACE
+NvAPI_D3D_SetSleepMode(IUnknown *pDev, NV_SET_SLEEP_MODE_PARAMS *pSetSleepModeParams) {
+  if (!pDev || !pSetSleepModeParams)
+    return NVAPI_INVALID_ARGUMENT;
+
+  switch (pSetSleepModeParams->version) {
+  case NV_SET_SLEEP_MODE_PARAMS_VER1:
+    break;
+  default:
+    return NVAPI_INCOMPATIBLE_STRUCT_VERSION;
+  }
+
+  return NVAPI_OK;
+}
+
+NVAPI_INTERFACE
+NvAPI_D3D_SetLatencyMarker(IUnknown *pDev, NV_LATENCY_MARKER_PARAMS *pSetLatencyMarkerParams) {
+  if (!pDev || !pSetLatencyMarkerParams)
+    return NVAPI_INVALID_ARGUMENT;
+
+  switch (pSetLatencyMarkerParams->version) {
+  case NV_LATENCY_MARKER_PARAMS_VER1:
+    break;
+  default:
+    return NVAPI_INCOMPATIBLE_STRUCT_VERSION;
+  }
+
+  return NVAPI_OK;
+}
+
+NVAPI_INTERFACE
+NvAPI_D3D_Sleep(IUnknown *pDev) {
+  if (!pDev)
+    return NVAPI_INVALID_ARGUMENT;
+
+  return NVAPI_OK;
+}
+
+NVAPI_INTERFACE
+NvAPI_D3D_GetLatency(IUnknown *pDev, NV_LATENCY_RESULT_PARAMS *pGetLatencyParams) {
+  if (!pDev || !pGetLatencyParams)
+    return NVAPI_INVALID_ARGUMENT;
+
+  switch (pGetLatencyParams->version) {
+  case NV_LATENCY_RESULT_PARAMS_VER1:
+    memset(pGetLatencyParams->frameReport, 0, sizeof(pGetLatencyParams->frameReport));
+    break;
+  default:
+    return NVAPI_INCOMPATIBLE_STRUCT_VERSION;
+  }
+
+  return NVAPI_OK;
+}
+
 extern "C" __cdecl void *nvapi_QueryInterface(NvU32 id) {
   switch (id) {
   case 0x0150e828:
@@ -472,6 +546,16 @@ extern "C" __cdecl void *nvapi_QueryInterface(NvU32 id) {
     return (void *)&NvAPI_GPU_GetConnectedDisplayIds;
   case 0x1e9d8a31:
     return (void *)&NvAPI_DISP_GetGDIPrimaryDisplayId;
+  case 0xaef96ca1:
+    return (void *)&NvAPI_D3D_GetSleepStatus;
+  case 0xac1ca9e0:
+    return (void *)&NvAPI_D3D_SetSleepMode;
+  case 0xd9984c05:
+    return (void *)&NvAPI_D3D_SetLatencyMarker;
+  case 0x852cd1d2:
+    return (void *)&NvAPI_D3D_Sleep;
+  case 0x1a587f9c:
+    return (void *)&NvAPI_D3D_GetLatency;
   default:
     break;
   }
