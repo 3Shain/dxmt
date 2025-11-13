@@ -1,6 +1,7 @@
 #pragma once
 
 #include "thread.hpp"
+#include "util_win32_compat.h"
 #include <atomic>
 #include <queue>
 #include <unordered_map>
@@ -69,10 +70,9 @@ template <typename Task> task_scheduler<Task>::~task_scheduler() {
 template <typename Task>
 void
 task_scheduler<Task>::worker_func() {
-  // FIXME: use windows alternative?
-  // __pthread_set_qos_class_self_np(__QOS_CLASS_USER_INTERACTIVE, 0);
   struct task_trait<Task> task_trait;
   std::vector<Task> continutation_buffer;
+  SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
   while (!destroyed.load()) {
     Task task;
     {
