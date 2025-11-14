@@ -29,6 +29,10 @@ typedef uint64_t obj_handle_t;
 
 #define NULL_OBJECT_HANDLE 0
 
+#ifndef _MACH_PORT_T
+typedef uint32_t mach_port_t;
+#endif
+
 WINEMETAL_API void NSObject_retain(obj_handle_t obj);
 
 WINEMETAL_API void NSObject_release(obj_handle_t obj);
@@ -479,6 +483,8 @@ struct WMTTextureInfo {
   uint8_t sample_count;
   enum WMTTextureUsage usage;
   enum WMTResourceOptions options;
+  uint32_t reserved;
+  mach_port_t mach_port; // in/out
   uint64_t gpu_resource_id; // out
 };
 
@@ -1795,5 +1801,11 @@ WINEMETAL_API obj_handle_t CacheWriter_alloc_init(const char *path, uint64_t ver
 WINEMETAL_API void CacheWriter_set(obj_handle_t writer, const void *key, uint64_t key_length, obj_handle_t value);
 
 WINEMETAL_API bool WMTSetMetalShaderCachePath(const char *path);
+
+WINEMETAL_API obj_handle_t MTLDevice_newSharedTexture(obj_handle_t device, struct WMTTextureInfo *info);
+
+WINEMETAL_API bool WMTBootstrapRegister(const char *name, mach_port_t mach_port);
+
+WINEMETAL_API bool WMTBootstrapLookUp(const char *name, mach_port_t *mach_port);
 
 #endif

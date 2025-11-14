@@ -840,6 +840,11 @@ public:
   setShouldMaximizeConcurrentCompilation(bool value) {
     MTLDevice_setShouldMaximizeConcurrentCompilation(handle, value);
   }
+
+  Reference<Texture>
+  newSharedTexture(WMTTextureInfo &info) {
+    return Reference<Texture>(MTLDevice_newSharedTexture(handle, &info));
+  }
 };
 
 inline Reference<Array<Device>>
