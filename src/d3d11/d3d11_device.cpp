@@ -998,6 +998,10 @@ public:
     return m_container->GetMTLDevice();
   }
 
+  D3DKMT_HANDLE STDMETHODCALLTYPE GetLocalD3DKMT() override {
+    return m_container->GetLocalD3DKMT();
+  }
+
   HRESULT
   CreateGraphicsPipeline(MTL_GRAPHICS_PIPELINE_DESC *pDesc,
                          MTLCompiledGraphicsPipeline **ppPipeline) override {
@@ -1114,6 +1118,22 @@ public:
         cmd_queue_(this->device->queue()),
         d3d11_device_(this, adapter, feature_level, feature_flags,
                       *this->device.get()) {
+    if (adapter_->GetLocalD3DKMT()) {
+      D3DKMT_CREATEDEVICE create = {};
+      create.hAdapter = adapter_->GetLocalD3DKMT();
+      if (D3DKMTCreateDevice(&create))
+        WARN("Failed to create D3DKMT device");
+      else
+        local_kmt_ = create.hDevice;
+    }
+  }
+
+  ~MTLD3D11DXGIDevice() {
+    if (local_kmt_) {
+      D3DKMT_DESTROYDEVICE destroy = {};
+      destroy.hDevice = local_kmt_;
+      D3DKMTDestroyDevice(&destroy);
+    }
   }
 
   HRESULT
@@ -1247,8 +1267,11 @@ public:
                                  ppSwapChain);
   }
 
+  D3DKMT_HANDLE STDMETHODCALLTYPE GetLocalD3DKMT() final { return local_kmt_; }
+
 private:
   Com<IMTLDXGIAdapter> adapter_;
+  D3DKMT_HANDLE local_kmt_ = 0;
   std::unique_ptr<Device> device;
   CommandQueue &cmd_queue_;
   MTLD3D11DeviceImpl d3d11_device_;
