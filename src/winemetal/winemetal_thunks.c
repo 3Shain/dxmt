@@ -1079,3 +1079,22 @@ WMTBootstrapLookUp(const char *name, mach_port_t *mach_port) {
   *mach_port = params.mach_port;
   return !ret;
 }
+
+WINEMETAL_API mach_port_t
+MTLSharedEvent_createMachPort(obj_handle_t event) {
+  struct unixcall_mtlsharedevent_createmachport params;
+  params.event = event;
+  params.ret_mach_port = 0;
+  UNIX_CALL(123, &params);
+  return params.ret_mach_port;
+}
+
+WINEMETAL_API obj_handle_t
+MTLDevice_newSharedEventWithMachPort(obj_handle_t device, mach_port_t mach_port) {
+  struct unixcall_mtldevice_newsharedeventwithmachport params;
+  params.device = device;
+  params.mach_port = mach_port;
+  params.ret_event = 0;
+  UNIX_CALL(124, &params);
+  return params.ret_event;
+}

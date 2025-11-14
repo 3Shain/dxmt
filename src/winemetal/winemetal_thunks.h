@@ -281,6 +281,17 @@ struct unixcall_mtlsharedevent_setevent {
   uint64_t value;
 };
 
+struct unixcall_mtlsharedevent_createmachport {
+  obj_handle_t event;
+  uint32_t ret_mach_port;
+};
+
+struct unixcall_mtldevice_newsharedeventwithmachport {
+  obj_handle_t device;
+  uint32_t mach_port;
+  obj_handle_t ret_event;
+};
+
 struct unixcall_get_os_version {
   uint64_t ret_major;
   uint64_t ret_minor;
