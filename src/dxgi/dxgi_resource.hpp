@@ -69,8 +69,7 @@ public:
   HRESULT
   STDMETHODCALLTYPE
   GetSharedHandle(HANDLE *pSharedHandle) final {
-    // not supported yet
-    return E_FAIL;
+    return resource_->GetSharedHandle(pSharedHandle);
   }
 
   HRESULT
@@ -104,8 +103,7 @@ public:
   STDMETHODCALLTYPE
   CreateSharedHandle(const SECURITY_ATTRIBUTES *attributes, DWORD access,
                      const WCHAR *name, HANDLE *handle) final {
-    ERR_ONCE("DXGIResource::CCreateSharedHandle: stub");
-    return E_NOTIMPL;
+    return resource_->CreateSharedHandle(attributes, access, name, handle);
   }
 
 private:

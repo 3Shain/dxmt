@@ -17,6 +17,7 @@ private:
   Rc<Texture> underlying_texture_;
   Rc<RenamableTexturePool> renamable_;
   float min_lod = 0.0;
+  UINT kmt_handle_ = 0;
 
   using SRVBase =
       TResourceViewBase<tag_shader_resource_view<DeviceTexture<tag_texture>>>;
@@ -148,6 +149,19 @@ public:
       underlying_texture_(std::move(u_texture)),
       renamable_(std::move(renamable)) {}
 
+  DeviceTexture(
+      const tag_texture::DESC1 *pDesc, Rc<Texture> &&u_texture, UINT hKMT,
+      MTLD3D11Device *pDevice
+  ) :
+      TResourceBase<tag_texture, IMTLMinLODClampable>(*pDesc, pDevice),
+      underlying_texture_(std::move(u_texture)), kmt_handle_(hKMT) {}
+
+  ~DeviceTexture() {
+    if (kmt_handle_) {
+      // TODO(shared-resource): D3DKMTDestroyAllocation2
+    }
+  }
+
   Rc<Buffer> buffer() final { return {}; };
   Rc<Texture> texture() final { return this->underlying_texture_; };
   BufferSlice bufferSlice() final { return {};}
@@ -275,6 +289,20 @@ public:
     return S_OK;
   };
 
+  virtual HRESULT
+  GetSharedHandle(HANDLE *pSharedHandle) override {
+    // TODO(shared-resource): note unlike CreateSharedHandle, this method returns a global handle
+    // is it simply kmt_handle_?
+    return E_INVALIDARG;
+  }
+
+  virtual HRESULT
+  CreateSharedHandle(const SECURITY_ATTRIBUTES *Attributes, DWORD Access, const WCHAR *pName, HANDLE *pNTHandle)
+      override {
+    // TODO(shared-resource): D3DKMTShareObjects
+    return E_INVALIDARG;
+  }
+
   void SetMinLOD(float MinLod) override { min_lod = MinLod; }
 
   float GetMinLOD() override { return min_lod; }
@@ -293,6 +321,35 @@ HRESULT CreateDeviceTextureInternal(MTLD3D11Device *pDevice,
   bool single_subresource = info.mipmap_level_count == 1 && info.array_length == 1 &&
                             !(finalDesc.MiscFlags & D3D11_RESOURCE_MISC_TEXTURECUBE);
   auto texture = Rc<Texture>(new Texture(info, pDevice->GetMTLDevice()));
+
+  auto shared_flag =
+      D3D11_RESOURCE_MISC_SHARED | D3D11_RESOURCE_MISC_SHARED_NTHANDLE | D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX;
+  if (finalDesc.MiscFlags & shared_flag) {
+    return E_NOTIMPL; // FIXME: remove after implemented
+    // use a dedicated path for now, because there are other works for private storage mode
+
+    Flags<TextureAllocationFlag> flags;
+    // TODO(shared-resource): have to use private storage but pInitialData is not handled
+    flags.set(TextureAllocationFlag::GpuPrivate);
+    if (finalDesc.Usage == D3D11_USAGE_IMMUTABLE)
+      flags.set(TextureAllocationFlag::GpuReadonly);
+    flags.set(TextureAllocationFlag::Shared);
+    auto allocation = texture->allocate(flags);
+
+    // mach_port_t mach_port = allocation->machPort;
+    UINT kmt_handle = 0;
+    // TODO(shared-resource): D3DKMTCreateAllocation2/WMTBootstrapRegister
+    // - need to create kmt adapter and device...
+    // - D3D11_RESOURCE_MISC_SHARED_NTHANDLE -> Flags.NtSecuritySharing
+    // - keyed mutex ?
+
+    texture->rename(std::move(allocation));
+    *ppTexture = reinterpret_cast<typename tag::COM_IMPL *>(
+        ref(new DeviceTexture<tag>(&finalDesc, std::move(texture), kmt_handle, pDevice))
+    );
+    return S_OK;
+  }
+
   Flags<TextureAllocationFlag> flags;
   flags.set(TextureAllocationFlag::GpuManaged);
   if (finalDesc.Usage == D3D11_USAGE_IMMUTABLE)
@@ -342,6 +399,47 @@ CreateDeviceTexture3D(MTLD3D11Device *pDevice,
                       ID3D11Texture3D1 **ppTexture) {
   return CreateDeviceTextureInternal<tag_texture_3d>(pDevice, pDesc,
                                                      pInitialData, ppTexture);
+}
+
+template <typename tag>
+HRESULT
+ImportSharedTextureInternal(
+    MTLD3D11Device *pDevice, const typename tag::DESC1 *pDescUnchecked, mach_port_t MachPort, REFIID riid,
+    void **ppTexture
+) {
+  WMTTextureInfo info;
+  typename tag::DESC1 finalDesc;
+  if (FAILED(CreateMTLTextureDescriptor(pDevice, pDescUnchecked, &finalDesc, &info)))
+    return E_INVALIDARG;
+
+  auto texture = Rc<Texture>(new Texture(info, pDevice->GetMTLDevice()));
+  auto allocation = texture->import(MachPort);
+  if (!allocation)
+    return E_FAIL;
+  texture->rename(std::move(allocation));
+
+  Com<DeviceTexture<tag>> device_texture = (ref(new DeviceTexture<tag>(&finalDesc, std::move(texture), pDevice)));
+  return device_texture->QueryInterface(riid, ppTexture);
+}
+
+HRESULT
+ImportSharedTexture(MTLD3D11Device *pDevice, HANDLE hResource, REFIID riid, void **ppTexture) {
+  // TODO(shared-resource): D3DKMTOpenResource2/WMTBootstrapLookUp/ImportSharedTextureInternal
+  return E_NOTIMPL;
+}
+
+HRESULT
+ImportSharedTextureFromNtHandle(MTLD3D11Device *pDevice, HANDLE hResource, REFIID riid, void **ppTexture) {
+  // TODO(shared-resource): D3DKMTOpenResourceFromNtHandle/WMTBootstrapLookUp/ImportSharedTextureInternal
+  return E_NOTIMPL;
+}
+
+HRESULT
+ImportSharedTextureByName(
+    MTLD3D11Device *pDevice, LPCWSTR lpName, DWORD dwDesiredAccess, REFIID riid, void **ppTexture
+) {
+  // TODO(shared-resource): D3DKMTOpenNtHandleFromName
+  return E_FAIL;
 }
 
 #pragma endregion

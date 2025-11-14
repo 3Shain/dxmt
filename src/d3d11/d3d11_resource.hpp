@@ -124,6 +124,9 @@ struct D3D11ResourceCommon : ID3D11Resource {
   CreateRenderTargetView(const D3D11_RENDER_TARGET_VIEW_DESC1 *pDesc, ID3D11RenderTargetView1 **ppView) = 0;
   virtual HRESULT STDMETHODCALLTYPE
   CreateDepthStencilView(const D3D11_DEPTH_STENCIL_VIEW_DESC *pDesc, ID3D11DepthStencilView **ppView) = 0;
+  virtual HRESULT GetSharedHandle(HANDLE *pSharedHandle) = 0;
+  virtual HRESULT
+  CreateSharedHandle(const SECURITY_ATTRIBUTES *Attributes, DWORD Access, const WCHAR *pName, HANDLE *pNTHandle) = 0;
 
   virtual Rc<Buffer> buffer() = 0;
   virtual BufferSlice bufferSlice() = 0;
@@ -179,7 +182,7 @@ public:
     return ResolveBase<n + 1, Args...>(riid, ppvObject);
   };
 
-  HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void **ppvObject) {
+  HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void **ppvObject) override {
     if (ppvObject == nullptr)
       return E_POINTER;
 
@@ -223,7 +226,7 @@ public:
     ::dxmt::DowngradeResourceDescription(desc, (typename tag::DESC *)pDesc);
   }
 
-  void STDMETHODCALLTYPE GetDesc1(void *pDesc) /* override / final */ { *(typename tag::DESC1 *)pDesc = desc; }
+  void STDMETHODCALLTYPE GetDesc1(void *pDesc) override { *(typename tag::DESC1 *)pDesc = desc; }
 
   void STDMETHODCALLTYPE GetType(D3D11_RESOURCE_DIMENSION *pResourceDimension) final {
     *pResourceDimension = tag::dimension;
@@ -249,24 +252,34 @@ public:
 
   virtual HRESULT STDMETHODCALLTYPE
   CreateShaderResourceView(const D3D11_SHADER_RESOURCE_VIEW_DESC1 *pDesc,
-                           ID3D11ShaderResourceView1 **ppView) {
+                           ID3D11ShaderResourceView1 **ppView) override {
     return E_INVALIDARG;
   };
   virtual HRESULT STDMETHODCALLTYPE
   CreateUnorderedAccessView(const D3D11_UNORDERED_ACCESS_VIEW_DESC1 *pDesc,
-                            ID3D11UnorderedAccessView1 **ppView) {
+                            ID3D11UnorderedAccessView1 **ppView) override {
     return E_INVALIDARG;
   };
   virtual HRESULT STDMETHODCALLTYPE
   CreateRenderTargetView(const D3D11_RENDER_TARGET_VIEW_DESC1 *pDesc,
-                         ID3D11RenderTargetView1 **ppView) {
+                         ID3D11RenderTargetView1 **ppView) override {
     return E_INVALIDARG;
   };
   virtual HRESULT STDMETHODCALLTYPE
   CreateDepthStencilView(const D3D11_DEPTH_STENCIL_VIEW_DESC *pDesc,
-                         ID3D11DepthStencilView **ppView) {
+                         ID3D11DepthStencilView **ppView) override {
     return E_INVALIDARG;
   };
+
+  virtual HRESULT
+  GetSharedHandle(HANDLE *pSharedHandle) override {
+    return E_INVALIDARG;
+  }
+  virtual HRESULT
+  CreateSharedHandle(const SECURITY_ATTRIBUTES *Attributes, DWORD Access, const WCHAR *pName, HANDLE *pNTHandle)
+      override {
+    return E_INVALIDARG;
+  }
 
 protected:
   tag::DESC1 desc;
@@ -461,6 +474,14 @@ HRESULT CreateDeviceTexture3D(MTLD3D11Device *pDevice,
                               const D3D11_TEXTURE3D_DESC1 *pDesc,
                               const D3D11_SUBRESOURCE_DATA *pInitialData,
                               ID3D11Texture3D1 **ppTexture);
+
+HRESULT ImportSharedTexture(MTLD3D11Device *pDevice, HANDLE hResource, REFIID riid, void **ppTexture);
+
+HRESULT ImportSharedTextureFromNtHandle(MTLD3D11Device *pDevice, HANDLE hResource, REFIID riid, void **ppTexture);
+
+HRESULT ImportSharedTextureByName(
+    MTLD3D11Device *pDevice, LPCWSTR lpName, DWORD dwDesiredAccess, REFIID riid, void **ppTexture
+);
 
 HRESULT
 CreateBuffer(MTLD3D11Device *pDevice, const D3D11_BUFFER_DESC *pDesc,

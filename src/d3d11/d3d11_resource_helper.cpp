@@ -314,6 +314,10 @@ CreateMTLTextureDescriptorInternal(
     return E_FAIL;
   }
 
+  auto shared_flag = D3D11_RESOURCE_MISC_SHARED | D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX;
+  if ((MiscFlags & shared_flag) == shared_flag) // check mutually exclusive flags
+    return E_INVALIDARG;
+
   if (BindFlags & D3D11_BIND_DEPTH_STENCIL) {
     switch (Format) {
     case DXGI_FORMAT_R32_TYPELESS:
