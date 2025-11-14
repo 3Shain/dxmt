@@ -7,12 +7,14 @@
 #import <MetalFX/MetalFX.h>
 #import <QuartzCore/QuartzCore.h>
 #include "objc/objc-runtime.h"
+#include <bootstrap.h>
 #define WINEMETAL_API
 #include "../winemetal_thunks.h"
 #include "../airconv_thunks.h"
 
 typedef int NTSTATUS;
 #define STATUS_SUCCESS 0
+#define STATUS_UNSUCCESSFUL 0xC0000001
 
 void
 execute_on_main(dispatch_block_t block) {
@@ -245,6 +247,21 @@ fill_texture_descriptor(MTLTextureDescriptor *desc, struct WMTTextureInfo *info)
   desc.resourceOptions = (MTLResourceOptions)info->options;
 };
 
+void
+extract_texture_descriptor(id<MTLTexture> desc, struct WMTTextureInfo *info) {
+  info->type = desc.textureType;
+  info->pixel_format = desc.pixelFormat;
+  info->width = desc.width;
+  info->height = desc.height;
+  info->depth = desc.depth;
+  info->array_length = desc.arrayLength;
+  info->mipmap_level_count = desc.mipmapLevelCount;
+  info->sample_count = desc.sampleCount;
+  info->usage = desc.usage;
+  info->options = (enum WMTResourceOptions)desc.resourceOptions;
+  info->reserved = 0;
+};
+
 static NTSTATUS
 _MTLDevice_newTexture(void *obj) {
   struct unixcall_mtldevice_newtexture *params = obj;
@@ -256,6 +273,7 @@ _MTLDevice_newTexture(void *obj) {
   id<MTLTexture> ret = [device newTextureWithDescriptor:desc];
   params->ret = (obj_handle_t)ret;
   info->gpu_resource_id = [ret gpuResourceID]._impl;
+  info->mach_port = 0;
 
   [desc release];
   return STATUS_SUCCESS;
@@ -272,6 +290,7 @@ _MTLBuffer_newTexture(void *obj) {
   id<MTLTexture> ret = [buffer newTextureWithDescriptor:desc offset:params->offset bytesPerRow:params->bytes_per_row];
   params->ret = (obj_handle_t)ret;
   info->gpu_resource_id = [ret gpuResourceID]._impl;
+  info->mach_port = 0;
 
   [desc release];
   return STATUS_SUCCESS;
@@ -2482,6 +2501,71 @@ _DispatchData_alloc_init(void *obj) {
   return STATUS_SUCCESS;
 }
 
+@interface MTLSharedTextureHandle ()
+
+- (MTLSharedTextureHandle *)initWithMachPort:(mach_port_t)port;
+- (mach_port_t)createMachPort;
+
+@end
+
+static NTSTATUS
+_MTLDevice_newSharedTexture(void *obj) {
+  struct unixcall_mtldevice_newtexture *params = obj;
+  id<MTLDevice> device = (id<MTLDevice>)params->device;
+  struct WMTTextureInfo *info = params->info.ptr;
+
+  if (info->mach_port) {
+    MTLSharedTextureHandle *handle = [[MTLSharedTextureHandle alloc] initWithMachPort:info->mach_port];
+    id<MTLTexture> ret = [device newSharedTextureWithHandle:handle];
+    extract_texture_descriptor(ret, info);
+    params->ret = (obj_handle_t)ret;
+    info->gpu_resource_id = [ret gpuResourceID]._impl;
+    [handle release];
+  } else {
+    MTLTextureDescriptor *desc = [[MTLTextureDescriptor alloc] init];
+    fill_texture_descriptor(desc, info);
+    id<MTLTexture> ret = [device newSharedTextureWithDescriptor:desc];
+    MTLSharedTextureHandle *handle = [ret newSharedTextureHandle];
+    params->ret = (obj_handle_t)ret;
+    info->gpu_resource_id = [ret gpuResourceID]._impl;
+    info->mach_port = [handle createMachPort]; // implicitly add ref to underlying IOSurface
+    [handle release];
+    [desc release];
+  }
+
+  return STATUS_SUCCESS;
+}
+
+/* Private API to register a mach port with the bootstrap server */
+extern kern_return_t bootstrap_register2(mach_port_t bp, name_t service_name, mach_port_t sp, int flags);
+
+static NTSTATUS
+_WMTBootstrapRegister(void *obj) {
+  struct unixcall_bootstrap *params = obj;
+  mach_port_t rp = params->mach_port;
+  mach_port_t bp;
+
+  if (task_get_bootstrap_port(mach_task_self(), &bp) != KERN_SUCCESS)
+    return STATUS_UNSUCCESSFUL;
+  NTSTATUS ret = bootstrap_register2(bp, params->name, rp, 0) != KERN_SUCCESS ? STATUS_UNSUCCESSFUL : STATUS_SUCCESS;
+  mach_port_deallocate(mach_task_self(), bp);
+  return ret;
+}
+
+static NTSTATUS
+_WMTBootstrapLookUp(void *obj) {
+  struct unixcall_bootstrap *params = obj;
+  mach_port_t rp = 0;
+  mach_port_t bp;
+
+  if (task_get_bootstrap_port(mach_task_self(), &bp) != KERN_SUCCESS)
+    return STATUS_UNSUCCESSFUL;
+  NTSTATUS ret = bootstrap_look_up(bp, params->name, &rp) != KERN_SUCCESS ? STATUS_UNSUCCESSFUL : STATUS_SUCCESS;
+  mach_port_deallocate(mach_task_self(), bp);
+  params->mach_port = rp;
+  return ret;
+}
+
 /*
  * Definition from cache.c
  */
@@ -2613,6 +2697,9 @@ const void *__wine_unix_call_funcs[] = {
     &_CacheWriter_alloc_init,
     &_CacheWriter_set,
     &_WMTSetMetalShaderCachePath,
+    &_MTLDevice_newSharedTexture,
+    &_WMTBootstrapRegister,
+    &_WMTBootstrapLookUp,
 };
 
 #ifndef DXMT_NATIVE
@@ -2737,5 +2824,8 @@ const void *__wine_unix_call_wow64_funcs[] = {
     &_CacheWriter_alloc_init,
     &_CacheWriter_set,
     &_WMTSetMetalShaderCachePath,
+    &_MTLDevice_newSharedTexture,
+    &_WMTBootstrapRegister,
+    &_WMTBootstrapLookUp,
 };
 #endif
