@@ -479,11 +479,6 @@ public:
     auto pResource = (D3D11SharedResource*)MapViewOfFile(
       hResource, FILE_MAP_ALL_ACCESS, 0, 0, sizeof(D3D11SharedResource));
 
-    if (!pResource) {
-      ERR("OpenSharedResource: MapViewOfFile(", hResource, ") failed: ", GetLastError());
-      return E_FAIL;
-    }
-
     D3D11SharedResource resource = *pResource;
     UnmapViewOfFile(pResource);
 
