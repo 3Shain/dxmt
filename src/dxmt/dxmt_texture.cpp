@@ -19,6 +19,7 @@ TextureAllocation::TextureAllocation(
   obj_ = buffer_.newTexture(info_copy, 0, bytes_per_row);
 
   gpuResourceID = info_copy.gpu_resource_id;
+  machPort = 0;
   depkey = EncoderDepSet::generateNewKey(global_texture_seq.fetch_add(1));
 };
 
@@ -29,6 +30,7 @@ TextureAllocation::TextureAllocation(
     flags_(flags) {
   mappedMemory = nullptr;
   gpuResourceID = textureDescriptor.gpu_resource_id;
+  machPort = textureDescriptor.mach_port;
   depkey = EncoderDepSet::generateNewKey(global_texture_seq.fetch_add(1));
 };
 
@@ -185,6 +187,7 @@ Rc<TextureAllocation>
 Texture::allocate(Flags<TextureAllocationFlag> flags) {
   WMTResourceOptions options = WMTResourceStorageModeShared;
   WMTTextureInfo info = info_; // copy
+  info.mach_port = 0;
   if (flags.test(TextureAllocationFlag::GpuReadonly)) {
     options |= WMTResourceHazardTrackingModeUntracked;
   }
@@ -209,10 +212,32 @@ Texture::allocate(Flags<TextureAllocationFlag> flags) {
     auto buffer = device_.newBuffer(buffer_info);
     return new TextureAllocation(std::move(buffer), buffer_info.memory.get(), info, bytes_per_row_, flags);
   }
-  auto texture = device_.newTexture(info);
+  auto texture = flags.test(TextureAllocationFlag::Shared) ? device_.newSharedTexture(info) : device_.newTexture(info);
   return new TextureAllocation(std::move(texture), info, flags);
 }
 
+Rc<TextureAllocation>
+Texture::import(mach_port_t mach_port) {
+  Flags<TextureAllocationFlag> flags;
+  WMTTextureInfo info;
+  info.mach_port = mach_port;
+  auto texture = device_.newSharedTexture(info);
+  // now allocation's info is populated
+  // and we may check if it is consitent with texture's info (it should be)
+  if (texture) {
+    // doing some unnecessary checks for the sake of completeness
+    if (info.options & WMTResourceStorageModeManaged) // should be always false
+      flags.set(TextureAllocationFlag::GpuManaged);
+    if (info.options & WMTResourceStorageModePrivate) // should be always true
+      flags.set(TextureAllocationFlag::GpuPrivate);
+    if (info.options & WMTResourceHazardTrackingModeUntracked)
+      flags.set(TextureAllocationFlag::NoTracking);
+    flags.set(TextureAllocationFlag::Shared);
+    return new TextureAllocation(std::move(texture), info, flags);
+  }
+  assert(texture && "failed to import shared texture");
+  return nullptr;
+}
 
 WMT::Texture
 Texture::view(TextureViewKey key) {
