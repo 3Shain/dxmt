@@ -15,6 +15,8 @@
 #include "../d3d10/d3d10_view.hpp"
 #include <memory>
 #include <type_traits>
+#include <random>
+#include <cstdio>
 
 DEFINE_COM_INTERFACE("9a6f6549-d4b1-45ea-8794-8503d190d3d1",
                      IMTLMinLODClampable)
@@ -436,6 +438,19 @@ protected:
 };
 
 #pragma region Resource Factory
+
+inline void MakeUniqueSharedName(char (&out)[54]) {
+    std::random_device rd;
+    std::mt19937_64 gen(rd());
+    std::uniform_int_distribution<uint64_t> dis;
+
+    uint64_t r1 = dis(gen);
+    uint64_t r2 = dis(gen);
+
+    std::snprintf(out, 54, "DXMT_shared_resource_%016llx%016llx",
+                  static_cast<unsigned long long>(r1),
+                  static_cast<unsigned long long>(r2));
+}
 
 HRESULT
 CreateStagingBuffer(MTLD3D11Device *pDevice, const D3D11_BUFFER_DESC *pDesc,
