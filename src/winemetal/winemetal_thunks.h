@@ -325,6 +325,12 @@ struct unixcall_setmetalcachepath {
   uint64_t ret_success;
 };
 
+struct unixcall_bootstrap {
+  char name[128];
+  uint32_t mach_port;
+  uint32_t reserved;
+};
+
 #pragma pack(pop)
 
 #endif

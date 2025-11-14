@@ -7,6 +7,7 @@
 #include "winemetal_thunks.h"
 #include <wineunixlib.h>
 #include "assert.h"
+#include "string.h"
 
 #ifdef NDEBUG
 #define UNIX_CALL(code, params) WINE_UNIX_CALL(code, params)
@@ -1047,4 +1048,34 @@ WMTSetMetalShaderCachePath(const char *path) {
   params.ret_success = 0;
   UNIX_CALL(119, &params);
   return params.ret_success;
+}
+
+WINEMETAL_API obj_handle_t
+MTLDevice_newSharedTexture(obj_handle_t device, struct WMTTextureInfo *info) {
+  struct unixcall_mtldevice_newtexture params;
+  params.device = device;
+  WMT_MEMPTR_SET(params.info, info);
+  UNIX_CALL(120, &params);
+  return params.ret;
+}
+
+WINEMETAL_API bool
+WMTBootstrapRegister(const char *name, mach_port_t mach_port) {
+  struct unixcall_bootstrap params;
+  strncpy(params.name, name, sizeof(params.name) - 1);
+  params.name[sizeof(params.name) - 1] = '\0';
+  params.mach_port = mach_port;
+  NTSTATUS ret = WINE_UNIX_CALL(121, &params);
+  return !ret;
+}
+
+WINEMETAL_API bool
+WMTBootstrapLookUp(const char *name, mach_port_t *mach_port) {
+  struct unixcall_bootstrap params;
+  strncpy(params.name, name, sizeof(params.name) - 1);
+  params.name[sizeof(params.name) - 1] = '\0';
+  params.mach_port = 0;
+  NTSTATUS ret = WINE_UNIX_CALL(122, &params);
+  *mach_port = params.mach_port;
+  return !ret;
 }
