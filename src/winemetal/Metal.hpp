@@ -188,6 +188,11 @@ public:
   signalValue(uint64_t value) {
     MTLSharedEvent_signalValue(handle, value);
   }
+
+  mach_port_t
+  createMachPort() {
+    return MTLSharedEvent_createMachPort(handle);
+  }
 };
 
 class Fence : public Object {
@@ -692,6 +697,11 @@ public:
   Reference<SharedEvent>
   newSharedEvent() {
     return Reference<SharedEvent>(MTLDevice_newSharedEvent(handle));
+  }
+
+  Reference<SharedEvent>
+  newSharedEventWithMachPort(mach_port_t mach_port) {
+    return Reference<SharedEvent>(MTLDevice_newSharedEventWithMachPort(handle, mach_port));
   }
 
   Reference<Buffer>

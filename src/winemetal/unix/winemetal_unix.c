@@ -8,6 +8,7 @@
 #import <QuartzCore/QuartzCore.h>
 #include "objc/objc-runtime.h"
 #include <bootstrap.h>
+#include <mach/mach_port.h>
 #define WINEMETAL_API
 #include "../winemetal_thunks.h"
 #include "../airconv_thunks.h"
@@ -2566,6 +2567,44 @@ _WMTBootstrapLookUp(void *obj) {
   return ret;
 }
 
+@protocol MTLDeviceSPI <MTLDevice>
+
+- (id<MTLSharedEvent>)newSharedEventWithMachPort:(mach_port_t)machPort;
+
+@end
+
+@interface MTLSharedEventHandle ()
+
+- (mach_port_t)eventPort;
+
+@end
+
+static NTSTATUS
+_MTLSharedEvent_createMachPort(void *obj) {
+  struct unixcall_mtlsharedevent_createmachport *params = obj;
+  id<MTLSharedEvent> event = (id<MTLSharedEvent>)params->event;
+  MTLSharedEventHandle *handle = [event newSharedEventHandle];
+  mach_port_t port = [handle eventPort];
+  
+  // The eventPort method returns a send right that's owned by the handle.
+  // We need to add our own send right since we're keeping the port but releasing the handle.
+  // This increments the send right count so the port remains valid.
+  mach_port_mod_refs(mach_task_self(), port, MACH_PORT_RIGHT_SEND, 1);
+  
+  params->ret_mach_port = port;
+  [handle release];
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_MTLDevice_newSharedEventWithMachPort(void *obj) {
+  struct unixcall_mtldevice_newsharedeventwithmachport *params = obj;
+  id<MTLDevice> device = (id<MTLDevice>)params->device;
+  id<MTLDeviceSPI> deviceSPI = (id<MTLDeviceSPI>)device;
+  params->ret_event = (obj_handle_t)[deviceSPI newSharedEventWithMachPort:params->mach_port];
+  return STATUS_SUCCESS;
+}
+
 /*
  * Definition from cache.c
  */
@@ -2700,6 +2739,8 @@ const void *__wine_unix_call_funcs[] = {
     &_MTLDevice_newSharedTexture,
     &_WMTBootstrapRegister,
     &_WMTBootstrapLookUp,
+    &_MTLSharedEvent_createMachPort,
+    &_MTLDevice_newSharedEventWithMachPort,
 };
 
 #ifndef DXMT_NATIVE
@@ -2827,5 +2868,7 @@ const void *__wine_unix_call_wow64_funcs[] = {
     &_MTLDevice_newSharedTexture,
     &_WMTBootstrapRegister,
     &_WMTBootstrapLookUp,
+    &_MTLSharedEvent_createMachPort,
+    &_MTLDevice_newSharedEventWithMachPort,
 };
 #endif

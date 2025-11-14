@@ -1808,4 +1808,8 @@ WINEMETAL_API bool WMTBootstrapRegister(const char *name, mach_port_t mach_port)
 
 WINEMETAL_API bool WMTBootstrapLookUp(const char *name, mach_port_t *mach_port);
 
+WINEMETAL_API mach_port_t MTLSharedEvent_createMachPort(obj_handle_t event);
+
+WINEMETAL_API obj_handle_t MTLDevice_newSharedEventWithMachPort(obj_handle_t device, mach_port_t mach_port);
+
 #endif
