@@ -17,6 +17,7 @@ enum class TextureAllocationFlag : uint32_t {
   CpuWriteCombined = 2,
   OwnedByCommandList = 3,
   GpuManaged = 4,
+  Shared = 5,
 };
 
 typedef unsigned TextureViewKey;
@@ -60,6 +61,7 @@ public:
 
   void *mappedMemory;
   uint64_t gpuResourceID;
+  mach_port_t machPort;
   DXMT_RESOURCE_RESIDENCY_STATE residencyState;
   EncoderDepKey depkey;
 
@@ -160,6 +162,7 @@ public:
   }
 
   Rc<TextureAllocation> allocate(Flags<TextureAllocationFlag> flags);
+  Rc<TextureAllocation> import(mach_port_t mach_port);
 
   WMT::Texture view(TextureViewKey key);
   WMT::Texture view(TextureViewKey key, TextureAllocation *allocation);
