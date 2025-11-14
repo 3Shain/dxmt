@@ -32,6 +32,8 @@ public:
 
   virtual WMT::Device STDMETHODCALLTYPE GetMTLDevice() = 0;
 
+  virtual D3DKMT_HANDLE STDMETHODCALLTYPE GetLocalD3DKMT() = 0;
+
   virtual HRESULT CreateGraphicsPipeline(MTL_GRAPHICS_PIPELINE_DESC * pDesc,
                                          MTLCompiledGraphicsPipeline *
                                              *ppPipeline) = 0;
