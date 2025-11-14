@@ -472,8 +472,9 @@ public:
   }
 
   HRESULT STDMETHODCALLTYPE
-      OpenSharedResource(HANDLE hResource, REFIID ReturnedInterface,
-                         void **ppResource) override{IMPLEMENT_ME}
+  OpenSharedResource(HANDLE hResource, REFIID ReturnedInterface, void **ppResource) override {
+    return ImportSharedTexture(this, hResource, ReturnedInterface, ppResource);
+  }
 
   HRESULT STDMETHODCALLTYPE
       CheckFormatSupport(DXGI_FORMAT Format, UINT *pFormatSupport) override {
@@ -787,16 +788,15 @@ public:
     return S_OK;
   }
 
-  HRESULT STDMETHODCALLTYPE OpenSharedResource1(HANDLE hResource,
-                                                REFIID returnedInterface,
-                                                void **ppResource) override{
-      IMPLEMENT_ME}
+  HRESULT STDMETHODCALLTYPE
+  OpenSharedResource1(HANDLE hResource, REFIID ReturnedInterface, void **ppResource) override {
+    return ImportSharedTextureFromNtHandle(this, hResource, ReturnedInterface, ppResource);
+  }
 
   HRESULT STDMETHODCALLTYPE
-      OpenSharedResourceByName(LPCWSTR lpName, DWORD dwDesiredAccess,
-                               REFIID returnedInterface,
-                               void **ppResource) override {
-    IMPLEMENT_ME
+  OpenSharedResourceByName(LPCWSTR lpName, DWORD dwDesiredAccess, REFIID ReturnedInterface, void **ppResource)
+      override {
+    return ImportSharedTextureByName(this, lpName, dwDesiredAccess, ReturnedInterface, ppResource);
   }
 
   void STDMETHODCALLTYPE
