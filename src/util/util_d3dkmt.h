@@ -134,6 +134,17 @@ typedef struct _D3DKMT_ESCAPE
   D3DKMT_HANDLE      hContext;
 } D3DKMT_ESCAPE;
 
+typedef struct _D3DKMT_QUERYRESOURCEINFO
+{
+  D3DKMT_HANDLE hDevice;
+  D3DKMT_HANDLE hGlobalShare;
+  void *pPrivateRuntimeData;
+  UINT PrivateRuntimeDataSize;
+  UINT TotalPrivateDriverDataSize;
+  UINT ResourcePrivateDriverDataSize;
+  UINT NumAllocations;
+} D3DKMT_QUERYRESOURCEINFO;
+
 typedef enum _D3DDDI_SYNCHRONIZATIONOBJECT_TYPE
 {
     D3DDDI_SYNCHRONIZATION_MUTEX = 1,
@@ -148,6 +159,41 @@ typedef enum _D3DDDI_SYNCHRONIZATIONOBJECT_TYPE
 typedef ULONGLONG D3DGPU_VIRTUAL_ADDRESS;
 
 typedef UINT D3DDDI_VIDEO_PRESENT_TARGET_ID;
+
+typedef struct _D3DDDI_OPENALLOCATIONINFO
+{
+  D3DKMT_HANDLE hAllocation;
+  const void *pPrivateDriverData;
+  UINT PrivateDriverDataSize;
+} D3DDDI_OPENALLOCATIONINFO;
+
+typedef struct _D3DDDI_OPENALLOCATIONINFO2
+{
+  D3DKMT_HANDLE hAllocation;
+  const void *pPrivateDriverData;
+  UINT PrivateDriverDataSize;
+  D3DGPU_VIRTUAL_ADDRESS GpuVirtualAddress;
+  ULONG_PTR Reserved[6];
+} D3DDDI_OPENALLOCATIONINFO2;
+
+typedef struct _D3DKMT_OPENRESOURCE
+{
+  D3DKMT_HANDLE hDevice;
+  D3DKMT_HANDLE hGlobalShare;
+  UINT NumAllocations;
+  union
+  {
+    D3DDDI_OPENALLOCATIONINFO *pOpenAllocationInfo;
+    D3DDDI_OPENALLOCATIONINFO2 *pOpenAllocationInfo2;
+  };
+  void *pPrivateRuntimeData;
+  UINT PrivateRuntimeDataSize;
+  void *pResourcePrivateDriverData;
+  UINT ResourcePrivateDriverDataSize;
+  void *pTotalPrivateDriverDataBuffer;
+  UINT TotalPrivateDriverDataBufferSize;
+  D3DKMT_HANDLE hResource;
+} D3DKMT_OPENRESOURCE;
 
 #ifndef D3DDDI_SYNCHRONIZATIONOBJECT_FLAGS_EXT
 #define D3DDDI_SYNCHRONIZATIONOBJECT_FLAGS_EXT
@@ -375,7 +421,9 @@ extern "C"
   DECLSPEC_IMPORT NTSTATUS WINAPI D3DKMTDestroyDevice(const D3DKMT_DESTROYDEVICE *desc);
   DECLSPEC_IMPORT NTSTATUS WINAPI D3DKMTDestroySynchronizationObject(const D3DKMT_DESTROYSYNCHRONIZATIONOBJECT *desc);
   DECLSPEC_IMPORT NTSTATUS WINAPI D3DKMTOpenAdapterFromLuid(D3DKMT_OPENADAPTERFROMLUID *desc);
+  DECLSPEC_IMPORT NTSTATUS WINAPI D3DKMTOpenResource2(D3DKMT_OPENRESOURCE *desc);
   DECLSPEC_IMPORT NTSTATUS WINAPI D3DKMTEscape(const D3DKMT_ESCAPE *desc);
+  DECLSPEC_IMPORT NTSTATUS WINAPI D3DKMTQueryResourceInfo(D3DKMT_QUERYRESOURCEINFO *desc);
   DECLSPEC_IMPORT NTSTATUS WINAPI D3DKMTCreateSynchronizationObject2(D3DKMT_CREATESYNCHRONIZATIONOBJECT2 *desc);
   DECLSPEC_IMPORT NTSTATUS WINAPI D3DKMTCreateAllocation2(D3DKMT_CREATEALLOCATION *desc);
   DECLSPEC_IMPORT NTSTATUS WINAPI D3DKMTCloseAdapter(const D3DKMT_CLOSEADAPTER *desc);
@@ -418,8 +466,18 @@ extern "C"
     return -1;
   }
 
+  inline NTSTATUS D3DKMTOpenResource2(D3DKMT_OPENRESOURCE *desc) {
+    dxmt::Logger::warn("D3DKMTOpenResource2 not implemented.");
+    return -1;
+  }
+
   inline NTSTATUS D3DKMTEscape(const D3DKMT_ESCAPE *desc) {
     dxmt::Logger::warn("D3DKMTEscape not implemented.");
+    return -1;
+  }
+
+  inline NTSTATUS D3DKMTQueryResourceInfo(D3DKMT_QUERYRESOURCEINFO *desc) {
+    dxmt::Logger::warn("D3DKMTQueryResourceInfo not implemented.");
     return -1;
   }
 

@@ -510,8 +510,77 @@ ImportSharedTextureInternal(
 
 HRESULT
 ImportSharedTexture(MTLD3D11Device *pDevice, HANDLE hResource, REFIID riid, void **ppTexture) {
-  // TODO(shared-resource): D3DKMTOpenResource2/WMTBootstrapLookUp/ImportSharedTextureInternal
-  return E_NOTIMPL;
+  InitReturnPtr(ppTexture);
+
+  if (!(reinterpret_cast<uintptr_t>(hResource) & 0xc0000000)) {
+    WARN("ImportSharedTexture: Invalid shared handle type");
+    return E_INVALIDARG;
+  }
+
+  if (ppTexture == nullptr)
+    return S_FALSE;
+
+  struct SharedResourceData runtimeData;
+
+  D3DKMT_QUERYRESOURCEINFO query = {};
+  query.hDevice = pDevice->GetLocalD3DKMT();
+  query.hGlobalShare = reinterpret_cast<uintptr_t>(hResource);
+  query.pPrivateRuntimeData = &runtimeData;
+  query.PrivateRuntimeDataSize = sizeof(runtimeData);
+
+  if (D3DKMTQueryResourceInfo(&query)) {
+    WARN("ImportSharedTexture: Failed to query resource: ", hResource);
+    return E_INVALIDARG;
+  }
+
+  if (query.PrivateRuntimeDataSize != sizeof(runtimeData)) {
+    WARN("ImportSharedTexture: Unexpected size: ", query.PrivateRuntimeDataSize);
+    return E_INVALIDARG;
+  } 
+
+  D3DDDI_OPENALLOCATIONINFO2 alloc = {};
+  D3DKMT_OPENRESOURCE open = {};
+  open.hDevice = pDevice->GetLocalD3DKMT();
+  open.hGlobalShare = reinterpret_cast<uintptr_t>(hResource);
+  open.NumAllocations = 1;
+  open.pOpenAllocationInfo2 = &alloc;
+  open.pPrivateRuntimeData = &runtimeData;
+  open.PrivateRuntimeDataSize = query.PrivateRuntimeDataSize;
+
+  if (D3DKMTOpenResource2(&open)) {
+    WARN("ImportSharedTexture: Failed to open resource: ", hResource);
+    return E_INVALIDARG;
+  }
+
+  D3DKMT_DESTROYALLOCATION destroy = {};
+  destroy.hDevice = pDevice->GetLocalD3DKMT();
+  destroy.hResource = open.hResource;
+  D3DKMTDestroyAllocation(&destroy);
+
+  mach_port_t mach_port;
+  if (!WMTBootstrapLookUp(runtimeData.mach_port_name, &mach_port)) {
+    ERR("ImportSharedTexture: Failed to look up mach port");
+    return E_INVALIDARG;
+  }
+
+  switch (runtimeData.dimension)
+  {
+  case D3D11_RESOURCE_DIMENSION_TEXTURE1D:
+    return ImportSharedTextureInternal<tag_texture_1d>(
+        pDevice, &runtimeData.desc.desc1d, mach_port, riid, ppTexture
+    );
+  case D3D11_RESOURCE_DIMENSION_TEXTURE2D:
+    return ImportSharedTextureInternal<tag_texture_2d>(
+        pDevice, &runtimeData.desc.desc2d, mach_port, riid, ppTexture
+    );
+  case D3D11_RESOURCE_DIMENSION_TEXTURE3D:
+    return ImportSharedTextureInternal<tag_texture_3d>(
+        pDevice, &runtimeData.desc.desc3d, mach_port, riid, ppTexture
+    );
+  default:
+    ERR("ImportSharedTexture: Unsupported resource dimension");
+    return E_INVALIDARG;
+  }
 }
 
 HRESULT
