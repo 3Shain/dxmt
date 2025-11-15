@@ -1067,7 +1067,7 @@ public:
 
   virtual HRESULT STDMETHODCALLTYPE OpenSharedFence(HANDLE Handle, REFIID riid,
                                                     void **ppFence) final {
-    return E_NOTIMPL;
+    return dxmt::OpenSharedFence(this, Handle, riid, ppFence);
   };
 
   virtual HRESULT STDMETHODCALLTYPE CreateFence(UINT64 InitialValue,
