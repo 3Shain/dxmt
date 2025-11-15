@@ -353,6 +353,16 @@ public:
   float GetMinLOD() override { return min_lod; }
 };
 
+struct SharedResourceData {
+  char mach_port_name[54];
+  D3D11_RESOURCE_DIMENSION dimension;
+  union {
+    D3D11_TEXTURE1D_DESC desc1d;
+    D3D11_TEXTURE2D_DESC1 desc2d;
+    D3D11_TEXTURE3D_DESC1 desc3d;
+  } desc;
+};
+
 template <typename tag>
 HRESULT CreateDeviceTextureInternal(MTLD3D11Device *pDevice,
                                     const typename tag::DESC1 *pDesc,
@@ -385,17 +395,19 @@ HRESULT CreateDeviceTextureInternal(MTLD3D11Device *pDevice,
       ERR("DeviceTexture: Failed to get mach port for shared texture");
       return E_FAIL;
     }
-    char mach_port_name[54];
-    MakeUniqueSharedName(mach_port_name);
-    if (!WMTBootstrapRegister(mach_port_name, mach_port)) {
+    SharedResourceData runtimeData;
+    MakeUniqueSharedName(runtimeData.mach_port_name);
+    if (!WMTBootstrapRegister(runtimeData.mach_port_name, mach_port)) {
       ERR("DeviceTexture: Failed to register mach port for shared texture");
       return E_FAIL;
     }
+    runtimeData.dimension = tag::dimension;
+    memcpy(&runtimeData.desc, pDesc, sizeof(typename tag::DESC1));
 
     D3DKMT_CREATEALLOCATION create = {};
     create.hDevice = pDevice->GetLocalD3DKMT();
-    create.pPrivateRuntimeData = mach_port_name;
-    create.PrivateRuntimeDataSize = sizeof(mach_port_name);
+    create.pPrivateRuntimeData = &runtimeData;
+    create.PrivateRuntimeDataSize = sizeof(runtimeData);
     create.Flags.StandardAllocation = 1;
     create.NumAllocations = 1;
     D3DDDI_ALLOCATIONINFO2 allocationInfo = {};
