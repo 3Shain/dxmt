@@ -18,6 +18,17 @@ inline HANDLE GetCurrentThread() {
   return nullptr;
 }
 
+inline DWORD GetCurrentProcessId() {
+  dxmt::Logger::warn("GetCurrentProcessId not implemented.");
+  return 0;
+}
+
+inline BOOL ProcessIdToSessionId(DWORD pid, DWORD *id) {
+  dxmt::Logger::warn("ProcessIdToSessionId not implemented.");
+  *id = 0;
+  return FALSE;
+}
+
 inline BOOL SetThreadPriority(HANDLE hThread, int nPriority) {
   dxmt::Logger::warn("SetThreadPriority not implemented.");
   return FALSE;

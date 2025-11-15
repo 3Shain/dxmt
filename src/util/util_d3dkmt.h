@@ -5,6 +5,23 @@
 typedef LONG NTSTATUS;
 typedef UINT D3DKMT_HANDLE;
 
+typedef struct _UNICODE_STRING {
+  USHORT Length;
+  USHORT MaximumLength;
+  PWSTR  Buffer;
+} UNICODE_STRING, *PUNICODE_STRING;
+
+#define OBJ_CASE_INSENSITIVE 0x00000040
+
+typedef struct _OBJECT_ATTRIBUTES {
+  ULONG Length;
+  HANDLE RootDirectory;
+  PUNICODE_STRING ObjectName;
+  ULONG Attributes;
+  PVOID SecurityDescriptor;
+  PVOID SecurityQualityOfService;
+} OBJECT_ATTRIBUTES, *POBJECT_ATTRIBUTES;
+
 typedef struct _D3DKMT_CREATEDEVICEFLAGS
 {
   UINT LegacyMode : 1;
@@ -362,6 +379,7 @@ extern "C"
   DECLSPEC_IMPORT NTSTATUS WINAPI D3DKMTCreateSynchronizationObject2(D3DKMT_CREATESYNCHRONIZATIONOBJECT2 *desc);
   DECLSPEC_IMPORT NTSTATUS WINAPI D3DKMTCreateAllocation2(D3DKMT_CREATEALLOCATION *desc);
   DECLSPEC_IMPORT NTSTATUS WINAPI D3DKMTCloseAdapter(const D3DKMT_CLOSEADAPTER *desc);
+  DECLSPEC_IMPORT NTSTATUS WINAPI D3DKMTShareObjects(UINT count, const D3DKMT_HANDLE *handles, OBJECT_ATTRIBUTES *attr, UINT access, HANDLE *handle);
 }
 
 #else
@@ -412,6 +430,11 @@ extern "C"
 
   inline NTSTATUS D3DKMTCreateAllocation2(D3DKMT_CREATEALLOCATION *desc) {
     dxmt::Logger::warn("D3DKMTCreateAllocation2 not implemented.");
+    return -1;
+  }
+
+  inline NTSTATUS D3DKMTShareObjects(UINT count, const D3DKMT_HANDLE *handles, OBJECT_ATTRIBUTES *attr, UINT access, HANDLE *handle) {
+    dxmt::Logger::warn("D3DKMTShareObjects not implemented.");
     return -1;
   }
 }
