@@ -585,8 +585,94 @@ ImportSharedTexture(MTLD3D11Device *pDevice, HANDLE hResource, REFIID riid, void
 
 HRESULT
 ImportSharedTextureFromNtHandle(MTLD3D11Device *pDevice, HANDLE hResource, REFIID riid, void **ppTexture) {
-  // TODO(shared-resource): D3DKMTOpenResourceFromNtHandle/WMTBootstrapLookUp/ImportSharedTextureInternal
-  return E_NOTIMPL;
+  InitReturnPtr(ppTexture);
+
+  if (reinterpret_cast<uintptr_t>(hResource) & 0xc0000000) {
+    WARN("ImportSharedTextureFromNtHandle: Invalid shared handle type");
+    return E_INVALIDARG;
+  }
+
+  if (ppTexture == nullptr)
+    return S_FALSE;
+
+  struct SharedResourceData runtimeData;
+
+  D3DKMT_QUERYRESOURCEINFOFROMNTHANDLE query = {};
+  query.hDevice = pDevice->GetLocalD3DKMT();
+  query.hNtHandle = hResource;
+  query.pPrivateRuntimeData = &runtimeData;
+  query.PrivateRuntimeDataSize = sizeof(runtimeData);
+
+  if (D3DKMTQueryResourceInfoFromNtHandle(&query)) {
+    WARN(str::format("ImportSharedTextureFromNtHandle: Failed to query resource: ", hResource));
+    return E_INVALIDARG;
+  }
+  
+  if (query.PrivateRuntimeDataSize != sizeof(runtimeData)) {
+    WARN(str::format("ImportSharedTextureFromNtHandle: Unexpected size: ", query.PrivateRuntimeDataSize));
+    return E_INVALIDARG;
+  }
+
+  D3DDDI_OPENALLOCATIONINFO2 alloc = {};
+  D3DKMT_OPENRESOURCEFROMNTHANDLE open = {};
+  char dummy;
+
+  open.hDevice = pDevice->GetLocalD3DKMT();
+  open.hNtHandle = hResource;
+  open.NumAllocations = 1;
+  open.pOpenAllocationInfo2 = &alloc;
+  open.pPrivateRuntimeData = &runtimeData;
+  open.PrivateRuntimeDataSize = query.PrivateRuntimeDataSize;
+  open.pTotalPrivateDriverDataBuffer = &dummy;
+  open.TotalPrivateDriverDataBufferSize = 0;
+
+  if (D3DKMTOpenResourceFromNtHandle(&open)) {
+    WARN(str::format("ImportSharedTextureFromNtHandle: Failed to open resource: ", hResource));
+    return E_INVALIDARG;
+  }
+
+  D3DKMT_DESTROYALLOCATION destroy = {};
+  destroy.hDevice = pDevice->GetLocalD3DKMT();
+  destroy.hResource = open.hResource;
+  D3DKMTDestroyAllocation(&destroy);
+
+  if (open.hSyncObject) {
+    WARN(str::format("ImportSharedTextureFromNtHandle: Ignoring bundled sync object"));
+    D3DKMT_DESTROYSYNCHRONIZATIONOBJECT destroySync = {};
+    destroySync.hSyncObject = open.hSyncObject;
+    D3DKMTDestroySynchronizationObject(&destroySync);
+  }
+  if (open.hKeyedMutex) {
+    WARN(str::format("ImportSharedTextureFromNtHandle: Ignoring bundled keyed mutex"));
+    D3DKMT_DESTROYKEYEDMUTEX destroyMutex = {};
+    destroyMutex.hKeyedMutex = open.hKeyedMutex;
+    D3DKMTDestroyKeyedMutex(&destroyMutex);
+  }
+
+  mach_port_t mach_port;
+  if (!WMTBootstrapLookUp(runtimeData.mach_port_name, &mach_port)) {
+    ERR("ImportSharedTexture: Failed to look up mach port");
+    return E_INVALIDARG;
+  }
+
+  switch (runtimeData.dimension)
+  {
+  case D3D11_RESOURCE_DIMENSION_TEXTURE1D:
+    return ImportSharedTextureInternal<tag_texture_1d>(
+        pDevice, &runtimeData.desc.desc1d, mach_port, riid, ppTexture
+    );
+  case D3D11_RESOURCE_DIMENSION_TEXTURE2D:
+    return ImportSharedTextureInternal<tag_texture_2d>(
+        pDevice, &runtimeData.desc.desc2d, mach_port, riid, ppTexture
+    );
+  case D3D11_RESOURCE_DIMENSION_TEXTURE3D:
+    return ImportSharedTextureInternal<tag_texture_3d>(
+        pDevice, &runtimeData.desc.desc3d, mach_port, riid, ppTexture
+    );
+  default:
+    ERR("ImportSharedTexture: Unsupported resource dimension");
+    return E_INVALIDARG;
+  }
 }
 
 HRESULT
