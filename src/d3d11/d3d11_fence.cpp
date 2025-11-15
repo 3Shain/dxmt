@@ -1,6 +1,7 @@
 #include "d3d11_fence.hpp"
 #include "d3d11_device_child.hpp"
 #include "d3d11_resource.hpp"
+#include "util_win32_compat.h"
 
 namespace dxmt {
 
@@ -82,7 +83,36 @@ public:
   HRESULT STDMETHODCALLTYPE
   CreateSharedHandle(const SECURITY_ATTRIBUTES *pAttributes, DWORD Access,
                      const WCHAR *Name, HANDLE *pHandle) final {
-    return E_NOTIMPL;
+    InitReturnPtr(pHandle);
+    if (!local_kmt)
+      return E_INVALIDARG;
+
+    OBJECT_ATTRIBUTES attr = {};
+    attr.Length = sizeof(attr);
+    attr.SecurityDescriptor = const_cast<SECURITY_ATTRIBUTES*>(pAttributes);
+
+    WCHAR buffer[MAX_PATH];
+    UNICODE_STRING name_str;
+    if (Name) {
+      DWORD session, len, name_len = wcslen(Name);
+
+      ProcessIdToSessionId(GetCurrentProcessId(), &session);
+      len = swprintf(buffer, ARRAYSIZE(buffer), L"\\Sessions\\%u\\BaseNamedObjects\\", session);
+      memcpy(buffer + len, Name, (name_len + 1) * sizeof(WCHAR));
+      name_str.MaximumLength = name_str.Length = (len + name_len) * sizeof(WCHAR);
+      name_str.MaximumLength += sizeof(WCHAR);
+      name_str.Buffer = buffer;
+
+      attr.ObjectName = &name_str;
+      attr.Attributes = OBJ_CASE_INSENSITIVE;
+    }
+
+    if (D3DKMTShareObjects(1, &local_kmt, &attr, Access, pHandle)) {
+      ERR("D3D11Fence: Failed to create shared handle");
+      return E_FAIL;
+    }
+
+    return S_OK;
   };
 
   UINT64 STDMETHODCALLTYPE GetCompletedValue() final {

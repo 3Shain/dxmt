@@ -379,6 +379,8 @@ typedef struct RGNDATA {
 #define RtlZeroMemory(Destination,Length) memset((Destination),0,(Length))
 #define ZeroMemory RtlZeroMemory
 
+#define MAX_PATH        260
+
 #ifndef DEFINE_ENUM_FLAG_OPERATORS
 
 #ifdef __cplusplus
