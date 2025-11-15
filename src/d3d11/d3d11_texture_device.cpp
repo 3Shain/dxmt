@@ -17,7 +17,8 @@ private:
   Rc<Texture> underlying_texture_;
   Rc<RenamableTexturePool> renamable_;
   float min_lod = 0.0;
-  UINT kmt_handle_ = 0;
+  D3DKMT_HANDLE local_kmt_ = 0;
+  D3DKMT_HANDLE global_kmt_ = 0;
 
   using SRVBase =
       TResourceViewBase<tag_shader_resource_view<DeviceTexture<tag_texture>>>;
@@ -150,15 +151,18 @@ public:
       renamable_(std::move(renamable)) {}
 
   DeviceTexture(
-      const tag_texture::DESC1 *pDesc, Rc<Texture> &&u_texture, UINT hKMT,
+      const tag_texture::DESC1 *pDesc, Rc<Texture> &&u_texture, D3DKMT_HANDLE localHandle, D3DKMT_HANDLE globalHandle,
       MTLD3D11Device *pDevice
   ) :
       TResourceBase<tag_texture, IMTLMinLODClampable>(*pDesc, pDevice),
-      underlying_texture_(std::move(u_texture)), kmt_handle_(hKMT) {}
+      underlying_texture_(std::move(u_texture)), local_kmt_(localHandle), global_kmt_(globalHandle) {}
 
   ~DeviceTexture() {
-    if (kmt_handle_) {
-      // TODO(shared-resource): D3DKMTDestroyAllocation2
+    if (local_kmt_) {
+      D3DKMT_DESTROYALLOCATION destroy = {};
+      destroy.hDevice = this->m_parent->GetLocalD3DKMT();
+      destroy.hResource = local_kmt_;
+      D3DKMTDestroyAllocation(&destroy);
     }
   }
 
@@ -325,7 +329,6 @@ HRESULT CreateDeviceTextureInternal(MTLD3D11Device *pDevice,
   auto shared_flag =
       D3D11_RESOURCE_MISC_SHARED | D3D11_RESOURCE_MISC_SHARED_NTHANDLE | D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX;
   if (finalDesc.MiscFlags & shared_flag) {
-    return E_NOTIMPL; // FIXME: remove after implemented
     // use a dedicated path for now, because there are other works for private storage mode
 
     Flags<TextureAllocationFlag> flags;
@@ -337,15 +340,33 @@ HRESULT CreateDeviceTextureInternal(MTLD3D11Device *pDevice,
     auto allocation = texture->allocate(flags);
 
     // mach_port_t mach_port = allocation->machPort;
-    UINT kmt_handle = 0;
-    // TODO(shared-resource): D3DKMTCreateAllocation2/WMTBootstrapRegister
-    // - need to create kmt adapter and device...
-    // - D3D11_RESOURCE_MISC_SHARED_NTHANDLE -> Flags.NtSecuritySharing
-    // - keyed mutex ?
+    // TODO: register mach port and store name in runtime data
+    D3DKMT_CREATEALLOCATION create = {};
+    create.hDevice = pDevice->GetLocalD3DKMT();
+    create.Flags.StandardAllocation = 1;
+    create.NumAllocations = 1;
+    D3DDDI_ALLOCATIONINFO2 allocationInfo = {};
+    create.pAllocationInfo2 = &allocationInfo;
+    D3DKMT_CREATESTANDARDALLOCATION standardAllocation = {};
+    create.pStandardAllocation = &standardAllocation;
+    standardAllocation.Type = D3DKMT_STANDARDALLOCATIONTYPE_EXISTINGHEAP;
+    create.Flags.ExistingSysMem = 1;
+    D3DDDI_ALLOCATIONINFO systemMem;
+    allocationInfo.pSystemMem = &systemMem;
+    create.Flags.CreateResource = 1;
+    create.Flags.CreateShared = 1;
+    create.Flags.NtSecuritySharing = !!(finalDesc.MiscFlags & D3D11_RESOURCE_MISC_SHARED_NTHANDLE);
+    if (D3DKMTCreateAllocation2(&create)) {
+      ERR("DeviceTexture: Failed to create D3DKMT for shared texture");
+      return E_FAIL;
+    }
+
+    // TODO: handle keyed mutex
 
     texture->rename(std::move(allocation));
     *ppTexture = reinterpret_cast<typename tag::COM_IMPL *>(
-        ref(new DeviceTexture<tag>(&finalDesc, std::move(texture), kmt_handle, pDevice))
+        ref(new DeviceTexture<tag>(&finalDesc, std::move(texture), create.hResource,
+                                   create.hGlobalShare, pDevice))
     );
     return S_OK;
   }
