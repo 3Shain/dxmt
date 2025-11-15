@@ -6,6 +6,7 @@
 #include "dxmt_staging.hpp"
 #include "dxmt_texture.hpp"
 #include "d3d11_resource.hpp"
+#include "util_win32_compat.h"
 
 namespace dxmt {
 
@@ -295,16 +296,56 @@ public:
 
   virtual HRESULT
   GetSharedHandle(HANDLE *pSharedHandle) override {
-    // TODO(shared-resource): note unlike CreateSharedHandle, this method returns a global handle
-    // is it simply kmt_handle_?
-    return E_INVALIDARG;
+    if (pSharedHandle == nullptr || (this->desc.MiscFlags & D3D11_RESOURCE_MISC_SHARED_NTHANDLE)) {
+      return E_INVALIDARG;
+    }
+
+    if (!(this->desc.MiscFlags & (D3D11_RESOURCE_MISC_SHARED | D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX))) {
+      *pSharedHandle = NULL;
+      return S_OK;
+    }
+
+    if (!global_kmt_) {
+      return E_INVALIDARG;
+    }
+
+    *pSharedHandle = reinterpret_cast<HANDLE>(global_kmt_);
+    return S_OK;
   }
 
   virtual HRESULT
   CreateSharedHandle(const SECURITY_ATTRIBUTES *Attributes, DWORD Access, const WCHAR *pName, HANDLE *pNTHandle)
       override {
-    // TODO(shared-resource): D3DKMTShareObjects
-    return E_INVALIDARG;
+    InitReturnPtr(pNTHandle);
+    if (!local_kmt_)
+      return E_INVALIDARG;
+
+    OBJECT_ATTRIBUTES attr = {};
+    attr.Length = sizeof(attr);
+    attr.SecurityDescriptor = const_cast<SECURITY_ATTRIBUTES*>(Attributes);
+
+    WCHAR buffer[MAX_PATH];
+    UNICODE_STRING name_str;
+    if (pName) {
+      DWORD session, len, name_len = wcslen(pName);
+
+      ProcessIdToSessionId(GetCurrentProcessId(), &session);
+      len = swprintf(buffer, ARRAYSIZE(buffer), L"\\Sessions\\%u\\BaseNamedObjects\\", session);
+      memcpy(buffer + len, pName, (name_len + 1) * sizeof(WCHAR));
+      name_str.MaximumLength = name_str.Length = (len + name_len) * sizeof(WCHAR);
+      name_str.MaximumLength += sizeof(WCHAR);
+      name_str.Buffer = buffer;
+
+      attr.ObjectName = &name_str;
+      attr.Attributes = OBJ_CASE_INSENSITIVE;
+    }
+
+    if (D3DKMTShareObjects(1, &local_kmt_, &attr, Access, pNTHandle)) {
+      ERR("DeviceTexture: Failed to create shared handle");
+      return E_FAIL;
+    }
+
+    return S_OK;
   }
 
   void SetMinLOD(float MinLod) override { min_lod = MinLod; }
