@@ -5,9 +5,36 @@ namespace dxmt {
 
 class MTLD3D11FenceImpl : public MTLD3D11DeviceChild<MTLD3D11Fence> {
 public:
-  MTLD3D11FenceImpl(MTLD3D11Device *pDevice)
+  MTLD3D11FenceImpl(MTLD3D11Device *pDevice, bool shared)
       : MTLD3D11DeviceChild<MTLD3D11Fence>(pDevice) {
     event = pDevice->GetMTLDevice().newSharedEvent();
+    if (shared) {
+      D3DKMT_CREATESYNCHRONIZATIONOBJECT2 create = {};
+      create.hDevice = pDevice->GetLocalD3DKMT();
+      create.Info.Type = D3DDDI_FENCE;
+      create.Info.Flags.Shared = 1;
+      create.Info.Flags.NtSecuritySharing = 1;
+      if (D3DKMTCreateSynchronizationObject2(&create)) {
+        ERR("D3D11Fence: Failed to create D3DKMT handle");
+        return;
+      }
+      local_kmt = create.hSyncObject;
+    }
+  };
+
+  MTLD3D11FenceImpl(MTLD3D11Device *pDevice, WMT::Reference<WMT::SharedEvent> importedEvent, 
+                    D3DKMT_HANDLE localHandle)
+      : MTLD3D11DeviceChild<MTLD3D11Fence>(pDevice) {
+    event = std::move(importedEvent);
+    local_kmt = localHandle;
+  };
+
+  ~MTLD3D11FenceImpl() {
+    if (local_kmt) {
+      D3DKMT_DESTROYSYNCHRONIZATIONOBJECT destroy = {};
+      destroy.hSyncObject = local_kmt;
+      D3DKMTDestroySynchronizationObject(&destroy);
+    }
   };
 
   HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid,
@@ -51,10 +78,16 @@ public:
 HRESULT
 CreateFence(MTLD3D11Device *pDevice, UINT64 InitialValue,
             D3D11_FENCE_FLAG Flags, REFIID riid, void **ppFence) {
-  // TODO: respect Flags
-  auto fence = new MTLD3D11FenceImpl(pDevice);
+  bool shared = !!(Flags & (D3D11_FENCE_FLAG_SHARED | D3D11_FENCE_FLAG_SHARED_CROSS_ADAPTER));
+  auto fence = new MTLD3D11FenceImpl(pDevice, shared);
   fence->event.signalValue(InitialValue);
   return fence->QueryInterface(riid, ppFence);
+}
+
+HRESULT
+OpenSharedFence(MTLD3D11Device *pDevice, HANDLE hResource,
+                REFIID riid, void **ppFence) {
+  return E_FAIL; // Not implemented yet
 }
 
 } // namespace dxmt
