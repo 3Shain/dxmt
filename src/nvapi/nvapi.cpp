@@ -501,6 +501,14 @@ NvAPI_D3D_GetLatency(IUnknown *pDev, NV_LATENCY_RESULT_PARAMS *pGetLatencyParams
   return NVAPI_OK;
 }
 
+NVAPI_INTERFACE
+NvAPI_GPU_GetPstates20(NvPhysicalGpuHandle hPhysicalGpu, NV_GPU_PERF_PSTATES20_INFO *pPstatesInfo) {
+  if (!hPhysicalGpu || !pPstatesInfo)
+    return NVAPI_INVALID_ARGUMENT;
+
+  return NVAPI_NO_IMPLEMENTATION;
+}
+
 extern "C" __cdecl void *nvapi_QueryInterface(NvU32 id) {
   switch (id) {
   case 0x0150e828:
@@ -556,6 +564,8 @@ extern "C" __cdecl void *nvapi_QueryInterface(NvU32 id) {
     return (void *)&NvAPI_D3D_Sleep;
   case 0x1a587f9c:
     return (void *)&NvAPI_D3D_GetLatency;
+  case 0x6ff81213:
+    return (void *)&NvAPI_GPU_GetPstates20;
   default:
     break;
   }
