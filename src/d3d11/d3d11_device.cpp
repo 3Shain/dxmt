@@ -1109,7 +1109,7 @@ public:
   friend class MTLDXGIMetalLayerFactory;
 
   MTLD3D11DXGIDevice(std::unique_ptr<Device> &&device, IMTLDXGIAdapter *adapter,
-                     D3D_FEATURE_LEVEL feature_level, UINT feature_flags)
+                     D3D_FEATURE_LEVEL feature_level, UINT feature_flags, D3DKMT_HANDLE kmt_handle)
       : adapter_(adapter), device(std::move(device)),
         cmd_queue_(this->device->queue()),
         d3d11_device_(this, adapter, feature_level, feature_flags,
@@ -1247,18 +1247,27 @@ public:
                                  ppSwapChain);
   }
 
+  D3DKMT_HANDLE STDMETHODCALLTYPE
+  GetD3DKMTDevice() final {
+    return kmt_handle_;
+  }
+
 private:
   Com<IMTLDXGIAdapter> adapter_;
   std::unique_ptr<Device> device;
   CommandQueue &cmd_queue_;
   MTLD3D11DeviceImpl d3d11_device_;
+  D3DKMT_HANDLE kmt_handle_;
 };
 
-Com<IMTLDXGIDevice> CreateD3D11Device(std::unique_ptr<Device> &&device,
-                                      IMTLDXGIAdapter *adapter,
-                                      D3D_FEATURE_LEVEL feature_level,
-                                      UINT feature_flags) {
-  return Com<IMTLDXGIDevice>::transfer(new MTLD3D11DXGIDevice(
-      std::move(device), adapter, feature_level, feature_flags));
+Com<IMTLDXGIDevice>
+CreateD3D11Device(
+    std::unique_ptr<Device> &&device, IMTLDXGIAdapter *adapter, D3D_FEATURE_LEVEL feature_level, UINT feature_flags
+) {
+  D3DKMT_HANDLE kmt_handle = 0;
+  // TODO(shared-resource)
+  return Com<IMTLDXGIDevice>::transfer(
+      new MTLD3D11DXGIDevice(std::move(device), adapter, feature_level, feature_flags, kmt_handle)
+  );
 };
 } // namespace dxmt

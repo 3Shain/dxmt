@@ -20,8 +20,8 @@ LUID GetAdapterLuid(WMT::Device device) {
 
 class MTLDXGIAdatper : public MTLDXGIObject<IMTLDXGIAdapter> {
 public:
-  MTLDXGIAdatper(WMT::Device device, IDXGIFactory *factory, Config &config)
-      : device_(device), factory_(factory), options_(config) {};
+  MTLDXGIAdatper(WMT::Device device, IDXGIFactory *factory, Config &config, D3DKMT_HANDLE kmt_handle)
+      : device_(device), factory_(factory), options_(config), kmt_handle_(kmt_handle) {};
 
   HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid,
                                            void **ppvObject) final {
@@ -254,17 +254,22 @@ public:
 
   WMT::Device STDMETHODCALLTYPE GetMTLDevice() final { return device_; }
 
+  D3DKMT_HANDLE STDMETHODCALLTYPE GetD3DKMTAdapter() final { return kmt_handle_; }
+
 private:
   WMT::Reference<WMT::Device> device_;
   Com<IDXGIFactory> factory_;
   DxgiOptions options_;
+  D3DKMT_HANDLE kmt_handle_;
   uint64_t mem_reserved_[2] = {0, 0};
 };
 
-Com<IMTLDXGIAdapter> CreateAdapter(WMT::Device Device,
-                                   IDXGIFactory2 *pFactory, Config &config) {
+Com<IMTLDXGIAdapter> CreateAdapter(WMT::Device Device, IDXGIFactory2 *pFactory,
+                                   Config &config) {
+  D3DKMT_HANDLE kmt_handle = 0;
+  // TODO(shared-resource)
   return Com<IMTLDXGIAdapter>::transfer(
-      new MTLDXGIAdatper(Device, pFactory, config));
+      new MTLDXGIAdatper(Device, pFactory, config, kmt_handle));
 }
 
 } // namespace dxmt
