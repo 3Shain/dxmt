@@ -1,5 +1,6 @@
 #include "d3d11_fence.hpp"
 #include "d3d11_device_child.hpp"
+#include "d3d11_resource.hpp"
 
 namespace dxmt {
 
@@ -19,6 +20,27 @@ public:
         return;
       }
       local_kmt = create.hSyncObject;
+
+      mach_port_t mach_port = event.createMachPort();
+      if (!mach_port) {
+        ERR("D3D11Fence: Failed to create mach port for shared fence");
+        return;
+      }
+      char mach_port_name[54];
+      MakeUniqueSharedName(mach_port_name);
+      if (!WMTBootstrapRegister(mach_port_name, mach_port)) {
+        ERR("D3D11Fence: Failed to register mach port for shared fence");
+        return;
+      }
+      D3DKMT_ESCAPE escape = {};
+      escape.Type = D3DKMT_ESCAPE_UPDATE_RESOURCE_WINE;
+      escape.pPrivateDriverData = mach_port_name;
+      escape.PrivateDriverDataSize = sizeof(mach_port_name);
+      escape.hContext = local_kmt;
+      if (!D3DKMTEscape(&escape)) {
+        ERR("D3D11Fence: Failed to escape mach port for shared fence");
+        return;
+      }
     }
   };
 

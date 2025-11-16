@@ -88,6 +88,35 @@ typedef struct _D3DKMT_OPENADAPTERFROMLUID
   D3DKMT_HANDLE hAdapter;
 } D3DKMT_OPENADAPTERFROMLUID;
 
+typedef enum _D3DKMT_ESCAPETYPE
+{
+    D3DKMT_ESCAPE_UPDATE_RESOURCE_WINE = 0x80000000
+} D3DKMT_ESCAPETYPE;
+
+typedef struct _D3DDDI_ESCAPEFLAGS
+{
+  union
+  {
+    struct
+    {
+      UINT HardwareAccess :1;
+      UINT Reserved       :31;
+    };
+    UINT Value;
+  };
+} D3DDDI_ESCAPEFLAGS;
+
+typedef struct _D3DKMT_ESCAPE
+{
+  D3DKMT_HANDLE      hAdapter;
+  D3DKMT_HANDLE      hDevice;
+  D3DKMT_ESCAPETYPE  Type;
+  D3DDDI_ESCAPEFLAGS Flags;
+  void              *pPrivateDriverData;
+  UINT               PrivateDriverDataSize;
+  D3DKMT_HANDLE      hContext;
+} D3DKMT_ESCAPE;
+
 typedef enum _D3DDDI_SYNCHRONIZATIONOBJECT_TYPE
 {
     D3DDDI_SYNCHRONIZATION_MUTEX = 1,
@@ -329,6 +358,7 @@ extern "C"
   DECLSPEC_IMPORT NTSTATUS WINAPI D3DKMTDestroyDevice(const D3DKMT_DESTROYDEVICE *desc);
   DECLSPEC_IMPORT NTSTATUS WINAPI D3DKMTDestroySynchronizationObject(const D3DKMT_DESTROYSYNCHRONIZATIONOBJECT *desc);
   DECLSPEC_IMPORT NTSTATUS WINAPI D3DKMTOpenAdapterFromLuid(D3DKMT_OPENADAPTERFROMLUID *desc);
+  DECLSPEC_IMPORT NTSTATUS WINAPI D3DKMTEscape(const D3DKMT_ESCAPE *desc);
   DECLSPEC_IMPORT NTSTATUS WINAPI D3DKMTCreateSynchronizationObject2(D3DKMT_CREATESYNCHRONIZATIONOBJECT2 *desc);
   DECLSPEC_IMPORT NTSTATUS WINAPI D3DKMTCreateAllocation2(D3DKMT_CREATEALLOCATION *desc);
   DECLSPEC_IMPORT NTSTATUS WINAPI D3DKMTCloseAdapter(const D3DKMT_CLOSEADAPTER *desc);
@@ -367,6 +397,11 @@ extern "C"
 
   inline NTSTATUS D3DKMTOpenAdapterFromLuid(const D3DKMT_OPENADAPTERFROMLUID *desc) {
     dxmt::Logger::warn("D3DKMTOpenAdapterFromLuid not implemented.");
+    return -1;
+  }
+
+  inline NTSTATUS D3DKMTEscape(const D3DKMT_ESCAPE *desc) {
+    dxmt::Logger::warn("D3DKMTEscape not implemented.");
     return -1;
   }
 
