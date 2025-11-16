@@ -69,7 +69,8 @@ public:
   HRESULT
   STDMETHODCALLTYPE
   GetSharedHandle(HANDLE *pSharedHandle) final {
-    return resource_->GetSharedHandle(pSharedHandle);
+    // not supported yet
+    return E_FAIL;
   }
 
   HRESULT
