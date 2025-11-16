@@ -187,7 +187,7 @@ public:
     if (pWindowHandle == nullptr)
       return DXGI_ERROR_INVALID_CALL;
 
-    *pWindowHandle = m_associatedWindow;
+    *pWindowHandle = associated_window_;
     return S_OK;
   }
 
@@ -202,7 +202,7 @@ public:
     if (Flags) {
       WARN("MakeWindowAssociation: Ignoring flags ", Flags);
     }
-    m_associatedWindow = WindowHandle;
+    associated_window_ = WindowHandle;
     return S_OK;
   }
 
@@ -291,7 +291,7 @@ public:
 private:
   UINT flags_;
 
-  HWND m_associatedWindow = nullptr;
+  HWND associated_window_ = nullptr;
 };
 
 extern "C" HRESULT __stdcall CreateDXGIFactory2(UINT Flags, REFIID riid,

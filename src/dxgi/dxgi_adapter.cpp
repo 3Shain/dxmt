@@ -16,7 +16,7 @@ Com<IDXGIOutput> CreateOutput(IMTLDXGIAdapter *pAadapter, HMONITOR monitor, Dxgi
 class MTLDXGIAdatper : public MTLDXGIObject<IMTLDXGIAdapter> {
 public:
   MTLDXGIAdatper(WMT::Device device, IDXGIFactory *factory, Config &config)
-      : m_deivce(device), m_factory(factory), options(config) {};
+      : device_(device), factory_(factory), options_(config) {};
 
   HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid,
                                            void **ppvObject) final {
@@ -41,7 +41,7 @@ public:
   };
 
   HRESULT STDMETHODCALLTYPE GetParent(REFIID riid, void **ppParent) final {
-    return m_factory->QueryInterface(riid, ppParent);
+    return factory_->QueryInterface(riid, ppParent);
   }
   HRESULT STDMETHODCALLTYPE GetDesc(DXGI_ADAPTER_DESC *pDesc) final {
     if (pDesc == nullptr)
@@ -118,17 +118,17 @@ public:
 
     std::memset(pDesc->Description, 0, sizeof(pDesc->Description));
 
-    if (!options.customDeviceDesc.empty()) {
+    if (!options_.customDeviceDesc.empty()) {
       str::transcodeString(
           pDesc->Description,
           sizeof(pDesc->Description) / sizeof(pDesc->Description[0]) - 1,
-          options.customDeviceDesc.c_str(), options.customDeviceDesc.size());
+          options_.customDeviceDesc.c_str(), options_.customDeviceDesc.size());
     } else {
-      m_deivce.name().getCString((char *)pDesc->Description, sizeof(pDesc->Description), WMTUTF16StringEncoding);
+      device_.name().getCString((char *)pDesc->Description, sizeof(pDesc->Description), WMTUTF16StringEncoding);
     }
 
-    if (options.customVendorId >= 0) {
-      pDesc->VendorId = options.customVendorId;
+    if (options_.customVendorId >= 0) {
+      pDesc->VendorId = options_.customVendorId;
     } else {
       pDesc->VendorId = 0x106B;
       if (g_extension_enabled == VendorExtension::Nvidia) {
@@ -136,8 +136,8 @@ public:
       }
     }
 
-    if (options.customDeviceId >= 0) {
-      pDesc->DeviceId = options.customDeviceId;
+    if (options_.customDeviceId >= 0) {
+      pDesc->DeviceId = options_.customDeviceId;
     } else {
       pDesc->DeviceId = 0;
     }
@@ -147,7 +147,7 @@ public:
     /**
     FIXME: divided by 2 is not necessary
      */
-    pDesc->DedicatedVideoMemory = m_deivce.recommendedMaxWorkingSetSize() / 2;
+    pDesc->DedicatedVideoMemory = device_.recommendedMaxWorkingSetSize() / 2;
     pDesc->DedicatedSystemMemory = 0;
     pDesc->SharedSystemMemory = 0;
     pDesc->AdapterLuid = LUID{1168, 1};
@@ -169,7 +169,7 @@ public:
     if (monitor == nullptr)
       return DXGI_ERROR_NOT_FOUND;
 
-    *ppOutput = CreateOutput(this, monitor, options);
+    *ppOutput = CreateOutput(this, monitor, options_);
     return S_OK;
   }
   HRESULT STDMETHODCALLTYPE
@@ -215,8 +215,8 @@ public:
       return E_INVALIDARG;
 
     // we don't actually care about MemorySegmentGroup
-    pVideoMemoryInfo->Budget = m_deivce.recommendedMaxWorkingSetSize();
-    pVideoMemoryInfo->CurrentUsage = m_deivce.currentAllocatedSize();
+    pVideoMemoryInfo->Budget = device_.recommendedMaxWorkingSetSize();
+    pVideoMemoryInfo->CurrentUsage = device_.currentAllocatedSize();
     pVideoMemoryInfo->AvailableForReservation = 0;
     pVideoMemoryInfo->CurrentReservation =
         mem_reserved_[uint32_t(MemorySegmentGroup)];
@@ -247,12 +247,12 @@ public:
     assert(0 && "TODO");
   }
 
-  WMT::Device STDMETHODCALLTYPE GetMTLDevice() final { return m_deivce; }
+  WMT::Device STDMETHODCALLTYPE GetMTLDevice() final { return device_; }
 
 private:
-  WMT::Reference<WMT::Device> m_deivce;
-  Com<IDXGIFactory> m_factory;
-  DxgiOptions options;
+  WMT::Reference<WMT::Device> device_;
+  Com<IDXGIFactory> factory_;
+  DxgiOptions options_;
   uint64_t mem_reserved_[2] = {0, 0};
 };
 
