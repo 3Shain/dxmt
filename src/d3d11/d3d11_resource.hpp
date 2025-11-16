@@ -13,7 +13,6 @@
 #include "../d3d10/d3d10_buffer.hpp"
 #include "../d3d10/d3d10_texture.hpp"
 #include "../d3d10/d3d10_view.hpp"
-#include "util_win32_compat.h"
 #include <memory>
 #include <type_traits>
 
@@ -125,7 +124,6 @@ struct D3D11ResourceCommon : ID3D11Resource {
   CreateRenderTargetView(const D3D11_RENDER_TARGET_VIEW_DESC1 *pDesc, ID3D11RenderTargetView1 **ppView) = 0;
   virtual HRESULT STDMETHODCALLTYPE
   CreateDepthStencilView(const D3D11_DEPTH_STENCIL_VIEW_DESC *pDesc, ID3D11DepthStencilView **ppView) = 0;
-  virtual HRESULT GetSharedHandle(HANDLE *pSharedHandle) = 0;
 
   virtual Rc<Buffer> buffer() = 0;
   virtual BufferSlice bufferSlice() = 0;
@@ -158,16 +156,6 @@ GetTexture(ID3D11Resource *pResource) {
   return static_cast<D3D11ResourceCommon *>(pResource)->texture();
 }
 
-struct D3D11SharedResource {
-  D3D11ResourceCommon *d3d11_resource;
-  HANDLE process;
-
-  // FIXME: For a complete implementation of shared resources, consider adding:
-  // MTLD3D11Device *d3d11_device;
-  // obj_handle_t metal_resource;
-  // obj_handle_t metal_device;
-};
-
 template <typename tag, typename... Base>
 class TResourceBase : public MTLD3D11DeviceChild<D3D11ResourceCommon, Base...> {
 public:
@@ -176,14 +164,7 @@ public:
             device),
         desc(desc),
         dxgi_resource(new MTLDXGIResource<TResourceBase<tag, Base...>>(this)),
-        d3d10(reinterpret_cast<tag::COM *>(this), device->GetImmediateContextPrivate()),
-        shared_handle(nullptr) {}
-
-  ~TResourceBase() {
-    if (shared_handle) {
-      CloseHandle(shared_handle);
-    }
-  }
+        d3d10(reinterpret_cast<tag::COM *>(this), device->GetImmediateContextPrivate()) {}
 
   template <std::size_t n> HRESULT ResolveBase(REFIID riid, void **ppvObject) {
     return E_NOINTERFACE;
@@ -258,63 +239,6 @@ public:
     return device->QueryInterface(riid, ppDevice);
   };
 
-  HRESULT GetSharedHandle(HANDLE *pSharedHandle) override {
-    // FIXME: Shared resource functionality (`GetSharedHandle` and `OpenSharedResource`)
-    // is currently limited to resources shared within a single process and without
-    // synchronization (i.e., created without the `D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX` flag).
-
-    if (shared_handle) {
-      // We already have a shared handle. Let's reuse it.
-      *pSharedHandle = shared_handle;
-      return S_OK;
-    }
-
-    if (pSharedHandle == nullptr || (desc.MiscFlags & D3D11_RESOURCE_MISC_SHARED_NTHANDLE))
-      return E_INVALIDARG;
-
-    if (desc.MiscFlags & D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX) {
-      ERR("GetSharedHandle: Resource sharing with KEYEDMUTEX is not yet supported");
-      return E_NOTIMPL;
-    }
-
-    // Create a file mapping object backed by the system paging file to enable sharing.
-    // NOTE: While cross-process sharing is not yet implemented, we create a valid
-    //       handle here. This prevents the application from immediately crashing with a
-    //       segfault if it tries to read the handle in `OpenSharedResource`,
-    //       allowing for a more graceful failure.
-    HANDLE mapFile = CreateFileMapping(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE,
-                                       0, sizeof(D3D11SharedResource), NULL);
-
-    if (!mapFile) {
-      ERR("GetSharedHandle: CreateFileMapping failed: ", GetLastError());
-      return E_FAIL;
-    }
-
-    D3D11SharedResource *handleData = (D3D11SharedResource*)MapViewOfFile(
-      mapFile, FILE_MAP_ALL_ACCESS, 0, 0, sizeof(D3D11SharedResource));
-
-    if (!handleData) {
-      ERR("GetSharedHandle: MapViewOfFile failed: ", GetLastError());
-      CloseHandle(mapFile);
-      return E_FAIL;
-    }
-
-    handleData->d3d11_resource = static_cast<D3D11ResourceCommon *>(this);
-    handleData->process = GetCurrentProcess();
-
-    UnmapViewOfFile(handleData);
-
-    // We will reuse this shared handle for later `GetSharedHandle` calls,
-    // and close it when this resource is destroyed.
-    // NOTE: According to the MSDN documentation, the handle returned by `GetSharedHandle`
-    //       is not an NT handle, so it does not support `CloseHandle`, `DuplicateHandle`,
-    //       and so on. Since the user cannot close this handle themselves,
-    //       it is our responsibility to close it properly at the appropriate time.
-    shared_handle = mapFile;
-    *pSharedHandle = mapFile;
-    return S_OK;
-  }
-
   virtual HRESULT GetDXGIUsage(DXGI_USAGE *pUsage) {
     if (!pUsage) {
       return E_INVALIDARG;
@@ -348,7 +272,6 @@ protected:
   tag::DESC1 desc;
   std::unique_ptr<IDXGIResource1> dxgi_resource;
   tag::D3D10_IMPL d3d10;
-  HANDLE shared_handle;
 };
 
 template <typename RESOURCE_IMPL_ = ID3D11Resource,
