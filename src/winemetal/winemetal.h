@@ -1812,4 +1812,6 @@ WINEMETAL_API mach_port_t MTLSharedEvent_createMachPort(obj_handle_t event);
 
 WINEMETAL_API obj_handle_t MTLDevice_newSharedEventWithMachPort(obj_handle_t device, mach_port_t mach_port);
 
+WINEMETAL_API uint64_t MTLDevice_registryID(obj_handle_t device);
+
 #endif
