@@ -684,6 +684,11 @@ public:
     return String{MTLDevice_name(handle)};
   }
 
+  uint64_t
+  registryID() const {
+    return MTLDevice_registryID(handle);
+  }
+
   Reference<CommandQueue>
   newCommandQueue(uint64_t maxCommandBufferCount) {
     return Reference<CommandQueue>(MTLDevice_newCommandQueue(handle, maxCommandBufferCount));

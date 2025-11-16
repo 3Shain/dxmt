@@ -1808,4 +1808,6 @@ WINEMETAL_API bool WMTBootstrapRegister(const char *name, mach_port_t mach_port)
 
 WINEMETAL_API bool WMTBootstrapLookUp(const char *name, mach_port_t *mach_port);
 
+WINEMETAL_API uint64_t MTLDevice_registryID(obj_handle_t device);
+
 #endif

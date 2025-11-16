@@ -2566,6 +2566,13 @@ _WMTBootstrapLookUp(void *obj) {
   return ret;
 }
 
+static NTSTATUS
+_MTLDevice_registryID(void *obj) {
+  struct unixcall_generic_obj_uint64_ret *params = obj;
+  params->ret = [(id<MTLDevice>)params->handle registryID];
+  return STATUS_SUCCESS;
+}
+
 /*
  * Definition from cache.c
  */
@@ -2700,6 +2707,7 @@ const void *__wine_unix_call_funcs[] = {
     &_MTLDevice_newSharedTexture,
     &_WMTBootstrapRegister,
     &_WMTBootstrapLookUp,
+    &_MTLDevice_registryID,
 };
 
 #ifndef DXMT_NATIVE
@@ -2827,5 +2835,6 @@ const void *__wine_unix_call_wow64_funcs[] = {
     &_MTLDevice_newSharedTexture,
     &_WMTBootstrapRegister,
     &_WMTBootstrapLookUp,
+    &_MTLDevice_registryID,
 };
 #endif

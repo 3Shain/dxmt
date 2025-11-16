@@ -1079,3 +1079,12 @@ WMTBootstrapLookUp(const char *name, mach_port_t *mach_port) {
   *mach_port = params.mach_port;
   return !ret;
 }
+
+WINEMETAL_API uint64_t
+MTLDevice_registryID(obj_handle_t device) {
+  struct unixcall_generic_obj_uint64_ret params;
+  params.handle = device;
+  params.ret = 0;
+  UNIX_CALL(123, &params);
+  return params.ret;
+}
