@@ -16,7 +16,25 @@ Com<IDXGIOutput> CreateOutput(IMTLDXGIAdapter *pAadapter, HMONITOR monitor, Dxgi
 class MTLDXGIAdatper : public MTLDXGIObject<IMTLDXGIAdapter> {
 public:
   MTLDXGIAdatper(WMT::Device device, IDXGIFactory *factory, Config &config)
-      : device_(device), factory_(factory), options_(config) {};
+      : device_(device), factory_(factory), options_(config) {
+    DXGI_ADAPTER_DESC3 desc;
+    D3DKMT_OPENADAPTERFROMLUID open = {};
+    GetDesc3(&desc);
+    open.AdapterLuid = desc.AdapterLuid;
+    if (D3DKMTOpenAdapterFromLuid(&open))
+      WARN("Failed to open D3DKMT adapter");
+    else
+      local_kmt_ = open.hAdapter;
+  };
+
+  ~MTLDXGIAdatper() {
+    if (local_kmt_) {
+      D3DKMT_CLOSEADAPTER close = {};
+      close.hAdapter = local_kmt_;
+      if (D3DKMTCloseAdapter(&close))
+        WARN("Failed to close D3DKMT adapter");
+    }
+  }
 
   HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid,
                                            void **ppvObject) final {
@@ -248,9 +266,11 @@ public:
   }
 
   WMT::Device STDMETHODCALLTYPE GetMTLDevice() final { return device_; }
+  D3DKMT_HANDLE STDMETHODCALLTYPE GetLocalD3DKMT() final { return local_kmt_; }
 
 private:
   WMT::Reference<WMT::Device> device_;
+  D3DKMT_HANDLE local_kmt_ = 0;
   Com<IDXGIFactory> factory_;
   DxgiOptions options_;
   uint64_t mem_reserved_[2] = {0, 0};
