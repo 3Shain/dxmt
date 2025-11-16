@@ -13,6 +13,11 @@ namespace dxmt {
 
 Com<IDXGIOutput> CreateOutput(IMTLDXGIAdapter *pAadapter, HMONITOR monitor, DxgiOptions &options);
 
+LUID GetAdapterLuid(WMT::Device device) {
+    // NOTE: use big-endian registryID, be consistent with MVK
+  return std::bit_cast<LUID>(__builtin_bswap64(device.registryID()));
+}
+
 class MTLDXGIAdatper : public MTLDXGIObject<IMTLDXGIAdapter> {
 public:
   MTLDXGIAdatper(WMT::Device device, IDXGIFactory *factory, Config &config)
@@ -150,7 +155,7 @@ public:
     pDesc->DedicatedVideoMemory = device_.recommendedMaxWorkingSetSize() / 2;
     pDesc->DedicatedSystemMemory = 0;
     pDesc->SharedSystemMemory = 0;
-    pDesc->AdapterLuid = LUID{1168, 1};
+    pDesc->AdapterLuid = GetAdapterLuid(device_);
     pDesc->Flags = DXGI_ADAPTER_FLAG3_NONE;
     pDesc->GraphicsPreemptionGranularity = DXGI_GRAPHICS_PREEMPTION_DMA_BUFFER_BOUNDARY;
     pDesc->ComputePreemptionGranularity = DXGI_COMPUTE_PREEMPTION_DMA_BUFFER_BOUNDARY;
