@@ -447,6 +447,13 @@ typedef struct _D3DKMT_CLOSEADAPTER
   D3DKMT_HANDLE hAdapter;
 } D3DKMT_CLOSEADAPTER;
 
+typedef struct _D3DKMT_OPENNTHANDLEFROMNAME
+{
+  DWORD dwDesiredAccess;
+  OBJECT_ATTRIBUTES *pObjAttrib;
+  HANDLE hNtHandle;
+} D3DKMT_OPENNTHANDLEFROMNAME;
+
 #if !defined(DXMT_NATIVE)
 
 extern "C"
@@ -466,6 +473,7 @@ extern "C"
   DECLSPEC_IMPORT NTSTATUS WINAPI D3DKMTCreateAllocation2(D3DKMT_CREATEALLOCATION *desc);
   DECLSPEC_IMPORT NTSTATUS WINAPI D3DKMTCloseAdapter(const D3DKMT_CLOSEADAPTER *desc);
   DECLSPEC_IMPORT NTSTATUS WINAPI D3DKMTShareObjects(UINT count, const D3DKMT_HANDLE *handles, OBJECT_ATTRIBUTES *attr, UINT access, HANDLE *handle);
+  DECLSPEC_IMPORT NTSTATUS WINAPI D3DKMTOpenNtHandleFromName(D3DKMT_OPENNTHANDLEFROMNAME *desc);
 }
 
 #else
@@ -546,6 +554,11 @@ extern "C"
 
   inline NTSTATUS D3DKMTShareObjects(UINT count, const D3DKMT_HANDLE *handles, OBJECT_ATTRIBUTES *attr, UINT access, HANDLE *handle) {
     dxmt::Logger::warn("D3DKMTShareObjects not implemented.");
+    return -1;
+  }
+
+  inline NTSTATUS D3DKMTOpenNtHandleFromName(D3DKMT_OPENNTHANDLEFROMNAME *desc) {
+    dxmt::Logger::warn("D3DKMTOpenNtHandleFromName not implemented.");
     return -1;
   }
 }
