@@ -339,10 +339,22 @@ HRESULT CreateDeviceTextureInternal(MTLD3D11Device *pDevice,
     flags.set(TextureAllocationFlag::Shared);
     auto allocation = texture->allocate(flags);
 
-    // mach_port_t mach_port = allocation->machPort;
-    // TODO: register mach port and store name in runtime data
+    mach_port_t mach_port = allocation->machPort;
+    if (!mach_port) {
+      ERR("DeviceTexture: Failed to get mach port for shared texture");
+      return E_FAIL;
+    }
+    char mach_port_name[54];
+    MakeUniqueSharedName(mach_port_name);
+    if (!WMTBootstrapRegister(mach_port_name, mach_port)) {
+      ERR("DeviceTexture: Failed to register mach port for shared texture");
+      return E_FAIL;
+    }
+
     D3DKMT_CREATEALLOCATION create = {};
     create.hDevice = pDevice->GetLocalD3DKMT();
+    create.pPrivateRuntimeData = mach_port_name;
+    create.PrivateRuntimeDataSize = sizeof(mach_port_name);
     create.Flags.StandardAllocation = 1;
     create.NumAllocations = 1;
     D3DDDI_ALLOCATIONINFO2 allocationInfo = {};
