@@ -310,6 +310,24 @@ typedef struct _D3DKMT_CREATESYNCHRONIZATIONOBJECT2
   D3DKMT_HANDLE hSyncObject;
 } D3DKMT_CREATESYNCHRONIZATIONOBJECT2;
 
+typedef struct _D3DKMT_OPENSYNCOBJECTFROMNTHANDLE2
+{
+  HANDLE hNtHandle;
+  D3DKMT_HANDLE hDevice;
+  D3DDDI_SYNCHRONIZATIONOBJECT_FLAGS Flags;
+  D3DKMT_HANDLE hSyncObject;
+  union
+  {
+    struct
+    {
+      void *FenceValueCPUVirtualAddress;
+      D3DGPU_VIRTUAL_ADDRESS FenceValueGPUVirtualAddress;
+      UINT EngineAffinity;
+    } MonitoredFence;
+    UINT64 Reserved[8];
+  };
+} D3DKMT_OPENSYNCOBJECTFROMNTHANDLE2;
+
 typedef struct _D3DKMT_CREATESTANDARDALLOCATIONFLAGS
 {
   union
@@ -470,6 +488,7 @@ extern "C"
   DECLSPEC_IMPORT NTSTATUS WINAPI D3DKMTQueryResourceInfo(D3DKMT_QUERYRESOURCEINFO *desc);
   DECLSPEC_IMPORT NTSTATUS WINAPI D3DKMTQueryResourceInfoFromNtHandle(D3DKMT_QUERYRESOURCEINFOFROMNTHANDLE *desc);
   DECLSPEC_IMPORT NTSTATUS WINAPI D3DKMTCreateSynchronizationObject2(D3DKMT_CREATESYNCHRONIZATIONOBJECT2 *desc);
+  DECLSPEC_IMPORT NTSTATUS WINAPI D3DKMTOpenSyncObjectFromNtHandle2(D3DKMT_OPENSYNCOBJECTFROMNTHANDLE2 *desc);
   DECLSPEC_IMPORT NTSTATUS WINAPI D3DKMTCreateAllocation2(D3DKMT_CREATEALLOCATION *desc);
   DECLSPEC_IMPORT NTSTATUS WINAPI D3DKMTCloseAdapter(const D3DKMT_CLOSEADAPTER *desc);
   DECLSPEC_IMPORT NTSTATUS WINAPI D3DKMTShareObjects(UINT count, const D3DKMT_HANDLE *handles, OBJECT_ATTRIBUTES *attr, UINT access, HANDLE *handle);
@@ -544,6 +563,11 @@ extern "C"
 
   inline NTSTATUS D3DKMTCreateSynchronizationObject2(D3DKMT_CREATESYNCHRONIZATIONOBJECT2 *desc) {
     dxmt::Logger::warn("D3DKMTCreateSynchronizationObject2 not implemented.");
+    return -1;
+  }
+
+  inline NTSTATUS D3DKMTOpenSyncObjectFromNtHandle2(D3DKMT_OPENSYNCOBJECTFROMNTHANDLE2 *desc) {
+    dxmt::Logger::warn("D3DKMTOpenSyncObjectFromNtHandle2 not implemented.");
     return -1;
   }
 
