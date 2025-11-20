@@ -380,6 +380,10 @@ HRESULT CreateDeviceTextureInternal(MTLD3D11Device *pDevice,
   auto shared_flag =
       D3D11_RESOURCE_MISC_SHARED | D3D11_RESOURCE_MISC_SHARED_NTHANDLE | D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX;
   if (finalDesc.MiscFlags & shared_flag) {
+    if (!(pDevice->GetLocalD3DKMT() & 0xc0000000)) {
+      ERR("DeviceTexture: Invalid device handle");
+      return E_FAIL;
+    }
     // use a dedicated path for now, because there are other works for private storage mode
 
     Flags<TextureAllocationFlag> flags;
