@@ -388,6 +388,16 @@ public:
     if (Mask == CombinedMask)
       return Value;
 
+    switch (Mask) {
+      case 0b1:
+      case 0b10:
+      case 0b100:
+      case 0b1000:
+        return ir.CreateExtractElement(Value, __builtin_ctz(Mask));
+      default:
+        break;
+    }
+
     llvm::SmallVector<int, 4> Idx;
     unsigned SrcIdx = 0;
     for (unsigned Bit = 0; Bit < 4; ++Bit) {
