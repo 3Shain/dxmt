@@ -342,6 +342,13 @@ struct unixcall_bootstrap {
   uint32_t reserved;
 };
 
+struct unixcall_mtlsharedevent_waituntilsignaledvalue {
+  obj_handle_t event;
+  uint64_t value;
+  uint64_t timeout_ms;
+  bool ret_timeout;
+};
+
 #pragma pack(pop)
 
 #endif

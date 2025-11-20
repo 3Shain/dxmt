@@ -2617,6 +2617,14 @@ _MTLDevice_registryID(void *obj) {
   return STATUS_SUCCESS;
 }
 
+static NTSTATUS
+_MTLSharedEvent_waitUntilSignaledValue(void *obj) {
+  struct unixcall_mtlsharedevent_waituntilsignaledvalue *params = obj;
+  bool timeout = [(id<MTLSharedEvent>)params->event waitUntilSignaledValue:params->value timeoutMS:params->timeout_ms];
+  params->ret_timeout = timeout;
+  return STATUS_SUCCESS;
+}
+
 /*
  * Definition from cache.c
  */
@@ -2754,6 +2762,7 @@ const void *__wine_unix_call_funcs[] = {
     &_MTLSharedEvent_createMachPort,
     &_MTLDevice_newSharedEventWithMachPort,
     &_MTLDevice_registryID,
+    &_MTLSharedEvent_waitUntilSignaledValue,
 };
 
 #ifndef DXMT_NATIVE
@@ -2884,5 +2893,6 @@ const void *__wine_unix_call_wow64_funcs[] = {
     &_MTLSharedEvent_createMachPort,
     &_MTLDevice_newSharedEventWithMachPort,
     &_MTLDevice_registryID,
+    &_MTLSharedEvent_waitUntilSignaledValue,
 };
 #endif

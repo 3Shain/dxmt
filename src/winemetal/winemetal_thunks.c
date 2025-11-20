@@ -1107,3 +1107,14 @@ MTLDevice_registryID(obj_handle_t device) {
   UNIX_CALL(125, &params);
   return params.ret;
 }
+
+WINEMETAL_API bool
+MTLSharedEvent_waitUntilSignaledValue(obj_handle_t event, uint64_t value, uint64_t timeout) {
+  struct unixcall_mtlsharedevent_waituntilsignaledvalue params;
+  params.event = event;
+  params.value = value;
+  params.timeout_ms = timeout;
+  params.ret_timeout = 0;
+  UNIX_CALL(126, &params);
+  return params.ret_timeout;
+}

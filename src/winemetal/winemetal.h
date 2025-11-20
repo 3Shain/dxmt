@@ -1825,4 +1825,6 @@ WINEMETAL_API obj_handle_t MTLDevice_newSharedEventWithMachPort(obj_handle_t dev
 
 WINEMETAL_API uint64_t MTLDevice_registryID(obj_handle_t device);
 
+WINEMETAL_API bool MTLSharedEvent_waitUntilSignaledValue(obj_handle_t event, uint64_t value, uint64_t timeout);
+
 #endif

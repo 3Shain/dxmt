@@ -193,6 +193,11 @@ public:
   createMachPort() {
     return MTLSharedEvent_createMachPort(handle);
   }
+
+  bool
+  waitUntilSignaledValue(uint64_t value, uint64_t timeout) {
+    return MTLSharedEvent_waitUntilSignaledValue(handle, value, timeout);
+  }
 };
 
 class Fence : public Object {
