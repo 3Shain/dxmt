@@ -9,21 +9,27 @@ namespace dxmt {
 
 #define ALLOC_COMPUTE(type, cmd)                                                                                       \
   type *cmd = nullptr;                                                                                                 \
-  if (!allocateCompute(&cmd)) {                                                                                          \
+  if (!allocateCompute(&cmd)) {                                                                                        \
     flushInternal();                                                                                                   \
     continue;                                                                                                          \
   }
 
 #define ALLOC_BLIT(type, cmd)                                                                                          \
   type *cmd = nullptr;                                                                                                 \
-  if (!allocateBlit(&cmd)) {                                                                                             \
+  if (!allocateBlit(&cmd)) {                                                                                           \
     flushInternal();                                                                                                   \
     continue;                                                                                                          \
   }
 
 #define ALLOC_CLEAR(info)                                                                                              \
   WMTRenderPassInfo *info;                                                                                             \
-  if (!allocateClear(&info)) {                                                                                           \
+  if (!allocateClear(&info)) {                                                                                         \
+    flushInternal();                                                                                                   \
+    continue;                                                                                                          \
+  }
+
+#define RETAIN(allocation)                                                                                             \
+  if (!retainAllocation(allocation)) {                                                                                 \
     flushInternal();                                                                                                   \
     continue;                                                                                                          \
   }
@@ -42,11 +48,13 @@ ResourceInitializer::~ResourceInitializer() {
 }
 
 uint64_t
-ResourceInitializer::initWithZero(const BufferAllocation *buffer, uint64_t offset, uint64_t length) {
+ResourceInitializer::initWithZero(BufferAllocation *buffer, uint64_t offset, uint64_t length) {
   std::lock_guard<dxmt::mutex> lock(mutex_);
 
   do {
+    RETAIN(buffer);
     ALLOC_BLIT(wmtcmd_blit_fillbuffer, fill);
+    fill->type = WMTBlitCommandFillBuffer;
     fill->buffer = buffer->buffer();
     fill->offset = offset;
     fill->length = length;
@@ -58,11 +66,12 @@ ResourceInitializer::initWithZero(const BufferAllocation *buffer, uint64_t offse
 }
 
 uint64_t
-ResourceInitializer::initWithDefault(const Texture *texture, const TextureAllocation *allocation) {
+ResourceInitializer::initWithDefault(const Texture *texture, TextureAllocation *allocation) {
   std::lock_guard<dxmt::mutex> lock(mutex_);
 
   do {
     if (auto dsv_planar = DepthStencilPlanarFlags(texture->pixelFormat())) {
+      RETAIN(allocation);
       ALLOC_CLEAR(info);
       info->render_target_array_length = texture->arrayLength();
       info->render_target_width = texture->width();
@@ -81,6 +90,7 @@ ResourceInitializer::initWithDefault(const Texture *texture, const TextureAlloca
       }
 
     } else if (texture->usage() & WMTTextureUsageRenderTarget) {
+      RETAIN(allocation);
       ALLOC_CLEAR(info);
       info->render_target_array_length =
           texture->textureType() == WMTTextureType3D ? texture->depth() : texture->arrayLength();
@@ -91,7 +101,7 @@ ResourceInitializer::initWithDefault(const Texture *texture, const TextureAlloca
       info->colors[0].clear_color = {0, 0, 0, 1.0};
       info->colors[0].store_action = WMTStoreActionStore;
     } else {
-      WARN("unhandled texture clear?");
+      DEBUG("unhandled texture clear");
     }
 
     break;
@@ -143,6 +153,8 @@ ResourceInitializer::reset() {
   compute_cmd_head.type = WMTComputeCommandNop;
   compute_cmd_head.next.set(nullptr);
   compute_cmd_tail = (wmtcmd_base *)&compute_cmd_head;
+
+  ref_tracker.clear();
 }
 
 void
@@ -166,6 +178,18 @@ ResourceInitializer::encode(WMT::CommandBuffer cmdbuf) {
     c.encodeCommands(&compute_cmd_head);
     c.endEncoding();
   }
+}
+
+bool
+ResourceInitializer::retainAllocation(Allocation *allocation) {
+  constexpr size_t block_size = 0x20;
+  while (unlikely(!ref_tracker.track(allocation))) {
+    auto temp = allocateCpuHeap<intptr_t[block_size]>();
+    if (!temp)
+      return false;
+    ref_tracker.addStorage(temp, block_size * sizeof(intptr_t));
+  }
+  return true;
 }
 
 } // namespace dxmt

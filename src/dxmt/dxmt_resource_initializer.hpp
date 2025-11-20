@@ -17,9 +17,9 @@ public:
   ResourceInitializer(WMT::Device device);
   ~ResourceInitializer();
 
-  uint64_t initWithZero(const BufferAllocation *buffer, uint64_t offset, uint64_t length);
+  uint64_t initWithZero(BufferAllocation *buffer, uint64_t offset, uint64_t length);
 
-  uint64_t initWithDefault(const Texture *texture, const TextureAllocation *allocation);
+  uint64_t initWithDefault(const Texture *texture, TextureAllocation *allocation);
 
   /*
    * Flush pending works and return the event id to wait
@@ -114,6 +114,8 @@ private:
     return false;
   }
 
+  bool retainAllocation(Allocation *allocation);
+
   uint64_t current_seq_id_ = 1;
   uint64_t cached_coherent_seq_id = 0;
   WMT::Device device_;
@@ -133,6 +135,8 @@ private:
 
   ClearRenderPassInfo clear_render_pass_head;
   ClearRenderPassInfo *clear_render_pass_tail;
+
+  AllocationRefTracking ref_tracker;
 };
 
 } // namespace dxmt
