@@ -50,7 +50,7 @@ class TextureAllocation : public Allocation {
 
 public:
 
-  WMT::Texture texture() {
+  WMT::Texture texture() const {
     return obj_;
   }
 
@@ -136,6 +136,11 @@ public:
   unsigned
   height() const {
     return info_.height;
+  }
+
+  unsigned
+  depth() const {
+    return info_.depth;
   }
 
   unsigned

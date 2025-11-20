@@ -33,7 +33,8 @@ CommandQueue::CommandQueue(WMT::Device device) :
     cpu_command_allocator({}),
     reftracker_storage_allocator({}),
     cmd_library(device),
-    argument_encoding_ctx(*this, device, cmd_library) {
+    argument_encoding_ctx(*this, device, cmd_library),
+    initializer(device) {
   for (unsigned i = 0; i < kCommandChunkCount; i++) {
     auto &chunk = chunks[i];
     chunk.queue = this;
@@ -76,6 +77,7 @@ CommandQueue::CommitCurrentChunk() {
   chunk.chunk_id = chunk_id;
   chunk.chunk_event_id = GetNextEventSeqId();
   chunk.frame_ = frame_count;
+  chunk.resource_initializer_event_id = initializer.flushToWait();
   auto& statistics = CurrentFrameStatistics();
   statistics.command_buffer_count++;
 #if ASYNC_ENCODING
@@ -132,6 +134,9 @@ CommandQueue::CommitChunkInternal(CommandChunk &chunk, uint64_t seq) {
 
   auto cmdbuf = commandQueue.commandBuffer();
   chunk.attached_cmdbuf = cmdbuf;
+  if (chunk.resource_initializer_event_id) {
+    cmdbuf.encodeWaitForEvent(initializer.event(), chunk.resource_initializer_event_id);
+  }
   chunk.encode(chunk.attached_cmdbuf, this->argument_encoding_ctx);
   cmdbuf.commit();
 
