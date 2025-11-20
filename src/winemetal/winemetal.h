@@ -838,6 +838,7 @@ enum WMTBlitCommandType : uint16_t {
   WMTBlitCommandGenerateMipmaps,
   WMTBlitCommandWaitForFence,
   WMTBlitCommandUpdateFence,
+  WMTBlitCommandFillBuffer,
 };
 
 struct wmtcmd_base {
@@ -920,6 +921,16 @@ struct wmtcmd_blit_fence_op {
   uint16_t reserved[3];
   struct WMTMemoryPointer next;
   obj_handle_t fence;
+};
+
+struct wmtcmd_blit_fillbuffer {
+  enum WMTBlitCommandType type;
+  uint16_t reserved[3];
+  struct WMTMemoryPointer next;
+  obj_handle_t buffer;
+  uint64_t offset;
+  uint64_t length;
+  uint8_t value;
 };
 
 WINEMETAL_API void MTLBlitCommandEncoder_encodeCommands(obj_handle_t encoder, const struct wmtcmd_base *cmd_head);

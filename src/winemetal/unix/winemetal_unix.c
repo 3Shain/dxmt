@@ -713,6 +713,11 @@ _MTLBlitCommandEncoder_encodeCommands(void *obj) {
       [encoder waitForFence:(id<MTLFence>)body->fence];
       break;
     }
+    case WMTBlitCommandFillBuffer: {
+      struct wmtcmd_blit_fillbuffer *body = (struct wmtcmd_blit_fillbuffer *)next;
+      [encoder fillBuffer:(id<MTLBuffer>)body->buffer range:NSMakeRange(body->offset, body->length) value:body->value];
+      break;
+    }
     }
 
     next = next->next.ptr;
