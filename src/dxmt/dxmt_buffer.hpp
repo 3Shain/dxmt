@@ -49,7 +49,7 @@ class BufferAllocation : public Allocation {
 public:
 
   WMT::Buffer
-  buffer() {
+  buffer() const {
     return obj_;
   }
 
