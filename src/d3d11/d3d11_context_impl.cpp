@@ -1394,7 +1394,7 @@ public:
       UINT NumControlPoint, UINT VertexCountPerInstance, UINT InstanceCount, UINT StartVertexLocation,
       UINT StartInstanceLocation
   ) {
-    auto draw_arguments_offset = PreAllocateArgumentBuffer(sizeof(DXMT_DRAW_ARGUMENTS), 4);
+    auto draw_arguments_offset = PreAllocateArgumentBuffer(sizeof(DXMT_DRAW_ARGUMENTS), 32);
     EmitOP([=, topo = state_.InputAssembler.Topology](ArgumentEncodingContext &enc) {
       DXMT_DRAW_ARGUMENTS *draw_arugment = enc.getMappedArgumentBuffer<DXMT_DRAW_ARGUMENTS>(draw_arguments_offset);
       draw_arugment->StartVertex = StartVertexLocation;
@@ -1424,7 +1424,7 @@ public:
       UINT InstanceCount, UINT BaseInstance
   ) {
     auto IndexBufferOffset = state_.InputAssembler.IndexBufferOffset;
-    auto draw_arguments_offset = PreAllocateArgumentBuffer(sizeof(DXMT_DRAW_INDEXED_ARGUMENTS), 4);
+    auto draw_arguments_offset = PreAllocateArgumentBuffer(sizeof(DXMT_DRAW_INDEXED_ARGUMENTS), 32);
     EmitOP([=, topo = state_.InputAssembler.Topology](ArgumentEncodingContext &enc) {
       DXMT_DRAW_INDEXED_ARGUMENTS *draw_arugment = enc.getMappedArgumentBuffer<DXMT_DRAW_INDEXED_ARGUMENTS>(draw_arguments_offset);
       draw_arugment->BaseVertex = BaseVertexLocation;
@@ -1457,7 +1457,7 @@ public:
       UINT VertexCountPerInstance, UINT InstanceCount, UINT StartVertexLocation,
       UINT StartInstanceLocation
   ) {
-    auto draw_arguments_offset = PreAllocateArgumentBuffer(sizeof(DXMT_DRAW_ARGUMENTS), 4);
+    auto draw_arguments_offset = PreAllocateArgumentBuffer(sizeof(DXMT_DRAW_ARGUMENTS), 32);
     EmitOP([=, topo = state_.InputAssembler.Topology](ArgumentEncodingContext &enc) {
       DXMT_DRAW_ARGUMENTS *draw_arugment = enc.getMappedArgumentBuffer<DXMT_DRAW_ARGUMENTS>(draw_arguments_offset);
       draw_arugment->StartVertex = StartVertexLocation;
@@ -1483,7 +1483,7 @@ public:
       UINT InstanceCount, UINT BaseInstance
   ) {
     auto IndexBufferOffset = state_.InputAssembler.IndexBufferOffset;
-    auto draw_arguments_offset = PreAllocateArgumentBuffer(sizeof(DXMT_DRAW_INDEXED_ARGUMENTS), 4);
+    auto draw_arguments_offset = PreAllocateArgumentBuffer(sizeof(DXMT_DRAW_INDEXED_ARGUMENTS), 32);
     EmitOP([=, topo = state_.InputAssembler.Topology](ArgumentEncodingContext &enc) {
       DXMT_DRAW_INDEXED_ARGUMENTS *draw_arugment = enc.getMappedArgumentBuffer<DXMT_DRAW_INDEXED_ARGUMENTS>(draw_arguments_offset);
       draw_arugment->BaseVertex = BaseVertexLocation;
@@ -2928,7 +2928,7 @@ public:
 
     if (reflection->NumConstantBuffers && dirty_cbuffer) {
       auto ConstantBufferCount = reflection->NumConstantBuffers;
-      auto offset = PreAllocateArgumentBuffer(ConstantBufferCount << 3, 16);
+      auto offset = PreAllocateArgumentBuffer(ConstantBufferCount << 3, 32);
       EmitST([=, cb = managed_shader->constant_buffers_info()](ArgumentEncodingContext &enc) {
         enc.encodeConstantBuffers<stage, kind>(reflection, cb, offset);
       });
@@ -2937,7 +2937,7 @@ public:
 
     if (reflection->NumArguments && (dirty_sampler || dirty_srv || dirty_uav)) {
       auto ArgumentTableQwords = reflection->ArgumentTableQwords;
-      auto offset = PreAllocateArgumentBuffer(ArgumentTableQwords << 3, 16);
+      auto offset = PreAllocateArgumentBuffer(ArgumentTableQwords << 3, 32);
       EmitST([=, arg = managed_shader->arguments_info()](ArgumentEncodingContext &enc) {
         enc.encodeShaderResources<stage, kind>(reflection, arg, offset);
       });
@@ -2963,7 +2963,7 @@ public:
       return;
 
     uint32_t num_slots = __builtin_popcount(slot_mask);
-    auto offset = PreAllocateArgumentBuffer(16 * num_slots, 16);
+    auto offset = PreAllocateArgumentBuffer(16 * num_slots, 32);
 
     if (cmdbuf_state == CommandBufferState::TessellationRenderPipelineReady) {
       EmitST([=](ArgumentEncodingContext &enc) { enc.encodeVertexBuffers<PipelineKind::Tessellation>(slot_mask, offset); });
@@ -3655,7 +3655,7 @@ public:
             }
             bytes_total = bytes_per_image * cmd.SrcSize.depth;
 
-            auto [buffer, offset] = enc.allocateTempBuffer(bytes_total, 16);
+            auto [buffer, offset] = enc.allocateTempBuffer(bytes_total, 256);
             auto &cmd_cpbuf = enc.encodeBlitCommand<wmtcmd_blit_copy_from_texture_to_buffer>();
             cmd_cpbuf.type = WMTBlitCommandCopyFromTextureToBuffer;
             cmd_cpbuf.src = src;
@@ -3719,7 +3719,7 @@ public:
           auto block_h = (align(cmd.SrcSize.height, 4u) >> 2);
           auto bytes_per_row = block_w * cmd.SrcFormat.BytesPerTexel;
           auto bytes_per_image = bytes_per_row * block_h;
-          auto [buffer, offset] = enc.allocateTempBuffer(bytes_per_image * cmd.SrcSize.depth, 16);
+          auto [buffer, offset] = enc.allocateTempBuffer(bytes_per_image * cmd.SrcSize.depth, 256);
           auto &cmd_cpbuf = enc.encodeBlitCommand<wmtcmd_blit_copy_from_texture_to_buffer>();
           cmd_cpbuf.type = WMTBlitCommandCopyFromTextureToBuffer;
           cmd_cpbuf.src = src;
@@ -3768,7 +3768,7 @@ public:
           auto dst = enc.access(dst_, cmd.Dst.MipLevel, cmd.Dst.ArraySlice, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
           auto bytes_per_row = cmd.SrcSize.width * cmd.SrcFormat.BytesPerTexel;
           auto bytes_per_image = cmd.SrcSize.height * bytes_per_row;
-          auto [buffer, offset] = enc.allocateTempBuffer(bytes_per_image * cmd.SrcSize.depth, 16);
+          auto [buffer, offset] = enc.allocateTempBuffer(bytes_per_image * cmd.SrcSize.depth, 256);
           auto clamped_src_width = std::min(
               cmd.SrcSize.width << 2, std::max<uint32_t>(dst.width() >> cmd.Dst.MipLevel, 1u) - cmd.DstOrigin.x
           );
