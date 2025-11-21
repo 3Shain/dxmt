@@ -1720,4 +1720,85 @@ AIRBuilder::CreateIntBinOp(IntBinOp Op, Value *LHS, Value *RHS, bool Signed) {
   return builder.CreateCall(Fn, {LHS, RHS});
 }
 
+Value *
+AIRBuilder::CreateAtomicRMW(AtomicRMWInst::BinOp Op, Value *Ptr, Value *Val) {
+  std::string FnName = "air.atomic.";
+  auto TyPtr = dyn_cast<PointerType>(Ptr->getType());
+  if (!TyPtr) {
+    debug << "invalid operation: atomicrmw: not a pointer.\n";
+    return nullptr; // TODO
+  }
+  if (TyPtr->getNonOpaquePointerElementType() != Val->getType()) {
+    debug << "invalid operation: atomicrmw: mismatched atomic operands.\n";
+    return nullptr; // TODO
+  }
+  Value *MemFlags = nullptr;
+  switch (TyPtr->getAddressSpace()) {
+  case 1:
+    FnName += "global.";
+    MemFlags = getInt(3);
+    break;
+  case 3:
+    FnName += "local.";
+    MemFlags = getInt(1);
+    break;
+  default:
+    debug << "invalid operation: atomicrmw: not a valid address space.\n";
+    return nullptr; // TODO
+  }
+  Signedness Sign = Signedness::Unsigned;
+  switch (Op) {
+  case llvm::AtomicRMWInst::Add:
+    FnName += "add";
+    break;
+  case llvm::AtomicRMWInst::Sub:
+    FnName += "sub";
+    break;
+  case llvm::AtomicRMWInst::And:
+    FnName += "and";
+    break;
+  case llvm::AtomicRMWInst::Or:
+    FnName += "or";
+    break;
+  case llvm::AtomicRMWInst::Xor:
+    FnName += "xor";
+    break;
+  case llvm::AtomicRMWInst::Max:
+    Sign = Signedness::Signed;
+    FnName += "max";
+    break;
+  case llvm::AtomicRMWInst::Min:
+    Sign = Signedness::Signed;
+    FnName += "min";
+    break;
+  case llvm::AtomicRMWInst::UMax:
+    FnName += "max";
+    break;
+  case llvm::AtomicRMWInst::UMin:
+    FnName += "min";
+    break;
+  case llvm::AtomicRMWInst::Xchg:
+    FnName += "xchg";
+    Sign = Signedness::DontCare;
+    break;
+  default:
+    FnName += "<invalid atomic op>";
+    break;
+  }
+  auto TyOp = TyPtr->getNonOpaquePointerElementType();
+  FnName += getTypeOverloadSuffix(TyPtr->getNonOpaquePointerElementType(), Sign);
+
+  auto &Context = getContext();
+  auto Attrs = AttributeList::get(
+      Context, {{1U, Attribute::get(Context, Attribute::AttrKind::NoCapture)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::NoUnwind)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::WillReturn)}}
+  );
+
+  auto Fn = getModule()->getOrInsertFunction(
+      FnName, llvm::FunctionType::get(TyOp, {TyPtr, TyOp, getIntTy(), getIntTy(), getBoolTy()}, false), Attrs
+  );
+  return builder.CreateCall(Fn, {Ptr, Val, getInt(0), MemFlags, getBool(true)});
+}
+
 } // namespace llvm::air
