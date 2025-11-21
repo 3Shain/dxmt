@@ -2411,9 +2411,7 @@ Converter::operator()(const InstAtomicBinOp &atomic) {
   if (Buf) {
     auto IntPtrOffset = LoadAtomicOpAddress(Buf.getValue(), atomic.dst_address);
     auto Ptr = ir.CreateGEP(ir.getInt32Ty(), Buf->Pointer, {IntPtrOffset});
-    auto Value = ir.CreateAtomicRMW(
-        Op, Ptr, LoadOperand(atomic.src, kMaskComponentX), Align(alignof(uint32_t)), AtomicOrdering::Monotonic
-    );
+    auto Value = air.CreateAtomicRMW(Op, Ptr, LoadOperand(atomic.src, kMaskComponentX));
     StoreOperand(atomic.dst_original, Value);
     return;
   }
@@ -2527,7 +2525,7 @@ Converter::operator()(const InstAtomicImmIncrement &atomic) {
   if (!Ctr)
     return;
 
-  auto Value = ir.CreateAtomicRMW(AtomicRMWInst::Add, Ctr->Pointer, ir.getInt32(1), {}, AtomicOrdering::Monotonic);
+  auto Value = air.CreateAtomicRMW(AtomicRMWInst::Add, Ctr->Pointer, ir.getInt32(1));
   StoreOperand(atomic.dst, Value);
 }
 void
@@ -2539,7 +2537,7 @@ Converter::operator()(const InstAtomicImmDecrement &atomic) {
   if (!Ctr)
     return;
 
-  auto Value = ir.CreateAtomicRMW(AtomicRMWInst::Sub, Ctr->Pointer, ir.getInt32(1), {}, AtomicOrdering::Monotonic);
+  auto Value = air.CreateAtomicRMW(AtomicRMWInst::Sub, Ctr->Pointer, ir.getInt32(1));
   // imm_atomic_consume returns new value
   StoreOperand(atomic.dst, ir.CreateSub(Value, ir.getInt32(1)));
 }
