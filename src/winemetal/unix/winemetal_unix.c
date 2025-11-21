@@ -2452,6 +2452,8 @@ static NTSTATUS
 _MTLBuffer_updateContents(void *obj) {
   struct unixcall_mtlbuffer_updatecontents *params = obj;
   memcpy((void *)((char *)[(id<MTLBuffer>)params->buffer contents] + params->offset), params->data.ptr, params->length);
+  if ([(id<MTLBuffer>)params->buffer storageMode] == MTLStorageModeManaged)
+    [(id<MTLBuffer>)params->buffer didModifyRange:NSMakeRange(params->offset, params->length)];
   return STATUS_SUCCESS;
 }
 
