@@ -146,11 +146,11 @@ public:
   MTLCompiledComputePipelineImpl(MTLD3D11Device *pDevice, ManagedShader shader)
       : device_(pDevice) {
     ComputeShader = shader->get_shader(ShaderVariantDefault{});
-    uint32_t total_tgsize = shader->reflection().ThreadgroupSize[0] *
-                            shader->reflection().ThreadgroupSize[1] *
-                            shader->reflection().ThreadgroupSize[2];
+    // uint32_t total_tgsize = shader->reflection().ThreadgroupSize[0] *
+    //                         shader->reflection().ThreadgroupSize[1] *
+    //                         shader->reflection().ThreadgroupSize[2];
     // FIXME: might be different on AMD GPU, if it's ever supported
-    tgsize_is_multiple_of_sgwidth = (total_tgsize % 32) == 0;
+    tgsize_is_multiple_of_sgwidth = false;
   }
 
   void GetPipeline(MTL_COMPILED_COMPUTE_PIPELINE *pPipeline) final {
