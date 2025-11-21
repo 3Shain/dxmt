@@ -90,7 +90,7 @@ public:
 
   void
   updateContents(uint64_t offset, const void *data, uint64_t length, uint32_t suballocation = 0) noexcept {
-    if (likely(mappedMemory_ != nullptr)) {
+    if (likely(mappedMemory_ != nullptr && !flags_.test(BufferAllocationFlag::GpuManaged))) {
       memcpy(reinterpret_cast<char *>(mappedMemory_) + suballocation * suballocation_size_ + offset, data, length);
       return;
     }
