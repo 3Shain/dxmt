@@ -647,9 +647,7 @@ convert_dxbc_vertex_hull_shader(
     workload_count->setAlignment(llvm::Align(4));
 
     // clear value
-    builder.CreateAtomicRMW(
-        llvm::AtomicRMWInst::And, workload_count, builder.getInt32(0), {}, llvm::AtomicOrdering::Monotonic
-    );
+    air.CreateAtomicRMW(llvm::AtomicRMWInst::And, workload_count, builder.getInt32(0));
 
     switch (pHullStage->tessellation_domain) {
     case microsoft::D3D11_SB_TESSELLATOR_DOMAIN_ISOLINE:
