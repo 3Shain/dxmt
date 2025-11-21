@@ -684,10 +684,7 @@ convert_dxbc_vertex_for_geometry_shader(
   }
 
   // explicit initialization
-  builder.CreateAtomicRMW(
-      llvm::AtomicRMWInst::BinOp::And, valid_vertex_mask, builder.getInt32(0), llvm::Align(4),
-      llvm::AtomicOrdering::Monotonic
-  );
+  air.CreateAtomicRMW(llvm::AtomicRMWInst::BinOp::And, valid_vertex_mask, builder.getInt32(0));
 
   builder.CreateCondBr(
       builder.CreateICmp(llvm::CmpInst::ICMP_ULT, global_index_id, vertex_count), index_check, will_dispatch
@@ -723,9 +720,8 @@ convert_dxbc_vertex_for_geometry_shader(
 
   builder.SetInsertPoint(active);
 
-  builder.CreateAtomicRMW(
-      llvm::AtomicRMWInst::BinOp::Or, valid_vertex_mask, builder.CreateShl(builder.getInt32(1), warp_vertex_id),
-      llvm::Align(4), llvm::AtomicOrdering::Monotonic
+  air.CreateAtomicRMW(
+      llvm::AtomicRMWInst::BinOp::Or, valid_vertex_mask, builder.CreateShl(builder.getInt32(1), warp_vertex_id)
   );
 
   resource_map.base_vertex_id = builder.CreateExtractValue(draw_arguments, is_indexed_draw ? 3 : 2);

@@ -342,6 +342,8 @@ public:
 
   Value *CreateIntBinOp(IntBinOp Op, Value *LHS, Value *RHS, bool Signed = false);
 
+  Value *CreateAtomicRMW(AtomicRMWInst::BinOp Op, Value *Ptr, Value *Val);
+
   /* Useful Helpers */
 
   ConstantFP *
