@@ -955,32 +955,29 @@ public:
   ) override {
     std::lock_guard<mutex_t> lock(mutex);
 
-    D3D11_RESOURCE_DIMENSION dimension;
-    pDstResource->GetType(&dimension);
-    if (dimension != D3D11_RESOURCE_DIMENSION_TEXTURE2D)
+    if (!pDstResource || !pSrcResource)
       return;
-    pSrcResource->GetType(&dimension);
-    if (dimension != D3D11_RESOURCE_DIMENSION_TEXTURE2D)
+    if (pDstResource == pSrcResource && DstSubresource == SrcSubresource)
       return;
-    D3D11_TEXTURE2D_DESC desc;
-    uint32_t width, height;
-    ((ID3D11Texture2D *)pSrcResource)->GetDesc(&desc);
-    if (desc.ArraySize <= DstSubresource) {
+
+    BlitObject Dst(device, pDstResource);
+    if (Dst.Dimension != D3D11_RESOURCE_DIMENSION_TEXTURE2D)
       return;
-    }
-    width = desc.Width;
-    height = desc.Height;
-    ((ID3D11Texture2D *)pDstResource)->GetDesc(&desc);
-    if (desc.SampleDesc.Count > 1) {
-      ERR("ResolveSubresource: Destination is not valid resolve target");
+    if (Dst.Texture2DDesc.SampleDesc.Count != 1)
       return;
-    }
-    uint32_t dst_level = DstSubresource % desc.MipLevels;
-    uint32_t dst_slice = DstSubresource / desc.MipLevels;
-    if (width != std::max(1u, desc.Width >> dst_level) || height != std::max(1u, desc.Height >> dst_level)) {
-      ERR("ResolveSubresource: Size doesn't match");
+    if (DstSubresource >= Dst.Texture2DDesc.MipLevels * Dst.Texture2DDesc.ArraySize)
       return;
-    }
+
+    BlitObject Src(device, pSrcResource);
+    if (Src.Dimension != D3D11_RESOURCE_DIMENSION_TEXTURE2D)
+      return;
+    if (SrcSubresource >= Src.Texture2DDesc.MipLevels * Src.Texture2DDesc.ArraySize)
+      return;
+
+    if (Src.Texture2DDesc.SampleDesc.Count == 1)
+      return CopyTexture(TextureCopyCommand(Dst, DstSubresource, 0, 0, 0, Src, SrcSubresource, nullptr));
+
+
     MTL_DXGI_FORMAT_DESC format_desc;
     if (FAILED(MTLQueryDXGIFormat(device->GetMTLDevice(), Format, format_desc))) {
       ERR("ResolveSubresource: invalid format ", Format);
@@ -989,14 +986,15 @@ public:
     InvalidateCurrentPass();
     EmitOP([src = static_cast<D3D11ResourceCommon *>(pSrcResource)->texture(),
             dst = static_cast<D3D11ResourceCommon *>(pDstResource)->texture(),
-            SrcSubresource, dst_level, dst_slice,
+            dst_level = DstSubresource % Dst.Texture2DDesc.MipLevels,
+            dst_slice = DstSubresource / Dst.Texture2DDesc.MipLevels, SrcSubresource,
             format = format_desc.PixelFormat](ArgumentEncodingContext &enc) mutable {
       TextureViewDescriptor src_desc;
       src_desc.format = format;
       src_desc.usage = WMTTextureUsageRenderTarget;
       src_desc.type = src->textureType();
       src_desc.arraySize = 1;
-      src_desc.firstArraySlice = SrcSubresource;
+      src_desc.firstArraySlice = SrcSubresource; // src must be a MS(Array) texture which has exactly 1 mipmap level
       src_desc.miplevelCount = 1;
       src_desc.firstMiplevel = 0;
 
@@ -1012,7 +1010,7 @@ public:
       auto src_view = src->createView(src_desc);
       auto dst_view = dst->createView(dst_desc);
 
-      enc.resolveTexture(forward_rc(src), src_view , forward_rc(dst), dst_view);
+      enc.resolveTexture(forward_rc(src), src_view, forward_rc(dst), dst_view);
     });
   }
 
