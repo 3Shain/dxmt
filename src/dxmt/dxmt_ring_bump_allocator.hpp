@@ -189,7 +189,8 @@ RingBumpState<Allocator, BlockSize, mutex>::free_blocks(uint64_t coherent_id) {
   std::lock_guard<mutex> lock(mutex_);
   while (!fifo.empty()) {
     auto &front = fifo.front();
-    if (front.last_used_seq_id <= coherent_id && (coherent_id - front.last_used_seq_id) > kStagingBlockLifetime) {
+    if (front.last_used_seq_id <= coherent_id &&
+        ((coherent_id - front.last_used_seq_id) > kStagingBlockLifetime || front.total_size > BlockSize)) {
       // can be deallocated
       fifo.pop();
     } else {
@@ -203,19 +204,22 @@ RingBumpState<Allocator, BlockSize, mutex>::Allocation &
 RingBumpState<Allocator, BlockSize, mutex>::allocate_or_reuse_block(
     uint64_t seq_id, uint64_t coherent_id, size_t block_size
 ) {
-  if (!fifo.empty()) {
+  while (!fifo.empty()) {
     auto &front = fifo.front();
     if (front.last_used_seq_id < coherent_id) {
-      if (front.total_size >= block_size) {
+      if (front.total_size > BlockSize) {
+        fifo.pop();
+        continue;
+      } else if (front.total_size >= block_size) {
         front.last_used_seq_id = seq_id;
         front.allocated_size = 0;
         fifo.push(std::move(front));
         fifo.pop();
         return fifo.back();
-      } else {
-        ERR("forced to allocate new block of size ", block_size);
       }
+      WARN("forced to allocate new block of size ", block_size);
     }
+    break;
   }
   fifo.push({
       .allocated_size = 0,
