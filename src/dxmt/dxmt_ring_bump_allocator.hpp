@@ -82,9 +82,10 @@ private:
 
 class StagingBufferBlockAllocator {
 public:
-  StagingBufferBlockAllocator(WMT::Device device, WMTResourceOptions block_options) {
+  StagingBufferBlockAllocator(WMT::Device device, WMTResourceOptions block_options, bool placed_buffer = true) {
     device_ = device;
     buffer_info_ = block_options;
+    placed_buffer_ = placed_buffer;
   }
 
   class Block {
@@ -114,7 +115,7 @@ public:
   Block
   allocate(size_t block_size) {
     Block block{};
-    block.mapped_address = malloc(block_size);
+    block.mapped_address = placed_buffer_ ? malloc(block_size) : nullptr;
     WMTBufferInfo info;
     info.options = buffer_info_;
     info.memory.set(block.mapped_address);
@@ -127,6 +128,7 @@ public:
 private:
   WMT::Device device_;
   WMTResourceOptions buffer_info_;
+  bool placed_buffer_;
 };
 
 class HostBufferBlockAllocator {
