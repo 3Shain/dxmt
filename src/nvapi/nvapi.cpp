@@ -509,6 +509,11 @@ NvAPI_GPU_GetPstates20(NvPhysicalGpuHandle hPhysicalGpu, NV_GPU_PERF_PSTATES20_I
   return NVAPI_NO_IMPLEMENTATION;
 }
 
+NVAPI_INTERFACE
+NvAPI_Mosaic_GetDisplayViewportsByResolution(NvU32 displayId, NvU32 srcWidth, NvU32 srcHeight, NV_RECT viewports[NV_MOSAIC_MAX_DISPLAYS], NvU8 *bezelCorrected) {
+  return NVAPI_MOSAIC_NOT_ACTIVE;
+}
+
 extern "C" __cdecl void *nvapi_QueryInterface(NvU32 id) {
   switch (id) {
   case 0x0150e828:
@@ -566,6 +571,8 @@ extern "C" __cdecl void *nvapi_QueryInterface(NvU32 id) {
     return (void *)&NvAPI_D3D_GetLatency;
   case 0x6ff81213:
     return (void *)&NvAPI_GPU_GetPstates20;
+  case 0xdc6dc8d3:
+    return (void *)&NvAPI_Mosaic_GetDisplayViewportsByResolution;
   default:
     break;
   }
