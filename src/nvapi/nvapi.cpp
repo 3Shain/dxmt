@@ -227,12 +227,27 @@ NvAPI_D3D_SetResourceHint(
   return NVAPI_OK;
 }
 
-NVAPI_INTERFACE NvAPI_EnumPhysicalGPUs(NvPhysicalGpuHandle nvGPUHandle[NVAPI_MAX_PHYSICAL_GPUS], NvU32 *pGpuCount) {
+NVAPI_INTERFACE
+NvAPI_EnumPhysicalGPUs(NvPhysicalGpuHandle nvGPUHandle[NVAPI_MAX_PHYSICAL_GPUS], NvU32 *pGpuCount) {
+  if (!nvGPUHandle || !pGpuCount)
+    return NVAPI_INVALID_ARGUMENT;
   /*
    * reasonable to report one fake gpu handle
    */
   *pGpuCount = 1;
   nvGPUHandle[0] = (NvPhysicalGpuHandle)0xdeadbeef;
+  return NVAPI_OK;
+}
+
+NVAPI_INTERFACE
+NvAPI_EnumLogicalGPUs(NvLogicalGpuHandle nvGPUHandle[NVAPI_MAX_LOGICAL_GPUS], NvU32 *pGpuCount) {
+  if (!nvGPUHandle || !pGpuCount)
+    return NVAPI_INVALID_ARGUMENT;
+  /*
+   * reasonable to report one fake gpu handle
+   */
+  *pGpuCount = 1;
+  nvGPUHandle[0] = (NvLogicalGpuHandle)0xdeadbeef;
   return NVAPI_OK;
 }
 
@@ -544,6 +559,8 @@ extern "C" __cdecl void *nvapi_QueryInterface(NvU32 id) {
     return (void *)&NvAPI_D3D_SetResourceHint;
   case 0xe5ac921f:
     return (void *)&NvAPI_EnumPhysicalGPUs;
+  case 0x48b3ea59:
+    return (void *)&NvAPI_EnumLogicalGPUs;
   case 0x351da224:
     return (void *)&NvAPI_Disp_HdrColorControl;
   case 0x84f2a8df:
