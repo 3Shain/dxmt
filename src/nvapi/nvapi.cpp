@@ -536,6 +536,9 @@ extern "C" __cdecl void *nvapi_QueryInterface(NvU32 id) {
   case 0x33c7358c:
   case 0x593e8644:
   case 0xad298d3f:
+  case 0xd7c61344:
+  case 0xd44d3c4e:
+  case 0x6d67533c:
     // unknown functions
     return nullptr;
   case 0x2926aaad:
