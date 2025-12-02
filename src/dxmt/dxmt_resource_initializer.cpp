@@ -21,13 +21,25 @@ namespace dxmt {
     continue;                                                                                                          \
   }
 
+#define ALLOC_GPU(buffer, size)                                                                                        \
+  WMT::Buffer buffer;                                                                                                  \
+  size_t buffer##_offset;                                                                                              \
+  if (!(buffer = allocateGpuHeap(size, buffer##_offset))) {                                                            \
+    flushInternal();                                                                                                   \
+    continue;                                                                                                          \
+  }
+
 #define RETAIN(allocation)                                                                                             \
   if (!retainAllocation(allocation)) {                                                                                 \
     flushInternal();                                                                                                   \
     continue;                                                                                                          \
   }
 
-ResourceInitializer::ResourceInitializer(WMT::Device device) : device_(device) {
+ResourceInitializer::ResourceInitializer(WMT::Device device) :
+    device_(device),
+    gpu_command_heap_allocator(StagingBufferBlockAllocator(
+        device, WMTResourceOptionCPUCacheModeWriteCombined | WMTResourceHazardTrackingModeUntracked, false
+    )) {
   upload_queue_ = device.newCommandQueue(kResourceInitializerChunks);
   upload_queue_event_ = device.newSharedEvent();
 
@@ -103,6 +115,87 @@ ResourceInitializer::initWithDefault(const Texture *texture, TextureAllocation *
   return current_seq_id_;
 }
 
+uint64_t
+ResourceInitializer::initWithData(
+    const Texture *texture, TextureAllocation *allocation, uint32_t slice, uint32_t level, const void *data,
+    size_t row_pitch, size_t depth_pitch
+) {
+  auto width_sub = std::max(1u, texture->width() >> level);
+  auto height_sub = std::max(1u, texture->height() >> level);
+  auto depth_sub = std::max(1u, texture->depth() >> level);
+
+  auto block_size = 1u;
+
+  switch (texture->pixelFormat()) {
+  case WMTPixelFormatBC1_RGBA:
+  case WMTPixelFormatBC1_RGBA_sRGB:
+  case WMTPixelFormatBC2_RGBA:
+  case WMTPixelFormatBC2_RGBA_sRGB:
+  case WMTPixelFormatBC3_RGBA:
+  case WMTPixelFormatBC3_RGBA_sRGB:
+  case WMTPixelFormatBC4_RSnorm:
+  case WMTPixelFormatBC4_RUnorm:
+  case WMTPixelFormatBC5_RGUnorm:
+  case WMTPixelFormatBC5_RGSnorm:
+  case WMTPixelFormatBC6H_RGBUfloat:
+  case WMTPixelFormatBC6H_RGBFloat:
+  case WMTPixelFormatBC7_RGBAUnorm:
+  case WMTPixelFormatBC7_RGBAUnorm_sRGB:
+    block_size = 4u;
+    break;
+  default:
+    break;
+  }
+
+  bool is_1d_tex = (texture->textureType() == WMTTextureType1D) || (texture->textureType() == WMTTextureType1DArray);
+  bool is_3d_tex = texture->textureType() == WMTTextureType3D;
+  size_t texel_size = MTLGetTexelSize(texture->pixelFormat());
+  size_t bytes_per_row_needed = texel_size * align(width_sub, block_size) / block_size;
+  size_t bytes_per_row_increment = is_1d_tex ? bytes_per_row_needed : row_pitch;
+  size_t bytes_per_row_valid = is_1d_tex ? bytes_per_row_needed : std::min(row_pitch, bytes_per_row_needed);
+  size_t bytes_per_image_needed = bytes_per_row_needed * align(height_sub, block_size) / block_size;
+  size_t bytes_per_image_increment = is_3d_tex ? depth_pitch : bytes_per_image_needed;
+  size_t bytes_per_image_valid = is_3d_tex ? std::min(depth_pitch, bytes_per_image_needed) : bytes_per_image_needed;
+  size_t total_bytes_needed = bytes_per_image_needed * depth_sub;
+
+  std::lock_guard<dxmt::mutex> lock(mutex_);
+  do {
+    RETAIN(allocation);
+    ALLOC_BLIT(wmtcmd_blit_copy_from_buffer_to_texture, copy);
+    ALLOC_GPU(temp, total_bytes_needed);
+
+    for (auto depth = 0u; depth < depth_sub; depth++) {
+      if (bytes_per_row_increment != bytes_per_row_needed) {
+        for (auto row = 0u; row < (align(height_sub, block_size) / block_size); row++) {
+          auto offset = temp_offset + depth * bytes_per_image_needed + row * bytes_per_row_needed;
+          auto length = bytes_per_row_valid;
+          auto src_data = ptr_add(data, depth * bytes_per_image_increment + row * bytes_per_row_increment);
+          temp.updateContents(offset, src_data, length);
+        }
+      } else {
+        auto offset = temp_offset + depth * bytes_per_image_needed;
+        auto length = bytes_per_image_valid;
+        auto src_data = ptr_add(data, depth * bytes_per_image_increment);
+        temp.updateContents(offset, src_data, length);
+      }
+    }
+
+    copy->type = WMTBlitCommandCopyFromBufferToTexture;
+    copy->src = temp;
+    copy->src_offset = temp_offset;
+    copy->bytes_per_row = bytes_per_row_needed;
+    copy->bytes_per_image = is_3d_tex ? bytes_per_image_needed : 0;
+    copy->size = {width_sub, height_sub, depth_sub};
+    copy->dst = allocation->texture();
+    copy->slice = slice;
+    copy->level = level;
+    copy->origin = {0, 0, 0};
+
+  } while (0);
+
+  return current_seq_id_;
+}
+
 std::uint64_t
 ResourceInitializer::flushInternal() {
   auto pool = WMT::MakeAutoreleasePool();
@@ -113,6 +206,8 @@ ResourceInitializer::flushInternal() {
   cmdbuf.encodeSignalEvent(upload_queue_event_, seq_id);
   cmdbuf.commit();
   reset();
+  cached_coherent_seq_id = upload_queue_event_.signaledValue();
+  gpu_command_heap_allocator.free_blocks(cached_coherent_seq_id);
   return seq_id;
 }
 
@@ -121,6 +216,7 @@ ResourceInitializer::flushToWait() {
   std::lock_guard<dxmt::mutex> lock(mutex_);
 
   if (idle()) {
+    gpu_command_heap_allocator.free_blocks(cached_coherent_seq_id);
     if (cached_coherent_seq_id == current_seq_id_ - 1)
       return 0;
     cached_coherent_seq_id = upload_queue_event_.signaledValue();
@@ -162,6 +258,15 @@ ResourceInitializer::encode(WMT::CommandBuffer cmdbuf) {
     b.endEncoding();
   }
 
+}
+
+WMT::Buffer
+ResourceInitializer::allocateGpuHeap(size_t size, size_t &offset) {
+  auto [block, offset_] = gpu_command_heap_allocator.allocate(
+      current_seq_id_, cached_coherent_seq_id, size, kResourceInitializerGpuUploadHeapAlignment
+  );
+  offset = offset_;
+  return block.buffer;
 }
 
 bool

@@ -2,12 +2,14 @@
 #include "Metal.hpp"
 #include "dxmt_buffer.hpp"
 #include "dxmt_context.hpp"
+#include "dxmt_ring_bump_allocator.hpp"
 #include "dxmt_texture.hpp"
 
 namespace dxmt {
 
 constexpr size_t kResourceInitializerCpuCommandHeapSize = 0x100000;  // 1MB
 constexpr size_t kResourceInitializerGpuUploadHeapSize = 0x10000000; // 256MB
+constexpr size_t kResourceInitializerGpuUploadHeapAlignment = 256;
 constexpr size_t kResourceInitializerChunks = 2;
 
 static_assert(kResourceInitializerChunks > 1);
@@ -20,6 +22,10 @@ public:
   uint64_t initWithZero(BufferAllocation *buffer, uint64_t offset, uint64_t length);
 
   uint64_t initWithDefault(const Texture *texture, TextureAllocation *allocation);
+  uint64_t initWithData(
+      const Texture *texture, TextureAllocation *allocation, uint32_t slice, uint32_t level, const void *data,
+      size_t row_pitch, size_t depth_pitch
+  );
 
   /*
    * Flush pending works and return the event id to wait
@@ -99,6 +105,8 @@ private:
     return false;
   }
 
+  WMT::Buffer allocateGpuHeap(size_t size, size_t &offset);
+
   bool retainAllocation(Allocation *allocation);
 
   uint64_t current_seq_id_ = 1;
@@ -111,6 +119,8 @@ private:
   void *cpu_command_heap;
   size_t cpu_command_heap_size;
   size_t cpu_command_heap_offset;
+
+  RingBumpState<StagingBufferBlockAllocator, kResourceInitializerGpuUploadHeapSize> gpu_command_heap_allocator;
 
   wmtcmd_blit_nop blit_cmd_head;
   wmtcmd_base *blit_cmd_tail;
