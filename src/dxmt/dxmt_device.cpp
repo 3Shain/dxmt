@@ -39,6 +39,10 @@ public:
     } else {
       metal_version_ = std::min(WMTMetal310, metal_version_);
     }
+    if (!device_.supportsFamily(WMTGPUFamilyApple7)) {
+      WARN("Experimental non-Apple GPU support");
+      metal_version_ = WMTMetal310; // Metal 3.2 features we need are basically not available
+    }
   }
 
 private:
