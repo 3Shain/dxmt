@@ -252,6 +252,18 @@ NvAPI_EnumLogicalGPUs(NvLogicalGpuHandle nvGPUHandle[NVAPI_MAX_LOGICAL_GPUS], Nv
 }
 
 NVAPI_INTERFACE
+NvAPI_GetPhysicalGPUsFromDisplay(NvDisplayHandle hNvDisp, NvPhysicalGpuHandle nvGPUHandle[NVAPI_MAX_PHYSICAL_GPUS], NvU32 *pGpuCount) {
+  if (!nvGPUHandle || !pGpuCount)
+    return NVAPI_INVALID_ARGUMENT;
+  /*
+   * reasonable to report one fake gpu handle
+   */
+  *pGpuCount = 1;
+  nvGPUHandle[0] = (NvPhysicalGpuHandle)0xdeadbeef;
+  return NVAPI_OK;
+}
+
+NVAPI_INTERFACE
 NvAPI_Disp_GetHdrCapabilities(NvU32 displayId, NV_HDR_CAPABILITIES *pHdrCapabilities) {
   WMTDisplayDescription desc;
   WMTGetDisplayDescription(displayId, &desc);
@@ -569,6 +581,8 @@ extern "C" __cdecl void *nvapi_QueryInterface(NvU32 id) {
     return (void *)&NvAPI_EnumPhysicalGPUs;
   case 0x48b3ea59:
     return (void *)&NvAPI_EnumLogicalGPUs;
+  case 0x34ef9506:
+    return (void *)&NvAPI_GetPhysicalGPUsFromDisplay;
   case 0x351da224:
     return (void *)&NvAPI_Disp_HdrColorControl;
   case 0x84f2a8df:
