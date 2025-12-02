@@ -1,5 +1,6 @@
 #include "com/com_pointer.hpp"
 #include "d3d11_device.hpp"
+#include "d3d11_enumerable.hpp"
 #include "d3d11_texture.hpp"
 #include "d3d11_view.hpp"
 #include "dxmt_dynamic.hpp"
@@ -443,7 +444,7 @@ HRESULT CreateDeviceTextureInternal(MTLD3D11Device *pDevice,
   }
 
   Flags<TextureAllocationFlag> flags;
-  if (!pInitialData)
+  if (!finalDesc.CPUAccessFlags)
     flags.set(TextureAllocationFlag::GpuPrivate);
   else
     flags.set(TextureAllocationFlag::GpuManaged);
@@ -451,7 +452,18 @@ HRESULT CreateDeviceTextureInternal(MTLD3D11Device *pDevice,
     flags.set(TextureAllocationFlag::GpuReadonly);
   if (pInitialData) {
     auto default_allocation = texture->allocate(flags);
-    InitializeTextureData(pDevice, default_allocation->texture(), finalDesc, pInitialData);
+    if (flags.test(TextureAllocationFlag::GpuPrivate)) {
+      for (auto sub : EnumerateSubresources(finalDesc)) {
+        auto &data = pInitialData[sub.SubresourceId];
+        initializer.initWithData(
+            texture.ptr(), default_allocation.ptr(), sub.ArraySlice, sub.MipLevel, data.pSysMem, data.SysMemPitch,
+            data.SysMemSlicePitch
+        );
+      }
+    } else {
+      // TODO(private-storage): eventually get rid of this
+      InitializeTextureData(pDevice, default_allocation->texture(), finalDesc, pInitialData);
+    }
     texture->rename(std::move(default_allocation));
     *ppTexture =
         reinterpret_cast<typename tag::COM_IMPL *>(
