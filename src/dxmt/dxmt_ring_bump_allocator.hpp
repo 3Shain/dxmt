@@ -31,6 +31,7 @@ private:
     size_t allocated_size;
     size_t total_size;
     uint64_t last_used_seq_id;
+    uint64_t inc_time_to_live;
     Allocator::Block block;
   };
 
@@ -189,13 +190,18 @@ RingBumpState<Allocator, BlockSize, mutex>::free_blocks(uint64_t coherent_id) {
   std::lock_guard<mutex> lock(mutex_);
   while (!fifo.empty()) {
     auto &front = fifo.front();
-    if (front.last_used_seq_id <= coherent_id &&
-        ((coherent_id - front.last_used_seq_id) > kStagingBlockLifetime || front.total_size > BlockSize)) {
+    if (front.last_used_seq_id > coherent_id)
+      break;
+    auto expired = (coherent_id - front.last_used_seq_id) > kStagingBlockLifetime ||
+                   front.inc_time_to_live > kStagingBlockLifetime || coherent_id == -1ull;
+    auto adhoc = front.total_size != BlockSize;
+    if (expired || adhoc) {
       // can be deallocated
       fifo.pop();
-    } else {
-      break;
+      continue;
     }
+    front.inc_time_to_live++;
+    break;
   }
 };
 
@@ -207,12 +213,13 @@ RingBumpState<Allocator, BlockSize, mutex>::allocate_or_reuse_block(
   while (!fifo.empty()) {
     auto &front = fifo.front();
     if (front.last_used_seq_id < coherent_id) {
-      if (front.total_size > BlockSize) {
+      if (front.total_size != BlockSize) {
         fifo.pop();
         continue;
       } else if (front.total_size >= block_size) {
         front.last_used_seq_id = seq_id;
         front.allocated_size = 0;
+        front.inc_time_to_live = 0;
         fifo.push(std::move(front));
         fifo.pop();
         return fifo.back();
@@ -225,6 +232,7 @@ RingBumpState<Allocator, BlockSize, mutex>::allocate_or_reuse_block(
       .allocated_size = 0,
       .total_size = block_size,
       .last_used_seq_id = seq_id,
+      .inc_time_to_live = 0,
       .block = allocator_.allocate(block_size),
   });
   return fifo.back();
