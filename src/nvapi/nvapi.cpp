@@ -529,6 +529,19 @@ NvAPI_Mosaic_GetDisplayViewportsByResolution(NvU32 displayId, NvU32 srcWidth, Nv
   return NVAPI_MOSAIC_NOT_ACTIVE;
 }
 
+NVAPI_INTERFACE
+NvAPI_Stereo_IsEnabled(NvU8 *pIsStereoEnabled) {
+  if (!pIsStereoEnabled)
+    return NVAPI_INVALID_ARGUMENT;
+
+  return NVAPI_STEREO_NOT_INITIALIZED;
+}
+
+NVAPI_INTERFACE
+NvAPI_Stereo_SetDriverMode(NV_STEREO_DRIVER_MODE mode) {
+  return NVAPI_STEREO_NOT_INITIALIZED;
+}
+
 extern "C" __cdecl void *nvapi_QueryInterface(NvU32 id) {
   switch (id) {
   case 0x0150e828:
@@ -593,6 +606,10 @@ extern "C" __cdecl void *nvapi_QueryInterface(NvU32 id) {
     return (void *)&NvAPI_GPU_GetPstates20;
   case 0xdc6dc8d3:
     return (void *)&NvAPI_Mosaic_GetDisplayViewportsByResolution;
+  case 0x348ff8e1:
+    return (void *)&NvAPI_Stereo_IsEnabled;
+  case 0x5e8f0bec:
+    return (void *)&NvAPI_Stereo_SetDriverMode;
   default:
     break;
   }
