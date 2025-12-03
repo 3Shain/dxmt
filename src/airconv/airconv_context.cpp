@@ -30,6 +30,8 @@
 #include "air_samplepos.h"
 #include "air_tessellation.h"
 
+#include "transforms/lower_16bit_texread.hpp"
+
 using namespace llvm;
 
 namespace dxmt {
@@ -154,6 +156,9 @@ runOptimizationPasses(llvm::Module &M) {
     GlobalCleanupPM.addPass(InstCombinePass());
 
     GlobalCleanupPM.addPass(SimplifyCFGPass(SimplifyCFGOptions().convertSwitchRangeToICmp(true)));
+
+    GlobalCleanupPM.addPass(air::Lower16BitTexReadPass());
+
     MPM.addPass(createModuleToFunctionPassAdaptor(std::move(GlobalCleanupPM), true /* ? */));
   }
 
