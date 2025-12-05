@@ -759,6 +759,7 @@ ArgumentEncodingContext::flushCommands(WMT::CommandBuffer cmdbuf, uint64_t seqId
         struct GS_MARSHAL_TASK {
           uint64_t draw_args;
           uint64_t dispatch_args_out;
+          uint64_t max_object_threadgroups;
           uint32_t vertex_count_per_warp;
           uint32_t end_of_command;
         };
@@ -769,6 +770,7 @@ ArgumentEncodingContext::flushCommands(WMT::CommandBuffer cmdbuf, uint64_t seqId
           auto & task = data->gs_arg_marshal_tasks[i];
           tasks_data[i].draw_args = task.draw_arguments_va;
           tasks_data[i].dispatch_args_out = task.dispatch_arguments_va;
+          tasks_data[i].max_object_threadgroups = task.max_object_threadgroups;
           tasks_data[i].vertex_count_per_warp = task.vertex_count_per_warp;
           tasks_data[i].end_of_command = 0;
           encoder.useResource(task.draw_arguments, WMTResourceUsageRead, WMTRenderStageVertex);
@@ -782,6 +784,7 @@ ArgumentEncodingContext::flushCommands(WMT::CommandBuffer cmdbuf, uint64_t seqId
         struct TS_MARSHAL_TASK {
           uint64_t draw_args;
           uint64_t dispatch_args_out;
+          uint64_t max_object_threadgroups;
           uint16_t control_point_count;
           uint16_t patch_per_group;
           uint32_t end_of_command;
@@ -793,6 +796,7 @@ ArgumentEncodingContext::flushCommands(WMT::CommandBuffer cmdbuf, uint64_t seqId
           auto & task = data->ts_arg_marshal_tasks[i];
           tasks_data[i].draw_args = task.draw_arguments_va;
           tasks_data[i].dispatch_args_out = task.dispatch_arguments_va;
+          tasks_data[i].max_object_threadgroups = task.max_object_threadgroups;
           tasks_data[i].control_point_count = task.control_point_count;
           tasks_data[i].patch_per_group = task.patch_per_group;
           tasks_data[i].end_of_command = 0;

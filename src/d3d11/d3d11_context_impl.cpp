@@ -1395,6 +1395,7 @@ public:
       UINT StartInstanceLocation
   ) {
     auto draw_arguments_offset = PreAllocateArgumentBuffer(sizeof(DXMT_DRAW_ARGUMENTS), 32);
+    auto max_object_threadgroups = max_object_threadgroups_;
     EmitOP([=, topo = state_.InputAssembler.Topology](ArgumentEncodingContext &enc) {
       DXMT_DRAW_ARGUMENTS *draw_arugment = enc.getMappedArgumentBuffer<DXMT_DRAW_ARGUMENTS>(draw_arguments_offset);
       draw_arugment->StartVertex = StartVertexLocation;
@@ -1406,6 +1407,14 @@ public:
       auto PatchPerGroup = 32 / enc.tess_threads_per_patch;
       auto ThreadsPerPatch = enc.tess_threads_per_patch;
       auto PatchPerObjectInstance = (PatchCountPerInstance - 1) / PatchPerGroup + 1;
+
+      if (PatchPerObjectInstance * InstanceCount > max_object_threadgroups) {
+        WARN(
+            "Omitted mesh draw (TS) because of too many object threadgroups (", PatchPerObjectInstance, "x",
+            InstanceCount, ")"
+        );
+        return;
+      }
 
       enc.bumpVisibilityResultOffset();
       auto &cmd = enc.encodeRenderCommand<wmtcmd_render_dxmt_tessellation_mesh_draw>();
@@ -1425,6 +1434,7 @@ public:
   ) {
     auto IndexBufferOffset = state_.InputAssembler.IndexBufferOffset;
     auto draw_arguments_offset = PreAllocateArgumentBuffer(sizeof(DXMT_DRAW_INDEXED_ARGUMENTS), 32);
+    auto max_object_threadgroups = max_object_threadgroups_;
     EmitOP([=, topo = state_.InputAssembler.Topology](ArgumentEncodingContext &enc) {
       DXMT_DRAW_INDEXED_ARGUMENTS *draw_arugment = enc.getMappedArgumentBuffer<DXMT_DRAW_INDEXED_ARGUMENTS>(draw_arguments_offset);
       draw_arugment->BaseVertex = BaseVertexLocation;
@@ -1437,7 +1447,15 @@ public:
       auto PatchPerGroup = 32 / enc.tess_threads_per_patch;
       auto ThreadsPerPatch = enc.tess_threads_per_patch;
       auto PatchPerObjectInstance = (PatchCountPerInstance - 1) / PatchPerGroup + 1;
-  
+
+      if (PatchPerObjectInstance * InstanceCount > max_object_threadgroups) {
+        WARN(
+            "Omitted mesh draw (TS) because of too many object threadgroups (", PatchPerObjectInstance, "x",
+            InstanceCount, ")"
+        );
+        return;
+      }
+
       auto [index_buffer, index_sub_offset] = enc.currentIndexBuffer();
       enc.bumpVisibilityResultOffset();
       auto &cmd = enc.encodeRenderCommand<wmtcmd_render_dxmt_tessellation_mesh_draw_indexed>();
@@ -1458,6 +1476,7 @@ public:
       UINT StartInstanceLocation
   ) {
     auto draw_arguments_offset = PreAllocateArgumentBuffer(sizeof(DXMT_DRAW_ARGUMENTS), 32);
+    auto max_object_threadgroups = max_object_threadgroups_;
     EmitOP([=, topo = state_.InputAssembler.Topology](ArgumentEncodingContext &enc) {
       DXMT_DRAW_ARGUMENTS *draw_arugment = enc.getMappedArgumentBuffer<DXMT_DRAW_ARGUMENTS>(draw_arguments_offset);
       draw_arugment->StartVertex = StartVertexLocation;
@@ -1467,6 +1486,12 @@ public:
 
       auto [vertex_per_warp, vertex_increment_per_wrap] = get_gs_vertex_count(topo);
       auto warp_count = (VertexCountPerInstance - 1) / vertex_increment_per_wrap + 1;
+
+      if (warp_count * InstanceCount > max_object_threadgroups) {
+        WARN("Omitted mesh draw (GS) because of too many object threadgroups(", warp_count, "x", InstanceCount, ")");
+        return;
+      }
+
       enc.bumpVisibilityResultOffset();
       auto &cmd = enc.encodeRenderCommand<wmtcmd_render_dxmt_geometry_draw>();
       cmd.type = WMTRenderCommandDXMTGeometryDraw;
@@ -1484,6 +1509,7 @@ public:
   ) {
     auto IndexBufferOffset = state_.InputAssembler.IndexBufferOffset;
     auto draw_arguments_offset = PreAllocateArgumentBuffer(sizeof(DXMT_DRAW_INDEXED_ARGUMENTS), 32);
+    auto max_object_threadgroups = max_object_threadgroups_;
     EmitOP([=, topo = state_.InputAssembler.Topology](ArgumentEncodingContext &enc) {
       DXMT_DRAW_INDEXED_ARGUMENTS *draw_arugment = enc.getMappedArgumentBuffer<DXMT_DRAW_INDEXED_ARGUMENTS>(draw_arguments_offset);
       draw_arugment->BaseVertex = BaseVertexLocation;
@@ -1495,6 +1521,12 @@ public:
       auto [index_buffer, index_sub_offset] = enc.currentIndexBuffer();
       auto [vertex_per_warp, vertex_increment_per_wrap] = get_gs_vertex_count(topo);
       auto warp_count = (IndexCountPerInstance - 1) / vertex_increment_per_wrap + 1;
+
+      if (warp_count * InstanceCount > max_object_threadgroups) {
+        WARN("Omitted mesh draw (GS) because of too many object threadgroups(", warp_count, "x", InstanceCount, ")");
+        return;
+      }
+
       enc.bumpVisibilityResultOffset();
       auto &cmd = enc.encodeRenderCommand<wmtcmd_render_dxmt_geometry_draw_indexed>();
       cmd.type = WMTRenderCommandDXMTGeometryDrawIndexed;
@@ -1581,6 +1613,7 @@ public:
   GeometryDrawIndirect(
     ID3D11Buffer *pBufferForArgs, UINT AlignedByteOffsetForArgs
   ) {
+    auto max_object_threadgroups = max_object_threadgroups_;
     if (auto bindable = reinterpret_cast<D3D11ResourceCommon *>(pBufferForArgs)) {
       EmitOP([=, topo = state_.InputAssembler.Topology, ArgBuffer = bindable->buffer()](ArgumentEncodingContext &enc) {
         auto [buffer, buffer_offset] = enc.access(ArgBuffer, AlignedByteOffsetForArgs, 20, DXMT_ENCODER_RESOURCE_ACESS_READ);
@@ -1591,7 +1624,7 @@ public:
         enc.bumpVisibilityResultOffset();
         enc.encodeGSDispatchArgumentsMarshal(
           buffer->buffer(), buffer->gpuAddress() + buffer_offset, AlignedByteOffsetForArgs, vertex_increment_per_wrap,
-          dispatch_arg.gpu_buffer, dispatch_arg.gpu_address, dispatch_arg.offset
+          dispatch_arg.gpu_buffer, dispatch_arg.gpu_address, dispatch_arg.offset, max_object_threadgroups
         );
         auto &cmd = enc.encodeRenderCommand<wmtcmd_render_dxmt_geometry_draw_indirect>();
         cmd.type = WMTRenderCommandDXMTGeometryDrawIndirect;
@@ -1610,6 +1643,7 @@ public:
     ID3D11Buffer *pBufferForArgs, UINT AlignedByteOffsetForArgs
   ) {
     auto IndexBufferOffset = state_.InputAssembler.IndexBufferOffset;
+    auto max_object_threadgroups = max_object_threadgroups_;
 
     if (auto bindable = reinterpret_cast<D3D11ResourceCommon *>(pBufferForArgs)) {
       EmitOP([=, topo = state_.InputAssembler.Topology, ArgBuffer = bindable->buffer()](ArgumentEncodingContext &enc) {
@@ -1622,7 +1656,7 @@ public:
         enc.bumpVisibilityResultOffset();
         enc.encodeGSDispatchArgumentsMarshal(
           buffer->buffer(), buffer->gpuAddress() + buffer_offset, AlignedByteOffsetForArgs, vertex_increment_per_wrap,
-          dispatch_arg.gpu_buffer, dispatch_arg.gpu_address, dispatch_arg.offset
+          dispatch_arg.gpu_buffer, dispatch_arg.gpu_address, dispatch_arg.offset, max_object_threadgroups
         );
         auto &cmd = enc.encodeRenderCommand<wmtcmd_render_dxmt_geometry_draw_indexed_indirect>();
         cmd.type = WMTRenderCommandDXMTGeometryDrawIndexedIndirect;
@@ -1642,6 +1676,7 @@ public:
   TessellationDrawIndirect(
     UINT NumControlPoint, ID3D11Buffer *pBufferForArgs, UINT AlignedByteOffsetForArgs
   ) {
+    auto max_object_threadgroups = max_object_threadgroups_;
     if (auto bindable = reinterpret_cast<D3D11ResourceCommon *>(pBufferForArgs)) {
       EmitOP([=, topo = state_.InputAssembler.Topology, ArgBuffer = bindable->buffer()](ArgumentEncodingContext &enc) {
         auto [buffer, buffer_offset] = enc.access(ArgBuffer, AlignedByteOffsetForArgs, 20, DXMT_ENCODER_RESOURCE_ACESS_READ);
@@ -1655,7 +1690,7 @@ public:
             buffer->buffer(), buffer->gpuAddress() + buffer_offset,
             AlignedByteOffsetForArgs, NumControlPoint, PatchPerGroup,
             dispatch_arg.gpu_buffer, dispatch_arg.gpu_address,
-            dispatch_arg.offset);
+            dispatch_arg.offset, max_object_threadgroups);
         auto &cmd = enc.encodeRenderCommand<wmtcmd_render_dxmt_tessellation_mesh_draw_indirect>();
         cmd.type = WMTRenderCommandDXMTTessellationMeshDrawIndirect;
         cmd.dispatch_args_buffer = dispatch_arg.gpu_buffer;
@@ -1674,6 +1709,7 @@ public:
     UINT NumControlPoint, ID3D11Buffer *pBufferForArgs, UINT AlignedByteOffsetForArgs
   ) {
     auto IndexBufferOffset = state_.InputAssembler.IndexBufferOffset;
+    auto max_object_threadgroups = max_object_threadgroups_;
 
     if (auto bindable = reinterpret_cast<D3D11ResourceCommon *>(pBufferForArgs)) {
       EmitOP([=, topo = state_.InputAssembler.Topology, ArgBuffer = bindable->buffer()](ArgumentEncodingContext &enc) {
@@ -1689,7 +1725,7 @@ public:
             buffer->buffer(), buffer->gpuAddress() + buffer_offset,
             AlignedByteOffsetForArgs, NumControlPoint, PatchPerGroup,
             dispatch_arg.gpu_buffer, dispatch_arg.gpu_address,
-            dispatch_arg.offset);
+            dispatch_arg.offset, max_object_threadgroups);
         auto &cmd = enc.encodeRenderCommand<wmtcmd_render_dxmt_tessellation_mesh_draw_indexed_indirect>();
         cmd.type = WMTRenderCommandDXMTTessellationMeshDrawIndexedIndirect;
         cmd.dispatch_args_buffer = dispatch_arg.gpu_buffer;
@@ -4794,6 +4830,7 @@ protected:
   D3D11ContextState state_;
   D3D11UserDefinedAnnotation annotation_;
   MTLD3D11ContextExt<ContextInternalState> ext_;
+  uint64_t max_object_threadgroups_;
 
 public:
   MTLD3D11DeviceContextImplBase(MTLD3D11Device *pDevice, ContextInternalState &ctx_state, ContextInternalState::device_mutex_t &mutex) :
@@ -4813,6 +4850,8 @@ public:
     default_rasterizer_state->Release();
     default_blend_state->Release();
     default_depth_stencil_state->Release();
+
+    max_object_threadgroups_ = m_parent->GetDXMTDevice().maxObjectThreadgroups();
   }
 };
 
