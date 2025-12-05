@@ -1133,18 +1133,18 @@ MTLGetTexelSize(WMTPixelFormat format) {
   case WMTPixelFormatRGBA16Float:
   case WMTPixelFormatBGRA10_XR:
   case WMTPixelFormatBGRA10_XR_sRGB:
+  case WMTPixelFormatBC1_RGBA:
+  case WMTPixelFormatBC1_RGBA_sRGB:
+  case WMTPixelFormatBC4_RUnorm:
+  case WMTPixelFormatBC4_RSnorm:
     return 8;
   case WMTPixelFormatRGBA32Uint:
   case WMTPixelFormatRGBA32Sint:
   case WMTPixelFormatRGBA32Float:
-  case WMTPixelFormatBC1_RGBA:
-  case WMTPixelFormatBC1_RGBA_sRGB:
   case WMTPixelFormatBC2_RGBA:
   case WMTPixelFormatBC2_RGBA_sRGB:
   case WMTPixelFormatBC3_RGBA:
   case WMTPixelFormatBC3_RGBA_sRGB:
-  case WMTPixelFormatBC4_RUnorm:
-  case WMTPixelFormatBC4_RSnorm:
   case WMTPixelFormatBC5_RGUnorm:
   case WMTPixelFormatBC5_RGSnorm:
   case WMTPixelFormatBC6H_RGBFloat:

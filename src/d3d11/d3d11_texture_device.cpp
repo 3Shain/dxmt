@@ -1,5 +1,6 @@
 #include "com/com_pointer.hpp"
 #include "d3d11_device.hpp"
+#include "d3d11_enumerable.hpp"
 #include "d3d11_texture.hpp"
 #include "d3d11_view.hpp"
 #include "dxmt_dynamic.hpp"
@@ -377,6 +378,8 @@ HRESULT CreateDeviceTextureInternal(MTLD3D11Device *pDevice,
                             !(finalDesc.MiscFlags & D3D11_RESOURCE_MISC_TEXTURECUBE);
   auto texture = Rc<Texture>(new Texture(info, pDevice->GetMTLDevice()));
 
+  auto &initializer = pDevice->GetDXMTDevice().queue().initializer;
+
   auto shared_flag =
       D3D11_RESOURCE_MISC_SHARED | D3D11_RESOURCE_MISC_SHARED_NTHANDLE | D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX;
   if (finalDesc.MiscFlags & shared_flag) {
@@ -441,12 +444,26 @@ HRESULT CreateDeviceTextureInternal(MTLD3D11Device *pDevice,
   }
 
   Flags<TextureAllocationFlag> flags;
-  flags.set(TextureAllocationFlag::GpuManaged);
+  if (!finalDesc.CPUAccessFlags)
+    flags.set(TextureAllocationFlag::GpuPrivate);
+  else
+    flags.set(TextureAllocationFlag::GpuManaged);
   if (finalDesc.Usage == D3D11_USAGE_IMMUTABLE)
     flags.set(TextureAllocationFlag::GpuReadonly);
   if (pInitialData) {
     auto default_allocation = texture->allocate(flags);
-    InitializeTextureData(pDevice, default_allocation->texture(), finalDesc, pInitialData);
+    if (flags.test(TextureAllocationFlag::GpuPrivate)) {
+      for (auto sub : EnumerateSubresources(finalDesc)) {
+        auto &data = pInitialData[sub.SubresourceId];
+        initializer.initWithData(
+            texture.ptr(), default_allocation.ptr(), sub.ArraySlice, sub.MipLevel, data.pSysMem, data.SysMemPitch,
+            data.SysMemSlicePitch
+        );
+      }
+    } else {
+      // TODO(private-storage): eventually get rid of this
+      InitializeTextureData(pDevice, default_allocation->texture(), finalDesc, pInitialData);
+    }
     texture->rename(std::move(default_allocation));
     *ppTexture =
         reinterpret_cast<typename tag::COM_IMPL *>(
@@ -454,10 +471,12 @@ HRESULT CreateDeviceTextureInternal(MTLD3D11Device *pDevice,
   } else if (single_subresource && (finalDesc.BindFlags & D3D11_BIND_DEPTH_STENCIL)) {
     Rc<RenamableTexturePool> renamable = new RenamableTexturePool(texture.ptr(), 32, flags);
     texture->rename(renamable->getNext(0));
+    initializer.initWithDefault(texture.ptr(), texture->current());
     *ppTexture = reinterpret_cast<typename tag::COM_IMPL *>(
         ref(new DeviceTexture<tag>(&finalDesc, std::move(texture), std::move(renamable), pDevice)));
   } else {
     texture->rename(texture->allocate(flags));
+    initializer.initWithDefault(texture.ptr(), texture->current());
     *ppTexture = reinterpret_cast<typename tag::COM_IMPL *>(
       ref(new DeviceTexture<tag>(&finalDesc, std::move(texture), pDevice)));
   }

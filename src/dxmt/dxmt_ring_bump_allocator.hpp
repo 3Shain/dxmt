@@ -31,6 +31,7 @@ private:
     size_t allocated_size;
     size_t total_size;
     uint64_t last_used_seq_id;
+    uint64_t inc_time_to_live;
     Allocator::Block block;
   };
 
@@ -82,9 +83,10 @@ private:
 
 class StagingBufferBlockAllocator {
 public:
-  StagingBufferBlockAllocator(WMT::Device device, WMTResourceOptions block_options) {
+  StagingBufferBlockAllocator(WMT::Device device, WMTResourceOptions block_options, bool placed_buffer = true) {
     device_ = device;
     buffer_info_ = block_options;
+    placed_buffer_ = placed_buffer;
   }
 
   class Block {
@@ -114,7 +116,7 @@ public:
   Block
   allocate(size_t block_size) {
     Block block{};
-    block.mapped_address = malloc(block_size);
+    block.mapped_address = placed_buffer_ ? malloc(block_size) : nullptr;
     WMTBufferInfo info;
     info.options = buffer_info_;
     info.memory.set(block.mapped_address);
@@ -127,6 +129,7 @@ public:
 private:
   WMT::Device device_;
   WMTResourceOptions buffer_info_;
+  bool placed_buffer_;
 };
 
 class HostBufferBlockAllocator {
@@ -187,12 +190,18 @@ RingBumpState<Allocator, BlockSize, mutex>::free_blocks(uint64_t coherent_id) {
   std::lock_guard<mutex> lock(mutex_);
   while (!fifo.empty()) {
     auto &front = fifo.front();
-    if (front.last_used_seq_id <= coherent_id && (coherent_id - front.last_used_seq_id) > kStagingBlockLifetime) {
+    if (front.last_used_seq_id > coherent_id)
+      break;
+    auto expired = (coherent_id - front.last_used_seq_id) > kStagingBlockLifetime ||
+                   front.inc_time_to_live > kStagingBlockLifetime || coherent_id == -1ull;
+    auto adhoc = front.total_size != BlockSize;
+    if (expired || adhoc) {
       // can be deallocated
       fifo.pop();
-    } else {
-      break;
+      continue;
     }
+    front.inc_time_to_live++;
+    break;
   }
 };
 
@@ -201,24 +210,29 @@ RingBumpState<Allocator, BlockSize, mutex>::Allocation &
 RingBumpState<Allocator, BlockSize, mutex>::allocate_or_reuse_block(
     uint64_t seq_id, uint64_t coherent_id, size_t block_size
 ) {
-  if (!fifo.empty()) {
+  while (!fifo.empty()) {
     auto &front = fifo.front();
     if (front.last_used_seq_id < coherent_id) {
-      if (front.total_size >= block_size) {
+      if (front.total_size != BlockSize) {
+        fifo.pop();
+        continue;
+      } else if (front.total_size >= block_size) {
         front.last_used_seq_id = seq_id;
         front.allocated_size = 0;
+        front.inc_time_to_live = 0;
         fifo.push(std::move(front));
         fifo.pop();
         return fifo.back();
-      } else {
-        ERR("forced to allocate new block of size ", block_size);
       }
+      WARN("forced to allocate new block of size ", block_size);
     }
+    break;
   }
   fifo.push({
       .allocated_size = 0,
       .total_size = block_size,
       .last_used_seq_id = seq_id,
+      .inc_time_to_live = 0,
       .block = allocator_.allocate(block_size),
   });
   return fifo.back();

@@ -261,23 +261,27 @@ Converter::LoadOperand(const SrcOperandIndexableTemp &SrcOp, mask_t Mask) {
 
   auto Handle = regfile.ptr_int_vec;
   auto TyHandle = GetArrayType(Handle);
+  auto Index = LoadOperandIndex(SrcOp.regindex);
+  auto TyInt = air.getIntTy();
 
   if (auto Comp = ComponentFromScalarMask(Mask, SrcOp._.swizzle); Comp >= 0) {
-    auto TyInt = air.getIntTy();
-    auto Ptr = ir.CreateGEP(TyHandle, Handle, {ir.getInt32(0), LoadOperandIndex(SrcOp.regindex), ir.getInt32(Comp)});
+    auto Ptr = ir.CreateGEP(
+        TyHandle, Handle,
+        {ir.getInt32(0), ir.CreateAdd(ir.CreateMul(Index, ir.getInt32(regfile.vec_size)), ir.getInt32(Comp))}
+    );
     auto ValueInt = ir.CreateLoad(TyInt, Ptr);
     return ApplySrcModifier(SrcOp._, ValueInt, Mask);
   }
 
   auto TyIntVec = air.getIntTy(regfile.vec_size);
-  auto Ptr = ir.CreateGEP(
-      TyHandle, Handle,
-      {
-          ir.getInt32(0),
-          LoadOperandIndex(SrcOp.regindex),
-      }
-  );
-  auto ValueIntVec = ir.CreateLoad(TyIntVec, Ptr);
+  llvm::Value *ValueIntVec = llvm::PoisonValue::get(TyIntVec);
+  for (auto [DstComp, _] : EnumerateComponents(MemoryAccessMask(Mask, SrcOp._.swizzle))) {
+    auto Ptr = ir.CreateGEP(
+        TyHandle, Handle,
+        {ir.getInt32(0), ir.CreateAdd(ir.CreateMul(Index, ir.getInt32(regfile.vec_size)), ir.getInt32(DstComp))}
+    );
+    ValueIntVec = ir.CreateInsertElement(ValueIntVec, ir.CreateLoad(TyInt, Ptr), DstComp);
+  }
   return ApplySrcModifier(SrcOp._, ValueIntVec, Mask);
 }
 
@@ -733,7 +737,10 @@ Converter::StoreOperand(const DstOperandIndexableTemp &DstOp, llvm::Value *Value
   auto Index = LoadOperandIndex(DstOp.regindex);
 
   for (auto [DstComp, SrcComp] : EnumerateComponents(DstOp._.mask)) {
-    auto Ptr = ir.CreateInBoundsGEP(TyHandle, Handle, {ir.getInt32(0), Index, ir.getInt32(DstComp)});
+    auto Ptr = ir.CreateInBoundsGEP(
+        TyHandle, Handle,
+        {ir.getInt32(0), ir.CreateAdd(ir.CreateMul(Index, ir.getInt32(regfile.vec_size)), ir.getInt32(DstComp))}
+    );
     ir.CreateStore(ExtractElement(ValueInt, SrcComp), Ptr);
   }
 }
@@ -2411,9 +2418,7 @@ Converter::operator()(const InstAtomicBinOp &atomic) {
   if (Buf) {
     auto IntPtrOffset = LoadAtomicOpAddress(Buf.getValue(), atomic.dst_address);
     auto Ptr = ir.CreateGEP(ir.getInt32Ty(), Buf->Pointer, {IntPtrOffset});
-    auto Value = ir.CreateAtomicRMW(
-        Op, Ptr, LoadOperand(atomic.src, kMaskComponentX), Align(alignof(uint32_t)), AtomicOrdering::Monotonic
-    );
+    auto Value = air.CreateAtomicRMW(Op, Ptr, LoadOperand(atomic.src, kMaskComponentX));
     StoreOperand(atomic.dst_original, Value);
     return;
   }
@@ -2527,7 +2532,7 @@ Converter::operator()(const InstAtomicImmIncrement &atomic) {
   if (!Ctr)
     return;
 
-  auto Value = ir.CreateAtomicRMW(AtomicRMWInst::Add, Ctr->Pointer, ir.getInt32(1), {}, AtomicOrdering::Monotonic);
+  auto Value = air.CreateAtomicRMW(AtomicRMWInst::Add, Ctr->Pointer, ir.getInt32(1));
   StoreOperand(atomic.dst, Value);
 }
 void
@@ -2539,7 +2544,7 @@ Converter::operator()(const InstAtomicImmDecrement &atomic) {
   if (!Ctr)
     return;
 
-  auto Value = ir.CreateAtomicRMW(AtomicRMWInst::Sub, Ctr->Pointer, ir.getInt32(1), {}, AtomicOrdering::Monotonic);
+  auto Value = air.CreateAtomicRMW(AtomicRMWInst::Sub, Ctr->Pointer, ir.getInt32(1));
   // imm_atomic_consume returns new value
   StoreOperand(atomic.dst, ir.CreateSub(Value, ir.getInt32(1)));
 }

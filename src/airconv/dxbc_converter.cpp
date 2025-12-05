@@ -344,15 +344,9 @@ void setup_temp_register(
     for (auto &[idx, info] : phase.indexableTempRegisterCounts) {
       auto &[numRegisters, mask] = info;
       auto channel_count = std::bit_width(mask);
-      auto ptr_int_vec = builder.CreateAlloca(llvm::ArrayType::get(
-        llvm::FixedVectorType::get(types._int, channel_count), numRegisters
-      ));
+      auto ptr_int_vec = builder.CreateAlloca(llvm::ArrayType::get(types._int, numRegisters * channel_count));
       auto ptr_float_vec = builder.CreateBitCast(
-        ptr_int_vec,
-        llvm::ArrayType::get(
-          llvm::FixedVectorType::get(types._float, channel_count), numRegisters
-        )
-          ->getPointerTo()
+          ptr_int_vec, llvm::ArrayType::get(types._float, numRegisters * channel_count)->getPointerTo()
       );
       phase_temp.indexable_temp_map[idx] = {
         ptr_int_vec, ptr_float_vec, (uint32_t)channel_count
@@ -362,15 +356,9 @@ void setup_temp_register(
   for (auto &[idx, info] : shader_info->indexableTempRegisterCounts) {
     auto &[numRegisters, mask] = info;
     auto channel_count = std::bit_width(mask);
-    auto ptr_int_vec = builder.CreateAlloca(llvm::ArrayType::get(
-      llvm::FixedVectorType::get(types._int, channel_count), numRegisters
-    ));
+    auto ptr_int_vec = builder.CreateAlloca(llvm::ArrayType::get(types._int, numRegisters * channel_count));
     auto ptr_float_vec = builder.CreateBitCast(
-      ptr_int_vec,
-      llvm::ArrayType::get(
-        llvm::FixedVectorType::get(types._float, channel_count), numRegisters
-      )
-        ->getPointerTo()
+        ptr_int_vec, llvm::ArrayType::get(types._float, numRegisters * channel_count)->getPointerTo()
     );
     resource_map.indexable_temp_map[idx] = {
       ptr_int_vec, ptr_float_vec, (uint32_t)channel_count

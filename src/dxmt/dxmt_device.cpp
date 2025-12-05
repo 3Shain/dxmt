@@ -20,6 +20,10 @@ public:
     return metal_version_;
   };
 
+  virtual uint64_t maxObjectThreadgroups() final {
+    return max_object_threadgroups_;
+  };
+
   DeviceImpl(const DEVICE_DESC &desc) : device_(desc.device), cmd_queue_(device_) {
     uint64_t macos_major_version = 0;
     device_.setShouldMaximizeConcurrentCompilation(true);
@@ -39,12 +43,20 @@ public:
     } else {
       metal_version_ = std::min(WMTMetal310, metal_version_);
     }
+    if (!device_.supportsFamily(WMTGPUFamilyApple7)) {
+      WARN("Experimental non-Apple GPU support");
+      metal_version_ = WMTMetal310; // Metal 3.2 features we need are basically not available
+      max_object_threadgroups_ = 1024;
+    } else {
+      max_object_threadgroups_ = -1ull;
+    }
   }
 
 private:
   WMT::Reference<WMT::Device> device_;
   CommandQueue cmd_queue_;
   WMTMetalVersion metal_version_;
+  uint64_t max_object_threadgroups_;
 };
 
 std::unique_ptr<Device>
