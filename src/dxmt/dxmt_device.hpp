@@ -11,6 +11,7 @@ public:
   virtual WMT::Device device() = 0;
   virtual CommandQueue& queue() = 0;
   virtual WMTMetalVersion metalVersion() = 0;
+  virtual uint64_t maxObjectThreadgroups() = 0;
 };
 
 struct DEVICE_DESC {
