@@ -41,10 +41,41 @@ NvAPI_SYS_GetDriverAndBranchVersion(NvU32 *pDriverVersion,
   std::string build_str = std::format("r{}_000", NVAPI_SDK_VERSION);
 
   if (!pDriverVersion || !szBuildBranchString)
-    return NVAPI_INVALID_POINTER;
+    return NVAPI_INVALID_ARGUMENT;
 
   memcpy(szBuildBranchString, build_str.c_str(), build_str.size());
   *pDriverVersion = 99999;
+
+  return NVAPI_OK;
+}
+
+NVAPI_INTERFACE
+NvAPI_GetDisplayDriverVersion(NvDisplayHandle hNvDisplay, NV_DISPLAY_DRIVER_VERSION *pVersion) {
+  std::string build_str = std::format("r{}_000", NVAPI_SDK_VERSION);
+  std::string adapter_str = "NVIDIA GeForce RTX";
+
+  if (!pVersion)
+    return NVAPI_INVALID_ARGUMENT;
+
+  if (pVersion->version != NV_DISPLAY_DRIVER_VERSION_VER)
+    return NVAPI_INCOMPATIBLE_STRUCT_VERSION;
+
+  pVersion->drvVersion = 99999;
+  pVersion->bldChangeListNum = 0;
+  memcpy(pVersion->szBuildBranchString, build_str.c_str(), build_str.size());
+  memcpy(pVersion->szAdapterString, adapter_str.c_str(), adapter_str.size());
+
+  return NVAPI_OK;
+}
+
+NVAPI_INTERFACE
+NvAPI_GetInterfaceVersionString(NvAPI_ShortString szDesc) {
+  std::string version_str = std::format("NVAPI Open Source Interface (DXMT-NVAPI)");
+
+  if (!szDesc)
+    return NVAPI_INVALID_ARGUMENT;
+
+  memcpy(szDesc, version_str.c_str(), version_str.size());
 
   return NVAPI_OK;
 }
@@ -564,10 +595,16 @@ extern "C" __cdecl void *nvapi_QueryInterface(NvU32 id) {
   case 0xd7c61344:
   case 0xd44d3c4e:
   case 0x6d67533c:
+  case 0xb7fbdbfa:
+  case 0xc99f4a67:
     // unknown functions
     return nullptr;
   case 0x2926aaad:
     return (void *)&NvAPI_SYS_GetDriverAndBranchVersion;
+  case 0xf951a4d1:
+    return (void *)&NvAPI_GetDisplayDriverVersion;
+  case 0x01053fa5:
+    return (void *)&NvAPI_GetInterfaceVersionString;
   case 0x4b708b54:
     return (void *)&NvAPI_D3D_GetCurrentSLIState;
   case 0xd22bdd7e:
