@@ -171,6 +171,10 @@ NVAPI_INTERFACE NvAPI_D3D11_IsNvShaderExtnOpCodeSupported(
    * UnrealEngine queries it for checking if GPU support time query (NVIDIA-specific workaround)
    */
   case NV_EXTN_OP_SHFL:
+  /*
+   * SOTTR and ROTTR queries it.
+   */
+  case NV_EXTN_OP_FP16_ATOMIC:
     *pSupported = false;
     break;
   default:
