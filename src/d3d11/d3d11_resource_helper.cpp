@@ -373,6 +373,10 @@ CreateMTLTextureDescriptorInternal(
     metal_usage |= WMTTextureUsagePixelFormatView;
   }
 
+  if (metal_format.Flag & (MTL_DXGI_FORMAT_DEPTH_PLANER | MTL_DXGI_FORMAT_STENCIL_PLANER)) {
+    metal_usage |= WMTTextureUsageRenderTarget;
+  }
+
   pDescOut->usage = metal_usage;
 
   WMTResourceOptions options = (WMTResourceOptions)0;
