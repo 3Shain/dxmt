@@ -33,7 +33,7 @@ public:
 
     if (!device_->GetMTLDevice().supportsFamily(WMTGPUFamilyApple9)) {
       // indeed this value might be too conservative
-      max_potential_factor = 8;
+      max_potential_factor = std::min(8u, max_potential_factor);
     }
     if ((float)max_potential_factor < hull_reflection.Tessellator.MaxFactor) {
       WARN("maxtessfactor(", hull_reflection.Tessellator.MaxFactor,
@@ -103,6 +103,10 @@ public:
     info.object_function = vhs.Function;
     info.mesh_function = ds.Function;
     info.payload_memory_length = 0;
+
+    // HACK for AMDGPU: always reserve all payload capability
+    if (!device_->GetMTLDevice().supportsFamily(WMTGPUFamilyApple7))
+      info.payload_memory_length = 16384;
 
     info.immutable_object_buffers =
         (1 << 16) | (1 << 21) | (1 << 27) | (1 << 28) | (1 << 29) | (1 << 30);
