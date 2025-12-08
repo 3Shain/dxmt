@@ -14,6 +14,8 @@ std::atomic_uint64_t global_buffer_seq = {0};
 BufferAllocation::BufferAllocation(WMT::Device device, const WMTBufferInfo &info, Flags<BufferAllocationFlag> flags) :
     info_(info),
     flags_(flags) {
+  // (sub)allocate a minimum of 256B buffer so that texture can be created
+  info_.length = std::max(info_.length, 256ull);
   suballocation_size_ = info_.length;
   if (flags_.test(BufferAllocationFlag::SuballocateFromOnePage) && suballocation_size_ <= DXMT_PAGE_SIZE) {
     suballocation_size_ = align(info_.length, 16);
