@@ -4685,6 +4685,7 @@ public:
           cmd.buffer = buffer->buffer();;
           cmd.offset = buffer_offset;
           cmd.index = 20;
+          enc.makeResident<PipelineStage::Vertex, PipelineKind::Ordinary>(slot0.ptr(), false, true);
           enc.setCompatibilityFlag(FeatureCompatibility::UnsupportedStreamOutputAppending);
         });
       } else {
@@ -4695,6 +4696,7 @@ public:
           cmd.buffer = buffer->buffer();;
           cmd.offset = offset + buffer_offset;
           cmd.index = 20;
+          enc.makeResident<PipelineStage::Vertex, PipelineKind::Ordinary>(slot0.ptr(), false, true);
         });
       }
     } else {
