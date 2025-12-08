@@ -171,12 +171,25 @@ public:
     InitReturnPtr(ppAdapter);
 
     auto devices = WMT::CopyAllDevices();
+    UINT adapter_count = devices.count();
 
-    if (Adapter >= (UINT)devices.count()) {
+    if (Adapter >= adapter_count)
       return DXGI_ERROR_NOT_FOUND;
+
+    UINT adjusted_adapter = Adapter;
+    if (adapter_count > 1) {
+      UINT preferred_adapter = 0;
+      for (unsigned i = 0; i < adapter_count; i++) {
+        if (!devices.object(i).hasUnifiedMemory())
+          preferred_adapter = i;
+      }
+      if (Adapter == 0)
+        adjusted_adapter = preferred_adapter;
+      else
+        adjusted_adapter = Adapter <= preferred_adapter ? Adapter - 1 : Adapter;
     }
 
-    auto device = devices.object(Adapter);
+    auto device = devices.object(adjusted_adapter);
 
     *ppAdapter = CreateAdapter(device, this, Config::getInstance());
     // devices->release(); // no you should not release it...
