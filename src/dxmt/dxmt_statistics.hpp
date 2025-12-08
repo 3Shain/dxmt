@@ -139,8 +139,8 @@ public:
       max_.encode_prepare_interval = std::max(max_.encode_prepare_interval, frames_[i].encode_prepare_interval);
       max_.encode_flush_interval = std::max(max_.encode_flush_interval, frames_[i].encode_flush_interval);
       max_.drawable_blocking_interval =
-          std::max(min_.drawable_blocking_interval, frames_[i].drawable_blocking_interval);
-      max_.present_lantency_interval = std::max(min_.present_lantency_interval, frames_[i].present_lantency_interval);
+          std::max(max_.drawable_blocking_interval, frames_[i].drawable_blocking_interval);
+      max_.present_lantency_interval = std::max(max_.present_lantency_interval, frames_[i].present_lantency_interval);
 
       average_.command_buffer_count += frames_[i].command_buffer_count;
       average_.sync_count += frames_[i].sync_count;
