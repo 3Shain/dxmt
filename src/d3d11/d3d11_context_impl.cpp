@@ -106,14 +106,15 @@ to_metal_primitive_topology(D3D11_PRIMITIVE_TOPOLOGY topo) {
     return WMTPrimitiveTopologyClassPoint;
   case D3D_PRIMITIVE_TOPOLOGY_LINELIST:
   case D3D_PRIMITIVE_TOPOLOGY_LINESTRIP:
-  case D3D_PRIMITIVE_TOPOLOGY_LINELIST_ADJ:
-  case D3D_PRIMITIVE_TOPOLOGY_LINESTRIP_ADJ:
     return WMTPrimitiveTopologyClassLine;
   case D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST:
   case D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP:
+    return WMTPrimitiveTopologyClassTriangle;
+  case D3D_PRIMITIVE_TOPOLOGY_LINELIST_ADJ:
+  case D3D_PRIMITIVE_TOPOLOGY_LINESTRIP_ADJ:
   case D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST_ADJ:
   case D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP_ADJ:
-    return WMTPrimitiveTopologyClassTriangle;
+    break;
   case D3D_PRIMITIVE_TOPOLOGY_1_CONTROL_POINT_PATCHLIST:
   case D3D_PRIMITIVE_TOPOLOGY_2_CONTROL_POINT_PATCHLIST:
   case D3D_PRIMITIVE_TOPOLOGY_3_CONTROL_POINT_PATCHLIST:
@@ -146,12 +147,11 @@ to_metal_primitive_topology(D3D11_PRIMITIVE_TOPOLOGY topo) {
   case D3D_PRIMITIVE_TOPOLOGY_30_CONTROL_POINT_PATCHLIST:
   case D3D_PRIMITIVE_TOPOLOGY_31_CONTROL_POINT_PATCHLIST:
   case D3D_PRIMITIVE_TOPOLOGY_32_CONTROL_POINT_PATCHLIST:
-    // Metal tessellation only support triangle as output primitive
-    return WMTPrimitiveTopologyClassTriangle;
+    break;
   case D3D_PRIMITIVE_TOPOLOGY_UNDEFINED:
     D3D11_ASSERT(0 && "Invalid topology");
   }
-  DXMT_UNREACHABLE
+  return WMTPrimitiveTopologyClassUnspecified;
 }
 
 inline bool is_strip_topology(D3D11_PRIMITIVE_TOPOLOGY topo) {
@@ -1917,7 +1917,10 @@ public:
   IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY Topology) override {
     std::lock_guard<mutex_t> lock(mutex);
 
-    state_.InputAssembler.Topology = Topology;
+    if (state_.InputAssembler.Topology != Topology) {
+      state_.InputAssembler.Topology = Topology;
+      InvalidateRenderPipeline();
+    }
   }
   void
   STDMETHODCALLTYPE
