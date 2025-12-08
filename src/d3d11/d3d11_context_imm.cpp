@@ -409,6 +409,8 @@ public:
       case EventState::Signaled:
         hr = S_OK;
         break;
+      case EventState::Invalid:
+        return DXGI_ERROR_INVALID_CALL;
       }
       break;
     }

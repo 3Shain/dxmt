@@ -109,12 +109,14 @@ enum class QueryState {
     Default state, or when data is ready
    */
   Signaled,
+  Undefined,
 };
 
 enum class EventState {
   Pending,
   Signaled,
   Stall,
+  Invalid,
 };
 
 constexpr size_t kEventStallThreshold = 64;
@@ -139,7 +141,9 @@ public:
   }
 
   EventState CheckEventState(uint64_t coherent_seq_id) override {
-    if (state == QueryState::Signaled || should_be_signaled_at <= coherent_seq_id) {
+    if (state == QueryState::Undefined)
+      return EventState::Invalid;
+    if (should_be_signaled_at <= coherent_seq_id) {
       state = QueryState::Signaled;
       stall_counter = 0;
       return EventState::Signaled;
@@ -155,7 +159,7 @@ public:
   };
 
 private:
-  QueryState state = QueryState::Signaled;
+  QueryState state = QueryState::Undefined;
   uint32_t stall_counter = 0;
   uint64_t should_be_signaled_at = 0;
 };
