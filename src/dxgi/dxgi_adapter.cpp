@@ -165,10 +165,10 @@ public:
 
     pDesc->SubSysId = 0;
     pDesc->Revision = 0;
-    /**
-    FIXME: divided by 2 is not necessary
-     */
-    pDesc->DedicatedVideoMemory = device_.recommendedMaxWorkingSetSize() / 2;
+    if (device_.hasUnifiedMemory())
+      pDesc->DedicatedVideoMemory = device_.recommendedMaxWorkingSetSize() / 2; // FIXME: use a more appropriate value
+    else
+      pDesc->DedicatedVideoMemory = device_.recommendedMaxWorkingSetSize();
     pDesc->DedicatedSystemMemory = 0;
     pDesc->SharedSystemMemory = 0;
     pDesc->AdapterLuid = GetAdapterLuid(device_);
