@@ -609,7 +609,7 @@ public:
       return S_OK;
     }
 
-    if (riid == __uuidof(IMTLD3D11ContextExt)) {
+    if (riid == __uuidof(IMTLD3D11ContextExt) || riid == __uuidof(IMTLD3D11ContextExt1)) {
       *ppvObject = ref(&ext_);
       return S_OK;
     }
@@ -4861,7 +4861,7 @@ public:
 };
 
 template <typename ContextInternalState>
-class MTLD3D11ContextExt : public IMTLD3D11ContextExt {
+class MTLD3D11ContextExt : public IMTLD3D11ContextExt1 {
   class CachedTemporalScaler {
   public:
     WMTPixelFormat color_pixel_format;
@@ -5052,6 +5052,21 @@ public:
   void STDMETHODCALLTYPE EndUAVOverlap() final {
     // TODO
   }
+
+  virtual HRESULT STDMETHODCALLTYPE
+  CheckFeatureSupport(MTL_FEATURE Feature, void *pFeatureSupportData, UINT FeatureSupportDataSize) final {
+    if (!pFeatureSupportData)
+      return E_INVALIDARG;
+    switch (Feature) {
+    case MTL_FEATURE_METALFX_TEMPORAL_SCALER: {
+      if (FeatureSupportDataSize != sizeof(BOOL))
+        return E_INVALIDARG;
+      *reinterpret_cast<BOOL *>(pFeatureSupportData) = ctx_->device->GetMTLDevice().supportsFXTemporalScaler();
+      return S_OK;
+    }
+    }
+    return E_INVALIDARG;
+  };
 
 private:
 
