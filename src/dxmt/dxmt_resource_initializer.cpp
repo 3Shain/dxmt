@@ -38,7 +38,7 @@ namespace dxmt {
 ResourceInitializer::ResourceInitializer(WMT::Device device) :
     device_(device),
     gpu_command_heap_allocator(StagingBufferBlockAllocator(
-        device, WMTResourceOptionCPUCacheModeWriteCombined | WMTResourceHazardTrackingModeUntracked, false
+        device, WMTResourceStorageModeManaged | WMTResourceHazardTrackingModeUntracked, false
     )) {
   upload_queue_ = device.newCommandQueue(kResourceInitializerChunks);
   upload_queue_event_ = device.newSharedEvent();

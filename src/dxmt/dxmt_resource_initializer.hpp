@@ -8,7 +8,7 @@
 namespace dxmt {
 
 constexpr size_t kResourceInitializerCpuCommandHeapSize = 0x100000;  // 1MB
-constexpr size_t kResourceInitializerGpuUploadHeapSize = 0x10000000; // 256MB
+constexpr size_t kResourceInitializerGpuUploadHeapSize = 0x2000000; // 32MB
 constexpr size_t kResourceInitializerGpuUploadHeapAlignment = 256;
 constexpr size_t kResourceInitializerChunks = 2;
 
