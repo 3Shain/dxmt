@@ -1185,8 +1185,8 @@ public:
         //   buffer->didModifyRange(NS::Range::Make(copy_offset, copy_len));
         //   return;
         // }
-        auto [ptr, staging_buffer, offset] = AllocateStagingBuffer(copy_len, 16);
-        memcpy(ptr, pSrcData, copy_len);
+        auto [staging_buffer, offset] = AllocateStagingBuffer(copy_len, 16);
+        staging_buffer.updateContents(offset, pSrcData, copy_len);
         SwitchToBlitEncoder(CommandBufferState::UpdateBlitEncoderActive);
         EmitOP([staging_buffer, offset, dst = bindable->buffer(), copy_offset, copy_len](ArgumentEncodingContext &enc) {
           auto [dst_buffer, dst_offset] = enc.access(dst, copy_offset, copy_len, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
@@ -2929,7 +2929,7 @@ public:
 
   template <typename T> moveonly_list<T> AllocateCommandData(size_t n = 1);
 
-  std::tuple<void *, WMT::Buffer, uint64_t> AllocateStagingBuffer(size_t size, size_t alignment);
+  std::tuple<WMT::Buffer, uint64_t> AllocateStagingBuffer(size_t size, size_t alignment);
   void UseCopyDestination(Rc<StagingResource> &);
   void UseCopySource(Rc<StagingResource> &);
 
@@ -3857,19 +3857,19 @@ public:
 
     if (auto dst = GetTexture(cmd.pDst)) {
       auto bytes_per_depth_slice = cmd.EffectiveRows * cmd.EffectiveBytesPerRow;
-      auto [ptr, staging_buffer, offset] = AllocateStagingBuffer(bytes_per_depth_slice * cmd.DstSize.depth, 16);
+      auto [staging_buffer, offset] = AllocateStagingBuffer(bytes_per_depth_slice * cmd.DstSize.depth, 16);
       if (cmd.EffectiveBytesPerRow == SrcRowPitch) {
         for (unsigned depthSlice = 0; depthSlice < cmd.DstSize.depth; depthSlice++) {
-          char *dst = ((char *)ptr) + depthSlice * bytes_per_depth_slice;
+          auto dst_offset = offset + depthSlice * bytes_per_depth_slice;
           const char *src = ((const char *)pSrcData) + depthSlice * SrcDepthPitch;
-          memcpy(dst, src, bytes_per_depth_slice);
+          staging_buffer.updateContents(dst_offset, src, bytes_per_depth_slice);
         }
       } else {
         for (unsigned depthSlice = 0; depthSlice < cmd.DstSize.depth; depthSlice++) {
           for (unsigned row = 0; row < cmd.EffectiveRows; row++) {
-            char *dst = ((char *)ptr) + row * cmd.EffectiveBytesPerRow + depthSlice * bytes_per_depth_slice;
+            auto dst_offset = offset + row * cmd.EffectiveBytesPerRow + depthSlice * bytes_per_depth_slice;
             const char *src = ((const char *)pSrcData) + row * SrcRowPitch + depthSlice * SrcDepthPitch;
-            memcpy(dst, src, cmd.EffectiveBytesPerRow);
+            staging_buffer.updateContents(dst_offset, src,  cmd.EffectiveBytesPerRow);
           }
         }
       }
@@ -5079,7 +5079,7 @@ public:
       context_flag(context_flag),
       cmdlist_pool(pPool),
       staging_allocator({pDevice->GetMTLDevice(), WMTResourceOptionCPUCacheModeWriteCombined |
-                                       WMTResourceHazardTrackingModeUntracked | WMTResourceStorageModeShared
+                                       WMTResourceHazardTrackingModeUntracked | WMTResourceStorageModeManaged, false
       }),
       cpu_command_allocator({}) {};
 
@@ -5151,10 +5151,10 @@ public:
     return moveonly_list<T>((T *)allocate_cpu_heap(sizeof(T) * n, alignof(T)), n);
   }
 
-  std::tuple<void *, WMT::Buffer, uint64_t>
+  std::tuple<WMT::Buffer, uint64_t>
   AllocateStagingBuffer(size_t size, size_t alignment) {
     auto [block, offset] = staging_allocator.allocate(1, 0, size, alignment);
-    return {ptr_add(block.mapped_address, offset), block.buffer, offset};
+    return {block.buffer, offset};
   }
 
   void *

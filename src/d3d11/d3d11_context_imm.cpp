@@ -47,7 +47,7 @@ ImmediateContextBase::AllocateCommandData(size_t n) {
 }
 
 template <>
-std::tuple<void *, WMT::Buffer, uint64_t>
+std::tuple<WMT::Buffer, uint64_t>
 ImmediateContextBase::AllocateStagingBuffer(size_t size, size_t alignment) {
   return ctx_state.cmd_queue.AllocateStagingBuffer(size, alignment);
 }

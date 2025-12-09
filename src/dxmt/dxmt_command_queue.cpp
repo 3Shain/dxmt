@@ -23,7 +23,7 @@ CommandQueue::CommandQueue(WMT::Device device) :
     event_listener_thread([this]() { SharedEventListener_start(this->shared_event_listener); }),
     staging_allocator({
         device, WMTResourceOptionCPUCacheModeWriteCombined | WMTResourceHazardTrackingModeUntracked |
-                    WMTResourceStorageModeShared
+                    WMTResourceStorageModeManaged, false
     }),
     copy_temp_allocator({device, WMTResourceHazardTrackingModeUntracked | WMTResourceStorageModePrivate}),
     argbuf_allocator({

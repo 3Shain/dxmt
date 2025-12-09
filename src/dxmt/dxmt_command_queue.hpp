@@ -260,10 +260,10 @@ public:
     cpu_coherent.wait(seq);
   };
 
-  std::tuple<void *, WMT::Buffer, uint64_t>
+  std::tuple<WMT::Buffer, uint64_t>
   AllocateStagingBuffer(size_t size, size_t alignment) {
     auto [block, offset] = staging_allocator.allocate(ready_for_encode, cpu_coherent.signaledValue(), size, alignment);
-    return {ptr_add(block.mapped_address, offset), block.buffer, offset};
+    return {block.buffer, offset};
   }
 
   std::pair<WMT::Buffer, uint64_t>
