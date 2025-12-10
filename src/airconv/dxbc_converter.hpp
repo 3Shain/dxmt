@@ -146,6 +146,7 @@ struct texture_descriptor {
   air::MSLTexture texture_info;
   IndexedIRValue resource_id;
   IndexedIRValue metadata;
+  bool global_coherent;
 };
 
 struct buffer_descriptor {

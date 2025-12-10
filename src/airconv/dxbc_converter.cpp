@@ -202,7 +202,8 @@ void setup_binding_table(
         [=, index = srv.arg_metadata_index](pvalue) {
           // ignore index in SM 5.0
           return get_item_in_argbuf_binding_table(binding_table_index, index);
-        }
+        },
+        false
       };
     } else {
       resource_map.srv_buf_range_map[range_id] = {
@@ -238,7 +239,8 @@ void setup_binding_table(
         [=, index = uav.arg_metadata_index](pvalue) {
           // ignore index in SM 5.0
           return get_item_in_argbuf_binding_table(binding_table_index, index);
-        }
+        },
+        uav.global_coherent
       };
     } else {
       resource_map.uav_buf_range_map[range_id] = {

@@ -396,7 +396,7 @@ llvm::Optional<TextureResourceHandle>
 Converter::LoadTexture(const SrcOperandResource &SrcOp) {
   using namespace llvm::air;
 
-  auto &[res, res_handle_fn, md_fn] = ctx.resource.srv_range_map[SrcOp.range_id];
+  auto &[res, res_handle_fn, md_fn, global_coherent] = ctx.resource.srv_range_map[SrcOp.range_id];
   auto res_handle = res_handle_fn(nullptr).build(ctx);
   if (res_handle.takeError())
     return {};
@@ -416,7 +416,8 @@ Converter::LoadTexture(const SrcOperandResource &SrcOp) {
   );
 
   return llvm::Optional<TextureResourceHandle>(
-      {texture, res.resource_kind_logical, res_handle.get(), md.get(), SrcOp.read_swizzle}
+      {texture, res.resource_kind_logical, res_handle.get(), md.get(), SrcOp.read_swizzle,
+       global_coherent && SupportsMemoryCoherency()}
   );
 }
 
@@ -424,7 +425,7 @@ llvm::Optional<TextureResourceHandle>
 Converter::LoadTexture(const SrcOperandUAV &SrcOp) {
   using namespace llvm::air;
 
-  auto &[res, res_handle_fn, md_fn] = ctx.resource.uav_range_map[SrcOp.range_id];
+  auto &[res, res_handle_fn, md_fn, global_coherent] = ctx.resource.uav_range_map[SrcOp.range_id];
   auto res_handle = res_handle_fn(nullptr).build(ctx);
   if (res_handle.takeError())
     return {};
@@ -444,7 +445,8 @@ Converter::LoadTexture(const SrcOperandUAV &SrcOp) {
   );
 
   return llvm::Optional<TextureResourceHandle>(
-      {texture, res.resource_kind_logical, res_handle.get(), md.get(), SrcOp.read_swizzle}
+      {texture, res.resource_kind_logical, res_handle.get(), md.get(), SrcOp.read_swizzle,
+       global_coherent && SupportsMemoryCoherency()}
   );
 }
 
@@ -452,7 +454,7 @@ llvm::Optional<TextureResourceHandle>
 Converter::LoadTexture(const AtomicDstOperandUAV &DstOp) {
   using namespace llvm::air;
 
-  auto &[res, res_handle_fn, md_fn] = ctx.resource.uav_range_map[DstOp.range_id];
+  auto &[res, res_handle_fn, md_fn, global_coherent] = ctx.resource.uav_range_map[DstOp.range_id];
   auto res_handle = res_handle_fn(nullptr).build(ctx);
   if (res_handle.takeError())
     return {};
@@ -472,7 +474,8 @@ Converter::LoadTexture(const AtomicDstOperandUAV &DstOp) {
   );
 
   return llvm::Optional<TextureResourceHandle>(
-      {texture, res.resource_kind_logical, res_handle.get(), md.get(), swizzle_identity}
+      {texture, res.resource_kind_logical, res_handle.get(), md.get(), swizzle_identity,
+       global_coherent && SupportsMemoryCoherency()}
   );
 }
 
@@ -1423,7 +1426,8 @@ Converter::operator()(const InstLoad &load) {
 
   llvm::Value *LOD = LoadOperand(load.src_address, kMaskComponentW);
 
-  auto [Value, Residency] = air.CreateRead(Tex->Texture, Tex->Handle, Address, ArrayIndex, SampleIndex, LOD);
+  auto [Value, Residency] =
+      air.CreateRead(Tex->Texture, Tex->Handle, Address, ArrayIndex, SampleIndex, LOD, Tex->GlobalCoherent);
 
   StoreOperand(load.dst, MaskSwizzle(Value, GetMask(load.dst), Tex->Swizzle));
 }
@@ -1471,7 +1475,8 @@ Converter::operator()(const InstLoadUAVTyped &load) {
   if (Tex->Texture.memory_access == Texture::acesss_readwrite)
     air.CreateTextureFence(Tex->Texture, Tex->Handle);
 
-  auto [Value, Residency] = air.CreateRead(Tex->Texture, Tex->Handle, Address, ArrayIndex, SampleIndex, air.getInt(0));
+  auto [Value, Residency] =
+      air.CreateRead(Tex->Texture, Tex->Handle, Address, ArrayIndex, SampleIndex, air.getInt(0), Tex->GlobalCoherent);
 
   StoreOperand(load.dst, MaskSwizzle(Value, GetMask(load.dst), Tex->Swizzle));
 }
@@ -1516,7 +1521,7 @@ Converter::operator()(const InstStoreUAVTyped &store) {
 
   auto Value = LoadOperand(store.src, kMaskAll);
 
-  air.CreateWrite(Tex->Texture, Tex->Handle, Address, ArrayIndex, nullptr, ir.getInt32(0), Value);
+  air.CreateWrite(Tex->Texture, Tex->Handle, Address, ArrayIndex, nullptr, ir.getInt32(0), Value, Tex->GlobalCoherent);
 }
 
 llvm::Value *

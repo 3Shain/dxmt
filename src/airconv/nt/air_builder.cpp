@@ -608,7 +608,8 @@ AIRBuilder::CreateSampleGrad(
 
 std::pair<Value *, Value *>
 AIRBuilder::CreateRead(
-    const Texture &Texture, Value *Handle, Value *Pos, Value *ArrayIndex, Value *SampleIndexOrCubeFace, Value *Level
+    const Texture &Texture, Value *Handle, Value *Pos, Value *ArrayIndex, Value *SampleIndexOrCubeFace, Value *Level,
+    bool DeviceCoherent
 ) {
   assert(Texture.kind <= Texture::last_resource_kind);
   auto &TexInfo = TextureInfo[Texture.kind];
@@ -665,6 +666,8 @@ AIRBuilder::CreateRead(
 
   std::string FnName = "air.read_";
   FnName += TexInfo.air_symbol_suffix;
+  if (DeviceCoherent)
+    FnName += ".device_coherent";
   FnName += getTypeOverloadSuffix(getTexelType(Texture), getTexelSign(Texture));
 
   auto Fn = getModule()->getOrInsertFunction(
@@ -678,7 +681,8 @@ AIRBuilder::CreateRead(
 
 CallInst *
 AIRBuilder::CreateWrite(
-    const Texture &Texture, Value *Handle, Value *Pos, Value *ArrayIndex, Value *CubeFace, Value *Level, Value *ValVec4
+    const Texture &Texture, Value *Handle, Value *Pos, Value *ArrayIndex, Value *CubeFace, Value *Level, Value *ValVec4,
+    bool DeviceCoherent
 ) {
   assert(Texture.kind <= Texture::last_resource_kind);
   auto &TexInfo = TextureInfo[Texture.kind];
@@ -726,6 +730,8 @@ AIRBuilder::CreateWrite(
 
   std::string FnName = "air.write_";
   FnName += TexInfo.air_symbol_suffix;
+  if (DeviceCoherent)
+    FnName += ".device_coherent";
   FnName += getTypeOverloadSuffix(getTexelType(Texture), getTexelSign(Texture));
 
   auto Fn = getModule()->getOrInsertFunction(FnName, FunctionType::get(getVoidTy(), Tys, false), Attrs);

@@ -187,12 +187,13 @@ public:
   );
 
   std::pair<Value *, Value *> CreateRead(
-      const Texture &Texture, Value *Handle, Value *Pos, Value *ArrayIndex, Value *SampleIndexOrCubeFace, Value *Level
+      const Texture &Texture, Value *Handle, Value *Pos, Value *ArrayIndex, Value *SampleIndexOrCubeFace, Value *Level,
+      bool DeviceCoherent = false
   );
 
   CallInst *CreateWrite(
       const Texture &Texture, Value *Handle, Value *Pos, Value *ArrayIndex, Value *CubeFace, Value *Level,
-      Value *ValVec4
+      Value *ValVec4, bool DeviceCoherent = false
   );
 
   std::pair<Value *, Value *> CreateAtomicCmpXchg(
