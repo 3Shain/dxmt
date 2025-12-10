@@ -226,11 +226,15 @@ public:
     MemFlags mem_flag = sync.tgsm_memory_barrier ? MemFlags::Threadgroup : MemFlags::None;
     if (sync.uav_boundary != InstSync::UAVBoundary::none) {
       mem_flag |= MemFlags::Device | MemFlags::Texture;
-    }
-    if (sync.tgsm_execution_barrier) {
+      if (SupportsNonExecutionBarrier())
+        air.CreateAtomicFence(
+            mem_flag,
+            sync.uav_boundary == InstSync::UAVBoundary::global ? ThreadScope::Device : ThreadScope::Threadgroup
+        );
+      if (sync.tgsm_execution_barrier)
+        air.CreateBarrier(SupportsNonExecutionBarrier() ? MemFlags::None : mem_flag);
+    } else if (sync.tgsm_execution_barrier) {
       air.CreateBarrier(mem_flag);
-    } else if (SupportsNonExecutionBarrier()) {
-      air.CreateAtomicFence(mem_flag, sync.uav_boundary != InstSync::UAVBoundary::none ? ThreadScope::Device: ThreadScope::Threadgroup);
     }
   }
 
