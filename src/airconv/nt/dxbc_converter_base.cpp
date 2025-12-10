@@ -1468,6 +1468,9 @@ Converter::operator()(const InstLoadUAVTyped &load) {
     return;
   }
 
+  if (Tex->Texture.memory_access == Texture::acesss_readwrite)
+    air.CreateTextureFence(Tex->Texture, Tex->Handle);
+
   auto [Value, Residency] = air.CreateRead(Tex->Texture, Tex->Handle, Address, ArrayIndex, SampleIndex, air.getInt(0));
 
   StoreOperand(load.dst, MaskSwizzle(Value, GetMask(load.dst), Tex->Swizzle));

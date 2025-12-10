@@ -996,6 +996,36 @@ AIRBuilder::CreateCalculateLOD(const Texture &Texture, Value *Handle, Value *Sam
   return {builder.CreateCall(Fn, Ops), builder.CreateCall(FnUnclamped, Ops)};
 }
 
+CallInst *
+AIRBuilder::CreateTextureFence(const Texture &Texture, Value *Handle) {
+  assert(Texture.kind <= Texture::last_resource_kind);
+  auto &TexInfo = TextureInfo[Texture.kind];
+
+  auto &Context = getContext();
+  auto Attrs = AttributeList::get(
+      Context,
+      {
+          {1U, Attribute::get(Context, Attribute::AttrKind::NoCapture)},
+          {~0U, Attribute::get(Context, Attribute::AttrKind::MustProgress)},
+          {~0U, Attribute::get(Context, Attribute::AttrKind::NoUnwind)},
+          {~0U, Attribute::get(Context, Attribute::AttrKind::WillReturn)},
+      }
+  );
+
+  SmallVector<Value *> Ops;
+  SmallVector<Type *> Tys;
+
+  Tys.push_back(getTextureHandleType(Texture));
+  Ops.push_back(Handle);
+
+  std::string FnName = "air.fence_";
+  FnName += TexInfo.air_symbol_suffix;
+
+  auto Fn = getModule()->getOrInsertFunction(FnName, FunctionType::get(getVoidTy(), Tys, false), Attrs);
+
+  return builder.CreateCall(Fn, Ops);
+}
+
 Value *
 AIRBuilder::CreateGetNumSamples() {
   auto &Context = getContext();

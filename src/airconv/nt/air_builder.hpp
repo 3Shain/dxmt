@@ -232,6 +232,8 @@ public:
   */
   std::pair<Value *, Value *> CreateCalculateLOD(const Texture &Texture, Value *Handle, Value *Sampler, Value *Coord);
 
+  CallInst *CreateTextureFence(const Texture &Texture, Value *Handle);
+
   /* Fragment Shader */
 
   Value *CreateGetNumSamples();
