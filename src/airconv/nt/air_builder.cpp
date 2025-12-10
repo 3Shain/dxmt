@@ -1661,7 +1661,7 @@ AIRBuilder::CreateFPUnOp(FPUnOp Op, Value *Operand) {
   auto OperandType = Operand->getType();
 
   std::string FnName = "air.";
-  if (builder.getFastMathFlags().isFast())
+  if (builder.getFastMathFlags().any())
     FnName += "fast_";
   FnName += FnNames[Op];
   FnName += getTypeOverloadSuffix(OperandType);
@@ -1690,7 +1690,7 @@ AIRBuilder::CreateFPBinOp(FPBinOp Op, Value *LHS, Value *RHS) {
   auto OperandType = LHS->getType();
 
   std::string FnName = "air.";
-  if (builder.getFastMathFlags().isFast())
+  if (builder.getFastMathFlags().any())
     FnName += "fast_";
   FnName += FnNames[Op];
   FnName += getTypeOverloadSuffix(OperandType);

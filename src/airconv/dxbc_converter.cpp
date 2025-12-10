@@ -374,13 +374,18 @@ void setup_temp_register(
 void setup_fastmath_flag(llvm::Module &module, llvm::IRBuilder<> &builder) {
   if (auto options = module.getNamedMetadata("air.compile_options")) {
     for (auto operand : options->operands()) {
-      if (isa<llvm::MDTuple>(operand) &&
-          cast<llvm::MDTuple>(operand)->getNumOperands() == 1 &&
+      if (isa<llvm::MDTuple>(operand) && cast<llvm::MDTuple>(operand)->getNumOperands() == 1 &&
           isa<llvm::MDString>(cast<llvm::MDTuple>(operand)->getOperand(0)) &&
           cast<llvm::MDString>(cast<llvm::MDTuple>(operand)->getOperand(0))
-              ->getString()
-              .compare("air.compile.fast_math_enable") == 0) {
-        builder.getFastMathFlags().setFast(true);
+                  ->getString()
+                  .compare("air.compile.fast_math_enable") == 0) {
+        builder.getFastMathFlags().setNoInfs();
+        builder.getFastMathFlags().setNoNaNs();
+        builder.getFastMathFlags().setNoSignedZeros();
+        builder.getFastMathFlags().setAllowReassoc();
+        builder.getFastMathFlags().setAllowReciprocal();
+        // builder.getFastMathFlags().setAllowContract();
+        builder.getFastMathFlags().setApproxFunc();
       }
     }
   }
