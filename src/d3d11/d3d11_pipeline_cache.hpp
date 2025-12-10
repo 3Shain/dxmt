@@ -4,7 +4,7 @@
 
 namespace dxmt {
 
-constexpr int kDXMTShaderCacheVersion = 4;
+constexpr int kDXMTShaderCacheVersion = 5;
 
 class MTLD3D11PipelineCacheBase {
 public:
