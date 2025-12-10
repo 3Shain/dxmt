@@ -278,6 +278,9 @@ pop_output_reg(uint32_t from_reg, uint32_t mask, uint32_t to_element);
 std::function<IRValue(pvalue)>
 pop_output_reg_fix_unorm(uint32_t from_reg, uint32_t mask, uint32_t to_element);
 
+std::function<IRValue(pvalue)>
+pop_output_reg_sanitize_pos(uint32_t from_reg, uint32_t mask, uint32_t to_element);
+
 IREffect pull_vertex_input(
   air::FunctionSignatureBuilder &func_signature, uint32_t to_reg, uint32_t mask,
   SM50_IA_INPUT_ELEMENT element_info, uint32_t slot_mask

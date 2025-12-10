@@ -1489,7 +1489,7 @@ AIRBuilder::CreateSetMeshPosition(Value *Vertex, Value *Position) {
       Attrs
   );
 
-  return builder.CreateCall(Fn, {getMeshHandle(), Vertex, Position});
+  return builder.CreateCall(Fn, {getMeshHandle(), Vertex, SanitizePosition(Position)});
 }
 
 CallInst *
@@ -1799,6 +1799,21 @@ AIRBuilder::CreateAtomicRMW(AtomicRMWInst::BinOp Op, Value *Ptr, Value *Val) {
       FnName, llvm::FunctionType::get(TyOp, {TyPtr, TyOp, getIntTy(), getIntTy(), getBoolTy()}, false), Attrs
   );
   return builder.CreateCall(Fn, {Ptr, Val, getInt(0), MemFlags, getBool(true)});
+}
+
+llvm::Value *
+AIRBuilder::SanitizePosition(llvm::Value *Pos) {
+  // isfinite(Pos)
+  auto Mask = builder.CreateICmpNE(
+      builder.CreateAnd(builder.CreateBitCast(Pos, getIntTy(4)), 0x7f800000ull),
+      getInt4(0x7f800000, 0x7f800000, 0x7f800000, 0x7f800000)
+  );
+  auto ValidPos = builder.CreateAnd(
+      builder.CreateAnd(builder.CreateExtractElement(Mask, 0ull), builder.CreateExtractElement(Mask, 1ull)),
+      builder.CreateAnd(builder.CreateExtractElement(Mask, 2ull), builder.CreateExtractElement(Mask, 3ull))
+  );
+  auto PosClipped = llvm::ConstantVector::get({getFloat(0.0f), getFloat(0.0f), getFloat(1.0f), getFloat(0.0f)});
+  return builder.CreateSelect(ValidPos, Pos, PosClipped);
 }
 
 } // namespace llvm::air

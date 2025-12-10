@@ -344,6 +344,8 @@ public:
 
   Value *CreateAtomicRMW(AtomicRMWInst::BinOp Op, Value *Ptr, Value *Val);
 
+  llvm::Value *SanitizePosition(llvm::Value *Pos);
+
   /* Useful Helpers */
 
   ConstantFP *

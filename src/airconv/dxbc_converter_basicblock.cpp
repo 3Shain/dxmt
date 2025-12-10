@@ -320,6 +320,17 @@ std::function<IRValue(pvalue)> pop_output_reg_fix_unorm(uint32_t from_reg, uint3
   };
 }
 
+std::function<IRValue(pvalue)> pop_output_reg_sanitize_pos(uint32_t from_reg, uint32_t mask, uint32_t to_element) {
+  return [=](pvalue ret) {
+    return make_irvalue_bind([=](context ctx) -> IRValue {
+      auto const_index = llvm::ConstantInt::get(ctx.llvm, llvm::APInt{32, from_reg, false});
+      auto fvec4 = co_yield load_from_array_at(ctx.resource.output.ptr_float4, const_index);
+      auto fixed = ctx.air.SanitizePosition(fvec4);
+      co_return ctx.builder.CreateInsertValue(ret, fixed, {to_element});
+    });
+  };
+}
+
 IREffect
 pop_mesh_output_render_taget_array_index(uint32_t from_reg, uint32_t mask, pvalue primitive_id) {
   auto ctx = co_yield get_context();

@@ -176,7 +176,7 @@ void handle_signature_vs(
       signature_handlers.push_back([=](SignatureContext &ctx) {
         if (ctx.skip_vertex_output)
           return;
-        ctx.epilogue >> pop_output_reg(reg, mask, assigned_index);
+        ctx.epilogue >> pop_output_reg_sanitize_pos(reg, mask, assigned_index);
       });
       break;
     }
