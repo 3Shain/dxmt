@@ -102,6 +102,11 @@ read_control_flow(
   while (!Parser.EndOfShader()) {
     D3D10ShaderBinary::CInstruction Inst;
     Parser.ParseInstruction(&Inst);
+
+    // HACK: mark all instructions as precise if refactor is not allowed
+    if (!shader_info.refactoringAllowed)
+      Inst.SetPreciseMask(0b1111);
+
     switch (Inst.OpCode()) {
 
     case D3D10_SB_OPCODE_IF: {

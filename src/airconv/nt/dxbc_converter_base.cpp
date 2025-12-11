@@ -1180,7 +1180,13 @@ Converter::operator()(const InstFloatMAD &mad) {
   auto B = LoadOperand(mad.src1, Mask);
   auto C = LoadOperand(mad.src2, Mask);
 
-  auto Result = !ir.getFastMathFlags().isFast() ? ir.CreateFAdd(ir.CreateFMul(A, B), C) : air.CreateFMA(A, B, C);
+  bool UseFusedMAD = false;
+
+  if (mad._.precise_mask) {
+    UseFusedMAD = true;
+  }
+
+  auto Result = UseFusedMAD ? air.CreateFMA(A, B, C) : ir.CreateFAdd(ir.CreateFMul(A, B), C);
 
   StoreOperand(mad.dst, Result, mad._.saturate);
 }

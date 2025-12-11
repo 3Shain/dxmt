@@ -551,7 +551,7 @@ std::variant<SrcOperandResource, SrcOperandUAV> readSrcResourceOrUAV(
 auto readInstructionCommon(
   const microsoft::D3D10ShaderBinary::CInstruction &Inst
 ) -> InstructionCommon {
-  return InstructionCommon{.saturate = Inst.m_bSaturate != 0};
+  return InstructionCommon{.saturate = Inst.m_bSaturate != 0, .precise_mask = (uint8_t)Inst.m_PreciseMask};
 };
 
 Instruction readInstruction(

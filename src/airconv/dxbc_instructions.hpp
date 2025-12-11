@@ -228,6 +228,7 @@ struct DstOperandOutputCoverageMask {
 #pragma region instructions
 struct InstructionCommon {
   bool saturate;
+  uint8_t precise_mask;
 };
 
 struct DclConstantBuffer {};
