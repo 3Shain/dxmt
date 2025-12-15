@@ -29,7 +29,6 @@ BufferAllocation::BufferAllocation(WMT::Device device, const WMTBufferInfo &info
   obj_ = device.newBuffer(info_);
   gpuAddress_ = info_.gpu_address;
   mappedMemory_ = info_.memory.get_accessible_or_null();
-  depkey = EncoderDepSet::generateNewKey(global_buffer_seq.fetch_add(1));
 };
 
 BufferAllocation::~BufferAllocation() {

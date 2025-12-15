@@ -98,7 +98,6 @@ public:
   void *mappedMemory;
   uint64_t gpuResourceID;
   mach_port_t machPort;
-  EncoderDepKey depkey;
 
 private:
   TextureAllocation(
