@@ -43,10 +43,35 @@ private:
 constexpr auto WEAK_FENCE_MASK = WeakFenceMaskLTO();
 
 FenceSet
-FenceLocalityCheck::ensureLocality(FenceSet strong_fences, EncoderId id) {
-  FenceSet all_fences(strong_fences);
-  all_fences.mergeWithLaneMaskOff(WEAK_FENCE_MASK[id], strong_fences.laneMask());
-  return all_fences;
+FenceLocalityCheck::collectAndSimplifyWaits(FenceSet strong_fences, EncoderId id, bool implicit_pre_raster_wait) {
+  if (implicit_pre_raster_wait)
+    strong_fences.set(id - 1);
+
+  FenceSet full_fences(strong_fences);
+  full_fences.mergeWithLaneMaskOff(WEAK_FENCE_MASK[id], strong_fences.laneMask());
+
+  FenceSet minimal_fences;
+  FenceSet accessible_fences;
+
+  constexpr auto start_offset = kParityLane == 1 ? 0 : 1;
+
+  for (auto offset = start_offset; offset < kParityLane; offset++) {
+    EncoderId prev_encoder_id = id - offset;
+
+    if (full_fences.test(prev_encoder_id) && !accessible_fences.testAndSet(prev_encoder_id))
+      minimal_fences.set(prev_encoder_id);
+    if (accessible_fences.test(prev_encoder_id))
+      accessible_fences.merge(summary_[prev_encoder_id % kParityLane]);
+    if (accessible_fences.contains(full_fences))
+      break;
+  }
+
+  summary_[id % kParityLane] = full_fences;
+
+  if (implicit_pre_raster_wait)
+    minimal_fences.unset(id - 1);
+
+  return minimal_fences;
 }
 
 } // namespace dxmt

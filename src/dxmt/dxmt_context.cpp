@@ -646,10 +646,12 @@ ArgumentEncodingContext::endPass() {
     if (encoder_current->type == EncoderType::Render) {
       auto render_encoder = static_cast<RenderEncoderData *>(encoder_current);
       render_encoder->fence_wait_vertex =
-          fence_locality_.ensureLocality(render_encoder->fence_wait_vertex, render_encoder->encoder_id_vertex);
-      encoder_current->fence_wait = fence_locality_.ensureLocality(encoder_current->fence_wait, encoder_last->id);
+          fence_locality_.collectAndSimplifyWaits(render_encoder->fence_wait_vertex, render_encoder->encoder_id_vertex);
+      encoder_current->fence_wait =
+          fence_locality_.collectAndSimplifyWaits(encoder_current->fence_wait, encoder_last->id, true);
     } else {
-      encoder_current->fence_wait = fence_locality_.ensureLocality(encoder_current->fence_wait, encoder_last->id);
+      encoder_current->fence_wait =
+          fence_locality_.collectAndSimplifyWaits(encoder_current->fence_wait, encoder_last->id);
     }
   }
 

@@ -777,7 +777,7 @@ private:
   EncoderData *encoder_current = nullptr;
   unsigned encoder_count_ = 0;
   
-  uint64_t encoder_id_ = kParityLane - kLane; // actually important to not start from 0
+  uint64_t encoder_id_ = kParityLane; // actually important to not start from 0
   std::array<WMT::Reference<WMT::Fence>, kParityLane> fence_pool_;
   FenceLocalityCheck fence_locality_;
 
