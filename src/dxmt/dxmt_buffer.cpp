@@ -129,10 +129,7 @@ Buffer::createView(BufferViewDescriptor const &descriptor) {
 
 Rc<BufferAllocation>
 Buffer::allocate(Flags<BufferAllocationFlag> flags) {
-  WMTResourceOptions options = WMTResourceStorageModeShared;
-  if (flags.test(BufferAllocationFlag::GpuReadonly)) {
-    options |= WMTResourceHazardTrackingModeUntracked;
-  }
+  WMTResourceOptions options = WMTResourceHazardTrackingModeUntracked;
   if (flags.test(BufferAllocationFlag::CpuWriteCombined)) {
     options |= WMTResourceOptionCPUCacheModeWriteCombined;
   }

@@ -157,12 +157,9 @@ Texture::Texture(
 
 Rc<TextureAllocation>
 Texture::allocate(Flags<TextureAllocationFlag> flags) {
-  WMTResourceOptions options = WMTResourceStorageModeShared;
+  WMTResourceOptions options = WMTResourceHazardTrackingModeUntracked;
   WMTTextureInfo info = info_; // copy
   info.mach_port = 0;
-  if (flags.test(TextureAllocationFlag::GpuReadonly)) {
-    options |= WMTResourceHazardTrackingModeUntracked;
-  }
   if (flags.test(TextureAllocationFlag::CpuWriteCombined)) {
     options |= WMTResourceOptionCPUCacheModeWriteCombined;
   }
