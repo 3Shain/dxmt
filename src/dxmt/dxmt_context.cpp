@@ -1,6 +1,7 @@
 #include "dxmt_context.hpp"
 #include "Metal.hpp"
 #include "dxmt_command_queue.hpp"
+#include "dxmt_deptrack.hpp"
 #include "dxmt_format.hpp"
 #include "dxmt_occlusion_query.hpp"
 #include "dxmt_presenter.hpp"
@@ -43,6 +44,9 @@ ArgumentEncodingContext::ArgumentEncodingContext(CommandQueue &queue, WMT::Devic
   std::memset(dummy_cbuffer_info_.memory.get(), 0, 65536);
   cpu_buffer_chunks_.emplace_back();
   barrier_event_ = device_.newEvent();
+  for (unsigned i = 0; i < kParityLane; i++) {
+    fence_pool_[i] = device.newFence();
+  }
 };
 
 ArgumentEncodingContext::~ArgumentEncodingContext() {
@@ -77,7 +81,8 @@ ArgumentEncodingContext::encodeVertexBuffers(uint32_t slot_mask, uint64_t offset
       continue;
     }
     auto valid_length = buffer->length() > state.offset ? buffer->length() - state.offset : 0;
-    auto [buffer_alloc, buffer_offset] = access<true>(buffer, state.offset, valid_length, DXMT_ENCODER_RESOURCE_ACESS_READ);
+    auto [buffer_alloc, buffer_offset] =
+        access<PipelineStage::Vertex>(buffer, state.offset, valid_length, DXMT_ENCODER_RESOURCE_ACESS_READ);
     entries[index].buffer_handle = buffer_alloc->gpuAddress() + buffer_offset + state.offset;
     entries[index].stride = state.stride;
     entries[index++].length = valid_length;
@@ -141,9 +146,6 @@ void
 ArgumentEncodingContext::encodeConstantBuffers(const MTL_SHADER_REFLECTION *reflection, const MTL_SM50_SHADER_ARGUMENT * constant_buffers, uint64_t offset) {
   uint64_t *encoded_buffer = getMappedArgumentBuffer<uint64_t, stage == PipelineStage::Compute>(offset);
 
-  constexpr bool PreRasterStage = stage == PipelineStage::Vertex || stage == PipelineStage::Domain ||
-                                 stage == PipelineStage::Hull || stage == PipelineStage::Geometry;
-
   for (unsigned i = 0; i < reflection->NumConstantBuffers; i++) {
     auto &arg = constant_buffers[i];
     auto slot = 14 * unsigned(stage) + arg.SM50BindingSlot;
@@ -157,7 +159,7 @@ ArgumentEncodingContext::encodeConstantBuffers(const MTL_SHADER_REFLECTION *refl
       }
       auto argbuf = cbuf.buffer;
       auto valid_length = argbuf->length() > cbuf.offset ? argbuf->length() - cbuf.offset : 0;
-      auto [argbuf_alloc, argbuf_offset] = access<PreRasterStage>(argbuf, cbuf.offset, valid_length, DXMT_ENCODER_RESOURCE_ACESS_READ);
+      auto [argbuf_alloc, argbuf_offset] = access<stage>(argbuf, cbuf.offset, valid_length, DXMT_ENCODER_RESOURCE_ACESS_READ);
       encoded_buffer[arg.StructurePtrOffset] = argbuf_alloc->gpuAddress() + argbuf_offset + cbuf.offset;
       makeResident<stage, kind>(argbuf.ptr());
       break;
@@ -245,9 +247,6 @@ ArgumentEncodingContext::encodeShaderResources(
 
   auto &UAVBindingSet = stage == PipelineStage::Compute ? cs_uav_ : om_uav_;
 
-  constexpr bool PreRasterStage = stage == PipelineStage::Vertex || stage == PipelineStage::Domain ||
-                                 stage == PipelineStage::Hull || stage == PipelineStage::Geometry;
-
   for (unsigned i = 0; i < BindingCount; i++) {
     auto &arg = arguments[i];
     switch (arg.Type) {
@@ -274,7 +273,7 @@ ArgumentEncodingContext::encodeShaderResources(
 
       if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_BUFFER) {
         if (srv.buffer.ptr()) {
-          auto [srv_alloc, offset] = access<PreRasterStage>(srv.buffer, srv.slice.byteOffset, srv.slice.byteLength, DXMT_ENCODER_RESOURCE_ACESS_READ);
+          auto [srv_alloc, offset] = access<stage>(srv.buffer, srv.slice.byteOffset, srv.slice.byteLength, DXMT_ENCODER_RESOURCE_ACESS_READ);
           encoded_buffer[arg.StructurePtrOffset] = srv_alloc->gpuAddress() + offset + srv.slice.byteOffset;
           encoded_buffer[arg.StructurePtrOffset + 1] = srv.slice.byteLength;
           makeResident<stage, kind>(srv.buffer.ptr());
@@ -285,7 +284,7 @@ ArgumentEncodingContext::encodeShaderResources(
       } else if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE) {
         if (srv.buffer.ptr()) {
           assert(arg.Flags & MTL_SM50_SHADER_ARGUMENT_TBUFFER_OFFSET);
-          auto [view, offset] = access<PreRasterStage>(srv.buffer, srv.viewId, DXMT_ENCODER_RESOURCE_ACESS_READ);
+          auto [view, offset] = access<stage>(srv.buffer, srv.viewId, DXMT_ENCODER_RESOURCE_ACESS_READ);
           encoded_buffer[arg.StructurePtrOffset] = view.gpu_resource_id;
           encoded_buffer[arg.StructurePtrOffset + 1] =
               ((uint64_t)srv.slice.elementCount << 32) | (uint64_t)(srv.slice.firstElement + offset);
@@ -294,7 +293,7 @@ ArgumentEncodingContext::encodeShaderResources(
           assert(arg.Flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE_MINLOD_CLAMP);
           auto viewIdChecked = srv.texture->checkViewUseArray(srv.viewId, arg.Flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE_ARRAY);
           encoded_buffer[arg.StructurePtrOffset] =
-              access<PreRasterStage>(srv.texture, viewIdChecked, DXMT_ENCODER_RESOURCE_ACESS_READ).gpuResourceID;
+              access<stage>(srv.texture, viewIdChecked, DXMT_ENCODER_RESOURCE_ACESS_READ).gpuResourceID;
           encoded_buffer[arg.StructurePtrOffset + 1] = TextureMetadata(srv.texture->arrayLength(viewIdChecked), 0);
           makeResident<stage, kind>(srv.texture.ptr(), viewIdChecked);
         } else {
@@ -314,7 +313,7 @@ ArgumentEncodingContext::encodeShaderResources(
 
       if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_BUFFER) {
         if (uav.buffer.ptr()) {
-          auto [uav_alloc, offset] = access<PreRasterStage>(uav.buffer, uav.slice.byteOffset, uav.slice.byteLength, access_flags);
+          auto [uav_alloc, offset] = access<stage>(uav.buffer, uav.slice.byteOffset, uav.slice.byteLength, access_flags);
           encoded_buffer[arg.StructurePtrOffset] = uav_alloc->gpuAddress() + offset + uav.slice.byteOffset;
           encoded_buffer[arg.StructurePtrOffset + 1] = uav.slice.byteLength;
           makeResident<stage, kind>(uav.buffer.ptr(), read, write);
@@ -325,7 +324,7 @@ ArgumentEncodingContext::encodeShaderResources(
       } else if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE) {
         if (uav.buffer.ptr()) {
           assert(arg.Flags & MTL_SM50_SHADER_ARGUMENT_TBUFFER_OFFSET);
-          auto [view, offset] = access<PreRasterStage>(uav.buffer, uav.viewId, access_flags);
+          auto [view, offset] = access<stage>(uav.buffer, uav.viewId, access_flags);
           encoded_buffer[arg.StructurePtrOffset] = view.gpu_resource_id;
           encoded_buffer[arg.StructurePtrOffset + 1] =
               ((uint64_t)uav.slice.elementCount << 32) | (uint64_t)(uav.slice.firstElement + offset);
@@ -333,7 +332,7 @@ ArgumentEncodingContext::encodeShaderResources(
         } else if (uav.texture.ptr()) {
           assert(arg.Flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE_MINLOD_CLAMP);
           auto viewIdChecked = uav.texture->checkViewUseArray(uav.viewId, arg.Flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE_ARRAY);
-          encoded_buffer[arg.StructurePtrOffset] = access<PreRasterStage>(uav.texture, viewIdChecked, access_flags).gpuResourceID;
+          encoded_buffer[arg.StructurePtrOffset] = access<stage>(uav.texture, viewIdChecked, access_flags).gpuResourceID;
           encoded_buffer[arg.StructurePtrOffset + 1] = TextureMetadata(uav.texture->arrayLength(viewIdChecked), 0);
           makeResident<stage, kind>(uav.texture.ptr(), viewIdChecked, read, write);
         } else {
@@ -343,7 +342,7 @@ ArgumentEncodingContext::encodeShaderResources(
       }
       if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_UAV_COUNTER) {
         if (uav.counter) {
-          auto [counter_alloc, offset] = access<PreRasterStage>(uav.counter, 0, 4, DXMT_ENCODER_RESOURCE_ACESS_READ | DXMT_ENCODER_RESOURCE_ACESS_WRITE);
+          auto [counter_alloc, offset] = access<stage>(uav.counter, 0, 4, DXMT_ENCODER_RESOURCE_ACESS_READ | DXMT_ENCODER_RESOURCE_ACESS_WRITE);
           encoded_buffer[arg.StructurePtrOffset + 2] = counter_alloc->gpuAddress() + offset;
           makeResident<stage, kind>(uav.counter.ptr(), true, true);
         } else {
@@ -403,6 +402,8 @@ ArgumentEncodingContext::clearColor(Rc<Texture> &&texture, unsigned viewId, unsi
   auto encoder_info = allocate<ClearEncoderData>();
   encoder_info->type = EncoderType::Clear;
   encoder_info->id = nextEncoderId();
+  encoder_info->fence_wait = {};
+  encoder_info->fence_update = {encoder_info->id};
   encoder_info->clear_dsv = 0;
   encoder_info->color = color;
   encoder_info->array_length = arrayLength;
@@ -425,6 +426,8 @@ ArgumentEncodingContext::clearDepthStencil(
   auto encoder_info = allocate<ClearEncoderData>();
   encoder_info->type = EncoderType::Clear;
   encoder_info->id = nextEncoderId();
+  encoder_info->fence_wait = {};
+  encoder_info->fence_update = {encoder_info->id};
   encoder_info->clear_dsv = flag & DepthStencilPlanarFlags(texture->pixelFormat());
   encoder_info->depth_stencil = {depth, stencil};
   encoder_info->array_length = arrayLength;
@@ -446,6 +449,9 @@ ArgumentEncodingContext::resolveTexture(
   assert(!encoder_current);
   auto encoder_info = allocate<ResolveEncoderData>();
   encoder_info->type = EncoderType::Resolve;
+  encoder_info->id = nextEncoderId();
+  encoder_info->fence_wait = {};
+  encoder_info->fence_update = {encoder_info->id};
   encoder_current = encoder_info;
 
   encoder_info->src = access(src, src_view, DXMT_ENCODER_RESOURCE_ACESS_READ);
@@ -460,6 +466,8 @@ ArgumentEncodingContext::present(Rc<Texture> &texture, Rc<Presenter> &presenter,
   auto encoder_info = allocate<PresentData>();
   encoder_info->type = EncoderType::Present;
   encoder_info->id = nextEncoderId();
+  encoder_info->fence_wait = {};
+  encoder_info->fence_update = {encoder_info->id};
   encoder_info->presenter = presenter;
   encoder_info->after = after;
   encoder_info->metadata = metadata;
@@ -475,6 +483,8 @@ ArgumentEncodingContext::upscale(Rc<Texture> &texture, Rc<Texture> &upscaled, Rc
   auto encoder_info = allocate<SpatialUpscaleData>();
   encoder_info->type = EncoderType::SpatialUpscale;
   encoder_info->id = nextEncoderId();
+  encoder_info->fence_wait = {};
+  encoder_info->fence_update = {encoder_info->id};
   encoder_info->scaler = scaler;
 
   encoder_current = encoder_info;
@@ -492,6 +502,8 @@ ArgumentEncodingContext::upscaleTemporal(
   auto encoder_info = allocate<TemporalUpscaleData>();
   encoder_info->type = EncoderType::TemporalUpscale;
   encoder_info->id = nextEncoderId();
+  encoder_info->fence_wait = {};
+  encoder_info->fence_update = {encoder_info->id};
   encoder_info->scaler = scaler;
   encoder_info->props = props;
 
@@ -511,7 +523,7 @@ ArgumentEncodingContext::signalEvent(uint64_t value) {
   assert(!encoder_current);
   auto encoder_info = allocate<SignalEventData>();
   encoder_info->type = EncoderType::SignalEvent;
-  encoder_info->id = nextEncoderId();
+  encoder_info->id = ~0ull;
   encoder_info->event = queue_.event;
   encoder_info->value = value;
 
@@ -524,7 +536,7 @@ ArgumentEncodingContext::signalEvent(WMT::Reference<WMT::Event> &&event, uint64_
   assert(!encoder_current);
   auto encoder_info = allocate<SignalEventData>();
   encoder_info->type = EncoderType::SignalEvent;
-  encoder_info->id = nextEncoderId();
+  encoder_info->id = ~0ull;
   encoder_info->event = std::move(event);
   encoder_info->value = value;
 
@@ -537,7 +549,7 @@ ArgumentEncodingContext::waitEvent(WMT::Reference<WMT::Event> &&event, uint64_t 
   assert(!encoder_current);
   auto encoder_info = allocate<WaitForEventData>();
   encoder_info->type = EncoderType::WaitForEvent;
-  encoder_info->id = nextEncoderId();
+  encoder_info->id = ~0ull;
   encoder_info->event = std::move(event);
   encoder_info->value = value;
 
@@ -552,7 +564,12 @@ ArgumentEncodingContext::startRenderPass(
   assert(!encoder_current);
   auto encoder_info = allocate<RenderEncoderData>();
   encoder_info->type = EncoderType::Render;
+  encoder_info->encoder_id_vertex = nextEncoderId();
+  encoder_info->fence_wait_vertex = {};
+  encoder_info->fence_update_vertex = {encoder_info->encoder_id_vertex};
   encoder_info->id = nextEncoderId();
+  encoder_info->fence_wait = {};
+  encoder_info->fence_update = {encoder_info->id};
   encoder_info->cmd_head.type = WMTRenderCommandNop;
   encoder_info->cmd_head.next.set(0);
   encoder_info->cmd_tail = (wmtcmd_base *)&encoder_info->cmd_head;
@@ -578,6 +595,8 @@ ArgumentEncodingContext::startComputePass(uint64_t encoder_argbuf_size) {
   auto encoder_info = allocate<ComputeEncoderData>();
   encoder_info->type = EncoderType::Compute;
   encoder_info->id = nextEncoderId();
+  encoder_info->fence_wait = {};
+  encoder_info->fence_update = {encoder_info->id};
   encoder_info->cmd_head.type = WMTComputeCommandNop;
   encoder_info->cmd_head.next.set(0);
   encoder_info->cmd_tail = (wmtcmd_base *)&encoder_info->cmd_head;
@@ -598,6 +617,8 @@ ArgumentEncodingContext::startBlitPass() {
   auto encoder_info = allocate<BlitEncoderData>();
   encoder_info->type = EncoderType::Blit;
   encoder_info->id = nextEncoderId();
+  encoder_info->fence_wait = {};
+  encoder_info->fence_update = {encoder_info->id};
   encoder_info->cmd_head.type = WMTBlitCommandNop;
   encoder_info->cmd_head.next.set(0);
   encoder_info->cmd_tail = (wmtcmd_base *)&encoder_info->cmd_head;
@@ -614,8 +635,19 @@ ArgumentEncodingContext::endPass() {
   encoder_last->next = encoder_current;
   encoder_last = encoder_current;
 
-  if (encoder_current->type == EncoderType::Render)
-    vro_state_.endEncoder();
+  if (encoder_current->id != ~0ull) {
+    if (encoder_current->type == EncoderType::Render) {
+      vro_state_.endEncoder();
+      auto render_encoder = static_cast<RenderEncoderData *>(encoder_current);
+      render_encoder->fence_wait_vertex =
+          fence_locality_.collectAndSimplifyWaits(render_encoder->fence_wait_vertex, render_encoder->encoder_id_vertex);
+      encoder_current->fence_wait =
+          fence_locality_.collectAndSimplifyWaits(encoder_current->fence_wait, encoder_last->id, true);
+    } else {
+      encoder_current->fence_wait =
+          fence_locality_.collectAndSimplifyWaits(encoder_current->fence_wait, encoder_last->id);
+    }
+  }
 
   encoder_current = nullptr;
   encoder_count_++;
@@ -677,7 +709,7 @@ ArgumentEncodingContext::sampleTimestamp(Rc<TimestampQuery> &&query) {
   }
   auto encoder_info = allocate<SampleTimestampData>();
   encoder_info->type = EncoderType::SampleTimestamp;
-  encoder_info->id = nextEncoderId();
+  encoder_info->id = ~0ull;
   encoder_info->readback_index = timestamp_state_.addQuery(query.ptr());
   encoder_info->queries = {};
   encoder_info->queries.push_back(std::move(query));
@@ -799,6 +831,11 @@ ArgumentEncodingContext::flushCommands(WMT::CommandBuffer cmdbuf, uint64_t seqId
       }
       auto gpu_buffer_ = data->allocated_argbuf;
       auto encoder = cmdbuf.renderCommandEncoder(render_pass_info);
+      data->fence_wait.forEach(
+          data->fence_wait_vertex, // if a fence is waited pre-raster, no need to wait again at fragment
+          [&](auto id) { encoder.waitForFence(fence_pool_[id], WMTRenderStagePreRaster); },
+          [&](auto id) { encoder.waitForFence(fence_pool_[id], WMTRenderStageFragment); }
+      );
       encoder.setVertexBuffer(gpu_buffer_, 0, 16);
       encoder.setVertexBuffer(gpu_buffer_, 0, 29);
       encoder.setVertexBuffer(gpu_buffer_, 0, 30);
@@ -875,6 +912,11 @@ ArgumentEncodingContext::flushCommands(WMT::CommandBuffer cmdbuf, uint64_t seqId
         );
       }
       encoder.encodeCommands(&data->cmd_head);
+      data->fence_update_vertex.forEach(
+          data->fence_update, // if a fence is updated at fragment, no need to update again pre-raster
+          [&](auto id) { encoder.updateFence(fence_pool_[id], WMTRenderStageFragment); },
+          [&](auto id) { encoder.updateFence(fence_pool_[id], WMTRenderStagePreRaster); }
+      );
       encoder.endEncoding();
       data->~RenderEncoderData();
       break;
@@ -882,6 +924,7 @@ ArgumentEncodingContext::flushCommands(WMT::CommandBuffer cmdbuf, uint64_t seqId
     case EncoderType::Compute: {
       auto data = static_cast<ComputeEncoderData *>(current);
       auto encoder = cmdbuf.computeCommandEncoder(false);
+      data->fence_wait.forEach([&](auto id) { encoder.waitForFence(fence_pool_[id]); });
       struct wmtcmd_compute_setbuffer setcmd;
       setcmd.type = WMTComputeCommandSetBuffer;
       setcmd.next.set(nullptr);
@@ -892,6 +935,7 @@ ArgumentEncodingContext::flushCommands(WMT::CommandBuffer cmdbuf, uint64_t seqId
       setcmd.index = 30;
       encoder.encodeCommands((const wmtcmd_compute_nop *)&setcmd);
       encoder.encodeCommands(&data->cmd_head);
+      data->fence_update.forEach([&](auto id) { encoder.updateFence(fence_pool_[id]); });
       encoder.endEncoding();
       data->~ComputeEncoderData();
       break;
@@ -899,7 +943,9 @@ ArgumentEncodingContext::flushCommands(WMT::CommandBuffer cmdbuf, uint64_t seqId
     case EncoderType::Blit: {
       auto data = static_cast<BlitEncoderData *>(current);
       auto encoder = cmdbuf.blitCommandEncoder();
+      data->fence_wait.forEach([&](auto id) { encoder.waitForFence(fence_pool_[id]); });
       encoder.encodeCommands(&data->cmd_head);
+      data->fence_update.forEach([&](auto id) { encoder.updateFence(fence_pool_[id]); });
       encoder.endEncoding();
       data->~BlitEncoderData();
       break;
@@ -910,10 +956,10 @@ ArgumentEncodingContext::flushCommands(WMT::CommandBuffer cmdbuf, uint64_t seqId
       auto drawable = data->presenter->encodeCommands(
           cmdbuf, data->backbuffer, data->metadata,
           [&](WMT::RenderCommandEncoder encoder) {
-            // TODO(fence): wait fences
+            data->fence_wait.forEach([&](auto id) { encoder.waitForFence(fence_pool_[id], WMTRenderStageFragment); });
           },
           [&](WMT::RenderCommandEncoder encoder) {
-            // TODO(fence): wait fences
+            data->fence_update.forEach([&](auto id) { encoder.updateFence(fence_pool_[id], WMTRenderStageFragment); });
           }
       );
       auto t1 = clock::now();
@@ -954,6 +1000,8 @@ ArgumentEncodingContext::flushCommands(WMT::CommandBuffer cmdbuf, uint64_t seqId
         info.render_target_array_length = data->array_length;
         auto encoder = cmdbuf.renderCommandEncoder(info);
         encoder.setLabel(WMT::String::string("ClearPass", WMTUTF8StringEncoding));
+        data->fence_wait.forEach([&](auto id) { encoder.waitForFence(fence_pool_[id], WMTRenderStageFragment); });
+        data->fence_update.forEach([&](auto id) { encoder.updateFence(fence_pool_[id], WMTRenderStageFragment); });
         encoder.endEncoding();
       }
       data->~ClearEncoderData();
@@ -971,6 +1019,8 @@ ArgumentEncodingContext::flushCommands(WMT::CommandBuffer cmdbuf, uint64_t seqId
 
         auto encoder = cmdbuf.renderCommandEncoder(info);
         encoder.setLabel(WMT::String::string("ResolvePass", WMTUTF8StringEncoding));
+        data->fence_wait.forEach([&](auto id) { encoder.waitForFence(fence_pool_[id], WMTRenderStageFragment); });
+        data->fence_update.forEach([&](auto id) { encoder.updateFence(fence_pool_[id], WMTRenderStageFragment); });
         encoder.endEncoding();
       }
       data->~ResolveEncoderData();
@@ -978,7 +1028,21 @@ ArgumentEncodingContext::flushCommands(WMT::CommandBuffer cmdbuf, uint64_t seqId
     }
     case EncoderType::SpatialUpscale: {
       auto data = static_cast<SpatialUpscaleData *>(current);
-      cmdbuf.encodeSpatialScale(data->scaler->scaler(), data->backbuffer, data->upscaled, {});
+
+      auto begin_scaler = cmdbuf.blitCommandEncoder();
+      begin_scaler.setLabel(WMT::String::string("BeginScaler", WMTUTF8StringEncoding));
+      data->fence_wait.forEach([&](auto id) { begin_scaler.waitForFence(fence_pool_[id]); });
+      begin_scaler.updateFence(data->scaler->fence());
+      begin_scaler.endEncoding();
+
+      cmdbuf.encodeSpatialScale(data->scaler->scaler(), data->backbuffer, data->upscaled, data->scaler->fence());
+
+      auto end_scaler = cmdbuf.blitCommandEncoder();
+      end_scaler.waitForFence(data->scaler->fence());
+      end_scaler.setLabel(WMT::String::string("EndScaler", WMTUTF8StringEncoding));
+      data->fence_update.forEach([&](auto id) { end_scaler.updateFence(fence_pool_[id]); });
+      end_scaler.endEncoding();
+
       data->~SpatialUpscaleData();
       break;
     }
@@ -996,7 +1060,23 @@ ArgumentEncodingContext::flushCommands(WMT::CommandBuffer cmdbuf, uint64_t seqId
     }
     case EncoderType::TemporalUpscale: {
       auto data = static_cast<TemporalUpscaleData *>(current);
-      cmdbuf.encodeTemporalScale(data->scaler->scaler(), data->input, data->output, data->depth, data->motion_vector, data->exposure, {}, data->props);
+
+      auto begin_scaler = cmdbuf.blitCommandEncoder();
+      begin_scaler.setLabel(WMT::String::string("BeginScaler", WMTUTF8StringEncoding));
+      data->fence_wait.forEach([&](auto id) { begin_scaler.waitForFence(fence_pool_[id]); });
+      begin_scaler.updateFence(data->scaler->fence());
+      begin_scaler.endEncoding();
+
+      cmdbuf.encodeTemporalScale(
+          data->scaler->scaler(), data->input, data->output, data->depth, data->motion_vector, data->exposure,
+          data->scaler->fence(), data->props
+      );
+
+      auto end_scaler = cmdbuf.blitCommandEncoder();
+      end_scaler.waitForFence(data->scaler->fence());
+      end_scaler.setLabel(WMT::String::string("EndScaler", WMTUTF8StringEncoding));
+      data->fence_update.forEach([&](auto id) { end_scaler.updateFence(fence_pool_[id]); });
+      end_scaler.endEncoding();
       data->~TemporalUpscaleData();
       break;
     }
@@ -1060,6 +1140,9 @@ ArgumentEncodingContext::flushCommands(WMT::CommandBuffer cmdbuf, uint64_t seqId
 
 DXMT_ENCODER_LIST_OP
 ArgumentEncodingContext::checkEncoderRelation(EncoderData *former, EncoderData *latter) {
+  // TODO(fences): re-implement this, base on fence information
+  return DXMT_ENCODER_LIST_OP_SYNCHRONIZE;
+
   if (former->type == EncoderType::Null)
     return DXMT_ENCODER_LIST_OP_SWAP;
   if (latter->type == EncoderType::Null)
