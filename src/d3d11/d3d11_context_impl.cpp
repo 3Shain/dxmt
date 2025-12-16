@@ -1561,7 +1561,7 @@ public:
     if (auto bindable = reinterpret_cast<D3D11ResourceCommon *>(pBufferForArgs)) {
       EmitOP([IndexType, IndexBufferOffset, Primitive, ArgBuffer = bindable->buffer(),
             AlignedByteOffsetForArgs](ArgumentEncodingContext &enc) {
-        auto [buffer, buffer_offset] = enc.access(ArgBuffer, AlignedByteOffsetForArgs, 20, DXMT_ENCODER_RESOURCE_ACESS_READ);
+        auto [buffer, buffer_offset] = enc.access<true>(ArgBuffer, AlignedByteOffsetForArgs, 20, DXMT_ENCODER_RESOURCE_ACESS_READ);
         enc.bumpVisibilityResultOffset();
         auto [index_buffer, index_sub_offset] = enc.currentIndexBuffer();
         auto &cmd = enc.encodeRenderCommand<wmtcmd_render_draw_indexed_indirect>();
@@ -1596,7 +1596,7 @@ public:
     }
     if (auto bindable = reinterpret_cast<D3D11ResourceCommon *>(pBufferForArgs)) {
       EmitOP([Primitive, ArgBuffer = bindable->buffer(), AlignedByteOffsetForArgs](ArgumentEncodingContext &enc) {
-        auto [buffer, buffer_offset] = enc.access(ArgBuffer, AlignedByteOffsetForArgs, 20, DXMT_ENCODER_RESOURCE_ACESS_READ);
+        auto [buffer, buffer_offset] = enc.access<true>(ArgBuffer, AlignedByteOffsetForArgs, 20, DXMT_ENCODER_RESOURCE_ACESS_READ);
         enc.bumpVisibilityResultOffset();
         auto &cmd = enc.encodeRenderCommand<wmtcmd_render_draw_indirect>();
         cmd.type = WMTRenderCommandDrawIndirect;
@@ -1614,7 +1614,7 @@ public:
     auto max_object_threadgroups = max_object_threadgroups_;
     if (auto bindable = reinterpret_cast<D3D11ResourceCommon *>(pBufferForArgs)) {
       EmitOP([=, topo = state_.InputAssembler.Topology, ArgBuffer = bindable->buffer()](ArgumentEncodingContext &enc) {
-        auto [buffer, buffer_offset] = enc.access(ArgBuffer, AlignedByteOffsetForArgs, 20, DXMT_ENCODER_RESOURCE_ACESS_READ);
+        auto [buffer, buffer_offset] = enc.access<true>(ArgBuffer, AlignedByteOffsetForArgs, 20, DXMT_ENCODER_RESOURCE_ACESS_READ);
         auto dispatch_arg = enc.allocateTempBuffer1(sizeof(DXMT_DISPATCH_ARGUMENTS), 4);
   
         auto [vertex_per_warp, vertex_increment_per_wrap] = get_gs_vertex_count(topo);
@@ -1645,7 +1645,7 @@ public:
 
     if (auto bindable = reinterpret_cast<D3D11ResourceCommon *>(pBufferForArgs)) {
       EmitOP([=, topo = state_.InputAssembler.Topology, ArgBuffer = bindable->buffer()](ArgumentEncodingContext &enc) {
-        auto [buffer, buffer_offset] = enc.access(ArgBuffer, AlignedByteOffsetForArgs, 20, DXMT_ENCODER_RESOURCE_ACESS_READ);
+        auto [buffer, buffer_offset] = enc.access<true>(ArgBuffer, AlignedByteOffsetForArgs, 20, DXMT_ENCODER_RESOURCE_ACESS_READ);
         auto dispatch_arg = enc.allocateTempBuffer1(sizeof(DXMT_DISPATCH_ARGUMENTS), 4);
   
         auto [vertex_per_warp, vertex_increment_per_wrap] = get_gs_vertex_count(topo);
@@ -1677,7 +1677,7 @@ public:
     auto max_object_threadgroups = max_object_threadgroups_;
     if (auto bindable = reinterpret_cast<D3D11ResourceCommon *>(pBufferForArgs)) {
       EmitOP([=, topo = state_.InputAssembler.Topology, ArgBuffer = bindable->buffer()](ArgumentEncodingContext &enc) {
-        auto [buffer, buffer_offset] = enc.access(ArgBuffer, AlignedByteOffsetForArgs, 20, DXMT_ENCODER_RESOURCE_ACESS_READ);
+        auto [buffer, buffer_offset] = enc.access<true>(ArgBuffer, AlignedByteOffsetForArgs, 20, DXMT_ENCODER_RESOURCE_ACESS_READ);
         auto dispatch_arg = enc.allocateTempBuffer1(sizeof(DXMT_DISPATCH_ARGUMENTS), 4);
   
         auto PatchPerGroup = 32 / enc.tess_threads_per_patch;
@@ -1711,7 +1711,7 @@ public:
 
     if (auto bindable = reinterpret_cast<D3D11ResourceCommon *>(pBufferForArgs)) {
       EmitOP([=, topo = state_.InputAssembler.Topology, ArgBuffer = bindable->buffer()](ArgumentEncodingContext &enc) {
-        auto [buffer, buffer_offset] = enc.access(ArgBuffer, AlignedByteOffsetForArgs, 20, DXMT_ENCODER_RESOURCE_ACESS_READ);
+        auto [buffer, buffer_offset] = enc.access<true>(ArgBuffer, AlignedByteOffsetForArgs, 20, DXMT_ENCODER_RESOURCE_ACESS_READ);
         auto dispatch_arg = enc.allocateTempBuffer1(sizeof(DXMT_DISPATCH_ARGUMENTS), 4);
   
         auto PatchPerGroup = 32 / enc.tess_threads_per_patch;
@@ -4668,7 +4668,7 @@ public:
       auto &so_slot0 = state_.StreamOutput.Targets[0];
       if (so_slot0.Offset == 0xFFFFFFFF) {
         EmitST([slot0 = so_slot0.Buffer->buffer()](ArgumentEncodingContext &enc) {
-          auto [buffer, buffer_offset] = enc.access(slot0, 0, slot0->length(), DXMT_ENCODER_RESOURCE_ACESS_WRITE);
+          auto [buffer, buffer_offset] = enc.access<true>(slot0, 0, slot0->length(), DXMT_ENCODER_RESOURCE_ACESS_WRITE);
           auto &cmd = enc.encodeRenderCommand<wmtcmd_render_setbuffer>();
           cmd.type = WMTRenderCommandSetVertexBuffer;
           cmd.buffer = buffer->buffer();;
@@ -4679,7 +4679,7 @@ public:
         });
       } else {
         EmitST([slot0 = so_slot0.Buffer->buffer(), offset = so_slot0.Offset](ArgumentEncodingContext &enc) {
-          auto [buffer, buffer_offset] = enc.access(slot0, 0, slot0->length(), DXMT_ENCODER_RESOURCE_ACESS_WRITE);
+          auto [buffer, buffer_offset] = enc.access<true>(slot0, 0, slot0->length(), DXMT_ENCODER_RESOURCE_ACESS_WRITE);
           auto &cmd = enc.encodeRenderCommand<wmtcmd_render_setbuffer>();
           cmd.type = WMTRenderCommandSetVertexBuffer;
           cmd.buffer = buffer->buffer();;
