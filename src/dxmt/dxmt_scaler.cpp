@@ -15,6 +15,7 @@ SpatialScaler::decRef() {
 
 SpatialScaler::SpatialScaler(WMT::Device device, const WMTFXSpatialScalerInfo &info) {
   scaler_ = device.newSpatialScaler(info);
+  fence_ = device.newFence();
 };
 
 void
@@ -30,6 +31,7 @@ TemporalScaler::decRef() {
 
 TemporalScaler::TemporalScaler(WMT::Device device, const WMTFXTemporalScalerInfo &info) {
   scaler_ = device.newTemporalScaler(info);
+  fence_ = device.newFence();
 }
 
 } // namespace dxmt

@@ -16,8 +16,13 @@ public:
     return scaler_;
   }
 
+  WMT::Fence fence() {
+    return fence_;
+  }
+
 private:
   WMT::Reference<WMT::FXSpatialScaler> scaler_;
+  WMT::Reference<WMT::Fence> fence_;
   std::atomic<uint32_t> refcount_;
 };
 
@@ -32,8 +37,13 @@ public:
     return scaler_;
   }
 
+  WMT::Fence fence() {
+    return fence_;
+  }
+
 private:
   WMT::Reference<WMT::FXTemporalScaler> scaler_;
+  WMT::Reference<WMT::Fence> fence_;
   std::atomic<uint32_t> refcount_;
 };
 

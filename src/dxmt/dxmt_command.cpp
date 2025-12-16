@@ -184,13 +184,13 @@ ClearRenderTargetContext::begin(Rc<Texture> texture, TextureViewKey view) {
 
   if (dsv_flag) {
     auto &depth = pass_info.depth;
-    depth.attachment = ctx_.access(texture, view, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
+    depth.attachment = ctx_.access<PipelineStage::Pixel>(texture, view, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
     depth.depth_plane = 0;
     depth.load_action = WMTLoadActionLoad;
     depth.store_action = WMTStoreActionStore;
   } else {
     auto &color = pass_info.colors[0];
-    color.attachment = ctx_.access(texture, view, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
+    color.attachment = ctx_.access<PipelineStage::Pixel>(texture, view, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
     color.depth_plane = 0;
     color.load_action = WMTLoadActionLoad;
     color.store_action = WMTStoreActionStore;
@@ -345,18 +345,19 @@ DepthStencilBlitContext::copyFromBuffer(
   auto height = depth_stencil->height(view);
   auto &pass_info = *ctx_.startRenderPass(0b11, 0, 0, 0);
   auto &depth = pass_info.depth;
-  depth.attachment = ctx_.access(depth_stencil, view, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
+  depth.attachment = ctx_.access<PipelineStage::Pixel>(depth_stencil, view, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
   depth.depth_plane = 0;
   depth.load_action = WMTLoadActionLoad;
   depth.store_action = WMTStoreActionStore;
 
   auto &stencil = pass_info.stencil;
-  stencil.attachment = ctx_.access(depth_stencil, view, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
+  stencil.attachment = ctx_.access<PipelineStage::Pixel>(depth_stencil, view, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
   stencil.depth_plane = 0;
   stencil.load_action = WMTLoadActionLoad;
   stencil.store_action = WMTStoreActionStore;
 
-  auto [src_, src_sub_offset] = ctx_.access(src, src_offset, src_length, DXMT_ENCODER_RESOURCE_ACESS_READ);
+  auto [src_, src_sub_offset] =
+      ctx_.access<PipelineStage::Pixel>(src, src_offset, src_length, DXMT_ENCODER_RESOURCE_ACESS_READ);
 
   pass_info.render_target_width = width;
   pass_info.render_target_height = height;

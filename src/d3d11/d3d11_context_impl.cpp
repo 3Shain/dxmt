@@ -1560,8 +1560,10 @@ public:
     auto IndexBufferOffset = state_.InputAssembler.IndexBufferOffset;
     if (auto bindable = reinterpret_cast<D3D11ResourceCommon *>(pBufferForArgs)) {
       EmitOP([IndexType, IndexBufferOffset, Primitive, ArgBuffer = bindable->buffer(),
-            AlignedByteOffsetForArgs](ArgumentEncodingContext &enc) {
-        auto [buffer, buffer_offset] = enc.access<true>(ArgBuffer, AlignedByteOffsetForArgs, 20, DXMT_ENCODER_RESOURCE_ACESS_READ);
+              AlignedByteOffsetForArgs](ArgumentEncodingContext &enc) {
+        auto [buffer, buffer_offset] = enc.access<PipelineStage::Vertex>(
+            ArgBuffer, AlignedByteOffsetForArgs, sizeof(DXMT_DRAW_INDEXED_ARGUMENTS), DXMT_ENCODER_RESOURCE_ACESS_READ
+        );
         enc.bumpVisibilityResultOffset();
         auto [index_buffer, index_sub_offset] = enc.currentIndexBuffer();
         auto &cmd = enc.encodeRenderCommand<wmtcmd_render_draw_indexed_indirect>();
@@ -1596,12 +1598,14 @@ public:
     }
     if (auto bindable = reinterpret_cast<D3D11ResourceCommon *>(pBufferForArgs)) {
       EmitOP([Primitive, ArgBuffer = bindable->buffer(), AlignedByteOffsetForArgs](ArgumentEncodingContext &enc) {
-        auto [buffer, buffer_offset] = enc.access<true>(ArgBuffer, AlignedByteOffsetForArgs, 20, DXMT_ENCODER_RESOURCE_ACESS_READ);
+        auto [buffer, buffer_offset] = enc.access<PipelineStage::Vertex>(
+            ArgBuffer, AlignedByteOffsetForArgs, sizeof(DXMT_DRAW_ARGUMENTS), DXMT_ENCODER_RESOURCE_ACESS_READ
+        );
         enc.bumpVisibilityResultOffset();
         auto &cmd = enc.encodeRenderCommand<wmtcmd_render_draw_indirect>();
         cmd.type = WMTRenderCommandDrawIndirect;
         cmd.primitive_type = Primitive;
-        cmd.indirect_args_buffer = buffer->buffer();;
+        cmd.indirect_args_buffer = buffer->buffer();
         cmd.indirect_args_offset = AlignedByteOffsetForArgs + buffer_offset;
       });
     }
@@ -1614,9 +1618,11 @@ public:
     auto max_object_threadgroups = max_object_threadgroups_;
     if (auto bindable = reinterpret_cast<D3D11ResourceCommon *>(pBufferForArgs)) {
       EmitOP([=, topo = state_.InputAssembler.Topology, ArgBuffer = bindable->buffer()](ArgumentEncodingContext &enc) {
-        auto [buffer, buffer_offset] = enc.access<true>(ArgBuffer, AlignedByteOffsetForArgs, 20, DXMT_ENCODER_RESOURCE_ACESS_READ);
+        auto [buffer, buffer_offset] = enc.access<PipelineStage::Vertex>(
+            ArgBuffer, AlignedByteOffsetForArgs, sizeof(DXMT_DRAW_ARGUMENTS), DXMT_ENCODER_RESOURCE_ACESS_READ
+        );
         auto dispatch_arg = enc.allocateTempBuffer1(sizeof(DXMT_DISPATCH_ARGUMENTS), 4);
-  
+
         auto [vertex_per_warp, vertex_increment_per_wrap] = get_gs_vertex_count(topo);
   
         enc.bumpVisibilityResultOffset();
@@ -1645,9 +1651,11 @@ public:
 
     if (auto bindable = reinterpret_cast<D3D11ResourceCommon *>(pBufferForArgs)) {
       EmitOP([=, topo = state_.InputAssembler.Topology, ArgBuffer = bindable->buffer()](ArgumentEncodingContext &enc) {
-        auto [buffer, buffer_offset] = enc.access<true>(ArgBuffer, AlignedByteOffsetForArgs, 20, DXMT_ENCODER_RESOURCE_ACESS_READ);
+        auto [buffer, buffer_offset] = enc.access<PipelineStage::Vertex>(
+            ArgBuffer, AlignedByteOffsetForArgs, sizeof(DXMT_DRAW_INDEXED_ARGUMENTS), DXMT_ENCODER_RESOURCE_ACESS_READ
+        );
         auto dispatch_arg = enc.allocateTempBuffer1(sizeof(DXMT_DISPATCH_ARGUMENTS), 4);
-  
+
         auto [vertex_per_warp, vertex_increment_per_wrap] = get_gs_vertex_count(topo);
         auto [index_buffer, index_sub_offset] = enc.currentIndexBuffer();
   
@@ -1677,9 +1685,11 @@ public:
     auto max_object_threadgroups = max_object_threadgroups_;
     if (auto bindable = reinterpret_cast<D3D11ResourceCommon *>(pBufferForArgs)) {
       EmitOP([=, ArgBuffer = bindable->buffer()](ArgumentEncodingContext &enc) {
-        auto [buffer, buffer_offset] = enc.access<true>(ArgBuffer, AlignedByteOffsetForArgs, 20, DXMT_ENCODER_RESOURCE_ACESS_READ);
+        auto [buffer, buffer_offset] = enc.access<PipelineStage::Vertex>(
+            ArgBuffer, AlignedByteOffsetForArgs, sizeof(DXMT_DRAW_ARGUMENTS), DXMT_ENCODER_RESOURCE_ACESS_READ
+        );
         auto dispatch_arg = enc.allocateTempBuffer1(sizeof(DXMT_DISPATCH_ARGUMENTS), 4);
-  
+
         auto PatchPerGroup = 32 / enc.tess_threads_per_patch;
         auto ThreadsPerPatch = enc.tess_threads_per_patch;
   
@@ -1711,9 +1721,11 @@ public:
 
     if (auto bindable = reinterpret_cast<D3D11ResourceCommon *>(pBufferForArgs)) {
       EmitOP([=, ArgBuffer = bindable->buffer()](ArgumentEncodingContext &enc) {
-        auto [buffer, buffer_offset] = enc.access<true>(ArgBuffer, AlignedByteOffsetForArgs, 20, DXMT_ENCODER_RESOURCE_ACESS_READ);
+        auto [buffer, buffer_offset] = enc.access<PipelineStage::Vertex>(
+            ArgBuffer, AlignedByteOffsetForArgs, sizeof(DXMT_DRAW_INDEXED_ARGUMENTS), DXMT_ENCODER_RESOURCE_ACESS_READ
+        );
         auto dispatch_arg = enc.allocateTempBuffer1(sizeof(DXMT_DISPATCH_ARGUMENTS), 4);
-  
+
         auto PatchPerGroup = 32 / enc.tess_threads_per_patch;
         auto ThreadsPerPatch = enc.tess_threads_per_patch;
         auto [index_buffer, index_sub_offset] = enc.currentIndexBuffer();
@@ -4428,7 +4440,8 @@ public:
             continue;
           }
           auto &color = info.colors[rtv.RenderTargetIndex];
-          color.attachment = ctx.access(rtv.Texture, rtv.viewId, DXMT_ENCODER_RESOURCE_ACESS_READWRITE);
+          color.attachment =
+              ctx.access<PipelineStage::Pixel>(rtv.Texture, rtv.viewId, DXMT_ENCODER_RESOURCE_ACESS_READWRITE);
           color.depth_plane = rtv.DepthPlane;
           color.load_action = rtv.LoadAction;
           color.store_action = WMTStoreActionStore;
@@ -4441,14 +4454,14 @@ public:
           // TODO: ...should know more about store behavior (e.g. DiscardView)
           if (dsv_planar_flags & 1) {
             auto &depth = info.depth;
-            depth.attachment = ctx.access(dsv.Texture, dsv.viewId, access_flag);
+            depth.attachment = ctx.access<PipelineStage::Pixel>(dsv.Texture, dsv.viewId, access_flag);
             depth.load_action = dsv.DepthLoadAction;
             depth.store_action = WMTStoreActionStore;
           }
 
           if (dsv_planar_flags & 2) {
             auto &stencil = info.stencil;
-            stencil.attachment = ctx.access(dsv.Texture, dsv.viewId, access_flag);
+            stencil.attachment = ctx.access<PipelineStage::Pixel>(dsv.Texture, dsv.viewId, access_flag);
             stencil.load_action = dsv.StencilLoadAction;
             stencil.store_action = WMTStoreActionStore;
           }
@@ -4933,10 +4946,11 @@ public:
       auto &so_slot0 = state_.StreamOutput.Targets[0];
       if (so_slot0.Offset == 0xFFFFFFFF) {
         EmitST([slot0 = so_slot0.Buffer->buffer()](ArgumentEncodingContext &enc) {
-          auto [buffer, buffer_offset] = enc.access<true>(slot0, 0, slot0->length(), DXMT_ENCODER_RESOURCE_ACESS_WRITE);
+          auto [buffer, buffer_offset] =
+              enc.access<PipelineStage::Geometry>(slot0, 0, slot0->length(), DXMT_ENCODER_RESOURCE_ACESS_WRITE);
           auto &cmd = enc.encodeRenderCommand<wmtcmd_render_setbuffer>();
           cmd.type = WMTRenderCommandSetVertexBuffer;
-          cmd.buffer = buffer->buffer();;
+          cmd.buffer = buffer->buffer();
           cmd.offset = buffer_offset;
           cmd.index = 20;
           enc.makeResident<PipelineStage::Vertex, PipelineKind::Ordinary>(slot0.ptr(), false, true);
@@ -4944,10 +4958,11 @@ public:
         });
       } else {
         EmitST([slot0 = so_slot0.Buffer->buffer(), offset = so_slot0.Offset](ArgumentEncodingContext &enc) {
-          auto [buffer, buffer_offset] = enc.access<true>(slot0, 0, slot0->length(), DXMT_ENCODER_RESOURCE_ACESS_WRITE);
+          auto [buffer, buffer_offset] =
+              enc.access<PipelineStage::Geometry>(slot0, 0, slot0->length(), DXMT_ENCODER_RESOURCE_ACESS_WRITE);
           auto &cmd = enc.encodeRenderCommand<wmtcmd_render_setbuffer>();
           cmd.type = WMTRenderCommandSetVertexBuffer;
-          cmd.buffer = buffer->buffer();;
+          cmd.buffer = buffer->buffer();
           cmd.offset = offset + buffer_offset;
           cmd.index = 20;
           enc.makeResident<PipelineStage::Vertex, PipelineKind::Ordinary>(slot0.ptr(), false, true);
