@@ -54,8 +54,11 @@ public:
 
   PresentState synchronizeLayerProperties();
 
-  WMT::MetalDrawable
-  encodeCommands(WMT::CommandBuffer cmdbuf, WMT::Fence fence, WMT::Texture backbuffer, DXMTPresentMetadata metadata);
+  WMT::MetalDrawable encodeCommands(
+      WMT::CommandBuffer cmdbuf, WMT::Texture backbuffer, DXMTPresentMetadata metadata,
+      std::function<void(WMT::RenderCommandEncoder)> &&wait_fences,
+      std::function<void(WMT::RenderCommandEncoder)> &&update_fences
+  );
 
 private:
   void buildRenderPipelineState(bool is_pq, bool with_hdr_metadata, bool is_ms);
