@@ -310,7 +310,7 @@ public:
     retainAllocation(allocation);
     if (allocation->flags().test(BufferAllocationFlag::GpuReadonly))
       return;
-    auto &tracker = allocation->fenceTracker;
+    auto &tracker = allocation->fenceTrackers[allocation->currentSuballocation()];
     track<stage>(tracker, flags & DXMT_ENCODER_RESOURCE_ACESS_WRITE);
   }
 

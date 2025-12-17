@@ -7,6 +7,7 @@
 #include "rc/util_rc_ptr.hpp"
 #include "thread.hpp"
 #include "util_flags.hpp"
+#include "util_svector.hpp"
 
 namespace dxmt {
 
@@ -88,6 +89,10 @@ public:
     return current_suballocation_ * stride;
   }
 
+  uint32_t currentSuballocation() {
+    return current_suballocation_;
+  }
+
   void
   updateContents(uint64_t offset, const void *data, uint64_t length, uint32_t suballocation = 0) noexcept {
     if (likely(mappedMemory_ != nullptr && !flags_.test(BufferAllocationFlag::GpuManaged))) {
@@ -98,7 +103,7 @@ public:
   }
 
   DXMT_RESOURCE_RESIDENCY_STATE residencyState;
-  GenericAccessTracker fenceTracker;
+  small_vector<GenericAccessTracker, 1> fenceTrackers;
 
 private:
   BufferAllocation(WMT::Device device, const WMTBufferInfo &info, Flags<BufferAllocationFlag> flags);
@@ -111,7 +116,7 @@ private:
   WMTBufferInfo info_;
   uint32_t version_ = 0;
   Flags<BufferAllocationFlag> flags_;
-  std::vector<std::unique_ptr<BufferView>> cached_view_;
+  small_vector<std::unique_ptr<BufferView>, 1> cached_view_;
   void *mappedMemory_;
   uint64_t gpuAddress_;
   uint32_t current_suballocation_ = 0;
