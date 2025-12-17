@@ -104,6 +104,15 @@ public:
   }
 
   constexpr bool
+  intersectedWith(const FenceSet &set) const {
+    for (int i = 0; i < kParity; i++) {
+      if (storage_[i] & set.storage_[i])
+        return true;
+    }
+    return false;
+  }
+
+  constexpr bool
   contains(const FenceSet &set) const {
     for (int i = 0; i < kParity; i++) {
       if ((storage_[i] & set.storage_[i]) != set.storage_[i])
@@ -118,6 +127,15 @@ public:
       storage_[i] |= set.storage_[i];
     }
     return *this;
+  }
+
+  FenceSet
+  unionOf(const FenceSet &set) const {
+    FenceSet ret{};
+    for (int i = 0; i < kParity; i++) {
+      ret.storage_[i] = storage_[i] | set.storage_[i];
+    }
+    return ret;
   }
 
   FenceSet &

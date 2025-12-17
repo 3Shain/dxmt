@@ -738,9 +738,10 @@ ArgumentEncodingContext::flushCommands(WMT::CommandBuffer cmdbuf, uint64_t seqId
   if (encoder_count > 1) {
     unsigned j, i;
     for (j = encoder_count - 2; j != ~0u; j--) {
-      if (encoders[j]->type == EncoderType::Null)
+      // TODO(fences): we don't actively move encoders other than clear and render
+      if (encoders[j]->type != EncoderType::Clear && encoders[j]->type != EncoderType::Render)
         continue;
-      for (i = j + 1; i < std::min(encoder_count, j + kEncoderOptimizerThreshold); i++) {
+      for (i = j + 1; i < encoder_count; i++) {
         if (encoders[i]->type == EncoderType::Null)
           continue;
         if (checkEncoderRelation(encoders[j], encoders[i]) == DXMT_ENCODER_LIST_OP_SYNCHRONIZE)
@@ -1076,8 +1077,6 @@ ArgumentEncodingContext::flushCommands(WMT::CommandBuffer cmdbuf, uint64_t seqId
 
 DXMT_ENCODER_LIST_OP
 ArgumentEncodingContext::checkEncoderRelation(EncoderData *former, EncoderData *latter) {
-  // TODO(fences): re-implement this, base on fence information
-  return DXMT_ENCODER_LIST_OP_SYNCHRONIZE;
 
   if (former->type == EncoderType::Null)
     return DXMT_ENCODER_LIST_OP_SWAP;
@@ -1106,8 +1105,9 @@ ArgumentEncodingContext::checkEncoderRelation(EncoderData *former, EncoderData *
             depth_attachment->clear_depth = clear->depth_stencil.first;
             depth_attachment->load_action = WMTLoadActionClear;
             depth_attachment->store_action = WMTStoreActionStore;
-            // render->tex_write.merge(clear->tex_write);
-            // TODO: MERGE/ALIAS FENCE
+            render->fence_update.merge(clear->fence_update);
+            render->fence_wait.merge(clear->fence_wait);
+            render->fence_wait.subtract(clear->fence_update);
           }
           clear->clear_dsv &= ~1;
         }
@@ -1116,8 +1116,9 @@ ArgumentEncodingContext::checkEncoderRelation(EncoderData *former, EncoderData *
             stencil_attachment->clear_stencil = clear->depth_stencil.second;
             stencil_attachment->load_action = WMTLoadActionClear;
             stencil_attachment->store_action = WMTStoreActionStore;
-            // render->tex_write.merge(clear->tex_write);
-            // TODO: MERGE/ALIAS FENCE
+            render->fence_update.merge(clear->fence_update);
+            render->fence_wait.merge(clear->fence_wait);
+            render->fence_wait.subtract(clear->fence_update);
           }
           clear->clear_dsv &= ~2;
         }
@@ -1134,8 +1135,9 @@ ArgumentEncodingContext::checkEncoderRelation(EncoderData *former, EncoderData *
             attachment->load_action = WMTLoadActionClear;
             attachment->clear_color = clear->color;
             if (attachment->store_action != WMTStoreActionDontCare) {
-              // render->tex_write.merge(clear->tex_write);
-              // TODO: MERGE/ALIAS FENCE
+              render->fence_update.merge(clear->fence_update);
+              render->fence_wait.merge(clear->fence_wait);
+              render->fence_wait.subtract(clear->fence_update);
             }
           }
 
@@ -1166,8 +1168,9 @@ ArgumentEncodingContext::checkEncoderRelation(EncoderData *former, EncoderData *
       if (result.src) {
         result.src->store_action = WMTStoreActionStoreAndMultisampleResolve;
         result.src->resolve_attachment = result.dst;
-        // render->tex_write.merge(resolve->tex_write);
-        // TODO: MERGE/ALIAS FENCE
+        render->fence_update.merge(resolve->fence_update);
+        render->fence_wait.merge(resolve->fence_wait);
+        render->fence_wait.subtract(resolve->fence_update);
 
         currentFrameStatistics().resolve_pass_optimized++;
         resolve->~ResolveEncoderData();
@@ -1183,7 +1186,9 @@ ArgumentEncodingContext::checkEncoderRelation(EncoderData *former, EncoderData *
     auto r1 = reinterpret_cast<RenderEncoderData *>(latter);
     auto r0 = reinterpret_cast<RenderEncoderData *>(former);
 
-    if (isEncoderSignatureMatched(r0, r1)) {
+    if (isEncoderSignatureMatched(r0, r1) &&
+        // can't merge if latter's vertex wait for former's fragment
+        !r1->fence_wait_vertex.intersectedWith(r0->fence_update)) {
       for (unsigned i = 0; i < r0->render_target_count; i++) {
         auto &a0 = r0->colors[i];
         auto &a1 = r1->colors[i];
@@ -1220,11 +1225,19 @@ ArgumentEncodingContext::checkEncoderRelation(EncoderData *former, EncoderData *
       r1->ts_arg_marshal_tasks = std::move(r0->ts_arg_marshal_tasks);
       r1->use_visibility_result = r0->use_visibility_result || r1->use_visibility_result;
 
-      // r1->buf_read.merge(r0->buf_read);
-      // r1->buf_write.merge(r0->buf_write);
-      // r1->tex_read.merge(r0->tex_read);
-      // r1->tex_write.merge(r0->tex_write);
-      // TODO: MERGE/ALIAS FENCE
+      r1->fence_update.merge(r0->fence_update);
+      r1->fence_wait.merge(r0->fence_wait);
+      r1->fence_wait.subtract(r0->fence_update);
+      r1->fence_update_vertex.merge(r0->fence_update_vertex);
+      r1->fence_wait_vertex.merge(r0->fence_wait_vertex);
+      r1->fence_wait_vertex.subtract(r0->fence_update_vertex);
+
+      // just in case
+      r1->fence_wait.subtract(r0->fence_update_vertex);
+      /* 
+      r1->fence_wait_vertex.subtract(r0->fence_update);
+      does not make sense
+      */
 
       currentFrameStatistics().render_pass_optimized++;
       r0->~RenderEncoderData();
@@ -1240,12 +1253,26 @@ ArgumentEncodingContext::checkEncoderRelation(EncoderData *former, EncoderData *
 
 bool
 ArgumentEncodingContext::hasDataDependency(EncoderData *latter, EncoderData *former) {
-  if (latter->type == EncoderType::Clear && former->type == EncoderType::Clear) {
-    // FIXME: prove it's safe to return false
-    return false;
+  if (former->type == EncoderType::Render) {
+    auto r0 = reinterpret_cast<RenderEncoderData *>(former);
+    FenceSet fence_wait_r0 = r0->fence_wait.unionOf(r0->fence_wait_vertex);
+    FenceSet fence_update_r0 = r0->fence_update_vertex.unionOf(r0->fence_update);
+    if (latter->type == EncoderType::Render) {
+      auto r1 = reinterpret_cast<RenderEncoderData *>(latter);
+      FenceSet fence_wait_r1 = r1->fence_wait.unionOf(r1->fence_wait_vertex);
+      FenceSet fence_update_r1 = r1->fence_update_vertex.unionOf(r1->fence_update);
+      return fence_update_r0.intersectedWith(fence_wait_r1) || fence_update_r1.intersectedWith(fence_wait_r0);
+    }
+    return fence_update_r0.intersectedWith(latter->fence_wait) || latter->fence_update.intersectedWith(fence_wait_r0);
   }
-  // TODO: COMPARE FENCE
-  return true;
+  if (latter->type == EncoderType::Render) {
+    auto r1 = reinterpret_cast<RenderEncoderData *>(latter);
+    FenceSet fence_wait = r1->fence_wait.unionOf(r1->fence_wait_vertex);
+    FenceSet fence_update = r1->fence_update_vertex.unionOf(r1->fence_update);
+    return former->fence_update.intersectedWith(fence_wait) || fence_update.intersectedWith(former->fence_wait);
+  }
+  return former->fence_update.intersectedWith(latter->fence_wait) ||
+         latter->fence_update.intersectedWith(former->fence_wait);
 }
 
 bool
