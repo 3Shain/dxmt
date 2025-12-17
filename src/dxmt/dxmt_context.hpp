@@ -297,38 +297,44 @@ class ArgumentEncodingContext {
     retainAllocation(allocation);
     if (allocation->flags().test(BufferAllocationFlag::GpuReadonly))
       return;
+    auto &tracker = allocation->fenceTrackers[allocation->currentSuballocation()];
     if constexpr (PreRasterStage) {
-      auto id = currentRenderEncoder()->encoder_id_vertex;
+      auto current_encoder = currentRenderEncoder();
+      auto id = current_encoder->encoder_id_vertex;
       if (flags & DXMT_ENCODER_RESOURCE_ACESS_WRITE)
-        allocation->fenceTracker.write(id, currentRenderEncoder()->fence_wait_vertex);
+        tracker.write(id, current_encoder->fence_wait_vertex);
       else
-        allocation->fenceTracker.read(id, currentRenderEncoder()->fence_wait_vertex);
+        tracker.read(id, current_encoder->fence_wait_vertex);
       return;
     }
+    auto current_encoder = currentEncoder();
     if (flags & DXMT_ENCODER_RESOURCE_ACESS_WRITE)
-      allocation->fenceTracker.write(currentEncoderId(), currentEncoder()->fence_wait);
+      tracker.write(currentEncoderId(), current_encoder->fence_wait);
     else
-      allocation->fenceTracker.read(currentEncoderId(), currentEncoder()->fence_wait);
+      tracker.read(currentEncoderId(), current_encoder->fence_wait);
   }
 
-  template<bool PreRasterStage = false>
+  template <bool PreRasterStage = false>
   void
   trackTexture(TextureAllocation *allocation, DXMT_ENCODER_RESOURCE_ACESS flags) {
     retainAllocation(allocation);
     if (allocation->flags().test(TextureAllocationFlag::GpuReadonly))
       return;
+    auto &tracker = allocation->fenceTracker;
     if constexpr (PreRasterStage) {
-      auto id = currentRenderEncoder()->encoder_id_vertex;
+      auto current_encoder = currentRenderEncoder();
+      auto id = current_encoder->encoder_id_vertex;
       if (flags & DXMT_ENCODER_RESOURCE_ACESS_WRITE)
-        allocation->fenceTracker.write(id, currentRenderEncoder()->fence_wait_vertex);
+        tracker.write(id, current_encoder->fence_wait_vertex);
       else
-        allocation->fenceTracker.read(id, currentRenderEncoder()->fence_wait_vertex);
+        tracker.read(id, current_encoder->fence_wait_vertex);
       return;
     }
+    auto current_encoder = currentEncoder();
     if (flags & DXMT_ENCODER_RESOURCE_ACESS_WRITE)
-      allocation->fenceTracker.write(currentEncoderId(), currentEncoder()->fence_wait);
+      tracker.write(currentEncoderId(), current_encoder->fence_wait);
     else
-      allocation->fenceTracker.read(currentEncoderId(), currentEncoder()->fence_wait);
+      tracker.read(currentEncoderId(), current_encoder->fence_wait);
   }
 
 public:

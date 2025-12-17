@@ -88,6 +88,10 @@ public:
     return current_suballocation_ * stride;
   }
 
+  uint32_t currentSuballocation() {
+    return current_suballocation_;
+  }
+
   void
   updateContents(uint64_t offset, const void *data, uint64_t length, uint32_t suballocation = 0) noexcept {
     if (likely(mappedMemory_ != nullptr && !flags_.test(BufferAllocationFlag::GpuManaged))) {
@@ -98,7 +102,7 @@ public:
   }
 
   DXMT_RESOURCE_RESIDENCY_STATE residencyState;
-  GenericAccessTracker fenceTracker;
+  std::vector<GenericAccessTracker> fenceTrackers;
 
 private:
   BufferAllocation(WMT::Device device, const WMTBufferInfo &info, Flags<BufferAllocationFlag> flags);
