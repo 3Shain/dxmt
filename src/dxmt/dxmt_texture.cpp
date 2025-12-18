@@ -20,7 +20,6 @@ TextureAllocation::TextureAllocation(
 
   gpuResourceID = info_copy.gpu_resource_id;
   machPort = 0;
-  depkey = EncoderDepSet::generateNewKey(global_texture_seq.fetch_add(1));
 };
 
 TextureAllocation::TextureAllocation(
@@ -31,7 +30,6 @@ TextureAllocation::TextureAllocation(
   mappedMemory = nullptr;
   gpuResourceID = textureDescriptor.gpu_resource_id;
   machPort = textureDescriptor.mach_port;
-  depkey = EncoderDepSet::generateNewKey(global_texture_seq.fetch_add(1));
 };
 
 TextureAllocation::~TextureAllocation(){
@@ -185,12 +183,9 @@ Texture::Texture(
 
 Rc<TextureAllocation>
 Texture::allocate(Flags<TextureAllocationFlag> flags) {
-  WMTResourceOptions options = WMTResourceStorageModeShared;
+  WMTResourceOptions options = WMTResourceHazardTrackingModeUntracked;
   WMTTextureInfo info = info_; // copy
   info.mach_port = 0;
-  if (flags.test(TextureAllocationFlag::GpuReadonly)) {
-    options |= WMTResourceHazardTrackingModeUntracked;
-  }
   if (flags.test(TextureAllocationFlag::CpuWriteCombined)) {
     options |= WMTResourceOptionCPUCacheModeWriteCombined;
   }

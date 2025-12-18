@@ -1092,6 +1092,7 @@ enum WMTRenderStages : uint8_t {
   WMTRenderStageTile = 4,
   WMTRenderStageObject = 8,
   WMTRenderStageMesh = 16,
+  WMTRenderStagePreRaster = WMTRenderStageVertex | WMTRenderStageObject | WMTRenderStageMesh,
 };
 
 struct wmtcmd_render_useresource {
