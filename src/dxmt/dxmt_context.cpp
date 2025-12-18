@@ -1021,14 +1021,12 @@ ArgumentEncodingContext::checkEncoderRelation(EncoderData *former, EncoderData *
       auto render = reinterpret_cast<RenderEncoderData *>(former);
       auto clear = reinterpret_cast<ClearEncoderData *>(latter);
 
-      if (clear->clear_dsv) {
-        if (render->info.depth.texture == clear->texture.handle) {
-          render->info.depth.store_action = WMTStoreActionDontCare;
-        }
-        if (render->info.stencil.texture == clear->texture.handle) {
-          render->info.stencil.store_action = WMTStoreActionDontCare;
-        }
-      }
+      // DontCare can be used because it's going to be cleared anyway
+      // just keep in mind DontCare != DontStore
+      if (clear->clear_dsv & 1 && render->info.depth.texture == clear->texture.handle)
+        render->info.depth.store_action = WMTStoreActionDontCare;
+      if (clear->clear_dsv & 2 && render->info.stencil.texture == clear->texture.handle)
+        render->info.stencil.store_action = WMTStoreActionDontCare;
     }
     return hasDataDependency(latter, former) ? DXMT_ENCODER_LIST_OP_SYNCHRONIZE : DXMT_ENCODER_LIST_OP_SWAP;
   }
