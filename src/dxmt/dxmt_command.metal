@@ -280,6 +280,7 @@ constexpr constant uint kPresentFCIndex_BackbufferIsSRGB = 0x103;
 constexpr constant uint kPresentFCIndex_HDRPQ = 0x101;
 constexpr constant uint kPresentFCIndex_WithHDRMetadata = 0x102;
 constexpr constant uint kPresentFCIndex_BackbufferIsMS = 0x104;
+constexpr constant uint kPresentFCIndex_GammaEnabled = 0x105;
 
 constant bool present_backbuffer_size_matched [[function_constant(kPresentFCIndex_BackbufferSizeMatched)]];
 constant bool present_backbuffer_is_srgb [[function_constant(kPresentFCIndex_BackbufferIsSRGB)]];
@@ -287,8 +288,10 @@ constant bool present_hdr_pq [[function_constant(kPresentFCIndex_HDRPQ)]];
 constant bool present_with_hdr_metadata [[function_constant(kPresentFCIndex_WithHDRMetadata)]];
 constant bool present_backbuffer_is_ms [[function_constant(kPresentFCIndex_BackbufferIsMS)]];
 constant bool present_backbuffer_is_not_ms = !present_backbuffer_is_ms;
+constant bool present_gamma_enabled [[function_constant(kPresentFCIndex_GammaEnabled)]];
 
 constexpr sampler s(coord::normalized);
+constexpr sampler gamma_sampler(coord::normalized, filter::linear, address::clamp_to_edge);
 
 struct DXMTPresentMetadata {
   float edr_scale;
@@ -304,6 +307,7 @@ float3 to_srgb(float3 linear) {
     present_data input [[stage_in]],
     texture2d<float, access::sample> source [[texture(0), function_constant(present_backbuffer_is_not_ms)]],
     texture2d_ms<float, access::read> source_ms [[texture(0), function_constant(present_backbuffer_is_ms)]],
+    texture2d<float, access::sample> gamma_lut [[texture(1), function_constant(present_gamma_enabled)]],
     constant DXMTPresentMetadata& meta [[buffer(0)]]
 ) {
   float4 output = float4(0);
@@ -319,6 +323,12 @@ float3 to_srgb(float3 linear) {
       : source.sample(s, input.uv);
   }
   float3 output_rgb = output.xyz;
+  if (present_gamma_enabled && !present_hdr_pq && !present_with_hdr_metadata) {
+    output_rgb = float3(
+        gamma_lut.sample(gamma_sampler, float2(output_rgb.r, 0.5)).r,
+        gamma_lut.sample(gamma_sampler, float2(output_rgb.g, 0.5)).g,
+        gamma_lut.sample(gamma_sampler, float2(output_rgb.b, 0.5)).b);
+  }
   float edr_scale = meta.edr_scale;
   if (present_backbuffer_is_srgb)
     output_rgb = to_srgb(output_rgb);
