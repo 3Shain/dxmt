@@ -457,6 +457,8 @@ ArgumentEncodingContext::present(Rc<Texture> &texture, Rc<Presenter> &presenter,
   encoder_info->after = after;
   encoder_info->metadata = metadata;
 
+  presenter->updateGammaLUT();
+
   encoder_info->tex_read.add(texture->current()->depkey);
 
   encoder_current = encoder_info;

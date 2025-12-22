@@ -417,6 +417,16 @@ public:
   };
 
   void
+  setFragmentSamplerState(SamplerState sampler_state, uint8_t index) {
+    struct wmtcmd_render_setsamplerstate cmd;
+    cmd.type = WMTRenderCommandSetFragmentTexture;
+    cmd.next.set(nullptr);
+    cmd.sampler_state = sampler_state;
+    cmd.index = index;
+    MTLRenderCommandEncoder_encodeCommands(handle, (const wmtcmd_base *)&cmd);
+  };
+
+  void
   setFragmentBytes(const void *buf, uint64_t length, uint8_t index) {
     struct wmtcmd_render_setbytes cmd;
     cmd.type = WMTRenderCommandSetFragmentBytes;

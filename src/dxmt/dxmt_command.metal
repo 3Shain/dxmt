@@ -279,11 +279,13 @@ constexpr constant uint kPresentFCIndex_BackbufferSizeMatched = 0x100;
 constexpr constant uint kPresentFCIndex_BackbufferIsSRGB = 0x103;
 constexpr constant uint kPresentFCIndex_HDRPQ = 0x101;
 constexpr constant uint kPresentFCIndex_WithHDRMetadata = 0x102;
+constexpr constant uint kPresentFCIndex_GammaEnabled = 0x104;
 
 constant bool present_backbuffer_size_matched [[function_constant(kPresentFCIndex_BackbufferSizeMatched)]];
 constant bool present_backbuffer_is_srgb [[function_constant(kPresentFCIndex_BackbufferIsSRGB)]];
 constant bool present_hdr_pq [[function_constant(kPresentFCIndex_HDRPQ)]];
 constant bool present_with_hdr_metadata [[function_constant(kPresentFCIndex_WithHDRMetadata)]];
+constant bool present_gamma_enabled [[function_constant(kPresentFCIndex_GammaEnabled)]];
 
 constexpr sampler s(coord::normalized);
 
@@ -300,12 +302,20 @@ float3 to_srgb(float3 linear) {
 [[fragment]] float4 fs_present_quad(
     present_data input [[stage_in]],
     texture2d<float, access::sample> source [[texture(0)]],
-    constant DXMTPresentMetadata& meta [[buffer(0)]]
+    texture2d<float, access::sample> gamma_lut [[texture(1)]],
+    constant DXMTPresentMetadata& meta [[buffer(0)]],
+    sampler gamma_sampler [[sampler(0)]]
 ) {
   float4 output = present_backbuffer_size_matched
       ? source.read(uint2(input.position.xy))
       : source.sample(s, input.uv);
   float3 output_rgb = output.xyz;
+  if (present_gamma_enabled && !present_hdr_pq && !present_with_hdr_metadata) {
+    output_rgb = float3(
+        gamma_lut.sample(gamma_sampler, float2(output_rgb.r, 0.5)).r,
+        gamma_lut.sample(gamma_sampler, float2(output_rgb.g, 0.5)).g,
+        gamma_lut.sample(gamma_sampler, float2(output_rgb.b, 0.5)).b);
+  }
   float edr_scale = meta.edr_scale;
   if (present_backbuffer_is_srgb)
     output_rgb = to_srgb(output_rgb);

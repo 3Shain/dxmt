@@ -172,6 +172,8 @@ class Presenter;
 
 struct PresentData : EncoderData {
   WMT::Reference<WMT::Texture> backbuffer;
+  WMT::Reference<WMT::Texture> gammaLUTTexture;
+  WMT::Reference<WMT::SamplerState> gammaSampler;
   Rc<Presenter> presenter;
   double after;
   DXMTPresentMetadata metadata;
