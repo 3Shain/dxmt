@@ -5,6 +5,8 @@ project('dxmt', ['c', 'cpp'], version : 'v0.1', meson_version: '>=1.3.0', defaul
   'b_ndebug=if-release',
 ])
 
+fs = import('fs')
+
 dxmt_native = get_option('dxmt_native')
 
 cpp = meson.get_compiler('cpp')
@@ -28,6 +30,11 @@ if dxmt_native
   dxmt_include_dirs += dxmt_native_include_dirs
 endif
 
+source_prefix_path = fs.relative_to(
+    meson.project_source_root(),
+    meson.project_build_root()
+)
+
 compiler_args = [
   '-Wimplicit-fallthrough',
   # gcc
@@ -41,6 +48,7 @@ compiler_args = [
   '-Wno-unused-const-variable',
   '-Wno-missing-braces',
   '-fblocks',
+  '-fmacro-prefix-map=' + source_prefix_path + '/=',
 ]
 
 if cpu_family == 'x86'
