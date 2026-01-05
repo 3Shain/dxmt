@@ -7,7 +7,7 @@
 
 namespace dxmt {
 
-constexpr size_t kResourceInitializerCpuCommandHeapSize = 0x100000;  // 1MB
+constexpr size_t kResourceInitializerCpuCommandHeapSize = 0x100000; // 1MB
 constexpr size_t kResourceInitializerGpuUploadHeapSize = 0x2000000; // 32MB
 constexpr size_t kResourceInitializerGpuUploadHeapAlignment = 256;
 constexpr size_t kResourceInitializerChunks = 2;
@@ -21,7 +21,12 @@ public:
 
   uint64_t initWithZero(BufferAllocation *buffer, uint64_t offset, uint64_t length);
 
-  uint64_t initWithDefault(const Texture *texture, TextureAllocation *allocation);
+  uint64_t initDepthStencilWithZero(
+      const Texture *texture, TextureAllocation *allocation, uint32_t slice, uint32_t level, uint32_t dsv_planar
+  );
+  uint64_t
+  initRenderTargetWithZero(const Texture *texture, TextureAllocation *allocation, uint32_t slice, uint32_t level);
+  uint64_t initWithZero(const Texture *texture, TextureAllocation *allocation, uint32_t slice, uint32_t level);
   uint64_t initWithData(
       const Texture *texture, TextureAllocation *allocation, uint32_t slice, uint32_t level, const void *data,
       size_t row_pitch, size_t depth_pitch
@@ -107,6 +112,8 @@ private:
 
   WMT::Buffer allocateGpuHeap(size_t size, size_t &offset);
 
+  WMT::Buffer allocateZeroBuffer(size_t size);
+
   bool retainAllocation(Allocation *allocation);
 
   uint64_t current_seq_id_ = 1;
@@ -114,6 +121,8 @@ private:
   WMT::Device device_;
   WMT::Reference<WMT::CommandQueue> upload_queue_;
   WMT::Reference<WMT::SharedEvent> upload_queue_event_;
+  WMT::Reference<WMT::Buffer> zero_buffer_;
+  size_t zero_buffer_size_ = 0;
   dxmt::mutex mutex_;
 
   void *cpu_command_heap;

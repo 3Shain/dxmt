@@ -29,6 +29,13 @@ namespace dxmt {
     continue;                                                                                                          \
   }
 
+#define ALLOC_ZERO(buffer, size)                                                                                       \
+  WMT::Buffer buffer;                                                                                                  \
+  if (!(buffer = allocateZeroBuffer(size))) {                                                                          \
+    flushInternal();                                                                                                   \
+    continue;                                                                                                          \
+  }
+
 #define RETAIN(allocation)                                                                                             \
   if (!retainAllocation(allocation)) {                                                                                 \
     flushInternal();                                                                                                   \
@@ -71,45 +78,125 @@ ResourceInitializer::initWithZero(BufferAllocation *buffer, uint64_t offset, uin
 }
 
 uint64_t
-ResourceInitializer::initWithDefault(const Texture *texture, TextureAllocation *allocation) {
+ResourceInitializer::initDepthStencilWithZero(
+    const Texture *texture, TextureAllocation *allocation, uint32_t slice, uint32_t level, uint32_t dsv_planar
+) {
+  std::lock_guard<dxmt::mutex> lock(mutex_);
+  do {
+    RETAIN(allocation);
+    ALLOC_CLEAR(info);
+
+    info->render_target_array_length = 0;
+    info->render_target_width = texture->width();
+    info->render_target_height = texture->height();
+    if (dsv_planar & 1) {
+      info->depth.texture = allocation->texture();
+      info->depth.clear_depth = 0;
+      info->depth.load_action = WMTLoadActionClear;
+      info->depth.store_action = WMTStoreActionStore;
+      info->depth.slice = slice;
+      info->depth.level = level;
+    }
+    if (dsv_planar & 2) {
+      info->stencil.texture = allocation->texture();
+      info->stencil.clear_stencil = 0;
+      info->stencil.load_action = WMTLoadActionClear;
+      info->stencil.store_action = WMTStoreActionStore;
+      info->stencil.slice = slice;
+      info->stencil.level = level;
+    }
+
+  } while (0);
+
+  return current_seq_id_;
+}
+
+uint64_t
+ResourceInitializer::initRenderTargetWithZero(
+    const Texture *texture, TextureAllocation *allocation, uint32_t slice, uint32_t level
+) {
+  std::lock_guard<dxmt::mutex> lock(mutex_);
+  do {
+    RETAIN(allocation);
+    ALLOC_CLEAR(info);
+
+    info->render_target_array_length = texture->textureType() == WMTTextureType3D ? texture->depth() : 0;
+    info->render_target_width = texture->width();
+    info->render_target_height = texture->height();
+    info->colors[0].texture = allocation->texture();
+    info->colors[0].load_action = WMTLoadActionClear;
+    info->colors[0].clear_color = {0, 0, 0, 0};
+    info->colors[0].store_action = WMTStoreActionStore;
+    info->colors[0].slice = slice;
+    info->colors[0].level = level;
+
+  } while (0);
+
+  return current_seq_id_;
+}
+
+uint64_t
+ResourceInitializer::initWithZero(
+    const Texture *texture, TextureAllocation *allocation, uint32_t slice, uint32_t level
+) {
+  if (auto dsv_planar = DepthStencilPlanarFlags(texture->pixelFormat())) {
+    return initDepthStencilWithZero(texture, allocation, slice, level, dsv_planar);
+  }
+  if (texture->usage() & WMTTextureUsageRenderTarget) {
+    return initRenderTargetWithZero(texture, allocation, slice, level);
+  }
+
+  auto width_sub = std::max(1u, texture->width() >> level);
+  auto height_sub = std::max(1u, texture->height() >> level);
+  auto depth_sub = std::max(1u, texture->depth() >> level);
+
+  auto block_size = 1u;
+
+  switch (texture->pixelFormat()) {
+  case WMTPixelFormatBC1_RGBA:
+  case WMTPixelFormatBC1_RGBA_sRGB:
+  case WMTPixelFormatBC2_RGBA:
+  case WMTPixelFormatBC2_RGBA_sRGB:
+  case WMTPixelFormatBC3_RGBA:
+  case WMTPixelFormatBC3_RGBA_sRGB:
+  case WMTPixelFormatBC4_RSnorm:
+  case WMTPixelFormatBC4_RUnorm:
+  case WMTPixelFormatBC5_RGUnorm:
+  case WMTPixelFormatBC5_RGSnorm:
+  case WMTPixelFormatBC6H_RGBUfloat:
+  case WMTPixelFormatBC6H_RGBFloat:
+  case WMTPixelFormatBC7_RGBAUnorm:
+  case WMTPixelFormatBC7_RGBAUnorm_sRGB:
+    block_size = 4u;
+    break;
+  default:
+    break;
+  }
+
+  bool is_3d_tex = texture->textureType() == WMTTextureType3D;
+  size_t texel_size = MTLGetTexelSize(texture->pixelFormat());
+  size_t bytes_per_row_needed = texel_size * align(width_sub, block_size) / block_size;
+  size_t bytes_per_image_needed = bytes_per_row_needed * align(height_sub, block_size) / block_size;
+  size_t total_bytes_needed = bytes_per_image_needed * depth_sub;
+
   std::lock_guard<dxmt::mutex> lock(mutex_);
 
   do {
-    if (auto dsv_planar = DepthStencilPlanarFlags(texture->pixelFormat())) {
-      RETAIN(allocation);
-      ALLOC_CLEAR(info);
-      info->render_target_array_length = texture->arrayLength();
-      info->render_target_width = texture->width();
-      info->render_target_height = texture->height();
-      if (dsv_planar & 1) {
-        info->depth.texture = allocation->texture();
-        info->depth.clear_depth = 0;
-        info->depth.load_action = WMTLoadActionClear;
-        info->depth.store_action = WMTStoreActionStore;
-      }
-      if (dsv_planar & 2) {
-        info->stencil.texture = allocation->texture();
-        info->stencil.clear_stencil = 0;
-        info->stencil.load_action = WMTLoadActionClear;
-        info->stencil.store_action = WMTStoreActionStore;
-      }
+    ALLOC_ZERO(zero, total_bytes_needed);
+    RETAIN(allocation);
+    ALLOC_BLIT(wmtcmd_blit_copy_from_buffer_to_texture, copy);
 
-    } else if (texture->usage() & WMTTextureUsageRenderTarget) {
-      RETAIN(allocation);
-      ALLOC_CLEAR(info);
-      info->render_target_array_length =
-          texture->textureType() == WMTTextureType3D ? texture->depth() : texture->arrayLength();
-      info->render_target_width = texture->width();
-      info->render_target_height = texture->height();
-      info->colors[0].texture = allocation->texture();
-      info->colors[0].load_action = WMTLoadActionClear;
-      info->colors[0].clear_color = {0, 0, 0, 1.0};
-      info->colors[0].store_action = WMTStoreActionStore;
-    }
-    // NOTE: otherwise the initial data is undefined
-    // "If you don't pass anything to pInitialData, the initial content of the memory for the resource is undefined"
+    copy->type = WMTBlitCommandCopyFromBufferToTexture;
+    copy->src = zero;
+    copy->src_offset = 0;
+    copy->bytes_per_row = bytes_per_row_needed;
+    copy->bytes_per_image = is_3d_tex ? bytes_per_image_needed : 0;
+    copy->size = {width_sub, height_sub, depth_sub};
+    copy->dst = allocation->texture();
+    copy->slice = slice;
+    copy->level = level;
+    copy->origin = {0, 0, 0};
 
-    break;
   } while (0);
 
   return current_seq_id_;
@@ -257,7 +344,6 @@ ResourceInitializer::encode(WMT::CommandBuffer cmdbuf) {
     b.encodeCommands(&blit_cmd_head);
     b.endEncoding();
   }
-
 }
 
 WMT::Buffer
@@ -279,6 +365,37 @@ ResourceInitializer::retainAllocation(Allocation *allocation) {
     ref_tracker.addStorage(temp, block_size * sizeof(intptr_t));
   }
   return true;
+}
+
+WMT::Buffer
+ResourceInitializer::allocateZeroBuffer(size_t size) {
+  if (zero_buffer_size_ < size) {
+    if (zero_buffer_size_) {
+      flushInternal(); // keep a reference of old zero buffer
+      zero_buffer_size_ = 0;
+      return {};
+    }
+
+    wmtcmd_blit_fillbuffer *fill = nullptr;
+    if (!allocateBlit(&fill)) {
+      return {};
+    }
+
+    WMTBufferInfo buffer_info;
+    buffer_info.gpu_address = 0;
+    buffer_info.length = size;
+    buffer_info.memory.set(nullptr);
+    buffer_info.options = WMTResourceStorageModePrivate | WMTResourceHazardTrackingModeUntracked;
+    zero_buffer_ = device_.newBuffer(buffer_info);
+    zero_buffer_size_ = size;
+
+    fill->type = WMTBlitCommandFillBuffer;
+    fill->buffer = zero_buffer_;
+    fill->length = size;
+    fill->offset = 0;
+    fill->value = 0;
+  }
+  return zero_buffer_;
 }
 
 } // namespace dxmt

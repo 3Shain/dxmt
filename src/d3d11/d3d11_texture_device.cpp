@@ -471,12 +471,14 @@ HRESULT CreateDeviceTextureInternal(MTLD3D11Device *pDevice,
   } else if (single_subresource && (finalDesc.BindFlags & D3D11_BIND_DEPTH_STENCIL)) {
     Rc<RenamableTexturePool> renamable = new RenamableTexturePool(texture.ptr(), 32, flags);
     texture->rename(renamable->getNext(0));
-    initializer.initWithDefault(texture.ptr(), texture->current());
+    initializer.initWithZero(texture.ptr(), texture->current(), 0, 0);
     *ppTexture = reinterpret_cast<typename tag::COM_IMPL *>(
         ref(new DeviceTexture<tag>(&finalDesc, std::move(texture), std::move(renamable), pDevice)));
   } else {
     texture->rename(texture->allocate(flags));
-    initializer.initWithDefault(texture.ptr(), texture->current());
+    for (auto sub : EnumerateSubresources(finalDesc)) {
+      initializer.initWithZero(texture.ptr(), texture->current(), sub.ArraySlice, sub.MipLevel);
+    }
     *ppTexture = reinterpret_cast<typename tag::COM_IMPL *>(
       ref(new DeviceTexture<tag>(&finalDesc, std::move(texture), pDevice)));
   }
