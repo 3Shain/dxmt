@@ -67,13 +67,13 @@ template <bool EnableMetalFX>
 class MTLD3D11SwapChain final : public MTLDXGISubObject<IDXGISwapChain4, MTLD3D11Device> {
 public:
   MTLD3D11SwapChain(
-      IDXGIFactory1 *pFactory, MTLD3D11Device *pDevice, IMTLDXGIDevice *pLayerFactoryWeakref,
+      IDXGIFactory1 *pFactory, MTLD3D11Device *pDevice, IMTLDXGIDevice *pDXGIDevice,
        HWND hWnd, const DXGI_SWAP_CHAIN_DESC1 *pDesc,
       const DXGI_SWAP_CHAIN_FULLSCREEN_DESC *pFullscreenDesc
   ) :
       MTLDXGISubObject(pDevice),
       factory_(pFactory),
-      layer_factory_weak_(pLayerFactoryWeakref),
+      dxgi_device_(pDXGIDevice),
       presentation_count_(0),
       desc_(*pDesc),
       device_context_(pDevice->GetImmediateContextPrivate()),
@@ -447,7 +447,7 @@ public:
     Com<IDXGIAdapter> adapter;
     Com<IDXGIOutput> output;
 
-    if (FAILED(layer_factory_weak_->GetAdapter(&adapter)))
+    if (FAILED(dxgi_device_->GetAdapter(&adapter)))
       return E_FAIL;
 
     for (uint32_t i = 0; SUCCEEDED(adapter->EnumOutputs(i, &output)); i++) {
@@ -855,7 +855,7 @@ private:
   };
 
   Com<IDXGIFactory1> factory_;
-  IMTLDXGIDevice *layer_factory_weak_;
+  Com<IMTLDXGIDevice> dxgi_device_;
   WMT::Object native_view_;
   WMT::MetalLayer layer_weak_;
   ULONG presentation_count_;
