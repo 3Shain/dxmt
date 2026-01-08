@@ -102,6 +102,7 @@ public:
         null_gs(this) {
     Sha1HashState h;
     h.update(desc.Strides);
+    h.update(desc.RasterizedStream);
     h.update(desc.Elements.size());
     for (auto &el : desc.Elements) {
         h.update(el);
@@ -149,6 +150,10 @@ public:
   Sha1Digest &Digest() override {
     return sha1_;
   };
+
+  virtual UINT RasterizedStream() override {
+    return desc_.RasterizedStream;
+  }
 
 private:
   MTL_STREAM_OUTPUT_DESC desc_;

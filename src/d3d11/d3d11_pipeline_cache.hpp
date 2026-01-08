@@ -22,7 +22,7 @@ public:
   ) = 0;
   virtual HRESULT AddStreamOutputLayout(
       const void *pShaderBytecode, UINT NumEntries, const D3D11_SO_DECLARATION_ENTRY *pEntries, UINT NumStrides,
-      const UINT *pStrides, IMTLD3D11StreamOutputLayout **ppSOLayout
+      const UINT *pStrides, UINT RasterizedStream, IMTLD3D11StreamOutputLayout **ppSOLayout
   ) = 0;
   virtual HRESULT AddBlendState(const D3D11_BLEND_DESC1 *pBlendDesc, IMTLD3D11BlendState **ppBlendState) = 0;
   virtual void

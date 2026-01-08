@@ -355,6 +355,7 @@ class PipelineCache : public MTLD3D11PipelineCacheBase {
   AddStreamOutputLayout(const void *pShaderBytecode, UINT NumEntries,
                         const D3D11_SO_DECLARATION_ENTRY *pEntries,
                         UINT NumStrides, const UINT *pStrides,
+                        UINT RasterizedStream,
                         IMTLD3D11StreamOutputLayout **ppSOLayout) override {
     std::lock_guard<dxmt::mutex> lock(mutex_so_);
     std::vector<MTL_SHADER_STREAM_OUTPUT_ELEMENT_DESC> buffer(NumEntries * 4);
@@ -372,6 +373,7 @@ class PipelineCache : public MTLD3D11PipelineCacheBase {
     MTL_STREAM_OUTPUT_DESC desc;
     memcpy(desc.Strides, strides.data(), sizeof(strides));
     desc.Elements = std::move(buffer);
+    desc.RasterizedStream = RasterizedStream;
     return so_layouts.CreateStateObject(&desc, ppSOLayout);
   };
 

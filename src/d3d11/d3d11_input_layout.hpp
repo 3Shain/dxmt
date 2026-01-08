@@ -39,6 +39,7 @@ DEFINE_COM_INTERFACE("fd58f76b-7c22-4605-b43c-28048c8b4a64",
       MTL_SHADER_STREAM_OUTPUT_ELEMENT_DESC * *ppElements,
       uint32_t Strides[4]) = 0;
   virtual dxmt::Sha1Digest &Digest() = 0;
+  virtual UINT RasterizedStream() = 0;
 };
 
 namespace dxmt {
@@ -68,6 +69,7 @@ HRESULT ExtractMTLStreamOutputElements(
 using MTL_INPUT_LAYOUT_DESC = std::vector<MTL_SHADER_INPUT_LAYOUT_ELEMENT_DESC>;
 
 struct MTL_STREAM_OUTPUT_DESC {
+  uint32_t RasterizedStream;
   uint32_t Strides[4];
   std::vector<MTL_SHADER_STREAM_OUTPUT_ELEMENT_DESC> Elements;
 };
@@ -99,6 +101,7 @@ template <> struct equal_to<MTL_INPUT_LAYOUT_DESC> {
 template <> struct hash<MTL_STREAM_OUTPUT_DESC> {
   size_t operator()(const MTL_STREAM_OUTPUT_DESC &v) const noexcept {
     dxmt::HashState state;
+    state.add(v.RasterizedStream);
     state.add(v.Strides[0]);
     state.add(v.Strides[1]);
     state.add(v.Strides[2]);
@@ -116,13 +119,10 @@ template <> struct equal_to<MTL_STREAM_OUTPUT_DESC> {
                   const MTL_STREAM_OUTPUT_DESC &y) const {
     auto binsize =
         x.Elements.size() * sizeof(MTL_SHADER_STREAM_OUTPUT_ELEMENT_DESC);
-    return x.Strides[0] == y.Strides[0] && x.Strides[1] == y.Strides[1] &&
-           x.Strides[2] == y.Strides[2] && x.Strides[3] == y.Strides[3] &&
-           x.Elements.size() == y.Elements.size() &&
-           (std::string_view(
-                {reinterpret_cast<const char *>(x.Elements.data()), binsize}) ==
-            std::string_view(
-                {reinterpret_cast<const char *>(y.Elements.data()), binsize}));
+    return x.RasterizedStream == y.RasterizedStream && x.Strides[0] == y.Strides[0] && x.Strides[1] == y.Strides[1] &&
+           x.Strides[2] == y.Strides[2] && x.Strides[3] == y.Strides[3] && x.Elements.size() == y.Elements.size() &&
+           (std::string_view({reinterpret_cast<const char *>(x.Elements.data()), binsize}) ==
+            std::string_view({reinterpret_cast<const char *>(y.Elements.data()), binsize}));
   };
 };
 

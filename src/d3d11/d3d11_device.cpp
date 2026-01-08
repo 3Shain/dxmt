@@ -277,7 +277,7 @@ public:
       Com<IMTLD3D11StreamOutputLayout> so_layout;
       HRESULT hr = pipeline_cache_->AddStreamOutputLayout(
           pShaderBytecode, NumEntries, pSODeclaration, NumStrides,
-          pBufferStrides, &so_layout);
+          pBufferStrides, RasterizedStream, &so_layout);
       if (FAILED(hr))
         return hr;
       return so_layout->QueryInterface(IID_PPV_ARGS(ppGeometryShader));
