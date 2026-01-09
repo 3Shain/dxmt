@@ -16,6 +16,7 @@ dxmt_src = [
   'dxmt_presenter.cpp',
   'dxmt_sampler.cpp',
   'dxmt_resource_initializer.cpp',
+  'dxmt_shader_cache.cpp',
 ]
 
 dxmt_shaders = [
