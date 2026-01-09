@@ -95,7 +95,7 @@ public:
   air::ArgumentBufferBuilder binding_table_cbuffer;
   air::ArgumentBufferBuilder binding_table;
   bool skipOptimization = false;
-  bool refactoringAllowed = true;
+  bool refactoringAllowed = false;
   bool use_cmp_exch = false;
   bool no_control_point_phase_passthrough = false;
   bool output_control_point_read = false;

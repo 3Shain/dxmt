@@ -546,8 +546,8 @@ read_control_flow(
       if (Inst.m_GlobalFlagsDecl.Flags & D3D11_1_SB_GLOBAL_FLAG_SKIP_OPTIMIZATION) {
         shader_info.skipOptimization = true;
       }
-      if ((Inst.m_GlobalFlagsDecl.Flags & D3D10_SB_GLOBAL_FLAG_REFACTORING_ALLOWED) == 0) {
-        shader_info.refactoringAllowed = false;
+      if (Inst.m_GlobalFlagsDecl.Flags & D3D10_SB_GLOBAL_FLAG_REFACTORING_ALLOWED) {
+        shader_info.refactoringAllowed = true;
       }
       break;
     }
