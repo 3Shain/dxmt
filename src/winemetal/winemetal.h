@@ -432,7 +432,13 @@ enum WMTPixelFormat : uint32_t {
   WMTPixelFormatDepth32Float_Stencil8 = 260,
   WMTPixelFormatX32_Stencil8 = 261,
   WMTPixelFormatX24_Stencil8 = 262,
+
+  WMTPixelFormatAlphaIsOne = 0x80000000,
+  WMTPixelFormatBGRX8Unorm = WMTPixelFormatAlphaIsOne | WMTPixelFormatBGRA8Unorm,
+  WMTPixelFormatBGRX8Unorm_sRGB = WMTPixelFormatAlphaIsOne | WMTPixelFormatBGRA8Unorm_sRGB,
 };
+
+#define ORIGINAL_FORMAT(format) (format & ~WMTPixelFormatAlphaIsOne)
 
 enum WMTTextureType : uint8_t {
   WMTTextureType1D = 0,

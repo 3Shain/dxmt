@@ -234,10 +234,14 @@ _MTLDevice_newDepthStencilState(void *obj) {
   return STATUS_SUCCESS;
 }
 
+MTLPixelFormat to_metal_pixel_format(enum WMTPixelFormat format) {
+  return (MTLPixelFormat)ORIGINAL_FORMAT(format);
+}
+
 void
 fill_texture_descriptor(MTLTextureDescriptor *desc, struct WMTTextureInfo *info) {
   desc.textureType = (MTLTextureType)info->type;
-  desc.pixelFormat = (MTLPixelFormat)info->pixel_format;
+  desc.pixelFormat = to_metal_pixel_format(info->pixel_format);
   desc.width = info->width;
   desc.height = info->height;
   desc.depth = info->depth;
@@ -303,13 +307,16 @@ _MTLTexture_newTextureView(void *obj) {
   id<MTLTexture> texture = (id<MTLTexture>)params->texture;
 
   id<MTLTexture> ret = [texture
-      newTextureViewWithPixelFormat:(MTLPixelFormat)params->format
+      newTextureViewWithPixelFormat:to_metal_pixel_format(params->format)
                         textureType:(MTLTextureType)params->texture_type
                              levels:NSMakeRange(params->level_start, params->level_count)
                              slices:NSMakeRange(params->slice_start, params->slice_count)
                             swizzle:MTLTextureSwizzleChannelsMake(
                                         (MTLTextureSwizzle)params->swizzle.r, (MTLTextureSwizzle)params->swizzle.g,
-                                        (MTLTextureSwizzle)params->swizzle.b, (MTLTextureSwizzle)params->swizzle.a
+                                        (MTLTextureSwizzle)params->swizzle.b,
+                                        (params->format & WMTPixelFormatAlphaIsOne)
+                                            ? MTLTextureSwizzleOne
+                                            : (MTLTextureSwizzle)params->swizzle.a
                                     )];
   params->ret = (obj_handle_t)ret;
   params->gpu_resource_id = [ret gpuResourceID]._impl;
@@ -319,7 +326,7 @@ _MTLTexture_newTextureView(void *obj) {
 static NTSTATUS
 _MTLDevice_minimumLinearTextureAlignmentForPixelFormat(void *obj) {
   struct unixcall_generic_obj_uint64_uint64_ret *params = obj;
-  params->ret = [(id<MTLDevice>)params->handle minimumLinearTextureAlignmentForPixelFormat:(MTLPixelFormat)params->arg];
+  params->ret = [(id<MTLDevice>)params->handle minimumLinearTextureAlignmentForPixelFormat:to_metal_pixel_format(params->arg)];
   return STATUS_SUCCESS;
 }
 
@@ -508,7 +515,7 @@ _MTLDevice_newRenderPipelineState(void *obj) {
   MTLRenderPipelineDescriptor *descriptor = [[MTLRenderPipelineDescriptor alloc] init];
 
   for (unsigned i = 0; i < 8; i++) {
-    descriptor.colorAttachments[i].pixelFormat = (MTLPixelFormat)info->colors[i].pixel_format;
+    descriptor.colorAttachments[i].pixelFormat = to_metal_pixel_format(info->colors[i].pixel_format);
     descriptor.colorAttachments[i].blendingEnabled = info->colors[i].blending_enabled;
     descriptor.colorAttachments[i].writeMask = (MTLColorWriteMask)info->colors[i].write_mask;
 
@@ -532,8 +539,8 @@ _MTLDevice_newRenderPipelineState(void *obj) {
   [descriptor setLogicOperationEnabled:info->logic_operation_enabled];
   [descriptor setLogicOperation:(MTLLogicOperation)info->logic_operation];
 #endif
-  descriptor.depthAttachmentPixelFormat = (MTLPixelFormat)info->depth_pixel_format;
-  descriptor.stencilAttachmentPixelFormat = (MTLPixelFormat)info->stencil_pixel_format;
+  descriptor.depthAttachmentPixelFormat = to_metal_pixel_format(info->depth_pixel_format);
+  descriptor.stencilAttachmentPixelFormat = to_metal_pixel_format(info->stencil_pixel_format);
   descriptor.alphaToCoverageEnabled = info->alpha_to_coverage_enabled;
   descriptor.rasterizationEnabled = info->rasterization_enabled;
   descriptor.rasterSampleCount = info->raster_sample_count;
@@ -572,7 +579,7 @@ _MTLDevice_newMeshRenderPipelineState(void *obj) {
   MTLMeshRenderPipelineDescriptor *descriptor = [[MTLMeshRenderPipelineDescriptor alloc] init];
 
   for (unsigned i = 0; i < 8; i++) {
-    descriptor.colorAttachments[i].pixelFormat = (MTLPixelFormat)info->colors[i].pixel_format;
+    descriptor.colorAttachments[i].pixelFormat = to_metal_pixel_format(info->colors[i].pixel_format);
     descriptor.colorAttachments[i].blendingEnabled = info->colors[i].blending_enabled;
     descriptor.colorAttachments[i].writeMask = (MTLColorWriteMask)info->colors[i].write_mask;
 
@@ -598,8 +605,8 @@ _MTLDevice_newMeshRenderPipelineState(void *obj) {
   [descriptor setLogicOperationEnabled:info->logic_operation_enabled];
   [descriptor setLogicOperation:(MTLLogicOperation)info->logic_operation];
 #endif
-  descriptor.depthAttachmentPixelFormat = (MTLPixelFormat)info->depth_pixel_format;
-  descriptor.stencilAttachmentPixelFormat = (MTLPixelFormat)info->stencil_pixel_format;
+  descriptor.depthAttachmentPixelFormat = to_metal_pixel_format(info->depth_pixel_format);
+  descriptor.stencilAttachmentPixelFormat = to_metal_pixel_format(info->stencil_pixel_format);
   descriptor.alphaToCoverageEnabled = info->alpha_to_coverage_enabled;
   descriptor.rasterizationEnabled = info->rasterization_enabled;
   descriptor.rasterSampleCount = info->raster_sample_count;
@@ -1292,10 +1299,10 @@ _MTLDevice_newTemporalScaler(void *obj) {
   struct unixcall_mtldevice_newfxtemporalscaler *params = obj;
   MTLFXTemporalScalerDescriptor *desc = [[MTLFXTemporalScalerDescriptor alloc] init];
   const struct WMTFXTemporalScalerInfo *info = params->info.ptr;
-  desc.colorTextureFormat = (MTLPixelFormat)info->color_format;
-  desc.outputTextureFormat = (MTLPixelFormat)info->output_format;
-  desc.depthTextureFormat = (MTLPixelFormat)info->depth_format;
-  desc.motionTextureFormat = (MTLPixelFormat)info->motion_format;
+  desc.colorTextureFormat = to_metal_pixel_format(info->color_format);
+  desc.outputTextureFormat = to_metal_pixel_format(info->output_format);
+  desc.depthTextureFormat = to_metal_pixel_format(info->depth_format);
+  desc.motionTextureFormat = to_metal_pixel_format(info->motion_format);
   desc.inputWidth = info->input_width;
   desc.inputHeight = info->input_height;
   desc.outputWidth = info->output_width;
@@ -1332,8 +1339,8 @@ _MTLDevice_newSpatialScaler(void *obj) {
   struct unixcall_mtldevice_newfxspatialscaler *params = obj;
   MTLFXSpatialScalerDescriptor *desc = [[MTLFXSpatialScalerDescriptor alloc] init];
   const struct WMTFXSpatialScalerInfo *info = params->info.ptr;
-  desc.colorTextureFormat = (MTLPixelFormat)info->color_format;
-  desc.outputTextureFormat = (MTLPixelFormat)info->output_format;
+  desc.colorTextureFormat = to_metal_pixel_format(info->color_format);
+  desc.outputTextureFormat = to_metal_pixel_format(info->output_format);
   desc.inputWidth = info->input_width;
   desc.inputHeight = info->input_height;
   desc.outputWidth = info->output_width;
@@ -1467,7 +1474,7 @@ _MetalLayer_setProps(void *obj) {
     layer.contentsScale = props->contents_scale;
     layer.displaySyncEnabled = props->display_sync_enabled;
     layer.drawableSize = CGSizeMake(props->drawable_width, props->drawable_height);
-    layer.pixelFormat = (MTLPixelFormat)props->pixel_format;
+    layer.pixelFormat = to_metal_pixel_format(props->pixel_format);
   });
   return STATUS_SUCCESS;
 }
