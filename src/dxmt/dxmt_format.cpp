@@ -76,6 +76,8 @@ FormatCapabilityInspector::Inspect(WMT::Device device) {
     APPEND_CAP(WMTPixelFormatRGBA8Sint, APPLE_INT_FORMAT_CAP | TEXTURE_BUFFER_ALL_CAP)
     APPEND_CAP(WMTPixelFormatBGRA8Unorm, ALL_CAP | FormatCapability::TextureBufferRead)
     APPEND_CAP(WMTPixelFormatBGRA8Unorm_sRGB, ALL_CAP)
+    APPEND_CAP(WMTPixelFormatBGRX8Unorm, ALL_CAP | FormatCapability::TextureBufferRead)
+    APPEND_CAP(WMTPixelFormatBGRX8Unorm_sRGB, ALL_CAP)
 
     // 32-bit packed
     APPEND_CAP(WMTPixelFormatRGB10A2Unorm, ALL_CAP | TEXTURE_BUFFER_READ_OR_WRITE)
@@ -219,6 +221,11 @@ FormatCapabilityInspector::Inspect(WMT::Device device) {
         WMTPixelFormatBGRA8Unorm_sRGB, FormatCapability::Filter | FormatCapability::Color | FormatCapability::MSAA |
                                              FormatCapability::Resolve | FormatCapability::Blend
     )
+    APPEND_CAP(WMTPixelFormatBGRX8Unorm, ALL_CAP | FormatCapability::TextureBufferRead)
+    APPEND_CAP(
+        WMTPixelFormatBGRX8Unorm_sRGB, FormatCapability::Filter | FormatCapability::Color | FormatCapability::MSAA |
+                                             FormatCapability::Resolve | FormatCapability::Blend
+    )
 
     // 32-bit packed
     APPEND_CAP(WMTPixelFormatRGB10A2Unorm, ALL_CAP | TEXTURE_BUFFER_READ_OR_WRITE)
@@ -314,6 +321,8 @@ Forget_sRGB(WMTPixelFormat format) {
     return WMTPixelFormatRGBA8Unorm;
   case WMTPixelFormatBGRA8Unorm_sRGB:
     return WMTPixelFormatBGRA8Unorm;
+  case WMTPixelFormatBGRX8Unorm_sRGB:
+    return WMTPixelFormatBGRX8Unorm;
   case WMTPixelFormatBGR10_XR_sRGB:
     return WMTPixelFormatBGR10_XR;
   case WMTPixelFormatBGRA10_XR_sRGB:
@@ -356,6 +365,8 @@ Recall_sRGB(WMTPixelFormat format) {
     return WMTPixelFormatRGBA8Unorm_sRGB;
   case WMTPixelFormatBGRA8Unorm:
     return WMTPixelFormatBGRA8Unorm_sRGB;
+  case WMTPixelFormatBGRX8Unorm:
+    return WMTPixelFormatBGRX8Unorm_sRGB;
   case WMTPixelFormatBGR10_XR:
     return WMTPixelFormatBGR10_XR_sRGB;
   case WMTPixelFormatBGRA10_XR:
@@ -980,7 +991,7 @@ MTLQueryDXGIFormat(WMT::Device device, uint32_t format, MTL_DXGI_FORMAT_DESC &de
     break;
   }
   case DXGI_FORMAT_B8G8R8X8_UNORM: {
-    description.PixelFormat = WMTPixelFormatBGRA8Unorm;
+    description.PixelFormat = WMTPixelFormatBGRX8Unorm;
     description.BytesPerTexel = 4;
     break;
   }
@@ -999,13 +1010,13 @@ MTLQueryDXGIFormat(WMT::Device device, uint32_t format, MTL_DXGI_FORMAT_DESC &de
     break;
   }
   case DXGI_FORMAT_B8G8R8X8_TYPELESS: {
-    description.PixelFormat = WMTPixelFormatBGRA8Unorm;
+    description.PixelFormat = WMTPixelFormatBGRX8Unorm;
     description.BytesPerTexel = 4;
     description.Flag = MTL_DXGI_FORMAT_TYPELESS;
     break;
   }
   case DXGI_FORMAT_B8G8R8X8_UNORM_SRGB: {
-    description.PixelFormat = WMTPixelFormatBGRA8Unorm_sRGB;
+    description.PixelFormat = WMTPixelFormatBGRX8Unorm_sRGB;
     description.BytesPerTexel = 4;
     break;
   }
@@ -1115,6 +1126,8 @@ MTLGetTexelSize(WMTPixelFormat format) {
   case WMTPixelFormatRGBA8Sint:
   case WMTPixelFormatBGRA8Unorm:
   case WMTPixelFormatBGRA8Unorm_sRGB:
+  case WMTPixelFormatBGRX8Unorm:
+  case WMTPixelFormatBGRX8Unorm_sRGB:
   case WMTPixelFormatRGB10A2Unorm:
   case WMTPixelFormatRGB10A2Uint:
   case WMTPixelFormatRG11B10Float:
@@ -1271,6 +1284,8 @@ MTLGetUnsignedIntegerFormat(WMTPixelFormat format) {
   case WMTPixelFormatRGBA8Sint:
   case WMTPixelFormatBGRA8Unorm:
   case WMTPixelFormatBGRA8Unorm_sRGB:
+  case WMTPixelFormatBGRX8Unorm:
+  case WMTPixelFormatBGRX8Unorm_sRGB:
     return WMTPixelFormatRGBA8Uint;
   case WMTPixelFormatRGB10A2Unorm:
   case WMTPixelFormatRGB10A2Uint:
@@ -1395,12 +1410,14 @@ IsUnorm8RenderTargetFormat(WMTPixelFormat format) {
   case WMTPixelFormatRG8Unorm:
   case WMTPixelFormatRGBA8Unorm:
   case WMTPixelFormatBGRA8Unorm:
+  case WMTPixelFormatBGRX8Unorm:
   // case WMTPixelFormatRG8Snorm: // not sure how they work, be conservative.
   // case WMTPixelFormatRGBA8Snorm:
   // case WMTPixelFormatR8Unorm_sRGB:
   // case WMTPixelFormatRG8Unorm_sRGB:
   // case WMTPixelFormatRGBA8Unorm_sRGB:
   // case WMTPixelFormatBGRA8Unorm_sRGB:
+  // case WMTPixelFormatBGRX8Unorm_sRGB:
     return true;
   default:
     break;

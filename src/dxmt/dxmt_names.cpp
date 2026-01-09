@@ -191,6 +191,8 @@ operator<<(std::ostream &os, WMTPixelFormat e) {
     ENUM_NAME(WMTPixelFormatRGBA8Sint);
     ENUM_NAME(WMTPixelFormatBGRA8Unorm);
     ENUM_NAME(WMTPixelFormatBGRA8Unorm_sRGB);
+    ENUM_NAME(WMTPixelFormatBGRX8Unorm);
+    ENUM_NAME(WMTPixelFormatBGRX8Unorm_sRGB);
     ENUM_NAME(WMTPixelFormatRGB10A2Unorm);
     ENUM_NAME(WMTPixelFormatRGB10A2Uint);
     ENUM_NAME(WMTPixelFormatRG11B10Float);

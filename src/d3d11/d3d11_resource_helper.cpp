@@ -342,7 +342,7 @@ CreateMTLTextureDescriptorInternal(
       break;
     }
   }
-  pDescOut->pixel_format = metal_format.PixelFormat;
+  pDescOut->pixel_format = ORIGINAL_FORMAT(metal_format.PixelFormat);
 
   WMTTextureUsage metal_usage = (WMTTextureUsage)0; // actually corresponding to BindFlags
 
