@@ -11,7 +11,7 @@
 
 namespace dxmt {
 
-Com<IDXGIOutput> CreateOutput(IMTLDXGIAdapter *pAadapter, HMONITOR monitor, DxgiOptions &options);
+Com<IDXGIOutput> CreateOutput(IMTLDXGIAdapter *pAadapter, IMTLDXGIFactory *pFactory, HMONITOR monitor, DxgiOptions &options);
 
 LUID GetAdapterLuid(WMT::Device device) {
     // NOTE: use big-endian registryID, be consistent with MVK
@@ -20,9 +20,10 @@ LUID GetAdapterLuid(WMT::Device device) {
 
 class MTLDXGIAdatper : public MTLDXGIObject<IMTLDXGIAdapter> {
 public:
-  MTLDXGIAdatper(WMT::Device device, IDXGIFactory *factory, Config &config)
+  MTLDXGIAdatper(WMT::Device device, IMTLDXGIFactory *factory, Config &config)
       : device_(device), factory_(factory), options_(config) {
     D3DKMT_OPENADAPTERFROMLUID open = {};
+    ERR("MTLDXGIAdatper::MTLDXGIAdatper");
     open.AdapterLuid = GetAdapterLuid(device_);
     if (D3DKMTOpenAdapterFromLuid(&open))
       WARN("Failed to open D3DKMT adapter");
@@ -41,6 +42,7 @@ public:
 
   HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid,
                                            void **ppvObject) final {
+    ERR("DXGIAdapter::QueryInterface");
     if (ppvObject == nullptr)
       return E_POINTER;
 
@@ -182,6 +184,7 @@ public:
   HRESULT STDMETHODCALLTYPE EnumOutputs(UINT Output,
                                         IDXGIOutput **ppOutput) final {
     InitReturnPtr(ppOutput);
+    ERR("DXGIAdapter::EnumOutputs");
 
     if (ppOutput == nullptr)
       return E_INVALIDARG;
@@ -190,9 +193,10 @@ public:
     if (monitor == nullptr)
       return DXGI_ERROR_NOT_FOUND;
 
-    *ppOutput = CreateOutput(this, monitor, options_);
+    *ppOutput = CreateOutput(this, factory_.ptr(), monitor, options_);
     return S_OK;
   }
+
   HRESULT STDMETHODCALLTYPE
   CheckInterfaceSupport(const GUID &guid, LARGE_INTEGER *umd_version) final {
     HRESULT hr = DXGI_ERROR_UNSUPPORTED;
@@ -274,13 +278,14 @@ public:
 private:
   WMT::Reference<WMT::Device> device_;
   D3DKMT_HANDLE local_kmt_ = 0;
-  Com<IDXGIFactory> factory_;
+  Com<IMTLDXGIFactory> factory_;
   DxgiOptions options_;
   uint64_t mem_reserved_[2] = {0, 0};
 };
 
 Com<IMTLDXGIAdapter> CreateAdapter(WMT::Device Device,
-                                   IDXGIFactory2 *pFactory, Config &config) {
+                                   IMTLDXGIFactory *pFactory, Config &config) {
+  ERR("DXGIAdapter::CreateAdapter");
   return Com<IMTLDXGIAdapter>::transfer(
       new MTLDXGIAdatper(Device, pFactory, config));
 }

@@ -14,9 +14,24 @@ struct DXMTPresentMetadata {
   float max_display_luminance;
 };
 
+constexpr uint32_t DXMT_DXGI_GAMMA_CP_COUNT = 1024;
+
+struct DXMTGammaCurve {
+  float Red[DXMT_DXGI_GAMMA_CP_COUNT];
+  float Green[DXMT_DXGI_GAMMA_CP_COUNT];
+  float Blue[DXMT_DXGI_GAMMA_CP_COUNT];
+  bool gammaIsIdentity;
+  bool updated;
+};
+
+struct DXMTPresentGamma {
+  WMT::Reference<WMT::Texture> gamme_lut_texture_;
+  WMT::Reference<WMT::SamplerState> gamma_sampler_;
+};
+
 class Presenter : public RcObject {
 public:
-  Presenter(WMT::Device device, WMT::MetalLayer layer, InternalCommandLibrary &lib, float scale_factor);
+  Presenter(WMT::Device device, WMT::MetalLayer layer, InternalCommandLibrary &lib, float scale_factor, DXMTGammaCurve *gamma_curve);
 
   bool changeLayerProperties(WMTPixelFormat format, WMTColorSpace colorspace, unsigned width, unsigned height);
 
@@ -50,6 +65,8 @@ public:
 
   PresentState synchronizeLayerProperties();
 
+  void updateGammaLUT();
+
   WMT::MetalDrawable
   encodeCommands(WMT::CommandBuffer cmdbuf, WMT::Fence fence, WMT::Texture backbuffer, DXMTPresentMetadata metadata);
 
@@ -68,6 +85,9 @@ private:
   WMTColorSpace display_colorspace_ = WMTColorSpaceSRGB;
   WMTHDRMetadata display_hdr_metadata_;
   WMTEDRValue display_edr_value_{0.0, 1.0};
+  DXMTGammaCurve *gamma_curve_;
+  WMT::Reference<WMT::Texture> gamme_lut_texture_;
+  WMT::Reference<WMT::SamplerState> gamma_sampler_;
   WMT::Reference<WMT::RenderPipelineState> present_blit_;
   WMT::Reference<WMT::RenderPipelineState> present_scale_;
   std::atomic_flag pso_valid = 0;

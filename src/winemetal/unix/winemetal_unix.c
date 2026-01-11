@@ -881,6 +881,11 @@ _MTLRenderCommandEncoder_encodeCommands(void *obj) {
       [encoder setFragmentTexture:(id<MTLTexture>)body->texture atIndex:body->index];
       break;
     }
+    case WMTRenderCommandSetFragmentSamplerState: {
+      struct wmtcmd_render_setsamplerstate *body = (struct wmtcmd_render_setsamplerstate *)next;
+      [encoder setFragmentSamplerState:(id<MTLSamplerState>)body->sampler_state atIndex:body->index];
+      break;
+    }
     case WMTRenderCommandSetRasterizerState: {
       struct wmtcmd_render_setrasterizerstate *body = (struct wmtcmd_render_setrasterizerstate *)next;
       [encoder setTriangleFillMode:(MTLTriangleFillMode)body->fill_mode];

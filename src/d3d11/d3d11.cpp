@@ -15,6 +15,7 @@ D3D11CoreCreateDevice(IDXGIFactory *pFactory, IDXGIAdapter *pAdapter,
                       UINT Flags, const D3D_FEATURE_LEVEL *pFeatureLevels,
                       UINT FeatureLevels, ID3D11Device **ppDevice) {
   InitReturnPtr(ppDevice);
+  ERR("D3D11::D3D11CoreCreateDevice");
 
   Com<IMTLDXGIAdapter> dxgi_adapter;
 
@@ -83,6 +84,7 @@ extern "C" HRESULT WINAPI D3D11CreateDeviceAndSwapChain(
   InitReturnPtr(ppDevice);
   InitReturnPtr(ppSwapChain);
   InitReturnPtr(ppImmediateContext);
+  ERR("D3D11::D3D11CreateDeviceAndSwapChain");
 
   if (pFeatureLevel)
     *pFeatureLevel = D3D_FEATURE_LEVEL(0);
@@ -172,6 +174,7 @@ extern "C" HRESULT WINAPI D3D11CreateDevice(
     UINT Flags, const D3D_FEATURE_LEVEL *pFeatureLevels, UINT FeatureLevels,
     UINT SDKVersion, ID3D11Device **ppDevice, D3D_FEATURE_LEVEL *pFeatureLevel,
     ID3D11DeviceContext **ppImmediateContext) {
+  ERR("D3D11::D3D11CreateDevice");
   return D3D11CreateDeviceAndSwapChain(pAdapter, DriverType, Software, Flags,
                                        pFeatureLevels, FeatureLevels,
                                        SDKVersion, nullptr, nullptr, ppDevice,

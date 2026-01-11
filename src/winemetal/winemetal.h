@@ -1071,7 +1071,7 @@ enum WMTRenderCommandType : uint16_t {
   WMTRenderCommandMemoryBarrier,
   Unused0,
   Unused1,
-  Unused2,
+  WMTRenderCommandSetFragmentSamplerState,
   WMTRenderCommandDXMTGeometryDraw,
   WMTRenderCommandDXMTGeometryDrawIndexed,
   WMTRenderCommandDXMTGeometryDrawIndirect,
@@ -1132,6 +1132,14 @@ struct wmtcmd_render_settexture {
   uint16_t reserved[3];
   struct WMTMemoryPointer next;
   obj_handle_t texture;
+  uint8_t index;
+};
+
+struct wmtcmd_render_setsamplerstate {
+  enum WMTRenderCommandType type;
+  uint16_t reserved[3];
+  struct WMTMemoryPointer next;
+  obj_handle_t sampler_state;
   uint8_t index;
 };
 

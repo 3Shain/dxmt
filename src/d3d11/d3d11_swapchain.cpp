@@ -20,6 +20,7 @@
 #include "wsi_window.hpp"
 #include "dxmt_info.hpp"
 #include "dxmt_presenter.hpp"
+#include "dxgi_monitor.hpp"
 #include <cfloat>
 #include <format>
 
@@ -81,6 +82,7 @@ public:
       monitor_(wsi::getWindowMonitor(hWnd)),
       hud(WMT::DeveloperHUDProperties::instance()) {
 
+    ERR("MTLD3D11SwapChain::MTLD3D11SwapChain");
     native_view_ = WMT::CreateMetalViewFromHWND((intptr_t)hWnd, pDevice->GetMTLDevice(), layer_weak_);
 
     if (!native_view_) {
@@ -92,9 +94,14 @@ public:
       scale_factor = std::max(Config::getInstance().getOption<float>("d3d11.metalSpatialUpscaleFactor", 2), 1.0f);
     }
 
+    if (FAILED(factory_->QueryInterface(IID_PPV_ARGS(&monitor_info_)))) {
+      ERR("MTLD3D11SwapChain: failed to get IMTLDXGIMonitor");
+    }
+    monitor_info_->GetMonitorData(&monitor_data_);
+
     presenter = Rc(new Presenter(pDevice->GetMTLDevice(), layer_weak_,
                                  pDevice->GetDXMTDevice().queue().cmd_library,
-                                 scale_factor));
+                                 scale_factor, monitor_data_ ? &monitor_data_->gammaCurve : nullptr));
 
     frame_latency = kSwapchainLatency;
     present_semaphore_ = CreateSemaphore(nullptr, frame_latency,
@@ -163,6 +170,7 @@ public:
   QueryInterface(REFIID riid, void **ppvObject) final {
     if (ppvObject == nullptr)
       return E_POINTER;
+    ERR("D3D11SwapChain::QueryInterface");
 
     *ppvObject = nullptr;
 
@@ -210,6 +218,7 @@ public:
   STDMETHODCALLTYPE
   SetFullscreenState(BOOL Fullscreen, IDXGIOutput *pTarget) final {
     Com<IDXGIOutput1> target;
+    ERR("D3D11SwapChain::SetFullscreenState");
 
     if (pTarget) {
       DXGI_OUTPUT_DESC desc;
@@ -234,6 +243,7 @@ public:
 
   HRESULT EnterFullscreenMode(IDXGIOutput1* pTarget) {
     Com<IDXGIOutput1> output = pTarget;
+    ERR("D3D11SwapChain::EnterFullscreenMode");
 
     if (!wsi::isWindow(hWnd))
       return DXGI_ERROR_NOT_CURRENTLY_AVAILABLE;
@@ -271,7 +281,8 @@ public:
     fullscreen_desc_.Windowed = TRUE;
     target_  = nullptr;
     monitor_ = wsi::getWindowMonitor(hWnd);
-    
+    ERR("D3D11SwapChain::LeaveFullscreenMode");
+
     if (!wsi::isWindow(hWnd))
       return S_OK;
     
@@ -287,6 +298,7 @@ public:
   STDMETHODCALLTYPE
   GetFullscreenState(BOOL *pFullscreen, IDXGIOutput **ppTarget) final {
     HRESULT hr = S_OK;
+    ERR("D3D11SwapChain::GetFullscreenState");
 
     if (pFullscreen != nullptr)
       *pFullscreen = !fullscreen_desc_.Windowed;
@@ -869,6 +881,8 @@ private:
   HWND hWnd;
   HMONITOR monitor_;
   Com<IDXGIOutput1> target_;
+  Com<IMTLDXGIMonitor> monitor_info_;
+  MTLDXGI_MONITOR_DATA *monitor_data_ = nullptr;
   wsi::DXMTWindowState window_state_;
   uint32_t frame_latency;
   DXGI_COLOR_SPACE_TYPE colorspace_ = DXGI_COLOR_SPACE_RGB_FULL_G22_NONE_P709;
@@ -892,6 +906,7 @@ CreateSwapChain(
   if (ppSwapChain == NULL)
     return DXGI_ERROR_INVALID_CALL;
   InitReturnPtr(ppSwapChain);
+  ERR("CreateSwapChain()");
 
   DWORD window_process_id;
   GetWindowThreadProcessId(hWnd, &window_process_id);

@@ -1,23 +1,59 @@
 
 #include <algorithm>
+#include <float.h>
 #include "Metal.hpp"
 #include "dxmt_format.hpp"
 #include "dxmt_presenter.hpp"
 #include "util_likely.hpp"
+#include "winemetal.h"
 
 
 namespace dxmt {
 
-Presenter::Presenter(WMT::Device device, WMT::MetalLayer layer, InternalCommandLibrary &lib, float scale_factor) :
+Presenter::Presenter(
+    WMT::Device device, WMT::MetalLayer layer, InternalCommandLibrary &lib, float scale_factor,
+    DXMTGammaCurve *gamma_curve
+) :
     device_(device),
     layer_(layer),
-    lib_(lib) {
+    lib_(lib),
+    gamma_curve_(gamma_curve) {
   layer_.getProps(layer_props_);
   layer_props_.device = device;
   layer_props_.opaque = true;
   layer_props_.display_sync_enabled = false;
   layer_props_.framebuffer_only = false; // how strangely setting it true results in worse performance
   layer_props_.contents_scale = layer_props_.contents_scale * scale_factor;
+
+  WMTTextureInfo texture_info;
+  texture_info.type = WMTTextureType2D;
+  texture_info.pixel_format = WMTPixelFormatRGBA16Float;
+  texture_info.usage = WMTTextureUsageShaderRead;
+  texture_info.options = WMTResourceStorageModePrivate;
+  texture_info.width = DXMT_DXGI_GAMMA_CP_COUNT;
+  texture_info.height = 1;
+  texture_info.depth = 1;
+  texture_info.mipmap_level_count = 1;
+  texture_info.sample_count = 1;
+  texture_info.array_length = 1;
+  gamme_lut_texture_ = device.newTexture(texture_info);
+
+  WMTSamplerInfo sampler_info;
+  sampler_info.support_argument_buffers = true;
+  sampler_info.border_color = WMTSamplerBorderColorTransparentBlack;
+  sampler_info.compare_function = WMTCompareFunctionNever;
+  sampler_info.normalized_coords = true;
+  sampler_info.r_address_mode = WMTSamplerAddressModeClampToEdge;
+  sampler_info.s_address_mode = WMTSamplerAddressModeClampToEdge;
+  sampler_info.t_address_mode = WMTSamplerAddressModeClampToEdge;
+  sampler_info.min_filter = WMTSamplerMinMagFilterLinear;
+  sampler_info.mag_filter = WMTSamplerMinMagFilterLinear;
+  sampler_info.mip_filter = WMTSamplerMipFilterNotMipmapped;
+  sampler_info.max_anisotroy = 1;
+  sampler_info.lod_min_clamp = 0.0f;
+  sampler_info.lod_max_clamp = FLT_MAX;
+  sampler_info.lod_average = false;
+  gamma_sampler_ = device_.newSamplerState(sampler_info);
 }
 
 bool
@@ -108,6 +144,25 @@ Presenter::synchronizeLayerProperties() {
   return {metadata, ++frame_requested_, this};
 }
 
+void
+Presenter::updateGammaLUT() {
+  if (gamma_curve_ && gamma_curve_->updated) {
+    gamma_curve_->updated = false;
+    std::vector<float> gamma_lut_rgba_(DXMT_DXGI_GAMMA_CP_COUNT);
+    for (uint32_t i = 0; i < DXMT_DXGI_GAMMA_CP_COUNT; i++) {
+        gamma_lut_rgba_[i * 4 + 0] = gamma_curve_->Red[i];
+        gamma_lut_rgba_[i * 4 + 1] = gamma_curve_->Green[i];
+        gamma_lut_rgba_[i * 4 + 2] = gamma_curve_->Blue[i];
+        gamma_lut_rgba_[i * 4 + 3] = 1.0f;
+    }
+    gamme_lut_texture_.replaceRegion(
+          {0, 0, 0}, {DXMT_DXGI_GAMMA_CP_COUNT, 1, 1}, 0, 0,
+          gamma_lut_rgba_.data(),
+          DXMT_DXGI_GAMMA_CP_COUNT * sizeof(float) * 4,
+          DXMT_DXGI_GAMMA_CP_COUNT * sizeof(float) * 4);
+    }
+}
+
 WMT::MetalDrawable
 Presenter::encodeCommands(
     WMT::CommandBuffer cmdbuf, WMT::Fence fence, WMT::Texture backbuffer, DXMTPresentMetadata metadata
@@ -123,6 +178,8 @@ Presenter::encodeCommands(
   if (fence)
     encoder.waitForFence(fence, WMTRenderStageFragment);
   encoder.setFragmentTexture(backbuffer, 0);
+  encoder.setFragmentTexture(gamme_lut_texture_, 1);
+  encoder.setFragmentSamplerState(gamma_sampler_, 0);
 
   double width = layer_props_.drawable_width;
   double height = layer_props_.drawable_height;
@@ -145,6 +202,7 @@ constexpr uint32_t kPresentFCIndex_BackbufferSizeMatched = 0x100;
 constexpr uint32_t kPresentFCIndex_HDRPQ = 0x101;
 constexpr uint32_t kPresentFCIndex_WithHDRMetadata = 0x102;
 constexpr uint32_t kPresentFCIndex_BackbufferIsSRGB = 0x103;
+constexpr uint32_t kPresentFCIndex_GammaEnabled = 0x104;
 
 void
 Presenter::buildRenderPipelineState(bool is_pq, bool with_hdr_metadata) {
@@ -153,7 +211,7 @@ Presenter::buildRenderPipelineState(bool is_pq, bool with_hdr_metadata) {
   auto library = lib_.getLibrary();
 
   uint32_t true_data = true, false_data = false;
-  WMTFunctionConstant constants[4];
+  WMTFunctionConstant constants[5];
   constants[0].data.set(&true_data);
   constants[0].type = WMTDataTypeBool;
   constants[0].index = kPresentFCIndex_BackbufferSizeMatched;
@@ -166,6 +224,9 @@ Presenter::buildRenderPipelineState(bool is_pq, bool with_hdr_metadata) {
   constants[3].data.set(Is_sRGBVariant(source_format_) ? &true_data : &false_data);
   constants[3].type = WMTDataTypeBool;
   constants[3].index = kPresentFCIndex_BackbufferIsSRGB;
+  constants[4].data.set((gamma_curve_ && !gamma_curve_->gammaIsIdentity) ? &true_data : &false_data);
+  constants[4].type  = WMTDataTypeBool;
+  constants[4].index = kPresentFCIndex_GammaEnabled;
 
   WMT::Reference<WMT::Error> error;
   auto vs_present_quad = library.newFunction("vs_present_quad");
