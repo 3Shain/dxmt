@@ -81,14 +81,17 @@ uint64_t
 ResourceInitializer::initDepthStencilWithZero(
     const Texture *texture, TextureAllocation *allocation, uint32_t slice, uint32_t level, uint32_t dsv_planar
 ) {
+  auto width_sub = std::max(1u, texture->width() >> level);
+  auto height_sub = std::max(1u, texture->height() >> level);
+
   std::lock_guard<dxmt::mutex> lock(mutex_);
   do {
     RETAIN(allocation);
     ALLOC_CLEAR(info);
 
     info->render_target_array_length = 0;
-    info->render_target_width = texture->width();
-    info->render_target_height = texture->height();
+    info->render_target_width = width_sub;
+    info->render_target_height = height_sub;
     if (dsv_planar & 1) {
       info->depth.texture = allocation->texture();
       info->depth.clear_depth = 0;
@@ -115,14 +118,17 @@ uint64_t
 ResourceInitializer::initRenderTargetWithZero(
     const Texture *texture, TextureAllocation *allocation, uint32_t slice, uint32_t level
 ) {
+  auto width_sub = std::max(1u, texture->width() >> level);
+  auto height_sub = std::max(1u, texture->height() >> level);
+
   std::lock_guard<dxmt::mutex> lock(mutex_);
   do {
     RETAIN(allocation);
     ALLOC_CLEAR(info);
 
     info->render_target_array_length = texture->textureType() == WMTTextureType3D ? texture->depth() : 0;
-    info->render_target_width = texture->width();
-    info->render_target_height = texture->height();
+    info->render_target_width = width_sub;
+    info->render_target_height = height_sub;
     info->colors[0].texture = allocation->texture();
     info->colors[0].load_action = WMTLoadActionClear;
     info->colors[0].clear_color = {0, 0, 0, 0};
