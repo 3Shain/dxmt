@@ -94,7 +94,7 @@ public:
 
     presenter = Rc(new Presenter(pDevice->GetMTLDevice(), layer_weak_,
                                  pDevice->GetDXMTDevice().queue().cmd_library,
-                                 scale_factor));
+                                 scale_factor, desc_.SampleDesc.Count));
 
     frame_latency = kSwapchainLatency;
     present_semaphore_ = CreateSemaphore(nullptr, frame_latency,
@@ -433,8 +433,9 @@ public:
                               : colorspace_,
                           LayerSupportEDR());
     if (presenter->changeLayerProperties(
-        ConvertSwapChainFormat(desc_.Format), target_color_space,
-        desc_.Width * scale_factor, desc_.Height * scale_factor))
+            ConvertSwapChainFormat(desc_.Format), target_color_space, desc_.Width * scale_factor,
+            desc_.Height * scale_factor, desc_.SampleDesc.Count
+        ))
       device_context_->WaitUntilGPUIdle();
   };
 

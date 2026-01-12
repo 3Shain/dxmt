@@ -8,10 +8,11 @@
 
 namespace dxmt {
 
-Presenter::Presenter(WMT::Device device, WMT::MetalLayer layer, InternalCommandLibrary &lib, float scale_factor) :
+Presenter::Presenter(WMT::Device device, WMT::MetalLayer layer, InternalCommandLibrary &lib, float scale_factor, uint8_t sample_count) :
     device_(device),
     layer_(layer),
-    lib_(lib) {
+    lib_(lib),
+    sample_count_(sample_count) {
   layer_.getProps(layer_props_);
   layer_props_.device = device;
   layer_props_.opaque = true;
@@ -21,10 +22,14 @@ Presenter::Presenter(WMT::Device device, WMT::MetalLayer layer, InternalCommandL
 }
 
 bool
-Presenter::changeLayerProperties(WMTPixelFormat format, WMTColorSpace colorspace, unsigned width, unsigned height) {
+Presenter::changeLayerProperties(
+    WMTPixelFormat format, WMTColorSpace colorspace, double width, double height, uint8_t sample_count
+) {
   bool should_invalidated = colorspace_ != colorspace;
   should_invalidated |= source_format_ != format;
   source_format_ = format;
+  should_invalidated |= sample_count_ != sample_count;
+  sample_count_ = sample_count;
   layer_props_.pixel_format = Forget_sRGB(format);
   layer_props_.drawable_height = height;
   layer_props_.drawable_width = width;
@@ -79,7 +84,7 @@ Presenter::synchronizeLayerProperties() {
                                                    : nullptr;
   if (unlikely(!pso_valid.test_and_set())) {
     frame_presented_.wait(frame_requested_);
-    buildRenderPipelineState(final_colorspace == WMTColorSpaceHDR_PQ, is_hdr && hdr_metadata != nullptr);
+    buildRenderPipelineState(final_colorspace == WMTColorSpaceHDR_PQ, is_hdr && hdr_metadata != nullptr, sample_count_ > 1);
     layer_.setProps(layer_props_);
     layer_.setColorSpace(final_colorspace);
   }
@@ -145,15 +150,16 @@ constexpr uint32_t kPresentFCIndex_BackbufferSizeMatched = 0x100;
 constexpr uint32_t kPresentFCIndex_HDRPQ = 0x101;
 constexpr uint32_t kPresentFCIndex_WithHDRMetadata = 0x102;
 constexpr uint32_t kPresentFCIndex_BackbufferIsSRGB = 0x103;
+constexpr uint32_t kPresentFCIndex_BackbufferIsMS = 0x104;
 
 void
-Presenter::buildRenderPipelineState(bool is_pq, bool with_hdr_metadata) {
+Presenter::buildRenderPipelineState(bool is_pq, bool with_hdr_metadata, bool is_ms) {
   auto pool = WMT::MakeAutoreleasePool();
 
   auto library = lib_.getLibrary();
 
   uint32_t true_data = true, false_data = false;
-  WMTFunctionConstant constants[4];
+  WMTFunctionConstant constants[5];
   constants[0].data.set(&true_data);
   constants[0].type = WMTDataTypeBool;
   constants[0].index = kPresentFCIndex_BackbufferSizeMatched;
@@ -166,6 +172,9 @@ Presenter::buildRenderPipelineState(bool is_pq, bool with_hdr_metadata) {
   constants[3].data.set(Is_sRGBVariant(source_format_) ? &true_data : &false_data);
   constants[3].type = WMTDataTypeBool;
   constants[3].index = kPresentFCIndex_BackbufferIsSRGB;
+  constants[4].data.set(is_ms ? &true_data : &false_data);
+  constants[4].type = WMTDataTypeBool;
+  constants[4].index = kPresentFCIndex_BackbufferIsMS;
 
   WMT::Reference<WMT::Error> error;
   auto vs_present_quad = library.newFunction("vs_present_quad");

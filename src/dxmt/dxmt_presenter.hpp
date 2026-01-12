@@ -16,9 +16,13 @@ struct DXMTPresentMetadata {
 
 class Presenter : public RcObject {
 public:
-  Presenter(WMT::Device device, WMT::MetalLayer layer, InternalCommandLibrary &lib, float scale_factor);
+  Presenter(
+      WMT::Device device, WMT::MetalLayer layer, InternalCommandLibrary &lib, float scale_factor, uint8_t sample_count
+  );
 
-  bool changeLayerProperties(WMTPixelFormat format, WMTColorSpace colorspace, unsigned width, unsigned height);
+  bool changeLayerProperties(
+      WMTPixelFormat format, WMTColorSpace colorspace, double width, double height, uint8_t sample_count
+  );
 
   bool changeLayerColorSpace(WMTColorSpace colorspace);
 
@@ -54,12 +58,13 @@ public:
   encodeCommands(WMT::CommandBuffer cmdbuf, WMT::Fence fence, WMT::Texture backbuffer, DXMTPresentMetadata metadata);
 
 private:
-  void buildRenderPipelineState(bool is_pq, bool with_hdr_metadata);
+  void buildRenderPipelineState(bool is_pq, bool with_hdr_metadata, bool is_ms);
 
   WMT::Device device_;
   WMT::MetalLayer layer_;
   InternalCommandLibrary &lib_;
   WMTLayerProps layer_props_;
+  uint32_t sample_count_;
   WMTColorSpace colorspace_ = WMTColorSpaceSRGB;
   WMTHDRMetadata hdr_metadata_;
   bool has_hdr_metadata_ = false;
