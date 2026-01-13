@@ -4903,6 +4903,12 @@ public:
     case WMTPixelFormatRG32Float:
     case WMTPixelFormatRG32Sint:
       return WMTPixelFormatRG32Float;
+    case WMTPixelFormatRGBA16Sint:
+    case WMTPixelFormatRGBA16Snorm:
+    case WMTPixelFormatRGBA16Uint:
+    case WMTPixelFormatRGBA16Unorm:
+    case WMTPixelFormatRGBA16Float:
+      return WMTPixelFormatRGBA16Float;
     default:
       break;
     }
