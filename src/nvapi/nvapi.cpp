@@ -481,6 +481,14 @@ NvAPI_GPU_GetConnectedDisplayIds(
 }
 
 NVAPI_INTERFACE
+NvAPI_DISP_GetMonitorCapabilities(__in NvU32 displayId, __inout NV_MONITOR_CAPABILITIES *pMonitorCapabilities) {
+  if (!pMonitorCapabilities)
+    return NVAPI_INVALID_ARGUMENT;
+
+  return NVAPI_NOT_SUPPORTED;
+}
+
+NVAPI_INTERFACE
 NvAPI_GPU_GetAllClockFrequencies(__in NvPhysicalGpuHandle hPhysicalGPU,
                                  __inout NV_GPU_CLOCK_FREQUENCIES *pClkFreqs) {
   if (!pClkFreqs)
@@ -491,7 +499,7 @@ NvAPI_GPU_GetAllClockFrequencies(__in NvPhysicalGpuHandle hPhysicalGPU,
 
 NVAPI_INTERFACE
 NvAPI_GPU_GetGpuCoreCount(NvPhysicalGpuHandle hPhysicalGpu, NvU32 *pCount) {
-  if (!pCount)
+  if (!hPhysicalGpu || !pCount)
     return NVAPI_INVALID_ARGUMENT;
 
   return NVAPI_NOT_SUPPORTED;
@@ -499,7 +507,15 @@ NvAPI_GPU_GetGpuCoreCount(NvPhysicalGpuHandle hPhysicalGpu, NvU32 *pCount) {
 
 NVAPI_INTERFACE
 NvAPI_GPU_GetBusId(NvPhysicalGpuHandle hPhysicalGpu, NvU32 *pBusId) {
-  if (!pBusId)
+  if (!hPhysicalGpu || !pBusId)
+    return NVAPI_INVALID_ARGUMENT;
+
+  return NVAPI_NOT_SUPPORTED;
+}
+
+NVAPI_INTERFACE
+NvAPI_GPU_GetBusType(NvPhysicalGpuHandle hPhysicalGpu, NV_GPU_BUS_TYPE *pBusType) {
+  if (!hPhysicalGpu || !pBusType)
     return NVAPI_INVALID_ARGUMENT;
 
   return NVAPI_NOT_SUPPORTED;
@@ -507,7 +523,15 @@ NvAPI_GPU_GetBusId(NvPhysicalGpuHandle hPhysicalGpu, NvU32 *pBusId) {
 
 NVAPI_INTERFACE
 NvAPI_GPU_GetMemoryInfo(NvPhysicalGpuHandle hPhysicalGpu, NV_DISPLAY_DRIVER_MEMORY_INFO *pMemoryInfo) {
-  if (!pMemoryInfo)
+  if (!hPhysicalGpu || !pMemoryInfo)
+    return NVAPI_INVALID_ARGUMENT;
+
+  return NVAPI_NOT_SUPPORTED;
+}
+
+NVAPI_INTERFACE
+NvAPI_GPU_GetMemoryInfoEx(NvPhysicalGpuHandle hPhysicalGpu, NV_GPU_MEMORY_INFO_EX *pMemoryInfo) {
+  if (!hPhysicalGpu || !pMemoryInfo)
     return NVAPI_INVALID_ARGUMENT;
 
   return NVAPI_NOT_SUPPORTED;
@@ -698,6 +722,8 @@ extern "C" __cdecl void *nvapi_QueryInterface(NvU32 id) {
     return (void *)&NvAPI_Disp_HdrColorControl;
   case 0x84f2a8df:
     return (void *)&NvAPI_Disp_GetHdrCapabilities;
+  case 0x3b05c7e1:
+    return (void *)&NvAPI_DISP_GetMonitorCapabilities;
   case 0x9abdd40d:
     return (void *)&NvAPI_EnumNvidiaDisplayHandle;
   case 0x0078dba2:
@@ -710,8 +736,12 @@ extern "C" __cdecl void *nvapi_QueryInterface(NvU32 id) {
     return (void *)&NvAPI_GPU_GetGpuCoreCount;
   case 0x1be0b8e5:
     return (void *)&NvAPI_GPU_GetBusId;
+  case 0x1bb18724:
+    return (void *)&NvAPI_GPU_GetBusType;
   case 0x07f9b368:
     return (void *)&NvAPI_GPU_GetMemoryInfo;
+  case 0xc0599498:
+    return (void *)&NvAPI_GPU_GetMemoryInfoEx;
   case 0xceee8e9f:
     return (void *)&NvAPI_GPU_GetFullName;
   case 0x6ff81213:
