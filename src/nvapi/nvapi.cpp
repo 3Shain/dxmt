@@ -490,6 +490,32 @@ NvAPI_GPU_GetAllClockFrequencies(__in NvPhysicalGpuHandle hPhysicalGPU,
 }
 
 NVAPI_INTERFACE
+NvAPI_GPU_GetArchInfo(NvPhysicalGpuHandle hPhysicalGpu, NV_GPU_ARCH_INFO *pGpuArchInfo) {
+  if (!hPhysicalGpu || !pGpuArchInfo)
+    return NVAPI_INVALID_ARGUMENT;
+
+  // NVIDIA GeForce RTX 4090
+  switch (pGpuArchInfo->version) {
+    case NV_GPU_ARCH_INFO_VER_1: {
+      auto pGpuArchInfoV1 = (NV_GPU_ARCH_INFO_V1 *)(pGpuArchInfo);
+      pGpuArchInfoV1->architecture = NV_GPU_ARCHITECTURE_AD100;
+      pGpuArchInfoV1->implementation = NV_GPU_ARCH_IMPLEMENTATION_AD102;
+      pGpuArchInfoV1->revision = NV_GPU_CHIP_REV_UNKNOWN;
+      break;
+    }
+    case NV_GPU_ARCH_INFO_VER_2:
+      pGpuArchInfo->architecture_id = NV_GPU_ARCHITECTURE_AD100;
+      pGpuArchInfo->implementation_id = NV_GPU_ARCH_IMPLEMENTATION_AD102;
+      pGpuArchInfo->revision_id = NV_GPU_CHIP_REV_UNKNOWN;
+      break;
+    default:
+      return NVAPI_INCOMPATIBLE_STRUCT_VERSION;
+  }
+
+  return NVAPI_OK;
+}
+
+NVAPI_INTERFACE
 NvAPI_GPU_GetGpuCoreCount(NvPhysicalGpuHandle hPhysicalGpu, NvU32 *pCount) {
   if (!pCount)
     return NVAPI_INVALID_ARGUMENT;
@@ -515,7 +541,7 @@ NvAPI_GPU_GetMemoryInfo(NvPhysicalGpuHandle hPhysicalGpu, NV_DISPLAY_DRIVER_MEMO
 
 NVAPI_INTERFACE
 NvAPI_GPU_GetFullName(NvPhysicalGpuHandle hPhysicalGpu, NvAPI_ShortString szName) {
-  std::string adapter_str = "NVIDIA GeForce RTX";
+  std::string adapter_str = "NVIDIA GeForce RTX 4090";
 
   if (!szName)
     return NVAPI_INVALID_ARGUMENT;
@@ -704,6 +730,8 @@ extern "C" __cdecl void *nvapi_QueryInterface(NvU32 id) {
     return (void *)&NvAPI_GPU_GetConnectedDisplayIds;
   case 0x1e9d8a31:
     return (void *)&NvAPI_DISP_GetGDIPrimaryDisplayId;
+  case 0xd8265d24:
+    return (void *)&NvAPI_GPU_GetArchInfo;
   case 0xdcb616c3:
     return (void *)&NvAPI_GPU_GetAllClockFrequencies;
   case 0xc7026a87:
