@@ -53,7 +53,7 @@ The following environment variables can be used for **debugging** purposes.
 
 ### Instructions
 
-After cloning this repository, inside the DXMT directory, run
+After cloning this repository (**including submodules**), inside the DXMT directory, run
 ```sh
 ./configure.sh
 meson setup --cross-file build-win64.txt --native-file build-osx.txt -Dnative_llvm_path=toolchains/llvm-darwin -Dwine_install_path=toolchains/wine build

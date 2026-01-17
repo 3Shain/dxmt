@@ -96,6 +96,10 @@ endif
 dxmt_include_path = include_directories(dxmt_include_dirs)
 dxmt_native_include_path = include_directories(dxmt_native_include_dirs)
 
+if not fs.is_file('include/native/directx/d3d11.h')
+  error('Don\'t forget to clone submodules. `git submodule update --init --recursive`')
+endif
+
 if not dxmt_native
   res_ext = '.o'
   wrc = find_program('windres')
