@@ -369,12 +369,14 @@ Converter::LoadOperand(const SrcOperandInputOCP &SrcOp, mask_t Mask) {
 
 llvm::Value *
 Converter::ApplySrcModifier(SrcOperandCommon C, llvm::Value *Value, mask_t Mask) {
+  using namespace llvm::air;
+
   Value = MaskSwizzle(Value, Mask, C.swizzle);
   switch (C.read_type) {
   case OperandDataType::Float:
     Value = BitcastToFloat(Value);
     if (C.abs)
-      Value = ir.CreateUnaryIntrinsic(llvm::Intrinsic::fabs, Value);
+      Value = air.CreateFPUnOp(AIRBuilder::fabs, Value);
     if (C.neg)
       Value = ir.CreateFNeg(Value);
     break;

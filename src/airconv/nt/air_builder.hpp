@@ -319,6 +319,7 @@ public:
     trunc,
     cos,
     sin,
+    fabs,
   };
 
   Value *CreateFPUnOp(FPUnOp Op, Value *Operand);

@@ -1644,7 +1644,7 @@ AIRBuilder::CreateSetMeshPointSize(Value *Vertex, Value *Size) {
 Value *
 AIRBuilder::CreateFPUnOp(FPUnOp Op, Value *Operand) {
   static char const *FnNames[] = {
-      "saturate", "log2", "exp2", "sqrt", "rsqrt", "fract", "rint", "floor", "ceil", "trunc", "cos", "sin",
+      "saturate", "log2", "exp2", "sqrt", "rsqrt", "fract", "rint", "floor", "ceil", "trunc", "cos", "sin", "fabs",
   };
 
   if (uint32_t(Op) >= std::size(FnNames)) {

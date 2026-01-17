@@ -4,7 +4,7 @@
 
 namespace dxmt {
 
-constexpr int kDXMTShaderCacheVersion = 8;
+constexpr int kDXMTShaderCacheVersion = 11;
 
 class ShaderCache {
 public:
