@@ -20,6 +20,7 @@
 #include "wsi_window.hpp"
 #include "dxmt_info.hpp"
 #include "dxmt_presenter.hpp"
+#include "dxgi_monitor.hpp"
 #include <cfloat>
 #include <format>
 
@@ -92,9 +93,20 @@ public:
       scale_factor = std::max(Config::getInstance().getOption<float>("d3d11.metalSpatialUpscaleFactor", 2), 1.0f);
     }
 
+    DXMTGammaCurve *gamma_curve = nullptr;
+    Com<IMTLDXGIMonitor> monitor_info;
+    if (FAILED(factory_->QueryInterface(IID_PPV_ARGS(&monitor_info)))) {
+      ERR("MTLD3D11SwapChain: failed to get IMTLDXGIMonitor");
+    } else {
+      MTLDXGI_MONITOR_DATA *monitor_data;
+      if (monitor_info->GetMonitorData(&monitor_data) == S_OK)
+        gamma_curve = &monitor_data->gammaCurve;
+    }
+
     presenter = Rc(new Presenter(pDevice->GetMTLDevice(), layer_weak_,
                                  pDevice->GetDXMTDevice().queue().cmd_library,
-                                 scale_factor, desc_.SampleDesc.Count));
+                                 scale_factor, desc_.SampleDesc.Count,
+                                 gamma_curve));
 
     frame_latency = kSwapchainLatency;
     present_semaphore_ = CreateSemaphore(nullptr, frame_latency,
@@ -595,6 +607,8 @@ public:
                  preferred_max_frame_rate ? 1.0 / preferred_max_frame_rate : 0);
 
     std::unique_lock<d3d11_device_mutex> lock(device_->mutex);
+
+    presenter->updateGammaLUT();
 
     device_context_->PrepareFlush();
     auto &cmd_queue = device_->GetDXMTDevice().queue();

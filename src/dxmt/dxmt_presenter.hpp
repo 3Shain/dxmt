@@ -14,10 +14,20 @@ struct DXMTPresentMetadata {
   float max_display_luminance;
 };
 
+constexpr uint32_t DXMT_DXGI_GAMMA_CP_COUNT = 1024;
+
+struct DXMTGammaCurve {
+  float Red[DXMT_DXGI_GAMMA_CP_COUNT];
+  float Green[DXMT_DXGI_GAMMA_CP_COUNT];
+  float Blue[DXMT_DXGI_GAMMA_CP_COUNT];
+  bool gammaIsIdentity;
+  bool updated;
+};
+
 class Presenter : public RcObject {
 public:
   Presenter(
-      WMT::Device device, WMT::MetalLayer layer, InternalCommandLibrary &lib, float scale_factor, uint8_t sample_count
+      WMT::Device device, WMT::MetalLayer layer, InternalCommandLibrary &lib, float scale_factor, uint8_t sample_count, DXMTGammaCurve *gamma_curve
   );
 
   bool changeLayerProperties(
@@ -27,6 +37,8 @@ public:
   bool changeLayerColorSpace(WMTColorSpace colorspace);
 
   void changeHDRMetadata(const WMTHDRMetadata *metadata);
+
+  void updateGammaLUT();
 
   class PresentState {
   public:
@@ -73,6 +85,9 @@ private:
   WMTColorSpace display_colorspace_ = WMTColorSpaceSRGB;
   WMTHDRMetadata display_hdr_metadata_;
   WMTEDRValue display_edr_value_{0.0, 1.0};
+  DXMTGammaCurve *gamma_curve_;
+  std::vector<float> gamma_lut_rgba_;
+  WMT::Reference<WMT::Texture> gamma_lut_texture_;
   WMT::Reference<WMT::RenderPipelineState> present_blit_;
   WMT::Reference<WMT::RenderPipelineState> present_scale_;
   std::atomic_flag pso_valid = 0;

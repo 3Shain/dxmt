@@ -4,21 +4,40 @@
 #include "dxmt_format.hpp"
 #include "dxmt_presenter.hpp"
 #include "util_likely.hpp"
+#include "winemetal.h"
 
 
 namespace dxmt {
 
-Presenter::Presenter(WMT::Device device, WMT::MetalLayer layer, InternalCommandLibrary &lib, float scale_factor, uint8_t sample_count) :
+Presenter::Presenter(
+    WMT::Device device, WMT::MetalLayer layer, InternalCommandLibrary &lib, float scale_factor,
+    uint8_t sample_count, DXMTGammaCurve *gamma_curve
+) :
     device_(device),
     layer_(layer),
     lib_(lib),
-    sample_count_(sample_count) {
+    sample_count_(sample_count),
+    gamma_curve_(gamma_curve) {
   layer_.getProps(layer_props_);
   layer_props_.device = device;
   layer_props_.opaque = true;
   layer_props_.display_sync_enabled = false;
   layer_props_.framebuffer_only = false; // how strangely setting it true results in worse performance
   layer_props_.contents_scale = layer_props_.contents_scale * scale_factor;
+
+  WMTTextureInfo texture_info;
+  texture_info.type = WMTTextureType2D;
+  texture_info.pixel_format = WMTPixelFormatRGBA32Float;
+  texture_info.usage = WMTTextureUsageShaderRead;
+  texture_info.options = WMTResourceStorageModeShared;
+  texture_info.width = DXMT_DXGI_GAMMA_CP_COUNT;
+  texture_info.height = 1;
+  texture_info.depth = 1;
+  texture_info.mipmap_level_count = 1;
+  texture_info.sample_count = 1;
+  texture_info.array_length = 1;
+  gamma_lut_texture_ = device.newTexture(texture_info);
+  gamma_lut_rgba_.reserve(DXMT_DXGI_GAMMA_CP_COUNT * 4);
 }
 
 bool
@@ -113,6 +132,24 @@ Presenter::synchronizeLayerProperties() {
   return {metadata, ++frame_requested_, this};
 }
 
+void
+Presenter::updateGammaLUT() {
+  if (gamma_curve_ && gamma_curve_->updated) {
+    gamma_curve_->updated = false;
+    for (uint32_t i = 0; i < DXMT_DXGI_GAMMA_CP_COUNT; i++) {
+      gamma_lut_rgba_[i * 4 + 0] = std::clamp(gamma_curve_->Red[i], 0.f, 1.f);
+      gamma_lut_rgba_[i * 4 + 1] = std::clamp(gamma_curve_->Green[i], 0.f, 1.f);
+      gamma_lut_rgba_[i * 4 + 2] = std::clamp(gamma_curve_->Blue[i], 0.f, 1.f);
+      gamma_lut_rgba_[i * 4 + 3] = 1.0f;
+    }
+    gamma_lut_texture_.replaceRegion(
+          {0, 0, 0}, {DXMT_DXGI_GAMMA_CP_COUNT, 1, 1}, 0, 0,
+          gamma_lut_rgba_.data(),
+          DXMT_DXGI_GAMMA_CP_COUNT * sizeof(float) * 4,
+          0);
+    }
+}
+
 WMT::MetalDrawable
 Presenter::encodeCommands(
     WMT::CommandBuffer cmdbuf, WMT::Fence fence, WMT::Texture backbuffer, DXMTPresentMetadata metadata
@@ -128,6 +165,7 @@ Presenter::encodeCommands(
   if (fence)
     encoder.waitForFence(fence, WMTRenderStageFragment);
   encoder.setFragmentTexture(backbuffer, 0);
+  encoder.setFragmentTexture(gamma_lut_texture_, 1);
 
   double width = layer_props_.drawable_width;
   double height = layer_props_.drawable_height;
@@ -151,6 +189,7 @@ constexpr uint32_t kPresentFCIndex_HDRPQ = 0x101;
 constexpr uint32_t kPresentFCIndex_WithHDRMetadata = 0x102;
 constexpr uint32_t kPresentFCIndex_BackbufferIsSRGB = 0x103;
 constexpr uint32_t kPresentFCIndex_BackbufferIsMS = 0x104;
+constexpr uint32_t kPresentFCIndex_GammaEnabled = 0x105;
 
 void
 Presenter::buildRenderPipelineState(bool is_pq, bool with_hdr_metadata, bool is_ms) {
@@ -159,7 +198,7 @@ Presenter::buildRenderPipelineState(bool is_pq, bool with_hdr_metadata, bool is_
   auto library = lib_.getLibrary();
 
   uint32_t true_data = true, false_data = false;
-  WMTFunctionConstant constants[5];
+  WMTFunctionConstant constants[6];
   constants[0].data.set(&true_data);
   constants[0].type = WMTDataTypeBool;
   constants[0].index = kPresentFCIndex_BackbufferSizeMatched;
@@ -175,6 +214,9 @@ Presenter::buildRenderPipelineState(bool is_pq, bool with_hdr_metadata, bool is_
   constants[4].data.set(is_ms ? &true_data : &false_data);
   constants[4].type = WMTDataTypeBool;
   constants[4].index = kPresentFCIndex_BackbufferIsMS;
+  constants[5].data.set((gamma_curve_ && !gamma_curve_->gammaIsIdentity) ? &true_data : &false_data);
+  constants[5].type  = WMTDataTypeBool;
+  constants[5].index = kPresentFCIndex_GammaEnabled;
 
   WMT::Reference<WMT::Error> error;
   auto vs_present_quad = library.newFunction("vs_present_quad");
