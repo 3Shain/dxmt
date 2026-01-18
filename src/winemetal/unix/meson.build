@@ -25,7 +25,7 @@ winemetal_unix_ld_args = [
 ]
 winemetal_unix_link_depends = []
 
-winemetal_unix_dll = shared_library('winemetal', winemetal_unix_src,
+shared_library('winemetal', winemetal_unix_src,
   name_prefix         : '',
   dependencies        : [ airconv_dep_darwin ],
   include_directories : dxmt_include_path,
