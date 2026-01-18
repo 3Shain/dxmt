@@ -1188,15 +1188,7 @@ Converter::operator()(const InstFloatMAD &mad) {
   auto B = LoadOperand(mad.src1, Mask);
   auto C = LoadOperand(mad.src2, Mask);
 
-  bool UseFusedMAD = false;
-
-  if (mad._.precise_mask) {
-    UseFusedMAD = true;
-  }
-
-  auto Result = UseFusedMAD ? air.CreateFMA(A, B, C) : ir.CreateFAdd(ir.CreateFMul(A, B), C);
-
-  StoreOperand(mad.dst, Result, mad._.saturate);
+  StoreOperand(mad.dst, air.CreateFMA(A, B, C), mad._.saturate);
 }
 
 void
