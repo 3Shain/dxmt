@@ -180,17 +180,25 @@ Converter::LoadOperand(const SrcOperandTemp &SrcOp, mask_t Mask) {
     Handle = res.phases[SrcOp.phase].temp.ptr_int4;
   }
   auto TyHandle = GetArrayType(Handle);
+  auto TyInt = air.getIntTy();
 
   if (auto Comp = ComponentFromScalarMask(Mask, SrcOp._.swizzle); Comp >= 0) {
-    auto TyInt = air.getIntTy();
-    auto Ptr = ir.CreateGEP(TyHandle, Handle, {ir.getInt32(0), ir.getInt32(SrcOp.regid), ir.getInt32(Comp)});
+    auto Ptr = ir.CreateGEP(
+        TyHandle, Handle,
+        {ir.getInt32(0), ir.CreateAdd(ir.CreateShl(ir.getInt32(SrcOp.regid), 2), ir.getInt32(Comp))}
+    );
     auto ValueInt = ir.CreateLoad(TyInt, Ptr);
     return ApplySrcModifier(SrcOp._, ValueInt, Mask);
   }
 
-  auto TyIntVec4 = air.getIntTy(4);
-  auto Ptr = ir.CreateGEP(TyHandle, Handle, {ir.getInt32(0), ir.getInt32(SrcOp.regid)});
-  auto ValueIntVec4 = ir.CreateLoad(TyIntVec4, Ptr);
+  llvm::Value *ValueIntVec4 = llvm::PoisonValue::get(air.getIntTy(4));
+  for (auto [DstComp, _] : EnumerateComponents(MemoryAccessMask(Mask, SrcOp._.swizzle))) {
+    auto Ptr = ir.CreateGEP(
+        TyHandle, Handle,
+        {ir.getInt32(0), ir.CreateAdd(ir.CreateShl(ir.getInt32(SrcOp.regid), 2), ir.getInt32(DstComp))}
+    );
+    ValueIntVec4 = ir.CreateInsertElement(ValueIntVec4, ir.CreateLoad(TyInt, Ptr), DstComp);
+  }
   return ApplySrcModifier(SrcOp._, ValueIntVec4, Mask);
 }
 
@@ -715,13 +723,11 @@ Converter::StoreOperand(const DstOperandTemp &DstOp, llvm::Value *Value) {
   }
   auto TyHandle = GetArrayType(Handle);
 
-  if ((DstOp._.mask & kMaskAll) == kMaskAll) {
-    auto Ptr = ir.CreateInBoundsGEP(TyHandle, Handle, {ir.getInt32(0), ir.getInt32(DstOp.regid)});
-    ir.CreateStore(VectorSplat(4, ValueInt), Ptr);
-    return;
-  }
   for (auto [DstComp, SrcComp] : EnumerateComponents(DstOp._.mask)) {
-    auto Ptr = ir.CreateInBoundsGEP(TyHandle, Handle, {ir.getInt32(0), ir.getInt32(DstOp.regid), ir.getInt32(DstComp)});
+    auto Ptr = ir.CreateInBoundsGEP(
+        TyHandle, Handle,
+        {ir.getInt32(0), ir.CreateAdd(ir.CreateShl(ir.getInt32(DstOp.regid), 2), ir.getInt32(DstComp))}
+    );
     ir.CreateStore(ExtractElement(ValueInt, SrcComp), Ptr);
   }
 }

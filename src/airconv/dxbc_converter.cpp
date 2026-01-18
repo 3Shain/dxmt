@@ -323,11 +323,11 @@ void setup_temp_register(
   air::AirType &types, llvm::Module &module, llvm::IRBuilder<> &builder
 ) {
   resource_map.temp.ptr_int4 = builder.CreateAlloca(
-    llvm::ArrayType::get(types._int4, shader_info->tempRegisterCount)
+    llvm::ArrayType::get(types._int, 4 * shader_info->tempRegisterCount)
   );
   resource_map.temp.ptr_float4 = builder.CreateBitCast(
     resource_map.temp.ptr_int4,
-    llvm::ArrayType::get(types._float4, shader_info->tempRegisterCount)
+    llvm::ArrayType::get(types._float, 4 * shader_info->tempRegisterCount)
       ->getPointerTo()
   );
   for (auto &phase : shader_info->phases) {
@@ -335,11 +335,11 @@ void setup_temp_register(
     auto &phase_temp = resource_map.phases.back();
 
     phase_temp.temp.ptr_int4 = builder.CreateAlloca(
-      llvm::ArrayType::get(types._int4, phase.tempRegisterCount)
+      llvm::ArrayType::get(types._int, 4 * phase.tempRegisterCount)
     );
     phase_temp.temp.ptr_float4 = builder.CreateBitCast(
       phase_temp.temp.ptr_int4,
-      llvm::ArrayType::get(types._float4, phase.tempRegisterCount)
+      llvm::ArrayType::get(types._float, 4 * phase.tempRegisterCount)
         ->getPointerTo()
     );
 
