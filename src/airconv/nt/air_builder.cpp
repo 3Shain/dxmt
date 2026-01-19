@@ -1642,7 +1642,7 @@ AIRBuilder::CreateSetMeshPointSize(Value *Vertex, Value *Size) {
 }
 
 Value *
-AIRBuilder::CreateFPUnOp(FPUnOp Op, Value *Operand) {
+AIRBuilder::CreateFPUnOp(FPUnOp Op, Value *Operand, bool FastVariant) {
   static char const *FnNames[] = {
       "saturate", "log2", "exp2", "sqrt", "rsqrt", "fract", "rint", "floor", "ceil", "trunc", "cos", "sin", "fabs",
   };
@@ -1661,7 +1661,7 @@ AIRBuilder::CreateFPUnOp(FPUnOp Op, Value *Operand) {
   auto OperandType = Operand->getType();
 
   std::string FnName = "air.";
-  if (builder.getFastMathFlags().any())
+  if (FastVariant)
     FnName += "fast_";
   FnName += FnNames[Op];
   FnName += getTypeOverloadSuffix(OperandType);
@@ -1670,7 +1670,7 @@ AIRBuilder::CreateFPUnOp(FPUnOp Op, Value *Operand) {
 }
 
 Value *
-AIRBuilder::CreateFPBinOp(FPBinOp Op, Value *LHS, Value *RHS) {
+AIRBuilder::CreateFPBinOp(FPBinOp Op, Value *LHS, Value *RHS, bool FastVariant) {
   static char const *FnNames[] = {
       "fmax",
       "fmin",
@@ -1690,7 +1690,7 @@ AIRBuilder::CreateFPBinOp(FPBinOp Op, Value *LHS, Value *RHS) {
   auto OperandType = LHS->getType();
 
   std::string FnName = "air.";
-  if (builder.getFastMathFlags().any())
+  if (FastVariant)
     FnName += "fast_";
   FnName += FnNames[Op];
   FnName += getTypeOverloadSuffix(OperandType);
