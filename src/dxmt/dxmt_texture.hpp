@@ -25,7 +25,6 @@ typedef unsigned TextureViewKey;
 struct TextureViewDescriptor {
   WMTPixelFormat format: 32;
   WMTTextureType type;
-  WMTTextureUsage usage;
   unsigned firstMiplevel = 0;
   unsigned miplevelCount = 1;
   unsigned firstArraySlice = 0;

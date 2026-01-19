@@ -991,7 +991,6 @@ public:
             format = format_desc.PixelFormat](ArgumentEncodingContext &enc) mutable {
       TextureViewDescriptor src_desc;
       src_desc.format = format;
-      src_desc.usage = WMTTextureUsageRenderTarget;
       src_desc.type = src->textureType();
       src_desc.arraySize = 1;
       src_desc.firstArraySlice = SrcSubresource; // src must be a MS(Array) texture which has exactly 1 mipmap level
@@ -1000,7 +999,6 @@ public:
 
       TextureViewDescriptor dst_desc;
       dst_desc.format = format;
-      dst_desc.usage = WMTTextureUsageRenderTarget;
       dst_desc.type = WMTTextureType2D;
       dst_desc.arraySize = 1;
       dst_desc.firstArraySlice = dst_slice;
@@ -5025,7 +5023,6 @@ public:
       auto mv_view = motion_vector->createView(
           {.format = motion_vector_format,
            .type = WMTTextureType2D,
-           .usage = motion_vector->usage(),
            .firstMiplevel = 0,
            .miplevelCount = 1,
            .firstArraySlice = 0,

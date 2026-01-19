@@ -32,7 +32,6 @@ InitializeAndNormalizeViewDescriptor(
     return E_FAIL;
   }
 
-  Descriptor.usage = WMTTextureUsageShaderRead;
   FixDepthStencilFormat(pTexture, metal_format);
   WMTTextureType TextureType = pTexture->textureType();
   switch (ViewDesc.ViewDimension) {
@@ -230,7 +229,6 @@ InitializeAndNormalizeViewDescriptor(
     return E_FAIL;
   }
 
-  Descriptor.usage = WMTTextureUsageShaderRead | WMTTextureUsageShaderWrite;
   FixDepthStencilFormat(pTexture, metal_format);
   WMTTextureType TextureType = pTexture->textureType();
   switch (ViewDesc.ViewDimension) {
@@ -337,7 +335,6 @@ HRESULT InitializeAndNormalizeViewDescriptor(
     return E_FAIL;
   }
 
-  Descriptor.usage = WMTTextureUsageRenderTarget;
   AttachmentDesc.DepthPlane = 0;
   AttachmentDesc.RenderTargetArrayLength = 0;
   AttachmentDesc.SampleCount = pTexture->sampleCount();
@@ -525,7 +522,6 @@ InitializeAndNormalizeViewDescriptor(
   }
 
   ViewDesc.Flags = ViewDesc.Flags & 3;
-  Descriptor.usage = WMTTextureUsageRenderTarget;
   AttachmentDesc.DepthPlane = 0;
   AttachmentDesc.RenderTargetArrayLength = 0;
   AttachmentDesc.SampleCount = pTexture->sampleCount();

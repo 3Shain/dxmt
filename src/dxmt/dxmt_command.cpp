@@ -334,7 +334,6 @@ DepthStencilBlitContext::copyFromBuffer(
     return;
   }
   view_desc.format = depth_stencil->pixelFormat();
-  view_desc.usage = depth_stencil->usage();
   view_desc.firstMiplevel = level;
   view_desc.miplevelCount = 1;
   view_desc.firstArraySlice = slice;
@@ -424,7 +423,6 @@ DepthStencilBlitContext::copyFromTexture(
     return;
   }
   view_desc.format = WMTPixelFormatDepth32Float_Stencil8;
-  view_desc.usage = WMTTextureUsageShaderRead;
   view_desc.firstMiplevel = level;
   view_desc.miplevelCount = 1;
   view_desc.firstArraySlice = slice;

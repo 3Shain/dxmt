@@ -69,8 +69,6 @@ Texture::createView(TextureViewDescriptor const &descriptor) {
       continue;
     if (viewDescriptors_[i].type != descriptor.type)
       continue;
-    if ((viewDescriptors_[i].usage & descriptor.usage) != descriptor.usage)
-      continue;
     if (viewDescriptors_[i].firstMiplevel != descriptor.firstMiplevel)
       continue;
     if (viewDescriptors_[i].miplevelCount != descriptor.miplevelCount)
@@ -103,7 +101,6 @@ Texture::Texture(const WMTTextureInfo &descriptor, WMT::Device device) :
   viewDescriptors_.push_back({
       .format = info_.pixel_format,
       .type = info_.type,
-      .usage = info_.usage,
       .firstMiplevel = 0,
       .miplevelCount = info_.mipmap_level_count,
       .firstArraySlice = 0,
@@ -127,7 +124,6 @@ Texture::Texture(
   viewDescriptors_.push_back({
       .format = info_.pixel_format,
       .type = info_.type,
-      .usage = WMTTextureUsageShaderRead | WMTTextureUsageShaderWrite,
       .firstMiplevel = 0,
       .miplevelCount = 1,
       .firstArraySlice = 0,
