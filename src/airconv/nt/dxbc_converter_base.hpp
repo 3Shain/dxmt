@@ -481,22 +481,8 @@ public:
 
   llvm::Value * CreateGEPInt32WithBoundCheck(AtomicBufferResourceHandle &Buffer, llvm::Value* Index);
 
-  class ForcePreciseMath {
-  public:
-    llvm::FastMathFlags Previous;
-    llvm::IRBuilderBase &Builder;
-    ForcePreciseMath(llvm::IRBuilderBase &Builder, bool ForcePrecise) : Builder(Builder) {
-      Previous = Builder.getFastMathFlags();
-      if (ForcePrecise) {
-        Builder.setFastMathFlags(llvm::FastMathFlags());
-      }
-    }
-    ~ForcePreciseMath() {
-      Builder.setFastMathFlags(Previous);
-    }
-    ForcePreciseMath(ForcePreciseMath &&) = delete;
-    ForcePreciseMath(const ForcePreciseMath &) = delete;
-  };
+  [[nodiscard]]
+  std::unique_ptr<llvm::IRBuilder<>::FastMathFlagGuard> UseFastMath(bool OptOut);
 
   bool
   IsConstantZero(llvm::Value *Value) const {

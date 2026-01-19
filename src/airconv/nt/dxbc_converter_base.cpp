@@ -891,6 +891,7 @@ Converter::MaskSwizzle(llvm::Value *Value, mask_t Mask, Swizzle Swizzle) {
 
 void
 Converter::operator()(const InstMov &mov) {
+  auto FM = UseFastMath(mov._.precise_mask);
   mask_t Mask = GetMask(mov.dst);
   auto Value = LoadOperand(mov.src, Mask);
   StoreOperand(mov.dst, Value, mov._.saturate);
@@ -898,6 +899,7 @@ Converter::operator()(const InstMov &mov) {
 
 void
 Converter::operator()(const InstMovConditional &movc) {
+  auto FM = UseFastMath(movc._.precise_mask);
   mask_t Mask = GetMask(movc.dst);
   auto Src0 = LoadOperand(movc.src0, Mask);
   auto Src1 = LoadOperand(movc.src1, Mask);
@@ -931,6 +933,7 @@ Converter::operator()(const InstSwapConditional &swapc) {
 
 void
 Converter::operator()(const InstDotProduct &dot) {
+  auto FM = UseFastMath(dot._.precise_mask);
   static mask_t DimensionMask[] = {kMaskVecXY, kMaskVecXYZ, kMaskAll};
   if (dot.dimension < 2 || dot.dimension > 4) {
     return;
@@ -946,6 +949,7 @@ void
 Converter::operator()(const InstFloatUnaryOp &unary) {
   using namespace llvm::air;
 
+  auto FM = UseFastMath(unary._.precise_mask);
   mask_t Mask = GetMask(unary.dst);
   auto Value = LoadOperand(unary.src, Mask);
 
@@ -989,6 +993,7 @@ void
 Converter::operator()(const InstFloatBinaryOp &bin) {
   using namespace llvm::air;
 
+  auto FM = UseFastMath(bin._.precise_mask);
   mask_t Mask = GetMask(bin.dst);
   auto LHS = LoadOperand(bin.src0, Mask);
   auto RHS = LoadOperand(bin.src1, Mask);
@@ -1000,7 +1005,6 @@ Converter::operator()(const InstFloatBinaryOp &bin) {
     Result = ir.CreateFAdd(LHS, RHS);
     break;
   case FloatBinaryOp::Mul: {
-    ForcePreciseMath precise(ir, IsInifinity(LHS) || IsInifinity(RHS));
     Result = ir.CreateFMul(LHS, RHS);
     break;
   }
@@ -1008,12 +1012,10 @@ Converter::operator()(const InstFloatBinaryOp &bin) {
     Result = ir.CreateFDiv(LHS, RHS);
     break;
   case FloatBinaryOp::Min: {
-    ForcePreciseMath precise(ir, llvm::isa<llvm::Constant>(LHS) || llvm::isa<llvm::Constant>(RHS));
     Result = air.CreateFPBinOp(AIRBuilder::fmin, LHS, RHS);
     break;
   }
   case FloatBinaryOp::Max: {
-    ForcePreciseMath precise(ir, llvm::isa<llvm::Constant>(LHS) || llvm::isa<llvm::Constant>(RHS));
     Result = air.CreateFPBinOp(AIRBuilder::fmax, LHS, RHS);
     break;
   }
@@ -1112,6 +1114,7 @@ Converter::operator()(const InstIntegerBinaryOp &bin) {
 
 void
 Converter::operator()(const InstPartialDerivative &deriv) {
+  auto FM = UseFastMath(deriv._.precise_mask);
   mask_t Mask = GetMask(deriv.dst);
   auto SrcValue = LoadOperand(deriv.src, Mask);
   auto Result = air.CreateDerivative(SrcValue, deriv.ddy);
@@ -1151,6 +1154,7 @@ Converter::operator()(const InstConvert &convert) {
 
 void
 Converter::operator()(const InstFloatCompare &cmp) {
+  auto FM = UseFastMath(cmp._.precise_mask);
   mask_t Mask = GetMask(cmp.dst);
   auto LHS = LoadOperand(cmp.src0, Mask);
   auto RHS = LoadOperand(cmp.src1, Mask);
@@ -1172,17 +1176,14 @@ Converter::operator()(const InstFloatCompare &cmp) {
     break;
   }
 
-  llvm::Value * Result;
-  {
-    ForcePreciseMath precise(ir, IsConstantZero(LHS) || IsConstantZero(RHS));
-    Result = ir.CreateFCmp(Pred, LHS, RHS);
-  }
+  llvm::Value * Result = ir.CreateFCmp(Pred, LHS, RHS);
 
   StoreOperand(cmp.dst, ir.CreateSExt(Result, Result->getType()->getWithNewBitWidth(32)));
 }
 
 void
 Converter::operator()(const InstFloatMAD &mad) {
+  auto FM = UseFastMath(mad._.precise_mask);
   mask_t Mask = GetMask(mad.dst);
   auto A = LoadOperand(mad.src0, Mask);
   auto B = LoadOperand(mad.src1, Mask);
@@ -1195,6 +1196,7 @@ void
 Converter::operator()(const InstSinCos &sincos) {
   using namespace llvm::air;
 
+  auto FM = UseFastMath(sincos._.precise_mask);
   mask_t MaskCos = GetMask(sincos.dst_cos);
   mask_t MaskSin = GetMask(sincos.dst_sin);
   mask_t MaskCombined = MaskCos | MaskSin;
@@ -2930,6 +2932,31 @@ Converter::CreateGEPInt32WithBoundCheck(AtomicBufferResourceHandle &Buffer, llvm
   return ir.CreateSelect(
       ir.CreateICmpULT(Index, ir.CreateLShr(ByteLength, 2)), Addr, llvm::Constant::getNullValue(Addr->getType())
   );
+}
+
+std::unique_ptr<llvm::IRBuilder<>::FastMathFlagGuard>
+Converter::UseFastMath(bool OptOut) {
+  if (OptOut)
+    return nullptr;
+  auto Guard = std::make_unique<llvm::IRBuilder<>::FastMathFlagGuard>(ir);
+  llvm::FastMathFlags FMF;
+
+  /**
+  TODO(airconv): provides option to allow NaN/INF
+  TODO(invariance-analysis): for now fp contraction&refactoring is simply disabled for pre-raster stage to reduce the
+  chance of depth prepass z-fighting. However if the game (e.g. SotTR) uses two versions of expression (mul+add vs. fma)
+  this is not handled yet (need further investigation, probably need a pass for un-fuse/re-fuse)
+  */
+  if (ctx.shader_type == microsoft::D3D11_SB_COMPUTE_SHADER || ctx.shader_type == microsoft::D3D10_SB_PIXEL_SHADER) {
+    FMF.setAllowContract();
+    FMF.setAllowReassoc();
+    FMF.setAllowReciprocal();
+  }
+
+  FMF.setApproxFunc();
+  FMF.setNoSignedZeros();
+  ir.setFastMathFlags(FMF);
+  return Guard;
 }
 
 bool
