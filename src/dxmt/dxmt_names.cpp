@@ -288,10 +288,10 @@ operator<<(std::ostream &os, WMTPixelFormat e) {
     ENUM_NAME(WMTPixelFormatDepth16Unorm);
     ENUM_NAME(WMTPixelFormatDepth32Float);
     ENUM_NAME(WMTPixelFormatStencil8);
-    ENUM_NAME(WMTPixelFormatDepth24Unorm_Stencil8);
+    // ENUM_NAME(WMTPixelFormatDepth24Unorm_Stencil8);
     ENUM_NAME(WMTPixelFormatDepth32Float_Stencil8);
     ENUM_NAME(WMTPixelFormatX32_Stencil8);
-    ENUM_NAME(WMTPixelFormatX24_Stencil8);
+    // ENUM_NAME(WMTPixelFormatX24_Stencil8);
     ENUM_NAME(WMTPixelFormatBGRA10_XR);
     ENUM_NAME(WMTPixelFormatBGRA10_XR_sRGB);
     ENUM_NAME(WMTPixelFormatBGR10_XR);

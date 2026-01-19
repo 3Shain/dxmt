@@ -101,10 +101,7 @@ public:
     if (depth_stencil_format != WMTPixelFormatInvalid) {
       info.depth_pixel_format = depth_stencil_format;
     }
-    // FIXME: don't hardcoding!
-    if (depth_stencil_format == WMTPixelFormatDepth32Float_Stencil8 ||
-        depth_stencil_format == WMTPixelFormatDepth24Unorm_Stencil8 ||
-        depth_stencil_format == WMTPixelFormatStencil8) {
+    if (DepthStencilPlanarFlags(depth_stencil_format) & 2) {
       info.stencil_pixel_format = depth_stencil_format;
     }
 
