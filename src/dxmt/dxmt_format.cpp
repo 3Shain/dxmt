@@ -429,8 +429,11 @@ DepthStencilPlanarFlags(WMTPixelFormat format) {
     return 3;
   case WMTPixelFormatDepth32Float:
   case WMTPixelFormatDepth16Unorm:
+  case WMTPixelFormatR32X8X32:
     return 1;
   case WMTPixelFormatStencil8:
+  case WMTPixelFormatX32_Stencil8:
+  case WMTPixelFormatX32G8X32:
     return 2;
   default:
     return 0;
@@ -567,12 +570,12 @@ MTLQueryDXGIFormat(WMT::Device device, uint32_t format, MTL_DXGI_FORMAT_DESC &de
     break;
   }
   case DXGI_FORMAT_R32_FLOAT_X8X24_TYPELESS: {
-    description.PixelFormat = WMTPixelFormatDepth32Float_Stencil8;
+    description.PixelFormat = WMTPixelFormatR32X8X32;
     description.Flag = MTL_DXGI_FORMAT_TYPELESS | MTL_DXGI_FORMAT_DEPTH_PLANER;
     break;
   }
   case DXGI_FORMAT_X32_TYPELESS_G8X24_UINT: {
-    description.PixelFormat = WMTPixelFormatX32_Stencil8;
+    description.PixelFormat = WMTPixelFormatX32G8X32;
     description.Flag = MTL_DXGI_FORMAT_TYPELESS | MTL_DXGI_FORMAT_STENCIL_PLANER;
     break;
   }
@@ -719,12 +722,12 @@ MTLQueryDXGIFormat(WMT::Device device, uint32_t format, MTL_DXGI_FORMAT_DESC &de
   }
   case DXGI_FORMAT_R24_UNORM_X8_TYPELESS: {
     description.Flag = MTL_DXGI_FORMAT_DEPTH_PLANER | MTL_DXGI_FORMAT_EMULATED_D24;
-    description.PixelFormat = WMTPixelFormatDepth32Float_Stencil8;
+    description.PixelFormat = WMTPixelFormatR32X8X32;
     break;
   }
   case DXGI_FORMAT_X24_TYPELESS_G8_UINT: {
     description.Flag = MTL_DXGI_FORMAT_STENCIL_PLANER | MTL_DXGI_FORMAT_EMULATED_D24;
-    description.PixelFormat = WMTPixelFormatX32_Stencil8;
+    description.PixelFormat = WMTPixelFormatX32G8X32;
     break;
   }
   case DXGI_FORMAT_R8G8_TYPELESS: {

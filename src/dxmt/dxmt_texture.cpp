@@ -50,33 +50,8 @@ Texture::prepareAllocationViews(TextureAllocation *allocaiton) {
   for (unsigned version = allocaiton->version_; version < version_; version++) {
     auto &texture = allocaiton->obj_;
     auto &view = viewDescriptors_[version];
-
-    WMT::Reference<WMT::Texture> ref;
     uint64_t gpu_resource_id;
-
-    if ((view.usage & WMTTextureUsageRenderTarget) == 0) {
-      switch (view.format) {
-      case WMTPixelFormatDepth16Unorm:
-      case WMTPixelFormatDepth32Float:
-      case WMTPixelFormatStencil8:
-        ref = texture.newTextureView(
-            view.format, view.type, view.firstMiplevel, view.miplevelCount, view.firstArraySlice, view.arraySize,
-            {WMTTextureSwizzleRed, WMTTextureSwizzleZero, WMTTextureSwizzleZero, WMTTextureSwizzleOne}, gpu_resource_id
-        );
-        allocaiton->cached_view_.push_back(std::make_unique<TextureView>(std::move(ref), gpu_resource_id));
-        continue;
-      case WMTPixelFormatX32_Stencil8:
-        ref = texture.newTextureView(
-            view.format, view.type, view.firstMiplevel, view.miplevelCount, view.firstArraySlice, view.arraySize,
-            {WMTTextureSwizzleZero, WMTTextureSwizzleRed, WMTTextureSwizzleZero, WMTTextureSwizzleOne}, gpu_resource_id
-        );
-        allocaiton->cached_view_.push_back(std::make_unique<TextureView>(std::move(ref), gpu_resource_id));
-        continue;
-      default:
-        break;
-      }
-    }
-    ref = texture.newTextureView(
+    WMT::Reference<WMT::Texture> ref = texture.newTextureView(
         view.format, view.type, view.firstMiplevel, view.miplevelCount, view.firstArraySlice, view.arraySize,
         {WMTTextureSwizzleRed, WMTTextureSwizzleGreen, WMTTextureSwizzleBlue, WMTTextureSwizzleAlpha}, gpu_resource_id
     );
@@ -115,22 +90,6 @@ Texture::Texture(const WMTTextureInfo &descriptor, WMT::Device device) :
     info_(descriptor),
     device_(device) {
 
-  WMTTextureUsage default_view_usage = info_.usage;
-  switch (info_.pixel_format) {
-  case WMTPixelFormatDepth16Unorm:
-  case WMTPixelFormatDepth32Float:
-  case WMTPixelFormatStencil8:
-  case WMTPixelFormatX32_Stencil8:
-    /**
-    we need to remove read/write usage for default depth stencil view
-    because the swizzle will be reconfigured to match the D3D11 spec
-     */
-    default_view_usage = default_view_usage & ~(WMTTextureUsageShaderRead | WMTTextureUsageShaderWrite);
-    break;
-  default:
-    break;
-  }
-
   uint32_t arraySize = info_.array_length;
   switch (info_.type) {
   case WMTTextureTypeCubeArray:
@@ -144,7 +103,7 @@ Texture::Texture(const WMTTextureInfo &descriptor, WMT::Device device) :
   viewDescriptors_.push_back({
       .format = info_.pixel_format,
       .type = info_.type,
-      .usage = default_view_usage,
+      .usage = info_.usage,
       .firstMiplevel = 0,
       .miplevelCount = info_.mipmap_level_count,
       .firstArraySlice = 0,
