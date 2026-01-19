@@ -549,7 +549,7 @@ struct DXMTClearUintMetadata {
   tex.write(meta.value, meta.offset + pos.xy, pos.z);
 }
 
-[[kernel]] void cs_clear_texture_buffer_float(
+[[kernel]] void cs_clear_tbuffer_float(
     texture_buffer<float, access::write> tex [[texture(0)]],
     constant DXMTClearFloatMetadata& meta [[buffer(1)]],
     uint pos [[thread_position_in_grid]]
@@ -557,7 +557,7 @@ struct DXMTClearUintMetadata {
   tex.write(meta.value, meta.offset.x + pos);
 }
 
-[[kernel]] void cs_clear_texture_buffer_uint(
+[[kernel]] void cs_clear_tbuffer_uint(
     texture_buffer<uint, access::write> tex [[texture(0)]],
     constant DXMTClearUintMetadata& meta [[buffer(1)]],
     uint pos [[thread_position_in_grid]]
