@@ -4,11 +4,7 @@
 
 namespace dxmt {
 
-struct ModuleOptions {
-  bool enableFastMath;
-};
-
-void initializeModule(llvm::Module &M, const ModuleOptions &opts);
+void initializeModule(llvm::Module &M);
 
 void runOptimizationPasses(llvm::Module &M);
 

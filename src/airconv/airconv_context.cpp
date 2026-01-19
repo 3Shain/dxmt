@@ -36,8 +36,7 @@ using namespace llvm;
 
 namespace dxmt {
 
-void initializeModule(llvm::Module &M, const ModuleOptions &opts) {
-  auto &context = M.getContext();
+void initializeModule(llvm::Module &M) {
   M.setSourceFileName("airconv_generated.metal");
   M.setTargetTriple("air64-apple-macosx14.0.0");
   M.setDataLayout(

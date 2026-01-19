@@ -203,7 +203,7 @@ int main(int argc, char **argv) {
   }
 
   Module M("default", Context);
-  dxmt::initializeModule(M, {.enableFastMath = FastMath});
+  dxmt::initializeModule(M);
 
   sm50_shader_t sm50;
   sm50_error_t err;

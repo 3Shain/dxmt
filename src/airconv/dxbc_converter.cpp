@@ -1381,18 +1381,9 @@ AIRCONV_API int SM50Compile(
   context.setOpaquePointers(false); // I suspect Metal uses LLVM 14...
 
   auto &shader_info = ((dxmt::dxbc::SM50ShaderInternal *)pShader)->shader_info;
-  auto shader_type = ((dxmt::dxbc::SM50ShaderInternal *)pShader)->shader_type;
 
   auto pModule = std::make_unique<Module>("shader.air", context);
-  initializeModule(
-    *pModule,
-    {.enableFastMath =
-       (!shader_info.skipOptimization && shader_info.refactoringAllowed &&
-        // this is by design: vertex functions are usually not the
-        // bottle-neck of pipeline, and precise calculation on pixel can reduce
-        // flickering
-        shader_type != microsoft::D3D10_SB_VERTEX_SHADER)}
-  );
+  initializeModule(*pModule);
 
   if (auto err = dxmt::dxbc::convertDXBC(
         pShader, FunctionName, context, *pModule, pArgs
@@ -1454,11 +1445,7 @@ AIRCONV_API int SM50CompileTessellationPipelineHull(
     ((dxmt::dxbc::SM50ShaderInternal *)pHullShader)->shader_info;
 
   auto pModule = std::make_unique<Module>("shader.air", context);
-  initializeModule(
-    *pModule,
-    {.enableFastMath =
-       (!shader_info.skipOptimization && shader_info.refactoringAllowed)}
-  );
+  initializeModule(*pModule);
 
   if (auto err = dxmt::dxbc::convert_dxbc_vertex_hull_shader(
         (dxbc::SM50ShaderInternal *)pVertexShader, (dxbc::SM50ShaderInternal *)pHullShader, 
@@ -1520,19 +1507,9 @@ AIRCONV_API int SM50CompileTessellationPipelineDomain(
 
   auto &shader_info =
     ((dxmt::dxbc::SM50ShaderInternal *)pDomainShader)->shader_info;
-  auto shader_type =
-    ((dxmt::dxbc::SM50ShaderInternal *)pDomainShader)->shader_type;
 
   auto pModule = std::make_unique<Module>("shader.air", context);
-  initializeModule(
-    *pModule,
-    {.enableFastMath =
-       (!shader_info.skipOptimization && shader_info.refactoringAllowed &&
-        // this is by design: vertex functions are usually not the
-        // bottle-neck of pipeline, and precise calculation on pixel can reduce
-        // flickering
-        shader_type != microsoft::D3D10_SB_VERTEX_SHADER)}
-  );
+  initializeModule(*pModule);
 
   if (auto err = dxmt::dxbc::convert_dxbc_tesselator_domain_shader(
         (dxbc::SM50ShaderInternal *)pDomainShader, FunctionName,
@@ -1596,7 +1573,7 @@ AIRCONV_API int SM50CompileGeometryPipelineVertex(
   auto &shader_info = ((dxmt::dxbc::SM50ShaderInternal *)pGeometryShader)->shader_info;
 
   auto pModule = std::make_unique<Module>("shader.air", context);
-  initializeModule(*pModule, {.enableFastMath = false});
+  initializeModule(*pModule);
 
   if (auto err = dxmt::dxbc::convert_dxbc_vertex_for_geometry_shader(
         (dxbc::SM50ShaderInternal *)pVertexShader, FunctionName,
@@ -1660,11 +1637,7 @@ AIRCONV_API int SM50CompileGeometryPipelineGeometry(
     ((dxmt::dxbc::SM50ShaderInternal *)pGeometryShader)->shader_info;
 
   auto pModule = std::make_unique<Module>("shader.air", context);
-  initializeModule(
-    *pModule,
-    {.enableFastMath =
-       (!shader_info.skipOptimization && shader_info.refactoringAllowed)}
-  );
+  initializeModule(*pModule);
 
   if (auto err = dxmt::dxbc::convert_dxbc_geometry_shader(
         (dxbc::SM50ShaderInternal *)pGeometryShader, FunctionName,
