@@ -526,8 +526,7 @@ public:
       outFormatSupport |= D3D11_FORMAT_SUPPORT_IA_INDEX_BUFFER;
     }
 
-    auto Capability =
-        format_inspector.textureCapabilities[metal_format.PixelFormat];
+    auto Capability = GetMTLPixelFormatCapability(metal_format.PixelFormat);
 
     if (any_bit_set(Capability & FormatCapability::Color)) {
       outFormatSupport |= D3D11_FORMAT_SUPPORT_RENDER_TARGET;
@@ -640,8 +639,7 @@ public:
                                     metal_format))) {
         return E_INVALIDARG;
       }
-      auto Capability =
-          format_inspector.textureCapabilities[metal_format.PixelFormat];
+      auto Capability = GetMTLPixelFormatCapability(metal_format.PixelFormat);
 
       if (any_bit_set(Capability & FormatCapability::TextureBufferRead)) {
         info->OutFormatSupport2 |= D3D11_FORMAT_SUPPORT2_UAV_TYPED_LOAD;
@@ -1042,6 +1040,7 @@ public:
 
   virtual FormatCapability
   GetMTLPixelFormatCapability(WMTPixelFormat Format) final {
+    Format = ORIGINAL_FORMAT(Format);
     if (!format_inspector.textureCapabilities.contains(Format))
       return FormatCapability(0);
     return format_inspector.textureCapabilities.at(Format);
