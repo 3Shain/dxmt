@@ -371,27 +371,6 @@ void setup_temp_register(
   }
 }
 
-void setup_fastmath_flag(llvm::Module &module, llvm::IRBuilder<> &builder) {
-  if (auto options = module.getNamedMetadata("air.compile_options")) {
-    for (auto operand : options->operands()) {
-      if (isa<llvm::MDTuple>(operand) && cast<llvm::MDTuple>(operand)->getNumOperands() == 1 &&
-          isa<llvm::MDString>(cast<llvm::MDTuple>(operand)->getOperand(0)) &&
-          cast<llvm::MDString>(cast<llvm::MDTuple>(operand)->getOperand(0))
-                  ->getString()
-                  .compare("air.compile.fast_math_enable") == 0) {
-        builder.getFastMathFlags().setNoInfs();
-        builder.getFastMathFlags().setNoNaNs();
-        builder.getFastMathFlags().setNoSignedZeros();
-        builder.getFastMathFlags().setAllowReassoc();
-        builder.getFastMathFlags().setAllowReciprocal();
-        // builder.getFastMathFlags().setAllowContract();
-        builder.getFastMathFlags().setApproxFunc();
-      }
-    }
-  }
-}
-
-
 void setup_metal_version(llvm::Module &module, SM50_SHADER_METAL_VERSION metal_verison) {
   using namespace llvm;
   auto &context = module.getContext();
@@ -503,7 +482,6 @@ llvm::Error convert_dxbc_pixel_shader(
   llvm::air::AIRBuilder air(builder, nulldbg);
 
   setup_metal_version(module, metal_version);
-  setup_fastmath_flag(module, builder);
 
   resource_map.input.ptr_int4 =
     builder.CreateAlloca(llvm::ArrayType::get(types._int4, max_input_register));
@@ -609,7 +587,6 @@ llvm::Error convert_dxbc_compute_shader(
   llvm::air::AIRBuilder air(builder, nulldbg);
 
   setup_metal_version(module, metal_version);
-  setup_fastmath_flag(module, builder);
   setup_temp_register(shader_info, resource_map, types, module, builder);
   setup_immediate_constant_buffer(
     shader_info, resource_map, types, module, builder
@@ -785,7 +762,6 @@ llvm::Error convert_dxbc_vertex_shader(
   llvm::air::AIRBuilder air(builder, nulldbg);
 
   setup_metal_version(module, metal_version);
-  setup_fastmath_flag(module, builder);
 
   resource_map.vertex_id_with_base = function->getArg(vertex_idx);
   resource_map.base_vertex_id = function->getArg(base_vertex_idx);

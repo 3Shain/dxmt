@@ -356,7 +356,6 @@ convert_dxbc_vertex_hull_shader(
 
     auto epilogue_bb = llvm::BasicBlock::Create(context, "epilogue_vertex", function);
     setup_metal_version(module, metal_version);
-    setup_fastmath_flag(module, builder);
 
     auto active = llvm::BasicBlock::Create(context, "active_vertex", function);
 
@@ -840,7 +839,6 @@ convert_dxbc_tesselator_domain_shader(
   llvm::air::AIRBuilder air(builder, nulldbg);
 
   setup_metal_version(module, metal_version);
-  setup_fastmath_flag(module, builder);
   setup_temp_register(shader_info, resource_map, types, module, builder);
   setup_immediate_constant_buffer(shader_info, resource_map, types, module, builder);
 

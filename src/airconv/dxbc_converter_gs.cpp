@@ -169,7 +169,6 @@ convert_dxbc_geometry_shader(
   llvm::raw_null_ostream nulldbg{};
   llvm::air::AIRBuilder air(builder, nulldbg);
   setup_metal_version(module, metal_version);
-  setup_fastmath_flag(module, builder);
 
   auto [warp_vertex_count, warp_primitive_count, vertex_per_primitive] =
       get_vertex_primitive_count_in_warp(pShaderInternal->gs_input_primitive, is_strip);
@@ -588,7 +587,6 @@ convert_dxbc_vertex_for_geometry_shader(
   llvm::air::AIRBuilder air(builder, nulldbg);
 
   setup_metal_version(module, metal_version);
-  setup_fastmath_flag(module, builder);
 
   auto index_check = llvm::BasicBlock::Create(context, "index_check", function);
   auto active = llvm::BasicBlock::Create(context, "active", function);

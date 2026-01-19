@@ -467,8 +467,6 @@ void setup_binding_table(
   uint32_t argbuffer_slot = kArgumentBufferBindIndex
 );
 
-void setup_fastmath_flag(llvm::Module &module, llvm::IRBuilder<> &builder);
-
 void setup_metal_version(llvm::Module &module, SM50_SHADER_METAL_VERSION metal_verison);
 
 void setup_temp_register(

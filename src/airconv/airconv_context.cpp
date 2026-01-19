@@ -60,20 +60,6 @@ void initializeModule(llvm::Module &M, const ModuleOptions &opts) {
   );
   M.addModuleFlag(Module::ModFlagBehavior::Max, "air.max_samplers", 16);
 
-  auto createString = [&](auto s) { return MDString::get(context, s); };
-
-  auto airCompileOptions = M.getOrInsertNamedMetadata("air.compile_options");
-  airCompileOptions->addOperand(
-    MDTuple::get(context, {createString("air.compile.denorms_disable")})
-  );
-  airCompileOptions->addOperand(MDTuple::get(
-    context,
-    {opts.enableFastMath ? createString("air.compile.fast_math_enable")
-                         : createString("air.compile.fast_math_disable")}
-  ));
-  airCompileOptions->addOperand(MDTuple::get(
-    context, {createString("air.compile.framebuffer_fetch_enable")}
-  ));
 };
 
 static std::atomic_flag llvm_overwrite = false;
