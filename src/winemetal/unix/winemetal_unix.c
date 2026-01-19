@@ -301,6 +301,29 @@ _MTLBuffer_newTexture(void *obj) {
   return STATUS_SUCCESS;
 }
 
+inline MTLTextureSwizzleChannels
+to_metal_swizzle(struct WMTTextureSwizzleChannels swizzle, enum WMTPixelFormat format) {
+  if (format & WMTPixelFormatRGB1Swizzle) {
+    return MTLTextureSwizzleChannelsMake(
+        (MTLTextureSwizzle)swizzle.r, (MTLTextureSwizzle)swizzle.g, (MTLTextureSwizzle)swizzle.b, MTLTextureSwizzleOne
+    );
+  }
+  if (format & WMTPixelFormatR001Swizzle) {
+    return MTLTextureSwizzleChannelsMake(
+        (MTLTextureSwizzle)swizzle.r, MTLTextureSwizzleZero, MTLTextureSwizzleZero, MTLTextureSwizzleOne
+    );
+  }
+  if (format & WMTPixelFormat0R01Swizzle) {
+    return MTLTextureSwizzleChannelsMake(
+        MTLTextureSwizzleOne, (MTLTextureSwizzle)swizzle.r, MTLTextureSwizzleOne, MTLTextureSwizzleOne
+    );
+  }
+  return MTLTextureSwizzleChannelsMake(
+      (MTLTextureSwizzle)swizzle.r, (MTLTextureSwizzle)swizzle.g, (MTLTextureSwizzle)swizzle.b,
+      (MTLTextureSwizzle)swizzle.a
+  );
+}
+
 static NTSTATUS
 _MTLTexture_newTextureView(void *obj) {
   struct unixcall_mtltexture_newtextureview *params = obj;
@@ -311,13 +334,7 @@ _MTLTexture_newTextureView(void *obj) {
                         textureType:(MTLTextureType)params->texture_type
                              levels:NSMakeRange(params->level_start, params->level_count)
                              slices:NSMakeRange(params->slice_start, params->slice_count)
-                            swizzle:MTLTextureSwizzleChannelsMake(
-                                        (MTLTextureSwizzle)params->swizzle.r, (MTLTextureSwizzle)params->swizzle.g,
-                                        (MTLTextureSwizzle)params->swizzle.b,
-                                        (params->format & WMTPixelFormatAlphaIsOne)
-                                            ? MTLTextureSwizzleOne
-                                            : (MTLTextureSwizzle)params->swizzle.a
-                                    )];
+                            swizzle:to_metal_swizzle(params->swizzle, params->format)];
   params->ret = (obj_handle_t)ret;
   params->gpu_resource_id = [ret gpuResourceID]._impl;
   return STATUS_SUCCESS;

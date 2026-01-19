@@ -436,9 +436,20 @@ enum WMTPixelFormat : uint32_t {
   WMTPixelFormatAlphaIsOne = 0x80000000,
   WMTPixelFormatBGRX8Unorm = WMTPixelFormatAlphaIsOne | WMTPixelFormatBGRA8Unorm,
   WMTPixelFormatBGRX8Unorm_sRGB = WMTPixelFormatAlphaIsOne | WMTPixelFormatBGRA8Unorm_sRGB,
+
+  WMTPixelFormatRGB1Swizzle = WMTPixelFormatAlphaIsOne,
+  WMTPixelFormatR001Swizzle = 0x40000000,
+  WMTPixelFormat0R01Swizzle = 0x20000000,
+
+  WMTPixelFormatR32X8X32 = WMTPixelFormatR001Swizzle | WMTPixelFormatDepth32Float_Stencil8,
+  // WMTPixelFormatR24X8 = WMTPixelFormatR001Swizzle | WMTPixelFormatDepth24Unorm_Stencil8,
+  WMTPixelFormatX32G8X32 = WMTPixelFormat0R01Swizzle | WMTPixelFormatX32_Stencil8,
+  // WMTPixelFormatX24G8 = WMTPixelFormat0R01Swizzle | WMTPixelFormatX24_Stencil8,
+
+  WMTPixelFormatCustomSwizzle = WMTPixelFormatRGB1Swizzle | WMTPixelFormatR001Swizzle | WMTPixelFormat0R01Swizzle,
 };
 
-#define ORIGINAL_FORMAT(format) (format & ~WMTPixelFormatAlphaIsOne)
+#define ORIGINAL_FORMAT(format) (format & ~WMTPixelFormatCustomSwizzle)
 
 enum WMTTextureType : uint8_t {
   WMTTextureType1D = 0,
