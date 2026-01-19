@@ -292,6 +292,7 @@ InitializeAndNormalizeViewDescriptor(
     break;
   }
   case D3D11_UAV_DIMENSION_TEXTURE3D: {
+    ArraySize = std::max(ArraySize >> ViewDesc.Texture3D.MipSlice, 1u); 
     if (~ViewDesc.Texture3D.WSize == 0)
       ViewDesc.Texture3D.WSize = ArraySize - ViewDesc.Texture3D.FirstWSlice;
     if (TextureType == WMTTextureType3D) {
@@ -470,6 +471,7 @@ HRESULT InitializeAndNormalizeViewDescriptor(
     break;
   }
   case D3D11_RTV_DIMENSION_TEXTURE3D: {
+    ArraySize = std::max(ArraySize >> ViewDesc.Texture3D.MipSlice, 1u); 
     if (~ViewDesc.Texture3D.WSize == 0)
       ViewDesc.Texture3D.WSize = ArraySize - ViewDesc.Texture3D.FirstWSlice;
     if (texture_type == WMTTextureType3D) {
