@@ -1,7 +1,6 @@
 #include "com/com_pointer.hpp"
 #include "d3d11_device.hpp"
 #include "d3d11_enumerable.hpp"
-#include "d3d11_texture.hpp"
 #include "d3d11_view.hpp"
 #include "dxmt_dynamic.hpp"
 #include "dxmt_staging.hpp"
@@ -380,6 +379,23 @@ HRESULT CreateDeviceTextureInternal(MTLD3D11Device *pDevice,
 
   auto &initializer = pDevice->GetDXMTDevice().queue().initializer;
 
+  auto initialize = [&](Rc<TextureAllocation> &&allocation) {
+    texture->rename(std::move(allocation));
+    if (!pInitialData) {
+      for (auto sub : EnumerateSubresources(finalDesc)) {
+        initializer.initWithZero(texture.ptr(), texture->current(), sub.ArraySlice, sub.MipLevel);
+      }
+    } else {
+      for (auto sub : EnumerateSubresources(finalDesc)) {
+        auto &data = pInitialData[sub.SubresourceId];
+        initializer.initWithData(
+            texture.ptr(), texture->current(), sub.ArraySlice, sub.MipLevel, data.pSysMem, data.SysMemPitch,
+            data.SysMemSlicePitch
+        );
+      }
+    }
+  };
+
   auto shared_flag =
       D3D11_RESOURCE_MISC_SHARED | D3D11_RESOURCE_MISC_SHARED_NTHANDLE | D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX;
   if (finalDesc.MiscFlags & shared_flag) {
@@ -390,7 +406,6 @@ HRESULT CreateDeviceTextureInternal(MTLD3D11Device *pDevice,
     // use a dedicated path for now, because there are other works for private storage mode
 
     Flags<TextureAllocationFlag> flags;
-    // TODO(shared-resource): have to use private storage but pInitialData is not handled
     flags.set(TextureAllocationFlag::GpuPrivate);
     if (finalDesc.Usage == D3D11_USAGE_IMMUTABLE)
       flags.set(TextureAllocationFlag::GpuReadonly);
@@ -435,7 +450,7 @@ HRESULT CreateDeviceTextureInternal(MTLD3D11Device *pDevice,
 
     // TODO: handle keyed mutex
 
-    texture->rename(std::move(allocation));
+    initialize(std::move(allocation));
     *ppTexture = reinterpret_cast<typename tag::COM_IMPL *>(
         ref(new DeviceTexture<tag>(&finalDesc, std::move(texture), create.hResource,
                                    create.hGlobalShare, pDevice))
@@ -444,43 +459,18 @@ HRESULT CreateDeviceTextureInternal(MTLD3D11Device *pDevice,
   }
 
   Flags<TextureAllocationFlag> flags;
-  if (!finalDesc.CPUAccessFlags)
-    flags.set(TextureAllocationFlag::GpuPrivate);
-  else
-    flags.set(TextureAllocationFlag::GpuManaged);
+  flags.set(finalDesc.CPUAccessFlags ? TextureAllocationFlag::GpuManaged : TextureAllocationFlag::GpuPrivate);
   if (finalDesc.Usage == D3D11_USAGE_IMMUTABLE)
     flags.set(TextureAllocationFlag::GpuReadonly);
-  if (pInitialData) {
-    auto default_allocation = texture->allocate(flags);
-    if (flags.test(TextureAllocationFlag::GpuPrivate)) {
-      for (auto sub : EnumerateSubresources(finalDesc)) {
-        auto &data = pInitialData[sub.SubresourceId];
-        initializer.initWithData(
-            texture.ptr(), default_allocation.ptr(), sub.ArraySlice, sub.MipLevel, data.pSysMem, data.SysMemPitch,
-            data.SysMemSlicePitch
-        );
-      }
-    } else {
-      // TODO(private-storage): eventually get rid of this
-      InitializeTextureData(pDevice, default_allocation->texture(), finalDesc, pInitialData);
-    }
-    texture->rename(std::move(default_allocation));
-    *ppTexture =
-        reinterpret_cast<typename tag::COM_IMPL *>(
-          ref(new DeviceTexture<tag>(&finalDesc, std::move(texture), pDevice)));
-  } else if (single_subresource && (finalDesc.BindFlags & D3D11_BIND_DEPTH_STENCIL)) {
+  if (single_subresource && (finalDesc.BindFlags & D3D11_BIND_DEPTH_STENCIL)) {
     Rc<RenamableTexturePool> renamable = new RenamableTexturePool(texture.ptr(), 32, flags);
-    texture->rename(renamable->getNext(0));
-    initializer.initWithZero(texture.ptr(), texture->current(), 0, 0);
+    initialize(renamable->getNext(0));
     *ppTexture = reinterpret_cast<typename tag::COM_IMPL *>(
         ref(new DeviceTexture<tag>(&finalDesc, std::move(texture), std::move(renamable), pDevice)));
   } else {
-    texture->rename(texture->allocate(flags));
-    for (auto sub : EnumerateSubresources(finalDesc)) {
-      initializer.initWithZero(texture.ptr(), texture->current(), sub.ArraySlice, sub.MipLevel);
-    }
+    initialize(texture->allocate(flags));
     *ppTexture = reinterpret_cast<typename tag::COM_IMPL *>(
-      ref(new DeviceTexture<tag>(&finalDesc, std::move(texture), pDevice)));
+        ref(new DeviceTexture<tag>(&finalDesc, std::move(texture), pDevice)));
   }
   return S_OK;
 }
