@@ -164,7 +164,7 @@ struct DXMTClearTextureBufferFloat {
 [[kernel]] void clear_texture_buffer_float(
     texture_buffer<float, access::read_write> tex [[texture(0)]],
     constant DXMTClearTextureBufferFloat& args [[buffer(1)]],
-    ushort pos [[thread_position_in_grid]]
+    uint pos [[thread_position_in_grid]]
 ) {
   uint width = tex.get_width();
   uint offset = pos + args.offset;
