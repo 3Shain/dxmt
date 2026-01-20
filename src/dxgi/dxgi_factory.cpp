@@ -1,6 +1,7 @@
 #include "com/com_pointer.hpp"
 #include "config/config.hpp"
 #include "dxgi_interfaces.h"
+#include "dxgi_monitor.hpp"
 #include "dxgi_object.hpp"
 #include "com/com_guid.hpp"
 #include "log/log.hpp"
@@ -11,12 +12,12 @@
 namespace dxmt {
 
 Com<IMTLDXGIAdapter> CreateAdapter(WMT::Device Device,
-                                   IDXGIFactory2 *pFactory, Config &config);
+                                   IMTLDXGIFactory *pFactory, Config &config);
 
-class MTLDXGIFactory : public MTLDXGIObject<IDXGIFactory6> {
+class MTLDXGIFactory : public MTLDXGIObject<IMTLDXGIFactory> {
 
 public:
-  MTLDXGIFactory(UINT Flags) : flags_(Flags) {};
+  MTLDXGIFactory(UINT Flags) : flags_(Flags), monitor_info_(new MTLDXGIMonitor(this)) {};
 
   HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid,
                                            void **ppvObject) final {
@@ -31,6 +32,11 @@ public:
         riid == __uuidof(IDXGIFactory3) || riid == __uuidof(IDXGIFactory4) ||
         riid == __uuidof(IDXGIFactory5) || riid == __uuidof(IDXGIFactory6)) {
       *ppvObject = ref(this);
+      return S_OK;
+    }
+
+    if (riid == __uuidof(IMTLDXGIMonitor)) {
+      *ppvObject = ref(monitor_info_);
       return S_OK;
     }
 
@@ -301,10 +307,17 @@ public:
     return adapter->QueryInterface(riid, ppvAdapter);
   };
 
+  MTLDXGIMonitor STDMETHODCALLTYPE
+  *GetMonitor() override {
+    return monitor_info_;
+  }
+
 private:
   UINT flags_;
 
   HWND associated_window_ = nullptr;
+
+  MTLDXGIMonitor *monitor_info_ = nullptr;
 };
 
 extern "C" HRESULT __stdcall CreateDXGIFactory2(UINT Flags, REFIID riid,
