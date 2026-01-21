@@ -293,13 +293,6 @@ public:
     return {view, allocation->currentSuballocationOffset(view.suballocation_texel)};
   }
 
-  std::pair<BufferAllocation *, uint64_t>
-  access(Rc<Buffer> const &buffer, DXMT_ENCODER_RESOURCE_ACESS flags) {
-    auto allocation = buffer->current();
-    trackBuffer(allocation, flags);
-    return {allocation, allocation->currentSuballocationOffset()};
-  }
-
   WMT::Texture
   access(Rc<Texture> const &texture, unsigned level, unsigned slice, DXMT_ENCODER_RESOURCE_ACESS flags) {
     auto allocation = texture->current();
@@ -312,13 +305,6 @@ public:
     auto allocation = texture->current();
     trackTexture(allocation, flags);
     return texture->view_(viewId, allocation);
-  }
-
-  WMT::Texture
-  access(Rc<Texture> const &texture, DXMT_ENCODER_RESOURCE_ACESS flags) {
-    auto allocation = texture->current();
-    trackTexture(allocation, flags);
-    return allocation->texture();
   }
 
   template <PipelineStage stage>

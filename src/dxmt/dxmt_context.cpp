@@ -74,11 +74,11 @@ ArgumentEncodingContext::encodeVertexBuffers(uint32_t slot_mask, uint64_t offset
       entries[index++].length = 0;
       continue;
     }
-    auto length = buffer->length();
-    auto [buffer_alloc, buffer_offset] = access(buffer, DXMT_ENCODER_RESOURCE_ACESS_READ);
+    auto valid_length = buffer->length() > state.offset ? buffer->length() - state.offset : 0;
+    auto [buffer_alloc, buffer_offset] = access(buffer, state.offset, valid_length, DXMT_ENCODER_RESOURCE_ACESS_READ);
     entries[index].buffer_handle = buffer_alloc->gpuAddress() + buffer_offset + state.offset;
     entries[index].stride = state.stride;
-    entries[index++].length = length > state.offset ? length - state.offset : 0;
+    entries[index++].length = valid_length;
     // FIXME: did we intended to use the whole buffer?
     makeResident<PipelineStage::Vertex, kind>(buffer.ptr());
   };
@@ -151,8 +151,8 @@ ArgumentEncodingContext::encodeConstantBuffers(const MTL_SHADER_REFLECTION *refl
         continue;
       }
       auto argbuf = cbuf.buffer;
-      // FIXME: did we intended to use the whole buffer?
-      auto [argbuf_alloc, argbuf_offset] = access(argbuf, DXMT_ENCODER_RESOURCE_ACESS_READ);
+      auto valid_length = argbuf->length() > cbuf.offset ? argbuf->length() - cbuf.offset : 0;
+      auto [argbuf_alloc, argbuf_offset] = access(argbuf, cbuf.offset, valid_length, DXMT_ENCODER_RESOURCE_ACESS_READ);
       encoded_buffer[arg.StructurePtrOffset] = argbuf_alloc->gpuAddress() + argbuf_offset + cbuf.offset;
       makeResident<stage, kind>(argbuf.ptr());
       break;
