@@ -1,5 +1,8 @@
 Reference: [D3D11.3 Functional Spec](https://microsoft.github.io/DirectX-Specs/d3d/archive/D3D11_3_FunctionalSpec.htm)
 
+TBD.
+
+<!--
 ## General Glossary
 
 \* (star) means there are similarities but also significant differences in detail.
@@ -86,3 +89,4 @@ Reference: [D3D11.3 Functional Spec](https://microsoft.github.io/DirectX-Specs/d
 | D3D11 | Metal | Note 
 | ----------- | ---------- | - 
 | 
+-->

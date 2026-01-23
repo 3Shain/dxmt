@@ -29,6 +29,10 @@ typedef uint64_t obj_handle_t;
 
 #define NULL_OBJECT_HANDLE 0
 
+#ifndef _MACH_PORT_T
+typedef uint32_t mach_port_t;
+#endif
+
 WINEMETAL_API void NSObject_retain(obj_handle_t obj);
 
 WINEMETAL_API void NSObject_release(obj_handle_t obj);
@@ -137,6 +141,15 @@ struct WMTMemoryPointer {
   get() {
 #if defined(__i386__)
     assert(!high_part && "inaccessible 64-bit pointer");
+#endif
+    return ptr;
+  }
+
+  void *
+  get_accessible_or_null() {
+#if defined(__i386__)
+    if (high_part)
+      return nullptr;
 #endif
     return ptr;
   }
@@ -419,7 +432,24 @@ enum WMTPixelFormat : uint32_t {
   WMTPixelFormatDepth32Float_Stencil8 = 260,
   WMTPixelFormatX32_Stencil8 = 261,
   WMTPixelFormatX24_Stencil8 = 262,
+
+  WMTPixelFormatAlphaIsOne = 0x80000000,
+  WMTPixelFormatBGRX8Unorm = WMTPixelFormatAlphaIsOne | WMTPixelFormatBGRA8Unorm,
+  WMTPixelFormatBGRX8Unorm_sRGB = WMTPixelFormatAlphaIsOne | WMTPixelFormatBGRA8Unorm_sRGB,
+
+  WMTPixelFormatRGB1Swizzle = WMTPixelFormatAlphaIsOne,
+  WMTPixelFormatR001Swizzle = 0x40000000,
+  WMTPixelFormat0R01Swizzle = 0x20000000,
+
+  WMTPixelFormatR32X8X32 = WMTPixelFormatR001Swizzle | WMTPixelFormatDepth32Float_Stencil8,
+  // WMTPixelFormatR24X8 = WMTPixelFormatR001Swizzle | WMTPixelFormatDepth24Unorm_Stencil8,
+  WMTPixelFormatX32G8X32 = WMTPixelFormat0R01Swizzle | WMTPixelFormatX32_Stencil8,
+  // WMTPixelFormatX24G8 = WMTPixelFormat0R01Swizzle | WMTPixelFormatX24_Stencil8,
+
+  WMTPixelFormatCustomSwizzle = WMTPixelFormatRGB1Swizzle | WMTPixelFormatR001Swizzle | WMTPixelFormat0R01Swizzle,
 };
+
+#define ORIGINAL_FORMAT(format) (format & ~WMTPixelFormatCustomSwizzle)
 
 enum WMTTextureType : uint8_t {
   WMTTextureType1D = 0,
@@ -470,6 +500,8 @@ struct WMTTextureInfo {
   uint8_t sample_count;
   enum WMTTextureUsage usage;
   enum WMTResourceOptions options;
+  uint32_t reserved;
+  mach_port_t mach_port; // in/out
   uint64_t gpu_resource_id; // out
 };
 
@@ -544,9 +576,7 @@ enum WMTAttributeFormat : uint32_t {
   WMTAttributeFormatFloatRGB9E5 = 55,
 };
 
-WINEMETAL_API obj_handle_t MTLDevice_newLibrary(
-    obj_handle_t device, struct WMTMemoryPointer bytecode, uint64_t bytecode_length, obj_handle_t *err_out
-);
+WINEMETAL_API obj_handle_t MTLDevice_newLibrary(obj_handle_t device, obj_handle_t data, obj_handle_t *err_out);
 
 WINEMETAL_API obj_handle_t MTLLibrary_newFunction(obj_handle_t library, const char *name);
 
@@ -554,8 +584,20 @@ WINEMETAL_API uint64_t NSString_lengthOfBytesUsingEncoding(obj_handle_t str, enu
 
 WINEMETAL_API obj_handle_t NSObject_description(obj_handle_t nserror);
 
-WINEMETAL_API obj_handle_t
-MTLDevice_newComputePipelineState(obj_handle_t device, obj_handle_t function, obj_handle_t *err_out);
+struct WMTComputePipelineInfo {
+  obj_handle_t compute_function;
+  struct WMTConstMemoryPointer binary_archives_for_lookup;
+  obj_handle_t binary_archive_for_serialization;
+  uint8_t num_binary_archives_for_lookup;
+  bool fail_on_binary_archive_miss;
+  uint8_t padding;
+  bool tgsize_is_multiple_of_sgwidth;
+  uint32_t immutable_buffers;
+};
+
+WINEMETAL_API obj_handle_t MTLDevice_newComputePipelineState(
+    obj_handle_t device, const struct WMTComputePipelineInfo *info, obj_handle_t *err_out
+);
 
 WINEMETAL_API obj_handle_t MTLCommandBuffer_blitCommandEncoder(obj_handle_t cmdbuf);
 
@@ -753,6 +795,11 @@ struct WMTRenderPipelineInfo {
   uint8_t max_tessellation_factor;
   enum WMTWinding tessellation_output_winding_order;
   enum WMTTessellationFactorStepFunction tessellation_factor_step;
+  obj_handle_t binary_archive_for_serialization;
+  struct WMTConstMemoryPointer binary_archives_for_lookup;
+  uint8_t num_binary_archives_for_lookup;
+  bool fail_on_binary_archive_miss;
+  uint8_t padding[6];
 };
 
 struct WMTMeshRenderPipelineInfo {
@@ -771,6 +818,13 @@ struct WMTMeshRenderPipelineInfo {
   uint32_t immutable_mesh_buffers;
   uint32_t immutable_fragment_buffers;
   uint16_t payload_memory_length;
+  bool mesh_tgsize_is_multiple_of_sgwidth;
+  bool object_tgsize_is_multiple_of_sgwidth;
+  obj_handle_t binary_archive_for_serialization;
+  struct WMTConstMemoryPointer binary_archives_for_lookup;
+  uint8_t num_binary_archives_for_lookup;
+  bool fail_on_binary_archive_miss;
+  uint8_t padding[6];
 };
 
 WINEMETAL_API obj_handle_t
@@ -801,6 +855,7 @@ enum WMTBlitCommandType : uint16_t {
   WMTBlitCommandGenerateMipmaps,
   WMTBlitCommandWaitForFence,
   WMTBlitCommandUpdateFence,
+  WMTBlitCommandFillBuffer,
 };
 
 struct wmtcmd_base {
@@ -883,6 +938,16 @@ struct wmtcmd_blit_fence_op {
   uint16_t reserved[3];
   struct WMTMemoryPointer next;
   obj_handle_t fence;
+};
+
+struct wmtcmd_blit_fillbuffer {
+  enum WMTBlitCommandType type;
+  uint16_t reserved[3];
+  struct WMTMemoryPointer next;
+  obj_handle_t buffer;
+  uint64_t offset;
+  uint64_t length;
+  uint8_t value;
 };
 
 WINEMETAL_API void MTLBlitCommandEncoder_encodeCommands(obj_handle_t encoder, const struct wmtcmd_base *cmd_head);
@@ -1322,6 +1387,7 @@ struct wmtcmd_render_dxmt_geometry_draw_indirect {
   enum WMTRenderCommandType type;
   uint16_t reserved[3];
   struct WMTMemoryPointer next;
+  obj_handle_t imm_draw_arguments;
   obj_handle_t indirect_args_buffer;
   uint64_t indirect_args_offset;
   obj_handle_t dispatch_args_buffer;
@@ -1335,6 +1401,7 @@ struct wmtcmd_render_dxmt_geometry_draw_indexed_indirect {
   struct WMTMemoryPointer next;
   obj_handle_t index_buffer;
   uint64_t index_buffer_offset;
+  obj_handle_t imm_draw_arguments;
   obj_handle_t indirect_args_buffer;
   uint64_t indirect_args_offset;
   obj_handle_t dispatch_args_buffer;
@@ -1378,6 +1445,7 @@ struct wmtcmd_render_dxmt_tessellation_mesh_draw_indirect {
   enum WMTRenderCommandType type;
   uint16_t reserved[3];
   struct WMTMemoryPointer next;
+  obj_handle_t imm_draw_arguments;
   obj_handle_t indirect_args_buffer;
   uint64_t indirect_args_offset;
   obj_handle_t dispatch_args_buffer;
@@ -1390,6 +1458,7 @@ struct wmtcmd_render_dxmt_tessellation_mesh_draw_indexed_indirect {
   enum WMTRenderCommandType type;
   uint16_t reserved[3];
   struct WMTMemoryPointer next;
+  obj_handle_t imm_draw_arguments;
   obj_handle_t indirect_args_buffer;
   uint64_t indirect_args_offset;
   obj_handle_t dispatch_args_buffer;
@@ -1720,10 +1789,59 @@ WINEMETAL_API void MTLCommandBuffer_encodeWaitForEvent(obj_handle_t cmdbuf, obj_
 
 WINEMETAL_API void MTLSharedEvent_signalValue(obj_handle_t event, uint64_t value);
 
-WINEMETAL_API void MTLSharedEvent_setWin32EventAtValue(obj_handle_t event, void *nt_event_handle, uint64_t at_value);
+WINEMETAL_API void MTLSharedEvent_setWin32EventAtValue(
+    obj_handle_t event, obj_handle_t shared_event_listener, void *nt_event_handle, uint64_t at_value
+);
 
 WINEMETAL_API obj_handle_t MTLDevice_newFence(obj_handle_t device);
 
 WINEMETAL_API obj_handle_t MTLDevice_newEvent(obj_handle_t device);
+
+WINEMETAL_API void
+MTLBuffer_updateContents(obj_handle_t buffer, uint64_t offset, struct WMTConstMemoryPointer data, uint64_t length);
+
+WINEMETAL_API obj_handle_t SharedEventListener_create();
+
+WINEMETAL_API void SharedEventListener_start(obj_handle_t shared_event_listener);
+
+WINEMETAL_API void SharedEventListener_destroy(obj_handle_t shared_event_listener);
+
+WINEMETAL_API void WMTGetOSVersion(uint64_t *major, uint64_t *minor, uint64_t *patch);
+
+enum WMTMetalVersion : uint32_t {
+  WMTMetal310 = 310,
+  WMTMetal320 = 320,
+  WMTMetalVersionMax = WMTMetal320,
+};
+
+WINEMETAL_API obj_handle_t MTLDevice_newBinaryArchive(obj_handle_t device, const char *url, obj_handle_t *err_out);
+
+WINEMETAL_API void MTLBinaryArchive_serialize(obj_handle_t archive, const char *url, obj_handle_t *err_out);
+
+WINEMETAL_API obj_handle_t DispatchData_alloc_init(uint64_t native_ptr, uint64_t length);
+
+WINEMETAL_API obj_handle_t CacheReader_alloc_init(const char *path, uint64_t version);
+
+WINEMETAL_API obj_handle_t CacheReader_get(obj_handle_t reader, const void *key, uint64_t length);
+
+WINEMETAL_API obj_handle_t CacheWriter_alloc_init(const char *path, uint64_t version);
+
+WINEMETAL_API void CacheWriter_set(obj_handle_t writer, const void *key, uint64_t key_length, obj_handle_t value);
+
+WINEMETAL_API bool WMTSetMetalShaderCachePath(const char *path);
+
+WINEMETAL_API obj_handle_t MTLDevice_newSharedTexture(obj_handle_t device, struct WMTTextureInfo *info);
+
+WINEMETAL_API bool WMTBootstrapRegister(const char *name, mach_port_t mach_port);
+
+WINEMETAL_API bool WMTBootstrapLookUp(const char *name, mach_port_t *mach_port);
+
+WINEMETAL_API mach_port_t MTLSharedEvent_createMachPort(obj_handle_t event);
+
+WINEMETAL_API obj_handle_t MTLDevice_newSharedEventWithMachPort(obj_handle_t device, mach_port_t mach_port);
+
+WINEMETAL_API uint64_t MTLDevice_registryID(obj_handle_t device);
+
+WINEMETAL_API bool MTLSharedEvent_waitUntilSignaledValue(obj_handle_t event, uint64_t value, uint64_t timeout);
 
 #endif

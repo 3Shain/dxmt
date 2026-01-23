@@ -7,8 +7,6 @@
 #include "log/log.hpp"
 
 #define THREAD_PRIORITY_TIME_CRITICAL 15
-#define FILE_MAP_ALL_ACCESS 0xF001F
-#define PAGE_READWRITE 0x04
 
 inline HANDLE GetCurrentProcess() {
   dxmt::Logger::warn("GetCurrentProcess not implemented.");
@@ -18,6 +16,17 @@ inline HANDLE GetCurrentProcess() {
 inline HANDLE GetCurrentThread() {
   dxmt::Logger::warn("GetCurrentThread not implemented.");
   return nullptr;
+}
+
+inline DWORD GetCurrentProcessId() {
+  dxmt::Logger::warn("GetCurrentProcessId not implemented.");
+  return 0;
+}
+
+inline BOOL ProcessIdToSessionId(DWORD pid, DWORD *id) {
+  dxmt::Logger::warn("ProcessIdToSessionId not implemented.");
+  *id = 0;
+  return FALSE;
 }
 
 inline BOOL SetThreadPriority(HANDLE hThread, int nPriority) {
@@ -88,37 +97,6 @@ inline BOOL DuplicateHandle(HANDLE   hSourceProcessHandle,
 {
   dxmt::Logger::warn("DuplicateHandle not implemented.");
   return FALSE;
-}
-
-inline HANDLE MapViewOfFile(HANDLE  hFileMappingObject,
-                            DWORD   dwDesiredAccess,
-                            DWORD   dwFileOffsetHigh,
-                            DWORD   dwFileOffsetLow,
-                            SIZE_T dwNumberOfBytesToMap)
-{
-  dxmt::Logger::warn("MapViewOfFile not implemented.");
-  return nullptr;
-}
-
-inline BOOL UnmapViewOfFile(LPCVOID lpBaseAddress) {
-  dxmt::Logger::warn("UnmapViewOfFile not implemented.");
-  return false;
-}
-
-inline HANDLE CreateFileMapping(HANDLE                hFile,
-                                LPSECURITY_ATTRIBUTES lpFileMappingAttributes,
-                                DWORD                 flProtect,
-                                DWORD                 dwMaximumSizeHigh,
-                                DWORD                 dwMaximumSizeLow,
-                                LPCWSTR               lpName)
-{
-  dxmt::Logger::warn("CreateFileMapping not implemented.");
-  return nullptr;
-}
-
-inline DWORD GetLastError(void) {
-  dxmt::Logger::warn("GetLastError not implemented.");
-  return 0;
 }
 
 

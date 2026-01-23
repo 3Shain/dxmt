@@ -24,7 +24,7 @@ endif
 airconv_lib_darwin = static_library('airconv', airconv_src,
   include_directories : [ dxmt_include_path, llvm_include_path_darwin ],
   cpp_args            : [ '-ObjC++', llvm_cxx_flags  ],
-  dependencies        : [ DXBCParser_native_dep ],
+  dependencies        : [ dxbc_parser_native_dep ],
   link_args           : llvm_ld_flags_darwin,
   native              : not dxmt_native
 )
@@ -38,7 +38,7 @@ airconv_dep_darwin = declare_dependency(
 executable('airconv', airconv_src + airconv_cli_src,
   include_directories : [ dxmt_include_path, llvm_include_path_darwin ],
   cpp_args            : [ llvm_cxx_flags  ],
-  dependencies        : [ DXBCParser_native_dep ],
+  dependencies        : [ dxbc_parser_native_dep ],
   link_args           : [ llvm_ld_flags_darwin, llvm_deps ],
   native              : not dxmt_native
 )

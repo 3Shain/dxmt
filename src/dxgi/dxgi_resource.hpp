@@ -24,34 +24,34 @@ struct IDXGIResourceVD: public IDXGIResource1 {
 /* designed to be used as an aggregated object*/
 template <DXGIResourceAggregateContext IResource> class MTLDXGIResource : public IDXGIResourceVD {
 public:
-  MTLDXGIResource(IResource *pResource) : m_resource(pResource) {}
+  MTLDXGIResource(IResource *pResource) : resource_(pResource) {}
   ~MTLDXGIResource() {}
 
   HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid,
                                            void **ppvObject) final {
-    return m_resource->QueryInterface(riid, ppvObject);
+    return resource_->QueryInterface(riid, ppvObject);
   }
 
-  ULONG STDMETHODCALLTYPE AddRef() final { return m_resource->AddRef(); }
+  ULONG STDMETHODCALLTYPE AddRef() final { return resource_->AddRef(); }
 
-  ULONG STDMETHODCALLTYPE Release() final { return m_resource->Release(); }
+  ULONG STDMETHODCALLTYPE Release() final { return resource_->Release(); }
 
   HRESULT
   STDMETHODCALLTYPE
   SetPrivateData(REFGUID guid, UINT data_size, const void *data) final {
-    return m_resource->SetPrivateData(guid, data_size, data);
+    return resource_->SetPrivateData(guid, data_size, data);
   }
 
   HRESULT
   STDMETHODCALLTYPE
   SetPrivateDataInterface(REFGUID guid, const IUnknown *object) final {
-    return m_resource->SetPrivateDataInterface(guid, object);
+    return resource_->SetPrivateDataInterface(guid, object);
   }
 
   HRESULT
   STDMETHODCALLTYPE
   GetPrivateData(REFGUID guid, UINT *data_size, void *data) final {
-    return m_resource->GetPrivateData(guid, data_size, data);
+    return resource_->GetPrivateData(guid, data_size, data);
   }
 
   HRESULT
@@ -63,32 +63,32 @@ public:
   HRESULT
   STDMETHODCALLTYPE
   GetDevice(REFIID riid, void **ppDevice) final {
-    return m_resource->GetDeviceInterface(riid, ppDevice);
+    return resource_->GetDeviceInterface(riid, ppDevice);
   }
 
   HRESULT
   STDMETHODCALLTYPE
   GetSharedHandle(HANDLE *pSharedHandle) final {
-    return m_resource->GetSharedHandle(pSharedHandle);
+    return resource_->GetSharedHandle(pSharedHandle);
   }
 
   HRESULT
   STDMETHODCALLTYPE
   GetUsage(DXGI_USAGE *pUsage) final {
-    return m_resource->GetDXGIUsage(pUsage);
+    return resource_->GetDXGIUsage(pUsage);
   }
 
   HRESULT
   STDMETHODCALLTYPE
   SetEvictionPriority(UINT EvictionPriority) final {
-    m_resource->SetEvictionPriority(EvictionPriority);
+    resource_->SetEvictionPriority(EvictionPriority);
     return S_OK;
   }
 
   HRESULT
   STDMETHODCALLTYPE
   GetEvictionPriority(UINT *pEvictionPriority) final {
-    *pEvictionPriority = m_resource->GetEvictionPriority();
+    *pEvictionPriority = resource_->GetEvictionPriority();
     return S_OK;
   }
 
@@ -103,12 +103,11 @@ public:
   STDMETHODCALLTYPE
   CreateSharedHandle(const SECURITY_ATTRIBUTES *attributes, DWORD access,
                      const WCHAR *name, HANDLE *handle) final {
-    ERR_ONCE("DXGIResource::CCreateSharedHandle: stub");
-    return E_NOTIMPL;
+    return resource_->CreateSharedHandle(attributes, access, name, handle);
   }
 
 private:
-  IResource *m_resource; // since it's aggregated, no extra reference is needed
+  IResource *resource_; // since it's aggregated, no extra reference is needed
 };
 
 } // namespace dxmt

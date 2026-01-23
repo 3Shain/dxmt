@@ -17,6 +17,7 @@ enum class TextureAllocationFlag : uint32_t {
   CpuWriteCombined = 2,
   OwnedByCommandList = 3,
   GpuManaged = 4,
+  Shared = 5,
 };
 
 typedef unsigned TextureViewKey;
@@ -24,7 +25,6 @@ typedef unsigned TextureViewKey;
 struct TextureViewDescriptor {
   WMTPixelFormat format: 32;
   WMTTextureType type;
-  WMTTextureUsage usage;
   unsigned firstMiplevel = 0;
   unsigned miplevelCount = 1;
   unsigned firstArraySlice = 0;
@@ -49,7 +49,7 @@ class TextureAllocation : public Allocation {
 
 public:
 
-  WMT::Texture texture() {
+  WMT::Texture texture() const {
     return obj_;
   }
 
@@ -60,6 +60,7 @@ public:
 
   void *mappedMemory;
   uint64_t gpuResourceID;
+  mach_port_t machPort;
   DXMT_RESOURCE_RESIDENCY_STATE residencyState;
   EncoderDepKey depkey;
 
@@ -137,6 +138,11 @@ public:
   }
 
   unsigned
+  depth() const {
+    return info_.depth;
+  }
+
+  unsigned
   width(TextureViewKey view) const {
     return std::max(info_.width >> viewDescriptors_[view].firstMiplevel, 1u);
   }
@@ -160,6 +166,7 @@ public:
   }
 
   Rc<TextureAllocation> allocate(Flags<TextureAllocationFlag> flags);
+  Rc<TextureAllocation> import(mach_port_t mach_port);
 
   WMT::Texture view(TextureViewKey key);
   WMT::Texture view(TextureViewKey key, TextureAllocation *allocation);

@@ -3,8 +3,7 @@
 #include "dxmt_context.hpp"
 #include "dxmt_format.hpp"
 
-extern "C" unsigned char dxmt_command_metallib[];
-extern "C" unsigned int dxmt_command_metallib_len;
+#include "dxmt_command.h"
 
 #define CREATE_PIPELINE(name)                                                                                          \
   auto name##_function = library.newFunction(#name);           \
@@ -14,7 +13,7 @@ namespace dxmt {
 
 InternalCommandLibrary::InternalCommandLibrary(WMT::Device device) {
   WMT::Reference<WMT::Error> error;
-  library_ = device.newLibrary(dxmt_command_metallib, dxmt_command_metallib_len, error);
+  library_ = device.newLibrary(dxmt_command, dxmt_command_len, error);
 
   if (error) {
     ERR("Failed to create internal command library: ", error.description().getUTF8String());
@@ -274,6 +273,7 @@ DepthStencilBlitContext::DepthStencilBlitContext(
   WMT::InitializeRenderPipelineInfo(pipeline_info);
   pipeline_info.vertex_function = vs_copy;
   pipeline_info.depth_pixel_format = WMTPixelFormatDepth32Float_Stencil8;
+  pipeline_info.stencil_pixel_format = WMTPixelFormatDepth32Float_Stencil8;
   pipeline_info.rasterization_enabled = true;
   pipeline_info.input_primitive_topology = WMTPrimitiveTopologyClassTriangle;
 
@@ -334,7 +334,6 @@ DepthStencilBlitContext::copyFromBuffer(
     return;
   }
   view_desc.format = depth_stencil->pixelFormat();
-  view_desc.usage = depth_stencil->usage();
   view_desc.firstMiplevel = level;
   view_desc.miplevelCount = 1;
   view_desc.firstArraySlice = slice;
@@ -423,16 +422,14 @@ DepthStencilBlitContext::copyFromTexture(
   default:
     return;
   }
-  view_desc.format = depth_stencil->pixelFormat();
-  view_desc.usage = WMTTextureUsageShaderRead;
+  view_desc.format = WMTPixelFormatDepth32Float_Stencil8;
   view_desc.firstMiplevel = level;
   view_desc.miplevelCount = 1;
   view_desc.firstArraySlice = slice;
   view_desc.arraySize = 1;
   auto depth_view = depth_stencil->createView(view_desc);
 
-  view_desc.format = depth_stencil->pixelFormat() == WMTPixelFormatDepth24Unorm_Stencil8 ? WMTPixelFormatX24_Stencil8
-                                                                                         : WMTPixelFormatX32_Stencil8;
+  view_desc.format = WMTPixelFormatX32_Stencil8;
   auto stencil_view = depth_stencil->createView(view_desc);
 
   ctx_.startComputePass(0);
@@ -635,5 +632,66 @@ ClearResourceKernelContext::end() {
   clearing_view_ = 0;
   dispatch_depth_ = 1;
 };
+
+MTLFXMVScaleContext::MTLFXMVScaleContext(
+    WMT::Device device, InternalCommandLibrary &lib, ArgumentEncodingContext &ctx
+) :
+    ctx_(ctx),
+    device_(device) {
+  WMT::Reference<WMT::Error> err;
+
+  auto library = lib.getLibrary();
+
+  auto cs_ = library.newFunction("cs_downscale_dilated_mv");
+
+  pso_downscale_dilated_mv_ = device_.newComputePipelineState(cs_, err);
+}
+
+struct downscale_dilated_mv_desc {
+  float scale_x;
+  float scale_y;
+};
+
+void
+MTLFXMVScaleContext::dispatch(
+    const Rc<Texture> &dilated, TextureViewKey view_dilated, const Rc<Texture> &downscaled,
+    TextureViewKey view_downscaled, float mv_scale_x, float mv_scale_y
+) {
+  ctx_.startComputePass(0);
+  auto tex_dilated = ctx_.access(dilated, view_dilated, DXMT_ENCODER_RESOURCE_ACESS_READ).texture;
+  auto tex_downscaled = ctx_.access(downscaled, view_downscaled, DXMT_ENCODER_RESOURCE_ACESS_WRITE).texture;
+
+  auto &setpso = ctx_.encodeComputeCommand<wmtcmd_compute_setpso>();
+  setpso.type = WMTComputeCommandSetPSO;
+  setpso.pso = pso_downscale_dilated_mv_;
+  setpso.threadgroup_size = {8, 4, 1};
+
+  auto &setdepth = ctx_.encodeComputeCommand<wmtcmd_compute_settexture>();
+  setdepth.type = WMTComputeCommandSetTexture;
+  setdepth.texture = tex_dilated;
+  setdepth.index = 0;
+
+  auto &setstencil = ctx_.encodeComputeCommand<wmtcmd_compute_settexture>();
+  setstencil.type = WMTComputeCommandSetTexture;
+  setstencil.texture = tex_downscaled;
+  setstencil.index = 1;
+
+  downscale_dilated_mv_desc desc{mv_scale_x, mv_scale_y};
+  auto &setdesc = ctx_.encodeComputeCommand<wmtcmd_compute_setbytes>();
+  setdesc.type = WMTComputeCommandSetBytes;
+  void *temp = ctx_.allocate_cpu_heap(sizeof(desc), 16);
+  memcpy(temp, &desc, sizeof(desc));
+  setdesc.bytes.set(temp);
+  setdesc.length = sizeof(desc);
+  setdesc.index = 0;
+
+  auto width = downscaled->width(view_downscaled);
+  auto height = downscaled->height(view_downscaled);
+  auto &dispatch = ctx_.encodeComputeCommand<wmtcmd_compute_dispatch>();
+  dispatch.type = WMTComputeCommandDispatchThreads;
+  dispatch.size = {width, height, 1};
+
+  ctx_.endPass();
+}
 
 } // namespace dxmt

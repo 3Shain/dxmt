@@ -76,6 +76,8 @@ FormatCapabilityInspector::Inspect(WMT::Device device) {
     APPEND_CAP(WMTPixelFormatRGBA8Sint, APPLE_INT_FORMAT_CAP | TEXTURE_BUFFER_ALL_CAP)
     APPEND_CAP(WMTPixelFormatBGRA8Unorm, ALL_CAP | FormatCapability::TextureBufferRead)
     APPEND_CAP(WMTPixelFormatBGRA8Unorm_sRGB, ALL_CAP)
+    APPEND_CAP(WMTPixelFormatBGRX8Unorm, ALL_CAP | FormatCapability::TextureBufferRead)
+    APPEND_CAP(WMTPixelFormatBGRX8Unorm_sRGB, ALL_CAP)
 
     // 32-bit packed
     APPEND_CAP(WMTPixelFormatRGB10A2Unorm, ALL_CAP | TEXTURE_BUFFER_READ_OR_WRITE)
@@ -219,6 +221,11 @@ FormatCapabilityInspector::Inspect(WMT::Device device) {
         WMTPixelFormatBGRA8Unorm_sRGB, FormatCapability::Filter | FormatCapability::Color | FormatCapability::MSAA |
                                              FormatCapability::Resolve | FormatCapability::Blend
     )
+    APPEND_CAP(WMTPixelFormatBGRX8Unorm, ALL_CAP | FormatCapability::TextureBufferRead)
+    APPEND_CAP(
+        WMTPixelFormatBGRX8Unorm_sRGB, FormatCapability::Filter | FormatCapability::Color | FormatCapability::MSAA |
+                                             FormatCapability::Resolve | FormatCapability::Blend
+    )
 
     // 32-bit packed
     APPEND_CAP(WMTPixelFormatRGB10A2Unorm, ALL_CAP | TEXTURE_BUFFER_READ_OR_WRITE)
@@ -280,15 +287,15 @@ FormatCapabilityInspector::Inspect(WMT::Device device) {
         FormatCapability::Filter | FormatCapability::MSAA | FormatCapability::Resolve | FormatCapability::DepthStencil
     )
     APPEND_CAP(WMTPixelFormatStencil8, FormatCapability::MSAA | FormatCapability::DepthStencil)
-    APPEND_CAP(
-        WMTPixelFormatDepth24Unorm_Stencil8,
-        FormatCapability::Filter | FormatCapability::MSAA | FormatCapability::Resolve | FormatCapability::DepthStencil
-    );
+    // APPEND_CAP(
+    //     WMTPixelFormatDepth24Unorm_Stencil8,
+    //     FormatCapability::Filter | FormatCapability::MSAA | FormatCapability::Resolve | FormatCapability::DepthStencil
+    // );
     APPEND_CAP(
         WMTPixelFormatDepth32Float_Stencil8,
         FormatCapability::MSAA | FormatCapability::Resolve | FormatCapability::DepthStencil
     )
-    APPEND_CAP(WMTPixelFormatX24_Stencil8, FormatCapability::MSAA | FormatCapability::DepthStencil)
+    // APPEND_CAP(WMTPixelFormatX24_Stencil8, FormatCapability::MSAA | FormatCapability::DepthStencil)
     APPEND_CAP(WMTPixelFormatX32_Stencil8, FormatCapability::MSAA | FormatCapability::DepthStencil)
 
     // extended range
@@ -314,6 +321,8 @@ Forget_sRGB(WMTPixelFormat format) {
     return WMTPixelFormatRGBA8Unorm;
   case WMTPixelFormatBGRA8Unorm_sRGB:
     return WMTPixelFormatBGRA8Unorm;
+  case WMTPixelFormatBGRX8Unorm_sRGB:
+    return WMTPixelFormatBGRX8Unorm;
   case WMTPixelFormatBGR10_XR_sRGB:
     return WMTPixelFormatBGR10_XR;
   case WMTPixelFormatBGRA10_XR_sRGB:
@@ -356,6 +365,8 @@ Recall_sRGB(WMTPixelFormat format) {
     return WMTPixelFormatRGBA8Unorm_sRGB;
   case WMTPixelFormatBGRA8Unorm:
     return WMTPixelFormatBGRA8Unorm_sRGB;
+  case WMTPixelFormatBGRX8Unorm:
+    return WMTPixelFormatBGRX8Unorm_sRGB;
   case WMTPixelFormatBGR10_XR:
     return WMTPixelFormatBGR10_XR_sRGB;
   case WMTPixelFormatBGRA10_XR:
@@ -415,12 +426,14 @@ uint32_t
 DepthStencilPlanarFlags(WMTPixelFormat format) {
   switch (format) {
   case WMTPixelFormatDepth32Float_Stencil8:
-  case WMTPixelFormatDepth24Unorm_Stencil8:
     return 3;
   case WMTPixelFormatDepth32Float:
   case WMTPixelFormatDepth16Unorm:
+  case WMTPixelFormatR32X8X32:
     return 1;
   case WMTPixelFormatStencil8:
+  case WMTPixelFormatX32_Stencil8:
+  case WMTPixelFormatX32G8X32:
     return 2;
   default:
     return 0;
@@ -557,12 +570,12 @@ MTLQueryDXGIFormat(WMT::Device device, uint32_t format, MTL_DXGI_FORMAT_DESC &de
     break;
   }
   case DXGI_FORMAT_R32_FLOAT_X8X24_TYPELESS: {
-    description.PixelFormat = WMTPixelFormatDepth32Float_Stencil8;
+    description.PixelFormat = WMTPixelFormatR32X8X32;
     description.Flag = MTL_DXGI_FORMAT_TYPELESS | MTL_DXGI_FORMAT_DEPTH_PLANER;
     break;
   }
   case DXGI_FORMAT_X32_TYPELESS_G8X24_UINT: {
-    description.PixelFormat = WMTPixelFormatX32_Stencil8;
+    description.PixelFormat = WMTPixelFormatX32G8X32;
     description.Flag = MTL_DXGI_FORMAT_TYPELESS | MTL_DXGI_FORMAT_STENCIL_PLANER;
     break;
   }
@@ -697,48 +710,24 @@ MTLQueryDXGIFormat(WMT::Device device, uint32_t format, MTL_DXGI_FORMAT_DESC &de
   }
   case DXGI_FORMAT_R24G8_TYPELESS: {
     description.Flag = MTL_DXGI_FORMAT_TYPELESS | MTL_DXGI_FORMAT_DEPTH_PLANER | MTL_DXGI_FORMAT_STENCIL_PLANER |
-                       MTL_DXGI_FORMAT_EMULATED_LINEAR_DEPTH_STENCIL;
-    // if (device->depth24Stencil8PixelFormatSupported()) {
-      if (false) {
-      description.PixelFormat = WMTPixelFormatDepth24Unorm_Stencil8;
-    } else {
-      description.Flag |= MTL_DXGI_FORMAT_EMULATED_D24;
-      description.PixelFormat = WMTPixelFormatDepth32Float_Stencil8;
-    }
+                       MTL_DXGI_FORMAT_EMULATED_LINEAR_DEPTH_STENCIL | MTL_DXGI_FORMAT_EMULATED_D24;
+    description.PixelFormat = WMTPixelFormatDepth32Float_Stencil8;
     description.BytesPerTexel = 4;
     break;
   }
   case DXGI_FORMAT_D24_UNORM_S8_UINT: {
-    description.Flag = MTL_DXGI_FORMAT_DEPTH_PLANER | MTL_DXGI_FORMAT_STENCIL_PLANER;
-    // if (device->depth24Stencil8PixelFormatSupported()) {
-    if (false) {
-      description.PixelFormat = WMTPixelFormatDepth24Unorm_Stencil8;
-    } else {
-      description.Flag |= MTL_DXGI_FORMAT_EMULATED_D24;
-      description.PixelFormat = WMTPixelFormatDepth32Float_Stencil8;
-    }
+    description.Flag = MTL_DXGI_FORMAT_DEPTH_PLANER | MTL_DXGI_FORMAT_STENCIL_PLANER | MTL_DXGI_FORMAT_EMULATED_D24;
+    description.PixelFormat = WMTPixelFormatDepth32Float_Stencil8;
     break;
   }
   case DXGI_FORMAT_R24_UNORM_X8_TYPELESS: {
-    description.Flag = MTL_DXGI_FORMAT_DEPTH_PLANER;
-    // if (device->depth24Stencil8PixelFormatSupported()) {
-      if (false) {
-      description.PixelFormat = WMTPixelFormatDepth24Unorm_Stencil8;
-    } else {
-      description.Flag |= MTL_DXGI_FORMAT_EMULATED_D24;
-      description.PixelFormat = WMTPixelFormatDepth32Float_Stencil8;
-    }
+    description.Flag = MTL_DXGI_FORMAT_DEPTH_PLANER | MTL_DXGI_FORMAT_EMULATED_D24;
+    description.PixelFormat = WMTPixelFormatR32X8X32;
     break;
   }
   case DXGI_FORMAT_X24_TYPELESS_G8_UINT: {
-    description.Flag = MTL_DXGI_FORMAT_STENCIL_PLANER;
-    // if (device->depth24Stencil8PixelFormatSupported()) {
-      if (false) {
-      description.PixelFormat = WMTPixelFormatX24_Stencil8;
-    } else {
-      description.Flag |= MTL_DXGI_FORMAT_EMULATED_D24;
-      description.PixelFormat = WMTPixelFormatX32_Stencil8;
-    }
+    description.Flag = MTL_DXGI_FORMAT_STENCIL_PLANER | MTL_DXGI_FORMAT_EMULATED_D24;
+    description.PixelFormat = WMTPixelFormatX32G8X32;
     break;
   }
   case DXGI_FORMAT_R8G8_TYPELESS: {
@@ -980,7 +969,7 @@ MTLQueryDXGIFormat(WMT::Device device, uint32_t format, MTL_DXGI_FORMAT_DESC &de
     break;
   }
   case DXGI_FORMAT_B8G8R8X8_UNORM: {
-    description.PixelFormat = WMTPixelFormatBGRA8Unorm;
+    description.PixelFormat = WMTPixelFormatBGRX8Unorm;
     description.BytesPerTexel = 4;
     break;
   }
@@ -999,13 +988,13 @@ MTLQueryDXGIFormat(WMT::Device device, uint32_t format, MTL_DXGI_FORMAT_DESC &de
     break;
   }
   case DXGI_FORMAT_B8G8R8X8_TYPELESS: {
-    description.PixelFormat = WMTPixelFormatBGRA8Unorm;
+    description.PixelFormat = WMTPixelFormatBGRX8Unorm;
     description.BytesPerTexel = 4;
     description.Flag = MTL_DXGI_FORMAT_TYPELESS;
     break;
   }
   case DXGI_FORMAT_B8G8R8X8_UNORM_SRGB: {
-    description.PixelFormat = WMTPixelFormatBGRA8Unorm_sRGB;
+    description.PixelFormat = WMTPixelFormatBGRX8Unorm_sRGB;
     description.BytesPerTexel = 4;
     break;
   }
@@ -1115,6 +1104,8 @@ MTLGetTexelSize(WMTPixelFormat format) {
   case WMTPixelFormatRGBA8Sint:
   case WMTPixelFormatBGRA8Unorm:
   case WMTPixelFormatBGRA8Unorm_sRGB:
+  case WMTPixelFormatBGRX8Unorm:
+  case WMTPixelFormatBGRX8Unorm_sRGB:
   case WMTPixelFormatRGB10A2Unorm:
   case WMTPixelFormatRGB10A2Uint:
   case WMTPixelFormatRG11B10Float:
@@ -1133,18 +1124,18 @@ MTLGetTexelSize(WMTPixelFormat format) {
   case WMTPixelFormatRGBA16Float:
   case WMTPixelFormatBGRA10_XR:
   case WMTPixelFormatBGRA10_XR_sRGB:
+  case WMTPixelFormatBC1_RGBA:
+  case WMTPixelFormatBC1_RGBA_sRGB:
+  case WMTPixelFormatBC4_RUnorm:
+  case WMTPixelFormatBC4_RSnorm:
     return 8;
   case WMTPixelFormatRGBA32Uint:
   case WMTPixelFormatRGBA32Sint:
   case WMTPixelFormatRGBA32Float:
-  case WMTPixelFormatBC1_RGBA:
-  case WMTPixelFormatBC1_RGBA_sRGB:
   case WMTPixelFormatBC2_RGBA:
   case WMTPixelFormatBC2_RGBA_sRGB:
   case WMTPixelFormatBC3_RGBA:
   case WMTPixelFormatBC3_RGBA_sRGB:
-  case WMTPixelFormatBC4_RUnorm:
-  case WMTPixelFormatBC4_RSnorm:
   case WMTPixelFormatBC5_RGUnorm:
   case WMTPixelFormatBC5_RGSnorm:
   case WMTPixelFormatBC6H_RGBFloat:
@@ -1271,6 +1262,8 @@ MTLGetUnsignedIntegerFormat(WMTPixelFormat format) {
   case WMTPixelFormatRGBA8Sint:
   case WMTPixelFormatBGRA8Unorm:
   case WMTPixelFormatBGRA8Unorm_sRGB:
+  case WMTPixelFormatBGRX8Unorm:
+  case WMTPixelFormatBGRX8Unorm_sRGB:
     return WMTPixelFormatRGBA8Uint;
   case WMTPixelFormatRGB10A2Unorm:
   case WMTPixelFormatRGB10A2Uint:
@@ -1298,89 +1291,6 @@ MTLGetUnsignedIntegerFormat(WMTPixelFormat format) {
   case WMTPixelFormatRGBA32Sint:
   case WMTPixelFormatRGBA32Float:
     return WMTPixelFormatRGBA32Uint;
-  case WMTPixelFormatBC1_RGBA:
-  case WMTPixelFormatBC1_RGBA_sRGB:
-  case WMTPixelFormatBC2_RGBA:
-  case WMTPixelFormatBC2_RGBA_sRGB:
-  case WMTPixelFormatBC3_RGBA:
-  case WMTPixelFormatBC3_RGBA_sRGB:
-  case WMTPixelFormatBC4_RUnorm:
-  case WMTPixelFormatBC4_RSnorm:
-  case WMTPixelFormatBC5_RGUnorm:
-  case WMTPixelFormatBC5_RGSnorm:
-  case WMTPixelFormatBC6H_RGBFloat:
-  case WMTPixelFormatBC6H_RGBUfloat:
-  case WMTPixelFormatBC7_RGBAUnorm:
-  case WMTPixelFormatBC7_RGBAUnorm_sRGB:
-  case WMTPixelFormatPVRTC_RGB_2BPP:
-  case WMTPixelFormatPVRTC_RGB_2BPP_sRGB:
-  case WMTPixelFormatPVRTC_RGB_4BPP:
-  case WMTPixelFormatPVRTC_RGB_4BPP_sRGB:
-  case WMTPixelFormatPVRTC_RGBA_2BPP:
-  case WMTPixelFormatPVRTC_RGBA_2BPP_sRGB:
-  case WMTPixelFormatPVRTC_RGBA_4BPP:
-  case WMTPixelFormatPVRTC_RGBA_4BPP_sRGB:
-  case WMTPixelFormatEAC_R11Unorm:
-  case WMTPixelFormatEAC_R11Snorm:
-  case WMTPixelFormatEAC_RG11Unorm:
-  case WMTPixelFormatEAC_RG11Snorm:
-  case WMTPixelFormatEAC_RGBA8:
-  case WMTPixelFormatEAC_RGBA8_sRGB:
-  case WMTPixelFormatETC2_RGB8:
-  case WMTPixelFormatETC2_RGB8_sRGB:
-  case WMTPixelFormatETC2_RGB8A1:
-  case WMTPixelFormatETC2_RGB8A1_sRGB:
-  case WMTPixelFormatASTC_4x4_sRGB:
-  case WMTPixelFormatASTC_5x4_sRGB:
-  case WMTPixelFormatASTC_5x5_sRGB:
-  case WMTPixelFormatASTC_6x5_sRGB:
-  case WMTPixelFormatASTC_6x6_sRGB:
-  case WMTPixelFormatASTC_8x5_sRGB:
-  case WMTPixelFormatASTC_8x6_sRGB:
-  case WMTPixelFormatASTC_8x8_sRGB:
-  case WMTPixelFormatASTC_10x5_sRGB:
-  case WMTPixelFormatASTC_10x6_sRGB:
-  case WMTPixelFormatASTC_10x8_sRGB:
-  case WMTPixelFormatASTC_10x10_sRGB:
-  case WMTPixelFormatASTC_12x10_sRGB:
-  case WMTPixelFormatASTC_12x12_sRGB:
-  case WMTPixelFormatASTC_4x4_LDR:
-  case WMTPixelFormatASTC_5x4_LDR:
-  case WMTPixelFormatASTC_5x5_LDR:
-  case WMTPixelFormatASTC_6x5_LDR:
-  case WMTPixelFormatASTC_6x6_LDR:
-  case WMTPixelFormatASTC_8x5_LDR:
-  case WMTPixelFormatASTC_8x6_LDR:
-  case WMTPixelFormatASTC_8x8_LDR:
-  case WMTPixelFormatASTC_10x5_LDR:
-  case WMTPixelFormatASTC_10x6_LDR:
-  case WMTPixelFormatASTC_10x8_LDR:
-  case WMTPixelFormatASTC_10x10_LDR:
-  case WMTPixelFormatASTC_12x10_LDR:
-  case WMTPixelFormatASTC_12x12_LDR:
-  case WMTPixelFormatASTC_4x4_HDR:
-  case WMTPixelFormatASTC_5x4_HDR:
-  case WMTPixelFormatASTC_5x5_HDR:
-  case WMTPixelFormatASTC_6x5_HDR:
-  case WMTPixelFormatASTC_6x6_HDR:
-  case WMTPixelFormatASTC_8x5_HDR:
-  case WMTPixelFormatASTC_8x6_HDR:
-  case WMTPixelFormatASTC_8x8_HDR:
-  case WMTPixelFormatASTC_10x5_HDR:
-  case WMTPixelFormatASTC_10x6_HDR:
-  case WMTPixelFormatASTC_10x8_HDR:
-  case WMTPixelFormatASTC_10x10_HDR:
-  case WMTPixelFormatASTC_12x10_HDR:
-  case WMTPixelFormatASTC_12x12_HDR:
-  case WMTPixelFormatGBGR422:
-  case WMTPixelFormatBGRG422:
-  case WMTPixelFormatDepth16Unorm:
-  case WMTPixelFormatDepth32Float:
-  case WMTPixelFormatStencil8:
-  case WMTPixelFormatDepth24Unorm_Stencil8:
-  case WMTPixelFormatDepth32Float_Stencil8:
-  case WMTPixelFormatX32_Stencil8:
-  case WMTPixelFormatX24_Stencil8:
   default:
     break;
   };
@@ -1395,12 +1305,14 @@ IsUnorm8RenderTargetFormat(WMTPixelFormat format) {
   case WMTPixelFormatRG8Unorm:
   case WMTPixelFormatRGBA8Unorm:
   case WMTPixelFormatBGRA8Unorm:
+  case WMTPixelFormatBGRX8Unorm:
   // case WMTPixelFormatRG8Snorm: // not sure how they work, be conservative.
   // case WMTPixelFormatRGBA8Snorm:
   // case WMTPixelFormatR8Unorm_sRGB:
   // case WMTPixelFormatRG8Unorm_sRGB:
   // case WMTPixelFormatRGBA8Unorm_sRGB:
   // case WMTPixelFormatBGRA8Unorm_sRGB:
+  // case WMTPixelFormatBGRX8Unorm_sRGB:
     return true;
   default:
     break;

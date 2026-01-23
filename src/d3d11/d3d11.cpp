@@ -36,10 +36,8 @@ D3D11CoreCreateDevice(IDXGIFactory *pFactory, IDXGIAdapter *pAdapter,
     FeatureLevels = defaultFeatureLevels.size();
   }
 
-  // so far stick to 11.1
-  // Find the highest feature level supported by the device.
-  // This works because the feature level array is ordered.
-  D3D_FEATURE_LEVEL maxFeatureLevel = D3D_FEATURE_LEVEL_11_1;
+  D3D_FEATURE_LEVEL maxFeatureLevel =
+      dxgi_adapter->GetMTLDevice().supportsFamily(WMTGPUFamilyApple7) ? D3D_FEATURE_LEVEL_11_1 : D3D_FEATURE_LEVEL_11_0;
   D3D_FEATURE_LEVEL minFeatureLevel = D3D_FEATURE_LEVEL();
   D3D_FEATURE_LEVEL devFeatureLevel = D3D_FEATURE_LEVEL();
 
@@ -196,13 +194,9 @@ extern "C" HRESULT __stdcall D3D11On12CreateDevice(
 #ifndef DXMT_NATIVE
 
 BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID reserved) {  
-  if (reason == DLL_PROCESS_DETACH) {
-    dxmt::uninitialize_io_hook();
-  }
   if (reason != DLL_PROCESS_ATTACH)
     return TRUE;
 
-  dxmt::initialize_io_hook();
   DisableThreadLibraryCalls(instance);
   return TRUE;
 }

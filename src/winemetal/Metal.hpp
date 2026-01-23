@@ -169,6 +169,10 @@ class Error : public Object {
 public:
 };
 
+class DispatchData : public Object {
+public:
+};
+
 class Event : public Object {
 public:
 };
@@ -183,6 +187,16 @@ public:
   void
   signalValue(uint64_t value) {
     MTLSharedEvent_signalValue(handle, value);
+  }
+
+  mach_port_t
+  createMachPort() {
+    return MTLSharedEvent_createMachPort(handle);
+  }
+
+  bool
+  waitUntilSignaledValue(uint64_t value, uint64_t timeout) {
+    return MTLSharedEvent_waitUntilSignaledValue(handle, value, timeout);
   }
 };
 
@@ -258,6 +272,13 @@ public:
   void
   didModifyRange(uint64_t start, uint64_t length) {
     MTLBuffer_didModifyRange(handle, start, length);
+  }
+
+  void
+  updateContents(uint64_t offset, const void *data, uint64_t length) {
+    WMTConstMemoryPointer ptr;
+    ptr.set(data);
+    MTLBuffer_updateContents(handle, offset, ptr, length);
   }
 };
 
@@ -648,6 +669,14 @@ public:
   }
 };
 
+class BinaryArchive : public Object {
+public:
+  void
+  serialize(const char *url, Error &error) {
+    MTLBinaryArchive_serialize(handle, url, &error.handle);
+  }
+};
+
 class Device : public Object {
 public:
   uint64_t
@@ -665,6 +694,11 @@ public:
     return String{MTLDevice_name(handle)};
   }
 
+  uint64_t
+  registryID() const {
+    return MTLDevice_registryID(handle);
+  }
+
   Reference<CommandQueue>
   newCommandQueue(uint64_t maxCommandBufferCount) {
     return Reference<CommandQueue>(MTLDevice_newCommandQueue(handle, maxCommandBufferCount));
@@ -673,6 +707,11 @@ public:
   Reference<SharedEvent>
   newSharedEvent() {
     return Reference<SharedEvent>(MTLDevice_newSharedEvent(handle));
+  }
+
+  Reference<SharedEvent>
+  newSharedEventWithMachPort(mach_port_t mach_port) {
+    return Reference<SharedEvent>(MTLDevice_newSharedEventWithMachPort(handle, mach_port));
   }
 
   Reference<Buffer>
@@ -697,28 +736,59 @@ public:
 
   Reference<Library>
   newLibrary(const void *bytecode, uint64_t bytecode_length, Error &error) {
-    struct WMTMemoryPointer mem;
-    mem.set((void *)bytecode);
-    return Reference<Library>(MTLDevice_newLibrary(handle, mem, bytecode_length, &error.handle));
+    auto data = DispatchData_alloc_init((uint64_t)bytecode, bytecode_length);
+    auto ret = Reference<Library>(MTLDevice_newLibrary(handle, data, &error.handle));
+    NSObject_release(data);
+    return ret;
   }
 
   Reference<Library>
   newLibraryFromNativeBuffer(uint64_t bytecode, uint64_t bytecode_length, Error &error) {
-    struct WMTMemoryPointer mem;
-    memcpy(&mem, &bytecode, 8);
-    return Reference<Library>(MTLDevice_newLibrary(handle, mem, bytecode_length, &error.handle));
+    auto data = DispatchData_alloc_init(bytecode, bytecode_length);
+    auto ret = Reference<Library>(MTLDevice_newLibrary(handle, data, &error.handle));
+    NSObject_release(data);
+    return ret;
+  }
+
+  Reference<Library>
+  newLibrary(DispatchData data, Error &error) {
+    return Reference<Library>(MTLDevice_newLibrary(handle, data, &error.handle));
   }
 
   Reference<ComputePipelineState>
   newComputePipelineState(const Function &compute_function, Error &error) {
-    return Reference<ComputePipelineState>(
-        MTLDevice_newComputePipelineState(handle, compute_function.handle, &error.handle)
-    );
+    WMTComputePipelineInfo info;
+    info.compute_function = compute_function;
+    info.tgsize_is_multiple_of_sgwidth = false;
+    info.immutable_buffers = 0;
+    info.binary_archive_for_serialization = NULL_OBJECT_HANDLE;
+    info.binary_archives_for_lookup.set(nullptr);
+    info.num_binary_archives_for_lookup = 0;
+    info.fail_on_binary_archive_miss = false;
+    return Reference<ComputePipelineState>(MTLDevice_newComputePipelineState(handle, &info, &error.handle));
+  }
+
+  Reference<ComputePipelineState>
+  newComputePipelineState(const Function &compute_function, bool tgsize_is_multiple_of_sgwidth, Error &error) {
+    WMTComputePipelineInfo info;
+    info.compute_function = compute_function;
+    info.tgsize_is_multiple_of_sgwidth = tgsize_is_multiple_of_sgwidth;
+    info.immutable_buffers = 0;
+    info.binary_archive_for_serialization = NULL_OBJECT_HANDLE;
+    info.binary_archives_for_lookup.set(nullptr);
+    info.num_binary_archives_for_lookup = 0;
+    info.fail_on_binary_archive_miss = false;
+    return Reference<ComputePipelineState>(MTLDevice_newComputePipelineState(handle, &info, &error.handle));
   }
 
   Reference<RenderPipelineState>
   newRenderPipelineState(const WMTRenderPipelineInfo &info, Error &error) {
     return Reference<RenderPipelineState>(MTLDevice_newRenderPipelineState(handle, &info, &error.handle));
+  }
+
+  Reference<ComputePipelineState>
+  newComputePipelineState(const WMTComputePipelineInfo &info, Error &error) {
+    return Reference<ComputePipelineState>(MTLDevice_newComputePipelineState(handle, &info, &error.handle));
   }
 
   Reference<RenderPipelineState>
@@ -771,6 +841,11 @@ public:
     return Reference<FXSpatialScaler>(MTLDevice_newSpatialScaler(handle, &info));
   }
 
+  Reference<BinaryArchive>
+  newBinaryArchive(const char *url, Error &error) {
+    return Reference<BinaryArchive>(MTLDevice_newBinaryArchive(handle, url, &error.handle));
+  }
+
   bool
   supportsFXSpatialScaler() {
     return MTLDevice_supportsFXSpatialScaler(handle);
@@ -784,6 +859,11 @@ public:
   void
   setShouldMaximizeConcurrentCompilation(bool value) {
     MTLDevice_setShouldMaximizeConcurrentCompilation(handle, value);
+  }
+
+  Reference<Texture>
+  newSharedTexture(WMTTextureInfo &info) {
+    return Reference<Texture>(MTLDevice_newSharedTexture(handle, &info));
   }
 };
 
@@ -833,6 +913,44 @@ public:
   }
 };
 
+class CacheReader : public Object {
+public:
+  static Reference<CacheReader>
+  alloc_init(const char *path, uint64_t version) {
+    return Reference<CacheReader>(CacheReader_alloc_init(path, version));
+  };
+
+  Reference<DispatchData>
+  get(const void *key, uint64_t length) {
+    return Reference<DispatchData>(CacheReader_get(handle, key, length));
+  };
+
+  template <typename K>
+  Reference<DispatchData>
+  get(const K &key) {
+    return Reference<DispatchData>(CacheReader_get(handle, reinterpret_cast<const void *>(&key), sizeof(key)));
+  };
+};
+
+class CacheWriter : public Object {
+public:
+  static Reference<CacheWriter>
+  alloc_init(const char *path, uint64_t version) {
+    return Reference<CacheWriter>(CacheWriter_alloc_init(path, version));
+  };
+
+  void
+  set(const void *key, uint64_t key_length, DispatchData value) {
+    CacheWriter_set(handle, key, key_length, value);
+  };
+
+  template <typename K>
+  void
+  set(const K &key, DispatchData value) {
+    set(reinterpret_cast<const void *>(&key), sizeof(key), value);
+  };
+};
+
 inline Reference<Object>
 MakeAutoreleasePool() {
   return Reference<Object>(NSAutoreleasePool_alloc_init());
@@ -841,6 +959,16 @@ MakeAutoreleasePool() {
 inline Reference<String>
 MakeString(const char *data, WMTStringEncoding encoding) {
   return Reference<String>(NSString_alloc_init(data, encoding));
+}
+
+inline Reference<DispatchData>
+MakeDispatchData(uint64_t native_ptr, uint64_t length) {
+  return Reference<DispatchData>(DispatchData_alloc_init(native_ptr, length));
+}
+
+inline Reference<DispatchData>
+MakeDispatchData(void *native_ptr, uint64_t length) {
+  return Reference<DispatchData>(DispatchData_alloc_init((uint64_t)native_ptr, length));
 }
 
 inline Object
@@ -896,6 +1024,21 @@ InitializeRenderPipelineInfo(WMTRenderPipelineInfo &info) {
   info.fragment_function = NULL_OBJECT_HANDLE;
   info.immutable_vertex_buffers = 0;
   info.immutable_fragment_buffers = 0;
+  info.binary_archive_for_serialization = NULL_OBJECT_HANDLE;
+  info.binary_archives_for_lookup.set(nullptr);
+  info.num_binary_archives_for_lookup = 0;
+  info.fail_on_binary_archive_miss = false;
+}
+
+inline void
+InitializeComputePipelineInfo(WMTComputePipelineInfo &info) {
+  info.compute_function = NULL_OBJECT_HANDLE;
+  info.binary_archive_for_serialization = NULL_OBJECT_HANDLE;
+  info.binary_archives_for_lookup.set(nullptr);
+  info.num_binary_archives_for_lookup = 0;
+  info.fail_on_binary_archive_miss = false;
+  info.tgsize_is_multiple_of_sgwidth = false;
+  info.immutable_buffers = 0;
 }
 
 inline void
@@ -926,6 +1069,12 @@ InitializeMeshRenderPipelineInfo(WMTMeshRenderPipelineInfo &info) {
   info.immutable_mesh_buffers = 0;
   info.immutable_fragment_buffers = 0;
   info.payload_memory_length = 0;
+  info.mesh_tgsize_is_multiple_of_sgwidth = 0;
+  info.object_tgsize_is_multiple_of_sgwidth = 0;
+  info.binary_archive_for_serialization = NULL_OBJECT_HANDLE;
+  info.binary_archives_for_lookup.set(nullptr);
+  info.num_binary_archives_for_lookup = 0;
+  info.fail_on_binary_archive_miss = false;
 }
 
 } // namespace WMT

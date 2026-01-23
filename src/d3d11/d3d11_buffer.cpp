@@ -80,19 +80,31 @@ public:
     // if (pDesc->Usage != D3D11_USAGE_DEFAULT)
     if (pDesc->Usage == D3D11_USAGE_IMMUTABLE)
       flags.set(BufferAllocationFlag::GpuReadonly);
-    if (pDesc->Usage != D3D11_USAGE_DYNAMIC)
-      flags.set(BufferAllocationFlag::GpuManaged);
-    else
+    if (pDesc->Usage != D3D11_USAGE_DYNAMIC) {
+      if (pInitialData)
+        flags.set(BufferAllocationFlag::GpuManaged);
+      else if (pDesc->BindFlags & kD3D11OuputBindFlags)
+        flags.set(BufferAllocationFlag::GpuPrivate);
+      else
+        flags.set(BufferAllocationFlag::GpuManaged);
+    } else {
       flags.set(BufferAllocationFlag::SuballocateFromOnePage);
+#ifdef __i386__
+      flags.set(BufferAllocationFlag::CpuPlaced);
+#endif
+    }
     auto allocation = buffer_->allocate(flags);
+    auto &initializer = device->GetDXMTDevice().queue().initializer;
     if (pInitialData) {
-      memcpy(allocation->mappedMemory(0), pInitialData->pSysMem, pDesc->ByteWidth);
+      allocation->updateContents(0, pInitialData->pSysMem, pDesc->ByteWidth);
+    } else if (flags.test(BufferAllocationFlag::GpuPrivate)) {
+      initializer.initWithZero(allocation.ptr(), 0, buffer_->length());
     }
     auto _ = buffer_->rename(std::move(allocation));
     D3D11_ASSERT(_.ptr() == nullptr);
     structured = pDesc->MiscFlags & D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
     allow_raw_view = pDesc->MiscFlags & D3D11_RESOURCE_MISC_BUFFER_ALLOW_RAW_VIEWS;
-    if (!(desc.BindFlags & (D3D11_BIND_UNORDERED_ACCESS | D3D11_BIND_STREAM_OUTPUT))) {
+    if (!(desc.BindFlags & kD3D11OuputBindFlags)) {
       dynamic_ = new DynamicBuffer(buffer_.ptr(), flags);
     }
   }

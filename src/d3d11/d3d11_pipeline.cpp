@@ -1,7 +1,6 @@
 #include "Metal.hpp"
 #include "d3d11_private.h"
 #include "d3d11_pipeline.hpp"
-#include "com/com_object.hpp"
 #include "d3d11_device.hpp"
 #include "d3d11_shader.hpp"
 #include "log/log.hpp"
@@ -9,13 +8,12 @@
 
 namespace dxmt {
 
-class MTLCompiledGraphicsPipeline
-    : public ComObject<IMTLCompiledGraphicsPipeline> {
+class MTLCompiledGraphicsPipelineImpl
+    : public MTLCompiledGraphicsPipeline {
 public:
-  MTLCompiledGraphicsPipeline(MTLD3D11Device *pDevice,
+  MTLCompiledGraphicsPipelineImpl(MTLD3D11Device *pDevice,
                               MTL_GRAPHICS_PIPELINE_DESC *pDesc)
-      : ComObject<IMTLCompiledGraphicsPipeline>(),
-        num_rtvs(pDesc->NumColorAttachments),
+      : num_rtvs(pDesc->NumColorAttachments),
         depth_stencil_format(pDesc->DepthStencilFormat),
         topology_class(pDesc->TopologyClass), device_(pDevice),
         pBlendState(pDesc->BlendState),
@@ -30,10 +28,10 @@ public:
     if (pDesc->SOLayout) {
       VertexShader =
           pDesc->VertexShader->get_shader(ShaderVariantVertexStreamOutput{
-              (uint64_t)pDesc->InputLayout, (uint64_t)pDesc->SOLayout});
+              pDesc->InputLayout, (uint64_t)pDesc->SOLayout});
     } else {
       VertexShader = pDesc->VertexShader->get_shader(ShaderVariantVertex{
-          (uint64_t)pDesc->InputLayout, pDesc->GSPassthrough, !pDesc->RasterizationEnabled});
+          pDesc->InputLayout, pDesc->GSPassthrough, !pDesc->RasterizationEnabled});
     }
 
     if (pDesc->PixelShader) {
@@ -41,44 +39,29 @@ public:
           pDesc->SampleMask, pDesc->BlendState->IsDualSourceBlending(),
           depth_stencil_format == WMTPixelFormatInvalid,
           unorm_output_reg_mask});
+      ps_valid_render_targets = pDesc->PixelShader->reflection().PSValidRenderTargets;
+    } else {
+      PixelShader = nullptr;
+      ps_valid_render_targets = 0;
     }
   }
-
-  void SubmitWork() { device_->SubmitThreadgroupWork(this); }
-
-  HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void **ppvObject) {
-    if (ppvObject == nullptr)
-      return E_POINTER;
-
-    *ppvObject = nullptr;
-
-    if (riid == __uuidof(IUnknown) || riid == __uuidof(IMTLThreadpoolWork) ||
-        riid == __uuidof(IMTLCompiledGraphicsPipeline)) {
-      *ppvObject = ref(this);
-      return S_OK;
-    }
-
-    return E_NOINTERFACE;
-  }
-
-  bool IsReady() final { return ready_.load(std::memory_order_relaxed); }
 
   void GetPipeline(MTL_COMPILED_GRAPHICS_PIPELINE *pPipeline) final {
     ready_.wait(false, std::memory_order_acquire);
     *pPipeline = {state_};
   }
 
-  IMTLThreadpoolWork *RunThreadpoolWork() {
+  ThreadpoolWork *RunThreadpoolWork() {
 
     TRACE("Start compiling 1 PSO");
 
     WMT::Reference<WMT::Error> err;
     MTL_COMPILED_SHADER vs, ps;
     if (!VertexShader->GetShader(&vs)) {
-      return VertexShader.ptr();
+      return VertexShader;
     }
     if (PixelShader && !PixelShader->GetShader(&ps)) {
-      return PixelShader.ptr();
+      return PixelShader;
     }
 
     WMTRenderPipelineInfo info;
@@ -100,15 +83,12 @@ public:
     if (depth_stencil_format != WMTPixelFormatInvalid) {
       info.depth_pixel_format = depth_stencil_format;
     }
-    // FIXME: don't hardcoding!
-    if (depth_stencil_format == WMTPixelFormatDepth32Float_Stencil8 ||
-        depth_stencil_format == WMTPixelFormatDepth24Unorm_Stencil8 ||
-        depth_stencil_format == WMTPixelFormatStencil8) {
+    if (DepthStencilPlanarFlags(depth_stencil_format) & 2) {
       info.stencil_pixel_format = depth_stencil_format;
     }
 
     if (pBlendState) {
-      pBlendState->SetupMetalPipelineDescriptor((WMTRenderPipelineBlendInfo *)&info, num_rtvs);
+      pBlendState->SetupMetalPipelineDescriptor((WMTRenderPipelineBlendInfo *)&info, num_rtvs, ps_valid_render_targets);
     }
 
     info.input_primitive_topology = topology_class;
@@ -137,72 +117,62 @@ public:
 
 private:
   UINT num_rtvs;
+  UINT ps_valid_render_targets;
   WMTPixelFormat rtv_formats[8];
   WMTPixelFormat depth_stencil_format;
   WMTPrimitiveTopologyClass topology_class;
   MTLD3D11Device *device_;
   std::atomic_bool ready_;
-  Com<CompiledShader> VertexShader;
-  Com<CompiledShader> PixelShader;
+  CompiledShader *VertexShader;
+  CompiledShader *PixelShader;
   IMTLD3D11BlendState *pBlendState;
   WMT::Reference<WMT::RenderPipelineState> state_;
   bool RasterizationEnabled;
   UINT SampleCount;
 };
 
-Com<IMTLCompiledGraphicsPipeline>
+std::unique_ptr<MTLCompiledGraphicsPipeline>
 CreateGraphicsPipeline(MTLD3D11Device *pDevice,
                        MTL_GRAPHICS_PIPELINE_DESC *pDesc) {
-  Com<IMTLCompiledGraphicsPipeline> pipeline =
-      new MTLCompiledGraphicsPipeline(pDevice, pDesc);
-  pipeline->SubmitWork();
-  return pipeline;
+  return std::make_unique<MTLCompiledGraphicsPipelineImpl>(pDevice, pDesc);
 }
 
-class MTLCompiledComputePipeline
-    : public ComObject<IMTLCompiledComputePipeline> {
+class MTLCompiledComputePipelineImpl
+    : public MTLCompiledComputePipeline {
 public:
-  MTLCompiledComputePipeline(MTLD3D11Device *pDevice, ManagedShader shader)
-      : ComObject<IMTLCompiledComputePipeline>(), device_(pDevice) {
+  MTLCompiledComputePipelineImpl(MTLD3D11Device *pDevice, ManagedShader shader)
+      : device_(pDevice) {
     ComputeShader = shader->get_shader(ShaderVariantDefault{});
+    uint32_t total_tgsize = shader->reflection().ThreadgroupSize[0] *
+                            shader->reflection().ThreadgroupSize[1] *
+                            shader->reflection().ThreadgroupSize[2];
+    // FIXME: might be different on AMD GPU, if it's ever supported
+    tgsize_is_multiple_of_sgwidth = (total_tgsize % 32) == 0;
   }
-
-  void SubmitWork() final { device_->SubmitThreadgroupWork(this); }
-
-  HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void **ppvObject) {
-    if (ppvObject == nullptr)
-      return E_POINTER;
-
-    *ppvObject = nullptr;
-
-    if (riid == __uuidof(IUnknown) || riid == __uuidof(IMTLThreadpoolWork) ||
-        riid == __uuidof(IMTLCompiledComputePipeline)) {
-      *ppvObject = ref(this);
-      return S_OK;
-    }
-
-    return E_NOINTERFACE;
-  }
-
-  bool IsReady() final { return ready_.load(std::memory_order_relaxed); }
 
   void GetPipeline(MTL_COMPILED_COMPUTE_PIPELINE *pPipeline) final {
     ready_.wait(false, std::memory_order_acquire);
     *pPipeline = {state_};
   }
 
-  IMTLThreadpoolWork *RunThreadpoolWork() {
-    D3D11_ASSERT(!ready_ && "?wtf"); // TODO: should use a lock?
+  ThreadpoolWork *RunThreadpoolWork() {
 
     TRACE("Start compiling 1 PSO");
 
     WMT::Reference<WMT::Error> err;
     MTL_COMPILED_SHADER cs;
     if (!ComputeShader->GetShader(&cs)) {
-      return ComputeShader.ptr();
+      return ComputeShader;
     }
 
-    state_ = device_->GetMTLDevice().newComputePipelineState(cs.Function, err);
+    WMTComputePipelineInfo info;
+    WMT::InitializeComputePipelineInfo(info);
+
+    info.compute_function = cs.Function;
+    info.tgsize_is_multiple_of_sgwidth = tgsize_is_multiple_of_sgwidth;
+    info.immutable_buffers = (1 << 29) | (1 << 30);
+
+    state_ = device_->GetMTLDevice().newComputePipelineState(info, err);
 
     if (!state_) {
       ERR("Failed to create compute PSO: ", err.description().getUTF8String());
@@ -224,16 +194,14 @@ public:
 private:
   MTLD3D11Device *device_;
   std::atomic_bool ready_;
-  Com<CompiledShader> ComputeShader;
+  CompiledShader *ComputeShader;
   WMT::Reference<WMT::ComputePipelineState> state_;
+  bool tgsize_is_multiple_of_sgwidth;
 };
 
-Com<IMTLCompiledComputePipeline>
+std::unique_ptr<MTLCompiledComputePipeline>
 CreateComputePipeline(MTLD3D11Device *pDevice, ManagedShader ComputeShader) {
-  Com<IMTLCompiledComputePipeline> pipeline =
-      new MTLCompiledComputePipeline(pDevice, ComputeShader);
-  pipeline->SubmitWork();
-  return pipeline;
+  return std::make_unique<MTLCompiledComputePipelineImpl>(pDevice, ComputeShader);
 }
 
 } // namespace dxmt

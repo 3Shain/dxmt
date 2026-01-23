@@ -89,6 +89,10 @@ struct MTL_GEOMETRY_SHADER_REFLECTION {
   uint32_t Primitive;
 };
 
+struct MTL_POST_TESSELLATOR_REFLECTION {
+  uint32_t MaxPotentialTessFactor;
+};
+
 struct MTL_SHADER_REFLECTION {
   uint32_t ConstanttBufferTableBindIndex;
   uint32_t ArgumentBufferBindIndex;
@@ -98,6 +102,8 @@ struct MTL_SHADER_REFLECTION {
     uint32_t ThreadgroupSize[3];
     struct MTL_TESSELLATOR_REFLECTION Tessellator;
     struct MTL_GEOMETRY_SHADER_REFLECTION GeometryShader;
+    struct MTL_POST_TESSELLATOR_REFLECTION PostTessellator;
+    uint32_t PSValidRenderTargets;
   };
   uint16_t ConstantBufferSlotMask;
   uint16_t SamplerSlotMask;
@@ -107,12 +113,6 @@ struct MTL_SHADER_REFLECTION {
   uint32_t NumOutputElement;
   uint32_t ThreadsPerPatch;
   uint32_t ArgumentTableQwords;
-};
-
-struct MTL_SHADER_BITCODE {
-  char *Data;
-  size_t Size;
-  // add additional metadata here
 };
 
 #if defined(__LP64__) || defined(_WIN64)
@@ -132,10 +132,6 @@ typedef struct sm50_ptr64_t {
 
   sm50_ptr64_t(uint64_t v) {
     impl = v;
-  }
-
-  operator void * () const {
-    return (void*)impl;
   }
 
   operator uint64_t () const {
@@ -160,8 +156,10 @@ typedef sm50_ptr64_t sm50_error_t;
 #define AIRCONV_API __attribute__((sysv_abi))
 #endif
 
-typedef struct __MTLArgumentEncoder *ArgumentEncoder_t;
-typedef struct __MTLDevice *Device_t;
+struct SM50_COMPILED_BITCODE {
+  sm50_ptr64_t Data;
+  uint64_t Size;
+};
 
 #ifdef __cplusplus
 
@@ -188,11 +186,12 @@ extern "C" {
 
 enum SM50_SHADER_COMPILATION_ARGUMENT_TYPE {
   SM50_SHADER_EMULATE_VERTEX_STREAM_OUTPUT = 1,
-  SM50_SHADER_DEBUG_IDENTITY = 2,
+  SM50_SHADER_COMMON = 2,
   SM50_SHADER_PSO_PIXEL_SHADER = 3,
   SM50_SHADER_IA_INPUT_LAYOUT = 4,
   SM50_SHADER_GS_PASS_THROUGH = 5,
   SM50_SHADER_PSO_GEOMETRY_SHADER = 6,
+  SM50_SHADER_PSO_TESSELLATOR = 7,
   SM50_SHADER_ARGUMENT_TYPE_MAX = 0xffffffff,
 };
 
@@ -217,10 +216,16 @@ struct SM50_SHADER_EMULATE_VERTEX_STREAM_OUTPUT_DATA {
   struct SM50_STREAM_OUTPUT_ELEMENT *elements;
 };
 
-struct SM50_SHADER_DEBUG_IDENTITY_DATA {
+enum SM50_SHADER_METAL_VERSION {
+  SM50_SHADER_METAL_310 = 310,
+  SM50_SHADER_METAL_320 = 320,
+  SM50_SHADER_METAL_MAX = 0xffffffff,
+};
+
+struct SM50_SHADER_COMMON_DATA {
   void *next;
   enum SM50_SHADER_COMPILATION_ARGUMENT_TYPE type;
-  uint64_t id;
+  enum SM50_SHADER_METAL_VERSION metal_version;
 };
 
 struct SM50_SHADER_PSO_PIXEL_SHADER_DATA {
@@ -273,6 +278,12 @@ struct SM50_SHADER_PSO_GEOMETRY_SHADER_DATA {
   bool strip_topology;
 };
 
+struct SM50_SHADER_PSO_TESSELLATOR_DATA {
+  void *next;
+  enum SM50_SHADER_COMPILATION_ARGUMENT_TYPE type;
+  uint32_t max_potential_tess_factor;
+};
+
 AIRCONV_API int SM50Initialize(
   const void *pBytecode, size_t BytecodeSize, sm50_shader_t *ppShader,
   struct MTL_SHADER_REFLECTION *pRefl, sm50_error_t *ppError
@@ -283,7 +294,7 @@ AIRCONV_API int SM50Compile(
   const char *FunctionName, sm50_bitcode_t *ppBitcode, sm50_error_t *ppError
 );
 AIRCONV_API void SM50GetCompiledBitcode(
-  sm50_bitcode_t pBitcode, struct MTL_SHADER_BITCODE *pData
+  sm50_bitcode_t pBitcode, struct SM50_COMPILED_BITCODE *pData
 );
 AIRCONV_API void SM50DestroyBitcode(sm50_bitcode_t pBitcode);
 AIRCONV_API size_t SM50GetErrorMessage(sm50_error_t pError, char *pBuffer, size_t BufferSize);

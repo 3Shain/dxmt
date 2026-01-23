@@ -47,7 +47,7 @@ ImmediateContextBase::AllocateCommandData(size_t n) {
 }
 
 template <>
-std::tuple<void *, WMT::Buffer, uint64_t>
+std::tuple<WMT::Buffer, uint64_t>
 ImmediateContextBase::AllocateStagingBuffer(size_t size, size_t alignment) {
   return ctx_state.cmd_queue.AllocateStagingBuffer(size, alignment);
 }
@@ -62,6 +62,12 @@ template <>
 void
 ImmediateContextBase::UseCopySource(Rc<StagingResource> &staging) {
   staging->useCopySource(ctx_state.cmd_queue.CurrentSeqId());
+}
+
+template <>
+std::pair<BufferAllocation *, uint32_t>
+ImmediateContextBase::GetDynamicBufferAllocation(Rc<DynamicBuffer> &dynamic) {
+  return {dynamic->immediateName().ptr(), dynamic->immediateSuballocation()};
 }
 
 class MTLD3D11ImmediateContext : public ImmediateContextBase {
@@ -403,6 +409,8 @@ public:
       case EventState::Signaled:
         hr = S_OK;
         break;
+      case EventState::Invalid:
+        return DXGI_ERROR_INVALID_CALL;
       }
       break;
     }
@@ -478,7 +486,7 @@ public:
 
     ResetEncodingContextState();
 
-    Com<MTLD3D11CommandList> cmdlist = static_cast<MTLD3D11CommandList *>(pCommandList);
+    Com<MTLD3D11CommandList, false> cmdlist = static_cast<MTLD3D11CommandList *>(pCommandList);
     auto seq_id = ctx_state.cmd_queue.CurrentSeqId();
 
     promote_flush = cmdlist->promote_flush;

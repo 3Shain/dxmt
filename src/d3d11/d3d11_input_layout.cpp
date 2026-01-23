@@ -4,6 +4,7 @@
 #include "d3d11_shader.hpp"
 #include "d3d11_state_object.hpp"
 #include "dxmt_format.hpp"
+#include "sha1/sha1_util.hpp"
 #include "util_math.hpp"
 #include "log/log.hpp"
 
@@ -31,16 +32,6 @@ HRESULT ExtractMTLInputLayoutElements(
   UINT attribute_count = 0;
   for (UINT j = 0; j < NumElements; j++) {
     auto &desc = pInputElementDescs[j];
-    auto pSig = std::find_if(
-        pParamters, pParamters + num_parameters,
-        [&](const D3D11_SIGNATURE_PARAMETER &inputSig) {
-          return desc.SemanticIndex == inputSig.SemanticIndex &&
-                 strcasecmp(desc.SemanticName, inputSig.SemanticName) == 0;
-        });
-    if (pSig == pParamters + num_parameters)
-      continue; // shader has no such input register, so skip it
-    auto &inputSig = *pSig;
-    auto &attribute = pInputLayout[attribute_count++];
 
     MTL_DXGI_FORMAT_DESC metal_format;
     if (FAILED(MTLQueryDXGIFormat(device->GetMTLDevice(), desc.Format, metal_format))) {
@@ -56,19 +47,27 @@ HRESULT ExtractMTLInputLayoutElements(
       ERR("CreateInputLayout: not an ordinary or packed format: ", desc.Format);
       return E_INVALIDARG;
     }
+    auto aligned_byte_offset = desc.AlignedByteOffset == D3D11_APPEND_ALIGNED_ELEMENT
+                                   ? align(append_offset[desc.InputSlot], std::min(4u, metal_format.BytesPerTexel))
+                                   : desc.AlignedByteOffset;
+    append_offset[desc.InputSlot] = aligned_byte_offset + metal_format.BytesPerTexel;
+
+    auto pSig = std::find_if(
+        pParamters, pParamters + num_parameters,
+        [&](const D3D11_SIGNATURE_PARAMETER &inputSig) {
+          return desc.SemanticIndex == inputSig.SemanticIndex &&
+                 strcasecmp(desc.SemanticName, inputSig.SemanticName) == 0;
+        });
+    if (pSig == pParamters + num_parameters)
+      continue; // shader has no such input register, so skip it
+    auto &inputSig = *pSig;
+    auto &attribute = pInputLayout[attribute_count++];
+
     attribute.Format = metal_format.AttributeFormat;
 
     attribute.Slot = desc.InputSlot;
     attribute.Index = inputSig.Register;
-
-    if (desc.AlignedByteOffset == D3D11_APPEND_ALIGNED_ELEMENT) {
-      attribute.Offset = align(append_offset[attribute.Slot],
-                               std::min(4u, metal_format.BytesPerTexel));
-    } else {
-      attribute.Offset = desc.AlignedByteOffset;
-    }
-    append_offset[attribute.Slot] =
-        attribute.Offset + metal_format.BytesPerTexel;
+    attribute.Offset = aligned_byte_offset;
     // the layout stride is provided in IASetVertexBuffer
     attribute.StepFunction = desc.InputSlotClass;
     attribute.InstanceStepRate =
@@ -98,7 +97,16 @@ public:
   MTLD3D11StreamOutputLayout(MTLD3D11Device *device,
                              const MTL_STREAM_OUTPUT_DESC &desc)
       : ManagedDeviceChild<IMTLD3D11StreamOutputLayout>(device), desc_(desc),
-        null_gs(this) {}
+        null_gs(this) {
+    Sha1HashState h;
+    h.update(desc.Strides);
+    h.update(desc.RasterizedStream);
+    h.update(desc.Elements.size());
+    for (auto &el : desc.Elements) {
+        h.update(el);
+    }
+    sha1_ = h.final();
+  }
 
   ~MTLD3D11StreamOutputLayout() {}
 
@@ -137,8 +145,17 @@ public:
     return desc_.Elements.size();
   }
 
+  Sha1Digest &Digest() override {
+    return sha1_;
+  };
+
+  virtual UINT RasterizedStream() override {
+    return desc_.RasterizedStream;
+  }
+
 private:
   MTL_STREAM_OUTPUT_DESC desc_;
+  Sha1Digest sha1_;
 
   class NullGeometryShader : public IMTLD3D11Shader {
     IUnknown *container;

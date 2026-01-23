@@ -187,12 +187,13 @@ public:
   );
 
   std::pair<Value *, Value *> CreateRead(
-      const Texture &Texture, Value *Handle, Value *Pos, Value *ArrayIndex, Value *SampleIndexOrCubeFace, Value *Level
+      const Texture &Texture, Value *Handle, Value *Pos, Value *ArrayIndex, Value *SampleIndexOrCubeFace, Value *Level,
+      bool DeviceCoherent = false
   );
 
   CallInst *CreateWrite(
       const Texture &Texture, Value *Handle, Value *Pos, Value *ArrayIndex, Value *CubeFace, Value *Level,
-      Value *ValVec4
+      Value *ValVec4, bool DeviceCoherent = false
   );
 
   std::pair<Value *, Value *> CreateAtomicCmpXchg(
@@ -231,6 +232,8 @@ public:
   \returns (float clamped_lod, float unclamped_lod)
   */
   std::pair<Value *, Value *> CreateCalculateLOD(const Texture &Texture, Value *Handle, Value *Sampler, Value *Coord);
+
+  CallInst *CreateTextureFence(const Texture &Texture, Value *Handle);
 
   /* Fragment Shader */
 
@@ -316,16 +319,17 @@ public:
     trunc,
     cos,
     sin,
+    fabs,
   };
 
-  Value *CreateFPUnOp(FPUnOp Op, Value *Operand);
+  Value *CreateFPUnOp(FPUnOp Op, Value *Operand, bool FastVariant = true);
 
   enum FPBinOp {
     fmax,
     fmin,
   };
 
-  Value *CreateFPBinOp(FPBinOp Op, Value *LHS, Value *RHS);
+  Value *CreateFPBinOp(FPBinOp Op, Value *LHS, Value *RHS, bool FastVariant = true);
 
   enum IntUnOp {
     reverse_bits,
@@ -341,6 +345,10 @@ public:
   };
 
   Value *CreateIntBinOp(IntBinOp Op, Value *LHS, Value *RHS, bool Signed = false);
+
+  Value *CreateAtomicRMW(AtomicRMWInst::BinOp Op, Value *Ptr, Value *Val);
+
+  llvm::Value *SanitizePosition(llvm::Value *Pos);
 
   /* Useful Helpers */
 

@@ -14,27 +14,29 @@ std::atomic_uint64_t global_buffer_seq = {0};
 BufferAllocation::BufferAllocation(WMT::Device device, const WMTBufferInfo &info, Flags<BufferAllocationFlag> flags) :
     info_(info),
     flags_(flags) {
+  // (sub)allocate a minimum of 256B buffer so that texture can be created
+  info_.length = std::max(info_.length, 256ull);
   suballocation_size_ = info_.length;
   if (flags_.test(BufferAllocationFlag::SuballocateFromOnePage) && suballocation_size_ <= DXMT_PAGE_SIZE) {
     suballocation_size_ = align(info_.length, 16);
     suballocation_count_ = DXMT_PAGE_SIZE / suballocation_size_;
     info_.length = DXMT_PAGE_SIZE;
   }
-#ifdef __i386__
-  placed_buffer = wsi::aligned_malloc(info_.length, DXMT_PAGE_SIZE);
-  info_.memory.set(placed_buffer);
-#endif
+  if (flags_.test(BufferAllocationFlag::CpuPlaced)) {
+    placed_buffer = wsi::aligned_malloc(info_.length, DXMT_PAGE_SIZE);
+    info_.memory.set(placed_buffer);
+  }
   obj_ = device.newBuffer(info_);
   gpuAddress_ = info_.gpu_address;
-  mappedMemory_ = info_.memory.get();
+  mappedMemory_ = info_.memory.get_accessible_or_null();
   depkey = EncoderDepSet::generateNewKey(global_buffer_seq.fetch_add(1));
 };
 
 BufferAllocation::~BufferAllocation() {
-#ifdef __i386__
-  wsi::aligned_free(placed_buffer);
-  placed_buffer = nullptr;
-#endif
+  if (placed_buffer) {
+    wsi::aligned_free(placed_buffer);
+    placed_buffer = nullptr;
+  }
 }
 
 WMT::Texture
@@ -94,7 +96,7 @@ Buffer::prepareAllocationViews(BufferAllocation *allocation) {
     info.options = allocation->info_.options;
     info.usage = WMTTextureUsageShaderRead;
     if (!allocation->flags().test(BufferAllocationFlag::GpuReadonly) &&
-        allocation->flags().test(BufferAllocationFlag::GpuManaged)) {
+       ( allocation->flags().test(BufferAllocationFlag::GpuManaged) ||  allocation->flags().test(BufferAllocationFlag::GpuPrivate))) {
       info.usage |= WMTTextureUsageShaderWrite;
       if (format == WMTPixelFormatR32Uint || format == WMTPixelFormatR32Sint ||
           (format == WMTPixelFormatRG32Uint && device_.supportsFamily(WMTGPUFamilyApple8))) {

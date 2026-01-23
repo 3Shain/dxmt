@@ -7,6 +7,7 @@
 #include "winemetal_thunks.h"
 #include <wineunixlib.h>
 #include "assert.h"
+#include "string.h"
 
 #ifdef NDEBUG
 #define UNIX_CALL(code, params) WINE_UNIX_CALL(code, params)
@@ -254,12 +255,11 @@ MTLDevice_minimumLinearTextureAlignmentForPixelFormat(obj_handle_t device, enum 
 
 WINEMETAL_API obj_handle_t
 MTLDevice_newLibrary(
-    obj_handle_t device, struct WMTMemoryPointer bytecode, uint64_t bytecode_length, obj_handle_t *err_out
+    obj_handle_t device, obj_handle_t data, obj_handle_t *err_out
 ) {
   struct unixcall_mtldevice_newlibrary params;
   params.device = device;
-  params.bytecode = bytecode;
-  params.bytecode_length = bytecode_length;
+  params.data = data;
   params.ret_error = 0;
   params.ret_library = 0;
   UNIX_CALL(25, &params);
@@ -297,10 +297,12 @@ NSObject_description(obj_handle_t nserror) {
 }
 
 WINEMETAL_API obj_handle_t
-MTLDevice_newComputePipelineState(obj_handle_t device, obj_handle_t function, obj_handle_t *err_out) {
+MTLDevice_newComputePipelineState(
+    obj_handle_t device, const struct WMTComputePipelineInfo *info, obj_handle_t *err_out
+) {
   struct unixcall_mtldevice_newcomputepso params;
   params.device = device;
-  params.function = function;
+  WMT_MEMPTR_SET(params.info, info);
   params.ret_error = 0;
   params.ret_pso = 0;
   UNIX_CALL(29, &params);
@@ -895,11 +897,14 @@ MTLSharedEvent_signalValue(obj_handle_t event, uint64_t value) {
 }
 
 WINEMETAL_API void
-MTLSharedEvent_setWin32EventAtValue(obj_handle_t event, void *nt_event_handle, uint64_t at_value) {
-  struct unixcall_generic_obj_obj_uint64_noret params;
-  params.handle = event;
-  params.arg0 = (obj_handle_t)PtrToUInt64(nt_event_handle);
-  params.arg1 = at_value;
+MTLSharedEvent_setWin32EventAtValue(
+    obj_handle_t event, obj_handle_t shared_event_listener, void *nt_event_handle, uint64_t at_value
+) {
+  struct unixcall_mtlsharedevent_setevent params;
+  params.shared_event = event;
+  params.shared_event_listener = shared_event_listener;
+  params.event_handle = (obj_handle_t)PtrToUInt64(nt_event_handle);
+  params.value = at_value;
   UNIX_CALL(104, &params);
 }
 
@@ -919,4 +924,197 @@ MTLDevice_newEvent(obj_handle_t device) {
   params.ret = 0;
   UNIX_CALL(106, &params);
   return params.ret;
+}
+
+WINEMETAL_API void
+MTLBuffer_updateContents(obj_handle_t buffer, uint64_t offset, struct WMTConstMemoryPointer data, uint64_t length) {
+  struct unixcall_mtlbuffer_updatecontents params;
+  params.buffer = buffer;
+  params.offset = offset;
+  params.data = data;
+  params.length = length;
+  UNIX_CALL(107, &params);
+}
+
+WINEMETAL_API obj_handle_t
+SharedEventListener_create() {
+  struct unixcall_generic_obj_ret params;
+  UNIX_CALL(108, &params);
+  return params.ret;
+}
+
+WINEMETAL_API void
+SharedEventListener_start(obj_handle_t event_queue) {
+  struct unixcall_generic_obj_noret params;
+  params.handle = event_queue;
+  UNIX_CALL(109, &params);
+}
+
+WINEMETAL_API void
+SharedEventListener_destroy(obj_handle_t event_queue) {
+  struct unixcall_generic_obj_noret params;
+  params.handle = event_queue;
+  UNIX_CALL(110, &params);
+}
+
+WINEMETAL_API void
+WMTGetOSVersion(uint64_t *major, uint64_t *minor, uint64_t *patch) {
+  struct unixcall_get_os_version params;
+  UNIX_CALL(111, &params);
+  if (major)
+    *major = params.ret_major;
+  if (minor)
+    *minor = params.ret_minor;
+  if (patch)
+    *patch = params.ret_patch;
+}
+
+WINEMETAL_API obj_handle_t
+MTLDevice_newBinaryArchive(obj_handle_t device, const char *url, obj_handle_t *err_out) {
+  struct unixcall_mtldevice_newbinaryarchive params;
+  params.device = device;
+  WMT_MEMPTR_SET(params.url, url);
+  params.ret_archive = 0;
+  params.ret_error = 0;
+  UNIX_CALL(112, &params);
+  if (err_out)
+    *err_out = params.ret_error;
+  return params.ret_archive;
+}
+
+WINEMETAL_API void
+MTLBinaryArchive_serialize(obj_handle_t archive, const char *url, obj_handle_t *err_out) {
+  struct unixcall_mtlbinaryarchive_serialize params;
+  params.archive = archive;
+  WMT_MEMPTR_SET(params.url, url);
+  UNIX_CALL(113, &params);
+  if (err_out)
+    *err_out = params.ret_error;
+}
+
+WINEMETAL_API obj_handle_t
+DispatchData_alloc_init(uint64_t native_ptr, uint64_t length) {
+  struct unixcall_generic_obj_uint64_obj_ret params;
+  params.handle = native_ptr;
+  params.arg = length;
+  UNIX_CALL(114, &params);
+  return params.ret;
+}
+
+WINEMETAL_API obj_handle_t
+CacheReader_alloc_init(const char *path, uint64_t version) {
+  struct unixcall_cache_alloc_init params;
+  WMT_MEMPTR_SET(params.path, path);
+  params.version = version;
+  UNIX_CALL(115, &params);
+  return params.ret_cache;
+}
+
+WINEMETAL_API obj_handle_t
+CacheReader_get(obj_handle_t reader, const void *key, uint64_t length) {
+  struct unixcall_cache_get params;
+  params.cache = reader;
+  WMT_MEMPTR_SET(params.key, key);
+  params.key_length = length;
+  UNIX_CALL(116, &params);
+  return params.ret_data;
+}
+
+WINEMETAL_API obj_handle_t
+CacheWriter_alloc_init(const char *path, uint64_t version) {
+  struct unixcall_cache_alloc_init params;
+  WMT_MEMPTR_SET(params.path, path);
+  params.version = version;
+  UNIX_CALL(117, &params);
+  return params.ret_cache;
+}
+
+WINEMETAL_API void
+CacheWriter_set(
+    obj_handle_t writer, const void *key, uint64_t key_length, obj_handle_t value
+) {
+  struct unixcall_cache_set params;
+  params.cache = writer;
+  WMT_MEMPTR_SET(params.key, key);
+  params.key_length = key_length;
+  params.value_data = value;
+  UNIX_CALL(118, &params);
+}
+
+WINEMETAL_API bool
+WMTSetMetalShaderCachePath(const char *path) {
+  struct unixcall_setmetalcachepath params;
+  WMT_MEMPTR_SET(params.path, path);
+  params.ret_success = 0;
+  UNIX_CALL(119, &params);
+  return params.ret_success;
+}
+
+WINEMETAL_API obj_handle_t
+MTLDevice_newSharedTexture(obj_handle_t device, struct WMTTextureInfo *info) {
+  struct unixcall_mtldevice_newtexture params;
+  params.device = device;
+  WMT_MEMPTR_SET(params.info, info);
+  UNIX_CALL(120, &params);
+  return params.ret;
+}
+
+WINEMETAL_API bool
+WMTBootstrapRegister(const char *name, mach_port_t mach_port) {
+  struct unixcall_bootstrap params;
+  strncpy(params.name, name, sizeof(params.name) - 1);
+  params.name[sizeof(params.name) - 1] = '\0';
+  params.mach_port = mach_port;
+  NTSTATUS ret = WINE_UNIX_CALL(121, &params);
+  return !ret;
+}
+
+WINEMETAL_API bool
+WMTBootstrapLookUp(const char *name, mach_port_t *mach_port) {
+  struct unixcall_bootstrap params;
+  strncpy(params.name, name, sizeof(params.name) - 1);
+  params.name[sizeof(params.name) - 1] = '\0';
+  params.mach_port = 0;
+  NTSTATUS ret = WINE_UNIX_CALL(122, &params);
+  *mach_port = params.mach_port;
+  return !ret;
+}
+
+WINEMETAL_API mach_port_t
+MTLSharedEvent_createMachPort(obj_handle_t event) {
+  struct unixcall_mtlsharedevent_createmachport params;
+  params.event = event;
+  params.ret_mach_port = 0;
+  UNIX_CALL(123, &params);
+  return params.ret_mach_port;
+}
+
+WINEMETAL_API obj_handle_t
+MTLDevice_newSharedEventWithMachPort(obj_handle_t device, mach_port_t mach_port) {
+  struct unixcall_mtldevice_newsharedeventwithmachport params;
+  params.device = device;
+  params.mach_port = mach_port;
+  params.ret_event = 0;
+  UNIX_CALL(124, &params);
+  return params.ret_event;
+}
+
+WINEMETAL_API uint64_t
+MTLDevice_registryID(obj_handle_t device) {
+  struct unixcall_generic_obj_uint64_ret params;
+  params.handle = device;
+  params.ret = 0;
+  UNIX_CALL(125, &params);
+  return params.ret;
+}
+
+WINEMETAL_API bool
+MTLSharedEvent_waitUntilSignaledValue(obj_handle_t event, uint64_t value, uint64_t timeout) {
+  struct unixcall_mtlsharedevent_waituntilsignaledvalue params;
+  params.event = event;
+  params.value = value;
+  params.timeout_ms = timeout;
+  params.ret_timeout = 0;
+  UNIX_CALL(126, &params);
+  return params.ret_timeout;
 }

@@ -191,6 +191,8 @@ operator<<(std::ostream &os, WMTPixelFormat e) {
     ENUM_NAME(WMTPixelFormatRGBA8Sint);
     ENUM_NAME(WMTPixelFormatBGRA8Unorm);
     ENUM_NAME(WMTPixelFormatBGRA8Unorm_sRGB);
+    ENUM_NAME(WMTPixelFormatBGRX8Unorm);
+    ENUM_NAME(WMTPixelFormatBGRX8Unorm_sRGB);
     ENUM_NAME(WMTPixelFormatRGB10A2Unorm);
     ENUM_NAME(WMTPixelFormatRGB10A2Uint);
     ENUM_NAME(WMTPixelFormatRG11B10Float);
@@ -286,10 +288,10 @@ operator<<(std::ostream &os, WMTPixelFormat e) {
     ENUM_NAME(WMTPixelFormatDepth16Unorm);
     ENUM_NAME(WMTPixelFormatDepth32Float);
     ENUM_NAME(WMTPixelFormatStencil8);
-    ENUM_NAME(WMTPixelFormatDepth24Unorm_Stencil8);
+    // ENUM_NAME(WMTPixelFormatDepth24Unorm_Stencil8);
     ENUM_NAME(WMTPixelFormatDepth32Float_Stencil8);
     ENUM_NAME(WMTPixelFormatX32_Stencil8);
-    ENUM_NAME(WMTPixelFormatX24_Stencil8);
+    // ENUM_NAME(WMTPixelFormatX24_Stencil8);
     ENUM_NAME(WMTPixelFormatBGRA10_XR);
     ENUM_NAME(WMTPixelFormatBGRA10_XR_sRGB);
     ENUM_NAME(WMTPixelFormatBGR10_XR);

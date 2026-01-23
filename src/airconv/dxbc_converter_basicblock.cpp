@@ -320,6 +320,17 @@ std::function<IRValue(pvalue)> pop_output_reg_fix_unorm(uint32_t from_reg, uint3
   };
 }
 
+std::function<IRValue(pvalue)> pop_output_reg_sanitize_pos(uint32_t from_reg, uint32_t mask, uint32_t to_element) {
+  return [=](pvalue ret) {
+    return make_irvalue_bind([=](context ctx) -> IRValue {
+      auto const_index = llvm::ConstantInt::get(ctx.llvm, llvm::APInt{32, from_reg, false});
+      auto fvec4 = co_yield load_from_array_at(ctx.resource.output.ptr_float4, const_index);
+      auto fixed = ctx.air.SanitizePosition(fvec4);
+      co_return ctx.builder.CreateInsertValue(ret, fixed, {to_element});
+    });
+  };
+}
+
 IREffect
 pop_mesh_output_render_taget_array_index(uint32_t from_reg, uint32_t mask, pvalue primitive_id) {
   auto ctx = co_yield get_context();
@@ -440,19 +451,6 @@ IREffect pull_vertex_input(
   });
 };
 
-auto
-load_condition(SrcOperand src, bool non_zero_test) {
-  return make_irvalue([=](context ctx) {
-    dxbc::Converter dxbc(ctx.air, ctx, ctx.resource);
-    auto element = dxbc.LoadOperand(src, kMaskComponentX);
-    if (non_zero_test) {
-      return ctx.builder.CreateICmpNE(element, ctx.builder.getInt32(0));
-    } else {
-      return ctx.builder.CreateICmpEQ(element, ctx.builder.getInt32(0));
-    }
-  });
-};
-
 llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
   BasicBlock *entry, context &ctx, llvm::BasicBlock *return_bb
 ) {
@@ -464,6 +462,8 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
 
   std::stack<BasicBlock *> block_to_visit;
   block_to_visit.push(entry);
+
+  dxbc::Converter dxbc(ctx.air, ctx, ctx.resource);
 
   while (!block_to_visit.empty()) {
     auto current = block_to_visit.top();
@@ -507,11 +507,18 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
     );
   }
 
+  auto load_condition = [&dxbc, &builder](SrcOperand src, bool non_zero_test) {
+    auto element = dxbc.LoadOperand(src, kMaskComponentX);
+    if (non_zero_test)
+      return builder.CreateICmpNE(element, builder.getInt32(0));
+    else
+      return builder.CreateICmpEQ(element, builder.getInt32(0));
+  };
+
   auto bb_pop = builder.GetInsertBlock();
   for (auto &[current, bb] : visit_order) {
     builder.SetInsertPoint(bb);
 
-    dxbc::Converter dxbc(ctx.air, ctx, ctx.resource);
     current->instructions.for_each(dxbc);
 
     if (auto err = std::visit(
@@ -529,17 +536,11 @@ llvm::Expected<llvm::BasicBlock *> convert_basicblocks(
             [&](BasicBlockConditionalBranch cond) -> llvm::Error {
               auto target_true_bb = visited[cond.true_branch];
               auto target_false_bb = visited[cond.false_branch];
-              auto test =
-                load_condition(cond.cond.operand, cond.cond.test_nonzero)
-                  .build(ctx);
-              if (auto err = test.takeError()) {
-                return err;
-              }
-              builder.CreateCondBr(test.get(), target_true_bb, target_false_bb);
+              auto test = load_condition(cond.cond.operand, cond.cond.test_nonzero);
+              builder.CreateCondBr(test, target_true_bb, target_false_bb);
               return llvm::Error::success();
             },
             [&](BasicBlockSwitch swc) -> llvm::Error {
-              dxbc::Converter dxbc(ctx.air, ctx, ctx.resource);
               auto value = dxbc.LoadOperand(swc.value, kMaskComponentX);
               auto switch_inst = builder.CreateSwitch(
                 value, visited[swc.case_default], swc.cases.size()

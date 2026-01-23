@@ -15,6 +15,7 @@ ArgumentEncodingContext::ArgumentEncodingContext(CommandQueue &queue, WMT::Devic
     clear_rt_cmd(device, lib, *this),
     blit_depth_stencil_cmd(device, lib, *this),
     clear_res_cmd(device, lib, *this),
+    mv_scale_cmd(device, lib, *this),
     device_(device),
     queue_(queue) {
   dummy_sampler_info_.support_argument_buffers = true;
@@ -39,11 +40,10 @@ ArgumentEncodingContext::ArgumentEncodingContext(CommandQueue &queue, WMT::Devic
                                 WMTResourceHazardTrackingModeUntracked;
   dummy_cbuffer_ = device.newBuffer(dummy_cbuffer_info_);
   std::memset(dummy_cbuffer_info_.memory.get(), 0, 65536);
-  cpu_buffer_ = malloc(kEncodingContextCPUHeapSize);
+  cpu_buffer_chunks_.emplace_back();
 };
 
 ArgumentEncodingContext::~ArgumentEncodingContext() {
-  free(cpu_buffer_);
   wsi::aligned_free(dummy_cbuffer_host_);
 };
 
@@ -317,7 +317,7 @@ ArgumentEncodingContext::encodeShaderResources(
       } else if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE) {
         if (uav.buffer.ptr()) {
           assert(arg.Flags & MTL_SM50_SHADER_ARGUMENT_TBUFFER_OFFSET);
-          auto [view, offset] = access(uav.buffer, uav.viewId, DXMT_ENCODER_RESOURCE_ACESS_READ);
+          auto [view, offset] = access(uav.buffer, uav.viewId, access_flags);
           encoded_buffer[arg.StructurePtrOffset] = view.gpu_resource_id;
           encoded_buffer[arg.StructurePtrOffset + 1] =
               ((uint64_t)uav.slice.elementCount << 32) | (uint64_t)(uav.slice.firstElement + offset);
@@ -675,6 +675,8 @@ ArgumentEncodingContext::currentFrameStatistics() {
 
 void
 ArgumentEncodingContext::$$setEncodingContext(uint64_t seq_id, uint64_t frame_id) {
+  current_buffer_chunk_ = 0;
+  cpu_buffer_ = cpu_buffer_chunks_[current_buffer_chunk_].ptr;
   cpu_buffer_offset_ = 0;
   seq_id_ = seq_id;
   frame_id_ = frame_id;
@@ -757,6 +759,7 @@ ArgumentEncodingContext::flushCommands(WMT::CommandBuffer cmdbuf, uint64_t seqId
         struct GS_MARSHAL_TASK {
           uint64_t draw_args;
           uint64_t dispatch_args_out;
+          uint64_t max_object_threadgroups;
           uint32_t vertex_count_per_warp;
           uint32_t end_of_command;
         };
@@ -767,6 +770,7 @@ ArgumentEncodingContext::flushCommands(WMT::CommandBuffer cmdbuf, uint64_t seqId
           auto & task = data->gs_arg_marshal_tasks[i];
           tasks_data[i].draw_args = task.draw_arguments_va;
           tasks_data[i].dispatch_args_out = task.dispatch_arguments_va;
+          tasks_data[i].max_object_threadgroups = task.max_object_threadgroups;
           tasks_data[i].vertex_count_per_warp = task.vertex_count_per_warp;
           tasks_data[i].end_of_command = 0;
           encoder.useResource(task.draw_arguments, WMTResourceUsageRead, WMTRenderStageVertex);
@@ -780,6 +784,7 @@ ArgumentEncodingContext::flushCommands(WMT::CommandBuffer cmdbuf, uint64_t seqId
         struct TS_MARSHAL_TASK {
           uint64_t draw_args;
           uint64_t dispatch_args_out;
+          uint64_t max_object_threadgroups;
           uint16_t control_point_count;
           uint16_t patch_per_group;
           uint32_t end_of_command;
@@ -791,6 +796,7 @@ ArgumentEncodingContext::flushCommands(WMT::CommandBuffer cmdbuf, uint64_t seqId
           auto & task = data->ts_arg_marshal_tasks[i];
           tasks_data[i].draw_args = task.draw_arguments_va;
           tasks_data[i].dispatch_args_out = task.dispatch_arguments_va;
+          tasks_data[i].max_object_threadgroups = task.max_object_threadgroups;
           tasks_data[i].control_point_count = task.control_point_count;
           tasks_data[i].patch_per_group = task.patch_per_group;
           tasks_data[i].end_of_command = 0;
@@ -935,6 +941,12 @@ ArgumentEncodingContext::flushCommands(WMT::CommandBuffer cmdbuf, uint64_t seqId
 
   cmdbuf.encodeSignalEvent(queue_.event, event_seq_id);
 
+  for (size_t i = cpu_buffer_chunks_.size() - 1; i > current_buffer_chunk_; i--) {
+    if (++cpu_buffer_chunks_[i].underused_times > kEncodingContextCPUHeapLifetime) {
+      cpu_buffer_chunks_.pop_back();
+    }
+  }
+
   return visibility_readback;
 }
 
@@ -1009,14 +1021,12 @@ ArgumentEncodingContext::checkEncoderRelation(EncoderData *former, EncoderData *
       auto render = reinterpret_cast<RenderEncoderData *>(former);
       auto clear = reinterpret_cast<ClearEncoderData *>(latter);
 
-      if (clear->clear_dsv) {
-        if (render->info.depth.texture == clear->texture.handle) {
-          render->info.depth.store_action = WMTStoreActionDontCare;
-        }
-        if (render->info.stencil.texture == clear->texture.handle) {
-          render->info.stencil.store_action = WMTStoreActionDontCare;
-        }
-      }
+      // DontCare can be used because it's going to be cleared anyway
+      // just keep in mind DontCare != DontStore
+      if (clear->clear_dsv & 1 && render->info.depth.texture == clear->texture.handle)
+        render->info.depth.store_action = WMTStoreActionDontCare;
+      if (clear->clear_dsv & 2 && render->info.stencil.texture == clear->texture.handle)
+        render->info.stencil.store_action = WMTStoreActionDontCare;
     }
     return hasDataDependency(latter, former) ? DXMT_ENCODER_LIST_OP_SYNCHRONIZE : DXMT_ENCODER_LIST_OP_SWAP;
   }

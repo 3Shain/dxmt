@@ -67,13 +67,13 @@ template <bool EnableMetalFX>
 class MTLD3D11SwapChain final : public MTLDXGISubObject<IDXGISwapChain4, MTLD3D11Device> {
 public:
   MTLD3D11SwapChain(
-      IDXGIFactory1 *pFactory, MTLD3D11Device *pDevice, IMTLDXGIDevice *pLayerFactoryWeakref,
+      IDXGIFactory1 *pFactory, MTLD3D11Device *pDevice, IMTLDXGIDevice *pDXGIDevice,
        HWND hWnd, const DXGI_SWAP_CHAIN_DESC1 *pDesc,
       const DXGI_SWAP_CHAIN_FULLSCREEN_DESC *pFullscreenDesc
   ) :
       MTLDXGISubObject(pDevice),
       factory_(pFactory),
-      layer_factory_weak_(pLayerFactoryWeakref),
+      dxgi_device_(pDXGIDevice),
       presentation_count_(0),
       desc_(*pDesc),
       device_context_(pDevice->GetImmediateContextPrivate()),
@@ -103,7 +103,7 @@ public:
 
     presenter = Rc(new Presenter(pDevice->GetMTLDevice(), layer_weak_,
                                  pDevice->GetDXMTDevice().queue().cmd_library,
-                                 scale_factor));
+                                 scale_factor, desc_.SampleDesc.Count));
 
     frame_latency = kSwapchainLatency;
     present_semaphore_ = CreateSemaphore(nullptr, frame_latency,
@@ -134,7 +134,7 @@ public:
                            (double)current_mode.refreshRate.denominator;
     }
 
-    hud.initialize(GetVersionDescriptionText(m_device->GetDirectXVersion(), m_device->GetFeatureLevel()));
+    hud.initialize(GetVersionDescriptionText(device_->GetDirectXVersion(), device_->GetFeatureLevel()));
 
     backbuffer_desc_ = D3D11_TEXTURE2D_DESC1 {
       .Width = desc_.Width,
@@ -359,7 +359,7 @@ public:
 
     backbuffer_ = nullptr;
     if (FAILED(dxmt::CreateDeviceTexture2D(
-            m_device, &backbuffer_desc_, nullptr, reinterpret_cast<ID3D11Texture2D1 **>(&backbuffer_)
+            device_, &backbuffer_desc_, nullptr, reinterpret_cast<ID3D11Texture2D1 **>(&backbuffer_)
         )))
       return E_FAIL;
     // CreateDeviceTexture2D returns public reference, change to private one here
@@ -372,7 +372,7 @@ public:
       upscaled_desc_.Width *= scale_factor;
       upscaled_backbuffer_ = nullptr;
       if (FAILED(dxmt::CreateDeviceTexture2D(
-              m_device, &upscaled_desc_, nullptr, reinterpret_cast<ID3D11Texture2D1 **>(&upscaled_backbuffer_)
+              device_, &upscaled_desc_, nullptr, reinterpret_cast<ID3D11Texture2D1 **>(&upscaled_backbuffer_)
           )))
         return E_FAIL;
 
@@ -383,7 +383,7 @@ public:
       info.output_width = desc_.Width * scale_factor;
       info.color_format = backbuffer_->texture()->pixelFormat();
       info.output_format =upscaled_backbuffer_->texture()->pixelFormat();
-      metalfx_scaler = m_device->GetMTLDevice().newSpatialScaler(info);
+      metalfx_scaler = device_->GetMTLDevice().newSpatialScaler(info);
       D3D11_ASSERT(metalfx_scaler && "otherwise metalfx failed to initialize");
     }
 
@@ -442,8 +442,9 @@ public:
                               : colorspace_,
                           LayerSupportEDR());
     if (presenter->changeLayerProperties(
-        ConvertSwapChainFormat(desc_.Format), target_color_space,
-        desc_.Width * scale_factor, desc_.Height * scale_factor))
+            ConvertSwapChainFormat(desc_.Format), target_color_space, desc_.Width * scale_factor,
+            desc_.Height * scale_factor, desc_.SampleDesc.Count
+        ))
       device_context_->WaitUntilGPUIdle();
   };
 
@@ -456,7 +457,7 @@ public:
     Com<IDXGIAdapter> adapter;
     Com<IDXGIOutput> output;
 
-    if (FAILED(layer_factory_weak_->GetAdapter(&adapter)))
+    if (FAILED(dxgi_device_->GetAdapter(&adapter)))
       return E_FAIL;
 
     for (uint32_t i = 0; SUCCEEDED(adapter->EnumOutputs(i, &output)); i++) {
@@ -498,7 +499,7 @@ public:
   HRESULT
   STDMETHODCALLTYPE
   GetFrameStatistics(DXGI_FRAME_STATISTICS *stats) final {
-    WARN("DXGISwapChain::GetFrameStatistics: stub");
+    DEBUG("DXGISwapChain::GetFrameStatistics: stub");
     stats->PresentCount = presentation_count_;
     stats->SyncRefreshCount = presentation_count_;
     stats->PresentRefreshCount = presentation_count_;
@@ -602,10 +603,10 @@ public:
                                                : init_refresh_rate_),
                  preferred_max_frame_rate ? 1.0 / preferred_max_frame_rate : 0);
 
-    std::unique_lock<d3d11_device_mutex> lock(m_device->mutex);
+    std::unique_lock<d3d11_device_mutex> lock(device_->mutex);
 
     device_context_->PrepareFlush();
-    auto &cmd_queue = m_device->GetDXMTDevice().queue();
+    auto &cmd_queue = device_->GetDXMTDevice().queue();
     auto chunk = cmd_queue.CurrentChunk();
     chunk->signal_frame_latency_fence_ = cmd_queue.CurrentFrameSeq();
     if constexpr (EnableMetalFX) {
@@ -864,7 +865,7 @@ private:
   };
 
   Com<IDXGIFactory1> factory_;
-  IMTLDXGIDevice *layer_factory_weak_;
+  Com<IMTLDXGIDevice> dxgi_device_;
   WMT::Object native_view_;
   WMT::MetalLayer layer_weak_;
   ULONG presentation_count_;

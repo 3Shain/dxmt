@@ -608,7 +608,8 @@ AIRBuilder::CreateSampleGrad(
 
 std::pair<Value *, Value *>
 AIRBuilder::CreateRead(
-    const Texture &Texture, Value *Handle, Value *Pos, Value *ArrayIndex, Value *SampleIndexOrCubeFace, Value *Level
+    const Texture &Texture, Value *Handle, Value *Pos, Value *ArrayIndex, Value *SampleIndexOrCubeFace, Value *Level,
+    bool DeviceCoherent
 ) {
   assert(Texture.kind <= Texture::last_resource_kind);
   auto &TexInfo = TextureInfo[Texture.kind];
@@ -665,6 +666,8 @@ AIRBuilder::CreateRead(
 
   std::string FnName = "air.read_";
   FnName += TexInfo.air_symbol_suffix;
+  if (DeviceCoherent)
+    FnName += ".device_coherent";
   FnName += getTypeOverloadSuffix(getTexelType(Texture), getTexelSign(Texture));
 
   auto Fn = getModule()->getOrInsertFunction(
@@ -678,7 +681,8 @@ AIRBuilder::CreateRead(
 
 CallInst *
 AIRBuilder::CreateWrite(
-    const Texture &Texture, Value *Handle, Value *Pos, Value *ArrayIndex, Value *CubeFace, Value *Level, Value *ValVec4
+    const Texture &Texture, Value *Handle, Value *Pos, Value *ArrayIndex, Value *CubeFace, Value *Level, Value *ValVec4,
+    bool DeviceCoherent
 ) {
   assert(Texture.kind <= Texture::last_resource_kind);
   auto &TexInfo = TextureInfo[Texture.kind];
@@ -726,6 +730,8 @@ AIRBuilder::CreateWrite(
 
   std::string FnName = "air.write_";
   FnName += TexInfo.air_symbol_suffix;
+  if (DeviceCoherent)
+    FnName += ".device_coherent";
   FnName += getTypeOverloadSuffix(getTexelType(Texture), getTexelSign(Texture));
 
   auto Fn = getModule()->getOrInsertFunction(FnName, FunctionType::get(getVoidTy(), Tys, false), Attrs);
@@ -994,6 +1000,36 @@ AIRBuilder::CreateCalculateLOD(const Texture &Texture, Value *Handle, Value *Sam
       getModule()->getOrInsertFunction(FnUnclampedName, FunctionType::get(getFloatTy(), Tys, false), Attrs);
 
   return {builder.CreateCall(Fn, Ops), builder.CreateCall(FnUnclamped, Ops)};
+}
+
+CallInst *
+AIRBuilder::CreateTextureFence(const Texture &Texture, Value *Handle) {
+  assert(Texture.kind <= Texture::last_resource_kind);
+  auto &TexInfo = TextureInfo[Texture.kind];
+
+  auto &Context = getContext();
+  auto Attrs = AttributeList::get(
+      Context,
+      {
+          {1U, Attribute::get(Context, Attribute::AttrKind::NoCapture)},
+          {~0U, Attribute::get(Context, Attribute::AttrKind::MustProgress)},
+          {~0U, Attribute::get(Context, Attribute::AttrKind::NoUnwind)},
+          {~0U, Attribute::get(Context, Attribute::AttrKind::WillReturn)},
+      }
+  );
+
+  SmallVector<Value *> Ops;
+  SmallVector<Type *> Tys;
+
+  Tys.push_back(getTextureHandleType(Texture));
+  Ops.push_back(Handle);
+
+  std::string FnName = "air.fence_";
+  FnName += TexInfo.air_symbol_suffix;
+
+  auto Fn = getModule()->getOrInsertFunction(FnName, FunctionType::get(getVoidTy(), Tys, false), Attrs);
+
+  return builder.CreateCall(Fn, Ops);
 }
 
 Value *
@@ -1489,7 +1525,7 @@ AIRBuilder::CreateSetMeshPosition(Value *Vertex, Value *Position) {
       Attrs
   );
 
-  return builder.CreateCall(Fn, {getMeshHandle(), Vertex, Position});
+  return builder.CreateCall(Fn, {getMeshHandle(), Vertex, SanitizePosition(Position)});
 }
 
 CallInst *
@@ -1606,9 +1642,9 @@ AIRBuilder::CreateSetMeshPointSize(Value *Vertex, Value *Size) {
 }
 
 Value *
-AIRBuilder::CreateFPUnOp(FPUnOp Op, Value *Operand) {
+AIRBuilder::CreateFPUnOp(FPUnOp Op, Value *Operand, bool FastVariant) {
   static char const *FnNames[] = {
-      "saturate", "log2", "exp2", "sqrt", "rsqrt", "fract", "rint", "floor", "ceil", "trunc", "cos", "sin",
+      "saturate", "log2", "exp2", "sqrt", "rsqrt", "fract", "rint", "floor", "ceil", "trunc", "cos", "sin", "fabs",
   };
 
   if (uint32_t(Op) >= std::size(FnNames)) {
@@ -1625,7 +1661,7 @@ AIRBuilder::CreateFPUnOp(FPUnOp Op, Value *Operand) {
   auto OperandType = Operand->getType();
 
   std::string FnName = "air.";
-  if (builder.getFastMathFlags().isFast())
+  if (FastVariant)
     FnName += "fast_";
   FnName += FnNames[Op];
   FnName += getTypeOverloadSuffix(OperandType);
@@ -1634,7 +1670,7 @@ AIRBuilder::CreateFPUnOp(FPUnOp Op, Value *Operand) {
 }
 
 Value *
-AIRBuilder::CreateFPBinOp(FPBinOp Op, Value *LHS, Value *RHS) {
+AIRBuilder::CreateFPBinOp(FPBinOp Op, Value *LHS, Value *RHS, bool FastVariant) {
   static char const *FnNames[] = {
       "fmax",
       "fmin",
@@ -1654,7 +1690,7 @@ AIRBuilder::CreateFPBinOp(FPBinOp Op, Value *LHS, Value *RHS) {
   auto OperandType = LHS->getType();
 
   std::string FnName = "air.";
-  if (builder.getFastMathFlags().isFast())
+  if (FastVariant)
     FnName += "fast_";
   FnName += FnNames[Op];
   FnName += getTypeOverloadSuffix(OperandType);
@@ -1718,6 +1754,102 @@ AIRBuilder::CreateIntBinOp(IntBinOp Op, Value *LHS, Value *RHS, bool Signed) {
       FnName, llvm::FunctionType::get(OperandType, {OperandType, OperandType}, false), Attrs
   );
   return builder.CreateCall(Fn, {LHS, RHS});
+}
+
+Value *
+AIRBuilder::CreateAtomicRMW(AtomicRMWInst::BinOp Op, Value *Ptr, Value *Val) {
+  std::string FnName = "air.atomic.";
+  auto TyPtr = dyn_cast<PointerType>(Ptr->getType());
+  if (!TyPtr) {
+    debug << "invalid operation: atomicrmw: not a pointer.\n";
+    return nullptr; // TODO
+  }
+  if (TyPtr->getNonOpaquePointerElementType() != Val->getType()) {
+    debug << "invalid operation: atomicrmw: mismatched atomic operands.\n";
+    return nullptr; // TODO
+  }
+  Value *MemFlags = nullptr;
+  switch (TyPtr->getAddressSpace()) {
+  case 1:
+    FnName += "global.";
+    MemFlags = getInt(3);
+    break;
+  case 3:
+    FnName += "local.";
+    MemFlags = getInt(1);
+    break;
+  default:
+    debug << "invalid operation: atomicrmw: not a valid address space.\n";
+    return nullptr; // TODO
+  }
+  Signedness Sign = Signedness::Unsigned;
+  switch (Op) {
+  case llvm::AtomicRMWInst::Add:
+    FnName += "add";
+    break;
+  case llvm::AtomicRMWInst::Sub:
+    FnName += "sub";
+    break;
+  case llvm::AtomicRMWInst::And:
+    FnName += "and";
+    break;
+  case llvm::AtomicRMWInst::Or:
+    FnName += "or";
+    break;
+  case llvm::AtomicRMWInst::Xor:
+    FnName += "xor";
+    break;
+  case llvm::AtomicRMWInst::Max:
+    Sign = Signedness::Signed;
+    FnName += "max";
+    break;
+  case llvm::AtomicRMWInst::Min:
+    Sign = Signedness::Signed;
+    FnName += "min";
+    break;
+  case llvm::AtomicRMWInst::UMax:
+    FnName += "max";
+    break;
+  case llvm::AtomicRMWInst::UMin:
+    FnName += "min";
+    break;
+  case llvm::AtomicRMWInst::Xchg:
+    FnName += "xchg";
+    Sign = Signedness::DontCare;
+    break;
+  default:
+    FnName += "<invalid atomic op>";
+    break;
+  }
+  auto TyOp = TyPtr->getNonOpaquePointerElementType();
+  FnName += getTypeOverloadSuffix(TyPtr->getNonOpaquePointerElementType(), Sign);
+
+  auto &Context = getContext();
+  auto Attrs = AttributeList::get(
+      Context, {{1U, Attribute::get(Context, Attribute::AttrKind::NoCapture)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::NoUnwind)},
+                {~0U, Attribute::get(Context, Attribute::AttrKind::WillReturn)}}
+  );
+
+  auto Fn = getModule()->getOrInsertFunction(
+      FnName, llvm::FunctionType::get(TyOp, {TyPtr, TyOp, getIntTy(), getIntTy(), getBoolTy()}, false), Attrs
+  );
+  return builder.CreateCall(Fn, {Ptr, Val, getInt(0), MemFlags, getBool(true)});
+}
+
+llvm::Value *
+AIRBuilder::SanitizePosition(llvm::Value *Pos) {
+  // isfinite(Pos)
+  auto Mask = builder.CreateICmpNE(
+      builder.CreateAnd(builder.CreateBitCast(Pos, getIntTy(4)), 0x7f800000ull),
+      getInt4(0x7f800000, 0x7f800000, 0x7f800000, 0x7f800000)
+  );
+  auto ValidPos = builder.CreateAnd(
+      builder.CreateAnd(builder.CreateExtractElement(Mask, 0ull), builder.CreateExtractElement(Mask, 1ull)),
+      builder.CreateAnd(builder.CreateExtractElement(Mask, 2ull), builder.CreateExtractElement(Mask, 3ull))
+  );
+  auto PosClipped = llvm::ConstantVector::get({getFloat(0.0f), getFloat(0.0f), getFloat(1.0f), getFloat(0.0f)});
+  return builder.CreateSelect(ValidPos, Pos, PosClipped);
 }
 
 } // namespace llvm::air

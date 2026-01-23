@@ -13,6 +13,7 @@ airconv_src = files([
  'metallib_writer.cpp',
  'nt/air_builder.cpp',
  'nt/dxbc_converter_base.cpp',
+ 'transforms/lower_16bit_texread.cpp',
 ])
 
 airconv_cli_src = files(['airconv_cli.cpp'])
@@ -46,24 +47,19 @@ airconv_forward_dep = declare_dependency(
   include_directories : [ dxmt_include_path, include_directories('.') ],
 )
 
-airshader_bc = custom_target(
-  'airshader-bc',
-  input : 'nt/air_shader.metal',
-  output : 'air_shader.air',
-  command : [
-    find_program('xcrun'), '-sdk', 'macosx', 'metal',
-    '-o', '@OUTPUT@', '-c', '@INPUT@', '-std=metal3.1', '--target=air64-apple-macos14.0',
-  ]
-)
+airconv_shaders = [
+  'shaders/air_msad.metal',
+  'shaders/air_samplepos.metal',
+  'shaders/air_tessellation.metal',
+]
 
-airshader_embeded = custom_target(
-  'airshader-embedded',
-  input : airshader_bc,
-  output : 'air_shader.c',
-  command : ['xxd', '-n', 'air_shader', '-i', '@INPUT@', '@OUTPUT@']
+airconv_shaders_ir = metalir_generator.process(
+  airconv_shaders,
+  extra_args: ['-std=metal3.1', '--target=air64-apple-macos14.0'],
 )
+airconv_shaders_header = hexdump_generator.process(airconv_shaders_ir)
 
-airconv_src += airshader_embeded
+airconv_src += airconv_shaders_header
 
 build_airconv_for_windows = get_option('build_airconv_for_windows')
 
@@ -74,7 +70,7 @@ llvm_include_path = include_directories('../../toolchains/llvm/include') # FIXME
 airconv_lib = static_library('airconv', airconv_src,
   include_directories : [ dxmt_include_path, llvm_include_path ],
   cpp_args            : [ llvm_cxx_flags, '-DWIN_EXPORT' ],
-  dependencies        : [ DXBCParser_dep ],
+  dependencies        : [ dxbc_parser_dep ],
   link_args           : llvm_ld_flags
 )
 
@@ -89,7 +85,7 @@ lib_d3dcompiler = cpp.find_library('d3dcompiler_47')
 executable('airconv', airconv_src + airconv_cli_src,
   include_directories : [ dxmt_include_path, llvm_include_path ],
   cpp_args            : [ llvm_cxx_flags, '-DWIN_EXPORT' ],
-  dependencies        : [ DXBCParser_dep, lib_d3dcompiler ],
+  dependencies        : [ dxbc_parser_dep, lib_d3dcompiler ],
   link_args           : [ llvm_ld_flags, llvm_deps ]
 )
 

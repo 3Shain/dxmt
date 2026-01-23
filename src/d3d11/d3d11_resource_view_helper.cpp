@@ -32,7 +32,6 @@ InitializeAndNormalizeViewDescriptor(
     return E_FAIL;
   }
 
-  Descriptor.usage = WMTTextureUsageShaderRead;
   FixDepthStencilFormat(pTexture, metal_format);
   WMTTextureType TextureType = pTexture->textureType();
   switch (ViewDesc.ViewDimension) {
@@ -230,7 +229,6 @@ InitializeAndNormalizeViewDescriptor(
     return E_FAIL;
   }
 
-  Descriptor.usage = WMTTextureUsageShaderRead | WMTTextureUsageShaderWrite;
   FixDepthStencilFormat(pTexture, metal_format);
   WMTTextureType TextureType = pTexture->textureType();
   switch (ViewDesc.ViewDimension) {
@@ -292,6 +290,7 @@ InitializeAndNormalizeViewDescriptor(
     break;
   }
   case D3D11_UAV_DIMENSION_TEXTURE3D: {
+    ArraySize = std::max(ArraySize >> ViewDesc.Texture3D.MipSlice, 1u); 
     if (~ViewDesc.Texture3D.WSize == 0)
       ViewDesc.Texture3D.WSize = ArraySize - ViewDesc.Texture3D.FirstWSlice;
     if (TextureType == WMTTextureType3D) {
@@ -336,7 +335,6 @@ HRESULT InitializeAndNormalizeViewDescriptor(
     return E_FAIL;
   }
 
-  Descriptor.usage = WMTTextureUsageRenderTarget;
   AttachmentDesc.DepthPlane = 0;
   AttachmentDesc.RenderTargetArrayLength = 0;
   AttachmentDesc.SampleCount = pTexture->sampleCount();
@@ -470,6 +468,7 @@ HRESULT InitializeAndNormalizeViewDescriptor(
     break;
   }
   case D3D11_RTV_DIMENSION_TEXTURE3D: {
+    ArraySize = std::max(ArraySize >> ViewDesc.Texture3D.MipSlice, 1u); 
     if (~ViewDesc.Texture3D.WSize == 0)
       ViewDesc.Texture3D.WSize = ArraySize - ViewDesc.Texture3D.FirstWSlice;
     if (texture_type == WMTTextureType3D) {
@@ -523,7 +522,6 @@ InitializeAndNormalizeViewDescriptor(
   }
 
   ViewDesc.Flags = ViewDesc.Flags & 3;
-  Descriptor.usage = WMTTextureUsageRenderTarget;
   AttachmentDesc.DepthPlane = 0;
   AttachmentDesc.RenderTargetArrayLength = 0;
   AttachmentDesc.SampleCount = pTexture->sampleCount();

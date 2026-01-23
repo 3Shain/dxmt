@@ -180,17 +180,25 @@ Converter::LoadOperand(const SrcOperandTemp &SrcOp, mask_t Mask) {
     Handle = res.phases[SrcOp.phase].temp.ptr_int4;
   }
   auto TyHandle = GetArrayType(Handle);
+  auto TyInt = air.getIntTy();
 
   if (auto Comp = ComponentFromScalarMask(Mask, SrcOp._.swizzle); Comp >= 0) {
-    auto TyInt = air.getIntTy();
-    auto Ptr = ir.CreateGEP(TyHandle, Handle, {ir.getInt32(0), ir.getInt32(SrcOp.regid), ir.getInt32(Comp)});
+    auto Ptr = ir.CreateGEP(
+        TyHandle, Handle,
+        {ir.getInt32(0), ir.CreateAdd(ir.CreateShl(ir.getInt32(SrcOp.regid), 2), ir.getInt32(Comp))}
+    );
     auto ValueInt = ir.CreateLoad(TyInt, Ptr);
     return ApplySrcModifier(SrcOp._, ValueInt, Mask);
   }
 
-  auto TyIntVec4 = air.getIntTy(4);
-  auto Ptr = ir.CreateGEP(TyHandle, Handle, {ir.getInt32(0), ir.getInt32(SrcOp.regid)});
-  auto ValueIntVec4 = ir.CreateLoad(TyIntVec4, Ptr);
+  llvm::Value *ValueIntVec4 = llvm::PoisonValue::get(air.getIntTy(4));
+  for (auto [DstComp, _] : EnumerateComponents(MemoryAccessMask(Mask, SrcOp._.swizzle))) {
+    auto Ptr = ir.CreateGEP(
+        TyHandle, Handle,
+        {ir.getInt32(0), ir.CreateAdd(ir.CreateShl(ir.getInt32(SrcOp.regid), 2), ir.getInt32(DstComp))}
+    );
+    ValueIntVec4 = ir.CreateInsertElement(ValueIntVec4, ir.CreateLoad(TyInt, Ptr), DstComp);
+  }
   return ApplySrcModifier(SrcOp._, ValueIntVec4, Mask);
 }
 
@@ -261,23 +269,27 @@ Converter::LoadOperand(const SrcOperandIndexableTemp &SrcOp, mask_t Mask) {
 
   auto Handle = regfile.ptr_int_vec;
   auto TyHandle = GetArrayType(Handle);
+  auto Index = LoadOperandIndex(SrcOp.regindex);
+  auto TyInt = air.getIntTy();
 
   if (auto Comp = ComponentFromScalarMask(Mask, SrcOp._.swizzle); Comp >= 0) {
-    auto TyInt = air.getIntTy();
-    auto Ptr = ir.CreateGEP(TyHandle, Handle, {ir.getInt32(0), LoadOperandIndex(SrcOp.regindex), ir.getInt32(Comp)});
+    auto Ptr = ir.CreateGEP(
+        TyHandle, Handle,
+        {ir.getInt32(0), ir.CreateAdd(ir.CreateMul(Index, ir.getInt32(regfile.vec_size)), ir.getInt32(Comp))}
+    );
     auto ValueInt = ir.CreateLoad(TyInt, Ptr);
     return ApplySrcModifier(SrcOp._, ValueInt, Mask);
   }
 
   auto TyIntVec = air.getIntTy(regfile.vec_size);
-  auto Ptr = ir.CreateGEP(
-      TyHandle, Handle,
-      {
-          ir.getInt32(0),
-          LoadOperandIndex(SrcOp.regindex),
-      }
-  );
-  auto ValueIntVec = ir.CreateLoad(TyIntVec, Ptr);
+  llvm::Value *ValueIntVec = llvm::PoisonValue::get(TyIntVec);
+  for (auto [DstComp, _] : EnumerateComponents(MemoryAccessMask(Mask, SrcOp._.swizzle))) {
+    auto Ptr = ir.CreateGEP(
+        TyHandle, Handle,
+        {ir.getInt32(0), ir.CreateAdd(ir.CreateMul(Index, ir.getInt32(regfile.vec_size)), ir.getInt32(DstComp))}
+    );
+    ValueIntVec = ir.CreateInsertElement(ValueIntVec, ir.CreateLoad(TyInt, Ptr), DstComp);
+  }
   return ApplySrcModifier(SrcOp._, ValueIntVec, Mask);
 }
 
@@ -365,12 +377,14 @@ Converter::LoadOperand(const SrcOperandInputOCP &SrcOp, mask_t Mask) {
 
 llvm::Value *
 Converter::ApplySrcModifier(SrcOperandCommon C, llvm::Value *Value, mask_t Mask) {
+  using namespace llvm::air;
+
   Value = MaskSwizzle(Value, Mask, C.swizzle);
   switch (C.read_type) {
   case OperandDataType::Float:
     Value = BitcastToFloat(Value);
     if (C.abs)
-      Value = ir.CreateUnaryIntrinsic(llvm::Intrinsic::fabs, Value);
+      Value = air.CreateFPUnOp(AIRBuilder::fabs, Value);
     if (C.neg)
       Value = ir.CreateFNeg(Value);
     break;
@@ -392,7 +406,7 @@ llvm::Optional<TextureResourceHandle>
 Converter::LoadTexture(const SrcOperandResource &SrcOp) {
   using namespace llvm::air;
 
-  auto &[res, res_handle_fn, md_fn] = ctx.resource.srv_range_map[SrcOp.range_id];
+  auto &[res, res_handle_fn, md_fn, global_coherent] = ctx.resource.srv_range_map[SrcOp.range_id];
   auto res_handle = res_handle_fn(nullptr).build(ctx);
   if (res_handle.takeError())
     return {};
@@ -412,7 +426,8 @@ Converter::LoadTexture(const SrcOperandResource &SrcOp) {
   );
 
   return llvm::Optional<TextureResourceHandle>(
-      {texture, res.resource_kind_logical, res_handle.get(), md.get(), SrcOp.read_swizzle}
+      {texture, res.resource_kind_logical, res_handle.get(), md.get(), SrcOp.read_swizzle,
+       global_coherent && SupportsMemoryCoherency()}
   );
 }
 
@@ -420,7 +435,7 @@ llvm::Optional<TextureResourceHandle>
 Converter::LoadTexture(const SrcOperandUAV &SrcOp) {
   using namespace llvm::air;
 
-  auto &[res, res_handle_fn, md_fn] = ctx.resource.uav_range_map[SrcOp.range_id];
+  auto &[res, res_handle_fn, md_fn, global_coherent] = ctx.resource.uav_range_map[SrcOp.range_id];
   auto res_handle = res_handle_fn(nullptr).build(ctx);
   if (res_handle.takeError())
     return {};
@@ -440,7 +455,8 @@ Converter::LoadTexture(const SrcOperandUAV &SrcOp) {
   );
 
   return llvm::Optional<TextureResourceHandle>(
-      {texture, res.resource_kind_logical, res_handle.get(), md.get(), SrcOp.read_swizzle}
+      {texture, res.resource_kind_logical, res_handle.get(), md.get(), SrcOp.read_swizzle,
+       global_coherent && SupportsMemoryCoherency()}
   );
 }
 
@@ -448,7 +464,7 @@ llvm::Optional<TextureResourceHandle>
 Converter::LoadTexture(const AtomicDstOperandUAV &DstOp) {
   using namespace llvm::air;
 
-  auto &[res, res_handle_fn, md_fn] = ctx.resource.uav_range_map[DstOp.range_id];
+  auto &[res, res_handle_fn, md_fn, global_coherent] = ctx.resource.uav_range_map[DstOp.range_id];
   auto res_handle = res_handle_fn(nullptr).build(ctx);
   if (res_handle.takeError())
     return {};
@@ -468,7 +484,8 @@ Converter::LoadTexture(const AtomicDstOperandUAV &DstOp) {
   );
 
   return llvm::Optional<TextureResourceHandle>(
-      {texture, res.resource_kind_logical, res_handle.get(), md.get(), swizzle_identity}
+      {texture, res.resource_kind_logical, res_handle.get(), md.get(), swizzle_identity,
+       global_coherent && SupportsMemoryCoherency()}
   );
 }
 
@@ -488,7 +505,9 @@ Converter::LoadBuffer(const SrcOperandResource &SrcOp) {
   if (md.takeError())
     return {};
 
-  return llvm::Optional<BufferResourceHandle>({res_handle.get(), md.get(), stride, SrcOp.read_swizzle, global_coherent});
+  return llvm::Optional<BufferResourceHandle>(
+      {res_handle.get(), md.get(), stride, SrcOp.read_swizzle, global_coherent && SupportsMemoryCoherency()}
+  );
 }
 
 llvm::Optional<BufferResourceHandle>
@@ -507,7 +526,9 @@ Converter::LoadBuffer(const SrcOperandUAV &SrcOp) {
   if (md.takeError())
     return {};
 
-  return llvm::Optional<BufferResourceHandle>({res_handle.get(), md.get(), stride, SrcOp.read_swizzle, global_coherent});
+  return llvm::Optional<BufferResourceHandle>(
+      {res_handle.get(), md.get(), stride, SrcOp.read_swizzle, global_coherent && SupportsMemoryCoherency()}
+  );
 }
 
 llvm::Optional<AtomicBufferResourceHandle>
@@ -526,7 +547,9 @@ Converter::LoadBuffer(const AtomicDstOperandUAV &DstOp) {
   if (md.takeError())
     return {};
 
-  return llvm::Optional<AtomicBufferResourceHandle>({res_handle.get(), md.get(), stride, DstOp.mask, global_coherent});
+  return llvm::Optional<AtomicBufferResourceHandle>(
+      {res_handle.get(), md.get(), stride, DstOp.mask, global_coherent && SupportsMemoryCoherency()}
+  );
 }
 
 llvm::Optional<BufferResourceHandle>
@@ -700,13 +723,11 @@ Converter::StoreOperand(const DstOperandTemp &DstOp, llvm::Value *Value) {
   }
   auto TyHandle = GetArrayType(Handle);
 
-  if ((DstOp._.mask & kMaskAll) == kMaskAll) {
-    auto Ptr = ir.CreateInBoundsGEP(TyHandle, Handle, {ir.getInt32(0), ir.getInt32(DstOp.regid)});
-    ir.CreateStore(VectorSplat(4, ValueInt), Ptr);
-    return;
-  }
   for (auto [DstComp, SrcComp] : EnumerateComponents(DstOp._.mask)) {
-    auto Ptr = ir.CreateInBoundsGEP(TyHandle, Handle, {ir.getInt32(0), ir.getInt32(DstOp.regid), ir.getInt32(DstComp)});
+    auto Ptr = ir.CreateInBoundsGEP(
+        TyHandle, Handle,
+        {ir.getInt32(0), ir.CreateAdd(ir.CreateShl(ir.getInt32(DstOp.regid), 2), ir.getInt32(DstComp))}
+    );
     ir.CreateStore(ExtractElement(ValueInt, SrcComp), Ptr);
   }
 }
@@ -727,7 +748,10 @@ Converter::StoreOperand(const DstOperandIndexableTemp &DstOp, llvm::Value *Value
   auto Index = LoadOperandIndex(DstOp.regindex);
 
   for (auto [DstComp, SrcComp] : EnumerateComponents(DstOp._.mask)) {
-    auto Ptr = ir.CreateInBoundsGEP(TyHandle, Handle, {ir.getInt32(0), Index, ir.getInt32(DstComp)});
+    auto Ptr = ir.CreateInBoundsGEP(
+        TyHandle, Handle,
+        {ir.getInt32(0), ir.CreateAdd(ir.CreateMul(Index, ir.getInt32(regfile.vec_size)), ir.getInt32(DstComp))}
+    );
     ir.CreateStore(ExtractElement(ValueInt, SrcComp), Ptr);
   }
 }
@@ -867,6 +891,7 @@ Converter::MaskSwizzle(llvm::Value *Value, mask_t Mask, Swizzle Swizzle) {
 
 void
 Converter::operator()(const InstMov &mov) {
+  auto FM = UseFastMath(mov._.precise_mask);
   mask_t Mask = GetMask(mov.dst);
   auto Value = LoadOperand(mov.src, Mask);
   StoreOperand(mov.dst, Value, mov._.saturate);
@@ -874,6 +899,7 @@ Converter::operator()(const InstMov &mov) {
 
 void
 Converter::operator()(const InstMovConditional &movc) {
+  auto FM = UseFastMath(movc._.precise_mask);
   mask_t Mask = GetMask(movc.dst);
   auto Src0 = LoadOperand(movc.src0, Mask);
   auto Src1 = LoadOperand(movc.src1, Mask);
@@ -907,6 +933,7 @@ Converter::operator()(const InstSwapConditional &swapc) {
 
 void
 Converter::operator()(const InstDotProduct &dot) {
+  auto FM = UseFastMath(dot._.precise_mask);
   static mask_t DimensionMask[] = {kMaskVecXY, kMaskVecXYZ, kMaskAll};
   if (dot.dimension < 2 || dot.dimension > 4) {
     return;
@@ -922,6 +949,7 @@ void
 Converter::operator()(const InstFloatUnaryOp &unary) {
   using namespace llvm::air;
 
+  auto FM = UseFastMath(unary._.precise_mask);
   mask_t Mask = GetMask(unary.dst);
   auto Value = LoadOperand(unary.src, Mask);
 
@@ -965,6 +993,7 @@ void
 Converter::operator()(const InstFloatBinaryOp &bin) {
   using namespace llvm::air;
 
+  auto FM = UseFastMath(bin._.precise_mask);
   mask_t Mask = GetMask(bin.dst);
   auto LHS = LoadOperand(bin.src0, Mask);
   auto RHS = LoadOperand(bin.src1, Mask);
@@ -976,7 +1005,6 @@ Converter::operator()(const InstFloatBinaryOp &bin) {
     Result = ir.CreateFAdd(LHS, RHS);
     break;
   case FloatBinaryOp::Mul: {
-    ForcePreciseMath precise(ir, IsInifinity(LHS) || IsInifinity(RHS));
     Result = ir.CreateFMul(LHS, RHS);
     break;
   }
@@ -984,12 +1012,10 @@ Converter::operator()(const InstFloatBinaryOp &bin) {
     Result = ir.CreateFDiv(LHS, RHS);
     break;
   case FloatBinaryOp::Min: {
-    ForcePreciseMath precise(ir, llvm::isa<llvm::Constant>(LHS) || llvm::isa<llvm::Constant>(RHS));
     Result = air.CreateFPBinOp(AIRBuilder::fmin, LHS, RHS);
     break;
   }
   case FloatBinaryOp::Max: {
-    ForcePreciseMath precise(ir, llvm::isa<llvm::Constant>(LHS) || llvm::isa<llvm::Constant>(RHS));
     Result = air.CreateFPBinOp(AIRBuilder::fmax, LHS, RHS);
     break;
   }
@@ -1088,6 +1114,7 @@ Converter::operator()(const InstIntegerBinaryOp &bin) {
 
 void
 Converter::operator()(const InstPartialDerivative &deriv) {
+  auto FM = UseFastMath(deriv._.precise_mask);
   mask_t Mask = GetMask(deriv.dst);
   auto SrcValue = LoadOperand(deriv.src, Mask);
   auto Result = air.CreateDerivative(SrcValue, deriv.ddy);
@@ -1127,6 +1154,7 @@ Converter::operator()(const InstConvert &convert) {
 
 void
 Converter::operator()(const InstFloatCompare &cmp) {
+  auto FM = UseFastMath(cmp._.precise_mask);
   mask_t Mask = GetMask(cmp.dst);
   auto LHS = LoadOperand(cmp.src0, Mask);
   auto RHS = LoadOperand(cmp.src1, Mask);
@@ -1148,31 +1176,27 @@ Converter::operator()(const InstFloatCompare &cmp) {
     break;
   }
 
-  llvm::Value * Result;
-  {
-    ForcePreciseMath precise(ir, IsConstantZero(LHS) || IsConstantZero(RHS));
-    Result = ir.CreateFCmp(Pred, LHS, RHS);
-  }
+  llvm::Value * Result = ir.CreateFCmp(Pred, LHS, RHS);
 
   StoreOperand(cmp.dst, ir.CreateSExt(Result, Result->getType()->getWithNewBitWidth(32)));
 }
 
 void
 Converter::operator()(const InstFloatMAD &mad) {
+  auto FM = UseFastMath(mad._.precise_mask);
   mask_t Mask = GetMask(mad.dst);
   auto A = LoadOperand(mad.src0, Mask);
   auto B = LoadOperand(mad.src1, Mask);
   auto C = LoadOperand(mad.src2, Mask);
 
-  auto Result = !ir.getFastMathFlags().isFast() ? ir.CreateFAdd(ir.CreateFMul(A, B), C) : air.CreateFMA(A, B, C);
-
-  StoreOperand(mad.dst, Result, mad._.saturate);
+  StoreOperand(mad.dst, air.CreateFMA(A, B, C), mad._.saturate);
 }
 
 void
 Converter::operator()(const InstSinCos &sincos) {
   using namespace llvm::air;
 
+  auto FM = UseFastMath(sincos._.precise_mask);
   mask_t MaskCos = GetMask(sincos.dst_cos);
   mask_t MaskSin = GetMask(sincos.dst_sin);
   mask_t MaskCombined = MaskCos | MaskSin;
@@ -1410,7 +1434,8 @@ Converter::operator()(const InstLoad &load) {
 
   llvm::Value *LOD = LoadOperand(load.src_address, kMaskComponentW);
 
-  auto [Value, Residency] = air.CreateRead(Tex->Texture, Tex->Handle, Address, ArrayIndex, SampleIndex, LOD);
+  auto [Value, Residency] =
+      air.CreateRead(Tex->Texture, Tex->Handle, Address, ArrayIndex, SampleIndex, LOD, Tex->GlobalCoherent);
 
   StoreOperand(load.dst, MaskSwizzle(Value, GetMask(load.dst), Tex->Swizzle));
 }
@@ -1455,7 +1480,11 @@ Converter::operator()(const InstLoadUAVTyped &load) {
     return;
   }
 
-  auto [Value, Residency] = air.CreateRead(Tex->Texture, Tex->Handle, Address, ArrayIndex, SampleIndex, air.getInt(0));
+  if (Tex->Texture.memory_access == Texture::acesss_readwrite)
+    air.CreateTextureFence(Tex->Texture, Tex->Handle);
+
+  auto [Value, Residency] =
+      air.CreateRead(Tex->Texture, Tex->Handle, Address, ArrayIndex, SampleIndex, air.getInt(0), Tex->GlobalCoherent);
 
   StoreOperand(load.dst, MaskSwizzle(Value, GetMask(load.dst), Tex->Swizzle));
 }
@@ -1500,7 +1529,7 @@ Converter::operator()(const InstStoreUAVTyped &store) {
 
   auto Value = LoadOperand(store.src, kMaskAll);
 
-  air.CreateWrite(Tex->Texture, Tex->Handle, Address, ArrayIndex, nullptr, ir.getInt32(0), Value);
+  air.CreateWrite(Tex->Texture, Tex->Handle, Address, ArrayIndex, nullptr, ir.getInt32(0), Value, Tex->GlobalCoherent);
 }
 
 llvm::Value *
@@ -2405,9 +2434,7 @@ Converter::operator()(const InstAtomicBinOp &atomic) {
   if (Buf) {
     auto IntPtrOffset = LoadAtomicOpAddress(Buf.getValue(), atomic.dst_address);
     auto Ptr = ir.CreateGEP(ir.getInt32Ty(), Buf->Pointer, {IntPtrOffset});
-    auto Value = ir.CreateAtomicRMW(
-        Op, Ptr, LoadOperand(atomic.src, kMaskComponentX), Align(alignof(uint32_t)), AtomicOrdering::Monotonic
-    );
+    auto Value = air.CreateAtomicRMW(Op, Ptr, LoadOperand(atomic.src, kMaskComponentX));
     StoreOperand(atomic.dst_original, Value);
     return;
   }
@@ -2521,7 +2548,7 @@ Converter::operator()(const InstAtomicImmIncrement &atomic) {
   if (!Ctr)
     return;
 
-  auto Value = ir.CreateAtomicRMW(AtomicRMWInst::Add, Ctr->Pointer, ir.getInt32(1), {}, AtomicOrdering::Monotonic);
+  auto Value = air.CreateAtomicRMW(AtomicRMWInst::Add, Ctr->Pointer, ir.getInt32(1));
   StoreOperand(atomic.dst, Value);
 }
 void
@@ -2533,7 +2560,7 @@ Converter::operator()(const InstAtomicImmDecrement &atomic) {
   if (!Ctr)
     return;
 
-  auto Value = ir.CreateAtomicRMW(AtomicRMWInst::Sub, Ctr->Pointer, ir.getInt32(1), {}, AtomicOrdering::Monotonic);
+  auto Value = air.CreateAtomicRMW(AtomicRMWInst::Sub, Ctr->Pointer, ir.getInt32(1));
   // imm_atomic_consume returns new value
   StoreOperand(atomic.dst, ir.CreateSub(Value, ir.getInt32(1)));
 }
@@ -2905,6 +2932,41 @@ Converter::CreateGEPInt32WithBoundCheck(AtomicBufferResourceHandle &Buffer, llvm
   return ir.CreateSelect(
       ir.CreateICmpULT(Index, ir.CreateLShr(ByteLength, 2)), Addr, llvm::Constant::getNullValue(Addr->getType())
   );
+}
+
+std::unique_ptr<llvm::IRBuilder<>::FastMathFlagGuard>
+Converter::UseFastMath(bool OptOut) {
+  if (OptOut)
+    return nullptr;
+  auto Guard = std::make_unique<llvm::IRBuilder<>::FastMathFlagGuard>(ir);
+  llvm::FastMathFlags FMF;
+
+  /**
+  TODO(airconv): provides option to allow NaN/INF
+  TODO(invariance-analysis): for now fp contraction&refactoring is simply disabled for pre-raster stage to reduce the
+  chance of depth prepass z-fighting. However if the game (e.g. SotTR) uses two versions of expression (mul+add vs. fma)
+  this is not handled yet (need further investigation, probably need a pass for un-fuse/re-fuse)
+  */
+  if (ctx.shader_type == microsoft::D3D11_SB_COMPUTE_SHADER || ctx.shader_type == microsoft::D3D10_SB_PIXEL_SHADER) {
+    FMF.setAllowContract();
+    FMF.setAllowReassoc();
+    FMF.setAllowReciprocal();
+  }
+
+  FMF.setApproxFunc();
+  FMF.setNoSignedZeros();
+  ir.setFastMathFlags(FMF);
+  return Guard;
+}
+
+bool
+Converter::SupportsMemoryCoherency() const {
+  return ctx.metal_version >= SM50_SHADER_METAL_320;
+}
+
+bool
+Converter::SupportsNonExecutionBarrier() const {
+  return ctx.metal_version >= SM50_SHADER_METAL_320;
 }
 
 } // namespace dxmt::dxbc

@@ -18,7 +18,12 @@ public:
   Rc<BufferAllocation>
   immediateName() {
     return name_;
-  };
+  }
+
+  uint32_t
+  immediateSuballocation() {
+    return name_suballocation_;
+  }
 
   void *
   immediateMappedMemory() {

@@ -66,6 +66,29 @@ AIRBuilderResult unpack_fvec4_from_addr(
   auto &types = ctx.types;
   auto &builder = ctx.builder;
 
+  if (format == MTLAttributeFormat::UShort4Normalized) {
+    pvalue _xy = co_yield call_unpack_impl(
+        "unorm2x16.v2f32", co_yield load_from_device_buffer(types._int, base_addr, aligned_offest, 0, 2), types._int,
+        types._float2
+    );
+    pvalue _zw = co_yield call_unpack_impl(
+        "unorm2x16.v2f32", co_yield load_from_device_buffer(types._int, base_addr, aligned_offest, 1, 2), types._int,
+        types._float2
+    );
+    co_return builder.CreateShuffleVector(_xy, _zw, {0, 1, 2, 3});
+  }
+  if (format == MTLAttributeFormat::Short4Normalized) {
+    pvalue _xy = co_yield call_unpack_impl(
+        "snorm2x16.v2f32", co_yield load_from_device_buffer(types._int, base_addr, aligned_offest, 0, 2), types._int,
+        types._float2
+    );
+    pvalue _zw = co_yield call_unpack_impl(
+        "snorm2x16.v2f32", co_yield load_from_device_buffer(types._int, base_addr, aligned_offest, 1, 2), types._int,
+        types._float2
+    );
+    co_return builder.CreateShuffleVector(_xy, _zw, {0, 1, 2, 3});
+  }
+
   std::string op;
   llvm::Type *src_type = nullptr;
   uint32_t align = 0;
@@ -120,12 +143,6 @@ AIRBuilderResult unpack_fvec4_from_addr(
     align = 2;
     dst_type = types._float2;
     break;
-  case MTLAttributeFormat::UShort4Normalized:
-    op = "unorm4x16.v4f32";
-    src_type = types._long;
-    align = 2;
-    dst_type = types._float4;
-    break;
   case MTLAttributeFormat::ShortNormalized:
     op = "snorm1x16.f32";
     src_type = types._short;
@@ -137,12 +154,6 @@ AIRBuilderResult unpack_fvec4_from_addr(
     src_type = types._int;
     align = 2;
     dst_type = types._float2;
-    break;
-  case MTLAttributeFormat::Short4Normalized:
-    op = "snorm4x16.v4f32";
-    src_type = types._long;
-    align = 2;
-    dst_type = types._float4;
     break;
   case MTLAttributeFormat::UInt1010102Normalized:
     op = "unorm.rgb10a2.v4f32";

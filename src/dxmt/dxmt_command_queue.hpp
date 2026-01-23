@@ -7,6 +7,7 @@
 #include "dxmt_command_list.hpp"
 #include "dxmt_context.hpp"
 #include "dxmt_occlusion_query.hpp"
+#include "dxmt_resource_initializer.hpp"
 #include "dxmt_ring_bump_allocator.hpp"
 #include "dxmt_statistics.hpp"
 #include "log/log.hpp"
@@ -106,6 +107,7 @@ public:
   uint64_t frame_;
   uint64_t signal_frame_latency_fence_;
   std::unique_ptr<VisibilityResultReadback> visibility_readback;
+  uint64_t resource_initializer_event_id;
 
 private:
   CommandQueue *queue;
@@ -155,6 +157,9 @@ private:
   WMT::Device device;
   WMT::Reference<WMT::CommandQueue> commandQueue;
 
+  obj_handle_t shared_event_listener;
+  dxmt::thread event_listener_thread;
+
   friend class CommandChunk;
   uint64_t
   GetNextEncoderId() {
@@ -174,6 +179,7 @@ public:
   WMT::Reference<WMT::SharedEvent> event;
   std::uint64_t current_event_seq_id = 0;
   FrameStatisticsContainer statistics;
+  ResourceInitializer initializer;
 
   CommandQueue(WMT::Device device);
 
@@ -210,6 +216,10 @@ public:
   SignaledEventSeqId() {
     return event.signaledValue();
   };
+
+  obj_handle_t GetSharedEventListener() {
+    return shared_event_listener;
+  }
 
   /**
   This is not thread-safe!
@@ -250,10 +260,10 @@ public:
     cpu_coherent.wait(seq);
   };
 
-  std::tuple<void *, WMT::Buffer, uint64_t>
+  std::tuple<WMT::Buffer, uint64_t>
   AllocateStagingBuffer(size_t size, size_t alignment) {
     auto [block, offset] = staging_allocator.allocate(ready_for_encode, cpu_coherent.signaledValue(), size, alignment);
-    return {ptr_add(block.mapped_address, offset), block.buffer, offset};
+    return {block.buffer, offset};
   }
 
   std::pair<WMT::Buffer, uint64_t>

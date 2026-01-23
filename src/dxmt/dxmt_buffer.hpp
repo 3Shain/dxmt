@@ -20,6 +20,7 @@ enum class BufferAllocationFlag : uint32_t {
   GpuManaged = 4,
   /* will allocate at least one page of memory and try to suballocate from that */
   SuballocateFromOnePage = 5,
+  CpuPlaced = 6,
 };
 
 typedef unsigned BufferViewKey;
@@ -48,7 +49,7 @@ class BufferAllocation : public Allocation {
 public:
 
   WMT::Buffer
-  buffer() {
+  buffer() const {
     return obj_;
   }
 
@@ -87,6 +88,15 @@ public:
     return current_suballocation_ * stride;
   }
 
+  void
+  updateContents(uint64_t offset, const void *data, uint64_t length, uint32_t suballocation = 0) noexcept {
+    if (likely(mappedMemory_ != nullptr && !flags_.test(BufferAllocationFlag::GpuManaged))) {
+      memcpy(reinterpret_cast<char *>(mappedMemory_) + suballocation * suballocation_size_ + offset, data, length);
+      return;
+    }
+    obj_.updateContents(suballocation * suballocation_size_ + offset, data, length);
+  }
+
   DXMT_RESOURCE_RESIDENCY_STATE residencyState;
   EncoderDepKey depkey;
 
@@ -108,9 +118,7 @@ private:
   uint32_t suballocation_size_;
   uint32_t suballocation_count_ = 1;
 
-#ifdef __i386__
-  void * placed_buffer;
-#endif
+  void * placed_buffer = nullptr;
 };
 
 class Buffer {

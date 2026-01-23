@@ -314,6 +314,10 @@ CreateMTLTextureDescriptorInternal(
     return E_FAIL;
   }
 
+  auto shared_flag = D3D11_RESOURCE_MISC_SHARED | D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX;
+  if ((MiscFlags & shared_flag) == shared_flag) // check mutually exclusive flags
+    return E_INVALIDARG;
+
   if (BindFlags & D3D11_BIND_DEPTH_STENCIL) {
     switch (Format) {
     case DXGI_FORMAT_R32_TYPELESS:
@@ -338,7 +342,7 @@ CreateMTLTextureDescriptorInternal(
       break;
     }
   }
-  pDescOut->pixel_format = metal_format.PixelFormat;
+  pDescOut->pixel_format = ORIGINAL_FORMAT(metal_format.PixelFormat);
 
   WMTTextureUsage metal_usage = (WMTTextureUsage)0; // actually corresponding to BindFlags
 
@@ -367,6 +371,10 @@ CreateMTLTextureDescriptorInternal(
   if (metal_format.Flag & MTL_DXGI_FORMAT_TYPELESS) {
     // well this is necessary for passing validation layer
     metal_usage |= WMTTextureUsagePixelFormatView;
+  }
+
+  if (metal_format.Flag & (MTL_DXGI_FORMAT_DEPTH_PLANER | MTL_DXGI_FORMAT_STENCIL_PLANER)) {
+    metal_usage |= WMTTextureUsageRenderTarget;
   }
 
   pDescOut->usage = metal_usage;

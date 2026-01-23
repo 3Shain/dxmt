@@ -1,6 +1,7 @@
 winemetal_src = [
   '../winemetal/winemetal_thunks.c',
-  '../winemetal/unix/winemetal_unix.c'
+  '../winemetal/unix/winemetal_unix.c',
+  '../winemetal/unix/cache.c',
 ]
 winemetal_link_depends = []
 
@@ -9,6 +10,7 @@ winemetal_ld_args = [
   '-framework', 'MetalFX', '-weak_framework', 'Foundation',
   '-weak_framework', 'CoreGraphics', '-weak_framework', 'QuartzCore',
   '-weak_framework', 'ColorSync',   '-weak_framework', 'Cocoa',
+  '-lsqlite3',
 ]
 
 winemetal_dll = shared_library('winemetal', winemetal_src,

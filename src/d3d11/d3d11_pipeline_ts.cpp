@@ -10,13 +10,11 @@ namespace dxmt {
 
 static dxmt::mutex ts_global_mutex;
 
-class MTLCompiledTessellationPipeline
-    : public ComObject<IMTLCompiledTessellationMeshPipeline> {
+class MTLCompiledTessellationPipelineImpl: public MTLCompiledTessellationMeshPipeline {
 public:
-  MTLCompiledTessellationPipeline(MTLD3D11Device *pDevice,
+  MTLCompiledTessellationPipelineImpl(MTLD3D11Device *pDevice,
                                   const MTL_GRAPHICS_PIPELINE_DESC *pDesc)
-      : ComObject<IMTLCompiledTessellationMeshPipeline>(),
-        num_rtvs(pDesc->NumColorAttachments),
+      : num_rtvs(pDesc->NumColorAttachments),
         depth_stencil_format(pDesc->DepthStencilFormat), device_(pDevice),
         pBlendState(pDesc->BlendState),
         RasterizationEnabled(pDesc->RasterizationEnabled),
@@ -29,41 +27,40 @@ public:
                                 << i);
     }
 
+    hull_reflection = pDesc->HullShader->reflection();
+    auto &domain_reflection = pDesc->DomainShader->reflection();
+    uint32_t max_potential_factor = domain_reflection.PostTessellator.MaxPotentialTessFactor;
+
+    if (!device_->GetMTLDevice().supportsFamily(WMTGPUFamilyApple9)) {
+      // indeed this value might be too conservative
+      max_potential_factor = std::min(8u, max_potential_factor);
+    }
+    if ((float)max_potential_factor < hull_reflection.Tessellator.MaxFactor) {
+      WARN("maxtessfactor(", hull_reflection.Tessellator.MaxFactor,
+           ") is too large for a mesh pipeline. Clamping to ",
+           max_potential_factor);
+    }
+
     VertexHullShader =
         pDesc->HullShader->get_shader(ShaderVariantTessellationVertexHull{
-            (uint64_t)pDesc->InputLayout,
-            (uint64_t)pDesc->VertexShader->handle(), pDesc->IndexBufferFormat});
+            pDesc->InputLayout,
+            pDesc->VertexShader, pDesc->IndexBufferFormat,
+            max_potential_factor});
     DomainShader =
         pDesc->DomainShader->get_shader(ShaderVariantTessellationDomain{
-            (uint64_t)pDesc->HullShader->handle(), pDesc->GSPassthrough,
-            !pDesc->RasterizationEnabled});
+            pDesc->HullShader, pDesc->GSPassthrough,
+            max_potential_factor, !pDesc->RasterizationEnabled});
     if (pDesc->PixelShader) {
       PixelShader = pDesc->PixelShader->get_shader(ShaderVariantPixel{
           pDesc->SampleMask, pDesc->BlendState->IsDualSourceBlending(),
           depth_stencil_format == WMTPixelFormatInvalid,
           unorm_output_reg_mask});
+      ps_valid_render_targets = pDesc->PixelShader->reflection().PSValidRenderTargets;
+    } else {
+      PixelShader = nullptr;
+      ps_valid_render_targets = 0;
     }
-    hull_reflection = pDesc->HullShader->reflection();
   }
-
-  void SubmitWork() { device_->SubmitThreadgroupWork(this); }
-
-  HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void **ppvObject) {
-    if (ppvObject == nullptr)
-      return E_POINTER;
-
-    *ppvObject = nullptr;
-
-    if (riid == __uuidof(IUnknown) || riid == __uuidof(IMTLThreadpoolWork) ||
-        riid == __uuidof(IMTLCompiledGraphicsPipeline)) {
-      *ppvObject = ref(this);
-      return S_OK;
-    }
-
-    return E_NOINTERFACE;
-  }
-
-  bool IsReady() final { return ready_.load(std::memory_order_relaxed); }
 
   void GetPipeline(MTL_COMPILED_TESSELLATION_MESH_PIPELINE *pPipeline) final {
     ready_.wait(false, std::memory_order_acquire);
@@ -71,20 +68,20 @@ public:
                   hull_reflection.ThreadsPerPatch};
   }
 
-  IMTLThreadpoolWork *RunThreadpoolWork() {
+  ThreadpoolWork *RunThreadpoolWork() {
 
     WMT::Reference<WMT::Error> err;
     MTL_COMPILED_SHADER vhs, ds, ps;
 
     if (!VertexHullShader->GetShader(&vhs)) {
-      return VertexHullShader.ptr();
+      return VertexHullShader;
     }
     if (!vhs.Function) {
       ERR("Failed to create tess-mesh PSO: Invalid vertex-hull shader.");
       return this;
     }
     if (!DomainShader->GetShader(&ds)) {
-      return DomainShader.ptr();
+      return DomainShader;
     }
     if (!ds.Function) {
       ERR("Failed to create tess-mesh PSO: Invalid domain shader.");
@@ -92,7 +89,7 @@ public:
     }
     if (PixelShader) {
       if (!PixelShader->GetShader(&ps)) {
-        return PixelShader.ptr();
+        return PixelShader;
       }
       if (!ps.Function) {
         ERR("Failed to create mesh PSO: Invalid pixel shader.");
@@ -106,6 +103,10 @@ public:
     info.object_function = vhs.Function;
     info.mesh_function = ds.Function;
     info.payload_memory_length = 0;
+
+    // HACK for AMDGPU: always reserve all payload capability
+    if (!device_->GetMTLDevice().supportsFamily(WMTGPUFamilyApple7))
+      info.payload_memory_length = 16384;
 
     info.immutable_object_buffers =
         (1 << 16) | (1 << 21) | (1 << 27) | (1 << 28) | (1 << 29) | (1 << 30);
@@ -126,19 +127,21 @@ public:
     if (depth_stencil_format != WMTPixelFormatInvalid) {
       info.depth_pixel_format = depth_stencil_format;
     }
-    // FIXME: don't hardcoding!
-    if (depth_stencil_format == WMTPixelFormatDepth32Float_Stencil8 ||
-        depth_stencil_format == WMTPixelFormatDepth24Unorm_Stencil8 ||
-        depth_stencil_format == WMTPixelFormatStencil8) {
+    if (DepthStencilPlanarFlags(depth_stencil_format) & 2) {
       info.stencil_pixel_format = depth_stencil_format;
     }
 
     if (pBlendState) {
       pBlendState->SetupMetalPipelineDescriptor(
-          (WMTRenderPipelineBlendInfo *)&info, num_rtvs);
+          (WMTRenderPipelineBlendInfo *)&info, num_rtvs, ps_valid_render_targets);
     }
 
     info.raster_sample_count = SampleCount;
+    // so far it's a fixed constant
+    info.mesh_tgsize_is_multiple_of_sgwidth = true;
+    // total threads is 32
+    // FIXME: might be different on AMD GPU, if it's ever supported
+    info.object_tgsize_is_multiple_of_sgwidth = true;
 
     {
       std::lock_guard<dxmt::mutex> lock(ts_global_mutex);
@@ -162,6 +165,7 @@ public:
 
 private:
   UINT num_rtvs;
+  UINT ps_valid_render_targets;
   WMTPixelFormat rtv_formats[8];
   WMTPixelFormat depth_stencil_format;
   MTLD3D11Device *device_;
@@ -173,18 +177,15 @@ private:
 
   MTL_SHADER_REFLECTION hull_reflection;
 
-  Com<CompiledShader> VertexHullShader;
-  Com<CompiledShader> PixelShader;
-  Com<CompiledShader> DomainShader;
+  CompiledShader *VertexHullShader;
+  CompiledShader *PixelShader;
+  CompiledShader *DomainShader;
 };
 
-Com<IMTLCompiledTessellationMeshPipeline>
+std::unique_ptr<MTLCompiledTessellationMeshPipeline>
 CreateTessellationMeshPipeline(MTLD3D11Device *pDevice,
                                MTL_GRAPHICS_PIPELINE_DESC *pDesc) {
-  Com<IMTLCompiledTessellationMeshPipeline> pipeline =
-      new MTLCompiledTessellationPipeline(pDevice, pDesc);
-  pipeline->SubmitWork();
-  return pipeline;
+  return std::make_unique<MTLCompiledTessellationPipelineImpl>(pDevice, pDesc);
 }
 
 } // namespace dxmt

@@ -164,7 +164,7 @@ struct DXMTClearTextureBufferFloat {
 [[kernel]] void clear_texture_buffer_float(
     texture_buffer<float, access::read_write> tex [[texture(0)]],
     constant DXMTClearTextureBufferFloat& args [[buffer(1)]],
-    ushort pos [[thread_position_in_grid]]
+    uint pos [[thread_position_in_grid]]
 ) {
   uint width = tex.get_width();
   uint offset = pos + args.offset;
@@ -279,11 +279,14 @@ constexpr constant uint kPresentFCIndex_BackbufferSizeMatched = 0x100;
 constexpr constant uint kPresentFCIndex_BackbufferIsSRGB = 0x103;
 constexpr constant uint kPresentFCIndex_HDRPQ = 0x101;
 constexpr constant uint kPresentFCIndex_WithHDRMetadata = 0x102;
+constexpr constant uint kPresentFCIndex_BackbufferIsMS = 0x104;
 
 constant bool present_backbuffer_size_matched [[function_constant(kPresentFCIndex_BackbufferSizeMatched)]];
 constant bool present_backbuffer_is_srgb [[function_constant(kPresentFCIndex_BackbufferIsSRGB)]];
 constant bool present_hdr_pq [[function_constant(kPresentFCIndex_HDRPQ)]];
 constant bool present_with_hdr_metadata [[function_constant(kPresentFCIndex_WithHDRMetadata)]];
+constant bool present_backbuffer_is_ms [[function_constant(kPresentFCIndex_BackbufferIsMS)]];
+constant bool present_backbuffer_is_not_ms = !present_backbuffer_is_ms;
 
 constexpr sampler s(coord::normalized);
 
@@ -299,12 +302,22 @@ float3 to_srgb(float3 linear) {
 
 [[fragment]] float4 fs_present_quad(
     present_data input [[stage_in]],
-    texture2d<float, access::sample> source [[texture(0)]],
+    texture2d<float, access::sample> source [[texture(0), function_constant(present_backbuffer_is_not_ms)]],
+    texture2d_ms<float, access::read> source_ms [[texture(0), function_constant(present_backbuffer_is_ms)]],
     constant DXMTPresentMetadata& meta [[buffer(0)]]
 ) {
-  float4 output = present_backbuffer_size_matched
+  float4 output = float4(0);
+  if (present_backbuffer_is_ms) {
+    const uint count = source_ms.get_num_samples();
+    for (uint i = 0; i < count; i++) {
+      output += source_ms.read(uint2(input.position.xy), i);
+    }
+    output /= count;
+  } else {
+    output = present_backbuffer_size_matched
       ? source.read(uint2(input.position.xy))
       : source.sample(s, input.uv);
+  }
   float3 output_rgb = output.xyz;
   float edr_scale = meta.edr_scale;
   if (present_backbuffer_is_srgb)
@@ -344,6 +357,7 @@ struct DXMTDispatchArguments {
 struct DXMTTSDispatchMarshal {
   constant uint2& draw_arguments; // (vertex|index_count, index_count)
   device DXMTDispatchArguments& dispatch_arguments_out;
+  ulong max_object_threadgroups;
   ushort control_point_count;
   ushort patch_per_group;
   uint end_of_command;
@@ -359,9 +373,16 @@ struct DXMTTSDispatchMarshal {
     device DXMTDispatchArguments& output = task.dispatch_arguments_out;
 
     uint patch_count_per_instance = task.draw_arguments.x / (uint)task.control_point_count;
-    output.x = (patch_count_per_instance - 1) / task.patch_per_group + 1;
-    output.y = task.draw_arguments.y;
-    output.z = 1;
+    uint x = (patch_count_per_instance - 1) / task.patch_per_group + 1;
+    if (x * task.draw_arguments.y > task.max_object_threadgroups) {
+      output.x = 0;
+      output.y = 0;
+      output.z = 0;
+    } else {
+      output.x = x;
+      output.y = task.draw_arguments.y;
+      output.z = 1;
+    }
 
     if (task.end_of_command)
       break;
@@ -371,6 +392,7 @@ struct DXMTTSDispatchMarshal {
 struct DXMTGSDispatchMarshal {
   constant uint2& draw_arguments; // (vertex|index_count, index_count)
   device DXMTDispatchArguments& dispatch_arguments_out;
+  ulong max_object_threadgroups;
   uint vertex_count_per_warp;
   uint end_of_command;
 };
@@ -384,9 +406,16 @@ struct DXMTGSDispatchMarshal {
 
     device DXMTDispatchArguments& output = task.dispatch_arguments_out;
 
-    output.x = (task.draw_arguments.x - 1) / task.vertex_count_per_warp + 1;
-    output.y = task.draw_arguments.y;
-    output.z = 1;
+    uint x = (task.draw_arguments.x - 1) / task.vertex_count_per_warp + 1;
+    if (x * task.draw_arguments.y > task.max_object_threadgroups) {
+      output.x = 0;
+      output.y = 0;
+      output.z = 0;
+    } else {
+      output.x = x;
+      output.y = task.draw_arguments.y;
+      output.z = 1;
+    }
 
     if (task.end_of_command)
       break;
@@ -520,7 +549,7 @@ struct DXMTClearUintMetadata {
   tex.write(meta.value, meta.offset + pos.xy, pos.z);
 }
 
-[[kernel]] void cs_clear_texture_buffer_float(
+[[kernel]] void cs_clear_tbuffer_float(
     texture_buffer<float, access::write> tex [[texture(0)]],
     constant DXMTClearFloatMetadata& meta [[buffer(1)]],
     uint pos [[thread_position_in_grid]]
@@ -528,7 +557,7 @@ struct DXMTClearUintMetadata {
   tex.write(meta.value, meta.offset.x + pos);
 }
 
-[[kernel]] void cs_clear_texture_buffer_uint(
+[[kernel]] void cs_clear_tbuffer_uint(
     texture_buffer<uint, access::write> tex [[texture(0)]],
     constant DXMTClearUintMetadata& meta [[buffer(1)]],
     uint pos [[thread_position_in_grid]]
@@ -550,4 +579,21 @@ struct DXMTClearUintMetadata {
     uint pos [[thread_position_in_grid]]
 ) {
   buffer[meta.offset.x + pos] = meta.value.x;
+}
+
+[[kernel]] void cs_downscale_dilated_mv(
+  uint2 pos [[thread_position_in_grid]],
+  constant float2& mv_scale [[buffer(0)]],
+  texture2d<float, access::read> dilated [[texture(0)]],
+  texture2d<float, access::write> downscaled [[texture(1)]]
+) {
+  float2 source_size = float2(dilated.get_width(), dilated.get_height());
+  float2 viewport_size = float2(downscaled.get_width(), downscaled.get_height());
+  float2 scale = viewport_size / source_size;
+  float2 sample_uv = (float2(pos) + 0.5) / viewport_size;
+  uint2 sample_pos = uint2(sample_uv * source_size);
+  float2 hi_mv = dilated.read(sample_pos).xy;
+  float2 hi_mv_pixel = hi_mv * mv_scale;
+  float2 lo_mv_pixel = hi_mv_pixel * scale;
+  downscaled.write(lo_mv_pixel.xyxy, pos); 
 }

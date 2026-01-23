@@ -95,10 +95,12 @@ public:
   air::ArgumentBufferBuilder binding_table_cbuffer;
   air::ArgumentBufferBuilder binding_table;
   bool skipOptimization = false;
-  bool refactoringAllowed = true;
+  bool refactoringAllowed = false;
   bool use_cmp_exch = false;
   bool no_control_point_phase_passthrough = false;
   bool output_control_point_read = false;
+  bool use_msad = false;
+  bool use_samplepos = false;
   std::vector<PhaseInfo> phases;
   uint32_t pull_mode_reg_mask = 0;
 };
@@ -144,6 +146,7 @@ struct texture_descriptor {
   air::MSLTexture texture_info;
   IndexedIRValue resource_id;
   IndexedIRValue metadata;
+  bool global_coherent;
 };
 
 struct buffer_descriptor {
@@ -233,6 +236,7 @@ struct context {
   air::AirType &types; // hmmm
   uint32_t pso_sample_mask;
   microsoft::D3D10_SB_TOKENIZED_PROGRAM_TYPE shader_type;
+  SM50_SHADER_METAL_VERSION metal_version;
 };
 
 template <typename S> IRValue make_irvalue(S &&fs) {
@@ -274,6 +278,9 @@ pop_output_reg(uint32_t from_reg, uint32_t mask, uint32_t to_element);
 
 std::function<IRValue(pvalue)>
 pop_output_reg_fix_unorm(uint32_t from_reg, uint32_t mask, uint32_t to_element);
+
+std::function<IRValue(pvalue)>
+pop_output_reg_sanitize_pos(uint32_t from_reg, uint32_t mask, uint32_t to_element);
 
 IREffect pull_vertex_input(
   air::FunctionSignatureBuilder &func_signature, uint32_t to_reg, uint32_t mask,
@@ -406,6 +413,7 @@ public:
   /* for domain shader, it refers to patch constant input count */
   uint32_t max_input_register = 0;
   uint32_t max_output_register = 0;
+  uint32_t pso_valid_output_reg_mask = 0;
   uint32_t max_patch_constant_output_register = 0;
   std::vector<MTL_SM50_SHADER_ARGUMENT> args_reflection_cbuffer;
   std::vector<MTL_SM50_SHADER_ARGUMENT> args_reflection;
@@ -445,8 +453,9 @@ std::vector<std::unique_ptr<BasicBlock>> read_control_flow(
 
 uint32_t next_pow2(uint32_t x);
 
-size_t
-estimate_payload_size(SM50ShaderInternal *pHullStage, uint32_t patch_per_group);
+size_t estimate_payload_size(SM50ShaderInternal *pHullStage, float factor, uint32_t patch_per_group);
+
+size_t estimate_mesh_size(SM50ShaderInternal *pDomainStage, uint32_t max_potential_factor_int);
 
 constexpr uint32_t kConstantBufferBindIndex = 29;
 constexpr uint32_t kArgumentBufferBindIndex = 30;
@@ -458,7 +467,7 @@ void setup_binding_table(
   uint32_t argbuffer_slot = kArgumentBufferBindIndex
 );
 
-void setup_fastmath_flag(llvm::Module &module, llvm::IRBuilder<> &builder);
+void setup_metal_version(llvm::Module &module, SM50_SHADER_METAL_VERSION metal_verison);
 
 void setup_temp_register(
   const ShaderInfo *shader_info, io_binding_map &resource_map,
@@ -492,5 +501,23 @@ llvm::Error convert_dxbc_tesselator_domain_shader(
     SM50ShaderInternal *pShaderInternal, const char *name, SM50ShaderInternal *pHullStage, llvm::LLVMContext &context,
     llvm::Module &module, SM50_SHADER_COMPILATION_ARGUMENT_DATA *pArgs
 );
+
+template <SM50_SHADER_COMPILATION_ARGUMENT_TYPE data_e, typename data_t>
+bool
+args_get_data(const struct SM50_SHADER_COMPILATION_ARGUMENT_DATA *data, data_t **out) {
+  const SM50_SHADER_COMPILATION_ARGUMENT_DATA *arg = data;
+  while (arg) {
+    switch (arg->type) {
+    case data_e:
+      *out = (data_t *)arg;
+      return true;
+    default:
+      break;
+    }
+    arg = (const SM50_SHADER_COMPILATION_ARGUMENT_DATA *)arg->next;
+  }
+  *out = NULL;
+  return false;
+}
 
 } // namespace dxmt::dxbc

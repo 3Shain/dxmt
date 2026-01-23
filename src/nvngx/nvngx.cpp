@@ -1,3 +1,4 @@
+#include "com/com_pointer.hpp"
 #include "d3d11.h"
 #include "nvngx.hpp"
 #include "log/log.hpp"
@@ -50,7 +51,16 @@ NVSDK_NGX_D3D11_CreateFeature(
     ID3D11DeviceContext *context, unsigned int feature, NVNGXParameter *params, unsigned int **out_handle
 ) {
   auto parameters = static_cast<ParametersImpl *>(params);
+  Com<IMTLD3D11ContextExt1> pCtxExt = nullptr;
+  if (FAILED(context->QueryInterface(IID_PPV_ARGS(&pCtxExt))))
+    return NVNGX_RESULT_INVALID_PARAMETER;
   if (feature == NVNGX_FEATURE_SUPERSAMPLING) {
+    BOOL feature_supported = false;
+    if (FAILED(pCtxExt->CheckFeatureSupport(MTL_FEATURE_METALFX_TEMPORAL_SCALER, &feature_supported, sizeof(feature_supported))))
+      return NVNGX_RESULT_FEATURE_NOT_SUPPORTED;
+    if (!feature_supported)
+      return NVNGX_RESULT_FEATURE_NOT_SUPPORTED;
+
     auto dlss = std::make_unique<DLSSFeature>();
     dlss->feature = NVNGX_FEATURE_SUPERSAMPLING;
     if (NVNGX_FAILED(parameters->Get(NVNGX_Parameter_Width, &dlss->width)))
@@ -118,6 +128,7 @@ NVSDK_NGX_D3D11_EvaluateFeature(
     desc.ExposureTexture = exposure;
     desc.DepthReversed = bool(dlss->flag & NVNGX_DLSS_FLAG_DEPTH_INVERTED);
     desc.AutoExposure = bool(dlss->flag & NVNGX_DLSS_FLAG_AUTO_EXPOSURE);
+    desc.MotionVectorInDisplayRes = !bool(dlss->flag & NVNGX_DLSS_FLAG_MV_LOWRES);
 
     if (NVNGX_FAILED(parameters->Get(NVNGX_Parameter_Jitter_Offset_X, &desc.JitterOffsetX)))
       desc.JitterOffsetX = 0;
@@ -129,9 +140,9 @@ NVSDK_NGX_D3D11_EvaluateFeature(
     desc.InReset = reset;
 
     if (NVNGX_FAILED(parameters->Get(NVNGX_Parameter_MV_Scale_X, &desc.MotionVectorScaleX)))
-      desc.MotionVectorScaleX = 0;
+      desc.MotionVectorScaleX = 1.0;
     if (NVNGX_FAILED(parameters->Get(NVNGX_Parameter_MV_Scale_Y, &desc.MotionVectorScaleY)))
-      desc.MotionVectorScaleY = 0;
+      desc.MotionVectorScaleY = 1.0;
     if (NVNGX_FAILED(parameters->Get(NVNGX_Parameter_DLSS_Pre_Exposure, &desc.PreExposure)))
       desc.PreExposure = 0;
 

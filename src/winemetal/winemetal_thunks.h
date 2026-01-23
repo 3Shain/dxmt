@@ -112,15 +112,14 @@ struct unixcall_mtltexture_newtextureview {
 
 struct unixcall_mtldevice_newlibrary {
   obj_handle_t device;
-  struct WMTMemoryPointer bytecode;
-  uint64_t bytecode_length;
+  obj_handle_t data;
   obj_handle_t ret_error;
   obj_handle_t ret_library;
 };
 
 struct unixcall_mtldevice_newcomputepso {
   obj_handle_t device;
-  obj_handle_t function;
+  struct WMTConstMemoryPointer info;
   obj_handle_t ret_error;
   obj_handle_t ret_pso;
 };
@@ -266,6 +265,88 @@ struct unixcall_query_display_setting_for_layer {
   enum WMTColorSpace colorspace;
   struct WMTMemoryPointer hdr_metadata;
   struct WMTEDRValue edr_value;
+};
+
+struct unixcall_mtlbuffer_updatecontents {
+  obj_handle_t buffer;
+  uint64_t offset;
+  struct WMTConstMemoryPointer data;
+  uint64_t length;
+};
+
+struct unixcall_mtlsharedevent_setevent {
+  obj_handle_t shared_event;
+  obj_handle_t event_handle;
+  obj_handle_t shared_event_listener;
+  uint64_t value;
+};
+
+struct unixcall_mtlsharedevent_createmachport {
+  obj_handle_t event;
+  uint32_t ret_mach_port;
+};
+
+struct unixcall_mtldevice_newsharedeventwithmachport {
+  obj_handle_t device;
+  uint32_t mach_port;
+  obj_handle_t ret_event;
+};
+
+struct unixcall_get_os_version {
+  uint64_t ret_major;
+  uint64_t ret_minor;
+  uint64_t ret_patch;
+};
+
+struct unixcall_mtldevice_newbinaryarchive {
+  obj_handle_t device;
+  struct WMTConstMemoryPointer url;
+  obj_handle_t ret_archive;
+  obj_handle_t ret_error;
+};
+
+struct unixcall_mtlbinaryarchive_serialize {
+  obj_handle_t archive;
+  struct WMTConstMemoryPointer url;
+  obj_handle_t ret_error;
+};
+
+struct unixcall_cache_alloc_init {
+  struct WMTConstMemoryPointer path;
+  uint64_t version;
+  obj_handle_t ret_cache;
+};
+
+struct unixcall_cache_get {
+  obj_handle_t cache;
+  struct WMTConstMemoryPointer key;
+  uint64_t key_length;
+  obj_handle_t ret_data;
+};
+
+struct unixcall_cache_set {
+  obj_handle_t cache;
+  struct WMTConstMemoryPointer key;
+  uint64_t key_length;
+  obj_handle_t value_data;
+};
+
+struct unixcall_setmetalcachepath {
+  struct WMTConstMemoryPointer path;
+  uint64_t ret_success;
+};
+
+struct unixcall_bootstrap {
+  char name[128];
+  uint32_t mach_port;
+  uint32_t reserved;
+};
+
+struct unixcall_mtlsharedevent_waituntilsignaledvalue {
+  obj_handle_t event;
+  uint64_t value;
+  uint64_t timeout_ms;
+  bool ret_timeout;
 };
 
 #pragma pack(pop)

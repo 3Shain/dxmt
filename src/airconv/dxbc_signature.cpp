@@ -176,7 +176,7 @@ void handle_signature_vs(
       signature_handlers.push_back([=](SignatureContext &ctx) {
         if (ctx.skip_vertex_output)
           return;
-        ctx.epilogue >> pop_output_reg(reg, mask, assigned_index);
+        ctx.epilogue >> pop_output_reg_sanitize_pos(reg, mask, assigned_index);
       });
       break;
     }
@@ -249,6 +249,7 @@ void handle_signature_ps(
 ) {
   uint32_t &max_input_register = sm50_shader->max_input_register;
   uint32_t &max_output_register = sm50_shader->max_output_register;
+  uint32_t &pso_valid_output_reg_mask = sm50_shader->pso_valid_output_reg_mask;
   auto &signature_handlers = sm50_shader->signature_handlers;
   auto &func_signature = sm50_shader->func_signature;
 
@@ -537,6 +538,7 @@ void handle_signature_ps(
         return (sig.reg() == reg) && ((sig.mask() & mask) != 0);
       });
       max_output_register = std::max(reg + 1, max_output_register);
+      pso_valid_output_reg_mask |= (1 << reg);
       if (sig.mask() == 0) break;
       auto type = sig.componentType();
       signature_handlers.push_back([=](SignatureContext &ctx) {

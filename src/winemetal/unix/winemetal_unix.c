@@ -1,16 +1,21 @@
+#include <stdatomic.h>
 #include <dlfcn.h>
 #import <Cocoa/Cocoa.h>
 #import <ColorSync/ColorSync.h>
+#import <CoreFoundation/CFRunLoop.h>
 #import <Metal/Metal.h>
 #import <MetalFX/MetalFX.h>
 #import <QuartzCore/QuartzCore.h>
 #include "objc/objc-runtime.h"
+#include <bootstrap.h>
+#include <mach/mach_port.h>
 #define WINEMETAL_API
 #include "../winemetal_thunks.h"
-#include "../unix_thunks.h"
+#include "../airconv_thunks.h"
 
 typedef int NTSTATUS;
 #define STATUS_SUCCESS 0
+#define STATUS_UNSUCCESSFUL 0xC0000001
 
 void
 execute_on_main(dispatch_block_t block) {
@@ -229,10 +234,14 @@ _MTLDevice_newDepthStencilState(void *obj) {
   return STATUS_SUCCESS;
 }
 
+MTLPixelFormat to_metal_pixel_format(enum WMTPixelFormat format) {
+  return (MTLPixelFormat)ORIGINAL_FORMAT(format);
+}
+
 void
 fill_texture_descriptor(MTLTextureDescriptor *desc, struct WMTTextureInfo *info) {
   desc.textureType = (MTLTextureType)info->type;
-  desc.pixelFormat = (MTLPixelFormat)info->pixel_format;
+  desc.pixelFormat = to_metal_pixel_format(info->pixel_format);
   desc.width = info->width;
   desc.height = info->height;
   desc.depth = info->depth;
@@ -241,6 +250,21 @@ fill_texture_descriptor(MTLTextureDescriptor *desc, struct WMTTextureInfo *info)
   desc.sampleCount = info->sample_count;
   desc.usage = (MTLTextureUsage)info->usage;
   desc.resourceOptions = (MTLResourceOptions)info->options;
+};
+
+void
+extract_texture_descriptor(id<MTLTexture> desc, struct WMTTextureInfo *info) {
+  info->type = desc.textureType;
+  info->pixel_format = desc.pixelFormat;
+  info->width = desc.width;
+  info->height = desc.height;
+  info->depth = desc.depth;
+  info->array_length = desc.arrayLength;
+  info->mipmap_level_count = desc.mipmapLevelCount;
+  info->sample_count = desc.sampleCount;
+  info->usage = desc.usage;
+  info->options = (enum WMTResourceOptions)desc.resourceOptions;
+  info->reserved = 0;
 };
 
 static NTSTATUS
@@ -254,6 +278,7 @@ _MTLDevice_newTexture(void *obj) {
   id<MTLTexture> ret = [device newTextureWithDescriptor:desc];
   params->ret = (obj_handle_t)ret;
   info->gpu_resource_id = [ret gpuResourceID]._impl;
+  info->mach_port = 0;
 
   [desc release];
   return STATUS_SUCCESS;
@@ -270,9 +295,33 @@ _MTLBuffer_newTexture(void *obj) {
   id<MTLTexture> ret = [buffer newTextureWithDescriptor:desc offset:params->offset bytesPerRow:params->bytes_per_row];
   params->ret = (obj_handle_t)ret;
   info->gpu_resource_id = [ret gpuResourceID]._impl;
+  info->mach_port = 0;
 
   [desc release];
   return STATUS_SUCCESS;
+}
+
+inline MTLTextureSwizzleChannels
+to_metal_swizzle(struct WMTTextureSwizzleChannels swizzle, enum WMTPixelFormat format) {
+  if (format & WMTPixelFormatRGB1Swizzle) {
+    return MTLTextureSwizzleChannelsMake(
+        (MTLTextureSwizzle)swizzle.r, (MTLTextureSwizzle)swizzle.g, (MTLTextureSwizzle)swizzle.b, MTLTextureSwizzleOne
+    );
+  }
+  if (format & WMTPixelFormatR001Swizzle) {
+    return MTLTextureSwizzleChannelsMake(
+        (MTLTextureSwizzle)swizzle.r, MTLTextureSwizzleZero, MTLTextureSwizzleZero, MTLTextureSwizzleOne
+    );
+  }
+  if (format & WMTPixelFormat0R01Swizzle) {
+    return MTLTextureSwizzleChannelsMake(
+        MTLTextureSwizzleOne, (MTLTextureSwizzle)swizzle.r, MTLTextureSwizzleOne, MTLTextureSwizzleOne
+    );
+  }
+  return MTLTextureSwizzleChannelsMake(
+      (MTLTextureSwizzle)swizzle.r, (MTLTextureSwizzle)swizzle.g, (MTLTextureSwizzle)swizzle.b,
+      (MTLTextureSwizzle)swizzle.a
+  );
 }
 
 static NTSTATUS
@@ -281,14 +330,11 @@ _MTLTexture_newTextureView(void *obj) {
   id<MTLTexture> texture = (id<MTLTexture>)params->texture;
 
   id<MTLTexture> ret = [texture
-      newTextureViewWithPixelFormat:(MTLPixelFormat)params->format
+      newTextureViewWithPixelFormat:to_metal_pixel_format(params->format)
                         textureType:(MTLTextureType)params->texture_type
                              levels:NSMakeRange(params->level_start, params->level_count)
                              slices:NSMakeRange(params->slice_start, params->slice_count)
-                            swizzle:MTLTextureSwizzleChannelsMake(
-                                        (MTLTextureSwizzle)params->swizzle.r, (MTLTextureSwizzle)params->swizzle.g,
-                                        (MTLTextureSwizzle)params->swizzle.b, (MTLTextureSwizzle)params->swizzle.a
-                                    )];
+                            swizzle:to_metal_swizzle(params->swizzle, params->format)];
   params->ret = (obj_handle_t)ret;
   params->gpu_resource_id = [ret gpuResourceID]._impl;
   return STATUS_SUCCESS;
@@ -297,7 +343,7 @@ _MTLTexture_newTextureView(void *obj) {
 static NTSTATUS
 _MTLDevice_minimumLinearTextureAlignmentForPixelFormat(void *obj) {
   struct unixcall_generic_obj_uint64_uint64_ret *params = obj;
-  params->ret = [(id<MTLDevice>)params->handle minimumLinearTextureAlignmentForPixelFormat:(MTLPixelFormat)params->arg];
+  params->ret = [(id<MTLDevice>)params->handle minimumLinearTextureAlignmentForPixelFormat:to_metal_pixel_format(params->arg)];
   return STATUS_SUCCESS;
 }
 
@@ -305,11 +351,9 @@ static NTSTATUS
 _MTLDevice_newLibrary(void *obj) {
   struct unixcall_mtldevice_newlibrary *params = obj;
   id<MTLDevice> device = (id<MTLDevice>)params->device;
-  dispatch_data_t data = dispatch_data_create(params->bytecode.ptr, params->bytecode_length, NULL, NULL);
   NSError *err = NULL;
-  params->ret_library = (obj_handle_t)[device newLibraryWithData:data error:&err];
+  params->ret_library = (obj_handle_t)[device newLibraryWithData:(dispatch_data_t)params->data error:&err];
   params->ret_error = (obj_handle_t)err;
-  dispatch_release(data);
   return STATUS_SUCCESS;
 }
 
@@ -341,10 +385,28 @@ static NTSTATUS
 _MTLDevice_newComputePipelineState(void *obj) {
   struct unixcall_mtldevice_newcomputepso *params = obj;
   id<MTLDevice> device = (id<MTLDevice>)params->device;
+  const struct WMTComputePipelineInfo *info = params->info.ptr;
+  MTLComputePipelineDescriptor *descriptor = [[MTLComputePipelineDescriptor alloc] init];
   NSError *err = NULL;
+  descriptor.computeFunction = (id<MTLFunction>)info->compute_function;
+  descriptor.threadGroupSizeIsMultipleOfThreadExecutionWidth = info->tgsize_is_multiple_of_sgwidth;
+  for (unsigned i = 0; i < 31; i++) {
+    if (info->immutable_buffers & (1 << i))
+      descriptor.buffers[i].mutability = MTLMutabilityImmutable;
+  }
+  if (info->num_binary_archives_for_lookup && info->binary_archives_for_lookup.ptr)
+    descriptor.binaryArchives = [NSArray arrayWithObjects:(id<MTLBinaryArchive> *)info->binary_archives_for_lookup.ptr
+                                                    count:info->num_binary_archives_for_lookup];
+  MTLPipelineOption options =
+      info->fail_on_binary_archive_miss ? MTLPipelineOptionFailOnBinaryArchiveMiss : MTLPipelineOptionNone;
   params->ret_pso =
-      (obj_handle_t)[device newComputePipelineStateWithFunction:(id<MTLFunction>)params->function error:&err];
+      (obj_handle_t)[device newComputePipelineStateWithDescriptor:descriptor options:options reflection:nil error:&err];
   params->ret_error = (obj_handle_t)err;
+  if (!err && info->binary_archive_for_serialization) {
+    [(id<MTLBinaryArchive>)info->binary_archive_for_serialization addComputePipelineFunctionsWithDescriptor:descriptor
+                                                                                                      error:&err];
+  }
+  [descriptor release];
   return STATUS_SUCCESS;
 }
 
@@ -470,7 +532,7 @@ _MTLDevice_newRenderPipelineState(void *obj) {
   MTLRenderPipelineDescriptor *descriptor = [[MTLRenderPipelineDescriptor alloc] init];
 
   for (unsigned i = 0; i < 8; i++) {
-    descriptor.colorAttachments[i].pixelFormat = (MTLPixelFormat)info->colors[i].pixel_format;
+    descriptor.colorAttachments[i].pixelFormat = to_metal_pixel_format(info->colors[i].pixel_format);
     descriptor.colorAttachments[i].blendingEnabled = info->colors[i].blending_enabled;
     descriptor.colorAttachments[i].writeMask = (MTLColorWriteMask)info->colors[i].write_mask;
 
@@ -494,8 +556,8 @@ _MTLDevice_newRenderPipelineState(void *obj) {
   [descriptor setLogicOperationEnabled:info->logic_operation_enabled];
   [descriptor setLogicOperation:(MTLLogicOperation)info->logic_operation];
 #endif
-  descriptor.depthAttachmentPixelFormat = (MTLPixelFormat)info->depth_pixel_format;
-  descriptor.stencilAttachmentPixelFormat = (MTLPixelFormat)info->stencil_pixel_format;
+  descriptor.depthAttachmentPixelFormat = to_metal_pixel_format(info->depth_pixel_format);
+  descriptor.stencilAttachmentPixelFormat = to_metal_pixel_format(info->stencil_pixel_format);
   descriptor.alphaToCoverageEnabled = info->alpha_to_coverage_enabled;
   descriptor.rasterizationEnabled = info->rasterization_enabled;
   descriptor.rasterSampleCount = info->raster_sample_count;
@@ -508,10 +570,21 @@ _MTLDevice_newRenderPipelineState(void *obj) {
   descriptor.vertexFunction = (id<MTLFunction>)info->vertex_function;
   descriptor.fragmentFunction = (id<MTLFunction>)info->fragment_function;
 
+  if (info->num_binary_archives_for_lookup && info->binary_archives_for_lookup.ptr)
+    descriptor.binaryArchives = [NSArray arrayWithObjects:(id<MTLBinaryArchive> *)info->binary_archives_for_lookup.ptr
+                                                    count:info->num_binary_archives_for_lookup];
   NSError *err = NULL;
-  params->ret_pso =
-      (obj_handle_t)[(id<MTLDevice>)params->device newRenderPipelineStateWithDescriptor:descriptor error:&err];
+  MTLPipelineOption options =
+      info->fail_on_binary_archive_miss ? MTLPipelineOptionFailOnBinaryArchiveMiss : MTLPipelineOptionNone;
+  params->ret_pso = (obj_handle_t)[(id<MTLDevice>)params->device newRenderPipelineStateWithDescriptor:descriptor
+                                                                                              options:options
+                                                                                           reflection:nil
+                                                                                                error:&err];
   params->ret_error = (obj_handle_t)err;
+  if (!err && info->binary_archive_for_serialization) {
+    [(id<MTLBinaryArchive>)info->binary_archive_for_serialization addRenderPipelineFunctionsWithDescriptor:descriptor
+                                                                                                     error:&err];
+  }
   [descriptor release];
   return STATUS_SUCCESS;
 }
@@ -523,7 +596,7 @@ _MTLDevice_newMeshRenderPipelineState(void *obj) {
   MTLMeshRenderPipelineDescriptor *descriptor = [[MTLMeshRenderPipelineDescriptor alloc] init];
 
   for (unsigned i = 0; i < 8; i++) {
-    descriptor.colorAttachments[i].pixelFormat = (MTLPixelFormat)info->colors[i].pixel_format;
+    descriptor.colorAttachments[i].pixelFormat = to_metal_pixel_format(info->colors[i].pixel_format);
     descriptor.colorAttachments[i].blendingEnabled = info->colors[i].blending_enabled;
     descriptor.colorAttachments[i].writeMask = (MTLColorWriteMask)info->colors[i].write_mask;
 
@@ -549,8 +622,8 @@ _MTLDevice_newMeshRenderPipelineState(void *obj) {
   [descriptor setLogicOperationEnabled:info->logic_operation_enabled];
   [descriptor setLogicOperation:(MTLLogicOperation)info->logic_operation];
 #endif
-  descriptor.depthAttachmentPixelFormat = (MTLPixelFormat)info->depth_pixel_format;
-  descriptor.stencilAttachmentPixelFormat = (MTLPixelFormat)info->stencil_pixel_format;
+  descriptor.depthAttachmentPixelFormat = to_metal_pixel_format(info->depth_pixel_format);
+  descriptor.stencilAttachmentPixelFormat = to_metal_pixel_format(info->stencil_pixel_format);
   descriptor.alphaToCoverageEnabled = info->alpha_to_coverage_enabled;
   descriptor.rasterizationEnabled = info->rasterization_enabled;
   descriptor.rasterSampleCount = info->raster_sample_count;
@@ -560,13 +633,33 @@ _MTLDevice_newMeshRenderPipelineState(void *obj) {
   descriptor.fragmentFunction = (id<MTLFunction>)info->fragment_function;
   descriptor.payloadMemoryLength = info->payload_memory_length;
 
+  descriptor.meshThreadgroupSizeIsMultipleOfThreadExecutionWidth = info->mesh_tgsize_is_multiple_of_sgwidth;
+  descriptor.objectThreadgroupSizeIsMultipleOfThreadExecutionWidth = info->object_tgsize_is_multiple_of_sgwidth;
+
+  MTLPipelineOption options = MTLPipelineOptionNone;
+#if __MAC_OS_X_VERSION_MAX_ALLOWED >= 150000
+  if (@available(macOS 15, *)) {
+    if (info->num_binary_archives_for_lookup && info->binary_archives_for_lookup.ptr)
+      descriptor.binaryArchives = [NSArray arrayWithObjects:(id<MTLBinaryArchive> *)info->binary_archives_for_lookup.ptr
+                                                      count:info->num_binary_archives_for_lookup];
+    options = info->fail_on_binary_archive_miss ? MTLPipelineOptionFailOnBinaryArchiveMiss : MTLPipelineOptionNone;
+  }
+#endif
   NSError *err = NULL;
-  params->ret_pso =
-      (obj_handle_t)[(id<MTLDevice>)params->device newRenderPipelineStateWithMeshDescriptor:descriptor
-                                                                                    options:MTLPipelineOptionNone
-                                                                                 reflection:nil
-                                                                                      error:&err];
+  params->ret_pso = (obj_handle_t)[(id<MTLDevice>)params->device newRenderPipelineStateWithMeshDescriptor:descriptor
+                                                                                                  options:options
+                                                                                               reflection:nil
+                                                                                                    error:&err];
   params->ret_error = (obj_handle_t)err;
+#if __MAC_OS_X_VERSION_MAX_ALLOWED >= 150000
+  if (@available(macOS 15, *)) {
+    if (!err && info->binary_archive_for_serialization) {
+      [(id<MTLBinaryArchive>)info->binary_archive_for_serialization
+          addMeshRenderPipelineFunctionsWithDescriptor:descriptor
+                                                 error:&err];
+    }
+  }
+#endif
   [descriptor release];
   return STATUS_SUCCESS;
 }
@@ -642,6 +735,11 @@ _MTLBlitCommandEncoder_encodeCommands(void *obj) {
     case WMTBlitCommandWaitForFence: {
       struct wmtcmd_blit_fence_op *body = (struct wmtcmd_blit_fence_op *)next;
       [encoder waitForFence:(id<MTLFence>)body->fence];
+      break;
+    }
+    case WMTBlitCommandFillBuffer: {
+      struct wmtcmd_blit_fillbuffer *body = (struct wmtcmd_blit_fillbuffer *)next;
+      [encoder fillBuffer:(id<MTLBuffer>)body->buffer range:NSMakeRange(body->offset, body->length) value:body->value];
       break;
     }
     }
@@ -943,7 +1041,7 @@ _MTLRenderCommandEncoder_encodeCommands(void *obj) {
                                  indirectBufferOffset:body->dispatch_args_offset
                           threadsPerObjectThreadgroup:MTLSizeMake(body->vertex_per_warp, 1, 1)
                             threadsPerMeshThreadgroup:MTLSizeMake(1, 1, 1)];
-      [encoder setObjectBuffer:(id<MTLBuffer>)body->dispatch_args_buffer offset:0 atIndex:21];
+      [encoder setObjectBuffer:(id<MTLBuffer>)body->imm_draw_arguments offset:0 atIndex:21];
       break;
     }
     case WMTRenderCommandDXMTGeometryDrawIndexedIndirect: {
@@ -955,7 +1053,7 @@ _MTLRenderCommandEncoder_encodeCommands(void *obj) {
                                  indirectBufferOffset:body->dispatch_args_offset
                           threadsPerObjectThreadgroup:MTLSizeMake(body->vertex_per_warp, 1, 1)
                             threadsPerMeshThreadgroup:MTLSizeMake(1, 1, 1)];
-      [encoder setObjectBuffer:(id<MTLBuffer>)body->dispatch_args_buffer offset:0 atIndex:21];
+      [encoder setObjectBuffer:(id<MTLBuffer>)body->imm_draw_arguments offset:0 atIndex:21];
       break;
     }
     case WMTRenderCommandDXMTTessellationMeshDraw: {
@@ -983,7 +1081,7 @@ _MTLRenderCommandEncoder_encodeCommands(void *obj) {
                                  indirectBufferOffset:body->dispatch_args_offset
                           threadsPerObjectThreadgroup:MTLSizeMake(body->threads_per_patch, body->patch_per_group, 1)
                             threadsPerMeshThreadgroup:MTLSizeMake(32, 1, 1)];
-      [encoder setObjectBuffer:(id<MTLBuffer>)body->dispatch_args_buffer offset:0 atIndex:21];
+      [encoder setObjectBuffer:(id<MTLBuffer>)body->imm_draw_arguments offset:0 atIndex:21];
       break;
     }
     case WMTRenderCommandDXMTTessellationMeshDrawIndexedIndirect: {
@@ -995,7 +1093,7 @@ _MTLRenderCommandEncoder_encodeCommands(void *obj) {
                                  indirectBufferOffset:body->dispatch_args_offset
                           threadsPerObjectThreadgroup:MTLSizeMake(body->threads_per_patch, body->patch_per_group, 1)
                             threadsPerMeshThreadgroup:MTLSizeMake(32, 1, 1)];
-      [encoder setObjectBuffer:(id<MTLBuffer>)body->dispatch_args_buffer offset:0 atIndex:21];
+      [encoder setObjectBuffer:(id<MTLBuffer>)body->imm_draw_arguments offset:0 atIndex:21];
       break;
     }
     case WMTRenderCommandUpdateFence: {
@@ -1218,10 +1316,10 @@ _MTLDevice_newTemporalScaler(void *obj) {
   struct unixcall_mtldevice_newfxtemporalscaler *params = obj;
   MTLFXTemporalScalerDescriptor *desc = [[MTLFXTemporalScalerDescriptor alloc] init];
   const struct WMTFXTemporalScalerInfo *info = params->info.ptr;
-  desc.colorTextureFormat = (MTLPixelFormat)info->color_format;
-  desc.outputTextureFormat = (MTLPixelFormat)info->output_format;
-  desc.depthTextureFormat = (MTLPixelFormat)info->depth_format;
-  desc.motionTextureFormat = (MTLPixelFormat)info->motion_format;
+  desc.colorTextureFormat = to_metal_pixel_format(info->color_format);
+  desc.outputTextureFormat = to_metal_pixel_format(info->output_format);
+  desc.depthTextureFormat = to_metal_pixel_format(info->depth_format);
+  desc.motionTextureFormat = to_metal_pixel_format(info->motion_format);
   desc.inputWidth = info->input_width;
   desc.inputHeight = info->input_height;
   desc.outputWidth = info->output_width;
@@ -1258,8 +1356,8 @@ _MTLDevice_newSpatialScaler(void *obj) {
   struct unixcall_mtldevice_newfxspatialscaler *params = obj;
   MTLFXSpatialScalerDescriptor *desc = [[MTLFXSpatialScalerDescriptor alloc] init];
   const struct WMTFXSpatialScalerInfo *info = params->info.ptr;
-  desc.colorTextureFormat = (MTLPixelFormat)info->color_format;
-  desc.outputTextureFormat = (MTLPixelFormat)info->output_format;
+  desc.colorTextureFormat = to_metal_pixel_format(info->color_format);
+  desc.outputTextureFormat = to_metal_pixel_format(info->output_format);
   desc.inputWidth = info->input_width;
   desc.inputHeight = info->input_height;
   desc.outputWidth = info->output_width;
@@ -1393,7 +1491,7 @@ _MetalLayer_setProps(void *obj) {
     layer.contentsScale = props->contents_scale;
     layer.displaySyncEnabled = props->display_sync_enabled;
     layer.drawableSize = CGSizeMake(props->drawable_width, props->drawable_height);
-    layer.pixelFormat = (MTLPixelFormat)props->pixel_format;
+    layer.pixelFormat = to_metal_pixel_format(props->pixel_format);
   });
   return STATUS_SUCCESS;
 }
@@ -1655,10 +1753,10 @@ struct SM50_SHADER_EMULATE_VERTEX_STREAM_OUTPUT_DATA32 {
   uint32_t elements;
 };
 
-struct SM50_SHADER_DEBUG_IDENTITY_DATA32 {
+struct SM50_SHADER_COMMON_DATA32 {
   uint32_t next;
   enum SM50_SHADER_COMPILATION_ARGUMENT_TYPE type;
-  uint64_t id;
+  enum SM50_SHADER_METAL_VERSION metal_version;
 };
 
 struct SM50_SHADER_COMPILATION_ARGUMENT_DATA32 {
@@ -1700,6 +1798,12 @@ struct SM50_SHADER_PSO_GEOMETRY_SHADER_DATA32 {
   bool strip_topology;
 };
 
+struct SM50_SHADER_PSO_TESSELLATOR_DATA32 {
+  uint32_t next;
+  enum SM50_SHADER_COMPILATION_ARGUMENT_TYPE type;
+  uint32_t max_potential_tess_factor;
+};
+
 void
 sm50_compilation_argument32_convert(
     struct SM50_SHADER_COMPILATION_ARGUMENT_DATA *first_arg, struct SM50_SHADER_COMPILATION_ARGUMENT_DATA32 *args32
@@ -1728,14 +1832,14 @@ sm50_compilation_argument32_convert(
       data->elements = UInt32ToPtr(src->elements);
       break;
     }
-    case SM50_SHADER_DEBUG_IDENTITY: {
-      struct SM50_SHADER_DEBUG_IDENTITY_DATA32 *src = (void *)args32;
-      struct SM50_SHADER_DEBUG_IDENTITY_DATA *data = malloc(sizeof(struct SM50_SHADER_DEBUG_IDENTITY_DATA));
+    case SM50_SHADER_COMMON: {
+      struct SM50_SHADER_COMMON_DATA32 *src = (void *)args32;
+      struct SM50_SHADER_COMMON_DATA *data = malloc(sizeof(struct SM50_SHADER_COMMON_DATA));
       last_arg->next = data;
       last_arg = (void *)data;
       last_arg->next = NULL;
       data->type = src->type;
-      data->id = src->id;
+      data->metal_version = src->metal_version;
       break;
     }
     case SM50_SHADER_PSO_PIXEL_SHADER: {
@@ -1783,6 +1887,16 @@ sm50_compilation_argument32_convert(
       last_arg->next = NULL;
       data->type = src->type;
       data->strip_topology = src->strip_topology;
+      break;
+    }
+    case SM50_SHADER_PSO_TESSELLATOR: {
+      struct SM50_SHADER_PSO_TESSELLATOR_DATA32 *src = (void *)args32;
+      struct SM50_SHADER_PSO_TESSELLATOR_DATA *data = malloc(sizeof(struct SM50_SHADER_PSO_TESSELLATOR_DATA));
+      last_arg->next = data;
+      last_arg = (void *)data;
+      last_arg->next = NULL;
+      data->type = src->type;
+      data->max_potential_tess_factor = src->max_potential_tess_factor;
       break;
     }
     case SM50_SHADER_ARGUMENT_TYPE_MAX:
@@ -2246,31 +2360,102 @@ _MTLSharedEvent_signalValue(void *obj) {
 }
 
 #ifndef DXMT_NATIVE
+
+typedef struct {
+  _Atomic(CFRunLoopRef) runloop_ref;
+  MTLSharedEventListener *shared_listener;
+} *shared_event_listener_t;
+
 extern NTSTATUS NtSetEvent(void *handle, void *prev_state);
 
 static NTSTATUS
 _MTLSharedEvent_setWin32EventAtValue(void *obj) {
-  static MTLSharedEventListener *shared_listener = nil;
-  static dispatch_once_t pred;
-  dispatch_once(&pred, ^{
-    shared_listener = [[MTLSharedEventListener alloc] init];
-  });
-
-  struct unixcall_generic_obj_obj_uint64_noret *params = obj;
-  void *nt_event_handle = (void *)params->arg0;
-  [(id<MTLSharedEvent>)params->handle notifyListener:shared_listener
-                                             atValue:params->arg1
-                                               block:^(id<MTLSharedEvent> _e, uint64_t _v) {
-                                                 NtSetEvent(nt_event_handle, NULL);
-                                               }];
+  struct unixcall_mtlsharedevent_setevent *params = obj;
+  void *nt_event_handle = (shared_event_listener_t)params->event_handle;
+  shared_event_listener_t q = (shared_event_listener_t)params->shared_event_listener;
+  [(id<MTLSharedEvent>)params->shared_event
+      notifyListener:q->shared_listener
+             atValue:params->value
+               block:^(id<MTLSharedEvent> _e, uint64_t _v) {
+                 // NOTE: must ensure no more notification comes after listener been destroyed.
+                 while (!atomic_load_explicit(&q->runloop_ref, memory_order_acquire)) {
+#if defined(__x86_64__)
+                   _mm_pause();
+#elif defined(__aarch64__)
+          __asm__ __volatile__("yield");
+#endif
+                 }
+                 CFRunLoopPerformBlock(q->runloop_ref, kCFRunLoopCommonModes, ^{
+                   NtSetEvent(nt_event_handle, NULL);
+                 });
+                 CFRunLoopWakeUp(q->runloop_ref);
+               }];
   return STATUS_SUCCESS;
 }
+
+static NTSTATUS
+_SharedEventListener_start(void *obj) {
+  struct unixcall_generic_obj_noret *params = obj;
+  shared_event_listener_t q = (shared_event_listener_t)params->handle;
+  CFRunLoopRef uninited = NULL;
+  if (q && atomic_compare_exchange_strong(&q->runloop_ref, &uninited, CFRunLoopGetCurrent())) {
+    /* Add a dummy source so the runloop stays running */
+    CFRunLoopSourceContext source_context = {0};
+    CFRunLoopSourceRef source = CFRunLoopSourceCreate(NULL, 0, &source_context);
+    CFRunLoopAddSource(q->runloop_ref, source, kCFRunLoopCommonModes);
+    CFRunLoopRun();
+  }
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_SharedEventListener_create(void *obj) {
+  struct unixcall_generic_obj_ret *params = obj;
+  shared_event_listener_t q = malloc(sizeof(*q));
+  if (q) {
+    q->runloop_ref = NULL;
+    q->shared_listener = [[MTLSharedEventListener alloc] init];
+  }
+  params->ret = (obj_handle_t)q;
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_SharedEventListener_destroy(void *obj) {
+  struct unixcall_generic_obj_noret *params = obj;
+  shared_event_listener_t q = (shared_event_listener_t)params->handle;
+  if (q && q->runloop_ref) {
+    CFRunLoopStop(q->runloop_ref);
+    q->runloop_ref = NULL;
+    [q->shared_listener release];
+    q->shared_listener = nil;
+    free(q);
+  }
+  return STATUS_SUCCESS;
+}
+
 #else
 static NTSTATUS
 _MTLSharedEvent_setWin32EventAtValue(void *obj) {
   // nop
   return STATUS_SUCCESS;
 }
+
+static NTSTATUS
+_SharedEventListener_start(void *obj) {
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_SharedEventListener_create(void *obj) {
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_SharedEventListener_destroy(void *obj) {
+  return STATUS_SUCCESS;
+}
+
 #endif
 
 static NTSTATUS
@@ -2286,6 +2471,195 @@ _MTLDevice_newEvent(void *obj) {
   params->ret = (obj_handle_t)[(id<MTLDevice>)params->handle newEvent];
   return STATUS_SUCCESS;
 }
+
+static NTSTATUS
+_MTLBuffer_updateContents(void *obj) {
+  struct unixcall_mtlbuffer_updatecontents *params = obj;
+  memcpy((void *)((char *)[(id<MTLBuffer>)params->buffer contents] + params->offset), params->data.ptr, params->length);
+  if ([(id<MTLBuffer>)params->buffer storageMode] == MTLStorageModeManaged)
+    [(id<MTLBuffer>)params->buffer didModifyRange:NSMakeRange(params->offset, params->length)];
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_WMTGetOSVersion(void *obj) {
+  struct unixcall_get_os_version *params = obj;
+  NSOperatingSystemVersion version = [NSProcessInfo processInfo].operatingSystemVersion;
+  params->ret_major = version.majorVersion;
+  params->ret_minor = version.minorVersion;
+  params->ret_patch = version.patchVersion;
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_MTLDevice_newBinaryArchive(void *obj) {
+  struct unixcall_mtldevice_newbinaryarchive *params = obj;
+  NSString *path_str = NULL;
+  NSURL *url = NULL;
+  MTLBinaryArchiveDescriptor *desc = [[MTLBinaryArchiveDescriptor alloc] init];
+  if (params->url.ptr != NULL) {
+    path_str = [[NSString alloc] initWithCString:params->url.ptr encoding:NSUTF8StringEncoding];
+    url = [[NSURL alloc] initFileURLWithPath:path_str];
+    desc.url = url;
+  }
+  NSError *err = NULL;
+  params->ret_archive = (obj_handle_t)[(id<MTLDevice>)params->device newBinaryArchiveWithDescriptor:desc error:&err];
+  params->ret_error = (obj_handle_t)err;
+  [desc release];
+  if (url)
+    [url release];
+  if (path_str)
+    [path_str release];
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_MTLBinaryArchive_serialize(void *obj) {
+  struct unixcall_mtlbinaryarchive_serialize *params = obj;
+  NSString *path_str = [[NSString alloc] initWithCString:params->url.ptr encoding:NSUTF8StringEncoding];
+  NSURL *url = [[NSURL alloc] initFileURLWithPath:path_str];
+  NSError *err = NULL;
+  [(id<MTLBinaryArchive>)params->archive serializeToURL:url error:&err];
+  params->ret_error = (obj_handle_t)err;
+  [url release];
+  [path_str release];
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_DispatchData_alloc_init(void *obj) {
+  struct unixcall_generic_obj_uint64_obj_ret *params = obj;
+  params->ret = (obj_handle_t)dispatch_data_create((void *)params->handle, params->arg, NULL, NULL);
+  return STATUS_SUCCESS;
+}
+
+@interface MTLSharedTextureHandle ()
+
+- (MTLSharedTextureHandle *)initWithMachPort:(mach_port_t)port;
+- (mach_port_t)createMachPort;
+
+@end
+
+static NTSTATUS
+_MTLDevice_newSharedTexture(void *obj) {
+  struct unixcall_mtldevice_newtexture *params = obj;
+  id<MTLDevice> device = (id<MTLDevice>)params->device;
+  struct WMTTextureInfo *info = params->info.ptr;
+
+  if (info->mach_port) {
+    MTLSharedTextureHandle *handle = [[MTLSharedTextureHandle alloc] initWithMachPort:info->mach_port];
+    id<MTLTexture> ret = [device newSharedTextureWithHandle:handle];
+    extract_texture_descriptor(ret, info);
+    params->ret = (obj_handle_t)ret;
+    info->gpu_resource_id = [ret gpuResourceID]._impl;
+    [handle release];
+  } else {
+    MTLTextureDescriptor *desc = [[MTLTextureDescriptor alloc] init];
+    fill_texture_descriptor(desc, info);
+    id<MTLTexture> ret = [device newSharedTextureWithDescriptor:desc];
+    MTLSharedTextureHandle *handle = [ret newSharedTextureHandle];
+    params->ret = (obj_handle_t)ret;
+    info->gpu_resource_id = [ret gpuResourceID]._impl;
+    info->mach_port = [handle createMachPort]; // implicitly add ref to underlying IOSurface
+    [handle release];
+    [desc release];
+  }
+
+  return STATUS_SUCCESS;
+}
+
+/* Private API to register a mach port with the bootstrap server */
+extern kern_return_t bootstrap_register2(mach_port_t bp, name_t service_name, mach_port_t sp, int flags);
+
+static NTSTATUS
+_WMTBootstrapRegister(void *obj) {
+  struct unixcall_bootstrap *params = obj;
+  mach_port_t rp = params->mach_port;
+  mach_port_t bp;
+
+  if (task_get_bootstrap_port(mach_task_self(), &bp) != KERN_SUCCESS)
+    return STATUS_UNSUCCESSFUL;
+  NTSTATUS ret = bootstrap_register2(bp, params->name, rp, 0) != KERN_SUCCESS ? STATUS_UNSUCCESSFUL : STATUS_SUCCESS;
+  mach_port_deallocate(mach_task_self(), bp);
+  return ret;
+}
+
+static NTSTATUS
+_WMTBootstrapLookUp(void *obj) {
+  struct unixcall_bootstrap *params = obj;
+  mach_port_t rp = 0;
+  mach_port_t bp;
+
+  if (task_get_bootstrap_port(mach_task_self(), &bp) != KERN_SUCCESS)
+    return STATUS_UNSUCCESSFUL;
+  NTSTATUS ret = bootstrap_look_up(bp, params->name, &rp) != KERN_SUCCESS ? STATUS_UNSUCCESSFUL : STATUS_SUCCESS;
+  mach_port_deallocate(mach_task_self(), bp);
+  params->mach_port = rp;
+  return ret;
+}
+
+@protocol MTLDeviceSPI <MTLDevice>
+
+- (id<MTLSharedEvent>)newSharedEventWithMachPort:(mach_port_t)machPort;
+
+@end
+
+@interface MTLSharedEventHandle ()
+
+- (mach_port_t)eventPort;
+
+@end
+
+static NTSTATUS
+_MTLSharedEvent_createMachPort(void *obj) {
+  struct unixcall_mtlsharedevent_createmachport *params = obj;
+  id<MTLSharedEvent> event = (id<MTLSharedEvent>)params->event;
+  MTLSharedEventHandle *handle = [event newSharedEventHandle];
+  mach_port_t port = [handle eventPort];
+  
+  // The eventPort method returns a send right that's owned by the handle.
+  // We need to add our own send right since we're keeping the port but releasing the handle.
+  // This increments the send right count so the port remains valid.
+  mach_port_mod_refs(mach_task_self(), port, MACH_PORT_RIGHT_SEND, 1);
+  
+  params->ret_mach_port = port;
+  [handle release];
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_MTLDevice_newSharedEventWithMachPort(void *obj) {
+  struct unixcall_mtldevice_newsharedeventwithmachport *params = obj;
+  id<MTLDevice> device = (id<MTLDevice>)params->device;
+  id<MTLDeviceSPI> deviceSPI = (id<MTLDeviceSPI>)device;
+  params->ret_event = (obj_handle_t)[deviceSPI newSharedEventWithMachPort:params->mach_port];
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_MTLDevice_registryID(void *obj) {
+  struct unixcall_generic_obj_uint64_ret *params = obj;
+  params->ret = [(id<MTLDevice>)params->handle registryID];
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_MTLSharedEvent_waitUntilSignaledValue(void *obj) {
+  struct unixcall_mtlsharedevent_waituntilsignaledvalue *params = obj;
+  bool timeout = [(id<MTLSharedEvent>)params->event waitUntilSignaledValue:params->value timeoutMS:params->timeout_ms];
+  params->ret_timeout = timeout;
+  return STATUS_SUCCESS;
+}
+
+/*
+ * Definition from cache.c
+ */
+
+NTSTATUS _CacheReader_alloc_init(void *obj);
+NTSTATUS _CacheReader_get(void *obj);
+NTSTATUS _CacheWriter_alloc_init(void *obj);
+NTSTATUS _CacheWriter_set(void *obj);
+NTSTATUS _WMTSetMetalShaderCachePath(void *obj);
 
 const void *__wine_unix_call_funcs[] = {
     &_NSObject_retain,
@@ -2395,6 +2769,26 @@ const void *__wine_unix_call_funcs[] = {
     &_MTLSharedEvent_setWin32EventAtValue,
     &_MTLDevice_newFence,
     &_MTLDevice_newEvent,
+    &_MTLBuffer_updateContents,
+    &_SharedEventListener_create,
+    &_SharedEventListener_start,
+    &_SharedEventListener_destroy,
+    &_WMTGetOSVersion,
+    &_MTLDevice_newBinaryArchive,
+    &_MTLBinaryArchive_serialize,
+    &_DispatchData_alloc_init,
+    &_CacheReader_alloc_init,
+    &_CacheReader_get,
+    &_CacheWriter_alloc_init,
+    &_CacheWriter_set,
+    &_WMTSetMetalShaderCachePath,
+    &_MTLDevice_newSharedTexture,
+    &_WMTBootstrapRegister,
+    &_WMTBootstrapLookUp,
+    &_MTLSharedEvent_createMachPort,
+    &_MTLDevice_newSharedEventWithMachPort,
+    &_MTLDevice_registryID,
+    &_MTLSharedEvent_waitUntilSignaledValue,
 };
 
 #ifndef DXMT_NATIVE
@@ -2506,5 +2900,25 @@ const void *__wine_unix_call_wow64_funcs[] = {
     &_MTLSharedEvent_setWin32EventAtValue,
     &_MTLDevice_newFence,
     &_MTLDevice_newEvent,
+    &_MTLBuffer_updateContents,
+    &_SharedEventListener_create,
+    &_SharedEventListener_start,
+    &_SharedEventListener_destroy,
+    &_WMTGetOSVersion,
+    &_MTLDevice_newBinaryArchive,
+    &_MTLBinaryArchive_serialize,
+    &_DispatchData_alloc_init,
+    &_CacheReader_alloc_init,
+    &_CacheReader_get,
+    &_CacheWriter_alloc_init,
+    &_CacheWriter_set,
+    &_WMTSetMetalShaderCachePath,
+    &_MTLDevice_newSharedTexture,
+    &_WMTBootstrapRegister,
+    &_WMTBootstrapLookUp,
+    &_MTLSharedEvent_createMachPort,
+    &_MTLDevice_newSharedEventWithMachPort,
+    &_MTLDevice_registryID,
+    &_MTLSharedEvent_waitUntilSignaledValue,
 };
 #endif

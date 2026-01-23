@@ -202,7 +202,8 @@ void setup_binding_table(
         [=, index = srv.arg_metadata_index](pvalue) {
           // ignore index in SM 5.0
           return get_item_in_argbuf_binding_table(binding_table_index, index);
-        }
+        },
+        false
       };
     } else {
       resource_map.srv_buf_range_map[range_id] = {
@@ -238,7 +239,8 @@ void setup_binding_table(
         [=, index = uav.arg_metadata_index](pvalue) {
           // ignore index in SM 5.0
           return get_item_in_argbuf_binding_table(binding_table_index, index);
-        }
+        },
+        uav.global_coherent
       };
     } else {
       resource_map.uav_buf_range_map[range_id] = {
@@ -321,11 +323,11 @@ void setup_temp_register(
   air::AirType &types, llvm::Module &module, llvm::IRBuilder<> &builder
 ) {
   resource_map.temp.ptr_int4 = builder.CreateAlloca(
-    llvm::ArrayType::get(types._int4, shader_info->tempRegisterCount)
+    llvm::ArrayType::get(types._int, 4 * shader_info->tempRegisterCount)
   );
   resource_map.temp.ptr_float4 = builder.CreateBitCast(
     resource_map.temp.ptr_int4,
-    llvm::ArrayType::get(types._float4, shader_info->tempRegisterCount)
+    llvm::ArrayType::get(types._float, 4 * shader_info->tempRegisterCount)
       ->getPointerTo()
   );
   for (auto &phase : shader_info->phases) {
@@ -333,26 +335,20 @@ void setup_temp_register(
     auto &phase_temp = resource_map.phases.back();
 
     phase_temp.temp.ptr_int4 = builder.CreateAlloca(
-      llvm::ArrayType::get(types._int4, phase.tempRegisterCount)
+      llvm::ArrayType::get(types._int, 4 * phase.tempRegisterCount)
     );
     phase_temp.temp.ptr_float4 = builder.CreateBitCast(
       phase_temp.temp.ptr_int4,
-      llvm::ArrayType::get(types._float4, phase.tempRegisterCount)
+      llvm::ArrayType::get(types._float, 4 * phase.tempRegisterCount)
         ->getPointerTo()
     );
 
     for (auto &[idx, info] : phase.indexableTempRegisterCounts) {
       auto &[numRegisters, mask] = info;
       auto channel_count = std::bit_width(mask);
-      auto ptr_int_vec = builder.CreateAlloca(llvm::ArrayType::get(
-        llvm::FixedVectorType::get(types._int, channel_count), numRegisters
-      ));
+      auto ptr_int_vec = builder.CreateAlloca(llvm::ArrayType::get(types._int, numRegisters * channel_count));
       auto ptr_float_vec = builder.CreateBitCast(
-        ptr_int_vec,
-        llvm::ArrayType::get(
-          llvm::FixedVectorType::get(types._float, channel_count), numRegisters
-        )
-          ->getPointerTo()
+          ptr_int_vec, llvm::ArrayType::get(types._float, numRegisters * channel_count)->getPointerTo()
       );
       phase_temp.indexable_temp_map[idx] = {
         ptr_int_vec, ptr_float_vec, (uint32_t)channel_count
@@ -362,15 +358,9 @@ void setup_temp_register(
   for (auto &[idx, info] : shader_info->indexableTempRegisterCounts) {
     auto &[numRegisters, mask] = info;
     auto channel_count = std::bit_width(mask);
-    auto ptr_int_vec = builder.CreateAlloca(llvm::ArrayType::get(
-      llvm::FixedVectorType::get(types._int, channel_count), numRegisters
-    ));
+    auto ptr_int_vec = builder.CreateAlloca(llvm::ArrayType::get(types._int, numRegisters * channel_count));
     auto ptr_float_vec = builder.CreateBitCast(
-      ptr_int_vec,
-      llvm::ArrayType::get(
-        llvm::FixedVectorType::get(types._float, channel_count), numRegisters
-      )
-        ->getPointerTo()
+        ptr_int_vec, llvm::ArrayType::get(types._float, numRegisters * channel_count)->getPointerTo()
     );
     resource_map.indexable_temp_map[idx] = {
       ptr_int_vec, ptr_float_vec, (uint32_t)channel_count
@@ -381,18 +371,36 @@ void setup_temp_register(
   }
 }
 
-void setup_fastmath_flag(llvm::Module &module, llvm::IRBuilder<> &builder) {
-  if (auto options = module.getNamedMetadata("air.compile_options")) {
-    for (auto operand : options->operands()) {
-      if (isa<llvm::MDTuple>(operand) &&
-          cast<llvm::MDTuple>(operand)->getNumOperands() == 1 &&
-          isa<llvm::MDString>(cast<llvm::MDTuple>(operand)->getOperand(0)) &&
-          cast<llvm::MDString>(cast<llvm::MDTuple>(operand)->getOperand(0))
-              ->getString()
-              .compare("air.compile.fast_math_enable") == 0) {
-        builder.getFastMathFlags().setFast(true);
-      }
-    }
+void setup_metal_version(llvm::Module &module, SM50_SHADER_METAL_VERSION metal_verison) {
+  using namespace llvm;
+  auto &context = module.getContext();
+  auto createUnsignedInteger = [&](uint32_t s) {
+    return ConstantAsMetadata::get(ConstantInt::get(context, APInt{32, s, false}));
+  };
+  auto createString = [&](auto s) { return MDString::get(context, s); };
+
+  auto airVersion = module.getOrInsertNamedMetadata("air.version");
+  auto airLangVersion = module.getOrInsertNamedMetadata("air.language_version");
+  switch (metal_verison) {
+  case SM50_SHADER_METAL_320: {
+    airVersion->addOperand(
+        MDTuple::get(context, {createUnsignedInteger(2), createUnsignedInteger(7), createUnsignedInteger(0)})
+    );
+    airLangVersion->addOperand(MDTuple::get(
+        context, {createString("Metal"), createUnsignedInteger(3), createUnsignedInteger(2), createUnsignedInteger(0)}
+    ));
+    module.setTargetTriple("air64-apple-macosx15.0.0");
+    break;
+  }
+  default: {
+    airVersion->addOperand(
+        MDTuple::get(context, {createUnsignedInteger(2), createUnsignedInteger(6), createUnsignedInteger(0)})
+    );
+    airLangVersion->addOperand(MDTuple::get(
+        context, {createString("Metal"), createUnsignedInteger(3), createUnsignedInteger(1), createUnsignedInteger(0)}
+    ));
+    break;
+  }
   }
 }
 
@@ -412,26 +420,17 @@ llvm::Error convert_dxbc_pixel_shader(
   bool pso_dual_source_blending = false;
   bool pso_disable_depth_output = false;
   uint32_t pso_unorm_output_reg_mask = 0;
-  SM50_SHADER_COMPILATION_ARGUMENT_DATA *arg = pArgs;
-  // uint64_t debug_id = ~0u;
-  while (arg) {
-    switch (arg->type) {
-    case SM50_SHADER_DEBUG_IDENTITY:
-      // debug_id = ((SM50_SHADER_DEBUG_IDENTITY_DATA *)arg)->id;
-      break;
-    case SM50_SHADER_PSO_PIXEL_SHADER:
-      pso_sample_mask = ((SM50_SHADER_PSO_PIXEL_SHADER_DATA *)arg)->sample_mask;
-      pso_dual_source_blending =
-        ((SM50_SHADER_PSO_PIXEL_SHADER_DATA *)arg)->dual_source_blending;
-      pso_disable_depth_output =
-        ((SM50_SHADER_PSO_PIXEL_SHADER_DATA *)arg)->disable_depth_output;
-      pso_unorm_output_reg_mask =
-        ((SM50_SHADER_PSO_PIXEL_SHADER_DATA *)arg)->unorm_output_reg_mask;
-      break;
-    default:
-      break;
-    }
-    arg = (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)arg->next;
+  SM50_SHADER_PSO_PIXEL_SHADER_DATA *pso_data = nullptr;
+  if (args_get_data<SM50_SHADER_PSO_PIXEL_SHADER, SM50_SHADER_PSO_PIXEL_SHADER_DATA>(pArgs, &pso_data)) {
+    pso_dual_source_blending = pso_data->dual_source_blending;
+    pso_disable_depth_output = pso_data->disable_depth_output;
+    pso_unorm_output_reg_mask = pso_data->unorm_output_reg_mask;
+    pso_sample_mask = pso_data->sample_mask;
+  }
+  SM50_SHADER_METAL_VERSION metal_version = SM50_SHADER_METAL_310;
+  SM50_SHADER_COMMON_DATA *sm50_common = nullptr;
+  if (args_get_data<SM50_SHADER_COMMON, SM50_SHADER_COMMON_DATA>(pArgs, &sm50_common)) {
+    metal_version = sm50_common->metal_version;
   }
 
   IREffect prologue([](auto) { return std::monostate(); });
@@ -482,7 +481,7 @@ llvm::Error convert_dxbc_pixel_shader(
   llvm::raw_null_ostream nulldbg{};
   llvm::air::AIRBuilder air(builder, nulldbg);
 
-  setup_fastmath_flag(module, builder);
+  setup_metal_version(module, metal_version);
 
   resource_map.input.ptr_int4 =
     builder.CreateAlloca(llvm::ArrayType::get(types._int4, max_input_register));
@@ -510,6 +509,7 @@ llvm::Error convert_dxbc_pixel_shader(
     .resource = resource_map, .types = types,
     .pso_sample_mask = pso_sample_mask,
     .shader_type = pShaderInternal->shader_type,
+    .metal_version = metal_version,
   };
 
   if (auto err = prologue.build(ctx).takeError()) {
@@ -549,17 +549,10 @@ llvm::Error convert_dxbc_compute_shader(
   auto func_signature = pShaderInternal->func_signature; // copy
   auto shader_info = &(pShaderInternal->shader_info);
 
-  SM50_SHADER_COMPILATION_ARGUMENT_DATA *arg = pArgs;
-  // uint64_t debug_id = ~0u;
-  while (arg) {
-    switch (arg->type) {
-    case SM50_SHADER_DEBUG_IDENTITY:
-      // debug_id = ((SM50_SHADER_DEBUG_IDENTITY_DATA *)arg)->id;
-      break;
-    default:
-      break;
-    }
-    arg = (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)arg->next;
+  SM50_SHADER_METAL_VERSION metal_version = SM50_SHADER_METAL_310;
+  SM50_SHADER_COMMON_DATA *sm50_common = nullptr;
+  if (args_get_data<SM50_SHADER_COMMON, SM50_SHADER_COMMON_DATA>(pArgs, &sm50_common)) {
+    metal_version = sm50_common->metal_version;
   }
 
   IREffect prologue([](auto) { return std::monostate(); });
@@ -593,7 +586,7 @@ llvm::Error convert_dxbc_compute_shader(
   llvm::raw_null_ostream nulldbg{};
   llvm::air::AIRBuilder air(builder, nulldbg);
 
-  setup_fastmath_flag(module, builder);
+  setup_metal_version(module, metal_version);
   setup_temp_register(shader_info, resource_map, types, module, builder);
   setup_immediate_constant_buffer(
     shader_info, resource_map, types, module, builder
@@ -603,6 +596,7 @@ llvm::Error convert_dxbc_compute_shader(
     .builder = builder, .air = air, .llvm = context, .module = module, .function = function,
     .resource = resource_map, .types = types, .pso_sample_mask = 0xffffffff,
     .shader_type = pShaderInternal->shader_type,
+    .metal_version = metal_version,
   };
 
   if (auto err = prologue.build(ctx).takeError()) {
@@ -635,39 +629,25 @@ llvm::Error convert_dxbc_vertex_shader(
 
   auto func_signature = pShaderInternal->func_signature; // copy
   auto shader_info = &(pShaderInternal->shader_info);
-  auto shader_type = pShaderInternal->shader_type;
 
   uint32_t max_input_register = pShaderInternal->max_input_register;
   uint32_t max_output_register = pShaderInternal->max_output_register;
-  SM50_SHADER_COMPILATION_ARGUMENT_DATA *arg = pArgs;
   SM50_SHADER_EMULATE_VERTEX_STREAM_OUTPUT_DATA *vertex_so = nullptr;
+  args_get_data<SM50_SHADER_EMULATE_VERTEX_STREAM_OUTPUT, SM50_SHADER_EMULATE_VERTEX_STREAM_OUTPUT_DATA>(
+      pArgs, &vertex_so
+  );
   SM50_SHADER_IA_INPUT_LAYOUT_DATA *ia_layout = nullptr;
-  MTL_GEOMETRY_SHADER_PASS_THROUGH *gs_passthrough = nullptr;
-  bool rasterization_disabled = false;
-  // uint64_t debug_id = ~0u;
-  while (arg) {
-    switch (arg->type) {
-    case SM50_SHADER_EMULATE_VERTEX_STREAM_OUTPUT:
-      if (shader_type != microsoft::D3D10_SB_VERTEX_SHADER)
-        break;
-      vertex_so = (SM50_SHADER_EMULATE_VERTEX_STREAM_OUTPUT_DATA *)arg;
-      break;
-    case SM50_SHADER_DEBUG_IDENTITY:
-      // debug_id = ((SM50_SHADER_DEBUG_IDENTITY_DATA *)arg)->id;
-      break;
-    case SM50_SHADER_IA_INPUT_LAYOUT:
-      ia_layout = ((SM50_SHADER_IA_INPUT_LAYOUT_DATA *)arg);
-      break;
-    case SM50_SHADER_GS_PASS_THROUGH:
-      gs_passthrough = &((SM50_SHADER_GS_PASS_THROUGH_DATA *)arg)->Data;
-      rasterization_disabled = ((SM50_SHADER_GS_PASS_THROUGH_DATA *)arg)->RasterizationDisabled;
-      break;
-    default:
-      break;
-    }
-    arg = (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)arg->next;
+  args_get_data<SM50_SHADER_IA_INPUT_LAYOUT, SM50_SHADER_IA_INPUT_LAYOUT_DATA>(pArgs, &ia_layout);
+  SM50_SHADER_GS_PASS_THROUGH_DATA *gs_passthrough = nullptr;
+  bool rasterization_disabled =
+      (args_get_data<SM50_SHADER_GS_PASS_THROUGH, SM50_SHADER_GS_PASS_THROUGH_DATA>(pArgs, &gs_passthrough) &&
+       gs_passthrough->RasterizationDisabled) ||
+      (vertex_so != nullptr);
+  SM50_SHADER_METAL_VERSION metal_version = SM50_SHADER_METAL_310;
+  SM50_SHADER_COMMON_DATA *sm50_common = nullptr;
+  if (args_get_data<SM50_SHADER_COMMON, SM50_SHADER_COMMON_DATA>(pArgs, &sm50_common)) {
+    metal_version = sm50_common->metal_version;
   }
-  rasterization_disabled = rasterization_disabled || (vertex_so != nullptr);
 
   IREffect prologue([](auto) { return std::monostate(); });
   IRValue epilogue([](struct context ctx) -> pvalue {
@@ -761,12 +741,12 @@ llvm::Error convert_dxbc_vertex_shader(
   setup_binding_table(shader_info, resource_map, func_signature, module);
 
   uint32_t rta_idx_out = ~0u;
-  if (gs_passthrough && gs_passthrough->RenderTargetArrayIndexReg != 255) {
+  if (gs_passthrough && gs_passthrough->Data.RenderTargetArrayIndexReg != 255) {
     rta_idx_out =
       func_signature.DefineOutput(air::OutputRenderTargetArrayIndex{});
   }
   uint32_t va_idx_out = ~0u;
-  if (gs_passthrough && gs_passthrough->ViewportArrayIndexReg != 255) {
+  if (gs_passthrough && gs_passthrough->Data.ViewportArrayIndexReg != 255) {
     va_idx_out = func_signature.DefineOutput(air::OutputViewportArrayIndex{});
   }
 
@@ -781,7 +761,7 @@ llvm::Error convert_dxbc_vertex_shader(
   llvm::raw_null_ostream nulldbg{};
   llvm::air::AIRBuilder air(builder, nulldbg);
 
-  setup_fastmath_flag(module, builder);
+  setup_metal_version(module, metal_version);
 
   resource_map.vertex_id_with_base = function->getArg(vertex_idx);
   resource_map.base_vertex_id = function->getArg(base_vertex_idx);
@@ -819,6 +799,7 @@ llvm::Error convert_dxbc_vertex_shader(
     .builder = builder, .air = air, .llvm = context, .module = module, .function = function,
     .resource = resource_map, .types = types, .pso_sample_mask = 0xffffffff,
     .shader_type = pShaderInternal->shader_type,
+    .metal_version = metal_version,
   };
 
   if (auto err = prologue.build(ctx).takeError()) {
@@ -869,8 +850,8 @@ llvm::Error convert_dxbc_vertex_shader(
         ),
         resource_map.output.ptr_int4,
         {builder.getInt32(0),
-         builder.getInt32(gs_passthrough->RenderTargetArrayIndexReg),
-         builder.getInt32(gs_passthrough->RenderTargetArrayIndexComponent)}
+         builder.getInt32(gs_passthrough->Data.RenderTargetArrayIndexReg),
+         builder.getInt32(gs_passthrough->Data.RenderTargetArrayIndexComponent)}
       );
       value = builder.CreateInsertValue(
         value, builder.CreateLoad(types._int, src_ptr), {rta_idx_out}
@@ -882,8 +863,8 @@ llvm::Error convert_dxbc_vertex_shader(
         ),
         resource_map.output.ptr_int4,
         {builder.getInt32(0),
-         builder.getInt32(gs_passthrough->ViewportArrayIndexReg),
-         builder.getInt32(gs_passthrough->ViewportArrayIndexComponent)}
+         builder.getInt32(gs_passthrough->Data.ViewportArrayIndexReg),
+         builder.getInt32(gs_passthrough->Data.ViewportArrayIndexComponent)}
       );
       value = builder.CreateInsertValue(
         value, builder.CreateLoad(types._int, src_ptr), {va_idx_out}
@@ -1285,20 +1266,19 @@ AIRCONV_API int SM50Initialize(
       pRefl->ThreadgroupSize[2] = sm50_shader->threadgroup_size[2];
     }
     if (sm50_shader->shader_type == microsoft::D3D11_SB_HULL_SHADER) {
-      pRefl->Tessellator = {
-        .Partition = sm50_shader->tessellation_partition,
-        .MaxFactor = sm50_shader->max_tesselation_factor,
-        .OutputPrimitive = (MTL_TESSELLATOR_OUTPUT_PRIMITIVE
-        )sm50_shader->tessellator_output_primitive,
-      };
-
       auto threads_per_patch = next_pow2(sm50_shader->hull_maximum_threads_per_patch);
+      if (threads_per_patch > 32) {
+        errorOut << "Threadgroup size of tessellation pipeline is too large.";
+        *ppError = (sm50_error_t)errorObj;
+        return 1;
+      }
       auto patch_per_group = 32 / threads_per_patch;
+      float max_tesselation_factor = sm50_shader->max_tesselation_factor;
 
-      while (estimate_payload_size(sm50_shader, patch_per_group) > 16384) {
+      while (estimate_payload_size(sm50_shader, max_tesselation_factor, patch_per_group) > 16384) {
         if (patch_per_group == 1) {
-          if (sm50_shader->max_tesselation_factor > 1.0f) {
-            sm50_shader->max_tesselation_factor = std::max(sm50_shader->max_tesselation_factor - 2, 1.0f);
+          if (max_tesselation_factor > 1.0f) {
+            max_tesselation_factor = std::max(max_tesselation_factor - 2.0f, 1.0f);
           } else {
             errorOut << "Payload size of tessellation pipeline is too large.";
             *ppError = (sm50_error_t)errorObj;
@@ -1309,7 +1289,27 @@ AIRCONV_API int SM50Initialize(
         }
       }
       sm50_shader->hull_maximum_threads_per_patch = 32 / patch_per_group;
+      sm50_shader->max_tesselation_factor = max_tesselation_factor;
+
       pRefl->ThreadsPerPatch = sm50_shader->hull_maximum_threads_per_patch;
+      pRefl->Tessellator = {
+        .Partition = sm50_shader->tessellation_partition,
+        .MaxFactor = sm50_shader->max_tesselation_factor,
+        .OutputPrimitive = (MTL_TESSELLATOR_OUTPUT_PRIMITIVE
+        )sm50_shader->tessellator_output_primitive,
+      };
+    }
+    if (sm50_shader->shader_type == microsoft::D3D11_SB_DOMAIN_SHADER) {
+      uint32_t max_potential_tess_factor = 1;
+
+      for (int tess_factor = 1; tess_factor <= 64; tess_factor++) {
+        auto x = estimate_mesh_size(sm50_shader, tess_factor);
+        if (x > 32768)
+          break;
+        max_potential_tess_factor = tess_factor;
+      }
+
+      pRefl->PostTessellator = {.MaxPotentialTessFactor = max_potential_tess_factor};
     }
     if (sm50_shader->shader_type == microsoft::D3D10_SB_GEOMETRY_SHADER) {
       if (binding_cbuffer_mask || binding_sampler_mask || binding_uav_mask ||
@@ -1322,6 +1322,9 @@ AIRCONV_API int SM50Initialize(
         );
       }
       pRefl->GeometryShader.Primitive = sm50_shader->gs_input_primitive;
+    }
+    if (sm50_shader->shader_type == microsoft::D3D10_SB_PIXEL_SHADER) {
+      pRefl->PSValidRenderTargets = sm50_shader->pso_valid_output_reg_mask;
     }
     pRefl->NumOutputElement = sm50_shader->max_output_register;
     pRefl->ArgumentTableQwords = binding_table.Size();
@@ -1378,18 +1381,9 @@ AIRCONV_API int SM50Compile(
   context.setOpaquePointers(false); // I suspect Metal uses LLVM 14...
 
   auto &shader_info = ((dxmt::dxbc::SM50ShaderInternal *)pShader)->shader_info;
-  auto shader_type = ((dxmt::dxbc::SM50ShaderInternal *)pShader)->shader_type;
 
   auto pModule = std::make_unique<Module>("shader.air", context);
-  initializeModule(
-    *pModule,
-    {.enableFastMath =
-       (!shader_info.skipOptimization && shader_info.refactoringAllowed &&
-        // this is by design: vertex functions are usually not the
-        // bottle-neck of pipeline, and precise calculation on pixel can reduce
-        // flickering
-        shader_type != microsoft::D3D10_SB_VERTEX_SHADER)}
-  );
+  initializeModule(*pModule);
 
   if (auto err = dxmt::dxbc::convertDXBC(
         pShader, FunctionName, context, *pModule, pArgs
@@ -1401,7 +1395,12 @@ AIRCONV_API int SM50Compile(
     return 1;
   }
 
-  linkShader(*pModule);
+  if (shader_info.use_msad)
+    linkMSAD(*pModule);
+  if (shader_info.use_samplepos)
+    linkSamplePos(*pModule);
+
+  runOptimizationPasses(*pModule);
 
   // Serialize AIR
   auto compiled = new SM50CompiledBitcodeInternal();
@@ -1446,11 +1445,7 @@ AIRCONV_API int SM50CompileTessellationPipelineHull(
     ((dxmt::dxbc::SM50ShaderInternal *)pHullShader)->shader_info;
 
   auto pModule = std::make_unique<Module>("shader.air", context);
-  initializeModule(
-    *pModule,
-    {.enableFastMath =
-       (!shader_info.skipOptimization && shader_info.refactoringAllowed)}
-  );
+  initializeModule(*pModule);
 
   if (auto err = dxmt::dxbc::convert_dxbc_vertex_hull_shader(
         (dxbc::SM50ShaderInternal *)pVertexShader, (dxbc::SM50ShaderInternal *)pHullShader, 
@@ -1463,7 +1458,13 @@ AIRCONV_API int SM50CompileTessellationPipelineHull(
     return 1;
   }
 
-  linkShader(*pModule);
+  if (shader_info.use_msad)
+    linkMSAD(*pModule);
+  if (shader_info.use_samplepos)
+    linkSamplePos(*pModule);
+  linkTessellation(*pModule);
+
+  runOptimizationPasses(*pModule);
 
   // Serialize AIR
   auto compiled = new SM50CompiledBitcodeInternal();
@@ -1506,19 +1507,9 @@ AIRCONV_API int SM50CompileTessellationPipelineDomain(
 
   auto &shader_info =
     ((dxmt::dxbc::SM50ShaderInternal *)pDomainShader)->shader_info;
-  auto shader_type =
-    ((dxmt::dxbc::SM50ShaderInternal *)pDomainShader)->shader_type;
 
   auto pModule = std::make_unique<Module>("shader.air", context);
-  initializeModule(
-    *pModule,
-    {.enableFastMath =
-       (!shader_info.skipOptimization && shader_info.refactoringAllowed &&
-        // this is by design: vertex functions are usually not the
-        // bottle-neck of pipeline, and precise calculation on pixel can reduce
-        // flickering
-        shader_type != microsoft::D3D10_SB_VERTEX_SHADER)}
-  );
+  initializeModule(*pModule);
 
   if (auto err = dxmt::dxbc::convert_dxbc_tesselator_domain_shader(
         (dxbc::SM50ShaderInternal *)pDomainShader, FunctionName,
@@ -1532,7 +1523,13 @@ AIRCONV_API int SM50CompileTessellationPipelineDomain(
     return 1;
   }
 
-  linkShader(*pModule);
+  if (shader_info.use_msad)
+    linkMSAD(*pModule);
+  if (shader_info.use_samplepos)
+    linkSamplePos(*pModule);
+  linkTessellation(*pModule);
+  
+  runOptimizationPasses(*pModule);
 
   // Serialize AIR
   auto compiled = new SM50CompiledBitcodeInternal();
@@ -1573,8 +1570,10 @@ AIRCONV_API int SM50CompileGeometryPipelineVertex(
 
   context.setOpaquePointers(false); // I suspect Metal uses LLVM 14...
 
+  auto &shader_info = ((dxmt::dxbc::SM50ShaderInternal *)pGeometryShader)->shader_info;
+
   auto pModule = std::make_unique<Module>("shader.air", context);
-  initializeModule(*pModule, {.enableFastMath = false});
+  initializeModule(*pModule);
 
   if (auto err = dxmt::dxbc::convert_dxbc_vertex_for_geometry_shader(
         (dxbc::SM50ShaderInternal *)pVertexShader, FunctionName,
@@ -1588,7 +1587,12 @@ AIRCONV_API int SM50CompileGeometryPipelineVertex(
     return 1;
   }
 
-  linkShader(*pModule);
+  if (shader_info.use_msad)
+    linkMSAD(*pModule);
+  if (shader_info.use_samplepos)
+    linkSamplePos(*pModule);
+
+  runOptimizationPasses(*pModule);
 
   // Serialize AIR
   auto compiled = new SM50CompiledBitcodeInternal();
@@ -1633,11 +1637,7 @@ AIRCONV_API int SM50CompileGeometryPipelineGeometry(
     ((dxmt::dxbc::SM50ShaderInternal *)pGeometryShader)->shader_info;
 
   auto pModule = std::make_unique<Module>("shader.air", context);
-  initializeModule(
-    *pModule,
-    {.enableFastMath =
-       (!shader_info.skipOptimization && shader_info.refactoringAllowed)}
-  );
+  initializeModule(*pModule);
 
   if (auto err = dxmt::dxbc::convert_dxbc_geometry_shader(
         (dxbc::SM50ShaderInternal *)pGeometryShader, FunctionName,
@@ -1651,7 +1651,12 @@ AIRCONV_API int SM50CompileGeometryPipelineGeometry(
     return 1;
   }
 
-  linkShader(*pModule);
+  if (shader_info.use_msad)
+    linkMSAD(*pModule);
+  if (shader_info.use_samplepos)
+    linkSamplePos(*pModule);
+  
+  runOptimizationPasses(*pModule);
 
   // Serialize AIR
   auto compiled = new SM50CompiledBitcodeInternal();
@@ -1669,7 +1674,7 @@ AIRCONV_API int SM50CompileGeometryPipelineGeometry(
 }
 
 AIRCONV_API void SM50GetCompiledBitcode(
-  sm50_bitcode_t pBitcode, MTL_SHADER_BITCODE *pData
+  sm50_bitcode_t pBitcode, SM50_COMPILED_BITCODE *pData
 ) {
   auto pBitcodeInternal = (SM50CompiledBitcodeInternal *)pBitcode;
   pData->Data = pBitcodeInternal->vec.data();

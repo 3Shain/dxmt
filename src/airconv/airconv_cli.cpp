@@ -203,7 +203,7 @@ int main(int argc, char **argv) {
   }
 
   Module M("default", Context);
-  dxmt::initializeModule(M, {.enableFastMath = FastMath});
+  dxmt::initializeModule(M);
 
   sm50_shader_t sm50;
   sm50_error_t err;
@@ -214,6 +214,11 @@ int main(int argc, char **argv) {
     SM50FreeError(err);
     return 1;
   }
+
+  SM50_SHADER_COMMON_DATA data;
+  data.metal_version = SM50_SHADER_METAL_320;
+  data.next = 0;
+  data.type = SM50_SHADER_COMMON;
 
   if (!HullBeforeDomain.getValue().empty()) {
     ErrorOr<std::unique_ptr<MemoryBuffer>> FileOrErr =
@@ -238,7 +243,7 @@ int main(int argc, char **argv) {
     }
     if (auto err = dxmt::dxbc::convert_dxbc_tesselator_domain_shader(
           (dxmt::dxbc::SM50ShaderInternal *)sm50, "shader_main",
-          (dxmt::dxbc::SM50ShaderInternal *)sm50_hull, Context, M, nullptr
+          (dxmt::dxbc::SM50ShaderInternal *)sm50_hull, Context, M, (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)&data
         )) {
       errs() << err << '\n';
       return 1;
@@ -266,7 +271,7 @@ int main(int argc, char **argv) {
     }
     if (auto err = dxmt::dxbc::convert_dxbc_vertex_hull_shader(
           (dxmt::dxbc::SM50ShaderInternal *)sm50_vertex, (dxmt::dxbc::SM50ShaderInternal *)sm50,
-          "shader_main", Context, M, nullptr
+          "shader_main", Context, M, (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)&data
         )) {
       errs() << err << '\n';
       return 1;
@@ -294,7 +299,7 @@ int main(int argc, char **argv) {
     }
     if (auto err = dxmt::dxbc::convert_dxbc_vertex_hull_shader(
           (dxmt::dxbc::SM50ShaderInternal *)sm50, (dxmt::dxbc::SM50ShaderInternal *)sm50_hull,
-          "shader_main", Context, M, nullptr
+          "shader_main", Context, M, (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)&data
         )) {
       errs() << err << '\n';
       return 1;
@@ -322,7 +327,7 @@ int main(int argc, char **argv) {
     }
     if (auto err = dxmt::dxbc::convert_dxbc_geometry_shader(
           (dxmt::dxbc::SM50ShaderInternal *)sm50, "shader_main",
-          (dxmt::dxbc::SM50ShaderInternal *)sm50_vertex, Context, M, nullptr
+          (dxmt::dxbc::SM50ShaderInternal *)sm50_vertex, Context, M, (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)&data
         )) {
       errs() << err << '\n';
       return 1;
@@ -350,14 +355,14 @@ int main(int argc, char **argv) {
     }
     if (auto err = dxmt::dxbc::convert_dxbc_vertex_for_geometry_shader(
           (dxmt::dxbc::SM50ShaderInternal *)sm50, "shader_main",
-          (dxmt::dxbc::SM50ShaderInternal *)sm50_geometry, Context, M, nullptr
+          (dxmt::dxbc::SM50ShaderInternal *)sm50_geometry, Context, M, (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)&data
         )) {
       errs() << err << '\n';
       return 1;
     }
   } else {
     if (auto err =
-          dxmt::dxbc::convertDXBC(sm50, "shader_main", Context, M, nullptr)) {
+          dxmt::dxbc::convertDXBC(sm50, "shader_main", Context, M, (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)&data)) {
       errs() << err << '\n';
       return 1;
     }
@@ -365,15 +370,15 @@ int main(int argc, char **argv) {
 
   SM50Destroy(sm50);
 
-  if (OptLevelO1) {
-    dxmt::runOptimizationPasses(M, OptimizationLevel::O1);
-  } else if (OptLevelO0) {
+  if (OptLevelO0) {
     // do nothing
   } else {
-    dxmt::runOptimizationPasses(M, OptimizationLevel::O2);
+    dxmt::runOptimizationPasses(M);
   }
 
-  dxmt::linkShader(M);
+  dxmt::linkMSAD(M);
+  dxmt::linkSamplePos(M);
+  dxmt::linkTessellation(M);
 
   std::error_code EC;
   std::unique_ptr<ToolOutputFile> Out(new ToolOutputFile(

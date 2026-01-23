@@ -10,33 +10,33 @@ template <typename Base> class MTLDXGIObject : public ComObjectWithInitialRef<Ba
 public:
   HRESULT STDMETHODCALLTYPE GetPrivateData(REFGUID Name, UINT *pDataSize,
                                            void *pData) final {
-    return m_privateData.getData(Name, pDataSize, pData);
+    return private_data_.getData(Name, pDataSize, pData);
   }
 
   HRESULT STDMETHODCALLTYPE SetPrivateData(REFGUID Name, UINT DataSize,
                                            const void *pData) final {
-    return m_privateData.setData(Name, DataSize, pData);
+    return private_data_.setData(Name, DataSize, pData);
   }
 
   HRESULT STDMETHODCALLTYPE
   SetPrivateDataInterface(REFGUID Name, const IUnknown *pUnknown) final {
-    return m_privateData.setInterface(Name, pUnknown);
+    return private_data_.setInterface(Name, pUnknown);
   }
 
 private:
-  ComPrivateData m_privateData;
+  ComPrivateData private_data_;
 };
 
 template <typename Base, typename Device = IUnknown> class MTLDXGISubObject : public MTLDXGIObject<Base> {
 public:
-  MTLDXGISubObject(Device *device) { m_device = device; }
+  MTLDXGISubObject(Device *device) { device_ = device; }
 
   HRESULT STDMETHODCALLTYPE GetDevice(REFIID riid, void **device) final {
-    return m_device->QueryInterface(riid, device);
+    return device_->QueryInterface(riid, device);
   }
 
 protected:
-  Device* m_device;
+  Device* device_;
 };
 
 } // namespace dxmt

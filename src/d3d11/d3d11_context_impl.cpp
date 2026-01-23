@@ -23,6 +23,7 @@ since it is for internal use only
 #include "dxmt_ring_bump_allocator.hpp"
 #include "dxmt_staging.hpp"
 #include "d3d11_resource.hpp"
+#include "dxmt_texture.hpp"
 #include "util_flags.hpp"
 #include "util_math.hpp"
 #include "util_win32_compat.h"
@@ -105,14 +106,15 @@ to_metal_primitive_topology(D3D11_PRIMITIVE_TOPOLOGY topo) {
     return WMTPrimitiveTopologyClassPoint;
   case D3D_PRIMITIVE_TOPOLOGY_LINELIST:
   case D3D_PRIMITIVE_TOPOLOGY_LINESTRIP:
-  case D3D_PRIMITIVE_TOPOLOGY_LINELIST_ADJ:
-  case D3D_PRIMITIVE_TOPOLOGY_LINESTRIP_ADJ:
     return WMTPrimitiveTopologyClassLine;
   case D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST:
   case D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP:
+    return WMTPrimitiveTopologyClassTriangle;
+  case D3D_PRIMITIVE_TOPOLOGY_LINELIST_ADJ:
+  case D3D_PRIMITIVE_TOPOLOGY_LINESTRIP_ADJ:
   case D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST_ADJ:
   case D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP_ADJ:
-    return WMTPrimitiveTopologyClassTriangle;
+    break;
   case D3D_PRIMITIVE_TOPOLOGY_1_CONTROL_POINT_PATCHLIST:
   case D3D_PRIMITIVE_TOPOLOGY_2_CONTROL_POINT_PATCHLIST:
   case D3D_PRIMITIVE_TOPOLOGY_3_CONTROL_POINT_PATCHLIST:
@@ -145,12 +147,11 @@ to_metal_primitive_topology(D3D11_PRIMITIVE_TOPOLOGY topo) {
   case D3D_PRIMITIVE_TOPOLOGY_30_CONTROL_POINT_PATCHLIST:
   case D3D_PRIMITIVE_TOPOLOGY_31_CONTROL_POINT_PATCHLIST:
   case D3D_PRIMITIVE_TOPOLOGY_32_CONTROL_POINT_PATCHLIST:
-    // Metal tessellation only support triangle as output primitive
-    return WMTPrimitiveTopologyClassTriangle;
+    break;
   case D3D_PRIMITIVE_TOPOLOGY_UNDEFINED:
     D3D11_ASSERT(0 && "Invalid topology");
   }
-  DXMT_UNREACHABLE
+  return WMTPrimitiveTopologyClassUnspecified;
 }
 
 inline bool is_strip_topology(D3D11_PRIMITIVE_TOPOLOGY topo) {
@@ -608,7 +609,7 @@ public:
       return S_OK;
     }
 
-    if (riid == __uuidof(IMTLD3D11ContextExt)) {
+    if (riid == __uuidof(IMTLD3D11ContextExt) || riid == __uuidof(IMTLD3D11ContextExt1)) {
       *ppvObject = ref(&ext_);
       return S_OK;
     }
@@ -954,32 +955,29 @@ public:
   ) override {
     std::lock_guard<mutex_t> lock(mutex);
 
-    D3D11_RESOURCE_DIMENSION dimension;
-    pDstResource->GetType(&dimension);
-    if (dimension != D3D11_RESOURCE_DIMENSION_TEXTURE2D)
+    if (!pDstResource || !pSrcResource)
       return;
-    pSrcResource->GetType(&dimension);
-    if (dimension != D3D11_RESOURCE_DIMENSION_TEXTURE2D)
+    if (pDstResource == pSrcResource && DstSubresource == SrcSubresource)
       return;
-    D3D11_TEXTURE2D_DESC desc;
-    uint32_t width, height;
-    ((ID3D11Texture2D *)pSrcResource)->GetDesc(&desc);
-    if (desc.ArraySize <= DstSubresource) {
+
+    BlitObject Dst(device, pDstResource);
+    if (Dst.Dimension != D3D11_RESOURCE_DIMENSION_TEXTURE2D)
       return;
-    }
-    width = desc.Width;
-    height = desc.Height;
-    ((ID3D11Texture2D *)pDstResource)->GetDesc(&desc);
-    if (desc.SampleDesc.Count > 1) {
-      ERR("ResolveSubresource: Destination is not valid resolve target");
+    if (Dst.Texture2DDesc.SampleDesc.Count != 1)
       return;
-    }
-    uint32_t dst_level = DstSubresource % desc.MipLevels;
-    uint32_t dst_slice = DstSubresource / desc.MipLevels;
-    if (width != std::max(1u, desc.Width >> dst_level) || height != std::max(1u, desc.Height >> dst_level)) {
-      ERR("ResolveSubresource: Size doesn't match");
+    if (DstSubresource >= Dst.Texture2DDesc.MipLevels * Dst.Texture2DDesc.ArraySize)
       return;
-    }
+
+    BlitObject Src(device, pSrcResource);
+    if (Src.Dimension != D3D11_RESOURCE_DIMENSION_TEXTURE2D)
+      return;
+    if (SrcSubresource >= Src.Texture2DDesc.MipLevels * Src.Texture2DDesc.ArraySize)
+      return;
+
+    if (Src.Texture2DDesc.SampleDesc.Count == 1)
+      return CopyTexture(TextureCopyCommand(Dst, DstSubresource, 0, 0, 0, Src, SrcSubresource, nullptr));
+
+
     MTL_DXGI_FORMAT_DESC format_desc;
     if (FAILED(MTLQueryDXGIFormat(device->GetMTLDevice(), Format, format_desc))) {
       ERR("ResolveSubresource: invalid format ", Format);
@@ -988,20 +986,19 @@ public:
     InvalidateCurrentPass();
     EmitOP([src = static_cast<D3D11ResourceCommon *>(pSrcResource)->texture(),
             dst = static_cast<D3D11ResourceCommon *>(pDstResource)->texture(),
-            SrcSubresource, dst_level, dst_slice,
+            dst_level = DstSubresource % Dst.Texture2DDesc.MipLevels,
+            dst_slice = DstSubresource / Dst.Texture2DDesc.MipLevels, SrcSubresource,
             format = format_desc.PixelFormat](ArgumentEncodingContext &enc) mutable {
       TextureViewDescriptor src_desc;
       src_desc.format = format;
-      src_desc.usage = WMTTextureUsageRenderTarget;
       src_desc.type = src->textureType();
       src_desc.arraySize = 1;
-      src_desc.firstArraySlice = SrcSubresource;
+      src_desc.firstArraySlice = SrcSubresource; // src must be a MS(Array) texture which has exactly 1 mipmap level
       src_desc.miplevelCount = 1;
       src_desc.firstMiplevel = 0;
 
       TextureViewDescriptor dst_desc;
       dst_desc.format = format;
-      dst_desc.usage = WMTTextureUsageRenderTarget;
       dst_desc.type = WMTTextureType2D;
       dst_desc.arraySize = 1;
       dst_desc.firstArraySlice = dst_slice;
@@ -1011,7 +1008,7 @@ public:
       auto src_view = src->createView(src_desc);
       auto dst_view = dst->createView(dst_desc);
 
-      enc.resolveTexture(forward_rc(src), src_view , forward_rc(dst), dst_view);
+      enc.resolveTexture(forward_rc(src), src_view, forward_rc(dst), dst_view);
     });
   }
 
@@ -1164,15 +1161,17 @@ public:
       UINT unused_bind_flag = 0;
       if (auto dynamic = GetDynamicBuffer(pDstResource, &buffer_len, &unused_bind_flag)) {
         D3D11_MAPPED_SUBRESOURCE mapped;
-        if ((copy_len == buffer_len && copy_offset == 0) || (CopyFlags & D3D11_COPY_DISCARD)) {
+        if ((CopyFlags & D3D11_COPY_DISCARD) || (copy_len == buffer_len && copy_offset == 0)) {
           Map(pDstResource, 0, D3D11_MAP_WRITE_DISCARD, 0, &mapped);
-          std::memcpy(reinterpret_cast<char *>(mapped.pData) + copy_offset, pSrcData, copy_len);
+          auto [allocation, sub] = GetDynamicBufferAllocation(dynamic);
+          allocation->updateContents(copy_offset, pSrcData, copy_len, sub);
           Unmap(pDstResource, 0);
           return;
         }
         if (CopyFlags & D3D11_COPY_NO_OVERWRITE) {
           Map(pDstResource, 0, D3D11_MAP_WRITE_NO_OVERWRITE, 0, &mapped);
-          std::memcpy(reinterpret_cast<char *>(mapped.pData) + copy_offset, pSrcData, copy_len);
+          auto [allocation, sub] = GetDynamicBufferAllocation(dynamic);
+          allocation->updateContents(copy_offset, pSrcData, copy_len, sub);
           Unmap(pDstResource, 0);
           return;
         }
@@ -1184,8 +1183,8 @@ public:
         //   buffer->didModifyRange(NS::Range::Make(copy_offset, copy_len));
         //   return;
         // }
-        auto [ptr, staging_buffer, offset] = AllocateStagingBuffer(copy_len, 16);
-        memcpy(ptr, pSrcData, copy_len);
+        auto [staging_buffer, offset] = AllocateStagingBuffer(copy_len, 16);
+        staging_buffer.updateContents(offset, pSrcData, copy_len);
         SwitchToBlitEncoder(CommandBufferState::UpdateBlitEncoderActive);
         EmitOP([staging_buffer, offset, dst = bindable->buffer(), copy_offset, copy_len](ArgumentEncodingContext &enc) {
           auto [dst_buffer, dst_offset] = enc.access(dst, copy_offset, copy_len, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
@@ -1393,7 +1392,8 @@ public:
       UINT NumControlPoint, UINT VertexCountPerInstance, UINT InstanceCount, UINT StartVertexLocation,
       UINT StartInstanceLocation
   ) {
-    auto draw_arguments_offset = PreAllocateArgumentBuffer(sizeof(DXMT_DRAW_ARGUMENTS), 4);
+    auto draw_arguments_offset = PreAllocateArgumentBuffer(sizeof(DXMT_DRAW_ARGUMENTS), 32);
+    auto max_object_threadgroups = max_object_threadgroups_;
     EmitOP([=, topo = state_.InputAssembler.Topology](ArgumentEncodingContext &enc) {
       DXMT_DRAW_ARGUMENTS *draw_arugment = enc.getMappedArgumentBuffer<DXMT_DRAW_ARGUMENTS>(draw_arguments_offset);
       draw_arugment->StartVertex = StartVertexLocation;
@@ -1405,6 +1405,14 @@ public:
       auto PatchPerGroup = 32 / enc.tess_threads_per_patch;
       auto ThreadsPerPatch = enc.tess_threads_per_patch;
       auto PatchPerObjectInstance = (PatchCountPerInstance - 1) / PatchPerGroup + 1;
+
+      if (PatchPerObjectInstance * InstanceCount > max_object_threadgroups) {
+        WARN(
+            "Omitted mesh draw (TS) because of too many object threadgroups (", PatchPerObjectInstance, "x",
+            InstanceCount, ")"
+        );
+        return;
+      }
 
       enc.bumpVisibilityResultOffset();
       auto &cmd = enc.encodeRenderCommand<wmtcmd_render_dxmt_tessellation_mesh_draw>();
@@ -1423,7 +1431,8 @@ public:
       UINT InstanceCount, UINT BaseInstance
   ) {
     auto IndexBufferOffset = state_.InputAssembler.IndexBufferOffset;
-    auto draw_arguments_offset = PreAllocateArgumentBuffer(sizeof(DXMT_DRAW_INDEXED_ARGUMENTS), 4);
+    auto draw_arguments_offset = PreAllocateArgumentBuffer(sizeof(DXMT_DRAW_INDEXED_ARGUMENTS), 32);
+    auto max_object_threadgroups = max_object_threadgroups_;
     EmitOP([=, topo = state_.InputAssembler.Topology](ArgumentEncodingContext &enc) {
       DXMT_DRAW_INDEXED_ARGUMENTS *draw_arugment = enc.getMappedArgumentBuffer<DXMT_DRAW_INDEXED_ARGUMENTS>(draw_arguments_offset);
       draw_arugment->BaseVertex = BaseVertexLocation;
@@ -1436,7 +1445,15 @@ public:
       auto PatchPerGroup = 32 / enc.tess_threads_per_patch;
       auto ThreadsPerPatch = enc.tess_threads_per_patch;
       auto PatchPerObjectInstance = (PatchCountPerInstance - 1) / PatchPerGroup + 1;
-  
+
+      if (PatchPerObjectInstance * InstanceCount > max_object_threadgroups) {
+        WARN(
+            "Omitted mesh draw (TS) because of too many object threadgroups (", PatchPerObjectInstance, "x",
+            InstanceCount, ")"
+        );
+        return;
+      }
+
       auto [index_buffer, index_sub_offset] = enc.currentIndexBuffer();
       enc.bumpVisibilityResultOffset();
       auto &cmd = enc.encodeRenderCommand<wmtcmd_render_dxmt_tessellation_mesh_draw_indexed>();
@@ -1456,7 +1473,8 @@ public:
       UINT VertexCountPerInstance, UINT InstanceCount, UINT StartVertexLocation,
       UINT StartInstanceLocation
   ) {
-    auto draw_arguments_offset = PreAllocateArgumentBuffer(sizeof(DXMT_DRAW_ARGUMENTS), 4);
+    auto draw_arguments_offset = PreAllocateArgumentBuffer(sizeof(DXMT_DRAW_ARGUMENTS), 32);
+    auto max_object_threadgroups = max_object_threadgroups_;
     EmitOP([=, topo = state_.InputAssembler.Topology](ArgumentEncodingContext &enc) {
       DXMT_DRAW_ARGUMENTS *draw_arugment = enc.getMappedArgumentBuffer<DXMT_DRAW_ARGUMENTS>(draw_arguments_offset);
       draw_arugment->StartVertex = StartVertexLocation;
@@ -1466,6 +1484,12 @@ public:
 
       auto [vertex_per_warp, vertex_increment_per_wrap] = get_gs_vertex_count(topo);
       auto warp_count = (VertexCountPerInstance - 1) / vertex_increment_per_wrap + 1;
+
+      if (warp_count * InstanceCount > max_object_threadgroups) {
+        WARN("Omitted mesh draw (GS) because of too many object threadgroups(", warp_count, "x", InstanceCount, ")");
+        return;
+      }
+
       enc.bumpVisibilityResultOffset();
       auto &cmd = enc.encodeRenderCommand<wmtcmd_render_dxmt_geometry_draw>();
       cmd.type = WMTRenderCommandDXMTGeometryDraw;
@@ -1482,7 +1506,8 @@ public:
       UINT InstanceCount, UINT BaseInstance
   ) {
     auto IndexBufferOffset = state_.InputAssembler.IndexBufferOffset;
-    auto draw_arguments_offset = PreAllocateArgumentBuffer(sizeof(DXMT_DRAW_INDEXED_ARGUMENTS), 4);
+    auto draw_arguments_offset = PreAllocateArgumentBuffer(sizeof(DXMT_DRAW_INDEXED_ARGUMENTS), 32);
+    auto max_object_threadgroups = max_object_threadgroups_;
     EmitOP([=, topo = state_.InputAssembler.Topology](ArgumentEncodingContext &enc) {
       DXMT_DRAW_INDEXED_ARGUMENTS *draw_arugment = enc.getMappedArgumentBuffer<DXMT_DRAW_INDEXED_ARGUMENTS>(draw_arguments_offset);
       draw_arugment->BaseVertex = BaseVertexLocation;
@@ -1494,6 +1519,12 @@ public:
       auto [index_buffer, index_sub_offset] = enc.currentIndexBuffer();
       auto [vertex_per_warp, vertex_increment_per_wrap] = get_gs_vertex_count(topo);
       auto warp_count = (IndexCountPerInstance - 1) / vertex_increment_per_wrap + 1;
+
+      if (warp_count * InstanceCount > max_object_threadgroups) {
+        WARN("Omitted mesh draw (GS) because of too many object threadgroups(", warp_count, "x", InstanceCount, ")");
+        return;
+      }
+
       enc.bumpVisibilityResultOffset();
       auto &cmd = enc.encodeRenderCommand<wmtcmd_render_dxmt_geometry_draw_indexed>();
       cmd.type = WMTRenderCommandDXMTGeometryDrawIndexed;
@@ -1580,6 +1611,7 @@ public:
   GeometryDrawIndirect(
     ID3D11Buffer *pBufferForArgs, UINT AlignedByteOffsetForArgs
   ) {
+    auto max_object_threadgroups = max_object_threadgroups_;
     if (auto bindable = reinterpret_cast<D3D11ResourceCommon *>(pBufferForArgs)) {
       EmitOP([=, topo = state_.InputAssembler.Topology, ArgBuffer = bindable->buffer()](ArgumentEncodingContext &enc) {
         auto [buffer, buffer_offset] = enc.access(ArgBuffer, AlignedByteOffsetForArgs, 20, DXMT_ENCODER_RESOURCE_ACESS_READ);
@@ -1590,7 +1622,7 @@ public:
         enc.bumpVisibilityResultOffset();
         enc.encodeGSDispatchArgumentsMarshal(
           buffer->buffer(), buffer->gpuAddress() + buffer_offset, AlignedByteOffsetForArgs, vertex_increment_per_wrap,
-          dispatch_arg.gpu_buffer, dispatch_arg.gpu_address, dispatch_arg.offset
+          dispatch_arg.gpu_buffer, dispatch_arg.gpu_address, dispatch_arg.offset, max_object_threadgroups
         );
         auto &cmd = enc.encodeRenderCommand<wmtcmd_render_dxmt_geometry_draw_indirect>();
         cmd.type = WMTRenderCommandDXMTGeometryDrawIndirect;
@@ -1599,6 +1631,7 @@ public:
         cmd.vertex_per_warp = vertex_per_warp;
         cmd.indirect_args_buffer = buffer->buffer();
         cmd.indirect_args_offset = buffer_offset + AlignedByteOffsetForArgs;
+        cmd.imm_draw_arguments = enc.getFinalArgumentBuffer();
       });
     }
   }
@@ -1608,6 +1641,7 @@ public:
     ID3D11Buffer *pBufferForArgs, UINT AlignedByteOffsetForArgs
   ) {
     auto IndexBufferOffset = state_.InputAssembler.IndexBufferOffset;
+    auto max_object_threadgroups = max_object_threadgroups_;
 
     if (auto bindable = reinterpret_cast<D3D11ResourceCommon *>(pBufferForArgs)) {
       EmitOP([=, topo = state_.InputAssembler.Topology, ArgBuffer = bindable->buffer()](ArgumentEncodingContext &enc) {
@@ -1620,7 +1654,7 @@ public:
         enc.bumpVisibilityResultOffset();
         enc.encodeGSDispatchArgumentsMarshal(
           buffer->buffer(), buffer->gpuAddress() + buffer_offset, AlignedByteOffsetForArgs, vertex_increment_per_wrap,
-          dispatch_arg.gpu_buffer, dispatch_arg.gpu_address, dispatch_arg.offset
+          dispatch_arg.gpu_buffer, dispatch_arg.gpu_address, dispatch_arg.offset, max_object_threadgroups
         );
         auto &cmd = enc.encodeRenderCommand<wmtcmd_render_dxmt_geometry_draw_indexed_indirect>();
         cmd.type = WMTRenderCommandDXMTGeometryDrawIndexedIndirect;
@@ -1631,6 +1665,7 @@ public:
         cmd.indirect_args_offset = AlignedByteOffsetForArgs + buffer_offset;
         cmd.index_buffer = index_buffer;
         cmd.index_buffer_offset = IndexBufferOffset + index_sub_offset;
+        cmd.imm_draw_arguments = enc.getFinalArgumentBuffer();
       });
     }
   }
@@ -1639,6 +1674,7 @@ public:
   TessellationDrawIndirect(
     UINT NumControlPoint, ID3D11Buffer *pBufferForArgs, UINT AlignedByteOffsetForArgs
   ) {
+    auto max_object_threadgroups = max_object_threadgroups_;
     if (auto bindable = reinterpret_cast<D3D11ResourceCommon *>(pBufferForArgs)) {
       EmitOP([=, topo = state_.InputAssembler.Topology, ArgBuffer = bindable->buffer()](ArgumentEncodingContext &enc) {
         auto [buffer, buffer_offset] = enc.access(ArgBuffer, AlignedByteOffsetForArgs, 20, DXMT_ENCODER_RESOURCE_ACESS_READ);
@@ -1652,7 +1688,7 @@ public:
             buffer->buffer(), buffer->gpuAddress() + buffer_offset,
             AlignedByteOffsetForArgs, NumControlPoint, PatchPerGroup,
             dispatch_arg.gpu_buffer, dispatch_arg.gpu_address,
-            dispatch_arg.offset);
+            dispatch_arg.offset, max_object_threadgroups);
         auto &cmd = enc.encodeRenderCommand<wmtcmd_render_dxmt_tessellation_mesh_draw_indirect>();
         cmd.type = WMTRenderCommandDXMTTessellationMeshDrawIndirect;
         cmd.dispatch_args_buffer = dispatch_arg.gpu_buffer;
@@ -1661,6 +1697,7 @@ public:
         cmd.threads_per_patch = ThreadsPerPatch;
         cmd.indirect_args_buffer = buffer->buffer();
         cmd.indirect_args_offset = buffer_offset + AlignedByteOffsetForArgs;
+        cmd.imm_draw_arguments = enc.getFinalArgumentBuffer();
       });
     }
   }
@@ -1670,6 +1707,7 @@ public:
     UINT NumControlPoint, ID3D11Buffer *pBufferForArgs, UINT AlignedByteOffsetForArgs
   ) {
     auto IndexBufferOffset = state_.InputAssembler.IndexBufferOffset;
+    auto max_object_threadgroups = max_object_threadgroups_;
 
     if (auto bindable = reinterpret_cast<D3D11ResourceCommon *>(pBufferForArgs)) {
       EmitOP([=, topo = state_.InputAssembler.Topology, ArgBuffer = bindable->buffer()](ArgumentEncodingContext &enc) {
@@ -1685,7 +1723,7 @@ public:
             buffer->buffer(), buffer->gpuAddress() + buffer_offset,
             AlignedByteOffsetForArgs, NumControlPoint, PatchPerGroup,
             dispatch_arg.gpu_buffer, dispatch_arg.gpu_address,
-            dispatch_arg.offset);
+            dispatch_arg.offset, max_object_threadgroups);
         auto &cmd = enc.encodeRenderCommand<wmtcmd_render_dxmt_tessellation_mesh_draw_indexed_indirect>();
         cmd.type = WMTRenderCommandDXMTTessellationMeshDrawIndexedIndirect;
         cmd.dispatch_args_buffer = dispatch_arg.gpu_buffer;
@@ -1696,6 +1734,7 @@ public:
         cmd.indirect_args_offset = AlignedByteOffsetForArgs + buffer_offset;
         cmd.index_buffer = index_buffer;
         cmd.index_buffer_offset = IndexBufferOffset + index_sub_offset;
+        cmd.imm_draw_arguments = enc.getFinalArgumentBuffer();
       });
     }
   }
@@ -1876,7 +1915,10 @@ public:
   IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY Topology) override {
     std::lock_guard<mutex_t> lock(mutex);
 
-    state_.InputAssembler.Topology = Topology;
+    if (state_.InputAssembler.Topology != Topology) {
+      state_.InputAssembler.Topology = Topology;
+      InvalidateRenderPipeline();
+    }
   }
   void
   STDMETHODCALLTYPE
@@ -2885,9 +2927,12 @@ public:
 
   template <typename T> moveonly_list<T> AllocateCommandData(size_t n = 1);
 
-  std::tuple<void *, WMT::Buffer, uint64_t> AllocateStagingBuffer(size_t size, size_t alignment);
+  std::tuple<WMT::Buffer, uint64_t> AllocateStagingBuffer(size_t size, size_t alignment);
   void UseCopyDestination(Rc<StagingResource> &);
   void UseCopySource(Rc<StagingResource> &);
+
+  std::pair<BufferAllocation *, uint32_t>
+  GetDynamicBufferAllocation(Rc<DynamicBuffer> &dynamic);
 
   uint64_t *allocated_encoder_argbuf_size_ = nullptr;
 
@@ -2920,7 +2965,7 @@ public:
 
     if (reflection->NumConstantBuffers && dirty_cbuffer) {
       auto ConstantBufferCount = reflection->NumConstantBuffers;
-      auto offset = PreAllocateArgumentBuffer(ConstantBufferCount << 3, 16);
+      auto offset = PreAllocateArgumentBuffer(ConstantBufferCount << 3, 32);
       EmitST([=, cb = managed_shader->constant_buffers_info()](ArgumentEncodingContext &enc) {
         enc.encodeConstantBuffers<stage, kind>(reflection, cb, offset);
       });
@@ -2929,7 +2974,7 @@ public:
 
     if (reflection->NumArguments && (dirty_sampler || dirty_srv || dirty_uav)) {
       auto ArgumentTableQwords = reflection->ArgumentTableQwords;
-      auto offset = PreAllocateArgumentBuffer(ArgumentTableQwords << 3, 16);
+      auto offset = PreAllocateArgumentBuffer(ArgumentTableQwords << 3, 32);
       EmitST([=, arg = managed_shader->arguments_info()](ArgumentEncodingContext &enc) {
         enc.encodeShaderResources<stage, kind>(reflection, arg, offset);
       });
@@ -2955,7 +3000,7 @@ public:
       return;
 
     uint32_t num_slots = __builtin_popcount(slot_mask);
-    auto offset = PreAllocateArgumentBuffer(16 * num_slots, 16);
+    auto offset = PreAllocateArgumentBuffer(16 * num_slots, 32);
 
     if (cmdbuf_state == CommandBufferState::TessellationRenderPipelineReady) {
       EmitST([=](ArgumentEncodingContext &enc) { enc.encodeVertexBuffers<PipelineKind::Tessellation>(slot_mask, offset); });
@@ -3245,8 +3290,10 @@ public:
     EmitST([counter = uav->counter(), value](ArgumentEncodingContext &enc) {
       if (!counter.ptr())
         return;
+      /* TODO: suballocate uav counter */
       auto new_counter = counter->allocate(BufferAllocationFlag::GpuManaged);
-      *reinterpret_cast<uint32_t *>(new_counter->mappedMemory(0 /* TODO: suballocate uav counter */)) = value;
+      int _zero = 0;
+      new_counter->updateContents(0, &_zero, 4);
       new_counter->buffer().didModifyRange(0, 4);
       auto old = counter->rename(std::move(new_counter));
       // TODO: reused discarded buffer
@@ -3645,7 +3692,7 @@ public:
             }
             bytes_total = bytes_per_image * cmd.SrcSize.depth;
 
-            auto [buffer, offset] = enc.allocateTempBuffer(bytes_total, 16);
+            auto [buffer, offset] = enc.allocateTempBuffer(bytes_total, 256);
             auto &cmd_cpbuf = enc.encodeBlitCommand<wmtcmd_blit_copy_from_texture_to_buffer>();
             cmd_cpbuf.type = WMTBlitCommandCopyFromTextureToBuffer;
             cmd_cpbuf.src = src;
@@ -3709,7 +3756,7 @@ public:
           auto block_h = (align(cmd.SrcSize.height, 4u) >> 2);
           auto bytes_per_row = block_w * cmd.SrcFormat.BytesPerTexel;
           auto bytes_per_image = bytes_per_row * block_h;
-          auto [buffer, offset] = enc.allocateTempBuffer(bytes_per_image * cmd.SrcSize.depth, 16);
+          auto [buffer, offset] = enc.allocateTempBuffer(bytes_per_image * cmd.SrcSize.depth, 256);
           auto &cmd_cpbuf = enc.encodeBlitCommand<wmtcmd_blit_copy_from_texture_to_buffer>();
           cmd_cpbuf.type = WMTBlitCommandCopyFromTextureToBuffer;
           cmd_cpbuf.src = src;
@@ -3758,7 +3805,7 @@ public:
           auto dst = enc.access(dst_, cmd.Dst.MipLevel, cmd.Dst.ArraySlice, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
           auto bytes_per_row = cmd.SrcSize.width * cmd.SrcFormat.BytesPerTexel;
           auto bytes_per_image = cmd.SrcSize.height * bytes_per_row;
-          auto [buffer, offset] = enc.allocateTempBuffer(bytes_per_image * cmd.SrcSize.depth, 16);
+          auto [buffer, offset] = enc.allocateTempBuffer(bytes_per_image * cmd.SrcSize.depth, 256);
           auto clamped_src_width = std::min(
               cmd.SrcSize.width << 2, std::max<uint32_t>(dst.width() >> cmd.Dst.MipLevel, 1u) - cmd.DstOrigin.x
           );
@@ -3808,19 +3855,19 @@ public:
 
     if (auto dst = GetTexture(cmd.pDst)) {
       auto bytes_per_depth_slice = cmd.EffectiveRows * cmd.EffectiveBytesPerRow;
-      auto [ptr, staging_buffer, offset] = AllocateStagingBuffer(bytes_per_depth_slice * cmd.DstSize.depth, 16);
+      auto [staging_buffer, offset] = AllocateStagingBuffer(bytes_per_depth_slice * cmd.DstSize.depth, 16);
       if (cmd.EffectiveBytesPerRow == SrcRowPitch) {
         for (unsigned depthSlice = 0; depthSlice < cmd.DstSize.depth; depthSlice++) {
-          char *dst = ((char *)ptr) + depthSlice * bytes_per_depth_slice;
+          auto dst_offset = offset + depthSlice * bytes_per_depth_slice;
           const char *src = ((const char *)pSrcData) + depthSlice * SrcDepthPitch;
-          memcpy(dst, src, bytes_per_depth_slice);
+          staging_buffer.updateContents(dst_offset, src, bytes_per_depth_slice);
         }
       } else {
         for (unsigned depthSlice = 0; depthSlice < cmd.DstSize.depth; depthSlice++) {
           for (unsigned row = 0; row < cmd.EffectiveRows; row++) {
-            char *dst = ((char *)ptr) + row * cmd.EffectiveBytesPerRow + depthSlice * bytes_per_depth_slice;
+            auto dst_offset = offset + row * cmd.EffectiveBytesPerRow + depthSlice * bytes_per_depth_slice;
             const char *src = ((const char *)pSrcData) + row * SrcRowPitch + depthSlice * SrcDepthPitch;
-            memcpy(dst, src, cmd.EffectiveBytesPerRow);
+            staging_buffer.updateContents(dst_offset, src,  cmd.EffectiveBytesPerRow);
           }
         }
       }
@@ -4084,7 +4131,7 @@ public:
         dsv_info.ReadOnlyFlags =  state_.OutputMerger.DSV->readonlyFlags();
       } else if (effective_render_target == 0) {
         if (!state_.OutputMerger.UAVs.any_bound()) {
-          ERR("No rendering attachment or uav is bounded");
+          DEBUG("No rendering attachment or uav is bounded");
           return false;
         }
         D3D11_ASSERT(state_.Rasterizer.NumViewports);
@@ -4263,7 +4310,10 @@ public:
         (state_.OutputMerger.DepthStencilState ? state_.OutputMerger.DepthStencilState : default_depth_stencil_state)
             ->IsEnabled();
     // FIXME: corner case: DSV is not bound or missing planar
-    Desc.RasterizationEnabled = PS || ds_enabled;
+    Desc.RasterizationEnabled =
+        (PS || ds_enabled) && (!Desc.SOLayout || Desc.SOLayout->RasterizedStream() != D3D11_SO_NO_RASTERIZED_STREAM);
+    if (!Desc.RasterizationEnabled)
+      Desc.PixelShader = nullptr; // Even rasterization is disabled, Metal still checks if VS-PS signatures match.
     Desc.SampleMask = state_.OutputMerger.SampleMask;
     Desc.GSPassthrough = GS ? GS->reflection().GeometryShader.GSPassThrough : ~0u;
     if (unlikely(Desc.GSPassthrough == ~0u && Desc.GeometryShader != nullptr)) {
@@ -4319,7 +4369,7 @@ public:
       return DrawCallStatus::Invalid;
     }
 
-    Com<IMTLCompiledTessellationMeshPipeline> pipeline;
+    MTLCompiledTessellationMeshPipeline *pipeline;
 
     MTL_GRAPHICS_PIPELINE_DESC pipelineDesc;
     InitializeGraphicsPipelineDesc<IndexedDraw>(pipelineDesc);
@@ -4370,7 +4420,7 @@ public:
       return DrawCallStatus::Invalid;
     }
 
-    Com<IMTLCompiledGeometryPipeline> pipeline;
+    MTLCompiledGeometryPipeline *pipeline;
 
     MTL_GRAPHICS_PIPELINE_DESC pipelineDesc;
     InitializeGraphicsPipelineDesc<IndexedDraw>(pipelineDesc);
@@ -4426,7 +4476,7 @@ public:
       return DrawCallStatus::Invalid;
     }
 
-    Com<IMTLCompiledGraphicsPipeline> pipeline;
+    MTLCompiledGraphicsPipeline *pipeline;
 
     MTL_GRAPHICS_PIPELINE_DESC pipelineDesc;
     InitializeGraphicsPipelineDesc<IndexedDraw>(pipelineDesc);
@@ -4583,7 +4633,7 @@ public:
       ERR("Shader not found?");
       return false;
     }
-    Com<IMTLCompiledComputePipeline> pipeline;
+    MTLCompiledComputePipeline *pipeline;
     MTL_COMPUTE_PIPELINE_DESC desc{CS};
     device->CreateComputePipeline(&desc, &pipeline);
 
@@ -4617,7 +4667,7 @@ public:
 
   void
   UpdateSOTargets() {
-    if (state_.ShaderStages[PipelineStage::Pixel].Shader) {
+    if (!state_.ShaderStages[PipelineStage::Geometry].Shader) {
       return;
     }
     /**
@@ -4636,6 +4686,7 @@ public:
           cmd.buffer = buffer->buffer();;
           cmd.offset = buffer_offset;
           cmd.index = 20;
+          enc.makeResident<PipelineStage::Vertex, PipelineKind::Ordinary>(slot0.ptr(), false, true);
           enc.setCompatibilityFlag(FeatureCompatibility::UnsupportedStreamOutputAppending);
         });
       } else {
@@ -4646,6 +4697,7 @@ public:
           cmd.buffer = buffer->buffer();;
           cmd.offset = offset + buffer_offset;
           cmd.index = 20;
+          enc.makeResident<PipelineStage::Vertex, PipelineKind::Ordinary>(slot0.ptr(), false, true);
         });
       }
     } else {
@@ -4784,6 +4836,7 @@ protected:
   D3D11ContextState state_;
   D3D11UserDefinedAnnotation annotation_;
   MTLD3D11ContextExt<ContextInternalState> ext_;
+  uint64_t max_object_threadgroups_;
 
 public:
   MTLD3D11DeviceContextImplBase(MTLD3D11Device *pDevice, ContextInternalState &ctx_state, ContextInternalState::device_mutex_t &mutex) :
@@ -4803,11 +4856,13 @@ public:
     default_rasterizer_state->Release();
     default_blend_state->Release();
     default_depth_stencil_state->Release();
+
+    max_object_threadgroups_ = m_parent->GetDXMTDevice().maxObjectThreadgroups();
   }
 };
 
 template <typename ContextInternalState>
-class MTLD3D11ContextExt : public IMTLD3D11ContextExt {
+class MTLD3D11ContextExt : public IMTLD3D11ContextExt1 {
   class CachedTemporalScaler {
   public:
     WMTPixelFormat color_pixel_format;
@@ -4820,6 +4875,7 @@ class MTLD3D11ContextExt : public IMTLD3D11ContextExt {
     uint32_t output_width;
     uint32_t output_height;
     WMT::Reference<WMT::FXTemporalScaler> scaler;
+    Rc<Texture> mv_downscaled;
   };
 public:
   MTLD3D11ContextExt(MTLD3D11DeviceContextImplBase<ContextInternalState> *context) : ctx_(context){};
@@ -4845,6 +4901,12 @@ public:
     case WMTPixelFormatRG32Float:
     case WMTPixelFormatRG32Sint:
       return WMTPixelFormatRG32Float;
+    case WMTPixelFormatRGBA16Sint:
+    case WMTPixelFormatRGBA16Snorm:
+    case WMTPixelFormatRGBA16Uint:
+    case WMTPixelFormatRGBA16Unorm:
+    case WMTPixelFormatRGBA16Float:
+      return WMTPixelFormatRGBA16Float;
     default:
       break;
     }
@@ -4870,12 +4932,8 @@ public:
       return;
     }
 
-    if (motion_vector->width() > input->width() || motion_vector->height() > input->height()) {
-      ERR("TemporalUpscale: resolution of motion vector is larger than input resolution");
-      return;
-    }
-
     WMT::Reference<WMT::FXTemporalScaler> scaler;
+    Rc<Texture> mv_downscaled;
 
     for(CachedTemporalScaler& entry: scaler_cache_) {
       if(pDesc->AutoExposure != entry.auto_exposure) continue;
@@ -4889,6 +4947,7 @@ public:
       if(motion_vector_format != entry.motion_vector_pixel_format) continue;
 
       scaler = entry.scaler;
+      mv_downscaled = entry.mv_downscaled;
       break;
     }
 
@@ -4918,6 +4977,24 @@ public:
       info.input_content_max_scale =  3.0f;
       info.requires_synchronous_initialization = true;
       scaler_entry.scaler = ctx_->device->GetMTLDevice().newTemporalScaler(info);
+      if (pDesc->MotionVectorInDisplayRes) {
+        WMTTextureInfo tex_info;
+        tex_info.width = scaler_entry.input_width;
+        tex_info.height = scaler_entry.input_height;
+        tex_info.depth = 1;
+        tex_info.array_length = 1;
+        tex_info.mipmap_level_count = 1;
+        tex_info.pixel_format = WMTPixelFormatRG32Float;
+        tex_info.sample_count = 1;
+        tex_info.type = WMTTextureType2D;
+        tex_info.usage = WMTTextureUsageShaderRead | WMTTextureUsageShaderWrite;
+        tex_info.options = WMTResourceStorageModePrivate;
+        scaler_entry.mv_downscaled = new Texture(tex_info, this->ctx_->device->GetMTLDevice());
+        mv_downscaled = scaler_entry.mv_downscaled;
+        Flags<TextureAllocationFlag> flags;
+        flags.set(TextureAllocationFlag::GpuPrivate);
+        mv_downscaled->rename(mv_downscaled->allocate(flags));
+      }
       scaler = scaler_entry.scaler;
       scaler_cache_.push_back(std::move(scaler_entry));
       // to simplify implementation, the created scalers are never destroyed
@@ -4941,11 +5018,11 @@ public:
                           pDesc->JitterOffsetY,
                           pDesc->PreExposure,
                       },
-                  motion_vector_format](ArgumentEncodingContext &enc) mutable {
+                  motion_vector_format, mv_downscaled = std::move(mv_downscaled)
+                ](ArgumentEncodingContext &enc) mutable {
       auto mv_view = motion_vector->createView(
           {.format = motion_vector_format,
            .type = WMTTextureType2D,
-           .usage = motion_vector->usage(),
            .firstMiplevel = 0,
            .miplevelCount = 1,
            .firstArraySlice = 0,
@@ -4958,11 +5035,19 @@ public:
       scaler_info.output_width = output->width();
       scaler_info.output_height = output->height();
 
-      scaler_info.motion_vector_highres = ((input->width() < scaler_info.output_width) ||
-                                           (input->height() < scaler_info.output_height)) &&
-                                          ((scaler_info.output_width <= motion_vector->width()) ||
-                                           (scaler_info.output_height <= motion_vector->height()));
-      enc.upscaleTemporal(input, output, depth, motion_vector, mv_view, exposure, scaler, props);
+      scaler_info.motion_vector_highres = mv_downscaled != nullptr;
+
+      if (scaler_info.motion_vector_highres) {
+        enc.mv_scale_cmd.dispatch(
+            motion_vector, mv_view, mv_downscaled, 0, props.motion_vector_scale_x, props.motion_vector_scale_y
+        );
+        WMTFXTemporalScalerProps new_props = props;
+        new_props.motion_vector_scale_x = 1.0;
+        new_props.motion_vector_scale_y = 1.0;
+        enc.upscaleTemporal(input, output, depth, mv_downscaled, 0, exposure, scaler, new_props);
+      } else {
+        enc.upscaleTemporal(input, output, depth, motion_vector, mv_view, exposure, scaler, props);
+      }
     });
   }
 
@@ -4973,6 +5058,21 @@ public:
   void STDMETHODCALLTYPE EndUAVOverlap() final {
     // TODO
   }
+
+  virtual HRESULT STDMETHODCALLTYPE
+  CheckFeatureSupport(MTL_FEATURE Feature, void *pFeatureSupportData, UINT FeatureSupportDataSize) final {
+    if (!pFeatureSupportData)
+      return E_INVALIDARG;
+    switch (Feature) {
+    case MTL_FEATURE_METALFX_TEMPORAL_SCALER: {
+      if (FeatureSupportDataSize != sizeof(BOOL))
+        return E_INVALIDARG;
+      *reinterpret_cast<BOOL *>(pFeatureSupportData) = ctx_->device->GetMTLDevice().supportsFXTemporalScaler();
+      return S_OK;
+    }
+    }
+    return E_INVALIDARG;
+  };
 
 private:
 
@@ -5000,7 +5100,7 @@ public:
       context_flag(context_flag),
       cmdlist_pool(pPool),
       staging_allocator({pDevice->GetMTLDevice(), WMTResourceOptionCPUCacheModeWriteCombined |
-                                       WMTResourceHazardTrackingModeUntracked | WMTResourceStorageModeShared
+                                       WMTResourceHazardTrackingModeUntracked | WMTResourceStorageModeManaged, false
       }),
       cpu_command_allocator({}) {};
 
@@ -5008,28 +5108,9 @@ public:
     Reset();
   }
 
-  ULONG
-  STDMETHODCALLTYPE
-  AddRef() override {
-    uint32_t refCount = this->m_refCount++;
-    if (unlikely(!refCount))
-      this->m_parent->AddRef();
-
-    return refCount + 1;
-  }
-
-  ULONG
-  STDMETHODCALLTYPE
-  Release() override {
-    uint32_t refCount = --this->m_refCount;
-    D3D11_ASSERT(refCount != ~0u && "try to release a 0 reference object");
-    if (unlikely(!refCount)) {
-      this->m_parent->Release();
-      Reset();
-      cmdlist_pool->RecycleCommandList(this);
-    }
-
-    return refCount;
+  void Recycle() final {
+    Reset();
+    cmdlist_pool->RecycleCommandList(this);
   }
 
   void
@@ -5091,10 +5172,10 @@ public:
     return moveonly_list<T>((T *)allocate_cpu_heap(sizeof(T) * n, alignof(T)), n);
   }
 
-  std::tuple<void *, WMT::Buffer, uint64_t>
+  std::tuple<WMT::Buffer, uint64_t>
   AllocateStagingBuffer(size_t size, size_t alignment) {
     auto [block, offset] = staging_allocator.allocate(1, 0, size, alignment);
-    return {ptr_add(block.mapped_address, offset), block.buffer, offset};
+    return {block.buffer, offset};
   }
 
   void *

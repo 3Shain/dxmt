@@ -1,5 +1,3 @@
-fs = import('fs')
-
 lib_d3d11 = cpp.find_library('d3d11')
 lib_dxgi = cpp.find_library('dxgi')
 lib_d3dcompiler = cpp.find_library('d3dcompiler_47')

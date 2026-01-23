@@ -8,6 +8,7 @@ struct MTL_TEMPORAL_UPSCALE_D3D11_DESC {
   BOOL AutoExposure;
   BOOL InReset;
   BOOL DepthReversed;
+  BOOL MotionVectorInDisplayRes;
   ID3D11Resource *Color;
   ID3D11Resource *Depth;
   ID3D11Resource *MotionVector;
@@ -26,6 +27,16 @@ DEFINE_COM_INTERFACE("43ace3ce-1956-448b-a4eb-aee68bdeb283",
    virtual void STDMETHODCALLTYPE TemporalUpscale(const MTL_TEMPORAL_UPSCALE_D3D11_DESC *pDesc) = 0;
    virtual void STDMETHODCALLTYPE BeginUAVOverlap() = 0;
    virtual void STDMETHODCALLTYPE EndUAVOverlap() = 0;
+};
+
+typedef enum MTL_FEATURE {
+  MTL_FEATURE_METALFX_TEMPORAL_SCALER = 0,
+} MTL_FEATURE;
+
+DEFINE_COM_INTERFACE("19a8e35a-38be-418f-94e3-9f7323936870", IMTLD3D11ContextExt1) : public IMTLD3D11ContextExt {
+  virtual HRESULT STDMETHODCALLTYPE CheckFeatureSupport(
+      MTL_FEATURE Feature, void *pFeatureSupportData, UINT FeatureSupportDataSize
+  ) = 0;
 };
 
 DEFINE_COM_INTERFACE("efc77ae6-2179-4c0a-b844-7661ca0dcde7", IMTLD3D11DeviceExt)

@@ -88,7 +88,7 @@ public:
 
 struct ShaderVariantVertex {
   using this_type = ShaderVariantVertex;
-  uint64_t input_layout_handle;
+  ManagedInputLayout input_layout_handle;
   uint32_t gs_passthrough;
   bool rasterization_disabled;
   bool operator==(const this_type &rhs) const {
@@ -114,32 +114,36 @@ struct ShaderVariantPixel {
 
 struct ShaderVariantTessellationVertexHull {
   using this_type = ShaderVariantTessellationVertexHull;
-  uint64_t input_layout_handle;
-  uint64_t vertex_shader_handle;
+  ManagedInputLayout input_layout_handle;
+  ManagedShader vertex_shader_handle;
   SM50_INDEX_BUFFER_FORAMT index_buffer_format;
+  uint32_t max_potential_tess_factor;
   bool operator==(const this_type &rhs) const {
     return input_layout_handle == rhs.input_layout_handle &&
            vertex_shader_handle == rhs.vertex_shader_handle &&
-           index_buffer_format == rhs.index_buffer_format;
+           index_buffer_format == rhs.index_buffer_format &&
+           max_potential_tess_factor == rhs.max_potential_tess_factor;
   }
 };
 
 struct ShaderVariantTessellationDomain {
   using this_type = ShaderVariantTessellationDomain;
-  uint64_t hull_shader_handle;
+  ManagedShader hull_shader_handle;
   uint32_t gs_passthrough;
+  uint32_t max_potential_tess_factor;
   bool rasterization_disabled;
   bool operator==(const this_type &rhs) const {
     return hull_shader_handle == rhs.hull_shader_handle &&
            gs_passthrough == rhs.gs_passthrough &&
+           max_potential_tess_factor == rhs.max_potential_tess_factor &&
            rasterization_disabled == rhs.rasterization_disabled;
   }
 };
 
 struct ShaderVariantGeometryVertex {
   using this_type = ShaderVariantGeometryVertex;
-  uint64_t input_layout_handle;
-  uint64_t geometry_shader_handle;
+  ManagedInputLayout input_layout_handle;
+  ManagedShader geometry_shader_handle;
   SM50_INDEX_BUFFER_FORAMT index_buffer_format;
   bool strip_topology;
   bool operator==(const this_type &rhs) const {
@@ -152,7 +156,7 @@ struct ShaderVariantGeometryVertex {
 
 struct ShaderVariantGeometry {
   using this_type = ShaderVariantGeometry;
-  uint64_t vertex_shader_handle;
+  ManagedShader vertex_shader_handle;
   bool strip_topology;
   bool operator==(const this_type &rhs) const {
     return vertex_shader_handle == rhs.vertex_shader_handle &&
@@ -167,7 +171,7 @@ struct ShaderVariantDefault {
 
 struct ShaderVariantVertexStreamOutput {
   using this_type = ShaderVariantVertexStreamOutput;
-  uint64_t input_layout_handle;
+  ManagedInputLayout input_layout_handle;
   uint64_t stream_output_layout_handle;
   bool operator==(const this_type &rhs) const {
     return input_layout_handle == rhs.input_layout_handle &&
@@ -181,7 +185,15 @@ using ShaderVariant =
                  ShaderVariantTessellationDomain, ShaderVariantVertexStreamOutput,
                  ShaderVariantGeometryVertex, ShaderVariantGeometry>;
 
-class CompiledShader : public IMTLThreadpoolWork {
+class ThreadpoolWork {
+public:
+  virtual ~ThreadpoolWork() {}
+  virtual ThreadpoolWork *RunThreadpoolWork() = 0;
+  virtual bool GetIsDone() = 0;
+  virtual void SetIsDone(bool state) = 0;
+};
+
+class CompiledShader : public ThreadpoolWork {
 public:
   virtual ~CompiledShader() {};
   /**
@@ -199,9 +211,12 @@ public:
   virtual MTL_SHADER_REFLECTION &reflection() = 0;
   virtual MTL_SM50_SHADER_ARGUMENT *constant_buffers_info() = 0;
   virtual MTL_SM50_SHADER_ARGUMENT *arguments_info() = 0;
-  virtual Com<CompiledShader> get_shader(ShaderVariant variant) = 0;
-  virtual const Sha1Hash& hash() = 0;
+  virtual CompiledShader *get_shader(ShaderVariant variant) = 0;
+  virtual const Sha1Digest& sha1() = 0;
   virtual void dump() = 0;
+
+  virtual WMT::Reference<WMT::DispatchData> find_cached_variant(Sha1Digest &key) = 0;
+  virtual void update_cached_variant(Sha1Digest &key, WMT::DispatchData data) = 0;
 };
 
 template <typename Variant>

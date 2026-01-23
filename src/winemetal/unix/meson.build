@@ -1,5 +1,6 @@
 winemetal_unix_src = [
-  'winemetal_unix.c'
+  'winemetal_unix.c',
+  'cache.c',
 ]
 
 if wine_build_path != ''
@@ -19,11 +20,12 @@ winemetal_unix_ld_args = [
   '-weak_framework', 'CoreFoundation', '-weak_framework', 'Metal',
   '-framework', 'MetalFX', '-weak_framework', 'Foundation',
   '-weak_framework', 'CoreGraphics', '-weak_framework', 'QuartzCore',
-  '-weak_framework', 'ColorSync',   '-weak_framework', 'Cocoa',
+  '-weak_framework', 'ColorSync',  '-weak_framework', 'Cocoa',
+  '-lsqlite3',
 ]
 winemetal_unix_link_depends = []
 
-winemetal_unix_dll = shared_library('winemetal', winemetal_unix_src,
+shared_library('winemetal', winemetal_unix_src,
   name_prefix         : '',
   dependencies        : [ airconv_dep_darwin ],
   include_directories : dxmt_include_path,

@@ -107,20 +107,14 @@ convert_dxbc_geometry_shader(
   bool is_strip = false;
 
   uint32_t max_output_register = pShaderInternal->max_output_register;
-  SM50_SHADER_COMPILATION_ARGUMENT_DATA *arg = pArgs;
-  // uint64_t debug_id = ~0u;
-  while (arg) {
-    switch (arg->type) {
-    // case SM50_SHADER_DEBUG_IDENTITY:
-    //   debug_id = ((SM50_SHADER_DEBUG_IDENTITY_DATA *)arg)->id;
-    //   break;
-    case SM50_SHADER_PSO_GEOMETRY_SHADER:
-      is_strip = ((SM50_SHADER_PSO_GEOMETRY_SHADER_DATA *)arg)->strip_topology;
-      break;
-    default:
-      break;
-    }
-    arg = (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)arg->next;
+  SM50_SHADER_PSO_GEOMETRY_SHADER_DATA *pso_data = nullptr;
+  if (args_get_data<SM50_SHADER_PSO_GEOMETRY_SHADER, SM50_SHADER_PSO_GEOMETRY_SHADER_DATA>(pArgs, &pso_data)) {
+    is_strip = pso_data->strip_topology;
+  }
+  SM50_SHADER_METAL_VERSION metal_version = SM50_SHADER_METAL_310;
+  SM50_SHADER_COMMON_DATA *sm50_common = nullptr;
+  if (args_get_data<SM50_SHADER_COMMON, SM50_SHADER_COMMON_DATA>(pArgs, &sm50_common)) {
+    metal_version = sm50_common->metal_version;
   }
 
   IREffect prologue([](auto) { return std::monostate(); });
@@ -174,7 +168,7 @@ convert_dxbc_geometry_shader(
   llvm::IRBuilder<> builder(entry_bb);
   llvm::raw_null_ostream nulldbg{};
   llvm::air::AIRBuilder air(builder, nulldbg);
-  setup_fastmath_flag(module, builder);
+  setup_metal_version(module, metal_version);
 
   auto [warp_vertex_count, warp_primitive_count, vertex_per_primitive] =
       get_vertex_primitive_count_in_warp(pShaderInternal->gs_input_primitive, is_strip);
@@ -472,7 +466,7 @@ convert_dxbc_geometry_shader(
 
   struct context ctx {
     .builder = builder, .air = air, .llvm = context, .module = module, .function = function, .resource = resource_map,
-    .types = types, .pso_sample_mask = 0xffffffff, .shader_type = pShaderInternal->shader_type,
+    .types = types, .pso_sample_mask = 0xffffffff, .shader_type = pShaderInternal->shader_type, .metal_version = metal_version,
   };
 
   if (auto err = prologue.build(ctx).takeError()) {
@@ -512,21 +506,16 @@ convert_dxbc_vertex_for_geometry_shader(
 
   uint32_t max_input_register = pShaderInternal->max_input_register;
   uint32_t max_output_register = pShaderInternal->max_output_register;
-  SM50_SHADER_COMPILATION_ARGUMENT_DATA *arg = pArgs;
   SM50_SHADER_IA_INPUT_LAYOUT_DATA *ia_layout = nullptr;
-  // uint64_t debug_id = ~0u;
-  while (arg) {
-    switch (arg->type) {
-    case SM50_SHADER_IA_INPUT_LAYOUT:
-      ia_layout = ((SM50_SHADER_IA_INPUT_LAYOUT_DATA *)arg);
-      break;    
-    case SM50_SHADER_PSO_GEOMETRY_SHADER:
-      is_strip = ((SM50_SHADER_PSO_GEOMETRY_SHADER_DATA *)arg)->strip_topology;
-      break;
-    default:
-      break;
-    }
-    arg = (SM50_SHADER_COMPILATION_ARGUMENT_DATA *)arg->next;
+  SM50_SHADER_PSO_GEOMETRY_SHADER_DATA *pso_data = nullptr;
+  args_get_data<SM50_SHADER_IA_INPUT_LAYOUT, SM50_SHADER_IA_INPUT_LAYOUT_DATA>(pArgs, &ia_layout);
+  if (args_get_data<SM50_SHADER_PSO_GEOMETRY_SHADER, SM50_SHADER_PSO_GEOMETRY_SHADER_DATA>(pArgs, &pso_data)) {
+    is_strip = pso_data->strip_topology;
+  }
+  SM50_SHADER_METAL_VERSION metal_version = SM50_SHADER_METAL_310;
+  SM50_SHADER_COMMON_DATA *sm50_common = nullptr;
+  if (args_get_data<SM50_SHADER_COMMON, SM50_SHADER_COMMON_DATA>(pArgs, &sm50_common)) {
+    metal_version = sm50_common->metal_version;
   }
 
   bool is_triadj_strip = is_strip && pGeometryStage->gs_input_primitive == D3D10_SB_PRIMITIVE_TRIANGLE_ADJ;
@@ -597,7 +586,7 @@ convert_dxbc_vertex_for_geometry_shader(
   llvm::raw_null_ostream nulldbg{};
   llvm::air::AIRBuilder air(builder, nulldbg);
 
-  setup_fastmath_flag(module, builder);
+  setup_metal_version(module, metal_version);
 
   auto index_check = llvm::BasicBlock::Create(context, "index_check", function);
   auto active = llvm::BasicBlock::Create(context, "active", function);
@@ -663,7 +652,7 @@ convert_dxbc_vertex_for_geometry_shader(
 
   struct context ctx {
     .builder = builder, .air = air, .llvm = context, .module = module, .function = function, .resource = resource_map,
-    .types = types, .pso_sample_mask = 0xffffffff, .shader_type = pShaderInternal->shader_type,
+    .types = types, .pso_sample_mask = 0xffffffff, .shader_type = pShaderInternal->shader_type, .metal_version = metal_version,
   };
 
   auto global_index_id =
@@ -693,10 +682,7 @@ convert_dxbc_vertex_for_geometry_shader(
   }
 
   // explicit initialization
-  builder.CreateAtomicRMW(
-      llvm::AtomicRMWInst::BinOp::And, valid_vertex_mask, builder.getInt32(0), llvm::Align(4),
-      llvm::AtomicOrdering::Monotonic
-  );
+  air.CreateAtomicRMW(llvm::AtomicRMWInst::BinOp::And, valid_vertex_mask, builder.getInt32(0));
 
   builder.CreateCondBr(
       builder.CreateICmp(llvm::CmpInst::ICMP_ULT, global_index_id, vertex_count), index_check, will_dispatch
@@ -732,9 +718,8 @@ convert_dxbc_vertex_for_geometry_shader(
 
   builder.SetInsertPoint(active);
 
-  builder.CreateAtomicRMW(
-      llvm::AtomicRMWInst::BinOp::Or, valid_vertex_mask, builder.CreateShl(builder.getInt32(1), warp_vertex_id),
-      llvm::Align(4), llvm::AtomicOrdering::Monotonic
+  air.CreateAtomicRMW(
+      llvm::AtomicRMWInst::BinOp::Or, valid_vertex_mask, builder.CreateShl(builder.getInt32(1), warp_vertex_id)
   );
 
   resource_map.base_vertex_id = builder.CreateExtractValue(draw_arguments, is_indexed_draw ? 3 : 2);

@@ -49,6 +49,9 @@ namespace dxmt {
     { R"(\\SONIC_X_SHADOW_GENERATIONS\.exe$)", {{
       { "d3d11.ignoreMapFlagNoWait",   "True" },
     }} },
+    { R"(\\OMORI\.exe$)", {{
+      { "dxgi.forceSDR",   "True" },
+    }} },
   }};
 
   const Config* findProfile(const ProfileList& profiles, const std::string& appName) {

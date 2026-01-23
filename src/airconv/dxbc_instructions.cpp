@@ -548,10 +548,14 @@ std::variant<SrcOperandResource, SrcOperandUAV> readSrcResourceOrUAV(
   }
   assert(0 && "unexpected resource operation destination");
 }
-auto readInstructionCommon(
-  const microsoft::D3D10ShaderBinary::CInstruction &Inst
-) -> InstructionCommon {
-  return InstructionCommon{.saturate = Inst.m_bSaturate != 0};
+
+auto
+readInstructionCommon(const microsoft::D3D10ShaderBinary::CInstruction &Inst, ShaderInfo &shader_info)
+    -> InstructionCommon {
+  return InstructionCommon{
+      .saturate = Inst.m_bSaturate != 0,
+      .precise_mask = shader_info.refactoringAllowed ? (uint8_t)Inst.m_PreciseMask : (uint8_t)0b1111
+  };
 };
 
 Instruction readInstruction(
@@ -570,14 +574,14 @@ Instruction readInstruction(
   switch (Inst.m_OpCode) {
   case microsoft::D3D10_SB_OPCODE_MOV: {
     return InstMov{
-      ._ = readInstructionCommon(Inst),
+      ._ = readInstructionCommon(Inst, shader_info),
       .dst = readDstOperand(Inst.m_Operands[0], phase, OperandDataType::Float),
       .src = readSrcOperand(Inst.m_Operands[1], phase, OperandDataType::Float),
     };
   };
   case microsoft::D3D10_SB_OPCODE_MOVC: {
     return InstMovConditional{
-      ._ = readInstructionCommon(Inst),
+      ._ = readInstructionCommon(Inst, shader_info),
       .dst = readDstOperand(Inst.m_Operands[0], phase, OperandDataType::Float),
       .src_cond = readSrcOperand(Inst.m_Operands[1], phase, OperandDataType::Integer),
       .src0 = readSrcOperand(Inst.m_Operands[2], phase, OperandDataType::Float),
@@ -816,6 +820,7 @@ Instruction readInstruction(
     };
   };
   case microsoft::D3D10_1_SB_OPCODE_SAMPLE_POS: {
+    shader_info.use_samplepos = true;
     if (Inst.m_Operands[1].m_Type ==
         microsoft::D3D10_SB_OPERAND_TYPE_RASTERIZER) {
       return InstSamplePos{
@@ -1063,7 +1068,7 @@ Instruction readInstruction(
   };
   case microsoft::D3D10_SB_OPCODE_DP2: {
     return InstDotProduct{
-      ._ = readInstructionCommon(Inst),
+      ._ = readInstructionCommon(Inst, shader_info),
       .dst = readDstOperand(Inst.m_Operands[0], phase, OperandDataType::Float),
       .src0 = readSrcOperand(Inst.m_Operands[1], phase, OperandDataType::Float),
       .src1 = readSrcOperand(Inst.m_Operands[2], phase, OperandDataType::Float),
@@ -1072,7 +1077,7 @@ Instruction readInstruction(
   };
   case microsoft::D3D10_SB_OPCODE_DP3: {
     return InstDotProduct{
-      ._ = readInstructionCommon(Inst),
+      ._ = readInstructionCommon(Inst, shader_info),
       .dst = readDstOperand(Inst.m_Operands[0], phase, OperandDataType::Float),
       .src0 = readSrcOperand(Inst.m_Operands[1], phase, OperandDataType::Float),
       .src1 = readSrcOperand(Inst.m_Operands[2], phase, OperandDataType::Float),
@@ -1081,7 +1086,7 @@ Instruction readInstruction(
   };
   case microsoft::D3D10_SB_OPCODE_DP4: {
     return InstDotProduct{
-      ._ = readInstructionCommon(Inst),
+      ._ = readInstructionCommon(Inst, shader_info),
       .dst = readDstOperand(Inst.m_Operands[0], phase, OperandDataType::Float),
       .src0 = readSrcOperand(Inst.m_Operands[1], phase, OperandDataType::Float),
       .src1 = readSrcOperand(Inst.m_Operands[2], phase, OperandDataType::Float),
@@ -1090,7 +1095,7 @@ Instruction readInstruction(
   };
   case microsoft::D3D10_SB_OPCODE_RSQ: {
     return InstFloatUnaryOp{
-      ._ = readInstructionCommon(Inst),
+      ._ = readInstructionCommon(Inst, shader_info),
       .op = FloatUnaryOp::Rsq,
       .dst = readDstOperand(Inst.m_Operands[0], phase, OperandDataType::Float),
       .src = readSrcOperand(Inst.m_Operands[1], phase, OperandDataType::Float),
@@ -1098,7 +1103,7 @@ Instruction readInstruction(
   }
   case microsoft::D3D11_SB_OPCODE_RCP: {
     return InstFloatUnaryOp{
-      ._ = readInstructionCommon(Inst),
+      ._ = readInstructionCommon(Inst, shader_info),
       .op = FloatUnaryOp::Rcp,
       .dst = readDstOperand(Inst.m_Operands[0], phase, OperandDataType::Float),
       .src = readSrcOperand(Inst.m_Operands[1], phase, OperandDataType::Float),
@@ -1106,7 +1111,7 @@ Instruction readInstruction(
   }
   case microsoft::D3D10_SB_OPCODE_LOG: {
     return InstFloatUnaryOp{
-      ._ = readInstructionCommon(Inst),
+      ._ = readInstructionCommon(Inst, shader_info),
       .op = FloatUnaryOp::Log2,
       .dst = readDstOperand(Inst.m_Operands[0], phase, OperandDataType::Float),
       .src = readSrcOperand(Inst.m_Operands[1], phase, OperandDataType::Float),
@@ -1114,7 +1119,7 @@ Instruction readInstruction(
   }
   case microsoft::D3D10_SB_OPCODE_EXP: {
     return InstFloatUnaryOp{
-      ._ = readInstructionCommon(Inst),
+      ._ = readInstructionCommon(Inst, shader_info),
       .op = FloatUnaryOp::Exp2,
       .dst = readDstOperand(Inst.m_Operands[0], phase, OperandDataType::Float),
       .src = readSrcOperand(Inst.m_Operands[1], phase, OperandDataType::Float),
@@ -1122,7 +1127,7 @@ Instruction readInstruction(
   }
   case microsoft::D3D10_SB_OPCODE_SQRT: {
     return InstFloatUnaryOp{
-      ._ = readInstructionCommon(Inst),
+      ._ = readInstructionCommon(Inst, shader_info),
       .op = FloatUnaryOp::Sqrt,
       .dst = readDstOperand(Inst.m_Operands[0], phase, OperandDataType::Float),
       .src = readSrcOperand(Inst.m_Operands[1], phase, OperandDataType::Float),
@@ -1130,7 +1135,7 @@ Instruction readInstruction(
   }
   case microsoft::D3D10_SB_OPCODE_ROUND_Z: {
     return InstFloatUnaryOp{
-      ._ = readInstructionCommon(Inst),
+      ._ = readInstructionCommon(Inst, shader_info),
       .op = FloatUnaryOp::RoundZero,
       .dst = readDstOperand(Inst.m_Operands[0], phase, OperandDataType::Float),
       .src = readSrcOperand(Inst.m_Operands[1], phase, OperandDataType::Float),
@@ -1138,7 +1143,7 @@ Instruction readInstruction(
   }
   case microsoft::D3D10_SB_OPCODE_ROUND_PI: {
     return InstFloatUnaryOp{
-      ._ = readInstructionCommon(Inst),
+      ._ = readInstructionCommon(Inst, shader_info),
       .op = FloatUnaryOp::RoundPositiveInf,
       .dst = readDstOperand(Inst.m_Operands[0], phase, OperandDataType::Float),
       .src = readSrcOperand(Inst.m_Operands[1], phase, OperandDataType::Float),
@@ -1146,7 +1151,7 @@ Instruction readInstruction(
   }
   case microsoft::D3D10_SB_OPCODE_ROUND_NI: {
     return InstFloatUnaryOp{
-      ._ = readInstructionCommon(Inst),
+      ._ = readInstructionCommon(Inst, shader_info),
       .op = FloatUnaryOp::RoundNegativeInf,
       .dst = readDstOperand(Inst.m_Operands[0], phase, OperandDataType::Float),
       .src = readSrcOperand(Inst.m_Operands[1], phase, OperandDataType::Float),
@@ -1154,7 +1159,7 @@ Instruction readInstruction(
   }
   case microsoft::D3D10_SB_OPCODE_ROUND_NE: {
     return InstFloatUnaryOp{
-      ._ = readInstructionCommon(Inst),
+      ._ = readInstructionCommon(Inst, shader_info),
       .op = FloatUnaryOp::RoundNearestEven,
       .dst = readDstOperand(Inst.m_Operands[0], phase, OperandDataType::Float),
       .src = readSrcOperand(Inst.m_Operands[1], phase, OperandDataType::Float),
@@ -1162,7 +1167,7 @@ Instruction readInstruction(
   }
   case microsoft::D3D10_SB_OPCODE_FRC: {
     return InstFloatUnaryOp{
-      ._ = readInstructionCommon(Inst),
+      ._ = readInstructionCommon(Inst, shader_info),
       .op = FloatUnaryOp::Fraction,
       .dst = readDstOperand(Inst.m_Operands[0], phase, OperandDataType::Float),
       .src = readSrcOperand(Inst.m_Operands[1], phase, OperandDataType::Float),
@@ -1170,7 +1175,7 @@ Instruction readInstruction(
   }
   case microsoft::D3D10_SB_OPCODE_ADD: {
     return InstFloatBinaryOp{
-      ._ = readInstructionCommon(Inst),
+      ._ = readInstructionCommon(Inst, shader_info),
       .op = FloatBinaryOp::Add,
       .dst = readDstOperand(Inst.m_Operands[0], phase, OperandDataType::Float),
       .src0 = readSrcOperand(Inst.m_Operands[1], phase, OperandDataType::Float),
@@ -1179,7 +1184,7 @@ Instruction readInstruction(
   };
   case microsoft::D3D10_SB_OPCODE_MUL: {
     return InstFloatBinaryOp{
-      ._ = readInstructionCommon(Inst),
+      ._ = readInstructionCommon(Inst, shader_info),
       .op = FloatBinaryOp::Mul,
       .dst = readDstOperand(Inst.m_Operands[0], phase, OperandDataType::Float),
       .src0 = readSrcOperand(Inst.m_Operands[1], phase, OperandDataType::Float),
@@ -1188,7 +1193,7 @@ Instruction readInstruction(
   };
   case microsoft::D3D10_SB_OPCODE_DIV: {
     return InstFloatBinaryOp{
-      ._ = readInstructionCommon(Inst),
+      ._ = readInstructionCommon(Inst, shader_info),
       .op = FloatBinaryOp::Div,
       .dst = readDstOperand(Inst.m_Operands[0], phase, OperandDataType::Float),
       .src0 = readSrcOperand(Inst.m_Operands[1], phase, OperandDataType::Float),
@@ -1197,7 +1202,7 @@ Instruction readInstruction(
   };
   case microsoft::D3D10_SB_OPCODE_MAX: {
     return InstFloatBinaryOp{
-      ._ = readInstructionCommon(Inst),
+      ._ = readInstructionCommon(Inst, shader_info),
       .op = FloatBinaryOp::Max,
       .dst = readDstOperand(Inst.m_Operands[0], phase, OperandDataType::Float),
       .src0 = readSrcOperand(Inst.m_Operands[1], phase, OperandDataType::Float),
@@ -1206,7 +1211,7 @@ Instruction readInstruction(
   };
   case microsoft::D3D10_SB_OPCODE_MIN: {
     return InstFloatBinaryOp{
-      ._ = readInstructionCommon(Inst),
+      ._ = readInstructionCommon(Inst, shader_info),
       .op = FloatBinaryOp::Min,
       .dst = readDstOperand(Inst.m_Operands[0], phase, OperandDataType::Float),
       .src0 = readSrcOperand(Inst.m_Operands[1], phase, OperandDataType::Float),
@@ -1215,7 +1220,7 @@ Instruction readInstruction(
   };
   case microsoft::D3D10_SB_OPCODE_MAD: {
     return InstFloatMAD{
-      ._ = readInstructionCommon(Inst),
+      ._ = readInstructionCommon(Inst, shader_info),
       .dst = readDstOperand(Inst.m_Operands[0], phase, OperandDataType::Float),
       .src0 = readSrcOperand(Inst.m_Operands[1], phase, OperandDataType::Float),
       .src1 = readSrcOperand(Inst.m_Operands[2], phase, OperandDataType::Float),
@@ -1241,6 +1246,7 @@ Instruction readInstruction(
     };
   };
   case microsoft::D3D11_1_SB_OPCODE_MSAD: {
+    shader_info.use_msad = true;
     return InstMaskedSumOfAbsDiff{
       .dst = readDstOperand(Inst.m_Operands[0], phase, OperandDataType::Integer),
       .src0 = readSrcOperand(Inst.m_Operands[1], phase, OperandDataType::Integer),
@@ -1250,7 +1256,7 @@ Instruction readInstruction(
   };
   case microsoft::D3D10_SB_OPCODE_SINCOS: {
     return InstSinCos{
-      ._ = readInstructionCommon(Inst),
+      ._ = readInstructionCommon(Inst, shader_info),
       .dst_sin = readDstOperand(Inst.m_Operands[0], phase, OperandDataType::Float),
       .dst_cos = readDstOperand(Inst.m_Operands[1], phase, OperandDataType::Float),
       .src = readSrcOperand(Inst.m_Operands[2], phase, OperandDataType::Float),
@@ -1258,7 +1264,7 @@ Instruction readInstruction(
   };
   case microsoft::D3D10_SB_OPCODE_EQ: {
     return InstFloatCompare{
-      ._ = readInstructionCommon(Inst),
+      ._ = readInstructionCommon(Inst, shader_info),
       .cmp = FloatComparison::Equal,
       .dst = readDstOperand(Inst.m_Operands[0], phase, OperandDataType::Integer),
       .src0 = readSrcOperand(Inst.m_Operands[1], phase, OperandDataType::Float),
@@ -1267,7 +1273,7 @@ Instruction readInstruction(
   };
   case microsoft::D3D10_SB_OPCODE_GE: {
     return InstFloatCompare{
-      ._ = readInstructionCommon(Inst),
+      ._ = readInstructionCommon(Inst, shader_info),
       .cmp = FloatComparison::GreaterEqual,
       .dst = readDstOperand(Inst.m_Operands[0], phase, OperandDataType::Integer),
       .src0 = readSrcOperand(Inst.m_Operands[1], phase, OperandDataType::Float),
@@ -1276,7 +1282,7 @@ Instruction readInstruction(
   };
   case microsoft::D3D10_SB_OPCODE_LT: {
     return InstFloatCompare{
-      ._ = readInstructionCommon(Inst),
+      ._ = readInstructionCommon(Inst, shader_info),
       .cmp = FloatComparison::LessThan,
       .dst = readDstOperand(Inst.m_Operands[0], phase, OperandDataType::Integer),
       .src0 = readSrcOperand(Inst.m_Operands[1], phase, OperandDataType::Float),
@@ -1285,7 +1291,7 @@ Instruction readInstruction(
   };
   case microsoft::D3D10_SB_OPCODE_NE: {
     return InstFloatCompare{
-      ._ = readInstructionCommon(Inst),
+      ._ = readInstructionCommon(Inst, shader_info),
       .cmp = FloatComparison::NotEqual,
       .dst = readDstOperand(Inst.m_Operands[0], phase, OperandDataType::Integer),
       .src0 = readSrcOperand(Inst.m_Operands[1], phase, OperandDataType::Float),
@@ -1506,7 +1512,7 @@ Instruction readInstruction(
   };
   case microsoft::D3D10_SB_OPCODE_IMUL: {
     return InstIntegerBinaryOpWithTwoDst{
-      ._ = readInstructionCommon(Inst),
+      ._ = readInstructionCommon(Inst, shader_info),
       .op = IntegerBinaryOpWithTwoDst::IMul,
       .dst_hi = readDstOperand(Inst.m_Operands[0], phase, OperandDataType::Integer),
       .dst_low = readDstOperand(Inst.m_Operands[1], phase, OperandDataType::Integer),
@@ -1516,7 +1522,7 @@ Instruction readInstruction(
   };
   case microsoft::D3D10_SB_OPCODE_UMUL: {
     return InstIntegerBinaryOpWithTwoDst{
-      ._ = readInstructionCommon(Inst),
+      ._ = readInstructionCommon(Inst, shader_info),
       .op = IntegerBinaryOpWithTwoDst::UMul,
       .dst_hi = readDstOperand(Inst.m_Operands[0], phase, OperandDataType::Integer),
       .dst_low = readDstOperand(Inst.m_Operands[1], phase, OperandDataType::Integer),
@@ -1526,7 +1532,7 @@ Instruction readInstruction(
   };
   case microsoft::D3D10_SB_OPCODE_UDIV: {
     return InstIntegerBinaryOpWithTwoDst{
-      ._ = readInstructionCommon(Inst),
+      ._ = readInstructionCommon(Inst, shader_info),
       .op = IntegerBinaryOpWithTwoDst::UDiv,
       .dst_hi = readDstOperand(Inst.m_Operands[0], phase, OperandDataType::Integer),
       .dst_low = readDstOperand(Inst.m_Operands[1], phase, OperandDataType::Integer),
@@ -1536,7 +1542,7 @@ Instruction readInstruction(
   };
   case microsoft::D3D11_SB_OPCODE_UADDC: {
     return InstIntegerBinaryOpWithTwoDst{
-      ._ = readInstructionCommon(Inst),
+      ._ = readInstructionCommon(Inst, shader_info),
       .op = IntegerBinaryOpWithTwoDst::UAddCarry,
       .dst_hi = readDstOperand(Inst.m_Operands[0], phase, OperandDataType::Integer),
       .dst_low = readDstOperand(Inst.m_Operands[1], phase, OperandDataType::Integer),
@@ -1546,7 +1552,7 @@ Instruction readInstruction(
   };
   case microsoft::D3D11_SB_OPCODE_USUBB: {
     return InstIntegerBinaryOpWithTwoDst{
-      ._ = readInstructionCommon(Inst),
+      ._ = readInstructionCommon(Inst, shader_info),
       .op = IntegerBinaryOpWithTwoDst::USubBorrow,
       .dst_hi = readDstOperand(Inst.m_Operands[0], phase, OperandDataType::Integer),
       .dst_low = readDstOperand(Inst.m_Operands[1], phase, OperandDataType::Integer),
@@ -1599,7 +1605,7 @@ Instruction readInstruction(
   case microsoft::D3D10_SB_OPCODE_DERIV_RTX:
   case microsoft::D3D11_SB_OPCODE_DERIV_RTX_FINE: {
     return InstPartialDerivative{
-      ._ = readInstructionCommon(Inst),
+      ._ = readInstructionCommon(Inst, shader_info),
       .dst = readDstOperand(Inst.m_Operands[0], phase, OperandDataType::Float),
       .src = readSrcOperand(Inst.m_Operands[1], phase, OperandDataType::Float),
       .ddy = false,
@@ -1609,7 +1615,7 @@ Instruction readInstruction(
   case microsoft::D3D10_SB_OPCODE_DERIV_RTY:
   case microsoft::D3D11_SB_OPCODE_DERIV_RTY_FINE: {
     return InstPartialDerivative{
-      ._ = readInstructionCommon(Inst),
+      ._ = readInstructionCommon(Inst, shader_info),
       .dst = readDstOperand(Inst.m_Operands[0], phase, OperandDataType::Float),
       .src = readSrcOperand(Inst.m_Operands[1], phase, OperandDataType::Float),
       .ddy = true,
@@ -1618,7 +1624,7 @@ Instruction readInstruction(
   };
   case microsoft::D3D11_SB_OPCODE_DERIV_RTX_COARSE: {
     return InstPartialDerivative{
-      ._ = readInstructionCommon(Inst),
+      ._ = readInstructionCommon(Inst, shader_info),
       .dst = readDstOperand(Inst.m_Operands[0], phase, OperandDataType::Float),
       .src = readSrcOperand(Inst.m_Operands[1], phase, OperandDataType::Float),
       .ddy = false,
@@ -1627,7 +1633,7 @@ Instruction readInstruction(
   };
   case microsoft::D3D11_SB_OPCODE_DERIV_RTY_COARSE: {
     return InstPartialDerivative{
-      ._ = readInstructionCommon(Inst),
+      ._ = readInstructionCommon(Inst, shader_info),
       .dst = readDstOperand(Inst.m_Operands[0], phase, OperandDataType::Float),
       .src = readSrcOperand(Inst.m_Operands[1], phase, OperandDataType::Float),
       .ddy = true,

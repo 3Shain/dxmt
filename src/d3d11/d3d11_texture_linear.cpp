@@ -207,7 +207,7 @@ CreateDynamicLinearTexture2D(
   }
 
   *ppTexture = reinterpret_cast<ID3D11Texture2D1 *>(
-      ref(new TDynamicLinearTexture<tag_texture_2d>(pDesc, info, pInitialData, bufferLen, bytesPerRow, pDevice))
+      ref(new TDynamicLinearTexture<tag_texture_2d>(&finalDesc, info, pInitialData, bufferLen, bytesPerRow, pDevice))
   );
   return S_OK;
 }
@@ -244,7 +244,7 @@ CreateDynamicLinearTexture1D(
   }
 
   *ppTexture = reinterpret_cast<ID3D11Texture1D *>(
-      ref(new TDynamicLinearTexture<tag_texture_1d>(pDesc, info, pInitialData, bufferLen, bytesPerRow, pDevice))
+      ref(new TDynamicLinearTexture<tag_texture_1d>(&finalDesc, info, pInitialData, bufferLen, bytesPerRow, pDevice))
   );
   return S_OK;
 }

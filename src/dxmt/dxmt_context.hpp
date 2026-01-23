@@ -22,7 +22,8 @@ namespace dxmt {
 
 constexpr size_t kCommandChunkCPUHeapSize = 0x400000;
 constexpr size_t kCommandChunkGPUHeapSize = 0x400000;
-constexpr size_t kEncodingContextCPUHeapSize = 0x1000000;
+constexpr size_t kEncodingContextCPUHeapSize = 0x100000;
+constexpr size_t kEncodingContextCPUHeapLifetime = 600;
 
 inline std::size_t
 align_forward_adjustment(const void *const ptr, const std::size_t &alignment) noexcept {
@@ -102,6 +103,7 @@ struct EncoderData {
 struct GSDispatchArgumentsMarshal {
   WMT::Reference<WMT::Buffer> draw_arguments;
   uint64_t draw_arguments_va;
+  uint64_t max_object_threadgroups;
   WMT::Buffer dispatch_arguments_buffer;
   uint64_t dispatch_arguments_va;
   uint32_t vertex_count_per_warp;
@@ -110,6 +112,7 @@ struct GSDispatchArgumentsMarshal {
 struct TSDispatchArgumentsMarshal {
   WMT::Reference<WMT::Buffer> draw_arguments;
   uint64_t draw_arguments_va;
+  uint64_t max_object_threadgroups;
   WMT::Buffer dispatch_arguments_buffer;
   uint64_t dispatch_arguments_va;
   uint32_t control_point_count;
@@ -486,26 +489,27 @@ public:
   void
   encodeGSDispatchArgumentsMarshal(
       WMT::Buffer draw_args, uint64_t draw_args_resource_id, uint32_t draw_args_offset, uint32_t vertex_count_per_warp,
-      WMT::Buffer dispatch_args, uint64_t dispatch_args_resource_id, uint32_t write_offset
+      WMT::Buffer dispatch_args, uint64_t dispatch_args_resource_id, uint32_t write_offset, uint64_t max_object_threadgroups
   ) {
     assert(encoder_current->type == EncoderType::Render);
     auto data = static_cast<RenderEncoderData *>(encoder_current);
     data->gs_arg_marshal_tasks.push_back(
-        {draw_args, draw_args_resource_id + draw_args_offset, dispatch_args, dispatch_args_resource_id + write_offset,
-         vertex_count_per_warp}
+        {draw_args, draw_args_resource_id + draw_args_offset, max_object_threadgroups, dispatch_args,
+         dispatch_args_resource_id + write_offset, vertex_count_per_warp}
     );
   }
 
   void
   encodeTSDispatchArgumentsMarshal(
       WMT::Buffer draw_args, uint64_t draw_args_resource_id, uint32_t draw_args_offset, uint32_t control_point_count,
-      uint32_t patch_per_group, WMT::Buffer dispatch_args, uint64_t dispatch_args_resource_id, uint32_t write_offset
+      uint32_t patch_per_group, WMT::Buffer dispatch_args, uint64_t dispatch_args_resource_id, uint32_t write_offset,
+      uint64_t max_object_threadgroups
   ) {
     assert(encoder_current->type == EncoderType::Render);
     auto data = static_cast<RenderEncoderData *>(encoder_current);
     data->ts_arg_marshal_tasks.push_back(
-        {draw_args, draw_args_resource_id + draw_args_offset, dispatch_args, dispatch_args_resource_id + write_offset,
-         control_point_count, patch_per_group}
+        {draw_args, draw_args_resource_id + draw_args_offset, max_object_threadgroups, dispatch_args,
+         dispatch_args_resource_id + write_offset, control_point_count, patch_per_group}
     );
   }
 
@@ -586,13 +590,24 @@ public:
 
   void *
   allocate_cpu_heap(size_t size, size_t alignment) {
-    std::size_t adjustment = align_forward_adjustment((void *)cpu_buffer_offset_, alignment);
-    auto aligned = cpu_buffer_offset_ + adjustment;
-    cpu_buffer_offset_ = aligned + size;
-    if (cpu_buffer_offset_ >= kEncodingContextCPUHeapSize) {
-      ERR(cpu_buffer_offset_, " - cpu argument heap overflow, expect error.");
+    assert(size < kEncodingContextCPUHeapSize);
+    for (;;) {
+      std::size_t adjustment = align_forward_adjustment((void *)cpu_buffer_offset_, alignment);
+      auto aligned = cpu_buffer_offset_ + adjustment;
+      cpu_buffer_offset_ = aligned + size;
+      if (unlikely(cpu_buffer_offset_ >= kEncodingContextCPUHeapSize)) {
+        current_buffer_chunk_++;
+        while (current_buffer_chunk_ >= cpu_buffer_chunks_.size()) {
+          cpu_buffer_chunks_.emplace_back();
+        }
+        auto &chunk = cpu_buffer_chunks_[current_buffer_chunk_];
+        chunk.underused_times = 0;
+        cpu_buffer_ = chunk.ptr;
+        cpu_buffer_offset_ = 0;
+        continue;
+      }
+      return ptr_add(cpu_buffer_, aligned);
     }
-    return ptr_add(cpu_buffer_, aligned);
   }
 
   template <typename T, bool ComputeCommandEncoder = false>
@@ -613,6 +628,14 @@ public:
     if constexpr (ComputeCommandEncoder)
       return reinterpret_cast<ComputeEncoderData *>(encoder_current)->allocated_argbuf_offset + offset;
     return reinterpret_cast<RenderEncoderData *>(encoder_current)->allocated_argbuf_offset + offset;
+  }
+
+  template <bool ComputeCommandEncoder = false>
+  WMT::Buffer
+  getFinalArgumentBuffer() {
+    if constexpr (ComputeCommandEncoder)
+      return reinterpret_cast<ComputeEncoderData *>(encoder_current)->allocated_argbuf;
+    return reinterpret_cast<RenderEncoderData *>(encoder_current)->allocated_argbuf;
   }
 
   std::pair<WMT::Buffer , size_t> allocateTempBuffer(size_t size, size_t alignment);
@@ -666,6 +689,7 @@ public:
   ClearRenderTargetContext clear_rt_cmd;
   DepthStencilBlitContext blit_depth_stencil_cmd;
   ClearResourceKernelContext clear_res_cmd;
+  MTLFXMVScaleContext mv_scale_cmd;
 
 private:
   DXMT_ENCODER_LIST_OP checkEncoderRelation(EncoderData* former, EncoderData* latter);
@@ -696,10 +720,32 @@ private:
   EncoderData *encoder_current = nullptr;
   unsigned encoder_count_ = 0;
 
-  void *cpu_buffer_;
-  uint64_t cpu_buffer_offset_;
   uint64_t seq_id_;
   uint64_t frame_id_;
+
+  struct chunk {
+    void *ptr;
+    size_t underused_times;
+
+    chunk() {
+      ptr = malloc(kEncodingContextCPUHeapSize);
+      underused_times = 0;
+    }
+    chunk(const chunk &copy) = delete;
+    chunk(chunk &&move) {
+      ptr = move.ptr;
+      underused_times = move.underused_times;
+      move.ptr = nullptr;
+    };
+    ~chunk() {
+      free(ptr);
+      ptr = nullptr;
+    }
+  };
+  std::vector<chunk> cpu_buffer_chunks_;
+  uint32_t current_buffer_chunk_ = 0;
+  void *cpu_buffer_;
+  uint64_t cpu_buffer_offset_;
 
   VisibilityResultOffsetBumpState vro_state_;
   std::vector<Rc<VisibilityResultQuery>> pending_queries_;

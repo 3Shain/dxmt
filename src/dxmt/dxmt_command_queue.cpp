@@ -19,9 +19,11 @@ CommandQueue::CommandQueue(WMT::Device device) :
     finishThread([this]() { this->WaitForFinishThread(); }),
     device(device),
     commandQueue(device.newCommandQueue(kCommandChunkCount)),
+    shared_event_listener(SharedEventListener_create()),
+    event_listener_thread([this]() { SharedEventListener_start(this->shared_event_listener); }),
     staging_allocator({
         device, WMTResourceOptionCPUCacheModeWriteCombined | WMTResourceHazardTrackingModeUntracked |
-                    WMTResourceStorageModeShared
+                    WMTResourceStorageModeManaged, false
     }),
     copy_temp_allocator({device, WMTResourceHazardTrackingModeUntracked | WMTResourceStorageModePrivate}),
     argbuf_allocator({
@@ -31,7 +33,8 @@ CommandQueue::CommandQueue(WMT::Device device) :
     cpu_command_allocator({}),
     reftracker_storage_allocator({}),
     cmd_library(device),
-    argument_encoding_ctx(*this, device, cmd_library) {
+    argument_encoding_ctx(*this, device, cmd_library),
+    initializer(device) {
   for (unsigned i = 0; i < kCommandChunkCount; i++) {
     auto &chunk = chunks[i];
     chunk.queue = this;
@@ -56,12 +59,14 @@ CommandQueue::~CommandQueue() {
   ready_for_encode.notify_one();
   ready_for_commit++;
   ready_for_commit.notify_one();
+  SharedEventListener_destroy(shared_event_listener);
   encodeThread.join();
   finishThread.join();
   for (unsigned i = 0; i < kCommandChunkCount; i++) {
     auto &chunk = chunks[i];
     chunk.reset();
   };
+  event_listener_thread.join();
   TRACE("Destructed command queue");
 }
 
@@ -72,6 +77,7 @@ CommandQueue::CommitCurrentChunk() {
   chunk.chunk_id = chunk_id;
   chunk.chunk_event_id = GetNextEventSeqId();
   chunk.frame_ = frame_count;
+  chunk.resource_initializer_event_id = initializer.flushToWait();
   auto& statistics = CurrentFrameStatistics();
   statistics.command_buffer_count++;
 #if ASYNC_ENCODING
@@ -105,8 +111,8 @@ CommandQueue::CommitChunkInternal(CommandChunk &chunk, uint64_t seq) {
     char filename[1024];
     std::time_t now;
     std::time(&now);
-    std::strftime(filename, 1024, "-capture-%H-%M-%S_%m-%d-%y.gputrace", std::localtime(&now));
-    auto fileUrl = env::getUnixPath(env::getExeBaseName() + filename);
+    std::strftime(filename, 1024, "_%H'%M'%S_%m-%d-%y.gputrace", std::localtime(&now));
+    auto fileUrl = env::getUnixPath(env::getExeBaseName() + "_F." + std::to_string(chunk.frame_) + filename);
     WARN("A new capture will be saved to ", fileUrl);
     info.output_url.set(fileUrl.c_str());
 
@@ -119,7 +125,7 @@ CommandQueue::CommitChunkInternal(CommandChunk &chunk, uint64_t seq) {
     break;
   }
   case CaptureState::NextAction::Nothing: {
-    if (CaptureState::shouldCaptureNextFrame()) {
+    if (capture_state.shouldCaptureNextFrame()) {
       capture_state.scheduleNextFrameCapture(chunk.frame_ + 1);
     }
     break;
@@ -128,6 +134,9 @@ CommandQueue::CommitChunkInternal(CommandChunk &chunk, uint64_t seq) {
 
   auto cmdbuf = commandQueue.commandBuffer();
   chunk.attached_cmdbuf = cmdbuf;
+  if (chunk.resource_initializer_event_id) {
+    cmdbuf.encodeWaitForEvent(initializer.event(), chunk.resource_initializer_event_id);
+  }
   chunk.encode(chunk.attached_cmdbuf, this->argument_encoding_ctx);
   cmdbuf.commit();
 

@@ -50,7 +50,7 @@ DeferredContextBase::AllocateCommandData(size_t n) {
 }
 
 template <>
-std::tuple<void *, WMT::Buffer, uint64_t>
+std::tuple<WMT::Buffer, uint64_t>
 DeferredContextBase::AllocateStagingBuffer(size_t size, size_t alignment) {
   return ctx_state.current_cmdlist->AllocateStagingBuffer(size, alignment);
 }
@@ -63,6 +63,16 @@ void DeferredContextBase::UseCopyDestination(Rc<StagingResource> &staging) {
 template <>
 void DeferredContextBase::UseCopySource(Rc<StagingResource> &staging) {
   ctx_state.current_cmdlist->read_staging_resources.push_back(staging);
+}
+
+template <>
+std::pair<BufferAllocation *, uint32_t>
+DeferredContextBase::GetDynamicBufferAllocation(Rc<DynamicBuffer> &dynamic) {
+  D3D11_ASSERT(
+      ctx_state.current_dynamic_buffer_allocations.contains(dynamic.ptr()) &&
+      "GetDynamicBufferAllocation() failed on deferred context");
+  auto &ret = ctx_state.current_dynamic_buffer_allocations.at(dynamic.ptr());
+  return {ret.allocation, ret.suballocation};
 }
 
 class MTLD3D11DeferredContext : public DeferredContextBase {

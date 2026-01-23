@@ -12,7 +12,6 @@
 #include "d3d11_pipeline_cache.hpp"
 #include "d3d11_private.h"
 #include "d3d11_query.hpp"
-#include "d3d11_shader.hpp"
 #include "d3d11_swapchain.hpp"
 #include "d3d11_state_object.hpp"
 #include "dxgi_interfaces.h"
@@ -20,32 +19,14 @@
 #include "dxmt_command_queue.hpp"
 #include "dxmt_device.hpp"
 #include "dxmt_format.hpp"
-#include "dxmt_tasks.hpp"
 #include "ftl.hpp"
 #include "d3d11_resource.hpp"
-#include "thread.hpp"
 #include "dxgi_object.hpp"
 #include <memory>
-#include <mutex>
-#include <thread>
-#include <unordered_map>
 #include "d3d11_4.h"
 #include "util_win32_compat.h"
 
 namespace dxmt {
-
-template<>
-struct task_trait<IMTLThreadpoolWork*> {
-  IMTLThreadpoolWork* run_task(IMTLThreadpoolWork* task) {
-    return task->RunThreadpoolWork();
-  }
-  bool get_done(IMTLThreadpoolWork* task) {
-    return task->GetIsDone();
-  }
-  void set_done(IMTLThreadpoolWork* task) {
-    task->SetIsDone(true);
-  }
-};
 
 const GUID kRenderdocUUID = {0xa7aa6116,
                              0x9c8d,
@@ -79,8 +60,6 @@ public:
     format_inspector.Inspect(GetMTLDevice());
   }
 
-  ~MTLD3D11DeviceImpl() {}
-
   HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid,
                                            void **ppvObject) override {
     return m_container->QueryInterface(riid, ppvObject);
@@ -89,10 +68,6 @@ public:
   ULONG STDMETHODCALLTYPE AddRef() override { return m_container->AddRef(); }
 
   ULONG STDMETHODCALLTYPE Release() override { return m_container->Release(); }
-
-  void AddRefPrivate() override { return m_container->AddRefPrivate(); }
-
-  void ReleasePrivate() override { return m_container->ReleasePrivate(); }
 
   bool IsTraced() override { return is_traced_; }
 
@@ -302,7 +277,7 @@ public:
       Com<IMTLD3D11StreamOutputLayout> so_layout;
       HRESULT hr = pipeline_cache_->AddStreamOutputLayout(
           pShaderBytecode, NumEntries, pSODeclaration, NumStrides,
-          pBufferStrides, &so_layout);
+          pBufferStrides, RasterizedStream, &so_layout);
       if (FAILED(hr))
         return hr;
       return so_layout->QueryInterface(IID_PPV_ARGS(ppGeometryShader));
@@ -497,27 +472,8 @@ public:
   }
 
   HRESULT STDMETHODCALLTYPE
-      OpenSharedResource(HANDLE hResource, REFIID ReturnedInterface,
-                         void **ppResource) override{
-    // FIXME: The shared resource functionality is not fully implemented.
-    //        (See comments in GetSharedHandle)
-    auto pResource = (D3D11SharedResource*)MapViewOfFile(
-      hResource, FILE_MAP_ALL_ACCESS, 0, 0, sizeof(D3D11SharedResource));
-
-    D3D11SharedResource resource = *pResource;
-    UnmapViewOfFile(pResource);
-
-    if (resource.process != GetCurrentProcess()) {
-      ERR("OpenSharedResource: Sharing resources across processes is not yet supported");
-      return E_FAIL;
-    }
-
-    if (resource.d3d11_resource->QueryInterface(ReturnedInterface, ppResource) != S_OK) {
-      ERR("OpenSharedResource: Failed to query the interface");
-      return E_FAIL;
-    }
-
-    return S_OK;
+  OpenSharedResource(HANDLE hResource, REFIID ReturnedInterface, void **ppResource) override {
+    return ImportSharedTexture(this, hResource, ReturnedInterface, ppResource);
   }
 
   HRESULT STDMETHODCALLTYPE
@@ -570,8 +526,7 @@ public:
       outFormatSupport |= D3D11_FORMAT_SUPPORT_IA_INDEX_BUFFER;
     }
 
-    auto Capability =
-        format_inspector.textureCapabilities[metal_format.PixelFormat];
+    auto Capability = GetMTLPixelFormatCapability(metal_format.PixelFormat);
 
     if (any_bit_set(Capability & FormatCapability::Color)) {
       outFormatSupport |= D3D11_FORMAT_SUPPORT_RENDER_TARGET;
@@ -684,8 +639,7 @@ public:
                                     metal_format))) {
         return E_INVALIDARG;
       }
-      auto Capability =
-          format_inspector.textureCapabilities[metal_format.PixelFormat];
+      auto Capability = GetMTLPixelFormatCapability(metal_format.PixelFormat);
 
       if (any_bit_set(Capability & FormatCapability::TextureBufferRead)) {
         info->OutFormatSupport2 |= D3D11_FORMAT_SUPPORT2_UAV_TYPED_LOAD;
@@ -832,16 +786,15 @@ public:
     return S_OK;
   }
 
-  HRESULT STDMETHODCALLTYPE OpenSharedResource1(HANDLE hResource,
-                                                REFIID returnedInterface,
-                                                void **ppResource) override{
-      IMPLEMENT_ME}
+  HRESULT STDMETHODCALLTYPE
+  OpenSharedResource1(HANDLE hResource, REFIID ReturnedInterface, void **ppResource) override {
+    return ImportSharedTextureFromNtHandle(this, hResource, ReturnedInterface, ppResource);
+  }
 
   HRESULT STDMETHODCALLTYPE
-      OpenSharedResourceByName(LPCWSTR lpName, DWORD dwDesiredAccess,
-                               REFIID returnedInterface,
-                               void **ppResource) override {
-    IMPLEMENT_ME
+  OpenSharedResourceByName(LPCWSTR lpName, DWORD dwDesiredAccess, REFIID ReturnedInterface, void **ppResource)
+      override {
+    return ImportSharedTextureByName(this, lpName, dwDesiredAccess, ReturnedInterface, ppResource);
   }
 
   void STDMETHODCALLTYPE
@@ -1043,46 +996,34 @@ public:
     return m_container->GetMTLDevice();
   }
 
-  void SubmitThreadgroupWork(IMTLThreadpoolWork *pWork) override {
-    scheduler_.submit(pWork);
+  D3DKMT_HANDLE STDMETHODCALLTYPE GetLocalD3DKMT() override {
+    return m_container->GetLocalD3DKMT();
   }
 
   HRESULT
   CreateGraphicsPipeline(MTL_GRAPHICS_PIPELINE_DESC *pDesc,
-                         IMTLCompiledGraphicsPipeline **ppPipeline) override {
+                         MTLCompiledGraphicsPipeline **ppPipeline) override {
     pipeline_cache_->GetGraphicsPipeline(pDesc, ppPipeline);
     return S_OK;
   };
 
   HRESULT
   CreateComputePipeline(MTL_COMPUTE_PIPELINE_DESC *pDesc,
-                        IMTLCompiledComputePipeline **ppPipeline) override {
-    std::lock_guard<dxmt::mutex> lock(mutex_cs_);
-
-    auto iter = pipelines_cs_.find(pDesc->ComputeShader);
-    if (iter != pipelines_cs_.end()) {
-      *ppPipeline = iter->second.ref();
-      return S_OK;
-    }
-    auto temp = dxmt::CreateComputePipeline(this, pDesc->ComputeShader);
-    if (!pipelines_cs_.insert({pDesc->ComputeShader, temp}).second) // copy
-    {
-      D3D11_ASSERT(0 && "duplicated compute pipeline");
-    }
-    *ppPipeline = std::move(temp); // move
+                        MTLCompiledComputePipeline **ppPipeline) override {
+    pipeline_cache_->GetComputePipeline(pDesc, ppPipeline);
     return S_OK;
   };
 
   virtual HRESULT
   CreateGeometryPipeline(MTL_GRAPHICS_PIPELINE_DESC *pDesc,
-                         IMTLCompiledGeometryPipeline **ppPipeline) override {
+                         MTLCompiledGeometryPipeline **ppPipeline) override {
     pipeline_cache_->GetGeometryPipeline(pDesc, ppPipeline);
     return S_OK;
   };
 
   HRESULT
   CreateTessellationMeshPipeline(MTL_GRAPHICS_PIPELINE_DESC *pDesc,
-                         IMTLCompiledTessellationMeshPipeline **ppPipeline) override {
+                         MTLCompiledTessellationMeshPipeline **ppPipeline) override {
     pipeline_cache_->GetTessellationPipeline(pDesc, ppPipeline);
     return S_OK;
   };
@@ -1099,6 +1040,7 @@ public:
 
   virtual FormatCapability
   GetMTLPixelFormatCapability(WMTPixelFormat Format) final {
+    Format = ORIGINAL_FORMAT(Format);
     if (!format_inspector.textureCapabilities.contains(Format))
       return FormatCapability(0);
     return format_inspector.textureCapabilities.at(Format);
@@ -1124,12 +1066,14 @@ public:
 
   virtual HRESULT STDMETHODCALLTYPE OpenSharedFence(HANDLE Handle, REFIID riid,
                                                     void **ppFence) final {
-    return E_NOTIMPL;
+    return dxmt::OpenSharedFence(this, Handle, riid, ppFence);
   };
 
   virtual HRESULT STDMETHODCALLTYPE CreateFence(UINT64 InitialValue,
                                                 D3D11_FENCE_FLAG Flags,
                                                 REFIID riid, void **ppFence) final {
+    if (m_FeatureFlags & D3D11_CREATE_DEVICE_VIDEO_SUPPORT)
+      return E_FAIL;
     return dxmt::CreateFence(this, InitialValue, Flags, riid, ppFence);
   };
 
@@ -1141,13 +1085,7 @@ private:
   MTLD3D11Inspection m_features;
   FormatCapabilityInspector format_inspector;
 
-  task_scheduler<IMTLThreadpoolWork*> scheduler_;
-
   bool is_traced_;
-
-  std::unordered_map<ManagedShader, Com<IMTLCompiledComputePipeline>>
-      pipelines_cs_;
-  dxmt::mutex mutex_cs_;
 
   StateObjectCache<D3D11_SAMPLER_DESC, D3D11SamplerState> sampler_states;
   StateObjectCache<D3D11_RASTERIZER_DESC2, IMTLD3D11RasterizerState>
@@ -1157,6 +1095,7 @@ private:
 
   std::unique_ptr<MTLD3D11CommandListPoolBase> commandlist_pool_;
   std::unique_ptr<MTLD3D11PipelineCacheBase> pipeline_cache_;
+
   Device& device_;
   /** ensure destructor called first */
   std::unique_ptr<MTLD3D11DeviceContextBase> context_;
@@ -1180,18 +1119,22 @@ public:
         cmd_queue_(this->device->queue()),
         d3d11_device_(this, adapter, feature_level, feature_flags,
                       *this->device.get()) {
+    if (adapter_->GetLocalD3DKMT()) {
+      D3DKMT_CREATEDEVICE create = {};
+      create.hAdapter = adapter_->GetLocalD3DKMT();
+      if (D3DKMTCreateDevice(&create))
+        WARN("Failed to create D3DKMT device");
+      else
+        local_kmt_ = create.hDevice;
+    }
   }
 
-  ~MTLD3D11DXGIDevice() override {}
-
-  bool FinalRelase() override {
-    // FIXME: doesn't reliably work
-    auto t = std::thread([this]() {
-      delete this;
-      ExitThread(0); 
-    });
-    t.detach();
-    return true;
+  ~MTLD3D11DXGIDevice() {
+    if (local_kmt_) {
+      D3DKMT_DESTROYDEVICE destroy = {};
+      destroy.hDevice = local_kmt_;
+      D3DKMTDestroyDevice(&destroy);
+    }
   }
 
   HRESULT
@@ -1325,8 +1268,11 @@ public:
                                  ppSwapChain);
   }
 
+  D3DKMT_HANDLE STDMETHODCALLTYPE GetLocalD3DKMT() final { return local_kmt_; }
+
 private:
   Com<IMTLDXGIAdapter> adapter_;
+  D3DKMT_HANDLE local_kmt_ = 0;
   std::unique_ptr<Device> device;
   CommandQueue &cmd_queue_;
   MTLD3D11DeviceImpl d3d11_device_;

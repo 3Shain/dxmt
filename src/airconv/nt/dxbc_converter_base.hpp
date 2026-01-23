@@ -32,6 +32,7 @@ struct TextureResourceHandle {
   llvm::Value *Handle;
   llvm::Value *Metadata;
   Swizzle Swizzle;
+  bool GlobalCoherent;
 };
 
 struct BufferResourceHandle {
@@ -226,11 +227,16 @@ public:
     MemFlags mem_flag = sync.tgsm_memory_barrier ? MemFlags::Threadgroup : MemFlags::None;
     if (sync.uav_boundary != InstSync::UAVBoundary::none) {
       mem_flag |= MemFlags::Device | MemFlags::Texture;
-    }
-    if (sync.tgsm_execution_barrier) {
+      if (SupportsNonExecutionBarrier())
+        air.CreateAtomicFence(
+            mem_flag,
+            (sync.uav_boundary == InstSync::UAVBoundary::global ? (ThreadScope::Device | ThreadScope::Threadgroup)
+                                                                : ThreadScope::Threadgroup)
+        );
+      if (sync.tgsm_execution_barrier)
+        air.CreateBarrier(SupportsNonExecutionBarrier() ? MemFlags::None : mem_flag);
+    } else if (sync.tgsm_execution_barrier) {
       air.CreateBarrier(mem_flag);
-    } else {
-      air.CreateAtomicFence(mem_flag, sync.uav_boundary != InstSync::UAVBoundary::none ? ThreadScope::Device: ThreadScope::Threadgroup);
     }
   }
 
@@ -388,6 +394,16 @@ public:
     if (Mask == CombinedMask)
       return Value;
 
+    switch (Mask) {
+      case 0b1:
+      case 0b10:
+      case 0b100:
+      case 0b1000:
+        return ir.CreateExtractElement(Value, __builtin_ctz(Mask));
+      default:
+        break;
+    }
+
     llvm::SmallVector<int, 4> Idx;
     unsigned SrcIdx = 0;
     for (unsigned Bit = 0; Bit < 4; ++Bit) {
@@ -465,22 +481,8 @@ public:
 
   llvm::Value * CreateGEPInt32WithBoundCheck(AtomicBufferResourceHandle &Buffer, llvm::Value* Index);
 
-  class ForcePreciseMath {
-  public:
-    llvm::FastMathFlags Previous;
-    llvm::IRBuilderBase &Builder;
-    ForcePreciseMath(llvm::IRBuilderBase &Builder, bool ForcePrecise) : Builder(Builder) {
-      Previous = Builder.getFastMathFlags();
-      if (ForcePrecise) {
-        Builder.setFastMathFlags(llvm::FastMathFlags());
-      }
-    }
-    ~ForcePreciseMath() {
-      Builder.setFastMathFlags(Previous);
-    }
-    ForcePreciseMath(ForcePreciseMath &&) = delete;
-    ForcePreciseMath(const ForcePreciseMath &) = delete;
-  };
+  [[nodiscard]]
+  std::unique_ptr<llvm::IRBuilder<>::FastMathFlagGuard> UseFastMath(bool OptOut);
 
   bool
   IsConstantZero(llvm::Value *Value) const {
@@ -491,6 +493,9 @@ public:
   IsInifinity(llvm::Value *Value) const {
     return llvm::isa<llvm::ConstantFP>(Value) && llvm::cast<llvm::ConstantFP>(Value)->isInfinity();
   }
+
+  bool SupportsMemoryCoherency() const;
+  bool SupportsNonExecutionBarrier() const;
 
 private:
   llvm::air::AIRBuilder &air;

@@ -1,6 +1,6 @@
 #define WIN_EXPORT
 #include "wineunixlib.h"
-#include "unix_thunks.h"
+#include "airconv_thunks.h"
 
 AIRCONV_API int
 SM50Initialize(
@@ -46,7 +46,7 @@ SM50Compile(
 }
 
 AIRCONV_API void
-SM50GetCompiledBitcode(sm50_bitcode_t pBitcode, struct MTL_SHADER_BITCODE *pData) {
+SM50GetCompiledBitcode(sm50_bitcode_t pBitcode, struct SM50_COMPILED_BITCODE *pData) {
   struct sm50_get_compiled_bitcode_params params;
   params.bitcode = pBitcode;
   params.data_out = pData;
