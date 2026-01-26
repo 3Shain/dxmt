@@ -265,11 +265,17 @@ NVAPI_INTERFACE
 NvAPI_EnumPhysicalGPUs(NvPhysicalGpuHandle nvGPUHandle[NVAPI_MAX_PHYSICAL_GPUS], NvU32 *pGpuCount) {
   if (!nvGPUHandle || !pGpuCount)
     return NVAPI_INVALID_ARGUMENT;
-  /*
-   * reasonable to report one fake gpu handle
-   */
-  *pGpuCount = 1;
-  nvGPUHandle[0] = (NvPhysicalGpuHandle)0xdeadbeef;
+
+  auto devices = WMT::CopyAllDevices();
+  auto adapter_count = devices.count();
+  if (adapter_count == 0)
+    return NVAPI_NVIDIA_DEVICE_NOT_FOUND;
+
+  *pGpuCount = adapter_count;
+  for (unsigned i = 0; i < adapter_count; i++) {
+    nvGPUHandle[i] = (NvPhysicalGpuHandle)devices.object(i).registryID();
+  }
+
   return NVAPI_OK;
 }
 
@@ -277,23 +283,41 @@ NVAPI_INTERFACE
 NvAPI_EnumLogicalGPUs(NvLogicalGpuHandle nvGPUHandle[NVAPI_MAX_LOGICAL_GPUS], NvU32 *pGpuCount) {
   if (!nvGPUHandle || !pGpuCount)
     return NVAPI_INVALID_ARGUMENT;
-  /*
-   * reasonable to report one fake gpu handle
-   */
-  *pGpuCount = 1;
-  nvGPUHandle[0] = (NvLogicalGpuHandle)0xdeadbeef;
+
+  auto devices = WMT::CopyAllDevices();
+  auto adapter_count = devices.count();
+  if (adapter_count == 0)
+    return NVAPI_NVIDIA_DEVICE_NOT_FOUND;
+
+  *pGpuCount = adapter_count;
+  for (unsigned i = 0; i < adapter_count; i++) {
+    nvGPUHandle[i] = (NvLogicalGpuHandle)devices.object(i).registryID();
+  }
+
   return NVAPI_OK;
 }
 
 NVAPI_INTERFACE
 NvAPI_GetPhysicalGPUsFromDisplay(NvDisplayHandle hNvDisp, NvPhysicalGpuHandle nvGPUHandle[NVAPI_MAX_PHYSICAL_GPUS], NvU32 *pGpuCount) {
-  if (!nvGPUHandle || !pGpuCount)
+  if (!hNvDisp || !nvGPUHandle || !pGpuCount)
     return NVAPI_INVALID_ARGUMENT;
-  /*
-   * reasonable to report one fake gpu handle
-   */
-  *pGpuCount = 1;
-  nvGPUHandle[0] = (NvPhysicalGpuHandle)0xdeadbeef;
+
+  HMONITOR monitor = (HMONITOR)hNvDisp;
+  if (!monitor)
+    return NVAPI_NVIDIA_DEVICE_NOT_FOUND;
+
+  auto devices = WMT::CopyAllDevices();
+  auto adapter_count = devices.count();
+  if (adapter_count == 0)
+    return NVAPI_NVIDIA_DEVICE_NOT_FOUND;
+
+  unsigned count_devices = 0;
+  for (unsigned i = 0; i < adapter_count; i++) {
+    // TODO: Currently assuming all GPU instances are connected to specific monitor
+    nvGPUHandle[count_devices++] = (NvPhysicalGpuHandle)devices.object(i).registryID();
+  }
+  *pGpuCount = count_devices;
+
   return NVAPI_OK;
 }
 
@@ -427,7 +451,6 @@ NvAPI_Disp_HdrColorControl(NvU32 displayId, NV_HDR_COLOR_DATA *pHdrColorData) {
 
 NVAPI_INTERFACE
 NvAPI_EnumNvidiaDisplayHandle(NvU32 thisEnum, NvDisplayHandle *pNvDispHandle) {
-
   if (!pNvDispHandle)
     return NVAPI_INVALID_ARGUMENT;
 
