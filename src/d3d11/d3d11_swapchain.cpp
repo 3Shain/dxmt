@@ -140,8 +140,9 @@ public:
       .MiscFlags = {},
       .TextureLayout = {},
     };
-    // if (desc_.BufferUsage & DXGI_USAGE_SHADER_INPUT)
-    backbuffer_desc_.BindFlags |= D3D11_BIND_SHADER_RESOURCE;
+    
+    if (desc_.BufferUsage & DXGI_USAGE_SHADER_INPUT)
+      backbuffer_desc_.BindFlags |= D3D11_BIND_SHADER_RESOURCE;
     if (desc_.BufferUsage & DXGI_USAGE_UNORDERED_ACCESS)
       backbuffer_desc_.BindFlags |= D3D11_BIND_UNORDERED_ACCESS;
 
