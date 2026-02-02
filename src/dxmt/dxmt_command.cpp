@@ -180,17 +180,17 @@ ClearRenderTargetContext::begin(Rc<Texture> texture, TextureViewKey view) {
   auto width = texture->width(view);
   auto height = texture->height(view);
   auto array_length = texture->arrayLength(view);
-  auto &pass_info = ctx_.startRenderPass(dsv_flag, 0, 1, 0)->info;
+  auto &pass_info = *ctx_.startRenderPass(dsv_flag, 0, 1, 0);
 
   if (dsv_flag) {
     auto &depth = pass_info.depth;
-    depth.texture = ctx_.access(texture, view, DXMT_ENCODER_RESOURCE_ACESS_WRITE).texture;
+    depth.attachment = ctx_.access(texture, view, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
     depth.depth_plane = 0;
     depth.load_action = WMTLoadActionLoad;
     depth.store_action = WMTStoreActionStore;
   } else {
     auto &color = pass_info.colors[0];
-    color.texture = ctx_.access(texture, view, DXMT_ENCODER_RESOURCE_ACESS_WRITE).texture;
+    color.attachment = ctx_.access(texture, view, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
     color.depth_plane = 0;
     color.load_action = WMTLoadActionLoad;
     color.store_action = WMTStoreActionStore;
@@ -242,7 +242,7 @@ ClearRenderTargetContext::clear(
   draw.vertex_start = 0;
   draw.vertex_count = 3;
   draw.base_instance = 0;
-  draw.instance_count = ctx_.currentRenderEncoder()->info.render_target_array_length;
+  draw.instance_count = ctx_.currentRenderEncoder()->render_target_array_length;
 }
 
 void
@@ -343,15 +343,15 @@ DepthStencilBlitContext::copyFromBuffer(
 
   auto width = depth_stencil->width(view);
   auto height = depth_stencil->height(view);
-  auto &pass_info = ctx_.startRenderPass(0b11, 0, 0, 0)->info;
+  auto &pass_info = *ctx_.startRenderPass(0b11, 0, 0, 0);
   auto &depth = pass_info.depth;
-  depth.texture = ctx_.access(depth_stencil, view, DXMT_ENCODER_RESOURCE_ACESS_WRITE).texture;
+  depth.attachment = ctx_.access(depth_stencil, view, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
   depth.depth_plane = 0;
   depth.load_action = WMTLoadActionLoad;
   depth.store_action = WMTStoreActionStore;
 
   auto &stencil = pass_info.stencil;
-  stencil.texture = depth.texture;
+  stencil.attachment = ctx_.access(depth_stencil, view, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
   stencil.depth_plane = 0;
   stencil.load_action = WMTLoadActionLoad;
   stencil.store_action = WMTStoreActionStore;
