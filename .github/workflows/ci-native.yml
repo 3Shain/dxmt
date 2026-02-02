@@ -27,7 +27,8 @@ jobs:
             ./toolchains
       - name: Install Development Environment
         run: |
-         brew install ninja meson
+          brew install mingw-w64
+          pip3 install meson==1.10.0 --break-system-packages
       - name: Configuration
         if: ${{ steps.cache-toolchains.outputs.cache-hit != 'true' }}
         run: ./configure.sh --native
