@@ -4156,34 +4156,36 @@ public:
             render_target_array, encoder_argbuf_size = std::move(allocated_encoder_argbuf_size)](ArgumentEncodingContext &ctx) {
         auto pool = WMT::MakeAutoreleasePool();
         uint32_t dsv_planar_flags = DepthStencilPlanarFlags(dsv.PixelFormat);
-        auto& info = ctx.startRenderPass(dsv_planar_flags, dsv.ReadOnlyFlags, rtvs.size(), *encoder_argbuf_size.get())->info;
+        auto& info = *ctx.startRenderPass(dsv_planar_flags, dsv.ReadOnlyFlags, rtvs.size(), *encoder_argbuf_size.get());
 
         for (auto &rtv : rtvs.span()) {
           if (rtv.PixelFormat == WMTPixelFormatInvalid) {
             continue;
           }
-          auto& colorAttachment = info.colors[rtv.RenderTargetIndex];
-          colorAttachment.texture = rtv.Texture->view(rtv.viewId).texture;
-          colorAttachment.depth_plane = rtv.DepthPlane;
-          colorAttachment.load_action = rtv.LoadAction;
-          colorAttachment.store_action = WMTStoreActionStore;
+          auto &color = info.colors[rtv.RenderTargetIndex];
+          color.attachment = ctx.access(rtv.Texture, rtv.viewId, DXMT_ENCODER_RESOURCE_ACESS_READWRITE);
+          color.depth_plane = rtv.DepthPlane;
+          color.load_action = rtv.LoadAction;
+          color.store_action = WMTStoreActionStore;
         };
 
         if (dsv.Texture.ptr()) {
-          WMT::Texture texture = dsv.Texture->view(dsv.viewId).texture;
+          auto access_flag = ((dsv.ReadOnlyFlags & dsv_planar_flags) == dsv_planar_flags)
+                                 ? DXMT_ENCODER_RESOURCE_ACESS_READ
+                                 : DXMT_ENCODER_RESOURCE_ACESS_READWRITE;
           // TODO: ...should know more about store behavior (e.g. DiscardView)
           if (dsv_planar_flags & 1) {
-            auto& depthAttachment = info.depth;
-            depthAttachment.texture = texture;
-            depthAttachment.load_action = dsv.DepthLoadAction;
-            depthAttachment.store_action = WMTStoreActionStore;
+            auto &depth = info.depth;
+            depth.attachment = ctx.access(dsv.Texture, dsv.viewId, access_flag);
+            depth.load_action = dsv.DepthLoadAction;
+            depth.store_action = WMTStoreActionStore;
           }
 
           if (dsv_planar_flags & 2) {
-            auto& stencilAttachment = info.stencil;
-            stencilAttachment.texture = texture;
-            stencilAttachment.load_action = dsv.StencilLoadAction;
-            stencilAttachment.store_action = WMTStoreActionStore;
+            auto &stencil = info.stencil;
+            stencil.attachment = ctx.access(dsv.Texture, dsv.viewId, access_flag);
+            stencil.load_action = dsv.StencilLoadAction;
+            stencil.store_action = WMTStoreActionStore;
           }
         }
         if (effective_render_target == 0) {
@@ -4195,20 +4197,6 @@ public:
         info.render_target_height = render_target_height;
         info.render_target_width = render_target_width;
         info.render_target_array_length = render_target_array;
-
-        for (auto &rtv : rtvs.span()) {
-          if (rtv.PixelFormat == WMTPixelFormatInvalid) {
-            continue;
-          }
-          ctx.access(rtv.Texture, rtv.viewId, DXMT_ENCODER_RESOURCE_ACESS_READ | DXMT_ENCODER_RESOURCE_ACESS_WRITE);
-        };
-
-        if (dsv.Texture.ptr()) {
-          if ((dsv.ReadOnlyFlags & dsv_planar_flags) == dsv_planar_flags)
-            ctx.access(dsv.Texture, dsv.viewId, DXMT_ENCODER_RESOURCE_ACESS_READ);
-          else
-            ctx.access(dsv.Texture, dsv.viewId, DXMT_ENCODER_RESOURCE_ACESS_READ | DXMT_ENCODER_RESOURCE_ACESS_WRITE);
-        }
       });
     }
 
