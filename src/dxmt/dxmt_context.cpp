@@ -286,7 +286,7 @@ ArgumentEncodingContext::encodeShaderResources(
           assert(arg.Flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE_MINLOD_CLAMP);
           auto viewIdChecked = srv.texture->checkViewUseArray(srv.viewId, arg.Flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE_ARRAY);
           encoded_buffer[arg.StructurePtrOffset] =
-              access(srv.texture, viewIdChecked, DXMT_ENCODER_RESOURCE_ACESS_READ).gpu_resource_id;
+              access(srv.texture, viewIdChecked, DXMT_ENCODER_RESOURCE_ACESS_READ).gpuResourceID;
           encoded_buffer[arg.StructurePtrOffset + 1] = TextureMetadata(srv.texture->arrayLength(viewIdChecked), 0);
           makeResident<stage, kind>(srv.texture.ptr(), viewIdChecked);
         } else {
@@ -325,7 +325,7 @@ ArgumentEncodingContext::encodeShaderResources(
         } else if (uav.texture.ptr()) {
           assert(arg.Flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE_MINLOD_CLAMP);
           auto viewIdChecked = uav.texture->checkViewUseArray(uav.viewId, arg.Flags & MTL_SM50_SHADER_ARGUMENT_TEXTURE_ARRAY);
-          encoded_buffer[arg.StructurePtrOffset] = access(uav.texture, viewIdChecked, access_flags).gpu_resource_id;
+          encoded_buffer[arg.StructurePtrOffset] = access(uav.texture, viewIdChecked, access_flags).gpuResourceID;
           encoded_buffer[arg.StructurePtrOffset + 1] = TextureMetadata(uav.texture->arrayLength(viewIdChecked), 0);
           makeResident<stage, kind>(uav.texture.ptr(), viewIdChecked, read, write);
         } else {
@@ -492,7 +492,7 @@ ArgumentEncodingContext::upscaleTemporal(
   encoder_info->input = input->current()->texture();
   encoder_info->output = output->current()->texture();
   encoder_info->depth = depth->current()->texture();
-  encoder_info->motion_vector = motion_vector->view(mvViewId);
+  encoder_info->motion_vector = motion_vector->view(mvViewId).texture;
   encoder_info->scaler = scaler;
   encoder_info->props = props;
 
