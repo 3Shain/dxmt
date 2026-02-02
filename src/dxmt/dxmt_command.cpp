@@ -583,7 +583,7 @@ ClearResourceKernelContext::clear(uint32_t offset_x, uint32_t offset_y, uint32_t
   meta_temp_.size[1] = height;
 
   if (clearing_texture_) {
-    auto dst_ = ctx_.access(clearing_texture_, clearing_view_, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
+    auto &dst_ = ctx_.access(clearing_texture_, clearing_view_, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
     auto &settex = ctx_.encodeComputeCommand<wmtcmd_compute_settexture>();
     settex.type = WMTComputeCommandSetTexture;
     settex.texture = dst_.texture;

@@ -689,7 +689,7 @@ public:
       EmitOP([=, texture = pUAV->texture(), viewId = pUAV->viewId(),
             value = std::array<uint32_t, 4>({Values[0], Values[1], Values[2], Values[3]}),
             dimension = desc.ViewDimension](ArgumentEncodingContext &enc) mutable {
-        auto view_format = texture->view(viewId).pixelFormat();
+        auto view_format = texture->pixelFormat(viewId);
         auto uint_format = MTLGetUnsignedIntegerFormat((WMTPixelFormat)view_format);
         /* RG11B10Float is a special case */
         if (view_format == WMTPixelFormatRG11B10Float) {
@@ -937,7 +937,7 @@ public:
         if (tex->pixelFormat(viewId) == WMTPixelFormatA8Unorm) {
           fixedViewId = tex->checkViewUseFormat(viewId, WMTPixelFormatR8Unorm);
         }
-        WMT::Texture texture = enc.access(tex, fixedViewId, DXMT_ENCODER_RESOURCE_ACESS_READ | DXMT_ENCODER_RESOURCE_ACESS_WRITE).texture;
+        WMT::Texture texture = enc.access(tex, fixedViewId, DXMT_ENCODER_RESOURCE_ACESS_READWRITE).texture;
         if (texture.mipmapLevelCount() > 1) {
           auto &cmd = enc.encodeBlitCommand<wmtcmd_blit_generate_mipmaps>();
           cmd.type = WMTBlitCommandGenerateMipmaps;
@@ -4163,14 +4163,14 @@ public:
             continue;
           }
           auto& colorAttachment = info.colors[rtv.RenderTargetIndex];
-          colorAttachment.texture = rtv.Texture->view(rtv.viewId);
+          colorAttachment.texture = rtv.Texture->view(rtv.viewId).texture;
           colorAttachment.depth_plane = rtv.DepthPlane;
           colorAttachment.load_action = rtv.LoadAction;
           colorAttachment.store_action = WMTStoreActionStore;
         };
 
         if (dsv.Texture.ptr()) {
-          WMT::Texture texture = dsv.Texture->view(dsv.viewId);
+          WMT::Texture texture = dsv.Texture->view(dsv.viewId).texture;
           // TODO: ...should know more about store behavior (e.g. DiscardView)
           if (dsv_planar_flags & 1) {
             auto& depthAttachment = info.depth;
