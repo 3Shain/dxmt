@@ -246,6 +246,7 @@ class CommandQueue;
 enum DXMT_ENCODER_RESOURCE_ACESS {
   DXMT_ENCODER_RESOURCE_ACESS_READ = 1 <<0,
   DXMT_ENCODER_RESOURCE_ACESS_WRITE = 1 << 1,
+  DXMT_ENCODER_RESOURCE_ACESS_READWRITE = DXMT_ENCODER_RESOURCE_ACESS_READ | DXMT_ENCODER_RESOURCE_ACESS_WRITE,
 };
 
 struct AllocatedTempBufferSlice {
@@ -300,11 +301,11 @@ public:
     return allocation->texture();
   }
 
-  TextureView const &
+  TextureView &
   access(Rc<Texture> const &texture, unsigned viewId, DXMT_ENCODER_RESOURCE_ACESS flags) {
     auto allocation = texture->current();
     trackTexture(allocation, flags);
-    return texture->view_(viewId, allocation);
+    return texture->view(viewId, allocation);
   }
 
   template <PipelineStage stage>
@@ -455,8 +456,9 @@ public:
     auto allocation = texture->current();
     uint64_t encoder_id = currentEncoder()->id;
     DXMT_RESOURCE_RESIDENCY requested = GetResidencyMask<kind>(stage, read, write);
-    if (CheckResourceResidency(texture->residency(viewId, allocation), encoder_id, requested)) {
-      makeResident<stage, kind>(texture->view(viewId, allocation), requested);
+    auto &view = texture->view(viewId, allocation);
+    if (CheckResourceResidency(view.residency, encoder_id, requested)) {
+      makeResident<stage, kind>(view.texture, requested);
     };
   }
 
