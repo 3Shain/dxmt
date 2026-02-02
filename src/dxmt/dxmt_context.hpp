@@ -119,8 +119,48 @@ struct TSDispatchArgumentsMarshal {
   uint32_t patch_per_group;
 };
 
+struct RenderEncoderColorAttachmentData {
+  TextureViewRef attachment;
+  enum WMTLoadAction load_action;
+  enum WMTStoreAction store_action;
+  uint16_t level;
+  uint16_t slice;
+  uint32_t depth_plane;
+  struct WMTClearColor clear_color;
+  TextureViewRef resolve_attachment;
+  uint16_t resolve_level;
+  uint16_t resolve_slice;
+  uint32_t resolve_depth_plane;
+};
+
+struct RenderEncoderDepthAttachmentData {
+  TextureViewRef attachment;
+  enum WMTLoadAction load_action;
+  enum WMTStoreAction store_action;
+  uint16_t level;
+  uint16_t slice;
+  uint32_t depth_plane;
+  float clear_depth;
+};
+
+struct RenderEncoderStencilAttachmentData {
+  TextureViewRef attachment;
+  enum WMTLoadAction load_action;
+  enum WMTStoreAction store_action;
+  uint16_t level;
+  uint16_t slice;
+  uint32_t depth_plane;
+  uint8_t clear_stencil;
+};
+
 struct RenderEncoderData : EncoderData {
-  WMTRenderPassInfo info;
+  std::array<RenderEncoderColorAttachmentData, 8> colors;
+  RenderEncoderDepthAttachmentData depth;
+  RenderEncoderStencilAttachmentData stencil;
+  uint8_t default_raster_sample_count;
+  uint16_t render_target_array_length;
+  uint32_t render_target_height;
+  uint32_t render_target_width;
   std::vector<GSDispatchArgumentsMarshal> gs_arg_marshal_tasks;
   std::vector<TSDispatchArgumentsMarshal> ts_arg_marshal_tasks;
   wmtcmd_render_nop cmd_head;
@@ -154,7 +194,7 @@ struct ClearEncoderData : EncoderData {
     WMTClearColor color;
     std::pair<float, uint8_t> depth_stencil;
   };
-  WMT::Reference<WMT::Texture> texture;
+  TextureViewRef attachment;
   unsigned clear_dsv;
   unsigned array_length;
   unsigned width;
@@ -164,8 +204,8 @@ struct ClearEncoderData : EncoderData {
 };
 
 struct ResolveEncoderData : EncoderData {
-  WMT::Reference<WMT::Texture> src;
-  WMT::Reference<WMT::Texture> dst;
+  TextureViewRef src;
+  TextureViewRef dst;
 };
 
 class Presenter;
@@ -683,9 +723,9 @@ private:
   DXMT_ENCODER_LIST_OP checkEncoderRelation(EncoderData* former, EncoderData* latter);
   bool hasDataDependency(EncoderData* from, EncoderData* to);
   bool isEncoderSignatureMatched(RenderEncoderData* former, RenderEncoderData* latter);
-  WMTColorAttachmentInfo *isClearColorSignatureMatched(ClearEncoderData* former, RenderEncoderData* latter);
-  WMTDepthAttachmentInfo *isClearDepthSignatureMatched(ClearEncoderData* former, RenderEncoderData* latter);
-  WMTStencilAttachmentInfo *isClearStencilSignatureMatched(ClearEncoderData* former, RenderEncoderData* latter);
+  RenderEncoderColorAttachmentData *isClearColorSignatureMatched(ClearEncoderData* former, RenderEncoderData* latter);
+  RenderEncoderDepthAttachmentData *isClearDepthSignatureMatched(ClearEncoderData* former, RenderEncoderData* latter);
+  RenderEncoderStencilAttachmentData *isClearStencilSignatureMatched(ClearEncoderData* former, RenderEncoderData* latter);
 
   std::array<VertexBufferBinding, kVertexBufferSlots> vbuf_;
   Rc<Buffer> ibuf_;
