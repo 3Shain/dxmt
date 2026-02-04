@@ -216,9 +216,15 @@ CreateVariantShader(MTLD3D11Device *pDevice, ManagedShader shader,
     SM50_SHADER_IA_INPUT_LAYOUT_DATA ia_layout;
     SM50_SHADER_PSO_TESSELLATOR_DATA pso_tess;
     ia_layout.index_buffer_format = variant.index_buffer_format;
-    ia_layout.slot_mask = variant.input_layout_handle->input_slot_mask();
-    ia_layout.num_elements = variant.input_layout_handle->input_layout_element(
-        (MTL_SHADER_INPUT_LAYOUT_ELEMENT_DESC **)&ia_layout.elements);
+    if (variant.input_layout_handle) {
+      ia_layout.slot_mask = variant.input_layout_handle->input_slot_mask();
+      ia_layout.num_elements = variant.input_layout_handle->input_layout_element(
+          reinterpret_cast<MTL_SHADER_INPUT_LAYOUT_ELEMENT_DESC **>(&ia_layout.elements)
+      );
+    } else {
+      ia_layout.slot_mask = 0;
+      ia_layout.num_elements = 0;
+    }
     ia_layout.type = SM50_SHADER_IA_INPUT_LAYOUT;
     ia_layout.next = &pso_tess;
     pso_tess.type = SM50_SHADER_PSO_TESSELLATOR;
