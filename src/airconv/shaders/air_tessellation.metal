@@ -21,7 +21,7 @@ uint fxp32_ceil(fxp32 f) {
 }
 
 fxp32 fxp32_invb(uint n, fxp32 v) {
-  return (fxp32)((n << 26) / v) << 6; // lose some precision here, but no need to do a 64-bit division 
+  return (fxp32)(((ulong)n << 32) / v);
 }
 
 using fxp16 = ushort;
