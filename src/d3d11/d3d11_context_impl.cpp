@@ -689,7 +689,7 @@ public:
       EmitOP([=, texture = pUAV->texture(), viewId = pUAV->viewId(),
             value = std::array<uint32_t, 4>({Values[0], Values[1], Values[2], Values[3]}),
             dimension = desc.ViewDimension](ArgumentEncodingContext &enc) mutable {
-        auto view_format = texture->view(viewId).pixelFormat();
+        auto view_format = texture->pixelFormat(viewId);
         auto uint_format = MTLGetUnsignedIntegerFormat((WMTPixelFormat)view_format);
         /* RG11B10Float is a special case */
         if (view_format == WMTPixelFormatRG11B10Float) {
@@ -937,7 +937,7 @@ public:
         if (tex->pixelFormat(viewId) == WMTPixelFormatA8Unorm) {
           fixedViewId = tex->checkViewUseFormat(viewId, WMTPixelFormatR8Unorm);
         }
-        WMT::Texture texture = enc.access(tex, fixedViewId, DXMT_ENCODER_RESOURCE_ACESS_READ | DXMT_ENCODER_RESOURCE_ACESS_WRITE).texture;
+        WMT::Texture texture = enc.access(tex, fixedViewId, DXMT_ENCODER_RESOURCE_ACESS_READWRITE).texture;
         if (texture.mipmapLevelCount() > 1) {
           auto &cmd = enc.encodeBlitCommand<wmtcmd_blit_generate_mipmaps>();
           cmd.type = WMTBlitCommandGenerateMipmaps;
@@ -3908,7 +3908,7 @@ public:
 
       SwitchToBlitEncoder(CommandBufferState::UpdateBlitEncoderActive);
       EmitOP([=, src = std::move(src), dst = std::move(dst), cmd = std::move(cmd)](ArgumentEncodingContext &enc) {
-        auto [src_buffer, src_offset] = enc.access(src, DXMT_ENCODER_RESOURCE_ACESS_READ);
+        auto [src_buffer, src_offset] = enc.access(src, 0, src->length(), DXMT_ENCODER_RESOURCE_ACESS_READ);
         auto texture = enc.access(dst, cmd.Dst.MipLevel, cmd.Dst.ArraySlice, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
         auto &cmd_cptex = enc.encodeBlitCommand<wmtcmd_blit_copy_from_buffer_to_texture>();
         cmd_cptex.type = WMTBlitCommandCopyFromBufferToTexture;
@@ -4156,34 +4156,36 @@ public:
             render_target_array, encoder_argbuf_size = std::move(allocated_encoder_argbuf_size)](ArgumentEncodingContext &ctx) {
         auto pool = WMT::MakeAutoreleasePool();
         uint32_t dsv_planar_flags = DepthStencilPlanarFlags(dsv.PixelFormat);
-        auto& info = ctx.startRenderPass(dsv_planar_flags, dsv.ReadOnlyFlags, rtvs.size(), *encoder_argbuf_size.get())->info;
+        auto& info = *ctx.startRenderPass(dsv_planar_flags, dsv.ReadOnlyFlags, rtvs.size(), *encoder_argbuf_size.get());
 
         for (auto &rtv : rtvs.span()) {
           if (rtv.PixelFormat == WMTPixelFormatInvalid) {
             continue;
           }
-          auto& colorAttachment = info.colors[rtv.RenderTargetIndex];
-          colorAttachment.texture = rtv.Texture->view(rtv.viewId);
-          colorAttachment.depth_plane = rtv.DepthPlane;
-          colorAttachment.load_action = rtv.LoadAction;
-          colorAttachment.store_action = WMTStoreActionStore;
+          auto &color = info.colors[rtv.RenderTargetIndex];
+          color.attachment = ctx.access(rtv.Texture, rtv.viewId, DXMT_ENCODER_RESOURCE_ACESS_READWRITE);
+          color.depth_plane = rtv.DepthPlane;
+          color.load_action = rtv.LoadAction;
+          color.store_action = WMTStoreActionStore;
         };
 
         if (dsv.Texture.ptr()) {
-          WMT::Texture texture = dsv.Texture->view(dsv.viewId);
+          auto access_flag = ((dsv.ReadOnlyFlags & dsv_planar_flags) == dsv_planar_flags)
+                                 ? DXMT_ENCODER_RESOURCE_ACESS_READ
+                                 : DXMT_ENCODER_RESOURCE_ACESS_READWRITE;
           // TODO: ...should know more about store behavior (e.g. DiscardView)
           if (dsv_planar_flags & 1) {
-            auto& depthAttachment = info.depth;
-            depthAttachment.texture = texture;
-            depthAttachment.load_action = dsv.DepthLoadAction;
-            depthAttachment.store_action = WMTStoreActionStore;
+            auto &depth = info.depth;
+            depth.attachment = ctx.access(dsv.Texture, dsv.viewId, access_flag);
+            depth.load_action = dsv.DepthLoadAction;
+            depth.store_action = WMTStoreActionStore;
           }
 
           if (dsv_planar_flags & 2) {
-            auto& stencilAttachment = info.stencil;
-            stencilAttachment.texture = texture;
-            stencilAttachment.load_action = dsv.StencilLoadAction;
-            stencilAttachment.store_action = WMTStoreActionStore;
+            auto &stencil = info.stencil;
+            stencil.attachment = ctx.access(dsv.Texture, dsv.viewId, access_flag);
+            stencil.load_action = dsv.StencilLoadAction;
+            stencil.store_action = WMTStoreActionStore;
           }
         }
         if (effective_render_target == 0) {
@@ -4195,20 +4197,6 @@ public:
         info.render_target_height = render_target_height;
         info.render_target_width = render_target_width;
         info.render_target_array_length = render_target_array;
-
-        for (auto &rtv : rtvs.span()) {
-          if (rtv.PixelFormat == WMTPixelFormatInvalid) {
-            continue;
-          }
-          ctx.access(rtv.Texture, rtv.viewId, DXMT_ENCODER_RESOURCE_ACESS_READ | DXMT_ENCODER_RESOURCE_ACESS_WRITE);
-        };
-
-        if (dsv.Texture.ptr()) {
-          if ((dsv.ReadOnlyFlags & dsv_planar_flags) == dsv_planar_flags)
-            ctx.access(dsv.Texture, dsv.viewId, DXMT_ENCODER_RESOURCE_ACESS_READ);
-          else
-            ctx.access(dsv.Texture, dsv.viewId, DXMT_ENCODER_RESOURCE_ACESS_READ | DXMT_ENCODER_RESOURCE_ACESS_WRITE);
-        }
       });
     }
 

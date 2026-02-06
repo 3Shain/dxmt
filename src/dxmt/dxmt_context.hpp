@@ -119,8 +119,48 @@ struct TSDispatchArgumentsMarshal {
   uint32_t patch_per_group;
 };
 
+struct RenderEncoderColorAttachmentData {
+  TextureViewRef attachment;
+  enum WMTLoadAction load_action;
+  enum WMTStoreAction store_action;
+  uint16_t level;
+  uint16_t slice;
+  uint32_t depth_plane;
+  struct WMTClearColor clear_color;
+  TextureViewRef resolve_attachment;
+  uint16_t resolve_level;
+  uint16_t resolve_slice;
+  uint32_t resolve_depth_plane;
+};
+
+struct RenderEncoderDepthAttachmentData {
+  TextureViewRef attachment;
+  enum WMTLoadAction load_action;
+  enum WMTStoreAction store_action;
+  uint16_t level;
+  uint16_t slice;
+  uint32_t depth_plane;
+  float clear_depth;
+};
+
+struct RenderEncoderStencilAttachmentData {
+  TextureViewRef attachment;
+  enum WMTLoadAction load_action;
+  enum WMTStoreAction store_action;
+  uint16_t level;
+  uint16_t slice;
+  uint32_t depth_plane;
+  uint8_t clear_stencil;
+};
+
 struct RenderEncoderData : EncoderData {
-  WMTRenderPassInfo info;
+  std::array<RenderEncoderColorAttachmentData, 8> colors;
+  RenderEncoderDepthAttachmentData depth;
+  RenderEncoderStencilAttachmentData stencil;
+  uint8_t default_raster_sample_count;
+  uint16_t render_target_array_length;
+  uint32_t render_target_height;
+  uint32_t render_target_width;
   std::vector<GSDispatchArgumentsMarshal> gs_arg_marshal_tasks;
   std::vector<TSDispatchArgumentsMarshal> ts_arg_marshal_tasks;
   wmtcmd_render_nop cmd_head;
@@ -154,7 +194,7 @@ struct ClearEncoderData : EncoderData {
     WMTClearColor color;
     std::pair<float, uint8_t> depth_stencil;
   };
-  WMT::Reference<WMT::Texture> texture;
+  TextureViewRef attachment;
   unsigned clear_dsv;
   unsigned array_length;
   unsigned width;
@@ -164,8 +204,8 @@ struct ClearEncoderData : EncoderData {
 };
 
 struct ResolveEncoderData : EncoderData {
-  WMT::Reference<WMT::Texture> src;
-  WMT::Reference<WMT::Texture> dst;
+  TextureViewRef src;
+  TextureViewRef dst;
 };
 
 class Presenter;
@@ -246,6 +286,7 @@ class CommandQueue;
 enum DXMT_ENCODER_RESOURCE_ACESS {
   DXMT_ENCODER_RESOURCE_ACESS_READ = 1 <<0,
   DXMT_ENCODER_RESOURCE_ACESS_WRITE = 1 << 1,
+  DXMT_ENCODER_RESOURCE_ACESS_READWRITE = DXMT_ENCODER_RESOURCE_ACESS_READ | DXMT_ENCODER_RESOURCE_ACESS_WRITE,
 };
 
 struct AllocatedTempBufferSlice {
@@ -293,13 +334,6 @@ public:
     return {view, allocation->currentSuballocationOffset(view.suballocation_texel)};
   }
 
-  std::pair<BufferAllocation *, uint64_t>
-  access(Rc<Buffer> const &buffer, DXMT_ENCODER_RESOURCE_ACESS flags) {
-    auto allocation = buffer->current();
-    trackBuffer(allocation, flags);
-    return {allocation, allocation->currentSuballocationOffset()};
-  }
-
   WMT::Texture
   access(Rc<Texture> const &texture, unsigned level, unsigned slice, DXMT_ENCODER_RESOURCE_ACESS flags) {
     auto allocation = texture->current();
@@ -307,18 +341,11 @@ public:
     return allocation->texture();
   }
 
-  TextureView const &
+  TextureView &
   access(Rc<Texture> const &texture, unsigned viewId, DXMT_ENCODER_RESOURCE_ACESS flags) {
     auto allocation = texture->current();
     trackTexture(allocation, flags);
-    return texture->view_(viewId, allocation);
-  }
-
-  WMT::Texture
-  access(Rc<Texture> const &texture, DXMT_ENCODER_RESOURCE_ACESS flags) {
-    auto allocation = texture->current();
-    trackTexture(allocation, flags);
-    return allocation->texture();
+    return texture->view(viewId, allocation);
   }
 
   template <PipelineStage stage>
@@ -469,8 +496,9 @@ public:
     auto allocation = texture->current();
     uint64_t encoder_id = currentEncoder()->id;
     DXMT_RESOURCE_RESIDENCY requested = GetResidencyMask<kind>(stage, read, write);
-    if (CheckResourceResidency(texture->residency(viewId, allocation), encoder_id, requested)) {
-      makeResident<stage, kind>(texture->view(viewId, allocation), requested);
+    auto &view = texture->view(viewId, allocation);
+    if (CheckResourceResidency(view.residency, encoder_id, requested)) {
+      makeResident<stage, kind>(view.texture, requested);
     };
   }
 
@@ -695,9 +723,16 @@ private:
   DXMT_ENCODER_LIST_OP checkEncoderRelation(EncoderData* former, EncoderData* latter);
   bool hasDataDependency(EncoderData* from, EncoderData* to);
   bool isEncoderSignatureMatched(RenderEncoderData* former, RenderEncoderData* latter);
-  WMTColorAttachmentInfo *isClearColorSignatureMatched(ClearEncoderData* former, RenderEncoderData* latter);
-  WMTDepthAttachmentInfo *isClearDepthSignatureMatched(ClearEncoderData* former, RenderEncoderData* latter);
-  WMTStencilAttachmentInfo *isClearStencilSignatureMatched(ClearEncoderData* former, RenderEncoderData* latter);
+  RenderEncoderColorAttachmentData *isClearColorSignatureMatched(ClearEncoderData* former, RenderEncoderData* latter);
+  RenderEncoderDepthAttachmentData *isClearDepthSignatureMatched(ClearEncoderData* former, RenderEncoderData* latter);
+  RenderEncoderStencilAttachmentData *isClearStencilSignatureMatched(ClearEncoderData* former, RenderEncoderData* latter);
+
+  class ResolveSignatureMatchResult {
+  public:
+    RenderEncoderColorAttachmentData *src{};
+    TextureViewRef dst{};
+  };
+  ResolveSignatureMatchResult isResolveSignatureMatched(RenderEncoderData *former, ResolveEncoderData *latter);
 
   std::array<VertexBufferBinding, kVertexBufferSlots> vbuf_;
   Rc<Buffer> ibuf_;

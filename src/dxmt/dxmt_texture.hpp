@@ -23,29 +23,65 @@ enum class TextureAllocationFlag : uint32_t {
 typedef unsigned TextureViewKey;
 
 struct TextureViewDescriptor {
-  WMTPixelFormat format: 32;
-  WMTTextureType type;
-  unsigned firstMiplevel = 0;
-  unsigned miplevelCount = 1;
-  unsigned firstArraySlice = 0;
-  unsigned arraySize = 1;
+  WMTPixelFormat format    : 24;
+  WMTTextureType type      : 8;
+  uint32_t firstMiplevel   : 4 = 0;
+  uint32_t miplevelCount   : 4 = 1;
+  uint32_t firstArraySlice : 12 = 0;
+  uint32_t arraySize       : 12 = 1;
 };
 
-struct TextureView {
-  WMT::Reference<WMT::Texture> texture;
-  uint64_t gpu_resource_id;
-  DXMT_RESOURCE_RESIDENCY_STATE residency{};
+class Texture;
+class TextureAllocation;
 
-  TextureView(WMT::Reference<WMT::Texture> &&texture, uint64_t gpu_resource_id) :
-      texture(std::move(texture)),
-      gpu_resource_id(gpu_resource_id) {}
-  TextureView(const WMT::Reference<WMT::Texture> &texture, uint64_t gpu_resource_id) :
-      texture(texture),
-      gpu_resource_id(gpu_resource_id) {}
+class TextureView {
+public:
+  virtual ~TextureView() {};
+
+  void incRef();
+  void decRef();
+
+  WMT::Reference<WMT::Texture> texture;
+  uint64_t gpuResourceID;
+  DXMT_RESOURCE_RESIDENCY_STATE residency{};
+  TextureAllocation *allocation; // `TextureAllocation` holds strong reference to `TextureView`
+  TextureViewKey key;
+
+  TextureView(const TextureView &) = delete;
+  TextureView(TextureView &&) = delete;
+  TextureView &operator=(const TextureView &) = delete;
+  TextureView &operator=(TextureView &&) = delete;
+  TextureView(TextureAllocation *allocation);
+  TextureView(TextureAllocation *allocation, TextureViewKey key, TextureViewDescriptor descriptor);
+
+private:
+  std::atomic<uint32_t> refcount_ = {0u};
+};
+
+class TextureViewRef : public Rc<TextureView> {
+public:
+  using Rc<TextureView>::Rc;
+
+  WMT::Texture
+  texture() const {
+    if (!*this)
+      return {};
+    return ptr()->texture;
+  }
+
+  TextureViewRef &
+  operator=(TextureView &ref) {
+    return (*this = &ref);
+  }
 };
 
 class TextureAllocation : public Allocation {
   friend class Texture;
+
+  /**
+   * notes on thread-safefy:
+   * all states in `TextureAllocation` is either immutable or only accessed by `dxmt-encode-thread`
+   */
 
 public:
 
@@ -58,19 +94,19 @@ public:
     return flags_;
   }
 
+  Texture *descriptor;
   void *mappedMemory;
   uint64_t gpuResourceID;
   mach_port_t machPort;
-  DXMT_RESOURCE_RESIDENCY_STATE residencyState;
   EncoderDepKey depkey;
 
 private:
   TextureAllocation(
-      WMT::Reference<WMT::Buffer> &&buffer, void *mapped_buffer, const WMTTextureInfo &info, unsigned bytes_per_row,
-      Flags<TextureAllocationFlag> flags
+      Texture *descriptor, WMT::Reference<WMT::Buffer> &&buffer, void *mapped_buffer, const WMTTextureInfo &info,
+      unsigned bytes_per_row, Flags<TextureAllocationFlag> flags
   );
   TextureAllocation(
-      WMT::Reference<WMT::Texture> &&texture, const WMTTextureInfo &textureDescriptor,
+      Texture *descriptor, WMT::Reference<WMT::Texture> &&texture, const WMTTextureInfo &textureDescriptor,
       Flags<TextureAllocationFlag> flags
   );
   ~TextureAllocation();
@@ -82,10 +118,11 @@ private:
   WMT::Reference<WMT::Buffer> buffer_;
   uint32_t version_ = 0;
   Flags<TextureAllocationFlag> flags_;
-  std::vector<std::unique_ptr<TextureView>> cached_view_;
+  std::vector<TextureViewRef> cached_view_;
 };
 
 class Texture {
+
 public:
   void incRef();
   void decRef();
@@ -108,12 +145,14 @@ public:
   }
 
   WMTTextureType
-  textureType(TextureViewKey view) const {
-    return viewDescriptors_.data()[view].type;
+  textureType(TextureViewKey view) {
+    std::shared_lock<dxmt::shared_mutex> lock(mutex_);
+    return viewDescriptors_[view].type;
   }
 
   WMTPixelFormat
-  pixelFormat(TextureViewKey view) const {
+  pixelFormat(TextureViewKey view) {
+    std::shared_lock<dxmt::shared_mutex> lock(mutex_);
     return viewDescriptors_[view].format;
   }
 
@@ -143,12 +182,14 @@ public:
   }
 
   unsigned
-  width(TextureViewKey view) const {
+  width(TextureViewKey view) {
+    std::shared_lock<dxmt::shared_mutex> lock(mutex_);
     return std::max(info_.width >> viewDescriptors_[view].firstMiplevel, 1u);
   }
 
   unsigned
-  height(TextureViewKey view) const {
+  height(TextureViewKey view) {
+    std::shared_lock<dxmt::shared_mutex> lock(mutex_);
     return std::max(info_.height >> viewDescriptors_[view].firstMiplevel, 1u);
   }
 
@@ -161,24 +202,19 @@ public:
   }
 
   unsigned
-  arrayLength(TextureViewKey view) const {
+  arrayLength(TextureViewKey view) {
+    std::shared_lock<dxmt::shared_mutex> lock(mutex_);
     return viewDescriptors_[view].arraySize;
   }
 
   Rc<TextureAllocation> allocate(Flags<TextureAllocationFlag> flags);
   Rc<TextureAllocation> import(mach_port_t mach_port);
 
-  WMT::Texture view(TextureViewKey key);
-  WMT::Texture view(TextureViewKey key, TextureAllocation *allocation);
-
-  TextureView const &view_(TextureViewKey key);
-  TextureView const &view_(TextureViewKey key, TextureAllocation *allocation);
+  TextureView &view(TextureViewKey key);
+  TextureView &view(TextureViewKey key, TextureAllocation *allocation);
 
   TextureViewKey checkViewUseArray(TextureViewKey key, bool isArray);
   TextureViewKey checkViewUseFormat(TextureViewKey key, WMTPixelFormat format);
-
-  DXMT_RESOURCE_RESIDENCY_STATE &residency(TextureViewKey key);
-  DXMT_RESOURCE_RESIDENCY_STATE &residency(TextureViewKey key, TextureAllocation *allocation);
 
   Rc<TextureAllocation> rename(Rc<TextureAllocation> &&newAllocation);
 
@@ -198,7 +234,7 @@ private:
   std::atomic<uint32_t> refcount_ = {0u};
 
   std::vector<TextureViewDescriptor> viewDescriptors_;
-  dxmt::mutex mutex_;
+  dxmt::shared_mutex mutex_;
   WMT::Device device_;
 };
 
