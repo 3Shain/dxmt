@@ -74,11 +74,11 @@ TextureAllocation::~TextureAllocation(){
 
 void
 Texture::prepareAllocationViews(TextureAllocation *allocaiton) {
-  std::unique_lock<dxmt::mutex> lock(mutex_);
   if (allocaiton->version_ < 1) {
     allocaiton->cached_view_.push_back(new TextureView(allocaiton));
     allocaiton->version_ = 1;
   }
+  std::shared_lock<dxmt::shared_mutex> lock(mutex_);
   for (unsigned version = allocaiton->version_; version < version_; version++) {
     allocaiton->cached_view_.push_back(new TextureView(allocaiton, version, viewDescriptors_[version]));
   }
@@ -87,7 +87,7 @@ Texture::prepareAllocationViews(TextureAllocation *allocaiton) {
 
 TextureViewKey
 Texture::createView(TextureViewDescriptor const &descriptor) {
-  std::unique_lock<dxmt::mutex> lock(mutex_);
+  std::unique_lock<dxmt::shared_mutex> lock(mutex_);
   unsigned i = 0;
   for (; i < version_; i++) {
     if (viewDescriptors_[i].format != descriptor.format)
@@ -226,9 +226,10 @@ Texture::view(TextureViewKey key, TextureAllocation* allocation) {
   return *allocation->cached_view_[key];
 }
 
-
 TextureViewKey Texture::checkViewUseArray(TextureViewKey key, bool isArray) {
-  auto &view = viewDescriptors_[key];
+  std::shared_lock<dxmt::shared_mutex> shared_lock(mutex_);
+  auto view = viewDescriptors_[key];
+  shared_lock = {};
   static constexpr uint32_t ARRAY_TYPE_MASK = 0b0101001010;
   if (unlikely(bool((1 << uint32_t(view.type)) & ARRAY_TYPE_MASK) != isArray)) {
     // TODO: this process can be cached
@@ -275,7 +276,9 @@ TextureViewKey Texture::checkViewUseArray(TextureViewKey key, bool isArray) {
 }
 
 TextureViewKey Texture::checkViewUseFormat(TextureViewKey key, WMTPixelFormat format) {
-  auto &view = viewDescriptors_[key];
+  std::shared_lock<dxmt::shared_mutex> shared_lock(mutex_);
+  auto view = viewDescriptors_[key];
+  shared_lock = {};
   if (unlikely(view.format != format)) {
     auto new_view_desc = view;
     new_view_desc.format = format;
