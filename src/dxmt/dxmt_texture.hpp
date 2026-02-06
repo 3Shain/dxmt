@@ -23,12 +23,12 @@ enum class TextureAllocationFlag : uint32_t {
 typedef unsigned TextureViewKey;
 
 struct TextureViewDescriptor {
-  WMTPixelFormat format: 32;
-  WMTTextureType type;
-  unsigned firstMiplevel = 0;
-  unsigned miplevelCount = 1;
-  unsigned firstArraySlice = 0;
-  unsigned arraySize = 1;
+  WMTPixelFormat format    : 24;
+  WMTTextureType type      : 8;
+  uint32_t firstMiplevel   : 4 = 0;
+  uint32_t miplevelCount   : 4 = 1;
+  uint32_t firstArraySlice : 12 = 0;
+  uint32_t arraySize       : 12 = 1;
 };
 
 struct TextureView {
