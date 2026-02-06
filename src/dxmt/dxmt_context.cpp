@@ -1074,6 +1074,22 @@ ArgumentEncodingContext::checkEncoderRelation(EncoderData *former, EncoderData *
       if (clear->clear_dsv & 2 && render->stencil.attachment == clear->attachment)
         render->stencil.store_action = WMTStoreActionDontCare;
     }
+    if (former->type == EncoderType::Render && latter->type == EncoderType::Resolve) {
+      auto render = reinterpret_cast<RenderEncoderData *>(former);
+      auto resolve = reinterpret_cast<ResolveEncoderData *>(latter);
+      auto result = isResolveSignatureMatched(render, resolve);
+      if (result.src) {
+        result.src->store_action = WMTStoreActionStoreAndMultisampleResolve;
+        result.src->resolve_attachment = result.dst;
+        render->tex_write.merge(resolve->tex_write);
+
+        currentFrameStatistics().resolve_pass_optimized++;
+        resolve->~ResolveEncoderData();
+        resolve->next = nullptr;
+        resolve->type = EncoderType::Null;
+        return DXMT_ENCODER_LIST_OP_SWAP; // carry on (RENDER -> RESOLVE -> RESOLVE -> ...)
+      }
+    }
     return hasDataDependency(latter, former) ? DXMT_ENCODER_LIST_OP_SYNCHRONIZE : DXMT_ENCODER_LIST_OP_SWAP;
   }
 
@@ -1247,6 +1263,38 @@ ArgumentEncodingContext::isClearStencilSignatureMatched(ClearEncoderData *clear,
   if (render->stencil.attachment != clear->attachment)
     return nullptr;
   return &render->stencil;
+}
+
+ArgumentEncodingContext::ResolveSignatureMatchResult
+ArgumentEncodingContext::isResolveSignatureMatched(RenderEncoderData *render, ResolveEncoderData *resolve) {
+  ResolveSignatureMatchResult ret{};
+  for (unsigned i = 0; i < render->render_target_count; i++) {
+    auto &color = render->colors[i];
+    if (!color.attachment)
+      continue;
+    if (color.store_action != WMTStoreActionStore)
+      continue;
+    if (color.resolve_attachment)
+      continue;
+    if (color.attachment->allocation != resolve->src->allocation)
+      continue;
+    if (color.attachment->key == resolve->src->key) {
+      ret.src = &color;
+      ret.dst = resolve->dst;
+      break;
+    };
+    auto &descriptor_src = resolve->src->allocation->descriptor;
+    auto &descriptor_dst = resolve->dst->allocation->descriptor;
+    auto color_format = descriptor_src->pixelFormat(color.attachment->key);
+    auto view_src_in_color_format = descriptor_src->checkViewUseFormat(resolve->src->key, color_format);
+    if (color.attachment->key == view_src_in_color_format) {
+      auto view_dst_in_color_format = descriptor_dst->checkViewUseFormat(resolve->dst->key, color_format);
+      ret.src = &color;
+      ret.dst = descriptor_dst->view(view_dst_in_color_format, resolve->dst->allocation);
+      break;
+    }
+  }
+  return ret;
 }
 
 } // namespace dxmt
