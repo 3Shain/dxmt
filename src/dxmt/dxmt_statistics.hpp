@@ -45,6 +45,7 @@ struct FrameStatistics {
   uint32_t render_pass_optimized = 0;
   uint32_t clear_pass_count = 0;
   uint32_t clear_pass_optimized = 0;
+  uint32_t resolve_pass_optimized = 0;
   uint32_t compute_pass_count = 0;
   uint32_t blit_pass_count = 0;
   uint32_t event_stall = 0;
@@ -66,6 +67,7 @@ struct FrameStatistics {
     render_pass_optimized = 0;
     clear_pass_count = 0;
     clear_pass_optimized = 0;
+    resolve_pass_optimized = 0;
     compute_pass_count = 0;
     blit_pass_count = 0;
     event_stall = 0;

@@ -727,6 +727,13 @@ private:
   RenderEncoderDepthAttachmentData *isClearDepthSignatureMatched(ClearEncoderData* former, RenderEncoderData* latter);
   RenderEncoderStencilAttachmentData *isClearStencilSignatureMatched(ClearEncoderData* former, RenderEncoderData* latter);
 
+  class ResolveSignatureMatchResult {
+  public:
+    RenderEncoderColorAttachmentData *src{};
+    TextureViewRef dst{};
+  };
+  ResolveSignatureMatchResult isResolveSignatureMatched(RenderEncoderData *former, ResolveEncoderData *latter);
+
   std::array<VertexBufferBinding, kVertexBufferSlots> vbuf_;
   Rc<Buffer> ibuf_;
 
