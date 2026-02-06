@@ -78,6 +78,11 @@ public:
 class TextureAllocation : public Allocation {
   friend class Texture;
 
+  /**
+   * notes on thread-safefy:
+   * all states in `TextureAllocation` is either immutable or only accessed by `dxmt-encode-thread`
+   */
+
 public:
 
   WMT::Texture texture() const {
@@ -140,12 +145,14 @@ public:
   }
 
   WMTTextureType
-  textureType(TextureViewKey view) const {
-    return viewDescriptors_.data()[view].type;
+  textureType(TextureViewKey view) {
+    std::shared_lock<dxmt::shared_mutex> lock(mutex_);
+    return viewDescriptors_[view].type;
   }
 
   WMTPixelFormat
-  pixelFormat(TextureViewKey view) const {
+  pixelFormat(TextureViewKey view) {
+    std::shared_lock<dxmt::shared_mutex> lock(mutex_);
     return viewDescriptors_[view].format;
   }
 
@@ -175,12 +182,14 @@ public:
   }
 
   unsigned
-  width(TextureViewKey view) const {
+  width(TextureViewKey view) {
+    std::shared_lock<dxmt::shared_mutex> lock(mutex_);
     return std::max(info_.width >> viewDescriptors_[view].firstMiplevel, 1u);
   }
 
   unsigned
-  height(TextureViewKey view) const {
+  height(TextureViewKey view) {
+    std::shared_lock<dxmt::shared_mutex> lock(mutex_);
     return std::max(info_.height >> viewDescriptors_[view].firstMiplevel, 1u);
   }
 
@@ -193,7 +202,8 @@ public:
   }
 
   unsigned
-  arrayLength(TextureViewKey view) const {
+  arrayLength(TextureViewKey view) {
+    std::shared_lock<dxmt::shared_mutex> lock(mutex_);
     return viewDescriptors_[view].arraySize;
   }
 
@@ -224,7 +234,7 @@ private:
   std::atomic<uint32_t> refcount_ = {0u};
 
   std::vector<TextureViewDescriptor> viewDescriptors_;
-  dxmt::mutex mutex_;
+  dxmt::shared_mutex mutex_;
   WMT::Device device_;
 };
 
