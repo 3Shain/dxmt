@@ -4,6 +4,7 @@
 #include "com/com_guid.hpp"
 #include "com/com_pointer.hpp"
 #include "dxgi_interfaces.h"
+#include "dxgi_monitor.hpp"
 #include "dxgi_object.hpp"
 #include "dxgi_options.hpp"
 #include "dxmt_format.hpp"
@@ -12,6 +13,10 @@
 #include "wsi_monitor.hpp"
 
 namespace dxmt {
+
+inline float GetGammaControlPointPosition(uint32_t cp_index) {
+  return float(cp_index) / float(DXMT_DXGI_GAMMA_CP_COUNT - 1);
+}
 
 /*
  * \see
@@ -136,12 +141,21 @@ void FilterModesByDesc(std::vector<DXGI_MODE_DESC1> &Modes,
 
 class MTLDXGIOutput : public MTLDXGIObject<IDXGIOutput6> {
 public:
-  MTLDXGIOutput(IMTLDXGIAdapter *adapter, HMONITOR monitor, DxgiOptions &options)
-      : adapter_(adapter), monitor_(monitor), options_(options) {
+  MTLDXGIOutput(IMTLDXGIAdapter *adapter, IMTLDXGIFactory *factory, HMONITOR monitor, DxgiOptions &options)
+      : adapter_(adapter), factory_(factory), monitor_(monitor), options_(options) {
     WMTGetDisplayDescription(monitor_ == wsi::getDefaultMonitor()
                                  ? WMTGetPrimaryDisplayId()
                                  : WMTGetSecondaryDisplayId(),
                              &native_desc_);
+    monitor_info_ = factory_->GetMonitor();
+    MTLDXGI_MONITOR_DATA monitorData;
+    for (uint32_t i = 0; i < DXMT_DXGI_GAMMA_CP_COUNT; i++) {
+      float pos = GetGammaControlPointPosition(i);
+      monitorData.gammaCurve.Red[i] = monitorData.gammaCurve.Green[i] = monitorData.gammaCurve.Blue[i] = pos;
+    }
+    monitorData.gammaCurve.gammaIsIdentity = true;
+    monitorData.gammaCurve.updated = false;
+    monitor_info_->SetMonitorData(&monitorData);
   }
 
   ~MTLDXGIOutput() {}
@@ -287,22 +301,56 @@ public:
     gamma_caps->ScaleAndOffsetSupported = false;
     gamma_caps->MaxConvertedValue = 1.0f;
     gamma_caps->MinConvertedValue = 0.0f;
-    gamma_caps->NumGammaControlPoints = 1;
+    gamma_caps->NumGammaControlPoints = DXMT_DXGI_GAMMA_CP_COUNT;
+    for (uint32_t i = 0; i < gamma_caps->NumGammaControlPoints; i++)
+      gamma_caps->ControlPointPositions[i] = GetGammaControlPointPosition(i);
     return S_OK;
   }
 
   HRESULT
   STDMETHODCALLTYPE
   SetGammaControl(const DXGI_GAMMA_CONTROL *gamma_control) final {
-    ERR("Not implemented");
-    return E_NOTIMPL;
+    MTLDXGI_MONITOR_DATA *monitorData = nullptr;
+    if (gamma_control == nullptr)
+      return E_NOTIMPL;
+
+    HRESULT hr = monitor_info_->GetMonitorData(&monitorData);
+    if (FAILED(hr))
+      return hr;
+
+    for (uint32_t i = 0; i < DXMT_DXGI_GAMMA_CP_COUNT; i++) {
+      monitorData->gammaCurve.Red[i] = gamma_control->GammaCurve[i].Red;
+      monitorData->gammaCurve.Green[i] = gamma_control->GammaCurve[i].Green;
+      monitorData->gammaCurve.Blue[i] = gamma_control->GammaCurve[i].Blue;
+      float identity = GetGammaControlPointPosition(i);
+      monitorData->gammaCurve.gammaIsIdentity &= gamma_control->GammaCurve[i].Red == identity
+                                              && gamma_control->GammaCurve[i].Green == identity
+                                              && gamma_control->GammaCurve[i].Blue == identity;
+    }
+    monitorData->gammaCurve.updated = true;
+
+    return S_OK;
   }
 
   HRESULT
   STDMETHODCALLTYPE
   GetGammaControl(DXGI_GAMMA_CONTROL *gamma_control) final {
-    ERR("Not implemented");
-    return E_NOTIMPL;
+    MTLDXGI_MONITOR_DATA *monitorData = nullptr;
+    if (gamma_control == nullptr)
+      return E_NOTIMPL;
+
+    HRESULT hr = monitor_info_->GetMonitorData(&monitorData);
+    if (FAILED(hr))
+      return hr;
+
+    gamma_control->Scale = { 1.0f, 1.0f, 1.0f };
+    gamma_control->Offset = { 0.0f, 0.0f, 0.0f };
+    for (uint32_t i = 0; i < DXMT_DXGI_GAMMA_CP_COUNT; i++) {
+      gamma_control->GammaCurve[i].Red = monitorData->gammaCurve.Red[i];
+      gamma_control->GammaCurve[i].Green = monitorData->gammaCurve.Green[i];
+      gamma_control->GammaCurve[i].Blue = monitorData->gammaCurve.Blue[i];
+    }
+    return S_OK;
   }
 
   HRESULT
@@ -603,13 +651,15 @@ public:
 
 private:
   Com<IMTLDXGIAdapter> adapter_ = nullptr;
+  Com<IMTLDXGIFactory> factory_ = nullptr;
+  MTLDXGIMonitor *monitor_info_ = nullptr;
   HMONITOR monitor_ = nullptr;
   WMTDisplayDescription native_desc_;
   DxgiOptions &options_;
 };
 
-Com<IDXGIOutput> CreateOutput(IMTLDXGIAdapter *pAadapter, HMONITOR monitor, DxgiOptions &options) {
-  return Com<IDXGIOutput>::transfer(new MTLDXGIOutput(pAadapter, monitor, options));
+Com<IDXGIOutput> CreateOutput(IMTLDXGIAdapter *pAadapter, IMTLDXGIFactory *pFactory, HMONITOR monitor, DxgiOptions &options) {
+  return Com<IDXGIOutput>::transfer(new MTLDXGIOutput(pAadapter, pFactory, monitor, options));
 };
 
 } // namespace dxmt
