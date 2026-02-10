@@ -318,12 +318,6 @@ to_metal_swizzle(struct WMTTextureSwizzleChannels swizzle, enum WMTPixelFormat f
         MTLTextureSwizzleOne, (MTLTextureSwizzle)swizzle.r, MTLTextureSwizzleOne, MTLTextureSwizzleOne
     );
   }
-  if (format & WMTPixelFormatBGRASwizzle) {
-    return MTLTextureSwizzleChannelsMake(
-        (MTLTextureSwizzle)swizzle.b, (MTLTextureSwizzle)swizzle.g, (MTLTextureSwizzle)swizzle.r,
-        (MTLTextureSwizzle)swizzle.a
-    );
-  }
   return MTLTextureSwizzleChannelsMake(
       (MTLTextureSwizzle)swizzle.r, (MTLTextureSwizzle)swizzle.g, (MTLTextureSwizzle)swizzle.b,
       (MTLTextureSwizzle)swizzle.a

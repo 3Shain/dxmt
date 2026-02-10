@@ -446,11 +446,7 @@ enum WMTPixelFormat : uint32_t {
   WMTPixelFormatX32G8X32 = WMTPixelFormat0R01Swizzle | WMTPixelFormatX32_Stencil8,
   // WMTPixelFormatX24G8 = WMTPixelFormat0R01Swizzle | WMTPixelFormatX24_Stencil8,
 
-  WMTPixelFormatBGRASwizzle = 0x10000000,
-
-  WMTPixelFormatARGB4Unorm = WMTPixelFormatBGRASwizzle | WMTPixelFormatABGR4Unorm,
-
-  WMTPixelFormatCustomSwizzle = WMTPixelFormatRGB1Swizzle | WMTPixelFormatR001Swizzle | WMTPixelFormat0R01Swizzle | WMTPixelFormatBGRASwizzle,
+  WMTPixelFormatCustomSwizzle = WMTPixelFormatRGB1Swizzle | WMTPixelFormatR001Swizzle | WMTPixelFormat0R01Swizzle,
 };
 
 #define ORIGINAL_FORMAT(format) (format & ~WMTPixelFormatCustomSwizzle)
