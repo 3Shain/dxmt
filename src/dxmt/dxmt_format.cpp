@@ -1027,6 +1027,11 @@ MTLQueryDXGIFormat(WMT::Device device, uint32_t format, MTL_DXGI_FORMAT_DESC &de
     description.BlockSize = 16;
     break;
   }
+  case DXGI_FORMAT_B4G4R4A4_UNORM:  {
+    description.PixelFormat = WMTPixelFormatBGRA4Unorm;
+    description.BytesPerTexel = 2;
+    break;
+  }
   case DXGI_FORMAT_AYUV:
   case DXGI_FORMAT_Y410:
   case DXGI_FORMAT_Y416:
@@ -1042,7 +1047,6 @@ MTLQueryDXGIFormat(WMT::Device device, uint32_t format, MTL_DXGI_FORMAT_DESC &de
   case DXGI_FORMAT_IA44:
   case DXGI_FORMAT_P8:
   case DXGI_FORMAT_A8P8:
-  case DXGI_FORMAT_B4G4R4A4_UNORM:
   case DXGI_FORMAT_P208:
   case DXGI_FORMAT_V208:
   case DXGI_FORMAT_V408:
