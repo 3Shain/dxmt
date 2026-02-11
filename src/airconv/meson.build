@@ -34,9 +34,16 @@ llvm_deps = [
  '-lLLVMBinaryFormat', '-lLLVMSupport', '-lLLVMDemangle'
 ]
 
-llvm_cxx_flags = [
- '-fno-exceptions','-funwind-tables','-fno-rtti','-D_FILE_OFFSET_BITS=64',
- '-D__STDC_CONSTANT_MACROS','-D__STDC_FORMAT_MACROS','-D__STDC_LIMIT_MACROS'
+airconv_args = [
+  '-Wno-extern-c-compat',
+  # LLVM
+  '-fno-exceptions',
+  '-funwind-tables',
+  '-fno-rtti',
+  '-D_FILE_OFFSET_BITS=64',
+  '-D__STDC_CONSTANT_MACROS',
+  '-D__STDC_FORMAT_MACROS',
+  '-D__STDC_LIMIT_MACROS',
 ]
 
 llvm_ld_flags = [
@@ -69,7 +76,7 @@ llvm_include_path = include_directories('../../toolchains/llvm/include') # FIXME
 
 airconv_lib = static_library('airconv', airconv_src,
   include_directories : [ dxmt_include_path, llvm_include_path ],
-  cpp_args            : [ llvm_cxx_flags, '-DWIN_EXPORT' ],
+  cpp_args            : [ airconv_args, '-DWIN_EXPORT' ],
   dependencies        : [ dxbc_parser_dep ],
   link_args           : llvm_ld_flags
 )
@@ -84,7 +91,7 @@ lib_d3dcompiler = cpp.find_library('d3dcompiler_47')
 
 executable('airconv', airconv_src + airconv_cli_src,
   include_directories : [ dxmt_include_path, llvm_include_path ],
-  cpp_args            : [ llvm_cxx_flags, '-DWIN_EXPORT' ],
+  cpp_args            : [ airconv_args, '-DWIN_EXPORT' ],
   dependencies        : [ dxbc_parser_dep, lib_d3dcompiler ],
   link_args           : [ llvm_ld_flags, llvm_deps ]
 )

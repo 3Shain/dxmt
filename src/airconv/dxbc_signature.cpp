@@ -586,7 +586,6 @@ void handle_signature_hs(
   uint32_t &max_output_register = sm50_shader->max_output_register;
   uint32_t &max_patch_constant_output_register =
     sm50_shader->max_patch_constant_output_register;
-  auto &signature_handlers = sm50_shader->signature_handlers;
 
   switch (Inst.m_OpCode) {
   case D3D10_SB_OPCODE_DCL_INPUT_SGV: {
@@ -743,7 +742,6 @@ void handle_signature_ds(
 ) {
   uint32_t &max_input_register = sm50_shader->max_input_register;
   uint32_t &max_output_register = sm50_shader->max_output_register;
-  auto &signature_handlers = sm50_shader->signature_handlers;
   auto &func_signature = sm50_shader->func_signature;
   auto &mesh_output_handlers = sm50_shader->mesh_output_handlers;
   uint32_t &num_mesh_vertex_data = sm50_shader->num_mesh_vertex_data;
@@ -763,7 +761,6 @@ void handle_signature_ds(
   switch (Inst.m_OpCode) {
   case D3D10_SB_OPCODE_DCL_INPUT_SIV: {
     unsigned reg = Inst.m_Operands[0].m_Index[0].m_RegIndex;
-    auto mask = Inst.m_Operands[0].m_WriteMask >> 4;
     auto siv = Inst.m_OutputDeclSIV.Name;
     switch (siv) {
     case D3D11_SB_NAME_FINAL_QUAD_U_EQ_0_EDGE_TESSFACTOR:
