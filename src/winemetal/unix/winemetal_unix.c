@@ -1278,7 +1278,7 @@ _MTLCaptureManager_stopCapture(void *obj) {
 
 void
 temp_handler(int signum) {
-  printf("received signal %d in temp_handler(), and it may cause problem!\n", signum);
+  fprintf(stderr, "received signal %d in temp_handler(), and it may cause problem!\n", signum);
 }
 
 static const int SIGNALS[] = {
@@ -1341,17 +1341,20 @@ _MTLDevice_newTemporalScaler(void *obj) {
   desc.autoExposureEnabled = info->auto_exposure;
 
   struct sigaction old_action[sizeof(SIGNALS) / sizeof(int)], new_action;
-  new_action.sa_handler = temp_handler;
-  sigemptyset(&new_action.sa_mask);
-  new_action.sa_flags = 0;
-
-  for (unsigned int i = 0; i < sizeof(SIGNALS) / sizeof(int); i++)
-    sigaction(SIGNALS[i], &new_action, &old_action[i]);
+  if (@available(macOS 16, *)) {} else {
+    new_action.sa_handler = temp_handler;
+    sigemptyset(&new_action.sa_mask);
+    new_action.sa_flags = 0;
+    for (unsigned int i = 0; i < sizeof(SIGNALS) / sizeof(int); i++)
+      sigaction(SIGNALS[i], &new_action, &old_action[i]);
+  }
 
   params->ret = (obj_handle_t)[desc newTemporalScalerWithDevice:(id<MTLDevice>)params->device];
 
-  for (unsigned int i = 0; i < sizeof(SIGNALS) / sizeof(int); i++)
-    sigaction(SIGNALS[i], &old_action[i], NULL);
+  if (@available(macOS 16, *)) {} else {
+    for (unsigned int i = 0; i < sizeof(SIGNALS) / sizeof(int); i++)
+      sigaction(SIGNALS[i], &old_action[i], NULL);
+  }
 
   [desc release];
   return STATUS_SUCCESS;
