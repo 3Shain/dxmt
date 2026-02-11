@@ -22,6 +22,10 @@ BufferAllocation::BufferAllocation(WMT::Device device, const WMTBufferInfo &info
     suballocation_count_ = DXMT_PAGE_SIZE / suballocation_size_;
     info_.length = DXMT_PAGE_SIZE;
   }
+  fenceTrackers.reserve(suballocation_count_);
+  for (auto i = 0u; i < suballocation_count_; i++) {
+    fenceTrackers.push_back({});
+  }
   if (flags_.test(BufferAllocationFlag::CpuPlaced)) {
     placed_buffer = wsi::aligned_malloc(info_.length, DXMT_PAGE_SIZE);
     info_.memory.set(placed_buffer);
@@ -29,7 +33,6 @@ BufferAllocation::BufferAllocation(WMT::Device device, const WMTBufferInfo &info
   obj_ = device.newBuffer(info_);
   gpuAddress_ = info_.gpu_address;
   mappedMemory_ = info_.memory.get_accessible_or_null();
-  depkey = EncoderDepSet::generateNewKey(global_buffer_seq.fetch_add(1));
 };
 
 BufferAllocation::~BufferAllocation() {
@@ -130,10 +133,7 @@ Buffer::createView(BufferViewDescriptor const &descriptor) {
 
 Rc<BufferAllocation>
 Buffer::allocate(Flags<BufferAllocationFlag> flags) {
-  WMTResourceOptions options = WMTResourceStorageModeShared;
-  if (flags.test(BufferAllocationFlag::GpuReadonly)) {
-    options |= WMTResourceHazardTrackingModeUntracked;
-  }
+  WMTResourceOptions options = WMTResourceHazardTrackingModeUntracked;
   if (flags.test(BufferAllocationFlag::CpuWriteCombined)) {
     options |= WMTResourceOptionCPUCacheModeWriteCombined;
   }

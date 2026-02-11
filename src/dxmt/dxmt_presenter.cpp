@@ -115,7 +115,9 @@ Presenter::synchronizeLayerProperties() {
 
 WMT::MetalDrawable
 Presenter::encodeCommands(
-    WMT::CommandBuffer cmdbuf, WMT::Fence fence, WMT::Texture backbuffer, DXMTPresentMetadata metadata
+    WMT::CommandBuffer cmdbuf, WMT::Texture backbuffer, DXMTPresentMetadata metadata,
+    std::function<void(WMT::RenderCommandEncoder)> &&wait_fences,
+    std::function<void(WMT::RenderCommandEncoder)> &&update_fences
 ) {
   auto drawable = layer_.nextDrawable();
 
@@ -125,8 +127,7 @@ Presenter::encodeCommands(
   info.colors[0].store_action = WMTStoreActionStore;
   info.colors[0].texture = drawable.texture();
   auto encoder = cmdbuf.renderCommandEncoder(info);
-  if (fence)
-    encoder.waitForFence(fence, WMTRenderStageFragment);
+  wait_fences(encoder);
   encoder.setFragmentTexture(backbuffer, 0);
 
   double width = layer_props_.drawable_width;
@@ -140,7 +141,7 @@ Presenter::encodeCommands(
   }
   encoder.setViewport({0, 0, width, height, 0, 1});
   encoder.drawPrimitives(WMTPrimitiveTypeTriangle, 0, 3);
-
+  update_fences(encoder);
   encoder.endEncoding();
 
   return drawable;
