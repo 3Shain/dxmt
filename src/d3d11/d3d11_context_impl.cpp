@@ -3292,8 +3292,7 @@ public:
         return;
       /* TODO: suballocate uav counter */
       auto new_counter = counter->allocate(BufferAllocationFlag::GpuManaged);
-      int _zero = 0;
-      new_counter->updateContents(0, &_zero, 4);
+      new_counter->updateContents(0, &value, 4);
       new_counter->buffer().didModifyRange(0, 4);
       auto old = counter->rename(std::move(new_counter));
       // TODO: reused discarded buffer
