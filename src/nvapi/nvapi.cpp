@@ -681,6 +681,14 @@ NvAPI_D3D_GetLatency(IUnknown *pDev, NV_LATENCY_RESULT_PARAMS *pGetLatencyParams
 }
 
 NVAPI_INTERFACE
+NvAPI_D3D_SetVerticalSyncMode(IUnknown *pDev, NVAPI_VSYNC_MODE vsyncMode) {
+  if (!pDev)
+    return NVAPI_INVALID_ARGUMENT;
+
+  return NVAPI_NO_IMPLEMENTATION;
+}
+
+NVAPI_INTERFACE
 NvAPI_GPU_GetPstates20(NvPhysicalGpuHandle hPhysicalGpu, NV_GPU_PERF_PSTATES20_INFO *pPstatesInfo) {
   if (!hPhysicalGpu || !pPstatesInfo)
     return NVAPI_INVALID_ARGUMENT;
@@ -807,6 +815,8 @@ extern "C" __cdecl void *nvapi_QueryInterface(NvU32 id) {
     return (void *)&NvAPI_D3D_Sleep;
   case 0x1a587f9c:
     return (void *)&NvAPI_D3D_GetLatency;
+  case 0x5526cfd1:
+    return (void *)&NvAPI_D3D_SetVerticalSyncMode;
   case 0xdc6dc8d3:
     return (void *)&NvAPI_Mosaic_GetDisplayViewportsByResolution;
   case 0x348ff8e1:
