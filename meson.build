@@ -15,6 +15,7 @@ clang = meson.get_compiler('c', native: true)
 clangpp = meson.get_compiler('cpp', native: true)
 
 cpu_family = target_machine.cpu_family()
+native_cpu_family = host_machine.cpu_family()
 
 dxmt_include_dirs = [
   './include',
@@ -176,15 +177,24 @@ if not dxmt_native
       windows_native_install_dir = 'system32'
     endif
     windows_builtin_install_dir = 'x86_64-windows'
+  elif cpu_family == 'aarch64'
+    if wine_builtin_dll
+      windows_native_install_dir = 'aarch64-windows'
+    else
+      windows_native_install_dir = 'system32'
+    endif
+    windows_builtin_install_dir = 'aarch64-windows'
   else
     error('invalid cpu family')
   endif
 
-  unix_install_dir = 'x86_64-unix'
+  unix_install_dir = native_cpu_family + '-unix'
 else
   wine_builtin_dll = false
   windows_native_install_dir = ''
 endif
+
+native_compiler_arch = native_cpu_family == 'aarch64' ? 'arm64' : 'x86_64'
 
 add_project_arguments(cpp.get_supported_arguments(compiler_args), language: 'cpp')
 add_project_arguments(clangpp.get_supported_arguments(native_compiler_args), language: 'cpp', native: true)
@@ -192,9 +202,9 @@ add_project_arguments(cc.get_supported_arguments(compiler_args), language: 'c')
 add_project_link_arguments(cpp.get_supported_link_arguments(link_args), language: 'cpp')
 add_project_link_arguments(cc.get_supported_link_arguments(link_args), language: 'c')
 if not dxmt_native
-  add_project_arguments(['-arch', 'x86_64'], language: 'c',  native: true)
-  add_project_arguments(['-arch', 'x86_64'], language: 'cpp',  native: true)
-  add_project_link_arguments(['-arch', 'x86_64'], language: 'cpp',  native: true)
+  add_project_arguments(['-arch', native_compiler_arch], language: 'c',  native: true)
+  add_project_arguments(['-arch', native_compiler_arch], language: 'cpp',  native: true)
+  add_project_link_arguments(['-arch', native_compiler_arch], language: 'cpp',  native: true)
 endif
 
 subdir('libs')
