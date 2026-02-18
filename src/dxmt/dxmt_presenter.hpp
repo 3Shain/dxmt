@@ -37,6 +37,8 @@ public:
 
   void changeHDRMetadata(const WMTHDRMetadata *metadata);
 
+  void changeGammaRamp(const DXMTGammaRamp *gamma_ramp);
+
   class PresentState {
   public:
     DXMTPresentMetadata metadata;
@@ -67,7 +69,7 @@ public:
   encodeCommands(WMT::CommandBuffer cmdbuf, WMT::Fence fence, WMT::Texture backbuffer, DXMTPresentMetadata metadata);
 
 private:
-  void buildRenderPipelineState(bool is_pq, bool with_hdr_metadata, bool is_ms);
+  void buildRenderPipelineState(bool is_pq, bool with_hdr_metadata, bool is_ms, bool gamma_enable);
 
   WMT::Device device_;
   WMT::MetalLayer layer_;
@@ -82,6 +84,9 @@ private:
   WMTColorSpace display_colorspace_ = WMTColorSpaceSRGB;
   WMTHDRMetadata display_hdr_metadata_;
   WMTEDRValue display_edr_value_{0.0, 1.0};
+  uint64_t gamma_version_ = 0;
+  std::array<float, DXMT_GAMMA_CP_COUNT * 4> gamma_lut_rgba_;
+  WMT::Reference<WMT::Texture> gamma_lut_texture_;
   WMT::Reference<WMT::RenderPipelineState> present_blit_;
   WMT::Reference<WMT::RenderPipelineState> present_scale_;
   std::atomic_flag pso_valid = 0;

@@ -19,6 +19,19 @@ Presenter::Presenter(WMT::Device device, WMT::MetalLayer layer, InternalCommandL
   layer_props_.display_sync_enabled = false;
   layer_props_.framebuffer_only = false; // how strangely setting it true results in worse performance
   layer_props_.contents_scale = layer_props_.contents_scale * scale_factor;
+
+  WMTTextureInfo texture_info;
+  texture_info.type = WMTTextureType2D;
+  texture_info.pixel_format = WMTPixelFormatRGBA32Float;
+  texture_info.usage = WMTTextureUsageShaderRead;
+  texture_info.options = WMTResourceStorageModeShared;
+  texture_info.width = DXMT_GAMMA_CP_COUNT;
+  texture_info.height = 1;
+  texture_info.depth = 1;
+  texture_info.mipmap_level_count = 1;
+  texture_info.sample_count = 1;
+  texture_info.array_length = 1;
+  gamma_lut_texture_ = device.newTexture(texture_info);
 }
 
 bool
@@ -64,6 +77,30 @@ Presenter::changeHDRMetadata(const WMTHDRMetadata *metadata) {
   }
 }
 
+void
+Presenter::changeGammaRamp(const DXMTGammaRamp *gamma_ramp) {
+  if (!gamma_ramp && gamma_version_ != 0) {
+    gamma_version_ = 0;
+    pso_valid.clear();
+    return;
+  }
+  if (gamma_ramp && gamma_version_ != gamma_ramp->version) {
+    gamma_version_ = gamma_ramp->version;
+    for (uint32_t i = 0; i < DXMT_GAMMA_CP_COUNT; i++) {
+      gamma_lut_rgba_[i * 4 + 0] = std::clamp(gamma_ramp->red[i], 0.f, 1.f);
+      gamma_lut_rgba_[i * 4 + 1] = std::clamp(gamma_ramp->green[i], 0.f, 1.f);
+      gamma_lut_rgba_[i * 4 + 2] = std::clamp(gamma_ramp->blue[i], 0.f, 1.f);
+      gamma_lut_rgba_[i * 4 + 3] = 1.0f;
+    }
+    gamma_lut_texture_.replaceRegion(
+          {0, 0, 0}, {DXMT_GAMMA_CP_COUNT, 1, 1}, 0, 0,
+          gamma_lut_rgba_.data(),
+          DXMT_GAMMA_CP_COUNT * sizeof(float) * 4,
+          0);
+    pso_valid.clear();
+  }
+}
+
 Presenter::PresentState
 Presenter::synchronizeLayerProperties() {
   uint64_t display_setting_version = 0;
@@ -84,7 +121,7 @@ Presenter::synchronizeLayerProperties() {
                                                    : nullptr;
   if (unlikely(!pso_valid.test_and_set())) {
     frame_presented_.wait(frame_requested_);
-    buildRenderPipelineState(final_colorspace == WMTColorSpaceHDR_PQ, is_hdr && hdr_metadata != nullptr, sample_count_ > 1);
+    buildRenderPipelineState(final_colorspace == WMTColorSpaceHDR_PQ, is_hdr && hdr_metadata != nullptr, sample_count_ > 1, gamma_version_ != 0);
     layer_.setProps(layer_props_);
     layer_.setColorSpace(final_colorspace);
   }
@@ -128,6 +165,7 @@ Presenter::encodeCommands(
   if (fence)
     encoder.waitForFence(fence, WMTRenderStageFragment);
   encoder.setFragmentTexture(backbuffer, 0);
+  encoder.setFragmentTexture(gamma_lut_texture_, 1);
 
   double width = layer_props_.drawable_width;
   double height = layer_props_.drawable_height;
@@ -151,15 +189,16 @@ constexpr uint32_t kPresentFCIndex_HDRPQ = 0x101;
 constexpr uint32_t kPresentFCIndex_WithHDRMetadata = 0x102;
 constexpr uint32_t kPresentFCIndex_BackbufferIsSRGB = 0x103;
 constexpr uint32_t kPresentFCIndex_BackbufferIsMS = 0x104;
+constexpr uint32_t kPresentFCIndex_GammaEnabled = 0x105;
 
 void
-Presenter::buildRenderPipelineState(bool is_pq, bool with_hdr_metadata, bool is_ms) {
+Presenter::buildRenderPipelineState(bool is_pq, bool with_hdr_metadata, bool is_ms, bool gamma_enable) {
   auto pool = WMT::MakeAutoreleasePool();
 
   auto library = lib_.getLibrary();
 
   uint32_t true_data = true, false_data = false;
-  WMTFunctionConstant constants[5];
+  WMTFunctionConstant constants[6];
   constants[0].data.set(&true_data);
   constants[0].type = WMTDataTypeBool;
   constants[0].index = kPresentFCIndex_BackbufferSizeMatched;
@@ -175,6 +214,9 @@ Presenter::buildRenderPipelineState(bool is_pq, bool with_hdr_metadata, bool is_
   constants[4].data.set(is_ms ? &true_data : &false_data);
   constants[4].type = WMTDataTypeBool;
   constants[4].index = kPresentFCIndex_BackbufferIsMS;
+  constants[5].data.set(gamma_enable ? &true_data : &false_data);
+  constants[5].type  = WMTDataTypeBool;
+  constants[5].index = kPresentFCIndex_GammaEnabled;
 
   WMT::Reference<WMT::Error> error;
   auto vs_present_quad = library.newFunction("vs_present_quad");
