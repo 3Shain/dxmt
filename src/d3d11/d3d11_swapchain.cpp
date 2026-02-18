@@ -4,10 +4,12 @@
 #include "d3d11_private.h"
 #include "dxgi_interfaces.h"
 #include "dxgi_object.hpp"
+#include "dxgi_output.hpp"
 #include "d3d11_context.hpp"
 #include "dxmt_context.hpp"
 #include "dxmt_hud_state.hpp"
 #include "dxmt_statistics.hpp"
+#include "dxmt_presenter.hpp"
 #include "log/log.hpp"
 #include "d3d11_resource.hpp"
 #include "d3d11_device.hpp"
@@ -281,6 +283,8 @@ public:
       return DXGI_ERROR_NOT_CURRENTLY_AVAILABLE;
     }
     
+    presenter->changeGammaRamp(nullptr);
+
     return S_OK;
   }
 
@@ -601,6 +605,10 @@ public:
     auto &cmd_queue = device_->GetDXMTDevice().queue();
     auto chunk = cmd_queue.CurrentChunk();
     chunk->signal_frame_latency_fence_ = cmd_queue.CurrentFrameSeq();
+    if (target_) {
+      auto output = static_cast<MTLDXGIOutput *>(target_.ptr());
+      presenter->changeGammaRamp(output->GetGammaRamp());
+    }
     if constexpr (EnableMetalFX) {
       chunk->emitcc([
         this, vsync_duration, backbuffer = backbuffer_->texture(),
