@@ -14,6 +14,15 @@ struct DXMTPresentMetadata {
   float max_display_luminance;
 };
 
+constexpr uint32_t DXMT_GAMMA_CP_COUNT = 1024;
+
+struct DXMTGammaRamp {
+  float red[DXMT_GAMMA_CP_COUNT];
+  float green[DXMT_GAMMA_CP_COUNT];
+  float blue[DXMT_GAMMA_CP_COUNT];
+  uint64_t version;
+};
+
 class Presenter : public RcObject {
 public:
   Presenter(

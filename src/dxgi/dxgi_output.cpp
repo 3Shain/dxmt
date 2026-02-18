@@ -4,9 +4,10 @@
 #include "com/com_guid.hpp"
 #include "com/com_pointer.hpp"
 #include "dxgi_interfaces.h"
-#include "dxgi_object.hpp"
+#include "dxgi_output.hpp"
 #include "dxgi_options.hpp"
 #include "dxmt_format.hpp"
+#include "dxmt_presenter.hpp"
 #include "log/log.hpp"
 #include "util_string.hpp"
 #include "wsi_monitor.hpp"
@@ -134,7 +135,7 @@ void FilterModesByDesc(std::vector<DXGI_MODE_DESC1> &Modes,
   }
 }
 
-class MTLDXGIOutputImpl : public MTLDXGIObject<IDXGIOutput6> {
+class MTLDXGIOutputImpl : public MTLDXGIOutput {
 public:
   MTLDXGIOutputImpl(IMTLDXGIAdapter *adapter, HMONITOR monitor, DxgiOptions &options)
       : adapter_(adapter), monitor_(monitor), options_(options) {
@@ -142,9 +143,20 @@ public:
                                  ? WMTGetPrimaryDisplayId()
                                  : WMTGetSecondaryDisplayId(),
                              &native_desc_);
+    for (uint32_t i = 0; i < DXMT_GAMMA_CP_COUNT; i++) {
+      gamma_ramp_.red[i] = gamma_ramp_.green[i] = gamma_ramp_.blue[i] =
+          float(i) / float(DXMT_GAMMA_CP_COUNT - 1);
+    }
+    gamma_ramp_.version = 0;
   }
 
   ~MTLDXGIOutputImpl() {}
+
+  const DXMTGammaRamp *
+  STDMETHODCALLTYPE
+  GetGammaRamp() override {
+    return &gamma_ramp_;
+  }
 
   HRESULT
   STDMETHODCALLTYPE
@@ -282,27 +294,47 @@ public:
   GetGammaControlCapabilities(
       DXGI_GAMMA_CONTROL_CAPABILITIES *gamma_caps) final {
     if (gamma_caps == nullptr)
-      return E_NOTIMPL;
+      return DXGI_ERROR_INVALID_CALL;
 
     gamma_caps->ScaleAndOffsetSupported = false;
     gamma_caps->MaxConvertedValue = 1.0f;
     gamma_caps->MinConvertedValue = 0.0f;
-    gamma_caps->NumGammaControlPoints = 1;
+    gamma_caps->NumGammaControlPoints = DXMT_GAMMA_CP_COUNT;
+    for (uint32_t i = 0; i < gamma_caps->NumGammaControlPoints; i++)
+      gamma_caps->ControlPointPositions[i] = float(i) / float(DXMT_GAMMA_CP_COUNT - 1);
     return S_OK;
   }
 
   HRESULT
   STDMETHODCALLTYPE
   SetGammaControl(const DXGI_GAMMA_CONTROL *gamma_control) final {
-    ERR("Not implemented");
-    return E_NOTIMPL;
+    if (gamma_control == nullptr)
+      return DXGI_ERROR_INVALID_CALL;
+
+    for (uint32_t i = 0; i < DXMT_GAMMA_CP_COUNT; i++) {
+      gamma_ramp_.red[i] = gamma_control->GammaCurve[i].Red;
+      gamma_ramp_.green[i] = gamma_control->GammaCurve[i].Green;
+      gamma_ramp_.blue[i] = gamma_control->GammaCurve[i].Blue;
+    }
+    gamma_ramp_.version++;
+    return S_OK;
   }
 
   HRESULT
   STDMETHODCALLTYPE
   GetGammaControl(DXGI_GAMMA_CONTROL *gamma_control) final {
-    ERR("Not implemented");
-    return E_NOTIMPL;
+    if (gamma_control == nullptr)
+      return DXGI_ERROR_INVALID_CALL;
+
+    gamma_control->Scale = { 1.0f, 1.0f, 1.0f };
+    gamma_control->Offset = { 0.0f, 0.0f, 0.0f };
+    for (uint32_t i = 0; i < DXMT_GAMMA_CP_COUNT; i++) {
+      gamma_control->GammaCurve[i].Red = gamma_ramp_.red[i];
+      gamma_control->GammaCurve[i].Green = gamma_ramp_.green[i];
+      gamma_control->GammaCurve[i].Blue = gamma_ramp_.blue[i];
+    }
+  
+    return S_OK;
   }
 
   HRESULT
@@ -606,6 +638,7 @@ private:
   HMONITOR monitor_ = nullptr;
   WMTDisplayDescription native_desc_;
   DxgiOptions &options_;
+  DXMTGammaRamp gamma_ramp_;
 };
 
 Com<IDXGIOutput> CreateOutput(IMTLDXGIAdapter *pAadapter, HMONITOR monitor, DxgiOptions &options) {
