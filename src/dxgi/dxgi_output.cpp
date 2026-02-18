@@ -134,9 +134,9 @@ void FilterModesByDesc(std::vector<DXGI_MODE_DESC1> &Modes,
   }
 }
 
-class MTLDXGIOutput : public MTLDXGIObject<IDXGIOutput6> {
+class MTLDXGIOutputImpl : public MTLDXGIObject<IDXGIOutput6> {
 public:
-  MTLDXGIOutput(IMTLDXGIAdapter *adapter, HMONITOR monitor, DxgiOptions &options)
+  MTLDXGIOutputImpl(IMTLDXGIAdapter *adapter, HMONITOR monitor, DxgiOptions &options)
       : adapter_(adapter), monitor_(monitor), options_(options) {
     WMTGetDisplayDescription(monitor_ == wsi::getDefaultMonitor()
                                  ? WMTGetPrimaryDisplayId()
@@ -144,7 +144,7 @@ public:
                              &native_desc_);
   }
 
-  ~MTLDXGIOutput() {}
+  ~MTLDXGIOutputImpl() {}
 
   HRESULT
   STDMETHODCALLTYPE
@@ -609,7 +609,7 @@ private:
 };
 
 Com<IDXGIOutput> CreateOutput(IMTLDXGIAdapter *pAadapter, HMONITOR monitor, DxgiOptions &options) {
-  return Com<IDXGIOutput>::transfer(new MTLDXGIOutput(pAadapter, monitor, options));
+  return Com<IDXGIOutput>::transfer(new MTLDXGIOutputImpl(pAadapter, monitor, options));
 };
 
 } // namespace dxmt
