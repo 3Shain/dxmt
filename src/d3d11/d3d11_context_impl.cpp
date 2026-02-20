@@ -2890,16 +2890,6 @@ public:
 
 #pragma endregion
 
-#pragma region Misc
-
-  UINT
-  STDMETHODCALLTYPE
-  GetContextFlags() override {
-    return 0;
-  }
-
-#pragma endregion
-
 #pragma region 11.3
 
   void STDMETHODCALLTYPE

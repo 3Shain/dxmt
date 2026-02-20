@@ -432,6 +432,12 @@ public:
     return DXGI_ERROR_INVALID_CALL;
   }
 
+  UINT
+  STDMETHODCALLTYPE
+  GetContextFlags() override {
+    return context_flag;
+  }
+
 private:
   DeferredContextInternalState ctx_state;
   null_mutex mutex;

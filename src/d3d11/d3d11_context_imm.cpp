@@ -587,6 +587,12 @@ public:
     return S_OK;
   }
 
+  UINT
+  STDMETHODCALLTYPE
+  GetContextFlags() override {
+    return 0;
+  }
+
 private:
   std::vector<Com<IMTLD3DOcclusionQuery>> pending_occlusion_queries;
   CommandQueue &cmd_queue;
