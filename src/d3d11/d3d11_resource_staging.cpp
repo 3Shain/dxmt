@@ -57,7 +57,7 @@ CreateStagingBuffer(MTLD3D11Device *pDevice, const D3D11_BUFFER_DESC *pDesc,
                     ID3D11Buffer **ppBuffer) {
   auto metal = pDevice->GetMTLDevice();
   auto byte_width = pDesc->ByteWidth;
-  auto buffer = new StagingResource(metal, byte_width, WMTResourceStorageModeShared, byte_width, byte_width);
+  auto buffer = new StagingResource(metal, byte_width, byte_width, byte_width);
   if (pInitialData) {
     memcpy(buffer->mappedImmediateMemory(), pInitialData->pSysMem, byte_width);
   }
@@ -141,7 +141,7 @@ HRESULT CreateStagingTextureInternal(MTLD3D11Device *pDevice,
       return E_FAIL;
     }
     D3D11_ASSERT(subresources.size() == sub.SubresourceId);
-    auto buffer = new StagingResource(metal, buf_len, WMTResourceStorageModeShared, bpr, bpi);
+    auto buffer = new StagingResource(metal, buf_len, bpr, bpi);
     if (pInitialData) {
       // FIXME: SysMemPitch and SysMemSlicePitch should be respected!
       memcpy(buffer->mappedImmediateMemory(), pInitialData[sub.SubresourceId].pSysMem, buf_len);

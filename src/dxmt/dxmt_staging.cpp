@@ -4,13 +4,12 @@
 namespace dxmt {
 
 StagingResource::StagingResource(
-  WMT::Device device, uint64_t length, WMTResourceOptions options, uint32_t bytes_per_row, uint32_t bytes_per_image
+  WMT::Device device, uint64_t length, uint32_t bytes_per_row, uint32_t bytes_per_image
 ) :
     bytesPerRow(bytes_per_row),
     bytesPerImage(bytes_per_image),
     length(length),
-    device_(device),
-    options_(options) {
+    device_(device) {
   buffer_ = new Buffer(length, device);
   immediate_name_ = allocate(0);
   buffer_->rename(allocation(0));

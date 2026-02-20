@@ -61,7 +61,7 @@ public:
    */
   uint64_t length;
 
-  StagingResource(WMT::Device device, uint64_t length, WMTResourceOptions options, uint32_t bytes_per_row, uint32_t bytes_per_image);
+  StagingResource(WMT::Device device, uint64_t length, uint32_t bytes_per_row, uint32_t bytes_per_image);
 
 private:
   struct QueueEntry {
@@ -81,7 +81,6 @@ private:
   // prevent write to staging before
   uint64_t gpu_occupied_until_finished_seq_id = 0;
   WMT::Device device_;
-  WMTResourceOptions options_;
 };
 
 } // namespace dxmt
