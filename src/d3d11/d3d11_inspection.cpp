@@ -1,33 +1,31 @@
 #include "d3d11_inspection.hpp"
-
 #include "log/log.hpp"
 
 namespace dxmt {
 
 MTLD3D11Inspection::MTLD3D11Inspection(WMT::Device pDevice)
     : m_device(pDevice) {
-
-  // FIXME: Apple Silicon definitely TBDR
+  /**
+  TODO: make it configurable (fake non-TBDR)
+   */
   m_architectureInfo.TileBasedDeferredRenderer = pDevice.hasUnifiedMemory();
 
-  m_threading.DriverConcurrentCreates = TRUE; // I guess
-  m_threading.DriverCommandLists = TRUE;      //  should be?
+  m_threading.DriverConcurrentCreates = TRUE;
+  m_threading.DriverCommandLists = TRUE;
 
-  /*
+  /**
   MSL Specification 2.1: Metal does _not_ support double
   */
   m_doubles.DoublePrecisionFloatShaderOps = FALSE;
 
-  m_d3d9Options.FullNonPow2TextureSupport = TRUE; // no doubt
-  m_d3d10Options.ComputeShaders_Plus_RawAndStructuredBuffers_Via_Shader_4_x =
-      TRUE; // no doubt
+  m_d3d9Options.FullNonPow2TextureSupport = TRUE;
+  m_d3d10Options.ComputeShaders_Plus_RawAndStructuredBuffers_Via_Shader_4_x = TRUE;
 
-  // dx11 features
-  m_d3d11Options.ClearView = TRUE; // ..
+  m_d3d11Options.ClearView = TRUE;
   m_d3d11Options.ConstantBufferOffsetting = TRUE;
   m_d3d11Options.ConstantBufferPartialUpdate = TRUE;
   m_d3d11Options.MapNoOverwriteOnDynamicConstantBuffer = TRUE;
-  /*
+  /**
   https://developer.apple.com/documentation/metal/mtlblitcommandencoder/1400754-copyfromtexture?language=objc
   Copying data to overlapping regions within the same texture may result in
   unexpected behavior.
@@ -35,25 +33,26 @@ MTLD3D11Inspection::MTLD3D11Inspection(WMT::Device pDevice)
   https://learn.microsoft.com/en-us/windows/win32/direct3d11/using-direct3d-optional-features-to-supplement-direct3d-feature-levels
   TODO: ClearView, CopyWithOverlap, ConstantBufferPartialUpdate,
   ConstantBufferOffsetting, and MapNoOverwriteOnDynamicConstantBuffer must be
-  all TRUE/FALSE. Maybe we should support it and when there is overlap we use a
-  temp buffer
+  all TRUE/FALSE. Overlapping copy needs special handling
   */
   m_d3d11Options.CopyWithOverlap = TRUE;
-  /*
+  /**
   FXIME: I think it is supported
    */
   m_d3d11Options.MultisampleRTVWithForcedSampleCountOne = TRUE;
   m_d3d11Options.MapNoOverwriteOnDynamicBufferSRV = TRUE;
-  /*
+  /**
   https://github.com/gpuweb/gpuweb/issues/503#issuecomment-908973358
   */
   m_d3d11Options.UAVOnlyRenderingForcedSampleCount = TRUE;
-  m_d3d11Options.DiscardAPIsSeenByDriver = TRUE; // wtf
-  // In metal we don't support double
+  m_d3d11Options.DiscardAPIsSeenByDriver = TRUE;
   m_d3d11Options.ExtendedDoublesShaderInstructions = FALSE;
-  m_d3d11Options.ExtendedResourceSharing = TRUE; // wtf
+  /**
+  FIXME: This is questionable
+  */
+  m_d3d11Options.ExtendedResourceSharing = TRUE;
   m_d3d11Options.SAD4ShaderInstructions = TRUE;
-  m_d3d11Options.FlagsForUpdateAndCopySeenByDriver = TRUE; // wtf
+  m_d3d11Options.FlagsForUpdateAndCopySeenByDriver = TRUE;
 #ifdef DXMT_NO_PRIVATE_API
   m_d3d11Options.OutputMergerLogicOp = FALSE;
 #else
@@ -70,13 +69,8 @@ MTLD3D11Inspection::MTLD3D11Inspection(WMT::Device pDevice)
 
   m_shaderCache.SupportFlags =
       D3D11_SHADER_CACHE_SUPPORT_AUTOMATIC_DISK_CACHE |
-      D3D11_SHADER_CACHE_SUPPORT_AUTOMATIC_INPROC_CACHE; // why application
-                                                         // would ask for
-                                                         // this...
+      D3D11_SHADER_CACHE_SUPPORT_AUTOMATIC_INPROC_CACHE;
 
-  /*
-  Metal: half data type
-  */
   m_shaderMinPrecision.PixelShaderMinPrecision =
       D3D11_SHADER_MIN_PRECISION_16_BIT;
   m_shaderMinPrecision.AllOtherShaderStagesMinPrecision =
@@ -86,6 +80,9 @@ MTLD3D11Inspection::MTLD3D11Inspection(WMT::Device pDevice)
 
   m_d3d11Options1.ClearViewAlsoSupportsDepthOnlyFormats = TRUE;
   m_d3d11Options1.MapOnDefaultBuffers = TRUE;
+  /**
+  TODO: supported by Apple10 family
+  */
   m_d3d11Options1.MinMaxFiltering = FALSE;
   m_d3d11Options1.TiledResourcesTier = D3D11_TILED_RESOURCES_NOT_SUPPORTED;
 
