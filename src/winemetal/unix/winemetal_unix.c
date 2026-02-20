@@ -301,7 +301,7 @@ _MTLBuffer_newTexture(void *obj) {
   return STATUS_SUCCESS;
 }
 
-inline MTLTextureSwizzleChannels
+static inline MTLTextureSwizzleChannels
 to_metal_swizzle(struct WMTTextureSwizzleChannels swizzle, enum WMTPixelFormat format) {
   if (format & WMTPixelFormatRGB1Swizzle) {
     return MTLTextureSwizzleChannelsMake(
