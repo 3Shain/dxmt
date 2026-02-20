@@ -44,30 +44,35 @@ const GUID kGpaUUID = {0xccffef16,
 class MTLD3D11DeviceImpl final : public MTLD3D11Device, public IMTLD3D11DeviceExt {
 friend class MTLD3D11DXGIDevice;
 public:
-  MTLD3D11DeviceImpl(MTLDXGIObject<IMTLDXGIDevice> *container,
-                 IMTLDXGIAdapter *pAdapter, D3D_FEATURE_LEVEL FeatureLevel,
-                 UINT FeatureFlags, Device &device)
-      : m_container(container), adapter_(pAdapter),
-        m_FeatureLevel(FeatureLevel), m_FeatureFlags(FeatureFlags),
-        m_features(container->GetMTLDevice()), sampler_states(this),
-        rasterizer_states(this), depthstencil_states(this),
-        device_(device), d3dmt_(static_cast<ID3D11Device *>(this), mutex) {
+  MTLD3D11DeviceImpl(
+      MTLDXGIObject<IMTLDXGIDevice> *container, IMTLDXGIAdapter *pAdapter, D3D_FEATURE_LEVEL FeatureLevel,
+      UINT FeatureFlags, Device &device
+  ) :
+      container_(container),
+      feature_level_(FeatureLevel),
+      feature_flags_(FeatureFlags),
+      features_(container->GetMTLDevice()),
+      sampler_states_(this),
+      rasterizer_states_(this),
+      depthstencil_states_(this),
+      device_(device),
+      d3dmt_(static_cast<ID3D11Device *>(this), mutex) {
     commandlist_pool_ = InitializeCommandListPool(this);
     pipeline_cache_ = InitializePipelineCache(this);
     context_ = InitializeImmediateContext(this, device_.queue());
     d3d10_ = std::make_unique<MTLD3D10Device>(this, context_.get());
     is_traced_ = !!::GetModuleHandle("dxgitrace.dll");
-    format_inspector.Inspect(GetMTLDevice());
+    format_inspector_.Inspect(GetMTLDevice());
   }
 
   HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid,
                                            void **ppvObject) override {
-    return m_container->QueryInterface(riid, ppvObject);
+    return container_->QueryInterface(riid, ppvObject);
   }
 
-  ULONG STDMETHODCALLTYPE AddRef() override { return m_container->AddRef(); }
+  ULONG STDMETHODCALLTYPE AddRef() override { return container_->AddRef(); }
 
-  ULONG STDMETHODCALLTYPE Release() override { return m_container->Release(); }
+  ULONG STDMETHODCALLTYPE Release() override { return container_->Release(); }
 
   bool IsTraced() override { return is_traced_; }
 
@@ -381,7 +386,7 @@ public:
   HRESULT STDMETHODCALLTYPE CreateDepthStencilState(
       const D3D11_DEPTH_STENCIL_DESC *pDesc,
       ID3D11DepthStencilState **ppDepthStencilState) override {
-    return depthstencil_states.CreateStateObject(
+    return depthstencil_states_.CreateStateObject(
         pDesc, (IMTLD3D11DepthStencilState **)ppDepthStencilState);
   }
 
@@ -410,7 +415,7 @@ public:
   HRESULT STDMETHODCALLTYPE
   CreateSamplerState(const D3D11_SAMPLER_DESC *pSamplerDesc,
                      ID3D11SamplerState **ppSamplerState) override {
-    return sampler_states.CreateStateObject(
+    return sampler_states_.CreateStateObject(
         pSamplerDesc, (D3D11SamplerState **)ppSamplerState);
   }
 
@@ -681,31 +686,31 @@ public:
     default:
       // For everything else, we can use the device feature struct
       // that we already initialized during device creation.
-      return m_features.GetFeatureData(Feature, FeatureSupportDataSize,
+      return features_.GetFeatureData(Feature, FeatureSupportDataSize,
                                        pFeatureSupportData);
     }
   }
 
   HRESULT STDMETHODCALLTYPE GetPrivateData(REFGUID guid, UINT *pDataSize,
                                            void *pData) override {
-    return m_container->GetPrivateData(guid, pDataSize, pData);
+    return container_->GetPrivateData(guid, pDataSize, pData);
   }
 
   HRESULT STDMETHODCALLTYPE SetPrivateData(REFGUID guid, UINT DataSize,
                                            const void *pData) override {
-    return m_container->SetPrivateData(guid, DataSize, pData);
+    return container_->SetPrivateData(guid, DataSize, pData);
   }
 
   HRESULT STDMETHODCALLTYPE
   SetPrivateDataInterface(REFGUID guid, const IUnknown *pData) override {
-    return m_container->SetPrivateDataInterface(guid, pData);
+    return container_->SetPrivateDataInterface(guid, pData);
   }
 
   D3D_FEATURE_LEVEL STDMETHODCALLTYPE GetFeatureLevel() override {
-    return m_FeatureLevel;
+    return feature_level_;
   }
 
-  UINT STDMETHODCALLTYPE GetCreationFlags() override { return m_FeatureFlags & 0x7fffffff; }
+  UINT STDMETHODCALLTYPE GetCreationFlags() override { return feature_flags_ & 0x7fffffff; }
 
   HRESULT STDMETHODCALLTYPE GetDeviceRemovedReason() override {
     // unless we are deal with eGPU, this method should awalys return S_OK?
@@ -916,7 +921,7 @@ public:
   HRESULT STDMETHODCALLTYPE
   CreateRasterizerState2(const D3D11_RASTERIZER_DESC2 *pRasterizerDesc,
                          ID3D11RasterizerState2 **ppRasterizerState) override {
-    return rasterizer_states.CreateStateObject(
+    return rasterizer_states_.CreateStateObject(
         pRasterizerDesc, (IMTLD3D11RasterizerState **)ppRasterizerState);
   }
 
@@ -993,11 +998,11 @@ public:
                       const D3D11_BOX *src_box) override{IMPLEMENT_ME}
 
   WMT::Device STDMETHODCALLTYPE GetMTLDevice() override {
-    return m_container->GetMTLDevice();
+    return container_->GetMTLDevice();
   }
 
   D3DKMT_HANDLE STDMETHODCALLTYPE GetLocalD3DKMT() override {
-    return m_container->GetLocalD3DKMT();
+    return container_->GetLocalD3DKMT();
   }
 
   HRESULT
@@ -1041,9 +1046,9 @@ public:
   virtual FormatCapability
   GetMTLPixelFormatCapability(WMTPixelFormat Format) final {
     Format = ORIGINAL_FORMAT(Format);
-    if (!format_inspector.textureCapabilities.contains(Format))
+    if (!format_inspector_.textureCapabilities.contains(Format))
       return FormatCapability(0);
-    return format_inspector.textureCapabilities.at(Format);
+    return format_inspector_.textureCapabilities.at(Format);
   };
 
   virtual IMTLD3D11DeviceContext *GetImmediateContextPrivate() final {
@@ -1051,7 +1056,7 @@ public:
   };
 
   virtual unsigned int GetDirectXVersion() final {
-    return m_FeatureFlags & 0x80000000 ? 10 : 11;
+    return feature_flags_ & 0x80000000 ? 10 : 11;
   };
 
   virtual HRESULT STDMETHODCALLTYPE RegisterDeviceRemovedEvent(HANDLE Event,
@@ -1072,26 +1077,23 @@ public:
   virtual HRESULT STDMETHODCALLTYPE CreateFence(UINT64 InitialValue,
                                                 D3D11_FENCE_FLAG Flags,
                                                 REFIID riid, void **ppFence) final {
-    if (m_FeatureFlags & D3D11_CREATE_DEVICE_VIDEO_SUPPORT)
+    if (feature_flags_ & D3D11_CREATE_DEVICE_VIDEO_SUPPORT)
       return E_FAIL;
     return dxmt::CreateFence(this, InitialValue, Flags, riid, ppFence);
   };
 
 private:
-  MTLDXGIObject<IMTLDXGIDevice> *m_container;
-  IMTLDXGIAdapter *adapter_;
-  D3D_FEATURE_LEVEL m_FeatureLevel;
-  UINT m_FeatureFlags;
-  MTLD3D11Inspection m_features;
-  FormatCapabilityInspector format_inspector;
+  MTLDXGIObject<IMTLDXGIDevice> *container_;
+  D3D_FEATURE_LEVEL feature_level_;
+  UINT feature_flags_;
+  MTLD3D11Inspection features_;
+  FormatCapabilityInspector format_inspector_;
 
   bool is_traced_;
 
-  StateObjectCache<D3D11_SAMPLER_DESC, D3D11SamplerState> sampler_states;
-  StateObjectCache<D3D11_RASTERIZER_DESC2, IMTLD3D11RasterizerState>
-      rasterizer_states;
-  StateObjectCache<D3D11_DEPTH_STENCIL_DESC, IMTLD3D11DepthStencilState>
-      depthstencil_states;
+  StateObjectCache<D3D11_SAMPLER_DESC, D3D11SamplerState> sampler_states_;
+  StateObjectCache<D3D11_RASTERIZER_DESC2, IMTLD3D11RasterizerState> rasterizer_states_;
+  StateObjectCache<D3D11_DEPTH_STENCIL_DESC, IMTLD3D11DepthStencilState> depthstencil_states_;
 
   std::unique_ptr<MTLD3D11CommandListPoolBase> commandlist_pool_;
   std::unique_ptr<MTLD3D11PipelineCacheBase> pipeline_cache_;
