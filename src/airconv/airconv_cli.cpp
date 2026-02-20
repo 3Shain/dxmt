@@ -134,12 +134,12 @@ int main(int argc, char **argv) {
   Context.setOpaquePointers(false);
   cl::ParseCommandLineOptions(argc, argv, "DXBC to Metal AIR transpiler\n");
 
-  bool FastMath = true;
-  for (StringRef Flag : f) {
-    if (Flag == "no-fast-math") {
-      FastMath = false;
-    }
-  }
+  // bool FastMath = true;
+  // for (StringRef Flag : f) {
+  //   if (Flag == "no-fast-math") {
+  //     FastMath = false;
+  //   }
+  // }
 
   if (OutputFilename.empty()) { // Unspecified output, infer it.
     if (InputFilename == "-") {
