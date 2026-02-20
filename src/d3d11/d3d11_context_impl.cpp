@@ -3233,20 +3233,16 @@ public:
 
     auto &ShaderStage = state_.ShaderStages[Stage];
     for (unsigned Slot = StartSlot; Slot < StartSlot + NumSamplers; Slot++) {
-      auto pSampler = ppSamplers[Slot - StartSlot];
+      auto pSampler = static_cast<D3D11SamplerState *>(ppSamplers[Slot - StartSlot]);
       if (pSampler) {
         bool replaced = false;
         auto &entry = ShaderStage.Samplers.bind(Slot, {pSampler}, replaced);
         if (!replaced)
           continue;
-        if (auto expected = static_cast<D3D11SamplerState *>(pSampler)) {
-          entry.Sampler = expected;
-          EmitST([=, sampler = entry.Sampler->sampler()](ArgumentEncodingContext &enc) mutable {
-            enc.bindSampler<Stage>(Slot, forward_rc(sampler));
-          });
-        } else {
-          D3D11_ASSERT(0 && "wtf");
-        }
+        entry.Sampler = pSampler;
+        EmitST([=, sampler = pSampler->sampler()](ArgumentEncodingContext &enc) mutable {
+          enc.bindSampler<Stage>(Slot, forward_rc(sampler));
+        });
       } else {
         // BIND NULL
         if (ShaderStage.Samplers.unbind(Slot)) {
