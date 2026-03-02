@@ -43,7 +43,7 @@ bool leaveFullscreenMode(HWND hWindow, DXMTWindowState *pState,
   return false;
 }
 
-bool restoreDisplayMode() {
+bool restoreDisplayMode(HMONITOR hMonitor) {
   return false;
 }
 
