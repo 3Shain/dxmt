@@ -636,6 +636,7 @@ public:
   STDMETHODCALLTYPE
   GetFrameStatistics(DXGI_FRAME_STATISTICS *stats) final {
     DEBUG("DXGISwapChain::GetFrameStatistics: stub");
+    std::unique_lock<d3d11_device_mutex> lock(device_->mutex);
     stats->PresentCount = presentation_count_;
     stats->SyncRefreshCount = presentation_count_;
     stats->PresentRefreshCount = presentation_count_;
@@ -650,6 +651,7 @@ public:
     if (last_present_count == NULL) {
       return E_POINTER;
     }
+    std::unique_lock<d3d11_device_mutex> lock(device_->mutex);
     *last_present_count = presentation_count_;
     return S_OK;
   };
@@ -770,7 +772,7 @@ public:
     if constexpr (EnableMetalFX) {
       chunk->emitcc([
         this, vsync_duration, backbuffer = backbuffer_->texture(),
-        sync_state = SyncFrame(chunk->signal_frame_latency_fence_),
+        sync_state = SyncFrame(++presentation_count_),
         upscaled = upscaled_backbuffer_->texture(),
         scaler = this->metalfx_scaler, state = presenter->synchronizeLayerProperties()
       ](ArgumentEncodingContext &ctx) mutable {
@@ -788,7 +790,7 @@ public:
     } else {
       chunk->emitcc([
         this, vsync_duration, state = presenter->synchronizeLayerProperties(),
-        sync_state = SyncFrame(chunk->signal_frame_latency_fence_),
+        sync_state = SyncFrame(++presentation_count_),
         backbuffer = backbuffer_->texture()
       ](ArgumentEncodingContext &ctx) mutable {
         ctx.present(backbuffer, presenter, vsync_duration, state.metadata);
@@ -801,8 +803,6 @@ public:
     lock.unlock(); // since PresentBoundary() will and should only stall current thread
 
     cmd_queue.PresentBoundary();
-
-    presentation_count_ += 1;
 
     return hr;
   };
