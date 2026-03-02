@@ -251,4 +251,12 @@ void updateFullscreenWindow(HMONITOR hMonitor, HWND hWindow,
   }
 }
 
+bool isForeground(HWND hWindow) {
+  return ::GetForegroundWindow() == hWindow;
+}
+
+bool isMinimized(HWND hWindow) {
+  return ::IsIconic(hWindow);
+}
+
 } // namespace dxmt::wsi
