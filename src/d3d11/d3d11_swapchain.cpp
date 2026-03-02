@@ -587,11 +587,26 @@ public:
   STDMETHODCALLTYPE
   Present1(UINT SyncInterval, UINT PresentFlags,
            const DXGI_PRESENT_PARAMETERS *pPresentParameters) final {
+    if (SyncInterval > 4)
+      return DXGI_ERROR_INVALID_CALL;
+
     HRESULT hr = S_OK;
-    if (desc_.Width == 0 || desc_.Height == 0)
+    bool window_minimized = wsi::isMinimized(hWnd);
+    if ((window_minimized || desc_.Width == 0 || desc_.Height == 0)
+        // MSDN: You will not receive DXGI_STATUS_OCCLUDED if you're using a flip model swap chain.
+        && desc_.SwapEffect <= DXGI_SWAP_EFFECT_SEQUENTIAL)
       hr = DXGI_STATUS_OCCLUDED;
     if (PresentFlags & DXGI_PRESENT_TEST)
       return hr;
+
+    std::unique_lock<d3d11_device_mutex> lock(device_->mutex);
+
+    device_context_->PrepareFlush();
+    if (hr == DXGI_STATUS_OCCLUDED) {
+      // flush commands without presenting
+      device_context_->Commit();
+      return hr;
+    }
 
     double vsync_duration =
         std::max(SyncInterval * 1.0 /
@@ -599,9 +614,6 @@ public:
                                                : init_refresh_rate_),
                  preferred_max_frame_rate ? 1.0 / preferred_max_frame_rate : 0);
 
-    std::unique_lock<d3d11_device_mutex> lock(device_->mutex);
-
-    device_context_->PrepareFlush();
     auto &cmd_queue = device_->GetDXMTDevice().queue();
     auto chunk = cmd_queue.CurrentChunk();
     chunk->signal_frame_latency_fence_ = cmd_queue.CurrentFrameSeq();
