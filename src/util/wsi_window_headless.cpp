@@ -57,4 +57,8 @@ void updateFullscreenWindow(HMONITOR hMonitor, HWND hWindow,
                             bool forceTopmost) {
 }
 
+bool isForeground(HWND hWindow) { return true; }
+
+bool isMinimized(HWND hWindow) { return false; }
+
 } // namespace dxmt::wsi
