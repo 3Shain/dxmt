@@ -70,31 +70,6 @@ static bool setMonitorDisplayMode(HMONITOR hMonitor, DEVMODEW *pMode) {
   return status == DISP_CHANGE_SUCCESSFUL;
 }
 
-static BOOL CALLBACK restoreDisplayModeCallback(HMONITOR hMonitor, HDC hDC,
-                                                LPRECT pRect,
-                                                LPARAM pUserdata) {
-  auto success = reinterpret_cast<bool *>(pUserdata);
-
-  DEVMODEW devMode = {};
-  devMode.dmSize = sizeof(devMode);
-
-  if (!getMonitorDisplayMode(hMonitor, ENUM_REGISTRY_SETTINGS, &devMode)) {
-    *success = false;
-    return false;
-  }
-
-  Logger::info(str::format("Restoring display mode: ", devMode.dmPelsWidth, "x",
-                           devMode.dmPelsHeight, "@",
-                           devMode.dmDisplayFrequency));
-
-  if (!setMonitorDisplayMode(hMonitor, &devMode)) {
-    *success = false;
-    return false;
-  }
-
-  return true;
-}
-
 void getWindowSize(HWND hWindow, uint32_t *pWidth, uint32_t *pHeight) {
   RECT rect = {};
   ::GetClientRect(hWindow, &rect);
@@ -144,10 +119,6 @@ bool setWindowMode(HMONITOR hMonitor, HWND hWindow, const WsiMode &mode) {
     devMode.dmDisplayFrequency =
         mode.refreshRate.numerator / mode.refreshRate.denominator;
   }
-
-  Logger::info(str::format("Setting display mode: ", devMode.dmPelsWidth, "x",
-                           devMode.dmPelsHeight, "@",
-                           devMode.dmDisplayFrequency));
 
   return setMonitorDisplayMode(hMonitor, &devMode);
 }
@@ -211,13 +182,28 @@ bool leaveFullscreenMode(HWND hWindow, DXMTWindowState *pState,
   return true;
 }
 
-bool restoreDisplayMode() {
-  bool success = true;
-  bool result =
-      ::EnumDisplayMonitors(nullptr, nullptr, &restoreDisplayModeCallback,
-                            reinterpret_cast<LPARAM>(&success));
-
-  return result && success;
+bool restoreDisplayMode(HMONITOR hMonitor) {
+  WCHAR device_name[32];
+  DEVMODEW current_mode, registry_mode;
+  getDisplayName(hMonitor, device_name);
+  if (!EnumDisplaySettingsExW(device_name, ENUM_CURRENT_SETTINGS, &current_mode, 0))
+    return false;
+  if (!EnumDisplaySettingsExW(device_name, ENUM_REGISTRY_SETTINGS, &registry_mode, 0))
+    return false;
+  do {
+    if (current_mode.dmPelsWidth != registry_mode.dmPelsWidth)
+      break;
+    if (current_mode.dmPelsHeight != registry_mode.dmPelsHeight)
+      break;
+    if (current_mode.dmBitsPerPel != registry_mode.dmBitsPerPel)
+      break;
+    if ((current_mode.dmFields & registry_mode.dmFields & DM_DISPLAYFREQUENCY) &&
+        current_mode.dmDisplayFrequency != registry_mode.dmDisplayFrequency)
+      break;
+    return true;
+  } while (0);
+  LONG ret = ChangeDisplaySettingsExW(device_name, NULL, NULL, 0, NULL);
+  return ret == DISP_CHANGE_SUCCESSFUL;
 }
 
 HMONITOR getWindowMonitor(HWND hWindow) {

@@ -75,7 +75,7 @@ bool leaveFullscreenMode(HWND hWindow, DXMTWindowState *pState,
  *
  * \returns \c true on success, \c false on failure
  */
-bool restoreDisplayMode();
+bool restoreDisplayMode(HMONITOR hMonitor);
 
 /**
  * \brief The monitor a window is on
