@@ -8,6 +8,8 @@
  * See <https://github.com/doitsujin/dxvk/blob/master/LICENSE>
  */
 
+#if !defined(DXMT_WSI_SDL2) && !defined(DXMT_WSI_SDL3)
+
 #include "wsi_monitor.hpp"
 
 namespace dxmt::wsi {
@@ -46,3 +48,5 @@ bool getDesktopDisplayMode(HMONITOR hMonitor, WsiMode *pMode) {
 }
 
 } // namespace dxmt::wsi
+
+#endif // !defined(DXMT_WSI_SDL2) && !defined(DXMT_WSI_SDL3)
