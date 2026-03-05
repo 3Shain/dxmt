@@ -142,6 +142,16 @@ add_project_arguments('-DDXMT_NATIVE=1', language: 'cpp')
 add_project_arguments('-DDXMT_NATIVE=1', language: 'c')
 endif
 
+if get_option('dxmt_wsi_sdl2') == true
+  add_project_arguments('-DDXMT_WSI_SDL2=1', language: 'cpp')
+  add_project_arguments('-DDXMT_WSI_SDL2=1', language: 'c')
+endif
+
+if get_option('dxmt_wsi_sdl3') == true
+  add_project_arguments('-DDXMT_WSI_SDL3=1', language: 'cpp')
+  add_project_arguments('-DDXMT_WSI_SDL3=1', language: 'c')
+endif
+
 add_project_arguments('-DDXMT_PAGE_SIZE=4096', language: 'cpp')
 
 dxmt_version = vcs_tag(

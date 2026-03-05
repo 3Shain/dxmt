@@ -8,6 +8,8 @@
  * See <https://github.com/doitsujin/dxvk/blob/master/LICENSE>
  */
 
+#if !defined(DXMT_WSI_SDL2) && !defined(DXMT_WSI_SDL3)
+
 #include "wsi_window.hpp"
 #include "wsi_monitor.hpp"
 
@@ -57,4 +59,10 @@ void updateFullscreenWindow(HMONITOR hMonitor, HWND hWindow,
                             bool forceTopmost) {
 }
 
+WMT::Object createMetalViewFromHWND(intptr_t hwnd, WMT::Device device, WMT::MetalLayer &layer) {
+  return WMT::Object();
+}
+
 } // namespace dxmt::wsi
+
+#endif // !defined(DXMT_WSI_SDL2) && !defined(DXMT_WSI_SDL3)
