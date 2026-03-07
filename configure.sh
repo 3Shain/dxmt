@@ -1,5 +1,8 @@
 NATIVE_BUILD=""
 
+# detect native arch by default
+NATIVE_ARCH="$(uname -m)"
+
 while [[ $# -gt 0 ]]; do
   case $1 in
     -n|--native)
@@ -26,21 +29,39 @@ fi
 git clone --depth 1 --branch llvmorg-15.0.7 https://github.com/llvm/llvm-project.git toolchains/llvm-project 
 
 if test -n "$NATIVE_BUILD"; then
-  mkdir -p ./toolchains/llvm-darwin-build-arm64
-  cmake -B ./toolchains/llvm-darwin-build-arm64 -S ./toolchains/llvm-project/llvm \
-    -DCMAKE_INSTALL_PREFIX="$(pwd)/toolchains/llvm-darwin" \
-    -DCMAKE_OSX_ARCHITECTURES=arm64 \
-    -DLLVM_HOST_TRIPLE=arm64-apple-darwin \
-    -DLLVM_ENABLE_ASSERTIONS=On \
-    -DLLVM_ENABLE_ZSTD=Off \
-    -DCMAKE_BUILD_TYPE=Release \
-    -DLLVM_TARGETS_TO_BUILD="" \
-    -DLLVM_BUILD_TOOLS=Off \
-    -DBUG_REPORT_URL="https://github.com/3Shain/dxmt" \
-    -DPACKAGE_VENDOR="DXMT" \
-    -DLLVM_VERSION_PRINTER_SHOW_HOST_TARGET_INFO=Off \
-    -G Ninja
-  pushd ./toolchains/llvm-darwin-build-arm64
+  if [ "$NATIVE_ARCH" = "arm64" ]; then
+    mkdir -p ./toolchains/llvm-darwin-build-arm64
+    cmake -B ./toolchains/llvm-darwin-build-arm64 -S ./toolchains/llvm-project/llvm \
+      -DCMAKE_INSTALL_PREFIX="$(pwd)/toolchains/llvm-darwin" \
+      -DCMAKE_OSX_ARCHITECTURES=arm64 \
+      -DLLVM_HOST_TRIPLE=arm64-apple-darwin \
+      -DLLVM_ENABLE_ASSERTIONS=On \
+      -DLLVM_ENABLE_ZSTD=Off \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DLLVM_TARGETS_TO_BUILD="" \
+      -DLLVM_BUILD_TOOLS=Off \
+      -DBUG_REPORT_URL="https://github.com/3Shain/dxmt" \
+      -DPACKAGE_VENDOR="DXMT" \
+      -DLLVM_VERSION_PRINTER_SHOW_HOST_TARGET_INFO=Off \
+      -G Ninja
+    pushd ./toolchains/llvm-darwin-build-arm64
+  else
+    mkdir -p ./toolchains/llvm-darwin-build-x86_64
+    cmake -B ./toolchains/llvm-darwin-build-x86_64 -S ./toolchains/llvm-project/llvm \
+      -DCMAKE_INSTALL_PREFIX="$(pwd)/toolchains/llvm-darwin" \
+      -DCMAKE_OSX_ARCHITECTURES=x86_64 \
+      -DLLVM_HOST_TRIPLE=x86_64-apple-darwin \
+      -DLLVM_ENABLE_ASSERTIONS=On \
+      -DLLVM_ENABLE_ZSTD=Off \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DLLVM_TARGETS_TO_BUILD="" \
+      -DLLVM_BUILD_TOOLS=Off \
+      -DBUG_REPORT_URL="https://github.com/3Shain/dxmt" \
+      -DPACKAGE_VENDOR="DXMT" \
+      -DLLVM_VERSION_PRINTER_SHOW_HOST_TARGET_INFO=Off \
+      -G Ninja
+    pushd ./toolchains/llvm-darwin-build-x86_64
+  fi 
   ninja
   ninja install
   popd
