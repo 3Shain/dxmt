@@ -175,6 +175,8 @@ public:
                            (double)current_mode.refreshRate.denominator;
     }
 
+    handle_alt_tab_ = Config::getInstance().getOption<bool>("dxgi.handleAltTab", false);
+
     hud.initialize(GetVersionDescriptionText(device_->GetDirectXVersion(), device_->GetFeatureLevel()));
 
     backbuffer_desc_ = D3D11_TEXTURE2D_DESC1 {
@@ -436,7 +438,7 @@ public:
   GetFullscreenState(BOOL *pFullscreen, IDXGIOutput **ppTarget) final {
     HRESULT hr = S_OK;
 
-    if (!fullscreen_desc_.Windowed && !wsi::isForeground(hWnd))
+    if (handle_alt_tab_ && !fullscreen_desc_.Windowed && !wsi::isForeground(hWnd))
       SetFullscreenState(FALSE, nullptr);
 
     if (pFullscreen != nullptr)
@@ -738,7 +740,8 @@ public:
         // MSDN: You will not receive DXGI_STATUS_OCCLUDED if you're using a flip model swap chain.
         && desc_.SwapEffect <= DXGI_SWAP_EFFECT_SEQUENTIAL)
       hr = DXGI_STATUS_OCCLUDED;
-    bool should_exit_fs = !fullscreen_desc_.Windowed && !window_minimized && !wsi::isForeground(hWnd);
+    bool should_exit_fs = handle_alt_tab_ // At the moment this is still broken for certain games
+                          && !fullscreen_desc_.Windowed && !window_minimized && !wsi::isForeground(hWnd);
     if (hr == S_OK && should_exit_fs)
       hr = DXGI_STATUS_OCCLUDED;
     if (PresentFlags & DXGI_PRESENT_TEST)
@@ -1046,6 +1049,8 @@ private:
   Rc<Presenter> presenter;
   ModeSetGuard modeset_guard_;
   dxmt::mutex mutex_;
+
+  bool handle_alt_tab_;
 
   std::conditional<EnableMetalFX, WMT::Reference<WMT::FXSpatialScaler>, std::monostate>::type metalfx_scaler;
   std::conditional<EnableMetalFX, Com<D3D11ResourceCommon>, std::monostate>::type upscaled_backbuffer_;
