@@ -344,15 +344,13 @@ CreateMTLTextureDescriptorInternal(
   }
   pDescOut->pixel_format = ORIGINAL_FORMAT(metal_format.PixelFormat);
 
-  WMTTextureUsage metal_usage = (WMTTextureUsage)0; // actually corresponding to BindFlags
+  WMTTextureUsage metal_usage = WMTTextureUsageShaderRead;
 
   if (BindFlags & (D3D11_BIND_CONSTANT_BUFFER | D3D11_BIND_VERTEX_BUFFER |
                    D3D11_BIND_INDEX_BUFFER | D3D11_BIND_STREAM_OUTPUT)) {
     ERR("CreateMTLTextureDescriptorInternal: invalid bind flags");
     return E_FAIL;
   } else {
-    if (BindFlags & D3D11_BIND_SHADER_RESOURCE)
-      metal_usage |= WMTTextureUsageShaderRead;
     if (BindFlags & (D3D11_BIND_RENDER_TARGET | D3D11_BIND_DEPTH_STENCIL))
       metal_usage |= WMTTextureUsageRenderTarget;
     if (BindFlags & D3D11_BIND_UNORDERED_ACCESS) {
