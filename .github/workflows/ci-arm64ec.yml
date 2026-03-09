@@ -1,0 +1,55 @@
+name: CI Build (ARM64EC)
+
+on:
+  push:
+    branches:
+    - main
+  pull_request:
+    branches:
+    - main
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+      - name: Cache Toolchains
+        id: cache-toolchains
+        uses: actions/cache@v4
+        with:
+          key: cache-key-arm64ec-${{ hashFiles('configure-arm64ec.sh') }}
+          restore-keys: |
+            cache-key-arm64ec-${{ hashFiles('configure-arm64ec.sh') }}
+          path: |
+            ./toolchains
+      - name: Install Development Environment
+        run: |
+          pip3 install meson==1.10.0 --break-system-packages
+      - name: Configuration
+        if: ${{ steps.cache-toolchains.outputs.cache-hit != 'true' }}
+        run: ./configure-arm64ec.sh
+      - name: Save Cache
+        id: cache-save
+        if: ${{ steps.cache-toolchains.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v4
+        with:
+          key: cache-key-arm64ec-${{ hashFiles('configure-arm64ec.sh') }}
+          path: |
+            ./toolchains
+      - name: Select Xcode Version
+        run: sudo xcode-select -s /Applications/Xcode_16.1.app
+      - name: Build
+        run: |
+          export PATH="$PATH:$GITHUB_WORKSPACE/toolchains/llvm-mingw-20251216-ucrt-macos-universal/bin"
+          meson setup --cross-file build-arm64ec.txt -Dwine_builtin_dll=true -Dnative_llvm_path=toolchains/llvm-darwin -Dwine_install_path=toolchains/wine-11.2 build --buildtype debugoptimized
+          meson compile -C build
+      - name: Tar
+        run: tar -zcf artifacts-arm64ec.tar.gz build/src
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: artifacts-arm64ec
+          path: artifacts-arm64ec.tar.gz
