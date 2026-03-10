@@ -70,6 +70,6 @@ meson compile -C build
 As an alternative for the default wine based build DXMT can be built natively on macOS for Apple Silicon to allow games to be ported more easily to this platform. In order to do this run the following commands after cloning the repository
 ```sh
 ./configure.sh --native
-meson setup -Ddxmt_native=true -Dnative_llvm_path=toolchains/llvm-darwin build
+meson setup -Dnative_llvm_path=toolchains/llvm-darwin build
 meson compile -C build
 ```
