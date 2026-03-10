@@ -23,7 +23,7 @@ util_src = files([
   'sha1/sha1_util.cpp',
 ])
 
-if dxmt_native
+if not dxmt_crossbuild
   util_src += files([
     'wsi_monitor_headless.cpp',
     'wsi_window_headless.cpp',
