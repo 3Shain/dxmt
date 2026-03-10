@@ -44,7 +44,7 @@ jobs:
         run: sudo xcode-select -s /Applications/Xcode_16.1.app
       - name: Build (release)
         run: |
-          meson setup -Ddxmt_native=true -Dnative_llvm_path=toolchains/llvm-darwin build --buildtype release
+          meson setup -Dnative_llvm_path=toolchains/llvm-darwin build --buildtype release
           meson compile -C build
       - name: Tar (release)
         run: tar -zcf artifacts-release.tar.gz build/src
