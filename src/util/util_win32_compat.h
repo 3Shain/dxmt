@@ -1,6 +1,6 @@
 #pragma once
 
-#if defined(DXMT_NATIVE)
+#ifndef _WIN32
 
 #include <windows.h>
 

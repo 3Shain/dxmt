@@ -11,7 +11,7 @@
 #define STATIC_ASSERT(x)
 #endif
 
-#ifndef DXMT_NATIVE
+#ifdef _WIN32
 #define WINEMETAL_IMPORT __declspec(dllimport)
 #else
 #define WINEMETAL_IMPORT

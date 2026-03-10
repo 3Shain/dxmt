@@ -473,7 +473,7 @@ typedef struct _D3DKMT_OPENNTHANDLEFROMNAME
   HANDLE hNtHandle;
 } D3DKMT_OPENNTHANDLEFROMNAME;
 
-#if !defined(DXMT_NATIVE)
+#ifdef _WIN32
 
 extern "C"
 {
