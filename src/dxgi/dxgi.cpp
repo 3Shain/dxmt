@@ -9,7 +9,7 @@ Logger Logger::s_instance("dxgi.log");
 
 VendorExtension g_extension_enabled = VendorExtension::None;
 
-#ifndef DXMT_NATIVE
+#ifdef _WIN32
 std::once_flag nvext_init;
 
 static void InitializeVendorExtensionNV() {
@@ -76,7 +76,7 @@ extern "C" BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason,
 
 extern "C" HRESULT __stdcall DXGIGetDebugInterface1(UINT Flags, REFIID riid,
                                                     void **ppDebug) {
-#ifndef DXMT_NATIVE
+#ifdef _WIN32
   // it's a DXMT implementation detail
   if (riid == DXMT_NVEXT_GUID) {
     std::call_once(nvext_init, InitializeVendorExtensionNV);

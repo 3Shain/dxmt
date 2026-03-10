@@ -137,11 +137,6 @@ if dxmt_debug
 add_project_arguments('-DDXMT_DEBUG=1', language: 'cpp')
 endif
 
-if not dxmt_crossbuild
-add_project_arguments('-DDXMT_NATIVE=1', language: 'cpp')
-add_project_arguments('-DDXMT_NATIVE=1', language: 'c')
-endif
-
 add_project_arguments('-DDXMT_PAGE_SIZE=4096', language: 'cpp')
 
 dxmt_version = vcs_tag(

@@ -336,7 +336,7 @@ public:
       policy = SCHED_OTHER;
       break;
     case ThreadPriority::Lowest:
-#ifdef DXMT_NATIVE
+#ifdef __APPLE__
       policy = SCHED_FIFO; /* No SCHED_IDLE on macOS */
 #else
       policy = SCHED_IDLE;

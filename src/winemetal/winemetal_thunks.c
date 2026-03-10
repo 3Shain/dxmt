@@ -1,4 +1,4 @@
-#ifndef DXMT_NATIVE
+#ifdef _WIN32
 #define WINEMETAL_API __declspec(dllexport)
 #else
 #define WINEMETAL_API
