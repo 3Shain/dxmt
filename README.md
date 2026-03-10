@@ -56,7 +56,7 @@ The following environment variables can be used for **debugging** purposes.
 After cloning this repository (**including submodules**), inside the DXMT directory, run
 ```sh
 ./configure.sh
-meson setup --cross-file build-win64.txt --native-file build-osx.txt -Dnative_llvm_path=toolchains/llvm-darwin -Dwine_install_path=toolchains/wine build
+meson setup --cross-file build-win64.txt -Dnative_llvm_path=toolchains/llvm-darwin -Dwine_install_path=toolchains/wine build
 ```
 `./configure.sh` will take some time (~1 hour) to configure the development environment, you only run it once.
 
@@ -70,6 +70,6 @@ meson compile -C build
 As an alternative for the default wine based build DXMT can be built natively on macOS for Apple Silicon to allow games to be ported more easily to this platform. In order to do this run the following commands after cloning the repository
 ```sh
 ./configure.sh --native
-meson setup --native-file build-osx.txt -Ddxmt_native=true -Dnative_llvm_path=toolchains/llvm-darwin build
+meson setup -Ddxmt_native=true -Dnative_llvm_path=toolchains/llvm-darwin build
 meson compile -C build
 ```
