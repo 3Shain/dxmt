@@ -860,6 +860,7 @@ enum WMTBlitCommandType : uint16_t {
   WMTBlitCommandWaitForFence,
   WMTBlitCommandUpdateFence,
   WMTBlitCommandFillBuffer,
+  WMTBlitCommandResolveCounters,
 };
 
 struct wmtcmd_base {
@@ -952,6 +953,17 @@ struct wmtcmd_blit_fillbuffer {
   uint64_t offset;
   uint64_t length;
   uint8_t value;
+};
+
+struct wmtcmd_blit_resolvecounters {
+  enum WMTBlitCommandType type;
+  uint16_t reserved[3];
+  struct WMTMemoryPointer next;
+  obj_handle_t sample_buffer;
+  uint32_t start;
+  uint32_t len;
+  obj_handle_t dst_buffer;
+  uint64_t dst_offset;
 };
 
 WINEMETAL_API void MTLBlitCommandEncoder_encodeCommands(obj_handle_t encoder, const struct wmtcmd_base *cmd_head);
@@ -1847,5 +1859,23 @@ WINEMETAL_API obj_handle_t MTLDevice_newSharedEventWithMachPort(obj_handle_t dev
 WINEMETAL_API uint64_t MTLDevice_registryID(obj_handle_t device);
 
 WINEMETAL_API bool MTLSharedEvent_waitUntilSignaledValue(obj_handle_t event, uint64_t value, uint64_t timeout);
+
+WINEMETAL_API obj_handle_t
+MTLCounterSampleBuffer_newTimestampBuffer(obj_handle_t device, uint32_t sample_count, bool shared);
+
+WINEMETAL_API void MTLCounterSampleBuffer_resolveCounterRange(
+    obj_handle_t sample_buffer, uint32_t start, uint32_t len, void *data_out, uint64_t data_length
+);
+
+struct WMTSampleBufferAttachmentInfo {
+  obj_handle_t sample_buffer;
+  uint64_t start_of_encoder_sample_index;
+  uint64_t end_of_encoder_sample_index;
+};
+
+WINEMETAL_API obj_handle_t MTLCommandBuffer_blitCommandEncoderWithSampleBuffers(
+    obj_handle_t cmdbuf, struct WMTSampleBufferAttachmentInfo *sample_buffer_attachments,
+    uint64_t num_sample_buffer_attachments
+);
 
 #endif

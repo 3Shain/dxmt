@@ -349,6 +349,28 @@ struct unixcall_mtlsharedevent_waituntilsignaledvalue {
   bool ret_timeout;
 };
 
+struct unixcall_mtlcountersamplebuffer_newtimestampbuffer {
+  obj_handle_t device;
+  uint32_t sample_count;
+  uint32_t shared;
+  obj_handle_t ret;
+};
+
+struct unixcall_mtlcountersamplebuffer_resolvecounterrange {
+  obj_handle_t sample_buffer;
+  uint32_t start;
+  uint32_t len;
+  struct WMTMemoryPointer data_out;
+  uint64_t data_length;
+};
+
+struct unixcall_mtlcommandbuffer_blitcommandencoderwithsamplebuffers {
+  obj_handle_t cmdbuf;
+  struct WMTMemoryPointer attachments;
+  uint64_t num_attachments;
+  obj_handle_t ret;
+};
+
 #pragma pack(pop)
 
 #endif
