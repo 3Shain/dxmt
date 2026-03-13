@@ -96,7 +96,7 @@ public:
     list_enc.execute(enc);
     attached_cmdbuf = cmdbuf;
     auto t1 = clock::now();
-    visibility_readback = enc.flushCommands(cmdbuf, chunk_id, chunk_event_id);
+    readback = enc.flushCommands(cmdbuf, chunk_id, chunk_event_id);
     auto t2 = clock::now();
     statistics.encode_prepare_interval += (t1 - t0);
     statistics.encode_flush_interval += (t2 - t1);
@@ -106,7 +106,7 @@ public:
   uint64_t chunk_event_id;
   uint64_t frame_;
   uint64_t signal_frame_latency_fence_;
-  std::unique_ptr<VisibilityResultReadback> visibility_readback;
+  QueryReadbacks readback;
   uint64_t resource_initializer_event_id;
 
 private:
@@ -124,7 +124,7 @@ public:
   void
   reset() noexcept {
     signal_frame_latency_fence_ = ~0ull;
-    visibility_readback = {};
+    readback = {};
     list_enc.reset();
     ref_tracker.clear();
     attached_cmdbuf = nullptr;

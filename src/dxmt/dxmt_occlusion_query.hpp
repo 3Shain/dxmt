@@ -6,6 +6,7 @@
 #include <atomic>
 #include <cassert>
 #include <cstdint>
+#include <memory>
 #include <vector>
 
 namespace dxmt {
@@ -188,6 +189,10 @@ public:
   std::vector<Rc<VisibilityResultQuery>> queries;
   WMTBufferInfo visibility_result_heap_info;
   WMT::Reference<WMT::Buffer> visibility_result_heap;
+};
+
+struct QueryReadbacks {
+  std::unique_ptr<VisibilityResultReadback> visibility;
 };
 
 } // namespace dxmt
