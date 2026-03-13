@@ -748,6 +748,14 @@ _MTLBlitCommandEncoder_encodeCommands(void *obj) {
       [encoder fillBuffer:(id<MTLBuffer>)body->buffer range:NSMakeRange(body->offset, body->length) value:body->value];
       break;
     }
+    case WMTBlitCommandResolveCounters: {
+      struct wmtcmd_blit_resolvecounters *body = (struct wmtcmd_blit_resolvecounters *)next;
+      [encoder resolveCounters:(id<MTLCounterSampleBuffer>)body->sample_buffer
+                       inRange:NSMakeRange(body->start, body->len)
+             destinationBuffer:(id<MTLBuffer>)body->dst_buffer
+             destinationOffset:body->dst_offset];
+      break;
+    }
     }
 
     next = next->next.ptr;
@@ -2660,6 +2668,63 @@ _MTLSharedEvent_waitUntilSignaledValue(void *obj) {
   return STATUS_SUCCESS;
 }
 
+static NTSTATUS
+_MTLCounterSampleBuffer_newTimestampBuffer(void *obj) {
+  struct unixcall_mtlcountersamplebuffer_newtimestampbuffer *params = obj;
+  id<MTLDevice> device = (id<MTLDevice>)params->device;
+
+  MTLCounterSampleBufferDescriptor *desc = [[MTLCounterSampleBufferDescriptor alloc] init];
+  NSArray<id<MTLCounterSet>> *counter_sets = [device counterSets];
+  id<MTLCounterSet> timestamp_counter_set = nil;
+  for (id<MTLCounterSet> counterSet in counter_sets) {
+    if ([counterSet.name isEqualToString:MTLCommonCounterSetTimestamp]) {
+      timestamp_counter_set = counterSet;
+      break;
+    }
+  }
+  desc.counterSet = timestamp_counter_set;
+  desc.sampleCount = params->sample_count;
+  desc.storageMode = params->shared ? MTLStorageModeShared : MTLStorageModePrivate;
+
+  NSError *error = nil;
+  params->ret = (obj_handle_t)[device newCounterSampleBufferWithDescriptor:desc error:&error];
+
+  [desc release];
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_MTLCounterSampleBuffer_resolveCounterRange(void *obj) {
+  struct unixcall_mtlcountersamplebuffer_resolvecounterrange *params = obj;
+  id<MTLCounterSampleBuffer> sample_buffer = (id<MTLCounterSampleBuffer>)params->sample_buffer;
+
+  NSData *data = [sample_buffer resolveCounterRange:NSMakeRange(params->start, params->len)];
+  if (data && params->data_out.ptr) {
+    [data getBytes:params->data_out.ptr length:params->data_length];
+  }
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_MTLCommandBuffer_blitCommandEncoderWithSampleBuffers(void *obj) {
+  struct unixcall_mtlcommandbuffer_blitcommandencoderwithsamplebuffers *params = obj;
+  id<MTLCommandBuffer> cmdbuf = (id<MTLCommandBuffer>)params->cmdbuf;
+  struct WMTSampleBufferAttachmentInfo *attachments = params->attachments.ptr;
+
+  MTLBlitPassDescriptor *blit_desc = [[MTLBlitPassDescriptor alloc] init];
+  for (uint64_t i = 0; i < params->num_attachments; i++) {
+    MTLBlitPassSampleBufferAttachmentDescriptor *desc = blit_desc.sampleBufferAttachments[i];
+    desc.sampleBuffer = (id<MTLCounterSampleBuffer>)attachments[i].sample_buffer;
+    desc.startOfEncoderSampleIndex = attachments[i].start_of_encoder_sample_index;
+    desc.endOfEncoderSampleIndex = attachments[i].end_of_encoder_sample_index;
+  }
+
+  params->ret = (obj_handle_t)[cmdbuf blitCommandEncoderWithDescriptor:blit_desc];
+
+  [blit_desc release];
+  return STATUS_SUCCESS;
+}
+
 /*
  * Definition from cache.c
  */
@@ -2798,6 +2863,9 @@ const void *__wine_unix_call_funcs[] = {
     &_MTLDevice_newSharedEventWithMachPort,
     &_MTLDevice_registryID,
     &_MTLSharedEvent_waitUntilSignaledValue,
+    &_MTLCounterSampleBuffer_newTimestampBuffer,
+    &_MTLCounterSampleBuffer_resolveCounterRange,
+    &_MTLCommandBuffer_blitCommandEncoderWithSampleBuffers,
 };
 
 #ifndef DXMT_NATIVE
@@ -2929,5 +2997,8 @@ const void *__wine_unix_call_wow64_funcs[] = {
     &_MTLDevice_newSharedEventWithMachPort,
     &_MTLDevice_registryID,
     &_MTLSharedEvent_waitUntilSignaledValue,
+    &_MTLCounterSampleBuffer_newTimestampBuffer,
+    &_MTLCounterSampleBuffer_resolveCounterRange,
+    &_MTLCommandBuffer_blitCommandEncoderWithSampleBuffers,
 };
 #endif

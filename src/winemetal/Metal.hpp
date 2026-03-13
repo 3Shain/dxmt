@@ -204,6 +204,14 @@ class Fence : public Object {
 public:
 };
 
+class CounterSampleBuffer : public Object {
+public:
+  void
+  resolveCounterRange(uint32_t start, uint32_t len, void *data_out, uint64_t data_length) {
+    MTLCounterSampleBuffer_resolveCounterRange(handle, start, len, data_out, data_length);
+  }
+};
+
 class Resource : public Object {
 public:
 };
@@ -482,6 +490,19 @@ public:
     cmd.fence = fence.handle;
     MTLBlitCommandEncoder_encodeCommands(handle, (const wmtcmd_base *)&cmd);
   }
+
+  void
+  resolveCounters(CounterSampleBuffer sample_buffer, uint32_t start, uint32_t len, Buffer dst, uint64_t dst_offset) {
+    struct wmtcmd_blit_resolvecounters cmd;
+    cmd.type = WMTBlitCommandResolveCounters;
+    cmd.next.set(nullptr);
+    cmd.sample_buffer = sample_buffer.handle;
+    cmd.start = start;
+    cmd.len = len;
+    cmd.dst_buffer = dst.handle;
+    cmd.dst_offset = dst_offset;
+    MTLBlitCommandEncoder_encodeCommands(handle, (const wmtcmd_base *)&cmd);
+  }
 };
 
 class ComputeCommandEncoder : public CommandEncoder {
@@ -611,6 +632,11 @@ public:
   BlitCommandEncoder
   blitCommandEncoder() {
     return BlitCommandEncoder{MTLCommandBuffer_blitCommandEncoder(handle)};
+  }
+
+  BlitCommandEncoder
+  blitCommandEncoderWithSampleBuffers(WMTSampleBufferAttachmentInfo *attachments, uint64_t num_attachments) {
+    return BlitCommandEncoder{MTLCommandBuffer_blitCommandEncoderWithSampleBuffers(handle, attachments, num_attachments)};
   }
 
   ComputeCommandEncoder
@@ -864,6 +890,11 @@ public:
   Reference<Texture>
   newSharedTexture(WMTTextureInfo &info) {
     return Reference<Texture>(MTLDevice_newSharedTexture(handle, &info));
+  }
+
+  Reference<CounterSampleBuffer>
+  newCounterSampleBuffer(uint32_t sample_count, bool shared = true) {
+    return Reference<CounterSampleBuffer>(MTLCounterSampleBuffer_newTimestampBuffer(handle, sample_count, shared));
   }
 };
 
