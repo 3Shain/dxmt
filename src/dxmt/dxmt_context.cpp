@@ -689,7 +689,7 @@ ArgumentEncodingContext::$$setEncodingContext(uint64_t seq_id, uint64_t frame_id
 
 constexpr unsigned kEncoderOptimizerThreshold = 64;
 
-std::unique_ptr<VisibilityResultReadback>
+QueryReadbacks
 ArgumentEncodingContext::flushCommands(WMT::CommandBuffer cmdbuf, uint64_t seqId, uint64_t event_seq_id) {
   assert(!encoder_current);
 
@@ -722,10 +722,10 @@ ArgumentEncodingContext::flushCommands(WMT::CommandBuffer cmdbuf, uint64_t seqId
     }
   }
 
-  std::unique_ptr<VisibilityResultReadback> visibility_readback {};
+  QueryReadbacks readbacks{};
 
   if (auto count = vro_state_.reset()) {
-    visibility_readback = std::make_unique<VisibilityResultReadback>(
+    readbacks.visibility = std::make_unique<VisibilityResultReadback>(
         device_, seqId, count, pending_queries_
     );
   }
@@ -784,8 +784,8 @@ ArgumentEncodingContext::flushCommands(WMT::CommandBuffer cmdbuf, uint64_t seqId
         render_pass_info.render_target_height = data->render_target_height;
       }
       if (data->use_visibility_result) {
-        assert(visibility_readback);
-        render_pass_info.visibility_buffer = visibility_readback->visibility_result_heap;
+        assert(readbacks.visibility);
+        render_pass_info.visibility_buffer = readbacks.visibility->visibility_result_heap;
       }
       auto gpu_buffer_ = data->allocated_argbuf;
       auto encoder = cmdbuf.renderCommandEncoder(render_pass_info);
@@ -999,7 +999,7 @@ ArgumentEncodingContext::flushCommands(WMT::CommandBuffer cmdbuf, uint64_t seqId
     }
   }
 
-  return visibility_readback;
+  return readbacks;
 }
 
 DXMT_ENCODER_LIST_OP
