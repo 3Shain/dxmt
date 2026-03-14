@@ -191,7 +191,7 @@ extern "C" HRESULT __stdcall D3D11On12CreateDevice(
 
 } // namespace dxmt
 
-#ifndef DXMT_NATIVE
+#ifdef _WIN32
 
 BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID reserved) {  
   if (reason != DLL_PROCESS_ATTACH)

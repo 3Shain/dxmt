@@ -87,6 +87,6 @@ fi
 
 ## configure
 # export PATH="$PATH:$(pwd)/toolchains/llvm-mingw-20231017-ucrt-macos-universal/bin"
-# meson setup --cross-file build-win64.txt --native-file build-osx.txt build
+# meson setup --cross-file build-win64.txt build
 ## build
 # meson compile -C build

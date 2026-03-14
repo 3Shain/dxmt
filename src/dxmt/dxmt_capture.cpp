@@ -51,7 +51,7 @@ CaptureState::scheduleNextFrameCapture(uint64_t next) {
 
 bool
 CaptureState::shouldCaptureNextFrame() {
-#ifndef DXMT_NATIVE
+#ifdef _WIN32
   if (state != State::Idle)
     return false;
   SHORT state_ = GetAsyncKeyState(VK_F10);

@@ -92,7 +92,7 @@ template <size_t N> constexpr GUID make_guid(const char (&str)[N]) {
 }
 } // namespace dxmt::guid
 
-#ifdef DXMT_NATIVE
+#ifndef __MINGW32__
 
 #ifdef __cplusplus
 # define DXMT_DEFINE_GUID(iid, guid_str) \

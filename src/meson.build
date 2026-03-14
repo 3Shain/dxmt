@@ -1,7 +1,7 @@
 subdir('util')
 subdir('airconv')
 
-if dxmt_native
+if not dxmt_crossbuild
 subdir('nativemetal')
 else
 subdir('winemetal')
