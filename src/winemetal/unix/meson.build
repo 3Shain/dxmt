@@ -14,8 +14,7 @@ else
 endif
 
 winemetal_unix_ld_args = [
-  '-install_name',
-  '@rpath/winemetal.so',
+  '-Wl,-install_name,@rpath/winemetal.so',
   winemac_so, ntdll_so,
   '-weak_framework', 'CoreFoundation', '-weak_framework', 'Metal',
   '-framework', 'MetalFX', '-weak_framework', 'Foundation',
