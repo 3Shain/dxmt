@@ -93,11 +93,9 @@ enum class EncoderType {
 struct EncoderData {
   EncoderType type;
   EncoderData *next = nullptr;
-  uint64_t id;
-  EncoderDepSet buf_read;
-  EncoderDepSet buf_write;
-  EncoderDepSet tex_read;
-  EncoderDepSet tex_write;
+  EncoderId id;
+  FenceSet fence_wait;
+  FenceSet fence_update;
 };
 
 struct GSDispatchArgumentsMarshal {
@@ -167,6 +165,9 @@ struct RenderEncoderData : EncoderData {
   wmtcmd_base *cmd_tail;
   WMT::Buffer allocated_argbuf;
   uint64_t allocated_argbuf_offset;
+  uint64_t encoder_id_vertex;
+  FenceSet fence_wait_vertex;
+  FenceSet fence_update_vertex;
   void *allocated_argbuf_mapping;
   uint8_t dsv_planar_flags;
   uint8_t dsv_readonly_flags;
@@ -283,12 +284,6 @@ enum DXMT_ENCODER_LIST_OP {
 
 class CommandQueue;
 
-enum DXMT_ENCODER_RESOURCE_ACESS {
-  DXMT_ENCODER_RESOURCE_ACESS_READ = 1 <<0,
-  DXMT_ENCODER_RESOURCE_ACESS_WRITE = 1 << 1,
-  DXMT_ENCODER_RESOURCE_ACESS_READWRITE = DXMT_ENCODER_RESOURCE_ACESS_READ | DXMT_ENCODER_RESOURCE_ACESS_WRITE,
-};
-
 struct AllocatedTempBufferSlice {
   WMT::Buffer gpu_buffer;
   uint64_t offset;
@@ -302,22 +297,44 @@ class ArgumentEncodingContext {
     retainAllocation(allocation);
     if (allocation->flags().test(BufferAllocationFlag::GpuReadonly))
       return;
-    if (flags & DXMT_ENCODER_RESOURCE_ACESS_READ)
-      encoder_current->buf_read.add(allocation->depkey);
+    auto &tracker = allocation->fenceTrackers[allocation->currentSuballocation()];
+    if constexpr (PreRasterStage) {
+      auto current_encoder = currentRenderEncoder();
+      auto id = current_encoder->encoder_id_vertex;
+      if (flags & DXMT_ENCODER_RESOURCE_ACESS_WRITE)
+        tracker.write(id, current_encoder->fence_wait_vertex);
+      else
+        tracker.read(id, current_encoder->fence_wait_vertex);
+      return;
+    }
+    auto current_encoder = currentEncoder();
     if (flags & DXMT_ENCODER_RESOURCE_ACESS_WRITE)
-      encoder_current->buf_write.add(allocation->depkey);
+      tracker.write(currentEncoderId(), current_encoder->fence_wait);
+    else
+      tracker.read(currentEncoderId(), current_encoder->fence_wait);
   }
 
-  template<bool PreRasterStage = false>
+  template <bool PreRasterStage = false>
   void
   trackTexture(TextureAllocation *allocation, DXMT_ENCODER_RESOURCE_ACESS flags) {
     retainAllocation(allocation);
     if (allocation->flags().test(TextureAllocationFlag::GpuReadonly))
       return;
-    if (flags & DXMT_ENCODER_RESOURCE_ACESS_READ)
-      encoder_current->tex_read.add(allocation->depkey);
+    auto &tracker = allocation->fenceTracker;
+    if constexpr (PreRasterStage) {
+      auto current_encoder = currentRenderEncoder();
+      auto id = current_encoder->encoder_id_vertex;
+      if (flags & DXMT_ENCODER_RESOURCE_ACESS_WRITE)
+        tracker.write(id, current_encoder->fence_wait_vertex);
+      else
+        tracker.read(id, current_encoder->fence_wait_vertex);
+      return;
+    }
+    auto current_encoder = currentEncoder();
     if (flags & DXMT_ENCODER_RESOURCE_ACESS_WRITE)
-      encoder_current->tex_write.add(allocation->depkey);
+      tracker.write(currentEncoderId(), current_encoder->fence_wait);
+    else
+      tracker.read(currentEncoderId(), current_encoder->fence_wait);
   }
 
 public:
@@ -592,8 +609,7 @@ public:
 
   uint64_t
   nextEncoderId() {
-    static std::atomic_uint64_t global_id = 0;
-    return global_id.fetch_add(1);
+    return encoder_id_++;
   };
 
   void clearColor(Rc<Texture> &&texture, unsigned viewId, unsigned arrayLength, WMTClearColor color);
@@ -616,9 +632,15 @@ public:
     return encoder_current;
   }
 
+  constexpr uint64_t
+  currentEncoderId() {
+    assert(encoder_current);
+    return encoder_current->id;
+  }
+
   constexpr RenderEncoderData *
   currentRenderEncoder() {
-    assert(encoder_current->type == EncoderType::Render);
+    assert(encoder_current && encoder_current->type == EncoderType::Render);
     return static_cast<RenderEncoderData *>(encoder_current);
   }
 
@@ -756,10 +778,14 @@ private:
   void *dummy_cbuffer_host_;
   WMTBufferInfo dummy_cbuffer_info_;
 
-  EncoderData encoder_head = {EncoderType::Null, nullptr};
+  EncoderData encoder_head = {EncoderType::Null, nullptr, ~0ull};
   EncoderData *encoder_last = &encoder_head;
   EncoderData *encoder_current = nullptr;
   unsigned encoder_count_ = 0;
+  
+  uint64_t encoder_id_ = kParityLane; // actually important to not start from 0
+  std::array<WMT::Reference<WMT::Fence>, kParityLane> fence_pool_;
+  FenceLocalityCheck fence_locality_;
 
   uint64_t seq_id_;
   uint64_t frame_id_;
