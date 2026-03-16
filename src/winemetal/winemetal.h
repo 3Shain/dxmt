@@ -1878,4 +1878,13 @@ WINEMETAL_API obj_handle_t MTLCommandBuffer_blitCommandEncoderWithSampleBuffers(
     uint64_t num_sample_buffer_attachments
 );
 
+enum WMTCommandBufferProperty : uint32_t {
+  WMTCommandBufferPropertyKernelStartTime,
+  WMTCommandBufferPropertyKernelEndTime,
+  WMTCommandBufferPropertyGPUStartTime,
+  WMTCommandBufferPropertyGPUEndTime,
+};
+
+WINEMETAL_API uint64_t MTLCommandBuffer_property(obj_handle_t cmdbuf, enum WMTCommandBufferProperty prop);
+
 #endif

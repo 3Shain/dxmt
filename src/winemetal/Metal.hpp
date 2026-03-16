@@ -614,6 +614,11 @@ public:
     return LogContainer{MTLCommandBuffer_logs(handle)};
   }
 
+  uint64_t
+  gpuEndTime() {
+    return MTLCommandBuffer_property(handle, WMTCommandBufferPropertyGPUEndTime);
+  }
+
   void
   encodeSignalEvent(Event event, uint64_t value) {
     return MTLCommandBuffer_encodeSignalEvent(handle, event.handle, value);

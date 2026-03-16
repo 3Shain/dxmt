@@ -2725,6 +2725,31 @@ _MTLCommandBuffer_blitCommandEncoderWithSampleBuffers(void *obj) {
   return STATUS_SUCCESS;
 }
 
+static NTSTATUS
+_MTLCommandBuffer_property(void *obj) {
+  struct unixcall_generic_obj_uint64_uint64_ret *params = obj;
+  id<MTLCommandBuffer> cmdbuf = (id<MTLCommandBuffer>)params->handle;
+  double ns = 1000000000;
+  switch (params->arg) {
+  case WMTCommandBufferPropertyKernelStartTime:
+    params->ret = (uint64_t)([cmdbuf kernelStartTime] * ns);
+    break;
+  case WMTCommandBufferPropertyKernelEndTime:
+    params->ret = (uint64_t)([cmdbuf kernelEndTime] * ns);
+    break;
+  case WMTCommandBufferPropertyGPUStartTime:
+    params->ret = (uint64_t)([cmdbuf GPUStartTime] * ns);
+    break;
+  case WMTCommandBufferPropertyGPUEndTime:
+    params->ret = (uint64_t)([cmdbuf GPUEndTime] * ns);
+    break;
+  default:
+    params->ret = 0;
+    break;
+  }
+  return STATUS_SUCCESS;
+}
+
 /*
  * Definition from cache.c
  */
@@ -2866,6 +2891,7 @@ const void *__wine_unix_call_funcs[] = {
     &_MTLCounterSampleBuffer_newTimestampBuffer,
     &_MTLCounterSampleBuffer_resolveCounterRange,
     &_MTLCommandBuffer_blitCommandEncoderWithSampleBuffers,
+    &_MTLCommandBuffer_property,
 };
 
 #ifndef DXMT_NATIVE
@@ -3000,5 +3026,6 @@ const void *__wine_unix_call_wow64_funcs[] = {
     &_MTLCounterSampleBuffer_newTimestampBuffer,
     &_MTLCounterSampleBuffer_resolveCounterRange,
     &_MTLCommandBuffer_blitCommandEncoderWithSampleBuffers,
+    &_MTLCommandBuffer_property,
 };
 #endif
