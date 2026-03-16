@@ -165,4 +165,14 @@ HRESULT CreateOcculusionQuery(MTLD3D11Device *pDevice,
                               const D3D11_QUERY_DESC *pDesc,
                               ID3D11Query **ppQuery);
 
+class MTLD3D11TimestampQuery : public ID3D11Query {
+public:
+  virtual HRESULT GetData(void *data) = 0;
+  virtual TimestampQuery *End() = 0;
+};
+
+HRESULT CreateTimestampQuery(MTLD3D11Device *pDevice,
+                              const D3D11_QUERY_DESC *pDesc,
+                              ID3D11Query **ppQuery);
+
 } // namespace dxmt
