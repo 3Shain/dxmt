@@ -350,7 +350,6 @@ public:
     D3D11_QUERY_DESC desc;
     ((ID3D11Query *)pAsync)->GetDesc(&desc);
     switch (desc.Query) {
-    case D3D11_QUERY_TIMESTAMP:
     case D3D11_QUERY_TIMESTAMP_DISJOINT:
     case D3D11_QUERY_EVENT: {
       if (ctx_state.has_dirty_op_since_last_event) {
@@ -364,6 +363,16 @@ public:
         ctx_state.has_dirty_op_since_last_event = false;
       } else {
         static_cast<MTLD3D11EventQuery *>(pAsync)->Issue(cmd_queue.GetCurrentEventSeqId());
+      }
+      break;
+    }
+    case D3D11_QUERY_TIMESTAMP: {
+      if (auto query = static_cast<MTLD3D11TimestampQuery *>(pAsync)->End()) {
+        InvalidateCurrentPass(true);
+        EmitOP([query = Rc(query)](ArgumentEncodingContext &enc) mutable {
+          enc.sampleTimestamp(std::move(query));
+        });
+        promote_flush = true;
       }
       break;
     }
@@ -402,7 +411,6 @@ public:
     ((ID3D11Query *)pAsync)->GetDesc(&desc);
     switch (desc.Query) {
     case D3D11_QUERY_EVENT:
-    case D3D11_QUERY_TIMESTAMP:
     case D3D11_QUERY_TIMESTAMP_DISJOINT: {
       switch (static_cast<MTLD3D11EventQuery *>(pAsync)->CheckEventState(cmd_queue.SignaledEventSeqId())) {
       case EventState::Pending:
@@ -440,8 +448,9 @@ public:
       break;
     }
     case D3D11_QUERY_TIMESTAMP: {
-      if (pData)
-        *static_cast<UINT64 *>(pData) = 0;
+      uint64_t null_data;
+      uint64_t *data_ptr = pData ? (uint64_t *)pData : &null_data;
+      hr = static_cast<MTLD3D11TimestampQuery *>(pAsync)->GetData(data_ptr);
       break;
     }
     case D3D11_QUERY_TIMESTAMP_DISJOINT: {
@@ -502,6 +511,10 @@ public:
     }
 
     for (const auto &query : cmdlist->issued_event_query) {
+      End(query.ptr());
+    }
+
+    for (const auto &query : cmdlist->issued_timestamp_query) {
       End(query.ptr());
     }
 

@@ -331,11 +331,16 @@ public:
     D3D11_QUERY_DESC desc;
     ((ID3D11Query *)pAsync)->GetDesc(&desc);
     switch (desc.Query) {
-    case D3D11_QUERY_TIMESTAMP:
     case D3D11_QUERY_EVENT:
+    case D3D11_QUERY_TIMESTAMP_DISJOINT:
       promote_flush = true;
       ctx_state.current_cmdlist->issued_event_query.push_back(static_cast<MTLD3D11EventQuery *>(pAsync));
       break;
+    case D3D11_QUERY_TIMESTAMP: {
+      promote_flush = true;
+      ctx_state.current_cmdlist->issued_timestamp_query.push_back(static_cast<MTLD3D11TimestampQuery *>(pAsync));
+      break;
+    }
     case D3D11_QUERY_OCCLUSION:
     case D3D11_QUERY_OCCLUSION_PREDICATE: {
       auto building_query = ctx_state.building_visibility_queries.find(pAsync);
@@ -354,7 +359,6 @@ public:
       ctx_state.building_visibility_queries.erase(building_query);
       break;
     }
-    case D3D11_QUERY_TIMESTAMP_DISJOINT:
     case D3D11_QUERY_PIPELINE_STATISTICS: {
       // ignore
       break;

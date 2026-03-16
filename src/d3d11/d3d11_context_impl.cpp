@@ -5105,6 +5105,7 @@ public:
     visibility_query_count = 0;
     issued_visibility_query.clear();
     issued_event_query.clear();
+    issued_timestamp_query.clear();
     list.reset();
     staging_allocator.free_blocks(~0uLL);
     cpu_command_allocator.free_blocks(~0uLL);
@@ -5188,6 +5189,7 @@ public:
   uint32_t visibility_query_count = 0;
   std::vector<std::pair<Com<MTLD3D11OcclusionQuery>, uint32_t>> issued_visibility_query;
   std::vector<Com<MTLD3D11EventQuery>> issued_event_query;
+  std::vector<Com<MTLD3D11TimestampQuery>> issued_timestamp_query;
 
 private:
   UINT context_flag;
