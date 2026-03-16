@@ -1155,3 +1155,12 @@ MTLCommandBuffer_blitCommandEncoderWithSampleBuffers(
   UNIX_CALL(129, &params);
   return params.ret;
 }
+
+WINEMETAL_API uint64_t
+MTLCommandBuffer_property(obj_handle_t cmdbuf, enum WMTCommandBufferProperty prop) {
+  struct unixcall_generic_obj_uint64_uint64_ret params;
+  params.handle = cmdbuf;
+  params.arg = prop;
+  UNIX_CALL(130, &params);
+  return params.ret;
+}
