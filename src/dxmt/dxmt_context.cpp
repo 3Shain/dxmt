@@ -16,6 +16,7 @@ ArgumentEncodingContext::ArgumentEncodingContext(CommandQueue &queue, WMT::Devic
     blit_depth_stencil_cmd(device, lib, *this),
     clear_res_cmd(device, lib, *this),
     mv_scale_cmd(device, lib, *this),
+    timestamp_state_(device),
     device_(device),
     queue_(queue) {
   dummy_sampler_info_.support_argument_buffers = true;
@@ -41,6 +42,7 @@ ArgumentEncodingContext::ArgumentEncodingContext(CommandQueue &queue, WMT::Devic
   dummy_cbuffer_ = device.newBuffer(dummy_cbuffer_info_);
   std::memset(dummy_cbuffer_info_.memory.get(), 0, 65536);
   cpu_buffer_chunks_.emplace_back();
+  barrier_event_ = device_.newEvent();
 };
 
 ArgumentEncodingContext::~ArgumentEncodingContext() {
@@ -679,6 +681,25 @@ ArgumentEncodingContext::currentFrameStatistics() {
 }
 
 void
+ArgumentEncodingContext::sampleTimestamp(Rc<TimestampQuery> &&query) {
+  assert(!encoder_current);
+  if (encoder_last && encoder_last->type == EncoderType::SampleTimestamp) {
+    timestamp_state_.coalaseQuery(query.ptr());
+    static_cast<SampleTimestampData *>(encoder_last)->queries.push_back(std::move(query));
+    return;
+  }
+  auto encoder_info = allocate<SampleTimestampData>();
+  encoder_info->type = EncoderType::SampleTimestamp;
+  encoder_info->id = nextEncoderId();
+  encoder_info->readback_index = timestamp_state_.addQuery(query.ptr());
+  encoder_info->queries = {};
+  encoder_info->queries.push_back(std::move(query));
+
+  encoder_current = encoder_info;
+  endPass();
+}
+
+void
 ArgumentEncodingContext::$$setEncodingContext(uint64_t seq_id, uint64_t frame_id) {
   current_buffer_chunk_ = 0;
   cpu_buffer_ = cpu_buffer_chunks_[current_buffer_chunk_].ptr;
@@ -730,6 +751,8 @@ ArgumentEncodingContext::flushCommands(WMT::CommandBuffer cmdbuf, uint64_t seqId
     );
   }
   std::erase_if(pending_queries_, [=](auto &query) -> bool { return query->queryEndAt() == seqId; });
+
+  readbacks.timestamp = timestamp_state_.flush(cmdbuf);
 
   while (encoder_index) {
     auto current = encoders[encoder_count - encoder_index];
@@ -982,6 +1005,44 @@ ArgumentEncodingContext::flushCommands(WMT::CommandBuffer cmdbuf, uint64_t seqId
       data->~TemporalUpscaleData();
       break;
     }
+    case EncoderType::SampleTimestamp: {
+      auto data = static_cast<SampleTimestampData *>(current);
+      if (auto readback = readbacks.timestamp.get(); readback->sampleBuffer()) {
+
+        /**
+        Since Metal driver may change the execution order of encoders, implement a "barrier" to prevent that
+        FIXME: Not an elegant implementation, should get rid of it when fence-based synchronization is done
+        */
+        barrierOnQueue(cmdbuf);
+
+        WMTSampleBufferAttachmentInfo sample_buffer_info{};
+        sample_buffer_info.sample_buffer = readback->sampleBuffer();
+        sample_buffer_info.start_of_encoder_sample_index = data->readback_index;
+        sample_buffer_info.end_of_encoder_sample_index = ~0ull; /* MTLCounterDontSample */
+        auto encoder = cmdbuf.blitCommandEncoderWithSampleBuffers(&sample_buffer_info, 1);
+        encoder.setLabel(WMT::String::string("SampleTimestamp", WMTUTF8StringEncoding));
+        {
+          /**
+          `sampleBufferAttachments` does not work when the blit encoder is empty, just do something
+          FIXME: potential perf overhead? 
+          */
+          struct wmtcmd_blit_fillbuffer fill;
+          fill.next.set(nullptr);
+          fill.type = WMTBlitCommandFillBuffer;
+          fill.buffer = dummy_cbuffer_;
+          fill.offset = 0;
+          fill.length = 4;
+          fill.value = 0;
+          MTLBlitCommandEncoder_encodeCommands(encoder, (const struct wmtcmd_base *)&fill);
+        }
+        encoder.endEncoding();
+
+      } else {
+        // Use timestamp from command buffer's `gpuEndTime`
+      }
+      data->~SampleTimestampData();
+      break;
+    }
     default:
       break;
     }
@@ -1015,6 +1076,10 @@ ArgumentEncodingContext::checkEncoderRelation(EncoderData *former, EncoderData *
   if (former->type == EncoderType::WaitForEvent)
     return DXMT_ENCODER_LIST_OP_SYNCHRONIZE;
   if (latter->type == EncoderType::WaitForEvent)
+    return DXMT_ENCODER_LIST_OP_SYNCHRONIZE;
+  if (former->type == EncoderType::SampleTimestamp)
+    return DXMT_ENCODER_LIST_OP_SYNCHRONIZE;
+  if (latter->type == EncoderType::SampleTimestamp)
     return DXMT_ENCODER_LIST_OP_SYNCHRONIZE;
 
   while (former->type != latter->type) {

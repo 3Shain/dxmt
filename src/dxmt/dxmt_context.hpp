@@ -88,6 +88,7 @@ enum class EncoderType {
   SignalEvent,
   TemporalUpscale,
   WaitForEvent,
+  SampleTimestamp,
 };
 
 struct EncoderData {
@@ -231,6 +232,12 @@ struct SignalEventData : EncoderData {
 struct WaitForEventData : EncoderData {
   WMT::Reference<WMT::Event> event;
   uint64_t value;
+};
+
+struct SampleTimestampData: EncoderData {
+  uint64_t readback_index;
+  // TODO: small_vector opt
+  std::vector<Rc<TimestampQuery>> queries;
 };
 
 struct TemporalUpscaleData : EncoderData {
@@ -705,6 +712,14 @@ public:
     return deferred_visibility_query_stack_.back()[query_id];
   }
 
+  void sampleTimestamp(Rc<TimestampQuery> &&query);
+
+  void barrierOnQueue(WMT::CommandBuffer cmdbuf) {
+    barrier_index_++;
+    cmdbuf.encodeSignalEvent(barrier_event_, barrier_index_);
+    cmdbuf.encodeWaitForEvent(barrier_event_, barrier_index_);
+  };
+
   FrameStatistics&
   currentFrameStatistics();
 
@@ -792,8 +807,11 @@ private:
   std::vector<Rc<VisibilityResultQuery>> pending_queries_;
   unsigned active_visibility_query_count_ = 0;
   Flags<FeatureCompatibility> compatibility_flag_;
-
+  TimestampQueryState timestamp_state_;
   std::vector<Rc<VisibilityResultQuery> *> deferred_visibility_query_stack_;
+
+  WMT::Reference<WMT::Event> barrier_event_;
+  uint64_t barrier_index_ = 0;
 
   WMT::Device device_;
   CommandQueue& queue_;
