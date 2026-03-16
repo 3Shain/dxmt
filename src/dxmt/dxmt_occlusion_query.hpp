@@ -191,8 +191,156 @@ public:
   WMT::Reference<WMT::Buffer> visibility_result_heap;
 };
 
+/**
+ * TODO: rename the whole file to dxmt_query.hpp
+ */
+
+class TimestampQuery {
+public:
+  void
+  incRef() {
+    refcount_.fetch_add(1u, std::memory_order_acquire);
+  }
+  void
+  decRef() {
+    if (refcount_.fetch_sub(1u, std::memory_order_release) == 1u)
+      delete this;
+  }
+
+  bool
+  getValue(uint64_t *value) {
+    if (cached_value_ == ~0ull)
+      return false;
+
+    *value = cached_value_;
+    return true;
+  }
+
+  void
+  issue(uint64_t sampled_data) {
+    cached_value_ = sampled_data;
+  }
+
+private:
+  uint64_t cached_value_ = ~0ull;
+  std::atomic<uint32_t> refcount_ = {0u};
+};
+
+using TimestampQueryList = std::vector<std::pair<Rc<TimestampQuery>, uint64_t>>;
+
+class TimestampReadbackSBuf {
+public:
+  TimestampReadbackSBuf(
+      WMT::Device device, WMT::CommandBuffer cmdbuf, uint64_t num_samples, TimestampQueryList &&queries
+  ) :
+      queries_(std::move(queries)),
+      num_samples_(num_samples) {
+    sample_buffer_ = device.newCounterSampleBuffer(num_samples, true);
+  }
+
+  ~TimestampReadbackSBuf() {
+    // TODO: small_vector opt
+    std::vector<uint64_t> results(num_samples_);
+    sample_buffer_.resolveCounterRange(0, num_samples_, results.data(), num_samples_ * sizeof(uint64_t));
+    for (const auto &[query, sample_index] : queries_) {
+      query->issue(results[sample_index]);
+    }
+  }
+
+  TimestampReadbackSBuf(const TimestampReadbackSBuf &) = delete;
+  TimestampReadbackSBuf(TimestampReadbackSBuf &&) = delete;
+
+  WMT::CounterSampleBuffer
+  sampleBuffer() {
+    return sample_buffer_;
+  };
+
+private:
+  TimestampQueryList queries_;
+  WMT::Reference<WMT::CounterSampleBuffer> sample_buffer_;
+  uint64_t num_samples_;
+};
+
+class TimestampReadbackCBuf {
+public:
+  TimestampReadbackCBuf(
+      WMT::Device device, WMT::CommandBuffer cmdbuf, uint64_t num_samples, TimestampQueryList &&queries
+  ) :
+      queries_(std::move(queries)),
+      num_samples_(num_samples),
+      cmdbuf_(cmdbuf) {}
+
+  ~TimestampReadbackCBuf() {
+    // TODO: small_vector opt
+    std::vector<uint64_t> results(num_samples_);
+    /**
+    There is no implicit relationship between `gpuEndTime` and order of commit, but we still want a later issued query
+    to return a timestamp greater or equal to previous ones, so check and use maximum.
+
+    `thread_local` makes sense because this destructor is only called on 1. finishing thread 2. (abnormal) device
+    destruction
+    */
+    thread_local uint64_t latest_ts_on_finish_thread = 0;
+    latest_ts_on_finish_thread = std::max(cmdbuf_.gpuEndTime(), latest_ts_on_finish_thread);
+    std::fill(results.begin(), results.end(), latest_ts_on_finish_thread);
+    for (const auto &[query, sample_index] : queries_) {
+      query->issue(results[sample_index]);
+    }
+  }
+
+  TimestampReadbackCBuf(const TimestampReadbackCBuf &) = delete;
+  TimestampReadbackCBuf(TimestampReadbackCBuf &&) = delete;
+
+  WMT::CounterSampleBuffer
+  sampleBuffer() {
+    return {};
+  };
+
+private:
+  TimestampQueryList queries_;
+  uint64_t num_samples_;
+  WMT::CommandBuffer cmdbuf_;
+};
+
+// compile-time: choose a timestamp impl: SBuf (sample buffer) or CBuf (command buffer `gpuEndTime`)
+using TimestampReadback = TimestampReadbackCBuf;
+
+class TimestampQueryState {
+public:
+  TimestampQueryState(WMT::Device device) : device_(device) {}
+
+  uint64_t
+  addQuery(TimestampQuery *query) {
+    queries_.push_back({query, num_samples_});
+    return num_samples_++;
+  }
+
+  void
+  coalaseQuery(TimestampQuery *query) {
+    assert(num_samples_);
+    queries_.push_back({query, num_samples_ - 1});
+  }
+
+  std::unique_ptr<TimestampReadback>
+  flush(WMT::CommandBuffer cmdbuf) {
+    if (num_samples_ == 0)
+      return {};
+
+    auto ret = std::make_unique<TimestampReadback>(device_, cmdbuf, num_samples_, std::move(queries_));
+    num_samples_ = 0;
+    queries_ = {};
+    return ret;
+  }
+
+private:
+  uint64_t num_samples_ = 0;
+  TimestampQueryList queries_;
+  WMT::Device device_;
+};
+
 struct QueryReadbacks {
   std::unique_ptr<VisibilityResultReadback> visibility;
+  std::unique_ptr<TimestampReadback> timestamp;
 };
 
 } // namespace dxmt
