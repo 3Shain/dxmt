@@ -8,6 +8,7 @@
  * See <https://github.com/doitsujin/dxvk/blob/master/LICENSE>
  */
 
+#include "util_d3dkmt.h"
 #include "wsi_window.hpp"
 #include "wsi_monitor.hpp"
 
@@ -126,6 +127,16 @@ bool setWindowMode(HMONITOR hMonitor, HWND hWindow, const WsiMode &mode) {
 bool enterFullscreenMode(HMONITOR hMonitor, HWND hWindow,
                          DXMTWindowState *pState,
                          [[maybe_unused]] bool modeSwitch) {
+  RECT rect = {};
+  getDesktopCoordinates(hMonitor, &rect);
+
+  D3DKMT_ESCAPE escape = {};
+  escape.Type = D3DKMT_ESCAPE_SET_PRESENT_RECT_WINE;
+  escape.pPrivateDriverData = &rect;
+  escape.PrivateDriverDataSize = sizeof(rect);
+  escape.hContext = HandleToUlong(hWindow);
+  D3DKMTEscape(&escape);
+
   // Find a display mode that matches what we need
   ::GetWindowRect(hWindow, &pState->rect);
 
@@ -141,9 +152,6 @@ bool enterFullscreenMode(HMONITOR hMonitor, HWND hWindow,
 
   ::SetWindowLongW(hWindow, GWL_STYLE, style);
   ::SetWindowLongW(hWindow, GWL_EXSTYLE, exstyle);
-
-  RECT rect = {};
-  getDesktopCoordinates(hMonitor, &rect);
 
   ::SetWindowPos(hWindow, HWND_TOPMOST, rect.left, rect.top,
                  rect.right - rect.left, rect.bottom - rect.top,
@@ -165,6 +173,14 @@ bool leaveFullscreenMode(HWND hWindow, DXMTWindowState *pState,
     ::SetWindowLongW(hWindow, GWL_STYLE, pState->style);
     ::SetWindowLongW(hWindow, GWL_EXSTYLE, pState->exstyle);
   }
+
+  RECT empty = {};
+  D3DKMT_ESCAPE escape = {};
+  escape.Type = D3DKMT_ESCAPE_SET_PRESENT_RECT_WINE;
+  escape.pPrivateDriverData = &empty;
+  escape.PrivateDriverDataSize = sizeof(empty);
+  escape.hContext = HandleToUlong(hWindow);
+  D3DKMTEscape(&escape);
 
   // Restore window position and apply the style
   UINT flags = SWP_FRAMECHANGED | SWP_NOACTIVATE;
@@ -224,6 +240,13 @@ void updateFullscreenWindow(HMONITOR hMonitor, HWND hWindow,
                             bool forceTopmost) {
   RECT bounds = {};
   wsi::getDesktopCoordinates(hMonitor, &bounds);
+
+  D3DKMT_ESCAPE escape = {};
+  escape.Type = D3DKMT_ESCAPE_SET_PRESENT_RECT_WINE;
+  escape.pPrivateDriverData = &bounds;
+  escape.PrivateDriverDataSize = sizeof(bounds);
+  escape.hContext = HandleToUlong(hWindow);
+  D3DKMTEscape(&escape);
 
   // In D3D9, changing display modes re-forces the window
   // to become top most, whereas in DXGI, it does not.
