@@ -1509,6 +1509,21 @@ _MetalLayer_setProps(void *obj) {
     layer.displaySyncEnabled = props->display_sync_enabled;
     layer.drawableSize = CGSizeMake(props->drawable_width, props->drawable_height);
     layer.pixelFormat = to_metal_pixel_format(props->pixel_format);
+
+    NSView *metalView = (NSView *)[layer delegate];
+    if (metalView) {
+      NSView *contentView = [metalView superview];
+      NSWindow *window = [metalView window];
+      if (contentView && window) {
+        NSRect windowContent = [window contentLayoutRect];
+        if (!NSEqualSizes(contentView.frame.size, windowContent.size)) {
+          [contentView setFrameSize:windowContent.size];
+        }
+        if (!NSEqualSizes(metalView.frame.size, windowContent.size)) {
+          [metalView setFrame:contentView.bounds];
+        }
+      }
+    }
   });
   return STATUS_SUCCESS;
 }
