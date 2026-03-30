@@ -4369,7 +4369,6 @@ public:
         UINT RenderTargetIndex;
         UINT DepthPlane;
         WMTPixelFormat PixelFormat = WMTPixelFormatInvalid;
-        WMTLoadAction LoadAction{WMTLoadActionLoad};
       };
 
       uint32_t effective_render_target = 0;
@@ -4391,8 +4390,6 @@ public:
         Rc<Texture> Texture{};
         unsigned viewId{};
         WMTPixelFormat PixelFormat = WMTPixelFormatInvalid;
-        WMTLoadAction DepthLoadAction{WMTLoadActionLoad};
-        WMTLoadAction StencilLoadAction{WMTLoadActionLoad};
         unsigned ReadOnlyFlags{};
       };
       // auto &dsv = state_.OutputMerger.DSV;
@@ -4443,7 +4440,7 @@ public:
           color.attachment =
               ctx.access<PipelineStage::Pixel>(rtv.Texture, rtv.viewId, DXMT_ENCODER_RESOURCE_ACESS_READWRITE);
           color.depth_plane = rtv.DepthPlane;
-          color.load_action = rtv.LoadAction;
+          color.load_action = WMTLoadActionLoad;
           color.store_action = WMTStoreActionStore;
         };
 
@@ -4455,14 +4452,14 @@ public:
           if (dsv_planar_flags & 1) {
             auto &depth = info.depth;
             depth.attachment = ctx.access<PipelineStage::Pixel>(dsv.Texture, dsv.viewId, access_flag);
-            depth.load_action = dsv.DepthLoadAction;
+            depth.load_action = WMTLoadActionLoad;
             depth.store_action = WMTStoreActionStore;
           }
 
           if (dsv_planar_flags & 2) {
             auto &stencil = info.stencil;
             stencil.attachment = ctx.access<PipelineStage::Pixel>(dsv.Texture, dsv.viewId, access_flag);
-            stencil.load_action = dsv.StencilLoadAction;
+            stencil.load_action = WMTLoadActionLoad;
             stencil.store_action = WMTStoreActionStore;
           }
         }
