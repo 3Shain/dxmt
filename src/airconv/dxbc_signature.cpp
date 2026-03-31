@@ -167,9 +167,26 @@ void handle_signature_vs(
       max_output_register = std::max(reg + 1, max_output_register);
       break;
     }
-    case D3D10_SB_NAME_CULL_DISTANCE:
-      assert(0 && "Metal doesn't support shader output: cull distance");
+    case D3D10_SB_NAME_CULL_DISTANCE: {
+      for (unsigned i = 0; i < 4; i++) {
+        if (mask & (1 << i)) {
+          sm50_shader->cull_distance_scalars.push_back(
+            {.component = (uint8_t)(i), .reg = (uint8_t)reg}
+          );
+        }
+      }
+      uint32_t assigned_index = func_signature.DefineOutput(OutputVertex{
+        .user = std::format("SV_CullDistance{}", reg),
+        .type = msl_float4,
+      });
+      signature_handlers.push_back([=](SignatureContext &ctx) {
+        if (ctx.skip_vertex_output)
+          return;
+        ctx.epilogue >> pop_output_reg(reg, mask, assigned_index);
+      });
+      max_output_register = std::max(reg + 1, max_output_register);
       break;
+    }
     case D3D10_SB_NAME_POSITION: {
       auto assigned_index =
         func_signature.DefineOutput(OutputPosition{.type = msl_float4});
@@ -339,6 +356,14 @@ void handle_signature_ps(
     case D3D10_SB_NAME_CLIP_DISTANCE:
       assigned_index = func_signature.DefineInput(InputFragmentStageIn{
         .user = std::format("SV_ClipDistance{}", reg),
+        .type = msl_float4,
+        .interpolation = interpolation,
+        .pull_mode = false
+      });
+      break;
+    case D3D10_SB_NAME_CULL_DISTANCE:
+      assigned_index = func_signature.DefineInput(InputFragmentStageIn{
+        .user = std::format("SV_CullDistance{}", reg),
         .type = msl_float4,
         .interpolation = interpolation,
         .pull_mode = false
@@ -838,9 +863,17 @@ void handle_signature_ds(
       max_output_register = std::max(reg + 1, max_output_register);
       break;
     }
-    case D3D10_SB_NAME_CULL_DISTANCE:
-      assert(0 && "Metal doesn't support shader output: cull distance");
+    case D3D10_SB_NAME_CULL_DISTANCE: {
+      for (unsigned i = 0; i < 4; i++) {
+        if (mask & (1 << i)) {
+          sm50_shader->cull_distance_scalars.push_back(
+            {.component = (uint8_t)(i), .reg = (uint8_t)reg}
+          );
+        }
+      }
+      max_output_register = std::max(reg + 1, max_output_register);
       break;
+    }
     case D3D10_SB_NAME_POSITION: {
       func_signature.DefineMeshVertexOutput(OutputPosition{.type = msl_float4});
       mesh_output_handlers.push_back([=](MeshOutputContext& output) -> IREffect {
@@ -1062,9 +1095,15 @@ handle_signature_gs(
       max_output_register = std::max(reg + 1, max_output_register);
       break;
     }
-    case D3D10_SB_NAME_CULL_DISTANCE:
-      assert(0 && "Metal doesn't support shader output: cull distance");
+    case D3D10_SB_NAME_CULL_DISTANCE: {
+      for (unsigned i = 0; i < 4; i++) {
+        if (mask & (1 << i)) {
+          sm50_shader->cull_distance_scalars.push_back({.component = (uint8_t)(i), .reg = (uint8_t)reg});
+        }
+      }
+      max_output_register = std::max(reg + 1, max_output_register);
       break;
+    }
     case D3D10_SB_NAME_POSITION: {
       func_signature.DefineMeshVertexOutput(OutputPosition{.type = msl_float4});
       mesh_output_handlers.push_back([=](MeshOutputContext& output) -> IREffect {

@@ -427,6 +427,7 @@ public:
   std::vector<PatchConstantScalarInfo> patch_constant_scalars;
   uint32_t hull_maximum_threads_per_patch = 0;
   std::vector<ScalarInfo> clip_distance_scalars;
+  std::vector<ScalarInfo> cull_distance_scalars;
   microsoft::D3D10_SB_PRIMITIVE gs_input_primitive = {};
   std::vector<std::function<IREffect(MeshOutputContext &)>> mesh_output_handlers;
   uint32_t num_mesh_vertex_data = 0;
