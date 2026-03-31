@@ -981,6 +981,7 @@ enum WMTComputeCommandType : uint16_t {
   WMTComputeCommandDispatchThreads,
   WMTComputeCommandWaitForFence,
   WMTComputeCommandUpdateFence,
+  WMTComputeCommandMemoryBarrier,
 };
 
 struct wmtcmd_compute_nop {
@@ -1065,6 +1066,19 @@ struct wmtcmd_compute_fence_op {
   uint16_t reserved[3];
   struct WMTMemoryPointer next;
   obj_handle_t fence;
+};
+
+enum WMTBarrierScope : uint8_t {
+  WMTBarrierScopeBuffers = 1,
+  WMTBarrierScopeTextures = 2,
+  WMTBarrierScopeRenderTargets = 4,
+};
+
+struct wmtcmd_compute_memory_barrier {
+enum WMTComputeCommandType type;
+  uint16_t reserved[3];
+  struct WMTMemoryPointer next;
+  enum WMTBarrierScope scope;
 };
 
 WINEMETAL_API void MTLComputeCommandEncoder_encodeCommands(obj_handle_t encoder, const struct wmtcmd_base *cmd_head);
@@ -1295,12 +1309,6 @@ struct wmtcmd_render_draw_meshthreadgroups_indirect {
   uint64_t indirect_args_offset;
   struct WMTSize object_threadgroup_size;
   struct WMTSize mesh_threadgroup_size;
-};
-
-enum WMTBarrierScope : uint8_t {
-  WMTBarrierScopeBuffers = 1,
-  WMTBarrierScopeTextures = 2,
-  WMTBarrierScopeRenderTargets = 4,
 };
 
 struct wmtcmd_render_memory_barrier {

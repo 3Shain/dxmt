@@ -836,6 +836,11 @@ _MTLComputeCommandEncoder_encodeCommands(void *obj) {
       [encoder waitForFence:(id<MTLFence>)body->fence];
       break;
     }
+    case WMTComputeCommandMemoryBarrier: {
+      struct wmtcmd_compute_memory_barrier *body = (struct wmtcmd_compute_memory_barrier *)next;
+      [encoder memoryBarrierWithScope:(MTLBarrierScope)body->scope];
+      break;
+    }
     }
 
     next = next->next.ptr;
