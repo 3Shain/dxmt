@@ -527,7 +527,7 @@ public:
       info.output_width = desc_.Width * scale_factor;
       info.color_format = backbuffer_->texture()->pixelFormat();
       info.output_format =upscaled_backbuffer_->texture()->pixelFormat();
-      metalfx_scaler = device_->GetMTLDevice().newSpatialScaler(info);
+      metalfx_scaler = new SpatialScaler(device_->GetMTLDevice(), info);
       D3D11_ASSERT(metalfx_scaler && "otherwise metalfx failed to initialize");
     }
 
@@ -1052,7 +1052,7 @@ private:
 
   bool handle_alt_tab_;
 
-  std::conditional<EnableMetalFX, WMT::Reference<WMT::FXSpatialScaler>, std::monostate>::type metalfx_scaler;
+  std::conditional<EnableMetalFX, Rc<SpatialScaler>, std::monostate>::type metalfx_scaler;
   std::conditional<EnableMetalFX, Com<D3D11ResourceCommon>, std::monostate>::type upscaled_backbuffer_;
   float scale_factor = 1.0;
 };

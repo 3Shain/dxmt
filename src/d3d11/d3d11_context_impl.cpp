@@ -4847,7 +4847,7 @@ class MTLD3D11ContextExt : public IMTLD3D11ContextExt1 {
     uint32_t input_height;
     uint32_t output_width;
     uint32_t output_height;
-    WMT::Reference<WMT::FXTemporalScaler> scaler;
+    Rc<TemporalScaler> scaler;
     Rc<Texture> mv_downscaled;
   };
 public:
@@ -4905,7 +4905,7 @@ public:
       return;
     }
 
-    WMT::Reference<WMT::FXTemporalScaler> scaler;
+    Rc<TemporalScaler> scaler;
     Rc<Texture> mv_downscaled;
 
     for(CachedTemporalScaler& entry: scaler_cache_) {
@@ -4949,7 +4949,7 @@ public:
       info.input_content_min_scale = 1.0f;
       info.input_content_max_scale =  3.0f;
       info.requires_synchronous_initialization = true;
-      scaler_entry.scaler = ctx_->device->GetMTLDevice().newTemporalScaler(info);
+      scaler_entry.scaler = new TemporalScaler(ctx_->device->GetMTLDevice(), info);
       if (pDesc->MotionVectorInDisplayRes) {
         WMTTextureInfo tex_info;
         tex_info.width = scaler_entry.input_width;

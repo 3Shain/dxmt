@@ -8,6 +8,7 @@
 #include "dxmt_presenter.hpp"
 #include "dxmt_residency.hpp"
 #include "dxmt_sampler.hpp"
+#include "dxmt_scaler.hpp"
 #include "dxmt_statistics.hpp"
 #include "dxmt_texture.hpp"
 #include "log/log.hpp"
@@ -221,7 +222,7 @@ struct PresentData : EncoderData {
 struct SpatialUpscaleData : EncoderData {
   WMT::Reference<WMT::Texture> backbuffer;
   WMT::Reference<WMT::Texture> upscaled;
-  WMT::Reference<WMT::FXSpatialScaler> scaler;
+  Rc<SpatialScaler> scaler;
 };
 
 struct SignalEventData : EncoderData {
@@ -246,7 +247,7 @@ struct TemporalUpscaleData : EncoderData {
   WMT::Reference<WMT::Texture> depth;
   WMT::Reference<WMT::Texture> motion_vector;
   WMT::Reference<WMT::Texture> exposure;
-  WMT::FXTemporalScaler scaler;
+  Rc<TemporalScaler> scaler;
   WMTFXTemporalScalerProps props;
 };
 
@@ -586,11 +587,11 @@ public:
 
   void present(Rc<Texture> &texture, Rc<Presenter> &presenter, double after, DXMTPresentMetadata metadata);
 
-  void upscale(Rc<Texture> &texture, Rc<Texture> &upscaled, WMT::Reference<WMT::FXSpatialScaler> &scaler);
+  void upscale(Rc<Texture> &texture, Rc<Texture> &upscaled, Rc<SpatialScaler> &scaler);
 
   void upscaleTemporal(
       Rc<Texture> &input, Rc<Texture> &output, Rc<Texture> &depth, Rc<Texture> &motion_vector, TextureViewKey mvViewId,
-      Rc<Texture> &exposure, WMT::Reference<WMT::FXTemporalScaler> &scaler, const WMTFXTemporalScalerProps &props
+      Rc<Texture> &exposure, Rc<TemporalScaler> &scaler, const WMTFXTemporalScalerProps &props
   );
 
   void signalEvent(uint64_t value);
