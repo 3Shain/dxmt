@@ -723,6 +723,10 @@ public:
     cmdbuf.encodeWaitForEvent(barrier_event_, barrier_index_);
   };
 
+  void resolveComputePassBarrier();
+
+  void resolveRenderPassBarrier();
+
   FrameStatistics&
   currentFrameStatistics();
 
