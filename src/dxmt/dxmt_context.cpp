@@ -719,6 +719,47 @@ ArgumentEncodingContext::sampleTimestamp(Rc<TimestampQuery> &&query) {
 }
 
 void
+ArgumentEncodingContext::resolveComputePassBarrier() {
+  assert(encoder_current);
+  assert(encoder_current->type == EncoderType::Compute);
+  auto &barrier_state = encoder_current->barrier_state;
+  if (barrier_state.barrierSet) {
+    auto &cmd = encodeComputeCommand<wmtcmd_compute_memory_barrier>();
+    cmd.type = WMTComputeCommandMemoryBarrier;
+    cmd.scope = WMTBarrierScopeBuffers | WMTBarrierScopeTextures;
+    barrier_state.barrierSet = 0;
+  }
+}
+
+void
+ArgumentEncodingContext::resolveRenderPassBarrier() {
+  assert(encoder_current);
+  assert(encoder_current->type == EncoderType::Render);
+  auto &barrier_state = encoder_current->barrier_state;
+  if (barrier_state.barrierPreRasterAfterFragmentSet) {
+    // TODO(barrier): encoder split
+    barrier_state.barrierSet = 0;
+    barrier_state.barrierPreRasterSet = 0;
+    barrier_state.barrierFragmentAfterPreRasterSet = 0;
+    barrier_state.barrierPreRasterAfterFragmentSet = 0;
+    return;
+  }
+  // Indiviual barriers
+  if (barrier_state.barrierSet) {
+    // TODO(barrier): frag-frag
+    barrier_state.barrierSet = 0;
+  }
+  if (barrier_state.barrierPreRasterSet) {
+    // TODO(barrier): vert-vert
+    barrier_state.barrierPreRasterSet = 0;
+  }
+  if (barrier_state.barrierFragmentAfterPreRasterSet) {
+    // TODO(barrier): vert-frag (implicit)
+    barrier_state.barrierFragmentAfterPreRasterSet = 0;
+  }
+}
+
+void
 ArgumentEncodingContext::$$setEncodingContext(uint64_t seq_id, uint64_t frame_id) {
   current_buffer_chunk_ = 0;
   cpu_buffer_ = cpu_buffer_chunks_[current_buffer_chunk_].ptr;
@@ -924,7 +965,7 @@ ArgumentEncodingContext::flushCommands(WMT::CommandBuffer cmdbuf, uint64_t seqId
     }
     case EncoderType::Compute: {
       auto data = static_cast<ComputeEncoderData *>(current);
-      auto encoder = cmdbuf.computeCommandEncoder(false);
+      auto encoder = cmdbuf.computeCommandEncoder(true);
       data->fence_wait.forEach([&](auto id) { encoder.waitForFence(fence_pool_[id]); });
       struct wmtcmd_compute_setbuffer setcmd;
       setcmd.type = WMTComputeCommandSetBuffer;

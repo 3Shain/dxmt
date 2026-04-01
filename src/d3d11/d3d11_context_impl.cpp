@@ -1252,6 +1252,7 @@ public:
     }
     EmitOP([Primitive, StartVertexLocation, VertexCount](ArgumentEncodingContext& enc) {
       enc.bumpVisibilityResultOffset();
+      enc.resolveRenderPassBarrier();
       auto &cmd = enc.encodeRenderCommand<wmtcmd_render_draw>();
       cmd.type = WMTRenderCommandDraw;
       cmd.primitive_type = Primitive;
@@ -1290,6 +1291,7 @@ public:
     EmitOP([IndexType, IndexBufferOffset, Primitive, IndexCount, BaseVertexLocation](ArgumentEncodingContext &enc) {
       enc.bumpVisibilityResultOffset();
       auto [index_buffer, index_sub_offset] = enc.currentIndexBuffer();
+      enc.resolveRenderPassBarrier();
       auto &cmd = enc.encodeRenderCommand<wmtcmd_render_draw_indexed>();
       cmd.type = WMTRenderCommandDrawIndexed;
       cmd.primitive_type = Primitive;
@@ -1327,6 +1329,7 @@ public:
     EmitOP([Primitive, StartVertexLocation, VertexCountPerInstance, InstanceCount,
           StartInstanceLocation](ArgumentEncodingContext &enc) {
       enc.bumpVisibilityResultOffset();
+      enc.resolveRenderPassBarrier();
       auto &cmd = enc.encodeRenderCommand<wmtcmd_render_draw>();
       cmd.type = WMTRenderCommandDraw;
       cmd.primitive_type = Primitive;
@@ -1374,6 +1377,7 @@ public:
           IndexCountPerInstance](ArgumentEncodingContext &enc) {
       enc.bumpVisibilityResultOffset();
       auto [index_buffer, index_sub_offset] = enc.currentIndexBuffer();
+      enc.resolveRenderPassBarrier();
       auto &cmd = enc.encodeRenderCommand<wmtcmd_render_draw_indexed>();
       cmd.type = WMTRenderCommandDrawIndexed;
       cmd.primitive_type = Primitive;
@@ -1415,6 +1419,7 @@ public:
       }
 
       enc.bumpVisibilityResultOffset();
+      enc.resolveRenderPassBarrier();
       auto &cmd = enc.encodeRenderCommand<wmtcmd_render_dxmt_tessellation_mesh_draw>();
       cmd.type = WMTRenderCommandDXMTTessellationMeshDraw;
       cmd.draw_arguments_offset = enc.getFinalArgumentBufferOffset(draw_arguments_offset);
@@ -1456,6 +1461,7 @@ public:
 
       auto [index_buffer, index_sub_offset] = enc.currentIndexBuffer();
       enc.bumpVisibilityResultOffset();
+      enc.resolveRenderPassBarrier();
       auto &cmd = enc.encodeRenderCommand<wmtcmd_render_dxmt_tessellation_mesh_draw_indexed>();
       cmd.type = WMTRenderCommandDXMTTessellationMeshDrawIndexed;
       cmd.draw_arguments_offset = enc.getFinalArgumentBufferOffset(draw_arguments_offset);
@@ -1491,6 +1497,7 @@ public:
       }
 
       enc.bumpVisibilityResultOffset();
+      enc.resolveRenderPassBarrier();
       auto &cmd = enc.encodeRenderCommand<wmtcmd_render_dxmt_geometry_draw>();
       cmd.type = WMTRenderCommandDXMTGeometryDraw;
       cmd.draw_arguments_offset = enc.getFinalArgumentBufferOffset(draw_arguments_offset);
@@ -1526,6 +1533,7 @@ public:
       }
 
       enc.bumpVisibilityResultOffset();
+      enc.resolveRenderPassBarrier();
       auto &cmd = enc.encodeRenderCommand<wmtcmd_render_dxmt_geometry_draw_indexed>();
       cmd.type = WMTRenderCommandDXMTGeometryDrawIndexed;
       cmd.draw_arguments_offset = enc.getFinalArgumentBufferOffset(draw_arguments_offset);
@@ -1566,6 +1574,7 @@ public:
         );
         enc.bumpVisibilityResultOffset();
         auto [index_buffer, index_sub_offset] = enc.currentIndexBuffer();
+        enc.resolveRenderPassBarrier();
         auto &cmd = enc.encodeRenderCommand<wmtcmd_render_draw_indexed_indirect>();
         cmd.type = WMTRenderCommandDrawIndexedIndirect;
         cmd.primitive_type = Primitive;
@@ -1602,6 +1611,7 @@ public:
             ArgBuffer, AlignedByteOffsetForArgs, sizeof(DXMT_DRAW_ARGUMENTS), DXMT_ENCODER_RESOURCE_ACESS_READ
         );
         enc.bumpVisibilityResultOffset();
+        enc.resolveRenderPassBarrier();
         auto &cmd = enc.encodeRenderCommand<wmtcmd_render_draw_indirect>();
         cmd.type = WMTRenderCommandDrawIndirect;
         cmd.primitive_type = Primitive;
@@ -1630,6 +1640,7 @@ public:
           buffer->buffer(), buffer->gpuAddress() + buffer_offset, AlignedByteOffsetForArgs, vertex_increment_per_wrap,
           dispatch_arg.gpu_buffer, dispatch_arg.gpu_address, dispatch_arg.offset, max_object_threadgroups
         );
+        enc.resolveRenderPassBarrier();
         auto &cmd = enc.encodeRenderCommand<wmtcmd_render_dxmt_geometry_draw_indirect>();
         cmd.type = WMTRenderCommandDXMTGeometryDrawIndirect;
         cmd.dispatch_args_buffer = dispatch_arg.gpu_buffer;
@@ -1664,6 +1675,7 @@ public:
           buffer->buffer(), buffer->gpuAddress() + buffer_offset, AlignedByteOffsetForArgs, vertex_increment_per_wrap,
           dispatch_arg.gpu_buffer, dispatch_arg.gpu_address, dispatch_arg.offset, max_object_threadgroups
         );
+        enc.resolveRenderPassBarrier();
         auto &cmd = enc.encodeRenderCommand<wmtcmd_render_dxmt_geometry_draw_indexed_indirect>();
         cmd.type = WMTRenderCommandDXMTGeometryDrawIndexedIndirect;
         cmd.dispatch_args_buffer = dispatch_arg.gpu_buffer;
@@ -1699,6 +1711,7 @@ public:
             AlignedByteOffsetForArgs, NumControlPoint, PatchPerGroup,
             dispatch_arg.gpu_buffer, dispatch_arg.gpu_address,
             dispatch_arg.offset, max_object_threadgroups);
+        enc.resolveRenderPassBarrier();
         auto &cmd = enc.encodeRenderCommand<wmtcmd_render_dxmt_tessellation_mesh_draw_indirect>();
         cmd.type = WMTRenderCommandDXMTTessellationMeshDrawIndirect;
         cmd.dispatch_args_buffer = dispatch_arg.gpu_buffer;
@@ -1736,6 +1749,7 @@ public:
             AlignedByteOffsetForArgs, NumControlPoint, PatchPerGroup,
             dispatch_arg.gpu_buffer, dispatch_arg.gpu_address,
             dispatch_arg.offset, max_object_threadgroups);
+        enc.resolveRenderPassBarrier();
         auto &cmd = enc.encodeRenderCommand<wmtcmd_render_dxmt_tessellation_mesh_draw_indexed_indirect>();
         cmd.type = WMTRenderCommandDXMTTessellationMeshDrawIndexedIndirect;
         cmd.dispatch_args_buffer = dispatch_arg.gpu_buffer;
@@ -1767,6 +1781,7 @@ public:
     if (!PreDispatch())
       return;
     EmitOP([ThreadGroupCountX, ThreadGroupCountY, ThreadGroupCountZ](ArgumentEncodingContext &enc) {
+      enc.resolveComputePassBarrier();
       auto &cmd = enc.encodeComputeCommand<wmtcmd_compute_dispatch>();
       cmd.type = WMTComputeCommandDispatch;
       cmd.size = {ThreadGroupCountX, ThreadGroupCountY, ThreadGroupCountZ};
@@ -1783,6 +1798,7 @@ public:
     if (auto bindable = reinterpret_cast<D3D11ResourceCommon *>(pBufferForArgs)) {
       EmitOP([AlignedByteOffsetForArgs, ArgBuffer = bindable->buffer()](ArgumentEncodingContext &enc) {
         auto [buffer, buffer_offset] = enc.access(ArgBuffer, AlignedByteOffsetForArgs, 12, DXMT_ENCODER_RESOURCE_ACESS_READ);
+        enc.resolveComputePassBarrier();
         auto &cmd = enc.encodeComputeCommand<wmtcmd_compute_dispatch_indirect>();
         cmd.type = WMTComputeCommandDispatchIndirect;
         cmd.indirect_args_buffer = buffer->buffer();;
