@@ -3238,8 +3238,8 @@ public:
     bool dirty_cbuffer = ShaderStage.ConstantBuffers.any_dirty_masked(reflection->ConstantBufferSlotMask);
     bool dirty_sampler = ShaderStage.Samplers.any_dirty_masked(reflection->SamplerSlotMask);
     bool dirty_srv = ShaderStage.SRVs.any_dirty_masked(reflection->SRVSlotMaskHi, reflection->SRVSlotMaskLo);
-    bool dirty_uav = UAVBindingSet.any_dirty_masked(reflection->UAVSlotMask);
-    if (!dirty_cbuffer && !dirty_sampler && !dirty_srv && !dirty_uav)
+    bool uav_bound = UAVBindingSet.any_bound_masked(reflection->UAVSlotMask);
+    if (!dirty_cbuffer && !dirty_sampler && !dirty_srv && !uav_bound)
       return;
 
     if (reflection->NumConstantBuffers && dirty_cbuffer) {
@@ -3251,7 +3251,7 @@ public:
       ShaderStage.ConstantBuffers.clear_dirty();
     }
 
-    if (reflection->NumArguments && (dirty_sampler || dirty_srv || dirty_uav)) {
+    if (reflection->NumArguments && (dirty_sampler || dirty_srv || uav_bound)) {
       auto ArgumentTableQwords = reflection->ArgumentTableQwords;
       auto offset = PreAllocateArgumentBuffer(ArgumentTableQwords << 3, 32);
       EmitST([=, arg = managed_shader->arguments_info()](ArgumentEncodingContext &enc) {
