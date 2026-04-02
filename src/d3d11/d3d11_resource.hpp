@@ -129,13 +129,20 @@ struct D3D11ResourceCommon : ID3D11Resource {
   virtual HRESULT
   CreateSharedHandle(const SECURITY_ATTRIBUTES *Attributes, DWORD Access, const WCHAR *pName, HANDLE *pNTHandle) = 0;
 
-  virtual Rc<Buffer> buffer() = 0;
-  virtual BufferSlice bufferSlice() = 0;
-  virtual Rc<Texture> texture() = 0;
   virtual Rc<StagingResource> staging(UINT Subresource) = 0;
   virtual Rc<DynamicBuffer> dynamicBuffer(UINT *pBufferLength, UINT *pBindFlags) = 0;
   virtual Rc<DynamicLinearTexture> dynamicLinearTexture(UINT *pBytesPerRow, UINT *pBytesPerImage) = 0;
   virtual Rc<DynamicBuffer> dynamicTexture(UINT Subresource, UINT *pBytesPerRow, UINT *pBytesPerImage) = 0;
+
+  Rc<Buffer> buffer_{};
+  Rc<Texture> texture_{};
+
+  const Rc<Buffer> &buffer() const {
+    return buffer_;
+  }
+  const Rc<Texture> &texture() const {
+    return texture_;
+  }
 };
 
 inline Rc<DynamicBuffer>

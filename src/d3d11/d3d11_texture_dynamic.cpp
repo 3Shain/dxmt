@@ -22,7 +22,6 @@ struct Subresource {
 template <typename tag_texture>
 class DynamicTexture : public TResourceBase<tag_texture, IMTLMinLODClampable> {
 private:
-  Rc<Texture> underlying_texture_;
   std::vector<Subresource> subresources_;
   float min_lod = 0.0;
 
@@ -34,7 +33,7 @@ private:
                const tag_shader_resource_view<>::DESC1 *pDesc,
                DynamicTexture *pResource, MTLD3D11Device *pDevice)
         : SRVBase(pDesc, pResource, pDevice) {
-      this->texture_ = pResource->underlying_texture_.ptr();
+      this->texture_ = pResource->texture_.ptr();
       this->view_id_ = view_key;
     }
 
@@ -43,12 +42,9 @@ private:
 public:
   DynamicTexture(const tag_texture::DESC1 *pDesc, Rc<Texture> &&u_texture, MTLD3D11Device *pDevice, std::vector<Subresource> && subresources) :
       TResourceBase<tag_texture, IMTLMinLODClampable>(*pDesc, pDevice),
-      underlying_texture_(std::move(u_texture)),
-      subresources_(std::move(subresources)) {}
-
-  Rc<Buffer> buffer() final { return {}; };
-  Rc<Texture> texture() final { return this->underlying_texture_; };
-  BufferSlice bufferSlice() final { return {};}
+      subresources_(std::move(subresources)) {
+    this->texture_ = std::move(u_texture);
+  }
   Rc<StagingResource> staging(UINT) final { return nullptr; }
   Rc<DynamicBuffer> dynamicBuffer(UINT*, UINT*) final { return {}; }
   Rc<DynamicLinearTexture> dynamicLinearTexture(UINT*, UINT*) final { return {}; };
@@ -81,7 +77,7 @@ public:
       arraySize = this->desc.ArraySize;
     }
     if (FAILED(InitializeAndNormalizeViewDescriptor(
-            this->m_parent, this->desc.MipLevels, arraySize, this->underlying_texture_.ptr(), finalDesc, descriptor
+            this->m_parent, this->desc.MipLevels, arraySize, this->texture_.ptr(), finalDesc, descriptor
         ))) {
       ERR("DynamicTexture: Failed to create texture SRV");
       return E_FAIL;
@@ -89,7 +85,7 @@ public:
     if (!ppView) {
       return S_FALSE;
     }
-    TextureViewKey key = underlying_texture_->createView(descriptor);
+    TextureViewKey key = this->texture_->createView(descriptor);
     *ppView = ref(new TextureSRV(key, &finalDesc, this, this->m_parent));
     return S_OK;
   };
