@@ -23,10 +23,15 @@ private:
   class SRV : public SRVBase {
   public:
     SRV(const tag_shader_resource_view<>::DESC1 *pDesc, TDynamicLinearTexture *pResource, MTLD3D11Device *pDevice,
-        TextureViewKey view_key) :
+        const TextureViewDescriptor &descriptor) :
         SRVBase(pDesc, pResource, pDevice) {
       this->texture_ = pResource->texture_.ptr();
-      this->view_id_ = view_key;
+      this->view_id_ = this->texture_->createView(descriptor);
+      this->subset_ = ResourceSubsetState(
+        &descriptor,
+        this->texture_->miplevelCount(),
+        this->texture_->arrayLength()
+      );
     }
 
     ~SRV() {}
@@ -105,16 +110,15 @@ HRESULT STDMETHODCALLTYPE TDynamicLinearTexture<tag_texture_2d>::CreateShaderRes
     return E_FAIL;
   }
 
-  auto view_key = texture_->createView(
+  auto srv = ref(new SRV(
+      &finalDesc, this, this->m_parent,
       {.format = format.PixelFormat,
        .type = WMTTextureType2D,
        .firstMiplevel = 0,
        .miplevelCount = 1,
        .firstArraySlice = 0,
        .arraySize = 1}
-  );
-
-  auto srv = ref(new SRV(&finalDesc, this, this->m_parent, view_key));
+  ));
 
   *ppView = srv;
   return S_OK;
@@ -144,16 +148,15 @@ HRESULT STDMETHODCALLTYPE TDynamicLinearTexture<tag_texture_1d>::CreateShaderRes
     return E_FAIL;
   }
 
-  auto view_key = texture_->createView(
+  auto srv = ref(new SRV(
+      &finalDesc, this, this->m_parent,
       {.format = format.PixelFormat,
        .type = WMTTextureType2D, // since all 1d texture is implemented as 1-row 2d texture
        .firstMiplevel = 0,
        .miplevelCount = 1,
        .firstArraySlice = 0,
        .arraySize = 1}
-  );
-
-  auto srv = ref(new SRV(&finalDesc, this, this->m_parent, view_key));
+  ));
 
   *ppView = srv;
   return S_OK;

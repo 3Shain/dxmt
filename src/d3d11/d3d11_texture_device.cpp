@@ -24,12 +24,17 @@ private:
       TResourceViewBase<tag_shader_resource_view<DeviceTexture<tag_texture>>>;
   class TextureSRV : public SRVBase {
   public:
-    TextureSRV(TextureViewKey view_key,
+    TextureSRV(const TextureViewDescriptor &descriptor,
                const tag_shader_resource_view<>::DESC1 *pDesc,
                DeviceTexture *pResource, MTLD3D11Device *pDevice)
         : SRVBase(pDesc, pResource, pDevice) {
       this->texture_ = pResource->texture_.ptr();
-      this->view_id_ = view_key;
+      this->view_id_ = this->texture_->createView(descriptor);
+      this->subset_ = ResourceSubsetState(
+        &descriptor,
+        this->texture_->miplevelCount(),
+        this->texture_->arrayLength()
+      );
     }
 
   };
@@ -38,12 +43,17 @@ private:
       TResourceViewBase<tag_unordered_access_view<DeviceTexture<tag_texture>>>;
   class TextureUAV : public UAVBase {
   public:
-    TextureUAV(TextureViewKey view_key,
+    TextureUAV(const TextureViewDescriptor &descriptor,
                const tag_unordered_access_view<>::DESC1 *pDesc,
                DeviceTexture *pResource, MTLD3D11Device *pDevice)
         : UAVBase(pDesc, pResource, pDevice) {
       this->texture_ = pResource->texture_.ptr();
-      this->view_id_ = view_key;
+      this->view_id_ = this->texture_->createView(descriptor);
+      this->subset_ = ResourceSubsetState(
+        &descriptor,
+        this->texture_->miplevelCount(),
+        this->texture_->arrayLength()
+      );
     }
   };
 
@@ -52,14 +62,19 @@ private:
   class TextureRTV : public RTVBase {
   public:
     TextureRTV(
-        TextureViewKey view_key, WMTPixelFormat view_format, const tag_render_target_view<>::DESC1 *pDesc,
+        const TextureViewDescriptor &descriptor, WMTPixelFormat view_format, const tag_render_target_view<>::DESC1 *pDesc,
         DeviceTexture *pResource, MTLD3D11Device *pDevice, const MTL_RENDER_PASS_ATTACHMENT_DESC &mtl_rtv_desc
     ) :
         RTVBase(pDesc, pResource, pDevice) {
-      this->view_id_ = view_key;
+      this->texture_ = pResource->texture_.ptr();
+      this->view_id_ = this->texture_->createView(descriptor);
       this->format_ = view_format;
       this->pass_desc_ = mtl_rtv_desc;
-      this->texture_ = this->resource->texture_.ptr();
+      this->subset_ = ResourceSubsetState(
+        &descriptor,
+        this->texture_->miplevelCount(),
+        this->texture_->arrayLength()
+      );
     }
   };
 
@@ -68,16 +83,22 @@ private:
   class TextureDSV : public DSVBase {
   public:
     TextureDSV(
-        TextureViewKey view_key, WMTPixelFormat view_format, const tag_depth_stencil_view<>::DESC1 *pDesc,
+        const TextureViewDescriptor &descriptor, WMTPixelFormat view_format, const tag_depth_stencil_view<>::DESC1 *pDesc,
         DeviceTexture *pResource, MTLD3D11Device *pDevice, const MTL_RENDER_PASS_ATTACHMENT_DESC &attachment_desc
     ) :
         DSVBase(pDesc, pResource, pDevice) {
-      this->view_id_ = view_key;
+      this->texture_ = pResource->texture_.ptr();
+      this->view_id_ = this->texture_->createView(descriptor);
       this->format_ = view_format;
       this->pass_desc_ = attachment_desc;
-      this->texture_ = this->resource->texture_.ptr();
-      this->renamable_ = this->resource->renamable_.ptr();
-      this->readonly_flags_ = this->desc.Flags;
+      this->renamable_ = pResource->renamable_.ptr();
+      this->readonly_flags_ = this->desc.Flags & 0b11;
+      this->subset_ = ResourceSubsetState(
+        &descriptor,
+        this->texture_->miplevelCount(),
+        this->texture_->arrayLength(),
+        this->readonly_flags_
+      );
     }
   };
 
@@ -143,8 +164,7 @@ public:
     if (!ppView) {
       return S_FALSE;
     }
-    TextureViewKey key = this->texture_->createView(descriptor);
-    *ppView = ref(new TextureRTV(key, descriptor.format, &finalDesc, this, this->m_parent, attachment_desc));
+    *ppView = ref(new TextureRTV(descriptor, descriptor.format, &finalDesc, this, this->m_parent, attachment_desc));
     return S_OK;
   };
 
@@ -172,8 +192,7 @@ public:
     if (!ppView) {
       return S_FALSE;
     }
-    TextureViewKey key = this->texture_->createView(descriptor);
-    *ppView = ref(new TextureDSV(key, descriptor.format, &finalDesc, this, this->m_parent, attachment_desc));
+    *ppView = ref(new TextureDSV(descriptor, descriptor.format, &finalDesc, this, this->m_parent, attachment_desc));
     return S_OK;
   };
 
@@ -203,8 +222,7 @@ public:
     if (!ppView) {
       return S_FALSE;
     }
-    TextureViewKey key = this->texture_->createView(descriptor);
-    *ppView = ref(new TextureSRV(key, &finalDesc, this, this->m_parent));
+    *ppView = ref(new TextureSRV(descriptor, &finalDesc, this, this->m_parent));
     return S_OK;
   };
 
@@ -233,8 +251,7 @@ public:
     if (!ppView) {
       return S_FALSE;
     }
-    TextureViewKey key = this->texture_->createView(descriptor);
-    *ppView = ref(new TextureUAV(key, &finalDesc, this, this->m_parent));
+    *ppView = ref(new TextureUAV(descriptor, &finalDesc, this, this->m_parent));
     return S_OK;
   };
 

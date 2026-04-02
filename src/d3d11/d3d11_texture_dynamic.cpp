@@ -29,12 +29,17 @@ private:
       TResourceViewBase<tag_shader_resource_view<DynamicTexture<tag_texture>>>;
   class TextureSRV : public SRVBase {
   public:
-    TextureSRV(TextureViewKey view_key,
+    TextureSRV(const TextureViewDescriptor &descriptor,
                const tag_shader_resource_view<>::DESC1 *pDesc,
                DynamicTexture *pResource, MTLD3D11Device *pDevice)
         : SRVBase(pDesc, pResource, pDevice) {
       this->texture_ = pResource->texture_.ptr();
-      this->view_id_ = view_key;
+      this->view_id_ = this->texture_->createView(descriptor);
+      this->subset_ = ResourceSubsetState(
+        &descriptor,
+        this->texture_->miplevelCount(),
+        this->texture_->arrayLength()
+      );
     }
 
   };
@@ -85,8 +90,7 @@ public:
     if (!ppView) {
       return S_FALSE;
     }
-    TextureViewKey key = this->texture_->createView(descriptor);
-    *ppView = ref(new TextureSRV(key, &finalDesc, this, this->m_parent));
+    *ppView = ref(new TextureSRV(descriptor, &finalDesc, this, this->m_parent));
     return S_OK;
   };
 
