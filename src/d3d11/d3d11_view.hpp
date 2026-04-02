@@ -1,7 +1,6 @@
 #pragma once
 #include "d3d11_1.h"
 #include "dxmt_buffer.hpp"
-#include "dxmt_resource_binding.hpp"
 #include "dxmt_texture.hpp"
 
 struct MTL_RENDER_PASS_ATTACHMENT_DESC {
