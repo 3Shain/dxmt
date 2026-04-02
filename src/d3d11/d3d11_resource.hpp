@@ -8,7 +8,6 @@
 #include "com/com_guid.hpp"
 #include "d3d11_view.hpp"
 #include "dxgi_resource.hpp"
-#include "dxmt_resource_binding.hpp"
 #include "log/log.hpp"
 #include "../d3d10/d3d10_buffer.hpp"
 #include "../d3d10/d3d10_texture.hpp"
@@ -423,10 +422,6 @@ public:
   void STDMETHODCALLTYPE GetResource(tag::RESOURCE **ppResource) final {
     resource->QueryInterface(IID_PPV_ARGS(ppResource));
   }
-
-  virtual ULONG64 GetUnderlyingResourceId() { return (ULONG64)resource.ptr(); };
-
-  virtual dxmt::ResourceSubset GetViewRange() { return ResourceSubset(desc); };
 
 protected:
   tag::DESC1 desc;
