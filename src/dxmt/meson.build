@@ -18,6 +18,7 @@ dxmt_src = [
   'dxmt_resource_initializer.cpp',
   'dxmt_shader_cache.cpp',
   'dxmt_scaler.cpp',
+  'dxmt_subresource.cpp',
 ]
 
 dxmt_shaders = [
