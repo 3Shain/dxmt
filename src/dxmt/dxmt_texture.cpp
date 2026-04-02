@@ -113,23 +113,13 @@ Texture::Texture(const WMTTextureInfo &descriptor, WMT::Device device) :
     info_(descriptor),
     device_(device) {
 
-  uint32_t arraySize = info_.array_length;
-  switch (info_.type) {
-  case WMTTextureTypeCubeArray:
-  case WMTTextureTypeCube:
-    arraySize = arraySize * 6;
-    break;
-  default:
-    break;
-  }
-
   viewDescriptors_.push_back({
       .format = info_.pixel_format,
       .type = info_.type,
       .firstMiplevel = 0,
       .miplevelCount = info_.mipmap_level_count,
       .firstArraySlice = 0,
-      .arraySize = arraySize,
+      .arraySize = arrayLength(),
   });
   version_ = 1;
 }
