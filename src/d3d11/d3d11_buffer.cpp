@@ -35,9 +35,10 @@ private:
         BufferViewInfo const &info
     ) :
         SRVBase(pDesc, pResource, pDevice) {
-      buffer_ = resource->buffer_.ptr();
+      buffer_ = pResource->buffer_.ptr();
       view_id_ = info.viewKey;
       slice_ = {info.byteOffset, info.byteWidth, info.viewElementOffset, info.viewElementWidth };
+      subset_ = ResourceSubsetState(info.byteOffset, info.byteWidth);
     }
 
     ~TBufferSRV() {}
@@ -52,10 +53,11 @@ private:
         BufferViewInfo const &info, Rc<Buffer>&& counter
     ) :
         UAVBase(pDesc, pResource, pDevice) {
-      buffer_ = resource->buffer_.ptr();
+      buffer_ = pResource->buffer_.ptr();
       view_id_ = info.viewKey;
       slice_ = {info.byteOffset, info.byteWidth, info.viewElementOffset, info.viewElementWidth };
       counter_ = std::move(counter);
+      subset_ = ResourceSubsetState(info.byteOffset, info.byteWidth);
     }
   };
 

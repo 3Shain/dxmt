@@ -1,6 +1,8 @@
 #pragma once
+#include "com/com_pointer.hpp"
 #include "d3d11_3.h"
 #include "dxmt_buffer.hpp"
+#include "dxmt_subresource.hpp"
 #include "dxmt_texture.hpp"
 
 struct MTL_RENDER_PASS_ATTACHMENT_DESC {
@@ -13,11 +15,16 @@ struct MTL_RENDER_PASS_ATTACHMENT_DESC {
 
 namespace dxmt {
 
+struct D3D11ResourceCommon;
+
 struct D3D11ShaderResourceView : ID3D11ShaderResourceView1 {
+  Com<D3D11ResourceCommon> resource_{};
   Buffer *buffer_{};
   BufferSlice slice_{};
   Texture *texture_{};
   unsigned view_id_{};
+  ResourceSubsetState subset_{};
+  uint32_t bind_flags_{};
 
   Rc<Buffer>
   buffer() const {
@@ -35,14 +42,25 @@ struct D3D11ShaderResourceView : ID3D11ShaderResourceView1 {
   viewId() const {
     return view_id_;
   };
+  uint32_t bindFlags() const {
+    return bind_flags_;
+  }
+  bool
+  hazardsFree() const {
+    return (bind_flags_ & (D3D11_BIND_STREAM_OUTPUT | D3D11_BIND_UNORDERED_ACCESS | D3D11_BIND_RENDER_TARGET |
+                           D3D11_BIND_DEPTH_STENCIL)) == 0;
+  }
 };
 
 struct D3D11UnorderedAccessView : ID3D11UnorderedAccessView1 {
+  Com<D3D11ResourceCommon> resource_{};
   Buffer *buffer_{};
   BufferSlice slice_{};
   Texture *texture_{};
   unsigned view_id_{};
   Rc<Buffer> counter_;
+  ResourceSubsetState subset_{};
+  uint32_t bind_flags_{};
 
   Rc<Buffer>
   buffer() const {
@@ -64,13 +82,19 @@ struct D3D11UnorderedAccessView : ID3D11UnorderedAccessView1 {
   counter() const {
     return counter_;
   };
+  uint32_t bindFlags() const {
+    return bind_flags_;
+  }
 };
 
 struct D3D11RenderTargetView : ID3D11RenderTargetView1 {
+  Com<D3D11ResourceCommon> resource_{};
   Texture *texture_{};
   unsigned view_id_{};
   MTL_RENDER_PASS_ATTACHMENT_DESC pass_desc_;
   WMTPixelFormat format_{};
+  ResourceSubsetState subset_{};
+  uint32_t bind_flags_{};
 
   WMTPixelFormat
   pixelFormat() const {
@@ -88,15 +112,21 @@ struct D3D11RenderTargetView : ID3D11RenderTargetView1 {
   viewId() const {
     return view_id_;
   };
+  uint32_t bindFlags() const {
+    return bind_flags_;
+  }
 };
 
 struct D3D11DepthStencilView : ID3D11DepthStencilView {
+  Com<D3D11ResourceCommon> resource_{};
   Texture *texture_{};
   unsigned view_id_{};
   MTL_RENDER_PASS_ATTACHMENT_DESC pass_desc_;
   WMTPixelFormat format_{};
   uint32_t readonly_flags_{};
   RenamableTexturePool *renamable_{};
+  ResourceSubsetState subset_{};
+  uint32_t bind_flags_{};
 
   WMTPixelFormat
   pixelFormat() const {
@@ -122,5 +152,15 @@ struct D3D11DepthStencilView : ID3D11DepthStencilView {
   renamable() {
     return renamable_;
   }
+  uint32_t bindFlags() const {
+    return bind_flags_;
+  }
 };
+
+template <typename A, typename B>
+inline bool
+CheckOverlap(const A *pViewA, const B *pViewB) {
+  return pViewA && pViewB && pViewA->resource_ == pViewB->resource_ && pViewA->subset_.overlapWith(pViewB->subset_);
+}
+
 }

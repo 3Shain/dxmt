@@ -136,6 +136,7 @@ struct D3D11ResourceCommon : ID3D11Resource {
 
   Rc<Buffer> buffer_{};
   Rc<Texture> texture_{};
+  uint32_t bind_flags_{};
 
   const Rc<Buffer> &buffer() const {
     return buffer_;
@@ -170,12 +171,14 @@ GetTexture(ID3D11Resource *pResource) {
 template <typename tag, typename... Base>
 class TResourceBase : public MTLD3D11DeviceChild<D3D11ResourceCommon, Base...> {
 public:
-  TResourceBase(const tag::DESC1 &desc, MTLD3D11Device *device)
-      : MTLD3D11DeviceChild<D3D11ResourceCommon, Base...>(
-            device),
-        desc(desc),
-        dxgi_resource(new MTLDXGIResource<TResourceBase<tag, Base...>>(this)),
-        d3d10(reinterpret_cast<tag::COM *>(this), device->GetImmediateContextPrivate()) {}
+  TResourceBase(const tag::DESC1 &desc, MTLD3D11Device *device) :
+      MTLD3D11DeviceChild<D3D11ResourceCommon, Base...>(device),
+      desc(desc),
+      dxgi_resource(new MTLDXGIResource<TResourceBase<tag, Base...>>(this)),
+      d3d10(reinterpret_cast<tag::COM *>(this), device->GetImmediateContextPrivate()) {
+    // D3D11ResourceCommonß::bind_flags_
+    this->bind_flags_ = desc.BindFlags;
+  }
 
   template <std::size_t n> HRESULT ResolveBase(REFIID riid, void **ppvObject) {
     return E_NOINTERFACE;
@@ -367,10 +370,12 @@ public:
   TResourceViewBase(const tag::DESC1 *pDesc, tag::RESOURCE_IMPL *pResource,
                     MTLD3D11Device *device)
       : MTLD3D11DeviceChild<typename tag::COM_IMPL, Base...>(device),
-        d3d10(static_cast<typename tag::COM_IMPL *>(this)), resource(pResource) {
+        d3d10(static_cast<typename tag::COM_IMPL *>(this)) {
     if (pDesc) {
       desc = *pDesc;
     }
+    this->resource_ = pResource;
+    this->bind_flags_ = this->resource_->bind_flags_;
   }
 
   template <std::size_t n> HRESULT ResolveBase(REFIID riid, void **ppvObject) {
@@ -427,16 +432,12 @@ public:
   void STDMETHODCALLTYPE GetDesc1(tag::DESC1 *pDesc) /* override / final */ { *pDesc = desc; }
 
   void STDMETHODCALLTYPE GetResource(tag::RESOURCE **ppResource) final {
-    resource->QueryInterface(IID_PPV_ARGS(ppResource));
+    this->resource_->QueryInterface(IID_PPV_ARGS(ppResource));
   }
 
 protected:
   tag::DESC1 desc;
   tag::D3D10_IMPL d3d10;
-  /**
-  strong ref to resource
-  */
-  Com<typename tag::RESOURCE_IMPL> resource;
 };
 
 #pragma region Resource Factory
