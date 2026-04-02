@@ -51,80 +51,34 @@ private:
   using RTVBase =
       TResourceViewBase<tag_render_target_view<DeviceTexture<tag_texture>>>;
   class TextureRTV : public RTVBase {
-  private:
-    TextureViewKey view_key_;
-    WMTPixelFormat view_format_;
-    MTL_RENDER_PASS_ATTACHMENT_DESC attachment_desc;
-
   public:
     TextureRTV(
         TextureViewKey view_key, WMTPixelFormat view_format, const tag_render_target_view<>::DESC1 *pDesc,
         DeviceTexture *pResource, MTLD3D11Device *pDevice, const MTL_RENDER_PASS_ATTACHMENT_DESC &mtl_rtv_desc
     ) :
-        RTVBase(pDesc, pResource, pDevice),
-        view_key_(view_key),
-        view_format_(view_format),
-        attachment_desc(mtl_rtv_desc) {}
-
-    WMTPixelFormat
-    pixelFormat() final {
-      return view_format_;
-    }
-
-    MTL_RENDER_PASS_ATTACHMENT_DESC &description() final {
-      return attachment_desc;
-    };
-
-    Rc<Texture> texture() final {
-      return this->resource->underlying_texture_;
-    }
-
-    unsigned viewId() final {
-      return view_key_;
+        RTVBase(pDesc, pResource, pDevice) {
+      this->view_id_ = view_key;
+      this->format_ = view_format;
+      this->pass_desc_ = mtl_rtv_desc;
+      this->texture_ = this->resource->underlying_texture_.ptr();
     }
   };
 
   using DSVBase =
       TResourceViewBase<tag_depth_stencil_view<DeviceTexture<tag_texture>>>;
   class TextureDSV : public DSVBase {
-  private:
-    TextureViewKey view_key_;
-    WMTPixelFormat view_format_;
-    MTL_RENDER_PASS_ATTACHMENT_DESC attachment_desc;
-
   public:
     TextureDSV(
         TextureViewKey view_key, WMTPixelFormat view_format, const tag_depth_stencil_view<>::DESC1 *pDesc,
         DeviceTexture *pResource, MTLD3D11Device *pDevice, const MTL_RENDER_PASS_ATTACHMENT_DESC &attachment_desc
     ) :
-        DSVBase(pDesc, pResource, pDevice),
-        view_key_(view_key),
-        view_format_(view_format),
-        attachment_desc(attachment_desc) {}
-
-    WMTPixelFormat
-    pixelFormat() final {
-      return view_format_;
-    }
-
-    MTL_RENDER_PASS_ATTACHMENT_DESC &description() final {
-      return attachment_desc;
-    };
-
-    UINT readonlyFlags() final {
-      return this->desc.Flags;
-    };
-
-    Rc<Texture> texture() final {
-      return this->resource->underlying_texture_;
-    }
-
-    unsigned viewId() final {
-      return view_key_;
-    }
-
-    dxmt::Rc<dxmt::RenamableTexturePool> renamable() final {
-      return this->resource->renamable_;
+        DSVBase(pDesc, pResource, pDevice) {
+      this->view_id_ = view_key;
+      this->format_ = view_format;
+      this->pass_desc_ = attachment_desc;
+      this->texture_ = this->resource->underlying_texture_.ptr();
+      this->renamable_ = this->resource->renamable_.ptr();
+      this->readonly_flags_ = this->desc.Flags;
     }
   };
 
