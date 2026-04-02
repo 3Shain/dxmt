@@ -67,19 +67,60 @@ struct D3D11UnorderedAccessView : ID3D11UnorderedAccessView1 {
 };
 
 struct D3D11RenderTargetView : ID3D11RenderTargetView1 {
-  virtual WMTPixelFormat pixelFormat() = 0;
-  virtual MTL_RENDER_PASS_ATTACHMENT_DESC &description() = 0;
-  virtual Rc<Texture> texture() = 0;
-  virtual unsigned viewId() = 0;
+  Texture *texture_{};
+  unsigned view_id_{};
+  MTL_RENDER_PASS_ATTACHMENT_DESC pass_desc_;
+  WMTPixelFormat format_{};
+
+  WMTPixelFormat
+  pixelFormat() const {
+    return format_;
+  };
+  const MTL_RENDER_PASS_ATTACHMENT_DESC &
+  description() const {
+    return pass_desc_;
+  };
+  Rc<Texture>
+  texture() const {
+    return texture_;
+  };
+  unsigned
+  viewId() const {
+    return view_id_;
+  };
 };
 
 struct D3D11DepthStencilView : ID3D11DepthStencilView {
-  virtual WMTPixelFormat pixelFormat() = 0;
-  virtual MTL_RENDER_PASS_ATTACHMENT_DESC &description() = 0;
-  virtual UINT readonlyFlags() = 0;
-  virtual Rc<Texture> texture() = 0;
-  virtual Rc<RenamableTexturePool> renamable() = 0;
-  virtual unsigned viewId() = 0;
-};
+  Texture *texture_{};
+  unsigned view_id_{};
+  MTL_RENDER_PASS_ATTACHMENT_DESC pass_desc_;
+  WMTPixelFormat format_{};
+  uint32_t readonly_flags_{};
+  RenamableTexturePool *renamable_{};
 
+  WMTPixelFormat
+  pixelFormat() const {
+    return format_;
+  };
+  const MTL_RENDER_PASS_ATTACHMENT_DESC &
+  description() const {
+    return pass_desc_;
+  };
+  Rc<Texture>
+  texture() const {
+    return texture_;
+  };
+  unsigned
+  viewId() const {
+    return view_id_;
+  };
+  UINT
+  readonlyFlags() {
+    return readonly_flags_;
+  }
+  Rc<RenamableTexturePool>
+  renamable() {
+    return renamable_;
+  }
+};
 }

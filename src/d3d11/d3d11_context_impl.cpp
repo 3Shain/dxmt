@@ -2474,7 +2474,7 @@ public:
   ValidateSetRenderTargets(
       UINT NumRTVs, ID3D11RenderTargetView *const *ppRenderTargetViews, ID3D11DepthStencilView *pDepthStencilView
   ) {
-    MTL_RENDER_PASS_ATTACHMENT_DESC *ref = nullptr;
+    const MTL_RENDER_PASS_ATTACHMENT_DESC *ref = nullptr;
 
     auto dsv = static_cast<D3D11DepthStencilView *>(pDepthStencilView);
     UINT render_target_array_length = 0, sample_count = 1, width = 0, height = 0;
