@@ -20,18 +20,6 @@ public:
   void OnSetDebugObjectName(LPCSTR Name) override {
   }
 
-  Rc<Buffer>
-  buffer() final {
-    return {};
-  };
-  Rc<Texture>
-  texture() final {
-    return {};
-  };
-  BufferSlice
-  bufferSlice() final {
-    return {};
-  }
   Rc<StagingResource>
   staging(UINT Subresource) final {
     assert(Subresource == 0);
@@ -87,18 +75,6 @@ public:
     }
   }
 
-  Rc<Buffer>
-  buffer() final {
-    return {};
-  };
-  Rc<Texture>
-  texture() final {
-    return {};
-  };
-  BufferSlice
-  bufferSlice() final {
-    return {};
-  }
   Rc<StagingResource>
   staging(UINT Subresource) final {
     return subresources.at(Subresource);

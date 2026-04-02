@@ -15,7 +15,6 @@ namespace dxmt {
 template <typename tag_texture>
 class DeviceTexture : public TResourceBase<tag_texture, IMTLMinLODClampable> {
 private:
-  Rc<Texture> underlying_texture_;
   Rc<RenamableTexturePool> renamable_;
   float min_lod = 0.0;
   D3DKMT_HANDLE local_kmt_ = 0;
@@ -29,7 +28,7 @@ private:
                const tag_shader_resource_view<>::DESC1 *pDesc,
                DeviceTexture *pResource, MTLD3D11Device *pDevice)
         : SRVBase(pDesc, pResource, pDevice) {
-      this->texture_ = pResource->underlying_texture_.ptr();
+      this->texture_ = pResource->texture_.ptr();
       this->view_id_ = view_key;
     }
 
@@ -43,7 +42,7 @@ private:
                const tag_unordered_access_view<>::DESC1 *pDesc,
                DeviceTexture *pResource, MTLD3D11Device *pDevice)
         : UAVBase(pDesc, pResource, pDevice) {
-      this->texture_ = pResource->underlying_texture_.ptr();
+      this->texture_ = pResource->texture_.ptr();
       this->view_id_ = view_key;
     }
   };
@@ -60,7 +59,7 @@ private:
       this->view_id_ = view_key;
       this->format_ = view_format;
       this->pass_desc_ = mtl_rtv_desc;
-      this->texture_ = this->resource->underlying_texture_.ptr();
+      this->texture_ = this->resource->texture_.ptr();
     }
   };
 
@@ -76,7 +75,7 @@ private:
       this->view_id_ = view_key;
       this->format_ = view_format;
       this->pass_desc_ = attachment_desc;
-      this->texture_ = this->resource->underlying_texture_.ptr();
+      this->texture_ = this->resource->texture_.ptr();
       this->renamable_ = this->resource->renamable_.ptr();
       this->readonly_flags_ = this->desc.Flags;
     }
@@ -84,23 +83,27 @@ private:
 
 public:
   DeviceTexture(const tag_texture::DESC1 *pDesc, Rc<Texture> &&u_texture, MTLD3D11Device *pDevice) :
-      TResourceBase<tag_texture, IMTLMinLODClampable>(*pDesc, pDevice),
-      underlying_texture_(std::move(u_texture)) {}
+      TResourceBase<tag_texture, IMTLMinLODClampable>(*pDesc, pDevice) {
+        this->texture_ = std::move(u_texture);
+      }
 
   DeviceTexture(
       const tag_texture::DESC1 *pDesc, Rc<Texture> &&u_texture, Rc<RenamableTexturePool> &&renamable,
       MTLD3D11Device *pDevice
   ) :
       TResourceBase<tag_texture, IMTLMinLODClampable>(*pDesc, pDevice),
-      underlying_texture_(std::move(u_texture)),
-      renamable_(std::move(renamable)) {}
+      renamable_(std::move(renamable)) {
+        this->texture_ = std::move(u_texture);
+      }
 
   DeviceTexture(
       const tag_texture::DESC1 *pDesc, Rc<Texture> &&u_texture, D3DKMT_HANDLE localHandle, D3DKMT_HANDLE globalHandle,
       MTLD3D11Device *pDevice
   ) :
       TResourceBase<tag_texture, IMTLMinLODClampable>(*pDesc, pDevice),
-      underlying_texture_(std::move(u_texture)), local_kmt_(localHandle), global_kmt_(globalHandle) {}
+      local_kmt_(localHandle), global_kmt_(globalHandle) {
+        this->texture_ = std::move(u_texture);
+      }
 
   ~DeviceTexture() {
     if (local_kmt_) {
@@ -111,9 +114,6 @@ public:
     }
   }
 
-  Rc<Buffer> buffer() final { return {}; };
-  Rc<Texture> texture() final { return this->underlying_texture_; };
-  BufferSlice bufferSlice() final { return {};}
   Rc<StagingResource> staging(UINT) final { return nullptr; }
   Rc<DynamicBuffer> dynamicBuffer(UINT*, UINT*) final { return {}; }
   Rc<DynamicLinearTexture> dynamicLinearTexture(UINT*, UINT*) final { return {}; };
@@ -135,7 +135,7 @@ public:
     }
     MTL_RENDER_PASS_ATTACHMENT_DESC attachment_desc;
     if (FAILED(InitializeAndNormalizeViewDescriptor(
-            this->m_parent, this->desc.MipLevels, arraySize, this->underlying_texture_.ptr(), finalDesc,
+            this->m_parent, this->desc.MipLevels, arraySize, this->texture_.ptr(), finalDesc,
             attachment_desc, descriptor
         ))) {
       return E_FAIL;
@@ -143,7 +143,7 @@ public:
     if (!ppView) {
       return S_FALSE;
     }
-    TextureViewKey key = underlying_texture_->createView(descriptor);
+    TextureViewKey key = this->texture_->createView(descriptor);
     *ppView = ref(new TextureRTV(key, descriptor.format, &finalDesc, this, this->m_parent, attachment_desc));
     return S_OK;
   };
@@ -164,7 +164,7 @@ public:
     }
     MTL_RENDER_PASS_ATTACHMENT_DESC attachment_desc;
     if (FAILED(InitializeAndNormalizeViewDescriptor(
-            this->m_parent, this->desc.MipLevels, arraySize, this->underlying_texture_.ptr(), finalDesc,
+            this->m_parent, this->desc.MipLevels, arraySize, this->texture_.ptr(), finalDesc,
             attachment_desc, descriptor
         ))) {
       return E_FAIL;
@@ -172,7 +172,7 @@ public:
     if (!ppView) {
       return S_FALSE;
     }
-    TextureViewKey key = underlying_texture_->createView(descriptor);
+    TextureViewKey key = this->texture_->createView(descriptor);
     *ppView = ref(new TextureDSV(key, descriptor.format, &finalDesc, this, this->m_parent, attachment_desc));
     return S_OK;
   };
@@ -195,7 +195,7 @@ public:
       arraySize = this->desc.ArraySize;
     }
     if (FAILED(InitializeAndNormalizeViewDescriptor(
-            this->m_parent, this->desc.MipLevels, arraySize, this->underlying_texture_.ptr(), finalDesc, descriptor
+            this->m_parent, this->desc.MipLevels, arraySize, this->texture_.ptr(), finalDesc, descriptor
         ))) {
       ERR("DeviceTexture: Failed to create texture SRV");
       return E_FAIL;
@@ -203,7 +203,7 @@ public:
     if (!ppView) {
       return S_FALSE;
     }
-    TextureViewKey key = underlying_texture_->createView(descriptor);
+    TextureViewKey key = this->texture_->createView(descriptor);
     *ppView = ref(new TextureSRV(key, &finalDesc, this, this->m_parent));
     return S_OK;
   };
@@ -225,7 +225,7 @@ public:
       arraySize = this->desc.ArraySize;
     }
     if (FAILED(InitializeAndNormalizeViewDescriptor(
-            this->m_parent, this->desc.MipLevels, arraySize, this->underlying_texture_.ptr(), finalDesc, descriptor
+            this->m_parent, this->desc.MipLevels, arraySize, this->texture_.ptr(), finalDesc, descriptor
         ))) {
       ERR("DeviceTexture: Failed to create texture UAV");
       return E_FAIL;
@@ -233,7 +233,7 @@ public:
     if (!ppView) {
       return S_FALSE;
     }
-    TextureViewKey key = underlying_texture_->createView(descriptor);
+    TextureViewKey key = this->texture_->createView(descriptor);
     *ppView = ref(new TextureUAV(key, &finalDesc, this, this->m_parent));
     return S_OK;
   };

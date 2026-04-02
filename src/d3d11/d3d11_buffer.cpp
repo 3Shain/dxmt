@@ -17,7 +17,6 @@ struct BufferViewInfo {
 
 class D3D11Buffer : public TResourceBase<tag_buffer> {
 private:
-  Rc<Buffer> buffer_;
 #ifdef DXMT_DEBUG
   std::string debug_name;
 #endif
@@ -108,18 +107,6 @@ public:
     return TResourceBase<tag_buffer>::QueryInterface(riid, ppvObject);
   }
 
-  Rc<Buffer>
-  buffer() final {
-    return buffer_;
-  };
-  Rc<Texture>
-  texture() final {
-    return {};
-  };
-  BufferSlice
-  bufferSlice() final {
-    return {0, desc.ByteWidth, 0, 0};
-  }
   Rc<StagingResource>
   staging(UINT Subresource) final {
     return nullptr;
