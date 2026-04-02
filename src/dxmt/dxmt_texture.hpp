@@ -194,10 +194,17 @@ public:
   }
 
   /**
-  \warning for cube texture, arrayLength() returns 1, while arrayLength(0) returns 6"
+  \warning for cube texture, this would be multiple of 6.
   */
   unsigned
   arrayLength() const {
+    switch (info_.type) {
+    case WMTTextureTypeCubeArray:
+    case WMTTextureTypeCube:
+      return info_.array_length * 6;
+    default:
+      break;
+    }
     return info_.array_length;
   }
 
@@ -205,6 +212,11 @@ public:
   arrayLength(TextureViewKey view) {
     std::shared_lock<dxmt::shared_mutex> lock(mutex_);
     return viewDescriptors_[view].arraySize;
+  }
+
+  unsigned
+  miplevelCount() const {
+    return info_.mipmap_level_count;
   }
 
   Rc<TextureAllocation> allocate(Flags<TextureAllocationFlag> flags);
