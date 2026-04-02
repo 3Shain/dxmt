@@ -24,38 +24,28 @@ private:
   using SRVBase =
       TResourceViewBase<tag_shader_resource_view<DeviceTexture<tag_texture>>>;
   class TextureSRV : public SRVBase {
-  private:
-    TextureViewKey view_key_;
-
   public:
     TextureSRV(TextureViewKey view_key,
                const tag_shader_resource_view<>::DESC1 *pDesc,
                DeviceTexture *pResource, MTLD3D11Device *pDevice)
-        : SRVBase(pDesc, pResource, pDevice), view_key_(view_key) {}
+        : SRVBase(pDesc, pResource, pDevice) {
+      this->texture_ = pResource->underlying_texture_.ptr();
+      this->view_id_ = view_key;
+    }
 
-    Rc<Buffer> buffer() final { return {}; };
-    Rc<Texture> texture() final { return this->resource->underlying_texture_; };
-    unsigned viewId() final { return view_key_;};
-    BufferSlice bufferSlice() final { return {};}
   };
 
   using UAVBase =
       TResourceViewBase<tag_unordered_access_view<DeviceTexture<tag_texture>>>;
   class TextureUAV : public UAVBase {
-  private:
-    TextureViewKey view_key_;
-
   public:
     TextureUAV(TextureViewKey view_key,
                const tag_unordered_access_view<>::DESC1 *pDesc,
                DeviceTexture *pResource, MTLD3D11Device *pDevice)
-        : UAVBase(pDesc, pResource, pDevice), view_key_(view_key){}
-
-    Rc<Buffer> buffer() final { return {}; };
-    Rc<Texture> texture() final { return this->resource->underlying_texture_; };
-    unsigned viewId() final { return view_key_;};
-    BufferSlice bufferSlice() final { return {};}
-    Rc<Buffer> counter() final { return {}; };
+        : UAVBase(pDesc, pResource, pDevice) {
+      this->texture_ = pResource->underlying_texture_.ptr();
+      this->view_id_ = view_key;
+    }
   };
 
   using RTVBase =

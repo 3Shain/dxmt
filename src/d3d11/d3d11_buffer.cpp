@@ -29,45 +29,35 @@ private:
   using SRVBase = TResourceViewBase<tag_shader_resource_view<D3D11Buffer>>;
 
   class TBufferSRV : public SRVBase {
-    BufferViewInfo info;
 
   public:
     TBufferSRV(
         const tag_shader_resource_view<>::DESC1 *pDesc, D3D11Buffer *pResource, MTLD3D11Device *pDevice,
         BufferViewInfo const &info
     ) :
-        SRVBase(pDesc, pResource, pDevice),
-        info(info) {}
+        SRVBase(pDesc, pResource, pDevice) {
+      buffer_ = resource->buffer_.ptr();
+      view_id_ = info.viewKey;
+      slice_ = {info.byteOffset, info.byteWidth, info.viewElementOffset, info.viewElementWidth };
+    }
 
     ~TBufferSRV() {}
-
-    Rc<Buffer> buffer() final { return resource->buffer_; };
-    Rc<Texture> texture() final { return {}; };
-    unsigned viewId() final { return info.viewKey;};
-    BufferSlice bufferSlice() final { return {info.byteOffset, info.byteWidth, info.viewElementOffset, info.viewElementWidth };}
   };
 
   using UAVBase = TResourceViewBase<tag_unordered_access_view<D3D11Buffer>>;
 
   class UAVWithCounter : public UAVBase {
-  private:
-    BufferViewInfo info;
-    Rc<Buffer> counter_;
-
   public:
     UAVWithCounter(
         const tag_unordered_access_view<>::DESC1 *pDesc, D3D11Buffer *pResource, MTLD3D11Device *pDevice,
         BufferViewInfo const &info, Rc<Buffer>&& counter
     ) :
-        UAVBase(pDesc, pResource, pDevice),
-        info(info),
-        counter_(std::move(counter)) {}
-
-    Rc<Buffer> buffer() final { return resource->buffer_; };
-    Rc<Texture> texture() final { return {}; };
-    unsigned viewId() final { return info.viewKey;};
-    BufferSlice bufferSlice() final { return {info.byteOffset, info.byteWidth, info.viewElementOffset, info.viewElementWidth };}
-    Rc<Buffer> counter() final { return counter_; };
+        UAVBase(pDesc, pResource, pDevice) {
+      buffer_ = resource->buffer_.ptr();
+      view_id_ = info.viewKey;
+      slice_ = {info.byteOffset, info.byteWidth, info.viewElementOffset, info.viewElementWidth };
+      counter_ = std::move(counter);
+    }
   };
 
 public:

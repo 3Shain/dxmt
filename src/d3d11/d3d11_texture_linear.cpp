@@ -22,20 +22,15 @@ private:
   using SRVBase = TResourceViewBase<tag_shader_resource_view<TDynamicLinearTexture>>;
 
   class SRV : public SRVBase {
-    TextureViewKey view_key;
-
   public:
     SRV(const tag_shader_resource_view<>::DESC1 *pDesc, TDynamicLinearTexture *pResource, MTLD3D11Device *pDevice,
         TextureViewKey view_key) :
-        SRVBase(pDesc, pResource, pDevice),
-        view_key(view_key) {}
+        SRVBase(pDesc, pResource, pDevice) {
+      this->texture_ = pResource->texture_.ptr();
+      this->view_id_ = view_key;
+    }
 
     ~SRV() {}
-
-    Rc<Buffer> buffer() final { return {}; };
-    Rc<Texture> texture() final { return this->resource->texture_; };
-    unsigned viewId() final { return view_key;};
-    BufferSlice bufferSlice() final { return {};}
   };
 
 public:
