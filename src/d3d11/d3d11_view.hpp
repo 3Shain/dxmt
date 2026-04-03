@@ -163,4 +163,21 @@ CheckOverlap(const A *pViewA, const B *pViewB) {
   return pViewA && pViewB && pViewA->resource_ == pViewB->resource_ && pViewA->subset_.overlapWith(pViewB->subset_);
 }
 
+template <typename View>
+inline bool
+CheckOverlap(D3D11ResourceCommon *pBuffer, const View *pView) {
+  return pBuffer && pView && pBuffer == pView->resource_.ptr();
+}
+
+template <typename View>
+inline bool
+CheckOverlap(const View *pView, D3D11ResourceCommon *pBuffer) {
+  return pBuffer && pView && pBuffer == pView->resource_.ptr();
+}
+
+inline bool
+CheckOverlap(D3D11ResourceCommon *pBufferA, D3D11ResourceCommon *pBufferB) {
+  return pBufferA && pBufferB && pBufferA == pBufferB;
+}
+
 }

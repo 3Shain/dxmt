@@ -111,6 +111,8 @@ struct D3D11OutputMergerStageState {
   UINT NumRTVs;
 
   UAVBindingSet UAVs;
+  UINT MinUAVBinding = D3D11_1_UAV_SLOT_COUNT;
+  UINT MaxUAVBinding = 0;
 
   IMTLD3D11DepthStencilState* DepthStencilState;
   UINT StencilRef;

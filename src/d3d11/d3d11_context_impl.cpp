@@ -2374,7 +2374,57 @@ public:
   ) override {
     std::lock_guard<mutex_t> lock(mutex);
 
-    SetUnorderedAccessView<PipelineStage::Compute>(StartSlot, NumUAVs, ppUnorderedAccessViews, pUAVInitialCounts);
+    if (StartSlot + NumUAVs > D3D11_1_UAV_SLOT_COUNT)
+      return;
+    if (!ValidateMultiOutput(0, nullptr, NumUAVs, ppUnorderedAccessViews))
+      return;
+
+    auto &UAVs = state_.ComputeStageUAV.UAVs;
+
+    for (const auto &[Slot, Bound] : UAVs) {
+      if (Slot >= StartSlot && Slot < (StartSlot + NumUAVs))
+        continue;
+      for (uint32_t i = 0; i < NumUAVs; i++) {
+        auto pUAV = static_cast<D3D11UnorderedAccessView *>(ppUnorderedAccessViews[i]);
+        if (CheckOverlap(Bound.View.ptr(), pUAV) && UAVs.unbind(Slot)) {
+          EmitST([=](ArgumentEncodingContext &enc) {
+            enc.bindOutputBuffer<PipelineStage::Compute>(Slot, {}, 0, {}, {});
+          });
+        }
+      }
+    }
+
+    for (unsigned Slot = StartSlot; Slot < StartSlot + NumUAVs; Slot++) {
+      auto pUAV = static_cast<D3D11UnorderedAccessView *>(ppUnorderedAccessViews[Slot - StartSlot]);
+      auto InitialCount = pUAVInitialCounts ? pUAVInitialCounts[Slot - StartSlot] : ~0u;
+      if (pUAV) {
+        bool replaced = false;
+        auto &entry = UAVs.bind(Slot, {pUAV}, replaced);
+        if (InitialCount != ~0u) {
+          UpdateUAVCounter(pUAV, InitialCount);
+        }
+        if (!replaced)
+          continue;
+        entry.View = pUAV;
+        if (auto buffer = pUAV->buffer()) {
+          EmitST([=, buffer = std::move(buffer), viewId = pUAV->viewId(), counter = pUAV->counter(),
+                  slice = pUAV->bufferSlice()](ArgumentEncodingContext &enc) mutable {
+            enc.bindOutputBuffer<PipelineStage::Compute>(Slot, forward_rc(buffer), viewId, forward_rc(counter), slice);
+          });
+        } else {
+          EmitST([=, texture = pUAV->texture(), viewId = pUAV->viewId()](ArgumentEncodingContext &enc) mutable {
+            enc.bindOutputTexture<PipelineStage::Compute>(Slot, forward_rc(texture), viewId);
+          });
+        }
+        ResolveSRVHazard<PipelineStage::Compute>(pUAV);
+      } else {
+        if (UAVs.unbind(Slot)) {
+          EmitST([=](ArgumentEncodingContext &enc) {
+            enc.bindOutputBuffer<PipelineStage::Compute>(Slot, {}, 0, {}, {});
+          });
+        }
+      }
+    }
   }
 
   void
@@ -2525,6 +2575,100 @@ public:
     return true;
   };
 
+  bool
+  ValidateMultiOutput(
+      UINT NumRTVs, ID3D11RenderTargetView *const *ppRTVs, UINT NumUAVs, ID3D11UnorderedAccessView *const *ppUAVs
+  ) {
+    if (NumRTVs == D3D11_KEEP_RENDER_TARGETS_AND_DEPTH_STENCIL)
+      NumRTVs = 0;
+    if (NumUAVs == D3D11_KEEP_UNORDERED_ACCESS_VIEWS)
+      NumUAVs = 0;
+
+    for (unsigned i = 0; i < NumRTVs; i++) {
+      if (auto pRTV = static_cast<D3D11RenderTargetView *>(ppRTVs[i])) {
+        for (unsigned j = 0; j < i; j++) {
+          if (CheckOverlap(pRTV, static_cast<D3D11RenderTargetView *>(ppRTVs[j])))
+            return false;
+        }
+        if (pRTV->bindFlags() & D3D11_BIND_UNORDERED_ACCESS) {
+          for (uint32_t j = 0; j < NumUAVs; j++) {
+            if (CheckOverlap(pRTV, static_cast<D3D11UnorderedAccessView *>(ppUAVs[j])))
+              return false;
+          }
+        }
+      }
+    }
+
+    for (unsigned i = 0; i < NumUAVs; i++) {
+      if (auto pUAV = static_cast<D3D11UnorderedAccessView *>(ppUAVs[i])) {
+        for (uint32_t j = 0; j < i; j++) {
+          if (CheckOverlap(pUAV, static_cast<D3D11UnorderedAccessView *>(ppUAVs[j])))
+            return false;
+        }
+      }
+    }
+
+    return true;
+  }
+
+  /**
+  Resolve hazards when OM UAV is updated while RTV is kept
+  Unbound RTV if a subresource conflict
+  No DSV check as DSV^UAV = 1
+  */
+  bool
+  OMResolveRTVHazard(D3D11UnorderedAccessView *pUAV) {
+    if (!pUAV || (pUAV->bindFlags() & D3D11_BIND_RENDER_TARGET) == 0)
+      return false;
+
+    bool hazard = false;
+
+    for (unsigned slot = 0; slot < state_.OutputMerger.NumRTVs; slot++) {
+      if (CheckOverlap(state_.OutputMerger.RTVs[slot].ptr(), pUAV)) {
+        state_.OutputMerger.RTVs[slot] = nullptr;
+        hazard = true;
+      }
+    }
+
+    return hazard;
+  }
+
+  template <PipelineStage Stage, typename TViewOrBuffer>
+  bool
+  ResolveSRVHazard(TViewOrBuffer *pViewOrBuffer) {
+    if (!pViewOrBuffer || (pViewOrBuffer->bindFlags() & D3D11_BIND_SHADER_RESOURCE) == 0)
+      return false;
+
+    bool hazard = false;
+
+    auto &SRVs = state_.ShaderStages[Stage].SRVs;
+
+    // TODO: iterate _hazard_ set rather than _bound_ set (former is a subset)
+    for (const auto & [Slot, Bound] : SRVs) {
+      if (CheckOverlap(Bound.SRV.ptr(), pViewOrBuffer)) {
+        if (SRVs.unbind(Slot)) {
+          EmitST([=](ArgumentEncodingContext& enc) {
+            enc.bindBuffer<Stage>(Slot, {}, 0, {});
+          });
+        }
+        hazard = true;
+      }
+    }
+
+    return hazard;
+  }
+
+  template <typename TView>
+  void
+  OMResolveSRVHazard(TView *pOutputView) {
+    // FIXME: should compute stage be resolved?
+    ResolveSRVHazard<PipelineStage::Vertex>(pOutputView);
+    ResolveSRVHazard<PipelineStage::Domain>(pOutputView);
+    ResolveSRVHazard<PipelineStage::Hull>(pOutputView);
+    ResolveSRVHazard<PipelineStage::Geometry>(pOutputView);
+    ResolveSRVHazard<PipelineStage::Pixel>(pOutputView);
+  }
+
   void
   STDMETHODCALLTYPE
   OMSetRenderTargetsAndUnorderedAccessViews(
@@ -2534,6 +2678,8 @@ public:
   ) override {
     std::lock_guard<mutex_t> lock(mutex);
 
+    if (!ValidateMultiOutput(NumRTVs, ppRenderTargetViews, NumUAVs, ppUnorderedAccessViews))
+      return;
 
     bool should_invalidate_pass = false;
 
@@ -2551,6 +2697,7 @@ public:
             continue;
           BoundRTVs[rtv_index] = rtv;
           should_invalidate_pass = true;
+          OMResolveSRVHazard(rtv);
         } else {
           if (BoundRTVs[rtv_index]) {
             should_invalidate_pass = true;
@@ -2564,6 +2711,7 @@ public:
         if (state_.OutputMerger.DSV.ptr() != dsv) {
           state_.OutputMerger.DSV = dsv;
           should_invalidate_pass = true;
+          OMResolveSRVHazard(dsv);
         }
       } else {
         if (state_.OutputMerger.DSV) {
@@ -2574,7 +2722,52 @@ public:
     }
 
     if (NumUAVs != D3D11_KEEP_UNORDERED_ACCESS_VIEWS) {
-      SetUnorderedAccessView<PipelineStage::Pixel>(UAVStartSlot, NumUAVs, ppUnorderedAccessViews, pUAVInitialCounts);
+      auto MinUAV = NumUAVs ? UAVStartSlot : D3D11_1_UAV_SLOT_COUNT;
+      auto MaxUAV = NumUAVs ? UAVStartSlot + NumUAVs : 0u;
+      auto OldMinUAV = std::exchange(state_.OutputMerger.MinUAVBinding, MinUAV);
+      auto OldMaxUAV = std::exchange(state_.OutputMerger.MaxUAVBinding, MaxUAV);
+      auto &UAVs = state_.OutputMerger.UAVs;
+      for (unsigned Slot = std::min(MinUAV, OldMinUAV); Slot < std::max(MaxUAV, OldMaxUAV); Slot++) {
+        D3D11UnorderedAccessView *pUAV = nullptr;
+        UINT InitialCount = ~0u;
+        if (Slot >= UAVStartSlot && Slot < UAVStartSlot + NumUAVs) {
+          pUAV = static_cast<D3D11UnorderedAccessView *>(ppUnorderedAccessViews[Slot - UAVStartSlot]);
+          InitialCount = pUAVInitialCounts ? pUAVInitialCounts[Slot - UAVStartSlot] : ~0u;
+        }
+        if (pUAV) {
+          bool replaced = false;
+          auto &entry = UAVs.bind(Slot, {pUAV}, replaced);
+          if (InitialCount != ~0u) {
+            UpdateUAVCounter(pUAV, InitialCount);
+          }
+          if (!replaced)
+            continue;
+          entry.View = pUAV;
+          if (auto buffer = pUAV->buffer()) {
+            EmitST([=, buffer = std::move(buffer), viewId = pUAV->viewId(), counter = pUAV->counter(),
+                    slice = pUAV->bufferSlice()](ArgumentEncodingContext &enc) mutable {
+              enc.bindOutputBuffer<PipelineStage::Pixel>(Slot, forward_rc(buffer), viewId, forward_rc(counter), slice);
+            });
+          } else {
+            EmitST([=, texture = pUAV->texture(), viewId = pUAV->viewId()](ArgumentEncodingContext &enc) mutable {
+              enc.bindOutputTexture<PipelineStage::Pixel>(Slot, forward_rc(texture), viewId);
+            });
+          }
+
+          OMResolveSRVHazard(pUAV);
+        } else {
+          if (UAVs.unbind(Slot)) {
+            EmitST([=](ArgumentEncodingContext &enc) {
+              enc.bindOutputBuffer<PipelineStage::Pixel>(Slot, {}, 0, {}, {});
+            });
+          }
+        }
+
+        // No check on SO as SO^UAV = 1
+
+        if (NumRTVs != D3D11_KEEP_RENDER_TARGETS_AND_DEPTH_STENCIL)
+          should_invalidate_pass |= OMResolveRTVHazard(pUAV);
+      }
     }
 
     if (should_invalidate_pass) {
@@ -3173,6 +3366,55 @@ public:
   }
 
   template <PipelineStage Stage>
+  bool
+  ValidateSRVHazard(D3D11ShaderResourceView *pView) {
+    if (pView->hazardsFree())
+      return true;
+
+    /**
+    At the moment, Graphics and Compute handles hazard tracking separately
+    This might be not enough per D3D11 spec
+    */
+
+    if constexpr (Stage == PipelineStage::Compute) {
+      for (const auto &[Slot, Bound] : state_.ComputeStageUAV.UAVs) {
+        if (CheckOverlap(Bound.View.ptr(), pView))
+          return false;
+      }
+      return true;
+    } else {
+      // RTV
+      for (unsigned Slot = 0; Slot < state_.OutputMerger.NumRTVs; Slot++) {
+        if (state_.OutputMerger.RTVs[Slot] && CheckOverlap(state_.OutputMerger.RTVs[Slot].ptr(), pView))
+          return false;
+      }
+
+      // DSV
+      if (state_.OutputMerger.DSV && CheckOverlap(state_.OutputMerger.DSV.ptr(), pView))
+        return false;
+
+      if (pView->bindFlags() & D3D11_BIND_UNORDERED_ACCESS) {
+        // UAV
+        for (unsigned Slot = state_.OutputMerger.NumRTVs; Slot < D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT; Slot++) {
+          if (state_.OutputMerger.UAVs.test_bound(Slot) &&
+              CheckOverlap(state_.OutputMerger.UAVs[Slot].View.ptr(), pView)) {
+            return false;
+          }
+        }
+      } else if (pView->bindFlags() & D3D11_BIND_STREAM_OUTPUT) {
+        // SO
+        for (unsigned Slot = 0; Slot < 4; Slot++) {
+          if (state_.StreamOutput.Targets.test_bound(Slot) &&
+              CheckOverlap(state_.StreamOutput.Targets[Slot].Buffer.ptr(), pView))
+            return false;
+        }
+      }
+
+      return true;
+    }
+  }
+
+  template <PipelineStage Stage>
   void
   SetShaderResource(UINT StartSlot, UINT NumViews, ID3D11ShaderResourceView *const *ppShaderResourceViews) {
     std::lock_guard<mutex_t> lock(mutex);
@@ -3181,7 +3423,7 @@ public:
     auto &ShaderStage = state_.ShaderStages[Stage];
     for (unsigned slot = StartSlot; slot < StartSlot + NumViews; slot++) {
       auto pView = static_cast<D3D11ShaderResourceView *>(ppShaderResourceViews[slot - StartSlot]);
-      if (pView) {
+      if (pView && ValidateSRVHazard<Stage>(pView)) {
         bool replaced = false;
         auto &entry = ShaderStage.SRVs.bind(slot, {pView}, replaced);
         if (!replaced)
@@ -3283,69 +3525,6 @@ public:
       auto old = counter->rename(std::move(new_counter));
       // TODO: reused discarded buffer
     });
-  }
-
-  template <PipelineStage Stage>
-  void
-  SetUnorderedAccessView(
-      UINT StartSlot, UINT NumUAVs, ID3D11UnorderedAccessView *const *ppUnorderedAccessViews,
-      const UINT *pUAVInitialCounts
-  ) {
-    auto &binding_set = Stage == PipelineStage::Compute ? state_.ComputeStageUAV.UAVs : state_.OutputMerger.UAVs;
-
-    // std::erase_if(state_.ComputeStageUAV.UAVs, [&](const auto &item) -> bool
-    // {
-    //   auto &[slot, bound_uav] = item;
-    //   if (slot < StartSlot || slot >= (StartSlot + NumUAVs))
-    //     return false;
-    //   for (auto i = 0u; i < NumUAVs; i++) {
-    //     if (auto uav = static_cast<MTLD3D11UnorderedAccessView *>(
-    //             ppUnorderedAccessViews[i])) {
-    //       // if (bound_uav.View->GetViewRange().CheckOverlap(
-    //       //         uav->GetViewRange())) {
-    //       //   return true;
-    //       // }
-    //     }
-    //   }
-    //   return false;
-    // });
-
-    for (unsigned slot = StartSlot; slot < StartSlot + NumUAVs; slot++) {
-      auto pUAV = static_cast<D3D11UnorderedAccessView*>(ppUnorderedAccessViews[slot - StartSlot]);
-      auto InitialCount = pUAVInitialCounts ? pUAVInitialCounts[slot - StartSlot] : ~0u;
-      if (pUAV) {
-        bool replaced = false;
-        auto &entry = binding_set.bind(slot, {pUAV}, replaced);
-        if (InitialCount != ~0u) {
-          UpdateUAVCounter(pUAV, InitialCount);
-        }
-        if (!replaced) {
-          continue;
-        }
-        entry.View = pUAV;
-        if (auto buffer = pUAV->buffer()) {
-          EmitST([=, buffer = std::move(buffer), viewId = pUAV->viewId(), counter = pUAV->counter(),
-                slice = pUAV->bufferSlice()](ArgumentEncodingContext &enc) mutable {
-            enc.bindOutputBuffer<Stage>(slot, forward_rc(buffer), viewId, forward_rc(counter), slice);
-          });
-        } else {
-          EmitST([=, texture = pUAV->texture(), viewId = pUAV->viewId()](ArgumentEncodingContext &enc) mutable {
-            enc.bindOutputTexture<Stage>(slot, forward_rc(texture), viewId);
-          });
-        }
-        // FIXME: resolve srv hazard: unbind any cs srv that share the resource
-        // std::erase_if(state_.ShaderStages[5].SRVs,
-        //               [&](const auto &item) -> bool {
-        //                 // auto &[slot, bound_srv] = item;
-        //                 // if srv conflict with uav, return true
-        //                 return false;
-        //               });
-      } else {
-        if (binding_set.unbind(slot)) {
-          EmitST([=](ArgumentEncodingContext &enc) { enc.bindOutputBuffer<Stage>(slot, {}, 0, {}, {}); });
-        }
-      }
-    }
   }
 
 #pragma endregion
