@@ -144,6 +144,14 @@ struct D3D11ResourceCommon : ID3D11Resource {
   const Rc<Texture> &texture() const {
     return texture_;
   }
+  uint32_t bindFlags() const {
+    return bind_flags_;
+  }
+  bool
+  hazardsFree() const {
+    return (bind_flags_ & (D3D11_BIND_STREAM_OUTPUT | D3D11_BIND_UNORDERED_ACCESS | D3D11_BIND_RENDER_TARGET |
+                           D3D11_BIND_DEPTH_STENCIL)) == 0;
+  }
 };
 
 inline Rc<DynamicBuffer>
