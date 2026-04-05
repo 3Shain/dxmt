@@ -327,6 +327,8 @@ public:
 
   constexpr uint64_t &qword(uint64_t idx) { return m_qwords[idx]; }
 
+  constexpr uint64_t qword(uint64_t idx) const { return m_qwords[idx]; }
+
   constexpr size_t bitCount() { return Bits; }
 
   constexpr size_t qwordCount() { return Qwords; }
