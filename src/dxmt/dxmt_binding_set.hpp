@@ -14,6 +14,7 @@ Element is required to be move-assignable
 template <typename Element, size_t NumElements> class BindingSet {
   bit::bitset<NumElements> dirty;
   bit::bitset<NumElements> bound;
+  bit::bitset<NumElements> hazard;
   std::array<Element, NumElements> storage;
 
 public:
@@ -22,6 +23,7 @@ public:
   BindingSet(BindingSet &&move) : storage(std::move(move.storage)) {
     bound = move.bound;
     dirty = move.bound; // intended behavior
+    hazard = move.hazard;
   };
 
   BindingSet &
@@ -29,6 +31,7 @@ public:
     storage = std::move(move.storage);
     bound = move.bound;
     dirty = move.bound; // intended behavior
+    hazard = move.hazard;
     return *this;
   }
 
@@ -121,13 +124,14 @@ public:
   (so no initialization overhead if no replacement)
   */
   inline Element &
-  bind(size_t slot, Element &&element, bool &replacement) {
+  bind(size_t slot, Element &&element, bool &replacement, bool hazard = true) {
     if (bound.get(slot)) {
       if (redunant_binding_trait<Element>::is_redunant(storage[slot], element)) {
         return storage[slot];
       }
     } else {
       bound.set(slot, true);
+      this->hazard.set(slot, hazard);
     }
     // new (storage.data() + slot) Element(std::forward<Element>(element));
     // std::construct_at(storage.data() + slot, std::forward<Element>(element));
@@ -149,6 +153,7 @@ public:
       // at bind()
       storage[slot] = {};
       bound.set(slot, false);
+      hazard.set(slot, false);
       dirty.set(slot, true);
       return true;
     }
@@ -221,6 +226,15 @@ public:
   }
   uint64_t
   end() const {
+    return NumElements;
+  }
+
+  bound_iterator
+  hazard_begin() const {
+    return bound_iterator(*this, hazard, 0);
+  }
+  uint64_t
+  hazard_end() const {
     return NumElements;
   }
 };
