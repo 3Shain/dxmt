@@ -2676,8 +2676,8 @@ public:
 
     auto &SRVs = state_.ShaderStages[Stage].SRVs;
 
-    // TODO: iterate _hazard_ set rather than _bound_ set (former is a subset)
-    for (const auto & [Slot, Bound] : SRVs) {
+    for (auto it = SRVs.hazard_begin(); it != SRVs.hazard_end(); it++) {
+      const auto & [Slot, Bound] = *it;
       if (CheckOverlap(Bound.SRV.ptr(), pViewOrBuffer)) {
         if (SRVs.unbind(Slot)) {
           EmitST([=](ArgumentEncodingContext& enc) {
@@ -2710,8 +2710,9 @@ public:
     }
 
     if (pViewOrBuffer->bindFlags() & D3D11_BIND_VERTEX_BUFFER) {
-      // TODO: iterate _hazard_ set rather than _bound_ set (former is a subset)
-      for (const auto &[Slot, Bound] : state_.InputAssembler.VertexBuffers) {
+      for (auto it = state_.InputAssembler.VertexBuffers.hazard_begin();
+           it != state_.InputAssembler.VertexBuffers.hazard_end(); it++) {
+        const auto &[Slot, Bound] = *it;
         if (CheckOverlap(Bound.Buffer.ptr(), pViewOrBuffer)) {
           if (state_.InputAssembler.VertexBuffers.unbind(Slot)) {
             EmitST([=](ArgumentEncodingContext &enc) { enc.bindVertexBuffer(Slot, 0, 0, {}); });
@@ -3492,7 +3493,7 @@ public:
       auto pView = static_cast<D3D11ShaderResourceView *>(ppShaderResourceViews[slot - StartSlot]);
       if (pView && ValidateSRVHazard<Stage>(pView)) {
         bool replaced = false;
-        auto &entry = ShaderStage.SRVs.bind(slot, {pView}, replaced);
+        auto &entry = ShaderStage.SRVs.bind(slot, {pView}, replaced, !pView->hazardsFree());
         if (!replaced)
           continue;
         entry.SRV = pView;
@@ -3641,7 +3642,7 @@ public:
       auto pVertexBuffer = reinterpret_cast<D3D11ResourceCommon *>(ppVertexBuffers[slot - StartSlot]);
       if (pVertexBuffer && (pVertexBuffer->bindFlags() & D3D11_BIND_VERTEX_BUFFER) && ValidateIAHazard(pVertexBuffer)) {
         bool replaced = false;
-        auto &entry = VertexBuffers.bind(slot, {pVertexBuffer}, replaced);
+        auto &entry = VertexBuffers.bind(slot, {pVertexBuffer}, replaced, !pVertexBuffer->hazardsFree());
         if (!replaced) {
           if (pStrides && pStrides[slot - StartSlot] != entry.Stride) {
             VertexBuffers.set_dirty(slot);
