@@ -1881,8 +1881,9 @@ public:
   IASetIndexBuffer(ID3D11Buffer *pIndexBuffer, DXGI_FORMAT Format, UINT Offset) override {
     std::lock_guard<mutex_t> lock(mutex);
 
-    if (auto expected = reinterpret_cast<D3D11ResourceCommon *>(pIndexBuffer)) {
-      state_.InputAssembler.IndexBuffer = expected;
+    auto pBuffer = reinterpret_cast<D3D11ResourceCommon *>(pIndexBuffer);
+    if (pBuffer && (pBuffer->bindFlags() & D3D11_BIND_INDEX_BUFFER) && ValidateIAHazard(pBuffer)) {
+      state_.InputAssembler.IndexBuffer = pBuffer;
       EmitST([buffer = state_.InputAssembler.IndexBuffer->buffer()](ArgumentEncodingContext &enc) mutable {
         enc.bindIndexBuffer(forward_rc(buffer));
       });
@@ -2143,17 +2144,40 @@ public:
     GetSamplers<PipelineStage::Geometry>(StartSlot, NumSamplers, ppSamplers);
   }
 
+  bool
+  ValidateMultiSOTargets(UINT NumBuffers, ID3D11Buffer *const *ppSOTargets) {
+    for (unsigned i = 0; i < NumBuffers; i++) {
+      if (auto buffer = ppSOTargets[i]) {
+        for (unsigned j = 0; j < i; j++) {
+          if (buffer == ppSOTargets[j])
+            return false;
+        }
+      }
+    }
+    return true;
+  }
+
+  template <typename TView>
+  void
+  SOResolveSRVHazard(TView *pOutputView) {
+    // well, they do the same thing
+    OMResolveSRVHazard<TView>(pOutputView);
+  }
+
   void
   STDMETHODCALLTYPE
   SOSetTargets(UINT NumBuffers, ID3D11Buffer *const *ppSOTargets, const UINT *pOffsets) override {
     std::lock_guard<mutex_t> lock(mutex);
 
+    if (!ValidateMultiSOTargets(NumBuffers, ppSOTargets))
+      return;
+
     if (NumBuffers == 0) {
       NumBuffers = 4; // see msdn description of SOSetTargets
     }
     for (unsigned slot = 0; slot < NumBuffers; slot++) {
-      auto pBuffer = ppSOTargets ? ppSOTargets[slot] : nullptr;
-      if (pBuffer) {
+      auto pBuffer = ppSOTargets ? reinterpret_cast<D3D11ResourceCommon *>(ppSOTargets[slot]) : nullptr;
+      if (pBuffer && (pBuffer->bindFlags() & D3D11_BIND_STREAM_OUTPUT)) {
         bool replaced = false;
         auto &entry = state_.StreamOutput.Targets.bind(slot, {pBuffer}, replaced);
         if (!replaced) {
@@ -2164,8 +2188,17 @@ public:
           }
           continue;
         }
-        entry.Buffer = reinterpret_cast<D3D11ResourceCommon *>(pBuffer);
+        entry.Buffer = pBuffer;
         entry.Offset = pOffsets ? pOffsets[slot] : 0;
+        SOResolveSRVHazard(pBuffer);
+        ResolveIAHazard(pBuffer);
+        /**
+         * We should also unbind output of hazard, but
+         * - `ValidateMultiSOTargets` checks all SO hazard-free
+         * - UAV resource cannot be SO at the same time
+         * - DSV can't even be a buffer
+         * - RTV is questionable: we don't support buffer-backed RTV at the moment
+         */
       } else {
         state_.StreamOutput.Targets.unbind(slot);
       }
@@ -2658,6 +2691,39 @@ public:
     return hazard;
   }
 
+  template <typename TViewOrBuffer>
+  bool
+  ResolveIAHazard(TViewOrBuffer *pViewOrBuffer) {
+    if (!pViewOrBuffer)
+      return false;
+
+    bool hazard = false;
+
+    if (pViewOrBuffer->bindFlags() & D3D11_BIND_INDEX_BUFFER) {
+      if (CheckOverlap(state_.InputAssembler.IndexBuffer.ptr(), pViewOrBuffer)) {
+        state_.InputAssembler.IndexBuffer = nullptr;
+        state_.InputAssembler.IndexBufferFormat = DXGI_FORMAT_UNKNOWN;
+        state_.InputAssembler.IndexBufferOffset = 0;
+        EmitST([](ArgumentEncodingContext &enc) { enc.bindIndexBuffer({}); });
+        hazard = true;
+      }
+    }
+
+    if (pViewOrBuffer->bindFlags() & D3D11_BIND_VERTEX_BUFFER) {
+      // TODO: iterate _hazard_ set rather than _bound_ set (former is a subset)
+      for (const auto &[Slot, Bound] : state_.InputAssembler.VertexBuffers) {
+        if (CheckOverlap(Bound.Buffer.ptr(), pViewOrBuffer)) {
+          if (state_.InputAssembler.VertexBuffers.unbind(Slot)) {
+            EmitST([=](ArgumentEncodingContext &enc) { enc.bindVertexBuffer(Slot, 0, 0, {}); });
+          }
+          hazard = true;
+        }
+      }
+    }
+
+    return hazard;
+  }
+
   template <typename TView>
   void
   OMResolveSRVHazard(TView *pOutputView) {
@@ -2755,6 +2821,7 @@ public:
           }
 
           OMResolveSRVHazard(pUAV);
+          ResolveIAHazard(pUAV);
         } else {
           if (UAVs.unbind(Slot)) {
             EmitST([=](ArgumentEncodingContext &enc) {
@@ -3530,6 +3597,39 @@ public:
 #pragma endregion
 
 #pragma region InputAssembler
+
+  bool
+  ValidateIAHazard(D3D11ResourceCommon *pBuffer) {
+    if (pBuffer->hazardsFree())
+      return true;
+
+    /**
+    At the moment, Graphics and Compute handles hazard tracking separately
+    This might be not enough per D3D11 spec
+
+    RTV and DSV unchecked because they can't be buffer
+    */
+
+    if (pBuffer->bindFlags() & D3D11_BIND_UNORDERED_ACCESS) {
+      // UAV
+      for (unsigned Slot = state_.OutputMerger.MinUAVBinding; Slot < state_.OutputMerger.MaxUAVBinding; Slot++) {
+        if (state_.OutputMerger.UAVs.test_bound(Slot) &&
+            CheckOverlap(state_.OutputMerger.UAVs[Slot].View.ptr(), pBuffer)) {
+          return false;
+        }
+      }
+    } else if (pBuffer->bindFlags() & D3D11_BIND_STREAM_OUTPUT) {
+      // SO
+      for (unsigned Slot = 0; Slot < 4; Slot++) {
+        if (state_.StreamOutput.Targets.test_bound(Slot) &&
+            CheckOverlap(state_.StreamOutput.Targets[Slot].Buffer.ptr(), pBuffer))
+          return false;
+      }
+    }
+
+    return true;
+  }
+
   void
   SetVertexBuffers(
       UINT StartSlot, UINT NumBuffers, ID3D11Buffer *const *ppVertexBuffers, const UINT *pStrides, const UINT *pOffsets
@@ -3538,8 +3638,8 @@ public:
 
     auto &VertexBuffers = state_.InputAssembler.VertexBuffers;
     for (unsigned slot = StartSlot; slot < StartSlot + NumBuffers; slot++) {
-      auto pVertexBuffer = ppVertexBuffers[slot - StartSlot];
-      if (pVertexBuffer) {
+      auto pVertexBuffer = reinterpret_cast<D3D11ResourceCommon *>(ppVertexBuffers[slot - StartSlot]);
+      if (pVertexBuffer && (pVertexBuffer->bindFlags() & D3D11_BIND_VERTEX_BUFFER) && ValidateIAHazard(pVertexBuffer)) {
         bool replaced = false;
         auto &entry = VertexBuffers.bind(slot, {pVertexBuffer}, replaced);
         if (!replaced) {
@@ -3569,7 +3669,7 @@ public:
           ERR("SetVertexBuffers: offset is null");
           entry.Stride = 0;
         }
-        entry.Buffer = reinterpret_cast<D3D11ResourceCommon *>(pVertexBuffer);
+        entry.Buffer = pVertexBuffer;
           EmitST([=, buffer = entry.Buffer->buffer(), offset = entry.Offset,
                 stride = entry.Stride](ArgumentEncodingContext &enc) mutable {
             enc.bindVertexBuffer(slot, offset, stride, forward_rc(buffer));
