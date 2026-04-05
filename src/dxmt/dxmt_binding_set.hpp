@@ -59,22 +59,22 @@ public:
   }
 
   constexpr bool
-  any_dirty_masked(uint16_t mask) noexcept {
+  any_dirty_masked(uint16_t mask) const noexcept {
     return (dirty.qword(0) & (uint64_t)mask) != 0;
   }
 
   constexpr bool
-  any_dirty_masked(uint64_t mask) noexcept {
+  any_dirty_masked(uint64_t mask) const noexcept {
     return (dirty.qword(0) & mask) != 0;
   }
 
   constexpr bool
-  any_dirty_masked(uint64_t mask_hi, uint64_t mask_lo) noexcept {
+  any_dirty_masked(uint64_t mask_hi, uint64_t mask_lo) const noexcept {
     return ((dirty.qword(0) & mask_lo) | (dirty.qword(1) & mask_hi)) != 0;
   }
 
   constexpr bool
-  all_bound_masked(uint32_t mask) noexcept {
+  all_bound_masked(uint32_t mask) const noexcept {
     return (bound.qword(0) & mask) == mask;
   }
 
@@ -84,9 +84,9 @@ public:
   }
 
   constexpr uint32_t
-  max_binding_64() noexcept {
-    auto qword = dirty.qword(0);
-    return qword == 0 ? 0 : 64 - __builtin_clzll(qword);
+  max_binding_64() const noexcept {
+    uint64_t qword = dirty.qword(0);
+    return 64u - bit::tzcnt(qword);
   }
 
   inline void
@@ -157,13 +157,23 @@ public:
 
   class bound_iterator {
     const BindingSet &binding_set;
+    const bit::bitset<NumElements> &bits;
     size_t current;
 
     void
     advance_to_next() {
-      while (current < NumElements && !binding_set.bound.get(current)) {
-        ++current;
+      while (current < NumElements) {
+        auto qword_index = current / 64;
+        auto tz = bit::tzcnt(uint64_t(bits.qword(qword_index) & ~((1ull << (current % 64)) - 1ull)));
+        if (tz < 64) {
+          current = qword_index * 64 + tz;
+          return;
+        }
+        current = (qword_index + 1) * 64;
+        continue;
       }
+      // just in case, clamp it
+      current = NumElements;
     }
 
   public:
@@ -173,7 +183,10 @@ public:
     using pointer = void;
     using reference = std::pair<size_t, const Element &>;
 
-    bound_iterator(const BindingSet &set, size_t start) : binding_set(set), current(start) {
+    bound_iterator(const BindingSet &set, const bit::bitset<NumElements> &bits, size_t start) :
+        binding_set(set),
+        bits(bits),
+        current(start) {
       advance_to_next();
     }
 
@@ -197,22 +210,18 @@ public:
     }
 
     bool
-    operator==(const bound_iterator &other) const {
-      return current == other.current;
-    }
-    bool
-    operator!=(const bound_iterator &other) const {
-      return !(*this == other);
+    operator!=(uint64_t index) const {
+      return current != index;
     }
   };
 
   bound_iterator
   begin() const {
-    return bound_iterator(*this, 0);
+    return bound_iterator(*this, bound, 0);
   }
-  bound_iterator
+  uint64_t
   end() const {
-    return bound_iterator(*this, NumElements);
+    return NumElements;
   }
 };
 } // namespace dxmt
