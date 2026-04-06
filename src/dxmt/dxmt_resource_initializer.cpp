@@ -126,7 +126,7 @@ ResourceInitializer::initRenderTargetWithZero(
     RETAIN(allocation);
     ALLOC_CLEAR(info);
 
-    info->render_target_array_length = texture->textureType() == WMTTextureType3D ? texture->depth() : 0;
+    info->render_target_array_length = texture->textureType() == WMTTextureType3D ? (texture->depth() >> level) : 0;
     info->render_target_width = width_sub;
     info->render_target_height = height_sub;
     info->colors[0].texture = allocation->texture();
