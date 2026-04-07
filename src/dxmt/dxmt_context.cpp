@@ -739,6 +739,7 @@ ArgumentEncodingContext::resolveRenderPassBarrier() {
   auto &barrier_state = encoder_current->barrier_state;
   if (barrier_state.barrierPreRasterAfterFragmentSet) {
     // TODO(barrier): encoder split
+    WARN("A fragment-vertex barrier is omitted");
     barrier_state.barrierSet = 0;
     barrier_state.barrierPreRasterSet = 0;
     barrier_state.barrierFragmentAfterPreRasterSet = 0;
@@ -747,15 +748,23 @@ ArgumentEncodingContext::resolveRenderPassBarrier() {
   }
   // Indiviual barriers
   if (barrier_state.barrierSet) {
-    // TODO(barrier): frag-frag
+    tile_barrier_cmd.dispatch();
     barrier_state.barrierSet = 0;
   }
   if (barrier_state.barrierPreRasterSet) {
-    // TODO(barrier): vert-vert
+    auto &cmd = encodeRenderCommand<wmtcmd_render_memory_barrier>();
+    cmd.type = WMTRenderCommandMemoryBarrier;
+    cmd.scope = WMTBarrierScopeBuffers | WMTBarrierScopeTextures;
+    cmd.stages_before = WMTRenderStagePreRaster;
+    cmd.stages_after = WMTRenderStagePreRaster;
     barrier_state.barrierPreRasterSet = 0;
   }
   if (barrier_state.barrierFragmentAfterPreRasterSet) {
-    // TODO(barrier): vert-frag (implicit)
+    auto &cmd = encodeRenderCommand<wmtcmd_render_memory_barrier>();
+    cmd.type = WMTRenderCommandMemoryBarrier;
+    cmd.scope = WMTBarrierScopeBuffers | WMTBarrierScopeTextures;
+    cmd.stages_before = WMTRenderStageFragment;
+    cmd.stages_after = WMTRenderStagePreRaster;
     barrier_state.barrierFragmentAfterPreRasterSet = 0;
   }
 }
