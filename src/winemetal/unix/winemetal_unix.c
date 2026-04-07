@@ -479,6 +479,11 @@ _MTLCommandBuffer_renderCommandEncoder(void *obj) {
   descriptor.renderTargetWidth = info->render_target_width;
   descriptor.visibilityResultBuffer = (id<MTLBuffer>)info->visibility_buffer;
 
+  if (info->tile_height && info->tile_width) {
+    descriptor.tileWidth = info->tile_width;
+    descriptor.tileHeight = info->tile_height;
+  }
+
   params->ret = (obj_handle_t)[(id<MTLCommandBuffer>)params->handle renderCommandEncoderWithDescriptor:descriptor];
 
   [descriptor release];
@@ -1141,6 +1146,11 @@ _MTLRenderCommandEncoder_encodeCommands(void *obj) {
         MTLScissorRect dst;
       } u = {.src = body->scissor_rect};
       [encoder setScissorRect:u.dst];
+      break;
+    }
+    case WMTRenderCommandDispatchThreadsPerTile: {
+      struct wmtcmd_render_dispatch_threads_per_tile *body = (struct wmtcmd_render_dispatch_threads_per_tile *)next;
+      [encoder dispatchThreadsPerTile:MTLSizeMake(body->width, body->height, 1)];
       break;
     }
     }
@@ -2755,6 +2765,55 @@ _MTLCommandBuffer_property(void *obj) {
   return STATUS_SUCCESS;
 }
 
+static NTSTATUS
+_MTLDevice_newTileRenderPipelineState(void *obj) {
+  struct unixcall_mtldevice_newrenderpso *params = obj;
+  const struct WMTTileRenderPipelineInfo *info = params->info.ptr;
+  MTLTileRenderPipelineDescriptor *descriptor = [[MTLTileRenderPipelineDescriptor alloc] init];
+
+  for (unsigned i = 0; i < 8; i++) {
+    descriptor.colorAttachments[i].pixelFormat = to_metal_pixel_format(info->color_formats[i]);
+  }
+
+  for (unsigned i = 0; i < 31; i++) {
+    if (info->immutable_tile_buffers & (1 << i))
+      descriptor.tileBuffers[i].mutability = MTLMutabilityImmutable;
+  }
+
+  descriptor.rasterSampleCount = info->raster_sample_count;
+  descriptor.threadgroupSizeMatchesTileSize = info->tgsize_matches_tile_size;
+
+
+  descriptor.tileFunction = (id<MTLFunction>)info->tile_function;
+
+  MTLPipelineOption options = MTLPipelineOptionNone;
+#if __MAC_OS_X_VERSION_MAX_ALLOWED >= 150000
+  if (@available(macOS 15, *)) {
+    if (info->num_binary_archives_for_lookup && info->binary_archives_for_lookup.ptr)
+      descriptor.binaryArchives = [NSArray arrayWithObjects:(id<MTLBinaryArchive> *)info->binary_archives_for_lookup.ptr
+                                                      count:info->num_binary_archives_for_lookup];
+    options = info->fail_on_binary_archive_miss ? MTLPipelineOptionFailOnBinaryArchiveMiss : MTLPipelineOptionNone;
+  }
+#endif
+  NSError *err = NULL;
+  params->ret_pso = (obj_handle_t)[(id<MTLDevice>)params->device newRenderPipelineStateWithTileDescriptor:descriptor
+                                                                                                  options:options
+                                                                                               reflection:nil
+                                                                                                    error:&err];
+  params->ret_error = (obj_handle_t)err;
+#if __MAC_OS_X_VERSION_MAX_ALLOWED >= 150000
+  if (@available(macOS 15, *)) {
+    if (!err && info->binary_archive_for_serialization) {
+      [(id<MTLBinaryArchive>)info->binary_archive_for_serialization
+          addTileRenderPipelineFunctionsWithDescriptor:descriptor
+                                                 error:&err];
+    }
+  }
+#endif
+  [descriptor release];
+  return STATUS_SUCCESS;
+}
+
 /*
  * Definition from cache.c
  */
@@ -2897,6 +2956,7 @@ const void *__wine_unix_call_funcs[] = {
     &_MTLCounterSampleBuffer_resolveCounterRange,
     &_MTLCommandBuffer_blitCommandEncoderWithSampleBuffers,
     &_MTLCommandBuffer_property,
+    &_MTLDevice_newTileRenderPipelineState,
 };
 
 #ifndef DXMT_NATIVE
@@ -3032,5 +3092,6 @@ const void *__wine_unix_call_wow64_funcs[] = {
     &_MTLCounterSampleBuffer_resolveCounterRange,
     &_MTLCommandBuffer_blitCommandEncoderWithSampleBuffers,
     &_MTLCommandBuffer_property,
+    &_MTLDevice_newTileRenderPipelineState,
 };
 #endif

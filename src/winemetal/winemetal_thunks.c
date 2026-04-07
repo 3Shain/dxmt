@@ -1164,3 +1164,18 @@ MTLCommandBuffer_property(obj_handle_t cmdbuf, enum WMTCommandBufferProperty pro
   UNIX_CALL(130, &params);
   return params.ret;
 }
+
+WINEMETAL_API obj_handle_t
+MTLDevice_newTileRenderPipelineState(
+    obj_handle_t device, const struct WMTTileRenderPipelineInfo *info, obj_handle_t *err_out
+) {
+  struct unixcall_mtldevice_newrenderpso params;
+  params.device = device;
+  WMT_MEMPTR_SET(params.info, info);
+  params.ret_error = 0;
+  params.ret_pso = 0;
+  UNIX_CALL(131, &params);
+  if (err_out)
+    *err_out = params.ret_error;
+  return params.ret_pso;
+}

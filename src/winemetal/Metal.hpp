@@ -827,6 +827,11 @@ public:
     return Reference<RenderPipelineState>(MTLDevice_newMeshRenderPipelineState(handle, &info, &error.handle));
   }
 
+  Reference<RenderPipelineState>
+  newRenderPipelineState(const WMTTileRenderPipelineInfo &info, Error &error) {
+    return Reference<RenderPipelineState>(MTLDevice_newTileRenderPipelineState(handle, &info, &error.handle));
+  }
+
   Reference<Fence>
   newFence() {
     return Reference<Fence>(MTLDevice_newFence(handle));
@@ -1107,6 +1112,22 @@ InitializeMeshRenderPipelineInfo(WMTMeshRenderPipelineInfo &info) {
   info.payload_memory_length = 0;
   info.mesh_tgsize_is_multiple_of_sgwidth = 0;
   info.object_tgsize_is_multiple_of_sgwidth = 0;
+  info.binary_archive_for_serialization = NULL_OBJECT_HANDLE;
+  info.binary_archives_for_lookup.set(nullptr);
+  info.num_binary_archives_for_lookup = 0;
+  info.fail_on_binary_archive_miss = false;
+}
+
+inline void
+InitializeTileRenderPipelineInfo(WMTTileRenderPipelineInfo &info) {
+  for (unsigned i = 0; i < 8; i++) {
+    info.color_formats[i] = WMTPixelFormatInvalid;
+  }
+  info.tile_function = NULL_OBJECT_HANDLE;
+  info.immutable_tile_buffers = 0;
+  info.raster_sample_count = 1;
+  info.tgsize_matches_tile_size = 0;
+
   info.binary_archive_for_serialization = NULL_OBJECT_HANDLE;
   info.binary_archives_for_lookup.set(nullptr);
   info.num_binary_archives_for_lookup = 0;
