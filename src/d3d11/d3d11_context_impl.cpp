@@ -2541,7 +2541,7 @@ public:
       UINT NumViews, ID3D11RenderTargetView *const *ppRenderTargetViews, ID3D11DepthStencilView *pDepthStencilView
   ) override {
     OMSetRenderTargetsAndUnorderedAccessViews(
-        NumViews, ppRenderTargetViews, pDepthStencilView, 0, D3D11_KEEP_UNORDERED_ACCESS_VIEWS, NULL, NULL
+        NumViews, ppRenderTargetViews, pDepthStencilView, NumViews, 0, NULL, NULL
     );
   }
 
