@@ -607,3 +607,7 @@ struct DXMTClearUintMetadata {
   float2 lo_mv_pixel = hi_mv_pixel * scale;
   downscaled.write(lo_mv_pixel.xyxy, pos); 
 }
+
+[[kernel]] void tile_barrier(ushort2 pos [[thread_position_in_threadgroup]]) {
+  // empty
+}

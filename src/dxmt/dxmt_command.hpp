@@ -8,6 +8,32 @@
 #include <unordered_map>
 
 namespace dxmt {
+struct TileBarrierPSOKey {
+  WMTPixelFormat color_formats[8];
+  unsigned raster_sample_count;
+};
+} // namespace dxmt
+
+namespace std {
+template <> struct hash<dxmt::TileBarrierPSOKey> {
+  size_t
+  operator()(const dxmt::TileBarrierPSOKey &v) const noexcept {
+    constexpr size_t binsize = sizeof(v);
+    return std::hash<string_view>{}({reinterpret_cast<const char *>(&v), binsize});
+  };
+};
+
+template <> struct equal_to<dxmt::TileBarrierPSOKey> {
+  bool
+  operator()(const dxmt::TileBarrierPSOKey &x, const dxmt::TileBarrierPSOKey &y) const {
+    constexpr size_t binsize = sizeof(x);
+    return std::string_view({reinterpret_cast<const char *>(&x), binsize}) ==
+           std::string_view({reinterpret_cast<const char *>(&y), binsize});
+  }
+};
+}; // namespace std
+
+namespace dxmt {
 
 class ArgumentEncodingContext;
 
@@ -279,6 +305,23 @@ private:
   ArgumentEncodingContext &ctx_;
   WMT::Device device_;
   WMT::Reference<WMT::ComputePipelineState> pso_downscale_dilated_mv_;
+};
+
+constexpr auto kBarrierTileSize = 16;
+
+class TileBarrierContext {
+public:
+  TileBarrierContext(WMT::Device device, InternalCommandLibrary &lib, ArgumentEncodingContext &ctx);
+
+  void dispatch();
+
+private:
+  WMT::RenderPipelineState getPSO(TileBarrierPSOKey &format);
+
+  ArgumentEncodingContext &ctx_;
+  WMT::Device device_;
+  WMT::Reference<WMT::Function> tile_function_;
+  std::unordered_map<TileBarrierPSOKey, WMT::Reference<WMT::RenderPipelineState>> psos_;
 };
 
 } // namespace dxmt
