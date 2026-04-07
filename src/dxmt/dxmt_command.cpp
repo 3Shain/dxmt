@@ -695,4 +695,53 @@ MTLFXMVScaleContext::dispatch(
   ctx_.endPass();
 }
 
+TileBarrierContext::TileBarrierContext(WMT::Device device, InternalCommandLibrary &lib, ArgumentEncodingContext &ctx) :
+    ctx_(ctx),
+    device_(device) {
+  tile_function_ = lib.getLibrary().newFunction("tile_barrier");
+}
+
+void
+TileBarrierContext::dispatch() {
+  if (auto tile_pso = getPSO(ctx_.currentRenderEncoder()->tile_barrier_pso_key)) {
+    auto &cmd_pso = ctx_.encodeRenderCommand<wmtcmd_render_setpso>();
+    cmd_pso.type = WMTRenderCommandSetPSO;
+    cmd_pso.pso = tile_pso;
+
+    auto &cmd_dispatch = ctx_.encodeRenderCommand<wmtcmd_render_dispatch_threads_per_tile>();
+    cmd_dispatch.type = WMTRenderCommandDispatchThreadsPerTile;
+    cmd_dispatch.width = kBarrierTileSize;
+    cmd_dispatch.height = kBarrierTileSize;
+
+    if (auto pso_recover = ctx_.currentRenderEncoder()->last_pso) {
+      auto &cmd_recover = ctx_.encodeRenderCommand<wmtcmd_render_setpso>();
+      cmd_recover.type = WMTRenderCommandSetPSO;
+      cmd_recover.pso = pso_recover;
+    }
+  }
+}
+
+WMT::RenderPipelineState
+TileBarrierContext::getPSO(TileBarrierPSOKey &key) {
+  auto it = psos_.find(key);
+  if (it != psos_.end())
+    return it->second;
+
+  WMTTileRenderPipelineInfo info;
+  WMT::InitializeTileRenderPipelineInfo(info);
+  memcpy(&info.color_formats, key.color_formats, sizeof(key.color_formats));
+  info.raster_sample_count = key.raster_sample_count;
+  info.tile_function = tile_function_;
+
+  WMT::Reference<WMT::Error> err;
+  auto pso = device_.newRenderPipelineState(info, err);
+
+  if (!pso) {
+    ERR("Failed to create tile PSO: ", err.description().getUTF8String());
+    return {};
+  }
+
+  return psos_.emplace(key, std::move(pso)).first->second;
+}
+
 } // namespace dxmt

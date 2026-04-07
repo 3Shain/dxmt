@@ -4413,7 +4413,7 @@ public:
       uint32_t render_target_width = state_.OutputMerger.RenderTargetWidth;
       uint32_t render_target_height = state_.OutputMerger.RenderTargetHeight;
       bool uav_only = false;
-      uint32_t uav_only_sample_count = 0;
+      uint32_t sample_count = state_.OutputMerger.SampleCount;
       if (state_.OutputMerger.DSV) {
         dsv_info.Texture = state_.OutputMerger.DSV->texture();
         dsv_info.viewId = state_.OutputMerger.DSV->viewId();
@@ -4430,7 +4430,7 @@ public:
         auto &viewport = state_.Rasterizer.viewports[0];
         render_target_width = viewport.Width;
         render_target_height = viewport.Height;
-        uav_only_sample_count = state->UAVOnlySampleCount();
+        sample_count = state->UAVOnlySampleCount();
         if (!(render_target_width && render_target_height)) {
           ERR("uav only rendering is enabled but viewport is empty");
           return false;
@@ -4442,7 +4442,7 @@ public:
       allocated_encoder_argbuf_size_ = allocated_encoder_argbuf_size.get();
 
       EmitST([rtvs = std::move(rtvs), dsv = std::move(dsv_info), effective_render_target, uav_only,
-            render_target_height, render_target_width, uav_only_sample_count,
+            render_target_height, render_target_width, sample_count,
             render_target_array, encoder_argbuf_size = std::move(allocated_encoder_argbuf_size)](ArgumentEncodingContext &ctx) {
         auto pool = WMT::MakeAutoreleasePool();
         uint32_t dsv_planar_flags = DepthStencilPlanarFlags(dsv.PixelFormat);
@@ -4458,6 +4458,7 @@ public:
           color.depth_plane = rtv.DepthPlane;
           color.load_action = WMTLoadActionLoad;
           color.store_action = WMTStoreActionStore;
+          info.tile_barrier_pso_key.color_formats[rtv.RenderTargetIndex] = rtv.PixelFormat;
         };
 
         if (dsv.Texture.ptr()) {
@@ -4481,13 +4482,14 @@ public:
         }
         if (effective_render_target == 0) {
           if (uav_only) {
-            info.default_raster_sample_count = uav_only_sample_count;
+            info.default_raster_sample_count = sample_count;
           }
         }
 
         info.render_target_height = render_target_height;
         info.render_target_width = render_target_width;
         info.render_target_array_length = render_target_array;
+        info.tile_barrier_pso_key.raster_sample_count = sample_count;
       });
     }
 
@@ -4669,6 +4671,7 @@ public:
       auto &cmd = enc.encodeRenderCommand<wmtcmd_render_setpso>();
       cmd.type = WMTRenderCommandSetPSO;
       cmd.pso = GraphicsPipeline.PipelineState;
+      render_encoder->last_pso = GraphicsPipeline.PipelineState;
     });
 
     cmdbuf_state = CommandBufferState::TessellationRenderPipelineReady;
@@ -4714,6 +4717,7 @@ public:
       auto &cmd = enc.encodeRenderCommand<wmtcmd_render_setpso>();
       cmd.type = WMTRenderCommandSetPSO;
       cmd.pso = GraphicsPipeline.PipelineState;
+      render_encoder->last_pso = GraphicsPipeline.PipelineState;
     });
 
     cmdbuf_state = CommandBufferState::GeometryRenderPipelineReady;
@@ -4769,6 +4773,7 @@ public:
       auto &cmd = enc.encodeRenderCommand<wmtcmd_render_setpso>();
       cmd.type = WMTRenderCommandSetPSO;
       cmd.pso = GraphicsPipeline.PipelineState;
+      enc.currentRenderEncoder()->last_pso = GraphicsPipeline.PipelineState;
     });
 
     cmdbuf_state = CommandBufferState::RenderPipelineReady;

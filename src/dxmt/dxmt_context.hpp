@@ -178,6 +178,8 @@ struct RenderEncoderData : EncoderData {
   bool use_visibility_result = 0;
   bool use_tessellation = 0;
   bool use_geometry = 0;
+  TileBarrierPSOKey tile_barrier_pso_key = {};
+  WMT::RenderPipelineState last_pso = {};
 };
 
 struct ComputeEncoderData : EncoderData {
@@ -746,6 +748,7 @@ public:
   DepthStencilBlitContext blit_depth_stencil_cmd;
   ClearResourceKernelContext clear_res_cmd;
   MTLFXMVScaleContext mv_scale_cmd;
+  TileBarrierContext tile_barrier_cmd;
 
 private:
   DXMT_ENCODER_LIST_OP checkEncoderRelation(EncoderData* former, EncoderData* latter);

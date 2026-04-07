@@ -17,6 +17,7 @@ ArgumentEncodingContext::ArgumentEncodingContext(CommandQueue &queue, WMT::Devic
     blit_depth_stencil_cmd(device, lib, *this),
     clear_res_cmd(device, lib, *this),
     mv_scale_cmd(device, lib, *this),
+    tile_barrier_cmd(device, lib, *this),
     timestamp_state_(device),
     device_(device),
     queue_(queue) {
