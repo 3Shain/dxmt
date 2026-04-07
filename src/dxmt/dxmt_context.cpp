@@ -640,6 +640,18 @@ ArgumentEncodingContext::endPass() {
     if (encoder_current->type == EncoderType::Render) {
       vro_state_.endEncoder();
       auto render_encoder = static_cast<RenderEncoderData *>(encoder_current);
+
+      if (render_encoder->depth.attachment && !(render_encoder->dsv_readonly_flags & 1))
+        access<PipelineStage::Pixel>(
+            render_encoder->depth.attachment->allocation->descriptor, render_encoder->depth.attachment->key,
+            DXMT_ENCODER_RESOURCE_ACESS_WRITE
+        );
+      if (render_encoder->stencil.attachment && !(render_encoder->dsv_readonly_flags & 2))
+        access<PipelineStage::Pixel>(
+            render_encoder->stencil.attachment->allocation->descriptor, render_encoder->stencil.attachment->key,
+            DXMT_ENCODER_RESOURCE_ACESS_WRITE
+        );
+
       render_encoder->fence_wait_vertex =
           fence_locality_.collectAndSimplifyWaits(render_encoder->fence_wait_vertex, render_encoder->encoder_id_vertex);
       encoder_current->fence_wait =

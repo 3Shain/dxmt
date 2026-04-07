@@ -4462,9 +4462,7 @@ public:
         };
 
         if (dsv.Texture.ptr()) {
-          auto access_flag = ((dsv.ReadOnlyFlags & dsv_planar_flags) == dsv_planar_flags)
-                                 ? DXMT_ENCODER_RESOURCE_ACESS_READ
-                                 : DXMT_ENCODER_RESOURCE_ACESS_READWRITE;
+          auto access_flag = DXMT_ENCODER_RESOURCE_ACESS_READ;
           // TODO: ...should know more about store behavior (e.g. DiscardView)
           if (dsv_planar_flags & 1) {
             auto &depth = info.depth;
