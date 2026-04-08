@@ -138,6 +138,7 @@ HRESULT CreateDynamicTextureInternal(MTLD3D11Device *pDevice,
   auto texture = Rc<Texture>(new Texture(info, pDevice->GetMTLDevice()));
   Flags<TextureAllocationFlag> flags;
   flags.set(TextureAllocationFlag::GpuManaged);
+  flags.set(TextureAllocationFlag::ShaderReadonly);
   if (pInitialData) {
     auto default_allocation = texture->allocate(flags);
     InitializeTextureData(pDevice, default_allocation->texture(), finalDesc, pInitialData);
