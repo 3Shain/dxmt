@@ -50,6 +50,9 @@ TextureAllocation::TextureAllocation(
 
   gpuResourceID = info_copy.gpu_resource_id;
   machPort = 0;
+  fenceTrackers.resize(
+      flags.test(TextureAllocationFlag::ShaderReadonly) ? 1 : descriptor->arrayLength() * descriptor->miplevelCount()
+  );
 };
 
 TextureAllocation::TextureAllocation(
@@ -62,6 +65,9 @@ TextureAllocation::TextureAllocation(
   mappedMemory = nullptr;
   gpuResourceID = textureDescriptor.gpu_resource_id;
   machPort = textureDescriptor.mach_port;
+  fenceTrackers.resize(
+      flags.test(TextureAllocationFlag::ShaderReadonly) ? 1 : descriptor->arrayLength() * descriptor->miplevelCount()
+  );
 };
 
 TextureAllocation::~TextureAllocation(){
@@ -193,6 +199,8 @@ Texture::import(mach_port_t mach_port) {
       flags.set(TextureAllocationFlag::GpuPrivate);
     if (info.options & WMTResourceHazardTrackingModeUntracked)
       flags.set(TextureAllocationFlag::NoTracking);
+    if ((info.usage & (WMTTextureUsageShaderWrite | WMTTextureUsageRenderTarget)) == 0)
+      flags.set(TextureAllocationFlag::ShaderReadonly);
     flags.set(TextureAllocationFlag::Shared);
     return new TextureAllocation(this, std::move(texture), info, flags);
   }
