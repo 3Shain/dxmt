@@ -6,6 +6,7 @@
 #include "rc/util_rc_ptr.hpp"
 #include "thread.hpp"
 #include "util_flags.hpp"
+#include "util_svector.hpp"
 
 namespace dxmt {
 
@@ -20,8 +21,6 @@ enum class TextureAllocationFlag : uint32_t {
   Shared = 5,
 };
 
-typedef uint64_t TextureViewKey;
-
 struct TextureViewDescriptor {
   WMTPixelFormat format    : 24;
   WMTTextureType type      : 8;
@@ -29,6 +28,38 @@ struct TextureViewDescriptor {
   uint32_t miplevelCount   : 4 = 1;
   uint32_t firstArraySlice : 12 = 0;
   uint32_t arraySize       : 12 = 1;
+};
+
+struct TextureViewKey {
+  union {
+    struct {
+      uint64_t index       : 28;
+      uint64_t mip_count   : 4;
+      uint64_t mip_start   : 4;
+      uint64_t array_start : 12;
+      uint64_t mip_end     : 4;
+      uint64_t array_end   : 12;
+    };
+    uint64_t impl_;
+  };
+
+  TextureViewKey() {
+    impl_ = 0;
+  }
+  TextureViewKey(const TextureViewDescriptor &descriptor, unsigned index, unsigned total_mip_count) {
+    mip_start = descriptor.firstMiplevel;
+    array_start = descriptor.firstArraySlice;
+    mip_end = descriptor.firstMiplevel + descriptor.miplevelCount;
+    array_end = descriptor.firstArraySlice + descriptor.arraySize;
+    mip_count = total_mip_count;
+    this->index = index;
+  }
+  TextureViewKey(uint64_t impl) {
+    impl_ = impl;
+  }
+  operator uint64_t() const {
+    return impl_;
+  }
 };
 
 class Texture;
@@ -52,7 +83,7 @@ public:
   TextureView &operator=(const TextureView &) = delete;
   TextureView &operator=(TextureView &&) = delete;
   TextureView(TextureAllocation *allocation);
-  TextureView(TextureAllocation *allocation, TextureViewKey key, TextureViewDescriptor descriptor);
+  TextureView(TextureAllocation *allocation, unsigned index, TextureViewDescriptor descriptor);
 
 private:
   std::atomic<uint32_t> refcount_ = {0u};
@@ -118,7 +149,7 @@ private:
   WMT::Reference<WMT::Buffer> buffer_;
   uint32_t version_ = 0;
   Flags<TextureAllocationFlag> flags_;
-  std::vector<TextureViewRef> cached_view_;
+  small_vector<TextureViewRef, 4> cached_view_;
 };
 
 class Texture {
@@ -147,13 +178,13 @@ public:
   WMTTextureType
   textureType(TextureViewKey view) {
     std::shared_lock<dxmt::shared_mutex> lock(mutex_);
-    return viewDescriptors_[view].type;
+    return viewDescriptors_[view.index].type;
   }
 
   WMTPixelFormat
   pixelFormat(TextureViewKey view) {
     std::shared_lock<dxmt::shared_mutex> lock(mutex_);
-    return viewDescriptors_[view].format;
+    return viewDescriptors_[view.index].format;
   }
 
   WMTTextureUsage
@@ -183,14 +214,12 @@ public:
 
   unsigned
   width(TextureViewKey view) {
-    std::shared_lock<dxmt::shared_mutex> lock(mutex_);
-    return std::max(info_.width >> viewDescriptors_[view].firstMiplevel, 1u);
+    return std::max(info_.width >> view.mip_start, 1u);
   }
 
   unsigned
   height(TextureViewKey view) {
-    std::shared_lock<dxmt::shared_mutex> lock(mutex_);
-    return std::max(info_.height >> viewDescriptors_[view].firstMiplevel, 1u);
+    return std::max(info_.height >> view.mip_start, 1u);
   }
 
   /**
@@ -210,14 +239,15 @@ public:
 
   unsigned
   arrayLength(TextureViewKey view) {
-    std::shared_lock<dxmt::shared_mutex> lock(mutex_);
-    return viewDescriptors_[view].arraySize;
+    return view.array_end - view.array_start;
   }
 
   unsigned
   miplevelCount() const {
     return info_.mipmap_level_count;
   }
+
+  TextureViewKey fullView;
 
   Rc<TextureAllocation> allocate(Flags<TextureAllocationFlag> flags);
   Rc<TextureAllocation> import(mach_port_t mach_port);
@@ -245,7 +275,7 @@ private:
   uint32_t version_ = 0;
   std::atomic<uint32_t> refcount_ = {0u};
 
-  std::vector<TextureViewDescriptor> viewDescriptors_;
+  small_vector<TextureViewDescriptor, 4> viewDescriptors_;
   dxmt::shared_mutex mutex_;
   WMT::Device device_;
 };

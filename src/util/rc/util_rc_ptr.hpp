@@ -37,7 +37,7 @@ public:
     this->incRef();
   }
 
-  template <typename Tx> Rc(const Rc<Tx> &other) : m_object(other.m_object) {
+  template <std::derived_from<T> Tx> Rc(const Rc<Tx> &other) : m_object(other.m_object) {
     this->incRef();
   }
 
@@ -45,7 +45,7 @@ public:
     other.m_object = nullptr;
   }
 
-  template <typename Tx> Rc(Rc<Tx> &&other) : m_object(other.m_object) {
+  template <std::derived_from<T> Tx> Rc(Rc<Tx> &&other) : m_object(other.m_object) {
     other.m_object = nullptr;
   }
 
@@ -62,7 +62,7 @@ public:
     return *this;
   }
 
-  template <typename Tx> Rc &operator=(const Rc<Tx> &other) {
+  template <std::derived_from<T> Tx> Rc &operator=(const Rc<Tx> &other) {
     other.incRef();
     this->decRef();
     m_object = other.m_object;
@@ -76,7 +76,7 @@ public:
     return *this;
   }
 
-  template <typename Tx> Rc &operator=(Rc<Tx> &&other) {
+  template <std::derived_from<T> Tx> Rc &operator=(Rc<Tx> &&other) {
     this->decRef();
     this->m_object = other.m_object;
     other.m_object = nullptr;
