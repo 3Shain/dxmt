@@ -370,6 +370,8 @@ HRESULT CreateDeviceTextureInternal(MTLD3D11Device *pDevice,
     flags.set(TextureAllocationFlag::GpuPrivate);
     if (finalDesc.Usage == D3D11_USAGE_IMMUTABLE)
       flags.set(TextureAllocationFlag::GpuReadonly);
+    if (!(finalDesc.BindFlags & (D3D11_BIND_UNORDERED_ACCESS | D3D11_BIND_RENDER_TARGET | D3D11_BIND_DEPTH_STENCIL)))
+      flags.set(TextureAllocationFlag::ShaderReadonly);
     flags.set(TextureAllocationFlag::Shared);
     auto allocation = texture->allocate(flags);
 
@@ -421,6 +423,8 @@ HRESULT CreateDeviceTextureInternal(MTLD3D11Device *pDevice,
 
   Flags<TextureAllocationFlag> flags;
   flags.set(finalDesc.CPUAccessFlags ? TextureAllocationFlag::GpuManaged : TextureAllocationFlag::GpuPrivate);
+  if (!(finalDesc.BindFlags & (D3D11_BIND_UNORDERED_ACCESS | D3D11_BIND_RENDER_TARGET | D3D11_BIND_DEPTH_STENCIL)))
+    flags.set(TextureAllocationFlag::ShaderReadonly);
   if (finalDesc.Usage == D3D11_USAGE_IMMUTABLE)
     flags.set(TextureAllocationFlag::GpuReadonly);
   if (single_subresource && (finalDesc.BindFlags & D3D11_BIND_DEPTH_STENCIL)) {

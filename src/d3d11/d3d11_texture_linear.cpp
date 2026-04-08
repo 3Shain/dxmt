@@ -47,6 +47,7 @@ TDynamicLinearTexture(
       bytes_per_row_(bytes_per_row) {
     this->texture_ = new Texture(bytes_per_image, bytes_per_row, descriptor, device->GetMTLDevice());
     Flags<TextureAllocationFlag> flags;
+    flags.set(TextureAllocationFlag::ShaderReadonly);
     if (!this->m_parent->IsTraced() && pDesc->Usage == D3D11_USAGE_DYNAMIC)
       flags.set(TextureAllocationFlag::CpuWriteCombined);
     // if (pDesc->Usage != D3D11_USAGE_DEFAULT)
