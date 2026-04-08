@@ -474,7 +474,7 @@ ArgumentEncodingContext::present(Rc<Texture> &texture, Rc<Presenter> &presenter,
   encoder_info->metadata = metadata;
 
   encoder_current = encoder_info;
-  encoder_info->backbuffer = access(texture, 0, DXMT_ENCODER_RESOURCE_ACESS_READ).texture;
+  encoder_info->backbuffer = access(texture, texture->fullView, DXMT_ENCODER_RESOURCE_ACESS_READ).texture;
   endPass();
 }
 
@@ -489,8 +489,8 @@ ArgumentEncodingContext::upscale(Rc<Texture> &texture, Rc<Texture> &upscaled, Rc
   encoder_info->scaler = scaler;
 
   encoder_current = encoder_info;
-  encoder_info->backbuffer = access(texture, 0, DXMT_ENCODER_RESOURCE_ACESS_READ).texture;
-  encoder_info->upscaled = access(upscaled, 0, DXMT_ENCODER_RESOURCE_ACESS_WRITE).texture;
+  encoder_info->backbuffer = access(texture, texture->fullView, DXMT_ENCODER_RESOURCE_ACESS_READ).texture;
+  encoder_info->upscaled = access(upscaled, upscaled->fullView, DXMT_ENCODER_RESOURCE_ACESS_WRITE).texture;
   endPass();
 }
 
@@ -509,12 +509,12 @@ ArgumentEncodingContext::upscaleTemporal(
   encoder_info->props = props;
 
   encoder_current = encoder_info;
-  encoder_info->input = access(input, 0, DXMT_ENCODER_RESOURCE_ACESS_READ).texture;
-  encoder_info->depth = access(depth, 0, DXMT_ENCODER_RESOURCE_ACESS_READ).texture;
+  encoder_info->input = access(input, input->fullView, DXMT_ENCODER_RESOURCE_ACESS_READ).texture;
+  encoder_info->depth = access(depth, depth->fullView, DXMT_ENCODER_RESOURCE_ACESS_READ).texture;
   encoder_info->motion_vector = access(motion_vector, mvViewId, DXMT_ENCODER_RESOURCE_ACESS_READ).texture;
-  encoder_info->output = access(output, 0, DXMT_ENCODER_RESOURCE_ACESS_WRITE).texture;
+  encoder_info->output = access(output, output->fullView, DXMT_ENCODER_RESOURCE_ACESS_WRITE).texture;
   if (exposure) {
-    encoder_info->exposure = access(exposure, 0, DXMT_ENCODER_RESOURCE_ACESS_READ).texture;
+    encoder_info->exposure = access(exposure, exposure->fullView, DXMT_ENCODER_RESOURCE_ACESS_READ).texture;
   }
   endPass();
 }

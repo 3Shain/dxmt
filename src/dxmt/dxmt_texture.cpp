@@ -23,12 +23,12 @@ TextureView::TextureView(TextureAllocation *allocation) :
     texture(allocation->texture()),
     gpuResourceID(allocation->gpuResourceID),
     allocation(allocation),
-    key(0) {}
+    key(allocation->descriptor->fullView) {}
 
-TextureView::TextureView(TextureAllocation *allocation, TextureViewKey key, TextureViewDescriptor descriptor) :
+TextureView::TextureView(TextureAllocation *allocation, unsigned index, TextureViewDescriptor descriptor) :
     gpuResourceID(0),
     allocation(allocation),
-    key(key) {
+    key(descriptor, index, allocation->descriptor->miplevelCount()) {
   auto parent = allocation->texture();
   texture = parent.newTextureView(
       descriptor.format, descriptor.type, descriptor.firstMiplevel, descriptor.miplevelCount,
@@ -100,11 +100,11 @@ Texture::createView(TextureViewDescriptor const &descriptor) {
       continue;
     if (viewDescriptors_[i].arraySize != descriptor.arraySize)
       continue;
-    return i;
+    return TextureViewKey(descriptor, i, info_.mipmap_level_count);
   }
   viewDescriptors_.push_back(descriptor);
   version_ = version_ + 1;
-  return i;
+  return TextureViewKey(descriptor, i, info_.mipmap_level_count);
 }
 
 Texture::Texture(const WMTTextureInfo &descriptor, WMT::Device device) :
@@ -120,6 +120,7 @@ Texture::Texture(const WMTTextureInfo &descriptor, WMT::Device device) :
       .arraySize = arrayLength(),
   });
   version_ = 1;
+  fullView = TextureViewKey(viewDescriptors_[0], 0, info_.mipmap_level_count);
 }
 
 Texture::Texture(
@@ -143,6 +144,7 @@ Texture::Texture(
       .arraySize = 1,
   });
   version_ = 1;
+  fullView = TextureViewKey(viewDescriptors_[0], 0, info_.mipmap_level_count);
 }
 
 Rc<TextureAllocation>
@@ -208,12 +210,12 @@ Texture::view(TextureViewKey key, TextureAllocation* allocation) {
   if (unlikely(allocation->version_ != version_)) {
     prepareAllocationViews(allocation);
   }
-  return *allocation->cached_view_[key];
+  return *allocation->cached_view_[key.index];
 }
 
 TextureViewKey Texture::checkViewUseArray(TextureViewKey key, bool isArray) {
   std::shared_lock<dxmt::shared_mutex> shared_lock(mutex_);
-  auto view = viewDescriptors_[key];
+  auto view = viewDescriptors_[key.index];
   shared_lock = {};
   static constexpr uint32_t ARRAY_TYPE_MASK = 0b0101001010;
   if (unlikely(bool((1 << uint32_t(view.type)) & ARRAY_TYPE_MASK) != isArray)) {
@@ -262,7 +264,7 @@ TextureViewKey Texture::checkViewUseArray(TextureViewKey key, bool isArray) {
 
 TextureViewKey Texture::checkViewUseFormat(TextureViewKey key, WMTPixelFormat format) {
   std::shared_lock<dxmt::shared_mutex> shared_lock(mutex_);
-  auto view = viewDescriptors_[key];
+  auto view = viewDescriptors_[key.index];
   shared_lock = {};
   if (unlikely(view.format != format)) {
     auto new_view_desc = view;
