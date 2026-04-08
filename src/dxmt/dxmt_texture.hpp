@@ -19,6 +19,7 @@ enum class TextureAllocationFlag : uint32_t {
   OwnedByCommandList = 3,
   GpuManaged = 4,
   Shared = 5,
+  ShaderReadonly = 6,
 };
 
 struct TextureViewDescriptor {
@@ -129,7 +130,7 @@ public:
   void *mappedMemory;
   uint64_t gpuResourceID;
   mach_port_t machPort;
-  GenericAccessTracker fenceTracker;
+  small_vector<GenericAccessTracker, 1> fenceTrackers;
 
 private:
   TextureAllocation(

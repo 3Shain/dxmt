@@ -316,16 +316,6 @@ public:
     track<stage>(tracker, flags & DXMT_ENCODER_RESOURCE_ACESS_WRITE);
   }
 
-  template <PipelineStage stage>
-  void
-  trackTexture(TextureAllocation *allocation, DXMT_ENCODER_RESOURCE_ACESS flags) {
-    retainAllocation(allocation);
-    if (allocation->flags().test(TextureAllocationFlag::GpuReadonly))
-      return;
-    auto &tracker = allocation->fenceTracker;
-    track<stage>(tracker, flags & DXMT_ENCODER_RESOURCE_ACESS_WRITE);
-  }
-
 public:
   template<PipelineStage stage = PipelineStage::Compute>
   std::pair<BufferAllocation *, uint64_t>
@@ -348,7 +338,15 @@ public:
   WMT::Texture
   access(Rc<Texture> const &texture, unsigned level, unsigned slice, DXMT_ENCODER_RESOURCE_ACESS flags) {
     auto allocation = texture->current();
-    trackTexture<stage>(allocation, flags);
+    retainAllocation(allocation);
+    if (!allocation->flags().test(TextureAllocationFlag::GpuReadonly)) {
+      if (likely(allocation->flags().test(TextureAllocationFlag::ShaderReadonly))) {
+        track<stage>(allocation->fenceTrackers[0], flags & DXMT_ENCODER_RESOURCE_ACESS_WRITE);
+      } else {
+        auto &tracker = allocation->fenceTrackers[slice * allocation->descriptor->miplevelCount() + level];
+        track<stage>(tracker, flags & DXMT_ENCODER_RESOURCE_ACESS_WRITE);
+      }
+    }
     return allocation->texture();
   }
 
@@ -357,8 +355,22 @@ public:
   access(Rc<Texture> const &texture, uint64_t viewId, DXMT_ENCODER_RESOURCE_ACESS flags) {
     assert(viewId);
     auto allocation = texture->current();
-    trackTexture<stage>(allocation, flags);
-    return texture->view(viewId, allocation);
+    retainAllocation(allocation);
+    auto &view = texture->view(viewId, allocation);
+    if (!allocation->flags().test(TextureAllocationFlag::GpuReadonly)) {
+      if (likely(allocation->flags().test(TextureAllocationFlag::ShaderReadonly))) {
+        track<stage>(allocation->fenceTrackers[0], flags & DXMT_ENCODER_RESOURCE_ACESS_WRITE);
+      } else {
+        TextureViewKey view = viewId;
+        for (unsigned slice = view.array_start; slice < view.array_end; slice++) {
+          for (unsigned level = view.mip_start; level < view.mip_end; level++) {
+            auto &tracker = allocation->fenceTrackers[slice * view.mip_count + level];
+            track<stage>(tracker, flags & DXMT_ENCODER_RESOURCE_ACESS_WRITE);
+          }
+        }
+      }
+    }
+    return view;
   }
 
   template <PipelineStage stage>
