@@ -398,7 +398,7 @@ ArgumentEncodingContext::retainAllocation(Allocation* allocation) {
 }
 
 void
-ArgumentEncodingContext::clearColor(Rc<Texture> &&texture, unsigned viewId, unsigned arrayLength, WMTClearColor color) {
+ArgumentEncodingContext::clearColor(Rc<Texture> &&texture, uint64_t viewId, unsigned arrayLength, WMTClearColor color) {
   assert(!encoder_current);
   auto encoder_info = allocate<ClearEncoderData>();
   encoder_info->type = EncoderType::Clear;
@@ -421,7 +421,7 @@ ArgumentEncodingContext::clearColor(Rc<Texture> &&texture, unsigned viewId, unsi
 
 void
 ArgumentEncodingContext::clearDepthStencil(
-    Rc<Texture> &&texture, unsigned viewId, unsigned arrayLength, unsigned flag, float depth, uint8_t stencil
+    Rc<Texture> &&texture, uint64_t viewId, unsigned arrayLength, unsigned flag, float depth, uint8_t stencil
 ) {
   assert(!encoder_current);
   auto encoder_info = allocate<ClearEncoderData>();
