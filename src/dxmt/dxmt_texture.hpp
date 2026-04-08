@@ -20,7 +20,7 @@ enum class TextureAllocationFlag : uint32_t {
   Shared = 5,
 };
 
-typedef unsigned TextureViewKey;
+typedef uint64_t TextureViewKey;
 
 struct TextureViewDescriptor {
   WMTPixelFormat format    : 24;

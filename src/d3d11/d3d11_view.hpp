@@ -22,7 +22,7 @@ struct D3D11ShaderResourceView : ID3D11ShaderResourceView1 {
   Buffer *buffer_{};
   BufferSlice slice_{};
   Texture *texture_{};
-  unsigned view_id_{};
+  uint64_t view_id_{};
   ResourceSubsetState subset_{};
   uint32_t bind_flags_{};
 
@@ -38,7 +38,7 @@ struct D3D11ShaderResourceView : ID3D11ShaderResourceView1 {
   texture() const {
     return texture_;
   };
-  unsigned
+  uint64_t
   viewId() const {
     return view_id_;
   };
@@ -57,7 +57,7 @@ struct D3D11UnorderedAccessView : ID3D11UnorderedAccessView1 {
   Buffer *buffer_{};
   BufferSlice slice_{};
   Texture *texture_{};
-  unsigned view_id_{};
+  uint64_t view_id_{};
   Rc<Buffer> counter_;
   ResourceSubsetState subset_{};
   uint32_t bind_flags_{};
@@ -74,7 +74,7 @@ struct D3D11UnorderedAccessView : ID3D11UnorderedAccessView1 {
   texture() const {
     return texture_;
   };
-  unsigned
+  uint64_t
   viewId() const {
     return view_id_;
   };
@@ -90,7 +90,7 @@ struct D3D11UnorderedAccessView : ID3D11UnorderedAccessView1 {
 struct D3D11RenderTargetView : ID3D11RenderTargetView1 {
   Com<D3D11ResourceCommon> resource_{};
   Texture *texture_{};
-  unsigned view_id_{};
+  uint64_t view_id_{};
   MTL_RENDER_PASS_ATTACHMENT_DESC pass_desc_;
   WMTPixelFormat format_{};
   ResourceSubsetState subset_{};
@@ -108,7 +108,7 @@ struct D3D11RenderTargetView : ID3D11RenderTargetView1 {
   texture() const {
     return texture_;
   };
-  unsigned
+  uint64_t
   viewId() const {
     return view_id_;
   };
@@ -120,7 +120,7 @@ struct D3D11RenderTargetView : ID3D11RenderTargetView1 {
 struct D3D11DepthStencilView : ID3D11DepthStencilView {
   Com<D3D11ResourceCommon> resource_{};
   Texture *texture_{};
-  unsigned view_id_{};
+  uint64_t view_id_{};
   MTL_RENDER_PASS_ATTACHMENT_DESC pass_desc_;
   WMTPixelFormat format_{};
   uint32_t readonly_flags_{};
@@ -140,7 +140,7 @@ struct D3D11DepthStencilView : ID3D11DepthStencilView {
   texture() const {
     return texture_;
   };
-  unsigned
+  uint64_t
   viewId() const {
     return view_id_;
   };

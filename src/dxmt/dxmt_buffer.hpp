@@ -24,7 +24,7 @@ enum class BufferAllocationFlag : uint32_t {
   CpuPlaced = 6,
 };
 
-typedef unsigned BufferViewKey;
+typedef uint64_t BufferViewKey;
 
 struct BufferViewDescriptor {
   WMTPixelFormat format;

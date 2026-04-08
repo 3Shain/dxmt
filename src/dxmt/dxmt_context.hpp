@@ -63,14 +63,14 @@ struct SamplerBinding {
 };
 
 struct ResourceViewBinding {
-  unsigned viewId;
+  uint64_t viewId;
   Rc<Buffer> buffer;
   Rc<Texture> texture;
   BufferSlice slice;
 };
 
 struct UnorderedAccessViewBinding {
-  unsigned viewId;
+  uint64_t viewId;
   Rc<Buffer> buffer;
   Rc<Texture> texture;
   Rc<Buffer> counter;
@@ -337,7 +337,7 @@ public:
 
   template<PipelineStage stage = PipelineStage::Compute>
   std::pair<BufferView const &, uint32_t>
-  access(Rc<Buffer> const &buffer, unsigned viewId, DXMT_ENCODER_RESOURCE_ACESS flags) {
+  access(Rc<Buffer> const &buffer, uint64_t viewId, DXMT_ENCODER_RESOURCE_ACESS flags) {
     auto allocation = buffer->current();
     trackBuffer<stage>(allocation, flags);
     auto &view = buffer->view_(viewId, allocation);
@@ -354,7 +354,8 @@ public:
 
   template<PipelineStage stage = PipelineStage::Compute>
   TextureView &
-  access(Rc<Texture> const &texture, unsigned viewId, DXMT_ENCODER_RESOURCE_ACESS flags) {
+  access(Rc<Texture> const &texture, uint64_t viewId, DXMT_ENCODER_RESOURCE_ACESS flags) {
+    assert(viewId);
     auto allocation = texture->current();
     trackTexture<stage>(allocation, flags);
     return texture->view(viewId, allocation);
@@ -387,7 +388,7 @@ public:
 
   template <PipelineStage stage>
   void
-  bindBuffer(unsigned slot, Rc<Buffer> &&buffer, unsigned viewId, BufferSlice slice) {
+  bindBuffer(unsigned slot, Rc<Buffer> &&buffer, uint64_t viewId, BufferSlice slice) {
     unsigned idx = slot + kSRVBindings * unsigned(stage);
     auto &entry = resview_[idx];
     entry.texture = {};
@@ -398,7 +399,7 @@ public:
 
   template <PipelineStage stage>
   void
-  bindTexture(unsigned slot, Rc<Texture> &&texture, unsigned viewId) {
+  bindTexture(unsigned slot, Rc<Texture> &&texture, uint64_t viewId) {
     unsigned idx = slot + kSRVBindings * unsigned(stage);
     auto &entry = resview_[idx];
     entry.buffer = {};
@@ -407,9 +408,9 @@ public:
   }
 
   template <PipelineStage stage>
-  void bindOutputBuffer(unsigned slot, Rc<Buffer> &&buffer, unsigned viewId, Rc<Buffer> &&counter, BufferSlice slice);
+  void bindOutputBuffer(unsigned slot, Rc<Buffer> &&buffer, uint64_t viewId, Rc<Buffer> &&counter, BufferSlice slice);
 
-  template <PipelineStage stage> void bindOutputTexture(unsigned slot, Rc<Texture> &&texture, unsigned viewId);
+  template <PipelineStage stage> void bindOutputTexture(unsigned slot, Rc<Texture> &&texture, uint64_t viewId);
 
   void bindStreamOutputBuffer(unsigned slot, unsigned offset, Rc<Buffer> &&buffer);
   void bindStreamOutputBufferOffset(unsigned slot, unsigned offset);
@@ -495,7 +496,7 @@ public:
   }
   template <PipelineStage stage, PipelineKind kind>
   void
-  makeResident(Buffer *buffer, unsigned viewId, bool read = true, bool write = false) {
+  makeResident(Buffer *buffer, uint64_t viewId, bool read = true, bool write = false) {
     auto allocation = buffer->current();
     uint64_t encoder_id = currentEncoder()->id;
     DXMT_RESOURCE_RESIDENCY requested = GetResidencyMask<kind>(stage, read, write);
@@ -505,7 +506,7 @@ public:
   }
   template <PipelineStage stage, PipelineKind kind>
   void
-  makeResident(Texture *texture, unsigned viewId, bool read = true, bool write = false) {
+  makeResident(Texture *texture, uint64_t viewId, bool read = true, bool write = false) {
     auto allocation = texture->current();
     uint64_t encoder_id = currentEncoder()->id;
     DXMT_RESOURCE_RESIDENCY requested = GetResidencyMask<kind>(stage, read, write);
@@ -602,9 +603,9 @@ public:
     return encoder_id_++;
   };
 
-  void clearColor(Rc<Texture> &&texture, unsigned viewId, unsigned arrayLength, WMTClearColor color);
+  void clearColor(Rc<Texture> &&texture, uint64_t viewId, unsigned arrayLength, WMTClearColor color);
   void clearDepthStencil(
-      Rc<Texture> &&texture, unsigned viewId, unsigned arrayLength, unsigned flag, float depth, uint8_t stencil
+      Rc<Texture> &&texture, uint64_t viewId, unsigned arrayLength, unsigned flag, float depth, uint8_t stencil
   );
   void resolveTexture(Rc<Texture> &&src, TextureViewKey src_view, Rc<Texture> &&dst, TextureViewKey dst_view);
 
@@ -834,7 +835,7 @@ private:
 template <>
 inline void
 ArgumentEncodingContext::bindOutputBuffer<PipelineStage::Compute>(
-    unsigned slot, Rc<Buffer> &&buffer, unsigned viewId, Rc<Buffer> &&counter, BufferSlice slice
+    unsigned slot, Rc<Buffer> &&buffer, uint64_t viewId, Rc<Buffer> &&counter, BufferSlice slice
 ) {
   auto &entry = cs_uav_[slot];
   entry.texture = {};
@@ -846,7 +847,7 @@ ArgumentEncodingContext::bindOutputBuffer<PipelineStage::Compute>(
 template <>
 inline void
 ArgumentEncodingContext::bindOutputBuffer<PipelineStage::Pixel>(
-    unsigned slot, Rc<Buffer> &&buffer, unsigned viewId, Rc<Buffer> &&counter, BufferSlice slice
+    unsigned slot, Rc<Buffer> &&buffer, uint64_t viewId, Rc<Buffer> &&counter, BufferSlice slice
 ) {
   auto &entry = om_uav_[slot];
   entry.texture = {};
@@ -859,7 +860,7 @@ ArgumentEncodingContext::bindOutputBuffer<PipelineStage::Pixel>(
 template <>
 inline void
 ArgumentEncodingContext::bindOutputTexture<PipelineStage::Compute>(
-    unsigned slot, Rc<Texture> &&texture, unsigned viewId
+    unsigned slot, Rc<Texture> &&texture, uint64_t viewId
 ) {
   auto &entry = cs_uav_[slot];
   entry.buffer = {};
@@ -869,7 +870,7 @@ ArgumentEncodingContext::bindOutputTexture<PipelineStage::Compute>(
 template <>
 inline void
 ArgumentEncodingContext::bindOutputTexture<PipelineStage::Pixel>(
-    unsigned slot, Rc<Texture> &&texture, unsigned viewId
+    unsigned slot, Rc<Texture> &&texture, uint64_t viewId
 ) {
   auto &entry = om_uav_[slot];
   entry.buffer = {};

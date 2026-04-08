@@ -4381,7 +4381,7 @@ public:
       /* Setup RenderCommandEncoder */
       struct RENDER_TARGET_STATE {
         Rc<Texture> Texture;
-        unsigned viewId;
+        uint64_t viewId;
         UINT RenderTargetIndex;
         UINT DepthPlane;
         WMTPixelFormat PixelFormat = WMTPixelFormatInvalid;
@@ -4404,7 +4404,7 @@ public:
       }
       struct DEPTH_STENCIL_STATE {
         Rc<Texture> Texture{};
-        unsigned viewId{};
+        uint64_t viewId{};
         WMTPixelFormat PixelFormat = WMTPixelFormatInvalid;
         unsigned ReadOnlyFlags{};
       };
