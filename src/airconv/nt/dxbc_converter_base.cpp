@@ -2951,6 +2951,8 @@ Converter::UseFastMath(bool OptOut) {
     FMF.setAllowContract();
     FMF.setAllowReassoc();
     FMF.setAllowReciprocal();
+    FMF.setNoNaNs();
+    FMF.setNoInfs();
   }
 
   FMF.setApproxFunc();

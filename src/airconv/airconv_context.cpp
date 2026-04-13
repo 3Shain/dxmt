@@ -23,6 +23,8 @@
 #include "llvm/Transforms/IPO/ForceFunctionAttrs.h"
 #include "llvm/Transforms/IPO/InferFunctionAttrs.h"
 #include "llvm/Transforms/Utils/Mem2Reg.h"
+#include "llvm/Transforms/Scalar/GVN.h"
+#include "llvm/Transforms/Scalar/DeadStoreElimination.h"
 
 #include "airconv_context.hpp"
 
@@ -139,6 +141,8 @@ runOptimizationPasses(llvm::Module &M) {
     // optimizations.
     FunctionPassManager GlobalCleanupPM;
     GlobalCleanupPM.addPass(InstCombinePass());
+    GlobalCleanupPM.addPass(GVNPass());
+    GlobalCleanupPM.addPass(DSEPass());
 
     GlobalCleanupPM.addPass(SimplifyCFGPass(SimplifyCFGOptions().convertSwitchRangeToICmp(true)));
 
