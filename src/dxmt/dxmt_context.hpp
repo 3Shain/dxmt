@@ -26,6 +26,8 @@ constexpr size_t kCommandChunkGPUHeapSize = 0x400000;
 constexpr size_t kEncodingContextCPUHeapSize = 0x100000;
 constexpr size_t kEncodingContextCPUHeapLifetime = 600;
 
+constexpr auto kIntrapassControlBitIgnoreUAVWaW = 1ull << 1;
+
 inline std::size_t
 align_forward_adjustment(const void *const ptr, const std::size_t &alignment) noexcept {
   const auto iptr = reinterpret_cast<std::uintptr_t>(ptr);
@@ -303,7 +305,7 @@ struct AllocatedTempBufferSlice {
 
 class ArgumentEncodingContext {
 private:
-  template <PipelineStage stage> void track(GenericAccessTracker &tracker, bool exclusive);
+  template <PipelineStage stage> void track(GenericAccessTracker &tracker, int flags);
 
 public:
   template <PipelineStage stage>
@@ -313,7 +315,7 @@ public:
     if (allocation->flags().test(BufferAllocationFlag::GpuReadonly))
       return;
     auto &tracker = allocation->fenceTrackers[allocation->currentSuballocation()];
-    track<stage>(tracker, flags & ResourceAccess::Write);
+    track<stage>(tracker, flags);
   }
 
 public:
@@ -341,10 +343,10 @@ public:
     retainAllocation(allocation);
     if (!allocation->flags().test(TextureAllocationFlag::GpuReadonly)) {
       if (likely(allocation->flags().test(TextureAllocationFlag::ShaderReadonly))) {
-        track<stage>(allocation->fenceTrackers[0], flags & ResourceAccess::Write);
+        track<stage>(allocation->fenceTrackers[0], flags);
       } else {
         auto &tracker = allocation->fenceTrackers[slice * allocation->descriptor->miplevelCount() + level];
-        track<stage>(tracker, flags & ResourceAccess::Write);
+        track<stage>(tracker, flags);
       }
     }
     return allocation->texture();
@@ -359,13 +361,13 @@ public:
     auto &view = texture->view(viewId, allocation);
     if (!allocation->flags().test(TextureAllocationFlag::GpuReadonly)) {
       if (likely(allocation->flags().test(TextureAllocationFlag::ShaderReadonly))) {
-        track<stage>(allocation->fenceTrackers[0], flags & ResourceAccess::Write);
+        track<stage>(allocation->fenceTrackers[0], flags);
       } else {
         TextureViewKey view = viewId;
         for (unsigned slice = view.array_start; slice < view.array_end; slice++) {
           for (unsigned level = view.mip_start; level < view.mip_end; level++) {
             auto &tracker = allocation->fenceTrackers[slice * view.mip_count + level];
-            track<stage>(tracker, flags & ResourceAccess::Write);
+            track<stage>(tracker, flags);
           }
         }
       }
@@ -749,6 +751,11 @@ public:
     currentFrameStatistics().compatibility_flags.set(flag);
   }
 
+  void
+  setIntrapassBarrierControl(uint64_t control_bits) {
+    intrapass_barrier_control_bits_ = control_bits;
+  }
+
   ArgumentEncodingContext(CommandQueue &queue, WMT::Device device, InternalCommandLibrary &lib);
   ~ArgumentEncodingContext();
 
@@ -839,6 +846,8 @@ private:
   WMT::Reference<WMT::Event> barrier_event_;
   uint64_t barrier_index_ = 0;
 
+  uint64_t intrapass_barrier_control_bits_ = 0;
+
   WMT::Device device_;
   CommandQueue& queue_;
 };
@@ -891,34 +900,40 @@ ArgumentEncodingContext::bindOutputTexture<PipelineStage::Pixel>(
 
 template <PipelineStage stage>
 inline void
-ArgumentEncodingContext::track(GenericAccessTracker &tracker, bool exclusive) {
+ArgumentEncodingContext::track(GenericAccessTracker &tracker, int flags) {
   auto current_encoder = currentRenderEncoder();
   auto id = current_encoder->encoder_id_vertex;
   EncoderBarrierState &barrier_state = current_encoder->barrier_state;
-  if (exclusive)
-    tracker.accessExclusivePreRaster(id, current_encoder->fence_wait_vertex, barrier_state);
+  if (flags & ResourceAccess::Write)
+    tracker.accessExclusivePreRaster(
+        id, current_encoder->fence_wait_vertex, barrier_state, flags & ResourceAccess::UAV
+    );
   else
     tracker.accessSharedPreRaster(id, current_encoder->fence_wait_vertex, barrier_state);
 }
 
 template <>
 inline void
-ArgumentEncodingContext::track<PipelineStage::Compute>(GenericAccessTracker &tracker, bool exclusive) {
+ArgumentEncodingContext::track<PipelineStage::Compute>(GenericAccessTracker &tracker, int flags) {
   auto current_encoder = currentEncoder();
   EncoderBarrierState &barrier_state = current_encoder->barrier_state;
-  if (exclusive)
-    tracker.accessExclusive(currentEncoderId(), current_encoder->fence_wait, barrier_state);
+  if (flags & ResourceAccess::Write)
+    tracker.accessExclusive(
+        currentEncoderId(), current_encoder->fence_wait, barrier_state, flags & ResourceAccess::UAV
+    );
   else
     tracker.accessShared(currentEncoderId(), current_encoder->fence_wait, barrier_state);
 }
 
 template <>
 inline void
-ArgumentEncodingContext::track<PipelineStage::Pixel>(GenericAccessTracker &tracker, bool exclusive) {
+ArgumentEncodingContext::track<PipelineStage::Pixel>(GenericAccessTracker &tracker, int flags) {
   auto current_encoder = currentRenderEncoder();
   EncoderBarrierState &barrier_state = current_encoder->barrier_state;
-  if (exclusive)
-    tracker.accessExclusiveFragment(currentEncoderId(), current_encoder->fence_wait, barrier_state);
+  if (flags & ResourceAccess::Write)
+    tracker.accessExclusiveFragment(
+        currentEncoderId(), current_encoder->fence_wait, barrier_state, flags & ResourceAccess::UAV
+    );
   else
     tracker.accessSharedFragment(currentEncoderId(), current_encoder->fence_wait, barrier_state);
   return;
