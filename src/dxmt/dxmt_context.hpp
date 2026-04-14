@@ -308,18 +308,18 @@ private:
 public:
   template <PipelineStage stage>
   void
-  trackBuffer(BufferAllocation *allocation, DXMT_ENCODER_RESOURCE_ACESS flags) {
+  trackBuffer(BufferAllocation *allocation, int flags) {
     retainAllocation(allocation);
     if (allocation->flags().test(BufferAllocationFlag::GpuReadonly))
       return;
     auto &tracker = allocation->fenceTrackers[allocation->currentSuballocation()];
-    track<stage>(tracker, flags & DXMT_ENCODER_RESOURCE_ACESS_WRITE);
+    track<stage>(tracker, flags & ResourceAccess::Write);
   }
 
 public:
   template<PipelineStage stage = PipelineStage::Compute>
   std::pair<BufferAllocation *, uint64_t>
-  access(Rc<Buffer> const &buffer, unsigned offset, unsigned length, DXMT_ENCODER_RESOURCE_ACESS flags) {
+  access(Rc<Buffer> const &buffer, unsigned offset, unsigned length, int flags) {
     auto allocation = buffer->current();
     trackBuffer<stage>(allocation, flags);
     return {allocation, allocation->currentSuballocationOffset()};
@@ -327,7 +327,7 @@ public:
 
   template<PipelineStage stage = PipelineStage::Compute>
   std::pair<BufferView const &, uint32_t>
-  access(Rc<Buffer> const &buffer, uint64_t viewId, DXMT_ENCODER_RESOURCE_ACESS flags) {
+  access(Rc<Buffer> const &buffer, uint64_t viewId, int flags) {
     auto allocation = buffer->current();
     trackBuffer<stage>(allocation, flags);
     auto &view = buffer->view_(viewId, allocation);
@@ -336,15 +336,15 @@ public:
 
   template<PipelineStage stage = PipelineStage::Compute>
   WMT::Texture
-  access(Rc<Texture> const &texture, unsigned level, unsigned slice, DXMT_ENCODER_RESOURCE_ACESS flags) {
+  access(Rc<Texture> const &texture, unsigned level, unsigned slice, int flags) {
     auto allocation = texture->current();
     retainAllocation(allocation);
     if (!allocation->flags().test(TextureAllocationFlag::GpuReadonly)) {
       if (likely(allocation->flags().test(TextureAllocationFlag::ShaderReadonly))) {
-        track<stage>(allocation->fenceTrackers[0], flags & DXMT_ENCODER_RESOURCE_ACESS_WRITE);
+        track<stage>(allocation->fenceTrackers[0], flags & ResourceAccess::Write);
       } else {
         auto &tracker = allocation->fenceTrackers[slice * allocation->descriptor->miplevelCount() + level];
-        track<stage>(tracker, flags & DXMT_ENCODER_RESOURCE_ACESS_WRITE);
+        track<stage>(tracker, flags & ResourceAccess::Write);
       }
     }
     return allocation->texture();
@@ -352,20 +352,20 @@ public:
 
   template<PipelineStage stage = PipelineStage::Compute>
   TextureView &
-  access(Rc<Texture> const &texture, uint64_t viewId, DXMT_ENCODER_RESOURCE_ACESS flags) {
+  access(Rc<Texture> const &texture, uint64_t viewId, int flags) {
     assert(viewId);
     auto allocation = texture->current();
     retainAllocation(allocation);
     auto &view = texture->view(viewId, allocation);
     if (!allocation->flags().test(TextureAllocationFlag::GpuReadonly)) {
       if (likely(allocation->flags().test(TextureAllocationFlag::ShaderReadonly))) {
-        track<stage>(allocation->fenceTrackers[0], flags & DXMT_ENCODER_RESOURCE_ACESS_WRITE);
+        track<stage>(allocation->fenceTrackers[0], flags & ResourceAccess::Write);
       } else {
         TextureViewKey view = viewId;
         for (unsigned slice = view.array_start; slice < view.array_end; slice++) {
           for (unsigned level = view.mip_start; level < view.mip_end; level++) {
             auto &tracker = allocation->fenceTrackers[slice * view.mip_count + level];
-            track<stage>(tracker, flags & DXMT_ENCODER_RESOURCE_ACESS_WRITE);
+            track<stage>(tracker, flags & ResourceAccess::Write);
           }
         }
       }
@@ -450,8 +450,7 @@ public:
   std::pair<WMT::Buffer, uint64_t>
   currentIndexBuffer() {
     // because of indirect draw, we can't predicate the accessed buffer range
-    auto [ibuf_alloc, offset] =
-        access<PipelineStage::Vertex>(ibuf_, 0, ibuf_->length(), DXMT_ENCODER_RESOURCE_ACESS_READ);
+    auto [ibuf_alloc, offset] = access<PipelineStage::Vertex>(ibuf_, 0, ibuf_->length(), ResourceAccess::Read);
     return {ibuf_alloc->buffer(), offset};
   };
 
