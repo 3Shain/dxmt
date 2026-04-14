@@ -310,7 +310,7 @@ ArgumentEncodingContext::encodeShaderResources(
     case SM50BindingType::UAV: {
       auto &uav = UAVBindingSet[arg.SM50BindingSlot];
       bool read = (arg.Flags >> 10) & 1, write = (arg.Flags >> 10) & 2;
-      int access_flags =  ((arg.Flags >> 10) & 3);
+      int access_flags =  ((arg.Flags >> 10) & 3) | ResourceAccess::UAV;
 
       if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_BUFFER) {
         if (uav.buffer.ptr()) {
@@ -343,7 +343,7 @@ ArgumentEncodingContext::encodeShaderResources(
       }
       if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_UAV_COUNTER) {
         if (uav.counter) {
-          auto [counter_alloc, offset] = access<stage>(uav.counter, 0, 4, ResourceAccess::Read | ResourceAccess::Write);
+          auto [counter_alloc, offset] = access<stage>(uav.counter, 0, 4, ResourceAccess::All);
           encoded_buffer[arg.StructurePtrOffset + 2] = counter_alloc->gpuAddress() + offset;
           makeResident<stage, kind>(uav.counter.ptr(), true, true);
         } else {
@@ -736,7 +736,7 @@ ArgumentEncodingContext::resolveComputePassBarrier() {
   assert(encoder_current);
   assert(encoder_current->type == EncoderType::Compute);
   auto &barrier_state = encoder_current->barrier_state;
-  if (barrier_state.barrierSet) {
+  if (barrier_state.barrierSet & ~intrapass_barrier_control_bits_) {
     auto &cmd = encodeComputeCommand<wmtcmd_compute_memory_barrier>();
     cmd.type = WMTComputeCommandMemoryBarrier;
     cmd.scope = WMTBarrierScopeBuffers | WMTBarrierScopeTextures;
@@ -749,7 +749,7 @@ ArgumentEncodingContext::resolveRenderPassBarrier() {
   assert(encoder_current);
   assert(encoder_current->type == EncoderType::Render);
   auto &barrier_state = encoder_current->barrier_state;
-  if (barrier_state.barrierPreRasterAfterFragmentSet) {
+  if (barrier_state.barrierPreRasterAfterFragmentSet & ~intrapass_barrier_control_bits_) {
     // TODO(barrier): encoder split
     WARN("A fragment-vertex barrier is omitted");
     barrier_state.barrierSet = 0;
@@ -759,11 +759,11 @@ ArgumentEncodingContext::resolveRenderPassBarrier() {
     return;
   }
   // Indiviual barriers
-  if (barrier_state.barrierSet) {
+  if (barrier_state.barrierSet & ~intrapass_barrier_control_bits_) {
     tile_barrier_cmd.dispatch();
     barrier_state.barrierSet = 0;
   }
-  if (barrier_state.barrierPreRasterSet) {
+  if (barrier_state.barrierPreRasterSet & ~intrapass_barrier_control_bits_) {
     auto &cmd = encodeRenderCommand<wmtcmd_render_memory_barrier>();
     cmd.type = WMTRenderCommandMemoryBarrier;
     cmd.scope = WMTBarrierScopeBuffers | WMTBarrierScopeTextures;
@@ -771,7 +771,7 @@ ArgumentEncodingContext::resolveRenderPassBarrier() {
     cmd.stages_after = WMTRenderStagePreRaster;
     barrier_state.barrierPreRasterSet = 0;
   }
-  if (barrier_state.barrierFragmentAfterPreRasterSet) {
+  if (barrier_state.barrierFragmentAfterPreRasterSet & ~intrapass_barrier_control_bits_) {
     auto &cmd = encodeRenderCommand<wmtcmd_render_memory_barrier>();
     cmd.type = WMTRenderCommandMemoryBarrier;
     cmd.scope = WMTBarrierScopeBuffers | WMTBarrierScopeTextures;

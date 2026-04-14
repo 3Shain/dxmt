@@ -9,7 +9,7 @@ GenericAccessTracker::accessShared(EncoderId id, FenceSet &wait_fences, EncoderB
     if (isShared)
       return;
     isShared = 1;
-    barrier_state.barrierSet = 1;
+    barrier_state.barrierSet |= kBarrierTypeRW;
     return;
   }
   assert(exclusive_ < id);
@@ -22,14 +22,16 @@ GenericAccessTracker::accessShared(EncoderId id, FenceSet &wait_fences, EncoderB
 }
 
 void
-GenericAccessTracker::accessExclusive(EncoderId id, FenceSet &wait_fences, EncoderBarrierState &barrier_state) {
+GenericAccessTracker::accessExclusive(
+    EncoderId id, FenceSet &wait_fences, EncoderBarrierState &barrier_state, bool uav
+) {
   isShared = 0;
   if (exclusive_ == id) {
-    barrier_state.barrierSet = 1;
+    barrier_state.barrierSet |= (1 << uav);
     return;
   }
   if (shared_.isLastAccess(id)) {
-    barrier_state.barrierSet = 1;
+    barrier_state.barrierSet |= kBarrierTypeRW;
   }
   shared_.enumerate(id, [&](EncoderId id) { wait_fences.set(id); });
   shared_.clear();
@@ -39,24 +41,22 @@ GenericAccessTracker::accessExclusive(EncoderId id, FenceSet &wait_fences, Encod
 }
 
 void
-GenericAccessTracker::accessSharedPreRaster(
-    EncoderId id, FenceSet &wait_fences, EncoderBarrierState &barrier_state
-) {
+GenericAccessTracker::accessSharedPreRaster(EncoderId id, FenceSet &wait_fences, EncoderBarrierState &barrier_state) {
   if (exclusive_ == id + 1) {
     if (isSharedPreRaster)
       return;
     isSharedPreRaster = 1;
     if (lastWriteFromPreRaster)
-      barrier_state.barrierPreRasterSet = 1;
+      barrier_state.barrierPreRasterSet |= kBarrierTypeRW;
     else
-      barrier_state.barrierPreRasterAfterFragmentSet = 1;
+      barrier_state.barrierPreRasterAfterFragmentSet |= kBarrierTypeRW;
     return;
   }
   if (exclusive_ == id) {
     if (isSharedPreRaster)
       return;
     isSharedPreRaster = 1;
-    barrier_state.barrierPreRasterSet = 1;
+    barrier_state.barrierPreRasterSet |= kBarrierTypeRW;
     return;
   }
   assert(exclusive_ < id);
@@ -80,7 +80,7 @@ GenericAccessTracker::accessSharedPreRaster(
 
 void
 GenericAccessTracker::accessExclusivePreRaster(
-    EncoderId id, FenceSet &wait_fences, EncoderBarrierState &barrier_state
+    EncoderId id, FenceSet &wait_fences, EncoderBarrierState &barrier_state, bool uav
 ) {
   auto last_exclusive = exclusive_;
   exclusive_ = id;
@@ -90,32 +90,32 @@ GenericAccessTracker::accessExclusivePreRaster(
     lastWriteFromPreRaster = 1;
     if (!isShared && !isSharedPreRaster) {
       if (last)
-        barrier_state.barrierPreRasterSet = 1;
+        barrier_state.barrierPreRasterSet |= (1 << uav);
       else
-        barrier_state.barrierPreRasterAfterFragmentSet = 1;
+        barrier_state.barrierPreRasterAfterFragmentSet |= (1 << uav);
       return;
     }
     if (isSharedPreRaster) {
       isSharedPreRaster = 0;
-      barrier_state.barrierPreRasterSet = 1;
+      barrier_state.barrierPreRasterSet |= kBarrierTypeRW;
     }
     if (isShared) {
       isShared = 0;
-      barrier_state.barrierPreRasterAfterFragmentSet = 1;
+      barrier_state.barrierPreRasterAfterFragmentSet |= kBarrierTypeRW;
     }
     return;
   }
   if (last_exclusive == id) {
     if (!isShared && !isSharedPreRaster) {
-      barrier_state.barrierPreRasterSet = 1;
+      barrier_state.barrierPreRasterSet |= (1 << uav);
     }
     if (isSharedPreRaster) {
       isSharedPreRaster = 0;
-      barrier_state.barrierPreRasterSet = 1;
+      barrier_state.barrierPreRasterSet |= kBarrierTypeRW;
     }
     if (isShared) {
       isShared = 0;
-      barrier_state.barrierPreRasterAfterFragmentSet = 1;
+      barrier_state.barrierPreRasterAfterFragmentSet |= kBarrierTypeRW;
     }
     return;
   }
@@ -126,11 +126,11 @@ GenericAccessTracker::accessExclusivePreRaster(
   if (shared_.isLastAccess(id + 1) || shared_.isLastAccess(id)) {
     if (isSharedPreRaster) {
       isSharedPreRaster = 0;
-      barrier_state.barrierPreRasterSet = 1;
+      barrier_state.barrierPreRasterSet |= kBarrierTypeRW;
     }
     if (isShared) {
       isShared = 0;
-      barrier_state.barrierPreRasterAfterFragmentSet = 1;
+      barrier_state.barrierPreRasterAfterFragmentSet |= kBarrierTypeRW;
     }
     shared_.clear();
     return;
@@ -141,9 +141,7 @@ GenericAccessTracker::accessExclusivePreRaster(
 }
 
 void
-GenericAccessTracker::accessSharedFragment(
-    EncoderId id, FenceSet &wait_fences, EncoderBarrierState &barrier_state
-) {
+GenericAccessTracker::accessSharedFragment(EncoderId id, FenceSet &wait_fences, EncoderBarrierState &barrier_state) {
   if (exclusive_ == id) {
     if (isShared)
       return;
@@ -151,9 +149,9 @@ GenericAccessTracker::accessSharedFragment(
     if (isSharedPreRaster)
       return; // IMPLICIT BARRIER
     if (lastWriteFromPreRaster)
-      barrier_state.barrierFragmentAfterPreRasterSet = 1;
+      barrier_state.barrierFragmentAfterPreRasterSet |= kBarrierTypeRW;
     else
-      barrier_state.barrierSet = 1;
+      barrier_state.barrierSet |= kBarrierTypeRW;
     return;
   }
   if (exclusive_ == id - 1) {
@@ -162,7 +160,7 @@ GenericAccessTracker::accessSharedFragment(
     isShared = 1;
     if (isSharedPreRaster)
       return; // IMPLICIT BARRIER
-    barrier_state.barrierFragmentAfterPreRasterSet = 1;
+    barrier_state.barrierFragmentAfterPreRasterSet |= kBarrierTypeRW;
     return;
   }
   assert(exclusive_ < id - 1);
@@ -179,7 +177,7 @@ GenericAccessTracker::accessSharedFragment(
 
 void
 GenericAccessTracker::accessExclusiveFragment(
-    EncoderId id, FenceSet &wait_fences, EncoderBarrierState &barrier_state
+    EncoderId id, FenceSet &wait_fences, EncoderBarrierState &barrier_state, bool uav
 ) {
   auto last_exclusive = exclusive_;
   exclusive_ = id;
@@ -188,34 +186,34 @@ GenericAccessTracker::accessExclusiveFragment(
     lastWriteFromPreRaster = 0;
     if (!isShared && !isSharedPreRaster) {
       if (last)
-        barrier_state.barrierFragmentAfterPreRasterSet = 1;
+        barrier_state.barrierFragmentAfterPreRasterSet |= (1 << uav);
       else
-        barrier_state.barrierSet = 1;
+        barrier_state.barrierSet |= (1 << uav);
       return;
     }
     if (isSharedPreRaster) {
       isSharedPreRaster = 0;
-      barrier_state.barrierFragmentAfterPreRasterSet = 1;
+      barrier_state.barrierFragmentAfterPreRasterSet |= kBarrierTypeRW;
     }
     if (isShared) {
       isShared = 0;
-      barrier_state.barrierSet = 1;
+      barrier_state.barrierSet |= kBarrierTypeRW;
     }
     return;
   }
   lastWriteFromPreRaster = 0;
   if (last_exclusive == id - 1) {
     if (!isShared && !isSharedPreRaster) {
-      barrier_state.barrierFragmentAfterPreRasterSet = 1;
+      barrier_state.barrierFragmentAfterPreRasterSet |= (1 << uav);
       return;
     }
     if (isSharedPreRaster) {
       isSharedPreRaster = 0;
-      barrier_state.barrierFragmentAfterPreRasterSet = 1;
+      barrier_state.barrierFragmentAfterPreRasterSet |= kBarrierTypeRW;
     }
     if (isShared) {
       isShared = 0;
-      barrier_state.barrierSet = 1;
+      barrier_state.barrierSet |= kBarrierTypeRW;
     }
     return;
   }
@@ -225,11 +223,11 @@ GenericAccessTracker::accessExclusiveFragment(
   if (shared_.isLastAccess(id) || shared_.isLastAccess(id - 1)) {
     if (isSharedPreRaster) {
       isSharedPreRaster = 0;
-      barrier_state.barrierFragmentAfterPreRasterSet = 1;
+      barrier_state.barrierFragmentAfterPreRasterSet |= kBarrierTypeRW;
     }
     if (isShared) {
       isShared = 0;
-      barrier_state.barrierSet = 1;
+      barrier_state.barrierSet |= kBarrierTypeRW;
     }
     shared_.clear();
     return;
