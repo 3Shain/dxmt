@@ -230,7 +230,7 @@ public:
       viewElementWidth = finalDesc.Buffer.NumElements * (desc.StructureByteStride >> 2);
       if (finalDesc.Buffer.Flags & (D3D11_BUFFER_UAV_FLAG_APPEND | D3D11_BUFFER_UAV_FLAG_COUNTER)) {
         counter = new dxmt::Buffer(sizeof(uint32_t), m_parent->GetMTLDevice());
-        auto allocation = counter->allocate(BufferAllocationFlag::GpuManaged);
+        auto allocation = counter->allocate(BufferAllocationFlag::GpuManaged | BufferAllocationFlag::NoTracking);
         const uint32_t initial_counter = 0;
         allocation->updateContents(0, &initial_counter, sizeof(initial_counter));
         allocation->buffer().didModifyRange(0, sizeof(initial_counter));
