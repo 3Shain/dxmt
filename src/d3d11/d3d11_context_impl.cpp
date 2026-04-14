@@ -1017,6 +1017,9 @@ public:
   CopyResource(ID3D11Resource *pDstResource, ID3D11Resource *pSrcResource) override {
     std::lock_guard<mutex_t> lock(mutex);
 
+    if (!pDstResource || !pSrcResource || (pDstResource == pSrcResource))
+      return;
+
     BlitObject Dst(device, pDstResource);
     BlitObject Src(device, pSrcResource);
 
