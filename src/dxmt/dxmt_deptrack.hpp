@@ -7,11 +7,11 @@
 
 namespace dxmt {
 
-enum DXMT_ENCODER_RESOURCE_ACESS {
-  DXMT_ENCODER_RESOURCE_ACESS_READ = 1 << 0,
-  DXMT_ENCODER_RESOURCE_ACESS_WRITE = 1 << 1,
-  DXMT_ENCODER_RESOURCE_ACESS_READWRITE = DXMT_ENCODER_RESOURCE_ACESS_READ | DXMT_ENCODER_RESOURCE_ACESS_WRITE,
-};
+namespace ResourceAccess {
+constexpr int Read = 1 << 0;
+constexpr int Write = 1 << 1;
+constexpr int ReadWrite = Read | Write;
+}; // namespace ResourceAccess
 
 constexpr auto kLog2Lane = 6ull;
 constexpr auto kLane = 1 << kLog2Lane;

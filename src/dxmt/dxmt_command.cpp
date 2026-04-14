@@ -184,13 +184,13 @@ ClearRenderTargetContext::begin(Rc<Texture> texture, TextureViewKey view) {
 
   if (dsv_flag) {
     auto &depth = pass_info.depth;
-    depth.attachment = ctx_.access<PipelineStage::Pixel>(texture, view, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
+    depth.attachment = ctx_.access<PipelineStage::Pixel>(texture, view, ResourceAccess::Write);
     depth.depth_plane = 0;
     depth.load_action = WMTLoadActionLoad;
     depth.store_action = WMTStoreActionStore;
   } else {
     auto &color = pass_info.colors[0];
-    color.attachment = ctx_.access<PipelineStage::Pixel>(texture, view, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
+    color.attachment = ctx_.access<PipelineStage::Pixel>(texture, view, ResourceAccess::Write);
     color.depth_plane = 0;
     color.load_action = WMTLoadActionLoad;
     color.store_action = WMTStoreActionStore;
@@ -345,19 +345,19 @@ DepthStencilBlitContext::copyFromBuffer(
   auto height = depth_stencil->height(view);
   auto &pass_info = *ctx_.startRenderPass(0b11, 0, 0, 0);
   auto &depth = pass_info.depth;
-  depth.attachment = ctx_.access<PipelineStage::Pixel>(depth_stencil, view, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
+  depth.attachment = ctx_.access<PipelineStage::Pixel>(depth_stencil, view, ResourceAccess::Write);
   depth.depth_plane = 0;
   depth.load_action = WMTLoadActionLoad;
   depth.store_action = WMTStoreActionStore;
 
   auto &stencil = pass_info.stencil;
-  stencil.attachment = ctx_.access<PipelineStage::Pixel>(depth_stencil, view, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
+  stencil.attachment = ctx_.access<PipelineStage::Pixel>(depth_stencil, view, ResourceAccess::Write);
   stencil.depth_plane = 0;
   stencil.load_action = WMTLoadActionLoad;
   stencil.store_action = WMTStoreActionStore;
 
   auto [src_, src_sub_offset] =
-      ctx_.access<PipelineStage::Pixel>(src, src_offset, src_length, DXMT_ENCODER_RESOURCE_ACESS_READ);
+      ctx_.access<PipelineStage::Pixel>(src, src_offset, src_length, ResourceAccess::Read);
 
   pass_info.render_target_width = width;
   pass_info.render_target_height = height;
@@ -434,9 +434,9 @@ DepthStencilBlitContext::copyFromTexture(
   auto stencil_view = depth_stencil->createView(view_desc);
 
   ctx_.startComputePass(0);
-  auto tex_depth = ctx_.access(depth_stencil, depth_view, DXMT_ENCODER_RESOURCE_ACESS_READ).texture;
-  auto tex_stencil = ctx_.access(depth_stencil, stencil_view, DXMT_ENCODER_RESOURCE_ACESS_READ).texture;
-  auto [dst_, dst_sub_offset] = ctx_.access(dst, dst_offset, dst_length, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
+  auto tex_depth = ctx_.access(depth_stencil, depth_view, ResourceAccess::Read).texture;
+  auto tex_stencil = ctx_.access(depth_stencil, stencil_view, ResourceAccess::Read).texture;
+  auto [dst_, dst_sub_offset] = ctx_.access(dst, dst_offset, dst_length, ResourceAccess::Write);
 
   auto &setpso = ctx_.encodeComputeCommand<wmtcmd_compute_setpso>();
   setpso.type = WMTComputeCommandSetPSO;
@@ -584,21 +584,21 @@ ClearResourceKernelContext::clear(uint32_t offset_x, uint32_t offset_y, uint32_t
   meta_temp_.size[1] = height;
 
   if (clearing_texture_) {
-    auto &dst_ = ctx_.access(clearing_texture_, clearing_view_, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
+    auto &dst_ = ctx_.access(clearing_texture_, clearing_view_, ResourceAccess::Write);
     auto &settex = ctx_.encodeComputeCommand<wmtcmd_compute_settexture>();
     settex.type = WMTComputeCommandSetTexture;
     settex.texture = dst_.texture;
     settex.index = 0;
   } else if (clearing_buffer_) {
     if (clearing_view_) {
-      auto [dst_, dst_sub_offset] = ctx_.access(clearing_buffer_, clearing_view_, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
+      auto [dst_, dst_sub_offset] = ctx_.access(clearing_buffer_, clearing_view_, ResourceAccess::Write);
       auto &settexbuf = ctx_.encodeComputeCommand<wmtcmd_compute_settexture>();
       settexbuf.type = WMTComputeCommandSetTexture;
       settexbuf.texture = dst_.texture;
       settexbuf.index = 0;
       meta_temp_.offset[0] += dst_sub_offset;
     } else {
-      auto [dst_, dst_sub_offset] = ctx_.access(clearing_buffer_, offset_x, width, DXMT_ENCODER_RESOURCE_ACESS_WRITE);
+      auto [dst_, dst_sub_offset] = ctx_.access(clearing_buffer_, offset_x, width, ResourceAccess::Write);
       auto &setbuf = ctx_.encodeComputeCommand<wmtcmd_compute_setbuffer>();
       setbuf.type = WMTComputeCommandSetBuffer;
       setbuf.buffer = dst_->buffer();
@@ -659,8 +659,8 @@ MTLFXMVScaleContext::dispatch(
     TextureViewKey view_downscaled, float mv_scale_x, float mv_scale_y
 ) {
   ctx_.startComputePass(0);
-  auto tex_dilated = ctx_.access(dilated, view_dilated, DXMT_ENCODER_RESOURCE_ACESS_READ).texture;
-  auto tex_downscaled = ctx_.access(downscaled, view_downscaled, DXMT_ENCODER_RESOURCE_ACESS_WRITE).texture;
+  auto tex_dilated = ctx_.access(dilated, view_dilated, ResourceAccess::Read).texture;
+  auto tex_downscaled = ctx_.access(downscaled, view_downscaled, ResourceAccess::Write).texture;
 
   auto &setpso = ctx_.encodeComputeCommand<wmtcmd_compute_setpso>();
   setpso.type = WMTComputeCommandSetPSO;
