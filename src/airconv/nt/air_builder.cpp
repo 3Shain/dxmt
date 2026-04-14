@@ -1097,7 +1097,7 @@ AIRBuilder::CreateDiscard() {
 }
 
 CallInst *
-AIRBuilder::CreateBarrier(MemFlags Flags) {
+AIRBuilder::CreateBarrier(MemFlags Flags, bool SimdGroup) {
   auto &Context = getContext();
   auto Attrs = AttributeList::get(
       Context, {{~0U, Attribute::get(Context, Attribute::AttrKind::Convergent)},
@@ -1113,7 +1113,9 @@ AIRBuilder::CreateBarrier(MemFlags Flags) {
   Tys.push_back(getIntTy());
   Ops.push_back(getInt(1)); // always 1 ?
 
-  auto Fn = getModule()->getOrInsertFunction("air.wg.barrier", FunctionType::get(getVoidTy(), Tys, false), Attrs);
+  auto Fn = getModule()->getOrInsertFunction(
+      SimdGroup ? "air.simdgroup.barrier" : "air.wg.barrier", FunctionType::get(getVoidTy(), Tys, false), Attrs
+  );
 
   return builder.CreateCall(Fn, Ops);
 }

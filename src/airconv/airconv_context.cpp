@@ -31,6 +31,7 @@
 #include "air_tessellation.h"
 
 #include "transforms/lower_16bit_texread.hpp"
+#include "transforms/simdgroup_implicit_membarrier.hpp"
 
 using namespace llvm;
 
@@ -143,6 +144,7 @@ runOptimizationPasses(llvm::Module &M) {
     GlobalCleanupPM.addPass(SimplifyCFGPass(SimplifyCFGOptions().convertSwitchRangeToICmp(true)));
 
     GlobalCleanupPM.addPass(air::Lower16BitTexReadPass());
+    GlobalCleanupPM.addPass(air::SimdgroupImplicitMemBarrierPass());
 
     MPM.addPass(createModuleToFunctionPassAdaptor(std::move(GlobalCleanupPM), true /* ? */));
   }

@@ -245,7 +245,7 @@ public:
 
   /* Compute Shader */
 
-  CallInst *CreateBarrier(MemFlags Flags);
+  CallInst *CreateBarrier(MemFlags Flags, bool SimdGroup = false);
 
   CallInst *CreateAtomicFence(MemFlags Flags, ThreadScope Scope, bool Relaxed = false);
 
