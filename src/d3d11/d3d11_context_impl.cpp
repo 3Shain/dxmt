@@ -3623,7 +3623,7 @@ public:
       if (!counter.ptr())
         return;
       /* TODO: suballocate uav counter */
-      auto new_counter = counter->allocate(BufferAllocationFlag::GpuManaged);
+      auto new_counter = counter->allocate(BufferAllocationFlag::GpuManaged | BufferAllocationFlag::NoTracking);
       new_counter->updateContents(0, &value, 4);
       new_counter->buffer().didModifyRange(0, 4);
       auto old = counter->rename(std::move(new_counter));
