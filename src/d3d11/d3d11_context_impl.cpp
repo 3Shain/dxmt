@@ -5343,11 +5343,15 @@ public:
   }
 
   void STDMETHODCALLTYPE BeginUAVOverlap() final {
-    // TODO
+    ctx_->EmitOP([](ArgumentEncodingContext &enc) {
+      enc.setIntrapassBarrierControl(kIntrapassControlBitIgnoreUAVWaW);
+    });
   }
 
   void STDMETHODCALLTYPE EndUAVOverlap() final {
-    // TODO
+    ctx_->EmitOP([](ArgumentEncodingContext &enc) {
+      enc.setIntrapassBarrierControl(0);
+    });
   }
 
   virtual HRESULT STDMETHODCALLTYPE
