@@ -3005,11 +3005,10 @@ public:
 
     if (pRasterizerState) {
       if (auto expected = com_cast<IMTLD3D11RasterizerState>(pRasterizerState)) {
+        if (state_.Rasterizer.RasterizerState == expected.ptr())
+          return;
         auto current_rs =
             state_.Rasterizer.RasterizerState ? state_.Rasterizer.RasterizerState : default_rasterizer_state;
-        if (current_rs == expected.ptr()) {
-          return;
-        }
         if (current_rs->IsScissorEnabled() != expected->IsScissorEnabled()) {
           dirty_state.set(DirtyState::Scissors);
         }
