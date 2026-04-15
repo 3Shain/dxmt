@@ -251,7 +251,11 @@ public:
       viewElementWidth = finalDesc.Buffer.NumElements * (desc.StructureByteStride >> 2);
       if (finalDesc.Buffer.Flags & (D3D11_BUFFER_UAV_FLAG_APPEND | D3D11_BUFFER_UAV_FLAG_COUNTER)) {
         counter = new dxmt::Buffer(sizeof(uint32_t), m_parent->GetMTLDevice());
-        counter->rename(counter->allocate(BufferAllocationFlag::GpuManaged));
+        auto allocation = counter->allocate(BufferAllocationFlag::GpuManaged);
+        const uint32_t initial_counter = 0;
+        allocation->updateContents(0, &initial_counter, sizeof(initial_counter));
+        allocation->buffer().didModifyRange(0, sizeof(initial_counter));
+        counter->rename(std::move(allocation));
       }
     } else if (finalDesc.Buffer.Flags & D3D11_BUFFER_UAV_FLAG_RAW) {
       if (!allow_raw_view)
