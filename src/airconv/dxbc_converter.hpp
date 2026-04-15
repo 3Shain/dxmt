@@ -378,6 +378,10 @@ public:
     return semantic_name_ + std::to_string(semantic_index_);
   }
 
+  std::string consistentAttributeName() const {
+    return "reg" + std::to_string(register_) + "_" + std::to_string(std::countr_zero(mask_ & 0xFu));
+  }
+
   uint32_t stream() const { return stream_; }
 
   uint32_t mask() const { return mask_; }

@@ -115,7 +115,7 @@ void handle_signature_vs(
       if (sig.mask() == 0) break;
       signature_handlers.push_back(
         [=, type = (InputAttributeComponentType)sig.componentType(),
-         name = sig.fullSemanticString()](SignatureContext &ctx) {
+         name = sig.consistentAttributeName()](SignatureContext &ctx) {
           if (ctx.ia_layout) {
             for (unsigned i = 0; i < ctx.ia_layout->num_elements; i++) {
               if (ctx.ia_layout->elements[i].reg == reg) {
@@ -237,7 +237,7 @@ void handle_signature_vs(
       max_output_register = std::max(reg + 1, max_output_register);
       if (sig.mask() == 0) break;
       uint32_t assigned_index = func_signature.DefineOutput(OutputVertex{
-        .user = sig.fullSemanticString(),
+        .user = sig.consistentAttributeName(),
         .type = to_msl_type(sig.componentType()),
       });
       signature_handlers.push_back([=](SignatureContext &ctx) {
@@ -420,7 +420,7 @@ void handle_signature_ps(
     });
     max_input_register = std::max(reg + 1, max_input_register);
     if (sig.mask() == 0) break;
-    signature_handlers.push_back([=, type = sig.componentType(), name = sig.fullSemanticString()]
+    signature_handlers.push_back([=, type = sig.componentType(), name = sig.consistentAttributeName()]
     (SignatureContext &ctx) {
       bool pull_mode = bool(ctx.pull_mode_reg_mask & (1 << reg)) && interpolation != air::Interpolation::flat;
       auto assigned_index = ctx.func_signature.DefineInput(InputFragmentStageIn{
@@ -917,7 +917,7 @@ void handle_signature_ds(
       auto const mesh_vertex_data_index = num_mesh_vertex_data++;
       auto const type = to_msl_type(sig.componentType());
       func_signature.DefineMeshVertexOutput(OutputMeshData{
-        .user = sig.fullSemanticString(),
+        .user = sig.consistentAttributeName(),
         .type = type,
         .index = mesh_vertex_data_index
       });
@@ -1147,7 +1147,7 @@ handle_signature_gs(
       auto const mesh_vertex_data_index = num_mesh_vertex_data++;
       auto const type = to_msl_type(sig.componentType());
       func_signature.DefineMeshVertexOutput(OutputMeshData{
-        .user = sig.fullSemanticString(),
+        .user = sig.consistentAttributeName(),
         .type = type,
         .index = mesh_vertex_data_index
       });
