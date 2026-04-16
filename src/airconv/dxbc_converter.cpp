@@ -428,9 +428,11 @@ llvm::Error convert_dxbc_pixel_shader(
     pso_sample_mask = pso_data->sample_mask;
   }
   SM50_SHADER_METAL_VERSION metal_version = SM50_SHADER_METAL_310;
+  SM50_SHADER_FLAG shader_flags = {};
   SM50_SHADER_COMMON_DATA *sm50_common = nullptr;
   if (args_get_data<SM50_SHADER_COMMON, SM50_SHADER_COMMON_DATA>(pArgs, &sm50_common)) {
     metal_version = sm50_common->metal_version;
+    shader_flags = sm50_common->flags;
   }
 
   IREffect prologue([](auto) { return std::monostate(); });
@@ -479,7 +481,12 @@ llvm::Error convert_dxbc_pixel_shader(
   auto epilogue_bb = llvm::BasicBlock::Create(context, "epilogue", function);
   llvm::IRBuilder<> builder(entry_bb);
   llvm::raw_null_ostream nulldbg{};
-  llvm::air::AIRBuilder air(builder, nulldbg);
+  llvm::air::AIRBuilder air(
+      {
+          .sampleNaNToZero = bool(shader_flags & SM50_SHADER_FLAG_SAMPLE_NAN_TO_ZERO),
+      },
+      builder, nulldbg
+  );
 
   setup_metal_version(module, metal_version);
 
@@ -550,9 +557,11 @@ llvm::Error convert_dxbc_compute_shader(
   auto shader_info = &(pShaderInternal->shader_info);
 
   SM50_SHADER_METAL_VERSION metal_version = SM50_SHADER_METAL_310;
+  SM50_SHADER_FLAG shader_flags = {};
   SM50_SHADER_COMMON_DATA *sm50_common = nullptr;
   if (args_get_data<SM50_SHADER_COMMON, SM50_SHADER_COMMON_DATA>(pArgs, &sm50_common)) {
     metal_version = sm50_common->metal_version;
+    shader_flags = sm50_common->flags;
   }
 
   IREffect prologue([](auto) { return std::monostate(); });
@@ -584,7 +593,12 @@ llvm::Error convert_dxbc_compute_shader(
   auto epilogue_bb = llvm::BasicBlock::Create(context, "epilogue", function);
   llvm::IRBuilder<> builder(entry_bb);
   llvm::raw_null_ostream nulldbg{};
-  llvm::air::AIRBuilder air(builder, nulldbg);
+  llvm::air::AIRBuilder air(
+      {
+          .sampleNaNToZero = bool(shader_flags & SM50_SHADER_FLAG_SAMPLE_NAN_TO_ZERO),
+      },
+      builder, nulldbg
+  );
 
   setup_metal_version(module, metal_version);
   setup_temp_register(shader_info, resource_map, types, module, builder);
@@ -644,9 +658,11 @@ llvm::Error convert_dxbc_vertex_shader(
        gs_passthrough->RasterizationDisabled) ||
       (vertex_so != nullptr);
   SM50_SHADER_METAL_VERSION metal_version = SM50_SHADER_METAL_310;
+  SM50_SHADER_FLAG shader_flags = {};
   SM50_SHADER_COMMON_DATA *sm50_common = nullptr;
   if (args_get_data<SM50_SHADER_COMMON, SM50_SHADER_COMMON_DATA>(pArgs, &sm50_common)) {
     metal_version = sm50_common->metal_version;
+    shader_flags = sm50_common->flags;
   }
 
   IREffect prologue([](auto) { return std::monostate(); });
@@ -759,7 +775,12 @@ llvm::Error convert_dxbc_vertex_shader(
   auto epilogue_bb = llvm::BasicBlock::Create(context, "epilogue", function);
   llvm::IRBuilder<> builder(entry_bb);
   llvm::raw_null_ostream nulldbg{};
-  llvm::air::AIRBuilder air(builder, nulldbg);
+  llvm::air::AIRBuilder air(
+      {
+          .sampleNaNToZero = bool(shader_flags & SM50_SHADER_FLAG_SAMPLE_NAN_TO_ZERO),
+      },
+      builder, nulldbg
+  );
 
   setup_metal_version(module, metal_version);
 
