@@ -1789,6 +1789,7 @@ struct SM50_SHADER_COMMON_DATA32 {
   uint32_t next;
   enum SM50_SHADER_COMPILATION_ARGUMENT_TYPE type;
   enum SM50_SHADER_METAL_VERSION metal_version;
+  enum SM50_SHADER_FLAG flag;
 };
 
 struct SM50_SHADER_COMPILATION_ARGUMENT_DATA32 {
@@ -1872,6 +1873,7 @@ sm50_compilation_argument32_convert(
       last_arg->next = NULL;
       data->type = src->type;
       data->metal_version = src->metal_version;
+      data->flags = src->flag;
       break;
     }
     case SM50_SHADER_PSO_PIXEL_SHADER: {

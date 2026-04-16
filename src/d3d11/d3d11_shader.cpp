@@ -15,6 +15,7 @@ public:
         shader_(shader), variant_digest_(variant_digest) {
     sm50_common.type = SM50_SHADER_COMMON;
     sm50_common.metal_version = (SM50_SHADER_METAL_VERSION)pDevice->GetDXMTDevice().metalVersion();
+    sm50_common.flags = {};
     sm50_common.next = nullptr;
   }
 
