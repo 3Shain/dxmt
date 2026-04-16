@@ -18,7 +18,7 @@ namespace dxmt {
 struct D3D11ResourceCommon;
 
 struct D3D11ShaderResourceView : ID3D11ShaderResourceView1 {
-  Com<D3D11ResourceCommon> resource_{};
+  Com<D3D11ResourceCommon, false> resource_{};
   Buffer *buffer_{};
   BufferSlice slice_{};
   Texture *texture_{};
@@ -50,10 +50,13 @@ struct D3D11ShaderResourceView : ID3D11ShaderResourceView1 {
     return (bind_flags_ & (D3D11_BIND_STREAM_OUTPUT | D3D11_BIND_UNORDERED_ACCESS | D3D11_BIND_RENDER_TARGET |
                            D3D11_BIND_DEPTH_STENCIL)) == 0;
   }
+
+  virtual void AddRefPrivate() = 0;
+  virtual void ReleasePrivate() = 0;
 };
 
 struct D3D11UnorderedAccessView : ID3D11UnorderedAccessView1 {
-  Com<D3D11ResourceCommon> resource_{};
+  Com<D3D11ResourceCommon, false> resource_{};
   Buffer *buffer_{};
   BufferSlice slice_{};
   Texture *texture_{};
@@ -85,10 +88,13 @@ struct D3D11UnorderedAccessView : ID3D11UnorderedAccessView1 {
   uint32_t bindFlags() const {
     return bind_flags_;
   }
+
+  virtual void AddRefPrivate() = 0;
+  virtual void ReleasePrivate() = 0;
 };
 
 struct D3D11RenderTargetView : ID3D11RenderTargetView1 {
-  Com<D3D11ResourceCommon> resource_{};
+  Com<D3D11ResourceCommon, false> resource_{};
   Texture *texture_{};
   uint64_t view_id_{};
   MTL_RENDER_PASS_ATTACHMENT_DESC pass_desc_;
@@ -115,10 +121,13 @@ struct D3D11RenderTargetView : ID3D11RenderTargetView1 {
   uint32_t bindFlags() const {
     return bind_flags_;
   }
+
+  virtual void AddRefPrivate() = 0;
+  virtual void ReleasePrivate() = 0;
 };
 
 struct D3D11DepthStencilView : ID3D11DepthStencilView {
-  Com<D3D11ResourceCommon> resource_{};
+  Com<D3D11ResourceCommon, false> resource_{};
   Texture *texture_{};
   uint64_t view_id_{};
   MTL_RENDER_PASS_ATTACHMENT_DESC pass_desc_;
@@ -155,6 +164,9 @@ struct D3D11DepthStencilView : ID3D11DepthStencilView {
   uint32_t bindFlags() const {
     return bind_flags_;
   }
+
+  virtual void AddRefPrivate() = 0;
+  virtual void ReleasePrivate() = 0;
 };
 
 template <typename A, typename B>
