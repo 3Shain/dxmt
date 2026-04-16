@@ -481,6 +481,8 @@ public:
 
   llvm::Value * CreateGEPInt32WithBoundCheck(AtomicBufferResourceHandle &Buffer, llvm::Value* Index);
 
+  llvm::Value * CreateInt32BoundCheck(AtomicBufferResourceHandle &Buffer, llvm::Value *Index);
+
   [[nodiscard]]
   std::unique_ptr<llvm::IRBuilder<>::FastMathFlagGuard> UseFastMath(bool OptOut);
 

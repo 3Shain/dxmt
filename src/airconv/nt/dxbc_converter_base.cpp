@@ -2313,6 +2313,7 @@ Converter::operator()(const InstLoadStructured &load) {
 void
 Converter::operator()(const InstStoreRaw &store) {
   using namespace llvm::air;
+  using namespace llvm;
 
   auto Buf = LoadBuffer(store.dst);
   if (!Buf)
@@ -2334,17 +2335,28 @@ Converter::operator()(const InstStoreRaw &store) {
   auto Value = LoadOperand(store.src, Buf->Mask);
 
   for (auto [DstComp, _] : EnumerateComponents(Buf->Mask)) {
-    auto Ptr = CreateGEPInt32WithBoundCheck(Buf.value(), ir.CreateAdd(Index, ir.getInt32(DstComp)));
+    auto CheckedIndex = ir.CreateAdd(Index, ir.getInt32(DstComp));
+    auto InBounds = CreateInt32BoundCheck(Buf.value(), CheckedIndex);
+    auto CurrentBlock = ir.GetInsertBlock();
+    auto Function = CurrentBlock->getParent();
+    auto StoreBlock = llvm::BasicBlock::Create(ir.getContext(), "store_raw.in_bounds", Function);
+    auto ContinueBlock = llvm::BasicBlock::Create(ir.getContext(), "store_raw.cont", Function);
+    ir.CreateCondBr(InBounds, StoreBlock, ContinueBlock);
+    ir.SetInsertPoint(StoreBlock);
+    auto Ptr = ir.CreateGEP(ir.getInt32Ty(), Buf->Pointer, {CheckedIndex});
     if (Buf->GlobalCoherent)
       air.CreateDeviceCoherentStore(ExtractElement(Value, DstComp), Ptr);
     else
       ir.CreateStore(ExtractElement(Value, DstComp), Ptr, Volatile);
+    ir.CreateBr(ContinueBlock);
+    ir.SetInsertPoint(ContinueBlock);
   }
 }
 
 void
 Converter::operator()(const InstStoreStructured &store) {
   using namespace llvm::air;
+  using namespace llvm;
 
   auto Buf = LoadBuffer(store.dst);
   if (!Buf)
@@ -2368,11 +2380,21 @@ Converter::operator()(const InstStoreStructured &store) {
   auto Value = LoadOperand(store.src, Buf->Mask);
 
   for (auto [DstComp, _] : EnumerateComponents(Buf->Mask)) {
-    auto Ptr = CreateGEPInt32WithBoundCheck(Buf.value(), ir.CreateAdd(Index, ir.getInt32(DstComp)));
+    auto CheckedIndex = ir.CreateAdd(Index, ir.getInt32(DstComp));
+    auto InBounds = CreateInt32BoundCheck(Buf.value(), CheckedIndex);
+    auto CurrentBlock = ir.GetInsertBlock();
+    auto Function = CurrentBlock->getParent();
+    auto StoreBlock = llvm::BasicBlock::Create(ir.getContext(), "store_structured.in_bounds", Function);
+    auto ContinueBlock = llvm::BasicBlock::Create(ir.getContext(), "store_structured.cont", Function);
+    ir.CreateCondBr(InBounds, StoreBlock, ContinueBlock);
+    ir.SetInsertPoint(StoreBlock);
+    auto Ptr = ir.CreateGEP(ir.getInt32Ty(), Buf->Pointer, {CheckedIndex});
     if (Buf->GlobalCoherent)
       air.CreateDeviceCoherentStore(ExtractElement(Value, DstComp), Ptr);
     else
       ir.CreateStore(ExtractElement(Value, DstComp), Ptr, Volatile);
+    ir.CreateBr(ContinueBlock);
+    ir.SetInsertPoint(ContinueBlock);
   }
 }
 
@@ -2433,9 +2455,27 @@ Converter::operator()(const InstAtomicBinOp &atomic) {
 
   if (Buf) {
     auto IntPtrOffset = LoadAtomicOpAddress(Buf.getValue(), atomic.dst_address);
+    auto InBounds = CreateInt32BoundCheck(Buf.getValue(), IntPtrOffset);
+    auto CurrentBlock = ir.GetInsertBlock();
+    auto Function = CurrentBlock->getParent();
+    auto AtomicBlock = llvm::BasicBlock::Create(ir.getContext(), "atomic_binop.in_bounds", Function);
+    auto OobBlock = llvm::BasicBlock::Create(ir.getContext(), "atomic_binop.oob", Function);
+    auto ContinueBlock = llvm::BasicBlock::Create(ir.getContext(), "atomic_binop.cont", Function);
+    ir.CreateCondBr(InBounds, AtomicBlock, OobBlock);
+
+    ir.SetInsertPoint(AtomicBlock);
     auto Ptr = ir.CreateGEP(ir.getInt32Ty(), Buf->Pointer, {IntPtrOffset});
     auto Value = air.CreateAtomicRMW(Op, Ptr, LoadOperand(atomic.src, kMaskComponentX));
     StoreOperand(atomic.dst_original, Value);
+    ir.CreateBr(ContinueBlock);
+
+    ir.SetInsertPoint(OobBlock);
+    // D3D defines the returned value for OOB atomic UAV accesses as undefined.
+    // Use zero to avoid surfacing a Metal fault while keeping behavior deterministic.
+    StoreOperand(atomic.dst_original, ir.getInt32(0));
+    ir.CreateBr(ContinueBlock);
+
+    ir.SetInsertPoint(ContinueBlock);
     return;
   }
 
@@ -2919,6 +2959,15 @@ Converter::CreateGEPInt32WithBoundCheck(BufferResourceHandle &Buffer, llvm::Valu
   return ir.CreateSelect(
       ir.CreateICmpULT(Index, ir.CreateLShr(ByteLength, 2)), Addr, llvm::Constant::getNullValue(Addr->getType())
   );
+}
+
+llvm::Value *
+Converter::CreateInt32BoundCheck(AtomicBufferResourceHandle &Buffer, llvm::Value *Index) {
+  if (!Buffer.Metadata) {
+    return llvm::ConstantInt::getTrue(ir.getContext());
+  }
+  auto ByteLength = DecodeRawBufferByteLength(Buffer.Metadata);
+  return ir.CreateICmpULT(Index, ir.CreateLShr(ByteLength, 2));
 }
 
 llvm::Value *
