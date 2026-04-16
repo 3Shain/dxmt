@@ -52,6 +52,10 @@ namespace dxmt {
     { R"(\\OMORI\.exe$)", {{
       { "dxgi.forceSDR",   "True" },
     }} },
+    /** Outcast: A New Beginning */
+    { R"(\\O2-Win64-Shipping\.exe$)", {{
+      { "d3d11.sampleNaNToZero",   "True" },
+    }} },
   }};
 
   const Config* findProfile(const ProfileList& profiles, const std::string& appName) {
