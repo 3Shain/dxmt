@@ -201,9 +201,11 @@ convert_dxbc_vertex_hull_shader(
   auto [final_maxtessfactor, factor_int] = get_final_maxtessfactor(pHullStage, pArgs);
 
   SM50_SHADER_METAL_VERSION metal_version = SM50_SHADER_METAL_310;
+  SM50_SHADER_FLAG shader_flags = {};
   SM50_SHADER_COMMON_DATA *sm50_common = nullptr;
   if (args_get_data<SM50_SHADER_COMMON, SM50_SHADER_COMMON_DATA>(pArgs, &sm50_common)) {
     metal_version = sm50_common->metal_version;
+    shader_flags = sm50_common->flags;
   }
   SM50_SHADER_IA_INPUT_LAYOUT_DATA *ia_layout = nullptr;
   args_get_data<SM50_SHADER_IA_INPUT_LAYOUT, SM50_SHADER_IA_INPUT_LAYOUT_DATA>(pArgs, &ia_layout);
@@ -313,7 +315,12 @@ convert_dxbc_vertex_hull_shader(
   auto vertex_stage_end = llvm::BasicBlock::Create(context, "vertex_end", function);
   llvm::IRBuilder<> builder(entry_bb_global);
   llvm::raw_null_ostream nulldbg{};
-  llvm::air::AIRBuilder air(builder, nulldbg);
+  llvm::air::AIRBuilder air(
+      {
+          .sampleNaNToZero = bool(shader_flags & SM50_SHADER_FLAG_SAMPLE_NAN_TO_ZERO),
+      },
+      builder, nulldbg
+  );
 
   // these values are initialized by vertex stage and accessed by hull stage
   llvm::Value *instance_id = nullptr;
@@ -720,9 +727,11 @@ convert_dxbc_tesselator_domain_shader(
       (args_get_data<SM50_SHADER_GS_PASS_THROUGH, SM50_SHADER_GS_PASS_THROUGH_DATA>(pArgs, &gs_passthrough) &&
        gs_passthrough->RasterizationDisabled);
   SM50_SHADER_METAL_VERSION metal_version = SM50_SHADER_METAL_310;
+  SM50_SHADER_FLAG shader_flags = {};
   SM50_SHADER_COMMON_DATA *sm50_common = nullptr;
   if (args_get_data<SM50_SHADER_COMMON, SM50_SHADER_COMMON_DATA>(pArgs, &sm50_common)) {
     metal_version = sm50_common->metal_version;
+    shader_flags = sm50_common->flags;
   }
 
   auto [final_maxtessfactor, factor_int] = get_final_maxtessfactor(pHullStage, pArgs);
@@ -836,7 +845,12 @@ convert_dxbc_tesselator_domain_shader(
   auto real_return = llvm::BasicBlock::Create(context, "real_return", function);
   llvm::IRBuilder<> builder(entry_bb);
   llvm::raw_null_ostream nulldbg{};
-  llvm::air::AIRBuilder air(builder, nulldbg);
+  llvm::air::AIRBuilder air(
+      {
+          .sampleNaNToZero = bool(shader_flags & SM50_SHADER_FLAG_SAMPLE_NAN_TO_ZERO),
+      },
+      builder, nulldbg
+  );
 
   setup_metal_version(module, metal_version);
   setup_temp_register(shader_info, resource_map, types, module, builder);

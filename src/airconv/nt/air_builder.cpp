@@ -362,7 +362,11 @@ AIRBuilder::CreateSampleCommon(
   }
 
   Tys.push_back(getTextureSampleCoordType(Texture));
-  Ops.push_back(Coord);
+  if (options.sampleNaNToZero) {
+    Ops.push_back(getNaNToZero(Coord));
+  } else {
+    Ops.push_back(Coord);
+  }
 
   if (TexInfo.is_array) {
     Tys.push_back(getIntTy());
@@ -462,7 +466,11 @@ AIRBuilder::CreateSampleCmpCommon(
   Ops.push_back(getInt(1));
 
   Tys.push_back(getTextureSampleCoordType(Texture));
-  Ops.push_back(Coord);
+  if (options.sampleNaNToZero) {
+    Ops.push_back(getNaNToZero(Coord));
+  } else {
+    Ops.push_back(Coord);
+  }
 
   if (TexInfo.is_array) {
     Tys.push_back(getIntTy());
@@ -546,7 +554,11 @@ AIRBuilder::CreateSampleGrad(
   }
 
   Tys.push_back(getTextureSampleCoordType(Texture));
-  Ops.push_back(Coord);
+  if (options.sampleNaNToZero) {
+    Ops.push_back(getNaNToZero(Coord));
+  } else {
+    Ops.push_back(Coord);
+  }
 
   if (TexInfo.is_array) {
     Tys.push_back(getIntTy());
@@ -554,9 +566,14 @@ AIRBuilder::CreateSampleGrad(
   }
 
   Tys.push_back(getTextureSampleCoordType(Texture));
-  Ops.push_back(DerivX);
   Tys.push_back(getTextureSampleCoordType(Texture));
-  Ops.push_back(DerivY);
+  if (options.sampleNaNToZero) {
+    Ops.push_back(getNaNToZero(DerivX));
+    Ops.push_back(getNaNToZero(DerivY));
+  } else {
+    Ops.push_back(DerivX);
+    Ops.push_back(DerivY);
+  }
 
   Tys.push_back(getFloatTy());
   Ops.push_back(MinLOD);
@@ -777,7 +794,11 @@ AIRBuilder::CreateGather(
   }
 
   Tys.push_back(getTextureSampleCoordType(Texture));
-  Ops.push_back(Coord);
+  if (options.sampleNaNToZero) {
+    Ops.push_back(getNaNToZero(Coord));
+  } else {
+    Ops.push_back(Coord);
+  }
 
   if (TexInfo.is_array) {
     Tys.push_back(getIntTy());
@@ -861,7 +882,11 @@ AIRBuilder::CreateGatherCompare(
   Ops.push_back(getInt(1));
 
   Tys.push_back(getTextureSampleCoordType(Texture));
-  Ops.push_back(Coord);
+  if (options.sampleNaNToZero) {
+    Ops.push_back(getNaNToZero(Coord));
+  } else {
+    Ops.push_back(Coord);
+  }
 
   if (TexInfo.is_array) {
     Tys.push_back(getIntTy());
@@ -982,7 +1007,11 @@ AIRBuilder::CreateCalculateLOD(const Texture &Texture, Value *Handle, Value *Sam
   Ops.push_back(Sampler);
 
   Tys.push_back(getTextureSampleCoordType(Texture));
-  Ops.push_back(Coord);
+  if (options.sampleNaNToZero) {
+    Ops.push_back(getNaNToZero(Coord));
+  } else {
+    Ops.push_back(Coord);
+  }
 
   /* access: always 0 = sample */
   Tys.push_back(getIntTy());
@@ -1669,6 +1698,20 @@ AIRBuilder::CreateFPUnOp(FPUnOp Op, Value *Operand, bool FastVariant) {
   FnName += getTypeOverloadSuffix(OperandType);
   auto Fn = getModule()->getOrInsertFunction(FnName, llvm::FunctionType::get(OperandType, {OperandType}, false), Attrs);
   return builder.CreateCall(Fn, {Operand});
+}
+
+Value *
+AIRBuilder::CreateIsNaN(Value *Operand) {
+  auto OperandType = Operand->getType();
+  llvm::Value *BitsL31 = getInt(0x7fffffffu);
+  llvm::Value *BitsInf = getInt(0x7f800000u);
+  llvm::Type *TyCast = getIntTy();
+  if (auto TyVec = dyn_cast<llvm::FixedVectorType>(OperandType)) {
+    BitsL31 = builder.CreateVectorSplat(TyVec->getNumElements(), BitsL31);
+    BitsInf = builder.CreateVectorSplat(TyVec->getNumElements(), BitsInf);
+    TyCast = getIntTy(TyVec->getNumElements());
+  }
+  return builder.CreateICmpUGT(builder.CreateAnd(builder.CreateBitCast(Operand, TyCast), BitsL31), BitsInf);
 }
 
 Value *

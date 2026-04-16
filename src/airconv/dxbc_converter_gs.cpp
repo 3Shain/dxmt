@@ -112,9 +112,11 @@ convert_dxbc_geometry_shader(
     is_strip = pso_data->strip_topology;
   }
   SM50_SHADER_METAL_VERSION metal_version = SM50_SHADER_METAL_310;
+  SM50_SHADER_FLAG shader_flags = {};
   SM50_SHADER_COMMON_DATA *sm50_common = nullptr;
   if (args_get_data<SM50_SHADER_COMMON, SM50_SHADER_COMMON_DATA>(pArgs, &sm50_common)) {
     metal_version = sm50_common->metal_version;
+    shader_flags = sm50_common->flags;
   }
 
   IREffect prologue([](auto) { return std::monostate(); });
@@ -167,7 +169,12 @@ convert_dxbc_geometry_shader(
   auto epilogue_bb = llvm::BasicBlock::Create(context, "epilogue", function);
   llvm::IRBuilder<> builder(entry_bb);
   llvm::raw_null_ostream nulldbg{};
-  llvm::air::AIRBuilder air(builder, nulldbg);
+  llvm::air::AIRBuilder air(
+      {
+          .sampleNaNToZero = bool(shader_flags & SM50_SHADER_FLAG_SAMPLE_NAN_TO_ZERO),
+      },
+      builder, nulldbg
+  );
   setup_metal_version(module, metal_version);
 
   auto [warp_vertex_count, warp_primitive_count, vertex_per_primitive] =
@@ -513,9 +520,11 @@ convert_dxbc_vertex_for_geometry_shader(
     is_strip = pso_data->strip_topology;
   }
   SM50_SHADER_METAL_VERSION metal_version = SM50_SHADER_METAL_310;
+  SM50_SHADER_FLAG shader_flags = {};
   SM50_SHADER_COMMON_DATA *sm50_common = nullptr;
   if (args_get_data<SM50_SHADER_COMMON, SM50_SHADER_COMMON_DATA>(pArgs, &sm50_common)) {
     metal_version = sm50_common->metal_version;
+    shader_flags = sm50_common->flags;
   }
 
   bool is_triadj_strip = is_strip && pGeometryStage->gs_input_primitive == D3D10_SB_PRIMITIVE_TRIANGLE_ADJ;
@@ -584,7 +593,12 @@ convert_dxbc_vertex_for_geometry_shader(
   auto epilogue_bb = llvm::BasicBlock::Create(context, "epilogue", function);
   llvm::IRBuilder<> builder(entry_bb);
   llvm::raw_null_ostream nulldbg{};
-  llvm::air::AIRBuilder air(builder, nulldbg);
+  llvm::air::AIRBuilder air(
+      {
+          .sampleNaNToZero = bool(shader_flags & SM50_SHADER_FLAG_SAMPLE_NAN_TO_ZERO),
+      },
+      builder, nulldbg
+  );
 
   setup_metal_version(module, metal_version);
 

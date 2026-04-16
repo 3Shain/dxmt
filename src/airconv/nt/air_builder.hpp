@@ -103,9 +103,19 @@ enum class ThreadScope {
   Simdgroup = 4,
 };
 
+class AIRBuilderOptions {
+public:
+  bool sampleNaNToZero = false;
+};
+
 class AIRBuilder {
 public:
-  AIRBuilder(IRBuilderBase &ir_builder, raw_ostream &debug) : builder(ir_builder), debug(debug) {}
+  AIRBuilder(IRBuilderBase &ir_builder, raw_ostream &debug) : builder(ir_builder), debug(debug), options() {}
+
+  AIRBuilder(const AIRBuilderOptions &options, IRBuilderBase &ir_builder, raw_ostream &debug) :
+      builder(ir_builder),
+      debug(debug),
+      options(options) {}
 
   /* Texture Operations */
 
@@ -324,6 +334,8 @@ public:
 
   Value *CreateFPUnOp(FPUnOp Op, Value *Operand, bool FastVariant = true);
 
+  Value *CreateIsNaN(Value *Operand);
+
   enum FPBinOp {
     fmax,
     fmin,
@@ -519,10 +531,16 @@ public:
     return nullptr;
   };
 
+  Value *
+  getNaNToZero(Value *Operand) {
+    return builder.CreateSelect(CreateIsNaN(Operand), Constant::getNullValue(Operand->getType()), Operand);
+  };
+
   std::string getTypeOverloadSuffix(Type *Ty, Signedness Sign = Signedness::DontCare);
 
 protected:
   raw_ostream &debug;
+  AIRBuilderOptions options;
 
   Value *
   GetOffset(const Texture &Texture, const int32_t ImmOffset[3]) {
