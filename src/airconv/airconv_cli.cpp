@@ -217,6 +217,7 @@ int main(int argc, char **argv) {
 
   SM50_SHADER_COMMON_DATA data;
   data.metal_version = SM50_SHADER_METAL_320;
+  data.flags = {};
   data.next = 0;
   data.type = SM50_SHADER_COMMON;
 
