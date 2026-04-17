@@ -212,7 +212,11 @@ public:
   }
 };
 
-class Resource : public Object {
+class Allocation : public Object {
+public:
+};
+
+class Resource : public Allocation {
 public:
 };
 
@@ -587,6 +591,29 @@ public:
   };
 };
 
+class ResidencySet : public Object {
+public:
+  void
+  addAllocations(const Allocation *allocations, uint64_t count) {
+    MTLResidencySet_addAllocations(handle, reinterpret_cast<const obj_handle_t *>(allocations), count);
+  }
+
+  void
+  removeAllocations(const Allocation *allocations, uint64_t count) {
+    MTLResidencySet_removeAllocations(handle, reinterpret_cast<const obj_handle_t *>(allocations), count);
+  }
+
+  void
+  removeAllAllocations() {
+    MTLResidencySet_removeAllAllocations(handle);
+  }
+
+  void
+  commit() {
+    MTLResidencySet_commit(handle);
+  }
+};
+
 class CommandBuffer : public Object {
 public:
   void
@@ -678,6 +705,11 @@ public:
   CommandBuffer
   commandBuffer() {
     return CommandBuffer{MTLCommandQueue_commandBuffer(handle)};
+  }
+
+  void
+  addResidencySet(ResidencySet residency_set) {
+    MTLCommandQueue_addResidencySet(handle, residency_set.handle);
   }
 };
 
@@ -840,6 +872,11 @@ public:
   Reference<Event>
   newEvent() {
     return Reference<Event>(MTLDevice_newEvent(handle));
+  }
+
+  Reference<ResidencySet>
+  newResidencySet(uint64_t init_capacity, Error &error) {
+    return Reference<ResidencySet>(MTLDevice_newResidencySet(handle, init_capacity, &error.handle));
   }
 
   uint64_t
