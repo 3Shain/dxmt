@@ -132,6 +132,10 @@ public:
   mach_port_t machPort;
   small_vector<GenericAccessTracker, 1> fenceTrackers;
 
+  virtual WMT::Allocation get() {
+    return obj_;
+  }
+
 private:
   TextureAllocation(
       Texture *descriptor, WMT::Reference<WMT::Buffer> &&buffer, void *mapped_buffer, const WMTTextureInfo &info,

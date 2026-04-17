@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Metal.hpp"
 #include <atomic>
 #include <cstdint>
 
@@ -20,6 +21,8 @@ public:
     last_retained_seq_id = seq_id;
     return false;
   }
+
+  virtual WMT::Allocation get() = 0;
 
 private:
   std::atomic<uint32_t> refcount_ = {0u};

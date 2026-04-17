@@ -89,7 +89,8 @@ public:
   encode(WMT::CommandBuffer cmdbuf, ArgumentEncodingContext &enc) {
     enc.$$setEncodingContext(
       chunk_id,
-      frame_
+      frame_,
+      residency_set
     );
     auto& statistics = enc.currentFrameStatistics();
     auto t0 = clock::now();
@@ -112,6 +113,7 @@ public:
 private:
   CommandQueue *queue;
   WMT::Reference<WMT::CommandBuffer> attached_cmdbuf;
+  WMT::Reference<WMT::ResidencySet> residency_set;
   
   CommandList<ArgumentEncodingContext> list_enc;
   AllocationRefTracking ref_tracker;
@@ -128,6 +130,7 @@ public:
     list_enc.reset();
     ref_tracker.clear();
     attached_cmdbuf = nullptr;
+    residency_set.removeAllAllocations();
   }
 };
 

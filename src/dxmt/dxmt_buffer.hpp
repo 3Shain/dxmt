@@ -102,6 +102,10 @@ public:
     obj_.updateContents(suballocation * suballocation_size_ + offset, data, length);
   }
 
+  virtual WMT::Allocation get() {
+    return (WMT::Allocation)obj_;
+  }
+
   DXMT_RESOURCE_RESIDENCY_STATE residencyState;
   small_vector<GenericAccessTracker, 1> fenceTrackers;
 

@@ -394,6 +394,11 @@ void
 ArgumentEncodingContext::retainAllocation(Allocation* allocation) {
   if (allocation->checkRetained(seq_id_))
     return;
+  batched_residency_update_[batched_residency_update_size_++] = allocation->get();
+  if (batched_residency_update_size_ == std::size(batched_residency_update_)) {
+    residency_set_.addAllocations(batched_residency_update_.data(), batched_residency_update_size_);
+    batched_residency_update_size_ = 0;
+  }
   queue_.Retain(seq_id_, allocation);
 }
 
@@ -782,12 +787,13 @@ ArgumentEncodingContext::resolveRenderPassBarrier() {
 }
 
 void
-ArgumentEncodingContext::$$setEncodingContext(uint64_t seq_id, uint64_t frame_id) {
+ArgumentEncodingContext::$$setEncodingContext(uint64_t seq_id, uint64_t frame_id, WMT::ResidencySet residency_set) {
   current_buffer_chunk_ = 0;
   cpu_buffer_ = cpu_buffer_chunks_[current_buffer_chunk_].ptr;
   cpu_buffer_offset_ = 0;
   seq_id_ = seq_id;
   frame_id_ = frame_id;
+  residency_set_ = residency_set;
 }
 
 constexpr unsigned kEncoderOptimizerThreshold = 64;
@@ -795,6 +801,12 @@ constexpr unsigned kEncoderOptimizerThreshold = 64;
 QueryReadbacks
 ArgumentEncodingContext::flushCommands(WMT::CommandBuffer cmdbuf, uint64_t seqId, uint64_t event_seq_id) {
   assert(!encoder_current);
+
+  if (batched_residency_update_size_) {
+    residency_set_.addAllocations(batched_residency_update_.data(), batched_residency_update_size_);
+    batched_residency_update_size_ = 0;
+  }
+  residency_set_.commit();
 
   unsigned encoder_count = encoder_count_;
   unsigned encoder_index = 0;

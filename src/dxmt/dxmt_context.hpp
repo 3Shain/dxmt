@@ -499,6 +499,7 @@ public:
   template <PipelineStage stage, PipelineKind kind>
   void
   makeResident(Buffer *buffer, bool read = true, bool write = false) {
+    return;
     auto allocation = buffer->current();
     uint64_t encoder_id = currentEncoder()->id;
     DXMT_RESOURCE_RESIDENCY requested = GetResidencyMask<kind>(stage, read, write);
@@ -509,6 +510,7 @@ public:
   template <PipelineStage stage, PipelineKind kind>
   void
   makeResident(Buffer *buffer, uint64_t viewId, bool read = true, bool write = false) {
+    return;
     auto allocation = buffer->current();
     uint64_t encoder_id = currentEncoder()->id;
     DXMT_RESOURCE_RESIDENCY requested = GetResidencyMask<kind>(stage, read, write);
@@ -519,6 +521,7 @@ public:
   template <PipelineStage stage, PipelineKind kind>
   void
   makeResident(Texture *texture, uint64_t viewId, bool read = true, bool write = false) {
+    return;
     auto allocation = texture->current();
     uint64_t encoder_id = currentEncoder()->id;
     DXMT_RESOURCE_RESIDENCY requested = GetResidencyMask<kind>(stage, read, write);
@@ -710,7 +713,7 @@ public:
   CommandQueue& queue() { return queue_;}
 
   void
-  $$setEncodingContext(uint64_t seq_id, uint64_t frame_id);
+  $$setEncodingContext(uint64_t seq_id, uint64_t frame_id, WMT::ResidencySet residency_set);
 
   void bumpVisibilityResultOffset();
   void beginVisibilityResultQuery(Rc<VisibilityResultQuery> &&query);
@@ -805,6 +808,10 @@ private:
 
   uint64_t seq_id_;
   uint64_t frame_id_;
+  WMT::ResidencySet residency_set_;
+
+  std::array<WMT::Allocation, 1024> batched_residency_update_;
+  size_t batched_residency_update_size_ = 0;
 
   struct chunk {
     void *ptr;

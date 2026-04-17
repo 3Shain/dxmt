@@ -35,9 +35,12 @@ CommandQueue::CommandQueue(WMT::Device device) :
     cmd_library(device),
     argument_encoding_ctx(*this, device, cmd_library),
     initializer(device) {
+  WMT::Reference<WMT::Error> err;
   for (unsigned i = 0; i < kCommandChunkCount; i++) {
     auto &chunk = chunks[i];
     chunk.queue = this;
+    chunk.residency_set = device.newResidencySet(0, err);
+    commandQueue.addResidencySet(chunk.residency_set);
     chunk.reset();
   };
   event = device.newSharedEvent();
