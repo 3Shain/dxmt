@@ -282,6 +282,11 @@ public:
     data.set((void *)pixelBytes);
     return MTLTexture_getBytes(handle, origin, size, level, slice, data, bytesPerRow, bytesPerImage);
   }
+
+  void
+  getInfo(WMTTextureInfo &info) {
+    MTLTexture_getInfo(handle, &info);
+  }
 };
 
 class Buffer : public Resource {

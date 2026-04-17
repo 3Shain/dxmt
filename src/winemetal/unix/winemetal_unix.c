@@ -3118,6 +3118,17 @@ _MTLTexture_getBytes(void *obj) {
   return STATUS_SUCCESS;
 }
 
+static NTSTATUS
+_MTLTexture_getInfo(void *obj) {
+  struct unixcall_generic_obj_ptr_noret *params = obj;
+  struct WMTTextureInfo *info = params->arg.ptr;
+  id<MTLTexture> texture = (id<MTLTexture>)params->handle;
+  extract_texture_descriptor(texture, info);
+  info->gpu_resource_id = [texture gpuResourceID]._impl;
+  info->mach_port = 0;
+  return STATUS_SUCCESS;
+}
+
 /*
  * Definition from cache.c
  */
@@ -3275,6 +3286,7 @@ const void *__wine_unix_call_funcs[] = {
     &_MTLDevice_newIndirectCommandBuffer,
     &_MTLDevice_newLibraryWithSource,
     &_MTLTexture_getBytes,
+    &_MTLTexture_getInfo,
 };
 
 #ifndef DXMT_NATIVE
@@ -3425,5 +3437,6 @@ const void *__wine_unix_call_wow64_funcs[] = {
     &_MTLDevice_newIndirectCommandBuffer,
     &_MTLDevice_newLibraryWithSource,
     &_MTLTexture_getBytes,
+    &_MTLTexture_getInfo,
 };
 #endif

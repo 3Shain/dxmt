@@ -27,6 +27,7 @@ d3d11_src = [
   'd3d11_context_def.cpp',
   'd3d11_multithread.cpp',
   'd3d11_fence.cpp',
+  'd3d11_metal_interop.cpp',
 ]
 
 d3d10_src = [

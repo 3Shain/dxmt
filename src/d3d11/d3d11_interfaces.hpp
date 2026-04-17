@@ -1,6 +1,6 @@
 #pragma once
 #include "com/com_guid.hpp"
-#include "d3d11.h"
+#include <d3d11_3.h>
 
 struct MTL_TEMPORAL_UPSCALE_D3D11_DESC {
   UINT InputContentWidth; // can be 0, which means full width
@@ -42,4 +42,11 @@ DEFINE_COM_INTERFACE("19a8e35a-38be-418f-94e3-9f7323936870", IMTLD3D11ContextExt
 DEFINE_COM_INTERFACE("efc77ae6-2179-4c0a-b844-7661ca0dcde7", IMTLD3D11DeviceExt)
     : public IUnknown {
   virtual void STDMETHODCALLTYPE SetShaderExtensionSlot(UINT Slot) = 0;
+};
+
+DEFINE_COM_INTERFACE("8b6fc874-7429-430d-8253-522e296cd8e2", IMTLD3D11InteropDevice) : public IUnknown {
+  virtual HRESULT STDMETHODCALLTYPE ImportMTLTexture2D(
+      const D3D11_TEXTURE2D_DESC1 *pDesc, uint64_t mtlTexture, ID3D11Texture2D **ppTexture2D
+  ) = 0;
+  virtual HRESULT STDMETHODCALLTYPE GetFenceSharedEvent(ID3D11Fence * pFence, uint64_t *pMtlSharedEvent) = 0;
 };

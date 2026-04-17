@@ -2,6 +2,7 @@
 #include "d3d11_fence.hpp"
 #include "d3d11_input_layout.hpp"
 #include "d3d11_interfaces.hpp"
+#include "d3d11_metal_interop.hpp"
 #include "d3d11_multithread.hpp"
 #include "d3d11_pipeline.hpp"
 #include "d3d11_class_linkage.hpp"
@@ -1136,7 +1137,9 @@ public:
       : adapter_(adapter), device(std::move(device)),
         cmd_queue_(this->device->queue()),
         d3d11_device_(this, adapter, feature_level, feature_flags,
-                      *this->device.get()) {
+                      *this->device.get()),
+        d3d11_interop_device_(static_cast<IUnknown *>(static_cast<IMTLDXGIDevice *>(this)),
+                       &d3d11_device_) {
     if (adapter_->GetLocalD3DKMT()) {
       D3DKMT_CREATEDEVICE create = {};
       create.hAdapter = adapter_->GetLocalD3DKMT();
@@ -1190,6 +1193,11 @@ public:
 
     if (riid == __uuidof(IMTLD3D11DeviceExt)) {
       *ppvObject = ref_and_cast<IMTLD3D11DeviceExt>(&d3d11_device_);
+      return S_OK;
+    }
+
+    if (riid == __uuidof(IMTLD3D11InteropDevice)) {
+      *ppvObject = ref_and_cast<IMTLD3D11InteropDevice>(&d3d11_interop_device_);
       return S_OK;
     }
 
@@ -1307,6 +1315,7 @@ private:
   std::unique_ptr<Device> device;
   CommandQueue &cmd_queue_;
   MTLD3D11DeviceImpl d3d11_device_;
+  MTLD3D11InteropDevice d3d11_interop_device_;
 };
 
 Com<IMTLDXGIDevice> CreateD3D11Device(std::unique_ptr<Device> &&device,

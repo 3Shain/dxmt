@@ -2148,4 +2148,6 @@ WINEMETAL_API void MTLTexture_getBytes(
     struct WMTMemoryPointer data, uint64_t bytes_per_row, uint64_t bytes_per_image
 );
 
+WINEMETAL_API void MTLTexture_getInfo(obj_handle_t texture, struct WMTTextureInfo *info);
+
 #endif

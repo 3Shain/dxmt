@@ -530,6 +530,56 @@ ImportSharedTextureInternal(
 }
 
 HRESULT
+ImportMTLTexture2D(
+    MTLD3D11Device *pDevice, const D3D11_TEXTURE2D_DESC1 *pDesc, uint64_t mtlTexture, ID3D11Texture2D **ppTexture2D
+) {
+  InitReturnPtr(ppTexture2D);
+  if (!pDesc || !ppTexture2D || !mtlTexture)
+    return E_INVALIDARG;
+
+  WMTTextureInfo expectedInfo;
+  D3D11_TEXTURE2D_DESC1 finalDesc;
+  if (FAILED(CreateMTLTextureDescriptor(pDevice, pDesc, &finalDesc, &expectedInfo)))
+    return E_INVALIDARG;
+
+  if (finalDesc.MiscFlags & (D3D11_RESOURCE_MISC_SHARED | D3D11_RESOURCE_MISC_SHARED_NTHANDLE |
+                             D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX | D3D11_RESOURCE_MISC_TILED))
+    return E_INVALIDARG;
+  if (finalDesc.Usage != D3D11_USAGE_DEFAULT)
+    return E_INVALIDARG;
+
+  // WMT::Reference(obj_handle_t) takes ownership without retaining, so bump the refcount first
+  NSObject_retain(mtlTexture);
+  WMT::Reference<WMT::Texture> mtlRef(mtlTexture);
+
+  WMTTextureInfo mtlInfo;
+  mtlRef.getInfo(mtlInfo);
+
+  if (expectedInfo.width != mtlInfo.width || expectedInfo.height != mtlInfo.height ||
+      expectedInfo.mipmap_level_count != mtlInfo.mipmap_level_count ||
+      expectedInfo.array_length != mtlInfo.array_length || expectedInfo.sample_count != mtlInfo.sample_count ||
+      expectedInfo.type != mtlInfo.type ||
+      ORIGINAL_FORMAT(expectedInfo.pixel_format) != ORIGINAL_FORMAT(mtlInfo.pixel_format)) {
+    ERR("ImportMTLTexture2D: texture property mismatch");
+    return E_INVALIDARG;
+  }
+
+  if ((mtlInfo.usage & expectedInfo.usage) != expectedInfo.usage) {
+    ERR("ImportMTLTexture2D: insufficient Metal texture usage");
+    return E_INVALIDARG;
+  }
+
+  auto texture = Rc<Texture>(new Texture(mtlInfo, pDevice->GetMTLDevice()));
+  auto allocation = texture->adopt(std::move(mtlRef), mtlInfo);
+  if (!allocation)
+    return E_FAIL;
+  texture->rename(std::move(allocation));
+  Com<DeviceTexture<tag_texture_2d>> device_texture =
+      ref(new DeviceTexture<tag_texture_2d>(&finalDesc, std::move(texture), pDevice));
+  return device_texture->QueryInterface(__uuidof(ID3D11Texture2D), (void **)ppTexture2D);
+}
+
+HRESULT
 ImportSharedTexture(MTLD3D11Device *pDevice, HANDLE hResource, REFIID riid, void **ppTexture) {
   InitReturnPtr(ppTexture);
 
