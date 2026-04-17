@@ -384,6 +384,41 @@ struct unixcall_mtlresidencyset_addallocations {
   uint64_t count;
 };
 
+struct unixcall_mtldevice_newheap {
+  obj_handle_t device;
+  struct WMTConstMemoryPointer info;
+  obj_handle_t ret;
+};
+
+struct unixcall_mtldevice_heapbuffersizeandalign {
+  obj_handle_t device;
+  uint64_t length;
+  enum WMTResourceOptions options;
+  uint32_t ret_size;
+  uint32_t ret_align;
+};
+
+struct unixcall_mtldevice_heaptexturesizeandalign {
+  obj_handle_t device;
+  struct WMTMemoryPointer info;
+  uint32_t ret_size;
+  uint32_t ret_align;
+};
+
+struct unixcall_mtlheap_newbuffer {
+  obj_handle_t heap;
+  struct WMTMemoryPointer info;
+  uint64_t offset;
+  obj_handle_t ret;
+};
+
+struct unixcall_mtlheap_newtexture {
+  obj_handle_t heap;
+  struct WMTMemoryPointer info;
+  uint64_t offset;
+  obj_handle_t ret;
+};
+
 #pragma pack(pop)
 
 #endif
