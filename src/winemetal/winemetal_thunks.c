@@ -1179,3 +1179,56 @@ MTLDevice_newTileRenderPipelineState(
     *err_out = params.ret_error;
   return params.ret_pso;
 }
+
+WINEMETAL_API obj_handle_t
+MTLDevice_newResidencySet(obj_handle_t device, uint64_t init_capacity, obj_handle_t *err_out) {
+  struct unixcall_mtldevice_newresidencyset params;
+  params.device = device;
+  params.init_capacity = init_capacity;
+  params.ret_error = 0;
+  params.ret_set = 0;
+  UNIX_CALL(132, &params);
+  if (err_out)
+    *err_out = params.ret_error;
+  return params.ret_set;
+}
+
+WINEMETAL_API void
+MTLResidencySet_addAllocations(obj_handle_t residency_set, const obj_handle_t *allocations, uint64_t count) {
+  struct unixcall_mtlresidencyset_addallocations params;
+  params.set = residency_set;
+  WMT_MEMPTR_SET(params.allocations, allocations);
+  params.count = count;
+  UNIX_CALL(133, &params);
+}
+
+WINEMETAL_API void
+MTLResidencySet_removeAllocations(obj_handle_t residency_set, const obj_handle_t *allocations, uint64_t count) {
+  struct unixcall_mtlresidencyset_addallocations params;
+  params.set = residency_set;
+  WMT_MEMPTR_SET(params.allocations, allocations);
+  params.count = count;
+  UNIX_CALL(134, &params);
+}
+
+WINEMETAL_API void
+MTLResidencySet_removeAllAllocations(obj_handle_t residency_set) {
+  struct unixcall_generic_obj_noret params;
+  params.handle = residency_set;
+  UNIX_CALL(135, &params);
+}
+
+WINEMETAL_API void
+MTLResidencySet_commit(obj_handle_t residency_set) {
+  struct unixcall_generic_obj_noret params;
+  params.handle = residency_set;
+  UNIX_CALL(136, &params);
+}
+
+WINEMETAL_API void
+MTLCommandQueue_addResidencySet(obj_handle_t queue, obj_handle_t residency_set) {
+  struct unixcall_generic_obj_obj_noret params;
+  params.handle = queue;
+  params.arg = residency_set;
+  UNIX_CALL(137, &params);
+}

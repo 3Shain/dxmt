@@ -1924,4 +1924,19 @@ WINEMETAL_API obj_handle_t MTLDevice_newTileRenderPipelineState(
     obj_handle_t device, const struct WMTTileRenderPipelineInfo *info, obj_handle_t *err_out
 );
 
+WINEMETAL_API obj_handle_t
+MTLDevice_newResidencySet(obj_handle_t device, uint64_t init_capacity, obj_handle_t *err_out);
+
+WINEMETAL_API void
+MTLResidencySet_addAllocations(obj_handle_t residency_set, const obj_handle_t *allocations, uint64_t count);
+
+WINEMETAL_API void
+MTLResidencySet_removeAllocations(obj_handle_t residency_set, const obj_handle_t *allocations, uint64_t count);
+
+WINEMETAL_API void MTLResidencySet_removeAllAllocations(obj_handle_t residency_set);
+
+WINEMETAL_API void MTLResidencySet_commit(obj_handle_t residency_set);
+
+WINEMETAL_API void MTLCommandQueue_addResidencySet(obj_handle_t queue, obj_handle_t residency_set);
+
 #endif

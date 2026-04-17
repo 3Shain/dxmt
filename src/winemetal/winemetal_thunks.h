@@ -371,6 +371,19 @@ struct unixcall_mtlcommandbuffer_blitcommandencoderwithsamplebuffers {
   obj_handle_t ret;
 };
 
+struct unixcall_mtldevice_newresidencyset {
+  obj_handle_t device;
+  uint64_t init_capacity;
+  obj_handle_t ret_error;
+  obj_handle_t ret_set;
+};
+
+struct unixcall_mtlresidencyset_addallocations {
+  obj_handle_t set;
+  struct WMTConstMemoryPointer allocations;
+  uint64_t count;
+};
+
 #pragma pack(pop)
 
 #endif

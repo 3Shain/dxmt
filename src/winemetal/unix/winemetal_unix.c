@@ -2816,6 +2816,59 @@ _MTLDevice_newTileRenderPipelineState(void *obj) {
   return STATUS_SUCCESS;
 }
 
+static NTSTATUS
+_MTLDevice_newResidencySet(void *obj) {
+  struct unixcall_mtldevice_newresidencyset *params = obj;
+  NSError *err = NULL;
+  MTLResidencySetDescriptor *descriptor = [[MTLResidencySetDescriptor alloc] init];
+  descriptor.initialCapacity = params->init_capacity;
+  params->ret_set = (obj_handle_t)[(id<MTLDevice>)params->device newResidencySetWithDescriptor:descriptor error:&err];
+  params->ret_error = (obj_handle_t)err;
+  [descriptor release];
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_MTLResidencySet_addAllocations(void *obj) {
+  struct unixcall_mtlresidencyset_addallocations *params = obj;
+  id<MTLResidencySet> set = (id<MTLResidencySet>)params->set;
+  [set addAllocations:(id<MTLAllocation> const *)params->allocations.ptr count:params->count];
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_MTLResidencySet_removeAllocations(void *obj) {
+  struct unixcall_mtlresidencyset_addallocations *params = obj;
+  id<MTLResidencySet> set = (id<MTLResidencySet>)params->set;
+  [set removeAllocations:(id<MTLAllocation> const *)params->allocations.ptr count:params->count];
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_MTLResidencySet_removeAllAllocations(void *obj) {
+  struct unixcall_generic_obj_noret *params = obj;
+  id<MTLResidencySet> set = (id<MTLResidencySet>)params->handle;
+  [set removeAllAllocations];
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_MTLResidencySet_commit(void *obj) {
+  struct unixcall_generic_obj_noret *params = obj;
+  id<MTLResidencySet> set = (id<MTLResidencySet>)params->handle;
+  [set commit];
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_MTLCommandQueue_addResidencySet(void *obj) {
+  struct unixcall_generic_obj_obj_noret *params = obj;
+  id<MTLCommandQueue> queue = (id<MTLCommandQueue>)params->handle;
+  id<MTLResidencySet> set = (id<MTLResidencySet>)params->arg;
+  [queue addResidencySet:set];
+  return STATUS_SUCCESS;
+}
+
 /*
  * Definition from cache.c
  */
@@ -2959,6 +3012,12 @@ const void *__wine_unix_call_funcs[] = {
     &_MTLCommandBuffer_blitCommandEncoderWithSampleBuffers,
     &_MTLCommandBuffer_property,
     &_MTLDevice_newTileRenderPipelineState,
+    &_MTLDevice_newResidencySet,
+    &_MTLResidencySet_addAllocations,
+    &_MTLResidencySet_removeAllocations,
+    &_MTLResidencySet_removeAllAllocations,
+    &_MTLResidencySet_commit,
+    &_MTLCommandQueue_addResidencySet,
 };
 
 #ifndef DXMT_NATIVE
@@ -3095,5 +3154,11 @@ const void *__wine_unix_call_wow64_funcs[] = {
     &_MTLCommandBuffer_blitCommandEncoderWithSampleBuffers,
     &_MTLCommandBuffer_property,
     &_MTLDevice_newTileRenderPipelineState,
+    &_MTLDevice_newResidencySet,
+    &_MTLResidencySet_addAllocations,
+    &_MTLResidencySet_removeAllocations,
+    &_MTLResidencySet_removeAllAllocations,
+    &_MTLResidencySet_commit,
+    &_MTLCommandQueue_addResidencySet,
 };
 #endif
