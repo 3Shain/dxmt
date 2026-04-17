@@ -1232,3 +1232,57 @@ MTLCommandQueue_addResidencySet(obj_handle_t queue, obj_handle_t residency_set) 
   params.arg = residency_set;
   UNIX_CALL(137, &params);
 }
+
+WINEMETAL_API obj_handle_t
+MTLDevice_newHeap(obj_handle_t device, struct WMTHeapInfo *info) {
+  struct unixcall_mtldevice_newheap params;
+  params.device = device;
+  WMT_MEMPTR_SET(params.info, info);
+  UNIX_CALL(138, &params);
+  return params.ret;
+}
+
+WINEMETAL_API struct WMTSizeAndAlign
+MTLDevice_heapBufferSizeAndAlign(obj_handle_t device, uint64_t length, enum WMTResourceOptions optioins) {
+  struct unixcall_mtldevice_heapbuffersizeandalign params;
+  params.device = device;
+  params.length = length;
+  params.options = optioins;
+  UNIX_CALL(139, &params);
+  struct WMTSizeAndAlign ret;
+  ret.size = params.ret_size;
+  ret.align = params.ret_align;
+  return ret;
+}
+
+WINEMETAL_API struct WMTSizeAndAlign
+MTLDevice_heapTextureSizeAndAlign(obj_handle_t device, struct WMTTextureInfo *info) {
+  struct unixcall_mtldevice_heaptexturesizeandalign params;
+  params.device = device;
+  WMT_MEMPTR_SET(params.info, info);
+  UNIX_CALL(140, &params);
+  struct WMTSizeAndAlign ret;
+  ret.size = params.ret_size;
+  ret.align = params.ret_align;
+  return ret;
+}
+
+WINEMETAL_API obj_handle_t
+MTLHeap_newBuffer(obj_handle_t heap, struct WMTBufferInfo *info, uint64_t offset) {
+  struct unixcall_mtlheap_newbuffer params;
+  params.heap = heap;
+  WMT_MEMPTR_SET(params.info, info);
+  params.offset = offset;
+  UNIX_CALL(141, &params);
+  return params.ret;
+}
+
+WINEMETAL_API obj_handle_t
+MTLHeap_newTexture(obj_handle_t heap, struct WMTTextureInfo *info, uint64_t offset) {
+  struct unixcall_mtlheap_newtexture params;
+  params.heap = heap;
+  WMT_MEMPTR_SET(params.info, info);
+  params.offset = offset;
+  UNIX_CALL(142, &params);
+  return params.ret;
+}

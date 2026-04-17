@@ -294,6 +294,19 @@ public:
   }
 };
 
+class Heap : public Allocation {
+public:
+  Reference<Buffer>
+  newBuffer(WMTBufferInfo &info, uint64_t offset = ~0ull) {
+    return Reference<Buffer>(MTLHeap_newBuffer(handle, &info, offset));
+  }
+
+  Reference<Texture>
+  newTexture(WMTTextureInfo &info, uint64_t offset = ~0ull) {
+    return Reference<Texture>(MTLHeap_newTexture(handle, &info, offset));
+  }
+};
+
 class SamplerState : public Object {
 public:
 };
@@ -877,6 +890,21 @@ public:
   Reference<ResidencySet>
   newResidencySet(uint64_t init_capacity, Error &error) {
     return Reference<ResidencySet>(MTLDevice_newResidencySet(handle, init_capacity, &error.handle));
+  }
+
+  Reference<Heap>
+  newHeap(WMTHeapInfo &info) {
+    return Reference<Heap>(MTLDevice_newHeap(handle, &info));
+  }
+
+  WMTSizeAndAlign
+  heapBufferSizeAndAlign(uint64_t length, WMTResourceOptions options) {
+    return MTLDevice_heapBufferSizeAndAlign(handle, length, options);
+  }
+
+  WMTSizeAndAlign
+  heapTextureSizeAndAlign(WMTTextureInfo &info) {
+    return MTLDevice_heapTextureSizeAndAlign(handle, &info);
   }
 
   uint64_t

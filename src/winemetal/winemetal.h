@@ -1939,4 +1939,41 @@ WINEMETAL_API void MTLResidencySet_commit(obj_handle_t residency_set);
 
 WINEMETAL_API void MTLCommandQueue_addResidencySet(obj_handle_t queue, obj_handle_t residency_set);
 
+enum WMTHeapType : uint32_t {
+  WMTHeapTypeAutomatic = 0,
+  WMTHeapTypePlacement = 1,
+  WMTHeapTypeSparse = 2,
+};
+enum WMTSparsePageSize : uint32_t {
+  WMTSparsePageSize16 = 101,
+  WMTSparsePageSize64 = 102,
+  WMTSparsePageSize256 = 103,
+};
+struct WMTHeapInfo {
+  uint64_t size;
+  enum WMTResourceOptions options;
+  enum WMTHeapType type;
+  enum WMTSparsePageSize sparse_page_size;
+};
+
+STATIC_ASSERT(sizeof(WMTHeapInfo) == 24);
+
+WINEMETAL_API obj_handle_t MTLDevice_newHeap(obj_handle_t device, struct WMTHeapInfo *info);
+
+struct WMTSizeAndAlign {
+  // 32-bit is sufficient
+  uint32_t size;
+  uint32_t align;
+};
+
+WINEMETAL_API struct WMTSizeAndAlign
+MTLDevice_heapBufferSizeAndAlign(obj_handle_t device, uint64_t length, enum WMTResourceOptions optioins);
+
+WINEMETAL_API struct WMTSizeAndAlign
+MTLDevice_heapTextureSizeAndAlign(obj_handle_t device, struct WMTTextureInfo *info);
+
+WINEMETAL_API obj_handle_t MTLHeap_newBuffer(obj_handle_t heap, struct WMTBufferInfo *info, uint64_t offset);
+
+WINEMETAL_API obj_handle_t MTLHeap_newTexture(obj_handle_t heap, struct WMTTextureInfo *info, uint64_t offset);
+
 #endif

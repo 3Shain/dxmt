@@ -2869,6 +2869,86 @@ _MTLCommandQueue_addResidencySet(void *obj) {
   return STATUS_SUCCESS;
 }
 
+static NTSTATUS
+_MTLDevice_newHeap(void *obj) {
+  struct unixcall_mtldevice_newheap *params = obj;
+  id<MTLDevice> device = (id<MTLDevice>)params->device;
+  struct WMTHeapInfo const *info = params->info.ptr;
+  MTLHeapDescriptor *desc = [[MTLHeapDescriptor alloc] init];
+  desc.resourceOptions = (MTLResourceOptions)info->options;
+  desc.sparsePageSize = (MTLSparsePageSize)info->sparse_page_size;
+  desc.type = (MTLHeapType)info->type;
+  desc.size = info->size;
+
+  params->ret = (obj_handle_t)[device newHeapWithDescriptor:desc];
+
+  [desc release];
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_MTLDevice_heapBufferSizeAndAlign(void *obj) {
+  struct unixcall_mtldevice_heapbuffersizeandalign *params = obj;
+  id<MTLDevice> device = (id<MTLDevice>)params->device;
+  MTLSizeAndAlign ret =
+      [device heapBufferSizeAndAlignWithLength:params->length options:(MTLResourceOptions)params->options];
+  params->ret_size = ret.size;
+  params->ret_align = ret.align;
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_MTLDevice_heapTextureSizeAndAlign(void *obj) {
+  struct unixcall_mtldevice_heaptexturesizeandalign *params = obj;
+  id<MTLDevice> device = (id<MTLDevice>)params->device;
+  struct WMTTextureInfo *info = params->info.ptr;
+  MTLTextureDescriptor *desc = [[MTLTextureDescriptor alloc] init];
+  fill_texture_descriptor(desc, info);
+  MTLSizeAndAlign ret = [device heapTextureSizeAndAlignWithDescriptor:desc];
+  params->ret_size = ret.size;
+  params->ret_align = ret.align;
+  [desc release];
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_MTLHeap_newBuffer(void *obj) {
+  struct unixcall_mtlheap_newbuffer *params = obj;
+  id<MTLHeap> heap = (id<MTLHeap>)params->heap;
+  struct WMTBufferInfo *info = params->info.ptr;
+  id<MTLBuffer> buffer;
+  if (~params->offset == 0)
+    buffer = [heap newBufferWithLength:info->length options:(enum MTLResourceOptions)info->options];
+  else
+    buffer =
+        [heap newBufferWithLength:info->length options:(enum MTLResourceOptions)info->options offset:params->offset];
+  info->memory.ptr = [heap storageMode] == MTLStorageModePrivate ? NULL : [buffer contents];
+
+  params->ret = (obj_handle_t)buffer;
+  info->gpu_address = [buffer gpuAddress];
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
+_MTLHeap_newTexture(void *obj) {
+  struct unixcall_mtlheap_newtexture *params = obj;
+  id<MTLHeap> heap = (id<MTLHeap>)params->heap;
+  struct WMTTextureInfo *info = params->info.ptr;
+  MTLTextureDescriptor *desc = [[MTLTextureDescriptor alloc] init];
+  fill_texture_descriptor(desc, info);
+
+  id<MTLTexture> ret;
+  if (~params->offset == 0)
+    ret = [heap newTextureWithDescriptor:desc];
+  else
+    ret = [heap newTextureWithDescriptor:desc offset:params->offset];
+  params->ret = (obj_handle_t)ret;
+  info->gpu_resource_id = [ret gpuResourceID]._impl;
+  info->mach_port = 0;
+
+  [desc release];
+}
+
 /*
  * Definition from cache.c
  */
@@ -3018,6 +3098,11 @@ const void *__wine_unix_call_funcs[] = {
     &_MTLResidencySet_removeAllAllocations,
     &_MTLResidencySet_commit,
     &_MTLCommandQueue_addResidencySet,
+    &_MTLDevice_newHeap,
+    &_MTLDevice_heapBufferSizeAndAlign,
+    &_MTLDevice_heapTextureSizeAndAlign,
+    &_MTLHeap_newBuffer,
+    &_MTLHeap_newTexture,
 };
 
 #ifndef DXMT_NATIVE
@@ -3160,5 +3245,10 @@ const void *__wine_unix_call_wow64_funcs[] = {
     &_MTLResidencySet_removeAllAllocations,
     &_MTLResidencySet_commit,
     &_MTLCommandQueue_addResidencySet,
+    &_MTLDevice_newHeap,
+    &_MTLDevice_heapBufferSizeAndAlign,
+    &_MTLDevice_heapTextureSizeAndAlign,
+    &_MTLHeap_newBuffer,
+    &_MTLHeap_newTexture,
 };
 #endif
