@@ -1179,13 +1179,13 @@ public:
           return;
         }
       }
-      if (auto bindable = reinterpret_cast<D3D11ResourceCommon *>(pDstResource)) {
-        // if (auto _ = UseImmediate(bindable.ptr())) {
-        //   auto buffer = _.buffer();
-        //   memcpy(((char *)buffer->contents()) + copy_offset, pSrcData, copy_len);
-        //   buffer->didModifyRange(NS::Range::Make(copy_offset, copy_len));
-        //   return;
-        // }
+      if (auto staging = GetStagingResource(pDstResource, DstSubresource); unlikely(staging)) {
+        // Per MSDN: The CPU copies data from memory to a subresource created in non-mappable memory.
+        // Also MSDN: A resource cannot be used as a destination if: the resource is created with immutable or
+        // dynamic usage.
+        // So it's legal?
+        UNIMPLEMENTED("update buffer: staging");
+      } else if (auto bindable = reinterpret_cast<D3D11ResourceCommon *>(pDstResource)) {
         auto [staging_buffer, offset] = AllocateStagingBuffer(copy_len, 16);
         staging_buffer.updateContents(offset, pSrcData, copy_len);
         SwitchToBlitEncoder(CommandBufferState::UpdateBlitEncoderActive);
@@ -1200,7 +1200,7 @@ public:
           cmd.dst_offset = copy_offset + dst_offset;
         });
       } else {
-        UNIMPLEMENTED("UpdateSubresource1: TODO: staging?");
+        UNREACHABLE
       }
       return;
     }
@@ -1848,7 +1848,7 @@ public:
   void
   STDMETHODCALLTYPE
   SwapDeviceContextState(ID3DDeviceContextState *pState, ID3DDeviceContextState **ppPreviousState) override {
-    IMPLEMENT_ME
+    UNIMPLEMENTED("SwapDeviceContextState");
   }
 
   void
@@ -3139,7 +3139,7 @@ public:
       const D3D11_TILE_REGION_SIZE *region_sizes, ID3D11Buffer *pool, UINT range_count, const UINT *range_flags,
       const UINT *pool_start_offsets, const UINT *range_tile_counts, UINT flags
   ) override {
-    IMPLEMENT_ME
+    UNIMPLEMENTED("tiled resource: update mapping");
   };
 
   HRESULT STDMETHODCALLTYPE CopyTileMappings(
@@ -3147,28 +3147,30 @@ public:
       ID3D11Resource *src_resource, const D3D11_TILED_RESOURCE_COORDINATE *src_start_coordinate,
       const D3D11_TILE_REGION_SIZE *region_size, UINT flags
   ) override {
-    IMPLEMENT_ME
+    UNIMPLEMENTED("tiled resource: copy mapping");
   };
 
   void STDMETHODCALLTYPE CopyTiles(
       ID3D11Resource *resource, const D3D11_TILED_RESOURCE_COORDINATE *start_coordinate,
       const D3D11_TILE_REGION_SIZE *size, ID3D11Buffer *buffer, UINT64 start_offset, UINT flags
   ) override {
-    IMPLEMENT_ME
+    UNIMPLEMENTED("tiled resource: copy tiles");
   };
 
   void STDMETHODCALLTYPE UpdateTiles(
       ID3D11Resource *dst_resource, const D3D11_TILED_RESOURCE_COORDINATE *dst_start_coordinate,
       const D3D11_TILE_REGION_SIZE *dst_region_size, const void *src_data, UINT flags
   ) override {
-    IMPLEMENT_ME
+    UNIMPLEMENTED("tiled resource: update tiles");
   };
 
-  HRESULT STDMETHODCALLTYPE ResizeTilePool(ID3D11Buffer *pool, UINT64 size) override { IMPLEMENT_ME };
+  HRESULT STDMETHODCALLTYPE ResizeTilePool(ID3D11Buffer *pool, UINT64 size) override {
+    UNIMPLEMENTED("tiled resource: resize");
+  };
 
   void STDMETHODCALLTYPE
   TiledResourceBarrier(ID3D11DeviceChild *before_barrier, ID3D11DeviceChild *after_barrier) override {
-    IMPLEMENT_ME
+    UNIMPLEMENTED("tiled resource: barrier");
   };
 
   WINBOOL STDMETHODCALLTYPE
@@ -3803,7 +3805,7 @@ public:
         });
         promote_flush = true;
       } else {
-        UNIMPLEMENTED("todo");
+        UNREACHABLE
       }
     } else if (auto dst = reinterpret_cast<D3D11ResourceCommon *>(pDstResource)) {
       if (auto staging_src = GetStagingResource(pSrcResource, SrcSubresource)) {
@@ -3836,10 +3838,10 @@ public:
           cmd.dst_offset = DstX + dst_offset;
         });
       } else {
-        UNIMPLEMENTED("todo");
+        UNREACHABLE
       }
     } else {
-      UNIMPLEMENTED("todo");
+      UNREACHABLE
     }
   }
 
@@ -4040,11 +4042,11 @@ public:
   void
   CopyTextureFromCompressed(TextureCopyCommand &&cmd) {
     if (auto staging_dst = GetStagingResource(cmd.pDst, cmd.DstSubresource)) {
-      IMPLEMENT_ME
+      UNIMPLEMENTED("copy texture: from compressed to staging");
     } else if (auto dst = GetTexture(cmd.pDst)) {
       if (auto staging_src = GetStagingResource(cmd.pSrc, cmd.SrcSubresource)) {
         // copy from staging to default
-        UNIMPLEMENTED("copy from compressed staging to default");
+        UNIMPLEMENTED("copy texture: from compressed staging to default");
       } else if (auto src = GetTexture(cmd.pSrc)) {
         // on-device copy
         SwitchToBlitEncoder(CommandBufferState::BlitEncoderActive);
@@ -4091,11 +4093,11 @@ public:
   void
   CopyTextureToCompressed(TextureCopyCommand &&cmd) {
     if (auto staging_dst = GetStagingResource(cmd.pDst, cmd.DstSubresource)) {
-      IMPLEMENT_ME
+      UNIMPLEMENTED("copy texture: copy to compressed staging");
     } else if (auto dst = GetTexture(cmd.pDst)) {
       if (auto staging_src = GetStagingResource(cmd.pSrc, cmd.SrcSubresource)) {
         // copy from staging to default
-        UNIMPLEMENTED("copy from staging to compressed default");
+        UNIMPLEMENTED("copy texture: from staging to compressed default");
       } else if (auto src = GetTexture(cmd.pSrc)) {
         // on-device copy
         SwitchToBlitEncoder(CommandBufferState::BlitEncoderActive);
@@ -4188,9 +4190,9 @@ public:
       });
     } else if (auto staging_dst = GetStagingResource(cmd.pDst, cmd.DstSubresource)) {
       // staging: ...
-      UNIMPLEMENTED("update staging texture");
+      UNIMPLEMENTED("update texture: staging");
     } else {
-      UNIMPLEMENTED("unknown texture");
+      UNREACHABLE
     }
   }
 
