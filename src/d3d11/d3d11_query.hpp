@@ -10,7 +10,7 @@ namespace dxmt {
 template <typename Query>
 class MTLD3DQueryBase : public MTLD3D11DeviceChild<Query> {
 public:
-  MTLD3DQueryBase(MTLD3D11Device *pDevice, const D3D11_QUERY_DESC *desc)
+  MTLD3DQueryBase(MTLD3D11Device *pDevice, const D3D11_QUERY_DESC1 *desc)
       : MTLD3D11DeviceChild<Query>(pDevice), desc_(*desc),
         d3d10_(this, pDevice->GetImmediateContextPrivate()) {}
   ~MTLD3DQueryBase(){};
@@ -43,20 +43,27 @@ public:
 
   void STDMETHODCALLTYPE GetDesc(D3D11_QUERY_DESC *pDesc) final {
     if (pDesc) {
+      pDesc->Query = desc_.Query;
+      pDesc->MiscFlags = desc_.MiscFlags;
+    }
+  };
+
+  void STDMETHODCALLTYPE GetDesc1(D3D11_QUERY_DESC1 *pDesc) final {
+    if (pDesc) {
       *pDesc = desc_;
     }
   };
 
 protected:
-  D3D11_QUERY_DESC desc_;
+  D3D11_QUERY_DESC1 desc_;
   MTLD3D10Query d3d10_;
 };
 
 template <typename DataType>
-class MTLD3D11DummyQuery : public MTLD3DQueryBase<ID3D11Query> {
+class MTLD3D11DummyQuery : public MTLD3DQueryBase<ID3D11Query1> {
 public:
-  MTLD3D11DummyQuery(MTLD3D11Device *pDevice, const D3D11_QUERY_DESC *desc)
-      : MTLD3DQueryBase<ID3D11Query>(pDevice, desc) {}
+  MTLD3D11DummyQuery(MTLD3D11Device *pDevice, const D3D11_QUERY_DESC1 *desc)
+      : MTLD3DQueryBase<ID3D11Query1>(pDevice, desc) {}
 
   virtual UINT STDMETHODCALLTYPE GetDataSize() override {
     return sizeof(DataType);
@@ -110,7 +117,7 @@ enum class EventState {
 
 constexpr size_t kEventStallThreshold = 64;
 
-struct MTLD3D11EventQuery : public ID3D11Query {
+struct MTLD3D11EventQuery : public ID3D11Query1 {
   virtual void Issue(uint64_t current_seq_id) = 0;
   virtual EventState CheckEventState(uint64_t coherent_seq_id) = 0;
 };
@@ -118,7 +125,7 @@ struct MTLD3D11EventQuery : public ID3D11Query {
 template <typename DataType>
 class MTLD3D11EventQueryImpl : public MTLD3DQueryBase<MTLD3D11EventQuery> {
 public:
-  MTLD3D11EventQueryImpl(MTLD3D11Device *pDevice, const D3D11_QUERY_DESC *desc)
+  MTLD3D11EventQueryImpl(MTLD3D11Device *pDevice, const D3D11_QUERY_DESC1 *desc)
       : MTLD3DQueryBase<MTLD3D11EventQuery>(pDevice, desc) {}
 
   UINT STDMETHODCALLTYPE GetDataSize() override { return sizeof(DataType); };
@@ -153,7 +160,7 @@ private:
   uint64_t should_be_signaled_at = 0;
 };
 
-class MTLD3D11OcclusionQuery : public ID3D11Query {
+class MTLD3D11OcclusionQuery : public ID3D11Query1 {
 public:
   virtual HRESULT GetData(void *data) = 0;
   virtual VisibilityResultQuery *Begin() = 0;
@@ -162,17 +169,17 @@ public:
 };
 
 HRESULT CreateOcculusionQuery(MTLD3D11Device *pDevice,
-                              const D3D11_QUERY_DESC *pDesc,
-                              ID3D11Query **ppQuery);
+                              const D3D11_QUERY_DESC1 *pDesc,
+                              ID3D11Query1 **ppQuery);
 
-class MTLD3D11TimestampQuery : public ID3D11Query {
+class MTLD3D11TimestampQuery : public ID3D11Query1 {
 public:
   virtual HRESULT GetData(void *data) = 0;
   virtual TimestampQuery *End() = 0;
 };
 
 HRESULT CreateTimestampQuery(MTLD3D11Device *pDevice,
-                              const D3D11_QUERY_DESC *pDesc,
-                              ID3D11Query **ppQuery);
+                              const D3D11_QUERY_DESC1 *pDesc,
+                              ID3D11Query1 **ppQuery);
 
 } // namespace dxmt
