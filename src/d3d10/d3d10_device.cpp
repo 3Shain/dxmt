@@ -1214,7 +1214,9 @@ MTLD3D10Device::CreatePredicate(const D3D10_QUERY_DESC *pPredicateDesc, ID3D10Pr
 
 HRESULT STDMETHODCALLTYPE
 MTLD3D10Device::CreateCounter(const D3D10_COUNTER_DESC *pCounterDesc, ID3D10Counter **ppCounter) {
-  UNIMPLEMENTED("CreateCounter");
+  InitReturnPtr(ppCounter);
+  WARN("CreateCounter: not supported");
+  return E_NOTIMPL;
 }
 
 HRESULT STDMETHODCALLTYPE
@@ -1230,7 +1232,11 @@ MTLD3D10Device::CheckMultisampleQualityLevels(DXGI_FORMAT Format, UINT SampleCou
 
 void STDMETHODCALLTYPE
 MTLD3D10Device::CheckCounterInfo(D3D10_COUNTER_INFO *pCounterInfo) {
-  UNIMPLEMENTED("CheckCounterInfo");
+  if (!pCounterInfo)
+    return;
+  pCounterInfo->LastDeviceDependentCounter = D3D10_COUNTER{D3D10_COUNTER_DEVICE_DEPENDENT_0};
+  pCounterInfo->NumSimultaneousCounters = 0;
+  pCounterInfo->NumDetectableParallelUnits = 0;
 }
 
 HRESULT STDMETHODCALLTYPE
@@ -1238,7 +1244,8 @@ MTLD3D10Device::CheckCounter(
     const D3D10_COUNTER_DESC *pDesc, D3D10_COUNTER_TYPE *pType, UINT *pActiveCounters, char *name, UINT *pNameLength,
     char *units, UINT *pUnitsLength, char *description, UINT *pDescriptionLength
 ) {
-  UNIMPLEMENTED("CheckCounter");
+  WARN("CheckCounter: not supported");
+  return E_NOTIMPL;
 }
 
 UINT STDMETHODCALLTYPE
