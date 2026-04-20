@@ -797,7 +797,9 @@ public:
       ID3D11Resource *resource, UINT *tile_count,
       D3D11_PACKED_MIP_DESC *mip_desc, D3D11_TILE_SHAPE *tile_shape,
       UINT *subresource_tiling_count, UINT first_subresource_tiling,
-      D3D11_SUBRESOURCE_TILING *subresource_tiling) override{IMPLEMENT_ME}
+      D3D11_SUBRESOURCE_TILING *subresource_tiling) override{
+    UNIMPLEMENTED("tiled resource: get resource tiling");
+  }
 
   HRESULT STDMETHODCALLTYPE
   CheckMultisampleQualityLevels1(DXGI_FORMAT Format, UINT SampleCount, UINT Flags, UINT *pNumQualityLevels) override {
@@ -988,19 +990,21 @@ public:
     return S_OK;
   }
 
-  void STDMETHODCALLTYPE WriteToSubresource(ID3D11Resource *dst_resource,
-                                            UINT dst_subresource,
-                                            const D3D11_BOX *dst_box,
-                                            const void *src_data,
-                                            UINT src_row_pitch,
-                                            UINT src_depth_pitch) override {
-    IMPLEMENT_ME
+  void STDMETHODCALLTYPE
+  WriteToSubresource(
+      ID3D11Resource *pDstResource, UINT DstSubresource, const D3D11_BOX *pDstBox, const void *pSrcData,
+      UINT SrcRowPitch, UINT SrcDepthPitch
+  ) override {
+    UNIMPLEMENTED("map-on-default: write resource");
   }
 
   void STDMETHODCALLTYPE
-  ReadFromSubresource(void *dst_data, UINT dst_row_pitch, UINT dst_depth_pitch,
-                      ID3D11Resource *src_resource, UINT src_subresource,
-                      const D3D11_BOX *src_box) override{IMPLEMENT_ME}
+  ReadFromSubresource(
+      void *pDstData, UINT DstRowPitch, UINT DstDepthPitch, ID3D11Resource *SrcResource, UINT SrcSubresource,
+      const D3D11_BOX *pSrcBox
+  ) override {
+    UNIMPLEMENTED("map-on-default: read resource");
+  }
 
   WMT::Device STDMETHODCALLTYPE GetMTLDevice() override {
     return container_->GetMTLDevice();
@@ -1210,7 +1214,9 @@ public:
   HRESULT STDMETHODCALLTYPE
   CreateSurface(const DXGI_SURFACE_DESC *desc, UINT surface_count,
                 DXGI_USAGE usage, const DXGI_SHARED_RESOURCE *shared_resource,
-                IDXGISurface **surface) override{IMPLEMENT_ME}
+                IDXGISurface **surface) override{
+    UNIMPLEMENTED("CreateSurface");
+  }
 
   HRESULT STDMETHODCALLTYPE
   QueryResourceResidency(IUnknown *const *ppResources, DXGI_RESIDENCY *pResidency, UINT ResourceCount) override {

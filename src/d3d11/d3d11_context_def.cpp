@@ -389,7 +389,9 @@ public:
 
   void
   STDMETHODCALLTYPE
-  ExecuteCommandList(ID3D11CommandList *pCommandList, BOOL RestoreContextState) override{IMPLEMENT_ME}
+  ExecuteCommandList(ID3D11CommandList *pCommandList, BOOL RestoreContextState) override{
+    UNIMPLEMENTED("ExecuteCommandList on deferred context");
+  }
 
   HRESULT 
   STDMETHODCALLTYPE

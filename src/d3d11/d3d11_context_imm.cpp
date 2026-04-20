@@ -279,7 +279,7 @@ public:
       };
     };
     if (pMappedResource == nullptr) {
-      UNIMPLEMENTED("unimplemented USAGE_DEFAULT resource mapping");
+      UNIMPLEMENTED("map-on-default: map");
     }
     return E_INVALIDARG;
   }
