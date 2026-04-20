@@ -798,11 +798,10 @@ public:
       D3D11_SUBRESOURCE_TILING *subresource_tiling) override{IMPLEMENT_ME}
 
   HRESULT STDMETHODCALLTYPE
-      CheckMultisampleQualityLevels1(DXGI_FORMAT Format, UINT SampleCount,
-                                     UINT Flags,
-                                     UINT *pNumQualityLevels) override {
+  CheckMultisampleQualityLevels1(DXGI_FORMAT Format, UINT SampleCount, UINT Flags, UINT *pNumQualityLevels) override {
     if (Flags) {
-      IMPLEMENT_ME;
+      ERR("CheckMultisampleQualityLevels1: unsupported flags ", Flags);
+      return E_INVALIDARG;
     }
     *pNumQualityLevels = 0;
     MTL_DXGI_FORMAT_DESC desc;
