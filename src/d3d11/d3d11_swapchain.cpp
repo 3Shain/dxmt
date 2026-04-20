@@ -895,31 +895,57 @@ public:
 
   HRESULT
   STDMETHODCALLTYPE
-  GetRestrictToOutput(IDXGIOutput **ppRestrictToOutput) final { IMPLEMENT_ME; };
+  GetRestrictToOutput(IDXGIOutput **ppRestrictToOutput) final {
+    InitReturnPtr(ppRestrictToOutput);
+    ERR("DXGISwapChain1::GetRestrictToOutput: not implemented");
+    return E_NOTIMPL;
+  };
 
   HRESULT
   STDMETHODCALLTYPE
-  SetBackgroundColor(const DXGI_RGBA *pColor) final { IMPLEMENT_ME; };
+  SetBackgroundColor(const DXGI_RGBA *pColor) final {
+    ERR("DXGISwapChain1::SetBackgroundColor: not implemented");
+    return E_NOTIMPL;
+  };
 
   HRESULT
   STDMETHODCALLTYPE
-  GetBackgroundColor(DXGI_RGBA *pColor) final { IMPLEMENT_ME; };
-
-  HRESULT
-  STDMETHODCALLTYPE
-  SetRotation(DXGI_MODE_ROTATION Rotation) final { IMPLEMENT_ME; };
-
-  HRESULT
-  STDMETHODCALLTYPE
-  GetRotation(DXGI_MODE_ROTATION *pRotation) final { IMPLEMENT_ME; };
-
-  HRESULT STDMETHODCALLTYPE SetSourceSize(UINT width, UINT height) override {
-    IMPLEMENT_ME
+  GetBackgroundColor(DXGI_RGBA *pColor) final {
+    if (!pColor)
+      return E_INVALIDARG;
+    // TODO(swapchain): check if native returns transparent or opaque black
+    *pColor = {0, 0, 0, 0};
     return S_OK;
   };
 
-  HRESULT STDMETHODCALLTYPE GetSourceSize(UINT *width, UINT *height) override {
-    IMPLEMENT_ME
+  HRESULT
+  STDMETHODCALLTYPE
+  SetRotation(DXGI_MODE_ROTATION Rotation) final {
+    ERR("DXGISwapChain1::SetRotation: not implemented");
+    return E_NOTIMPL;
+  };
+
+  HRESULT
+  STDMETHODCALLTYPE
+  GetRotation(DXGI_MODE_ROTATION *pRotation) final {
+    if (!pRotation)
+      return E_INVALIDARG;
+    *pRotation = DXGI_MODE_ROTATION_IDENTITY;
+    return S_OK;
+  };
+
+  HRESULT STDMETHODCALLTYPE
+  SetSourceSize(UINT Width, UINT Height) override {
+    ERR("DXGISwapChain2::SetSourceSize: not implemented");
+    return E_NOTIMPL;
+  };
+
+  HRESULT STDMETHODCALLTYPE
+  GetSourceSize(UINT *pWidth, UINT *pHeight) override {
+    if (pWidth)
+      *pWidth = desc_.Width;
+    if (pHeight)
+      *pHeight = desc_.Height;
     return S_OK;
   };
 
@@ -961,12 +987,14 @@ public:
 
   HRESULT STDMETHODCALLTYPE
   SetMatrixTransform(const DXGI_MATRIX_3X2_F *matrix) override {
-    return DXGI_ERROR_INVALID_CALL;
+    ERR("DXGISwapChain2::SetMatrixTransform: not implemented");
+    return E_NOTIMPL;
   };
 
   HRESULT STDMETHODCALLTYPE
   GetMatrixTransform(DXGI_MATRIX_3X2_F *matrix) override {
-    return DXGI_ERROR_INVALID_CALL;
+    ERR("DXGISwapChain2::GetMatrixTransform: not implemented");
+    return E_NOTIMPL;
   };
 
   HRESULT STDMETHODCALLTYPE CheckColorSpaceSupport(
@@ -980,7 +1008,7 @@ public:
   };
 
   UINT STDMETHODCALLTYPE GetCurrentBackBufferIndex() override {
-    // should always 0?
+    // TODO(swapchain): can be non-zero once sequential swapchain is implemented
     return 0;
   }
 
