@@ -1212,9 +1212,15 @@ public:
                 IDXGISurface **surface) override{IMPLEMENT_ME}
 
   HRESULT STDMETHODCALLTYPE
-      QueryResourceResidency(IUnknown *const *resources,
-                             DXGI_RESIDENCY *residency,
-                             UINT resource_count) override{IMPLEMENT_ME}
+  QueryResourceResidency(IUnknown *const *ppResources, DXGI_RESIDENCY *pResidency, UINT ResourceCount) override {
+    if (!ppResources || !pResidency)
+      return E_INVALIDARG;
+
+    // Basically in DXMT D3D11 implementation, all resources are assumed to be resident.
+    for (uint32_t i = 0; i < ResourceCount; i++)
+      pResidency[i] = DXGI_RESIDENCY_FULLY_RESIDENT;
+    return S_OK;
+  }
 
   HRESULT STDMETHODCALLTYPE SetGPUThreadPriority(INT Priority) override {
     if (Priority < -7 || Priority > 7)
