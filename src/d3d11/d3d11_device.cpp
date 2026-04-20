@@ -439,8 +439,8 @@ public:
   CreateCounter(const D3D11_COUNTER_DESC *pCounterDesc,
                 ID3D11Counter **ppCounter) override {
     InitReturnPtr(ppCounter);
-    WARN("Not supported");
-    return DXGI_ERROR_UNSUPPORTED;
+    WARN("CreateCounter: not supported");
+    return E_NOTIMPL;
   }
 
   HRESULT STDMETHODCALLTYPE CreateDeferredContext(
@@ -560,9 +560,11 @@ public:
                                           pNumQualityLevels);
   }
 
-  void STDMETHODCALLTYPE CheckCounterInfo(D3D11_COUNTER_INFO *pCounterInfo)
-      override { // We basically don't support counters
-    pCounterInfo->LastDeviceDependentCounter = D3D11_COUNTER(0);
+  void STDMETHODCALLTYPE
+  CheckCounterInfo(D3D11_COUNTER_INFO *pCounterInfo) override {
+    if (!pCounterInfo)
+      return;
+    pCounterInfo->LastDeviceDependentCounter = D3D11_COUNTER{D3D11_COUNTER_DEVICE_DEPENDENT_0};
     pCounterInfo->NumSimultaneousCounters = 0;
     pCounterInfo->NumDetectableParallelUnits = 0;
   }
@@ -574,8 +576,8 @@ public:
                                          UINT *pUnitsLength,
                                          LPSTR szDescription,
                                          UINT *pDescriptionLength) override {
-    WARN("Not supported");
-    return DXGI_ERROR_UNSUPPORTED;
+    WARN("CheckCounter: not supported");
+    return E_NOTIMPL;
   }
 
   HRESULT STDMETHODCALLTYPE
