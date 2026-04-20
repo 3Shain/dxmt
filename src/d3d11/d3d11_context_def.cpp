@@ -383,6 +383,12 @@ public:
 
   void
   STDMETHODCALLTYPE
+  Flush1(D3D11_CONTEXT_TYPE Type, HANDLE hEvent) override {
+    // nop
+  }
+
+  void
+  STDMETHODCALLTYPE
   ExecuteCommandList(ID3D11CommandList *pCommandList, BOOL RestoreContextState) override{IMPLEMENT_ME}
 
   HRESULT 

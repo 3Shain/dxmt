@@ -479,13 +479,24 @@ public:
   void
   STDMETHODCALLTYPE
   Flush() override {
+    Flush1(D3D11_CONTEXT_TYPE_ALL, NULL);
+  }
+
+  void
+  STDMETHODCALLTYPE
+  Flush1(D3D11_CONTEXT_TYPE Type, HANDLE hEvent) override {
     std::lock_guard<d3d11_device_mutex> lock(mutex);
 
-    if (!ctx_state.has_dirty_op_since_last_event && !promote_flush) {
-      return;
+    if (ctx_state.has_dirty_op_since_last_event || promote_flush) {
+      InvalidateCurrentPass(true);
+      Commit();
     }
-    promote_flush = true;
-    InvalidateCurrentPass();
+    if (hEvent) {
+      auto shared_event_listener = cmd_queue.GetSharedEventListener();
+      MTLSharedEvent_setWin32EventAtValue(
+          cmd_queue.event, shared_event_listener, hEvent, cmd_queue.GetCurrentEventSeqId()
+      );
+    }
   }
 
   void PrepareFlush() override {

@@ -3193,11 +3193,6 @@ public:
 #pragma region 11.3
 
   void STDMETHODCALLTYPE
-  Flush1(D3D11_CONTEXT_TYPE type, HANDLE event) override {
-    IMPLEMENT_ME;
-  }
-
-  void STDMETHODCALLTYPE
   SetHardwareProtectionState(WINBOOL enable) override {
     WARN("SetHardwareProtectionState: stub");
   }
