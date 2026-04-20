@@ -419,36 +419,13 @@ public:
         pSamplerDesc, (D3D11SamplerState **)ppSamplerState);
   }
 
-  HRESULT STDMETHODCALLTYPE CreateQuery(const D3D11_QUERY_DESC *pQueryDesc,
-                                        ID3D11Query **ppQuery) override {
-    InitReturnPtr(ppQuery);
-
-    if (!pQueryDesc)
-      return E_INVALIDARG;
-
-    switch (pQueryDesc->Query) {
-    case D3D11_QUERY_EVENT:
-      *ppQuery = ref(new MTLD3D11EventQueryImpl<BOOL>(this, pQueryDesc));
-      return S_OK;
-    case D3D11_QUERY_OCCLUSION:
-    case D3D11_QUERY_OCCLUSION_PREDICATE:
-      return CreateOcculusionQuery(this, pQueryDesc, ppQuery);
-    case D3D11_QUERY_TIMESTAMP:
-      return CreateTimestampQuery(this, pQueryDesc, ppQuery);
-    case D3D11_QUERY_TIMESTAMP_DISJOINT: {
-      *ppQuery = ref(new MTLD3D11EventQueryImpl<D3D11_QUERY_DATA_TIMESTAMP_DISJOINT>(this, pQueryDesc));
-      return S_OK;
-    }
-    case D3D11_QUERY_PIPELINE_STATISTICS: {
-      *ppQuery =
-          ref(new MTLD3D11DummyQuery<D3D11_QUERY_DATA_PIPELINE_STATISTICS>(
-              this, pQueryDesc));
-      return S_OK;
-    }
-    default:
-      ERR("CreateQuery: query type not implemented: ", pQueryDesc->Query);
-      return E_NOTIMPL;
-    }
+  HRESULT STDMETHODCALLTYPE
+  CreateQuery(const D3D11_QUERY_DESC *pQueryDesc, ID3D11Query **ppQuery) override {
+    D3D11_QUERY_DESC1 desc;
+    desc.Query = pQueryDesc->Query;
+    desc.MiscFlags = pQueryDesc->MiscFlags;
+    desc.ContextType = D3D11_CONTEXT_TYPE_ALL;
+    return CreateQuery1(&desc, reinterpret_cast<ID3D11Query1 **>(ppQuery));
   }
 
   HRESULT STDMETHODCALLTYPE
@@ -966,9 +943,37 @@ public:
     return static_cast<D3D11ResourceCommon *>(pResource)->CreateRenderTargetView(pDesc, ppRTView);
   }
 
-  HRESULT STDMETHODCALLTYPE CreateQuery1(const D3D11_QUERY_DESC1 *desc,
-                                         ID3D11Query1 **query) override {
-    IMPLEMENT_ME
+  HRESULT STDMETHODCALLTYPE
+  CreateQuery1(const D3D11_QUERY_DESC1 *pQueryDesc, ID3D11Query1 **ppQuery) override {
+    InitReturnPtr(ppQuery);
+
+    if (!pQueryDesc)
+      return E_INVALIDARG;
+
+    if (!ppQuery)
+      return S_FALSE;
+
+    switch (pQueryDesc->Query) {
+    case D3D11_QUERY_EVENT:
+      *ppQuery = ref(new MTLD3D11EventQueryImpl<BOOL>(this, pQueryDesc));
+      return S_OK;
+    case D3D11_QUERY_OCCLUSION:
+    case D3D11_QUERY_OCCLUSION_PREDICATE:
+      return CreateOcculusionQuery(this, pQueryDesc, ppQuery);
+    case D3D11_QUERY_TIMESTAMP:
+      return CreateTimestampQuery(this, pQueryDesc, ppQuery);
+    case D3D11_QUERY_TIMESTAMP_DISJOINT: {
+      *ppQuery = ref(new MTLD3D11EventQueryImpl<D3D11_QUERY_DATA_TIMESTAMP_DISJOINT>(this, pQueryDesc));
+      return S_OK;
+    }
+    case D3D11_QUERY_PIPELINE_STATISTICS: {
+      *ppQuery = ref(new MTLD3D11DummyQuery<D3D11_QUERY_DATA_PIPELINE_STATISTICS>(this, pQueryDesc));
+      return S_OK;
+    }
+    default:
+      ERR("CreateQuery1: query type not implemented: ", pQueryDesc->Query);
+      return E_NOTIMPL;
+    }
   }
 
   void STDMETHODCALLTYPE

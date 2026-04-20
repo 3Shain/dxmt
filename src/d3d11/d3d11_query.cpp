@@ -73,7 +73,7 @@ class OcculusionQuery : public MTLD3DQueryBase<MTLD3D11OcclusionQuery> {
 };
 
 HRESULT
-CreateOcculusionQuery(MTLD3D11Device *pDevice, const D3D11_QUERY_DESC *pDesc, ID3D11Query **ppQuery) {
+CreateOcculusionQuery(MTLD3D11Device *pDevice, const D3D11_QUERY_DESC1 *pDesc, ID3D11Query1 **ppQuery) {
   if (ppQuery) {
     *ppQuery = ref(new OcculusionQuery(pDevice, pDesc));
     return S_OK;
@@ -117,7 +117,7 @@ class MTLD3D11TimestampQueryImpl : public MTLD3DQueryBase<MTLD3D11TimestampQuery
 };
 
 HRESULT
-CreateTimestampQuery(MTLD3D11Device *pDevice, const D3D11_QUERY_DESC *pDesc, ID3D11Query **ppQuery) {
+CreateTimestampQuery(MTLD3D11Device *pDevice, const D3D11_QUERY_DESC1 *pDesc, ID3D11Query1 **ppQuery) {
   if (ppQuery) {
     *ppQuery = ref(new MTLD3D11TimestampQueryImpl(pDevice, pDesc));
     return S_OK;
