@@ -3171,13 +3171,22 @@ public:
     IMPLEMENT_ME
   };
 
-  WINBOOL STDMETHODCALLTYPE IsAnnotationEnabled() override { IMPLEMENT_ME };
+  WINBOOL STDMETHODCALLTYPE
+  IsAnnotationEnabled() override {
+    return annotation_.GetStatus();
+  };
 
-  void STDMETHODCALLTYPE SetMarkerInt(const WCHAR *label, int data) override { IMPLEMENT_ME };
+  void STDMETHODCALLTYPE SetMarkerInt(const WCHAR *label, int data) override {
+    // no-op
+  };
 
-  void STDMETHODCALLTYPE BeginEventInt(const WCHAR *label, int data) override { IMPLEMENT_ME };
+  void STDMETHODCALLTYPE BeginEventInt(const WCHAR *label, int data) override {
+    // no-op
+  };
 
-  void STDMETHODCALLTYPE EndEvent() override { IMPLEMENT_ME };
+  void STDMETHODCALLTYPE EndEvent() override {
+    // no-op
+  };
 
 #pragma endregion
 
