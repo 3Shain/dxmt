@@ -154,6 +154,10 @@ struct D3D11ResourceCommon : ID3D11Resource {
   }
 };
 
+inline D3D11ResourceCommon* GetResourceCommon(ID3D11Resource *pResource) {
+  return static_cast<D3D11ResourceCommon *>(pResource);
+}
+
 inline Rc<DynamicBuffer>
 GetDynamicBuffer(ID3D11Resource *pResource, UINT *pBufferLength, UINT *pBindFlags) {
   return static_cast<D3D11ResourceCommon *>(pResource)->dynamicBuffer(pBufferLength, pBindFlags);

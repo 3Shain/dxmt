@@ -674,10 +674,10 @@ public:
   getMappedArgumentBuffer(size_t offset) {
     if constexpr (ComputeCommandEncoder)
       return reinterpret_cast<T *>(
-          (char *)reinterpret_cast<ComputeEncoderData *>(encoder_current)->allocated_argbuf_mapping + offset
+          (char *)static_cast<ComputeEncoderData *>(encoder_current)->allocated_argbuf_mapping + offset
       );
     return reinterpret_cast<T *>(
-        (char *)reinterpret_cast<RenderEncoderData *>(encoder_current)->allocated_argbuf_mapping + offset
+        (char *)static_cast<RenderEncoderData *>(encoder_current)->allocated_argbuf_mapping + offset
     );
   }
 
@@ -685,16 +685,16 @@ public:
   uint64_t
   getFinalArgumentBufferOffset(size_t offset) {
     if constexpr (ComputeCommandEncoder)
-      return reinterpret_cast<ComputeEncoderData *>(encoder_current)->allocated_argbuf_offset + offset;
-    return reinterpret_cast<RenderEncoderData *>(encoder_current)->allocated_argbuf_offset + offset;
+      return static_cast<ComputeEncoderData *>(encoder_current)->allocated_argbuf_offset + offset;
+    return static_cast<RenderEncoderData *>(encoder_current)->allocated_argbuf_offset + offset;
   }
 
   template <bool ComputeCommandEncoder = false>
   WMT::Buffer
   getFinalArgumentBuffer() {
     if constexpr (ComputeCommandEncoder)
-      return reinterpret_cast<ComputeEncoderData *>(encoder_current)->allocated_argbuf;
-    return reinterpret_cast<RenderEncoderData *>(encoder_current)->allocated_argbuf;
+      return static_cast<ComputeEncoderData *>(encoder_current)->allocated_argbuf;
+    return static_cast<RenderEncoderData *>(encoder_current)->allocated_argbuf;
   }
 
   std::pair<WMT::Buffer , size_t> allocateTempBuffer(size_t size, size_t alignment);
