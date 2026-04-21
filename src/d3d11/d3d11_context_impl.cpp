@@ -273,18 +273,18 @@ public:
     case D3D11_RESOURCE_DIMENSION_UNKNOWN:
       break;
     case D3D11_RESOURCE_DIMENSION_BUFFER:
-      reinterpret_cast<ID3D11Buffer *>(pResource)->GetDesc(&BufferDesc);
+      static_cast<ID3D11Buffer *>(pResource)->GetDesc(&BufferDesc);
       break;
     case D3D11_RESOURCE_DIMENSION_TEXTURE1D:
-      reinterpret_cast<ID3D11Texture1D *>(pResource)->GetDesc(&Texture1DDesc);
+      static_cast<ID3D11Texture1D *>(pResource)->GetDesc(&Texture1DDesc);
       MTLQueryDXGIFormat(pDevice->GetMTLDevice(), Texture1DDesc.Format, FormatDescription);
       break;
     case D3D11_RESOURCE_DIMENSION_TEXTURE2D:
-      reinterpret_cast<ID3D11Texture2D1 *>(pResource)->GetDesc1(&Texture2DDesc);
+      static_cast<ID3D11Texture2D1 *>(pResource)->GetDesc1(&Texture2DDesc);
       MTLQueryDXGIFormat(pDevice->GetMTLDevice(), Texture2DDesc.Format, FormatDescription);
       break;
     case D3D11_RESOURCE_DIMENSION_TEXTURE3D:
-      reinterpret_cast<ID3D11Texture3D1 *>(pResource)->GetDesc1(&Texture3DDesc);
+      static_cast<ID3D11Texture3D1 *>(pResource)->GetDesc1(&Texture3DDesc);
       MTLQueryDXGIFormat(pDevice->GetMTLDevice(), Texture3DDesc.Format, FormatDescription);
       break;
     }
@@ -1108,7 +1108,7 @@ public:
       override {
     std::lock_guard<mutex_t> lock(mutex);
 
-    if (auto dst_bind = reinterpret_cast<D3D11ResourceCommon *>(pDstBuffer)) {
+    if (auto dst_bind = GetResourceCommon(pDstBuffer)) {
       if (auto uav = static_cast<D3D11UnorderedAccessView *>(pSrcView)) {
         SwitchToBlitEncoder(CommandBufferState::BlitEncoderActive);
         EmitOP([=, dst = dst_bind->buffer(), counter = uav->counter()](ArgumentEncodingContext &enc) {
@@ -1185,7 +1185,7 @@ public:
         // dynamic usage.
         // So it's legal?
         UNIMPLEMENTED("update buffer: staging");
-      } else if (auto bindable = reinterpret_cast<D3D11ResourceCommon *>(pDstResource)) {
+      } else if (auto bindable = GetResourceCommon(pDstResource)) {
         auto [staging_buffer, offset] = AllocateStagingBuffer(copy_len, 16);
         staging_buffer.updateContents(offset, pSrcData, copy_len);
         SwitchToBlitEncoder(CommandBufferState::UpdateBlitEncoderActive);
@@ -1569,7 +1569,7 @@ public:
     auto IndexType =
         state_.InputAssembler.IndexBufferFormat == DXGI_FORMAT_R32_UINT ? WMTIndexTypeUInt32 : WMTIndexTypeUInt16;
     auto IndexBufferOffset = state_.InputAssembler.IndexBufferOffset;
-    if (auto bindable = reinterpret_cast<D3D11ResourceCommon *>(pBufferForArgs)) {
+    if (auto bindable = GetResourceCommon(pBufferForArgs)) {
       EmitOP([IndexType, IndexBufferOffset, Primitive, ArgBuffer = bindable->buffer(),
               AlignedByteOffsetForArgs](ArgumentEncodingContext &enc) {
         auto [buffer, buffer_offset] = enc.access<PipelineStage::Vertex>(
@@ -1608,7 +1608,7 @@ public:
     if (status == DrawCallStatus::Tessellation) {
       return TessellationDrawIndirect(ControlPointCount, pBufferForArgs, AlignedByteOffsetForArgs);
     }
-    if (auto bindable = reinterpret_cast<D3D11ResourceCommon *>(pBufferForArgs)) {
+    if (auto bindable = GetResourceCommon(pBufferForArgs)) {
       EmitOP([Primitive, ArgBuffer = bindable->buffer(), AlignedByteOffsetForArgs](ArgumentEncodingContext &enc) {
         auto [buffer, buffer_offset] = enc.access<PipelineStage::Vertex>(
             ArgBuffer, AlignedByteOffsetForArgs, sizeof(DXMT_DRAW_ARGUMENTS), DXMT_ENCODER_RESOURCE_ACESS_READ
@@ -1629,7 +1629,7 @@ public:
     ID3D11Buffer *pBufferForArgs, UINT AlignedByteOffsetForArgs
   ) {
     auto max_object_threadgroups = max_object_threadgroups_;
-    if (auto bindable = reinterpret_cast<D3D11ResourceCommon *>(pBufferForArgs)) {
+    if (auto bindable = GetResourceCommon(pBufferForArgs)) {
       EmitOP([=, topo = state_.InputAssembler.Topology, ArgBuffer = bindable->buffer()](ArgumentEncodingContext &enc) {
         auto [buffer, buffer_offset] = enc.access<PipelineStage::Vertex>(
             ArgBuffer, AlignedByteOffsetForArgs, sizeof(DXMT_DRAW_ARGUMENTS), DXMT_ENCODER_RESOURCE_ACESS_READ
@@ -1663,7 +1663,7 @@ public:
     auto IndexBufferOffset = state_.InputAssembler.IndexBufferOffset;
     auto max_object_threadgroups = max_object_threadgroups_;
 
-    if (auto bindable = reinterpret_cast<D3D11ResourceCommon *>(pBufferForArgs)) {
+    if (auto bindable = GetResourceCommon(pBufferForArgs)) {
       EmitOP([=, topo = state_.InputAssembler.Topology, ArgBuffer = bindable->buffer()](ArgumentEncodingContext &enc) {
         auto [buffer, buffer_offset] = enc.access<PipelineStage::Vertex>(
             ArgBuffer, AlignedByteOffsetForArgs, sizeof(DXMT_DRAW_INDEXED_ARGUMENTS), DXMT_ENCODER_RESOURCE_ACESS_READ
@@ -1698,7 +1698,7 @@ public:
     UINT NumControlPoint, ID3D11Buffer *pBufferForArgs, UINT AlignedByteOffsetForArgs
   ) {
     auto max_object_threadgroups = max_object_threadgroups_;
-    if (auto bindable = reinterpret_cast<D3D11ResourceCommon *>(pBufferForArgs)) {
+    if (auto bindable = GetResourceCommon(pBufferForArgs)) {
       EmitOP([=, ArgBuffer = bindable->buffer()](ArgumentEncodingContext &enc) {
         auto [buffer, buffer_offset] = enc.access<PipelineStage::Vertex>(
             ArgBuffer, AlignedByteOffsetForArgs, sizeof(DXMT_DRAW_ARGUMENTS), DXMT_ENCODER_RESOURCE_ACESS_READ
@@ -1735,7 +1735,7 @@ public:
     auto IndexBufferOffset = state_.InputAssembler.IndexBufferOffset;
     auto max_object_threadgroups = max_object_threadgroups_;
 
-    if (auto bindable = reinterpret_cast<D3D11ResourceCommon *>(pBufferForArgs)) {
+    if (auto bindable = GetResourceCommon(pBufferForArgs)) {
       EmitOP([=, ArgBuffer = bindable->buffer()](ArgumentEncodingContext &enc) {
         auto [buffer, buffer_offset] = enc.access<PipelineStage::Vertex>(
             ArgBuffer, AlignedByteOffsetForArgs, sizeof(DXMT_DRAW_INDEXED_ARGUMENTS), DXMT_ENCODER_RESOURCE_ACESS_READ
@@ -1798,7 +1798,7 @@ public:
 
     if (!PreDispatch())
       return;
-    if (auto bindable = reinterpret_cast<D3D11ResourceCommon *>(pBufferForArgs)) {
+    if (auto bindable = GetResourceCommon(pBufferForArgs)) {
       EmitOP([AlignedByteOffsetForArgs, ArgBuffer = bindable->buffer()](ArgumentEncodingContext &enc) {
         auto [buffer, buffer_offset] = enc.access(ArgBuffer, AlignedByteOffsetForArgs, 12, DXMT_ENCODER_RESOURCE_ACESS_READ);
         enc.resolveComputePassBarrier();
@@ -1912,7 +1912,7 @@ public:
   IASetIndexBuffer(ID3D11Buffer *pIndexBuffer, DXGI_FORMAT Format, UINT Offset) override {
     std::lock_guard<mutex_t> lock(mutex);
 
-    auto pBuffer = reinterpret_cast<D3D11ResourceCommon *>(pIndexBuffer);
+    auto pBuffer = GetResourceCommon(pIndexBuffer);
     if (pBuffer && (pBuffer->bindFlags() & D3D11_BIND_INDEX_BUFFER) && ValidateIAHazard(pBuffer)) {
       state_.InputAssembler.IndexBuffer = pBuffer;
       EmitST([buffer = state_.InputAssembler.IndexBuffer->buffer()](ArgumentEncodingContext &enc) mutable {
@@ -2207,7 +2207,7 @@ public:
       NumBuffers = 4; // see msdn description of SOSetTargets
     }
     for (unsigned slot = 0; slot < NumBuffers; slot++) {
-      auto pBuffer = ppSOTargets ? reinterpret_cast<D3D11ResourceCommon *>(ppSOTargets[slot]) : nullptr;
+      auto pBuffer = ppSOTargets ? GetResourceCommon(ppSOTargets[slot]) : nullptr;
       if (pBuffer && (pBuffer->bindFlags() & D3D11_BIND_STREAM_OUTPUT)) {
         bool replaced = false;
         auto &entry = state_.StreamOutput.Targets.bind(slot, {pBuffer}, replaced);
@@ -3428,7 +3428,7 @@ public:
           pConstantBuffer->GetDesc(&desc);
           entry.NumConstants = desc.ByteWidth >> 4;
         }
-        entry.Buffer = reinterpret_cast<D3D11ResourceCommon *>(pConstantBuffer);
+        entry.Buffer = GetResourceCommon(pConstantBuffer);
         EmitST([=, buffer = entry.Buffer->buffer(), offset = entry.FirstConstant << 4](ArgumentEncodingContext &enc
              ) mutable { enc.bindConstantBuffer<Stage>(slot, offset, forward_rc(buffer)); });
       } else {
@@ -3675,7 +3675,7 @@ public:
 
     auto &VertexBuffers = state_.InputAssembler.VertexBuffers;
     for (unsigned slot = StartSlot; slot < StartSlot + NumBuffers; slot++) {
-      auto pVertexBuffer = reinterpret_cast<D3D11ResourceCommon *>(ppVertexBuffers[slot - StartSlot]);
+      auto pVertexBuffer = GetResourceCommon(ppVertexBuffers[slot - StartSlot]);
       if (pVertexBuffer && (pVertexBuffer->bindFlags() & D3D11_BIND_VERTEX_BUFFER) && ValidateIAHazard(pVertexBuffer)) {
         bool replaced = false;
         auto &entry = VertexBuffers.bind(slot, {pVertexBuffer}, replaced, !pVertexBuffer->hazardsFree());
@@ -3788,7 +3788,7 @@ public:
           cmd.dst_offset = DstX + dst_offset;
         });
         promote_flush = true;
-      } else if (auto src = reinterpret_cast<D3D11ResourceCommon *>(pSrcResource)) {
+      } else if (auto src = GetResourceCommon(pSrcResource)) {
         // copy from device to staging
         SwitchToBlitEncoder(CommandBufferState::ReadbackBlitEncoderActive);
         UseCopyDestination(staging_dst);
@@ -3807,7 +3807,7 @@ public:
       } else {
         UNREACHABLE
       }
-    } else if (auto dst = reinterpret_cast<D3D11ResourceCommon *>(pDstResource)) {
+    } else if (auto dst = GetResourceCommon(pDstResource)) {
       if (auto staging_src = GetStagingResource(pSrcResource, SrcSubresource)) {
         SwitchToBlitEncoder(CommandBufferState::UpdateBlitEncoderActive);
         UseCopySource(staging_src);
@@ -3822,7 +3822,7 @@ public:
           cmd.dst = dst->buffer();;
           cmd.dst_offset = DstX + dst_offset;
         });
-      } else if (auto src = reinterpret_cast<D3D11ResourceCommon *>(pSrcResource)) {
+      } else if (auto src = GetResourceCommon(pSrcResource)) {
         // on-device copy
         SwitchToBlitEncoder(CommandBufferState::BlitEncoderActive);
         EmitOP([dst_ = dst->buffer(), src_ = src->buffer(), DstX,
