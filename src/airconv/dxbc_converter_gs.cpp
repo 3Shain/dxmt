@@ -172,6 +172,7 @@ convert_dxbc_geometry_shader(
   llvm::air::AIRBuilder air(
       {
           .sampleNaNToZero = bool(shader_flags & SM50_SHADER_FLAG_SAMPLE_NAN_TO_ZERO),
+          .defuseFma = bool(shader_flags & SM50_SHADER_FLAG_DEFUSE_FMA),
       },
       builder, nulldbg
   );
@@ -596,6 +597,7 @@ convert_dxbc_vertex_for_geometry_shader(
   llvm::air::AIRBuilder air(
       {
           .sampleNaNToZero = bool(shader_flags & SM50_SHADER_FLAG_SAMPLE_NAN_TO_ZERO),
+          .defuseFma = bool(shader_flags & SM50_SHADER_FLAG_DEFUSE_FMA),
       },
       builder, nulldbg
   );

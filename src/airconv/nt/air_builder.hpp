@@ -106,6 +106,7 @@ enum class ThreadScope {
 class AIRBuilderOptions {
 public:
   bool sampleNaNToZero = false;
+  bool defuseFma = false;
 };
 
 class AIRBuilder {

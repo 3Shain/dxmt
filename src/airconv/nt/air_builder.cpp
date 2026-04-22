@@ -1183,6 +1183,9 @@ AIRBuilder::CreateFMA(Value *X, Value *Y, Value *Z) {
     debug << "invalid operation: fma has unmatched operand types.\n";
     return nullptr; // TODO
   }
+  if (options.defuseFma) {
+    return builder.CreateFAdd(builder.CreateFMul(X, Y), Z);
+  }
   auto &Context = getContext();
   auto Attrs = AttributeList::get(
       Context, {{~0U, Attribute::get(Context, Attribute::AttrKind::ReadNone)},
