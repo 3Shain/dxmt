@@ -56,6 +56,10 @@ namespace dxmt {
     { R"(\\O2-Win64-Shipping\.exe$)", {{
       { "d3d11.sampleNaNToZero",   "True" },
     }} },
+    /** Shadow of the Tomb Raider */
+    { R"(\\SotTR\.exe$)", {{
+      { "d3d11.defuseFma",   "True" },
+    }} },
   }};
 
   const Config* findProfile(const ProfileList& profiles, const std::string& appName) {
