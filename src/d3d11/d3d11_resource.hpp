@@ -605,7 +605,7 @@ CalculateBufferViewOffsetAndSize(const D3D11_BUFFER_DESC &buffer_desc,
 };
 #pragma endregion
 
-constexpr UINT kD3D11OuputBindFlags =
+constexpr UINT kD3D11OutputBindFlags =
     D3D11_BIND_STREAM_OUTPUT | D3D11_BIND_UNORDERED_ACCESS | D3D11_BIND_RENDER_TARGET | D3D11_BIND_RENDER_TARGET;
 
 } // namespace dxmt

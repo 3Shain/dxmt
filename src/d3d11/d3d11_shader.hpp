@@ -116,7 +116,7 @@ struct ShaderVariantTessellationVertexHull {
   using this_type = ShaderVariantTessellationVertexHull;
   ManagedInputLayout input_layout_handle;
   ManagedShader vertex_shader_handle;
-  SM50_INDEX_BUFFER_FORAMT index_buffer_format;
+  SM50_INDEX_BUFFER_FORMAT index_buffer_format;
   uint32_t max_potential_tess_factor;
   bool operator==(const this_type &rhs) const {
     return input_layout_handle == rhs.input_layout_handle &&
@@ -144,7 +144,7 @@ struct ShaderVariantGeometryVertex {
   using this_type = ShaderVariantGeometryVertex;
   ManagedInputLayout input_layout_handle;
   ManagedShader geometry_shader_handle;
-  SM50_INDEX_BUFFER_FORAMT index_buffer_format;
+  SM50_INDEX_BUFFER_FORMAT index_buffer_format;
   bool strip_topology;
   bool operator==(const this_type &rhs) const {
     return input_layout_handle == rhs.input_layout_handle &&

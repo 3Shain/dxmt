@@ -436,7 +436,7 @@ struct InstLoadStructured {
   SrcOperand src_address;
   SrcOperand src_byte_offset;
   std::variant<SrcOperandResource, SrcOperandUAV, SrcOperandTGSM> src;
-  // 2nd condtion: stride is also vec4 aligned
+  // 2nd condition: stride is also vec4 aligned
   bool opt_flag_offset_is_vec4_aligned = false;
 };
 

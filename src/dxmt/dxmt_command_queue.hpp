@@ -246,7 +246,7 @@ public:
       auto t0 = clock::now();
       frame_latency_fence_.wait(frame_count - max_latency_);
       auto t1 = clock::now();
-      statistics.at(frame_count).present_lantency_interval += (t1 - t0);
+      statistics.at(frame_count).present_latency_interval += (t1 - t0);
     }
     statistics.at(frame_count).latency = max_latency_;
   }

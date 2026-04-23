@@ -37,7 +37,7 @@ MTLD3D11Inspection::MTLD3D11Inspection(WMT::Device pDevice)
   */
   m_d3d11Options.CopyWithOverlap = TRUE;
   /**
-  FXIME: I think it is supported
+  FIXME: I think it is supported
    */
   m_d3d11Options.MultisampleRTVWithForcedSampleCountOne = TRUE;
   m_d3d11Options.MapNoOverwriteOnDynamicBufferSRV = TRUE;

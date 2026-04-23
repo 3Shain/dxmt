@@ -23,7 +23,7 @@ struct MTL_GRAPHICS_PIPELINE_DESC {
   bool RasterizationEnabled;
   uint8_t SampleCount;
   bool GSStripTopology;
-  SM50_INDEX_BUFFER_FORAMT IndexBufferFormat;
+  SM50_INDEX_BUFFER_FORMAT IndexBufferFormat;
   uint32_t SampleMask;
   uint32_t GSPassthrough;
 };

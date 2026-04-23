@@ -41,7 +41,7 @@ AIRBuilderResult call_unpack_impl(
 };
 
 AIRBuilderResult load_from_device_buffer(
-  llvm::Type *value_type, pvalue base_addr, pvalue aligned_offest,
+  llvm::Type *value_type, pvalue base_addr, pvalue aligned_offset,
   uint32_t element_offset, uint32_t align
 ) {
   auto ctx = co_yield get_context();
@@ -50,7 +50,7 @@ AIRBuilderResult load_from_device_buffer(
     ctx.builder.CreateConstGEP1_32(
       value_type,
       ctx.builder.CreateBitCast(
-        ctx.builder.CreateGEP(ctx.types._byte, base_addr, {aligned_offest}),
+        ctx.builder.CreateGEP(ctx.types._byte, base_addr, {aligned_offset}),
         value_type->getPointerTo((uint32_t)AddressSpace::device)
       ),
       element_offset
@@ -60,7 +60,7 @@ AIRBuilderResult load_from_device_buffer(
 };
 
 AIRBuilderResult unpack_fvec4_from_addr(
-  MTLAttributeFormat format, pvalue base_addr, pvalue aligned_offest
+  MTLAttributeFormat format, pvalue base_addr, pvalue aligned_offset
 ) {
   auto ctx = co_yield get_context();
   auto &types = ctx.types;
@@ -68,22 +68,22 @@ AIRBuilderResult unpack_fvec4_from_addr(
 
   if (format == MTLAttributeFormat::UShort4Normalized) {
     pvalue _xy = co_yield call_unpack_impl(
-        "unorm2x16.v2f32", co_yield load_from_device_buffer(types._int, base_addr, aligned_offest, 0, 2), types._int,
+        "unorm2x16.v2f32", co_yield load_from_device_buffer(types._int, base_addr, aligned_offset, 0, 2), types._int,
         types._float2
     );
     pvalue _zw = co_yield call_unpack_impl(
-        "unorm2x16.v2f32", co_yield load_from_device_buffer(types._int, base_addr, aligned_offest, 1, 2), types._int,
+        "unorm2x16.v2f32", co_yield load_from_device_buffer(types._int, base_addr, aligned_offset, 1, 2), types._int,
         types._float2
     );
     co_return builder.CreateShuffleVector(_xy, _zw, {0, 1, 2, 3});
   }
   if (format == MTLAttributeFormat::Short4Normalized) {
     pvalue _xy = co_yield call_unpack_impl(
-        "snorm2x16.v2f32", co_yield load_from_device_buffer(types._int, base_addr, aligned_offest, 0, 2), types._int,
+        "snorm2x16.v2f32", co_yield load_from_device_buffer(types._int, base_addr, aligned_offset, 0, 2), types._int,
         types._float2
     );
     pvalue _zw = co_yield call_unpack_impl(
-        "snorm2x16.v2f32", co_yield load_from_device_buffer(types._int, base_addr, aligned_offest, 1, 2), types._int,
+        "snorm2x16.v2f32", co_yield load_from_device_buffer(types._int, base_addr, aligned_offset, 1, 2), types._int,
         types._float2
     );
     co_return builder.CreateShuffleVector(_xy, _zw, {0, 1, 2, 3});
@@ -187,7 +187,7 @@ AIRBuilderResult unpack_fvec4_from_addr(
   pvalue ret = co_yield call_unpack_impl(
     op,
     co_yield load_from_device_buffer(
-      src_type, base_addr, aligned_offest, 0, align
+      src_type, base_addr, aligned_offset, 0, align
     ),
     src_type, dst_type
   );

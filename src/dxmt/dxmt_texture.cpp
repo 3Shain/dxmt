@@ -77,16 +77,16 @@ TextureAllocation::~TextureAllocation(){
 };
 
 void
-Texture::prepareAllocationViews(TextureAllocation *allocaiton) {
-  if (allocaiton->version_ < 1) {
-    allocaiton->cached_view_.push_back(new TextureView(allocaiton));
-    allocaiton->version_ = 1;
+Texture::prepareAllocationViews(TextureAllocation *allocation) {
+  if (allocation->version_ < 1) {
+    allocation->cached_view_.push_back(new TextureView(allocation));
+    allocation->version_ = 1;
   }
   std::shared_lock<dxmt::shared_mutex> lock(mutex_);
-  for (unsigned version = allocaiton->version_; version < version_; version++) {
-    allocaiton->cached_view_.push_back(new TextureView(allocaiton, version, viewDescriptors_[version]));
+  for (unsigned version = allocation->version_; version < version_; version++) {
+    allocation->cached_view_.push_back(new TextureView(allocation, version, viewDescriptors_[version]));
   }
-  allocaiton->version_ = version_;
+  allocation->version_ = version_;
 }
 
 TextureViewKey
@@ -190,7 +190,7 @@ Texture::import(mach_port_t mach_port) {
   info.mach_port = mach_port;
   auto texture = device_.newSharedTexture(info);
   // now allocation's info is populated
-  // and we may check if it is consitent with texture's info (it should be)
+  // and we may check if it is consistent with texture's info (it should be)
   if (texture) {
     // doing some unnecessary checks for the sake of completeness
     if (info.options & WMTResourceStorageModeManaged) // should be always false

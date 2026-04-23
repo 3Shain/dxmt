@@ -5,7 +5,7 @@
 
 /**
  * This is a poor man's automatic memory barrier insertion pass for threadgroup memory read-after-write
- * Some games expect shared memery to be coherent within a wrap(simdgroup), but this is not the case on Metal
+ * Some games expect shared memory to be coherent within a wrap(simdgroup), but this is not the case on Metal
  * where `simdgroup_barrier()` is explicitly introduced.
  */
 

@@ -854,7 +854,7 @@ public:
     hud.printLine(std::format(
         "Sync:   {:2} {:4.1f}  {:2} {:4.1f} {:2}", std::min(frame.sync_count, 99u),
         std::min(average.sync_interval.count() / 1000000.0, 99.9), std::min(statistics.max().event_stall, 99u),
-        std::min(average.present_lantency_interval.count() / 1000000.0, 99.9), frame.latency
+        std::min(average.present_latency_interval.count() / 1000000.0, 99.9), frame.latency
     ));
     hud.printLine(std::format(
         "Encode: {:4.1f}+{:4.1f}+{:4.1f}={:4.1f}", std::min(average.encode_prepare_interval.count() / 1000000.0, 99.9),

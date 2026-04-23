@@ -20,8 +20,8 @@ struct UAV_B {
 
 typedef BindingSet<UAV_B, 64> UAVBindingSet;
 
-template <> struct redunant_binding_trait<UAV_B> {
-  static bool is_redunant(const UAV_B &left, const UAV_B &right) {
+template <> struct redundant_binding_trait<UAV_B> {
+  static bool is_redundant(const UAV_B &left, const UAV_B &right) {
     return left.RawPointer == right.RawPointer;
   }
 };
@@ -39,8 +39,8 @@ struct CONSTANT_BUFFER_B {
 
 typedef BindingSet<CONSTANT_BUFFER_B, 14> ConstantBufferBindingSet;
 
-template <> struct redunant_binding_trait<CONSTANT_BUFFER_B> {
-  static bool is_redunant(const CONSTANT_BUFFER_B &left,
+template <> struct redundant_binding_trait<CONSTANT_BUFFER_B> {
+  static bool is_redundant(const CONSTANT_BUFFER_B &left,
                           const CONSTANT_BUFFER_B &right) {
     return left.RawPointer == right.RawPointer;
   }
@@ -53,8 +53,8 @@ struct SAMPLER_B {
 
 typedef BindingSet<SAMPLER_B, 16> SamplerBindingSet;
 
-template <> struct redunant_binding_trait<SAMPLER_B> {
-  static bool is_redunant(const SAMPLER_B &left, const SAMPLER_B &right) {
+template <> struct redundant_binding_trait<SAMPLER_B> {
+  static bool is_redundant(const SAMPLER_B &left, const SAMPLER_B &right) {
     return left.RawPointer == right.RawPointer;
   }
 };
@@ -66,8 +66,8 @@ struct SRV_B {
 
 typedef BindingSet<SRV_B, 128> SRVBindingSet;
 
-template <> struct redunant_binding_trait<SRV_B> {
-  static bool is_redunant(const SRV_B &left, const SRV_B &right) {
+template <> struct redundant_binding_trait<SRV_B> {
+  static bool is_redundant(const SRV_B &left, const SRV_B &right) {
     return left.RawPointer == right.RawPointer;
   }
 };
@@ -86,8 +86,8 @@ struct VERTEX_BUFFER_B {
   UINT Offset;
 };
 
-template <> struct redunant_binding_trait<VERTEX_BUFFER_B> {
-  static bool is_redunant(const VERTEX_BUFFER_B &left,
+template <> struct redundant_binding_trait<VERTEX_BUFFER_B> {
+  static bool is_redundant(const VERTEX_BUFFER_B &left,
                           const VERTEX_BUFFER_B &right) {
     return left.RawPointer == right.RawPointer;
   }
@@ -135,8 +135,8 @@ struct STREAM_OUTPUT_BUFFER_B {
   UINT Offset;
 };
 
-template <> struct redunant_binding_trait<STREAM_OUTPUT_BUFFER_B> {
-  static bool is_redunant(const STREAM_OUTPUT_BUFFER_B &left,
+template <> struct redundant_binding_trait<STREAM_OUTPUT_BUFFER_B> {
+  static bool is_redundant(const STREAM_OUTPUT_BUFFER_B &left,
                           const STREAM_OUTPUT_BUFFER_B &right) {
     return left.RawPointer == right.RawPointer;
   }
@@ -182,7 +182,7 @@ struct D3D11ContextState {
   BOOL predicate_value = FALSE;
 };
 
-// TODO: implemente it properly
+// TODO: implement it properly
 class MTLD3D11DeviceContextState
     : public MTLD3D11DeviceChild<ID3DDeviceContextState> {
 

@@ -26,8 +26,8 @@ HRESULT ExtractMTLInputLayoutElements(
   if (FAILED(hr)) {
     return hr;
   }
-  const D3D11_SIGNATURE_PARAMETER *pParamters;
-  auto num_parameters = parser.GetParameters(&pParamters);
+  const D3D11_SIGNATURE_PARAMETER *pParameters;
+  auto num_parameters = parser.GetParameters(&pParameters);
 
   UINT attribute_count = 0;
   for (UINT j = 0; j < NumElements; j++) {
@@ -53,12 +53,12 @@ HRESULT ExtractMTLInputLayoutElements(
     append_offset[desc.InputSlot] = aligned_byte_offset + metal_format.BytesPerTexel;
 
     auto pSig = std::find_if(
-        pParamters, pParamters + num_parameters,
+        pParameters, pParameters + num_parameters,
         [&](const D3D11_SIGNATURE_PARAMETER &inputSig) {
           return desc.SemanticIndex == inputSig.SemanticIndex &&
                  strcasecmp(desc.SemanticName, inputSig.SemanticName) == 0;
         });
-    if (pSig == pParamters + num_parameters)
+    if (pSig == pParameters + num_parameters)
       continue; // shader has no such input register, so skip it
     auto &inputSig = *pSig;
     auto &attribute = pInputLayout[attribute_count++];
@@ -77,7 +77,7 @@ HRESULT ExtractMTLInputLayoutElements(
     register_mask |= (1 << inputSig.Register);
   }
   for (UINT i = 0; i < num_parameters; i++) {
-    auto &inputSig = pParamters[i];
+    auto &inputSig = pParameters[i];
     if (inputSig.SystemValue != D3D10_SB_NAME_UNDEFINED) 
       continue; // ignore SIV & SGV
     if (!(register_mask & (1 << inputSig.Register))) {
@@ -188,8 +188,8 @@ HRESULT ExtractMTLStreamOutputElements(
   if (FAILED(hr)) {
     return hr;
   }
-  const D3D11_SIGNATURE_PARAMETER *pParamters;
-  auto numParameteres = parser.GetParameters(&pParamters);
+  const D3D11_SIGNATURE_PARAMETER *pParameters;
+  auto numParameters = parser.GetParameters(&pParameters);
   for (unsigned i = 0; i < NumEntries; i++) {
     auto entry = pEntries[i];
     if (entry.Stream != 0) {
@@ -228,12 +228,12 @@ HRESULT ExtractMTLStreamOutputElements(
       continue;
     }
     auto pDesc = std::find_if(
-        pParamters, pParamters + numParameteres,
+        pParameters, pParameters + numParameters,
         [&](const D3D11_SIGNATURE_PARAMETER &Ele) {
           return Ele.SemanticIndex == entry.SemanticIndex &&
                  strcasecmp(Ele.SemanticName, entry.SemanticName) == 0;
         });
-    if (pDesc == pParamters + numParameteres) {
+    if (pDesc == pParameters + numParameters) {
       ERR("CreateEmulatedVertexStreamOutputShader: output parameter not found");
       return E_INVALIDARG;
     }

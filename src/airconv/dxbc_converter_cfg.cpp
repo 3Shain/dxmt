@@ -132,13 +132,13 @@ read_control_flow(
     }
 
     case D3D10_SB_OPCODE_LOOP: {
-      auto loop_entrace = fresh_bb("loop_entrace");
+      auto loop_entrance = fresh_bb("loop_entrance");
       auto end_loop = fresh_bb("end_loop");
-      bb_continue_target.push(loop_entrace);
+      bb_continue_target.push(loop_entrance);
       bb_break_target.push(end_loop);
 
-      bb_current->target = BasicBlockUnconditionalBranch{loop_entrace};
-      bb_current = loop_entrace;
+      bb_current->target = BasicBlockUnconditionalBranch{loop_entrance};
+      bb_current = loop_entrance;
       break;
     }
     case D3D10_SB_OPCODE_ENDLOOP: {
@@ -403,7 +403,7 @@ read_control_flow(
         srv.range.space = (Inst.m_ResourceDecl.Space);
         srv.resource_type = to_shader_resource_type(Inst.m_ResourceDecl.Dimension);
         srv.scaler_type = to_shader_scaler_type(Inst.m_ResourceDecl.ReturnType[0]);
-        srv.strucure_stride = -1;
+        srv.structure_stride = -1;
         // Inst.m_ResourceDecl.SampleCount
         break;
       }
@@ -411,14 +411,14 @@ read_control_flow(
         srv.resource_type = ResourceType::NonApplicable;
         srv.range.space = Inst.m_RawSRVDecl.Space;
         srv.scaler_type = ScalerDataType::Uint;
-        srv.strucure_stride = 0;
+        srv.structure_stride = 0;
         break;
       }
       case D3D11_SB_OPCODE_DCL_RESOURCE_STRUCTURED: {
         srv.resource_type = ResourceType::NonApplicable;
         srv.range.space = (Inst.m_StructuredSRVDecl.Space);
         srv.scaler_type = ScalerDataType::Uint;
-        srv.strucure_stride = Inst.m_StructuredSRVDecl.ByteStride;
+        srv.structure_stride = Inst.m_StructuredSRVDecl.ByteStride;
         break;
       }
       default:;
@@ -458,7 +458,7 @@ read_control_flow(
         Flags = Inst.m_TypedUAVDecl.Flags;
         uav.resource_type = to_shader_resource_type(Inst.m_TypedUAVDecl.Dimension);
         uav.scaler_type = to_shader_scaler_type(Inst.m_TypedUAVDecl.ReturnType[0]);
-        uav.strucure_stride = -1;
+        uav.structure_stride = -1;
         break;
       }
       case D3D11_SB_OPCODE_DCL_UNORDERED_ACCESS_VIEW_RAW: {
@@ -466,7 +466,7 @@ read_control_flow(
         uav.resource_type = ResourceType::NonApplicable;
         Flags = Inst.m_RawUAVDecl.Flags;
         uav.scaler_type = ScalerDataType::Uint;
-        uav.strucure_stride = 0;
+        uav.structure_stride = 0;
         break;
       }
       case D3D11_SB_OPCODE_DCL_UNORDERED_ACCESS_VIEW_STRUCTURED: {
@@ -474,7 +474,7 @@ read_control_flow(
         uav.resource_type = ResourceType::NonApplicable;
         Flags = Inst.m_StructuredUAVDecl.Flags;
         uav.scaler_type = ScalerDataType::Uint;
-        uav.strucure_stride = Inst.m_StructuredUAVDecl.ByteStride;
+        uav.structure_stride = Inst.m_StructuredUAVDecl.ByteStride;
         break;
       }
       default:;

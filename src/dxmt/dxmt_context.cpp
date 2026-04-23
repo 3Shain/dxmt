@@ -716,7 +716,7 @@ void
 ArgumentEncodingContext::sampleTimestamp(Rc<TimestampQuery> &&query) {
   assert(!encoder_current);
   if (encoder_last && encoder_last->type == EncoderType::SampleTimestamp) {
-    timestamp_state_.coalaseQuery(query.ptr());
+    timestamp_state_.coalesceQuery(query.ptr());
     static_cast<SampleTimestampData *>(encoder_last)->queries.push_back(std::move(query));
     return;
   }
@@ -758,7 +758,7 @@ ArgumentEncodingContext::resolveRenderPassBarrier() {
     barrier_state.barrierPreRasterAfterFragmentSet = 0;
     return;
   }
-  // Indiviual barriers
+  // Individual barriers
   if (barrier_state.barrierSet & ~intrapass_barrier_control_bits_) {
     tile_barrier_cmd.dispatch();
     barrier_state.barrierSet = 0;

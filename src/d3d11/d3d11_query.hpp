@@ -168,7 +168,7 @@ public:
   virtual void DoDeferredQuery(VisibilityResultQuery *deferred_query) = 0;
 };
 
-HRESULT CreateOcculusionQuery(MTLD3D11Device *pDevice,
+HRESULT CreateOcclusionQuery(MTLD3D11Device *pDevice,
                               const D3D11_QUERY_DESC1 *pDesc,
                               ID3D11Query1 **ppQuery);
 

@@ -230,7 +230,7 @@ struct unixcall_create_metal_view_from_hwnd {
 };
 
 struct unixcall_enumerate {
-  obj_handle_t enumeratable;
+  obj_handle_t enumerable;
   uint64_t start;
   uint64_t buffer_size;
   struct WMTMemoryPointer buffer;

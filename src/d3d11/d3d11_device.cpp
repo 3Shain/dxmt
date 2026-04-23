@@ -962,7 +962,7 @@ public:
       return S_OK;
     case D3D11_QUERY_OCCLUSION:
     case D3D11_QUERY_OCCLUSION_PREDICATE:
-      return CreateOcculusionQuery(this, pQueryDesc, ppQuery);
+      return CreateOcclusionQuery(this, pQueryDesc, ppQuery);
     case D3D11_QUERY_TIMESTAMP:
       return CreateTimestampQuery(this, pQueryDesc, ppQuery);
     case D3D11_QUERY_TIMESTAMP_DISJOINT: {

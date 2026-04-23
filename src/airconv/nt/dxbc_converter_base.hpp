@@ -490,7 +490,7 @@ public:
   }
 
   bool
-  IsInifinity(llvm::Value *Value) const {
+  IsInfinity(llvm::Value *Value) const {
     return llvm::isa<llvm::ConstantFP>(Value) && llvm::cast<llvm::ConstantFP>(Value)->isInfinity();
   }
 

@@ -93,7 +93,7 @@ void MetallibWriter::Write(const llvm::Module &module, raw_ostream &OS) {
         function_def_stream << "ENDT";
         auto inputs = dyn_cast<MDTuple>(fn->getOperand(2).get());
 
-        std::vector<InputAttribute> attribtues;
+        std::vector<InputAttribute> attributes;
 
         for (auto &input : inputs->operands()) {
           auto inputElement = dyn_cast<MDTuple>(input.get());
@@ -111,7 +111,7 @@ void MetallibWriter::Write(const llvm::Module &module, raw_ostream &OS) {
               dyn_cast<MDString>(inputElement->getOperand(6))->getString();
             auto argName =
               dyn_cast<MDString>(inputElement->getOperand(8))->getString();
-            attribtues.push_back(InputAttribute{
+            attributes.push_back(InputAttribute{
               .attribute = (uint8_t)location,
               .name = (argName.str()),
               .type =
@@ -124,14 +124,14 @@ void MetallibWriter::Write(const llvm::Module &module, raw_ostream &OS) {
         }
         SmallVector<char, 0> fn_public_metadata;
         raw_svector_ostream fn_public_metadata_stream(fn_public_metadata);
-        if (attribtues.size()) {
-          // if no vertex attribtues, then don't emit VATY, otherwise PSO
+        if (attributes.size()) {
+          // if no vertex attributes, then don't emit VATY, otherwise PSO
           // doesn't compile
           fn_public_metadata_stream << value(MTLBFourCC::VertexAttribute);
           auto lenOffset = fn_public_metadata_stream.tell();
           fn_public_metadata_stream << value((uint16_t)0);
-          fn_public_metadata_stream << value((uint16_t)attribtues.size());
-          for (auto &vattr : attribtues) {
+          fn_public_metadata_stream << value((uint16_t)attributes.size());
+          for (auto &vattr : attributes) {
             fn_public_metadata_stream << vattr.name << '\0';
             fn_public_metadata_stream << value(MTLB_VATY{
               .attribute = vattr.attribute,
@@ -143,9 +143,9 @@ void MetallibWriter::Write(const llvm::Module &module, raw_ostream &OS) {
           auto vatt_written = fn_public_metadata_stream.tell() - lenOffset;
           *(uint16_t *)(&fn_public_metadata[lenOffset]) = vatt_written - 2;
           fn_public_metadata_stream << value(MTLBFourCC::VertexAttributeType);
-          fn_public_metadata_stream << value((uint16_t)(2 + attribtues.size()));
-          fn_public_metadata_stream << value((uint16_t)(attribtues.size()));
-          for (auto &vattr : attribtues) {
+          fn_public_metadata_stream << value((uint16_t)(2 + attributes.size()));
+          fn_public_metadata_stream << value((uint16_t)(attributes.size()));
+          for (auto &vattr : attributes) {
             fn_public_metadata_stream << value(vattr.type);
           }
         }
@@ -221,7 +221,7 @@ void MetallibWriter::Write(const llvm::Module &module, raw_ostream &OS) {
         });
         function_def_stream << "ENDT";
 
-        std::vector<InputAttribute> attribtues;
+        std::vector<InputAttribute> attributes;
 
         // auto inputs = dyn_cast<MDTuple>(fn->getOperand(2).get());
         // for (auto &input : inputs->operands()) {
@@ -240,7 +240,7 @@ void MetallibWriter::Write(const llvm::Module &module, raw_ostream &OS) {
         //       dyn_cast<MDString>(inputElement->getOperand(6))->getString();
         //     auto argName =
         //       dyn_cast<MDString>(inputElement->getOperand(8))->getString();
-        //     attribtues.push_back(InputAttribute{
+        //     attributes.push_back(InputAttribute{
         //       .attribute = (uint8_t)location,
         //       .name = (argName.str()),
         //       .type =
@@ -257,8 +257,8 @@ void MetallibWriter::Write(const llvm::Module &module, raw_ostream &OS) {
         // fn_public_metadata_stream << value(MTLBFourCC::VertexAttribute);
         // auto lenOffset = fn_public_metadata_stream.tell();
         // fn_public_metadata_stream << value((uint16_t)0);
-        // fn_public_metadata_stream << value((uint16_t)attribtues.size());
-        // for (auto &vattr : attribtues) {
+        // fn_public_metadata_stream << value((uint16_t)attributes.size());
+        // for (auto &vattr : attributes) {
         //   fn_public_metadata_stream << vattr.name << '\0';
         //   fn_public_metadata_stream << value(MTLB_VATY{
         //     .attribute = vattr.attribute,
@@ -271,8 +271,8 @@ void MetallibWriter::Write(const llvm::Module &module, raw_ostream &OS) {
         // *(uint16_t *)(&fn_public_metadata[lenOffset]) = vatt_written - 2;
         // fn_public_metadata_stream << value(MTLBFourCC::VertexAttributeType);
         // fn_public_metadata_stream << value((uint16_t)(2 +
-        // attribtues.size())); fn_public_metadata_stream <<
-        // value((uint16_t)(attribtues.size())); for (auto &vattr : attribtues)
+        // attributes.size())); fn_public_metadata_stream <<
+        // value((uint16_t)(attributes.size())); for (auto &vattr : attributes)
         // {
         //   fn_public_metadata_stream << value(vattr.type);
         // }

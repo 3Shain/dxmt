@@ -74,7 +74,7 @@ public:
     if (pDesc->Usage != D3D11_USAGE_DYNAMIC) {
       if (pInitialData)
         flags.set(BufferAllocationFlag::GpuManaged);
-      else if (pDesc->BindFlags & kD3D11OuputBindFlags)
+      else if (pDesc->BindFlags & kD3D11OutputBindFlags)
         flags.set(BufferAllocationFlag::GpuPrivate);
       else
         flags.set(BufferAllocationFlag::GpuManaged);
@@ -95,7 +95,7 @@ public:
     D3D11_ASSERT(_.ptr() == nullptr);
     structured = pDesc->MiscFlags & D3D11_RESOURCE_MISC_BUFFER_STRUCTURED;
     allow_raw_view = pDesc->MiscFlags & D3D11_RESOURCE_MISC_BUFFER_ALLOW_RAW_VIEWS;
-    if (!(desc.BindFlags & kD3D11OuputBindFlags)) {
+    if (!(desc.BindFlags & kD3D11OutputBindFlags)) {
       dynamic_ = new DynamicBuffer(buffer_.ptr(), flags);
     }
   }

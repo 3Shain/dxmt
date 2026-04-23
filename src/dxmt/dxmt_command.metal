@@ -339,7 +339,7 @@ float3 to_srgb(float3 linear) {
   if (present_with_hdr_metadata) {
     // tone mapping: BT.2408 EETF + maxRGB
     float max_content_luminance = meta.max_content_luminance;
-    float min_content_luminance = 1; // in case of divison by 0
+    float min_content_luminance = 1; // in case of division by 0
     float max_display_luminance = meta.max_display_luminance;
     float min_display_luminance = 0;
     float3 clamped = clamp(output_rgb, float3(min_content_luminance), float3(max_content_luminance));

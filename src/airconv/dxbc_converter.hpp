@@ -35,7 +35,7 @@ struct ShaderResourceViewInfo {
   bool sampled = false;
   bool compared = false; // therefore we use depth texture!
 
-  uint32_t strucure_stride = 0;
+  uint32_t structure_stride = 0;
   uint32_t arg_index;
   uint32_t arg_metadata_index;
 };
@@ -49,7 +49,7 @@ struct UnorderedAccessViewInfo {
   bool rasterizer_order = false;
   bool with_counter = false;
 
-  uint32_t strucure_stride = 0;
+  uint32_t structure_stride = 0;
   uint32_t arg_index;
   uint32_t arg_metadata_index;
   uint32_t arg_counter_index;
@@ -287,7 +287,7 @@ IREffect pull_vertex_input(
   SM50_IA_INPUT_ELEMENT element_info, uint32_t slot_mask
 );
 
-IREffect pop_mesh_output_render_taget_array_index(uint32_t from_reg, uint32_t mask, pvalue primitive_id);
+IREffect pop_mesh_output_render_target_array_index(uint32_t from_reg, uint32_t mask, pvalue primitive_id);
 IREffect pop_mesh_output_viewport_array_index(uint32_t from_reg, uint32_t mask, pvalue primitive_id);
 IREffect pop_mesh_output_position(uint32_t from_reg, uint32_t mask, pvalue vertex_id);
 IREffect
@@ -472,7 +472,7 @@ void setup_binding_table(
   uint32_t argbuffer_slot = kArgumentBufferBindIndex
 );
 
-void setup_metal_version(llvm::Module &module, SM50_SHADER_METAL_VERSION metal_verison);
+void setup_metal_version(llvm::Module &module, SM50_SHADER_METAL_VERSION metal_version);
 
 void setup_temp_register(
   const ShaderInfo *shader_info, io_binding_map &resource_map,

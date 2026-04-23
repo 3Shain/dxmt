@@ -71,7 +71,7 @@ template <typename Task>
 void
 task_scheduler<Task>::worker_func() {
   struct task_trait<Task> task_trait;
-  std::vector<Task> continutation_buffer;
+  std::vector<Task> continuation_buffer;
   SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
   while (!destroyed.load()) {
     Task task;
@@ -102,19 +102,19 @@ task_scheduler<Task>::worker_func() {
           std::unique_lock<dxmt::mutex> lock(deps_mutex_);
           auto range = task_continuation_.equal_range(continuation);
           for (auto itr = range.first; itr != range.second; ++itr) {
-            continutation_buffer.push_back(itr->second);
+            continuation_buffer.push_back(itr->second);
           }
           task_continuation_.erase(range.first, range.second);
           task_trait.set_done(continuation);
         }
         {
           std::unique_lock<dxmt::mutex> lock(worker_mutex_);
-          for (auto &task : continutation_buffer) {
+          for (auto &task : continuation_buffer) {
             task_continuation_queue_.push(task);
           }
         }
         worker_cond_.notify_all();
-        continutation_buffer.clear();
+        continuation_buffer.clear();
       } else {
         std::unique_lock<dxmt::mutex> lock(deps_mutex_);
         // spurious dependency
