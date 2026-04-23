@@ -641,8 +641,8 @@ private:
   DXMTGammaRamp gamma_ramp_;
 };
 
-Com<IDXGIOutput> CreateOutput(IMTLDXGIAdapter *pAadapter, HMONITOR monitor, DxgiOptions &options) {
-  return Com<IDXGIOutput>::transfer(new MTLDXGIOutputImpl(pAadapter, monitor, options));
+Com<IDXGIOutput> CreateOutput(IMTLDXGIAdapter *pAdapter, HMONITOR monitor, DxgiOptions &options) {
+  return Com<IDXGIOutput>::transfer(new MTLDXGIOutputImpl(pAdapter, monitor, options));
 };
 
 } // namespace dxmt
