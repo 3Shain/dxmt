@@ -551,9 +551,9 @@ public:
 
     EmitOP([cmdlist = std::move(cmdlist), query_list = std::move(query_list)](ArgumentEncodingContext &enc) {
       // Finished command list should clean up the encoding context
-      enc.pushDeferredVisibilityQuerys(query_list.data());
+      enc.pushDeferredVisibilityQueries(query_list.data());
       cmdlist->Execute(enc);
-      enc.popDeferredVisibilityQuerys();
+      enc.popDeferredVisibilityQueries();
     });
 
     if (RestoreContextState)

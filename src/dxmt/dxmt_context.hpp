@@ -717,11 +717,11 @@ public:
   void beginVisibilityResultQuery(Rc<VisibilityResultQuery> &&query);
   void endVisibilityResultQuery(Rc<VisibilityResultQuery> &&query);
   void
-  pushDeferredVisibilityQuerys(Rc<VisibilityResultQuery> *list) {
+  pushDeferredVisibilityQueries(Rc<VisibilityResultQuery> *list) {
     deferred_visibility_query_stack_.push_back(list);
   }
   void
-  popDeferredVisibilityQuerys() {
+  popDeferredVisibilityQueries() {
     assert(!deferred_visibility_query_stack_.empty());
     deferred_visibility_query_stack_.pop_back();
   }

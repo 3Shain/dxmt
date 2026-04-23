@@ -316,7 +316,7 @@ public:
   }
 
   void
-  coalaseQuery(TimestampQuery *query) {
+  coalesceQuery(TimestampQuery *query) {
     assert(num_samples_);
     queries_.push_back({query, num_samples_ - 1});
   }

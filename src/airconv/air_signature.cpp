@@ -402,10 +402,10 @@ auto ArgumentBufferBuilder::Build(
     struct_metadata.integer(member_offset)
       ->integer(
         layout.getTypeSizeInBits(field_type) / 8
-      )            // CAVEATS: the bool is represented as i8 in arugment
+      )            // CAVEATS: the bool is represented as i8 in argument
                    // buffer (but i1 in function argument)
       ->integer(0) // TODO: array_size (0 for non-array, like
-                   // MTLArguementDescriptor)
+                   // MTLArgumentDescriptor)
       ->string(cast<MDString>(
                  cast<MDTuple>(indirect_argument_metadata)->operands().end()[-3]
       )

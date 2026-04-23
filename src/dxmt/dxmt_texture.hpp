@@ -111,7 +111,7 @@ class TextureAllocation : public Allocation {
   friend class Texture;
 
   /**
-   * notes on thread-safefy:
+   * notes on thread-safety:
    * all states in `TextureAllocation` is either immutable or only accessed by `dxmt-encode-thread`
    */
 

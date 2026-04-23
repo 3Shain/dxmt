@@ -207,7 +207,7 @@ void setup_binding_table(
       };
     } else {
       resource_map.srv_buf_range_map[range_id] = {
-        srv.strucure_stride,
+        srv.structure_stride,
         [=, index = srv.arg_index](pvalue) {
           return get_item_in_argbuf_binding_table(binding_table_index, index);
         },
@@ -244,7 +244,7 @@ void setup_binding_table(
       };
     } else {
       resource_map.uav_buf_range_map[range_id] = {
-        uav.strucure_stride,
+        uav.structure_stride,
         [=, index = uav.arg_index](pvalue) {
           return get_item_in_argbuf_binding_table(binding_table_index, index);
         },
@@ -371,7 +371,7 @@ void setup_temp_register(
   }
 }
 
-void setup_metal_version(llvm::Module &module, SM50_SHADER_METAL_VERSION metal_verison) {
+void setup_metal_version(llvm::Module &module, SM50_SHADER_METAL_VERSION metal_version) {
   using namespace llvm;
   auto &context = module.getContext();
   auto createUnsignedInteger = [&](uint32_t s) {
@@ -381,7 +381,7 @@ void setup_metal_version(llvm::Module &module, SM50_SHADER_METAL_VERSION metal_v
 
   auto airVersion = module.getOrInsertNamedMetadata("air.version");
   auto airLangVersion = module.getOrInsertNamedMetadata("air.language_version");
-  switch (metal_verison) {
+  switch (metal_version) {
   case SM50_SHADER_METAL_320: {
     airVersion->addOperand(
         MDTuple::get(context, {createUnsignedInteger(2), createUnsignedInteger(7), createUnsignedInteger(0)})
@@ -986,7 +986,7 @@ bool CheckGSSignatureIsPassThrough(
   num_input = input.GetNumParameters();
   num_output = output.Signature(0)->GetNumParameters();
   if (num_output > num_input) {
-    // at least it is a non-trival shader that generates new data
+    // at least it is a non-trivial shader that generates new data
     return false;
   }
   bool has_match_record;

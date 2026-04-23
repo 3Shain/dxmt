@@ -204,11 +204,11 @@ CommandQueue::WaitForFinishThread() {
   return 0;
 }
 
-void CommandQueue::Retain(uint64_t seq, Allocation* allocaiton) {
+void CommandQueue::Retain(uint64_t seq, Allocation* allocation) {
   auto &chunk = chunks[seq % kCommandChunkCount];
   auto &tracker = chunk.ref_tracker;
   constexpr size_t block_size = decltype(reftracker_storage_allocator)::block_size;
-  while (unlikely(!tracker.track(allocaiton))) {
+  while (unlikely(!tracker.track(allocation))) {
     auto [temp_buffer, _] = reftracker_storage_allocator.allocate(seq, cpu_coherent.signaledValue(), block_size, 1);
     tracker.addStorage(temp_buffer.ptr, block_size);
   }

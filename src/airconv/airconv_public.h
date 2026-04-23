@@ -253,7 +253,7 @@ struct SM50_IA_INPUT_ELEMENT {
   uint32_t step_rate: 31;
 };
 
-enum SM50_INDEX_BUFFER_FORAMT {
+enum SM50_INDEX_BUFFER_FORMAT {
   SM50_INDEX_BUFFER_FORMAT_NONE = 0,
   SM50_INDEX_BUFFER_FORMAT_UINT16 = 1,
   SM50_INDEX_BUFFER_FORMAT_UINT32 = 2,
@@ -262,7 +262,7 @@ enum SM50_INDEX_BUFFER_FORAMT {
 struct SM50_SHADER_IA_INPUT_LAYOUT_DATA {
   void *next;
   enum SM50_SHADER_COMPILATION_ARGUMENT_TYPE type;
-  enum SM50_INDEX_BUFFER_FORAMT index_buffer_format;
+  enum SM50_INDEX_BUFFER_FORMAT index_buffer_format;
   uint32_t slot_mask;
   uint32_t num_elements;
   struct SM50_IA_INPUT_ELEMENT *elements;

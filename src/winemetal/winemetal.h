@@ -1686,7 +1686,7 @@ enum WMTColorSpace : uint64_t {
 
 WINEMETAL_API bool CGColorSpace_checkColorSpaceSupported(enum WMTColorSpace colorspace);
 
-WINEMETAL_API bool MetalLayer_setColorSpace(obj_handle_t layer, enum WMTColorSpace colorpsace);
+WINEMETAL_API bool MetalLayer_setColorSpace(obj_handle_t layer, enum WMTColorSpace colorspace);
 
 WINEMETAL_API uint32_t WMTGetPrimaryDisplayId();
 

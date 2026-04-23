@@ -531,7 +531,7 @@ public:
       DstBox = {0, 0, 0, Dst.Width, Dst.Height, Dst.Depth};
     }
 
-    // Discard, if box does't overlap with the texure at all
+    // Discard, if box does't overlap with the texture at all
     if (DstBox.left >= Dst.Width)
       return;
     if (DstBox.top >= Dst.Height)
@@ -1402,11 +1402,11 @@ public:
     auto draw_arguments_offset = PreAllocateArgumentBuffer(sizeof(DXMT_DRAW_ARGUMENTS), 32);
     auto max_object_threadgroups = max_object_threadgroups_;
     EmitOP([=](ArgumentEncodingContext &enc) {
-      DXMT_DRAW_ARGUMENTS *draw_arugment = enc.getMappedArgumentBuffer<DXMT_DRAW_ARGUMENTS>(draw_arguments_offset);
-      draw_arugment->StartVertex = StartVertexLocation;
-      draw_arugment->VertexCount = VertexCountPerInstance;
-      draw_arugment->InstanceCount = InstanceCount;
-      draw_arugment->StartInstance = StartInstanceLocation;
+      DXMT_DRAW_ARGUMENTS *draw_argument = enc.getMappedArgumentBuffer<DXMT_DRAW_ARGUMENTS>(draw_arguments_offset);
+      draw_argument->StartVertex = StartVertexLocation;
+      draw_argument->VertexCount = VertexCountPerInstance;
+      draw_argument->InstanceCount = InstanceCount;
+      draw_argument->StartInstance = StartInstanceLocation;
 
       auto PatchCountPerInstance = VertexCountPerInstance / NumControlPoint;
       auto PatchPerGroup = 32 / enc.tess_threads_per_patch;
@@ -1442,12 +1442,12 @@ public:
     auto draw_arguments_offset = PreAllocateArgumentBuffer(sizeof(DXMT_DRAW_INDEXED_ARGUMENTS), 32);
     auto max_object_threadgroups = max_object_threadgroups_;
     EmitOP([=](ArgumentEncodingContext &enc) {
-      DXMT_DRAW_INDEXED_ARGUMENTS *draw_arugment = enc.getMappedArgumentBuffer<DXMT_DRAW_INDEXED_ARGUMENTS>(draw_arguments_offset);
-      draw_arugment->BaseVertex = BaseVertexLocation;
-      draw_arugment->IndexCount = IndexCountPerInstance;
-      draw_arugment->StartIndex = StartIndexLocation;
-      draw_arugment->InstanceCount = InstanceCount;
-      draw_arugment->StartInstance = BaseInstance;
+      DXMT_DRAW_INDEXED_ARGUMENTS *draw_argument = enc.getMappedArgumentBuffer<DXMT_DRAW_INDEXED_ARGUMENTS>(draw_arguments_offset);
+      draw_argument->BaseVertex = BaseVertexLocation;
+      draw_argument->IndexCount = IndexCountPerInstance;
+      draw_argument->StartIndex = StartIndexLocation;
+      draw_argument->InstanceCount = InstanceCount;
+      draw_argument->StartInstance = BaseInstance;
 
       auto PatchCountPerInstance = IndexCountPerInstance / NumControlPoint;
       auto PatchPerGroup = 32 / enc.tess_threads_per_patch;
@@ -1485,11 +1485,11 @@ public:
     auto draw_arguments_offset = PreAllocateArgumentBuffer(sizeof(DXMT_DRAW_ARGUMENTS), 32);
     auto max_object_threadgroups = max_object_threadgroups_;
     EmitOP([=, topo = state_.InputAssembler.Topology](ArgumentEncodingContext &enc) {
-      DXMT_DRAW_ARGUMENTS *draw_arugment = enc.getMappedArgumentBuffer<DXMT_DRAW_ARGUMENTS>(draw_arguments_offset);
-      draw_arugment->StartVertex = StartVertexLocation;
-      draw_arugment->VertexCount = VertexCountPerInstance;
-      draw_arugment->InstanceCount = InstanceCount;
-      draw_arugment->StartInstance = StartInstanceLocation;
+      DXMT_DRAW_ARGUMENTS *draw_argument = enc.getMappedArgumentBuffer<DXMT_DRAW_ARGUMENTS>(draw_arguments_offset);
+      draw_argument->StartVertex = StartVertexLocation;
+      draw_argument->VertexCount = VertexCountPerInstance;
+      draw_argument->InstanceCount = InstanceCount;
+      draw_argument->StartInstance = StartInstanceLocation;
 
       auto [vertex_per_warp, vertex_increment_per_wrap] = get_gs_vertex_count(topo);
       auto warp_count = (VertexCountPerInstance - 1) / vertex_increment_per_wrap + 1;
@@ -1519,12 +1519,12 @@ public:
     auto draw_arguments_offset = PreAllocateArgumentBuffer(sizeof(DXMT_DRAW_INDEXED_ARGUMENTS), 32);
     auto max_object_threadgroups = max_object_threadgroups_;
     EmitOP([=, topo = state_.InputAssembler.Topology](ArgumentEncodingContext &enc) {
-      DXMT_DRAW_INDEXED_ARGUMENTS *draw_arugment = enc.getMappedArgumentBuffer<DXMT_DRAW_INDEXED_ARGUMENTS>(draw_arguments_offset);
-      draw_arugment->BaseVertex = BaseVertexLocation;
-      draw_arugment->IndexCount = IndexCountPerInstance;
-      draw_arugment->StartIndex = StartIndexLocation;
-      draw_arugment->InstanceCount = InstanceCount;
-      draw_arugment->StartInstance = BaseInstance;
+      DXMT_DRAW_INDEXED_ARGUMENTS *draw_argument = enc.getMappedArgumentBuffer<DXMT_DRAW_INDEXED_ARGUMENTS>(draw_arguments_offset);
+      draw_argument->BaseVertex = BaseVertexLocation;
+      draw_argument->IndexCount = IndexCountPerInstance;
+      draw_argument->StartIndex = StartIndexLocation;
+      draw_argument->InstanceCount = InstanceCount;
+      draw_argument->StartInstance = BaseInstance;
 
       auto [index_buffer, index_sub_offset] = enc.currentIndexBuffer();
       auto [vertex_per_warp, vertex_increment_per_wrap] = get_gs_vertex_count(topo);
@@ -3309,7 +3309,7 @@ public:
   Idle -> ComputeEncoderActive
   Idle -> (Upload|Readback)BlitEncoderActive
   RenderEncoderActive <-> RenderPipelineReady
-  ComputeEncoderActive <-> CoputePipelineReady
+  ComputeEncoderActive <-> ComputePipelineReady
   */
   enum class CommandBufferState {
     Idle,
@@ -4308,7 +4308,7 @@ public:
   /**
   Compute pipeline can be invalidate by reasons:
   - shader program changes
-  TOOD: maybe we don't need this, since compute shader can be pre-compiled
+  TODO: maybe we don't need this, since compute shader can be pre-compiled
   */
   void
   InvalidateComputePipeline() {

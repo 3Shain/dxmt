@@ -18,9 +18,9 @@ LUID GetAdapterLuid(WMT::Device device) {
   return std::bit_cast<LUID>(__builtin_bswap64(device.registryID()));
 }
 
-class MTLDXGIAdatper : public MTLDXGIObject<IMTLDXGIAdapter> {
+class MTLDXGIAdapter : public MTLDXGIObject<IMTLDXGIAdapter> {
 public:
-  MTLDXGIAdatper(WMT::Device device, IDXGIFactory *factory, Config &config)
+  MTLDXGIAdapter(WMT::Device device, IDXGIFactory *factory, Config &config)
       : device_(device), factory_(factory), options_(config) {
     D3DKMT_OPENADAPTERFROMLUID open = {};
     open.AdapterLuid = GetAdapterLuid(device_);
@@ -30,7 +30,7 @@ public:
       local_kmt_ = open.hAdapter;
   };
 
-  ~MTLDXGIAdatper() {
+  ~MTLDXGIAdapter() {
     if (local_kmt_) {
       D3DKMT_CLOSEADAPTER close = {};
       close.hAdapter = local_kmt_;
@@ -282,7 +282,7 @@ private:
 Com<IMTLDXGIAdapter> CreateAdapter(WMT::Device Device,
                                    IDXGIFactory2 *pFactory, Config &config) {
   return Com<IMTLDXGIAdapter>::transfer(
-      new MTLDXGIAdatper(Device, pFactory, config));
+      new MTLDXGIAdapter(Device, pFactory, config));
 }
 
 } // namespace dxmt

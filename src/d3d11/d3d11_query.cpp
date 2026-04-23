@@ -3,7 +3,7 @@
 
 namespace dxmt {
 
-class OcculusionQuery : public MTLD3DQueryBase<MTLD3D11OcclusionQuery> {
+class OcclusionQuery : public MTLD3DQueryBase<MTLD3D11OcclusionQuery> {
   using MTLD3DQueryBase<MTLD3D11OcclusionQuery>::MTLD3DQueryBase;
 
   QueryState state_ = QueryState::Signaled;
@@ -73,9 +73,9 @@ class OcculusionQuery : public MTLD3DQueryBase<MTLD3D11OcclusionQuery> {
 };
 
 HRESULT
-CreateOcculusionQuery(MTLD3D11Device *pDevice, const D3D11_QUERY_DESC1 *pDesc, ID3D11Query1 **ppQuery) {
+CreateOcclusionQuery(MTLD3D11Device *pDevice, const D3D11_QUERY_DESC1 *pDesc, ID3D11Query1 **ppQuery) {
   if (ppQuery) {
-    *ppQuery = ref(new OcculusionQuery(pDevice, pDesc));
+    *ppQuery = ref(new OcclusionQuery(pDevice, pDesc));
     return S_OK;
   }
   return S_FALSE;

@@ -53,7 +53,7 @@ struct FrameStatistics {
   clock::duration encode_prepare_interval{};
   clock::duration encode_flush_interval{};
   clock::duration drawable_blocking_interval{};
-  clock::duration present_lantency_interval{};
+  clock::duration present_latency_interval{};
   ScalerInfo last_scaler_info{};
 
   void
@@ -75,7 +75,7 @@ struct FrameStatistics {
     encode_prepare_interval = {};
     encode_flush_interval = {};
     drawable_blocking_interval = {};
-    present_lantency_interval = {};
+    present_latency_interval = {};
     last_scaler_info.type = {};
   };
 };
@@ -131,7 +131,7 @@ public:
       min_.encode_flush_interval = std::min(min_.encode_flush_interval, frames_[i].encode_flush_interval);
       min_.drawable_blocking_interval =
           std::min(min_.drawable_blocking_interval, frames_[i].drawable_blocking_interval);
-      min_.present_lantency_interval = std::min(min_.present_lantency_interval, frames_[i].present_lantency_interval);
+      min_.present_latency_interval = std::min(min_.present_latency_interval, frames_[i].present_latency_interval);
 
       max_.command_buffer_count = std::max(max_.command_buffer_count, frames_[i].command_buffer_count);
       max_.sync_count = std::max(max_.sync_count, frames_[i].sync_count);
@@ -142,7 +142,7 @@ public:
       max_.encode_flush_interval = std::max(max_.encode_flush_interval, frames_[i].encode_flush_interval);
       max_.drawable_blocking_interval =
           std::max(max_.drawable_blocking_interval, frames_[i].drawable_blocking_interval);
-      max_.present_lantency_interval = std::max(max_.present_lantency_interval, frames_[i].present_lantency_interval);
+      max_.present_latency_interval = std::max(max_.present_latency_interval, frames_[i].present_latency_interval);
 
       average_.command_buffer_count += frames_[i].command_buffer_count;
       average_.sync_count += frames_[i].sync_count;
@@ -152,7 +152,7 @@ public:
       average_.encode_prepare_interval += frames_[i].encode_prepare_interval;
       average_.encode_flush_interval += frames_[i].encode_flush_interval;
       average_.drawable_blocking_interval += frames_[i].drawable_blocking_interval;
-      average_.present_lantency_interval += frames_[i].present_lantency_interval;
+      average_.present_latency_interval += frames_[i].present_latency_interval;
     }
     average_.command_buffer_count /= (kFrameStatisticsCount - 1);
     average_.sync_count /= (kFrameStatisticsCount - 1);
@@ -162,7 +162,7 @@ public:
     average_.encode_prepare_interval /= (kFrameStatisticsCount - 1);
     average_.encode_flush_interval /= (kFrameStatisticsCount - 1);
     average_.drawable_blocking_interval /= (kFrameStatisticsCount - 1);
-    average_.present_lantency_interval /= (kFrameStatisticsCount - 1);
+    average_.present_latency_interval /= (kFrameStatisticsCount - 1);
   };
 };
 

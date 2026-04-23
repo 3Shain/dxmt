@@ -76,9 +76,9 @@ class PipelineCache : public MTLD3D11PipelineCacheBase {
     std::unordered_map<ShaderVariant, std::unique_ptr<CompiledShader>> variants;
 
   public:
-    CachedSM50Shader(PipelineCache *cache, sm50_shader_t shader_transfered,
+    CachedSM50Shader(PipelineCache *cache, sm50_shader_t shader_transferred,
                      const Sha1Digest &hash, MTL_SHADER_REFLECTION &reflection)
-        : cache(cache), shader(shader_transfered), sha1_(hash),
+        : cache(cache), shader(shader_transferred), sha1_(hash),
           reflection_(reflection) {
       if (reflection_.NumConstantBuffers + reflection_.NumArguments) {
         arguments_info_buffer = (MTL_SM50_SHADER_ARGUMENT *)malloc(

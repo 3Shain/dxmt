@@ -332,7 +332,7 @@ std::function<IRValue(pvalue)> pop_output_reg_sanitize_pos(uint32_t from_reg, ui
 }
 
 IREffect
-pop_mesh_output_render_taget_array_index(uint32_t from_reg, uint32_t mask, pvalue primitive_id) {
+pop_mesh_output_render_target_array_index(uint32_t from_reg, uint32_t mask, pvalue primitive_id) {
   auto ctx = co_yield get_context();
   auto result = co_yield to_desired_type_from_int_vec4(
       co_yield load_from_array_at(ctx.resource.output.ptr_int4, ctx.builder.getInt32(from_reg)), ctx.types._int, mask

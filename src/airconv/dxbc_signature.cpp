@@ -884,7 +884,7 @@ void handle_signature_ds(
     case D3D10_SB_NAME_RENDER_TARGET_ARRAY_INDEX: {
       func_signature.DefineMeshPrimitiveOutput(OutputRenderTargetArrayIndex{});
       mesh_output_handlers.push_back([=](MeshOutputContext& output) -> IREffect {
-        return pop_mesh_output_render_taget_array_index(reg, mask, output.primitive_id);
+        return pop_mesh_output_render_target_array_index(reg, mask, output.primitive_id);
       });
       break;
     }
@@ -1114,7 +1114,7 @@ handle_signature_gs(
     case D3D10_SB_NAME_RENDER_TARGET_ARRAY_INDEX: {
       func_signature.DefineMeshPrimitiveOutput(OutputRenderTargetArrayIndex{});
       mesh_output_handlers.push_back([=](MeshOutputContext& output) -> IREffect {
-        return pop_mesh_output_render_taget_array_index(reg, mask, output.primitive_id);
+        return pop_mesh_output_render_target_array_index(reg, mask, output.primitive_id);
       });
       break;
     }

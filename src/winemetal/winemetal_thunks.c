@@ -767,7 +767,7 @@ MTLCommandBuffer_logs(obj_handle_t cmdbuf) {
 WINEMETAL_API uint64_t
 MTLLogContainer_enumerate(obj_handle_t logs, uint64_t start, uint64_t buffer_size, obj_handle_t *buffer) {
   struct unixcall_enumerate params;
-  params.enumeratable = logs;
+  params.enumerable = logs;
   params.start = start;
   params.buffer_size = buffer_size;
   WMT_MEMPTR_SET(params.buffer, buffer);
@@ -786,10 +786,10 @@ CGColorSpace_checkColorSpaceSupported(enum WMTColorSpace colorspace) {
 }
 
 WINEMETAL_API bool
-MetalLayer_setColorSpace(obj_handle_t layer, enum WMTColorSpace colorpsace) {
+MetalLayer_setColorSpace(obj_handle_t layer, enum WMTColorSpace colorspace) {
   struct unixcall_generic_obj_uint64_uint64_ret params;
   params.handle = layer;
-  params.arg = colorpsace;
+  params.arg = colorspace;
   params.ret = 0;
   UNIX_CALL(93, &params);
   return params.ret;

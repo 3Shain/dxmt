@@ -32,10 +32,10 @@ private:
   F func;
 };
 
-template <typename context> class EmtpyCommand final : public CommandBase<context> {
+template <typename context> class EmptyCommand final : public CommandBase<context> {
 public:
   void invoke(context &ctx) final{/* nop */};
-  ~EmtpyCommand() noexcept = default;
+  ~EmptyCommand() noexcept = default;
 };
 
 template <typename value_t> struct LinkedListNode {
@@ -47,7 +47,7 @@ template <typename value_t> struct LinkedListNode {
 
 template <typename Context> class CommandList {
 
-  impl::EmtpyCommand<Context> empty;
+  impl::EmptyCommand<Context> empty;
   impl::CommandBase<Context> *list_end;
 
 public:

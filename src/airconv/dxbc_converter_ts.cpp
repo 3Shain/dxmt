@@ -153,7 +153,7 @@ size_t estimate_mesh_size(SM50ShaderInternal *pDomainStage, uint32_t max_potenti
 std::pair<float, uint32_t>
 get_final_maxtessfactor(SM50ShaderInternal *pHullStage, SM50_SHADER_COMPILATION_ARGUMENT_DATA *pArgs) {
   /*
-  the factor recevied by domain (mesh) shader will be strictly less or equal to returned value
+  the factor received by domain (mesh) shader will be strictly less or equal to returned value
   so we can reserve enough spaces for output mesh
   */
   float maxtessfactor = pHullStage->max_tesselation_factor;
@@ -168,8 +168,8 @@ get_final_maxtessfactor(SM50ShaderInternal *pHullStage, SM50_SHADER_COMPILATION_
         return {maxtessfactor, maxtessfactor_int};
       maxtessfactor = maxtessfactor - 1.0f;
     } while (maxtessfactor > 1.0f);
-    auto mininal_factor = get_integer_factor(1.0f, pHullStage);
-    return {mininal_factor, mininal_factor};
+    auto minimal_factor = get_integer_factor(1.0f, pHullStage);
+    return {minimal_factor, minimal_factor};
   }
   return {maxtessfactor, maxtessfactor_int};
 }
