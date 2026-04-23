@@ -283,9 +283,8 @@ public:
       HRESULT hr = pipeline_cache_->AddStreamOutputLayout(
           pShaderBytecode, NumEntries, pSODeclaration, NumStrides,
           pBufferStrides, RasterizedStream, &so_layout);
-      if (FAILED(hr))
-        return hr;
-      return so_layout->QueryInterface(IID_PPV_ARGS(ppGeometryShader));
+      if (SUCCEEDED(hr))
+        return so_layout->QueryInterface(IID_PPV_ARGS(ppGeometryShader));
     }
     ERR("CreateGeometryShaderWithStreamOutput: not supported, expect problem");
     return pipeline_cache_->AddGeometryShader(pShaderBytecode, BytecodeLength,
