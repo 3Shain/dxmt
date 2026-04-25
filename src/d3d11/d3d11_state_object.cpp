@@ -1,3 +1,21 @@
+/*
+ * Copyright 2026 Feifan He for CodeWeavers
+ *
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
+ *
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
+ */
+
 
 #include "Metal.hpp"
 #include "d3d11_device.hpp"
@@ -279,16 +297,14 @@ public:
     pDesc->IndependentBlendEnable = desc_.IndependentBlendEnable;
     pDesc->AlphaToCoverageEnable = desc_.AlphaToCoverageEnable;
     for (size_t i = 0; i < 8; i++) {
-      auto &renderTarget = desc_.RenderTarget[i];
-      pDesc->RenderTarget[i].RenderTargetWriteMask =
-          renderTarget.RenderTargetWriteMask;
-      pDesc->RenderTarget[i].BlendEnable = renderTarget.BlendEnable;
-      pDesc->RenderTarget[i].BlendOp = renderTarget.BlendOp;
-      pDesc->RenderTarget[i].BlendOpAlpha = renderTarget.BlendOpAlpha;
-      pDesc->RenderTarget[i].SrcBlend = renderTarget.SrcBlend;
-      pDesc->RenderTarget[i].DestBlend = renderTarget.SrcBlendAlpha;
-      pDesc->RenderTarget[i].SrcBlendAlpha = renderTarget.DestBlend;
-      pDesc->RenderTarget[i].DestBlendAlpha = renderTarget.DestBlendAlpha;
+      pDesc->RenderTarget[i].BlendEnable = desc_.RenderTarget[i].BlendEnable;
+      pDesc->RenderTarget[i].SrcBlend = desc_.RenderTarget[i].SrcBlend;
+      pDesc->RenderTarget[i].DestBlend = desc_.RenderTarget[i].DestBlend;
+      pDesc->RenderTarget[i].BlendOp = desc_.RenderTarget[i].BlendOp;
+      pDesc->RenderTarget[i].SrcBlendAlpha = desc_.RenderTarget[i].SrcBlendAlpha;
+      pDesc->RenderTarget[i].DestBlendAlpha = desc_.RenderTarget[i].DestBlendAlpha;
+      pDesc->RenderTarget[i].BlendOpAlpha = desc_.RenderTarget[i].BlendOpAlpha;
+      pDesc->RenderTarget[i].RenderTargetWriteMask = desc_.RenderTarget[i].RenderTargetWriteMask;
     }
   }
 
