@@ -515,7 +515,7 @@ struct linear_texture_desc {
   if (width > pos.x && height > pos.y) {
     auto dst = reinterpret_cast<device packed_d32s8x24 *>(buffer + buffer_offset);
     dst->depth = tex_depth.read(pos).x;
-    dst->stencil = tex_stencil.read(pos).y;
+    dst->stencil = tex_stencil.read(pos).x;
   }
 }
 
@@ -533,7 +533,7 @@ struct linear_texture_desc {
   if (width > pos.x && height > pos.y) {
     auto dst = reinterpret_cast<device uint *>(buffer + buffer_offset);
     float depth = tex_depth.read(pos).x;
-    uint stencil = tex_stencil.read(pos).y;
+    uint stencil = tex_stencil.read(pos).x;
     *dst = (uint(0xffffff * clamp(depth, 0.0, 1.0)) & 0xffffff) | (stencil << 24);
   }
 }
