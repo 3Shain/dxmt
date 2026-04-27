@@ -1,3 +1,21 @@
+/*
+ * Copyright 2026 Feifan He for CodeWeavers
+ *
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
+ *
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
+ */
+
 #pragma once
 #include "Metal.hpp"
 #include "dxmt_buffer.hpp"
@@ -29,7 +47,7 @@ public:
   uint64_t initWithZero(const Texture *texture, TextureAllocation *allocation, uint32_t slice, uint32_t level);
   uint64_t initWithData(
       const Texture *texture, TextureAllocation *allocation, uint32_t slice, uint32_t level, const void *data,
-      size_t row_pitch, size_t depth_pitch
+      size_t row_pitch, size_t depth_pitch, uint32_t format_flags
   );
 
   /*
@@ -52,6 +70,11 @@ public:
 
 private:
   uint64_t flushInternal();
+
+  uint64_t initDepthStencilWithData(
+      const Texture *texture, TextureAllocation *allocation, uint32_t slice, uint32_t level, const void *data,
+      size_t row_pitch, bool is_d24s8
+  );
 
   struct ClearRenderPassInfo {
     WMTRenderPassInfo info;

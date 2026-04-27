@@ -1,3 +1,21 @@
+/*
+ * Copyright 2026 Feifan He for CodeWeavers
+ *
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
+ *
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
+ */
+
 #include "Metal.hpp"
 #include "dxmt_resource_initializer.hpp"
 #include "dxmt_format.hpp"
@@ -211,7 +229,7 @@ ResourceInitializer::initWithZero(
 uint64_t
 ResourceInitializer::initWithData(
     const Texture *texture, TextureAllocation *allocation, uint32_t slice, uint32_t level, const void *data,
-    size_t row_pitch, size_t depth_pitch
+    size_t row_pitch, size_t depth_pitch, uint32_t format_flags
 ) {
   auto width_sub = std::max(1u, texture->width() >> level);
   auto height_sub = std::max(1u, texture->height() >> level);
@@ -236,6 +254,10 @@ ResourceInitializer::initWithData(
   case WMTPixelFormatBC7_RGBAUnorm_sRGB:
     block_size = 4u;
     break;
+  case WMTPixelFormatDepth32Float_Stencil8:
+    return initDepthStencilWithData(
+        texture, allocation, slice, level, data, row_pitch, (format_flags & MTL_DXGI_FORMAT_EMULATED_D24)
+    );
   default:
     break;
   }
@@ -283,6 +305,76 @@ ResourceInitializer::initWithData(
     copy->slice = slice;
     copy->level = level;
     copy->origin = {0, 0, 0};
+
+  } while (0);
+
+  return current_seq_id_;
+}
+
+uint64_t
+ResourceInitializer::initDepthStencilWithData(
+    const Texture *texture, TextureAllocation *allocation, uint32_t slice, uint32_t level, const void *data,
+    size_t row_pitch, bool is_d24s8
+) {
+  auto width_sub = std::max(1u, texture->width() >> level);
+  auto height_sub = std::max(1u, texture->height() >> level);
+
+  size_t depth_bytes_per_row = 4 * width_sub;
+  size_t stencil_bytes_per_row = align(width_sub, 4u);
+
+  size_t depth_bytes_per_image = depth_bytes_per_row * height_sub;
+  size_t stencil_bytes_per_image = stencil_bytes_per_row * height_sub;
+
+  std::lock_guard<dxmt::mutex> lock(mutex_);
+  do {
+    RETAIN(allocation);
+    ALLOC_BLIT(wmtcmd_blit_copy_from_buffer_to_texture_withblitoption, depth_copy);
+    ALLOC_BLIT(wmtcmd_blit_copy_from_buffer_to_texture_withblitoption, stencil_copy);
+    ALLOC_GPU(depth_buf, depth_bytes_per_image);
+    ALLOC_GPU(stencil_buf, stencil_bytes_per_image);
+
+    for (auto row = 0u; row < height_sub; row++) {
+      auto src_data = ptr_add(data, row * row_pitch);
+
+      if (is_d24s8) {
+        for (auto x = 0u; x < width_sub; x++) {
+          uint32_t packed = *(const uint32_t *)((const char *)src_data + x * 4);
+          float depth_val = (float)(packed & 0xFFFFFF) / (float)(0xFFFFFF);
+          uint8_t stencil_val = (uint8_t)(packed >> 24);
+          depth_buf.updateContents(depth_buf_offset + row * depth_bytes_per_row + x * 4, &depth_val, 4);
+          stencil_buf.updateContents(stencil_buf_offset + row * stencil_bytes_per_row + x, &stencil_val, 1);
+        }
+      } else {
+        for (auto x = 0u; x < width_sub; x++) {
+          depth_buf.updateContents(depth_buf_offset + row * depth_bytes_per_row + x * 4, (const char *)src_data + x * 8, 4);
+          stencil_buf.updateContents(stencil_buf_offset + row * stencil_bytes_per_row + x, (const uint8_t *)src_data + x * 8 + 4, 1);
+        }
+      }
+    }
+
+    depth_copy->type = WMTBlitCommandCopyFromBufferToTextureWithBlitOption;
+    depth_copy->src = depth_buf;
+    depth_copy->src_offset = depth_buf_offset;
+    depth_copy->bytes_per_row = depth_bytes_per_row;
+    depth_copy->bytes_per_image = 0;
+    depth_copy->size = {width_sub, height_sub, 1};
+    depth_copy->dst = allocation->texture();
+    depth_copy->slice = slice;
+    depth_copy->level = level;
+    depth_copy->origin = {0, 0, 0};
+    depth_copy->options = WMTBlitOptionDepthFromDepthStencil;
+
+    stencil_copy->type = WMTBlitCommandCopyFromBufferToTextureWithBlitOption;
+    stencil_copy->src = stencil_buf;
+    stencil_copy->src_offset = stencil_buf_offset;
+    stencil_copy->bytes_per_row = stencil_bytes_per_row;
+    stencil_copy->bytes_per_image = 0;
+    stencil_copy->size = {width_sub, height_sub, 1};
+    stencil_copy->dst = allocation->texture();
+    stencil_copy->slice = slice;
+    stencil_copy->level = level;
+    stencil_copy->origin = {0, 0, 0};
+    stencil_copy->options = WMTBlitOptionStencilFromDepthStencil;
 
   } while (0);
 

@@ -1,3 +1,22 @@
+/*
+ * Copyright 2026 Feifan He for CodeWeavers
+ * Copyright 2026 Marc-Aurel Zent for CodeWeavers
+ *
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
+ *
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
+ */
+
 #include "com/com_pointer.hpp"
 #include "d3d11_device.hpp"
 #include "d3d11_enumerable.hpp"
@@ -338,6 +357,9 @@ HRESULT CreateDeviceTextureInternal(MTLD3D11Device *pDevice,
                             !(finalDesc.MiscFlags & D3D11_RESOURCE_MISC_TEXTURECUBE);
   auto texture = Rc<Texture>(new Texture(info, pDevice->GetMTLDevice()));
 
+  MTL_DXGI_FORMAT_DESC format_desc;
+  MTLQueryDXGIFormat(pDevice->GetMTLDevice(), finalDesc.Format, format_desc);
+
   auto &initializer = pDevice->GetDXMTDevice().queue().initializer;
 
   auto initialize = [&](Rc<TextureAllocation> &&allocation) {
@@ -351,7 +373,7 @@ HRESULT CreateDeviceTextureInternal(MTLD3D11Device *pDevice,
         auto &data = pInitialData[sub.SubresourceId];
         initializer.initWithData(
             texture.ptr(), texture->current(), sub.ArraySlice, sub.MipLevel, data.pSysMem, data.SysMemPitch,
-            data.SysMemSlicePitch
+            data.SysMemSlicePitch, format_desc.Flag
         );
       }
     }
