@@ -729,7 +729,7 @@ StateObjectCache<D3D11_SAMPLER_DESC, D3D11SamplerState>::CreateStateObject(
 
   // Anisotropy
   if (D3D11_DECODE_IS_ANISOTROPIC_FILTER(desc.Filter)) {
-    info.max_anisotroy = desc.MaxAnisotropy;
+    info.max_anisotroy = std::clamp(desc.MaxAnisotropy, 1u, 16u);
   } else {
     info.max_anisotroy = 1;
   }
