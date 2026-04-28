@@ -1,6 +1,25 @@
+/*
+ * Copyright 2026 Feifan He for CodeWeavers
+ *
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
+ *
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
+ */
+
 #include "dxmt_names.hpp"
 #include "com/com_object.hpp"
 #include "com/com_pointer.hpp"
+#include "config/config.hpp"
 #include "d3d11_device.hpp"
 #include "log/log.hpp"
 #include "util_string.hpp"
@@ -40,6 +59,24 @@ D3D11CoreCreateDevice(IDXGIFactory *pFactory, IDXGIAdapter *pAdapter,
       dxgi_adapter->GetMTLDevice().supportsFamily(WMTGPUFamilyApple7) ? D3D_FEATURE_LEVEL_11_1 : D3D_FEATURE_LEVEL_11_0;
   D3D_FEATURE_LEVEL minFeatureLevel = D3D_FEATURE_LEVEL();
   D3D_FEATURE_LEVEL devFeatureLevel = D3D_FEATURE_LEVEL();
+
+  if (auto fl_override = Config::getInstance().getOption<std::string>("d3d11.maxFeatureLevel", "");
+      fl_override != "") {
+    static const std::unordered_map<std::string, D3D_FEATURE_LEVEL> s_feature_levels = {{
+        {"12_1", D3D_FEATURE_LEVEL_12_1},
+        {"12_0", D3D_FEATURE_LEVEL_12_0},
+        {"11_1", D3D_FEATURE_LEVEL_11_1},
+        {"11_0", D3D_FEATURE_LEVEL_11_0},
+        {"10_1", D3D_FEATURE_LEVEL_10_1},
+        {"10_0", D3D_FEATURE_LEVEL_10_0},
+        {"9_3", D3D_FEATURE_LEVEL_9_3},
+        {"9_2", D3D_FEATURE_LEVEL_9_2},
+        {"9_1", D3D_FEATURE_LEVEL_9_1},
+    }};
+    if (auto iter = s_feature_levels.find(fl_override); iter != s_feature_levels.end()) {
+      maxFeatureLevel = iter->second;
+    }
+  }
 
   Logger::info(
       str::format("Maximum supported feature level: ", maxFeatureLevel));
