@@ -94,7 +94,7 @@ struct UnorderedAccessViewBinding {
   uint64_t viewId;
   Rc<Buffer> buffer;
   Rc<Texture> texture;
-  Rc<Buffer> counter;
+  Rc<Counter> counter;
   BufferSlice slice;
 };
 
@@ -460,7 +460,7 @@ public:
   }
 
   template <PipelineStage stage>
-  void bindOutputBuffer(unsigned slot, Rc<Buffer> &&buffer, uint64_t viewId, Rc<Buffer> &&counter, BufferSlice slice);
+  void bindOutputBuffer(unsigned slot, Rc<Buffer> &&buffer, uint64_t viewId, Rc<Counter> &&counter, BufferSlice slice);
 
   template <PipelineStage stage> void bindOutputTexture(unsigned slot, Rc<Texture> &&texture, uint64_t viewId);
 
@@ -902,7 +902,7 @@ private:
 template <>
 inline void
 ArgumentEncodingContext::bindOutputBuffer<PipelineStage::Compute>(
-    unsigned slot, Rc<Buffer> &&buffer, uint64_t viewId, Rc<Buffer> &&counter, BufferSlice slice
+    unsigned slot, Rc<Buffer> &&buffer, uint64_t viewId, Rc<Counter> &&counter, BufferSlice slice
 ) {
   auto &entry = cs_uav_[slot];
   entry.texture = {};
@@ -914,7 +914,7 @@ ArgumentEncodingContext::bindOutputBuffer<PipelineStage::Compute>(
 template <>
 inline void
 ArgumentEncodingContext::bindOutputBuffer<PipelineStage::Pixel>(
-    unsigned slot, Rc<Buffer> &&buffer, uint64_t viewId, Rc<Buffer> &&counter, BufferSlice slice
+    unsigned slot, Rc<Buffer> &&buffer, uint64_t viewId, Rc<Counter> &&counter, BufferSlice slice
 ) {
   auto &entry = om_uav_[slot];
   entry.texture = {};

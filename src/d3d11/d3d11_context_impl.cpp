@@ -1123,14 +1123,15 @@ public:
     std::lock_guard<mutex_t> lock(mutex);
 
     if (auto uav = static_cast<D3D11UnorderedAccessView *>(pSrcView)) {
-      if (!uav->counter())
+      if (!uav->hasCounter())
         return;
       if (auto staging_dst = GetStagingResource(pDstBuffer, 0)) {
         SwitchToBlitEncoder(CommandBufferState::ReadbackBlitEncoderActive);
         UseCopyDestination(staging_dst);
-        EmitOP([=, dst_ = std::move(staging_dst), counter = uav->counter()](ArgumentEncodingContext &enc) {
+        EmitOP([=, dst_ = std::move(staging_dst), counter = uav->counter(),
+                uav_buffer = uav->buffer()](ArgumentEncodingContext &enc) {
           auto [dst_buffer, dst_offset] = enc.access(dst_->buffer(), DstAlignedByteOffset, 4, ResourceAccess::Write);
-          auto [counter_buffer, counter_offset] = enc.access(counter, 0, 4, ResourceAccess::Read);
+          auto [counter_buffer, counter_offset] = enc.access(counter, uav_buffer);
           auto &cmd = enc.encodeBlitCommand<wmtcmd_blit_copy_from_buffer_to_buffer>();
           cmd.type = WMTBlitCommandCopyFromBufferToBuffer;
           cmd.copy_length = 4;
@@ -1141,9 +1142,10 @@ public:
         });
       } else if (auto dst_bind = GetResourceCommon(pDstBuffer)) {
         SwitchToBlitEncoder(CommandBufferState::BlitEncoderActive);
-        EmitOP([=, dst = dst_bind->buffer(), counter = uav->counter()](ArgumentEncodingContext &enc) {
+        EmitOP([=, dst = dst_bind->buffer(), counter = uav->counter(),
+                uav_buffer = uav->buffer()](ArgumentEncodingContext &enc) {
           auto [dst_buffer, dst_offset] = enc.access(dst, DstAlignedByteOffset, 4, ResourceAccess::Write);
-          auto [counter_buffer, counter_offset] = enc.access(counter, 0, 4, ResourceAccess::Read);
+          auto [counter_buffer, counter_offset] = enc.access(counter, uav_buffer);
           auto &cmd = enc.encodeBlitCommand<wmtcmd_blit_copy_from_buffer_to_buffer>();
           cmd.type = WMTBlitCommandCopyFromBufferToBuffer;
           cmd.copy_length = 4;
@@ -3653,15 +3655,12 @@ public:
 
   void
   UpdateUAVCounter(D3D11UnorderedAccessView *uav, uint32_t value) {
+    if (!uav->hasCounter())
+      return;
     EmitST([counter = uav->counter(), value](ArgumentEncodingContext &enc) {
       if (!counter.ptr())
         return;
-      /* TODO: suballocate uav counter */
-      auto new_counter = counter->allocate(BufferAllocationFlag::GpuManaged | BufferAllocationFlag::NoTracking);
-      new_counter->updateContents(0, &value, 4);
-      new_counter->buffer().didModifyRange(0, 4);
-      auto old = counter->rename(std::move(new_counter));
-      // TODO: reused discarded buffer
+      enc.queue().counter_pool.updateCounter(counter, value);
     });
   }
 
