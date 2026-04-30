@@ -20,6 +20,7 @@ dxmt_src = [
   'dxmt_scaler.cpp',
   'dxmt_subresource.cpp',
   'dxmt_deptrack.cpp',
+  'dxmt_counter.cpp',
 ]
 
 dxmt_shaders = [

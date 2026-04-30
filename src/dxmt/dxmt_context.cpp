@@ -390,6 +390,11 @@ ArgumentEncodingContext::encodeShaderResources(
   }
 }
 
+CounterAllocation *
+ArgumentEncodingContext::getCounterAllocation(Rc<Counter> const &counter) {
+  return queue_.counter_pool.getCurrentAllocation(counter);
+}
+
 void
 ArgumentEncodingContext::retainAllocation(Allocation* allocation) {
   if (allocation->checkRetained(seq_id_))
