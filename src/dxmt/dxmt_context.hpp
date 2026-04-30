@@ -1,8 +1,27 @@
+/*
+ * Copyright 2026 Feifan He for CodeWeavers
+ *
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
+ *
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
+ */
+
 #pragma once
 
 #include "Metal.hpp"
 #include "dxmt_buffer.hpp"
 #include "dxmt_command.hpp"
+#include "dxmt_counter.hpp"
 #include "dxmt_deptrack.hpp"
 #include "dxmt_occlusion_query.hpp"
 #include "dxmt_presenter.hpp"
@@ -75,7 +94,7 @@ struct UnorderedAccessViewBinding {
   uint64_t viewId;
   Rc<Buffer> buffer;
   Rc<Texture> texture;
-  Rc<Buffer> counter;
+  Rc<Counter> counter;
   BufferSlice slice;
 };
 
@@ -375,6 +394,25 @@ public:
     return view;
   }
 
+  CounterAllocation *getCounterAllocation(Rc<Counter> const &counter);
+
+  template <PipelineStage stage = PipelineStage::Compute>
+  std::pair<BufferAllocation *, uint64_t>
+  access(Rc<Counter> const &counter, Rc<Buffer> const &buffer_to_synchronize) {
+    auto allocation = getCounterAllocation(counter);
+    retainAllocation(allocation);
+    trackBuffer<stage>(buffer_to_synchronize->current(), ResourceAccess::All);
+    return {allocation->buffer(), allocation->offset()};
+  }
+
+  template <PipelineStage stage = PipelineStage::Compute>
+  std::pair<BufferAllocation *, uint64_t>
+  access(Rc<Counter> const &counter) {
+    auto allocation = getCounterAllocation(counter);
+    retainAllocation(allocation);
+    return {allocation->buffer(), allocation->offset()};
+  }
+
   template <PipelineStage stage>
   void
   bindConstantBuffer(unsigned slot, unsigned offset, Rc<Buffer> &&buffer) {
@@ -422,7 +460,7 @@ public:
   }
 
   template <PipelineStage stage>
-  void bindOutputBuffer(unsigned slot, Rc<Buffer> &&buffer, uint64_t viewId, Rc<Buffer> &&counter, BufferSlice slice);
+  void bindOutputBuffer(unsigned slot, Rc<Buffer> &&buffer, uint64_t viewId, Rc<Counter> &&counter, BufferSlice slice);
 
   template <PipelineStage stage> void bindOutputTexture(unsigned slot, Rc<Texture> &&texture, uint64_t viewId);
 
@@ -496,7 +534,16 @@ public:
       cmd.stages = GetStagesFromResidencyMask(requested);
     }
   }
-
+  template <PipelineStage stage, PipelineKind kind>
+  void
+  makeResident(Counter *counter) {
+    auto allocation = getCounterAllocation(counter)->buffer();
+    uint64_t encoder_id = currentEncoder()->id;
+    DXMT_RESOURCE_RESIDENCY requested = GetResidencyMask<kind>(stage, true, true);
+    if (CheckResourceResidency(allocation->residencyState, encoder_id, requested)) {
+      makeResident<stage, kind>(allocation->buffer(), requested);
+    };
+  }
   template <PipelineStage stage, PipelineKind kind>
   void
   makeResident(Buffer *buffer, bool read = true, bool write = false) {
@@ -855,7 +902,7 @@ private:
 template <>
 inline void
 ArgumentEncodingContext::bindOutputBuffer<PipelineStage::Compute>(
-    unsigned slot, Rc<Buffer> &&buffer, uint64_t viewId, Rc<Buffer> &&counter, BufferSlice slice
+    unsigned slot, Rc<Buffer> &&buffer, uint64_t viewId, Rc<Counter> &&counter, BufferSlice slice
 ) {
   auto &entry = cs_uav_[slot];
   entry.texture = {};
@@ -867,7 +914,7 @@ ArgumentEncodingContext::bindOutputBuffer<PipelineStage::Compute>(
 template <>
 inline void
 ArgumentEncodingContext::bindOutputBuffer<PipelineStage::Pixel>(
-    unsigned slot, Rc<Buffer> &&buffer, uint64_t viewId, Rc<Buffer> &&counter, BufferSlice slice
+    unsigned slot, Rc<Buffer> &&buffer, uint64_t viewId, Rc<Counter> &&counter, BufferSlice slice
 ) {
   auto &entry = om_uav_[slot];
   entry.texture = {};

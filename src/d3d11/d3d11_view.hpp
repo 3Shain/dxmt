@@ -1,7 +1,26 @@
+/*
+ * Copyright 2026 Feifan He for CodeWeavers
+ *
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
+ *
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
+ */
+
 #pragma once
 #include "com/com_pointer.hpp"
 #include "d3d11_3.h"
 #include "dxmt_buffer.hpp"
+#include "dxmt_counter.hpp"
 #include "dxmt_subresource.hpp"
 #include "dxmt_texture.hpp"
 
@@ -61,7 +80,7 @@ struct D3D11UnorderedAccessView : ID3D11UnorderedAccessView1 {
   BufferSlice slice_{};
   Texture *texture_{};
   uint64_t view_id_{};
-  Rc<Buffer> counter_;
+  Rc<Counter> counter_;
   ResourceSubsetState subset_{};
   uint32_t bind_flags_{};
 
@@ -81,12 +100,16 @@ struct D3D11UnorderedAccessView : ID3D11UnorderedAccessView1 {
   viewId() const {
     return view_id_;
   };
-  Rc<Buffer>
+  Rc<Counter>
   counter() const {
     return counter_;
   };
   uint32_t bindFlags() const {
     return bind_flags_;
+  }
+  bool
+  hasCounter() const {
+    return buffer_ && counter_;
   }
 
   virtual void AddRefPrivate() = 0;

@@ -1,3 +1,21 @@
+/*
+ * Copyright 2026 Feifan He for CodeWeavers
+ *
+ * This library is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU Lesser General Public
+ * License as published by the Free Software Foundation; either
+ * version 2.1 of the License, or (at your option) any later version.
+ *
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this library; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301, USA
+ */
+
 #include "dxmt_context.hpp"
 #include "Metal.hpp"
 #include "dxmt_command_queue.hpp"
@@ -343,9 +361,9 @@ ArgumentEncodingContext::encodeShaderResources(
       }
       if (arg.Flags & MTL_SM50_SHADER_ARGUMENT_UAV_COUNTER) {
         if (uav.counter) {
-          auto [counter_alloc, offset] = access<stage>(uav.counter, 0, 4, ResourceAccess::All);
+          auto [counter_alloc, offset] = access<stage>(uav.counter);
           encoded_buffer[arg.StructurePtrOffset + 2] = counter_alloc->gpuAddress() + offset;
-          makeResident<stage, kind>(uav.counter.ptr(), true, true);
+          makeResident<stage, kind>(uav.counter.ptr());
         } else {
           /*
            * potentially cause gpu pagefault, even providing a dummy buffer doesn't improve since the returned
@@ -388,6 +406,11 @@ ArgumentEncodingContext::encodeShaderResources(
       assert(0 && "Not implemented or unreachable");
     }
   }
+}
+
+CounterAllocation *
+ArgumentEncodingContext::getCounterAllocation(Rc<Counter> const &counter) {
+  return queue_.counter_pool.getCurrentAllocation(counter);
 }
 
 void
