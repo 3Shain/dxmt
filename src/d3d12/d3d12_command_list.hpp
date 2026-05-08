@@ -193,7 +193,7 @@ struct CmdResolveSubresource {
   DXGI_FORMAT format;
 };
 
-class MTLD3D12GraphicsCommandList : public ID3D12GraphicsCommandList {
+class MTLD3D12GraphicsCommandList : public ID3D12GraphicsCommandList2 {
 public:
   MTLD3D12GraphicsCommandList(MTLD3D12Device *device,
                               MTLD3D12CommandAllocator *allocator,
@@ -368,6 +368,33 @@ public:
       ID3D12Resource *arg_buffer, UINT64 arg_buffer_offset,
       ID3D12Resource *count_buffer,
       UINT64 count_buffer_offset) override;
+
+  void STDMETHODCALLTYPE AtomicCopyBufferUINT(
+      ID3D12Resource *dst_buffer, UINT64 dst_offset,
+      ID3D12Resource *src_buffer, UINT64 src_offset,
+      UINT dependent_resource_count,
+      ID3D12Resource *const *dependent_resources,
+      const D3D12_SUBRESOURCE_RANGE_UINT64 *dependent_sub_resource_ranges) override;
+  void STDMETHODCALLTYPE AtomicCopyBufferUINT64(
+      ID3D12Resource *dst_buffer, UINT64 dst_offset,
+      ID3D12Resource *src_buffer, UINT64 src_offset,
+      UINT dependent_resource_count,
+      ID3D12Resource *const *dependent_resources,
+      const D3D12_SUBRESOURCE_RANGE_UINT64 *dependent_sub_resource_ranges) override;
+  void STDMETHODCALLTYPE OMSetDepthBounds(FLOAT min, FLOAT max) override;
+  void STDMETHODCALLTYPE SetSamplePositions(
+      UINT sample_count, UINT pixel_count,
+      D3D12_SAMPLE_POSITION *sample_positions) override;
+  void STDMETHODCALLTYPE ResolveSubresourceRegion(
+      ID3D12Resource *dst_resource, UINT dst_sub_resource_idx,
+      UINT dst_x, UINT dst_y,
+      ID3D12Resource *src_resource, UINT src_sub_resource_idx,
+      D3D12_RECT *src_rect, DXGI_FORMAT format,
+      D3D12_RESOLVE_MODE mode) override;
+  void STDMETHODCALLTYPE SetViewInstanceMask(UINT mask) override;
+  void STDMETHODCALLTYPE WriteBufferImmediate(
+      UINT count, const D3D12_WRITEBUFFERIMMEDIATE_PARAMETER *parameters,
+      const D3D12_WRITEBUFFERIMMEDIATE_MODE *modes) override;
 
   const std::vector<uint8_t> &GetCommands() const { return m_cmds; }
   void ClearCommands() { m_cmds.clear(); }

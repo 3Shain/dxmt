@@ -35,7 +35,13 @@ MTLD3D12GraphicsCommandList::QueryInterface(REFIID riid, void **ppvObject) {
 
   if (riid == IID_IUnknown || riid == IID_ID3D12Object ||
       riid == IID_ID3D12DeviceChild || riid == IID_ID3D12CommandList ||
-      riid == IID_ID3D12GraphicsCommandList) {
+      riid == IID_ID3D12GraphicsCommandList ||
+      riid == IID_ID3D12GraphicsCommandList1 ||
+      riid == IID_ID3D12GraphicsCommandList2 ||
+      riid == IID_ID3D12GraphicsCommandList3 ||
+      riid == IID_ID3D12GraphicsCommandList4 ||
+      riid == IID_ID3D12GraphicsCommandList5 ||
+      riid == IID_ID3D12GraphicsCommandList6) {
     *ppvObject = ref(this);
     return S_OK;
   }
@@ -113,6 +119,7 @@ MTLD3D12GraphicsCommandList::ClearState(ID3D12PipelineState *pipeline_state) {
 void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::DrawInstanced(
     UINT vertex_count, UINT instance_count, UINT start_vertex,
     UINT start_instance) {
+  CLTRACE("DrawInstanced v=%u i=%u", vertex_count, instance_count);
   CmdDrawInstanced cmd = {};
   cmd.header = {CmdType::DrawInstanced, sizeof(cmd)};
   cmd.vertex_count = vertex_count;
@@ -125,6 +132,7 @@ void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::DrawInstanced(
 void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::DrawIndexedInstanced(
     UINT index_count, UINT instance_count, UINT start_vertex,
     INT base_vertex, UINT start_instance) {
+  CLTRACE("DrawIndexedInstanced idx=%u i=%u", index_count, instance_count);
   CmdDrawIndexedInstanced cmd = {};
   cmd.header = {CmdType::DrawIndexedInstanced, sizeof(cmd)};
   cmd.index_count = index_count;
@@ -137,6 +145,7 @@ void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::DrawIndexedInstanced(
 
 void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::Dispatch(UINT x, UINT y,
                                                              UINT z) {
+  CLTRACE("Dispatch %ux%ux%u", x, y, z);
   CmdDispatch cmd = {};
   cmd.header = {CmdType::Dispatch, sizeof(cmd)};
   cmd.x = x;
@@ -539,6 +548,43 @@ void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::EndEvent() {}
 void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::ExecuteIndirect(
     ID3D12CommandSignature *command_signature, UINT max_command_count,
     ID3D12Resource *arg_buffer, UINT64 arg_buffer_offset,
-    ID3D12Resource *count_buffer, UINT64 count_buffer_offset) {}
+    ID3D12Resource *count_buffer, UINT64 count_buffer_offset) {
+  CLTRACE("ExecuteIndirect max=%u", max_command_count);
+}
+
+void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::AtomicCopyBufferUINT(
+    ID3D12Resource *dst_buffer, UINT64 dst_offset,
+    ID3D12Resource *src_buffer, UINT64 src_offset,
+    UINT dependent_resource_count,
+    ID3D12Resource *const *dependent_resources,
+    const D3D12_SUBRESOURCE_RANGE_UINT64 *dependent_sub_resource_ranges) {}
+
+void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::AtomicCopyBufferUINT64(
+    ID3D12Resource *dst_buffer, UINT64 dst_offset,
+    ID3D12Resource *src_buffer, UINT64 src_offset,
+    UINT dependent_resource_count,
+    ID3D12Resource *const *dependent_resources,
+    const D3D12_SUBRESOURCE_RANGE_UINT64 *dependent_sub_resource_ranges) {}
+
+void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::OMSetDepthBounds(
+    FLOAT min, FLOAT max) {}
+
+void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::SetSamplePositions(
+    UINT sample_count, UINT pixel_count,
+    D3D12_SAMPLE_POSITION *sample_positions) {}
+
+void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::ResolveSubresourceRegion(
+    ID3D12Resource *dst_resource, UINT dst_sub_resource_idx,
+    UINT dst_x, UINT dst_y,
+    ID3D12Resource *src_resource, UINT src_sub_resource_idx,
+    D3D12_RECT *src_rect, DXGI_FORMAT format,
+    D3D12_RESOLVE_MODE mode) {}
+
+void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::SetViewInstanceMask(
+    UINT mask) {}
+
+void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::WriteBufferImmediate(
+    UINT count, const D3D12_WRITEBUFFERIMMEDIATE_PARAMETER *parameters,
+    const D3D12_WRITEBUFFERIMMEDIATE_MODE *modes) {}
 
 } // namespace dxmt
