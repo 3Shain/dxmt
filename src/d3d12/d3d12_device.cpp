@@ -2,8 +2,11 @@
 #include "d3d12_command_queue.hpp"
 #include "d3d12_command_allocator.hpp"
 #include "d3d12_command_list.hpp"
+#include "d3d12_descriptor_heap.hpp"
 #include "d3d12_device.hpp"
+#include "d3d12_fence.hpp"
 #include "d3d12_resource.hpp"
+#include "d3d12_root_signature.hpp"
 #include "com/com_object.hpp"
 #include "log/log.hpp"
 #include "util_string.hpp"
@@ -226,9 +229,16 @@ MTLD3D12Device::CheckFeatureSupport(D3D12_FEATURE feature,
 
 HRESULT STDMETHODCALLTYPE
 MTLD3D12Device::CreateDescriptorHeap(const D3D12_DESCRIPTOR_HEAP_DESC *desc,
-                                     REFIID riid, void **descriptor_heap) {
-  Logger::warn("D3D12Device::CreateDescriptorHeap: stub");
-  return E_NOTIMPL;
+                                      REFIID riid, void **descriptor_heap) {
+  if (!desc || !descriptor_heap)
+    return E_POINTER;
+  InitReturnPtr(descriptor_heap);
+
+  auto heap = new MTLD3D12DescriptorHeap(this, *desc);
+  HRESULT hr = heap->QueryInterface(riid, descriptor_heap);
+  if (FAILED(hr))
+    heap->Release();
+  return hr;
 }
 
 UINT STDMETHODCALLTYPE MTLD3D12Device::GetDescriptorHandleIncrementSize(
@@ -239,8 +249,16 @@ UINT STDMETHODCALLTYPE MTLD3D12Device::GetDescriptorHandleIncrementSize(
 HRESULT STDMETHODCALLTYPE MTLD3D12Device::CreateRootSignature(
     UINT node_mask, const void *bytecode, SIZE_T bytecode_length,
     REFIID riid, void **root_signature) {
-  Logger::warn("D3D12Device::CreateRootSignature: stub");
-  return E_NOTIMPL;
+  if (!bytecode || !root_signature)
+    return E_POINTER;
+  InitReturnPtr(root_signature);
+
+  auto rs =
+      new MTLD3D12RootSignature(this, bytecode, bytecode_length);
+  HRESULT hr = rs->QueryInterface(riid, root_signature);
+  if (FAILED(hr))
+    rs->Release();
+  return hr;
 }
 
 void STDMETHODCALLTYPE MTLD3D12Device::CreateConstantBufferView(
@@ -386,9 +404,16 @@ MTLD3D12Device::Evict(UINT object_count, ID3D12Pageable *const *objects) {
 
 HRESULT STDMETHODCALLTYPE
 MTLD3D12Device::CreateFence(UINT64 initial_value, D3D12_FENCE_FLAGS flags,
-                            REFIID riid, void **fence) {
-  Logger::warn("D3D12Device::CreateFence: stub");
-  return E_NOTIMPL;
+                             REFIID riid, void **fence) {
+  if (!fence)
+    return E_POINTER;
+  InitReturnPtr(fence);
+
+  auto f = new MTLD3D12Fence(this, initial_value, flags);
+  HRESULT hr = f->QueryInterface(riid, fence);
+  if (FAILED(hr))
+    f->Release();
+  return hr;
 }
 
 HRESULT STDMETHODCALLTYPE MTLD3D12Device::GetDeviceRemovedReason() {

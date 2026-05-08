@@ -1,0 +1,92 @@
+#include "d3d12_fence.hpp"
+#include "d3d12_device.hpp"
+#include "log/log.hpp"
+#include "util_string.hpp"
+
+namespace dxmt {
+
+MTLD3D12Fence::MTLD3D12Fence(MTLD3D12Device *device, uint64_t initial_value,
+                             D3D12_FENCE_FLAGS flags)
+    : m_device(device), m_flags(flags), m_value(initial_value) {
+  m_device->AddRef();
+  auto wmt_device = m_device->GetDXMTDevice().device();
+  m_shared_event = wmt_device.newSharedEvent();
+  m_shared_event.signalValue(initial_value);
+  Logger::info(str::format("D3D12Fence: created value=", initial_value));
+}
+
+MTLD3D12Fence::~MTLD3D12Fence() {
+  m_shared_event = nullptr;
+  m_device->Release();
+}
+
+HRESULT STDMETHODCALLTYPE
+MTLD3D12Fence::QueryInterface(REFIID riid, void **ppvObject) {
+  if (!ppvObject)
+    return E_POINTER;
+  *ppvObject = nullptr;
+
+  if (riid == IID_IUnknown || riid == IID_ID3D12Object ||
+      riid == IID_ID3D12DeviceChild || riid == IID_ID3D12Pageable ||
+      riid == IID_ID3D12Fence) {
+    *ppvObject = ref(this);
+    return S_OK;
+  }
+  return E_NOINTERFACE;
+}
+
+ULONG STDMETHODCALLTYPE MTLD3D12Fence::AddRef() { return ++m_refCount; }
+
+ULONG STDMETHODCALLTYPE MTLD3D12Fence::Release() {
+  uint32_t rc = --m_refCount;
+  if (!rc)
+    delete this;
+  return rc;
+}
+
+HRESULT STDMETHODCALLTYPE
+MTLD3D12Fence::GetPrivateData(REFGUID guid, UINT *data_size, void *data) {
+  return E_NOTIMPL;
+}
+
+HRESULT STDMETHODCALLTYPE
+MTLD3D12Fence::SetPrivateData(REFGUID guid, UINT data_size,
+                              const void *data) {
+  return S_OK;
+}
+
+HRESULT STDMETHODCALLTYPE
+MTLD3D12Fence::SetPrivateDataInterface(REFGUID guid, const IUnknown *data) {
+  return S_OK;
+}
+
+HRESULT STDMETHODCALLTYPE MTLD3D12Fence::SetName(LPCWSTR name) {
+  return S_OK;
+}
+
+HRESULT STDMETHODCALLTYPE
+MTLD3D12Fence::GetDevice(REFIID riid, void **device) {
+  return m_device->QueryInterface(riid, device);
+}
+
+uint64_t STDMETHODCALLTYPE MTLD3D12Fence::GetCompletedValue() {
+  return m_value.load(std::memory_order_acquire);
+}
+
+HRESULT STDMETHODCALLTYPE
+MTLD3D12Fence::SetEventOnCompletion(uint64_t value, HANDLE event) {
+  if (m_shared_event.handle) {
+    m_shared_event.waitUntilSignaledValue(value, UINT64_MAX);
+  }
+  return S_OK;
+}
+
+HRESULT STDMETHODCALLTYPE MTLD3D12Fence::Signal(uint64_t value) {
+  m_value.store(value, std::memory_order_release);
+  if (m_shared_event.handle) {
+    m_shared_event.signalValue(value);
+  }
+  return S_OK;
+}
+
+} // namespace dxmt
