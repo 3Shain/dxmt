@@ -3,6 +3,8 @@
 #include "log/log.hpp"
 #include "util_string.hpp"
 
+#define FTRACE(fmt, ...) do { FILE *_tf = fopen("Z:\\tmp\\dxmt_dxgi_trace.log", "a"); if (_tf) { fprintf(_tf, "Fence::" fmt "\n", ##__VA_ARGS__); fclose(_tf); } } while(0)
+
 namespace dxmt {
 
 MTLD3D12Fence::MTLD3D12Fence(MTLD3D12Device *device, uint64_t initial_value,
@@ -32,6 +34,7 @@ MTLD3D12Fence::QueryInterface(REFIID riid, void **ppvObject) {
     *ppvObject = ref(this);
     return S_OK;
   }
+  FTRACE("QI unknown IID %s -> E_NOINTERFACE", str::format(riid).c_str());
   return E_NOINTERFACE;
 }
 
@@ -46,6 +49,7 @@ ULONG STDMETHODCALLTYPE MTLD3D12Fence::Release() {
 
 HRESULT STDMETHODCALLTYPE
 MTLD3D12Fence::GetPrivateData(REFGUID guid, UINT *data_size, void *data) {
+  FTRACE("GetPrivateData E_NOTIMPL");
   return E_NOTIMPL;
 }
 
@@ -70,11 +74,13 @@ MTLD3D12Fence::GetDevice(REFIID riid, void **device) {
 }
 
 uint64_t STDMETHODCALLTYPE MTLD3D12Fence::GetCompletedValue() {
+  FTRACE("GetCompletedValue -> %llu", (unsigned long long)m_value.load(std::memory_order_acquire));
   return m_value.load(std::memory_order_acquire);
 }
 
 HRESULT STDMETHODCALLTYPE
 MTLD3D12Fence::SetEventOnCompletion(uint64_t value, HANDLE event) {
+  FTRACE("SetEventOnCompletion value=%llu", (unsigned long long)value);
   if (m_shared_event.handle) {
     m_shared_event.waitUntilSignaledValue(value, UINT64_MAX);
   }
@@ -82,6 +88,7 @@ MTLD3D12Fence::SetEventOnCompletion(uint64_t value, HANDLE event) {
 }
 
 HRESULT STDMETHODCALLTYPE MTLD3D12Fence::Signal(uint64_t value) {
+  FTRACE("Signal value=%llu", (unsigned long long)value);
   m_value.store(value, std::memory_order_release);
   if (m_shared_event.handle) {
     m_shared_event.signalValue(value);

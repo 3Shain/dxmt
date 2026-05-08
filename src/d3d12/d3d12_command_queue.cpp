@@ -9,6 +9,8 @@
 #include "util_string.hpp"
 #include "Metal.hpp"
 
+#define QTRACE(fmt, ...) do { FILE *_tf = fopen("Z:\\tmp\\dxmt_dxgi_trace.log", "a"); if (_tf) { fprintf(_tf, fmt "\n", ##__VA_ARGS__); fclose(_tf); } } while(0)
+
 namespace dxmt {
 
 namespace {
@@ -209,6 +211,7 @@ MTLD3D12CommandQueue::QueryInterface(REFIID riid, void **ppvObject) {
     *ppvObject = ref(this);
     return S_OK;
   }
+  QTRACE("CmdQueue::QI unknown IID %s -> E_NOINTERFACE", str::format(riid).c_str());
   return E_NOINTERFACE;
 }
 
@@ -230,7 +233,8 @@ ULONG STDMETHODCALLTYPE MTLD3D12CommandQueue::Release() {
 
 HRESULT STDMETHODCALLTYPE
 MTLD3D12CommandQueue::GetPrivateData(REFGUID guid, UINT *data_size,
-                                     void *data) {
+                                      void *data) {
+  QTRACE("CmdQueue::GetPrivateData E_NOTIMPL");
   return E_NOTIMPL;
 }
 
@@ -274,6 +278,7 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::CopyTileMappings(
 void STDMETHODCALLTYPE MTLD3D12CommandQueue::ExecuteCommandLists(
     UINT command_list_count,
     ID3D12CommandList *const *command_lists) {
+  QTRACE("ExecuteCommandLists count=%u", command_list_count);
   auto wmt_device = m_device->GetDXMTDevice().device();
   auto wmt_queue = WMT::CommandQueue{wmt_device.newCommandQueue(1).handle};
 
@@ -603,6 +608,7 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::EndEvent() {}
 
 HRESULT STDMETHODCALLTYPE
 MTLD3D12CommandQueue::Signal(ID3D12Fence *fence, UINT64 value) {
+  QTRACE("Signal value=%llu", (unsigned long long)value);
   if (!fence)
     return E_POINTER;
   return fence->Signal(value);

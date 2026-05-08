@@ -3,6 +3,8 @@
 #include "log/log.hpp"
 #include "util_string.hpp"
 
+#define RTRACE(fmt, ...) do { FILE *_tf = fopen("Z:\\tmp\\dxmt_dxgi_trace.log", "a"); if (_tf) { fprintf(_tf, "Resource::" fmt "\n", ##__VA_ARGS__); fclose(_tf); } } while(0)
+
 namespace dxmt {
 
 MTLD3D12Resource::MTLD3D12Resource(
@@ -68,6 +70,7 @@ MTLD3D12Resource::QueryInterface(REFIID riid, void **ppvObject) {
     *ppvObject = ref(this);
     return S_OK;
   }
+  RTRACE("QI unknown IID %s -> E_NOINTERFACE", str::format(riid).c_str());
   return E_NOINTERFACE;
 }
 
@@ -87,6 +90,7 @@ ULONG STDMETHODCALLTYPE MTLD3D12Resource::Release() {
 
 HRESULT STDMETHODCALLTYPE
 MTLD3D12Resource::GetPrivateData(REFGUID guid, UINT *data_size, void *data) {
+  RTRACE("GetPrivateData E_NOTIMPL");
   return E_NOTIMPL;
 }
 
@@ -109,10 +113,11 @@ HRESULT STDMETHODCALLTYPE
 MTLD3D12Resource::GetDevice(REFIID riid, void **device) {
   return m_device->QueryInterface(riid, device);
 }
-
-HRESULT STDMETHODCALLTYPE MTLD3D12Resource::Map(UINT sub_resource,
-                                                const D3D12_RANGE *read_range,
-                                                void **data) {
+HRESULT STDMETHODCALLTYPE
+MTLD3D12Resource::Map(UINT sub_resource,
+                                                 const D3D12_RANGE *read_range,
+                                                 void **data) {
+  RTRACE("Map sub=%u", sub_resource);
   if (!data)
     return E_POINTER;
   if (m_cpu_addr) {
@@ -133,18 +138,21 @@ MTLD3D12Resource::GetDesc(D3D12_RESOURCE_DESC *__ret) {
 
 D3D12_GPU_VIRTUAL_ADDRESS STDMETHODCALLTYPE
 MTLD3D12Resource::GetGPUVirtualAddress() {
+  RTRACE("GetGPUVirtualAddress -> 0x%llx", (unsigned long long)m_gpu_addr);
   return m_gpu_addr;
 }
 
 HRESULT STDMETHODCALLTYPE MTLD3D12Resource::WriteToSubresource(
     UINT dst_sub_resource, const D3D12_BOX *dst_box, const void *src_data,
     UINT src_row_pitch, UINT src_slice_pitch) {
+  RTRACE("WriteToSubresource E_NOTIMPL");
   return E_NOTIMPL;
 }
 
 HRESULT STDMETHODCALLTYPE MTLD3D12Resource::ReadFromSubresource(
     void *dst_data, UINT dst_row_pitch, UINT dst_slice_pitch,
     UINT src_sub_resource, const D3D12_BOX *src_box) {
+  RTRACE("ReadFromSubresource E_NOTIMPL");
   return E_NOTIMPL;
 }
 

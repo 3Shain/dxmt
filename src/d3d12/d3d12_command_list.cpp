@@ -8,6 +8,8 @@
 #include "log/log.hpp"
 #include "util_string.hpp"
 
+#define CLTRACE(fmt, ...) do { FILE *_tf = fopen("Z:\\tmp\\dxmt_dxgi_trace.log", "a"); if (_tf) { fprintf(_tf, "CmdList::" fmt "\n", ##__VA_ARGS__); fclose(_tf); } } while(0)
+
 namespace dxmt {
 
 MTLD3D12GraphicsCommandList::MTLD3D12GraphicsCommandList(
@@ -37,6 +39,7 @@ MTLD3D12GraphicsCommandList::QueryInterface(REFIID riid, void **ppvObject) {
     *ppvObject = ref(this);
     return S_OK;
   }
+  CLTRACE("QI unknown IID %s -> E_NOINTERFACE", str::format(riid).c_str());
   return E_NOINTERFACE;
 }
 
@@ -58,7 +61,8 @@ ULONG STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::Release() {
 
 HRESULT STDMETHODCALLTYPE
 MTLD3D12GraphicsCommandList::GetPrivateData(REFGUID guid, UINT *data_size,
-                                            void *data) {
+                                             void *data) {
+  CLTRACE("GetPrivateData E_NOTIMPL");
   return E_NOTIMPL;
 }
 
@@ -88,12 +92,14 @@ MTLD3D12GraphicsCommandList::GetType() {
 }
 
 HRESULT STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::Close() {
+  CLTRACE("Close");
   m_closed = true;
   return S_OK;
 }
 
 HRESULT STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::Reset(
     ID3D12CommandAllocator *allocator, ID3D12PipelineState *initial_state) {
+  CLTRACE("Reset");
   m_closed = false;
   m_cmds.clear();
   return S_OK;

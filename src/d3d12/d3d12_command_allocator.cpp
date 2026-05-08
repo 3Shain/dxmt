@@ -1,6 +1,9 @@
 #include "d3d12_command_allocator.hpp"
 #include "d3d12_device.hpp"
 #include "log/log.hpp"
+#include "util_string.hpp"
+
+#define CATRACE(fmt, ...) do { FILE *_tf = fopen("Z:\\tmp\\dxmt_dxgi_trace.log", "a"); if (_tf) { fprintf(_tf, "CmdAlloc::" fmt "\n", ##__VA_ARGS__); fclose(_tf); } } while(0)
 
 namespace dxmt {
 
@@ -26,6 +29,7 @@ MTLD3D12CommandAllocator::QueryInterface(REFIID riid, void **ppvObject) {
     *ppvObject = ref(this);
     return S_OK;
   }
+  CATRACE("QI unknown IID %s -> E_NOINTERFACE", str::format(riid).c_str());
   return E_NOINTERFACE;
 }
 
@@ -47,7 +51,8 @@ ULONG STDMETHODCALLTYPE MTLD3D12CommandAllocator::Release() {
 
 HRESULT STDMETHODCALLTYPE
 MTLD3D12CommandAllocator::GetPrivateData(REFGUID guid, UINT *data_size,
-                                         void *data) {
+                                          void *data) {
+  CATRACE("GetPrivateData E_NOTIMPL");
   return E_NOTIMPL;
 }
 

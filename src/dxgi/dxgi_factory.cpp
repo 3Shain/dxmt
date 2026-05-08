@@ -8,6 +8,8 @@
 #include "wsi_window.hpp"
 #include "Metal.hpp"
 
+#define DGTRACE(fmt, ...) do { FILE *_tf = fopen("Z:\\tmp\\dxmt_dxgi_trace.log", "a"); if (_tf) { fprintf(_tf, "DXGI::" fmt "\n", ##__VA_ARGS__); fclose(_tf); } } while(0)
+
 namespace dxmt {
 
 Com<IMTLDXGIAdapter> CreateAdapter(WMT::Device Device,
@@ -67,6 +69,7 @@ public:
   HRESULT STDMETHODCALLTYPE
   CreateSwapChain(IUnknown *pDevice, DXGI_SWAP_CHAIN_DESC *pDesc,
                   IDXGISwapChain **ppSwapChain) final {
+    DGTRACE("CreateSwapChain (legacy) called");
     if (ppSwapChain == nullptr || pDesc == nullptr || pDevice == nullptr)
       return DXGI_ERROR_INVALID_CALL;
 
@@ -97,17 +100,23 @@ public:
     return hr;
   }
 
-  HRESULT STDMETHODCALLTYPE CreateSwapChainForHwnd(
+  HRESULT STDMETHODCALLTYPE
+  CreateSwapChainForHwnd(
       IUnknown *pDevice, HWND hWnd, const DXGI_SWAP_CHAIN_DESC1 *pDesc,
       const DXGI_SWAP_CHAIN_FULLSCREEN_DESC *pFullscreenDesc,
       IDXGIOutput *pRestrictToOutput, IDXGISwapChain1 **ppSwapChain) final {
+    DGTRACE("CreateSwapChainForHwnd called");
     InitReturnPtr(ppSwapChain);
 
-    if (!ppSwapChain || !pDesc || !hWnd || !pDevice)
+    if (!ppSwapChain || !pDesc || !hWnd || !pDevice) {
+      DGTRACE("CreateSwapChainForHwnd -> DXGI_ERROR_INVALID_CALL (null args)");
       return DXGI_ERROR_INVALID_CALL;
+    }
 
     Com<IMTLDXGIDevice> metal_dxgi_device;
-    if (FAILED(pDevice->QueryInterface(IID_PPV_ARGS(&metal_dxgi_device)))) {
+    HRESULT qhr = pDevice->QueryInterface(IID_PPV_ARGS(&metal_dxgi_device));
+    if (FAILED(qhr)) {
+      DGTRACE("CreateSwapChainForHwnd -> QI IMTLDXGIDevice FAILED hr=0x%lx", qhr);
       ERR("Unsupported device type");
       return DXGI_ERROR_UNSUPPORTED;
     }
@@ -309,10 +318,19 @@ private:
 
 extern "C" HRESULT __stdcall CreateDXGIFactory2(UINT Flags, REFIID riid,
                                                 void **ppFactory) {
+  {
+    FILE *f = fopen("Z:\\tmp\\dxmt_dxgi_trace.log", "a");
+    if (f) { fprintf(f, "CreateDXGIFactory2 called\n"); fclose(f); }
+  }
   try {
     MTLDXGIFactory* factory = new MTLDXGIFactory(Flags);
     HRESULT hr = factory->QueryInterface(riid, ppFactory);
     factory->Release();
+
+    {
+      FILE *f = fopen("Z:\\tmp\\dxmt_dxgi_trace.log", "a");
+      if (f) { fprintf(f, "QI hr=0x%lx\n", hr); fclose(f); }
+    }
 
     if (FAILED(hr))
       return hr;

@@ -7,11 +7,13 @@ d3d12_src = [
   'd3d12_command_allocator.cpp',
   'd3d12_command_list.cpp',
   'd3d12_descriptor_heap.cpp',
+  'd3d12_dxgi_device.cpp',
   'd3d12_fence.cpp',
   'd3d12_pipeline_state.cpp',
   'd3d12_query_heap.cpp',
   'd3d12_resource.cpp',
   'd3d12_root_signature.cpp',
+  'd3d12_swapchain.cpp',
 ]
 
 d3d12_ld_args      = ['-L' + windows_native_install_dir]

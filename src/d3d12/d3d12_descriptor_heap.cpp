@@ -4,6 +4,8 @@
 #include "util_string.hpp"
 #include <cstring>
 
+#define HTRACE(fmt, ...) do { FILE *_tf = fopen("Z:\\tmp\\dxmt_dxgi_trace.log", "a"); if (_tf) { fprintf(_tf, "DescHeap::" fmt "\n", ##__VA_ARGS__); fclose(_tf); } } while(0)
+
 namespace dxmt {
 
 MTLD3D12DescriptorHeap::MTLD3D12DescriptorHeap(
@@ -35,6 +37,7 @@ MTLD3D12DescriptorHeap::QueryInterface(REFIID riid, void **ppvObject) {
     *ppvObject = ref(this);
     return S_OK;
   }
+  HTRACE("QI unknown IID %s -> E_NOINTERFACE", str::format(riid).c_str());
   return E_NOINTERFACE;
 }
 
@@ -50,7 +53,8 @@ ULONG STDMETHODCALLTYPE MTLD3D12DescriptorHeap::Release() {
 
 HRESULT STDMETHODCALLTYPE
 MTLD3D12DescriptorHeap::GetPrivateData(REFGUID guid, UINT *data_size,
-                                       void *data) {
+                                        void *data) {
+  HTRACE("GetPrivateData E_NOTIMPL");
   return E_NOTIMPL;
 }
 
@@ -85,6 +89,7 @@ MTLD3D12DescriptorHeap::GetDesc(D3D12_DESCRIPTOR_HEAP_DESC *__ret) {
 D3D12_CPU_DESCRIPTOR_HANDLE *STDMETHODCALLTYPE
 MTLD3D12DescriptorHeap::GetCPUDescriptorHandleForHeapStart(
     D3D12_CPU_DESCRIPTOR_HANDLE *__ret) {
+  HTRACE("GetCPUDescriptorHandleForHeapStart");
   __ret->ptr = reinterpret_cast<SIZE_T>(m_descriptors.data());
   return __ret;
 }
@@ -92,6 +97,7 @@ MTLD3D12DescriptorHeap::GetCPUDescriptorHandleForHeapStart(
 D3D12_GPU_DESCRIPTOR_HANDLE *STDMETHODCALLTYPE
 MTLD3D12DescriptorHeap::GetGPUDescriptorHandleForHeapStart(
     D3D12_GPU_DESCRIPTOR_HANDLE *__ret) {
+  HTRACE("GetGPUDescriptorHandleForHeapStart");
   __ret->ptr = reinterpret_cast<UINT64>(m_descriptors.data());
   return __ret;
 }

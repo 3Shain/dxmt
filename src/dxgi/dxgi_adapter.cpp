@@ -7,6 +7,7 @@
 #include "dxgi_interfaces.h"
 #include "dxgi_object.hpp"
 #include "d3d10_1.h"
+#include "d3d12.h"
 #include "Metal.hpp"
 
 namespace dxmt {
@@ -176,6 +177,16 @@ public:
     pDesc->GraphicsPreemptionGranularity = DXGI_GRAPHICS_PREEMPTION_DMA_BUFFER_BOUNDARY;
     pDesc->ComputePreemptionGranularity = DXGI_COMPUTE_PREEMPTION_DMA_BUFFER_BOUNDARY;
 
+    {
+      FILE *f = fopen("Z:\\tmp\\dxmt_dxgi_trace.log", "a");
+      if (f) {
+        fwprintf(f, L"GetDesc3: %s VendorId=0x%04x DeviceId=0x%04x VRAM=%lluMB Flags=0x%x\n",
+          pDesc->Description, pDesc->VendorId, pDesc->DeviceId,
+          (unsigned long long)pDesc->DedicatedVideoMemory/(1024*1024), pDesc->Flags);
+        fclose(f);
+      }
+    }
+
     return S_OK;
   }
 
@@ -195,10 +206,14 @@ public:
   }
   HRESULT STDMETHODCALLTYPE
   CheckInterfaceSupport(const GUID &guid, LARGE_INTEGER *umd_version) final {
+    {
+      FILE *f = fopen("Z:\\tmp\\dxmt_dxgi_trace.log", "a");
+      if (f) { fprintf(f, "CheckInterfaceSupport: %08lx-%04x-%04x\n", guid.Data1, guid.Data2, guid.Data3); fclose(f); }
+    }
     HRESULT hr = DXGI_ERROR_UNSUPPORTED;
 
     if (guid == __uuidof(IDXGIDevice) || guid == __uuidof(ID3D10Device) ||
-        guid == __uuidof(ID3D10Device1))
+        guid == __uuidof(ID3D10Device1) || guid == __uuidof(ID3D12Device))
       hr = S_OK;
 
     // We can't really reconstruct the version numbers
