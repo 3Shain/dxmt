@@ -6,6 +6,7 @@ d3d12_src = [
   'd3d12_command_queue.cpp',
   'd3d12_command_allocator.cpp',
   'd3d12_command_list.cpp',
+  'd3d12_resource.cpp',
 ]
 
 d3d12_ld_args      = ['-L' + windows_native_install_dir]

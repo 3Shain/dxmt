@@ -3,6 +3,7 @@
 #include "d3d12_command_allocator.hpp"
 #include "d3d12_command_list.hpp"
 #include "d3d12_device.hpp"
+#include "d3d12_resource.hpp"
 #include "com/com_object.hpp"
 #include "log/log.hpp"
 #include "util_string.hpp"
@@ -318,8 +319,17 @@ HRESULT STDMETHODCALLTYPE MTLD3D12Device::CreateCommittedResource(
     const D3D12_RESOURCE_DESC *desc, D3D12_RESOURCE_STATES initial_state,
     const D3D12_CLEAR_VALUE *optimized_clear_value, REFIID riid,
     void **resource) {
-  Logger::warn("D3D12Device::CreateCommittedResource: stub");
-  return E_NOTIMPL;
+  if (!desc || !resource)
+    return E_POINTER;
+  InitReturnPtr(resource);
+
+  auto res = new MTLD3D12Resource(this, *desc, initial_state,
+                                  heap_properties ? *heap_properties
+                                                  : D3D12_HEAP_PROPERTIES{});
+  HRESULT hr = res->QueryInterface(riid, resource);
+  if (FAILED(hr))
+    res->Release();
+  return hr;
 }
 
 HRESULT STDMETHODCALLTYPE
