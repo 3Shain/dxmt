@@ -167,7 +167,9 @@ HRESULT STDMETHODCALLTYPE MTLD3D12Device::CreateGraphicsPipelineState(
 
   auto pso = new MTLD3D12PipelineState(this, false);
   pso->SetGraphicsDesc(*desc);
-  if (!pso->Compile()) {
+  bool compiled = pso->Compile();
+  TRACE("CreateGraphicsPSO: compile=%d VS=%p PS=%p", compiled, desc->VS.pShaderBytecode, desc->PS.pShaderBytecode);
+  if (!compiled) {
     Logger::warn("CreateGraphicsPipelineState: shader compilation deferred/failed");
   }
   HRESULT hr = pso->QueryInterface(riid, pipeline_state);
@@ -185,7 +187,9 @@ HRESULT STDMETHODCALLTYPE MTLD3D12Device::CreateComputePipelineState(
 
   auto pso = new MTLD3D12PipelineState(this, true);
   pso->SetComputeDesc(*desc);
-  if (!pso->Compile()) {
+  bool compiled = pso->Compile();
+  TRACE("CreateComputePSO: compile=%d CS=%p", compiled, desc->CS.pShaderBytecode);
+  if (!compiled) {
     Logger::warn("CreateComputePipelineState: shader compilation deferred/failed");
   }
   HRESULT hr = pso->QueryInterface(riid, pipeline_state);
@@ -254,11 +258,11 @@ MTLD3D12Device::CheckFeatureSupport(D3D12_FEATURE feature,
     auto *fl = (D3D12_FEATURE_DATA_FEATURE_LEVELS *)feature_data;
     if (feature_data_size < sizeof(*fl))
       return E_INVALIDARG;
-    fl->MaxSupportedFeatureLevel = D3D_FEATURE_LEVEL_12_1;
+    fl->MaxSupportedFeatureLevel = D3D_FEATURE_LEVEL_9_1;
     for (UINT i = 0; i < fl->NumFeatureLevels; i++) {
-      if (fl->pFeatureLevelsRequested[i] <= D3D_FEATURE_LEVEL_12_1) {
+      if (fl->pFeatureLevelsRequested[i] <= D3D_FEATURE_LEVEL_12_1 &&
+          fl->pFeatureLevelsRequested[i] > fl->MaxSupportedFeatureLevel) {
         fl->MaxSupportedFeatureLevel = fl->pFeatureLevelsRequested[i];
-        break;
       }
     }
     return S_OK;

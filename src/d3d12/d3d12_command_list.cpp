@@ -272,7 +272,14 @@ void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::ResourceBarrier(
 }
 
 void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::ExecuteBundle(
-    ID3D12GraphicsCommandList *command_list) {}
+    ID3D12GraphicsCommandList *command_list) {
+  CLTRACE("ExecuteBundle cmds=%zu", command_list ? static_cast<MTLD3D12GraphicsCommandList*>(command_list)->GetCommands().size() : 0);
+  if (command_list) {
+    auto *bundle = static_cast<MTLD3D12GraphicsCommandList*>(command_list);
+    const auto &bundle_cmds = bundle->GetCommands();
+    m_cmds.insert(m_cmds.end(), bundle_cmds.begin(), bundle_cmds.end());
+  }
+}
 
 void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::SetDescriptorHeaps(
     UINT heap_count, ID3D12DescriptorHeap *const *heaps) {

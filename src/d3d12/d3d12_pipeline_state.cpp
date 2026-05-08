@@ -7,6 +7,8 @@
 #include "dxmt_format.hpp"
 #include <cstring>
 
+#define PSTRACE(fmt, ...) do { FILE *_tf = fopen("Z:\\tmp\\dxmt_dxgi_trace.log", "a"); if (_tf) { fprintf(_tf, fmt "\n", ##__VA_ARGS__); fclose(_tf); } } while(0)
+
 namespace dxmt {
 
 MTLD3D12PipelineState::MTLD3D12PipelineState(MTLD3D12Device *device,
@@ -51,6 +53,24 @@ bool MTLD3D12PipelineState::CompileShader(const void *bytecode, SIZE_T size,
                                           ShaderType type,
                                           const char *func_name,
                                           WMT::Reference<WMT::Function> &out_func) {
+  if (bytecode && size >= 4) {
+    auto *magic = (const uint32_t *)bytecode;
+    PSTRACE("CompileShader: %s size=%zu magic=0x%08x (DXBC=0x43425844 DXIL=0x4C495844)", func_name, size, *magic);
+    if (*magic == 0x43425844 && size >= 20) {
+      auto *chunks = (const uint32_t *)bytecode;
+      uint32_t num_chunks = chunks[4];
+      PSTRACE("  DXBC: num_chunks=%u", num_chunks);
+      for (uint32_t i = 0; i < num_chunks && i < 16; i++) {
+        uint32_t offset = chunks[5 + i];
+        if (offset + 8 <= size) {
+          char tag[5] = {};
+          memcpy(tag, (const char *)bytecode + offset, 4);
+          uint32_t chunk_size = *((const uint32_t *)bytecode + offset/4 + 1);
+          PSTRACE("  chunk[%u]: tag='%s' offset=%u size=%u", i, tag, offset, chunk_size);
+        }
+      }
+    }
+  }
   sm50_error_t sm50_err = nullptr;
   sm50_shader_t shader = nullptr;
   MTL_SHADER_REFLECTION reflection = {};
@@ -58,7 +78,7 @@ bool MTLD3D12PipelineState::CompileShader(const void *bytecode, SIZE_T size,
   if (SM50Initialize(bytecode, size, &shader, &reflection, &sm50_err)) {
     char err_buf[256] = {};
     SM50GetErrorMessage(sm50_err, err_buf, sizeof(err_buf));
-    Logger::err(str::format("SM50Initialize failed for ", func_name, ": ", err_buf));
+    PSTRACE("SM50Init FAILED for %s: %s", func_name, err_buf);
     SM50FreeError(sm50_err);
     return false;
   }

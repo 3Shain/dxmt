@@ -324,16 +324,18 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::ExecuteCommandLists(
 
     QTRACE("ExecuteCommandLists: cmd_size=%zu", cmds.size());
     size_t offset = 0;
+    size_t cmd_count = 0;
+    uint32_t type_counts[30] = {};
     while (offset < cmds.size()) {
       if (offset + sizeof(CmdHeader) > cmds.size())
         break;
       auto *header = reinterpret_cast<const CmdHeader *>(cmds.data() + offset);
-      if (offset + header->size > cmds.size())
+      if (header->size < sizeof(CmdHeader) || offset + header->size > cmds.size())
         break;
 
-      if (offset == 0)
-        QTRACE("ECL: first_cmd type=%u size=%u", (uint32_t)header->type, header->size);
-        break;
+      if ((uint32_t)header->type < 30)
+        type_counts[(uint32_t)header->type]++;
+      cmd_count++;
 
       switch (header->type) {
       case CmdType::DrawInstanced: {
@@ -613,6 +615,11 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::ExecuteCommandLists(
 
       offset += header->size;
     }
+
+    QTRACE("ECL: replayed %zu cmds, types:", cmd_count);
+    for (int i = 0; i < 30; i++)
+      if (type_counts[i])
+        QTRACE("  type[%d]=%u", i, type_counts[i]);
 
     st.CloseRenderEncoder();
     QTRACE("ExecuteCommandLists: committing cmdbuf");
