@@ -4,10 +4,186 @@
 #include "d3d12_device.hpp"
 #include "d3d12_pipeline_state.hpp"
 #include "d3d12_resource.hpp"
+#include "d3d12_root_signature.hpp"
 #include "log/log.hpp"
 #include "util_string.hpp"
+#include "Metal.hpp"
 
 namespace dxmt {
+
+namespace {
+
+struct ReplayState {
+  WMT::CommandBuffer cmdbuf;
+  WMT::RenderCommandEncoder render_enc;
+  bool render_enc_open = false;
+
+  MTLD3D12PipelineState *pso = nullptr;
+  MTLD3D12RootSignature *graphics_root_sig = nullptr;
+  D3D12_PRIMITIVE_TOPOLOGY topology = D3D_PRIMITIVE_TOPOLOGY_UNDEFINED;
+  D3D12_VERTEX_BUFFER_VIEW vbs[16] = {};
+  D3D12_INDEX_BUFFER_VIEW ib = {};
+  D3D12_VIEWPORT viewports[16] = {};
+  uint32_t viewport_count = 0;
+  D3D12_RECT scissor_rects[16] = {};
+  uint32_t scissor_count = 0;
+  float blend_factor[4] = {1, 1, 1, 1};
+  uint32_t stencil_ref = 0;
+
+  D3D12_CPU_DESCRIPTOR_HANDLE rt_handles[8] = {};
+  D3D12_CPU_DESCRIPTOR_HANDLE dsv_handle = {};
+  uint32_t rt_count = 0;
+  bool has_dsv = false;
+
+  ID3D12DescriptorHeap *desc_heaps[2] = {};
+  uint32_t desc_heap_count = 0;
+
+  D3D12_GPU_VIRTUAL_ADDRESS root_cbvs[16] = {};
+  D3D12_GPU_DESCRIPTOR_HANDLE root_tables[16] = {};
+  uint8_t root_constants_buf[16 * 64] = {};
+  uint32_t root_constant_offsets[16] = {};
+  uint32_t root_constant_sizes[16] = {};
+  bool root_constant_set[16] = {};
+  bool root_cbv_set[16] = {};
+  bool root_table_set[16] = {};
+
+  void CloseRenderEncoder() {
+    if (render_enc_open) {
+      render_enc.endEncoding();
+      render_enc_open = false;
+    }
+  }
+
+  WMTPrimitiveType GetMetalPrimitiveType() {
+    switch (topology) {
+    case D3D_PRIMITIVE_TOPOLOGY_POINTLIST: return WMTPrimitiveTypePoint;
+    case D3D_PRIMITIVE_TOPOLOGY_LINELIST: return WMTPrimitiveTypeLine;
+    case D3D_PRIMITIVE_TOPOLOGY_LINESTRIP: return WMTPrimitiveTypeLineStrip;
+    case D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST: return WMTPrimitiveTypeTriangle;
+    case D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP: return WMTPrimitiveTypeTriangleStrip;
+    default: return WMTPrimitiveTypeTriangle;
+    }
+  }
+
+  void EnsureRenderEncoder() {
+    if (render_enc_open)
+      return;
+
+    WMTRenderPassInfo rp = {};
+    for (uint32_t i = 0; i < 8; i++) {
+      rp.colors[i].texture = NULL_OBJECT_HANDLE;
+      rp.colors[i].load_action = WMTLoadActionLoad;
+      rp.colors[i].store_action = WMTStoreActionStore;
+      rp.colors[i].level = 0;
+      rp.colors[i].slice = 0;
+    }
+    rp.depth.texture = NULL_OBJECT_HANDLE;
+    rp.depth.load_action = WMTLoadActionLoad;
+    rp.depth.store_action = WMTStoreActionStore;
+    rp.stencil.texture = NULL_OBJECT_HANDLE;
+    rp.stencil.load_action = WMTLoadActionLoad;
+    rp.stencil.store_action = WMTStoreActionStore;
+
+    for (uint32_t i = 0; i < rt_count && i < 8; i++) {
+      auto *desc = reinterpret_cast<const D3D12Descriptor *>(rt_handles[i].ptr);
+      if (desc && desc->resource) {
+        auto *res = static_cast<MTLD3D12Resource *>(desc->resource);
+        if (res->GetMTLTexture().handle) {
+          rp.colors[i].texture = res->GetMTLTexture().handle;
+        } else if (res->GetMTLBuffer().handle) {
+          WMTTextureInfo tex_info = {};
+          tex_info.width = 1;
+          tex_info.height = 1;
+          tex_info.depth = 1;
+          tex_info.array_length = 1;
+          tex_info.mipmap_level_count = 1;
+          tex_info.sample_count = 1;
+          tex_info.type = WMTTextureType2D;
+          tex_info.usage = WMTTextureUsageRenderTarget;
+          tex_info.pixel_format = WMTPixelFormatBGRA8Unorm;
+          tex_info.options = WMTResourceStorageModeShared;
+          auto tex = res->GetMTLBuffer().newTexture(tex_info, 0, 0);
+          rp.colors[i].texture = tex.handle;
+        }
+      }
+    }
+
+    if (has_dsv) {
+      auto *desc = reinterpret_cast<const D3D12Descriptor *>(dsv_handle.ptr);
+      if (desc && desc->resource) {
+        auto *res = static_cast<MTLD3D12Resource *>(desc->resource);
+        if (res->GetMTLTexture().handle) {
+          rp.depth.texture = res->GetMTLTexture().handle;
+          rp.stencil.texture = res->GetMTLTexture().handle;
+        }
+      }
+    }
+
+    render_enc = cmdbuf.renderCommandEncoder(rp);
+    render_enc_open = true;
+
+    if (pso && pso->IsCompiled() && pso->GetRenderPSO().handle) {
+      render_enc.setRenderPipelineState(pso->GetRenderPSO());
+    }
+
+    if (viewport_count > 0) {
+      for (uint32_t i = 0; i < viewport_count; i++) {
+        WMTViewport vp = {(double)viewports[i].TopLeftX,
+                          (double)viewports[i].TopLeftY,
+                          (double)viewports[i].Width,
+                          (double)viewports[i].Height,
+                          viewports[i].MinDepth,
+                          viewports[i].MaxDepth};
+        render_enc.setViewport(vp);
+      }
+    }
+  }
+
+  void ApplyRootBindings() {
+    if (!render_enc_open || !pso)
+      return;
+
+    for (uint32_t i = 0; i < 16; i++) {
+      if (root_cbv_set[i] && root_cbvs[i]) {
+        struct wmtcmd_render_setbuffer cmd;
+        cmd.type = WMTRenderCommandSetVertexBuffer;
+        cmd.next.set(nullptr);
+        cmd.buffer = NULL_OBJECT_HANDLE;
+        cmd.offset = root_cbvs[i];
+        cmd.index = i;
+        render_enc.encodeCommands(
+            reinterpret_cast<const wmtcmd_render_nop *>(&cmd));
+
+        cmd.type = WMTRenderCommandSetFragmentBuffer;
+        cmd.index = i;
+        render_enc.encodeCommands(
+            reinterpret_cast<const wmtcmd_render_nop *>(&cmd));
+      }
+
+      if (root_constant_set[i] && root_constant_sizes[i] > 0) {
+        render_enc.setFragmentBytes(root_constants_buf + root_constant_offsets[i],
+                                    root_constant_sizes[i], i);
+        render_enc.setFragmentBytes(root_constants_buf + root_constant_offsets[i],
+                                    root_constant_sizes[i], i);
+      }
+    }
+  }
+};
+
+WMTIndexType DXGIToWMTIndexFormat(DXGI_FORMAT fmt) {
+  switch (fmt) {
+  case DXGI_FORMAT_R16_UINT: return WMTIndexTypeUInt16;
+  case DXGI_FORMAT_R32_UINT: return WMTIndexTypeUInt32;
+  default: return WMTIndexTypeUInt16;
+  }
+}
+
+} // anonymous namespace
+
+static bool rt_handles_match(D3D12_CPU_DESCRIPTOR_HANDLE a,
+                             D3D12_CPU_DESCRIPTOR_HANDLE b) {
+  return a.ptr == b.ptr;
+}
 
 MTLD3D12CommandQueue::MTLD3D12CommandQueue(MTLD3D12Device *device,
                                            CommandQueue &queue,
@@ -98,13 +274,11 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::CopyTileMappings(
 void STDMETHODCALLTYPE MTLD3D12CommandQueue::ExecuteCommandLists(
     UINT command_list_count,
     ID3D12CommandList *const *command_lists) {
-  Logger::info(str::format("ExecuteCommandLists: ", command_list_count, " lists"));
-
   auto wmt_device = m_device->GetDXMTDevice().device();
   auto wmt_queue = WMT::CommandQueue{wmt_device.newCommandQueue(1).handle};
 
-  for (UINT i = 0; i < command_list_count; i++) {
-    auto *list = static_cast<MTLD3D12GraphicsCommandList *>(command_lists[i]);
+  for (UINT li = 0; li < command_list_count; li++) {
+    auto *list = static_cast<MTLD3D12GraphicsCommandList *>(command_lists[li]);
     if (!list)
       continue;
 
@@ -120,7 +294,8 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::ExecuteCommandLists(
       continue;
     }
 
-    Logger::info(str::format("  list[", i, "]: ", cmds.size(), " bytes of commands"));
+    ReplayState st;
+    st.cmdbuf = cmdbuf;
 
     size_t offset = 0;
     while (offset < cmds.size()) {
@@ -133,25 +308,65 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::ExecuteCommandLists(
       switch (header->type) {
       case CmdType::DrawInstanced: {
         auto *cmd = reinterpret_cast<const CmdDrawInstanced *>(header);
-        Logger::info(str::format("    DrawInstanced: v=", cmd->vertex_count,
-                                  " i=", cmd->instance_count));
+        st.EnsureRenderEncoder();
+        st.ApplyRootBindings();
+
+        if (cmd->instance_count > 0 && cmd->vertex_count > 0) {
+          struct wmtcmd_render_draw draw = {};
+          draw.type = WMTRenderCommandDraw;
+          draw.next.set(nullptr);
+          draw.primitive_type = st.GetMetalPrimitiveType();
+          draw.vertex_start = cmd->start_vertex;
+          draw.vertex_count = cmd->vertex_count;
+          draw.base_instance = cmd->start_instance;
+          draw.instance_count = cmd->instance_count;
+          st.render_enc.encodeCommands(
+              reinterpret_cast<const wmtcmd_render_nop *>(&draw));
+        }
         break;
       }
       case CmdType::DrawIndexedInstanced: {
         auto *cmd = reinterpret_cast<const CmdDrawIndexedInstanced *>(header);
-        Logger::info(str::format("    DrawIndexedInstanced: idx=", cmd->index_count,
-                                  " inst=", cmd->instance_count));
+        st.EnsureRenderEncoder();
+        st.ApplyRootBindings();
+
+        if (cmd->instance_count > 0 && cmd->index_count > 0 && st.ib.BufferLocation) {
+          auto *ib_res = reinterpret_cast<MTLD3D12Resource *>(st.ib.BufferLocation);
+          struct wmtcmd_render_draw_indexed draw = {};
+          draw.type = WMTRenderCommandDrawIndexed;
+          draw.next.set(nullptr);
+          draw.primitive_type = st.GetMetalPrimitiveType();
+          draw.index_type = DXGIToWMTIndexFormat(st.ib.Format);
+          draw.index_count = cmd->index_count;
+          draw.index_buffer = ib_res->GetMTLBuffer().handle;
+          draw.index_buffer_offset = st.ib.SizeInBytes ? 0 : 0;
+          draw.instance_count = cmd->instance_count;
+          draw.base_vertex = cmd->base_vertex;
+          draw.base_instance = cmd->start_instance;
+          st.render_enc.encodeCommands(
+              reinterpret_cast<const wmtcmd_render_nop *>(&draw));
+        }
         break;
       }
       case CmdType::Dispatch: {
         auto *cmd = reinterpret_cast<const CmdDispatch *>(header);
-        Logger::info(str::format("    Dispatch: ", cmd->x, "x", cmd->y, "x", cmd->z));
+        if (st.pso && st.pso->IsCompiled() && st.pso->IsCompute() &&
+            st.pso->GetComputePSO().handle) {
+          auto comp = cmdbuf.computeCommandEncoder(false);
+          struct wmtcmd_compute_setpso setpso = {};
+          setpso.type = WMTComputeCommandSetPSO;
+          setpso.next.set(nullptr);
+          setpso.pso = st.pso->GetComputePSO();
+          comp.encodeCommands(
+              reinterpret_cast<const wmtcmd_compute_nop *>(&setpso));
+          comp.endEncoding();
+        }
         break;
       }
       case CmdType::CopyBufferRegion: {
         auto *cmd = reinterpret_cast<const CmdCopyBufferRegion *>(header);
-        Logger::info(str::format("    CopyBuffer: ", cmd->byte_count, " bytes"));
         if (cmd->dst && cmd->src) {
+          st.CloseRenderEncoder();
           auto *dst_res = static_cast<MTLD3D12Resource *>(cmd->dst);
           auto *src_res = static_cast<MTLD3D12Resource *>(cmd->src);
           if (dst_res->GetMTLBuffer().handle && src_res->GetMTLBuffer().handle) {
@@ -172,79 +387,200 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::ExecuteCommandLists(
       }
       case CmdType::SetPipelineState: {
         auto *cmd = reinterpret_cast<const CmdSetPipelineState *>(header);
-        auto *pso = static_cast<MTLD3D12PipelineState *>(cmd->pso);
-        if (pso)
-          Logger::info(str::format("    SetPSO: compute=", pso->IsCompute()));
+        st.pso = static_cast<MTLD3D12PipelineState *>(cmd->pso);
+        if (st.render_enc_open && st.pso && st.pso->IsCompiled() &&
+            st.pso->GetRenderPSO().handle) {
+          st.render_enc.setRenderPipelineState(st.pso->GetRenderPSO());
+        }
         break;
       }
       case CmdType::ResourceBarrier: {
-        Logger::info("    ResourceBarrier");
         break;
       }
       case CmdType::OMSetRenderTargets: {
         auto *cmd = reinterpret_cast<const CmdOMSetRenderTargets *>(header);
-        Logger::info(str::format("    SetRTs: ", cmd->rt_count, " rts, dsv=", cmd->has_dsv));
+        st.CloseRenderEncoder();
+        st.rt_count = cmd->rt_count;
+        for (uint32_t i = 0; i < cmd->rt_count && i < 8; i++)
+          st.rt_handles[i] = cmd->rts[i];
+        st.has_dsv = cmd->has_dsv;
+        if (cmd->has_dsv)
+          st.dsv_handle = cmd->dsv;
         break;
       }
       case CmdType::ClearRenderTargetView: {
         auto *cmd = reinterpret_cast<const CmdClearRTV *>(header);
-        Logger::info(str::format("    ClearRTV: (", cmd->color[0], ",", cmd->color[1],
-                                  ",", cmd->color[2], ",", cmd->color[3], ")"));
+        st.CloseRenderEncoder();
+
+        WMTRenderPassInfo rp = {};
+        for (uint32_t i = 0; i < 8; i++) {
+          rp.colors[i].texture = NULL_OBJECT_HANDLE;
+          rp.colors[i].load_action = WMTLoadActionDontCare;
+          rp.colors[i].store_action = WMTStoreActionDontCare;
+        }
+        rp.depth.texture = NULL_OBJECT_HANDLE;
+        rp.depth.load_action = WMTLoadActionDontCare;
+        rp.depth.store_action = WMTStoreActionDontCare;
+        rp.stencil.texture = NULL_OBJECT_HANDLE;
+        rp.stencil.load_action = WMTLoadActionDontCare;
+        rp.stencil.store_action = WMTStoreActionDontCare;
+
+        for (uint32_t i = 0; i < st.rt_count && i < 8; i++) {
+          auto *desc = reinterpret_cast<const D3D12Descriptor *>(st.rt_handles[i].ptr);
+          if (desc && desc->resource) {
+            auto *res = static_cast<MTLD3D12Resource *>(desc->resource);
+            if (res->GetMTLTexture().handle) {
+              rp.colors[i].texture = res->GetMTLTexture().handle;
+              if (rt_handles_match(st.rt_handles[i], cmd->rtv)) {
+                rp.colors[i].load_action = WMTLoadActionClear;
+                rp.colors[i].store_action = WMTStoreActionStore;
+                rp.colors[i].clear_color = {cmd->color[0], cmd->color[1],
+                                            cmd->color[2], cmd->color[3]};
+              } else {
+                rp.colors[i].load_action = WMTLoadActionLoad;
+                rp.colors[i].store_action = WMTStoreActionStore;
+              }
+            }
+          }
+        }
+
+        if (st.has_dsv) {
+          auto *desc = reinterpret_cast<const D3D12Descriptor *>(st.dsv_handle.ptr);
+          if (desc && desc->resource) {
+            auto *res = static_cast<MTLD3D12Resource *>(desc->resource);
+            if (res->GetMTLTexture().handle) {
+              rp.depth.texture = res->GetMTLTexture().handle;
+              rp.depth.load_action = WMTLoadActionLoad;
+              rp.depth.store_action = WMTStoreActionStore;
+            }
+          }
+        }
+
+        auto enc = cmdbuf.renderCommandEncoder(rp);
+        enc.endEncoding();
+        break;
+      }
+      case CmdType::ClearDepthStencilView: {
+        auto *cmd = reinterpret_cast<const CmdClearDSV *>(header);
         break;
       }
       case CmdType::RSSetViewports: {
         auto *cmd = reinterpret_cast<const CmdRSSetViewports *>(header);
-        Logger::info(str::format("    SetViewports: ", cmd->count));
+        auto *vps = reinterpret_cast<const D3D12_VIEWPORT *>(
+            reinterpret_cast<const uint8_t *>(cmd) +
+            sizeof(CmdRSSetViewports) - sizeof(D3D12_VIEWPORT));
+        st.viewport_count = cmd->count > 16 ? 16 : cmd->count;
+        for (uint32_t i = 0; i < st.viewport_count; i++)
+          st.viewports[i] = vps[i];
+        if (st.render_enc_open) {
+          for (uint32_t i = 0; i < st.viewport_count; i++) {
+            WMTViewport vp = {(double)vps[i].TopLeftX, (double)vps[i].TopLeftY,
+                              (double)vps[i].Width, (double)vps[i].Height,
+                              vps[i].MinDepth, vps[i].MaxDepth};
+            st.render_enc.setViewport(vp);
+          }
+        }
+        break;
+      }
+      case CmdType::RSSetScissorRects: {
+        auto *cmd = reinterpret_cast<const CmdRSSetScissorRects *>(header);
+        st.scissor_count = cmd->count > 16 ? 16 : cmd->count;
         break;
       }
       case CmdType::IASetPrimitiveTopology: {
         auto *cmd = reinterpret_cast<const CmdIASetPrimitiveTopology *>(header);
-        Logger::info(str::format("    SetTopology: ", cmd->topology));
+        st.topology = cmd->topology;
         break;
       }
       case CmdType::SetGraphicsRootSignature: {
-        Logger::info("    SetGraphicsRootSignature");
+        auto *cmd = reinterpret_cast<const CmdSetRootSignature *>(header);
+        st.graphics_root_sig = static_cast<MTLD3D12RootSignature *>(cmd->root_sig);
         break;
       }
       case CmdType::SetGraphicsRoot32BitConstants: {
         auto *cmd = reinterpret_cast<const CmdSetRoot32BitConstants *>(header);
-        Logger::info(str::format("    SetRootConstants: slot=", cmd->root_param_index,
-                                  " count=", cmd->count));
+        if (cmd->root_param_index < 16) {
+          uint32_t sz = cmd->count * 4;
+          uint32_t off = cmd->dst_offset * 4;
+          if (off + sz <= sizeof(st.root_constants_buf)) {
+            memcpy(st.root_constants_buf + off, cmd->data, sz);
+            st.root_constant_offsets[cmd->root_param_index] = off;
+            st.root_constant_sizes[cmd->root_param_index] = sz;
+            st.root_constant_set[cmd->root_param_index] = true;
+          }
+        }
         break;
       }
       case CmdType::SetGraphicsRootConstantBufferView: {
         auto *cmd = reinterpret_cast<const CmdSetRootCBV *>(header);
-        Logger::info(str::format("    SetRootCBV: slot=", cmd->root_param_index,
-                                  " addr=", cmd->address));
+        if (cmd->root_param_index < 16) {
+          st.root_cbvs[cmd->root_param_index] = cmd->address;
+          st.root_cbv_set[cmd->root_param_index] = true;
+        }
         break;
       }
       case CmdType::SetGraphicsRootDescriptorTable: {
         auto *cmd = reinterpret_cast<const CmdSetRootDescriptorTable *>(header);
-        Logger::info(str::format("    SetRootDescTable: slot=", cmd->root_param_index));
+        if (cmd->root_param_index < 16) {
+          st.root_tables[cmd->root_param_index] = cmd->base_descriptor;
+          st.root_table_set[cmd->root_param_index] = true;
+        }
         break;
       }
       case CmdType::IASetVertexBuffers: {
         auto *cmd = reinterpret_cast<const CmdIASetVertexBuffers *>(header);
-        Logger::info(str::format("    SetVBs: slot=", cmd->start_slot, " count=", cmd->count));
+        auto *views = reinterpret_cast<const D3D12_VERTEX_BUFFER_VIEW *>(
+            reinterpret_cast<const uint8_t *>(cmd) +
+            sizeof(CmdIASetVertexBuffers) - sizeof(D3D12_VERTEX_BUFFER_VIEW));
+        if (st.render_enc_open) {
+          for (uint32_t i = 0; i < cmd->count; i++) {
+            if (views[i].BufferLocation) {
+              auto *res = reinterpret_cast<MTLD3D12Resource *>(views[i].BufferLocation);
+              if (res && res->GetMTLBuffer().handle) {
+                st.render_enc.setVertexBuffer(res->GetMTLBuffer(),
+                                              views[i].SizeInBytes ? 0 : 0,
+                                              cmd->start_slot + i);
+              }
+            }
+          }
+        }
+        for (uint32_t i = 0; i < cmd->count && (cmd->start_slot + i) < 16; i++)
+          st.vbs[cmd->start_slot + i] = views[i];
         break;
       }
       case CmdType::IASetIndexBuffer: {
-        Logger::info("    SetIB");
+        auto *cmd = reinterpret_cast<const CmdIASetIndexBuffer *>(header);
+        st.ib = cmd->view;
+        break;
+      }
+      case CmdType::OMSetBlendFactor: {
+        auto *cmd = reinterpret_cast<const CmdOMBlendFactor *>(header);
+        memcpy(st.blend_factor, cmd->factor, 16);
+        break;
+      }
+      case CmdType::OMSetStencilRef: {
+        auto *cmd = reinterpret_cast<const CmdOMStencilRef *>(header);
+        st.stencil_ref = cmd->stencil_ref;
         break;
       }
       case CmdType::SetDescriptorHeaps: {
         auto *cmd = reinterpret_cast<const CmdSetDescriptorHeaps *>(header);
-        Logger::info(str::format("    SetDescHeaps: ", cmd->count));
+        st.desc_heap_count = cmd->count > 2 ? 2 : cmd->count;
+        auto *heaps = reinterpret_cast<ID3D12DescriptorHeap *const *>(
+            reinterpret_cast<const uint8_t *>(cmd) +
+            sizeof(CmdSetDescriptorHeaps) - sizeof(ID3D12DescriptorHeap *));
+        for (uint32_t i = 0; i < st.desc_heap_count; i++)
+          st.desc_heaps[i] = heaps[i];
         break;
       }
       default:
-        Logger::info(str::format("    Unknown cmd: ", (uint32_t)header->type));
         break;
       }
 
       offset += header->size;
     }
 
+    st.CloseRenderEncoder();
     cmdbuf.commit();
     cmdbuf.waitUntilCompleted();
 
