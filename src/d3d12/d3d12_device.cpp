@@ -5,11 +5,14 @@
 #include "d3d12_descriptor_heap.hpp"
 #include "d3d12_device.hpp"
 #include "d3d12_fence.hpp"
+#include "d3d12_pipeline_state.hpp"
+#include "d3d12_query_heap.hpp"
 #include "d3d12_resource.hpp"
 #include "d3d12_root_signature.hpp"
 #include "com/com_object.hpp"
 #include "log/log.hpp"
 #include "util_string.hpp"
+#include <cstring>
 #include <d3d12.h>
 
 namespace dxmt {
@@ -124,15 +127,31 @@ MTLD3D12Device::CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE type,
 HRESULT STDMETHODCALLTYPE MTLD3D12Device::CreateGraphicsPipelineState(
     const D3D12_GRAPHICS_PIPELINE_STATE_DESC *desc, REFIID riid,
     void **pipeline_state) {
-  Logger::warn("D3D12Device::CreateGraphicsPipelineState: stub");
-  return E_NOTIMPL;
+  if (!desc || !pipeline_state)
+    return E_POINTER;
+  InitReturnPtr(pipeline_state);
+
+  auto pso = new MTLD3D12PipelineState(this, false);
+  pso->SetGraphicsDesc(*desc);
+  HRESULT hr = pso->QueryInterface(riid, pipeline_state);
+  if (FAILED(hr))
+    pso->Release();
+  return hr;
 }
 
 HRESULT STDMETHODCALLTYPE MTLD3D12Device::CreateComputePipelineState(
     const D3D12_COMPUTE_PIPELINE_STATE_DESC *desc, REFIID riid,
     void **pipeline_state) {
-  Logger::warn("D3D12Device::CreateComputePipelineState: stub");
-  return E_NOTIMPL;
+  if (!desc || !pipeline_state)
+    return E_POINTER;
+  InitReturnPtr(pipeline_state);
+
+  auto pso = new MTLD3D12PipelineState(this, true);
+  pso->SetComputeDesc(*desc);
+  HRESULT hr = pso->QueryInterface(riid, pipeline_state);
+  if (FAILED(hr))
+    pso->Release();
+  return hr;
 }
 
 HRESULT STDMETHODCALLTYPE MTLD3D12Device::CreateCommandList(
@@ -263,28 +282,75 @@ HRESULT STDMETHODCALLTYPE MTLD3D12Device::CreateRootSignature(
 
 void STDMETHODCALLTYPE MTLD3D12Device::CreateConstantBufferView(
     const D3D12_CONSTANT_BUFFER_VIEW_DESC *desc,
-    D3D12_CPU_DESCRIPTOR_HANDLE descriptor) {}
+    D3D12_CPU_DESCRIPTOR_HANDLE descriptor) {
+  if (!desc)
+    return;
+  auto *d = reinterpret_cast<D3D12Descriptor *>(descriptor.ptr);
+  if (d) {
+    d->cbv = *desc;
+    d->type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+  }
+}
 
 void STDMETHODCALLTYPE MTLD3D12Device::CreateShaderResourceView(
     ID3D12Resource *resource, const D3D12_SHADER_RESOURCE_VIEW_DESC *desc,
-    D3D12_CPU_DESCRIPTOR_HANDLE descriptor) {}
+    D3D12_CPU_DESCRIPTOR_HANDLE descriptor) {
+  auto *d = reinterpret_cast<D3D12Descriptor *>(descriptor.ptr);
+  if (d) {
+    d->resource = resource;
+    if (desc)
+      d->srv = *desc;
+    d->type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+  }
+}
 
 void STDMETHODCALLTYPE MTLD3D12Device::CreateUnorderedAccessView(
     ID3D12Resource *resource, ID3D12Resource *counter_resource,
     const D3D12_UNORDERED_ACCESS_VIEW_DESC *desc,
-    D3D12_CPU_DESCRIPTOR_HANDLE descriptor) {}
+    D3D12_CPU_DESCRIPTOR_HANDLE descriptor) {
+  auto *d = reinterpret_cast<D3D12Descriptor *>(descriptor.ptr);
+  if (d) {
+    d->resource = resource;
+    d->resource_uav_counter = counter_resource;
+    if (desc)
+      d->uav = *desc;
+    d->type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+  }
+}
 
 void STDMETHODCALLTYPE MTLD3D12Device::CreateRenderTargetView(
     ID3D12Resource *resource, const D3D12_RENDER_TARGET_VIEW_DESC *desc,
-    D3D12_CPU_DESCRIPTOR_HANDLE descriptor) {}
+    D3D12_CPU_DESCRIPTOR_HANDLE descriptor) {
+  auto *d = reinterpret_cast<D3D12Descriptor *>(descriptor.ptr);
+  if (d) {
+    d->resource = resource;
+    if (desc)
+      d->rtv = *desc;
+    d->type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
+  }
+}
 
 void STDMETHODCALLTYPE MTLD3D12Device::CreateDepthStencilView(
     ID3D12Resource *resource, const D3D12_DEPTH_STENCIL_VIEW_DESC *desc,
-    D3D12_CPU_DESCRIPTOR_HANDLE descriptor) {}
+    D3D12_CPU_DESCRIPTOR_HANDLE descriptor) {
+  auto *d = reinterpret_cast<D3D12Descriptor *>(descriptor.ptr);
+  if (d) {
+    d->resource = resource;
+    if (desc)
+      d->dsv = *desc;
+    d->type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
+  }
+}
 
 void STDMETHODCALLTYPE
 MTLD3D12Device::CreateSampler(const D3D12_SAMPLER_DESC *desc,
-                              D3D12_CPU_DESCRIPTOR_HANDLE descriptor) {}
+                              D3D12_CPU_DESCRIPTOR_HANDLE descriptor) {
+  auto *d = reinterpret_cast<D3D12Descriptor *>(descriptor.ptr);
+  if (d && desc) {
+    d->sampler = *desc;
+    d->type = D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER;
+  }
+}
 
 void STDMETHODCALLTYPE MTLD3D12Device::CopyDescriptors(
     UINT dst_descriptor_range_count,
@@ -293,13 +359,35 @@ void STDMETHODCALLTYPE MTLD3D12Device::CopyDescriptors(
     UINT src_descriptor_range_count,
     const D3D12_CPU_DESCRIPTOR_HANDLE *src_descriptor_range_offsets,
     const UINT *src_descriptor_range_sizes,
-    D3D12_DESCRIPTOR_HEAP_TYPE descriptor_heap_type) {}
+    D3D12_DESCRIPTOR_HEAP_TYPE descriptor_heap_type) {
+  UINT src_idx = 0;
+  for (UINT dst_range = 0; dst_range < dst_descriptor_range_count; dst_range++) {
+    for (UINT i = 0; i < dst_descriptor_range_sizes[dst_range]; i++) {
+      auto *dst = reinterpret_cast<D3D12Descriptor *>(
+          dst_descriptor_range_offsets[dst_range].ptr) +
+                  i * (GetDescriptorHandleIncrementSize(descriptor_heap_type) /
+                       sizeof(D3D12Descriptor));
+      if (src_idx < src_descriptor_range_count) {
+        auto *src = reinterpret_cast<D3D12Descriptor *>(
+            src_descriptor_range_offsets[src_idx].ptr) +
+                    i * (GetDescriptorHandleIncrementSize(descriptor_heap_type) /
+                         sizeof(D3D12Descriptor));
+        *dst = *src;
+      }
+    }
+    src_idx++;
+  }
+}
 
 void STDMETHODCALLTYPE MTLD3D12Device::CopyDescriptorsSimple(
     UINT descriptor_count,
     const D3D12_CPU_DESCRIPTOR_HANDLE dst_descriptor_range_offset,
     const D3D12_CPU_DESCRIPTOR_HANDLE src_descriptor_range_offset,
-    D3D12_DESCRIPTOR_HEAP_TYPE descriptor_heap_type) {}
+    D3D12_DESCRIPTOR_HEAP_TYPE descriptor_heap_type) {
+  CopyDescriptors(1, &dst_descriptor_range_offset, &descriptor_count, 1,
+                  &src_descriptor_range_offset, &descriptor_count,
+                  descriptor_heap_type);
+}
 
 D3D12_RESOURCE_ALLOCATION_INFO* STDMETHODCALLTYPE
 MTLD3D12Device::GetResourceAllocationInfo(
@@ -431,9 +519,16 @@ void STDMETHODCALLTYPE MTLD3D12Device::GetCopyableFootprints(
 
 HRESULT STDMETHODCALLTYPE
 MTLD3D12Device::CreateQueryHeap(const D3D12_QUERY_HEAP_DESC *desc,
-                                REFIID riid, void **heap) {
-  Logger::warn("D3D12Device::CreateQueryHeap: stub");
-  return E_NOTIMPL;
+                                 REFIID riid, void **heap) {
+  if (!desc || !heap)
+    return E_POINTER;
+  InitReturnPtr(heap);
+
+  auto qh = new MTLD3D12QueryHeap(this, *desc);
+  HRESULT hr = qh->QueryInterface(riid, heap);
+  if (FAILED(hr))
+    qh->Release();
+  return hr;
 }
 
 HRESULT STDMETHODCALLTYPE
@@ -445,7 +540,9 @@ HRESULT STDMETHODCALLTYPE MTLD3D12Device::CreateCommandSignature(
     const D3D12_COMMAND_SIGNATURE_DESC *desc,
     ID3D12RootSignature *root_signature, REFIID riid,
     void **command_signature) {
-  Logger::warn("D3D12Device::CreateCommandSignature: stub");
+  if (!desc || !command_signature)
+    return E_POINTER;
+  InitReturnPtr(command_signature);
   return E_NOTIMPL;
 }
 

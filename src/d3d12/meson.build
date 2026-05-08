@@ -8,6 +8,8 @@ d3d12_src = [
   'd3d12_command_list.cpp',
   'd3d12_descriptor_heap.cpp',
   'd3d12_fence.cpp',
+  'd3d12_pipeline_state.cpp',
+  'd3d12_query_heap.cpp',
   'd3d12_resource.cpp',
   'd3d12_root_signature.cpp',
 ]
