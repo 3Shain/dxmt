@@ -1,6 +1,10 @@
 #include "d3d12_command_list.hpp"
 #include "d3d12_command_allocator.hpp"
 #include "d3d12_device.hpp"
+#include "d3d12_pipeline_state.hpp"
+#include "d3d12_resource.hpp"
+#include "d3d12_root_signature.hpp"
+#include "d3d12_descriptor_heap.hpp"
 #include "log/log.hpp"
 #include "util_string.hpp"
 
@@ -91,27 +95,62 @@ HRESULT STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::Close() {
 HRESULT STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::Reset(
     ID3D12CommandAllocator *allocator, ID3D12PipelineState *initial_state) {
   m_closed = false;
+  m_cmds.clear();
   return S_OK;
 }
 
 void STDMETHODCALLTYPE
-MTLD3D12GraphicsCommandList::ClearState(ID3D12PipelineState *pipeline_state) {}
+MTLD3D12GraphicsCommandList::ClearState(ID3D12PipelineState *pipeline_state) {
+  m_cmds.clear();
+}
 
 void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::DrawInstanced(
-    UINT vertex_count_per_instance, UINT instance_count,
-    UINT start_vertex_location, UINT start_instance_location) {}
+    UINT vertex_count, UINT instance_count, UINT start_vertex,
+    UINT start_instance) {
+  CmdDrawInstanced cmd = {};
+  cmd.header = {CmdType::DrawInstanced, sizeof(cmd)};
+  cmd.vertex_count = vertex_count;
+  cmd.instance_count = instance_count;
+  cmd.start_vertex = start_vertex;
+  cmd.start_instance = start_instance;
+  Emit(cmd);
+}
 
 void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::DrawIndexedInstanced(
-    UINT index_count_per_instance, UINT instance_count,
-    UINT start_vertex_location, INT base_vertex_location,
-    UINT start_instance_location) {}
+    UINT index_count, UINT instance_count, UINT start_vertex,
+    INT base_vertex, UINT start_instance) {
+  CmdDrawIndexedInstanced cmd = {};
+  cmd.header = {CmdType::DrawIndexedInstanced, sizeof(cmd)};
+  cmd.index_count = index_count;
+  cmd.instance_count = instance_count;
+  cmd.start_vertex = start_vertex;
+  cmd.base_vertex = base_vertex;
+  cmd.start_instance = start_instance;
+  Emit(cmd);
+}
 
-void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::Dispatch(UINT x, UINT u,
-                                                             UINT z) {}
+void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::Dispatch(UINT x, UINT y,
+                                                             UINT z) {
+  CmdDispatch cmd = {};
+  cmd.header = {CmdType::Dispatch, sizeof(cmd)};
+  cmd.x = x;
+  cmd.y = y;
+  cmd.z = z;
+  Emit(cmd);
+}
 
 void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::CopyBufferRegion(
-    ID3D12Resource *dst_buffer, UINT64 dst_offset,
-    ID3D12Resource *src_buffer, UINT64 src_offset, UINT64 byte_count) {}
+    ID3D12Resource *dst, UINT64 dst_offset, ID3D12Resource *src,
+    UINT64 src_offset, UINT64 byte_count) {
+  CmdCopyBufferRegion cmd = {};
+  cmd.header = {CmdType::CopyBufferRegion, sizeof(cmd)};
+  cmd.dst = dst;
+  cmd.dst_offset = dst_offset;
+  cmd.src = src;
+  cmd.src_offset = src_offset;
+  cmd.byte_count = byte_count;
+  Emit(cmd);
+}
 
 void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::CopyTextureRegion(
     const D3D12_TEXTURE_COPY_LOCATION *dst, UINT dst_x, UINT dst_y,
@@ -119,8 +158,8 @@ void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::CopyTextureRegion(
     const D3D12_BOX *src_box) {}
 
 void STDMETHODCALLTYPE
-MTLD3D12GraphicsCommandList::CopyResource(ID3D12Resource *dst_resource,
-                                          ID3D12Resource *src_resource) {}
+MTLD3D12GraphicsCommandList::CopyResource(ID3D12Resource *dst,
+                                          ID3D12Resource *src) {}
 
 void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::CopyTiles(
     ID3D12Resource *tiled_resource,
@@ -130,114 +169,329 @@ void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::CopyTiles(
     D3D12_TILE_COPY_FLAGS flags) {}
 
 void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::ResolveSubresource(
-    ID3D12Resource *dst_resource, UINT dst_sub_resource,
-    ID3D12Resource *src_resource, UINT src_sub_resource,
-    DXGI_FORMAT format) {}
+    ID3D12Resource *dst, UINT dst_sub, ID3D12Resource *src, UINT src_sub,
+    DXGI_FORMAT format) {
+  CmdResolveSubresource cmd = {};
+  cmd.header = {CmdType::ResolveSubresource, sizeof(cmd)};
+  cmd.dst = dst;
+  cmd.dst_sub = dst_sub;
+  cmd.src = src;
+  cmd.src_sub = src_sub;
+  cmd.format = format;
+  Emit(cmd);
+}
 
 void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::IASetPrimitiveTopology(
-    D3D12_PRIMITIVE_TOPOLOGY primitive_topology) {}
+    D3D12_PRIMITIVE_TOPOLOGY topology) {
+  CmdIASetPrimitiveTopology cmd = {};
+  cmd.header = {CmdType::IASetPrimitiveTopology, sizeof(cmd)};
+  cmd.topology = topology;
+  Emit(cmd);
+}
 
 void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::RSSetViewports(
-    UINT viewport_count, const D3D12_VIEWPORT *viewports) {}
+    UINT count, const D3D12_VIEWPORT *viewports) {
+  size_t extra = count * sizeof(D3D12_VIEWPORT);
+  auto total = sizeof(CmdRSSetViewports) - sizeof(D3D12_VIEWPORT) + extra;
+  auto offset = m_cmds.size();
+  m_cmds.resize(offset + total);
+  CmdRSSetViewports cmd = {};
+  cmd.header = {CmdType::RSSetViewports, (uint32_t)total};
+  cmd.count = count;
+  memcpy(m_cmds.data() + offset, &cmd, sizeof(CmdRSSetViewports) - sizeof(D3D12_VIEWPORT));
+  memcpy(m_cmds.data() + offset + sizeof(CmdRSSetViewports) - sizeof(D3D12_VIEWPORT),
+         viewports, extra);
+}
 
 void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::RSSetScissorRects(
-    UINT rect_count, const D3D12_RECT *rects) {}
+    UINT count, const D3D12_RECT *rects) {
+  size_t extra = count * sizeof(D3D12_RECT);
+  auto total = sizeof(CmdRSSetScissorRects) - sizeof(D3D12_RECT) + extra;
+  auto offset = m_cmds.size();
+  m_cmds.resize(offset + total);
+  CmdRSSetScissorRects cmd = {};
+  cmd.header = {CmdType::RSSetScissorRects, (uint32_t)total};
+  cmd.count = count;
+  memcpy(m_cmds.data() + offset, &cmd, sizeof(CmdRSSetScissorRects) - sizeof(D3D12_RECT));
+  memcpy(m_cmds.data() + offset + sizeof(CmdRSSetScissorRects) - sizeof(D3D12_RECT),
+         rects, extra);
+}
 
 void STDMETHODCALLTYPE
-MTLD3D12GraphicsCommandList::OMSetBlendFactor(const FLOAT blend_factor[4]) {}
+MTLD3D12GraphicsCommandList::OMSetBlendFactor(const FLOAT blend_factor[4]) {
+  CmdOMBlendFactor cmd = {};
+  cmd.header = {CmdType::OMSetBlendFactor, sizeof(cmd)};
+  memcpy(cmd.factor, blend_factor, 16);
+  Emit(cmd);
+}
 
 void STDMETHODCALLTYPE
-MTLD3D12GraphicsCommandList::OMSetStencilRef(UINT stencil_ref) {}
+MTLD3D12GraphicsCommandList::OMSetStencilRef(UINT stencil_ref) {
+  CmdOMStencilRef cmd = {};
+  cmd.header = {CmdType::OMSetStencilRef, sizeof(cmd)};
+  cmd.stencil_ref = stencil_ref;
+  Emit(cmd);
+}
 
 void STDMETHODCALLTYPE
 MTLD3D12GraphicsCommandList::SetPipelineState(
-    ID3D12PipelineState *pipeline_state) {}
+    ID3D12PipelineState *pipeline_state) {
+  CmdSetPipelineState cmd = {};
+  cmd.header = {CmdType::SetPipelineState, sizeof(cmd)};
+  cmd.pso = pipeline_state;
+  Emit(cmd);
+}
 
 void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::ResourceBarrier(
-    UINT barrier_count, const D3D12_RESOURCE_BARRIER *barriers) {}
+    UINT barrier_count, const D3D12_RESOURCE_BARRIER *barriers) {
+  size_t extra = barrier_count * sizeof(D3D12_RESOURCE_BARRIER);
+  auto total = sizeof(CmdResourceBarrier) - sizeof(D3D12_RESOURCE_BARRIER) + extra;
+  auto offset = m_cmds.size();
+  m_cmds.resize(offset + total);
+  CmdResourceBarrier cmd = {};
+  cmd.header = {CmdType::ResourceBarrier, (uint32_t)total};
+  cmd.count = barrier_count;
+  memcpy(m_cmds.data() + offset, &cmd, sizeof(CmdResourceBarrier) - sizeof(D3D12_RESOURCE_BARRIER));
+  memcpy(m_cmds.data() + offset + sizeof(CmdResourceBarrier) - sizeof(D3D12_RESOURCE_BARRIER),
+         barriers, extra);
+}
 
 void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::ExecuteBundle(
     ID3D12GraphicsCommandList *command_list) {}
 
 void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::SetDescriptorHeaps(
-    UINT heap_count, ID3D12DescriptorHeap *const *heaps) {}
+    UINT heap_count, ID3D12DescriptorHeap *const *heaps) {
+  size_t extra = heap_count * sizeof(ID3D12DescriptorHeap *);
+  auto total = sizeof(CmdSetDescriptorHeaps) - sizeof(ID3D12DescriptorHeap *) + extra;
+  auto offset = m_cmds.size();
+  m_cmds.resize(offset + total);
+  CmdSetDescriptorHeaps cmd = {};
+  cmd.header = {CmdType::SetDescriptorHeaps, (uint32_t)total};
+  cmd.count = heap_count;
+  memcpy(m_cmds.data() + offset, &cmd, sizeof(CmdSetDescriptorHeaps) - sizeof(ID3D12DescriptorHeap *));
+  memcpy(m_cmds.data() + offset + sizeof(CmdSetDescriptorHeaps) - sizeof(ID3D12DescriptorHeap *),
+         heaps, extra);
+}
 
 void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::SetComputeRootSignature(
-    ID3D12RootSignature *root_signature) {}
+    ID3D12RootSignature *root_signature) {
+  CmdSetRootSignature cmd = {};
+  cmd.header = {CmdType::SetComputeRootSignature, sizeof(cmd)};
+  cmd.root_sig = root_signature;
+  Emit(cmd);
+}
 
 void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::SetGraphicsRootSignature(
-    ID3D12RootSignature *root_signature) {}
+    ID3D12RootSignature *root_signature) {
+  CmdSetRootSignature cmd = {};
+  cmd.header = {CmdType::SetGraphicsRootSignature, sizeof(cmd)};
+  cmd.root_sig = root_signature;
+  Emit(cmd);
+}
 
 void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::SetComputeRootDescriptorTable(
     UINT root_parameter_index,
-    D3D12_GPU_DESCRIPTOR_HANDLE base_descriptor) {}
+    D3D12_GPU_DESCRIPTOR_HANDLE base_descriptor) {
+  CmdSetRootDescriptorTable cmd = {};
+  cmd.header = {CmdType::SetComputeRootDescriptorTable, sizeof(cmd)};
+  cmd.root_param_index = root_parameter_index;
+  cmd.base_descriptor = base_descriptor;
+  Emit(cmd);
+}
 
 void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::SetGraphicsRootDescriptorTable(
     UINT root_parameter_index,
-    D3D12_GPU_DESCRIPTOR_HANDLE base_descriptor) {}
+    D3D12_GPU_DESCRIPTOR_HANDLE base_descriptor) {
+  CmdSetRootDescriptorTable cmd = {};
+  cmd.header = {CmdType::SetGraphicsRootDescriptorTable, sizeof(cmd)};
+  cmd.root_param_index = root_parameter_index;
+  cmd.base_descriptor = base_descriptor;
+  Emit(cmd);
+}
 
 void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::SetComputeRoot32BitConstant(
-    UINT root_parameter_index, UINT data, UINT dst_offset) {}
+    UINT root_parameter_index, UINT data, UINT dst_offset) {
+  CmdSetRoot32BitConstants cmd = {};
+  cmd.header = {CmdType::SetComputeRoot32BitConstants, sizeof(cmd)};
+  cmd.root_param_index = root_parameter_index;
+  cmd.count = 1;
+  cmd.dst_offset = dst_offset;
+  memcpy(cmd.data, &data, 4);
+  Emit(cmd);
+}
 
 void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::SetGraphicsRoot32BitConstant(
-    UINT root_parameter_index, UINT data, UINT dst_offset) {}
+    UINT root_parameter_index, UINT data, UINT dst_offset) {
+  CmdSetRoot32BitConstants cmd = {};
+  cmd.header = {CmdType::SetGraphicsRoot32BitConstants, sizeof(cmd)};
+  cmd.root_param_index = root_parameter_index;
+  cmd.count = 1;
+  cmd.dst_offset = dst_offset;
+  memcpy(cmd.data, &data, 4);
+  Emit(cmd);
+}
 
 void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::SetComputeRoot32BitConstants(
     UINT root_parameter_index, UINT constant_count, const void *data,
-    UINT dst_offset) {}
+    UINT dst_offset) {
+  size_t extra = constant_count * 4;
+  auto total = sizeof(CmdSetRoot32BitConstants) - 1 + extra;
+  auto offset = m_cmds.size();
+  m_cmds.resize(offset + total);
+  CmdSetRoot32BitConstants cmd = {};
+  cmd.header = {CmdType::SetComputeRoot32BitConstants, (uint32_t)total};
+  cmd.root_param_index = root_parameter_index;
+  cmd.count = constant_count;
+  cmd.dst_offset = dst_offset;
+  memcpy(m_cmds.data() + offset, &cmd, sizeof(CmdSetRoot32BitConstants) - 1);
+  memcpy(m_cmds.data() + offset + sizeof(CmdSetRoot32BitConstants) - 1, data, extra);
+}
 
 void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::SetGraphicsRoot32BitConstants(
     UINT root_parameter_index, UINT constant_count, const void *data,
-    UINT dst_offset) {}
+    UINT dst_offset) {
+  size_t extra = constant_count * 4;
+  auto total = sizeof(CmdSetRoot32BitConstants) - 1 + extra;
+  auto offset = m_cmds.size();
+  m_cmds.resize(offset + total);
+  CmdSetRoot32BitConstants cmd = {};
+  cmd.header = {CmdType::SetGraphicsRoot32BitConstants, (uint32_t)total};
+  cmd.root_param_index = root_parameter_index;
+  cmd.count = constant_count;
+  cmd.dst_offset = dst_offset;
+  memcpy(m_cmds.data() + offset, &cmd, sizeof(CmdSetRoot32BitConstants) - 1);
+  memcpy(m_cmds.data() + offset + sizeof(CmdSetRoot32BitConstants) - 1, data, extra);
+}
 
 void STDMETHODCALLTYPE
 MTLD3D12GraphicsCommandList::SetComputeRootConstantBufferView(
-    UINT root_parameter_index, D3D12_GPU_VIRTUAL_ADDRESS address) {}
+    UINT root_parameter_index, D3D12_GPU_VIRTUAL_ADDRESS address) {
+  CmdSetRootCBV cmd = {};
+  cmd.header = {CmdType::SetComputeRootConstantBufferView, sizeof(cmd)};
+  cmd.root_param_index = root_parameter_index;
+  cmd.address = address;
+  Emit(cmd);
+}
 
 void STDMETHODCALLTYPE
 MTLD3D12GraphicsCommandList::SetGraphicsRootConstantBufferView(
-    UINT root_parameter_index, D3D12_GPU_VIRTUAL_ADDRESS address) {}
+    UINT root_parameter_index, D3D12_GPU_VIRTUAL_ADDRESS address) {
+  CmdSetRootCBV cmd = {};
+  cmd.header = {CmdType::SetGraphicsRootConstantBufferView, sizeof(cmd)};
+  cmd.root_param_index = root_parameter_index;
+  cmd.address = address;
+  Emit(cmd);
+}
 
 void STDMETHODCALLTYPE
 MTLD3D12GraphicsCommandList::SetComputeRootShaderResourceView(
-    UINT root_parameter_index, D3D12_GPU_VIRTUAL_ADDRESS address) {}
+    UINT root_parameter_index, D3D12_GPU_VIRTUAL_ADDRESS address) {
+  CmdSetRootCBV cmd = {};
+  cmd.header = {CmdType::SetComputeRootConstantBufferView, sizeof(cmd)};
+  cmd.root_param_index = root_parameter_index;
+  cmd.address = address;
+  Emit(cmd);
+}
 
 void STDMETHODCALLTYPE
 MTLD3D12GraphicsCommandList::SetGraphicsRootShaderResourceView(
-    UINT root_parameter_index, D3D12_GPU_VIRTUAL_ADDRESS address) {}
+    UINT root_parameter_index, D3D12_GPU_VIRTUAL_ADDRESS address) {
+  CmdSetRootCBV cmd = {};
+  cmd.header = {CmdType::SetGraphicsRootConstantBufferView, sizeof(cmd)};
+  cmd.root_param_index = root_parameter_index;
+  cmd.address = address;
+  Emit(cmd);
+}
 
 void STDMETHODCALLTYPE
 MTLD3D12GraphicsCommandList::SetComputeRootUnorderedAccessView(
-    UINT root_parameter_index, D3D12_GPU_VIRTUAL_ADDRESS address) {}
+    UINT root_parameter_index, D3D12_GPU_VIRTUAL_ADDRESS address) {
+  CmdSetRootCBV cmd = {};
+  cmd.header = {CmdType::SetComputeRootConstantBufferView, sizeof(cmd)};
+  cmd.root_param_index = root_parameter_index;
+  cmd.address = address;
+  Emit(cmd);
+}
 
 void STDMETHODCALLTYPE
 MTLD3D12GraphicsCommandList::SetGraphicsRootUnorderedAccessView(
-    UINT root_parameter_index, D3D12_GPU_VIRTUAL_ADDRESS address) {}
+    UINT root_parameter_index, D3D12_GPU_VIRTUAL_ADDRESS address) {
+  CmdSetRootCBV cmd = {};
+  cmd.header = {CmdType::SetGraphicsRootConstantBufferView, sizeof(cmd)};
+  cmd.root_param_index = root_parameter_index;
+  cmd.address = address;
+  Emit(cmd);
+}
 
 void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::IASetIndexBuffer(
-    const D3D12_INDEX_BUFFER_VIEW *view) {}
+    const D3D12_INDEX_BUFFER_VIEW *view) {
+  CmdIASetIndexBuffer cmd = {};
+  cmd.header = {CmdType::IASetIndexBuffer, sizeof(cmd)};
+  if (view)
+    cmd.view = *view;
+  Emit(cmd);
+}
 
 void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::IASetVertexBuffers(
-    UINT start_slot, UINT view_count,
-    const D3D12_VERTEX_BUFFER_VIEW *views) {}
+    UINT start_slot, UINT count,
+    const D3D12_VERTEX_BUFFER_VIEW *views) {
+  size_t extra = count * sizeof(D3D12_VERTEX_BUFFER_VIEW);
+  auto total = sizeof(CmdIASetVertexBuffers) - sizeof(D3D12_VERTEX_BUFFER_VIEW) + extra;
+  auto offset = m_cmds.size();
+  m_cmds.resize(offset + total);
+  CmdIASetVertexBuffers cmd = {};
+  cmd.header = {CmdType::IASetVertexBuffers, (uint32_t)total};
+  cmd.start_slot = start_slot;
+  cmd.count = count;
+  memcpy(m_cmds.data() + offset, &cmd, sizeof(CmdIASetVertexBuffers) - sizeof(D3D12_VERTEX_BUFFER_VIEW));
+  if (views)
+    memcpy(m_cmds.data() + offset + sizeof(CmdIASetVertexBuffers) - sizeof(D3D12_VERTEX_BUFFER_VIEW),
+           views, extra);
+}
 
 void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::SOSetTargets(
     UINT start_slot, UINT view_count,
     const D3D12_STREAM_OUTPUT_BUFFER_VIEW *views) {}
 
 void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::OMSetRenderTargets(
-    UINT render_target_descriptor_count,
-    const D3D12_CPU_DESCRIPTOR_HANDLE *render_target_descriptors,
-    WINBOOL single_descriptor_handle,
-    const D3D12_CPU_DESCRIPTOR_HANDLE *depth_stencil_descriptor) {}
+    UINT rt_count, const D3D12_CPU_DESCRIPTOR_HANDLE *rts,
+    WINBOOL single_handle,
+    const D3D12_CPU_DESCRIPTOR_HANDLE *dsv) {
+  CmdOMSetRenderTargets cmd = {};
+  cmd.header = {CmdType::OMSetRenderTargets, sizeof(cmd)};
+  cmd.rt_count = rt_count;
+  cmd.single_handle = single_handle != 0;
+  cmd.has_dsv = dsv != nullptr;
+  if (rts) {
+    for (UINT i = 0; i < rt_count && i < 8; i++)
+      cmd.rts[i] = rts[i];
+  }
+  if (dsv)
+    cmd.dsv = *dsv;
+  Emit(cmd);
+}
 
 void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::ClearDepthStencilView(
     D3D12_CPU_DESCRIPTOR_HANDLE dsv, D3D12_CLEAR_FLAGS flags, FLOAT depth,
-    UINT8 stencil, UINT rect_count, const D3D12_RECT *rects) {}
+    UINT8 stencil, UINT rect_count, const D3D12_RECT *rects) {
+  CmdClearDSV cmd = {};
+  cmd.header = {CmdType::ClearDepthStencilView, sizeof(cmd)};
+  cmd.dsv = dsv;
+  cmd.flags = flags;
+  cmd.depth = depth;
+  cmd.stencil = stencil;
+  Emit(cmd);
+}
 
 void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::ClearRenderTargetView(
     D3D12_CPU_DESCRIPTOR_HANDLE rtv, const FLOAT color[4], UINT rect_count,
-    const D3D12_RECT *rects) {}
+    const D3D12_RECT *rects) {
+  CmdClearRTV cmd = {};
+  cmd.header = {CmdType::ClearRenderTargetView, sizeof(cmd)};
+  cmd.rtv = rtv;
+  memcpy(cmd.color, color, 16);
+  Emit(cmd);
+}
 
 void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::ClearUnorderedAccessViewUint(
     D3D12_GPU_DESCRIPTOR_HANDLE gpu_handle,

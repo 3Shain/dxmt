@@ -2,12 +2,196 @@
 
 #include "com/com_pointer.hpp"
 #include "d3d12.h"
+#include "Metal.hpp"
 #include <atomic>
+#include <cstdint>
+#include <cstring>
+#include <vector>
 
 namespace dxmt {
 
 class MTLD3D12Device;
 class MTLD3D12CommandAllocator;
+
+enum class CmdType : uint32_t {
+  DrawInstanced,
+  DrawIndexedInstanced,
+  Dispatch,
+  CopyBufferRegion,
+  CopyTextureRegion,
+  CopyResource,
+  SetPipelineState,
+  SetGraphicsRootSignature,
+  SetComputeRootSignature,
+  SetGraphicsRoot32BitConstants,
+  SetComputeRoot32BitConstants,
+  SetGraphicsRootConstantBufferView,
+  SetComputeRootConstantBufferView,
+  SetGraphicsRootDescriptorTable,
+  SetComputeRootDescriptorTable,
+  IASetPrimitiveTopology,
+  IASetVertexBuffers,
+  IASetIndexBuffer,
+  RSSetViewports,
+  RSSetScissorRects,
+  OMSetRenderTargets,
+  OMSetBlendFactor,
+  OMSetStencilRef,
+  ClearRenderTargetView,
+  ClearDepthStencilView,
+  ResourceBarrier,
+  SetDescriptorHeaps,
+  ResolveSubresource,
+};
+
+struct CmdHeader {
+  CmdType type;
+  uint32_t size;
+};
+
+struct CmdDrawInstanced {
+  CmdHeader header;
+  uint32_t vertex_count;
+  uint32_t instance_count;
+  uint32_t start_vertex;
+  uint32_t start_instance;
+};
+
+struct CmdDrawIndexedInstanced {
+  CmdHeader header;
+  uint32_t index_count;
+  uint32_t instance_count;
+  uint32_t start_vertex;
+  int32_t base_vertex;
+  uint32_t start_instance;
+};
+
+struct CmdDispatch {
+  CmdHeader header;
+  uint32_t x, y, z;
+};
+
+struct CmdCopyBufferRegion {
+  CmdHeader header;
+  ID3D12Resource *dst;
+  uint64_t dst_offset;
+  ID3D12Resource *src;
+  uint64_t src_offset;
+  uint64_t byte_count;
+};
+
+struct CmdSetPipelineState {
+  CmdHeader header;
+  ID3D12PipelineState *pso;
+};
+
+struct CmdSetRootSignature {
+  CmdHeader header;
+  ID3D12RootSignature *root_sig;
+};
+
+struct CmdSetRoot32BitConstants {
+  CmdHeader header;
+  uint32_t root_param_index;
+  uint32_t count;
+  uint32_t dst_offset;
+  uint8_t data[1];
+};
+
+struct CmdSetRootCBV {
+  CmdHeader header;
+  uint32_t root_param_index;
+  D3D12_GPU_VIRTUAL_ADDRESS address;
+};
+
+struct CmdSetRootDescriptorTable {
+  CmdHeader header;
+  uint32_t root_param_index;
+  D3D12_GPU_DESCRIPTOR_HANDLE base_descriptor;
+};
+
+struct CmdIASetPrimitiveTopology {
+  CmdHeader header;
+  D3D12_PRIMITIVE_TOPOLOGY topology;
+};
+
+struct CmdIASetVertexBuffers {
+  CmdHeader header;
+  uint32_t start_slot;
+  uint32_t count;
+  D3D12_VERTEX_BUFFER_VIEW views[1];
+};
+
+struct CmdIASetIndexBuffer {
+  CmdHeader header;
+  D3D12_INDEX_BUFFER_VIEW view;
+};
+
+struct CmdRSSetViewports {
+  CmdHeader header;
+  uint32_t count;
+  D3D12_VIEWPORT viewports[1];
+};
+
+struct CmdRSSetScissorRects {
+  CmdHeader header;
+  uint32_t count;
+  D3D12_RECT rects[1];
+};
+
+struct CmdOMSetRenderTargets {
+  CmdHeader header;
+  uint32_t rt_count;
+  bool single_handle;
+  D3D12_CPU_DESCRIPTOR_HANDLE rts[8];
+  D3D12_CPU_DESCRIPTOR_HANDLE dsv;
+  bool has_dsv;
+};
+
+struct CmdOMBlendFactor {
+  CmdHeader header;
+  float factor[4];
+};
+
+struct CmdOMStencilRef {
+  CmdHeader header;
+  uint32_t stencil_ref;
+};
+
+struct CmdClearRTV {
+  CmdHeader header;
+  D3D12_CPU_DESCRIPTOR_HANDLE rtv;
+  float color[4];
+};
+
+struct CmdClearDSV {
+  CmdHeader header;
+  D3D12_CPU_DESCRIPTOR_HANDLE dsv;
+  D3D12_CLEAR_FLAGS flags;
+  float depth;
+  uint8_t stencil;
+};
+
+struct CmdResourceBarrier {
+  CmdHeader header;
+  uint32_t count;
+  D3D12_RESOURCE_BARRIER barriers[1];
+};
+
+struct CmdSetDescriptorHeaps {
+  CmdHeader header;
+  uint32_t count;
+  ID3D12DescriptorHeap *heaps[1];
+};
+
+struct CmdResolveSubresource {
+  CmdHeader header;
+  ID3D12Resource *dst;
+  uint32_t dst_sub;
+  ID3D12Resource *src;
+  uint32_t src_sub;
+  DXGI_FORMAT format;
+};
 
 class MTLD3D12GraphicsCommandList : public ID3D12GraphicsCommandList {
 public:
@@ -23,9 +207,9 @@ public:
   ULONG STDMETHODCALLTYPE Release() override;
 
   HRESULT STDMETHODCALLTYPE GetPrivateData(REFGUID guid, UINT *data_size,
-                                          void *data) override;
+                                           void *data) override;
   HRESULT STDMETHODCALLTYPE SetPrivateData(REFGUID guid, UINT data_size,
-                                          const void *data) override;
+                                           const void *data) override;
   HRESULT STDMETHODCALLTYPE SetPrivateDataInterface(
       REFGUID guid, const IUnknown *data) override;
   HRESULT STDMETHODCALLTYPE SetName(LPCWSTR name) override;
@@ -185,11 +369,30 @@ public:
       ID3D12Resource *count_buffer,
       UINT64 count_buffer_offset) override;
 
+  const std::vector<uint8_t> &GetCommands() const { return m_cmds; }
+  void ClearCommands() { m_cmds.clear(); }
+
 private:
+  template <typename T> void Emit(const T &cmd) {
+    auto offset = m_cmds.size();
+    m_cmds.resize(offset + sizeof(T));
+    memcpy(m_cmds.data() + offset, &cmd, sizeof(T));
+  }
+
+  template <typename T>
+  void EmitVar(T &cmd, const void *extra, uint32_t extra_size) {
+    auto offset = m_cmds.size();
+    m_cmds.resize(offset + sizeof(T) - 1 + extra_size);
+    cmd.header.size = sizeof(T) - 1 + extra_size;
+    memcpy(m_cmds.data() + offset, &cmd, sizeof(T) - 1);
+    memcpy(m_cmds.data() + offset + sizeof(T) - 1, extra, extra_size);
+  }
+
   MTLD3D12Device *m_device;
   MTLD3D12CommandAllocator *m_allocator;
   D3D12_COMMAND_LIST_TYPE m_type;
   bool m_closed = false;
+  std::vector<uint8_t> m_cmds;
   std::atomic<uint32_t> m_refCount = {1ul};
   std::atomic<uint32_t> m_refPrivate = {1ul};
 };
