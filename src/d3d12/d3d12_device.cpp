@@ -133,6 +133,9 @@ HRESULT STDMETHODCALLTYPE MTLD3D12Device::CreateGraphicsPipelineState(
 
   auto pso = new MTLD3D12PipelineState(this, false);
   pso->SetGraphicsDesc(*desc);
+  if (!pso->Compile()) {
+    Logger::warn("CreateGraphicsPipelineState: shader compilation deferred/failed");
+  }
   HRESULT hr = pso->QueryInterface(riid, pipeline_state);
   if (FAILED(hr))
     pso->Release();
@@ -148,6 +151,9 @@ HRESULT STDMETHODCALLTYPE MTLD3D12Device::CreateComputePipelineState(
 
   auto pso = new MTLD3D12PipelineState(this, true);
   pso->SetComputeDesc(*desc);
+  if (!pso->Compile()) {
+    Logger::warn("CreateComputePipelineState: shader compilation deferred/failed");
+  }
   HRESULT hr = pso->QueryInterface(riid, pipeline_state);
   if (FAILED(hr))
     pso->Release();
