@@ -17,6 +17,7 @@ MTLD3D12Resource::MTLD3D12Resource(
   m_device->AddRef();
 
   auto wmt_device = m_device->GetDXMTDevice().device();
+  RTRACE("ctor: wmt_device=%llu dim=%u fmt=%u w=%llu h=%u", (unsigned long long)wmt_device.handle, desc.Dimension, desc.Format, desc.Width, desc.Height);
 
   if (desc.Dimension == D3D12_RESOURCE_DIMENSION_BUFFER) {
     WMTBufferInfo buf_info = {};
@@ -47,13 +48,39 @@ MTLD3D12Resource::MTLD3D12Resource(
     if (tex_info.pixel_format == WMTPixelFormatInvalid)
       tex_info.pixel_format = WMTPixelFormatBGRA8Unorm;
 
-    m_mtl_texture = wmt_device.newTexture(tex_info);
+    m_mtl_texture = {}; // lazy creation
+    RTRACE("ctor: texture deferred (lazy) fmt=%u %llux%u", tex_info.pixel_format, tex_info.width, tex_info.height);
   }
 
   Logger::info(str::format("D3D12Resource: dim=", desc.Dimension,
                             " ", desc.Width, "x", desc.Height,
                             " gpu=", m_gpu_addr));
   m_device->RegisterResource(this);
+}
+
+WMT::Reference<WMT::Texture> MTLD3D12Resource::GetMTLTexture() {
+  if (!m_mtl_texture.handle && m_desc.Dimension != D3D12_RESOURCE_DIMENSION_BUFFER) {
+    auto wmt_device = m_device->GetDXMTDevice().device();
+    WMTTextureInfo tex_info = {};
+    tex_info.width = m_desc.Width ? m_desc.Width : 1;
+    tex_info.height = m_desc.Height ? m_desc.Height : 1;
+    tex_info.depth = (m_desc.Dimension == D3D12_RESOURCE_DIMENSION_TEXTURE3D)
+                         ? m_desc.DepthOrArraySize : 1;
+    tex_info.array_length = (m_desc.Dimension == D3D12_RESOURCE_DIMENSION_TEXTURE2D)
+                                 ? m_desc.DepthOrArraySize : 1;
+    tex_info.mipmap_level_count = m_desc.MipLevels ? m_desc.MipLevels : 1;
+    tex_info.sample_count = m_desc.SampleDesc.Count ? m_desc.SampleDesc.Count : 1;
+    tex_info.type = WMTTextureType2D;
+    tex_info.usage = (WMTTextureUsage)(WMTTextureUsageRenderTarget | WMTTextureUsageShaderRead);
+    tex_info.options = WMTResourceStorageModePrivate;
+    tex_info.pixel_format = MTLD3D12PipelineState::DXGIToMTLPixelFormat(static_cast<DXGI_FORMAT>(m_desc.Format));
+    if (tex_info.pixel_format == WMTPixelFormatInvalid)
+      tex_info.pixel_format = WMTPixelFormatBGRA8Unorm;
+    RTRACE("GetMTLTexture: creating fmt=%u %llux%u", tex_info.pixel_format, tex_info.width, tex_info.height);
+    m_mtl_texture = wmt_device.newTexture(tex_info);
+    RTRACE("GetMTLTexture: handle=%llu", (unsigned long long)m_mtl_texture.handle);
+  }
+  return m_mtl_texture;
 }
 
 MTLD3D12Resource::~MTLD3D12Resource() {

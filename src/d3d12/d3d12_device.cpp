@@ -668,9 +668,17 @@ HRESULT STDMETHODCALLTYPE MTLD3D12Device::CreateReservedResource(
     const D3D12_RESOURCE_DESC *desc, D3D12_RESOURCE_STATES initial_state,
     const D3D12_CLEAR_VALUE *optimized_clear_value, REFIID riid,
     void **resource) {
-  Logger::warn("D3D12Device::CreateReservedResource: stub");
-  TRACE("CreateReservedResource E_NOTIMPL");
-  return E_NOTIMPL;
+  TRACE("CreateReservedResource dim=%u fmt=%u w=%llu (fallback to committed)", desc ? desc->Dimension : 0, desc ? desc->Format : 0, desc ? desc->Width : 0);
+  if (!desc || !resource)
+    return E_POINTER;
+  InitReturnPtr(resource);
+  D3D12_HEAP_PROPERTIES heap_props = {};
+  heap_props.Type = D3D12_HEAP_TYPE_DEFAULT;
+  auto res = new MTLD3D12Resource(this, *desc, initial_state, heap_props);
+  HRESULT hr = res->QueryInterface(riid, resource);
+  if (FAILED(hr))
+    res->Release();
+  return hr;
 }
 
 HRESULT STDMETHODCALLTYPE MTLD3D12Device::CreateSharedHandle(

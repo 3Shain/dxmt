@@ -56,7 +56,7 @@ public:
   }
 
   WMT::Reference<WMT::Buffer> GetMTLBuffer() { return m_mtl_buffer; }
-  WMT::Reference<WMT::Texture> GetMTLTexture() { return m_mtl_texture; }
+  WMT::Reference<WMT::Texture> GetMTLTexture();
 
 private:
   MTLD3D12Device *m_device;

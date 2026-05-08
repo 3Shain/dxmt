@@ -327,6 +327,10 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::ExecuteCommandLists(
       if (offset + header->size > cmds.size())
         break;
 
+      if (offset == 0)
+        QTRACE("ECL: first_cmd type=%u size=%u", (uint32_t)header->type, header->size);
+        break;
+
       switch (header->type) {
       case CmdType::DrawInstanced: {
         auto *cmd = reinterpret_cast<const CmdDrawInstanced *>(header);
