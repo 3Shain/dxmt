@@ -2,6 +2,7 @@
 
 #include "com/com_pointer.hpp"
 #include "d3d12.h"
+#include "dxgi_interfaces.h"
 #include "dxmt_command_queue.hpp"
 #include "Metal.hpp"
 #include <atomic>

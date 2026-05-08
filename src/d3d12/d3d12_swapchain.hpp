@@ -5,6 +5,7 @@
 #include "dxgi_interfaces.h"
 #include "Metal.hpp"
 #include <atomic>
+#include <array>
 
 namespace dxmt {
 
@@ -90,7 +91,8 @@ private:
   DXGI_SWAP_CHAIN_FULLSCREEN_DESC m_fs_desc = {};
   uint64_t m_present_count = 0;
 
-  Com<MTLD3D12Resource> m_backbuffer;
+  std::array<Com<MTLD3D12Resource>, 4> m_backbuffers;
+  uint32_t m_current_buffer = 0;
   WMT::Reference<WMT::CommandQueue> m_present_queue;
 };
 

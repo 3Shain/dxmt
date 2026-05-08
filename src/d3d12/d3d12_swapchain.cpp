@@ -54,7 +54,8 @@ MTLD3D12SwapChain::MTLD3D12SwapChain(
 }
 
 MTLD3D12SwapChain::~MTLD3D12SwapChain() {
-  m_backbuffer = nullptr;
+  for (uint32_t i = 0; i < 4; i++)
+    m_backbuffers[i] = nullptr;
   if (m_native_view.handle)
     WMT::ReleaseMetalView(m_native_view);
   if (m_device)
@@ -124,13 +125,11 @@ MTLD3D12SwapChain::GetBuffer(UINT buffer_idx, REFIID riid, void **surface) {
   SCTRACE("GetBuffer idx=%u", buffer_idx);
   if (!surface)
     return E_POINTER;
-  if (buffer_idx != 0) {
-    ERR("D3D12SwapChain::GetBuffer: only index 0 supported");
-    return DXGI_ERROR_UNSUPPORTED;
+  if (buffer_idx >= 4 || !m_backbuffers[buffer_idx]) {
+    SCTRACE("GetBuffer idx=%u FAILED (no buffer)", buffer_idx);
+    return DXGI_ERROR_INVALID_CALL;
   }
-  if (!m_backbuffer)
-    return E_FAIL;
-  return m_backbuffer->QueryInterface(riid, surface);
+  return m_backbuffers[buffer_idx]->QueryInterface(riid, surface);
 }
 
 HRESULT STDMETHODCALLTYPE
@@ -169,7 +168,8 @@ MTLD3D12SwapChain::GetDesc(DXGI_SWAP_CHAIN_DESC *desc) {
 HRESULT STDMETHODCALLTYPE
 MTLD3D12SwapChain::ResizeBuffers(UINT buffer_count, UINT width, UINT height,
                                  DXGI_FORMAT format, UINT flags) {
-  m_backbuffer = nullptr;
+  for (uint32_t i = 0; i < 4; i++)
+    m_backbuffers[i] = nullptr;
 
   if (buffer_count)
     m_desc.BufferCount = buffer_count;
@@ -205,9 +205,13 @@ MTLD3D12SwapChain::ResizeBuffers(UINT buffer_count, UINT width, UINT height,
   D3D12_HEAP_PROPERTIES heap_props = {};
   heap_props.Type = D3D12_HEAP_TYPE_DEFAULT;
 
-  m_backbuffer = new MTLD3D12Resource(m_device, res_desc,
-                                       D3D12_RESOURCE_STATE_RENDER_TARGET,
-                                       heap_props);
+  uint32_t count = m_desc.BufferCount ? m_desc.BufferCount : 2;
+  if (count > 4) count = 4;
+  for (uint32_t i = 0; i < count; i++) {
+    m_backbuffers[i] = new MTLD3D12Resource(m_device, res_desc,
+                                             D3D12_RESOURCE_STATE_RENDER_TARGET,
+                                             heap_props);
+  }
   return S_OK;
 }
 
@@ -267,7 +271,7 @@ MTLD3D12SwapChain::Present1(UINT sync_interval, UINT flags,
                             const DXGI_PRESENT_PARAMETERS *params) {
   m_present_count++;
 
-  if (!m_backbuffer)
+  if (!m_backbuffers[m_current_buffer])
     return S_OK;
 
   if (!m_present_queue.handle) {
@@ -284,7 +288,7 @@ MTLD3D12SwapChain::Present1(UINT sync_interval, UINT flags,
   }
 
   auto dst_texture = drawable.texture();
-  auto *res = static_cast<MTLD3D12Resource *>(m_backbuffer.ptr());
+  auto *res = static_cast<MTLD3D12Resource *>(m_backbuffers[m_current_buffer].ptr());
   auto src_texture = res->GetMTLTexture();
 
   if (src_texture.handle && dst_texture.handle) {
@@ -307,6 +311,8 @@ MTLD3D12SwapChain::Present1(UINT sync_interval, UINT flags,
 
   cmdbuf.presentDrawable(drawable);
   cmdbuf.commit();
+
+  m_current_buffer = (m_current_buffer + 1) % (m_desc.BufferCount ? m_desc.BufferCount : 2);
 
   return S_OK;
 }
@@ -344,7 +350,7 @@ HRESULT STDMETHODCALLTYPE MTLD3D12SwapChain::GetMaximumFrameLatency(UINT *pMaxLa
 HANDLE STDMETHODCALLTYPE MTLD3D12SwapChain::GetFrameLatencyWaitableObject() { return nullptr; }
 HRESULT STDMETHODCALLTYPE MTLD3D12SwapChain::SetMatrixTransform(const DXGI_MATRIX_3X2_F *pMatrix) { return S_OK; }
 HRESULT STDMETHODCALLTYPE MTLD3D12SwapChain::GetMatrixTransform(DXGI_MATRIX_3X2_F *pMatrix) { return S_OK; }
-UINT STDMETHODCALLTYPE MTLD3D12SwapChain::GetCurrentBackBufferIndex() { return 0; }
+UINT STDMETHODCALLTYPE MTLD3D12SwapChain::GetCurrentBackBufferIndex() { return m_current_buffer; }
 HRESULT STDMETHODCALLTYPE MTLD3D12SwapChain::CheckColorSpaceSupport(DXGI_COLOR_SPACE_TYPE ColorSpace, UINT *pSupport) { if (pSupport) *pSupport = 0; return S_OK; }
 HRESULT STDMETHODCALLTYPE MTLD3D12SwapChain::SetColorSpace1(DXGI_COLOR_SPACE_TYPE ColorSpace) { return S_OK; }
 HRESULT STDMETHODCALLTYPE MTLD3D12SwapChain::ResizeBuffers1(UINT, UINT, UINT, DXGI_FORMAT, UINT, const UINT *, IUnknown *const *) { return S_OK; }

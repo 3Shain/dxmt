@@ -80,9 +80,16 @@ uint64_t STDMETHODCALLTYPE MTLD3D12Fence::GetCompletedValue() {
 
 HRESULT STDMETHODCALLTYPE
 MTLD3D12Fence::SetEventOnCompletion(uint64_t value, HANDLE event) {
-  FTRACE("SetEventOnCompletion value=%llu", (unsigned long long)value);
-  if (m_shared_event.handle) {
-    m_shared_event.waitUntilSignaledValue(value, UINT64_MAX);
+  FTRACE("SetEventOnCompletion value=%llu current=%llu", (unsigned long long)value, (unsigned long long)m_value.load());
+  if (event) {
+    if (m_value.load(std::memory_order_acquire) >= value) {
+      SetEvent(event);
+    } else {
+      if (m_shared_event.handle) {
+        m_shared_event.waitUntilSignaledValue(value, UINT64_MAX);
+      }
+      SetEvent(event);
+    }
   }
   return S_OK;
 }

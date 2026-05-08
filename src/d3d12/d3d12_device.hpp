@@ -15,8 +15,10 @@ class MTLD3D12Resource;
 class MTLD3D12Device : public ID3D12Device {
 public:
   MTLD3D12Device(std::unique_ptr<Device> &&device,
-                  IMTLDXGIAdapter *pAdapter);
+                   IMTLDXGIAdapter *pAdapter);
   ~MTLD3D12Device();
+
+  void SetDXGIDevice(IMTLDXGIDevice *dxgi_device) { m_dxgi_device = dxgi_device; }
 
   WMT::Device GetMTLDevice();
   Device &GetDXMTDevice();
@@ -207,6 +209,7 @@ public:
 private:
   std::unique_ptr<Device> m_device;
   Com<IMTLDXGIAdapter> m_adapter;
+  IMTLDXGIDevice *m_dxgi_device = nullptr;
   std::atomic<uint32_t> m_refCount = {1ul};
   std::atomic<uint32_t> m_refPrivate = {1ul};
   std::mutex m_resource_mutex;

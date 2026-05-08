@@ -221,6 +221,10 @@ MTLD3D12CommandQueue::QueryInterface(REFIID riid, void **ppvObject) {
     *ppvObject = ref(this);
     return S_OK;
   }
+
+  if (riid == __uuidof(IMTLDXGIDevice)) {
+    return m_device->QueryInterface(riid, ppvObject);
+  }
   QTRACE("CmdQueue::QI unknown IID %s -> E_NOINTERFACE", str::format(riid).c_str());
   return E_NOINTERFACE;
 }

@@ -14,6 +14,7 @@ MTLD3D12DXGIDevice::MTLD3D12DXGIDevice(std::unique_ptr<Device> &&device,
   if (m_adapter)
     m_adapter->AddRef();
   m_d3d12_device = new MTLD3D12Device(std::move(device), m_adapter.ptr());
+  m_d3d12_device->SetDXGIDevice(this);
   Logger::info("D3D12DXGIDevice created");
 }
 

@@ -76,6 +76,10 @@ MTLD3D12Device::QueryInterface(REFIID riid, void **ppvObject) {
     return S_OK;
   }
 
+  if (riid == __uuidof(IMTLDXGIDevice) && m_dxgi_device) {
+    return m_dxgi_device->QueryInterface(riid, ppvObject);
+  }
+
   Logger::warn(str::format("D3D12Device::QueryInterface: unknown IID ", riid));
   TRACE("D3D12Device::QI unknown IID %s -> E_NOINTERFACE", str::format(riid).c_str());
   return E_NOINTERFACE;
