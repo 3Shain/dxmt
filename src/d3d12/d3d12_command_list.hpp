@@ -1,0 +1,197 @@
+#pragma once
+
+#include "com/com_pointer.hpp"
+#include "d3d12.h"
+#include <atomic>
+
+namespace dxmt {
+
+class MTLD3D12Device;
+class MTLD3D12CommandAllocator;
+
+class MTLD3D12GraphicsCommandList : public ID3D12GraphicsCommandList {
+public:
+  MTLD3D12GraphicsCommandList(MTLD3D12Device *device,
+                              MTLD3D12CommandAllocator *allocator,
+                              D3D12_COMMAND_LIST_TYPE type,
+                              ID3D12PipelineState *initial_state);
+  ~MTLD3D12GraphicsCommandList();
+
+  HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid,
+                                           void **ppvObject) override;
+  ULONG STDMETHODCALLTYPE AddRef() override;
+  ULONG STDMETHODCALLTYPE Release() override;
+
+  HRESULT STDMETHODCALLTYPE GetPrivateData(REFGUID guid, UINT *data_size,
+                                          void *data) override;
+  HRESULT STDMETHODCALLTYPE SetPrivateData(REFGUID guid, UINT data_size,
+                                          const void *data) override;
+  HRESULT STDMETHODCALLTYPE SetPrivateDataInterface(
+      REFGUID guid, const IUnknown *data) override;
+  HRESULT STDMETHODCALLTYPE SetName(LPCWSTR name) override;
+
+  HRESULT STDMETHODCALLTYPE GetDevice(REFIID riid, void **device) override;
+
+  D3D12_COMMAND_LIST_TYPE STDMETHODCALLTYPE GetType() override;
+
+  HRESULT STDMETHODCALLTYPE Close() override;
+  HRESULT STDMETHODCALLTYPE Reset(ID3D12CommandAllocator *allocator,
+                                  ID3D12PipelineState *initial_state) override;
+  void STDMETHODCALLTYPE ClearState(ID3D12PipelineState *pipeline_state) override;
+
+  void STDMETHODCALLTYPE DrawInstanced(UINT vertex_count_per_instance,
+                                       UINT instance_count,
+                                       UINT start_vertex_location,
+                                       UINT start_instance_location) override;
+  void STDMETHODCALLTYPE DrawIndexedInstanced(UINT index_count_per_instance,
+                                              UINT instance_count,
+                                              UINT start_vertex_location,
+                                              INT base_vertex_location,
+                                              UINT start_instance_location) override;
+  void STDMETHODCALLTYPE Dispatch(UINT x, UINT u, UINT z) override;
+  void STDMETHODCALLTYPE CopyBufferRegion(ID3D12Resource *dst_buffer,
+                                          UINT64 dst_offset,
+                                          ID3D12Resource *src_buffer,
+                                          UINT64 src_offset,
+                                          UINT64 byte_count) override;
+  void STDMETHODCALLTYPE CopyTextureRegion(
+      const D3D12_TEXTURE_COPY_LOCATION *dst, UINT dst_x, UINT dst_y,
+      UINT dst_z, const D3D12_TEXTURE_COPY_LOCATION *src,
+      const D3D12_BOX *src_box) override;
+  void STDMETHODCALLTYPE CopyResource(ID3D12Resource *dst_resource,
+                                      ID3D12Resource *src_resource) override;
+  void STDMETHODCALLTYPE CopyTiles(
+      ID3D12Resource *tiled_resource,
+      const D3D12_TILED_RESOURCE_COORDINATE *tile_region_start_coordinate,
+      const D3D12_TILE_REGION_SIZE *tile_region_size,
+      ID3D12Resource *buffer, UINT64 buffer_offset,
+      D3D12_TILE_COPY_FLAGS flags) override;
+  void STDMETHODCALLTYPE ResolveSubresource(ID3D12Resource *dst_resource,
+                                            UINT dst_sub_resource,
+                                            ID3D12Resource *src_resource,
+                                            UINT src_sub_resource,
+                                            DXGI_FORMAT format) override;
+  void STDMETHODCALLTYPE
+  IASetPrimitiveTopology(D3D12_PRIMITIVE_TOPOLOGY primitive_topology) override;
+  void STDMETHODCALLTYPE RSSetViewports(UINT viewport_count,
+                                       const D3D12_VIEWPORT *viewports) override;
+  void STDMETHODCALLTYPE RSSetScissorRects(UINT rect_count,
+                                           const D3D12_RECT *rects) override;
+  void STDMETHODCALLTYPE OMSetBlendFactor(const FLOAT blend_factor[4]) override;
+  void STDMETHODCALLTYPE OMSetStencilRef(UINT stencil_ref) override;
+  void STDMETHODCALLTYPE SetPipelineState(
+      ID3D12PipelineState *pipeline_state) override;
+  void STDMETHODCALLTYPE ResourceBarrier(
+      UINT barrier_count,
+      const D3D12_RESOURCE_BARRIER *barriers) override;
+  void STDMETHODCALLTYPE ExecuteBundle(
+      ID3D12GraphicsCommandList *command_list) override;
+  void STDMETHODCALLTYPE SetDescriptorHeaps(
+      UINT heap_count,
+      ID3D12DescriptorHeap *const *heaps) override;
+  void STDMETHODCALLTYPE
+  SetComputeRootSignature(ID3D12RootSignature *root_signature) override;
+  void STDMETHODCALLTYPE
+  SetGraphicsRootSignature(ID3D12RootSignature *root_signature) override;
+  void STDMETHODCALLTYPE SetComputeRootDescriptorTable(
+      UINT root_parameter_index,
+      D3D12_GPU_DESCRIPTOR_HANDLE base_descriptor) override;
+  void STDMETHODCALLTYPE SetGraphicsRootDescriptorTable(
+      UINT root_parameter_index,
+      D3D12_GPU_DESCRIPTOR_HANDLE base_descriptor) override;
+  void STDMETHODCALLTYPE SetComputeRoot32BitConstant(UINT root_parameter_index,
+                                                     UINT data,
+                                                     UINT dst_offset) override;
+  void STDMETHODCALLTYPE SetGraphicsRoot32BitConstant(
+      UINT root_parameter_index, UINT data, UINT dst_offset) override;
+  void STDMETHODCALLTYPE SetComputeRoot32BitConstants(
+      UINT root_parameter_index, UINT constant_count, const void *data,
+      UINT dst_offset) override;
+  void STDMETHODCALLTYPE SetGraphicsRoot32BitConstants(
+      UINT root_parameter_index, UINT constant_count, const void *data,
+      UINT dst_offset) override;
+  void STDMETHODCALLTYPE SetComputeRootConstantBufferView(
+      UINT root_parameter_index,
+      D3D12_GPU_VIRTUAL_ADDRESS address) override;
+  void STDMETHODCALLTYPE SetGraphicsRootConstantBufferView(
+      UINT root_parameter_index,
+      D3D12_GPU_VIRTUAL_ADDRESS address) override;
+  void STDMETHODCALLTYPE SetComputeRootShaderResourceView(
+      UINT root_parameter_index,
+      D3D12_GPU_VIRTUAL_ADDRESS address) override;
+  void STDMETHODCALLTYPE SetGraphicsRootShaderResourceView(
+      UINT root_parameter_index,
+      D3D12_GPU_VIRTUAL_ADDRESS address) override;
+  void STDMETHODCALLTYPE SetComputeRootUnorderedAccessView(
+      UINT root_parameter_index,
+      D3D12_GPU_VIRTUAL_ADDRESS address) override;
+  void STDMETHODCALLTYPE SetGraphicsRootUnorderedAccessView(
+      UINT root_parameter_index,
+      D3D12_GPU_VIRTUAL_ADDRESS address) override;
+  void STDMETHODCALLTYPE
+  IASetIndexBuffer(const D3D12_INDEX_BUFFER_VIEW *view) override;
+  void STDMETHODCALLTYPE IASetVertexBuffers(UINT start_slot, UINT view_count,
+                                           const D3D12_VERTEX_BUFFER_VIEW *views) override;
+  void STDMETHODCALLTYPE SOSetTargets(
+      UINT start_slot, UINT view_count,
+      const D3D12_STREAM_OUTPUT_BUFFER_VIEW *views) override;
+  void STDMETHODCALLTYPE OMSetRenderTargets(
+      UINT render_target_descriptor_count,
+      const D3D12_CPU_DESCRIPTOR_HANDLE *render_target_descriptors,
+      WINBOOL single_descriptor_handle,
+      const D3D12_CPU_DESCRIPTOR_HANDLE *depth_stencil_descriptor) override;
+  void STDMETHODCALLTYPE ClearDepthStencilView(D3D12_CPU_DESCRIPTOR_HANDLE dsv,
+                                               D3D12_CLEAR_FLAGS flags,
+                                               FLOAT depth, UINT8 stencil,
+                                               UINT rect_count,
+                                               const D3D12_RECT *rects) override;
+  void STDMETHODCALLTYPE ClearRenderTargetView(
+      D3D12_CPU_DESCRIPTOR_HANDLE rtv, const FLOAT color[4], UINT rect_count,
+      const D3D12_RECT *rects) override;
+  void STDMETHODCALLTYPE ClearUnorderedAccessViewUint(
+      D3D12_GPU_DESCRIPTOR_HANDLE gpu_handle,
+      D3D12_CPU_DESCRIPTOR_HANDLE cpu_handle, ID3D12Resource *resource,
+      const UINT values[4], UINT rect_count,
+      const D3D12_RECT *rects) override;
+  void STDMETHODCALLTYPE ClearUnorderedAccessViewFloat(
+      D3D12_GPU_DESCRIPTOR_HANDLE gpu_handle,
+      D3D12_CPU_DESCRIPTOR_HANDLE cpu_handle, ID3D12Resource *resource,
+      const float values[4], UINT rect_count,
+      const D3D12_RECT *rects) override;
+  void STDMETHODCALLTYPE DiscardResource(ID3D12Resource *resource,
+                                        const D3D12_DISCARD_REGION *region) override;
+  void STDMETHODCALLTYPE BeginQuery(ID3D12QueryHeap *heap,
+                                    D3D12_QUERY_TYPE type,
+                                    UINT index) override;
+  void STDMETHODCALLTYPE EndQuery(ID3D12QueryHeap *heap,
+                                  D3D12_QUERY_TYPE type,
+                                  UINT index) override;
+  void STDMETHODCALLTYPE ResolveQueryData(ID3D12QueryHeap *heap,
+                                          D3D12_QUERY_TYPE type,
+                                          UINT start_index, UINT query_count,
+                                          ID3D12Resource *dst_buffer,
+                                          UINT64 aligned_dst_buffer_offset) override;
+  void STDMETHODCALLTYPE SetPredication(ID3D12Resource *buffer,
+                                       UINT64 aligned_buffer_offset,
+                                       D3D12_PREDICATION_OP operation) override;
+  void STDMETHODCALLTYPE SetMarker(UINT metadata, const void *data,
+                                   UINT size) override;
+  void STDMETHODCALLTYPE BeginEvent(UINT metadata, const void *data,
+                                    UINT size) override;
+  void STDMETHODCALLTYPE EndEvent() override;
+  void STDMETHODCALLTYPE ExecuteIndirect(
+      ID3D12CommandSignature *command_signature, UINT max_command_count,
+      ID3D12Resource *arg_buffer, UINT64 arg_buffer_offset,
+      ID3D12Resource *count_buffer,
+      UINT64 count_buffer_offset) override;
+
+private:
+  MTLD3D12Device *m_device;
+  MTLD3D12CommandAllocator *m_allocator;
+  D3D12_COMMAND_LIST_TYPE m_type;
+  bool m_closed = false;
+  std::atomic<uint32_t> m_refCount = {1ul};
+  std::atomic<uint32_t> m_refPrivate = {1ul};
+};
+
+} // namespace dxmt
