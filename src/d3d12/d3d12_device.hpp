@@ -5,29 +5,37 @@
 #include "dxgi_interfaces.h"
 #include "dxmt_device.hpp"
 #include <atomic>
+#include <unordered_map>
+#include <mutex>
 
 namespace dxmt {
+
+class MTLD3D12Resource;
 
 class MTLD3D12Device : public ID3D12Device {
 public:
   MTLD3D12Device(std::unique_ptr<Device> &&device,
-                 IMTLDXGIAdapter *pAdapter);
+                  IMTLDXGIAdapter *pAdapter);
   ~MTLD3D12Device();
 
   WMT::Device GetMTLDevice();
   Device &GetDXMTDevice();
 
+  void RegisterResource(MTLD3D12Resource *res);
+  void UnregisterResource(MTLD3D12Resource *res);
+  MTLD3D12Resource *LookupResourceByGPUAddress(D3D12_GPU_VIRTUAL_ADDRESS addr);
+
   /*** IUnknown ***/
   HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid,
-                                           void **ppvObject) override;
+                                            void **ppvObject) override;
   ULONG STDMETHODCALLTYPE AddRef() override;
   ULONG STDMETHODCALLTYPE Release() override;
 
   /*** ID3D12Object ***/
   HRESULT STDMETHODCALLTYPE GetPrivateData(REFGUID guid, UINT *data_size,
-                                          void *data) override;
+                                            void *data) override;
   HRESULT STDMETHODCALLTYPE SetPrivateData(REFGUID guid, UINT data_size,
-                                          const void *data) override;
+                                            const void *data) override;
   HRESULT STDMETHODCALLTYPE SetPrivateDataInterface(
       REFGUID guid, const IUnknown *data) override;
   HRESULT STDMETHODCALLTYPE SetName(LPCWSTR name) override;
@@ -132,8 +140,8 @@ public:
       void **resource) override;
 
   HRESULT STDMETHODCALLTYPE CreateHeap(const D3D12_HEAP_DESC *desc,
-                                       REFIID riid,
-                                       void **heap) override;
+                                        REFIID riid,
+                                        void **heap) override;
 
   HRESULT STDMETHODCALLTYPE CreatePlacedResource(
       ID3D12Heap *heap, UINT64 heap_offset,
@@ -151,21 +159,21 @@ public:
       DWORD access, const WCHAR *name, HANDLE *handle) override;
 
   HRESULT STDMETHODCALLTYPE OpenSharedHandle(HANDLE handle, REFIID riid,
-                                             void **object) override;
+                                              void **object) override;
 
   HRESULT STDMETHODCALLTYPE OpenSharedHandleByName(const WCHAR *name,
-                                                   DWORD access,
-                                                   HANDLE *handle) override;
+                                                    DWORD access,
+                                                    HANDLE *handle) override;
 
   HRESULT STDMETHODCALLTYPE MakeResident(
       UINT object_count, ID3D12Pageable *const *objects) override;
 
   HRESULT STDMETHODCALLTYPE Evict(UINT object_count,
-                                  ID3D12Pageable *const *objects) override;
+                                    ID3D12Pageable *const *objects) override;
 
   HRESULT STDMETHODCALLTYPE CreateFence(UINT64 initial_value,
-                                        D3D12_FENCE_FLAGS flags, REFIID riid,
-                                        void **fence) override;
+                                          D3D12_FENCE_FLAGS flags, REFIID riid,
+                                          void **fence) override;
 
   HRESULT STDMETHODCALLTYPE GetDeviceRemovedReason() override;
 
@@ -176,8 +184,8 @@ public:
       UINT64 *row_size, UINT64 *total_bytes) override;
 
   HRESULT STDMETHODCALLTYPE CreateQueryHeap(const D3D12_QUERY_HEAP_DESC *desc,
-                                            REFIID riid,
-                                            void **heap) override;
+                                              REFIID riid,
+                                              void **heap) override;
 
   HRESULT STDMETHODCALLTYPE SetStablePowerState(WINBOOL enable) override;
 
@@ -201,6 +209,8 @@ private:
   Com<IMTLDXGIAdapter> m_adapter;
   std::atomic<uint32_t> m_refCount = {1ul};
   std::atomic<uint32_t> m_refPrivate = {1ul};
+  std::mutex m_resource_mutex;
+  std::unordered_map<uint64_t, MTLD3D12Resource *> m_resources_by_gpu_addr;
 };
 
 } // namespace dxmt

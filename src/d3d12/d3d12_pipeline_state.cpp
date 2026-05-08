@@ -163,8 +163,7 @@ bool MTLD3D12PipelineState::Compile() {
   if (ps_func.handle)
     info.fragment_function = ps_func.handle;
 
-  info.rasterization_enabled = (m_rasterizer_desc.FillMode != D3D12_FILL_MODE_WIREFRAME)
-                               || m_rasterizer_desc.FillMode != 0;
+  info.rasterization_enabled = (m_rasterizer_desc.FillMode != D3D12_FILL_MODE_WIREFRAME);
   info.raster_sample_count = m_sample_count ? m_sample_count : 1;
 
   for (UINT i = 0; i < m_num_render_targets && i < 8; i++) {

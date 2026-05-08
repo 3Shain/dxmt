@@ -14,7 +14,7 @@
 #include "com/com_object.hpp"
 #include "log/log.hpp"
 #include "util_string.hpp"
-#include <cstring>
+#include "d3d12_resource.hpp"
 #include <d3d12.h>
 
 namespace dxmt {
@@ -775,6 +775,40 @@ void STDMETHODCALLTYPE MTLD3D12Device::GetResourceTiling(
 LUID* STDMETHODCALLTYPE MTLD3D12Device::GetAdapterLuid(LUID *__ret) {
   *__ret = {};
   return __ret;
+}
+
+void MTLD3D12Device::RegisterResource(MTLD3D12Resource *res) {
+  if (!res) return;
+  D3D12_GPU_VIRTUAL_ADDRESS addr = res->GetGPUVirtualAddress();
+  if (addr) {
+    std::lock_guard<std::mutex> lock(m_resource_mutex);
+    m_resources_by_gpu_addr[addr] = res;
+  }
+}
+
+void MTLD3D12Device::UnregisterResource(MTLD3D12Resource *res) {
+  if (!res) return;
+  D3D12_GPU_VIRTUAL_ADDRESS addr = res->GetGPUVirtualAddress();
+  if (addr) {
+    std::lock_guard<std::mutex> lock(m_resource_mutex);
+    m_resources_by_gpu_addr.erase(addr);
+  }
+}
+
+MTLD3D12Resource *MTLD3D12Device::LookupResourceByGPUAddress(D3D12_GPU_VIRTUAL_ADDRESS addr) {
+  if (!addr) return nullptr;
+  std::lock_guard<std::mutex> lock(m_resource_mutex);
+  auto it = m_resources_by_gpu_addr.find(addr);
+  if (it != m_resources_by_gpu_addr.end())
+    return it->second;
+  for (auto &[gpu_addr, res] : m_resources_by_gpu_addr) {
+    auto *desc = res->GetDesc({});
+    if (desc && desc->Dimension == D3D12_RESOURCE_DIMENSION_BUFFER) {
+      if (addr >= gpu_addr && addr < gpu_addr + desc->Width)
+        return res;
+    }
+  }
+  return nullptr;
 }
 
 } // namespace dxmt

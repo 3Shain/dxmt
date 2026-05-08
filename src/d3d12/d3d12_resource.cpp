@@ -1,5 +1,6 @@
 #include "d3d12_resource.hpp"
 #include "d3d12_device.hpp"
+#include "d3d12_pipeline_state.hpp"
 #include "log/log.hpp"
 #include "util_string.hpp"
 
@@ -42,7 +43,9 @@ MTLD3D12Resource::MTLD3D12Resource(
     tex_info.usage = (WMTTextureUsage)(WMTTextureUsageRenderTarget |
                                       WMTTextureUsageShaderRead);
     tex_info.options = WMTResourceStorageModePrivate;
-    tex_info.pixel_format = WMTPixelFormatBGRA8Unorm;
+    tex_info.pixel_format = MTLD3D12PipelineState::DXGIToMTLPixelFormat(static_cast<DXGI_FORMAT>(desc.Format));
+    if (tex_info.pixel_format == WMTPixelFormatInvalid)
+      tex_info.pixel_format = WMTPixelFormatBGRA8Unorm;
 
     m_mtl_texture = wmt_device.newTexture(tex_info);
   }
@@ -50,9 +53,11 @@ MTLD3D12Resource::MTLD3D12Resource(
   Logger::info(str::format("D3D12Resource: dim=", desc.Dimension,
                             " ", desc.Width, "x", desc.Height,
                             " gpu=", m_gpu_addr));
+  m_device->RegisterResource(this);
 }
 
 MTLD3D12Resource::~MTLD3D12Resource() {
+  m_device->UnregisterResource(this);
   m_mtl_buffer = nullptr;
   m_mtl_texture = nullptr;
   m_device->Release();

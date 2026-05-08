@@ -3,6 +3,7 @@
 #include "com/com_pointer.hpp"
 #include "d3d12.h"
 #include "dxmt_command_queue.hpp"
+#include "Metal.hpp"
 #include <atomic>
 
 namespace dxmt {
@@ -80,6 +81,7 @@ private:
   D3D12_COMMAND_QUEUE_DESC m_desc;
   std::atomic<uint32_t> m_refCount = {1ul};
   std::atomic<uint32_t> m_refPrivate = {1ul};
+  WMT::Reference<WMT::CommandQueue> m_wmt_queue;
 };
 
 } // namespace dxmt

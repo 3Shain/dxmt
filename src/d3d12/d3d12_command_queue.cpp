@@ -71,6 +71,11 @@ struct ReplayState {
     if (render_enc_open)
       return;
 
+    if (rt_count == 0) {
+      QTRACE("EnsureRenderEncoder: no render targets set, skipping");
+      return;
+    }
+
     WMTRenderPassInfo rp = {};
     for (uint32_t i = 0; i < 8; i++) {
       rp.colors[i].texture = NULL_OBJECT_HANDLE;
@@ -86,6 +91,7 @@ struct ReplayState {
     rp.stencil.load_action = WMTLoadActionLoad;
     rp.stencil.store_action = WMTStoreActionStore;
 
+    bool has_valid_rt = false;
     for (uint32_t i = 0; i < rt_count && i < 8; i++) {
       auto *desc = reinterpret_cast<const D3D12Descriptor *>(rt_handles[i].ptr);
       if (desc && desc->resource) {
@@ -106,6 +112,7 @@ struct ReplayState {
           tex_info.options = WMTResourceStorageModeShared;
           auto tex = res->GetMTLBuffer().newTexture(tex_info, 0, 0);
           rp.colors[i].texture = tex.handle;
+          has_valid_rt = true;
         }
       }
     }
@@ -117,11 +124,22 @@ struct ReplayState {
         if (res->GetMTLTexture().handle) {
           rp.depth.texture = res->GetMTLTexture().handle;
           rp.stencil.texture = res->GetMTLTexture().handle;
+          has_valid_rt = true;
         }
       }
     }
 
+    if (!has_valid_rt) {
+      QTRACE("EnsureRenderEncoder: no valid RT texture found, skipping");
+      return;
+    }
+
+    QTRACE("EnsureRenderEncoder: creating render encoder rt_count=%u", rt_count);
     render_enc = cmdbuf.renderCommandEncoder(rp);
+    if (!render_enc.handle) {
+      QTRACE("EnsureRenderEncoder: FAILED to create render encoder!");
+      return;
+    }
     render_enc_open = true;
 
     if (pso && pso->IsCompiled() && pso->GetRenderPSO().handle) {
@@ -147,26 +165,16 @@ struct ReplayState {
 
     for (uint32_t i = 0; i < 16; i++) {
       if (root_cbv_set[i] && root_cbvs[i]) {
-        struct wmtcmd_render_setbuffer cmd;
-        cmd.type = WMTRenderCommandSetVertexBuffer;
-        cmd.next.set(nullptr);
-        cmd.buffer = NULL_OBJECT_HANDLE;
-        cmd.offset = root_cbvs[i];
-        cmd.index = i;
-        render_enc.encodeCommands(
-            reinterpret_cast<const wmtcmd_render_nop *>(&cmd));
-
-        cmd.type = WMTRenderCommandSetFragmentBuffer;
-        cmd.index = i;
-        render_enc.encodeCommands(
-            reinterpret_cast<const wmtcmd_render_nop *>(&cmd));
+        // TODO: resolve GPU address to actual Metal buffer via device lookup
       }
 
       if (root_constant_set[i] && root_constant_sizes[i] > 0) {
         render_enc.setFragmentBytes(root_constants_buf + root_constant_offsets[i],
-                                    root_constant_sizes[i], i);
-        render_enc.setFragmentBytes(root_constants_buf + root_constant_offsets[i],
-                                    root_constant_sizes[i], i);
+                                     root_constant_sizes[i], i);
+      }
+
+      if (root_table_set[i] && root_cbv_set[i]) {
+        // descriptor table + CBV at this slot
       }
     }
   }
@@ -192,6 +200,8 @@ MTLD3D12CommandQueue::MTLD3D12CommandQueue(MTLD3D12Device *device,
                                            D3D12_COMMAND_QUEUE_DESC desc)
     : m_device(device), m_queue(queue), m_desc(desc) {
   m_device->AddRef();
+  auto wmt_dev = m_device->GetDXMTDevice().device();
+  m_wmt_queue = wmt_dev.newCommandQueue(1);
   Logger::info("D3D12CommandQueue created");
 }
 
@@ -279,29 +289,36 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::ExecuteCommandLists(
     UINT command_list_count,
     ID3D12CommandList *const *command_lists) {
   QTRACE("ExecuteCommandLists count=%u", command_list_count);
-  auto wmt_device = m_device->GetDXMTDevice().device();
-  auto wmt_queue = WMT::CommandQueue{wmt_device.newCommandQueue(1).handle};
 
   for (UINT li = 0; li < command_list_count; li++) {
+    QTRACE("ECL: processing list %u", li);
     auto *list = static_cast<MTLD3D12GraphicsCommandList *>(command_lists[li]);
-    if (!list)
+    if (!list) {
+      QTRACE("ECL: list %u is null, skipping", li);
       continue;
+    }
 
-    auto cmdbuf = wmt_queue.commandBuffer();
+    QTRACE("ECL: creating cmdbuf from m_wmt_queue");
+    auto cmdbuf = m_wmt_queue.commandBuffer();
+    QTRACE("ECL: cmdbuf handle=%llu", (unsigned long long)cmdbuf.handle);
     if (!cmdbuf.handle) {
       Logger::err("ExecuteCommandLists: failed to create Metal command buffer");
       continue;
     }
 
     const auto &cmds = list->GetCommands();
+    QTRACE("ExecuteCommandLists: cmds.size=%zu empty=%d", cmds.size(), cmds.empty());
     if (cmds.empty()) {
+      QTRACE("ExecuteCommandLists: empty cmdlist, committing");
       cmdbuf.commit();
+      QTRACE("ExecuteCommandLists: empty cmdlist committed ok");
       continue;
     }
 
     ReplayState st;
     st.cmdbuf = cmdbuf;
 
+    QTRACE("ExecuteCommandLists: cmd_size=%zu", cmds.size());
     size_t offset = 0;
     while (offset < cmds.size()) {
       if (offset + sizeof(CmdHeader) > cmds.size())
@@ -315,8 +332,9 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::ExecuteCommandLists(
         auto *cmd = reinterpret_cast<const CmdDrawInstanced *>(header);
         st.EnsureRenderEncoder();
         st.ApplyRootBindings();
+        QTRACE("DrawInstanced v=%u i=%u enc_open=%d", cmd->vertex_count, cmd->instance_count, st.render_enc_open);
 
-        if (cmd->instance_count > 0 && cmd->vertex_count > 0) {
+        if (cmd->instance_count > 0 && cmd->vertex_count > 0 && st.render_enc_open) {
           struct wmtcmd_render_draw draw = {};
           draw.type = WMTRenderCommandDraw;
           draw.next.set(nullptr);
@@ -336,14 +354,17 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::ExecuteCommandLists(
         st.ApplyRootBindings();
 
         if (cmd->instance_count > 0 && cmd->index_count > 0 && st.ib.BufferLocation) {
-          auto *ib_res = reinterpret_cast<MTLD3D12Resource *>(st.ib.BufferLocation);
+          auto *ib_res = m_device->LookupResourceByGPUAddress(st.ib.BufferLocation);
+          if (!ib_res && st.ib.BufferLocation) {
+            ib_res = reinterpret_cast<MTLD3D12Resource *>(st.ib.BufferLocation);
+          }
           struct wmtcmd_render_draw_indexed draw = {};
           draw.type = WMTRenderCommandDrawIndexed;
           draw.next.set(nullptr);
           draw.primitive_type = st.GetMetalPrimitiveType();
           draw.index_type = DXGIToWMTIndexFormat(st.ib.Format);
           draw.index_count = cmd->index_count;
-          draw.index_buffer = ib_res->GetMTLBuffer().handle;
+          draw.index_buffer = ib_res ? ib_res->GetMTLBuffer().handle : NULL_OBJECT_HANDLE;
           draw.index_buffer_offset = st.ib.SizeInBytes ? 0 : 0;
           draw.instance_count = cmd->instance_count;
           draw.base_vertex = cmd->base_vertex;
@@ -540,7 +561,7 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::ExecuteCommandLists(
         if (st.render_enc_open) {
           for (uint32_t i = 0; i < cmd->count; i++) {
             if (views[i].BufferLocation) {
-              auto *res = reinterpret_cast<MTLD3D12Resource *>(views[i].BufferLocation);
+              auto *res = m_device->LookupResourceByGPUAddress(views[i].BufferLocation);
               if (res && res->GetMTLBuffer().handle) {
                 st.render_enc.setVertexBuffer(res->GetMTLBuffer(),
                                               views[i].SizeInBytes ? 0 : 0,
@@ -586,12 +607,15 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::ExecuteCommandLists(
     }
 
     st.CloseRenderEncoder();
+    QTRACE("ExecuteCommandLists: committing cmdbuf");
     cmdbuf.commit();
     cmdbuf.waitUntilCompleted();
 
     auto status = cmdbuf.status();
+    QTRACE("ExecuteCommandLists: cmdbuf status=%d", (int)status);
     if (status != WMTCommandBufferStatusCompleted) {
-      Logger::err(str::format("ExecuteCommandLists: cmdbuf status=", status));
+      auto err = cmdbuf.error();
+      Logger::err(str::format("ExecuteCommandLists: cmdbuf status=", status, " error_handle=", err.handle));
     }
   }
 }

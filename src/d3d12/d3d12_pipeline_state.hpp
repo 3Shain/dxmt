@@ -42,6 +42,11 @@ public:
 
   bool Compile();
 
+  bool EnsureCompiled() {
+    if (!m_compiled) Compile();
+    return m_compiled;
+  }
+
   bool IsCompute() const { return m_is_compute; }
   bool IsCompiled() const { return m_compiled; }
 
@@ -53,10 +58,11 @@ public:
   }
   ID3D12RootSignature *GetRootSignature() const { return m_root_sig; }
 
+  static WMTPixelFormat DXGIToMTLPixelFormat(DXGI_FORMAT format);
+
 private:
   bool CompileShader(const void *bytecode, SIZE_T size, ShaderType type,
                      const char *func_name, WMT::Reference<WMT::Function> &out_func);
-  WMTPixelFormat DXGIToMTLPixelFormat(DXGI_FORMAT format);
 
   MTLD3D12Device *m_device;
   bool m_is_compute;
