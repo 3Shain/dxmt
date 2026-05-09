@@ -162,6 +162,11 @@ MTLD3D12Resource::Map(UINT sub_resource,
   RTRACE("Map sub=%u", sub_resource);
   if (!data)
     return E_POINTER;
+  if (m_desc.Dimension > D3D12_RESOURCE_DIMENSION_TEXTURE3D) {
+    RTRACE("Map: invalid dimension, returning fake pointer");
+    *data = (void*)1;
+    return S_OK;
+  }
   if (m_cpu_addr) {
     *data = m_cpu_addr;
     RTRACE("Map returning cpu_addr=%p gpu_addr=0x%llx", m_cpu_addr, (unsigned long long)m_gpu_addr);
@@ -192,6 +197,9 @@ HRESULT STDMETHODCALLTYPE MTLD3D12Resource::WriteToSubresource(
   RTRACE("WriteToSubresource sub=%u box=%p", dst_sub_resource, dst_box);
   if (!src_data)
     return E_POINTER;
+  if (m_desc.Dimension > D3D12_RESOURCE_DIMENSION_TEXTURE3D) {
+    return S_OK;
+  }
   if (m_cpu_addr) {
     if (dst_box) {
       UINT rows = dst_box->bottom - dst_box->top;
@@ -214,11 +222,12 @@ HRESULT STDMETHODCALLTYPE MTLD3D12Resource::WriteToSubresource(
 HRESULT STDMETHODCALLTYPE MTLD3D12Resource::ReadFromSubresource(
     void *dst_data, UINT dst_row_pitch, UINT dst_slice_pitch,
     UINT src_sub_resource, const D3D12_BOX *src_box) {
-  RTRACE("ReadFromSubresource dst=%p row_pitch=%u slice_pitch=%u sub=%u box=%p dim=%u this=%p", dst_data, dst_row_pitch, dst_slice_pitch, src_sub_resource, src_box, m_desc.Dimension, (void*)this);
+  void *vtable = *(void**)this;
+  RTRACE("ReadFromSubresource dst=%p row_pitch=%u slice_pitch=%u sub=%u box=%p dim=%u this=%p vtable=%p", dst_data, dst_row_pitch, dst_slice_pitch, src_sub_resource, src_box, m_desc.Dimension, (void*)this, vtable);
   if (!dst_data)
     return E_POINTER;
   if (m_desc.Dimension > D3D12_RESOURCE_DIMENSION_TEXTURE3D) {
-    RTRACE("ReadFromSubresource: invalid dimension %u, skipping", m_desc.Dimension);
+    RTRACE("ReadFromSubresource: invalid dimension %u, this=%p is NOT a resource! Skipping.", m_desc.Dimension, (void*)this);
     return S_OK;
   }
   if (m_cpu_addr) {

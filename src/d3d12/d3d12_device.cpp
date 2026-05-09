@@ -66,10 +66,19 @@ MTLD3D12Device::MTLD3D12Device(std::unique_ptr<Device> &&device,
     : m_device(std::move(device)), m_adapter(pAdapter) {
   if (m_adapter)
     m_adapter->AddRef();
+  m_expected_vtable = *(void**)this;
+  TRACE("Device ctor: this=%p vtable=%p", (void*)this, m_expected_vtable);
   Logger::info("D3D12 device created via DXMT Metal backend");
 }
 
 MTLD3D12Device::~MTLD3D12Device() { Logger::info("D3D12 device destroyed"); }
+
+void MTLD3D12Device::CheckVtable(const char *where) {
+  void *current = *(void**)this;
+  if (current != m_expected_vtable) {
+    TRACE("VTABLE CORRUPTION at %s: expected=%p got=%p this=%p", where, m_expected_vtable, current, (void*)this);
+  }
+}
 
 WMT::Device MTLD3D12Device::GetMTLDevice() {
   return m_device->device();
@@ -480,6 +489,7 @@ MTLD3D12Device::CreateDescriptorHeap(const D3D12_DESCRIPTOR_HEAP_DESC *desc,
                                       REFIID riid, void **descriptor_heap) {
   if (!desc || !descriptor_heap)
     return E_POINTER;
+  CheckVtable("CreateDescriptorHeap");
   TRACE("CreateDescriptorHeap type=%u num=%u starting", desc->Type, desc->NumDescriptors);
   InitReturnPtr(descriptor_heap);
 
@@ -673,6 +683,7 @@ HRESULT STDMETHODCALLTYPE MTLD3D12Device::CreateCommittedResource(
     const D3D12_CLEAR_VALUE *optimized_clear_value, REFIID riid,
     void **resource) {
   TRACE("CreateCommittedResource dim=%u fmt=%u width=%llu state=0x%x heap_type=%u", desc ? desc->Dimension : 0xFF, desc ? desc->Format : 0, desc ? desc->Width : 0, initial_state, heap_properties ? heap_properties->Type : 0xFF);
+  CheckVtable("CreateCommittedResource");
   if (!desc || !resource)
     return E_POINTER;
   InitReturnPtr(resource);

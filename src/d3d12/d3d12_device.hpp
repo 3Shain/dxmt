@@ -226,6 +226,8 @@ private:
   std::atomic<uint32_t> m_refPrivate = {1ul};
   std::mutex m_resource_mutex;
   std::unordered_map<uint64_t, MTLD3D12Resource *> m_resources_by_gpu_addr;
+  void *m_expected_vtable = nullptr;
+  void CheckVtable(const char *where);
 };
 
 } // namespace dxmt
