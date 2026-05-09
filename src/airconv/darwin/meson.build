@@ -14,31 +14,29 @@ llvm_ld_flags_darwin = [
   '-lm', '-lz', '-lcurses', '-lxml2'
 ]
 
-if native_llvm_path.startswith('/usr/local/opt')
-  llvm_ld_flags_darwin = [
-    llvm_ld_flags_darwin,
-    '/usr/local/opt/zstd/lib/libzstd.a', '/usr/local/opt/llvm@15/lib/libunwind.a'
-  ]
+llvm_extra_libs = []
+if native_llvm_path.startswith('/usr/local/opt') or native_llvm_path.startswith('/opt/homebrew/opt')
+  llvm_extra_libs = ['/opt/homebrew/opt/zstd/lib/libzstd.a', join_paths(native_llvm_path, 'lib/libunwind.a')]
 endif
 
 airconv_lib_darwin = static_library('airconv', airconv_src,
   include_directories : [ dxmt_include_path, llvm_include_path_darwin ],
   cpp_args            : [ airconv_args ],
   dependencies        : [ dxbc_parser_native_dep ],
-  link_args           : llvm_ld_flags_darwin,
+  link_args           : [ llvm_ld_flags_darwin, llvm_extra_libs ],
   native              : dxmt_crossbuild
 )
 
 airconv_dep_darwin = declare_dependency(
   link_with           : [ airconv_lib_darwin ],
   include_directories : [ dxmt_include_path, include_directories('..') ],
-  link_args           : [ llvm_ld_flags_darwin, llvm_deps ] # meh
+  link_args           : [ llvm_ld_flags_darwin, llvm_extra_libs, llvm_deps ]
 )
 
 executable('airconv', airconv_src + airconv_cli_src,
   include_directories : [ dxmt_include_path, llvm_include_path_darwin ],
   cpp_args            : [ airconv_args ],
   dependencies        : [ dxbc_parser_native_dep ],
-  link_args           : [ llvm_ld_flags_darwin, llvm_deps ],
+  link_args           : [ llvm_ld_flags_darwin, llvm_extra_libs, llvm_deps ],
   native              : dxmt_crossbuild
 )

@@ -59,6 +59,9 @@ public:
     return m_compute_pso;
   }
   ID3D12RootSignature *GetRootSignature() const { return m_root_sig; }
+  struct WMTSize GetThreadgroupSize() const {
+    return {(uint64_t)m_threadgroup_size.width, (uint64_t)m_threadgroup_size.height, (uint64_t)m_threadgroup_size.depth};
+  }
 
   static WMTPixelFormat DXGIToMTLPixelFormat(DXGI_FORMAT format);
 
@@ -88,6 +91,7 @@ private:
 
   WMT::Reference<WMT::RenderPipelineState> m_render_pso;
   WMT::Reference<WMT::ComputePipelineState> m_compute_pso;
+  struct { uint32_t width = 1, height = 1, depth = 1; } m_threadgroup_size;
 
   std::atomic<uint32_t> m_refCount = {1ul};
 };

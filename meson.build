@@ -47,6 +47,11 @@ compiler_args = [
   '-Wno-extern-c-compat',
   '-Wno-unused-const-variable',
   '-Wno-missing-braces',
+  '-Wno-inconsistent-missing-override',
+  '-Wno-overriding-method-mismatch',
+  '-Wno-error=non-virtual-dtor',
+  '-Wno-covered-switch-default',
+  '-fpermissive',
   '-fblocks',
   '-fmacro-prefix-map=' + source_prefix_path + '/=',
 ]

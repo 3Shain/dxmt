@@ -153,9 +153,9 @@ bool MTLD3D12PipelineState::CompileShader(const void *bytecode, SIZE_T size,
             auto library = wmt_device.newLibrary(dispatch_data, err);
             if (!err.handle) {
               char actual_entry[256] = {};
+              char rbuf[4096] = {};
               FILE *rf = fopen(reflection_path, "r");
               if (rf) {
-                char rbuf[4096] = {};
                 fread(rbuf, 1, sizeof(rbuf)-1, rf);
                 fclose(rf);
                 char *ep = strstr(rbuf, "\"EntryPoint\"");
@@ -180,6 +180,17 @@ bool MTLD3D12PipelineState::CompileShader(const void *bytecode, SIZE_T size,
               if (out_func.handle) {
                 PSTRACE("  DXIL loaded from cache OK! entry=%s", fn_name);
                 s_shader_cache[hash] = out_func;
+                char *tg = strstr(rbuf, "\"tg_size\"");
+                if (tg) {
+                  int tw=1,th=1,td=1;
+                  if (sscanf(tg, "\"tg_size\": [%d, %d, %d]", &tw, &th, &td) == 3 ||
+                      sscanf(tg, "\"tg_size\":[%d,%d,%d]", &tw, &th, &td) == 3) {
+                    m_threadgroup_size.width = tw;
+                    m_threadgroup_size.height = th;
+                    m_threadgroup_size.depth = td;
+                    PSTRACE("  threadgroup_size from reflection: %dx%dx%d", tw, th, td);
+                  }
+                }
                 return true;
               } else {
                 PSTRACE("  WMT newFunction returned null");

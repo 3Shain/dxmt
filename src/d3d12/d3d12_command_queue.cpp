@@ -320,7 +320,7 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::ExecuteCommandLists(
       continue;
     }
 
-    const auto &cmds = list->GetCommands();
+     const auto cmds = list->GetCommands();
     QTRACE("ExecuteCommandLists: cmds.size=%zu empty=%d", cmds.size(), cmds.empty());
     if (cmds.empty()) {
       QTRACE("ExecuteCommandLists: empty cmdlist, committing");
@@ -340,12 +340,18 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::ExecuteCommandLists(
       if (offset + sizeof(CmdHeader) > cmds.size())
         break;
       auto *header = reinterpret_cast<const CmdHeader *>(cmds.data() + offset);
-      if (header->size < sizeof(CmdHeader) || offset + header->size > cmds.size())
+      if (header->size < sizeof(CmdHeader) || header->size > 65536 || offset + header->size > cmds.size()) {
+        QTRACE("ECL: corrupt cmd at offset=%zu type=%d size=%zu cmds_size=%zu — skipping rest",
+               offset, (int)header->type, header->size, cmds.size());
         break;
+      }
 
       if ((uint32_t)header->type < 30)
         type_counts[(uint32_t)header->type]++;
       cmd_count++;
+
+      if (cmd_count <= 5 || (cmd_count % 50) == 0)
+        QTRACE("ECL cmd[%zu] type=%d size=%u offset=%zu", cmd_count, (int)header->type, (unsigned)header->size, offset);
 
       switch (header->type) {
       case CmdType::DrawInstanced: {
@@ -396,6 +402,11 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::ExecuteCommandLists(
       }
       case CmdType::Dispatch: {
         auto *cmd = reinterpret_cast<const CmdDispatch *>(header);
+        QTRACE("Dispatch x=%u y=%u z=%u pso=%p compiled=%d compute=%d heaps=%u",
+               cmd->x, cmd->y, cmd->z, (void*)st.pso,
+               st.pso ? st.pso->IsCompiled() : 0,
+               st.pso ? st.pso->IsCompute() : 0,
+               st.desc_heap_count);
         if (st.pso && st.pso->IsCompiled() && st.pso->IsCompute() &&
             st.pso->GetComputePSO().handle) {
           st.CloseRenderEncoder();
@@ -422,35 +433,45 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::ExecuteCommandLists(
           struct wmtcmd_compute_setpso setpso = {};
           setpso.type = WMTComputeCommandSetPSO;
           setpso.pso = st.pso->GetComputePSO();
-          setpso.threadgroup_size = {1, 1, 1};
+          setpso.threadgroup_size = st.pso->GetThreadgroupSize();
           append_cmd(&setpso, sizeof(setpso));
 
           for (uint32_t i = 0; i < 16; i++) {
-            if (st.comp_constant_set[i] && st.comp_constant_sizes[i] > 0) {
+            bool const_set = st.comp_constant_set[i] || st.root_constant_set[i];
+            uint32_t const_size = st.comp_constant_set[i] ? st.comp_constant_sizes[i] : st.root_constant_sizes[i];
+            uint32_t const_off = st.comp_constant_set[i] ? st.comp_constant_offsets[i] : st.root_constant_offsets[i];
+            uint8_t *const_buf = st.comp_constant_set[i] ? st.comp_constants_buf : st.root_constants_buf;
+
+            bool cbv_set = st.comp_cbv_set[i] || st.root_cbv_set[i];
+            D3D12_GPU_VIRTUAL_ADDRESS cbv_addr = st.comp_cbv_set[i] ? st.comp_cbvs[i] : st.root_cbvs[i];
+
+            bool tbl_set = st.comp_table_set[i] || st.root_table_set[i];
+            D3D12_GPU_DESCRIPTOR_HANDLE tbl_handle = st.comp_table_set[i] ? st.comp_tables[i] : st.root_tables[i];
+
+            if (const_set && const_size > 0) {
               struct wmtcmd_compute_setbytes sb = {};
               sb.type = WMTComputeCommandSetBytes;
-              sb.length = st.comp_constant_sizes[i];
+              sb.length = const_size;
               sb.index = i;
-              sb.bytes.ptr = (void *)(st.comp_constants_buf + st.comp_constant_offsets[i]);
+              sb.bytes.ptr = (void *)(const_buf + const_off);
               append_cmd(&sb, sizeof(sb));
             }
-            if (st.comp_cbv_set[i] && st.comp_cbvs[i]) {
-              auto *res = m_device->LookupResourceByGPUAddress(st.comp_cbvs[i]);
+            if (cbv_set && cbv_addr) {
+              auto *res = m_device->LookupResourceByGPUAddress(cbv_addr);
               if (res && res->GetMTLBuffer().handle) {
                 struct wmtcmd_compute_setbuffer sbuf = {};
                 sbuf.type = WMTComputeCommandSetBuffer;
                 sbuf.buffer = res->GetMTLBuffer().handle;
-                sbuf.offset = st.comp_cbvs[i] - res->GetGPUVirtualAddress();
+                sbuf.offset = cbv_addr - res->GetGPUVirtualAddress();
                 sbuf.index = i;
                 append_cmd(&sbuf, sizeof(sbuf));
               }
             }
-            if (st.comp_table_set[i] && st.desc_heap_count > 0) {
-              auto &handle = st.comp_tables[i];
+            if (tbl_set && st.desc_heap_count > 0) {
               for (uint32_t h = 0; h < st.desc_heap_count; h++) {
                 auto *heap = static_cast<MTLD3D12DescriptorHeap *>(st.desc_heaps[h]);
                 if (heap) {
-                  auto *desc = heap->GetDescriptorFromGPUHandle(handle);
+                  auto *desc = heap->GetDescriptorFromGPUHandle(tbl_handle);
                   if (desc && desc->resource) {
                     auto *res = static_cast<MTLD3D12Resource *>(desc->resource);
                     if (res->GetMTLBuffer().handle) {
@@ -472,6 +493,18 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::ExecuteCommandLists(
               }
             }
           }
+
+          int num_consts = 0, num_cbvs = 0, num_tables = 0;
+          for (uint32_t i = 0; i < 16; i++) {
+            if (st.comp_constant_set[i] && st.comp_constant_sizes[i] > 0) num_consts++;
+            if (st.comp_cbv_set[i] && st.comp_cbvs[i]) num_cbvs++;
+            if (st.comp_table_set[i]) num_tables++;
+          }
+          QTRACE("  bindings: consts=%d cbvs=%d tables=%d tg=%ux%ux%u",
+                 num_consts, num_cbvs, num_tables,
+                 st.pso->GetThreadgroupSize().width,
+                 st.pso->GetThreadgroupSize().height,
+                 st.pso->GetThreadgroupSize().depth);
 
           struct wmtcmd_compute_dispatch disp = {};
           disp.type = WMTComputeCommandDispatch;
@@ -620,6 +653,7 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::ExecuteCommandLists(
       }
       case CmdType::SetGraphicsRoot32BitConstants: {
         auto *cmd = reinterpret_cast<const CmdSetRoot32BitConstants *>(header);
+        QTRACE("SetGraphicsRoot32BitConstants idx=%u count=%u", cmd->root_param_index, cmd->count);
         if (cmd->root_param_index < 16) {
           uint32_t sz = cmd->count * 4;
           uint32_t off = cmd->dst_offset * 4;
@@ -642,6 +676,7 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::ExecuteCommandLists(
       }
       case CmdType::SetGraphicsRootDescriptorTable: {
         auto *cmd = reinterpret_cast<const CmdSetRootDescriptorTable *>(header);
+        QTRACE("SetGraphicsRootDescriptorTable idx=%u handle=0x%llx", cmd->root_param_index, (unsigned long long)cmd->base_descriptor.ptr);
         if (cmd->root_param_index < 16) {
           st.root_tables[cmd->root_param_index] = cmd->base_descriptor;
           st.root_table_set[cmd->root_param_index] = true;
