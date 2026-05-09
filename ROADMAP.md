@@ -3,17 +3,22 @@
 ## Goal
 Get RE4 (Resident Evil 4, AppID 2050650) running on macOS via MetalSharp Wine with a custom D3D12→Metal translation layer.
 
-## Current Status: BLOCKED on DXIL Shader Compilation
+## Current Status: DXIL Shaders Compile! Investigating Game Exit
 
-RE4 reaches its main loop, creates swapchain, presents frames (pink pulsating screen), but **all shader compilation fails** because RE4 uses DXIL (Shader Model 6.x) shaders inside DXBC containers. The existing SM50 compiler only handles SM5.0 DXBC shaders.
+RE4's DXIL shaders now successfully compile to Metal via Apple's `metal-shaderconverter.exe` (Windows version, v3.0.6) running inside Wine. Both compute PSOs compile and load as WMT functions. Game exits shortly after PSO creation — investigating why.
 
-### Evidence
-- DXBC containers contain `DXIL` chunks (not `SHDR`/`SHEX`)
-- Chunk tags found: `SFI0`, `ISG1`, `OSG1`, `PSV0`, `STAT`, `ILDN`, `HASH`, `DXIL`
-- SM50Initialize fails: "Invalid DXBC bytecode: shader blob not found"
-- All 4 compute PSOs fail compilation
-- Game dispatches 88+ compute workloads per frame with null Metal functions
-- Zero draw calls (game uses compute-first rendering path)
+### Shader Compilation Pipeline (WORKING)
+- DXBC container → CDXBCParser finds DXIL blob → write to temp file
+- `metal-shaderconverter.exe` (Wine) → metallib output
+- Parse reflection JSON for real entry point names
+- WMT `newLibrary(metallib)` → `newFunction(entryPoint)`
+- Result: `CS_FastClear` (4176 bytes), `CS_ZeroFill` (4108 bytes)
+
+### Current Issues
+- Game exits/crashes after PSO creation (no error in our trace)
+- Only 2 PSOs created (was 4 before — may be a timing issue)
+- Command lists still only contain SetPipelineState commands
+- No root constants or dispatch calls recorded
 
 ## Commits on `feat/d3d12-metal`
 1. `ba00619` - root signature serialization + command signature stubs
@@ -22,13 +27,15 @@ RE4 reaches its main loop, creates swapchain, presents frames (pink pulsating sc
 4. `02a0eaf` - swapchain creation + multi-backbuffer + fence fix - PINK SCREEN!
 5. `eee259a` - inherit ID3D12GraphicsCommandList2 + stub methods
 6. `73b16d0` - diagnostic tracing - DXBC chunk inspection reveals DXIL blocker
+7. `cb4faac` - DXIL compilation via Apple metal-shaderconverter - SHADERS COMPILE!
 
 ## What's Working
 - D3D12 device creation + QI chains
 - Command queue with persistent WMT command queue
 - Command list record + replay (all command types)
 - Swapchain creation + multi-backbuffer (4 buffers) + Present
-- Fence signal + SetEventOnCompletion (non-blocking)
+- **DXIL→Metal shader compilation via Apple metal-shaderconverter**
+- **PSO creation with real Metal compute functions (CS_FastClear, CS_ZeroFill)**
 - Feature support queries (OPTIONS1-11, shader model 6.5, etc.)
 - Root signature creation + serialization
 - PSO creation (graphics + compute) — structure works, compilation fails
@@ -39,53 +46,44 @@ RE4 reaches its main loop, creates swapchain, presents frames (pink pulsating sc
 - ExecuteBundle tracing + command merge
 
 ## What's NOT Working
-- **DXIL shader compilation** — CORE BLOCKER
-- No draw calls issued (game uses compute-first path, gated on PSO compilation)
+- **Game exits after PSO creation** — investigating crash/exit reason
+- Command lists only have SetPipelineState, no dispatch/root constants
 - Root CBV binding incomplete (LookupResourceByGPUAddress TODOs)
 - setVertexBytes not in WMT API (only setFragmentBytes)
 - No audio (media foundation / XAudio2)
 
 ---
 
-## Phase 1: DXIL→Metal Shader Compiler [CURRENT]
+## Phase 1: DXIL Shader Compilation [DONE]
 
-### Approach: Write a DXIL→AIR converter
-Convert DXIL bytecode to Apple AIR (Assembly Intermediate Representation) / Metallib format.
+### Approach: Apple metal-shaderconverter (Windows exe in Wine)
+Uses Apple's official DXIL→Metal converter rather than writing our own compiler.
 
-### Sub-tasks
-1. **DXIL container parser** — extract DXIL blob from DXBC container
-   - Parse DXBC header (magic, hash, chunk offsets)
-   - Find `DXIL` chunk by tag
-   - Extract the DXIL program blob (LLVM bitcode)
-2. **DXIL bitcode reader** — parse LLVM bitcode into IR
-   - LLVM bitcode format: bitstream blocks, records, abbreviation system
-   - Extract function bodies, type table, constant pool, value symbol table
-   - Map DXIL opcodes to semantics (load, store, call, compute/texture intrinsics)
-3. **DXIL intrinsic mapping** — map DXIL ops to Metal equivalents
-   - `dx.op.threadId` → thread position in grid
-   - `dx.op.bufferLoad` → buffer read
-   - `dx.op.textureStore` → texture write
-   - `dx.op.createHandle` → resource binding
-   - `dx.op.barrier` → threadgroup barrier
-   - etc.
-4. **Metal AIR/Metallib writer** — emit Metal shader bytecode
-   - Use existing `metallib_writer.cpp` in DXMT airconv as reference
-   - Or generate MSL source and compile via `wmt_device.newLibrary(source)`
-5. **Integration** — wire into `MTLD3D12PipelineState::CompileShader()`
-   - Detect DXIL vs DXBC by checking chunk tags
-   - Route to DXIL compiler path when DXIL chunk found
+### Pipeline
+1. SM50Initialize fails → detect DXIL chunk via CDXBCParser
+2. Write full DXBC container to temp file
+3. Run `metal-shaderconverter.exe` (v3.0.6) inside Wine via `_spawnlp`
+4. Parse reflection JSON for entry point name (CS_FastClear, CS_ZeroFill, etc.)
+5. Load metallib via WMT `newLibrary` → `newFunction(entryPoint)`
 
-### Alternative: DXIL→MSL source (faster to prototype)
-Instead of writing AIR directly, generate MSL (Metal Shading Language) source code from DXIL IR, then compile via WMT `newLibrary(source)`. This is easier to debug and good enough for a first pass.
+### Files Added
+- `src/airconv/dxil/dxil_container.hpp/cpp` — DXIL blob parser
+- `src/airconv/dxil/llvm_bitcode.hpp/cpp` — LLVM bitcode reader (future use)
+- `src/airconv/dxil/dxil_to_msl.hpp/cpp` — DXIL→MSL stub (future use)
+
+### Dependencies
+- `metal-shaderconverter.exe` installed to `C:\windows\system32\` in Wine prefix
+- `metalirconverter.dll` in same location
+- Downloaded from Apple Developer: Metal Shader Converter for Windows 3.0
 
 ---
 
-## Phase 2: Rendering (after shaders compile)
-- Verify compute dispatches execute with real Metal functions
-- Implement root CBV binding (GPU address → Metal buffer lookup)
-- Add setVertexBytes to WMT API
+## Phase 2: Rendering Pipeline [NEXT]
+- Investigate game exit after PSO creation
+- Root signature binding via top-level Argument Buffer
+- Implement resource encoding per Metal Shader Converter docs
+- Command list replay with real Metal functions
 - Debug visual output
-- Audio (stretch goal)
 
 ## Phase 3: Polish
 - Per-game DLL routing via mscompatdb.so
