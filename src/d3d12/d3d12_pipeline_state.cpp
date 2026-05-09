@@ -13,10 +13,14 @@
 #include <unistd.h>
 #include <vector>
 #include <process.h>
+#include <windows.h>
 
 #define PSTRACE(fmt, ...) do { FILE *_tf = fopen("Z:\\tmp\\dxmt_dxgi_trace.log", "a"); if (_tf) { fprintf(_tf, fmt "\n", ##__VA_ARGS__); fclose(_tf); } } while(0)
 
 namespace dxmt {
+
+std::mutex MTLD3D12PipelineState::s_shader_mutex;
+std::unordered_map<size_t, WMT::Reference<WMT::Function>> MTLD3D12PipelineState::s_shader_cache;
 
 MTLD3D12PipelineState::MTLD3D12PipelineState(MTLD3D12Device *device,
                                              bool is_compute)
@@ -60,6 +64,23 @@ bool MTLD3D12PipelineState::CompileShader(const void *bytecode, SIZE_T size,
                                           ShaderType type,
                                           const char *func_name,
                                           WMT::Reference<WMT::Function> &out_func) {
+  size_t hash = 0;
+  if (bytecode && size > 0) {
+    const uint8_t *p = (const uint8_t *)bytecode;
+    for (SIZE_T i = 0; i < size; i++)
+      hash = hash * 131 + p[i];
+  }
+  {
+    std::lock_guard<std::mutex> lock(s_shader_mutex);
+    PSTRACE("CompileShader: %s hash=0x%zx size=%zu cache_entries=%zu", func_name, hash, size, s_shader_cache.size());
+    auto it = s_shader_cache.find(hash);
+    if (it != s_shader_cache.end()) {
+      out_func = it->second;
+      PSTRACE("CompileShader: %s CACHE HIT hash=0x%zx", func_name, hash);
+      return true;
+    }
+  }
+
   if (bytecode && size >= 4) {
     auto *magic = (const uint32_t *)bytecode;
     PSTRACE("CompileShader: %s size=%zu magic=0x%08x (DXBC=0x43425844 DXIL=0x4C495844)", func_name, size, *magic);
@@ -100,94 +121,74 @@ bool MTLD3D12PipelineState::CompileShader(const void *bytecode, SIZE_T size,
 
           auto wmt_device = m_device->GetDXMTDevice().device();
 
-          char tmp_dxil[] = "/tmp/dxmt_dxil_XXXXXX";
-          char tmp_metallib[] = "/tmp/dxmt_dxil_lib_XXXXXX";
-          int fd_dxil = mkstemp(tmp_dxil);
-          int fd_metallib = mkstemp(tmp_metallib);
-          if (fd_dxil >= 0 && fd_metallib >= 0) {
-            write(fd_dxil, bytecode, size);
-            close(fd_dxil);
-            close(fd_metallib);
+          char cache_path[256];
+          snprintf(cache_path, sizeof(cache_path), "/tmp/dxmt_shader_cache/%016zx", hash);
+          char dxbc_path[256], metallib_path[256], reflection_path[256];
+          snprintf(dxbc_path, sizeof(dxbc_path), "%s.dxbc", cache_path);
+          snprintf(metallib_path, sizeof(metallib_path), "%s.metallib", cache_path);
+          snprintf(reflection_path, sizeof(reflection_path), "%s.json", cache_path);
 
-            char win_dxil[256], win_metallib[256];
-            snprintf(win_dxil, sizeof(win_dxil), "Z:\\tmp\\%s", strrchr(tmp_dxil, '/') + 1);
-            snprintf(win_metallib, sizeof(win_metallib), "Z:\\tmp\\%s", strrchr(tmp_metallib, '/') + 1);
+          FILE *mf = fopen(metallib_path, "rb");
+          if (!mf) {
+            PSTRACE("  metallib not cached, writing DXBC to %s", dxbc_path);
+            FILE *df = fopen(dxbc_path, "wb");
+            if (df) {
+              fwrite(bytecode, 1, size, df);
+              fclose(df);
+            }
+            return false;
+          }
 
-            intptr_t pid = _spawnlp(_P_WAIT, "C:\\windows\\system32\\metal-shaderconverter.exe",
-              "metal-shaderconverter",
-              "--output-reflection-file=Z:\\tmp\\dxmt_msc_reflection.json",
-              "-o", win_metallib, win_dxil, NULL);
-            int rc = (int)pid;
-            PSTRACE("  metal-shaderconverter rc=%d", rc);
-
-            if (rc == 0) {
-              FILE *f = fopen(tmp_metallib, "rb");
-              if (f) {
-                fseek(f, 0, SEEK_END);
-                long lib_size = ftell(f);
-                fseek(f, 0, SEEK_SET);
-                PSTRACE("  metallib size=%ld", lib_size);
-                if (lib_size > 0) {
-                  std::vector<uint8_t> lib_data(lib_size);
-                  fread(lib_data.data(), 1, lib_size, f);
-                  fclose(f);
-                  auto dispatch_data = WMT::MakeDispatchData(lib_data.data(), lib_size);
-                  WMT::Reference<WMT::Error> err;
-                  auto library = wmt_device.newLibrary(dispatch_data, err);
-                  if (err.handle) {
-                    PSTRACE("  WMT newLibrary FAILED");
-                  } else {
-                    char actual_entry[256] = {};
-                    FILE *rf = fopen("Z:\\tmp\\dxmt_msc_reflection.json", "r");
-                    if (rf) {
-                      char rbuf[4096] = {};
-                      fread(rbuf, 1, sizeof(rbuf)-1, rf);
-                      fclose(rf);
-                      char *ep = strstr(rbuf, "\"EntryPoint\"");
-                      if (ep) {
-                        char *q1 = strchr(ep + 13, '"');
-                        char *q2 = q1 ? strchr(q1+1, '"') : nullptr;
-                        if (q1 && q2) {
-                          size_t len = q2 - q1 - 1;
-                          if (len < sizeof(actual_entry)) {
-                            memcpy(actual_entry, q1+1, len);
-                            actual_entry[len] = 0;
-                          }
-                        }
-                      }
-                      unlink("Z:\\tmp\\dxmt_msc_reflection.json");
-                    }
-                    const char *fn_name = actual_entry[0] ? actual_entry : func_name;
-                    PSTRACE("  trying newFunction(%s)", fn_name);
-                    out_func = library.newFunction(fn_name);
-                    if (!out_func.handle && actual_entry[0]) {
-                      PSTRACE("  retry with func_name=%s", func_name);
-                      out_func = library.newFunction(func_name);
-                    }
-                    if (out_func.handle) {
-                      PSTRACE("  DXIL compiled via metal-shaderconverter OK! entry=%s", fn_name);
-                      unlink(tmp_dxil);
-                      unlink(tmp_metallib);
-                      return true;
-                    } else {
-                      PSTRACE("  WMT newFunction returned null for both names");
+          PSTRACE("  loading cached metallib from %s", metallib_path);
+          fseek(mf, 0, SEEK_END);
+          long lib_size = ftell(mf);
+          fseek(mf, 0, SEEK_SET);
+          PSTRACE("  metallib size=%ld", lib_size);
+          if (lib_size > 0) {
+            std::vector<uint8_t> lib_data(lib_size);
+            fread(lib_data.data(), 1, lib_size, mf);
+            fclose(mf);
+            auto dispatch_data = WMT::MakeDispatchData(lib_data.data(), lib_size);
+            WMT::Reference<WMT::Error> err;
+            auto library = wmt_device.newLibrary(dispatch_data, err);
+            if (!err.handle) {
+              char actual_entry[256] = {};
+              FILE *rf = fopen(reflection_path, "r");
+              if (rf) {
+                char rbuf[4096] = {};
+                fread(rbuf, 1, sizeof(rbuf)-1, rf);
+                fclose(rf);
+                char *ep = strstr(rbuf, "\"EntryPoint\"");
+                if (ep) {
+                  char *q1 = strchr(ep + 13, '"');
+                  char *q2 = q1 ? strchr(q1+1, '"') : nullptr;
+                  if (q1 && q2) {
+                    size_t len = q2 - q1 - 1;
+                    if (len < sizeof(actual_entry)) {
+                      memcpy(actual_entry, q1+1, len);
+                      actual_entry[len] = 0;
                     }
                   }
-                } else {
-                  fclose(f);
                 }
               }
-            } else {
-              FILE *ef = fopen("/tmp/dxmt_msc_stderr.log", "r");
-              if (ef) {
-                char errbuf[256] = {};
-                fgets(errbuf, sizeof(errbuf), ef);
-                PSTRACE("  MSC stderr: %s", errbuf);
-                fclose(ef);
+              const char *fn_name = actual_entry[0] ? actual_entry : func_name;
+              PSTRACE("  trying newFunction(%s)", fn_name);
+              out_func = library.newFunction(fn_name);
+              if (!out_func.handle && actual_entry[0]) {
+                out_func = library.newFunction(func_name);
               }
+              if (out_func.handle) {
+                PSTRACE("  DXIL loaded from cache OK! entry=%s", fn_name);
+                s_shader_cache[hash] = out_func;
+                return true;
+              } else {
+                PSTRACE("  WMT newFunction returned null");
+              }
+            } else {
+              PSTRACE("  WMT newLibrary FAILED");
             }
-            unlink(tmp_dxil);
-            unlink(tmp_metallib);
+          } else {
+            fclose(mf);
           }
           break;
         }
@@ -241,6 +242,10 @@ bool MTLD3D12PipelineState::CompileShader(const void *bytecode, SIZE_T size,
   }
 
   Logger::info(str::format("  Compiled ", func_name, " OK"));
+  {
+    std::lock_guard<std::mutex> lock(s_shader_mutex);
+    s_shader_cache[hash] = out_func;
+  }
   return true;
 }
 

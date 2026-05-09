@@ -388,13 +388,62 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::ExecuteCommandLists(
         auto *cmd = reinterpret_cast<const CmdDispatch *>(header);
         if (st.pso && st.pso->IsCompiled() && st.pso->IsCompute() &&
             st.pso->GetComputePSO().handle) {
+          st.CloseRenderEncoder();
           auto comp = cmdbuf.computeCommandEncoder(false);
+
+          uint8_t cmd_buf[4096];
+          uint8_t *cmd_ptr = cmd_buf;
+          wmtcmd_compute_nop *chain_head = nullptr;
+          wmtcmd_base *chain_tail = nullptr;
+
+          auto append_cmd = [&](void *data, size_t sz) -> wmtcmd_base * {
+            auto *c = (wmtcmd_base *)cmd_ptr;
+            memcpy(cmd_ptr, data, sz);
+            cmd_ptr += sz;
+            c->next.set(nullptr);
+            if (chain_tail)
+              chain_tail->next.set(c);
+            else
+              chain_head = (wmtcmd_compute_nop *)c;
+            chain_tail = c;
+            return c;
+          };
+
           struct wmtcmd_compute_setpso setpso = {};
           setpso.type = WMTComputeCommandSetPSO;
-          setpso.next.set(nullptr);
           setpso.pso = st.pso->GetComputePSO();
-          comp.encodeCommands(
-              reinterpret_cast<const wmtcmd_compute_nop *>(&setpso));
+          setpso.threadgroup_size = {1, 1, 1};
+          append_cmd(&setpso, sizeof(setpso));
+
+          for (uint32_t i = 0; i < 16; i++) {
+            if (st.root_constant_set[i] && st.root_constant_sizes[i] > 0) {
+              struct wmtcmd_compute_setbytes sb = {};
+              sb.type = WMTComputeCommandSetBytes;
+              sb.length = st.root_constant_sizes[i];
+              sb.index = i;
+              sb.bytes.ptr = (void *)(st.root_constants_buf + st.root_constant_offsets[i]);
+              append_cmd(&sb, sizeof(sb));
+            }
+            if (st.root_cbv_set[i] && st.root_cbvs[i]) {
+              auto *res = m_device->LookupResourceByGPUAddress(st.root_cbvs[i]);
+              if (res && res->GetMTLBuffer().handle) {
+                struct wmtcmd_compute_setbuffer sbuf = {};
+                sbuf.type = WMTComputeCommandSetBuffer;
+                sbuf.buffer = res->GetMTLBuffer().handle;
+                sbuf.offset = st.root_cbvs[i] - res->GetGPUVirtualAddress();
+                sbuf.index = i;
+                append_cmd(&sbuf, sizeof(sbuf));
+              }
+            }
+          }
+
+          struct wmtcmd_compute_dispatch disp = {};
+          disp.type = WMTComputeCommandDispatch;
+          disp.size = {(uint64_t)cmd->x, (uint64_t)cmd->y, (uint64_t)cmd->z};
+          append_cmd(&disp, sizeof(disp));
+
+          if (chain_head)
+            comp.encodeCommands(chain_head);
           comp.endEncoding();
         }
         break;

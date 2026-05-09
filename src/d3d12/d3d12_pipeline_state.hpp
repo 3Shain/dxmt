@@ -5,6 +5,8 @@
 #include "Metal.hpp"
 #include "airconv_public.h"
 #include <atomic>
+#include <mutex>
+#include <unordered_map>
 #include <vector>
 
 namespace dxmt {
@@ -63,6 +65,9 @@ public:
 private:
   bool CompileShader(const void *bytecode, SIZE_T size, ShaderType type,
                      const char *func_name, WMT::Reference<WMT::Function> &out_func);
+
+  static std::mutex s_shader_mutex;
+  static std::unordered_map<size_t, WMT::Reference<WMT::Function>> s_shader_cache;
 
   MTLD3D12Device *m_device;
   bool m_is_compute;
