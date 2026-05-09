@@ -106,21 +106,8 @@ struct ReplayState {
       auto *desc = reinterpret_cast<const D3D12Descriptor *>(rt_handles[i].ptr);
       if (desc && desc->resource) {
         auto *res = static_cast<MTLD3D12Resource *>(desc->resource);
-        if (res->GetMTLTexture().handle) {
-          rp.colors[i].texture = res->GetMTLTexture().handle;
-        } else if (res->GetMTLBuffer().handle) {
-          WMTTextureInfo tex_info = {};
-          tex_info.width = 1;
-          tex_info.height = 1;
-          tex_info.depth = 1;
-          tex_info.array_length = 1;
-          tex_info.mipmap_level_count = 1;
-          tex_info.sample_count = 1;
-          tex_info.type = WMTTextureType2D;
-          tex_info.usage = WMTTextureUsageRenderTarget;
-          tex_info.pixel_format = WMTPixelFormatBGRA8Unorm;
-          tex_info.options = WMTResourceStorageModeShared;
-          auto tex = res->GetMTLBuffer().newTexture(tex_info, 0, 0);
+        auto tex = res->GetMTLTexture();
+        if (tex.handle) {
           rp.colors[i].texture = tex.handle;
           has_valid_rt = true;
         }
@@ -169,22 +156,58 @@ struct ReplayState {
     }
   }
 
-  void ApplyRootBindings() {
+  void ApplyRootBindings(MTLD3D12Device *device) {
     if (!render_enc_open || !pso)
       return;
 
     for (uint32_t i = 0; i < 16; i++) {
-      if (root_cbv_set[i] && root_cbvs[i]) {
-        // TODO: resolve GPU address to actual Metal buffer via device lookup
-      }
-
       if (root_constant_set[i] && root_constant_sizes[i] > 0) {
         render_enc.setFragmentBytes(root_constants_buf + root_constant_offsets[i],
-                                     root_constant_sizes[i], i);
+                                    root_constant_sizes[i], i);
       }
 
-      if (root_table_set[i] && root_cbv_set[i]) {
-        // descriptor table + CBV at this slot
+      if (root_cbv_set[i] && root_cbvs[i]) {
+        auto *res = device->LookupResourceByGPUAddress(root_cbvs[i]);
+        if (res && res->GetMTLBuffer().handle) {
+          uint64_t offset = root_cbvs[i] - res->GetGPUVirtualAddress();
+          render_enc.setVertexBuffer(res->GetMTLBuffer(), offset, i);
+          render_enc.setFragmentBuffer(res->GetMTLBuffer(), offset, i);
+        }
+      }
+
+      if (root_table_set[i] && desc_heap_count > 0) {
+        for (uint32_t h = 0; h < desc_heap_count; h++) {
+          auto *heap = static_cast<MTLD3D12DescriptorHeap *>(desc_heaps[h]);
+          if (!heap) continue;
+          auto *desc = heap->GetDescriptorFromGPUHandle(root_tables[i]);
+          if (!desc || !desc->resource) continue;
+          auto *res = static_cast<MTLD3D12Resource *>(desc->resource);
+          if (res->GetMTLBuffer().handle) {
+            uint64_t off = 0;
+            if (desc->cbv.BufferLocation) {
+              auto *cbv_res = device->LookupResourceByGPUAddress(desc->cbv.BufferLocation);
+              if (cbv_res) off = desc->cbv.BufferLocation - cbv_res->GetGPUVirtualAddress();
+            }
+            render_enc.setVertexBuffer(res->GetMTLBuffer(), off, i);
+            render_enc.setFragmentBuffer(res->GetMTLBuffer(), off, i);
+          } else if (res->GetMTLTexture().handle) {
+            render_enc.setFragmentTexture(res->GetMTLTexture(), i);
+          }
+        }
+      }
+    }
+  }
+
+  void ApplyVertexBuffers(MTLD3D12Device *device) {
+    if (!render_enc_open)
+      return;
+    for (uint32_t i = 0; i < 16; i++) {
+      if (vbs[i].BufferLocation) {
+        auto *res = device->LookupResourceByGPUAddress(vbs[i].BufferLocation);
+        if (res && res->GetMTLBuffer().handle) {
+          uint64_t offset = vbs[i].BufferLocation - res->GetGPUVirtualAddress();
+          render_enc.setVertexBuffer(res->GetMTLBuffer(), offset, i);
+        }
       }
     }
   }
@@ -357,7 +380,8 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::ExecuteCommandLists(
       case CmdType::DrawInstanced: {
         auto *cmd = reinterpret_cast<const CmdDrawInstanced *>(header);
         st.EnsureRenderEncoder();
-        st.ApplyRootBindings();
+        st.ApplyRootBindings(m_device);
+        st.ApplyVertexBuffers(m_device);
         QTRACE("DrawInstanced v=%u i=%u enc_open=%d", cmd->vertex_count, cmd->instance_count, st.render_enc_open);
 
         if (cmd->instance_count > 0 && cmd->vertex_count > 0 && st.render_enc_open) {
@@ -377,7 +401,8 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::ExecuteCommandLists(
       case CmdType::DrawIndexedInstanced: {
         auto *cmd = reinterpret_cast<const CmdDrawIndexedInstanced *>(header);
         st.EnsureRenderEncoder();
-        st.ApplyRootBindings();
+        st.ApplyRootBindings(m_device);
+        st.ApplyVertexBuffers(m_device);
 
         if (cmd->instance_count > 0 && cmd->index_count > 0 && st.ib.BufferLocation) {
           auto *ib_res = m_device->LookupResourceByGPUAddress(st.ib.BufferLocation);
@@ -731,18 +756,6 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::ExecuteCommandLists(
         auto *views = reinterpret_cast<const D3D12_VERTEX_BUFFER_VIEW *>(
             reinterpret_cast<const uint8_t *>(cmd) +
             sizeof(CmdIASetVertexBuffers) - sizeof(D3D12_VERTEX_BUFFER_VIEW));
-        if (st.render_enc_open) {
-          for (uint32_t i = 0; i < cmd->count; i++) {
-            if (views[i].BufferLocation) {
-              auto *res = m_device->LookupResourceByGPUAddress(views[i].BufferLocation);
-              if (res && res->GetMTLBuffer().handle) {
-                st.render_enc.setVertexBuffer(res->GetMTLBuffer(),
-                                              views[i].SizeInBytes ? 0 : 0,
-                                              cmd->start_slot + i);
-              }
-            }
-          }
-        }
         for (uint32_t i = 0; i < cmd->count && (cmd->start_slot + i) < 16; i++)
           st.vbs[cmd->start_slot + i] = views[i];
         break;

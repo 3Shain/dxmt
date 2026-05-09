@@ -16,6 +16,7 @@
 #include "util_string.hpp"
 #include "d3d12_resource.hpp"
 #include <d3d12.h>
+#include <windows.h>
 
 namespace dxmt {
 
@@ -113,9 +114,11 @@ ULONG STDMETHODCALLTYPE MTLD3D12Device::AddRef() {
 
 ULONG STDMETHODCALLTYPE MTLD3D12Device::Release() {
   uint32_t rc = --m_refCount;
+  if (rc <= 1) TRACE("Device::Release rc=%u this=%p", rc, (void*)this);
   if (!rc) {
     uint32_t rp = --m_refPrivate;
     if (!rp) {
+      TRACE("Device::Release DELETING this=%p", (void*)this);
       m_refPrivate += 0x80000000;
       delete this;
     }
@@ -475,21 +478,26 @@ MTLD3D12Device::CheckFeatureSupport(D3D12_FEATURE feature,
 HRESULT STDMETHODCALLTYPE
 MTLD3D12Device::CreateDescriptorHeap(const D3D12_DESCRIPTOR_HEAP_DESC *desc,
                                       REFIID riid, void **descriptor_heap) {
-  TRACE("CreateDescriptorHeap type=%u num=%u", desc ? desc->Type : 0xFF, desc ? desc->NumDescriptors : 0);
   if (!desc || !descriptor_heap)
     return E_POINTER;
+  TRACE("CreateDescriptorHeap type=%u num=%u starting", desc->Type, desc->NumDescriptors);
   InitReturnPtr(descriptor_heap);
 
-  MTLD3D12DescriptorHeap *heap;
-  try {
-    heap = new MTLD3D12DescriptorHeap(this, *desc);
-  } catch (const std::bad_alloc &) {
-    TRACE("CreateDescriptorHeap: E_OUTOFMEMORY (bad_alloc for %u descriptors)", desc->NumDescriptors);
+  TRACE("CreateDescriptorHeap: about to allocate %u bytes for object", (unsigned)sizeof(MTLD3D12DescriptorHeap));
+  void *raw = HeapAlloc(GetProcessHeap(), 0, sizeof(MTLD3D12DescriptorHeap));
+  TRACE("CreateDescriptorHeap: HeapAlloc returned %p", raw);
+  if (!raw) {
+    TRACE("CreateDescriptorHeap: HeapAlloc for object FAILED");
     return E_OUTOFMEMORY;
   }
+  TRACE("CreateDescriptorHeap: about to placement-new, sizeof=%u", (unsigned)sizeof(MTLD3D12DescriptorHeap));
+  MTLD3D12DescriptorHeap *heap = new (raw) MTLD3D12DescriptorHeap(this, *desc);
+  TRACE("CreateDescriptorHeap: heap=%p data=%p", (void *)heap, heap->GetDescriptors());
   HRESULT hr = heap->QueryInterface(riid, descriptor_heap);
-  if (FAILED(hr))
-    heap->Release();
+  if (FAILED(hr)) {
+    heap->~MTLD3D12DescriptorHeap();
+    HeapFree(GetProcessHeap(), 0, raw);
+  }
   return hr;
 }
 
@@ -530,7 +538,7 @@ void STDMETHODCALLTYPE MTLD3D12Device::CreateConstantBufferView(
 void STDMETHODCALLTYPE MTLD3D12Device::CreateShaderResourceView(
     ID3D12Resource *resource, const D3D12_SHADER_RESOURCE_VIEW_DESC *desc,
     D3D12_CPU_DESCRIPTOR_HANDLE descriptor) {
-  TRACE("CreateShaderResourceView");
+  TRACE("CreateShaderResourceView res=%p handle=0x%llx", (void*)resource, (unsigned long long)descriptor.ptr);
   auto *d = reinterpret_cast<D3D12Descriptor *>(descriptor.ptr);
   if (d) {
     d->resource = resource;
@@ -544,7 +552,7 @@ void STDMETHODCALLTYPE MTLD3D12Device::CreateUnorderedAccessView(
     ID3D12Resource *resource, ID3D12Resource *counter_resource,
     const D3D12_UNORDERED_ACCESS_VIEW_DESC *desc,
     D3D12_CPU_DESCRIPTOR_HANDLE descriptor) {
-  TRACE("CreateUnorderedAccessView");
+  TRACE("CreateUnorderedAccessView res=%p counter=%p handle=0x%llx", (void*)resource, (void*)counter_resource, (unsigned long long)descriptor.ptr);
   auto *d = reinterpret_cast<D3D12Descriptor *>(descriptor.ptr);
   if (d) {
     d->resource = resource;

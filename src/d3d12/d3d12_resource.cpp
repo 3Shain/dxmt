@@ -27,6 +27,7 @@ MTLD3D12Resource::MTLD3D12Resource(
     m_cpu_addr = buf_info.memory.get_accessible_or_null();
     m_gpu_addr = buf_info.gpu_address;
     m_buf_info = buf_info;
+    RTRACE("ctor: buffer cpu=%p gpu=0x%llx len=%llu", m_cpu_addr, (unsigned long long)m_gpu_addr, (unsigned long long)desc.Width);
   } else {
     bool cpu_accessible = (heap_properties.Type == D3D12_HEAP_TYPE_UPLOAD ||
                            heap_properties.Type == D3D12_HEAP_TYPE_READBACK);
@@ -163,8 +164,10 @@ MTLD3D12Resource::Map(UINT sub_resource,
     return E_POINTER;
   if (m_cpu_addr) {
     *data = m_cpu_addr;
+    RTRACE("Map returning cpu_addr=%p gpu_addr=0x%llx", m_cpu_addr, (unsigned long long)m_gpu_addr);
     return S_OK;
   }
+  RTRACE("Map FAILED - no cpu_addr");
   return E_FAIL;
 }
 
@@ -211,9 +214,13 @@ HRESULT STDMETHODCALLTYPE MTLD3D12Resource::WriteToSubresource(
 HRESULT STDMETHODCALLTYPE MTLD3D12Resource::ReadFromSubresource(
     void *dst_data, UINT dst_row_pitch, UINT dst_slice_pitch,
     UINT src_sub_resource, const D3D12_BOX *src_box) {
-  RTRACE("ReadFromSubresource dst_row=%u dst_slice=%u sub=%u box=%p dim=%u this=%p m_desc.dim=%u", dst_row_pitch, dst_slice_pitch, src_sub_resource, src_box, m_desc.Dimension, (void *)this, m_desc.Dimension);
+  RTRACE("ReadFromSubresource dst=%p row_pitch=%u slice_pitch=%u sub=%u box=%p dim=%u this=%p", dst_data, dst_row_pitch, dst_slice_pitch, src_sub_resource, src_box, m_desc.Dimension, (void*)this);
   if (!dst_data)
     return E_POINTER;
+  if (m_desc.Dimension > D3D12_RESOURCE_DIMENSION_TEXTURE3D) {
+    RTRACE("ReadFromSubresource: invalid dimension %u, skipping", m_desc.Dimension);
+    return S_OK;
+  }
   if (m_cpu_addr) {
     UINT rows = m_desc.Height ? m_desc.Height : 1;
     if (src_box) {
