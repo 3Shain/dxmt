@@ -55,6 +55,19 @@ public:
   D3D12Descriptor *GetDescriptors() { return m_descriptors.data(); }
   uint32_t GetDescriptorCount() { return m_desc.NumDescriptors; }
 
+  D3D12Descriptor *GetDescriptorFromGPUHandle(D3D12_GPU_DESCRIPTOR_HANDLE handle) {
+    auto *desc = reinterpret_cast<D3D12Descriptor *>(handle.ptr);
+    if (desc < m_descriptors.data() || desc >= m_descriptors.data() + m_desc.NumDescriptors)
+      return nullptr;
+    return desc;
+  }
+  D3D12Descriptor *GetDescriptorFromCPUHandle(D3D12_CPU_DESCRIPTOR_HANDLE handle) {
+    auto *desc = reinterpret_cast<D3D12Descriptor *>(handle.ptr);
+    if (desc < m_descriptors.data() || desc >= m_descriptors.data() + m_desc.NumDescriptors)
+      return nullptr;
+    return desc;
+  }
+
 private:
   MTLD3D12Device *m_device;
   D3D12_DESCRIPTOR_HEAP_DESC m_desc;

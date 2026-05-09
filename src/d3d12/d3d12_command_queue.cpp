@@ -49,6 +49,16 @@ struct ReplayState {
   bool root_cbv_set[16] = {};
   bool root_table_set[16] = {};
 
+  MTLD3D12RootSignature *compute_root_sig = nullptr;
+  D3D12_GPU_VIRTUAL_ADDRESS comp_cbvs[16] = {};
+  D3D12_GPU_DESCRIPTOR_HANDLE comp_tables[16] = {};
+  uint8_t comp_constants_buf[16 * 64] = {};
+  uint32_t comp_constant_offsets[16] = {};
+  uint32_t comp_constant_sizes[16] = {};
+  bool comp_constant_set[16] = {};
+  bool comp_cbv_set[16] = {};
+  bool comp_table_set[16] = {};
+
   void CloseRenderEncoder() {
     if (render_enc_open) {
       render_enc.endEncoding();
@@ -416,23 +426,49 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::ExecuteCommandLists(
           append_cmd(&setpso, sizeof(setpso));
 
           for (uint32_t i = 0; i < 16; i++) {
-            if (st.root_constant_set[i] && st.root_constant_sizes[i] > 0) {
+            if (st.comp_constant_set[i] && st.comp_constant_sizes[i] > 0) {
               struct wmtcmd_compute_setbytes sb = {};
               sb.type = WMTComputeCommandSetBytes;
-              sb.length = st.root_constant_sizes[i];
+              sb.length = st.comp_constant_sizes[i];
               sb.index = i;
-              sb.bytes.ptr = (void *)(st.root_constants_buf + st.root_constant_offsets[i]);
+              sb.bytes.ptr = (void *)(st.comp_constants_buf + st.comp_constant_offsets[i]);
               append_cmd(&sb, sizeof(sb));
             }
-            if (st.root_cbv_set[i] && st.root_cbvs[i]) {
-              auto *res = m_device->LookupResourceByGPUAddress(st.root_cbvs[i]);
+            if (st.comp_cbv_set[i] && st.comp_cbvs[i]) {
+              auto *res = m_device->LookupResourceByGPUAddress(st.comp_cbvs[i]);
               if (res && res->GetMTLBuffer().handle) {
                 struct wmtcmd_compute_setbuffer sbuf = {};
                 sbuf.type = WMTComputeCommandSetBuffer;
                 sbuf.buffer = res->GetMTLBuffer().handle;
-                sbuf.offset = st.root_cbvs[i] - res->GetGPUVirtualAddress();
+                sbuf.offset = st.comp_cbvs[i] - res->GetGPUVirtualAddress();
                 sbuf.index = i;
                 append_cmd(&sbuf, sizeof(sbuf));
+              }
+            }
+            if (st.comp_table_set[i] && st.desc_heap_count > 0) {
+              auto &handle = st.comp_tables[i];
+              for (uint32_t h = 0; h < st.desc_heap_count; h++) {
+                auto *heap = static_cast<MTLD3D12DescriptorHeap *>(st.desc_heaps[h]);
+                if (heap) {
+                  auto *desc = heap->GetDescriptorFromGPUHandle(handle);
+                  if (desc && desc->resource) {
+                    auto *res = static_cast<MTLD3D12Resource *>(desc->resource);
+                    if (res->GetMTLBuffer().handle) {
+                      struct wmtcmd_compute_setbuffer sbuf = {};
+                      sbuf.type = WMTComputeCommandSetBuffer;
+                      sbuf.buffer = res->GetMTLBuffer().handle;
+                      sbuf.offset = 0;
+                      sbuf.index = i;
+                      append_cmd(&sbuf, sizeof(sbuf));
+                    } else if (res->GetMTLTexture().handle) {
+                      struct wmtcmd_compute_settexture stex = {};
+                      stex.type = WMTComputeCommandSetTexture;
+                      stex.texture = res->GetMTLTexture().handle;
+                      stex.index = i;
+                      append_cmd(&stex, sizeof(stex));
+                    }
+                  }
+                }
               }
             }
           }
@@ -609,6 +645,41 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::ExecuteCommandLists(
         if (cmd->root_param_index < 16) {
           st.root_tables[cmd->root_param_index] = cmd->base_descriptor;
           st.root_table_set[cmd->root_param_index] = true;
+        }
+        break;
+      }
+      case CmdType::SetComputeRootSignature: {
+        auto *cmd = reinterpret_cast<const CmdSetRootSignature *>(header);
+        st.compute_root_sig = static_cast<MTLD3D12RootSignature *>(cmd->root_sig);
+        break;
+      }
+      case CmdType::SetComputeRoot32BitConstants: {
+        auto *cmd = reinterpret_cast<const CmdSetRoot32BitConstants *>(header);
+        if (cmd->root_param_index < 16) {
+          uint32_t sz = cmd->count * 4;
+          uint32_t off = cmd->dst_offset * 4;
+          if (off + sz <= sizeof(st.comp_constants_buf)) {
+            memcpy(st.comp_constants_buf + off, cmd->data, sz);
+            st.comp_constant_offsets[cmd->root_param_index] = off;
+            st.comp_constant_sizes[cmd->root_param_index] = sz;
+            st.comp_constant_set[cmd->root_param_index] = true;
+          }
+        }
+        break;
+      }
+      case CmdType::SetComputeRootConstantBufferView: {
+        auto *cmd = reinterpret_cast<const CmdSetRootCBV *>(header);
+        if (cmd->root_param_index < 16) {
+          st.comp_cbvs[cmd->root_param_index] = cmd->address;
+          st.comp_cbv_set[cmd->root_param_index] = true;
+        }
+        break;
+      }
+      case CmdType::SetComputeRootDescriptorTable: {
+        auto *cmd = reinterpret_cast<const CmdSetRootDescriptorTable *>(header);
+        if (cmd->root_param_index < 16) {
+          st.comp_tables[cmd->root_param_index] = cmd->base_descriptor;
+          st.comp_table_set[cmd->root_param_index] = true;
         }
         break;
       }
