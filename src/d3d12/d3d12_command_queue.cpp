@@ -810,7 +810,7 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::EndEvent() {}
 
 HRESULT STDMETHODCALLTYPE
 MTLD3D12CommandQueue::Signal(ID3D12Fence *fence, UINT64 value) {
-  QTRACE("Signal value=%llu", (unsigned long long)value);
+  QTRACE("CmdQueue::Signal value=%llu fence_iface=%p", (unsigned long long)value, (void *)fence);
   if (!fence)
     return E_POINTER;
   return fence->Signal(value);

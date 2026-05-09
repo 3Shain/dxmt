@@ -28,6 +28,8 @@ MTLD3D12Resource::MTLD3D12Resource(
     m_gpu_addr = buf_info.gpu_address;
     m_buf_info = buf_info;
   } else {
+    bool cpu_accessible = (heap_properties.Type == D3D12_HEAP_TYPE_UPLOAD ||
+                           heap_properties.Type == D3D12_HEAP_TYPE_READBACK);
     WMTTextureInfo tex_info = {};
     tex_info.width = desc.Width;
     tex_info.height = desc.Height;
@@ -43,13 +45,18 @@ MTLD3D12Resource::MTLD3D12Resource(
     tex_info.type = WMTTextureType2D;
     tex_info.usage = (WMTTextureUsage)(WMTTextureUsageRenderTarget |
                                       WMTTextureUsageShaderRead);
-    tex_info.options = WMTResourceStorageModePrivate;
+    tex_info.options = cpu_accessible ? WMTResourceStorageModeShared : WMTResourceStorageModePrivate;
     tex_info.pixel_format = MTLD3D12PipelineState::DXGIToMTLPixelFormat(static_cast<DXGI_FORMAT>(desc.Format));
     if (tex_info.pixel_format == WMTPixelFormatInvalid)
       tex_info.pixel_format = WMTPixelFormatBGRA8Unorm;
 
-    m_mtl_texture = {}; // lazy creation
-    RTRACE("ctor: texture deferred (lazy) fmt=%u %llux%u", tex_info.pixel_format, tex_info.width, tex_info.height);
+    if (cpu_accessible) {
+      m_mtl_texture = wmt_device.newTexture(tex_info);
+      RTRACE("ctor: texture CPU-accessible fmt=%u %llux%u", tex_info.pixel_format, tex_info.width, tex_info.height);
+    } else {
+      m_mtl_texture = {}; // lazy creation
+      RTRACE("ctor: texture deferred (lazy) fmt=%u %llux%u", tex_info.pixel_format, tex_info.width, tex_info.height);
+    }
   }
 
   Logger::info(str::format("D3D12Resource: dim=", desc.Dimension,
@@ -60,19 +67,21 @@ MTLD3D12Resource::MTLD3D12Resource(
 
 WMT::Reference<WMT::Texture> MTLD3D12Resource::GetMTLTexture() {
   if (!m_mtl_texture.handle && m_desc.Dimension != D3D12_RESOURCE_DIMENSION_BUFFER) {
+    bool cpu_accessible = (m_heap_properties.Type == D3D12_HEAP_TYPE_UPLOAD ||
+                           m_heap_properties.Type == D3D12_HEAP_TYPE_READBACK);
     auto wmt_device = m_device->GetDXMTDevice().device();
     WMTTextureInfo tex_info = {};
     tex_info.width = m_desc.Width ? m_desc.Width : 1;
     tex_info.height = m_desc.Height ? m_desc.Height : 1;
     tex_info.depth = (m_desc.Dimension == D3D12_RESOURCE_DIMENSION_TEXTURE3D)
-                         ? m_desc.DepthOrArraySize : 1;
+                          ? m_desc.DepthOrArraySize : 1;
     tex_info.array_length = (m_desc.Dimension == D3D12_RESOURCE_DIMENSION_TEXTURE2D)
-                                 ? m_desc.DepthOrArraySize : 1;
+                                  ? m_desc.DepthOrArraySize : 1;
     tex_info.mipmap_level_count = m_desc.MipLevels ? m_desc.MipLevels : 1;
     tex_info.sample_count = m_desc.SampleDesc.Count ? m_desc.SampleDesc.Count : 1;
     tex_info.type = WMTTextureType2D;
     tex_info.usage = (WMTTextureUsage)(WMTTextureUsageRenderTarget | WMTTextureUsageShaderRead);
-    tex_info.options = WMTResourceStorageModePrivate;
+    tex_info.options = cpu_accessible ? WMTResourceStorageModeShared : WMTResourceStorageModePrivate;
     tex_info.pixel_format = MTLD3D12PipelineState::DXGIToMTLPixelFormat(static_cast<DXGI_FORMAT>(m_desc.Format));
     if (tex_info.pixel_format == WMTPixelFormatInvalid)
       tex_info.pixel_format = WMTPixelFormatBGRA8Unorm;
@@ -177,15 +186,58 @@ MTLD3D12Resource::GetGPUVirtualAddress() {
 HRESULT STDMETHODCALLTYPE MTLD3D12Resource::WriteToSubresource(
     UINT dst_sub_resource, const D3D12_BOX *dst_box, const void *src_data,
     UINT src_row_pitch, UINT src_slice_pitch) {
-  RTRACE("WriteToSubresource E_NOTIMPL");
-  return E_NOTIMPL;
+  RTRACE("WriteToSubresource sub=%u box=%p", dst_sub_resource, dst_box);
+  if (!src_data)
+    return E_POINTER;
+  if (m_cpu_addr) {
+    if (dst_box) {
+      UINT rows = dst_box->bottom - dst_box->top;
+      UINT depth = dst_box->back - dst_box->front;
+      for (UINT z = 0; z < depth; z++) {
+        for (UINT y = 0; y < rows; y++) {
+          memcpy((char *)m_cpu_addr + (dst_box->front + z) * src_slice_pitch + (dst_box->top + y) * src_row_pitch + dst_box->left,
+                 (char *)src_data + z * src_slice_pitch + y * src_row_pitch,
+                 dst_box->right - dst_box->left);
+        }
+      }
+    } else {
+      memcpy(m_cpu_addr, src_data, src_slice_pitch ? src_slice_pitch : src_row_pitch);
+    }
+    return S_OK;
+  }
+  return S_OK;
 }
 
 HRESULT STDMETHODCALLTYPE MTLD3D12Resource::ReadFromSubresource(
     void *dst_data, UINT dst_row_pitch, UINT dst_slice_pitch,
     UINT src_sub_resource, const D3D12_BOX *src_box) {
-  RTRACE("ReadFromSubresource E_NOTIMPL");
-  return E_NOTIMPL;
+  RTRACE("ReadFromSubresource dst_row=%u dst_slice=%u sub=%u box=%p dim=%u this=%p m_desc.dim=%u", dst_row_pitch, dst_slice_pitch, src_sub_resource, src_box, m_desc.Dimension, (void *)this, m_desc.Dimension);
+  if (!dst_data)
+    return E_POINTER;
+  if (m_cpu_addr) {
+    UINT rows = m_desc.Height ? m_desc.Height : 1;
+    if (src_box) {
+      UINT copy_rows = src_box->bottom - src_box->top;
+      UINT copy_depth = src_box->back - src_box->front;
+      UINT copy_width = src_box->right - src_box->left;
+      for (UINT z = 0; z < copy_depth; z++) {
+        for (UINT y = 0; y < copy_rows; y++) {
+          memcpy((char *)dst_data + z * dst_slice_pitch + y * dst_row_pitch,
+                 (char *)m_cpu_addr + (src_box->front + z) * rows * dst_row_pitch + (src_box->top + y) * dst_row_pitch + src_box->left,
+                 copy_width);
+        }
+      }
+    } else {
+      memcpy(dst_data, m_cpu_addr, dst_slice_pitch ? dst_slice_pitch : dst_row_pitch);
+    }
+    return S_OK;
+  }
+  if (m_desc.Dimension != D3D12_RESOURCE_DIMENSION_BUFFER) {
+    UINT total = dst_slice_pitch ? dst_slice_pitch : dst_row_pitch * (m_desc.Height ? m_desc.Height : 1);
+    if (total) memset(dst_data, 0, total);
+    return S_OK;
+  }
+  return S_OK;
 }
 
 HRESULT STDMETHODCALLTYPE

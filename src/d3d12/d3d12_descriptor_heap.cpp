@@ -4,6 +4,10 @@
 #include "util_string.hpp"
 #include <cstring>
 
+namespace dxmt {
+static constexpr size_t DESC_SIZE = sizeof(D3D12Descriptor);
+}
+
 #define HTRACE(fmt, ...) do { FILE *_tf = fopen("Z:\\tmp\\dxmt_dxgi_trace.log", "a"); if (_tf) { fprintf(_tf, "DescHeap::" fmt "\n", ##__VA_ARGS__); fclose(_tf); } } while(0)
 
 namespace dxmt {
@@ -12,12 +16,19 @@ MTLD3D12DescriptorHeap::MTLD3D12DescriptorHeap(
     MTLD3D12Device *device, const D3D12_DESCRIPTOR_HEAP_DESC &desc)
     : m_device(device), m_desc(desc) {
   m_device->AddRef();
-  m_descriptors.resize(desc.NumDescriptors);
-  std::memset(m_descriptors.data(), 0,
-              desc.NumDescriptors * sizeof(D3D12Descriptor));
-  for (uint32_t i = 0; i < desc.NumDescriptors; i++) {
-    m_descriptors[i].type = desc.Type;
+  HTRACE("DescriptorHeap ctor: type=%u num=%u desc_size=%zu allocating %llu bytes", desc.Type, desc.NumDescriptors,
+         dxmt::DESC_SIZE, (unsigned long long)desc.NumDescriptors * dxmt::DESC_SIZE);
+  try {
+    m_descriptors.resize(desc.NumDescriptors);
+    std::memset(m_descriptors.data(), 0,
+                desc.NumDescriptors * sizeof(D3D12Descriptor));
+    for (uint32_t i = 0; i < desc.NumDescriptors; i++) {
+      m_descriptors[i].type = desc.Type;
+    }
+  } catch (...) {
+    HTRACE("DescriptorHeap ctor: FAILED to allocate %u descriptors!", desc.NumDescriptors);
   }
+  HTRACE("DescriptorHeap ctor: done, data=%p", (void *)m_descriptors.data());
   Logger::info(str::format("D3D12DescriptorHeap: type=", desc.Type,
                             " count=", desc.NumDescriptors,
                             " flags=", desc.Flags));
@@ -97,7 +108,7 @@ MTLD3D12DescriptorHeap::GetCPUDescriptorHandleForHeapStart(
 D3D12_GPU_DESCRIPTOR_HANDLE *STDMETHODCALLTYPE
 MTLD3D12DescriptorHeap::GetGPUDescriptorHandleForHeapStart(
     D3D12_GPU_DESCRIPTOR_HANDLE *__ret) {
-  HTRACE("GetGPUDescriptorHandleForHeapStart");
+  HTRACE("GetGPUDescriptorHandleForHeapStart ptr=0x%llx", (unsigned long long)reinterpret_cast<UINT64>(m_descriptors.data()));
   __ret->ptr = reinterpret_cast<UINT64>(m_descriptors.data());
   return __ret;
 }

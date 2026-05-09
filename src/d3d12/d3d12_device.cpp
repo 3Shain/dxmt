@@ -18,6 +18,19 @@
 #include <d3d12.h>
 
 namespace dxmt {
+
+static const GUID IID_ID3D12Device2_ = {0x30baa41e, 0xb15b, 0x475c, {0xa0, 0xbb, 0x1a, 0xf5, 0xc5, 0xb6, 0x43, 0x28}};
+static const GUID IID_ID3D12Device3_ = {0x81dadc15, 0x2bad, 0x4392, {0x93, 0xc5, 0x10, 0x13, 0x45, 0xc4, 0xaa, 0x98}};
+static const GUID IID_ID3D12Device4_ = {0xe865df17, 0xa9ee, 0x46f9, {0xa4, 0x63, 0x30, 0x98, 0x31, 0x5a, 0xa2, 0xe5}};
+static const GUID IID_ID3D12Device5_ = {0x8b4f173b, 0x2fea, 0x4b80, {0x8f, 0x58, 0x43, 0x07, 0x19, 0x1a, 0xb9, 0x5d}};
+static const GUID IID_ID3D12Device6_ = {0xc70b221b, 0x40e4, 0x4a17, {0x89, 0xaf, 0x02, 0x5a, 0x07, 0x27, 0xa6, 0xdc}};
+static const GUID IID_ID3D12Device7_ = {0x5c014b53, 0x68a1, 0x4b9b, {0x8b, 0xd1, 0xdd, 0x60, 0x46, 0xb9, 0x35, 0x8b}};
+static const GUID IID_ID3D12Device8_ = {0x9218e6bb, 0xf944, 0x4f7e, {0xa7, 0x5c, 0xb1, 0xb2, 0xc7, 0xb7, 0x01, 0xf3}};
+static const GUID IID_ID3D12Device9_ = {0x4c80e962, 0xf032, 0x4f60, {0xbc, 0x9e, 0xeb, 0xc2, 0xcf, 0xa1, 0xd8, 0x3c}};
+static const GUID IID_ID3D12Device10_ = {0x517f8718, 0xaa66, 0x49f9, {0xb0, 0x2b, 0xa7, 0xab, 0x89, 0xc0, 0x60, 0x31}};
+static const GUID IID_ID3D12Device11_ = {0x5405c344, 0xd457, 0x444e, {0xb4, 0xdd, 0x23, 0x66, 0xe4, 0x5a, 0xee, 0x39}};
+static const GUID IID_ID3D12Device12_ = {0x5af5c532, 0x4c91, 0x4cd0, {0xb5, 0x41, 0x15, 0xa4, 0x05, 0x39, 0x5f, 0xc5}};
+
 Logger Logger::s_instance("d3d12.log");
 
 class MTLD3D12CommandSignature : public ComObject<ID3D12CommandSignature> {
@@ -71,7 +84,13 @@ MTLD3D12Device::QueryInterface(REFIID riid, void **ppvObject) {
 
   if (riid == IID_IUnknown || riid == IID_ID3D12Object ||
       riid == IID_ID3D12DeviceChild || riid == IID_ID3D12Pageable ||
-      riid == IID_ID3D12Device || riid == IID_ID3D12Device1) {
+      riid == IID_ID3D12Device || riid == IID_ID3D12Device1 ||
+      riid == IID_ID3D12Device2_ || riid == IID_ID3D12Device3_ ||
+      riid == IID_ID3D12Device4_ || riid == IID_ID3D12Device5_ ||
+      riid == IID_ID3D12Device6_ || riid == IID_ID3D12Device7_ ||
+      riid == IID_ID3D12Device8_ || riid == IID_ID3D12Device9_ ||
+      riid == IID_ID3D12Device10_ || riid == IID_ID3D12Device11_ ||
+      riid == IID_ID3D12Device12_) {
     *ppvObject = ref(this);
     return S_OK;
   }
@@ -461,7 +480,13 @@ MTLD3D12Device::CreateDescriptorHeap(const D3D12_DESCRIPTOR_HEAP_DESC *desc,
     return E_POINTER;
   InitReturnPtr(descriptor_heap);
 
-  auto heap = new MTLD3D12DescriptorHeap(this, *desc);
+  MTLD3D12DescriptorHeap *heap;
+  try {
+    heap = new MTLD3D12DescriptorHeap(this, *desc);
+  } catch (const std::bad_alloc &) {
+    TRACE("CreateDescriptorHeap: E_OUTOFMEMORY (bad_alloc for %u descriptors)", desc->NumDescriptors);
+    return E_OUTOFMEMORY;
+  }
   HRESULT hr = heap->QueryInterface(riid, descriptor_heap);
   if (FAILED(hr))
     heap->Release();
@@ -639,7 +664,7 @@ HRESULT STDMETHODCALLTYPE MTLD3D12Device::CreateCommittedResource(
     const D3D12_RESOURCE_DESC *desc, D3D12_RESOURCE_STATES initial_state,
     const D3D12_CLEAR_VALUE *optimized_clear_value, REFIID riid,
     void **resource) {
-  TRACE("CreateCommittedResource dim=%u fmt=%u width=%llu state=0x%x", desc ? desc->Dimension : 0xFF, desc ? desc->Format : 0, desc ? desc->Width : 0, initial_state);
+  TRACE("CreateCommittedResource dim=%u fmt=%u width=%llu state=0x%x heap_type=%u", desc ? desc->Dimension : 0xFF, desc ? desc->Format : 0, desc ? desc->Width : 0, initial_state, heap_properties ? heap_properties->Type : 0xFF);
   if (!desc || !resource)
     return E_POINTER;
   InitReturnPtr(resource);
@@ -720,12 +745,12 @@ MTLD3D12Device::Evict(UINT object_count, ID3D12Pageable *const *objects) {
 HRESULT STDMETHODCALLTYPE
 MTLD3D12Device::CreateFence(UINT64 initial_value, D3D12_FENCE_FLAGS flags,
                               REFIID riid, void **fence) {
-  TRACE("CreateFence init=%llu", (unsigned long long)initial_value);
   if (!fence)
     return E_POINTER;
   InitReturnPtr(fence);
 
   auto f = new MTLD3D12Fence(this, initial_value, flags);
+  TRACE("CreateFence init=%llu fence=%p", (unsigned long long)initial_value, (void *)f);
   HRESULT hr = f->QueryInterface(riid, fence);
   if (FAILED(hr))
     f->Release();
