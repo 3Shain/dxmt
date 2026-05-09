@@ -472,6 +472,9 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::ExecuteCommandLists(
                 auto *heap = static_cast<MTLD3D12DescriptorHeap *>(st.desc_heaps[h]);
                 if (heap) {
                   auto *desc = heap->GetDescriptorFromGPUHandle(tbl_handle);
+                  QTRACE("  tbl[%u] heap=%u handle=0x%llx desc=%p res=%p", i, h,
+                         (unsigned long long)tbl_handle.ptr, (void*)desc,
+                         desc ? (void*)desc->resource : nullptr);
                   if (desc && desc->resource) {
                     auto *res = static_cast<MTLD3D12Resource *>(desc->resource);
                     if (res->GetMTLBuffer().handle) {
@@ -496,9 +499,14 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::ExecuteCommandLists(
 
           int num_consts = 0, num_cbvs = 0, num_tables = 0;
           for (uint32_t i = 0; i < 16; i++) {
-            if (st.comp_constant_set[i] && st.comp_constant_sizes[i] > 0) num_consts++;
-            if (st.comp_cbv_set[i] && st.comp_cbvs[i]) num_cbvs++;
-            if (st.comp_table_set[i]) num_tables++;
+            if ((st.comp_constant_set[i] || st.root_constant_set[i]) &&
+                (st.comp_constant_sizes[i] > 0 || st.root_constant_sizes[i] > 0))
+              num_consts++;
+            if ((st.comp_cbv_set[i] && st.comp_cbvs[i]) ||
+                (st.root_cbv_set[i] && st.root_cbvs[i]))
+              num_cbvs++;
+            if (st.comp_table_set[i] || st.root_table_set[i])
+              num_tables++;
           }
           QTRACE("  bindings: consts=%d cbvs=%d tables=%d tg=%ux%ux%u",
                  num_consts, num_cbvs, num_tables,

@@ -71,7 +71,7 @@ MTLD3D12Device::QueryInterface(REFIID riid, void **ppvObject) {
 
   if (riid == IID_IUnknown || riid == IID_ID3D12Object ||
       riid == IID_ID3D12DeviceChild || riid == IID_ID3D12Pageable ||
-      riid == IID_ID3D12Device) {
+      riid == IID_ID3D12Device || riid == IID_ID3D12Device1) {
     *ppvObject = ref(this);
     return S_OK;
   }
@@ -470,7 +470,7 @@ MTLD3D12Device::CreateDescriptorHeap(const D3D12_DESCRIPTOR_HEAP_DESC *desc,
 
 UINT STDMETHODCALLTYPE MTLD3D12Device::GetDescriptorHandleIncrementSize(
     D3D12_DESCRIPTOR_HEAP_TYPE descriptor_heap_type) {
-  return 64;
+  return sizeof(D3D12Descriptor);
 }
 
 HRESULT STDMETHODCALLTYPE MTLD3D12Device::CreateRootSignature(
@@ -825,6 +825,26 @@ MTLD3D12Resource *MTLD3D12Device::LookupResourceByGPUAddress(D3D12_GPU_VIRTUAL_A
     }
   }
   return nullptr;
+}
+
+HRESULT STDMETHODCALLTYPE MTLD3D12Device::CreatePipelineLibrary(
+    const void *blob, SIZE_T blob_size, REFIID riid, void **lib) {
+  TRACE("CreatePipelineLibrary -> DXGI_ERROR_UNSUPPORTED");
+  if (lib) *lib = nullptr;
+  return DXGI_ERROR_UNSUPPORTED;
+}
+
+HRESULT STDMETHODCALLTYPE MTLD3D12Device::SetEventOnMultipleFenceCompletion(
+    ID3D12Fence *const *fences, const UINT64 *values, UINT fence_count,
+    D3D12_MULTIPLE_FENCE_WAIT_FLAGS flags, HANDLE event) {
+  TRACE("SetEventOnMultipleFenceCompletion -> E_NOTIMPL");
+  return E_NOTIMPL;
+}
+
+HRESULT STDMETHODCALLTYPE MTLD3D12Device::SetResidencyPriority(
+    UINT object_count, ID3D12Pageable *const *objects,
+    const D3D12_RESIDENCY_PRIORITY *priorities) {
+  return S_OK;
 }
 
 } // namespace dxmt

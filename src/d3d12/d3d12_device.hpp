@@ -12,7 +12,7 @@ namespace dxmt {
 
 class MTLD3D12Resource;
 
-class MTLD3D12Device : public ID3D12Device {
+class MTLD3D12Device : public ID3D12Device1 {
 public:
   MTLD3D12Device(std::unique_ptr<Device> &&device,
                    IMTLDXGIAdapter *pAdapter);
@@ -205,6 +205,18 @@ public:
       D3D12_SUBRESOURCE_TILING *sub_resource_tilings) override;
 
   LUID* STDMETHODCALLTYPE GetAdapterLuid(LUID *__ret) override;
+
+  HRESULT STDMETHODCALLTYPE CreatePipelineLibrary(
+      const void *blob, SIZE_T blob_size, REFIID riid,
+      void **lib) override;
+
+  HRESULT STDMETHODCALLTYPE SetEventOnMultipleFenceCompletion(
+      ID3D12Fence *const *fences, const UINT64 *values, UINT fence_count,
+      D3D12_MULTIPLE_FENCE_WAIT_FLAGS flags, HANDLE event) override;
+
+  HRESULT STDMETHODCALLTYPE SetResidencyPriority(
+      UINT object_count, ID3D12Pageable *const *objects,
+      const D3D12_RESIDENCY_PRIORITY *priorities) override;
 
 private:
   std::unique_ptr<Device> m_device;
