@@ -18,11 +18,13 @@
 
 #include "dxmt_buffer.hpp"
 #include "dxmt_format.hpp"
+#include "log/log.hpp"
 #include "thread.hpp"
 #include "util_likely.hpp"
 #include "util_math.hpp"
 #include "wsi_platform.hpp"
 #include <cassert>
+#include <cstdio>
 #include <mutex>
 
 namespace dxmt {
@@ -48,11 +50,82 @@ BufferAllocation::BufferAllocation(WMT::Device device, const WMTBufferInfo &info
   obj_ = device.newBuffer(info_);
   gpuAddress_ = info_.gpu_address;
   mappedMemory_ = info_.memory.get_accessible_or_null();
+  {
+    extern void *g_d3d12_device_addr;
+    extern size_t g_d3d12_device_size;
+    FILE *f = fopen("Z:\\tmp\\dxmt_dxgi_trace.log", "a");
+    if (f) {
+      fprintf(f, "BufferAlloc CTOR %p: placed_buf=%p mappedMem=%p gpuAddr=0x%llx len=%llu flags=%u",
+        this, placed_buffer, mappedMemory_, (unsigned long long)gpuAddress_, (unsigned long long)info_.length, (uint32_t)flags_.raw());
+      if (g_d3d12_device_addr) {
+        uintptr_t dstart = (uintptr_t)g_d3d12_device_addr;
+        uintptr_t dend = dstart + g_d3d12_device_size;
+        uintptr_t astart = (uintptr_t)this;
+        uintptr_t aend = astart + sizeof(BufferAllocation);
+        bool overlaps = (astart < dend && aend > dstart);
+        fprintf(f, " device_dist=%lld overlap=%d", (long long)(astart - dstart), overlaps);
+        if (overlaps) {
+          fprintf(f, " !!! ALLOCATION OVERLAPS DEVICE !!!");
+        }
+      }
+      fprintf(f, "\n");
+      fclose(f);
+    }
+  }
 };
 
 void
 BufferAllocation::free() {
+  {
+    extern void *g_d3d12_device_addr;
+    extern size_t g_d3d12_device_size;
+    DWORD tid = GetCurrentThreadId();
+    void *ret_addr = __builtin_return_address(0);
+    void *ret_addr2 = __builtin_return_address(1);
+    FILE *f = fopen("Z:\\tmp\\dxmt_dxgi_trace.log", "a");
+    if (f) {
+      fprintf(f, "BufferAlloc FREE ENTRY %p: canary=0x%08x ret0=%p ret1=%p tid=%lu vtable_now=%p\n",
+        this, canary_, ret_addr, ret_addr2, (unsigned long)tid, *(void**)this);
+      void *buf[16];
+      ULONG n = RtlCaptureStackBackTrace(1, 16, buf, nullptr);
+      fprintf(f, "  stack[%lu]=", (unsigned long)n);
+      for (ULONG i = 0; i < n; i++) fprintf(f, "%p ", buf[i]);
+      if (g_d3d12_device_addr) {
+        uintptr_t dstart = (uintptr_t)g_d3d12_device_addr;
+        uintptr_t dend = dstart + g_d3d12_device_size;
+        uintptr_t astart = (uintptr_t)this;
+        bool overlaps = (astart >= dstart && astart < dend);
+        fprintf(f, "\n  device_dist=%lld overlap=%d sizeof_this=%zu",
+          (long long)(astart - dstart), overlaps, sizeof(BufferAllocation));
+        if (overlaps) {
+          fprintf(f, " !!! FREE ON DEVICE MEMORY — ABORTING !!!\n");
+          fclose(f);
+          return;
+        }
+      }
+      fprintf(f, "\n");
+      fclose(f);
+    }
+  }
+  if (canary_ != 0xDEADBEEF) {
+    FILE *f = fopen("Z:\\tmp\\dxmt_dxgi_trace.log", "a");
+    if (f) {
+      fprintf(f, "  CORRUPTED! canary=0x%08x expected 0xDEADBEEF, skipping free\n", canary_);
+      fclose(f);
+    }
+    return;
+  }
   if (placed_buffer) {
+    uintptr_t p = reinterpret_cast<uintptr_t>(placed_buffer);
+    if (p & 0xFFF) {
+      FILE *f = fopen("Z:\\tmp\\dxmt_dxgi_trace.log", "a");
+      if (f) {
+        fprintf(f, "  placed_buf=%p NOT page-aligned! heap corruption, skipping free\n", placed_buffer);
+        fclose(f);
+      }
+      placed_buffer = nullptr;
+      return;
+    }
     wsi::aligned_free(placed_buffer);
     placed_buffer = nullptr;
   }

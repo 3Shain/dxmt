@@ -364,6 +364,23 @@ _MTLDevice_newLibrary(void *obj) {
 }
 
 static NTSTATUS
+_MTLDevice_newLibraryWithSource(void *obj) {
+  struct unixcall_mtldevice_newlibrary_source *params = obj;
+  id<MTLDevice> device = (id<MTLDevice>)params->device;
+  NSError *err = NULL;
+  NSString *source = [[NSString alloc] initWithBytes:params->source.ptr
+                                              length:params->source_length
+                                            encoding:NSUTF8StringEncoding];
+  MTLCompileOptions *options = [[MTLCompileOptions alloc] init];
+  [options setLanguageVersion:MTLLanguageVersion3_1];
+  params->ret_library = (obj_handle_t)[device newLibraryWithSource:source options:options error:&err];
+  params->ret_error = (obj_handle_t)err;
+  [source release];
+  [options release];
+  return STATUS_SUCCESS;
+}
+
+static NTSTATUS
 _MTLLibrary_newFunction(void *obj) {
   struct unixcall_generic_obj_uint64_obj_ret *params = obj;
   id<MTLLibrary> library = (id<MTLLibrary>)params->handle;
@@ -2974,6 +2991,7 @@ const void *__wine_unix_call_funcs[] = {
     &_MTLCommandBuffer_blitCommandEncoderWithSampleBuffers,
     &_MTLCommandBuffer_property,
     &_MTLDevice_newTileRenderPipelineState,
+    &_MTLDevice_newLibraryWithSource,
 };
 
 #ifndef DXMT_NATIVE
@@ -3110,5 +3128,6 @@ const void *__wine_unix_call_wow64_funcs[] = {
     &_MTLCommandBuffer_blitCommandEncoderWithSampleBuffers,
     &_MTLCommandBuffer_property,
     &_MTLDevice_newTileRenderPipelineState,
+    &_MTLDevice_newLibraryWithSource,
 };
 #endif

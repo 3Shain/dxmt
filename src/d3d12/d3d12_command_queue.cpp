@@ -58,6 +58,7 @@ struct ReplayState {
   bool comp_constant_set[16] = {};
   bool comp_cbv_set[16] = {};
   bool comp_table_set[16] = {};
+  bool comp_uav_root[16] = {};
 
   void CloseRenderEncoder() {
     if (render_enc_open) {
@@ -461,6 +462,23 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::ExecuteCommandLists(
           setpso.threadgroup_size = st.pso->GetThreadgroupSize();
           append_cmd(&setpso, sizeof(setpso));
 
+          bool is_uav_slot[16] = {};
+          if (st.compute_root_sig) {
+            auto &params = st.compute_root_sig->GetParameters();
+            QTRACE("ECL UAV scan: root_sig=%p num_params=%u", (void*)st.compute_root_sig, (uint32_t)params.size());
+            for (uint32_t p = 0; p < params.size() && p < 16; p++) {
+              QTRACE("  param[%u] type=%u range_type=%u vis=%u", p, params[p].type, params[p].range_type, params[p].shader_visibility);
+              if (params[p].type == D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE &&
+                  params[p].range_type == D3D12_DESCRIPTOR_RANGE_TYPE_UAV) {
+                is_uav_slot[p] = true;
+              } else if (params[p].type == D3D12_ROOT_PARAMETER_TYPE_UAV) {
+                is_uav_slot[p] = true;
+              }
+            }
+          } else {
+            QTRACE("ECL UAV scan: no compute_root_sig set!");
+          }
+
           for (uint32_t i = 0; i < 16; i++) {
             bool const_set = st.comp_constant_set[i] || st.root_constant_set[i];
             uint32_t const_size = st.comp_constant_set[i] ? st.comp_constant_sizes[i] : st.root_constant_sizes[i];
@@ -490,6 +508,14 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::ExecuteCommandLists(
                 sbuf.offset = cbv_addr - res->GetGPUVirtualAddress();
                 sbuf.index = i;
                 append_cmd(&sbuf, sizeof(sbuf));
+                if (st.comp_uav_root[i]) {
+                  struct wmtcmd_compute_useresource use = {};
+                  use.type = WMTComputeCommandUseResource;
+                  use.resource = res->GetMTLBuffer().handle;
+                  use.usage = (WMTResourceUsage)(WMTResourceUsageRead | WMTResourceUsageWrite);
+                  append_cmd(&use, sizeof(use));
+                  QTRACE("  UAV UseResource root buf slot=%u handle=%llu", i, (unsigned long long)res->GetMTLBuffer().handle);
+                }
               }
             }
             if (tbl_set && st.desc_heap_count > 0) {
@@ -509,12 +535,27 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::ExecuteCommandLists(
                       sbuf.offset = 0;
                       sbuf.index = i;
                       append_cmd(&sbuf, sizeof(sbuf));
+                      if (is_uav_slot[i]) {
+                        struct wmtcmd_compute_useresource use = {};
+                        use.type = WMTComputeCommandUseResource;
+                        use.resource = res->GetMTLBuffer().handle;
+                        use.usage = (WMTResourceUsage)(WMTResourceUsageRead | WMTResourceUsageWrite);
+                        append_cmd(&use, sizeof(use));
+                      }
                     } else if (res->GetMTLTexture().handle) {
                       struct wmtcmd_compute_settexture stex = {};
                       stex.type = WMTComputeCommandSetTexture;
                       stex.texture = res->GetMTLTexture().handle;
                       stex.index = i;
                       append_cmd(&stex, sizeof(stex));
+                      if (is_uav_slot[i]) {
+                        QTRACE("  UAV UseResource tex slot=%u handle=%llu", i, (unsigned long long)res->GetMTLTexture().handle);
+                        struct wmtcmd_compute_useresource use = {};
+                        use.type = WMTComputeCommandUseResource;
+                        use.resource = res->GetMTLTexture().handle;
+                        use.usage = (WMTResourceUsage)(WMTResourceUsageRead | WMTResourceUsageWrite);
+                        append_cmd(&use, sizeof(use));
+                      }
                     }
                   }
                 }
@@ -552,6 +593,7 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::ExecuteCommandLists(
       }
       case CmdType::CopyBufferRegion: {
         auto *cmd = reinterpret_cast<const CmdCopyBufferRegion *>(header);
+        QTRACE("CopyBufferRegion dst=%p +%llu src=%p +%llu bytes=%llu", (void*)cmd->dst, (unsigned long long)cmd->dst_offset, (void*)cmd->src, (unsigned long long)cmd->src_offset, (unsigned long long)cmd->byte_count);
         if (cmd->dst && cmd->src) {
           st.CloseRenderEncoder();
           auto *dst_res = static_cast<MTLD3D12Resource *>(cmd->dst);
@@ -569,6 +611,169 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::ExecuteCommandLists(
             blit.encodeCommands(reinterpret_cast<const wmtcmd_blit_nop *>(&copy));
             blit.endEncoding();
           }
+        }
+        break;
+      }
+      case CmdType::CopyTextureRegion: {
+        auto *cmd = reinterpret_cast<const CmdCopyTextureRegion *>(header);
+        auto *dst_res = static_cast<MTLD3D12Resource *>(cmd->dst_resource);
+        auto *src_res = static_cast<MTLD3D12Resource *>(cmd->src_resource);
+        QTRACE("CopyTextureRegion dst=%p(%p) src=%p(%p) dst_type=%u src_type=%u",
+          (void*)dst_res, dst_res ? (void*)dst_res->GetMTLTexture().handle : nullptr,
+          (void*)src_res, src_res ? (void*)src_res->GetMTLTexture().handle : nullptr,
+          cmd->dst_type, cmd->src_type);
+        if (!dst_res || !src_res) break;
+
+        QTRACE("CopyTextureRegion dst=%p src=%p dst_type=%u src_type=%u",
+          (void*)dst_res, (void*)src_res, cmd->dst_type, cmd->src_type);
+
+        st.CloseRenderEncoder();
+        auto blit = cmdbuf.blitCommandEncoder();
+        if (!blit.handle) {
+          QTRACE("CopyTextureRegion: FAILED to create blit encoder");
+          break;
+        }
+
+        bool src_is_buffer = (cmd->src_type == D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT);
+        bool dst_is_buffer = (cmd->dst_type == D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT);
+
+        auto src_tex = src_res->GetMTLTexture();
+        auto dst_tex = dst_res->GetMTLTexture();
+        auto src_buf = src_res->GetMTLBuffer();
+        auto dst_buf = dst_res->GetMTLBuffer();
+
+        if (!src_is_buffer && !src_tex.handle) src_is_buffer = (src_buf.handle != 0);
+        if (!dst_is_buffer && !dst_tex.handle) dst_is_buffer = (dst_buf.handle != 0);
+
+        QTRACE("CopyTextureRegion src_tex=%llu src_buf=%llu dst_tex=%llu dst_buf=%llu src_buf_flag=%d dst_buf_flag=%d",
+          (unsigned long long)src_tex.handle, (unsigned long long)src_buf.handle,
+          (unsigned long long)dst_tex.handle, (unsigned long long)dst_buf.handle,
+          src_is_buffer, dst_is_buffer);
+
+        UINT copy_w, copy_h, copy_d;
+        if (cmd->has_src_box) {
+          copy_w = cmd->src_box.right - cmd->src_box.left;
+          copy_h = cmd->src_box.bottom - cmd->src_box.top;
+          copy_d = cmd->src_box.back - cmd->src_box.front;
+        } else {
+          D3D12_RESOURCE_DESC tex_desc;
+          if (!dst_is_buffer && dst_tex.handle) {
+            dst_res->GetDesc(&tex_desc);
+            copy_w = tex_desc.Width;
+            copy_h = tex_desc.Height;
+            copy_d = 1;
+          } else if (!src_is_buffer && src_tex.handle) {
+            src_res->GetDesc(&tex_desc);
+            copy_w = tex_desc.Width;
+            copy_h = tex_desc.Height;
+            copy_d = 1;
+          } else {
+            copy_w = 1;
+            copy_h = 1;
+            copy_d = 1;
+          }
+          if (copy_w == 0) copy_w = 1;
+          if (copy_h == 0) copy_h = 1;
+        }
+
+        if (src_is_buffer && !dst_is_buffer && dst_tex.handle) {
+          UINT row_pitch = cmd->src_footprint_row_pitch;
+          if (row_pitch == 0) row_pitch = copy_w * 4;
+          struct wmtcmd_blit_copy_from_buffer_to_texture copy = {};
+          copy.type = WMTBlitCommandCopyFromBufferToTexture;
+          copy.next.set(nullptr);
+          copy.src = src_buf.handle;
+          copy.src_offset = cmd->src_offset;
+          copy.bytes_per_row = row_pitch;
+          copy.bytes_per_image = row_pitch * copy_h;
+          copy.size = {copy_w, copy_h, copy_d};
+          copy.dst = dst_tex.handle;
+          copy.slice = 0;
+          copy.level = 0;
+          copy.origin = {cmd->dst_x, cmd->dst_y, cmd->dst_z};
+          blit.encodeCommands(reinterpret_cast<const wmtcmd_blit_nop *>(&copy));
+        } else if (!src_is_buffer && dst_is_buffer && src_tex.handle) {
+          struct wmtcmd_blit_copy_from_texture_to_buffer copy = {};
+          copy.type = WMTBlitCommandCopyFromTextureToBuffer;
+          copy.next.set(nullptr);
+          copy.src = src_tex.handle;
+          copy.slice = 0;
+          copy.level = 0;
+          UINT src_x = cmd->has_src_box ? cmd->src_box.left : 0;
+          UINT src_y = cmd->has_src_box ? cmd->src_box.top : 0;
+          UINT src_z = cmd->has_src_box ? cmd->src_box.front : 0;
+          copy.origin = {src_x, src_y, src_z};
+          copy.size = {copy_w, copy_h, copy_d};
+          copy.dst = dst_buf.handle;
+          copy.offset = cmd->dst_offset;
+          copy.bytes_per_row = cmd->dst_footprint_row_pitch;
+          copy.bytes_per_image = cmd->dst_footprint_row_pitch * copy_h;
+          blit.encodeCommands(reinterpret_cast<const wmtcmd_blit_nop *>(&copy));
+        } else if (!src_is_buffer && !dst_is_buffer && src_tex.handle && dst_tex.handle) {
+          struct wmtcmd_blit_copy_from_texture_to_texture copy = {};
+          copy.type = WMTBlitCommandCopyFromTextureToTexture;
+          copy.next.set(nullptr);
+          copy.src = src_tex.handle;
+          copy.src_slice = 0;
+          copy.src_level = 0;
+          UINT src_x = cmd->has_src_box ? cmd->src_box.left : 0;
+          UINT src_y = cmd->has_src_box ? cmd->src_box.top : 0;
+          UINT src_z = cmd->has_src_box ? cmd->src_box.front : 0;
+          copy.src_origin = {src_x, src_y, src_z};
+          copy.src_size = {copy_w, copy_h, copy_d};
+          copy.dst = dst_tex.handle;
+          copy.dst_slice = 0;
+          copy.dst_level = 0;
+          copy.dst_origin = {cmd->dst_x, cmd->dst_y, cmd->dst_z};
+          blit.encodeCommands(reinterpret_cast<const wmtcmd_blit_nop *>(&copy));
+        } else {
+          QTRACE("CopyTextureRegion: unhandled buffer-to-buffer or null resources");
+        }
+
+        QTRACE("CopyTextureRegion: blit.endEncoding src_buf=%d dst_buf=%d w=%u h=%u d=%u",
+          src_is_buffer, dst_is_buffer, copy_w, copy_h, copy_d);
+        blit.endEncoding();
+        break;
+      }
+      case CmdType::CopyResource: {
+        auto *cmd = reinterpret_cast<const CmdCopyResource *>(header);
+        auto *dst_res = static_cast<MTLD3D12Resource *>(cmd->dst);
+        auto *src_res = static_cast<MTLD3D12Resource *>(cmd->src);
+        if (!dst_res || !src_res) break;
+        st.CloseRenderEncoder();
+
+        if (dst_res->GetMTLBuffer().handle && src_res->GetMTLBuffer().handle) {
+          auto blit = cmdbuf.blitCommandEncoder();
+          struct wmtcmd_blit_copy_from_buffer_to_buffer copy = {};
+          copy.type = WMTBlitCommandCopyFromBufferToBuffer;
+          copy.next.set(nullptr);
+          copy.src = src_res->GetMTLBuffer().handle;
+          copy.src_offset = 0;
+          copy.dst = dst_res->GetMTLBuffer().handle;
+          copy.dst_offset = 0;
+          D3D12_RESOURCE_DESC src_desc;
+          src_res->GetDesc(&src_desc);
+          copy.copy_length = src_desc.Width;
+          blit.encodeCommands(reinterpret_cast<const wmtcmd_blit_nop *>(&copy));
+          blit.endEncoding();
+        } else if (dst_res->GetMTLTexture().handle && src_res->GetMTLTexture().handle) {
+          auto blit = cmdbuf.blitCommandEncoder();
+          D3D12_RESOURCE_DESC src_desc;
+          src_res->GetDesc(&src_desc);
+          struct wmtcmd_blit_copy_from_texture_to_texture copy = {};
+          copy.type = WMTBlitCommandCopyFromTextureToTexture;
+          copy.next.set(nullptr);
+          copy.src = src_res->GetMTLTexture().handle;
+          copy.src_slice = 0;
+          copy.src_level = 0;
+          copy.src_origin = {0, 0, 0};
+          copy.src_size = {src_desc.Width, src_desc.Height, 1};
+          copy.dst = dst_res->GetMTLTexture().handle;
+          copy.dst_slice = 0;
+          copy.dst_level = 0;
+          copy.dst_origin = {0, 0, 0};
+          blit.encodeCommands(reinterpret_cast<const wmtcmd_blit_nop *>(&copy));
+          blit.endEncoding();
         }
         break;
       }
@@ -707,6 +912,22 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::ExecuteCommandLists(
         }
         break;
       }
+      case CmdType::SetGraphicsRootShaderResourceView: {
+        auto *cmd = reinterpret_cast<const CmdSetRootCBV *>(header);
+        if (cmd->root_param_index < 16) {
+          st.root_cbvs[cmd->root_param_index] = cmd->address;
+          st.root_cbv_set[cmd->root_param_index] = true;
+        }
+        break;
+      }
+      case CmdType::SetGraphicsRootUnorderedAccessView: {
+        auto *cmd = reinterpret_cast<const CmdSetRootCBV *>(header);
+        if (cmd->root_param_index < 16) {
+          st.root_cbvs[cmd->root_param_index] = cmd->address;
+          st.root_cbv_set[cmd->root_param_index] = true;
+        }
+        break;
+      }
       case CmdType::SetGraphicsRootDescriptorTable: {
         auto *cmd = reinterpret_cast<const CmdSetRootDescriptorTable *>(header);
         QTRACE("SetGraphicsRootDescriptorTable idx=%u handle=0x%llx", cmd->root_param_index, (unsigned long long)cmd->base_descriptor.ptr);
@@ -740,6 +961,25 @@ void STDMETHODCALLTYPE MTLD3D12CommandQueue::ExecuteCommandLists(
         if (cmd->root_param_index < 16) {
           st.comp_cbvs[cmd->root_param_index] = cmd->address;
           st.comp_cbv_set[cmd->root_param_index] = true;
+          st.comp_uav_root[cmd->root_param_index] = false;
+        }
+        break;
+      }
+      case CmdType::SetComputeRootShaderResourceView: {
+        auto *cmd = reinterpret_cast<const CmdSetRootCBV *>(header);
+        if (cmd->root_param_index < 16) {
+          st.comp_cbvs[cmd->root_param_index] = cmd->address;
+          st.comp_cbv_set[cmd->root_param_index] = true;
+          st.comp_uav_root[cmd->root_param_index] = false;
+        }
+        break;
+      }
+      case CmdType::SetComputeRootUnorderedAccessView: {
+        auto *cmd = reinterpret_cast<const CmdSetRootCBV *>(header);
+        if (cmd->root_param_index < 16) {
+          st.comp_cbvs[cmd->root_param_index] = cmd->address;
+          st.comp_cbv_set[cmd->root_param_index] = true;
+          st.comp_uav_root[cmd->root_param_index] = true;
         }
         break;
       }
@@ -826,6 +1066,10 @@ MTLD3D12CommandQueue::Signal(ID3D12Fence *fence, UINT64 value) {
   QTRACE("CmdQueue::Signal value=%llu fence_iface=%p", (unsigned long long)value, (void *)fence);
   if (!fence)
     return E_POINTER;
+  {
+    FILE *f = fopen("Z:\\tmp\\dxmt_dxgi_trace.log", "a");
+    if (f) { fprintf(f, "CmdQueue::Signal value=%llu fence=%p\n", (unsigned long long)value, (void *)fence); fclose(f); }
+  }
   return fence->Signal(value);
 }
 

@@ -269,6 +269,22 @@ MTLDevice_newLibrary(
 }
 
 WINEMETAL_API obj_handle_t
+MTLDevice_newLibraryWithSource(
+    obj_handle_t device, const char *source, uint64_t source_length, obj_handle_t *err_out
+) {
+  struct unixcall_mtldevice_newlibrary_source params;
+  params.device = device;
+  params.source.ptr = source;
+  params.source_length = source_length;
+  params.ret_error = 0;
+  params.ret_library = 0;
+  UNIX_CALL(133, &params);
+  if (err_out)
+    *err_out = params.ret_error;
+  return params.ret_library;
+}
+
+WINEMETAL_API obj_handle_t
 MTLLibrary_newFunction(obj_handle_t library, const char *name) {
   struct unixcall_generic_obj_uint64_obj_ret params;
   params.handle = library;

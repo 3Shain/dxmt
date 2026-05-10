@@ -3,6 +3,7 @@
 #include "d3d12_swapchain.hpp"
 #include "log/log.hpp"
 #include "util_string.hpp"
+#include <windows.h>
 
 #define DDTRACE(fmt, ...) do { FILE *_tf = fopen("Z:\\tmp\\dxmt_dxgi_trace.log", "a"); if (_tf) { fprintf(_tf, "DXGIDev::" fmt "\n", ##__VA_ARGS__); fclose(_tf); } } while(0)
 
@@ -13,7 +14,12 @@ MTLD3D12DXGIDevice::MTLD3D12DXGIDevice(std::unique_ptr<Device> &&device,
     : m_adapter(adapter) {
   if (m_adapter)
     m_adapter->AddRef();
-  m_d3d12_device = new MTLD3D12Device(std::move(device), m_adapter.ptr());
+  void *dev_mem = VirtualAlloc((void*)0x500000000ULL, sizeof(MTLD3D12Device),
+    MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+  if (!dev_mem) dev_mem = VirtualAlloc(nullptr, sizeof(MTLD3D12Device),
+    MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+  m_d3d12_device = ::new(dev_mem) MTLD3D12Device(std::move(device), m_adapter.ptr());
+  DDTRACE("D3D12Device at %p (VirtualAlloc)", (void*)m_d3d12_device);
   m_d3d12_device->SetDXGIDevice(this);
   Logger::info("D3D12DXGIDevice created");
 }

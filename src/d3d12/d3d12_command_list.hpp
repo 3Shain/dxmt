@@ -27,6 +27,10 @@ enum class CmdType : uint32_t {
   SetComputeRoot32BitConstants,
   SetGraphicsRootConstantBufferView,
   SetComputeRootConstantBufferView,
+  SetGraphicsRootShaderResourceView,
+  SetComputeRootShaderResourceView,
+  SetGraphicsRootUnorderedAccessView,
+  SetComputeRootUnorderedAccessView,
   SetGraphicsRootDescriptorTable,
   SetComputeRootDescriptorTable,
   IASetPrimitiveTopology,
@@ -78,6 +82,35 @@ struct CmdCopyBufferRegion {
   ID3D12Resource *src;
   uint64_t src_offset;
   uint64_t byte_count;
+};
+
+struct CmdCopyTextureRegion {
+  CmdHeader header;
+  ID3D12Resource *dst_resource;
+  D3D12_TEXTURE_COPY_TYPE dst_type;
+  UINT dst_subresource;
+  UINT64 dst_offset;
+  UINT dst_footprint_width;
+  UINT dst_footprint_height;
+  UINT dst_footprint_depth;
+  UINT dst_footprint_row_pitch;
+  UINT dst_x, dst_y, dst_z;
+  ID3D12Resource *src_resource;
+  D3D12_TEXTURE_COPY_TYPE src_type;
+  UINT src_subresource;
+  UINT64 src_offset;
+  UINT src_footprint_width;
+  UINT src_footprint_height;
+  UINT src_footprint_depth;
+  UINT src_footprint_row_pitch;
+  D3D12_BOX src_box;
+  UINT8 has_src_box;
+};
+
+struct CmdCopyResource {
+  CmdHeader header;
+  ID3D12Resource *dst;
+  ID3D12Resource *src;
 };
 
 struct CmdSetPipelineState {

@@ -222,9 +222,15 @@ MTLD3D12SwapChain::ResizeTarget(const DXGI_MODE_DESC *new_target_params) {
 
 HRESULT STDMETHODCALLTYPE
 MTLD3D12SwapChain::GetContainingOutput(IDXGIOutput **output) {
-  SCTRACE("GetContainingOutput E_NOTIMPL");
+  if (!output)
+    return E_POINTER;
   *output = nullptr;
-  return E_NOTIMPL;
+  Com<IDXGIAdapter> adapter;
+  HRESULT hr = m_factory->EnumAdapters(0, &adapter);
+  if (FAILED(hr)) return hr;
+  hr = adapter->EnumOutputs(0, output);
+  SCTRACE("GetContainingOutput -> hr=0x%lx output=%p", hr, output ? *output : nullptr);
+  return hr;
 }
 
 HRESULT STDMETHODCALLTYPE

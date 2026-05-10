@@ -19,8 +19,44 @@
 #include "dxmt_allocation.hpp"
 #include "util_likely.hpp"
 #include <cassert>
+#include <cstdio>
 #include <iterator>
 #include <new>
+#include <windows.h>
+
+namespace dxmt {
+
+void *g_d3d12_device_addr = nullptr;
+size_t g_d3d12_device_size = 0;
+
+} // namespace dxmt
+
+void operator delete(void *ptr) noexcept {
+  if (dxmt::g_d3d12_device_addr && ptr) {
+    uintptr_t p = (uintptr_t)ptr;
+    uintptr_t d = (uintptr_t)dxmt::g_d3d12_device_addr;
+    if (p >= d && p < d + dxmt::g_d3d12_device_size) {
+      DWORD tid = GetCurrentThreadId();
+      FILE *f = fopen("Z:\\tmp\\dxmt_dxgi_trace.log", "a");
+      if (f) {
+        fprintf(f, "!!! GLOBAL operator delete ON DEVICE! ptr=%p device=%p size=%zu tid=%lu\n",
+          ptr, dxmt::g_d3d12_device_addr, dxmt::g_d3d12_device_size, (unsigned long)tid);
+        void *buf[16];
+        ULONG n = RtlCaptureStackBackTrace(1, 16, buf, nullptr);
+        fprintf(f, "  stack[%lu]=", (unsigned long)n);
+        for (ULONG i = 0; i < n; i++) fprintf(f, "%p ", buf[i]);
+        fprintf(f, "\n");
+        fclose(f);
+      }
+      return;
+    }
+  }
+  free(ptr);
+}
+
+void operator delete(void *ptr, std::align_val_t) noexcept {
+  free(ptr);
+}
 
 namespace dxmt {
 
@@ -31,8 +67,15 @@ Allocation::incRef() {
 
 void
 Allocation::decRef() {
-  if (refcount_.fetch_sub(1u, std::memory_order_release) == 1u)
-    this->free();
+  if (g_d3d12_device_addr != nullptr &&
+      (uintptr_t)this >= (uintptr_t)g_d3d12_device_addr &&
+      (uintptr_t)this < (uintptr_t)g_d3d12_device_addr + g_d3d12_device_size) {
+    return;
+  }
+  uint32_t prev = refcount_.fetch_sub(1u, std::memory_order_release);
+  if (prev == 1u) {
+    this->destroy();
+  }
 };
 
 AllocationRefTracking::AllocationRefTracking() {
@@ -65,15 +108,19 @@ AllocationRefTracking::addStorage(void *ptr, size_t length) {
 
 void
 AllocationRefTracking::clear() {
+  FILE *f = fopen("Z:\\tmp\\dxmt_dxgi_trace.log", "a");
   RefAddChunk<> *chunk = reinterpret_cast<RefAddChunk<> *>(&chunk_placed);
   while (chunk) {
     dxmt::Allocation **list = std::launder(chunk->allocations);
-    for (unsigned i = 0; i < chunk->size; i++)
+    for (unsigned i = 0; i < chunk->size; i++) {
+      if (f) fprintf(f, "RefTracking::clear decRef on alloc[%u]=%p vtable=%p\n",
+        i, (void*)list[i], list[i] ? *(void**)list[i] : nullptr);
       list[i]->decRef();
+    }
     chunk->size = 0;
     chunk = chunk->next_chunk;
   }
-  // reset state
+  if (f) { fprintf(f, "RefTracking::clear done\n"); fclose(f); }
   chunk_last = reinterpret_cast<RefAddChunk<> *>(&chunk_placed);
   chunk_placed.next_chunk = nullptr;
 };

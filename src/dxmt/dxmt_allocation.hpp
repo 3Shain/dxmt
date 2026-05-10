@@ -23,14 +23,20 @@
 
 namespace dxmt {
 
+extern void *g_d3d12_device_addr;
+extern size_t g_d3d12_device_size;
+
 class Allocation {
 public:
+  ~Allocation(){};
+
+  virtual void destroy() = 0;
+
   void incRef();
   void decRef();
 
   bool
   checkRetained(uint64_t seq_id) {
-    // FIXME: is a compare-and-swap necessary?
     if (seq_id == last_retained_seq_id)
       return true;
     last_retained_seq_id = seq_id;

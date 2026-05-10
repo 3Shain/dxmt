@@ -17,7 +17,9 @@ MTLD3D12Resource::MTLD3D12Resource(
   m_device->AddRef();
 
   auto wmt_device = m_device->GetDXMTDevice().device();
-  RTRACE("ctor: wmt_device=%llu dim=%u fmt=%u w=%llu h=%u", (unsigned long long)wmt_device.handle, desc.Dimension, desc.Format, desc.Width, desc.Height);
+  RTRACE("ctor: wmt_device=%llu dim=%u fmt=%u w=%llu h=%u depth_or_arr=%u",
+    (unsigned long long)wmt_device.handle, desc.Dimension, desc.Format,
+    desc.Width, desc.Height, desc.DepthOrArraySize);
 
   if (desc.Dimension == D3D12_RESOURCE_DIMENSION_BUFFER) {
     WMTBufferInfo buf_info = {};
@@ -43,20 +45,37 @@ MTLD3D12Resource::MTLD3D12Resource(
             : 1;
     tex_info.mipmap_level_count = desc.MipLevels ? desc.MipLevels : 1;
     tex_info.sample_count = desc.SampleDesc.Count ? desc.SampleDesc.Count : 1;
-    tex_info.type = WMTTextureType2D;
+    switch (desc.Dimension) {
+    case D3D12_RESOURCE_DIMENSION_TEXTURE1D:
+      tex_info.type = (desc.DepthOrArraySize > 1) ? WMTTextureType1DArray : WMTTextureType1D;
+      break;
+    case D3D12_RESOURCE_DIMENSION_TEXTURE3D:
+      tex_info.type = WMTTextureType3D;
+      break;
+    default:
+      tex_info.type = (desc.DepthOrArraySize > 1) ? WMTTextureType2DArray : WMTTextureType2D;
+      break;
+    }
     tex_info.usage = (WMTTextureUsage)(WMTTextureUsageRenderTarget |
-                                      WMTTextureUsageShaderRead);
+                                      WMTTextureUsageShaderRead |
+                                      WMTTextureUsageShaderWrite);
     tex_info.options = cpu_accessible ? WMTResourceStorageModeShared : WMTResourceStorageModePrivate;
     tex_info.pixel_format = MTLD3D12PipelineState::DXGIToMTLPixelFormat(static_cast<DXGI_FORMAT>(desc.Format));
     if (tex_info.pixel_format == WMTPixelFormatInvalid)
       tex_info.pixel_format = WMTPixelFormatBGRA8Unorm;
 
-    if (cpu_accessible) {
-      m_mtl_texture = wmt_device.newTexture(tex_info);
-      RTRACE("ctor: texture CPU-accessible fmt=%u %llux%u", tex_info.pixel_format, tex_info.width, tex_info.height);
+    RTRACE("ctor: about to newTexture type=%u fmt=%u %ux%u depth=%u arr=%u mip=%u sample=%u opts=%u",
+      tex_info.type, tex_info.pixel_format, (unsigned)tex_info.width, (unsigned)tex_info.height,
+      (unsigned)tex_info.depth, (unsigned)tex_info.array_length,
+      (unsigned)tex_info.mipmap_level_count, (unsigned)tex_info.sample_count, (unsigned)tex_info.options);
+    m_mtl_texture = wmt_device.newTexture(tex_info);
+    if (!m_mtl_texture.handle) {
+      RTRACE("ctor: texture creation FAILED type=%u fmt=%u %ux%u arr=%u",
+        tex_info.type, tex_info.pixel_format, (unsigned)tex_info.width, (unsigned)tex_info.height, (unsigned)tex_info.array_length);
     } else {
-      m_mtl_texture = {}; // lazy creation
-      RTRACE("ctor: texture deferred (lazy) fmt=%u %llux%u", tex_info.pixel_format, tex_info.width, tex_info.height);
+      RTRACE("ctor: texture created fmt=%u %ux%u arr=%u handle=%llu %s",
+        tex_info.pixel_format, (unsigned)tex_info.width, (unsigned)tex_info.height, (unsigned)tex_info.array_length,
+        (unsigned long long)m_mtl_texture.handle, cpu_accessible ? "cpu" : "gpu");
     }
   }
 
@@ -80,14 +99,31 @@ WMT::Reference<WMT::Texture> MTLD3D12Resource::GetMTLTexture() {
                                   ? m_desc.DepthOrArraySize : 1;
     tex_info.mipmap_level_count = m_desc.MipLevels ? m_desc.MipLevels : 1;
     tex_info.sample_count = m_desc.SampleDesc.Count ? m_desc.SampleDesc.Count : 1;
-    tex_info.type = WMTTextureType2D;
-    tex_info.usage = (WMTTextureUsage)(WMTTextureUsageRenderTarget | WMTTextureUsageShaderRead);
+    switch (m_desc.Dimension) {
+    case D3D12_RESOURCE_DIMENSION_TEXTURE1D:
+      tex_info.type = (m_desc.DepthOrArraySize > 1) ? WMTTextureType1DArray : WMTTextureType1D;
+      break;
+    case D3D12_RESOURCE_DIMENSION_TEXTURE3D:
+      tex_info.type = WMTTextureType3D;
+      break;
+    default:
+      tex_info.type = (m_desc.DepthOrArraySize > 1) ? WMTTextureType2DArray : WMTTextureType2D;
+      break;
+    }
+    tex_info.usage = (WMTTextureUsage)(WMTTextureUsageRenderTarget | WMTTextureUsageShaderRead | WMTTextureUsageShaderWrite);
     tex_info.options = cpu_accessible ? WMTResourceStorageModeShared : WMTResourceStorageModePrivate;
     tex_info.pixel_format = MTLD3D12PipelineState::DXGIToMTLPixelFormat(static_cast<DXGI_FORMAT>(m_desc.Format));
     if (tex_info.pixel_format == WMTPixelFormatInvalid)
       tex_info.pixel_format = WMTPixelFormatBGRA8Unorm;
-    RTRACE("GetMTLTexture: creating fmt=%u %llux%u", tex_info.pixel_format, tex_info.width, tex_info.height);
+    RTRACE("GetMTLTexture: creating type=%u fmt=%u %ux%ux%u arr=%u mip=%u sample=%u opts=%u",
+      tex_info.type, tex_info.pixel_format, (unsigned)tex_info.width, (unsigned)tex_info.height,
+      (unsigned)tex_info.depth, (unsigned)tex_info.array_length, (unsigned)tex_info.mipmap_level_count,
+      (unsigned)tex_info.sample_count, (unsigned)tex_info.options);
     m_mtl_texture = wmt_device.newTexture(tex_info);
+    if (!m_mtl_texture.handle) {
+      RTRACE("GetMTLTexture: newTexture returned NULL handle");
+      return m_mtl_texture;
+    }
     RTRACE("GetMTLTexture: handle=%llu", (unsigned long long)m_mtl_texture.handle);
   }
   return m_mtl_texture;
@@ -187,7 +223,7 @@ MTLD3D12Resource::GetDesc(D3D12_RESOURCE_DESC *__ret) {
 
 D3D12_GPU_VIRTUAL_ADDRESS STDMETHODCALLTYPE
 MTLD3D12Resource::GetGPUVirtualAddress() {
-  RTRACE("GetGPUVirtualAddress -> 0x%llx", (unsigned long long)m_gpu_addr);
+  RTRACE("GetGPUVirtualAddress -> 0x%llx this=%p", (unsigned long long)m_gpu_addr, (void*)this);
   return m_gpu_addr;
 }
 

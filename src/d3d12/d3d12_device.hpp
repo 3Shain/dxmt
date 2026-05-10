@@ -7,6 +7,7 @@
 #include <atomic>
 #include <unordered_map>
 #include <mutex>
+#include <new>
 
 namespace dxmt {
 
@@ -17,6 +18,15 @@ public:
   MTLD3D12Device(std::unique_ptr<Device> &&device,
                    IMTLDXGIAdapter *pAdapter);
   ~MTLD3D12Device();
+
+  void *operator new(size_t size) {
+    void *ptr = VirtualAlloc(nullptr, size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+    if (!ptr) throw std::bad_alloc();
+    return ptr;
+  }
+  void operator delete(void *ptr) {
+    VirtualFree(ptr, 0, MEM_RELEASE);
+  }
 
   void SetDXGIDevice(IMTLDXGIDevice *dxgi_device) { m_dxgi_device = dxgi_device; }
 

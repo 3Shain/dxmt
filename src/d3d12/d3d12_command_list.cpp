@@ -170,11 +170,52 @@ void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::CopyBufferRegion(
 void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::CopyTextureRegion(
     const D3D12_TEXTURE_COPY_LOCATION *dst, UINT dst_x, UINT dst_y,
     UINT dst_z, const D3D12_TEXTURE_COPY_LOCATION *src,
-    const D3D12_BOX *src_box) {}
+    const D3D12_BOX *src_box) {
+  if (!dst || !src) return;
+  CmdCopyTextureRegion cmd = {};
+  cmd.header = {CmdType::CopyTextureRegion, sizeof(cmd)};
+  cmd.dst_resource = dst->pResource;
+  cmd.dst_type = dst->Type;
+  cmd.dst_x = dst_x;
+  cmd.dst_y = dst_y;
+  cmd.dst_z = dst_z;
+  if (dst->Type == D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX) {
+    cmd.dst_subresource = dst->SubresourceIndex;
+  } else {
+    cmd.dst_offset = dst->PlacedFootprint.Offset;
+    cmd.dst_footprint_width = dst->PlacedFootprint.Footprint.Width;
+    cmd.dst_footprint_height = dst->PlacedFootprint.Footprint.Height;
+    cmd.dst_footprint_depth = dst->PlacedFootprint.Footprint.Depth;
+    cmd.dst_footprint_row_pitch = dst->PlacedFootprint.Footprint.RowPitch;
+  }
+  cmd.src_resource = src->pResource;
+  cmd.src_type = src->Type;
+  if (src->Type == D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX) {
+    cmd.src_subresource = src->SubresourceIndex;
+  } else {
+    cmd.src_offset = src->PlacedFootprint.Offset;
+    cmd.src_footprint_width = src->PlacedFootprint.Footprint.Width;
+    cmd.src_footprint_height = src->PlacedFootprint.Footprint.Height;
+    cmd.src_footprint_depth = src->PlacedFootprint.Footprint.Depth;
+    cmd.src_footprint_row_pitch = src->PlacedFootprint.Footprint.RowPitch;
+  }
+  if (src_box) {
+    cmd.src_box = *src_box;
+    cmd.has_src_box = 1;
+  }
+  Emit(cmd);
+}
 
 void STDMETHODCALLTYPE
 MTLD3D12GraphicsCommandList::CopyResource(ID3D12Resource *dst,
-                                          ID3D12Resource *src) {}
+                                          ID3D12Resource *src) {
+  if (!dst || !src) return;
+  CmdCopyResource cmd = {};
+  cmd.header = {CmdType::CopyResource, sizeof(cmd)};
+  cmd.dst = dst;
+  cmd.src = src;
+  Emit(cmd);
+}
 
 void STDMETHODCALLTYPE MTLD3D12GraphicsCommandList::CopyTiles(
     ID3D12Resource *tiled_resource,
@@ -409,7 +450,7 @@ void STDMETHODCALLTYPE
 MTLD3D12GraphicsCommandList::SetComputeRootShaderResourceView(
     UINT root_parameter_index, D3D12_GPU_VIRTUAL_ADDRESS address) {
   CmdSetRootCBV cmd = {};
-  cmd.header = {CmdType::SetComputeRootConstantBufferView, sizeof(cmd)};
+  cmd.header = {CmdType::SetComputeRootShaderResourceView, sizeof(cmd)};
   cmd.root_param_index = root_parameter_index;
   cmd.address = address;
   Emit(cmd);
@@ -419,7 +460,7 @@ void STDMETHODCALLTYPE
 MTLD3D12GraphicsCommandList::SetGraphicsRootShaderResourceView(
     UINT root_parameter_index, D3D12_GPU_VIRTUAL_ADDRESS address) {
   CmdSetRootCBV cmd = {};
-  cmd.header = {CmdType::SetGraphicsRootConstantBufferView, sizeof(cmd)};
+  cmd.header = {CmdType::SetGraphicsRootShaderResourceView, sizeof(cmd)};
   cmd.root_param_index = root_parameter_index;
   cmd.address = address;
   Emit(cmd);
@@ -429,7 +470,7 @@ void STDMETHODCALLTYPE
 MTLD3D12GraphicsCommandList::SetComputeRootUnorderedAccessView(
     UINT root_parameter_index, D3D12_GPU_VIRTUAL_ADDRESS address) {
   CmdSetRootCBV cmd = {};
-  cmd.header = {CmdType::SetComputeRootConstantBufferView, sizeof(cmd)};
+  cmd.header = {CmdType::SetComputeRootUnorderedAccessView, sizeof(cmd)};
   cmd.root_param_index = root_parameter_index;
   cmd.address = address;
   Emit(cmd);
@@ -439,7 +480,7 @@ void STDMETHODCALLTYPE
 MTLD3D12GraphicsCommandList::SetGraphicsRootUnorderedAccessView(
     UINT root_parameter_index, D3D12_GPU_VIRTUAL_ADDRESS address) {
   CmdSetRootCBV cmd = {};
-  cmd.header = {CmdType::SetGraphicsRootConstantBufferView, sizeof(cmd)};
+  cmd.header = {CmdType::SetGraphicsRootUnorderedAccessView, sizeof(cmd)};
   cmd.root_param_index = root_parameter_index;
   cmd.address = address;
   Emit(cmd);

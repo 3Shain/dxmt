@@ -130,13 +130,109 @@ bool MTLD3D12PipelineState::CompileShader(const void *bytecode, SIZE_T size,
 
           FILE *mf = fopen(metallib_path, "rb");
           if (!mf) {
-            PSTRACE("  metallib not cached, writing DXBC to %s", dxbc_path);
-            FILE *df = fopen(dxbc_path, "wb");
-            if (df) {
-              fwrite(bytecode, 1, size, df);
-              fclose(df);
+            PSTRACE("  metallib not cached, attempting DXIL->MSL compilation");
+
+            auto container = dxmt::dxil::DXILContainer::parse(blob, blob_size);
+            if (!container) {
+              PSTRACE("  DXILContainer::parse FAILED for %s", func_name);
+              FILE *df = fopen(dxbc_path, "wb");
+              if (df) { fwrite(bytecode, 1, size, df); fclose(df); }
+              return false;
             }
-            return false;
+
+            auto &shader_info = container->shader();
+            PSTRACE("  DXIL container parsed: kind=%u sm=%u.%u bc_size=%u",
+                    (uint32_t)shader_info.kind, shader_info.shader_model.major,
+                    shader_info.shader_model.minor, shader_info.bitcode.size);
+
+            auto module = dxmt::dxil::BitcodeReader::parse(
+                shader_info.bitcode.data, shader_info.bitcode.size);
+            if (!module) {
+              PSTRACE("  BitcodeReader::parse FAILED");
+              FILE *df = fopen(dxbc_path, "wb");
+              if (df) { fwrite(bytecode, 1, size, df); fclose(df); }
+              return false;
+            }
+
+            PSTRACE("  Bitcode parsed: types=%zu functions=%zu constants=%zu",
+                    module->types.size(), module->functions.size(), module->constants.size());
+
+            auto msl_result = dxmt::dxil::DXILToMSL::convert(*module, shader_info);
+            if (!msl_result) {
+              PSTRACE("  DXILToMSL::convert FAILED");
+              FILE *df = fopen(dxbc_path, "wb");
+              if (df) { fwrite(bytecode, 1, size, df); fclose(df); }
+              return false;
+            }
+
+            PSTRACE("  MSL generated: %zu bytes, entry=%s", msl_result->source.size(), msl_result->entry_point.c_str());
+
+            {
+              char msl_path[256];
+              snprintf(msl_path, sizeof(msl_path), "%s.msl", cache_path);
+              FILE *msl_file = fopen(msl_path, "w");
+              if (msl_file) {
+                fwrite(msl_result->source.c_str(), 1, msl_result->source.size(), msl_file);
+                fclose(msl_file);
+                PSTRACE("  MSL source written to %s", msl_path);
+              }
+            }
+
+            WMT::Reference<WMT::Error> compile_err;
+            auto library = wmt_device.newLibraryWithSource(
+                msl_result->source.c_str(), msl_result->source.size(), compile_err);
+
+            if (compile_err.handle) {
+              char *err_desc = (char *)NSObject_description(compile_err.handle);
+              PSTRACE("  newLibraryWithSource FAILED: %s", err_desc ? err_desc : "unknown");
+              Logger::err(str::format("DXIL MSL compilation failed for ", func_name, ": ",
+                                       err_desc ? err_desc : "unknown error"));
+              FILE *df = fopen(dxbc_path, "wb");
+              if (df) { fwrite(bytecode, 1, size, df); fclose(df); }
+              return false;
+            }
+
+            PSTRACE("  Metal library compiled OK from source");
+
+            const char *entry_name = msl_result->entry_point.c_str();
+            if (strcmp(entry_name, "cs_main") != 0 &&
+                strcmp(entry_name, "vs_main") != 0 &&
+                strcmp(entry_name, "ps_main") != 0) {
+              switch (shader_info.kind) {
+              case dxmt::dxil::DxilShaderKind::Compute: entry_name = "cs_main"; break;
+              case dxmt::dxil::DxilShaderKind::Vertex: entry_name = "vs_main"; break;
+              case dxmt::dxil::DxilShaderKind::Pixel: entry_name = "ps_main"; break;
+              default: break;
+              }
+            }
+
+            out_func = library.newFunction(entry_name);
+            if (!out_func.handle) {
+              PSTRACE("  newFunction(%s) returned null, trying alternatives", entry_name);
+              out_func = library.newFunction("main");
+              if (!out_func.handle)
+                out_func = library.newFunction("cs_main");
+              if (!out_func.handle)
+                out_func = library.newFunction("vs_main");
+              if (!out_func.handle)
+                out_func = library.newFunction("ps_main");
+            }
+
+            if (out_func.handle) {
+              PSTRACE("  DXIL shader compiled OK! entry=%s", entry_name);
+              s_shader_cache[hash] = out_func;
+
+              if (shader_info.kind == dxmt::dxil::DxilShaderKind::Compute) {
+                m_threadgroup_size.width = msl_result->tg_size[0];
+                m_threadgroup_size.height = msl_result->tg_size[1];
+                m_threadgroup_size.depth = msl_result->tg_size[2];
+              }
+              return true;
+            } else {
+              PSTRACE("  newFunction returned null for all entry points");
+              Logger::err(str::format("DXIL: failed to get function from compiled library for ", func_name));
+              return false;
+            }
           }
 
           PSTRACE("  loading cached metallib from %s", metallib_path);

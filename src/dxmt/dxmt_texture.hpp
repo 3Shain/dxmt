@@ -162,6 +162,8 @@ private:
 
   void free();
 
+  void destroy() override { delete this; }
+
   TextureAllocation(const TextureAllocation &) = delete;
   TextureAllocation(TextureAllocation &&) = delete;
 

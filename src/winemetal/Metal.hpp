@@ -786,6 +786,11 @@ public:
     return Reference<Library>(MTLDevice_newLibrary(handle, data, &error.handle));
   }
 
+  Reference<Library>
+  newLibraryWithSource(const char *source, uint64_t source_length, Error &error) {
+    return Reference<Library>(MTLDevice_newLibraryWithSource(handle, source, source_length, &error.handle));
+  }
+
   Reference<ComputePipelineState>
   newComputePipelineState(const Function &compute_function, Error &error) {
     WMTComputePipelineInfo info;

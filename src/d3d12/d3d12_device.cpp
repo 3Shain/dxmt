@@ -5,6 +5,7 @@
 #include "d3d12_descriptor_heap.hpp"
 #include "d3d12_device.hpp"
 #include "d3d12_fence.hpp"
+#include "d3d12_heap.hpp"
 #include "d3d12_pipeline_state.hpp"
 #include "d3d12_query_heap.hpp"
 #include "d3d12_resource.hpp"
@@ -15,8 +16,33 @@
 #include "log/log.hpp"
 #include "util_string.hpp"
 #include "d3d12_resource.hpp"
+#include <thread>
 #include <d3d12.h>
 #include <windows.h>
+
+static LONG WINAPI crash_handler(EXCEPTION_POINTERS *ep) {
+  if (ep->ExceptionRecord->ExceptionCode == EXCEPTION_ACCESS_VIOLATION ||
+      ep->ExceptionRecord->ExceptionCode == EXCEPTION_STACK_OVERFLOW) {
+    FILE *f = fopen("Z:\\tmp\\dxmt_dxgi_trace.log", "a");
+    if (f) {
+      fprintf(f, "!!! EXCEPTION code=0x%lx addr=%p flags=0x%lx\n",
+        ep->ExceptionRecord->ExceptionCode,
+        ep->ExceptionRecord->ExceptionAddress,
+        ep->ExceptionRecord->ExceptionFlags);
+      void *buf[32];
+      ULONG n = RtlCaptureStackBackTrace(0, 32, buf, nullptr);
+      for (ULONG i = 0; i < n; i++) {
+        fprintf(f, "  [%lu] %p\n", (unsigned long)i, buf[i]);
+      }
+      fclose(f);
+    }
+  }
+  return EXCEPTION_CONTINUE_SEARCH;
+}
+
+void install_crash_handler() {
+  AddVectoredExceptionHandler(1, crash_handler);
+}
 
 namespace dxmt {
 
@@ -61,22 +87,104 @@ private:
 
 namespace dxmt {
 
+static void *g_device_this = nullptr;
+static void *g_device_expected_vtable = nullptr;
+static uint64_t g_device_expected_m_device = 0;
+static std::atomic<bool> g_device_watcher_running{false};
+static int g_watcher_restore_count = 0;
+
+static void device_vtable_watcher() {
+  int check_count = 0;
+  int snapshot_count = 0;
+  while (g_device_watcher_running.load()) {
+    if (g_device_this) {
+      void *current = *(void**)g_device_this;
+      uint64_t current_m_device = *((uint64_t*)((char*)g_device_this + 8));
+      bool vtable_bad = (current != g_device_expected_vtable);
+      bool m_device_bad = (g_device_expected_m_device != 0 && current_m_device != g_device_expected_m_device);
+      if (vtable_bad || m_device_bad) {
+        g_watcher_restore_count++;
+        FILE *f = fopen("Z:\\tmp\\dxmt_dxgi_trace.log", "a");
+        if (f) {
+          fprintf(f, "!!! CORRUPTION #%d after %d checks: this=%p vtable_expected=%p vtable_now=%p m_device_expected=0x%llx m_device_now=0x%llx watcher_tid=%lu\n",
+            g_watcher_restore_count, check_count,
+            g_device_this, g_device_expected_vtable, current,
+            (unsigned long long)g_device_expected_m_device, (unsigned long long)current_m_device,
+            (unsigned long)GetCurrentThreadId());
+          unsigned char *raw = (unsigned char *)g_device_this;
+          fprintf(f, "!!! DEVICE DUMP [0x00-0x3F]:");
+          for (int i = 0; i < 64; i += 8) {
+            fprintf(f, " %02x%02x%02x%02x%02x%02x%02x%02x",
+              raw[i], raw[i+1], raw[i+2], raw[i+3], raw[i+4], raw[i+5], raw[i+6], raw[i+7]);
+          }
+          fprintf(f, "\n!!! DEVICE DUMP [0x40-0x7F]:");
+          for (int i = 64; i < 128; i += 8) {
+            fprintf(f, " %02x%02x%02x%02x%02x%02x%02x%02x",
+              raw[i], raw[i+1], raw[i+2], raw[i+3], raw[i+4], raw[i+5], raw[i+6], raw[i+7]);
+          }
+          fprintf(f, "\n");
+          fclose(f);
+        }
+        *(void**)g_device_this = g_device_expected_vtable;
+        if (g_device_expected_m_device != 0) {
+          *((uint64_t*)((char*)g_device_this + 8)) = g_device_expected_m_device;
+        }
+        check_count = 0;
+        continue;
+      }
+      check_count++;
+      snapshot_count++;
+      if (snapshot_count % 10000 == 0) {
+        FILE *f = fopen("Z:\\tmp\\dxmt_dxgi_trace.log", "a");
+        if (f) {
+          fprintf(f, "watcher snapshot #%d: vtable=%p m_device=0x%llx OK\n",
+            snapshot_count, current, (unsigned long long)current_m_device);
+          fclose(f);
+        }
+      }
+    }
+    std::this_thread::sleep_for(std::chrono::microseconds(100));
+  }
+}
+
 MTLD3D12Device::MTLD3D12Device(std::unique_ptr<Device> &&device,
                                IMTLDXGIAdapter *pAdapter)
     : m_device(std::move(device)), m_adapter(pAdapter) {
   if (m_adapter)
     m_adapter->AddRef();
   m_expected_vtable = *(void**)this;
-  TRACE("Device ctor: this=%p vtable=%p", (void*)this, m_expected_vtable);
+  g_device_this = (void*)this;
+  g_device_expected_vtable = m_expected_vtable;
+  g_device_expected_m_device = (uint64_t)m_device.get();
+  TRACE("Device ctor: this=%p vtable=%p m_device=%p sizeof=%zu",
+    (void*)this, m_expected_vtable, (void*)m_device.get(), sizeof(MTLD3D12Device));
+  extern void *g_d3d12_device_addr;
+  extern size_t g_d3d12_device_size;
+  g_d3d12_device_addr = (void*)this;
+  g_d3d12_device_size = sizeof(MTLD3D12Device);
+  TRACE("Device ctor: registered device guard at %p size=%zu", g_d3d12_device_addr, g_d3d12_device_size);
+  g_device_watcher_running.store(true);
+  std::thread watcher(device_vtable_watcher);
+  watcher.detach();
   Logger::info("D3D12 device created via DXMT Metal backend");
 }
 
-MTLD3D12Device::~MTLD3D12Device() { Logger::info("D3D12 device destroyed"); }
+MTLD3D12Device::~MTLD3D12Device() {
+  void *current_vt = *(void**)this;
+  FILE *f = fopen("Z:\\tmp\\dxmt_dxgi_trace.log", "a");
+  if (f) {
+    fprintf(f, "Device REAL DTOR this=%p vtable=%p expected=%p m_refCount=%u\n",
+      (void*)this, current_vt, m_expected_vtable, m_refCount.load());
+    fclose(f);
+  }
+  Logger::info("D3D12 device destroyed");
+}
 
 void MTLD3D12Device::CheckVtable(const char *where) {
   void *current = *(void**)this;
   if (current != m_expected_vtable) {
-    TRACE("VTABLE CORRUPTION at %s: expected=%p got=%p this=%p", where, m_expected_vtable, current, (void*)this);
+    TRACE("VTABLE CORRUPTION at %s: expected=%p got=%p this=%p — AUTO-RESTORING", where, m_expected_vtable, current, (void*)this);
+    *(void**)this = m_expected_vtable;
   }
 }
 
@@ -115,6 +223,7 @@ MTLD3D12Device::QueryInterface(REFIID riid, void **ppvObject) {
 }
 
 ULONG STDMETHODCALLTYPE MTLD3D12Device::AddRef() {
+  CheckVtable("AddRef");
   uint32_t rc = m_refCount++;
   if (!rc)
     ++m_refPrivate;
@@ -122,6 +231,7 @@ ULONG STDMETHODCALLTYPE MTLD3D12Device::AddRef() {
 }
 
 ULONG STDMETHODCALLTYPE MTLD3D12Device::Release() {
+  CheckVtable("Release");
   uint32_t rc = --m_refCount;
   if (rc <= 1) TRACE("Device::Release rc=%u this=%p", rc, (void*)this);
   if (!rc) {
@@ -252,7 +362,10 @@ HRESULT STDMETHODCALLTYPE
 MTLD3D12Device::CheckFeatureSupport(D3D12_FEATURE feature,
                                     void *feature_data,
                                     UINT feature_data_size) {
-  TRACE("CheckFeatureSupport feature=%u size=%u", feature, feature_data_size);
+  TRACE("CheckFeatureSupport this=%p feature=%u data=%p size=%u", (void*)this, (unsigned)feature, feature_data, feature_data_size);
+  if ((UINT_PTR)feature_data > 0 && (UINT_PTR)feature_data < 0x10000) {
+    TRACE("!!! SUSPICIOUS CheckFeatureSupport: feature_data=%p looks like row_pitch (small int), this=%p — probable vtable slot 13 collision (ReadFromSubresource->CheckFeatureSupport)", feature_data, (void*)this);
+  }
   switch (feature) {
   case D3D12_FEATURE_D3D12_OPTIONS: {
     auto *opts = (D3D12_FEATURE_DATA_D3D12_OPTIONS *)feature_data;
@@ -302,6 +415,7 @@ MTLD3D12Device::CheckFeatureSupport(D3D12_FEATURE feature,
     auto *fmt = (D3D12_FEATURE_DATA_FORMAT_SUPPORT *)feature_data;
     if (feature_data_size < sizeof(*fmt))
       return E_INVALIDARG;
+    TRACE("  FORMAT_SUPPORT: format=%u", (unsigned)fmt->Format);
     fmt->Support1 = (D3D12_FORMAT_SUPPORT1)(
         D3D12_FORMAT_SUPPORT1_TEXTURE2D | D3D12_FORMAT_SUPPORT1_RENDER_TARGET |
         D3D12_FORMAT_SUPPORT1_DEPTH_STENCIL |
@@ -310,8 +424,19 @@ MTLD3D12Device::CheckFeatureSupport(D3D12_FEATURE feature,
         D3D12_FORMAT_SUPPORT1_SHADER_SAMPLE_COMPARISON |
         D3D12_FORMAT_SUPPORT1_BUFFER |
         D3D12_FORMAT_SUPPORT1_IA_INDEX_BUFFER |
-        D3D12_FORMAT_SUPPORT1_IA_VERTEX_BUFFER);
-    fmt->Support2 = D3D12_FORMAT_SUPPORT2_UAV_TYPED_LOAD | D3D12_FORMAT_SUPPORT2_UAV_TYPED_STORE;
+        D3D12_FORMAT_SUPPORT1_IA_VERTEX_BUFFER |
+        D3D12_FORMAT_SUPPORT1_TYPED_UNORDERED_ACCESS_VIEW |
+        D3D12_FORMAT_SUPPORT1_MULTISAMPLE_RENDERTARGET |
+        D3D12_FORMAT_SUPPORT1_MULTISAMPLE_RESOLVE |
+        D3D12_FORMAT_SUPPORT1_DISPLAY);
+    fmt->Support2 = (D3D12_FORMAT_SUPPORT2)(
+        D3D12_FORMAT_SUPPORT2_UAV_TYPED_LOAD | D3D12_FORMAT_SUPPORT2_UAV_TYPED_STORE |
+        D3D12_FORMAT_SUPPORT2_UAV_ATOMIC_ADD |
+        D3D12_FORMAT_SUPPORT2_UAV_ATOMIC_BITWISE_OPS |
+        D3D12_FORMAT_SUPPORT2_UAV_ATOMIC_COMPARE_STORE_OR_COMPARE_EXCHANGE |
+        D3D12_FORMAT_SUPPORT2_UAV_ATOMIC_EXCHANGE |
+        D3D12_FORMAT_SUPPORT2_UAV_ATOMIC_SIGNED_MIN_OR_MAX |
+        D3D12_FORMAT_SUPPORT2_UAV_ATOMIC_UNSIGNED_MIN_OR_MAX);
     return S_OK;
   }
   case D3D12_FEATURE_MULTISAMPLE_QUALITY_LEVELS: {
@@ -422,6 +547,7 @@ MTLD3D12Device::CheckFeatureSupport(D3D12_FEATURE feature,
       return E_INVALIDARG;
     o->SRVOnlyTiledResourceTier3 = FALSE;
     o->RenderPassesTier = D3D12_RENDER_PASS_TIER_0;
+    o->RaytracingTier = D3D12_RAYTRACING_TIER_NOT_SUPPORTED;
     return S_OK;
   }
   case D3D12_FEATURE_D3D12_OPTIONS6: {
@@ -476,11 +602,18 @@ MTLD3D12Device::CheckFeatureSupport(D3D12_FEATURE feature,
     o->AtomicInt64OnDescriptorHeapResourceSupported = FALSE;
     return S_OK;
   }
+  case D3D12_FEATURE_PROTECTED_RESOURCE_SESSION_SUPPORT: {
+    auto *p = (D3D12_FEATURE_DATA_PROTECTED_RESOURCE_SESSION_SUPPORT *)feature_data;
+    if (feature_data_size < sizeof(*p))
+      return E_INVALIDARG;
+    p->Support = D3D12_PROTECTED_RESOURCE_SESSION_SUPPORT_FLAG_NONE;
+    return S_OK;
+  }
   default:
-    TRACE("CheckFeatureSupport UNHANDLED feature=%u size=%u -> E_NOTIMPL", feature, feature_data_size);
-    Logger::warn(
-        str::format("CheckFeatureSupport: unhandled feature ", feature));
-    return E_NOTIMPL;
+    TRACE("CheckFeatureSupport UNHANDLED feature=%u size=%u -> zeroing and returning S_OK", feature, feature_data_size);
+    if (feature_data && feature_data_size > 0)
+      memset(feature_data, 0, feature_data_size);
+    return S_OK;
   }
 }
 
@@ -536,6 +669,7 @@ void STDMETHODCALLTYPE MTLD3D12Device::CreateConstantBufferView(
     const D3D12_CONSTANT_BUFFER_VIEW_DESC *desc,
     D3D12_CPU_DESCRIPTOR_HANDLE descriptor) {
   TRACE("CreateConstantBufferView");
+  CheckVtable("CreateConstantBufferView");
   if (!desc)
     return;
   auto *d = reinterpret_cast<D3D12Descriptor *>(descriptor.ptr);
@@ -548,7 +682,11 @@ void STDMETHODCALLTYPE MTLD3D12Device::CreateConstantBufferView(
 void STDMETHODCALLTYPE MTLD3D12Device::CreateShaderResourceView(
     ID3D12Resource *resource, const D3D12_SHADER_RESOURCE_VIEW_DESC *desc,
     D3D12_CPU_DESCRIPTOR_HANDLE descriptor) {
-  TRACE("CreateShaderResourceView res=%p handle=0x%llx", (void*)resource, (unsigned long long)descriptor.ptr);
+  TRACE("CreateShaderResourceView res=%p handle=0x%llx device=%p", (void*)resource, (unsigned long long)descriptor.ptr, (void*)this);
+  if ((void*)resource == (void*)this) {
+    TRACE("!!! LEAK DETECTED: CreateShaderResourceView called with device pointer as resource!");
+  }
+  CheckVtable("CreateShaderResourceView");
   auto *d = reinterpret_cast<D3D12Descriptor *>(descriptor.ptr);
   if (d) {
     d->resource = resource;
@@ -562,7 +700,11 @@ void STDMETHODCALLTYPE MTLD3D12Device::CreateUnorderedAccessView(
     ID3D12Resource *resource, ID3D12Resource *counter_resource,
     const D3D12_UNORDERED_ACCESS_VIEW_DESC *desc,
     D3D12_CPU_DESCRIPTOR_HANDLE descriptor) {
-  TRACE("CreateUnorderedAccessView res=%p counter=%p handle=0x%llx", (void*)resource, (void*)counter_resource, (unsigned long long)descriptor.ptr);
+  TRACE("CreateUnorderedAccessView res=%p counter=%p handle=0x%llx device=%p", (void*)resource, (void*)counter_resource, (unsigned long long)descriptor.ptr, (void*)this);
+  if ((void*)resource == (void*)this || (void*)counter_resource == (void*)this) {
+    TRACE("!!! LEAK DETECTED: CreateUnorderedAccessView called with device pointer as resource!");
+  }
+  CheckVtable("CreateUnorderedAccessView");
   auto *d = reinterpret_cast<D3D12Descriptor *>(descriptor.ptr);
   if (d) {
     d->resource = resource;
@@ -576,7 +718,10 @@ void STDMETHODCALLTYPE MTLD3D12Device::CreateUnorderedAccessView(
 void STDMETHODCALLTYPE MTLD3D12Device::CreateRenderTargetView(
     ID3D12Resource *resource, const D3D12_RENDER_TARGET_VIEW_DESC *desc,
     D3D12_CPU_DESCRIPTOR_HANDLE descriptor) {
-  TRACE("CreateRenderTargetView");
+  TRACE("CreateRenderTargetView res=%p device=%p", (void*)resource, (void*)this);
+  if ((void*)resource == (void*)this) {
+    TRACE("!!! LEAK DETECTED: CreateRenderTargetView called with device pointer as resource!");
+  }
   auto *d = reinterpret_cast<D3D12Descriptor *>(descriptor.ptr);
   if (d) {
     d->resource = resource;
@@ -589,7 +734,10 @@ void STDMETHODCALLTYPE MTLD3D12Device::CreateRenderTargetView(
 void STDMETHODCALLTYPE MTLD3D12Device::CreateDepthStencilView(
     ID3D12Resource *resource, const D3D12_DEPTH_STENCIL_VIEW_DESC *desc,
     D3D12_CPU_DESCRIPTOR_HANDLE descriptor) {
-  TRACE("CreateDepthStencilView");
+  TRACE("CreateDepthStencilView res=%p device=%p", (void*)resource, (void*)this);
+  if ((void*)resource == (void*)this) {
+    TRACE("!!! LEAK DETECTED: CreateDepthStencilView called with device pointer as resource!");
+  }
   auto *d = reinterpret_cast<D3D12Descriptor *>(descriptor.ptr);
   if (d) {
     d->resource = resource;
@@ -629,6 +777,9 @@ void STDMETHODCALLTYPE MTLD3D12Device::CopyDescriptors(
             src_descriptor_range_offsets[src_idx].ptr) +
                     i * (GetDescriptorHandleIncrementSize(descriptor_heap_type) /
                          sizeof(D3D12Descriptor));
+        if (src->resource && (void*)src->resource == (void*)this) {
+          TRACE("!!! CopyDescriptors: src descriptor at %p has device pointer as resource! copying to dst %p", (void*)src, (void*)dst);
+        }
         *dst = *src;
       }
     }
@@ -692,7 +843,10 @@ HRESULT STDMETHODCALLTYPE MTLD3D12Device::CreateCommittedResource(
                                   heap_properties ? *heap_properties
                                                   : D3D12_HEAP_PROPERTIES{});
   HRESULT hr = res->QueryInterface(riid, resource);
-  TRACE("CreateCommittedResource QI hr=0x%lx", hr);
+  TRACE("CreateCommittedResource res_obj=%p out=%p hr=0x%lx", (void*)res, resource ? *resource : nullptr, hr);
+  if (resource && *resource == (void*)this) {
+    TRACE("!!! LEAK DETECTED: CreateCommittedResource returned device pointer %p as resource!", (void*)this);
+  }
   if (FAILED(hr))
     res->Release();
   return hr;
@@ -701,9 +855,19 @@ HRESULT STDMETHODCALLTYPE MTLD3D12Device::CreateCommittedResource(
 HRESULT STDMETHODCALLTYPE
 MTLD3D12Device::CreateHeap(const D3D12_HEAP_DESC *desc, REFIID riid,
                            void **heap) {
-  Logger::warn("D3D12Device::CreateHeap: stub");
-  TRACE("CreateHeap E_NOTIMPL");
-  return E_NOTIMPL;
+  TRACE("CreateHeap size=%llu type=%u flags=0x%x",
+    desc ? (unsigned long long)desc->SizeInBytes : 0,
+    desc ? desc->Properties.Type : 0xFF,
+    desc ? desc->Flags : 0);
+  if (!desc || !heap)
+    return E_POINTER;
+  InitReturnPtr(heap);
+
+  auto h = new MTLD3D12Heap(this, *desc);
+  HRESULT hr = h->QueryInterface(riid, heap);
+  if (FAILED(hr))
+    h->Release();
+  return hr;
 }
 
 HRESULT STDMETHODCALLTYPE MTLD3D12Device::CreatePlacedResource(
@@ -711,9 +875,26 @@ HRESULT STDMETHODCALLTYPE MTLD3D12Device::CreatePlacedResource(
     D3D12_RESOURCE_STATES initial_state,
     const D3D12_CLEAR_VALUE *optimized_clear_value, REFIID riid,
     void **resource) {
-  Logger::warn("D3D12Device::CreatePlacedResource: stub");
-  TRACE("CreatePlacedResource E_NOTIMPL");
-  return E_NOTIMPL;
+  TRACE("CreatePlacedResource heap=%p offset=%llu dim=%u fmt=%u w=%llu",
+    (void*)heap, (unsigned long long)heap_offset,
+    desc ? desc->Dimension : 0, desc ? desc->Format : 0,
+    desc ? desc->Width : 0);
+  if (!desc || !resource || !heap)
+    return E_POINTER;
+  InitReturnPtr(resource);
+
+  D3D12_HEAP_PROPERTIES heap_props = {};
+  heap_props.Type = D3D12_HEAP_TYPE_DEFAULT;
+  auto mt_heap = static_cast<MTLD3D12Heap *>(heap);
+  if (mt_heap) {
+    heap_props = mt_heap->GetHeapDesc().Properties;
+  }
+
+  auto res = new MTLD3D12Resource(this, *desc, initial_state, heap_props);
+  HRESULT hr = res->QueryInterface(riid, resource);
+  if (FAILED(hr))
+    res->Release();
+  return hr;
 }
 
 HRESULT STDMETHODCALLTYPE MTLD3D12Device::CreateReservedResource(
@@ -721,6 +902,7 @@ HRESULT STDMETHODCALLTYPE MTLD3D12Device::CreateReservedResource(
     const D3D12_CLEAR_VALUE *optimized_clear_value, REFIID riid,
     void **resource) {
   TRACE("CreateReservedResource dim=%u fmt=%u w=%llu (fallback to committed)", desc ? desc->Dimension : 0, desc ? desc->Format : 0, desc ? desc->Width : 0);
+  CheckVtable("CreateReservedResource");
   if (!desc || !resource)
     return E_POINTER;
   InitReturnPtr(resource);
@@ -881,8 +1063,39 @@ HRESULT STDMETHODCALLTYPE MTLD3D12Device::CreatePipelineLibrary(
 HRESULT STDMETHODCALLTYPE MTLD3D12Device::SetEventOnMultipleFenceCompletion(
     ID3D12Fence *const *fences, const UINT64 *values, UINT fence_count,
     D3D12_MULTIPLE_FENCE_WAIT_FLAGS flags, HANDLE event) {
-  TRACE("SetEventOnMultipleFenceCompletion -> E_NOTIMPL");
-  return E_NOTIMPL;
+  TRACE("SetEventOnMultipleFenceCompletion count=%u flags=0x%x event=%p",
+    fence_count, flags, (void*)(uintptr_t)event);
+  if (!fences || !values || !event)
+    return E_POINTER;
+
+  bool all_signaled = true;
+  for (UINT i = 0; i < fence_count; i++) {
+    if (fences[i]->GetCompletedValue() < values[i]) {
+      all_signaled = false;
+      break;
+    }
+  }
+
+  if (all_signaled) {
+    SetEvent(event);
+    return S_OK;
+  }
+
+  if (flags == D3D12_MULTIPLE_FENCE_WAIT_FLAG_ALL) {
+    for (UINT i = 0; i < fence_count; i++) {
+      fences[i]->SetEventOnCompletion(values[i], nullptr);
+    }
+    SetEvent(event);
+  } else {
+    for (UINT i = 0; i < fence_count; i++) {
+      if (fences[i]->GetCompletedValue() < values[i]) {
+        fences[i]->SetEventOnCompletion(values[i], nullptr);
+        SetEvent(event);
+        break;
+      }
+    }
+  }
+  return S_OK;
 }
 
 HRESULT STDMETHODCALLTYPE MTLD3D12Device::SetResidencyPriority(

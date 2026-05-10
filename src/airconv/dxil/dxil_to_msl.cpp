@@ -1,146 +1,973 @@
 #include "dxil_to_msl.hpp"
 #include <sstream>
 #include <cstdio>
+#include <cstring>
+#include <cinttypes>
+#include <algorithm>
+
+#define DXTRACE(fmt, ...) do { FILE *_tf = fopen("Z:\\tmp\\dxmt_dxil_trace.log", "a"); if (_tf) { fprintf(_tf, fmt "\n", ##__VA_ARGS__); fclose(_tf); } } while(0)
 
 namespace dxmt::dxil {
 
-static const char *kComputeHeader = R"(
-#include <metal_stdlib>
+enum DXIntrinsicOpcode {
+  DXOP_LoadInput = 4,
+  DXOP_StoreOutput = 5,
+  DXOP_CreateHandle = 57,
+  DXOP_CBufferLoadLegacy = 59,
+  DXOP_ThreadId = 93,
+  DXOP_GroupId = 94,
+  DXOP_ThreadIDInGroup = 95,
+  DXOP_FlattenedThreadIDInGroup = 96,
+  DXOP_BufferLoad = 68,
+  DXOP_BufferStore = 69,
+  DXOP_TextureLoad = 66,
+  DXOP_TextureStore = 67,
+  DXOP_TextureGather = 73,
+  DXOP_TextureSample = 60,
+  DXOP_TextureSampleCmp = 63,
+  DXOP_Barrier = 80,
+  DXOP_Unary = 13,
+  DXOP_Binary = 14,
+  DXOP_Tertiary = 15,
+  DXOP_Dot2 = 54,
+  DXOP_Dot3 = 55,
+  DXOP_Dot4 = 56,
+  DXOP_MakeDouble = 101,
+  DXOP_SplitDouble = 102,
+  DXOP_RawBufferLoad = 1025,
+  DXOP_RawBufferStore = 1026,
+  DXOP_AtomicBinOp = 78,
+  DXOP_AtomicCompareExchange = 79,
+  DXOP_DerivCoarseX = 83,
+  DXOP_DerivCoarseY = 84,
+  DXOP_DerivFineX = 85,
+  DXOP_DerivFineY = 86,
+  DXOP_CalcLOD = 81,
+  DXOP_Texture2DMSGetSamplePosition = 97,
+  DXOPRenderTargetGetSamplePosition = 98,
+  DXOP_NumPrimitives = 109,
+  DXOP_NumOutputVertices = 110,
+};
+
+static const char *kMetalHeader = R"(#include <metal_stdlib>
 using namespace metal;
 
 )";
 
-std::string DXILToMSL::opcodeName(LLVMInstruction::Opcode op) {
-  switch (op) {
-  case LLVMInstruction::Add: return "add";
-  case LLVMInstruction::Sub: return "sub";
-  case LLVMInstruction::Mul: return "mul";
-  case LLVMInstruction::UDiv: return "udiv";
-  case LLVMInstruction::SDiv: return "sdiv";
-  case LLVMInstruction::FAdd: return "fadd";
-  case LLVMInstruction::FSub: return "fsub";
-  case LLVMInstruction::FMul: return "fmul";
-  case LLVMInstruction::FDiv: return "fdiv";
-  case LLVMInstruction::And: return "and";
-  case LLVMInstruction::Or: return "or";
-  case LLVMInstruction::Xor: return "xor";
-  case LLVMInstruction::Shl: return "shl";
-  case LLVMInstruction::LShr: return "lshr";
-  case LLVMInstruction::AShr: return "ashr";
-  case LLVMInstruction::Ret: return "ret";
-  case LLVMInstruction::Br: return "br";
-  case LLVMInstruction::Load: return "load";
-  case LLVMInstruction::Store: return "store";
-  case LLVMInstruction::Call: return "call";
-  case LLVMInstruction::BitCast: return "bitcast";
-  case LLVMInstruction::ZExt: return "zext";
-  case LLVMInstruction::SExt: return "sext";
-  case LLVMInstruction::Trunc: return "trunc";
-  case LLVMInstruction::ICmp: return "icmp";
-  case LLVMInstruction::FCmp: return "fcmp";
-  case LLVMInstruction::Select: return "select";
-  case LLVMInstruction::GetElementPtr: return "gep";
-  default: return "unknown";
+static std::string escapeName(const std::string &s) {
+  if (s.empty()) return "_";
+  std::string r;
+  for (char c : s) {
+    if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+        (c >= '0' && c <= '9') || c == '_')
+      r += c;
+    else
+      r += '_';
+  }
+  if (!r.empty() && r[0] >= '0' && r[0] <= '9')
+    r = "_" + r;
+  return r;
+}
+
+std::string DXILToMSL::getTypeName(const LLVMType &t, const LLVMModule &mod) {
+  switch (t.kind) {
+  case LLVMType::Void: return "void";
+  case LLVMType::Float: return "float";
+  case LLVMType::Double: return "float64_t";
+  case LLVMType::Integer:
+    if (t.bit_width == 1) return "bool";
+    if (t.bit_width == 8) return "char";
+    if (t.bit_width == 16) return "short";
+    if (t.bit_width == 32) return "int";
+    if (t.bit_width == 64) return "long";
+    return "int";
+  case LLVMType::Pointer: return "device char*";
+  case LLVMType::Struct: return "char" + std::to_string((uint64_t)&t % 997);
+  case LLVMType::Array: return "array<char," + std::to_string(t.bit_width) + ">";
+  case LLVMType::Vector: {
+    if (t.subtypes.empty())
+      return "float4";
+    return getTypeName(t.subtypes[0], mod) + std::to_string(t.bit_width);
+  }
+  case LLVMType::Function: return "void";
+  }
+  return "int";
+}
+
+std::string DXILToMSL::getVectorTypeName(const LLVMType &elem, uint32_t count, const LLVMModule &mod) {
+  return getTypeName(elem, mod) + std::to_string(count);
+}
+
+uint32_t DXILToMSL::getTypeSize(const LLVMType &t, const LLVMModule &mod) {
+  switch (t.kind) {
+  case LLVMType::Void: return 0;
+  case LLVMType::Float: return 4;
+  case LLVMType::Double: return 8;
+  case LLVMType::Integer: return (t.bit_width + 7) / 8;
+  case LLVMType::Pointer: return 8;
+  case LLVMType::Struct: {
+    uint32_t s = 0;
+    for (auto &st : t.subtypes)
+      s += getTypeSize(st, mod);
+    return s;
+  }
+  case LLVMType::Array: return t.bit_width * (t.subtypes.empty() ? 4 : getTypeSize(t.subtypes[0], mod));
+  case LLVMType::Vector: return t.bit_width * 4;
+  case LLVMType::Function: return 0;
+  }
+  return 4;
+}
+
+std::string DXILToMSL::emitValue(uint32_t idx) {
+  if (idx == 0xFFFFFFFF) return "undef";
+  return "v" + std::to_string(idx);
+}
+
+std::string DXILToMSL::emitConstant(const std::vector<uint64_t> &ops, uint32_t type_id, const LLVMModule &mod) {
+  if (type_id >= mod.types.size())
+    return "0";
+  auto &t = mod.types[type_id];
+  if (ops.empty())
+    return "0";
+  switch (t.kind) {
+  case LLVMType::Integer:
+    if (t.bit_width == 1) return ops[0] ? "true" : "false";
+    if (t.bit_width <= 32) return std::to_string((int32_t)ops[0]);
+    return std::to_string((int64_t)ops[0]);
+  case LLVMType::Float: {
+    float f;
+    uint32_t u = (uint32_t)ops[0];
+    memcpy(&f, &u, 4);
+    char buf[64];
+    snprintf(buf, sizeof(buf), "%.9g", (double)f);
+    if (!strchr(buf, '.') && !strchr(buf, 'e') && !strchr(buf, 'E'))
+      strcat(buf, ".0");
+    return std::string(buf) + "f";
+  }
+  case LLVMType::Double: {
+    double d;
+    uint64_t u = ops[0];
+    memcpy(&d, &u, 8);
+    char buf[64];
+    snprintf(buf, sizeof(buf), "%.17g", d);
+    return std::string(buf);
+  }
+  default:
+    return "0";
   }
 }
 
-std::string DXILToMSL::translateIntrinsic(const std::string &name,
-                                            const std::vector<uint32_t> &operands,
-                                            const LLVMModule &mod) {
-  if (name.find("dx.op.") == std::string::npos)
-    return name;
+void DXILToMSL::emitBindings(EmitContext &ctx) {
+  auto &os = ctx.os;
 
-  if (name.find("threadId") != std::string::npos ||
-      name.find("ThreadId") != std::string::npos) {
-    return "thread_position_in_grid";
+  if (ctx.shader.kind == DxilShaderKind::Compute) {
+    os << "  uint3 dtid [[thread_position_in_grid]];\n";
+    os << "  uint3 gtid [[thread_position_in_threadgroup]];\n";
+    os << "  uint3 ggid [[threadgroup_position_in_grid]];\n";
+    os << "  uint3 gsz [[threads_per_threadgroup]];\n";
+    ctx.uses_thread_id = true;
+    ctx.uses_group_id = true;
+    ctx.uses_group_thread_id = true;
+    ctx.uses_group_size = true;
   }
-  if (name.find("groupId") != std::string::npos ||
-      name.find("GroupId") != std::string::npos) {
-    return "threadgroup_position_in_grid";
+
+  os << "\n";
+}
+
+void DXILToMSL::emitFunctionPrologue(EmitContext &ctx) {
+  auto &os = ctx.os;
+  os << kMetalHeader;
+
+  os << "struct input_v {\n";
+  os << "  float4 position [[position]];\n";
+  os << "  float4 v0;\n  float4 v1;\n  float4 v2;\n  float4 v3;\n";
+  os << "  float4 v4;\n  float4 v5;\n  float4 v6;\n  float4 v7;\n";
+  os << "  float2 uv0; float2 uv1; float2 uv2; float2 uv3;\n";
+  os << "  float4 color0;\n  float4 color1;\n  float4 color2;\n  float4 color3;\n";
+  os << "};\n\n";
+
+  os << "struct output_v {\n";
+  os << "  float4 position [[position]];\n";
+  os << "  float4 v0; float4 v1; float4 v2; float4 v3;\n";
+  os << "  float2 uv0 [[user(locn0)]]; float2 uv1 [[user(locn1)]];\n";
+  os << "  float2 uv2 [[user(locn2)]]; float2 uv3 [[user(locn3)]];\n";
+  os << "  float4 color0 [[color(0)]]; float4 color1 [[color(1)]];\n";
+  os << "  float4 color2 [[color(2)]]; float4 color3 [[color(3)]];\n";
+  os << "};\n\n";
+
+  if (ctx.shader.kind == DxilShaderKind::Compute) {
+    os << "kernel void cs_main(\n";
+    os << "  device char* buf0 [[buffer(0)]],\n";
+    os << "  device char* buf1 [[buffer(1)]],\n";
+    os << "  device char* buf2 [[buffer(2)]],\n";
+    os << "  device char* buf3 [[buffer(3)]],\n";
+    os << "  device char* buf4 [[buffer(4)]],\n";
+    os << "  device char* buf5 [[buffer(5)]],\n";
+    os << "  device char* buf6 [[buffer(6)]],\n";
+    os << "  device char* buf7 [[buffer(7)]],\n";
+    os << "  texture2d<float, access::read_write> tex0 [[texture(0)]],\n";
+    os << "  texture2d<float, access::read_write> tex1 [[texture(1)]],\n";
+    os << "  texture2d<float, access::read_write> tex2 [[texture(2)]],\n";
+    os << "  texture2d<float, access::read_write> tex3 [[texture(3)]],\n";
+    os << "  texture2d<float, access::read_write> tex4 [[texture(4)]],\n";
+    os << "  texture2d<float, access::read_write> tex5 [[texture(5)]],\n";
+    os << "  texture2d<float, access::read_write> tex6 [[texture(6)]],\n";
+    os << "  texture2d<float, access::read_write> tex7 [[texture(7)]],\n";
+    os << "  sampler samp0 [[sampler(0)]],\n";
+    os << "  sampler samp1 [[sampler(1)]],\n";
+    os << "  sampler samp2 [[sampler(2)]],\n";
+    os << "  sampler samp3 [[sampler(3)]],\n";
+    os << "  uint3 dtid [[thread_position_in_grid]],\n";
+    os << "  uint3 gtid [[thread_position_in_threadgroup]],\n";
+    os << "  uint3 ggid [[threadgroup_position_in_grid]],\n";
+    os << "  uint3 gsz [[threads_per_threadgroup]]\n";
+    os << ") {\n";
+  } else if (ctx.shader.kind == DxilShaderKind::Vertex) {
+    os << "vertex output_v vs_main(\n";
+    os << "  uint vid [[vertex_id]],\n";
+    os << "  device char* buf0 [[buffer(0)]],\n";
+    os << "  device char* buf1 [[buffer(1)]],\n";
+    os << "  device char* buf2 [[buffer(2)]],\n";
+    os << "  device char* buf3 [[buffer(3)]],\n";
+    os << "  device char* buf4 [[buffer(4)]],\n";
+    os << "  device char* buf5 [[buffer(5)]],\n";
+    os << "  device char* buf6 [[buffer(6)]],\n";
+    os << "  device char* buf7 [[buffer(7)]]\n";
+    os << ") {\n";
+    os << "  output_v out = {};\n";
+  } else if (ctx.shader.kind == DxilShaderKind::Pixel) {
+    os << "fragment float4 ps_main(\n";
+    os << "  input_v in [[stage_in]],\n";
+    os << "  device char* buf0 [[buffer(0)]],\n";
+    os << "  device char* buf1 [[buffer(1)]],\n";
+    os << "  device char* buf2 [[buffer(2)]],\n";
+    os << "  device char* buf3 [[buffer(3)]],\n";
+    os << "  device char* buf4 [[buffer(4)]],\n";
+    os << "  device char* buf5 [[buffer(5)]],\n";
+    os << "  device char* buf6 [[buffer(6)]],\n";
+    os << "  device char* buf7 [[buffer(7)]],\n";
+    os << "  texture2d<float, access::sample> tex0 [[texture(0)]],\n";
+    os << "  texture2d<float, access::sample> tex1 [[texture(1)]],\n";
+    os << "  texture2d<float, access::sample> tex2 [[texture(2)]],\n";
+    os << "  texture2d<float, access::sample> tex3 [[texture(3)]],\n";
+    os << "  texture2d<float, access::sample> tex4 [[texture(4)]],\n";
+    os << "  texture2d<float, access::sample> tex5 [[texture(5)]],\n";
+    os << "  texture2d<float, access::sample> tex6 [[texture(6)]],\n";
+    os << "  texture2d<float, access::sample> tex7 [[texture(7)]],\n";
+    os << "  sampler samp0 [[sampler(0)]],\n";
+    os << "  sampler samp1 [[sampler(1)]],\n";
+    os << "  sampler samp2 [[sampler(2)]],\n";
+    os << "  sampler samp3 [[sampler(3)]]\n";
+    os << ") {\n";
+    os << "  float4 result = float4(0,0,0,1);\n";
+  } else {
+    os << "kernel void unknown_main() {\n";
   }
-  if (name.find("bufferLoad") != std::string::npos) {
-    return "dx_bufferLoad";
+}
+
+std::string DXILToMSL::translateDXIntrinsic(EmitContext &ctx, uint32_t intrinsic_id,
+                                              const std::vector<uint32_t> &args) {
+  auto &os = ctx.os;
+
+  switch (intrinsic_id) {
+  case DXOP_CreateHandle: {
+    if (args.size() < 5) return "0";
+    uint32_t resource_class = args[1];
+    uint32_t range_id = args[2];
+    uint32_t index = args[3];
+    bool non_uniform = args[4] != 0;
+    (void)non_uniform;
+    uint32_t handle_id = ctx.next_binding++;
+    std::string res_name;
+    if (resource_class == 0) {
+      res_name = "buf" + std::to_string(range_id);
+    } else if (resource_class == 1) {
+      res_name = "samp" + std::to_string(range_id);
+    } else if (resource_class == 2) {
+      res_name = "tex" + std::to_string(range_id);
+    } else if (resource_class == 3) {
+      res_name = "buf" + std::to_string(range_id);
+    } else {
+      res_name = "buf" + std::to_string(range_id);
+    }
+    DXTRACE("DXIL CreateHandle: class=%u range=%u index=%u -> %s", resource_class, range_id, index, res_name.c_str());
+    return res_name;
   }
-  if (name.find("bufferStore") != std::string::npos) {
-    return "dx_bufferStore";
+
+  case DXOP_ThreadId: {
+    ctx.uses_thread_id = true;
+    if (!args.empty()) {
+      uint32_t component = args[0];
+      if (component == 0) return "(int)dtidx.x";
+      if (component == 1) return "(int)dtidx.y";
+      if (component == 2) return "(int)dtidx.z";
+    }
+    return "(int)dtidx.x";
   }
-  if (name.find("barrier") != std::string::npos ||
-      name.find("Barrier") != std::string::npos) {
+
+  case DXOP_GroupId: {
+    ctx.uses_group_id = true;
+    if (!args.empty()) {
+      uint32_t component = args[0];
+      if (component == 0) return "(int)ggidx.x";
+      if (component == 1) return "(int)ggidx.y";
+      if (component == 2) return "(int)ggidx.z";
+    }
+    return "(int)ggidx.x";
+  }
+
+  case DXOP_ThreadIDInGroup: {
+    ctx.uses_group_thread_id = true;
+    if (!args.empty()) {
+      uint32_t component = args[0];
+      if (component == 0) return "(int)gtidx.x";
+      if (component == 1) return "(int)gtidx.y";
+      if (component == 2) return "(int)gtidx.z";
+    }
+    return "(int)gtidx.x";
+  }
+
+  case DXOP_CBufferLoadLegacy: {
+    if (args.size() < 2) return "float4(0)";
+    auto handle = args[0] < ctx.value_table.size() ? ctx.value_table[args[0]] : "buf0";
+    auto reg_idx = args[1] < ctx.value_table.size() ? ctx.value_table[args[1]] : "0";
+    return "(reinterpret_cast<device float4&>(" + handle + "[(" + reg_idx + ")*64]))";
+  }
+
+  case DXOP_BufferLoad: {
+    if (args.size() < 3) return "float4(0)";
+    auto handle = args[0] < ctx.value_table.size() ? ctx.value_table[args[0]] : "buf0";
+    auto index = args[1] < ctx.value_table.size() ? ctx.value_table[args[1]] : "0";
+    auto w = args.size() > 2 && args[2] < ctx.value_table.size() ? ctx.value_table[args[2]] : "0";
+    return "(reinterpret_cast<device float4&>(" + handle + "[(" + index + ")*16]))";
+  }
+
+  case DXOP_TextureLoad: {
+    if (args.size() < 3) return "float4(0)";
+    auto handle = args[0] < ctx.value_table.size() ? ctx.value_table[args[0]] : "tex0";
+    auto coord = args[2] < ctx.value_table.size() ? ctx.value_table[args[2]] : "int2(0)";
+    return handle + ".read(" + coord + ")";
+  }
+
+  case DXOP_TextureSample: {
+    if (args.size() < 4) return "float4(0)";
+    auto handle = args[0] < ctx.value_table.size() ? ctx.value_table[args[0]] : "tex0";
+    auto sampler = args.size() > 1 && args[1] < ctx.value_table.size() ? ctx.value_table[args[1]] : "samp0";
+    auto coord = args[2] < ctx.value_table.size() ? ctx.value_table[args[2]] : "float2(0)";
+    return handle + ".sample(" + sampler + ", " + coord + ")";
+  }
+
+  case DXOP_Barrier: {
     return "threadgroup_barrier(mem_flags::mem_threadgroup)";
   }
-  if (name.find("createHandle") != std::string::npos) {
-    return "dx_createHandle";
-  }
-  if (name.find("textureLoad") != std::string::npos) {
-    return "dx_textureLoad";
-  }
-  if (name.find("textureStore") != std::string::npos) {
-    return "dx_textureStore";
-  }
-  if (name.find("rawBufferLoad") != std::string::npos) {
-    return "dx_rawBufferLoad";
-  }
-  if (name.find("rawBufferStore") != std::string::npos) {
-    return "dx_rawBufferStore";
-  }
-  if (name.find("atomic") != std::string::npos) {
-    return "dx_atomic";
+
+  case DXOP_Dot2: {
+    if (args.size() < 3) return "0.0";
+    auto a = args[1] < ctx.value_table.size() ? ctx.value_table[args[1]] : "float2(0)";
+    auto b = args[2] < ctx.value_table.size() ? ctx.value_table[args[2]] : "float2(0)";
+    return "dot(" + a + ", " + b + ")";
   }
 
-  return name;
+  case DXOP_Dot3: {
+    if (args.size() < 3) return "0.0";
+    auto a = args[1] < ctx.value_table.size() ? ctx.value_table[args[1]] : "float3(0)";
+    auto b = args[2] < ctx.value_table.size() ? ctx.value_table[args[2]] : "float3(0)";
+    return "dot(" + a + ", " + b + ")";
+  }
+
+  case DXOP_Dot4: {
+    if (args.size() < 3) return "0.0";
+    auto a = args[1] < ctx.value_table.size() ? ctx.value_table[args[1]] : "float4(0)";
+    auto b = args[2] < ctx.value_table.size() ? ctx.value_table[args[2]] : "float4(0)";
+    return "dot(" + a + ", " + b + ")";
+  }
+
+  case DXOP_LoadInput: {
+    if (args.size() < 4) return "float4(0)";
+    uint32_t input_id = args[1];
+    uint32_t component = args.size() > 3 ? args[3] : 0;
+    if (ctx.shader.kind == DxilShaderKind::Pixel) {
+      switch (input_id) {
+      case 0: return "in.position";
+      case 1: return "in.v0";
+      case 2: return "in.v1";
+      case 3: return "in.v2";
+      case 4: return "in.v3";
+      default: return "in.v0";
+      }
+    }
+    return "float4(0)";
+  }
+
+  case DXOP_StoreOutput: {
+    if (args.size() < 4) return "";
+    uint32_t output_id = args[1];
+    uint32_t component = args.size() > 2 ? args[2] : 0;
+    auto val = args[3] < ctx.value_table.size() ? ctx.value_table[args[3]] : "float4(0)";
+
+    if (ctx.shader.kind == DxilShaderKind::Vertex) {
+      switch (output_id) {
+      case 0: return "out.position = " + val;
+      case 1: return "out.v0 = " + val;
+      case 2: return "out.v1 = " + val;
+      case 3: return "out.v2 = " + val;
+      default: return "out.v0 = " + val;
+      }
+    }
+    return "result = " + val;
+  }
+
+  default:
+    DXTRACE("DXIL unknown intrinsic: %u", intrinsic_id);
+    break;
+  }
+
+  return "0 /* unknown dx intrinsic " + std::to_string(intrinsic_id) + " */";
+}
+
+void DXILToMSL::emitInstruction(EmitContext &ctx, const LLVMInstruction &inst, uint32_t &value_counter) {
+  auto &os = ctx.os;
+  std::string result = emitValue(value_counter);
+
+  auto getValue = [&](uint32_t idx) -> std::string {
+    if (idx < ctx.value_table.size() && !ctx.value_table[idx].empty())
+      return ctx.value_table[idx];
+    return emitValue(idx);
+  };
+
+  auto ensureValueTable = [&](uint32_t needed) {
+    if (ctx.value_table.size() <= needed)
+      ctx.value_table.resize(needed + 1);
+  };
+
+  switch (inst.opcode) {
+  case LLVMInstruction::Ret:
+    if (ctx.shader.kind == DxilShaderKind::Vertex) {
+      os << "  return out;\n";
+    } else if (ctx.shader.kind == DxilShaderKind::Pixel) {
+      os << "  return result;\n";
+    } else {
+      os << "  return;\n";
+    }
+    break;
+
+  case LLVMInstruction::Call: {
+    if (inst.operands.empty())
+      break;
+    uint32_t callee = inst.operands[0];
+
+    std::vector<uint32_t> call_args;
+    for (size_t i = 2; i < inst.operands.size(); i++)
+      call_args.push_back(inst.operands[i]);
+
+    if (callee < ctx.value_table.size() && ctx.value_table[callee].substr(0, 5) == "dx.op") {
+      uint32_t intrinsic_id = 0;
+      if (call_args.size() > 0) {
+        std::string id_str = getValue(call_args[0]);
+        intrinsic_id = (uint32_t)std::stoi(id_str);
+      }
+      std::vector<uint32_t> remaining_args(call_args.begin() + 1, call_args.end());
+
+      std::string translated = translateDXIntrinsic(ctx, intrinsic_id, remaining_args);
+
+      if (inst.type_id != 0 || translated.find('=') == std::string::npos) {
+        ensureValueTable(value_counter);
+        if (!translated.empty() && translated[0] != ' ') {
+          os << "  " << result << " = " << translated << ";\n";
+          ctx.value_table[value_counter] = result;
+        } else if (!translated.empty()) {
+          os << "  " << translated << ";\n";
+        }
+      } else {
+        os << "  " << translated << ";\n";
+      }
+    } else {
+      os << "  // call " << getValue(callee) << "(";
+      for (size_t i = 0; i < call_args.size(); i++) {
+        if (i) os << ", ";
+        os << getValue(call_args[i]);
+      }
+      os << ")\n";
+      ensureValueTable(value_counter);
+      ctx.value_table[value_counter] = result;
+    }
+    value_counter++;
+    break;
+  }
+
+  case LLVMInstruction::Add: {
+    ensureValueTable(value_counter);
+    os << "  " << result << " = " << getValue(inst.operands[0]) << " + " << getValue(inst.operands[1]) << ";\n";
+    ctx.value_table[value_counter] = result;
+    value_counter++;
+    break;
+  }
+
+  case LLVMInstruction::Sub: {
+    ensureValueTable(value_counter);
+    os << "  " << result << " = " << getValue(inst.operands[0]) << " - " << getValue(inst.operands[1]) << ";\n";
+    ctx.value_table[value_counter] = result;
+    value_counter++;
+    break;
+  }
+
+  case LLVMInstruction::Mul: {
+    ensureValueTable(value_counter);
+    os << "  " << result << " = " << getValue(inst.operands[0]) << " * " << getValue(inst.operands[1]) << ";\n";
+    ctx.value_table[value_counter] = result;
+    value_counter++;
+    break;
+  }
+
+  case LLVMInstruction::UDiv: {
+    ensureValueTable(value_counter);
+    os << "  " << result << " = (" << getValue(inst.operands[0]) << ") / (" << getValue(inst.operands[1]) << ");\n";
+    ctx.value_table[value_counter] = result;
+    value_counter++;
+    break;
+  }
+
+  case LLVMInstruction::SDiv: {
+    ensureValueTable(value_counter);
+    os << "  " << result << " = (" << getValue(inst.operands[0]) << ") / (" << getValue(inst.operands[1]) << ");\n";
+    ctx.value_table[value_counter] = result;
+    value_counter++;
+    break;
+  }
+
+  case LLVMInstruction::FAdd: {
+    ensureValueTable(value_counter);
+    os << "  " << result << " = " << getValue(inst.operands[0]) << " + " << getValue(inst.operands[1]) << ";\n";
+    ctx.value_table[value_counter] = result;
+    value_counter++;
+    break;
+  }
+
+  case LLVMInstruction::FSub: {
+    ensureValueTable(value_counter);
+    os << "  " << result << " = " << getValue(inst.operands[0]) << " - " << getValue(inst.operands[1]) << ";\n";
+    ctx.value_table[value_counter] = result;
+    value_counter++;
+    break;
+  }
+
+  case LLVMInstruction::FMul: {
+    ensureValueTable(value_counter);
+    os << "  " << result << " = " << getValue(inst.operands[0]) << " * " << getValue(inst.operands[1]) << ";\n";
+    ctx.value_table[value_counter] = result;
+    value_counter++;
+    break;
+  }
+
+  case LLVMInstruction::FDiv: {
+    ensureValueTable(value_counter);
+    os << "  " << result << " = " << getValue(inst.operands[0]) << " / " << getValue(inst.operands[1]) << ";\n";
+    ctx.value_table[value_counter] = result;
+    value_counter++;
+    break;
+  }
+
+  case LLVMInstruction::FRem: {
+    ensureValueTable(value_counter);
+    os << "  " << result << " = fmod(" << getValue(inst.operands[0]) << ", " << getValue(inst.operands[1]) << ");\n";
+    ctx.value_table[value_counter] = result;
+    value_counter++;
+    break;
+  }
+
+  case LLVMInstruction::And: {
+    ensureValueTable(value_counter);
+    os << "  " << result << " = " << getValue(inst.operands[0]) << " & " << getValue(inst.operands[1]) << ";\n";
+    ctx.value_table[value_counter] = result;
+    value_counter++;
+    break;
+  }
+
+  case LLVMInstruction::Or: {
+    ensureValueTable(value_counter);
+    os << "  " << result << " = " << getValue(inst.operands[0]) << " | " << getValue(inst.operands[1]) << ";\n";
+    ctx.value_table[value_counter] = result;
+    value_counter++;
+    break;
+  }
+
+  case LLVMInstruction::Xor: {
+    ensureValueTable(value_counter);
+    os << "  " << result << " = " << getValue(inst.operands[0]) << " ^ " << getValue(inst.operands[1]) << ";\n";
+    ctx.value_table[value_counter] = result;
+    value_counter++;
+    break;
+  }
+
+  case LLVMInstruction::Shl: {
+    ensureValueTable(value_counter);
+    os << "  " << result << " = " << getValue(inst.operands[0]) << " << " << getValue(inst.operands[1]) << ";\n";
+    ctx.value_table[value_counter] = result;
+    value_counter++;
+    break;
+  }
+
+  case LLVMInstruction::LShr: {
+    ensureValueTable(value_counter);
+    os << "  " << result << " = (uint)(" << getValue(inst.operands[0]) << ") >> " << getValue(inst.operands[1]) << ";\n";
+    ctx.value_table[value_counter] = result;
+    value_counter++;
+    break;
+  }
+
+  case LLVMInstruction::AShr: {
+    ensureValueTable(value_counter);
+    os << "  " << result << " = (int)(" << getValue(inst.operands[0]) << ") >> " << getValue(inst.operands[1]) << ";\n";
+    ctx.value_table[value_counter] = result;
+    value_counter++;
+    break;
+  }
+
+  case LLVMInstruction::BitCast: {
+    ensureValueTable(value_counter);
+    if (inst.operands.size() >= 1) {
+      os << "  " << result << " = reinterpret_cast<decltype(" << result << ")>(" << getValue(inst.operands[0]) << ");\n";
+    }
+    ctx.value_table[value_counter] = result;
+    value_counter++;
+    break;
+  }
+
+  case LLVMInstruction::ZExt: {
+    ensureValueTable(value_counter);
+    if (inst.operands.size() >= 1) {
+      os << "  " << result << " = (decltype(" << result << "))(" << getValue(inst.operands[0]) << ");\n";
+    }
+    ctx.value_table[value_counter] = result;
+    value_counter++;
+    break;
+  }
+
+  case LLVMInstruction::SExt: {
+    ensureValueTable(value_counter);
+    if (inst.operands.size() >= 1) {
+      os << "  " << result << " = (decltype(" << result << "))(" << getValue(inst.operands[0]) << ");\n";
+    }
+    ctx.value_table[value_counter] = result;
+    value_counter++;
+    break;
+  }
+
+  case LLVMInstruction::Trunc: {
+    ensureValueTable(value_counter);
+    if (inst.operands.size() >= 1) {
+      os << "  " << result << " = (decltype(" << result << "))(" << getValue(inst.operands[0]) << ");\n";
+    }
+    ctx.value_table[value_counter] = result;
+    value_counter++;
+    break;
+  }
+
+  case LLVMInstruction::FPToUI: {
+    ensureValueTable(value_counter);
+    os << "  " << result << " = static_cast<decltype(" << result << ")>(" << getValue(inst.operands[0]) << ");\n";
+    ctx.value_table[value_counter] = result;
+    value_counter++;
+    break;
+  }
+
+  case LLVMInstruction::FPToSI: {
+    ensureValueTable(value_counter);
+    os << "  " << result << " = static_cast<decltype(" << result << ")>(" << getValue(inst.operands[0]) << ");\n";
+    ctx.value_table[value_counter] = result;
+    value_counter++;
+    break;
+  }
+
+  case LLVMInstruction::UIToFP: {
+    ensureValueTable(value_counter);
+    os << "  " << result << " = static_cast<decltype(" << result << ")>(" << getValue(inst.operands[0]) << ");\n";
+    ctx.value_table[value_counter] = result;
+    value_counter++;
+    break;
+  }
+
+  case LLVMInstruction::SIToFP: {
+    ensureValueTable(value_counter);
+    os << "  " << result << " = static_cast<decltype(" << result << ")>(" << getValue(inst.operands[0]) << ");\n";
+    ctx.value_table[value_counter] = result;
+    value_counter++;
+    break;
+  }
+
+  case LLVMInstruction::FPTrunc: {
+    ensureValueTable(value_counter);
+    os << "  " << result << " = static_cast<decltype(" << result << ")>(" << getValue(inst.operands[0]) << ");\n";
+    ctx.value_table[value_counter] = result;
+    value_counter++;
+    break;
+  }
+
+  case LLVMInstruction::FPExt: {
+    ensureValueTable(value_counter);
+    os << "  " << result << " = static_cast<decltype(" << result << ")>(" << getValue(inst.operands[0]) << ");\n";
+    ctx.value_table[value_counter] = result;
+    value_counter++;
+    break;
+  }
+
+  case LLVMInstruction::PtrToInt: {
+    ensureValueTable(value_counter);
+    os << "  " << result << " = reinterpret_cast<uintptr_t>(" << getValue(inst.operands[0]) << ");\n";
+    ctx.value_table[value_counter] = result;
+    value_counter++;
+    break;
+  }
+
+  case LLVMInstruction::IntToPtr: {
+    ensureValueTable(value_counter);
+    os << "  " << result << " = reinterpret_cast<device char*>(static_cast<uintptr_t>(" << getValue(inst.operands[0]) << "));\n";
+    ctx.value_table[value_counter] = result;
+    value_counter++;
+    break;
+  }
+
+  case LLVMInstruction::ICmp: {
+    ensureValueTable(value_counter);
+    if (inst.operands.size() >= 3) {
+      auto pred = inst.operands[0];
+      auto lhs = getValue(inst.operands[1]);
+      auto rhs = getValue(inst.operands[2]);
+      std::string op;
+      switch (pred) {
+      case 32: op = "=="; break;
+      case 33: op = "!="; break;
+      case 34: op = ">"; break;
+      case 35: op = ">="; break;
+      case 36: op = "<"; break;
+      case 37: op = "<="; break;
+      default: op = "=="; break;
+      }
+      os << "  bool " << result << " = " << lhs << " " << op << " " << rhs << ";\n";
+      ctx.value_table[value_counter] = result;
+    }
+    value_counter++;
+    break;
+  }
+
+  case LLVMInstruction::FCmp: {
+    ensureValueTable(value_counter);
+    if (inst.operands.size() >= 3) {
+      auto pred = inst.operands[0];
+      auto lhs = getValue(inst.operands[1]);
+      auto rhs = getValue(inst.operands[2]);
+      std::string op;
+      switch (pred) {
+      case 0: os << "  bool " << result << " = false;\n"; break;
+      case 1: os << "  bool " << result << " = true;\n"; break;
+      case 2: os << "  bool " << result << " = isunordered(" << lhs << ", " << rhs << ");\n"; break;
+      case 3: os << "  bool " << result << " = (" << lhs << " == " << rhs << ");\n"; break;
+      case 4: os << "  bool " << result << " = (" << lhs << " != " << rhs << ");\n"; break;
+      case 5: os << "  bool " << result << " = (" << lhs << " > " << rhs << ");\n"; break;
+      case 6: os << "  bool " << result << " = (" << lhs << " >= " << rhs << ");\n"; break;
+      case 7: os << "  bool " << result << " = (" << lhs << " < " << rhs << ");\n"; break;
+      case 8: os << "  bool " << result << " = (" << lhs << " <= " << rhs << ");\n"; break;
+      default: os << "  bool " << result << " = false;\n"; break;
+      }
+      ctx.value_table[value_counter] = result;
+    }
+    value_counter++;
+    break;
+  }
+
+  case LLVMInstruction::Select: {
+    ensureValueTable(value_counter);
+    if (inst.operands.size() >= 3) {
+      os << "  " << result << " = " << getValue(inst.operands[0]) << " ? " << getValue(inst.operands[1]) << " : " << getValue(inst.operands[2]) << ";\n";
+      ctx.value_table[value_counter] = result;
+    }
+    value_counter++;
+    break;
+  }
+
+  case LLVMInstruction::Load: {
+    ensureValueTable(value_counter);
+    if (inst.operands.size() >= 1) {
+      os << "  " << result << " = reinterpret_cast<device decltype(" << result << ")&>(" << getValue(inst.operands[0]) << ");\n";
+    }
+    ctx.value_table[value_counter] = result;
+    value_counter++;
+    break;
+  }
+
+  case LLVMInstruction::Store: {
+    if (inst.operands.size() >= 2) {
+      os << "  reinterpret_cast<device decltype(" << getValue(inst.operands[1]) << ")&>(" << getValue(inst.operands[0]) << ") = " << getValue(inst.operands[1]) << ";\n";
+    }
+    break;
+  }
+
+  case LLVMInstruction::GEP:
+  case LLVMInstruction::GetElementPtr: {
+    ensureValueTable(value_counter);
+    if (inst.operands.size() >= 2) {
+      auto base = getValue(inst.operands[0]);
+      std::string offset = "0";
+      if (inst.operands.size() >= 2)
+        offset = getValue(inst.operands[1]);
+      for (size_t i = 2; i < inst.operands.size(); i++) {
+        offset = "(" + offset + " + " + getValue(inst.operands[i]) + ")";
+      }
+      os << "  device char* " << result << " = (" << base << " + (" << offset << "));\n";
+      ctx.value_table[value_counter] = result;
+    }
+    value_counter++;
+    break;
+  }
+
+  case LLVMInstruction::Alloca: {
+    ensureValueTable(value_counter);
+    os << "  thread char* " << result << " = (thread char*)alloca(256);\n";
+    ctx.value_table[value_counter] = result;
+    value_counter++;
+    break;
+  }
+
+  case LLVMInstruction::PHI: {
+    ensureValueTable(value_counter);
+    os << "  auto " << result << " = decltype(" << result << ")(0); // phi\n";
+    ctx.value_table[value_counter] = result;
+    value_counter++;
+    break;
+  }
+
+  case LLVMInstruction::Br: {
+    if (inst.operands.size() == 1) {
+      // unconditional branch
+    } else if (inst.operands.size() >= 3) {
+      auto cond = getValue(inst.operands[0]);
+      os << "  if (" << cond << ") {\n  // br true\n  } else {\n  // br false\n  }\n";
+    }
+    break;
+  }
+
+  case LLVMInstruction::Switch: {
+    os << "  // switch\n";
+    break;
+  }
+
+  case LLVMInstruction::ExtractValue: {
+    ensureValueTable(value_counter);
+    if (inst.operands.size() >= 2) {
+      auto agg = getValue(inst.operands[0]);
+      auto idx = inst.operands[1];
+      os << "  " << result << " = (" << agg << "); // extractvalue idx=" << idx << "\n";
+      ctx.value_table[value_counter] = result;
+    }
+    value_counter++;
+    break;
+  }
+
+  case LLVMInstruction::InsertValue: {
+    ensureValueTable(value_counter);
+    os << "  " << result << " = " << (inst.operands.size() >= 1 ? getValue(inst.operands[0]) : "0") << "; // insertvalue\n";
+    ctx.value_table[value_counter] = result;
+    value_counter++;
+    break;
+  }
+
+  case LLVMInstruction::ExtractElement: {
+    ensureValueTable(value_counter);
+    if (inst.operands.size() >= 2) {
+      os << "  " << result << " = " << getValue(inst.operands[0]) << "[" << getValue(inst.operands[1]) << "];\n";
+      ctx.value_table[value_counter] = result;
+    }
+    value_counter++;
+    break;
+  }
+
+  case LLVMInstruction::InsertElement: {
+    ensureValueTable(value_counter);
+    os << "  " << result << " = " << (inst.operands.size() >= 1 ? getValue(inst.operands[0]) : "float4(0)") << "; // insertelement\n";
+    ctx.value_table[value_counter] = result;
+    value_counter++;
+    break;
+  }
+
+  case LLVMInstruction::ShuffleVector: {
+    ensureValueTable(value_counter);
+    os << "  " << result << " = " << (inst.operands.size() >= 1 ? getValue(inst.operands[0]) : "float4(0)") << "; // shufflevector\n";
+    ctx.value_table[value_counter] = result;
+    value_counter++;
+    break;
+  }
+
+  case LLVMInstruction::Unreachable:
+    os << "  // unreachable\n";
+    break;
+
+  case LLVMInstruction::FNeg: {
+    ensureValueTable(value_counter);
+    if (inst.operands.size() >= 1) {
+      os << "  " << result << " = -(" << getValue(inst.operands[0]) << ");\n";
+      ctx.value_table[value_counter] = result;
+    }
+    value_counter++;
+    break;
+  }
+
+  case LLVMInstruction::URem:
+  case LLVMInstruction::SRem: {
+    ensureValueTable(value_counter);
+    os << "  " << result << " = " << getValue(inst.operands[0]) << " % " << getValue(inst.operands[1]) << ";\n";
+    ctx.value_table[value_counter] = result;
+    value_counter++;
+    break;
+  }
+
+  case LLVMInstruction::Invoke: {
+    os << "  // invoke\n";
+    break;
+  }
+
+  default:
+    os << "  // unhandled opcode " << (int)inst.opcode << "\n";
+    ensureValueTable(value_counter);
+    ctx.value_table[value_counter] = result;
+    value_counter++;
+    break;
+  }
 }
 
 std::optional<MSLShader> DXILToMSL::convert(const LLVMModule &module,
                                               const DxilParsedShader &shader) {
+  DXTRACE("DXILToMSL::convert: kind=%u sm=%u.%u functions=%zu types=%zu",
+          (uint32_t)shader.kind, shader.shader_model.major, shader.shader_model.minor,
+          module.functions.size(), module.types.size());
+
   std::ostringstream os;
-  os << kComputeHeader;
+  EmitContext ctx{os, module, shader, {}, {}, 0, false, false, false, false};
 
-  os << "kernel void " << shader.entry_point << "(\n";
-  os << "  uint3 dtid [[thread_position_in_grid]],\n";
-  os << "  uint3 gtidx [[thread_position_in_threadgroup]],\n";
-  os << "  uint3 ggid [[threadgroup_position_in_grid]],\n";
-  os << "  uint3 gsz [[threads_per_threadgroup]]\n";
-  os << ") {\n";
+  emitFunctionPrologue(ctx);
 
-  if (module.functions.empty()) {
-    os << "  // No functions parsed from DXIL\n";
-    os << "}\n";
-    MSLShader result;
-    result.source = os.str();
-    result.entry_point = shader.entry_point;
-    return result;
-  }
+  ctx.value_table.resize(256);
 
-  auto &fn = module.functions.back();
-
-  for (auto &block : fn.blocks) {
-    for (auto &inst : block.instructions) {
-      os << "  // ";
-      switch (inst.opcode) {
-      case LLVMInstruction::Call:
-        os << "call";
-        if (inst.operands.size() >= 2) {
-          os << " fn=" << inst.operands[0];
-          os << " nargs=" << (inst.operands.size() - 1);
-        }
-        break;
-      case LLVMInstruction::Ret:
-        os << "ret";
-        break;
-      case LLVMInstruction::Load:
-        os << "load ptr=" << (inst.operands.empty() ? 0 : inst.operands[0]);
-        break;
-      case LLVMInstruction::Store:
-        os << "store ptr=" << (inst.operands.empty() ? 0 : inst.operands[0]);
-        break;
-      default:
-        os << opcodeName(inst.opcode);
-        for (auto &op : inst.operands)
-          os << " " << op;
-        break;
+  if (!module.functions.empty()) {
+    for (size_t i = 0; i < module.constants.size(); i++) {
+      uint32_t val_idx = (uint32_t)i;
+      if (val_idx < ctx.value_table.size()) {
+        ctx.value_table[val_idx] = "const_" + std::to_string(i);
       }
-      os << "\n";
     }
+
+    auto &fn = module.functions.back();
+    DXTRACE("DXILToMSL: entry function has %zu blocks", fn.blocks.size());
+
+    uint32_t value_counter = (uint32_t)module.constants.size();
+
+    for (auto &block : fn.blocks) {
+      for (auto &inst : block.instructions) {
+        emitInstruction(ctx, inst, value_counter);
+      }
+    }
+  } else {
+    os << "  // No functions parsed from DXIL bitcode\n";
+    DXTRACE("DXILToMSL: no functions in module");
   }
 
   os << "}\n";
@@ -148,6 +975,12 @@ std::optional<MSLShader> DXILToMSL::convert(const LLVMModule &module,
   MSLShader result;
   result.source = os.str();
   result.entry_point = shader.entry_point;
+  result.tg_size[0] = 1;
+  result.tg_size[1] = 1;
+  result.tg_size[2] = 1;
+
+  DXTRACE("DXILToMSL: generated %zu bytes of MSL", result.source.size());
+
   return result;
 }
 

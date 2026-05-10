@@ -57,7 +57,16 @@ std::optional<DXILContainer> DXILContainer::parse(const void *data, size_t size)
   result.m_shader.shader_model = sm;
   result.m_shader.bitcode.data = bitcode_ptr;
   result.m_shader.bitcode.size = bitcode_size;
-  result.m_shader.entry_point = "cs_main";
+
+  switch (kind) {
+  case DxilShaderKind::Compute: result.m_shader.entry_point = "cs_main"; break;
+  case DxilShaderKind::Vertex: result.m_shader.entry_point = "vs_main"; break;
+  case DxilShaderKind::Pixel: result.m_shader.entry_point = "ps_main"; break;
+  case DxilShaderKind::Geometry: result.m_shader.entry_point = "gs_main"; break;
+  case DxilShaderKind::Hull: result.m_shader.entry_point = "hs_main"; break;
+  case DxilShaderKind::Domain: result.m_shader.entry_point = "ds_main"; break;
+  default: result.m_shader.entry_point = "main"; break;
+  }
 
   return result;
 }

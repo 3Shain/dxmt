@@ -182,7 +182,21 @@ D3D12CreateDevice(IUnknown *pAdapter, D3D_FEATURE_LEVEL MinimumFeatureLevel,
   }
 
   try {
-    auto dxgi_device = new MTLD3D12DXGIDevice(
+    void *device_mem = VirtualAlloc((void*)0x500000000ULL, sizeof(MTLD3D12DXGIDevice),
+      MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+    if (!device_mem) {
+      device_mem = VirtualAlloc((void*)0x200000000ULL, sizeof(MTLD3D12DXGIDevice),
+        MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+    }
+    if (!device_mem) {
+      device_mem = VirtualAlloc(nullptr, sizeof(MTLD3D12DXGIDevice),
+        MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+    }
+    {
+      FILE *f = fopen("Z:\\tmp\\dxmt_dxgi_trace.log", "a");
+      if (f) { fprintf(f, "Device allocated at %p size=%zu\n", device_mem, sizeof(MTLD3D12DXGIDevice)); fclose(f); }
+    }
+    auto dxgi_device = new (device_mem) MTLD3D12DXGIDevice(
         CreateDXMTDevice({.device = dxgi_adapter->GetMTLDevice()}),
         dxgi_adapter.ptr());
 
@@ -294,10 +308,12 @@ extern "C" HRESULT WINAPI D3D12GetDebugInterface(REFIID riid,
 }
 
 #ifdef _WIN32
+extern void install_crash_handler();
 BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID reserved) {
   if (reason != DLL_PROCESS_ATTACH)
     return TRUE;
   DisableThreadLibraryCalls(instance);
+  install_crash_handler();
   return TRUE;
 }
 #endif

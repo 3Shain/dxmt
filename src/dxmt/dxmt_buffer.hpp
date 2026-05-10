@@ -22,6 +22,8 @@
 #include "dxmt_deptrack.hpp"
 #include "dxmt_residency.hpp"
 #include "dxmt_allocation.hpp"
+#include <cstdio>
+#include <windows.h>
 #include "rc/util_rc_ptr.hpp"
 #include "thread.hpp"
 #include "util_flags.hpp"
@@ -127,6 +129,28 @@ private:
   BufferAllocation(WMT::Device device, const WMTBufferInfo &info, Flags<BufferAllocationFlag> flags);
   void free();
 
+  void destroy() override {
+    if (dxmt::g_d3d12_device_addr) {
+      uintptr_t a = (uintptr_t)this;
+      uintptr_t d = (uintptr_t)dxmt::g_d3d12_device_addr;
+      if (a >= d && a < d + dxmt::g_d3d12_device_size) {
+        FILE *f = fopen("Z:\\tmp\\dxmt_dxgi_trace.log", "a");
+        if (f) {
+          fprintf(f, "!!! BLOCKED BufferAllocation::destroy() on DEVICE this=%p device=%p tid=%lu\n",
+            (void*)this, dxmt::g_d3d12_device_addr, (unsigned long)GetCurrentThreadId());
+          void *buf[16];
+          ULONG n = RtlCaptureStackBackTrace(1, 16, buf, nullptr);
+          fprintf(f, "  stack[%lu]=", (unsigned long)n);
+          for (ULONG i = 0; i < n; i++) fprintf(f, "%p ", buf[i]);
+          fprintf(f, "\n");
+          fclose(f);
+        }
+        return;
+      }
+    }
+    delete this;
+  }
+
   BufferAllocation(const BufferAllocation &) = delete;
   BufferAllocation(BufferAllocation &&) = delete;
 
@@ -142,6 +166,7 @@ private:
   uint32_t suballocation_count_ = 1;
 
   void * placed_buffer = nullptr;
+  uint32_t canary_ = 0xDEADBEEF;
 };
 
 class Buffer {

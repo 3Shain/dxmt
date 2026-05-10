@@ -371,6 +371,14 @@ struct unixcall_mtlcommandbuffer_blitcommandencoderwithsamplebuffers {
   obj_handle_t ret;
 };
 
+struct unixcall_mtldevice_newlibrary_source {
+  obj_handle_t device;
+  struct WMTConstMemoryPointer source;
+  uint64_t source_length;
+  obj_handle_t ret_error;
+  obj_handle_t ret_library;
+};
+
 #pragma pack(pop)
 
 #endif
