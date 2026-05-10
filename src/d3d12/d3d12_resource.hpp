@@ -66,6 +66,7 @@ private:
   WMTBufferInfo m_buf_info = {};
   WMT::Reference<WMT::Buffer> m_mtl_buffer;
   WMT::Reference<WMT::Texture> m_mtl_texture;
+  WMT::Reference<WMT::Buffer> m_fake_buffer;
   void *m_cpu_addr = nullptr;
   uint64_t m_gpu_addr = 0;
   std::atomic<uint32_t> m_refCount = {1ul};

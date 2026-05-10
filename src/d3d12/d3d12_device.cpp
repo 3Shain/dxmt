@@ -306,6 +306,12 @@ HRESULT STDMETHODCALLTYPE MTLD3D12Device::CreateGraphicsPipelineState(
     return E_POINTER;
   InitReturnPtr(pipeline_state);
 
+  TRACE("CreateGraphicsPSO ENTER: VS=%p(%zu) PS=%p(%zu) NumRT=%u DSV=%u Topo=%u",
+        desc->VS.pShaderBytecode, desc->VS.BytecodeLength,
+        desc->PS.pShaderBytecode, desc->PS.BytecodeLength,
+        desc->NumRenderTargets, (unsigned)desc->DSVFormat,
+        (unsigned)desc->PrimitiveTopologyType);
+
   auto pso = new MTLD3D12PipelineState(this, false);
   pso->SetGraphicsDesc(*desc);
   bool compiled = pso->Compile();
@@ -316,6 +322,7 @@ HRESULT STDMETHODCALLTYPE MTLD3D12Device::CreateGraphicsPipelineState(
   HRESULT hr = pso->QueryInterface(riid, pipeline_state);
   if (FAILED(hr))
     pso->Release();
+  TRACE("CreateGraphicsPSO EXIT hr=0x%lx pso=%p", hr, *pipeline_state);
   return hr;
 }
 

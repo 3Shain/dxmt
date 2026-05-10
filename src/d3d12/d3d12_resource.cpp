@@ -77,6 +77,16 @@ MTLD3D12Resource::MTLD3D12Resource(
         tex_info.pixel_format, (unsigned)tex_info.width, (unsigned)tex_info.height, (unsigned)tex_info.array_length,
         (unsigned long long)m_mtl_texture.handle, cpu_accessible ? "cpu" : "gpu");
     }
+    {
+      uint64_t fake_size = (uint64_t)tex_info.width * tex_info.height * 4;
+      if (fake_size < 256) fake_size = 256;
+      WMTBufferInfo fake_buf = {};
+      fake_buf.length = fake_size;
+      fake_buf.options = WMTResourceStorageModeShared;
+      m_fake_buffer = wmt_device.newBuffer(fake_buf);
+      m_gpu_addr = fake_buf.gpu_address;
+      RTRACE("ctor: texture fake gpu_addr=0x%llx (from fake buffer %llu bytes)", (unsigned long long)m_gpu_addr, (unsigned long long)fake_size);
+    }
   }
 
   Logger::info(str::format("D3D12Resource: dim=", desc.Dimension,
